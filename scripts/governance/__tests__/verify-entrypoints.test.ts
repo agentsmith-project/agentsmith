@@ -162,6 +162,11 @@ type ReportEvidenceCard = {
 };
 
 type ReportStoryCard = {
+  risk_level: string;
+  risk_reason: string;
+  risk_policy_refs: string[];
+  risk_policy_source: string;
+  required_levels: string[];
   status: string;
   evidence_status: string;
   manual_review_required: boolean;
@@ -831,8 +836,10 @@ describe('verify human entrypoints', () => {
 
       expect(result.status).toBe(0);
       expect(result.stdout).toContain('Goal: release-real');
-      expect(result.stdout).toContain('Required levels: V0, V1, V3');
+      expect(result.stdout).toContain('Required levels: V3');
       expect(result.stdout).toContain('npm run verify:release-real');
+      expect(result.stdout).not.toContain('npm run verify:visual');
+      expect(result.stdout).not.toContain('npm run verify:real');
       expect(result.stdout).toContain('this is not release readiness and not a release verdict');
 
       const report = JSON.parse(readFileSync(join(root, 'story-acceptance-report.json'), 'utf8')) as {
@@ -845,8 +852,18 @@ describe('verify human entrypoints', () => {
       const v3Evidence = report.story_cards[0]?.evidence_cards.find((card) => card.level === 'V3');
 
       expect(releaseRealUxTraceTemplate).toBeTruthy();
-      expect(report.required_levels).toEqual(['V0', 'V1', 'V3']);
-      expect(report.recommended_commands).toContain('npm run verify:release-real');
+      expect(report.required_levels).toEqual(['V3']);
+      expect(report.required_levels).not.toContain('V4');
+      expect(report.recommended_commands).toEqual(['npm run verify:release-real']);
+      expect(report.recommended_commands).not.toContain('npm run verify:visual');
+      expect(report.recommended_commands).not.toContain('npm run verify:real');
+      expect(report.story_cards[0]).toMatchObject({
+        risk_level: 'R0',
+        risk_policy_refs: ['release_blocking_governance'],
+        risk_policy_source: 'scripts/governance/current-story-risk-policy.ts',
+        required_levels: ['V3'],
+      });
+      expect(report.story_cards[0]?.risk_reason).toContain('release_blocking_governance');
       expect(v3Evidence).toMatchObject({
         state: 'not_inspected_by_verify_report',
         status: 'manual_review_needed',

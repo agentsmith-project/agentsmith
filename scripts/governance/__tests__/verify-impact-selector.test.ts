@@ -8,7 +8,13 @@ import { describe, expect, it } from 'vitest';
 import {
   buildVerificationPlan,
 } from '../run-verify';
+import {
+  CURRENT_STORY_RISK_POLICY_SCHEMA,
+  CURRENT_STORY_RISK_POLICY_SOURCE,
+} from '../current-story-risk-policy';
 import { buildVerificationCatalog } from '../verification-catalog';
+import { buildStoryAcceptanceReport } from '../story-acceptance-report';
+import { loadCommittedStoryDefinitionsSync } from '../../story-catalog-support';
 
 function withTempDir<T>(prefix: string, run: (root: string) => T): T {
   const root = mkdtempSync(join(tmpdir(), prefix));
@@ -55,6 +61,10 @@ type ReportStoryImpactSource = {
 
 type ReportStoryCard = {
   story_id: string;
+  risk_level: string;
+  risk_reason: string;
+  risk_policy_refs: string[];
+  risk_policy_source: string;
   status: string;
   evidence_status: string;
   impact_sources: ReportStoryImpactSource[];
@@ -121,6 +131,9 @@ describe('verify impact selector', () => {
     });
     const visualCard = plan.storyCards.find((card) => card.storyId === 'mock-lane-chat-operate-and-recover');
     expect(visualCard?.manualReviewReasons).toContain('visual V2 needs review');
+    expect(visualCard?.riskPolicyRefs).toContain('visual_product_experience');
+    expect(visualCard?.riskPolicySource).toBe(CURRENT_STORY_RISK_POLICY_SOURCE);
+    expect(visualCard?.riskReason).toContain('risk policy sidecar');
     expect(visualCard?.levelStatuses).toContainEqual({
       level: 'V2',
       status: 'manual_review_needed',
@@ -211,6 +224,31 @@ describe('verify impact selector', () => {
     expect(plan.releaseVerdict).toBe(false);
   });
 
+  it('does not downgrade mock-lane visual story policy floors for explicit release-real goal', () => {
+    const plan = buildVerificationPlan({
+      goal: 'release-real',
+      goalExplicit: true,
+      changedFiles: ['e2e/stories/mock-lane/mock-lane-chat-operate-and-recover.story.md'],
+    });
+    const storyCard = plan.storyCards.find((card) => card.storyId === 'mock-lane-chat-operate-and-recover');
+
+    expect(plan.requiredLevels).toEqual(['V0', 'V1', 'V2', 'V3']);
+    expect(plan.recommendedCommands).not.toEqual(['npm run verify:release-real']);
+    expect(plan.recommendedCommands).toEqual([
+      'npm run verify:quick',
+      'npm run verify:default',
+      'npm run verify:visual',
+      'npm run verify:release-real',
+    ]);
+    expect(storyCard).toMatchObject({
+      lane: 'mock-lane',
+      riskLevel: 'R2',
+      requiredLevels: ['V0', 'V1', 'V2'],
+    });
+    expect(storyCard?.riskReason).not.toContain('release-real owner diagnostic stays V3-only');
+    expect(plan.releaseVerdict).toBe(false);
+  });
+
   it('requires visual and backend-real evidence for backend-real stories with visual review evidence', () => {
     const plan = buildVerificationPlan({
       changedFiles: ['e2e/stories/backend-real/real-backend-visual-review.story.md'],
@@ -229,6 +267,59 @@ describe('verify impact selector', () => {
     expect(storyCard?.lane).toBe('backend-real');
     expect(storyCard?.riskLevel).toBe('R1');
     expect(storyCard?.riskReason).toContain('backend-real');
+  });
+
+  it('raises R0 policy stories to the policy risk and level floors', () => {
+    const plan = buildVerificationPlan({
+      changedFiles: ['e2e/stories/backend-real/unicode-filename-round-trip.story.md'],
+    });
+    const storyCard = plan.storyCards.find((card) => card.storyId === 'unicode-filename-round-trip');
+
+    expect(plan.requiredLevels).toEqual(['V0', 'V1', 'V2', 'V3']);
+    expect(storyCard).toMatchObject({
+      riskLevel: 'R0',
+      riskPolicyRefs: ['file_continuity_integrity'],
+      riskPolicySource: CURRENT_STORY_RISK_POLICY_SOURCE,
+      requiredLevels: ['V0', 'V1', 'V2', 'V3'],
+    });
+    expect(storyCard?.riskReason).toContain('file_continuity_integrity');
+  });
+
+  it('does not let R3 policy refs lower backend-real baseline risk or levels', () => {
+    const story = loadCommittedStoryDefinitionsSync()
+      .find((candidate) => candidate.storyId === 'notebook-first-success');
+    if (!story) {
+      throw new Error('notebook-first-success story fixture is required');
+    }
+    const catalog = buildVerificationCatalog({
+      stories: [story],
+      visualCatalogEntries: [],
+      storyRiskPolicy: {
+        schema: CURRENT_STORY_RISK_POLICY_SCHEMA,
+        stories: {
+          'notebook-first-success': {
+            policy_refs: ['low_risk_reference'],
+          },
+        },
+      },
+    });
+    const plan = buildVerificationPlan({
+      catalog,
+      changedFiles: [story.sourceFile ?? story.filePath],
+    });
+
+    expect(plan.requiredLevels).toEqual(['V0', 'V1', 'V3']);
+    expect(plan.storyCards[0]).toMatchObject({
+      riskLevel: 'R1',
+      riskPolicyRefs: ['low_risk_reference'],
+      riskPolicySource: 'input_override_non_authoritative',
+      requiredLevels: ['V0', 'V1', 'V3'],
+    });
+    expect(buildStoryAcceptanceReport(plan, '/tmp/report-root').story_cards[0]).toMatchObject({
+      risk_policy_refs: ['low_risk_reference'],
+      risk_policy_source: 'input_override_non_authoritative',
+    });
+    expect(plan.storyCards[0]?.riskReason).toContain('backend-real');
   });
 
   it('maps canonical story markdown changes to the exact story and requires manual review', () => {
@@ -477,6 +568,11 @@ describe('verify impact selector', () => {
         status: 'manual_review_needed',
         reason: 'Visual V2 needs review; verify report did not inspect visual evidence.',
       });
+      expect(reportCard).toMatchObject({
+        risk_policy_refs: expect.arrayContaining(['visual_product_experience']),
+        risk_policy_source: CURRENT_STORY_RISK_POLICY_SOURCE,
+      });
+      expect(reportCard?.risk_reason).toContain('risk policy sidecar');
       expect(reportCard?.latest_evidence).toEqual({
         state: 'not_inspected_by_verify_report',
         owner: 'visual review owner',
@@ -507,6 +603,8 @@ describe('verify impact selector', () => {
       expect(markdown).toContain('not release readiness');
       expect(markdown).toContain('not a release verdict');
       expect(markdown).toContain('mock-lane-chat-operate-and-recover');
+      expect(markdown).toContain('- Risk policy refs: visual_product_experience, standard_mock_workflow');
+      expect(markdown).toContain(`- Risk policy source: ${CURRENT_STORY_RISK_POLICY_SOURCE}`);
       expect(markdown).toContain('- Evidence cards:');
       expect(markdown).toContain(
         '- V2: owner=npm run verify:visual; status=manual_review_needed; path_template=artifacts/visual-baseline-reviews/<run-id>/run-manifest.json',

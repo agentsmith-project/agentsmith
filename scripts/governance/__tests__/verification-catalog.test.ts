@@ -10,6 +10,12 @@ import {
   type CurrentVerificationCampaignDefinition,
 } from '../current-verification-campaign-manifest';
 import {
+  CURRENT_STORY_RISK_POLICY,
+  CURRENT_STORY_RISK_POLICY_SCHEMA,
+  CURRENT_STORY_RISK_POLICY_SOURCE,
+  validateCurrentStoryRiskPolicy,
+} from '../current-story-risk-policy';
+import {
   buildVerificationCatalog,
   GENERATED_STORY_SPEC_PATH,
   VERIFICATION_CATALOG_SCHEMA,
@@ -17,6 +23,78 @@ import {
 } from '../verification-catalog';
 
 describe('verification catalog', () => {
+  it('validates the risk policy sidecar with exact canonical story coverage and policy refs only', () => {
+    const canonicalStoryIds = loadCommittedStoryDefinitionsSync()
+      .map((story) => story.storyId)
+      .sort((left, right) => left.localeCompare(right));
+    const policy = validateCurrentStoryRiskPolicy(CURRENT_STORY_RISK_POLICY, canonicalStoryIds);
+
+    expect(CURRENT_STORY_RISK_POLICY_SCHEMA).toBe('agentsmith_story_risk_policy/v1');
+    expect(Object.keys(policy.stories).sort((left, right) => left.localeCompare(right))).toEqual(canonicalStoryIds);
+    expect(policy.schema).toBe(CURRENT_STORY_RISK_POLICY_SCHEMA);
+    expect(policy.stories['unicode-filename-round-trip']?.policy_refs).toContain('file_continuity_integrity');
+    for (const entry of Object.values(policy.stories)) {
+      expect(Object.keys(entry)).toEqual(['policy_refs']);
+      expect(entry.policy_refs.length).toBeGreaterThan(0);
+    }
+  });
+
+  it('hard-fails invalid risk policy sidecar documents', () => {
+    const validPolicy = {
+      schema: CURRENT_STORY_RISK_POLICY_SCHEMA,
+      stories: {
+        alpha: { policy_refs: ['low_risk_reference'] },
+        beta: { policy_refs: ['standard_mock_workflow'] },
+      },
+    };
+    const validate = (policy: unknown) => validateCurrentStoryRiskPolicy(policy, ['alpha', 'beta']);
+
+    expect(() => validate({
+      ...validPolicy,
+      stories: {
+        alpha: { policy_refs: ['low_risk_reference'] },
+      },
+    })).toThrow(/missing canonical story ids: beta/);
+    expect(() => validate({
+      ...validPolicy,
+      stories: {
+        ...validPolicy.stories,
+        gamma: { policy_refs: ['low_risk_reference'] },
+      },
+    })).toThrow(/unknown story ids: gamma/);
+    expect(() => validate({
+      ...validPolicy,
+      stories: {
+        ...validPolicy.stories,
+        beta: { policy_refs: [] },
+      },
+    })).toThrow(/beta.*policy_refs.*empty/);
+    expect(() => validate({
+      ...validPolicy,
+      stories: {
+        ...validPolicy.stories,
+        beta: { policy_refs: [''] },
+      },
+    })).toThrow(/beta.*empty policy ref/);
+    expect(() => validate({
+      ...validPolicy,
+      stories: {
+        ...validPolicy.stories,
+        beta: { policy_refs: ['unknown_ref'] },
+      },
+    })).toThrow(/beta.*unknown policy ref: unknown_ref/);
+    expect(() => validate({
+      ...validPolicy,
+      stories: {
+        ...validPolicy.stories,
+        beta: {
+          policy_refs: ['low_risk_reference'],
+          title: 'copied canonical title',
+        },
+      },
+    })).toThrow(/beta.*only contain policy_refs/);
+  });
+
   it('declares the read-only catalog schema and authoritative provenance', () => {
     const catalog = buildVerificationCatalog({
       generatedAt: '2026-04-25T12:00:00.000Z',
@@ -45,6 +123,12 @@ describe('verification catalog', () => {
       source_module: 'e2e/visual-baseline-support.ts',
     });
     expect(catalog.source_truth.gate_result_schema.writer_gate_ids).toContain('lane-backend-real-core');
+    expect(catalog.source_truth.current_story_risk_policy).toMatchObject({
+      authority: 'authoritative',
+      module: CURRENT_STORY_RISK_POLICY_SOURCE,
+      schema: CURRENT_STORY_RISK_POLICY_SCHEMA,
+      story_count: catalog.stories.length,
+    });
   });
 
   it('marks custom story and visual inputs as non-default input overrides', () => {
@@ -70,6 +154,50 @@ describe('verification catalog', () => {
       entry_count: 0,
     });
     expect(catalog.source_truth.generated_story_specs.source_builder).toContain('input story override');
+  });
+
+  it('marks risk policy input overrides as non-authoritative story policy sources', () => {
+    const [story] = loadCommittedStoryDefinitionsSync();
+    const catalog = buildVerificationCatalog({
+      stories: [story],
+      visualCatalogEntries: [],
+      storyRiskPolicy: {
+        schema: CURRENT_STORY_RISK_POLICY_SCHEMA,
+        stories: {
+          [story.storyId]: {
+            policy_refs: ['low_risk_reference'],
+          },
+        },
+      },
+    });
+
+    expect(catalog.source_truth.current_story_risk_policy).toMatchObject({
+      authority: 'input_override_non_authoritative',
+      source_mode: 'input_override',
+      module: null,
+    });
+    expect(catalog.story_by_id[story.storyId]?.riskPolicySource).toBe('input_override_non_authoritative');
+  });
+
+  it('hard-fails present but invalid risk policy input overrides instead of falling back to defaults', () => {
+    const [story] = loadCommittedStoryDefinitionsSync();
+    const baseInput = {
+      stories: [story],
+      visualCatalogEntries: [],
+    };
+
+    expect(() => buildVerificationCatalog({
+      ...baseInput,
+      storyRiskPolicy: null,
+    })).toThrow(/current story risk policy must be an object/);
+    expect(() => buildVerificationCatalog({
+      ...baseInput,
+      storyRiskPolicy: false,
+    })).toThrow(/current story risk policy must be an object/);
+    expect(() => buildVerificationCatalog({
+      ...baseInput,
+      storyRiskPolicy: '',
+    })).toThrow(/current story risk policy must be an object/);
   });
 
   it('marks generated story specs as derived cache and never uses them as story truth', () => {
@@ -123,6 +251,26 @@ describe('verification catalog', () => {
       gateId: 'lane-backend-real-core',
       artifactPathTemplate: 'artifacts/backend-real/runs/<run-id>/ux-traces',
       verdictState: 'none',
+    });
+  });
+
+  it('projects risk policy refs and only raises canonical story levels', () => {
+    const catalog = buildVerificationCatalog();
+    const unicodeStory = catalog.story_by_id['unicode-filename-round-trip'];
+    const notebookStory = catalog.story_by_id['notebook-first-success'];
+
+    expect(unicodeStory).toMatchObject({
+      riskPolicyRefs: ['file_continuity_integrity'],
+      riskPolicySource: CURRENT_STORY_RISK_POLICY_SOURCE,
+      riskPolicyRiskFloor: 'R0',
+      riskPolicyLevelFloor: ['V0', 'V1', 'V2', 'V3'],
+      requiredLevels: ['V0', 'V1', 'V2', 'V3'],
+    });
+    expect(notebookStory).toMatchObject({
+      riskPolicyRefs: ['core_ai_workflow'],
+      riskPolicyRiskFloor: 'R1',
+      riskPolicyLevelFloor: ['V0', 'V1', 'V3'],
+      requiredLevels: ['V0', 'V1', 'V3'],
     });
   });
 

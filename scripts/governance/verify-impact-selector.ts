@@ -86,6 +86,8 @@ export interface VerificationStoryCard {
   lane: StoryDefinition['lane'];
   sourceFile: string;
   risk: StoryCardRisk;
+  riskPolicyRefs: VerificationCatalogStory['riskPolicyRefs'];
+  riskPolicySource: VerificationCatalogStory['riskPolicySource'];
   riskLevel: StoryRiskLevel;
   riskReason: string;
   requiredLevels: readonly VerificationLevel[];
@@ -152,6 +154,8 @@ type MutableStoryCard = Omit<
   | 'nextAction'
 > & {
   requiredLevels: Set<VerificationLevel>;
+  riskPolicyRiskFloor: StoryRiskLevel;
+  riskPolicyLevelFloor: Set<VerificationLevel>;
   manualReviewReasons: Set<StoryManualReviewReason>;
   impactSources: Map<string, VerificationStoryImpactSource>;
   nextActions: string[];
@@ -181,6 +185,7 @@ type ImpactAccumulator = {
 };
 
 const LEVEL_ORDER: readonly VerificationLevel[] = ['V0', 'V1', 'V2', 'V3', 'V4'];
+const RISK_LEVEL_ORDER: readonly StoryRiskLevel[] = ['R0', 'R1', 'R2', 'R3'];
 const IMPACT_RULE_ORDER: readonly ChangedFileImpactRule[] = [
   'canonical_story_markdown',
   'generated_story_specs_derived_cache',
@@ -282,6 +287,10 @@ function isReleaseRealOwnerDiagnosticPath(filePath: string): boolean {
   ].some((pattern) => pattern.test(filePath));
 }
 
+function isReleaseRealDiagnosticStory(story: VerificationCatalogStory): boolean {
+  return story.storyId === 'release-user-story-end-to-end';
+}
+
 function isReleaseDeployOrRehearsalPath(filePath: string): boolean {
   return [
     /^scripts\/release-full-campaign\.sh$/,
@@ -361,6 +370,17 @@ function evidenceForLevels(levels: Iterable<VerificationLevel>): string[] {
 
 function levelsForStory(story: VerificationCatalogStory): readonly VerificationLevel[] {
   return story.requiredLevels;
+}
+
+function levelsWithStoryPolicyFloor(
+  levels: readonly VerificationLevel[],
+  story: VerificationCatalogStory,
+): readonly VerificationLevel[] {
+  if (levels.includes('V4')) {
+    // V4 release/deploy operator review already dominates lower story policy floors.
+    return levels;
+  }
+  return orderedLevels([...levels, ...story.riskPolicyLevelFloor]);
 }
 
 function createAccumulator(): ImpactAccumulator {
@@ -522,16 +542,23 @@ function addStoryCard(
     manualReviewReasons?: readonly StoryManualReviewReason[];
     nextAction: string;
     impactSource?: VerificationStoryImpactSource;
+    applyPolicyLevelFloor?: boolean;
   },
 ): void {
+  const levels = args.applyPolicyLevelFloor === false
+    ? args.levels
+    : levelsWithStoryPolicyFloor(args.levels, story);
   if (args.manualReviewReasons && args.manualReviewReasons.length > 0) {
     accumulator.manualReviewRequired = true;
   }
 
   const existing = accumulator.storyCards.get(story.storyId);
   if (existing) {
-    for (const level of args.levels) {
+    for (const level of levels) {
       existing.requiredLevels.add(level);
+    }
+    for (const level of story.riskPolicyLevelFloor) {
+      existing.riskPolicyLevelFloor.add(level);
     }
     for (const reason of args.manualReviewReasons ?? []) {
       existing.manualReviewReasons.add(reason);
@@ -555,7 +582,11 @@ function addStoryCard(
     lane: story.lane,
     sourceFile: story.sourceFile,
     risk: args.risk,
-    requiredLevels: new Set(args.levels),
+    riskPolicyRefs: story.riskPolicyRefs,
+    riskPolicySource: story.riskPolicySource,
+    riskPolicyRiskFloor: story.riskPolicyRiskFloor,
+    riskPolicyLevelFloor: new Set(story.riskPolicyLevelFloor),
+    requiredLevels: new Set(levels),
     evidenceStatus: args.evidenceStatus,
     manualReviewReasons: new Set(args.manualReviewReasons ?? []),
     impactSources: new Map<string, VerificationStoryImpactSource>(
@@ -578,7 +609,9 @@ function addBroadStoryCards(
 ): void {
   accumulator.broadImpact = true;
   for (const story of stories) {
-    const levels = args.levels ?? levelsForStory(story);
+    const levels = args.levels
+      ? levelsWithStoryPolicyFloor(args.levels, story)
+      : levelsForStory(story);
     addLevels(accumulator, levels);
     addStoryCard(accumulator, story, {
       risk: 'inferred',
@@ -609,34 +642,57 @@ function findVisualMatches(
   return catalog.visual_code_ref_map[filePath] ?? [];
 }
 
-function deriveRiskLevel(card: MutableStoryCard, requiredLevels: readonly VerificationLevel[]): StoryRiskLevel {
-  if (requiredLevels.includes('V4')) {
-    return 'R0';
-  }
-  if (card.lane === 'backend-real' && requiredLevels.includes('V3')) {
-    return 'R1';
-  }
-  if (requiredLevels.includes('V2')) {
-    return 'R2';
-  }
-  return 'R3';
+function moreSevereRiskLevel(left: StoryRiskLevel, right: StoryRiskLevel): StoryRiskLevel {
+  return RISK_LEVEL_ORDER.indexOf(left) <= RISK_LEVEL_ORDER.indexOf(right) ? left : right;
 }
 
-function riskReasonForCard(card: MutableStoryCard, riskLevel: StoryRiskLevel): string {
+function deriveRiskLevel(card: MutableStoryCard, requiredLevels: readonly VerificationLevel[]): StoryRiskLevel {
+  let inferredRiskLevel: StoryRiskLevel = 'R3';
+  if (requiredLevels.includes('V4')) {
+    inferredRiskLevel = 'R0';
+  } else if (card.lane === 'backend-real' && requiredLevels.includes('V3')) {
+    inferredRiskLevel = 'R1';
+  } else if (requiredLevels.includes('V2')) {
+    inferredRiskLevel = 'R2';
+  }
+  return moreSevereRiskLevel(card.riskPolicyRiskFloor, inferredRiskLevel);
+}
+
+function riskPolicyReasonForCard(card: MutableStoryCard): string {
+  return `risk policy sidecar ${card.riskPolicySource} refs ${card.riskPolicyRefs.join(', ')} set ${card.riskPolicyRiskFloor}/${orderedLevels(card.riskPolicyLevelFloor).join(', ')} floor.`;
+}
+
+function riskReasonForCard(
+  card: MutableStoryCard,
+  riskLevel: StoryRiskLevel,
+  requiredLevels: readonly VerificationLevel[],
+  context: EvidenceCardBuildContext,
+): string {
   const prefix = card.risk === 'inferred'
     ? 'Risk inferred fail-closed from required levels'
     : 'Risk required by mapped story impact';
+  const policyReason = riskPolicyReasonForCard(card);
 
   if (riskLevel === 'R0') {
-    return `${prefix}: V4 release/deploy/rehearsal story card requires operator review; verify report is not release readiness.`;
+    if (requiredLevels.includes('V4')) {
+      return `${prefix}: V4 release/deploy/rehearsal story card requires operator review; verify report is not release readiness. ${policyReason}`;
+    }
+    if (
+      releaseRealDiagnosticSelected(context)
+      && requiredLevels.length === 1
+      && requiredLevels[0] === 'V3'
+    ) {
+      return `${prefix}: release-real owner diagnostic stays V3-only; policy floor is retained as a risk note and this report is not release readiness. ${policyReason}`;
+    }
+    return `${prefix}: R0 governance policy floor requires full V0/V1/V2/V3 evidence selection; verify report did not inspect evidence. ${policyReason}`;
   }
   if (riskLevel === 'R1') {
-    return `${prefix}: backend-real story requires V3 verification; verify report did not inspect evidence.`;
+    return `${prefix}: backend-real story requires V3 verification; verify report did not inspect evidence. ${policyReason}`;
   }
   if (riskLevel === 'R2') {
-    return `${prefix}: mock-lane/visual story requires V2 visual review; verify report did not inspect evidence.`;
+    return `${prefix}: mock-lane/visual story requires V2 visual review; verify report did not inspect evidence. ${policyReason}`;
   }
-  return `${prefix}: debug/V0-only impact requires basic verification; verify report did not inspect evidence.`;
+  return `${prefix}: debug/V0-only impact requires basic verification; verify report did not inspect evidence. ${policyReason}`;
 }
 
 function manualReviewReasonForLevel(
@@ -793,12 +849,16 @@ function storyCardToImmutable(card: MutableStoryCard, context: EvidenceCardBuild
   const nextAction = orderedNextActions(card.nextActions).join(' ');
   const {
     requiredLevels: _requiredLevels,
+    riskPolicyRiskFloor: _riskPolicyRiskFloor,
+    riskPolicyLevelFloor: _riskPolicyLevelFloor,
     manualReviewReasons: _manualReviewReasons,
     impactSources: _impactSources,
     nextActions: _nextActions,
     ...cardFields
   } = card;
   void _requiredLevels;
+  void _riskPolicyRiskFloor;
+  void _riskPolicyLevelFloor;
   void _manualReviewReasons;
   void _impactSources;
   void _nextActions;
@@ -806,7 +866,7 @@ function storyCardToImmutable(card: MutableStoryCard, context: EvidenceCardBuild
   return {
     ...cardFields,
     riskLevel,
-    riskReason: riskReasonForCard(card, riskLevel),
+    riskReason: riskReasonForCard(card, riskLevel, requiredLevels, context),
     requiredLevels,
     status,
     failureReason: null,
@@ -865,6 +925,7 @@ export function buildVerificationPlan(input: BuildVerificationPlanInput = {}): V
   const changedFiles = uniqueSorted((input.changedFiles ?? []).map(normalizeRepoPath).filter(Boolean));
   const storyBySourceFile = buildStorySourceMap(catalog);
   const accumulator = createAccumulator();
+  const releaseRealDiagnosticGoal = goal === 'release-real' && input.goalExplicit;
   for (const warning of input.changeDetectionWarnings ?? []) {
     pushUnique(accumulator.warnings, warning);
   }
@@ -895,7 +956,8 @@ export function buildVerificationPlan(input: BuildVerificationPlanInput = {}): V
     const exactStory = storyBySourceFile.get(changedFile);
     if (exactStory) {
       mapped = true;
-      const levels = levelsForStory(exactStory);
+      const releaseRealDiagnosticStoryImpact = releaseRealDiagnosticGoal && isReleaseRealDiagnosticStory(exactStory);
+      const levels: readonly VerificationLevel[] = releaseRealDiagnosticStoryImpact ? ['V3'] : levelsForStory(exactStory);
       const action = 'Manual story review required because canonical story markdown changed; then run the recommended verification aliases.';
       const surface = `story:${exactStory.storyId}`;
       const impactSource: VerificationStoryImpactSource = {
@@ -906,7 +968,11 @@ export function buildVerificationPlan(input: BuildVerificationPlanInput = {}): V
         manualReviewRequired: true,
         broadImpact: false,
       };
-      addLevels(accumulator, levels);
+      if (releaseRealDiagnosticStoryImpact) {
+        accumulator.levels.add('V3');
+      } else {
+        addLevels(accumulator, levels);
+      }
       accumulator.surfaces.add(surface);
       accumulator.manualReviewRequired = true;
       accumulator.reasons.push(`${changedFile} is canonical story markdown for ${exactStory.storyId}.`);
@@ -927,6 +993,7 @@ export function buildVerificationPlan(input: BuildVerificationPlanInput = {}): V
         manualReviewReasons: [MANUAL_REVIEW_REASONS.storyMarkdownChanged],
         nextAction: action,
         impactSource,
+        applyPolicyLevelFloor: !releaseRealDiagnosticStoryImpact,
       });
     }
 
@@ -987,9 +1054,11 @@ export function buildVerificationPlan(input: BuildVerificationPlanInput = {}): V
           broadImpact: false,
         });
         if (story) {
+          const storyLevels = levelsWithStoryPolicyFloor(levels, story);
+          addLevels(accumulator, storyLevels);
           addStoryCard(accumulator, story, {
             risk: 'required',
-            levels,
+            levels: storyLevels,
             evidenceStatus: 'not_evaluated',
             manualReviewReasons: [MANUAL_REVIEW_REASONS.visualV2NeedsReview],
             nextAction: action,

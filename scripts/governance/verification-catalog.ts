@@ -23,6 +23,19 @@ import {
   listCurrentVerificationCampaigns,
   type CurrentVerificationCampaignDefinition,
 } from './current-verification-campaign-manifest';
+import {
+  CURRENT_STORY_RISK_POLICY,
+  CURRENT_STORY_RISK_POLICY_INPUT_OVERRIDE_SOURCE,
+  CURRENT_STORY_RISK_POLICY_SCHEMA,
+  CURRENT_STORY_RISK_POLICY_SOURCE,
+  STORY_RISK_POLICY_REF_DEFINITIONS,
+  resolveStoryRiskPolicyFloor,
+  validateCurrentStoryRiskPolicy,
+  type CurrentStoryRiskPolicyDocument,
+  type StoryRiskPolicyRefId,
+  type StoryRiskPolicyRisk,
+  type StoryRiskPolicySource,
+} from './current-story-risk-policy';
 
 export const VERIFICATION_CATALOG_SCHEMA = 'agentsmith_verification_catalog/v1' as const;
 export const VERIFICATION_CATALOG_FILE_NAME = 'verification-catalog.json' as const;
@@ -40,6 +53,10 @@ export interface VerificationCatalogStory {
   sourceFile: string;
   filePath: string;
   gatePolicy: StoryDefinition['gatePolicy'];
+  riskPolicyRefs: readonly StoryRiskPolicyRefId[];
+  riskPolicySource: StoryRiskPolicySource;
+  riskPolicyRiskFloor: StoryRiskPolicyRisk;
+  riskPolicyLevelFloor: readonly VerificationCatalogLevel[];
   requiredLevels: readonly VerificationCatalogLevel[];
   visualScenarioIds: readonly string[];
   sourceTruth: {
@@ -155,6 +172,14 @@ export interface VerificationCatalog {
       used_as_story_truth: false;
       spec_count: number;
     };
+    current_story_risk_policy: {
+      authority: 'authoritative' | 'input_override_non_authoritative';
+      source_mode: 'default_sidecar' | 'input_override';
+      module: typeof CURRENT_STORY_RISK_POLICY_SOURCE | null;
+      schema: typeof CURRENT_STORY_RISK_POLICY_SCHEMA;
+      story_count: number;
+      policy_ref_ids: readonly StoryRiskPolicyRefId[];
+    };
   };
   stories: readonly VerificationCatalogStory[];
   story_by_id: Record<string, VerificationCatalogStory>;
@@ -178,6 +203,7 @@ export interface BuildVerificationCatalogInput {
   stories?: readonly StoryDefinition[];
   visualCatalogEntries?: readonly VisualBaselineCatalogEntry[];
   verificationCampaigns?: readonly CurrentVerificationCampaignDefinition[];
+  storyRiskPolicy?: unknown;
 }
 
 export interface VerificationCatalogWriteResult {
@@ -213,13 +239,19 @@ function orderedLevels(values: Iterable<VerificationCatalogLevel>): Verification
   return VERIFICATION_LEVEL_ORDER.filter((level) => selected.has(level));
 }
 
-function levelsForStory(story: StoryDefinition): readonly VerificationCatalogLevel[] {
+function levelsForStory(
+  story: StoryDefinition,
+  riskPolicyLevelFloor: readonly VerificationCatalogLevel[] = [],
+): readonly VerificationCatalogLevel[] {
   const levels = new Set<VerificationCatalogLevel>(['V0', 'V1']);
   if (story.lane === 'mock-lane' || story.gatePolicy.requiredEvidence.includes('visual')) {
     levels.add('V2');
   }
   if (story.lane === 'backend-real') {
     levels.add('V3');
+  }
+  for (const level of riskPolicyLevelFloor) {
+    levels.add(level);
   }
   return orderedLevels(levels);
 }
@@ -451,6 +483,8 @@ function buildVisualProjection(entries: readonly VisualBaselineCatalogEntry[]): 
 function buildStoryProjection(
   stories: readonly StoryDefinition[],
   scenarioIdsByStoryId: ReadonlyMap<string, readonly string[]>,
+  riskPolicy: CurrentStoryRiskPolicyDocument,
+  riskPolicySource: StoryRiskPolicySource,
 ): {
   stories: VerificationCatalogStory[];
   storyById: Record<string, VerificationCatalogStory>;
@@ -459,6 +493,12 @@ function buildStoryProjection(
   const projectedStories = stories.map((story) => {
     const sourceFile = normalizeVerificationCatalogRepoPath(story.sourceFile ?? story.filePath);
     const filePath = normalizeVerificationCatalogRepoPath(story.filePath);
+    const policyRefs = riskPolicy.stories[story.storyId]?.policy_refs;
+    if (!policyRefs) {
+      throw new Error(`current story risk policy is missing story ${story.storyId}`);
+    }
+    const riskPolicyFloor = resolveStoryRiskPolicyFloor(policyRefs);
+    const riskPolicyLevelFloor = orderedLevels(riskPolicyFloor.levelFloor);
     return {
       storyId: story.storyId,
       title: story.title,
@@ -471,7 +511,11 @@ function buildStoryProjection(
         tier: story.gatePolicy.tier,
         requiredEvidence: [...story.gatePolicy.requiredEvidence],
       },
-      requiredLevels: levelsForStory(story),
+      riskPolicyRefs: [...policyRefs],
+      riskPolicySource,
+      riskPolicyRiskFloor: riskPolicyFloor.riskFloor,
+      riskPolicyLevelFloor,
+      requiredLevels: levelsForStory(story, riskPolicyLevelFloor),
       visualScenarioIds: uniqueSorted(scenarioIdsByStoryId.get(story.storyId) ?? []),
       sourceTruth: {
         kind: 'canonical_story_markdown',
@@ -487,17 +531,58 @@ function buildStoryProjection(
   };
 }
 
+function selectStoryRiskPolicy(args: {
+  stories: readonly StoryDefinition[];
+  inputPolicy: unknown;
+  hasInputPolicyOverride: boolean;
+  storiesUseInputOverride: boolean;
+}): CurrentStoryRiskPolicyDocument {
+  const storyIds = args.stories.map((story) => story.storyId);
+  if (args.hasInputPolicyOverride) {
+    return validateCurrentStoryRiskPolicy(args.inputPolicy, storyIds);
+  }
+  if (!args.storiesUseInputOverride) {
+    return validateCurrentStoryRiskPolicy(CURRENT_STORY_RISK_POLICY, storyIds);
+  }
+
+  const defaultPolicy = CURRENT_STORY_RISK_POLICY as CurrentStoryRiskPolicyDocument;
+  return validateCurrentStoryRiskPolicy({
+    schema: CURRENT_STORY_RISK_POLICY_SCHEMA,
+    stories: Object.fromEntries(storyIds.map((storyId) => {
+      const entry = defaultPolicy.stories[storyId];
+      if (!entry) {
+        throw new Error(`current story risk policy is missing input story override id: ${storyId}`);
+      }
+      return [storyId, entry];
+    })),
+  }, storyIds);
+}
+
 export function buildVerificationCatalog(input: BuildVerificationCatalogInput = {}): VerificationCatalog {
   const stories = input.stories ?? loadCommittedStoryDefinitionsSync();
   const visualCatalogEntries = input.visualCatalogEntries ?? listVisualBaselineCatalogEntries();
   const verificationCampaigns = input.verificationCampaigns ?? listCurrentVerificationCampaigns();
   const generatedStorySpecStoryIds = stories.map((story) => story.storyId);
   const visualProjection = buildVisualProjection(visualCatalogEntries);
-  const storyProjection = buildStoryProjection(stories, visualProjection.scenarioIdsByStoryId);
+  const storiesUseInputOverride = Boolean(input.stories);
+  const riskPolicyUsesInputOverride = Object.prototype.hasOwnProperty.call(input, 'storyRiskPolicy');
+  const riskPolicy = selectStoryRiskPolicy({
+    stories,
+    inputPolicy: input.storyRiskPolicy,
+    hasInputPolicyOverride: riskPolicyUsesInputOverride,
+    storiesUseInputOverride,
+  });
+  const storyProjection = buildStoryProjection(
+    stories,
+    visualProjection.scenarioIdsByStoryId,
+    riskPolicy,
+    riskPolicyUsesInputOverride
+      ? CURRENT_STORY_RISK_POLICY_INPUT_OVERRIDE_SOURCE
+      : CURRENT_STORY_RISK_POLICY_SOURCE,
+  );
   const gateIds = listCurrentGateDefinitions().map((definition) => definition.id);
   const campaignIds = verificationCampaigns.map((campaign) => campaign.id);
   const visualScenarioCount = new Set(visualCatalogEntries.map((entry) => entry.scenarioId)).size;
-  const storiesUseInputOverride = Boolean(input.stories);
   const visualCatalogUsesInputOverride = Boolean(input.visualCatalogEntries);
   const verificationCampaignsUseInputOverride = Boolean(input.verificationCampaigns);
 
@@ -557,6 +642,15 @@ export function buildVerificationCatalog(input: BuildVerificationCatalogInput = 
           : 'canonical story id projection; generated specs are not loaded as story truth',
         used_as_story_truth: false,
         spec_count: generatedStorySpecStoryIds.length,
+      },
+      current_story_risk_policy: {
+        authority: riskPolicyUsesInputOverride ? 'input_override_non_authoritative' : 'authoritative',
+        source_mode: riskPolicyUsesInputOverride ? 'input_override' : 'default_sidecar',
+        module: riskPolicyUsesInputOverride ? null : CURRENT_STORY_RISK_POLICY_SOURCE,
+        schema: riskPolicy.schema,
+        story_count: storyProjection.stories.length,
+        policy_ref_ids: Object.keys(STORY_RISK_POLICY_REF_DEFINITIONS)
+          .sort((left, right) => left.localeCompare(right)) as StoryRiskPolicyRefId[],
       },
     },
     stories: storyProjection.stories,

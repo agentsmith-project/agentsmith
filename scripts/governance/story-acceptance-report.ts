@@ -19,6 +19,8 @@ export interface StoryAcceptanceReportCard {
   risk: VerificationStoryCard['risk'];
   risk_level: VerificationStoryCard['riskLevel'];
   risk_reason: string;
+  risk_policy_refs: VerificationStoryCard['riskPolicyRefs'];
+  risk_policy_source: VerificationStoryCard['riskPolicySource'];
   required_levels: readonly string[];
   evidence_status: VerificationStoryCard['evidenceStatus'];
   status: VerificationStoryCard['status'];
@@ -116,6 +118,8 @@ function toReportCard(card: VerificationStoryCard): StoryAcceptanceReportCard {
     risk: card.risk,
     risk_level: card.riskLevel,
     risk_reason: card.riskReason,
+    risk_policy_refs: card.riskPolicyRefs,
+    risk_policy_source: card.riskPolicySource,
     required_levels: card.requiredLevels,
     evidence_status: card.evidenceStatus,
     status: card.status,
@@ -309,6 +313,8 @@ function renderStoryCard(card: StoryAcceptanceReportCard): string[] {
     `- Source file: ${card.source_file}`,
     `- Risk: ${card.risk_level} (${card.risk})`,
     `- Risk reason: ${card.risk_reason}`,
+    `- Risk policy refs: ${card.risk_policy_refs.join(', ')}`,
+    `- Risk policy source: ${card.risk_policy_source}`,
     `- Required levels: ${card.required_levels.join(', ')}`,
     `- Evidence status: ${card.evidence_status}`,
     `- Status: ${card.status}`,

@@ -6,6 +6,23 @@ import { describe, expect, it } from 'vitest';
 
 import { loadCommittedStoryDefinitionsSync } from '../../story-catalog-support';
 import {
+  CURRENT_EVIDENCE_CLAIM_SCHEMA,
+  CURRENT_EVIDENCE_CLAIM_SCHEMA_VERSION,
+  CURRENT_EVIDENCE_CLAIM_SCOPES,
+  CURRENT_EVIDENCE_CLAIM_TOP_LEVEL_KEYS,
+  CURRENT_EVIDENCE_CLAIM_VALIDATION_PURPOSES,
+} from '../current-evidence-claim-schema';
+import {
+  CURRENT_JOB_METADATA_MANIFEST_SCHEMA,
+  CURRENT_JOB_METADATA_MANIFEST_VERSION,
+  listCurrentJobMetadata,
+} from '../current-job-metadata-manifest';
+import {
+  CURRENT_RESOURCE_LOCK_MANIFEST_SCHEMA,
+  CURRENT_RESOURCE_LOCK_MANIFEST_VERSION,
+  listCurrentResourceLocks,
+} from '../current-resource-lock-manifest';
+import {
   listCurrentVerificationCampaigns,
   type CurrentVerificationCampaignDefinition,
 } from '../current-verification-campaign-manifest';
@@ -16,12 +33,42 @@ import {
   validateCurrentStoryRiskPolicy,
 } from '../current-story-risk-policy';
 import {
+  buildVerificationCatalogP2ModelProjection,
   buildVerificationCatalog,
   GENERATED_STORY_SPEC_PATH,
   VERIFICATION_CATALOG_SCHEMA,
   writeVerificationCatalog,
 } from '../verification-catalog';
 import { scanTraceSpecStoryMap } from '../trace-spec-story-map';
+
+const FORBIDDEN_P2_RUNTIME_FIELD_NAMES = [
+  'passed',
+  'failed',
+  'stale',
+  'reusable',
+  'cache_hit',
+  'claim_id',
+  'verdict',
+  'result_status',
+  'failure_class',
+  'exists',
+  'artifact_digest',
+  'result_digest',
+  'run_id',
+  'campaign_root',
+] as const;
+
+function serializedWithoutAllowedVerdictState(value: unknown): string {
+  return JSON.stringify(value).replaceAll('"verdict_state":"none"', '"allowed_state":"none"');
+}
+
+function expectNoForbiddenP2RuntimeTokens(value: unknown, label: string): void {
+  const serialized = serializedWithoutAllowedVerdictState(value);
+
+  for (const fieldName of FORBIDDEN_P2_RUNTIME_FIELD_NAMES) {
+    expect(serialized, `${label} must not contain forbidden token ${fieldName}`).not.toContain(fieldName);
+  }
+}
 
 describe('verification catalog', () => {
   it('validates the risk policy sidecar with exact canonical story coverage and policy refs only', () => {
@@ -130,6 +177,190 @@ describe('verification catalog', () => {
       schema: CURRENT_STORY_RISK_POLICY_SCHEMA,
       story_count: catalog.stories.length,
     });
+  });
+
+  it('registers the P2 model source truth without inspecting artifacts', () => {
+    const catalog = buildVerificationCatalog();
+    const lockIds = listCurrentResourceLocks().map((lock) => lock.id);
+    const jobIds = listCurrentJobMetadata().map((job) => job.id);
+    const campaignIds = [
+      ...new Set(listCurrentJobMetadata()
+        .map((job) => job.campaign_id)
+        .filter((campaignId): campaignId is string => typeof campaignId === 'string')),
+    ].sort((left, right) => left.localeCompare(right));
+
+    expect(catalog.source_truth.current_evidence_claim_schema).toEqual({
+      authority: 'authoritative',
+      module: 'scripts/governance/current-evidence-claim-schema.ts',
+      schema_version: CURRENT_EVIDENCE_CLAIM_SCHEMA_VERSION,
+      top_level_key_count: CURRENT_EVIDENCE_CLAIM_TOP_LEVEL_KEYS.length,
+      scope_count: CURRENT_EVIDENCE_CLAIM_SCOPES.length,
+      validation_purpose_count: CURRENT_EVIDENCE_CLAIM_VALIDATION_PURPOSES.length,
+      digest_format: CURRENT_EVIDENCE_CLAIM_SCHEMA.digest_format,
+      claim_instances_included: false,
+    });
+    expect(catalog.source_truth.current_resource_lock_manifest).toEqual({
+      authority: 'authoritative',
+      module: 'scripts/governance/current-resource-lock-manifest.ts',
+      schema: CURRENT_RESOURCE_LOCK_MANIFEST_SCHEMA,
+      version: CURRENT_RESOURCE_LOCK_MANIFEST_VERSION,
+      lock_ids: lockIds,
+      lock_count: lockIds.length,
+    });
+    expect(catalog.source_truth.current_job_metadata_manifest).toEqual({
+      authority: 'authoritative',
+      module: 'scripts/governance/current-job-metadata-manifest.ts',
+      schema: CURRENT_JOB_METADATA_MANIFEST_SCHEMA,
+      version: CURRENT_JOB_METADATA_MANIFEST_VERSION,
+      job_ids: jobIds,
+      job_count: jobIds.length,
+      campaign_ids: campaignIds,
+    });
+  });
+
+  it('projects P2 claim schema, resource locks, and job metadata as read-only model data', () => {
+    const catalog = buildVerificationCatalog();
+    const projection = catalog.p2_model_projection;
+    const providerSecretLock = projection.resource_locks.locks.find((lock) => lock.id === 'provider-secret-profile');
+    const gateReleaseJob = projection.job_metadata.jobs.find((job) => job.id === 'gate-release');
+
+    expect(projection).toMatchObject({
+      projection_kind: 'read_only',
+      artifact_directory_inspection: false,
+      verdict_state: 'none',
+      evidence_claims_created: false,
+      claim_schema: {
+        schema_version: CURRENT_EVIDENCE_CLAIM_SCHEMA_VERSION,
+        top_level_key_count: CURRENT_EVIDENCE_CLAIM_TOP_LEVEL_KEYS.length,
+        scope_count: CURRENT_EVIDENCE_CLAIM_SCOPES.length,
+        validation_purpose_count: CURRENT_EVIDENCE_CLAIM_VALIDATION_PURPOSES.length,
+        digest_format: CURRENT_EVIDENCE_CLAIM_SCHEMA.digest_format,
+        claim_instances_included: false,
+      },
+      resource_locks: {
+        schema: CURRENT_RESOURCE_LOCK_MANIFEST_SCHEMA,
+        version: CURRENT_RESOURCE_LOCK_MANIFEST_VERSION,
+        lock_ids: listCurrentResourceLocks().map((lock) => lock.id),
+        lock_count: listCurrentResourceLocks().length,
+      },
+      job_metadata: {
+        schema: CURRENT_JOB_METADATA_MANIFEST_SCHEMA,
+        version: CURRENT_JOB_METADATA_MANIFEST_VERSION,
+        job_ids: listCurrentJobMetadata().map((job) => job.id),
+        job_count: listCurrentJobMetadata().length,
+        campaign_id_count: 1,
+      },
+    });
+    expect(providerSecretLock).toMatchObject({
+      id: 'provider-secret-profile',
+      category: 'secret_profile',
+      scope: 'provider_profile',
+      mode: 'exclusive',
+      owner_counts: {
+        gate_id_count: 2,
+        npm_script_count: 4,
+        command_surface_count: 2,
+      },
+      applies_to_counts: {
+        gate_id_count: 2,
+        npm_script_count: 6,
+        runtime_line_count: 0,
+        path_count: 0,
+        port_count: 0,
+        provider_profile_count: 3,
+      },
+      enforcement: 'modeled_only',
+      profile_reuse: {
+        cross_provider_profile_reuse_forbidden: true,
+        cross_secret_profile_reuse_forbidden: true,
+      },
+    });
+    expect(gateReleaseJob).toMatchObject({
+      id: 'gate-release',
+      kind: 'campaign_step',
+      gate_id: 'gate-release',
+      step_id: 'gate-release',
+      npm_script: 'gate:release',
+      execution_mode: 'execute',
+      line_kind: 'release_backend_real',
+      lock_ids: expect.arrayContaining([
+        'release-campaign-root-writes',
+        'backend-real-provider-quota',
+        'provider-secret-profile',
+      ]),
+      retry: 'manual_only',
+      cache: 'release_campaign_only',
+      timeout_seconds: {
+        local: 3600,
+        ci: 5400,
+      },
+      input_counts: {
+        path_glob_count: 0,
+        env_profile_count: 2,
+        required_secret_count: 1,
+      },
+    });
+    expect(gateReleaseJob?.output_counts.expected_artifact_template_count).toBeGreaterThan(0);
+    expect(Object.keys(gateReleaseJob ?? {}).sort()).toEqual([
+      'cache',
+      'depends_on',
+      'execution_mode',
+      'gate_id',
+      'id',
+      'input_counts',
+      'kind',
+      'line_kind',
+      'lock_ids',
+      'npm_script',
+      'output_counts',
+      'retry',
+      'step_id',
+      'timeout_seconds',
+    ]);
+  });
+
+  it('keeps every projected job lock mapped to a projected resource lock id', () => {
+    const catalog = buildVerificationCatalog();
+    const lockIds = new Set(catalog.p2_model_projection.resource_locks.lock_ids);
+
+    for (const job of catalog.p2_model_projection.job_metadata.jobs) {
+      for (const lockId of job.lock_ids) {
+        expect(lockIds.has(lockId), `${job.id} references unknown projected lock ${lockId}`).toBe(true);
+      }
+    }
+  });
+
+  it('fails closed when projected job locks reference unknown current resource lock ids', () => {
+    const [firstJob] = listCurrentJobMetadata();
+    if (!firstJob) {
+      throw new Error('current job metadata fixture is required');
+    }
+
+    expect(() => buildVerificationCatalogP2ModelProjection({
+      resourceLocks: listCurrentResourceLocks(),
+      jobs: [{
+        ...firstJob,
+        locks: [...firstJob.locks, 'unknown-resource-lock'],
+      }],
+    })).toThrow(/unknown current resource lock id: unknown-resource-lock/);
+  });
+
+  it('does not serialize runtime verdict, cache decision, or evidence instance tokens in P2 catalog fields', () => {
+    const catalog = buildVerificationCatalog();
+
+    expect(JSON.stringify(catalog.p2_model_projection)).toContain('"verdict_state":"none"');
+    expectNoForbiddenP2RuntimeTokens(
+      catalog.source_truth.current_evidence_claim_schema,
+      'source_truth.current_evidence_claim_schema',
+    );
+    expectNoForbiddenP2RuntimeTokens(catalog.p2_model_projection, 'p2_model_projection');
+  });
+
+  it('does not introduce artifact inspection APIs in the verification catalog source', () => {
+    const source = readFileSync('scripts/governance/verification-catalog.ts', 'utf8');
+
+    expect(source).not.toMatch(/\b(?:existsSync|readdirSync|statSync|createHash|sha256)\b/);
+    expect(source).not.toMatch(/from ['"]node:crypto['"]/);
   });
 
   it('marks custom story and visual inputs as non-default input overrides', () => {

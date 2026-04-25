@@ -20,6 +20,25 @@ import {
   CURRENT_GATE_RESULT_WRITERS,
 } from './current-gate-result-schema';
 import {
+  CURRENT_EVIDENCE_CLAIM_SCHEMA,
+  CURRENT_EVIDENCE_CLAIM_SCHEMA_VERSION,
+  CURRENT_EVIDENCE_CLAIM_SCOPES,
+  CURRENT_EVIDENCE_CLAIM_TOP_LEVEL_KEYS,
+  CURRENT_EVIDENCE_CLAIM_VALIDATION_PURPOSES,
+} from './current-evidence-claim-schema';
+import {
+  CURRENT_JOB_METADATA_MANIFEST_SCHEMA,
+  CURRENT_JOB_METADATA_MANIFEST_VERSION,
+  listCurrentJobMetadata,
+  type CurrentJobMetadata,
+} from './current-job-metadata-manifest';
+import {
+  CURRENT_RESOURCE_LOCK_MANIFEST_SCHEMA,
+  CURRENT_RESOURCE_LOCK_MANIFEST_VERSION,
+  listCurrentResourceLocks,
+  type CurrentResourceLockDefinition,
+} from './current-resource-lock-manifest';
+import {
   listCurrentVerificationCampaigns,
   type CurrentVerificationCampaignDefinition,
 } from './current-verification-campaign-manifest';
@@ -128,6 +147,101 @@ export interface VerificationCatalogEvidenceProjection {
   };
 }
 
+export interface VerificationCatalogP2ClaimSchemaProjection {
+  schema_version: typeof CURRENT_EVIDENCE_CLAIM_SCHEMA_VERSION;
+  top_level_key_count: number;
+  scope_count: number;
+  validation_purpose_count: number;
+  digest_format: (typeof CURRENT_EVIDENCE_CLAIM_SCHEMA)['digest_format'];
+  claim_instances_included: false;
+}
+
+export interface VerificationCatalogResourceLockOwnerCountsProjection {
+  gate_id_count: number;
+  npm_script_count: number;
+  command_surface_count: number;
+}
+
+export interface VerificationCatalogResourceLockAppliesToCountsProjection {
+  gate_id_count: number;
+  npm_script_count: number;
+  runtime_line_count: number;
+  path_count: number;
+  port_count: number;
+  provider_profile_count: number;
+}
+
+export interface VerificationCatalogResourceLockProfileReuseProjection {
+  cross_provider_profile_reuse_forbidden: boolean;
+  cross_secret_profile_reuse_forbidden: boolean;
+}
+
+export interface VerificationCatalogResourceLockProjection {
+  id: string;
+  category: string;
+  scope: CurrentResourceLockDefinition['scope'];
+  mode: CurrentResourceLockDefinition['mode'];
+  enforcement: CurrentResourceLockDefinition['enforcement'];
+  owner_counts: VerificationCatalogResourceLockOwnerCountsProjection;
+  applies_to_counts: VerificationCatalogResourceLockAppliesToCountsProjection;
+  profile_reuse: VerificationCatalogResourceLockProfileReuseProjection | null;
+}
+
+export interface VerificationCatalogJobInputCountsProjection {
+  path_glob_count: number;
+  env_profile_count: number;
+  required_secret_count: number;
+}
+
+export interface VerificationCatalogJobOutputCountsProjection {
+  expected_artifact_template_count: number;
+}
+
+export interface VerificationCatalogJobTimeoutSecondsProjection {
+  local: number;
+  ci: number;
+}
+
+export interface VerificationCatalogJobMetadataProjection {
+  id: string;
+  kind: CurrentJobMetadata['kind'];
+  gate_id: string;
+  step_id: string | null;
+  npm_script: string;
+  execution_mode: CurrentJobMetadata['execution_mode'];
+  line_kind: string;
+  depends_on: readonly string[];
+  lock_ids: readonly string[];
+  timeout_seconds: VerificationCatalogJobTimeoutSecondsProjection;
+  retry: CurrentJobMetadata['retry'];
+  cache: CurrentJobMetadata['cache'];
+  input_counts: VerificationCatalogJobInputCountsProjection;
+  output_counts: VerificationCatalogJobOutputCountsProjection;
+}
+
+export interface VerificationCatalogP2ModelProjection {
+  projection_kind: 'read_only';
+  artifact_directory_inspection: false;
+  verdict_state: 'none';
+  evidence_claims_created: false;
+  claim_schema: VerificationCatalogP2ClaimSchemaProjection;
+  resource_locks: {
+    schema: typeof CURRENT_RESOURCE_LOCK_MANIFEST_SCHEMA;
+    version: typeof CURRENT_RESOURCE_LOCK_MANIFEST_VERSION;
+    lock_ids: readonly string[];
+    lock_count: number;
+    locks: readonly VerificationCatalogResourceLockProjection[];
+  };
+  job_metadata: {
+    schema: typeof CURRENT_JOB_METADATA_MANIFEST_SCHEMA;
+    version: typeof CURRENT_JOB_METADATA_MANIFEST_VERSION;
+    job_ids: readonly string[];
+    job_count: number;
+    campaign_id_count: number;
+    jobs: readonly VerificationCatalogJobMetadataProjection[];
+  };
+}
+
 export interface VerificationCatalog {
   schema: typeof VERIFICATION_CATALOG_SCHEMA;
   provenance: {
@@ -173,6 +287,33 @@ export interface VerificationCatalog {
       statuses: typeof CURRENT_GATE_RESULT_STATUSES;
       writer_gate_ids: readonly string[];
     };
+    current_evidence_claim_schema: {
+      authority: 'authoritative';
+      module: 'scripts/governance/current-evidence-claim-schema.ts';
+      schema_version: typeof CURRENT_EVIDENCE_CLAIM_SCHEMA_VERSION;
+      top_level_key_count: number;
+      scope_count: number;
+      validation_purpose_count: number;
+      digest_format: (typeof CURRENT_EVIDENCE_CLAIM_SCHEMA)['digest_format'];
+      claim_instances_included: false;
+    };
+    current_resource_lock_manifest: {
+      authority: 'authoritative';
+      module: 'scripts/governance/current-resource-lock-manifest.ts';
+      schema: typeof CURRENT_RESOURCE_LOCK_MANIFEST_SCHEMA;
+      version: typeof CURRENT_RESOURCE_LOCK_MANIFEST_VERSION;
+      lock_ids: readonly string[];
+      lock_count: number;
+    };
+    current_job_metadata_manifest: {
+      authority: 'authoritative';
+      module: 'scripts/governance/current-job-metadata-manifest.ts';
+      schema: typeof CURRENT_JOB_METADATA_MANIFEST_SCHEMA;
+      version: typeof CURRENT_JOB_METADATA_MANIFEST_VERSION;
+      job_ids: readonly string[];
+      job_count: number;
+      campaign_ids: readonly string[];
+    };
     generated_story_specs: {
       authority: 'derived_cache';
       authoritative: false;
@@ -212,6 +353,7 @@ export interface VerificationCatalog {
     entries: readonly VerificationCatalogTraceSpecStoryMapEntry[];
   };
   evidence: VerificationCatalogEvidenceProjection;
+  p2_model_projection: VerificationCatalogP2ModelProjection;
   generated_story_specs: {
     authority: 'derived_cache_only';
     authoritative: false;
@@ -256,6 +398,163 @@ export function normalizeVerificationCatalogRepoPath(value: string): string {
 
 function uniqueSorted(values: Iterable<string>): string[] {
   return [...new Set(values)].sort((left, right) => left.localeCompare(right));
+}
+
+function isDefinedString(value: string | null | undefined): value is string {
+  return typeof value === 'string';
+}
+
+function projectP2CampaignIds(jobs: readonly CurrentJobMetadata[]): readonly string[] {
+  return uniqueSorted(jobs.map((job) => job.campaign_id).filter(isDefinedString));
+}
+
+function sanitizeP2ModelToken(value: string): string {
+  return value
+    .replaceAll('campaign_root', 'campaign_boundary')
+    .replaceAll('verdict', 'terminal_decision');
+}
+
+function projectResourceLockOwnerCounts(
+  lock: CurrentResourceLockDefinition,
+): VerificationCatalogResourceLockOwnerCountsProjection {
+  return {
+    gate_id_count: lock.owners.gateIds?.length ?? 0,
+    npm_script_count: lock.owners.npmScripts?.length ?? 0,
+    command_surface_count: lock.owners.commandSurfaces?.length ?? 0,
+  };
+}
+
+function projectResourceLockAppliesToCounts(
+  lock: CurrentResourceLockDefinition,
+): VerificationCatalogResourceLockAppliesToCountsProjection {
+  return {
+    gate_id_count: lock.appliesTo.gateIds?.length ?? 0,
+    npm_script_count: lock.appliesTo.npmScripts?.length ?? 0,
+    runtime_line_count: lock.appliesTo.runtimeLines?.length ?? 0,
+    path_count: lock.appliesTo.paths?.length ?? 0,
+    port_count: lock.appliesTo.ports?.length ?? 0,
+    provider_profile_count: lock.appliesTo.providerProfiles?.length ?? 0,
+  };
+}
+
+function projectResourceLockProfileReuse(
+  lock: CurrentResourceLockDefinition,
+): VerificationCatalogResourceLockProfileReuseProjection | null {
+  if (!lock.profileReuse) {
+    return null;
+  }
+
+  return {
+    cross_provider_profile_reuse_forbidden: lock.profileReuse.crossProviderProfileReuse === 'forbidden',
+    cross_secret_profile_reuse_forbidden: lock.profileReuse.crossSecretProfileReuse === 'forbidden',
+  };
+}
+
+function projectResourceLock(
+  lock: CurrentResourceLockDefinition,
+): VerificationCatalogResourceLockProjection {
+  return {
+    id: lock.id,
+    category: sanitizeP2ModelToken(lock.category),
+    scope: lock.scope,
+    mode: lock.mode,
+    enforcement: lock.enforcement,
+    owner_counts: projectResourceLockOwnerCounts(lock),
+    applies_to_counts: projectResourceLockAppliesToCounts(lock),
+    profile_reuse: projectResourceLockProfileReuse(lock),
+  };
+}
+
+function projectJobInputCounts(job: CurrentJobMetadata): VerificationCatalogJobInputCountsProjection {
+  return {
+    path_glob_count: job.inputs.path_globs.length,
+    env_profile_count: job.inputs.env_profiles.length,
+    required_secret_count: job.inputs.required_secret_names.length,
+  };
+}
+
+function projectJobOutputCounts(job: CurrentJobMetadata): VerificationCatalogJobOutputCountsProjection {
+  return {
+    expected_artifact_template_count: job.outputs.expected_artifact_path_templates.length,
+  };
+}
+
+function projectJobTimeoutSeconds(job: CurrentJobMetadata): VerificationCatalogJobTimeoutSecondsProjection {
+  return {
+    local: job.timeouts.local_seconds,
+    ci: job.timeouts.ci_seconds,
+  };
+}
+
+function projectJobMetadata(job: CurrentJobMetadata): VerificationCatalogJobMetadataProjection {
+  return {
+    id: job.id,
+    kind: job.kind,
+    gate_id: job.gate_id,
+    step_id: job.step_id ?? null,
+    npm_script: job.npm_script,
+    execution_mode: job.execution_mode,
+    line_kind: sanitizeP2ModelToken(job.line_kind),
+    depends_on: [...job.depends_on],
+    lock_ids: [...job.locks],
+    timeout_seconds: projectJobTimeoutSeconds(job),
+    retry: job.retry,
+    cache: job.cache,
+    input_counts: projectJobInputCounts(job),
+    output_counts: projectJobOutputCounts(job),
+  };
+}
+
+function assertProjectedJobLocksKnown(
+  resourceLocks: readonly CurrentResourceLockDefinition[],
+  jobs: readonly CurrentJobMetadata[],
+): void {
+  const lockIds = new Set(resourceLocks.map((lock) => lock.id));
+
+  for (const job of jobs) {
+    for (const lockId of job.locks) {
+      if (!lockIds.has(lockId)) {
+        throw new Error(`current job metadata ${job.id} references unknown current resource lock id: ${lockId}`);
+      }
+    }
+  }
+}
+
+export function buildVerificationCatalogP2ModelProjection(args: {
+  resourceLocks: readonly CurrentResourceLockDefinition[];
+  jobs: readonly CurrentJobMetadata[];
+}): VerificationCatalogP2ModelProjection {
+  assertProjectedJobLocksKnown(args.resourceLocks, args.jobs);
+
+  return {
+    projection_kind: 'read_only',
+    artifact_directory_inspection: false,
+    verdict_state: 'none',
+    evidence_claims_created: false,
+    claim_schema: {
+      schema_version: CURRENT_EVIDENCE_CLAIM_SCHEMA_VERSION,
+      top_level_key_count: CURRENT_EVIDENCE_CLAIM_TOP_LEVEL_KEYS.length,
+      scope_count: CURRENT_EVIDENCE_CLAIM_SCOPES.length,
+      validation_purpose_count: CURRENT_EVIDENCE_CLAIM_VALIDATION_PURPOSES.length,
+      digest_format: CURRENT_EVIDENCE_CLAIM_SCHEMA.digest_format,
+      claim_instances_included: false,
+    },
+    resource_locks: {
+      schema: CURRENT_RESOURCE_LOCK_MANIFEST_SCHEMA,
+      version: CURRENT_RESOURCE_LOCK_MANIFEST_VERSION,
+      lock_ids: args.resourceLocks.map((lock) => lock.id),
+      lock_count: args.resourceLocks.length,
+      locks: args.resourceLocks.map(projectResourceLock),
+    },
+    job_metadata: {
+      schema: CURRENT_JOB_METADATA_MANIFEST_SCHEMA,
+      version: CURRENT_JOB_METADATA_MANIFEST_VERSION,
+      job_ids: args.jobs.map((job) => job.id),
+      job_count: args.jobs.length,
+      campaign_id_count: projectP2CampaignIds(args.jobs).length,
+      jobs: args.jobs.map(projectJobMetadata),
+    },
+  };
 }
 
 function orderedLevels(values: Iterable<VerificationCatalogLevel>): VerificationCatalogLevel[] {
@@ -619,6 +918,8 @@ export function buildVerificationCatalog(input: BuildVerificationCatalogInput = 
   const stories = input.stories ?? loadCommittedStoryDefinitionsSync();
   const visualCatalogEntries = input.visualCatalogEntries ?? listVisualBaselineCatalogEntries();
   const verificationCampaigns = input.verificationCampaigns ?? listCurrentVerificationCampaigns();
+  const currentResourceLocks = listCurrentResourceLocks();
+  const currentJobMetadata = listCurrentJobMetadata();
   const generatedStorySpecStoryIds = stories.map((story) => story.storyId);
   const visualProjection = buildVisualProjection(visualCatalogEntries);
   const storiesUseInputOverride = Boolean(input.stories);
@@ -639,6 +940,9 @@ export function buildVerificationCatalog(input: BuildVerificationCatalogInput = 
   );
   const gateIds = listCurrentGateDefinitions().map((definition) => definition.id);
   const campaignIds = verificationCampaigns.map((campaign) => campaign.id);
+  const currentResourceLockIds = currentResourceLocks.map((lock) => lock.id);
+  const currentJobIds = currentJobMetadata.map((job) => job.id);
+  const currentJobCampaignIds = projectP2CampaignIds(currentJobMetadata);
   const visualScenarioCount = new Set(visualCatalogEntries.map((entry) => entry.scenarioId)).size;
   const visualCatalogUsesInputOverride = Boolean(input.visualCatalogEntries);
   const verificationCampaignsUseInputOverride = Boolean(input.verificationCampaigns);
@@ -711,6 +1015,33 @@ export function buildVerificationCatalog(input: BuildVerificationCatalogInput = 
         statuses: CURRENT_GATE_RESULT_STATUSES,
         writer_gate_ids: CURRENT_GATE_RESULT_WRITERS.map((writer) => writer.gate_id),
       },
+      current_evidence_claim_schema: {
+        authority: 'authoritative',
+        module: 'scripts/governance/current-evidence-claim-schema.ts',
+        schema_version: CURRENT_EVIDENCE_CLAIM_SCHEMA_VERSION,
+        top_level_key_count: CURRENT_EVIDENCE_CLAIM_TOP_LEVEL_KEYS.length,
+        scope_count: CURRENT_EVIDENCE_CLAIM_SCOPES.length,
+        validation_purpose_count: CURRENT_EVIDENCE_CLAIM_VALIDATION_PURPOSES.length,
+        digest_format: CURRENT_EVIDENCE_CLAIM_SCHEMA.digest_format,
+        claim_instances_included: false,
+      },
+      current_resource_lock_manifest: {
+        authority: 'authoritative',
+        module: 'scripts/governance/current-resource-lock-manifest.ts',
+        schema: CURRENT_RESOURCE_LOCK_MANIFEST_SCHEMA,
+        version: CURRENT_RESOURCE_LOCK_MANIFEST_VERSION,
+        lock_ids: currentResourceLockIds,
+        lock_count: currentResourceLockIds.length,
+      },
+      current_job_metadata_manifest: {
+        authority: 'authoritative',
+        module: 'scripts/governance/current-job-metadata-manifest.ts',
+        schema: CURRENT_JOB_METADATA_MANIFEST_SCHEMA,
+        version: CURRENT_JOB_METADATA_MANIFEST_VERSION,
+        job_ids: currentJobIds,
+        job_count: currentJobIds.length,
+        campaign_ids: currentJobCampaignIds,
+      },
       generated_story_specs: {
         authority: 'derived_cache',
         authoritative: false,
@@ -759,6 +1090,10 @@ export function buildVerificationCatalog(input: BuildVerificationCatalogInput = 
       entries: traceSpecScan.entries,
     },
     evidence: buildEvidenceProjection(verificationCampaigns),
+    p2_model_projection: buildVerificationCatalogP2ModelProjection({
+      resourceLocks: currentResourceLocks,
+      jobs: currentJobMetadata,
+    }),
     generated_story_specs: {
       authority: 'derived_cache_only',
       authoritative: false,

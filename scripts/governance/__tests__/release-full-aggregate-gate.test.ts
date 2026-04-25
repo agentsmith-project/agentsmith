@@ -1593,6 +1593,28 @@ describe('release-full aggregate gate', () => {
     expect(terminalResult.summary).toContain('gate_adapter.npm_script mismatch');
   });
 
+  it('fails with contract drift when a campaign wrapper result has an evidence_dir mismatch', () => {
+    const campaignRoot = mkdtempSync(join(tmpdir(), 'release-full-aggregate-wrapper-evidence-dir-'));
+    seedPassedCampaign(campaignRoot);
+    const visualResultPath = resolve(campaignRoot, 'lane-visual', 'result.json');
+    const result = JSON.parse(readFileSync(visualResultPath, 'utf8')) as Record<string, unknown>;
+    writeJson(visualResultPath, {
+      ...result,
+      evidence_dir: resolve(campaignRoot, 'other-step'),
+    });
+
+    expect(() => runAggregate(campaignRoot)).toThrow();
+
+    const terminalResult = JSON.parse(
+      readFileSync(resolve(campaignRoot, 'gate-release-full', 'result.json'), 'utf8'),
+    ) as { status: string; failure_class: string; summary: string };
+    expect(terminalResult).toMatchObject({
+      status: 'failed',
+      failure_class: 'contract_drift',
+    });
+    expect(terminalResult.summary).toContain('evidence_dir mismatch');
+  });
+
   it('fails with contract drift when an evidence pointer is not bound to the current step', () => {
     const campaignRoot = mkdtempSync(join(tmpdir(), 'release-full-aggregate-pointer-traceability-'));
     seedPassedCampaign(campaignRoot);
@@ -1613,6 +1635,28 @@ describe('release-full aggregate gate', () => {
       failure_class: 'contract_drift',
     });
     expect(terminalResult.summary).toContain('step_id mismatch');
+  });
+
+  it('fails with contract drift when an evidence pointer has an evidence_dir mismatch', () => {
+    const campaignRoot = mkdtempSync(join(tmpdir(), 'release-full-aggregate-pointer-evidence-dir-'));
+    seedPassedCampaign(campaignRoot);
+    const visualEvidencePath = resolve(campaignRoot, 'lane-visual', 'evidence.json');
+    const evidence = JSON.parse(readFileSync(visualEvidencePath, 'utf8')) as Record<string, unknown>;
+    writeJson(visualEvidencePath, {
+      ...evidence,
+      evidence_dir: resolve(campaignRoot, 'other-step'),
+    });
+
+    expect(() => runAggregate(campaignRoot)).toThrow();
+
+    const terminalResult = JSON.parse(
+      readFileSync(resolve(campaignRoot, 'gate-release-full', 'result.json'), 'utf8'),
+    ) as { status: string; failure_class: string; summary: string };
+    expect(terminalResult).toMatchObject({
+      status: 'failed',
+      failure_class: 'contract_drift',
+    });
+    expect(terminalResult.summary).toContain('evidence_dir mismatch');
   });
 
   it('fails with contract drift when an evidence pointer is not bound to campaign-root topology', () => {

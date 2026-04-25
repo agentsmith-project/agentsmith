@@ -3,7 +3,7 @@ import path from 'node:path';
 import {
   CURRENT_WORKFLOW_TOP_LEVEL_TERMS,
   listCurrentWorkflowCommands,
-  listRecommendedCurrentWorkflowCommands,
+  listQuickHumanCurrentWorkflowCommands,
   type CurrentWorkflowCommand,
 } from '../governance/current-workflow-manifest';
 
@@ -73,9 +73,29 @@ function extractBlock(content: string, startMarker: string, endMarker: string, l
 }
 
 const HIDDEN_HUMAN_WORKFLOW_NPM_SCRIPTS = new Set(['release:campaign:full']);
+const QUICK_HUMAN_FORBIDDEN_COMMAND_PATTERNS = [
+  /\bnpm run verify:[a-z0-9:_-]+/,
+  /\bnpm run gate:[a-z0-9:_-]+/,
+  /\bmake gate-[a-z0-9_-]+/,
+  /\bnpm run lane:[a-z0-9:_-]+/,
+  /\bmake lane-[a-z0-9_-]+/,
+  /\bnpm run release:aggregate\b/,
+  /\bnpm run release:campaign:full\b/,
+  /\bnpm run gate:release:full\b/,
+  /\bRELEASE_CAMPAIGN_ROOT\b/,
+  /\bnpm run rehearse:[a-z0-9:_-]+/,
+  /\bmake demo-rehearsal-[a-z0-9_-]+/,
+  /\bmake cluster-rehearsal-[a-z0-9_-]+/,
+  /\bnpm run backend-real:[a-z0-9:_-]+/,
+  /\bmake backend-real-[a-z0-9_-]+/,
+] as const;
 
 function isHiddenHumanWorkflowCommand(command: Pick<CurrentWorkflowCommand, 'npmScript'>): boolean {
   return Boolean(command.npmScript && HIDDEN_HUMAN_WORKFLOW_NPM_SCRIPTS.has(command.npmScript));
+}
+
+function renderMakeQuickDisplay(command: CurrentWorkflowCommand): string {
+  return command.makeTarget ? `make ${command.makeTarget}` : command.command;
 }
 
 const readmeWorkflowBlock = extractBlock(
@@ -197,10 +217,28 @@ for (const term of CURRENT_WORKFLOW_TOP_LEVEL_TERMS) {
   requireMatch(governanceModel, new RegExp(term), `current engineering governance model is missing current workflow term: ${term}`);
 }
 
-for (const command of listRecommendedCurrentWorkflowCommands()) {
+for (const command of listQuickHumanCurrentWorkflowCommands()) {
   const escapedCommand = escapeRegExp(command.command);
-  requireMatch(readmeWorkflowBlock, new RegExp(escapedCommand), `README current workflow block is missing recommended command: ${command.command}`);
-  requireMatch(developmentWorkflowBlock, new RegExp(escapedCommand), `DEVELOPMENT current workflow block is missing recommended command: ${command.command}`);
+  const escapedQuickHelpDisplay = escapeRegExp(renderMakeQuickDisplay(command));
+  requireMatch(readmeWorkflowBlock, new RegExp(escapedCommand), `README current workflow block is missing quick human command: ${command.command}`);
+  requireMatch(developmentWorkflowBlock, new RegExp(escapedCommand), `DEVELOPMENT current workflow block is missing quick human command: ${command.command}`);
+  requireMatch(makeQuickHelpWorkflowBlock, new RegExp(escapedQuickHelpDisplay), `Makefile quick-help block is missing quick human command: ${renderMakeQuickDisplay(command)}`);
+}
+
+for (const [label, block] of [
+  ['README current workflow block', readmeWorkflowBlock],
+  ['DEVELOPMENT current workflow block', developmentWorkflowBlock],
+  ['Makefile quick-help workflow block', makeQuickHelpWorkflowBlock],
+] as const) {
+  for (const pattern of QUICK_HUMAN_FORBIDDEN_COMMAND_PATTERNS) {
+    forbidMatch(block, pattern, `${label} must not expose advanced command pattern in the quick path: ${pattern}`);
+  }
+  requireMatch(block, /release:status[\s\S]*read-only/i, `${label} must describe release:status as read-only`);
+  forbidMatch(
+    block,
+    /release:status[\s\S]{0,120}(?:verdict|re-aggregat|aggregate)/i,
+    `${label} must not describe release:status as producing or re-aggregating a verdict`,
+  );
 }
 
 for (const command of listCurrentWorkflowCommands()) {

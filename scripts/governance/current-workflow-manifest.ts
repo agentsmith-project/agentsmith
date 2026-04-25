@@ -24,6 +24,7 @@ export interface CurrentWorkflowCommand {
   npmScript?: string;
   gateId?: string;
   recommended?: boolean;
+  quickHuman?: boolean;
   workflowRole: CurrentWorkflowRole;
   storyEvidencePolicy: CurrentGateStoryEvidencePolicy;
   storyEvidenceKinds: readonly CurrentGateStoryEvidenceKind[];
@@ -296,7 +297,7 @@ export const CURRENT_WORKFLOW_ENTRY_PATHS: readonly CurrentWorkflowEntryPath[] =
     id: 'ui_only',
     label: 'UI only',
     whenToUse: '只改前端页面、交互、文案，暂时不需要真实后端或 notebook / runner 主链。',
-    startCommands: ['npm run dev', 'npm run verify', 'npm run verify:quick'],
+    startCommands: ['npm run dev', 'npm run verify'],
     docs: ['README.md', 'DEVELOPMENT.md', 'docs/testing/diagnostic-catalog-v1.md'],
     avoid: ['不要把 `npm run dev` 当成 release verdict。', '不要直接跳到 `gate:release:full`。'],
   },
@@ -319,9 +320,6 @@ export const CURRENT_WORKFLOW_ENTRY_PATHS: readonly CurrentWorkflowEntryPath[] =
     startCommands: [
       'npm run release:ready',
       'npm run release:status',
-      'npm run release:aggregate -- --campaign-root=<campaign-root>',
-      'npm run rehearse:demo',
-      'npm run rehearse:cluster',
     ],
     docs: [
       'docs/testing/verification-campaigns-v1.md',
@@ -730,6 +728,14 @@ const CURRENT_WORKFLOW_RAW_MANIFEST: readonly RawCurrentWorkflowSection[] = [
     title: '环境',
     commands: [
       {
+        command: 'npm run dev',
+        description: 'start the Next.js development server',
+        canonical: 'npm',
+        npmScript: 'dev',
+        recommended: true,
+        quickHuman: true,
+      },
+      {
         command: 'make substrate-up',
         description: 'start the local managed substrate',
         canonical: 'make',
@@ -765,6 +771,7 @@ const CURRENT_WORKFLOW_RAW_MANIFEST: readonly RawCurrentWorkflowSection[] = [
         canonical: 'make',
         makeTarget: 'local-real-up',
         recommended: true,
+        quickHuman: true,
       },
       {
         command: 'make local-real-status',
@@ -772,6 +779,7 @@ const CURRENT_WORKFLOW_RAW_MANIFEST: readonly RawCurrentWorkflowSection[] = [
         canonical: 'make',
         makeTarget: 'local-real-status',
         recommended: true,
+        quickHuman: true,
       },
       {
         command: 'make local-real-down',
@@ -935,6 +943,7 @@ const CURRENT_WORKFLOW_RAW_MANIFEST: readonly RawCurrentWorkflowSection[] = [
         canonical: 'npm',
         npmScript: 'verify',
         recommended: true,
+        quickHuman: true,
       },
       {
         command: 'npm run verify:quick',
@@ -1121,13 +1130,15 @@ const CURRENT_WORKFLOW_RAW_MANIFEST: readonly RawCurrentWorkflowSection[] = [
         canonical: 'npm',
         npmScript: 'release:ready',
         recommended: true,
+        quickHuman: true,
       },
       {
         command: 'npm run release:status',
-        description: 'read the latest release summary without re-aggregating evidence',
+        description: 'read the latest release summary in read-only mode',
         canonical: 'npm',
         npmScript: 'release:status',
         recommended: true,
+        quickHuman: true,
       },
       {
         command: 'npm run release:aggregate -- --campaign-root=<campaign-root>',
@@ -1210,6 +1221,17 @@ export function listRecommendedCurrentWorkflowSections(): readonly CurrentWorkfl
 
 export function listRecommendedCurrentWorkflowCommands(): readonly CurrentWorkflowCommand[] {
   return listRecommendedCurrentWorkflowSections().flatMap((section) => section.commands);
+}
+
+export function listQuickHumanCurrentWorkflowSections(): readonly CurrentWorkflowSection[] {
+  return CURRENT_WORKFLOW_MANIFEST.map((section) => ({
+    ...section,
+    commands: section.commands.filter((command) => command.quickHuman),
+  })).filter((section) => section.commands.length > 0);
+}
+
+export function listQuickHumanCurrentWorkflowCommands(): readonly CurrentWorkflowCommand[] {
+  return listQuickHumanCurrentWorkflowSections().flatMap((section) => section.commands);
 }
 
 export function listCurrentCIWorkflowJobs(): readonly CurrentCIWorkflowJob[] {

@@ -95,9 +95,14 @@ Command naming rule:
 - `make` is the canonical entrypoint for environment and rehearsal orchestration
 - `npm run` is the canonical entrypoint for tests, gates, verification lanes, and release validation
 
+Quick path note:
+- Advanced diagnostics and owner-specific commands stay in `make help-extended` and the governance docs.
+- `npm run release:status` is read-only; it only reads the latest release summary.
+
 ### 环境
 
 ```bash
+npm run dev
 make local-real-up
 make local-real-status
 ```
@@ -106,24 +111,6 @@ make local-real-status
 
 ```bash
 npm run verify
-```
-
-### 门禁
-
-```bash
-npm run gate:fast
-npm run gate:default
-npm run gate:release
-```
-
-### 验证通道
-
-```bash
-npm run lane:mock
-npm run lane:visual
-npm run lane:backend-real:release
-npm run lane:demo-rehearsal
-npm run lane:cluster-rehearsal
 ```
 
 ### 发布

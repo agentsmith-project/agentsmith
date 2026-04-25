@@ -130,6 +130,7 @@ Current engineering runtime baseline:
 ### 环境
 
 ```bash
+npm run dev
 make substrate-up
 make substrate-reseed
 make substrate-status

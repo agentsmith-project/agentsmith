@@ -4,7 +4,7 @@ import path from 'node:path';
 import {
   CURRENT_WORKFLOW_MANIFEST,
   CURRENT_WORKFLOW_TOP_LEVEL_TERMS,
-  listRecommendedCurrentWorkflowSections,
+  listQuickHumanCurrentWorkflowSections,
   type CurrentWorkflowCommand,
   type CurrentWorkflowSection,
 } from './current-workflow-manifest';
@@ -43,7 +43,7 @@ function renderCommandList(section: CurrentWorkflowSection): string {
 }
 
 function renderCurrentWorkflowDocBlock(): string {
-  const recommendedSections = listRecommendedCurrentWorkflowSections();
+  const quickSections = listQuickHumanCurrentWorkflowSections();
 
   return [
     'Use this minimal command set for daily work.',
@@ -60,15 +60,19 @@ function renderCurrentWorkflowDocBlock(): string {
     '- `make` is the canonical entrypoint for environment and rehearsal orchestration',
     '- `npm run` is the canonical entrypoint for tests, gates, verification lanes, and release validation',
     '',
-    ...recommendedSections.flatMap((section, index) => {
+    'Quick path note:',
+    '- Advanced diagnostics and owner-specific commands stay in `make help-extended` and the governance docs.',
+    '- `npm run release:status` is read-only; it only reads the latest release summary.',
+    '',
+    ...quickSections.flatMap((section, index) => {
       const block = renderCommandList(section).split('\n');
-      return index === recommendedSections.length - 1 ? block : [...block, ''];
+      return index === quickSections.length - 1 ? block : [...block, ''];
     }),
   ].join('\n');
 }
 
 function renderDevelopmentWorkflowBlock(): string {
-  const recommendedSections = listRecommendedCurrentWorkflowSections();
+  const quickSections = listQuickHumanCurrentWorkflowSections();
 
   return [
     '当前仓库只保留这几类 current 主路径：',
@@ -85,9 +89,13 @@ function renderDevelopmentWorkflowBlock(): string {
     '- `make` 与 `npm run` 是当前 command surface / adapter，不是 gate identity truth',
     '- gate identity 统一看 `scripts/governance/current-gate-manifest.ts` 里的稳定 `id`',
     '',
-    ...recommendedSections.flatMap((section, index) => {
+    'Quick path note:',
+    '- Advanced diagnostics and owner-specific commands stay in `make help-extended` and the governance docs.',
+    '- `npm run release:status` is read-only; it only reads the latest release summary.',
+    '',
+    ...quickSections.flatMap((section, index) => {
       const block = renderCommandList(section).split('\n');
-      return index === recommendedSections.length - 1 ? block : [...block, ''];
+      return index === quickSections.length - 1 ? block : [...block, ''];
     }),
   ].join('\n');
 }
@@ -138,16 +146,16 @@ function renderMakeHelpExtendedBlock(): string {
 }
 
 function renderMakeQuickHelpBlock(): string {
-  const recommended = listRecommendedCurrentWorkflowSections().flatMap((section) => section.commands);
+  const quickCommands = listQuickHumanCurrentWorkflowSections().flatMap((section) => section.commands);
   const lines = [
     'quick-help:',
-    '\t@echo "MBOS Recommended Commands"',
+    '\t@echo "MBOS Quick Human Commands"',
     '\t@echo ""',
-    '\t@echo "  note: make owns environment/rehearsal orchestration; npm run owns tests, gates, lanes, and release verification"',
+    '\t@echo "  note: quick-help shows human entrypoints only; use make help-extended for diagnostics and owner-specific commands"',
     '\t@echo ""',
   ];
 
-  for (const command of recommended) {
+  for (const command of quickCommands) {
     const display = command.makeTarget ? `make ${command.makeTarget}` : command.command;
     const sentence = `${command.description.charAt(0).toUpperCase()}${command.description.slice(1)}.`;
     lines.push(`\t@echo "  ${display}"`);

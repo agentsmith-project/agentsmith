@@ -37,9 +37,14 @@ Repo version files:
 - `make` 与 `npm run` 是当前 command surface / adapter，不是 gate identity truth
 - gate identity 统一看 `scripts/governance/current-gate-manifest.ts` 里的稳定 `id`
 
+Quick path note:
+- Advanced diagnostics and owner-specific commands stay in `make help-extended` and the governance docs.
+- `npm run release:status` is read-only; it only reads the latest release summary.
+
 ### 环境
 
 ```bash
+npm run dev
 make local-real-up
 make local-real-status
 ```
@@ -48,24 +53,6 @@ make local-real-status
 
 ```bash
 npm run verify
-```
-
-### 门禁
-
-```bash
-npm run gate:fast
-npm run gate:default
-npm run gate:release
-```
-
-### 验证通道
-
-```bash
-npm run lane:mock
-npm run lane:visual
-npm run lane:backend-real:release
-npm run lane:demo-rehearsal
-npm run lane:cluster-rehearsal
 ```
 
 ### 发布
@@ -80,9 +67,9 @@ npm run release:status
 
 | Entry path | 适用情况 | 先跑什么 |
 | --- | --- | --- |
-| `ui_only` | 只改前端 UI、文案、mock 交互、客户端状态。 | `npm run dev`，然后用 `npm run test:e2e` 或 `npm run gate:fast` 缩小问题。 |
-| `local_manual` | 需要真实本地 API / Web / Notebook / Terminal / runner / files 行为。 | `make substrate-up`，`make local-manual-up`，必要时 `make local-manual-seed-notebook`。 |
-| `release_grade` | 大改动收口、发布前、incident 修复后的跨层复验。 | 先读 [Verification Campaigns v1](./docs/testing/verification-campaigns-v1.md) 和 [Release Readiness Checklist](./docs/user-guides/release-readiness-checklist.md)。 |
+| `ui_only` | 只改前端 UI、文案、mock 交互、客户端状态。 | `npm run dev`，然后用 `npm run verify` 生成 dry-run plan。 |
+| `local_manual` | 需要真实本地 API / Web / Notebook / Terminal / runner / files 行为。 | `make local-real-up`，然后用 `make local-real-status` 看当前状态。 |
+| `release_grade` | 大改动收口、发布前、incident 修复后的跨层复验。 | `npm run release:ready`，然后用 `npm run release:status` 只读查看 summary/status。 |
 
 如果只是定位问题，先用 [diagnostic catalog](./docs/testing/diagnostic-catalog-v1.md) 找最小诊断命令。诊断命令通过后，仍然要回到 owning gate 或 lane 给正式 verdict。
 

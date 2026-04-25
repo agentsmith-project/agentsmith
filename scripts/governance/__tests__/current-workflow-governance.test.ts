@@ -16,6 +16,8 @@ import {
   CURRENT_WORKFLOW_TOP_LEVEL_TERMS,
   listCurrentCIWorkflowJobs,
   listCurrentWorkflowCommands,
+  listQuickHumanCurrentWorkflowSections,
+  listRecommendedCurrentWorkflowCommands,
   listRecommendedCurrentWorkflowSections,
 } from '../current-workflow-manifest';
 import { GOVERNANCE_CHECK_DEFINITIONS } from '../check-definitions';
@@ -46,6 +48,61 @@ function extractGeneratedBlock(relativePath: string, startMarker: string, endMar
   }
 
   return content.slice(startIndex + startMarker.length, endIndex);
+}
+
+const QUICK_HUMAN_ENTRYPOINT_COMMANDS = [
+  'npm run dev',
+  'make local-real-up',
+  'make local-real-status',
+  'npm run verify',
+  'npm run release:ready',
+  'npm run release:status',
+] as const;
+
+const QUICK_HUMAN_FORBIDDEN_COMMAND_PATTERNS = [
+  /\bnpm run verify:[a-z0-9:_-]+/,
+  /\bnpm run gate:[a-z0-9:_-]+/,
+  /\bmake gate-[a-z0-9_-]+/,
+  /\bnpm run lane:[a-z0-9:_-]+/,
+  /\bmake lane-[a-z0-9_-]+/,
+  /\bnpm run release:aggregate\b/,
+  /\bnpm run release:campaign:full\b/,
+  /\bnpm run gate:release:full\b/,
+  /\bRELEASE_CAMPAIGN_ROOT\b/,
+  /\bnpm run rehearse:[a-z0-9:_-]+/,
+  /\bmake demo-rehearsal-[a-z0-9_-]+/,
+  /\bmake cluster-rehearsal-[a-z0-9_-]+/,
+  /\bnpm run backend-real:[a-z0-9:_-]+/,
+  /\bmake backend-real-[a-z0-9_-]+/,
+] as const;
+
+function extractMarkdownBashCommands(block: string): string[] {
+  const commands: string[] = [];
+  let inBashFence = false;
+
+  for (const line of block.split('\n')) {
+    const trimmed = line.trim();
+    if (trimmed === '```bash') {
+      inBashFence = true;
+      continue;
+    }
+    if (trimmed === '```') {
+      inBashFence = false;
+      continue;
+    }
+    if (inBashFence && trimmed.length > 0) {
+      commands.push(trimmed);
+    }
+  }
+
+  return commands;
+}
+
+function extractMakeQuickHelpCommands(block: string): string[] {
+  return block
+    .split('\n')
+    .map((line) => line.match(/^\s*@echo "  ((?:npm run|make) [^"]+)"$/)?.[1])
+    .filter((command): command is string => Boolean(command));
 }
 
 function readTrackedWorkflowFiles(): string[] {
@@ -142,10 +199,28 @@ describe('current workflow governance', () => {
   it('keeps current workflow commands structurally complete', () => {
     const commands = listCurrentWorkflowCommands();
     const recommendedSections = listRecommendedCurrentWorkflowSections();
+    const recommendedCommands = listRecommendedCurrentWorkflowCommands();
+    const quickHumanSections = listQuickHumanCurrentWorkflowSections();
+    const recommendedCommandNames = recommendedCommands.map((command) => command.command);
+    const quickHumanCommandNames = quickHumanSections.flatMap((section) => section.commands.map((command) => command.command));
     expect(commands.length).toBeGreaterThan(0);
-    expect(recommendedSections.length).toBe(CURRENT_WORKFLOW_TOP_LEVEL_TERMS.length);
+    expect(quickHumanSections.map((section) => section.id)).toEqual(['environment', 'test', 'release']);
+    expect(quickHumanCommandNames).toEqual([...QUICK_HUMAN_ENTRYPOINT_COMMANDS]);
+    expect(recommendedSections.map((section) => section.title)).toEqual(CURRENT_WORKFLOW_TOP_LEVEL_TERMS);
+    expect(recommendedCommandNames).toEqual(expect.arrayContaining([...QUICK_HUMAN_ENTRYPOINT_COMMANDS]));
+    expect(recommendedCommandNames).toEqual(expect.arrayContaining([
+      'npm run gate:fast',
+      'npm run gate:default',
+      'npm run gate:release',
+      'npm run lane:mock',
+      'npm run lane:visual',
+      'npm run lane:backend-real:release',
+      'npm run lane:demo-rehearsal',
+      'npm run lane:cluster-rehearsal',
+    ]));
+    expect(recommendedCommands.length).toBeGreaterThan(quickHumanCommandNames.length);
 
-    for (const section of recommendedSections) {
+    for (const section of quickHumanSections) {
       expect(section.commands.length).toBeGreaterThan(0);
     }
 
@@ -176,6 +251,17 @@ describe('current workflow governance', () => {
         } else {
           expect(command.npmScript).toBeTruthy();
         }
+      }
+
+      if (command.quickHuman) {
+        expect(command.recommended).toBe(true);
+        expect(command.gateId).toBeUndefined();
+      }
+    }
+
+    for (const command of recommendedCommands) {
+      if (!command.quickHuman) {
+        expect(quickHumanCommandNames).not.toContain(command.command);
       }
     }
   });
@@ -318,12 +404,17 @@ describe('current workflow governance', () => {
 
     expect(releaseEntry?.startCommands).toContain('npm run release:ready');
     expect(releaseEntry?.startCommands).toContain('npm run release:status');
+    expect(releaseEntry?.startCommands).not.toContain('npm run release:aggregate -- --campaign-root=<campaign-root>');
+    expect(releaseEntry?.startCommands).not.toContain('npm run rehearse:demo');
+    expect(releaseEntry?.startCommands).not.toContain('npm run rehearse:cluster');
     expect(releaseEntry?.startCommands).not.toContain('npm run gate:release:full');
 
     expect(releaseReady?.workflowRole).toBe('release_operation');
     expect(releaseReady?.recommended).toBe(true);
     expect(releaseReady?.gateId).toBeUndefined();
     expect(releaseStatus?.workflowRole).toBe('release_operation');
+    expect(releaseStatus?.description).toMatch(/read-only/i);
+    expect(releaseStatus?.description).not.toMatch(/verdict|re-aggregat|aggregate/i);
     expect(releaseAggregate?.workflowRole).toBe('release_operation');
     expect(releaseAggregate?.gateId).toBeUndefined();
     expect(releaseCampaign?.workflowRole).toBe('release_operation');
@@ -370,6 +461,51 @@ describe('current workflow governance', () => {
     expect(packageScripts.has('release:campaign:full')).toBe(true);
     for (const block of generatedBlocks) {
       expect(block, 'generated human-copyable workflow blocks must hide the internal campaign launcher').not.toContain(hiddenCommand);
+    }
+  });
+
+  it('keeps generated quick workflow blocks limited to the quick human entrypoints', () => {
+    const quickBlocks = [
+      {
+        label: 'README current workflow block',
+        block: extractGeneratedBlock(
+          'README.md',
+          '<!-- current-workflow:readme:start -->',
+          '<!-- current-workflow:readme:end -->',
+        ),
+        commands: extractMarkdownBashCommands,
+      },
+      {
+        label: 'DEVELOPMENT current workflow block',
+        block: extractGeneratedBlock(
+          'DEVELOPMENT.md',
+          '<!-- current-workflow:development:start -->',
+          '<!-- current-workflow:development:end -->',
+        ),
+        commands: extractMarkdownBashCommands,
+      },
+      {
+        label: 'Makefile quick-help block',
+        block: extractGeneratedBlock(
+          'Makefile',
+          '# current-workflow:quick-help:start',
+          '# current-workflow:quick-help:end',
+        ),
+        commands: extractMakeQuickHelpCommands,
+      },
+    ];
+
+    for (const { label, block, commands } of quickBlocks) {
+      expect(commands(block), label).toEqual([...QUICK_HUMAN_ENTRYPOINT_COMMANDS]);
+
+      for (const pattern of QUICK_HUMAN_FORBIDDEN_COMMAND_PATTERNS) {
+        expect(block, `${label} must not expose ${pattern}`).not.toMatch(pattern);
+      }
+
+      expect(block, `${label} must describe release:status as read-only`).toMatch(/release:status[\s\S]*read-only/i);
+      expect(block, `${label} must not describe release:status as a verdict producer`).not.toMatch(
+        /release:status[\s\S]{0,120}(?:verdict|re-aggregat|aggregate)/i,
+      );
     }
   });
 

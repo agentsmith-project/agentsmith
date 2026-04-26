@@ -15,7 +15,7 @@ Use the entry path selector before choosing a command:
 | --- | --- | --- |
 | `ui_only` | You changed UI copy, layout, client state, or a mock-only interaction. | `npm run dev`, then `npm run verify` for the dry-run plan |
 | `local_manual` | You need the real local API, Notebook, Terminal, runner, files, or backend behavior. | `make local-real-up`, `make local-real-status` |
-| `release_grade` | You are preparing a release, closing a cross-domain refactor, or verifying an incident fix. | `npm run release:ready`, then `npm run release:status`; owner reruns such as `npm run gate:release`, `npm run lane:demo-rehearsal`, `npm run lane:cluster-rehearsal` are diagnostics after a failed campaign |
+| `release_grade` | You are preparing a release, closing a cross-domain refactor, or verifying an incident fix. | `npm run release:ready`, then `npm run release:status`; failed campaigns name internal owner adapters such as `gate:release`, `lane:demo-rehearsal`, or `lane:cluster-rehearsal` |
 
 If you are unsure, start with `ui_only` for frontend-only work, `local_manual` for real runtime behavior, and `release_grade` only when you need a release-level answer.
 
@@ -31,7 +31,7 @@ Do not use a diagnostic success as a release sign-off. If `npm run test:integrat
 
 ## 3. Diagnostic Commands
 
-| Command | Use when | Next step |
+| Command or owner | Use when | Next step |
 | --- | --- | --- |
 | `npm run test:e2e` | The default mock UI path may be broken. | Fix the smallest UI slice, then rerun the owning gate. |
 | `npm run test:e2e:all` | You need the broader mock range, including visual-adjacent coverage. | If it fails visually, inspect screenshots before updating baselines. |
@@ -42,11 +42,11 @@ Do not use a diagnostic success as a release sign-off. If `npm run test:integrat
 | `npm run ws:typecheck` | Workspace shell, store, or shared library types changed. | Follow with the related integration or e2e slice. |
 | `npm run ws:test` | Workspace logic needs fast Vitest coverage. | Follow with the user-facing gate or lane. |
 | `npm run test:release:precheck` | You are about to enter release-grade verification and want local readiness first. | Treat success as readiness only, not a release verdict. |
-| `npm run lane:mock` | You need a governed mock verification channel but not full visual or backend-real. Stable gate id: `lane-mock`. | Use it as a diagnostic lane surface, then return to `gate:default` or higher. |
-| `npm run gate:release` | A release campaign failed in the backend-real release evidence owner. | Rerun this owner, preserve `ux_trace_bundle`, then return to `npm run release:ready`. |
-| `npm run lane:demo-rehearsal` | A release campaign failed in the demo deployment rehearsal evidence owner. | Rerun from the lane's clean reset, then return to `npm run release:ready`. |
-| `npm run lane:cluster-rehearsal` | A release campaign failed in the cluster deployment rehearsal evidence owner. | Rerun from the lane's clean reset, then return to `npm run release:ready`. |
-| `RELEASE_CAMPAIGN_ROOT=<campaign-root> npm run gate:release:full` | You already have explicit campaign context and only need to re-aggregate the terminal verdict. | This command is aggregate-only and does not execute suites; without explicit context, run `npm run release:ready` instead. |
+| Internal adapter `lane:mock` | You need a governed mock verification channel but not full visual or backend-real. Stable gate id: `lane-mock`. | Treat it as an owner diagnostic surface, then return to the current human entrypoint or owner runbook. |
+| Internal adapter `gate:release` | A release campaign failed in the backend-real release evidence owner. | Preserve `ux_trace_bundle`, use the owner runbook if rerun is needed, then return to `npm run release:ready`. |
+| Internal adapter `lane:demo-rehearsal` | A release campaign failed in the demo deployment rehearsal evidence owner. | Prefer `npm run rehearse:demo` for the clean human path; owner reruns still start from the lane clean reset. |
+| Internal adapter `lane:cluster-rehearsal` | A release campaign failed in the cluster deployment rehearsal evidence owner. | Prefer `npm run rehearse:cluster` for the clean human path; owner reruns still start from the lane clean reset. |
+| Internal verifier `gate:release:full` | You already have explicit campaign context and only need to understand the terminal aggregate verifier. | This verifier is aggregate-only and does not execute suites; without explicit context, run `npm run release:ready` instead. |
 
 ## 4. Do / Don't
 
@@ -73,5 +73,5 @@ Stop the current wave and investigate root cause when:
 After the root cause is fixed, rerun in this order:
 1. smallest reproducible diagnostic command
 2. owning subsystem suite
-3. owning gate or lane
+3. owning gate or lane adapter from the owner runbook
 4. release campaign only if the change is release-grade

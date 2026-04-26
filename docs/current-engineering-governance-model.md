@@ -127,80 +127,24 @@ Current engineering runtime baseline:
 ## 3. Current command model
 
 <!-- current-workflow:governance-model:start -->
+Human-facing command blocks intentionally list clean entrypoints only.
+
+Internal adapters and evidence producers remain in `scripts/governance/current-workflow-manifest.ts`, `scripts/governance/current-gate-manifest.ts`, and `package.json`, but are not rendered here as copyable human defaults.
+
 ### 环境
 
 ```bash
 npm run dev
-make substrate-up
-make substrate-reseed
-make substrate-status
-make substrate-down
-make substrate-reset
 make local-real-up
 make local-real-status
 make local-real-down
 make local-real-reset
-make local-manual-up
-make local-manual-seed-notebook
-make local-manual-internal-up
-make local-manual-internal-status
-make local-manual-internal-down
-make local-manual-internal-reset
-make local-manual-status
-make local-manual-down
-make local-manual-reset
-make demo-rehearsal-up
-make demo-rehearsal-status
-make demo-rehearsal-down
-make demo-rehearsal-reset
-make demo-rehearsal-bootstrap
-make demo-rehearsal-verify
-make demo-rehearsal-report
-make cluster-rehearsal-up
-make cluster-rehearsal-status
-make cluster-rehearsal-down
-make cluster-rehearsal-reset
-make cluster-rehearsal-bootstrap
-make cluster-rehearsal-verify
-make cluster-rehearsal-report
 ```
 
 ### 测试
 
 ```bash
 npm run verify
-npm run verify:quick
-npm run verify:default
-npm run verify:visual
-npm run verify:real
-npm run verify:release-real
-npm run test:default-e2e
-npm run test:visual
-npm run test:governance
-npm run test:backend-real:core
-npm run test:demo-bundle:inputs
-npm run test:demo-rendered-env
-npm run test:notebook:backend-real:smoke
-```
-
-### 门禁
-
-```bash
-npm run gate:fast
-npm run gate:default
-npm run gate:release
-RELEASE_CAMPAIGN_ROOT=<campaign-root> npm run gate:release:full
-```
-
-### 验证通道
-
-```bash
-npm run lane:mock
-npm run lane:visual
-npm run lane:backend-real:core
-npm run lane:backend-real:release
-npm run lane:demo-rehearsal
-npm run lane:cluster-rehearsal
 ```
 
 ### 发布
@@ -208,14 +152,8 @@ npm run lane:cluster-rehearsal
 ```bash
 npm run release:ready
 npm run release:status
-npm run release:aggregate -- --campaign-root=<campaign-root>
 npm run rehearse:demo
 npm run rehearse:cluster
-npm run backend-real:reset
-npm run backend-real:bootstrap
-npm run backend-real:ready
-npm run backend-real:run
-npm run backend-real:report
 ```
 <!-- current-workflow:governance-model:end -->
 

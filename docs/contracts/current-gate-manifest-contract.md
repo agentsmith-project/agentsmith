@@ -98,8 +98,8 @@ It does not redefine product permissions, route gates, or OpenAPI behavior.
 - the terminal aggregate verifier for an existing release campaign
 - depends on the release evidence owned by `gate:release`, `lane:visual`, `lane:demo-rehearsal`, and `lane:cluster-rehearsal`
 - requires both `visual_scene_catalog` and `ux_trace_bundle` evidence to be present in their canonical roots
-- does not execute suites, gates, or lanes itself; the human-facing release execution entrypoint is `npm run release:ready`, which delegates to `npm run release:campaign:full` after precheck passes
-- must be used with explicit campaign context such as `RELEASE_CAMPAIGN_ROOT=<campaign-root>` or an equivalent explicit run id context
+- does not execute suites, gates, or lanes itself; the human-facing release execution entrypoint is `npm run release:ready`, which delegates to internal adapter `release:campaign:full` after precheck passes
+- requires explicit campaign context such as `RELEASE_CAMPAIGN_ROOT=<campaign-root>` or an equivalent explicit run id context
 - must evaluate evidence completeness from the current verification campaign manifest, not from whatever paths an older `evidence.json` happened to declare
 - must reject stale evidence pointers that omit current required check ids, even when all referenced dummy paths exist
 

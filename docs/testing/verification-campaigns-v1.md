@@ -81,7 +81,7 @@ Status: `current reference`
 - 一个 lane 里可以跑 e2e，但 lane 不是 e2e。
 - 一个 gate 可以消费 lane 结果，也可以直接跑某些 tests，但 gate 的本质是 verdict。
 - `lane:mock` 是 current workflow 里的 diagnostic lane surface；它有价值，但不是 release evidence。
-- `release:ready` 是面向人的 release readiness 入口；它通过 precheck 后委托 `release:campaign:full`，而 `gate:release:full` 只是在显式 campaign context 下做 terminal aggregate verdict，不执行任何 suite。
+- `npm run release:ready` 是面向人的 release readiness 入口；`npm run release:status` 是只读状态入口。`release:campaign:full` 只作为 `release:ready` 后面的 internal adapter identity 出现，`gate:release:full` 只是在 campaign context 内做 aggregate-only terminal verdict，不执行任何 suite。
 
 ## 4. 诊断路径 vs verdict 路径
 
@@ -105,19 +105,20 @@ Status: `current reference`
 
 verdict 路径的目标是：**给出当前变更是否可接受的正式判断**。
 
-当前 automated verdict 以这些命令为主：
-- `npm run gate:fast`
-- `npm run gate:default`
-- `npm run gate:release`
+当前 release-grade 人类可复制入口只保留 clean surface：
 - `npm run release:ready`
-- `npm run release:campaign:full`（wrapper 通过 precheck 后调用的 existing campaign launcher）
+- `npm run release:status`
+- `npm run rehearse:demo`
+- `npm run rehearse:cluster`
+
+内部 verdict / evidence identity 仍然看 current manifests，例如 `gate:fast`、`gate:default`、`gate:release`、`lane:visual`、`lane:backend-real:release`、`release:campaign:full` 和 `gate:release:full`。这些 identity 可以用于证据所有权、排障归因和 aggregate verification 描述，但不作为 verification campaign guide 的 copyable/default command surface。
 
 其中：
 - `gate:default` 不是 full visual，也不是 full release
 - `lane:visual` 是 full visual 的唯一 owner
 - `gate:release` 不替代 `lane:visual`
 - `release:ready` 先跑非 verdict precheck，precheck 失败时不进入 campaign、也不写 release verdict
-- `release:campaign:full` 编排 release-grade 所有 required steps，并在最后调用 aggregate-only 的 `gate:release:full`
+- internal adapter `release:campaign:full` 编排 release-grade 所有 required steps，并在最后调用 aggregate-only 的 `gate:release:full`
 - `gate:release:full` 只能在显式 campaign root / run id context 下复核已有 evidence，不是日常执行入口
 
 结论：
@@ -150,11 +151,11 @@ verdict 路径的目标是：**给出当前变更是否可接受的正式判断*
 用途：
 - 作为必须通过的工程验收捆绑检查
 
-当前核心门禁：
-- `npm run gate:fast`
-- `npm run gate:default`
-- `npm run gate:release`
-- `RELEASE_CAMPAIGN_ROOT=<campaign-root> npm run gate:release:full`（aggregate-only，必须已有 campaign context）
+当前核心门禁 identity：
+- `gate:fast`
+- `gate:default`
+- `gate:release`
+- internal verifier `gate:release:full`（aggregate-only，必须已有 campaign context）
 
 适合：
 - 合并前验收
@@ -165,13 +166,13 @@ verdict 路径的目标是：**给出当前变更是否可接受的正式判断*
 用途：
 - 跑一条有独立真相源和独立证据义务的验证路径
 
-当前核心验证通道：
-- `npm run lane:mock`
-- `npm run lane:visual`
-- `npm run lane:backend-real:core`
-- `npm run lane:backend-real:release`
-- `npm run lane:demo-rehearsal`
-- `npm run lane:cluster-rehearsal`
+当前核心验证通道 identity：
+- `lane:mock`
+- `lane:visual`
+- `lane:backend-real:core`
+- `lane:backend-real:release`
+- `lane:demo-rehearsal`
+- `lane:cluster-rehearsal`
 
 理解方式：
 - `lane:visual` 证明 full visual
@@ -184,19 +185,22 @@ verdict 路径的目标是：**给出当前变更是否可接受的正式判断*
 
 当前应按角色理解，而不是在多份文档里各自维护一套冲突顺序：
 
-| Role | Current command surface | What it proves |
+| Role | Surface | What it proves |
 | --- | --- | --- |
 | human release entry | `npm run release:ready` | 先执行非 verdict precheck，precheck 通过后进入 official campaign |
-| campaign launcher | `npm run release:campaign:full` | official campaign launcher，编排所有 required steps 并调用 terminal aggregate verdict |
-| preflight | `npm run gate:fast` | 快速确认基础 contract / static / cheap checks 没先坏 |
-| tier verdict | `npm run gate:default` | 默认工程层是否可接受 |
-| evidence owner | `npm run lane:visual` | full visual 和 `visual_scene_catalog` 证据 |
-| evidence owner | `npm run gate:release` / `npm run lane:backend-real:release` | release-grade backend-real 与 `ux_trace_bundle` 证据 |
-| rehearsal evidence owner | `npm run lane:demo-rehearsal` | demo release path 排演证据 |
-| rehearsal evidence owner | `npm run lane:cluster-rehearsal` | cluster release path 排演证据 |
-| terminal aggregate verdict | `RELEASE_CAMPAIGN_ROOT=<campaign-root> npm run gate:release:full` | 只聚合已有 campaign evidence，不执行任何 suite |
+| read-only status | `npm run release:status` | 读取 latest summary / status，不重新聚合 evidence |
+| rehearsal entry | `npm run rehearse:demo` | 必要时单独运行 demo deployment rehearsal 的 clean human path |
+| rehearsal entry | `npm run rehearse:cluster` | 必要时单独运行 cluster deployment rehearsal 的 clean human path |
+| campaign launcher | internal adapter `release:campaign:full` | official campaign launcher，编排所有 required steps 并调用 terminal aggregate verdict |
+| preflight | internal adapter `gate:fast` | 快速确认基础 contract / static / cheap checks 没先坏 |
+| tier verdict | internal adapter `gate:default` | 默认工程层是否可接受 |
+| evidence owner | internal adapter `lane:visual` | full visual 和 `visual_scene_catalog` 证据 |
+| evidence owner | internal adapter `gate:release` / `lane:backend-real:release` | release-grade backend-real 与 `ux_trace_bundle` 证据 |
+| rehearsal evidence owner | internal adapter `lane:demo-rehearsal` | demo release path 排演证据 |
+| rehearsal evidence owner | internal adapter `lane:cluster-rehearsal` | cluster release path 排演证据 |
+| terminal aggregate verdict | internal verifier `gate:release:full` | aggregate-only 聚合已有 campaign evidence，不执行任何 suite |
 
-`npm run release:ready` 是人类入口；`npm run release:campaign:full` 必须消费同一组 role 和 evidence truth；不能绕过这些 owner 自己发明 release 判断。`gate:release:full` 如果没有显式 campaign context，就不应该被新人当作 release 执行入口。
+`npm run release:ready` 是人类入口；internal adapter `release:campaign:full` 必须消费同一组 role 和 evidence truth；不能绕过这些 owner 自己发明 release 判断。`gate:release:full` 如果没有 campaign context，就不应该被新人当作 release 执行入口。
 
 手工 Feishu 操作位于 [Release Readiness Checklist](../user-guides/release-readiness-checklist.md) 的 operator 流程中，不属于这份文档定义的 automated campaign 默认范围。
 
@@ -277,7 +281,7 @@ visual baseline 更新不是“修测试”，而是一个受控审查动作。
 
 执行顺序应该是：
 
-1. 先跑 `npm run lane:visual`
+1. 先由 `lane:visual` 这个 full visual owner 生成或复核视觉证据
 2. 如果失败，先看截图、trace、相关页面代码
 3. 判断差异是：
 - 产品/样式回归
@@ -339,7 +343,7 @@ visual baseline 更新不是“修测试”，而是一个受控审查动作。
 - `test:backend-real:core` / `lane:backend-real:core` 更像默认层真实验证
 - `gate:release` / `lane:backend-real:release` 才是 release-grade backend-real 义务
 
-6. 发布级人类入口看 `release:ready`
+6. 发布级人类入口看 `npm run release:ready`
 - 它先执行 non-verdict precheck，再调用 official one-shot automated release campaign
 - campaign 会在 context 内调用 aggregate-only 的 `gate:release:full`
 - 不要把 `gate:release:full` 当成第一轮问题定位工具或 suite launcher

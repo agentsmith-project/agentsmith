@@ -36,9 +36,11 @@ Repo version files:
 命令命名约定：
 - `make` 与 `npm run` 是当前 command surface / adapter，不是 gate identity truth
 - gate identity 统一看 `scripts/governance/current-gate-manifest.ts` 里的稳定 `id`
+- `npm run dev` 是前端/mock 开发入口；local-real 环境编排走 `make`
+- `gate:*`、`lane:*`、`backend-real:*`、`release:campaign:*` 保留为内部 adapter / evidence producer，不作为默认人工入口
 
 Quick path note:
-- Advanced diagnostics and owner-specific commands stay in `make help-extended` and the governance docs.
+- `make help-extended` 只重复 clean human surface；owner 需要内部 adapter 时回到 manifest / runbook。
 - `npm run release:status` is read-only; it only reads the latest release summary.
 
 ### 环境
@@ -47,6 +49,8 @@ Quick path note:
 npm run dev
 make local-real-up
 make local-real-status
+make local-real-down
+make local-real-reset
 ```
 
 ### 测试
@@ -60,6 +64,8 @@ npm run verify
 ```bash
 npm run release:ready
 npm run release:status
+npm run rehearse:demo
+npm run rehearse:cluster
 ```
 <!-- current-workflow:development:end -->
 
@@ -82,10 +88,10 @@ Gate adapter fidelity notes:
 给新开发者的执行边界：
 
 1. 先区分诊断路径和 authoritative verdict
-- `test` family commands、某个 focused Playwright spec、某条 targeted `lane` command，主要用于诊断、复现和缩小问题范围。
-- `gate` family commands 才是当前工程门禁 verdict surface；要回答“这次改动在当前层级是否可接受”，最终看对应 gate，而不是某个临时诊断命令。
-- `npm run gate:default` 不是 full visual，也不是 release-grade verdict。full visual 统一看 `npm run lane:visual`；面向人的发布级自动化入口统一看 `npm run release:ready`，它会在 precheck 通过后委托 campaign，并在 campaign context 内调用 terminal aggregate verdict。
-- `npm run gate:release:full` 是 aggregate-only 复核命令，只能在显式 campaign context 下使用，例如 `RELEASE_CAMPAIGN_ROOT=<campaign-root> npm run gate:release:full`；它不会执行任何 suite。
+- `test` family commands、某个 focused Playwright spec、某条 targeted lane adapter，主要用于诊断、复现和缩小问题范围。
+- `gate` family adapter 才是当前工程门禁 verdict surface；普通开发者先用 `npm run verify` 生成计划，不从 gate adapter 目录手工拼流程。
+- `gate:default` 不是 full visual，也不是 release-grade verdict。full visual 的内部 owner 是 `lane:visual`；面向人的发布级自动化入口统一看 `npm run release:ready`，它会在 precheck 通过后委托内部 campaign，并在 campaign context 内调用 terminal aggregate verdict。
+- `gate:release:full` 是 aggregate-only 内部复核器，只能在显式 campaign context 下由 release wrapper 或 owner runbook 使用；它不会执行任何 suite。
 
 2. `command passed` 不等于验收通过
 - 对 evidence-owning gates 和 lanes，证据完整性与命令返回同级。
@@ -530,11 +536,11 @@ npm run release:status
 
 Notes:
 
-1. `npm run release:ready` is the human-friendly automated release path. It runs the non-verdict precheck first, then delegates to `npm run release:campaign:full`, which orchestrates `gate:fast`, `gate:default`, `lane:visual`, `gate:release`, demo rehearsal, cluster rehearsal, and the terminal aggregate verdict.
-2. `npm run gate:release:full` is aggregate-only. Use it only with explicit campaign context, for example `RELEASE_CAMPAIGN_ROOT=<campaign-root> npm run gate:release:full`, and do not expect it to execute any suite.
-3. When diagnosing a failed campaign, rerun the owning evidence command such as `npm run gate:release`, `npm run lane:visual`, `npm run lane:demo-rehearsal`, or `npm run lane:cluster-rehearsal`, then return to `npm run release:ready`.
+1. `npm run release:ready` is the human-friendly automated release path. It runs the non-verdict precheck first, then delegates to internal campaign adapters that orchestrate `gate:fast`, `gate:default`, `lane:visual`, `gate:release`, demo rehearsal, cluster rehearsal, and the terminal aggregate verdict.
+2. `gate:release:full` is aggregate-only. Treat it as an internal verifier for an explicit campaign context, not as a copyable release command.
+3. When diagnosing a failed campaign, rerun the owning evidence adapter from the owner runbook or manifest, then return to `npm run release:ready`.
 4. Real-lane notebook verification requires `PRESET_ENDPOINT_API_KEY` (or a derived `BACKEND_REAL_API_KEY` alias).
-5. Fresh demo rehearsal roots seeded during `npm run release:campaign:full` keep `infra/deploy/demo/env/site.env.example` secret-free and derive a missing `PRESET_ENDPOINT_API_KEY` from repo-local runtime presets such as `.env.backend-real`.
+5. Fresh demo rehearsal roots seeded by the release campaign keep `infra/deploy/demo/env/site.env.example` secret-free and derive a missing `PRESET_ENDPOINT_API_KEY` from repo-local runtime presets such as `.env.backend-real`.
 
 ## Test & Evidence Directory Contract
 

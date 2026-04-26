@@ -92,11 +92,13 @@ Authoritative definition:
 - Machine-readable gate source: [`scripts/governance/current-gate-manifest.ts`](./scripts/governance/current-gate-manifest.ts)
 
 Command naming rule:
-- `make` is the canonical entrypoint for environment and rehearsal orchestration
-- `npm run` is the canonical entrypoint for tests, gates, verification lanes, and release validation
+- `npm run dev` is the canonical frontend/mock development entrypoint
+- `make` is the canonical entrypoint for local-real environment orchestration
+- `npm run` is the canonical entrypoint for clean verification and release wrappers
+- `gate:*`, `lane:*`, `backend-real:*`, and `release:campaign:*` stay internal adapters/evidence producers, not default human entrypoints
 
 Quick path note:
-- Advanced diagnostics and owner-specific commands stay in `make help-extended` and the governance docs.
+- `make help-extended` repeats this clean human surface and points owners to manifest-backed internal adapters.
 - `npm run release:status` is read-only; it only reads the latest release summary.
 
 ### 环境
@@ -105,6 +107,8 @@ Quick path note:
 npm run dev
 make local-real-up
 make local-real-status
+make local-real-down
+make local-real-reset
 ```
 
 ### 测试
@@ -118,6 +122,8 @@ npm run verify
 ```bash
 npm run release:ready
 npm run release:status
+npm run rehearse:demo
+npm run rehearse:cluster
 ```
 <!-- current-workflow:readme:end -->
 
@@ -152,22 +158,13 @@ This validates the required behavior for MVP deployment without sandbox:
 - current API/Web/Runner path is healthy (`make local-manual-status`)
 - internal-agent sandbox path is fail-fast with explicit `AGENT_SANDBOX_NOT_CONFIGURED`
 
-### Advanced Diagnostics And Owner Commands
+### Internal Adapters And Owner Diagnostics
 
 For daily verification, use the generated workflow entry above: `npm run verify`. For release readiness, use `npm run release:ready` and `npm run release:status`.
 
-The commands below are retained as advanced diagnostics and owner rerun references. They are not the default sequence for new contributors.
+Legacy `gate:*`, `lane:*`, `backend-real:*`, and `release:campaign:*` scripts still exist in `package.json` for CI, `release:ready`, and evidence-owner runbooks. They are internal adapters, not a default command directory for ordinary development, testing, or release work.
 
-| Command | Use |
-| --- | --- |
-| `npm run gate:fast` | Diagnostics shortcut when an owner needs to isolate fast gate failures. |
-| `npm run gate:default` | Owner rerun reference for default gate diagnostics after `npm run verify` fails. |
-| `npm run gate:release` | Owner rerun reference for release gate diagnostics in explicit campaign context. |
-| `npm run release:campaign:full` | Launcher behind `npm run release:ready`; not the newcomer default entrypoint. |
-| `RELEASE_CAMPAIGN_ROOT=<campaign-root> npm run gate:release:full` | Aggregate-only release verdict for an existing campaign; does not run suites. |
-| `npm run lane:visual` | Owner rerun reference for visual lane evidence in campaign diagnostics. |
-| `npm run lane:demo-rehearsal` | Owner rerun reference for demo rehearsal lane evidence in explicit campaign context. |
-| `npm run lane:cluster-rehearsal` | Owner rerun reference for cluster rehearsal lane evidence in explicit campaign context. |
+When a release campaign points to a specific owner, use the named adapter family from the owner runbook or manifest rather than copying commands from this README. Examples of owner identities are `gate:default`, `lane:visual`, `gate:release`, `lane:demo-rehearsal`, `lane:cluster-rehearsal`, and the aggregate-only `gate:release:full`.
 
 Optional operator-only Feishu checks when the current release scope includes Feishu:
 

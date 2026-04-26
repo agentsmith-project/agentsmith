@@ -43,7 +43,7 @@ jobs:
         run: npm ci
 
       - name: Run gate-fast
-        run: make gate-fast
+        run: npm run gate:fast
 
       - name: Run permission contract drift check
         run: npm run contracts:check

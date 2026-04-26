@@ -64,15 +64,15 @@ npm run release:ready
 npm run release:status
 ```
 
-默认从 `release:ready` 发起 release-grade campaign，用 `release:status` 查看当前 verdict / evidence 状态。下面命令只用于 campaign 失败后的 owner diagnostics / owner rerun，不能替代 `release:ready`。
+默认从 `release:ready` 发起 release-grade campaign，用 `release:status` 查看当前 verdict / evidence 状态。`release:campaign:full` 只作为 `release:ready` 后面的 internal adapter identity 出现，不是 notebook runbook 里的可复制发布命令。下面的 owner identity 只用于 campaign 失败后的 diagnostics / rerun 归因，不能替代 `release:ready`。
 
-| Owner command | Use after campaign failure |
+| Owner identity | Use after campaign failure |
 | --- | --- |
-| `npm run gate:fast` / `npm run gate:default` | Fast/default gate owner rerun. |
-| `npm run lane:visual` | Visual lane owner diagnostics. |
+| internal adapter `gate:fast` / `gate:default` | Fast/default gate owner rerun. |
+| internal adapter `lane:visual` | Visual lane owner diagnostics. |
 | `npm run backend-real:reset` / `npm run backend-real:bootstrap` / `npm run backend-real:ready` | Backend-real environment diagnostics before an owner rerun. |
-| `npm run lane:backend-real:release` | Backend-real release lane owner rerun. |
-| `RELEASE_CAMPAIGN_ROOT=<campaign-root> npm run gate:release:full` | Aggregate-only verifier for an explicit campaign context; it does not execute suites. |
+| internal adapter `lane:backend-real:release` | Backend-real release lane owner rerun. |
+| internal verifier `gate:release:full` | Aggregate-only verifier for an existing campaign context; it does not execute suites. |
 
 如果只排 notebook runner：
 - 先看 `npm run test:notebook:runner:fast`
@@ -169,7 +169,8 @@ npm run test:skills:backend-real
 如果需要 current release verdict，看：
 - [Release Readiness Checklist](./user-guides/release-readiness-checklist.md)
 - human release execution entrypoint: `npm run release:ready`
-- campaign launcher behind the wrapper: `npm run release:campaign:full`
-- aggregate-only verifier for an existing campaign: `RELEASE_CAMPAIGN_ROOT=<campaign-root> npm run gate:release:full`
+- read-only release status entrypoint: `npm run release:status`
+- campaign launcher behind the wrapper: internal adapter `release:campaign:full`
+- aggregate-only verifier for an existing campaign: internal verifier `gate:release:full`
 
 不要把裸 `gate:release:full` 当成 release 执行入口；它只复核已有 campaign evidence，不执行 suite。

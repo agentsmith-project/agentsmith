@@ -27,9 +27,7 @@
 	preprod-ensure-pgvector preprod-capture-baseline \
 	sandbox-preflight sandbox-api-dev sandbox-joint-smoke \
 	ensure-default-workspace real-stack-ready \
-	gate-fast gate-default gate-release lane-mock lane-visual lane-real-core lane-real-release \
-	manual-feishu-admin manual-feishu-user manual-feishu-check \
-	backend-real-reset backend-real-bootstrap backend-real-ready backend-real-run backend-real-report
+	manual-feishu-admin manual-feishu-user manual-feishu-check
 
 NPM ?= npm
 
@@ -73,7 +71,7 @@ help:
 	@$(MAKE) quick-help
 	@echo ""
 	@echo "More commands:"
-	@echo "  make help-extended  # full command catalog"
+	@echo "  make help-extended  # clean human command details"
 	@echo "  make help-glossary  # term definitions"
 
 # current-workflow:help-extended:start
@@ -83,206 +81,35 @@ help-extended:
 	@echo "Current path (lowest cognitive load):"
 	@echo "  make quick-help     # show only the recommended day-to-day commands"
 	@echo "  make help-glossary  # explain common testing/engineering terms in plain language"
-	@echo "  note: make owns environment/rehearsal orchestration; npm run owns tests, gates, lanes, and release verification"
+	@echo "  note: gate/lane/backend-real/release:campaign scripts are internal adapters, not default human entrypoints"
 	@echo ""
 	@echo "Environment:"
 	@echo "  npm run dev  # start the Next.js development server"
-	@echo "  make substrate-up  # start the local managed substrate"
-	@echo "  make substrate-reseed  # rebuild minimum substrate data"
-	@echo "  make substrate-status  # inspect the managed substrate"
-	@echo "  make substrate-down  # stop the managed substrate"
-	@echo "  make substrate-reset  # clear the managed substrate"
 	@echo "  make local-real-up  # start the real local environment through the local-manual adapter"
 	@echo "  make local-real-status  # show substrate and local-manual adapter status"
 	@echo "  make local-real-down  # stop the real local environment through the local-manual adapter"
 	@echo "  make local-real-reset  # reset the real local environment through the local-manual adapter"
-	@echo "  make local-manual-up  # start the real local manual-test environment"
-	@echo "  make local-manual-seed-notebook  # create notebook demo resources and start the host runner"
-	@echo "  make local-manual-internal-up  # enable the local internal sandbox extension on top of local-manual"
-	@echo "  make local-manual-internal-status  # inspect the local internal sandbox extension"
-	@echo "  make local-manual-internal-down  # disable the local internal sandbox extension"
-	@echo "  make local-manual-internal-reset  # rebuild the local internal sandbox extension"
-	@echo "  make local-manual-status  # show the current real local environment state"
-	@echo "  make local-manual-down  # stop the real local manual-test environment"
-	@echo "  make local-manual-reset  # rebuild the real local manual-test environment"
-	@echo "  make demo-rehearsal-up  # prepare the local demo deploy rehearsal line to the environment-ready stage"
-	@echo "  make demo-rehearsal-status  # inspect the local demo deploy rehearsal line"
-	@echo "  make demo-rehearsal-down  # clear the local demo deploy rehearsal line"
-	@echo "  make demo-rehearsal-reset  # reset the local demo deploy rehearsal line"
-	@echo "  make demo-rehearsal-bootstrap  # bootstrap the local demo deploy rehearsal line after up"
-	@echo "  make demo-rehearsal-verify  # verify the local demo deploy rehearsal line after bootstrap"
-	@echo "  make demo-rehearsal-report  # write the local demo deploy rehearsal report after verify"
-	@echo "  make cluster-rehearsal-up  # prepare the local cluster deploy rehearsal line to the environment-ready stage"
-	@echo "  make cluster-rehearsal-status  # inspect the local cluster deploy rehearsal line"
-	@echo "  make cluster-rehearsal-down  # clear the local cluster deploy rehearsal line"
-	@echo "  make cluster-rehearsal-reset  # reset the local cluster deploy rehearsal line"
-	@echo "  make cluster-rehearsal-bootstrap  # bootstrap the local cluster deploy rehearsal line after up"
-	@echo "  make cluster-rehearsal-verify  # verify the local cluster deploy rehearsal line after bootstrap"
-	@echo "  make cluster-rehearsal-report  # write the local cluster deploy rehearsal report after verify"
 	@echo ""
 	@echo "Tests:"
 	@echo "  npm run verify  # write a dry-run story acceptance report and print the recommended verification plan"
-	@echo "  npm run verify:quick  # run the quick verification adapter"
-	@echo "  npm run verify:default  # run the default verification adapter"
-	@echo "  npm run verify:visual  # run the visual verification adapter"
-	@echo "  npm run verify:real  # run the real-backend verification adapter"
-	@echo "  npm run verify:release-real  # run the release backend-real owner diagnostic adapter"
-	@echo "  npm run test:default-e2e  # run the default mock UI regression range"
-	@echo "  npm run test:visual  # run the visual verification suite"
-	@echo "  npm run test:governance  # run governance-focused verification"
-	@echo "  npm run test:backend-real:core  # run the core real-backend verification suite"
-	@echo "  npm run test:demo-bundle:inputs  # verify release bundle inputs"
-	@echo "  npm run test:demo-rendered-env  # verify rendered deployment env artifacts"
-	@echo "  npm run test:notebook:backend-real:smoke  # run notebook real-backend smoke verification"
-	@echo ""
-	@echo "Gates:"
-	@echo "  make gate-fast  # run the fast engineering gate"
-	@echo "  make gate-default  # run the default engineering gate"
-	@echo "  make gate-release  # run the release-grade engineering gate"
-	@echo "  RELEASE_CAMPAIGN_ROOT=<campaign-root> npm run gate:release:full  # aggregate an explicitly selected release campaign into the terminal release verdict"
-	@echo ""
-	@echo "Verification channels:"
-	@echo "  make lane-mock  # run the mock verification channel"
-	@echo "  make lane-visual  # run the visual verification channel"
-	@echo "  make lane-real-core  # run the core real-backend verification channel"
-	@echo "  make lane-real-release  # run the full real-backend verification channel"
-	@echo "  npm run lane:demo-rehearsal  # run the demo deployment rehearsal verification channel"
-	@echo "  npm run lane:cluster-rehearsal  # run the cluster deployment rehearsal verification channel"
 	@echo ""
 	@echo "Release:"
 	@echo "  npm run release:ready  # run the human-friendly release readiness wrapper"
 	@echo "  npm run release:status  # read the latest release summary in read-only mode"
-	@echo "  npm run release:aggregate -- --campaign-root=<campaign-root>  # aggregate an explicitly selected campaign and write its summary"
 	@echo "  npm run rehearse:demo  # run the demo deployment rehearsal adapter"
 	@echo "  npm run rehearse:cluster  # run the cluster deployment rehearsal adapter"
-	@echo "  make backend-real-reset  # clean release verification state"
-	@echo "  make backend-real-bootstrap  # bootstrap release verification dependencies and tokens"
-	@echo "  make backend-real-ready  # wait for release verification readiness"
-	@echo "  make backend-real-run  # run the release verification matrix"
-	@echo "  make backend-real-report  # write the release verification report"
 	@echo ""
-	@echo "Bootstrap:"
-	@echo "  make bootstrap    # deps-up -> wait for ready -> deps-init -> deps-smoke (ordered)"
+	@echo "Internal adapters:"
+	@echo "  package.json keeps gate/lane/backend-real/release:campaign scripts for CI, release:ready, and evidence owners."
+	@echo "  They are intentionally omitted from help output as copyable human defaults."
 	@echo ""
 # current-workflow:help-extended:end
-	@echo "Dependencies:"
-	@echo "  make deps-up       # legacy direct deps start (prefer substrate-up)"
-	@echo "  make deps-ready    # wait for postgres/keycloak to accept connections (after deps-up)"
-	@echo "  make deps-init    # apply postgres schemas + seed/reset keycloak users (requires deps-ready)"
-	@echo "  make deps-smoke   # verify all deps healthy (requires deps-init for pgvector)"
-	@echo "  make deps-init-postgres # apply postgres schemas (projects + pgvector tables)"
-	@echo "  make deps-init-keycloak # ensure/reset keycloak integration users"
-	@echo "  make deps-down     # legacy direct deps stop (prefer substrate-down)"
-	@echo "  make deps-reset    # legacy direct deps reset (prefer substrate-reset)"
-	@echo "  make deps-logs     # tail deps logs"
-	@echo "  make deps-ps       # list deps status"
-	@echo ""
-	@echo "Services:"
-	@echo "  make api-dev       # start node api (postgres+redis+mongo+minio+keycloak)"
-	@echo "  make api-dev-min   # start node api (keycloak + minio minimal mode)"
-	@echo "  make web           # start frontend (backend mode, msw off)"
-	@echo "  make web-msw       # start frontend with msw"
-	@echo ""
-	@echo "Extended tests and focused verification:"
-	@echo "  make e2e           # run the default mock e2e range (light verification + default e2e)"
-	@echo "  make e2e-local     # run the default mock e2e range against a manually started web server"
-	@echo "  make e2e-int-minimal   # run minimal integration e2e (real backend)"
-	@echo "  make e2e-int-chat      # run chat integration e2e (real backend)"
-	@echo "  make e2e-int-agent     # run external-agent integration e2e (real backend)"
-	@echo "  make e2e-int-chat-real # run real provider-backed chat integration e2e (Anthropic-compatible upstream)"
-	@echo "  make e2e-int-local     # run integration e2e against a manually started web server (BASE_URL)"
-	@echo "  make e2e-int-minimal-local-api  # run minimal integration e2e with current node api (requires frontend already running)"
-	@echo "  make e2e-int-chat-local-api     # run chat integration e2e with current node api (requires frontend already running)"
-	@echo "  make e2e-int-agent-local-api    # run external-agent integration e2e with current node api (requires frontend already running)"
-	@echo "  make e2e-int-chat-real-local-api # run provider-backed chat e2e with current node api (requires frontend already running)"
-	@echo "  make e2e-int-chat-auto      # auto start deps+api+web and run integration-chat spec"
-	@echo "  make e2e-int-agent-auto     # auto start deps+api+web and run integration-agent spec"
-	@echo "  make e2e-int-notebook-agent-auto # auto start deps+api+web and run notebook external-agent integration spec"
-	@echo "  make e2e-int-chat-ux-auto   # auto start deps+api+web and run targeted chat UX integration checks"
-	@echo "  make e2e-int-core-local-api # run MVP real-backend core smoke against already-running API/Web"
-	@echo "  make e2e-int-core-auto      # auto start deps+api+web and run MVP real-backend core smoke"
-	@echo ""
-	@echo "Focused release operations:"
-	@echo "  make manual-feishu-admin # print admin Feishu confirmation URL"
-	@echo "  make manual-feishu-user  # print user Feishu confirmation URL"
-	@echo "  make manual-feishu-check # verify the latest Feishu manual step"
-	@echo ""
-	@echo "Notebook and runner operations:"
-	@echo "  make agent-test-runner  # start standalone external agent test runner (requires AGENT_WS_URL + AGENT_KEY)"
-	@echo "  make notebook-runner    # start notebook runner (requires AGENT_WS_URL + AGENT_KEY; auto mounts builtin skills)"
-	@echo "  make chat-runner        # start chat runner (requires AGENT_WS_URL + AGENT_KEY)"
-	@echo "  make notebook-agent-refresh-token # refresh Keycloak JWT into artifacts/backend-real/current/token.txt"
-	@echo "  make notebook-agent-init-resources # create project/endpoint/agent/key and write artifacts/backend-real/current/state.json"
-	@echo "  make notebook-agent-runner         # alias for notebook-runner using artifacts/backend-real/current/state.json"
-	@echo "  make notebook-agent-no-sandbox-smoke # verify AgentSmith works without sandbox deployment (current API/Web/Runner path + fail-fast internal paths)"
-	@echo "  make notebook-agent-smoke-task    # create notebook task, post prompt, poll final output"
-	@echo "  make notebook-agent-credential-sync-smoke # verify execution_context credential files are written under .codex/credential/"
-	@echo "  make notebook-agent-engineering-smoke # run notebook light verification set (basic notebook chain; optional matplotlib)"
-	@echo "  make notebook-agent-engineering-smoke-full # refresh token (if needed) + demo-check + engineering-smoke"
-	@echo ""
-	@echo "Governance and workspace deep checks:"
-	@echo "  make ensure-default-workspace # seed/update ws_default in real workspace persistence"
-	@echo "  make real-stack-ready         # wait for keycloak/api/web/juicefs-csi readiness"
-	@echo "  make governance-smoke # run governance real-backend page open + interaction smoke set"
-	@echo "  make governance-pages-real-backend-smoke # default tolerant mode for governance page-open smoke"
-	@echo "  make governance-pages-real-backend-smoke-strict # fail-fast mode: governance page-open smoke fails on product error states"
-	@echo "  make governance-pages-real-backend-smoke-tolerant # tolerant triage mode for governance page-open smoke"
-	@echo "  make governance-pages-real-backend-interaction-smoke # default tolerant mode for governance interaction smoke"
-	@echo "  make governance-pages-real-backend-interaction-smoke-strict # fail-fast mode: governance interaction smoke fails on product error states"
-	@echo "  make governance-pages-real-backend-interaction-smoke-tolerant # tolerant triage mode for governance interaction smoke"
-	@echo "  make governance-policy-effect-smoke # real-backend endpoint policy effect smoke (rate limit -> audit/usage evidence)"
-	@echo "  make governance-policy-access-effect-smoke # real-backend endpoint policy allow-list effect smoke (deny->allow + audit/usage evidence)"
-	@echo "  make governance-policy-group-access-effect-smoke # real-backend endpoint policy group allow-list effect smoke (deny->group-allow)"
-	@echo "  make governance-policy-update-audit-smoke # real-backend endpoint policy update -> audit event smoke"
-	@echo "  make governance-config-audit-effect-smoke # real-backend endpoint/credential config change -> audit event smoke"
-	@echo "  make governance-policy-spending-effect-smoke # real-backend endpoint policy spending-limit effect smoke (block -> audit/usage evidence)"
-	@echo "  make governance-policy-requests-rate-effect-smoke # real-backend endpoint policy requests/day rate effect smoke (block -> audit/usage evidence)"
-	@echo "  make governance-member-permission-effect-smoke # optional smoke (not part of default MVP engineering gate)"
-	@echo "  make governance-member-lifecycle-effect-smoke # real-backend member lifecycle smoke (active->suspended->removed->restore)"
-	@echo "  make governance-sse-ticket-effect-smoke # real-backend SSE ticket hardening smoke (opaque ticket + no query fallback)"
-	@echo "  make build-reliability-smoke # build reliability smoke (chat recovery + notebook task execution + contract suite)"
-	@echo "  make workspace-governance-smoke # workspace governance smoke (overview + member admin + cross-project actions + explainability)"
-	@echo "  make workspace-overview-smoke # workspace entry smoke (overview + project entry path)"
-	@echo ""
-	@echo "Benchmarks and tracing:"
-	@echo "  make notebook-agent-smoke-full    # refresh token + start runner + run notebook smoke task"
-	@echo "  make notebook-agent-monitor       # poll notebook task execution internal metrics (auth required)"
-	@echo "  make notebook-agent-load-test     # concurrent notebook task load test + summary + metrics snapshot"
-	@echo "  make notebook-agent-load-matrix   # run a load matrix and save CSV/JSONL summaries under /tmp"
-	@echo "  make notebook-agent-benchmark-baseline # run the standard baseline matrix profile and print summary preview"
-	@echo "  make notebook-agent-benchmark-compare  # compare two baseline dirs (BASELINE_A_DIR, BASELINE_B_DIR)"
-	@echo "  make notebook-agent-benchmark-archive  # archive a benchmark output dir under artifacts/benchmarks"
-	@echo "  make notebook-agent-traces-query-bench # benchmark /tasks/:id/traces?message_id=... query path"
-	@echo "  make notebook-agent-traces-query-sweep # compare message-scoped traces query latency across page sizes"
-	@echo "  make notebook-agent-traces-query-sweep-compare # compare two traces-query-sweep dirs by page_size"
-	@echo "  make model-request-stream-bench # benchmark unified /llm/chat/completions stream path"
-	@echo "  make model-request-stream-bench-gate # run stream benchmark with p95/error-rate thresholds"
-	@echo "  make openapi-generate   # generate frontend API types from docs/contracts/specs/openapi.yaml"
-	@echo "  make openapi-check-generated # verify generated API types are in sync"
-	@echo "  make openapi-changelog  # generate OpenAPI diff changelog vs origin/main"
-	@echo "  make contracts-check-openapi # run OpenAPI core coverage + route-kind coverage + breaking checks"
-	@echo ""
-	@echo "Composite governance helpers:"
-	@echo "  make verify-contracts # typecheck + doc governance + OpenAPI generated + OpenAPI checks"
-	@echo "  make verify-governance # run the default engineering gate bundle"
-	@echo "  make verify-governance-with-report # run default gate and archive a governance report"
-	@echo "  make governance-report # generate governance evidence report from current checks/artifacts"
-	@echo "  make mvp-freeze-check # verify contracts + governance core smoke + local manual status"
-	@echo "  make preprod-acceptance-check # run preprod acceptance script"
-	@echo "  make preprod-capture-baseline # capture the current preprod baseline"
-	@echo ""
-	@echo "Static artifact generation:"
-	@echo "  npm run docs:artifacts:generate # generate product-doc screenshot and markdown bundles"
-	@echo "  npm run marketing:assets:generate # refresh marketing screenshot assets"
-	@echo ""
-	@echo "Utility:"
-	@echo "  make urls          # print local URLs and test users"
 
 # current-workflow:quick-help:start
 quick-help:
 	@echo "MBOS Quick Human Commands"
 	@echo ""
-	@echo "  note: quick-help shows human entrypoints only; use make help-extended for diagnostics and owner-specific commands"
+	@echo "  note: quick-help shows clean human entrypoints only; internal adapters stay behind release:ready, CI, or owner runbooks"
 	@echo ""
 	@echo "  npm run dev"
 	@echo "    Start the Next.js development server."
@@ -293,6 +120,12 @@ quick-help:
 	@echo "  make local-real-status"
 	@echo "    Show substrate and local-manual adapter status."
 	@echo ""
+	@echo "  make local-real-down"
+	@echo "    Stop the real local environment through the local-manual adapter."
+	@echo ""
+	@echo "  make local-real-reset"
+	@echo "    Reset the real local environment through the local-manual adapter."
+	@echo ""
 	@echo "  npm run verify"
 	@echo "    Write a dry-run story acceptance report and print the recommended verification plan."
 	@echo ""
@@ -301,6 +134,12 @@ quick-help:
 	@echo ""
 	@echo "  npm run release:status"
 	@echo "    Read the latest release summary in read-only mode."
+	@echo ""
+	@echo "  npm run rehearse:demo"
+	@echo "    Run the demo deployment rehearsal adapter."
+	@echo ""
+	@echo "  npm run rehearse:cluster"
+	@echo "    Run the cluster deployment rehearsal adapter."
 	@echo ""
 # current-workflow:quick-help:end
 
@@ -345,7 +184,7 @@ verify-contracts:
 
 verify-governance:
 	@set -e; \
-	$(MAKE) gate-default
+	$(NPM) run gate:default
 
 mvp-freeze-check:
 	@set -e; \
@@ -448,27 +287,6 @@ real-stack-ready:
 	KEYCLOAK_BASE_URL=$(KEYCLOAK_BASE_URL) \
 	bash scripts/wait-real-stack-ready.sh
 
-gate-fast:
-	npm run gate:fast
-
-gate-default:
-	npm run gate:default
-
-gate-release:
-	npm run gate:release
-
-lane-mock:
-	npm run lane:mock
-
-lane-visual:
-	npm run lane:visual
-
-lane-real-core:
-	npm run lane:backend-real:core
-
-lane-real-release:
-	npm run lane:backend-real:release
-
 manual-feishu-admin:
 	npm run manual:feishu:admin
 
@@ -477,21 +295,6 @@ manual-feishu-user:
 
 manual-feishu-check:
 	npm run manual:feishu:check
-
-backend-real-reset:
-	npm run backend-real:reset
-
-backend-real-bootstrap:
-	npm run backend-real:bootstrap
-
-backend-real-ready:
-	npm run backend-real:ready
-
-backend-real-run:
-	npm run backend-real:run
-
-backend-real-report:
-	npm run backend-real:report
 
 check-api-port:
 	@PORT="$(PORT_API)"; \

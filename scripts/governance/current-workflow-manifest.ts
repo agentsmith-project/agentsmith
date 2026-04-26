@@ -81,15 +81,27 @@ export interface CurrentWorkflowGlossaryTerm {
   doNotConfuseWith: string;
 }
 
-export interface CurrentWorkflowDiagnosticCommand {
+type CurrentWorkflowDiagnosticCommandBase = {
   id: string;
-  command: string;
   npmScript?: string;
   gateId?: string;
   workflowRole: Extract<CurrentWorkflowRole, 'diagnostic' | 'diagnostic_lane'>;
   whenToUse: string;
   nextStep: string;
-}
+};
+
+export type CurrentWorkflowDiagnosticCommand = CurrentWorkflowDiagnosticCommandBase & (
+  | {
+      command: string;
+      internalAdapter?: never;
+      ownerSurface?: never;
+    }
+  | {
+      command?: never;
+      internalAdapter: string;
+      ownerSurface: string;
+    }
+);
 
 export const CURRENT_CI_WORKFLOW_ROLES = [
   'quality_gate',
@@ -320,6 +332,8 @@ export const CURRENT_WORKFLOW_ENTRY_PATHS: readonly CurrentWorkflowEntryPath[] =
     startCommands: [
       'npm run release:ready',
       'npm run release:status',
+      'npm run rehearse:demo',
+      'npm run rehearse:cluster',
     ],
     docs: [
       'docs/testing/verification-campaigns-v1.md',
@@ -448,7 +462,8 @@ export const CURRENT_WORKFLOW_DIAGNOSTIC_COMMANDS: readonly CurrentWorkflowDiagn
   },
   {
     id: 'mock-lane',
-    command: 'npm run lane:mock',
+    internalAdapter: 'lane:mock',
+    ownerSurface: 'mock lane owner adapter',
     npmScript: 'lane:mock',
     workflowRole: 'diagnostic_lane',
     whenToUse: '需要用当前 mock 验证通道复现 UI / interaction 问题，但还不想进入 full visual 或 backend-real。',
@@ -456,7 +471,8 @@ export const CURRENT_WORKFLOW_DIAGNOSTIC_COMMANDS: readonly CurrentWorkflowDiagn
   },
   {
     id: 'release-backend-real-owner',
-    command: 'npm run gate:release',
+    internalAdapter: 'gate:release',
+    ownerSurface: 'backend-real release evidence owner',
     npmScript: 'gate:release',
     gateId: 'gate-release',
     workflowRole: 'diagnostic',
@@ -465,7 +481,8 @@ export const CURRENT_WORKFLOW_DIAGNOSTIC_COMMANDS: readonly CurrentWorkflowDiagn
   },
   {
     id: 'release-demo-rehearsal-owner',
-    command: 'npm run lane:demo-rehearsal',
+    internalAdapter: 'lane:demo-rehearsal',
+    ownerSurface: 'demo deployment rehearsal evidence owner',
     npmScript: 'lane:demo-rehearsal',
     gateId: 'lane-demo-rehearsal',
     workflowRole: 'diagnostic_lane',
@@ -474,7 +491,8 @@ export const CURRENT_WORKFLOW_DIAGNOSTIC_COMMANDS: readonly CurrentWorkflowDiagn
   },
   {
     id: 'release-cluster-rehearsal-owner',
-    command: 'npm run lane:cluster-rehearsal',
+    internalAdapter: 'lane:cluster-rehearsal',
+    ownerSurface: 'cluster deployment rehearsal evidence owner',
     npmScript: 'lane:cluster-rehearsal',
     gateId: 'lane-cluster-rehearsal',
     workflowRole: 'diagnostic_lane',
@@ -483,7 +501,8 @@ export const CURRENT_WORKFLOW_DIAGNOSTIC_COMMANDS: readonly CurrentWorkflowDiagn
   },
   {
     id: 'release-terminal-aggregate',
-    command: 'RELEASE_CAMPAIGN_ROOT=<campaign-root> npm run gate:release:full',
+    internalAdapter: 'gate:release:full',
+    ownerSurface: 'release campaign terminal aggregate verifier',
     npmScript: 'gate:release:full',
     gateId: 'gate-release-full',
     workflowRole: 'diagnostic',
@@ -507,7 +526,7 @@ export const CURRENT_CI_WORKFLOW_MANIFEST: readonly CurrentCIWorkflowDefinition[
         role: 'contract_gate',
         gateId: 'gate-fast',
         commands: [
-          'make gate-fast',
+          'npm run gate:fast',
           'npm run contracts:check',
           'npm run contracts:check-current-workflows',
           'npm run contracts:check-current-gates',
@@ -525,7 +544,7 @@ export const CURRENT_CI_WORKFLOW_MANIFEST: readonly CurrentCIWorkflowDefinition[
         blockingFor: ['pull_request', 'push', 'release'],
         scheduled: false,
         releaseBlocking: true,
-        notes: 'Contracts workflow runs gate-fast first, so mock-lane run-scoped artifacts are part of its evidence surface.',
+        notes: 'Contracts workflow runs the gate:fast npm adapter first, so mock-lane run-scoped artifacts are part of its evidence surface.',
       },
     ],
   }),
@@ -786,12 +805,16 @@ const CURRENT_WORKFLOW_RAW_MANIFEST: readonly RawCurrentWorkflowSection[] = [
         description: 'stop the real local environment through the local-manual adapter',
         canonical: 'make',
         makeTarget: 'local-real-down',
+        recommended: true,
+        quickHuman: true,
       },
       {
         command: 'make local-real-reset',
         description: 'reset the real local environment through the local-manual adapter',
         canonical: 'make',
         makeTarget: 'local-real-reset',
+        recommended: true,
+        quickHuman: true,
       },
       {
         command: 'make local-manual-up',
@@ -1033,8 +1056,6 @@ const CURRENT_WORKFLOW_RAW_MANIFEST: readonly RawCurrentWorkflowSection[] = [
         canonical: 'npm',
         npmScript: 'gate:fast',
         gateId: 'gate-fast',
-        makeTarget: 'gate-fast',
-        recommended: true,
       },
       {
         command: 'npm run gate:default',
@@ -1042,8 +1063,6 @@ const CURRENT_WORKFLOW_RAW_MANIFEST: readonly RawCurrentWorkflowSection[] = [
         canonical: 'npm',
         npmScript: 'gate:default',
         gateId: 'gate-default',
-        makeTarget: 'gate-default',
-        recommended: true,
       },
       {
         command: 'npm run gate:release',
@@ -1051,8 +1070,6 @@ const CURRENT_WORKFLOW_RAW_MANIFEST: readonly RawCurrentWorkflowSection[] = [
         canonical: 'npm',
         npmScript: 'gate:release',
         gateId: 'gate-release',
-        makeTarget: 'gate-release',
-        recommended: true,
       },
       {
         command: 'RELEASE_CAMPAIGN_ROOT=<campaign-root> npm run gate:release:full',
@@ -1073,8 +1090,6 @@ const CURRENT_WORKFLOW_RAW_MANIFEST: readonly RawCurrentWorkflowSection[] = [
         canonical: 'npm',
         npmScript: 'lane:mock',
         gateId: 'lane-mock',
-        makeTarget: 'lane-mock',
-        recommended: true,
       },
       {
         command: 'npm run lane:visual',
@@ -1082,8 +1097,6 @@ const CURRENT_WORKFLOW_RAW_MANIFEST: readonly RawCurrentWorkflowSection[] = [
         canonical: 'npm',
         npmScript: 'lane:visual',
         gateId: 'lane-visual',
-        makeTarget: 'lane-visual',
-        recommended: true,
       },
       {
         command: 'npm run lane:backend-real:core',
@@ -1091,7 +1104,6 @@ const CURRENT_WORKFLOW_RAW_MANIFEST: readonly RawCurrentWorkflowSection[] = [
         canonical: 'npm',
         npmScript: 'lane:backend-real:core',
         gateId: 'lane-backend-real-core',
-        makeTarget: 'lane-real-core',
       },
       {
         command: 'npm run lane:backend-real:release',
@@ -1099,8 +1111,6 @@ const CURRENT_WORKFLOW_RAW_MANIFEST: readonly RawCurrentWorkflowSection[] = [
         canonical: 'npm',
         npmScript: 'lane:backend-real:release',
         gateId: 'lane-backend-real-release',
-        makeTarget: 'lane-real-release',
-        recommended: true,
       },
       {
         command: 'npm run lane:demo-rehearsal',
@@ -1108,7 +1118,6 @@ const CURRENT_WORKFLOW_RAW_MANIFEST: readonly RawCurrentWorkflowSection[] = [
         canonical: 'npm',
         npmScript: 'lane:demo-rehearsal',
         gateId: 'lane-demo-rehearsal',
-        recommended: true,
       },
       {
         command: 'npm run lane:cluster-rehearsal',
@@ -1116,7 +1125,6 @@ const CURRENT_WORKFLOW_RAW_MANIFEST: readonly RawCurrentWorkflowSection[] = [
         canonical: 'npm',
         npmScript: 'lane:cluster-rehearsal',
         gateId: 'lane-cluster-rehearsal',
-        recommended: true,
       },
     ],
   },
@@ -1151,47 +1159,46 @@ const CURRENT_WORKFLOW_RAW_MANIFEST: readonly RawCurrentWorkflowSection[] = [
         description: 'run the demo deployment rehearsal adapter',
         canonical: 'npm',
         npmScript: 'rehearse:demo',
+        recommended: true,
+        quickHuman: true,
       },
       {
         command: 'npm run rehearse:cluster',
         description: 'run the cluster deployment rehearsal adapter',
         canonical: 'npm',
         npmScript: 'rehearse:cluster',
+        recommended: true,
+        quickHuman: true,
       },
       {
         command: 'npm run backend-real:reset',
         description: 'clean release verification state',
         canonical: 'npm',
         npmScript: 'backend-real:reset',
-        makeTarget: 'backend-real-reset',
       },
       {
         command: 'npm run backend-real:bootstrap',
         description: 'bootstrap release verification dependencies and tokens',
         canonical: 'npm',
         npmScript: 'backend-real:bootstrap',
-        makeTarget: 'backend-real-bootstrap',
       },
       {
         command: 'npm run backend-real:ready',
         description: 'wait for release verification readiness',
         canonical: 'npm',
         npmScript: 'backend-real:ready',
-        makeTarget: 'backend-real-ready',
       },
       {
         command: 'npm run backend-real:run',
         description: 'run the release verification matrix',
         canonical: 'npm',
         npmScript: 'backend-real:run',
-        makeTarget: 'backend-real-run',
       },
       {
         command: 'npm run backend-real:report',
         description: 'write the release verification report',
         canonical: 'npm',
         npmScript: 'backend-real:report',
-        makeTarget: 'backend-real-report',
       },
       {
         command: 'npm run release:campaign:full',

@@ -16,6 +16,14 @@ function readPackageScripts(): Record<string, string> {
   return (JSON.parse(readFileSync('package.json', 'utf8')) as { scripts: Record<string, string> }).scripts;
 }
 
+const RELEASE_HUMAN_DOC_FORBIDDEN_COPYABLE_PATTERNS = [
+  /\bnpm run gate:[a-z0-9:_-]+/,
+  /\bnpm run lane:[a-z0-9:_-]+/,
+  /\bnpm run backend-real:[a-z0-9:_-]+/,
+  /\bnpm run release:campaign:full\b/,
+  /\bRELEASE_CAMPAIGN_ROOT=<campaign-root>\s+npm run gate:release:full\b/,
+] as const;
+
 function writeJson(path: string, payload: unknown): void {
   mkdirSync(dirname(path), { recursive: true });
   writeFileSync(path, `${JSON.stringify(payload, null, 2)}\n`);
@@ -99,6 +107,20 @@ describe('release readiness human entrypoints', () => {
     expect(scripts['gate:release:full']).toBeTruthy();
     expect(scripts['lane:demo-rehearsal']).toBeTruthy();
     expect(scripts['lane:cluster-rehearsal']).toBeTruthy();
+  });
+
+  it('keeps the release readiness checklist centered on clean human entrypoints', () => {
+    const checklist = readFileSync('docs/user-guides/release-readiness-checklist.md', 'utf8');
+
+    expect(checklist).toContain('npm run release:ready');
+    expect(checklist).toContain('npm run release:status');
+    expect(checklist).toContain('npm run rehearse:demo');
+    expect(checklist).toContain('npm run rehearse:cluster');
+    expect(checklist).toContain('internal adapter');
+
+    for (const pattern of RELEASE_HUMAN_DOC_FORBIDDEN_COPYABLE_PATTERNS) {
+      expect(checklist, `release checklist must not expose internal adapter as copyable human path: ${pattern}`).not.toMatch(pattern);
+    }
   });
 
   it('writes release summary from the campaign-scoped terminal result without rereading upstream evidence', () => {

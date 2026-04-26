@@ -31,7 +31,14 @@ function forbidMatch(content: string, pattern: RegExp, message: string, failures
   }
 }
 
-function assertReleaseCampaignEntrypointSurface(
+const RELEASE_DOC_FORBIDDEN_COPYABLE_COMMAND_PATTERNS = [
+  /\bnpm run release:campaign:full\b/,
+  /\bnpm run gate:[a-z0-9:_-]+\b/,
+  /\bnpm run lane:[a-z0-9:_-]+\b/,
+  /\bRELEASE_CAMPAIGN_ROOT=<campaign-root>\s+npm run gate:release:full\b/,
+] as const;
+
+function assertReleaseHumanEntrypointSurface(
   content: string,
   owner: string,
   failures: string[],
@@ -44,22 +51,30 @@ function assertReleaseCampaignEntrypointSurface(
   );
   requireMatch(
     content,
-    /npm run release:campaign:full/,
-    `${owner} must describe npm run release:campaign:full as the campaign launcher behind npm run release:ready`,
+    /npm run release:status/,
+    `${owner} must point read-only release inspection to npm run release:status`,
     failures,
   );
   requireMatch(
     content,
-    /RELEASE_CAMPAIGN_ROOT=<campaign-root>\s+npm run gate:release:full/,
-    `${owner} must show gate:release:full only with explicit campaign context`,
+    /release:campaign:full[\s\S]{0,240}internal adapter|internal adapter[\s\S]{0,240}release:campaign:full/i,
+    `${owner} must describe release:campaign:full only as an internal adapter identity`,
     failures,
   );
-  forbidMatch(
+  requireMatch(
     content,
-    /(?:^|\n)\s*(?:-\s*)?`npm run gate:release:full`\s*(?:\n|$)|(?:^|\n)```bash\s*\n\s*npm run gate:release:full\s*\n```/m,
-    `${owner} must not present bare npm run gate:release:full as a copyable release entrypoint`,
+    /gate:release:full[\s\S]{0,240}aggregate-only/i,
+    `${owner} must describe gate:release:full as aggregate-only`,
     failures,
   );
+  for (const pattern of RELEASE_DOC_FORBIDDEN_COPYABLE_COMMAND_PATTERNS) {
+    forbidMatch(
+      content,
+      pattern,
+      `${owner} must not expose internal release/gate/lane adapters as copyable human commands: ${pattern}`,
+      failures,
+    );
+  }
 }
 
 function countMatches(content: string, pattern: RegExp): number {
@@ -134,6 +149,7 @@ const readme = read('README.md');
 const development = read('DEVELOPMENT.md');
 const governanceModel = read('docs/current-engineering-governance-model.md');
 const gateContract = read('docs/contracts/current-gate-manifest-contract.md');
+const gateResultContract = read('docs/contracts/current-gate-result-schema-contract.md');
 const notebookCodexRunbook = read('docs/notebook-codex-runbook.md');
 const verificationCampaigns = read('docs/testing/verification-campaigns-v1.md');
 const workspaceDefaultChecklist = read('docs/user-guides/workspace-project-default-engineering-gate-checklist.md');
@@ -288,6 +304,18 @@ requireMatch(gateContract, /stable gate id/i, 'current gate manifest contract mu
 requireMatch(gateContract, /adapter surface/i, 'current gate manifest contract must describe npmScript\\/command\\/ciJob as adapter surfaces', failures);
 requireMatch(gateContract, /execution target/i, 'current gate manifest contract must describe structured execution targets', failures);
 requireMatch(gateContract, /operator hint/i, 'current gate manifest contract must describe command as an operator hint', failures);
+requireMatch(gateContract, /npm run release:ready/, 'current gate manifest contract must identify npm run release:ready as the human-facing release entrypoint', failures);
+requireMatch(gateContract, /release:campaign:full[\s\S]{0,240}internal adapter|internal adapter[\s\S]{0,240}release:campaign:full/i, 'current gate manifest contract must describe release:campaign:full as an internal adapter identity', failures);
+requireMatch(gateResultContract, /release:campaign:full[\s\S]{0,240}not a writer identity/i, 'current gate result schema contract must keep campaign launchers out of writer identity truth', failures);
+requireMatch(gateResultContract, /gate:release:full[\s\S]{0,240}aggregate-only/i, 'current gate result schema contract must describe gate:release:full as aggregate-only', failures);
+for (const [content, owner] of [
+  [gateContract, 'current gate manifest contract'],
+  [gateResultContract, 'current gate result schema contract'],
+] as const) {
+  forbidMatch(content, /\bnpm run release:campaign:full\b/, `${owner} must not expose release:campaign:full as a copyable command`, failures);
+  forbidMatch(content, /\bnpm run gate:release:full\b/, `${owner} must not expose gate:release:full as a copyable command`, failures);
+  forbidMatch(content, /\bRELEASE_CAMPAIGN_ROOT=<campaign-root>\s+npm run gate:release:full\b/, `${owner} must not expose gate:release:full explicit context as a copyable command`, failures);
+}
 requireMatch(governanceModel, /gate id/i, 'current engineering governance model must describe gate ids as the stable identity', failures);
 requireMatch(governanceModel, /execution target/i, 'current engineering governance model must describe structured execution targets', failures);
 requireMatch(governanceModel, /operator hint/i, 'current engineering governance model must describe command as an operator hint', failures);
@@ -323,16 +351,18 @@ requireMatch(governanceDefaultChecklist, /targeted visual/, 'governance checklis
 requireMatch(governanceDefaultChecklist, /npm run lane:visual/, 'governance checklist must point full visual verification to npm run lane:visual', failures);
 forbidMatch(governanceDefaultChecklist, /npm run gate:default/, 'governance checklist must document its own canonical gate command instead of gate:default', failures);
 
-requireMatch(releaseChecklist, /npm run gate:default/, 'release checklist must require npm run gate:default', failures);
-requireMatch(releaseChecklist, /npm run lane:visual/, 'release checklist must require npm run lane:visual', failures);
-requireMatch(releaseChecklist, /npm run lane:demo-rehearsal/, 'release checklist must require npm run lane:demo-rehearsal', failures);
-requireMatch(releaseChecklist, /npm run lane:cluster-rehearsal/, 'release checklist must require npm run lane:cluster-rehearsal', failures);
 requireMatch(releaseChecklist, /npm run release:ready/, 'release checklist must define npm run release:ready as the human-facing full release entrypoint', failures);
-requireMatch(releaseChecklist, /precheck[\s\S]*npm run release:campaign:full/, 'release checklist must state that release:ready delegates to release:campaign:full only after precheck passes', failures);
-requireMatch(releaseChecklist, /RELEASE_CAMPAIGN_ROOT=<campaign-root>\s+npm run gate:release:full/, 'release checklist must describe gate:release:full as an aggregate-only terminal verifier with explicit campaign context', failures);
+requireMatch(releaseChecklist, /npm run release:status/, 'release checklist must define npm run release:status as the read-only status entrypoint', failures);
+requireMatch(releaseChecklist, /npm run rehearse:demo/, 'release checklist must expose npm run rehearse:demo as the clean demo rehearsal entrypoint', failures);
+requireMatch(releaseChecklist, /npm run rehearse:cluster/, 'release checklist must expose npm run rehearse:cluster as the clean cluster rehearsal entrypoint', failures);
+requireMatch(releaseChecklist, /precheck[\s\S]*internal adapter/i, 'release checklist must state that release:ready delegates to internal adapters only after precheck passes', failures);
+requireMatch(releaseChecklist, /gate:release:full[\s\S]*aggregate-only/i, 'release checklist must describe gate:release:full as an aggregate-only internal verifier', failures);
+forbidMatch(releaseChecklist, /\bnpm run (?:gate|lane|backend-real):[a-z0-9:_-]+/, 'release checklist must not present internal gate/lane/backend-real adapters as copyable human defaults', failures);
+forbidMatch(releaseChecklist, /\bnpm run release:campaign:full\b/, 'release checklist must not present release:campaign:full as a copyable human default', failures);
+forbidMatch(releaseChecklist, /\bRELEASE_CAMPAIGN_ROOT=<campaign-root>\s+npm run gate:release:full\b/, 'release checklist must not present gate:release:full as a copyable human default', failures);
 forbidMatch(releaseChecklist, /gate:release:full as the full release command/, 'release checklist must not describe gate:release:full as the full release command', failures);
-assertReleaseCampaignEntrypointSurface(notebookCodexRunbook, 'notebook codex runbook', failures);
-assertReleaseCampaignEntrypointSurface(verificationCampaigns, 'verification campaigns guide', failures);
+assertReleaseHumanEntrypointSurface(notebookCodexRunbook, 'notebook codex runbook', failures);
+assertReleaseHumanEntrypointSurface(verificationCampaigns, 'verification campaigns guide', failures);
 requireMatch(releaseChecklist, /does not run the full visual lane|不能被 `gate:default` 代替/, 'release checklist must explain that gate:default does not run the full visual lane', failures);
 requireMatch(releaseChecklist, /visual_scene_catalog/, 'release checklist must identify visual_scene_catalog as a required release evidence kind', failures);
 requireMatch(releaseChecklist, /ux_trace_bundle/, 'release checklist must identify ux_trace_bundle as a required release evidence kind', failures);

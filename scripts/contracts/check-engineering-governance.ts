@@ -1,6 +1,7 @@
 import { readFileSync } from 'node:fs';
 import path from 'node:path';
 import {
+  CURRENT_WORKFLOW_DIAGNOSTIC_COMMANDS,
   CURRENT_WORKFLOW_TOP_LEVEL_TERMS,
   listCurrentWorkflowCommands,
   listQuickHumanCurrentWorkflowCommands,
@@ -38,6 +39,7 @@ const clusterRehearsalUp = read('scripts/scenarios/cluster-rehearsal/up.sh');
 const releaseLocalPrecheck = read('scripts/run-release-local-precheck.sh');
 const playwrightConfig = read('playwright.config.ts');
 const makefile = read('Makefile');
+const contractsCheckWorkflow = read('.github/workflows/contracts-check.yml');
 const qualityGatesWorkflow = read('.github/workflows/quality-gates.yml');
 const governanceModel = read(governanceDoc);
 const packageJson = JSON.parse(read('package.json')) as { scripts?: Record<string, string> };
@@ -72,7 +74,6 @@ function extractBlock(content: string, startMarker: string, endMarker: string, l
   return content.slice(startIndex + startMarker.length, endIndex);
 }
 
-const HIDDEN_HUMAN_WORKFLOW_NPM_SCRIPTS = new Set(['release:campaign:full']);
 const QUICK_HUMAN_FORBIDDEN_COMMAND_PATTERNS = [
   /\bnpm run verify:[a-z0-9:_-]+/,
   /\bnpm run gate:[a-z0-9:_-]+/,
@@ -83,16 +84,39 @@ const QUICK_HUMAN_FORBIDDEN_COMMAND_PATTERNS = [
   /\bnpm run release:campaign:full\b/,
   /\bnpm run gate:release:full\b/,
   /\bRELEASE_CAMPAIGN_ROOT\b/,
-  /\bnpm run rehearse:[a-z0-9:_-]+/,
   /\bmake demo-rehearsal-[a-z0-9_-]+/,
   /\bmake cluster-rehearsal-[a-z0-9_-]+/,
   /\bnpm run backend-real:[a-z0-9:_-]+/,
   /\bmake backend-real-[a-z0-9_-]+/,
 ] as const;
 
-function isHiddenHumanWorkflowCommand(command: Pick<CurrentWorkflowCommand, 'npmScript'>): boolean {
-  return Boolean(command.npmScript && HIDDEN_HUMAN_WORKFLOW_NPM_SCRIPTS.has(command.npmScript));
-}
+const HUMAN_DOC_FORBIDDEN_COPYABLE_COMMAND_PATTERNS = [
+  /\bnpm run verify:[a-z0-9:_-]+/,
+  /\bnpm run gate:[a-z0-9:_-]+/,
+  /\bmake gate-[a-z0-9_-]+/,
+  /\bnpm run lane:[a-z0-9:_-]+/,
+  /\bmake lane-[a-z0-9_-]+/,
+  /\bnpm run release:aggregate\b/,
+  /\bnpm run release:campaign:full\b/,
+  /\bRELEASE_CAMPAIGN_ROOT=<campaign-root>\s+npm run gate:release:full\b/,
+  /\bnpm run backend-real:[a-z0-9:_-]+/,
+  /\bmake backend-real-[a-z0-9_-]+/,
+] as const;
+
+const REMOVED_MAKE_COMPAT_TARGETS = [
+  'gate-fast',
+  'gate-default',
+  'gate-release',
+  'lane-mock',
+  'lane-visual',
+  'lane-real-core',
+  'lane-real-release',
+  'backend-real-reset',
+  'backend-real-bootstrap',
+  'backend-real-ready',
+  'backend-real-run',
+  'backend-real-report',
+] as const;
 
 function renderMakeQuickDisplay(command: CurrentWorkflowCommand): string {
   return command.makeTarget ? `make ${command.makeTarget}` : command.command;
@@ -222,6 +246,8 @@ for (const command of listQuickHumanCurrentWorkflowCommands()) {
   const escapedQuickHelpDisplay = escapeRegExp(renderMakeQuickDisplay(command));
   requireMatch(readmeWorkflowBlock, new RegExp(escapedCommand), `README current workflow block is missing quick human command: ${command.command}`);
   requireMatch(developmentWorkflowBlock, new RegExp(escapedCommand), `DEVELOPMENT current workflow block is missing quick human command: ${command.command}`);
+  requireMatch(governanceWorkflowBlock, new RegExp(escapedCommand), `current engineering governance model workflow block is missing human command: ${command.command}`);
+  requireMatch(makeHelpExtendedWorkflowBlock, new RegExp(escapedQuickHelpDisplay), `Makefile help-extended block is missing human command: ${renderMakeQuickDisplay(command)}`);
   requireMatch(makeQuickHelpWorkflowBlock, new RegExp(escapedQuickHelpDisplay), `Makefile quick-help block is missing quick human command: ${renderMakeQuickDisplay(command)}`);
 }
 
@@ -241,14 +267,19 @@ for (const [label, block] of [
   );
 }
 
-for (const command of listCurrentWorkflowCommands()) {
-  const escapedCommand = escapeRegExp(command.command);
-  if (!isHiddenHumanWorkflowCommand(command)) {
-    requireMatch(governanceWorkflowBlock, new RegExp(escapedCommand), `current engineering governance model workflow block is missing command: ${command.command}`);
+for (const [label, block] of humanCopyableWorkflowBlocks) {
+  for (const pattern of HUMAN_DOC_FORBIDDEN_COPYABLE_COMMAND_PATTERNS) {
+    forbidMatch(block, pattern, `${label} must not expose internal adapter as a copyable human entrypoint: ${pattern}`);
   }
+}
 
+for (const command of listCurrentWorkflowCommands()) {
   if (command.npmScript && !packageJson.scripts?.[command.npmScript]) {
     failures.push(`package.json is missing current workflow script: ${command.npmScript}`);
+  }
+
+  if (/^(?:gate:|lane:|backend-real:|release:campaign:full|release:aggregate|verify:)/.test(command.npmScript ?? '') && command.makeTarget) {
+    failures.push(`internal workflow adapter must not keep a Make compatibility target: ${command.command}`);
   }
 
   if (command.makeTarget) {
@@ -256,10 +287,21 @@ for (const command of listCurrentWorkflowCommands()) {
   }
 }
 
-for (const command of listCurrentWorkflowCommands().filter(isHiddenHumanWorkflowCommand)) {
-  const escapedCommand = escapeRegExp(command.command);
-  for (const [label, block] of humanCopyableWorkflowBlocks) {
-    forbidMatch(block, new RegExp(escapedCommand), `${label} must not expose hidden/internal workflow command: ${command.command}`);
+const makefilePhonyBlock = makefile.match(/^\.PHONY:[\s\S]*?\n\n/)?.[0] ?? '';
+for (const target of REMOVED_MAKE_COMPAT_TARGETS) {
+  forbidMatch(makefile, new RegExp(`^${target}:`, 'm'), `Makefile must not define removed compatibility target: ${target}`);
+  forbidMatch(makefilePhonyBlock, new RegExp(`\\b${target}\\b`), `.PHONY must not expose removed compatibility target: ${target}`);
+}
+
+for (const diagnostic of CURRENT_WORKFLOW_DIAGNOSTIC_COMMANDS) {
+  if (diagnostic.command) {
+    forbidMatch(
+      diagnostic.command,
+      /\b(?:npm run (?:gate|lane|backend-real):[a-z0-9:_-]+|RELEASE_CAMPAIGN_ROOT=<campaign-root>\s+npm run gate:release:full)\b/,
+      `diagnostic command truth must not expose internal adapter as copyable command: ${diagnostic.id}`,
+    );
+  } else if (!diagnostic.internalAdapter || !diagnostic.ownerSurface) {
+    failures.push(`diagnostic owner reference must declare internalAdapter and ownerSurface: ${diagnostic.id}`);
   }
 }
 
@@ -295,7 +337,9 @@ requireMatch(governanceModel, /artifacts\/backend-real-visual\/<run-id>\/ux-trac
 requireMatch(testingIndex, /diagnostic-catalog-v1/, 'testing README must index the diagnostic catalog');
 requireMatch(testingIndex, /entry path/i, 'testing README must explain where the entry path selector lives');
 requireMatch(diagnosticCatalog, /diagnostic commands are not final verdicts/i, 'diagnostic catalog must separate diagnostics from verdicts');
-requireMatch(diagnosticCatalog, /npm run lane:mock/, 'diagnostic catalog must include lane:mock');
+requireMatch(diagnosticCatalog, /lane:mock/, 'diagnostic catalog must include lane:mock as an internal adapter reference');
+forbidMatch(diagnosticCatalog, /\bnpm run (?:gate|lane|backend-real):[a-z0-9:_-]+/, 'diagnostic catalog must not present internal gate/lane/backend-real adapters as copyable human defaults');
+forbidMatch(diagnosticCatalog, /\bRELEASE_CAMPAIGN_ROOT=<campaign-root>\s+npm run gate:release:full\b/, 'diagnostic catalog must not present gate:release:full as a copyable human default');
 requireMatch(diagnosticCatalog, /npm run test:integration/, 'diagnostic catalog must include integration diagnostics');
 requireMatch(diagnosticCatalog, /npm run test:release:precheck/, 'diagnostic catalog must include release precheck diagnostics');
 requireMatch(storyTruthGuide, /edit the story markdown first/i, 'story truth guide must explain the story-first edit loop');
@@ -308,8 +352,21 @@ requireMatch(releaseChecklist, /preflight/i, 'release checklist must label prefl
 requireMatch(releaseChecklist, /evidence owner/i, 'release checklist must label evidence-owner steps');
 requireMatch(releaseChecklist, /terminal verdict/i, 'release checklist must label the terminal verdict step');
 requireMatch(releaseChecklist, /CI green/i, 'release checklist must explain what CI green means');
+requireMatch(releaseChecklist, /npm run release:ready/, 'release checklist must define release:ready as the human-facing full release entrypoint');
+requireMatch(releaseChecklist, /npm run release:status/, 'release checklist must define release:status as the read-only release status entrypoint');
+requireMatch(releaseChecklist, /npm run rehearse:demo/, 'release checklist must expose rehearse:demo as the clean rehearsal entrypoint');
+requireMatch(releaseChecklist, /npm run rehearse:cluster/, 'release checklist must expose rehearse:cluster as the clean rehearsal entrypoint');
+requireMatch(releaseChecklist, /internal adapter/i, 'release checklist must label old gate/lane/backend-real commands as internal adapters');
+forbidMatch(releaseChecklist, /\bnpm run (?:gate|lane|backend-real):[a-z0-9:_-]+/, 'release checklist must not present internal gate/lane/backend-real adapters as copyable human defaults');
+forbidMatch(releaseChecklist, /\bnpm run release:campaign:full\b/, 'release checklist must not present release:campaign:full as a copyable human default');
+forbidMatch(releaseChecklist, /\bRELEASE_CAMPAIGN_ROOT=<campaign-root>\s+npm run gate:release:full\b/, 'release checklist must not present gate:release:full as a copyable human default');
 requireMatch(qualityGatesWorkflow, /lane-visual:\n(?:[ \t].*\n)*[ \t]+needs:\s*gate-fast/, 'quality-gates CI must run lane-visual after gate-fast');
 forbidMatch(qualityGatesWorkflow, /lane-visual:\n(?:[ \t].*\n)*[ \t]+needs:\s*gate-default/, 'quality-gates CI must not require gate-default before lane-visual');
+forbidMatch(
+  `${contractsCheckWorkflow}\n${qualityGatesWorkflow}`,
+  /\bmake (?:gate-(?:fast|default|release)|lane-(?:mock|visual|real-core|real-release)|backend-real-(?:reset|bootstrap|ready|run|report))\b/,
+  'CI workflows must call npm internal adapters directly instead of removed Make compatibility targets',
+);
 
 const requiredMockLaneScripts = [
   'test:e2e:lane:mock:smoke',

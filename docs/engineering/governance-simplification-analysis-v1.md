@@ -31,7 +31,7 @@
 2. 将普通使用者的入口收敛到少数动作：开发、真实本地、验证、发布。
 3. 把复杂的 gate / lane / campaign / evidence / result schema 收入治理工具内部。
 4. 用 user story、风险等级、验证级别和下一步建议替代“记命令和读日志”。
-5. 允许渐进实施，先包装和报告，后重构执行平台，避免一次性大爆炸。
+5. 一次性收敛人类入口和文档叙事；底层 evidence producer / adapter 可以作为内部实现保留，但不能继续作为普通开发、测试、发布人员的入口或心智模型。
 
 ## 1.1 非目标
 
@@ -42,7 +42,7 @@
 3. 不减少 release readiness 的证据要求。
 4. 不用 QA/产品可读报告替代 machine-readable evidence。
 5. 不让 diagnostic command 替代 owning gate / evidence producer / release verdict。
-6. 不要求一次性删除旧命令或重写所有 shell scripts。
+6. 不要求一次性重写所有底层 evidence producer 或 shell scripts；但旧 gate/lane/backend-real/release:campaign 入口不再作为普通路径、fallback 路径或文档主叙事。
 7. 不改变 runner 安全边界：ticket/token/managed credential 不落盘，runner 工作目录和 Context Store 约束继续以现有 contracts 为准。
 
 ## 2. 当前问题
@@ -102,42 +102,31 @@
 4. `command passed` 和 evidence completeness 同级；缺证据就是失败。
 5. 缓存和复用只能复用可验证 evidence claim，不能复用“看起来存在的文件”。
 6. release-grade verdict 只消费 producer-owned evidence，不从当前 checkout 重造证据真相。
-7. 旧命令先保留为 adapter，逐步降级到 expert diagnostics，避免破坏现有工作流。
+7. 旧 gate/lane/backend-real/release:campaign 命令若保留，只能作为内部 adapter、evidence producer 或 maintainer diagnostic；不能作为普通入口、备用入口或发布执行叙事。
 8. deploy 与 rehearsal 分层：demo/cluster rehearsal 是本机排演；demo/cluster deploy 是目标主机发布线，不能互相替代。
 9. manual operator steps 可以影响 release sign-off，但不能伪装成 automated gate identity。
 
 ## 4. 目标人类模型
 
-### 4.1 四个主入口
+### 4.1 Clean 人类入口
 
-普通开发、测试、发布执行者只需要优先理解四类入口。
+普通开发、测试、发布执行者只需要优先理解以下 clean human entrypoints；普通 docs、help、quick path 和发布执行叙事都必须以这组入口为准。
 
-| 场景 | 推荐入口 | 人类理解 | 背后能力 |
+| 场景 | Clean human entrypoint | 人类理解 | 背后能力 |
 | --- | --- | --- | --- |
 | 前端 / mock 开发 | `npm run dev` | 我要开发和快速看页面 | Next dev + MSW |
-| 本地真实环境 | `make local-real-up` | 我要真实后端、runner 和手测环境 | substrate + local-manual adapter |
+| 本地真实环境 | `make local-real-up` / `make local-real-status` / `make local-real-down` / `make local-real-reset` | 我要管理真实后端、runner 和手测环境 | substrate + local-manual adapter |
 | 日常验证 | `npm run verify` | 请根据本次改动告诉我该跑什么 | impact selector + checks + evidence validation |
-| 发布验收 | `npm run release:ready` | 我要发布前完整结论 | precheck + release campaign wrapper + summary |
+| 发布验收与查看 | `npm run release:ready` / `npm run release:status` | 我要发布前完整结论，或查看最新发布验收状态 | precheck + release campaign wrapper + summary/latest status |
+| 本地排演 | `npm run rehearse:demo` / `npm run rehearse:cluster` | 我要做 demo 或 cluster 本机排演 | rehearsal adapters |
 
-保留高级入口，但默认文档不把它们作为人类主路径：
+`verify:*`、旧 `gate:*`、`lane:*`、`backend-real:*`、`release:campaign:*` 和相关 `test:*` 命令不属于 clean human entrypoints。若底层脚本仍被新入口调用，必须被描述为内部 implementation dependency、evidence producer / adapter、owner diagnostic adapter 或 maintainer-only traceability，而不是可选替代路径或发布执行叙事。
 
-- `npm run verify:quick`
-- `npm run verify:default`
-- `npm run verify:visual`
-- `npm run verify:real`
-- `npm run verify:release-real`
-- `npm run release:status`
-- `npm run release:aggregate -- --campaign-root=<path>`
-- `npm run rehearse:demo`
-- `npm run rehearse:cluster`
-
-旧 `gate:*`、`lane:*`、`backend-real:*`、`test:*` 命令在迁移期继续存在，但应逐步被描述为 advanced diagnostics 或 adapter，而不是新人默认入口。
-
-`local-real` 只表示面向人的入口别名，不是新的 runtime-line id、evidence root、manifest identity 或产品术语。落地实现仍必须映射到现有 `local-manual` runtime-line truth。
+`local-real` 只表示面向人的入口名，不是新的 runtime-line id、evidence root、manifest identity 或产品术语。落地实现仍必须映射到现有 `local-manual` runtime-line truth。
 
 ### 4.2 `npm run verify` 的行为
 
-`npm run verify` 不应是固定大 suite，而应是向导和执行器。为避免把“计划生成成功”误读成“验收通过”，默认行为必须是 dry-run 推荐；只有显式 `--run` 或调用具体 `verify:*` alias 时才执行检查。
+`npm run verify` 不应是固定大 suite，而应是向导和执行器。为避免把“计划生成成功”误读成“验收通过”，默认行为必须是 dry-run 推荐；只有显式 `--run` 才通过 clean human entrypoint 执行检查。具体 `verify:*` scripts 若保留，只能作为内部 implementation dependency 或 owner diagnostic adapter。
 
 推荐模式：
 
@@ -169,9 +158,7 @@ Affected stories: chat-stop-terminate-idempotent-state-resync, notebook-cancel-t
 Required levels: V0, V1, V3
 
 Run now:
-1. npm run verify:quick
-2. npm run verify:default
-3. npm run verify:real
+1. npm run verify -- --goal=pr --run
 
 Final verdict: default acceptance + backend-real evidence
 Note: this is not release readiness. Run npm run release:ready before release.
@@ -193,8 +180,8 @@ QA、产品、发布执行者不需要以 unit / integration / e2e / visual / ba
 
 V3 需要区分 scope：
 
-1. `default real`：日常真实后端验证，对应 `verify:real` / core backend-real。
-2. `release real`：发布级真实后端验证，只能作为 release campaign 的 producer-owned evidence，或作为 campaign 失败后的 owning diagnostic 通过 `verify:release-real` 定位问题。
+1. `default real`：日常真实后端验证，实现层对应 internal `verify:real` adapter / core backend-real。
+2. `release real`：发布级真实后端验证，只能作为 release campaign 的 producer-owned evidence，或作为 campaign 失败后的 owning diagnostic 通过 internal `verify:release-real` adapter 定位问题。
 
 `verify:real` 通过不等于 release readiness，`verify:release-real` 通过也不能替代 campaign-scoped release verdict。
 
@@ -234,7 +221,7 @@ Story 的 `passed` 也必须表示该 story 的 required levels 全部满足，�
 | Evidence Claim | 某次执行产出的可验证证明 | 可复用证据 |
 | Verdict Policy | 聚合 evidence 后给出正式裁决 | 验收结论 |
 | Run Plan | 一次工程治理执行的 DAG | 执行计划详情 |
-| Adapter | npm / make / shell / CI job 入口 | 高级命令 |
+| Adapter | npm / make / shell / CI job 内部调用桥接 | maintainer trace / owner diagnostic |
 
 关键边界：
 
@@ -242,7 +229,7 @@ Story 的 `passed` 也必须表示该 story 的 required levels 全部满足，�
 2. `Evidence Claim` 记录“这次执行证明了什么”。
 3. `Verdict Policy` 只消费 evidence claims，不直接替代 producer。
 4. `Run Plan` 只负责编排，不拥有 evidence truth。
-5. `Adapter` 只是兼容入口，不是治理身份。
+5. `Adapter` 只是内部调用桥接，不是治理身份，也不是对外承诺的入口。
 
 这些对象只属于工程实现解释，不应写成产品对象或用户可见功能范围。
 
@@ -261,7 +248,7 @@ Story 的 `passed` 也必须表示该 story 的 required levels 全部满足，�
 | `producer` | 本地/CI、runner、Node 版本、command adapter |
 | `gate_id` | 对应 current gate manifest 的 stable gate id；没有 gate id 的 claim 不能用于 gate verdict |
 | `line_kind` | mock、visual、backend-real、rehearsal、release 等 runtime / verification line |
-| `gate_adapter.npm_script` | 当前 npm adapter，保留命令可追溯性 |
+| `gate_adapter.npm_script` | 当前 npm adapter，仅保留内部执行链可追溯性 |
 | `ci_job` / `step_id` | CI job、campaign step 或本地 run step 标识 |
 | `campaign_root` / `run_id` | 所属 campaign 或 run；release-grade claim 必须绑定 campaign root |
 | `evidence_dir` | producer-owned evidence 目录 |
@@ -325,7 +312,7 @@ Evidence claim 是 index/cache，不是新的 verdict source。它只能指向 p
 | shared substrate lifecycle | substrate up/down/reset/reseed 会影响所有 local runtime flows |
 | destructive lifecycle commands | reset、reseed、down、cleanup 必须独占 |
 | fixed local ports | API/Web/Keycloak/Postgres/Mongo/Redis/MinIO/proxy 端口冲突 |
-| mutable current aliases | `artifacts/backend-real/current`、`mock-lane/current` 等会被覆盖 |
+| mutable current pointers | `artifacts/backend-real/current`、`mock-lane/current` 等会被覆盖 |
 | release latest pointer | `release:status` 读取的 latest 指针必须避免并发覆盖 |
 | campaign root writes | release campaign evidence root 必须单写者 |
 | scenario world | demo/cluster rehearsal 的 kind cluster、registry、runtime root |
@@ -454,46 +441,57 @@ Logs: artifacts/release-runs/<precheck-run-id>/
 
 人工 review 触发条件应按 failure class 分组展示：环境类可以修环境后重跑，evidence/contract 类必须回到 owning producer 或治理维护者，product regression 必须修业务问题并重跑 required levels。
 
-## 11. 推荐命令映射
+## 11. Clean 人类入口与内部实现映射
 
-| 新入口 | 当前映射 | 说明 |
+下表左侧只列 clean human entrypoints。右侧是内部实现依赖或 producer adapter，不是普通人员需要记忆的替代命令。落地后的 quick path、help、CI workflow 叙事必须以左侧入口为准。
+
+| Clean human entrypoint | 内部实现依赖 | 说明 |
 | --- | --- | --- |
-| `npm run verify:quick` | `npm run gate:fast` | 快速基础可信 |
-| `npm run verify:default` | `npm run gate:default` | 默认工程验收 |
-| `npm run verify:visual` | `npm run lane:visual` | full visual |
-| `npm run verify:real` | `npm run lane:backend-real:core` | 默认 backend-real |
-| `npm run verify:release-real` | `npm run gate:release` | release campaign 失败后的 backend-real owner 诊断 |
-| `npm run release:ready` | `npm run test:release:precheck && npm run release:campaign:full` | 发布准备检查；precheck 是非 verdict guard，release verdict 只来自 campaign |
-| `npm run release:status` | 读取 latest campaign summary | 查看最新 release 结论 |
-| `npm run release:aggregate` | `RELEASE_CAMPAIGN_ROOT=<root> npm run gate:release:full` | expert-only aggregate |
-| `npm run rehearse:demo` | `npm run lane:demo-rehearsal` | demo 本地排演 |
-| `npm run rehearse:cluster` | `npm run lane:cluster-rehearsal` | cluster 本地排演 |
+| `npm run dev` | Next dev + MSW | 前端 / mock 开发 |
 | `make local-real-up` | `make substrate-up && make substrate-reseed && make local-manual-up` | 本地真实环境 adapter；不新增 runtime-line id |
 | `make local-real-status` | `make substrate-status && make local-manual-status` | 查看真实环境 |
 | `make local-real-down` | `make local-manual-down` | 停止真实环境 |
 | `make local-real-reset` | `make local-manual-reset` | 重置真实环境 |
+| `npm run verify` | impact selector + internal verification adapters + evidence validation | 日常验证唯一 clean human entrypoint |
+| `npm run release:ready` | `npm run test:release:precheck && npm run release:campaign:full` | 发布准备检查；precheck 是非 verdict guard，release verdict 只来自 campaign |
+| `npm run release:status` | 读取 latest campaign summary | 查看最新 release 结论 |
+| `npm run rehearse:demo` | `npm run lane:demo-rehearsal` | demo 本地排演 |
+| `npm run rehearse:cluster` | `npm run lane:cluster-rehearsal` | cluster 本地排演 |
 
-落地时必须同步 `package.json`、Makefile、`scripts/governance/current-workflow-manifest.ts`、CI workflow 描述和相关 docs，避免命令可用但 manifest 不认识，或 manifest 有入口但 docs 不可发现。
+下表左侧不是人类入口，只是 internal implementation dependency、owner diagnostic adapter 或 maintainer-only traceability。它们不能出现在普通 quick path、help 输出或发布执行叙事中。
+
+| Internal implementation dependency / maintainer diagnostic adapter | Owning producer / lower-level adapter | 允许语境 |
+| --- | --- | --- |
+| `npm run verify:quick` | `npm run gate:fast` | `npm run verify` 执行计划的内部实现映射，或 maintainer V0 诊断 |
+| `npm run verify:default` | `npm run gate:default` | `npm run verify` 执行计划的内部实现映射，或 maintainer default gate 诊断 |
+| `npm run verify:visual` | `npm run lane:visual` | `npm run verify` 执行计划的内部实现映射，或 maintainer full visual 诊断 |
+| `npm run verify:real` | `npm run lane:backend-real:core` | `npm run verify` 执行计划的内部实现映射，或 backend-real owner 诊断 |
+| `npm run verify:release-real` | `npm run gate:release` | release campaign 失败后的 backend-real owner 诊断；不能替代 campaign-scoped verdict |
+| `npm run release:aggregate` | `RELEASE_CAMPAIGN_ROOT=<root> npm run gate:release:full` | maintainer-only terminal aggregate traceability；不能作为 release execution entrypoint |
+
+落地时必须同步 `package.json`、Makefile、`scripts/governance/current-workflow-manifest.ts`、CI workflow 描述和相关 docs，避免入口、manifest、docs 和 CI 叙事不一致。
 
 ## 12. 实施路线
 
-### P0：低风险包装与报告
+旧命令收敛不是 P3 才做的清理项，而是 P0 起必须满足的实施约束：普通开发、测试、发布路径只暴露新入口；旧 gate/lane/backend-real/release:campaign 命令若仍被调用，只能作为内部 evidence producer / adapter 或 maintainer diagnostic 被追溯。
 
-目标：不改变现有 gate identity 和 shell 脚本，只增加人类友好入口和报告。
+### P0：入口收敛与报告
+
+目标：在人类入口层完成 clean refactor。现有 gate identity 和 shell 脚本可以先作为内部实现复用，但普通路径、文档 quick path、help 输出和发布叙事必须一次性收敛到新入口。
 
 交付：
 
-1. 新增 `verify:*` aliases。
-2. 新增 `release:ready`、`release:status`、`rehearse:*` aliases。
+1. 确立 `npm run verify` 为 canonical human verification entrypoint；`verify:*` scripts 仅作为内部 implementation dependency 或 owner diagnostic adapter。
+2. 确立 `release:ready`、`release:status`、`rehearse:*` 为 canonical release/rehearsal entrypoints。
 3. 新增 `make local-real-*` 包装入口。
 4. release campaign 结束后生成 `summary.md` 和 `summary.json`。
 5. 失败输出最后一屏固定显示 verdict、blocked step、why、next action、summary path。
-6. 文档 quick path 只写四类入口，旧命令移到 advanced reference。
+6. 文档 quick path、help 和普通操作说明只写四类入口；旧命令族只允许出现在 maintainer 内部实现追溯中。
 
 验收：
 
-1. 旧命令继续可用。
-2. precheck 通过后，`npm run release:ready` 能给出与 `release:campaign:full` 等价的 automated verdict。
+1. 普通开发、测试、发布文档和 help 不再列出旧 gate/lane/backend-real/release:campaign 命令作为可执行路径。
+2. precheck 通过后，`npm run release:ready` 能基于 campaign-scoped evidence 和 terminal aggregate 给出 automated release-grade verdict。
 3. precheck 失败时，`npm run release:ready` 明确输出没有进入 release campaign、没有 release verdict。
 4. `release:status` 能读取 latest campaign 并给出下一步。
 5. `npm run contracts:check-doc-governance` 通过。
@@ -549,21 +547,21 @@ Logs: artifacts/release-runs/<precheck-run-id>/
 4. release verdict 仍然只来自 producer-owned evidence。
 5. resource lock、cache hit、claim reuse 都能在 run summary 中审计。
 
-### P3：收敛旧命令与文档
+### P3：CI 与治理 runner 收口
 
-目标：降低长期维护成本。
+目标：在 P0 已完成人类入口收敛的基础上，降低长期维护成本。
 
 交付：
 
-1. 旧 `lane:*`、`backend-real:*`、高风险 `gate:release:full` 在 quick help 中隐藏。
-2. 旧命令执行时打印新入口提示。
-3. 文档从“命令目录”改为“入口 + 报告 + advanced diagnostics”。
-4. CI workflow 从手写步骤逐步改为统一 `governance run`。
+1. CI workflow 从手写步骤收敛为统一 `governance run` 或 canonical human entrypoint。
+2. maintainer 文档能从新入口追溯到底层 evidence producer、adapter、manifest id 和 artifact root。
+3. package scripts、workflow manifest 和 docs 不再形成多套并列 release 执行叙事。
+4. 当没有内部调用者依赖时，旧命令实现可以删除、重命名或内联到治理 runner。
 
 验收：
 
 1. 新人只读 quick path 就能完成开发验证和发布验收。
-2. Maintainer 仍能通过 advanced reference 定位底层 evidence producer。
+2. Maintainer 仍能定位底层 evidence producer，但不需要把旧命令当成普通入口。
 3. docs、manifest、package scripts 不再出现多套互相竞争的 release 执行叙事。
 
 ## 13. 不做事项
@@ -576,7 +574,7 @@ Logs: artifacts/release-runs/<precheck-run-id>/
 4. 不让 visual snapshot update 绕过人工审查。
 5. 不在同一台本机强行并行共享 runtime world。
 6. 不把 release / deploy / rehearsal 的实现细节提升为产品功能范围。
-7. 不一次性删除旧命令，避免破坏现有 CI 和 operator muscle memory。
+7. 不把旧 gate/lane/backend-real/release:campaign 入口作为普通路径、备用路径或 operator muscle memory 继续维护。
 8. 不把 full visual 塞进 default gate，也不让 default gate 隐式承担 release 责任。
 9. 不让 generated cache、summary report 或 README 命令块替代 story truth、manifest truth 或 evidence truth。
 
@@ -584,7 +582,7 @@ Logs: artifacts/release-runs/<precheck-run-id>/
 
 | 风险 | 影响 | 缓解 |
 | --- | --- | --- |
-| 新入口与旧命令语义不一致 | 用户误判验收结果 | 首阶段只做 alias，不改底层 verdict |
+| 新入口与内部 producer 语义不一致 | 用户误判验收结果 | 用 manifest、evidence contract 和 mapping tests 锁定语义；不提供旧命令 fallback 叙事 |
 | 缓存误用 | 放过真实回归 | evidence claim 必须包含 input digest、artifact digest、validator |
 | report 过度摘要 | 审计信息不足 | 首页摘要 + 附录保留 evidence paths 和 raw logs |
 | story risk 推断错误 | 跑少或跑多 | 首版只推荐，不自动降级 required levels |
@@ -593,11 +591,11 @@ Logs: artifacts/release-runs/<precheck-run-id>/
 
 ## 15. 开发交付切片
 
-建议按以下切片交付，避免一次性重构过大：
+建议按以下切片交付：入口层先 clean refactor，后续切片再逐步建设内部执行平台，避免把平台重写和人类入口收敛绑成一个不可交付的大包。
 
 1. `release summary writer`
 2. `release:ready` 和 `release:status`
-3. `verify:*` aliases
+3. `npm run verify` selector and internal `verify:*` adapter mapping
 4. `make local-real-*`
 5. verification catalog read-only generator
 6. impact selector dry run
@@ -610,9 +608,9 @@ Logs: artifacts/release-runs/<precheck-run-id>/
 13. governance runner shell adapter
 14. DAG scheduler and resume
 15. CI integration
-16. old command de-emphasis and docs rewrite
+16. human entrypoint cleanup and docs rewrite
 
-每个切片都必须先有 tests，再改实现，并保留旧入口回归测试。
+每个切片都必须先有 tests，再改实现，并保留 evidence producer、manifest mapping 和 verdict contract 的回归测试；不新增旧入口可执行性的回归要求。
 
 ## 16. 首版成功标准
 
@@ -622,7 +620,7 @@ Logs: artifacts/release-runs/<precheck-run-id>/
 2. 发布执行者只需要 `npm run release:ready` 和 `npm run release:status`。
 3. QA/产品能读 `Story Acceptance Report`，不需要理解 lane/gate。
 4. release 失败时最后一屏有唯一 next action。
-5. 所有旧 gate/lane/release commands 继续可用。
+5. 普通 docs、help 和发布执行说明不再要求理解或调用旧 gate/lane/backend-real/release:campaign commands。
 6. docs governance、contracts check、现有 gate result schema 不被破坏。
 
 ## 17. 后续需要确认的决策
@@ -636,20 +634,20 @@ Logs: artifacts/release-runs/<precheck-run-id>/
 
 推荐默认：
 
-1. P0 只做 aliases 和 reports。
+1. P0 完成人类入口收敛和报告，不重写所有底层 producer。
 2. P1 才引入 story risk sidecar。
 3. P2 才考虑 evidence claim promotion。
 4. `verify` 默认 dry-run，显式 `--run` 才执行推荐计划。
-5. `local-real` 永远只作为 `local-manual` 的人类友好 alias。
+5. `local-real` 永远只作为 `local-manual` 的人类友好入口名，不新增 runtime-line identity。
 
 ## 18. 开发前检查清单
 
 正式进入实现前，负责开发的 team 应再次确认：
 
 1. 是否只改工程治理和测试发布体验，没有扩张产品范围。
-2. 是否保留旧入口兼容。
+2. 是否已把普通开发、测试、发布路径收敛到新入口，没有保留旧命令 fallback 叙事。
 3. 是否已定义新入口与现有 stable gate id / workflow role / evidence owner 的映射。
 4. 是否每个新报告字段都能追溯到 canonical evidence 或 manifest。
 5. 是否对 secret、ticket、managed credential 做了不落盘和脱敏约束。
-6. 是否有 TDD 切片：文档检查、manifest 检查、CLI 输出、summary writer、failure guidance、旧命令兼容。
+6. 是否有 TDD 切片：文档检查、manifest 检查、CLI 输出、summary writer、failure guidance、producer mapping 与 verdict contract。
 7. 是否明确失败时最终回到哪个 owning gate、evidence producer 或 release verdict。

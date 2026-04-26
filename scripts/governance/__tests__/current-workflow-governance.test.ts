@@ -50,13 +50,17 @@ function extractGeneratedBlock(relativePath: string, startMarker: string, endMar
   return content.slice(startIndex + startMarker.length, endIndex);
 }
 
-const QUICK_HUMAN_ENTRYPOINT_COMMANDS = [
+const HUMAN_ENTRYPOINT_COMMANDS = [
   'npm run dev',
   'make local-real-up',
   'make local-real-status',
+  'make local-real-down',
+  'make local-real-reset',
   'npm run verify',
   'npm run release:ready',
   'npm run release:status',
+  'npm run rehearse:demo',
+  'npm run rehearse:cluster',
 ] as const;
 
 const QUICK_HUMAN_FORBIDDEN_COMMAND_PATTERNS = [
@@ -69,11 +73,45 @@ const QUICK_HUMAN_FORBIDDEN_COMMAND_PATTERNS = [
   /\bnpm run release:campaign:full\b/,
   /\bnpm run gate:release:full\b/,
   /\bRELEASE_CAMPAIGN_ROOT\b/,
-  /\bnpm run rehearse:[a-z0-9:_-]+/,
   /\bmake demo-rehearsal-[a-z0-9_-]+/,
   /\bmake cluster-rehearsal-[a-z0-9_-]+/,
   /\bnpm run backend-real:[a-z0-9:_-]+/,
   /\bmake backend-real-[a-z0-9_-]+/,
+] as const;
+
+const HUMAN_DOC_FORBIDDEN_COPYABLE_COMMAND_PATTERNS = [
+  /\bnpm run verify:[a-z0-9:_-]+/,
+  /\bnpm run gate:[a-z0-9:_-]+/,
+  /\bmake gate-[a-z0-9_-]+/,
+  /\bnpm run lane:[a-z0-9:_-]+/,
+  /\bmake lane-[a-z0-9_-]+/,
+  /\bnpm run release:aggregate\b/,
+  /\bnpm run release:campaign:full\b/,
+  /\bRELEASE_CAMPAIGN_ROOT=<campaign-root>\s+npm run gate:release:full\b/,
+  /\bnpm run backend-real:[a-z0-9:_-]+/,
+  /\bmake backend-real-[a-z0-9_-]+/,
+] as const;
+
+const RELEASE_DOC_FORBIDDEN_COPYABLE_COMMAND_PATTERNS = [
+  /\bnpm run release:campaign:full\b/,
+  /\bnpm run gate:[a-z0-9:_-]+\b/,
+  /\bnpm run lane:[a-z0-9:_-]+\b/,
+  /\bRELEASE_CAMPAIGN_ROOT=<campaign-root>\s+npm run gate:release:full\b/,
+] as const;
+
+const REMOVED_MAKE_COMPAT_TARGETS = [
+  'gate-fast',
+  'gate-default',
+  'gate-release',
+  'lane-mock',
+  'lane-visual',
+  'lane-real-core',
+  'lane-real-release',
+  'backend-real-reset',
+  'backend-real-bootstrap',
+  'backend-real-ready',
+  'backend-real-run',
+  'backend-real-report',
 ] as const;
 
 function extractMarkdownBashCommands(block: string): string[] {
@@ -205,20 +243,9 @@ describe('current workflow governance', () => {
     const quickHumanCommandNames = quickHumanSections.flatMap((section) => section.commands.map((command) => command.command));
     expect(commands.length).toBeGreaterThan(0);
     expect(quickHumanSections.map((section) => section.id)).toEqual(['environment', 'test', 'release']);
-    expect(quickHumanCommandNames).toEqual([...QUICK_HUMAN_ENTRYPOINT_COMMANDS]);
-    expect(recommendedSections.map((section) => section.title)).toEqual(CURRENT_WORKFLOW_TOP_LEVEL_TERMS);
-    expect(recommendedCommandNames).toEqual(expect.arrayContaining([...QUICK_HUMAN_ENTRYPOINT_COMMANDS]));
-    expect(recommendedCommandNames).toEqual(expect.arrayContaining([
-      'npm run gate:fast',
-      'npm run gate:default',
-      'npm run gate:release',
-      'npm run lane:mock',
-      'npm run lane:visual',
-      'npm run lane:backend-real:release',
-      'npm run lane:demo-rehearsal',
-      'npm run lane:cluster-rehearsal',
-    ]));
-    expect(recommendedCommands.length).toBeGreaterThan(quickHumanCommandNames.length);
+    expect(quickHumanCommandNames).toEqual([...HUMAN_ENTRYPOINT_COMMANDS]);
+    expect(recommendedSections.map((section) => section.id)).toEqual(['environment', 'test', 'release']);
+    expect(recommendedCommandNames).toEqual([...HUMAN_ENTRYPOINT_COMMANDS]);
 
     for (const section of quickHumanSections) {
       expect(section.commands.length).toBeGreaterThan(0);
@@ -246,6 +273,8 @@ describe('current workflow governance', () => {
       }
 
       if (command.recommended) {
+        expect(command.quickHuman).toBe(true);
+        expect(command.gateId).toBeUndefined();
         if (command.canonical === 'make') {
           expect(command.makeTarget).toBeTruthy();
         } else {
@@ -262,6 +291,14 @@ describe('current workflow governance', () => {
     for (const command of recommendedCommands) {
       if (!command.quickHuman) {
         expect(quickHumanCommandNames).not.toContain(command.command);
+      }
+    }
+
+    for (const command of commands) {
+      if (/^(?:gate:|lane:|backend-real:|release:campaign:full|release:aggregate|verify:)/.test(command.npmScript ?? '')) {
+        expect(command.recommended, `${command.command} must stay an internal adapter, not a human recommendation`).not.toBe(true);
+        expect(command.quickHuman, `${command.command} must stay out of the quick human surface`).not.toBe(true);
+        expect(command.makeTarget, `${command.command} must not keep a Make compatibility target`).toBeUndefined();
       }
     }
   });
@@ -371,8 +408,15 @@ describe('current workflow governance', () => {
       expect(item.doNotConfuseWith.length).toBeGreaterThan(0);
     }
 
+    const copyableDiagnosticCommands = CURRENT_WORKFLOW_DIAGNOSTIC_COMMANDS.flatMap((diagnostic) => (
+      diagnostic.command ? [diagnostic.command] : []
+    ));
+    const internalDiagnosticAdapters = CURRENT_WORKFLOW_DIAGNOSTIC_COMMANDS.flatMap((diagnostic) => (
+      diagnostic.internalAdapter ? [diagnostic.internalAdapter] : []
+    ));
+
     expect(CURRENT_WORKFLOW_DIAGNOSTIC_COMMANDS.length).toBeGreaterThanOrEqual(8);
-    expect(CURRENT_WORKFLOW_DIAGNOSTIC_COMMANDS.map((command) => command.command)).toEqual([
+    expect(copyableDiagnosticCommands).toEqual([
       'npm run test:e2e',
       'npm run test:e2e:all',
       'npm run test:integration',
@@ -382,12 +426,25 @@ describe('current workflow governance', () => {
       'npm run ws:typecheck',
       'npm run ws:test',
       'npm run test:release:precheck',
-      'npm run lane:mock',
-      'npm run gate:release',
-      'npm run lane:demo-rehearsal',
-      'npm run lane:cluster-rehearsal',
-      'RELEASE_CAMPAIGN_ROOT=<campaign-root> npm run gate:release:full',
     ]);
+    expect(internalDiagnosticAdapters).toEqual([
+      'lane:mock',
+      'gate:release',
+      'lane:demo-rehearsal',
+      'lane:cluster-rehearsal',
+      'gate:release:full',
+    ]);
+
+    for (const diagnostic of CURRENT_WORKFLOW_DIAGNOSTIC_COMMANDS) {
+      if (diagnostic.command) {
+        expect(diagnostic.command, `${diagnostic.id} must not expose internal adapters as copyable commands`).not.toMatch(
+          /\b(?:npm run (?:gate|lane|backend-real):[a-z0-9:_-]+|RELEASE_CAMPAIGN_ROOT=<campaign-root>\s+npm run gate:release:full)\b/,
+        );
+      } else {
+        expect(diagnostic.internalAdapter, `${diagnostic.id} must identify the internal owner adapter`).toBeTruthy();
+        expect(diagnostic.ownerSurface, `${diagnostic.id} must explain the owner surface`).toBeTruthy();
+      }
+    }
   });
 
   it('models release-grade entry through the campaign launcher instead of the aggregate-only gate', () => {
@@ -401,12 +458,14 @@ describe('current workflow governance', () => {
     const releaseGate = commands.find((command) => command.npmScript === 'gate:release');
     const demoRehearsalLane = commands.find((command) => command.npmScript === 'lane:demo-rehearsal');
     const clusterRehearsalLane = commands.find((command) => command.npmScript === 'lane:cluster-rehearsal');
+    const demoRehearsal = commands.find((command) => command.npmScript === 'rehearse:demo');
+    const clusterRehearsal = commands.find((command) => command.npmScript === 'rehearse:cluster');
 
     expect(releaseEntry?.startCommands).toContain('npm run release:ready');
     expect(releaseEntry?.startCommands).toContain('npm run release:status');
+    expect(releaseEntry?.startCommands).toContain('npm run rehearse:demo');
+    expect(releaseEntry?.startCommands).toContain('npm run rehearse:cluster');
     expect(releaseEntry?.startCommands).not.toContain('npm run release:aggregate -- --campaign-root=<campaign-root>');
-    expect(releaseEntry?.startCommands).not.toContain('npm run rehearse:demo');
-    expect(releaseEntry?.startCommands).not.toContain('npm run rehearse:cluster');
     expect(releaseEntry?.startCommands).not.toContain('npm run gate:release:full');
 
     expect(releaseReady?.workflowRole).toBe('release_operation');
@@ -425,42 +484,67 @@ describe('current workflow governance', () => {
     expect(releaseGate?.workflowRole).toBe('gate_verdict');
     expect(demoRehearsalLane?.workflowRole).toBe('evidence_lane');
     expect(clusterRehearsalLane?.workflowRole).toBe('evidence_lane');
+    expect(demoRehearsal?.recommended).toBe(true);
+    expect(demoRehearsal?.quickHuman).toBe(true);
+    expect(demoRehearsal?.gateId).toBeUndefined();
+    expect(clusterRehearsal?.recommended).toBe(true);
+    expect(clusterRehearsal?.quickHuman).toBe(true);
+    expect(clusterRehearsal?.gateId).toBeUndefined();
   });
 
-  it('keeps hidden release launchers out of generated human workflow blocks', () => {
+  it('keeps internal adapters out of generated human workflow blocks', () => {
     const packageScripts = readPackageScripts();
-    const hiddenCommand = 'npm run release:campaign:full';
     const generatedBlocks = [
-      extractGeneratedBlock(
-        'README.md',
-        '<!-- current-workflow:readme:start -->',
-        '<!-- current-workflow:readme:end -->',
-      ),
-      extractGeneratedBlock(
-        'DEVELOPMENT.md',
-        '<!-- current-workflow:development:start -->',
-        '<!-- current-workflow:development:end -->',
-      ),
-      extractGeneratedBlock(
-        'docs/current-engineering-governance-model.md',
-        '<!-- current-workflow:governance-model:start -->',
-        '<!-- current-workflow:governance-model:end -->',
-      ),
-      extractGeneratedBlock(
-        'Makefile',
-        '# current-workflow:help-extended:start',
-        '# current-workflow:help-extended:end',
-      ),
-      extractGeneratedBlock(
-        'Makefile',
-        '# current-workflow:quick-help:start',
-        '# current-workflow:quick-help:end',
-      ),
+      {
+        label: 'README current workflow block',
+        block: extractGeneratedBlock(
+          'README.md',
+          '<!-- current-workflow:readme:start -->',
+          '<!-- current-workflow:readme:end -->',
+        ),
+      },
+      {
+        label: 'DEVELOPMENT current workflow block',
+        block: extractGeneratedBlock(
+          'DEVELOPMENT.md',
+          '<!-- current-workflow:development:start -->',
+          '<!-- current-workflow:development:end -->',
+        ),
+      },
+      {
+        label: 'current governance model workflow block',
+        block: extractGeneratedBlock(
+          'docs/current-engineering-governance-model.md',
+          '<!-- current-workflow:governance-model:start -->',
+          '<!-- current-workflow:governance-model:end -->',
+        ),
+      },
+      {
+        label: 'Makefile help-extended block',
+        block: extractGeneratedBlock(
+          'Makefile',
+          '# current-workflow:help-extended:start',
+          '# current-workflow:help-extended:end',
+        ),
+      },
+      {
+        label: 'Makefile quick-help block',
+        block: extractGeneratedBlock(
+          'Makefile',
+          '# current-workflow:quick-help:start',
+          '# current-workflow:quick-help:end',
+        ),
+      },
     ];
 
     expect(packageScripts.has('release:campaign:full')).toBe(true);
-    for (const block of generatedBlocks) {
-      expect(block, 'generated human-copyable workflow blocks must hide the internal campaign launcher').not.toContain(hiddenCommand);
+    expect(packageScripts.has('gate:default')).toBe(true);
+    expect(packageScripts.has('lane:visual')).toBe(true);
+    expect(packageScripts.has('backend-real:run')).toBe(true);
+    for (const { label, block } of generatedBlocks) {
+      for (const pattern of HUMAN_DOC_FORBIDDEN_COPYABLE_COMMAND_PATTERNS) {
+        expect(block, `${label} must not expose internal adapter as a copyable human entrypoint: ${pattern}`).not.toMatch(pattern);
+      }
     }
   });
 
@@ -496,7 +580,7 @@ describe('current workflow governance', () => {
     ];
 
     for (const { label, block, commands } of quickBlocks) {
-      expect(commands(block), label).toEqual([...QUICK_HUMAN_ENTRYPOINT_COMMANDS]);
+      expect(commands(block), label).toEqual([...HUMAN_ENTRYPOINT_COMMANDS]);
 
       for (const pattern of QUICK_HUMAN_FORBIDDEN_COMMAND_PATTERNS) {
         expect(block, `${label} must not expose ${pattern}`).not.toMatch(pattern);
@@ -544,13 +628,37 @@ describe('current workflow governance', () => {
       );
     }
 
+    for (const doc of [
+      'docs/testing/verification-campaigns-v1.md',
+      'docs/user-guides/release-readiness-checklist.md',
+      'docs/notebook-codex-runbook.md',
+    ]) {
+      const content = readRepoFile(doc);
+      expect(content, `${doc} must expose release:ready as the human release entrypoint`).toContain(
+        'npm run release:ready',
+      );
+      expect(content, `${doc} must expose release:status as the read-only entrypoint`).toContain(
+        'npm run release:status',
+      );
+      expect(content, `${doc} must describe release:campaign:full as internal when it is mentioned`).not.toMatch(
+        /npm run release:campaign:full/,
+      );
+      for (const pattern of RELEASE_DOC_FORBIDDEN_COPYABLE_COMMAND_PATTERNS) {
+        expect(content, `${doc} must not expose internal release/gate/lane adapters as copyable commands: ${pattern}`).not.toMatch(pattern);
+      }
+    }
+
+    const governanceModel = readRepoFile('docs/current-engineering-governance-model.md');
+    expect(governanceModel, 'governance model must keep gate:release:full described as internal/aggregate-only').toMatch(/gate:release:full/);
+
     for (const surface of ['docs/current-engineering-governance-model.md', 'Makefile']) {
       const content = readRepoFile(surface);
-      expect(content, `${surface} must show gate:release:full with explicit campaign context`).toContain(
-        'RELEASE_CAMPAIGN_ROOT=<campaign-root> npm run gate:release:full',
-      );
+      expect(content, `${surface} must describe old surfaces as internal adapters`).toMatch(/internal adapter/i);
       expect(content, `${surface} must not offer bare gate:release:full as a copyable entrypoint`).not.toMatch(
         /(?:^|\n)(?:\s*@echo "\s*)?npm run gate:release:full(?:\s*(?:#|"))/m,
+      );
+      expect(content, `${surface} must not offer explicit gate:release:full as a generated human command`).not.toMatch(
+        /(?:^|\n)(?:\s*@echo "\s*)?RELEASE_CAMPAIGN_ROOT=<campaign-root>\s+npm run gate:release:full(?:\s*(?:#|"))/m,
       );
     }
 
@@ -603,6 +711,20 @@ describe('current workflow governance', () => {
     expect(makefile).toMatch(/local-real-status:[\s\S]*\$\(MAKE\) substrate-status[\s\S]*\$\(MAKE\) local-manual-status/);
     expect(runtimeManifest).not.toMatch(/id:\s*'local-real'/);
     expect(runtimeManifest).not.toMatch(/formalName:\s*'local-real'/);
+  });
+
+  it('removes Make compatibility targets for internal gate, lane, and backend-real adapters', () => {
+    const makefile = readRepoFile('Makefile');
+    const phonyBlock = makefile.match(/^\.PHONY:[\s\S]*?\n\n/)?.[0] ?? '';
+
+    for (const target of REMOVED_MAKE_COMPAT_TARGETS) {
+      expect(makefile, `Makefile must not define removed compatibility target: ${target}`).not.toMatch(
+        new RegExp(`^${target}:`, 'm'),
+      );
+      expect(phonyBlock, `.PHONY must not expose removed compatibility target: ${target}`).not.toMatch(
+        new RegExp(`\\b${target}\\b`),
+      );
+    }
   });
 
   it('keeps verify aliases as adapters instead of new gate identities', () => {
@@ -719,6 +841,32 @@ describe('current workflow governance', () => {
         expect([...job.artifactPaths].sort()).toEqual(collectJobArtifactPaths(parsedWorkflow, job.id));
       }
     }
+  });
+
+  it('keeps CI producer commands on npm adapters instead of removed Make compatibility targets', () => {
+    const removedMakeCommandPattern = /\bmake (?:gate-(?:fast|default|release)|lane-(?:mock|visual|real-core|real-release)|backend-real-(?:reset|bootstrap|ready|run|report))\b/;
+
+    for (const job of listCurrentCIWorkflowJobs()) {
+      for (const command of job.commands) {
+        expect(command, `${job.workflowPath}:${job.id} must not use removed Make compatibility targets`).not.toMatch(
+          removedMakeCommandPattern,
+        );
+      }
+
+      const parsedWorkflow = parseWorkflow(job.workflowPath);
+      const runCommands = collectJobRunCommands(parsedWorkflow, job.id);
+      expect(runCommands, `${job.workflowPath}:${job.id} must not call removed Make compatibility targets`).not.toMatch(
+        removedMakeCommandPattern,
+      );
+    }
+
+    const contractsJob = listCurrentCIWorkflowJobs().find(
+      (job) => job.workflowPath === '.github/workflows/contracts-check.yml' && job.id === 'contracts',
+    );
+    expect(contractsJob?.commands).toContain('npm run gate:fast');
+    expect(collectJobRunCommands(parseWorkflow('.github/workflows/contracts-check.yml'), 'contracts')).toContain(
+      'npm run gate:fast',
+    );
   });
 
   it('makes backend-real scheduled regression a real evidence-producing lane instead of a governance-only alias', () => {

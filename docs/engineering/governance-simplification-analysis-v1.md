@@ -300,7 +300,7 @@ Evidence claim 是 index/cache，不是新的 verdict source。它只能指向 p
 4. 分配动态端口和 run root。
 5. 决定 cache hit / miss。
 6. 收集 artifacts 并生成 evidence claims。
-7. 输出 verdict 和 story acceptance report。
+7. 输出 verdict 和 story acceptance report；其中 release 结论必须来自 delegated terminal aggregate 和 producer-owned evidence，runner 只负责汇总与呈现，不成为新的 release verdict source。
 
 ### 8.2 资源锁
 
@@ -319,6 +319,8 @@ Evidence claim 是 index/cache，不是新的 verdict source。它只能指向 p
 | backend-real provider quota | 同一 API key / provider / model 不能盲目并发 |
 | provider secret profile | backend-real evidence 不能跨 secret/provider profile 复用 |
 | visual baseline update | 更新截图和验收截图必须独占 |
+
+`release-campaign-root-writes` 这类锁在并行化前必须先定义 scope key 和 lease 语义：同一 campaign root 写入需要可审计的运行时 lease；不同 root 或不同安全 scope 不应被 naive job-level exclusive 全部串行化；同时不能因为担心串行化而忽略锁。
 
 可以并行的内容：
 
@@ -523,6 +525,8 @@ Logs: artifacts/release-runs/<precheck-run-id>/
 
 目标：把脚本编排升级为可调度、可缓存、可复用的治理执行平台。
 
+本阶段新增的 run state、resume plan、scheduler、lock lease 等只属于治理 runner 内部工程模型，不改变产品范围，也不替代 current truth、producer-owned evidence 或 delegated terminal aggregate。
+
 交付：
 
 1. `governance run --goal=<debug|pr|visual|real|release>`。
@@ -530,8 +534,9 @@ Logs: artifacts/release-runs/<precheck-run-id>/
 3. Resource lock manager。
 4. Evidence claim schema。
 5. Artifact index。
-6. Release campaign DAG 调度和 resume。
-7. CI 与本地共用 run plan。
+6. Run state and resume plan model：先实现无执行、无 verdict、基于 current manifests 与 evidence claim boundary 的 run state / resume decision model。
+7. Executing DAG scheduler：后续才接入命令执行、资源锁运行时 lease 和 producer adapters。
+8. CI 与本地共用 run plan。
 
 实施顺序确认：
 
@@ -539,11 +544,15 @@ Logs: artifacts/release-runs/<precheck-run-id>/
 
 `Artifact index` 仍是 P2 目标，但必须等到已有 P2 模型被只读报告/检查入口消费后再实现。未来 guardrails：它不得读取文件、扫描目录、计算 digest、声明 `exists` / `passed` / `failed` / `reusable` / `verdict` / `cache_hit` / `claim_id`，不得成为 release verdict source；digest 仍属于 evidence claim 责任。
 
+`Run state and resume plan model` 必须先于 `executing DAG scheduler`：首阶段只判断哪些 producer-owned evidence / claims 在当前 manifests 边界内可复用、缺失或需要补跑，不启动命令、不持有运行时 lease、不输出 release verdict。只有该模型经只读报告和检查入口验证后，才进入执行型 DAG scheduler，接入命令执行、lease acquisition / renewal / release、producer adapters 和失败恢复。
+
+`governance run --goal=release` 最终可以输出 release 结论，但结论来源必须仍是 delegated terminal aggregate 对 campaign-scoped producer-owned evidence 的聚合结果；runner 不得绕过 aggregate 自己裁决，也不得把 run state / resume decision 当作 release verdict。
+
 验收：
 
 1. `gate-default` 和 full visual 可在安全边界内并行。
 2. 同一 commit 下 pure checks 可复用。
-3. release failure 修复后能只补跑失效 claims 和 downstream verdict。
+3. release failure 修复后，run state / resume plan 能说明失效 claims、需要补跑的 producers 和 downstream aggregate，不直接声明 release verdict。
 4. release verdict 仍然只来自 producer-owned evidence。
 5. resource lock、cache hit、claim reuse 都能在 run summary 中审计。
 
@@ -606,9 +615,10 @@ Logs: artifacts/release-runs/<precheck-run-id>/
 11. P2 model read-only report/check projection
 12. artifact index
 13. governance runner shell adapter
-14. DAG scheduler and resume
-15. CI integration
-16. human entrypoint cleanup and docs rewrite
+14. run state and resume plan model
+15. executing DAG scheduler
+16. CI integration
+17. human entrypoint cleanup and docs rewrite
 
 每个切片都必须先有 tests，再改实现，并保留 evidence producer、manifest mapping 和 verdict contract 的回归测试；不新增旧入口可执行性的回归要求。
 

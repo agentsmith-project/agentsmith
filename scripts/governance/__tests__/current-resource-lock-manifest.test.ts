@@ -240,6 +240,25 @@ describe('current resource lock manifest', () => {
     );
   });
 
+  it('models gate-default and lane-visual as fixed local port users', () => {
+    const portLock = findCurrentResourceLockById('fixed-local-ports');
+
+    expect(portLock?.scope).toBe('local_host');
+    expect(portLock?.mode).toBe('exclusive');
+    expect(portLock?.appliesTo.gateIds).toEqual(
+      expect.arrayContaining([
+        'gate-default',
+        'lane-visual',
+      ]),
+    );
+    expect(portLock?.appliesTo.npmScripts).toEqual(
+      expect.arrayContaining([
+        'gate:default',
+        'lane:visual',
+      ]),
+    );
+  });
+
   it('declares current alias paths for runtime lines, backend-real, and mock lane artifacts', () => {
     const aliasLock = findCurrentResourceLockById('runtime-current-aliases');
 

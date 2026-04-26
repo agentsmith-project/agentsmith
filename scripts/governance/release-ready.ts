@@ -2,10 +2,8 @@ import { spawnSync } from 'node:child_process';
 import { join, resolve } from 'node:path';
 
 import {
-  isDefaultReleaseRunsCampaignRoot,
   readReleaseStatus,
   renderReleaseStatus,
-  writeReleaseSummaryForCampaign,
 } from './release-summary';
 
 function isCliEntrypoint(fileName: string): boolean {
@@ -85,21 +83,9 @@ export function runReleaseReady(argv: readonly string[] = process.argv.slice(2))
     stdio: 'inherit',
   });
 
-  let statusExitCode = 0;
-  try {
-    writeReleaseSummaryForCampaign({
-      campaignRoot: campaignContext.campaignRoot,
-      writeLatest: !campaignContext.explicitCampaignRoot
-        && isDefaultReleaseRunsCampaignRoot(campaignContext.campaignRoot),
-    });
-  } catch (error) {
-    statusExitCode = 1;
-    process.stderr.write(`[release:ready] failed to write release summary: ${error instanceof Error ? error.message : String(error)}\n`);
-  }
-
-  process.stdout.write(renderReleaseStatus(
-    readReleaseStatus({ campaignRoot: campaignContext.campaignRoot }),
-  ).replace('AgentSmith Release Status', 'AgentSmith Release Readiness'));
+  const status = readReleaseStatus({ campaignRoot: campaignContext.campaignRoot });
+  const statusExitCode = status.kind === 'ready' ? 0 : 1;
+  process.stdout.write(renderReleaseStatus(status).replace('AgentSmith Release Status', 'AgentSmith Release Readiness'));
   const campaignExitCode = typeof campaign.status === 'number' ? campaign.status : 1;
   return campaignExitCode === 0 ? statusExitCode : campaignExitCode;
 }

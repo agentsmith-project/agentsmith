@@ -318,6 +318,79 @@ exit 0
     }
   });
 
+  it('treats the release campaign as the only summary writer', () => {
+    const root = mkdtempSync(join(tmpdir(), 'agentsmith-release-ready-summary-owner-'));
+    const fakeBin = mkdtempSync(join(tmpdir(), 'agentsmith-fake-npm-'));
+    try {
+      writeFakeNpm(fakeBin, `#!/usr/bin/env bash
+set -euo pipefail
+if [[ "$1" == "run" && "$2" == "test:release:precheck" ]]; then
+  exit 0
+fi
+if [[ "$1" == "run" && "$2" == "release:campaign:full" ]]; then
+  mkdir -p "\${RELEASE_CAMPAIGN_ROOT}/gate-release-full"
+  campaign_run_id="$(basename "\${RELEASE_CAMPAIGN_ROOT}")"
+  cat > "\${RELEASE_CAMPAIGN_ROOT}/gate-release-full/result.json" <<JSON
+{
+  "schema_version": "${CURRENT_GATE_RESULT_SCHEMA_VERSION}",
+  "gate_id": "gate-release-full",
+  "gate_adapter": { "npm_script": "gate:release:full", "ci_job": null },
+  "status": "passed",
+  "failure_class": "none",
+  "stage": "aggregate",
+  "line_kind": "release_full_verdict",
+  "evidence_dir": "\${RELEASE_CAMPAIGN_ROOT}/gate-release-full",
+  "summary": "Campaign-owned summary passed.",
+  "generated_at": "2026-04-25T12:00:00.000Z"
+}
+JSON
+  cat > "\${RELEASE_CAMPAIGN_ROOT}/summary.json" <<JSON
+{
+  "schema": "agentsmith_release_summary/v1",
+  "campaign_id": "release-full",
+  "campaign_run_id": "\${campaign_run_id}",
+  "campaign_root": "\${RELEASE_CAMPAIGN_ROOT}",
+  "automated_release_verdict": "PASSED",
+  "status": "passed",
+  "failure_class": "none",
+  "stage": "aggregate",
+  "blocked_step": null,
+  "why": "Campaign-owned summary passed.",
+  "next_action": "Attach summary.md to the release note and complete the operator sign-off checklist.",
+  "terminal_result_path": "\${RELEASE_CAMPAIGN_ROOT}/gate-release-full/result.json",
+  "summary_json_path": "\${RELEASE_CAMPAIGN_ROOT}/summary.json",
+  "summary_md_path": "\${RELEASE_CAMPAIGN_ROOT}/summary.md",
+  "evidence_package": "\${RELEASE_CAMPAIGN_ROOT}",
+  "manual_operator_signoff": "not_covered",
+  "generated_at": "campaign-owned-summary"
+}
+JSON
+  printf '# Campaign-owned summary\\n' > "\${RELEASE_CAMPAIGN_ROOT}/summary.md"
+  exit 0
+fi
+exit 0
+`);
+
+      const result = spawnSync('npx', ['tsx', 'scripts/governance/release-ready.ts'], {
+        cwd: process.cwd(),
+        env: {
+          ...process.env,
+          PATH: `${fakeBin}:${process.env.PATH ?? ''}`,
+          RELEASE_CAMPAIGN_ROOT: root,
+        },
+        encoding: 'utf8',
+      });
+
+      expect(result.status).toBe(0);
+      expect(result.stdout).toContain('Campaign-owned summary passed.');
+      const summary = JSON.parse(readFileSync(join(root, 'summary.json'), 'utf8')) as { generated_at: string };
+      expect(summary.generated_at).toBe('campaign-owned-summary');
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+      rmSync(fakeBin, { recursive: true, force: true });
+    }
+  });
+
   it('creates and reads the current campaign root instead of falling back to an older latest pointer', () => {
     const root = mkdtempSync(join(tmpdir(), 'agentsmith-release-ready-current-root-'));
     const fakeBin = mkdtempSync(join(tmpdir(), 'agentsmith-fake-npm-'));
@@ -348,6 +421,7 @@ if [[ "$1" == "run" && "$2" == "test:release:precheck" ]]; then
 fi
 if [[ "$1" == "run" && "$2" == "release:campaign:full" ]]; then
   mkdir -p "\${RELEASE_CAMPAIGN_ROOT}/gate-release-full"
+  campaign_run_id="$(basename "\${RELEASE_CAMPAIGN_ROOT}")"
   cat > "\${RELEASE_CAMPAIGN_ROOT}/gate-release-full/result.json" <<JSON
 {
   "schema_version": "${CURRENT_GATE_RESULT_SCHEMA_VERSION}",
@@ -362,6 +436,28 @@ if [[ "$1" == "run" && "$2" == "release:campaign:full" ]]; then
   "generated_at": "2026-04-25T12:00:00.000Z"
 }
 JSON
+  cat > "\${RELEASE_CAMPAIGN_ROOT}/summary.json" <<JSON
+{
+  "schema": "agentsmith_release_summary/v1",
+  "campaign_id": "release-full",
+  "campaign_run_id": "\${campaign_run_id}",
+  "campaign_root": "\${RELEASE_CAMPAIGN_ROOT}",
+  "automated_release_verdict": "PASSED",
+  "status": "passed",
+  "failure_class": "none",
+  "stage": "aggregate",
+  "blocked_step": null,
+  "why": "Current campaign passed.",
+  "next_action": "Attach summary.md to the release note and complete the operator sign-off checklist.",
+  "terminal_result_path": "\${RELEASE_CAMPAIGN_ROOT}/gate-release-full/result.json",
+  "summary_json_path": "\${RELEASE_CAMPAIGN_ROOT}/summary.json",
+  "summary_md_path": "\${RELEASE_CAMPAIGN_ROOT}/summary.md",
+  "evidence_package": "\${RELEASE_CAMPAIGN_ROOT}",
+  "manual_operator_signoff": "not_covered",
+  "generated_at": "campaign-owned-summary"
+}
+JSON
+  printf '# Current campaign summary\\n' > "\${RELEASE_CAMPAIGN_ROOT}/summary.md"
   exit 0
 fi
 exit 0
@@ -383,6 +479,95 @@ exit 0
       expect(result.stdout).not.toContain('Old campaign failed');
       expect(readFileSync(logPath, 'utf8')).toMatch(/run release:campaign:full\|root=.*agentsmith-release-ready-current-root-/);
       expect(readFileSync(logPath, 'utf8')).toMatch(/run release:campaign:full\|root=.*\|run=release-ready-/);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+      rmSync(fakeBin, { recursive: true, force: true });
+      if (previousLatest === null) {
+        rmSync(repoLatestPath, { force: true });
+      } else {
+        writeFileSync(repoLatestPath, previousLatest);
+      }
+    }
+  });
+
+  it('does not update the repo latest pointer when RELEASE_CAMPAIGN_ROOT is explicit', () => {
+    const root = mkdtempSync(join(tmpdir(), 'agentsmith-release-ready-explicit-root-'));
+    const fakeBin = mkdtempSync(join(tmpdir(), 'agentsmith-fake-npm-'));
+    const repoLatestPath = resolve('artifacts', 'release-runs', 'latest.json');
+    const previousLatest = existsSync(repoLatestPath) ? readFileSync(repoLatestPath, 'utf8') : null;
+    try {
+      writeJson(repoLatestPath, {
+        schema: 'agentsmith_release_latest/v1',
+        campaign_id: 'release-full',
+        campaign_run_id: 'previous-latest',
+        campaign_root: '/tmp/previous-latest-root',
+        updated_at: '2026-04-25T12:00:00.000Z',
+      });
+
+      writeFakeNpm(fakeBin, `#!/usr/bin/env bash
+set -euo pipefail
+if [[ "$1" == "run" && "$2" == "test:release:precheck" ]]; then
+  exit 0
+fi
+if [[ "$1" == "run" && "$2" == "release:campaign:full" ]]; then
+  mkdir -p "\${RELEASE_CAMPAIGN_ROOT}/gate-release-full"
+  campaign_run_id="$(basename "\${RELEASE_CAMPAIGN_ROOT}")"
+  cat > "\${RELEASE_CAMPAIGN_ROOT}/gate-release-full/result.json" <<JSON
+{
+  "schema_version": "${CURRENT_GATE_RESULT_SCHEMA_VERSION}",
+  "gate_id": "gate-release-full",
+  "gate_adapter": { "npm_script": "gate:release:full", "ci_job": null },
+  "status": "passed",
+  "failure_class": "none",
+  "stage": "aggregate",
+  "line_kind": "release_full_verdict",
+  "evidence_dir": "\${RELEASE_CAMPAIGN_ROOT}/gate-release-full",
+  "summary": "Explicit campaign root passed.",
+  "generated_at": "2026-04-25T12:00:00.000Z"
+}
+JSON
+  cat > "\${RELEASE_CAMPAIGN_ROOT}/summary.json" <<JSON
+{
+  "schema": "agentsmith_release_summary/v1",
+  "campaign_id": "release-full",
+  "campaign_run_id": "\${campaign_run_id}",
+  "campaign_root": "\${RELEASE_CAMPAIGN_ROOT}",
+  "automated_release_verdict": "PASSED",
+  "status": "passed",
+  "failure_class": "none",
+  "stage": "aggregate",
+  "blocked_step": null,
+  "why": "Explicit campaign root passed.",
+  "next_action": "Attach summary.md to the release note and complete the operator sign-off checklist.",
+  "terminal_result_path": "\${RELEASE_CAMPAIGN_ROOT}/gate-release-full/result.json",
+  "summary_json_path": "\${RELEASE_CAMPAIGN_ROOT}/summary.json",
+  "summary_md_path": "\${RELEASE_CAMPAIGN_ROOT}/summary.md",
+  "evidence_package": "\${RELEASE_CAMPAIGN_ROOT}",
+  "manual_operator_signoff": "not_covered",
+  "generated_at": "campaign-owned-summary"
+}
+JSON
+  printf '# Explicit campaign root summary\\n' > "\${RELEASE_CAMPAIGN_ROOT}/summary.md"
+  exit 0
+fi
+exit 0
+`);
+
+      const result = spawnSync('npx', ['tsx', 'scripts/governance/release-ready.ts'], {
+        cwd: process.cwd(),
+        env: {
+          ...process.env,
+          PATH: `${fakeBin}:${process.env.PATH ?? ''}`,
+          RELEASE_CAMPAIGN_ROOT: root,
+        },
+        encoding: 'utf8',
+      });
+
+      expect(result.status).toBe(0);
+      expect(JSON.parse(readFileSync(repoLatestPath, 'utf8'))).toMatchObject({
+        campaign_run_id: 'previous-latest',
+        campaign_root: '/tmp/previous-latest-root',
+      });
     } finally {
       rmSync(root, { recursive: true, force: true });
       rmSync(fakeBin, { recursive: true, force: true });

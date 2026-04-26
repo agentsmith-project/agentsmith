@@ -1,8 +1,15 @@
 import type { SpawnSyncReturns } from 'node:child_process';
 
-import type { CurrentGateResultFailureClass } from './current-gate-result-schema';
+import {
+  CURRENT_GATE_RESULT_FAILURE_CLASSES,
+  CURRENT_GATE_RESULT_SCHEMA_VERSION,
+  CURRENT_GATE_RESULT_STATUSES,
+  type CurrentGateResultFailureClass,
+} from './current-gate-result-schema';
 import type { CurrentVerificationCampaignStep } from './current-verification-campaign-manifest';
 import {
+  resultPath,
+  tryReadGateResult,
   writeCampaignEvidencePointer,
   writeCampaignGateResult,
 } from './release-campaign-io';
@@ -25,6 +32,13 @@ export interface TerminalAggregateEvaluationInput {
   terminalStepId: string;
   hadExecutableStepFailure: boolean;
   aggregateResult: ReleaseCampaignSpawnResult;
+}
+
+export interface TerminalAggregateResultReadiness {
+  ok: boolean;
+  status?: string;
+  failureClass?: string;
+  error?: string;
 }
 
 function describeSpawnError(error: Error): string {
@@ -66,7 +80,7 @@ export function evaluateTerminalAggregateOutcome(
     };
   }
 
-  if (hadExecutableStepFailure) {
+  if (hadExecutableStepFailure && aggregateResult.status === 0) {
     return {
       exitCode: 1,
       shouldWriteFallbackResult: true,
@@ -95,12 +109,84 @@ export function evaluateTerminalAggregateOutcome(
   };
 }
 
+export function terminalAggregateResultIsReadable(input: {
+  campaignRoot: string;
+  terminalStep: CurrentVerificationCampaignStep;
+}): TerminalAggregateResultReadiness {
+  const path = resultPath(input.campaignRoot, input.terminalStep);
+  const result = tryReadGateResult(path);
+  if (!result.ok || !result.value) {
+    return {
+      ok: false,
+      error: result.error ?? `missing terminal result: ${path}`,
+    };
+  }
+
+  const value = result.value;
+  if (value.schema_version !== CURRENT_GATE_RESULT_SCHEMA_VERSION) {
+    return {
+      ok: false,
+      error: `terminal result schema_version must be ${CURRENT_GATE_RESULT_SCHEMA_VERSION}`,
+    };
+  }
+  if (value.gate_id !== input.terminalStep.gateId) {
+    return {
+      ok: false,
+      error: `terminal result gate_id must be ${input.terminalStep.gateId}`,
+    };
+  }
+  if (value.line_kind !== input.terminalStep.lineKind) {
+    return {
+      ok: false,
+      error: `terminal result line_kind must be ${input.terminalStep.lineKind}`,
+    };
+  }
+  if (
+    typeof value.status !== 'string'
+    || !CURRENT_GATE_RESULT_STATUSES.includes(value.status as never)
+  ) {
+    return {
+      ok: false,
+      error: 'terminal result status is invalid',
+    };
+  }
+  if (
+    typeof value.failure_class !== 'string'
+    || !CURRENT_GATE_RESULT_FAILURE_CLASSES.includes(value.failure_class as never)
+  ) {
+    return {
+      ok: false,
+      error: 'terminal result failure_class is invalid',
+    };
+  }
+  if (typeof value.stage !== 'string' || typeof value.summary !== 'string') {
+    return {
+      ok: false,
+      error: 'terminal result stage and summary must be strings',
+    };
+  }
+
+  return {
+    ok: true,
+    status: value.status,
+    failureClass: value.failure_class,
+  };
+}
+
 export function writeTerminalAggregateFallbackResult(input: {
   campaignRoot: string;
   terminalStep: CurrentVerificationCampaignStep;
   outcome: TerminalAggregateOutcome;
 }): boolean {
-  if (!input.outcome.shouldWriteFallbackResult) {
+  const readable = terminalAggregateResultIsReadable({
+    campaignRoot: input.campaignRoot,
+    terminalStep: input.terminalStep,
+  });
+  const hasReadableFailureVerdict = readable.ok && readable.status === 'failed';
+  const shouldWriteFallback = input.outcome.shouldWriteFallbackResult
+    || (input.outcome.exitCode !== 0 && !hasReadableFailureVerdict);
+
+  if (!shouldWriteFallback) {
     return false;
   }
 

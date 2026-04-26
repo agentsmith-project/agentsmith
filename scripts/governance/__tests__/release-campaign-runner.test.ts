@@ -10,6 +10,16 @@ import {
   evaluateTerminalAggregateOutcome,
   writeTerminalAggregateFallbackResult,
 } from '../release-campaign-runner';
+import {
+  writeCampaignGateResult,
+} from '../release-campaign-io';
+import {
+  buildReleaseCampaignCommandEnv,
+  buildReleaseCampaignRuntimeLeaseRequests,
+} from '../release-campaign-execution';
+import {
+  readReleaseStatus,
+} from '../release-summary';
 
 function releaseFullTerminalStep() {
   const campaign = findCurrentVerificationCampaignById('release-full');
@@ -28,6 +38,15 @@ function releaseFullExecutableSteps() {
   return campaign.steps.filter((step) => step.executionMode === 'execute');
 }
 
+function releaseFullStep(stepId: string) {
+  const campaign = findCurrentVerificationCampaignById('release-full');
+  const step = campaign?.steps.find((candidate) => candidate.id === stepId);
+  if (!step) {
+    throw new Error(`Missing release-full step: ${stepId}`);
+  }
+  return step;
+}
+
 function writeFakeNpm(dir: string, script: string): string {
   const path = join(dir, 'npm');
   writeFileSync(path, script);
@@ -35,12 +54,17 @@ function writeFakeNpm(dir: string, script: string): string {
   return path;
 }
 
-function runReleaseCampaignWithFakeNpm(root: string, fakeBin: string): void {
+function runReleaseCampaignWithFakeNpm(
+  root: string,
+  fakeBin: string,
+  extraEnv: NodeJS.ProcessEnv = {},
+): void {
   try {
     execFileSync('npx', ['tsx', 'scripts/governance/run-current-verification-campaign.ts', 'release-full'], {
       cwd: process.cwd(),
       env: {
         ...process.env,
+        ...extraEnv,
         PATH: `${fakeBin}:${process.env.PATH ?? ''}`,
         RELEASE_CAMPAIGN_ROOT: root,
         RELEASE_CAMPAIGN_RUN_ID: 'release-campaign-runner-test',
@@ -54,6 +78,81 @@ function runReleaseCampaignWithFakeNpm(root: string, fakeBin: string): void {
 }
 
 describe('release campaign runner lifecycle contract', () => {
+  it('projects release campaign runtime leases from the current resource lock semantics', () => {
+    const root = mkdtempSync(join(tmpdir(), 'agentsmith-release-campaign-locks-'));
+    try {
+      const campaign = findCurrentVerificationCampaignById('release-full');
+      if (!campaign) {
+        throw new Error('Missing release-full campaign.');
+      }
+
+      const requestsByStep = new Map(campaign.steps.map((step) => [
+        step.id,
+        buildReleaseCampaignRuntimeLeaseRequests({
+          campaignId: campaign.id,
+          runId: 'lock-projection-test',
+          campaignRoot: root,
+          step,
+        }),
+      ]));
+
+      for (const step of campaign.steps) {
+        const requestIds = requestsByStep.get(step.id)?.map((request) => request.lockId) ?? [];
+        expect(requestIds, `${step.id} must lease the campaign root`).toContain('release-campaign-root-writes');
+        expect(requestIds, `${step.id} must lease its step output`).toContain('release-campaign-step-output');
+      }
+
+      const visualLocks = requestsByStep.get('lane-visual') ?? [];
+      expect(visualLocks).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({
+            lockId: 'visual-baseline-update',
+            scopeKind: 'visual_baseline',
+            scopeKey: 'repo:visual-baseline-update',
+          }),
+        ]),
+      );
+
+      const defaultGateFixedPorts = (requestsByStep.get('gate-default') ?? [])
+        .find((request) => request.lockId === 'fixed-local-ports');
+      const visualFixedPorts = visualLocks.find((request) => request.lockId === 'fixed-local-ports');
+      expect(defaultGateFixedPorts, 'gate-default must lease fixed local ports').toBeDefined();
+      expect(visualFixedPorts, 'lane-visual must lease fixed local ports').toBeDefined();
+      expect(defaultGateFixedPorts?.scopeKind).toBe('local_host');
+      expect(visualFixedPorts?.scopeKind).toBe('local_host');
+      expect(visualFixedPorts?.scopeKey).toBe(defaultGateFixedPorts?.scopeKey);
+
+      const gateReleaseLockIds = new Set((requestsByStep.get('gate-release') ?? []).map((request) => request.lockId));
+      expect([...gateReleaseLockIds]).toEqual(
+        expect.arrayContaining([
+          'shared-local-substrate',
+          'destructive-lifecycle',
+          'fixed-local-ports',
+          'backend-real-provider-quota',
+          'provider-secret-profile',
+        ]),
+      );
+
+      const localHostLocks = [
+        'shared-local-substrate',
+        'destructive-lifecycle',
+        'fixed-local-ports',
+        'scenario-world',
+      ];
+      for (const lockId of localHostLocks) {
+        const demo = (requestsByStep.get('lane-demo-rehearsal') ?? []).find((request) => request.lockId === lockId);
+        const cluster = (requestsByStep.get('lane-cluster-rehearsal') ?? []).find((request) => request.lockId === lockId);
+        expect(demo, `demo rehearsal must project ${lockId}`).toBeDefined();
+        expect(cluster, `cluster rehearsal must project ${lockId}`).toBeDefined();
+        expect(demo?.scopeKind).toBe('local_host');
+        expect(cluster?.scopeKind).toBe('local_host');
+        expect(cluster?.scopeKey).toBe(demo?.scopeKey);
+      }
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
   it('fails closed when the terminal aggregate verifier is killed by signal', () => {
     const outcome = evaluateTerminalAggregateOutcome({
       terminalStepId: 'gate-release-full',
@@ -102,6 +201,107 @@ describe('release campaign runner lifecycle contract', () => {
     expect(outcome.shouldWriteFallbackResult).toBe(true);
     expect(outcome.failureClass).toBe('product_regression');
     expect(outcome.summary).toContain('executable release campaign step failed');
+  });
+
+  it('does not overwrite a normally failed terminal aggregate verdict with runner fallback', () => {
+    const outcome = evaluateTerminalAggregateOutcome({
+      terminalStepId: 'gate-release-full',
+      hadExecutableStepFailure: true,
+      aggregateResult: {
+        status: 1,
+        signal: null,
+      },
+    });
+
+    expect(outcome.exitCode).toBe(1);
+    expect(outcome.shouldWriteFallbackResult).toBe(false);
+    expect(outcome.failureClass).toBe('product_regression');
+    expect(outcome.summary).toContain('failed with exit code 1');
+  });
+
+  it('writes fallback terminal result when aggregate exits nonzero without producing a terminal artifact', () => {
+    const root = mkdtempSync(join(tmpdir(), 'agentsmith-release-campaign-terminal-fallback-'));
+    const fakeBin = mkdtempSync(join(tmpdir(), 'agentsmith-fake-npm-'));
+    try {
+      writeFakeNpm(fakeBin, `#!/usr/bin/env bash
+set -euo pipefail
+if [[ "$1" == "run" && "$2" == "gate:release:full" ]]; then
+  exit 1
+fi
+exit 0
+`);
+
+      runReleaseCampaignWithFakeNpm(root, fakeBin);
+
+      const terminalPath = join(root, 'gate-release-full', 'result.json');
+      expect(existsSync(terminalPath)).toBe(true);
+      const terminal = JSON.parse(readFileSync(terminalPath, 'utf8')) as {
+        status: string;
+        failure_class: string;
+        summary: string;
+      };
+      expect(terminal.status).toBe('failed');
+      expect(terminal.failure_class).toBe('product_regression');
+      expect(terminal.summary).toContain('failed with exit code 1');
+      expect(existsSync(join(root, 'gate-release-full', 'evidence.json'))).toBe(true);
+
+      const status = readReleaseStatus({ campaignRoot: root });
+      expect(status.kind).toBe('ready');
+      if (status.kind === 'ready') {
+        expect(status.summary.automated_release_verdict).toBe('FAILED');
+        expect(status.summary.terminal_result_path).toBe(terminalPath);
+      }
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+      rmSync(fakeBin, { recursive: true, force: true });
+    }
+  });
+
+  it('overwrites stale passed terminal artifact when aggregate exits nonzero', () => {
+    const root = mkdtempSync(join(tmpdir(), 'agentsmith-release-campaign-stale-terminal-'));
+    const fakeBin = mkdtempSync(join(tmpdir(), 'agentsmith-fake-npm-'));
+    try {
+      const terminalStep = releaseFullTerminalStep();
+      writeCampaignGateResult({
+        step: terminalStep,
+        campaignRoot: root,
+        status: 'passed',
+        failureClass: 'none',
+        stage: 'complete',
+        summary: 'Stale terminal aggregate result from a prior run passed.',
+      });
+      writeFakeNpm(fakeBin, `#!/usr/bin/env bash
+set -euo pipefail
+if [[ "$1" == "run" && "$2" == "gate:release:full" ]]; then
+  exit 1
+fi
+exit 0
+`);
+
+      runReleaseCampaignWithFakeNpm(root, fakeBin);
+
+      const terminalPath = join(root, 'gate-release-full', 'result.json');
+      const terminal = JSON.parse(readFileSync(terminalPath, 'utf8')) as {
+        status: string;
+        failure_class: string;
+        summary: string;
+      };
+      expect(terminal.status).toBe('failed');
+      expect(terminal.failure_class).toBe('product_regression');
+      expect(terminal.summary).toContain('failed with exit code 1');
+      expect(existsSync(join(root, 'gate-release-full', 'evidence.json'))).toBe(true);
+
+      const status = readReleaseStatus({ campaignRoot: root });
+      expect(status.kind).toBe('ready');
+      if (status.kind === 'ready') {
+        expect(status.summary.automated_release_verdict).toBe('FAILED');
+        expect(status.summary.failure_class).toBe('product_regression');
+        expect(status.summary.terminal_result_path).toBe(terminalPath);
+      }
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+      rmSync(fakeBin, { recursive: true, force: true });
+    }
   });
 
   it('only exits green when executable steps passed and aggregate status is zero', () => {
@@ -213,6 +413,131 @@ exit 0
     }
   });
 
+  it('keeps release campaign step env equivalent to the old internal runner adapters', () => {
+    const root = mkdtempSync(join(tmpdir(), 'agentsmith-release-campaign-env-'));
+    try {
+      const runId = 'release-env-equivalence-test';
+
+      const gateDefault = buildReleaseCampaignCommandEnv({
+        campaignRoot: root,
+        runId,
+        step: releaseFullStep('gate-default'),
+        baseEnv: {},
+      });
+      expect(gateDefault.DEFAULT_GATE_PROFILE).toBe('campaign_after_gate_fast');
+
+      const visual = buildReleaseCampaignCommandEnv({
+        campaignRoot: root,
+        runId,
+        step: releaseFullStep('lane-visual'),
+        baseEnv: {},
+      });
+      expect(visual.MOCK_RUN_ID).toBe(runId);
+      expect(visual.VISUAL_BASELINE_REVIEW_ROOT).toBe(join(root, 'lane-visual', 'visual-baseline-reviews'));
+      expect(visual.CURRENT_GATE_RESULT_GATE_ID).toBe('lane-visual');
+      expect(visual.CURRENT_GATE_RESULT_NPM_SCRIPT).toBe('lane:visual');
+      expect(visual.CURRENT_GATE_RESULT_LINE_KIND).toBe('visual');
+      expect(visual.CURRENT_GATE_RESULT_EVIDENCE_DIR).toBe(join(root, 'lane-visual', 'native'));
+
+      const release = buildReleaseCampaignCommandEnv({
+        campaignRoot: root,
+        runId,
+        step: releaseFullStep('gate-release'),
+        baseEnv: {},
+      });
+      expect(release.RELEASE_REAL_VISUAL_RUN_ID).toBe(runId);
+      expect(release.RELEASE_REAL_VISUAL_ARTIFACT_DIR).toBe(join(root, 'gate-release', 'backend-real-visual'));
+      expect(release.RELEASE_REAL_RUN_ROOT).toBe(join(root, 'gate-release', 'backend-real-run'));
+      expect(release.RELEASE_REAL_READY_LOG_DIR).toBe(join(root, 'gate-release', 'native'));
+      expect(release.CURRENT_GATE_RESULT_GATE_ID).toBe('lane-backend-real-release');
+      expect(release.CURRENT_GATE_RESULT_NPM_SCRIPT).toBe('lane:backend-real:release');
+      expect(release.CURRENT_GATE_RESULT_LINE_KIND).toBe('release_backend_real');
+      expect(release.CURRENT_GATE_RESULT_EVIDENCE_DIR).toBe(join(root, 'gate-release', 'native'));
+
+      const demo = buildReleaseCampaignCommandEnv({
+        campaignRoot: root,
+        runId,
+        step: releaseFullStep('lane-demo-rehearsal'),
+        baseEnv: {},
+      });
+      expect(demo.SCENARIO_RUNTIME_ROOT).toBe(join(root, 'scenario-runtime'));
+      expect(demo.DEMO_REHEARSAL_ROOT).toBe(join(root, 'lane-demo-rehearsal', 'scenario'));
+
+      const cluster = buildReleaseCampaignCommandEnv({
+        campaignRoot: root,
+        runId,
+        step: releaseFullStep('lane-cluster-rehearsal'),
+        baseEnv: {},
+      });
+      expect(cluster.SCENARIO_RUNTIME_ROOT).toBe(join(root, 'scenario-runtime'));
+      expect(cluster.CLUSTER_REHEARSAL_ROOT).toBe(join(root, 'lane-cluster-rehearsal', 'scenario'));
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it('scrubs stale step-specific result env from terminal aggregate while preserving executable step env', () => {
+    const root = mkdtempSync(join(tmpdir(), 'agentsmith-release-campaign-terminal-env-'));
+    const fakeBin = mkdtempSync(join(tmpdir(), 'agentsmith-fake-npm-'));
+    const logPath = join(root, 'npm.log');
+    try {
+      writeFakeNpm(fakeBin, `#!/usr/bin/env bash
+set -euo pipefail
+printf '%s|gate=%s|script=%s|mock=%s|visual=%s|release_real=%s|scenario=%s\\n' \\
+  "$*" \\
+  "\${CURRENT_GATE_RESULT_GATE_ID:-}" \\
+  "\${CURRENT_GATE_RESULT_NPM_SCRIPT:-}" \\
+  "\${MOCK_RUN_ID:-}" \\
+  "\${VISUAL_BASELINE_REVIEW_ROOT:-}" \\
+  "\${RELEASE_REAL_RUN_ROOT:-}" \\
+  "\${SCENARIO_RUNTIME_ROOT:-}" >> "${logPath}"
+if [[ "$1" == "run" && "$2" == "gate:fast" ]]; then
+  exit 0
+fi
+if [[ "$1" == "run" && "$2" == "gate:default" ]]; then
+  exit 0
+fi
+if [[ "$1" == "run" && "$2" == "lane:visual" ]]; then
+  exit 8
+fi
+if [[ "$1" == "run" && "$2" == "gate:release:full" ]]; then
+  exit 1
+fi
+exit 0
+`);
+
+      runReleaseCampaignWithFakeNpm(root, fakeBin, {
+        CURRENT_GATE_RESULT_GATE_ID: 'stale-parent-gate',
+        CURRENT_GATE_RESULT_NPM_SCRIPT: 'stale:script',
+        CURRENT_GATE_RESULT_LINE_KIND: 'stale_line_kind',
+        CURRENT_GATE_RESULT_EVIDENCE_DIR: '/tmp/stale-evidence',
+        MOCK_RUN_ID: 'stale-mock-run',
+        VISUAL_BASELINE_REVIEW_ROOT: '/tmp/stale-visual-review',
+        RELEASE_REAL_RUN_ROOT: '/tmp/stale-release-real',
+        SCENARIO_RUNTIME_ROOT: '/tmp/stale-scenario-runtime',
+      });
+
+      const log = readFileSync(logPath, 'utf8');
+      expect(log).toContain(
+        `run lane:visual|gate=lane-visual|script=lane:visual|mock=release-campaign-runner-test|visual=${join(root, 'lane-visual', 'visual-baseline-reviews')}`,
+      );
+
+      const terminalLine = log.split('\n').find((line) => line.startsWith('run gate:release:full|'));
+      expect(terminalLine).toBeDefined();
+      expect(terminalLine).not.toContain('stale-parent-gate');
+      expect(terminalLine).not.toContain('stale:script');
+      expect(terminalLine).not.toContain('stale-mock-run');
+      expect(terminalLine).not.toContain('stale-visual-review');
+      expect(terminalLine).not.toContain('stale-release-real');
+      expect(terminalLine).not.toContain('stale-scenario-runtime');
+      expect(terminalLine).toBe('run gate:release:full|gate=|script=|mock=|visual=|release_real=|scenario=');
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+      rmSync(fakeBin, { recursive: true, force: true });
+    }
+  });
+
+
   it('writes skipped results and evidence pointers for executable steps after an upstream failure', () => {
     const root = mkdtempSync(join(tmpdir(), 'agentsmith-release-campaign-skipped-'));
     const fakeBin = mkdtempSync(join(tmpdir(), 'agentsmith-fake-npm-'));
@@ -277,6 +602,53 @@ exit 0
       expect(terminalResult.summary).not.toContain('Missing campaign step result');
       expect(terminalResult.summary).toContain('Campaign step gate-fast did not pass.');
       expect(terminalResult.summary).toContain('Campaign step gate-default did not pass.');
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+      rmSync(fakeBin, { recursive: true, force: true });
+    }
+  });
+
+  it('distinguishes fail-fast skipped siblings from dependency-failed downstream steps', () => {
+    const root = mkdtempSync(join(tmpdir(), 'agentsmith-release-campaign-fail-fast-'));
+    const fakeBin = mkdtempSync(join(tmpdir(), 'agentsmith-fake-npm-'));
+    const logPath = join(root, 'npm.log');
+    try {
+      writeFakeNpm(fakeBin, `#!/usr/bin/env bash
+set -euo pipefail
+printf '%s\\n' "$*" >> "${logPath}"
+if [[ "$1" == "run" && "$2" == "gate:fast" ]]; then
+  exit 0
+fi
+if [[ "$1" == "run" && "$2" == "gate:default" ]]; then
+  exit 6
+fi
+exit 0
+`);
+
+      runReleaseCampaignWithFakeNpm(root, fakeBin);
+
+      const log = readFileSync(logPath, 'utf8');
+      expect(log).toContain('run gate:fast');
+      expect(log).toContain('run gate:default');
+      expect(log).toContain('run gate:release:full');
+      expect(log).not.toContain('run lane:visual');
+      expect(log.split('\n')).not.toContain('run gate:release');
+
+      const visualResult = JSON.parse(
+        readFileSync(join(root, 'lane-visual', 'result.json'), 'utf8'),
+      ) as { status: string; stage: string; summary: string };
+      expect(visualResult.status).toBe('failed');
+      expect(visualResult.stage).toBe('skipped');
+      expect(visualResult.summary).toContain('campaign fail-fast');
+      expect(visualResult.summary).toContain('gate-default');
+      expect(visualResult.summary).not.toContain('dependency gate-default');
+
+      const releaseResult = JSON.parse(
+        readFileSync(join(root, 'gate-release', 'result.json'), 'utf8'),
+      ) as { status: string; stage: string; summary: string };
+      expect(releaseResult.status).toBe('failed');
+      expect(releaseResult.stage).toBe('skipped');
+      expect(releaseResult.summary).toContain('dependency gate-default');
     } finally {
       rmSync(root, { recursive: true, force: true });
       rmSync(fakeBin, { recursive: true, force: true });

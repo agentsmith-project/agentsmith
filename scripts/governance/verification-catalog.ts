@@ -33,6 +33,13 @@ import {
   type CurrentJobMetadata,
 } from './current-job-metadata-manifest';
 import {
+  buildCurrentArtifactTemplateIndex,
+  CURRENT_ARTIFACT_TEMPLATE_INDEX_SCHEMA,
+  CURRENT_ARTIFACT_TEMPLATE_INDEX_VERSION,
+  type CurrentArtifactTemplateEntry,
+  type CurrentArtifactTemplateIndex,
+} from './current-artifact-index-schema';
+import {
   CURRENT_RESOURCE_LOCK_MANIFEST_SCHEMA,
   CURRENT_RESOURCE_LOCK_MANIFEST_VERSION,
   listCurrentResourceLocks,
@@ -219,6 +226,32 @@ export interface VerificationCatalogJobMetadataProjection {
   output_counts: VerificationCatalogJobOutputCountsProjection;
 }
 
+export interface VerificationCatalogArtifactTemplateProjection {
+  template: string;
+  kind: CurrentArtifactTemplateEntry['kind'];
+  required_for: CurrentArtifactTemplateEntry['required_for'];
+  producer_kind: CurrentArtifactTemplateEntry['producer']['kind'];
+  producer_job_id: string;
+  producer_gate_id: string;
+  producer_step_id: string | null;
+  producer_npm_script: string;
+}
+
+export interface VerificationCatalogArtifactTemplateIndexProjection {
+  schema: typeof CURRENT_ARTIFACT_TEMPLATE_INDEX_SCHEMA;
+  version: typeof CURRENT_ARTIFACT_TEMPLATE_INDEX_VERSION;
+  projection_kind: CurrentArtifactTemplateIndex['summary']['projection_kind'];
+  artifact_directory_inspection: false;
+  creates_evidence_claim: false;
+  job_count: number;
+  template_count: number;
+  required_template_count: number;
+  campaign_id_count: number;
+  template_kind_counts: CurrentArtifactTemplateIndex['summary']['template_kind_counts'];
+  producer_kind_counts: CurrentArtifactTemplateIndex['summary']['producer_kind_counts'];
+  templates: readonly VerificationCatalogArtifactTemplateProjection[];
+}
+
 export interface VerificationCatalogP2ModelProjection {
   projection_kind: 'read_only';
   artifact_directory_inspection: false;
@@ -240,6 +273,7 @@ export interface VerificationCatalogP2ModelProjection {
     campaign_id_count: number;
     jobs: readonly VerificationCatalogJobMetadataProjection[];
   };
+  artifact_templates: VerificationCatalogArtifactTemplateIndexProjection;
 }
 
 export interface VerificationCatalog {
@@ -313,6 +347,16 @@ export interface VerificationCatalog {
       job_ids: readonly string[];
       job_count: number;
       campaign_ids: readonly string[];
+    };
+    current_artifact_template_index: {
+      authority: 'derived_projection';
+      module: 'scripts/governance/current-artifact-index-schema.ts';
+      schema: typeof CURRENT_ARTIFACT_TEMPLATE_INDEX_SCHEMA;
+      version: typeof CURRENT_ARTIFACT_TEMPLATE_INDEX_VERSION;
+      job_count: number;
+      template_count: number;
+      artifact_directory_inspection: false;
+      creates_evidence_claim: false;
     };
     generated_story_specs: {
       authority: 'derived_cache';
@@ -505,6 +549,40 @@ function projectJobMetadata(job: CurrentJobMetadata): VerificationCatalogJobMeta
   };
 }
 
+function projectArtifactTemplate(
+  template: CurrentArtifactTemplateEntry,
+): VerificationCatalogArtifactTemplateProjection {
+  return {
+    template: template.template,
+    kind: template.kind,
+    required_for: [...template.required_for],
+    producer_kind: template.producer.kind,
+    producer_job_id: template.producer.job_id,
+    producer_gate_id: template.producer.gate_id,
+    producer_step_id: template.producer.step_id,
+    producer_npm_script: template.producer.npm_script,
+  };
+}
+
+function projectArtifactTemplateIndex(
+  artifactTemplateIndex: CurrentArtifactTemplateIndex,
+): VerificationCatalogArtifactTemplateIndexProjection {
+  return {
+    schema: CURRENT_ARTIFACT_TEMPLATE_INDEX_SCHEMA,
+    version: CURRENT_ARTIFACT_TEMPLATE_INDEX_VERSION,
+    projection_kind: artifactTemplateIndex.summary.projection_kind,
+    artifact_directory_inspection: false,
+    creates_evidence_claim: false,
+    job_count: artifactTemplateIndex.summary.job_count,
+    template_count: artifactTemplateIndex.summary.template_count,
+    required_template_count: artifactTemplateIndex.summary.required_template_count,
+    campaign_id_count: artifactTemplateIndex.summary.campaign_id_count,
+    template_kind_counts: artifactTemplateIndex.summary.template_kind_counts,
+    producer_kind_counts: artifactTemplateIndex.summary.producer_kind_counts,
+    templates: artifactTemplateIndex.templates.map(projectArtifactTemplate),
+  };
+}
+
 function assertProjectedJobLocksKnown(
   resourceLocks: readonly CurrentResourceLockDefinition[],
   jobs: readonly CurrentJobMetadata[],
@@ -525,6 +603,9 @@ export function buildVerificationCatalogP2ModelProjection(args: {
   jobs: readonly CurrentJobMetadata[];
 }): VerificationCatalogP2ModelProjection {
   assertProjectedJobLocksKnown(args.resourceLocks, args.jobs);
+  const artifactTemplateIndex = buildCurrentArtifactTemplateIndex({
+    jobs: args.jobs,
+  });
 
   return {
     projection_kind: 'read_only',
@@ -554,6 +635,7 @@ export function buildVerificationCatalogP2ModelProjection(args: {
       campaign_id_count: projectP2CampaignIds(args.jobs).length,
       jobs: args.jobs.map(projectJobMetadata),
     },
+    artifact_templates: projectArtifactTemplateIndex(artifactTemplateIndex),
   };
 }
 
@@ -920,6 +1002,9 @@ export function buildVerificationCatalog(input: BuildVerificationCatalogInput = 
   const verificationCampaigns = input.verificationCampaigns ?? listCurrentVerificationCampaigns();
   const currentResourceLocks = listCurrentResourceLocks();
   const currentJobMetadata = listCurrentJobMetadata();
+  const currentArtifactTemplateIndex = buildCurrentArtifactTemplateIndex({
+    jobs: currentJobMetadata,
+  });
   const generatedStorySpecStoryIds = stories.map((story) => story.storyId);
   const visualProjection = buildVisualProjection(visualCatalogEntries);
   const storiesUseInputOverride = Boolean(input.stories);
@@ -1041,6 +1126,16 @@ export function buildVerificationCatalog(input: BuildVerificationCatalogInput = 
         job_ids: currentJobIds,
         job_count: currentJobIds.length,
         campaign_ids: currentJobCampaignIds,
+      },
+      current_artifact_template_index: {
+        authority: 'derived_projection',
+        module: 'scripts/governance/current-artifact-index-schema.ts',
+        schema: CURRENT_ARTIFACT_TEMPLATE_INDEX_SCHEMA,
+        version: CURRENT_ARTIFACT_TEMPLATE_INDEX_VERSION,
+        job_count: currentArtifactTemplateIndex.summary.job_count,
+        template_count: currentArtifactTemplateIndex.summary.template_count,
+        artifact_directory_inspection: false,
+        creates_evidence_claim: false,
       },
       generated_story_specs: {
         authority: 'derived_cache',

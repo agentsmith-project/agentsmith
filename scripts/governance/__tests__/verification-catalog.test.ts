@@ -18,6 +18,11 @@ import {
   listCurrentJobMetadata,
 } from '../current-job-metadata-manifest';
 import {
+  buildCurrentArtifactTemplateIndex,
+  CURRENT_ARTIFACT_TEMPLATE_INDEX_SCHEMA,
+  CURRENT_ARTIFACT_TEMPLATE_INDEX_VERSION,
+} from '../current-artifact-index-schema';
+import {
   CURRENT_RESOURCE_LOCK_MANIFEST_SCHEMA,
   CURRENT_RESOURCE_LOCK_MANIFEST_VERSION,
   listCurrentResourceLocks,
@@ -42,18 +47,22 @@ import {
 import { scanTraceSpecStoryMap } from '../trace-spec-story-map';
 
 const FORBIDDEN_P2_RUNTIME_FIELD_NAMES = [
+  'exists',
+  'status',
+  'exit_code',
   'passed',
   'failed',
   'stale',
   'reusable',
   'cache_hit',
   'claim_id',
+  'claim_reuse',
   'verdict',
   'result_status',
   'failure_class',
-  'exists',
   'artifact_digest',
   'result_digest',
+  'input_digest',
   'run_id',
   'campaign_root',
 ] as const;
@@ -216,13 +225,28 @@ describe('verification catalog', () => {
       job_count: jobIds.length,
       campaign_ids: campaignIds,
     });
+    expect(catalog.source_truth.current_artifact_template_index).toEqual({
+      authority: 'derived_projection',
+      module: 'scripts/governance/current-artifact-index-schema.ts',
+      schema: CURRENT_ARTIFACT_TEMPLATE_INDEX_SCHEMA,
+      version: CURRENT_ARTIFACT_TEMPLATE_INDEX_VERSION,
+      job_count: jobIds.length,
+      template_count: buildCurrentArtifactTemplateIndex().summary.template_count,
+      artifact_directory_inspection: false,
+      creates_evidence_claim: false,
+    });
   });
 
-  it('projects P2 claim schema, resource locks, and job metadata as read-only model data', () => {
+  it('projects P2 claim schema, resource locks, job metadata, and artifact templates as read-only model data', () => {
     const catalog = buildVerificationCatalog();
     const projection = catalog.p2_model_projection;
+    const artifactIndex = buildCurrentArtifactTemplateIndex();
     const providerSecretLock = projection.resource_locks.locks.find((lock) => lock.id === 'provider-secret-profile');
     const gateReleaseJob = projection.job_metadata.jobs.find((job) => job.id === 'gate-release');
+    const gateReleaseNativeTemplate = projection.artifact_templates.templates.find((entry) => (
+      entry.producer_job_id === 'gate-release'
+      && entry.template === '<campaign-root>/gate-release/native/result.json'
+    ));
 
     expect(projection).toMatchObject({
       projection_kind: 'read_only',
@@ -249,6 +273,18 @@ describe('verification catalog', () => {
         job_ids: listCurrentJobMetadata().map((job) => job.id),
         job_count: listCurrentJobMetadata().length,
         campaign_id_count: 1,
+      },
+      artifact_templates: {
+        schema: CURRENT_ARTIFACT_TEMPLATE_INDEX_SCHEMA,
+        version: CURRENT_ARTIFACT_TEMPLATE_INDEX_VERSION,
+        projection_kind: 'declared_template_index',
+        artifact_directory_inspection: false,
+        creates_evidence_claim: false,
+        job_count: artifactIndex.summary.job_count,
+        template_count: artifactIndex.summary.template_count,
+        required_template_count: artifactIndex.summary.required_template_count,
+        template_kind_counts: artifactIndex.summary.template_kind_counts,
+        producer_kind_counts: artifactIndex.summary.producer_kind_counts,
       },
     });
     expect(providerSecretLock).toMatchObject({
@@ -317,6 +353,25 @@ describe('verification catalog', () => {
       'step_id',
       'timeout_seconds',
     ]);
+    expect(gateReleaseNativeTemplate).toMatchObject({
+      kind: 'native_result_template',
+      required_for: ['release'],
+      producer_kind: 'campaign_step',
+      producer_job_id: 'gate-release',
+      producer_gate_id: 'gate-release',
+      producer_step_id: 'gate-release',
+      producer_npm_script: 'gate:release',
+    });
+    expect(Object.keys(gateReleaseNativeTemplate ?? {}).sort()).toEqual([
+      'kind',
+      'producer_gate_id',
+      'producer_job_id',
+      'producer_kind',
+      'producer_npm_script',
+      'producer_step_id',
+      'required_for',
+      'template',
+    ]);
   });
 
   it('keeps every projected job lock mapped to a projected resource lock id', () => {
@@ -353,14 +408,23 @@ describe('verification catalog', () => {
       catalog.source_truth.current_evidence_claim_schema,
       'source_truth.current_evidence_claim_schema',
     );
+    expectNoForbiddenP2RuntimeTokens(
+      catalog.source_truth.current_artifact_template_index,
+      'source_truth.current_artifact_template_index',
+    );
     expectNoForbiddenP2RuntimeTokens(catalog.p2_model_projection, 'p2_model_projection');
   });
 
   it('does not introduce artifact inspection APIs in the verification catalog source', () => {
     const source = readFileSync('scripts/governance/verification-catalog.ts', 'utf8');
+    const p2Source = source.slice(
+      source.indexOf('export function buildVerificationCatalogP2ModelProjection'),
+      source.indexOf('function orderedLevels'),
+    );
 
     expect(source).not.toMatch(/\b(?:existsSync|readdirSync|statSync|createHash|sha256)\b/);
     expect(source).not.toMatch(/from ['"]node:crypto['"]/);
+    expect(p2Source).not.toMatch(/from ['"]node:fs['"]|\b(?:existsSync|readdirSync|statSync|readFileSync|createHash|sha256)\b/);
   });
 
   it('marks custom story and visual inputs as non-default input overrides', () => {

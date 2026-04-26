@@ -2,12 +2,25 @@ import { mkdirSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 
 import {
+  findCurrentVerificationCampaignById,
+} from './current-verification-campaign-manifest';
+import {
+  writeGovernanceRunSummary,
+} from './governance-run-summary';
+import {
   buildGovernanceRunPlan,
   GOVERNANCE_RUN_PLAN_FILE_NAME,
   renderGovernanceRunPlanSummary,
   validateGovernanceRunPlan,
   type GovernanceRunPlanValidationFailure,
 } from './governance-run-plan';
+import {
+  resolveCampaignRoot,
+  resolveCampaignRunId,
+} from './release-campaign-io';
+import {
+  runReleaseCampaignExecution,
+} from './release-campaign-execution';
 
 interface ParsedGovernanceRunArgs {
   subcommand: 'run';
@@ -75,6 +88,60 @@ function unsupportedGoalMessage(goal: string): string {
   ].join(' ');
 }
 
+function timestampRunId(): string {
+  return new Date().toISOString().replace(/[-:]/g, '').replace(/\.\d{3}Z$/, 'Z');
+}
+
+function hasExplicitCampaignRoot(): boolean {
+  return Boolean(process.env.RELEASE_CAMPAIGN_ROOT?.trim());
+}
+
+function resolveGovernanceCampaignRunId(campaignRoot: string): string {
+  if (!hasExplicitCampaignRoot()) {
+    return resolveCampaignRunId(campaignRoot);
+  }
+
+  const originalRunId = process.env.RELEASE_CAMPAIGN_RUN_ID;
+  delete process.env.RELEASE_CAMPAIGN_RUN_ID;
+
+  try {
+    return resolveCampaignRunId(campaignRoot);
+  } finally {
+    if (originalRunId === undefined) {
+      delete process.env.RELEASE_CAMPAIGN_RUN_ID;
+    } else {
+      process.env.RELEASE_CAMPAIGN_RUN_ID = originalRunId;
+    }
+  }
+}
+
+function withReleaseCampaignEnvironment<T>(input: {
+  campaignRoot: string;
+  runId: string;
+  action: () => T;
+}): T {
+  const originalRoot = process.env.RELEASE_CAMPAIGN_ROOT;
+  const originalRunId = process.env.RELEASE_CAMPAIGN_RUN_ID;
+
+  process.env.RELEASE_CAMPAIGN_ROOT = input.campaignRoot;
+  process.env.RELEASE_CAMPAIGN_RUN_ID = input.runId;
+
+  try {
+    return input.action();
+  } finally {
+    if (originalRoot === undefined) {
+      delete process.env.RELEASE_CAMPAIGN_ROOT;
+    } else {
+      process.env.RELEASE_CAMPAIGN_ROOT = originalRoot;
+    }
+    if (originalRunId === undefined) {
+      delete process.env.RELEASE_CAMPAIGN_RUN_ID;
+    } else {
+      process.env.RELEASE_CAMPAIGN_RUN_ID = originalRunId;
+    }
+  }
+}
+
 function writePlanFile(reportRoot: string, content: string): string {
   mkdirSync(reportRoot, { recursive: true });
   const outputPath = path.join(reportRoot, GOVERNANCE_RUN_PLAN_FILE_NAME);
@@ -100,16 +167,14 @@ function assertValidPlanBeforeWrite(plan: unknown): void {
 export function runGovernanceCli(argv: readonly string[] = process.argv.slice(2)): number {
   try {
     const options = parseGovernanceRunArgs(argv);
-    if (options.run) {
-      throw new Error(
-        'execution not supported in this slice; this adapter only writes manifest-backed plan_only JSON and does not run npm or shell commands.',
-      );
-    }
     if (options.goal !== 'release') {
       throw new Error(unsupportedGoalMessage(options.goal));
     }
     if (!options.reportRoot?.trim()) {
       throw new Error('report root is required for governance runner shell plan output.');
+    }
+    if (options.run && options.jobId) {
+      throw new Error('partial job execution is not supported for governance run --goal=release --run.');
     }
 
     const plan = buildGovernanceRunPlan({
@@ -121,6 +186,51 @@ export function runGovernanceCli(argv: readonly string[] = process.argv.slice(2)
     const outputPath = writePlanFile(options.reportRoot, `${JSON.stringify(plan, null, 2)}\n`);
 
     process.stdout.write(renderGovernanceRunPlanSummary(plan, outputPath));
+    if (options.run) {
+      const campaign = findCurrentVerificationCampaignById('release-full');
+      if (!campaign) {
+        throw new Error('release-full verification campaign is not registered.');
+      }
+
+      const requestedRunId = process.env.RELEASE_CAMPAIGN_RUN_ID?.trim() || timestampRunId();
+      const campaignRoot = resolveCampaignRoot(requestedRunId);
+      const runId = resolveGovernanceCampaignRunId(campaignRoot);
+      let exitCode = 1;
+      let campaignEngineInvoked = false;
+      let campaignExecutionReturned = false;
+
+      try {
+        campaignEngineInvoked = true;
+        const result = withReleaseCampaignEnvironment({
+          campaignRoot,
+          runId,
+          action: () => runReleaseCampaignExecution({
+            campaign,
+            campaignRoot,
+            runId,
+            cwd: process.cwd(),
+            env: process.env,
+            maxConcurrency: 1,
+          }),
+        });
+        campaignExecutionReturned = true;
+        exitCode = result.exitCode;
+      } finally {
+        const summaryPath = writeGovernanceRunSummary({
+          goal: 'release',
+          reportRoot: options.reportRoot,
+          planSource: outputPath,
+          campaignId: 'release-full',
+          campaignRoot,
+          campaignRunId: runId,
+          campaignEngineInvoked,
+          campaignExecutionReturned,
+        });
+        process.stdout.write(`Governance runner audit summary: ${summaryPath}\n`);
+      }
+
+      return exitCode;
+    }
     return 0;
   } catch (error) {
     process.stderr.write(`[governance-runner] ${error instanceof Error ? error.message : String(error)}\n`);

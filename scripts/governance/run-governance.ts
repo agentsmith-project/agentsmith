@@ -15,6 +15,9 @@ import {
   type GovernanceRunPlanValidationFailure,
 } from './governance-run-plan';
 import {
+  assertGovernanceRunGoal,
+} from './governance-run-goal-selector';
+import {
   resolveCampaignRoot,
   resolveCampaignRunId,
 } from './release-campaign-io';
@@ -80,11 +83,11 @@ function parseGovernanceRunArgs(argv: readonly string[]): ParsedGovernanceRunArg
   };
 }
 
-function unsupportedGoalMessage(goal: string): string {
+function unsupportedRunMessage(goal: string): string {
   return [
-    `goal ${goal} is not supported by this P2 shell adapter slice.`,
-    `Continue with \`npm run verify -- --goal=${goal}\` dry-run plan instead.`,
-    'This adapter must not assemble daily jobs from shell fragments.',
+    `governance run --goal=${goal} --run is not supported by this plan-only slice.`,
+    `Use \`npm run verify -- --goal=${goal} --run\` for non-release execution.`,
+    'This adapter only delegates release --run to the release campaign engine.',
   ].join(' ');
 }
 
@@ -167,11 +170,12 @@ function assertValidPlanBeforeWrite(plan: unknown): void {
 export function runGovernanceCli(argv: readonly string[] = process.argv.slice(2)): number {
   try {
     const options = parseGovernanceRunArgs(argv);
-    if (options.goal !== 'release') {
-      throw new Error(unsupportedGoalMessage(options.goal));
-    }
+    assertGovernanceRunGoal(options.goal);
     if (!options.reportRoot?.trim()) {
       throw new Error('report root is required for governance runner shell plan output.');
+    }
+    if (options.run && options.goal !== 'release') {
+      throw new Error(unsupportedRunMessage(options.goal));
     }
     if (options.run && options.jobId) {
       throw new Error('partial job execution is not supported for governance run --goal=release --run.');

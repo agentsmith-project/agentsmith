@@ -72,6 +72,18 @@ function expectedTemplatePaths(): readonly string[] {
   return listCurrentJobMetadata().flatMap((job) => job.outputs.expected_artifact_path_templates);
 }
 
+function expectedRequiredFor(entry: ReturnType<typeof buildCurrentArtifactTemplateIndex>['templates'][number]): readonly string[] {
+  if (entry.producer.kind === 'campaign_step') {
+    return ['release'];
+  }
+
+  const gate = findCurrentGateDefinitionById(entry.producer.gate_id);
+  const requirements = gate?.requiredFor.length ? gate.requiredFor : gate?.storyEvidenceRequiredFor ?? [];
+  const ordered = ['default', 'release', 'visual'] as const;
+
+  return ordered.filter((requirement) => requirements.includes(requirement));
+}
+
 describe('current artifact template index schema', () => {
   it('declares only expected artifact templates derived from current job metadata', () => {
     const index = buildCurrentArtifactTemplateIndex();
@@ -174,6 +186,34 @@ describe('current artifact template index schema', () => {
     expect(nativeEntry?.template).toContain('<campaign-root>');
   });
 
+  it('marks standalone evidence artifact provenance with the standalone gate field', () => {
+    const index = buildCurrentArtifactTemplateIndex();
+    const standaloneVisualEntry = index.templates.find((entry) => (
+      entry.producer.job_id === 'standalone-lane-visual'
+      && entry.template === 'artifacts/visual-baseline-reviews/<run-id>/run-manifest.json'
+    ));
+
+    expect(standaloneVisualEntry).toMatchObject({
+      kind: 'declared_output_template',
+      required_for: ['release', 'visual'],
+      producer: {
+        kind: 'standalone_gate',
+        job_id: 'standalone-lane-visual',
+        campaign_id: null,
+        gate_id: 'lane-visual',
+        step_id: null,
+        npm_script: 'lane:visual',
+      },
+      provenance: {
+        source: 'current_job_metadata_manifest',
+        source_field: 'outputs.expected_artifact_path_templates',
+        campaign_step_field: null,
+        gate_id: 'lane-visual',
+        gate_field: 'standalone_evidence_artifacts',
+      },
+    });
+  });
+
   it('keeps every entry aligned with the current gate manifest required-for topology', () => {
     const index = buildCurrentArtifactTemplateIndex();
 
@@ -183,7 +223,7 @@ describe('current artifact template index schema', () => {
       expect(gate, `${entry.id} must reference a current gate`).toBeDefined();
       expect(entry.producer.npm_script).toBe(gate?.npmScript);
       expect(entry.required_for.length).toBeGreaterThan(0);
-      expect(entry.required_for).toEqual(['release']);
+      expect(entry.required_for).toEqual(expectedRequiredFor(entry));
     }
   });
 

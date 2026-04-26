@@ -15,7 +15,9 @@ import { runGovernanceCli } from '../run-governance';
 import { buildCurrentArtifactTemplateIndex } from '../current-artifact-index-schema';
 import { listCurrentJobMetadata } from '../current-job-metadata-manifest';
 import { listCurrentResourceLocks } from '../current-resource-lock-manifest';
+import { selectGovernanceRunStandaloneJobIds, type GovernanceRunGoal } from '../governance-run-goal-selector';
 import { resolveCampaignRunId } from '../release-campaign-io';
+import { buildVerificationPlan } from '../verify-impact-selector';
 
 const FORBIDDEN_RUNTIME_KEYS = [
   'status',
@@ -62,6 +64,12 @@ const FORBIDDEN_GOVERNANCE_RUN_SUMMARY_KEYS = [
   'owner',
 ] as const;
 const FORBIDDEN_GOVERNANCE_RUN_SUMMARY_KEY_SET = new Set<string>(FORBIDDEN_GOVERNANCE_RUN_SUMMARY_KEYS);
+const STANDALONE_JOB_VERIFY_COMMANDS: Record<string, string> = {
+  'standalone-gate-fast': 'npm run verify:quick',
+  'standalone-gate-default': 'npm run verify:default',
+  'standalone-lane-visual': 'npm run verify:visual',
+  'standalone-lane-backend-real-core': 'npm run verify:real',
+};
 
 function collectForbiddenRuntimeKeys(value: unknown, path: string, matches: string[]): void {
   if (Array.isArray(value)) {
@@ -262,8 +270,10 @@ async function withPatchedEnv<T>(
 describe('governance runner shell adapter', () => {
   it('builds a release plan from current manifests without execution or runtime decision fields', () => {
     const reportRoot = 'artifacts/governance-runner-shell-plan/test';
-    const jobs = listCurrentJobMetadata();
+    const allJobs = listCurrentJobMetadata();
+    const jobs = allJobs.filter((job) => job.kind === 'campaign_step');
     const artifactIndex = buildCurrentArtifactTemplateIndex({ jobs });
+    const fullArtifactIndex = buildCurrentArtifactTemplateIndex({ jobs: allJobs });
     const plan = buildGovernanceRunPlan({
       goal: 'release',
       reportRoot,
@@ -298,7 +308,7 @@ describe('governance runner shell adapter', () => {
     ]);
     expect(plan.input_manifests).toMatchObject({
       current_job_metadata_manifest: {
-        job_count: jobs.length,
+        job_count: allJobs.length,
         selected_job_count: jobs.length,
       },
       current_resource_lock_manifest: {
@@ -308,7 +318,7 @@ describe('governance runner shell adapter', () => {
         projection_kind: 'declared_template_index',
         artifact_directory_inspection: false,
         creates_evidence_claim: false,
-        template_count: artifactIndex.summary.template_count,
+        template_count: fullArtifactIndex.summary.template_count,
         selected_template_count: artifactIndex.summary.template_count,
       },
     });
@@ -373,6 +383,81 @@ describe('governance runner shell adapter', () => {
       value: plan,
     });
     expectNoForbiddenRuntimeKeys(plan, 'release shell plan');
+  });
+
+  it('accepts governance run plan goals while keeping unknown goals and release-real fail-closed', () => {
+    const reportRoot = 'artifacts/governance-runner-shell-plan/test';
+
+    for (const goal of ['debug', 'pr', 'visual', 'real', 'release'] as const) {
+      const plan = buildGovernanceRunPlan({
+        goal,
+        reportRoot,
+      });
+
+      expect(plan.goal).toBe(goal);
+      expect(validateGovernanceRunPlan(plan)).toEqual({
+        ok: true,
+        value: plan,
+      });
+      expectNoForbiddenRuntimeKeys(plan, `${goal} shell plan`);
+    }
+
+    expect(() => buildGovernanceRunPlan({
+      goal: 'release-real',
+      reportRoot,
+    })).toThrow(/unsupported governance run goal: release-real/);
+    expect(() => buildGovernanceRunPlan({
+      goal: 'unknown',
+      reportRoot,
+    })).toThrow(/unsupported governance run goal: unknown/);
+  });
+
+  it('selects standalone jobs for non-release goals and campaign steps for release only', () => {
+    const reportRoot = 'artifacts/governance-runner-shell-plan/test';
+    const releaseJobIds = listCurrentJobMetadata()
+      .filter((job) => job.kind === 'campaign_step')
+      .map((job) => job.id);
+    const expectedByGoal = {
+      debug: ['standalone-gate-fast'],
+      visual: ['standalone-gate-fast', 'standalone-gate-default', 'standalone-lane-visual'],
+      real: ['standalone-gate-fast', 'standalone-gate-default', 'standalone-lane-backend-real-core'],
+      pr: ['standalone-gate-fast', 'standalone-gate-default', 'standalone-lane-backend-real-core'],
+      release: releaseJobIds,
+    } as const;
+
+    for (const [goal, expectedJobIds] of Object.entries(expectedByGoal)) {
+      const plan = buildGovernanceRunPlan({
+        goal,
+        reportRoot,
+      });
+
+      expect(plan.jobs.map((job) => job.id), goal).toEqual(expectedJobIds);
+      if (goal === 'release') {
+        expect(plan.jobs.every((job) => job.kind === 'campaign_step')).toBe(true);
+        expect(plan.jobs.every((job) => job.campaign_id === 'release-full')).toBe(true);
+        expect(plan.jobs.every((job) => job.step_id !== null)).toBe(true);
+      } else {
+        expect(plan.jobs.every((job) => job.kind === 'standalone_gate')).toBe(true);
+        expect(plan.jobs.every((job) => job.campaign_id === null)).toBe(true);
+        expect(plan.jobs.every((job) => job.step_id === null)).toBe(true);
+        expect(plan.artifact_templates.every((entry) => entry.producer_kind === 'standalone_gate')).toBe(true);
+        expect(JSON.stringify(plan)).not.toContain('"gate_id":"gate-release-full"');
+      }
+      expectNoForbiddenRuntimeKeys(plan, `${goal} selected shell plan`);
+    }
+  });
+
+  it('keeps non-release goal selector mapping aligned with verify selector default semantics', () => {
+    for (const goal of ['debug', 'pr', 'visual', 'real'] as const satisfies readonly GovernanceRunGoal[]) {
+      const selectedCommands = selectGovernanceRunStandaloneJobIds(goal)
+        .map((jobId) => STANDALONE_JOB_VERIFY_COMMANDS[jobId]);
+      const verificationPlan = buildVerificationPlan({
+        goal,
+        run: false,
+      });
+
+      expect(selectedCommands, goal).toEqual(verificationPlan.recommendedCommands);
+    }
   });
 
   it('marks the terminal aggregate job as an internal aggregate adapter only', () => {
@@ -440,6 +525,67 @@ describe('governance runner shell adapter', () => {
         reportRoot,
       }));
       expectNoForbiddenRuntimeKeys(written, 'written shell plan');
+    });
+  });
+
+  it('writes a non-release plan-only file without spawning npm or writing a governance summary', async () => {
+    await withTempReportRoot(async (parentRoot) => {
+      const reportRoot = join(parentRoot, 'visual-plan-report');
+      const fakeBin = await mkdtemp(join(parentRoot, 'fake-npm-'));
+      const logPath = join(parentRoot, 'fake-npm-plan-only.log');
+      await writeFakeNpm(fakeBin, logPath);
+
+      const result = await withPatchedEnv({
+        PATH: `${fakeBin}:${process.env.PATH ?? ''}`,
+      }, async () => captureProcessWrites(() => runGovernanceCli([
+        'run',
+        '--goal=visual',
+        `--report-root=${reportRoot}`,
+      ])));
+      const written = await readPlanFile(reportRoot);
+
+      expect(result.code).toBe(0);
+      expect(result.stderr).toBe('');
+      expect(result.stdout).toContain('Governance runner shell plan');
+      expect(result.stdout).toContain('Goal: visual');
+      expect(written).toEqual(buildGovernanceRunPlan({
+        goal: 'visual',
+        reportRoot,
+      }));
+      expect(written).toMatchObject({
+        mode: 'plan_only',
+        commands_executed: false,
+        release_decision_produced: false,
+        evidence_claims_created: false,
+      });
+      await expect(readFile(logPath, 'utf8')).rejects.toThrow();
+      await expect(readJsonFile(join(reportRoot, 'governance-run-summary.json'))).rejects.toThrow();
+    });
+  });
+
+  it('fails closed for non-release --run without spawning npm or writing governance output', async () => {
+    await withTempReportRoot(async (parentRoot) => {
+      const reportRoot = join(parentRoot, 'visual-run-report');
+      const fakeBin = await mkdtemp(join(parentRoot, 'fake-npm-'));
+      const logPath = join(parentRoot, 'fake-npm-run-closed.log');
+      await writeFakeNpm(fakeBin, logPath);
+
+      const result = await withPatchedEnv({
+        PATH: `${fakeBin}:${process.env.PATH ?? ''}`,
+      }, async () => captureProcessWrites(() => runGovernanceCli([
+        'run',
+        '--goal=visual',
+        `--report-root=${reportRoot}`,
+        '--run',
+      ])));
+
+      expect(result.code).toBe(1);
+      expect(result.stdout).toBe('');
+      expect(result.stderr).toContain('governance run --goal=visual --run is not supported');
+      expect(result.stderr).toContain('npm run verify -- --goal=visual --run');
+      await expect(readFile(logPath, 'utf8')).rejects.toThrow();
+      await expect(readPlanFile(reportRoot)).rejects.toThrow();
+      await expect(readJsonFile(join(reportRoot, 'governance-run-summary.json'))).rejects.toThrow();
     });
   });
 
@@ -788,7 +934,7 @@ describe('governance runner shell adapter', () => {
     });
   });
 
-  it('fails closed for --run job selection and non-release goals without writing execution output', async () => {
+  it('fails closed for --run job selection without writing execution output', async () => {
     await withTempReportRoot(async (reportRoot) => {
       const runResult = captureProcessWrites(() => runGovernanceCli([
         'run',
@@ -797,38 +943,30 @@ describe('governance runner shell adapter', () => {
         '--run',
         '--job-id=gate-fast',
       ]));
-      const unsupportedGoal = captureProcessWrites(() => runGovernanceCli([
-        'run',
-        '--goal=visual',
-        `--report-root=${reportRoot}`,
-      ]));
 
       expect(runResult.code).toBe(1);
       expect(runResult.stdout).toBe('');
       expect(runResult.stderr).toContain('partial job execution is not supported');
-      expect(unsupportedGoal.code).toBe(1);
-      expect(unsupportedGoal.stdout).toBe('');
-      expect(unsupportedGoal.stderr).toContain('goal visual is not supported');
-      expect(unsupportedGoal.stderr).toContain('npm run verify -- --goal=visual');
-      expect(unsupportedGoal.stderr).toContain('dry-run plan');
       await expect(readPlanFile(reportRoot)).rejects.toThrow();
       await expect(readJsonFile(join(reportRoot, 'governance-run-summary.json'))).rejects.toThrow();
     });
   });
 
   it('keeps the plan builder free of shell execution, artifact scanning, and public script exposure', async () => {
-    const [builderSource, cliSource, packageJsonSource] = await Promise.all([
+    const [builderSource, selectorSource, cliSource, packageJsonSource] = await Promise.all([
       readFile('scripts/governance/governance-run-plan.ts', 'utf8'),
+      readFile('scripts/governance/governance-run-goal-selector.ts', 'utf8'),
       readFile('scripts/governance/run-governance.ts', 'utf8'),
       readFile('package.json', 'utf8'),
     ]);
-    const adapterSource = `${builderSource}\n${cliSource}`;
+    const planBuilderSource = `${builderSource}\n${selectorSource}`;
+    const adapterSource = `${planBuilderSource}\n${cliSource}`;
     const packageScripts = (JSON.parse(packageJsonSource) as { scripts: Record<string, string> }).scripts;
 
     expect(adapterSource).not.toMatch(/from ['"]node:child_process['"]/);
     expect(adapterSource).not.toMatch(/\bspawn(?:Sync)?\b/);
     expect(adapterSource).not.toMatch(/\bexec(?:File|FileSync|Sync)?\b/);
-    expect(builderSource).not.toMatch(/from ['"]node:fs['"]/);
+    expect(planBuilderSource).not.toMatch(/from ['"]node:fs['"]/);
     expect(adapterSource).not.toMatch(/\b(?:existsSync|readdirSync|statSync|readFileSync|createHash|sha256)\b/);
     expect(adapterSource).not.toMatch(/from ['"]node:crypto['"]/);
     expect(cliSource).toMatch(/import \{ mkdirSync, writeFileSync \} from 'node:fs';/);

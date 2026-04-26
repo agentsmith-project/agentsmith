@@ -17,13 +17,19 @@ import {
   listCurrentResourceLocks,
   type CurrentResourceLockDefinition,
 } from './current-resource-lock-manifest';
+import {
+  assertGovernanceRunGoal,
+  isReleaseGovernanceRunGoal,
+  selectGovernanceRunStandaloneJobIds,
+  type GovernanceRunGoal,
+} from './governance-run-goal-selector';
+export type { GovernanceRunGoal } from './governance-run-goal-selector';
 
 export const GOVERNANCE_RUN_PLAN_SCHEMA = 'governance-runner-shell-plan.v1' as const;
 export const GOVERNANCE_RUN_PLAN_VERSION = 1 as const;
 export const GOVERNANCE_RUN_PLAN_FILE_NAME = 'governance-runner-shell-plan.json' as const;
 
 export type GovernanceRunPlanMode = 'plan_only';
-export type GovernanceRunGoal = 'release';
 export type GovernanceRunAdapterScope = 'internal_adapter';
 
 export interface GovernanceRunPlanInputCounts {
@@ -302,12 +308,6 @@ const NESTED_ALLOWED_FIELD_SETS = new Map<string, ReadonlySet<string>>([
   ],
 ]);
 
-function assertReleaseGoal(goal: string): asserts goal is GovernanceRunGoal {
-  if (goal !== 'release') {
-    throw new Error(`unsupported governance run goal: ${goal}`);
-  }
-}
-
 function inputCounts(job: CurrentJobMetadata): GovernanceRunPlanInputCounts {
   return {
     path_glob_count: job.inputs.path_globs.length,
@@ -401,14 +401,30 @@ function projectArtifactTemplate(template: CurrentArtifactTemplateEntry): Govern
   };
 }
 
-function selectJobs(jobId: string | undefined): readonly CurrentJobMetadata[] {
+function selectJobs(goal: GovernanceRunGoal, jobId: string | undefined): readonly CurrentJobMetadata[] {
+  const selectedJobIds = isReleaseGovernanceRunGoal(goal)
+    ? listCurrentJobMetadata()
+      .filter((job) => job.kind === 'campaign_step' && job.campaign_id === 'release-full')
+      .map((job) => job.id)
+    : selectGovernanceRunStandaloneJobIds(goal);
+  const selectedJobIdSet = new Set(selectedJobIds);
+
   if (!jobId) {
-    return listCurrentJobMetadata();
+    return selectedJobIds.map((id) => {
+      const job = findCurrentJobMetadataById(id);
+      if (!job) {
+        throw new Error(`current job metadata is missing selected job id: ${id}`);
+      }
+      return job;
+    });
   }
 
   const job = findCurrentJobMetadataById(jobId);
   if (!job) {
     throw new Error(`unknown current job id: ${jobId}`);
+  }
+  if (!selectedJobIdSet.has(job.id)) {
+    throw new Error(`current job id ${jobId} is not selectable for governance run goal ${goal}.`);
   }
   return [job];
 }
@@ -420,9 +436,9 @@ function selectedLocks(jobs: readonly CurrentJobMetadata[]): readonly CurrentRes
 }
 
 export function buildGovernanceRunPlan(input: BuildGovernanceRunPlanInput): GovernanceRunPlan {
-  assertReleaseGoal(input.goal);
+  assertGovernanceRunGoal(input.goal);
   const allJobs = listCurrentJobMetadata();
-  const jobs = selectJobs(input.jobId);
+  const jobs = selectJobs(input.goal, input.jobId);
   const locks = selectedLocks(jobs);
   const artifactTemplateIndex = buildCurrentArtifactTemplateIndex({ jobs });
   const fullArtifactTemplateIndex = buildCurrentArtifactTemplateIndex({ jobs: allJobs });
@@ -643,7 +659,21 @@ export function validateGovernanceRunPlan(plan: unknown): GovernanceRunPlanValid
   validateLiteral(plan.schema, GOVERNANCE_RUN_PLAN_SCHEMA, 'plan.schema', failures);
   validateLiteral(plan.version, GOVERNANCE_RUN_PLAN_VERSION, 'plan.version', failures);
   validateLiteral(plan.mode, 'plan_only', 'plan.mode', failures);
-  validateLiteral(plan.goal, 'release', 'plan.goal', failures);
+  if (typeof plan.goal !== 'string') {
+    failures.push({
+      path: 'plan.goal',
+      reason: 'plan.goal must be a current governance run goal.',
+    });
+  } else {
+    try {
+      assertGovernanceRunGoal(plan.goal);
+    } catch {
+      failures.push({
+        path: 'plan.goal',
+        reason: 'plan.goal must be a current governance run goal.',
+      });
+    }
+  }
   validateLiteral(plan.release_decision_produced, false, 'plan.release_decision_produced', failures);
   validateLiteral(plan.evidence_claims_created, false, 'plan.evidence_claims_created', failures);
   validateLiteral(plan.artifact_directory_inspection, false, 'plan.artifact_directory_inspection', failures);

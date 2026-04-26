@@ -1,5 +1,6 @@
 import {
   findCurrentGateDefinitionById,
+  type CurrentGateDefinition,
 } from './current-gate-manifest';
 import {
   listCurrentResourceLocks,
@@ -180,6 +181,7 @@ const RELEASE_SENSITIVE_RETRY_POLICIES = new Set<CurrentJobMetadataRetry>([
   'manual_only',
 ]);
 const CAMPAIGN_TIMEOUT_SOURCE = 'p2_metadata_schema_static_envelope';
+const STANDALONE_TIMEOUT_SOURCE = 'governance_run_plan_only_static_envelope';
 const RELEASE_CAMPAIGN_ROOT_WRITE_LOCK_ID = 'release-campaign-root-writes';
 
 function requireReleaseFullCampaign() {
@@ -219,6 +221,36 @@ function stepLockIds(step: CurrentVerificationCampaignStep): readonly string[] {
   for (const lock of listCurrentResourceLocks()) {
     if (
       lock.appliesTo.gateIds?.some((gateId) => gateIds.has(gateId))
+      || lock.appliesTo.npmScripts?.some((npmScript) => npmScripts.has(npmScript))
+    ) {
+      selectedLockIds.add(lock.id);
+    }
+  }
+
+  return listCurrentResourceLocks()
+    .filter((lock) => selectedLockIds.has(lock.id))
+    .map((lock) => lock.id);
+}
+
+function standaloneLockNpmScripts(gate: CurrentGateDefinition): readonly string[] {
+  return uniqueStrings([
+    gate.npmScript,
+    ...gate.executionTargets.flatMap((target) => (
+      target.kind === 'npm_script' ? [target.npmScript] : []
+    )),
+  ]);
+}
+
+function standaloneLockIds(gate: CurrentGateDefinition): readonly string[] {
+  const npmScripts = new Set(standaloneLockNpmScripts(gate));
+  const selectedLockIds = new Set<string>();
+
+  for (const lock of listCurrentResourceLocks()) {
+    if (lock.id === RELEASE_CAMPAIGN_ROOT_WRITE_LOCK_ID) {
+      continue;
+    }
+    if (
+      lock.appliesTo.gateIds?.includes(gate.id)
       || lock.appliesTo.npmScripts?.some((npmScript) => npmScripts.has(npmScript))
     ) {
       selectedLockIds.add(lock.id);
@@ -285,6 +317,28 @@ function timeoutsForStep(step: CurrentVerificationCampaignStep): CurrentJobMetad
   };
 }
 
+function standaloneTimeouts(gateId: string): CurrentJobMetadataTimeouts {
+  if (gateId === 'lane-backend-real-core') {
+    return {
+      local_seconds: 3600,
+      ci_seconds: 5400,
+      source: STANDALONE_TIMEOUT_SOURCE,
+    };
+  }
+  if (gateId === 'gate-default' || gateId === 'lane-visual') {
+    return {
+      local_seconds: 1800,
+      ci_seconds: 2700,
+      source: STANDALONE_TIMEOUT_SOURCE,
+    };
+  }
+  return {
+    local_seconds: 900,
+    ci_seconds: 1200,
+    source: STANDALONE_TIMEOUT_SOURCE,
+  };
+}
+
 function retryPolicyForStep(step: CurrentVerificationCampaignStep): CurrentJobMetadataRetry {
   return step.executionMode === 'aggregate_only' ? 'none' : 'manual_only';
 }
@@ -322,12 +376,89 @@ function buildCampaignJob(
   };
 }
 
+function buildStandaloneJob(input: {
+  id: string;
+  gateId: string;
+  lineKind: string;
+  dependsOn: readonly string[];
+  envProfiles: readonly string[];
+  retry: CurrentJobMetadataRetry;
+}): CurrentJobMetadata {
+  const gate = findCurrentGateDefinitionById(input.gateId);
+  if (!gate) {
+    throw new Error(`Missing gate definition for standalone job ${input.id}: ${input.gateId}`);
+  }
+
+  return {
+    id: input.id,
+    kind: 'standalone_gate',
+    gate_id: gate.id,
+    npm_script: gate.npmScript,
+    command: gate.command,
+    execution_mode: 'execute',
+    line_kind: input.lineKind,
+    depends_on: input.dependsOn,
+    inputs: {
+      path_globs: [],
+      env_profiles: input.envProfiles,
+      required_secret_names: [],
+    },
+    outputs: {
+      result_required: true,
+      evidence_required: gate.standaloneEvidenceArtifacts.length > 0,
+      result_path_template: `<governance-run-report-root>/${input.id}/result.json`,
+      expected_artifact_path_templates: gate.standaloneEvidenceArtifacts,
+    },
+    locks: standaloneLockIds(gate),
+    timeouts: standaloneTimeouts(gate.id),
+    retry: input.retry,
+    cache: 'disabled',
+  };
+}
+
 const RELEASE_FULL_CAMPAIGN = requireReleaseFullCampaign();
+const CURRENT_STANDALONE_JOBS = [
+  buildStandaloneJob({
+    id: 'standalone-gate-fast',
+    gateId: 'gate-fast',
+    lineKind: 'governance_run_quick',
+    dependsOn: [],
+    envProfiles: ['governance_run_standalone', 'quick'],
+    retry: 'none',
+  }),
+  buildStandaloneJob({
+    id: 'standalone-gate-default',
+    gateId: 'gate-default',
+    lineKind: 'governance_run_default',
+    dependsOn: ['standalone-gate-fast'],
+    envProfiles: ['governance_run_standalone', 'default'],
+    retry: 'none',
+  }),
+  buildStandaloneJob({
+    id: 'standalone-lane-visual',
+    gateId: 'lane-visual',
+    lineKind: 'governance_run_visual',
+    dependsOn: ['standalone-gate-fast'],
+    envProfiles: ['governance_run_standalone', 'quick', 'visual_baseline'],
+    retry: 'none',
+  }),
+  buildStandaloneJob({
+    id: 'standalone-lane-backend-real-core',
+    gateId: 'lane-backend-real-core',
+    lineKind: 'governance_run_backend_real_core',
+    dependsOn: ['standalone-gate-default'],
+    envProfiles: ['governance_run_standalone', 'backend_real_core'],
+    retry: 'manual_only',
+  }),
+] as const satisfies readonly CurrentJobMetadata[];
 
 export const CURRENT_JOB_METADATA_MANIFEST: CurrentJobMetadataManifest = {
   schema: CURRENT_JOB_METADATA_MANIFEST_SCHEMA,
   version: CURRENT_JOB_METADATA_MANIFEST_VERSION,
-  jobs: RELEASE_FULL_CAMPAIGN.steps.map((step) => buildCampaignJob(RELEASE_FULL_CAMPAIGN.id, step)),
+  jobs: [
+    ...RELEASE_FULL_CAMPAIGN.steps.map((step) => buildCampaignJob(RELEASE_FULL_CAMPAIGN.id, step)),
+    ...CURRENT_STANDALONE_JOBS,
+  ],
 };
 
 export function listCurrentJobMetadata(): readonly CurrentJobMetadata[] {
@@ -466,6 +597,14 @@ function validateJobs(
       validateRequiredString(entry.campaign_id, 'campaign_id', index, id, failures);
       validateRequiredString(entry.step_id, 'step_id', index, id, failures);
     }
+    if (entry.kind === 'standalone_gate' && ('campaign_id' in entry || 'step_id' in entry)) {
+      failures.push({
+        index,
+        id,
+        path: `jobs[${index}]`,
+        reason: 'standalone jobs must not declare campaign_id or step_id.',
+      });
+    }
 
     validateGateBinding(entry, index, id, failures);
     validateInputs(entry.inputs, index, id, failures);
@@ -490,11 +629,11 @@ function validateReleaseFullCampaignMirror(
     return;
   }
 
-  if (jobs.length !== campaign.steps.length) {
+  if (jobs.length < campaign.steps.length) {
     failures.push({
       index: -1,
       path: 'manifest.jobs',
-      reason: 'jobs must contain only release-full campaign steps and match the current release-full step count.',
+      reason: 'release-full campaign jobs must mirror current release-full steps.',
     });
   }
 
@@ -517,7 +656,7 @@ function validateReleaseFullCampaignMirror(
         index,
         id,
         path: `jobs[${index}]`,
-        reason: 'jobs must contain only release-full campaign steps.',
+        reason: 'release-full campaign jobs must mirror current release-full steps.',
       });
     }
 
@@ -576,6 +715,80 @@ function validateReleaseFullCampaignMirror(
     validateMirrorTimeouts(job.timeouts, expected.timeouts, step, index, id, failures);
     validateMirrorField(job.retry, expected.retry, 'retry', step, index, id, failures);
     validateMirrorField(job.cache, expected.cache, 'cache', step, index, id, failures);
+  });
+
+  jobs.slice(campaign.steps.length).forEach((job, offset) => {
+    if (!isRecord(job)) {
+      return;
+    }
+    if (job.kind === 'campaign_step') {
+      const index = campaign.steps.length + offset;
+      failures.push({
+        index,
+        id: typeof job.id === 'string' ? job.id : undefined,
+        path: `jobs[${index}]`,
+        reason: 'release-full campaign jobs must mirror current release-full steps.',
+      });
+    }
+  });
+
+  validateStandaloneJobsMirror(jobs.slice(campaign.steps.length), campaign.steps.length, failures);
+}
+
+function validateStandaloneJobsMirror(
+  jobs: readonly unknown[],
+  startIndex: number,
+  failures: CurrentJobMetadataManifestFailure[],
+): void {
+  if (jobs.length !== CURRENT_STANDALONE_JOBS.length) {
+    failures.push({
+      index: -1,
+      path: 'manifest.jobs',
+      reason: 'standalone jobs must mirror current standalone goal jobs.',
+    });
+  }
+
+  CURRENT_STANDALONE_JOBS.forEach((expected, offset) => {
+    const index = startIndex + offset;
+    const job = jobs[offset];
+    if (!isRecord(job)) {
+      failures.push({
+        index,
+        path: `jobs[${index}]`,
+        reason: `missing standalone job ${expected.id}.`,
+      });
+      return;
+    }
+
+    const id = typeof job.id === 'string' ? job.id : undefined;
+    const fields = [
+      'id',
+      'kind',
+      'gate_id',
+      'npm_script',
+      'command',
+      'execution_mode',
+      'line_kind',
+      'retry',
+      'cache',
+    ] as const;
+
+    for (const field of fields) {
+      if (job[field] !== expected[field]) {
+        failures.push({
+          index,
+          id,
+          path: `jobs[${index}].${field}`,
+          reason: `standalone jobs must mirror current standalone goal jobs (${expected.id}).`,
+        });
+      }
+    }
+
+    validateStandaloneMirrorArray(job.depends_on, expected.depends_on, 'depends_on', expected.id, index, id, failures);
+    validateStandaloneInputs(job.inputs, expected.inputs, expected.id, index, id, failures);
+    validateStandaloneOutputs(job.outputs, expected.outputs, expected.id, index, id, failures);
+    validateStandaloneMirrorArray(job.locks, expected.locks, 'locks', expected.id, index, id, failures);
+    validateStandaloneTimeouts(job.timeouts, expected.timeouts, expected.id, index, id, failures);
   });
 }
 
@@ -912,6 +1125,107 @@ function validateMirrorTimeouts(
       id,
       path: `jobs[${index}].timeouts`,
       reason: `timeouts must mirror release-full step ${step.id}.`,
+    });
+  }
+}
+
+function validateStandaloneMirrorArray(
+  actual: unknown,
+  expected: readonly string[],
+  field: string,
+  expectedId: string,
+  index: number,
+  id: string | undefined,
+  failures: CurrentJobMetadataManifestFailure[],
+): void {
+  if (!Array.isArray(actual) || !stringArraysEqual(actual, expected)) {
+    failures.push({
+      index,
+      id,
+      path: `jobs[${index}].${field}`,
+      reason: `standalone jobs must mirror current standalone goal jobs (${expectedId}).`,
+    });
+  }
+}
+
+function validateStandaloneInputs(
+  actual: unknown,
+  expected: CurrentJobMetadataInputs,
+  expectedId: string,
+  index: number,
+  id: string | undefined,
+  failures: CurrentJobMetadataManifestFailure[],
+): void {
+  if (!isRecord(actual)) {
+    return;
+  }
+
+  if (
+    !stringArrayValueEquals(actual.path_globs, expected.path_globs)
+    || !stringArrayValueEquals(actual.env_profiles, expected.env_profiles)
+    || !stringArrayValueEquals(actual.required_secret_names, expected.required_secret_names)
+  ) {
+    failures.push({
+      index,
+      id,
+      path: `jobs[${index}].inputs`,
+      reason: `standalone jobs must mirror current standalone goal jobs (${expectedId}).`,
+    });
+  }
+}
+
+function validateStandaloneOutputs(
+  actual: unknown,
+  expected: CurrentJobMetadataOutputs,
+  expectedId: string,
+  index: number,
+  id: string | undefined,
+  failures: CurrentJobMetadataManifestFailure[],
+): void {
+  if (!isRecord(actual)) {
+    return;
+  }
+
+  if (
+    actual.result_required !== expected.result_required
+    || actual.evidence_required !== expected.evidence_required
+    || actual.result_path_template !== expected.result_path_template
+    || !stringArrayValueEquals(
+      actual.expected_artifact_path_templates,
+      expected.expected_artifact_path_templates,
+    )
+  ) {
+    failures.push({
+      index,
+      id,
+      path: `jobs[${index}].outputs`,
+      reason: `standalone jobs must mirror current standalone goal jobs (${expectedId}).`,
+    });
+  }
+}
+
+function validateStandaloneTimeouts(
+  actual: unknown,
+  expected: CurrentJobMetadataTimeouts,
+  expectedId: string,
+  index: number,
+  id: string | undefined,
+  failures: CurrentJobMetadataManifestFailure[],
+): void {
+  if (!isRecord(actual)) {
+    return;
+  }
+
+  if (
+    actual.local_seconds !== expected.local_seconds
+    || actual.ci_seconds !== expected.ci_seconds
+    || actual.source !== expected.source
+  ) {
+    failures.push({
+      index,
+      id,
+      path: `jobs[${index}].timeouts`,
+      reason: `standalone jobs must mirror current standalone goal jobs (${expectedId}).`,
     });
   }
 }

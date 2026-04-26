@@ -42,6 +42,12 @@ const SECRET_LOOKING_VALUES = [
   'password=test-secret',
   'ticket=test-secret',
 ] as const;
+const STANDALONE_JOB_IDS = [
+  'standalone-gate-fast',
+  'standalone-gate-default',
+  'standalone-lane-visual',
+  'standalone-lane-backend-real-core',
+] as const;
 
 function releaseFullCampaign() {
   const campaign = findCurrentVerificationCampaignById('release-full');
@@ -108,8 +114,12 @@ function expectedArtifactPathTemplates(step: CurrentVerificationCampaignStep): r
 }
 
 describe('current job metadata manifest', () => {
-  it('defines a pure schema/manifest projection for release-full campaign jobs', () => {
+  it('defines a pure schema/manifest projection for release-full campaign jobs and standalone plan jobs', () => {
     const releaseFull = releaseFullCampaign();
+    const expectedJobIds = [
+      ...releaseFull.steps.map((step) => step.id),
+      ...STANDALONE_JOB_IDS,
+    ];
 
     expect(CURRENT_JOB_METADATA_MANIFEST_SCHEMA).toBe('current-job-metadata-manifest.v1');
     expect(CURRENT_JOB_METADATA_MANIFEST_VERSION).toBe(1);
@@ -118,9 +128,7 @@ describe('current job metadata manifest', () => {
       version: CURRENT_JOB_METADATA_MANIFEST_VERSION,
     });
     expect(listCurrentJobMetadata()).toBe(CURRENT_JOB_METADATA_MANIFEST.jobs);
-    expect(listCurrentJobMetadata().map((job) => job.id)).toEqual(
-      releaseFull.steps.map((step) => step.id),
-    );
+    expect(listCurrentJobMetadata().map((job) => job.id)).toEqual(expectedJobIds);
     expect(validateCurrentJobMetadataManifest()).toEqual({
       ok: true,
       value: CURRENT_JOB_METADATA_MANIFEST,
@@ -190,8 +198,9 @@ describe('current job metadata manifest', () => {
 
   it('mirrors release-full steps exactly without executing or acquiring anything', () => {
     const releaseFull = releaseFullCampaign();
+    const campaignJobs = listCurrentJobMetadata().filter((job) => job.kind === 'campaign_step');
 
-    expect(listCurrentJobMetadata().map((job) => ({
+    expect(campaignJobs.map((job) => ({
       id: job.id,
       kind: job.kind,
       campaign_id: job.campaign_id,
@@ -232,7 +241,7 @@ describe('current job metadata manifest', () => {
         kind: 'standalone_gate',
       },
     ];
-    expectValidationFailure(extraStandalone, 'must contain only release-full campaign steps');
+    expectValidationFailure(extraStandalone, 'standalone jobs must mirror current standalone goal jobs');
 
     const extraCampaign = cloneCurrentManifest();
     extraCampaign.jobs = [
@@ -244,7 +253,98 @@ describe('current job metadata manifest', () => {
         step_id: 'other-campaign-step',
       },
     ];
-    expectValidationFailure(extraCampaign, 'must contain only release-full campaign steps');
+    expectValidationFailure(extraCampaign, 'release-full campaign jobs must mirror current release-full steps');
+  });
+
+  it('keeps standalone job ids distinct from release campaign steps and bound to stable gate truth', () => {
+    const standaloneJobs = listCurrentJobMetadata().filter((job) => job.kind === 'standalone_gate');
+
+    expect(standaloneJobs.map((job) => job.id)).toEqual(STANDALONE_JOB_IDS);
+    expect(standaloneJobs.map((job) => ({
+      id: job.id,
+      gate_id: job.gate_id,
+      npm_script: job.npm_script,
+      campaign_id: job.campaign_id,
+      step_id: job.step_id,
+      execution_mode: job.execution_mode,
+      depends_on: job.depends_on,
+      cache: job.cache,
+    }))).toEqual([
+      {
+        id: 'standalone-gate-fast',
+        gate_id: 'gate-fast',
+        npm_script: 'gate:fast',
+        campaign_id: undefined,
+        step_id: undefined,
+        execution_mode: 'execute',
+        depends_on: [],
+        cache: 'disabled',
+      },
+      {
+        id: 'standalone-gate-default',
+        gate_id: 'gate-default',
+        npm_script: 'gate:default',
+        campaign_id: undefined,
+        step_id: undefined,
+        execution_mode: 'execute',
+        depends_on: ['standalone-gate-fast'],
+        cache: 'disabled',
+      },
+      {
+        id: 'standalone-lane-visual',
+        gate_id: 'lane-visual',
+        npm_script: 'lane:visual',
+        campaign_id: undefined,
+        step_id: undefined,
+        execution_mode: 'execute',
+        depends_on: ['standalone-gate-fast'],
+        cache: 'disabled',
+      },
+      {
+        id: 'standalone-lane-backend-real-core',
+        gate_id: 'lane-backend-real-core',
+        npm_script: 'lane:backend-real:core',
+        campaign_id: undefined,
+        step_id: undefined,
+        execution_mode: 'execute',
+        depends_on: ['standalone-gate-default'],
+        cache: 'disabled',
+      },
+    ]);
+
+    for (const job of standaloneJobs) {
+      const gate = findCurrentGateDefinitionById(job.gate_id);
+
+      expect(gate).toBeDefined();
+      expect(job.npm_script).toBe(gate?.npmScript);
+      expect(job.outputs.result_path_template).toBe(`<governance-run-report-root>/${job.id}/result.json`);
+      expect(job.outputs.expected_artifact_path_templates).toEqual(gate?.standaloneEvidenceArtifacts ?? []);
+      expect(job.locks).not.toContain('release-campaign-root-writes');
+    }
+
+    const standaloneCampaignId = cloneCurrentManifest();
+    clonedJob(standaloneCampaignId, 'standalone-gate-fast').campaign_id = 'release-full';
+    expectValidationFailure(standaloneCampaignId, 'standalone jobs must not declare campaign_id or step_id');
+  });
+
+  it('derives standalone locks from gate execution target npm scripts, not only the wrapper script', () => {
+    const backendRealCore = findCurrentJobMetadataById('standalone-lane-backend-real-core');
+    const backendRealGate = findCurrentGateDefinitionById('lane-backend-real-core');
+    const fixedLocalPorts = listCurrentResourceLocks().find((lock) => lock.id === 'fixed-local-ports');
+
+    expect(backendRealGate?.npmScript).toBe('lane:backend-real:core');
+    expect(backendRealGate?.executionTargets).toContainEqual({
+      kind: 'npm_script',
+      npmScript: 'backend-real:run',
+    });
+    expect(fixedLocalPorts?.appliesTo.gateIds).not.toContain('lane-backend-real-core');
+    expect(fixedLocalPorts?.appliesTo.npmScripts).not.toContain('lane:backend-real:core');
+    expect(fixedLocalPorts?.appliesTo.npmScripts).toContain('backend-real:run');
+    expect(backendRealCore?.locks).toEqual(expect.arrayContaining([
+      'shared-local-substrate',
+      'fixed-local-ports',
+      'backend-real-provider-quota',
+    ]));
   });
 
   it('references resource lock ids only and keeps them in the current lock manifest', () => {

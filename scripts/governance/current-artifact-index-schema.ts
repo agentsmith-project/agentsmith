@@ -30,7 +30,10 @@ export type CurrentArtifactTemplateSchemaValidation = 'fail_closed';
 export type CurrentArtifactTemplateSource = 'current_job_metadata_manifest';
 export type CurrentArtifactTemplateSourceField = 'outputs.expected_artifact_path_templates';
 export type CurrentArtifactTemplateCampaignStepField = 'evidence_hints' | 'native_result_path' | null;
-export type CurrentArtifactTemplateGateField = 'campaign_evidence_artifacts' | null;
+export type CurrentArtifactTemplateGateField =
+  | 'campaign_evidence_artifacts'
+  | 'standalone_evidence_artifacts'
+  | null;
 
 export interface CurrentArtifactTemplateIndexSourceTruth {
   current_job_metadata_manifest: {
@@ -170,7 +173,7 @@ const PRODUCER_KINDS = ['standalone_gate', 'campaign_step'] as const satisfies r
 const EXECUTION_MODES = ['execute', 'aggregate_only'] as const satisfies readonly CurrentVerificationCampaignExecutionMode[];
 const REQUIRED_FOR_VALUES = ['default', 'release', 'visual'] as const satisfies readonly CurrentGateRequirement[];
 const CAMPAIGN_STEP_FIELDS = ['evidence_hints', 'native_result_path'] as const;
-const GATE_FIELDS = ['campaign_evidence_artifacts'] as const;
+const GATE_FIELDS = ['campaign_evidence_artifacts', 'standalone_evidence_artifacts'] as const;
 const TOP_LEVEL_FIELD_SET = new Set<string>(TOP_LEVEL_FIELDS);
 const SOURCE_TRUTH_FIELD_SET = new Set<string>(SOURCE_TRUTH_FIELDS);
 const JOB_SOURCE_FIELD_SET = new Set<string>(JOB_SOURCE_FIELDS);
@@ -359,6 +362,7 @@ function buildTemplatesForJob(
     const templateInStepHints = stepContext?.step.evidenceHints.includes(template) ?? false;
     const templateIsNative = stepContext?.step.nativeResult?.path === template;
     const templateInGateCampaignArtifacts = gate?.campaignEvidenceArtifacts.includes(template) ?? false;
+    const templateInGateStandaloneArtifacts = gate?.standaloneEvidenceArtifacts.includes(template) ?? false;
 
     return {
       id: `${job.id}-artifact-${String(templateIndex + 1).padStart(3, '0')}`,
@@ -389,7 +393,11 @@ function buildTemplatesForJob(
             ? 'evidence_hints'
             : null,
         gate_id: job.gate_id,
-        gate_field: templateInGateCampaignArtifacts ? 'campaign_evidence_artifacts' : null,
+        gate_field: templateInGateCampaignArtifacts
+          ? 'campaign_evidence_artifacts'
+          : templateInGateStandaloneArtifacts
+            ? 'standalone_evidence_artifacts'
+            : null,
       },
     };
   });
@@ -414,7 +422,9 @@ function requiredForJob(job: CurrentJobMetadata): readonly CurrentGateRequiremen
   }
 
   const gate = findCurrentGateDefinitionById(job.gate_id);
-  return orderRequiredFor(gate?.requiredFor ?? []);
+  return orderRequiredFor(
+    gate?.requiredFor.length ? gate.requiredFor : gate?.storyEvidenceRequiredFor ?? [],
+  );
 }
 
 function orderRequiredFor(values: readonly CurrentGateRequirement[]): readonly CurrentGateRequirement[] {

@@ -11,6 +11,13 @@ import {
   GOVERNANCE_RUN_PLAN_VERSION,
   validateGovernanceRunPlan,
 } from '../governance-run-plan';
+import {
+  CURRENT_EVIDENCE_CLAIM_SCHEMA,
+  CURRENT_EVIDENCE_CLAIM_SCHEMA_VERSION,
+  CURRENT_EVIDENCE_CLAIM_SCOPES,
+  CURRENT_EVIDENCE_CLAIM_TOP_LEVEL_KEYS,
+  CURRENT_EVIDENCE_CLAIM_VALIDATION_PURPOSES,
+} from '../current-evidence-claim-schema';
 import { runGovernanceCli } from '../run-governance';
 import { buildCurrentArtifactTemplateIndex } from '../current-artifact-index-schema';
 import { listCurrentJobMetadata } from '../current-job-metadata-manifest';
@@ -313,6 +320,16 @@ describe('governance runner shell adapter', () => {
       },
       current_resource_lock_manifest: {
         lock_count: listCurrentResourceLocks().length,
+      },
+      current_evidence_claim_schema: {
+        schema_version: CURRENT_EVIDENCE_CLAIM_SCHEMA_VERSION,
+        top_level_key_count: CURRENT_EVIDENCE_CLAIM_TOP_LEVEL_KEYS.length,
+        scope_count: CURRENT_EVIDENCE_CLAIM_SCOPES.length,
+        validation_purpose_count: CURRENT_EVIDENCE_CLAIM_VALIDATION_PURPOSES.length,
+        digest_format: CURRENT_EVIDENCE_CLAIM_SCHEMA.digest_format,
+        claim_instances_included: false,
+        claim_validation_executed: false,
+        claims_created: false,
       },
       current_artifact_template_index: {
         projection_kind: 'declared_template_index',
@@ -635,6 +652,43 @@ describe('governance runner shell adapter', () => {
           expect.objectContaining({
             path: testCase.path,
             reason: `forbidden runtime key "${testCase.key}" is not allowed in a shell plan.`,
+          }),
+        ]));
+      }
+    }
+  });
+
+  it('rejects evidence claim boundary flags when they drift from false', () => {
+    const validPlan = buildGovernanceRunPlan({
+      goal: 'release',
+      reportRoot: 'artifacts/governance-runner-shell-plan/test',
+    });
+    const falseOnlyFields = [
+      'claim_instances_included',
+      'claim_validation_executed',
+      'claims_created',
+    ] as const;
+
+    for (const field of falseOnlyFields) {
+      const plan = {
+        ...validPlan,
+        input_manifests: {
+          ...validPlan.input_manifests,
+          current_evidence_claim_schema: {
+            ...validPlan.input_manifests.current_evidence_claim_schema,
+            [field]: true,
+          },
+        },
+      };
+      const path = `plan.input_manifests.current_evidence_claim_schema.${field}`;
+      const validation = validateGovernanceRunPlan(plan);
+
+      expect(validation.ok, field).toBe(false);
+      if (!validation.ok) {
+        expect(validation.failures, field).toEqual(expect.arrayContaining([
+          expect.objectContaining({
+            path,
+            reason: `${path} must be false.`,
           }),
         ]));
       }

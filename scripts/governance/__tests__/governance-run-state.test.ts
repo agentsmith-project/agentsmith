@@ -6,7 +6,13 @@ import {
   CURRENT_ARTIFACT_TEMPLATE_INDEX_SCHEMA,
   CURRENT_ARTIFACT_TEMPLATE_INDEX_VERSION,
 } from '../current-artifact-index-schema';
-import { CURRENT_EVIDENCE_CLAIM_SCHEMA_VERSION } from '../current-evidence-claim-schema';
+import {
+  CURRENT_EVIDENCE_CLAIM_SCHEMA,
+  CURRENT_EVIDENCE_CLAIM_SCHEMA_VERSION,
+  CURRENT_EVIDENCE_CLAIM_SCOPES,
+  CURRENT_EVIDENCE_CLAIM_TOP_LEVEL_KEYS,
+  CURRENT_EVIDENCE_CLAIM_VALIDATION_PURPOSES,
+} from '../current-evidence-claim-schema';
 import {
   CURRENT_JOB_METADATA_MANIFEST_SCHEMA,
   CURRENT_JOB_METADATA_MANIFEST_VERSION,
@@ -96,6 +102,16 @@ function makeRunPlan(): GovernanceRunPlan {
         version: CURRENT_RESOURCE_LOCK_MANIFEST_VERSION,
         lock_count: 1,
         selected_lock_count: 1,
+      },
+      current_evidence_claim_schema: {
+        schema_version: CURRENT_EVIDENCE_CLAIM_SCHEMA_VERSION,
+        top_level_key_count: CURRENT_EVIDENCE_CLAIM_TOP_LEVEL_KEYS.length,
+        scope_count: CURRENT_EVIDENCE_CLAIM_SCOPES.length,
+        validation_purpose_count: CURRENT_EVIDENCE_CLAIM_VALIDATION_PURPOSES.length,
+        digest_format: CURRENT_EVIDENCE_CLAIM_SCHEMA.digest_format,
+        claim_instances_included: false,
+        claim_validation_executed: false,
+        claims_created: false,
       },
       current_artifact_template_index: {
         schema: CURRENT_ARTIFACT_TEMPLATE_INDEX_SCHEMA,

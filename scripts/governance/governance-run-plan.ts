@@ -5,6 +5,13 @@ import {
   type CurrentArtifactTemplateEntry,
 } from './current-artifact-index-schema';
 import {
+  CURRENT_EVIDENCE_CLAIM_SCHEMA,
+  CURRENT_EVIDENCE_CLAIM_SCHEMA_VERSION,
+  CURRENT_EVIDENCE_CLAIM_SCOPES,
+  CURRENT_EVIDENCE_CLAIM_TOP_LEVEL_KEYS,
+  CURRENT_EVIDENCE_CLAIM_VALIDATION_PURPOSES,
+} from './current-evidence-claim-schema';
+import {
   CURRENT_JOB_METADATA_MANIFEST_SCHEMA,
   CURRENT_JOB_METADATA_MANIFEST_VERSION,
   findCurrentJobMetadataById,
@@ -124,6 +131,16 @@ export interface GovernanceRunPlanInputManifests {
     lock_count: number;
     selected_lock_count: number;
   };
+  current_evidence_claim_schema: {
+    schema_version: typeof CURRENT_EVIDENCE_CLAIM_SCHEMA_VERSION;
+    top_level_key_count: number;
+    scope_count: number;
+    validation_purpose_count: number;
+    digest_format: (typeof CURRENT_EVIDENCE_CLAIM_SCHEMA)['digest_format'];
+    claim_instances_included: false;
+    claim_validation_executed: false;
+    claims_created: false;
+  };
   current_artifact_template_index: {
     schema: typeof CURRENT_ARTIFACT_TEMPLATE_INDEX_SCHEMA;
     version: typeof CURRENT_ARTIFACT_TEMPLATE_INDEX_VERSION;
@@ -219,6 +236,7 @@ const NESTED_ALLOWED_FIELD_SETS = new Map<string, ReadonlySet<string>>([
     new Set([
       'current_job_metadata_manifest',
       'current_resource_lock_manifest',
+      'current_evidence_claim_schema',
       'current_artifact_template_index',
     ]),
   ],
@@ -229,6 +247,19 @@ const NESTED_ALLOWED_FIELD_SETS = new Map<string, ReadonlySet<string>>([
   [
     'plan.input_manifests.current_resource_lock_manifest',
     new Set(['schema', 'version', 'lock_count', 'selected_lock_count']),
+  ],
+  [
+    'plan.input_manifests.current_evidence_claim_schema',
+    new Set([
+      'schema_version',
+      'top_level_key_count',
+      'scope_count',
+      'validation_purpose_count',
+      'digest_format',
+      'claim_instances_included',
+      'claim_validation_executed',
+      'claims_created',
+    ]),
   ],
   [
     'plan.input_manifests.current_artifact_template_index',
@@ -466,6 +497,16 @@ export function buildGovernanceRunPlan(input: BuildGovernanceRunPlanInput): Gove
         lock_count: listCurrentResourceLocks().length,
         selected_lock_count: locks.length,
       },
+      current_evidence_claim_schema: {
+        schema_version: CURRENT_EVIDENCE_CLAIM_SCHEMA_VERSION,
+        top_level_key_count: CURRENT_EVIDENCE_CLAIM_TOP_LEVEL_KEYS.length,
+        scope_count: CURRENT_EVIDENCE_CLAIM_SCOPES.length,
+        validation_purpose_count: CURRENT_EVIDENCE_CLAIM_VALIDATION_PURPOSES.length,
+        digest_format: CURRENT_EVIDENCE_CLAIM_SCHEMA.digest_format,
+        claim_instances_included: false,
+        claim_validation_executed: false,
+        claims_created: false,
+      },
       current_artifact_template_index: {
         schema: CURRENT_ARTIFACT_TEMPLATE_INDEX_SCHEMA,
         version: CURRENT_ARTIFACT_TEMPLATE_INDEX_VERSION,
@@ -631,6 +672,34 @@ function validateArray(
   }
 }
 
+function validateEvidenceClaimSchemaBoundary(
+  value: unknown,
+  failures: GovernanceRunPlanValidationFailure[],
+): void {
+  if (!isRecord(value)) {
+    return;
+  }
+
+  validateLiteral(
+    value.claim_instances_included,
+    false,
+    'plan.input_manifests.current_evidence_claim_schema.claim_instances_included',
+    failures,
+  );
+  validateLiteral(
+    value.claim_validation_executed,
+    false,
+    'plan.input_manifests.current_evidence_claim_schema.claim_validation_executed',
+    failures,
+  );
+  validateLiteral(
+    value.claims_created,
+    false,
+    'plan.input_manifests.current_evidence_claim_schema.claims_created',
+    failures,
+  );
+}
+
 export function validateGovernanceRunPlan(plan: unknown): GovernanceRunPlanValidationResult {
   const failures: GovernanceRunPlanValidationFailure[] = [];
 
@@ -656,6 +725,12 @@ export function validateGovernanceRunPlan(plan: unknown): GovernanceRunPlanValid
   validateNestedAllowedFields(plan.edges, 'plan.edges', failures);
   validateNestedAllowedFields(plan.locks, 'plan.locks', failures);
   validateNestedAllowedFields(plan.artifact_templates, 'plan.artifact_templates', failures);
+  validateEvidenceClaimSchemaBoundary(
+    isRecord(plan.input_manifests)
+      ? plan.input_manifests.current_evidence_claim_schema
+      : undefined,
+    failures,
+  );
   validateLiteral(plan.schema, GOVERNANCE_RUN_PLAN_SCHEMA, 'plan.schema', failures);
   validateLiteral(plan.version, GOVERNANCE_RUN_PLAN_VERSION, 'plan.version', failures);
   validateLiteral(plan.mode, 'plan_only', 'plan.mode', failures);

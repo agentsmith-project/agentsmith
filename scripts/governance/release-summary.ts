@@ -1,3 +1,4 @@
+import { spawnSync } from 'node:child_process';
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { basename, dirname, join, resolve } from 'node:path';
 
@@ -36,10 +37,17 @@ export interface ReleaseLatestPointer {
   campaign_id: 'release-full';
   campaign_run_id: string;
   campaign_root: string;
+  git_sha: string;
   summary_json?: string;
   summary_md?: string;
   terminal_result_path?: string;
-  updated_at: string;
+  /**
+   * When this read-only latest pointer was generated. New writes keep
+   * updated_at as a compatibility alias, but readers must not use it as a
+   * replacement for generated_at.
+   */
+  generated_at: string;
+  updated_at?: string;
 }
 
 export type ReleaseStatusRead =
@@ -47,6 +55,22 @@ export type ReleaseStatusRead =
   | { kind: 'missing_latest'; latestPath: string }
   | { kind: 'missing_summary'; latestPath: string; summaryPath: string }
   | { kind: 'malformed'; latestPath: string; error: string };
+
+const RELEASE_LATEST_POINTER_KEYS = new Set([
+  'schema',
+  'campaign_id',
+  'campaign_run_id',
+  'campaign_root',
+  'git_sha',
+  'summary_json',
+  'summary_md',
+  'terminal_result_path',
+  'generated_at',
+  'updated_at',
+]);
+
+const GIT_COMMIT_HASH_PATTERN = /^(?:[0-9a-f]{40}|[0-9a-f]{64})$/i;
+const ISO_TIMESTAMP_PATTERN = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/;
 
 interface ParsedTerminalResult {
   schema_version?: unknown;
@@ -65,6 +89,7 @@ export interface WriteReleaseSummaryOptions {
   campaignRoot: string;
   latestPath?: string;
   writeLatest?: boolean;
+  resolveGitSha?: () => string;
 }
 
 export interface ReadReleaseStatusOptions {
@@ -99,6 +124,62 @@ function requireRecord(value: unknown, label: string): Record<string, unknown> {
 
 function readJson(path: string): unknown {
   return JSON.parse(readFileSync(path, 'utf8')) as unknown;
+}
+
+export function resolveCurrentGitSha(cwd = process.cwd()): string {
+  const result = spawnSync('git', ['rev-parse', 'HEAD'], {
+    cwd,
+    encoding: 'utf8',
+  });
+  const stdout = typeof result.stdout === 'string' ? result.stdout.trim() : '';
+  if (result.status !== 0 || stdout.length === 0) {
+    const stderr = typeof result.stderr === 'string' ? result.stderr.trim() : '';
+    throw new Error(`Unable to resolve current git sha${stderr ? `: ${stderr}` : '.'}`);
+  }
+  return stdout;
+}
+
+function requireNonEmptyStringField(record: Record<string, unknown>, field: string, label: string): string {
+  const value = record[field];
+  if (typeof value !== 'string' || value.trim().length === 0) {
+    throw new Error(`${label} must include ${field}.`);
+  }
+  return value;
+}
+
+function requireOptionalStringField(record: Record<string, unknown>, field: string, label: string): void {
+  const value = record[field];
+  if (value !== undefined && (typeof value !== 'string' || value.trim().length === 0)) {
+    throw new Error(`${label} ${field} must be a non-empty string when present.`);
+  }
+}
+
+function assertAllowedFields(record: Record<string, unknown>, allowedFields: ReadonlySet<string>, label: string): void {
+  const unexpectedField = Object.keys(record).find((field) => !allowedFields.has(field));
+  if (unexpectedField) {
+    throw new Error(`${label} has unexpected field: ${unexpectedField}.`);
+  }
+}
+
+function requireGitCommitHash(record: Record<string, unknown>, field: string, label: string): string {
+  const value = requireNonEmptyStringField(record, field, label);
+  if (!GIT_COMMIT_HASH_PATTERN.test(value)) {
+    throw new Error(`${label} ${field} must be a 40 or 64 character hex git commit hash.`);
+  }
+  return value;
+}
+
+function requireIsoTimestamp(record: Record<string, unknown>, field: string, label: string): string {
+  const value = requireNonEmptyStringField(record, field, label);
+  const parsed = new Date(value);
+  if (
+    !ISO_TIMESTAMP_PATTERN.test(value)
+    || Number.isNaN(parsed.getTime())
+    || parsed.toISOString() !== value
+  ) {
+    throw new Error(`${label} ${field} must be a valid canonical ISO timestamp.`);
+  }
+  return value;
 }
 
 function readTerminalResult(campaignRoot: string): ParsedTerminalResult {
@@ -246,14 +327,20 @@ export function writeReleaseSummaryForCampaign(options: WriteReleaseSummaryOptio
 
   if (options.writeLatest !== false) {
     const latestPath = resolve(options.latestPath ?? defaultLatestPath());
+    const gitSha = (options.resolveGitSha ?? resolveCurrentGitSha)().trim();
+    if (!GIT_COMMIT_HASH_PATTERN.test(gitSha)) {
+      throw new Error('release latest pointer git_sha must be a 40 or 64 character hex git commit hash.');
+    }
     const latest: ReleaseLatestPointer = {
       schema: 'agentsmith_release_latest/v1',
       campaign_id: 'release-full',
       campaign_run_id: summary.campaign_run_id,
       campaign_root: campaignRoot,
+      git_sha: gitSha,
       summary_json: summaryJsonPath,
       summary_md: summaryMdPath,
       terminal_result_path: terminalPath,
+      generated_at: summary.generated_at,
       updated_at: summary.generated_at,
     };
     mkdirSync(dirname(latestPath), { recursive: true });
@@ -265,17 +352,23 @@ export function writeReleaseSummaryForCampaign(options: WriteReleaseSummaryOptio
 
 function parseLatestPointer(path: string): ReleaseLatestPointer {
   const latest = requireRecord(readJson(path), 'release latest pointer');
+  assertAllowedFields(latest, RELEASE_LATEST_POINTER_KEYS, 'release latest pointer');
   if (latest.schema !== 'agentsmith_release_latest/v1') {
     throw new Error('release latest pointer schema must be agentsmith_release_latest/v1.');
   }
-  if (typeof latest.campaign_root !== 'string' || latest.campaign_root.trim().length === 0) {
-    throw new Error('release latest pointer must include campaign_root.');
+  if (latest.campaign_id !== 'release-full') {
+    throw new Error('release latest pointer campaign_id must be release-full.');
   }
-  if (latest.summary_json !== undefined && typeof latest.summary_json !== 'string') {
-    throw new Error('release latest pointer summary_json must be a string when present.');
-  }
-  if (latest.summary_md !== undefined && typeof latest.summary_md !== 'string') {
-    throw new Error('release latest pointer summary_md must be a string when present.');
+  const campaignRunId = requireNonEmptyStringField(latest, 'campaign_run_id', 'release latest pointer');
+  const campaignRoot = requireNonEmptyStringField(latest, 'campaign_root', 'release latest pointer');
+  requireGitCommitHash(latest, 'git_sha', 'release latest pointer');
+  requireIsoTimestamp(latest, 'generated_at', 'release latest pointer');
+  requireOptionalStringField(latest, 'summary_json', 'release latest pointer');
+  requireOptionalStringField(latest, 'summary_md', 'release latest pointer');
+  requireOptionalStringField(latest, 'terminal_result_path', 'release latest pointer');
+  requireOptionalStringField(latest, 'updated_at', 'release latest pointer');
+  if (campaignRunId !== basename(resolve(campaignRoot))) {
+    throw new Error('release latest pointer campaign_run_id must match the campaign root basename.');
   }
   return latest as unknown as ReleaseLatestPointer;
 }
@@ -380,6 +473,13 @@ function readStatusFromCampaignRoot(args: {
 
   try {
     const summary = parseSummary(summaryPath);
+    if (args.latest && args.latest.campaign_run_id !== summary.campaign_run_id) {
+      return {
+        kind: 'malformed',
+        latestPath: args.latestPath,
+        error: 'release latest pointer campaign_run_id must match release summary campaign_run_id.',
+      };
+    }
     const mismatch = summaryMatchesTerminal({
       campaignRoot,
       summaryPath,

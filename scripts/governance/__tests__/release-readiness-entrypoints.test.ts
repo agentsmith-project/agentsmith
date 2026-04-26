@@ -1,6 +1,6 @@
 import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { dirname, join, resolve } from 'node:path';
+import { basename, dirname, join, resolve } from 'node:path';
 import { spawnSync } from 'node:child_process';
 
 import { describe, expect, it } from 'vitest';
@@ -23,6 +23,8 @@ const RELEASE_HUMAN_DOC_FORBIDDEN_COPYABLE_PATTERNS = [
   /\bnpm run release:campaign:full\b/,
   /\bRELEASE_CAMPAIGN_ROOT=<campaign-root>\s+npm run gate:release:full\b/,
 ] as const;
+
+const VALID_TEST_GIT_SHA = '0123456789abcdef0123456789abcdef01234567';
 
 function writeJson(path: string, payload: unknown): void {
   mkdirSync(dirname(path), { recursive: true });
@@ -56,7 +58,7 @@ function writeSummaryCache(campaignRoot: string, overrides: Partial<Record<strin
   writeJson(join(campaignRoot, 'summary.json'), {
     schema: 'agentsmith_release_summary/v1',
     campaign_id: 'release-full',
-    campaign_run_id: overrides.campaign_run_id ?? 'summary-cache-test',
+    campaign_run_id: overrides.campaign_run_id ?? basename(campaignRoot),
     campaign_root: overrides.campaign_root ?? campaignRoot,
     automated_release_verdict: overrides.automated_release_verdict ?? 'PASSED',
     status: overrides.status ?? 'passed',
@@ -78,11 +80,13 @@ function writeLatestPointer(latestPath: string, campaignRoot: string): void {
   writeJson(latestPath, {
     schema: 'agentsmith_release_latest/v1',
     campaign_id: 'release-full',
-    campaign_run_id: 'latest-pointer-test',
+    campaign_run_id: basename(campaignRoot),
     campaign_root: campaignRoot,
+    git_sha: VALID_TEST_GIT_SHA,
     summary_json: join(campaignRoot, 'summary.json'),
     summary_md: join(campaignRoot, 'summary.md'),
     terminal_result_path: join(campaignRoot, 'gate-release-full', 'result.json'),
+    generated_at: '2026-04-25T12:00:00.000Z',
     updated_at: '2026-04-25T12:00:00.000Z',
   });
 }
@@ -136,6 +140,7 @@ describe('release readiness human entrypoints', () => {
       const summary = writeReleaseSummaryForCampaign({
         campaignRoot: root,
         latestPath,
+        resolveGitSha: () => VALID_TEST_GIT_SHA,
       });
 
       expect(summary.automated_release_verdict).toBe('FAILED');
@@ -144,11 +149,18 @@ describe('release readiness human entrypoints', () => {
       expect(summary.terminal_result_path).toBe(join(root, 'gate-release-full', 'result.json'));
       expect(existsSync(join(root, 'summary.json'))).toBe(true);
       expect(existsSync(join(root, 'summary.md'))).toBe(true);
-      expect(JSON.parse(readFileSync(latestPath, 'utf8'))).toMatchObject({
+      const latest = JSON.parse(readFileSync(latestPath, 'utf8')) as Record<string, unknown>;
+      expect(latest).toMatchObject({
         campaign_root: root,
+        campaign_run_id: summary.campaign_run_id,
+        git_sha: VALID_TEST_GIT_SHA,
+        generated_at: summary.generated_at,
+        updated_at: summary.generated_at,
         summary_json: join(root, 'summary.json'),
         summary_md: join(root, 'summary.md'),
       });
+      expect(latest.automated_release_verdict).toBeUndefined();
+      expect(latest.status).toBeUndefined();
     } finally {
       rmSync(root, { recursive: true, force: true });
     }
@@ -165,6 +177,111 @@ describe('release readiness human entrypoints', () => {
       expect(output).toContain('Automated release verdict: MISSING');
       expect(output).toContain('Next: run npm run release:ready');
       expect(output).not.toContain('gate:release:full');
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it('fails closed when latest pointer is missing required provenance fields', () => {
+    const root = mkdtempSync(join(tmpdir(), 'agentsmith-release-status-weak-latest-'));
+    const latestPath = join(root, 'latest.json');
+    try {
+      writeTerminalResult(root);
+      writeReleaseSummaryForCampaign({
+        campaignRoot: root,
+        latestPath,
+        resolveGitSha: () => VALID_TEST_GIT_SHA,
+      });
+
+      const completePointer = JSON.parse(readFileSync(latestPath, 'utf8')) as Record<string, unknown>;
+      for (const field of ['campaign_run_id', 'git_sha', 'generated_at'] as const) {
+        const weakPointer = { ...completePointer };
+        delete weakPointer[field];
+        writeJson(latestPath, weakPointer);
+
+        const status = readReleaseStatus({ latestPath });
+        expect(status.kind).toBe('malformed');
+        if (status.kind !== 'malformed') {
+          throw new Error(`Expected weak latest pointer without ${field} to fail closed.`);
+        }
+        expect(status.error).toContain(field);
+
+        const output = renderReleaseStatus(status);
+        expect(output).toContain('Automated release verdict: UNKNOWN');
+        expect(output).not.toContain('Automated release verdict: PASSED');
+        expect(output).not.toContain('Campaign:');
+      }
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it('fails closed when latest pointer provenance is invalid or polluted', () => {
+    const root = mkdtempSync(join(tmpdir(), 'agentsmith-release-status-invalid-latest-'));
+    const latestPath = join(root, 'latest.json');
+    try {
+      writeTerminalResult(root);
+      writeReleaseSummaryForCampaign({
+        campaignRoot: root,
+        latestPath,
+        resolveGitSha: () => VALID_TEST_GIT_SHA,
+      });
+
+      const completePointer = JSON.parse(readFileSync(latestPath, 'utf8')) as Record<string, unknown>;
+      const cases: Array<{ label: string; patch: Record<string, unknown>; expectedError: string }> = [
+        {
+          label: 'wrong run id',
+          patch: { campaign_run_id: 'not-the-summary-run-id' },
+          expectedError: 'campaign_run_id',
+        },
+        {
+          label: 'invalid generated_at',
+          patch: { generated_at: 'not-an-iso-time' },
+          expectedError: 'generated_at',
+        },
+        {
+          label: 'nonexistent generated_at calendar date',
+          patch: { generated_at: '2026-02-31T12:00:00.000Z' },
+          expectedError: 'generated_at',
+        },
+        {
+          label: 'invalid git_sha',
+          patch: { git_sha: 'not-a-real-git-sha' },
+          expectedError: 'git_sha',
+        },
+        {
+          label: 'wrong campaign id',
+          patch: { campaign_id: 'release-lite' },
+          expectedError: 'campaign_id',
+        },
+        {
+          label: 'polluted verdict fields',
+          patch: {
+            automated_release_verdict: 'PASSED',
+            status: 'passed',
+          },
+          expectedError: 'unexpected field',
+        },
+      ];
+
+      for (const testCase of cases) {
+        writeJson(latestPath, {
+          ...completePointer,
+          ...testCase.patch,
+        });
+
+        const status = readReleaseStatus({ latestPath });
+        expect(status.kind, testCase.label).toBe('malformed');
+        if (status.kind !== 'malformed') {
+          throw new Error(`Expected invalid latest pointer case to fail closed: ${testCase.label}.`);
+        }
+        expect(status.error).toContain(testCase.expectedError);
+
+        const output = renderReleaseStatus(status);
+        expect(output).toContain('Automated release verdict: UNKNOWN');
+        expect(output).not.toContain('Automated release verdict: PASSED');
+        expect(output).not.toContain('Campaign:');
+      }
     } finally {
       rmSync(root, { recursive: true, force: true });
     }

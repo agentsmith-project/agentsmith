@@ -22,6 +22,11 @@ import {
   CURRENT_RESOURCE_LOCK_MANIFEST_VERSION,
 } from '../current-resource-lock-manifest';
 import {
+  CURRENT_PURE_CHECK_IDENTITY_MANIFEST,
+  type CurrentPureCheckIdentityManifest,
+} from '../current-pure-check-identity-manifest';
+import {
+  deriveGovernancePureCheckReuseDecision,
   deriveGovernanceResumePlan,
   GOVERNANCE_RESUME_PLAN_SCHEMA,
   GOVERNANCE_RESUME_PLAN_VERSION,
@@ -29,6 +34,7 @@ import {
   GOVERNANCE_RUN_STATE_VERSION,
   validateGovernanceResumePlan,
   validateGovernanceRunState,
+  type GovernancePureCheckReuseDecisionInput,
   type GovernanceRunState,
 } from '../governance-run-state';
 import {
@@ -49,6 +55,9 @@ const CAMPAIGN_ID = 'release-full';
 const RUN_ID = 'release-run-001';
 const CAMPAIGN_ROOT = `artifacts/release-runs/${RUN_ID}`;
 const GENERATED_AT = '2026-04-25T12:00:00.000Z';
+const GIT_SHA = 'abc1234';
+const PURE_CHECK_ID = 'contracts';
+const PURE_CHECK_NPM_SCRIPT = 'contracts:check';
 
 const JOBS = [
   {
@@ -197,6 +206,7 @@ function makeClaim(jobId: JobId, overrides: Record<string, unknown> = {}): Recor
     campaign_root: CAMPAIGN_ROOT,
     run_id: RUN_ID,
     step_id: job.step_id,
+    check_id: null,
     gate_id: job.gate_id,
     line_kind: job.line_kind,
     gate_adapter: {
@@ -216,7 +226,7 @@ function makeClaim(jobId: JobId, overrides: Record<string, unknown> = {}): Recor
       origin: 'test',
     },
     freshness: {
-      git_sha: 'abc1234',
+      git_sha: GIT_SHA,
       allow_cross_commit: false,
       allow_cross_secret_profile: false,
       secret_profile_digest: DIGEST_SECRET,
@@ -281,6 +291,7 @@ function makeState(
       },
       claim_ref: {
         claim_id: `${job.job_id}-claim`,
+        check_id: null,
         claim_digest: DIGEST_CLAIM,
         evidence_dir: `${CAMPAIGN_ROOT}/${job.step_id}`,
         input_digest: DIGEST_INPUT,
@@ -330,6 +341,143 @@ function resumeJobFor(plan: ReturnType<typeof deriveGovernanceResumePlan>, jobId
 
 function actionFor(plan: ReturnType<typeof deriveGovernanceResumePlan>, jobId: JobId) {
   return resumeJobFor(plan, jobId).next_action;
+}
+
+function makePureCheckClaim(overrides: Record<string, unknown> = {}): Record<string, unknown> {
+  return {
+    schema_version: CURRENT_EVIDENCE_CLAIM_SCHEMA_VERSION,
+    subject: 'pure.standalone_gate_fast',
+    scope: 'debug',
+    campaign_id: null,
+    campaign_root: null,
+    run_id: null,
+    step_id: null,
+    check_id: PURE_CHECK_ID,
+    gate_id: 'gate-fast',
+    line_kind: 'governance_run_quick',
+    gate_adapter: {
+      npm_script: PURE_CHECK_NPM_SCRIPT,
+    },
+    evidence_dir: 'artifacts/governance-runner-shell-plan/local-run/standalone-gate-fast',
+    result_status: 'passed',
+    failure_class: 'none',
+    input_digest: {
+      value: DIGEST_INPUT,
+    },
+    artifact_digest: {
+      value: DIGEST_ARTIFACT,
+    },
+    result_digest: DIGEST_RESULT,
+    producer: {
+      origin: 'test',
+    },
+    freshness: {
+      git_sha: GIT_SHA,
+      allow_cross_commit: false,
+      allow_cross_secret_profile: false,
+      secret_profile_digest: null,
+    },
+    validator: {
+      name: 'current-evidence-claim-schema',
+      version: CURRENT_EVIDENCE_CLAIM_SCHEMA_VERSION,
+    },
+    generated_at: GENERATED_AT,
+    ...overrides,
+  };
+}
+
+function makePureCheckStateJob(
+  overrides: Partial<GovernanceRunState['jobs'][number]> = {},
+): GovernanceRunState['jobs'][number] {
+  return {
+    job_id: 'standalone-gate-fast',
+    gate_id: 'gate-fast',
+    step_id: null,
+    line_kind: 'governance_run_quick',
+    lifecycle: 'completed',
+    attempts: [
+      {
+        attempt_id: 'standalone-gate-fast-attempt-1',
+        lifecycle: 'completed',
+        started_at: GENERATED_AT,
+        finished_at: GENERATED_AT,
+      },
+    ],
+    lock_leases: [],
+    result_ref: {
+      result_status: 'passed',
+      failure_class: 'none',
+      result_digest: DIGEST_RESULT,
+    },
+    evidence_ref: {
+      evidence_dir: 'artifacts/governance-runner-shell-plan/local-run/standalone-gate-fast',
+      artifact_digest: DIGEST_ARTIFACT,
+    },
+    claim_ref: {
+      claim_id: 'standalone-gate-fast-claim',
+      check_id: PURE_CHECK_ID,
+      claim_digest: DIGEST_CLAIM,
+      evidence_dir: 'artifacts/governance-runner-shell-plan/local-run/standalone-gate-fast',
+      input_digest: DIGEST_INPUT,
+      artifact_digest: DIGEST_ARTIFACT,
+      result_digest: DIGEST_RESULT,
+      result_status: 'passed',
+      failure_class: 'none',
+      secret_profile_digest: null,
+    },
+    ...overrides,
+  };
+}
+
+function makePureCheckReuseInput(
+  overrides: {
+    stateJob?: GovernanceRunState['jobs'][number] | null;
+    claim?: Record<string, unknown>;
+    claimValidationInput?: GovernancePureCheckReuseDecisionInput['claim_validation_input'];
+    current?: Partial<GovernancePureCheckReuseDecisionInput['current']>;
+    manifest?: CurrentPureCheckIdentityManifest;
+  } = {},
+): GovernancePureCheckReuseDecisionInput {
+  const claim = overrides.claim ?? makePureCheckClaim();
+
+  return {
+    state_job: overrides.stateJob === undefined ? makePureCheckStateJob() : overrides.stateJob,
+    current: {
+      check_id: PURE_CHECK_ID,
+      git_sha: GIT_SHA,
+      input_digest: DIGEST_INPUT,
+      artifact_digest: DIGEST_ARTIFACT,
+      result_digest: DIGEST_RESULT,
+      secret_profile_digest: null,
+      stable_check_identity: true,
+      ...(overrides.current ?? {}),
+    },
+    pure_check_identity_manifest: overrides.manifest,
+    claim_validation_input: overrides.claimValidationInput === undefined
+      ? {
+        job_id: 'standalone-gate-fast',
+        claim_id: 'standalone-gate-fast-claim',
+        purpose: 'pure_check_reuse',
+        claim,
+      }
+      : overrides.claimValidationInput,
+  };
+}
+
+function makePureCheckManifestWithContractOverride(
+  overrides: Partial<CurrentPureCheckIdentityManifest['checks'][number]>,
+): CurrentPureCheckIdentityManifest {
+  return {
+    ...CURRENT_PURE_CHECK_IDENTITY_MANIFEST,
+    checks: CURRENT_PURE_CHECK_IDENTITY_MANIFEST.checks.map((check) => (
+      check.check_id === PURE_CHECK_ID
+        ? {
+          ...check,
+          ...overrides,
+        }
+        : check
+    )),
+  };
 }
 
 describe('governance run state and resume plan model', () => {
@@ -504,6 +652,296 @@ describe('governance run state and resume plan model', () => {
         result_digest: DIGEST_RESULT,
       },
     });
+  });
+
+  it('models current non-release pure check reuse as shadow_only because current manifest only enables shadow cache policy', () => {
+    const decision = deriveGovernancePureCheckReuseDecision(makePureCheckReuseInput());
+
+    expect(decision).toMatchObject({
+      decision: 'shadow_only',
+      check_id: PURE_CHECK_ID,
+      reason_codes: ['cache_policy_shadow_only'],
+      claim_ref: {
+        claim_id: 'standalone-gate-fast-claim',
+        check_id: PURE_CHECK_ID,
+        input_digest: DIGEST_INPUT,
+        artifact_digest: DIGEST_ARTIFACT,
+        result_digest: DIGEST_RESULT,
+      },
+    });
+  });
+
+  it('does not return reuse_allowed for any current pure check identity while cache policy is shadow-only', () => {
+    const decisions = CURRENT_PURE_CHECK_IDENTITY_MANIFEST.checks.map((identity) => {
+      const claim = makePureCheckClaim({
+        check_id: identity.check_id,
+        gate_id: identity.owning_gate_id,
+        gate_adapter: {
+          npm_script: identity.npm_script ?? 'npx-command-without-npm-script',
+        },
+      });
+      const stateJob = makePureCheckStateJob({
+        job_id: identity.owning_job_id,
+        gate_id: identity.owning_gate_id,
+        claim_ref: {
+          ...makePureCheckStateJob().claim_ref!,
+          check_id: identity.check_id,
+        },
+      });
+
+      return deriveGovernancePureCheckReuseDecision(makePureCheckReuseInput({
+        stateJob,
+        claim,
+        current: {
+          check_id: identity.check_id,
+        },
+      }));
+    });
+
+    expect(decisions.map((decision) => decision.decision)).not.toContain('reuse_allowed');
+  });
+
+  it('keeps pure check reuse in shadow_only when stable check identity is not confirmed', () => {
+    const decision = deriveGovernancePureCheckReuseDecision(makePureCheckReuseInput({
+      current: {
+        stable_check_identity: false,
+      },
+    }));
+
+    expect(decision).toMatchObject({
+      decision: 'shadow_only',
+      check_id: PURE_CHECK_ID,
+      reason_codes: expect.arrayContaining([
+        'stable_check_identity_not_confirmed',
+        'cache_policy_shadow_only',
+      ]),
+    });
+    expect(decision.claim_ref).toMatchObject({
+      check_id: PURE_CHECK_ID,
+      input_digest: DIGEST_INPUT,
+      artifact_digest: DIGEST_ARTIFACT,
+      result_digest: DIGEST_RESULT,
+    });
+  });
+
+  it('fails closed when pure check_id is unknown to the current identity manifest', () => {
+    const unknownCheckId = 'unknown-pure-check';
+    const decision = deriveGovernancePureCheckReuseDecision(makePureCheckReuseInput({
+      stateJob: makePureCheckStateJob({
+        claim_ref: {
+          ...makePureCheckStateJob().claim_ref!,
+          check_id: unknownCheckId,
+        },
+      }),
+      claim: makePureCheckClaim({
+        check_id: unknownCheckId,
+      }),
+      current: {
+        check_id: unknownCheckId,
+      },
+    }));
+
+    expect(decision).toMatchObject({
+      decision: 'rerun_required',
+      check_id: unknownCheckId,
+    });
+    expect(decision.reason_codes).toContain('unknown_check_id');
+    expect(decision.claim_ref).toBeNull();
+  });
+
+  it('fails closed when unit check claims are bound to gate-fast instead of manifest owners', () => {
+    const decision = deriveGovernancePureCheckReuseDecision(makePureCheckReuseInput({
+      stateJob: makePureCheckStateJob({
+        claim_ref: {
+          ...makePureCheckStateJob().claim_ref!,
+          check_id: 'unit',
+        },
+      }),
+      claim: makePureCheckClaim({
+        check_id: 'unit',
+        gate_adapter: {
+          npm_script: 'test:run',
+        },
+      }),
+      current: {
+        check_id: 'unit',
+      },
+    }));
+
+    expect(decision.decision).toBe('rerun_required');
+    expect(decision.reason_codes).toContain('manifest_owner_gate_mismatch');
+    expect(decision.reason_codes).toContain('manifest_owner_job_mismatch');
+    expect(decision.claim_ref).toBeNull();
+  });
+
+  it('fails closed when manifest owner binding for a check drifts from the state and claim', () => {
+    const decision = deriveGovernancePureCheckReuseDecision(makePureCheckReuseInput({
+      manifest: makePureCheckManifestWithContractOverride({
+        owning_gate_id: 'gate-default',
+        owning_job_id: 'standalone-gate-default',
+      }),
+    }));
+
+    expect(decision.decision).toBe('rerun_required');
+    expect(decision.reason_codes).toContain('manifest_owner_gate_mismatch');
+    expect(decision.reason_codes).toContain('manifest_owner_job_mismatch');
+    expect(decision.claim_ref).toBeNull();
+  });
+
+  it('fails closed when manifest npm_script binding drifts from the claim gate adapter', () => {
+    const decision = deriveGovernancePureCheckReuseDecision(makePureCheckReuseInput({
+      claim: makePureCheckClaim({
+        gate_adapter: {
+          npm_script: 'gate:fast',
+        },
+      }),
+    }));
+
+    expect(decision.decision).toBe('rerun_required');
+    expect(decision.reason_codes).toContain('manifest_npm_script_mismatch');
+    expect(decision.claim_ref).toBeNull();
+  });
+
+  it('fails closed when manifest cache policy is disabled', () => {
+    const decision = deriveGovernancePureCheckReuseDecision(makePureCheckReuseInput({
+      manifest: makePureCheckManifestWithContractOverride({
+        cache_policy: 'disabled',
+      }),
+    }));
+
+    expect(decision).toMatchObject({
+      decision: 'rerun_required',
+      reason_codes: expect.arrayContaining(['cache_policy_disabled']),
+      claim_ref: null,
+    });
+  });
+
+  it('fails closed when manifest cache policy is not recognized as a reusable policy', () => {
+    const decision = deriveGovernancePureCheckReuseDecision(makePureCheckReuseInput({
+      manifest: makePureCheckManifestWithContractOverride({
+        cache_policy: 'unexpected-policy' as CurrentPureCheckIdentityManifest['checks'][number]['cache_policy'],
+      }),
+    }));
+
+    expect(decision).toMatchObject({
+      decision: 'rerun_required',
+      reason_codes: expect.arrayContaining(['cache_policy_not_reusable']),
+      claim_ref: null,
+    });
+  });
+
+  it.each([
+    {
+      label: 'failed claim',
+      input: makePureCheckReuseInput({
+        claim: makePureCheckClaim({
+          result_status: 'failed',
+          failure_class: 'product_regression',
+        }),
+      }),
+      reason: 'claim_validation_failed_claim_not_reusable',
+    },
+    {
+      label: 'missing artifact digest',
+      input: makePureCheckReuseInput({
+        stateJob: makePureCheckStateJob({
+          evidence_ref: {
+            evidence_dir: 'artifacts/governance-runner-shell-plan/local-run/standalone-gate-fast',
+            artifact_digest: null,
+          },
+          claim_ref: {
+            ...makePureCheckStateJob().claim_ref!,
+            artifact_digest: null,
+          },
+        }),
+      }),
+      reason: 'missing_artifact_digest',
+    },
+    {
+      label: 'check_id mismatch',
+      input: makePureCheckReuseInput({
+        claim: makePureCheckClaim({
+          check_id: 'other-pure-check',
+        }),
+      }),
+      reason: 'check_id_mismatch',
+    },
+    {
+      label: 'git sha mismatch',
+      input: makePureCheckReuseInput({
+        claim: makePureCheckClaim({
+          freshness: {
+            git_sha: 'other-commit',
+            allow_cross_commit: false,
+            allow_cross_secret_profile: false,
+            secret_profile_digest: null,
+          },
+        }),
+      }),
+      reason: 'git_sha_mismatch',
+    },
+    {
+      label: 'input digest mismatch',
+      input: makePureCheckReuseInput({
+        current: {
+          input_digest: DIGEST_OTHER,
+        },
+      }),
+      reason: 'input_digest_mismatch',
+    },
+    {
+      label: 'artifact digest mismatch',
+      input: makePureCheckReuseInput({
+        current: {
+          artifact_digest: DIGEST_OTHER,
+        },
+      }),
+      reason: 'artifact_digest_mismatch',
+    },
+    {
+      label: 'result digest mismatch',
+      input: makePureCheckReuseInput({
+        current: {
+          result_digest: DIGEST_OTHER,
+        },
+      }),
+      reason: 'result_digest_mismatch',
+    },
+    {
+      label: 'secret profile mismatch',
+      input: makePureCheckReuseInput({
+        current: {
+          secret_profile_digest: DIGEST_SECRET,
+        },
+        claim: makePureCheckClaim({
+          freshness: {
+            git_sha: GIT_SHA,
+            allow_cross_commit: false,
+            allow_cross_secret_profile: false,
+            secret_profile_digest: DIGEST_OTHER,
+          },
+        }),
+      }),
+      reason: 'secret_profile_mismatch',
+    },
+    {
+      label: 'release scope from another campaign',
+      input: makePureCheckReuseInput({
+        claim: makeClaim('gate-fast', {
+          campaign_root: 'artifacts/release-runs/release-run-999',
+          run_id: 'release-run-999',
+          evidence_dir: 'artifacts/release-runs/release-run-999/gate-fast',
+          check_id: PURE_CHECK_ID,
+        }),
+      }),
+      reason: 'claim_validation_pure_check_release_scope_not_allowed',
+    },
+  ])('fails closed as rerun_required for pure check reuse when $label', ({ input, reason }) => {
+    const decision = deriveGovernancePureCheckReuseDecision(input);
+
+    expect(decision.decision).toBe('rerun_required');
+    expect(decision.reason_codes).toContain(reason);
+    expect(decision.claim_ref).toBeNull();
   });
 
   it.each([

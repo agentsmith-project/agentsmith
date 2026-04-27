@@ -11,6 +11,13 @@ import {
   CURRENT_JOB_METADATA_MANIFEST_VERSION,
   validateCurrentJobMetadataManifest,
 } from '../current-job-metadata-manifest';
+import {
+  CURRENT_PURE_CHECK_IDENTITY_MANIFEST,
+  CURRENT_PURE_CHECK_IDS,
+  listCurrentPureCheckIdentities,
+  listCurrentPureCheckInputDigestRules,
+  validateCurrentPureCheckIdentityManifest,
+} from '../current-pure-check-identity-manifest';
 import { listCurrentResourceLocks } from '../current-resource-lock-manifest';
 import {
   findCurrentVerificationCampaignById,
@@ -63,6 +70,12 @@ function cloneCurrentManifest(): Record<string, unknown> & { jobs: Record<string
   };
 }
 
+function clonePureCheckManifest(): Record<string, unknown> & { checks: Record<string, unknown>[] } {
+  return structuredClone(CURRENT_PURE_CHECK_IDENTITY_MANIFEST) as Record<string, unknown> & {
+    checks: Record<string, unknown>[];
+  };
+}
+
 function jobOutputs(job: Record<string, unknown>): Record<string, unknown> {
   if (!job.outputs || typeof job.outputs !== 'object' || Array.isArray(job.outputs)) {
     throw new Error(`Job ${String(job.id)} has invalid outputs.`);
@@ -87,6 +100,21 @@ function clonedJob(manifest: { jobs: Record<string, unknown>[] }, id: string): R
 
 function expectValidationFailure(manifest: unknown, expectedReason: string): void {
   const result = validateCurrentJobMetadataManifest(manifest);
+
+  expect(result.ok).toBe(false);
+  if (!result.ok) {
+    expect(result.failures).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          reason: expect.stringContaining(expectedReason),
+        }),
+      ]),
+    );
+  }
+}
+
+function expectPureCheckValidationFailure(manifest: unknown, expectedReason: string): void {
+  const result = validateCurrentPureCheckIdentityManifest(manifest);
 
   expect(result.ok).toBe(false);
   if (!result.ok) {
@@ -194,6 +222,105 @@ describe('current job metadata manifest', () => {
     const mismatchedScript = cloneCurrentManifest();
     mismatchedScript.jobs[0].npm_script = 'test:e2e';
     expectValidationFailure(mismatchedScript, 'npm_script must match current gate manifest');
+  });
+
+  it('declares stable pure check identities owned by current gate and job metadata', () => {
+    const jobsById = new Map(listCurrentJobMetadata().map((job) => [job.id, job]));
+    const digestRuleIds = new Set(listCurrentPureCheckInputDigestRules().map((rule) => rule.id));
+    const checks = listCurrentPureCheckIdentities();
+
+    expect(CURRENT_PURE_CHECK_IDS).toEqual([
+      'contracts',
+      'openapi-contract',
+      'openapi-generated',
+      'lint',
+      'typecheck',
+      'unit',
+    ]);
+    expect(checks.map((check) => check.check_id)).toEqual(CURRENT_PURE_CHECK_IDS);
+    expect(validateCurrentPureCheckIdentityManifest()).toEqual({
+      ok: true,
+      value: CURRENT_PURE_CHECK_IDENTITY_MANIFEST,
+    });
+
+    const checkIds = checks.map((check) => check.check_id);
+    expect(new Set(checkIds).size).toBe(checkIds.length);
+
+    for (const check of checks) {
+      const gate = findCurrentGateDefinitionById(check.owning_gate_id);
+      const job = jobsById.get(check.owning_job_id);
+
+      expect(check.check_id).toMatch(/^[a-z][a-z0-9]*(?:-[a-z0-9]+)*$/);
+      expect(check.check_id.trim()).toBe(check.check_id);
+      expect(gate, `${check.check_id} owning gate exists`).toBeDefined();
+      expect(job, `${check.check_id} owning job exists`).toBeDefined();
+      expect(job?.gate_id, `${check.check_id} owner job maps to owning gate`).toBe(check.owning_gate_id);
+      expect(check.path_globs.length, `${check.check_id} path_globs`).toBeGreaterThan(0);
+      expect(check.path_globs).not.toEqual(expect.arrayContaining(['**/*', '**', '*', '.', './']));
+      expect(['shadow', 'disabled']).toContain(check.cache_policy);
+      expect(digestRuleIds.has(check.input_digest_rule_id)).toBe(true);
+    }
+
+    const source = readFileSync('scripts/governance/current-pure-check-identity-manifest.ts', 'utf8');
+    expect(source).not.toMatch(/from 'node:fs'|existsSync|readdirSync|statSync|readFileSync|createHash|sha256/);
+  });
+
+  it('fails closed when pure check identity prerequisites are missing or unsafe', () => {
+    const emptyId = clonePureCheckManifest();
+    emptyId.checks[0] = {
+      ...emptyId.checks[0],
+      check_id: '',
+    };
+    expectPureCheckValidationFailure(emptyId, 'non-empty stable kebab-case');
+
+    const duplicateId = clonePureCheckManifest();
+    duplicateId.checks[1] = {
+      ...duplicateId.checks[1],
+      check_id: duplicateId.checks[0].check_id,
+    };
+    expectPureCheckValidationFailure(duplicateId, 'duplicate check_id');
+
+    const missingGate = clonePureCheckManifest();
+    missingGate.checks[0] = {
+      ...missingGate.checks[0],
+      owning_gate_id: 'missing-gate',
+    };
+    expectPureCheckValidationFailure(missingGate, 'unknown owning_gate_id');
+
+    const missingJob = clonePureCheckManifest();
+    missingJob.checks[0] = {
+      ...missingJob.checks[0],
+      owning_job_id: 'missing-job',
+    };
+    expectPureCheckValidationFailure(missingJob, 'unknown owning_job_id');
+
+    const emptyGlobs = clonePureCheckManifest();
+    emptyGlobs.checks[0] = {
+      ...emptyGlobs.checks[0],
+      path_globs: [],
+    };
+    expectPureCheckValidationFailure(emptyGlobs, 'path_globs must be non-empty');
+
+    const fullRepoGlob = clonePureCheckManifest();
+    fullRepoGlob.checks[0] = {
+      ...fullRepoGlob.checks[0],
+      path_globs: ['**/*'],
+    };
+    expectPureCheckValidationFailure(fullRepoGlob, 'must not generalize to the full repo');
+
+    const enabledReuse = clonePureCheckManifest();
+    enabledReuse.checks[0] = {
+      ...enabledReuse.checks[0],
+      cache_policy: 'enabled' as never,
+    };
+    expectPureCheckValidationFailure(enabledReuse, 'cache_policy must be shadow or disabled');
+
+    const missingDigestRule = clonePureCheckManifest();
+    missingDigestRule.checks[0] = {
+      ...missingDigestRule.checks[0],
+      input_digest_rule_id: 'missing-rule',
+    };
+    expectPureCheckValidationFailure(missingDigestRule, 'unknown input_digest_rule_id');
   });
 
   it('mirrors release-full steps exactly without executing or acquiring anything', () => {

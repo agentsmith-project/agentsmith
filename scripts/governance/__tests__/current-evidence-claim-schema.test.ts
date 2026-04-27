@@ -27,6 +27,7 @@ function makeLocalClaim(
     campaign_root: null,
     run_id: null,
     step_id: null,
+    check_id: null,
     gate_id: 'lane-visual',
     line_kind: 'visual',
     gate_adapter: {
@@ -70,6 +71,7 @@ function makeReleaseClaim(
     campaign_root: 'artifacts/release-runs/release-run-001',
     run_id: 'release-run-001',
     step_id: 'lane-visual',
+    check_id: null,
     evidence_dir: 'artifacts/release-runs/release-run-001/lane-visual',
     freshness: {
       git_sha: 'abc1234',
@@ -77,6 +79,23 @@ function makeReleaseClaim(
       allow_cross_secret_profile: false,
       secret_profile_digest: DIGEST_4,
     },
+    ...overrides,
+  });
+}
+
+function makePureCheckClaim(
+  overrides: ClaimFixtureOverrides = {},
+): ClaimFixture {
+  return makeLocalClaim({
+    subject: 'pure.gate_fast',
+    scope: 'debug',
+    check_id: 'contracts',
+    gate_id: 'gate-fast',
+    line_kind: 'governance_run_quick',
+    gate_adapter: {
+      npm_script: 'contracts:check',
+    },
+    evidence_dir: 'artifacts/governance-runner-shell-plan/local-run/standalone-gate-fast',
     ...overrides,
   });
 }
@@ -101,6 +120,7 @@ describe('current evidence claim schema', () => {
         campaign_root: null,
         run_id: null,
         step_id: null,
+        check_id: null,
         gate_id: 'lane-visual',
         result_status: 'passed',
         failure_class: 'none',
@@ -206,6 +226,37 @@ describe('current evidence claim schema', () => {
     expect(validateCurrentEvidenceClaim(failedClaim, { purpose: 'reuse' }).ok).toBe(false);
     expect(validateCurrentEvidenceClaim(failedClaim, { purpose: 'verdict_candidate' }).ok)
       .toBe(false);
+  });
+
+  it('requires stable check_id binding for pure check reuse claims only', () => {
+    expect(validateCurrentEvidenceClaim(
+      makePureCheckClaim(),
+      { purpose: 'pure_check_reuse' },
+    ).ok).toBe(true);
+
+    const missingCheckId = validateCurrentEvidenceClaim(
+      makePureCheckClaim({ check_id: null }),
+      { purpose: 'pure_check_reuse' },
+    );
+    const releasePureReuse = validateCurrentEvidenceClaim(
+      makeReleaseClaim({ check_id: 'contracts' }),
+      { purpose: 'pure_check_reuse' },
+    );
+
+    expect(missingCheckId.ok).toBe(false);
+    if (!missingCheckId.ok) {
+      expect(missingCheckId.failures).toContainEqual(expect.objectContaining({
+        path: 'check_id',
+        code: 'pure_check_id_required',
+      }));
+    }
+    expect(releasePureReuse.ok).toBe(false);
+    if (!releasePureReuse.ok) {
+      expect(releasePureReuse.failures).toContainEqual(expect.objectContaining({
+        path: 'scope',
+        code: 'pure_check_release_scope_not_allowed',
+      }));
+    }
   });
 
   it('fails invalid result status and failure_class pairings', () => {

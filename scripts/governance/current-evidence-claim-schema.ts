@@ -8,7 +8,7 @@ import {
 } from './current-gate-result-schema';
 import { findCurrentVerificationCampaignById } from './current-verification-campaign-manifest';
 
-export const CURRENT_EVIDENCE_CLAIM_SCHEMA_VERSION = '1.0.0' as const;
+export const CURRENT_EVIDENCE_CLAIM_SCHEMA_VERSION = '1.1.0' as const;
 
 export const CURRENT_EVIDENCE_CLAIM_TOP_LEVEL_KEYS = [
   'schema_version',
@@ -18,6 +18,7 @@ export const CURRENT_EVIDENCE_CLAIM_TOP_LEVEL_KEYS = [
   'campaign_root',
   'run_id',
   'step_id',
+  'check_id',
   'gate_id',
   'line_kind',
   'gate_adapter',
@@ -44,6 +45,7 @@ export const CURRENT_EVIDENCE_CLAIM_SCOPES = [
 export const CURRENT_EVIDENCE_CLAIM_VALIDATION_PURPOSES = [
   'record',
   'reuse',
+  'pure_check_reuse',
   'verdict_candidate',
 ] as const;
 
@@ -54,7 +56,11 @@ export const CURRENT_EVIDENCE_CLAIM_SCHEMA = {
   validation_purposes: CURRENT_EVIDENCE_CLAIM_VALIDATION_PURPOSES,
 } as const;
 
-export type CurrentEvidenceClaimValidationPurpose = 'record' | 'reuse' | 'verdict_candidate';
+export type CurrentEvidenceClaimValidationPurpose =
+  | 'record'
+  | 'reuse'
+  | 'pure_check_reuse'
+  | 'verdict_candidate';
 export type CurrentEvidenceClaimScope = (typeof CURRENT_EVIDENCE_CLAIM_SCOPES)[number];
 export type CurrentEvidenceClaimCampaignId = 'release-full';
 
@@ -90,6 +96,7 @@ export interface CurrentEvidenceClaimRecord {
   campaign_root: string | null;
   run_id: string | null;
   step_id: string | null;
+  check_id: string | null;
   gate_id: string;
   line_kind: string;
   gate_adapter: CurrentEvidenceClaimGateAdapter;
@@ -445,6 +452,7 @@ function buildClaimRecord(args: {
   campaignRoot: string | null;
   runId: string | null;
   stepId: string | null;
+  checkId: string | null;
   gateId: string;
   lineKind: string;
   npmScript: string;
@@ -471,6 +479,7 @@ function buildClaimRecord(args: {
     campaign_root: args.campaignRoot,
     run_id: args.runId,
     step_id: args.stepId,
+    check_id: args.checkId,
     gate_id: args.gateId,
     line_kind: args.lineKind,
     gate_adapter: {
@@ -571,6 +580,7 @@ export function validateCurrentEvidenceClaim(
   const campaignRoot = readRequiredNullableString(claim, 'campaign_root', 'campaign_root', failures);
   const runId = readRequiredNullableString(claim, 'run_id', 'run_id', failures);
   const stepId = readRequiredNullableString(claim, 'step_id', 'step_id', failures);
+  const checkId = readRequiredNullableString(claim, 'check_id', 'check_id', failures);
   const gateId = readRequiredString(claim, 'gate_id', 'gate_id', failures);
   const lineKind = readRequiredString(claim, 'line_kind', 'line_kind', failures);
   const evidenceDir = readRequiredString(claim, 'evidence_dir', 'evidence_dir', failures);
@@ -676,6 +686,7 @@ export function validateCurrentEvidenceClaim(
       );
     } else if (
       npmScript !== undefined
+      && purpose !== 'pure_check_reuse'
       && !requiresReleaseCampaignBinding(scope, campaignId, campaignRoot, runId, stepId, gateId, lineKind)
       && npmScript !== gate.npmScript
     ) {
@@ -729,6 +740,57 @@ export function validateCurrentEvidenceClaim(
         'result_status',
         'failed_claim_not_reusable',
         'failed claim cannot be reused or used as a verdict candidate.',
+      );
+    }
+  }
+
+  if (purpose === 'pure_check_reuse') {
+    if (checkId === null || checkId === undefined) {
+      pushFailure(
+        failures,
+        'check_id',
+        'pure_check_id_required',
+        'pure check reuse claim must bind a stable check_id.',
+      );
+    }
+    if (scope === 'release') {
+      pushFailure(
+        failures,
+        'scope',
+        'pure_check_release_scope_not_allowed',
+        'pure check reuse claim must be non-release scoped.',
+      );
+    }
+    if (campaignId !== null && campaignId !== undefined) {
+      pushFailure(
+        failures,
+        'campaign_id',
+        'pure_check_campaign_id_not_allowed',
+        'pure check reuse claim must not bind a release campaign_id.',
+      );
+    }
+    if (campaignRoot !== null && campaignRoot !== undefined) {
+      pushFailure(
+        failures,
+        'campaign_root',
+        'pure_check_campaign_root_not_allowed',
+        'pure check reuse claim must not bind a release campaign_root.',
+      );
+    }
+    if (runId !== null && runId !== undefined) {
+      pushFailure(
+        failures,
+        'run_id',
+        'pure_check_run_id_not_allowed',
+        'pure check reuse claim must not bind a release run_id.',
+      );
+    }
+    if (stepId !== null && stepId !== undefined) {
+      pushFailure(
+        failures,
+        'step_id',
+        'pure_check_step_id_not_allowed',
+        'pure check reuse claim must not bind a release step_id.',
       );
     }
   }
@@ -892,6 +954,7 @@ export function validateCurrentEvidenceClaim(
       campaignRoot: campaignRoot ?? null,
       runId: runId ?? null,
       stepId: stepId ?? null,
+      checkId: checkId ?? null,
       gateId: gateId ?? '',
       lineKind: lineKind ?? '',
       npmScript: npmScript ?? '',

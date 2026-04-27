@@ -33,6 +33,15 @@ import {
   type CurrentJobMetadata,
 } from './current-job-metadata-manifest';
 import {
+  CURRENT_PURE_CHECK_IDENTITY_MANIFEST_SCHEMA,
+  CURRENT_PURE_CHECK_IDENTITY_MANIFEST_VERSION,
+  listCurrentPureCheckIdentities,
+  listCurrentPureCheckInputDigestRules,
+  validateCurrentPureCheckIdentityManifest,
+  type CurrentPureCheckCachePolicy,
+  type CurrentPureCheckIdentity,
+} from './current-pure-check-identity-manifest';
+import {
   buildCurrentArtifactTemplateIndex,
   CURRENT_ARTIFACT_TEMPLATE_INDEX_SCHEMA,
   CURRENT_ARTIFACT_TEMPLATE_INDEX_VERSION,
@@ -252,6 +261,31 @@ export interface VerificationCatalogArtifactTemplateIndexProjection {
   templates: readonly VerificationCatalogArtifactTemplateProjection[];
 }
 
+export type VerificationCatalogPureCheckCachePolicyCounts = Record<CurrentPureCheckCachePolicy, number>;
+
+export interface VerificationCatalogPureCheckProjection {
+  check_id: string;
+  command: string;
+  npm_script: string | null;
+  owning_gate_id: string;
+  owning_job_id: string;
+  path_glob_count: number;
+  cache_policy: CurrentPureCheckCachePolicy;
+  digest_rule_id: string;
+}
+
+export interface VerificationCatalogPureCheckIdentityProjection {
+  schema: typeof CURRENT_PURE_CHECK_IDENTITY_MANIFEST_SCHEMA;
+  version: typeof CURRENT_PURE_CHECK_IDENTITY_MANIFEST_VERSION;
+  check_ids: readonly string[];
+  check_count: number;
+  digest_rule_count: number;
+  cache_policy_counts: VerificationCatalogPureCheckCachePolicyCounts;
+  claim_instances_included: false;
+  commands_executed: false;
+  checks: readonly VerificationCatalogPureCheckProjection[];
+}
+
 export interface VerificationCatalogP2ModelProjection {
   projection_kind: 'read_only';
   artifact_directory_inspection: false;
@@ -273,6 +307,7 @@ export interface VerificationCatalogP2ModelProjection {
     campaign_id_count: number;
     jobs: readonly VerificationCatalogJobMetadataProjection[];
   };
+  pure_checks: VerificationCatalogPureCheckIdentityProjection;
   artifact_templates: VerificationCatalogArtifactTemplateIndexProjection;
 }
 
@@ -347,6 +382,18 @@ export interface VerificationCatalog {
       job_ids: readonly string[];
       job_count: number;
       campaign_ids: readonly string[];
+    };
+    current_pure_check_identity_manifest: {
+      authority: 'authoritative';
+      module: 'scripts/governance/current-pure-check-identity-manifest.ts';
+      schema: typeof CURRENT_PURE_CHECK_IDENTITY_MANIFEST_SCHEMA;
+      version: typeof CURRENT_PURE_CHECK_IDENTITY_MANIFEST_VERSION;
+      check_ids: readonly string[];
+      check_count: number;
+      digest_rule_count: number;
+      cache_policy_counts: VerificationCatalogPureCheckCachePolicyCounts;
+      claim_instances_included: false;
+      commands_executed: false;
     };
     current_artifact_template_index: {
       authority: 'derived_projection';
@@ -583,6 +630,66 @@ function projectArtifactTemplateIndex(
   };
 }
 
+function assertCurrentPureCheckIdentityManifestValid(): void {
+  const validation = validateCurrentPureCheckIdentityManifest();
+
+  if (!validation.ok) {
+    throw new Error(
+      `current pure check identity manifest is invalid: ${
+        validation.failures.map((failure) => `${failure.path}: ${failure.reason}`).join('; ')
+      }`,
+    );
+  }
+}
+
+function pureCheckCachePolicyCounts(
+  checks: readonly CurrentPureCheckIdentity[],
+): VerificationCatalogPureCheckCachePolicyCounts {
+  return checks.reduce<VerificationCatalogPureCheckCachePolicyCounts>(
+    (counts, check) => ({
+      ...counts,
+      [check.cache_policy]: counts[check.cache_policy] + 1,
+    }),
+    {
+      shadow: 0,
+      disabled: 0,
+    },
+  );
+}
+
+function projectPureCheckIdentity(
+  check: CurrentPureCheckIdentity,
+): VerificationCatalogPureCheckProjection {
+  return {
+    check_id: check.check_id,
+    command: check.command,
+    npm_script: check.npm_script ?? null,
+    owning_gate_id: check.owning_gate_id,
+    owning_job_id: check.owning_job_id,
+    path_glob_count: check.path_globs.length,
+    cache_policy: check.cache_policy,
+    digest_rule_id: check.input_digest_rule_id,
+  };
+}
+
+function projectPureCheckIdentityManifest(
+  checks: readonly CurrentPureCheckIdentity[],
+): VerificationCatalogPureCheckIdentityProjection {
+  const digestRuleCount = listCurrentPureCheckInputDigestRules().length;
+
+  return {
+    schema: CURRENT_PURE_CHECK_IDENTITY_MANIFEST_SCHEMA,
+    version: CURRENT_PURE_CHECK_IDENTITY_MANIFEST_VERSION,
+    check_ids: checks.map((check) => check.check_id),
+    check_count: checks.length,
+    digest_rule_count: digestRuleCount,
+    cache_policy_counts: pureCheckCachePolicyCounts(checks),
+    claim_instances_included: false,
+    commands_executed: false,
+    checks: checks.map(projectPureCheckIdentity),
+  };
+}
+
 function assertProjectedJobLocksKnown(
   resourceLocks: readonly CurrentResourceLockDefinition[],
   jobs: readonly CurrentJobMetadata[],
@@ -602,10 +709,12 @@ export function buildVerificationCatalogP2ModelProjection(args: {
   resourceLocks: readonly CurrentResourceLockDefinition[];
   jobs: readonly CurrentJobMetadata[];
 }): VerificationCatalogP2ModelProjection {
+  assertCurrentPureCheckIdentityManifestValid();
   assertProjectedJobLocksKnown(args.resourceLocks, args.jobs);
   const artifactTemplateIndex = buildCurrentArtifactTemplateIndex({
     jobs: args.jobs,
   });
+  const currentPureCheckIdentities = listCurrentPureCheckIdentities();
 
   return {
     projection_kind: 'read_only',
@@ -635,6 +744,7 @@ export function buildVerificationCatalogP2ModelProjection(args: {
       campaign_id_count: projectP2CampaignIds(args.jobs).length,
       jobs: args.jobs.map(projectJobMetadata),
     },
+    pure_checks: projectPureCheckIdentityManifest(currentPureCheckIdentities),
     artifact_templates: projectArtifactTemplateIndex(artifactTemplateIndex),
   };
 }
@@ -1002,6 +1112,7 @@ export function buildVerificationCatalog(input: BuildVerificationCatalogInput = 
   const verificationCampaigns = input.verificationCampaigns ?? listCurrentVerificationCampaigns();
   const currentResourceLocks = listCurrentResourceLocks();
   const currentJobMetadata = listCurrentJobMetadata();
+  const currentPureCheckIdentities = listCurrentPureCheckIdentities();
   const currentArtifactTemplateIndex = buildCurrentArtifactTemplateIndex({
     jobs: currentJobMetadata,
   });
@@ -1028,6 +1139,7 @@ export function buildVerificationCatalog(input: BuildVerificationCatalogInput = 
   const currentResourceLockIds = currentResourceLocks.map((lock) => lock.id);
   const currentJobIds = currentJobMetadata.map((job) => job.id);
   const currentJobCampaignIds = projectP2CampaignIds(currentJobMetadata);
+  const currentPureCheckProjection = projectPureCheckIdentityManifest(currentPureCheckIdentities);
   const visualScenarioCount = new Set(visualCatalogEntries.map((entry) => entry.scenarioId)).size;
   const visualCatalogUsesInputOverride = Boolean(input.visualCatalogEntries);
   const verificationCampaignsUseInputOverride = Boolean(input.verificationCampaigns);
@@ -1126,6 +1238,18 @@ export function buildVerificationCatalog(input: BuildVerificationCatalogInput = 
         job_ids: currentJobIds,
         job_count: currentJobIds.length,
         campaign_ids: currentJobCampaignIds,
+      },
+      current_pure_check_identity_manifest: {
+        authority: 'authoritative',
+        module: 'scripts/governance/current-pure-check-identity-manifest.ts',
+        schema: currentPureCheckProjection.schema,
+        version: currentPureCheckProjection.version,
+        check_ids: currentPureCheckProjection.check_ids,
+        check_count: currentPureCheckProjection.check_count,
+        digest_rule_count: currentPureCheckProjection.digest_rule_count,
+        cache_policy_counts: currentPureCheckProjection.cache_policy_counts,
+        claim_instances_included: false,
+        commands_executed: false,
       },
       current_artifact_template_index: {
         authority: 'derived_projection',

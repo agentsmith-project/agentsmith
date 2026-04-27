@@ -7,6 +7,14 @@ import {
   listQuickHumanCurrentWorkflowCommands,
   type CurrentWorkflowCommand,
 } from '../governance/current-workflow-manifest';
+import {
+  CURRENT_PURE_CHECK_IDENTITY_MANIFEST_SCHEMA,
+  CURRENT_PURE_CHECK_IDENTITY_MANIFEST_VERSION,
+  CURRENT_PURE_CHECK_IDS,
+  listCurrentPureCheckIdentities,
+  listCurrentPureCheckInputDigestRules,
+} from '../governance/current-pure-check-identity-manifest';
+import { buildVerificationCatalog } from '../governance/verification-catalog';
 
 const rootDir = process.cwd();
 
@@ -60,6 +68,10 @@ function forbidMatch(content: string, pattern: RegExp, message: string): void {
 
 function escapeRegExp(value: string): string {
   return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+function stableJson(value: unknown): string {
+  return JSON.stringify(value);
 }
 
 function extractBlock(content: string, startMarker: string, endMarker: string, label: string): string {
@@ -502,6 +514,69 @@ requireMatch(
   /must not be described as a second model catalog or a generic provider picker/,
   'product terminology contract must explicitly forbid describing Execution target as a generic provider picker',
 );
+
+const verificationCatalog = buildVerificationCatalog({
+  generatedAt: '2026-04-27T12:00:00.000Z',
+});
+const currentPureChecks = listCurrentPureCheckIdentities();
+const currentPureCheckDigestRuleIds = new Set(listCurrentPureCheckInputDigestRules().map((rule) => rule.id));
+const pureCheckCachePolicyCounts = currentPureChecks.reduce<Record<'shadow' | 'disabled', number>>(
+  (counts, check) => ({
+    ...counts,
+    [check.cache_policy]: counts[check.cache_policy] + 1,
+  }),
+  {
+    shadow: 0,
+    disabled: 0,
+  },
+);
+const pureCheckSourceTruth = verificationCatalog.source_truth.current_pure_check_identity_manifest;
+const pureCheckProjection = verificationCatalog.p2_model_projection.pure_checks;
+
+if (pureCheckSourceTruth.schema !== CURRENT_PURE_CHECK_IDENTITY_MANIFEST_SCHEMA) {
+  failures.push('verification catalog source truth must include the current pure check identity manifest schema');
+}
+if (pureCheckSourceTruth.version !== CURRENT_PURE_CHECK_IDENTITY_MANIFEST_VERSION) {
+  failures.push('verification catalog source truth must include the current pure check identity manifest version');
+}
+if (stableJson(pureCheckSourceTruth.check_ids) !== stableJson(CURRENT_PURE_CHECK_IDS)) {
+  failures.push('verification catalog source truth must preserve current pure check ids');
+}
+if (pureCheckSourceTruth.check_count !== currentPureChecks.length) {
+  failures.push('verification catalog source truth must include the current pure check count');
+}
+if (pureCheckSourceTruth.digest_rule_count !== currentPureCheckDigestRuleIds.size) {
+  failures.push('verification catalog source truth must include the current pure check digest rule count');
+}
+if (stableJson(pureCheckSourceTruth.cache_policy_counts) !== stableJson(pureCheckCachePolicyCounts)) {
+  failures.push('verification catalog source truth must include the current pure check cache policy distribution');
+}
+if (pureCheckSourceTruth.claim_instances_included !== false || pureCheckSourceTruth.commands_executed !== false) {
+  failures.push('verification catalog source truth must not include claim instances or execute pure checks');
+}
+if (
+  pureCheckProjection.schema !== CURRENT_PURE_CHECK_IDENTITY_MANIFEST_SCHEMA
+  || pureCheckProjection.version !== CURRENT_PURE_CHECK_IDENTITY_MANIFEST_VERSION
+  || stableJson(pureCheckProjection.check_ids) !== stableJson(CURRENT_PURE_CHECK_IDS)
+  || pureCheckProjection.check_count !== currentPureChecks.length
+  || pureCheckProjection.digest_rule_count !== currentPureCheckDigestRuleIds.size
+  || stableJson(pureCheckProjection.cache_policy_counts) !== stableJson(pureCheckCachePolicyCounts)
+  || pureCheckProjection.claim_instances_included !== false
+  || pureCheckProjection.commands_executed !== false
+) {
+  failures.push('verification catalog P2 projection must mirror pure check identity manifest metadata without claim reuse');
+}
+for (const check of pureCheckProjection.checks) {
+  if (check.path_glob_count <= 0) {
+    failures.push(`verification catalog pure check projection has empty path glob count: ${check.check_id}`);
+  }
+  if (check.cache_policy !== 'shadow' && check.cache_policy !== 'disabled') {
+    failures.push(`verification catalog pure check projection has unsafe cache policy: ${check.check_id}`);
+  }
+  if (!currentPureCheckDigestRuleIds.has(check.digest_rule_id)) {
+    failures.push(`verification catalog pure check projection references unknown digest rule: ${check.check_id}`);
+  }
+}
 
 if (failures.length > 0) {
   console.error('[contracts] engineering governance check failed:');

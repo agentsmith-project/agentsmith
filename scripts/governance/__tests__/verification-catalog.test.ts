@@ -18,6 +18,13 @@ import {
   listCurrentJobMetadata,
 } from '../current-job-metadata-manifest';
 import {
+  CURRENT_PURE_CHECK_IDENTITY_MANIFEST_SCHEMA,
+  CURRENT_PURE_CHECK_IDENTITY_MANIFEST_VERSION,
+  CURRENT_PURE_CHECK_IDS,
+  listCurrentPureCheckIdentities,
+  listCurrentPureCheckInputDigestRules,
+} from '../current-pure-check-identity-manifest';
+import {
   buildCurrentArtifactTemplateIndex,
   CURRENT_ARTIFACT_TEMPLATE_INDEX_SCHEMA,
   CURRENT_ARTIFACT_TEMPLATE_INDEX_VERSION,
@@ -77,6 +84,19 @@ function expectNoForbiddenP2RuntimeTokens(value: unknown, label: string): void {
   for (const fieldName of FORBIDDEN_P2_RUNTIME_FIELD_NAMES) {
     expect(serialized, `${label} must not contain forbidden token ${fieldName}`).not.toContain(fieldName);
   }
+}
+
+function pureCheckCachePolicyCounts(): Record<'shadow' | 'disabled', number> {
+  return listCurrentPureCheckIdentities().reduce<Record<'shadow' | 'disabled', number>>(
+    (counts, check) => ({
+      ...counts,
+      [check.cache_policy]: counts[check.cache_policy] + 1,
+    }),
+    {
+      shadow: 0,
+      disabled: 0,
+    },
+  );
 }
 
 describe('verification catalog', () => {
@@ -225,6 +245,18 @@ describe('verification catalog', () => {
       job_count: jobIds.length,
       campaign_ids: campaignIds,
     });
+    expect(catalog.source_truth.current_pure_check_identity_manifest).toEqual({
+      authority: 'authoritative',
+      module: 'scripts/governance/current-pure-check-identity-manifest.ts',
+      schema: CURRENT_PURE_CHECK_IDENTITY_MANIFEST_SCHEMA,
+      version: CURRENT_PURE_CHECK_IDENTITY_MANIFEST_VERSION,
+      check_ids: [...CURRENT_PURE_CHECK_IDS],
+      check_count: listCurrentPureCheckIdentities().length,
+      digest_rule_count: listCurrentPureCheckInputDigestRules().length,
+      cache_policy_counts: pureCheckCachePolicyCounts(),
+      claim_instances_included: false,
+      commands_executed: false,
+    });
     expect(catalog.source_truth.current_artifact_template_index).toEqual({
       authority: 'derived_projection',
       module: 'scripts/governance/current-artifact-index-schema.ts',
@@ -274,6 +306,16 @@ describe('verification catalog', () => {
         job_count: listCurrentJobMetadata().length,
         campaign_id_count: 1,
       },
+      pure_checks: {
+        schema: CURRENT_PURE_CHECK_IDENTITY_MANIFEST_SCHEMA,
+        version: CURRENT_PURE_CHECK_IDENTITY_MANIFEST_VERSION,
+        check_ids: [...CURRENT_PURE_CHECK_IDS],
+        check_count: listCurrentPureCheckIdentities().length,
+        digest_rule_count: listCurrentPureCheckInputDigestRules().length,
+        cache_policy_counts: pureCheckCachePolicyCounts(),
+        claim_instances_included: false,
+        commands_executed: false,
+      },
       artifact_templates: {
         schema: CURRENT_ARTIFACT_TEMPLATE_INDEX_SCHEMA,
         version: CURRENT_ARTIFACT_TEMPLATE_INDEX_VERSION,
@@ -287,6 +329,33 @@ describe('verification catalog', () => {
         producer_kind_counts: artifactIndex.summary.producer_kind_counts,
       },
     });
+    expect(projection.pure_checks.checks.map((check) => ({
+      check_id: check.check_id,
+      owning_gate_id: check.owning_gate_id,
+      owning_job_id: check.owning_job_id,
+      cache_policy: check.cache_policy,
+      path_glob_count: check.path_glob_count,
+      digest_rule_id: check.digest_rule_id,
+    }))).toEqual(listCurrentPureCheckIdentities().map((check) => ({
+      check_id: check.check_id,
+      owning_gate_id: check.owning_gate_id,
+      owning_job_id: check.owning_job_id,
+      cache_policy: check.cache_policy,
+      path_glob_count: check.path_globs.length,
+      digest_rule_id: check.input_digest_rule_id,
+    })));
+    expect(projection.pure_checks.checks.every((check) => check.path_glob_count > 0)).toBe(true);
+    expect(Object.keys(projection.pure_checks).sort()).toEqual([
+      'cache_policy_counts',
+      'check_count',
+      'check_ids',
+      'checks',
+      'claim_instances_included',
+      'commands_executed',
+      'digest_rule_count',
+      'schema',
+      'version',
+    ]);
     expect(providerSecretLock).toMatchObject({
       id: 'provider-secret-profile',
       category: 'secret_profile',

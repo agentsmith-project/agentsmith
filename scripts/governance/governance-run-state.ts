@@ -2,11 +2,17 @@ import {
   validateCurrentEvidenceClaim,
   type CurrentEvidenceClaimRecord,
   type CurrentEvidenceClaimValidationPurpose,
+  type CurrentEvidenceClaimValidationFailure,
 } from './current-evidence-claim-schema';
 import type {
   CurrentGateResultFailureClass,
   CurrentGateResultStatus,
 } from './current-gate-result-schema';
+import {
+  CURRENT_PURE_CHECK_IDENTITY_MANIFEST,
+  type CurrentPureCheckIdentity,
+  type CurrentPureCheckIdentityManifest,
+} from './current-pure-check-identity-manifest';
 import type { GovernanceRunPlan } from './governance-run-plan';
 
 export const GOVERNANCE_RUN_STATE_SCHEMA = 'governance-run-state.v1' as const;
@@ -62,6 +68,7 @@ export interface GovernanceRunEvidenceRef {
 
 export interface GovernanceRunClaimRef {
   claim_id: string;
+  check_id: string | null;
   claim_digest: GovernanceDigest | null;
   evidence_dir: string;
   input_digest: GovernanceDigest | null;
@@ -114,6 +121,13 @@ export interface GovernanceEvidenceClaimValidationInput {
   claim: unknown;
 }
 
+export interface GovernancePureCheckClaimValidationInput {
+  job_id: string;
+  claim_id: string;
+  purpose: Extract<CurrentEvidenceClaimValidationPurpose, 'pure_check_reuse'>;
+  claim: unknown;
+}
+
 export interface GovernanceResumePlanInput {
   run_plan: GovernanceRunPlan;
   run_state: GovernanceRunState;
@@ -147,6 +161,44 @@ export interface GovernanceResumePlan {
   campaign: GovernanceRunCampaignIdentity;
   fingerprints: GovernanceRunFingerprints;
   jobs: readonly GovernanceResumePlanJob[];
+}
+
+export type GovernancePureCheckReuseDecisionKind =
+  | 'reuse_allowed'
+  | 'shadow_only'
+  | 'rerun_required';
+
+export interface GovernancePureCheckCurrentInput {
+  check_id: string;
+  git_sha: string;
+  input_digest: GovernanceDigest;
+  artifact_digest: GovernanceDigest;
+  result_digest: GovernanceDigest;
+  secret_profile_digest: GovernanceDigest | null;
+  stable_check_identity: boolean;
+}
+
+export interface GovernancePureCheckReuseDecisionInput {
+  state_job: GovernanceRunStateJob | null;
+  claim_validation_input: GovernancePureCheckClaimValidationInput | null;
+  current: GovernancePureCheckCurrentInput;
+  pure_check_identity_manifest?: CurrentPureCheckIdentityManifest;
+}
+
+export interface GovernancePureCheckReuseDecisionClaimRef {
+  claim_id: string;
+  check_id: string;
+  evidence_dir: string;
+  input_digest: GovernanceDigest;
+  artifact_digest: GovernanceDigest;
+  result_digest: GovernanceDigest;
+}
+
+export interface GovernancePureCheckReuseDecision {
+  decision: GovernancePureCheckReuseDecisionKind;
+  check_id: string;
+  reason_codes: readonly string[];
+  claim_ref: GovernancePureCheckReuseDecisionClaimRef | null;
 }
 
 export interface GovernanceRunModelValidationFailure {
@@ -213,6 +265,7 @@ const STATE_ALLOWED_FIELD_SETS = new Map<string, ReadonlySet<string>>([
     'state.jobs[].claim_ref',
     new Set([
       'claim_id',
+      'check_id',
       'claim_digest',
       'evidence_dir',
       'input_digest',
@@ -672,6 +725,7 @@ function validateClaimRef(
     path,
     [
       'claim_id',
+      'check_id',
       'claim_digest',
       'evidence_dir',
       'input_digest',
@@ -684,6 +738,7 @@ function validateClaimRef(
     failures,
   );
   validateString(value.claim_id, `${path}.claim_id`, failures);
+  validateNullableString(value.check_id, `${path}.check_id`, failures);
   validateDigest(value.claim_digest, `${path}.claim_digest`, failures, { nullable: true });
   const evidenceDir = validateString(value.evidence_dir, `${path}.evidence_dir`, failures);
   validateDigest(value.input_digest, `${path}.input_digest`, failures, { nullable: true });
@@ -1172,6 +1227,307 @@ function claimBindingMatches(
   }
 
   return reasons;
+}
+
+function isCompleteGovernanceDigest(value: string | null | undefined): value is string {
+  return typeof value === 'string' && SHA256_DIGEST_PATTERN.test(value);
+}
+
+function pushClaimValidationReasonCodes(
+  reasons: string[],
+  failures: readonly CurrentEvidenceClaimValidationFailure[],
+): void {
+  pushReason(reasons, 'claim_validation_failed');
+  for (const failure of failures) {
+    pushReason(reasons, `claim_validation_${failure.code}`);
+  }
+}
+
+function pureCheckDecisionClaimRef(
+  stateJob: GovernanceRunStateJob,
+): GovernancePureCheckReuseDecisionClaimRef | null {
+  const claimRef = stateJob.claim_ref;
+  if (
+    !claimRef
+    || typeof claimRef.check_id !== 'string'
+    || !allDigestRefsComplete(claimRef)
+  ) {
+    return null;
+  }
+
+  return {
+    claim_id: claimRef.claim_id,
+    check_id: claimRef.check_id,
+    evidence_dir: claimRef.evidence_dir,
+    input_digest: claimRef.input_digest,
+    artifact_digest: claimRef.artifact_digest,
+    result_digest: claimRef.result_digest,
+  };
+}
+
+function findPureCheckIdentity(
+  manifest: CurrentPureCheckIdentityManifest,
+  checkId: string,
+): CurrentPureCheckIdentity | undefined {
+  return manifest.checks.find((check) => check.check_id === checkId);
+}
+
+function pushPureCheckManifestBindingReasons(args: {
+  reasons: string[];
+  identity: CurrentPureCheckIdentity;
+  stateJob: GovernanceRunStateJob | null;
+  claim: CurrentEvidenceClaimRecord | null;
+}): void {
+  const { reasons, identity, stateJob, claim } = args;
+
+  if (stateJob) {
+    if (stateJob.job_id !== identity.owning_job_id) {
+      pushReason(reasons, 'manifest_owner_job_mismatch');
+    }
+    if (stateJob.gate_id !== identity.owning_gate_id) {
+      pushReason(reasons, 'manifest_owner_gate_mismatch');
+    }
+  }
+  if (claim) {
+    if (claim.gate_id !== identity.owning_gate_id) {
+      pushReason(reasons, 'manifest_owner_gate_mismatch');
+    }
+    if (
+      typeof identity.npm_script === 'string'
+      && claim.gate_adapter.npm_script !== identity.npm_script
+    ) {
+      pushReason(reasons, 'manifest_npm_script_mismatch');
+    }
+  }
+}
+
+function pushPureCheckCachePolicyReason(
+  reasons: string[],
+  identity: CurrentPureCheckIdentity | undefined,
+): void {
+  if (!identity) {
+    return;
+  }
+  if (identity.cache_policy === 'shadow') {
+    pushReason(reasons, 'cache_policy_shadow_only');
+    return;
+  }
+  if (identity.cache_policy === 'disabled') {
+    pushReason(reasons, 'cache_policy_disabled');
+    return;
+  }
+  pushReason(reasons, 'cache_policy_not_reusable');
+}
+
+export function deriveGovernancePureCheckReuseDecision(
+  input: GovernancePureCheckReuseDecisionInput,
+): GovernancePureCheckReuseDecision {
+  const reasons: string[] = [];
+  const { current, state_job: stateJob, claim_validation_input: claimInput } = input;
+  const pureCheckManifest = input.pure_check_identity_manifest ?? CURRENT_PURE_CHECK_IDENTITY_MANIFEST;
+  const identity = findPureCheckIdentity(pureCheckManifest, current.check_id);
+
+  if (current.check_id.trim().length === 0) {
+    pushReason(reasons, 'missing_current_check_id');
+  }
+  if (!identity) {
+    pushReason(reasons, 'unknown_check_id');
+  }
+  pushPureCheckCachePolicyReason(reasons, identity);
+  if (!isCompleteGovernanceDigest(current.input_digest)) {
+    pushReason(reasons, 'current_input_digest_malformed');
+  }
+  if (!isCompleteGovernanceDigest(current.artifact_digest)) {
+    pushReason(reasons, 'current_artifact_digest_malformed');
+  }
+  if (!isCompleteGovernanceDigest(current.result_digest)) {
+    pushReason(reasons, 'current_result_digest_malformed');
+  }
+  if (
+    current.secret_profile_digest !== null
+    && !isCompleteGovernanceDigest(current.secret_profile_digest)
+  ) {
+    pushReason(reasons, 'current_secret_profile_digest_malformed');
+  }
+  if (!current.stable_check_identity) {
+    pushReason(reasons, 'stable_check_identity_not_confirmed');
+  }
+
+  if (!stateJob) {
+    pushReason(reasons, 'missing_state_job');
+  } else {
+    if (stateJob.step_id !== null) {
+      pushReason(reasons, 'campaign_step_not_supported_for_pure_check');
+    }
+    if (stateJob.lifecycle !== 'completed') {
+      pushReason(reasons, 'job_not_completed');
+    }
+    if (!stateJob.result_ref) {
+      pushReason(reasons, 'missing_result_ref');
+    } else {
+      if (stateJob.result_ref.result_status !== 'passed') {
+        pushReason(reasons, 'result_not_passed');
+      }
+      if (stateJob.result_ref.failure_class !== 'none') {
+        pushReason(reasons, 'failure_class_not_none');
+      }
+      if (!isCompleteGovernanceDigest(stateJob.result_ref.result_digest)) {
+        pushReason(reasons, 'missing_result_digest');
+      } else if (stateJob.result_ref.result_digest !== current.result_digest) {
+        pushReason(reasons, 'result_digest_mismatch');
+      }
+    }
+    if (!stateJob.evidence_ref) {
+      pushReason(reasons, 'missing_evidence_ref');
+    } else if (!isCompleteGovernanceDigest(stateJob.evidence_ref.artifact_digest)) {
+      pushReason(reasons, 'missing_artifact_digest');
+    } else if (stateJob.evidence_ref.artifact_digest !== current.artifact_digest) {
+      pushReason(reasons, 'artifact_digest_mismatch');
+    }
+    if (!stateJob.claim_ref) {
+      pushReason(reasons, 'missing_claim_ref');
+    } else {
+      if (stateJob.claim_ref.check_id === null) {
+        pushReason(reasons, 'missing_state_check_id');
+      } else if (stateJob.claim_ref.check_id !== current.check_id) {
+        pushReason(reasons, 'state_check_id_mismatch');
+      }
+      if (stateJob.claim_ref.result_status !== 'passed') {
+        pushReason(reasons, 'claim_result_not_passed');
+      }
+      if (stateJob.claim_ref.failure_class !== 'none') {
+        pushReason(reasons, 'claim_failure_class_not_none');
+      }
+      if (!allDigestRefsComplete(stateJob.claim_ref)) {
+        pushReason(reasons, 'claim_digest_incomplete');
+      } else {
+        if (stateJob.claim_ref.input_digest !== current.input_digest) {
+          pushReason(reasons, 'input_digest_mismatch');
+        }
+        if (stateJob.claim_ref.artifact_digest !== current.artifact_digest) {
+          pushReason(reasons, 'artifact_digest_mismatch');
+        }
+        if (stateJob.claim_ref.result_digest !== current.result_digest) {
+          pushReason(reasons, 'result_digest_mismatch');
+        }
+      }
+      if (!compareNullableString(stateJob.claim_ref.secret_profile_digest, current.secret_profile_digest)) {
+        pushReason(reasons, 'state_secret_profile_mismatch');
+      }
+    }
+  }
+
+  let validatedClaim: CurrentEvidenceClaimRecord | null = null;
+  if (!claimInput) {
+    pushReason(reasons, 'missing_claim_validation_input');
+  } else {
+    if (claimInput.purpose !== 'pure_check_reuse') {
+      pushReason(reasons, 'claim_validation_purpose_not_pure_check_reuse');
+    }
+    if (stateJob && claimInput.job_id !== stateJob.job_id) {
+      pushReason(reasons, 'claim_job_id_mismatch');
+    }
+    if (stateJob?.claim_ref && claimInput.claim_id !== stateJob.claim_ref.claim_id) {
+      pushReason(reasons, 'claim_id_mismatch');
+    }
+
+    const claimValidation = validateCurrentEvidenceClaim(claimInput.claim, { purpose: 'pure_check_reuse' });
+    if (!claimValidation.ok) {
+      pushClaimValidationReasonCodes(reasons, claimValidation.failures);
+    } else {
+      validatedClaim = claimValidation.value;
+      if (validatedClaim.check_id !== current.check_id) {
+        pushReason(reasons, 'check_id_mismatch');
+      }
+      if (stateJob && validatedClaim.gate_id !== stateJob.gate_id) {
+        pushReason(reasons, 'gate_mismatch');
+      }
+      if (stateJob && validatedClaim.line_kind !== stateJob.line_kind) {
+        pushReason(reasons, 'line_kind_mismatch');
+      }
+      if (
+        stateJob?.evidence_ref
+        && validatedClaim.evidence_dir !== stateJob.evidence_ref.evidence_dir
+      ) {
+        pushReason(reasons, 'evidence_dir_mismatch');
+      }
+      if (
+        stateJob?.claim_ref
+        && validatedClaim.evidence_dir !== stateJob.claim_ref.evidence_dir
+      ) {
+        pushReason(reasons, 'claim_ref_evidence_dir_mismatch');
+      }
+      if (validatedClaim.freshness.git_sha !== current.git_sha) {
+        pushReason(reasons, 'git_sha_mismatch');
+      }
+      if (validatedClaim.freshness.allow_cross_commit !== false) {
+        pushReason(reasons, 'cross_commit_reuse_not_allowed');
+      }
+      if (validatedClaim.freshness.allow_cross_secret_profile !== false) {
+        pushReason(reasons, 'cross_secret_profile_reuse_not_allowed');
+      }
+      if (!compareNullableString(validatedClaim.freshness.secret_profile_digest, current.secret_profile_digest)) {
+        pushReason(reasons, 'secret_profile_mismatch');
+      }
+      if (validatedClaim.result_status !== 'passed') {
+        pushReason(reasons, 'claim_result_not_passed');
+      }
+      if (validatedClaim.failure_class !== 'none') {
+        pushReason(reasons, 'claim_failure_class_not_none');
+      }
+      if (validatedClaim.input_digest.value !== current.input_digest) {
+        pushReason(reasons, 'input_digest_mismatch');
+      }
+      if (validatedClaim.artifact_digest.value !== current.artifact_digest) {
+        pushReason(reasons, 'artifact_digest_mismatch');
+      }
+      if (validatedClaim.result_digest !== current.result_digest) {
+        pushReason(reasons, 'result_digest_mismatch');
+      }
+    }
+  }
+
+  if (identity) {
+    pushPureCheckManifestBindingReasons({
+      reasons,
+      identity,
+      stateJob,
+      claim: validatedClaim,
+    });
+  }
+
+  const uniqueReasons = [...new Set(reasons)];
+  const shadowOnlyReasons = new Set([
+    'stable_check_identity_not_confirmed',
+    'cache_policy_shadow_only',
+  ]);
+  const blockingReasons = uniqueReasons.filter((reason) => !shadowOnlyReasons.has(reason));
+  const claimRef = stateJob && validatedClaim ? pureCheckDecisionClaimRef(stateJob) : null;
+
+  if (blockingReasons.length > 0) {
+    return {
+      decision: 'rerun_required',
+      check_id: current.check_id,
+      reason_codes: uniqueReasons,
+      claim_ref: null,
+    };
+  }
+
+  if (uniqueReasons.some((reason) => shadowOnlyReasons.has(reason))) {
+    return {
+      decision: 'shadow_only',
+      check_id: current.check_id,
+      reason_codes: uniqueReasons.filter((reason) => shadowOnlyReasons.has(reason)),
+      claim_ref: claimRef,
+    };
+  }
+
+  return {
+    decision: 'reuse_allowed',
+    check_id: current.check_id,
+    reason_codes: ['pure_check_claim_valid_for_reuse'],
+    claim_ref: claimRef,
+  };
 }
 
 export function deriveGovernanceResumePlan(input: GovernanceResumePlanInput): GovernanceResumePlan {

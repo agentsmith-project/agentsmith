@@ -236,6 +236,29 @@ function readVerifyReport(root: string): VerifyReport {
   return JSON.parse(readFileSync(join(root, 'story-acceptance-report.json'), 'utf8')) as VerifyReport;
 }
 
+const LEGACY_VERIFY_REPORT_ALIASES = [
+  'npm run verify:quick',
+  'npm run verify:default',
+  'npm run verify:visual',
+  'npm run verify:real',
+  'npm run verify:release-real',
+] as const;
+
+function expectCleanVerifyReportSurface(root: string): void {
+  const json = readFileSync(join(root, 'story-acceptance-report.json'), 'utf8');
+  const markdown = readFileSync(join(root, 'story-acceptance-report.md'), 'utf8');
+  for (const alias of LEGACY_VERIFY_REPORT_ALIASES) {
+    expect(json).not.toContain(alias);
+    expect(markdown).not.toContain(alias);
+  }
+}
+
+function expectCleanVerifyHumanOutput(output: string): void {
+  for (const alias of LEGACY_VERIFY_REPORT_ALIASES) {
+    expect(output).not.toContain(alias);
+  }
+}
+
 describe('verify human entrypoints', () => {
   it('keeps npm run verify as a dry-run planner by default', () => {
     const root = mkdtempSync(join(tmpdir(), 'agentsmith-verify-dry-run-'));
@@ -252,6 +275,9 @@ describe('verify human entrypoints', () => {
       ]);
       expect(output).toContain('AgentSmith Verification');
       expect(output).toContain('Mode: dry-run');
+      expect(output).toContain('npm run verify -- --goal=real --run');
+      expect(output).not.toContain('npm run verify:real');
+      expect(output).not.toContain('npm run verify:release-real');
       expect(output).toContain('Final verdict: not evaluated');
       expect(existsSync(join(root, 'artifacts', 'gate-results'))).toBe(false);
     } finally {
@@ -276,6 +302,92 @@ describe('verify human entrypoints', () => {
     expect(scripts['gate:release']).toBeTruthy();
   });
 
+  it('prints verify status as a read-only projection without writing reports or executing aliases', () => {
+    const root = mkdtempSync(join(tmpdir(), 'agentsmith-verify-status-'));
+    const logPath = join(root, 'npm.log');
+    try {
+      writeFakeNpm(root, logPath);
+
+      const result = spawnSync('npx', [
+        'tsx',
+        'scripts/governance/run-verify.ts',
+        '--status',
+        '--report-root',
+        root,
+      ], {
+        cwd: process.cwd(),
+        env: {
+          ...process.env,
+          PATH: `${root}:${process.env.PATH ?? ''}`,
+        },
+        encoding: 'utf8',
+      });
+
+      expect(result.status).toBe(0);
+      expect(result.stdout).toContain('AgentSmith Verify Status');
+      expect(result.stdout).toContain('Goal: verify');
+      expect(result.stdout).toContain('Projection: read-only');
+      expect(result.stdout).toContain('Release decision produced: false');
+      expect(result.stdout).toContain('Commands executed: false');
+      expect(result.stdout).not.toContain('Story acceptance report');
+      expect(result.stdout).not.toContain('release_verdict');
+      expect(result.stderr).toBe('');
+      expect(existsSync(join(root, 'story-acceptance-report.json'))).toBe(false);
+      expect(existsSync(join(root, 'story-acceptance-report.md'))).toBe(false);
+      expect(existsSync(join(root, 'verification-catalog.json'))).toBe(false);
+      expect(existsSync(logPath)).toBe(false);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it('prints verify status JSON as the unified read-only projection', () => {
+    const root = mkdtempSync(join(tmpdir(), 'agentsmith-verify-status-json-'));
+    const logPath = join(root, 'npm.log');
+    try {
+      writeFakeNpm(root, logPath);
+
+      const result = spawnSync('npx', [
+        'tsx',
+        'scripts/governance/run-verify.ts',
+        '--status',
+        '--json',
+        '--report-root',
+        root,
+      ], {
+        cwd: process.cwd(),
+        env: {
+          ...process.env,
+          PATH: `${root}:${process.env.PATH ?? ''}`,
+        },
+        encoding: 'utf8',
+      });
+      const projection = JSON.parse(result.stdout) as {
+        schema: string;
+        projection_kind: string;
+        goal: string;
+        release_decision_produced: boolean;
+        commands_executed: boolean;
+      };
+
+      expect(result.status).toBe(0);
+      expect(projection).toMatchObject({
+        schema: 'agentsmith_status_projection/v1',
+        projection_kind: 'read_only',
+        goal: 'verify',
+        release_decision_produced: false,
+        commands_executed: false,
+      });
+      expect(JSON.stringify(projection)).not.toContain('release_verdict');
+      expect(result.stderr).toBe('');
+      expect(existsSync(join(root, 'story-acceptance-report.json'))).toBe(false);
+      expect(existsSync(join(root, 'verification-catalog.json'))).toBe(false);
+      expect(existsSync(logPath)).toBe(false);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
   it('prints the dry-run plan from the CLI without executing gates', () => {
     const root = mkdtempSync(join(tmpdir(), 'agentsmith-verify-report-root-'));
     try {
@@ -296,7 +408,7 @@ describe('verify human entrypoints', () => {
       expect(result.stdout).toContain('AgentSmith Verification');
       expect(result.stdout).toContain('Goal: visual');
       expect(result.stdout).toContain('Mode: dry-run');
-      expect(result.stdout).toContain('npm run verify:visual');
+      expect(result.stdout).toContain('npm run verify -- --goal=visual --run');
       expect(result.stdout).toContain('this is not release readiness');
       expect(result.stdout).toContain(`Verification catalog: ${join(root, 'verification-catalog.json')}`);
       expect(existsSync(join(root, 'story-acceptance-report.json'))).toBe(true);
@@ -306,6 +418,7 @@ describe('verify human entrypoints', () => {
       expect(markdown).toContain(`- Verification catalog: ${join(root, 'verification-catalog.json')}`);
       const report = JSON.parse(readFileSync(join(root, 'story-acceptance-report.json'), 'utf8')) as {
         generated_at: string;
+        recommended_commands: string[];
         verification_catalog_path: string;
       };
       const catalog = JSON.parse(readFileSync(join(root, 'verification-catalog.json'), 'utf8')) as {
@@ -318,6 +431,9 @@ describe('verify human entrypoints', () => {
         };
       };
       expect(report.verification_catalog_path).toBe(join(root, 'verification-catalog.json'));
+      expect(report.recommended_commands).toEqual(['npm run verify -- --goal=visual --run']);
+      expect(markdown).toContain('- npm run verify -- --goal=visual --run');
+      expectCleanVerifyReportSurface(root);
       expect(report.generated_at).toBe(catalog.provenance.generated_at);
       expect(catalog.provenance).toMatchObject({
         projection_kind: 'read_only',
@@ -366,10 +482,11 @@ describe('verify human entrypoints', () => {
 
       expect(result.status).toBe(0);
       expect(result.stdout).toContain('Changed files: src/components/chat/ChatMainPane.tsx');
-      expect(result.stdout).toContain('npm run verify:visual');
+      expect(result.stdout).toContain('npm run verify -- --goal=visual --run');
       const report = JSON.parse(readFileSync(join(root, 'story-acceptance-report.json'), 'utf8')) as VerifyReport;
       expect(report.changed_files).toEqual(['src/components/chat/ChatMainPane.tsx']);
-      expect(report.recommended_commands).toContain('npm run verify:visual');
+      expect(report.recommended_commands).toContain('npm run verify -- --goal=visual --run');
+      expectCleanVerifyReportSurface(root);
 
       const log = readFileSync(gitLog, 'utf8');
       expect(log).toContain('rev-parse --verify origin/main');
@@ -419,7 +536,8 @@ describe('verify human entrypoints', () => {
       expect(result.status).toBe(0);
       const report = JSON.parse(readFileSync(join(root, 'story-acceptance-report.json'), 'utf8')) as VerifyReport;
       expect(report.changed_files).toEqual(['src/components/chat/ChatMainPane.tsx']);
-      expect(report.recommended_commands).toContain('npm run verify:visual');
+      expect(report.recommended_commands).toContain('npm run verify -- --goal=visual --run');
+      expectCleanVerifyReportSurface(root);
 
       const log = readFileSync(gitLog, 'utf8');
       expect(log).toContain('rev-parse --verify upstream/main');
@@ -454,7 +572,8 @@ describe('verify human entrypoints', () => {
       expect(result.status).toBe(0);
       const report = readVerifyReport(root);
       expect(report.changed_files).toEqual(['src/components/chat/ChatMainPane.tsx']);
-      expect(report.recommended_commands).toContain('npm run verify:visual');
+      expect(report.recommended_commands).toContain('npm run verify -- --goal=visual --run');
+      expectCleanVerifyReportSurface(root);
 
       const log = readFileSync(gitLog, 'utf8');
       expect(log).toContain('rev-parse --verify origin/develop');
@@ -631,7 +750,8 @@ describe('verify human entrypoints', () => {
       expect(result.stdout).toContain('base ref unavailable');
       const report = readVerifyReport(root);
       expect(report.changed_files).toEqual(['src/components/chat/ChatMainPane.tsx']);
-      expect(report.recommended_commands).toContain('npm run verify:visual');
+      expect(report.recommended_commands).toContain('npm run verify -- --goal=visual --run');
+      expectCleanVerifyReportSurface(root);
       expect(report.risk_summary.warnings.join('\n')).toContain('base ref unavailable');
       expect(report.risk_summary.broad_impact).toBe(false);
 
@@ -785,7 +905,8 @@ describe('verify human entrypoints', () => {
       expect(result.status).toBe(0);
       const report = JSON.parse(readFileSync(join(root, 'story-acceptance-report.json'), 'utf8')) as VerifyReport;
       expect(report.changed_files).toEqual(['src/components/chat/ChatMainPane.tsx']);
-      expect(report.recommended_commands).toContain('npm run verify:visual');
+      expect(report.recommended_commands).toContain('npm run verify -- --goal=visual --run');
+      expectCleanVerifyReportSurface(root);
       expect(existsSync(gitLog)).toBe(false);
     } finally {
       rmSync(root, { recursive: true, force: true });
@@ -847,7 +968,8 @@ describe('verify human entrypoints', () => {
       expect(result.status).toBe(0);
       expect(result.stdout).toContain('Goal: release-real');
       expect(result.stdout).toContain('Required levels: V3');
-      expect(result.stdout).toContain('npm run verify:release-real');
+      expect(result.stdout).toContain('npm run verify -- --goal=release-real --run');
+      expect(result.stdout).not.toContain('npm run verify:release-real');
       expect(result.stdout).not.toContain('npm run verify:visual');
       expect(result.stdout).not.toContain('npm run verify:real');
       expect(result.stdout).toContain('this is not release readiness and not a release verdict');
@@ -865,9 +987,7 @@ describe('verify human entrypoints', () => {
       expect(releaseRealUxTraceTemplate).toBeTruthy();
       expect(report.required_levels).toEqual(['V3']);
       expect(report.required_levels).not.toContain('V4');
-      expect(report.recommended_commands).toEqual(['npm run verify:release-real']);
-      expect(report.recommended_commands).not.toContain('npm run verify:visual');
-      expect(report.recommended_commands).not.toContain('npm run verify:real');
+      expect(report.recommended_commands).toEqual(['npm run verify -- --goal=release-real --run']);
       expect(report.story_cards[0]).toMatchObject({
         risk_level: 'R0',
         risk_policy_refs: ['release_blocking_governance'],
@@ -878,7 +998,7 @@ describe('verify human entrypoints', () => {
       expect(v3Evidence).toMatchObject({
         state: 'not_inspected_by_verify_report',
         status: 'manual_review_needed',
-        owner: 'npm run verify:release-real',
+        owner: 'npm run verify -- --goal=release-real --run',
         artifact_path: null,
         artifact_path_template: releaseRealUxTraceTemplate,
         artifact_path_template_reason: null,
@@ -891,8 +1011,56 @@ describe('verify human entrypoints', () => {
       expect(reportStatusValues(report.story_cards)).not.toContain('stale');
 
       const markdown = readFileSync(join(root, 'story-acceptance-report.md'), 'utf8');
+      expect(markdown).toContain('- npm run verify -- --goal=release-real --run');
       expect(markdown).toContain('## Traceability Gaps');
       expect(markdown).toContain('No traceability gaps were detected.');
+      expectCleanVerifyReportSurface(root);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it('writes release-real goal-default reports with only the governed clean command', () => {
+    const root = mkdtempSync(join(tmpdir(), 'agentsmith-verify-release-real-default-'));
+    const gitLog = join(root, 'git.log');
+    try {
+      writeFakeGit(root, gitLog, {
+        refs: {
+          'origin/main': 'refs/remotes/origin/main',
+        },
+        mergeBases: {
+          'HEAD origin/main': 'merge-base-sha',
+        },
+      });
+
+      const result = spawnSync('npx', [
+        'tsx',
+        'scripts/governance/run-verify.ts',
+        '--goal=release-real',
+        '--report-root',
+        root,
+      ], {
+        cwd: process.cwd(),
+        env: {
+          ...process.env,
+          PATH: `${root}:${process.env.PATH ?? ''}`,
+          CI: '',
+          GITHUB_EVENT_NAME: '',
+          GITHUB_BASE_REF: '',
+          VERIFY_BASE_REF: '',
+        },
+        encoding: 'utf8',
+      });
+
+      expect(result.status).toBe(0);
+      expect(result.stdout).toContain('npm run verify -- --goal=release-real --run');
+      expect(result.stdout).not.toContain('npm run verify:release-real');
+      const report = readVerifyReport(root);
+      expect(report.recommended_commands).toEqual(['npm run verify -- --goal=release-real --run']);
+      expectCleanVerifyReportSurface(root);
+      expect(readFileSync(join(root, 'story-acceptance-report.md'), 'utf8'))
+        .toContain('- npm run verify -- --goal=release-real --run');
+      expect(readFileSync(gitLog, 'utf8')).toContain('diff --name-only merge-base-sha..HEAD');
     } finally {
       rmSync(root, { recursive: true, force: true });
     }
@@ -922,7 +1090,7 @@ describe('verify human entrypoints', () => {
 
       expect(result.status).toBe(0);
       expect(result.stdout).toContain('Mode: dry-run');
-      expect(result.stdout).toContain('npm run verify:quick');
+      expect(result.stdout).toContain('npm run verify -- --goal=visual --run');
       expect(existsSync(join(root, 'story-acceptance-report.json'))).toBe(true);
       expect(existsSync(join(root, 'verification-catalog.json'))).toBe(true);
       expect(existsSync(logPath)).toBe(false);
@@ -996,7 +1164,10 @@ describe('verify human entrypoints', () => {
       });
 
       expect(result.status).toBe(1);
-      expect(result.stderr).toContain('--goal=pr --run cannot execute npm run verify:real');
+      expect(result.stdout).toContain('--goal=pr --run cannot execute npm run verify -- --goal=real --run');
+      expectCleanVerifyHumanOutput(result.stdout);
+      expect(result.stderr).toContain('--goal=pr --run cannot execute npm run verify -- --goal=real --run');
+      expectCleanVerifyHumanOutput(result.stderr);
       expect(existsSync(join(root, 'story-acceptance-report.json'))).toBe(true);
       expect(existsSync(join(root, 'verification-catalog.json'))).toBe(true);
       expect(existsSync(logPath)).toBe(false);
@@ -1007,8 +1178,9 @@ describe('verify human entrypoints', () => {
         risk_summary: { warnings: string[] };
       };
       expect(report.final_verdict).toBe('not_evaluated_fail_closed');
-      expect(report.recommended_commands).toContain('npm run verify:real');
-      expect(report.risk_summary.warnings.join('\n')).toContain('--goal=pr --run cannot execute npm run verify:real');
+      expect(report.recommended_commands).toContain('npm run verify -- --goal=real --run');
+      expect(report.risk_summary.warnings.join('\n')).toContain('--goal=pr --run cannot execute npm run verify -- --goal=real --run');
+      expectCleanVerifyReportSurface(root);
     } finally {
       rmSync(root, { recursive: true, force: true });
     }
@@ -1039,7 +1211,10 @@ describe('verify human entrypoints', () => {
       });
 
       expect(result.status).toBe(1);
-      expect(result.stderr).toContain('--goal=visual --run cannot execute npm run verify:release-real');
+      expect(result.stdout).toContain('--goal=visual --run cannot execute npm run verify -- --goal=release-real --run');
+      expectCleanVerifyHumanOutput(result.stdout);
+      expect(result.stderr).toContain('--goal=visual --run cannot execute npm run verify -- --goal=release-real --run');
+      expectCleanVerifyHumanOutput(result.stderr);
       expect(existsSync(join(root, 'story-acceptance-report.json'))).toBe(true);
       expect(existsSync(join(root, 'verification-catalog.json'))).toBe(true);
       expect(existsSync(logPath)).toBe(false);
@@ -1051,9 +1226,10 @@ describe('verify human entrypoints', () => {
         risk_summary: { warnings: string[] };
       };
       expect(report.final_verdict).toBe('not_evaluated_fail_closed');
-      expect(report.recommended_commands).toContain('npm run verify:release-real');
+      expect(report.recommended_commands).toContain('npm run verify -- --goal=release-real --run');
       expect(report.release_verdict).toBe(false);
-      expect(report.risk_summary.warnings.join('\n')).toContain('--goal=visual --run cannot execute npm run verify:release-real');
+      expect(report.risk_summary.warnings.join('\n')).toContain('--goal=visual --run cannot execute npm run verify -- --goal=release-real --run');
+      expectCleanVerifyReportSurface(root);
     } finally {
       rmSync(root, { recursive: true, force: true });
     }
@@ -1130,10 +1306,13 @@ describe('verify human entrypoints', () => {
 
       const report = JSON.parse(readFileSync(join(root, 'story-acceptance-report.json'), 'utf8')) as {
         final_verdict: string;
+        recommended_commands: string[];
         release_verdict: boolean;
       };
       expect(report.final_verdict).toBe('delegated_to_executed_verification_commands');
+      expect(report.recommended_commands).toEqual(['npm run verify -- --goal=real --run']);
       expect(report.release_verdict).toBe(false);
+      expectCleanVerifyReportSurface(root);
     } finally {
       rmSync(root, { recursive: true, force: true });
     }
@@ -1173,9 +1352,10 @@ describe('verify human entrypoints', () => {
         not_release_readiness: boolean;
       };
       expect(report.final_verdict).toBe('delegated_to_executed_verification_commands');
-      expect(report.recommended_commands).toEqual(['npm run verify:release-real']);
+      expect(report.recommended_commands).toEqual(['npm run verify -- --goal=release-real --run']);
       expect(report.release_verdict).toBe(false);
       expect(report.not_release_readiness).toBe(true);
+      expectCleanVerifyReportSurface(root);
     } finally {
       rmSync(root, { recursive: true, force: true });
     }
@@ -1207,7 +1387,7 @@ describe('verify human entrypoints', () => {
 
       expect(result.status).toBe(0);
       expect(result.stdout).toContain('Required levels: V4');
-      expect(result.stdout).toContain('No verify alias is safe to run for this V4 plan; use the next action.');
+      expect(result.stdout).toContain('No verify command is safe to run for this V4 plan; use the next action.');
       expect(result.stdout).toContain('Final verdict: not evaluated (next action required; no verify aliases executed)');
       expect(result.stdout).toContain('npm run release:ready');
       expect(result.stdout).not.toContain('npm run verify:release-real');

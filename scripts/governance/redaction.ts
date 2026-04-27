@@ -89,6 +89,8 @@ const SAFE_ADDITIONAL_PRESENCE_LABELS = new Set<string>([
   'probe.registry_available',
   'probe.docker_available',
 ]);
+const UNCLASSIFIED_ADDITIONAL_PRESENCE_LABEL = 'presence.unclassified';
+const REDACTED_TEXT = '[redacted]';
 
 const SECRET_KEY_PATTERNS = [
   /authorization/i,
@@ -115,9 +117,20 @@ const SECRET_VALUE_PATTERNS = [
   /\bpassword\s*[:=]\s*[^"',\s}]+/i,
   /\bticket\s*[:=]\s*[^"',\s}]+/i,
   /\bmanaged[_-]?credentials?\s*[:=]\s*[^"',\s}]+/i,
-  /\bCookie\s*[:=]\s*[^"',\n}]+/i,
-  /\bAuthorization\s*[:=]\s*[^"',\n}]+/i,
+  /\bCookie\s*[:=]\s*[^"',\s}]+/i,
+  /\bAuthorization\s*[:=]\s*[^"',\s}]+/i,
+  /\bmanaged[_-]?credentials?(?:\.[A-Za-z0-9_-]+)?\s*[:=]\s*[\[{]/i,
+  /\bpassword\s*[:=]\s*[\[{]/i,
+  /["'](?:api_key|access_token|refresh_token|oauth_token|client_secret|password|ticket|managed_credentials)["']\s*:\s*[\[{]/i,
+  /["'](?:feishu|value)["']\s*:\s*["'][^"']*(?:raw|secret|credential|token|password|key)[^"']*["']/i,
 ] as const;
+const SENSITIVE_TEXT_KEY = String.raw`[A-Za-z0-9_.-]*(?:api[_-]?key|access[_-]?token|refresh[_-]?token|oauth(?:[_-]?token)?|client[_-]?secret|password|ticket|managed[_-]?credentials?(?:\.[A-Za-z0-9_-]+)?|cookie|authorization)[A-Za-z0-9_.-]*`;
+const BEARER_VALUE_PATTERN = /\bBearer\s+[A-Za-z0-9._~+/=-]+/gi;
+const SK_VALUE_PATTERN = /\bsk-[A-Za-z0-9][A-Za-z0-9_-]{6,}/gi;
+const SENSITIVE_TEXT_PREFIX_PATTERN = new RegExp(
+  String.raw`(?:"${SENSITIVE_TEXT_KEY}"|'${SENSITIVE_TEXT_KEY}'|\b${SENSITIVE_TEXT_KEY}\b)\s*[:=]\s*`,
+  'gi',
+);
 
 function normalizeEnvValue(value: unknown): string | undefined {
   if (typeof value === 'string') {
@@ -260,7 +273,7 @@ function safeAdditionalPresenceLabel(label: string): string {
   if (SAFE_ADDITIONAL_PRESENCE_LABELS.has(label)) {
     return label;
   }
-  return `presence_label_sha256_${sha256(label)}`;
+  return UNCLASSIFIED_ADDITIONAL_PRESENCE_LABEL;
 }
 
 function normalizeAdditionalPresence(
@@ -299,13 +312,105 @@ export function buildRedactedFailureBundle(input: BuildRedactedFailureBundleInpu
   return buildRedactedDiagnostic(input);
 }
 
+function scanQuotedValueEnd(value: string, start: number, quote: string): number {
+  for (let index = start + 1; index < value.length; index += 1) {
+    if (value[index] === '\\') {
+      index += 1;
+      continue;
+    }
+    if (value[index] === quote) {
+      return index + 1;
+    }
+  }
+  return value.length;
+}
+
+function scanBracketedValueEnd(value: string, start: number, opener: string): number {
+  const closer = opener === '{' ? '}' : ']';
+  let depth = 0;
+  let quote: string | null = null;
+  for (let index = start; index < value.length; index += 1) {
+    const char = value[index];
+    if (quote) {
+      if (char === '\\') {
+        index += 1;
+        continue;
+      }
+      if (char === quote) {
+        quote = null;
+      }
+      continue;
+    }
+    if (char === '"' || char === "'") {
+      quote = char;
+      continue;
+    }
+    if (char === opener) {
+      depth += 1;
+      continue;
+    }
+    if (char === closer) {
+      depth -= 1;
+      if (depth === 0) {
+        return index + 1;
+      }
+    }
+  }
+  return value.length;
+}
+
+function scanUnquotedValueEnd(value: string, start: number): number {
+  const bearer = /^Bearer\s+[A-Za-z0-9._~+/=-]+/i.exec(value.slice(start));
+  if (bearer) {
+    return start + bearer[0].length;
+  }
+  const unquoted = /^[^\s"',}]+/.exec(value.slice(start));
+  return unquoted ? start + unquoted[0].length : start;
+}
+
+function sensitiveValueEnd(value: string, start: number): number {
+  const first = value[start];
+  if (first === '"' || first === "'") {
+    return scanQuotedValueEnd(value, start, first);
+  }
+  if (first === '{' || first === '[') {
+    return scanBracketedValueEnd(value, start, first);
+  }
+  return scanUnquotedValueEnd(value, start);
+}
+
+function redactSensitiveAssignments(value: string): string {
+  let result = '';
+  let cursor = 0;
+  SENSITIVE_TEXT_PREFIX_PATTERN.lastIndex = 0;
+  let match = SENSITIVE_TEXT_PREFIX_PATTERN.exec(value);
+
+  while (match) {
+    const valueStart = match.index + match[0].length;
+    const valueEnd = sensitiveValueEnd(value, valueStart);
+    result += `${value.slice(cursor, valueStart)}${REDACTED_TEXT}`;
+    cursor = valueEnd;
+    SENSITIVE_TEXT_PREFIX_PATTERN.lastIndex = valueEnd;
+    match = SENSITIVE_TEXT_PREFIX_PATTERN.exec(value);
+  }
+
+  return `${result}${value.slice(cursor)}`;
+}
+
+export function redactSensitiveText(value: string): string {
+  return redactSensitiveAssignments(value)
+    .replace(BEARER_VALUE_PATTERN, `Bearer ${REDACTED_TEXT}`)
+    .replace(SK_VALUE_PATTERN, `sk-${REDACTED_TEXT}`);
+}
+
 export function findRedactionLeaks(value: unknown): string[] {
   const serialized = typeof value === 'string' ? value : JSON.stringify(value);
   if (!serialized) {
     return [];
   }
+  const leakCandidate = serialized.replaceAll(REDACTED_TEXT, '""');
 
   return SECRET_VALUE_PATTERNS
-    .filter((pattern) => pattern.test(serialized))
+    .filter((pattern) => pattern.test(leakCandidate))
     .map((pattern) => pattern.source);
 }

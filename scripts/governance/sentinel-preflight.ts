@@ -168,8 +168,8 @@ if (isCliEntrypoint('sentinel-preflight.ts')) {
     .then((exitCode) => {
       process.exit(exitCode);
     })
-    .catch((error: unknown) => {
-      process.stderr.write(`[sentinel-preflight] ${error instanceof Error ? error.message : String(error)}\n`);
+    .catch(() => {
+      process.stderr.write('[sentinel-preflight] diagnostic unavailable\n');
       process.exit(1);
     });
 }

@@ -229,7 +229,8 @@ describe('verify impact selector', () => {
     expect(plan.requiredLevels).toEqual(['V3']);
     expect(plan.recommendedCommands).toEqual(['npm run verify:release-real']);
     expect(plan.requiredEvidence).toEqual(['backend-real ux_trace_bundle evidence']);
-    expect(plan.nextAction).toContain('npm run verify:release-real');
+    expect(plan.nextAction).toContain('npm run verify -- --goal=release-real --run');
+    expect(plan.nextAction).not.toContain('npm run verify:release-real');
     expect(plan.nextAction).toContain('not release readiness');
     expect(plan.releaseVerdict).toBe(false);
   });
@@ -378,7 +379,7 @@ describe('verify impact selector', () => {
       expect(v3Evidence).toMatchObject({
         state: 'not_inspected_by_verify_report',
         status: 'manual_review_needed',
-        owner: 'npm run verify:real',
+        owner: 'npm run verify -- --goal=real --run',
         artifact_path: null,
         artifact_path_template: 'artifacts/backend-real/runs/<run-id>/ux-traces',
         artifact_path_template_reason: null,
@@ -392,8 +393,10 @@ describe('verify impact selector', () => {
 
       const markdown = readFileSync(join(reportRoot, 'story-acceptance-report.md'), 'utf8');
       expect(markdown).toContain(
-        '- V3: owner=npm run verify:real; status=manual_review_needed; path_template=artifacts/backend-real/runs/<run-id>/ux-traces',
+        '- V3: owner=npm run verify -- --goal=real --run; status=manual_review_needed; path_template=artifacts/backend-real/runs/<run-id>/ux-traces',
       );
+      expect(readFileSync(join(reportRoot, 'story-acceptance-report.json'), 'utf8')).not.toContain('npm run verify:');
+      expect(markdown).not.toContain('npm run verify:');
     });
   });
 
@@ -548,7 +551,8 @@ describe('verify impact selector', () => {
     expect(plan.recommendedCommands).toContain('npm run verify:real');
     expect(plan.affectedSurfaces).toContain('runner/context-store/credentials');
     expect(plan.finalVerdict).toContain('not_evaluated');
-    expect(plan.nextAction).toContain('npm run verify:real');
+    expect(plan.nextAction).toContain('npm run verify -- --goal=real --run');
+    expect(plan.nextAction).not.toContain('npm run verify:real');
     expect(plan.riskSummary.manualReviewRequired).toBe(true);
     expect(plan.riskSummary.broadImpact).toBe(true);
     expect(plan.changedFileImpacts.find((impact) => impact.changedFile === 'src/lib/api/endpoints/context.ts')).toMatchObject({
@@ -581,7 +585,9 @@ describe('verify impact selector', () => {
 
       expect(plan.recommendedCommands).toContain('npm run verify:real');
       expect(plan.finalVerdict).toBe('not_evaluated_fail_closed');
-      expect(plan.riskSummary.warnings.join('\n')).toContain(`--goal=${goal} --run cannot execute npm run verify:real`);
+      expect(plan.riskSummary.warnings.join('\n')).toContain(`--goal=${goal} --run cannot execute npm run verify -- --goal=real --run`);
+      expect(plan.riskSummary.warnings.join('\n')).not.toContain('npm run verify:real');
+      expect(plan.riskSummary.warnings.join('\n')).not.toContain('npm run verify:release-real');
       expect(plan.releaseVerdict).toBe(false);
     },
   );
@@ -612,7 +618,9 @@ describe('verify impact selector', () => {
 
       expect(plan.recommendedCommands).toContain('npm run verify:release-real');
       expect(plan.finalVerdict).toBe('not_evaluated_fail_closed');
-      expect(plan.riskSummary.warnings.join('\n')).toContain(`--goal=${goal} --run cannot execute npm run verify:release-real`);
+      expect(plan.riskSummary.warnings.join('\n')).toContain(`--goal=${goal} --run cannot execute npm run verify -- --goal=release-real --run`);
+      expect(plan.riskSummary.warnings.join('\n')).not.toContain('npm run verify:real');
+      expect(plan.riskSummary.warnings.join('\n')).not.toContain('npm run verify:release-real');
       expect(plan.releaseVerdict).toBe(false);
     },
   );
@@ -629,6 +637,8 @@ describe('verify impact selector', () => {
     expect(plan.requiredLevels).toEqual(['V3']);
     expect(plan.finalVerdict).toBe('delegated_to_executed_verification_commands');
     expect(plan.releaseVerdict).toBe(false);
+    expect(plan.nextAction).toContain('npm run verify -- --goal=release-real --run');
+    expect(plan.nextAction).not.toContain('npm run verify:release-real');
     expect(plan.nextAction).toContain('not release readiness');
   });
 
@@ -703,7 +713,8 @@ describe('verify impact selector', () => {
     expect(plan.affectedSurfaces).toEqual(['release-real-owner']);
     expect(plan.affectedStories.join('\n')).toContain('mapped operational impact: release-real-owner');
     expect(plan.affectedStories.join('\n')).not.toContain('No changed files provided or detected');
-    expect(plan.nextAction).toContain('npm run verify:release-real');
+    expect(plan.nextAction).toContain('npm run verify -- --goal=release-real --run');
+    expect(plan.nextAction).not.toContain('npm run verify:release-real');
     expect(plan.nextAction).toContain('not release readiness');
     expect(plan.releaseVerdict).toBe(false);
   });
@@ -822,13 +833,13 @@ describe('verify impact selector', () => {
       expect(reportCard?.evidence_cards.find((card) => card.level === 'V2')).toMatchObject({
         state: 'not_inspected_by_verify_report',
         status: 'manual_review_needed',
-        owner: 'npm run verify:visual',
+        owner: 'npm run verify -- --goal=visual --run',
         artifact_path: null,
         artifact_path_template: 'artifacts/visual-baseline-reviews/<run-id>/run-manifest.json',
         artifact_path_template_reason: null,
       });
       expect(reportCard?.evidence_cards.find((card) => card.level === 'V0')).toMatchObject({
-        owner: 'npm run verify:quick',
+        owner: 'npm run verify -- --goal=debug --run',
         artifact_path_template: null,
       });
       expect(reportCard?.evidence_cards.find((card) => card.level === 'V0')?.artifact_path_template_reason)
@@ -838,7 +849,7 @@ describe('verify impact selector', () => {
           kind: 'missing_catalog_mapping',
           story_id: 'mock-lane-chat-operate-and-recover',
           level: 'V0',
-          owner: 'npm run verify:quick',
+          owner: 'npm run verify -- --goal=debug --run',
           status: 'not_evaluated',
           artifact_path_template_reason: expect.stringContaining('No registered current gate result writer for gate-fast'),
           next_action: expect.stringContaining('Register the current gate result writer artifact_path_template mapping for V0'),
@@ -847,7 +858,7 @@ describe('verify impact selector', () => {
           kind: 'missing_catalog_mapping',
           story_id: 'mock-lane-chat-operate-and-recover',
           level: 'V1',
-          owner: 'npm run verify:default',
+          owner: 'npm run verify -- --goal=pr --run',
           status: 'not_evaluated',
           artifact_path_template_reason: expect.stringContaining('No registered current gate result writer for gate-default'),
           next_action: expect.stringContaining('Register the current gate result writer artifact_path_template mapping for V1'),
@@ -874,8 +885,10 @@ describe('verify impact selector', () => {
       expect(markdown).toContain(`- Risk policy source: ${CURRENT_STORY_RISK_POLICY_SOURCE}`);
       expect(markdown).toContain('- Evidence cards:');
       expect(markdown).toContain(
-        '- V2: owner=npm run verify:visual; status=manual_review_needed; path_template=artifacts/visual-baseline-reviews/<run-id>/run-manifest.json',
+        '- V2: owner=npm run verify -- --goal=visual --run; status=manual_review_needed; path_template=artifacts/visual-baseline-reviews/<run-id>/run-manifest.json',
       );
+      expect(readFileSync(jsonPath, 'utf8')).not.toContain('npm run verify:');
+      expect(markdown).not.toContain('npm run verify:');
     });
   });
 
@@ -916,7 +929,7 @@ describe('verify impact selector', () => {
 
       expect(report.next_action).toContain('Manual impact owner triage');
       expect(report.next_actions.some((action) => action.includes('Manual impact owner triage'))).toBe(true);
-      expect(report.next_actions.some((action) => action.includes('npm run verify:visual'))).toBe(true);
+      expect(report.next_actions.some((action) => action.includes('npm run verify -- --goal=visual --run'))).toBe(true);
       expect(chatImpact).toMatchObject({
         matched_rules: ['visual_code_ref'],
         manual_review_required: true,

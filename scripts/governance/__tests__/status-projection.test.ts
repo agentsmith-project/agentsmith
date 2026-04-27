@@ -18,6 +18,37 @@ const GENERATED_AT = '2026-04-27T12:00:00.000Z';
 const CURRENT_GIT_SHA = 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa';
 const EVIDENCE_GIT_SHA = 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa';
 const STALE_EVIDENCE_GIT_SHA = 'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb';
+const SENSITIVE_AGGREGATE_SUMMARY = [
+  'Campaign step gate-release did not pass.',
+  'Authorization: Bearer projection-bearer-raw-token',
+  'OPENAI_API_KEY=sk-projection-raw-value',
+  'api_key=projection-api-key-raw-value',
+  'access_token=projection-access-token-raw-value',
+  'refresh_token=projection-refresh-token-raw-value',
+  'oauth_token=projection-oauth-token-raw-value',
+  'client_secret=projection-client-secret-raw-value',
+  'password=projection-password-raw-value',
+  'managed_credentials: {"feishu":"projection-managed-credential-object-raw-value"}',
+  'password: {"value":"projection-password-object-raw-value"}',
+  'ticket=projection-ticket-raw-value',
+  'managed_credentials.feishu=projection-managed-credential-raw-value',
+  'Cookie: sid=projection-cookie-raw-value',
+].join(' ');
+const SENSITIVE_PROJECTION_FRAGMENTS = [
+  'projection-bearer-raw-token',
+  'sk-projection-raw-value',
+  'projection-api-key-raw-value',
+  'projection-access-token-raw-value',
+  'projection-refresh-token-raw-value',
+  'projection-oauth-token-raw-value',
+  'projection-client-secret-raw-value',
+  'projection-password-raw-value',
+  'projection-managed-credential-object-raw-value',
+  'projection-password-object-raw-value',
+  'projection-ticket-raw-value',
+  'projection-managed-credential-raw-value',
+  'projection-cookie-raw-value',
+];
 
 function sha256(value: string): string {
   return `sha256:${createHash('sha256').update(value).digest('hex')}`;
@@ -68,6 +99,14 @@ function expectNoReleaseVerdictFields(value: unknown): void {
   const serialized = JSON.stringify(value);
   expect(serialized).not.toContain('release_verdict');
   expect(serialized).not.toContain('automated_release_verdict');
+}
+
+function expectNoSensitiveProjectionLeak(value: unknown): void {
+  const serialized = typeof value === 'string' ? value : JSON.stringify(value);
+  for (const fragment of SENSITIVE_PROJECTION_FRAGMENTS) {
+    expect(serialized).not.toContain(fragment);
+  }
+  expect(serialized).not.toContain('Bearer projection-bearer-raw-token');
 }
 
 describe('current status projection', () => {
@@ -245,6 +284,30 @@ describe('current status projection', () => {
     });
   });
 
+  it('redacts sensitive aggregate summaries at the status projection boundary', () => {
+    withTempRoot((campaignRoot) => {
+      writeAggregateResult(campaignRoot, {
+        status: 'failed',
+        failure_class: 'product_regression',
+        summary: SENSITIVE_AGGREGATE_SUMMARY,
+      });
+
+      const projection = buildStatusProjection({
+        goal: 'release-ready',
+        campaignRoot,
+        currentGitSha: CURRENT_GIT_SHA,
+        evidenceGitSha: EVIDENCE_GIT_SHA,
+        generatedAt: GENERATED_AT,
+      });
+
+      expect(projection.presentation_status).toBe('failed');
+      expect(projection.primary_blocker?.owner).toBe('gate-release');
+      expect(projection.deepest_reason?.summary).toContain('[redacted]');
+      expectNoSensitiveProjectionLeak(projection);
+      expect(validateCurrentStatusProjection(projection)).toEqual({ ok: true, value: projection });
+    });
+  });
+
   it('fails closed when aggregate status is passed but failure_class is not none', () => {
     withTempRoot((campaignRoot) => {
       const aggregatePath = writeAggregateResult(campaignRoot, {
@@ -385,6 +448,32 @@ describe('current status projection', () => {
       expectNoReleaseVerdictFields(projection);
       expect(existsSync(join(campaignRoot, 'summary.json'))).toBe(false);
       expect(existsSync(join(campaignRoot, 'status.json'))).toBe(false);
+    });
+  });
+
+  it('keeps release-status --json from replaying redacted terminal summary secrets', () => {
+    withTempRoot((campaignRoot) => {
+      writeAggregateResult(campaignRoot, {
+        status: 'failed',
+        failure_class: 'product_regression',
+        summary: SENSITIVE_AGGREGATE_SUMMARY,
+      });
+
+      const output = execFileSync('npx', [
+        'tsx',
+        'scripts/governance/release-status.ts',
+        '--json',
+        '--campaign-root',
+        campaignRoot,
+      ], {
+        cwd: process.cwd(),
+        encoding: 'utf8',
+      });
+      const projection = JSON.parse(output) as unknown;
+
+      expect(validateCurrentStatusProjection(projection)).toMatchObject({ ok: true });
+      expectNoReleaseVerdictFields(projection);
+      expectNoSensitiveProjectionLeak(output);
     });
   });
 });

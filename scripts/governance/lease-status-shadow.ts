@@ -46,14 +46,13 @@ export interface MinimalLeasePortFamilySection extends MinimalLeaseLockSection {
   families: readonly MinimalLeasePortFamily[];
 }
 
-export interface MinimalLeaseSecretProfile {
-  name: string;
+export interface MinimalLeaseSecretProfileSummary {
   present: boolean;
   digest: string | null;
 }
 
 export interface MinimalLeaseSecretProfileSection extends MinimalLeaseLockSection {
-  profiles: readonly MinimalLeaseSecretProfile[];
+  profile: MinimalLeaseSecretProfileSummary;
 }
 
 export interface MinimalLeaseStatusShadow {
@@ -133,10 +132,11 @@ const ACTIVE_RUN_FIELDS = new Set<string>([
 const LOCK_SECTION_FIELDS = new Set<string>(['present', 'lock_id', 'owners']);
 const PORT_SECTION_FIELDS = new Set<string>(['present', 'lock_id', 'owners', 'families']);
 const PORT_FAMILY_FIELDS = new Set<string>(['name', 'ports']);
-const SECRET_SECTION_FIELDS = new Set<string>(['present', 'lock_id', 'owners', 'profiles']);
-const SECRET_PROFILE_FIELDS = new Set<string>(['name', 'present', 'digest']);
+const SECRET_SECTION_FIELDS = new Set<string>(['present', 'lock_id', 'owners', 'profile']);
+const SECRET_PROFILE_FIELDS = new Set<string>(['present', 'digest']);
 const FORBIDDEN_SECRET_VALUE_FIELDS = new Set<string>([
   'value',
+  'value_digest',
   'raw_value',
   'secret_value',
   'raw_secret',
@@ -209,19 +209,20 @@ function portFamiliesFromManifest(): readonly MinimalLeasePortFamily[] {
     }));
 }
 
-function secretProfiles(
+function secretProfile(
   requiredSecretNames: readonly string[],
   env: Readonly<Record<string, string | undefined>>,
-): readonly MinimalLeaseSecretProfile[] {
-  return requiredSecretNames.map((name) => {
+): MinimalLeaseSecretProfileSummary {
+  const names = [...new Set(requiredSecretNames)].sort((left, right) => left.localeCompare(right));
+  const presence = names.map((name) => {
     const value = env[name];
-    const present = typeof value === 'string' && value.length > 0;
-    return {
-      name,
-      present,
-      digest: present ? sha256(value) : null,
-    };
+    return typeof value === 'string' && value.length > 0;
   });
+  const present = presence.some(Boolean);
+  return {
+    present,
+    digest: present ? sha256(JSON.stringify({ presence })) : null,
+  };
 }
 
 export function buildMinimalLeaseStatusShadow(
@@ -260,7 +261,7 @@ export function buildMinimalLeaseStatusShadow(
       present: secretOwners.length > 0,
       lock_id: providerSecretOwner ? 'provider-secret-profile' : secretOwners[0]?.lock_id ?? null,
       owners: secretOwners,
-      profiles: secretProfiles(input.requiredSecretNames ?? [], input.env ?? {}),
+      profile: secretProfile(input.requiredSecretNames ?? [], input.env ?? {}),
     },
     active_leases: activeLeases,
   };
@@ -512,7 +513,7 @@ function validatePortFamilySection(
   });
 }
 
-function validateSecretProfile(
+function validateSecretProfileSummary(
   value: unknown,
   path: string,
   failures: MinimalLeaseStatusShadowValidationFailure[],
@@ -523,11 +524,13 @@ function validateSecretProfile(
   }
   validateNoUnknownFields(value, path, SECRET_PROFILE_FIELDS, failures);
   validateRequiredFields(value, path, [...SECRET_PROFILE_FIELDS], failures);
-  validateString(value.name, `${path}.name`, failures);
   validateBoolean(value.present, `${path}.present`, failures);
   validateNullableDigest(value.digest, `${path}.digest`, failures);
   if (value.present === false && value.digest !== null) {
     pushFailure(failures, `${path}.digest`, 'absent secret profile must use digest null.');
+  }
+  if (value.present === true && value.digest === null) {
+    pushFailure(failures, `${path}.digest`, 'present secret profile must use a profile digest.');
   }
 }
 
@@ -540,13 +543,7 @@ function validateSecretProfileSection(
   if (!isRecord(value)) {
     return;
   }
-  if (!Array.isArray(value.profiles)) {
-    pushFailure(failures, `${path}.profiles`, `${path}.profiles must be an array.`);
-    return;
-  }
-  value.profiles.forEach((profile, index) => {
-    validateSecretProfile(profile, `${path}.profiles[${index}]`, failures);
-  });
+  validateSecretProfileSummary(value.profile, `${path}.profile`, failures);
 }
 
 export function validateMinimalLeaseStatusShadow(value: unknown): MinimalLeaseStatusShadowValidationResult {

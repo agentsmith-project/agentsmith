@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest';
 import {
   buildRedactedFailureBundle,
   findRedactionLeaks,
+  redactSensitiveText,
   type RedactedGovernanceDiagnostic,
 } from '../redaction';
 
@@ -154,12 +155,37 @@ describe('failure bundle redaction', () => {
     const serialized = stringifyDiagnostic(diagnostic);
 
     expect(diagnostic.presence['probe.dns_gateway_reachable']).toBe(false);
-    expect(Object.keys(diagnostic.presence).some((key) => key.startsWith('presence_label_sha256_'))).toBe(true);
+    expect(diagnostic.presence['presence.unclassified']).toBe(true);
+    expect(Object.keys(diagnostic.presence).some((key) => key.startsWith('presence_label_sha256_'))).toBe(false);
     expect(serialized).not.toContain('Authorization');
     expect(serialized).not.toContain('Bearer');
     expect(serialized).not.toContain('additional-presence-raw-value');
     expect(serialized).not.toContain('managed_credentials.feishu=');
     expect(serialized).not.toContain('additional-managed-credential-raw-value');
     expect(findRedactionLeaks(diagnostic)).toEqual([]);
+  });
+
+  it('redacts object-shaped secret assignments and detects residual object leaks', () => {
+    const summary = [
+      'managed_credentials: {"feishu":"redaction-managed-credential-object-raw-value"}',
+      'password: {"value":"redaction-password-object-raw-value"}',
+      '"client_secret": {"value":"redaction-client-secret-object-raw-value"}',
+      'Authorization: Bearer redaction-bearer-object-raw-token',
+    ].join(' ');
+
+    expect(findRedactionLeaks(summary).length).toBeGreaterThan(0);
+    expect(findRedactionLeaks('"feishu":"redaction-managed-credential-object-raw-value"}').length).toBeGreaterThan(0);
+    expect(findRedactionLeaks('"value":"redaction-password-object-raw-value"}').length).toBeGreaterThan(0);
+
+    const redacted = redactSensitiveText(summary);
+
+    expect(redacted).toContain('[redacted]');
+    expect(redacted).not.toContain('redaction-managed-credential-object-raw-value');
+    expect(redacted).not.toContain('redaction-password-object-raw-value');
+    expect(redacted).not.toContain('redaction-client-secret-object-raw-value');
+    expect(redacted).not.toContain('redaction-bearer-object-raw-token');
+    expect(redacted).not.toContain('"feishu"');
+    expect(redacted).not.toContain('"value":"redaction-password-object-raw-value"');
+    expect(findRedactionLeaks(redacted)).toEqual([]);
   });
 });

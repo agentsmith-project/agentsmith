@@ -13,6 +13,8 @@ import {
   writeVerificationCatalog,
 } from './verification-catalog';
 import { writeStoryAcceptanceReport } from './story-acceptance-report';
+import { buildStatusProjection } from './status-projection';
+import type { CurrentStatusProjection } from './current-status-projection-schema';
 
 export {
   buildVerificationPlan,
@@ -25,6 +27,8 @@ type ParsedVerifyArgs = {
   goal: VerificationGoal;
   goalExplicit: boolean;
   run: boolean;
+  status: boolean;
+  json: boolean;
   reportRoot?: string;
   changedFiles?: string[];
   baseRef?: string;
@@ -88,15 +92,48 @@ function humanizeVerdict(verdict: string): string {
   return verdict.replaceAll('_', ' ');
 }
 
+const GOVERNED_VERIFY_RUN_COMMAND_BY_ALIAS: Record<string, string> = {
+  'npm run verify:quick': 'npm run verify -- --goal=debug --run',
+  'npm run verify:default': 'npm run verify -- --goal=pr --run',
+  'npm run verify:visual': 'npm run verify -- --goal=visual --run',
+  'npm run verify:real': 'npm run verify -- --goal=real --run',
+  'npm run verify:release-real': 'npm run verify -- --goal=release-real --run',
+};
+
+const GOVERNED_VERIFY_RUN_COMMAND_PRIORITY = [
+  'npm run verify:release-real',
+  'npm run verify:real',
+  'npm run verify:visual',
+  'npm run verify:default',
+  'npm run verify:quick',
+] as const;
+
+function governedVerifyRunCommand(plan: VerificationPlan): string | null {
+  for (const alias of GOVERNED_VERIFY_RUN_COMMAND_PRIORITY) {
+    if (plan.recommendedCommands.includes(alias)) {
+      return GOVERNED_VERIFY_RUN_COMMAND_BY_ALIAS[alias];
+    }
+  }
+  return null;
+}
+
+function cleanVerifyHumanText(value: string): string {
+  return Object.entries(GOVERNED_VERIFY_RUN_COMMAND_BY_ALIAS).reduce(
+    (current, [alias, command]) => current.split(alias).join(command),
+    value,
+  );
+}
+
 function renderRecommendedPlan(plan: VerificationPlan): string[] {
   if (plan.recommendedCommands.length === 0) {
-    return ['No verify alias is safe to run for this V4 plan; use the next action.'];
+    return ['No verify command is safe to run for this V4 plan; use the next action.'];
   }
-  return plan.recommendedCommands.map((command, index) => `${index + 1}. ${command}`);
+  const command = governedVerifyRunCommand(plan);
+  return command ? [`1. ${command}`] : ['Use the governed verify entrypoint after reviewing this plan.'];
 }
 
 function renderRiskWarnings(plan: VerificationPlan): string {
-  return `Risk warnings: ${plan.riskSummary.warnings.length > 0 ? plan.riskSummary.warnings.join('; ') : '<none>'}`;
+  return `Risk warnings: ${plan.riskSummary.warnings.length > 0 ? cleanVerifyHumanText(plan.riskSummary.warnings.join('; ')) : '<none>'}`;
 }
 
 export function renderVerificationPlan(plan: VerificationPlan): string {
@@ -118,11 +155,11 @@ export function renderVerificationPlan(plan: VerificationPlan): string {
     'Recommended plan:',
     ...renderRecommendedPlan(plan),
     '',
-    `Next action: ${plan.nextAction}`,
+    `Next action: ${cleanVerifyHumanText(plan.nextAction)}`,
     ...(plan.nextActions.length > 1
       ? [
           'Next actions:',
-          ...plan.nextActions.map((action, index) => `${index + 1}. ${action}`),
+          ...plan.nextActions.map((action, index) => `${index + 1}. ${cleanVerifyHumanText(action)}`),
         ]
       : []),
     `Final verdict: ${humanizeVerdict(plan.finalVerdict)}`,
@@ -131,10 +168,43 @@ export function renderVerificationPlan(plan: VerificationPlan): string {
   ].join('\n');
 }
 
+function renderProjectionValue(value: string | null): string {
+  return value ?? '<none>';
+}
+
+function renderVerifyStatusProjection(projection: CurrentStatusProjection): string {
+  const primaryBlocker = projection.primary_blocker
+    ? `${projection.primary_blocker.owner} (${projection.primary_blocker.stage})`
+    : '<none>';
+  const deepestReason = projection.deepest_reason
+    ? `${projection.deepest_reason.code}: ${projection.deepest_reason.summary}`
+    : '<none>';
+
+  return [
+    'AgentSmith Verify Status',
+    '',
+    'Goal: verify',
+    `Projection: ${projection.projection_kind.replaceAll('_', '-')}`,
+    `Status: ${projection.presentation_status}`,
+    `Phase: ${projection.phase}`,
+    `Run ID: ${renderProjectionValue(projection.run_id)}`,
+    `Primary blocker: ${primaryBlocker}`,
+    `Deepest reason: ${deepestReason}`,
+    `Safe next command: ${renderProjectionValue(projection.safe_next_command)}`,
+    `Release decision produced: ${String(projection.release_decision_produced)}`,
+    `Commands executed: ${String(projection.commands_executed)}`,
+    `Authority aggregate: ${renderProjectionValue(projection.authority_paths.aggregate)}`,
+    'Note: this status projection is read-only and does not produce a release verdict.',
+    '',
+  ].join('\n');
+}
+
 function parseArgs(argv: readonly string[]): ParsedVerifyArgs {
   let goal: VerificationGoal = 'pr';
   let goalExplicit = false;
   let run = false;
+  let status = false;
+  let json = false;
   let reportRoot: string | undefined;
   let changedFiles: string[] | undefined;
   let baseRef: string | undefined;
@@ -144,6 +214,10 @@ function parseArgs(argv: readonly string[]): ParsedVerifyArgs {
     const next = argv[index + 1];
     if (arg === '--run') {
       run = true;
+    } else if (arg === '--status') {
+      status = true;
+    } else if (arg === '--json') {
+      json = true;
     } else if (arg === '--goal' && next) {
       goal = normalizeGoal(next);
       goalExplicit = true;
@@ -177,6 +251,8 @@ function parseArgs(argv: readonly string[]): ParsedVerifyArgs {
     goal,
     goalExplicit,
     run,
+    status,
+    json,
     reportRoot,
     changedFiles,
     baseRef,
@@ -374,6 +450,20 @@ function buildPlanInput(options: ParsedVerifyArgs, reportRoot: string): BuildVer
 export function runVerificationCli(argv: readonly string[] = process.argv.slice(2)): number {
   try {
     const options = parseArgs(argv);
+    if (options.json && !options.status) {
+      throw new Error('--json is only supported with --status.');
+    }
+    if (options.status && options.run) {
+      throw new Error('--status is read-only and cannot be combined with --run.');
+    }
+    if (options.status) {
+      const projection = buildStatusProjection({ goal: 'verify' });
+      process.stdout.write(options.json
+        ? `${JSON.stringify(projection, null, 2)}\n`
+        : renderVerifyStatusProjection(projection));
+      return 0;
+    }
+
     const reportRoot = options.reportRoot ?? defaultReportRoot();
     const generatedAt = new Date().toISOString();
     const catalog = buildVerificationCatalog({ generatedAt });

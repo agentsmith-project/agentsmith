@@ -206,6 +206,12 @@ const COMMAND_ORDER = [
 ] as const;
 const REAL_VERIFY_COMMAND = 'npm run verify:real';
 const RELEASE_REAL_VERIFY_COMMAND = 'npm run verify:release-real';
+const GOVERNED_REAL_VERIFY_COMMAND = 'npm run verify -- --goal=real --run';
+const GOVERNED_RELEASE_REAL_VERIFY_COMMAND = 'npm run verify -- --goal=release-real --run';
+const GOVERNED_VERIFY_COMMAND_BY_INTERNAL_ALIAS: Record<string, string> = {
+  [REAL_VERIFY_COMMAND]: GOVERNED_REAL_VERIFY_COMMAND,
+  [RELEASE_REAL_VERIFY_COMMAND]: GOVERNED_RELEASE_REAL_VERIFY_COMMAND,
+};
 
 const MANUAL_REVIEW_REASONS = {
   storyMarkdownChanged: 'story markdown changed',
@@ -256,6 +262,10 @@ function orderedManualReviewReasons(values: Iterable<StoryManualReviewReason>): 
   return MANUAL_REVIEW_REASON_ORDER.filter((reason) => selected.has(reason));
 }
 
+function governedVerifyCommandForInternalAlias(command: string): string {
+  return GOVERNED_VERIFY_COMMAND_BY_INTERNAL_ALIAS[command] ?? command;
+}
+
 export function verificationRunContractFailure(input: {
   goal: VerificationGoal;
   goalExplicit?: boolean;
@@ -278,7 +288,8 @@ export function verificationRunContractFailure(input: {
     return null;
   }
 
-  return `--goal=${input.goal} --run cannot execute ${blockedCommands.join(', ')}; use --goal=real --run for npm run verify:real or --goal=release-real --run for the release-real owner diagnostic.`;
+  const blockedGovernedCommands = blockedCommands.map(governedVerifyCommandForInternalAlias);
+  return `--goal=${input.goal} --run cannot execute ${blockedGovernedCommands.join(', ')}; use ${GOVERNED_REAL_VERIFY_COMMAND} for backend-real verification or ${GOVERNED_RELEASE_REAL_VERIFY_COMMAND} for the release-real owner diagnostic.`;
 }
 
 function normalizeRepoPath(value: string): string {
@@ -456,13 +467,19 @@ function nextActionPriority(action: string): number {
   if (action.includes('runner, Context Store, and credential owner review')) {
     return 3;
   }
-  if (action.includes('npm run verify:release-real')) {
+  if (
+    action.includes(GOVERNED_RELEASE_REAL_VERIFY_COMMAND)
+    || action.includes('npm run verify:release-real')
+  ) {
     return 4;
   }
   if (action.includes('Manual story review')) {
     return 5;
   }
-  if (action.includes('npm run verify:real')) {
+  if (
+    action.includes(GOVERNED_REAL_VERIFY_COMMAND)
+    || action.includes('npm run verify:real')
+  ) {
     return 6;
   }
   if (action.includes('npm run verify:visual')) {
@@ -921,12 +938,12 @@ function defaultNextAction(levels: readonly VerificationLevel[]): string {
     return 'Release or deploy path changed. Use npm run release:ready as the next release operation outside this verification report; this report is not a release verdict.';
   }
   if (levels.includes('V3')) {
-    return 'Run npm run verify:real after reviewing the fail-closed impact selection.';
+    return `Run ${GOVERNED_REAL_VERIFY_COMMAND} after reviewing the fail-closed impact selection.`;
   }
   if (levels.includes('V2')) {
     return 'Run npm run verify:visual after reviewing affected visual story cards.';
   }
-  return 'Run the recommended verification aliases after reviewing the plan.';
+  return 'Run the governed verification entrypoint after reviewing the plan.';
 }
 
 function addGoalDefaults(accumulator: ImpactAccumulator, goal: VerificationGoal): void {
@@ -943,7 +960,7 @@ function addGoalDefaults(accumulator: ImpactAccumulator, goal: VerificationGoal)
   pushUnique(
     accumulator.nextActions,
     goal === 'release-real'
-      ? 'Run npm run verify:release-real as a release backend-real owner diagnostic; this report is not release readiness.'
+      ? `Run ${GOVERNED_RELEASE_REAL_VERIFY_COMMAND} as a release backend-real owner diagnostic; this report is not release readiness.`
       : defaultNextAction(levels),
   );
 }
@@ -994,7 +1011,7 @@ export function buildVerificationPlan(input: BuildVerificationPlanInput = {}): V
       mapped = true;
       const releaseRealDiagnosticStoryImpact = releaseRealDiagnosticGoal && isReleaseRealDiagnosticStory(exactStory);
       const levels: readonly VerificationLevel[] = releaseRealDiagnosticStoryImpact ? ['V3'] : levelsForStory(exactStory);
-      const action = 'Manual story review required because canonical story markdown changed; then run the recommended verification aliases.';
+      const action = 'Manual story review required because canonical story markdown changed; then run the governed verification entrypoint.';
       const surface = `story:${exactStory.storyId}`;
       const impactSource: VerificationStoryImpactSource = {
         changedFile,
@@ -1154,7 +1171,7 @@ export function buildVerificationPlan(input: BuildVerificationPlanInput = {}): V
 
     if (isRunnerContextOrCredentialPath(changedFile)) {
       mapped = true;
-      const action = 'Run npm run verify:real with runner, Context Store, and credential owner review.';
+      const action = `Run ${GOVERNED_REAL_VERIFY_COMMAND} with runner, Context Store, and credential owner review.`;
       const surface = 'runner/context-store/credentials';
       const impactedStories = stories.filter((story) => story.lane === 'backend-real');
       const impactSource: VerificationStoryImpactSource = {
@@ -1188,7 +1205,7 @@ export function buildVerificationPlan(input: BuildVerificationPlanInput = {}): V
 
     if (isReleaseRealOwnerDiagnosticPath(changedFile)) {
       mapped = true;
-      const action = 'Run npm run verify:release-real as a release backend-real owner diagnostic; this report is not release readiness.';
+      const action = `Run ${GOVERNED_RELEASE_REAL_VERIFY_COMMAND} as a release backend-real owner diagnostic; this report is not release readiness.`;
       const surface = 'release-real-owner';
       accumulator.levels.add('V3');
       accumulator.commands.add(RELEASE_REAL_VERIFY_COMMAND);

@@ -1,4 +1,3 @@
-import { createHash } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 
 import { describe, expect, it } from 'vitest';
@@ -11,10 +10,6 @@ import {
 
 const GENERATED_AT = '2026-04-27T12:00:00.000Z';
 const SECRET_VALUE = 'sk-live-do-not-print';
-
-function digest(value: string): string {
-  return `sha256:${createHash('sha256').update(value).digest('hex')}`;
-}
 
 function lease(overrides: Partial<GovernanceRuntimeLockLease>): GovernanceRuntimeLockLease {
   return {
@@ -97,19 +92,26 @@ describe('minimal lease/status shadow', () => {
       },
     });
     expect(shadow.port_family.owners.map((owner) => owner.lock_id)).toContain('fixed-local-ports');
-    expect(shadow.secret_profile_lock.profiles).toEqual([
-      {
-        name: 'BACKEND_REAL_API_KEY',
-        present: true,
-        digest: digest(SECRET_VALUE),
+    expect(shadow.secret_profile_lock.profile).toEqual({
+      present: true,
+      digest: expect.stringMatching(/^sha256:[a-f0-9]{64}$/),
+    });
+    expect(shadow.secret_profile_lock).not.toHaveProperty('profiles');
+
+    const rotated = buildMinimalLeaseStatusShadow({
+      activeLeases: [],
+      requiredSecretNames: ['BACKEND_REAL_API_KEY', 'MISSING_SECRET'],
+      env: {
+        BACKEND_REAL_API_KEY: 'sk-live-rotated-do-not-print',
       },
-      {
-        name: 'MISSING_SECRET',
-        present: false,
-        digest: null,
-      },
-    ]);
-    expect(JSON.stringify(shadow)).not.toContain(SECRET_VALUE);
+      generatedAt: GENERATED_AT,
+    });
+    expect(rotated.secret_profile_lock.profile.digest).toBe(shadow.secret_profile_lock.profile.digest);
+
+    const serialized = JSON.stringify(shadow);
+    expect(serialized).not.toContain('BACKEND_REAL_API_KEY');
+    expect(serialized).not.toContain('MISSING_SECRET');
+    expect(serialized).not.toContain(SECRET_VALUE);
     expect(validateMinimalLeaseStatusShadow(shadow)).toEqual({ ok: true, value: shadow });
   });
 
@@ -146,19 +148,17 @@ describe('minimal lease/status shadow', () => {
       ...shadow,
       secret_profile_lock: {
         ...shadow.secret_profile_lock,
-        profiles: [
-          {
-            name: 'BACKEND_REAL_API_KEY',
-            present: true,
-            digest: digest(SECRET_VALUE),
-            value: SECRET_VALUE,
-          },
-        ],
+        profiles: [{ name: 'BACKEND_REAL_API_KEY', value_digest: SECRET_VALUE }],
+        profile: {
+          ...shadow.secret_profile_lock.profile,
+          value: SECRET_VALUE,
+        },
       },
     })).toMatchObject({
       ok: false,
       failures: expect.arrayContaining([
-        expect.objectContaining({ path: 'shadow.secret_profile_lock.profiles[0].value' }),
+        expect.objectContaining({ path: 'shadow.secret_profile_lock.profiles' }),
+        expect.objectContaining({ path: 'shadow.secret_profile_lock.profile.value' }),
       ]),
     });
 

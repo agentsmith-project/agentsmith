@@ -22,6 +22,7 @@ import {
   type CurrentStatusProjectionPresentationStatus,
   type CurrentStatusProjectionReason,
 } from './current-status-projection-schema';
+import { redactSensitiveText } from './redaction';
 
 interface ParsedAggregateResult {
   ok: true;
@@ -323,7 +324,7 @@ function reasonForAggregate(input: {
 
   return {
     code: input.result.failureClass,
-    summary: input.result.summary,
+    summary: redactSensitiveText(input.result.summary),
     source_path: input.result.path,
   };
 }
@@ -386,7 +387,7 @@ function buildMissingAggregateProjection(input: {
     downstream_skipped: [],
     deepest_reason: {
       code: running ? 'aggregate_result_pending' : input.source.reasonCode,
-      summary: running ? 'Release aggregate result has not been produced yet.' : input.source.summary,
+      summary: running ? 'Release aggregate result has not been produced yet.' : redactSensitiveText(input.source.summary),
       source_path: input.source.path.length > 0 ? input.source.path : null,
     },
     safe_next_command: safeCommandForOwner(null, input.options.goal),

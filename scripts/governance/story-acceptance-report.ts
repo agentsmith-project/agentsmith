@@ -118,6 +118,47 @@ export interface BuildStoryAcceptanceReportOptions {
   verificationCatalogPath?: string;
 }
 
+const GOVERNED_VERIFY_RUN_COMMAND_BY_ALIAS: Record<string, string> = {
+  'npm run verify:quick': 'npm run verify -- --goal=debug --run',
+  'npm run verify:default': 'npm run verify -- --goal=pr --run',
+  'npm run verify:visual': 'npm run verify -- --goal=visual --run',
+  'npm run verify:real': 'npm run verify -- --goal=real --run',
+  'npm run verify:release-real': 'npm run verify -- --goal=release-real --run',
+};
+
+const GOVERNED_VERIFY_RUN_COMMAND_PRIORITY = [
+  'npm run verify:release-real',
+  'npm run verify:real',
+  'npm run verify:visual',
+  'npm run verify:default',
+  'npm run verify:quick',
+] as const;
+
+function cleanVerifyReportText(value: string): string {
+  return Object.entries(GOVERNED_VERIFY_RUN_COMMAND_BY_ALIAS).reduce(
+    (current, [alias, command]) => current.split(alias).join(command),
+    value,
+  );
+}
+
+function cleanVerifyReportTextOrNull(value: string | null): string | null {
+  return value === null ? null : cleanVerifyReportText(value);
+}
+
+function toReportRecommendedCommands(commands: readonly string[]): string[] {
+  if (commands.length === 0) {
+    return [];
+  }
+
+  for (const alias of GOVERNED_VERIFY_RUN_COMMAND_PRIORITY) {
+    if (commands.includes(alias)) {
+      return [GOVERNED_VERIFY_RUN_COMMAND_BY_ALIAS[alias]];
+    }
+  }
+
+  return commands.map(cleanVerifyReportText);
+}
+
 function toReportCard(card: VerificationStoryCard): StoryAcceptanceReportCard {
   return {
     story_id: card.storyId,
@@ -128,41 +169,45 @@ function toReportCard(card: VerificationStoryCard): StoryAcceptanceReportCard {
     source_file: card.sourceFile,
     risk: card.risk,
     risk_level: card.riskLevel,
-    risk_reason: card.riskReason,
+    risk_reason: cleanVerifyReportText(card.riskReason),
     risk_policy_refs: card.riskPolicyRefs,
     risk_policy_source: card.riskPolicySource,
     required_levels: card.requiredLevels,
     evidence_status: card.evidenceStatus,
     status: card.status,
-    failure_reason: card.failureReason,
+    failure_reason: cleanVerifyReportTextOrNull(card.failureReason),
     manual_review_required: card.manualReviewRequired,
     manual_review_reasons: card.manualReviewReasons,
-    level_statuses: card.levelStatuses,
+    level_statuses: card.levelStatuses.map((entry) => ({
+      level: entry.level,
+      status: entry.status,
+      reason: cleanVerifyReportText(entry.reason),
+    })),
     latest_evidence: {
       state: card.latestEvidence.state,
-      owner: card.latestEvidence.owner,
+      owner: cleanVerifyReportText(card.latestEvidence.owner),
       artifact_path: card.latestEvidence.artifactPath,
     },
     evidence_cards: card.evidenceCards.map((evidenceCard) => ({
       level: evidenceCard.level,
       state: evidenceCard.state,
       status: evidenceCard.status,
-      owner: evidenceCard.owner,
+      owner: cleanVerifyReportText(evidenceCard.owner),
       artifact_path: evidenceCard.artifactPath,
       artifact_path_template: evidenceCard.artifactPathTemplate,
       additional_artifact_path_templates: evidenceCard.additionalArtifactPathTemplates,
-      artifact_path_template_reason: evidenceCard.artifactPathTemplateReason,
-      note: evidenceCard.note,
+      artifact_path_template_reason: cleanVerifyReportTextOrNull(evidenceCard.artifactPathTemplateReason),
+      note: cleanVerifyReportText(evidenceCard.note),
     })),
     impact_sources: card.impactSources.map((source) => ({
       changed_file: source.changedFile,
       rule: source.rule,
       surface: source.surface,
-      action: source.action,
+      action: cleanVerifyReportText(source.action),
       manual_review_required: source.manualReviewRequired,
       broad_impact: source.broadImpact,
     })),
-    next_action: card.nextAction,
+    next_action: cleanVerifyReportText(card.nextAction),
   };
 }
 
@@ -174,7 +219,7 @@ function toChangedFileImpact(
     matched_rules: impact.matchedRules,
     affected_surfaces: impact.affectedSurfaces,
     story_ids: impact.storyIds,
-    action: impact.action,
+    action: cleanVerifyReportText(impact.action),
     manual_review_required: impact.manualReviewRequired,
     broad_impact: impact.broadImpact,
   };
@@ -224,17 +269,17 @@ export function buildStoryAcceptanceReport(
     changed_files: plan.changedFiles,
     risk_summary: {
       posture: plan.riskSummary.posture,
-      summary: plan.riskSummary.summary,
-      reasons: plan.riskSummary.reasons,
-      warnings: plan.riskSummary.warnings,
+      summary: cleanVerifyReportText(plan.riskSummary.summary),
+      reasons: plan.riskSummary.reasons.map(cleanVerifyReportText),
+      warnings: plan.riskSummary.warnings.map(cleanVerifyReportText),
       manual_review_required: plan.riskSummary.manualReviewRequired,
       broad_impact: plan.riskSummary.broadImpact,
     },
     required_levels: plan.requiredLevels,
-    recommended_commands: plan.recommendedCommands,
+    recommended_commands: toReportRecommendedCommands(plan.recommendedCommands),
     final_verdict: plan.finalVerdict,
-    next_action: plan.nextAction,
-    next_actions: plan.nextActions,
+    next_action: cleanVerifyReportText(plan.nextAction),
+    next_actions: plan.nextActions.map(cleanVerifyReportText),
     traceability_gaps: collectTraceabilityGaps(storyCards),
     report_root: reportRoot,
     ...(options.verificationCatalogPath

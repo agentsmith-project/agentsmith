@@ -24,7 +24,8 @@
 7. `product-terminology.md`
 8. `current-gate-manifest-contract.md`
 9. `current-gate-result-schema-contract.md`
-10. `user-story-contract-v1.md`
+10. `current-governance-observability-contract.md`
+11. `user-story-contract-v1.md`
 
 ## 参考与专题合同
 
@@ -65,6 +66,8 @@
   - stable gate ids、visual ownership、backend-real ownership、story evidence ownership
 - `current-gate-result-schema-contract.md`
   - canonical `result.json` location、snake_case schema、gate-level `failure_class`
+- `current-governance-observability-contract.md`
+  - status projection、run diagnostics artifacts、sentinel preflight、lease status shadow、redaction boundary
 - `user-story-contract-v1.md`
   - executable story truth、generated spec drift rules、story fingerprint semantics
 - `../testing/verification-campaigns-v1.md`

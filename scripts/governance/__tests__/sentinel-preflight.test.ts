@@ -1,3 +1,5 @@
+import { readFileSync } from 'node:fs';
+
 import { describe, expect, it } from 'vitest';
 
 import {
@@ -154,5 +156,12 @@ describe('sentinel preflight', () => {
     expect(rendered).not.toContain('sk-thrown-probe-raw-value');
     expect(rendered).not.toContain('ticket=thrown-ticket-raw-value');
     expect(findRedactionLeaks(rendered)).toEqual([]);
+  });
+
+  it('uses a fixed diagnostic for the direct entrypoint outer catch', () => {
+    const source = readFileSync('scripts/governance/sentinel-preflight.ts', 'utf8');
+
+    expect(source).toContain("process.stderr.write('[sentinel-preflight] diagnostic unavailable\\n')");
+    expect(source).not.toContain('error instanceof Error ? error.message : String(error)');
   });
 });

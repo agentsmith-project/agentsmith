@@ -124,6 +124,67 @@ if (existsSync(sourceManifestPath)) {
 NODE
 }
 
+gate_current_run_diagnostics_timestamp() {
+  node -e 'const now = new Date(); process.stdout.write(`${now.toISOString()} ${now.getTime()}`);'
+}
+
+gate_write_wrapped_run_diagnostics() {
+  local action="$1"
+  local event="${2:-}"
+  local reason_code="${3:-}"
+  local failure_reason="${4:-}"
+  local finished_at="${5:-}"
+  local finished_ms="${6:-}"
+
+  CURRENT_RUN_DIAGNOSTICS_ACTION="${action}" \
+  CURRENT_RUN_DIAGNOSTICS_RUN_ROOT="${EVIDENCE_DIR}" \
+  CURRENT_RUN_DIAGNOSTICS_RUN_ID="${RUN_ID}" \
+  CURRENT_RUN_DIAGNOSTICS_GATE_ID="${CURRENT_GATE_RESULT_GATE_ID}" \
+  CURRENT_RUN_DIAGNOSTICS_LINE_KIND="${CURRENT_GATE_RESULT_LINE_KIND}" \
+  CURRENT_RUN_DIAGNOSTICS_NPM_SCRIPT="${CURRENT_GATE_RESULT_NPM_SCRIPT}" \
+  CURRENT_RUN_DIAGNOSTICS_CI_JOB="${CURRENT_GATE_RESULT_CI_JOB}" \
+  CURRENT_RUN_DIAGNOSTICS_STAGE="execute" \
+  CURRENT_RUN_DIAGNOSTICS_EVENT="${event}" \
+  CURRENT_RUN_DIAGNOSTICS_REASON_CODE="${reason_code}" \
+  CURRENT_RUN_DIAGNOSTICS_FAILURE_REASON="${failure_reason}" \
+  CURRENT_RUN_DIAGNOSTICS_STARTED_AT="${RUN_DIAGNOSTICS_STARTED_AT:-}" \
+  CURRENT_RUN_DIAGNOSTICS_STARTED_MS="${RUN_DIAGNOSTICS_STARTED_MS:-}" \
+  CURRENT_RUN_DIAGNOSTICS_FINISHED_AT="${finished_at}" \
+  CURRENT_RUN_DIAGNOSTICS_FINISHED_MS="${finished_ms}" \
+  node --import tsx "${ROOT_DIR}/scripts/governance/run-diagnostics-writer.ts"
+}
+
+gate_write_wrapped_run_diagnostics_finish() {
+  local event="$1"
+  local reason_code="$2"
+  local failure_reason="$3"
+  local diagnostic_now
+  local finished_at
+  local finished_ms
+
+  if diagnostic_now="$(gate_current_run_diagnostics_timestamp)"; then
+    finished_at="${diagnostic_now% *}"
+    finished_ms="${diagnostic_now##* }"
+  else
+    finished_at="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+    finished_ms="${RUN_DIAGNOSTICS_STARTED_MS:-0}"
+  fi
+  gate_write_wrapped_run_diagnostics "wrapped-command-finish" "${event}" "${reason_code}" "${failure_reason}" "${finished_at}" "${finished_ms}"
+}
+
+RUN_DIAGNOSTICS_STARTED_AT=""
+RUN_DIAGNOSTICS_STARTED_MS=""
+if diagnostic_now="$(gate_current_run_diagnostics_timestamp)"; then
+  RUN_DIAGNOSTICS_STARTED_AT="${diagnostic_now% *}"
+  RUN_DIAGNOSTICS_STARTED_MS="${diagnostic_now##* }"
+else
+  RUN_DIAGNOSTICS_STARTED_AT="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+  RUN_DIAGNOSTICS_STARTED_MS="0"
+fi
+if ! gate_write_wrapped_run_diagnostics "wrapped-command-start"; then
+  printf '[current-gate-result] warning: failed to write run diagnostics start artifact\n' >&2
+fi
+
 set +e
 "$@"
 status=$?
@@ -145,14 +206,23 @@ if [[ "${status}" -eq 0 ]]; then
       elif [[ -n "${validation_error}" ]]; then
         validation_summary="${validation_error}"
       fi
+      if ! gate_write_wrapped_run_diagnostics_finish "failed" "" "wrapped_evidence_validation_failed"; then
+        printf '[current-gate-result] warning: failed to write run diagnostics validation-failure artifact\n' >&2
+      fi
       gate_record_failure "${EVIDENCE_DIR}" "${validation_failure_class}" "evidence" "${validation_summary}"
       exit 1
     fi
     rm -f "${validation_log}"
   fi
+  if ! gate_write_wrapped_run_diagnostics_finish "finished" "wrapped_command_completed" ""; then
+    printf '[current-gate-result] warning: failed to write run diagnostics finish artifact\n' >&2
+  fi
   gate_record_success "${EVIDENCE_DIR}" "${LINE_KIND}"
   exit 0
 fi
 
+if ! gate_write_wrapped_run_diagnostics_finish "failed" "" "wrapped_command_exited_nonzero"; then
+  printf '[current-gate-result] warning: failed to write run diagnostics failure artifact\n' >&2
+fi
 gate_record_failure "${EVIDENCE_DIR}" "${CURRENT_GATE_RESULT_FAILURE_CLASSIFICATION:-scenario_assertion_failed}" "execute" "wrapped command exited with status ${status}"
 exit "${status}"

@@ -931,7 +931,135 @@ describe('verify human entrypoints', () => {
     }
   });
 
-  it('writes the report before executing recommended aliases when --run is explicit', () => {
+  it('writes a fail-closed report and refuses --run without an explicit --goal', () => {
+    const root = mkdtempSync(join(tmpdir(), 'agentsmith-verify-run-missing-goal-'));
+    const logPath = join(root, 'npm.log');
+    try {
+      writeFakeNpm(root, logPath);
+
+      const result = spawnSync('npx', [
+        'tsx',
+        'scripts/governance/run-verify.ts',
+        '--run',
+        '--report-root',
+        root,
+        '--changed-file',
+        'src/components/chat/ChatMainPane.tsx',
+      ], {
+        cwd: process.cwd(),
+        env: {
+          ...process.env,
+          PATH: `${root}:${process.env.PATH ?? ''}`,
+        },
+        encoding: 'utf8',
+      });
+
+      expect(result.status).toBe(1);
+      expect(result.stderr).toContain('--run requires an explicit --goal');
+      expect(existsSync(join(root, 'story-acceptance-report.json'))).toBe(true);
+      expect(existsSync(join(root, 'verification-catalog.json'))).toBe(true);
+      expect(existsSync(logPath)).toBe(false);
+
+      const report = JSON.parse(readFileSync(join(root, 'story-acceptance-report.json'), 'utf8')) as {
+        final_verdict: string;
+        risk_summary: { warnings: string[] };
+      };
+      expect(report.final_verdict).toBe('not_evaluated_fail_closed');
+      expect(report.risk_summary.warnings.join('\n')).toContain('--run requires an explicit --goal');
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it('does not implicitly execute verify:real for pr/debug/visual run goals', () => {
+    const root = mkdtempSync(join(tmpdir(), 'agentsmith-verify-run-real-blocked-'));
+    const logPath = join(root, 'npm.log');
+    try {
+      writeFakeNpm(root, logPath);
+
+      const result = spawnSync('npx', [
+        'tsx',
+        'scripts/governance/run-verify.ts',
+        '--goal=pr',
+        '--run',
+        '--report-root',
+        root,
+        '--changed-file',
+        'e2e/stories/backend-real/notebook-first-success.story.md',
+      ], {
+        cwd: process.cwd(),
+        env: {
+          ...process.env,
+          PATH: `${root}:${process.env.PATH ?? ''}`,
+        },
+        encoding: 'utf8',
+      });
+
+      expect(result.status).toBe(1);
+      expect(result.stderr).toContain('--goal=pr --run cannot execute npm run verify:real');
+      expect(existsSync(join(root, 'story-acceptance-report.json'))).toBe(true);
+      expect(existsSync(join(root, 'verification-catalog.json'))).toBe(true);
+      expect(existsSync(logPath)).toBe(false);
+
+      const report = JSON.parse(readFileSync(join(root, 'story-acceptance-report.json'), 'utf8')) as {
+        final_verdict: string;
+        recommended_commands: string[];
+        risk_summary: { warnings: string[] };
+      };
+      expect(report.final_verdict).toBe('not_evaluated_fail_closed');
+      expect(report.recommended_commands).toContain('npm run verify:real');
+      expect(report.risk_summary.warnings.join('\n')).toContain('--goal=pr --run cannot execute npm run verify:real');
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it('does not implicitly execute release-real diagnostics for non-release-real run goals', () => {
+    const root = mkdtempSync(join(tmpdir(), 'agentsmith-verify-run-release-real-blocked-'));
+    const logPath = join(root, 'npm.log');
+    try {
+      writeFakeNpm(root, logPath);
+
+      const result = spawnSync('npx', [
+        'tsx',
+        'scripts/governance/run-verify.ts',
+        '--goal=visual',
+        '--run',
+        '--report-root',
+        root,
+        '--changed-file',
+        'scripts/backend-real-full-gate.sh',
+      ], {
+        cwd: process.cwd(),
+        env: {
+          ...process.env,
+          PATH: `${root}:${process.env.PATH ?? ''}`,
+        },
+        encoding: 'utf8',
+      });
+
+      expect(result.status).toBe(1);
+      expect(result.stderr).toContain('--goal=visual --run cannot execute npm run verify:release-real');
+      expect(existsSync(join(root, 'story-acceptance-report.json'))).toBe(true);
+      expect(existsSync(join(root, 'verification-catalog.json'))).toBe(true);
+      expect(existsSync(logPath)).toBe(false);
+
+      const report = JSON.parse(readFileSync(join(root, 'story-acceptance-report.json'), 'utf8')) as {
+        final_verdict: string;
+        recommended_commands: string[];
+        release_verdict: boolean;
+        risk_summary: { warnings: string[] };
+      };
+      expect(report.final_verdict).toBe('not_evaluated_fail_closed');
+      expect(report.recommended_commands).toContain('npm run verify:release-real');
+      expect(report.release_verdict).toBe(false);
+      expect(report.risk_summary.warnings.join('\n')).toContain('--goal=visual --run cannot execute npm run verify:release-real');
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it('writes the report before executing recommended aliases when --run and a safe goal are explicit', () => {
     const root = mkdtempSync(join(tmpdir(), 'agentsmith-verify-run-fake-npm-'));
     const logPath = join(root, 'npm.log');
     try {
@@ -940,6 +1068,7 @@ describe('verify human entrypoints', () => {
       const result = spawnSync('npx', [
         'tsx',
         'scripts/governance/run-verify.ts',
+        '--goal=visual',
         '--run',
         '--report-root',
         root,
@@ -966,6 +1095,92 @@ describe('verify human entrypoints', () => {
     }
   });
 
+  it('executes verify:real only for explicit real run goal after writing reports', () => {
+    const root = mkdtempSync(join(tmpdir(), 'agentsmith-verify-run-real-allowed-'));
+    const logPath = join(root, 'npm.log');
+    try {
+      writeReportAwareFakeNpm(root, logPath);
+
+      const result = spawnSync('npx', [
+        'tsx',
+        'scripts/governance/run-verify.ts',
+        '--goal=real',
+        '--run',
+        '--report-root',
+        root,
+        '--changed-file',
+        'e2e/stories/backend-real/notebook-first-success.story.md',
+      ], {
+        cwd: process.cwd(),
+        env: {
+          ...process.env,
+          PATH: `${root}:${process.env.PATH ?? ''}`,
+        },
+        encoding: 'utf8',
+      });
+
+      expect(result.status).toBe(0);
+      expect(existsSync(join(root, 'story-acceptance-report.json'))).toBe(true);
+      expect(existsSync(join(root, 'verification-catalog.json'))).toBe(true);
+      expect(readFileSync(logPath, 'utf8').trim().split('\n')).toEqual([
+        'run verify:quick',
+        'run verify:default',
+        'run verify:real',
+      ]);
+
+      const report = JSON.parse(readFileSync(join(root, 'story-acceptance-report.json'), 'utf8')) as {
+        final_verdict: string;
+        release_verdict: boolean;
+      };
+      expect(report.final_verdict).toBe('delegated_to_executed_verification_commands');
+      expect(report.release_verdict).toBe(false);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it('keeps release-real run as an owner diagnostic without producing a release verdict', () => {
+    const root = mkdtempSync(join(tmpdir(), 'agentsmith-verify-run-release-real-allowed-'));
+    const logPath = join(root, 'npm.log');
+    try {
+      writeReportAwareFakeNpm(root, logPath);
+
+      const result = spawnSync('npx', [
+        'tsx',
+        'scripts/governance/run-verify.ts',
+        '--goal=release-real',
+        '--run',
+        '--report-root',
+        root,
+        '--changed-file',
+        'e2e/stories/backend-real/release-user-story-end-to-end.story.md',
+      ], {
+        cwd: process.cwd(),
+        env: {
+          ...process.env,
+          PATH: `${root}:${process.env.PATH ?? ''}`,
+        },
+        encoding: 'utf8',
+      });
+
+      expect(result.status).toBe(0);
+      expect(readFileSync(logPath, 'utf8').trim()).toBe('run verify:release-real');
+
+      const report = JSON.parse(readFileSync(join(root, 'story-acceptance-report.json'), 'utf8')) as {
+        final_verdict: string;
+        recommended_commands: string[];
+        release_verdict: boolean;
+        not_release_readiness: boolean;
+      };
+      expect(report.final_verdict).toBe('delegated_to_executed_verification_commands');
+      expect(report.recommended_commands).toEqual(['npm run verify:release-real']);
+      expect(report.release_verdict).toBe(false);
+      expect(report.not_release_readiness).toBe(true);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
   it('does not execute verify aliases for release/deploy V4 impact even when --run is explicit', () => {
     const root = mkdtempSync(join(tmpdir(), 'agentsmith-verify-release-run-fake-npm-'));
     const logPath = join(root, 'npm.log');
@@ -975,6 +1190,7 @@ describe('verify human entrypoints', () => {
       const result = spawnSync('npx', [
         'tsx',
         'scripts/governance/run-verify.ts',
+        '--goal=pr',
         '--run',
         '--report-root',
         root,

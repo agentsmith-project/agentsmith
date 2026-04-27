@@ -1,18 +1,22 @@
 import {
   readReleaseStatus,
   renderReleaseStatus,
+  resolveCurrentGitSha,
 } from './release-summary';
+import { buildStatusProjection } from './status-projection';
 
 function isCliEntrypoint(fileName: string): boolean {
   return Boolean(process.argv[1]?.replaceAll('\\', '/').endsWith(`/governance/${fileName}`));
 }
 
-function parseArgs(argv: readonly string[]): { latestPath?: string; campaignRoot?: string } {
-  const options: { latestPath?: string; campaignRoot?: string } = {};
+function parseArgs(argv: readonly string[]): { latestPath?: string; campaignRoot?: string; json?: boolean } {
+  const options: { latestPath?: string; campaignRoot?: string; json?: boolean } = {};
   for (let index = 0; index < argv.length; index += 1) {
     const arg = argv[index];
     const next = argv[index + 1];
-    if (arg === '--latest-path' && next) {
+    if (arg === '--json') {
+      options.json = true;
+    } else if (arg === '--latest-path' && next) {
       options.latestPath = next;
       index += 1;
     } else if (arg.startsWith('--latest-path=')) {
@@ -29,9 +33,35 @@ function parseArgs(argv: readonly string[]): { latestPath?: string; campaignRoot
   return options;
 }
 
+function tryResolveCurrentGitSha(): string | null {
+  try {
+    return resolveCurrentGitSha();
+  } catch {
+    return null;
+  }
+}
+
 export function runReleaseStatus(argv: readonly string[] = process.argv.slice(2)): number {
   try {
-    const status = readReleaseStatus(parseArgs(argv));
+    const options = parseArgs(argv);
+    if (options.json) {
+      const status = options.campaignRoot ? null : readReleaseStatus(options);
+      const campaignRoot = options.campaignRoot
+        ?? (status?.kind === 'ready' ? status.summary.campaign_root : null);
+      const runId = status?.kind === 'ready' ? status.summary.campaign_run_id : null;
+      const evidenceGitSha = status?.kind === 'ready' ? status.latest?.git_sha ?? null : null;
+      const projection = buildStatusProjection({
+        goal: 'release-ready',
+        campaignRoot,
+        runId,
+        currentGitSha: tryResolveCurrentGitSha(),
+        evidenceGitSha,
+      });
+      process.stdout.write(`${JSON.stringify(projection, null, 2)}\n`);
+      return 0;
+    }
+
+    const status = readReleaseStatus(options);
     process.stdout.write(renderReleaseStatus(status));
     return status.kind === 'ready' ? 0 : 1;
   } catch (error) {

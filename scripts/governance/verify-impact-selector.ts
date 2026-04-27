@@ -204,6 +204,8 @@ const COMMAND_ORDER = [
   'npm run verify:real',
   'npm run verify:release-real',
 ] as const;
+const REAL_VERIFY_COMMAND = 'npm run verify:real';
+const RELEASE_REAL_VERIFY_COMMAND = 'npm run verify:release-real';
 
 const MANUAL_REVIEW_REASONS = {
   storyMarkdownChanged: 'story markdown changed',
@@ -252,6 +254,31 @@ function orderedCommands(values: Iterable<string>): string[] {
 function orderedManualReviewReasons(values: Iterable<StoryManualReviewReason>): string[] {
   const selected = new Set(values);
   return MANUAL_REVIEW_REASON_ORDER.filter((reason) => selected.has(reason));
+}
+
+export function verificationRunContractFailure(input: {
+  goal: VerificationGoal;
+  goalExplicit?: boolean;
+  run?: boolean;
+  recommendedCommands: readonly string[];
+}): string | null {
+  if (!input.run) {
+    return null;
+  }
+
+  if (!input.goalExplicit) {
+    return '--run requires an explicit --goal=<debug|pr|visual|real|release-real>; no verification aliases were executed.';
+  }
+
+  const blockedCommands = input.recommendedCommands.filter((command) => (
+    (command === REAL_VERIFY_COMMAND && input.goal !== 'real')
+    || (command === RELEASE_REAL_VERIFY_COMMAND && input.goal !== 'release-real')
+  ));
+  if (blockedCommands.length === 0) {
+    return null;
+  }
+
+  return `--goal=${input.goal} --run cannot execute ${blockedCommands.join(', ')}; use --goal=real --run for npm run verify:real or --goal=release-real --run for the release-real owner diagnostic.`;
 }
 
 function normalizeRepoPath(value: string): string {
@@ -344,7 +371,7 @@ function commandsForLevels(levels: Iterable<VerificationLevel>): readonly string
     commands.add('npm run verify:visual');
   }
   if (selected.has('V3')) {
-    commands.add('npm run verify:real');
+    commands.add(REAL_VERIFY_COMMAND);
   }
   return orderedCommands(commands);
 }
@@ -908,7 +935,7 @@ function addGoalDefaults(accumulator: ImpactAccumulator, goal: VerificationGoal)
     for (const level of levels) {
       accumulator.levels.add(level);
     }
-    accumulator.commands.add('npm run verify:release-real');
+    accumulator.commands.add(RELEASE_REAL_VERIFY_COMMAND);
   } else {
     addLevels(accumulator, levels);
   }
@@ -1164,7 +1191,7 @@ export function buildVerificationPlan(input: BuildVerificationPlanInput = {}): V
       const action = 'Run npm run verify:release-real as a release backend-real owner diagnostic; this report is not release readiness.';
       const surface = 'release-real-owner';
       accumulator.levels.add('V3');
-      accumulator.commands.add('npm run verify:release-real');
+      accumulator.commands.add(RELEASE_REAL_VERIFY_COMMAND);
       accumulator.surfaces.add(surface);
       accumulator.reasons.push(`${changedFile} owns the backend-real release diagnostic gate.`);
       pushUnique(accumulator.nextActions, action);
@@ -1262,6 +1289,15 @@ export function buildVerificationPlan(input: BuildVerificationPlanInput = {}): V
 
   const requiredLevels = orderedLevels(accumulator.levels);
   const recommendedCommands = orderedCommands(accumulator.commands);
+  const runContractFailure = verificationRunContractFailure({
+    goal,
+    goalExplicit: input.goalExplicit,
+    run: input.run,
+    recommendedCommands,
+  });
+  if (runContractFailure) {
+    pushUnique(accumulator.warnings, `Run contract blocked execution: ${runContractFailure}`);
+  }
   const affectedSurfaces = uniqueSorted(accumulator.surfaces);
   const storyCards = [...accumulator.storyCards.values()]
     .map((card) => storyCardToImmutable(card, {
@@ -1282,7 +1318,7 @@ export function buildVerificationPlan(input: BuildVerificationPlanInput = {}): V
   const changedFileImpacts = [...accumulator.changedFileImpacts.values()]
     .map(changedFileImpactToImmutable)
     .sort((left, right) => left.changedFile.localeCompare(right.changedFile));
-  const finalVerdict = mode === 'dry-run'
+  const finalVerdict = mode === 'dry-run' || runContractFailure
     ? 'not_evaluated_fail_closed'
     : recommendedCommands.length > 0
       ? 'delegated_to_executed_verification_commands'

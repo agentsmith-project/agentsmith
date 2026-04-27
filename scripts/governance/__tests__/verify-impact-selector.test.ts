@@ -557,6 +557,81 @@ describe('verify impact selector', () => {
     });
   });
 
+  it('marks --run without explicit goal as fail-closed and keeps the report non-release', () => {
+    const plan = buildVerificationPlan({
+      run: true,
+      changedFiles: ['src/components/chat/ChatMainPane.tsx'],
+    });
+
+    expect(plan.mode).toBe('run');
+    expect(plan.finalVerdict).toBe('not_evaluated_fail_closed');
+    expect(plan.riskSummary.warnings.join('\n')).toContain('--run requires an explicit --goal');
+    expect(plan.releaseVerdict).toBe(false);
+  });
+
+  it.each(['debug', 'pr', 'visual'] as const)(
+    'blocks implicit verify:real execution for %s run goal while preserving required evidence',
+    (goal) => {
+      const plan = buildVerificationPlan({
+        goal,
+        goalExplicit: true,
+        run: true,
+        changedFiles: ['src/lib/api/endpoints/context.ts'],
+      });
+
+      expect(plan.recommendedCommands).toContain('npm run verify:real');
+      expect(plan.finalVerdict).toBe('not_evaluated_fail_closed');
+      expect(plan.riskSummary.warnings.join('\n')).toContain(`--goal=${goal} --run cannot execute npm run verify:real`);
+      expect(plan.releaseVerdict).toBe(false);
+    },
+  );
+
+  it('allows verify:real execution only for explicit real run goal', () => {
+    const plan = buildVerificationPlan({
+      goal: 'real',
+      goalExplicit: true,
+      run: true,
+      changedFiles: ['src/lib/api/endpoints/context.ts'],
+    });
+
+    expect(plan.recommendedCommands).toContain('npm run verify:real');
+    expect(plan.finalVerdict).toBe('delegated_to_executed_verification_commands');
+    expect(plan.riskSummary.warnings.join('\n')).not.toContain('cannot execute npm run verify:real');
+    expect(plan.releaseVerdict).toBe(false);
+  });
+
+  it.each(['debug', 'pr', 'visual'] as const)(
+    'blocks implicit release-real diagnostic execution for %s run goal',
+    (goal) => {
+      const plan = buildVerificationPlan({
+        goal,
+        goalExplicit: true,
+        run: true,
+        changedFiles: ['scripts/backend-real-full-gate.sh'],
+      });
+
+      expect(plan.recommendedCommands).toContain('npm run verify:release-real');
+      expect(plan.finalVerdict).toBe('not_evaluated_fail_closed');
+      expect(plan.riskSummary.warnings.join('\n')).toContain(`--goal=${goal} --run cannot execute npm run verify:release-real`);
+      expect(plan.releaseVerdict).toBe(false);
+    },
+  );
+
+  it('keeps release-real run as a diagnostic plan without creating a release verdict', () => {
+    const plan = buildVerificationPlan({
+      goal: 'release-real',
+      goalExplicit: true,
+      run: true,
+      changedFiles: ['e2e/stories/backend-real/release-user-story-end-to-end.story.md'],
+    });
+
+    expect(plan.recommendedCommands).toEqual(['npm run verify:release-real']);
+    expect(plan.requiredLevels).toEqual(['V3']);
+    expect(plan.finalVerdict).toBe('delegated_to_executed_verification_commands');
+    expect(plan.releaseVerdict).toBe(false);
+    expect(plan.nextAction).toContain('not release readiness');
+  });
+
   it('carries trace spec story binding sources into the acceptance report projection', () => {
     const plan = buildVerificationPlan({
       changedFiles: ['e2e/integration-chat.spec.ts'],

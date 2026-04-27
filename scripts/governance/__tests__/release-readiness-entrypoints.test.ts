@@ -166,6 +166,62 @@ describe('release readiness human entrypoints', () => {
     }
   });
 
+  it('uses the governed release-real run command in release summary next actions', () => {
+    const root = mkdtempSync(join(tmpdir(), 'agentsmith-release-summary-release-real-command-'));
+    const latestPath = join(root, 'latest.json');
+    try {
+      writeTerminalResult(root, {
+        status: 'failed',
+        failure_class: 'product_regression',
+        summary: 'Campaign step gate-release did not pass.',
+      });
+
+      const summary = writeReleaseSummaryForCampaign({
+        campaignRoot: root,
+        latestPath,
+        resolveGitSha: () => VALID_TEST_GIT_SHA,
+      });
+
+      expect(summary.blocked_step).toBe('gate-release');
+      expect(summary.next_action).toContain('npm run verify -- --goal=release-real --run');
+      expect(summary.next_action).not.toContain('npm run verify:release-real');
+      expect(readFileSync(join(root, 'summary.md'), 'utf8')).not.toContain('npm run verify:release-real');
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it('fails closed instead of rendering stale release-real summary next actions', () => {
+    const root = mkdtempSync(join(tmpdir(), 'agentsmith-release-status-stale-release-real-command-'));
+    const latestPath = join(root, 'latest.json');
+    try {
+      writeTerminalResult(root, {
+        status: 'failed',
+        failure_class: 'product_regression',
+        summary: 'Campaign step gate-release did not pass.',
+      });
+      writeSummaryCache(root, {
+        automated_release_verdict: 'FAILED',
+        status: 'failed',
+        failure_class: 'product_regression',
+        blocked_step: 'gate-release',
+        why: 'Campaign step gate-release did not pass.',
+        next_action: 'Fix the product regression, run npm run verify:release-real, then rerun npm run release:ready.',
+      });
+      writeLatestPointer(latestPath, root);
+
+      const status = readReleaseStatus({ latestPath });
+      expect(status.kind).toBe('malformed');
+
+      const output = renderReleaseStatus(status);
+      expect(output).toContain('Automated release verdict: UNKNOWN');
+      expect(output).toContain('next_action');
+      expect(output).not.toContain('npm run verify:release-real');
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
   it('renders release status from latest summary only and gives a next action when latest is missing', () => {
     const root = mkdtempSync(join(tmpdir(), 'agentsmith-release-status-'));
     const latestPath = join(root, 'missing-latest.json');

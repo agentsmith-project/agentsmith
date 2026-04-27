@@ -204,6 +204,12 @@ function readTerminalResult(campaignRoot: string): ParsedTerminalResult {
   ) {
     throw new Error('release terminal result failure_class is not a current gate result failure class.');
   }
+  if (result.status === 'passed' && result.failure_class !== 'none') {
+    throw new Error('release terminal result is inconsistent: passed result must use failure_class none.');
+  }
+  if (result.status === 'failed' && result.failure_class === 'none') {
+    throw new Error('release terminal result is inconsistent: failed result must use a non-none failure_class.');
+  }
   if (typeof result.stage !== 'string' || typeof result.summary !== 'string') {
     throw new Error('release terminal result must include stage and summary strings.');
   }
@@ -240,7 +246,7 @@ function nextActionForFailure(
 
   const ownerCommandByStep: Record<string, string> = {
     'lane-visual': 'npm run verify:visual',
-    'gate-release': 'npm run verify:release-real',
+    'gate-release': 'npm run verify -- --goal=release-real --run',
     'lane-demo-rehearsal': 'npm run rehearse:demo',
     'lane-cluster-rehearsal': 'npm run rehearse:cluster',
     'gate-fast': 'npm run verify:quick',
@@ -430,6 +436,7 @@ function summaryMatchesTerminal(args: {
   const expectedVerdict = terminalStatus === 'passed' ? 'PASSED' : 'FAILED';
   const expectedBlockedStep = inferBlockedStep(terminalStatus, args.terminalResult.summary as string);
   const expectedTerminalPath = terminalResultPath(args.campaignRoot);
+  const expectedNextAction = nextActionForFailure(terminalFailureClass, expectedBlockedStep);
 
   const checks: Array<[boolean, string]> = [
     [resolve(args.summary.campaign_root) === resolve(args.campaignRoot), 'campaign_root'],
@@ -443,6 +450,7 @@ function summaryMatchesTerminal(args: {
     [resolve(args.summary.summary_json_path) === resolve(args.summaryPath), 'summary_json_path'],
     [resolve(args.summary.evidence_package) === resolve(args.campaignRoot), 'evidence_package'],
     [args.summary.blocked_step === expectedBlockedStep, 'blocked_step'],
+    [args.summary.next_action === expectedNextAction, 'next_action'],
   ];
 
   const failed = checks.find(([ok]) => !ok);

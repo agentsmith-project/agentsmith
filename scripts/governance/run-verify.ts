@@ -3,6 +3,7 @@ import path from 'node:path';
 
 import {
   buildVerificationPlan,
+  verificationRunContractFailure,
   type BuildVerificationPlanInput,
   type VerificationGoal,
   type VerificationPlan,
@@ -76,7 +77,7 @@ function defaultReportRoot(runId = createVerificationRunId()): string {
 
 function humanizeVerdict(verdict: string): string {
   if (verdict === 'not_evaluated_fail_closed') {
-    return 'not evaluated (fail-closed dry-run)';
+    return 'not evaluated (fail-closed)';
   }
   if (verdict === 'delegated_to_executed_verification_commands') {
     return 'delegated to the executed verification commands';
@@ -393,6 +394,17 @@ export function runVerificationCli(argv: readonly string[] = process.argv.slice(
 
     if (plan.mode === 'dry-run') {
       return 0;
+    }
+
+    const runContractFailure = verificationRunContractFailure({
+      goal: options.goal,
+      goalExplicit: options.goalExplicit,
+      run: options.run,
+      recommendedCommands: plan.recommendedCommands,
+    });
+    if (runContractFailure) {
+      process.stderr.write(`[verify] ${runContractFailure}\n`);
+      return 1;
     }
 
     for (const command of plan.recommendedCommands) {

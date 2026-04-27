@@ -1,10 +1,14 @@
-import { readFileSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { dirname, join } from 'node:path';
 
 import { describe, expect, it } from 'vitest';
 
 import {
   ORDERED_SENTINEL_PROBES,
+  SENTINEL_PROFILE_PROBE_MATRIX,
   SENTINEL_PROFILE_PROBES,
+  buildSentinelPreflightEnv,
   renderSentinelPreflightOutput,
   runSentinelPreflight,
   runSentinelPreflightCli,
@@ -28,31 +32,101 @@ function probeMap(
   );
 }
 
+function probePresenceKeys(output: { presence: Record<string, boolean> }): string[] {
+  return Object.keys(output.presence)
+    .filter((key) => key.startsWith('probe.'))
+    .sort((left, right) => left.localeCompare(right));
+}
+
+function writeEnv(root: string, path: string, lines: readonly string[]): void {
+  const fullPath = join(root, path);
+  mkdirSync(dirname(fullPath), { recursive: true });
+  writeFileSync(fullPath, `${lines.join('\n')}\n`);
+}
+
+function writeCurrentHydrationShape(root: string): void {
+  writeEnv(root, 'infra/runtime/presets.env', [
+    'PRESET_ENDPOINT_MODEL=placeholder-model',
+    'PRESET_OPENAI_ENDPOINT_BASE_URL=https://openai-compatible.provider.example/v1',
+  ]);
+  writeEnv(root, 'infra/runtime/backend-real.env', [
+    'INTEGRATION_API_PORT=20040',
+    'INTEGRATION_WEB_PORT=3041',
+  ]);
+  writeEnv(root, '.env.backend-real', [
+    'PRESET_ENDPOINT_API_KEY=sk-test-current-hydration-value',
+    'PRESET_ENDPOINT_MODEL=test-current-hydration-model',
+  ]);
+  writeEnv(root, 'infra/flows/demo-rehearsal.env', [
+    'LOCAL_KIND_CLUSTER_NAME=agentsmith-demo',
+    'LOCAL_KIND_REGISTRY_HOST=127.0.0.1',
+    'LOCAL_KIND_REGISTRY_HOST_PORT=5003',
+    'FLOW_SITE_ENV_PUBLIC_WEB_BASE_URL=http://localhost:33001',
+    'FLOW_SITE_ENV_PUBLIC_API_BASE_URL=http://localhost:40000',
+  ]);
+  writeEnv(root, 'infra/flows/cluster-rehearsal.env', [
+    'LOCAL_KIND_CLUSTER_NAME=agentsmith-cluster',
+    'LOCAL_KIND_REGISTRY_HOST=127.0.0.1',
+    'LOCAL_KIND_REGISTRY_HOST_PORT=5002',
+    'CLUSTER_REHEARSAL_REGISTRY_HOST=localhost:5002',
+    'CLUSTER_REHEARSAL_K8S_REGISTRY_HOST=agentsmith-cluster-registry:5000',
+    'FLOW_SITE_ENV_PUBLIC_WEB_BASE_URL=http://localhost:43001',
+    'FLOW_SITE_ENV_PUBLIC_API_BASE_URL=http://localhost:41000/api/v1',
+  ]);
+  writeEnv(root, 'artifacts/runtime/scenario/demo-rehearsal/config/site.env', [
+    'MBOS_UNIVERSAL_PROXY_DATA_TOKEN=demo-proxy-data-token',
+    'PRESET_ENDPOINT_API_KEY=sk-test-demo-rehearsal-value',
+    'PRESET_ENDPOINT_MODEL=test-demo-rehearsal-model',
+  ]);
+  writeEnv(root, 'artifacts/runtime/scenario/cluster-rehearsal/config/site.env', [
+    'MBOS_UNIVERSAL_PROXY_DATA_TOKEN=cluster-proxy-data-token',
+    'PRESET_ENDPOINT_API_KEY=sk-test-cluster-rehearsal-value',
+    'PRESET_ENDPOINT_MODEL=test-cluster-rehearsal-model',
+  ]);
+  writeEnv(root, 'artifacts/runtime/scenario/cluster-rehearsal/config/registry.env', [
+    'REGISTRY_HOST=localhost:5002',
+    'K8S_REGISTRY_HOST=agentsmith-cluster-registry:5000',
+  ]);
+  writeEnv(root, 'env/registry.env', [
+    'REGISTRY_HOST=localhost:5002',
+    'K8S_REGISTRY_HOST=agentsmith-cluster-registry:5000',
+  ]);
+}
+
 describe('sentinel preflight', () => {
   it.each([
     ['release-ready', [
+      'keycloak_redirect_bases_present',
       'provider_profile_present',
       'secret_profile_present',
     ]],
     ['verify-real', [
+      'keycloak_redirect_bases_present',
       'provider_profile_present',
       'secret_profile_present',
     ]],
     ['verify-release-real', [
+      'keycloak_redirect_bases_present',
       'provider_profile_present',
       'secret_profile_present',
     ]],
     ['demo-rehearsal', [
+      'keycloak_redirect_bases_present',
+      'provider_profile_present',
+      'secret_profile_present',
       'kind_available',
       'registry_available',
     ]],
     ['cluster-rehearsal', [
+      'keycloak_redirect_bases_present',
+      'provider_profile_present',
+      'secret_profile_present',
       'kind_available',
       'registry_available',
     ]],
   ] satisfies Array<[SentinelProfile, SentinelProbeName[]]>)(
-    'runs only the necessary %s sentinel probes',
-    async (profile, expectedProbes) => {
+    'reports the full P0 probe catalog for %s while classifying required probes',
+    async (profile, expectedRequiredProbes) => {
       const calls: SentinelProbeName[] = [];
       const result = await runSentinelPreflight({
         profile,
@@ -73,13 +147,20 @@ describe('sentinel preflight', () => {
       });
 
       expect(result.exitCode).toBe(0);
-      expect(SENTINEL_PROFILE_PROBES[profile]).toEqual(expectedProbes);
-      expect(calls).toEqual(expectedProbes);
-      expect(calls).not.toEqual([...ORDERED_SENTINEL_PROBES]);
+      expect(SENTINEL_PROFILE_PROBES[profile]).toEqual(expectedRequiredProbes);
+      expect(calls).toEqual([...ORDERED_SENTINEL_PROBES]);
+      expect(probePresenceKeys(result.output)).toEqual(
+        ORDERED_SENTINEL_PROBES
+          .map((name) => `probe.${name}`)
+          .sort((left, right) => left.localeCompare(right)),
+      );
+      for (const name of ORDERED_SENTINEL_PROBES) {
+        expect(SENTINEL_PROFILE_PROBE_MATRIX[profile][name]).toMatch(/^(required|advisory)$/);
+      }
     },
   );
 
-  it('runs fixture-friendly probes and fail-fast stops at the first failed profile diagnostic', async () => {
+  it('exits 1 when a required profile probe fails and still emits the full catalog', async () => {
     const calls: SentinelProbeName[] = [];
     const result = await runSentinelPreflight({
       profile: 'release-ready',
@@ -93,12 +174,162 @@ describe('sentinel preflight', () => {
     });
 
     expect(result.exitCode).toBe(1);
-    expect(calls).toEqual([
-      'provider_profile_present',
-      'secret_profile_present',
-    ]);
+    expect(calls).toEqual([...ORDERED_SENTINEL_PROBES]);
     expect(result.output.presence['probe.secret_profile_present']).toBe(false);
     expect(result.output.presence['probe.provider_profile_present']).toBe(true);
+    expect(probePresenceKeys(result.output)).toHaveLength(ORDERED_SENTINEL_PROBES.length);
+  });
+
+  it('does not fail when advisory probes are missing from the current wrapper-visible env', async () => {
+    const calls: SentinelProbeName[] = [];
+    const result = await runSentinelPreflight({
+      profile: 'verify-real',
+      env: {},
+      probes: probeMap({
+        internal_execution_ws_base_url_correct: false,
+        proxy_data_token_present: false,
+        ticket_auth_present: false,
+        keycloak_redirect_bases_present: true,
+        dns_gateway_reachable: false,
+        provider_profile_present: true,
+        secret_profile_present: true,
+        kind_available: false,
+        registry_available: false,
+        docker_available: false,
+      }, calls),
+    });
+
+    expect(result.exitCode).toBe(0);
+    expect(calls).toEqual([...ORDERED_SENTINEL_PROBES]);
+    expect(result.output.presence['probe.ticket_auth_present']).toBe(false);
+    expect(result.output.presence['probe.docker_available']).toBe(false);
+    expect(result.output.presence['probe.keycloak_redirect_bases_present']).toBe(true);
+  });
+
+  it.each([
+    'demo-rehearsal',
+    'cluster-rehearsal',
+  ] satisfies SentinelProfile[])(
+    'fails %s when KIND_AVAILABLE is explicitly false and no kind identity is present',
+    async (profile) => {
+      const result = await runSentinelPreflight({
+        profile,
+        env: {
+          KEYCLOAK_REDIRECT_BASE_URL: 'http://localhost:33001',
+          PROVIDER_PROFILE: 'provider-present',
+          SECRET_PROFILE: 'secret-present',
+          KIND_AVAILABLE: 'false',
+          REGISTRY_HOST: 'localhost:5003',
+        },
+      });
+
+      expect(result.exitCode).toBe(1);
+      expect(result.output.presence['tool.kind']).toBe(true);
+      expect(result.output.presence['probe.kind_available']).toBe(false);
+      expect(result.output.presence['probe.registry_available']).toBe(true);
+    },
+  );
+
+  it.each([
+    'demo-rehearsal',
+    'cluster-rehearsal',
+  ] satisfies SentinelProfile[])(
+    'fails %s when REGISTRY_AVAILABLE is explicitly false and no registry identity is present',
+    async (profile) => {
+      const result = await runSentinelPreflight({
+        profile,
+        env: {
+          KEYCLOAK_REDIRECT_BASE_URL: 'http://localhost:33001',
+          PROVIDER_PROFILE: 'provider-present',
+          SECRET_PROFILE: 'secret-present',
+          KIND_CLUSTER_NAME: 'agentsmith-demo',
+          REGISTRY_AVAILABLE: 'false',
+        },
+      });
+
+      expect(result.exitCode).toBe(1);
+      expect(result.output.presence['tool.registry']).toBe(true);
+      expect(result.output.presence['probe.kind_available']).toBe(true);
+      expect(result.output.presence['probe.registry_available']).toBe(false);
+    },
+  );
+
+  it('treats explicit false availability flags as authoritative even when identity keys are present', async () => {
+    const result = await runSentinelPreflight({
+      profile: 'demo-rehearsal',
+      env: {
+        KEYCLOAK_REDIRECT_BASE_URL: 'http://localhost:33001',
+        PROVIDER_PROFILE: 'provider-present',
+        SECRET_PROFILE: 'secret-present',
+        KIND_AVAILABLE: 'false',
+        KIND_CLUSTER_NAME: 'agentsmith-demo',
+        REGISTRY_AVAILABLE: 'false',
+        REGISTRY_HOST: 'localhost:5003',
+      },
+    });
+
+    expect(result.exitCode).toBe(1);
+    expect(result.output.presence['tool.kind']).toBe(true);
+    expect(result.output.presence['tool.registry']).toBe(true);
+    expect(result.output.presence['probe.kind_available']).toBe(false);
+    expect(result.output.presence['probe.registry_available']).toBe(false);
+  });
+
+  it.each([
+    'release-ready',
+    'verify-real',
+    'verify-release-real',
+    'demo-rehearsal',
+    'cluster-rehearsal',
+  ] satisfies SentinelProfile[])(
+    'passes %s with the current hydrated env shape without ticket or docker signals',
+    async (profile) => {
+      const root = mkdtempSync(join(tmpdir(), 'agentsmith-sentinel-current-env-'));
+      try {
+        writeCurrentHydrationShape(root);
+        const env = buildSentinelPreflightEnv({
+          profile,
+          cwd: root,
+          env: {},
+        });
+        const result = await runSentinelPreflight({ profile, env });
+
+        expect(result.exitCode).toBe(0);
+        expect(result.output.presence['probe.ticket_auth_present']).toBe(false);
+        expect(result.output.presence['probe.docker_available']).toBe(false);
+        expect(probePresenceKeys(result.output)).toHaveLength(ORDERED_SENTINEL_PROBES.length);
+      } finally {
+        rmSync(root, { recursive: true, force: true });
+      }
+    },
+  );
+
+  it('recognizes rendered rehearsal proxy and internal execution WS aliases as observed probes', async () => {
+    const rawProxyToken = 'scenario-proxy-data-token-raw-value';
+    const result = await runSentinelPreflight({
+      profile: 'demo-rehearsal',
+      env: {
+        AGENT_EXECUTION_WS_BASE_URL: 'ws://172.18.0.1:40000',
+        MBOS_UNIVERSAL_PROXY_DATA_TOKEN: rawProxyToken,
+        LLM_UNIVERSAL_PROXY_DATA_TOKEN: 'scenario-llm-proxy-token-raw-value',
+        KEYCLOAK_REDIRECT_BASE_URL: 'http://localhost:33001',
+        PROVIDER_PROFILE: 'provider-present',
+        SECRET_PROFILE: 'secret-present',
+        KIND_CLUSTER_NAME: 'agentsmith-demo',
+        REGISTRY_HOST: 'localhost:5003',
+      },
+    });
+    const rendered = renderSentinelPreflightOutput(result.output);
+
+    expect(result.exitCode).toBe(0);
+    expect(result.output.presence['probe.internal_execution_ws_base_url_correct']).toBe(true);
+    expect(result.output.presence['probe.proxy_data_token_present']).toBe(true);
+    expect(result.output.presence['endpoint.internal_ws']).toBe(true);
+    expect(result.output.presence['auth.proxy_data_token']).toBe(true);
+    expect(rendered).not.toContain('172.18.0.1');
+    expect(rendered).not.toContain(rawProxyToken);
+    expect(rendered).not.toContain('scenario-llm-proxy-token-raw-value');
+    expect(findRedactionLeaks(rendered)).toEqual([]);
   });
 
   it('returns a fixed unknown-profile error without leaking secret-like input', async () => {

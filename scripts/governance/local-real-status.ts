@@ -1,3 +1,4 @@
+import { resolveMinimalLeaseStatusShadow } from './lease-status-shadow';
 import { buildStatusProjection, renderStatusProjection } from './status-projection';
 
 type LocalRealStatusStreams = {
@@ -46,6 +47,9 @@ export function runLocalRealStatusProjection(
       goal: 'local-real',
       runtimeLine: 'local-manual',
       generatedAt: dependencies.generatedAt,
+      leaseStatusShadow: resolveMinimalLeaseStatusShadow({
+        generatedAt: dependencies.generatedAt,
+      }),
     });
     dependencies.stdout.write(options.json
       ? `${JSON.stringify(projection, null, 2)}\n`

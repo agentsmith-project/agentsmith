@@ -140,6 +140,32 @@ describe('failure bundle redaction', () => {
     expect(stringifyDiagnostic(diagnostic)).not.toContain('internal-ticket-raw-value');
   });
 
+  it('keeps alias-based high-level presence aligned without leaking proxy tokens', () => {
+    const diagnostic = buildRedactedFailureBundle({
+      env: {
+        AGENT_EXECUTION_WS_BASE_URL: 'ws://172.18.0.1:40000/execution/ws',
+        MBOS_UNIVERSAL_PROXY_DATA_TOKEN: 'mbos-proxy-data-token-raw-value',
+        LLM_UNIVERSAL_PROXY_DATA_TOKEN: 'llm-proxy-data-token-raw-value',
+        PRESET_ENDPOINT_MODEL: 'alias-model',
+        PRESET_ENDPOINT_API_KEY: 'sk-redaction-alias-raw-value',
+        PRESET_OPENAI_ENDPOINT_BASE_URL: 'https://provider.example.test/v1',
+      },
+    });
+
+    const serialized = stringifyDiagnostic(diagnostic);
+
+    expect(diagnostic.presence['endpoint.internal_ws']).toBe(true);
+    expect(diagnostic.presence['auth.proxy_data_token']).toBe(true);
+    expect(diagnostic.presence['profile.provider']).toBe(true);
+    expect(diagnostic.presence['profile.secret']).toBe(true);
+    expect(diagnostic.public_endpoint).toBe(null);
+    expect(serialized).not.toContain('172.18.0.1');
+    expect(serialized).not.toContain('mbos-proxy-data-token-raw-value');
+    expect(serialized).not.toContain('llm-proxy-data-token-raw-value');
+    expect(serialized).not.toContain('sk-redaction-alias-raw-value');
+    expect(findRedactionLeaks(diagnostic)).toEqual([]);
+  });
+
   it('normalizes non-allowlisted additionalPresence labels so key names cannot leak secrets', () => {
     const diagnostic = buildRedactedFailureBundle({
       env: {

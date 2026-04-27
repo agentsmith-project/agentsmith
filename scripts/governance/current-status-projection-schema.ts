@@ -1,4 +1,8 @@
 import { listCurrentRuntimeLines } from './current-runtime-line-manifest';
+import {
+  validateMinimalLeaseStatusShadow,
+  type MinimalLeaseStatusShadow,
+} from './lease-status-shadow';
 
 export const CURRENT_STATUS_PROJECTION_SCHEMA = 'agentsmith_status_projection/v1' as const;
 export const CURRENT_STATUS_PROJECTION_VERSION = 1 as const;
@@ -98,6 +102,7 @@ export interface CurrentStatusProjection {
   safe_next_command: string | null;
   destructive_recovery_command: string | null;
   lock_owner: CurrentStatusProjectionLockOwner | null;
+  lease_status_shadow: MinimalLeaseStatusShadow | null;
   manual_signoff_status: CurrentStatusProjectionManualSignoffStatus;
   evidence_paths: readonly CurrentStatusProjectionPathRef[];
   authority_paths: CurrentStatusProjectionAuthorityPaths;
@@ -142,6 +147,7 @@ const STATUS_PROJECTION_TOP_LEVEL_FIELDS = new Set<string>([
   'safe_next_command',
   'destructive_recovery_command',
   'lock_owner',
+  'lease_status_shadow',
   'manual_signoff_status',
   'evidence_paths',
   'authority_paths',
@@ -555,6 +561,29 @@ function validateLockOwner(
   });
 }
 
+function validateLeaseStatusShadow(
+  value: unknown,
+  path: string,
+  failures: CurrentStatusProjectionValidationFailure[],
+): void {
+  if (value === null) {
+    return;
+  }
+
+  const result = validateMinimalLeaseStatusShadow(value);
+  if (result.ok) {
+    return;
+  }
+
+  for (const failure of result.failures) {
+    pushFailure(
+      failures,
+      failure.path.replace(/^shadow/, path),
+      failure.reason,
+    );
+  }
+}
+
 function validateAuthorityPaths(
   value: unknown,
   path: string,
@@ -650,6 +679,7 @@ export function validateCurrentStatusProjection(value: unknown): CurrentStatusPr
   validateNullableString(value.safe_next_command, 'projection.safe_next_command', failures);
   validateNullableString(value.destructive_recovery_command, 'projection.destructive_recovery_command', failures);
   validateLockOwner(value.lock_owner, 'projection.lock_owner', failures);
+  validateLeaseStatusShadow(value.lease_status_shadow, 'projection.lease_status_shadow', failures);
   validateEnum(value.manual_signoff_status, MANUAL_SIGNOFF_STATUSES, 'projection.manual_signoff_status', failures);
   validateEvidencePaths(value.evidence_paths, 'projection.evidence_paths', failures);
   validateAuthorityPaths(value.authority_paths, 'projection.authority_paths', failures);

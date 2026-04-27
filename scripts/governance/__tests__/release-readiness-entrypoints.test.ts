@@ -110,6 +110,12 @@ function writeFakeNpm(dir: string, script: string): void {
 
 function writeBackendRealStyleEnv(root: string): void {
   mkdirSync(root, { recursive: true });
+  mkdirSync(join(root, 'infra', 'runtime'), { recursive: true });
+  writeFileSync(join(root, 'infra', 'runtime', 'backend-real.env'), [
+    'INTEGRATION_API_PORT=20040',
+    'INTEGRATION_WEB_PORT=3041',
+    '',
+  ].join('\n'));
   writeFileSync(join(root, '.env.backend-real'), [
     'PRESET_ENDPOINT_API_KEY=sk-test-release-ready-file-value',
     'PRESET_ENDPOINT_MODEL=test-release-ready-model',

@@ -12,6 +12,8 @@ import {
   CURRENT_STATUS_PROJECTION_VERSION,
   validateCurrentStatusProjection,
 } from '../current-status-projection-schema';
+import type { GovernanceRuntimeLockLease } from '../governance-lock-lease-manager';
+import { buildMinimalLeaseStatusShadow, resolveMinimalLeaseStatusShadow } from '../lease-status-shadow';
 import { buildStatusProjection, renderStatusProjection } from '../status-projection';
 
 const GENERATED_AT = '2026-04-27T12:00:00.000Z';
@@ -49,6 +51,10 @@ const SENSITIVE_PROJECTION_FRAGMENTS = [
   'projection-managed-credential-raw-value',
   'projection-cookie-raw-value',
 ];
+const PREBUILT_SCOPE_KIND_SECRET = 'sk-status-prebuilt-scope-kind-secret-1234567';
+const PREBUILT_MODE_SECRET = 'api_key=status-prebuilt-mode-api-key-raw-value';
+const PREBUILT_OWNER_SECRET = 'sk-status-prebuilt-owner-secret-1234567';
+const PREBUILT_TICKET_SECRET = 'ticket=status-prebuilt-ticket-raw-value';
 
 function sha256(value: string): string {
   return `sha256:${createHash('sha256').update(value).digest('hex')}`;
@@ -136,6 +142,23 @@ function writePerformance(runRoot: string, payload: Record<string, unknown>): st
   return path;
 }
 
+function lease(overrides: Partial<GovernanceRuntimeLockLease>): GovernanceRuntimeLockLease {
+  return {
+    leaseId: overrides.leaseId ?? 'lease-000001',
+    lockId: overrides.lockId ?? 'release-campaign-root-writes',
+    scopeKind: overrides.scopeKind ?? 'campaign_root',
+    scopeKey: overrides.scopeKey ?? '/tmp/release-run',
+    ownerGroup: overrides.ownerGroup ?? 'release-full|run-lease-001|/tmp/release-run',
+    ownerAttemptId: overrides.ownerAttemptId ?? 'attempt-lease-001',
+    ownerStepId: overrides.ownerStepId ?? 'gate-release',
+    mode: overrides.mode ?? 'exclusive',
+    campaignId: overrides.campaignId ?? 'release-full',
+    runId: overrides.runId ?? 'run-lease-001',
+    campaignRoot: overrides.campaignRoot ?? '/tmp/release-run',
+    acquiredAt: overrides.acquiredAt ?? GENERATED_AT,
+  };
+}
+
 function withTempRoot<T>(action: (root: string) => T): T {
   const root = mkdtempSync(join(tmpdir(), 'agentsmith-status-projection-'));
   try {
@@ -165,6 +188,204 @@ function expectNoInternalVerifyAlias(value: unknown): void {
 }
 
 describe('current status projection', () => {
+  it('includes the read-only lease status shadow in projection JSON without producing decisions or commands', () => {
+    const leaseStatusShadow = buildMinimalLeaseStatusShadow({
+      activeLeases: [
+        lease({}),
+        lease({
+          leaseId: 'lease-destructive',
+          lockId: 'destructive-lifecycle',
+          scopeKind: 'local_host',
+          scopeKey: 'localhost',
+          ownerStepId: 'local-real-reset',
+        }),
+        lease({
+          leaseId: 'lease-ports',
+          lockId: 'fixed-local-ports',
+          scopeKind: 'local_host',
+          scopeKey: 'local-real:ports',
+          ownerStepId: 'local-real-up',
+        }),
+        lease({
+          leaseId: 'lease-secret',
+          lockId: 'provider-secret-profile',
+          scopeKind: 'provider_profile',
+          scopeKey: 'backend-real-managed-secret',
+          ownerStepId: 'gate-release',
+        }),
+      ],
+      requiredSecretNames: ['BACKEND_REAL_API_KEY'],
+      env: {
+        BACKEND_REAL_API_KEY: 'sk-status-projection-do-not-print',
+      },
+      generatedAt: GENERATED_AT,
+    });
+
+    const projection = buildStatusProjection({
+      goal: 'release-ready',
+      currentGitSha: CURRENT_GIT_SHA,
+      generatedAt: GENERATED_AT,
+      leaseStatusShadow,
+    });
+
+    expect(projection).toMatchObject({
+      schema: CURRENT_STATUS_PROJECTION_SCHEMA,
+      version: CURRENT_STATUS_PROJECTION_VERSION,
+      projection_kind: 'read_only',
+      lease_status_shadow: {
+        schema: 'agentsmith_lease_status_shadow/v1',
+        projection_kind: 'read_only_shadow',
+        leases_acquired: false,
+        leases_released: false,
+        active_run: {
+          run_id: 'run-lease-001',
+          campaign_id: 'release-full',
+        },
+        destructive_command_lock: {
+          present: true,
+          lock_id: 'destructive-lifecycle',
+        },
+        port_family: {
+          present: true,
+          lock_id: 'fixed-local-ports',
+        },
+        secret_profile_lock: {
+          present: true,
+          lock_id: 'provider-secret-profile',
+          profile: {
+            present: true,
+            digest: expect.stringMatching(/^sha256:[a-f0-9]{64}$/),
+          },
+        },
+      },
+      release_decision_produced: false,
+      commands_executed: false,
+      leases_acquired: false,
+      leases_released: false,
+    });
+    expect(JSON.stringify(projection)).not.toContain('sk-status-projection-do-not-print');
+    expect(validateCurrentStatusProjection(projection)).toEqual({ ok: true, value: projection });
+    expectNoReleaseVerdictFields(projection);
+  });
+
+  it('renders lease shadow state and safe action on the first status screen', () => {
+    const leaseStatusShadow = buildMinimalLeaseStatusShadow({
+      activeLeases: [
+        lease({}),
+        lease({
+          leaseId: 'lease-destructive',
+          lockId: 'destructive-lifecycle',
+          scopeKind: 'local_host',
+          scopeKey: 'localhost',
+          ownerStepId: 'local-real-reset',
+        }),
+        lease({
+          leaseId: 'lease-ports',
+          lockId: 'fixed-local-ports',
+          scopeKind: 'local_host',
+          scopeKey: 'local-real:ports',
+          ownerStepId: 'local-real-up',
+        }),
+        lease({
+          leaseId: 'lease-secret',
+          lockId: 'provider-secret-profile',
+          scopeKind: 'provider_profile',
+          scopeKey: 'backend-real-managed-secret',
+          ownerStepId: 'gate-release',
+        }),
+      ],
+      requiredSecretNames: ['BACKEND_REAL_API_KEY'],
+      env: {
+        BACKEND_REAL_API_KEY: 'sk-status-render-do-not-print',
+      },
+      generatedAt: GENERATED_AT,
+    });
+
+    const projection = buildStatusProjection({
+      goal: 'release-ready',
+      currentGitSha: CURRENT_GIT_SHA,
+      generatedAt: GENERATED_AT,
+      leaseStatusShadow,
+    });
+    const rendered = renderStatusProjection(projection);
+
+    expect(rendered).toContain('Lease shadow active run: run-lease-001');
+    expect(rendered).toContain('Lease shadow destructive command lock: present');
+    expect(rendered).toContain('destructive-lifecycle');
+    expect(rendered).toContain('Lease shadow port family: present');
+    expect(rendered).toContain('fixed-local-ports');
+    expect(rendered).toContain('Lease shadow secret profile: present');
+    expect(rendered).toContain('profile_presence=true');
+    expect(rendered).toContain('digest=sha256:');
+    expect(rendered).toContain('Next action: npm run release:ready');
+    expect(rendered).toContain('Safe action: npm run release:ready');
+    expect(rendered).toContain('Release decision produced: false');
+    expect(rendered).toContain('Commands executed: false');
+    expect(rendered).not.toContain('sk-status-render-do-not-print');
+  });
+
+  it('keeps prebuilt shadow scope_kind and mode redacted in projection JSON, lock_owner, and human output', () => {
+    const prebuilt = buildMinimalLeaseStatusShadow({
+      activeLeases: [lease({})],
+      requiredSecretNames: [],
+      generatedAt: GENERATED_AT,
+    });
+    const leaseStatusShadow = resolveMinimalLeaseStatusShadow({
+      snapshotJson: JSON.stringify({
+        ...prebuilt,
+        active_run: prebuilt.active_run
+          ? {
+              ...prebuilt.active_run,
+              owner_group: `owner-${PREBUILT_OWNER_SECRET}`,
+              owner_step_id: `step-${PREBUILT_TICKET_SECRET}`,
+            }
+          : null,
+        active_leases: prebuilt.active_leases.map((owner) => ({
+          ...owner,
+          scope_kind: PREBUILT_SCOPE_KIND_SECRET,
+          mode: PREBUILT_MODE_SECRET,
+          owner_group: `owner-${PREBUILT_OWNER_SECRET}`,
+          owner_attempt_id: `attempt-${PREBUILT_TICKET_SECRET}`,
+          owner_step_id: `step-${PREBUILT_OWNER_SECRET}`,
+        })),
+      }),
+      generatedAt: GENERATED_AT,
+    });
+
+    const projection = buildStatusProjection({
+      goal: 'release-ready',
+      currentGitSha: CURRENT_GIT_SHA,
+      generatedAt: GENERATED_AT,
+      leaseStatusShadow,
+    });
+    const rendered = renderStatusProjection(projection);
+    const serialized = JSON.stringify(projection);
+
+    expect(validateCurrentStatusProjection(projection)).toEqual({ ok: true, value: projection });
+    expect(projection.lease_status_shadow?.active_leases[0]?.scope_kind).toContain('[redacted]');
+    expect(projection.lease_status_shadow?.active_leases[0]?.mode).toContain('[redacted]');
+    expect(projection.lock_owner?.owners[0]?.scope_kind).toContain('[redacted]');
+    expect(serialized).toContain('[redacted]');
+    expect(rendered).toContain('[redacted]');
+    for (const raw of [
+      PREBUILT_SCOPE_KIND_SECRET,
+      PREBUILT_MODE_SECRET,
+      PREBUILT_OWNER_SECRET,
+      PREBUILT_TICKET_SECRET,
+    ]) {
+      expect(serialized).not.toContain(raw);
+      expect(rendered).not.toContain(raw);
+    }
+  });
+
+  it('keeps the status projection builder read-only and outside lock acquisition/release paths', () => {
+    const source = readFileSync('scripts/governance/status-projection.ts', 'utf8');
+
+    expect(source).not.toMatch(/new GovernanceLockLeaseManager/);
+    expect(source).not.toMatch(/\.acquire\s*\(/);
+    expect(source).not.toMatch(/\.release(?:Many)?\s*\(/);
+  });
+
   it('projects a passed release status as read-only presentation without producing a release verdict', () => {
     withTempRoot((campaignRoot) => {
       const aggregatePath = writeAggregateResult(campaignRoot);

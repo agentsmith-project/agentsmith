@@ -1,10 +1,19 @@
 import { createHash } from 'node:crypto';
+import { readFileSync } from 'node:fs';
 
 import { listCurrentResourceLocks } from './current-resource-lock-manifest';
-import type { GovernanceRuntimeLockLease } from './governance-lock-lease-manager';
+import type {
+  GovernanceRuntimeLockLease,
+  GovernanceRuntimeLockMode,
+  GovernanceRuntimeLockScopeKind,
+} from './governance-lock-lease-manager';
+import { redactSensitiveText } from './redaction';
 
 export const MINIMAL_LEASE_STATUS_SHADOW_SCHEMA = 'agentsmith_lease_status_shadow/v1' as const;
 export const MINIMAL_LEASE_STATUS_SHADOW_VERSION = 1 as const;
+export const GOVERNANCE_LEASE_SNAPSHOT_PATH_ENV = 'AGENTSMITH_GOVERNANCE_LEASE_SNAPSHOT_PATH' as const;
+export const GOVERNANCE_LEASE_SNAPSHOT_JSON_ENV = 'AGENTSMITH_GOVERNANCE_LEASE_SNAPSHOT_JSON' as const;
+export const DEFAULT_LEASE_STATUS_SHADOW_SECRET_NAMES = ['BACKEND_REAL_API_KEY'] as const;
 
 export interface MinimalLeaseOwnerRef {
   lease_id: string;
@@ -76,6 +85,14 @@ export interface BuildMinimalLeaseStatusShadowInput {
   generatedAt?: string;
 }
 
+export interface ResolveMinimalLeaseStatusShadowInput {
+  env?: Readonly<Record<string, string | undefined>>;
+  snapshotPath?: string | null;
+  snapshotJson?: string | null;
+  requiredSecretNames?: readonly string[];
+  generatedAt?: string;
+}
+
 export interface MinimalLeaseStatusShadowValidationFailure {
   path: string;
   reason: string;
@@ -143,6 +160,15 @@ const FORBIDDEN_SECRET_VALUE_FIELDS = new Set<string>([
   'token_value',
   'password_value',
 ]);
+const RUNTIME_LOCK_SCOPE_KINDS = new Set<GovernanceRuntimeLockScopeKind>([
+  'campaign_root',
+  'step_output',
+  'local_host',
+  'provider_profile',
+  'visual_baseline',
+  'release_latest',
+]);
+const RUNTIME_LOCK_MODES = new Set<GovernanceRuntimeLockMode>(['exclusive']);
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
@@ -166,17 +192,17 @@ function sha256(value: string): string {
 
 function ownerRef(lease: GovernanceRuntimeLockLease): MinimalLeaseOwnerRef {
   return {
-    lease_id: lease.leaseId,
-    lock_id: lease.lockId,
-    scope_kind: lease.scopeKind,
-    scope_key: lease.scopeKey,
-    owner_group: lease.ownerGroup,
-    owner_attempt_id: lease.ownerAttemptId,
-    owner_step_id: lease.ownerStepId,
-    mode: lease.mode,
-    campaign_id: lease.campaignId,
-    run_id: lease.runId,
-    campaign_root: lease.campaignRoot,
+    lease_id: safeLeaseText(lease.leaseId),
+    lock_id: safeLeaseText(lease.lockId),
+    scope_kind: safeLeaseText(lease.scopeKind),
+    scope_key: safeLeaseText(lease.scopeKey),
+    owner_group: safeLeaseText(lease.ownerGroup),
+    owner_attempt_id: safeLeaseText(lease.ownerAttemptId),
+    owner_step_id: safeLeaseText(lease.ownerStepId),
+    mode: safeLeaseText(lease.mode),
+    campaign_id: safeNullableLeaseText(lease.campaignId),
+    run_id: safeNullableLeaseText(lease.runId),
+    campaign_root: safeNullableLeaseText(lease.campaignRoot),
     acquired_at: lease.acquiredAt,
     pid: null,
   };
@@ -223,6 +249,254 @@ function secretProfile(
     present,
     digest: present ? sha256(JSON.stringify({ presence })) : null,
   };
+}
+
+function safeLeaseText(value: string): string {
+  const redacted = redactSensitiveText(value);
+  return redacted.trim().length > 0 ? redacted : '[redacted]';
+}
+
+function safeNullableLeaseText(value: string | null): string | null {
+  return value === null ? null : safeLeaseText(value);
+}
+
+function safeLockId(value: string | null): string | null {
+  return value === null ? null : safeLeaseText(value);
+}
+
+function isCanonicalIsoTimestamp(value: string): boolean {
+  const parsed = new Date(value);
+  return (
+    ISO_TIMESTAMP_PATTERN.test(value)
+    && !Number.isNaN(parsed.getTime())
+    && parsed.toISOString() === value
+  );
+}
+
+function sanitizeOwnerRef(owner: MinimalLeaseOwnerRef): MinimalLeaseOwnerRef {
+  return {
+    lease_id: safeLeaseText(owner.lease_id),
+    lock_id: safeLeaseText(owner.lock_id),
+    scope_kind: safeLeaseText(owner.scope_kind),
+    scope_key: safeLeaseText(owner.scope_key),
+    owner_group: safeLeaseText(owner.owner_group),
+    owner_attempt_id: safeLeaseText(owner.owner_attempt_id),
+    owner_step_id: safeLeaseText(owner.owner_step_id),
+    mode: safeLeaseText(owner.mode),
+    campaign_id: safeNullableLeaseText(owner.campaign_id),
+    run_id: safeNullableLeaseText(owner.run_id),
+    campaign_root: safeNullableLeaseText(owner.campaign_root),
+    acquired_at: owner.acquired_at,
+    pid: owner.pid,
+  };
+}
+
+function sanitizeLockSection(section: MinimalLeaseLockSection): MinimalLeaseLockSection {
+  return {
+    present: section.present,
+    lock_id: safeLockId(section.lock_id),
+    owners: section.owners.map(sanitizeOwnerRef),
+  };
+}
+
+function sanitizePortFamilySection(section: MinimalLeasePortFamilySection): MinimalLeasePortFamilySection {
+  return {
+    ...sanitizeLockSection(section),
+    families: section.families.map((family) => ({
+      name: safeLeaseText(family.name),
+      ports: [...family.ports],
+    })),
+  };
+}
+
+function sanitizeSecretProfileSection(section: MinimalLeaseSecretProfileSection): MinimalLeaseSecretProfileSection {
+  return {
+    ...sanitizeLockSection(section),
+    profile: {
+      present: section.profile.present,
+      digest: section.profile.digest,
+    },
+  };
+}
+
+function sanitizeActiveRun(activeRun: MinimalLeaseActiveRun | null): MinimalLeaseActiveRun | null {
+  if (!activeRun) {
+    return null;
+  }
+  return {
+    run_id: safeLeaseText(activeRun.run_id),
+    campaign_id: safeNullableLeaseText(activeRun.campaign_id),
+    campaign_root: safeNullableLeaseText(activeRun.campaign_root),
+    owner_group: safeLeaseText(activeRun.owner_group),
+    owner_step_id: safeLeaseText(activeRun.owner_step_id),
+    started_at: activeRun.started_at,
+  };
+}
+
+function sanitizeMinimalLeaseStatusShadow(shadow: MinimalLeaseStatusShadow): MinimalLeaseStatusShadow {
+  return {
+    schema: shadow.schema,
+    version: shadow.version,
+    projection_kind: shadow.projection_kind,
+    generated_at: shadow.generated_at,
+    leases_acquired: false,
+    leases_released: false,
+    active_run: sanitizeActiveRun(shadow.active_run),
+    destructive_command_lock: sanitizeLockSection(shadow.destructive_command_lock),
+    port_family: sanitizePortFamilySection(shadow.port_family),
+    secret_profile_lock: sanitizeSecretProfileSection(shadow.secret_profile_lock),
+    active_leases: shadow.active_leases.map(sanitizeOwnerRef),
+  };
+}
+
+function nonEmptyString(value: unknown): value is string {
+  return typeof value === 'string' && value.trim().length > 0;
+}
+
+function nullableString(value: unknown): string | null | undefined {
+  if (value === null) {
+    return null;
+  }
+  if (nonEmptyString(value)) {
+    return value;
+  }
+  return undefined;
+}
+
+function isRuntimeLockScopeKind(value: unknown): value is GovernanceRuntimeLockScopeKind {
+  return typeof value === 'string' && RUNTIME_LOCK_SCOPE_KINDS.has(value as GovernanceRuntimeLockScopeKind);
+}
+
+function isRuntimeLockMode(value: unknown): value is GovernanceRuntimeLockMode {
+  return typeof value === 'string' && RUNTIME_LOCK_MODES.has(value as GovernanceRuntimeLockMode);
+}
+
+function parseRuntimeLease(value: unknown): GovernanceRuntimeLockLease | null {
+  if (!isRecord(value)) {
+    return null;
+  }
+
+  const leaseId = value.leaseId;
+  const lockId = value.lockId;
+  const scopeKind = value.scopeKind;
+  const scopeKey = value.scopeKey;
+  const ownerGroup = value.ownerGroup;
+  const ownerAttemptId = value.ownerAttemptId;
+  const ownerStepId = value.ownerStepId;
+  const mode = value.mode;
+  const campaignId = nullableString(value.campaignId);
+  const runId = nullableString(value.runId);
+  const campaignRoot = nullableString(value.campaignRoot);
+  const acquiredAt = value.acquiredAt;
+
+  if (
+    !nonEmptyString(leaseId)
+    || !nonEmptyString(lockId)
+    || !isRuntimeLockScopeKind(scopeKind)
+    || !nonEmptyString(scopeKey)
+    || !nonEmptyString(ownerGroup)
+    || !nonEmptyString(ownerAttemptId)
+    || !nonEmptyString(ownerStepId)
+    || !isRuntimeLockMode(mode)
+    || campaignId === undefined
+    || runId === undefined
+    || campaignRoot === undefined
+    || !nonEmptyString(acquiredAt)
+    || !isCanonicalIsoTimestamp(acquiredAt)
+  ) {
+    return null;
+  }
+
+  return {
+    leaseId,
+    lockId,
+    scopeKind,
+    scopeKey,
+    ownerGroup,
+    ownerAttemptId,
+    ownerStepId,
+    mode,
+    campaignId,
+    runId,
+    campaignRoot,
+    acquiredAt,
+  };
+}
+
+function parseRuntimeLeases(value: unknown): readonly GovernanceRuntimeLockLease[] | null {
+  if (!Array.isArray(value)) {
+    return null;
+  }
+
+  const leases: GovernanceRuntimeLockLease[] = [];
+  for (const entry of value) {
+    const lease = parseRuntimeLease(entry);
+    if (!lease) {
+      return null;
+    }
+    leases.push(lease);
+  }
+  return leases;
+}
+
+function runtimeLeasesFromSnapshotPayload(value: unknown): readonly GovernanceRuntimeLockLease[] | null {
+  if (Array.isArray(value)) {
+    return parseRuntimeLeases(value);
+  }
+  if (!isRecord(value)) {
+    return null;
+  }
+  if (hasOwn(value, 'activeLeases')) {
+    return parseRuntimeLeases(value.activeLeases);
+  }
+  return null;
+}
+
+function readSnapshotPayload(input: ResolveMinimalLeaseStatusShadowInput): unknown | null {
+  const env = input.env ?? process.env;
+  const rawJson = input.snapshotJson ?? env[GOVERNANCE_LEASE_SNAPSHOT_JSON_ENV] ?? null;
+  const snapshotPath = input.snapshotPath ?? env[GOVERNANCE_LEASE_SNAPSHOT_PATH_ENV] ?? null;
+
+  try {
+    if (rawJson && rawJson.trim().length > 0) {
+      return JSON.parse(rawJson) as unknown;
+    }
+    if (snapshotPath && snapshotPath.trim().length > 0) {
+      return JSON.parse(readFileSync(snapshotPath, 'utf8')) as unknown;
+    }
+  } catch {
+    return null;
+  }
+
+  return null;
+}
+
+export function resolveMinimalLeaseStatusShadow(
+  input: ResolveMinimalLeaseStatusShadowInput = {},
+): MinimalLeaseStatusShadow | null {
+  const payload = readSnapshotPayload(input);
+  if (payload === null) {
+    return null;
+  }
+
+  const existingShadow = validateMinimalLeaseStatusShadow(payload);
+  if (existingShadow.ok) {
+    const sanitized = sanitizeMinimalLeaseStatusShadow(existingShadow.value);
+    return validateMinimalLeaseStatusShadow(sanitized).ok ? sanitized : null;
+  }
+
+  const activeLeases = runtimeLeasesFromSnapshotPayload(payload);
+  if (!activeLeases) {
+    return null;
+  }
+
+  const shadow = buildMinimalLeaseStatusShadow({
+    activeLeases,
+    requiredSecretNames: input.requiredSecretNames ?? DEFAULT_LEASE_STATUS_SHADOW_SECRET_NAMES,
+    env: input.env ?? process.env,
+    generatedAt: input.generatedAt,
+  });
+  return validateMinimalLeaseStatusShadow(shadow).ok ? shadow : null;
 }
 
 export function buildMinimalLeaseStatusShadow(

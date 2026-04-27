@@ -3,6 +3,7 @@ import { spawnSync } from 'node:child_process';
 import {
   type CurrentStatusProjectionGoal,
 } from './current-status-projection-schema';
+import { resolveMinimalLeaseStatusShadow } from './lease-status-shadow';
 import { buildStatusProjection, renderStatusProjection } from './status-projection';
 import {
   buildSentinelPreflightEnv,
@@ -126,6 +127,9 @@ export function runRehearsalEntrypoint(
         runtimeLine: config.runtimeLine,
         gateResultsRoot: dependencies.gateResultsRoot,
         generatedAt: dependencies.generatedAt,
+        leaseStatusShadow: resolveMinimalLeaseStatusShadow({
+          generatedAt: dependencies.generatedAt,
+        }),
       });
       dependencies.stdout.write(options.json
         ? `${JSON.stringify(projection, null, 2)}\n`

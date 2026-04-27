@@ -2,6 +2,7 @@ import {
   readReleaseStatus,
   resolveCurrentGitSha,
 } from './release-summary';
+import { resolveMinimalLeaseStatusShadow } from './lease-status-shadow';
 import { buildStatusProjection, renderStatusProjection } from './status-projection';
 
 function isCliEntrypoint(fileName: string): boolean {
@@ -54,6 +55,7 @@ export function runReleaseStatus(argv: readonly string[] = process.argv.slice(2)
       runId,
       currentGitSha: tryResolveCurrentGitSha(),
       evidenceGitSha,
+      leaseStatusShadow: resolveMinimalLeaseStatusShadow(),
     });
 
     if (options.json) {

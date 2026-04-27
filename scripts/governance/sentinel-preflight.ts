@@ -2,6 +2,18 @@ import { existsSync, readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 
 import {
+  DOCKER_AVAILABILITY_FLAG_ENV_KEYS,
+  DOCKER_IDENTITY_ENV_KEYS,
+  INTERNAL_EXECUTION_WS_ENV_KEYS,
+  KEYCLOAK_REDIRECT_BASE_ENV_KEYS,
+  KIND_AVAILABILITY_FLAG_ENV_KEYS,
+  KIND_IDENTITY_ENV_KEYS,
+  PROVIDER_PROFILE_ENV_KEYS,
+  PROXY_DATA_TOKEN_ENV_KEYS,
+  REGISTRY_AVAILABILITY_FLAG_ENV_KEYS,
+  REGISTRY_IDENTITY_ENV_KEYS,
+  SECRET_PROFILE_ENV_KEYS,
+  TICKET_AUTH_ENV_KEYS,
   buildRedactedDiagnostic,
   type RedactedGovernanceDiagnostic,
   type RedactionEnv,
@@ -27,31 +39,86 @@ export type SentinelProfile =
   | 'verify-release-real'
   | 'demo-rehearsal'
   | 'cluster-rehearsal';
+export type SentinelProbeDisposition = 'required' | 'advisory';
 
 export const DEFAULT_SENTINEL_PROFILE = 'release-ready' as const satisfies SentinelProfile;
 
+export const SENTINEL_PROFILE_PROBE_MATRIX = {
+  'release-ready': {
+    internal_execution_ws_base_url_correct: 'advisory',
+    proxy_data_token_present: 'advisory',
+    ticket_auth_present: 'advisory',
+    keycloak_redirect_bases_present: 'required',
+    dns_gateway_reachable: 'advisory',
+    provider_profile_present: 'required',
+    secret_profile_present: 'required',
+    kind_available: 'advisory',
+    registry_available: 'advisory',
+    docker_available: 'advisory',
+  },
+  'verify-real': {
+    internal_execution_ws_base_url_correct: 'advisory',
+    proxy_data_token_present: 'advisory',
+    ticket_auth_present: 'advisory',
+    keycloak_redirect_bases_present: 'required',
+    dns_gateway_reachable: 'advisory',
+    provider_profile_present: 'required',
+    secret_profile_present: 'required',
+    kind_available: 'advisory',
+    registry_available: 'advisory',
+    docker_available: 'advisory',
+  },
+  'verify-release-real': {
+    internal_execution_ws_base_url_correct: 'advisory',
+    proxy_data_token_present: 'advisory',
+    ticket_auth_present: 'advisory',
+    keycloak_redirect_bases_present: 'required',
+    dns_gateway_reachable: 'advisory',
+    provider_profile_present: 'required',
+    secret_profile_present: 'required',
+    kind_available: 'advisory',
+    registry_available: 'advisory',
+    docker_available: 'advisory',
+  },
+  'demo-rehearsal': {
+    internal_execution_ws_base_url_correct: 'advisory',
+    proxy_data_token_present: 'advisory',
+    ticket_auth_present: 'advisory',
+    keycloak_redirect_bases_present: 'required',
+    dns_gateway_reachable: 'advisory',
+    provider_profile_present: 'required',
+    secret_profile_present: 'required',
+    kind_available: 'required',
+    registry_available: 'required',
+    docker_available: 'advisory',
+  },
+  'cluster-rehearsal': {
+    internal_execution_ws_base_url_correct: 'advisory',
+    proxy_data_token_present: 'advisory',
+    ticket_auth_present: 'advisory',
+    keycloak_redirect_bases_present: 'required',
+    dns_gateway_reachable: 'advisory',
+    provider_profile_present: 'required',
+    secret_profile_present: 'required',
+    kind_available: 'required',
+    registry_available: 'required',
+    docker_available: 'advisory',
+  },
+} as const satisfies Record<SentinelProfile, Record<SentinelProbeName, SentinelProbeDisposition>>;
+
+function requiredProbesForProfile(profile: SentinelProfile): SentinelProbeName[] {
+  return ORDERED_SENTINEL_PROBES.filter((name) => (
+    SENTINEL_PROFILE_PROBE_MATRIX[profile][name] === 'required'
+  ));
+}
+
 export const SENTINEL_PROFILE_PROBES = {
-  'release-ready': [
-    'provider_profile_present',
-    'secret_profile_present',
-  ],
-  'verify-real': [
-    'provider_profile_present',
-    'secret_profile_present',
-  ],
-  'verify-release-real': [
-    'provider_profile_present',
-    'secret_profile_present',
-  ],
-  'demo-rehearsal': [
-    'kind_available',
-    'registry_available',
-  ],
-  'cluster-rehearsal': [
-    'kind_available',
-    'registry_available',
-  ],
-} as const satisfies Record<SentinelProfile, readonly SentinelProbeName[]>;
+  'release-ready': requiredProbesForProfile('release-ready'),
+  'verify-real': requiredProbesForProfile('verify-real'),
+  'verify-release-real': requiredProbesForProfile('verify-release-real'),
+  'demo-rehearsal': requiredProbesForProfile('demo-rehearsal'),
+  'cluster-rehearsal': requiredProbesForProfile('cluster-rehearsal'),
+} satisfies Record<SentinelProfile, readonly SentinelProbeName[]>;
 
 export const SENTINEL_PROFILE_ENV_FILES = {
   'release-ready': [
@@ -151,6 +218,26 @@ function truthyEnv(env: RedactionEnv, keys: readonly string[]): boolean {
   });
 }
 
+function availabilityEnv(env: RedactionEnv, flagKeys: readonly string[], identityKeys: readonly string[]): boolean {
+  let hasFlag = false;
+  let hasTruthyFlag = false;
+
+  for (const key of flagKeys) {
+    const value = normalizeEnvValue(env[key])?.trim().toLowerCase();
+    if (!value) {
+      continue;
+    }
+    hasFlag = true;
+    if (value === '1' || value === 'true' || value === 'yes' || value === 'available') {
+      hasTruthyFlag = true;
+    } else {
+      return false;
+    }
+  }
+
+  return hasFlag ? hasTruthyFlag : hasAnyEnv(env, identityKeys);
+}
+
 function firstEnv(env: RedactionEnv, keys: readonly string[]): string | undefined {
   for (const key of keys) {
     const value = normalizeEnvValue(env[key])?.trim();
@@ -162,7 +249,7 @@ function firstEnv(env: RedactionEnv, keys: readonly string[]): string | undefine
 }
 
 function internalExecutionWsBaseUrlCorrect(env: RedactionEnv): boolean {
-  const value = firstEnv(env, ['INTERNAL_EXECUTION_WS_BASE_URL', 'EXECUTION_WS_BASE_URL']);
+  const value = firstEnv(env, INTERNAL_EXECUTION_WS_ENV_KEYS);
   if (!value) {
     return false;
   }
@@ -183,50 +270,19 @@ function internalExecutionWsBaseUrlCorrect(env: RedactionEnv): boolean {
 
 const DEFAULT_SENTINEL_PROBES: Record<SentinelProbeName, SentinelProbe> = {
   internal_execution_ws_base_url_correct: ({ env }) => internalExecutionWsBaseUrlCorrect(env),
-  proxy_data_token_present: ({ env }) => hasAnyEnv(env, ['PROXY_DATA_TOKEN', 'MBOS_PROXY_DATA_TOKEN', 'DATA_PROXY_TOKEN']),
-  ticket_auth_present: ({ env }) => hasAnyEnv(env, ['RUNNER_TICKET', 'TASK_TICKET', 'AGENTSMITH_TICKET', 'MBOS_TICKET']),
-  keycloak_redirect_bases_present: ({ env }) => hasAnyEnv(env, ['KEYCLOAK_REDIRECT_BASE_URL', 'NEXT_PUBLIC_APP_URL', 'BASE_URL']),
+  proxy_data_token_present: ({ env }) => hasAnyEnv(env, PROXY_DATA_TOKEN_ENV_KEYS),
+  ticket_auth_present: ({ env }) => hasAnyEnv(env, TICKET_AUTH_ENV_KEYS),
+  keycloak_redirect_bases_present: ({ env }) => hasAnyEnv(env, KEYCLOAK_REDIRECT_BASE_ENV_KEYS),
   dns_gateway_reachable: ({ env }) => truthyEnv(env, ['DNS_GATEWAY_REACHABLE', 'GATEWAY_REACHABLE']),
-  provider_profile_present: ({ env }) => hasAnyEnv(env, [
-    'PROVIDER_PROFILE',
-    'LLM_PROVIDER_PROFILE',
-    'MODEL_PROVIDER_PROFILE',
-    'PRESET_ENDPOINT_MODEL',
-    'PRESET_OPENAI_ENDPOINT_BASE_URL',
-    'PRESET_ANTHROPIC_ENDPOINT_BASE_URL',
-    'BACKEND_REAL_MODEL_VALUE',
-    'OPENAI_API_KEY',
-    'ANTHROPIC_API_KEY',
-    'DEEPSEEK_API_KEY',
-  ]),
-  secret_profile_present: ({ env }) => hasAnyEnv(env, [
-    'SECRET_PROFILE',
-    'SECRET_PROFILE_PATH',
-    'PRESET_ENDPOINT_API_KEY',
-    'BACKEND_REAL_API_KEY',
-    'BACKEND_REAL_API_KEY_VALUE',
-    'OPENAI_API_KEY',
-    'ANTHROPIC_API_KEY',
-    'DEEPSEEK_API_KEY',
-    'MANAGED_CREDENTIALS',
-  ]),
-  kind_available: ({ env }) => truthyEnv(env, ['KIND_AVAILABLE']) || hasAnyEnv(env, [
-    'KIND_CLUSTER_NAME',
-    'LOCAL_KIND_CLUSTER_NAME',
-    'LOCAL_KIND_CONFIG_PATH',
-  ]),
-  registry_available: ({ env }) => truthyEnv(env, ['REGISTRY_AVAILABLE']) || hasAnyEnv(env, [
-    'REGISTRY_HOST',
-    'LOCAL_KIND_REGISTRY_HOST',
-    'LOCAL_KIND_REGISTRY_NAME',
-    'CLUSTER_REHEARSAL_REGISTRY_HOST',
-    'K8S_REGISTRY_HOST',
-  ]),
-  docker_available: ({ env }) => truthyEnv(env, ['DOCKER_AVAILABLE']) || hasAnyEnv(env, ['DOCKER_HOST']),
+  provider_profile_present: ({ env }) => hasAnyEnv(env, PROVIDER_PROFILE_ENV_KEYS),
+  secret_profile_present: ({ env }) => hasAnyEnv(env, SECRET_PROFILE_ENV_KEYS),
+  kind_available: ({ env }) => availabilityEnv(env, KIND_AVAILABILITY_FLAG_ENV_KEYS, KIND_IDENTITY_ENV_KEYS),
+  registry_available: ({ env }) => availabilityEnv(env, REGISTRY_AVAILABILITY_FLAG_ENV_KEYS, REGISTRY_IDENTITY_ENV_KEYS),
+  docker_available: ({ env }) => availabilityEnv(env, DOCKER_AVAILABILITY_FLAG_ENV_KEYS, DOCKER_IDENTITY_ENV_KEYS),
 };
 
 function isSentinelProfile(value: string): value is SentinelProfile {
-  return Object.hasOwn(SENTINEL_PROFILE_PROBES, value);
+  return Object.hasOwn(SENTINEL_PROFILE_PROBE_MATRIX, value);
 }
 
 function resolveSentinelProfile(value: SentinelPreflightInput['profile']): SentinelProfile {
@@ -352,7 +408,7 @@ export async function runSentinelPreflight(input: SentinelPreflightInput = {}): 
   const probePresence: Record<string, boolean> = {};
   let exitCode: 0 | 1 = 0;
 
-  for (const name of SENTINEL_PROFILE_PROBES[profile]) {
+  for (const name of ORDERED_SENTINEL_PROBES) {
     const probe = input.probes?.[name] ?? DEFAULT_SENTINEL_PROBES[name];
     let passed = false;
     try {
@@ -362,9 +418,8 @@ export async function runSentinelPreflight(input: SentinelPreflightInput = {}): 
     }
     probePresence[`probe.${name}`] = passed;
 
-    if (!passed) {
+    if (!passed && SENTINEL_PROFILE_PROBE_MATRIX[profile][name] === 'required') {
       exitCode = 1;
-      break;
     }
   }
 
@@ -383,7 +438,7 @@ export function runSentinelPreflightSync(input: SentinelPreflightInput = {}): Se
   const probePresence: Record<string, boolean> = {};
   let exitCode: 0 | 1 = 0;
 
-  for (const name of SENTINEL_PROFILE_PROBES[profile]) {
+  for (const name of ORDERED_SENTINEL_PROBES) {
     const probe = input.probes?.[name] ?? DEFAULT_SENTINEL_PROBES[name];
     let passed = false;
     try {
@@ -394,9 +449,8 @@ export function runSentinelPreflightSync(input: SentinelPreflightInput = {}): Se
     }
     probePresence[`probe.${name}`] = passed;
 
-    if (!passed) {
+    if (!passed && SENTINEL_PROFILE_PROBE_MATRIX[profile][name] === 'required') {
       exitCode = 1;
-      break;
     }
   }
 

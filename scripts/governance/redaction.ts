@@ -23,6 +23,104 @@ export type BuildRedactedDiagnosticInput = {
 
 export type BuildRedactedFailureBundleInput = BuildRedactedDiagnosticInput;
 
+export const INTERNAL_EXECUTION_WS_ENV_KEYS = [
+  'INTERNAL_EXECUTION_WS_BASE_URL',
+  'EXECUTION_WS_BASE_URL',
+  'AGENT_EXECUTION_WS_BASE_URL',
+] as const;
+
+export const PROXY_DATA_TOKEN_ENV_KEYS = [
+  'PROXY_DATA_TOKEN',
+  'MBOS_PROXY_DATA_TOKEN',
+  'DATA_PROXY_TOKEN',
+  'MBOS_UNIVERSAL_PROXY_DATA_TOKEN',
+  'LLM_UNIVERSAL_PROXY_DATA_TOKEN',
+] as const;
+
+export const TICKET_AUTH_ENV_KEYS = [
+  'RUNNER_TICKET',
+  'TASK_TICKET',
+  'AGENTSMITH_TICKET',
+  'MBOS_TICKET',
+] as const;
+
+export const KEYCLOAK_REDIRECT_BASE_ENV_KEYS = [
+  'KEYCLOAK_REDIRECT_BASE_URL',
+  'NEXT_PUBLIC_APP_URL',
+  'BASE_URL',
+] as const;
+
+export const PROVIDER_PROFILE_ENV_KEYS = [
+  'PROVIDER_PROFILE',
+  'LLM_PROVIDER_PROFILE',
+  'MODEL_PROVIDER_PROFILE',
+  'PRESET_ENDPOINT_MODEL',
+  'PRESET_OPENAI_ENDPOINT_BASE_URL',
+  'PRESET_ANTHROPIC_ENDPOINT_BASE_URL',
+  'BACKEND_REAL_MODEL_VALUE',
+  'OPENAI_API_KEY',
+  'ANTHROPIC_API_KEY',
+  'DEEPSEEK_API_KEY',
+] as const;
+
+export const SECRET_PROFILE_ENV_KEYS = [
+  'SECRET_PROFILE',
+  'SECRET_PROFILE_PATH',
+  'PRESET_ENDPOINT_API_KEY',
+  'BACKEND_REAL_API_KEY',
+  'BACKEND_REAL_API_KEY_VALUE',
+  'OPENAI_API_KEY',
+  'ANTHROPIC_API_KEY',
+  'DEEPSEEK_API_KEY',
+  'MANAGED_CREDENTIALS',
+] as const;
+
+export const KIND_AVAILABILITY_FLAG_ENV_KEYS = [
+  'KIND_AVAILABLE',
+] as const;
+
+export const KIND_IDENTITY_ENV_KEYS = [
+  'KIND_CLUSTER_NAME',
+  'LOCAL_KIND_CLUSTER_NAME',
+  'LOCAL_KIND_CONFIG_PATH',
+] as const;
+
+export const KIND_AVAILABILITY_ENV_KEYS = [
+  ...KIND_AVAILABILITY_FLAG_ENV_KEYS,
+  ...KIND_IDENTITY_ENV_KEYS,
+] as const;
+
+export const REGISTRY_AVAILABILITY_FLAG_ENV_KEYS = [
+  'REGISTRY_AVAILABLE',
+] as const;
+
+export const REGISTRY_IDENTITY_ENV_KEYS = [
+  'REGISTRY_HOST',
+  'REGISTRY_PROJECT',
+  'LOCAL_KIND_REGISTRY_HOST',
+  'LOCAL_KIND_REGISTRY_NAME',
+  'CLUSTER_REHEARSAL_REGISTRY_HOST',
+  'K8S_REGISTRY_HOST',
+] as const;
+
+export const REGISTRY_AVAILABILITY_ENV_KEYS = [
+  ...REGISTRY_AVAILABILITY_FLAG_ENV_KEYS,
+  ...REGISTRY_IDENTITY_ENV_KEYS,
+] as const;
+
+export const DOCKER_AVAILABILITY_FLAG_ENV_KEYS = [
+  'DOCKER_AVAILABLE',
+] as const;
+
+export const DOCKER_IDENTITY_ENV_KEYS = [
+  'DOCKER_HOST',
+] as const;
+
+export const DOCKER_AVAILABILITY_ENV_KEYS = [
+  ...DOCKER_AVAILABILITY_FLAG_ENV_KEYS,
+  ...DOCKER_IDENTITY_ENV_KEYS,
+] as const;
+
 const DEFAULT_ENDPOINT_KEYS = [
   'NEXT_PUBLIC_API_BASE',
   'NEXT_PUBLIC_APP_URL',
@@ -47,34 +145,27 @@ const DEFAULT_PROFILE_KEYS = [
   'CLIENT_SECRET',
   'PASSWORD',
   'DATABASE_PASSWORD',
-  'RUNNER_TICKET',
-  'TASK_TICKET',
-  'PROXY_DATA_TOKEN',
-  'MBOS_PROXY_DATA_TOKEN',
+  ...TICKET_AUTH_ENV_KEYS,
+  ...PROXY_DATA_TOKEN_ENV_KEYS,
+  ...SECRET_PROFILE_ENV_KEYS,
   'MANAGED_CREDENTIALS',
   'MANAGED_CREDENTIALS_FEISHU',
 ] as const;
 
 const DEFAULT_PRESENCE_GROUPS: readonly PresenceGroup[] = [
   { label: 'endpoint.public', keys: DEFAULT_ENDPOINT_KEYS },
-  { label: 'endpoint.internal_ws', keys: ['INTERNAL_EXECUTION_WS_BASE_URL', 'EXECUTION_WS_BASE_URL'] },
-  { label: 'auth.proxy_data_token', keys: ['PROXY_DATA_TOKEN', 'MBOS_PROXY_DATA_TOKEN', 'DATA_PROXY_TOKEN'] },
-  { label: 'auth.ticket', keys: ['RUNNER_TICKET', 'TASK_TICKET', 'AGENTSMITH_TICKET', 'MBOS_TICKET'] },
+  { label: 'endpoint.internal_ws', keys: INTERNAL_EXECUTION_WS_ENV_KEYS },
+  { label: 'auth.proxy_data_token', keys: PROXY_DATA_TOKEN_ENV_KEYS },
+  { label: 'auth.ticket', keys: TICKET_AUTH_ENV_KEYS },
   { label: 'auth.authorization', keys: ['AUTHORIZATION'] },
   { label: 'auth.cookie', keys: ['COOKIE'] },
-  {
-    label: 'profile.provider',
-    keys: ['PROVIDER_PROFILE', 'LLM_PROVIDER_PROFILE', 'MODEL_PROVIDER_PROFILE', 'OPENAI_API_KEY', 'ANTHROPIC_API_KEY', 'DEEPSEEK_API_KEY'],
-  },
-  {
-    label: 'profile.secret',
-    keys: ['SECRET_PROFILE', 'SECRET_PROFILE_PATH', 'OPENAI_API_KEY', 'ANTHROPIC_API_KEY', 'DEEPSEEK_API_KEY', 'MANAGED_CREDENTIALS'],
-  },
+  { label: 'profile.provider', keys: PROVIDER_PROFILE_ENV_KEYS },
+  { label: 'profile.secret', keys: SECRET_PROFILE_ENV_KEYS },
   { label: 'profile.managed_credentials', keys: ['MANAGED_CREDENTIALS', 'MANAGED_CREDENTIALS_FEISHU'] },
-  { label: 'keycloak.redirect_base', keys: ['KEYCLOAK_REDIRECT_BASE_URL', 'NEXT_PUBLIC_APP_URL', 'BASE_URL'] },
-  { label: 'tool.kind', keys: ['KIND_AVAILABLE', 'KIND_CLUSTER_NAME'] },
-  { label: 'tool.registry', keys: ['REGISTRY_AVAILABLE', 'REGISTRY_HOST', 'REGISTRY_PROJECT'] },
-  { label: 'tool.docker', keys: ['DOCKER_AVAILABLE', 'DOCKER_HOST'] },
+  { label: 'keycloak.redirect_base', keys: KEYCLOAK_REDIRECT_BASE_ENV_KEYS },
+  { label: 'tool.kind', keys: KIND_AVAILABILITY_ENV_KEYS },
+  { label: 'tool.registry', keys: REGISTRY_AVAILABILITY_ENV_KEYS },
+  { label: 'tool.docker', keys: DOCKER_AVAILABILITY_ENV_KEYS },
 ] as const;
 
 const SAFE_ADDITIONAL_PRESENCE_LABELS = new Set<string>([

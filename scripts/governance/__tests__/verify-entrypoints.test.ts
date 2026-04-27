@@ -12,6 +12,11 @@ import {
   runVerificationCli,
 } from '../run-verify';
 import { findCurrentGateDefinitionById } from '../current-gate-manifest';
+import { validateCurrentStatusProjection } from '../current-status-projection-schema';
+import type { GovernanceRuntimeLockLease } from '../governance-lock-lease-manager';
+
+const LEASE_SNAPSHOT_ENV = 'AGENTSMITH_GOVERNANCE_LEASE_SNAPSHOT_PATH';
+const LEASE_SNAPSHOT_SECRET = 'sk-verify-status-lease-shadow-do-not-print';
 
 function readPackageScripts(): Record<string, string> {
   return (JSON.parse(readFileSync('package.json', 'utf8')) as { scripts: Record<string, string> }).scripts;
@@ -25,6 +30,68 @@ printf '%s\\n' "$*" >> "${logPath}"
 exit 42
 `);
   chmodSync(path, 0o755);
+}
+
+function writeJson(path: string, payload: unknown): void {
+  writeFileSync(path, `${JSON.stringify(payload, null, 2)}\n`);
+}
+
+function lease(overrides: Partial<GovernanceRuntimeLockLease>): GovernanceRuntimeLockLease {
+  return {
+    leaseId: overrides.leaseId ?? 'lease-verify-status-001',
+    lockId: overrides.lockId ?? 'release-campaign-root-writes',
+    scopeKind: overrides.scopeKind ?? 'campaign_root',
+    scopeKey: overrides.scopeKey ?? '/tmp/verify-status-release-run',
+    ownerGroup: overrides.ownerGroup ?? 'release-full|verify-status-run|/tmp/verify-status-release-run',
+    ownerAttemptId: overrides.ownerAttemptId ?? 'verify-status-run:gate-release',
+    ownerStepId: overrides.ownerStepId ?? 'gate-release',
+    mode: overrides.mode ?? 'exclusive',
+    campaignId: overrides.campaignId ?? 'release-full',
+    runId: overrides.runId ?? 'verify-status-run',
+    campaignRoot: overrides.campaignRoot ?? '/tmp/verify-status-release-run',
+    acquiredAt: overrides.acquiredAt ?? '2026-04-27T12:00:00.000Z',
+  };
+}
+
+function writeLeaseSnapshot(root: string): string {
+  const path = join(root, 'lease-snapshot.json');
+  writeJson(path, {
+    activeLeases: [
+      lease({}),
+      lease({
+        leaseId: 'lease-verify-status-destructive',
+        lockId: 'destructive-lifecycle',
+        scopeKind: 'local_host',
+        scopeKey: 'localhost',
+        ownerStepId: 'local-real-reset',
+      }),
+      lease({
+        leaseId: 'lease-verify-status-ports',
+        lockId: 'fixed-local-ports',
+        scopeKind: 'local_host',
+        scopeKey: 'local-real:ports',
+        ownerStepId: 'local-real-up',
+      }),
+      lease({
+        leaseId: 'lease-verify-status-secret',
+        lockId: 'provider-secret-profile',
+        scopeKind: 'provider_profile',
+        scopeKey: 'backend-real-managed-secret',
+        ownerStepId: 'gate-release',
+      }),
+    ],
+  });
+  return path;
+}
+
+function writeMalformedLeaseSnapshot(root: string): string {
+  const path = join(root, 'lease-snapshot-malformed.json');
+  writeJson(path, {
+    activeLeases: [
+      lease({ acquiredAt: 'not-an-iso-date' }),
+    ],
+  });
+  return path;
 }
 
 function writeReportAwareFakeNpm(dir: string, logPath: string): void {
@@ -365,6 +432,10 @@ describe('verify human entrypoints', () => {
       expect(result.stdout).toContain('AgentSmith Verify Status');
       expect(result.stdout).toContain('Goal: verify');
       expect(result.stdout).toContain('Projection: read-only');
+      expect(result.stdout).toContain('Lease shadow active run: not-known');
+      expect(result.stdout).toContain('Lease shadow destructive command lock: not-known');
+      expect(result.stdout).toContain('Lease shadow port family: not-known');
+      expect(result.stdout).toContain('Lease shadow secret profile: not-known');
       expect(result.stdout).toContain('Release decision produced: false');
       expect(result.stdout).toContain('Commands executed: false');
       expect(result.stdout).not.toContain('Story acceptance report');
@@ -413,6 +484,7 @@ describe('verify human entrypoints', () => {
         schema: 'agentsmith_status_projection/v1',
         projection_kind: 'read_only',
         goal: 'verify',
+        lease_status_shadow: null,
         release_decision_produced: false,
         commands_executed: false,
       });
@@ -420,6 +492,121 @@ describe('verify human entrypoints', () => {
       expect(result.stderr).toBe('');
       expect(existsSync(join(root, 'story-acceptance-report.json'))).toBe(false);
       expect(existsSync(join(root, 'verification-catalog.json'))).toBe(false);
+      expect(existsSync(logPath)).toBe(false);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it('reads an existing active lease snapshot in real verify status JSON and human output', () => {
+    const root = mkdtempSync(join(tmpdir(), 'agentsmith-verify-status-live-lease-'));
+    const logPath = join(root, 'npm.log');
+    try {
+      writeFakeNpm(root, logPath);
+      const snapshotPath = writeLeaseSnapshot(root);
+      const env = {
+        ...process.env,
+        PATH: `${root}:${process.env.PATH ?? ''}`,
+        [LEASE_SNAPSHOT_ENV]: snapshotPath,
+        BACKEND_REAL_API_KEY: LEASE_SNAPSHOT_SECRET,
+      };
+
+      const jsonResult = spawnSync('npx', [
+        'tsx',
+        'scripts/governance/run-verify.ts',
+        '--status',
+        '--json',
+        '--report-root',
+        root,
+      ], {
+        cwd: process.cwd(),
+        env,
+        encoding: 'utf8',
+      });
+      const projection = JSON.parse(jsonResult.stdout) as {
+        lease_status_shadow: {
+          active_run: { run_id: string } | null;
+          destructive_command_lock: { present: boolean };
+          port_family: { present: boolean };
+          secret_profile_lock: { present: boolean; profile: { present: boolean; digest: string | null } };
+        } | null;
+        commands_executed: boolean;
+        release_decision_produced: boolean;
+      };
+
+      expect(jsonResult.status).toBe(0);
+      expect(validateCurrentStatusProjection(projection)).toMatchObject({ ok: true });
+      expect(projection.lease_status_shadow?.active_run?.run_id).toBe('verify-status-run');
+      expect(projection.lease_status_shadow?.destructive_command_lock.present).toBe(true);
+      expect(projection.lease_status_shadow?.port_family.present).toBe(true);
+      expect(projection.lease_status_shadow?.secret_profile_lock.present).toBe(true);
+      expect(projection.lease_status_shadow?.secret_profile_lock.profile).toEqual({
+        present: true,
+        digest: expect.stringMatching(/^sha256:[a-f0-9]{64}$/),
+      });
+      expect(projection.commands_executed).toBe(false);
+      expect(projection.release_decision_produced).toBe(false);
+      expect(jsonResult.stdout).not.toContain(LEASE_SNAPSHOT_SECRET);
+
+      const humanResult = spawnSync('npx', [
+        'tsx',
+        'scripts/governance/run-verify.ts',
+        '--status',
+        '--report-root',
+        root,
+      ], {
+        cwd: process.cwd(),
+        env,
+        encoding: 'utf8',
+      });
+
+      expect(humanResult.status).toBe(0);
+      expect(humanResult.stdout).toContain('Lease shadow active run: verify-status-run');
+      expect(humanResult.stdout).toContain('Lease shadow destructive command lock: present');
+      expect(humanResult.stdout).toContain('Lease shadow port family: present');
+      expect(humanResult.stdout).toContain('Lease shadow secret profile: present');
+      expect(humanResult.stdout).toContain('profile_presence=true');
+      expect(humanResult.stdout).not.toContain(LEASE_SNAPSHOT_SECRET);
+      expect(existsSync(logPath)).toBe(false);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it('degrades malformed active lease snapshots in real verify status without invalidating JSON', () => {
+    const root = mkdtempSync(join(tmpdir(), 'agentsmith-verify-status-malformed-lease-'));
+    const logPath = join(root, 'npm.log');
+    try {
+      writeFakeNpm(root, logPath);
+      const snapshotPath = writeMalformedLeaseSnapshot(root);
+
+      const result = spawnSync('npx', [
+        'tsx',
+        'scripts/governance/run-verify.ts',
+        '--status',
+        '--json',
+        '--report-root',
+        root,
+      ], {
+        cwd: process.cwd(),
+        env: {
+          ...process.env,
+          PATH: `${root}:${process.env.PATH ?? ''}`,
+          [LEASE_SNAPSHOT_ENV]: snapshotPath,
+        },
+        encoding: 'utf8',
+      });
+      const projection = JSON.parse(result.stdout) as {
+        lease_status_shadow: unknown;
+        commands_executed: boolean;
+        release_decision_produced: boolean;
+      };
+
+      expect(result.status).toBe(0);
+      expect(validateCurrentStatusProjection(projection)).toMatchObject({ ok: true });
+      expect(projection.lease_status_shadow).toBe(null);
+      expect(projection.commands_executed).toBe(false);
+      expect(projection.release_decision_produced).toBe(false);
       expect(existsSync(logPath)).toBe(false);
     } finally {
       rmSync(root, { recursive: true, force: true });

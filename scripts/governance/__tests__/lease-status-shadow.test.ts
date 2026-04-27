@@ -1,15 +1,24 @@
-import { readFileSync } from 'node:fs';
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 
 import { describe, expect, it } from 'vitest';
 
 import type { GovernanceRuntimeLockLease } from '../governance-lock-lease-manager';
 import {
   buildMinimalLeaseStatusShadow,
+  resolveMinimalLeaseStatusShadow,
   validateMinimalLeaseStatusShadow,
 } from '../lease-status-shadow';
 
 const GENERATED_AT = '2026-04-27T12:00:00.000Z';
 const SECRET_VALUE = 'sk-live-do-not-print';
+const SNAPSHOT_OWNER_SECRET = 'sk-lease-owner-secret-1234567';
+const SNAPSHOT_TICKET_SECRET = 'ticket=lease-ticket-raw-value';
+const SNAPSHOT_API_KEY_SECRET = 'api_key=lease-api-key-raw-value';
+const SNAPSHOT_PASSWORD_SECRET = 'password=lease-password-raw-value';
+const PREBUILT_SCOPE_KIND_SECRET = 'sk-prebuilt-scope-kind-secret-1234567';
+const PREBUILT_MODE_SECRET = 'api_key=prebuilt-mode-api-key-raw-value';
 
 function lease(overrides: Partial<GovernanceRuntimeLockLease>): GovernanceRuntimeLockLease {
   return {
@@ -132,6 +141,170 @@ describe('minimal lease/status shadow', () => {
     expect(shadow.leases_acquired).toBe(false);
     expect(shadow.leases_released).toBe(false);
     expect(validateMinimalLeaseStatusShadow(shadow)).toEqual({ ok: true, value: shadow });
+  });
+
+  it('resolves an existing active lease snapshot from a read-only JSON path', () => {
+    const root = mkdtempSync(join(tmpdir(), 'agentsmith-lease-shadow-provider-'));
+    try {
+      const snapshotPath = join(root, 'active-leases.json');
+      writeFileSync(snapshotPath, `${JSON.stringify({
+        activeLeases: [
+          lease({}),
+          lease({
+            leaseId: 'lease-provider-destructive',
+            lockId: 'destructive-lifecycle',
+            scopeKind: 'local_host',
+            scopeKey: 'localhost',
+            ownerStepId: 'local-real-reset',
+          }),
+          lease({
+            leaseId: 'lease-provider-ports',
+            lockId: 'fixed-local-ports',
+            scopeKind: 'local_host',
+            scopeKey: 'local-real:ports',
+            ownerStepId: 'local-real-up',
+          }),
+          lease({
+            leaseId: 'lease-provider-secret',
+            lockId: 'provider-secret-profile',
+            scopeKind: 'provider_profile',
+            scopeKey: 'backend-real-managed-secret',
+            ownerStepId: 'gate-release',
+          }),
+        ],
+      }, null, 2)}\n`);
+
+      const shadow = resolveMinimalLeaseStatusShadow({
+        snapshotPath,
+        requiredSecretNames: ['BACKEND_REAL_API_KEY'],
+        env: {
+          BACKEND_REAL_API_KEY: SECRET_VALUE,
+        },
+        generatedAt: GENERATED_AT,
+      });
+
+      expect(shadow).not.toBe(null);
+      expect(shadow?.active_run?.run_id).toBe('run-001');
+      expect(shadow?.destructive_command_lock.present).toBe(true);
+      expect(shadow?.port_family.present).toBe(true);
+      expect(shadow?.secret_profile_lock.present).toBe(true);
+      expect(shadow?.secret_profile_lock.profile).toEqual({
+        present: true,
+        digest: expect.stringMatching(/^sha256:[a-f0-9]{64}$/),
+      });
+      expect(shadow?.leases_acquired).toBe(false);
+      expect(shadow?.leases_released).toBe(false);
+      expect(JSON.stringify(shadow)).not.toContain(SECRET_VALUE);
+      expect(validateMinimalLeaseStatusShadow(shadow)).toMatchObject({ ok: true });
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it('degrades malformed runtime snapshots to null instead of returning invalid shadows', () => {
+    const root = mkdtempSync(join(tmpdir(), 'agentsmith-lease-shadow-malformed-'));
+    try {
+      const snapshotPath = join(root, 'active-leases.json');
+      writeFileSync(snapshotPath, `${JSON.stringify({
+        activeLeases: [
+          lease({ acquiredAt: 'not-an-iso-date' }),
+        ],
+      }, null, 2)}\n`);
+
+      const shadow = resolveMinimalLeaseStatusShadow({
+        snapshotPath,
+        generatedAt: GENERATED_AT,
+      });
+
+      expect(shadow).toBe(null);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it('redacts snapshot-owned lease strings while keeping the built shadow schema-valid', () => {
+    const shadow = buildMinimalLeaseStatusShadow({
+      activeLeases: [
+        lease({
+          leaseId: `lease-${SNAPSHOT_OWNER_SECRET}`,
+          lockId: 'release-campaign-root-writes',
+          scopeKey: `/tmp/${SNAPSHOT_API_KEY_SECRET}`,
+          ownerGroup: `release-full|${SNAPSHOT_OWNER_SECRET}|${SNAPSHOT_TICKET_SECRET}`,
+          ownerAttemptId: `attempt-${SNAPSHOT_TICKET_SECRET}`,
+          ownerStepId: `gate-release-${SNAPSHOT_OWNER_SECRET}`,
+          campaignId: `release-${SNAPSHOT_OWNER_SECRET}`,
+          runId: `run-${SNAPSHOT_OWNER_SECRET}`,
+          campaignRoot: `/tmp/${SNAPSHOT_PASSWORD_SECRET}`,
+        }),
+        lease({
+          leaseId: `lease-secret-${SNAPSHOT_OWNER_SECRET}`,
+          lockId: 'provider-secret-profile',
+          scopeKind: 'provider_profile',
+          scopeKey: `backend-real-${SNAPSHOT_API_KEY_SECRET}`,
+          ownerGroup: `provider|${SNAPSHOT_OWNER_SECRET}`,
+          ownerAttemptId: `attempt-secret-${SNAPSHOT_TICKET_SECRET}`,
+          ownerStepId: `gate-release-${SNAPSHOT_OWNER_SECRET}`,
+        }),
+      ],
+      requiredSecretNames: ['BACKEND_REAL_API_KEY'],
+      env: {
+        BACKEND_REAL_API_KEY: SECRET_VALUE,
+      },
+      generatedAt: GENERATED_AT,
+    });
+
+    const serialized = JSON.stringify(shadow);
+    expect(serialized).toContain('[redacted]');
+    expect(serialized).not.toContain(SNAPSHOT_OWNER_SECRET);
+    expect(serialized).not.toContain(SNAPSHOT_TICKET_SECRET);
+    expect(serialized).not.toContain(SNAPSHOT_API_KEY_SECRET);
+    expect(serialized).not.toContain(SNAPSHOT_PASSWORD_SECRET);
+    expect(serialized).not.toContain(SECRET_VALUE);
+    expect(validateMinimalLeaseStatusShadow(shadow)).toEqual({ ok: true, value: shadow });
+  });
+
+  it('redacts prebuilt shadow owner scope_kind and mode before returning it', () => {
+    const prebuilt = buildMinimalLeaseStatusShadow({
+      activeLeases: [lease({})],
+      requiredSecretNames: [],
+      generatedAt: GENERATED_AT,
+    });
+    const polluted = {
+      ...prebuilt,
+      active_run: prebuilt.active_run
+        ? {
+            ...prebuilt.active_run,
+            owner_group: `owner-${SNAPSHOT_OWNER_SECRET}`,
+            owner_step_id: `step-${SNAPSHOT_TICKET_SECRET}`,
+          }
+        : null,
+      active_leases: prebuilt.active_leases.map((owner) => ({
+        ...owner,
+        scope_kind: PREBUILT_SCOPE_KIND_SECRET,
+        mode: PREBUILT_MODE_SECRET,
+        scope_key: `scope-${SNAPSHOT_API_KEY_SECRET}`,
+        owner_group: `owner-${SNAPSHOT_OWNER_SECRET}`,
+        owner_attempt_id: `attempt-${SNAPSHOT_TICKET_SECRET}`,
+        owner_step_id: `step-${SNAPSHOT_OWNER_SECRET}`,
+      })),
+    };
+
+    const shadow = resolveMinimalLeaseStatusShadow({
+      snapshotJson: JSON.stringify(polluted),
+      generatedAt: GENERATED_AT,
+    });
+
+    expect(shadow).not.toBe(null);
+    const serialized = JSON.stringify(shadow);
+    expect(serialized).toContain('[redacted]');
+    expect(serialized).not.toContain(PREBUILT_SCOPE_KIND_SECRET);
+    expect(serialized).not.toContain(PREBUILT_MODE_SECRET);
+    expect(serialized).not.toContain(SNAPSHOT_OWNER_SECRET);
+    expect(serialized).not.toContain(SNAPSHOT_TICKET_SECRET);
+    expect(serialized).not.toContain(SNAPSHOT_API_KEY_SECRET);
+    expect(shadow?.active_leases[0]?.scope_kind).toContain('[redacted]');
+    expect(shadow?.active_leases[0]?.mode).toContain('[redacted]');
+    expect(validateMinimalLeaseStatusShadow(shadow)).toMatchObject({ ok: true });
   });
 
   it('rejects secret-looking shadow pollution and raw secret fields', () => {

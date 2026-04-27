@@ -22,6 +22,12 @@ import {
   type CurrentStatusProjectionPresentationStatus,
   type CurrentStatusProjectionReason,
 } from './current-status-projection-schema';
+import type {
+  MinimalLeaseLockSection,
+  MinimalLeaseOwnerRef,
+  MinimalLeasePortFamilySection,
+  MinimalLeaseSecretProfileSection,
+} from './lease-status-shadow';
 import { validateCurrentRunDiagnosticArtifactPayload } from './current-run-diagnostics-schema';
 import { redactSensitiveText } from './redaction';
 
@@ -116,6 +122,7 @@ export interface BuildStatusProjectionInput {
   generatedAt?: string;
   phase?: CurrentStatusProjectionPhase;
   lockOwner?: CurrentStatusProjection['lock_owner'];
+  leaseStatusShadow?: CurrentStatusProjection['lease_status_shadow'];
 }
 
 const DEFAULT_GENERATED_AT = '1970-01-01T00:00:00.000Z';
@@ -813,6 +820,42 @@ function evidencePathsForAggregate(result: ParsedAggregateResult | null): readon
   ];
 }
 
+function leaseStatusShadowForInput(
+  input: Pick<BuildStatusProjectionInput, 'leaseStatusShadow'>,
+): CurrentStatusProjection['lease_status_shadow'] {
+  return input.leaseStatusShadow ?? null;
+}
+
+function lockOwnerFromLeaseStatusShadow(
+  leaseStatusShadow: CurrentStatusProjection['lease_status_shadow'],
+): CurrentStatusProjection['lock_owner'] {
+  if (!leaseStatusShadow || leaseStatusShadow.active_leases.length === 0) {
+    return null;
+  }
+
+  return {
+    active_run_id: leaseStatusShadow.active_run?.run_id ?? null,
+    active_lock_count: leaseStatusShadow.active_leases.length,
+    owners: leaseStatusShadow.active_leases.map((owner) => ({
+      lock_id: owner.lock_id,
+      scope_kind: owner.scope_kind,
+      scope_key: owner.scope_key,
+      owner_group: owner.owner_group,
+      owner_step_id: owner.owner_step_id,
+      owner_attempt_id: owner.owner_attempt_id,
+      pid: owner.pid,
+    })),
+  };
+}
+
+function lockOwnerForInput(
+  input: Pick<BuildStatusProjectionInput, 'lockOwner' | 'leaseStatusShadow'>,
+): CurrentStatusProjection['lock_owner'] {
+  return input.lockOwner !== undefined
+    ? input.lockOwner
+    : lockOwnerFromLeaseStatusShadow(leaseStatusShadowForInput(input));
+}
+
 function missingAggregatePresentationStatus(input: {
   running: boolean;
   reasonCode: string;
@@ -865,7 +908,8 @@ function buildMissingAggregateProjection(input: {
     },
     safe_next_command: safeCommandForOwner(null, input.options.goal),
     destructive_recovery_command: null,
-    lock_owner: input.options.lockOwner ?? null,
+    lock_owner: lockOwnerForInput(input.options),
+    lease_status_shadow: leaseStatusShadowForInput(input.options),
     manual_signoff_status: 'not-covered',
     evidence_paths: [],
     authority_paths: {
@@ -1032,7 +1076,8 @@ function buildMissingRehearsalProjection(input: {
     },
     safe_next_command: input.source.config.safeNextCommand,
     destructive_recovery_command: null,
-    lock_owner: input.options.lockOwner ?? null,
+    lock_owner: lockOwnerForInput(input.options),
+    lease_status_shadow: leaseStatusShadowForInput(input.options),
     manual_signoff_status: 'not-covered',
     evidence_paths: [],
     authority_paths: {
@@ -1085,7 +1130,8 @@ function buildRehearsalProjection(input: {
     }),
     safe_next_command: presentationStatus === 'passed' ? null : input.evidence.config.safeNextCommand,
     destructive_recovery_command: null,
-    lock_owner: input.options.lockOwner ?? null,
+    lock_owner: lockOwnerForInput(input.options),
+    lease_status_shadow: leaseStatusShadowForInput(input.options),
     manual_signoff_status: 'not-covered',
     evidence_paths: rehearsalEvidencePathRefs(input.evidence),
     authority_paths: {
@@ -1178,7 +1224,8 @@ export function buildStatusProjection(input: BuildStatusProjectionInput): Curren
     }),
     safe_next_command: presentationStatus === 'passed' ? null : safeCommandForOwner(blockerOwner, input.goal),
     destructive_recovery_command: null,
-    lock_owner: input.lockOwner ?? null,
+    lock_owner: lockOwnerForInput(input),
+    lease_status_shadow: leaseStatusShadowForInput(input),
     manual_signoff_status: 'not-covered',
     evidence_paths: evidencePathsForAggregate(aggregate),
     authority_paths: {
@@ -1241,6 +1288,85 @@ function renderLocks(lockOwner: CurrentStatusProjection['lock_owner']): string {
   ].filter(Boolean).join('; ');
 }
 
+function renderLeaseShadowOwners(owners: readonly MinimalLeaseOwnerRef[]): string {
+  if (owners.length === 0) {
+    return '<none>';
+  }
+  return owners.map((owner) => (
+    `${owner.lock_id}:${owner.owner_group}/${owner.owner_step_id}${owner.pid ? ` pid=${owner.pid}` : ''}`
+  )).join('; ');
+}
+
+function renderLeaseLockPresence(section: MinimalLeaseLockSection): string {
+  return section.present ? 'present' : 'absent';
+}
+
+function renderLeaseShadowDestructiveLock(
+  section: MinimalLeaseLockSection,
+): string {
+  return [
+    renderLeaseLockPresence(section),
+    `lock=${renderOptional(section.lock_id)}`,
+    `owners=${renderLeaseShadowOwners(section.owners)}`,
+  ].join('; ');
+}
+
+function renderLeaseShadowPortFamilies(section: MinimalLeasePortFamilySection): string {
+  if (section.families.length === 0) {
+    return 'not-applicable';
+  }
+  return section.families.map((family) => (
+    `${family.name}[${family.ports.length > 0 ? family.ports.join(',') : 'not-known'}]`
+  )).join('; ');
+}
+
+function renderLeaseShadowPortFamily(section: MinimalLeasePortFamilySection): string {
+  return [
+    renderLeaseLockPresence(section),
+    `lock=${renderOptional(section.lock_id)}`,
+    `families=${renderLeaseShadowPortFamilies(section)}`,
+    `owners=${renderLeaseShadowOwners(section.owners)}`,
+  ].join('; ');
+}
+
+function renderLeaseShadowSecretProfile(section: MinimalLeaseSecretProfileSection): string {
+  return [
+    renderLeaseLockPresence(section),
+    `lock=${renderOptional(section.lock_id)}`,
+    `profile_presence=${String(section.profile.present)}`,
+    `digest=${renderOptional(section.profile.digest)}`,
+    `owners=${renderLeaseShadowOwners(section.owners)}`,
+  ].join('; ');
+}
+
+export function renderStatusProjectionLeaseShadowLines(
+  projection: Pick<CurrentStatusProjection, 'lease_status_shadow'>,
+): readonly string[] {
+  const shadow = projection.lease_status_shadow;
+  if (!shadow) {
+    return [
+      'Lease shadow active run: not-known',
+      'Lease shadow destructive command lock: not-known',
+      'Lease shadow port family: not-known',
+      'Lease shadow secret profile: not-known',
+    ];
+  }
+
+  const activeRun = shadow.active_run
+    ? [
+        shadow.active_run.run_id,
+        `(campaign=${renderOptional(shadow.active_run.campaign_id)}; owner=${shadow.active_run.owner_group}/${shadow.active_run.owner_step_id}; started_at=${shadow.active_run.started_at})`,
+      ].join(' ')
+    : 'none observed';
+
+  return [
+    `Lease shadow active run: ${activeRun}`,
+    `Lease shadow destructive command lock: ${renderLeaseShadowDestructiveLock(shadow.destructive_command_lock)}`,
+    `Lease shadow port family: ${renderLeaseShadowPortFamily(shadow.port_family)}`,
+    `Lease shadow secret profile: ${renderLeaseShadowSecretProfile(shadow.secret_profile_lock)}`,
+  ];
+}
+
 export function renderStatusProjection(projection: CurrentStatusProjection): string {
   return [
     'AgentSmith Status Projection',
@@ -1255,9 +1381,11 @@ export function renderStatusProjection(projection: CurrentStatusProjection): str
     `Primary blocker: ${renderPrimaryBlocker(projection.primary_blocker)}`,
     `Deepest reason: ${renderDeepestReason(projection.deepest_reason)}`,
     `Next action: ${renderOptional(projection.safe_next_command)}`,
+    `Safe action: ${renderOptional(projection.safe_next_command)}`,
     `Recovery: ${renderOptional(projection.destructive_recovery_command)}`,
     `Freshness: current_git_sha=${renderOptional(projection.current_git_sha)}; evidence_git_sha=${renderOptional(projection.evidence_git_sha)}; run_age_seconds=${renderOptional(projection.run_age_seconds)}`,
     `Locks: ${renderLocks(projection.lock_owner)}`,
+    ...renderStatusProjectionLeaseShadowLines(projection),
     `Manual sign-off: ${projection.manual_signoff_status}`,
     `Evidence: ${renderPathRefs(projection.evidence_paths)}`,
     `Authority: aggregate=${renderOptionalPath(projection.authority_paths.aggregate)}; stage=${renderOptionalPath(projection.authority_paths.stage)}; evidence=${projection.authority_paths.evidence.length > 0 ? projection.authority_paths.evidence.map(redactProjectionPath).join('; ') : '<none>'}`,

@@ -13,7 +13,11 @@ import {
   writeVerificationCatalog,
 } from './verification-catalog';
 import { writeStoryAcceptanceReport } from './story-acceptance-report';
-import { buildStatusProjection } from './status-projection';
+import { resolveMinimalLeaseStatusShadow } from './lease-status-shadow';
+import {
+  buildStatusProjection,
+  renderStatusProjectionLeaseShadowLines,
+} from './status-projection';
 import type { CurrentStatusProjection } from './current-status-projection-schema';
 import {
   buildSentinelPreflightEnv,
@@ -213,6 +217,7 @@ function renderVerifyStatusProjection(projection: CurrentStatusProjection): stri
     `Primary blocker: ${primaryBlocker}`,
     `Deepest reason: ${deepestReason}`,
     `Safe next command: ${renderProjectionValue(projection.safe_next_command)}`,
+    ...renderStatusProjectionLeaseShadowLines(projection),
     `Release decision produced: ${String(projection.release_decision_produced)}`,
     `Commands executed: ${String(projection.commands_executed)}`,
     `Authority aggregate: ${renderProjectionValue(projection.authority_paths.aggregate)}`,
@@ -518,7 +523,10 @@ export function runVerificationCli(
       throw new Error('--status is read-only and cannot be combined with --run.');
     }
     if (options.status) {
-      const projection = buildStatusProjection({ goal: 'verify' });
+      const projection = buildStatusProjection({
+        goal: 'verify',
+        leaseStatusShadow: resolveMinimalLeaseStatusShadow(),
+      });
       stdout.write(options.json
         ? `${JSON.stringify(projection, null, 2)}\n`
         : renderVerifyStatusProjection(projection));

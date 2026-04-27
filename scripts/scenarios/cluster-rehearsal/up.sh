@@ -12,6 +12,7 @@ ensure_cluster_rehearsal_registry_env
 ensure_cluster_rehearsal_release_bundle
 mark_scenario_world_changed
 ensure_local_kind_cluster
+rewrite_cluster_rehearsal_kind_gateway_site_env "${CLUSTER_REHEARSAL_CONFIG_DIR}/site.env"
 cleanup_cluster_rehearsal_legacy_generated_state
 kind_kubeconfig="$(scenario_kind_kubeconfig_path)"
 mkdir -p "${CLUSTER_REHEARSAL_GENERATED_DIR}"

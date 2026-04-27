@@ -354,6 +354,45 @@ async function waitForStableRecipeMarkers(page: Page, scenario: VisualBaselineEx
   }
 }
 
+function extractVisualRouteWorkspaceId(route: string): string | null {
+  const match = route.match(/^\/[a-z]{2}(?:-[A-Z]{2})?\/workspaces\/([^/?#]+)/);
+  const workspaceId = match?.[1] ? decodeURIComponent(match[1]) : '';
+  if (!workspaceId || workspaceId === 'overview') {
+    return null;
+  }
+  return workspaceId;
+}
+
+function resolveVisualFixtureWorkspaceName(workspaceId: string): string | null {
+  if (workspaceId === WS_ID) {
+    return 'Default Workspace';
+  }
+  if (workspaceId === 'ws_test') {
+    return 'Test Workspace';
+  }
+  return null;
+}
+
+async function waitForVisualRouteWorkspaceIdentityReady(page: Page, scenario: VisualBaselineExecutorScenario) {
+  const workspaceId = extractVisualRouteWorkspaceId(scenario.route);
+  if (!workspaceId) {
+    return;
+  }
+
+  const switcher = page.getByTestId('topbar__workspace-switcher');
+  if (!(await switcher.isVisible().catch(() => false))) {
+    return;
+  }
+
+  const expectedName = resolveVisualFixtureWorkspaceName(workspaceId);
+  if (expectedName) {
+    await expect(switcher).toContainText(expectedName, { timeout: 15_000 });
+    return;
+  }
+
+  await expect(switcher).not.toContainText(/Select Workspace|选择工作空间/, { timeout: 15_000 });
+}
+
 async function waitForNotebookTerminalTruthReady(page: Page) {
   await expect(page.getByTestId('notebook__task-header')).toHaveAttribute('data-terminal-truth-state', 'ready', {
     timeout: 15_000,
@@ -2305,6 +2344,7 @@ async function runVisualScenario(context: VisualScenarioContext) {
 
   await waitForStableRecipeMarkers(page, scenario);
   await expectVisualSemanticAssertions(page, scenario.semanticAssertions, scenario.scenarioId);
+  await waitForVisualRouteWorkspaceIdentityReady(page, scenario);
   const actualCapture = await captureSnapshotBoundActualScreenshot({
     page,
     entry,

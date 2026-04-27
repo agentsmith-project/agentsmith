@@ -58,6 +58,23 @@ function sanitizeBaseUrl(value: string | undefined | null): string | null {
   return trimmed.replace(/\/+$/, '');
 }
 
+function sanitizeWebSocketOriginBaseUrl(value: string | undefined | null): string | null {
+  const trimmed = sanitizeBaseUrl(value);
+  if (!trimmed) return null;
+  try {
+    const parsed = new URL(trimmed);
+    if (parsed.protocol === 'ws:' || parsed.protocol === 'wss:') {
+      parsed.pathname = '';
+      parsed.search = '';
+      parsed.hash = '';
+      return parsed.toString().replace(/\/+$/, '');
+    }
+  } catch {
+    return trimmed;
+  }
+  return trimmed;
+}
+
 function deriveWebSocketBaseFromHttpBase(value: string | undefined | null): string | null {
   const trimmed = sanitizeBaseUrl(value);
   if (!trimmed) return null;
@@ -93,7 +110,7 @@ function resolveConnectionWsBase(agent: Pick<AgentRecord, 'mode' | 'config'>): s
     );
   }
   return (
-    sanitizeBaseUrl(process.env.AGENT_EXECUTION_WS_BASE_URL)
+    sanitizeWebSocketOriginBaseUrl(process.env.AGENT_EXECUTION_WS_BASE_URL)
     ?? deriveWebSocketBaseFromHttpBase(process.env.AGENT_EXECUTION_HTTP_BASE_URL)
     ?? 'ws://localhost:20000'
   );

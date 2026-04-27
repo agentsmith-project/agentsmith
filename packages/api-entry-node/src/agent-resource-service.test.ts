@@ -639,4 +639,18 @@ describe('AgentResourceService', () => {
       'ws://10.88.0.1:20000/api/v1/agent-execution/ws?agent_id=ag_internal_1',
     );
   });
+
+  it('normalizes internal agent websocket base before appending the agent execution endpoint path', () => {
+    process.env.AGENT_EXECUTION_WS_BASE_URL = 'ws://10.88.0.1:41000/api/v1';
+
+    const service = new AgentResourceService(new InMemoryJsonDocStore());
+    const connectionInfo = service.buildConnectionInfo({
+      id: 'ag_internal_1',
+      mode: 'internal',
+    });
+
+    expect(connectionInfo.ws_url).toBe(
+      'ws://10.88.0.1:41000/api/v1/agent-execution/ws?agent_id=ag_internal_1',
+    );
+  });
 });

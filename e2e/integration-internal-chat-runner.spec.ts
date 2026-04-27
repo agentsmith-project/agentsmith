@@ -80,6 +80,20 @@ function requireInternalSandboxNamespace(): string {
   return namespace;
 }
 
+function internalWorkloadReachableUpstreamOptions(): {
+  listenHost?: string;
+  advertiseHost?: string;
+} {
+  const advertiseHost = process.env.INTEGRATION_INTERNAL_WORKLOAD_UPSTREAM_HOST?.trim();
+  if (!advertiseHost) {
+    return {};
+  }
+  return {
+    listenHost: '0.0.0.0',
+    advertiseHost,
+  };
+}
+
 function requireRealLaneApiKey(): string {
   const value = process.env.BACKEND_REAL_API_KEY?.trim();
   if (!value) {
@@ -419,6 +433,7 @@ test.describe('@lane-real internal chat runner integration', () => {
     const slowUpstream = await startOpenAICompatibleUpstreamWith({
       replyText: 'slow upstream reply should never fully arrive before terminate',
       holdResponseOpen: true,
+      ...internalWorkloadReachableUpstreamOptions(),
     });
     const streamAbortController = new AbortController();
     let streamSettled = false;

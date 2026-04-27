@@ -121,6 +121,59 @@ describe('demo-rehearsal site env seeding', () => {
     }
   });
 
+  it('seeds a scenario-owned host port range so release campaigns do not collide with backend-real dependencies', () => {
+    const tempRoot = mkdtempSync(path.join(os.tmpdir(), 'demo-rehearsal-owned-ports-'));
+    try {
+      stageDemoRehearsalFixture(tempRoot);
+
+      runDemoRehearsalCommon(tempRoot);
+
+      const seededSiteEnv = path.join(tempRoot, 'scenario', 'config', 'site.env');
+      expect(readEnvValue(seededSiteEnv, 'POSTGRES_PORT')).toBe('35432');
+      expect(readEnvValue(seededSiteEnv, 'MONGO_PORT')).toBe('37017');
+      expect(readEnvValue(seededSiteEnv, 'REDIS_PORT')).toBe('36379');
+      expect(readEnvValue(seededSiteEnv, 'MINIO_API_PORT')).toBe('39000');
+      expect(readEnvValue(seededSiteEnv, 'MINIO_CONSOLE_PORT')).toBe('39001');
+      expect(readEnvValue(seededSiteEnv, 'KEYCLOAK_PORT')).toBe('38080');
+      expect(readEnvValue(seededSiteEnv, 'API_PORT')).toBe('40000');
+      expect(readEnvValue(seededSiteEnv, 'WEB_PORT')).toBe('33001');
+      expect(readEnvValue(seededSiteEnv, 'PUBLIC_WEB_BASE_URL')).toBe('http://localhost:33001');
+      expect(readEnvValue(seededSiteEnv, 'PUBLIC_API_BASE_URL')).toBe('http://localhost:40000');
+      expect(readEnvValue(seededSiteEnv, 'PUBLIC_KEYCLOAK_BASE_URL')).toBe('http://localhost:38080');
+      expect(readEnvValue(seededSiteEnv, 'HOST_LOCAL_POSTGRES_PORT')).toBe('35432');
+      expect(readEnvValue(seededSiteEnv, 'HOST_LOCAL_MINIO_ENDPOINT')).toBe('http://localhost:39000');
+      expect(readEnvValue(seededSiteEnv, 'CLIENT_PUBLIC_POSTGRES_PORT')).toBe('35432');
+      expect(readEnvValue(seededSiteEnv, 'CLIENT_PUBLIC_MINIO_ENDPOINT')).toBe('http://localhost:39000');
+      expect(readEnvValue(seededSiteEnv, 'INTEGRATION_PUBLIC_WEB_BASES')).toBe(
+        'http://localhost:33001,http://127.0.0.1:33001',
+      );
+    } finally {
+      rmSync(tempRoot, { recursive: true, force: true });
+    }
+  });
+
+  it('backfills missing current site env schema keys into a legacy rehearsal config without overwriting existing values', () => {
+    const tempRoot = mkdtempSync(path.join(os.tmpdir(), 'demo-rehearsal-legacy-site-env-'));
+    try {
+      stageDemoRehearsalFixture(tempRoot);
+      const seededSiteEnv = path.join(tempRoot, 'scenario', 'config', 'site.env');
+      mkdirSync(path.dirname(seededSiteEnv), { recursive: true });
+      writeFileSync(seededSiteEnv, 'PRESET_ENDPOINT_API_KEY=legacy-secret\n', 'utf8');
+
+      runDemoRehearsalCommon(tempRoot);
+
+      const siteEnvText = readFileSync(seededSiteEnv, 'utf8');
+      expect(readEnvValue(seededSiteEnv, 'PRESET_ENDPOINT_API_KEY')).toBe('legacy-secret');
+      expect(readEnvValue(seededSiteEnv, 'RUNTIME_PROXY_MODE')).toBe('sanitized');
+      expect(siteEnvText).toContain('RUNTIME_HTTP_PROXY=');
+      expect(siteEnvText).toContain('RUNTIME_HTTPS_PROXY=');
+      expect(siteEnvText).toContain('RUNTIME_ALL_PROXY=');
+      expect(readEnvValue(seededSiteEnv, 'SANDBOX_HOST_PORT')).toBe('29280');
+    } finally {
+      rmSync(tempRoot, { recursive: true, force: true });
+    }
+  });
+
   it('hydrates a fresh rehearsal site env with PRESET_ENDPOINT_API_KEY from .env.backend-real without mutating the tracked example', () => {
     const tempRoot = mkdtempSync(path.join(os.tmpdir(), 'demo-rehearsal-common-'));
     try {
@@ -159,6 +212,27 @@ describe('demo-rehearsal site env seeding', () => {
     }
   });
 
+  it('hydrates a fresh rehearsal site env with MBOS_UNIVERSAL_PROXY_DATA_TOKEN without mutating the tracked example', () => {
+    const tempRoot = mkdtempSync(path.join(os.tmpdir(), 'demo-rehearsal-proxy-data-token-'));
+    try {
+      stageDemoRehearsalFixture(tempRoot);
+
+      runDemoRehearsalCommon(tempRoot);
+      const seededSiteEnv = path.join(tempRoot, 'scenario', 'config', 'site.env');
+      const exampleSiteEnv = path.join(tempRoot, 'infra', 'deploy', 'demo', 'env', 'site.env.example');
+      const firstToken = readEnvValue(seededSiteEnv, 'MBOS_UNIVERSAL_PROXY_DATA_TOKEN');
+
+      runDemoRehearsalCommon(tempRoot);
+      const secondToken = readEnvValue(seededSiteEnv, 'MBOS_UNIVERSAL_PROXY_DATA_TOKEN');
+
+      expect(firstToken).not.toBe('');
+      expect(secondToken).toBe(firstToken);
+      expect(readEnvValue(exampleSiteEnv, 'MBOS_UNIVERSAL_PROXY_DATA_TOKEN')).toBe('');
+    } finally {
+      rmSync(tempRoot, { recursive: true, force: true });
+    }
+  });
+
   it('preserves an explicit rehearsal PRESET_ENDPOINT_API_KEY instead of overwriting it from .env.backend-real', () => {
     const tempRoot = mkdtempSync(path.join(os.tmpdir(), 'demo-rehearsal-common-explicit-'));
     try {
@@ -189,6 +263,23 @@ describe('demo-rehearsal site env seeding', () => {
 
       const seededSiteEnv = path.join(tempRoot, 'scenario', 'config', 'site.env');
       expect(readEnvValue(seededSiteEnv, 'MBOS_UNIVERSAL_PROXY_ADMIN_TOKEN')).toBe('site-proxy-token');
+    } finally {
+      rmSync(tempRoot, { recursive: true, force: true });
+    }
+  });
+
+  it('preserves an explicit rehearsal MBOS_UNIVERSAL_PROXY_DATA_TOKEN instead of replacing it', () => {
+    const tempRoot = mkdtempSync(path.join(os.tmpdir(), 'demo-rehearsal-proxy-data-token-explicit-'));
+    try {
+      stageDemoRehearsalFixture(tempRoot);
+
+      runDemoRehearsalCommon(
+        tempRoot,
+        'printf \'MBOS_UNIVERSAL_PROXY_DATA_TOKEN=site-proxy-data-token\\n\' > "${DEMO_REHEARSAL_CONFIG_DIR}/site.env"',
+      );
+
+      const seededSiteEnv = path.join(tempRoot, 'scenario', 'config', 'site.env');
+      expect(readEnvValue(seededSiteEnv, 'MBOS_UNIVERSAL_PROXY_DATA_TOKEN')).toBe('site-proxy-data-token');
     } finally {
       rmSync(tempRoot, { recursive: true, force: true });
     }

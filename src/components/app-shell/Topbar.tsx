@@ -123,6 +123,7 @@ export function Topbar({ className = '', workspaceId: workspaceIdProp, projectId
     if (!workspaceId || !workspaces) return null;
     return workspaces.find((ws) => ws.id === workspaceId) || null;
   }, [workspaceId, workspaces]);
+  const currentWorkspaceLabel = currentWorkspace?.name || workspaceId || t('select_workspace');
 
   const handleWorkspaceChange = (newWorkspaceId: string) => {
     router.push(`/workspaces/${newWorkspaceId}`);
@@ -217,7 +218,7 @@ export function Topbar({ className = '', workspaceId: workspaceIdProp, projectId
             className={`${quietSwitcherClassName} max-w-[20rem]`}
           >
             <Globe className='h-4 w-4 flex-shrink-0 text-icon-default' />
-            <span className='truncate text-[13px] text-foreground'>{currentWorkspace?.name || t('select_workspace')}</span>
+            <span className='truncate text-[13px] text-foreground'>{currentWorkspaceLabel}</span>
             <ChevronDown className='ml-auto h-4 w-4 flex-shrink-0 text-tertiary' />
           </DropdownMenuTrigger>
           <DropdownMenuContent align='start'>

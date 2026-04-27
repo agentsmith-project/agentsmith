@@ -462,6 +462,8 @@ exit 0
       });
       expect(demo.SCENARIO_RUNTIME_ROOT).toBe(join(root, 'scenario-runtime'));
       expect(demo.DEMO_REHEARSAL_ROOT).toBe(join(root, 'lane-demo-rehearsal', 'scenario'));
+      expect(demo.DEMO_REHEARSAL_SKIP_RELEASE_ARCHIVE).toBe('1');
+      expect(demo.DEMO_REHEARSAL_SKIP_BUNDLED_IMAGE_LOAD).toBe('1');
 
       const cluster = buildReleaseCampaignCommandEnv({
         campaignRoot: root,
@@ -471,6 +473,8 @@ exit 0
       });
       expect(cluster.SCENARIO_RUNTIME_ROOT).toBe(join(root, 'scenario-runtime'));
       expect(cluster.CLUSTER_REHEARSAL_ROOT).toBe(join(root, 'lane-cluster-rehearsal', 'scenario'));
+      expect(cluster.CLUSTER_REHEARSAL_SKIP_RELEASE_ARCHIVE).toBe('1');
+      expect(cluster.CLUSTER_REHEARSAL_SKIP_BUNDLED_IMAGE_LOAD).toBe('1');
     } finally {
       rmSync(root, { recursive: true, force: true });
     }

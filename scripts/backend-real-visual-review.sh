@@ -44,13 +44,17 @@ info "backend-real logs:"
 info "  API: ${API_LOG}"
 info "  Web: ${WEB_LOG}"
 
-run_cmd "BACKEND_REAL_API_KEY='${BACKEND_REAL_API_KEY_VALUE}' \
-RELEASE_REAL_VISUAL_ARTIFACT_DIR='${ARTIFACT_DIR}' \
-UX_TRACE_OUTPUT_ROOT='${ARTIFACT_DIR}/ux-traces' \
-INTEGRATION_API_PORT='${API_PORT}' \
-INTEGRATION_WEB_PORT='${WEB_PORT}' \
-INTEGRATION_API_LOG='${API_LOG}' \
-INTEGRATION_WEB_LOG='${WEB_LOG}' \
-bash scripts/run-integration-e2e-full.sh e2e/integration-visual-review.spec.ts"
+info "BACKEND_REAL_API_KEY=<redacted> RELEASE_REAL_VISUAL_ARTIFACT_DIR='${ARTIFACT_DIR}' INTEGRATION_API_PORT='${API_PORT}' INTEGRATION_WEB_PORT='${WEB_PORT}' bash scripts/run-integration-e2e-full.sh e2e/integration-visual-review.spec.ts"
+(
+  cd "${ROOT_DIR}" && \
+    BACKEND_REAL_API_KEY="${BACKEND_REAL_API_KEY_VALUE}" \
+    RELEASE_REAL_VISUAL_ARTIFACT_DIR="${ARTIFACT_DIR}" \
+    UX_TRACE_OUTPUT_ROOT="${ARTIFACT_DIR}/ux-traces" \
+    INTEGRATION_API_PORT="${API_PORT}" \
+    INTEGRATION_WEB_PORT="${WEB_PORT}" \
+    INTEGRATION_API_LOG="${API_LOG}" \
+    INTEGRATION_WEB_LOG="${WEB_LOG}" \
+    bash scripts/run-integration-e2e-full.sh e2e/integration-visual-review.spec.ts
+)
 
 info "real visual review capture completed"

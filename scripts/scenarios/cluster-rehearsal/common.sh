@@ -81,17 +81,20 @@ EOF
 
 ensure_cluster_rehearsal_site_env() {
   local site_env="${CLUSTER_REHEARSAL_CONFIG_DIR}/site.env"
+  local example_site_env="${ROOT_DIR}/infra/deploy/cluster/env/site.env.example"
   if [[ ! -f "${site_env}" ]]; then
     if [[ -f "${ROOT_DIR}/.infra/cluster-deploy/site.env" ]]; then
       cp "${ROOT_DIR}/.infra/cluster-deploy/site.env" "${site_env}"
     else
-      cp "${ROOT_DIR}/infra/deploy/cluster/env/site.env.example" "${site_env}"
+      cp "${example_site_env}" "${site_env}"
     fi
   fi
+  merge_missing_site_env_keys_from_example "${site_env}" "${example_site_env}"
   apply_flow_site_env_overrides "${site_env}"
   canonicalize_cluster_rehearsal_site_env_protocol_aliases "${site_env}"
   rewrite_cluster_rehearsal_sandbox_public_base_url "${site_env}"
   ensure_scenario_site_env_proxy_admin_token "${site_env}" "${CLUSTER_REHEARSAL_NAME}"
+  ensure_scenario_site_env_proxy_data_token "${site_env}" "${CLUSTER_REHEARSAL_NAME}"
   render_cluster_rehearsal_kind_config
   validate_cluster_rehearsal_site_env "${site_env}"
 }
@@ -164,6 +167,39 @@ if not seen:
 
 path.write_text("\n".join(updated) + "\n", encoding="utf-8")
 PY
+}
+
+cluster_rehearsal_kind_gateway_host() {
+  if [[ -n "${CLUSTER_REHEARSAL_KIND_GATEWAY_HOST:-}" ]]; then
+    printf '%s\n' "${CLUSTER_REHEARSAL_KIND_GATEWAY_HOST}"
+    return 0
+  fi
+
+  docker network inspect kind -f '{{range .IPAM.Config}}{{println .Gateway}}{{end}}' 2>/dev/null \
+    | awk '/^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$/ { print; exit }'
+}
+
+rewrite_cluster_rehearsal_kind_gateway_site_env() {
+  local site_env="$1"
+  local gateway_host
+  local postgres_port
+  local minio_port
+  local api_port
+
+  gateway_host="$(cluster_rehearsal_kind_gateway_host || true)"
+  [[ -n "${gateway_host}" ]] || return 0
+
+  postgres_port="$(site_env_value "${site_env}" POSTGRES_PORT)"
+  minio_port="$(site_env_value "${site_env}" MINIO_API_PORT)"
+  api_port="$(site_env_value "${site_env}" API_PORT)"
+
+  [[ -n "${postgres_port}" ]] && write_site_env_value "${site_env}" K8S_EXTERNAL_POSTGRES_PORT "${postgres_port}"
+  [[ -n "${minio_port}" ]] && write_site_env_value "${site_env}" K8S_EXTERNAL_MINIO_PORT "${minio_port}"
+  write_site_env_value "${site_env}" K8S_EXTERNAL_POSTGRES_HOST "${gateway_host}"
+  write_site_env_value "${site_env}" K8S_EXTERNAL_MINIO_HOST "${gateway_host}"
+  if [[ -n "${api_port}" ]]; then
+    write_site_env_value "${site_env}" K8S_EXTERNAL_API_BASE_URL "http://${gateway_host}:${api_port}"
+  fi
 }
 
 validate_cluster_rehearsal_site_env() {

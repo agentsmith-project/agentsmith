@@ -127,6 +127,85 @@ describe('cluster-rehearsal generated state ownership', () => {
     }
   });
 
+  it('backfills missing current site env schema keys into a legacy operator config without mutating the operator file', () => {
+    const tempRoot = mkdtempSync(path.join(os.tmpdir(), 'cluster-rehearsal-legacy-site-env-'));
+
+    try {
+      stageClusterRehearsalFixture(tempRoot);
+      mkdirSync(path.join(tempRoot, '.infra', 'cluster-deploy'), { recursive: true });
+      const operatorSiteEnv = path.join(tempRoot, '.infra', 'cluster-deploy', 'site.env');
+      writeFileSync(operatorSiteEnv, 'PRESET_ENDPOINT_API_KEY=legacy-cluster-secret\n', 'utf8');
+
+      runClusterRehearsalCommand(
+        tempRoot,
+        `
+          source "${tempRoot}/scripts/scenarios/cluster-rehearsal/common.sh"
+          init_cluster_rehearsal_env
+          ensure_cluster_rehearsal_site_env
+        `,
+      );
+
+      const seededSiteEnv = path.join(tempRoot, 'scenario', 'config', 'site.env');
+      const seededSiteEnvText = readFileSync(seededSiteEnv, 'utf8');
+      const operatorSiteEnvText = readFileSync(operatorSiteEnv, 'utf8');
+
+      expect(readEnvValue(seededSiteEnv, 'PRESET_ENDPOINT_API_KEY')).toBe('legacy-cluster-secret');
+      expect(readEnvValue(seededSiteEnv, 'RUNTIME_PROXY_MODE')).toBe('sanitized');
+      expect(seededSiteEnvText).toContain('RUNTIME_HTTP_PROXY=');
+      expect(seededSiteEnvText).toContain('RUNTIME_HTTPS_PROXY=');
+      expect(seededSiteEnvText).toContain('RUNTIME_ALL_PROXY=');
+      expect(operatorSiteEnvText).not.toContain('RUNTIME_PROXY_MODE=');
+    } finally {
+      rmSync(tempRoot, { recursive: true, force: true });
+    }
+  });
+
+  it('seeds a scenario-owned host port range and rewrites kind-facing addresses for local full-auto rehearsal', () => {
+    const tempRoot = mkdtempSync(path.join(os.tmpdir(), 'cluster-rehearsal-owned-ports-'));
+
+    try {
+      stageClusterRehearsalFixture(tempRoot);
+
+      runClusterRehearsalCommand(
+        tempRoot,
+        `
+          source "${tempRoot}/scripts/scenarios/cluster-rehearsal/common.sh"
+          init_cluster_rehearsal_env
+          ensure_cluster_rehearsal_site_env
+          CLUSTER_REHEARSAL_KIND_GATEWAY_HOST=10.88.0.1 rewrite_cluster_rehearsal_kind_gateway_site_env "${tempRoot}/scenario/config/site.env"
+        `,
+      );
+
+      const seededSiteEnv = path.join(tempRoot, 'scenario', 'config', 'site.env');
+      expect(readEnvValue(seededSiteEnv, 'CLUSTER_DEPLOY_MODE')).toBe('full-auto');
+      expect(readEnvValue(seededSiteEnv, 'POSTGRES_PORT')).toBe('45432');
+      expect(readEnvValue(seededSiteEnv, 'MONGO_PORT')).toBe('47017');
+      expect(readEnvValue(seededSiteEnv, 'REDIS_PORT')).toBe('46379');
+      expect(readEnvValue(seededSiteEnv, 'MINIO_API_PORT')).toBe('49000');
+      expect(readEnvValue(seededSiteEnv, 'MINIO_CONSOLE_PORT')).toBe('49001');
+      expect(readEnvValue(seededSiteEnv, 'KEYCLOAK_PORT')).toBe('48080');
+      expect(readEnvValue(seededSiteEnv, 'API_PORT')).toBe('41000');
+      expect(readEnvValue(seededSiteEnv, 'WEB_PORT')).toBe('43001');
+      expect(readEnvValue(seededSiteEnv, 'PUBLIC_WEB_BASE_URL')).toBe('http://localhost:43001');
+      expect(readEnvValue(seededSiteEnv, 'PUBLIC_API_BASE_URL')).toBe('http://localhost:41000/api/v1');
+      expect(readEnvValue(seededSiteEnv, 'PUBLIC_KEYCLOAK_BASE_URL')).toBe('http://localhost:48080');
+      expect(readEnvValue(seededSiteEnv, 'HOST_LOCAL_POSTGRES_PORT')).toBe('45432');
+      expect(readEnvValue(seededSiteEnv, 'HOST_LOCAL_MINIO_ENDPOINT')).toBe('http://127.0.0.1:49000');
+      expect(readEnvValue(seededSiteEnv, 'CLIENT_PUBLIC_POSTGRES_PORT')).toBe('45432');
+      expect(readEnvValue(seededSiteEnv, 'CLIENT_PUBLIC_MINIO_ENDPOINT')).toBe('http://127.0.0.1:49000');
+      expect(readEnvValue(seededSiteEnv, 'K8S_EXTERNAL_POSTGRES_HOST')).toBe('10.88.0.1');
+      expect(readEnvValue(seededSiteEnv, 'K8S_EXTERNAL_POSTGRES_PORT')).toBe('45432');
+      expect(readEnvValue(seededSiteEnv, 'K8S_EXTERNAL_MINIO_HOST')).toBe('10.88.0.1');
+      expect(readEnvValue(seededSiteEnv, 'K8S_EXTERNAL_MINIO_PORT')).toBe('49000');
+      expect(readEnvValue(seededSiteEnv, 'K8S_EXTERNAL_API_BASE_URL')).toBe('http://10.88.0.1:41000');
+      expect(readEnvValue(seededSiteEnv, 'INTEGRATION_PUBLIC_WEB_BASES')).toBe(
+        'http://localhost:43001,http://127.0.0.1:43001',
+      );
+    } finally {
+      rmSync(tempRoot, { recursive: true, force: true });
+    }
+  });
+
   it('rewrites fresh site.env seeds to the tracked rehearsal sandbox URL truth', () => {
     const repoRoot = process.cwd();
     const tempRoot = mkdtempSync(path.join(os.tmpdir(), 'cluster-rehearsal-site-env-'));

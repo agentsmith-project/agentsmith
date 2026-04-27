@@ -53,9 +53,11 @@ render_demo_rehearsal_kind_config() {
 
 ensure_demo_rehearsal_site_env() {
   local site_env="${DEMO_REHEARSAL_CONFIG_DIR}/site.env"
+  local example_site_env="${ROOT_DIR}/infra/deploy/demo/env/site.env.example"
   if [[ ! -f "${site_env}" ]]; then
-    cp "${ROOT_DIR}/infra/deploy/demo/env/site.env.example" "${site_env}"
+    cp "${example_site_env}" "${site_env}"
   fi
+  merge_missing_site_env_keys_from_example "${site_env}" "${example_site_env}"
   apply_flow_site_env_overrides "${site_env}"
   render_demo_rehearsal_kind_config
   hydrate_demo_rehearsal_site_env_secrets "${site_env}"
@@ -67,6 +69,7 @@ hydrate_demo_rehearsal_site_env_secrets() {
   local current_value resolved_value
 
   ensure_scenario_site_env_proxy_admin_token "${site_env}" "${DEMO_REHEARSAL_NAME}"
+  ensure_scenario_site_env_proxy_data_token "${site_env}" "${DEMO_REHEARSAL_NAME}"
 
   current_value="$(site_env_value "${site_env}" PRESET_ENDPOINT_API_KEY)"
   if [[ -n "${current_value}" ]]; then

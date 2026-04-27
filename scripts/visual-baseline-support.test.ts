@@ -204,6 +204,26 @@ describe('visual baseline support', () => {
     expect(visualSpec).toContain('maxDiffPixelRatio: 0');
   });
 
+  it('waits for route workspace identity before visual screenshots to avoid shell-level flakes', async () => {
+    const visualSpec = await readFile(path.resolve('e2e/visual.spec.ts'), 'utf-8');
+    const runScenarioSource = extractSourceSection({
+      source: visualSpec,
+      start: 'async function runVisualScenario',
+      end: "test.describe('Visual Auth Contract'",
+    });
+
+    const identityWaitIndex = runScenarioSource.indexOf('waitForVisualRouteWorkspaceIdentityReady(page, scenario)');
+    const captureCallIndex = runScenarioSource.indexOf(
+      'const actualCapture = await captureSnapshotBoundActualScreenshot({',
+    );
+
+    expect(visualSpec).toContain('async function waitForVisualRouteWorkspaceIdentityReady');
+    expect(visualSpec).toContain('topbar__workspace-switcher');
+    expect(identityWaitIndex).toBeGreaterThan(-1);
+    expect(captureCallIndex).toBeGreaterThan(-1);
+    expect(identityWaitIndex).toBeLessThan(captureCallIndex);
+  });
+
   it('groups paired light/dark screenshots under the same scenario record', () => {
     const grouped = groupVisualBaselineCatalogByScenario();
 

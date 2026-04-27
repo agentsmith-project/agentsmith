@@ -22,6 +22,8 @@ export async function startOpenAICompatibleUpstreamWith(args: {
   errorMessage?: string;
   errorCode?: string;
   holdResponseOpen?: boolean;
+  listenHost?: string;
+  advertiseHost?: string;
 }): Promise<{
   server: Server;
   baseUrl: string;
@@ -192,11 +194,13 @@ export async function startOpenAICompatibleUpstreamWith(args: {
     });
   });
 
-  await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', () => resolve()));
+  const listenHost = args.listenHost ?? '127.0.0.1';
+  const advertiseHost = args.advertiseHost ?? listenHost;
+  await new Promise<void>((resolve) => server.listen(0, listenHost, () => resolve()));
   const address = server.address() as AddressInfo;
   return {
     server,
-    baseUrl: `http://127.0.0.1:${address.port}/v1`,
+    baseUrl: `http://${advertiseHost}:${address.port}/v1`,
     getRequestCount: () => requestCount,
     getAbortedRequestCount: () => abortedRequestCount,
     releasePendingResponses,

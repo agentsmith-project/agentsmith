@@ -12,7 +12,11 @@ describe('rehearsal internal chat verification contract', () => {
     const clusterBuild = read('scripts/cluster-deploy/build-bundle.sh');
 
     expect(demoBuild).toContain('copy_bundle_file "${ROOT_DIR}/e2e/integration-internal-chat-runner.spec.ts"');
+    expect(demoBuild).toContain('copy_bundle_file "${ROOT_DIR}/e2e/integration-chat-local-upstream.ts"');
+    expect(demoBuild).toContain('copy_bundle_file "${ROOT_DIR}/e2e/internal-chat-isolation-probe.ts"');
     expect(clusterBuild).toContain('copy_bundle_file "${ROOT_DIR}/e2e/integration-internal-chat-runner.spec.ts"');
+    expect(clusterBuild).toContain('copy_bundle_file "${ROOT_DIR}/e2e/integration-chat-local-upstream.ts"');
+    expect(clusterBuild).toContain('copy_bundle_file "${ROOT_DIR}/e2e/internal-chat-isolation-probe.ts"');
   });
 
   it('runs internal chat verification in release-like demo full and cluster verify flows', () => {
@@ -24,6 +28,7 @@ describe('rehearsal internal chat verification contract', () => {
     expect(demoVerify).toContain('prepare_demo_full_mode_verify_inputs() {');
     expect(demoVerify).toContain('if ! demo_mode_is_full; then');
     expect(demoVerify).toContain('VERIFY_INTEGRATION_INTERNAL_CHAT_RUNNER_SPEC="$(resolve_verify_source_file "e2e/integration-internal-chat-runner.spec.ts")"');
+    expect(demoVerify).toContain('VERIFY_INTERNAL_CHAT_ISOLATION_PROBE="$(resolve_verify_source_file "e2e/internal-chat-isolation-probe.ts")"');
     expect(demoVerify).toContain('VERIFY_BUNDLED_KUBECTL="${RELEASE_ROOT}/tools/kubectl"');
     expect(demoVerify).toContain('[[ -x "${VERIFY_BUNDLED_KUBECTL}" ]] || die "bundled kubectl missing from release tools"');
     expect(demoVerify).toContain('VERIFY_KUBECONFIG_SOURCE="${KUBECONFIG:-}"');
@@ -32,6 +37,7 @@ describe('rehearsal internal chat verification contract', () => {
     expect(demoVerify).toContain('-v "${VERIFY_INTEGRATION_INTERNAL_CHAT_RUNNER_SPEC}:/app/e2e/integration-internal-chat-runner.spec.ts:ro"');
     expect(demoVerify).toContain('-v "${VERIFY_BUNDLED_KUBECTL}:/usr/local/bin/kubectl:ro"');
     expect(demoVerify).toContain('-v "${VERIFY_KUBECONFIG_SOURCE}:/tmp/verify-kubeconfig:ro"');
+    expect(demoVerify).toContain('-v "${VERIFY_INTERNAL_CHAT_ISOLATION_PROBE}:/app/e2e/internal-chat-isolation-probe.ts:ro"');
     expect(demoVerify).toContain('DEMO_FULL_MODE_VERIFY_ENV+=(');
     expect(demoVerify).toContain('-e KUBECONFIG=/tmp/verify-kubeconfig');
     expect(demoVerify).toContain('-e SANDBOX_MANAGER_URL="${SANDBOX_MANAGER_URL:-}"');
@@ -48,6 +54,8 @@ describe('rehearsal internal chat verification contract', () => {
     expect(demoVerify).toContain('"${DEMO_FULL_MODE_VERIFY_ENV[@]}"');
 
     expect(clusterVerify).toContain('VERIFY_INTEGRATION_INTERNAL_CHAT_RUNNER_SPEC=');
+    expect(clusterVerify).toContain('VERIFY_INTEGRATION_CHAT_LOCAL_UPSTREAM=');
+    expect(clusterVerify).toContain('VERIFY_INTERNAL_CHAT_ISOLATION_PROBE=');
     expect(clusterVerify).toContain('VERIFY_BUNDLED_KUBECTL="${RELEASE_ROOT}/tools/kubectl"');
     expect(clusterVerify).toContain('[[ -x "${VERIFY_BUNDLED_KUBECTL}" ]] || die "bundled kubectl missing from release tools"');
     expect(clusterVerify).toContain('ensure_operator_manager_kubeconfig');
@@ -58,6 +66,8 @@ describe('rehearsal internal chat verification contract', () => {
     expect(clusterVerify).toContain('get pods -n \\"${INTERNAL_AGENT_K8S_NAMESPACE}\\" >/dev/null');
     expect(clusterVerify).toContain('record_service verify_kubeconfig ready "${VERIFY_KUBECONFIG_SOURCE}"');
     expect(clusterVerify).toContain('-v "${VERIFY_INTEGRATION_INTERNAL_CHAT_RUNNER_SPEC}:/app/e2e/integration-internal-chat-runner.spec.ts:ro"');
+    expect(clusterVerify).toContain('-v "${VERIFY_INTEGRATION_CHAT_LOCAL_UPSTREAM}:/app/e2e/integration-chat-local-upstream.ts:ro"');
+    expect(clusterVerify).toContain('-v "${VERIFY_INTERNAL_CHAT_ISOLATION_PROBE}:/app/e2e/internal-chat-isolation-probe.ts:ro"');
     expect(clusterVerify).toContain('-v "${VERIFY_BUNDLED_KUBECTL}:/usr/local/bin/kubectl:ro"');
     expect(clusterVerify).toContain('-v "${VERIFY_KUBECONFIG_SOURCE}:/tmp/verify-kubeconfig:ro"');
     expect(clusterVerify).toContain('-e KUBECONFIG=/tmp/verify-kubeconfig');
@@ -65,10 +75,20 @@ describe('rehearsal internal chat verification contract', () => {
     expect(clusterVerify).toContain('-e SANDBOX_SERVICE_KEY="${SANDBOX_SERVICE_KEY}"');
     expect(clusterVerify).toContain('-e INTERNAL_AGENT_K8S_NAMESPACE="${INTERNAL_AGENT_K8S_NAMESPACE}"');
     expect(clusterVerify).toContain('-e INTEGRATION_INTERNAL_CHAT_AGENT_IMAGE="${K8S_CHAT_RUNNER_IMAGE}"');
+    expect(clusterVerify).toContain('-e INTEGRATION_INTERNAL_WORKLOAD_UPSTREAM_HOST="${INTEGRATION_INTERNAL_WORKLOAD_UPSTREAM_HOST_VALUE}"');
     expect(clusterVerify).toContain('-e INTEGRATION_CHAT_RUNNER_BASE_DOCKER_IMAGE="${CHAT_RUNNER_IMAGE}"');
     expect(clusterVerify).toContain('-e INTEGRATION_CHAT_RUNNER_REBUILD_BASE_IMAGE=0');
     expect(clusterVerify).toContain('-e INTEGRATION_CHAT_RUNNER_REBUILD_IMAGE=0');
     expect(clusterVerify).toContain('e2e/integration-internal-chat-runner.spec.ts');
+  });
+
+  it('makes cluster internal chat verification advertise host-reachable local upstream fixtures to kind workloads', () => {
+    const clusterVerify = read('scripts/cluster-deploy/verify.sh');
+
+    expect(clusterVerify).toContain('INTEGRATION_INTERNAL_WORKLOAD_UPSTREAM_HOST_VALUE="${INTEGRATION_INTERNAL_WORKLOAD_UPSTREAM_HOST:-${RESOLVED_KIND_GATEWAY_HOST:-}}"');
+    expect(clusterVerify).toContain('INTEGRATION_INTERNAL_WORKLOAD_UPSTREAM_HOST_VALUE="$(detect_kind_gateway_ip)"');
+    expect(clusterVerify).toContain('internal chat verify upstream host is empty');
+    expect(clusterVerify).toContain('-e INTEGRATION_INTERNAL_WORKLOAD_UPSTREAM_HOST="${INTEGRATION_INTERNAL_WORKLOAD_UPSTREAM_HOST_VALUE}"');
   });
 
   it('keeps the chat runner image available to demo full and cluster rehearsal targets', () => {

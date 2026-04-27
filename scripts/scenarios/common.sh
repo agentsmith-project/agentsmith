@@ -150,6 +150,43 @@ path.write_text("\n".join(updated) + "\n", encoding='utf-8')
 PY
 }
 
+merge_missing_site_env_keys_from_example() {
+  local site_env="$1"
+  local example_env="$2"
+  [[ -f "${example_env}" ]] || return 0
+
+  python3 - <<'PY' "${site_env}" "${example_env}"
+from pathlib import Path
+import sys
+
+site_env = Path(sys.argv[1])
+example_env = Path(sys.argv[2])
+target_lines = site_env.read_text(encoding="utf-8").splitlines() if site_env.exists() else []
+example_lines = example_env.read_text(encoding="utf-8").splitlines()
+
+
+def env_key(line: str) -> str | None:
+    stripped = line.strip()
+    if not stripped or stripped.startswith("#") or "=" not in stripped:
+        return None
+    return stripped.split("=", 1)[0].strip()
+
+
+declared = {key for line in target_lines if (key := env_key(line))}
+updated = list(target_lines)
+
+for line in example_lines:
+    key = env_key(line)
+    if key is None or key in declared:
+        continue
+    updated.append(line)
+    declared.add(key)
+
+site_env.parent.mkdir(parents=True, exist_ok=True)
+site_env.write_text("\n".join(updated) + "\n", encoding="utf-8")
+PY
+}
+
 scenario_deterministic_secret_value() {
   local secret_scope="$1"
   local site_env_path="$2"
@@ -187,6 +224,12 @@ ensure_scenario_site_env_proxy_admin_token() {
   local site_env="$1"
   local scenario_name="${2:-scenario}"
   ensure_scenario_site_env_secret "${site_env}" MBOS_UNIVERSAL_PROXY_ADMIN_TOKEN "${scenario_name}-proxy-admin-token"
+}
+
+ensure_scenario_site_env_proxy_data_token() {
+  local site_env="$1"
+  local scenario_name="${2:-scenario}"
+  ensure_scenario_site_env_secret "${site_env}" MBOS_UNIVERSAL_PROXY_DATA_TOKEN "${scenario_name}-proxy-data-token"
 }
 
 render_scenario_owned_kind_config() {

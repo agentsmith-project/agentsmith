@@ -27,6 +27,7 @@ let mockGovernableProjects = [
     permissions: ['project:endpoint:use'],
   },
 ];
+let mockWorkspaces: { id: string; name: string }[] | undefined = [{ id: 'ws_1', name: 'Workspace One' }];
 
 let mockCurrentProject: { id: string; name: string; permissions: string[] } | null = {
   id: 'proj_chat',
@@ -93,7 +94,7 @@ vi.mock('@/lib/auth/invite-handoff', () => ({
 
 vi.mock('@/lib/hooks/use-workspaces', () => ({
   useWorkspaces: () => ({
-    data: [{ id: 'ws_1', name: 'Workspace One' }],
+    data: mockWorkspaces,
   }),
 }));
 
@@ -163,6 +164,7 @@ describe('Topbar', () => {
       project: 'proj_chat',
     };
     mockPathname = '/en-US/workspaces/ws_1/projects/proj_chat/overview';
+    mockWorkspaces = [{ id: 'ws_1', name: 'Workspace One' }];
     mockUserMenu.mockReset();
     mockClearLoginContinuationState.mockReset();
     mockClearAuth.mockReset();
@@ -235,6 +237,16 @@ describe('Topbar', () => {
 
     const shell = screen.getByTestId('topbar');
     expect(shell.className).not.toMatch(/shadow-|backdrop-blur/);
+  });
+
+  it('uses the route workspace id instead of a selection prompt while workspace metadata is unresolved', () => {
+    mockWorkspaces = undefined;
+
+    renderTopbar();
+
+    const switcher = screen.getByTestId('topbar__workspace-switcher');
+    expect(switcher).toHaveTextContent('ws_1');
+    expect(switcher).not.toHaveTextContent('select_workspace');
   });
 
   it('exposes a direct topbar theme switch with a stable light-to-dark order', async () => {

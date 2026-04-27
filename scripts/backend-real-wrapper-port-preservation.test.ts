@@ -56,4 +56,18 @@ describe('backend-real wrapper port preservation contract', () => {
       expect(script.indexOf(restoreWeb)).toBeLessThan(script.indexOf(webResolution));
     },
   );
+
+  it('does not interpolate backend-real API keys into command strings that are echoed by wrappers', () => {
+    const scriptPaths = [
+      'scripts/notebook-real-smoke-gate.sh',
+      'scripts/backend-real-visual-review.sh',
+      'scripts/backend-real-full-gate.sh',
+    ];
+
+    for (const scriptPath of scriptPaths) {
+      const script = readFileSync(scriptPath, 'utf8');
+
+      expect(script, scriptPath).not.toContain("BACKEND_REAL_API_KEY='${BACKEND_REAL_API_KEY_VALUE}'");
+    }
+  });
 });

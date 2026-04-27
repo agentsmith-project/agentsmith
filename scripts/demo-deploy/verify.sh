@@ -13,6 +13,12 @@ source "${ROOT_DIR}/scripts/lib/runtime-verification.sh"
 
 load_agentsmith_presets "${ROOT_DIR}"
 load_release_env
+if [[ -f "${RELEASE_ROOT}/env/runtime-addresses.env" ]]; then
+  set -a
+  # shellcheck disable=SC1090
+  source "${RELEASE_ROOT}/env/runtime-addresses.env"
+  set +a
+fi
 apply_non_environment_preset_defaults
 apply_preset_endpoint_defaults
 DEMO_DEPLOY_MODE="$(demo_deploy_mode)"
@@ -105,6 +111,8 @@ prepare_demo_full_mode_verify_inputs() {
   fi
 
   VERIFY_INTEGRATION_INTERNAL_CHAT_RUNNER_SPEC="$(resolve_verify_source_file "e2e/integration-internal-chat-runner.spec.ts")"
+  VERIFY_INTEGRATION_CHAT_LOCAL_UPSTREAM="$(resolve_verify_source_file "e2e/integration-chat-local-upstream.ts")"
+  VERIFY_INTERNAL_CHAT_ISOLATION_PROBE="$(resolve_verify_source_file "e2e/internal-chat-isolation-probe.ts")"
   VERIFY_BUNDLED_KUBECTL="${RELEASE_ROOT}/tools/kubectl"
   [[ -x "${VERIFY_BUNDLED_KUBECTL}" ]] || die "bundled kubectl missing from release tools"
   VERIFY_KUBECONFIG_SOURCE="${KUBECONFIG:-}"
@@ -112,6 +120,8 @@ prepare_demo_full_mode_verify_inputs() {
 
   DEMO_FULL_MODE_VERIFY_MOUNTS+=(
     -v "${VERIFY_INTEGRATION_INTERNAL_CHAT_RUNNER_SPEC}:/app/e2e/integration-internal-chat-runner.spec.ts:ro"
+    -v "${VERIFY_INTEGRATION_CHAT_LOCAL_UPSTREAM}:/app/e2e/integration-chat-local-upstream.ts:ro"
+    -v "${VERIFY_INTERNAL_CHAT_ISOLATION_PROBE}:/app/e2e/internal-chat-isolation-probe.ts:ro"
     -v "${VERIFY_BUNDLED_KUBECTL}:/usr/local/bin/kubectl:ro"
     -v "${VERIFY_KUBECONFIG_SOURCE}:/tmp/verify-kubeconfig:ro"
   )
@@ -121,6 +131,7 @@ prepare_demo_full_mode_verify_inputs() {
     -e SANDBOX_SERVICE_KEY="${SANDBOX_SERVICE_KEY:-}"
     -e INTERNAL_AGENT_K8S_NAMESPACE="${INTERNAL_AGENT_K8S_NAMESPACE:-}"
     -e INTEGRATION_INTERNAL_CHAT_AGENT_IMAGE="${CHAT_RUNNER_IMAGE}"
+    -e INTEGRATION_INTERNAL_WORKLOAD_UPSTREAM_HOST="${RESOLVED_KIND_GATEWAY_HOST:-}"
     -e INTEGRATION_CHAT_RUNNER_BASE_DOCKER_IMAGE="${CHAT_RUNNER_IMAGE}"
     -e INTEGRATION_CHAT_RUNNER_REBUILD_BASE_IMAGE=0
     -e INTEGRATION_CHAT_RUNNER_REBUILD_IMAGE=0

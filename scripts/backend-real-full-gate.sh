@@ -14,11 +14,16 @@ source "${ROOT_DIR}/scripts/lib/runtime-verification.sh"
 source "${ROOT_DIR}/scripts/scenarios/common.sh"
 load_backend_real_env "${ROOT_DIR}/.env.backend-real"
 export_backend_real_endpoint_env
-MONGO_URL="${MONGO_URL:-mongodb://mbos:mbos_dev_password@localhost:17017/admin}"
+POSTGRES_PORT="${POSTGRES_PORT:-${INTEGRATION_POSTGRES_PORT:-25432}}"
+MONGO_PORT="${MONGO_PORT:-${INTEGRATION_MONGO_PORT:-27027}}"
+REDIS_PORT="${REDIS_PORT:-${INTEGRATION_REDIS_PORT:-26379}}"
+MINIO_API_PORT="${MINIO_API_PORT:-${INTEGRATION_MINIO_API_PORT:-29000}}"
+MINIO_CONSOLE_PORT="${MINIO_CONSOLE_PORT:-${INTEGRATION_MINIO_CONSOLE_PORT:-29001}}"
+MONGO_URL="${MONGO_URL:-mongodb://mbos:mbos_dev_password@localhost:${MONGO_PORT}/admin}"
 MONGO_DB_NAME="${MONGO_DB_NAME:-mbos}"
-API_PORT="${PORT_API:-20000}"
-WEB_PORT="${PORT_WEB:-3001}"
-KEYCLOAK_PORT="${KEYCLOAK_PORT:-18080}"
+API_PORT="${PORT_API:-${API_PORT:-20090}}"
+WEB_PORT="${PORT_WEB:-${WEB_PORT:-3091}}"
+KEYCLOAK_PORT="${KEYCLOAK_PORT:-${INTEGRATION_KEYCLOAK_PORT:-28081}}"
 RUN_ID="${RELEASE_REAL_VISUAL_RUN_ID:-$(date +%Y%m%d-%H%M%S)}"
 ARTIFACT_DIR="${RELEASE_REAL_VISUAL_ARTIFACT_DIR:-${ROOT_DIR}/artifacts/backend-real-visual/${RUN_ID}}"
 AUTHORITATIVE_UX_TRACE_ROOT="${ARTIFACT_DIR}/ux-traces"
@@ -84,12 +89,12 @@ ensure_local_release_stack() {
         INTERNAL_KEYCLOAK_BASE_URL="${INTERNAL_KEYCLOAK_BASE_URL}" \
         KEYCLOAK_ISSUER_URL="${KEYCLOAK_ISSUER_URL}" \
         KEYCLOAK_REALM="${KEYCLOAK_REALM}" \
-        DATABASE_URL="${DATABASE_URL:-postgresql://mbos:mbos_dev_password@localhost:15432/mbos}" \
+        DATABASE_URL="${DATABASE_URL:-postgresql://mbos:mbos_dev_password@localhost:${POSTGRES_PORT}/mbos}" \
         MONGO_URL="${MONGO_URL}" \
         MONGO_DB_NAME="${MONGO_DB_NAME}" \
-        REDIS_URL="${REDIS_URL:-redis://localhost:16379}" \
+        REDIS_URL="${REDIS_URL:-redis://localhost:${REDIS_PORT}}" \
         MINIO_ENDPOINT="${MINIO_ENDPOINT:-localhost}" \
-        MINIO_PORT="${MINIO_PORT:-19000}" \
+        MINIO_PORT="${MINIO_PORT:-${MINIO_API_PORT}}" \
         MINIO_USE_SSL="${MINIO_USE_SSL:-false}" \
         MINIO_ACCESS_KEY="${MINIO_ACCESS_KEY:-mbos}" \
         MINIO_SECRET_KEY="${MINIO_SECRET_KEY:-mbos_dev_password}" \
@@ -177,28 +182,29 @@ run_real_cmd() {
   shift 2
   local command="$*"
   cleanup_gate_ports "${api_port}" "${web_port}" "${command}"
-  info "INTEGRATION_API_PORT=${api_port} INTEGRATION_WEB_PORT=${web_port} ${command}"
+  info "INTEGRATION_API_PORT=${api_port} INTEGRATION_WEB_PORT=${web_port} BACKEND_REAL_API_KEY=<redacted> ${command}"
   (
-    cd "${ROOT_DIR}" && \
-      INTEGRATION_API_PORT="${api_port}" \
-      INTEGRATION_WEB_PORT="${web_port}" \
-      eval "${command}"
+    cd "${ROOT_DIR}"
+    export INTEGRATION_API_PORT="${api_port}"
+    export INTEGRATION_WEB_PORT="${web_port}"
+    export BACKEND_REAL_API_KEY="${BACKEND_REAL_API_KEY_VALUE}"
+    eval "${command}"
   )
 }
 
-run_cmd "MONGO_URL='${MONGO_URL}' MONGO_DB_NAME='${MONGO_DB_NAME}' KEYCLOAK_BASE_URL='${KEYCLOAK_BASE_URL}' KEYCLOAK_REALM='${KEYCLOAK_REALM}' KEYCLOAK_CLIENT_ID='${KEYCLOAK_CLIENT_ID}' npm run backend-real:bootstrap"
+run_cmd "POSTGRES_PORT='${POSTGRES_PORT}' MONGO_PORT='${MONGO_PORT}' REDIS_PORT='${REDIS_PORT}' MINIO_API_PORT='${MINIO_API_PORT}' MINIO_CONSOLE_PORT='${MINIO_CONSOLE_PORT}' KEYCLOAK_PORT='${KEYCLOAK_PORT}' API_PORT='${API_PORT}' WEB_PORT='${WEB_PORT}' MONGO_URL='${MONGO_URL}' MONGO_DB_NAME='${MONGO_DB_NAME}' KEYCLOAK_BASE_URL='${KEYCLOAK_BASE_URL}' KEYCLOAK_REALM='${KEYCLOAK_REALM}' KEYCLOAK_CLIENT_ID='${KEYCLOAK_CLIENT_ID}' npm run backend-real:bootstrap"
 gate_record_preflight_check "${LOCAL_READY_LOG_DIR}" "backend_bootstrap" "passed" "backend-real bootstrap completed"
 prewarm_internal_kind_cluster
 gate_record_preflight_check "${LOCAL_READY_LOG_DIR}" "kind_cluster_ready" "passed" "${INTERNAL_AGENT_KIND_CLUSTER_NAME:-agentsmith}"
 ensure_local_release_stack
 ACCESS_TOKEN="$(gate_run_auth_preflight "${LOCAL_READY_LOG_DIR}" "${KEYCLOAK_BASE_URL}" "${KEYCLOAK_REALM}" "${KEYCLOAK_CLIENT_ID}" "${INTEGRATION_DEV_ADMIN_USERNAME:-dev-admin}" "${INTEGRATION_DEV_ADMIN_PASSWORD:-dev-admin-123}" "${RUNTIME_HOST_API_BASE_URL}/api/v1/me/profile" "failed to obtain release-ready token" "release-ready token missing access_token" "authenticated /api/v1/me/profile unavailable")" || exit 1
 record_service auth ready "release-ready dev-admin token bootstrap"
-run_cmd "env -u INTEGRATION_API_PORT -u INTEGRATION_WEB_PORT BACKEND_REAL_STATE_DIR='${RELEASE_RUN_ROOT}' API_PORT='${API_PORT}' WEB_PORT='${WEB_PORT}' API_BASE='${RUNTIME_HOST_API_BASE_URL}' BASE_URL='${RUNTIME_BROWSER_WEB_BASE_URL}' KEYCLOAK_BASE_URL='${KEYCLOAK_BASE_URL}' npm run backend-real:ready"
+run_cmd "env -u INTEGRATION_API_PORT -u INTEGRATION_WEB_PORT BACKEND_REAL_STATE_DIR='${RELEASE_RUN_ROOT}' API_PORT='${API_PORT}' WEB_PORT='${WEB_PORT}' KEYCLOAK_PORT='${KEYCLOAK_PORT}' API_BASE='${RUNTIME_HOST_API_BASE_URL}' BASE_URL='${RUNTIME_BROWSER_WEB_BASE_URL}' KEYCLOAK_BASE_URL='${KEYCLOAK_BASE_URL}' npm run backend-real:ready"
 gate_record_preflight_check "${LOCAL_READY_LOG_DIR}" "backend_ready" "passed" "backend-real ready"
 record_service backend_ready ready "backend-real ready"
-run_real_cmd 20050 3051 "BACKEND_REAL_API_KEY='${BACKEND_REAL_API_KEY_VALUE}' npm run backend-real:run"
-run_real_cmd 20080 3081 "BACKEND_REAL_API_KEY='${BACKEND_REAL_API_KEY_VALUE}' RELEASE_REAL_VISUAL_ARTIFACT_DIR='${VISUAL_REVIEW_ARTIFACT_DIR}' npm run test:visual:backend-real:review"
-run_real_cmd 20074 3074 "BACKEND_REAL_API_KEY='${BACKEND_REAL_API_KEY_VALUE}' ARTIFACT_DIR='${ARTIFACT_DIR}' RESET_FIRST=0 bash scripts/run-integration-release-user-story.sh"
+run_real_cmd 20050 3051 "npm run backend-real:run"
+run_real_cmd 20080 3081 "RELEASE_REAL_VISUAL_ARTIFACT_DIR='${VISUAL_REVIEW_ARTIFACT_DIR}' npm run test:visual:backend-real:review"
+run_real_cmd 20074 3074 "ARTIFACT_DIR='${ARTIFACT_DIR}' RESET_FIRST=0 bash scripts/run-integration-release-user-story.sh"
 UX_TRACE_VALIDATION_REPORT="${ARTIFACT_DIR}/ux-trace-validation.json"
 UX_TRACE_VALID_BUNDLES="${ARTIFACT_DIR}/ux-trace-valid-bundles.txt"
 if ! run_cmd "npx tsx scripts/governance/run-release-full-aggregate.ts validate-ux-trace-root --campaign-id release-full --step-id gate-release --path '${AUTHORITATIVE_UX_TRACE_ROOT}' --report '${UX_TRACE_VALIDATION_REPORT}' --valid-paths '${UX_TRACE_VALID_BUNDLES}'"; then

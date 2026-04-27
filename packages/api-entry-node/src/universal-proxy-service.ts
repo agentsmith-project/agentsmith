@@ -388,6 +388,7 @@ export class UniversalProxyService {
   constructor(
     private readonly baseUrl: string,
     private readonly adminToken?: string,
+    private readonly dataToken?: string,
     options?: UniversalProxyServiceOptions,
   ) {
     this.options = resolveServiceOptions(options);
@@ -397,7 +398,8 @@ export class UniversalProxyService {
     const raw = env.MBOS_UNIVERSAL_PROXY_BASE_URL?.trim();
     if (!raw) return undefined;
     const adminToken = env.MBOS_UNIVERSAL_PROXY_ADMIN_TOKEN?.trim() || undefined;
-    return new UniversalProxyService(raw, adminToken);
+    const dataToken = env.MBOS_UNIVERSAL_PROXY_DATA_TOKEN?.trim() || undefined;
+    return new UniversalProxyService(raw, adminToken, dataToken);
   }
 
   supportsProxyPath(proxyPath: string): boolean {
@@ -600,6 +602,7 @@ export class UniversalProxyService {
       headers: {
         'content-type': 'application/json',
         ...(options.passthroughHeaders ?? {}),
+        ...(this.dataToken ? { 'x-llmup-data-token': this.dataToken } : {}),
       },
       body: JSON.stringify({
         ...(typeof options.requestBody === 'object' && options.requestBody !== null ? options.requestBody as Record<string, unknown> : {}),

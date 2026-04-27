@@ -178,6 +178,8 @@ exit 0
     'e2e/integration-workspace-publish-usable.spec.ts',
     'e2e/integration-preset-external-file-library.spec.ts',
     'e2e/integration-internal-chat-runner.spec.ts',
+    'e2e/integration-chat-local-upstream.ts',
+    'e2e/internal-chat-isolation-probe.ts',
     'e2e/integration-release-user-story.spec.ts',
   ]) {
     writeFile(path.join(tempRoot, relativePath), 'placeholder\n');
@@ -278,7 +280,30 @@ describe('demo verify mode contract', () => {
       expect(dockerLog).toContain('/usr/local/bin/kubectl');
       expect(dockerLog).toContain('/tmp/verify-kubeconfig');
       expect(dockerLog).toContain('integration-internal-chat-runner.spec.ts:/app/e2e/integration-internal-chat-runner.spec.ts:ro');
+      expect(dockerLog).toContain('integration-chat-local-upstream.ts:/app/e2e/integration-chat-local-upstream.ts:ro');
+      expect(dockerLog).toContain('internal-chat-isolation-probe.ts:/app/e2e/internal-chat-isolation-probe.ts:ro');
       expect(dockerLog).toContain('KUBECONFIG=/tmp/verify-kubeconfig');
+    } finally {
+      rmSync(tempRoot, { recursive: true, force: true });
+    }
+  });
+
+  it('passes the kind gateway host to full-mode internal workload upstream tests', () => {
+    const tempRoot = mkdtempSync(path.join(os.tmpdir(), 'demo-verify-full-kind-gateway-'));
+    try {
+      stageDemoVerifyFixture(tempRoot);
+      stageBundledKubectl(tempRoot);
+      const kubeconfigPath = stageKubeconfig(tempRoot);
+      writeFile(path.join(tempRoot, 'release', 'env', 'runtime-addresses.env'), 'RESOLVED_KIND_GATEWAY_HOST=10.88.0.1\n');
+
+      const result = runDemoVerify(tempRoot, {
+        DEMO_DEPLOY_MODE: 'full',
+        KUBECONFIG: kubeconfigPath,
+      });
+
+      expect(result.status).toBe(0);
+      const dockerLog = readFileSync(path.join(tempRoot, 'docker.log'), 'utf8');
+      expect(dockerLog).toContain('INTEGRATION_INTERNAL_WORKLOAD_UPSTREAM_HOST=10.88.0.1');
     } finally {
       rmSync(tempRoot, { recursive: true, force: true });
     }

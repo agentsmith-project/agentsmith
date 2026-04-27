@@ -89,6 +89,7 @@ run_render() {
   local runner_host="runner.internal.test"
   set_site_env_key DEMO_DEPLOY_MODE "${mode}"
   set_site_env_key MBOS_UNIVERSAL_PROXY_ADMIN_TOKEN fake-proxy-admin-token
+  set_site_env_key MBOS_UNIVERSAL_PROXY_DATA_TOKEN fake-proxy-data-token
   RESOLVED_RUNNER_HOST="${runner_host}" \
   RESOLVED_KIND_GATEWAY_HOST=10.88.0.1 \
   ALLOW_UNRESOLVED_KIND_GATEWAY=1 \
@@ -135,6 +136,8 @@ release_check_require_exact_line "${RELEASE_ROOT}/env/base.env" 'https_proxy=' '
 release_check_require_exact_line "${RELEASE_ROOT}/env/base.env" 'all_proxy=' 'rendered_env_mismatch:base.env:all_proxy'
 release_check_require_exact_line "${RELEASE_ROOT}/env/internal.env" 'MBOS_UNIVERSAL_PROXY_ADMIN_TOKEN=fake-proxy-admin-token' 'rendered_env_mismatch:internal.env:MBOS_UNIVERSAL_PROXY_ADMIN_TOKEN'
 release_check_require_exact_line "${RELEASE_ROOT}/env/internal.env" 'LLM_UNIVERSAL_PROXY_ADMIN_TOKEN=fake-proxy-admin-token' 'rendered_env_mismatch:internal.env:LLM_UNIVERSAL_PROXY_ADMIN_TOKEN'
+release_check_require_exact_line "${RELEASE_ROOT}/env/internal.env" 'MBOS_UNIVERSAL_PROXY_DATA_TOKEN=fake-proxy-data-token' 'rendered_env_mismatch:internal.env:MBOS_UNIVERSAL_PROXY_DATA_TOKEN'
+release_check_require_exact_line "${RELEASE_ROOT}/env/internal.env" 'LLM_UNIVERSAL_PROXY_DATA_TOKEN=fake-proxy-data-token' 'rendered_env_mismatch:internal.env:LLM_UNIVERSAL_PROXY_DATA_TOKEN'
 release_check_require_exact_line "${RELEASE_ROOT}/env/internal.env" 'HTTP_PROXY=' 'rendered_env_mismatch:internal.env:HTTP_PROXY'
 release_check_require_exact_line "${RELEASE_ROOT}/env/internal.env" 'HTTPS_PROXY=' 'rendered_env_mismatch:internal.env:HTTPS_PROXY'
 release_check_require_exact_line "${RELEASE_ROOT}/env/internal.env" 'ALL_PROXY=' 'rendered_env_mismatch:internal.env:ALL_PROXY'
@@ -206,6 +209,8 @@ release_check_require_exact_line "${RELEASE_ROOT}/env/internal.env" 'https_proxy
 release_check_require_exact_line "${RELEASE_ROOT}/env/internal.env" 'all_proxy=' 'rendered_env_mismatch:simple:internal.env:all_proxy'
 release_check_require_exact_line "${RELEASE_ROOT}/env/internal.env" 'MBOS_UNIVERSAL_PROXY_ADMIN_TOKEN=fake-proxy-admin-token' 'rendered_env_mismatch:simple:internal.env:MBOS_UNIVERSAL_PROXY_ADMIN_TOKEN'
 release_check_require_exact_line "${RELEASE_ROOT}/env/internal.env" 'LLM_UNIVERSAL_PROXY_ADMIN_TOKEN=fake-proxy-admin-token' 'rendered_env_mismatch:simple:internal.env:LLM_UNIVERSAL_PROXY_ADMIN_TOKEN'
+release_check_require_exact_line "${RELEASE_ROOT}/env/internal.env" 'MBOS_UNIVERSAL_PROXY_DATA_TOKEN=fake-proxy-data-token' 'rendered_env_mismatch:simple:internal.env:MBOS_UNIVERSAL_PROXY_DATA_TOKEN'
+release_check_require_exact_line "${RELEASE_ROOT}/env/internal.env" 'LLM_UNIVERSAL_PROXY_DATA_TOKEN=fake-proxy-data-token' 'rendered_env_mismatch:simple:internal.env:LLM_UNIVERSAL_PROXY_DATA_TOKEN'
 release_check_require_pattern "${RELEASE_ROOT}/env/internal.env" 'internal sandbox runtime is disabled' 'rendered_env_mismatch:simple:internal.env'
 
 remove_site_env_keys RUNTIME_PROXY_MODE RUNTIME_HTTP_PROXY RUNTIME_HTTPS_PROXY RUNTIME_ALL_PROXY RUNTIME_ADDITIONAL_NO_PROXY

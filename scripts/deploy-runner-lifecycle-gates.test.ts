@@ -149,6 +149,14 @@ describe('deploy runner lifecycle gates', () => {
     expect(localManualCommon).not.toMatch(rawHistoricalConnectedGrep);
   });
 
+  it('keeps deploy bootstrap Keycloak redirect seeding on rendered public web bases instead of a single web URL', async () => {
+    const bootstrapCommon = await readRepoFile('scripts/lib/bootstrap-common.sh');
+
+    expect(bootstrapCommon).toContain('KEYCLOAK_REDIRECT_WEB_BASES="${INTEGRATION_PUBLIC_WEB_BASES:-${PUBLIC_WEB_BASE_URL}}"');
+    expect(bootstrapCommon).toContain('INTEGRATION_PUBLIC_WEB_BASES="\'"${KEYCLOAK_REDIRECT_WEB_BASES}"\'"');
+    expect(bootstrapCommon).not.toContain('INTEGRATION_PUBLIC_WEB_BASES="\'"${PUBLIC_WEB_BASE_URL}"\'"');
+  });
+
   it('keeps rendered env and Docker runtime launches on a shared runtime proxy helper', async () => {
     const bootstrapCommon = await readRepoFile('scripts/lib/bootstrap-common.sh');
     const clusterVerify = await readRepoFile('scripts/cluster-deploy/verify.sh');

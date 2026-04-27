@@ -87,6 +87,35 @@ describe('UniversalProxyService', () => {
     });
   });
 
+  it('adds the llmup data token to proxied data requests when configured from env', async () => {
+    const fetchMock = vi.fn().mockResolvedValue(
+      createJsonResponse({ id: 'chatcmpl_1', choices: [] }, 200),
+    );
+    vi.stubGlobal('fetch', fetchMock);
+
+    const service = UniversalProxyService.fromEnv({
+      MBOS_UNIVERSAL_PROXY_BASE_URL: 'http://proxy.internal:8080',
+      MBOS_UNIVERSAL_PROXY_DATA_TOKEN: ' proxy-data-token ',
+    });
+
+    expect(service).toBeDefined();
+
+    await service?.forwardRequest({
+      req: createRequest(),
+      namespace: 'ws_default__proj_1__ep_1',
+      proxyPath: 'openai/chat/completions',
+      model: 'demo-model',
+      requestBody: { messages: [] },
+      passthroughHeaders: { 'x-request-id': 'req_1' },
+    });
+
+    expect(getRequest(fetchMock).init.headers).toEqual({
+      'content-type': 'application/json',
+      'x-request-id': 'req_1',
+      'x-llmup-data-token': 'proxy-data-token',
+    });
+  });
+
   it('keeps admin config pushes unchanged when no admin token is configured', async () => {
     const fetchMock = vi.fn().mockResolvedValue(
       new Response(JSON.stringify({ revision: 'srv_rev_1' }), {

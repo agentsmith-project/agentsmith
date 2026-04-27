@@ -145,6 +145,8 @@ release_story_verify_source_set() {
     'e2e/integration-workspace-publish-usable.spec.ts',
     'e2e/integration-preset-external-file-library.spec.ts',
     'e2e/integration-internal-chat-runner.spec.ts',
+    'e2e/integration-chat-local-upstream.ts',
+    'e2e/internal-chat-isolation-probe.ts',
     'e2e/stories/backend-real/example.story.md',
   ]) {
     writeFile(path.join(tempRoot, relativePath), 'placeholder\n');

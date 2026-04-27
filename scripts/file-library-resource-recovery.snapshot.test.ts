@@ -123,6 +123,37 @@ describe('file library resource recovery snapshot capture', () => {
     expect(snapshot.tcp_connections).toEqual([]);
   });
 
+  it('ignores non-authoritative gateway processes whose /proc fd truth is not readable', async () => {
+    loadProcessTableMock.mockResolvedValue([
+      {
+        pid: 2003,
+        ppid: 1,
+        ageSeconds: 3600,
+        command: 'juicefs owner_scope=api-v1:old-instance:old-boot library_id=flib_old gateway redis://cache 127.0.0.1:39000',
+        cwd: null,
+      },
+    ]);
+    extractGatewayProcessIdentityMock.mockReturnValue({
+      label: 'scope_library:api-v1:old-instance:old-boot:flib_old',
+      libraryId: 'flib_old',
+      ownerScope: 'api-v1:old-instance:old-boot',
+    });
+    readdirMock.mockImplementation(async (targetPath: string) => {
+      if (targetPath === '/proc/2003/fd') {
+        const error = new Error('EACCES while listing root-owned gateway fd truth');
+        Object.assign(error, { code: 'EACCES' });
+        throw error;
+      }
+      return [];
+    });
+
+    const snapshot = await captureResourceRecoverySnapshot();
+
+    expect(snapshot.managed_gateway_labels).toEqual([]);
+    expect(snapshot.managed_gateway_processes).toEqual([]);
+    expect(snapshot.tcp_connections).toEqual([]);
+  });
+
   it('fails closed when an authority-backed managed gateway disappears before /proc fd truth can be sampled', async () => {
     loadGatewayStatesMock.mockResolvedValue([
       {

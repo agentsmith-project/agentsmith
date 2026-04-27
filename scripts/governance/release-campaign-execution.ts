@@ -95,7 +95,11 @@ const STEP_SPECIFIC_AGGREGATE_ENV_KEYS = [
   'RELEASE_REAL_READY_LOG_DIR',
   'SCENARIO_RUNTIME_ROOT',
   'DEMO_REHEARSAL_ROOT',
+  'DEMO_REHEARSAL_SKIP_RELEASE_ARCHIVE',
+  'DEMO_REHEARSAL_SKIP_BUNDLED_IMAGE_LOAD',
   'CLUSTER_REHEARSAL_ROOT',
+  'CLUSTER_REHEARSAL_SKIP_RELEASE_ARCHIVE',
+  'CLUSTER_REHEARSAL_SKIP_BUNDLED_IMAGE_LOAD',
   'LOCAL_RUNTIME_LINE_KIND',
   'LOCAL_RUNTIME_OWNER_TOKEN',
 ] as const;
@@ -279,11 +283,15 @@ export function buildReleaseCampaignCommandEnv(
   if (input.step.id === 'lane-demo-rehearsal') {
     env.SCENARIO_RUNTIME_ROOT = join(input.campaignRoot, 'scenario-runtime');
     env.DEMO_REHEARSAL_ROOT = join(stepDir(input.campaignRoot, input.step), 'scenario');
+    env.DEMO_REHEARSAL_SKIP_RELEASE_ARCHIVE = '1';
+    env.DEMO_REHEARSAL_SKIP_BUNDLED_IMAGE_LOAD = '1';
   }
 
   if (input.step.id === 'lane-cluster-rehearsal') {
     env.SCENARIO_RUNTIME_ROOT = join(input.campaignRoot, 'scenario-runtime');
     env.CLUSTER_REHEARSAL_ROOT = join(stepDir(input.campaignRoot, input.step), 'scenario');
+    env.CLUSTER_REHEARSAL_SKIP_RELEASE_ARCHIVE = '1';
+    env.CLUSTER_REHEARSAL_SKIP_BUNDLED_IMAGE_LOAD = '1';
   }
 
   return env;

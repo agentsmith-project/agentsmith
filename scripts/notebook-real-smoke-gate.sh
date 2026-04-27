@@ -54,11 +54,15 @@ info "backend-real logs will be written to:"
 info "  API: ${API_LOG}"
 info "  Web: ${WEB_LOG}"
 
-run_cmd "BACKEND_REAL_API_KEY='${BACKEND_REAL_API_KEY_VALUE}' \
-INTEGRATION_API_PORT='${API_PORT}' \
-INTEGRATION_WEB_PORT='${WEB_PORT}' \
-INTEGRATION_API_LOG='${API_LOG}' \
-INTEGRATION_WEB_LOG='${WEB_LOG}' \
-bash scripts/run-integration-e2e-full.sh e2e/integration-system-notebook-default.spec.ts"
+info "BACKEND_REAL_API_KEY=<redacted> INTEGRATION_API_PORT='${API_PORT}' INTEGRATION_WEB_PORT='${WEB_PORT}' bash scripts/run-integration-e2e-full.sh e2e/integration-system-notebook-default.spec.ts"
+(
+  cd "${ROOT_DIR}" && \
+    BACKEND_REAL_API_KEY="${BACKEND_REAL_API_KEY_VALUE}" \
+    INTEGRATION_API_PORT="${API_PORT}" \
+    INTEGRATION_WEB_PORT="${WEB_PORT}" \
+    INTEGRATION_API_LOG="${API_LOG}" \
+    INTEGRATION_WEB_LOG="${WEB_LOG}" \
+    bash scripts/run-integration-e2e-full.sh e2e/integration-system-notebook-default.spec.ts
+)
 
 info "system 管理侧 -> notebook 真实主链 gate passed"

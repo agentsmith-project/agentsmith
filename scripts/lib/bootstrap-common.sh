@@ -121,6 +121,7 @@ run_deploy_bootstrap() {
   RUNNER_IMAGE="${RUNNER_IMAGE:-$(awk -F= '$1=="agentsmith_runner_image"{print $2}' "${RELEASE_ROOT}/VERSION")}"
   INTERNAL_AGENT_IMAGE="${INTERNAL_AGENT_IMAGE:-$(awk -F= '$1=="agentsmith_runner_image"{print $2}' "${RELEASE_ROOT}/VERSION")}"
   PUBLIC_WEB_BASE_URL="${PUBLIC_WEB_BASE_URL:-http://localhost:3001}"
+  KEYCLOAK_REDIRECT_WEB_BASES="${INTEGRATION_PUBLIC_WEB_BASES:-${PUBLIC_WEB_BASE_URL}}"
   PRESET_PROJECT_NAME="${PRESET_PROJECT_NAME:-Demo Project}"
   PRESET_CREDENTIAL_NAME="${PRESET_CREDENTIAL_NAME:-preset-shared-key}"
   PRESET_EXTERNAL_AGENT_NAME="${PRESET_EXTERNAL_AGENT_NAME:-demo-external-agent}"
@@ -299,7 +300,7 @@ run_deploy_bootstrap() {
   wait_keycloak_admin_token_via_api_container
 
   docker_compose exec -T api bash -lc '
-    INTEGRATION_PUBLIC_WEB_BASES="'"${PUBLIC_WEB_BASE_URL}"'" \
+    INTEGRATION_PUBLIC_WEB_BASES="'"${KEYCLOAK_REDIRECT_WEB_BASES}"'" \
     INTERNAL_KEYCLOAK_BASE_URL="'"${INTERNAL_KEYCLOAK_BASE_URL}"'" \
     KEYCLOAK_REALM="'"${BOOTSTRAP_KEYCLOAK_REALM}"'" \
     KEYCLOAK_CLIENT_ID="'"${BOOTSTRAP_KEYCLOAK_CLIENT_ID}"'" \

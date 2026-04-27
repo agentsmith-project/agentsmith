@@ -91,7 +91,8 @@
       "COMPOSE_INTERNAL_API_BASE_URL",
       "COMPOSE_INTERNAL_KEYCLOAK_BASE_URL",
       "COMPOSE_INTERNAL_UNIVERSAL_PROXY_BASE_URL",
-      "MBOS_UNIVERSAL_PROXY_ADMIN_TOKEN"
+      "MBOS_UNIVERSAL_PROXY_ADMIN_TOKEN",
+      "MBOS_UNIVERSAL_PROXY_DATA_TOKEN"
     ],
     "host_local_runtime": [
       "HOST_LOCAL_POSTGRES_HOST",
@@ -184,6 +185,9 @@
     "e2e/integration-workspace-entry.spec.ts",
     "e2e/integration-workspace-publish-usable.spec.ts",
     "e2e/integration-preset-external-file-library.spec.ts",
+    "e2e/integration-internal-chat-runner.spec.ts",
+    "e2e/integration-chat-local-upstream.ts",
+    "e2e/internal-chat-isolation-probe.ts",
     "docs/user-guides/demo-deploy-operations.md",
     "docs/user-guides/demo-deploy-simple-quickstart-zh.md",
     "docs/contracts/deployment-spec-v1.md",

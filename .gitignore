@@ -70,6 +70,7 @@ artifacts/visual-baseline-reviews/
 artifacts/ux-traces/
 artifacts/uxui-reviews/
 artifacts/local-runtime/
+artifacts/tmp/
 artifacts/tmp-release-proxy/
 artifacts/release-evidence/
 artifacts/system-state/

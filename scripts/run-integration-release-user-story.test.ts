@@ -3,6 +3,18 @@ import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 
 describe('run-integration-release-user-story integration dependency contract', () => {
+  it('honors caller-provided codex runner images as internal runner aliases instead of forcing a hidden rebuild', () => {
+    const script = readFileSync('scripts/run-integration-release-user-story.sh', 'utf8');
+
+    expect(script).toContain(
+      'RUNNER_IMAGE="${INTEGRATION_INTERNAL_AGENT_IMAGE:-${INTEGRATION_CODEX_RUNNER_DOCKER_IMAGE:-$(runner_default_image "${RUNNER_KIND}")}}"',
+    );
+    expect(script).toContain(
+      'RUNNER_BASE_IMAGE="${INTEGRATION_INTERNAL_AGENT_BASE_IMAGE:-${INTEGRATION_CODEX_RUNNER_BASE_DOCKER_IMAGE:-$(runner_default_base_image "${RUNNER_KIND}")}}"',
+    );
+    expect(script).toContain('BUILD_RUNNER_IMAGE="${INTEGRATION_BUILD_INTERNAL_AGENT_IMAGE:-${INTEGRATION_CODEX_RUNNER_REBUILD_IMAGE:-1}}"');
+  });
+
   it('uses integration dependency ports as the single source of truth for internal runner mounts and child lane env', () => {
     const script = readFileSync('scripts/run-integration-release-user-story.sh', 'utf8');
 

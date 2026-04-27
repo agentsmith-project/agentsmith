@@ -103,6 +103,65 @@ describe('internal-agent-pod-manager', () => {
     expect(onlineStateStore.getAgentSessionOnlineState).toHaveBeenCalledWith('ag_1', 'task_1');
   });
 
+  it('normalizes internal websocket base before appending the agent execution endpoint path', async () => {
+    const createOrEnsurePod = vi.fn().mockResolvedValue({ httpStatus: 201, pod: { phase: 'Running' } });
+    const manager = new InternalAgentPodManagerImpl(
+      {
+        checkReady: vi.fn().mockResolvedValue(undefined),
+        getPodStatus: vi.fn()
+          .mockResolvedValueOnce({ phase: 'offline' })
+          .mockResolvedValueOnce({ phase: 'Running' }),
+        createOrEnsurePod,
+        deletePod: vi.fn().mockResolvedValue(undefined),
+        keepalive: vi.fn().mockResolvedValue(null),
+        exec: vi.fn(),
+      },
+      {
+        getAgentOnlineState: vi.fn()
+          .mockReturnValueOnce(false)
+          .mockReturnValueOnce(false)
+          .mockReturnValueOnce(true),
+        getAgentSessionOnlineState: vi.fn()
+          .mockReturnValueOnce(false)
+          .mockReturnValueOnce(false)
+          .mockReturnValueOnce(true),
+      },
+      'ws://172.19.0.1:41000/api/v1',
+      {
+        phasePollIntervalMs: 1,
+        onlinePollIntervalMs: 1,
+      },
+    );
+
+    await manager.ensureAgentReady({
+      workspaceId: 'ws_1',
+      projectId: 'proj_1',
+      workloadId: 'task_1',
+      sessionId: 'task_1',
+      agent: buildAgent({
+        image: 'runner:v1',
+        _internal_raw_key: 'ask_xxx',
+      }),
+      workspaceMount: {
+        bindingId: 'flib_demo',
+        mountPath: '/workspace/task_1',
+      },
+    });
+
+    expect(createOrEnsurePod).toHaveBeenCalledWith(
+      'ws_1',
+      'proj_1',
+      'task_1',
+      expect.objectContaining({
+        env: expect.objectContaining({
+          MBOS_AGENT_WS_URL:
+            'ws://172.19.0.1:41000/api/v1/agent-execution/ws?agent_id=ag_1&session_id=task_1',
+        }),
+      }),
+      undefined,
+    );
+  });
+
   it('fails fast when internal key is missing', async () => {
     const manager = new InternalAgentPodManagerImpl(
       {

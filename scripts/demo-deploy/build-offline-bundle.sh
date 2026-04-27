@@ -290,6 +290,8 @@ copy_bundle_file "${ROOT_DIR}/e2e/integration-workspace-entry.spec.ts" "${BUNDLE
 copy_bundle_file "${ROOT_DIR}/e2e/integration-workspace-publish-usable.spec.ts" "${BUNDLE_DIR}/e2e/integration-workspace-publish-usable.spec.ts"
 copy_bundle_file "${ROOT_DIR}/e2e/integration-preset-external-file-library.spec.ts" "${BUNDLE_DIR}/e2e/integration-preset-external-file-library.spec.ts"
 copy_bundle_file "${ROOT_DIR}/e2e/integration-internal-chat-runner.spec.ts" "${BUNDLE_DIR}/e2e/integration-internal-chat-runner.spec.ts"
+copy_bundle_file "${ROOT_DIR}/e2e/integration-chat-local-upstream.ts" "${BUNDLE_DIR}/e2e/integration-chat-local-upstream.ts"
+copy_bundle_file "${ROOT_DIR}/e2e/internal-chat-isolation-probe.ts" "${BUNDLE_DIR}/e2e/internal-chat-isolation-probe.ts"
 while IFS= read -r relative_path; do
   [[ -n "${relative_path}" ]] || continue
   copy_bundle_file "${ROOT_DIR}/${relative_path}" "${BUNDLE_DIR}/${relative_path}"

@@ -60,4 +60,27 @@ describe('integration chat local upstream', () => {
       ],
     });
   });
+
+  it('can listen broadly while advertising a workload-reachable host', async () => {
+    const upstream = await startOpenAICompatibleUpstreamWith({
+      replyText: 'Reachable reply',
+      listenHost: '0.0.0.0',
+      advertiseHost: 'localhost',
+    });
+    startedServers.push(upstream);
+
+    expect(upstream.baseUrl).toMatch(/^http:\/\/localhost:\d+\/v1$/);
+    const response = await fetch(`${upstream.baseUrl}/chat/completions`, {
+      method: 'POST',
+      headers: {
+        'content-type': 'application/json',
+      },
+      body: JSON.stringify({
+        model: 'integration-chat-model',
+        messages: [{ role: 'user', content: 'hello' }],
+      }),
+    });
+
+    expect(response.ok).toBe(true);
+  });
 });

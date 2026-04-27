@@ -49,6 +49,35 @@ describe('run-integration-e2e-full lifecycle observability contract', () => {
     expect(clearLaneOwnerIndex).toBeLessThan(normalizeIndex);
   });
 
+  it('passes runner image controls into the Playwright process instead of forcing hidden rebuild defaults', () => {
+    const script = readFileSync('scripts/run-integration-e2e-full.sh', 'utf8');
+    const playwrightLaunchIndex = script.indexOf('npx playwright test --config playwright.config.integration.ts');
+
+    expect(playwrightLaunchIndex).toBeGreaterThanOrEqual(0);
+
+    const expectedAssignments = [
+      'INTEGRATION_CODEX_RUNNER_BASE_DOCKER_IMAGE="${INTEGRATION_CODEX_RUNNER_BASE_DOCKER_IMAGE:-}"',
+      'INTEGRATION_CODEX_RUNNER_DOCKER_IMAGE="${INTEGRATION_CODEX_RUNNER_DOCKER_IMAGE:-}"',
+      'INTEGRATION_CODEX_RUNNER_REBUILD_BASE_IMAGE="${INTEGRATION_CODEX_RUNNER_REBUILD_BASE_IMAGE:-}"',
+      'INTEGRATION_CODEX_RUNNER_REBUILD_IMAGE="${INTEGRATION_CODEX_RUNNER_REBUILD_IMAGE:-}"',
+      'INTEGRATION_CODEX_RUNNER_EMBEDDED="${INTEGRATION_CODEX_RUNNER_EMBEDDED:-}"',
+      'INTEGRATION_CODEX_RUNNER_BUILTIN_SKILLS="${INTEGRATION_CODEX_RUNNER_BUILTIN_SKILLS:-mbos-context,feishu-docs,jira-ops}"',
+      'INTEGRATION_CODEX_RUNNER_BUILTIN_SKILLS_REQUIRED="${INTEGRATION_CODEX_RUNNER_BUILTIN_SKILLS_REQUIRED:-1}"',
+      'INTEGRATION_CODEX_RUNNER_BUILTIN_SKILLS_DIR="${INTEGRATION_CODEX_RUNNER_BUILTIN_SKILLS_DIR:-}"',
+      'INTEGRATION_CODEX_RUNNER_MOUNT_READY_TIMEOUT_MS="${INTEGRATION_CODEX_RUNNER_MOUNT_READY_TIMEOUT_MS:-120000}"',
+      'INTEGRATION_CHAT_RUNNER_BASE_DOCKER_IMAGE="${INTEGRATION_CHAT_RUNNER_BASE_DOCKER_IMAGE:-}"',
+      'INTEGRATION_CHAT_RUNNER_REBUILD_BASE_IMAGE="${INTEGRATION_CHAT_RUNNER_REBUILD_BASE_IMAGE:-}"',
+      'INTEGRATION_CHAT_RUNNER_REBUILD_IMAGE="${INTEGRATION_CHAT_RUNNER_REBUILD_IMAGE:-}"',
+      'INTEGRATION_INTERNAL_CHAT_AGENT_IMAGE="${INTEGRATION_INTERNAL_CHAT_AGENT_IMAGE:-}"',
+      'INTEGRATION_RUNNER_LOG_DIR="${INTEGRATION_RUNNER_LOG_DIR:-}"',
+    ];
+
+    for (const assignment of expectedAssignments) {
+      expect(script, assignment).toContain(assignment);
+      expect(script.indexOf(assignment), assignment).toBeLessThan(playwrightLaunchIndex);
+    }
+  });
+
   it('captures pre-stop and post-stop lifecycle evidence without changing the failure retention contract', () => {
     const tempRoot = mkdtempSync(path.join(os.tmpdir(), 'run-integration-e2e-full-'));
     tempRoots.push(tempRoot);

@@ -164,6 +164,8 @@ VERIFY_INTEGRATION_WORKSPACE_ENTRY_SPEC="$(resolve_verify_source_file "e2e/integ
 VERIFY_INTEGRATION_WORKSPACE_PUBLISH_SPEC="$(resolve_verify_source_file "e2e/integration-workspace-publish-usable.spec.ts")"
 VERIFY_INTEGRATION_PRESET_FILELIB_SPEC="$(resolve_verify_source_file "e2e/integration-preset-external-file-library.spec.ts")"
 VERIFY_INTEGRATION_INTERNAL_CHAT_RUNNER_SPEC="$(resolve_verify_source_file "e2e/integration-internal-chat-runner.spec.ts")"
+VERIFY_INTEGRATION_CHAT_LOCAL_UPSTREAM="$(resolve_verify_source_file "e2e/integration-chat-local-upstream.ts")"
+VERIFY_INTERNAL_CHAT_ISOLATION_PROBE="$(resolve_verify_source_file "e2e/internal-chat-isolation-probe.ts")"
 VERIFY_BUNDLED_KUBECTL="${RELEASE_ROOT}/tools/kubectl"
 [[ -x "${VERIFY_BUNDLED_KUBECTL}" ]] || die "bundled kubectl missing from release tools"
 ensure_operator_manager_kubeconfig
@@ -178,6 +180,11 @@ gate_require_command \
 record_service verify_kubeconfig ready "${VERIFY_KUBECONFIG_SOURCE}"
 gate_record_preflight_check "${VERIFY_EVIDENCE_DIR}" "verify_kubeconfig" "passed" "${VERIFY_KUBECONFIG_SOURCE}"
 prepare_release_story_verify_mounts || exit 1
+INTEGRATION_INTERNAL_WORKLOAD_UPSTREAM_HOST_VALUE="${INTEGRATION_INTERNAL_WORKLOAD_UPSTREAM_HOST:-${RESOLVED_KIND_GATEWAY_HOST:-}}"
+if [[ -z "${INTEGRATION_INTERNAL_WORKLOAD_UPSTREAM_HOST_VALUE}" ]] && detect_kind_gateway_ip >/dev/null 2>&1; then
+  INTEGRATION_INTERNAL_WORKLOAD_UPSTREAM_HOST_VALUE="$(detect_kind_gateway_ip)"
+fi
+[[ -n "${INTEGRATION_INTERNAL_WORKLOAD_UPSTREAM_HOST_VALUE}" ]] || die "internal chat verify upstream host is empty; set INTEGRATION_INTERNAL_WORKLOAD_UPSTREAM_HOST or make the kind gateway detectable"
 VERIFY_PLAYWRIGHT_SPECS=(
   e2e/integration-files.spec.ts
   e2e/integration-workspace-entry.spec.ts
@@ -207,6 +214,8 @@ docker run --rm \
   -v "${VERIFY_INTEGRATION_WORKSPACE_PUBLISH_SPEC}:/app/e2e/integration-workspace-publish-usable.spec.ts:ro" \
   -v "${VERIFY_INTEGRATION_PRESET_FILELIB_SPEC}:/app/e2e/integration-preset-external-file-library.spec.ts:ro" \
   -v "${VERIFY_INTEGRATION_INTERNAL_CHAT_RUNNER_SPEC}:/app/e2e/integration-internal-chat-runner.spec.ts:ro" \
+  -v "${VERIFY_INTEGRATION_CHAT_LOCAL_UPSTREAM}:/app/e2e/integration-chat-local-upstream.ts:ro" \
+  -v "${VERIFY_INTERNAL_CHAT_ISOLATION_PROBE}:/app/e2e/internal-chat-isolation-probe.ts:ro" \
   "${RELEASE_STORY_VERIFY_MOUNTS[@]}" \
   -e BASE_URL="${HOST_LOCAL_WEB_BASE_URL}" \
   -e INTEGRATION_API_BASE="${HOST_LOCAL_API_BASE_URL}" \
@@ -235,6 +244,7 @@ docker run --rm \
   -e INTEGRATION_CODEX_RUNNER_DOCKER_IMAGE="${RUNNER_IMAGE}" \
   -e INTEGRATION_INTERNAL_AGENT_IMAGE="${K8S_RUNNER_IMAGE}" \
   -e INTEGRATION_INTERNAL_CHAT_AGENT_IMAGE="${K8S_CHAT_RUNNER_IMAGE}" \
+  -e INTEGRATION_INTERNAL_WORKLOAD_UPSTREAM_HOST="${INTEGRATION_INTERNAL_WORKLOAD_UPSTREAM_HOST_VALUE}" \
   -e INTEGRATION_CHAT_RUNNER_BASE_DOCKER_IMAGE="${CHAT_RUNNER_IMAGE}" \
   -e INTEGRATION_CHAT_RUNNER_REBUILD_BASE_IMAGE=0 \
   -e INTEGRATION_CHAT_RUNNER_REBUILD_IMAGE=0 \

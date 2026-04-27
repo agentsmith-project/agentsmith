@@ -268,6 +268,11 @@ function isProcTruthGone(error: unknown): boolean {
   return code === 'ENOENT';
 }
 
+function isProcTruthInaccessible(error: unknown): boolean {
+  const code = typeof error === 'object' && error !== null && 'code' in error ? String(error.code) : null;
+  return code === 'EACCES' || code === 'EPERM';
+}
+
 async function captureProcessFdTruth(args: {
   pid: number;
   processLabel: string;
@@ -288,6 +293,9 @@ async function captureProcessFdTruth(args: {
       throw new Error(
         `tracked ${args.processLabel} pid ${args.pid} disappeared before fd truth could be captured`,
       );
+    }
+    if (isProcTruthInaccessible(error) && args.requirement === 'best_effort') {
+      return null;
     }
     throw new Error(
       formatCommandRequirementError(fdDir, `inspect fd truth for ${args.processLabel} pid ${args.pid}`, error),

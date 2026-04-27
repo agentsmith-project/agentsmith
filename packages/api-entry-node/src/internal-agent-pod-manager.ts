@@ -74,6 +74,22 @@ function defaultSleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
+function normalizeAgentWebSocketBaseUrl(value: string): string {
+  const trimmed = value.trim().replace(/\/+$/, '');
+  try {
+    const parsed = new URL(trimmed);
+    if (parsed.protocol === 'ws:' || parsed.protocol === 'wss:') {
+      parsed.pathname = '';
+      parsed.search = '';
+      parsed.hash = '';
+      return parsed.toString().replace(/\/+$/, '');
+    }
+  } catch {
+    return trimmed;
+  }
+  return trimmed;
+}
+
 function buildAgentCancelledError(reason?: unknown): Error {
   const error = new Error(
     reason instanceof Error
@@ -459,7 +475,8 @@ export class InternalAgentPodManagerImpl implements InternalAgentPodManager {
       signal,
     );
     throwIfAborted(signal);
-    const wsUrl = `${this.wsBaseUrl.replace(/\/+$/, '')}/api/v1/agent-execution/ws?agent_id=${encodeURIComponent(agent.id)}${
+    const wsBaseUrl = normalizeAgentWebSocketBaseUrl(this.wsBaseUrl);
+    const wsUrl = `${wsBaseUrl}/api/v1/agent-execution/ws?agent_id=${encodeURIComponent(agent.id)}${
       sessionId ? `&session_id=${encodeURIComponent(sessionId)}` : ''
     }`;
 

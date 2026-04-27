@@ -1,9 +1,8 @@
 import {
   readReleaseStatus,
-  renderReleaseStatus,
   resolveCurrentGitSha,
 } from './release-summary';
-import { buildStatusProjection } from './status-projection';
+import { buildStatusProjection, renderStatusProjection } from './status-projection';
 
 function isCliEntrypoint(fileName: string): boolean {
   return Boolean(process.argv[1]?.replaceAll('\\', '/').endsWith(`/governance/${fileName}`));
@@ -27,7 +26,7 @@ function parseArgs(argv: readonly string[]): { latestPath?: string; campaignRoot
     } else if (arg.startsWith('--campaign-root=')) {
       options.campaignRoot = arg.slice('--campaign-root='.length);
     } else {
-      throw new Error(`Unknown release status argument: ${arg}`);
+      throw new Error('Unknown release status argument.');
     }
   }
   return options;
@@ -44,28 +43,28 @@ function tryResolveCurrentGitSha(): string | null {
 export function runReleaseStatus(argv: readonly string[] = process.argv.slice(2)): number {
   try {
     const options = parseArgs(argv);
+    const status = options.campaignRoot ? null : readReleaseStatus(options);
+    const campaignRoot = options.campaignRoot
+      ?? (status?.kind === 'ready' ? status.summary.campaign_root : null);
+    const runId = status?.kind === 'ready' ? status.summary.campaign_run_id : null;
+    const evidenceGitSha = status?.kind === 'ready' ? status.latest?.git_sha ?? null : null;
+    const projection = buildStatusProjection({
+      goal: 'release-ready',
+      campaignRoot,
+      runId,
+      currentGitSha: tryResolveCurrentGitSha(),
+      evidenceGitSha,
+    });
+
     if (options.json) {
-      const status = options.campaignRoot ? null : readReleaseStatus(options);
-      const campaignRoot = options.campaignRoot
-        ?? (status?.kind === 'ready' ? status.summary.campaign_root : null);
-      const runId = status?.kind === 'ready' ? status.summary.campaign_run_id : null;
-      const evidenceGitSha = status?.kind === 'ready' ? status.latest?.git_sha ?? null : null;
-      const projection = buildStatusProjection({
-        goal: 'release-ready',
-        campaignRoot,
-        runId,
-        currentGitSha: tryResolveCurrentGitSha(),
-        evidenceGitSha,
-      });
       process.stdout.write(`${JSON.stringify(projection, null, 2)}\n`);
       return 0;
     }
 
-    const status = readReleaseStatus(options);
-    process.stdout.write(renderReleaseStatus(status));
-    return status.kind === 'ready' ? 0 : 1;
-  } catch (error) {
-    process.stderr.write(`[release-status] ${error instanceof Error ? error.message : String(error)}\n`);
+    process.stdout.write(renderStatusProjection(projection));
+    return projection.aggregate_status_ref ? 0 : 1;
+  } catch {
+    process.stderr.write('[release-status] status unavailable; check arguments and release artifacts.\n');
     return 1;
   }
 }

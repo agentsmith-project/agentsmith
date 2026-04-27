@@ -104,8 +104,8 @@ describe('release readiness human entrypoints', () => {
     expect(scripts['release:ready']).toContain('scripts/governance/release-ready.ts');
     expect(scripts['release:status']).toContain('scripts/governance/release-status.ts');
     expect(scripts['release:aggregate']).toContain('scripts/governance/run-release-aggregate.ts');
-    expect(scripts['rehearse:demo']).toBe('npm run lane:demo-rehearsal');
-    expect(scripts['rehearse:cluster']).toBe('npm run lane:cluster-rehearsal');
+    expect(scripts['rehearse:demo']).toBe('tsx scripts/governance/rehearsal-entrypoint.ts demo-rehearsal');
+    expect(scripts['rehearse:cluster']).toBe('tsx scripts/governance/rehearsal-entrypoint.ts cluster-rehearsal');
 
     expect(scripts['release:campaign:full']).toBeTruthy();
     expect(scripts['gate:release:full']).toBeTruthy();

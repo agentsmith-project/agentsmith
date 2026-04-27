@@ -51,6 +51,13 @@ describe('current governance observability manifest', () => {
       kind: 'read_only_projection',
       schema_ref: CURRENT_STATUS_PROJECTION_SCHEMA,
       schema_version: CURRENT_STATUS_PROJECTION_VERSION,
+      implementation_refs: [
+        'scripts/governance/current-status-projection-schema.ts',
+        'scripts/governance/status-projection.ts',
+        'scripts/governance/release-status.ts',
+        'scripts/governance/rehearsal-entrypoint.ts',
+        'scripts/governance/local-real-status.ts',
+      ],
       authority: {
         read_only: true,
       },

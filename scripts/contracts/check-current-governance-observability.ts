@@ -108,6 +108,17 @@ function main(): void {
   assert(statusProjection.authority.read_only === true, 'status projection must be read_only');
   assert(statusProjection.schema_ref === CURRENT_STATUS_PROJECTION_SCHEMA, 'status projection schema ref drifted');
   assert(statusProjection.schema_version === CURRENT_STATUS_PROJECTION_VERSION, 'status projection schema version drifted');
+  assertExactArray(
+    'status projection implementation refs',
+    statusProjection.implementation_refs,
+    [
+      'scripts/governance/current-status-projection-schema.ts',
+      'scripts/governance/status-projection.ts',
+      'scripts/governance/release-status.ts',
+      'scripts/governance/rehearsal-entrypoint.ts',
+      'scripts/governance/local-real-status.ts',
+    ],
+  );
   assert(
     statusProjection.safety_boundary.redaction_required === true,
     'status projection terminal summaries must remain inside the redaction boundary',

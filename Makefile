@@ -668,6 +668,7 @@ local-real-up:
 	$(MAKE) local-manual-up
 
 local-real-status:
+	npx tsx scripts/governance/local-real-status.ts
 	$(MAKE) substrate-status
 	$(MAKE) local-manual-status
 

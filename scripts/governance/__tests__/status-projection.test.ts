@@ -12,7 +12,7 @@ import {
   CURRENT_STATUS_PROJECTION_VERSION,
   validateCurrentStatusProjection,
 } from '../current-status-projection-schema';
-import { buildStatusProjection } from '../status-projection';
+import { buildStatusProjection, renderStatusProjection } from '../status-projection';
 
 const GENERATED_AT = '2026-04-27T12:00:00.000Z';
 const CURRENT_GIT_SHA = 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa';
@@ -107,6 +107,11 @@ function expectNoSensitiveProjectionLeak(value: unknown): void {
     expect(serialized).not.toContain(fragment);
   }
   expect(serialized).not.toContain('Bearer projection-bearer-raw-token');
+}
+
+function expectNoInternalVerifyAlias(value: unknown): void {
+  const serialized = typeof value === 'string' ? value : JSON.stringify(value);
+  expect(serialized).not.toContain('npm run verify:');
 }
 
 describe('current status projection', () => {
@@ -237,7 +242,8 @@ describe('current status projection', () => {
         code: 'evidence_missing',
         summary: 'Missing campaign step result: lane-visual',
       });
-      expect(blocked.safe_next_command).toBe('npm run verify:visual');
+      expect(blocked.safe_next_command).toBe('npm run verify -- --goal=visual --run');
+      expectNoInternalVerifyAlias(blocked);
 
       const running = buildStatusProjection({
         goal: 'release-ready',
@@ -284,6 +290,39 @@ describe('current status projection', () => {
     });
   });
 
+  it.each([
+    ['lane-visual', 'npm run verify -- --goal=visual --run'],
+    ['gate-fast', 'npm run verify -- --goal=debug --run'],
+    ['gate-default', 'npm run verify -- --goal=pr --run'],
+    ['gate-release', 'npm run verify -- --goal=release-real --run'],
+  ])('uses governed verify command for failed release owner %s', (owner, expectedCommand) => {
+    withTempRoot((campaignRoot) => {
+      writeAggregateResult(campaignRoot, {
+        status: 'failed',
+        failure_class: 'evidence_missing',
+        summary: `Missing campaign step result: ${owner}`,
+      });
+
+      const projection = buildStatusProjection({
+        goal: 'release-ready',
+        campaignRoot,
+        currentGitSha: CURRENT_GIT_SHA,
+        evidenceGitSha: EVIDENCE_GIT_SHA,
+        generatedAt: GENERATED_AT,
+      });
+      const rendered = renderStatusProjection(projection);
+
+      expect(projection.presentation_status).toBe('failed');
+      expect(projection.primary_blocker?.owner).toBe(owner);
+      expect(projection.safe_next_command).toBe(expectedCommand);
+      expect(rendered).toContain(`Next action: ${expectedCommand}`);
+      expectNoInternalVerifyAlias(projection);
+      expectNoInternalVerifyAlias(rendered);
+      expect(validateCurrentStatusProjection(projection)).toEqual({ ok: true, value: projection });
+      expectNoReleaseVerdictFields(projection);
+    });
+  });
+
   it('redacts sensitive aggregate summaries at the status projection boundary', () => {
     withTempRoot((campaignRoot) => {
       writeAggregateResult(campaignRoot, {
@@ -306,6 +345,33 @@ describe('current status projection', () => {
       expectNoSensitiveProjectionLeak(projection);
       expect(validateCurrentStatusProjection(projection)).toEqual({ ok: true, value: projection });
     });
+  });
+
+  it('redacts deepest reason summary again when rendering exported status projections', () => {
+    const projection = {
+      ...buildStatusProjection({
+        goal: 'release-ready',
+        currentGitSha: CURRENT_GIT_SHA,
+        generatedAt: GENERATED_AT,
+      }),
+      deepest_reason: {
+        code: 'renderer_secret_regression',
+        summary: [
+          'Authorization: Bearer renderer-bearer-raw-token',
+          'managed_credentials: {"feishu":"renderer-managed-credential-raw-value"}',
+          'password: {"value":"renderer-password-raw-value"}',
+        ].join(' '),
+        source_path: null,
+      },
+    };
+
+    const rendered = renderStatusProjection(projection);
+
+    expect(rendered).toContain('[redacted]');
+    expect(rendered).not.toContain('renderer-bearer-raw-token');
+    expect(rendered).not.toContain('renderer-managed-credential-raw-value');
+    expect(rendered).not.toContain('renderer-password-raw-value');
+    expect(rendered).not.toContain('Authorization: Bearer renderer-bearer-raw-token');
   });
 
   it('fails closed when aggregate status is passed but failure_class is not none', () => {

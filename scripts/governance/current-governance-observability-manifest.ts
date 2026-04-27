@@ -125,6 +125,9 @@ export const CURRENT_GOVERNANCE_OBSERVABILITY_OBJECTS = [
     implementation_refs: [
       'scripts/governance/current-status-projection-schema.ts',
       'scripts/governance/status-projection.ts',
+      'scripts/governance/release-status.ts',
+      'scripts/governance/rehearsal-entrypoint.ts',
+      'scripts/governance/local-real-status.ts',
     ],
     contract_refs: [CONTRACT_DOC],
     docs_refs: ['docs/contracts/README.md'],

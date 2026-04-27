@@ -252,7 +252,7 @@ function inferBlockedOwner(summary: string): string | null {
 
 function safeCommandForOwner(owner: string | null, goal: CurrentStatusProjectionGoal): string | null {
   if (owner === 'lane-visual') {
-    return 'npm run verify:visual';
+    return 'npm run verify -- --goal=visual --run';
   }
   if (owner === 'gate-release') {
     return 'npm run verify -- --goal=release-real --run';
@@ -264,13 +264,19 @@ function safeCommandForOwner(owner: string | null, goal: CurrentStatusProjection
     return 'npm run rehearse:cluster';
   }
   if (owner === 'gate-fast') {
-    return 'npm run verify:quick';
+    return 'npm run verify -- --goal=debug --run';
   }
   if (owner === 'gate-default') {
-    return 'npm run verify:default';
+    return 'npm run verify -- --goal=pr --run';
   }
   if (goal === 'local-real') {
     return 'make local-real-status';
+  }
+  if (goal === 'demo-rehearsal') {
+    return 'npm run rehearse:demo';
+  }
+  if (goal === 'cluster-rehearsal') {
+    return 'npm run rehearse:cluster';
   }
   if (goal === 'release-ready') {
     return 'npm run release:ready';
@@ -477,4 +483,75 @@ export function buildStatusProjection(input: BuildStatusProjectionInput): Curren
     leases_acquired: false,
     leases_released: false,
   };
+}
+
+function renderOptional(value: string | number | null | undefined): string {
+  return value === null || value === undefined ? '<none>' : String(value);
+}
+
+function renderAggregateStatusRef(ref: CurrentStatusProjectionAggregateStatusRef | null): string {
+  return ref ? `${ref.path} (${ref.digest})` : '<none>';
+}
+
+function renderPathRefs(paths: readonly CurrentStatusProjectionPathRef[]): string {
+  if (paths.length === 0) {
+    return '<none>';
+  }
+  return paths.map((path) => `${path.path}${path.digest ? ` (${path.digest})` : ''}`).join('; ');
+}
+
+function renderPrimaryBlocker(blocker: CurrentStatusProjectionBlocker | null): string {
+  if (!blocker) {
+    return '<none>';
+  }
+  return `${blocker.owner} (${blocker.stage})${blocker.path ? ` @ ${blocker.path}` : ''}`;
+}
+
+function renderDeepestReason(reason: CurrentStatusProjectionReason | null): string {
+  if (!reason) {
+    return '<none>';
+  }
+  return `${reason.code}: ${redactSensitiveText(reason.summary)}${reason.source_path ? ` @ ${reason.source_path}` : ''}`;
+}
+
+function renderLocks(lockOwner: CurrentStatusProjection['lock_owner']): string {
+  if (!lockOwner || lockOwner.active_lock_count === 0) {
+    return '<none>';
+  }
+  const owners = lockOwner.owners.map((owner) => (
+    `${owner.lock_id}:${owner.owner_group}/${owner.owner_step_id}${owner.pid ? ` pid=${owner.pid}` : ''}`
+  ));
+  return [
+    `active_run=${renderOptional(lockOwner.active_run_id)}`,
+    `active_lock_count=${lockOwner.active_lock_count}`,
+    owners.join('; '),
+  ].filter(Boolean).join('; ');
+}
+
+export function renderStatusProjection(projection: CurrentStatusProjection): string {
+  return [
+    'AgentSmith Status Projection',
+    '',
+    `Projection kind: ${projection.projection_kind.replaceAll('_', '-')}`,
+    `Goal: ${renderOptional(projection.goal)}`,
+    `Runtime line: ${renderOptional(projection.runtime_line)}`,
+    `Phase: ${projection.phase}`,
+    `Aggregate status ref: ${renderAggregateStatusRef(projection.aggregate_status_ref)}`,
+    `Presentation status: ${projection.presentation_status}`,
+    `Primary blocker: ${renderPrimaryBlocker(projection.primary_blocker)}`,
+    `Deepest reason: ${renderDeepestReason(projection.deepest_reason)}`,
+    `Next action: ${renderOptional(projection.safe_next_command)}`,
+    `Recovery: ${renderOptional(projection.destructive_recovery_command)}`,
+    `Freshness: current_git_sha=${renderOptional(projection.current_git_sha)}; evidence_git_sha=${renderOptional(projection.evidence_git_sha)}; run_age_seconds=${renderOptional(projection.run_age_seconds)}`,
+    `Locks: ${renderLocks(projection.lock_owner)}`,
+    `Manual sign-off: ${projection.manual_signoff_status}`,
+    `Evidence: ${renderPathRefs(projection.evidence_paths)}`,
+    `Authority: aggregate=${renderOptional(projection.authority_paths.aggregate)}; stage=${renderOptional(projection.authority_paths.stage)}; evidence=${projection.authority_paths.evidence.length > 0 ? projection.authority_paths.evidence.join('; ') : '<none>'}`,
+    `Release decision produced: ${String(projection.release_decision_produced)}`,
+    `Commands executed: ${String(projection.commands_executed)}`,
+    `Leases acquired: ${String(projection.leases_acquired)}`,
+    `Leases released: ${String(projection.leases_released)}`,
+    'Note: read-only projection; it points at current authority artifacts and does not produce a release decision.',
+    '',
+  ].join('\n');
 }

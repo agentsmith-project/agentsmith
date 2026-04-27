@@ -4,9 +4,11 @@ import { describe, expect, it } from 'vitest';
 
 import {
   ORDERED_SENTINEL_PROBES,
+  SENTINEL_PROFILE_PROBES,
   renderSentinelPreflightOutput,
   runSentinelPreflight,
   runSentinelPreflightCli,
+  type SentinelProfile,
   type SentinelProbeName,
 } from '../sentinel-preflight';
 import { findRedactionLeaks } from '../redaction';
@@ -27,32 +29,107 @@ function probeMap(
 }
 
 describe('sentinel preflight', () => {
-  it('runs fixture-friendly probes and fail-fast stops at the first failed diagnostic', async () => {
+  it.each([
+    ['release-ready', [
+      'provider_profile_present',
+      'secret_profile_present',
+    ]],
+    ['verify-real', [
+      'provider_profile_present',
+      'secret_profile_present',
+    ]],
+    ['verify-release-real', [
+      'provider_profile_present',
+      'secret_profile_present',
+    ]],
+    ['demo-rehearsal', [
+      'kind_available',
+      'registry_available',
+    ]],
+    ['cluster-rehearsal', [
+      'kind_available',
+      'registry_available',
+    ]],
+  ] satisfies Array<[SentinelProfile, SentinelProbeName[]]>)(
+    'runs only the necessary %s sentinel probes',
+    async (profile, expectedProbes) => {
+      const calls: SentinelProbeName[] = [];
+      const result = await runSentinelPreflight({
+        profile,
+        env: {
+          NEXT_PUBLIC_API_BASE: 'http://localhost:20000/api/v1',
+          INTERNAL_EXECUTION_WS_BASE_URL: 'ws://localhost:20000/api/v1/execution/ws',
+          PROXY_DATA_TOKEN: 'proxy-token-raw-value',
+          RUNNER_TICKET: 'runner-ticket-raw-value',
+          KEYCLOAK_REDIRECT_BASE_URL: 'http://localhost:3000',
+          DNS_GATEWAY_REACHABLE: 'true',
+          PROVIDER_PROFILE: 'provider-present',
+          SECRET_PROFILE: 'secret-present',
+          KIND_AVAILABLE: 'true',
+          REGISTRY_AVAILABLE: 'true',
+          DOCKER_AVAILABLE: 'true',
+        },
+        probes: probeMap({}, calls),
+      });
+
+      expect(result.exitCode).toBe(0);
+      expect(SENTINEL_PROFILE_PROBES[profile]).toEqual(expectedProbes);
+      expect(calls).toEqual(expectedProbes);
+      expect(calls).not.toEqual([...ORDERED_SENTINEL_PROBES]);
+    },
+  );
+
+  it('runs fixture-friendly probes and fail-fast stops at the first failed profile diagnostic', async () => {
     const calls: SentinelProbeName[] = [];
     const result = await runSentinelPreflight({
+      profile: 'release-ready',
       env: {
         NEXT_PUBLIC_API_BASE: 'http://localhost:20000/api/v1',
         INTERNAL_EXECUTION_WS_BASE_URL: 'ws://localhost:20000/api/v1/execution/ws',
         PROXY_DATA_TOKEN: 'proxy-token-raw-value',
         RUNNER_TICKET: 'runner-ticket-raw-value',
       },
-      probes: probeMap({ dns_gateway_reachable: false }, calls),
+      probes: probeMap({ secret_profile_present: false }, calls),
     });
 
     expect(result.exitCode).toBe(1);
     expect(calls).toEqual([
-      'internal_execution_ws_base_url_correct',
-      'proxy_data_token_present',
-      'ticket_auth_present',
-      'keycloak_redirect_bases_present',
-      'dns_gateway_reachable',
+      'provider_profile_present',
+      'secret_profile_present',
     ]);
-    expect(result.output.presence['probe.dns_gateway_reachable']).toBe(false);
-    expect(result.output.presence['probe.provider_profile_present']).toBeUndefined();
+    expect(result.output.presence['probe.secret_profile_present']).toBe(false);
+    expect(result.output.presence['probe.provider_profile_present']).toBe(true);
+  });
+
+  it('returns a fixed unknown-profile error without leaking secret-like input', async () => {
+    const stdout: string[] = [];
+    const stderr: string[] = [];
+    const exitCode = await runSentinelPreflightCli({
+      profile: 'Bearer unknown-profile-raw-token' as SentinelProfile,
+      env: {
+        AUTHORIZATION: 'Bearer sentinel-cli-raw-token',
+        OPENAI_API_KEY: 'sk-sentinel-cli-raw-value',
+      },
+      probes: probeMap({}, []),
+    }, {
+      stdout: { write: (chunk: string) => stdout.push(chunk) },
+      stderr: { write: (chunk: string) => stderr.push(chunk) },
+    });
+
+    const rendered = `${stdout.join('')}\n${stderr.join('')}`;
+
+    expect(exitCode).toBe(1);
+    expect(stdout.join('')).toBe('');
+    expect(stderr.join('')).toBe('[sentinel-preflight] unknown profile\n');
+    expect(rendered).not.toContain('unknown-profile-raw-token');
+    expect(rendered).not.toContain('sentinel-cli-raw-token');
+    expect(rendered).not.toContain('sk-sentinel-cli-raw-value');
+    expect(findRedactionLeaks(rendered)).toEqual([]);
   });
 
   it('does not produce a verdict while still returning an exit code for the wrapper', async () => {
     const result = await runSentinelPreflight({
+      profile: 'release-ready',
       env: {
         NEXT_PUBLIC_API_BASE: 'http://localhost:20000/api/v1',
         INTERNAL_EXECUTION_WS_BASE_URL: 'ws://localhost:20000/api/v1/execution/ws',
@@ -75,6 +152,7 @@ describe('sentinel preflight', () => {
 
   it('redacts secret-bearing env values from sentinel diagnostics', async () => {
     const result = await runSentinelPreflight({
+      profile: 'release-ready',
       env: {
         NEXT_PUBLIC_API_BASE: 'https://api.example.test:20000/api/v1?access_token=query-token',
         INTERNAL_EXECUTION_WS_BASE_URL: 'wss://api.example.test:20000/api/v1/execution/ws?ticket=query-ticket',
@@ -119,8 +197,8 @@ describe('sentinel preflight', () => {
     const stderr: string[] = [];
     const probes = {
       ...probeMap({}, calls),
-      dns_gateway_reachable: async () => {
-        calls.push('dns_gateway_reachable');
+      secret_profile_present: async () => {
+        calls.push('secret_profile_present');
         throw new Error(
           'probe exploded Authorization: Bearer thrown-probe-raw-token sk-thrown-probe-raw-value ticket=thrown-ticket-raw-value',
         );
@@ -128,6 +206,7 @@ describe('sentinel preflight', () => {
     };
 
     const exitCode = await runSentinelPreflightCli({
+      profile: 'release-ready',
       env: {
         NEXT_PUBLIC_API_BASE: 'http://localhost:20000/api/v1',
         INTERNAL_EXECUTION_WS_BASE_URL: 'ws://localhost:20000/api/v1/execution/ws',
@@ -147,8 +226,8 @@ describe('sentinel preflight', () => {
 
     expect(exitCode).toBe(1);
     expect(stderr.join('')).toBe('');
-    expect(parsed.presence['probe.dns_gateway_reachable']).toBe(false);
-    expect(parsed.presence['probe.provider_profile_present']).toBeUndefined();
+    expect(parsed.presence['probe.secret_profile_present']).toBe(false);
+    expect(parsed.presence['probe.provider_profile_present']).toBe(true);
     expect(rendered).not.toContain('probe exploded');
     expect(rendered).not.toContain('Authorization');
     expect(rendered).not.toContain('Bearer');

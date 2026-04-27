@@ -21,6 +21,32 @@ const RELEASE_STATUS_SECRET_ARG = '--api_key=entrypoint-release-api-key-raw-valu
 const LOCAL_REAL_STATUS_SECRET_ARG = '--ticket=entrypoint-local-ticket-raw-value';
 const REHEARSAL_STATUS_SECRET_ARG = 'Authorization: Bearer entrypoint-rehearsal-bearer-raw-token';
 
+function passingSentinelResult() {
+  return {
+    exitCode: 0 as const,
+    output: {
+      presence: {},
+      profile_digest: 'sha256:test-profile-digest',
+      public_endpoint: null,
+      port_family: 'unknown',
+    },
+  };
+}
+
+function failingSentinelResult() {
+  return {
+    exitCode: 1 as const,
+    output: {
+      presence: {
+        'probe.registry_available': false,
+      },
+      profile_digest: 'sha256:redacted-failing-profile-digest',
+      public_endpoint: null,
+      port_family: 'unknown',
+    },
+  };
+}
+
 function expectNoEntrypointSecretLeak(output: string, rawArg: string, rawSecret: string): void {
   expect(output).not.toContain(rawArg);
   expect(output).not.toContain(rawSecret);
@@ -205,6 +231,7 @@ describe('clean status entrypoints', () => {
   ])('renders %s --status --json as read-only projection without delegating the lane', (line, runtimeLine, laneCommand) => {
     const stdout: string[] = [];
     const delegated: string[][] = [];
+    const sentinelProfiles: string[] = [];
 
     const exitCode = runRehearsalEntrypoint([line, '--status', '--json'], {
       stdout: { write: (chunk: string) => stdout.push(chunk) },
@@ -213,11 +240,16 @@ describe('clean status entrypoints', () => {
         delegated.push([command, ...args]);
         return { status: 0 };
       },
+      sentinelRunner: (profile) => {
+        sentinelProfiles.push(profile);
+        return failingSentinelResult();
+      },
       generatedAt: GENERATED_AT,
     });
 
     expect(exitCode).toBe(0);
     expect(delegated).toEqual([]);
+    expect(sentinelProfiles).toEqual([]);
     expect(stdout.join('')).not.toContain(laneCommand);
 
     const projection = JSON.parse(stdout.join('')) as unknown;
@@ -330,10 +362,15 @@ describe('clean status entrypoints', () => {
     ['cluster-rehearsal', 'lane:cluster-rehearsal'],
   ])('delegates %s default execution to the existing lane adapter', (line, laneScript) => {
     const delegated: string[][] = [];
+    const sentinelProfiles: string[] = [];
 
     const exitCode = runRehearsalEntrypoint([line], {
       stdout: { write: () => undefined },
       stderr: { write: () => undefined },
+      sentinelRunner: (profile) => {
+        sentinelProfiles.push(profile);
+        return passingSentinelResult();
+      },
       delegate: (command, args) => {
         delegated.push([command, ...args]);
         return { status: 0 };
@@ -342,7 +379,43 @@ describe('clean status entrypoints', () => {
     });
 
     expect(exitCode).toBe(0);
+    expect(sentinelProfiles).toEqual([line]);
     expect(delegated).toEqual([['npm', 'run', laneScript]]);
+  });
+
+  it.each([
+    ['demo-rehearsal', 'lane:demo-rehearsal'],
+    ['cluster-rehearsal', 'lane:cluster-rehearsal'],
+  ])('stops %s default execution before delegating when sentinel fails', (line, laneScript) => {
+    const stdout: string[] = [];
+    const stderr: string[] = [];
+    const delegated: string[][] = [];
+    const sentinelProfiles: string[] = [];
+
+    const exitCode = runRehearsalEntrypoint([line], {
+      stdout: { write: (chunk: string) => stdout.push(chunk) },
+      stderr: { write: (chunk: string) => stderr.push(chunk) },
+      sentinelRunner: (profile) => {
+        sentinelProfiles.push(profile);
+        return failingSentinelResult();
+      },
+      delegate: (command, args) => {
+        delegated.push([command, ...args]);
+        return { status: 0 };
+      },
+      generatedAt: GENERATED_AT,
+    });
+
+    const combinedOutput = `${stdout.join('')}\n${stderr.join('')}`;
+
+    expect(exitCode).toBe(1);
+    expect(sentinelProfiles).toEqual([line]);
+    expect(delegated).toEqual([]);
+    expect(combinedOutput).toContain('sentinel preflight failed');
+    expect(combinedOutput).toContain('"probe.registry_available": false');
+    expect(combinedOutput).not.toContain(laneScript);
+    expect(combinedOutput).not.toContain('release_verdict');
+    expect(combinedOutput).not.toContain('automated_release_verdict');
   });
 
   it('points public rehearse scripts at the mode-aware governance adapter', () => {

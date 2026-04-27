@@ -4,6 +4,13 @@ import {
   type CurrentStatusProjectionGoal,
 } from './current-status-projection-schema';
 import { buildStatusProjection, renderStatusProjection } from './status-projection';
+import {
+  buildSentinelPreflightEnv,
+  renderSentinelPreflightOutput,
+  runSentinelPreflightSync,
+  type SentinelPreflightResult,
+  type SentinelProfile,
+} from './sentinel-preflight';
 
 type RehearsalLine = 'demo-rehearsal' | 'cluster-rehearsal';
 
@@ -22,6 +29,7 @@ type DelegateResult = {
 
 type RehearsalEntrypointDependencies = RehearsalEntrypointStreams & {
   delegate?: (command: string, args: string[]) => DelegateResult;
+  sentinelRunner?: (profile: Extract<SentinelProfile, RehearsalLine>) => SentinelPreflightResult;
   gateResultsRoot?: string;
   generatedAt?: string;
 };
@@ -94,6 +102,13 @@ function defaultDelegate(command: string, args: string[]): DelegateResult {
   });
 }
 
+function defaultSentinelRunner(profile: Extract<SentinelProfile, RehearsalLine>): SentinelPreflightResult {
+  return runSentinelPreflightSync({
+    profile,
+    env: buildSentinelPreflightEnv({ profile }),
+  });
+}
+
 export function runRehearsalEntrypoint(
   argv: readonly string[] = process.argv.slice(2),
   dependencies: RehearsalEntrypointDependencies = {
@@ -116,6 +131,20 @@ export function runRehearsalEntrypoint(
         ? `${JSON.stringify(projection, null, 2)}\n`
         : renderStatusProjection(projection));
       return 0;
+    }
+
+    const sentinelRunner = dependencies.sentinelRunner ?? defaultSentinelRunner;
+    let sentinelResult: SentinelPreflightResult;
+    try {
+      sentinelResult = sentinelRunner(options.line);
+    } catch {
+      dependencies.stderr.write(`[rehearsal-entrypoint] sentinel preflight unavailable for ${options.line}.\n`);
+      return 1;
+    }
+    if (sentinelResult.exitCode !== 0) {
+      dependencies.stdout.write(renderSentinelPreflightOutput(sentinelResult.output));
+      dependencies.stderr.write(`[rehearsal-entrypoint] sentinel preflight failed for ${options.line}.\n`);
+      return 1;
     }
 
     const delegate = dependencies.delegate ?? defaultDelegate;

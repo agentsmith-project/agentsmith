@@ -11,6 +11,7 @@ import {
   renderReleaseStatus,
   writeReleaseSummaryForCampaign,
 } from '../release-summary';
+import { runReleaseReady } from '../release-ready';
 
 function readPackageScripts(): Record<string, string> {
   return (JSON.parse(readFileSync('package.json', 'utf8')) as { scripts: Record<string, string> }).scripts;
@@ -25,6 +26,16 @@ const RELEASE_HUMAN_DOC_FORBIDDEN_COPYABLE_PATTERNS = [
 ] as const;
 
 const VALID_TEST_GIT_SHA = '0123456789abcdef0123456789abcdef01234567';
+const SENTINEL_PASS_ENV = {
+  NEXT_PUBLIC_API_BASE: 'http://localhost:20000/api/v1',
+  INTERNAL_EXECUTION_WS_BASE_URL: 'ws://localhost:20000/api/v1/execution/ws',
+  PROXY_DATA_TOKEN: 'test-proxy-token',
+  RUNNER_TICKET: 'test-runner-ticket',
+  KEYCLOAK_REDIRECT_BASE_URL: 'http://localhost:3000',
+  DNS_GATEWAY_REACHABLE: 'true',
+  PROVIDER_PROFILE: 'test-provider-profile',
+  SECRET_PROFILE: 'test-secret-profile',
+} as const;
 
 function writeJson(path: string, payload: unknown): void {
   mkdirSync(dirname(path), { recursive: true });
@@ -95,6 +106,42 @@ function writeFakeNpm(dir: string, script: string): void {
   const path = join(dir, 'npm');
   writeFileSync(path, script);
   chmodSync(path, 0o755);
+}
+
+function writeBackendRealStyleEnv(root: string): void {
+  mkdirSync(root, { recursive: true });
+  writeFileSync(join(root, '.env.backend-real'), [
+    'PRESET_ENDPOINT_API_KEY=sk-test-release-ready-file-value',
+    'PRESET_ENDPOINT_MODEL=test-release-ready-model',
+    'PRESET_OPENAI_ENDPOINT_BASE_URL=https://provider.example.test/v1',
+    '',
+  ].join('\n'));
+}
+
+function passingSentinelResult() {
+  return {
+    exitCode: 0 as const,
+    output: {
+      presence: {},
+      profile_digest: 'sha256:test-profile-digest',
+      public_endpoint: null,
+      port_family: 'unknown',
+    },
+  };
+}
+
+function failingSentinelResult() {
+  return {
+    exitCode: 1 as const,
+    output: {
+      presence: {
+        'probe.secret_profile_present': false,
+      },
+      profile_digest: 'sha256:redacted-failing-profile-digest',
+      public_endpoint: null,
+      port_family: 'unknown',
+    },
+  };
 }
 
 describe('release readiness human entrypoints', () => {
@@ -452,6 +499,203 @@ exit 0
     }
   });
 
+  it('does not run sentinel when release precheck fails', () => {
+    const root = mkdtempSync(join(tmpdir(), 'agentsmith-release-ready-precheck-no-sentinel-'));
+    const stdout: string[] = [];
+    const stderr: string[] = [];
+    const scripts: string[] = [];
+    const sentinelProfiles: string[] = [];
+    try {
+      const exitCode = runReleaseReady([], {
+        stdout: { write: (chunk: string) => stdout.push(chunk) },
+        stderr: { write: (chunk: string) => stderr.push(chunk) },
+        env: {
+          ...process.env,
+          RELEASE_CAMPAIGN_ROOT: root,
+        },
+        runNpmScript: (script) => {
+          scripts.push(script);
+          return script === 'test:release:precheck'
+            ? { status: 9, signal: null }
+            : { status: 0, signal: null };
+        },
+        sentinelRunner: (profile) => {
+          sentinelProfiles.push(profile);
+          return passingSentinelResult();
+        },
+      });
+
+      expect(exitCode).toBe(9);
+      expect(scripts).toEqual(['test:release:precheck']);
+      expect(sentinelProfiles).toEqual([]);
+      expect(`${stdout.join('')}\n${stderr.join('')}`).toContain('Automated release verdict: NOT STARTED');
+      expect(existsSync(join(root, 'gate-release-full', 'result.json'))).toBe(false);
+      expect(existsSync(join(root, 'summary.json'))).toBe(false);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it('stops after precheck when release-ready sentinel fails without writing a release verdict', () => {
+    const root = mkdtempSync(join(tmpdir(), 'agentsmith-release-ready-sentinel-fail-'));
+    const stdout: string[] = [];
+    const stderr: string[] = [];
+    const scripts: string[] = [];
+    const sentinelProfiles: string[] = [];
+    try {
+      const exitCode = runReleaseReady([], {
+        stdout: { write: (chunk: string) => stdout.push(chunk) },
+        stderr: { write: (chunk: string) => stderr.push(chunk) },
+        env: {
+          ...process.env,
+          RELEASE_CAMPAIGN_ROOT: root,
+        },
+        runNpmScript: (script) => {
+          scripts.push(script);
+          return { status: 0, signal: null };
+        },
+        sentinelRunner: (profile) => {
+          sentinelProfiles.push(profile);
+          return failingSentinelResult();
+        },
+      });
+
+      const combinedOutput = `${stdout.join('')}\n${stderr.join('')}`;
+
+      expect(exitCode).toBe(1);
+      expect(scripts).toEqual(['test:release:precheck']);
+      expect(sentinelProfiles).toEqual(['release-ready']);
+      expect(combinedOutput).toContain('Automated release verdict: NOT STARTED');
+      expect(combinedOutput).toContain('sentinel preflight failed');
+      expect(combinedOutput).toContain('"probe.secret_profile_present": false');
+      expect(combinedOutput).not.toContain('Automated release verdict: PASSED');
+      expect(existsSync(join(root, 'gate-release-full', 'result.json'))).toBe(false);
+      expect(existsSync(join(root, 'summary.json'))).toBe(false);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it('runs release-ready sentinel from a backend-real env file in cwd after precheck passes', () => {
+    const root = mkdtempSync(join(tmpdir(), 'agentsmith-release-ready-sentinel-env-file-'));
+    const stdout: string[] = [];
+    const stderr: string[] = [];
+    const scripts: string[] = [];
+    const parentEnv: NodeJS.ProcessEnv = {
+      PATH: process.env.PATH ?? '',
+      RELEASE_CAMPAIGN_ROOT: root,
+    };
+    try {
+      writeBackendRealStyleEnv(root);
+
+      const exitCode = runReleaseReady([], {
+        stdout: { write: (chunk: string) => stdout.push(chunk) },
+        stderr: { write: (chunk: string) => stderr.push(chunk) },
+        cwd: root,
+        env: parentEnv,
+        runNpmScript: (script) => {
+          scripts.push(script);
+          return script === 'release:campaign:full'
+            ? { status: 7, signal: null }
+            : { status: 0, signal: null };
+        },
+      });
+
+      expect(exitCode).toBe(7);
+      expect(scripts).toEqual(['test:release:precheck', 'release:campaign:full']);
+      expect(parentEnv.PRESET_ENDPOINT_API_KEY).toBeUndefined();
+      expect(parentEnv.PRESET_ENDPOINT_MODEL).toBeUndefined();
+      expect(`${stdout.join('')}\n${stderr.join('')}`).not.toContain('sentinel preflight failed');
+      expect(existsSync(join(root, 'gate-release-full', 'result.json'))).toBe(false);
+      expect(existsSync(join(root, 'summary.json'))).toBe(false);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it('does not assume the release precheck child env mutates the parent sentinel env', () => {
+    const root = mkdtempSync(join(tmpdir(), 'agentsmith-release-ready-child-env-'));
+    const stdout: string[] = [];
+    const stderr: string[] = [];
+    const scripts: string[] = [];
+    const parentEnv: NodeJS.ProcessEnv = {
+      PATH: process.env.PATH ?? '',
+      RELEASE_CAMPAIGN_ROOT: root,
+    };
+    try {
+      const exitCode = runReleaseReady([], {
+        stdout: { write: (chunk: string) => stdout.push(chunk) },
+        stderr: { write: (chunk: string) => stderr.push(chunk) },
+        cwd: root,
+        env: parentEnv,
+        runNpmScript: (script, _args, env) => {
+          scripts.push(script);
+          if (script === 'test:release:precheck') {
+            const childOnlyEnv = {
+              ...env,
+              PRESET_ENDPOINT_API_KEY: 'sk-test-child-only-value',
+              PRESET_ENDPOINT_MODEL: 'test-child-only-model',
+            };
+            expect(childOnlyEnv.PRESET_ENDPOINT_API_KEY).toBe('sk-test-child-only-value');
+          }
+          return { status: 0, signal: null };
+        },
+      });
+
+      const combinedOutput = `${stdout.join('')}\n${stderr.join('')}`;
+
+      expect(exitCode).toBe(1);
+      expect(scripts).toEqual(['test:release:precheck']);
+      expect(parentEnv.PRESET_ENDPOINT_API_KEY).toBeUndefined();
+      expect(parentEnv.PRESET_ENDPOINT_MODEL).toBeUndefined();
+      expect(combinedOutput).toContain('Automated release verdict: NOT STARTED');
+      expect(combinedOutput).toContain('sentinel preflight failed');
+      expect(combinedOutput).not.toContain('sk-test-child-only-value');
+      expect(existsSync(join(root, 'gate-release-full', 'result.json'))).toBe(false);
+      expect(existsSync(join(root, 'summary.json'))).toBe(false);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it('runs the existing campaign only after release-ready sentinel passes', () => {
+    const root = mkdtempSync(join(tmpdir(), 'agentsmith-release-ready-sentinel-pass-'));
+    const stdout: string[] = [];
+    const stderr: string[] = [];
+    const scripts: string[] = [];
+    const sentinelProfiles: string[] = [];
+    try {
+      const exitCode = runReleaseReady(['--dry-run'], {
+        stdout: { write: (chunk: string) => stdout.push(chunk) },
+        stderr: { write: (chunk: string) => stderr.push(chunk) },
+        env: {
+          ...process.env,
+          RELEASE_CAMPAIGN_ROOT: root,
+        },
+        runNpmScript: (script, args) => {
+          scripts.push([script, ...args].join(' '));
+          return script === 'release:campaign:full'
+            ? { status: 7, signal: null }
+            : { status: 0, signal: null };
+        },
+        sentinelRunner: (profile) => {
+          sentinelProfiles.push(profile);
+          return passingSentinelResult();
+        },
+      });
+
+      expect(exitCode).toBe(7);
+      expect(scripts).toEqual([
+        'test:release:precheck',
+        'release:campaign:full --dry-run',
+      ]);
+      expect(sentinelProfiles).toEqual(['release-ready']);
+      expect(stderr.join('')).toBe('');
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
   it('runs the existing campaign after precheck passes and follows the campaign exit code', () => {
     const root = mkdtempSync(join(tmpdir(), 'agentsmith-release-ready-campaign-'));
     const fakeBin = mkdtempSync(join(tmpdir(), 'agentsmith-fake-npm-'));
@@ -473,6 +717,7 @@ exit 0
         cwd: process.cwd(),
         env: {
           ...process.env,
+          ...SENTINEL_PASS_ENV,
           PATH: `${fakeBin}:${process.env.PATH ?? ''}`,
           RELEASE_CAMPAIGN_ROOT: root,
         },
@@ -548,6 +793,7 @@ exit 0
         cwd: process.cwd(),
         env: {
           ...process.env,
+          ...SENTINEL_PASS_ENV,
           PATH: `${fakeBin}:${process.env.PATH ?? ''}`,
           RELEASE_CAMPAIGN_ROOT: root,
         },
@@ -640,6 +886,7 @@ exit 0
         cwd: process.cwd(),
         env: {
           ...process.env,
+          ...SENTINEL_PASS_ENV,
           PATH: `${fakeBin}:${process.env.PATH ?? ''}`,
           RELEASE_RUNS_ROOT: root,
         },
@@ -730,6 +977,7 @@ exit 0
         cwd: process.cwd(),
         env: {
           ...process.env,
+          ...SENTINEL_PASS_ENV,
           PATH: `${fakeBin}:${process.env.PATH ?? ''}`,
           RELEASE_CAMPAIGN_ROOT: root,
         },

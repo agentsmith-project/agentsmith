@@ -9,6 +9,7 @@ import { describe, expect, it } from 'vitest';
 import {
   buildVerificationPlan,
   renderVerificationPlan,
+  runVerificationCli,
 } from '../run-verify';
 import { findCurrentGateDefinitionById } from '../current-gate-manifest';
 
@@ -243,6 +244,17 @@ const LEGACY_VERIFY_REPORT_ALIASES = [
   'npm run verify:real',
   'npm run verify:release-real',
 ] as const;
+const SENTINEL_PASS_ENV = {
+  NEXT_PUBLIC_API_BASE: 'http://localhost:20000/api/v1',
+  INTERNAL_EXECUTION_WS_BASE_URL: 'ws://localhost:20000/api/v1/execution/ws',
+  PROXY_DATA_TOKEN: 'test-proxy-token',
+  RUNNER_TICKET: 'test-runner-ticket',
+  KEYCLOAK_REDIRECT_BASE_URL: 'http://localhost:3000',
+  DNS_GATEWAY_REACHABLE: 'true',
+  PROVIDER_PROFILE: 'test-provider-profile',
+  SECRET_PROFILE: 'test-secret-profile',
+  DOCKER_AVAILABLE: 'true',
+} as const;
 
 function expectCleanVerifyReportSurface(root: string): void {
   const json = readFileSync(join(root, 'story-acceptance-report.json'), 'utf8');
@@ -257,6 +269,32 @@ function expectCleanVerifyHumanOutput(output: string): void {
   for (const alias of LEGACY_VERIFY_REPORT_ALIASES) {
     expect(output).not.toContain(alias);
   }
+}
+
+function passingSentinelResult() {
+  return {
+    exitCode: 0 as const,
+    output: {
+      presence: {},
+      profile_digest: 'sha256:test-profile-digest',
+      public_endpoint: null,
+      port_family: 'unknown',
+    },
+  };
+}
+
+function failingSentinelResult() {
+  return {
+    exitCode: 1 as const,
+    output: {
+      presence: {
+        'probe.secret_profile_present': false,
+      },
+      profile_digest: 'sha256:redacted-failing-profile-digest',
+      public_endpoint: null,
+      port_family: 'unknown',
+    },
+  };
 }
 
 describe('verify human entrypoints', () => {
@@ -383,6 +421,57 @@ describe('verify human entrypoints', () => {
       expect(existsSync(join(root, 'story-acceptance-report.json'))).toBe(false);
       expect(existsSync(join(root, 'verification-catalog.json'))).toBe(false);
       expect(existsSync(logPath)).toBe(false);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it('does not run sentinel for status or dry-run verify entrypoints', () => {
+    const root = mkdtempSync(join(tmpdir(), 'agentsmith-verify-sentinel-clean-'));
+    const stdout: string[] = [];
+    const stderr: string[] = [];
+    const sentinelProfiles: string[] = [];
+    const aliases: string[] = [];
+    try {
+      const dryRunExit = runVerificationCli([
+        '--report-root',
+        root,
+        '--changed-file',
+        'e2e/stories/backend-real/notebook-first-success.story.md',
+      ], {
+        stdout: { write: (chunk: string) => stdout.push(chunk) },
+        stderr: { write: (chunk: string) => stderr.push(chunk) },
+        sentinelRunner: (profile) => {
+          sentinelProfiles.push(profile);
+          return failingSentinelResult();
+        },
+        runNpmScript: (script) => {
+          aliases.push(script);
+          return { status: 0 };
+        },
+      });
+      const statusExit = runVerificationCli([
+        '--status',
+        '--report-root',
+        root,
+      ], {
+        stdout: { write: (chunk: string) => stdout.push(chunk) },
+        stderr: { write: (chunk: string) => stderr.push(chunk) },
+        sentinelRunner: (profile) => {
+          sentinelProfiles.push(profile);
+          return failingSentinelResult();
+        },
+        runNpmScript: (script) => {
+          aliases.push(script);
+          return { status: 0 };
+        },
+      });
+
+      expect(dryRunExit).toBe(0);
+      expect(statusExit).toBe(0);
+      expect(sentinelProfiles).toEqual([]);
+      expect(aliases).toEqual([]);
+      expect(stderr.join('')).toBe('');
     } finally {
       rmSync(root, { recursive: true, force: true });
     }
@@ -1271,6 +1360,81 @@ describe('verify human entrypoints', () => {
     }
   });
 
+  it('does not run sentinel for explicit visual run before executing aliases', () => {
+    const root = mkdtempSync(join(tmpdir(), 'agentsmith-verify-visual-no-sentinel-'));
+    const stdout: string[] = [];
+    const stderr: string[] = [];
+    const sentinelProfiles: string[] = [];
+    const aliases: string[] = [];
+    try {
+      const exitCode = runVerificationCli([
+        '--goal=visual',
+        '--run',
+        '--report-root',
+        root,
+        '--changed-file',
+        'src/components/chat/ChatMainPane.tsx',
+      ], {
+        stdout: { write: (chunk: string) => stdout.push(chunk) },
+        stderr: { write: (chunk: string) => stderr.push(chunk) },
+        sentinelRunner: (profile) => {
+          sentinelProfiles.push(profile);
+          return failingSentinelResult();
+        },
+        runNpmScript: (script) => {
+          aliases.push(script);
+          return { status: 0 };
+        },
+      });
+
+      expect(exitCode).toBe(0);
+      expect(sentinelProfiles).toEqual([]);
+      expect(aliases).toEqual(['verify:quick', 'verify:default', 'verify:visual']);
+      expect(stderr.join('')).toBe('');
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it('stops explicit real run before npm aliases when sentinel fails', () => {
+    const root = mkdtempSync(join(tmpdir(), 'agentsmith-verify-real-sentinel-fail-'));
+    const stdout: string[] = [];
+    const stderr: string[] = [];
+    const sentinelProfiles: string[] = [];
+    const aliases: string[] = [];
+    try {
+      const exitCode = runVerificationCli([
+        '--goal=real',
+        '--run',
+        '--report-root',
+        root,
+        '--changed-file',
+        'e2e/stories/backend-real/notebook-first-success.story.md',
+      ], {
+        stdout: { write: (chunk: string) => stdout.push(chunk) },
+        stderr: { write: (chunk: string) => stderr.push(chunk) },
+        sentinelRunner: (profile) => {
+          sentinelProfiles.push(profile);
+          return failingSentinelResult();
+        },
+        runNpmScript: (script) => {
+          aliases.push(script);
+          return { status: 0 };
+        },
+      });
+
+      expect(exitCode).toBe(1);
+      expect(sentinelProfiles).toEqual(['verify-real']);
+      expect(aliases).toEqual([]);
+      expect(stdout.join('')).toContain('"probe.secret_profile_present": false');
+      expect(stdout.join('')).not.toContain('release_verdict');
+      expect(stdout.join('')).not.toContain('release_ready');
+      expect(stderr.join('')).toContain('[verify] sentinel preflight failed for verify-real.');
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
   it('executes verify:real only for explicit real run goal after writing reports', () => {
     const root = mkdtempSync(join(tmpdir(), 'agentsmith-verify-run-real-allowed-'));
     const logPath = join(root, 'npm.log');
@@ -1290,6 +1454,7 @@ describe('verify human entrypoints', () => {
         cwd: process.cwd(),
         env: {
           ...process.env,
+          ...SENTINEL_PASS_ENV,
           PATH: `${root}:${process.env.PATH ?? ''}`,
         },
         encoding: 'utf8',
@@ -1318,6 +1483,44 @@ describe('verify human entrypoints', () => {
     }
   });
 
+  it('runs explicit release-real aliases only after release-real sentinel passes', () => {
+    const root = mkdtempSync(join(tmpdir(), 'agentsmith-verify-release-real-sentinel-pass-'));
+    const stdout: string[] = [];
+    const stderr: string[] = [];
+    const sentinelProfiles: string[] = [];
+    const aliases: string[] = [];
+    try {
+      const exitCode = runVerificationCli([
+        '--goal=release-real',
+        '--run',
+        '--report-root',
+        root,
+        '--changed-file',
+        'e2e/stories/backend-real/release-user-story-end-to-end.story.md',
+      ], {
+        stdout: { write: (chunk: string) => stdout.push(chunk) },
+        stderr: { write: (chunk: string) => stderr.push(chunk) },
+        sentinelRunner: (profile) => {
+          sentinelProfiles.push(profile);
+          return passingSentinelResult();
+        },
+        runNpmScript: (script) => {
+          aliases.push(script);
+          return { status: 0 };
+        },
+      });
+
+      expect(exitCode).toBe(0);
+      expect(sentinelProfiles).toEqual(['verify-release-real']);
+      expect(aliases).toEqual(['verify:release-real']);
+      expect(stderr.join('')).toBe('');
+      expect(stdout.join('')).not.toContain('Automated release verdict');
+      expect(stdout.join('')).not.toContain('release_ready');
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
   it('keeps release-real run as an owner diagnostic without producing a release verdict', () => {
     const root = mkdtempSync(join(tmpdir(), 'agentsmith-verify-run-release-real-allowed-'));
     const logPath = join(root, 'npm.log');
@@ -1337,6 +1540,7 @@ describe('verify human entrypoints', () => {
         cwd: process.cwd(),
         env: {
           ...process.env,
+          ...SENTINEL_PASS_ENV,
           PATH: `${root}:${process.env.PATH ?? ''}`,
         },
         encoding: 'utf8',

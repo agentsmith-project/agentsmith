@@ -15,6 +15,13 @@ import {
 import { writeStoryAcceptanceReport } from './story-acceptance-report';
 import { buildStatusProjection } from './status-projection';
 import type { CurrentStatusProjection } from './current-status-projection-schema';
+import {
+  buildSentinelPreflightEnv,
+  renderSentinelPreflightOutput,
+  runSentinelPreflightSync,
+  type SentinelPreflightResult,
+  type SentinelProfile,
+} from './sentinel-preflight';
 
 export {
   buildVerificationPlan,
@@ -32,6 +39,21 @@ type ParsedVerifyArgs = {
   reportRoot?: string;
   changedFiles?: string[];
   baseRef?: string;
+};
+
+type CliWriteStream = {
+  write(chunk: string): unknown;
+};
+
+type NpmScriptResult = {
+  status: number | null;
+};
+
+type VerificationCliDependencies = {
+  stdout?: CliWriteStream;
+  stderr?: CliWriteStream;
+  runNpmScript?: (script: string) => NpmScriptResult;
+  sentinelRunner?: (profile: SentinelProfile) => SentinelPreflightResult;
 };
 
 type ChangedFileDetection = {
@@ -424,6 +446,37 @@ function npmScriptFromCommand(command: string): string {
   return command.replace(/^npm run /, '');
 }
 
+function defaultRunNpmScript(script: string): NpmScriptResult {
+  const result = spawnSync('npm', ['run', script], {
+    cwd: process.cwd(),
+    env: process.env,
+    stdio: 'inherit',
+  });
+  return {
+    status: result.status,
+  };
+}
+
+function defaultSentinelRunner(profile: SentinelProfile): SentinelPreflightResult {
+  return runSentinelPreflightSync({
+    profile,
+    env: buildSentinelPreflightEnv({ profile }),
+  });
+}
+
+function verificationSentinelProfile(options: ParsedVerifyArgs): SentinelProfile | null {
+  if (!options.run || !options.goalExplicit) {
+    return null;
+  }
+  if (options.goal === 'real') {
+    return 'verify-real';
+  }
+  if (options.goal === 'release-real') {
+    return 'verify-release-real';
+  }
+  return null;
+}
+
 function buildPlanInput(options: ParsedVerifyArgs, reportRoot: string): BuildVerificationPlanInput {
   if (options.changedFiles) {
     return {
@@ -447,7 +500,15 @@ function buildPlanInput(options: ParsedVerifyArgs, reportRoot: string): BuildVer
   };
 }
 
-export function runVerificationCli(argv: readonly string[] = process.argv.slice(2)): number {
+export function runVerificationCli(
+  argv: readonly string[] = process.argv.slice(2),
+  dependencies: VerificationCliDependencies = {},
+): number {
+  const stdout = dependencies.stdout ?? process.stdout;
+  const stderr = dependencies.stderr ?? process.stderr;
+  const runNpmScript = dependencies.runNpmScript ?? defaultRunNpmScript;
+  const sentinelRunner = dependencies.sentinelRunner ?? defaultSentinelRunner;
+
   try {
     const options = parseArgs(argv);
     if (options.json && !options.status) {
@@ -458,7 +519,7 @@ export function runVerificationCli(argv: readonly string[] = process.argv.slice(
     }
     if (options.status) {
       const projection = buildStatusProjection({ goal: 'verify' });
-      process.stdout.write(options.json
+      stdout.write(options.json
         ? `${JSON.stringify(projection, null, 2)}\n`
         : renderVerifyStatusProjection(projection));
       return 0;
@@ -477,10 +538,10 @@ export function runVerificationCli(argv: readonly string[] = process.argv.slice(
       verificationCatalogPath: catalogWriteResult.jsonPath,
     });
 
-    process.stdout.write(renderVerificationPlan(plan));
-    process.stdout.write(`Story acceptance report: ${writeResult.markdownPath}\n`);
-    process.stdout.write(`Story acceptance report JSON: ${writeResult.jsonPath}\n`);
-    process.stdout.write(`Verification catalog: ${catalogWriteResult.jsonPath}\n`);
+    stdout.write(renderVerificationPlan(plan));
+    stdout.write(`Story acceptance report: ${writeResult.markdownPath}\n`);
+    stdout.write(`Story acceptance report JSON: ${writeResult.jsonPath}\n`);
+    stdout.write(`Verification catalog: ${catalogWriteResult.jsonPath}\n`);
 
     if (plan.mode === 'dry-run') {
       return 0;
@@ -493,23 +554,35 @@ export function runVerificationCli(argv: readonly string[] = process.argv.slice(
       recommendedCommands: plan.recommendedCommands,
     });
     if (runContractFailure) {
-      process.stderr.write(`[verify] ${runContractFailure}\n`);
+      stderr.write(`[verify] ${runContractFailure}\n`);
       return 1;
     }
 
+    const sentinelProfile = verificationSentinelProfile(options);
+    if (sentinelProfile) {
+      let sentinelResult: SentinelPreflightResult;
+      try {
+        sentinelResult = sentinelRunner(sentinelProfile);
+      } catch {
+        stderr.write(`[verify] sentinel preflight unavailable for ${sentinelProfile}.\n`);
+        return 1;
+      }
+      if (sentinelResult.exitCode !== 0) {
+        stdout.write(renderSentinelPreflightOutput(sentinelResult.output));
+        stderr.write(`[verify] sentinel preflight failed for ${sentinelProfile}.\n`);
+        return 1;
+      }
+    }
+
     for (const command of plan.recommendedCommands) {
-      const result = spawnSync('npm', ['run', npmScriptFromCommand(command)], {
-        cwd: process.cwd(),
-        env: process.env,
-        stdio: 'inherit',
-      });
+      const result = runNpmScript(npmScriptFromCommand(command));
       if (result.status !== 0) {
         return typeof result.status === 'number' ? result.status : 1;
       }
     }
     return 0;
   } catch (error) {
-    process.stderr.write(`[verify] ${error instanceof Error ? error.message : String(error)}\n`);
+    stderr.write(`[verify] ${error instanceof Error ? error.message : String(error)}\n`);
     return 1;
   }
 }

@@ -5,6 +5,35 @@ import {
   readReleaseStatus,
   renderReleaseStatus,
 } from './release-summary';
+import {
+  buildSentinelPreflightEnv,
+  renderSentinelPreflightOutput,
+  runSentinelPreflightSync,
+  type SentinelPreflightResult,
+  type SentinelProfile,
+} from './sentinel-preflight';
+
+type CliWriteStream = {
+  write(chunk: string): unknown;
+};
+
+type NpmScriptResult = {
+  status: number | null;
+  signal: NodeJS.Signals | null;
+};
+
+type ReleaseReadyDependencies = {
+  stdout?: CliWriteStream;
+  stderr?: CliWriteStream;
+  env?: NodeJS.ProcessEnv;
+  cwd?: string;
+  runNpmScript?: (
+    script: string,
+    args: readonly string[],
+    env: NodeJS.ProcessEnv,
+  ) => NpmScriptResult;
+  sentinelRunner?: (profile: SentinelProfile, env: NodeJS.ProcessEnv, cwd: string) => SentinelPreflightResult;
+};
 
 function isCliEntrypoint(fileName: string): boolean {
   return Boolean(process.argv[1]?.replaceAll('\\', '/').endsWith(`/governance/${fileName}`));
@@ -20,16 +49,19 @@ function describeExit(status: number | null, signal: NodeJS.Signals | null): str
   return 'unknown exit status';
 }
 
-function renderNotStarted(reason: string): string {
+function renderNotStarted(reason: string, options: {
+  next: string;
+  logs: string;
+}): string {
   return [
     'AgentSmith Release Readiness',
     '',
     'Automated release verdict: NOT STARTED',
     'Blocked before: release campaign',
     `Why: ${reason}`,
-    'Next: fix the release precheck issue, then run: npm run release:ready',
+    `Next: ${options.next}`,
     'Evidence: no campaign evidence was produced; no release verdict was written.',
-    'Logs: see the release precheck output above.',
+    `Logs: ${options.logs}`,
     '',
   ].join('\n');
 }
@@ -57,37 +89,87 @@ function resolveReleaseReadyCampaignContext(env: NodeJS.ProcessEnv): {
   };
 }
 
-export function runReleaseReady(argv: readonly string[] = process.argv.slice(2)): number {
-  const precheck = spawnSync('npm', ['run', 'test:release:precheck'], {
-    cwd: process.cwd(),
-    env: process.env,
-    stdio: 'inherit',
-  });
+export function runReleaseReady(
+  argv: readonly string[] = process.argv.slice(2),
+  dependencies: ReleaseReadyDependencies = {},
+): number {
+  const stdout = dependencies.stdout ?? process.stdout;
+  const env = dependencies.env ?? process.env;
+  const cwd = dependencies.cwd ?? process.cwd();
+  const runNpmScript = dependencies.runNpmScript ?? defaultRunNpmScript;
+  const sentinelRunner = dependencies.sentinelRunner ?? defaultSentinelRunner;
+
+  const precheck = runNpmScript('test:release:precheck', [], env);
 
   if (precheck.status !== 0) {
     const exitCode = typeof precheck.status === 'number' ? precheck.status : 1;
-    process.stdout.write(renderNotStarted(`release precheck failed with ${describeExit(precheck.status, precheck.signal)}.`));
+    stdout.write(renderNotStarted(`release precheck failed with ${describeExit(precheck.status, precheck.signal)}.`, {
+      next: 'fix the release precheck issue, then run: npm run release:ready',
+      logs: 'see the release precheck output above.',
+    }));
     return exitCode;
   }
 
-  const campaignContext = resolveReleaseReadyCampaignContext(process.env);
+  let sentinelResult: SentinelPreflightResult;
+  try {
+    sentinelResult = sentinelRunner('release-ready', env, cwd);
+  } catch {
+    stdout.write(renderNotStarted('sentinel preflight unavailable for release-ready.', {
+      next: 'fix the release-ready sentinel issue, then run: npm run release:ready',
+      logs: 'see the sentinel preflight output above.',
+    }));
+    return 1;
+  }
+  if (sentinelResult.exitCode !== 0) {
+    stdout.write(renderSentinelPreflightOutput(sentinelResult.output));
+    stdout.write(renderNotStarted('sentinel preflight failed for release-ready.', {
+      next: 'fix the release-ready sentinel issue, then run: npm run release:ready',
+      logs: 'see the redacted sentinel diagnostic above.',
+    }));
+    return 1;
+  }
+
+  const campaignContext = resolveReleaseReadyCampaignContext(env);
   const campaignEnv = {
-    ...process.env,
+    ...env,
     RELEASE_CAMPAIGN_RUN_ID: campaignContext.runId,
     RELEASE_CAMPAIGN_ROOT: campaignContext.campaignRoot,
   };
 
-  const campaign = spawnSync('npm', ['run', 'release:campaign:full', ...argv], {
-    cwd: process.cwd(),
-    env: campaignEnv,
-    stdio: 'inherit',
-  });
+  const campaign = runNpmScript('release:campaign:full', argv, campaignEnv);
 
   const status = readReleaseStatus({ campaignRoot: campaignContext.campaignRoot });
   const statusExitCode = status.kind === 'ready' ? 0 : 1;
-  process.stdout.write(renderReleaseStatus(status).replace('AgentSmith Release Status', 'AgentSmith Release Readiness'));
+  stdout.write(renderReleaseStatus(status).replace('AgentSmith Release Status', 'AgentSmith Release Readiness'));
   const campaignExitCode = typeof campaign.status === 'number' ? campaign.status : 1;
   return campaignExitCode === 0 ? statusExitCode : campaignExitCode;
+}
+
+function defaultRunNpmScript(
+  script: string,
+  args: readonly string[],
+  env: NodeJS.ProcessEnv,
+): NpmScriptResult {
+  const result = spawnSync('npm', ['run', script, ...args], {
+    cwd: process.cwd(),
+    env,
+    stdio: 'inherit',
+  });
+  return {
+    status: result.status,
+    signal: result.signal,
+  };
+}
+
+function defaultSentinelRunner(
+  profile: SentinelProfile,
+  env: NodeJS.ProcessEnv,
+  cwd: string,
+): SentinelPreflightResult {
+  return runSentinelPreflightSync({
+    profile,
+    env: buildSentinelPreflightEnv({ profile, env, cwd }),
+  });
 }
 
 if (isCliEntrypoint('release-ready.ts')) {

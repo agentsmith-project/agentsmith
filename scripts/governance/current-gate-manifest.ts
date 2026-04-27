@@ -442,13 +442,9 @@ export const CURRENT_GATE_MANIFEST: readonly CurrentGateDefinition[] = [
   defineCurrentGate({
     id: 'lane-demo-rehearsal',
     npmScript: 'lane:demo-rehearsal',
-    command: 'bash scripts/scenarios/demo-rehearsal/reset.sh && bash scripts/scenarios/demo-rehearsal/up.sh && bash scripts/scenarios/demo-rehearsal/bootstrap.sh && bash scripts/scenarios/demo-rehearsal/verify.sh && bash scripts/scenarios/demo-rehearsal/report.sh',
+    command: 'bash scripts/governance/run-rehearsal-stages.sh demo-rehearsal',
     executionTargets: [
-      shellScriptTarget('scripts/scenarios/demo-rehearsal/reset.sh'),
-      shellScriptTarget('scripts/scenarios/demo-rehearsal/up.sh'),
-      shellScriptTarget('scripts/scenarios/demo-rehearsal/bootstrap.sh'),
-      shellScriptTarget('scripts/scenarios/demo-rehearsal/verify.sh'),
-      shellScriptTarget('scripts/scenarios/demo-rehearsal/report.sh'),
+      shellScriptTarget('scripts/governance/run-rehearsal-stages.sh', ['demo-rehearsal']),
     ],
     description: 'run the demo deploy rehearsal lane from a clean state through evidence generation',
     kind: 'lane',
@@ -461,13 +457,9 @@ export const CURRENT_GATE_MANIFEST: readonly CurrentGateDefinition[] = [
   defineCurrentGate({
     id: 'lane-cluster-rehearsal',
     npmScript: 'lane:cluster-rehearsal',
-    command: 'bash scripts/scenarios/cluster-rehearsal/reset.sh && bash scripts/scenarios/cluster-rehearsal/up.sh && bash scripts/scenarios/cluster-rehearsal/bootstrap.sh && bash scripts/scenarios/cluster-rehearsal/verify.sh && bash scripts/scenarios/cluster-rehearsal/report.sh',
+    command: 'bash scripts/governance/run-rehearsal-stages.sh cluster-rehearsal',
     executionTargets: [
-      shellScriptTarget('scripts/scenarios/cluster-rehearsal/reset.sh'),
-      shellScriptTarget('scripts/scenarios/cluster-rehearsal/up.sh'),
-      shellScriptTarget('scripts/scenarios/cluster-rehearsal/bootstrap.sh'),
-      shellScriptTarget('scripts/scenarios/cluster-rehearsal/verify.sh'),
-      shellScriptTarget('scripts/scenarios/cluster-rehearsal/report.sh'),
+      shellScriptTarget('scripts/governance/run-rehearsal-stages.sh', ['cluster-rehearsal']),
     ],
     description: 'run the cluster deploy rehearsal lane from a clean state through evidence generation',
     kind: 'lane',

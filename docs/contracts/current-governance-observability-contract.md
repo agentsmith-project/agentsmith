@@ -7,7 +7,7 @@ This contract registers P0 observability and diagnostics objects that explain cu
 ## Registered Objects
 
 - `status_projection_schema`: read-only status projection. It may point to aggregate status and stage diagnostics, but it must not produce `release_verdict` or `automated_release_verdict`; terminal summaries rendered through `release:status`, `rehearse:* --status`, and `make local-real-status` must stay inside the redaction boundary.
-- `run_diagnostics_artifacts`: diagnostic audit artifact family for `stage-events.jsonl`, `performance.json`, and `skip-decisions.ndjson`. These artifacts do not participate in evidence completeness.
+- `run_diagnostics_artifacts`: diagnostic audit artifact family for `stage-events.jsonl`, `performance.json`, and `skip-decisions.ndjson`. Wrapped demo/cluster rehearsal lanes record `reset`, `up`, `bootstrap`, `verify`, and `report` stage diagnostics through `scripts/governance/run-rehearsal-stages.sh`. These artifacts do not participate in evidence completeness.
 - `sentinel_preflight`: fail-fast preflight diagnostic. Its output is redacted diagnostic context, not a canonical result.
 - `lease_status_shadow`: read-only shadow for active run, destructive command, port family, and secret profile state. It does not acquire or release leases.
 - `rehearsal_metadata_schema`: read-only schema for `REHEARSAL_MODE`, reset level, world identity, and skip invalidation metadata. It defines audit metadata only; it does not drive rehearsal execution, reset behavior, world management, evidence truth, or verdict generation.

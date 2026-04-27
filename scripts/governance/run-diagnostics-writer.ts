@@ -1,4 +1,4 @@
-import { appendFileSync, mkdirSync, writeFileSync } from 'node:fs';
+import { appendFileSync, existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -8,6 +8,7 @@ import {
   validateCurrentRunDiagnosticArtifactPayload,
   type CurrentRunDiagnosticArtifactKind,
 } from './current-run-diagnostics-schema';
+import { redactSensitiveText } from './redaction';
 
 export interface CurrentRunDiagnosticsBaseInput {
   run_root: string;
@@ -81,6 +82,7 @@ export function initializeCurrentRunDiagnosticsArtifacts(input: { run_root: stri
   mkdirSync(input.run_root, { recursive: true });
   writeFileSync(resolveDiagnosticArtifactPath(input.run_root, 'stage_events'), '');
   writeFileSync(resolveDiagnosticArtifactPath(input.run_root, 'skip_decisions'), '');
+  rmSync(resolveDiagnosticArtifactPath(input.run_root, 'performance'), { force: true });
 }
 
 export function appendCurrentRunStageEvent(input: CurrentRunStageEventInput): void {
@@ -94,8 +96,8 @@ export function appendCurrentRunStageEvent(input: CurrentRunStageEventInput): vo
     ci_job: input.ci_job,
     stage: input.stage,
     event: input.event,
-    diagnostic_reason_code: input.diagnostic_reason_code,
-    stage_failure_reason: input.stage_failure_reason,
+    diagnostic_reason_code: sanitizeReasonText(input.diagnostic_reason_code),
+    stage_failure_reason: sanitizeReasonText(input.stage_failure_reason),
     stage_log_path: input.stage_log_path,
     stage_input_digest: input.stage_input_digest,
     stage_artifact_digest: input.stage_artifact_digest,
@@ -107,6 +109,15 @@ export function appendCurrentRunStageEvent(input: CurrentRunStageEventInput): vo
 }
 
 export function writeCurrentRunPerformance(input: CurrentRunPerformanceInput): void {
+  const performancePath = resolveDiagnosticArtifactPath(input.run_root, 'performance');
+  const incomingStages = input.stages.map((stage) => omitUndefined({
+    stage: stage.stage,
+    started_at: stage.started_at,
+    finished_at: stage.finished_at,
+    duration_ms: stage.duration_ms,
+    diagnostic_reason_code: sanitizeReasonText(stage.diagnostic_reason_code),
+    stage_failure_reason: sanitizeReasonText(stage.stage_failure_reason),
+  }));
   const payload = omitUndefined({
     schema_version: CURRENT_RUN_DIAGNOSTICS_SCHEMA_VERSION,
     artifact_kind: 'performance',
@@ -115,19 +126,12 @@ export function writeCurrentRunPerformance(input: CurrentRunPerformanceInput): v
     line_kind: input.line_kind,
     npm_script: input.npm_script,
     ci_job: input.ci_job,
-    stages: input.stages.map((stage) => omitUndefined({
-      stage: stage.stage,
-      started_at: stage.started_at,
-      finished_at: stage.finished_at,
-      duration_ms: stage.duration_ms,
-      diagnostic_reason_code: stage.diagnostic_reason_code,
-      stage_failure_reason: stage.stage_failure_reason,
-    })),
+    stages: [...readExistingPerformanceStages(performancePath), ...incomingStages],
     generated_at: input.generated_at ?? new Date().toISOString(),
   });
 
   assertValidDiagnosticPayload('performance', payload);
-  writeJson(resolveDiagnosticArtifactPath(input.run_root, 'performance'), payload);
+  writeJson(performancePath, payload);
 }
 
 export function appendCurrentRunSkipDecision(input: CurrentRunSkipDecisionInput): void {
@@ -210,6 +214,68 @@ export function writeWrappedCommandFinishDiagnostics(input: WrappedCommandFinish
   });
 }
 
+export function writeRehearsalStageStartDiagnostics(input: WrappedCommandStartDiagnosticsInput): void {
+  appendCurrentRunStageEvent({
+    run_root: input.run_root,
+    run_id: input.run_id,
+    gate_id: input.gate_id,
+    line_kind: input.line_kind,
+    npm_script: input.npm_script,
+    ci_job: input.ci_job,
+    stage: input.stage,
+    event: 'started',
+    diagnostic_reason_code: 'rehearsal_stage_started',
+    generated_at: input.started_at,
+  });
+}
+
+export function writeRehearsalStageFinishDiagnostics(input: WrappedCommandFinishDiagnosticsInput): void {
+  const finishedAt = input.finished_at ?? new Date().toISOString();
+  const durationMs = resolveDurationMs(input.started_ms, input.finished_ms);
+  const failureReason = input.stage_failure_reason ?? 'rehearsal_stage_exited_nonzero';
+
+  appendCurrentRunStageEvent({
+    run_root: input.run_root,
+    run_id: input.run_id,
+    gate_id: input.gate_id,
+    line_kind: input.line_kind,
+    npm_script: input.npm_script,
+    ci_job: input.ci_job,
+    stage: input.stage,
+    event: input.event,
+    diagnostic_reason_code: input.event === 'finished'
+      ? input.diagnostic_reason_code ?? 'rehearsal_stage_completed'
+      : undefined,
+    stage_failure_reason: input.event === 'failed'
+      ? failureReason
+      : undefined,
+    generated_at: finishedAt,
+  });
+  writeCurrentRunPerformance({
+    run_root: input.run_root,
+    run_id: input.run_id,
+    gate_id: input.gate_id,
+    line_kind: input.line_kind,
+    npm_script: input.npm_script,
+    ci_job: input.ci_job,
+    stages: [
+      {
+        stage: input.stage,
+        started_at: input.started_at,
+        finished_at: finishedAt,
+        duration_ms: durationMs,
+        diagnostic_reason_code: input.event === 'finished'
+          ? 'rehearsal_stage_duration_observed'
+          : undefined,
+        stage_failure_reason: input.event === 'failed'
+          ? failureReason
+          : undefined,
+      },
+    ],
+    generated_at: finishedAt,
+  });
+}
+
 export function resolveDiagnosticArtifactPath(
   runRoot: string,
   kind: CurrentRunDiagnosticArtifactKind,
@@ -227,6 +293,24 @@ function writeJson(file: string, payload: DiagnosticPayload): void {
   writeFileSync(file, `${JSON.stringify(payload, null, 2)}\n`);
 }
 
+function readExistingPerformanceStages(file: string): readonly DiagnosticPayload[] {
+  if (!existsSync(file)) {
+    return [];
+  }
+
+  let payload: unknown;
+  try {
+    payload = JSON.parse(readFileSync(file, 'utf8')) as unknown;
+  } catch {
+    return [];
+  }
+  if (!isRecord(payload) || !Array.isArray(payload.stages)) {
+    return [];
+  }
+
+  return payload.stages.filter(isRecord).map(sanitizePerformanceStage);
+}
+
 function assertValidDiagnosticPayload(
   kind: CurrentRunDiagnosticArtifactKind,
   payload: DiagnosticPayload,
@@ -241,6 +325,22 @@ function omitUndefined(input: DiagnosticPayload): DiagnosticPayload {
   return Object.fromEntries(Object.entries(input).filter(([, value]) => value !== undefined));
 }
 
+function sanitizeReasonText(value: string | undefined): string | undefined {
+  return typeof value === 'string' ? redactSensitiveText(value) : undefined;
+}
+
+function sanitizePerformanceStage(stage: DiagnosticPayload): DiagnosticPayload {
+  return omitUndefined({
+    ...stage,
+    diagnostic_reason_code: typeof stage.diagnostic_reason_code === 'string'
+      ? sanitizeReasonText(stage.diagnostic_reason_code)
+      : stage.diagnostic_reason_code,
+    stage_failure_reason: typeof stage.stage_failure_reason === 'string'
+      ? sanitizeReasonText(stage.stage_failure_reason)
+      : stage.stage_failure_reason,
+  });
+}
+
 function resolveDurationMs(startedMs: number | undefined, finishedMs: number | undefined): number {
   if (typeof startedMs !== 'number' || typeof finishedMs !== 'number') {
     return 0;
@@ -249,6 +349,10 @@ function resolveDurationMs(startedMs: number | undefined, finishedMs: number | u
     return 0;
   }
   return Math.max(0, finishedMs - startedMs);
+}
+
+function isRecord(value: unknown): value is DiagnosticPayload {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
 
 function requireEnv(name: string): string {
@@ -316,7 +420,34 @@ function runCliFromEnv(): void {
     return;
   }
 
-  throw new Error(`unknown CURRENT_RUN_DIAGNOSTICS_ACTION: ${action}`);
+  if (action === 'rehearsal-stage-start') {
+    writeRehearsalStageStartDiagnostics({
+      ...baseInput,
+      started_at: optionalEnv('CURRENT_RUN_DIAGNOSTICS_STARTED_AT'),
+    });
+    return;
+  }
+
+  if (action === 'rehearsal-stage-finish') {
+    const event = requireEnv('CURRENT_RUN_DIAGNOSTICS_EVENT');
+    if (event !== 'finished' && event !== 'failed') {
+      throw new Error('CURRENT_RUN_DIAGNOSTICS_EVENT must be finished or failed');
+    }
+
+    writeRehearsalStageFinishDiagnostics({
+      ...baseInput,
+      event,
+      started_at: optionalEnv('CURRENT_RUN_DIAGNOSTICS_STARTED_AT'),
+      finished_at: optionalEnv('CURRENT_RUN_DIAGNOSTICS_FINISHED_AT'),
+      started_ms: optionalNumberEnv('CURRENT_RUN_DIAGNOSTICS_STARTED_MS'),
+      finished_ms: optionalNumberEnv('CURRENT_RUN_DIAGNOSTICS_FINISHED_MS'),
+      diagnostic_reason_code: optionalEnv('CURRENT_RUN_DIAGNOSTICS_REASON_CODE'),
+      stage_failure_reason: optionalEnv('CURRENT_RUN_DIAGNOSTICS_FAILURE_REASON'),
+    });
+    return;
+  }
+
+  throw new Error('unknown CURRENT_RUN_DIAGNOSTICS_ACTION');
 }
 
 function isDirectCliEntrypoint(): boolean {
@@ -329,5 +460,11 @@ function isDirectCliEntrypoint(): boolean {
 }
 
 if (isDirectCliEntrypoint()) {
-  runCliFromEnv();
+  try {
+    runCliFromEnv();
+  } catch (error) {
+    const message = error instanceof Error ? error.message : 'run diagnostics writer failed';
+    process.stderr.write(`${redactSensitiveText(message)}\n`);
+    process.exit(1);
+  }
 }

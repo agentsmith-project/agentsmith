@@ -21,6 +21,7 @@ import {
 import { runGovernanceCli } from '../run-governance';
 import { buildCurrentArtifactTemplateIndex } from '../current-artifact-index-schema';
 import { listCurrentJobMetadata } from '../current-job-metadata-manifest';
+import { CURRENT_PURE_CHECK_IDS } from '../current-pure-check-identity-manifest';
 import { listCurrentResourceLocks } from '../current-resource-lock-manifest';
 import { selectGovernanceRunStandaloneJobIds, type GovernanceRunGoal } from '../governance-run-goal-selector';
 import { resolveCampaignRunId } from '../release-campaign-io';
@@ -132,6 +133,7 @@ function expectGovernanceRunSummaryAllowedKeys(value: unknown): void {
     campaign?: unknown;
     terminal_aggregate_source?: unknown;
     release_summary_source?: unknown;
+    pure_check_shadow_audit?: unknown;
   };
 
   expect(Object.keys(summary), 'governance run summary top-level keys').toEqual([
@@ -148,6 +150,7 @@ function expectGovernanceRunSummaryAllowedKeys(value: unknown): void {
     'campaign',
     'terminal_aggregate_source',
     'release_summary_source',
+    'pure_check_shadow_audit',
     'generated_at',
   ]);
   expect(Object.keys(summary.campaign as Record<string, unknown>), 'governance run summary campaign keys').toEqual([
@@ -172,6 +175,22 @@ function expectGovernanceRunSummaryAllowedKeys(value: unknown): void {
     'reference_kind',
     'path',
     'artifact_path_observed',
+  ]);
+  expect(
+    Object.keys(summary.pure_check_shadow_audit as Record<string, unknown>),
+    'governance run summary pure check shadow audit keys',
+  ).toEqual([
+    'schema',
+    'audit_scope',
+    'summary_semantics',
+    'cache_semantics',
+    'claim_store_read',
+    'claim_store_write',
+    'claim_count',
+    'valid_count',
+    'invalid_count',
+    'checks',
+    'generated_at',
   ]);
 }
 
@@ -836,7 +855,32 @@ describe('governance runner shell adapter', () => {
           reference_kind: 'campaign_output_path_reference',
           artifact_path_observed: true,
         },
+        pure_check_shadow_audit: {
+          schema: 'agentsmith_pure_check_shadow_audit/v1',
+          audit_scope: 'pure_check_shadow_audit',
+          summary_semantics: 'audit_only_not_release_verdict',
+          cache_semantics: 'shadow_no_skip',
+          claim_store_read: false,
+          claim_store_write: false,
+          claim_count: 0,
+          valid_count: 0,
+          invalid_count: 0,
+        },
       });
+      expect((governanceSummary as {
+        pure_check_shadow_audit?: { checks?: Array<{ check_id?: string; decision?: string; reason_codes?: string[] }> };
+      }).pure_check_shadow_audit?.checks).toEqual(CURRENT_PURE_CHECK_IDS.map((checkId) => ({
+        check_id: checkId,
+        cache_policy: 'shadow',
+        decision: 'rerun_required',
+        would_reuse: false,
+        reason_codes: ['pure_check_shadow_evaluation_not_available'],
+        claim_store_read: false,
+        claim_store_write: false,
+        claim_count: 0,
+        valid_count: 0,
+        invalid_count: 0,
+      })));
       expectGovernanceRunSummaryAllowedKeys(governanceSummary);
       expectNoForbiddenGovernanceRunSummaryKeys(governanceSummary);
       expect(releaseSummary.schema).toBe('agentsmith_release_summary/v1');

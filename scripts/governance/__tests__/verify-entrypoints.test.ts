@@ -1,4 +1,4 @@
-import { chmodSync, existsSync, mkdtempSync, readFileSync, rmdirSync, rmSync, writeFileSync } from 'node:fs';
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmdirSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { spawnSync } from 'node:child_process';
@@ -13,10 +13,18 @@ import {
 } from '../run-verify';
 import { findCurrentGateDefinitionById } from '../current-gate-manifest';
 import { validateCurrentStatusProjection } from '../current-status-projection-schema';
+import { PURE_CHECK_SHADOW_AUDIT_FILE_NAME } from '../pure-check-shadow-audit';
+import { findCurrentPureCheckIdentityById } from '../current-pure-check-identity-manifest';
+import {
+  buildPureCheckRuntimeShadowClaimRecord,
+  STABLE_PURE_CHECK_CLAIMS_JSONL_PATH,
+} from '../pure-check-runtime-shadow';
 import type { GovernanceRuntimeLockLease } from '../governance-lock-lease-manager';
 
 const LEASE_SNAPSHOT_ENV = 'AGENTSMITH_GOVERNANCE_LEASE_SNAPSHOT_PATH';
 const LEASE_SNAPSHOT_SECRET = 'sk-verify-status-lease-shadow-do-not-print';
+const CLAIM_STORE_ROOT_ENV = 'AGENTSMITH_GOVERNANCE_CLAIM_STORE_ROOT';
+const CLAIM_STORE_GIT_SHA_ENV = 'AGENTSMITH_GOVERNANCE_CLAIM_STORE_GIT_SHA';
 
 function readPackageScripts(): Record<string, string> {
   return (JSON.parse(readFileSync('package.json', 'utf8')) as { scripts: Record<string, string> }).scripts;
@@ -1572,12 +1580,265 @@ describe('verify human entrypoints', () => {
           aliases.push(script);
           return { status: 0 };
         },
+        pureCheckShadowRepoRoot: root,
+        pureCheckShadowGitSha: 'current-git-sha',
       });
 
       expect(exitCode).toBe(0);
       expect(sentinelProfiles).toEqual([]);
       expect(aliases).toEqual(['verify:quick', 'verify:default', 'verify:visual']);
       expect(stderr.join('')).toBe('');
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it('writes pure check shadow audit for non-release verify run without claiming unit coverage', () => {
+    const root = mkdtempSync(join(tmpdir(), 'agentsmith-verify-pure-shadow-audit-'));
+    const stdout: string[] = [];
+    const stderr: string[] = [];
+    const aliases: string[] = [];
+    try {
+      const existingIdentity = findCurrentPureCheckIdentityById('contracts');
+      expect(existingIdentity).toBeDefined();
+      if (!existingIdentity) {
+        return;
+      }
+      const existingClaim = buildPureCheckRuntimeShadowClaimRecord({
+        identity: existingIdentity,
+        scope: 'debug',
+        evidenceDir: 'artifacts/previous-pure-shadow/contracts',
+        resultStatus: 'passed',
+        failureClass: 'none',
+        inputDigest: `sha256:${'1'.repeat(64)}`,
+        artifactDigest: `sha256:${'2'.repeat(64)}`,
+        resultDigest: `sha256:${'3'.repeat(64)}`,
+        gitSha: 'previous-git-sha',
+        generatedAt: '2026-04-25T12:00:00.000Z',
+        producerOrigin: 'test-seed',
+      });
+      expect(existingClaim.ok).toBe(true);
+      if (!existingClaim.ok) {
+        return;
+      }
+      const stableStorePath = join(root, STABLE_PURE_CHECK_CLAIMS_JSONL_PATH);
+      mkdirSync(dirname(stableStorePath), { recursive: true });
+      writeFileSync(stableStorePath, `${JSON.stringify(existingClaim.value)}\n`);
+
+      const exitCode = runVerificationCli([
+        '--goal=visual',
+        '--run',
+        '--report-root',
+        root,
+        '--changed-file',
+        'src/components/chat/ChatMainPane.tsx',
+      ], {
+        stdout: { write: (chunk: string) => stdout.push(chunk) },
+        stderr: { write: (chunk: string) => stderr.push(chunk) },
+        runNpmScript: (script) => {
+          aliases.push(script);
+          return { status: 0 };
+        },
+        pureCheckShadowRepoRoot: root,
+        pureCheckShadowGitSha: 'current-git-sha',
+      });
+
+      expect(exitCode).toBe(0);
+      expect(aliases).toEqual(['verify:quick', 'verify:default', 'verify:visual']);
+      expect(stderr.join('')).toBe('');
+      expect(stdout.join('')).toContain(`Pure check shadow audit: ${join(root, PURE_CHECK_SHADOW_AUDIT_FILE_NAME)}`);
+
+      const audit = JSON.parse(readFileSync(join(root, PURE_CHECK_SHADOW_AUDIT_FILE_NAME), 'utf8')) as {
+        schema: string;
+        audit_scope: string;
+        summary_semantics: string;
+        cache_semantics: string;
+        claim_store_read: boolean;
+        claim_store_write: boolean;
+        claim_count: number;
+        valid_count: number;
+        invalid_count: number;
+        checks: Array<{
+          check_id: string;
+          decision: string;
+          would_reuse: boolean;
+          reason_codes: string[];
+          result_status?: string;
+          failure_class?: string;
+          script_results?: Array<{
+            script: string;
+            result_status: string;
+            failure_class: string;
+          }>;
+          claim_store_read: boolean;
+          claim_store_write: boolean;
+          claim_count: number;
+          valid_count: number;
+          invalid_count: number;
+          audit_digests?: {
+            scope: string;
+            input?: string;
+            artifact?: string;
+            result?: string;
+            claim?: string;
+          };
+        }>;
+      };
+      const digestPattern = /^sha256:[0-9a-f]{64}$/;
+
+      expect(audit).toMatchObject({
+        schema: 'agentsmith_pure_check_shadow_audit/v1',
+        audit_scope: 'pure_check_shadow_audit',
+        summary_semantics: 'audit_only_not_release_verdict',
+        cache_semantics: 'shadow_no_skip',
+        claim_store_read: true,
+        claim_store_write: false,
+        claim_count: 1,
+        valid_count: 0,
+        invalid_count: 1,
+      });
+      expect(audit.checks.map((check) => check.check_id)).toEqual([
+        'contracts',
+        'openapi-contract',
+        'openapi-generated',
+        'lint',
+        'typecheck',
+      ]);
+      expect(audit.checks.map((check) => check.check_id)).not.toContain('unit');
+      expect(audit.checks.every((check) => check.decision === 'rerun_required')).toBe(true);
+      expect(audit.checks.every((check) => check.would_reuse === false)).toBe(true);
+      expect(audit.checks.every((check) => check.claim_store_read === true)).toBe(true);
+      expect(audit.checks.every((check) => check.claim_store_write === false)).toBe(true);
+      expect(audit.checks.every((check) => check.result_status === 'passed')).toBe(true);
+      expect(audit.checks.every((check) => check.failure_class === 'none')).toBe(true);
+      expect(audit.checks.every((check) => check.script_results?.some((script) => (
+        script.script === 'verify:quick'
+        && script.result_status === 'passed'
+        && script.failure_class === 'none'
+      )))).toBe(true);
+      expect(audit.checks.every((check) => check.audit_digests?.scope === 'pure_check_shadow_audit')).toBe(true);
+      expect(audit.checks.every((check) => digestPattern.test(check.audit_digests?.input ?? ''))).toBe(true);
+      expect(audit.checks.every((check) => digestPattern.test(check.audit_digests?.artifact ?? ''))).toBe(true);
+      expect(audit.checks.every((check) => digestPattern.test(check.audit_digests?.result ?? ''))).toBe(true);
+      expect(audit.checks.every((check) => check.audit_digests?.claim === undefined)).toBe(true);
+      expect(audit.checks.find((check) => check.check_id === 'contracts')).toMatchObject({
+        claim_count: 1,
+        valid_count: 0,
+        invalid_count: 1,
+        reason_codes: expect.arrayContaining([
+          'stable_claim_not_reusable_without_current_producer_evidence',
+          'producer_owned_artifact_adapter_missing',
+          'runtime_shadow_claim_not_written',
+        ]),
+      });
+      expect(audit.checks.filter((check) => check.check_id !== 'contracts').every((check) => (
+        check.claim_count === 0
+        && check.valid_count === 0
+        && check.invalid_count === 0
+        && check.reason_codes.includes('stable_claim_store_empty')
+      ))).toBe(true);
+      expect(audit.checks.every((check) => check.reason_codes.includes('producer_owned_artifact_adapter_missing')))
+        .toBe(true);
+
+      const stableClaims = readFileSync(stableStorePath, 'utf8')
+        .trim()
+        .split('\n')
+        .map((line) => JSON.parse(line) as { check_id: string });
+      expect(existsSync(join(root, 'evidence-claims.jsonl'))).toBe(false);
+      expect(stableClaims.map((claim) => claim.check_id)).toEqual([
+        'contracts',
+      ]);
+      expect(JSON.stringify(audit)).not.toMatch(
+        /"(?:cache_hit|claim_reuse|skipped|verdict|release_verdict|automated_release_verdict)"\s*:/,
+      );
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it('includes failed executed verify aliases in pure check audit without writing reusable passed claims', () => {
+    const root = mkdtempSync(join(tmpdir(), 'agentsmith-verify-pure-shadow-failed-alias-'));
+    const stdout: string[] = [];
+    const stderr: string[] = [];
+    const aliases: string[] = [];
+    try {
+      const exitCode = runVerificationCli([
+        '--goal=debug',
+        '--run',
+        '--report-root',
+        root,
+        '--changed-file',
+        'src/components/chat/ChatMainPane.tsx',
+      ], {
+        stdout: { write: (chunk: string) => stdout.push(chunk) },
+        stderr: { write: (chunk: string) => stderr.push(chunk) },
+        runNpmScript: (script) => {
+          aliases.push(script);
+          return { status: 7 };
+        },
+        pureCheckShadowRepoRoot: root,
+        pureCheckShadowGitSha: 'current-git-sha',
+        pureCheckShadowToolchainIdentity: {
+          node: 'node-v24.14.1',
+          npm: 'npm-v11.11.0',
+          'package-lock': 'lockfile-version-3',
+          'next-typegen': 'next-typegen-v1',
+        },
+      });
+
+      expect(exitCode).toBe(7);
+      expect(aliases).toEqual(['verify:quick']);
+      expect(stderr.join('')).toBe('');
+      expect(stdout.join('')).toContain(`Pure check shadow audit: ${join(root, PURE_CHECK_SHADOW_AUDIT_FILE_NAME)}`);
+
+      const audit = JSON.parse(readFileSync(join(root, PURE_CHECK_SHADOW_AUDIT_FILE_NAME), 'utf8')) as {
+        claim_store_write: boolean;
+        checks: Array<{
+          check_id: string;
+          decision: string;
+          reason_codes: string[];
+          result_status?: string;
+          failure_class?: string;
+          script_results?: Array<{
+            script: string;
+            result_status: string;
+            failure_class: string;
+          }>;
+          claim_store_write: boolean;
+          audit_digests?: {
+            input?: string;
+            artifact?: string;
+            result?: string;
+            claim?: string;
+          };
+        }>;
+      };
+
+      expect(audit.claim_store_write).toBe(false);
+      expect(audit.checks.map((check) => check.check_id)).toEqual([
+        'contracts',
+        'openapi-contract',
+        'openapi-generated',
+        'lint',
+        'typecheck',
+      ]);
+      expect(audit.checks.every((check) => check.result_status === 'failed')).toBe(true);
+      expect(audit.checks.every((check) => check.failure_class && check.failure_class !== 'none')).toBe(true);
+      expect(audit.checks.every((check) => check.script_results?.some((script) => (
+        script.script === 'verify:quick'
+        && script.result_status === 'failed'
+        && script.failure_class !== 'none'
+      )))).toBe(true);
+      expect(audit.checks.every((check) => check.decision === 'rerun_required')).toBe(true);
+      expect(audit.checks.every((check) => check.claim_store_write === false)).toBe(true);
+      expect(audit.checks.every((check) => check.reason_codes.includes('producer_execution_failed'))).toBe(true);
+      expect(audit.checks.every((check) => check.reason_codes.includes('runtime_shadow_claim_not_written'))).toBe(true);
+      expect(audit.checks.every((check) => check.audit_digests?.claim === undefined)).toBe(true);
+      expect(existsSync(join(root, 'evidence-claims.jsonl'))).toBe(false);
+      expect(existsSync(join(root, STABLE_PURE_CHECK_CLAIMS_JSONL_PATH))).toBe(false);
+      expect(JSON.stringify(audit)).not.toMatch(
+        /"(?:cache_hit|claim_reuse|skipped|verdict|release_verdict|automated_release_verdict)"\s*:/,
+      );
     } finally {
       rmSync(root, { recursive: true, force: true });
     }
@@ -1642,6 +1903,8 @@ describe('verify human entrypoints', () => {
         env: {
           ...process.env,
           ...SENTINEL_PASS_ENV,
+          [CLAIM_STORE_ROOT_ENV]: root,
+          [CLAIM_STORE_GIT_SHA_ENV]: 'current-git-sha',
           PATH: `${root}:${process.env.PATH ?? ''}`,
         },
         encoding: 'utf8',

@@ -1,4 +1,5 @@
 import { spawnSync } from 'node:child_process';
+import { writeFileSync } from 'node:fs';
 import path from 'node:path';
 
 import {
@@ -26,6 +27,15 @@ import {
   type SentinelPreflightResult,
   type SentinelProfile,
 } from './sentinel-preflight';
+import {
+  buildGovernancePureCheckShadowAudit,
+  PURE_CHECK_SHADOW_AUDIT_FILE_NAME,
+} from './pure-check-shadow-audit';
+import {
+  evaluatePureCheckRuntimeShadowForVerifyRunSync,
+  type PureCheckVerifyScriptExecution,
+} from './pure-check-runtime-shadow';
+import type { CurrentGateResultFailureClass } from './current-gate-result-schema';
 
 export {
   buildVerificationPlan,
@@ -58,6 +68,9 @@ type VerificationCliDependencies = {
   stderr?: CliWriteStream;
   runNpmScript?: (script: string) => NpmScriptResult;
   sentinelRunner?: (profile: SentinelProfile) => SentinelPreflightResult;
+  pureCheckShadowRepoRoot?: string;
+  pureCheckShadowGitSha?: string;
+  pureCheckShadowToolchainIdentity?: Readonly<Record<string, string | null | undefined>>;
 };
 
 type ChangedFileDetection = {
@@ -79,6 +92,9 @@ type GitCommandResult = {
   stdout: string;
   stderr: string;
 };
+
+const PURE_CHECK_SHADOW_REPO_ROOT_ENV = 'AGENTSMITH_GOVERNANCE_CLAIM_STORE_ROOT';
+const PURE_CHECK_SHADOW_GIT_SHA_ENV = 'AGENTSMITH_GOVERNANCE_CLAIM_STORE_GIT_SHA';
 
 function isCliEntrypoint(fileName: string): boolean {
   return Boolean(process.argv[1]?.replaceAll('\\', '/').endsWith(`/governance/${fileName}`));
@@ -226,6 +242,34 @@ function renderVerifyStatusProjection(projection: CurrentStatusProjection): stri
   ].join('\n');
 }
 
+function writeVerifyPureCheckShadowAudit(args: {
+  repoRoot: string;
+  reportRoot: string;
+  executedScripts: readonly string[];
+  scriptExecutions?: readonly PureCheckVerifyScriptExecution[];
+  generatedAt: string;
+  gitSha: string;
+  toolchainIdentity?: Readonly<Record<string, string | null | undefined>>;
+}): string {
+  const runtimeShadow = evaluatePureCheckRuntimeShadowForVerifyRunSync({
+    repoRoot: args.repoRoot,
+    reportRoot: args.reportRoot,
+    executedScripts: args.executedScripts,
+    scriptExecutions: args.scriptExecutions,
+    generatedAt: args.generatedAt,
+    gitSha: args.gitSha,
+    toolchainIdentity: args.toolchainIdentity,
+  });
+  const audit = buildGovernancePureCheckShadowAudit({
+    includeMissingChecks: false,
+    generated_at: args.generatedAt,
+    evaluations: runtimeShadow.evaluations,
+  });
+  const auditPath = path.join(args.reportRoot, PURE_CHECK_SHADOW_AUDIT_FILE_NAME);
+  writeFileSync(auditPath, `${JSON.stringify(audit, null, 2)}\n`);
+  return auditPath;
+}
+
 function parseArgs(argv: readonly string[]): ParsedVerifyArgs {
   let goal: VerificationGoal = 'pr';
   let goalExplicit = false;
@@ -305,6 +349,15 @@ function runGit(args: readonly string[]): GitCommandResult {
     stdout: typeof result.stdout === 'string' ? result.stdout : '',
     stderr: typeof result.stderr === 'string' ? result.stderr : '',
   };
+}
+
+function resolveVerifyGitSha(): string {
+  const result = runGit(['rev-parse', 'HEAD']);
+  if (result.status !== 0) {
+    return 'unknown-git-sha';
+  }
+  const gitSha = result.stdout.trim().split(/\r?\n/)[0]?.trim();
+  return gitSha && gitSha.length > 0 ? gitSha : 'unknown-git-sha';
 }
 
 function gitFailureMessage(result: GitCommandResult): string {
@@ -462,6 +515,23 @@ function defaultRunNpmScript(script: string): NpmScriptResult {
   };
 }
 
+function failureClassForNpmScriptResult(result: NpmScriptResult): CurrentGateResultFailureClass {
+  return result.status === null ? 'infra_setup_failure' : 'product_regression';
+}
+
+function scriptExecutionFromNpmResult(
+  script: string,
+  result: NpmScriptResult,
+): PureCheckVerifyScriptExecution {
+  const passed = result.status === 0;
+  return {
+    script,
+    resultStatus: passed ? 'passed' : 'failed',
+    failureClass: passed ? 'none' : failureClassForNpmScriptResult(result),
+    exitCode: result.status,
+  };
+}
+
 function defaultSentinelRunner(profile: SentinelProfile): SentinelPreflightResult {
   return runSentinelPreflightSync({
     profile,
@@ -534,6 +604,9 @@ export function runVerificationCli(
     }
 
     const reportRoot = options.reportRoot ?? defaultReportRoot();
+    const pureCheckShadowRepoRoot = dependencies.pureCheckShadowRepoRoot
+      ?? process.env[PURE_CHECK_SHADOW_REPO_ROOT_ENV]
+      ?? process.cwd();
     const generatedAt = new Date().toISOString();
     const catalog = buildVerificationCatalog({ generatedAt });
     const plan = buildVerificationPlan({
@@ -582,12 +655,41 @@ export function runVerificationCli(
       }
     }
 
+    const pureCheckShadowGitSha = dependencies.pureCheckShadowGitSha
+      ?? process.env[PURE_CHECK_SHADOW_GIT_SHA_ENV]
+      ?? resolveVerifyGitSha();
+    const executedScripts: string[] = [];
+    const scriptExecutions: PureCheckVerifyScriptExecution[] = [];
     for (const command of plan.recommendedCommands) {
-      const result = runNpmScript(npmScriptFromCommand(command));
+      const script = npmScriptFromCommand(command);
+      const result = runNpmScript(script);
+      const scriptExecution = scriptExecutionFromNpmResult(script, result);
+      executedScripts.push(script);
+      scriptExecutions.push(scriptExecution);
       if (result.status !== 0) {
+        const auditPath = writeVerifyPureCheckShadowAudit({
+          repoRoot: pureCheckShadowRepoRoot,
+          reportRoot,
+          executedScripts,
+          scriptExecutions,
+          generatedAt,
+          gitSha: pureCheckShadowGitSha,
+          toolchainIdentity: dependencies.pureCheckShadowToolchainIdentity,
+        });
+        stdout.write(`Pure check shadow audit: ${auditPath}\n`);
         return typeof result.status === 'number' ? result.status : 1;
       }
     }
+    const auditPath = writeVerifyPureCheckShadowAudit({
+      repoRoot: pureCheckShadowRepoRoot,
+      reportRoot,
+      executedScripts,
+      scriptExecutions,
+      generatedAt,
+      gitSha: pureCheckShadowGitSha,
+      toolchainIdentity: dependencies.pureCheckShadowToolchainIdentity,
+    });
+    stdout.write(`Pure check shadow audit: ${auditPath}\n`);
     return 0;
   } catch (error) {
     stderr.write(`[verify] ${error instanceof Error ? error.message : String(error)}\n`);

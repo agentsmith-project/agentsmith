@@ -253,13 +253,23 @@ v2 不新增平行 claim truth。实现必须先对齐 `scripts/governance/curre
 | freshness | 是否允许跨 commit、跨 branch、跨 profile |
 | validator | 校验器名称和版本 |
 
-### 7.3 复用规则
+### 7.3 Claim Store 路径
+
+pure check reuse 在 P1a 只进入 shadow 闭环，推荐同时保留两类记录：
+
+1. `<run-root>/evidence-claims.jsonl`：run-scoped audit copy，记录本次 run 读到、写入和 would-reuse 的 claim，用于 summary、debug 和审计，不作为跨 run 的 stable source。
+2. `artifacts/governance-claim-store/pure-checks.jsonl`：repo-local stable shadow store，保存 non-release `pure_check_reuse` claim。`cache_policy=shadow` 时只能驱动 would-reuse audit，不能驱动真实 skip。
+
+`pure_check_reuse` claim 只属于 non-release scope。release campaign 不做跨 campaign pure reuse；发布路径必须重新执行 campaign step，或只消费同一 campaign root 下 producer-owned evidence 与 terminal aggregate。
+
+### 7.4 复用规则
 
 允许：
 
-1. 同一 commit、同一 env profile、同一 stable gate/check identity 的 producer-owned evidence 复用。
-2. release aggregate 复核同一 campaign root 下 producer-owned evidence。
-3. stable check identity、path globs、cache policy 和 input digest 规则齐备后，再允许 pure checks 进入 claim reuse。
+1. P1a `cache_policy=shadow` 下，同一 commit、同一 env profile、同一 stable gate/check identity 的 producer-owned evidence 只能用于 would-reuse audit；命令仍必须实际执行。
+2. P1b 或后续 enablement 中，只有 cache policy 从 `shadow` 升级并完成单独评审后，才允许 pure checks 进入真实 claim reuse / skip。
+3. release aggregate 复核同一 campaign root 下 producer-owned evidence。
+4. stable check identity、path globs、cache policy、input digest、artifact digest 和 result digest 规则齐备后，才允许 pure checks 从 shadow 进入 enablement 评审。
 
 不属于 evidence claim 的复用：
 
@@ -276,15 +286,18 @@ v2 不新增平行 claim truth。实现必须先对齐 `scripts/governance/curre
 5. 当前 checkout 重造旧 story trace 的语义。
 6. artifact index 扫目录后自行声明 passed / reusable / verdict。
 7. 用 session state、build manifest 或 skip decision 冒充 claim。
+8. 把 `gate:default` targeted unit tests 推断成 full `npm run test:run` passed。
+9. 用 non-release `pure_check_reuse` claim 满足 release campaign 或跨 campaign pure reuse。
 
-### 7.4 Claim Store 验收
+### 7.5 Claim Store 验收
 
 1. claim validator 与 current schema 对齐。
-2. stable gate/check identity 不存在时，pure check 不能启用 reuse，只能输出 shadow recommendation。
+2. stable gate/check identity 不存在，或 `cache_policy=shadow` 时，pure check 不能启用真实 reuse，只能输出 shadow recommendation / would-reuse audit。
 3. secret profile 变化时 backend-real claim 必须失效。
 4. artifact digest 缺失时 claim 不可复用。
 5. release scope claim 必须带 campaign root、campaign id、run id、step id，否则不能作为 verdict candidate。
-6. 所有 claim reuse 都写入 audit summary。
+6. 所有 shadow would-reuse 和真实 claim reuse 都写入 audit summary，并明确区分 recommendation 与 applied skip。
+7. full `npm run test:run` claim 只能由显式执行该 producer 的结果写入；`gate:default` targeted tests 只能写入自身覆盖范围的 claim。
 
 ## 8. Build Artifact Broker
 
@@ -778,27 +791,48 @@ current manifests 已经表达了部分依赖关系，但实际执行仍偏串�
 6. projection 不产生 release verdict，只引用 aggregate result。
 7. minimal lease/status shadow model 能解释 P3 session runner 的前置锁和状态。
 
-### P1：Evidence claim 运行时复用
+### P1：Evidence claim 运行时 shadow 与后续启用
 
-目标：先让低风险 pure checks 安全复用，但必须先补 stable gate/check identity。
+目标：先让低风险 pure checks 形成可审计的 runtime shadow 闭环，不在 P1a 真实跳过命令。当前策略是 `cache_policy=shadow`；真实 reuse / skip 只能放在 P1b 或后续 enablement，并且必须在 cache policy 升级和单独评审后启用。
+
+#### P1a：runtime shadow closure
 
 交付：
 
 1. stable check identity 或 owning gate/job mapping。
-2. job metadata `path_globs`、cache policy、input digest 规则。
-3. Claim Store 最小实现。
-4. pure checks input digest。
-5. artifact digest validator。
-6. claim reuse audit。
-7. non-release shadow mode，对比命中率和误判风险。
+2. job metadata `path_globs`、`cache_policy=shadow`、input digest 规则。
+3. Claim Store 最小实现：run-scoped `<run-root>/evidence-claims.jsonl` audit copy，以及 repo-local `artifacts/governance-claim-store/pure-checks.jsonl` stable shadow store。
+4. pure checks input digest 计算。
+5. artifact digest 与 result digest 计算和 validator。
+6. claim store read/write：读取历史 matching claim，写入本次 producer claim。
+7. would-reuse audit：记录 hit / miss / stale / digest mismatch / identity missing 等原因。
+8. 命令照跑：shadow recommendation 不影响执行计划、result status 或 release verdict。
+
+在 check-specific producer-owned artifact/result adapter 接入前，P1a 只能输出 digest/audit reason，不能用 `verification-catalog.json` 或 `story-acceptance-report.json` 冒充 producer evidence 写入 reusable passed claim。
 
 验收：
 
-1. stable identity 缺失时只输出 shadow recommendation，不启用 reuse。
-2. contracts/openapi/lint/typecheck/unit 同 commit 可复用。
-3. artifact digest 缺失时拒绝复用。
-4. claim reuse 出现在 summary 中。
-5. release scope 暂不复用跨 campaign claim。
+1. `cache_policy=shadow` 下，contracts/openapi/lint/typecheck/unit 被选中时仍实际执行。
+2. 同 commit、同 env profile、同 stable identity 的命中只产生 would-reuse audit，不产生 applied skip。
+3. stable identity 缺失时只输出 shadow recommendation，不启用真实 reuse。
+4. artifact digest 或 result digest 缺失时，claim 只能记录不可复用原因。
+5. `pure_check_reuse` claim 是 non-release scope；release campaign 不做跨 campaign pure reuse。
+6. unit 当前不能从 `gate:default` targeted tests 推断为 full `npm run test:run` passed；只有显式 producer 覆盖 full `npm run test:run` 时，才能写对应 claim。
+
+#### P1b：reuse / skip enablement
+
+交付：
+
+1. 将具体 pure check 的 cache policy 从 `shadow` 升级为允许真实 reuse / skip 的策略。
+2. 针对每个升级的 producer 单独评审 stable identity、input digest、artifact digest、result digest、freshness 和 failure mode。
+3. 扩展 summary，明确区分 shadow would-reuse、applied reuse、forced rerun 和 fail-closed rerun。
+4. 增加真实 skip 的 contract/unit 覆盖，证明 digest mismatch、缺失 artifact、scope mismatch、producer mismatch 时 fail-closed。
+
+验收：
+
+1. 未完成 cache policy 升级和单独评审前，任何 pure check 都不能真实 reuse / skip。
+2. applied reuse 必须引用 valid claim，并在 audit summary 中给出 claim id、producer、digest 和 freshness。
+3. release campaign 仍不消费跨 campaign `pure_check_reuse` claim；release verdict 只来自 campaign-scoped producer-owned evidence 与 terminal aggregate。
 
 ### P2：内容键构建和镜像跳过
 
@@ -988,7 +1022,7 @@ v2 实施必须继续 TDD。建议按层补测试：
 6. minimal lease/status shadow model。
 7. stable check identity and job metadata cache policy。
 8. pure check claim store。
-9. claim reuse audit summary。
+9. shadow would-reuse audit summary。
 10. build content key calculator。
 11. `VERSION.release_id` truth and base image digest lock。
 12. app/llmup image content tag + release alias。
@@ -1023,7 +1057,7 @@ v2 不能只看脚本通过。完成必须满足：
 1. 人类入口没有增加，仍以 `npm run verify`、`npm run release:ready/status`、`npm run rehearse:*`、`make local-real-*` 为主。
 2. 同源码重复 rehearsal 明显减少昂贵 build/image 操作。
 3. backend-real 和 mock lane 的重复启动次数明显下降。
-4. verification reuse 都有 valid evidence claim；operational skip 都有 skip decision audit。
+4. 真实 verification reuse 都有 valid evidence claim；P1a shadow 阶段只有 would-reuse audit，不做 applied skip；operational skip 都有 skip decision audit。
 5. 失败后 status 能明确 primary blocker 和 safe next action。
 6. standalone release-fidelity 产出 release-compatible diagnostic evidence；V4 release evidence 只来自 campaign-scoped producer evidence。
 7. CI 与本地复用同一 run plan 或同一 projection schema。
@@ -1034,7 +1068,7 @@ v2 不能只看脚本通过。完成必须满足：
 为了最快降低下一次长任务风险，建议首批只做四件事：
 
 1. 完整 P0：clean entrypoints/help/docs、`verify --run` CLI contract、status projection、stage timing、sentinel preflight、minimal lease/status shadow。
-2. P1 stable check identity + pure check evidence claim shadow/reuse。
+2. P1a stable check identity + pure check evidence claim runtime shadow closure；P1b reuse enablement 单独评审。
 3. P2 app/llmup 内容键镜像、VERSION truth、digest skip。
 4. P3 current coverage mapping + backend-real session runner 的最小 shard 化。
 

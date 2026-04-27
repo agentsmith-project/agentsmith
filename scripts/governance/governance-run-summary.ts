@@ -1,6 +1,11 @@
 import { existsSync, mkdirSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 
+import {
+  buildGovernancePureCheckShadowAudit,
+  type GovernancePureCheckShadowAudit,
+} from './pure-check-shadow-audit';
+
 export const GOVERNANCE_RUN_SUMMARY_FILE_NAME = 'governance-run-summary.json';
 
 export interface BuildGovernanceRunSummaryInput {
@@ -12,6 +17,7 @@ export interface BuildGovernanceRunSummaryInput {
   campaignRunId: string;
   campaignEngineInvoked: boolean;
   campaignExecutionReturned: boolean;
+  pureCheckShadowAudit?: GovernancePureCheckShadowAudit;
 }
 
 export interface GovernanceRunSummary {
@@ -42,6 +48,7 @@ export interface GovernanceRunSummary {
     path: string;
     artifact_path_observed: boolean;
   };
+  pure_check_shadow_audit: GovernancePureCheckShadowAudit;
   generated_at: string;
 }
 
@@ -50,6 +57,7 @@ export function buildGovernanceRunSummary(input: BuildGovernanceRunSummaryInput)
   const releaseSummaryPath = path.join(input.campaignRoot, 'summary.json');
   const terminalAggregatePresent = existsSync(terminalAggregatePath);
   const releaseSummaryPresent = existsSync(releaseSummaryPath);
+  const pureCheckShadowAudit = input.pureCheckShadowAudit ?? buildGovernancePureCheckShadowAudit();
 
   return {
     schema: 'agentsmith_governance_run_summary/v1',
@@ -79,6 +87,7 @@ export function buildGovernanceRunSummary(input: BuildGovernanceRunSummaryInput)
       path: releaseSummaryPath,
       artifact_path_observed: releaseSummaryPresent,
     },
+    pure_check_shadow_audit: pureCheckShadowAudit,
     generated_at: new Date().toISOString(),
   };
 }

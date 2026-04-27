@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto';
-import { existsSync, readFileSync } from 'node:fs';
+import { existsSync, readdirSync, readFileSync, statSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 
 import {
@@ -22,6 +22,7 @@ import {
   type CurrentStatusProjectionPresentationStatus,
   type CurrentStatusProjectionReason,
 } from './current-status-projection-schema';
+import { validateCurrentRunDiagnosticArtifactPayload } from './current-run-diagnostics-schema';
 import { redactSensitiveText } from './redaction';
 
 interface ParsedAggregateResult {
@@ -43,11 +44,72 @@ interface MissingAggregateResult {
 
 type AggregateResultRead = ParsedAggregateResult | MissingAggregateResult;
 
+type RehearsalGoal = Extract<CurrentStatusProjectionGoal, 'demo-rehearsal' | 'cluster-rehearsal'>;
+
+interface RehearsalStatusConfig {
+  goal: RehearsalGoal;
+  gateId: 'lane-demo-rehearsal' | 'lane-cluster-rehearsal';
+  lineKind: 'demo_rehearsal' | 'cluster_rehearsal';
+  safeNextCommand: 'npm run rehearse:demo' | 'npm run rehearse:cluster';
+}
+
+interface RehearsalResultCandidate {
+  runId: string;
+  runRoot: string;
+  resultPath: string;
+  content: string;
+  sortTimestamp: number;
+}
+
+interface RehearsalStageEvent {
+  stage: string;
+  event: string;
+  diagnosticReasonCode: string | null;
+  stageFailureReason: string | null;
+}
+
+interface RehearsalDiagnosticArtifact {
+  path: string;
+  digest: string;
+}
+
+interface RehearsalStageEventsArtifact extends RehearsalDiagnosticArtifact {
+  lastFailedEvent: RehearsalStageEvent | null;
+}
+
+interface ParsedRehearsalEvidence {
+  ok: true;
+  config: RehearsalStatusConfig;
+  laneRoot: string;
+  runRoot: string;
+  runId: string;
+  resultPath: string;
+  resultDigest: string;
+  status: CurrentGateResultStatus;
+  failureClass: CurrentGateResultFailureClass;
+  stage: string;
+  summary: string;
+  stageEvents: RehearsalStageEventsArtifact | null;
+  performance: RehearsalDiagnosticArtifact | null;
+}
+
+interface MissingRehearsalEvidence {
+  ok: false;
+  config: RehearsalStatusConfig;
+  laneRoot: string;
+  path: string;
+  reasonCode: string;
+  summary: string;
+}
+
+type RehearsalEvidenceRead = ParsedRehearsalEvidence | MissingRehearsalEvidence;
+
 export interface BuildStatusProjectionInput {
   goal: CurrentStatusProjectionGoal;
   runtimeLine?: string | null;
   runId?: string | null;
   campaignRoot?: string | null;
+  gateResultsRoot?: string | null;
   currentGitSha?: string | null;
   evidenceGitSha?: string | null;
   startedAt?: string | null;
@@ -57,6 +119,20 @@ export interface BuildStatusProjectionInput {
 }
 
 const DEFAULT_GENERATED_AT = '1970-01-01T00:00:00.000Z';
+const REHEARSAL_STATUS_CONFIGS: Record<RehearsalGoal, RehearsalStatusConfig> = {
+  'demo-rehearsal': {
+    goal: 'demo-rehearsal',
+    gateId: 'lane-demo-rehearsal',
+    lineKind: 'demo_rehearsal',
+    safeNextCommand: 'npm run rehearse:demo',
+  },
+  'cluster-rehearsal': {
+    goal: 'cluster-rehearsal',
+    gateId: 'lane-cluster-rehearsal',
+    lineKind: 'cluster_rehearsal',
+    safeNextCommand: 'npm run rehearse:cluster',
+  },
+};
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
@@ -66,8 +142,20 @@ function sha256(value: string | Buffer): string {
   return `sha256:${createHash('sha256').update(value).digest('hex')}`;
 }
 
+function redactProjectionText(value: string): string {
+  return redactSensitiveText(value);
+}
+
+function redactProjectionPath(path: string): string {
+  return path;
+}
+
 function releaseAggregateResultPath(campaignRoot: string): string {
   return join(resolve(campaignRoot), 'gate-release-full', 'result.json');
+}
+
+function gateResultsRoot(input?: string | null): string {
+  return resolve(input ?? join(process.cwd(), 'artifacts', 'gate-results'));
 }
 
 function aggregateMalformedResult(input: {
@@ -194,9 +282,387 @@ function readReleaseAggregateResult(campaignRoot?: string | null): AggregateResu
   };
 }
 
+function rehearsalConfigForGoal(goal: CurrentStatusProjectionGoal): RehearsalStatusConfig | null {
+  if (goal === 'demo-rehearsal' || goal === 'cluster-rehearsal') {
+    return REHEARSAL_STATUS_CONFIGS[goal];
+  }
+  return null;
+}
+
+function latestRehearsalResultCandidate(laneRoot: string): RehearsalResultCandidate | null {
+  if (!existsSync(laneRoot)) {
+    return null;
+  }
+
+  const candidates: RehearsalResultCandidate[] = [];
+  for (const entry of readdirSync(laneRoot, { withFileTypes: true })) {
+    if (!entry.isDirectory()) {
+      continue;
+    }
+
+    const runId = entry.name;
+    const runRoot = join(laneRoot, runId);
+    const resultPath = join(runRoot, 'result.json');
+    if (!existsSync(resultPath)) {
+      continue;
+    }
+
+    let content: string;
+    try {
+      content = readFileSync(resultPath, 'utf8');
+    } catch {
+      continue;
+    }
+
+    let sortTimestamp = 0;
+    try {
+      sortTimestamp = statSync(resultPath).mtimeMs;
+    } catch {
+      // Keep the run visible even if filesystem metadata races during a read-only status check.
+    }
+    try {
+      const parsed = JSON.parse(content) as unknown;
+      if (isRecord(parsed) && typeof parsed.generated_at === 'string') {
+        const generatedAtMs = new Date(parsed.generated_at).getTime();
+        if (Number.isFinite(generatedAtMs)) {
+          sortTimestamp = generatedAtMs;
+        }
+      }
+    } catch {
+      // Keep the filesystem timestamp fallback so malformed latest results are still visible.
+    }
+
+    candidates.push({
+      runId,
+      runRoot,
+      resultPath,
+      content,
+      sortTimestamp,
+    });
+  }
+
+  return candidates
+    .sort((left, right) => (
+      left.sortTimestamp - right.sortTimestamp
+      || left.runId.localeCompare(right.runId)
+    ))
+    .at(-1) ?? null;
+}
+
+function readDiagnosticContent(path: string): (RehearsalDiagnosticArtifact & { content: string }) | null {
+  if (!existsSync(path)) {
+    return null;
+  }
+  try {
+    const content = readFileSync(path, 'utf8');
+    return {
+      path,
+      digest: sha256(content),
+      content,
+    };
+  } catch {
+    return null;
+  }
+}
+
+function matchesRehearsalDiagnosticIdentity(input: {
+  value: unknown;
+  kind: 'stage_events' | 'performance';
+  artifactKind: 'stage_event' | 'performance';
+  runId: string;
+  config: RehearsalStatusConfig;
+}): input is {
+  value: Record<string, unknown>;
+  kind: 'stage_events' | 'performance';
+  artifactKind: 'stage_event' | 'performance';
+  runId: string;
+  config: RehearsalStatusConfig;
+} {
+  if (!isRecord(input.value)) {
+    return false;
+  }
+  if (validateCurrentRunDiagnosticArtifactPayload(input.kind, input.value).ok !== true) {
+    return false;
+  }
+  return input.value.artifact_kind === input.artifactKind
+    && input.value.run_id === input.runId
+    && input.value.gate_id === input.config.gateId
+    && input.value.line_kind === input.config.lineKind;
+}
+
+function parseRehearsalStageEvent(value: Record<string, unknown>): RehearsalStageEvent | null {
+  if (!isRecord(value)) {
+    return null;
+  }
+  if (typeof value.stage !== 'string' || typeof value.event !== 'string') {
+    return null;
+  }
+  return {
+    stage: value.stage,
+    event: value.event,
+    diagnosticReasonCode: typeof value.diagnostic_reason_code === 'string'
+      ? value.diagnostic_reason_code
+      : null,
+    stageFailureReason: typeof value.stage_failure_reason === 'string'
+      ? value.stage_failure_reason
+      : null,
+  };
+}
+
+function isGenericWrapperFailedEvent(event: RehearsalStageEvent): boolean {
+  if (event.stage !== 'execute') {
+    return false;
+  }
+  return event.diagnosticReasonCode === 'execute:failed'
+    || event.stageFailureReason === 'wrapped_command_exited_nonzero';
+}
+
+function readRehearsalStageEventsArtifact(input: {
+  path: string;
+  runId: string;
+  config: RehearsalStatusConfig;
+}): RehearsalStageEventsArtifact | null {
+  const artifact = readDiagnosticContent(input.path);
+  if (!artifact) {
+    return null;
+  }
+
+  let sawValidSameRunEvent = false;
+  let lastInnerFailedEvent: RehearsalStageEvent | null = null;
+  let lastWrapperFailedEvent: RehearsalStageEvent | null = null;
+  for (const line of artifact.content.split('\n')) {
+    const trimmed = line.trim();
+    if (!trimmed) {
+      continue;
+    }
+    let parsed: unknown;
+    try {
+      parsed = JSON.parse(trimmed) as unknown;
+    } catch {
+      continue;
+    }
+    if (!matchesRehearsalDiagnosticIdentity({
+      value: parsed,
+      kind: 'stage_events',
+      artifactKind: 'stage_event',
+      runId: input.runId,
+      config: input.config,
+    })) {
+      continue;
+    }
+    const event = parseRehearsalStageEvent(parsed);
+    if (!event) {
+      continue;
+    }
+    sawValidSameRunEvent = true;
+    if (event.event !== 'failed') {
+      continue;
+    }
+    if (isGenericWrapperFailedEvent(event)) {
+      lastWrapperFailedEvent = event;
+    } else {
+      lastInnerFailedEvent = event;
+    }
+  }
+
+  if (!sawValidSameRunEvent) {
+    return null;
+  }
+
+  const { content: _content, ...diagnosticArtifact } = artifact;
+  return {
+    ...diagnosticArtifact,
+    lastFailedEvent: lastInnerFailedEvent ?? lastWrapperFailedEvent,
+  };
+}
+
+function readRehearsalPerformanceArtifact(input: {
+  path: string;
+  runId: string;
+  config: RehearsalStatusConfig;
+}): RehearsalDiagnosticArtifact | null {
+  const artifact = readDiagnosticContent(input.path);
+  if (!artifact) {
+    return null;
+  }
+
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(artifact.content) as unknown;
+  } catch {
+    return null;
+  }
+  if (!matchesRehearsalDiagnosticIdentity({
+    value: parsed,
+    kind: 'performance',
+    artifactKind: 'performance',
+    runId: input.runId,
+    config: input.config,
+  })) {
+    return null;
+  }
+
+  const { content: _content, ...diagnosticArtifact } = artifact;
+  return {
+    ...diagnosticArtifact,
+  };
+}
+
+function rehearsalMalformedEvidence(input: {
+  config: RehearsalStatusConfig;
+  laneRoot: string;
+  path: string;
+  reasonCode: string;
+  summary: string;
+}): MissingRehearsalEvidence {
+  return {
+    ok: false,
+    config: input.config,
+    laneRoot: input.laneRoot,
+    path: input.path,
+    reasonCode: input.reasonCode,
+    summary: input.summary,
+  };
+}
+
+function readRehearsalEvidence(input: {
+  config: RehearsalStatusConfig;
+  gateResultsRoot?: string | null;
+}): RehearsalEvidenceRead {
+  const root = gateResultsRoot(input.gateResultsRoot);
+  const laneRoot = join(root, input.config.gateId);
+  const latest = latestRehearsalResultCandidate(laneRoot);
+  if (!latest) {
+    return {
+      ok: false,
+      config: input.config,
+      laneRoot,
+      path: laneRoot,
+      reasonCode: 'rehearsal_evidence_missing',
+      summary: `No rehearsal evidence found under ${laneRoot}.`,
+    };
+  }
+
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(latest.content) as unknown;
+  } catch (error) {
+    return rehearsalMalformedEvidence({
+      config: input.config,
+      laneRoot,
+      path: latest.resultPath,
+      reasonCode: 'rehearsal_result_malformed',
+      summary: `Rehearsal result is not valid JSON: ${error instanceof Error ? error.message : String(error)}`,
+    });
+  }
+
+  if (!isRecord(parsed)) {
+    return rehearsalMalformedEvidence({
+      config: input.config,
+      laneRoot,
+      path: latest.resultPath,
+      reasonCode: 'rehearsal_result_malformed',
+      summary: 'Rehearsal result must be a JSON object.',
+    });
+  }
+
+  if (
+    parsed.schema_version !== CURRENT_GATE_RESULT_SCHEMA_VERSION
+    || parsed.gate_id !== input.config.gateId
+    || parsed.line_kind !== input.config.lineKind
+  ) {
+    return rehearsalMalformedEvidence({
+      config: input.config,
+      laneRoot,
+      path: latest.resultPath,
+      reasonCode: 'rehearsal_result_wrong_lane',
+      summary: `Rehearsal result must be ${input.config.gateId} / ${input.config.lineKind}.`,
+    });
+  }
+
+  if (
+    typeof parsed.status !== 'string'
+    || typeof parsed.failure_class !== 'string'
+    || typeof parsed.stage !== 'string'
+    || typeof parsed.summary !== 'string'
+  ) {
+    return rehearsalMalformedEvidence({
+      config: input.config,
+      laneRoot,
+      path: latest.resultPath,
+      reasonCode: 'rehearsal_result_malformed',
+      summary: 'Rehearsal result must include status, failure_class, stage, and summary strings.',
+    });
+  }
+
+  if (!CURRENT_GATE_RESULT_STATUSES.includes(parsed.status as CurrentGateResultStatus)) {
+    return rehearsalMalformedEvidence({
+      config: input.config,
+      laneRoot,
+      path: latest.resultPath,
+      reasonCode: 'rehearsal_result_invalid_status',
+      summary: 'Rehearsal result status is not a current gate result status.',
+    });
+  }
+  if (!CURRENT_GATE_RESULT_FAILURE_CLASSES.includes(parsed.failure_class as CurrentGateResultFailureClass)) {
+    return rehearsalMalformedEvidence({
+      config: input.config,
+      laneRoot,
+      path: latest.resultPath,
+      reasonCode: 'rehearsal_result_invalid_failure_class',
+      summary: 'Rehearsal result failure_class is not a current gate result failure class.',
+    });
+  }
+
+  const status = parsed.status as CurrentGateResultStatus;
+  const failureClass = parsed.failure_class as CurrentGateResultFailureClass;
+  if (status === 'passed' && failureClass !== 'none') {
+    return rehearsalMalformedEvidence({
+      config: input.config,
+      laneRoot,
+      path: latest.resultPath,
+      reasonCode: 'rehearsal_result_inconsistent',
+      summary: 'Rehearsal result is inconsistent: passed result must use failure_class none.',
+    });
+  }
+  if (status === 'failed' && failureClass === 'none') {
+    return rehearsalMalformedEvidence({
+      config: input.config,
+      laneRoot,
+      path: latest.resultPath,
+      reasonCode: 'rehearsal_result_inconsistent',
+      summary: 'Rehearsal result is inconsistent: failed result must use a non-none failure_class.',
+    });
+  }
+
+  return {
+    ok: true,
+    config: input.config,
+    laneRoot,
+    runRoot: latest.runRoot,
+    runId: latest.runId,
+    resultPath: latest.resultPath,
+    resultDigest: sha256(latest.content),
+    status,
+    failureClass,
+    stage: parsed.stage,
+    summary: parsed.summary,
+    stageEvents: readRehearsalStageEventsArtifact({
+      path: join(latest.runRoot, 'stage-events.jsonl'),
+      runId: latest.runId,
+      config: input.config,
+    }),
+    performance: readRehearsalPerformanceArtifact({
+      path: join(latest.runRoot, 'performance.json'),
+      runId: latest.runId,
+      config: input.config,
+    }),
+  };
+}
+
 function aggregateStatusRef(result: ParsedAggregateResult): CurrentStatusProjectionAggregateStatusRef {
   return {
-    path: result.path,
+    path: redactProjectionPath(result.path),
     digest: result.digest,
     gate_id: 'gate-release-full',
     line_kind: 'release_full_verdict',
@@ -289,7 +755,7 @@ function failedPrimaryBlocker(result: ParsedAggregateResult): CurrentStatusProje
   return {
     owner,
     stage: normalizePhase(result.stage),
-    path: result.path,
+    path: redactProjectionPath(result.path),
   };
 }
 
@@ -324,14 +790,14 @@ function reasonForAggregate(input: {
     return {
       code: 'stale_evidence_git_sha',
       summary: `Evidence git sha ${input.evidenceGitSha ?? '<unknown>'} does not match current git sha ${input.currentGitSha ?? '<unknown>'}.`,
-      source_path: input.result.path,
+      source_path: redactProjectionPath(input.result.path),
     };
   }
 
   return {
     code: input.result.failureClass,
     summary: redactSensitiveText(input.result.summary),
-    source_path: input.result.path,
+    source_path: redactProjectionPath(input.result.path),
   };
 }
 
@@ -341,7 +807,7 @@ function evidencePathsForAggregate(result: ParsedAggregateResult | null): readon
   }
   return [
     {
-      path: result.path,
+      path: redactProjectionPath(result.path),
       digest: result.digest,
     },
   ];
@@ -375,6 +841,7 @@ function buildMissingAggregateProjection(input: {
     reasonCode: input.source.reasonCode,
   });
   const phase: CurrentStatusProjectionPhase = input.options.phase ?? (running ? 'verify' : 'not-started');
+  const sourcePath = input.source.path.length > 0 ? redactProjectionPath(input.source.path) : null;
 
   return {
     schema: CURRENT_STATUS_PROJECTION_SCHEMA,
@@ -394,7 +861,7 @@ function buildMissingAggregateProjection(input: {
     deepest_reason: {
       code: running ? 'aggregate_result_pending' : input.source.reasonCode,
       summary: running ? 'Release aggregate result has not been produced yet.' : redactSensitiveText(input.source.summary),
-      source_path: input.source.path.length > 0 ? input.source.path : null,
+      source_path: sourcePath,
     },
     safe_next_command: safeCommandForOwner(null, input.options.goal),
     destructive_recovery_command: null,
@@ -403,8 +870,228 @@ function buildMissingAggregateProjection(input: {
     evidence_paths: [],
     authority_paths: {
       aggregate: null,
-      stage: input.source.path.length > 0 ? input.source.path : null,
+      stage: sourcePath,
       evidence: [],
+    },
+    generated_at: input.generatedAt,
+    release_decision_produced: false,
+    commands_executed: false,
+    leases_acquired: false,
+    leases_released: false,
+  };
+}
+
+function rehearsalPresentationStatus(input: {
+  evidence: ParsedRehearsalEvidence;
+  currentGitSha: string | null;
+  evidenceGitSha: string | null;
+}): CurrentStatusProjectionPresentationStatus {
+  if (
+    input.currentGitSha
+    && input.evidenceGitSha
+    && input.currentGitSha !== input.evidenceGitSha
+  ) {
+    return 'stale';
+  }
+  return input.evidence.status === 'passed' ? 'passed' : 'failed';
+}
+
+function rehearsalEvidencePathRefs(
+  evidence: ParsedRehearsalEvidence,
+): readonly CurrentStatusProjectionPathRef[] {
+  return [
+    {
+      path: redactProjectionPath(evidence.resultPath),
+      digest: evidence.resultDigest,
+    },
+    ...(evidence.stageEvents
+      ? [{
+          path: redactProjectionPath(evidence.stageEvents.path),
+          digest: evidence.stageEvents.digest,
+        }]
+      : []),
+    ...(evidence.performance
+      ? [{
+          path: redactProjectionPath(evidence.performance.path),
+          digest: evidence.performance.digest,
+        }]
+      : []),
+  ];
+}
+
+function rehearsalAuthorityEvidencePaths(evidence: ParsedRehearsalEvidence): readonly string[] {
+  return rehearsalEvidencePathRefs(evidence).map((entry) => entry.path);
+}
+
+function rehearsalStageAuthorityPath(evidence: ParsedRehearsalEvidence): string {
+  if (evidence.stageEvents) {
+    return redactProjectionPath(evidence.stageEvents.path);
+  }
+  return redactProjectionPath(evidence.resultPath);
+}
+
+function rehearsalFailedPrimaryBlocker(evidence: ParsedRehearsalEvidence): CurrentStatusProjectionBlocker {
+  const failedEvent = evidence.stageEvents?.lastFailedEvent ?? null;
+  return {
+    owner: evidence.config.gateId,
+    stage: normalizePhase(failedEvent?.stage ?? evidence.stage),
+    path: failedEvent && evidence.stageEvents
+      ? redactProjectionPath(evidence.stageEvents.path)
+      : redactProjectionPath(evidence.resultPath),
+  };
+}
+
+function reasonForRehearsal(input: {
+  evidence: ParsedRehearsalEvidence;
+  presentationStatus: CurrentStatusProjectionPresentationStatus;
+  currentGitSha: string | null;
+  evidenceGitSha: string | null;
+}): CurrentStatusProjectionReason {
+  if (input.presentationStatus === 'stale') {
+    return {
+      code: 'stale_evidence_git_sha',
+      summary: redactProjectionText(
+        `Evidence git sha ${input.evidenceGitSha ?? '<unknown>'} does not match current git sha ${input.currentGitSha ?? '<unknown>'}.`,
+      ),
+      source_path: redactProjectionPath(input.evidence.resultPath),
+    };
+  }
+
+  const failedEvent = input.evidence.stageEvents?.lastFailedEvent ?? null;
+  if (input.presentationStatus === 'failed' && failedEvent) {
+    const rawReason = failedEvent.stageFailureReason
+      ?? failedEvent.diagnosticReasonCode
+      ?? 'rehearsal_stage_failed';
+    const safeReason = redactProjectionText(rawReason);
+    return {
+      code: safeReason,
+      summary: redactProjectionText(`Rehearsal stage ${failedEvent.stage} failed: ${rawReason}`),
+      source_path: input.evidence.stageEvents
+        ? redactProjectionPath(input.evidence.stageEvents.path)
+        : redactProjectionPath(input.evidence.resultPath),
+    };
+  }
+
+  if (input.presentationStatus === 'failed') {
+    return {
+      code: 'rehearsal_result_failed',
+      summary: redactProjectionText(input.evidence.summary),
+      source_path: redactProjectionPath(input.evidence.resultPath),
+    };
+  }
+
+  return {
+    code: 'rehearsal_result_passed',
+    summary: redactProjectionText(input.evidence.summary),
+    source_path: redactProjectionPath(input.evidence.resultPath),
+  };
+}
+
+function phaseForRehearsal(
+  evidence: ParsedRehearsalEvidence,
+  presentationStatus: CurrentStatusProjectionPresentationStatus,
+): CurrentStatusProjectionPhase {
+  if (presentationStatus === 'passed') {
+    return 'complete';
+  }
+  if (presentationStatus === 'failed' && evidence.stageEvents?.lastFailedEvent) {
+    return normalizePhase(evidence.stageEvents.lastFailedEvent.stage);
+  }
+  return normalizePhase(evidence.stage);
+}
+
+function buildMissingRehearsalProjection(input: {
+  source: MissingRehearsalEvidence;
+  options: BuildStatusProjectionInput;
+  generatedAt: string;
+  runtimeLine: string | null;
+}): CurrentStatusProjection {
+  const safePath = redactProjectionPath(input.source.path);
+
+  return {
+    schema: CURRENT_STATUS_PROJECTION_SCHEMA,
+    version: CURRENT_STATUS_PROJECTION_VERSION,
+    projection_kind: 'read_only',
+    goal: input.options.goal,
+    runtime_line: input.runtimeLine,
+    run_id: input.options.runId ?? null,
+    current_git_sha: input.options.currentGitSha ?? null,
+    evidence_git_sha: input.options.evidenceGitSha ?? null,
+    run_age_seconds: runAgeSeconds(input.options),
+    phase: input.options.phase ?? 'not-started',
+    aggregate_status_ref: null,
+    presentation_status: input.source.reasonCode === 'rehearsal_evidence_missing'
+      ? 'not-started'
+      : 'unknown',
+    primary_blocker: null,
+    downstream_skipped: [],
+    deepest_reason: {
+      code: input.source.reasonCode,
+      summary: redactProjectionText(input.source.summary),
+      source_path: safePath,
+    },
+    safe_next_command: input.source.config.safeNextCommand,
+    destructive_recovery_command: null,
+    lock_owner: input.options.lockOwner ?? null,
+    manual_signoff_status: 'not-covered',
+    evidence_paths: [],
+    authority_paths: {
+      aggregate: null,
+      stage: safePath,
+      evidence: [],
+    },
+    generated_at: input.generatedAt,
+    release_decision_produced: false,
+    commands_executed: false,
+    leases_acquired: false,
+    leases_released: false,
+  };
+}
+
+function buildRehearsalProjection(input: {
+  evidence: ParsedRehearsalEvidence;
+  options: BuildStatusProjectionInput;
+  generatedAt: string;
+  runtimeLine: string | null;
+}): CurrentStatusProjection {
+  const presentationStatus = rehearsalPresentationStatus({
+    evidence: input.evidence,
+    currentGitSha: input.options.currentGitSha ?? null,
+    evidenceGitSha: input.options.evidenceGitSha ?? null,
+  });
+
+  return {
+    schema: CURRENT_STATUS_PROJECTION_SCHEMA,
+    version: CURRENT_STATUS_PROJECTION_VERSION,
+    projection_kind: 'read_only',
+    goal: input.options.goal,
+    runtime_line: input.runtimeLine,
+    run_id: input.options.runId ?? input.evidence.runId,
+    current_git_sha: input.options.currentGitSha ?? null,
+    evidence_git_sha: input.options.evidenceGitSha ?? null,
+    run_age_seconds: runAgeSeconds(input.options),
+    phase: input.options.phase ?? phaseForRehearsal(input.evidence, presentationStatus),
+    aggregate_status_ref: null,
+    presentation_status: presentationStatus,
+    primary_blocker: presentationStatus === 'failed'
+      ? rehearsalFailedPrimaryBlocker(input.evidence)
+      : null,
+    downstream_skipped: [],
+    deepest_reason: reasonForRehearsal({
+      evidence: input.evidence,
+      presentationStatus,
+      currentGitSha: input.options.currentGitSha ?? null,
+      evidenceGitSha: input.options.evidenceGitSha ?? null,
+    }),
+    safe_next_command: presentationStatus === 'passed' ? null : input.evidence.config.safeNextCommand,
+    destructive_recovery_command: null,
+    lock_owner: input.options.lockOwner ?? null,
+    manual_signoff_status: 'not-covered',
+    evidence_paths: rehearsalEvidencePathRefs(input.evidence),
+    authority_paths: {
+      aggregate: null,
+      stage: rehearsalStageAuthorityPath(input.evidence),
+      evidence: rehearsalAuthorityEvidencePaths(input.evidence),
     },
     generated_at: input.generatedAt,
     release_decision_produced: false,
@@ -420,6 +1107,28 @@ export function buildStatusProjection(input: BuildStatusProjectionInput): Curren
     goal: input.goal,
     runtimeLine: input.runtimeLine,
   });
+  const rehearsalConfig = rehearsalConfigForGoal(input.goal);
+  if (rehearsalConfig) {
+    const rehearsalEvidence = readRehearsalEvidence({
+      config: rehearsalConfig,
+      gateResultsRoot: input.gateResultsRoot,
+    });
+    if (!rehearsalEvidence.ok) {
+      return buildMissingRehearsalProjection({
+        source: rehearsalEvidence,
+        options: input,
+        generatedAt,
+        runtimeLine,
+      });
+    }
+    return buildRehearsalProjection({
+      evidence: rehearsalEvidence,
+      options: input,
+      generatedAt,
+      runtimeLine,
+    });
+  }
+
   const aggregate = input.goal === 'release-ready'
     ? readReleaseAggregateResult(input.campaignRoot)
     : {
@@ -473,9 +1182,9 @@ export function buildStatusProjection(input: BuildStatusProjectionInput): Curren
     manual_signoff_status: 'not-covered',
     evidence_paths: evidencePathsForAggregate(aggregate),
     authority_paths: {
-      aggregate: aggregate.path,
-      stage: aggregate.path,
-      evidence: [aggregate.path],
+      aggregate: redactProjectionPath(aggregate.path),
+      stage: redactProjectionPath(aggregate.path),
+      evidence: [redactProjectionPath(aggregate.path)],
     },
     generated_at: generatedAt,
     release_decision_produced: false,
@@ -489,29 +1198,33 @@ function renderOptional(value: string | number | null | undefined): string {
   return value === null || value === undefined ? '<none>' : String(value);
 }
 
+function renderOptionalPath(value: string | null | undefined): string {
+  return value === null || value === undefined ? '<none>' : redactProjectionPath(value);
+}
+
 function renderAggregateStatusRef(ref: CurrentStatusProjectionAggregateStatusRef | null): string {
-  return ref ? `${ref.path} (${ref.digest})` : '<none>';
+  return ref ? `${redactProjectionPath(ref.path)} (${ref.digest})` : '<none>';
 }
 
 function renderPathRefs(paths: readonly CurrentStatusProjectionPathRef[]): string {
   if (paths.length === 0) {
     return '<none>';
   }
-  return paths.map((path) => `${path.path}${path.digest ? ` (${path.digest})` : ''}`).join('; ');
+  return paths.map((path) => `${redactProjectionPath(path.path)}${path.digest ? ` (${path.digest})` : ''}`).join('; ');
 }
 
 function renderPrimaryBlocker(blocker: CurrentStatusProjectionBlocker | null): string {
   if (!blocker) {
     return '<none>';
   }
-  return `${blocker.owner} (${blocker.stage})${blocker.path ? ` @ ${blocker.path}` : ''}`;
+  return `${blocker.owner} (${blocker.stage})${blocker.path ? ` @ ${redactProjectionPath(blocker.path)}` : ''}`;
 }
 
 function renderDeepestReason(reason: CurrentStatusProjectionReason | null): string {
   if (!reason) {
     return '<none>';
   }
-  return `${reason.code}: ${redactSensitiveText(reason.summary)}${reason.source_path ? ` @ ${reason.source_path}` : ''}`;
+  return `${redactSensitiveText(reason.code)}: ${redactSensitiveText(reason.summary)}${reason.source_path ? ` @ ${redactProjectionPath(reason.source_path)}` : ''}`;
 }
 
 function renderLocks(lockOwner: CurrentStatusProjection['lock_owner']): string {
@@ -535,6 +1248,7 @@ export function renderStatusProjection(projection: CurrentStatusProjection): str
     `Projection kind: ${projection.projection_kind.replaceAll('_', '-')}`,
     `Goal: ${renderOptional(projection.goal)}`,
     `Runtime line: ${renderOptional(projection.runtime_line)}`,
+    `Run: ${renderOptional(projection.run_id)}`,
     `Phase: ${projection.phase}`,
     `Aggregate status ref: ${renderAggregateStatusRef(projection.aggregate_status_ref)}`,
     `Presentation status: ${projection.presentation_status}`,
@@ -546,7 +1260,7 @@ export function renderStatusProjection(projection: CurrentStatusProjection): str
     `Locks: ${renderLocks(projection.lock_owner)}`,
     `Manual sign-off: ${projection.manual_signoff_status}`,
     `Evidence: ${renderPathRefs(projection.evidence_paths)}`,
-    `Authority: aggregate=${renderOptional(projection.authority_paths.aggregate)}; stage=${renderOptional(projection.authority_paths.stage)}; evidence=${projection.authority_paths.evidence.length > 0 ? projection.authority_paths.evidence.join('; ') : '<none>'}`,
+    `Authority: aggregate=${renderOptionalPath(projection.authority_paths.aggregate)}; stage=${renderOptionalPath(projection.authority_paths.stage)}; evidence=${projection.authority_paths.evidence.length > 0 ? projection.authority_paths.evidence.map(redactProjectionPath).join('; ') : '<none>'}`,
     `Release decision produced: ${String(projection.release_decision_produced)}`,
     `Commands executed: ${String(projection.commands_executed)}`,
     `Leases acquired: ${String(projection.leases_acquired)}`,

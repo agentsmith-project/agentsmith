@@ -22,6 +22,7 @@ type DelegateResult = {
 
 type RehearsalEntrypointDependencies = RehearsalEntrypointStreams & {
   delegate?: (command: string, args: string[]) => DelegateResult;
+  gateResultsRoot?: string;
   generatedAt?: string;
 };
 
@@ -108,6 +109,7 @@ export function runRehearsalEntrypoint(
       const projection = buildStatusProjection({
         goal: config.goal,
         runtimeLine: config.runtimeLine,
+        gateResultsRoot: dependencies.gateResultsRoot,
         generatedAt: dependencies.generatedAt,
       });
       dependencies.stdout.write(options.json

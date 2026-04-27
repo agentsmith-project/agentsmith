@@ -50,6 +50,69 @@ function writeReleaseAggregateResult(campaignRoot: string): void {
   });
 }
 
+function writeRehearsalEvidence(gateResultsRoot: string, input: {
+  gateId: 'lane-demo-rehearsal' | 'lane-cluster-rehearsal';
+  lineKind: 'demo_rehearsal' | 'cluster_rehearsal';
+  runId: string;
+  status?: 'passed' | 'failed';
+  failureClass?: 'none' | 'product_regression';
+  stage?: string;
+  summary?: string;
+}): {
+  resultPath: string;
+  stageEventsPath: string;
+} {
+  const runRoot = join(gateResultsRoot, input.gateId, input.runId);
+  const resultPath = join(runRoot, 'result.json');
+  writeJson(resultPath, {
+    schema_version: CURRENT_GATE_RESULT_SCHEMA_VERSION,
+    gate_id: input.gateId,
+    gate_adapter: {
+      npm_script: input.gateId === 'lane-demo-rehearsal' ? 'lane:demo-rehearsal' : 'lane:cluster-rehearsal',
+      ci_job: 'local',
+    },
+    status: input.status ?? 'failed',
+    failure_class: input.failureClass ?? 'product_regression',
+    stage: input.stage ?? 'execute',
+    line_kind: input.lineKind,
+    evidence_dir: runRoot,
+    summary: input.summary ?? `Gate ${input.gateId} failed during execute.`,
+    generated_at: GENERATED_AT,
+  });
+  const stageEventsPath = join(runRoot, 'stage-events.jsonl');
+  mkdirSync(dirname(stageEventsPath), { recursive: true });
+  writeFileSync(stageEventsPath, `${JSON.stringify({
+    schema_version: '1.0.0',
+    artifact_kind: 'stage_event',
+    run_id: input.runId,
+    gate_id: input.gateId,
+    line_kind: input.lineKind,
+    stage: 'verify',
+    event: 'failed',
+    stage_failure_reason: 'rehearsal_stage_exited_nonzero',
+    generated_at: GENERATED_AT,
+  })}\n`);
+  writeJson(join(runRoot, 'performance.json'), {
+    schema_version: '1.0.0',
+    artifact_kind: 'performance',
+    run_id: input.runId,
+    gate_id: input.gateId,
+    line_kind: input.lineKind,
+    stages: [
+      {
+        stage: 'verify',
+        duration_ms: 1000,
+        stage_failure_reason: 'rehearsal_stage_exited_nonzero',
+      },
+    ],
+    generated_at: GENERATED_AT,
+  });
+  return {
+    resultPath,
+    stageEventsPath,
+  };
+}
+
 function readPackageScripts(): Record<string, string> {
   return (JSON.parse(readFileSync('package.json', 'utf8')) as { scripts: Record<string, string> }).scripts;
 }
@@ -168,6 +231,98 @@ describe('clean status entrypoints', () => {
       leases_acquired: false,
       leases_released: false,
     });
+  });
+
+  it('renders rehearsal --status --json from existing read-only evidence without producing release verdict fields', () => {
+    const root = mkdtempSync(join(tmpdir(), 'agentsmith-rehearsal-status-json-'));
+    try {
+      const gateResultsRoot = join(root, 'artifacts', 'gate-results');
+      const { resultPath, stageEventsPath } = writeRehearsalEvidence(gateResultsRoot, {
+        gateId: 'lane-demo-rehearsal',
+        lineKind: 'demo_rehearsal',
+        runId: '20260427T050000Z',
+      });
+      const stdout: string[] = [];
+      const delegated: string[][] = [];
+
+      const exitCode = runRehearsalEntrypoint(['demo-rehearsal', '--status', '--json'], {
+        stdout: { write: (chunk: string) => stdout.push(chunk) },
+        stderr: { write: () => undefined },
+        delegate: (command, args) => {
+          delegated.push([command, ...args]);
+          return { status: 0 };
+        },
+        gateResultsRoot,
+        generatedAt: GENERATED_AT,
+      });
+
+      expect(exitCode).toBe(0);
+      expect(delegated).toEqual([]);
+      const output = stdout.join('');
+      expect(output).not.toContain('release_verdict');
+      expect(output).not.toContain('automated_release_verdict');
+      expect(output).not.toContain('failure_class');
+
+      const projection = JSON.parse(output) as unknown;
+      expect(validateCurrentStatusProjection(projection)).toMatchObject({ ok: true });
+      expect(projection).toMatchObject({
+        schema: 'agentsmith_status_projection/v1',
+        goal: 'demo-rehearsal',
+        runtime_line: 'demo-rehearsal',
+        projection_kind: 'read_only',
+        aggregate_status_ref: null,
+        presentation_status: 'failed',
+        primary_blocker: {
+          owner: 'lane-demo-rehearsal',
+          stage: 'verify',
+          path: stageEventsPath,
+        },
+        deepest_reason: {
+          code: 'rehearsal_stage_exited_nonzero',
+          source_path: stageEventsPath,
+        },
+        safe_next_command: 'npm run rehearse:demo',
+        commands_executed: false,
+      });
+      expect((projection as { evidence_paths: readonly { path: string }[] }).evidence_paths.map((entry) => entry.path))
+        .toContain(resultPath);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it('renders rehearsal human status with the selected run id on the first screen', () => {
+    const root = mkdtempSync(join(tmpdir(), 'agentsmith-rehearsal-status-human-'));
+    try {
+      const gateResultsRoot = join(root, 'artifacts', 'gate-results');
+      writeRehearsalEvidence(gateResultsRoot, {
+        gateId: 'lane-demo-rehearsal',
+        lineKind: 'demo_rehearsal',
+        runId: '20260427T051500Z',
+      });
+      const stdout: string[] = [];
+      const delegated: string[][] = [];
+
+      const exitCode = runRehearsalEntrypoint(['demo-rehearsal', '--status'], {
+        stdout: { write: (chunk: string) => stdout.push(chunk) },
+        stderr: { write: () => undefined },
+        delegate: (command, args) => {
+          delegated.push([command, ...args]);
+          return { status: 0 };
+        },
+        gateResultsRoot,
+        generatedAt: GENERATED_AT,
+      });
+
+      const output = stdout.join('');
+      expect(exitCode).toBe(0);
+      expect(delegated).toEqual([]);
+      expect(output).toContain('AgentSmith Status Projection');
+      expect(output).toContain('Goal: demo-rehearsal');
+      expect(output).toContain('Run: 20260427T051500Z');
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
   });
 
   it.each([

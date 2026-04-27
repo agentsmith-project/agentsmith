@@ -25,6 +25,13 @@ import {
   MINIMAL_LEASE_STATUS_SHADOW_SCHEMA,
   MINIMAL_LEASE_STATUS_SHADOW_VERSION,
 } from '../governance/lease-status-shadow';
+import {
+  CURRENT_REHEARSAL_METADATA_FORBIDDEN_FIELDS,
+  CURRENT_REHEARSAL_METADATA_SCHEMA,
+  CURRENT_REHEARSAL_METADATA_VERSION,
+  buildCurrentRehearsalMetadata,
+  validateCurrentRehearsalMetadata,
+} from '../governance/current-rehearsal-metadata-schema';
 import { buildRedactedDiagnostic, findRedactionLeaks } from '../governance/redaction';
 import { ORDERED_SENTINEL_PROBES } from '../governance/sentinel-preflight';
 import { buildStatusProjection } from '../governance/status-projection';
@@ -175,6 +182,134 @@ function main(): void {
   assert(leaseShadow.authority.read_only === true, 'lease status shadow must be read_only');
   assert(leaseShadow.schema_ref === MINIMAL_LEASE_STATUS_SHADOW_SCHEMA, 'lease status shadow schema ref drifted');
   assert(leaseShadow.schema_version === MINIMAL_LEASE_STATUS_SHADOW_VERSION, 'lease status shadow version drifted');
+
+  const rehearsalMetadata = objectById('rehearsal_metadata_schema');
+  assert(rehearsalMetadata.kind === 'read_only_metadata_schema', 'rehearsal metadata must be a read-only metadata schema');
+  assert(rehearsalMetadata.authority.read_only === true, 'rehearsal metadata schema must be read_only');
+  assert(rehearsalMetadata.authority.diagnostic_audit === false, 'rehearsal metadata schema must not be a diagnostic writer');
+  assert(rehearsalMetadata.schema_ref === CURRENT_REHEARSAL_METADATA_SCHEMA, 'rehearsal metadata schema ref drifted');
+  assert(rehearsalMetadata.schema_version === CURRENT_REHEARSAL_METADATA_VERSION, 'rehearsal metadata schema version drifted');
+  assertExactArray(
+    'rehearsal metadata implementation refs',
+    rehearsalMetadata.implementation_refs,
+    ['scripts/governance/current-rehearsal-metadata-schema.ts'],
+  );
+  assertExactArray(
+    'rehearsal metadata forbidden fields',
+    rehearsalMetadata.safety_boundary.forbidden_fields,
+    CURRENT_REHEARSAL_METADATA_FORBIDDEN_FIELDS,
+  );
+  assert(
+    rehearsalMetadata.safety_boundary.redaction_required === true,
+    'rehearsal metadata must remain inside the redaction boundary',
+  );
+  const sampleRehearsalMetadata = buildCurrentRehearsalMetadata({
+    rehearsalMode: 'fast',
+    resetLevel: 'none',
+    generatedAt: '2026-04-27T12:00:00.000Z',
+    worldIdentity: {
+      runtime_line: 'demo-rehearsal',
+      world_root: 'artifacts/runtime/scenario/demo-rehearsal',
+      service_ports: {
+        web: 3000,
+        api: 20000,
+      },
+    },
+    skipInvalidation: {
+      target: 'rollout',
+      operation: 'skip-if-inputs-unchanged',
+      input_digest: `sha256:${'a'.repeat(64)}`,
+      existing_artifact_digest: `sha256:${'b'.repeat(64)}`,
+      skip_reason: 'input_digest_matches',
+      validator: 'current-rehearsal-metadata-schema',
+    },
+  });
+  assert(
+    validateCurrentRehearsalMetadata(sampleRehearsalMetadata).ok === true,
+    'sample rehearsal metadata must validate',
+  );
+  assert(
+    validateCurrentRehearsalMetadata({
+      ...sampleRehearsalMetadata,
+      world_identity: {
+        ...sampleRehearsalMetadata.world_identity,
+        runtime_line: 'local-real',
+      },
+    }).ok === false,
+    'local-real must stay a goal adapter, not a rehearsal runtime line',
+  );
+  for (const field of CURRENT_REHEARSAL_METADATA_FORBIDDEN_FIELDS) {
+    assert(
+      validateCurrentRehearsalMetadata({
+        ...sampleRehearsalMetadata,
+        skip_invalidation: {
+          ...sampleRehearsalMetadata.skip_invalidation,
+          [field]: 'forbidden',
+        },
+      }).ok === false,
+      `rehearsal metadata schema must reject forbidden field: ${field}`,
+    );
+  }
+  const { rehearsal_mode: _rehearsalMode, ...legacyModeShape } = sampleRehearsalMetadata;
+  assert(
+    validateCurrentRehearsalMetadata({
+      ...legacyModeShape,
+      mode: 'fast',
+    }).ok === false,
+    'rehearsal metadata schema must reject legacy mode field',
+  );
+  const { skip_reason: _skipReason, ...legacySkipInvalidationShape } = sampleRehearsalMetadata.skip_invalidation;
+  assert(
+    validateCurrentRehearsalMetadata({
+      ...sampleRehearsalMetadata,
+      skip_invalidation: {
+        ...legacySkipInvalidationShape,
+        reason: 'legacy_reason_field',
+      },
+    }).ok === false,
+    'rehearsal metadata schema must reject legacy skip invalidation reason field',
+  );
+  assert(
+    validateCurrentRehearsalMetadata({
+      ...sampleRehearsalMetadata,
+      world_identity: {
+        ...sampleRehearsalMetadata.world_identity,
+        api_key: 'sk-current-rehearsal-raw-secret-value',
+      },
+    }).ok === false,
+    'rehearsal metadata schema must reject raw secret fields',
+  );
+  assert(
+    validateCurrentRehearsalMetadata({
+      ...sampleRehearsalMetadata,
+      world_identity: {
+        ...sampleRehearsalMetadata.world_identity,
+        world_id: 'Bearer raw-token-value',
+      },
+    }).ok === false,
+    'rehearsal metadata schema must reject raw secret-looking values',
+  );
+  assert(
+    validateCurrentRehearsalMetadata({
+      ...sampleRehearsalMetadata,
+      skip_invalidation: {
+        ...sampleRehearsalMetadata.skip_invalidation,
+        skip_reason: 'managed_credentials: {"feishu":"raw-secret"}',
+      },
+    }).ok === false,
+    'rehearsal metadata schema must reject object-ish raw secret strings',
+  );
+  assertExactArray(
+    'rehearsal skip invalidation fields',
+    Object.keys(sampleRehearsalMetadata.skip_invalidation),
+    ['target', 'operation', 'input_digest', 'existing_artifact_digest', 'skip_reason', 'validator'],
+  );
+  for (const blockedField of ['verdict', 'claim_id', 'reusable']) {
+    assert(
+      !Object.prototype.hasOwnProperty.call(sampleRehearsalMetadata.skip_invalidation, blockedField),
+      `skip invalidation must not expose ${blockedField}`,
+    );
+  }
 
   const redaction = objectById('redaction_boundary');
   assert(redaction.kind === 'redaction_boundary', 'redaction boundary kind drifted');

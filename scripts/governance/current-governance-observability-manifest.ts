@@ -11,6 +11,11 @@ import {
   MINIMAL_LEASE_STATUS_SHADOW_SCHEMA,
   MINIMAL_LEASE_STATUS_SHADOW_VERSION,
 } from './lease-status-shadow';
+import {
+  CURRENT_REHEARSAL_METADATA_FORBIDDEN_FIELDS,
+  CURRENT_REHEARSAL_METADATA_SCHEMA,
+  CURRENT_REHEARSAL_METADATA_VERSION,
+} from './current-rehearsal-metadata-schema';
 import { ORDERED_SENTINEL_PROBES } from './sentinel-preflight';
 
 export const CURRENT_GOVERNANCE_OBSERVABILITY_MANIFEST_SCHEMA =
@@ -22,6 +27,7 @@ export const CURRENT_GOVERNANCE_OBSERVABILITY_OBJECT_IDS = [
   'run_diagnostics_artifacts',
   'sentinel_preflight',
   'lease_status_shadow',
+  'rehearsal_metadata_schema',
   'redaction_boundary',
 ] as const;
 
@@ -33,6 +39,7 @@ export type CurrentGovernanceObservabilityObjectKind =
   | 'diagnostic_artifact_family'
   | 'preflight_diagnostic'
   | 'read_only_shadow'
+  | 'read_only_metadata_schema'
   | 'redaction_boundary';
 
 export interface CurrentGovernanceObservabilityAuthority {
@@ -207,6 +214,25 @@ export const CURRENT_GOVERNANCE_OBSERVABILITY_OBJECTS = [
     },
   },
   {
+    id: 'rehearsal_metadata_schema',
+    kind: 'read_only_metadata_schema',
+    schema_ref: CURRENT_REHEARSAL_METADATA_SCHEMA,
+    schema_version: CURRENT_REHEARSAL_METADATA_VERSION,
+    implementation_refs: ['scripts/governance/current-rehearsal-metadata-schema.ts'],
+    contract_refs: [CONTRACT_DOC],
+    docs_refs: ['docs/contracts/README.md'],
+    authority: {
+      read_only: true,
+      diagnostic_audit: false,
+      ...NON_VERDICT_AUTHORITY,
+    },
+    safety_boundary: {
+      forbidden_fields: [...CURRENT_REHEARSAL_METADATA_FORBIDDEN_FIELDS],
+      redaction_required: true,
+      raw_secret_output_allowed: false,
+    },
+  },
+  {
     id: 'redaction_boundary',
     kind: 'redaction_boundary',
     schema_ref: null,
@@ -263,6 +289,7 @@ const OBJECT_KIND_SET = new Set<string>([
   'diagnostic_artifact_family',
   'preflight_diagnostic',
   'read_only_shadow',
+  'read_only_metadata_schema',
   'redaction_boundary',
 ] satisfies CurrentGovernanceObservabilityObjectKind[]);
 

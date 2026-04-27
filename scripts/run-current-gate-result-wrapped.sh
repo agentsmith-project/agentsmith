@@ -16,13 +16,21 @@ LINE_KIND="$2"
 NPM_SCRIPT="$3"
 shift 4
 
+EFFECTIVE_GATE_ID="${CURRENT_GATE_RESULT_GATE_ID:-${GATE_ID}}"
+EFFECTIVE_LINE_KIND="${CURRENT_GATE_RESULT_LINE_KIND:-${LINE_KIND}}"
+
+if [[ "${EFFECTIVE_GATE_ID}" == "gate-release-full" || "${EFFECTIVE_LINE_KIND}" == "release_full_verdict" ]]; then
+  printf '[current-gate-result] gate-release-full/release_full_verdict must not write release_full_verdict through the generic wrapper\n' >&2
+  exit 2
+fi
+
 RUN_ID="${CURRENT_GATE_RESULT_RUN_ID:-$(date -u +%Y%m%dT%H%M%SZ)}"
 EVIDENCE_DIR="${CURRENT_GATE_RESULT_EVIDENCE_DIR:-${ROOT_DIR}/artifacts/gate-results/${GATE_ID}/${RUN_ID}}"
 export CURRENT_GATE_RESULT_RUN_ID="${RUN_ID}"
 export CURRENT_GATE_RESULT_EVIDENCE_DIR="${EVIDENCE_DIR}"
-export CURRENT_GATE_RESULT_GATE_ID="${CURRENT_GATE_RESULT_GATE_ID:-${GATE_ID}}"
+export CURRENT_GATE_RESULT_GATE_ID="${EFFECTIVE_GATE_ID}"
 export CURRENT_GATE_RESULT_NPM_SCRIPT="${CURRENT_GATE_RESULT_NPM_SCRIPT:-${NPM_SCRIPT}}"
-export CURRENT_GATE_RESULT_LINE_KIND="${CURRENT_GATE_RESULT_LINE_KIND:-${LINE_KIND}}"
+export CURRENT_GATE_RESULT_LINE_KIND="${EFFECTIVE_LINE_KIND}"
 export CURRENT_GATE_RESULT_CI_JOB="${CURRENT_GATE_RESULT_CI_JOB:-$(gate_resolve_result_ci_job "${CURRENT_GATE_RESULT_GATE_ID}")}"
 if [[ "${GATE_ID}" == "lane-visual" && -z "${MOCK_RUN_ID:-}" ]]; then
   export MOCK_RUN_ID="${RUN_ID}"
@@ -174,6 +182,32 @@ gate_write_wrapped_run_diagnostics_finish() {
   gate_write_wrapped_run_diagnostics "wrapped-command-finish" "${event}" "${reason_code}" "${failure_reason}" "${finished_at}" "${finished_ms}"
 }
 
+gate_select_wrapped_failure_diagnostic() {
+  local child_status="$1"
+  local selected_json
+
+  if selected_json="$(CURRENT_RUN_DIAGNOSTICS_RUN_ROOT="${EVIDENCE_DIR}" \
+    CURRENT_RUN_DIAGNOSTICS_RUN_ID="${RUN_ID}" \
+    CURRENT_RUN_DIAGNOSTICS_GATE_ID="${CURRENT_GATE_RESULT_GATE_ID}" \
+    CURRENT_RUN_DIAGNOSTICS_LINE_KIND="${CURRENT_GATE_RESULT_LINE_KIND}" \
+    CURRENT_RUN_DIAGNOSTICS_CHILD_STATUS="${child_status}" \
+    node --import tsx "${ROOT_DIR}/scripts/governance/current-run-diagnostic-selector.ts")"; then
+    if node -e '
+const fs = require("node:fs");
+const payload = JSON.parse(fs.readFileSync(0, "utf8"));
+const stage = typeof payload.stage === "string" && payload.stage.trim() ? payload.stage : "execute";
+const summary = typeof payload.summary === "string" && payload.summary.trim()
+  ? payload.summary
+  : "child_exited_nonzero_without_inner_diagnostics: no inner diagnostics observed";
+process.stdout.write(`${stage.replace(/\s+/g, " ")}\t${summary.replace(/\s+/g, " ")}`);
+' <<<"${selected_json}"; then
+      return 0
+    fi
+  fi
+
+  printf 'execute\tchild_exited_nonzero_without_inner_diagnostics: no inner diagnostics observed; child exit status %s' "${child_status}"
+}
+
 RUN_DIAGNOSTICS_STARTED_AT=""
 RUN_DIAGNOSTICS_STARTED_MS=""
 if diagnostic_now="$(gate_current_run_diagnostics_timestamp)"; then
@@ -226,5 +260,7 @@ fi
 if ! gate_write_wrapped_run_diagnostics_finish "failed" "" "wrapped_command_exited_nonzero"; then
   printf '[current-gate-result] warning: failed to write run diagnostics failure artifact\n' >&2
 fi
-gate_record_failure "${EVIDENCE_DIR}" "${CURRENT_GATE_RESULT_FAILURE_CLASSIFICATION:-scenario_assertion_failed}" "execute" "wrapped command exited with status ${status}"
+selected_failure="$(gate_select_wrapped_failure_diagnostic "${status}")"
+IFS=$'\t' read -r selected_stage selected_summary <<<"${selected_failure}"
+gate_record_failure "${EVIDENCE_DIR}" "${CURRENT_GATE_RESULT_FAILURE_CLASSIFICATION:-scenario_assertion_failed}" "${selected_stage:-execute}" "${selected_summary:-child_exited_nonzero_without_inner_diagnostics: no inner diagnostics observed}"
 exit "${status}"

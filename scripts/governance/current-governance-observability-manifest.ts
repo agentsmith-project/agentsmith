@@ -157,6 +157,7 @@ export const CURRENT_GOVERNANCE_OBSERVABILITY_OBJECTS = [
     implementation_refs: [
       'scripts/governance/current-run-diagnostics-schema.ts',
       'scripts/governance/run-diagnostics-writer.ts',
+      'scripts/governance/current-run-diagnostic-selector.ts',
       'scripts/governance/run-rehearsal-stages.sh',
       'scripts/run-current-gate-result-wrapped.sh',
     ],

@@ -104,11 +104,17 @@ function runWrappedGate(input: {
   evidenceDir: string;
   command: string;
   runId?: string;
-}): { status: number; result: JsonRecord } {
+  gateId?: string;
+  lineKind?: string;
+  npmScript?: string;
+  env?: NodeJS.ProcessEnv;
+}): { status: number; result: JsonRecord | null; stderr: string } {
   let status = 0;
+  let stderr = '';
   const env = {
     ...process.env,
     CURRENT_GATE_RESULT_EVIDENCE_DIR: input.evidenceDir,
+    ...input.env,
   };
   if (input.runId !== undefined) {
     env.CURRENT_GATE_RESULT_RUN_ID = input.runId;
@@ -120,9 +126,9 @@ function runWrappedGate(input: {
       'bash',
       [
         'scripts/run-current-gate-result-wrapped.sh',
-        'lane-demo-rehearsal',
-        'demo_rehearsal',
-        'lane:demo-rehearsal',
+        input.gateId ?? 'lane-demo-rehearsal',
+        input.lineKind ?? 'demo_rehearsal',
+        input.npmScript ?? 'lane:demo-rehearsal',
         '--',
         'bash',
         '-lc',
@@ -132,18 +138,45 @@ function runWrappedGate(input: {
         cwd: process.cwd(),
         env,
         stdio: 'pipe',
+        encoding: 'utf8',
       },
     );
   } catch (error) {
     status = typeof (error as { status?: unknown }).status === 'number'
       ? (error as { status: number }).status
       : 1;
+    stderr = typeof (error as { stderr?: unknown }).stderr === 'string'
+      ? (error as { stderr: string }).stderr
+      : '';
   }
 
+  const resultPath = join(input.evidenceDir, 'result.json');
   return {
     status,
-    result: readJson(join(input.evidenceDir, 'result.json')),
+    result: existsSync(resultPath) ? readJson(resultPath) : null,
+    stderr,
   };
+}
+
+function diagnosticsWriterCommand(input: {
+  stage: string;
+  event?: 'failed' | 'finished';
+  reason?: string;
+  runId?: string;
+  gateId?: string;
+  lineKind?: string;
+}): string {
+  return [
+    `CURRENT_RUN_DIAGNOSTICS_ACTION=rehearsal-stage-finish`,
+    `CURRENT_RUN_DIAGNOSTICS_RUN_ROOT="$CURRENT_GATE_RESULT_EVIDENCE_DIR"`,
+    `CURRENT_RUN_DIAGNOSTICS_RUN_ID="${input.runId ?? '$CURRENT_GATE_RESULT_RUN_ID'}"`,
+    `CURRENT_RUN_DIAGNOSTICS_GATE_ID="${input.gateId ?? '$CURRENT_GATE_RESULT_GATE_ID'}"`,
+    `CURRENT_RUN_DIAGNOSTICS_LINE_KIND="${input.lineKind ?? '$CURRENT_GATE_RESULT_LINE_KIND'}"`,
+    `CURRENT_RUN_DIAGNOSTICS_STAGE="${input.stage}"`,
+    `CURRENT_RUN_DIAGNOSTICS_EVENT="${input.event ?? 'failed'}"`,
+    `CURRENT_RUN_DIAGNOSTICS_FAILURE_REASON="${input.reason ?? `${input.stage}_failed`}"`,
+    `node --import tsx scripts/governance/run-diagnostics-writer.ts`,
+  ].join(' ');
 }
 
 function writeStageScript(stageRoot: string, stage: string, body: string): void {
@@ -396,6 +429,7 @@ describe('current run diagnostics artifacts', () => {
     });
 
     expect(success.status).toBe(0);
+    expect(success.result).not.toBeNull();
     expect(success.result).toMatchObject({
       gate_id: 'lane-demo-rehearsal',
       status: 'passed',
@@ -430,6 +464,7 @@ describe('current run diagnostics artifacts', () => {
     });
 
     expect(failure.status).toBe(7);
+    expect(failure.result).not.toBeNull();
     expect(failure.result).toMatchObject({
       gate_id: 'lane-demo-rehearsal',
       status: 'failed',
@@ -443,6 +478,163 @@ describe('current run diagnostics artifacts', () => {
       stage_failure_reason: 'wrapped_command_exited_nonzero',
     });
     expectNoForbiddenFields(failureStageEvents);
+  });
+
+  it('uses inner failed stage diagnostics for wrapped command canonical failures', () => {
+    const evidenceDir = mkdtempSync(join(tmpdir(), 'current-run-diagnostics-wrapper-inner-failure-'));
+    const failure = runWrappedGate({
+      evidenceDir,
+      command: `${diagnosticsWriterCommand({
+        stage: 'verify',
+        reason: 'verify_contract_failed',
+      })}; exit 7`,
+      runId: 'run-diagnostics-wrapper-inner-failure',
+    });
+
+    expect(failure.status).toBe(7);
+    expect(failure.result).not.toBeNull();
+    expect(failure.result).toMatchObject({
+      gate_id: 'lane-demo-rehearsal',
+      status: 'failed',
+      stage: 'verify',
+    });
+    expect(failure.result?.summary).toContain('verify');
+    expect(failure.result?.summary).toContain('verify_contract_failed');
+    expect(failure.result?.summary).not.toContain('wrapped command exited with status');
+
+    const stageEvents = readNdjson(join(evidenceDir, 'stage-events.jsonl'));
+    expect(stageEvents.map((event) => `${event.stage}:${event.event}`)).toEqual([
+      'execute:started',
+      'verify:failed',
+      'execute:failed',
+    ]);
+    expectNoForbiddenFields(stageEvents);
+  });
+
+  it('uses an explicit fallback when a wrapped command fails without inner diagnostics', () => {
+    const evidenceDir = mkdtempSync(join(tmpdir(), 'current-run-diagnostics-wrapper-no-inner-'));
+    const failure = runWrappedGate({
+      evidenceDir,
+      command: 'exit 7',
+      runId: 'run-diagnostics-wrapper-no-inner',
+    });
+
+    expect(failure.status).toBe(7);
+    expect(failure.result).not.toBeNull();
+    expect(failure.result).toMatchObject({
+      gate_id: 'lane-demo-rehearsal',
+      status: 'failed',
+      stage: 'execute',
+    });
+    expect(failure.result?.summary).toContain('child_exited_nonzero_without_inner_diagnostics');
+    expect(failure.result?.summary).toContain('no inner diagnostics observed');
+    expect(failure.result?.summary).not.toContain('wrapped command exited with status');
+  });
+
+  it('ignores inner stage diagnostics from the wrong run, gate, or line', () => {
+    const evidenceDir = mkdtempSync(join(tmpdir(), 'current-run-diagnostics-wrapper-scope-'));
+    const failure = runWrappedGate({
+      evidenceDir,
+      command: [
+        diagnosticsWriterCommand({
+          stage: 'verify',
+          reason: 'wrong_run_verify_failed',
+          runId: 'other-run',
+        }),
+        diagnosticsWriterCommand({
+          stage: 'bootstrap',
+          reason: 'wrong_gate_bootstrap_failed',
+          gateId: 'other-gate',
+        }),
+        diagnosticsWriterCommand({
+          stage: 'report',
+          reason: 'wrong_line_report_failed',
+          lineKind: 'other_line',
+        }),
+        'exit 7',
+      ].join('; '),
+      runId: 'run-diagnostics-wrapper-scope',
+    });
+
+    expect(failure.status).toBe(7);
+    expect(failure.result).not.toBeNull();
+    expect(failure.result).toMatchObject({
+      gate_id: 'lane-demo-rehearsal',
+      status: 'failed',
+      stage: 'execute',
+    });
+    expect(failure.result?.summary).toContain('child_exited_nonzero_without_inner_diagnostics');
+    expect(failure.result?.summary).not.toContain('wrong_run_verify_failed');
+    expect(failure.result?.summary).not.toContain('wrong_gate_bootstrap_failed');
+    expect(failure.result?.summary).not.toContain('wrong_line_report_failed');
+  });
+
+  it('rejects wrapped release full canonical writer calls without writing result.json', () => {
+    const evidenceDir = mkdtempSync(join(tmpdir(), 'current-run-diagnostics-wrapper-release-guard-'));
+    const result = runWrappedGate({
+      evidenceDir,
+      gateId: 'gate-release-full',
+      lineKind: 'release_full_verdict',
+      npmScript: 'release:full',
+      command: 'true',
+      runId: 'run-diagnostics-wrapper-release-guard',
+    });
+
+    expect(result.status).toBe(2);
+    expect(result.stderr).toContain('must not write release_full_verdict');
+    expect(result.result).toBeNull();
+    expect(existsSync(join(evidenceDir, 'result.json'))).toBe(false);
+  });
+
+  it('rejects release full writer identity overrides without writing result.json', () => {
+    const evidenceDir = mkdtempSync(join(tmpdir(), 'current-run-diagnostics-wrapper-release-env-guard-'));
+    const result = runWrappedGate({
+      evidenceDir,
+      gateId: 'lane-demo-rehearsal',
+      lineKind: 'demo_rehearsal',
+      npmScript: 'lane:demo-rehearsal',
+      command: 'true',
+      runId: 'run-diagnostics-wrapper-release-env-guard',
+      env: {
+        CURRENT_GATE_RESULT_GATE_ID: 'gate-release-full',
+        CURRENT_GATE_RESULT_LINE_KIND: 'release_full_verdict',
+      },
+    });
+
+    expect(result.status).toBe(2);
+    expect(result.stderr).toContain('must not write release_full_verdict');
+    expect(result.result).toBeNull();
+    expect(existsSync(join(evidenceDir, 'result.json'))).toBe(false);
+  });
+
+  it('redacts selected inner stage reasons before writing wrapper failure summaries', () => {
+    const evidenceDir = mkdtempSync(join(tmpdir(), 'current-run-diagnostics-wrapper-selected-redaction-'));
+    const rawReason = 'verify failed Bearer raw-token-value api_key=raw-secret ticket=raw-ticket';
+    const failure = runWrappedGate({
+      evidenceDir,
+      command: `${diagnosticsWriterCommand({
+        stage: 'verify',
+        reason: rawReason,
+      })}; exit 7`,
+      runId: 'run-diagnostics-wrapper-selected-redaction',
+    });
+
+    expect(failure.status).toBe(7);
+    expect(failure.result).not.toBeNull();
+    expect(failure.result).toMatchObject({
+      status: 'failed',
+      stage: 'verify',
+    });
+
+    const failureClassification = readJson(join(evidenceDir, 'failure-classification.json'));
+    const serialized = JSON.stringify({
+      result: failure.result,
+      failureClassification,
+    });
+    expect(serialized).not.toContain('raw-token-value');
+    expect(serialized).not.toContain('raw-secret');
+    expect(serialized).not.toContain('raw-ticket');
+    expect(serialized).toContain('[redacted]');
   });
 
   it('merges wrapper execute performance with existing inner stage performance instead of overwriting it', () => {

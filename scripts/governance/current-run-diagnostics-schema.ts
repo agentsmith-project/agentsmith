@@ -13,6 +13,8 @@ export const CURRENT_RUN_DIAGNOSTICS_FORBIDDEN_FIELDS = [
   'claim_id',
   'failure_class',
   'result_status',
+  'release_verdict',
+  'automated_release_verdict',
 ] as const;
 
 export type CurrentRunDiagnosticArtifactKind = keyof typeof CURRENT_RUN_DIAGNOSTIC_ARTIFACT_NAMES;

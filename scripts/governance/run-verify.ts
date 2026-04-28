@@ -63,10 +63,17 @@ type NpmScriptResult = {
   status: number | null;
 };
 
+type NpmScriptRunContext = {
+  reportRoot: string;
+  repoRoot: string;
+  gitSha: string;
+  env: NodeJS.ProcessEnv;
+};
+
 type VerificationCliDependencies = {
   stdout?: CliWriteStream;
   stderr?: CliWriteStream;
-  runNpmScript?: (script: string) => NpmScriptResult;
+  runNpmScript?: (script: string, context: NpmScriptRunContext) => NpmScriptResult;
   sentinelRunner?: (profile: SentinelProfile) => SentinelPreflightResult;
   pureCheckShadowRepoRoot?: string;
   pureCheckShadowGitSha?: string;
@@ -95,6 +102,9 @@ type GitCommandResult = {
 
 const PURE_CHECK_SHADOW_REPO_ROOT_ENV = 'AGENTSMITH_GOVERNANCE_CLAIM_STORE_ROOT';
 const PURE_CHECK_SHADOW_GIT_SHA_ENV = 'AGENTSMITH_GOVERNANCE_CLAIM_STORE_GIT_SHA';
+const VERIFY_REPORT_ROOT_ENV = 'AGENTSMITH_VERIFY_REPORT_ROOT';
+const VERIFY_REPO_ROOT_ENV = 'AGENTSMITH_VERIFY_REPO_ROOT';
+const VERIFY_GIT_SHA_ENV = 'AGENTSMITH_VERIFY_GIT_SHA';
 
 function isCliEntrypoint(fileName: string): boolean {
   return Boolean(process.argv[1]?.replaceAll('\\', '/').endsWith(`/governance/${fileName}`));
@@ -504,10 +514,28 @@ function npmScriptFromCommand(command: string): string {
   return command.replace(/^npm run /, '');
 }
 
-function defaultRunNpmScript(script: string): NpmScriptResult {
+function buildNpmScriptRunContext(args: {
+  reportRoot: string;
+  repoRoot: string;
+  gitSha: string;
+}): NpmScriptRunContext {
+  return {
+    ...args,
+    env: {
+      ...process.env,
+      [VERIFY_REPORT_ROOT_ENV]: args.reportRoot,
+      [VERIFY_REPO_ROOT_ENV]: args.repoRoot,
+      [VERIFY_GIT_SHA_ENV]: args.gitSha,
+      [PURE_CHECK_SHADOW_REPO_ROOT_ENV]: args.repoRoot,
+      [PURE_CHECK_SHADOW_GIT_SHA_ENV]: args.gitSha,
+    },
+  };
+}
+
+function defaultRunNpmScript(script: string, context: NpmScriptRunContext): NpmScriptResult {
   const result = spawnSync('npm', ['run', script], {
     cwd: process.cwd(),
-    env: process.env,
+    env: context.env,
     stdio: 'inherit',
   });
   return {
@@ -660,9 +688,14 @@ export function runVerificationCli(
       ?? resolveVerifyGitSha();
     const executedScripts: string[] = [];
     const scriptExecutions: PureCheckVerifyScriptExecution[] = [];
+    const npmScriptRunContext = buildNpmScriptRunContext({
+      reportRoot,
+      repoRoot: pureCheckShadowRepoRoot,
+      gitSha: pureCheckShadowGitSha,
+    });
     for (const command of plan.recommendedCommands) {
       const script = npmScriptFromCommand(command);
-      const result = runNpmScript(script);
+      const result = runNpmScript(script, npmScriptRunContext);
       const scriptExecution = scriptExecutionFromNpmResult(script, result);
       executedScripts.push(script);
       scriptExecutions.push(scriptExecution);

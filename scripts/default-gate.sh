@@ -28,12 +28,116 @@ run_cmd() {
   (cd "${ROOT_DIR}" && eval "$*")
 }
 
+pure_check_now_iso() {
+  node -e 'process.stdout.write(new Date().toISOString());'
+}
+
+summarize_stream() {
+  local summary_file="$1"
+  local line_limit="${PURE_CHECK_PRODUCER_SUMMARY_LINES:-80}"
+  awk -v target="${summary_file}" -v limit="${line_limit}" '
+    {
+      print
+      if (limit > 0) {
+        lines[NR % limit] = $0
+      }
+    }
+    END {
+      if (NR == 0 || limit <= 0) {
+        exit 0
+      }
+      start = NR > limit ? NR - limit + 1 : 1
+      for (i = start; i <= NR; i += 1) {
+        print lines[i % limit] > target
+      }
+    }
+  '
+}
+
+run_pure_check_cmd() {
+  local check_id="$1"
+  local command="$2"
+  shift 2
+  local -a required_artifacts=("$@")
+
+  if [[ -z "${AGENTSMITH_VERIFY_REPORT_ROOT:-}" ]]; then
+    run_cmd "${command}"
+    return $?
+  fi
+
+  local tmp_dir stdout_pipe stderr_pipe stdout_summary stderr_summary stdout_pid stderr_pid
+  local started_at finished_at status result_status failure_class evidence_status
+  tmp_dir="$(mktemp -d)"
+  stdout_pipe="${tmp_dir}/stdout.pipe"
+  stderr_pipe="${tmp_dir}/stderr.pipe"
+  stdout_summary="${tmp_dir}/stdout.summary"
+  stderr_summary="${tmp_dir}/stderr.summary"
+  mkfifo "${stdout_pipe}" "${stderr_pipe}"
+  : > "${stdout_summary}"
+  : > "${stderr_summary}"
+
+  summarize_stream "${stdout_summary}" < "${stdout_pipe}" &
+  stdout_pid="$!"
+  summarize_stream "${stderr_summary}" < "${stderr_pipe}" >&2 &
+  stderr_pid="$!"
+
+  info "${command}"
+  started_at="$(pure_check_now_iso)"
+  if (cd "${ROOT_DIR}" && eval "${command}") > "${stdout_pipe}" 2> "${stderr_pipe}"; then
+    status=0
+  else
+    status=$?
+  fi
+  finished_at="$(pure_check_now_iso)"
+
+  wait "${stdout_pid}" || true
+  wait "${stderr_pid}" || true
+
+  if [[ "${status}" -eq 0 ]]; then
+    result_status="passed"
+    failure_class="none"
+  else
+    result_status="failed"
+    failure_class="product_regression"
+  fi
+
+  local -a evidence_args=(
+    --repo-root "${AGENTSMITH_VERIFY_REPO_ROOT:-${ROOT_DIR}}"
+    --report-root "${AGENTSMITH_VERIFY_REPORT_ROOT}"
+    --check-id "${check_id}"
+    --status "${result_status}"
+    --failure-class "${failure_class}"
+    --exit-code "${status}"
+    --started-at "${started_at}"
+    --finished-at "${finished_at}"
+    --stdout-summary-file "${stdout_summary}"
+    --stderr-summary-file "${stderr_summary}"
+  )
+  local required_artifact
+  for required_artifact in "${required_artifacts[@]}"; do
+    evidence_args+=(--required-artifact "${required_artifact}")
+  done
+
+  set +e
+  (cd "${ROOT_DIR}" && npx tsx scripts/governance/write-pure-check-producer-evidence.ts "${evidence_args[@]}")
+  evidence_status=$?
+  set -e
+  rm -rf "${tmp_dir}"
+
+  if [[ "${evidence_status}" -ne 0 ]]; then
+    echo "[default-gate] warning: pure check producer evidence writer failed for ${check_id} with exit code ${evidence_status}; preserving pure check exit code ${status}" >&2
+  fi
+  return "${status}"
+}
+
 run_default_gate_typegen() {
   run_cmd "npx next typegen ."
 }
 
 run_default_gate_typecheck() {
-  run_cmd "npx tsc --noEmit"
+  run_pure_check_cmd "typecheck" "npx tsc --noEmit" \
+    "repo_root:.next/types/routes.d.ts:next-typegen-routes" \
+    "repo_root:next-env.d.ts:next-env"
 }
 
 run_default_gate_build() {
@@ -53,11 +157,11 @@ next_generated_root_with_source_contract_lock default_gate_shared_preflight \
   next_generated_root_prepare_for_validation
 
 if [[ "${DEFAULT_GATE_PROFILE}" != "campaign_after_gate_fast" ]]; then
-  run_cmd "npm run contracts:check"
+  run_pure_check_cmd "contracts" "npm run contracts:check"
 fi
-run_cmd "npm run contracts:check-openapi"
-run_cmd "npm run openapi:check-generated"
-run_cmd "npm run lint"
+run_pure_check_cmd "openapi-contract" "npm run contracts:check-openapi"
+run_pure_check_cmd "openapi-generated" "npm run openapi:check-generated"
+run_pure_check_cmd "lint" "npm run lint"
 next_generated_root_run_locked_type_state_gate_sequence \
   default_gate_type_state \
   run_default_gate_typegen \

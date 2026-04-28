@@ -27,8 +27,14 @@ import {
   readStablePureCheckClaimJsonlStore,
   STABLE_PURE_CHECK_CLAIMS_JSONL_PATH,
 } from '../pure-check-runtime-shadow';
+import {
+  writePureCheckProducerEvidence,
+} from '../pure-check-producer-evidence';
 
 const DIGEST_PATTERN = /^sha256:[a-f0-9]{64}$/;
+const PRODUCER_STARTED_AT = '2026-04-25T12:00:00.000Z';
+const PRODUCER_FINISHED_AT = '2026-04-25T12:00:03.000Z';
+const PRODUCER_GENERATED_AT = '2026-04-25T12:00:04.000Z';
 
 const TEST_RULE: CurrentPureCheckInputDigestRule = {
   id: 'test-static-inputs-v1',
@@ -417,7 +423,145 @@ describe('pure check runtime shadow', () => {
     }
   });
 
-  it('keeps report-root artifacts as audit-only digests until producer-owned adapters exist', async () => {
+  it('writes shadow claims from passed producer-owned evidence and reports producer digests', async () => {
+    const root = await makeTempRoot();
+    await writeFixture(root, 'story-acceptance-report.json', '{"schema":"story-report"}\n');
+    await writeFixture(root, 'verification-catalog.json', '{"schema":"verification-catalog"}\n');
+    const producerWrite = await writePureCheckProducerEvidence({
+      repoRoot: root,
+      reportRoot: root,
+      checkId: 'contracts',
+      resultStatus: 'passed',
+      failureClass: 'none',
+      exitCode: 0,
+      startedAt: PRODUCER_STARTED_AT,
+      finishedAt: PRODUCER_FINISHED_AT,
+      generatedAt: PRODUCER_GENERATED_AT,
+      stdoutSummary: 'contracts ok',
+      stderrSummary: null,
+    });
+
+    expect(producerWrite.ok).toBe(true);
+
+    const result = evaluatePureCheckRuntimeShadowForVerifyRunSync({
+      repoRoot: root,
+      reportRoot: root,
+      executedScripts: ['verify:quick'],
+      generatedAt: '2026-04-25T12:00:00.000Z',
+      gitSha: 'current-git-sha',
+      toolchainIdentity: {
+        node: 'node-v24.14.1',
+        npm: 'npm-v11.11.0',
+        'package-lock': 'lockfile-version-3',
+        'next-typegen': 'next-typegen-v1',
+      },
+    });
+    const contracts = result.evaluations.find((evaluation) => evaluation.check_id === 'contracts');
+
+    expect(result.evaluations.map((evaluation) => evaluation.check_id)).toEqual([
+      'contracts',
+      'openapi-contract',
+      'openapi-generated',
+      'lint',
+      'typecheck',
+    ]);
+    expect(contracts).toMatchObject({
+      check_id: 'contracts',
+      decision: 'shadow_only',
+      result_status: 'passed',
+      failure_class: 'none',
+      claim_store_write: true,
+      claim_count: 0,
+      valid_count: 0,
+      invalid_count: 0,
+    });
+    expect(contracts?.reason_codes).toEqual(expect.arrayContaining([
+      'producer_evidence_valid',
+      'runtime_shadow_claim_written',
+    ]));
+    expect(contracts?.reason_codes).not.toEqual(expect.arrayContaining([
+      'producer_owned_artifact_adapter_missing',
+      'producer_owned_result_adapter_missing',
+    ]));
+    expect(contracts?.audit_digests.input).toMatch(DIGEST_PATTERN);
+    expect(contracts?.audit_digests.artifact).toMatch(DIGEST_PATTERN);
+    expect(contracts?.audit_digests.result).toMatch(DIGEST_PATTERN);
+    expect(contracts?.audit_digests.claim).toMatch(DIGEST_PATTERN);
+    expect(result.evaluations.filter((evaluation) => evaluation.check_id !== 'contracts').every((evaluation) => (
+      evaluation.claim_store_write === false
+      && evaluation.decision === 'rerun_required'
+      && evaluation.reason_codes.includes('producer_evidence_missing')
+    ))).toBe(true);
+    expect(result.evaluations.every((evaluation) => evaluation.script_results.some((script) => (
+      script.script === 'verify:quick'
+      && script.result_status === 'passed'
+      && script.failure_class === 'none'
+    )))).toBe(true);
+
+    const runClaims = await readEvidenceClaimJsonlStore({
+      runRoot: root,
+      validationPurpose: 'pure_check_reuse',
+    });
+    const stableClaims = await readStablePureCheckClaimJsonlStore({
+      repoRoot: root,
+      validationPurpose: 'pure_check_reuse',
+    });
+    expect(runClaims.ok && runClaims.claims.map((claim) => claim.check_id)).toEqual(['contracts']);
+    expect(stableClaims.ok && stableClaims.claims.map((claim) => claim.check_id)).toEqual(['contracts']);
+  });
+
+  it('does not write claims from stale producer evidence outside the current verify run', async () => {
+    const root = await makeTempRoot();
+    const producerWrite = await writePureCheckProducerEvidence({
+      repoRoot: root,
+      reportRoot: root,
+      checkId: 'contracts',
+      resultStatus: 'passed',
+      failureClass: 'none',
+      exitCode: 0,
+      startedAt: '2026-04-25T12:00:00.000Z',
+      finishedAt: '2026-04-25T12:00:03.000Z',
+      generatedAt: '2026-04-25T12:00:04.000Z',
+      stdoutSummary: 'contracts ok from a previous verify run',
+      stderrSummary: null,
+    });
+
+    expect(producerWrite.ok).toBe(true);
+
+    const result = evaluatePureCheckRuntimeShadowForVerifyRunSync({
+      repoRoot: root,
+      reportRoot: root,
+      executedScripts: ['verify:quick'],
+      generatedAt: '2026-04-25T12:05:00.000Z',
+      gitSha: 'current-git-sha',
+      toolchainIdentity: {
+        node: 'node-v24.14.1',
+        npm: 'npm-v11.11.0',
+        'package-lock': 'lockfile-version-3',
+        'next-typegen': 'next-typegen-v1',
+      },
+    });
+    const contracts = result.evaluations.find((evaluation) => evaluation.check_id === 'contracts');
+
+    expect(contracts).toMatchObject({
+      check_id: 'contracts',
+      decision: 'rerun_required',
+      result_status: 'passed',
+      failure_class: 'none',
+      claim_store_write: false,
+    });
+    expect(contracts?.reason_codes).toEqual(expect.arrayContaining([
+      'producer_evidence_valid',
+      'producer_evidence_out_of_run',
+      'producer_required_artifacts_incomplete',
+      'runtime_shadow_claim_not_written',
+    ]));
+    expect(contracts?.audit_digests.claim).toBeUndefined();
+    expect(existsSync(join(root, 'evidence-claims.jsonl'))).toBe(false);
+    expect(existsSync(join(root, STABLE_PURE_CHECK_CLAIMS_JSONL_PATH))).toBe(false);
+  });
+
+  it('does not write claims when producer evidence is missing', async () => {
     const root = await makeTempRoot();
     await writeFixture(root, 'story-acceptance-report.json', '{"schema":"story-report"}\n');
     await writeFixture(root, 'verification-catalog.json', '{"schema":"verification-catalog"}\n');
@@ -436,34 +580,18 @@ describe('pure check runtime shadow', () => {
       },
     });
 
-    expect(result.evaluations.map((evaluation) => evaluation.check_id)).toEqual([
-      'contracts',
-      'openapi-contract',
-      'openapi-generated',
-      'lint',
-      'typecheck',
-    ]);
     expect(result.evaluations.every((evaluation) => evaluation.claim_store_write === false)).toBe(true);
     expect(result.evaluations.every((evaluation) => evaluation.decision === 'rerun_required')).toBe(true);
-    expect(result.evaluations.every((evaluation) => evaluation.script_results.some((script) => (
-      script.script === 'verify:quick'
-      && script.result_status === 'passed'
-      && script.failure_class === 'none'
-    )))).toBe(true);
-    expect(result.evaluations.every((evaluation) => evaluation.reason_codes.includes('producer_owned_artifact_adapter_missing')))
+    expect(result.evaluations.every((evaluation) => evaluation.reason_codes.includes('producer_evidence_missing')))
       .toBe(true);
-    expect(result.evaluations.every((evaluation) => DIGEST_PATTERN.test(evaluation.audit_digests.input))).toBe(true);
-    expect(result.evaluations.every((evaluation) => DIGEST_PATTERN.test(evaluation.audit_digests.artifact))).toBe(true);
-    expect(result.evaluations.every((evaluation) => DIGEST_PATTERN.test(evaluation.audit_digests.result))).toBe(true);
     expect(result.evaluations.every((evaluation) => evaluation.audit_digests.claim === undefined)).toBe(true);
     expect(existsSync(join(root, 'evidence-claims.jsonl'))).toBe(false);
     expect(existsSync(join(root, STABLE_PURE_CHECK_CLAIMS_JSONL_PATH))).toBe(false);
   });
 
-  it('does not write a reusable typecheck claim when next typegen input material is missing', async () => {
+  it('does not write claims when producer evidence is invalid', async () => {
     const root = await makeTempRoot();
-    await writeFixture(root, 'story-acceptance-report.json', '{"schema":"story-report"}\n');
-    await writeFixture(root, 'verification-catalog.json', '{"schema":"verification-catalog"}\n');
+    await writeFixture(root, 'pure-check-producer/contracts/result.json', '{not json}\n');
 
     const result = evaluatePureCheckRuntimeShadowForVerifyRunSync({
       repoRoot: root,
@@ -475,6 +603,106 @@ describe('pure check runtime shadow', () => {
         node: 'node-v24.14.1',
         npm: 'npm-v11.11.0',
         'package-lock': 'lockfile-version-3',
+        'next-typegen': 'next-typegen-v1',
+      },
+    });
+    const contracts = result.evaluations.find((evaluation) => evaluation.check_id === 'contracts');
+
+    expect(contracts).toMatchObject({
+      check_id: 'contracts',
+      decision: 'rerun_required',
+      claim_store_write: false,
+    });
+    expect(contracts?.reason_codes).toEqual(expect.arrayContaining([
+      'producer_evidence_invalid',
+      'producer_evidence_invalid_json',
+      'runtime_shadow_claim_not_written',
+    ]));
+    expect(contracts?.audit_digests.claim).toBeUndefined();
+    expect(existsSync(join(root, 'evidence-claims.jsonl'))).toBe(false);
+    expect(existsSync(join(root, STABLE_PURE_CHECK_CLAIMS_JSONL_PATH))).toBe(false);
+  });
+
+  it('does not write claims when producer evidence reports a failed result', async () => {
+    const root = await makeTempRoot();
+    const producerWrite = await writePureCheckProducerEvidence({
+      repoRoot: root,
+      reportRoot: root,
+      checkId: 'contracts',
+      resultStatus: 'failed',
+      failureClass: 'product_regression',
+      exitCode: 1,
+      startedAt: PRODUCER_STARTED_AT,
+      finishedAt: PRODUCER_FINISHED_AT,
+      generatedAt: PRODUCER_GENERATED_AT,
+      stdoutSummary: 'contracts failed',
+      stderrSummary: 'contract mismatch',
+    });
+
+    expect(producerWrite.ok).toBe(true);
+
+    const result = evaluatePureCheckRuntimeShadowForVerifyRunSync({
+      repoRoot: root,
+      reportRoot: root,
+      executedScripts: ['verify:quick'],
+      generatedAt: '2026-04-25T12:00:00.000Z',
+      gitSha: 'current-git-sha',
+      toolchainIdentity: {
+        node: 'node-v24.14.1',
+        npm: 'npm-v11.11.0',
+        'package-lock': 'lockfile-version-3',
+        'next-typegen': 'next-typegen-v1',
+      },
+    });
+    const contracts = result.evaluations.find((evaluation) => evaluation.check_id === 'contracts');
+
+    expect(contracts).toMatchObject({
+      check_id: 'contracts',
+      decision: 'rerun_required',
+      result_status: 'failed',
+      failure_class: 'product_regression',
+      claim_store_write: false,
+    });
+    expect(contracts?.reason_codes).toEqual(expect.arrayContaining([
+      'producer_evidence_valid',
+      'producer_evidence_failed',
+      'runtime_shadow_claim_not_written',
+    ]));
+    expect(contracts?.audit_digests.result).toMatch(DIGEST_PATTERN);
+    expect(contracts?.audit_digests.claim).toBeUndefined();
+    expect(existsSync(join(root, 'evidence-claims.jsonl'))).toBe(false);
+    expect(existsSync(join(root, STABLE_PURE_CHECK_CLAIMS_JSONL_PATH))).toBe(false);
+  });
+
+  it('does not write a reusable typecheck claim when producer evidence omits next typegen artifacts', async () => {
+    const root = await makeTempRoot();
+    const producerWrite = await writePureCheckProducerEvidence({
+      repoRoot: root,
+      reportRoot: root,
+      checkId: 'typecheck',
+      resultStatus: 'passed',
+      failureClass: 'none',
+      exitCode: 0,
+      startedAt: PRODUCER_STARTED_AT,
+      finishedAt: PRODUCER_FINISHED_AT,
+      generatedAt: PRODUCER_GENERATED_AT,
+      stdoutSummary: 'typecheck ok',
+      stderrSummary: null,
+    });
+
+    expect(producerWrite.ok).toBe(true);
+
+    const result = evaluatePureCheckRuntimeShadowForVerifyRunSync({
+      repoRoot: root,
+      reportRoot: root,
+      executedScripts: ['verify:quick'],
+      generatedAt: '2026-04-25T12:00:00.000Z',
+      gitSha: 'current-git-sha',
+      toolchainIdentity: {
+        node: 'node-v24.14.1',
+        npm: 'npm-v11.11.0',
+        'package-lock': 'lockfile-version-3',
+        'next-typegen': 'next-typegen-v1',
       },
     });
     const typecheck = result.evaluations.find((evaluation) => evaluation.check_id === 'typecheck');
@@ -483,14 +711,88 @@ describe('pure check runtime shadow', () => {
     expect(typecheck).toMatchObject({
       check_id: 'typecheck',
       decision: 'rerun_required',
+      result_status: 'passed',
+      failure_class: 'none',
       claim_store_write: false,
     });
     expect(typecheck?.reason_codes).toEqual(expect.arrayContaining([
-      'input_digest_incomplete',
-      'toolchain_input_missing',
+      'producer_evidence_valid',
+      'typecheck_next_typegen_artifact_missing',
+      'runtime_shadow_claim_not_written',
     ]));
     expect(typecheck?.audit_digests.claim).toBeUndefined();
     expect(existsSync(join(root, 'evidence-claims.jsonl'))).toBe(false);
+    expect(existsSync(join(root, STABLE_PURE_CHECK_CLAIMS_JSONL_PATH))).toBe(false);
+  });
+
+  it('does not write a reusable typecheck claim when next typegen artifact scope or path is wrong', async () => {
+    const root = await makeTempRoot();
+    const reportRoot = join(root, 'reports');
+    await writeFixture(root, '.next/types/routes.d.ts', 'declare const routes: "/";\n');
+    await writeFixture(root, 'next-env.d.ts', '/// <reference types="next" />\n');
+    await writeFixture(root, 'reports/.next/types/routes.d.ts', 'declare const reportRoutes: "/report";\n');
+
+    const producerWrite = await writePureCheckProducerEvidence({
+      repoRoot: root,
+      reportRoot,
+      checkId: 'typecheck',
+      resultStatus: 'passed',
+      failureClass: 'none',
+      exitCode: 0,
+      startedAt: PRODUCER_STARTED_AT,
+      finishedAt: PRODUCER_FINISHED_AT,
+      generatedAt: PRODUCER_GENERATED_AT,
+      stdoutSummary: 'typecheck ok',
+      stderrSummary: null,
+      requiredArtifacts: [
+        {
+          id: 'next-typegen-routes',
+          scope: 'report_root',
+          path: '.next/types/routes.d.ts',
+          kind: 'file',
+        },
+        {
+          id: 'next-env',
+          scope: 'repo_root',
+          path: 'next-env.d.ts',
+          kind: 'file',
+        },
+      ],
+    });
+
+    expect(producerWrite.ok).toBe(true);
+
+    const result = evaluatePureCheckRuntimeShadowForVerifyRunSync({
+      repoRoot: root,
+      reportRoot,
+      executedScripts: ['verify:quick'],
+      generatedAt: '2026-04-25T12:00:00.000Z',
+      gitSha: 'current-git-sha',
+      toolchainIdentity: {
+        node: 'node-v24.14.1',
+        npm: 'npm-v11.11.0',
+        'package-lock': 'lockfile-version-3',
+        'next-typegen': 'next-typegen-v1',
+      },
+    });
+    const typecheck = result.evaluations.find((evaluation) => evaluation.check_id === 'typecheck');
+
+    expect(typecheck).toBeDefined();
+    expect(typecheck).toMatchObject({
+      check_id: 'typecheck',
+      decision: 'rerun_required',
+      result_status: 'passed',
+      failure_class: 'none',
+      claim_store_write: false,
+    });
+    expect(typecheck?.reason_codes).toEqual(expect.arrayContaining([
+      'producer_evidence_valid',
+      'typecheck_next_typegen_artifact_mismatch',
+      'producer_required_artifacts_incomplete',
+      'runtime_shadow_claim_not_written',
+    ]));
+    expect(typecheck?.audit_digests.claim).toBeUndefined();
+    expect(existsSync(join(reportRoot, 'evidence-claims.jsonl'))).toBe(false);
     expect(existsSync(join(root, STABLE_PURE_CHECK_CLAIMS_JSONL_PATH))).toBe(false);
   });
 });

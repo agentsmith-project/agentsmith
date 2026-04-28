@@ -19,6 +19,12 @@ import {
   buildPureCheckRuntimeShadowClaimRecord,
   STABLE_PURE_CHECK_CLAIMS_JSONL_PATH,
 } from '../pure-check-runtime-shadow';
+import {
+  PURE_CHECK_PRODUCER_EVIDENCE_SCHEMA,
+  PURE_CHECK_PRODUCER_RESULT_ARTIFACT_ID,
+  PURE_CHECK_PRODUCER_RESULT_FILE_NAME,
+  writePureCheckProducerEvidence,
+} from '../pure-check-producer-evidence';
 import type { GovernanceRuntimeLockLease } from '../governance-lock-lease-manager';
 
 const LEASE_SNAPSHOT_ENV = 'AGENTSMITH_GOVERNANCE_LEASE_SNAPSHOT_PATH';
@@ -1593,6 +1599,61 @@ describe('verify human entrypoints', () => {
     }
   });
 
+  it('passes verify run context env to npm aliases so default-gate can write producer evidence', () => {
+    const root = mkdtempSync(join(tmpdir(), 'agentsmith-verify-run-env-'));
+    const stdout: string[] = [];
+    const stderr: string[] = [];
+    const captured: Array<{
+      script: string;
+      reportRoot: string;
+      repoRoot: string;
+      gitSha: string;
+      env: NodeJS.ProcessEnv;
+    }> = [];
+    try {
+      const exitCode = runVerificationCli([
+        '--goal=debug',
+        '--run',
+        '--report-root',
+        root,
+        '--changed-file',
+        'src/components/chat/ChatMainPane.tsx',
+      ], {
+        stdout: { write: (chunk: string) => stdout.push(chunk) },
+        stderr: { write: (chunk: string) => stderr.push(chunk) },
+        runNpmScript: (script, context) => {
+          captured.push({
+            script,
+            reportRoot: context.reportRoot,
+            repoRoot: context.repoRoot,
+            gitSha: context.gitSha,
+            env: context.env,
+          });
+          throw new Error('stop after env capture');
+        },
+        pureCheckShadowRepoRoot: root,
+        pureCheckShadowGitSha: 'current-git-sha',
+      });
+
+      expect(exitCode).toBe(1);
+      expect(captured).toHaveLength(1);
+      expect(captured[0]).toMatchObject({
+        script: 'verify:quick',
+        reportRoot: root,
+        repoRoot: root,
+        gitSha: 'current-git-sha',
+      });
+      expect(captured[0]?.env.AGENTSMITH_VERIFY_REPORT_ROOT).toBe(root);
+      expect(captured[0]?.env.AGENTSMITH_VERIFY_REPO_ROOT).toBe(root);
+      expect(captured[0]?.env.AGENTSMITH_VERIFY_GIT_SHA).toBe('current-git-sha');
+      expect(captured[0]?.env[CLAIM_STORE_ROOT_ENV]).toBe(root);
+      expect(captured[0]?.env[CLAIM_STORE_GIT_SHA_ENV]).toBe('current-git-sha');
+      expect(stderr.join('')).toContain('[verify] stop after env capture');
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
   it('writes pure check shadow audit for non-release verify run without claiming unit coverage', () => {
     const root = mkdtempSync(join(tmpdir(), 'agentsmith-verify-pure-shadow-audit-'));
     const stdout: string[] = [];
@@ -1727,7 +1788,7 @@ describe('verify human entrypoints', () => {
         invalid_count: 1,
         reason_codes: expect.arrayContaining([
           'stable_claim_not_reusable_without_current_producer_evidence',
-          'producer_owned_artifact_adapter_missing',
+          'producer_evidence_missing',
           'runtime_shadow_claim_not_written',
         ]),
       });
@@ -1737,7 +1798,7 @@ describe('verify human entrypoints', () => {
         && check.invalid_count === 0
         && check.reason_codes.includes('stable_claim_store_empty')
       ))).toBe(true);
-      expect(audit.checks.every((check) => check.reason_codes.includes('producer_owned_artifact_adapter_missing')))
+      expect(audit.checks.every((check) => check.reason_codes.includes('producer_evidence_missing')))
         .toBe(true);
 
       const stableClaims = readFileSync(stableStorePath, 'utf8')
@@ -1748,6 +1809,118 @@ describe('verify human entrypoints', () => {
       expect(stableClaims.map((claim) => claim.check_id)).toEqual([
         'contracts',
       ]);
+      expect(JSON.stringify(audit)).not.toMatch(
+        /"(?:cache_hit|claim_reuse|skipped|verdict|release_verdict|automated_release_verdict)"\s*:/,
+      );
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it('writes pure check shadow claims when verify run has passed producer evidence', () => {
+    const root = mkdtempSync(join(tmpdir(), 'agentsmith-verify-pure-shadow-claim-'));
+    const stdout: string[] = [];
+    const stderr: string[] = [];
+    const aliases: string[] = [];
+    try {
+      const exitCode = runVerificationCli([
+        '--goal=debug',
+        '--run',
+        '--report-root',
+        root,
+        '--changed-file',
+        'src/components/chat/ChatMainPane.tsx',
+      ], {
+        stdout: { write: (chunk: string) => stdout.push(chunk) },
+        stderr: { write: (chunk: string) => stderr.push(chunk) },
+        runNpmScript: (script, context) => {
+          aliases.push(script);
+          if (script === 'verify:quick') {
+            const identity = findCurrentPureCheckIdentityById('contracts');
+            expect(identity).toBeDefined();
+            if (identity) {
+              const evidenceDir = join(context.reportRoot, 'pure-check-producer', 'contracts');
+              const generatedAt = new Date().toISOString();
+              mkdirSync(evidenceDir, { recursive: true });
+              writeJson(join(evidenceDir, PURE_CHECK_PRODUCER_RESULT_FILE_NAME), {
+                schema: PURE_CHECK_PRODUCER_EVIDENCE_SCHEMA,
+                check_id: identity.check_id,
+                owning_job_id: identity.owning_job_id,
+                gate_id: identity.owning_gate_id,
+                command: identity.command,
+                npm_script: identity.npm_script ?? null,
+                report_root: context.reportRoot,
+                evidence_dir: evidenceDir,
+                result_status: 'passed',
+                failure_class: 'none',
+                exit_code: 0,
+                started_at: generatedAt,
+                finished_at: generatedAt,
+                duration_ms: 0,
+                stdout_summary_digest: { digest: null, summary_length: 0, redacted: false },
+                stderr_summary_digest: { digest: null, summary_length: 0, redacted: false },
+                required_artifacts: [{
+                  id: PURE_CHECK_PRODUCER_RESULT_ARTIFACT_ID,
+                  scope: 'evidence_dir',
+                  path: PURE_CHECK_PRODUCER_RESULT_FILE_NAME,
+                  kind: 'file',
+                  digest: null,
+                  size_bytes: null,
+                }],
+                generated_at: generatedAt,
+              });
+            }
+          }
+          return { status: 0 };
+        },
+        pureCheckShadowRepoRoot: root,
+        pureCheckShadowGitSha: 'current-git-sha',
+        pureCheckShadowToolchainIdentity: {
+          node: 'node-v24.14.1',
+          npm: 'npm-v11.11.0',
+          'package-lock': 'lockfile-version-3',
+          'next-typegen': 'next-typegen-v1',
+        },
+      });
+
+      expect(exitCode).toBe(0);
+      expect(aliases).toEqual(['verify:quick', 'verify:default', 'verify:visual']);
+      expect(stderr.join('')).toBe('');
+
+      const audit = JSON.parse(readFileSync(join(root, PURE_CHECK_SHADOW_AUDIT_FILE_NAME), 'utf8')) as {
+        claim_store_write: boolean;
+        checks: Array<{
+          check_id: string;
+          decision: string;
+          reason_codes: string[];
+          claim_store_write: boolean;
+          audit_digests?: {
+            input?: string;
+            artifact?: string;
+            result?: string;
+            claim?: string;
+          };
+        }>;
+      };
+      const contracts = audit.checks.find((check) => check.check_id === 'contracts');
+      const digestPattern = /^sha256:[0-9a-f]{64}$/;
+
+      expect(audit.claim_store_write).toBe(true);
+      expect(audit.checks.map((check) => check.check_id)).not.toContain('unit');
+      expect(contracts).toMatchObject({
+        decision: 'shadow_only',
+        claim_store_write: true,
+        reason_codes: expect.arrayContaining([
+          'producer_evidence_valid',
+          'runtime_shadow_claim_written',
+        ]),
+      });
+      expect(contracts?.audit_digests?.input).toMatch(digestPattern);
+      expect(contracts?.audit_digests?.artifact).toMatch(digestPattern);
+      expect(contracts?.audit_digests?.result).toMatch(digestPattern);
+      expect(contracts?.audit_digests?.claim).toMatch(digestPattern);
+      expect(existsSync(join(root, 'evidence-claims.jsonl'))).toBe(true);
+      expect(existsSync(join(root, STABLE_PURE_CHECK_CLAIMS_JSONL_PATH))).toBe(true);
       expect(JSON.stringify(audit)).not.toMatch(
         /"(?:cache_hit|claim_reuse|skipped|verdict|release_verdict|automated_release_verdict)"\s*:/,
       );

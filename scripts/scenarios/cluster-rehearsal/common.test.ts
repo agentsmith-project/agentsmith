@@ -44,6 +44,22 @@ function runClusterRehearsalCommand(tempRoot: string, script: string, extraEnv: 
   );
 }
 
+function expectClusterRehearsalCommandFailure(
+  tempRoot: string,
+  script: string,
+  extraEnv: NodeJS.ProcessEnv = {},
+): string {
+  let failure: (Error & { stderr?: Buffer | string }) | undefined;
+  try {
+    runClusterRehearsalCommand(tempRoot, script, extraEnv);
+  } catch (error) {
+    failure = error as Error & { stderr?: Buffer | string };
+  }
+
+  expect(failure).toBeDefined();
+  return String(failure?.stderr ?? failure?.message ?? '');
+}
+
 function readEnvValue(filePath: string, key: string): string {
   for (const rawLine of readFileSync(filePath, 'utf8').split('\n')) {
     const line = rawLine.trim();
@@ -265,6 +281,7 @@ EOF
             export ROOT_DIR="${repoRoot}"
             export HOME="${tempRoot}"
             export CLUSTER_REHEARSAL_ROOT="${tempRoot}/scenario"
+            export REHEARSAL_MODE=fast
             export CLUSTER_REHEARSAL_SKIP_BUNDLED_IMAGE_LOAD=1
             source "${repoRoot}/scripts/scenarios/cluster-rehearsal/common.sh"
             init_cluster_rehearsal_env
@@ -289,6 +306,7 @@ EOF
             export CLUSTER_REHEARSAL_ROOT="${tempRoot}/scenario"
             source "${repoRoot}/scripts/scenarios/cluster-rehearsal/common.sh"
             init_cluster_rehearsal_env
+            printf 'mode=%s\\n' "\${REHEARSAL_MODE:-}"
             printf 'skip=%s\\n' "\${SKIP_BUNDLED_IMAGE_LOAD:-}"
           `,
         ],
@@ -301,6 +319,7 @@ EOF
       );
 
       expect(withFastPath).toContain('skip=1');
+      expect(withoutFastPath).toContain('mode=release-fidelity');
       expect(withoutFastPath).toContain('skip=');
     } finally {
       rmSync(tempRoot, { recursive: true, force: true });
@@ -334,7 +353,11 @@ mkdir -p "\${OUT_DIR}/agentsmith-\${RELEASE_ID}"
           cat "${tempRoot}/scenario/releases/builder.env"
           printf 'release_root=%s\\n' "\${RELEASE_ROOT}"
         `,
-        { CLUSTER_REHEARSAL_SKIP_RELEASE_ARCHIVE: '1', CLUSTER_REHEARSAL_SKIP_BUNDLED_IMAGE_LOAD: '1' },
+        {
+          REHEARSAL_MODE: 'fast',
+          CLUSTER_REHEARSAL_SKIP_RELEASE_ARCHIVE: '1',
+          CLUSTER_REHEARSAL_SKIP_BUNDLED_IMAGE_LOAD: '1',
+        },
       );
 
       const withExplicitOverride = runClusterRehearsalCommand(
@@ -346,7 +369,7 @@ mkdir -p "\${OUT_DIR}/agentsmith-\${RELEASE_ID}"
           ensure_cluster_rehearsal_release_bundle
           cat "${tempRoot}/scenario/releases/builder.env"
         `,
-        { SKIP_RELEASE_ARCHIVE: '1' },
+        { REHEARSAL_MODE: 'fast', SKIP_RELEASE_ARCHIVE: '1' },
       );
 
       const withExplicitArchiveOverride = runClusterRehearsalCommand(
@@ -358,7 +381,7 @@ mkdir -p "\${OUT_DIR}/agentsmith-\${RELEASE_ID}"
           ensure_cluster_rehearsal_release_bundle
           cat "${tempRoot}/scenario/releases/builder.env"
         `,
-        { SKIP_BUNDLED_IMAGE_ARCHIVE_GENERATION: '1' },
+        { REHEARSAL_MODE: 'fast', SKIP_BUNDLED_IMAGE_ARCHIVE_GENERATION: '1' },
       );
 
       const withoutFastPath = runClusterRehearsalCommand(
@@ -381,6 +404,72 @@ mkdir -p "\${OUT_DIR}/agentsmith-\${RELEASE_ID}"
       expect(withoutFastPath).not.toContain('SKIP_RELEASE_ARCHIVE=1');
       expect(withoutFastPath).toContain('SKIP_BUNDLED_IMAGE_ARCHIVE_GENERATION=');
       expect(withoutFastPath).not.toContain('SKIP_BUNDLED_IMAGE_ARCHIVE_GENERATION=1');
+    } finally {
+      rmSync(tempRoot, { recursive: true, force: true });
+    }
+  });
+
+  it('fails closed when release-fidelity cluster rehearsal sees manual skip env', () => {
+    const tempRoot = mkdtempSync(path.join(os.tmpdir(), 'cluster-rehearsal-skip-policy-'));
+    const forbiddenCases: Array<[string, NodeJS.ProcessEnv, string]> = [
+      ['default mode', {}, 'SKIP_BUNDLED_IMAGE_LOAD'],
+      ['release-fidelity mode', { REHEARSAL_MODE: 'release-fidelity' }, 'SKIP_RELEASE_ARCHIVE'],
+      [
+        'release-fidelity archive generation',
+        { REHEARSAL_MODE: 'release-fidelity' },
+        'SKIP_BUNDLED_IMAGE_ARCHIVE_GENERATION',
+      ],
+      [
+        'offline-package line load',
+        { REHEARSAL_MODE: 'offline-package' },
+        'CLUSTER_REHEARSAL_SKIP_BUNDLED_IMAGE_LOAD',
+      ],
+      [
+        'offline-package line release archive',
+        { REHEARSAL_MODE: 'offline-package' },
+        'CLUSTER_REHEARSAL_SKIP_RELEASE_ARCHIVE',
+      ],
+    ];
+
+    try {
+      stageClusterRehearsalFixture(tempRoot);
+
+      for (const [caseName, env, skipKey] of forbiddenCases) {
+        const stderr = expectClusterRehearsalCommandFailure(
+          tempRoot,
+          `
+            source "${tempRoot}/scripts/scenarios/cluster-rehearsal/common.sh"
+            init_cluster_rehearsal_env
+          `,
+          { ...env, [skipKey]: '1' },
+        );
+
+        expect(stderr, caseName).toContain('REHEARSAL_MODE');
+        expect(stderr, caseName).toContain(skipKey);
+      }
+    } finally {
+      rmSync(tempRoot, { recursive: true, force: true });
+    }
+  });
+
+  it('rejects unsupported cluster rehearsal modes before applying skip env', () => {
+    const tempRoot = mkdtempSync(path.join(os.tmpdir(), 'cluster-rehearsal-invalid-mode-'));
+    try {
+      stageClusterRehearsalFixture(tempRoot);
+
+      const stderr = expectClusterRehearsalCommandFailure(
+        tempRoot,
+        `
+          source "${tempRoot}/scripts/scenarios/cluster-rehearsal/common.sh"
+          init_cluster_rehearsal_env
+        `,
+        { REHEARSAL_MODE: 'unsafe-skip' },
+      );
+
+      expect(stderr).toContain('invalid REHEARSAL_MODE');
+      expect(stderr).toContain('fast');
+      expect(stderr).toContain('release-fidelity');
+      expect(stderr).toContain('offline-package');
     } finally {
       rmSync(tempRoot, { recursive: true, force: true });
     }

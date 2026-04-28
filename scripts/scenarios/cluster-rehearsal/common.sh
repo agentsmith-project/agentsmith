@@ -20,8 +20,19 @@ CLUSTER_REHEARSAL_LEGACY_SHARED_ADMIN_READY_ENV="${CLUSTER_REHEARSAL_CONFIG_DIR}
 CLUSTER_REHEARSAL_LEGACY_ADMIN_HANDOFF_DIR="${CLUSTER_REHEARSAL_ROOT}/admin-handoff"
 
 apply_cluster_rehearsal_fast_path_env() {
+  assert_rehearsal_skip_env_allowed \
+    SKIP_BUNDLED_IMAGE_LOAD \
+    SKIP_RELEASE_ARCHIVE \
+    SKIP_BUNDLED_IMAGE_ARCHIVE_GENERATION \
+    CLUSTER_REHEARSAL_SKIP_BUNDLED_IMAGE_LOAD \
+    CLUSTER_REHEARSAL_SKIP_RELEASE_ARCHIVE
+  [[ "${REHEARSAL_MODE}" == "fast" ]] || return 0
+
   if [[ -z "${SKIP_BUNDLED_IMAGE_LOAD:-}" && -n "${CLUSTER_REHEARSAL_SKIP_BUNDLED_IMAGE_LOAD:-}" ]]; then
     export SKIP_BUNDLED_IMAGE_LOAD="${CLUSTER_REHEARSAL_SKIP_BUNDLED_IMAGE_LOAD}"
+  fi
+  if [[ -z "${SKIP_RELEASE_ARCHIVE:-}" && -n "${CLUSTER_REHEARSAL_SKIP_RELEASE_ARCHIVE:-}" ]]; then
+    export SKIP_RELEASE_ARCHIVE="${CLUSTER_REHEARSAL_SKIP_RELEASE_ARCHIVE}"
   fi
   if [[ -z "${SKIP_BUNDLED_IMAGE_ARCHIVE_GENERATION:-}" && "${SKIP_BUNDLED_IMAGE_LOAD:-0}" == "1" ]]; then
     export SKIP_BUNDLED_IMAGE_ARCHIVE_GENERATION=1
@@ -219,8 +230,9 @@ validate_cluster_rehearsal_site_env() {
 }
 
 ensure_cluster_rehearsal_release_bundle() {
+  apply_cluster_rehearsal_fast_path_env
   local release_id="cluster-rehearsal-$(date -u +%Y%m%dT%H%M%SZ)"
-  local skip_release_archive="${SKIP_RELEASE_ARCHIVE:-${CLUSTER_REHEARSAL_SKIP_RELEASE_ARCHIVE:-}}"
+  local skip_release_archive="${SKIP_RELEASE_ARCHIVE:-}"
   local skip_bundled_image_archive_generation="${SKIP_BUNDLED_IMAGE_ARCHIVE_GENERATION:-}"
   OUT_DIR="${CLUSTER_REHEARSAL_RELEASES_DIR}" \
     RELEASE_ID="${release_id}" \

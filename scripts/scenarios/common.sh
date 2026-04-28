@@ -62,6 +62,31 @@ load_flow_env() {
   set +a
 }
 
+ensure_rehearsal_mode() {
+  export REHEARSAL_MODE="${REHEARSAL_MODE:-release-fidelity}"
+  case "${REHEARSAL_MODE}" in
+    fast|release-fidelity|offline-package)
+      ;;
+    *)
+      echo "invalid REHEARSAL_MODE=${REHEARSAL_MODE}; expected one of: fast, release-fidelity, offline-package" >&2
+      return 1
+      ;;
+  esac
+}
+
+assert_rehearsal_skip_env_allowed() {
+  ensure_rehearsal_mode
+  [[ "${REHEARSAL_MODE}" != "fast" ]] || return 0
+
+  local key
+  for key in "$@"; do
+    if [[ "${!key:-}" == "1" ]]; then
+      echo "REHEARSAL_MODE=${REHEARSAL_MODE} forbids manual skip env ${key}=1; use REHEARSAL_MODE=fast for local fast paths" >&2
+      return 1
+    fi
+  done
+}
+
 apply_flow_site_env_overrides() {
   local path="$1"
   python3 - <<'PY' "${path}"

@@ -401,11 +401,11 @@ exit 0
       const defaultGateScript = readFileSync('scripts/default-gate.sh', 'utf8');
       expect(defaultGateScript).toContain('DEFAULT_GATE_PROFILE');
       expect(defaultGateScript).toContain('campaign_after_gate_fast');
-      expect(defaultGateScript).toContain('run_cmd "npm run contracts:check"');
-      expect(defaultGateScript).toContain('run_cmd "npm run lint"');
+      expect(defaultGateScript).toContain('run_pure_check_cmd "contracts" "npm run contracts:check"');
+      expect(defaultGateScript).toContain('run_pure_check_cmd "lint" "npm run lint"');
       expect(defaultGateScript).toContain('next_generated_root_run_locked_type_state_gate_sequence');
       expect(defaultGateScript).toContain('run_cmd "npx next typegen ."');
-      expect(defaultGateScript).toContain('run_cmd "npx tsc --noEmit"');
+      expect(defaultGateScript).toContain('run_pure_check_cmd "typecheck" "npx tsc --noEmit"');
       expect(defaultGateScript).toContain('run_cmd "npm run build"');
     } finally {
       rmSync(root, { recursive: true, force: true });
@@ -462,8 +462,11 @@ exit 0
       });
       expect(demo.SCENARIO_RUNTIME_ROOT).toBe(join(root, 'scenario-runtime'));
       expect(demo.DEMO_REHEARSAL_ROOT).toBe(join(root, 'lane-demo-rehearsal', 'scenario'));
-      expect(demo.DEMO_REHEARSAL_SKIP_RELEASE_ARCHIVE).toBe('1');
-      expect(demo.DEMO_REHEARSAL_SKIP_BUNDLED_IMAGE_LOAD).toBe('1');
+      expect(demo.REHEARSAL_MODE).toBe('release-fidelity');
+      expect(demo.DEMO_REHEARSAL_SKIP_RELEASE_ARCHIVE).toBeUndefined();
+      expect(demo.DEMO_REHEARSAL_SKIP_BUNDLED_IMAGE_LOAD).toBeUndefined();
+      expect(demo.SKIP_RELEASE_ARCHIVE).toBeUndefined();
+      expect(demo.SKIP_BUNDLED_IMAGE_LOAD).toBeUndefined();
 
       const cluster = buildReleaseCampaignCommandEnv({
         campaignRoot: root,
@@ -473,8 +476,11 @@ exit 0
       });
       expect(cluster.SCENARIO_RUNTIME_ROOT).toBe(join(root, 'scenario-runtime'));
       expect(cluster.CLUSTER_REHEARSAL_ROOT).toBe(join(root, 'lane-cluster-rehearsal', 'scenario'));
-      expect(cluster.CLUSTER_REHEARSAL_SKIP_RELEASE_ARCHIVE).toBe('1');
-      expect(cluster.CLUSTER_REHEARSAL_SKIP_BUNDLED_IMAGE_LOAD).toBe('1');
+      expect(cluster.REHEARSAL_MODE).toBe('release-fidelity');
+      expect(cluster.CLUSTER_REHEARSAL_SKIP_RELEASE_ARCHIVE).toBeUndefined();
+      expect(cluster.CLUSTER_REHEARSAL_SKIP_BUNDLED_IMAGE_LOAD).toBeUndefined();
+      expect(cluster.SKIP_RELEASE_ARCHIVE).toBeUndefined();
+      expect(cluster.SKIP_BUNDLED_IMAGE_LOAD).toBeUndefined();
     } finally {
       rmSync(root, { recursive: true, force: true });
     }

@@ -70,6 +70,22 @@ function runDemoRehearsalCommand(tempRoot: string, script: string, extraEnv: Nod
   );
 }
 
+function expectDemoRehearsalCommandFailure(
+  tempRoot: string,
+  script: string,
+  extraEnv: NodeJS.ProcessEnv = {},
+): string {
+  let failure: (Error & { stderr?: Buffer | string }) | undefined;
+  try {
+    runDemoRehearsalCommand(tempRoot, script, extraEnv);
+  } catch (error) {
+    failure = error as Error & { stderr?: Buffer | string };
+  }
+
+  expect(failure).toBeDefined();
+  return String(failure?.stderr ?? failure?.message ?? '');
+}
+
 function readEnvValue(filePath: string, key: string): string {
   for (const rawLine of readFileSync(filePath, 'utf8').split('\n')) {
     const line = rawLine.trim();
@@ -311,7 +327,11 @@ mkdir -p "\${OUT_DIR}/agentsmith-\${RELEASE_ID}"
           cat "${tempRoot}/scenario/releases/builder.env"
           printf 'release_root=%s\\n' "\${RELEASE_ROOT}"
         `,
-        { DEMO_REHEARSAL_SKIP_RELEASE_ARCHIVE: '1', DEMO_REHEARSAL_SKIP_BUNDLED_IMAGE_LOAD: '1' },
+        {
+          REHEARSAL_MODE: 'fast',
+          DEMO_REHEARSAL_SKIP_RELEASE_ARCHIVE: '1',
+          DEMO_REHEARSAL_SKIP_BUNDLED_IMAGE_LOAD: '1',
+        },
       );
 
       const withExplicitArchiveOverride = runDemoRehearsalCommand(
@@ -323,7 +343,7 @@ mkdir -p "\${OUT_DIR}/agentsmith-\${RELEASE_ID}"
           ensure_demo_rehearsal_release_bundle
           cat "${tempRoot}/scenario/releases/builder.env"
         `,
-        { SKIP_BUNDLED_IMAGE_ARCHIVE_GENERATION: '1' },
+        { REHEARSAL_MODE: 'fast', SKIP_BUNDLED_IMAGE_ARCHIVE_GENERATION: '1' },
       );
 
       const withoutFastPath = runDemoRehearsalCommand(
@@ -345,6 +365,68 @@ mkdir -p "\${OUT_DIR}/agentsmith-\${RELEASE_ID}"
       expect(withoutFastPath).not.toContain('SKIP_RELEASE_ARCHIVE=1');
       expect(withoutFastPath).toContain('SKIP_BUNDLED_IMAGE_ARCHIVE_GENERATION=');
       expect(withoutFastPath).not.toContain('SKIP_BUNDLED_IMAGE_ARCHIVE_GENERATION=1');
+    } finally {
+      rmSync(tempRoot, { recursive: true, force: true });
+    }
+  });
+
+  it('fails closed when release-fidelity demo rehearsal sees manual skip env', () => {
+    const tempRoot = mkdtempSync(path.join(os.tmpdir(), 'demo-rehearsal-skip-policy-'));
+    const forbiddenCases: Array<[string, NodeJS.ProcessEnv, string]> = [
+      ['default mode', {}, 'SKIP_BUNDLED_IMAGE_LOAD'],
+      ['release-fidelity mode', { REHEARSAL_MODE: 'release-fidelity' }, 'SKIP_RELEASE_ARCHIVE'],
+      [
+        'release-fidelity archive generation',
+        { REHEARSAL_MODE: 'release-fidelity' },
+        'SKIP_BUNDLED_IMAGE_ARCHIVE_GENERATION',
+      ],
+      ['offline-package line load', { REHEARSAL_MODE: 'offline-package' }, 'DEMO_REHEARSAL_SKIP_BUNDLED_IMAGE_LOAD'],
+      [
+        'offline-package line release archive',
+        { REHEARSAL_MODE: 'offline-package' },
+        'DEMO_REHEARSAL_SKIP_RELEASE_ARCHIVE',
+      ],
+    ];
+
+    try {
+      stageDemoRehearsalFixture(tempRoot);
+
+      for (const [caseName, env, skipKey] of forbiddenCases) {
+        const stderr = expectDemoRehearsalCommandFailure(
+          tempRoot,
+          `
+            source "${tempRoot}/scripts/scenarios/demo-rehearsal/common.sh"
+            init_demo_rehearsal_env
+          `,
+          { ...env, [skipKey]: '1' },
+        );
+
+        expect(stderr, caseName).toContain('REHEARSAL_MODE');
+        expect(stderr, caseName).toContain(skipKey);
+      }
+    } finally {
+      rmSync(tempRoot, { recursive: true, force: true });
+    }
+  });
+
+  it('rejects unsupported demo rehearsal modes before applying skip env', () => {
+    const tempRoot = mkdtempSync(path.join(os.tmpdir(), 'demo-rehearsal-invalid-mode-'));
+    try {
+      stageDemoRehearsalFixture(tempRoot);
+
+      const stderr = expectDemoRehearsalCommandFailure(
+        tempRoot,
+        `
+          source "${tempRoot}/scripts/scenarios/demo-rehearsal/common.sh"
+          init_demo_rehearsal_env
+        `,
+        { REHEARSAL_MODE: 'unsafe-skip' },
+      );
+
+      expect(stderr).toContain('invalid REHEARSAL_MODE');
+      expect(stderr).toContain('fast');
+      expect(stderr).toContain('release-fidelity');
+      expect(stderr).toContain('offline-package');
     } finally {
       rmSync(tempRoot, { recursive: true, force: true });
     }
@@ -398,7 +480,7 @@ printf 'SANDBOX_HOST_PORT=29180\\n' > "\${release_root}/env/site.env.example"
           init_demo_rehearsal_env
           printf 'skip=%s\\n' "\${SKIP_BUNDLED_IMAGE_LOAD:-}"
         `,
-        { DEMO_REHEARSAL_SKIP_BUNDLED_IMAGE_LOAD: '1' },
+        { REHEARSAL_MODE: 'fast', DEMO_REHEARSAL_SKIP_BUNDLED_IMAGE_LOAD: '1' },
       );
 
       const withoutFastPath = runDemoRehearsalCommand(
@@ -406,11 +488,13 @@ printf 'SANDBOX_HOST_PORT=29180\\n' > "\${release_root}/env/site.env.example"
         `
           source "${tempRoot}/scripts/scenarios/demo-rehearsal/common.sh"
           init_demo_rehearsal_env
+          printf 'mode=%s\\n' "\${REHEARSAL_MODE:-}"
           printf 'skip=%s\\n' "\${SKIP_BUNDLED_IMAGE_LOAD:-}"
         `,
       );
 
       expect(withFastPath).toContain('skip=1');
+      expect(withoutFastPath).toContain('mode=release-fidelity');
       expect(withoutFastPath).toContain('skip=');
     } finally {
       rmSync(tempRoot, { recursive: true, force: true });

@@ -283,15 +283,13 @@ export function buildReleaseCampaignCommandEnv(
   if (input.step.id === 'lane-demo-rehearsal') {
     env.SCENARIO_RUNTIME_ROOT = join(input.campaignRoot, 'scenario-runtime');
     env.DEMO_REHEARSAL_ROOT = join(stepDir(input.campaignRoot, input.step), 'scenario');
-    env.DEMO_REHEARSAL_SKIP_RELEASE_ARCHIVE = '1';
-    env.DEMO_REHEARSAL_SKIP_BUNDLED_IMAGE_LOAD = '1';
+    env.REHEARSAL_MODE = 'release-fidelity';
   }
 
   if (input.step.id === 'lane-cluster-rehearsal') {
     env.SCENARIO_RUNTIME_ROOT = join(input.campaignRoot, 'scenario-runtime');
     env.CLUSTER_REHEARSAL_ROOT = join(stepDir(input.campaignRoot, input.step), 'scenario');
-    env.CLUSTER_REHEARSAL_SKIP_RELEASE_ARCHIVE = '1';
-    env.CLUSTER_REHEARSAL_SKIP_BUNDLED_IMAGE_LOAD = '1';
+    env.REHEARSAL_MODE = 'release-fidelity';
   }
 
   return env;

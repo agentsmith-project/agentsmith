@@ -11,16 +11,14 @@ const GENERATED_AT = '2026-04-27T12:00:00.000Z';
 const RUN_ID = 'build-artifact-broker-cli-test';
 const APP_BASE_DIGEST = `sha256:${'a'.repeat(64)}`;
 const APP_MC_DIGEST = `sha256:${'f'.repeat(64)}`;
-const LLMUP_RUST_BASE_DIGEST = `sha256:${'b'.repeat(64)}`;
-const LLMUP_RUNTIME_BASE_DIGEST = `sha256:${'c'.repeat(64)}`;
 const APP_IMAGE_DIGEST = `sha256:${'d'.repeat(64)}`;
-const LLMUP_IMAGE_DIGEST = `sha256:${'e'.repeat(64)}`;
+const LLMUP_DIGEST = 'sha256:81c277bcbdbec4645b3e4edce5efa4d1b2253539214ba944f0712798c9a28f22';
+const LLMUP_SOURCE_IMAGE = `ghcr.io/agentsmith-project/llm-universal-proxy:v0.2.23@${LLMUP_DIGEST}`;
 
 interface BrokerFixture {
   tempRoot: string;
   releaseRoot: string;
   appSourceDir: string;
-  llmupSourceDir: string;
   digestProbePath: string;
 }
 
@@ -38,7 +36,6 @@ function stageBrokerFixture(versionContent?: string): BrokerFixture {
   const tempRoot = mkdtempSync(path.join(os.tmpdir(), 'build-artifact-broker-cli-'));
   const releaseRoot = path.join(tempRoot, 'release');
   const appSourceDir = path.join(tempRoot, 'sources', 'agentsmith');
-  const llmupSourceDir = path.join(tempRoot, 'sources', 'llm-universal-proxy');
   const digestProbePath = path.join(tempRoot, 'bin', 'digest-probe');
 
   writeFile(
@@ -72,21 +69,12 @@ function stageBrokerFixture(versionContent?: string): BrokerFixture {
   writeFile(path.join(appSourceDir, 'packages', 'api-entry-node', 'dist', 'runtime.js'), 'export const runtime = true;\n');
   writeFile(path.join(appSourceDir, 'packages', 'api-entry-node', 'target', 'debug', 'cache.bin'), 'nested target\n');
 
-  writeFile(path.join(llmupSourceDir, 'Cargo.toml'), '[package]\nname = "llm-universal-proxy"\n');
-  writeFile(path.join(llmupSourceDir, 'Cargo.lock'), '# lock\n');
-  writeFile(path.join(llmupSourceDir, 'Dockerfile'), 'FROM rust\nCOPY src ./src\n');
-  writeFile(path.join(llmupSourceDir, 'src', 'main.rs'), 'fn main() {}\n');
-  writeFile(path.join(llmupSourceDir, 'target', 'debug', 'llmup'), 'excluded target output\n');
-  writeFile(path.join(llmupSourceDir, 'dist', 'bundle'), 'excluded dist output\n');
-  writeFile(path.join(llmupSourceDir, 'artifacts', 'trace.json'), 'excluded artifact\n');
-
   writeExecutable(
     digestProbePath,
     `#!/usr/bin/env bash
 set -euo pipefail
 case "$1" in
   *agentsmith-app*) printf '%s\\n' '${APP_IMAGE_DIGEST}' ;;
-  *llm-universal-proxy*) printf '%s\\n' '${LLMUP_IMAGE_DIGEST}' ;;
   *) exit 1 ;;
 esac
 `,
@@ -96,7 +84,6 @@ esac
     tempRoot,
     releaseRoot,
     appSourceDir,
-    llmupSourceDir,
     digestProbePath,
   };
 }
@@ -106,7 +93,7 @@ function runBroker(
   extraArgs: readonly string[] = [],
   releaseId = 'release-20260427',
 ): number {
-  return runBuildArtifactBrokerCli({
+  const exitCode = runBuildArtifactBrokerCli({
     argv: [
       '--release-root',
       fixture.releaseRoot,
@@ -114,16 +101,10 @@ function runBroker(
       releaseId,
       '--app-source-dir',
       fixture.appSourceDir,
-      '--llmup-source-dir',
-      fixture.llmupSourceDir,
       '--app-base-image',
       `docker.io/library/node:24-bookworm@${APP_BASE_DIGEST}`,
       '--app-base-image',
       `docker.io/minio/mc:RELEASE.2026-04-27T12-00-00Z@${APP_MC_DIGEST}`,
-      '--llmup-base-image',
-      `docker.io/library/rust:1.88-bookworm@${LLMUP_RUST_BASE_DIGEST}`,
-      '--llmup-base-image',
-      `docker.io/library/debian:bookworm-slim@${LLMUP_RUNTIME_BASE_DIGEST}`,
       ...extraArgs,
     ],
     env: {
@@ -133,8 +114,17 @@ function runBroker(
       BUILD_ARTIFACT_BROKER_RUN_ID: RUN_ID,
     },
     stdout: () => undefined,
-    stderr: () => undefined,
+    stderr: (message) => {
+      if (process.env.DEBUG_BUILD_ARTIFACT_BROKER_CLI_TEST === '1') {
+        console.error(message);
+      }
+    },
   });
+  const reportPath = path.join(fixture.releaseRoot, 'build-artifact-broker-report.json');
+  if (process.env.DEBUG_BUILD_ARTIFACT_BROKER_CLI_TEST === '1' && exitCode !== 0 && existsSync(reportPath)) {
+    console.error(readFileSync(reportPath, 'utf8'));
+  }
+  return exitCode;
 }
 
 function readJson(filePath: string): unknown {
@@ -183,6 +173,39 @@ function findForbiddenEvidenceTruthField(value: unknown): string | null {
 }
 
 describe('build artifact broker CLI adapter', () => {
+  it('does not require llmup source inputs and emits only the app target', () => {
+    const fixture = stageBrokerFixture([
+      'release_id=test-release',
+      'agentsmith_app_image=localhost:5001/mbos/agentsmith-app:test-release',
+      'llm_universal_proxy_image=localhost:5001/mbos/llm-universal-proxy:v0.2.23',
+      'llmup_version=v0.2.23',
+      `llmup_source_image=${LLMUP_SOURCE_IMAGE}`,
+      `llmup_source_image_digest=${LLMUP_DIGEST}`,
+      '',
+    ].join('\n'));
+
+    try {
+      expect(existsSync(path.join(fixture.tempRoot, 'sources', 'llm-universal-proxy'))).toBe(false);
+
+      expect(runBroker(fixture, ['--artifact-kind', 'prebuild-plan'], 'test-release')).toBe(0);
+
+      const plan = readJson(path.join(fixture.releaseRoot, 'build-artifact-broker-plan.json')) as {
+        targets: Array<{ target: string }>;
+      };
+      expect(plan.targets.map((target) => target.target)).toEqual(['app']);
+
+      expect(runBroker(fixture, [], 'test-release')).toBe(0);
+
+      const manifest = readJson(path.join(fixture.releaseRoot, 'build-manifest.json')) as {
+        targets: Array<{ target: string }>;
+      };
+      expect(manifest.targets.map((target) => target.target)).toEqual(['app']);
+      expect(validateBuildManifestAggregate(manifest).ok).toBe(true);
+    } finally {
+      rmSync(fixture.tempRoot, { recursive: true, force: true });
+    }
+  });
+
   it('writes a prebuild plan with normalized release aliases before local image digests exist', () => {
     const fixture = stageBrokerFixture([
       'release_id=test-release',
@@ -215,23 +238,14 @@ describe('build artifact broker CLI adapter', () => {
         plan_kind: 'build_prebuild_plan',
         release_id: 'test-release',
       });
-      expect(plan.targets).toHaveLength(2);
+      expect(plan.targets).toHaveLength(1);
 
       const appPlanTarget = plan.targets.find((target) => target.target === 'app');
-      const llmupPlanTarget = plan.targets.find((target) => target.target === 'llmup');
 
       expect(appPlanTarget?.content_ref).toMatch(/^localhost:5001\/mbos\/agentsmith-app:ck-[a-f0-9]{32}$/u);
       expect(appPlanTarget?.release_alias_ref).toBe('localhost:5001/mbos/agentsmith-app:release-test-release');
       expect(appPlanTarget?.content_key).toMatch(/^ck-[a-f0-9]{32}$/u);
       expect(appPlanTarget).not.toHaveProperty('image_digest');
-      expect(llmupPlanTarget?.content_ref).toMatch(
-        /^localhost:5001\/mbos\/llm-universal-proxy:ck-[a-f0-9]{32}$/u,
-      );
-      expect(llmupPlanTarget?.release_alias_ref).toBe(
-        'localhost:5001/mbos/llm-universal-proxy:release-test-release',
-      );
-      expect(llmupPlanTarget?.content_key).toMatch(/^ck-[a-f0-9]{32}$/u);
-      expect(llmupPlanTarget).not.toHaveProperty('image_digest');
 
       expect(runBroker(fixture, [], 'test-release')).toBe(0);
 
@@ -249,16 +263,13 @@ describe('build artifact broker CLI adapter', () => {
         content_ref: appPlanTarget?.content_ref,
         release_alias_ref: appPlanTarget?.release_alias_ref,
       });
-      expect(manifestRefsByTarget.llmup).toEqual({
-        content_ref: llmupPlanTarget?.content_ref,
-        release_alias_ref: llmupPlanTarget?.release_alias_ref,
-      });
+      expect(manifestRefsByTarget.llmup).toBeUndefined();
     } finally {
       rmSync(fixture.tempRoot, { recursive: true, force: true });
     }
   });
 
-  it('scans app and llmup sources with stable exclusions and writes an aggregate manifest', () => {
+  it('scans app sources with stable exclusions and writes an aggregate manifest', () => {
     const fixture = stageBrokerFixture();
 
     try {
@@ -277,7 +288,6 @@ describe('build artifact broker CLI adapter', () => {
       });
       expect((manifest as { targets: Array<{ target: string }> }).targets.map((target) => target.target)).toEqual([
         'app',
-        'llmup',
       ]);
 
       const firstDigests = Object.fromEntries(
@@ -291,8 +301,6 @@ describe('build artifact broker CLI adapter', () => {
       writeFile(path.join(fixture.appSourceDir, 'target', 'debug', 'app'), 'changed excluded root target\n');
       writeFile(path.join(fixture.appSourceDir, 'dist', 'bundle.js'), 'changed excluded dist output\n');
       writeFile(path.join(fixture.appSourceDir, 'artifacts', 'build.log'), 'changed excluded artifact\n');
-      writeFile(path.join(fixture.llmupSourceDir, 'target', 'debug', 'llmup'), 'changed excluded target\n');
-      writeFile(path.join(fixture.llmupSourceDir, 'dist', 'bundle'), 'changed excluded dist\n');
       expect(runBroker(fixture)).toBe(0);
 
       const secondManifest = readJson(manifestPath) as { targets: Array<{ target: string; input_digest: string }> };
@@ -314,7 +322,6 @@ describe('build artifact broker CLI adapter', () => {
       const thirdManifest = readJson(manifestPath) as { targets: Array<{ target: string; input_digest: string }> };
       const thirdDigests = Object.fromEntries(thirdManifest.targets.map((target) => [target.target, target.input_digest]));
       expect(thirdDigests.app).not.toBe(secondDigests.app);
-      expect(thirdDigests.llmup).toBe(secondDigests.llmup);
 
       writeFile(
         path.join(fixture.appSourceDir, 'packages', 'api-entry-node', 'node_modules', '.vite', 'vitest', 'results.json'),
@@ -329,7 +336,6 @@ describe('build artifact broker CLI adapter', () => {
       const fourthManifest = readJson(manifestPath) as { targets: Array<{ target: string; input_digest: string }> };
       const fourthDigests = Object.fromEntries(fourthManifest.targets.map((target) => [target.target, target.input_digest]));
       expect(fourthDigests.app).not.toBe(thirdDigests.app);
-      expect(fourthDigests.llmup).toBe(thirdDigests.llmup);
     } finally {
       rmSync(fixture.tempRoot, { recursive: true, force: true });
     }
@@ -339,7 +345,7 @@ describe('build artifact broker CLI adapter', () => {
     const fixture = stageBrokerFixture();
 
     try {
-      expect(runBroker(fixture, ['--target-decision', 'app=reused', '--target-decision', 'llmup=skipped'])).toBe(0);
+      expect(runBroker(fixture, ['--target-decision', 'app=reused'])).toBe(0);
 
       const manifest = readJson(path.join(fixture.releaseRoot, 'build-manifest.json')) as {
         targets: Array<{ target: string; decision: string }>;
@@ -351,8 +357,8 @@ describe('build artifact broker CLI adapter', () => {
       expect(validateBuildManifestAggregate(manifest).ok).toBe(true);
       expect(decisionsByTarget).toMatchObject({
         app: 'reused',
-        llmup: 'skipped',
       });
+      expect(decisionsByTarget.llmup).toBeUndefined();
     } finally {
       rmSync(fixture.tempRoot, { recursive: true, force: true });
     }
@@ -361,6 +367,7 @@ describe('build artifact broker CLI adapter', () => {
   it('fails closed on invalid per-target manifest decision input', () => {
     const invalidTargetFixture = stageBrokerFixture();
     const invalidDecisionFixture = stageBrokerFixture();
+    const deprecatedTargetFixture = stageBrokerFixture();
 
     try {
       expect(runBroker(invalidTargetFixture, ['--target-decision', 'worker=reused'])).toBe(1);
@@ -368,9 +375,13 @@ describe('build artifact broker CLI adapter', () => {
 
       expect(runBroker(invalidDecisionFixture, ['--target-decision', 'app=reusable'])).toBe(1);
       expect(existsSync(path.join(invalidDecisionFixture.releaseRoot, 'build-manifest.json'))).toBe(false);
+
+      expect(runBroker(deprecatedTargetFixture, ['--target-decision', 'llmup=skipped'])).toBe(1);
+      expect(existsSync(path.join(deprecatedTargetFixture.releaseRoot, 'build-manifest.json'))).toBe(false);
     } finally {
       rmSync(invalidTargetFixture.tempRoot, { recursive: true, force: true });
       rmSync(invalidDecisionFixture.tempRoot, { recursive: true, force: true });
+      rmSync(deprecatedTargetFixture.tempRoot, { recursive: true, force: true });
     }
   });
 
@@ -380,12 +391,9 @@ describe('build artifact broker CLI adapter', () => {
     try {
       writeExecutable(
         fixture.digestProbePath,
-        `#!/usr/bin/env bash
+`#!/usr/bin/env bash
 set -euo pipefail
-case "$1" in
-  *agentsmith-app*) printf '%s\\n' '${APP_IMAGE_DIGEST}' ;;
-  *) exit 1 ;;
-esac
+exit 1
 `,
       );
 
@@ -401,29 +409,30 @@ esac
         release_id: 'release-20260427',
       });
       expect(JSON.stringify(report)).toContain('missing_image_digest');
-      expect(JSON.stringify(report)).toContain('llmup');
+      expect(JSON.stringify(report)).toContain('app');
       expect(findForbiddenEvidenceTruthField(report)).toBeNull();
     } finally {
       rmSync(fixture.tempRoot, { recursive: true, force: true });
     }
   });
 
-  it('writes a diagnostic report when the llmup Dockerfile copies tests outside the runtime key model', () => {
+  it('rejects deprecated llmup source and base image CLI arguments', () => {
     const fixture = stageBrokerFixture();
 
     try {
-      writeFile(path.join(fixture.llmupSourceDir, 'Dockerfile'), 'FROM rust\nCOPY tests ./tests\nCOPY src ./src\n');
-
-      expect(runBroker(fixture)).toBe(1);
-
-      const manifestPath = path.join(fixture.releaseRoot, 'build-manifest.json');
-      const reportPath = path.join(fixture.releaseRoot, 'build-artifact-broker-report.json');
-      const report = readJson(reportPath);
-
-      expect(existsSync(manifestPath)).toBe(false);
-      expect(JSON.stringify(report)).toContain('llmup_runtime_tests_copy_present');
-      expect(JSON.stringify(report)).toContain('Dockerfile');
-      expect(findForbiddenEvidenceTruthField(report)).toBeNull();
+      expect(
+        runBroker(fixture, [
+          '--llmup-source-dir',
+          path.join(fixture.tempRoot, 'sources', 'llm-universal-proxy'),
+        ]),
+      ).toBe(1);
+      expect(
+        runBroker(fixture, [
+          '--llmup-base-image',
+          `docker.io/library/rust:1.88-bookworm@${APP_BASE_DIGEST}`,
+        ]),
+      ).toBe(1);
+      expect(existsSync(path.join(fixture.releaseRoot, 'build-manifest.json'))).toBe(false);
     } finally {
       rmSync(fixture.tempRoot, { recursive: true, force: true });
     }

@@ -5,6 +5,7 @@ ROOT_DIR="$(cd "${SCRIPT_DIR}/../.." && pwd)"
 source "${ROOT_DIR}/scripts/cluster-deploy/lib.sh"
 source "${ROOT_DIR}/scripts/lib/docker-buildx-common.sh"
 source "${ROOT_DIR}/scripts/lib/runner-image-common.sh"
+source "${ROOT_DIR}/scripts/lib/llmup-image-lock.sh"
 
 ensure_operator_registry_env
 load_registry_env
@@ -12,6 +13,7 @@ load_registry_env
 require_cmd docker
 
 BASE_DEPENDENCY_IMAGE_LOCK="${BASE_DEPENDENCY_IMAGE_LOCK:-${ROOT_DIR}/infra/deploy/shared/build-base-images.lock}"
+LLMUP_IMAGE_LOCK="${LLMUP_IMAGE_LOCK:-${ROOT_DIR}/infra/deploy/shared/llmup-image.lock}"
 declare -A BASE_DEPENDENCY_IMAGE_LOCK_REFS=()
 
 trim_value() {
@@ -109,7 +111,7 @@ locked_image_ref_or_die() {
 require_current_p2_base_dependency_image_lock_entries() {
   local required_id=""
 
-  for required_id in app_node_base_image app_mc_image llmup_rust_base_image llmup_runtime_base_image; do
+  for required_id in app_node_base_image app_mc_image; do
     locked_image_ref_or_die "${required_id}" >/dev/null
   done
 }
@@ -135,16 +137,14 @@ K8S_REGISTRY_HOST="${K8S_REGISTRY_HOST:-${REGISTRY_HOST}}"
 
 APP_SOURCE_DIR="${RELEASE_ROOT}/sources/agentsmith"
 SANDBOX_SOURCE_DIR="${RELEASE_ROOT}/sources/mbos-sandbox-v1/manager-service"
-UNIVERSAL_PROXY_SOURCE_DIR="${RELEASE_ROOT}/sources/llm-universal-proxy"
 APP_SOURCE_DIR="${APP_SOURCE_DIR_OVERRIDE:-${APP_SOURCE_DIR}}"
 SANDBOX_SOURCE_DIR="${SANDBOX_SOURCE_DIR_OVERRIDE:-${SANDBOX_SOURCE_DIR}}"
-UNIVERSAL_PROXY_SOURCE_DIR="${UNIVERSAL_PROXY_SOURCE_DIR_OVERRIDE:-${UNIVERSAL_PROXY_SOURCE_DIR}}"
 
 [[ -d "${APP_SOURCE_DIR}" ]] || die "missing bundled agentsmith source at ${APP_SOURCE_DIR}"
 [[ -d "${SANDBOX_SOURCE_DIR}" ]] || die "missing bundled sandbox manager source at ${SANDBOX_SOURCE_DIR}"
-[[ -d "${UNIVERSAL_PROXY_SOURCE_DIR}" ]] || die "missing bundled universal proxy source at ${UNIVERSAL_PROXY_SOURCE_DIR}"
 
 IMAGE_PREFIX="${REGISTRY_HOST}/${REGISTRY_PROJECT}"
+resolve_llmup_image_lock "${LLMUP_IMAGE_LOCK}"
 JUICEFS_CSI_VERSION="${JUICEFS_CSI_VERSION:-v0.31.3}"
 INGRESS_NGINX_VERSION="${INGRESS_NGINX_VERSION:-v1.15.1}"
 
@@ -157,7 +157,7 @@ RUNNER_IMAGE="${RUNNER_IMAGE:-$(runner_release_image notebook "${RELEASE_ID}" "$
 CHAT_RUNNER_IMAGE="${CHAT_RUNNER_IMAGE:-$(runner_release_image chat "${RELEASE_ID}" "${IMAGE_PREFIX}")}"
 VERIFY_RUNNER_IMAGE="${IMAGE_PREFIX}/agentsmith-verify-runner:${RELEASE_ID}"
 SANDBOX_MANAGER_IMAGE="${IMAGE_PREFIX}/sandbox-manager:${RELEASE_ID}"
-UNIVERSAL_PROXY_IMAGE="${IMAGE_PREFIX}/llm-universal-proxy:${RELEASE_ID}"
+UNIVERSAL_PROXY_IMAGE="${UNIVERSAL_PROXY_IMAGE:-${IMAGE_PREFIX}/llm-universal-proxy:${LLMUP_VERSION}}"
 
 APP_NODE_BASE_IMAGE="$(resolve_base_image_ref APP_NODE_BASE_IMAGE app_node_base_image)"
 APP_MC_IMAGE="$(resolve_base_image_ref APP_MC_IMAGE app_mc_image)"
@@ -166,8 +166,6 @@ VERIFY_PLAYWRIGHT_BASE_IMAGE="${VERIFY_PLAYWRIGHT_BASE_IMAGE:-mcr.microsoft.com/
 VERIFY_DOCKER_CLI_IMAGE="${VERIFY_DOCKER_CLI_IMAGE:-docker:28.5.1-cli}"
 SANDBOX_GO_BASE_IMAGE="${SANDBOX_GO_BASE_IMAGE:-golang:1.25-alpine}"
 SANDBOX_RUNTIME_BASE_IMAGE="${SANDBOX_RUNTIME_BASE_IMAGE:-ubuntu:22.04}"
-UNIVERSAL_PROXY_RUST_BASE_IMAGE="$(resolve_base_image_ref UNIVERSAL_PROXY_RUST_BASE_IMAGE llmup_rust_base_image)"
-UNIVERSAL_PROXY_RUNTIME_BASE_IMAGE="$(resolve_base_image_ref UNIVERSAL_PROXY_RUNTIME_BASE_IMAGE llmup_runtime_base_image)"
 
 run_build_artifact_broker_prebuild_plan() {
   local broker_cli="${ROOT_DIR}/scripts/governance/build-artifact-broker-cli.ts"
@@ -195,13 +193,9 @@ run_build_artifact_broker_prebuild_plan() {
     --release-root "${RELEASE_ROOT}" \
     --release-id "${RELEASE_ID}" \
     --app-source-dir "${APP_SOURCE_DIR}" \
-    --llmup-source-dir "${UNIVERSAL_PROXY_SOURCE_DIR}" \
     --app-image "${APP_IMAGE}" \
-    --llmup-image "${UNIVERSAL_PROXY_IMAGE}" \
     --app-base-image "${APP_NODE_BASE_IMAGE}" \
     --app-base-image "${APP_MC_IMAGE}" \
-    --llmup-base-image "${UNIVERSAL_PROXY_RUST_BASE_IMAGE}" \
-    --llmup-base-image "${UNIVERSAL_PROXY_RUNTIME_BASE_IMAGE}" \
     --plan-path "${plan_path}" || broker_exit=$?
 
   if [[ "${broker_exit}" -ne 0 ]]; then
@@ -253,14 +247,12 @@ function emitTarget(prefix, target) {
 }
 
 emitTarget('APP', readTarget('app'));
-emitTarget('LLMUP', readTarget('llmup'));
 NODE
 
   # shellcheck disable=SC1090
   source "${plan_env_path}"
 
   APP_IMAGE="${APP_RELEASE_ALIAS_REF}"
-  UNIVERSAL_PROXY_IMAGE="${LLMUP_RELEASE_ALIAS_REF}"
 }
 
 BUILD_SKIP_EXISTING_ARTIFACT_DIGEST=""
@@ -411,7 +403,6 @@ NODE
 run_build_artifact_broker_prebuild_plan
 
 APP_BUILD_DECISION="built"
-LLMUP_BUILD_DECISION="built"
 rm -f "${RELEASE_ROOT}/skip-decisions.ndjson"
 
 docker_build_local \
@@ -460,31 +451,9 @@ docker_build_local \
   -t "${SANDBOX_MANAGER_IMAGE}" \
   -f "${SANDBOX_SOURCE_DIR}/Dockerfile" \
   "${SANDBOX_SOURCE_DIR}"
-if should_reuse_content_ref_final_build \
-  "llmup" \
-  "${LLMUP_CONTENT_REF}" \
-  "${LLMUP_INPUT_DIGEST}" \
-  "${LLMUP_BASE_IMAGE_DIGEST}" \
-  "${LLMUP_CONTENT_KEY}" \
-  "${LLMUP_PRODUCER}"; then
-  LLMUP_BUILD_DECISION="reused"
-  append_build_skip_decision "llmup" "${LLMUP_INPUT_DIGEST}" "${BUILD_SKIP_EXISTING_ARTIFACT_DIGEST}"
-  log "reusing local llmup content ref for final docker build: ${LLMUP_CONTENT_REF}"
-else
-  docker_build_local \
-    --build-arg RUST_BASE_IMAGE="${UNIVERSAL_PROXY_RUST_BASE_IMAGE}" \
-    --build-arg RUNTIME_BASE_IMAGE="${UNIVERSAL_PROXY_RUNTIME_BASE_IMAGE}" \
-    --label "com.agentsmith.build.input_digest=${LLMUP_INPUT_DIGEST}" \
-    --label "com.agentsmith.build.base_image_digest=${LLMUP_BASE_IMAGE_DIGEST}" \
-    --label "com.agentsmith.build.content_key=${LLMUP_CONTENT_KEY}" \
-    --label "com.agentsmith.build.release_id=${RELEASE_ID}" \
-    --label "com.agentsmith.build.target=llmup" \
-    --label "com.agentsmith.build.producer=${LLMUP_PRODUCER}" \
-    -t "${LLMUP_CONTENT_REF}" \
-    -f "${UNIVERSAL_PROXY_SOURCE_DIR}/Dockerfile" \
-    "${UNIVERSAL_PROXY_SOURCE_DIR}"
-fi
-docker tag "${LLMUP_CONTENT_REF}" "${LLMUP_RELEASE_ALIAS_REF}"
+
+docker pull --platform linux/amd64 "${LLMUP_SOURCE_IMAGE}" >/dev/null
+docker tag "${LLMUP_SOURCE_IMAGE}" "${UNIVERSAL_PROXY_IMAGE}"
 
 cat > "${RELEASE_ROOT}/VERSION" <<EOF
 release_id=${RELEASE_ID}
@@ -497,10 +466,11 @@ agentsmith_verify_runner_image=${VERIFY_RUNNER_IMAGE}
 sandbox_manager_image=${SANDBOX_MANAGER_IMAGE}
 sandbox_manager_k8s_image=${K8S_REGISTRY_HOST}/${REGISTRY_PROJECT}/sandbox-manager:${RELEASE_ID}
 llm_universal_proxy_image=${UNIVERSAL_PROXY_IMAGE}
+llmup_version=${LLMUP_VERSION}
+llmup_source_image=${LLMUP_SOURCE_IMAGE}
+llmup_source_image_digest=${LLMUP_SOURCE_IMAGE_DIGEST}
 app_node_base_image_ref=${APP_NODE_BASE_IMAGE}
 app_mc_image_ref=${APP_MC_IMAGE}
-llmup_rust_base_image_ref=${UNIVERSAL_PROXY_RUST_BASE_IMAGE}
-llmup_runtime_base_image_ref=${UNIVERSAL_PROXY_RUNTIME_BASE_IMAGE}
 juicefs_csi_version=${JUICEFS_CSI_VERSION}
 ingress_nginx_version=${INGRESS_NGINX_VERSION}
 registry_host=${REGISTRY_HOST}
@@ -533,15 +503,10 @@ run_build_artifact_broker_manifest_gate() {
     --release-root "${RELEASE_ROOT}" \
     --release-id "${RELEASE_ID}" \
     --app-source-dir "${APP_SOURCE_DIR}" \
-    --llmup-source-dir "${UNIVERSAL_PROXY_SOURCE_DIR}" \
     --app-image "${APP_IMAGE}" \
-    --llmup-image "${UNIVERSAL_PROXY_IMAGE}" \
     --app-base-image "${APP_NODE_BASE_IMAGE}" \
     --app-base-image "${APP_MC_IMAGE}" \
-    --llmup-base-image "${UNIVERSAL_PROXY_RUST_BASE_IMAGE}" \
-    --llmup-base-image "${UNIVERSAL_PROXY_RUNTIME_BASE_IMAGE}" \
-    --target-decision "app=${APP_BUILD_DECISION}" \
-    --target-decision "llmup=${LLMUP_BUILD_DECISION}" || broker_exit=$?
+    --target-decision "app=${APP_BUILD_DECISION}" || broker_exit=$?
 
   if [[ "${broker_exit}" -ne 0 ]]; then
     die "build artifact broker manifest gate failed with exit ${broker_exit}; see ${report_path}"

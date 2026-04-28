@@ -196,27 +196,12 @@ const APP_IMAGE_ROOT_FILES = new Set([
   'tsconfig.json',
   'components.json',
 ]);
-const LLMUP_RUNTIME_ROOT_FILES = new Set([
-  'Cargo.toml',
-  'Cargo.lock',
-  'rust-toolchain',
-  'rust-toolchain.toml',
-  'Dockerfile',
-]);
 
 export function computeAppImageContentKey(args: ComputeContentKeyArgs): BuildArtifactContentKeyResult {
   return computeContentKey({
     ...args,
     target: 'app',
     fileSelector: isAppImageInputPath,
-  });
-}
-
-export function computeLlmupRuntimeContentKey(args: ComputeContentKeyArgs): BuildArtifactContentKeyResult {
-  return computeContentKey({
-    ...args,
-    target: 'llmup',
-    fileSelector: isLlmupRuntimeInputPath,
   });
 }
 
@@ -509,10 +494,6 @@ function isAppImageInputPath(path: string): boolean {
     || path.startsWith('assets/')
     || path.startsWith('scripts/')
     || path.startsWith('infra/');
-}
-
-function isLlmupRuntimeInputPath(path: string): boolean {
-  return LLMUP_RUNTIME_ROOT_FILES.has(path) || path.startsWith('src/');
 }
 
 function normalizeInputPath(path: string): string {

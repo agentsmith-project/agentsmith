@@ -321,8 +321,23 @@ Site-specific operator config may override these values, but the tracked preset 
 - `VERIFY_DOCKER_CLI_IMAGE`
 - `SANDBOX_GO_BASE_IMAGE`
 - `SANDBOX_RUNTIME_BASE_IMAGE`
-- `UNIVERSAL_PROXY_RUST_BASE_IMAGE`
-- `UNIVERSAL_PROXY_RUNTIME_BASE_IMAGE`
+
+llmup is an external GHCR image dependency. The default release truth is tracked in:
+
+- `infra/deploy/shared/llmup-image.lock`
+
+The lock records:
+
+- `llmup_version`
+- `llmup_source_image` as a pinned `image:tag@sha256:<digest>` ref
+
+`build-images.sh` and `build-offline-bundle.sh` write the resolved external image truth to `VERSION`:
+
+- `llmup_version`
+- `llmup_source_image`
+- `llmup_source_image_digest`
+
+Operators may explicitly override `LLMUP_VERSION` and `LLMUP_SOURCE_IMAGE`, but the source image must stay pinned by `@sha256` and its tag must match `LLMUP_VERSION`.
 
 The target host does not build images.
 It only loads the offline bundle, pushes bundled registry-tagged images, and deploys the application and manager.

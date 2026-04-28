@@ -12,7 +12,6 @@ import {
   buildBuildManifestAggregate,
   buildBuildManifestTarget,
   computeAppImageContentKey,
-  computeLlmupRuntimeContentKey,
   parseLockedImageRef,
   validateBuildManifestAggregate,
   validateReleaseIdTruth,
@@ -46,11 +45,8 @@ interface BuildArtifactBrokerCliConfig {
   releaseRoot: string;
   releaseId?: string;
   appSourceDir: string;
-  llmupSourceDir: string;
   appImage?: string;
-  llmupImage?: string;
   appBaseImages: readonly string[];
-  llmupBaseImages: readonly string[];
   mode: CurrentBuildManifestMode;
   artifactKind: BuildArtifactBrokerArtifactKind;
   targetDecisions: Readonly<Partial<Record<CurrentBuildArtifactTarget, CurrentBuildManifestTargetDecision>>>;
@@ -199,11 +195,7 @@ function writeBuildArtifactBrokerArtifact(
 
   const diagnostics: BuildArtifactBrokerDiagnostic[] = [];
   const appImage = config.appImage ?? versionValues.get('agentsmith_app_image');
-  const llmupImage = config.llmupImage ?? versionValues.get('llm_universal_proxy_image');
   const appFiles = scanSourceOrDiagnostic('app', config.appSourceDir, diagnostics);
-  const llmupFiles = scanSourceOrDiagnostic('llmup', config.llmupSourceDir, diagnostics);
-
-  appendLlmupRuntimeKeyModelDiagnostics(config.llmupSourceDir, diagnostics);
 
   if (!appImage) {
     diagnostics.push({
@@ -213,20 +205,11 @@ function writeBuildArtifactBrokerArtifact(
       message: 'agentsmith app image ref is required.',
     });
   }
-  if (!llmupImage) {
-    diagnostics.push({
-      target: 'llmup',
-      reason_code: 'missing_image_ref',
-      path: 'VERSION.llm_universal_proxy_image',
-      message: 'llm universal proxy image ref is required.',
-    });
-  }
 
   validateBaseImageLocks('app', config.appBaseImages, diagnostics);
-  validateBaseImageLocks('llmup', config.llmupBaseImages, diagnostics);
 
   if (config.artifactKind === 'prebuild_plan') {
-    if (diagnostics.length > 0 || !appImage || !llmupImage) {
+    if (diagnostics.length > 0 || !appImage) {
       return writeDiagnosticReport(context, releaseId, diagnostics, 1);
     }
 
@@ -234,11 +217,6 @@ function writeBuildArtifactBrokerArtifact(
       files: appFiles,
       env,
       baseImages: config.appBaseImages,
-    });
-    const llmupContentKey = computeLlmupRuntimeContentKey({
-      files: llmupFiles,
-      env,
-      baseImages: config.llmupBaseImages,
     });
     const plan = buildBuildPrebuildPlanAggregate({
       runId,
@@ -253,14 +231,6 @@ function writeBuildArtifactBrokerArtifact(
           releaseId,
           imageName: imageRepositoryFromRef(appImage),
           contentKey: appContentKey,
-          producer,
-          generatedAt,
-        }),
-        buildBuildPrebuildPlanTarget({
-          target: 'llmup',
-          releaseId,
-          imageName: imageRepositoryFromRef(llmupImage),
-          contentKey: llmupContentKey,
           producer,
           generatedAt,
         }),
@@ -279,7 +249,6 @@ function writeBuildArtifactBrokerArtifact(
   }
 
   const appImageDigest = appImage ? probeImageDigest(appImage, env) : undefined;
-  const llmupImageDigest = llmupImage ? probeImageDigest(llmupImage, env) : undefined;
 
   if (appImageDigest && !appImageDigest.ok) {
     diagnostics.push({
@@ -289,16 +258,8 @@ function writeBuildArtifactBrokerArtifact(
       message: appImageDigest.reason,
     });
   }
-  if (llmupImageDigest && !llmupImageDigest.ok) {
-    diagnostics.push({
-      target: 'llmup',
-      reason_code: 'missing_image_digest',
-      path: `image:${llmupImage}`,
-      message: llmupImageDigest.reason,
-    });
-  }
 
-  if (diagnostics.length > 0 || !appImage || !llmupImage || !appImageDigest?.ok || !llmupImageDigest?.ok) {
+  if (diagnostics.length > 0 || !appImage || !appImageDigest?.ok) {
     return writeDiagnosticReport(context, releaseId, diagnostics, 1);
   }
 
@@ -306,11 +267,6 @@ function writeBuildArtifactBrokerArtifact(
     files: appFiles,
     env,
     baseImages: config.appBaseImages,
-  });
-  const llmupContentKey = computeLlmupRuntimeContentKey({
-    files: llmupFiles,
-    env,
-    baseImages: config.llmupBaseImages,
   });
   const targets = [
     buildBuildManifestTarget({
@@ -320,16 +276,6 @@ function writeBuildArtifactBrokerArtifact(
       contentKey: appContentKey,
       imageDigest: appImageDigest.digest,
       decision: config.targetDecisions.app ?? 'built',
-      producer,
-      generatedAt,
-    }),
-    buildBuildManifestTarget({
-      target: 'llmup',
-      releaseId,
-      imageName: imageRepositoryFromRef(llmupImage),
-      contentKey: llmupContentKey,
-      imageDigest: llmupImageDigest.digest,
-      decision: config.targetDecisions.llmup ?? 'built',
       producer,
       generatedAt,
     }),
@@ -373,11 +319,8 @@ function parseCliConfig(argv: readonly string[]): BuildArtifactBrokerCliConfig {
     releaseRoot?: string;
     releaseId?: string;
     appSourceDir?: string;
-    llmupSourceDir?: string;
     appImage?: string;
-    llmupImage?: string;
     appBaseImages: string[];
-    llmupBaseImages: string[];
     mode?: string;
     artifactKind?: string;
     targetDecisions: string[];
@@ -386,7 +329,6 @@ function parseCliConfig(argv: readonly string[]): BuildArtifactBrokerCliConfig {
     reportPath?: string;
   } = {
     appBaseImages: [],
-    llmupBaseImages: [],
     targetDecisions: [],
   };
 
@@ -406,24 +348,12 @@ function parseCliConfig(argv: readonly string[]): BuildArtifactBrokerCliConfig {
         rawConfig.appSourceDir = requireArgValue(argv, index);
         index += 1;
         break;
-      case '--llmup-source-dir':
-        rawConfig.llmupSourceDir = requireArgValue(argv, index);
-        index += 1;
-        break;
       case '--app-image':
         rawConfig.appImage = requireArgValue(argv, index);
         index += 1;
         break;
-      case '--llmup-image':
-        rawConfig.llmupImage = requireArgValue(argv, index);
-        index += 1;
-        break;
       case '--app-base-image':
         rawConfig.appBaseImages.push(requireArgValue(argv, index));
-        index += 1;
-        break;
-      case '--llmup-base-image':
-        rawConfig.llmupBaseImages.push(requireArgValue(argv, index));
         index += 1;
         break;
       case '--mode':
@@ -473,11 +403,8 @@ function parseCliConfig(argv: readonly string[]): BuildArtifactBrokerCliConfig {
     releaseRoot,
     releaseId: rawConfig.releaseId,
     appSourceDir: path.resolve(rawConfig.appSourceDir ?? path.join(releaseRoot, 'sources', 'agentsmith')),
-    llmupSourceDir: path.resolve(rawConfig.llmupSourceDir ?? path.join(releaseRoot, 'sources', 'llm-universal-proxy')),
     appImage: rawConfig.appImage,
-    llmupImage: rawConfig.llmupImage,
     appBaseImages: rawConfig.appBaseImages,
-    llmupBaseImages: rawConfig.llmupBaseImages,
     mode: mode as CurrentBuildManifestMode,
     artifactKind: artifactKind === 'prebuild-plan' ? 'prebuild_plan' : 'manifest',
     targetDecisions: parseTargetDecisions(rawConfig.targetDecisions),
@@ -617,50 +544,6 @@ function validateBaseImageLocks(
       });
     }
   }
-}
-
-function appendLlmupRuntimeKeyModelDiagnostics(
-  llmupSourceDir: string,
-  diagnostics: BuildArtifactBrokerDiagnostic[],
-): void {
-  const dockerfilePath = path.join(llmupSourceDir, 'Dockerfile');
-
-  if (!existsSync(dockerfilePath)) {
-    return;
-  }
-
-  const dockerfileContent = readFileSync(dockerfilePath, 'utf8');
-  const copyTestsLine = findDockerfileCopyTestsLine(dockerfileContent);
-
-  if (!copyTestsLine) {
-    return;
-  }
-
-  diagnostics.push({
-    target: 'llmup',
-    reason_code: 'llmup_runtime_tests_copy_present',
-    path: `${dockerfilePath}:${copyTestsLine.lineNumber}`,
-    message: 'llmup Dockerfile copies tests, but the current llmup runtime key model excludes tests.',
-  });
-}
-
-function findDockerfileCopyTestsLine(content: string): { lineNumber: number } | null {
-  const lines = content.split(/\r?\n/u);
-
-  for (const [index, rawLine] of lines.entries()) {
-    const line = rawLine.trim();
-
-    if (line === '' || line.startsWith('#')) {
-      continue;
-    }
-    if (/^COPY\s+(?:--\S+\s+)*(?:"tests"|'tests'|tests)(?:\s|\/|$)/iu.test(line)) {
-      return {
-        lineNumber: index + 1,
-      };
-    }
-  }
-
-  return null;
 }
 
 function probeImageDigest(imageRef: string, env: NodeJS.ProcessEnv): ImageDigestProbeResult {

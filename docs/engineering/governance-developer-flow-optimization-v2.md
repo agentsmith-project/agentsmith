@@ -99,7 +99,7 @@ v2 的目标是：在不降低治理能力的前提下，大幅降低开发、�
 | 场景 | v1 / 当前痛点 | v2 目标 |
 | --- | --- | --- |
 | 基础配置错误 | 常在长时间 build/e2e 后才暴露 | 1-2 分钟内由 sentinel preflight 失败快停 |
-| 同源码重复 rehearsal | 仍可能重建 app/llmup、全量 save/load/push/import | 内容键命中后跳过昂贵构建和镜像搬运 |
+| 同源码重复 rehearsal | 仍可能重建 app、重复搬运 llmup 镜像、全量 save/load/push/import | 内容键和外部镜像版本命中后跳过昂贵构建和镜像搬运 |
 | backend-real 多 spec | 多次启动 deps/API/Web/Keycloak | 同一 real session 内按 shard 执行 |
 | 失败恢复 | 用户不知道该重跑哪条命令 | status projection 给出 primary blocker 和 safe next action |
 | release 证据 | 不能降低可信度 | 保持 campaign-scoped evidence 和 terminal aggregate |
@@ -308,10 +308,9 @@ pure check reuse 在 P1a 只进入 shadow 闭环，推荐同时保留两类记�
 核心模型：
 
 ```text
-agentsmith-app:ck-<app_image_key>          # 内容键镜像
-agentsmith-app:release-<release_id>        # release alias，只做 retag
-llm-universal-proxy:ck-<llmup_key>
-llm-universal-proxy:release-<release_id>
+agentsmith-app:ck-<app_image_key>                # 内容键镜像
+agentsmith-app:release-<release_id>              # release alias，只做 retag
+llm-universal-proxy:<llmup_version>@sha256:<...> # 外部 GHCR image lock，只做 pull/tag/归档
 ```
 
 release id 的权威来源必须收敛：当 `RELEASE_ROOT/VERSION` 存在时，`VERSION.release_id` 是 release id 真相；显式 override 必须写入状态和证据，并校验 `state.release.id == VERSION.release_id`。`RELEASE_ID` 可以作为环境变量承载该真相，但不能在脚本内部静默生成一个与 bundle 不一致的新 id。
@@ -326,13 +325,13 @@ release id 的权威来源必须收敛：当 `RELEASE_ROOT/VERSION` 存在时，
 | app image | app deps key、Dockerfile final image `COPY` closure（src/public/messages/packages/assets/scripts/infra/config、components.json）、Next/Tailwind/PostCSS/TS config、build-time `NEXT_PUBLIC_*`、runtime direct `COPY`/`ARG`/base digest、infra/vendor/juicefs、`JUICEFS_VERSION`、runtime node/MC image digest |
 | runner base | platform、node base digest、runner base Dockerfile、package-lock、runner package manifests、Codex/JuiceFS versions |
 | runner image | runner base key、runner src、chat/notebook runner src、builtin skills |
-| llmup | Cargo.toml、Cargo.lock、rust-toolchain、src、release profile、Rust/runtime base digests |
+| llmup external image | `llmup_version`、`llmup_source_image`、`llmup_source_image_digest`、镜像归档/搬运证据；不作为 AgentSmith-owned content-key target |
 | sandbox | manager-service tree、Dockerfile、go.mod/go.sum、base image digests |
 | verify image | test deps、Playwright version、e2e config、scripts needed by verification |
 
 app image key 必须覆盖 Dockerfile final runtime image 的内容闭包；不能只按“build 会用到的 scripts”计算。任何直接进入最终镜像或改变最终镜像内容的 `COPY`、`ARG`、base/runtime digest 都必须进入 key。
 
-llmup 的 runtime image key 不应包含 `tests/`，除非构建的是 test image。这样改测试不会重建 release runtime image。若当前 Dockerfile 仍 `COPY tests`，必须先拆 runtime target 和 test target，或从 runtime Dockerfile 移除 tests，再启用该验收。
+llmup 由 llmup 团队维护的 GHCR image 发布；AgentSmith 发布链路只记录和搬运指定版本，不再计算 Cargo/runtime content key，也不再构建 llmup Dockerfile。
 
 ### 8.2.1 `build-manifest.json`
 
@@ -355,7 +354,7 @@ Aggregate fields 至少记录：
 
 | 字段 | 说明 |
 | --- | --- |
-| target | P2 第一切片 current schema 先覆盖 app / llmup；完整 P2 后续扩展到 runner / sandbox / verify |
+| target | P2 第一切片 current schema 先覆盖 app；llmup 作为外部镜像版本真相记录在 VERSION、image archive 和 operational skip 证据中 |
 | content_ref | `ck-*` 内容键镜像 ref |
 | release_alias_ref | `release-*` alias ref |
 | image_digest | 本地构建或远端 registry digest |
@@ -403,11 +402,11 @@ Aggregate fields 至少记录：
 ### 8.5 Broker 验收
 
 1. 同源码第二次 demo/cluster rehearsal 不触发 Next build。
-2. 同源码第二次不触发 llmup Cargo release build。
+2. 同 llmup 版本第二次不触发 llmup 构建，只复用已记录的外部 image 搬运/归档证据。
 3. 同源码第二次不触发 docker save/load/push/kind import。
 4. 改 chat runner 只重建相关 runner image。
-5. 改 llmup `src` 只重建 llmup。
-6. 改 llmup `tests` 不重建 runtime image。
+5. 改 llmup 版本只更新 `llmup_version` / `llmup_source_image` / `llmup_source_image_digest` 和对应镜像搬运/归档。
+6. llmup 源码变更不在 AgentSmith 发布链路内触发自建。
 7. `offline-package` 仍能强制验证离线包完整性。
 
 ## 9. Real Session Runner
@@ -863,11 +862,11 @@ current manifests 已经表达了部分依赖关系，但实际执行仍偏串�
 7. kind containerd digest probe。
 8. BuildKit cache mount。
 9. `build-manifest.json`。
-10. llmup runtime/test Docker target 拆分或移除 runtime `tests` copy。
+10. llmup external image version/source/digest truth 写入 VERSION，并保留 image archive/搬运证据。
 
 验收：
 
-1. 同源码第二次 rehearsal 不触发 app/llmup build。
+1. 同源码第二次 rehearsal 不触发 app build；同 llmup 版本不触发 llmup build。
 2. 同源码第二次不做全量 image import。
 3. 改不同 target 只重建受影响镜像。
 4. skip decisions 可审计，但不满足 gate evidence。
@@ -945,7 +944,7 @@ v2 实施必须继续 TDD。建议按层补测试：
 | --- | --- |
 | Planner | fixture diff -> affected stories / required levels / selected jobs |
 | Claim Store | valid/invalid claim、digest mismatch、secret profile mismatch、scope mismatch |
-| Build Broker | content key、retag、skip decisions、llmup tests 不影响 runtime key |
+| Build Broker | app content key、retag、skip decisions、llmup external image version/source/digest truth |
 | Session Runner | current coverage mapping、wrapper invocation count、shard evidence、failure bundle、state pollution sentinel |
 | Rehearsal Manager | mode/reset matrix、world reuse fail-closed、stage events |
 | Operator Projection | passed/stale/running/blocked/evidence_missing fixture -> primary blocker / next action |
@@ -1039,7 +1038,7 @@ v2 实施必须继续 TDD。建议按层补测试：
 9. shadow would-reuse audit summary。
 10. build content key calculator。
 11. `VERSION.release_id` truth and base image digest lock。
-12. app/llmup image content tag + release alias。
+12. app image content tag + release alias，llmup external image version/source/digest truth。
 13. docker/registry/kind digest probes。
 14. current gate/spec/grep coverage mapping。
 15. mock shared session。
@@ -1083,7 +1082,7 @@ v2 不能只看脚本通过。完成必须满足：
 
 1. 完整 P0：clean entrypoints/help/docs、`verify --run` CLI contract、status projection、stage timing、sentinel preflight、minimal lease/status shadow。
 2. P1a stable check identity + pure check evidence claim runtime shadow closure；P1b reuse enablement 单独评审。
-3. P2 app/llmup 内容键镜像、VERSION truth、digest skip。
+3. P2 app 内容键镜像、llmup external image version/source/digest truth、VERSION truth、digest skip。
 4. P3 current coverage mapping + backend-real session runner 的最小 shard 化。
 
 这四项风险最低、收益最高，并且不会影响 release verdict 权威边界。后续再进入 rehearsal mode、world manager、executing DAG scheduler。

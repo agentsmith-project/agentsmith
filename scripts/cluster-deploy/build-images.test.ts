@@ -10,10 +10,9 @@ import { validateBuildSkipDecision } from '../governance/build-artifact-broker';
 const repoRoot = process.cwd();
 const APP_BASE_DIGEST = `sha256:${'a'.repeat(64)}`;
 const APP_MC_DIGEST = `sha256:${'f'.repeat(64)}`;
-const LLMUP_RUST_BASE_DIGEST = `sha256:${'b'.repeat(64)}`;
-const LLMUP_RUNTIME_BASE_DIGEST = `sha256:${'c'.repeat(64)}`;
 const APP_IMAGE_DIGEST = `sha256:${'d'.repeat(64)}`;
-const LLMUP_IMAGE_DIGEST = `sha256:${'e'.repeat(64)}`;
+const LLMUP_DIGEST = 'sha256:81c277bcbdbec4645b3e4edce5efa4d1b2253539214ba944f0712798c9a28f22';
+const LLMUP_SOURCE_IMAGE = `ghcr.io/agentsmith-project/llm-universal-proxy:v0.2.23@${LLMUP_DIGEST}`;
 
 function writeFile(filePath: string, content: string): void {
   mkdirSync(path.dirname(filePath), { recursive: true });
@@ -34,8 +33,6 @@ function writeBuildBaseImagesLock(
   entries: Readonly<Record<string, string>> = {
     app_node_base_image: `node:24.14.1-bookworm@${APP_BASE_DIGEST}`,
     app_mc_image: `minio/mc:RELEASE.2025-08-13T08-35-41Z@${APP_MC_DIGEST}`,
-    llmup_rust_base_image: `rust:1.88-bookworm@${LLMUP_RUST_BASE_DIGEST}`,
-    llmup_runtime_base_image: `debian:bookworm-slim@${LLMUP_RUNTIME_BASE_DIGEST}`,
   },
 ): void {
   writeRawBuildBaseImagesLock(
@@ -48,12 +45,27 @@ function writeBuildBaseImagesLock(
   );
 }
 
+function writeLlmupImageLock(tempRoot: string): void {
+  writeFile(
+    path.join(tempRoot, 'infra', 'deploy', 'shared', 'llmup-image.lock'),
+    [
+      '# AgentSmith llmup external image lock.',
+      '# Format: llmup_version=<version> and llmup_source_image=<image:tag@sha256:digest>',
+      'llmup_version=v0.2.23',
+      `llmup_source_image=${LLMUP_SOURCE_IMAGE}`,
+      '',
+    ].join('\n'),
+  );
+}
+
 function stageBuildImagesFixture(tempRoot: string): void {
   copyFileToFixture('scripts/cluster-deploy/build-images.sh', tempRoot);
   copyFileToFixture('scripts/governance/build-artifact-broker.ts', tempRoot);
   copyFileToFixture('scripts/governance/build-artifact-broker-cli.ts', tempRoot);
   copyFileToFixture('scripts/governance/current-build-artifact-broker-schema.ts', tempRoot);
+  copyFileToFixture('scripts/lib/llmup-image-lock.sh', tempRoot);
   writeBuildBaseImagesLock(tempRoot);
+  writeLlmupImageLock(tempRoot);
 
   writeFile(
     path.join(tempRoot, 'scripts', 'cluster-deploy', 'lib.sh'),
@@ -120,10 +132,6 @@ build_runner_image() {
     ),
     'FROM playwright\n',
   );
-  writeFile(path.join(tempRoot, 'release', 'sources', 'llm-universal-proxy', 'Cargo.toml'), '[package]\n');
-  writeFile(path.join(tempRoot, 'release', 'sources', 'llm-universal-proxy', 'Cargo.lock'), '# lock\n');
-  writeFile(path.join(tempRoot, 'release', 'sources', 'llm-universal-proxy', 'src', 'main.rs'), 'fn main() {}\n');
-  writeFile(path.join(tempRoot, 'release', 'sources', 'llm-universal-proxy', 'Dockerfile'), 'FROM rust\n');
   writeFile(path.join(tempRoot, 'release', 'sources', 'mbos-sandbox-v1', 'manager-service', 'Dockerfile'), 'FROM golang\n');
 
   writeExecutable(
@@ -135,7 +143,6 @@ if [[ "\${1:-}" == "image" && "\${2:-}" == "inspect" ]]; then
   image="\${@: -1}"
   case "\${image}" in
     *agentsmith-app*) printf '%s\\n' '${APP_IMAGE_DIGEST}' ;;
-    *llm-universal-proxy*) printf '%s\\n' '${LLMUP_IMAGE_DIGEST}' ;;
     *) exit 0 ;;
   esac
   exit 0
@@ -163,7 +170,6 @@ if [[ "\${1:-}" == "image" && "\${2:-}" == "inspect" ]]; then
   digest=""
   case "\${image}" in
     *agentsmith-app*) target="app"; digest="${APP_IMAGE_DIGEST}" ;;
-    *llm-universal-proxy*) target="llmup"; digest="${LLMUP_IMAGE_DIGEST}" ;;
     *) exit 0 ;;
   esac
 
@@ -267,7 +273,43 @@ function readNdjson(filePath: string): unknown[] {
 }
 
 describe('cluster build-images build artifact broker integration', () => {
-  it('builds app and llmup final images with content tags, labels them, and writes release aliases to VERSION', () => {
+  it('uses the external llmup image when no bundled llmup source directory exists', () => {
+    const tempRoot = mkdtempSync(path.join(os.tmpdir(), 'cluster-build-images-external-llmup-'));
+
+    try {
+      stageBuildImagesFixture(tempRoot);
+      rmSync(path.join(tempRoot, 'release', 'sources', 'llm-universal-proxy'), { recursive: true, force: true });
+
+      runBuildImages(tempRoot, { RELEASE_ID: 'test-release' });
+
+      const releaseRoot = path.join(tempRoot, 'release');
+      const plan = readJson(path.join(releaseRoot, 'build-artifact-broker-plan.json')) as {
+        targets: Array<{ target: string }>;
+      };
+      const manifest = readJson(path.join(releaseRoot, 'build-manifest.json')) as {
+        targets: Array<{ target: string }>;
+      };
+      const versionContent = readFileSync(path.join(releaseRoot, 'VERSION'), 'utf8');
+      const dockerLog = readFileSync(path.join(releaseRoot, 'build-images-docker.log'), 'utf8');
+
+      expect(plan.targets.map((target) => target.target)).toEqual(['app']);
+      expect(manifest.targets.map((target) => target.target)).toEqual(['app']);
+      expect(versionContent).toContain('llmup_version=v0.2.23');
+      expect(versionContent).toContain(`llmup_source_image=${LLMUP_SOURCE_IMAGE}`);
+      expect(versionContent).toContain(`llmup_source_image_digest=${LLMUP_DIGEST}`);
+      expect(versionContent).toContain(
+        'llm_universal_proxy_image=localhost:5001/mbos/llm-universal-proxy:v0.2.23',
+      );
+      expect(dockerLog).toContain(`docker pull --platform linux/amd64 ${LLMUP_SOURCE_IMAGE}`);
+      expect(dockerLog).toContain(`docker tag ${LLMUP_SOURCE_IMAGE} localhost:5001/mbos/llm-universal-proxy:v0.2.23`);
+      expect(dockerLog).not.toContain('--label com.agentsmith.build.target=llmup');
+      expect(dockerLog).not.toContain('release/sources/llm-universal-proxy');
+    } finally {
+      rmSync(tempRoot, { recursive: true, force: true });
+    }
+  });
+
+  it('builds the app final image with a content tag and writes the external llmup image truth to VERSION', () => {
     const tempRoot = mkdtempSync(path.join(os.tmpdir(), 'cluster-build-images-content-tags-'));
 
     try {
@@ -287,29 +329,24 @@ describe('cluster build-images build artifact broker integration', () => {
         }>;
       };
       const appTarget = plan.targets.find((target) => target.target === 'app');
-      const llmupTarget = plan.targets.find((target) => target.target === 'llmup');
 
       expect(appTarget).toBeDefined();
-      expect(llmupTarget).toBeDefined();
+      expect(plan.targets.map((target) => target.target)).toEqual(['app']);
       expect(appTarget?.content_ref).toMatch(/^localhost:5001\/mbos\/agentsmith-app:ck-[a-f0-9]{32}$/u);
       expect(appTarget?.release_alias_ref).toBe('localhost:5001/mbos/agentsmith-app:release-test-release');
-      expect(llmupTarget?.content_ref).toMatch(
-        /^localhost:5001\/mbos\/llm-universal-proxy:ck-[a-f0-9]{32}$/u,
-      );
-      expect(llmupTarget?.release_alias_ref).toBe(
-        'localhost:5001/mbos/llm-universal-proxy:release-test-release',
-      );
 
       const versionContent = readFileSync(path.join(releaseRoot, 'VERSION'), 'utf8');
       const dockerLog = readFileSync(path.join(releaseRoot, 'build-images-docker.log'), 'utf8');
 
       expect(versionContent).toContain('release_id=test-release');
       expect(versionContent).toContain(`agentsmith_app_image=${appTarget?.release_alias_ref}`);
-      expect(versionContent).toContain(`llm_universal_proxy_image=${llmupTarget?.release_alias_ref}`);
-      expect(versionContent).not.toContain('agentsmith_app_image=localhost:5001/mbos/agentsmith-app:test-release');
-      expect(versionContent).not.toContain(
-        'llm_universal_proxy_image=localhost:5001/mbos/llm-universal-proxy:test-release',
+      expect(versionContent).toContain('llmup_version=v0.2.23');
+      expect(versionContent).toContain(`llmup_source_image=${LLMUP_SOURCE_IMAGE}`);
+      expect(versionContent).toContain(`llmup_source_image_digest=${LLMUP_DIGEST}`);
+      expect(versionContent).toContain(
+        'llm_universal_proxy_image=localhost:5001/mbos/llm-universal-proxy:v0.2.23',
       );
+      expect(versionContent).not.toContain('agentsmith_app_image=localhost:5001/mbos/agentsmith-app:test-release');
 
       expect(dockerLog).toContain(`-t ${appTarget?.content_ref}`);
       expect(dockerLog).toContain(`docker tag ${appTarget?.content_ref} ${appTarget?.release_alias_ref}`);
@@ -319,14 +356,9 @@ describe('cluster build-images build artifact broker integration', () => {
       expect(dockerLog).toContain('--label com.agentsmith.build.release_id=test-release');
       expect(dockerLog).toContain('--label com.agentsmith.build.target=app');
       expect(dockerLog).toContain('--label com.agentsmith.build.producer=build-artifact-broker');
-
-      expect(dockerLog).toContain(`-t ${llmupTarget?.content_ref}`);
-      expect(dockerLog).toContain(`docker tag ${llmupTarget?.content_ref} ${llmupTarget?.release_alias_ref}`);
-      expect(dockerLog).toContain(`--label com.agentsmith.build.input_digest=${llmupTarget?.input_digest}`);
-      expect(dockerLog).toContain(`--label com.agentsmith.build.base_image_digest=${llmupTarget?.base_image_digest}`);
-      expect(dockerLog).toContain(`--label com.agentsmith.build.content_key=${llmupTarget?.content_key}`);
-      expect(dockerLog).toContain('--label com.agentsmith.build.target=llmup');
-      expect(dockerLog).toContain('--label com.agentsmith.build.producer=build-artifact-broker');
+      expect(dockerLog).toContain(`docker pull --platform linux/amd64 ${LLMUP_SOURCE_IMAGE}`);
+      expect(dockerLog).toContain(`docker tag ${LLMUP_SOURCE_IMAGE} localhost:5001/mbos/llm-universal-proxy:v0.2.23`);
+      expect(dockerLog).not.toContain('--label com.agentsmith.build.target=llmup');
 
       expect(existsSync(path.join(releaseRoot, 'build-manifest.json'))).toBe(true);
       expect(existsSync(path.join(releaseRoot, 'build-artifact-broker-report.json'))).toBe(false);
@@ -335,7 +367,7 @@ describe('cluster build-images build artifact broker integration', () => {
     }
   });
 
-  it('reuses local content refs for app and llmup final docker builds when required labels and digests match', () => {
+  it('reuses the local app content ref when required labels and digests match', () => {
     const tempRoot = mkdtempSync(path.join(os.tmpdir(), 'cluster-build-images-content-ref-skip-'));
 
     try {
@@ -359,16 +391,15 @@ describe('cluster build-images build artifact broker integration', () => {
       const dockerLog = readFileSync(path.join(releaseRoot, 'build-images-docker.log'), 'utf8');
       const dockerLogLines = dockerLog.split(/\n/u);
       const appTarget = plan.targets.find((target) => target.target === 'app');
-      const llmupTarget = plan.targets.find((target) => target.target === 'llmup');
 
       expect(appTarget).toBeDefined();
-      expect(llmupTarget).toBeDefined();
+      expect(plan.targets.map((target) => target.target)).toEqual(['app']);
       expect(dockerLogLines.some((line) => line.includes('docker_build_local') && line.includes(`-t ${appTarget?.content_ref}`)))
         .toBe(false);
-      expect(dockerLogLines.some((line) => line.includes('docker_build_local') && line.includes(`-t ${llmupTarget?.content_ref}`)))
-        .toBe(false);
       expect(dockerLog).toContain(`docker tag ${appTarget?.content_ref} ${appTarget?.release_alias_ref}`);
-      expect(dockerLog).toContain(`docker tag ${llmupTarget?.content_ref} ${llmupTarget?.release_alias_ref}`);
+      expect(dockerLog).toContain(
+        `docker tag ${LLMUP_SOURCE_IMAGE} localhost:5001/mbos/llm-universal-proxy:v0.2.23`,
+      );
 
       const skipDecisions = readNdjson(path.join(releaseRoot, 'skip-decisions.ndjson')) as Array<{
         target: string;
@@ -387,7 +418,7 @@ describe('cluster build-images build artifact broker integration', () => {
         manifest.targets.map((target) => [target.target, target.decision]),
       );
 
-      expect(skipDecisions).toHaveLength(2);
+      expect(skipDecisions).toHaveLength(1);
       for (const decision of skipDecisions) {
         expect(validateBuildSkipDecision(decision).ok).toBe(true);
         expect(decision.operation).toBe('docker_build');
@@ -402,20 +433,15 @@ describe('cluster build-images build artifact broker integration', () => {
         input_digest: appTarget?.input_digest,
         existing_artifact_digest: APP_IMAGE_DIGEST,
       });
-      expect(decisionsByTarget.llmup).toMatchObject({
-        input_digest: llmupTarget?.input_digest,
-        existing_artifact_digest: LLMUP_IMAGE_DIGEST,
-      });
       expect(manifestDecisionsByTarget).toMatchObject({
         app: 'reused',
-        llmup: 'reused',
       });
     } finally {
       rmSync(tempRoot, { recursive: true, force: true });
     }
   });
 
-  it('forces app and llmup final docker builds and does not write docker_build skip decisions when FORCE_REBUILD is set', () => {
+  it('forces the app final docker build and does not write docker_build skip decisions when FORCE_REBUILD is set', () => {
     const tempRoot = mkdtempSync(path.join(os.tmpdir(), 'cluster-build-images-force-rebuild-'));
 
     try {
@@ -433,19 +459,15 @@ describe('cluster build-images build artifact broker integration', () => {
       };
       const dockerLogLines = readFileSync(path.join(releaseRoot, 'build-images-docker.log'), 'utf8').split(/\n/u);
       const appTarget = plan.targets.find((target) => target.target === 'app');
-      const llmupTarget = plan.targets.find((target) => target.target === 'llmup');
       const manifestDecisionsByTarget = Object.fromEntries(
         manifest.targets.map((target) => [target.target, target.decision]),
       );
 
       expect(dockerLogLines.some((line) => line.includes('docker_build_local') && line.includes(`-t ${appTarget?.content_ref}`)))
         .toBe(true);
-      expect(dockerLogLines.some((line) => line.includes('docker_build_local') && line.includes(`-t ${llmupTarget?.content_ref}`)))
-        .toBe(true);
       expect(existsSync(path.join(releaseRoot, 'skip-decisions.ndjson'))).toBe(false);
       expect(manifestDecisionsByTarget).toMatchObject({
         app: 'built',
-        llmup: 'built',
       });
     } finally {
       rmSync(tempRoot, { recursive: true, force: true });
@@ -470,27 +492,23 @@ describe('cluster build-images build artifact broker integration', () => {
       };
       const dockerLogLines = readFileSync(path.join(releaseRoot, 'build-images-docker.log'), 'utf8').split(/\n/u);
       const appTarget = plan.targets.find((target) => target.target === 'app');
-      const llmupTarget = plan.targets.find((target) => target.target === 'llmup');
       const manifestDecisionsByTarget = Object.fromEntries(
         manifest.targets.map((target) => [target.target, target.decision]),
       );
 
       expect(dockerLogLines.some((line) => line.includes('docker_build_local') && line.includes(`-t ${appTarget?.content_ref}`)))
         .toBe(true);
-      expect(dockerLogLines.some((line) => line.includes('docker_build_local') && line.includes(`-t ${llmupTarget?.content_ref}`)))
-        .toBe(true);
       expect(existsSync(path.join(releaseRoot, 'skip-decisions.ndjson'))).toBe(false);
       expect(manifestDecisionsByTarget).toMatchObject({
         app: 'built',
-        llmup: 'built',
       });
     } finally {
       rmSync(tempRoot, { recursive: true, force: true });
     }
   });
 
-  it('fails closed before final app and llmup builds when the prebuild plan cannot trust the llmup Dockerfile', () => {
-    const tempRoot = mkdtempSync(path.join(os.tmpdir(), 'cluster-build-images-plan-fail-closed-'));
+  it('ignores stale llmup source content because llmup is an external image dependency', () => {
+    const tempRoot = mkdtempSync(path.join(os.tmpdir(), 'cluster-build-images-stale-llmup-source-'));
 
     try {
       stageBuildImagesFixture(tempRoot);
@@ -499,17 +517,16 @@ describe('cluster build-images build artifact broker integration', () => {
         'FROM rust\nCOPY tests ./tests\nCOPY src ./src\n',
       );
 
-      const result = runBuildImagesResult(tempRoot, { RELEASE_ID: 'test-release' });
-      const releaseRoot = path.join(tempRoot, 'release');
-      const reportPath = path.join(releaseRoot, 'build-artifact-broker-report.json');
+      runBuildImages(tempRoot, { RELEASE_ID: 'test-release' });
 
-      expect(result.status).not.toBe(0);
-      expect(existsSync(path.join(releaseRoot, 'VERSION'))).toBe(false);
-      expect(existsSync(path.join(releaseRoot, 'build-manifest.json'))).toBe(false);
-      expect(existsSync(path.join(releaseRoot, 'build-artifact-broker-plan.json'))).toBe(false);
-      expect(existsSync(reportPath)).toBe(true);
-      expect(JSON.stringify(readJson(reportPath))).toContain('llmup_runtime_tests_copy_present');
-      expect(existsSync(path.join(releaseRoot, 'build-images-docker.log'))).toBe(false);
+      const releaseRoot = path.join(tempRoot, 'release');
+      const plan = readJson(path.join(releaseRoot, 'build-artifact-broker-plan.json')) as {
+        targets: Array<{ target: string }>;
+      };
+
+      expect(plan.targets.map((target) => target.target)).toEqual(['app']);
+      expect(existsSync(path.join(releaseRoot, 'build-manifest.json'))).toBe(true);
+      expect(existsSync(path.join(releaseRoot, 'build-artifact-broker-report.json'))).toBe(false);
     } finally {
       rmSync(tempRoot, { recursive: true, force: true });
     }
@@ -528,8 +545,7 @@ printf 'docker %s\\n' "$*" >> "\${RELEASE_ROOT}/build-images-docker.log"
 if [[ "\${1:-}" == "image" && "\${2:-}" == "inspect" ]]; then
   image="\${@: -1}"
   case "\${image}" in
-    *agentsmith-app*) printf '%s\\n' '${APP_IMAGE_DIGEST}' ;;
-    *llm-universal-proxy*) exit 1 ;;
+    *agentsmith-app*) exit 1 ;;
     *) exit 0 ;;
   esac
   exit 0
@@ -548,7 +564,7 @@ exit 0
       expect(existsSync(path.join(releaseRoot, 'build-manifest.json'))).toBe(false);
       expect(existsSync(reportPath)).toBe(true);
       expect(JSON.stringify(readJson(reportPath))).toContain('missing_image_digest');
-      expect(JSON.stringify(readJson(reportPath))).toContain('llmup');
+      expect(JSON.stringify(readJson(reportPath))).toContain('app');
       expect(dockerLog).toContain('docker tag');
       expect(result.stdout).not.toContain('build-images ok');
     } finally {
@@ -626,18 +642,62 @@ exit 42
       expect(versionContent).toContain(
         `app_mc_image_ref=minio/mc:RELEASE.2025-08-13T08-35-41Z@${APP_MC_DIGEST}`,
       );
-      expect(versionContent).toContain(`llmup_rust_base_image_ref=rust:1.88-bookworm@${LLMUP_RUST_BASE_DIGEST}`);
       expect(versionContent).toContain(
-        `llmup_runtime_base_image_ref=debian:bookworm-slim@${LLMUP_RUNTIME_BASE_DIGEST}`,
+        `llmup_source_image=${LLMUP_SOURCE_IMAGE}`,
       );
+      expect(versionContent).toContain('llmup_version=v0.2.23');
+      expect(versionContent).toContain(`llmup_source_image_digest=${LLMUP_DIGEST}`);
+      expect(versionContent).not.toContain('llmup_rust_base_image_ref=');
+      expect(versionContent).not.toContain('llmup_runtime_base_image_ref=');
       expect(existsSync(path.join(releaseRoot, 'build-artifact-broker-report.json'))).toBe(false);
       expect(manifest.release_id).toBe('release-20260427');
-      expect(manifest.targets.map((target) => target.target)).toEqual(['app', 'llmup']);
+      expect(manifest.targets.map((target) => target.target)).toEqual(['app']);
       const dockerLog = readFileSync(path.join(releaseRoot, 'build-images-docker.log'), 'utf8');
       expect(dockerLog).toContain('docker_build_local');
       expect(dockerLog).toContain(
         `--build-arg MC_IMAGE=minio/mc:RELEASE.2025-08-13T08-35-41Z@${APP_MC_DIGEST}`,
       );
+    } finally {
+      rmSync(tempRoot, { recursive: true, force: true });
+    }
+  });
+
+  it('fails closed when the llmup source image override is not pinned by digest', () => {
+    const tempRoot = mkdtempSync(path.join(os.tmpdir(), 'cluster-build-images-llmup-unpinned-'));
+
+    try {
+      stageBuildImagesFixture(tempRoot);
+
+      const result = runBuildImagesResult(tempRoot, {
+        LLMUP_SOURCE_IMAGE: 'ghcr.io/agentsmith-project/llm-universal-proxy:v0.2.23',
+      });
+      const releaseRoot = path.join(tempRoot, 'release');
+
+      expect(result.status).not.toBe(0);
+      expect(result.stderr).toContain('LLMUP_SOURCE_IMAGE must include a sha256 digest');
+      expect(existsSync(path.join(releaseRoot, 'VERSION'))).toBe(false);
+      expect(existsSync(path.join(releaseRoot, 'build-manifest.json'))).toBe(false);
+    } finally {
+      rmSync(tempRoot, { recursive: true, force: true });
+    }
+  });
+
+  it('fails closed when the llmup source image tag does not match LLMUP_VERSION', () => {
+    const tempRoot = mkdtempSync(path.join(os.tmpdir(), 'cluster-build-images-llmup-version-mismatch-'));
+
+    try {
+      stageBuildImagesFixture(tempRoot);
+
+      const result = runBuildImagesResult(tempRoot, {
+        LLMUP_VERSION: 'v0.2.24',
+        LLMUP_SOURCE_IMAGE,
+      });
+      const releaseRoot = path.join(tempRoot, 'release');
+
+      expect(result.status).not.toBe(0);
+      expect(result.stderr).toContain('LLMUP_SOURCE_IMAGE tag must match LLMUP_VERSION');
+      expect(existsSync(path.join(releaseRoot, 'VERSION'))).toBe(false);
+      expect(existsSync(path.join(releaseRoot, 'build-manifest.json'))).toBe(false);
     } finally {
       rmSync(tempRoot, { recursive: true, force: true });
     }
@@ -650,15 +710,13 @@ exit 42
       stageBuildImagesFixture(tempRoot);
       writeBuildBaseImagesLock(tempRoot, {
         app_node_base_image: `node:24.14.1-bookworm@${APP_BASE_DIGEST}`,
-        app_mc_image: `minio/mc:RELEASE.2025-08-13T08-35-41Z@${APP_MC_DIGEST}`,
-        llmup_rust_base_image: `rust:1.88-bookworm@${LLMUP_RUST_BASE_DIGEST}`,
       });
 
       const result = runBuildImagesResult(tempRoot);
       const releaseRoot = path.join(tempRoot, 'release');
 
       expect(result.status).not.toBe(0);
-      expect(result.stderr).toContain('missing required build base image lock entry: llmup_runtime_base_image');
+      expect(result.stderr).toContain('missing required build base image lock entry: app_mc_image');
       expect(existsSync(path.join(releaseRoot, 'VERSION'))).toBe(false);
       expect(existsSync(path.join(releaseRoot, 'build-manifest.json'))).toBe(false);
       expect(existsSync(path.join(releaseRoot, 'build-artifact-broker-report.json'))).toBe(false);
@@ -675,8 +733,6 @@ exit 42
       stageBuildImagesFixture(tempRoot);
       writeBuildBaseImagesLock(tempRoot, {
         app_node_base_image: `node:24.14.1-bookworm@${APP_BASE_DIGEST}`,
-        llmup_rust_base_image: `rust:1.88-bookworm@${LLMUP_RUST_BASE_DIGEST}`,
-        llmup_runtime_base_image: `debian:bookworm-slim@${LLMUP_RUNTIME_BASE_DIGEST}`,
       });
 
       const result = runBuildImagesResult(tempRoot, {
@@ -726,8 +782,6 @@ exit 42
           `app_node_base_image=node:24.14.1-bookworm@${APP_BASE_DIGEST}`,
           `app_mc_image=minio/mc:RELEASE.2025-08-13T08-35-41Z@${APP_MC_DIGEST}`,
           `app_mc_image=minio/mc:RELEASE.2025-08-13T08-35-41Z@${APP_MC_DIGEST}`,
-          `llmup_rust_base_image=rust:1.88-bookworm@${LLMUP_RUST_BASE_DIGEST}`,
-          `llmup_runtime_base_image=debian:bookworm-slim@${LLMUP_RUNTIME_BASE_DIGEST}`,
           '',
         ].join('\n'),
       );

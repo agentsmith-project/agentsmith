@@ -3,12 +3,12 @@ set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "$0")/../.." && pwd)"
 SANDBOX_ROOT="$(cd "${ROOT_DIR}/../mbos-sandbox-v1" && pwd)"
-UNIVERSAL_PROXY_ROOT="$(cd "${ROOT_DIR}/../llm-universal-proxy" && pwd)"
 source "${ROOT_DIR}/scripts/lib/ensure-juicefs-vendor.sh"
 source "${ROOT_DIR}/scripts/lib/docker-buildx-common.sh"
 source "${ROOT_DIR}/scripts/lib/image-archive-manifest.sh"
 source "${ROOT_DIR}/scripts/lib/release-story-verify-source-set.sh"
 source "${ROOT_DIR}/scripts/lib/runner-image-common.sh"
+source "${ROOT_DIR}/scripts/lib/llmup-image-lock.sh"
 RELEASE_STORY_SOURCE_SET_NAME="$(release_story_verify_source_set_name)"
 RELEASE_STORY_SOURCE_SET_HELPER="$(release_story_verify_source_set_helper_path)"
 OUT_DIR="${OUT_DIR:-${HOME}/agentsmith/deploy/uploads}"
@@ -17,6 +17,7 @@ BUNDLE_DIR="${OUT_DIR}/agentsmith-${RELEASE_ID}"
 IMAGES_DIR="${BUNDLE_DIR}/images"
 TOOLS_DIR="${BUNDLE_DIR}/tools"
 BUNDLE_PLATFORM="${BUNDLE_PLATFORM:-linux/amd64}"
+LLMUP_IMAGE_LOCK="${LLMUP_IMAGE_LOCK:-${ROOT_DIR}/infra/deploy/shared/llmup-image.lock}"
 BUNDLED_IMAGE_ARCHIVES_INCLUDED=1
 if [[ "${SKIP_BUNDLED_IMAGE_ARCHIVE_GENERATION:-0}" == "1" ]]; then
   BUNDLED_IMAGE_ARCHIVES_INCLUDED=0
@@ -146,7 +147,8 @@ RUNNER_IMAGE="${RUNNER_IMAGE:-agentsmith-notebook-codex-runner:${RELEASE_ID}}"
 CHAT_RUNNER_IMAGE="${CHAT_RUNNER_IMAGE:-agentsmith-chat-llm-runner:${RELEASE_ID}}"
 VERIFY_RUNNER_IMAGE="${VERIFY_RUNNER_IMAGE:-agentsmith-verify-runner:${RELEASE_ID}}"
 SANDBOX_MANAGER_IMAGE="${SANDBOX_MANAGER_IMAGE:-sandbox-manager:${RELEASE_ID}}"
-UNIVERSAL_PROXY_IMAGE="${UNIVERSAL_PROXY_IMAGE:-llm-universal-proxy:${RELEASE_ID}}"
+resolve_llmup_image_lock "${LLMUP_IMAGE_LOCK}"
+UNIVERSAL_PROXY_IMAGE="${UNIVERSAL_PROXY_IMAGE:-llm-universal-proxy:${LLMUP_VERSION}}"
 JUICEFS_CSI_VERSION="${JUICEFS_CSI_VERSION:-v0.31.3}"
 JUICEFS_VERSION="${JUICEFS_VERSION:-1.3.0}"
 JUICEFS_DOWNLOAD_BASE_URL="${JUICEFS_DOWNLOAD_BASE_URL:-https://github.com/juicedata/juicefs/releases/download/v${JUICEFS_VERSION}}"
@@ -186,8 +188,9 @@ docker_build_local "${BUILD_ARGS[@]}" --build-arg VERIFY_RUNNER_BASE_IMAGE="${VE
 echo "[bundle] building sandbox manager image ${SANDBOX_MANAGER_IMAGE}"
 docker_build_local "${BUILD_ARGS[@]}" -t "${SANDBOX_MANAGER_IMAGE}" -f "${SANDBOX_ROOT}/manager-service/Dockerfile" "${SANDBOX_ROOT}/manager-service"
 
-echo "[bundle] building universal proxy image ${UNIVERSAL_PROXY_IMAGE}"
-docker_build_local "${BUILD_ARGS[@]}" -t "${UNIVERSAL_PROXY_IMAGE}" -f "${UNIVERSAL_PROXY_ROOT}/Dockerfile" "${UNIVERSAL_PROXY_ROOT}"
+echo "[bundle] pulling universal proxy source image ${LLMUP_SOURCE_IMAGE}"
+docker pull --platform "${BUNDLE_PLATFORM}" "${LLMUP_SOURCE_IMAGE}"
+docker tag "${LLMUP_SOURCE_IMAGE}" "${UNIVERSAL_PROXY_IMAGE}"
 
 DEPENDENCY_IMAGES=(
   "pgvector/pgvector:pg16"
@@ -290,6 +293,7 @@ cp "${ROOT_DIR}/scripts/lib/k8s-external-services.sh" "${BUNDLE_DIR}/scripts/lib
 cp "${ROOT_DIR}/scripts/lib/preset-common.sh" "${BUNDLE_DIR}/scripts/lib/preset-common.sh"
 cp "${ROOT_DIR}/scripts/lib/release-story-verify-source-set.sh" "${BUNDLE_DIR}/scripts/lib/release-story-verify-source-set.sh"
 cp "${ROOT_DIR}/scripts/lib/runtime-verification.sh" "${BUNDLE_DIR}/scripts/lib/runtime-verification.sh"
+cp "${ROOT_DIR}/scripts/lib/llmup-image-lock.sh" "${BUNDLE_DIR}/scripts/lib/llmup-image-lock.sh"
 mkdir -p "${BUNDLE_DIR}/scripts/substrate"
 cp "${ROOT_DIR}/scripts/substrate/deploy-common.sh" "${BUNDLE_DIR}/scripts/substrate/deploy-common.sh"
 mkdir -p "${BUNDLE_DIR}/scripts/app"
@@ -336,6 +340,9 @@ agentsmith_verify_runner_base_image=${VERIFY_RUNNER_BASE_IMAGE}
 agentsmith_verify_runner_image=${VERIFY_RUNNER_IMAGE}
 sandbox_manager_image=${SANDBOX_MANAGER_IMAGE}
 llm_universal_proxy_image=${UNIVERSAL_PROXY_IMAGE}
+llmup_version=${LLMUP_VERSION}
+llmup_source_image=${LLMUP_SOURCE_IMAGE}
+llmup_source_image_digest=${LLMUP_SOURCE_IMAGE_DIGEST}
 bundled_image_archives_included=${BUNDLED_IMAGE_ARCHIVES_INCLUDED}
 EOF
 

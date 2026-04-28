@@ -162,10 +162,11 @@
     "contracts:check-current-runtime-lines": "tsx scripts/contracts/check-current-runtime-lines.ts",
     "contracts:check-current-governance-observability": "tsx scripts/contracts/check-current-governance-observability.ts",
     "contracts:check-current-build-artifact-broker": "tsx scripts/contracts/check-current-build-artifact-broker.ts",
+    "contracts:check-retired-exports": "tsx scripts/contracts/check-retired-exports.ts",
     "contracts:check-current-real-session-coverage": "tsx scripts/contracts/check-current-real-session-coverage.ts",
     "contracts:check-product-terminology": "tsx scripts/contracts/check-product-terminology.ts",
     "contracts:check-engineering-governance": "tsx scripts/contracts/check-engineering-governance.ts",
-    "contracts:check": "npm run contracts:check-limit-naming && npm run contracts:check-current-workflows && npm run contracts:check-current-gates && npm run contracts:check-current-gate-results && npm run contracts:check-current-verification-campaigns && npm run contracts:check-current-runtime-lines && npm run contracts:check-current-governance-observability && npm run contracts:check-current-build-artifact-broker && npm run contracts:check-current-real-session-coverage && npm run contracts:check-product-terminology && npm run contracts:check-doc-governance && npm run story-generated-spec:check && npm run contracts:check-engineering-governance && tsx scripts/contracts/check-next-dist-types.ts && tsx scripts/contracts/check-runner-naming.ts && tsx scripts/contracts/check-permission-gates.ts",
+    "contracts:check": "npm run contracts:check-limit-naming && npm run contracts:check-current-workflows && npm run contracts:check-current-gates && npm run contracts:check-current-gate-results && npm run contracts:check-current-verification-campaigns && npm run contracts:check-current-runtime-lines && npm run contracts:check-current-governance-observability && npm run contracts:check-current-build-artifact-broker && npm run contracts:check-retired-exports && npm run contracts:check-current-real-session-coverage && npm run contracts:check-product-terminology && npm run contracts:check-doc-governance && npm run story-generated-spec:check && npm run contracts:check-engineering-governance && tsx scripts/contracts/check-next-dist-types.ts && tsx scripts/contracts/check-runner-naming.ts && tsx scripts/contracts/check-permission-gates.ts",
     "contracts:check-doc-governance": "tsx scripts/contracts/check-doc-governance.ts",
     "contracts:check-openapi-core": "tsx scripts/contracts/check-openapi-core-coverage.ts",
     "contracts:check-openapi-route-kinds": "tsx scripts/contracts/check-openapi-route-kind-coverage.ts",
@@ -193,10 +194,7 @@
     "current-workflow:sync": "tsx scripts/governance/sync-current-workflow-docs.ts",
     "current-workflow:check": "tsx scripts/governance/sync-current-workflow-docs.ts --check",
     "current-runtime-lines:sync": "tsx scripts/governance/sync-current-runtime-line-docs.ts",
-    "current-runtime-lines:check": "tsx scripts/governance/sync-current-runtime-line-docs.ts --check",
-    "oss:export": "tsx scripts/oss-export/build-oss-tree.ts",
-    "oss:verify": "tsx scripts/oss-export/verify-oss-tree.ts",
-    "oss:publish": "tsx scripts/oss-export/publish-oss.ts"
+    "current-runtime-lines:check": "tsx scripts/governance/sync-current-runtime-line-docs.ts --check"
   },
   "msw": {
     "workerDirectory": "public"

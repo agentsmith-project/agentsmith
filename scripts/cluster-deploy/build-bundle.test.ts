@@ -7,6 +7,8 @@ import path from 'node:path';
 import { describe, expect, it } from 'vitest';
 
 const repoRoot = process.cwd();
+const LLMUP_DIGEST = 'sha256:81c277bcbdbec4645b3e4edce5efa4d1b2253539214ba944f0712798c9a28f22';
+const LLMUP_SOURCE_IMAGE = `ghcr.io/agentsmith-project/llm-universal-proxy:v0.2.23@${LLMUP_DIGEST}`;
 const forbiddenEvidenceTruthFields = new Set([
   'verdict',
   'claim_id',
@@ -212,7 +214,6 @@ function writeCacheArchiveWithLayerProblem(cacheArchivePath: string, problem: 'm
 function stageClusterBuildBundleFixture(tempRoot: string): void {
   const siblingRoot = path.dirname(tempRoot);
   mkdirSync(path.join(siblingRoot, 'mbos-sandbox-v1', 'manager-service'), { recursive: true });
-  mkdirSync(path.join(siblingRoot, 'llm-universal-proxy'), { recursive: true });
 
   mkdirSync(path.join(tempRoot, 'scripts', 'cluster-deploy'), { recursive: true });
   copyFileSync(
@@ -256,7 +257,10 @@ agentsmith_chat_runner_image=localhost:5001/mbos/agentsmith-chat-llm-runner:\${R
 agentsmith_chat_runner_k8s_image=kind-registry:5000/mbos/agentsmith-chat-llm-runner:\${RELEASE_ID}
 agentsmith_verify_runner_image=localhost:5001/mbos/agentsmith-verify-runner:\${RELEASE_ID}
 sandbox_manager_image=localhost:5001/mbos/sandbox-manager:\${RELEASE_ID}
-llm_universal_proxy_image=localhost:5001/mbos/llm-universal-proxy:\${release_alias}
+llm_universal_proxy_image=localhost:5001/mbos/llm-universal-proxy:v0.2.23
+llmup_version=v0.2.23
+llmup_source_image=${LLMUP_SOURCE_IMAGE}
+llmup_source_image_digest=${LLMUP_DIGEST}
 registry_host=localhost:5001
 registry_project=mbos
 EOF
@@ -516,6 +520,37 @@ function runClusterBuildBundle(tempRoot: string, extraEnv: NodeJS.ProcessEnv = {
 }
 
 describe('cluster build bundle archive packaging', () => {
+  it('builds without a sibling llm-universal-proxy worktree and does not pass an llmup source override', () => {
+    const parentRoot = mkdtempSync(path.join(os.tmpdir(), 'cluster-build-bundle-no-llmup-parent-'));
+    const tempRoot = path.join(parentRoot, 'agentsmith');
+
+    try {
+      mkdirSync(tempRoot, { recursive: true });
+      stageClusterBuildBundleFixture(tempRoot);
+      rmSync(path.join(parentRoot, 'llm-universal-proxy'), { recursive: true, force: true });
+
+      runClusterBuildBundle(tempRoot, {
+        SKIP_RELEASE_ARCHIVE: '1',
+        SKIP_BUNDLED_IMAGE_ARCHIVE_GENERATION: '1',
+      });
+
+      const bundleDir = path.join(tempRoot, 'out', 'agentsmith-test-release');
+      const buildImagesEnv = readFileSync(path.join(bundleDir, 'build-images-env.log'), 'utf8');
+      const version = readFileSync(path.join(bundleDir, 'VERSION'), 'utf8');
+
+      expect(buildImagesEnv).toContain('UNIVERSAL_PROXY_SOURCE_DIR_OVERRIDE=');
+      expect(buildImagesEnv).not.toContain('llm-universal-proxy');
+      expect(version).toContain('llmup_version=v0.2.23');
+      expect(version).toContain(`llmup_source_image=${LLMUP_SOURCE_IMAGE}`);
+      expect(version).toContain(`llmup_source_image_digest=${LLMUP_DIGEST}`);
+      expect(version).toContain(
+        'llm_universal_proxy_image=localhost:5001/mbos/llm-universal-proxy:v0.2.23',
+      );
+    } finally {
+      rmSync(parentRoot, { recursive: true, force: true });
+    }
+  });
+
   it('writes the release archive by default', () => {
     const tempRoot = mkdtempSync(path.join(os.tmpdir(), 'cluster-build-bundle-default-'));
 
@@ -535,7 +570,7 @@ describe('cluster build bundle archive packaging', () => {
       const manifestPath = path.join(bundleDir, 'images', 'image-archives.manifest.json');
       const manifest = readJsonFile<ImageArchiveManifest>(manifestPath);
       const appArchiveRelpath = 'images/localhost-5001-mbos-agentsmith-app-release-test-release.tar';
-      const proxyArchiveRelpath = 'images/localhost-5001-mbos-llm-universal-proxy-release-test-release.tar';
+      const proxyArchiveRelpath = 'images/localhost-5001-mbos-llm-universal-proxy-v0.2.23.tar';
       const appArchivePath = path.join(bundleDir, appArchiveRelpath);
       const appProof = readDockerArchiveProof(appArchivePath);
       const appManifestEntry = findManifestArchive(manifest, appArchiveRelpath);
@@ -806,8 +841,8 @@ describe('cluster build bundle archive packaging', () => {
     }
   }, 15000);
 
-  it('passes UNIVERSAL_PROXY_ROOT_OVERRIDE through to build-images as the llmup source override', () => {
-    const tempRoot = mkdtempSync(path.join(os.tmpdir(), 'cluster-build-bundle-llmup-override-'));
+  it('does not pass UNIVERSAL_PROXY_ROOT_OVERRIDE through as an llmup source override', () => {
+    const tempRoot = mkdtempSync(path.join(os.tmpdir(), 'cluster-build-bundle-ignore-llmup-override-'));
 
     try {
       stageClusterBuildBundleFixture(tempRoot);
@@ -823,10 +858,11 @@ describe('cluster build bundle archive packaging', () => {
       const bundleDir = path.join(tempRoot, 'out', 'agentsmith-test-release');
 
       expect(readFileSync(path.join(bundleDir, 'build-images-env.log'), 'utf8')).toContain(
-        `UNIVERSAL_PROXY_SOURCE_DIR_OVERRIDE=${fixedLlmupRoot}`,
+        'UNIVERSAL_PROXY_SOURCE_DIR_OVERRIDE=',
       );
+      expect(readFileSync(path.join(bundleDir, 'build-images-env.log'), 'utf8')).not.toContain(fixedLlmupRoot);
       expect(readFileSync(path.join(bundleDir, 'VERSION'), 'utf8')).toContain(
-        'llm_universal_proxy_image=localhost:5001/mbos/llm-universal-proxy:release-test-release',
+        'llm_universal_proxy_image=localhost:5001/mbos/llm-universal-proxy:v0.2.23',
       );
     } finally {
       rmSync(tempRoot, { recursive: true, force: true });

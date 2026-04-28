@@ -1,4 +1,4 @@
-import { execFileSync } from 'node:child_process';
+import { execFileSync, spawnSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import { chmodSync, copyFileSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import os from 'node:os';
@@ -7,6 +7,8 @@ import path from 'node:path';
 import { describe, expect, it } from 'vitest';
 
 const repoRoot = process.cwd();
+const LLMUP_DIGEST = 'sha256:81c277bcbdbec4645b3e4edce5efa4d1b2253539214ba944f0712798c9a28f22';
+const LLMUP_SOURCE_IMAGE = `ghcr.io/agentsmith-project/llm-universal-proxy:v0.2.23@${LLMUP_DIGEST}`;
 const forbiddenEvidenceTruthFields = new Set([
   'verdict',
   'claim_id',
@@ -168,12 +170,27 @@ function expectDockerSaveSkipDecision(value: unknown, imageRef: string, inputDig
 function stageDemoBuildBundleFixture(tempRoot: string): void {
   const siblingRoot = path.dirname(tempRoot);
   mkdirSync(path.join(siblingRoot, 'mbos-sandbox-v1', 'manager-service'), { recursive: true });
-  mkdirSync(path.join(siblingRoot, 'llm-universal-proxy'), { recursive: true });
 
   mkdirSync(path.join(tempRoot, 'scripts', 'demo-deploy'), { recursive: true });
   copyFileSync(
     path.join(repoRoot, 'scripts', 'demo-deploy', 'build-offline-bundle.sh'),
     path.join(tempRoot, 'scripts', 'demo-deploy', 'build-offline-bundle.sh'),
+  );
+  mkdirSync(path.join(tempRoot, 'scripts', 'lib'), { recursive: true });
+  copyFileSync(
+    path.join(repoRoot, 'scripts', 'lib', 'llmup-image-lock.sh'),
+    path.join(tempRoot, 'scripts', 'lib', 'llmup-image-lock.sh'),
+  );
+
+  writeFile(
+    path.join(tempRoot, 'infra', 'deploy', 'shared', 'llmup-image.lock'),
+    [
+      '# AgentSmith llmup external image lock.',
+      '# Format: llmup_version=<version> and llmup_source_image=<image:tag@sha256:digest>',
+      'llmup_version=v0.2.23',
+      `llmup_source_image=${LLMUP_SOURCE_IMAGE}`,
+      '',
+    ].join('\n'),
   );
 
   writeFile(
@@ -461,7 +478,107 @@ function runDemoBuildBundle(tempRoot: string, extraEnv: NodeJS.ProcessEnv = {}):
   );
 }
 
+function runDemoBuildBundleResult(tempRoot: string, extraEnv: NodeJS.ProcessEnv = {}): {
+  status: number | null;
+  stdout: string;
+  stderr: string;
+} {
+  const result = spawnSync(
+    'bash',
+    [path.join(tempRoot, 'scripts', 'demo-deploy', 'build-offline-bundle.sh')],
+    {
+      cwd: tempRoot,
+      env: {
+        ...process.env,
+        PATH: `${path.join(tempRoot, 'bin')}:${process.env.PATH}`,
+        HOME: tempRoot,
+        OUT_DIR: path.join(tempRoot, 'out'),
+        RELEASE_ID: 'test-release',
+        SKIP_BUNDLE_INPUTS_CHECK: '1',
+        SKIP_RELEASE_PRECHECK: '1',
+        ...extraEnv,
+      },
+      encoding: 'utf8',
+    },
+  );
+
+  return {
+    status: result.status,
+    stdout: result.stdout,
+    stderr: result.stderr,
+  };
+}
+
 describe('demo build bundle image archives', () => {
+  it('builds without a sibling llm-universal-proxy worktree and records the external llmup image truth', () => {
+    const parentRoot = mkdtempSync(path.join(os.tmpdir(), 'demo-build-bundle-no-llmup-parent-'));
+    const tempRoot = path.join(parentRoot, 'agentsmith');
+
+    try {
+      mkdirSync(tempRoot, { recursive: true });
+      stageDemoBuildBundleFixture(tempRoot);
+      rmSync(path.join(parentRoot, 'llm-universal-proxy'), { recursive: true, force: true });
+
+      runDemoBuildBundle(tempRoot, {
+        SKIP_RELEASE_ARCHIVE: '1',
+        SKIP_BUNDLED_IMAGE_ARCHIVE_GENERATION: '1',
+      });
+
+      const bundleDir = path.join(tempRoot, 'out', 'agentsmith-test-release');
+      const version = readFileSync(path.join(bundleDir, 'VERSION'), 'utf8');
+
+      expect(version).toContain('llmup_version=v0.2.23');
+      expect(version).toContain(`llmup_source_image=${LLMUP_SOURCE_IMAGE}`);
+      expect(version).toContain(`llmup_source_image_digest=${LLMUP_DIGEST}`);
+      expect(version).toContain('llm_universal_proxy_image=llm-universal-proxy:v0.2.23');
+    } finally {
+      rmSync(parentRoot, { recursive: true, force: true });
+    }
+  });
+
+  it('fails closed when the llmup source image override is not pinned by digest', () => {
+    const tempRoot = mkdtempSync(path.join(os.tmpdir(), 'demo-build-bundle-llmup-unpinned-'));
+
+    try {
+      stageDemoBuildBundleFixture(tempRoot);
+
+      const result = runDemoBuildBundleResult(tempRoot, {
+        LLMUP_SOURCE_IMAGE: 'ghcr.io/agentsmith-project/llm-universal-proxy:v0.2.23',
+        SKIP_RELEASE_ARCHIVE: '1',
+        SKIP_BUNDLED_IMAGE_ARCHIVE_GENERATION: '1',
+      });
+      const bundleDir = path.join(tempRoot, 'out', 'agentsmith-test-release');
+
+      expect(result.status).not.toBe(0);
+      expect(result.stderr).toContain('LLMUP_SOURCE_IMAGE must include a sha256 digest');
+      expect(existsSync(path.join(bundleDir, 'VERSION'))).toBe(false);
+    } finally {
+      rmSync(tempRoot, { recursive: true, force: true });
+    }
+  });
+
+  it('fails closed when the llmup source image tag does not match LLMUP_VERSION', () => {
+    const tempRoot = mkdtempSync(path.join(os.tmpdir(), 'demo-build-bundle-llmup-version-mismatch-'));
+
+    try {
+      stageDemoBuildBundleFixture(tempRoot);
+
+      const result = runDemoBuildBundleResult(tempRoot, {
+        LLMUP_VERSION: 'v0.2.24',
+        LLMUP_SOURCE_IMAGE,
+        SKIP_RELEASE_ARCHIVE: '1',
+        SKIP_BUNDLED_IMAGE_ARCHIVE_GENERATION: '1',
+      });
+      const bundleDir = path.join(tempRoot, 'out', 'agentsmith-test-release');
+
+      expect(result.status).not.toBe(0);
+      expect(result.stderr).toContain('LLMUP_SOURCE_IMAGE tag must match LLMUP_VERSION');
+      expect(existsSync(path.join(bundleDir, 'VERSION'))).toBe(false);
+    } finally {
+      rmSync(tempRoot, { recursive: true, force: true });
+    }
+  });
+
   it('writes an image archive manifest from docker save archive content and includes it in checksums', () => {
     const tempRoot = mkdtempSync(path.join(os.tmpdir(), 'demo-build-bundle-image-manifest-'));
 
@@ -472,10 +589,13 @@ describe('demo build bundle image archives', () => {
       const bundleDir = path.join(tempRoot, 'out', 'agentsmith-test-release');
       const manifestPath = path.join(bundleDir, 'images', 'image-archives.manifest.json');
       const appArchiveRelpath = 'images/agentsmith-app-test-release.tar';
+      const proxyArchiveRelpath = 'images/llm-universal-proxy-v0.2.23.tar';
       const appArchivePath = path.join(bundleDir, appArchiveRelpath);
       const appProof = readDockerArchiveProof(appArchivePath);
+      const proxyProof = readDockerArchiveProof(path.join(bundleDir, proxyArchiveRelpath));
       const manifest = readJsonFile<ImageArchiveManifest>(manifestPath);
       const appManifestEntry = findManifestArchive(manifest, appArchiveRelpath);
+      const proxyManifestEntry = findManifestArchive(manifest, proxyArchiveRelpath);
       const checksums = readFileSync(path.join(bundleDir, 'checksums.txt'), 'utf8');
       const manifestHex = sha256Digest(readFileSync(manifestPath)).slice('sha256:'.length);
 
@@ -494,6 +614,8 @@ describe('demo build bundle image archives', () => {
         platform: 'linux/amd64',
       });
       expect(appManifestEntry.image_ref).toBe('agentsmith-app:test-release');
+      expect(proxyManifestEntry.image_ref).toBe('llm-universal-proxy:v0.2.23');
+      expect(proxyManifestEntry.archive_config_digest).toBe(proxyProof.configDigest);
       expect(appManifestEntry.source_build_manifest_digest).toBeNull();
       expect(appManifestEntry.source_manifest_digest).toBeNull();
       expect(appManifestEntry.validator).toContain('manifest.json');

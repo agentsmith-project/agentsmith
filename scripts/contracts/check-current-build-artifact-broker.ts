@@ -2,6 +2,7 @@ import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 
 import {
+  CURRENT_BUILD_ARTIFACT_TARGETS,
   CURRENT_BUILD_MANIFEST_AGGREGATE_SCHEMA,
   CURRENT_BUILD_MANIFEST_AGGREGATE_VERSION,
   CURRENT_BUILD_MANIFEST_MODES,
@@ -14,7 +15,6 @@ import {
   buildBuildManifestAggregate,
   buildBuildManifestTarget,
   computeAppImageContentKey,
-  computeLlmupRuntimeContentKey,
   normalizeReleaseAliasTag,
   parseBaseDependencyImageLock,
   parseLockedImageRef,
@@ -52,6 +52,26 @@ function readJson<T>(relativePath: string): T {
 
 function readText(relativePath: string): string {
   return readFileSync(resolve(relativePath), 'utf8');
+}
+
+function parseKeyValueText(text: string): Map<string, string> {
+  const values = new Map<string, string>();
+
+  for (const rawLine of text.split(/\r?\n/u)) {
+    const line = rawLine.trim();
+    if (line.length === 0 || line.startsWith('#')) {
+      continue;
+    }
+
+    const separatorIndex = line.indexOf('=');
+    if (separatorIndex <= 0) {
+      continue;
+    }
+
+    values.set(line.slice(0, separatorIndex).trim(), line.slice(separatorIndex + 1).trim());
+  }
+
+  return values;
 }
 
 function normalizeInstructionWhitespace(instruction: string): string {
@@ -167,7 +187,16 @@ function main(): void {
   const packageJson = readJson<PackageJson>('package.json');
   const contractsCheck = packageJson.scripts?.['contracts:check'] ?? '';
   const buildImagesScript = readText('scripts/cluster-deploy/build-images.sh');
+  const clusterBuildBundleScript = readText('scripts/cluster-deploy/build-bundle.sh');
+  const demoBuildBundleScript = readText('scripts/demo-deploy/build-offline-bundle.sh');
+  const buildBrokerCli = readText('scripts/governance/build-artifact-broker-cli.ts');
+  const buildBroker = readText('scripts/governance/build-artifact-broker.ts');
+  const buildBaseImagesLock = readText('infra/deploy/shared/build-base-images.lock');
+  const llmupImageLock = readText('infra/deploy/shared/llmup-image.lock');
   const agentsmithAppDockerfile = readText('infra/deploy/Dockerfile.agentsmith-app');
+  const deploymentSpec = readText('docs/contracts/deployment-spec-v1.md');
+  const clusterDeploymentSpec = readText('docs/contracts/cluster-deployment-spec-v1.md');
+  const buildGovernanceDoc = readText('docs/engineering/governance-developer-flow-optimization-v2.md');
 
   assert(
     packageJson.scripts?.['contracts:check-current-build-artifact-broker']
@@ -185,6 +214,10 @@ function main(): void {
   assert(
     CURRENT_BUILD_MANIFEST_AGGREGATE_VERSION === 1,
     'unexpected build manifest aggregate schema version.',
+  );
+  assert(
+    JSON.stringify(CURRENT_BUILD_ARTIFACT_TARGETS) === JSON.stringify(['app']),
+    'current build artifact broker targets must be limited to AgentSmith-owned app.',
   );
   for (const mode of ['build', 'bundle', 'rehearsal', 'release-fidelity', 'offline-package'] as const) {
     assert(CURRENT_BUILD_MANIFEST_MODES.includes(mode), `build manifest aggregate mode ${mode} must be supported.`);
@@ -240,6 +273,72 @@ function main(): void {
       && !buildImagesScript.includes('build artifact broker diagnostic skipped'),
     'build-images.sh must not downgrade post-build broker failures to diagnostics or warnings.',
   );
+  const llmupCouplingScanTargets = [
+    ['scripts/cluster-deploy/build-images.sh', buildImagesScript],
+    ['scripts/cluster-deploy/build-bundle.sh', clusterBuildBundleScript],
+    ['scripts/demo-deploy/build-offline-bundle.sh', demoBuildBundleScript],
+    ['scripts/governance/build-artifact-broker-cli.ts', buildBrokerCli],
+    ['docs/contracts/deployment-spec-v1.md', deploymentSpec],
+    ['docs/contracts/cluster-deployment-spec-v1.md', clusterDeploymentSpec],
+    ['docs/engineering/governance-developer-flow-optimization-v2.md', buildGovernanceDoc],
+  ] as const;
+  const deprecatedLlmupBuildCouplings = [
+    ['sources', 'llm-universal-proxy'].join('/'),
+    ['UNIVERSAL', 'PROXY', 'SOURCE', 'DIR'].join('_'),
+    ['UNIVERSAL', 'PROXY', 'ROOT', 'OVERRIDE'].join('_'),
+    ['UNIVERSAL', 'PROXY', 'RUST', 'BASE', 'IMAGE'].join('_'),
+    ['UNIVERSAL', 'PROXY', 'RUNTIME', 'BASE', 'IMAGE'].join('_'),
+    `--${'llmup'}-source-dir`,
+    `--${'llmup'}-base-image`,
+    ['llmup', 'rust', 'base', 'image'].join('_'),
+    ['llmup', 'runtime', 'base', 'image'].join('_'),
+  ];
+  for (const [targetPath, content] of llmupCouplingScanTargets) {
+    for (const forbidden of deprecatedLlmupBuildCouplings) {
+      assert(!content.includes(forbidden), `${targetPath} must not contain deprecated llmup build coupling: ${forbidden}.`);
+    }
+  }
+  assert(
+    !buildBroker.includes(['compute', 'Llmup', 'Runtime', 'Content', 'Key'].join('')),
+    'build artifact broker must not expose an AgentSmith-owned llmup runtime content key.',
+  );
+  assert(
+    !buildBaseImagesLock.includes(['llmup', 'rust', 'base', 'image'].join('_'))
+      && !buildBaseImagesLock.includes(['llmup', 'runtime', 'base', 'image'].join('_')),
+    'build base image lock must not require llmup Rust/runtime base images.',
+  );
+  const llmupLockValues = parseKeyValueText(llmupImageLock);
+  const llmupVersion = llmupLockValues.get('llmup_version');
+  const llmupSourceImage = llmupLockValues.get('llmup_source_image');
+  assert(typeof llmupVersion === 'string' && llmupVersion.length > 0, 'llmup image lock must include llmup_version.');
+  assert(
+    typeof llmupSourceImage === 'string' && llmupSourceImage.length > 0,
+    'llmup image lock must include llmup_source_image.',
+  );
+  if (typeof llmupVersion === 'string' && typeof llmupSourceImage === 'string') {
+    const parsedLlmupSourceImage = parseLockedImageRef(llmupSourceImage);
+    assert(
+      parsedLlmupSourceImage.ok,
+      `llmup image lock source image failed validation: ${parsedLlmupSourceImage.ok ? '' : parsedLlmupSourceImage.reason}`,
+    );
+    if (parsedLlmupSourceImage.ok) {
+      assert(
+        parsedLlmupSourceImage.value.tag === llmupVersion,
+        'llmup image lock source image tag must match llmup_version.',
+      );
+    }
+  }
+  for (const [targetPath, content] of [
+    ['scripts/cluster-deploy/build-images.sh', buildImagesScript],
+    ['scripts/demo-deploy/build-offline-bundle.sh', demoBuildBundleScript],
+  ] as const) {
+    assert(content.includes('LLMUP_IMAGE_LOCK'), `${targetPath} must resolve llmup defaults from the image lock.`);
+    assert(content.includes('llmup_source_image_digest='), `${targetPath} must write llmup_source_image_digest to VERSION.`);
+    assert(
+      !content.includes('ghcr.io/agentsmith-project/llm-universal-proxy:${LLMUP_VERSION}'),
+      `${targetPath} must not default llmup source image from a mutable tag-only ref.`,
+    );
+  }
   assertAgentsmithAppNextBuildCacheMount(agentsmithAppDockerfile);
 
   const appKey = computeAppImageContentKey({
@@ -256,19 +355,6 @@ function main(): void {
       INTERNAL_SECRET: 'not-keyed',
     },
     baseImages: ['docker.io/library/node:22-bookworm-slim@' + LOCKED_DIGEST_A],
-  });
-  const llmupKey = computeLlmupRuntimeContentKey({
-    files: [
-      { path: 'Cargo.toml', content: '[package]\nname = "llm-universal-proxy"\n' },
-      { path: 'Cargo.lock', content: 'lock' },
-      { path: 'rust-toolchain.toml', content: 'channel = "1.85.0"\n' },
-      { path: 'src/main.rs', content: 'fn main() {}' },
-      { path: 'tests/proxy.rs', content: '#[test]\nfn proxy_contract() {}' },
-    ],
-    baseImages: [
-      'docker.io/library/rust:1.85-bookworm@' + LOCKED_DIGEST_A,
-      'gcr.io/distroless/cc-debian12:nonroot@' + LOCKED_DIGEST_B,
-    ],
   });
   assert(
     normalizeReleaseAliasTag('release-20260427') === 'release-20260427',
@@ -292,16 +378,6 @@ function main(): void {
         imageName: 'agentsmith-app',
         contentKey: appKey,
         imageDigest: LOCKED_DIGEST_A,
-        decision: 'built',
-        producer: BUILD_PRODUCER,
-        generatedAt: GENERATED_AT,
-      }),
-      buildBuildManifestTarget({
-        target: 'llmup',
-        releaseId: 'release-20260427',
-        imageName: 'llm-universal-proxy',
-        contentKey: llmupKey,
-        imageDigest: LOCKED_DIGEST_B,
         decision: 'built',
         producer: BUILD_PRODUCER,
         generatedAt: GENERATED_AT,
@@ -427,6 +503,13 @@ function main(): void {
     }).ok === false,
     'build manifest target schema must remain limited to build artifact targets.',
   );
+  assert(
+    validateBuildManifestAggregate({
+      ...aggregate,
+      targets: [{ ...aggregate.targets[0], target: ['llm', 'up'].join('') }],
+    }).ok === false,
+    'build manifest target schema must reject llmup as an AgentSmith-owned target.',
+  );
 
   const registryPushSkipDecision = {
     schema: CURRENT_BUILD_SKIP_DECISION_SCHEMA,
@@ -536,11 +619,11 @@ function main(): void {
     for (const id of [
       'app_node_base_image',
       'app_mc_image',
-      'llmup_rust_base_image',
-      'llmup_runtime_base_image',
     ]) {
       assert(lockedIds.has(id), `build base image lock must include ${id}.`);
     }
+    assert(!lockedIds.has(['llmup', 'rust', 'base', 'image'].join('_')), 'build base image lock must not include llmup Rust base image.');
+    assert(!lockedIds.has(['llmup', 'runtime', 'base', 'image'].join('_')), 'build base image lock must not include llmup runtime base image.');
   }
 
   if (failures.length > 0) {

@@ -6,7 +6,7 @@ import {
   buildBuildManifestAggregate,
   buildBuildManifestTarget,
   computeAppImageContentKey,
-  computeLlmupRuntimeContentKey,
+  CURRENT_BUILD_ARTIFACT_TARGETS,
   normalizeReleaseAliasTag,
   parseBaseDependencyImageLock,
   parseLockedImageRef,
@@ -43,15 +43,6 @@ const APP_BASE_FILES: readonly BuildArtifactBrokerFileInput[] = [
   { path: 'docs/readme.md', content: 'not part of the app image key' },
 ];
 
-const LLMUP_BASE_FILES: readonly BuildArtifactBrokerFileInput[] = [
-  { path: 'Cargo.toml', content: '[package]\nname = "llm-universal-proxy"\n' },
-  { path: 'Cargo.lock', content: '# lock' },
-  { path: 'rust-toolchain.toml', content: '[toolchain]\nchannel = "1.85.0"\n' },
-  { path: 'src/main.rs', content: 'fn main() {}' },
-  { path: 'tests/proxy.rs', content: '#[test]\nfn proxy_contract() {}' },
-  { path: 'README.md', content: 'not part of the runtime key' },
-];
-
 function withChangedFile(
   files: readonly BuildArtifactBrokerFileInput[],
   path: string,
@@ -77,6 +68,10 @@ function expectAppKeyToChange(path: string): void {
 }
 
 describe('build artifact broker', () => {
+  it('limits AgentSmith-owned build artifact targets to the app image', () => {
+    expect(CURRENT_BUILD_ARTIFACT_TARGETS).toEqual(['app']);
+  });
+
   it('calculates deterministic content keys with stable input sorting', () => {
     const first = computeAppImageContentKey({
       files: [
@@ -154,37 +149,6 @@ describe('build artifact broker', () => {
     expect(changedPublicEnv.content_key).not.toBe(base.content_key);
     expect(changedPrivateEnv.content_key).toBe(base.content_key);
     expect(unrelatedDocsChange.content_key).toBe(base.content_key);
-  });
-
-  it('keeps llmup runtime keys sensitive to runtime Rust inputs but insensitive to tests', () => {
-    const base = computeLlmupRuntimeContentKey({
-      files: LLMUP_BASE_FILES,
-      baseImages: [
-        'docker.io/library/rust:1.85-bookworm@' + LOCKED_DIGEST_A,
-        'gcr.io/distroless/cc-debian12:nonroot@' + LOCKED_DIGEST_B,
-      ],
-    });
-    const changedTest = computeLlmupRuntimeContentKey({
-      files: withChangedFile(LLMUP_BASE_FILES, 'tests/proxy.rs', 'changed test'),
-      baseImages: [
-        'docker.io/library/rust:1.85-bookworm@' + LOCKED_DIGEST_A,
-        'gcr.io/distroless/cc-debian12:nonroot@' + LOCKED_DIGEST_B,
-      ],
-    });
-
-    expect(changedTest.content_key).toBe(base.content_key);
-
-    for (const path of ['Cargo.toml', 'Cargo.lock', 'rust-toolchain.toml', 'src/main.rs']) {
-      const changedRuntimeInput = computeLlmupRuntimeContentKey({
-        files: withChangedFile(LLMUP_BASE_FILES, path, `changed ${path}`),
-        baseImages: [
-          'docker.io/library/rust:1.85-bookworm@' + LOCKED_DIGEST_A,
-          'gcr.io/distroless/cc-debian12:nonroot@' + LOCKED_DIGEST_B,
-        ],
-      });
-
-      expect(changedRuntimeInput.content_key).not.toBe(base.content_key);
-    }
   });
 
   it('treats VERSION.release_id as truth and fails closed on env or state drift', () => {
@@ -379,6 +343,12 @@ describe('build artifact broker', () => {
       validateBuildManifestAggregate({
         ...aggregate,
         targets: [{ ...target, target: 'image:registry.test/mbos/agentsmith-app:release-20260427' }],
+      }).ok,
+    ).toBe(false);
+    expect(
+      validateBuildManifestAggregate({
+        ...aggregate,
+        targets: [{ ...target, target: 'llmup' }],
       }).ok,
     ).toBe(false);
 

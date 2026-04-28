@@ -15,8 +15,7 @@ load_agentsmith_presets "${ROOT_DIR}"
 load_release_env
 if [[ -f "${RELEASE_ROOT}/env/runtime-addresses.env" ]]; then
   set -a
-  # shellcheck disable=SC1090
-  source "${RELEASE_ROOT}/env/runtime-addresses.env"
+  load_env_file "${RELEASE_ROOT}/env/runtime-addresses.env"
   set +a
 fi
 apply_non_environment_preset_defaults

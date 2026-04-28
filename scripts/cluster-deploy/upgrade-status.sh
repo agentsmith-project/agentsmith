@@ -7,11 +7,8 @@ source "${ROOT_DIR}/scripts/cluster-deploy/lib.sh"
 source "${ROOT_DIR}/scripts/lib/runner-lifecycle-log.sh"
 
 ensure_dirs
-ensure_operator_site_env
+load_site_env
 ensure_operator_kubeconfig
-set -a
-source "${RELEASE_ROOT}/env/site.env"
-set +a
 bash "${ROOT_DIR}/scripts/cluster-deploy/render-env.sh"
 load_release_env
 load_kubeconfig

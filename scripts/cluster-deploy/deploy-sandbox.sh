@@ -13,9 +13,7 @@ ensure_operator_manager_kubeconfig
 ensure_admin_ready
 load_registry_env
 load_kubeconfig
-set -a
-source "${RELEASE_ROOT}/env/site.env"
-set +a
+load_site_env
 bash "${ROOT_DIR}/scripts/cluster-deploy/apply-kind-dns.sh"
 bash "${ROOT_DIR}/scripts/cluster-deploy/render-env.sh"
 load_release_env

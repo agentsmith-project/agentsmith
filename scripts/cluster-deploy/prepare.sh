@@ -6,10 +6,7 @@ source "${ROOT_DIR}/scripts/cluster-deploy/lib.sh"
 source "${ROOT_DIR}/scripts/lib/release-stage-common.sh"
 
 ensure_dirs
-ensure_operator_site_env
-set -a
-source "${RELEASE_ROOT}/env/site.env"
-set +a
+load_site_env
 require_supported_cluster_deploy_mode
 
 for cmd in docker curl tar sha256sum python3; do

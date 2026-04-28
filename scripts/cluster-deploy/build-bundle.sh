@@ -4,14 +4,15 @@ set -euo pipefail
 ROOT_DIR="$(cd "$(dirname "$0")/../.." && pwd)"
 SANDBOX_ROOT="$(cd "${ROOT_DIR}/../mbos-sandbox-v1" && pwd)"
 UNIVERSAL_PROXY_ROOT="$(cd "${ROOT_DIR}/../llm-universal-proxy" && pwd)"
+OUT_DIR="${OUT_DIR:-${HOME}/agentsmith/cluster-deploy/uploads}"
+RELEASE_ID="${RELEASE_ID:-$(git -C "${ROOT_DIR}" rev-parse --short HEAD)-$(date -u +%Y%m%dT%H%M%SZ)}"
+export DEPLOY_COMMON_IGNORE_CURRENT_RELEASE=1
 source "${ROOT_DIR}/scripts/cluster-deploy/lib.sh"
 source "${ROOT_DIR}/scripts/lib/ensure-juicefs-vendor.sh"
 source "${ROOT_DIR}/scripts/lib/release-story-verify-source-set.sh"
 RELEASE_STORY_SOURCE_SET_NAME="$(release_story_verify_source_set_name)"
 RELEASE_STORY_SOURCE_SET_HELPER="$(release_story_verify_source_set_helper_path)"
 
-OUT_DIR="${OUT_DIR:-${HOME}/agentsmith/cluster-deploy/uploads}"
-RELEASE_ID="${RELEASE_ID:-$(git -C "${ROOT_DIR}" rev-parse --short HEAD)-$(date -u +%Y%m%dT%H%M%SZ)}"
 BUNDLE_DIR="${OUT_DIR}/agentsmith-${RELEASE_ID}"
 IMAGES_DIR="${BUNDLE_DIR}/images"
 TOOLS_DIR="${BUNDLE_DIR}/tools"

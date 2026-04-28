@@ -64,8 +64,7 @@ done
 
 set -a
 load_agentsmith_presets "${ROOT_DIR}"
-# shellcheck disable=SC1090
-source "${SITE_ENV}"
+load_env_file "${SITE_ENV}"
 apply_non_environment_preset_defaults
 apply_preset_endpoint_defaults
 runtime_proxy_mode >/dev/null
@@ -210,8 +209,7 @@ fi
 bash "${RELEASE_SCRIPT_DIR}/resolve-runtime-addresses.sh"
 
 set -a
-# shellcheck disable=SC1090
-source "${RELEASE_ROOT}/env/runtime-addresses.env"
+load_env_file "${RELEASE_ROOT}/env/runtime-addresses.env"
 set +a
 
 for resolved_key in \

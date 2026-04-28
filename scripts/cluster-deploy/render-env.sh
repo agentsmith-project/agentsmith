@@ -81,7 +81,7 @@ done
 
 set -a
 load_agentsmith_presets "${ROOT_DIR}"
-source "${SITE_ENV}"
+load_env_file "${SITE_ENV}"
 apply_non_environment_preset_defaults
 apply_preset_endpoint_defaults
 runtime_proxy_mode >/dev/null

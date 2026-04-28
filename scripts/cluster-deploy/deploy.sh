@@ -6,10 +6,7 @@ TARGET_ROOT="${CLUSTER_DEPLOY_ROOT:-${HOME}/agentsmith/cluster-deploy}"
 source "${ROOT_DIR}/scripts/cluster-deploy/lib.sh"
 
 ensure_dirs
-ensure_operator_site_env
-set -a
-source "${RELEASE_ROOT}/env/site.env"
-set +a
+load_site_env
 require_supported_cluster_deploy_mode
 
 bash "${ROOT_DIR}/scripts/cluster-deploy/publish-images.sh"

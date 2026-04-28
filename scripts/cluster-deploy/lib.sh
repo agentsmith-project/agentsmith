@@ -161,13 +161,7 @@ ensure_operator_manager_kubeconfig() {
 
 load_registry_env() {
   ensure_operator_registry_env
-  while IFS= read -r raw_line || [[ -n "${raw_line}" ]]; do
-    local line="${raw_line#"${raw_line%%[![:space:]]*}"}"
-    [[ -z "${line}" || "${line}" == \#* || "${line}" != *=* ]] && continue
-    local key="${line%%=*}"
-    local value="${line#*=}"
-        export "${key}=${value}"
-      done < "${RELEASE_ROOT}/env/registry.env"
+  load_env_file "${RELEASE_ROOT}/env/registry.env"
   export K8S_REGISTRY_HOST="${K8S_REGISTRY_HOST:-${REGISTRY_HOST:-}}"
   if [[ -z "${K8S_REGISTRY_HOST:-}" || "${K8S_REGISTRY_HOST}" == "${REGISTRY_HOST:-}" ]]; then
     local local_kind_registry_name="${LOCAL_KIND_REGISTRY_NAME:-kind-registry}"

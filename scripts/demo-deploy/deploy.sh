@@ -179,11 +179,7 @@ ensure_demo_external_runner_slot_available() {
 
 main() {
   ensure_dirs
-  ensure_operator_site_env
-  set -a
-  # shellcheck disable=SC1090
-  source "${RELEASE_ROOT}/env/site.env"
-  set +a
+  load_site_env
   DEMO_DEPLOY_MODE="$(demo_deploy_mode)"
   HOST_LOCAL_WEB_BASE_URL="${HOST_LOCAL_WEB_BASE_URL:-http://127.0.0.1:${WEB_PORT:-3001}}"
   HOST_LOCAL_KEYCLOAK_BASE_URL="${HOST_LOCAL_KEYCLOAK_BASE_URL:-http://127.0.0.1:${KEYCLOAK_PORT:-18080}}"
@@ -231,7 +227,7 @@ wait_tcp "127.0.0.1" "${API_PORT}" 240
 wait_http "${HOST_LOCAL_WEB_BASE_URL}/api/public/workspaces" 240
 
 set -a
-source "${RELEASE_ROOT}/env/runtime-addresses.env"
+load_env_file "${RELEASE_ROOT}/env/runtime-addresses.env"
 set +a
 
 if demo_mode_is_full; then

@@ -5,10 +5,7 @@ ROOT_DIR="$(cd "${SCRIPT_DIR}/../.." && pwd)"
 source "${ROOT_DIR}/scripts/cluster-deploy/lib.sh"
 
 ensure_dirs
-ensure_operator_site_env
-set -a
-source "${RELEASE_ROOT}/env/site.env"
-set +a
+load_site_env
 render_admin_handoff
 
 state_set release.phase admin_handoff_prepared

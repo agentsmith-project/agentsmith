@@ -5,12 +5,9 @@ ROOT_DIR="$(cd "${SCRIPT_DIR}/../.." && pwd)"
 source "${ROOT_DIR}/scripts/cluster-deploy/lib.sh"
 
 ensure_dirs
-ensure_operator_site_env
+load_site_env
 ensure_operator_admin_kubeconfig
 ensure_operator_registry_env
-set -a
-source "${RELEASE_ROOT}/env/site.env"
-set +a
 require_supported_cluster_deploy_mode
 [[ "$(cluster_deploy_mode)" == "full-auto" ]] || die "apply-cluster-prereqs is only supported when CLUSTER_DEPLOY_MODE=full-auto"
 if [[ ! -x "${ADMIN_HANDOFF_DIR}/scripts/final-verification.sh" ]]; then

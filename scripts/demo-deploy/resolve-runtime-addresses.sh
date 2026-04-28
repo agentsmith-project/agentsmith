@@ -16,8 +16,7 @@ SITE_ENV="${RELEASE_ROOT}/env/site.env"
 [[ -f "${SITE_ENV}" ]] || cp "${RELEASE_ROOT}/env/site.env.example" "${SITE_ENV}"
 
 set -a
-# shellcheck disable=SC1090
-source "${SITE_ENV}"
+load_env_file "${SITE_ENV}"
 set +a
 
 DEMO_DEPLOY_MODE="$(demo_deploy_mode)"

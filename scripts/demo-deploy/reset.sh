@@ -15,8 +15,7 @@ if [[ -d "${CURRENT_LINK}" ]]; then
   RELEASE_ROOT="$(cd "${CURRENT_LINK}" && pwd)"
 fi
 if [[ -f "${RELEASE_ROOT}/env/site.env" ]]; then
-  # shellcheck disable=SC1090
-  source "${RELEASE_ROOT}/env/site.env"
+  load_env_file "${RELEASE_ROOT}/env/site.env"
 fi
 
 KIND_CLUSTER_NAME="${KIND_CLUSTER_NAME:-${LOCAL_KIND_CLUSTER_NAME:-agentsmith}}"

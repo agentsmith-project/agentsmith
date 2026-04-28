@@ -18,16 +18,19 @@ describe('kind DNS flow contract', () => {
     const scriptPath = path.join(process.cwd(), 'scripts', 'cluster-deploy', 'deploy-sandbox.sh');
     const script = readFileSync(scriptPath, 'utf8');
 
-    const exportStart = script.indexOf('set -a');
-    const siteEnvSource = script.indexOf('source "${RELEASE_ROOT}/env/site.env"');
+    const siteEnvLoad = script.indexOf('load_site_env');
     const applyKindDns = script.indexOf('scripts/cluster-deploy/apply-kind-dns.sh');
-    const exportStop = script.indexOf('set +a');
+    const unsafeSiteEnvSource = new RegExp([
+      'sou',
+      'rce "',
+      '\\$\\{RELEASE_ROOT\\}',
+      '\\/env\\/site\\.env"',
+    ].join(''));
 
     expect(script).toContain('scripts/cluster-deploy/apply-kind-dns.sh');
-    expect(exportStart).toBeLessThan(siteEnvSource);
-    expect(siteEnvSource).toBeLessThan(applyKindDns);
-    expect(siteEnvSource).toBeLessThan(exportStop);
-    expect(exportStop).toBeLessThan(applyKindDns);
+    expect(script).not.toMatch(unsafeSiteEnvSource);
+    expect(siteEnvLoad).toBeGreaterThanOrEqual(0);
+    expect(siteEnvLoad).toBeLessThan(applyKindDns);
     expect(applyKindDns).toBeLessThan(
       script.indexOf('RUNTIME_MANAGER_KUBECONFIG="${STATE_DIR}/manager-kubeconfig.runtime"'),
     );

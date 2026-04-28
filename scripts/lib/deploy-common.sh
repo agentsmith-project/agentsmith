@@ -5,6 +5,10 @@ COMMON_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 DEPLOY_ROOT_DEFAULT="${DEPLOY_ROOT_DEFAULT:-${HOME}/agentsmith/deploy}"
 DEPLOY_LOG_PREFIX="${DEPLOY_LOG_PREFIX:-deploy}"
 
+log() { printf '[%s] %s\n' "${DEPLOY_LOG_PREFIX}" "$*"; }
+die() { printf '[%s] ERROR: %s\n' "${DEPLOY_LOG_PREFIX}" "$*" >&2; exit 1; }
+require_cmd() { command -v "$1" >/dev/null 2>&1 || die "missing command: $1"; }
+
 infer_release_root_from_common_dir() {
   local candidate
   candidate="$(cd "${COMMON_DIR}/../.." && pwd)"
@@ -28,6 +32,33 @@ infer_deploy_root_from_release_root() {
   return 1
 }
 
+ensure_release_id_default() {
+  if [[ -z "${RELEASE_ID:-}" ]]; then
+    RELEASE_ID="$(date -u +%Y%m%dT%H%M%SZ)"
+  fi
+}
+
+read_version_release_id() {
+  local version_path="$1"
+  awk -F= '$1=="release_id"{print $2; exit}' "${version_path}" 2>/dev/null || true
+}
+
+die_missing_version_release_id() {
+  die "VERSION is missing release_id; refusing to use incomplete release truth"
+}
+
+die_release_id_mismatch() {
+  die "RELEASE_ID does not match VERSION release_id; refusing to use mismatched release truth"
+}
+
+require_version_release_id() {
+  local version_path="$1"
+  local version_release_id=""
+  version_release_id="$(read_version_release_id "${version_path}")"
+  [[ -n "${version_release_id}" ]] || die_missing_version_release_id
+  printf '%s\n' "${version_release_id}"
+}
+
 INFERRED_RELEASE_ROOT="$(infer_release_root_from_common_dir || true)"
 INFERRED_DEPLOY_ROOT=""
 if [[ -n "${INFERRED_RELEASE_ROOT}" ]]; then
@@ -36,13 +67,15 @@ fi
 
 DEPLOY_ROOT="${DEPLOY_ROOT:-${DEMO_DEPLOY_ROOT:-${CLUSTER_DEPLOY_ROOT:-${INFERRED_DEPLOY_ROOT:-${DEPLOY_ROOT_DEFAULT}}}}}"
 CURRENT_LINK="${DEPLOY_ROOT}/current"
-RELEASE_ID="${RELEASE_ID:-$(date -u +%Y%m%dT%H%M%SZ)}"
+EXPLICIT_RELEASE_ID="${RELEASE_ID:-}"
+RELEASE_ID="${EXPLICIT_RELEASE_ID}"
 if [[ -z "${RELEASE_ROOT:-}" ]]; then
   if [[ -n "${INFERRED_RELEASE_ROOT}" ]]; then
     RELEASE_ROOT="${INFERRED_RELEASE_ROOT}"
-  elif [[ -f "${CURRENT_LINK}/VERSION" ]]; then
+  elif [[ "${DEPLOY_COMMON_IGNORE_CURRENT_RELEASE:-0}" != "1" && -f "${CURRENT_LINK}/VERSION" ]]; then
     RELEASE_ROOT="$(readlink -f "${CURRENT_LINK}")"
   else
+    ensure_release_id_default
     RELEASE_ROOT="${DEPLOY_ROOT}/releases/${RELEASE_ID}"
   fi
 elif [[ -e "${RELEASE_ROOT}" ]]; then
@@ -60,11 +93,13 @@ CONFIG_DIR="${DEPLOY_ROOT}/config"
 SHARED_SITE_ENV="${CONFIG_DIR}/site.env"
 TOOLS_DIR="${RELEASE_ROOT}/tools"
 if [[ -f "${RELEASE_ROOT}/VERSION" ]]; then
-  VERSION_RELEASE_ID="$(awk -F= '$1=="release_id"{print $2}' "${RELEASE_ROOT}/VERSION" 2>/dev/null || true)"
-  if [[ -n "${VERSION_RELEASE_ID}" ]]; then
-    RELEASE_ID="${RELEASE_ID:-${VERSION_RELEASE_ID}}"
+  VERSION_RELEASE_ID="$(require_version_release_id "${RELEASE_ROOT}/VERSION")"
+  if [[ -n "${EXPLICIT_RELEASE_ID}" && "${EXPLICIT_RELEASE_ID}" != "${VERSION_RELEASE_ID}" ]]; then
+    die_release_id_mismatch
   fi
+  RELEASE_ID="${VERSION_RELEASE_ID}"
 fi
+ensure_release_id_default
 export DEPLOY_ROOT CURRENT_LINK RELEASE_ID RELEASE_ROOT RELEASE_SCRIPT_DIR STATE_DIR LOG_DIR REPORT_DIR CONFIG_DIR SHARED_SITE_ENV TOOLS_DIR
 ORIGINAL_PATH="${PATH}"
 resolve_tool() {
@@ -107,10 +142,6 @@ ensure_local_image_from_bundle() {
   docker load -i "${archive_path}" >/dev/null
 }
 
-log() { printf '[%s] %s\n' "${DEPLOY_LOG_PREFIX}" "$*"; }
-die() { printf '[%s] ERROR: %s\n' "${DEPLOY_LOG_PREFIX}" "$*" >&2; exit 1; }
-require_cmd() { command -v "$1" >/dev/null 2>&1 || die "missing command: $1"; }
-
 ensure_dirs() {
   mkdir -p "${DEPLOY_ROOT}" "${STATE_DIR}" "${LOG_DIR}" "${REPORT_DIR}" "${CONFIG_DIR}"
 }
@@ -146,23 +177,62 @@ load_release_env() {
     "${RELEASE_ROOT}/env/internal.env" \
     "${RELEASE_ROOT}/env/runner.env"; do
     if [[ -f "${env_file}" ]]; then
-      while IFS= read -r raw_line || [[ -n "${raw_line}" ]]; do
-        local line="${raw_line#"${raw_line%%[![:space:]]*}"}"
-        [[ -z "${line}" || "${line}" == \#* || "${line}" != *=* ]] && continue
-        local key="${line%%=*}"
-        local value="${line#*=}"
-        if [[ "${value}" =~ ^\'(.*)\'$ ]]; then
-          value="${BASH_REMATCH[1]}"
-        elif [[ "${value}" =~ ^\"(.*)\"$ ]]; then
-          value="${BASH_REMATCH[1]}"
-        fi
-        export "${key}=${value}"
-      done < "${env_file}"
+      load_env_file "${env_file}"
     fi
   done
 }
 
+load_env_file() {
+  local env_file="$1"
+  while IFS= read -r raw_line || [[ -n "${raw_line}" ]]; do
+    local line="${raw_line#"${raw_line%%[![:space:]]*}"}"
+    [[ -z "${line}" || "${line}" == \#* || "${line}" != *=* ]] && continue
+    local key="${line%%=*}"
+    local value="${line#*=}"
+    if [[ "${value}" =~ ^\'(.*)\'$ ]]; then
+      value="${BASH_REMATCH[1]}"
+    elif [[ "${value}" =~ ^\"(.*)\"$ ]]; then
+      value="${BASH_REMATCH[1]}"
+    fi
+    if [[ "${key}" == "RELEASE_ID" ]]; then
+      if [[ -n "${value}" ]]; then
+        assert_release_id_matches_version "${value}"
+      fi
+      if [[ -f "${RELEASE_ROOT}/VERSION" ]]; then
+        RELEASE_ID="$(require_version_release_id "${RELEASE_ROOT}/VERSION")"
+        export RELEASE_ID
+      fi
+      continue
+    fi
+    export "${key}=${value}"
+  done < "${env_file}"
+}
+
+load_site_env() {
+  ensure_operator_site_env
+  load_env_file "${RELEASE_ROOT}/env/site.env"
+}
+
 state_file() { printf '%s/deploy-state.json\n' "${STATE_DIR}"; }
+
+assert_release_id_matches_version() {
+  local release_id="$1"
+  local version_release_id=""
+  if [[ -f "${RELEASE_ROOT}/VERSION" ]]; then
+    version_release_id="$(require_version_release_id "${RELEASE_ROOT}/VERSION")"
+  fi
+  if [[ -n "${version_release_id}" && "${release_id}" != "${version_release_id}" ]]; then
+    die_release_id_mismatch
+  fi
+}
+
+assert_state_release_id_matches_version() {
+  local state_release_id=""
+  state_release_id="$(state_get release.id 2>/dev/null || true)"
+  if [[ -n "${state_release_id}" ]]; then
+    assert_release_id_matches_version "${state_release_id}"
+  fi
+}
 
 ensure_state() {
   ensure_dirs
@@ -174,6 +244,9 @@ ensure_state() {
 state_set() {
   local key="$1"
   local value="${2-}"
+  if [[ "${key}" == "release.id" ]]; then
+    assert_release_id_matches_version "${value}"
+  fi
   ensure_state
   python3 - <<'PY' "$(state_file)" "${key}" "${value}"
 import json

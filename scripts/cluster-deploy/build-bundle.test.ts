@@ -33,10 +33,11 @@ function stageClusterBuildBundleFixture(tempRoot: string): void {
     path.join(tempRoot, 'scripts', 'cluster-deploy', 'lib.sh'),
     `#!/usr/bin/env bash
 set -euo pipefail
-ORIGINAL_PATH="\${PATH}"
-log() { printf '[cluster-build-test] %s\\n' "$*"; }
-die() { printf '[cluster-build-test] ERROR: %s\\n' "$*" >&2; exit 1; }
-require_cmd() { command -v "$1" >/dev/null 2>&1 || die "missing command: $1"; }
+SCRIPT_DIR="$(cd "$(dirname "\${BASH_SOURCE[0]}")" && pwd)"
+ROOT_DIR="$(cd "\${SCRIPT_DIR}/../.." && pwd)"
+export DEPLOY_ROOT_DEFAULT="\${CLUSTER_DEPLOY_ROOT:-\${HOME}/agentsmith/cluster-deploy}"
+export DEPLOY_LOG_PREFIX="\${DEPLOY_LOG_PREFIX:-cluster-build-test}"
+source "\${ROOT_DIR}/scripts/lib/deploy-common.sh"
 ensure_operator_registry_env() { :; }
 load_registry_env() {
   export REGISTRY_HOST="\${REGISTRY_HOST:-localhost:5001}"
@@ -49,15 +50,15 @@ load_registry_env() {
     path.join(tempRoot, 'scripts', 'cluster-deploy', 'build-images.sh'),
     `#!/usr/bin/env bash
 set -euo pipefail
-cat > "\${RELEASE_ROOT}/VERSION" <<'EOF'
-release_id=test-release
-agentsmith_app_image=localhost:5001/mbos/agentsmith-app:test-release
-agentsmith_runner_image=localhost:5001/mbos/agentsmith-notebook-codex-runner:test-release
-agentsmith_chat_runner_image=localhost:5001/mbos/agentsmith-chat-llm-runner:test-release
-agentsmith_chat_runner_k8s_image=kind-registry:5000/mbos/agentsmith-chat-llm-runner:test-release
-agentsmith_verify_runner_image=localhost:5001/mbos/agentsmith-verify-runner:test-release
-sandbox_manager_image=localhost:5001/mbos/sandbox-manager:test-release
-llm_universal_proxy_image=localhost:5001/mbos/llm-universal-proxy:test-release
+cat > "\${RELEASE_ROOT}/VERSION" <<EOF
+release_id=\${RELEASE_ID}
+agentsmith_app_image=localhost:5001/mbos/agentsmith-app:\${RELEASE_ID}
+agentsmith_runner_image=localhost:5001/mbos/agentsmith-notebook-codex-runner:\${RELEASE_ID}
+agentsmith_chat_runner_image=localhost:5001/mbos/agentsmith-chat-llm-runner:\${RELEASE_ID}
+agentsmith_chat_runner_k8s_image=kind-registry:5000/mbos/agentsmith-chat-llm-runner:\${RELEASE_ID}
+agentsmith_verify_runner_image=localhost:5001/mbos/agentsmith-verify-runner:\${RELEASE_ID}
+sandbox_manager_image=localhost:5001/mbos/sandbox-manager:\${RELEASE_ID}
+llm_universal_proxy_image=localhost:5001/mbos/llm-universal-proxy:\${RELEASE_ID}
 registry_host=localhost:5001
 registry_project=mbos
 EOF
@@ -94,7 +95,6 @@ release_story_verify_source_set() {
     'scripts/check-preset-external-file-library.sh',
     'scripts/file-library-real-smoke.sh',
     'scripts/cluster-upgrade-smoke.sh',
-    'scripts/lib/deploy-common.sh',
     'scripts/lib/release-stage-common.sh',
     'scripts/lib/bootstrap-common.sh',
     'scripts/lib/k8s-external-services.sh',
@@ -105,6 +105,10 @@ release_story_verify_source_set() {
   ]) {
     writeExecutable(path.join(tempRoot, relativePath), '#!/usr/bin/env bash\nset -euo pipefail\n');
   }
+  copyFileSync(
+    path.join(repoRoot, 'scripts', 'lib', 'deploy-common.sh'),
+    path.join(tempRoot, 'scripts', 'lib', 'deploy-common.sh'),
+  );
 
   writeFile(path.join(tempRoot, 'scripts', 'notebook-agent-refresh-token.js'), 'console.log("ok");\n');
   writeFile(path.join(tempRoot, 'infra', 'runtime', 'presets.env'), 'PRESET_ENDPOINT_MODEL=placeholder-model\n');
@@ -271,6 +275,27 @@ describe('cluster build bundle archive packaging', () => {
 
       expect(existsSync(path.join(bundleDir, 'images'))).toBe(false);
       expect(readFileSync(path.join(bundleDir, 'VERSION'), 'utf8')).toContain('bundled_image_archives_included=0');
+    } finally {
+      rmSync(tempRoot, { recursive: true, force: true });
+    }
+  });
+
+  it('uses the explicit bundle RELEASE_ID even when current/VERSION has another release id', () => {
+    const tempRoot = mkdtempSync(path.join(os.tmpdir(), 'cluster-build-bundle-current-truth-'));
+
+    try {
+      stageClusterBuildBundleFixture(tempRoot);
+      const deployRoot = path.join(tempRoot, 'cluster-deploy-root');
+      const currentRoot = path.join(deployRoot, 'current');
+      mkdirSync(currentRoot, { recursive: true });
+      writeFileSync(path.join(currentRoot, 'VERSION'), 'release_id=current-release\n', 'utf8');
+
+      runClusterBuildBundle(tempRoot, { CLUSTER_DEPLOY_ROOT: deployRoot, RELEASE_ID: 'new-release' });
+      const bundleDir = path.join(tempRoot, 'out', 'agentsmith-new-release');
+      const version = readFileSync(path.join(bundleDir, 'VERSION'), 'utf8');
+
+      expect(version).toContain('release_id=new-release');
+      expect(version).not.toContain('current-release');
     } finally {
       rmSync(tempRoot, { recursive: true, force: true });
     }

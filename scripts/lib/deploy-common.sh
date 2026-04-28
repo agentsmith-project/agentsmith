@@ -131,6 +131,151 @@ bundled_image_archive_path() {
   fi
 }
 
+docker_load_skip_decision_generated_at() {
+  if [[ -n "${BUILD_ARTIFACT_BROKER_GENERATED_AT:-}" ]]; then
+    printf '%s' "${BUILD_ARTIFACT_BROKER_GENERATED_AT}"
+    return 0
+  fi
+
+  node -e 'process.stdout.write(new Date().toISOString())'
+}
+
+append_docker_load_skip_decision() {
+  local image_ref="$1"
+  local archive_config_digest="$2"
+  local local_image_id="$3"
+  local generated_at
+  local skip_decisions_path="${RELEASE_ROOT}/skip-decisions.ndjson"
+
+  generated_at="$(docker_load_skip_decision_generated_at)"
+  node - \
+    "${skip_decisions_path}" \
+    "${image_ref}" \
+    "${archive_config_digest}" \
+    "${local_image_id}" \
+    "${generated_at}" <<'NODE'
+const fs = require('node:fs');
+const path = require('node:path');
+
+const [skipDecisionsPath, imageRef, archiveConfigDigest, localImageId, generatedAt] = process.argv.slice(2);
+const digestPattern = /^sha256:[a-f0-9]{64}$/u;
+const imageRefPattern = /^[A-Za-z0-9][A-Za-z0-9._:/@-]*$/u;
+
+if (!imageRefPattern.test(imageRef) || !digestPattern.test(archiveConfigDigest) || !digestPattern.test(localImageId)) {
+  process.exit(1);
+}
+
+const decision = {
+  schema: 'current-build-skip-decision.v1',
+  version: 1,
+  target: `image:${imageRef}`,
+  operation: 'docker_load',
+  input_digest: archiveConfigDigest,
+  existing_artifact_digest: localImageId,
+  skip_reason: 'local_docker_image_config_digest_matches_archive_config_digest',
+  validator: 'docker save archive manifest Config digest and docker image inspect --format {{.Id}}',
+  generated_at: generatedAt,
+};
+
+fs.mkdirSync(path.dirname(skipDecisionsPath), { recursive: true });
+fs.appendFileSync(skipDecisionsPath, `${JSON.stringify(decision)}\n`, 'utf8');
+NODE
+}
+
+docker_load_archive_config_proof() {
+  local archive_path="$1"
+
+  command -v node >/dev/null 2>&1 || return 1
+  command -v tar >/dev/null 2>&1 || return 1
+
+  node - "${archive_path}" <<'NODE'
+const { createHash } = require('node:crypto');
+const { execFileSync } = require('node:child_process');
+
+const archivePath = process.argv[2];
+const imageRefPattern = /^[A-Za-z0-9][A-Za-z0-9._:/@-]*$/u;
+
+function isRecord(value) {
+  return value !== null && typeof value === 'object' && !Array.isArray(value);
+}
+
+function isSafeArchivePath(value) {
+  if (typeof value !== 'string' || value === '' || value.startsWith('/') || value.startsWith('-')) {
+    return false;
+  }
+
+  return value.split('/').every((part) => part !== '' && part !== '.' && part !== '..');
+}
+
+function readArchiveEntry(entryPath, encoding) {
+  return execFileSync('tar', ['-xOf', archivePath, entryPath], {
+    encoding,
+    maxBuffer: 64 * 1024 * 1024,
+  });
+}
+
+try {
+  const manifest = JSON.parse(readArchiveEntry('manifest.json', 'utf8'));
+  if (!Array.isArray(manifest) || manifest.length !== 1) {
+    process.exit(1);
+  }
+
+  const entry = manifest[0];
+  if (!isRecord(entry) || !Array.isArray(entry.RepoTags) || entry.RepoTags.length !== 1) {
+    process.exit(1);
+  }
+
+  const [imageRef] = entry.RepoTags;
+  if (typeof imageRef !== 'string' || !imageRefPattern.test(imageRef)) {
+    process.exit(1);
+  }
+  if (!isSafeArchivePath(entry.Config)) {
+    process.exit(1);
+  }
+
+  const configBytes = readArchiveEntry(entry.Config, null);
+  JSON.parse(configBytes.toString('utf8'));
+  const configDigest = `sha256:${createHash('sha256').update(configBytes).digest('hex')}`;
+  process.stdout.write(`${imageRef}\t${configDigest}`);
+} catch {
+  process.exit(1);
+}
+NODE
+}
+
+local_docker_image_config_digest() {
+  local image_ref="$1"
+  local image_id
+
+  if ! image_id="$(docker image inspect --format '{{.Id}}' "${image_ref}" 2>/dev/null)"; then
+    return 1
+  fi
+  [[ "${image_id}" =~ ^sha256:[a-f0-9]{64}$ ]] || return 1
+  printf '%s\n' "${image_id}"
+}
+
+docker_load_archive_with_digest_proven_skip() {
+  local archive_path="$1"
+  local proof=""
+  local image_ref=""
+  local archive_config_digest=""
+  local local_image_id=""
+
+  if proof="$(docker_load_archive_config_proof "${archive_path}")"; then
+    IFS=$'\t' read -r image_ref archive_config_digest <<< "${proof}"
+    if [[ -n "${image_ref}" && -n "${archive_config_digest}" ]] \
+      && local_image_id="$(local_docker_image_config_digest "${image_ref}")" \
+      && [[ "${local_image_id}" == "${archive_config_digest}" ]] \
+      && append_docker_load_skip_decision "${image_ref}" "${archive_config_digest}" "${local_image_id}"; then
+      log "skipping docker load because local Docker image config digest matches archive config digest: ${image_ref}"
+      return 0
+    fi
+  fi
+
+  log "loading $(basename "${archive_path}")"
+  docker load -i "${archive_path}" >/dev/null
+}
+
 ensure_local_image_from_bundle() {
   local image="$1"
   if docker image inspect "${image}" >/dev/null 2>&1; then

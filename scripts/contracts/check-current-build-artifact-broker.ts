@@ -96,6 +96,10 @@ function main(): void {
     'unexpected build skip decision schema version.',
   );
   assert(
+    CURRENT_BUILD_SKIP_OPERATIONS.includes('docker_load'),
+    'build skip decisions must support docker_load audit operations.',
+  );
+  assert(
     CURRENT_BUILD_SKIP_OPERATIONS.includes('registry_push'),
     'build skip decisions must support registry_push audit operations.',
   );
@@ -327,6 +331,18 @@ function main(): void {
     generated_at: GENERATED_AT,
   };
   assertValidationOk('registry_push skip decision', validateBuildSkipDecision(registryPushSkipDecision));
+  const dockerLoadSkipDecision = {
+    schema: CURRENT_BUILD_SKIP_DECISION_SCHEMA,
+    version: CURRENT_BUILD_SKIP_DECISION_VERSION,
+    target: 'image:registry.test/mbos/agentsmith-app:release-20260427',
+    operation: 'docker_load',
+    input_digest: LOCKED_DIGEST_A,
+    existing_artifact_digest: LOCKED_DIGEST_A,
+    skip_reason: 'local_docker_image_config_digest_matches_archive_config_digest',
+    validator: 'docker save archive manifest Config digest and docker image inspect --format {{.Id}}',
+    generated_at: GENERATED_AT,
+  };
+  assertValidationOk('docker_load skip decision', validateBuildSkipDecision(dockerLoadSkipDecision));
   const kindPreloadSkipDecision = {
     schema: CURRENT_BUILD_SKIP_DECISION_SCHEMA,
     version: CURRENT_BUILD_SKIP_DECISION_VERSION,

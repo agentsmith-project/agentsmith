@@ -398,6 +398,19 @@ describe('build artifact broker', () => {
       validateBuildSkipDecision({
         schema: 'current-build-skip-decision.v1',
         version: 1,
+        target: 'image:registry.test/mbos/agentsmith-app:release-20260427',
+        operation: 'docker_load',
+        input_digest: LOCKED_DIGEST_A,
+        existing_artifact_digest: LOCKED_DIGEST_A,
+        skip_reason: 'local_docker_image_config_digest_matches_archive_config_digest',
+        validator: 'docker save archive manifest Config digest and docker image inspect --format {{.Id}}',
+        generated_at: GENERATED_AT,
+      }).ok,
+    ).toBe(true);
+    expect(
+      validateBuildSkipDecision({
+        schema: 'current-build-skip-decision.v1',
+        version: 1,
         target: 'image:kind-registry:5000/mbos/agentsmith-runner:release-20260427',
         operation: 'kind_preload',
         input_digest: LOCKED_DIGEST_A,

@@ -68,8 +68,7 @@ load_demo_bundled_images() {
   shopt -u nullglob
   (( ${#image_archives[@]} > 0 )) || die "no image archives found under ${RELEASE_ROOT}/images"
   for tar_file in "${image_archives[@]}"; do
-    log "loading $(basename "${tar_file}")"
-    docker load -i "${tar_file}" >/dev/null
+    docker_load_archive_with_digest_proven_skip "${tar_file}"
   done
 }
 

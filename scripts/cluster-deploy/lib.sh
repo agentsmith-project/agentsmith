@@ -286,7 +286,7 @@ load_bundled_images() {
     die "release bundle omits bundled image archives; rerun with SKIP_BUNDLED_IMAGE_LOAD=1 and local images available"
   fi
   while IFS= read -r tar_file; do
-    docker load -i "${tar_file}" >/dev/null
+    docker_load_archive_with_digest_proven_skip "${tar_file}"
   done < <(bundled_image_archives)
 }
 

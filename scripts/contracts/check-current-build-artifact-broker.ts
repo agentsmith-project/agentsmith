@@ -8,6 +8,7 @@ import {
   CURRENT_BUILD_MANIFEST_TARGET_DECISIONS,
   CURRENT_BUILD_SKIP_DECISION_SCHEMA,
   CURRENT_BUILD_SKIP_DECISION_VERSION,
+  CURRENT_BUILD_SKIP_OPERATIONS,
   buildBuildPrebuildPlanAggregate,
   buildBuildPrebuildPlanTarget,
   buildBuildManifestAggregate,
@@ -93,6 +94,10 @@ function main(): void {
   assert(
     CURRENT_BUILD_SKIP_DECISION_VERSION === 1,
     'unexpected build skip decision schema version.',
+  );
+  assert(
+    CURRENT_BUILD_SKIP_OPERATIONS.includes('registry_push'),
+    'build skip decisions must support registry_push audit operations.',
   );
   assert(
     buildImagesScript.includes('run_build_artifact_broker_manifest_gate'),
@@ -298,8 +303,28 @@ function main(): void {
     }).ok === false,
     'build manifest target must reject missing decision.',
   );
+  assert(
+    validateBuildManifestAggregate({
+      ...aggregate,
+      targets: [{ ...aggregate.targets[0], target: 'image:registry.test/mbos/agentsmith-app:release-20260427' }],
+    }).ok === false,
+    'build manifest target schema must remain limited to build artifact targets.',
+  );
 
-  for (const field of ['verdict', 'claim_id', 'reusable']) {
+  const registryPushSkipDecision = {
+    schema: CURRENT_BUILD_SKIP_DECISION_SCHEMA,
+    version: CURRENT_BUILD_SKIP_DECISION_VERSION,
+    target: 'image:registry.test/mbos/agentsmith-runner:release-20260427',
+    operation: 'registry_push',
+    input_digest: LOCKED_DIGEST_A,
+    existing_artifact_digest: LOCKED_DIGEST_A,
+    skip_reason: 'remote_manifest_digest_matches',
+    validator: 'registry manifest digest probe via docker buildx imagetools inspect',
+    generated_at: GENERATED_AT,
+  };
+  assertValidationOk('registry_push skip decision', validateBuildSkipDecision(registryPushSkipDecision));
+
+  for (const field of ['verdict', 'claim_id', 'reusable', 'passed', 'status', 'result_status']) {
     assert(
       validateBuildManifestAggregate({
         ...aggregate,
@@ -309,15 +334,7 @@ function main(): void {
     );
     assert(
       validateBuildSkipDecision({
-        schema: CURRENT_BUILD_SKIP_DECISION_SCHEMA,
-        version: CURRENT_BUILD_SKIP_DECISION_VERSION,
-        target: 'app',
-        operation: 'docker_build',
-        input_digest: appKey.input_digest,
-        existing_artifact_digest: LOCKED_DIGEST_A,
-        skip_reason: 'content_ref_digest_matches',
-        validator: 'contract-check',
-        generated_at: GENERATED_AT,
+        ...registryPushSkipDecision,
         [field]: 'forbidden',
       }).ok === false,
       `build skip decision must reject evidence truth field ${field}.`,

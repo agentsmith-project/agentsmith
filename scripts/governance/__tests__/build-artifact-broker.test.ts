@@ -375,8 +375,27 @@ describe('build artifact broker', () => {
         target: aggregate.targets[0],
       }).ok,
     ).toBe(false);
+    expect(
+      validateBuildManifestAggregate({
+        ...aggregate,
+        targets: [{ ...target, target: 'image:registry.test/mbos/agentsmith-app:release-20260427' }],
+      }).ok,
+    ).toBe(false);
 
-    for (const field of ['verdict', 'claim_id', 'reusable']) {
+    const registryPushSkipDecision = {
+      schema: 'current-build-skip-decision.v1',
+      version: 1,
+      target: 'image:registry.test/mbos/agentsmith-runner:release-20260427',
+      operation: 'registry_push',
+      input_digest: LOCKED_DIGEST_A,
+      existing_artifact_digest: LOCKED_DIGEST_A,
+      skip_reason: 'remote_manifest_digest_matches',
+      validator: 'registry manifest digest probe via docker buildx imagetools inspect',
+      generated_at: GENERATED_AT,
+    };
+    expect(validateBuildSkipDecision(registryPushSkipDecision).ok).toBe(true);
+
+    for (const field of ['verdict', 'claim_id', 'reusable', 'passed', 'status', 'result_status']) {
       expect(
         validateBuildManifestAggregate({
           ...aggregate,
@@ -385,15 +404,7 @@ describe('build artifact broker', () => {
       ).toBe(false);
       expect(
         validateBuildSkipDecision({
-          schema: 'current-build-skip-decision.v1',
-          version: 1,
-          target: 'app',
-          operation: 'docker_build',
-          input_digest: appKey.input_digest,
-          existing_artifact_digest: LOCKED_DIGEST_B,
-          skip_reason: 'content_ref_digest_matches',
-          validator: 'unit-test',
-          generated_at: GENERATED_AT,
+          ...registryPushSkipDecision,
           [field]: 'forbidden',
         }).ok,
       ).toBe(false);

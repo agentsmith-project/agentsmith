@@ -290,13 +290,152 @@ load_bundled_images() {
   done < <(bundled_image_archives)
 }
 
+image_repository_from_ref() {
+  local image="$1"
+  local image_without_digest="${image%%@*}"
+  local last_component="${image_without_digest##*/}"
+
+  if [[ "${last_component}" == *:* ]]; then
+    printf '%s' "${image_without_digest%:*}"
+    return 0
+  fi
+
+  printf '%s' "${image_without_digest}"
+}
+
+local_registry_manifest_digest_for_image() {
+  local image="$1"
+  local image_repo
+  local repo_digests_json
+
+  command -v node >/dev/null 2>&1 || return 1
+  image_repo="$(image_repository_from_ref "${image}")"
+  if ! repo_digests_json="$(docker image inspect --format '{{json .RepoDigests}}' "${image}" 2>/dev/null)"; then
+    return 1
+  fi
+
+  node - "${image_repo}" "${repo_digests_json}" <<'NODE'
+const repo = process.argv[2];
+const input = process.argv[3] ?? '';
+const digestPattern = /^sha256:[a-f0-9]{64}$/u;
+let repoDigests;
+
+try {
+  repoDigests = JSON.parse(input);
+} catch {
+  process.exit(1);
+}
+
+if (!Array.isArray(repoDigests)) {
+  process.exit(1);
+}
+
+for (const entry of repoDigests) {
+  if (typeof entry !== 'string') {
+    continue;
+  }
+
+  const separatorIndex = entry.lastIndexOf('@');
+  if (separatorIndex <= 0) {
+    continue;
+  }
+
+  const entryRepo = entry.slice(0, separatorIndex);
+  const entryDigest = entry.slice(separatorIndex + 1);
+  if (entryRepo === repo && digestPattern.test(entryDigest)) {
+    process.stdout.write(entryDigest);
+    process.exit(0);
+  }
+}
+
+process.exit(1);
+NODE
+}
+
+remote_registry_manifest_digest_for_image() {
+  local image="$1"
+  local manifest_json
+
+  command -v node >/dev/null 2>&1 || return 1
+  if ! manifest_json="$(docker buildx imagetools inspect "${image}" --format '{{json .Manifest}}' 2>/dev/null)"; then
+    return 1
+  fi
+
+  node - "${manifest_json}" <<'NODE'
+const input = process.argv[2] ?? '';
+const digestPattern = /^sha256:[a-f0-9]{64}$/u;
+let manifest;
+
+try {
+  manifest = JSON.parse(input);
+} catch {
+  process.exit(1);
+}
+
+if (!manifest || typeof manifest !== 'object' || Array.isArray(manifest)) {
+  process.exit(1);
+}
+
+const digest = manifest.digest;
+if (typeof digest !== 'string' || !digestPattern.test(digest)) {
+  process.exit(1);
+}
+
+process.stdout.write(digest);
+NODE
+}
+
+registry_push_skip_decision_generated_at() {
+  if [[ -n "${BUILD_ARTIFACT_BROKER_GENERATED_AT:-}" ]]; then
+    printf '%s' "${BUILD_ARTIFACT_BROKER_GENERATED_AT}"
+    return 0
+  fi
+
+  node -e 'process.stdout.write(new Date().toISOString())'
+}
+
+append_registry_push_skip_decision() {
+  local image="$1"
+  local input_digest="$2"
+  local existing_artifact_digest="$3"
+  local generated_at
+  local skip_decisions_path="${RELEASE_ROOT}/skip-decisions.ndjson"
+
+  generated_at="$(registry_push_skip_decision_generated_at)"
+  node - \
+    "${skip_decisions_path}" \
+    "${image}" \
+    "${input_digest}" \
+    "${existing_artifact_digest}" \
+    "${generated_at}" <<'NODE'
+const fs = require('node:fs');
+const path = require('node:path');
+
+const [skipDecisionsPath, image, inputDigest, existingArtifactDigest, generatedAt] = process.argv.slice(2);
+const decision = {
+  schema: 'current-build-skip-decision.v1',
+  version: 1,
+  target: `image:${image}`,
+  operation: 'registry_push',
+  input_digest: inputDigest,
+  existing_artifact_digest: existingArtifactDigest,
+  skip_reason: 'remote_manifest_digest_matches',
+  validator: 'registry manifest digest probe via docker buildx imagetools inspect',
+  generated_at: generatedAt,
+};
+
+fs.mkdirSync(path.dirname(skipDecisionsPath), { recursive: true });
+fs.appendFileSync(skipDecisionsPath, `${JSON.stringify(decision)}\n`, 'utf8');
+NODE
+}
+
 push_release_images() {
   if [[ -n "${REGISTRY_USERNAME:-}" || -n "${REGISTRY_PASSWORD:-}" ]]; then
     [[ -n "${REGISTRY_USERNAME:-}" && -n "${REGISTRY_PASSWORD:-}" ]] \
       || die "registry auth requires both REGISTRY_USERNAME and REGISTRY_PASSWORD"
-    docker login "${REGISTRY_HOST}" -u "${REGISTRY_USERNAME}" -p "${REGISTRY_PASSWORD}" >/dev/null
+    printf '%s' "${REGISTRY_PASSWORD}" | docker login "${REGISTRY_HOST}" -u "${REGISTRY_USERNAME}" --password-stdin >/dev/null
   fi
-  local image
+  local image local_manifest_digest remote_manifest_digest
   for image in \
     "${APP_IMAGE}" \
     "${RUNNER_IMAGE}" \
@@ -313,6 +452,15 @@ push_release_images() {
     "${JUICEFS_CSI_NODE_REGISTRAR_IMAGE}" \
     "${INGRESS_NGINX_CONTROLLER_IMAGE}" \
     "${INGRESS_NGINX_CERTGEN_IMAGE}"; do
+    if [[ "${FORCE_REGISTRY_PUSH:-0}" != "1" ]] \
+      && local_manifest_digest="$(local_registry_manifest_digest_for_image "${image}")" \
+      && remote_manifest_digest="$(remote_registry_manifest_digest_for_image "${image}")" \
+      && [[ "${local_manifest_digest}" == "${remote_manifest_digest}" ]]; then
+      append_registry_push_skip_decision "${image}" "${local_manifest_digest}" "${remote_manifest_digest}"
+      log "skipping registry push because local RepoDigest matches remote manifest digest: ${image}"
+      continue
+    fi
+
     docker push "${image}" >/dev/null
   done
 }

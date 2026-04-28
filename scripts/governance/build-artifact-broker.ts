@@ -32,7 +32,9 @@ export {
   type CurrentBuildManifestProducer,
   type CurrentBuildManifestTarget,
   type CurrentBuildManifestTargetDecision,
+  type CurrentBuildOperationalSkipTarget,
   type CurrentBuildSkipDecision,
+  type CurrentBuildSkipDecisionTarget,
 } from './current-build-artifact-broker-schema';
 
 export interface BuildArtifactBrokerFileInput {

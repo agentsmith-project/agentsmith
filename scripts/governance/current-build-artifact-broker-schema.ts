@@ -5,6 +5,8 @@ export const CURRENT_BUILD_SKIP_DECISION_VERSION = 1 as const;
 
 export const CURRENT_BUILD_ARTIFACT_TARGETS = ['app', 'llmup'] as const;
 export type CurrentBuildArtifactTarget = (typeof CURRENT_BUILD_ARTIFACT_TARGETS)[number];
+export type CurrentBuildOperationalSkipTarget = `image:${string}`;
+export type CurrentBuildSkipDecisionTarget = CurrentBuildArtifactTarget | CurrentBuildOperationalSkipTarget;
 
 export const CURRENT_BUILD_MANIFEST_MODES = [
   'build',
@@ -78,7 +80,7 @@ export interface CurrentBuildManifestAggregate {
 export interface CurrentBuildSkipDecision {
   schema: typeof CURRENT_BUILD_SKIP_DECISION_SCHEMA;
   version: typeof CURRENT_BUILD_SKIP_DECISION_VERSION;
-  target: CurrentBuildArtifactTarget;
+  target: CurrentBuildSkipDecisionTarget;
   operation: CurrentBuildSkipOperation;
   input_digest: string;
   existing_artifact_digest: string;
@@ -151,6 +153,7 @@ const FORBIDDEN_EVIDENCE_TRUTH_FIELD_SET = new Set<string>(CURRENT_BUILD_FORBIDD
 const DIGEST_PATTERN = /^sha256:[a-f0-9]{64}$/;
 const CONTENT_REF_PATTERN = /:ck-[a-f0-9]{32}$/;
 const RELEASE_ALIAS_PATTERN = /:release-[a-zA-Z0-9._-]+$/;
+const IMAGE_SKIP_TARGET_PATTERN = /^image:[A-Za-z0-9][A-Za-z0-9._:/@-]*$/;
 
 export function validateBuildManifestAggregate(
   value: unknown,
@@ -238,7 +241,7 @@ export function validateBuildSkipDecision(
   validateRequiredFields(value, SKIP_DECISION_FIELDS, 'skip_decision', failures);
   validateLiteral(value.schema, CURRENT_BUILD_SKIP_DECISION_SCHEMA, 'skip_decision.schema', failures);
   validateLiteral(value.version, CURRENT_BUILD_SKIP_DECISION_VERSION, 'skip_decision.version', failures);
-  validateEnum(value.target, TARGET_SET, 'skip_decision.target', failures);
+  validateSkipDecisionTarget(value.target, 'skip_decision.target', failures);
   validateEnum(value.operation, SKIP_OPERATION_SET, 'skip_decision.operation', failures);
   validateDigest(value.input_digest, 'skip_decision.input_digest', failures);
   validateDigest(value.existing_artifact_digest, 'skip_decision.existing_artifact_digest', failures);
@@ -327,6 +330,21 @@ function validateProducer(
   validateRequiredString(value.version, `${path}.version`, failures);
   validateRequiredString(value.command, `${path}.command`, failures);
   validateRequiredString(value.runtime, `${path}.runtime`, failures);
+}
+
+function validateSkipDecisionTarget(
+  value: unknown,
+  path: string,
+  failures: CurrentBuildArtifactBrokerValidationFailure[],
+): void {
+  if (typeof value === 'string' && (TARGET_SET.has(value) || IMAGE_SKIP_TARGET_PATTERN.test(value))) {
+    return;
+  }
+
+  failures.push({
+    path,
+    reason: `must be one of: ${[...TARGET_SET].join(', ')}, or image:<ref>.`,
+  });
 }
 
 function validateForbiddenEvidenceTruthFields(

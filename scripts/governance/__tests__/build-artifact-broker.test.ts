@@ -1,6 +1,8 @@
 import { describe, expect, it } from 'vitest';
 
 import {
+  buildBuildPrebuildPlanAggregate,
+  buildBuildPrebuildPlanTarget,
   buildBuildManifestAggregate,
   buildBuildManifestTarget,
   computeAppImageContentKey,
@@ -249,6 +251,48 @@ describe('build artifact broker', () => {
         generatedAt: GENERATED_AT,
       }).release_alias_ref,
     ).toBe('agentsmith-app:release-20260427');
+  });
+
+  it('builds prebuild plan refs with the same content and release alias semantics as manifest targets', () => {
+    const appKey = computeAppImageContentKey({
+      files: APP_BASE_FILES,
+      env: { NEXT_PUBLIC_API_BASE: 'http://localhost:20000/api/v1' },
+      baseImages: ['docker.io/library/node:22-bookworm-slim@' + LOCKED_DIGEST_A],
+    });
+    const planTarget = buildBuildPrebuildPlanTarget({
+      target: 'app',
+      releaseId: 'test-release',
+      imageName: 'localhost:5001/mbos/agentsmith-app',
+      contentKey: appKey,
+      producer: BUILD_PRODUCER,
+      generatedAt: GENERATED_AT,
+    });
+    const manifestTarget = buildBuildManifestTarget({
+      target: 'app',
+      releaseId: 'test-release',
+      imageName: 'localhost:5001/mbos/agentsmith-app',
+      contentKey: appKey,
+      imageDigest: LOCKED_DIGEST_B,
+      decision: 'built',
+      producer: BUILD_PRODUCER,
+      generatedAt: GENERATED_AT,
+    });
+    const plan = buildBuildPrebuildPlanAggregate({
+      runId: BUILD_RUN_ID,
+      releaseId: 'test-release',
+      versionPath: '/tmp/release/VERSION',
+      mode: 'build',
+      producer: BUILD_PRODUCER,
+      targets: [planTarget],
+      generatedAt: GENERATED_AT,
+    });
+
+    expect(planTarget.content_ref).toMatch(/^localhost:5001\/mbos\/agentsmith-app:ck-[a-f0-9]{32}$/u);
+    expect(planTarget.release_alias_ref).toBe('localhost:5001/mbos/agentsmith-app:release-test-release');
+    expect(planTarget.content_ref).toBe(manifestTarget.content_ref);
+    expect(planTarget.release_alias_ref).toBe(manifestTarget.release_alias_ref);
+    expect(planTarget).not.toHaveProperty('image_digest');
+    expect(plan.targets[0]).toBe(planTarget);
   });
 
   it('validates build-manifest aggregate targets and keeps evidence truth fields out of manifests and skip decisions', () => {

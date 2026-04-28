@@ -3,7 +3,11 @@ set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "$0")/../.." && pwd)"
 SANDBOX_ROOT="$(cd "${ROOT_DIR}/../mbos-sandbox-v1" && pwd)"
-UNIVERSAL_PROXY_ROOT="$(cd "${ROOT_DIR}/../llm-universal-proxy" && pwd)"
+if [[ -n "${UNIVERSAL_PROXY_ROOT_OVERRIDE:-}" ]]; then
+  UNIVERSAL_PROXY_ROOT="$(cd "${UNIVERSAL_PROXY_ROOT_OVERRIDE}" && pwd)"
+else
+  UNIVERSAL_PROXY_ROOT="$(cd "${ROOT_DIR}/../llm-universal-proxy" && pwd)"
+fi
 OUT_DIR="${OUT_DIR:-${HOME}/agentsmith/cluster-deploy/uploads}"
 RELEASE_ID="${RELEASE_ID:-$(git -C "${ROOT_DIR}" rev-parse --short HEAD)-$(date -u +%Y%m%dT%H%M%SZ)}"
 export DEPLOY_COMMON_IGNORE_CURRENT_RELEASE=1

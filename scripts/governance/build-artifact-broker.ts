@@ -11,6 +11,9 @@ import {
   type CurrentBuildManifestTargetDecision,
 } from './current-build-artifact-broker-schema';
 
+export const BUILD_ARTIFACT_PREBUILD_PLAN_SCHEMA = 'build-artifact-broker-prebuild-plan.v1' as const;
+export const BUILD_ARTIFACT_PREBUILD_PLAN_VERSION = 1 as const;
+
 export {
   CURRENT_BUILD_ARTIFACT_TARGETS,
   CURRENT_BUILD_FORBIDDEN_EVIDENCE_TRUTH_FIELDS,
@@ -106,6 +109,31 @@ export type ReleaseIdTruthValidationResult =
       failures: readonly BuildArtifactBrokerParseFailure[];
     };
 
+export interface BuildArtifactPrebuildPlanTarget {
+  target: CurrentBuildArtifactTarget;
+  release_id: string;
+  content_key: string;
+  content_ref: string;
+  release_alias_ref: string;
+  input_digest: string;
+  base_image_digest: string;
+  producer: CurrentBuildManifestProducer;
+  generated_at: string;
+}
+
+export interface BuildArtifactPrebuildPlan {
+  schema: typeof BUILD_ARTIFACT_PREBUILD_PLAN_SCHEMA;
+  version: typeof BUILD_ARTIFACT_PREBUILD_PLAN_VERSION;
+  plan_kind: 'build_prebuild_plan';
+  run_id: string;
+  release_id: string;
+  version_path: string;
+  mode: CurrentBuildManifestMode;
+  producer: CurrentBuildManifestProducer;
+  generated_at: string;
+  targets: readonly BuildArtifactPrebuildPlanTarget[];
+}
+
 interface NormalizedDigestInput {
   path: string;
   kind: BuildArtifactBrokerSelectedInput['kind'];
@@ -123,6 +151,15 @@ interface BuildManifestTargetArgs {
   generatedAt: string;
 }
 
+interface BuildPrebuildPlanTargetArgs {
+  target: CurrentBuildArtifactTarget;
+  releaseId: string;
+  imageName: string;
+  contentKey: BuildArtifactContentKeyResult;
+  producer: CurrentBuildManifestProducer;
+  generatedAt: string;
+}
+
 interface BuildManifestAggregateArgs {
   runId: string;
   releaseId: string;
@@ -130,6 +167,16 @@ interface BuildManifestAggregateArgs {
   mode: CurrentBuildManifestMode;
   producer: CurrentBuildManifestProducer;
   targets: readonly CurrentBuildManifestTarget[];
+  generatedAt: string;
+}
+
+interface BuildPrebuildPlanAggregateArgs {
+  runId: string;
+  releaseId: string;
+  versionPath: string;
+  mode: CurrentBuildManifestMode;
+  producer: CurrentBuildManifestProducer;
+  targets: readonly BuildArtifactPrebuildPlanTarget[];
   generatedAt: string;
 }
 
@@ -351,11 +398,42 @@ export function buildBuildManifestTarget(args: BuildManifestTargetArgs): Current
   };
 }
 
+export function buildBuildPrebuildPlanTarget(args: BuildPrebuildPlanTargetArgs): BuildArtifactPrebuildPlanTarget {
+  const releaseAliasTag = normalizeReleaseAliasTag(args.releaseId);
+
+  return {
+    target: args.target,
+    release_id: args.releaseId,
+    content_key: args.contentKey.content_key,
+    content_ref: `${args.imageName}:${args.contentKey.content_key}`,
+    release_alias_ref: `${args.imageName}:${releaseAliasTag}`,
+    input_digest: args.contentKey.input_digest,
+    base_image_digest: args.contentKey.base_image_digest,
+    producer: args.producer,
+    generated_at: args.generatedAt,
+  };
+}
+
 export function buildBuildManifestAggregate(args: BuildManifestAggregateArgs): CurrentBuildManifestAggregate {
   return {
     schema: CURRENT_BUILD_MANIFEST_AGGREGATE_SCHEMA,
     version: CURRENT_BUILD_MANIFEST_AGGREGATE_VERSION,
     manifest_kind: 'build_manifest_aggregate',
+    run_id: args.runId,
+    release_id: args.releaseId,
+    version_path: args.versionPath,
+    mode: args.mode,
+    producer: args.producer,
+    generated_at: args.generatedAt,
+    targets: args.targets,
+  };
+}
+
+export function buildBuildPrebuildPlanAggregate(args: BuildPrebuildPlanAggregateArgs): BuildArtifactPrebuildPlan {
+  return {
+    schema: BUILD_ARTIFACT_PREBUILD_PLAN_SCHEMA,
+    version: BUILD_ARTIFACT_PREBUILD_PLAN_VERSION,
+    plan_kind: 'build_prebuild_plan',
     run_id: args.runId,
     release_id: args.releaseId,
     version_path: args.versionPath,

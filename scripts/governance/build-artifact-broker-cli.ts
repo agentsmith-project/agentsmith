@@ -5,6 +5,8 @@ import { pathToFileURL } from 'node:url';
 
 import {
   CURRENT_BUILD_MANIFEST_MODES,
+  buildBuildPrebuildPlanAggregate,
+  buildBuildPrebuildPlanTarget,
   buildBuildManifestAggregate,
   buildBuildManifestTarget,
   computeAppImageContentKey,
@@ -24,6 +26,9 @@ const DIAGNOSTIC_REPORT_SCHEMA = 'build-artifact-broker-diagnostic-report.v1' as
 const DIAGNOSTIC_REPORT_VERSION = 1 as const;
 const ROOT_ONLY_EXCLUDED_SOURCE_DIRS = new Set(['.git', '.next', 'node_modules', 'target', 'artifacts', 'dist']);
 const MODE_SET = new Set<string>(CURRENT_BUILD_MANIFEST_MODES);
+const ARTIFACT_KIND_SET = new Set(['manifest', 'prebuild-plan']);
+
+type BuildArtifactBrokerArtifactKind = 'manifest' | 'prebuild_plan';
 
 interface BuildArtifactBrokerCliOptions {
   argv?: readonly string[];
@@ -42,7 +47,9 @@ interface BuildArtifactBrokerCliConfig {
   appBaseImages: readonly string[];
   llmupBaseImages: readonly string[];
   mode: CurrentBuildManifestMode;
+  artifactKind: BuildArtifactBrokerArtifactKind;
   manifestPath: string;
+  planPath: string;
   reportPath: string;
 }
 
@@ -66,6 +73,7 @@ interface BuildArtifactBrokerDiagnosticReport {
   diagnostics: readonly BuildArtifactBrokerDiagnostic[];
   outputs: {
     manifest_path: string;
+    plan_path: string;
     report_path: string;
   };
 }
@@ -81,7 +89,7 @@ interface BrokerRunContext {
 interface BrokerRunResult {
   exitCode: number;
   artifactPath: string;
-  artifactKind: 'manifest' | 'diagnostic_report';
+  artifactKind: 'manifest' | 'prebuild_plan' | 'diagnostic_report';
 }
 
 type ImageDigestProbeResult =
@@ -106,6 +114,8 @@ export function runBuildArtifactBrokerCli(options: BuildArtifactBrokerCliOptions
 
     if (result.artifactKind === 'manifest') {
       stdout(`build artifact broker manifest: ${result.artifactPath}`);
+    } else if (result.artifactKind === 'prebuild_plan') {
+      stdout(`build artifact broker prebuild plan: ${result.artifactPath}`);
     } else {
       stdout(`build artifact broker diagnostic report: ${result.artifactPath}`);
     }
@@ -144,7 +154,34 @@ function writeBuildArtifactBrokerArtifact(
     versionPath,
   };
 
-  if (!existsSync(versionPath)) {
+  let versionValues: ReadonlyMap<string, string> = new Map();
+  let releaseId = config.releaseId ?? '';
+
+  if (existsSync(versionPath)) {
+    const versionContent = readFileSync(versionPath, 'utf8');
+    const releaseTruth = validateReleaseIdTruth({
+      versionContent,
+      envReleaseId: config.releaseId,
+      versionPath,
+    });
+    versionValues = parseVersionValues(versionContent);
+    const versionReleaseId = versionValues.get('release_id') ?? config.releaseId ?? '';
+
+    if (!releaseTruth.ok) {
+      return writeDiagnosticReport(
+        context,
+        versionReleaseId,
+        releaseTruth.failures.map((failure) => ({
+          reason_code: 'release_id_truth_failure',
+          path: failure.path,
+          message: failure.reason,
+        })),
+        BUILD_ARTIFACT_BROKER_RELEASE_TRUTH_EXIT_CODE,
+      );
+    }
+
+    releaseId = releaseTruth.release_id;
+  } else if (config.artifactKind === 'manifest' || !config.releaseId) {
     return writeDiagnosticReport(context, config.releaseId ?? '', [
       {
         reason_code: 'release_id_truth_failure',
@@ -154,30 +191,7 @@ function writeBuildArtifactBrokerArtifact(
     ], BUILD_ARTIFACT_BROKER_RELEASE_TRUTH_EXIT_CODE);
   }
 
-  const versionContent = readFileSync(versionPath, 'utf8');
-  const releaseTruth = validateReleaseIdTruth({
-    versionContent,
-    envReleaseId: config.releaseId,
-    versionPath,
-  });
-  const versionValues = parseVersionValues(versionContent);
-  const versionReleaseId = versionValues.get('release_id') ?? config.releaseId ?? '';
-
-  if (!releaseTruth.ok) {
-    return writeDiagnosticReport(
-      context,
-      versionReleaseId,
-      releaseTruth.failures.map((failure) => ({
-        reason_code: 'release_id_truth_failure',
-        path: failure.path,
-        message: failure.reason,
-      })),
-      BUILD_ARTIFACT_BROKER_RELEASE_TRUTH_EXIT_CODE,
-    );
-  }
-
   const diagnostics: BuildArtifactBrokerDiagnostic[] = [];
-  const releaseId = releaseTruth.release_id;
   const appImage = config.appImage ?? versionValues.get('agentsmith_app_image');
   const llmupImage = config.llmupImage ?? versionValues.get('llm_universal_proxy_image');
   const appFiles = scanSourceOrDiagnostic('app', config.appSourceDir, diagnostics);
@@ -205,6 +219,59 @@ function writeBuildArtifactBrokerArtifact(
   validateBaseImageLocks('app', config.appBaseImages, diagnostics);
   validateBaseImageLocks('llmup', config.llmupBaseImages, diagnostics);
 
+  if (config.artifactKind === 'prebuild_plan') {
+    if (diagnostics.length > 0 || !appImage || !llmupImage) {
+      return writeDiagnosticReport(context, releaseId, diagnostics, 1);
+    }
+
+    const appContentKey = computeAppImageContentKey({
+      files: appFiles,
+      env,
+      baseImages: config.appBaseImages,
+    });
+    const llmupContentKey = computeLlmupRuntimeContentKey({
+      files: llmupFiles,
+      env,
+      baseImages: config.llmupBaseImages,
+    });
+    const plan = buildBuildPrebuildPlanAggregate({
+      runId,
+      releaseId,
+      versionPath,
+      mode: config.mode,
+      producer,
+      generatedAt,
+      targets: [
+        buildBuildPrebuildPlanTarget({
+          target: 'app',
+          releaseId,
+          imageName: imageRepositoryFromRef(appImage),
+          contentKey: appContentKey,
+          producer,
+          generatedAt,
+        }),
+        buildBuildPrebuildPlanTarget({
+          target: 'llmup',
+          releaseId,
+          imageName: imageRepositoryFromRef(llmupImage),
+          contentKey: llmupContentKey,
+          producer,
+          generatedAt,
+        }),
+      ],
+    });
+
+    rmSync(config.reportPath, { force: true });
+    rmSync(config.manifestPath, { force: true });
+    writeJson(config.planPath, plan);
+
+    return {
+      exitCode: 0,
+      artifactPath: config.planPath,
+      artifactKind: 'prebuild_plan',
+    };
+  }
+
   const appImageDigest = appImage ? probeImageDigest(appImage, env) : undefined;
   const llmupImageDigest = llmupImage ? probeImageDigest(llmupImage, env) : undefined;
 
@@ -226,7 +293,7 @@ function writeBuildArtifactBrokerArtifact(
   }
 
   if (diagnostics.length > 0 || !appImage || !llmupImage || !appImageDigest?.ok || !llmupImageDigest?.ok) {
-    return writeDiagnosticReport(context, releaseId, diagnostics, 0);
+    return writeDiagnosticReport(context, releaseId, diagnostics, 1);
   }
 
   const appContentKey = computeAppImageContentKey({
@@ -306,7 +373,9 @@ function parseCliConfig(argv: readonly string[]): BuildArtifactBrokerCliConfig {
     appBaseImages: string[];
     llmupBaseImages: string[];
     mode?: string;
+    artifactKind?: string;
     manifestPath?: string;
+    planPath?: string;
     reportPath?: string;
   } = {
     appBaseImages: [],
@@ -353,8 +422,16 @@ function parseCliConfig(argv: readonly string[]): BuildArtifactBrokerCliConfig {
         rawConfig.mode = requireArgValue(argv, index);
         index += 1;
         break;
+      case '--artifact-kind':
+        rawConfig.artifactKind = requireArgValue(argv, index);
+        index += 1;
+        break;
       case '--manifest-path':
         rawConfig.manifestPath = requireArgValue(argv, index);
+        index += 1;
+        break;
+      case '--plan-path':
+        rawConfig.planPath = requireArgValue(argv, index);
         index += 1;
         break;
       case '--report-path':
@@ -375,6 +452,10 @@ function parseCliConfig(argv: readonly string[]): BuildArtifactBrokerCliConfig {
   if (!MODE_SET.has(mode)) {
     throw new Error(`unsupported build artifact broker mode: ${mode}`);
   }
+  const artifactKind = rawConfig.artifactKind ?? 'manifest';
+  if (!ARTIFACT_KIND_SET.has(artifactKind)) {
+    throw new Error(`unsupported build artifact broker artifact kind: ${artifactKind}`);
+  }
 
   return {
     releaseRoot,
@@ -386,7 +467,9 @@ function parseCliConfig(argv: readonly string[]): BuildArtifactBrokerCliConfig {
     appBaseImages: rawConfig.appBaseImages,
     llmupBaseImages: rawConfig.llmupBaseImages,
     mode: mode as CurrentBuildManifestMode,
+    artifactKind: artifactKind === 'prebuild-plan' ? 'prebuild_plan' : 'manifest',
     manifestPath: path.resolve(rawConfig.manifestPath ?? path.join(releaseRoot, 'build-manifest.json')),
+    planPath: path.resolve(rawConfig.planPath ?? path.join(releaseRoot, 'build-artifact-broker-plan.json')),
     reportPath: path.resolve(rawConfig.reportPath ?? path.join(releaseRoot, 'build-artifact-broker-report.json')),
   };
 }
@@ -600,11 +683,13 @@ function writeDiagnosticReport(
     diagnostics,
     outputs: {
       manifest_path: context.config.manifestPath,
+      plan_path: context.config.planPath,
       report_path: context.config.reportPath,
     },
   };
 
   rmSync(context.config.manifestPath, { force: true });
+  rmSync(context.config.planPath, { force: true });
   writeJson(context.config.reportPath, report);
 
   return {

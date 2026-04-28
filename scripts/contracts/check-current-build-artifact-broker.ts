@@ -8,6 +8,8 @@ import {
   CURRENT_BUILD_MANIFEST_TARGET_DECISIONS,
   CURRENT_BUILD_SKIP_DECISION_SCHEMA,
   CURRENT_BUILD_SKIP_DECISION_VERSION,
+  buildBuildPrebuildPlanAggregate,
+  buildBuildPrebuildPlanTarget,
   buildBuildManifestAggregate,
   buildBuildManifestTarget,
   computeAppImageContentKey,
@@ -56,6 +58,7 @@ function assertValidationOk(label: string, result: { ok: boolean; failures?: rea
 function main(): void {
   const packageJson = readJson<PackageJson>('package.json');
   const contractsCheck = packageJson.scripts?.['contracts:check'] ?? '';
+  const buildImagesScript = readFileSync(resolve('scripts/cluster-deploy/build-images.sh'), 'utf8');
 
   assert(
     packageJson.scripts?.['contracts:check-current-build-artifact-broker']
@@ -90,6 +93,31 @@ function main(): void {
   assert(
     CURRENT_BUILD_SKIP_DECISION_VERSION === 1,
     'unexpected build skip decision schema version.',
+  );
+  assert(
+    buildImagesScript.includes('run_build_artifact_broker_manifest_gate'),
+    'build-images.sh must run the post-build build artifact broker as a manifest gate.',
+  );
+  assert(
+    buildImagesScript.includes('build artifact broker manifest gate failed with exit'),
+    'build-images.sh must fail closed when the post-build broker exits nonzero.',
+  );
+  assert(
+    buildImagesScript.includes('wrote diagnostic report instead of trusted manifest'),
+    'build-images.sh must reject post-build diagnostic reports on the mandatory manifest path.',
+  );
+  assert(
+    buildImagesScript.includes('did not write ${manifest_path}'),
+    'build-images.sh must require build-manifest.json after the post-build broker completes.',
+  );
+  assert(
+    !/broker_exit[^\n;]*-eq 42/u.test(buildImagesScript),
+    'build-images.sh must not special-case release-truth exit 42 on the post-build mandatory path.',
+  );
+  assert(
+    !buildImagesScript.includes('build artifact broker diagnostic warning')
+      && !buildImagesScript.includes('build artifact broker diagnostic skipped'),
+    'build-images.sh must not downgrade post-build broker failures to diagnostics or warnings.',
   );
 
   const appKey = computeAppImageContentKey({
@@ -171,6 +199,36 @@ function main(): void {
   assert(
     aggregate.targets[0]?.release_alias_ref === 'agentsmith-app:release-20260427',
     'release alias refs must use the normalized release alias tag.',
+  );
+  const prebuildPlan = buildBuildPrebuildPlanAggregate({
+    runId: BUILD_RUN_ID,
+    releaseId: '20260427',
+    versionPath: '/tmp/release/VERSION',
+    mode: 'build',
+    producer: BUILD_PRODUCER,
+    generatedAt: GENERATED_AT,
+    targets: [
+      buildBuildPrebuildPlanTarget({
+        target: 'app',
+        releaseId: '20260427',
+        imageName: 'agentsmith-app',
+        contentKey: appKey,
+        producer: BUILD_PRODUCER,
+        generatedAt: GENERATED_AT,
+      }),
+    ],
+  });
+  assert(
+    prebuildPlan.targets[0]?.content_ref === aggregate.targets[0]?.content_ref,
+    'prebuild plan content_ref must match manifest target content_ref.',
+  );
+  assert(
+    prebuildPlan.targets[0]?.release_alias_ref === aggregate.targets[0]?.release_alias_ref,
+    'prebuild plan release_alias_ref must match manifest target release_alias_ref.',
+  );
+  assert(
+    !('image_digest' in prebuildPlan.targets[0]),
+    'prebuild plan target must not require or claim an image digest.',
   );
   assert(
     buildBuildManifestTarget({

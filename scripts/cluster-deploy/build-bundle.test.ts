@@ -50,15 +50,22 @@ load_registry_env() {
     path.join(tempRoot, 'scripts', 'cluster-deploy', 'build-images.sh'),
     `#!/usr/bin/env bash
 set -euo pipefail
+release_alias="\${RELEASE_ID}"
+if [[ "\${release_alias}" != release-* ]]; then
+  release_alias="release-\${release_alias}"
+fi
+cat > "\${RELEASE_ROOT}/build-images-env.log" <<EOF
+UNIVERSAL_PROXY_SOURCE_DIR_OVERRIDE=\${UNIVERSAL_PROXY_SOURCE_DIR_OVERRIDE:-}
+EOF
 cat > "\${RELEASE_ROOT}/VERSION" <<EOF
 release_id=\${RELEASE_ID}
-agentsmith_app_image=localhost:5001/mbos/agentsmith-app:\${RELEASE_ID}
+agentsmith_app_image=localhost:5001/mbos/agentsmith-app:\${release_alias}
 agentsmith_runner_image=localhost:5001/mbos/agentsmith-notebook-codex-runner:\${RELEASE_ID}
 agentsmith_chat_runner_image=localhost:5001/mbos/agentsmith-chat-llm-runner:\${RELEASE_ID}
 agentsmith_chat_runner_k8s_image=kind-registry:5000/mbos/agentsmith-chat-llm-runner:\${RELEASE_ID}
 agentsmith_verify_runner_image=localhost:5001/mbos/agentsmith-verify-runner:\${RELEASE_ID}
 sandbox_manager_image=localhost:5001/mbos/sandbox-manager:\${RELEASE_ID}
-llm_universal_proxy_image=localhost:5001/mbos/llm-universal-proxy:\${RELEASE_ID}
+llm_universal_proxy_image=localhost:5001/mbos/llm-universal-proxy:\${release_alias}
 registry_host=localhost:5001
 registry_project=mbos
 EOF
@@ -238,6 +245,18 @@ describe('cluster build bundle archive packaging', () => {
       expect(existsSync(path.join(bundleDir, 'VERSION'))).toBe(true);
       expect(existsSync(path.join(bundleDir, 'checksums.txt'))).toBe(true);
       expect(existsSync(archivePath)).toBe(true);
+      expect(
+        readFileSync(
+          path.join(bundleDir, 'images', 'localhost-5001-mbos-agentsmith-app-release-test-release.tar'),
+          'utf8',
+        ),
+      ).toContain('image=localhost:5001/mbos/agentsmith-app:release-test-release');
+      expect(
+        readFileSync(
+          path.join(bundleDir, 'images', 'localhost-5001-mbos-llm-universal-proxy-release-test-release.tar'),
+          'utf8',
+        ),
+      ).toContain('image=localhost:5001/mbos/llm-universal-proxy:release-test-release');
     } finally {
       rmSync(tempRoot, { recursive: true, force: true });
     }
@@ -296,6 +315,33 @@ describe('cluster build bundle archive packaging', () => {
 
       expect(version).toContain('release_id=new-release');
       expect(version).not.toContain('current-release');
+    } finally {
+      rmSync(tempRoot, { recursive: true, force: true });
+    }
+  });
+
+  it('passes UNIVERSAL_PROXY_ROOT_OVERRIDE through to build-images as the llmup source override', () => {
+    const tempRoot = mkdtempSync(path.join(os.tmpdir(), 'cluster-build-bundle-llmup-override-'));
+
+    try {
+      stageClusterBuildBundleFixture(tempRoot);
+      const fixedLlmupRoot = path.join(tempRoot, 'fixed-llmup-worktree');
+      mkdirSync(fixedLlmupRoot, { recursive: true });
+
+      runClusterBuildBundle(tempRoot, {
+        SKIP_RELEASE_ARCHIVE: '1',
+        SKIP_BUNDLED_IMAGE_ARCHIVE_GENERATION: '1',
+        UNIVERSAL_PROXY_ROOT_OVERRIDE: fixedLlmupRoot,
+      });
+
+      const bundleDir = path.join(tempRoot, 'out', 'agentsmith-test-release');
+
+      expect(readFileSync(path.join(bundleDir, 'build-images-env.log'), 'utf8')).toContain(
+        `UNIVERSAL_PROXY_SOURCE_DIR_OVERRIDE=${fixedLlmupRoot}`,
+      );
+      expect(readFileSync(path.join(bundleDir, 'VERSION'), 'utf8')).toContain(
+        'llm_universal_proxy_image=localhost:5001/mbos/llm-universal-proxy:release-test-release',
+      );
     } finally {
       rmSync(tempRoot, { recursive: true, force: true });
     }

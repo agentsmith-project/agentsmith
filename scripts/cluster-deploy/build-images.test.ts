@@ -128,6 +128,7 @@ build_runner_image() {
     path.join(tempRoot, 'bin', 'docker'),
     `#!/usr/bin/env bash
 set -euo pipefail
+printf 'docker %s\\n' "$*" >> "\${RELEASE_ROOT}/build-images-docker.log"
 if [[ "\${1:-}" == "image" && "\${2:-}" == "inspect" ]]; then
   image="\${@: -1}"
   case "\${image}" in
@@ -202,6 +203,190 @@ function readJson(filePath: string): unknown {
 }
 
 describe('cluster build-images build artifact broker integration', () => {
+  it('builds app and llmup final images with content tags, labels them, and writes release aliases to VERSION', () => {
+    const tempRoot = mkdtempSync(path.join(os.tmpdir(), 'cluster-build-images-content-tags-'));
+
+    try {
+      stageBuildImagesFixture(tempRoot);
+
+      runBuildImages(tempRoot, { RELEASE_ID: 'test-release' });
+
+      const releaseRoot = path.join(tempRoot, 'release');
+      const plan = readJson(path.join(releaseRoot, 'build-artifact-broker-plan.json')) as {
+        targets: Array<{
+          target: string;
+          content_key: string;
+          content_ref: string;
+          release_alias_ref: string;
+          input_digest: string;
+          base_image_digest: string;
+        }>;
+      };
+      const appTarget = plan.targets.find((target) => target.target === 'app');
+      const llmupTarget = plan.targets.find((target) => target.target === 'llmup');
+
+      expect(appTarget).toBeDefined();
+      expect(llmupTarget).toBeDefined();
+      expect(appTarget?.content_ref).toMatch(/^localhost:5001\/mbos\/agentsmith-app:ck-[a-f0-9]{32}$/u);
+      expect(appTarget?.release_alias_ref).toBe('localhost:5001/mbos/agentsmith-app:release-test-release');
+      expect(llmupTarget?.content_ref).toMatch(
+        /^localhost:5001\/mbos\/llm-universal-proxy:ck-[a-f0-9]{32}$/u,
+      );
+      expect(llmupTarget?.release_alias_ref).toBe(
+        'localhost:5001/mbos/llm-universal-proxy:release-test-release',
+      );
+
+      const versionContent = readFileSync(path.join(releaseRoot, 'VERSION'), 'utf8');
+      const dockerLog = readFileSync(path.join(releaseRoot, 'build-images-docker.log'), 'utf8');
+
+      expect(versionContent).toContain('release_id=test-release');
+      expect(versionContent).toContain(`agentsmith_app_image=${appTarget?.release_alias_ref}`);
+      expect(versionContent).toContain(`llm_universal_proxy_image=${llmupTarget?.release_alias_ref}`);
+      expect(versionContent).not.toContain('agentsmith_app_image=localhost:5001/mbos/agentsmith-app:test-release');
+      expect(versionContent).not.toContain(
+        'llm_universal_proxy_image=localhost:5001/mbos/llm-universal-proxy:test-release',
+      );
+
+      expect(dockerLog).toContain(`-t ${appTarget?.content_ref}`);
+      expect(dockerLog).toContain(`docker tag ${appTarget?.content_ref} ${appTarget?.release_alias_ref}`);
+      expect(dockerLog).toContain(`--label com.agentsmith.build.input_digest=${appTarget?.input_digest}`);
+      expect(dockerLog).toContain(`--label com.agentsmith.build.base_image_digest=${appTarget?.base_image_digest}`);
+      expect(dockerLog).toContain(`--label com.agentsmith.build.content_key=${appTarget?.content_key}`);
+      expect(dockerLog).toContain('--label com.agentsmith.build.release_id=test-release');
+      expect(dockerLog).toContain('--label com.agentsmith.build.target=app');
+      expect(dockerLog).toContain('--label com.agentsmith.build.producer=build-artifact-broker');
+
+      expect(dockerLog).toContain(`-t ${llmupTarget?.content_ref}`);
+      expect(dockerLog).toContain(`docker tag ${llmupTarget?.content_ref} ${llmupTarget?.release_alias_ref}`);
+      expect(dockerLog).toContain(`--label com.agentsmith.build.input_digest=${llmupTarget?.input_digest}`);
+      expect(dockerLog).toContain(`--label com.agentsmith.build.base_image_digest=${llmupTarget?.base_image_digest}`);
+      expect(dockerLog).toContain(`--label com.agentsmith.build.content_key=${llmupTarget?.content_key}`);
+      expect(dockerLog).toContain('--label com.agentsmith.build.target=llmup');
+      expect(dockerLog).toContain('--label com.agentsmith.build.producer=build-artifact-broker');
+
+      expect(existsSync(path.join(releaseRoot, 'build-manifest.json'))).toBe(true);
+      expect(existsSync(path.join(releaseRoot, 'build-artifact-broker-report.json'))).toBe(false);
+    } finally {
+      rmSync(tempRoot, { recursive: true, force: true });
+    }
+  });
+
+  it('fails closed before final app and llmup builds when the prebuild plan cannot trust the llmup Dockerfile', () => {
+    const tempRoot = mkdtempSync(path.join(os.tmpdir(), 'cluster-build-images-plan-fail-closed-'));
+
+    try {
+      stageBuildImagesFixture(tempRoot);
+      writeFile(
+        path.join(tempRoot, 'release', 'sources', 'llm-universal-proxy', 'Dockerfile'),
+        'FROM rust\nCOPY tests ./tests\nCOPY src ./src\n',
+      );
+
+      const result = runBuildImagesResult(tempRoot, { RELEASE_ID: 'test-release' });
+      const releaseRoot = path.join(tempRoot, 'release');
+      const reportPath = path.join(releaseRoot, 'build-artifact-broker-report.json');
+
+      expect(result.status).not.toBe(0);
+      expect(existsSync(path.join(releaseRoot, 'VERSION'))).toBe(false);
+      expect(existsSync(path.join(releaseRoot, 'build-manifest.json'))).toBe(false);
+      expect(existsSync(path.join(releaseRoot, 'build-artifact-broker-plan.json'))).toBe(false);
+      expect(existsSync(reportPath)).toBe(true);
+      expect(JSON.stringify(readJson(reportPath))).toContain('llmup_runtime_tests_copy_present');
+      expect(existsSync(path.join(releaseRoot, 'build-images-docker.log'))).toBe(false);
+    } finally {
+      rmSync(tempRoot, { recursive: true, force: true });
+    }
+  });
+
+  it('fails closed after Docker build when the post-build digest probe cannot verify a final image', () => {
+    const tempRoot = mkdtempSync(path.join(os.tmpdir(), 'cluster-build-images-digest-probe-fail-'));
+
+    try {
+      stageBuildImagesFixture(tempRoot);
+      writeExecutable(
+        path.join(tempRoot, 'bin', 'docker'),
+        `#!/usr/bin/env bash
+set -euo pipefail
+printf 'docker %s\\n' "$*" >> "\${RELEASE_ROOT}/build-images-docker.log"
+if [[ "\${1:-}" == "image" && "\${2:-}" == "inspect" ]]; then
+  image="\${@: -1}"
+  case "\${image}" in
+    *agentsmith-app*) printf '%s\\n' '${APP_IMAGE_DIGEST}' ;;
+    *llm-universal-proxy*) exit 1 ;;
+    *) exit 0 ;;
+  esac
+  exit 0
+fi
+exit 0
+`,
+      );
+
+      const result = runBuildImagesResult(tempRoot, { RELEASE_ID: 'test-release' });
+      const releaseRoot = path.join(tempRoot, 'release');
+      const reportPath = path.join(releaseRoot, 'build-artifact-broker-report.json');
+      const dockerLog = readFileSync(path.join(releaseRoot, 'build-images-docker.log'), 'utf8');
+
+      expect(result.status).not.toBe(0);
+      expect(result.stderr).toContain('build artifact broker manifest gate failed');
+      expect(existsSync(path.join(releaseRoot, 'build-manifest.json'))).toBe(false);
+      expect(existsSync(reportPath)).toBe(true);
+      expect(JSON.stringify(readJson(reportPath))).toContain('missing_image_digest');
+      expect(JSON.stringify(readJson(reportPath))).toContain('llmup');
+      expect(dockerLog).toContain('docker tag');
+      expect(result.stdout).not.toContain('build-images ok');
+    } finally {
+      rmSync(tempRoot, { recursive: true, force: true });
+    }
+  });
+
+  it('fails closed when the post-build broker writes a diagnostic report and exits 42', () => {
+    const tempRoot = mkdtempSync(path.join(os.tmpdir(), 'cluster-build-images-postbuild-broker-42-'));
+    const fakeBrokerRunner = path.join(tempRoot, 'bin', 'broker-runner');
+
+    try {
+      stageBuildImagesFixture(tempRoot);
+      writeExecutable(
+        fakeBrokerRunner,
+        `#!/usr/bin/env bash
+set -euo pipefail
+broker_cli="$1"
+shift
+for arg in "$@"; do
+  if [[ "\${arg}" == "--artifact-kind" ]]; then
+    exec "${path.join(repoRoot, 'node_modules', '.bin', 'tsx')}" "\${broker_cli}" "$@"
+  fi
+done
+cat > "\${RELEASE_ROOT}/build-artifact-broker-report.json" <<'JSON'
+{
+  "report_kind": "build_artifact_broker_diagnostic",
+  "diagnostics": [
+    {
+      "reason_code": "release_id_truth_failure",
+      "path": "VERSION.release_id",
+      "message": "forced post-build release truth diagnostic"
+    }
+  ]
+}
+JSON
+rm -f "\${RELEASE_ROOT}/build-manifest.json"
+exit 42
+`,
+      );
+
+      const result = runBuildImagesResult(tempRoot, {
+        BUILD_ARTIFACT_BROKER_TSX_COMMAND: fakeBrokerRunner,
+      });
+      const releaseRoot = path.join(tempRoot, 'release');
+
+      expect(result.status).not.toBe(0);
+      expect(result.stderr).toContain('build artifact broker manifest gate failed with exit 42');
+      expect(existsSync(path.join(releaseRoot, 'build-manifest.json'))).toBe(false);
+      expect(existsSync(path.join(releaseRoot, 'build-artifact-broker-report.json'))).toBe(true);
+      expect(result.stdout).not.toContain('build-images ok');
+    } finally {
+      rmSync(tempRoot, { recursive: true, force: true });
+    }
+  });
+
   it('uses repo locked base image refs by default and writes them to VERSION', () => {
     const tempRoot = mkdtempSync(path.join(os.tmpdir(), 'cluster-build-images-manifest-'));
 

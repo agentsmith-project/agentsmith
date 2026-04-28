@@ -101,13 +101,17 @@ esac
   };
 }
 
-function runBroker(fixture: BrokerFixture, extraArgs: readonly string[] = []): number {
+function runBroker(
+  fixture: BrokerFixture,
+  extraArgs: readonly string[] = [],
+  releaseId = 'release-20260427',
+): number {
   return runBuildArtifactBrokerCli({
     argv: [
       '--release-root',
       fixture.releaseRoot,
       '--release-id',
-      'release-20260427',
+      releaseId,
       '--app-source-dir',
       fixture.appSourceDir,
       '--llmup-source-dir',
@@ -179,6 +183,81 @@ function findForbiddenEvidenceTruthField(value: unknown): string | null {
 }
 
 describe('build artifact broker CLI adapter', () => {
+  it('writes a prebuild plan with normalized release aliases before local image digests exist', () => {
+    const fixture = stageBrokerFixture([
+      'release_id=test-release',
+      'agentsmith_app_image=localhost:5001/mbos/agentsmith-app:test-release',
+      'llm_universal_proxy_image=localhost:5001/mbos/llm-universal-proxy:test-release',
+      '',
+    ].join('\n'));
+
+    try {
+      expect(runBroker(fixture, ['--artifact-kind', 'prebuild-plan'], 'test-release')).toBe(0);
+
+      const planPath = path.join(fixture.releaseRoot, 'build-artifact-broker-plan.json');
+      const manifestPath = path.join(fixture.releaseRoot, 'build-manifest.json');
+      const reportPath = path.join(fixture.releaseRoot, 'build-artifact-broker-report.json');
+      const plan = readJson(planPath) as {
+        plan_kind: string;
+        release_id: string;
+        targets: Array<{
+          target: string;
+          content_key: string;
+          content_ref: string;
+          release_alias_ref: string;
+          image_digest?: string;
+        }>;
+      };
+
+      expect(existsSync(reportPath)).toBe(false);
+      expect(existsSync(manifestPath)).toBe(false);
+      expect(plan).toMatchObject({
+        plan_kind: 'build_prebuild_plan',
+        release_id: 'test-release',
+      });
+      expect(plan.targets).toHaveLength(2);
+
+      const appPlanTarget = plan.targets.find((target) => target.target === 'app');
+      const llmupPlanTarget = plan.targets.find((target) => target.target === 'llmup');
+
+      expect(appPlanTarget?.content_ref).toMatch(/^localhost:5001\/mbos\/agentsmith-app:ck-[a-f0-9]{32}$/u);
+      expect(appPlanTarget?.release_alias_ref).toBe('localhost:5001/mbos/agentsmith-app:release-test-release');
+      expect(appPlanTarget?.content_key).toMatch(/^ck-[a-f0-9]{32}$/u);
+      expect(appPlanTarget).not.toHaveProperty('image_digest');
+      expect(llmupPlanTarget?.content_ref).toMatch(
+        /^localhost:5001\/mbos\/llm-universal-proxy:ck-[a-f0-9]{32}$/u,
+      );
+      expect(llmupPlanTarget?.release_alias_ref).toBe(
+        'localhost:5001/mbos/llm-universal-proxy:release-test-release',
+      );
+      expect(llmupPlanTarget?.content_key).toMatch(/^ck-[a-f0-9]{32}$/u);
+      expect(llmupPlanTarget).not.toHaveProperty('image_digest');
+
+      expect(runBroker(fixture, [], 'test-release')).toBe(0);
+
+      const manifest = readJson(manifestPath) as {
+        targets: Array<{ target: string; content_ref: string; release_alias_ref: string }>;
+      };
+      const manifestRefsByTarget = Object.fromEntries(
+        manifest.targets.map((target) => [target.target, {
+          content_ref: target.content_ref,
+          release_alias_ref: target.release_alias_ref,
+        }]),
+      );
+
+      expect(manifestRefsByTarget.app).toEqual({
+        content_ref: appPlanTarget?.content_ref,
+        release_alias_ref: appPlanTarget?.release_alias_ref,
+      });
+      expect(manifestRefsByTarget.llmup).toEqual({
+        content_ref: llmupPlanTarget?.content_ref,
+        release_alias_ref: llmupPlanTarget?.release_alias_ref,
+      });
+    } finally {
+      rmSync(fixture.tempRoot, { recursive: true, force: true });
+    }
+  });
+
   it('scans app and llmup sources with stable exclusions and writes an aggregate manifest', () => {
     const fixture = stageBrokerFixture();
 
@@ -271,7 +350,7 @@ esac
 `,
       );
 
-      expect(runBroker(fixture)).toBe(0);
+      expect(runBroker(fixture)).toBe(1);
 
       const manifestPath = path.join(fixture.releaseRoot, 'build-manifest.json');
       const reportPath = path.join(fixture.releaseRoot, 'build-artifact-broker-report.json');
@@ -296,7 +375,7 @@ esac
     try {
       writeFile(path.join(fixture.llmupSourceDir, 'Dockerfile'), 'FROM rust\nCOPY tests ./tests\nCOPY src ./src\n');
 
-      expect(runBroker(fixture)).toBe(0);
+      expect(runBroker(fixture)).toBe(1);
 
       const manifestPath = path.join(fixture.releaseRoot, 'build-manifest.json');
       const reportPath = path.join(fixture.releaseRoot, 'build-artifact-broker-report.json');

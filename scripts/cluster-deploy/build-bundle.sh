@@ -228,7 +228,13 @@ save_image_archive() {
   local image="$1"
   local archive_name
   archive_name="$(printf '%s' "${image}" | tr '/:@' '---').tar"
-  docker save "${image}" -o "${IMAGES_DIR}/${archive_name}"
+  save_image_archive_with_cache \
+    "${image}" \
+    "${IMAGES_DIR}/${archive_name}" \
+    "${OUT_DIR}" \
+    "${BUNDLE_DIR}" \
+    "default" \
+    "linux/amd64"
 }
 
 if [[ "${BUNDLED_IMAGE_ARCHIVES_INCLUDED}" == "1" ]]; then

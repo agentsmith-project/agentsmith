@@ -235,9 +235,21 @@ if [[ "${BUNDLED_IMAGE_ARCHIVES_INCLUDED}" == "1" ]]; then
     file_name="$(printf '%s' "${image}" | tr '/:@' '---').tar"
     echo "[bundle] saving ${image}"
     if printf '%s\n' "${DEPENDENCY_IMAGES[@]}" | grep -Fxq "${image}"; then
-      docker save --platform "${BUNDLE_PLATFORM}" "${image}" -o "${IMAGES_DIR}/${file_name}"
+      save_image_archive_with_cache \
+        "${image}" \
+        "${IMAGES_DIR}/${file_name}" \
+        "${OUT_DIR}" \
+        "${BUNDLE_DIR}" \
+        "platform" \
+        "${BUNDLE_PLATFORM}"
     else
-      docker save "${image}" -o "${IMAGES_DIR}/${file_name}"
+      save_image_archive_with_cache \
+        "${image}" \
+        "${IMAGES_DIR}/${file_name}" \
+        "${OUT_DIR}" \
+        "${BUNDLE_DIR}" \
+        "default" \
+        "${BUNDLE_PLATFORM}"
     fi
   done
 else

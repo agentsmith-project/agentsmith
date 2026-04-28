@@ -331,6 +331,18 @@ function main(): void {
     generated_at: GENERATED_AT,
   };
   assertValidationOk('registry_push skip decision', validateBuildSkipDecision(registryPushSkipDecision));
+  const dockerSaveSkipDecision = {
+    schema: CURRENT_BUILD_SKIP_DECISION_SCHEMA,
+    version: CURRENT_BUILD_SKIP_DECISION_VERSION,
+    target: 'image:registry.test/mbos/agentsmith-app:release-20260427',
+    operation: 'docker_save',
+    input_digest: LOCKED_DIGEST_A,
+    existing_artifact_digest: LOCKED_DIGEST_B,
+    skip_reason: 'image_archive_cache_verified',
+    validator: 'docker save archive manifest.json single RepoTag, Layers members, Config rootfs.diff_ids layer sha256, Config bytes digest, archive sha256, and docker image inspect --format {{.Id}}',
+    generated_at: GENERATED_AT,
+  };
+  assertValidationOk('docker_save skip decision', validateBuildSkipDecision(dockerSaveSkipDecision));
   const dockerLoadSkipDecision = {
     schema: CURRENT_BUILD_SKIP_DECISION_SCHEMA,
     version: CURRENT_BUILD_SKIP_DECISION_VERSION,

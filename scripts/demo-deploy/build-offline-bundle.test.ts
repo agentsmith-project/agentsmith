@@ -24,6 +24,7 @@ const forbiddenEvidenceTruthFields = new Set([
 interface DockerSaveManifestEntry {
   Config: string;
   RepoTags: string[];
+  Layers: string[];
 }
 
 interface ArchiveProof {
@@ -54,6 +55,18 @@ interface ImageArchiveManifest {
   archives: ImageArchiveManifestEntry[];
 }
 
+interface BuildSkipDecision {
+  schema: string;
+  version: number;
+  target: string;
+  operation: string;
+  input_digest: string;
+  existing_artifact_digest: string;
+  skip_reason: string;
+  validator: string;
+  generated_at: string;
+}
+
 function writeExecutable(filePath: string, content: string): void {
   mkdirSync(path.dirname(filePath), { recursive: true });
   writeFileSync(filePath, content, 'utf8');
@@ -71,6 +84,13 @@ function sha256Digest(content: Buffer | string): string {
 
 function readJsonFile<T>(filePath: string): T {
   return JSON.parse(readFileSync(filePath, 'utf8')) as T;
+}
+
+function readNdjsonFile<T>(filePath: string): T[] {
+  return readFileSync(filePath, 'utf8')
+    .split('\n')
+    .filter((line) => line.trim().length > 0)
+    .map((line) => JSON.parse(line) as T);
 }
 
 function readDockerArchiveProof(archivePath: string): ArchiveProof {
@@ -107,6 +127,42 @@ function findManifestArchive(manifest: ImageArchiveManifest, archiveRelpath: str
   const archive = manifest.archives.find((entry) => entry.archive_relpath === archiveRelpath);
   expect(archive).toBeDefined();
   return archive as ImageArchiveManifestEntry;
+}
+
+function countDockerSaveCalls(tempRoot: string, imageRef?: string): number {
+  const logPath = path.join(tempRoot, 'docker-save.log');
+  if (!existsSync(logPath)) {
+    return 0;
+  }
+  const lines = readFileSync(logPath, 'utf8').split('\n').filter(Boolean);
+  if (!imageRef) {
+    return lines.length;
+  }
+  return lines.filter((line) => line === imageRef).length;
+}
+
+function readDockerSaveArgLines(tempRoot: string): string[] {
+  const logPath = path.join(tempRoot, 'docker-save-args.log');
+  if (!existsSync(logPath)) {
+    return [];
+  }
+  return readFileSync(logPath, 'utf8').split('\n').filter(Boolean);
+}
+
+function expectDockerSaveSkipDecision(value: unknown, imageRef: string, inputDigest: string): BuildSkipDecision {
+  expectNoEvidenceTruthFields(value);
+  expect(value).toMatchObject({
+    schema: 'current-build-skip-decision.v1',
+    version: 1,
+    target: `image:${imageRef}`,
+    operation: 'docker_save',
+    input_digest: inputDigest,
+    skip_reason: 'image_archive_cache_verified',
+  });
+  expect(value).toHaveProperty('existing_artifact_digest');
+  expect((value as BuildSkipDecision).existing_artifact_digest).toMatch(/^sha256:[a-f0-9]{64}$/);
+  expect((value as BuildSkipDecision).validator).toContain('archive sha256');
+  return value as BuildSkipDecision;
 }
 
 function stageDemoBuildBundleFixture(tempRoot: string): void {
@@ -269,18 +325,34 @@ case "$1" in
     if [[ "$2" == "inspect" ]]; then
       if [[ "\${3:-}" == "--format" ]]; then
         image_ref="\${@: -1}"
-        python3 - "\${image_ref}" <<'PY'
+        python3 - "\${image_ref}" "\${DOCKER_IMAGE_ID_SALT:-stable}" <<'PY'
 import hashlib
+import io
 import json
 import sys
+import tarfile
 
 image_ref = sys.argv[1]
+salt = sys.argv[2]
+layer_payload = f"fake layer for {image_ref} {salt}\\n".encode("utf-8")
+layer_buffer = io.BytesIO()
+with tarfile.open(fileobj=layer_buffer, mode="w") as layer_tar:
+    info = tarfile.TarInfo("layer.txt")
+    info.size = len(layer_payload)
+    info.mode = 0o644
+    info.mtime = 0
+    info.uid = 0
+    info.gid = 0
+    info.uname = "root"
+    info.gname = "root"
+    layer_tar.addfile(info, io.BytesIO(layer_payload))
+layer_diff_id = "sha256:" + hashlib.sha256(layer_buffer.getvalue()).hexdigest()
 config = {
     "architecture": "amd64",
-    "config": {"Image": image_ref},
+    "config": {"Image": image_ref, "Salt": salt},
     "created": "2026-04-27T00:00:00Z",
     "os": "linux",
-    "rootfs": {"diff_ids": [], "type": "layers"},
+    "rootfs": {"diff_ids": [layer_diff_id], "type": "layers"},
 }
 data = (json.dumps(config, sort_keys=True, separators=(",", ":")) + "\\n").encode("utf-8")
 print("sha256:" + hashlib.sha256(data).hexdigest())
@@ -293,6 +365,7 @@ PY
     exit 0
     ;;
   save)
+    printf '%s\\n' "$*" >> "\${DOCKER_SAVE_ARGS_LOG:-${tempRoot}/docker-save-args.log}"
     output=''
     image=''
     shift
@@ -311,32 +384,52 @@ PY
           ;;
       esac
     done
+    printf '%s\\n' "\${image}" >> "\${DOCKER_SAVE_LOG:-${tempRoot}/docker-save.log}"
     mkdir -p "$(dirname "$output")"
     temp_dir="$(mktemp -d)"
-    python3 - "\${temp_dir}" "\${image}" <<'PY'
+    python3 - "\${temp_dir}" "\${image}" "\${DOCKER_IMAGE_ID_SALT:-stable}" <<'PY'
+import hashlib
+import io
 import json
 import pathlib
 import sys
+import tarfile
 
 temp_dir = pathlib.Path(sys.argv[1])
 image_ref = sys.argv[2]
+salt = sys.argv[3]
+layer_payload = f"fake layer for {image_ref} {salt}\\n".encode("utf-8")
+layer_buffer = io.BytesIO()
+with tarfile.open(fileobj=layer_buffer, mode="w") as layer_tar:
+    info = tarfile.TarInfo("layer.txt")
+    info.size = len(layer_payload)
+    info.mode = 0o644
+    info.mtime = 0
+    info.uid = 0
+    info.gid = 0
+    info.uname = "root"
+    info.gname = "root"
+    layer_tar.addfile(info, io.BytesIO(layer_payload))
+layer_bytes = layer_buffer.getvalue()
+layer_diff_id = "sha256:" + hashlib.sha256(layer_bytes).hexdigest()
 config = {
     "architecture": "amd64",
-    "config": {"Image": image_ref},
+    "config": {"Image": image_ref, "Salt": salt},
     "created": "2026-04-27T00:00:00Z",
     "os": "linux",
-    "rootfs": {"diff_ids": [], "type": "layers"},
+    "rootfs": {"diff_ids": [layer_diff_id], "type": "layers"},
 }
+(temp_dir / "layer.tar").write_bytes(layer_bytes)
 (temp_dir / "config.json").write_text(
     json.dumps(config, sort_keys=True, separators=(",", ":")) + "\\n",
     encoding="utf-8",
 )
 (temp_dir / "manifest.json").write_text(
-    json.dumps([{"Config": "config.json", "RepoTags": [image_ref], "Layers": []}], separators=(",", ":")) + "\\n",
+    json.dumps([{"Config": "config.json", "RepoTags": [image_ref], "Layers": ["layer.tar"]}], separators=(",", ":")) + "\\n",
     encoding="utf-8",
 )
 PY
-    tar -C "\${temp_dir}" -cf "$output" manifest.json config.json
+    tar -C "\${temp_dir}" -cf "$output" manifest.json config.json layer.tar
     rm -rf "\${temp_dir}"
     exit 0
     ;;
@@ -409,7 +502,7 @@ describe('demo build bundle image archives', () => {
     } finally {
       rmSync(tempRoot, { recursive: true, force: true });
     }
-  });
+  }, 15000);
 
   it('omits bundled image archives when SKIP_BUNDLED_IMAGE_ARCHIVE_GENERATION=1 while preserving bundle metadata', () => {
     const tempRoot = mkdtempSync(path.join(os.tmpdir(), 'demo-build-bundle-no-images-'));
@@ -422,9 +515,81 @@ describe('demo build bundle image archives', () => {
 
       expect(existsSync(path.join(bundleDir, 'images'))).toBe(false);
       expect(existsSync(path.join(bundleDir, 'images', 'image-archives.manifest.json'))).toBe(false);
+      expect(existsSync(path.join(bundleDir, 'skip-decisions.ndjson'))).toBe(false);
+      expect(existsSync(path.join(tempRoot, 'out', '.image-archive-cache'))).toBe(false);
       expect(readFileSync(path.join(bundleDir, 'VERSION'), 'utf8')).toContain('bundled_image_archives_included=0');
     } finally {
       rmSync(tempRoot, { recursive: true, force: true });
     }
   });
+
+  it('fills the image archive cache on first run and skips docker save on second run when the cache proof matches', () => {
+    const tempRoot = mkdtempSync(path.join(os.tmpdir(), 'demo-build-bundle-image-cache-'));
+
+    try {
+      stageDemoBuildBundleFixture(tempRoot);
+      const imageRef = 'agentsmith-app:test-release';
+      const archiveRelpath = 'images/agentsmith-app-test-release.tar';
+      const dependencyImageRef = 'pgvector/pgvector:pg16';
+      const dependencyArchiveRelpath = 'images/pgvector-pgvector-pg16.tar';
+      const bundleDir = path.join(tempRoot, 'out', 'agentsmith-test-release');
+      const cacheRoot = path.join(tempRoot, 'out', '.image-archive-cache', 'v1');
+
+      runDemoBuildBundle(tempRoot, { SKIP_RELEASE_ARCHIVE: '1' });
+      const firstRunSaveArgLines = readDockerSaveArgLines(tempRoot);
+      const appSaveArgs = firstRunSaveArgLines.find((line) => line.includes(` ${imageRef} `));
+      const dependencySaveArgs = firstRunSaveArgLines.find((line) => line.includes(` ${dependencyImageRef} `));
+
+      expect(countDockerSaveCalls(tempRoot, imageRef)).toBe(1);
+      expect(countDockerSaveCalls(tempRoot, dependencyImageRef)).toBe(1);
+      expect(appSaveArgs).toBeDefined();
+      expect(appSaveArgs).not.toContain('--platform');
+      expect(dependencySaveArgs).toBeDefined();
+      expect(dependencySaveArgs).toContain(`--platform linux/amd64 ${dependencyImageRef}`);
+      expect(existsSync(cacheRoot)).toBe(true);
+      expect(existsSync(path.join(bundleDir, 'skip-decisions.ndjson'))).toBe(false);
+
+      rmSync(path.join(tempRoot, 'docker-save.log'), { force: true });
+      rmSync(path.join(tempRoot, 'docker-save-args.log'), { force: true });
+      runDemoBuildBundle(tempRoot, { SKIP_RELEASE_ARCHIVE: '1' });
+
+      const archivePath = path.join(bundleDir, archiveRelpath);
+      const dependencyArchivePath = path.join(bundleDir, dependencyArchiveRelpath);
+      const proof = readDockerArchiveProof(archivePath);
+      const dependencyProof = readDockerArchiveProof(dependencyArchivePath);
+      const manifestPath = path.join(bundleDir, 'images', 'image-archives.manifest.json');
+      const manifest = readJsonFile<ImageArchiveManifest>(manifestPath);
+      const manifestEntry = findManifestArchive(manifest, archiveRelpath);
+      const dependencyManifestEntry = findManifestArchive(manifest, dependencyArchiveRelpath);
+      const checksums = readFileSync(path.join(bundleDir, 'checksums.txt'), 'utf8');
+      const decisions = readNdjsonFile<BuildSkipDecision>(path.join(bundleDir, 'skip-decisions.ndjson'));
+      const decision = decisions.find((entry) => entry.target === `image:${imageRef}`);
+      const dependencyDecision = decisions.find((entry) => entry.target === `image:${dependencyImageRef}`);
+
+      expect(countDockerSaveCalls(tempRoot, imageRef)).toBe(0);
+      expect(countDockerSaveCalls(tempRoot, dependencyImageRef)).toBe(0);
+      expect(existsSync(archivePath)).toBe(true);
+      expect(existsSync(dependencyArchivePath)).toBe(true);
+      expect(manifestEntry.archive_sha256).toBe(proof.archiveDigest);
+      expect(manifestEntry.archive_config_digest).toBe(proof.configDigest);
+      expect(manifestEntry.local_image_id).toBe(proof.configDigest);
+      expect(dependencyManifestEntry).toMatchObject({
+        image_ref: dependencyImageRef,
+        archive_sha256: dependencyProof.archiveDigest,
+        archive_config_digest: dependencyProof.configDigest,
+        platform: 'linux/amd64',
+      });
+      expect(checksums).toContain(`${sha256Digest(readFileSync(archivePath)).slice('sha256:'.length)}  ./images/agentsmith-app-test-release.tar`);
+      expect(checksums).toContain(`${sha256Digest(readFileSync(dependencyArchivePath)).slice('sha256:'.length)}  ./images/pgvector-pgvector-pg16.tar`);
+      expect(checksums).toContain(`${sha256Digest(readFileSync(manifestPath)).slice('sha256:'.length)}  ./images/image-archives.manifest.json`);
+      expect(decision).toBeDefined();
+      expectDockerSaveSkipDecision(decision, imageRef, proof.configDigest);
+      expect(decision?.existing_artifact_digest).toBe(proof.archiveDigest);
+      expect(dependencyDecision).toBeDefined();
+      expectDockerSaveSkipDecision(dependencyDecision, dependencyImageRef, dependencyProof.configDigest);
+      expect(dependencyDecision?.existing_artifact_digest).toBe(dependencyProof.archiveDigest);
+    } finally {
+      rmSync(tempRoot, { recursive: true, force: true });
+    }
+  }, 15000);
 });

@@ -4,7 +4,9 @@ import path from 'node:path';
 import { pathToFileURL } from 'node:url';
 
 import {
+  CURRENT_BUILD_ARTIFACT_TARGETS,
   CURRENT_BUILD_MANIFEST_MODES,
+  CURRENT_BUILD_MANIFEST_TARGET_DECISIONS,
   buildBuildPrebuildPlanAggregate,
   buildBuildPrebuildPlanTarget,
   buildBuildManifestAggregate,
@@ -18,6 +20,7 @@ import {
   type CurrentBuildArtifactTarget,
   type CurrentBuildManifestMode,
   type CurrentBuildManifestProducer,
+  type CurrentBuildManifestTargetDecision,
 } from './build-artifact-broker';
 
 export const BUILD_ARTIFACT_BROKER_RELEASE_TRUTH_EXIT_CODE = 42;
@@ -26,6 +29,8 @@ const DIAGNOSTIC_REPORT_SCHEMA = 'build-artifact-broker-diagnostic-report.v1' as
 const DIAGNOSTIC_REPORT_VERSION = 1 as const;
 const ROOT_ONLY_EXCLUDED_SOURCE_DIRS = new Set(['.git', '.next', 'node_modules', 'target', 'artifacts', 'dist']);
 const MODE_SET = new Set<string>(CURRENT_BUILD_MANIFEST_MODES);
+const TARGET_SET = new Set<string>(CURRENT_BUILD_ARTIFACT_TARGETS);
+const TARGET_DECISION_SET = new Set<string>(CURRENT_BUILD_MANIFEST_TARGET_DECISIONS);
 const ARTIFACT_KIND_SET = new Set(['manifest', 'prebuild-plan']);
 
 type BuildArtifactBrokerArtifactKind = 'manifest' | 'prebuild_plan';
@@ -48,6 +53,7 @@ interface BuildArtifactBrokerCliConfig {
   llmupBaseImages: readonly string[];
   mode: CurrentBuildManifestMode;
   artifactKind: BuildArtifactBrokerArtifactKind;
+  targetDecisions: Readonly<Partial<Record<CurrentBuildArtifactTarget, CurrentBuildManifestTargetDecision>>>;
   manifestPath: string;
   planPath: string;
   reportPath: string;
@@ -313,7 +319,7 @@ function writeBuildArtifactBrokerArtifact(
       imageName: imageRepositoryFromRef(appImage),
       contentKey: appContentKey,
       imageDigest: appImageDigest.digest,
-      decision: 'built',
+      decision: config.targetDecisions.app ?? 'built',
       producer,
       generatedAt,
     }),
@@ -323,7 +329,7 @@ function writeBuildArtifactBrokerArtifact(
       imageName: imageRepositoryFromRef(llmupImage),
       contentKey: llmupContentKey,
       imageDigest: llmupImageDigest.digest,
-      decision: 'built',
+      decision: config.targetDecisions.llmup ?? 'built',
       producer,
       generatedAt,
     }),
@@ -374,12 +380,14 @@ function parseCliConfig(argv: readonly string[]): BuildArtifactBrokerCliConfig {
     llmupBaseImages: string[];
     mode?: string;
     artifactKind?: string;
+    targetDecisions: string[];
     manifestPath?: string;
     planPath?: string;
     reportPath?: string;
   } = {
     appBaseImages: [],
     llmupBaseImages: [],
+    targetDecisions: [],
   };
 
   for (let index = 0; index < argv.length; index += 1) {
@@ -426,6 +434,10 @@ function parseCliConfig(argv: readonly string[]): BuildArtifactBrokerCliConfig {
         rawConfig.artifactKind = requireArgValue(argv, index);
         index += 1;
         break;
+      case '--target-decision':
+        rawConfig.targetDecisions.push(requireArgValue(argv, index));
+        index += 1;
+        break;
       case '--manifest-path':
         rawConfig.manifestPath = requireArgValue(argv, index);
         index += 1;
@@ -468,10 +480,42 @@ function parseCliConfig(argv: readonly string[]): BuildArtifactBrokerCliConfig {
     llmupBaseImages: rawConfig.llmupBaseImages,
     mode: mode as CurrentBuildManifestMode,
     artifactKind: artifactKind === 'prebuild-plan' ? 'prebuild_plan' : 'manifest',
+    targetDecisions: parseTargetDecisions(rawConfig.targetDecisions),
     manifestPath: path.resolve(rawConfig.manifestPath ?? path.join(releaseRoot, 'build-manifest.json')),
     planPath: path.resolve(rawConfig.planPath ?? path.join(releaseRoot, 'build-artifact-broker-plan.json')),
     reportPath: path.resolve(rawConfig.reportPath ?? path.join(releaseRoot, 'build-artifact-broker-report.json')),
   };
+}
+
+function parseTargetDecisions(
+  rawDecisions: readonly string[],
+): Readonly<Partial<Record<CurrentBuildArtifactTarget, CurrentBuildManifestTargetDecision>>> {
+  const decisions: Partial<Record<CurrentBuildArtifactTarget, CurrentBuildManifestTargetDecision>> = {};
+
+  for (const rawDecision of rawDecisions) {
+    const equalsIndex = rawDecision.indexOf('=');
+
+    if (equalsIndex <= 0 || equalsIndex === rawDecision.length - 1) {
+      throw new Error(`invalid --target-decision value: ${rawDecision}. Expected target=decision.`);
+    }
+
+    const target = rawDecision.slice(0, equalsIndex).trim();
+    const decision = rawDecision.slice(equalsIndex + 1).trim();
+
+    if (!TARGET_SET.has(target)) {
+      throw new Error(`unsupported build artifact broker target for --target-decision: ${target}`);
+    }
+    if (!TARGET_DECISION_SET.has(decision)) {
+      throw new Error(`unsupported build artifact broker target decision: ${decision}`);
+    }
+    if (target in decisions) {
+      throw new Error(`duplicate --target-decision for target: ${target}`);
+    }
+
+    decisions[target as CurrentBuildArtifactTarget] = decision as CurrentBuildManifestTargetDecision;
+  }
+
+  return decisions;
 }
 
 function requireArgValue(argv: readonly string[], index: number): string {

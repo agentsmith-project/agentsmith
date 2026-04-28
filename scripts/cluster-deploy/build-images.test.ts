@@ -5,6 +5,8 @@ import path from 'node:path';
 
 import { describe, expect, it } from 'vitest';
 
+import { validateBuildSkipDecision } from '../governance/build-artifact-broker';
+
 const repoRoot = process.cwd();
 const APP_BASE_DIGEST = `sha256:${'a'.repeat(64)}`;
 const APP_MC_DIGEST = `sha256:${'f'.repeat(64)}`;
@@ -143,6 +145,60 @@ exit 0
   );
 }
 
+function writeContentRefProbeDockerMock(tempRoot: string, options: { matchLabels: boolean }): void {
+  const mismatchDigest = `sha256:${'0'.repeat(64)}`;
+
+  writeExecutable(
+    path.join(tempRoot, 'bin', 'docker'),
+    `#!/usr/bin/env bash
+set -euo pipefail
+printf 'docker %s\\n' "$*" >> "\${RELEASE_ROOT}/build-images-docker.log"
+if [[ "\${1:-}" == "image" && "\${2:-}" == "inspect" ]]; then
+  format=""
+  if [[ "\${3:-}" == "--format" ]]; then
+    format="\${4:-}"
+  fi
+  image="\${@: -1}"
+  target=""
+  digest=""
+  case "\${image}" in
+    *agentsmith-app*) target="app"; digest="${APP_IMAGE_DIGEST}" ;;
+    *llm-universal-proxy*) target="llmup"; digest="${LLMUP_IMAGE_DIGEST}" ;;
+    *) exit 0 ;;
+  esac
+
+  if [[ "\${format}" == *"com.agentsmith.build.input_digest"* ]]; then
+    node - "\${RELEASE_ROOT}/build-artifact-broker-plan.json" "\${target}" "\${digest}" "${options.matchLabels ? '1' : '0'}" <<'NODE'
+const fs = require('node:fs');
+
+const [planPath, target, digest, matchLabels] = process.argv.slice(2);
+const plan = JSON.parse(fs.readFileSync(planPath, 'utf8'));
+const entry = plan.targets.find((candidate) => candidate.target === target);
+
+if (!entry) {
+  process.exit(1);
+}
+
+process.stdout.write([
+  digest,
+  entry.input_digest,
+  matchLabels === '1' ? entry.base_image_digest : '${mismatchDigest}',
+  entry.content_key,
+  entry.target,
+  entry.producer.name,
+  'release-from-previous-build',
+].join('\\n') + '\\n');
+NODE
+  else
+    printf '%s\\n' "\${digest}"
+  fi
+  exit 0
+fi
+exit 0
+`,
+  );
+}
+
 function copyFileToFixture(relativePath: string, tempRoot: string): void {
   const targetPath = path.join(tempRoot, relativePath);
   mkdirSync(path.dirname(targetPath), { recursive: true });
@@ -200,6 +256,14 @@ function runBuildImagesResult(tempRoot: string, extraEnv: NodeJS.ProcessEnv = {}
 
 function readJson(filePath: string): unknown {
   return JSON.parse(readFileSync(filePath, 'utf8'));
+}
+
+function readNdjson(filePath: string): unknown[] {
+  return readFileSync(filePath, 'utf8')
+    .trim()
+    .split(/\n/u)
+    .filter((line) => line.length > 0)
+    .map((line) => JSON.parse(line) as unknown);
 }
 
 describe('cluster build-images build artifact broker integration', () => {
@@ -266,6 +330,160 @@ describe('cluster build-images build artifact broker integration', () => {
 
       expect(existsSync(path.join(releaseRoot, 'build-manifest.json'))).toBe(true);
       expect(existsSync(path.join(releaseRoot, 'build-artifact-broker-report.json'))).toBe(false);
+    } finally {
+      rmSync(tempRoot, { recursive: true, force: true });
+    }
+  });
+
+  it('reuses local content refs for app and llmup final docker builds when required labels and digests match', () => {
+    const tempRoot = mkdtempSync(path.join(os.tmpdir(), 'cluster-build-images-content-ref-skip-'));
+
+    try {
+      stageBuildImagesFixture(tempRoot);
+      writeContentRefProbeDockerMock(tempRoot, { matchLabels: true });
+
+      runBuildImages(tempRoot, { RELEASE_ID: 'test-release' });
+
+      const releaseRoot = path.join(tempRoot, 'release');
+      const plan = readJson(path.join(releaseRoot, 'build-artifact-broker-plan.json')) as {
+        targets: Array<{
+          target: string;
+          content_ref: string;
+          release_alias_ref: string;
+          input_digest: string;
+        }>;
+      };
+      const manifest = readJson(path.join(releaseRoot, 'build-manifest.json')) as {
+        targets: Array<{ target: string; decision: string }>;
+      };
+      const dockerLog = readFileSync(path.join(releaseRoot, 'build-images-docker.log'), 'utf8');
+      const dockerLogLines = dockerLog.split(/\n/u);
+      const appTarget = plan.targets.find((target) => target.target === 'app');
+      const llmupTarget = plan.targets.find((target) => target.target === 'llmup');
+
+      expect(appTarget).toBeDefined();
+      expect(llmupTarget).toBeDefined();
+      expect(dockerLogLines.some((line) => line.includes('docker_build_local') && line.includes(`-t ${appTarget?.content_ref}`)))
+        .toBe(false);
+      expect(dockerLogLines.some((line) => line.includes('docker_build_local') && line.includes(`-t ${llmupTarget?.content_ref}`)))
+        .toBe(false);
+      expect(dockerLog).toContain(`docker tag ${appTarget?.content_ref} ${appTarget?.release_alias_ref}`);
+      expect(dockerLog).toContain(`docker tag ${llmupTarget?.content_ref} ${llmupTarget?.release_alias_ref}`);
+
+      const skipDecisions = readNdjson(path.join(releaseRoot, 'skip-decisions.ndjson')) as Array<{
+        target: string;
+        operation: string;
+        input_digest: string;
+        existing_artifact_digest: string;
+        skip_reason: string;
+        validator: string;
+        generated_at: string;
+        status?: string;
+        verdict?: string;
+        reusable?: boolean;
+      }>;
+      const decisionsByTarget = Object.fromEntries(skipDecisions.map((decision) => [decision.target, decision]));
+      const manifestDecisionsByTarget = Object.fromEntries(
+        manifest.targets.map((target) => [target.target, target.decision]),
+      );
+
+      expect(skipDecisions).toHaveLength(2);
+      for (const decision of skipDecisions) {
+        expect(validateBuildSkipDecision(decision).ok).toBe(true);
+        expect(decision.operation).toBe('docker_build');
+        expect(decision.skip_reason).toBe('local_content_ref_labels_match');
+        expect(decision.validator).toBe('build-images.sh local content_ref label probe');
+        expect(decision.generated_at).toBe('2026-04-27T12:00:00.000Z');
+        expect(decision.status).toBeUndefined();
+        expect(decision.verdict).toBeUndefined();
+        expect(decision.reusable).toBeUndefined();
+      }
+      expect(decisionsByTarget.app).toMatchObject({
+        input_digest: appTarget?.input_digest,
+        existing_artifact_digest: APP_IMAGE_DIGEST,
+      });
+      expect(decisionsByTarget.llmup).toMatchObject({
+        input_digest: llmupTarget?.input_digest,
+        existing_artifact_digest: LLMUP_IMAGE_DIGEST,
+      });
+      expect(manifestDecisionsByTarget).toMatchObject({
+        app: 'reused',
+        llmup: 'reused',
+      });
+    } finally {
+      rmSync(tempRoot, { recursive: true, force: true });
+    }
+  });
+
+  it('forces app and llmup final docker builds and does not write docker_build skip decisions when FORCE_REBUILD is set', () => {
+    const tempRoot = mkdtempSync(path.join(os.tmpdir(), 'cluster-build-images-force-rebuild-'));
+
+    try {
+      stageBuildImagesFixture(tempRoot);
+      writeContentRefProbeDockerMock(tempRoot, { matchLabels: true });
+
+      runBuildImages(tempRoot, { FORCE_REBUILD: '1', RELEASE_ID: 'test-release' });
+
+      const releaseRoot = path.join(tempRoot, 'release');
+      const plan = readJson(path.join(releaseRoot, 'build-artifact-broker-plan.json')) as {
+        targets: Array<{ target: string; content_ref: string }>;
+      };
+      const manifest = readJson(path.join(releaseRoot, 'build-manifest.json')) as {
+        targets: Array<{ target: string; decision: string }>;
+      };
+      const dockerLogLines = readFileSync(path.join(releaseRoot, 'build-images-docker.log'), 'utf8').split(/\n/u);
+      const appTarget = plan.targets.find((target) => target.target === 'app');
+      const llmupTarget = plan.targets.find((target) => target.target === 'llmup');
+      const manifestDecisionsByTarget = Object.fromEntries(
+        manifest.targets.map((target) => [target.target, target.decision]),
+      );
+
+      expect(dockerLogLines.some((line) => line.includes('docker_build_local') && line.includes(`-t ${appTarget?.content_ref}`)))
+        .toBe(true);
+      expect(dockerLogLines.some((line) => line.includes('docker_build_local') && line.includes(`-t ${llmupTarget?.content_ref}`)))
+        .toBe(true);
+      expect(existsSync(path.join(releaseRoot, 'skip-decisions.ndjson'))).toBe(false);
+      expect(manifestDecisionsByTarget).toMatchObject({
+        app: 'built',
+        llmup: 'built',
+      });
+    } finally {
+      rmSync(tempRoot, { recursive: true, force: true });
+    }
+  });
+
+  it('fails closed to final docker builds when a local content ref label does not match the prebuild plan', () => {
+    const tempRoot = mkdtempSync(path.join(os.tmpdir(), 'cluster-build-images-label-mismatch-'));
+
+    try {
+      stageBuildImagesFixture(tempRoot);
+      writeContentRefProbeDockerMock(tempRoot, { matchLabels: false });
+
+      runBuildImages(tempRoot, { RELEASE_ID: 'test-release' });
+
+      const releaseRoot = path.join(tempRoot, 'release');
+      const plan = readJson(path.join(releaseRoot, 'build-artifact-broker-plan.json')) as {
+        targets: Array<{ target: string; content_ref: string }>;
+      };
+      const manifest = readJson(path.join(releaseRoot, 'build-manifest.json')) as {
+        targets: Array<{ target: string; decision: string }>;
+      };
+      const dockerLogLines = readFileSync(path.join(releaseRoot, 'build-images-docker.log'), 'utf8').split(/\n/u);
+      const appTarget = plan.targets.find((target) => target.target === 'app');
+      const llmupTarget = plan.targets.find((target) => target.target === 'llmup');
+      const manifestDecisionsByTarget = Object.fromEntries(
+        manifest.targets.map((target) => [target.target, target.decision]),
+      );
+
+      expect(dockerLogLines.some((line) => line.includes('docker_build_local') && line.includes(`-t ${appTarget?.content_ref}`)))
+        .toBe(true);
+      expect(dockerLogLines.some((line) => line.includes('docker_build_local') && line.includes(`-t ${llmupTarget?.content_ref}`)))
+        .toBe(true);
+      expect(existsSync(path.join(releaseRoot, 'skip-decisions.ndjson'))).toBe(false);
+      expect(manifestDecisionsByTarget).toMatchObject({
+        app: 'built',
+        llmup: 'built',
+      });
     } finally {
       rmSync(tempRoot, { recursive: true, force: true });
     }

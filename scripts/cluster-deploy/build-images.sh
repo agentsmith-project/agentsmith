@@ -263,26 +263,187 @@ NODE
   UNIVERSAL_PROXY_IMAGE="${LLMUP_RELEASE_ALIAS_REF}"
 }
 
+BUILD_SKIP_EXISTING_ARTIFACT_DIGEST=""
+BUILD_SKIP_DECISION_VALIDATOR="build-images.sh local content_ref label probe"
+BUILD_SKIP_REASON_LOCAL_CONTENT_REF_LABELS_MATCH="local_content_ref_labels_match"
+
+normalize_build_image_digest() {
+  local raw_value="$1"
+  local first_line=""
+
+  first_line="${raw_value%%$'\n'*}"
+  first_line="${first_line%$'\r'}"
+  first_line="$(trim_value "${first_line}")"
+
+  if [[ "${first_line}" =~ ^(sha256:)?([a-fA-F0-9]{64})$ ]]; then
+    printf 'sha256:%s' "${BASH_REMATCH[2],,}"
+    return 0
+  fi
+
+  return 1
+}
+
+content_ref_build_skip_matches() {
+  local target="$1"
+  local content_ref="$2"
+  local expected_input_digest="$3"
+  local expected_base_image_digest="$4"
+  local expected_content_key="$5"
+  local expected_producer="$6"
+  local inspect_format=""
+  local inspect_output=""
+  local existing_digest=""
+  local labels=()
+  local actual_input_digest=""
+  local actual_base_image_digest=""
+  local actual_content_key=""
+  local actual_target=""
+  local actual_producer=""
+
+  inspect_format='{{.Id}}{{println}}{{index .Config.Labels "com.agentsmith.build.input_digest"}}{{println}}{{index .Config.Labels "com.agentsmith.build.base_image_digest"}}{{println}}{{index .Config.Labels "com.agentsmith.build.content_key"}}{{println}}{{index .Config.Labels "com.agentsmith.build.target"}}{{println}}{{index .Config.Labels "com.agentsmith.build.producer"}}{{println}}{{index .Config.Labels "com.agentsmith.build.release_id"}}'
+
+  if ! inspect_output="$(docker image inspect --format "${inspect_format}" "${content_ref}" 2>/dev/null)"; then
+    return 1
+  fi
+  readarray -t labels <<< "${inspect_output}"
+  existing_digest="$(normalize_build_image_digest "${labels[0]:-}")" || return 1
+  actual_input_digest="$(trim_value "${labels[1]:-}")"
+  actual_base_image_digest="$(trim_value "${labels[2]:-}")"
+  actual_content_key="$(trim_value "${labels[3]:-}")"
+  actual_target="$(trim_value "${labels[4]:-}")"
+  actual_producer="$(trim_value "${labels[5]:-}")"
+
+  if [[ "${actual_input_digest}" != "${expected_input_digest}" ]]; then
+    return 1
+  fi
+  if [[ "${actual_base_image_digest}" != "${expected_base_image_digest}" ]]; then
+    return 1
+  fi
+  if [[ "${actual_content_key}" != "${expected_content_key}" ]]; then
+    return 1
+  fi
+  if [[ "${actual_target}" != "${target}" ]]; then
+    return 1
+  fi
+  if [[ "${actual_producer}" != "${expected_producer}" ]]; then
+    return 1
+  fi
+
+  BUILD_SKIP_EXISTING_ARTIFACT_DIGEST="${existing_digest}"
+  return 0
+}
+
+should_reuse_content_ref_final_build() {
+  local target="$1"
+  local content_ref="$2"
+  local expected_input_digest="$3"
+  local expected_base_image_digest="$4"
+  local expected_content_key="$5"
+  local expected_producer="$6"
+
+  if [[ "${FORCE_REBUILD:-0}" == "1" ]]; then
+    return 1
+  fi
+
+  content_ref_build_skip_matches \
+    "${target}" \
+    "${content_ref}" \
+    "${expected_input_digest}" \
+    "${expected_base_image_digest}" \
+    "${expected_content_key}" \
+    "${expected_producer}"
+}
+
+build_skip_decision_generated_at() {
+  if [[ -n "${BUILD_ARTIFACT_BROKER_GENERATED_AT:-}" ]]; then
+    printf '%s' "${BUILD_ARTIFACT_BROKER_GENERATED_AT}"
+    return 0
+  fi
+
+  node -e 'process.stdout.write(new Date().toISOString())'
+}
+
+append_build_skip_decision() {
+  local target="$1"
+  local input_digest="$2"
+  local existing_artifact_digest="$3"
+  local generated_at=""
+  local skip_decisions_path="${RELEASE_ROOT}/skip-decisions.ndjson"
+
+  generated_at="$(build_skip_decision_generated_at)"
+  node - \
+    "${skip_decisions_path}" \
+    "${target}" \
+    "${input_digest}" \
+    "${existing_artifact_digest}" \
+    "${BUILD_SKIP_REASON_LOCAL_CONTENT_REF_LABELS_MATCH}" \
+    "${BUILD_SKIP_DECISION_VALIDATOR}" \
+    "${generated_at}" <<'NODE'
+const fs = require('node:fs');
+const path = require('node:path');
+
+const [
+  skipDecisionsPath,
+  target,
+  inputDigest,
+  existingArtifactDigest,
+  skipReason,
+  validator,
+  generatedAt,
+] = process.argv.slice(2);
+const decision = {
+  schema: 'current-build-skip-decision.v1',
+  version: 1,
+  target,
+  operation: 'docker_build',
+  input_digest: inputDigest,
+  existing_artifact_digest: existingArtifactDigest,
+  skip_reason: skipReason,
+  validator,
+  generated_at: generatedAt,
+};
+
+fs.mkdirSync(path.dirname(skipDecisionsPath), { recursive: true });
+fs.appendFileSync(skipDecisionsPath, `${JSON.stringify(decision)}\n`, 'utf8');
+NODE
+}
+
 run_build_artifact_broker_prebuild_plan
+
+APP_BUILD_DECISION="built"
+LLMUP_BUILD_DECISION="built"
+rm -f "${RELEASE_ROOT}/skip-decisions.ndjson"
 
 docker_build_local \
   --build-arg NODE_BASE_IMAGE="${APP_NODE_BASE_IMAGE}" \
   -t "${APP_BASE_IMAGE}" \
   -f "${APP_SOURCE_DIR}/infra/deploy/Dockerfile.agentsmith-app-base" \
   "${APP_SOURCE_DIR}"
-docker_build_local \
-  --build-arg APP_BASE_IMAGE="${APP_BASE_IMAGE}" \
-  --build-arg NODE_RUNTIME_IMAGE="${APP_NODE_BASE_IMAGE}" \
-  --build-arg MC_IMAGE="${APP_MC_IMAGE}" \
-  --label "com.agentsmith.build.input_digest=${APP_INPUT_DIGEST}" \
-  --label "com.agentsmith.build.base_image_digest=${APP_BASE_IMAGE_DIGEST}" \
-  --label "com.agentsmith.build.content_key=${APP_CONTENT_KEY}" \
-  --label "com.agentsmith.build.release_id=${RELEASE_ID}" \
-  --label "com.agentsmith.build.target=app" \
-  --label "com.agentsmith.build.producer=${APP_PRODUCER}" \
-  -t "${APP_CONTENT_REF}" \
-  -f "${APP_SOURCE_DIR}/infra/deploy/Dockerfile.agentsmith-app" \
-  "${APP_SOURCE_DIR}"
+if should_reuse_content_ref_final_build \
+  "app" \
+  "${APP_CONTENT_REF}" \
+  "${APP_INPUT_DIGEST}" \
+  "${APP_BASE_IMAGE_DIGEST}" \
+  "${APP_CONTENT_KEY}" \
+  "${APP_PRODUCER}"; then
+  APP_BUILD_DECISION="reused"
+  append_build_skip_decision "app" "${APP_INPUT_DIGEST}" "${BUILD_SKIP_EXISTING_ARTIFACT_DIGEST}"
+  log "reusing local app content ref for final docker build: ${APP_CONTENT_REF}"
+else
+  docker_build_local \
+    --build-arg APP_BASE_IMAGE="${APP_BASE_IMAGE}" \
+    --build-arg NODE_RUNTIME_IMAGE="${APP_NODE_BASE_IMAGE}" \
+    --build-arg MC_IMAGE="${APP_MC_IMAGE}" \
+    --label "com.agentsmith.build.input_digest=${APP_INPUT_DIGEST}" \
+    --label "com.agentsmith.build.base_image_digest=${APP_BASE_IMAGE_DIGEST}" \
+    --label "com.agentsmith.build.content_key=${APP_CONTENT_KEY}" \
+    --label "com.agentsmith.build.release_id=${RELEASE_ID}" \
+    --label "com.agentsmith.build.target=app" \
+    --label "com.agentsmith.build.producer=${APP_PRODUCER}" \
+    -t "${APP_CONTENT_REF}" \
+    -f "${APP_SOURCE_DIR}/infra/deploy/Dockerfile.agentsmith-app" \
+    "${APP_SOURCE_DIR}"
+fi
 docker tag "${APP_CONTENT_REF}" "${APP_RELEASE_ALIAS_REF}"
 build_runner_image notebook "${RUNNER_BASE_IMAGE}" "${RUNNER_IMAGE}" "${DOCKER_BUILD_PROXY:-}" "1" "1" "${APP_SOURCE_DIR}"
 build_runner_image chat "${CHAT_RUNNER_BASE_IMAGE}" "${CHAT_RUNNER_IMAGE}" "${DOCKER_BUILD_PROXY:-}" "1" "1" "${APP_SOURCE_DIR}"
@@ -299,18 +460,30 @@ docker_build_local \
   -t "${SANDBOX_MANAGER_IMAGE}" \
   -f "${SANDBOX_SOURCE_DIR}/Dockerfile" \
   "${SANDBOX_SOURCE_DIR}"
-docker_build_local \
-  --build-arg RUST_BASE_IMAGE="${UNIVERSAL_PROXY_RUST_BASE_IMAGE}" \
-  --build-arg RUNTIME_BASE_IMAGE="${UNIVERSAL_PROXY_RUNTIME_BASE_IMAGE}" \
-  --label "com.agentsmith.build.input_digest=${LLMUP_INPUT_DIGEST}" \
-  --label "com.agentsmith.build.base_image_digest=${LLMUP_BASE_IMAGE_DIGEST}" \
-  --label "com.agentsmith.build.content_key=${LLMUP_CONTENT_KEY}" \
-  --label "com.agentsmith.build.release_id=${RELEASE_ID}" \
-  --label "com.agentsmith.build.target=llmup" \
-  --label "com.agentsmith.build.producer=${LLMUP_PRODUCER}" \
-  -t "${LLMUP_CONTENT_REF}" \
-  -f "${UNIVERSAL_PROXY_SOURCE_DIR}/Dockerfile" \
-  "${UNIVERSAL_PROXY_SOURCE_DIR}"
+if should_reuse_content_ref_final_build \
+  "llmup" \
+  "${LLMUP_CONTENT_REF}" \
+  "${LLMUP_INPUT_DIGEST}" \
+  "${LLMUP_BASE_IMAGE_DIGEST}" \
+  "${LLMUP_CONTENT_KEY}" \
+  "${LLMUP_PRODUCER}"; then
+  LLMUP_BUILD_DECISION="reused"
+  append_build_skip_decision "llmup" "${LLMUP_INPUT_DIGEST}" "${BUILD_SKIP_EXISTING_ARTIFACT_DIGEST}"
+  log "reusing local llmup content ref for final docker build: ${LLMUP_CONTENT_REF}"
+else
+  docker_build_local \
+    --build-arg RUST_BASE_IMAGE="${UNIVERSAL_PROXY_RUST_BASE_IMAGE}" \
+    --build-arg RUNTIME_BASE_IMAGE="${UNIVERSAL_PROXY_RUNTIME_BASE_IMAGE}" \
+    --label "com.agentsmith.build.input_digest=${LLMUP_INPUT_DIGEST}" \
+    --label "com.agentsmith.build.base_image_digest=${LLMUP_BASE_IMAGE_DIGEST}" \
+    --label "com.agentsmith.build.content_key=${LLMUP_CONTENT_KEY}" \
+    --label "com.agentsmith.build.release_id=${RELEASE_ID}" \
+    --label "com.agentsmith.build.target=llmup" \
+    --label "com.agentsmith.build.producer=${LLMUP_PRODUCER}" \
+    -t "${LLMUP_CONTENT_REF}" \
+    -f "${UNIVERSAL_PROXY_SOURCE_DIR}/Dockerfile" \
+    "${UNIVERSAL_PROXY_SOURCE_DIR}"
+fi
 docker tag "${LLMUP_CONTENT_REF}" "${LLMUP_RELEASE_ALIAS_REF}"
 
 cat > "${RELEASE_ROOT}/VERSION" <<EOF
@@ -366,7 +539,9 @@ run_build_artifact_broker_manifest_gate() {
     --app-base-image "${APP_NODE_BASE_IMAGE}" \
     --app-base-image "${APP_MC_IMAGE}" \
     --llmup-base-image "${UNIVERSAL_PROXY_RUST_BASE_IMAGE}" \
-    --llmup-base-image "${UNIVERSAL_PROXY_RUNTIME_BASE_IMAGE}" || broker_exit=$?
+    --llmup-base-image "${UNIVERSAL_PROXY_RUNTIME_BASE_IMAGE}" \
+    --target-decision "app=${APP_BUILD_DECISION}" \
+    --target-decision "llmup=${LLMUP_BUILD_DECISION}" || broker_exit=$?
 
   if [[ "${broker_exit}" -ne 0 ]]; then
     die "build artifact broker manifest gate failed with exit ${broker_exit}; see ${report_path}"

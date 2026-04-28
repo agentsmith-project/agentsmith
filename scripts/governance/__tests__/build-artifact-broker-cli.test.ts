@@ -335,6 +335,45 @@ describe('build artifact broker CLI adapter', () => {
     }
   });
 
+  it('writes per-target manifest decisions from CLI input', () => {
+    const fixture = stageBrokerFixture();
+
+    try {
+      expect(runBroker(fixture, ['--target-decision', 'app=reused', '--target-decision', 'llmup=skipped'])).toBe(0);
+
+      const manifest = readJson(path.join(fixture.releaseRoot, 'build-manifest.json')) as {
+        targets: Array<{ target: string; decision: string }>;
+      };
+      const decisionsByTarget = Object.fromEntries(
+        manifest.targets.map((target) => [target.target, target.decision]),
+      );
+
+      expect(validateBuildManifestAggregate(manifest).ok).toBe(true);
+      expect(decisionsByTarget).toMatchObject({
+        app: 'reused',
+        llmup: 'skipped',
+      });
+    } finally {
+      rmSync(fixture.tempRoot, { recursive: true, force: true });
+    }
+  });
+
+  it('fails closed on invalid per-target manifest decision input', () => {
+    const invalidTargetFixture = stageBrokerFixture();
+    const invalidDecisionFixture = stageBrokerFixture();
+
+    try {
+      expect(runBroker(invalidTargetFixture, ['--target-decision', 'worker=reused'])).toBe(1);
+      expect(existsSync(path.join(invalidTargetFixture.releaseRoot, 'build-manifest.json'))).toBe(false);
+
+      expect(runBroker(invalidDecisionFixture, ['--target-decision', 'app=reusable'])).toBe(1);
+      expect(existsSync(path.join(invalidDecisionFixture.releaseRoot, 'build-manifest.json'))).toBe(false);
+    } finally {
+      rmSync(invalidTargetFixture.tempRoot, { recursive: true, force: true });
+      rmSync(invalidDecisionFixture.tempRoot, { recursive: true, force: true });
+    }
+  });
+
   it('writes a structured diagnostic report instead of an invalid manifest when an image digest is missing', () => {
     const fixture = stageBrokerFixture();
 

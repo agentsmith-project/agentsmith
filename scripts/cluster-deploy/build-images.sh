@@ -40,6 +40,7 @@ SANDBOX_MANAGER_IMAGE="${IMAGE_PREFIX}/sandbox-manager:${RELEASE_ID}"
 UNIVERSAL_PROXY_IMAGE="${IMAGE_PREFIX}/llm-universal-proxy:${RELEASE_ID}"
 
 APP_NODE_BASE_IMAGE="${APP_NODE_BASE_IMAGE:-node:24.14.1-bookworm}"
+APP_MC_IMAGE="${APP_MC_IMAGE:-minio/mc:latest}"
 RUNNER_NODE_BASE_IMAGE="${RUNNER_NODE_BASE_IMAGE:-node:24.14.1-bookworm}"
 VERIFY_PLAYWRIGHT_BASE_IMAGE="${VERIFY_PLAYWRIGHT_BASE_IMAGE:-mcr.microsoft.com/playwright:v1.58.1-noble}"
 VERIFY_DOCKER_CLI_IMAGE="${VERIFY_DOCKER_CLI_IMAGE:-docker:28.5.1-cli}"
@@ -56,6 +57,7 @@ docker_build_local \
 docker_build_local \
   --build-arg APP_BASE_IMAGE="${APP_BASE_IMAGE}" \
   --build-arg NODE_RUNTIME_IMAGE="${APP_NODE_BASE_IMAGE}" \
+  --build-arg MC_IMAGE="${APP_MC_IMAGE}" \
   -t "${APP_IMAGE}" \
   -f "${APP_SOURCE_DIR}/infra/deploy/Dockerfile.agentsmith-app" \
   "${APP_SOURCE_DIR}"
@@ -98,5 +100,55 @@ registry_host=${REGISTRY_HOST}
 k8s_registry_host=${K8S_REGISTRY_HOST}
 registry_project=${REGISTRY_PROJECT}
 EOF
+
+run_build_artifact_broker_diagnostic() {
+  local broker_cli="${ROOT_DIR}/scripts/governance/build-artifact-broker-cli.ts"
+  local broker_runner=()
+  local broker_exit=0
+
+  if [[ ! -f "${broker_cli}" ]]; then
+    log "build artifact broker diagnostic skipped: missing internal adapter at ${broker_cli}"
+    return 0
+  fi
+
+  if [[ -n "${BUILD_ARTIFACT_BROKER_TSX_COMMAND:-}" ]]; then
+    broker_runner=("${BUILD_ARTIFACT_BROKER_TSX_COMMAND}")
+  elif [[ -x "${ROOT_DIR}/node_modules/.bin/tsx" ]]; then
+    broker_runner=("${ROOT_DIR}/node_modules/.bin/tsx")
+  elif command -v tsx >/dev/null 2>&1; then
+    broker_runner=("$(command -v tsx)")
+  else
+    log "build artifact broker diagnostic skipped: missing tsx runtime"
+    return 0
+  fi
+
+  "${broker_runner[@]}" "${broker_cli}" \
+    --release-root "${RELEASE_ROOT}" \
+    --release-id "${RELEASE_ID}" \
+    --app-source-dir "${APP_SOURCE_DIR}" \
+    --llmup-source-dir "${UNIVERSAL_PROXY_SOURCE_DIR}" \
+    --app-image "${APP_IMAGE}" \
+    --llmup-image "${UNIVERSAL_PROXY_IMAGE}" \
+    --app-base-image "${APP_NODE_BASE_IMAGE}" \
+    --app-base-image "${APP_MC_IMAGE}" \
+    --llmup-base-image "${UNIVERSAL_PROXY_RUST_BASE_IMAGE}" \
+    --llmup-base-image "${UNIVERSAL_PROXY_RUNTIME_BASE_IMAGE}" || broker_exit=$?
+
+  if [[ "${broker_exit}" -eq 42 ]]; then
+    return "${broker_exit}"
+  fi
+  if [[ "${broker_exit}" -ne 0 ]]; then
+    log "build artifact broker diagnostic warning: adapter failed with exit ${broker_exit}"
+    return 0
+  fi
+
+  if [[ -f "${RELEASE_ROOT}/build-manifest.json" ]]; then
+    log "build artifact broker manifest: ${RELEASE_ROOT}/build-manifest.json"
+  elif [[ -f "${RELEASE_ROOT}/build-artifact-broker-report.json" ]]; then
+    log "build artifact broker diagnostic report: ${RELEASE_ROOT}/build-artifact-broker-report.json"
+  fi
+}
+
+run_build_artifact_broker_diagnostic
 
 log "build-images ok"

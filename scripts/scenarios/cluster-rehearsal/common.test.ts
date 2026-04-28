@@ -1,9 +1,33 @@
 import { execFileSync } from 'node:child_process';
-import { copyFileSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import {
+  copyFileSync,
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readdirSync,
+  readFileSync,
+  rmSync,
+  writeFileSync,
+} from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 
 import { describe, expect, it } from 'vitest';
+
+import { validateBuildSkipDecision } from '../../governance/build-artifact-broker';
+
+const DIGEST_A = `sha256:${'a'.repeat(64)}`;
+const DIGEST_B = `sha256:${'b'.repeat(64)}`;
+const KIND_RUNNER_IMAGE = 'kind-registry:5000/mbos/runner:release-20260427';
+const HOST_RUNNER_IMAGE = 'registry.test/mbos/runner:release-20260427';
+const FORBIDDEN_SKIP_DECISION_FIELDS = [
+  'passed',
+  'verdict',
+  'reusable',
+  'claim_id',
+  'result_status',
+  'failure_class',
+] as const;
 
 function stageClusterRehearsalFixture(tempRoot: string): void {
   for (const relativePath of [
@@ -20,6 +44,188 @@ function stageClusterRehearsalFixture(tempRoot: string): void {
     mkdirSync(path.dirname(targetPath), { recursive: true });
     copyFileSync(sourcePath, targetPath);
   }
+}
+
+function stageKindPreloadFixture(tempRoot: string): {
+  binDir: string;
+  dockerLogPath: string;
+  releaseRoot: string;
+  tarballDir: string;
+} {
+  stageClusterRehearsalFixture(tempRoot);
+
+  mkdirSync(path.join(tempRoot, 'scripts', 'cluster-deploy'), { recursive: true });
+  writeFileSync(
+    path.join(tempRoot, 'scripts', 'cluster-deploy', 'lib.sh'),
+    `#!/usr/bin/env bash
+set -euo pipefail
+
+ensure_dirs() {
+  mkdir -p "\${RELEASE_ROOT}/env"
+}
+
+ensure_operator_registry_env() {
+  :
+}
+
+load_registry_env() {
+  export REGISTRY_HOST=registry.test
+  export K8S_REGISTRY_HOST=kind-registry:5000
+}
+
+require_version_images() {
+  export RUNNER_IMAGE="${HOST_RUNNER_IMAGE}"
+  export K8S_RUNNER_IMAGE="${KIND_RUNNER_IMAGE}"
+  export CHAT_RUNNER_IMAGE=""
+  export K8S_CHAT_RUNNER_IMAGE=""
+  export SANDBOX_MANAGER_IMAGE=""
+  export K8S_SANDBOX_MANAGER_IMAGE=""
+  export JUICEFS_MOUNT_IMAGE=""
+  export K8S_JUICEFS_MOUNT_IMAGE=""
+  export JUICEFS_CSI_DRIVER_IMAGE=""
+  export K8S_JUICEFS_CSI_DRIVER_IMAGE=""
+  export JUICEFS_CSI_DASHBOARD_IMAGE=""
+  export K8S_JUICEFS_CSI_DASHBOARD_IMAGE=""
+  export JUICEFS_CSI_PROVISIONER_IMAGE=""
+  export K8S_JUICEFS_CSI_PROVISIONER_IMAGE=""
+  export JUICEFS_CSI_RESIZER_IMAGE=""
+  export K8S_JUICEFS_CSI_RESIZER_IMAGE=""
+  export JUICEFS_CSI_LIVENESSPROBE_IMAGE=""
+  export K8S_JUICEFS_CSI_LIVENESSPROBE_IMAGE=""
+  export JUICEFS_CSI_NODE_REGISTRAR_IMAGE=""
+  export K8S_JUICEFS_CSI_NODE_REGISTRAR_IMAGE=""
+  export INGRESS_NGINX_CONTROLLER_IMAGE=""
+  export K8S_INGRESS_NGINX_CONTROLLER_IMAGE=""
+  export INGRESS_NGINX_CERTGEN_IMAGE=""
+  export K8S_INGRESS_NGINX_CERTGEN_IMAGE=""
+}
+`,
+    'utf8',
+  );
+
+  const binDir = path.join(tempRoot, 'bin');
+  const tarballDir = path.join(tempRoot, 'kind-image-tmp');
+  mkdirSync(binDir, { recursive: true });
+  mkdirSync(tarballDir, { recursive: true });
+  writeFileSync(
+    path.join(binDir, 'docker'),
+    `#!/usr/bin/env bash
+set -euo pipefail
+
+printf '%s\\n' "$*" >> "\${DOCKER_LOG:?}"
+
+case "\${1:-}" in
+  tag)
+    exit 0
+    ;;
+  image)
+    if [[ "\${2:-}" == "inspect" ]]; then
+      if [[ "\${LOCAL_INSPECT_EXIT:-0}" == "1" ]]; then
+        exit 1
+      fi
+      local_image_id="\${LOCAL_IMAGE_ID:-}"
+      local_config_digest="\${LOCAL_CONFIG_DIGEST:-}"
+      local_repo_digests_json="\${LOCAL_REPO_DIGESTS_JSON:-[]}"
+      case "\${3:-}" in
+        --format)
+          case "\${4:-}" in
+            '{{json .RepoDigests}}')
+              printf '%s\\n' "\${local_repo_digests_json}"
+              ;;
+            '{{.Id}}'|'{{json .Id}}')
+              printf '%s\\n' "\${local_image_id}"
+              ;;
+            '{{.Config.Digest}}'|'{{json .Config.Digest}}')
+              printf '%s\\n' "\${local_config_digest}"
+              ;;
+            *)
+              printf '[{"Id":"%s","RepoDigests":%s,"Config":{"Digest":"%s"}}]\\n' \
+                "\${local_image_id}" \
+                "\${local_repo_digests_json}" \
+                "\${local_config_digest}"
+              ;;
+          esac
+          ;;
+        *)
+          printf '[{"Id":"%s","RepoDigests":%s,"Config":{"Digest":"%s"}}]\\n' \
+            "\${local_image_id}" \
+            "\${local_repo_digests_json}" \
+            "\${local_config_digest}"
+          ;;
+      esac
+      exit 0
+    fi
+    ;;
+  save)
+    output_path=""
+    while (( "$#" > 0 )); do
+      if [[ "\${1}" == "-o" ]]; then
+        output_path="\${2:-}"
+        shift 2
+        continue
+      fi
+      shift
+    done
+    [[ -n "\${output_path}" ]] || exit 2
+    printf 'tar\\n' > "\${output_path}"
+    exit 0
+    ;;
+  exec)
+    if [[ "\${2:-}" == "-i" ]]; then
+      cat >/dev/null
+      if [[ "\${KIND_IMPORT_EXIT:-0}" != "0" ]]; then
+        exit "\${KIND_IMPORT_EXIT}"
+      fi
+      exit 0
+    fi
+    if [[ "\${KIND_PROBE_EXIT:-0}" == "1" ]]; then
+      exit 1
+    fi
+    if [[ -n "\${KIND_CTR_IMAGE_INSPECT_JSON:-}" ]]; then
+      printf '%s\\n' "\${KIND_CTR_IMAGE_INSPECT_JSON}"
+    else
+      printf '{}\\n'
+    fi
+    exit 0
+    ;;
+esac
+
+echo "unexpected docker invocation: $*" >&2
+exit 2
+`,
+    { encoding: 'utf8', mode: 0o755 },
+  );
+  writeFileSync(
+    path.join(binDir, 'mktemp'),
+    `#!/usr/bin/env bash
+set -euo pipefail
+
+if [[ "\${1:-}" == "/tmp/cluster-rehearsal-kind-image."*".tar" ]]; then
+  mkdir -p "\${KIND_TARBALL_DIR:?}"
+  counter_path="\${KIND_TARBALL_DIR}/counter"
+  counter=0
+  if [[ -f "\${counter_path}" ]]; then
+    counter="$(cat "\${counter_path}")"
+  fi
+  next_counter=$((counter + 1))
+  printf '%s\\n' "\${next_counter}" > "\${counter_path}"
+  tarball="\${KIND_TARBALL_DIR}/cluster-rehearsal-kind-image.\${counter}.tar"
+  : > "\${tarball}"
+  printf '%s\\n' "\${tarball}"
+  exit 0
+fi
+
+/usr/bin/mktemp "$@"
+`,
+    { encoding: 'utf8', mode: 0o755 },
+  );
+
+  return {
+    binDir,
+    dockerLogPath: path.join(tempRoot, 'docker.log'),
+    releaseRoot: path.join(tempRoot, 'release'),
+    tarballDir,
+  };
 }
 
 function runClusterRehearsalCommand(tempRoot: string, script: string, extraEnv: NodeJS.ProcessEnv = {}): string {
@@ -69,6 +275,83 @@ function readEnvValue(filePath: string, key: string): string {
     return line.slice(key.length + 1).trim().replace(/^['"]|['"]$/g, '');
   }
   return '';
+}
+
+function runKindPreloadCommand(
+  tempRoot: string,
+  extraEnv: NodeJS.ProcessEnv = {},
+): { dockerLog: string; releaseRoot: string; tarballDir: string } {
+  const { binDir, dockerLogPath, releaseRoot, tarballDir } = stageKindPreloadFixture(tempRoot);
+
+  runClusterRehearsalCommand(
+    tempRoot,
+    `
+      source "${tempRoot}/scripts/scenarios/cluster-rehearsal/common.sh"
+      export RELEASE_ROOT="${releaseRoot}"
+      mkdir -p "\${RELEASE_ROOT}"
+      preload_cluster_rehearsal_kind_images
+    `,
+    {
+      ...extraEnv,
+      DOCKER_LOG: dockerLogPath,
+      KIND_TARBALL_DIR: tarballDir,
+      PATH: `${binDir}:${process.env.PATH ?? ''}`,
+    },
+  );
+
+  return {
+    dockerLog: readFileSync(dockerLogPath, 'utf8'),
+    releaseRoot,
+    tarballDir,
+  };
+}
+
+function expectKindPreloadCommandFailure(
+  tempRoot: string,
+  extraEnv: NodeJS.ProcessEnv = {},
+): { dockerLog: string; releaseRoot: string; tarballDir: string; status: number | null } {
+  const { binDir, dockerLogPath, releaseRoot, tarballDir } = stageKindPreloadFixture(tempRoot);
+  let failure: (Error & { status?: number | null }) | undefined;
+
+  try {
+    runClusterRehearsalCommand(
+      tempRoot,
+      `
+        source "${tempRoot}/scripts/scenarios/cluster-rehearsal/common.sh"
+        export RELEASE_ROOT="${releaseRoot}"
+        mkdir -p "\${RELEASE_ROOT}"
+        preload_cluster_rehearsal_kind_images
+      `,
+      {
+        ...extraEnv,
+        DOCKER_LOG: dockerLogPath,
+        KIND_TARBALL_DIR: tarballDir,
+        PATH: `${binDir}:${process.env.PATH ?? ''}`,
+      },
+    );
+  } catch (error) {
+    failure = error as Error & { status?: number | null };
+  }
+
+  expect(failure).toBeDefined();
+  return {
+    dockerLog: existsSync(dockerLogPath) ? readFileSync(dockerLogPath, 'utf8') : '',
+    releaseRoot,
+    tarballDir,
+    status: failure?.status ?? null,
+  };
+}
+
+function readSkipDecisions(releaseRoot: string): Array<Record<string, unknown>> {
+  const skipDecisionPath = path.join(releaseRoot, 'skip-decisions.ndjson');
+  if (!existsSync(skipDecisionPath)) {
+    return [];
+  }
+
+  return readFileSync(skipDecisionPath, 'utf8')
+    .split('\n')
+    .filter(Boolean)
+    .map((line) => JSON.parse(line) as Record<string, unknown>);
 }
 
 describe('cluster-rehearsal generated state ownership', () => {
@@ -641,5 +924,188 @@ mkdir -p "\${OUT_DIR}/agentsmith-\${RELEASE_ID}"
     expect(commonScript).toContain('"${CHAT_RUNNER_IMAGE}"');
     expect(commonScript).toContain('"${K8S_RUNNER_IMAGE}"');
     expect(commonScript).toContain('"${K8S_CHAT_RUNNER_IMAGE}"');
+  });
+
+  it('skips kind image preload when local and kind containerd manifest digests match and records an audit decision', () => {
+    const tempRoot = mkdtempSync(path.join(os.tmpdir(), 'cluster-rehearsal-kind-skip-match-'));
+
+    try {
+      const { dockerLog, releaseRoot } = runKindPreloadCommand(tempRoot, {
+        LOCAL_REPO_DIGESTS_JSON: `["${KIND_RUNNER_IMAGE.replace(/:[^/:]+$/u, '')}@${DIGEST_A}"]`,
+        KIND_CTR_IMAGE_INSPECT_JSON: `{"target":{"digest":"${DIGEST_A}"}}`,
+      });
+      const skipDecisions = readSkipDecisions(releaseRoot);
+
+      expect(dockerLog).toContain(`tag ${HOST_RUNNER_IMAGE} ${KIND_RUNNER_IMAGE}`);
+      expect(dockerLog).toContain(`image inspect --format {{json .RepoDigests}} ${KIND_RUNNER_IMAGE}`);
+      expect(dockerLog).toContain(`exec agentsmith-control-plane ctr -n k8s.io images inspect ${KIND_RUNNER_IMAGE}`);
+      expect(dockerLog).not.toContain('save --platform linux/amd64');
+      expect(dockerLog).not.toContain('exec -i agentsmith-control-plane');
+
+      expect(skipDecisions).toHaveLength(1);
+      expect(skipDecisions[0]).toMatchObject({
+        schema: 'current-build-skip-decision.v1',
+        version: 1,
+        target: `image:${KIND_RUNNER_IMAGE}`,
+        operation: 'kind_preload',
+        input_digest: DIGEST_A,
+        existing_artifact_digest: DIGEST_A,
+        skip_reason: 'kind_containerd_target_digest_matches_local_manifest_digest',
+      });
+      expect(String(skipDecisions[0]?.validator)).toContain('docker image inspect');
+      expect(String(skipDecisions[0]?.validator)).toContain('ctr images inspect');
+      expect(typeof skipDecisions[0]?.generated_at).toBe('string');
+      expect(validateBuildSkipDecision(skipDecisions[0]).ok).toBe(true);
+      for (const field of FORBIDDEN_SKIP_DECISION_FIELDS) {
+        expect(skipDecisions[0]).not.toHaveProperty(field);
+      }
+    } finally {
+      rmSync(tempRoot, { recursive: true, force: true });
+    }
+  });
+
+  it('imports into kind when proven local and kind containerd digests differ', () => {
+    const tempRoot = mkdtempSync(path.join(os.tmpdir(), 'cluster-rehearsal-kind-skip-mismatch-'));
+
+    try {
+      const { dockerLog, releaseRoot } = runKindPreloadCommand(tempRoot, {
+        LOCAL_REPO_DIGESTS_JSON: `["${KIND_RUNNER_IMAGE.replace(/:[^/:]+$/u, '')}@${DIGEST_A}"]`,
+        KIND_CTR_IMAGE_INSPECT_JSON: `{"target":{"digest":"${DIGEST_B}"}}`,
+      });
+
+      expect(dockerLog).toContain('save --platform linux/amd64');
+      expect(dockerLog).toContain('exec -i agentsmith-control-plane sh -lc');
+      expect(readSkipDecisions(releaseRoot)).toEqual([]);
+    } finally {
+      rmSync(tempRoot, { recursive: true, force: true });
+    }
+  });
+
+  it('removes the temporary kind image archive when import fails without masking the failure status', () => {
+    const tempRoot = mkdtempSync(path.join(os.tmpdir(), 'cluster-rehearsal-kind-import-cleanup-'));
+
+    try {
+      const { dockerLog, releaseRoot, status, tarballDir } = expectKindPreloadCommandFailure(tempRoot, {
+        LOCAL_REPO_DIGESTS_JSON: `["${KIND_RUNNER_IMAGE.replace(/:[^/:]+$/u, '')}@${DIGEST_A}"]`,
+        KIND_CTR_IMAGE_INSPECT_JSON: `{"target":{"digest":"${DIGEST_B}"}}`,
+        KIND_IMPORT_EXIT: '7',
+      });
+
+      expect(status).toBe(7);
+      expect(dockerLog).toContain('save --platform linux/amd64');
+      expect(dockerLog).toContain('exec -i agentsmith-control-plane sh -lc');
+      expect(readdirSync(tarballDir).filter((name) => name.endsWith('.tar'))).toEqual([]);
+      expect(readSkipDecisions(releaseRoot)).toEqual([]);
+    } finally {
+      rmSync(tempRoot, { recursive: true, force: true });
+    }
+  });
+
+  it('imports into kind when digest probes fail, are missing, or return invalid digests', () => {
+    const cases: Array<[string, NodeJS.ProcessEnv]> = [
+      [
+        'kind probe failure',
+        {
+          LOCAL_REPO_DIGESTS_JSON: `["${KIND_RUNNER_IMAGE.replace(/:[^/:]+$/u, '')}@${DIGEST_A}"]`,
+          KIND_PROBE_EXIT: '1',
+        },
+      ],
+      [
+        'kind invalid digest',
+        {
+          LOCAL_REPO_DIGESTS_JSON: `["${KIND_RUNNER_IMAGE.replace(/:[^/:]+$/u, '')}@${DIGEST_A}"]`,
+          KIND_CTR_IMAGE_INSPECT_JSON: '{"target":{"digest":"sha256:not-a-valid-digest"}}',
+        },
+      ],
+      [
+        'missing local digest proof',
+        {
+          LOCAL_REPO_DIGESTS_JSON: '[]',
+          KIND_CTR_IMAGE_INSPECT_JSON: `{"target":{"digest":"${DIGEST_A}"}}`,
+        },
+      ],
+      [
+        'local invalid digest',
+        {
+          LOCAL_REPO_DIGESTS_JSON: `["${KIND_RUNNER_IMAGE.replace(/:[^/:]+$/u, '')}@sha256:not-a-valid-digest"]`,
+          KIND_CTR_IMAGE_INSPECT_JSON: `{"target":{"digest":"${DIGEST_A}"}}`,
+        },
+      ],
+    ];
+
+    for (const [caseName, env] of cases) {
+      const tempRoot = mkdtempSync(path.join(os.tmpdir(), 'cluster-rehearsal-kind-skip-fail-closed-'));
+
+      try {
+        const { dockerLog, releaseRoot } = runKindPreloadCommand(tempRoot, env);
+
+        expect(dockerLog, caseName).toContain('save --platform linux/amd64');
+        expect(dockerLog, caseName).toContain('exec -i agentsmith-control-plane sh -lc');
+        expect(readSkipDecisions(releaseRoot), caseName).toEqual([]);
+      } finally {
+        rmSync(tempRoot, { recursive: true, force: true });
+      }
+    }
+  });
+
+  it('does not skip from Docker image ID/config digest or containerd target config digest matches', () => {
+    const cases: Array<[string, NodeJS.ProcessEnv]> = [
+      [
+        'docker image id and config digest match kind target digest but RepoDigest differs',
+        {
+          LOCAL_IMAGE_ID: DIGEST_B,
+          LOCAL_CONFIG_DIGEST: DIGEST_B,
+          LOCAL_REPO_DIGESTS_JSON: `["${KIND_RUNNER_IMAGE.replace(/:[^/:]+$/u, '')}@${DIGEST_A}"]`,
+          KIND_CTR_IMAGE_INSPECT_JSON: `{"target":{"digest":"${DIGEST_B}"}}`,
+        },
+      ],
+      [
+        'RepoDigest matches containerd target config digest but not target digest',
+        {
+          LOCAL_IMAGE_ID: DIGEST_A,
+          LOCAL_CONFIG_DIGEST: DIGEST_A,
+          LOCAL_REPO_DIGESTS_JSON: `["${KIND_RUNNER_IMAGE.replace(/:[^/:]+$/u, '')}@${DIGEST_A}"]`,
+          KIND_CTR_IMAGE_INSPECT_JSON: `{"target":{"digest":"${DIGEST_B}","config":{"digest":"${DIGEST_A}"}}}`,
+        },
+      ],
+    ];
+
+    for (const [caseName, env] of cases) {
+      const tempRoot = mkdtempSync(path.join(os.tmpdir(), 'cluster-rehearsal-kind-skip-config-digest-'));
+
+      try {
+        const { dockerLog, releaseRoot } = runKindPreloadCommand(tempRoot, env);
+
+        expect(dockerLog, caseName).toContain(`image inspect --format {{json .RepoDigests}} ${KIND_RUNNER_IMAGE}`);
+        expect(dockerLog, caseName).toContain(
+          `exec agentsmith-control-plane ctr -n k8s.io images inspect ${KIND_RUNNER_IMAGE}`,
+        );
+        expect(dockerLog, caseName).toContain('save --platform linux/amd64');
+        expect(dockerLog, caseName).toContain('exec -i agentsmith-control-plane sh -lc');
+        expect(readSkipDecisions(releaseRoot), caseName).toEqual([]);
+      } finally {
+        rmSync(tempRoot, { recursive: true, force: true });
+      }
+    }
+  });
+
+  it('bypasses digest probes and imports when FORCE_KIND_PRELOAD=1', () => {
+    const tempRoot = mkdtempSync(path.join(os.tmpdir(), 'cluster-rehearsal-kind-force-preload-'));
+
+    try {
+      const { dockerLog, releaseRoot } = runKindPreloadCommand(tempRoot, {
+        FORCE_KIND_PRELOAD: '1',
+        LOCAL_REPO_DIGESTS_JSON: `["${KIND_RUNNER_IMAGE.replace(/:[^/:]+$/u, '')}@${DIGEST_A}"]`,
+        KIND_CTR_IMAGE_INSPECT_JSON: `{"target":{"digest":"${DIGEST_A}"}}`,
+      });
+
+      expect(dockerLog).toContain('save --platform linux/amd64');
+      expect(dockerLog).toContain('exec -i agentsmith-control-plane sh -lc');
+      expect(dockerLog).not.toContain('image inspect --format');
+      expect(dockerLog).not.toContain('ctr -n k8s.io images inspect');
+      expect(readSkipDecisions(releaseRoot)).toEqual([]);
+    } finally {
+      rmSync(tempRoot, { recursive: true, force: true });
+    }
   });
 });

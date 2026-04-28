@@ -422,6 +422,233 @@ ADMIN_CHECKED_AT=$(date -u +%Y-%m-%dT%H:%M:%SZ)
 EOF
 }
 
+cluster_rehearsal_valid_sha256_digest() {
+  [[ "${1:-}" =~ ^sha256:[a-f0-9]{64}$ ]]
+}
+
+cluster_rehearsal_image_repo_from_ref() {
+  local ref="${1%%@*}"
+  local last_component="${ref##*/}"
+
+  if [[ "${last_component}" == *:* ]]; then
+    ref="${ref%:*}"
+  fi
+
+  printf '%s\n' "${ref}"
+}
+
+cluster_rehearsal_digest_from_ref() {
+  local digest="${1##*@}"
+
+  if [[ "${digest}" != "$1" ]] && cluster_rehearsal_valid_sha256_digest "${digest}"; then
+    printf '%s\n' "${digest}"
+    return 0
+  fi
+
+  return 1
+}
+
+cluster_rehearsal_local_image_manifest_digest_from_inspect() {
+  local image_ref="$1"
+  shift
+
+  local repo_digests_json
+  repo_digests_json="$(docker image inspect --format '{{json .RepoDigests}}' "${image_ref}" 2>/dev/null)" || return 1
+
+  python3 - "${repo_digests_json}" "$@" <<'PY'
+import json
+import re
+import sys
+
+digest_pattern = re.compile(r"^sha256:[a-f0-9]{64}$")
+expected_repos = set(sys.argv[2:])
+
+try:
+    repo_digests = json.loads(sys.argv[1])
+except json.JSONDecodeError:
+    raise SystemExit(1)
+
+if not isinstance(repo_digests, list):
+    raise SystemExit(1)
+
+digests = set()
+for entry in repo_digests:
+    if not isinstance(entry, str) or "@" not in entry:
+        continue
+    repo, digest = entry.rsplit("@", 1)
+    if repo not in expected_repos:
+        continue
+    if digest_pattern.fullmatch(digest):
+        digests.add(digest)
+
+if len(digests) != 1:
+    raise SystemExit(1)
+
+print(next(iter(digests)))
+PY
+}
+
+cluster_rehearsal_local_image_manifest_digest() {
+  local host_image="$1"
+  local kind_image="$2"
+  local host_repo
+  local kind_repo
+  local digest
+
+  digest="$(cluster_rehearsal_digest_from_ref "${kind_image}" || true)"
+  if [[ -n "${digest}" ]] && docker image inspect "${kind_image}" >/dev/null 2>&1; then
+    printf '%s\n' "${digest}"
+    return 0
+  fi
+
+  host_repo="$(cluster_rehearsal_image_repo_from_ref "${host_image}")"
+  kind_repo="$(cluster_rehearsal_image_repo_from_ref "${kind_image}")"
+
+  digest="$(cluster_rehearsal_local_image_manifest_digest_from_inspect "${kind_image}" "${kind_repo}" "${host_repo}" || true)"
+  if cluster_rehearsal_valid_sha256_digest "${digest}"; then
+    printf '%s\n' "${digest}"
+    return 0
+  fi
+
+  if [[ "${host_image}" != "${kind_image}" ]]; then
+    digest="$(cluster_rehearsal_local_image_manifest_digest_from_inspect "${host_image}" "${host_repo}" || true)"
+    if cluster_rehearsal_valid_sha256_digest "${digest}"; then
+      printf '%s\n' "${digest}"
+      return 0
+    fi
+  fi
+
+  return 1
+}
+
+cluster_rehearsal_kind_containerd_image_digest() {
+  local cluster_name="$1"
+  local kind_image="$2"
+  local inspect_json
+
+  inspect_json="$(docker exec "${cluster_name}-control-plane" ctr -n k8s.io images inspect "${kind_image}" 2>/dev/null)" || return 1
+
+  python3 - "${inspect_json}" <<'PY'
+import json
+import re
+import sys
+
+digest_pattern = re.compile(r"^sha256:[a-f0-9]{64}$")
+
+try:
+    image = json.loads(sys.argv[1])
+except json.JSONDecodeError:
+    raise SystemExit(1)
+
+if not isinstance(image, dict):
+    raise SystemExit(1)
+
+target = image.get("target")
+if not isinstance(target, dict):
+    target = image.get("Target")
+if not isinstance(target, dict):
+    raise SystemExit(1)
+
+digest = target.get("digest")
+if not isinstance(digest, str):
+    digest = target.get("Digest")
+if not isinstance(digest, str) or not digest_pattern.fullmatch(digest):
+    raise SystemExit(1)
+
+print(digest)
+PY
+}
+
+cluster_rehearsal_append_kind_preload_skip_decision() {
+  local kind_image="$1"
+  local input_digest="$2"
+  local existing_artifact_digest="$3"
+  local skip_decision_path="${RELEASE_ROOT}/skip-decisions.ndjson"
+  local generated_at
+
+  mkdir -p "$(dirname "${skip_decision_path}")"
+  generated_at="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+
+  python3 - "${skip_decision_path}" "${kind_image}" "${input_digest}" "${existing_artifact_digest}" "${generated_at}" <<'PY'
+import json
+import pathlib
+import sys
+
+path = pathlib.Path(sys.argv[1])
+payload = {
+    "schema": "current-build-skip-decision.v1",
+    "version": 1,
+    "target": f"image:{sys.argv[2]}",
+    "operation": "kind_preload",
+    "input_digest": sys.argv[3],
+    "existing_artifact_digest": sys.argv[4],
+    "skip_reason": "kind_containerd_target_digest_matches_local_manifest_digest",
+    "validator": "local docker image inspect RepoDigests and kind containerd ctr images inspect target digest",
+    "generated_at": sys.argv[5],
+}
+
+with path.open("a", encoding="utf-8") as handle:
+    handle.write(json.dumps(payload, separators=(",", ":"), sort_keys=True) + "\n")
+PY
+}
+
+cluster_rehearsal_kind_preload_digest_match() {
+  local cluster_name="$1"
+  local host_image="$2"
+  local kind_image="$3"
+  local local_digest
+  local kind_digest
+
+  CLUSTER_REHEARSAL_KIND_PRELOAD_LOCAL_DIGEST=""
+  CLUSTER_REHEARSAL_KIND_PRELOAD_EXISTING_DIGEST=""
+
+  [[ "${FORCE_KIND_PRELOAD:-0}" != "1" ]] || return 1
+
+  local_digest="$(cluster_rehearsal_local_image_manifest_digest "${host_image}" "${kind_image}" || true)"
+  cluster_rehearsal_valid_sha256_digest "${local_digest}" || return 1
+
+  kind_digest="$(cluster_rehearsal_kind_containerd_image_digest "${cluster_name}" "${kind_image}" || true)"
+  cluster_rehearsal_valid_sha256_digest "${kind_digest}" || return 1
+
+  [[ "${local_digest}" == "${kind_digest}" ]] || return 1
+
+  CLUSTER_REHEARSAL_KIND_PRELOAD_LOCAL_DIGEST="${local_digest}"
+  CLUSTER_REHEARSAL_KIND_PRELOAD_EXISTING_DIGEST="${kind_digest}"
+  return 0
+}
+
+cluster_rehearsal_import_kind_image() {
+  local cluster_name="$1"
+  local kind_image="$2"
+  local tarball
+  local status
+
+  if tarball="$(mktemp /tmp/cluster-rehearsal-kind-image.XXXXXX.tar)"; then
+    :
+  else
+    status=$?
+    return "${status}"
+  fi
+
+  if docker save --platform linux/amd64 "${kind_image}" -o "${tarball}"; then
+    :
+  else
+    status=$?
+    rm -f "${tarball}" || true
+    return "${status}"
+  fi
+
+  if cat "${tarball}" | docker exec -i "${cluster_name}-control-plane" sh -lc 'cat > /tmp/image.tar && ctr -n k8s.io images import /tmp/image.tar && rm -f /tmp/image.tar' >/dev/null; then
+    :
+  else
+    status=$?
+    rm -f "${tarball}" || true
+    return "${status}"
+  fi
+
+  rm -f "${tarball}"
+}
+
 preload_cluster_rehearsal_kind_images() {
   # shellcheck disable=SC1091
   source "${ROOT_DIR}/scripts/cluster-deploy/lib.sh"
@@ -461,7 +688,7 @@ preload_cluster_rehearsal_kind_images() {
     "${K8S_INGRESS_NGINX_CERTGEN_IMAGE}"
   )
 
-  local idx host_image kind_image tarball
+  local idx host_image kind_image
   for idx in "${!kind_images[@]}"; do
     host_image="${host_images[$idx]}"
     kind_image="${kind_images[$idx]}"
@@ -469,9 +696,13 @@ preload_cluster_rehearsal_kind_images() {
     if [[ "${host_image}" != "${kind_image}" ]]; then
       docker tag "${host_image}" "${kind_image}" >/dev/null
     fi
-    tarball="$(mktemp /tmp/cluster-rehearsal-kind-image.XXXXXX.tar)"
-    docker save --platform linux/amd64 "${kind_image}" -o "${tarball}"
-    cat "${tarball}" | docker exec -i "${cluster_name}-control-plane" sh -lc 'cat > /tmp/image.tar && ctr -n k8s.io images import /tmp/image.tar && rm -f /tmp/image.tar' >/dev/null
-    rm -f "${tarball}"
+    if cluster_rehearsal_kind_preload_digest_match "${cluster_name}" "${host_image}" "${kind_image}"; then
+      cluster_rehearsal_append_kind_preload_skip_decision \
+        "${kind_image}" \
+        "${CLUSTER_REHEARSAL_KIND_PRELOAD_LOCAL_DIGEST}" \
+        "${CLUSTER_REHEARSAL_KIND_PRELOAD_EXISTING_DIGEST}"
+      continue
+    fi
+    cluster_rehearsal_import_kind_image "${cluster_name}" "${kind_image}"
   done
 }

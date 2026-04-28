@@ -394,6 +394,19 @@ describe('build artifact broker', () => {
       generated_at: GENERATED_AT,
     };
     expect(validateBuildSkipDecision(registryPushSkipDecision).ok).toBe(true);
+    expect(
+      validateBuildSkipDecision({
+        schema: 'current-build-skip-decision.v1',
+        version: 1,
+        target: 'image:kind-registry:5000/mbos/agentsmith-runner:release-20260427',
+        operation: 'kind_preload',
+        input_digest: LOCKED_DIGEST_A,
+        existing_artifact_digest: LOCKED_DIGEST_A,
+        skip_reason: 'kind_containerd_target_digest_matches_local_manifest_digest',
+        validator: 'local docker image inspect RepoDigests and kind containerd ctr images inspect target digest',
+        generated_at: GENERATED_AT,
+      }).ok,
+    ).toBe(true);
 
     for (const field of ['verdict', 'claim_id', 'reusable', 'passed', 'status', 'result_status']) {
       expect(

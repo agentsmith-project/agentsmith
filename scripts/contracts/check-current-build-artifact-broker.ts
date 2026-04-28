@@ -100,6 +100,10 @@ function main(): void {
     'build skip decisions must support registry_push audit operations.',
   );
   assert(
+    CURRENT_BUILD_SKIP_OPERATIONS.includes('kind_preload'),
+    'build skip decisions must support kind_preload audit operations.',
+  );
+  assert(
     buildImagesScript.includes('run_build_artifact_broker_manifest_gate'),
     'build-images.sh must run the post-build build artifact broker as a manifest gate.',
   );
@@ -323,6 +327,18 @@ function main(): void {
     generated_at: GENERATED_AT,
   };
   assertValidationOk('registry_push skip decision', validateBuildSkipDecision(registryPushSkipDecision));
+  const kindPreloadSkipDecision = {
+    schema: CURRENT_BUILD_SKIP_DECISION_SCHEMA,
+    version: CURRENT_BUILD_SKIP_DECISION_VERSION,
+    target: 'image:kind-registry:5000/mbos/agentsmith-runner:release-20260427',
+    operation: 'kind_preload',
+    input_digest: LOCKED_DIGEST_A,
+    existing_artifact_digest: LOCKED_DIGEST_A,
+    skip_reason: 'kind_containerd_target_digest_matches_local_manifest_digest',
+    validator: 'local docker image inspect RepoDigests and kind containerd ctr images inspect target digest',
+    generated_at: GENERATED_AT,
+  };
+  assertValidationOk('kind_preload skip decision', validateBuildSkipDecision(kindPreloadSkipDecision));
 
   for (const field of ['verdict', 'claim_id', 'reusable', 'passed', 'status', 'result_status']) {
     assert(

@@ -41,6 +41,203 @@ demo_kind_preload_platform() {
   printf '%s\n' "${DEMO_KIND_PRELOAD_PLATFORM:-${BUNDLE_PLATFORM:-linux/amd64}}"
 }
 
+demo_kind_valid_sha256_digest() {
+  [[ "$1" =~ ^sha256:[a-f0-9]{64}$ ]]
+}
+
+demo_kind_image_repo_from_ref() {
+  local ref="${1%%@*}"
+  local last_component="${ref##*/}"
+
+  if [[ "${last_component}" == *:* ]]; then
+    ref="${ref%:*}"
+  fi
+
+  printf '%s\n' "${ref}"
+}
+
+demo_kind_local_image_manifest_digest() {
+  local image="$1"
+  local image_repo
+  local repo_digests_json
+
+  command -v node >/dev/null 2>&1 || return 1
+  image_repo="$(demo_kind_image_repo_from_ref "${image}")"
+  repo_digests_json="$(docker image inspect --format '{{json .RepoDigests}}' "${image}" 2>/dev/null)" || return 1
+
+  node - "${image_repo}" "${repo_digests_json}" <<'NODE'
+const repo = process.argv[2];
+const input = process.argv[3] ?? '';
+const digestPattern = /^sha256:[a-f0-9]{64}$/u;
+let repoDigests;
+
+try {
+  repoDigests = JSON.parse(input);
+} catch {
+  process.exit(1);
+}
+
+if (!Array.isArray(repoDigests)) {
+  process.exit(1);
+}
+
+const digests = new Set();
+for (const entry of repoDigests) {
+  if (typeof entry !== 'string') {
+    continue;
+  }
+
+  const separatorIndex = entry.lastIndexOf('@');
+  if (separatorIndex <= 0) {
+    continue;
+  }
+
+  const entryRepo = entry.slice(0, separatorIndex);
+  const entryDigest = entry.slice(separatorIndex + 1);
+  if (entryRepo === repo && digestPattern.test(entryDigest)) {
+    digests.add(entryDigest);
+  }
+}
+
+if (digests.size !== 1) {
+  process.exit(1);
+}
+
+process.stdout.write([...digests][0]);
+NODE
+}
+
+demo_kind_containerd_image_digest() {
+  local image="$1"
+  local inspect_json
+
+  command -v node >/dev/null 2>&1 || return 1
+  inspect_json="$(docker exec "${KIND_CLUSTER_NAME}-control-plane" ctr -n k8s.io images inspect "${image}" 2>/dev/null)" || return 1
+
+  node - "${inspect_json}" <<'NODE'
+const input = process.argv[2] ?? '';
+const digestPattern = /^sha256:[a-f0-9]{64}$/u;
+let image;
+
+try {
+  image = JSON.parse(input);
+} catch {
+  process.exit(1);
+}
+
+if (!image || typeof image !== 'object' || Array.isArray(image)) {
+  process.exit(1);
+}
+
+let target = image.target;
+if (!target || typeof target !== 'object' || Array.isArray(target)) {
+  target = image.Target;
+}
+if (!target || typeof target !== 'object' || Array.isArray(target)) {
+  process.exit(1);
+}
+
+let digest = target.digest;
+if (typeof digest !== 'string') {
+  digest = target.Digest;
+}
+if (typeof digest !== 'string' || !digestPattern.test(digest)) {
+  process.exit(1);
+}
+
+process.stdout.write(digest);
+NODE
+}
+
+demo_kind_preload_skip_decision_generated_at() {
+  if [[ -n "${BUILD_ARTIFACT_BROKER_GENERATED_AT:-}" ]]; then
+    printf '%s' "${BUILD_ARTIFACT_BROKER_GENERATED_AT}"
+    return 0
+  fi
+
+  node -e 'process.stdout.write(new Date().toISOString())'
+}
+
+append_demo_kind_preload_skip_decision() {
+  local image="$1"
+  local local_manifest_digest="$2"
+  local kind_target_digest="$3"
+  local generated_at
+  local skip_decisions_path="${RELEASE_ROOT}/skip-decisions.ndjson"
+
+  generated_at="$(demo_kind_preload_skip_decision_generated_at)"
+  node - \
+    "${skip_decisions_path}" \
+    "${image}" \
+    "${local_manifest_digest}" \
+    "${kind_target_digest}" \
+    "${generated_at}" <<'NODE'
+const fs = require('node:fs');
+const path = require('node:path');
+
+const [skipDecisionsPath, image, localManifestDigest, kindTargetDigest, generatedAt] = process.argv.slice(2);
+const digestPattern = /^sha256:[a-f0-9]{64}$/u;
+const imageRefPattern = /^[A-Za-z0-9][A-Za-z0-9._:/@-]*$/u;
+
+if (!imageRefPattern.test(image) || !digestPattern.test(localManifestDigest) || !digestPattern.test(kindTargetDigest)) {
+  process.exit(1);
+}
+
+const decision = {
+  schema: 'current-build-skip-decision.v1',
+  version: 1,
+  target: `image:${image}`,
+  operation: 'kind_preload',
+  input_digest: localManifestDigest,
+  existing_artifact_digest: kindTargetDigest,
+  skip_reason: 'kind_containerd_target_digest_matches_local_manifest_digest',
+  validator: 'local docker image inspect RepoDigests and kind containerd ctr images inspect target digest',
+  generated_at: generatedAt,
+};
+
+fs.mkdirSync(path.dirname(skipDecisionsPath), { recursive: true });
+fs.appendFileSync(skipDecisionsPath, `${JSON.stringify(decision)}\n`, 'utf8');
+NODE
+}
+
+demo_kind_preload_digest_match() {
+  local image="$1"
+  local local_manifest_digest
+  local kind_target_digest
+
+  DEMO_KIND_PRELOAD_LOCAL_DIGEST=""
+  DEMO_KIND_PRELOAD_EXISTING_DIGEST=""
+
+  [[ "${FORCE_KIND_PRELOAD:-0}" != "1" ]] || return 1
+
+  local_manifest_digest="$(demo_kind_local_image_manifest_digest "${image}" || true)"
+  demo_kind_valid_sha256_digest "${local_manifest_digest}" || return 1
+
+  kind_target_digest="$(demo_kind_containerd_image_digest "${image}" || true)"
+  demo_kind_valid_sha256_digest "${kind_target_digest}" || return 1
+
+  [[ "${local_manifest_digest}" == "${kind_target_digest}" ]] || return 1
+
+  DEMO_KIND_PRELOAD_LOCAL_DIGEST="${local_manifest_digest}"
+  DEMO_KIND_PRELOAD_EXISTING_DIGEST="${kind_target_digest}"
+  return 0
+}
+
+demo_kind_preload_with_digest_proven_skip() {
+  local image="$1"
+
+  if demo_kind_preload_digest_match "${image}" \
+    && append_demo_kind_preload_skip_decision \
+      "${image}" \
+      "${DEMO_KIND_PRELOAD_LOCAL_DIGEST}" \
+      "${DEMO_KIND_PRELOAD_EXISTING_DIGEST}"; then
+    log "skipping kind preload because kind containerd target digest matches local Docker manifest digest: ${image}"
+    return 0
+  fi
+
+  return 1
+}
+
 release_bundle_includes_bundled_image_archives() {
   local bundled_archives_included=""
   if [[ -f "${RELEASE_ROOT}/VERSION" ]]; then
@@ -136,12 +333,16 @@ load_demo_kind_images() {
     for image in "${kind_images[@]}"; do
       archive_path="${RELEASE_ROOT}/images/$(image_tar_name "${image}").tar"
       [[ -f "${archive_path}" ]] || die "missing kind image archive: ${archive_path}"
+      # Docker save archives do not prove the target manifest digest kind stores, so bundled preload fails closed.
       kind load image-archive "${archive_path}" --name "${KIND_CLUSTER_NAME}" >/dev/null
     done
     return 0
   fi
 
   for image in "${kind_images[@]}"; do
+    if demo_kind_preload_with_digest_proven_skip "${image}"; then
+      continue
+    fi
     load_demo_kind_image_from_local_image "${image}"
   done
 }

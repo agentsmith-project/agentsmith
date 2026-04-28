@@ -9,7 +9,21 @@ import { describe, expect, it } from 'vitest';
 import { validateBuildSkipDecision } from '../governance/build-artifact-broker';
 
 const repoRoot = process.cwd();
+const DIGEST_A = `sha256:${'a'.repeat(64)}`;
 const DIGEST_B = `sha256:${'b'.repeat(64)}`;
+
+const DEMO_KIND_IMAGES = [
+  'agentsmith-runner:test',
+  'agentsmith-chat-runner:test',
+  'sandbox-manager:test',
+  'juicedata/juicefs-csi-driver:v0.31.3',
+  'juicedata/csi-dashboard:v0.31.3',
+  'juicedata/mount:ce-v1.3.1',
+  'registry.k8s.io/sig-storage/csi-provisioner:v3.6.0',
+  'registry.k8s.io/sig-storage/csi-resizer:v1.9.0',
+  'registry.k8s.io/sig-storage/csi-node-driver-registrar:v2.9.0',
+  'registry.k8s.io/sig-storage/livenessprobe:v2.11.0',
+] as const;
 
 const FORBIDDEN_SKIP_DECISION_FIELDS = [
   'passed',
@@ -25,6 +39,16 @@ function dockerFixtureKey(image: string): string {
   return Buffer.from(image).toString('base64url');
 }
 
+function imageRepoForTest(image: string): string {
+  const imageWithoutDigest = image.split('@')[0] ?? image;
+  const lastComponent = imageWithoutDigest.split('/').at(-1) ?? imageWithoutDigest;
+  return lastComponent.includes(':') ? imageWithoutDigest.replace(/:[^/:]+$/u, '') : imageWithoutDigest;
+}
+
+function imageTarNameForTest(image: string): string {
+  return image.replace(/[/:@]/gu, '-');
+}
+
 function writeDockerImageIdFixture(tempRoot: string, image: string, digest: string): void {
   const fixtureDir = path.join(tempRoot, 'docker-fixtures');
   mkdirSync(fixtureDir, { recursive: true });
@@ -35,6 +59,69 @@ function writeDockerImageInspectFailure(tempRoot: string, image: string): void {
   const fixtureDir = path.join(tempRoot, 'docker-fixtures');
   mkdirSync(fixtureDir, { recursive: true });
   writeFileSync(path.join(fixtureDir, `image-id-${dockerFixtureKey(image)}.fail`), 'inspect failed\n', 'utf8');
+}
+
+function writeDockerRepoDigestsFixture(tempRoot: string, image: string, repoDigests: unknown): void {
+  const fixtureDir = path.join(tempRoot, 'docker-fixtures');
+  mkdirSync(fixtureDir, { recursive: true });
+  writeFileSync(
+    path.join(fixtureDir, `repo-digests-${dockerFixtureKey(image)}.json`),
+    `${typeof repoDigests === 'string' ? repoDigests : JSON.stringify(repoDigests)}\n`,
+    'utf8',
+  );
+}
+
+function writeDockerRepoDigestsFailure(tempRoot: string, image: string): void {
+  const fixtureDir = path.join(tempRoot, 'docker-fixtures');
+  mkdirSync(fixtureDir, { recursive: true });
+  writeFileSync(path.join(fixtureDir, `repo-digests-${dockerFixtureKey(image)}.fail`), 'repo digest inspect failed\n', 'utf8');
+}
+
+function writeKindContainerdTargetDigestFixture(tempRoot: string, image: string, digest: string): void {
+  const fixtureDir = path.join(tempRoot, 'kind-containerd-fixtures');
+  mkdirSync(fixtureDir, { recursive: true });
+  writeFileSync(
+    path.join(fixtureDir, `target-${dockerFixtureKey(image)}.json`),
+    `${JSON.stringify({ target: { digest } })}\n`,
+    'utf8',
+  );
+}
+
+function writeKindContainerdInspectFixture(tempRoot: string, image: string, inspectJson: string): void {
+  const fixtureDir = path.join(tempRoot, 'kind-containerd-fixtures');
+  mkdirSync(fixtureDir, { recursive: true });
+  writeFileSync(path.join(fixtureDir, `target-${dockerFixtureKey(image)}.json`), `${inspectJson}\n`, 'utf8');
+}
+
+function writeKindContainerdInspectFailure(tempRoot: string, image: string): void {
+  const fixtureDir = path.join(tempRoot, 'kind-containerd-fixtures');
+  mkdirSync(fixtureDir, { recursive: true });
+  writeFileSync(path.join(fixtureDir, `target-${dockerFixtureKey(image)}.fail`), 'containerd inspect failed\n', 'utf8');
+}
+
+function writeDemoKindImageArchives(tempRoot: string): void {
+  const imagesDir = path.join(tempRoot, 'release', 'images');
+  mkdirSync(imagesDir, { recursive: true });
+  for (const image of DEMO_KIND_IMAGES) {
+    writeFileSync(path.join(imagesDir, `${imageTarNameForTest(image)}.tar`), `archive for ${image}\n`, 'utf8');
+  }
+}
+
+function writeDemoReleaseVersion(tempRoot: string, bundledImageArchivesIncluded: boolean): void {
+  writeFileSync(
+    path.join(tempRoot, 'release', 'VERSION'),
+    [
+      'release_id=release-test',
+      'agentsmith_app_image=agentsmith-app:test',
+      'agentsmith_runner_image=agentsmith-runner:test',
+      'agentsmith_chat_runner_image=agentsmith-chat-runner:test',
+      'sandbox_manager_image=sandbox-manager:test',
+      'llm_universal_proxy_image=llm-universal-proxy:test',
+      `bundled_image_archives_included=${bundledImageArchivesIncluded ? '1' : '0'}`,
+      '',
+    ].join('\n'),
+    'utf8',
+  );
 }
 
 function writeDockerSaveArchive(
@@ -190,8 +277,39 @@ case "$1" in
         printf 'sha256:%064d\\n' 0
         exit 0
       fi
+      if [[ "$*" == *"--format {{json .RepoDigests}}"* ]]; then
+        key="$(node -e 'process.stdout.write(Buffer.from(process.argv[1]).toString("base64url"))' "\${image}")"
+        fail_fixture="${tempRoot}/docker-fixtures/repo-digests-\${key}.fail"
+        fixture="${tempRoot}/docker-fixtures/repo-digests-\${key}.json"
+        if [[ -f "\${fail_fixture}" ]]; then
+          cat "\${fail_fixture}" >&2
+          exit 1
+        fi
+        if [[ -f "\${fixture}" ]]; then
+          cat "\${fixture}"
+          exit 0
+        fi
+        printf 'repo digests fixture missing\\n' >&2
+        exit 1
+      fi
       exit 0
     fi
+    ;;
+  exec)
+    image="\${@: -1}"
+    key="$(node -e 'process.stdout.write(Buffer.from(process.argv[1]).toString("base64url"))' "\${image}")"
+    fail_fixture="${tempRoot}/kind-containerd-fixtures/target-\${key}.fail"
+    fixture="${tempRoot}/kind-containerd-fixtures/target-\${key}.json"
+    if [[ -f "\${fail_fixture}" ]]; then
+      cat "\${fail_fixture}" >&2
+      exit 1
+    fi
+    if [[ -f "\${fixture}" ]]; then
+      cat "\${fixture}"
+      exit 0
+    fi
+    printf '{}\\n'
+    exit 0
     ;;
   ps)
     exit 0
@@ -478,6 +596,174 @@ describe('demo deploy bundled image loading', () => {
       } finally {
         rmSync(tempRoot, { recursive: true, force: true });
       }
+    }
+  });
+
+  it('loads bundled kind image archive when only local RepoDigest matches kind containerd target digest', () => {
+    const tempRoot = mkdtempSync(path.join(os.tmpdir(), 'demo-deploy-kind-bundled-fail-closed-'));
+    const image = 'agentsmith-runner:test';
+    try {
+      stageDemoDeployFixture(tempRoot);
+      writeDemoKindImageArchives(tempRoot);
+      writeDockerRepoDigestsFixture(tempRoot, image, [`${imageRepoForTest(image)}@${DIGEST_A}`]);
+      writeKindContainerdTargetDigestFixture(tempRoot, image, DIGEST_A);
+
+      runDemoLoadKindImages(tempRoot, { BUILD_ARTIFACT_BROKER_GENERATED_AT: '2026-04-27T12:00:00.000Z' });
+
+      const archivePath = path.join(tempRoot, 'release', 'images', `${imageTarNameForTest(image)}.tar`);
+      const kindLog = readFileSync(path.join(tempRoot, 'kind.log'), 'utf8');
+      expect(kindLog).toContain(`load image-archive ${archivePath} --name agentsmith`);
+      expect(existsSync(path.join(tempRoot, 'release', 'skip-decisions.ndjson'))).toBe(false);
+    } finally {
+      rmSync(tempRoot, { recursive: true, force: true });
+    }
+  });
+
+  it('skips local-image kind preload when local RepoDigest matches kind containerd target digest', () => {
+    const tempRoot = mkdtempSync(path.join(os.tmpdir(), 'demo-deploy-kind-local-skip-'));
+    const image = 'agentsmith-runner:test';
+    try {
+      stageDemoDeployFixture(tempRoot);
+      writeDemoReleaseVersion(tempRoot, false);
+      unlinkSync(path.join(tempRoot, 'release', 'images', 'example.tar'));
+      writeDockerRepoDigestsFixture(tempRoot, image, [`${imageRepoForTest(image)}@${DIGEST_A}`]);
+      writeKindContainerdTargetDigestFixture(tempRoot, image, DIGEST_A);
+
+      runDemoLoadKindImages(tempRoot, { BUILD_ARTIFACT_BROKER_GENERATED_AT: '2026-04-27T12:00:00.000Z' });
+
+      const dockerLog = readFileSync(path.join(tempRoot, 'docker.log'), 'utf8');
+      const kindLog = readFileSync(path.join(tempRoot, 'kind.log'), 'utf8');
+      expect(dockerLog).toContain(`image inspect --format {{json .RepoDigests}} ${image}`);
+      expect(dockerLog).toContain(`exec agentsmith-control-plane ctr -n k8s.io images inspect ${image}`);
+      expect(dockerLog).not.toContain(`image inspect --format {{.Id}} ${image}`);
+      expect(kindLog).not.toContain(`load docker-image ${image} --name agentsmith`);
+      expect(kindLog).not.toContain(`load image-archive ${image}`);
+
+      const decisions = readNdjson(path.join(tempRoot, 'release', 'skip-decisions.ndjson'));
+      expect(decisions).toHaveLength(1);
+      expect(validateBuildSkipDecision(decisions[0]).ok).toBe(true);
+      for (const field of FORBIDDEN_SKIP_DECISION_FIELDS) {
+        expect(decisions[0]).not.toHaveProperty(field);
+      }
+    } finally {
+      rmSync(tempRoot, { recursive: true, force: true });
+    }
+  });
+
+  it('does not skip local-image kind preload when only Docker image ID matches kind target digest', () => {
+    const tempRoot = mkdtempSync(path.join(os.tmpdir(), 'demo-deploy-kind-local-id-no-skip-'));
+    const image = 'agentsmith-runner:test';
+    try {
+      stageDemoDeployFixture(tempRoot);
+      writeDemoReleaseVersion(tempRoot, false);
+      unlinkSync(path.join(tempRoot, 'release', 'images', 'example.tar'));
+      writeDockerImageIdFixture(tempRoot, image, DIGEST_A);
+      writeKindContainerdTargetDigestFixture(tempRoot, image, DIGEST_A);
+
+      runDemoLoadKindImages(tempRoot);
+
+      const dockerLog = readFileSync(path.join(tempRoot, 'docker.log'), 'utf8');
+      const kindLog = readFileSync(path.join(tempRoot, 'kind.log'), 'utf8');
+      expect(dockerLog).toContain(`image inspect --format {{json .RepoDigests}} ${image}`);
+      expect(dockerLog).not.toContain(`image inspect --format {{.Id}} ${image}`);
+      expect(kindLog).toContain(`load docker-image ${image} --name agentsmith`);
+      expect(existsSync(path.join(tempRoot, 'release', 'skip-decisions.ndjson'))).toBe(false);
+    } finally {
+      rmSync(tempRoot, { recursive: true, force: true });
+    }
+  });
+
+  it('fails closed to local-image kind preload without a skip decision when digest proof is absent or untrusted', () => {
+    const cases: readonly Array<{
+      name: string;
+      configure: (tempRoot: string, image: string) => void;
+    }> = [
+      {
+        name: 'digest-mismatch',
+        configure: (tempRoot, image) => {
+          writeDockerRepoDigestsFixture(tempRoot, image, [`${imageRepoForTest(image)}@${DIGEST_A}`]);
+          writeKindContainerdTargetDigestFixture(tempRoot, image, DIGEST_B);
+        },
+      },
+      {
+        name: 'missing-local-repodigest',
+        configure: (tempRoot, image) => {
+          writeDockerRepoDigestsFixture(tempRoot, image, []);
+          writeKindContainerdTargetDigestFixture(tempRoot, image, DIGEST_A);
+        },
+      },
+      {
+        name: 'invalid-local-repodigest',
+        configure: (tempRoot, image) => {
+          writeDockerRepoDigestsFixture(tempRoot, image, [`${imageRepoForTest(image)}@sha256:not-a-manifest-digest`]);
+          writeKindContainerdTargetDigestFixture(tempRoot, image, DIGEST_A);
+        },
+      },
+      {
+        name: 'invalid-kind-target-digest',
+        configure: (tempRoot, image) => {
+          writeDockerRepoDigestsFixture(tempRoot, image, [`${imageRepoForTest(image)}@${DIGEST_A}`]);
+          writeKindContainerdInspectFixture(tempRoot, image, JSON.stringify({ target: { digest: 'sha512:bad' } }));
+        },
+      },
+      {
+        name: 'local-probe-failure',
+        configure: (tempRoot, image) => {
+          writeDockerRepoDigestsFailure(tempRoot, image);
+          writeKindContainerdTargetDigestFixture(tempRoot, image, DIGEST_A);
+        },
+      },
+      {
+        name: 'kind-probe-failure',
+        configure: (tempRoot, image) => {
+          writeDockerRepoDigestsFixture(tempRoot, image, [`${imageRepoForTest(image)}@${DIGEST_A}`]);
+          writeKindContainerdInspectFailure(tempRoot, image);
+        },
+      },
+    ];
+
+    for (const testCase of cases) {
+      const tempRoot = mkdtempSync(path.join(os.tmpdir(), `demo-deploy-kind-fail-closed-${testCase.name}-`));
+      const image = 'agentsmith-runner:test';
+      try {
+        stageDemoDeployFixture(tempRoot);
+        writeDemoReleaseVersion(tempRoot, false);
+        unlinkSync(path.join(tempRoot, 'release', 'images', 'example.tar'));
+        testCase.configure(tempRoot, image);
+
+        runDemoLoadKindImages(tempRoot);
+
+        const kindLog = readFileSync(path.join(tempRoot, 'kind.log'), 'utf8');
+        expect(kindLog).toContain(`load docker-image ${image} --name agentsmith`);
+        expect(existsSync(path.join(tempRoot, 'release', 'skip-decisions.ndjson'))).toBe(false);
+      } finally {
+        rmSync(tempRoot, { recursive: true, force: true });
+      }
+    }
+  }, 10000);
+
+  it('forces kind preload without probing or writing a skip decision when FORCE_KIND_PRELOAD=1', () => {
+    const tempRoot = mkdtempSync(path.join(os.tmpdir(), 'demo-deploy-kind-force-preload-'));
+    const image = 'agentsmith-runner:test';
+    try {
+      stageDemoDeployFixture(tempRoot);
+      writeDemoReleaseVersion(tempRoot, false);
+      unlinkSync(path.join(tempRoot, 'release', 'images', 'example.tar'));
+      writeDockerRepoDigestsFixture(tempRoot, image, [`${imageRepoForTest(image)}@${DIGEST_A}`]);
+      writeKindContainerdTargetDigestFixture(tempRoot, image, DIGEST_A);
+
+      runDemoLoadKindImages(tempRoot, { FORCE_KIND_PRELOAD: '1' });
+
+      const dockerLog = existsSync(path.join(tempRoot, 'docker.log'))
+        ? readFileSync(path.join(tempRoot, 'docker.log'), 'utf8')
+        : '';
+      const kindLog = readFileSync(path.join(tempRoot, 'kind.log'), 'utf8');
+      expect(dockerLog).not.toContain('image inspect --format {{json .RepoDigests}}');
+      expect(dockerLog).not.toContain('ctr -n k8s.io images inspect');
+      expect(kindLog).toContain(`load docker-image ${image} --name agentsmith`);
+      expect(existsSync(path.join(tempRoot, 'release', 'skip-decisions.ndjson'))).toBe(false);
+    } finally {
+      rmSync(tempRoot, { recursive: true, force: true });
     }
   });
 

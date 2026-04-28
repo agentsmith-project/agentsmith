@@ -38,6 +38,7 @@ const BUILD_PRODUCER = {
   command: 'pure-build-broker',
   runtime: 'tsx',
 };
+const NEXT_BUILD_COMMAND = 'npx next build --no-lint';
 
 function assert(condition: unknown, message: string): asserts condition {
   if (!condition) {
@@ -47,6 +48,112 @@ function assert(condition: unknown, message: string): asserts condition {
 
 function readJson<T>(relativePath: string): T {
   return JSON.parse(readFileSync(resolve(relativePath), 'utf8')) as T;
+}
+
+function readText(relativePath: string): string {
+  return readFileSync(resolve(relativePath), 'utf8');
+}
+
+function normalizeInstructionWhitespace(instruction: string): string {
+  return instruction.replace(/\s+/gu, ' ').trim();
+}
+
+function parseDockerfileInstructions(content: string): string[] {
+  const instructions: string[] = [];
+  let currentInstruction = '';
+
+  for (const rawLine of content.split(/\r?\n/u)) {
+    const line = rawLine.trimEnd();
+    if (line.length === 0 && currentInstruction.length === 0) {
+      continue;
+    }
+
+    if (line.endsWith('\\')) {
+      currentInstruction += `${line.slice(0, -1)} `;
+      continue;
+    }
+
+    currentInstruction += line;
+    const normalizedInstruction = normalizeInstructionWhitespace(currentInstruction);
+    if (normalizedInstruction.length > 0) {
+      instructions.push(normalizedInstruction);
+    }
+    currentInstruction = '';
+  }
+
+  const normalizedTrailingInstruction = normalizeInstructionWhitespace(currentInstruction);
+  if (normalizedTrailingInstruction.length > 0) {
+    instructions.push(normalizedTrailingInstruction);
+  }
+
+  return instructions;
+}
+
+function parseDockerfileMountOption(mountOption: string): Map<string, string> | null {
+  if (!mountOption.startsWith('--mount=')) {
+    return null;
+  }
+
+  const attributes = new Map<string, string>();
+  for (const attribute of mountOption.slice('--mount='.length).split(',')) {
+    const separatorIndex = attribute.indexOf('=');
+    if (separatorIndex <= 0) {
+      return null;
+    }
+
+    attributes.set(attribute.slice(0, separatorIndex), attribute.slice(separatorIndex + 1));
+  }
+
+  return attributes;
+}
+
+function assertAgentsmithAppNextBuildCacheMount(dockerfileContent: string): void {
+  const nextBuildRuns = parseDockerfileInstructions(dockerfileContent).filter(
+    (instruction) => instruction.startsWith('RUN ') && instruction.includes(NEXT_BUILD_COMMAND),
+  );
+
+  assert(
+    nextBuildRuns.length === 1,
+    `Dockerfile.agentsmith-app must execute exactly one RUN step containing ${NEXT_BUILD_COMMAND}.`,
+  );
+
+  const nextBuildRun = nextBuildRuns[0];
+  assert(nextBuildRun !== undefined, 'Dockerfile.agentsmith-app Next build RUN step must be present.');
+  if (nextBuildRun === undefined) {
+    return;
+  }
+
+  const nextBuildRunCommand = nextBuildRun.slice('RUN '.length);
+  assert(
+    nextBuildRunCommand.endsWith(NEXT_BUILD_COMMAND),
+    `Dockerfile.agentsmith-app Next build RUN step must directly execute ${NEXT_BUILD_COMMAND}.`,
+  );
+
+  const mountOptions = nextBuildRunCommand
+    .slice(0, -NEXT_BUILD_COMMAND.length)
+    .trim()
+    .split(/\s+/u)
+    .filter(Boolean);
+  assert(
+    mountOptions.length > 0 && mountOptions.every((mountOption) => mountOption.startsWith('--mount=')),
+    'Dockerfile.agentsmith-app Next build RUN step must use only BuildKit mount options before the Next command.',
+  );
+
+  const parsedMountOptions = mountOptions
+    .map((mountOption) => parseDockerfileMountOption(mountOption))
+    .filter((attributes): attributes is Map<string, string> => attributes !== null);
+  assert(
+    parsedMountOptions.some(
+      (attributes) => attributes.get('type') === 'cache' && attributes.get('target') === '/app/.next/cache',
+    ),
+    'Dockerfile.agentsmith-app Next build RUN step must mount BuildKit cache at /app/.next/cache.',
+  );
+  assert(
+    !parsedMountOptions.some(
+      (attributes) => attributes.get('type') === 'cache' && attributes.get('target') === '/app/.next',
+    ),
+    'Dockerfile.agentsmith-app Next build RUN step must not mount the whole /app/.next directory.',
+  );
 }
 
 function assertValidationOk(label: string, result: { ok: boolean; failures?: readonly { path: string; reason: string }[] }): void {
@@ -59,7 +166,8 @@ function assertValidationOk(label: string, result: { ok: boolean; failures?: rea
 function main(): void {
   const packageJson = readJson<PackageJson>('package.json');
   const contractsCheck = packageJson.scripts?.['contracts:check'] ?? '';
-  const buildImagesScript = readFileSync(resolve('scripts/cluster-deploy/build-images.sh'), 'utf8');
+  const buildImagesScript = readText('scripts/cluster-deploy/build-images.sh');
+  const agentsmithAppDockerfile = readText('infra/deploy/Dockerfile.agentsmith-app');
 
   assert(
     packageJson.scripts?.['contracts:check-current-build-artifact-broker']
@@ -132,6 +240,7 @@ function main(): void {
       && !buildImagesScript.includes('build artifact broker diagnostic skipped'),
     'build-images.sh must not downgrade post-build broker failures to diagnostics or warnings.',
   );
+  assertAgentsmithAppNextBuildCacheMount(agentsmithAppDockerfile);
 
   const appKey = computeAppImageContentKey({
     files: [

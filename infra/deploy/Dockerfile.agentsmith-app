@@ -24,7 +24,8 @@ COPY postcss.config.js ./
 COPY tailwind.config.js ./
 COPY tsconfig.json ./
 
-RUN npx next build --no-lint
+RUN --mount=type=cache,target=/app/.next/cache \
+  npx next build --no-lint
 
 FROM ${NODE_RUNTIME_IMAGE} AS runtime
 

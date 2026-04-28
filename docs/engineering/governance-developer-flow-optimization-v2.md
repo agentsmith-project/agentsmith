@@ -370,8 +370,8 @@ Aggregate fields 至少记录：
 | 操作 | 跳过条件 |
 | --- | --- |
 | Docker build | 内容标签存在，label key 匹配，base digest 未变，未设置 `FORCE_REBUILD=1` |
-| Docker save / archive | `fast` 模式允许跳过；`release-fidelity` 必须有 build-manifest digest 证明；`offline-package` 强制执行 |
-| Docker load | 本地 image digest 已存在 |
+| Docker save / archive | `fast` 模式允许跳过；`release-fidelity` 必须有 build-manifest digest 证明；`offline-package` 强制完整性证明，禁止无 digest 证明的人工 skip，是否执行 digest-proven no-op/skip 由显式策略决定 |
+| Docker load | 本地 image digest 已存在；`offline-package` 同样要求完整性证明，不能用无 digest 证明的人工 skip 替代 |
 | Registry push | 远端 manifest digest 已匹配 |
 | kind preload | control-plane containerd 中 ref/digest 已存在 |
 | K8s rollout | manifest hash 未变，rollout healthy，且 mode 允许 skip |
@@ -386,7 +386,7 @@ Aggregate fields 至少记录：
 6. validator。
 7. generated_at。
 
-`SKIP_BUNDLED_IMAGE_LOAD=1`、跳过 archive 生成、跳过 push/import 这类开关只能在 `fast` mode 或有 digest 证明的 `release-fidelity` 中生效。`offline-package` 禁止使用人工 skip 开关绕过离线包完整性证明。
+`SKIP_BUNDLED_IMAGE_LOAD=1`、跳过 archive 生成、跳过 push/import 这类开关只能在 `fast` mode 或有 digest 证明的 `release-fidelity` 中生效。`offline-package` 强制的是完整性证明，不是无条件每次重复 load/archive；禁止使用无 digest 证明的人工 skip 绕过离线包完整性证明，是否执行 digest-proven no-op/skip 必须由显式策略决定。
 
 ### 8.4 BuildKit cache
 
@@ -578,7 +578,7 @@ demo/cluster rehearsal 应同时支持快反馈和发布可信度。v2 使用独
 | --- | --- | --- |
 | `fast` | 本地开发/修复后快速确认 | 可复用健康 world，跳过未变化 build/load/rollout |
 | `release-fidelity` | 发布前 rehearsal 兼容诊断 | clean reset + 内容缓存 + deploy/bootstrap/verify/report；standalone 结果不能替代 V4 |
-| `offline-package` | 离线交付包验证 | 强制 archive、load、publish、kind import、完整 verify |
+| `offline-package` | 离线交付包验证 | 强制 archive/load/publish/kind import 的完整性证明，禁止无 digest 证明的人工 skip；是否执行 digest-proven no-op/skip 由显式策略决定；完整 verify |
 
 只有 `release-fidelity` 在 `release:campaign:full` 对应 step 内运行、写入 campaign root、绑定 campaign id / run id / step id，并被 terminal aggregate 消费时，才是 V4 release evidence。
 

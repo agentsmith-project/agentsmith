@@ -1,4 +1,5 @@
 import { execFileSync } from 'node:child_process';
+import { createHash } from 'node:crypto';
 import { chmodSync, copyFileSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
@@ -6,6 +7,52 @@ import path from 'node:path';
 import { describe, expect, it } from 'vitest';
 
 const repoRoot = process.cwd();
+const forbiddenEvidenceTruthFields = new Set([
+  'verdict',
+  'claim_id',
+  'reusable',
+  'passed',
+  'failed',
+  'status',
+  'result_status',
+  'failure_class',
+  'evidence_claim',
+  'claim_reuse',
+  'cache_hit',
+]);
+
+interface DockerSaveManifestEntry {
+  Config: string;
+  RepoTags: string[];
+}
+
+interface ArchiveProof {
+  archiveDigest: string;
+  configDigest: string;
+  imageRef: string;
+}
+
+interface ImageArchiveManifestEntry {
+  archive_relpath: string;
+  image_ref: string;
+  archive_sha256: string;
+  archive_config_digest: string;
+  local_image_id: string | null;
+  local_config_digest: string | null;
+  platform: string;
+  source_manifest_digest?: string | null;
+  source_build_manifest_digest?: string | null;
+  validator: string;
+}
+
+interface ImageArchiveManifest {
+  schema: string;
+  version: number;
+  release_id: string;
+  generated_at: string;
+  producer: unknown;
+  archives: ImageArchiveManifestEntry[];
+}
 
 function writeExecutable(filePath: string, content: string): void {
   mkdirSync(path.dirname(filePath), { recursive: true });
@@ -16,6 +63,50 @@ function writeExecutable(filePath: string, content: string): void {
 function writeFile(filePath: string, content: string): void {
   mkdirSync(path.dirname(filePath), { recursive: true });
   writeFileSync(filePath, content, 'utf8');
+}
+
+function sha256Digest(content: Buffer | string): string {
+  return `sha256:${createHash('sha256').update(content).digest('hex')}`;
+}
+
+function readJsonFile<T>(filePath: string): T {
+  return JSON.parse(readFileSync(filePath, 'utf8')) as T;
+}
+
+function readDockerArchiveProof(archivePath: string): ArchiveProof {
+  const manifest = JSON.parse(
+    execFileSync('tar', ['-xOf', archivePath, 'manifest.json'], { encoding: 'utf8' }),
+  ) as DockerSaveManifestEntry[];
+  const [entry] = manifest;
+  const configBytes = execFileSync('tar', ['-xOf', archivePath, entry.Config]);
+
+  return {
+    archiveDigest: sha256Digest(readFileSync(archivePath)),
+    configDigest: sha256Digest(configBytes),
+    imageRef: entry.RepoTags[0],
+  };
+}
+
+function expectNoEvidenceTruthFields(value: unknown, pathLabel = '$'): void {
+  if (Array.isArray(value)) {
+    value.forEach((entry, index) => expectNoEvidenceTruthFields(entry, `${pathLabel}[${index}]`));
+    return;
+  }
+
+  if (value === null || typeof value !== 'object') {
+    return;
+  }
+
+  for (const [key, child] of Object.entries(value)) {
+    expect(forbiddenEvidenceTruthFields.has(key), `${pathLabel}.${key} must not be an evidence truth field`).toBe(false);
+    expectNoEvidenceTruthFields(child, `${pathLabel}.${key}`);
+  }
+}
+
+function findManifestArchive(manifest: ImageArchiveManifest, archiveRelpath: string): ImageArchiveManifestEntry {
+  const archive = manifest.archives.find((entry) => entry.archive_relpath === archiveRelpath);
+  expect(archive).toBeDefined();
+  return archive as ImageArchiveManifestEntry;
 }
 
 function stageDemoBuildBundleFixture(tempRoot: string): void {
@@ -86,6 +177,10 @@ release_story_verify_source_set() {
   ]) {
     writeExecutable(path.join(tempRoot, relativePath), '#!/usr/bin/env bash\nset -euo pipefail\n');
   }
+  copyFileSync(
+    path.join(repoRoot, 'scripts', 'lib', 'image-archive-manifest.sh'),
+    path.join(tempRoot, 'scripts', 'lib', 'image-archive-manifest.sh'),
+  );
 
   writeFile(path.join(tempRoot, 'scripts', 'notebook-agent-refresh-token.js'), 'console.log("ok");\n');
   writeFile(path.join(tempRoot, 'README-demo-deploy.md'), 'demo bundle\n');
@@ -172,6 +267,25 @@ case "$1" in
     ;;
   image)
     if [[ "$2" == "inspect" ]]; then
+      if [[ "\${3:-}" == "--format" ]]; then
+        image_ref="\${@: -1}"
+        python3 - "\${image_ref}" <<'PY'
+import hashlib
+import json
+import sys
+
+image_ref = sys.argv[1]
+config = {
+    "architecture": "amd64",
+    "config": {"Image": image_ref},
+    "created": "2026-04-27T00:00:00Z",
+    "os": "linux",
+    "rootfs": {"diff_ids": [], "type": "layers"},
+}
+data = (json.dumps(config, sort_keys=True, separators=(",", ":")) + "\\n").encode("utf-8")
+print("sha256:" + hashlib.sha256(data).hexdigest())
+PY
+      fi
       exit 0
     fi
     ;;
@@ -198,7 +312,32 @@ case "$1" in
       esac
     done
     mkdir -p "$(dirname "$output")"
-    printf 'image=%s\\n' "$image" > "$output"
+    temp_dir="$(mktemp -d)"
+    python3 - "\${temp_dir}" "\${image}" <<'PY'
+import json
+import pathlib
+import sys
+
+temp_dir = pathlib.Path(sys.argv[1])
+image_ref = sys.argv[2]
+config = {
+    "architecture": "amd64",
+    "config": {"Image": image_ref},
+    "created": "2026-04-27T00:00:00Z",
+    "os": "linux",
+    "rootfs": {"diff_ids": [], "type": "layers"},
+}
+(temp_dir / "config.json").write_text(
+    json.dumps(config, sort_keys=True, separators=(",", ":")) + "\\n",
+    encoding="utf-8",
+)
+(temp_dir / "manifest.json").write_text(
+    json.dumps([{"Config": "config.json", "RepoTags": [image_ref], "Layers": []}], separators=(",", ":")) + "\\n",
+    encoding="utf-8",
+)
+PY
+    tar -C "\${temp_dir}" -cf "$output" manifest.json config.json
+    rm -rf "\${temp_dir}"
     exit 0
     ;;
 esac
@@ -230,6 +369,48 @@ function runDemoBuildBundle(tempRoot: string, extraEnv: NodeJS.ProcessEnv = {}):
 }
 
 describe('demo build bundle image archives', () => {
+  it('writes an image archive manifest from docker save archive content and includes it in checksums', () => {
+    const tempRoot = mkdtempSync(path.join(os.tmpdir(), 'demo-build-bundle-image-manifest-'));
+
+    try {
+      stageDemoBuildBundleFixture(tempRoot);
+
+      runDemoBuildBundle(tempRoot, { SKIP_RELEASE_ARCHIVE: '1' });
+      const bundleDir = path.join(tempRoot, 'out', 'agentsmith-test-release');
+      const manifestPath = path.join(bundleDir, 'images', 'image-archives.manifest.json');
+      const appArchiveRelpath = 'images/agentsmith-app-test-release.tar';
+      const appArchivePath = path.join(bundleDir, appArchiveRelpath);
+      const appProof = readDockerArchiveProof(appArchivePath);
+      const manifest = readJsonFile<ImageArchiveManifest>(manifestPath);
+      const appManifestEntry = findManifestArchive(manifest, appArchiveRelpath);
+      const checksums = readFileSync(path.join(bundleDir, 'checksums.txt'), 'utf8');
+      const manifestHex = sha256Digest(readFileSync(manifestPath)).slice('sha256:'.length);
+
+      expect(manifest).toMatchObject({
+        schema: 'image-archive-manifest.v1',
+        version: 1,
+        release_id: 'test-release',
+      });
+      expect(manifest.archives.length).toBeGreaterThan(1);
+      expect(appManifestEntry).toMatchObject({
+        image_ref: appProof.imageRef,
+        archive_sha256: appProof.archiveDigest,
+        archive_config_digest: appProof.configDigest,
+        local_image_id: appProof.configDigest,
+        local_config_digest: appProof.configDigest,
+        platform: 'linux/amd64',
+      });
+      expect(appManifestEntry.image_ref).toBe('agentsmith-app:test-release');
+      expect(appManifestEntry.source_build_manifest_digest).toBeNull();
+      expect(appManifestEntry.source_manifest_digest).toBeNull();
+      expect(appManifestEntry.validator).toContain('manifest.json');
+      expectNoEvidenceTruthFields(manifest);
+      expect(checksums).toContain(`${manifestHex}  ./images/image-archives.manifest.json`);
+    } finally {
+      rmSync(tempRoot, { recursive: true, force: true });
+    }
+  });
+
   it('omits bundled image archives when SKIP_BUNDLED_IMAGE_ARCHIVE_GENERATION=1 while preserving bundle metadata', () => {
     const tempRoot = mkdtempSync(path.join(os.tmpdir(), 'demo-build-bundle-no-images-'));
 
@@ -240,6 +421,7 @@ describe('demo build bundle image archives', () => {
       const bundleDir = path.join(tempRoot, 'out', 'agentsmith-test-release');
 
       expect(existsSync(path.join(bundleDir, 'images'))).toBe(false);
+      expect(existsSync(path.join(bundleDir, 'images', 'image-archives.manifest.json'))).toBe(false);
       expect(readFileSync(path.join(bundleDir, 'VERSION'), 'utf8')).toContain('bundled_image_archives_included=0');
     } finally {
       rmSync(tempRoot, { recursive: true, force: true });

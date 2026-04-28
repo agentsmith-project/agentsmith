@@ -13,6 +13,7 @@ RELEASE_ID="${RELEASE_ID:-$(git -C "${ROOT_DIR}" rev-parse --short HEAD)-$(date 
 export DEPLOY_COMMON_IGNORE_CURRENT_RELEASE=1
 source "${ROOT_DIR}/scripts/cluster-deploy/lib.sh"
 source "${ROOT_DIR}/scripts/lib/ensure-juicefs-vendor.sh"
+source "${ROOT_DIR}/scripts/lib/image-archive-manifest.sh"
 source "${ROOT_DIR}/scripts/lib/release-story-verify-source-set.sh"
 RELEASE_STORY_SOURCE_SET_NAME="$(release_story_verify_source_set_name)"
 RELEASE_STORY_SOURCE_SET_HELPER="$(release_story_verify_source_set_helper_path)"
@@ -252,6 +253,10 @@ ingress_nginx_controller_image=${INGRESS_NGINX_CONTROLLER_IMAGE}
 ingress_nginx_certgen_image=${INGRESS_NGINX_CERTGEN_IMAGE}
 bundled_image_archives_included=${BUNDLED_IMAGE_ARCHIVES_INCLUDED}
 EOF
+
+if [[ "${BUNDLED_IMAGE_ARCHIVES_INCLUDED}" == "1" ]]; then
+  write_image_archive_manifest "${BUNDLE_DIR}" "${RELEASE_ID}" "scripts/cluster-deploy/build-bundle.sh" "linux/amd64"
+fi
 
 (cd "${BUNDLE_DIR}" && find . -type f -print0 | sort -z | xargs -0 sha256sum > checksums.txt)
 

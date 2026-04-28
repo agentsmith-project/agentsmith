@@ -1,4 +1,5 @@
 import { execFileSync } from 'node:child_process';
+import { createHash } from 'node:crypto';
 import { chmodSync, copyFileSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
@@ -6,6 +7,52 @@ import path from 'node:path';
 import { describe, expect, it } from 'vitest';
 
 const repoRoot = process.cwd();
+const forbiddenEvidenceTruthFields = new Set([
+  'verdict',
+  'claim_id',
+  'reusable',
+  'passed',
+  'failed',
+  'status',
+  'result_status',
+  'failure_class',
+  'evidence_claim',
+  'claim_reuse',
+  'cache_hit',
+]);
+
+interface DockerSaveManifestEntry {
+  Config: string;
+  RepoTags: string[];
+}
+
+interface ArchiveProof {
+  archiveDigest: string;
+  configDigest: string;
+  imageRef: string;
+}
+
+interface ImageArchiveManifestEntry {
+  archive_relpath: string;
+  image_ref: string;
+  archive_sha256: string;
+  archive_config_digest: string;
+  local_image_id: string | null;
+  local_config_digest: string | null;
+  platform: string;
+  source_manifest_digest?: string | null;
+  source_build_manifest_digest?: string | null;
+  validator: string;
+}
+
+interface ImageArchiveManifest {
+  schema: string;
+  version: number;
+  release_id: string;
+  generated_at: string;
+  producer: unknown;
+  archives: ImageArchiveManifestEntry[];
+}
 
 function writeExecutable(filePath: string, content: string): void {
   mkdirSync(path.dirname(filePath), { recursive: true });
@@ -16,6 +63,50 @@ function writeExecutable(filePath: string, content: string): void {
 function writeFile(filePath: string, content: string): void {
   mkdirSync(path.dirname(filePath), { recursive: true });
   writeFileSync(filePath, content, 'utf8');
+}
+
+function sha256Digest(content: Buffer | string): string {
+  return `sha256:${createHash('sha256').update(content).digest('hex')}`;
+}
+
+function readJsonFile<T>(filePath: string): T {
+  return JSON.parse(readFileSync(filePath, 'utf8')) as T;
+}
+
+function readDockerArchiveProof(archivePath: string): ArchiveProof {
+  const manifest = JSON.parse(
+    execFileSync('tar', ['-xOf', archivePath, 'manifest.json'], { encoding: 'utf8' }),
+  ) as DockerSaveManifestEntry[];
+  const [entry] = manifest;
+  const configBytes = execFileSync('tar', ['-xOf', archivePath, entry.Config]);
+
+  return {
+    archiveDigest: sha256Digest(readFileSync(archivePath)),
+    configDigest: sha256Digest(configBytes),
+    imageRef: entry.RepoTags[0],
+  };
+}
+
+function expectNoEvidenceTruthFields(value: unknown, pathLabel = '$'): void {
+  if (Array.isArray(value)) {
+    value.forEach((entry, index) => expectNoEvidenceTruthFields(entry, `${pathLabel}[${index}]`));
+    return;
+  }
+
+  if (value === null || typeof value !== 'object') {
+    return;
+  }
+
+  for (const [key, child] of Object.entries(value)) {
+    expect(forbiddenEvidenceTruthFields.has(key), `${pathLabel}.${key} must not be an evidence truth field`).toBe(false);
+    expectNoEvidenceTruthFields(child, `${pathLabel}.${key}`);
+  }
+}
+
+function findManifestArchive(manifest: ImageArchiveManifest, archiveRelpath: string): ImageArchiveManifestEntry {
+  const archive = manifest.archives.find((entry) => entry.archive_relpath === archiveRelpath);
+  expect(archive).toBeDefined();
+  return archive as ImageArchiveManifestEntry;
 }
 
 function stageClusterBuildBundleFixture(tempRoot: string): void {
@@ -69,6 +160,11 @@ llm_universal_proxy_image=localhost:5001/mbos/llm-universal-proxy:\${release_ali
 registry_host=localhost:5001
 registry_project=mbos
 EOF
+if [[ "\${WRITE_BUILD_MANIFEST:-0}" == "1" ]]; then
+  cat > "\${RELEASE_ROOT}/build-manifest.json" <<EOF_MANIFEST
+{"schema":"cluster-build-test-manifest.v1","release_id":"\${RELEASE_ID}","targets":[]}
+EOF_MANIFEST
+fi
 `,
   );
   writeExecutable(
@@ -115,6 +211,10 @@ release_story_verify_source_set() {
   copyFileSync(
     path.join(repoRoot, 'scripts', 'lib', 'deploy-common.sh'),
     path.join(tempRoot, 'scripts', 'lib', 'deploy-common.sh'),
+  );
+  copyFileSync(
+    path.join(repoRoot, 'scripts', 'lib', 'image-archive-manifest.sh'),
+    path.join(tempRoot, 'scripts', 'lib', 'image-archive-manifest.sh'),
   );
 
   writeFile(path.join(tempRoot, 'scripts', 'notebook-agent-refresh-token.js'), 'console.log("ok");\n');
@@ -176,6 +276,25 @@ set -euo pipefail
 case "$1" in
   image)
     if [[ "$2" == "inspect" ]]; then
+      if [[ "\${3:-}" == "--format" ]]; then
+        image_ref="\${@: -1}"
+        python3 - "\${image_ref}" <<'PY'
+import hashlib
+import json
+import sys
+
+image_ref = sys.argv[1]
+config = {
+    "architecture": "amd64",
+    "config": {"Image": image_ref},
+    "created": "2026-04-27T00:00:00Z",
+    "os": "linux",
+    "rootfs": {"diff_ids": [], "type": "layers"},
+}
+data = (json.dumps(config, sort_keys=True, separators=(",", ":")) + "\\n").encode("utf-8")
+print("sha256:" + hashlib.sha256(data).hexdigest())
+PY
+      fi
       exit 0
     fi
     ;;
@@ -199,7 +318,38 @@ case "$1" in
       esac
     done
     mkdir -p "$(dirname "$output")"
-    printf 'image=%s\\n' "$image" > "$output"
+    temp_dir="$(mktemp -d)"
+    if [[ "\${DOCKER_SAVE_INVALID_ARCHIVE_FOR:-}" == "\${image}" ]]; then
+      printf '{}\\n' > "\${temp_dir}/config.json"
+      tar -C "\${temp_dir}" -cf "$output" config.json
+      rm -rf "\${temp_dir}"
+      exit 0
+    fi
+    python3 - "\${temp_dir}" "\${image}" <<'PY'
+import json
+import pathlib
+import sys
+
+temp_dir = pathlib.Path(sys.argv[1])
+image_ref = sys.argv[2]
+config = {
+    "architecture": "amd64",
+    "config": {"Image": image_ref},
+    "created": "2026-04-27T00:00:00Z",
+    "os": "linux",
+    "rootfs": {"diff_ids": [], "type": "layers"},
+}
+(temp_dir / "config.json").write_text(
+    json.dumps(config, sort_keys=True, separators=(",", ":")) + "\\n",
+    encoding="utf-8",
+)
+(temp_dir / "manifest.json").write_text(
+    json.dumps([{"Config": "config.json", "RepoTags": [image_ref], "Layers": []}], separators=(",", ":")) + "\\n",
+    encoding="utf-8",
+)
+PY
+    tar -C "\${temp_dir}" -cf "$output" manifest.json config.json
+    rm -rf "\${temp_dir}"
     exit 0
     ;;
 esac
@@ -245,18 +395,71 @@ describe('cluster build bundle archive packaging', () => {
       expect(existsSync(path.join(bundleDir, 'VERSION'))).toBe(true);
       expect(existsSync(path.join(bundleDir, 'checksums.txt'))).toBe(true);
       expect(existsSync(archivePath)).toBe(true);
-      expect(
-        readFileSync(
-          path.join(bundleDir, 'images', 'localhost-5001-mbos-agentsmith-app-release-test-release.tar'),
-          'utf8',
-        ),
-      ).toContain('image=localhost:5001/mbos/agentsmith-app:release-test-release');
-      expect(
-        readFileSync(
-          path.join(bundleDir, 'images', 'localhost-5001-mbos-llm-universal-proxy-release-test-release.tar'),
-          'utf8',
-        ),
-      ).toContain('image=localhost:5001/mbos/llm-universal-proxy:release-test-release');
+
+      const manifestPath = path.join(bundleDir, 'images', 'image-archives.manifest.json');
+      const manifest = readJsonFile<ImageArchiveManifest>(manifestPath);
+      const appArchiveRelpath = 'images/localhost-5001-mbos-agentsmith-app-release-test-release.tar';
+      const proxyArchiveRelpath = 'images/localhost-5001-mbos-llm-universal-proxy-release-test-release.tar';
+      const appArchivePath = path.join(bundleDir, appArchiveRelpath);
+      const appProof = readDockerArchiveProof(appArchivePath);
+      const appManifestEntry = findManifestArchive(manifest, appArchiveRelpath);
+      const proxyProof = readDockerArchiveProof(path.join(bundleDir, proxyArchiveRelpath));
+      const proxyManifestEntry = findManifestArchive(manifest, proxyArchiveRelpath);
+      const checksums = readFileSync(path.join(bundleDir, 'checksums.txt'), 'utf8');
+      const manifestHex = sha256Digest(readFileSync(manifestPath)).slice('sha256:'.length);
+
+      expect(manifest).toMatchObject({
+        schema: 'image-archive-manifest.v1',
+        version: 1,
+        release_id: 'test-release',
+      });
+      expect(manifest.archives.length).toBeGreaterThan(1);
+      expect(appManifestEntry).toMatchObject({
+        image_ref: appProof.imageRef,
+        archive_sha256: appProof.archiveDigest,
+        archive_config_digest: appProof.configDigest,
+        local_image_id: appProof.configDigest,
+        local_config_digest: appProof.configDigest,
+        platform: 'linux/amd64',
+      });
+      expect(proxyManifestEntry).toMatchObject({
+        image_ref: proxyProof.imageRef,
+        archive_config_digest: proxyProof.configDigest,
+      });
+      expect(appManifestEntry.image_ref).toBe('localhost:5001/mbos/agentsmith-app:release-test-release');
+      expect(appManifestEntry.source_build_manifest_digest).toBeNull();
+      expect(appManifestEntry.source_manifest_digest).toBeNull();
+      expect(appManifestEntry.validator).toContain('manifest.json');
+      expectNoEvidenceTruthFields(manifest);
+      expect(checksums).toContain(`${manifestHex}  ./images/image-archives.manifest.json`);
+    } finally {
+      rmSync(tempRoot, { recursive: true, force: true });
+    }
+  });
+
+  it('records the source build manifest digest when build-manifest.json exists', () => {
+    const tempRoot = mkdtempSync(path.join(os.tmpdir(), 'cluster-build-bundle-source-manifest-'));
+
+    try {
+      stageClusterBuildBundleFixture(tempRoot);
+
+      runClusterBuildBundle(tempRoot, {
+        SKIP_RELEASE_ARCHIVE: '1',
+        WRITE_BUILD_MANIFEST: '1',
+      });
+      const bundleDir = path.join(tempRoot, 'out', 'agentsmith-test-release');
+      const sourceManifestPath = path.join(bundleDir, 'build-manifest.json');
+      const expectedDigest = sha256Digest(readFileSync(sourceManifestPath));
+      const manifest = readJsonFile<ImageArchiveManifest>(
+        path.join(bundleDir, 'images', 'image-archives.manifest.json'),
+      );
+
+      expect(manifest.archives.length).toBeGreaterThan(1);
+      for (const archive of manifest.archives) {
+        expect(archive.source_manifest_digest).toBe(expectedDigest);
+        expect(archive.source_build_manifest_digest).toBe(expectedDigest);
+      }
+      expectNoEvidenceTruthFields(manifest);
     } finally {
       rmSync(tempRoot, { recursive: true, force: true });
     }
@@ -293,7 +496,27 @@ describe('cluster build bundle archive packaging', () => {
       const bundleDir = path.join(tempRoot, 'out', 'agentsmith-test-release');
 
       expect(existsSync(path.join(bundleDir, 'images'))).toBe(false);
+      expect(existsSync(path.join(bundleDir, 'images', 'image-archives.manifest.json'))).toBe(false);
       expect(readFileSync(path.join(bundleDir, 'VERSION'), 'utf8')).toContain('bundled_image_archives_included=0');
+    } finally {
+      rmSync(tempRoot, { recursive: true, force: true });
+    }
+  });
+
+  it('fails instead of inferring manifest proof from an archive filename when archive manifest.json is missing', () => {
+    const tempRoot = mkdtempSync(path.join(os.tmpdir(), 'cluster-build-bundle-invalid-image-archive-'));
+
+    try {
+      stageClusterBuildBundleFixture(tempRoot);
+
+      expect(() =>
+        runClusterBuildBundle(tempRoot, {
+          DOCKER_SAVE_INVALID_ARCHIVE_FOR: 'localhost:5001/mbos/agentsmith-app:release-test-release',
+        }),
+      ).toThrow();
+
+      const bundleDir = path.join(tempRoot, 'out', 'agentsmith-test-release');
+      expect(existsSync(path.join(bundleDir, 'images', 'image-archives.manifest.json'))).toBe(false);
     } finally {
       rmSync(tempRoot, { recursive: true, force: true });
     }

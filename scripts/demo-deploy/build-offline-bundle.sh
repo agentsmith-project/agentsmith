@@ -6,6 +6,7 @@ SANDBOX_ROOT="$(cd "${ROOT_DIR}/../mbos-sandbox-v1" && pwd)"
 UNIVERSAL_PROXY_ROOT="$(cd "${ROOT_DIR}/../llm-universal-proxy" && pwd)"
 source "${ROOT_DIR}/scripts/lib/ensure-juicefs-vendor.sh"
 source "${ROOT_DIR}/scripts/lib/docker-buildx-common.sh"
+source "${ROOT_DIR}/scripts/lib/image-archive-manifest.sh"
 source "${ROOT_DIR}/scripts/lib/release-story-verify-source-set.sh"
 source "${ROOT_DIR}/scripts/lib/runner-image-common.sh"
 RELEASE_STORY_SOURCE_SET_NAME="$(release_story_verify_source_set_name)"
@@ -25,6 +26,7 @@ require_cmd() { command -v "$1" >/dev/null 2>&1 || { echo "missing command: $1" 
 require_cmd docker
 require_cmd tar
 require_cmd sha256sum
+require_cmd python3
 require_cmd kind
 require_cmd kubectl
 require_cmd juicefs
@@ -324,6 +326,10 @@ sandbox_manager_image=${SANDBOX_MANAGER_IMAGE}
 llm_universal_proxy_image=${UNIVERSAL_PROXY_IMAGE}
 bundled_image_archives_included=${BUNDLED_IMAGE_ARCHIVES_INCLUDED}
 EOF
+
+if [[ "${BUNDLED_IMAGE_ARCHIVES_INCLUDED}" == "1" ]]; then
+  write_image_archive_manifest "${BUNDLE_DIR}" "${RELEASE_ID}" "scripts/demo-deploy/build-offline-bundle.sh" "${BUNDLE_PLATFORM}"
+fi
 
 (cd "${BUNDLE_DIR}" && find . -type f -print0 | sort -z | xargs -0 sha256sum > checksums.txt)
 

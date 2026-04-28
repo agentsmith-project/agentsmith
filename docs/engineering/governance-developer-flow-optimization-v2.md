@@ -323,31 +323,45 @@ release id 的权威来源必须收敛：当 `RELEASE_ROOT/VERSION` 存在时，
 | Target | 内容键输入 |
 | --- | --- |
 | app deps | platform、node base digest、Dockerfile base、package-lock、workspace package manifests |
-| app image | app deps key、src、public、messages、packages、scripts needed by build、Next/Tailwind/PostCSS/TS config、build-time `NEXT_PUBLIC_*` |
+| app image | app deps key、Dockerfile final image `COPY` closure（src/public/messages/packages/assets/scripts/infra/config、components.json）、Next/Tailwind/PostCSS/TS config、build-time `NEXT_PUBLIC_*`、runtime direct `COPY`/`ARG`/base digest、infra/vendor/juicefs、`JUICEFS_VERSION`、runtime node/MC image digest |
 | runner base | platform、node base digest、runner base Dockerfile、package-lock、runner package manifests、Codex/JuiceFS versions |
 | runner image | runner base key、runner src、chat/notebook runner src、builtin skills |
 | llmup | Cargo.toml、Cargo.lock、rust-toolchain、src、release profile、Rust/runtime base digests |
 | sandbox | manager-service tree、Dockerfile、go.mod/go.sum、base image digests |
 | verify image | test deps、Playwright version、e2e config、scripts needed by verification |
 
+app image key 必须覆盖 Dockerfile final runtime image 的内容闭包；不能只按“build 会用到的 scripts”计算。任何直接进入最终镜像或改变最终镜像内容的 `COPY`、`ARG`、base/runtime digest 都必须进入 key。
+
 llmup 的 runtime image key 不应包含 `tests/`，除非构建的是 test image。这样改测试不会重建 release runtime image。若当前 Dockerfile 仍 `COPY tests`，必须先拆 runtime target 和 test target，或从 runtime Dockerfile 移除 tests，再启用该验收。
 
 ### 8.2.1 `build-manifest.json`
 
-每次 build / bundle / rehearsal 都必须产出 `build-manifest.json`，至少记录：
+每次 build / bundle / rehearsal 最终都必须产出一个 bundle / run-level aggregate `build-manifest.json`。它不是单 target manifest，必须包含 `targets[]`；单 target build 也写一个 target。per-target fragment 可以作为中间产物存在，但 skip / rehearsal / release proof 入口必须指向最终 aggregate manifest。
+
+Aggregate fields 至少记录：
 
 | 字段 | 说明 |
 | --- | --- |
+| schema | aggregate manifest schema |
+| run_id | build / bundle / rehearsal run id |
 | release_id | 来自 `VERSION.release_id` 或显式 override |
 | version_path | VERSION 文件路径 |
-| target | app / runner / llmup / sandbox / verify |
+| mode | build / bundle / rehearsal / release-fidelity / offline-package |
+| producer | 构建脚本、版本和运行环境 |
+| generated_at | 生成时间 |
+| targets[] | 本次 run 覆盖的 target 列表，不能为空 |
+
+`targets[]` target fields 至少记录：
+
+| 字段 | 说明 |
+| --- | --- |
+| target | P2 第一切片 current schema 先覆盖 app / llmup；完整 P2 后续扩展到 runner / sandbox / verify |
 | content_ref | `ck-*` 内容键镜像 ref |
 | release_alias_ref | `release-*` alias ref |
 | image_digest | 本地构建或远端 registry digest |
 | input_digest | 内容键输入 digest |
 | base_image_digest | base / dependency image digest |
-| producer | 构建脚本、版本和运行环境 |
-| generated_at | 生成时间 |
+| decision | built / reused / skipped |
 
 `VERSION` 不应只存 tag。进入 v2 后，VERSION 或 companion manifest 必须能追溯 tag + digest，否则 release alias 无法证明指向正确内容。
 

@@ -236,6 +236,7 @@ export function parseLockedImageRef(ref: string): LockedImageRefParseResult {
 export function parseBaseDependencyImageLock(text: string): BaseDependencyImageLockParseResult {
   const failures: BuildArtifactBrokerParseFailure[] = [];
   const entries: ParsedBaseDependencyImageLockEntry[] = [];
+  const seenIds = new Set<string>();
 
   text.split(/\r?\n/u).forEach((rawLine, lineIndex) => {
     const line = rawLine.trim();
@@ -245,6 +246,15 @@ export function parseBaseDependencyImageLock(text: string): BaseDependencyImageL
     }
 
     const parsedLine = parseImageLockLine(line, lineIndex + 1);
+    if (seenIds.has(parsedLine.id)) {
+      failures.push({
+        path: `line ${lineIndex + 1}`,
+        reason: `duplicate base/dependency image lock id: ${parsedLine.id}.`,
+      });
+      return;
+    }
+    seenIds.add(parsedLine.id);
+
     const parsedRef = parseLockedImageRef(parsedLine.ref);
 
     if (!parsedRef.ok) {

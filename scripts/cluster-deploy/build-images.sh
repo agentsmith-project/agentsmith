@@ -11,6 +11,126 @@ load_registry_env
 
 require_cmd docker
 
+BASE_DEPENDENCY_IMAGE_LOCK="${BASE_DEPENDENCY_IMAGE_LOCK:-${ROOT_DIR}/infra/deploy/shared/build-base-images.lock}"
+declare -A BASE_DEPENDENCY_IMAGE_LOCK_REFS=()
+
+trim_value() {
+  local value="$1"
+  value="${value#"${value%%[![:space:]]*}"}"
+  value="${value%"${value##*[![:space:]]}"}"
+  printf '%s' "${value}"
+}
+
+validate_image_ref_pinned_non_latest() {
+  local subject="$1"
+  local ref="$2"
+  local ref_without_digest=""
+  local last_component=""
+  local tag=""
+
+  if [[ -z "${ref}" ]]; then
+    die "${subject} must include an image ref"
+  fi
+  if [[ ! "${ref}" =~ @sha256:[a-fA-F0-9]{64}$ ]]; then
+    die "${subject} must include a sha256 digest"
+  fi
+
+  ref_without_digest="${ref%@sha256:*}"
+  if [[ -z "${ref_without_digest}" ]]; then
+    die "${subject} must include an image name"
+  fi
+
+  last_component="${ref_without_digest##*/}"
+  if [[ "${last_component}" == *":"* ]]; then
+    tag="${last_component##*:}"
+    if [[ -z "${tag}" ]]; then
+      die "${subject} must not use an empty image tag"
+    fi
+    if [[ "${tag,,}" == "latest" ]]; then
+      die "${subject} must not use latest tag"
+    fi
+  fi
+}
+
+load_base_dependency_image_lock() {
+  local lock_path="$1"
+  local raw_line=""
+  local line=""
+  local id=""
+  local ref=""
+  local line_number=0
+
+  [[ -f "${lock_path}" ]] || die "missing build base image lock at ${lock_path}"
+
+  while IFS= read -r raw_line || [[ -n "${raw_line}" ]]; do
+    line_number=$((line_number + 1))
+    raw_line="${raw_line%$'\r'}"
+    line="$(trim_value "${raw_line}")"
+
+    if [[ -z "${line}" || "${line}" == \#* ]]; then
+      continue
+    fi
+
+    if [[ "${line}" == *"="* ]]; then
+      id="$(trim_value "${line%%=*}")"
+      ref="$(trim_value "${line#*=}")"
+    else
+      id="${line%%[[:space:]]*}"
+      if [[ "${id}" == "${line}" ]]; then
+        die "invalid build base image lock line ${line_number}: expected id=image@sha256:<digest> or id image@sha256:<digest>"
+      fi
+      ref="$(trim_value "${line#"${id}"}")"
+      id="$(trim_value "${id}")"
+    fi
+
+    if [[ -z "${id}" || -z "${ref}" ]]; then
+      die "invalid build base image lock line ${line_number}: expected id=image@sha256:<digest> or id image@sha256:<digest>"
+    fi
+
+    if [[ -n "${BASE_DEPENDENCY_IMAGE_LOCK_REFS[${id}]+x}" ]]; then
+      die "duplicate build base image lock entry: ${id}"
+    fi
+
+    validate_image_ref_pinned_non_latest "build base image lock entry ${id}" "${ref}"
+    BASE_DEPENDENCY_IMAGE_LOCK_REFS["${id}"]="${ref}"
+  done < "${lock_path}"
+}
+
+locked_image_ref_or_die() {
+  local id="$1"
+
+  if [[ -z "${BASE_DEPENDENCY_IMAGE_LOCK_REFS[${id}]+x}" ]]; then
+    die "missing required build base image lock entry: ${id}"
+  fi
+
+  printf '%s' "${BASE_DEPENDENCY_IMAGE_LOCK_REFS[${id}]}"
+}
+
+require_current_p2_base_dependency_image_lock_entries() {
+  local required_id=""
+
+  for required_id in app_node_base_image app_mc_image llmup_rust_base_image llmup_runtime_base_image; do
+    locked_image_ref_or_die "${required_id}" >/dev/null
+  done
+}
+
+resolve_base_image_ref() {
+  local env_name="$1"
+  local lock_id="$2"
+  local override_value="${!env_name:-}"
+
+  if [[ -n "${override_value}" ]]; then
+    validate_image_ref_pinned_non_latest "base image override ${env_name}" "${override_value}"
+    printf '%s' "${override_value}"
+    return 0
+  fi
+
+  locked_image_ref_or_die "${lock_id}"
+}
+
+load_base_dependency_image_lock "${BASE_DEPENDENCY_IMAGE_LOCK}"
+require_current_p2_base_dependency_image_lock_entries
+
 K8S_REGISTRY_HOST="${K8S_REGISTRY_HOST:-${REGISTRY_HOST}}"
 
 APP_SOURCE_DIR="${RELEASE_ROOT}/sources/agentsmith"
@@ -39,15 +159,15 @@ VERIFY_RUNNER_IMAGE="${IMAGE_PREFIX}/agentsmith-verify-runner:${RELEASE_ID}"
 SANDBOX_MANAGER_IMAGE="${IMAGE_PREFIX}/sandbox-manager:${RELEASE_ID}"
 UNIVERSAL_PROXY_IMAGE="${IMAGE_PREFIX}/llm-universal-proxy:${RELEASE_ID}"
 
-APP_NODE_BASE_IMAGE="${APP_NODE_BASE_IMAGE:-node:24.14.1-bookworm}"
-APP_MC_IMAGE="${APP_MC_IMAGE:-minio/mc:latest}"
+APP_NODE_BASE_IMAGE="$(resolve_base_image_ref APP_NODE_BASE_IMAGE app_node_base_image)"
+APP_MC_IMAGE="$(resolve_base_image_ref APP_MC_IMAGE app_mc_image)"
 RUNNER_NODE_BASE_IMAGE="${RUNNER_NODE_BASE_IMAGE:-node:24.14.1-bookworm}"
 VERIFY_PLAYWRIGHT_BASE_IMAGE="${VERIFY_PLAYWRIGHT_BASE_IMAGE:-mcr.microsoft.com/playwright:v1.58.1-noble}"
 VERIFY_DOCKER_CLI_IMAGE="${VERIFY_DOCKER_CLI_IMAGE:-docker:28.5.1-cli}"
 SANDBOX_GO_BASE_IMAGE="${SANDBOX_GO_BASE_IMAGE:-golang:1.25-alpine}"
 SANDBOX_RUNTIME_BASE_IMAGE="${SANDBOX_RUNTIME_BASE_IMAGE:-ubuntu:22.04}"
-UNIVERSAL_PROXY_RUST_BASE_IMAGE="${UNIVERSAL_PROXY_RUST_BASE_IMAGE:-rust:1.88-bookworm}"
-UNIVERSAL_PROXY_RUNTIME_BASE_IMAGE="${UNIVERSAL_PROXY_RUNTIME_BASE_IMAGE:-debian:bookworm-slim}"
+UNIVERSAL_PROXY_RUST_BASE_IMAGE="$(resolve_base_image_ref UNIVERSAL_PROXY_RUST_BASE_IMAGE llmup_rust_base_image)"
+UNIVERSAL_PROXY_RUNTIME_BASE_IMAGE="$(resolve_base_image_ref UNIVERSAL_PROXY_RUNTIME_BASE_IMAGE llmup_runtime_base_image)"
 
 docker_build_local \
   --build-arg NODE_BASE_IMAGE="${APP_NODE_BASE_IMAGE}" \
@@ -94,6 +214,10 @@ agentsmith_verify_runner_image=${VERIFY_RUNNER_IMAGE}
 sandbox_manager_image=${SANDBOX_MANAGER_IMAGE}
 sandbox_manager_k8s_image=${K8S_REGISTRY_HOST}/${REGISTRY_PROJECT}/sandbox-manager:${RELEASE_ID}
 llm_universal_proxy_image=${UNIVERSAL_PROXY_IMAGE}
+app_node_base_image_ref=${APP_NODE_BASE_IMAGE}
+app_mc_image_ref=${APP_MC_IMAGE}
+llmup_rust_base_image_ref=${UNIVERSAL_PROXY_RUST_BASE_IMAGE}
+llmup_runtime_base_image_ref=${UNIVERSAL_PROXY_RUNTIME_BASE_IMAGE}
 juicefs_csi_version=${JUICEFS_CSI_VERSION}
 ingress_nginx_version=${INGRESS_NGINX_VERSION}
 registry_host=${REGISTRY_HOST}

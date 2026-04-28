@@ -13,6 +13,7 @@ import {
   computeAppImageContentKey,
   computeLlmupRuntimeContentKey,
   normalizeReleaseAliasTag,
+  parseBaseDependencyImageLock,
   parseLockedImageRef,
   validateBuildManifestAggregate,
   validateBuildSkipDecision,
@@ -297,6 +298,22 @@ function main(): void {
     parseLockedImageRef('docker.io/library/node:22-bookworm-slim').ok === false,
     'base/dependency image refs without digests must be rejected.',
   );
+
+  const baseImageLock = parseBaseDependencyImageLock(
+    readFileSync(resolve('infra/deploy/shared/build-base-images.lock'), 'utf8'),
+  );
+  assertValidationOk('build base image lock', baseImageLock);
+  if (baseImageLock.ok) {
+    const lockedIds = new Set(baseImageLock.entries.map((entry) => entry.id));
+    for (const id of [
+      'app_node_base_image',
+      'app_mc_image',
+      'llmup_rust_base_image',
+      'llmup_runtime_base_image',
+    ]) {
+      assert(lockedIds.has(id), `build base image lock must include ${id}.`);
+    }
+  }
 
   if (failures.length > 0) {
     throw new Error(failures.join('\n'));

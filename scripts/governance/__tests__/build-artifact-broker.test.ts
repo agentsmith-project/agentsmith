@@ -380,5 +380,19 @@ describe('build artifact broker', () => {
     expect(
       parseBaseDependencyImageLock('node=docker.io/library/node:latest@' + LOCKED_DIGEST_A).ok,
     ).toBe(false);
+    expect(
+      parseBaseDependencyImageLock([
+        'node=docker.io/library/node:22-bookworm-slim@' + LOCKED_DIGEST_A,
+        'node docker.io/library/node:22-bookworm-slim@' + LOCKED_DIGEST_B,
+      ].join('\n')),
+    ).toMatchObject({
+      ok: false,
+      failures: [
+        {
+          path: 'line 2',
+          reason: 'duplicate base/dependency image lock id: node.',
+        },
+      ],
+    });
   });
 });

@@ -75,7 +75,7 @@ Audience: 架构评审、后端、前端、测试、发布负责人
 | 工作区权限与 tenant 配置解析 | `packages/api-entry-node/src/workspace-permissions.ts`, `packages/api-entry-node/src/workspace-tenant-collections.ts` | workspace owner / creators / tenant config | 基于持久化 workspace 配置读取 | 主数据投影 | 通过 | 已不再读 `system-workspaces.json` |
 | 项目主数据 | project routes / workspace scoped collections | project records | `docStore` / Mongo | 主数据 | 通过 | 标准 workspace-scoped 真相 |
 | Endpoint 配置 | `packages/api-entry-node/src/endpoint-resource-service.ts` | endpoint records | `docStore` / Mongo | 主数据 | 通过 | 符合企业控制面模式 |
-| 凭据 | `packages/api-entry-node/src/endpoint-resource-service.ts` 等 | credentials / secret refs | `docStore` / Mongo | 主数据 | 通过 | 需持续保证 secret-at-rest 约束 |
+| Project secrets / 凭据引用 | `packages/api-entry-node/src/endpoint-resource-service.ts` 等 | credentials / secret refs | `docStore` / Mongo | 主数据 | 通过 | 需持续保证 secret-at-rest 约束 |
 | Agents 主数据 | `packages/api-entry-node/src/agent-resource-service.ts` | agent records / keys | `docStore` / Mongo | 主数据 | 通过 | 与 presence 分层 |
 | Agent 在线状态 | `packages/api-entry-node/src/agent-resource-service.ts` | heartbeat / presence | shared cache / Redis + 本地 socket 镜像 | 共享运行态 | 通过 | 当前实现适合多实例 presence 投影 |
 | 用户外部连接 | `packages/api-entry-node/src/user-external-connections-store.ts` | external connections | `docStore` / Mongo | 主数据 | 通过 | 外部账号绑定真相已持久化 |

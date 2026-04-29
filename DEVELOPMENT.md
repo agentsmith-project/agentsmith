@@ -984,7 +984,7 @@ When business logic changes are large, run this manual flow once before freeze:
    - create/delete group
 5. Validate resource management:
    - endpoints create/edit/toggle/delete
-   - sources upload/manage libraries
+   - files upload/manage libraries
    - agents create/edit/toggle and key management
 6. Validate resource policy:
    - edit default/resource/subject rules
@@ -1185,7 +1185,7 @@ npx tsc --noEmit
 
 This follow-up extends the external notebook-agent execution line toward a NotebookLM-like workflow:
 
-- notebook task attached sources are injected to external execution context as `task_inputs`
+- notebook task inputs from Files are injected to external execution context as `task_inputs`
 - runner writes task-local manifest: `<task_cwd>/.mbos/task-inputs.json`
 - runner writes task-local `AGENTS.md` (headless rules, artifact dir rules, input helper guidance)
 - runner installs task-local Codex skill:

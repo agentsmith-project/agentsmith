@@ -195,7 +195,7 @@ NEXT_PUBLIC_KEYCLOAK_REALM=mbos
 NEXT_PUBLIC_KEYCLOAK_CLIENT_ID=agentsmith
 ```
 
-Third-party accounts and Feishu OAuth backend configuration:
+Personal connections and Feishu OAuth backend configuration:
 
 ```bash
 USER_EXTERNAL_CONNECTIONS_SECRET_KEY=<strong-random-secret>

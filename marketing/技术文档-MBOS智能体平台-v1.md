@@ -26,7 +26,7 @@ npm run marketing:assets:generate
 | 10-usage | `usage.png` | 用量统计 |
 | 11-settings | `settings-general.png` | 项目设置总览 |
 | 12-files | `files.png`, `create-library-dialog.png`, `library-mount-access-dialog.png` | Files 页面与关键对话框 |
-| 13-credentials | `credentials-list.png`, `create-credential-dialog.png` | 凭据列表与创建对话框 |
+| 13-credentials | `credentials-list.png`, `create-credential-dialog.png` | Project secrets 列表与创建对话框 |
 | 14-user | `profile.png`, `api-keys.png` | 用户资料与 API Key |
 | 16-workspace | `workspace-settings.png` | 工作区设置 |
 

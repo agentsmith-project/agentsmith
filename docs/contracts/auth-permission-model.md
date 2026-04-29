@@ -108,7 +108,7 @@ Clarify the boundary between authentication data and authorization enforcement t
 - Is a project governance label that maps to project governance permissions.
 - Is assigned by the `project owner`.
 - Can read project audit via `project:audit:read`.
-- Can govern project resources, credentials, policy, and project-scope settings.
+- Can govern project resources, project secrets, policy, and project-scope settings.
 - Cannot delete the project.
 - Cannot assign other project admins.
 - Cannot transfer ownership.
@@ -139,7 +139,7 @@ Current project-scope model:
 
 Current split-token scope:
 - `project:terminal:use` covers notebook task terminal access and must be granted explicitly
-- `project:governance:update` covers credentials, resource policy, endpoint governance, and similar governance surfaces
+- `project:governance:update` covers project secrets, resource policy, endpoint governance, and similar governance surfaces
 - `project:files:update` covers file-library create/update/delete/move/upload/share-link writes
 - `project:membership:update` covers join requests, member lifecycle writes, templates, and groups
 - `project:admins:update` covers assigning or revoking project admins

@@ -1,6 +1,6 @@
 # Product Terminology Contract
 
-Last updated: 2026-04-10  
+Last updated: 2026-04-29
 Status: `authoritative`
 
 This document defines the canonical product-facing names for current AgentSmith surfaces and objects.
@@ -69,34 +69,39 @@ Do not use this contract to rename machine-readable API fields, OpenAPI tags, or
 13. `Audit`
 - Project audit review surface.
 
-14. `Settings`
+14. `Alerts` / `Alert Center`
+- Project-scoped operational signal surface for alert rules and notifications.
+- Scope: cost, limit, policy, endpoint-health, and in-app notification signals.
+- It is an operations support surface, not release orchestration, not a project governance launcher, and not required to appear as a primary sidebar item.
+
+15. `Settings`
 - Project identity / ownership / lifecycle / profile surface.
 - Settings must not return to being a governance launcher.
 - Not a governance launcher page.
 
 ### Workspace and personal connection objects
 
-15. `Workspace integrations`
+16. `Workspace integrations`
 - Workspace-scoped shared integration/configuration surface.
 - Product-facing replacement for workspace `Connections`.
 
-16. `Personal connections`
+17. `Personal connections`
 - Personal third-party account connection surface.
 - Product-facing replacement for `Third-party accounts` as the default UI name.
 
 ### Execution naming
 
-17. `Execution target`
+18. `Execution target`
 - The user-facing name for choosing where Chat execution goes.
 - It may point to an `Endpoint` or an `Agent`.
 - It must not be labeled as `model` in product-facing Chat selection UI.
 - It must not be described as a second model catalog or a generic provider picker.
 
-18. `Endpoint`
+19. `Endpoint`
 - Project execution capability configuration object.
 - Do not describe `Endpoint` and `Agent` as interchangeable model sources.
 
-19. `Agent`
+20. `Agent`
 - Project execution behavior / runner object.
 - Do not describe `Endpoint` and `Agent` as interchangeable model sources.
 
@@ -105,13 +110,13 @@ Object-boundary rule:
 
 ### Notebook execution terms
 
-20. `Task inputs`
+21. `Task inputs`
 - Notebook inputs attached from the shared project library or explicit task input channels.
 
-21. `Artifacts`
+22. `Artifacts`
 - Notebook-generated outputs produced by task execution.
 
-22. `Terminal session`
+23. `Terminal session`
 - Notebook task-scoped terminal execution session.
 - Scope: many `Terminal sessions` may exist under one task.
 - They share the same task workspace and task-scoped home; they are not isolated sandboxes.

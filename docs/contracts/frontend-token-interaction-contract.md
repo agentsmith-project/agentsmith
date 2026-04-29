@@ -1,6 +1,6 @@
 # Frontend Token & Interaction Contract (MVP)
 
-Last updated: 2026-04-07
+Last updated: 2026-04-29
 Owner: Frontend
 Audience: Frontend, Backend Auth, QA
 
@@ -60,6 +60,7 @@ Related docs:
 - Resource Policy: `project:governance:update`
 - Settings: `project:governance:update` or `project:admins:update` or `project:lifecycle:update`
 - Audit: `project:audit:read`
+- Alert Center: `project:audit:read`
 - Usage: `project:endpoint:use`
 - Access guide: `project:endpoint:use`
 
@@ -73,6 +74,7 @@ Current split-token status:
 - Project owner/admin assignment remains on `project:admins:update`.
 - Project lifecycle settings and delete remain on `project:lifecycle:update`.
 - Audit read remains on `project:audit:read`.
+- Alert Center remains on `project:audit:read` as an operational support surface, not a governance launcher.
 
 ## Action-Level Permission Gate Contract
 
@@ -80,6 +82,7 @@ Current split-token status:
 - File/library create/update/delete: `project:files:update`
 - Project secret create/rotate/delete: `project:governance:update`
 - Resource policy save: `project:governance:update`
+- Alert rule and notification-status management: `project:audit:read` (current MVP alert surface gate)
 - Member/template/group management and join request decisions: `project:membership:update`
 - Agent create/update/delete/key issue/key revoke: `project:agent:manage`
 - Agent publish/unpublish visibility changes: `project:agent:public`

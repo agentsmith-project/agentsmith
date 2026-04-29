@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-DEFAULT_PROXY_URL="${DEFAULT_PROXY_URL:-http://192.168.0.210:8889}"
-DEFAULT_NO_PROXY="${DEFAULT_NO_PROXY:-harbor.pullot.com,.pullot.com,localhost,127.0.0.1,::1,0.0.0.0,host.docker.internal,.svc,.cluster.local,10.0.0.0/8,10.7.0.0/16,172.16.0.0/12,192.168.0.0/16,169.254.0.0/16}"
+DEFAULT_PROXY_URL="${DEFAULT_PROXY_URL:-}"
+DEFAULT_NO_PROXY="${DEFAULT_NO_PROXY:-localhost,127.0.0.1,::1,0.0.0.0,host.docker.internal,.svc,.cluster.local,10.0.0.0/8,10.7.0.0/16,172.16.0.0/12,192.168.0.0/16,169.254.0.0/16}"
 export HTTP_PROXY="${HTTP_PROXY:-${http_proxy:-${DEFAULT_PROXY_URL}}}"
 export HTTPS_PROXY="${HTTPS_PROXY:-${https_proxy:-${DEFAULT_PROXY_URL}}}"
 export NO_PROXY="${NO_PROXY:-${no_proxy:-${DEFAULT_NO_PROXY}}}"

@@ -42,7 +42,7 @@
 
 ## 3. Current operational entrypoints
 
-### Fast / default validation
+### Notebook runner fast owner diagnostic
 
 ```bash
 npm run test:notebook:runner:fast
@@ -88,7 +88,7 @@ npm run release:status
 | internal verifier `gate:release:full` | Aggregate-only verifier for an existing campaign context; it does not execute suites. |
 
 如果只排 notebook runner：
-- 先看 `npm run test:notebook:runner:fast`
+- 先看 owner diagnostic：`npm run test:notebook:runner:fast`
 - 再看 `make local-real-status` 和 `npm run verify -- --goal=real --run`
 - 如果问题仍落在 runner owner，再看 `npm run test:notebook:runner:backend-real`
 - 最后按需要补 terminal matrix 与 UX owner diagnostics

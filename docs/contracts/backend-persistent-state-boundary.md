@@ -57,7 +57,7 @@ Audience: 后端、前端、测试、发布负责人
 
 ### 2.4 System 管理侧工作区配置
 
-- system workspace registry
+- system 管理侧工作区配置记录
 - 工作区发布状态
 - workspace admin / project creators 绑定快照
 - idp 配置与 tenant 配置
@@ -65,7 +65,7 @@ Audience: 后端、前端、测试、发布负责人
 要求：
 
 - system 管理侧创建、更新、发布、禁用、删除后的状态在 API 重启后保留
-- 旧 JSON registry 只作为迁移来源或兼容镜像，不再是生产唯一真相
+- 旧 JSON 工作区配置文件只作为迁移来源或兼容镜像，不再是生产唯一真相
 - 多实例不能依赖各自本地文件维持工作区清单一致性
 
 ## 3. 允许保留内存的运行态
@@ -123,7 +123,7 @@ Audience: 后端、前端、测试、发布负责人
 - project join request 主路径
 - me notifications / profile 主路径
 - project member governance 主路径
-- system workspace registry 主路径
+- system 管理侧工作区配置主路径
 
 ### 已收敛到共享运行态
 

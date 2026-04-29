@@ -32,11 +32,11 @@ npm run marketing:assets:generate
 
 说明：
 
-- 截图目录说明以 [README.md](/home/percy/works/mbos-v1/agentsmith/marketing/README.md) 和实际脚本输出为准。
+- 截图目录说明以 [README.md](./README.md) 和实际脚本输出为准。
 - 如需修改页面范围，优先更新 `e2e/capture-screenshots.spec.ts`，不要手工维护旧截图流程。
 
 ## 6. 参考文档
 
-- [Marketing README](/home/percy/works/mbos-v1/agentsmith/marketing/README.md)
-- [Product Doc Artifacts](/home/percy/works/mbos-v1/agentsmith/docs/user-guides/product-doc-artifacts.md)
-- [Current Engineering Governance Model](/home/percy/works/mbos-v1/agentsmith/docs/current-engineering-governance-model.md)
+- [Marketing README](./README.md)
+- [Product Doc Artifacts](../docs/user-guides/product-doc-artifacts.md)
+- [Current Engineering Governance Model](../docs/current-engineering-governance-model.md)

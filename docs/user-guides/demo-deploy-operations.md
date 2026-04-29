@@ -100,7 +100,7 @@ Everything under `$HOME/agentsmith/deploy` is managed deployment state. Do not c
 
 External dependencies stay in Compose. Internal agent workloads use Kubernetes service names that point to those external dependencies.
 
-On a development host, this local `kind` cluster is shared by the local rehearsal flows. It is not the production cluster model.
+On a development host, `demo-rehearsal` and `cluster-rehearsal` each own their own scenario-local `kind` world and registry identity. They share the local substrate, not one generic local cluster.
 
 ## Current Address Model
 

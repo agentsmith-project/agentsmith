@@ -62,8 +62,8 @@ Responsibilities:
 
 The current transfer policy is:
 
-1. build machine uploads the bundle to `pullot`
-2. target host logs in and pulls the bundle from `pullot`
+1. build machine uploads the bundle to an operator-approved transfer host or artifact store
+2. target host logs in and pulls the bundle from that transfer location
 
 The build machine does not upload directly to the target host.
 

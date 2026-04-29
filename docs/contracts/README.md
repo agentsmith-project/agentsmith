@@ -2,6 +2,8 @@
 
 本目录只保留 current contracts、协议说明和 machine-readable specs 的导航入口。
 
+部分 current contract 文件可能包含明确标注的 backlog/reference 小节。那些小节只用于保留未来设计方向或历史决策上下文，不是当前发布工作顺序，也不是必须执行的 gate 清单。
+
 基线入口：
 - [Current Baseline (Whitelist)](../CURRENT_BASELINE.md)
 

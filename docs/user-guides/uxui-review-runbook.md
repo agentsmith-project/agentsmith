@@ -151,7 +151,7 @@ UX/UI 审查的最小单位不是“一个 `page.tsx` 文件”，而是：
 包含：
 - user profile
 - api keys
-- third-party accounts
+- personal connections
 
 #### D. Project Work Surfaces
 
@@ -161,14 +161,14 @@ UX/UI 审查的最小单位不是“一个 `page.tsx` 文件”，而是：
 - notebook
 - notebook task detail
 - files
-- use guide
+- access guide
 - 其他沉浸式或主工作面
 
 #### E. Project Governance & Ops
 
 包含：
 - endpoints
-- credentials
+- project secrets
 - agents
 - members
 - resource policy
@@ -176,7 +176,7 @@ UX/UI 审查的最小单位不是“一个 `page.tsx` 文件”，而是：
 - usage
 - settings
 - alerts
-- context / my-context
+- shared context / my context
 - 其他 project 级治理与运维面
 
 #### F. Redirect / Callback / Preview Pack

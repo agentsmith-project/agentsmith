@@ -155,7 +155,7 @@ make notebook-agent-no-sandbox-smoke
 ```
 
 This validates the required behavior for MVP deployment without sandbox:
-- current API/Web/Runner path is healthy (`make local-manual-status`)
+- current API/Web/Runner path is healthy (`make local-real-status`)
 - internal-agent sandbox path is fail-fast with explicit `AGENT_SANDBOX_NOT_CONFIGURED`
 
 ### Internal Adapters And Owner Diagnostics

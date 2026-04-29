@@ -1,6 +1,6 @@
 # Current Baseline (Whitelist)
 
-更新时间：2026-04-11  
+更新时间：2026-04-29
 状态：`authoritative`
 
 本文件是唯一的人类 current truth router。它回答两件事：

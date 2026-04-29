@@ -189,9 +189,9 @@ When both are empty, the DNS apply flow falls back to host resolver discovery an
 
 ## Shared Persistent Truth
 
-### Workspace Registry
+### System Workspace Configuration
 - System workspace configuration must be stored in shared Mongo-backed persistence.
-- `web` and `api` must read the same workspace registry data.
+- `web` and `api` must read the same workspace configuration records.
 - In deployment mode, system workspace persistence must fail fast if shared Mongo configuration is missing.
 - Silent in-memory fallback is only allowed in explicit test mode.
 

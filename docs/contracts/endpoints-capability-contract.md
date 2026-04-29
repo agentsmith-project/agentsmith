@@ -83,6 +83,8 @@ Output:
 
 ## Verification
 
+These commands are focused endpoint capability diagnostics. They do not replace the normal PR verification entrypoint `npm run verify -- --goal=pr --run`.
+
 - Unit and route tests:
   - `npm run test:run -- packages/api-entry-node/src/endpoint-route-handler.test.ts packages/api-entry-node/src/projects-route-match.test.ts packages/api-entry-node/src/endpoint-resource-service.test.ts`
 - Frontend API tests:

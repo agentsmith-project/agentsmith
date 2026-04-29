@@ -14,10 +14,12 @@ The Alert Center helps you stay informed about important events in your project 
 ## Accessing Alert Center
 
 1. Navigate to your project
-2. Click on **Alerts** in the sidebar navigation
+2. Open **Alerts** from project operational links, the alert bell, or the direct project `alerts` route when it is available in your deployment
 3. The Alert Center opens with two tabs:
    - **Rules Tab**: Manage alert rule configurations
    - **Notifications Tab**: View received alerts
+
+Current IA note: Alert Center is an operational support surface. It is not required to appear as a primary sidebar item and must not be treated as a release orchestration or project governance launcher.
 
 ## Alert Rules
 

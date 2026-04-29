@@ -181,7 +181,7 @@ This section is authoritative for current permission boundaries and any remainin
 
 ## Frontend Navigation Sections
 
-> Updated: 2026-03-02 (Navigation Restructure WP-01/WP-02)
+> Updated: 2026-04-29 (Navigation and operational signal boundary)
 
 | Section | Description | Pages |
 |---------|-------------|-------|
@@ -189,7 +189,7 @@ This section is authoritative for current permission boundaries and any remainin
 | `use` | End-user daily AI tools | Chat, Notebook, Files |
 | `develop` | Developer agent building | Agents |
 | `govern` | Configuration and policy | Endpoints, Policy, Shared context, Project secrets, Members, Audit, Settings |
-| `operate` | Execution-related backend operations | Internal execution/configuration routes only; user-facing review goes through Audit |
+| `operate` | Execution-related backend operations | Internal execution/configuration routes plus supporting operational signals such as Alerts; user-facing evidence review still goes through Audit |
 
 ## Contract Guidance
 

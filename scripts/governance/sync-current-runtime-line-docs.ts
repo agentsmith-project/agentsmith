@@ -181,7 +181,7 @@ function renderLocalRuntimeFlowsBlock(): string {
 
 function renderRuntimeLinesMatrixBlock(): string {
   const rows = [
-    '| 本地真实手测线 | `local-manual` | 日常开发、真实后端手测、notebook / runner 手测 | 默认启用 | 通过 `local-manual-internal-up` 显式开启 | 共享本地 substrate | 当前推荐本机真实手测入口 |',
+    '| 本地真实手测线 | `local-manual` | 日常开发、真实后端手测、notebook / runner 手测 | 默认启用 | 仅 owner runbook 通过 `make local-manual-internal-up` 显式开启 | 共享本地 substrate | 当前推荐本机真实手测入口 |',
     '| demo 本机排演线 | `demo-rehearsal` | 本机排演 demo 发布线 | `DEMO_DEPLOY_MODE=simple` 时 external-only | `DEMO_DEPLOY_MODE=full` 时启用，运行在本地 `kind` | 共享本地 substrate | 使用 scenario-owned `agentsmith-demo` 与 `agentsmith-demo-registry` |',
     '| demo 正式发布线 | `demo-deploy` | 单机 / demo 环境发布 | `simple` | `full` | 目标主机上的 compose substrate | 目标主机 release 线，不是本机 rehearsal 入口 |',
     '| cluster 本机排演线 | `cluster-rehearsal` | 本机排演真实集群发布线 | 始终包含 external runner | 始终包含 internal k8s 执行面 | 共享本地 substrate | 使用 scenario-owned `agentsmith-cluster` 与 `agentsmith-cluster-registry` |',
@@ -192,6 +192,8 @@ function renderRuntimeLinesMatrixBlock(): string {
     '## 当前本机操作基线',
     '',
     ...renderRuleListZh('operational_baseline').map((rule, index) => `${index + 1}. ${rule.slice(2)}`),
+    '',
+    '可复制的人类操作入口统一看 [Local Runtime Flows](./local-runtime-flows.md)；本矩阵只说明 topology、mode 边界和运行线归属。',
     '',
     '## 持续生效的 runtime contract',
     '',

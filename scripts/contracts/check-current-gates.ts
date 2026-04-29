@@ -338,17 +338,21 @@ requireMatch(gateContract, /artifacts\/backend-real-visual\/<run-id>\/ux-traces/
 requireMatch(gateContract, /scenario-owned local clean reset/, 'current gate manifest contract must require clean-reset semantics for rehearsal lanes', failures);
 requireMatch(gateContract, /generated handoff state/, 'current gate manifest contract must describe rehearsal-generated handoff state ownership', failures);
 
-requireMatch(workspaceDefaultChecklist, /npm run test:default-e2e/, 'workspace/project checklist must keep test:default-e2e as its canonical gate command', failures);
-requireMatch(workspaceDefaultChecklist, /npm run test:backend-real:core/, 'workspace/project checklist must keep test:backend-real:core as the optional real-backend command', failures);
+requireMatch(workspaceDefaultChecklist, /npm run verify -- --goal=pr --run/, 'workspace/project checklist must point default execution to npm run verify -- --goal=pr --run', failures);
+requireMatch(workspaceDefaultChecklist, /npm run test:default-e2e[\s\S]{0,200}(focused diagnostics|evidence-owner producer)/, 'workspace/project checklist must label test:default-e2e as focused diagnostics, not the default entrypoint', failures);
+requireMatch(workspaceDefaultChecklist, /npm run test:backend-real:core[\s\S]{0,240}(focused diagnostics|evidence-owner producer)/, 'workspace/project checklist must label test:backend-real:core as focused diagnostics, not release sign-off', failures);
 requireMatch(workspaceDefaultChecklist, /ux_trace_bundle/, 'workspace/project checklist must describe the default-tier backend-real ux_trace_bundle evidence', failures);
 requireMatch(workspaceDefaultChecklist, /artifacts\/backend-real\/runs\/<run-id>\/ux-traces/, 'workspace/project checklist must identify the default-tier backend-real ux trace bundle root', failures);
 requireMatch(workspaceDefaultChecklist, /targeted visual/, 'workspace/project checklist must explain that its visual coverage is targeted', failures);
-requireMatch(workspaceDefaultChecklist, /npm run lane:visual/, 'workspace/project checklist must point full visual verification to npm run lane:visual', failures);
+requireMatch(workspaceDefaultChecklist, /npm run verify -- --goal=visual --run/, 'workspace/project checklist must point human full visual verification to npm run verify -- --goal=visual --run', failures);
+requireMatch(workspaceDefaultChecklist, /internal evidence ownership remains `lane:visual`/, 'workspace/project checklist must keep lane:visual only as internal visual evidence ownership', failures);
 forbidMatch(workspaceDefaultChecklist, /npm run gate:default/, 'workspace/project checklist must document its own canonical gate command instead of gate:default', failures);
 
-requireMatch(governanceDefaultChecklist, /npm run test:governance/, 'governance checklist must keep test:governance as its canonical gate command', failures);
+requireMatch(governanceDefaultChecklist, /npm run verify -- --goal=pr --run/, 'governance checklist must point default execution to npm run verify -- --goal=pr --run', failures);
+requireMatch(governanceDefaultChecklist, /npm run test:governance[\s\S]{0,200}(focused diagnostics|evidence-owner producer)/, 'governance checklist must label test:governance as focused diagnostics, not the default entrypoint', failures);
 requireMatch(governanceDefaultChecklist, /targeted visual/, 'governance checklist must explain that its visual coverage is targeted', failures);
-requireMatch(governanceDefaultChecklist, /npm run lane:visual/, 'governance checklist must point full visual verification to npm run lane:visual', failures);
+requireMatch(governanceDefaultChecklist, /npm run verify -- --goal=visual --run/, 'governance checklist must point human full visual verification to npm run verify -- --goal=visual --run', failures);
+requireMatch(governanceDefaultChecklist, /internal evidence ownership remains `lane:visual`/, 'governance checklist must keep lane:visual only as internal visual evidence ownership', failures);
 forbidMatch(governanceDefaultChecklist, /npm run gate:default/, 'governance checklist must document its own canonical gate command instead of gate:default', failures);
 
 requireMatch(releaseChecklist, /npm run release:ready/, 'release checklist must define npm run release:ready as the human-facing full release entrypoint', failures);

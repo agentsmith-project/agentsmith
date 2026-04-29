@@ -64,7 +64,9 @@
 
 - 新依赖（repo/store/client）必须通过 `node-api-deps.ts` 显式声明，再在 `node-api-deps-factory.ts` 统一装配。
 
-## 3. 后续建议（P1/P2 配套）
+## 3. 后续建议（Backlog / Reference）
+
+本节不是当前发布 gate，也不是主线开发顺序。只有当相关模块继续演进时，才作为结构性改进参考。
 
 - 给 `projects-route-match.ts` 添加路由匹配单元测试，避免正则回归。
 - 持续扩展 `chat-resource-service.ts` 分支/修订语义测试，覆盖跨 session/project 的边界场景。

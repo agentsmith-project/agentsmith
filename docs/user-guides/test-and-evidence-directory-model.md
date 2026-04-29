@@ -48,7 +48,7 @@
 - `artifacts/backend-real-visual/`
 - `artifacts/backend-real/runs/<run-id>/...`
 - `artifacts/release-runs/`
-- `artifacts/release-reports/`
+- `artifacts/release-reports/`（历史/生成的报告快照；当前发布结论优先看 campaign-scoped `artifacts/release-runs/<campaign-run-id>` 与 `latest.json`）
 - `artifacts/release-escalations/`
 - `artifacts/governance-reports/`
 
@@ -94,7 +94,9 @@
 看：
 - 严格门禁命令输出
 - `artifacts/backend-real-visual/<run-id>/review.md`
-- `artifacts/release-reports/`
+- `artifacts/release-runs/<campaign-run-id>/summary.md`
+- `artifacts/release-runs/latest.json`
+- `artifacts/release-reports/` 中被当前 release run 明确引用的生成报告；其他旧报告只作为历史证据快照
 
 ## 6. 当前目录治理结论
 

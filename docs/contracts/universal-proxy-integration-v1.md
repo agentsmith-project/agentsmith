@@ -6,7 +6,7 @@
 
 目标：
 
-- AgentSmith 继续作为控制面真相源
+- AgentSmith 继续作为用户、工作区、项目、endpoint 配置与凭据归属的真相源
 - `llm-universal-proxy` 作为独立协议转换层
 - runner 只面对 AgentSmith 的统一接口，不再关心上游是 OpenAI Chat、OpenAI Responses 还是 Anthropic Messages
 
@@ -81,15 +81,15 @@ AgentSmith 在 endpoint proxy 主路径上优先把支持的聊天协议请求�
 - AgentSmith 缺失 `if_revision` 或发送过期值时，协议层返回 `412` + `current_revision`
 - namespace 不存在时，协议层返回显式错误
 
-## Verification Gate
+## Verification Diagnostics
 
-最小 gate：
+针对本集成点的最小诊断入口：
 
 1. Rust `cargo test`
 2. AgentSmith `universal-proxy-service` 单测
 3. `npx tsc --noEmit`
 
-后续完整 gate 应继续补到：
+Backlog / reference：如后续继续扩展本集成点，可补充以下诊断覆盖；它们不是当前发布主线 gate 清单。
 
 - endpoint proxy 经 universal proxy 的真实集成测试
 - runner -> AgentSmith -> universal proxy -> upstream 的 stream / non-stream 测试

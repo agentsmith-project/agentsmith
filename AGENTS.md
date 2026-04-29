@@ -54,13 +54,17 @@ AgentSmith = MBOS 企业级控制面前端。**当前职责**: AI 智能体使�
 - 不用 `registry` 作为泛化术语；优先说 `工作区配置记录`、`system 管理侧保存的工作区清单`、`历史工作区配置数据`
 - 身份模型默认使用 `Email 选人，ID 落库`：界面主识别是 email，系统内部唯一主键是 `user_id = Keycloak sub`
 
-## 常用命令
+## 常用入口
 
 ```bash
-npm run dev / build / start / lint / test / test:e2e / test:integration
+npm run dev / build / start / lint
+npm run verify / npm run verify -- --goal=<pr|real|visual> --run
+npm run release:ready / npm run release:status
 npm run contracts:check / contracts:check-openapi / openapi:check-generated
-make bootstrap / api-dev / web / e2e / deps-down / deps-reset
+make local-real-up / local-real-status / local-real-down / local-real-reset
 ```
+
+Raw `test:*`, `gate:*`, `lane:*`, `backend-real:*` 和低层 `make *-rehearsal-*` 命令只作为 focused diagnostics、evidence producer 或 owner runbook adapter；普通验收必须回到 `npm run verify -- --goal=... --run` 或 `npm run release:ready`。
 
 ## 架构要点
 
@@ -103,12 +107,13 @@ make bootstrap / api-dev / web / e2e / deps-down / deps-reset
 **e2e**: Playwright, projects: smoke / chromium / visual, fixtures: `e2e/fixtures/test-base.ts`
 **执行**: 不让 Playwright 管理服务启动，手动启动后用 `BASE_URL` 运行，清理代理环境变量，UI 变更需跑 visual e2e
 
-**skill runtime gate**:
-- 改 builtin skills、runner skill env、Context Store route/store、managed credential resolution 时，至少跑 `npm run test:skills:fast`
-- 改 chat/notebook/terminal execution context、agent ticket scope、Context Store ownership 时，再加跑 `npm run test:skills:backend-real`
-- `test:skills:*` 覆盖的是 builtin skills + runner runtime + Context Store 主链，不替代共享 context UI、治理、files 等业务 gate
-- notebook runner 主链可直接用 `npm run test:notebook:runner:fast` / `npm run test:notebook:runner:backend-real`
-- chat runner 主链可直接用 `npm run test:chat:runner:fast` / `npm run test:chat:runner:backend-real`
+**skill runtime diagnostics**:
+- 改 builtin skills、runner skill env、Context Store route/store、managed credential resolution 时，至少跑 focused producer `npm run test:skills:fast`
+- 改 chat/notebook/terminal execution context、agent ticket scope、Context Store ownership 时，再加跑 focused producer `npm run test:skills:backend-real`
+- `test:skills:*` 覆盖的是 builtin skills + runner runtime + Context Store 主链，不替代共享 context UI、治理、files 等业务 verification entrypoint
+- notebook runner 主链 owner diagnostics 可用 `npm run test:notebook:runner:fast` / `npm run test:notebook:runner:backend-real`
+- chat runner 主链 owner diagnostics 可用 `npm run test:chat:runner:fast` / `npm run test:chat:runner:backend-real`
+- diagnostics 变绿后，按改动范围回到 `npm run verify -- --goal=... --run`；发布级收口回到 `npm run release:ready`
 
 ## 测试 ID 规范
 
@@ -131,7 +136,7 @@ make bootstrap / api-dev / web / e2e / deps-down / deps-reset
 ## 开发工作流
 
 **Route Gate**: 合并前 `npm run contracts:check` + `contracts:check-openapi` + `openapi:check-generated`
-**提交前**: `npm test` + `npm run lint` + `npx tsc --noEmit`
+**提交前**: `npm run verify -- --goal=pr --run`；只做计划时用 `npm run verify`
 **错误处理**: `useApiError` + ErrorBoundary
 
 ## 常见问题 & 开发注意

@@ -589,7 +589,7 @@ Notes:
   - `artifacts/backend-real-visual/`
   - `artifacts/backend-real/runs/<run-id>/...`
   - `artifacts/release-runs/`
-  - `artifacts/release-reports/`
+  - `artifacts/release-reports/`（historical/generated report snapshots; current release authority comes from campaign-scoped `artifacts/release-runs/<campaign-run-id>` and `latest.json`）
   - `artifacts/release-escalations/`
   - `artifacts/governance-reports/`
 
@@ -653,9 +653,21 @@ npm run openapi:check-generated
 npm run openapi:changelog
 ```
 
-## Playwright E2E Runbook (Recommended)
+## Playwright E2E Diagnostics
 
-Use this runbook when E2E is unstable or intermittently timing out.
+Use this runbook when E2E is unstable or intermittently timing out. These commands are focused diagnostics; they do not replace the clean verification verdict path.
+
+For normal PR acceptance, use:
+
+```bash
+npm run verify -- --goal=pr --run
+```
+
+For real-backend acceptance, use:
+
+```bash
+npm run verify -- --goal=real --run
+```
 
 Notes:
 - By default, Playwright manages its own `next dev` web server (port `3001`) with MSW enabled.
@@ -682,9 +694,9 @@ Make sure the dev server is started with MSW enabled:
 NEXT_PUBLIC_USE_MSW=true npm run dev:test -- --port 3001
 ```
 
-## E2E Modes (Recommended)
+## E2E Diagnostic Modes
 
-We keep two E2E modes with distinct responsibilities:
+We keep two E2E diagnostic modes with distinct responsibilities:
 
 1) Mock E2E (default)
 

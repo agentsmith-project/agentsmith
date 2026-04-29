@@ -143,12 +143,12 @@ DEMO_DEPLOY_MODE=simple
 
 ### 5.2 配置对外服务地址
 
-如果这台机器在局域网里的 IP 是 `192.168.0.210`，推荐直接这样配：
+先确认这台机器在局域网里的可访问 IP，下面用 `<demo-host-lan-ip>` 作为占位：
 
 ```bash
-PUBLIC_WEB_BASE_URL=http://192.168.0.210:3001
-PUBLIC_API_BASE_URL=http://192.168.0.210:20000
-PUBLIC_KEYCLOAK_BASE_URL=http://192.168.0.210:18080
+PUBLIC_WEB_BASE_URL=http://<demo-host-lan-ip>:3001
+PUBLIC_API_BASE_URL=http://<demo-host-lan-ip>:20000
+PUBLIC_KEYCLOAK_BASE_URL=http://<demo-host-lan-ip>:18080
 ```
 
 这三个地址是给：
@@ -166,9 +166,9 @@ PUBLIC_KEYCLOAK_BASE_URL=http://192.168.0.210:18080
 如果你也要让局域网里的客户端能访问文件库相关能力，建议一起改成这台主机 IP：
 
 ```bash
-CLIENT_PUBLIC_POSTGRES_HOST=192.168.0.210
+CLIENT_PUBLIC_POSTGRES_HOST=<demo-host-lan-ip>
 CLIENT_PUBLIC_POSTGRES_PORT=15432
-CLIENT_PUBLIC_MINIO_ENDPOINT=http://192.168.0.210:19000
+CLIENT_PUBLIC_MINIO_ENDPOINT=http://<demo-host-lan-ip>:19000
 ```
 
 ### 5.4 填 LLM API Key
@@ -334,9 +334,9 @@ bash scripts/report.sh
 如果你前面配置的是：
 
 ```bash
-PUBLIC_WEB_BASE_URL=http://192.168.0.210:3001
-PUBLIC_API_BASE_URL=http://192.168.0.210:20000
-PUBLIC_KEYCLOAK_BASE_URL=http://192.168.0.210:18080
+PUBLIC_WEB_BASE_URL=http://<demo-host-lan-ip>:3001
+PUBLIC_API_BASE_URL=http://<demo-host-lan-ip>:20000
+PUBLIC_KEYCLOAK_BASE_URL=http://<demo-host-lan-ip>:18080
 ```
 
 那么局域网里的使用者通常访问：
@@ -344,19 +344,19 @@ PUBLIC_KEYCLOAK_BASE_URL=http://192.168.0.210:18080
 - Web 登录入口：
 
 ```bash
-http://192.168.0.210:3001/en-US/login/workspace
+http://<demo-host-lan-ip>:3001/en-US/login/workspace
 ```
 
 或者中文：
 
 ```bash
-http://192.168.0.210:3001/zh-CN/login/workspace
+http://<demo-host-lan-ip>:3001/zh-CN/login/workspace
 ```
 
 如果是 API 接入，就用：
 
 ```bash
-http://192.168.0.210:20000
+http://<demo-host-lan-ip>:20000
 ```
 
 ---
@@ -496,10 +496,10 @@ cp env/site.env.example env/site.env
 DEMO_DEPLOY_MODE=simple
 ```
 
-把 `PUBLIC_*` 和 `CLIENT_PUBLIC_*` 改成这台机器的局域网 IP，比如：
+把 `PUBLIC_*` 和 `CLIENT_PUBLIC_*` 改成这台机器的局域网 IP：
 
 ```bash
-192.168.0.210
+<demo-host-lan-ip>
 ```
 
 然后依次执行：

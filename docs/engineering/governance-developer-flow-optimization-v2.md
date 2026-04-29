@@ -438,7 +438,7 @@ Aggregate fields 至少记录：
 ### 8.5 Broker 验收
 
 1. 同源码第二次 demo/cluster rehearsal 不触发 Next build。
-2. 同 llmup 版本第二次不触发 llmup 构建，只复用已记录的外部 image 搬运/归档证据。
+2. 同 llmup 版本第二次不触发 llmup image refresh / retag / archive，只复用已记录的外部 image 搬运/归档证据。
 3. 同源码第二次不触发 docker save/load/push/kind import。
 4. 改 chat runner 只重建相关 runner image。
 5. 改 llmup 版本只更新 `llmup_version` / `llmup_source_image` / `llmup_source_image_digest` 和对应镜像搬运/归档。
@@ -914,7 +914,7 @@ current manifests 已经表达了部分依赖关系，但实际执行仍偏串�
 
 验收：
 
-1. 同源码第二次 rehearsal 不触发 app build；同 llmup 版本不触发 llmup build。
+1. 同源码第二次 rehearsal 不触发 app build；同 llmup 版本不触发 llmup image refresh / retag / archive。
 2. 同源码第二次不做全量 image import。
 3. 改不同 target 只重建受影响镜像。
 4. skip decisions 可审计，但不满足 gate evidence。

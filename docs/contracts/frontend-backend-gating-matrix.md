@@ -1,6 +1,6 @@
 # Frontend-Backend Gating Matrix (Page/Operation Level)
 
-Last updated: 2026-04-07
+Last updated: 2026-04-29
 Owner: Frontend
 Audience: Backend auth team, QA, FE
 
@@ -46,12 +46,14 @@ Backend enforces `401/403`; frontend applies route/component gates.
 | endpoints | view/use endpoints | `project:endpoint:use` | `GET /endpoints*` | page-level permission denied |
 | endpoints | create/update/delete endpoint | `project:governance:update` | `POST/PUT/DELETE /endpoints*` | mutating controls disabled |
 | resource policy | view/update endpoint/agent policy | `project:governance:update` | `GET/PATCH /resources/{endpoint\|agent}/{id}/policy` | mutating controls disabled |
-| credentials | view/manage credentials | `project:governance:update` | `GET/POST/DELETE /credentials*` | page-level permission denied |
+| Project secrets | view/manage project secrets | `project:governance:update` | `GET/POST/DELETE /credentials*` | page-level permission denied |
 | members | view/manage members/templates/groups | `project:membership:update` | `/members/*`, `/invites`, `/join-requests/*`, `/groups*`, `/permission-templates*`, `/spending-limit-templates*` | page-level permission denied or mutating controls disabled |
 | settings | view project settings shell | `project:governance:update` or `project:admins:update` or `project:lifecycle:update` | `GET /projects/{id}` | page-level permission denied |
 | audit | view audit data | `project:audit:read` | `GET /audit` | component-level permission denied |
+| Alerts / Alert Center | view alert rules and notifications | `project:audit:read` | `GET /alert-rules*`, `GET /alert-notifications*` | page-level permission denied |
+| Alerts / Alert Center | manage/test alert rules and notification status | `project:audit:read` (current MVP alert surface gate) | `POST/PUT/DELETE /alert-rules*`, `POST /alert-rules/*/test`, `PUT /alert-notifications/*` | mutating controls fail gracefully |
 | usage | view own usage data (read-only) | `project:endpoint:use` | `GET /usage`, `GET /usage/facts` | component-level permission denied |
-| use guide | view API access handbook | `project:endpoint:use` | N/A (static guidance page) | page-level permission denied |
+| Access guide | view API access handbook | `project:endpoint:use` | N/A (static guidance page) | page-level permission denied |
 
 ## Notes for Backend Team
 
@@ -71,7 +73,7 @@ Backend enforces `401/403`; frontend applies route/component gates.
 
 - `project:governance:update`
   - endpoints governance writes
-  - credentials
+  - project secrets
   - resource policy
 - `project:files:update`
   - file and library mutations

@@ -19,6 +19,7 @@ export function ResourcePolicyEditor(args: {
   basePath: string;
   tResource: (key: string, values?: Record<string, string | number>) => string;
   selectedResource: ResourceRow | null;
+  unresolvedResourceQuery?: { resourceType: string; resourceId: string } | null;
   policyLoading: boolean;
   selectedPolicy?: ResourcePolicy;
   selectedType: ResourceRow['type'];
@@ -70,6 +71,7 @@ export function ResourcePolicyEditor(args: {
     basePath,
     tResource,
     selectedResource,
+    unresolvedResourceQuery,
     policyLoading,
     selectedPolicy,
     selectedType,
@@ -112,7 +114,17 @@ export function ResourcePolicyEditor(args: {
         className="space-y-3 rounded-md border border-subtle bg-surface-high p-4"
         data-testid="resource-policy__editor"
       >
-        <p className="text-sm text-tertiary">{tResource('select_resource')}</p>
+        <p
+          className="text-sm text-tertiary"
+          data-testid={unresolvedResourceQuery ? 'resource-policy__resource-not-found' : undefined}
+        >
+          {unresolvedResourceQuery
+            ? tResource('resource_not_found', {
+                resourceType: unresolvedResourceQuery.resourceType,
+                resourceId: unresolvedResourceQuery.resourceId,
+              })
+            : tResource('select_resource')}
+        </p>
       </div>
     );
   }

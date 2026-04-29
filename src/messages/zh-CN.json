@@ -1951,6 +1951,7 @@
     "default_model_hint": "先从项目默认策略开始，只在确有需要时为单个资源添加覆盖。",
     "inherits_defaults": "继承默认策略",
     "select_resource": "请选择资源以编辑策略。",
+    "resource_not_found": "未找到请求的 {resourceType} 资源 \"{resourceId}\"。请先选择一个已存在的资源，再运行访问检查。",
     "loading_policy": "正在加载策略...",
     "access_mode": {
       "label": "访问模式",

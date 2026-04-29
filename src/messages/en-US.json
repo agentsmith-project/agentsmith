@@ -1949,6 +1949,7 @@
     "default_model_hint": "Start from the project default, then add resource-specific overrides only when needed.",
     "inherits_defaults": "inherits defaults",
     "select_resource": "Select a resource to edit policy.",
+    "resource_not_found": "Requested {resourceType} resource \"{resourceId}\" was not found. Select an existing resource before running an access check.",
     "loading_policy": "Loading policy...",
     "access_mode": {
       "label": "Access mode",

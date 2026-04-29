@@ -1,4 +1,5 @@
 import { render, screen, waitFor, within } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { useCanReadProjectPolicy, useCanUpdateProjectPolicy } from '@/lib/hooks/use-permissions';
@@ -78,6 +79,41 @@ describe('ResourcePolicyPage', () => {
     expect(screen.getByTestId('resource-policy__summary-line')).toHaveTextContent('resource_type.endpoint');
     expect(screen.queryByTestId('resource-policy__summary-chip--access-mode')).not.toBeInTheDocument();
     expect(screen.queryByTestId('resource-policy__summary-chip--subjects')).not.toBeInTheDocument();
+  });
+
+  it('does not fall back to a different resource when the query resource is missing', async () => {
+    mockSearchParams.set('resource_type', 'endpoint');
+    mockSearchParams.set('resource_id', 'missing_ep');
+
+    render(<ResourcePolicyPage params={Promise.resolve({ workspace: 'ws_1', project: 'prj_1', locale: 'en-US' })} />, { wrapper: createWrapper() });
+
+    await waitFor(() => {
+      expect(screen.getByTestId('resource-policy__resource-not-found')).toBeInTheDocument();
+    });
+    expect(screen.getByTestId('resource-policy__resource-not-found')).toHaveTextContent('resource_not_found');
+    const editor = screen.getByTestId('resource-policy__editor');
+    expect(within(editor).queryByText('OpenAI Main')).not.toBeInTheDocument();
+    expect(screen.queryByTestId('resource-policy__access-mode')).not.toBeInTheDocument();
+  });
+
+  it('allows users to select an existing resource after the query resource is missing', async () => {
+    const user = userEvent.setup();
+    mockSearchParams.set('resource_type', 'endpoint');
+    mockSearchParams.set('resource_id', 'missing_ep');
+
+    render(<ResourcePolicyPage params={Promise.resolve({ workspace: 'ws_1', project: 'prj_1', locale: 'en-US' })} />, { wrapper: createWrapper() });
+
+    await waitFor(() => {
+      expect(screen.getByTestId('resource-policy__resource-not-found')).toBeInTheDocument();
+    });
+
+    await user.click(screen.getByTestId('resource-policy__row--endpoint--ep_1'));
+
+    await waitFor(() => {
+      expect(screen.getByTestId('resource-policy__access-mode')).toBeInTheDocument();
+    });
+    expect(screen.getByTestId('resource-policy__editor')).toHaveTextContent('OpenAI Main');
+    expect(screen.queryByTestId('resource-policy__resource-not-found')).not.toBeInTheDocument();
   });
 
   it('shows permission denied without policy permission', async () => {

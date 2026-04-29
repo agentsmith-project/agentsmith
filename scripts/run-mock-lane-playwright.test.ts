@@ -7,6 +7,27 @@ describe('run-mock-lane-playwright', () => {
     expect(() => execFileSync('bash', ['-n', 'scripts/run-mock-lane-playwright.sh'])).not.toThrow();
   });
 
+  it('keeps the shared mock lane session adapter shell-syntax valid', () => {
+    expect(() => execFileSync('bash', ['-n', 'scripts/run-mock-lane-session.sh'])).not.toThrow();
+  });
+
+  it('routes aggregate mock npm entries through the session adapter without changing single-project diagnostics', () => {
+    const packageJson = JSON.parse(readFileSync('package.json', 'utf8')) as {
+      scripts?: Record<string, string>;
+    };
+
+    expect(packageJson.scripts?.['test:e2e']).toBe('bash scripts/run-mock-lane-session.sh --preset=default');
+    expect(packageJson.scripts?.['test:e2e:all']).toBe('bash scripts/run-mock-lane-session.sh --preset=with-visual');
+    expect(packageJson.scripts?.['test:e2e:lane:mock:full:with-visual']).toBe(
+      'bash scripts/run-mock-lane-session.sh --preset=with-visual',
+    );
+    expect(packageJson.scripts?.['test:e2e:lane:mock:smoke']).toContain('scripts/run-mock-lane-playwright.sh');
+    expect(packageJson.scripts?.['test:e2e:lane:mock:chromium']).toContain('scripts/run-mock-lane-playwright.sh');
+    expect(packageJson.scripts?.['test:e2e:lane:mock:visual']).toContain('scripts/run-mock-lane-playwright.sh');
+    expect(packageJson.scripts?.['test:e2e:lane:mock:visual:update']).toContain('scripts/run-mock-lane-playwright.sh');
+    expect(packageJson.scripts?.['test:e2e:lane:mock:visual:update']).not.toContain('run-mock-lane-session.sh');
+  });
+
   it('forces strict MSW readiness for both the mock web server and the Playwright child lane', () => {
     const script = readFileSync('scripts/run-mock-lane-playwright.sh', 'utf8');
     const serverLaunchIndex = script.indexOf('start_mock_server() {');

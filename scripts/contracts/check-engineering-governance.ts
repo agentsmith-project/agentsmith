@@ -385,7 +385,6 @@ const requiredMockLaneScripts = [
   'test:e2e:lane:mock:chromium',
   'test:e2e:lane:mock:visual',
   'test:e2e:lane:mock:visual:update',
-  'test:e2e:lane:mock:full:with-visual',
 ] as const;
 
 for (const scriptName of requiredMockLaneScripts) {
@@ -397,6 +396,11 @@ for (const scriptName of requiredMockLaneScripts) {
   if (!/run-mock-lane-playwright\.sh/.test(scriptValue)) {
     failures.push(`${scriptName} must use scripts/run-mock-lane-playwright.sh as the canonical mock lane launcher`);
   }
+}
+
+const fullMockLaneWithVisualScript = packageJson.scripts?.['test:e2e:lane:mock:full:with-visual'];
+if (!fullMockLaneWithVisualScript || !/run-mock-lane-session\.sh/.test(fullMockLaneWithVisualScript) || !/--preset=with-visual/.test(fullMockLaneWithVisualScript)) {
+  failures.push('test:e2e:lane:mock:full:with-visual must use the shared mock lane session adapter with visual enabled');
 }
 
 requireMatch(
@@ -454,13 +458,13 @@ for (const scriptPath of requiredScenarioCommandLockedScripts) {
 }
 
 const defaultMockE2EScript = packageJson.scripts?.['test:e2e'];
-if (!defaultMockE2EScript || !/test:e2e:lane:mock:smoke/.test(defaultMockE2EScript) || !/test:e2e:lane:mock:chromium/.test(defaultMockE2EScript)) {
-  failures.push('test:e2e must delegate to the canonical mock smoke and chromium lane scripts');
+if (!defaultMockE2EScript || !/run-mock-lane-session\.sh/.test(defaultMockE2EScript) || !/--preset=default/.test(defaultMockE2EScript)) {
+  failures.push('test:e2e must run the shared mock lane session adapter with the default shard preset');
 }
 
 const fullMockE2EScript = packageJson.scripts?.['test:e2e:all'];
-if (!fullMockE2EScript || !/test:e2e\b/.test(fullMockE2EScript) || !/test:e2e:lane:mock:visual/.test(fullMockE2EScript)) {
-  failures.push('test:e2e:all must compose the canonical mock e2e script with the visual lane script');
+if (!fullMockE2EScript || !/run-mock-lane-session\.sh/.test(fullMockE2EScript) || !/--preset=with-visual/.test(fullMockE2EScript)) {
+  failures.push('test:e2e:all must run the shared mock lane session adapter with visual enabled');
 }
 
 requireMatch(constitution, /视觉验证属于独立证据通道/, 'constitution must describe visual verification as an independent evidence channel');

@@ -71,6 +71,7 @@ export default function ResourcePolicyPage({ params }: ResourcePolicyPageProps) 
   const isFeatureBlocked = isFeatureBlockedInCurrentMode('resource_policy');
   const resolvedParams = useResolvedProjectRoute(params);
   const [selectedResource, setSelectedResource] = useState<ResourceRow | null>(null);
+  const [selectedResourceSource, setSelectedResourceSource] = useState<'auto' | 'query' | 'user' | null>(null);
   const [accessMode, setAccessMode] = useState<'allow_all_members' | 'allow_list'>('allow_all_members');
   const [rootDraftRules, setRootDraftRules] = useState<Partial<Record<PolicyRuleKey, string>>>({});
   const [subjects, setSubjects] = useState<EditableSubject[]>([]);
@@ -111,6 +112,19 @@ export default function ResourcePolicyPage({ params }: ResourcePolicyPageProps) 
       endpoint: rows.filter((row) => row.type === 'endpoint'),
     };
   }, [rows]);
+  const queryResourceType = searchParams.get('resource_type');
+  const queryResourceId = searchParams.get('resource_id');
+  const hasResourceQuery = queryResourceType !== null || queryResourceId !== null;
+  const queryMatchedResource = useMemo(() => {
+    if (queryResourceType !== 'endpoint' || !queryResourceId) return null;
+    return rows.find((row) => row.type === queryResourceType && row.id === queryResourceId) ?? null;
+  }, [queryResourceId, queryResourceType, rows]);
+  const unresolvedResourceQuery = hasResourceQuery && !queryMatchedResource
+    ? {
+        resourceType: queryResourceType ?? 'unknown',
+        resourceId: queryResourceId ?? '',
+      }
+    : null;
 
   const policyQueries = useQueries({
     queries: rows.map((row) => ({
@@ -199,21 +213,29 @@ export default function ResourcePolicyPage({ params }: ResourcePolicyPageProps) 
   );
 
   useEffect(() => {
+    if (hasResourceQuery) {
+      if (queryMatchedResource) {
+        if (
+          selectedResource?.type !== queryMatchedResource.type
+          || selectedResource.id !== queryMatchedResource.id
+        ) {
+          setSelectedResource(queryMatchedResource);
+          setSelectedResourceSource('query');
+        } else if (selectedResourceSource !== 'query') {
+          setSelectedResourceSource('query');
+        }
+      } else if (selectedResource && selectedResourceSource !== 'user') {
+        setSelectedResource(null);
+        setSelectedResourceSource(null);
+      }
+      return;
+    }
+
     if (!selectedResource && rows.length > 0) {
       setSelectedResource(rows[0] ?? null);
+      setSelectedResourceSource('auto');
     }
-  }, [rows, selectedResource]);
-
-  useEffect(() => {
-    const resourceType = searchParams.get('resource_type');
-    const resourceId = searchParams.get('resource_id');
-    if (!resourceType || !resourceId) return;
-    if (resourceType !== 'endpoint') return;
-    const matched = rows.find((row) => row.type === resourceType && row.id === resourceId);
-    if (matched && (selectedResource?.type !== matched.type || selectedResource.id !== matched.id)) {
-      setSelectedResource(matched);
-    }
-  }, [rows, searchParams, selectedResource]);
+  }, [hasResourceQuery, queryMatchedResource, rows, selectedResource, selectedResourceSource]);
 
   useEffect(() => {
     if (!selectedPolicy) return;
@@ -248,8 +270,6 @@ export default function ResourcePolicyPage({ params }: ResourcePolicyPageProps) 
 
   useEffect(() => {
     if (!selectedResource) return;
-    const queryResourceType = searchParams.get('resource_type');
-    const queryResourceId = searchParams.get('resource_id');
     if (
       queryResourceType
       && queryResourceId
@@ -270,7 +290,7 @@ export default function ResourcePolicyPage({ params }: ResourcePolicyPageProps) 
     if (action) {
       setExplainAction(action);
     }
-  }, [searchParams, selectedResource]);
+  }, [queryResourceId, queryResourceType, searchParams, selectedResource]);
 
   const memberIds = useMemo(() => (userOptions ?? []).map((o) => o.id), [userOptions]);
   const groupIds = useMemo(() => (groupOptions ?? []).map((o) => o.id), [groupOptions]);
@@ -481,13 +501,17 @@ export default function ResourcePolicyPage({ params }: ResourcePolicyPageProps) 
             <ResourcePolicyTable
               groupedRows={groupedRows}
               selectedResource={selectedResource}
-              onSelectResource={setSelectedResource}
+              onSelectResource={(row) => {
+                setSelectedResource(row);
+                setSelectedResourceSource('user');
+              }}
               getRowPolicyState={getRowPolicyState}
             />
             <ResourcePolicyEditor
               basePath={basePath}
               tResource={tResource}
               selectedResource={selectedResource}
+              unresolvedResourceQuery={unresolvedResourceQuery}
               policyLoading={policyLoading}
               selectedPolicy={selectedPolicy}
               selectedType={selectedType}

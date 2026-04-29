@@ -1,12 +1,46 @@
 # Engineering Governance Developer Flow Optimization v2
 
-更新时间：2026-04-27
-状态：`analysis_for_implementation`
+更新时间：2026-04-29
+状态：`first_scope_closed_2026-04-29`
+状态含义：v2 第一批实现范围已关闭到可以停止主动扩张；剩余内容是 backlog / reference，不是当前 marching orders。
 适用范围：AgentSmith 工程治理、测试验证、real lane、发布前验证、本地 demo / cluster 部署演练
 
 ## 0. 文档地位
 
-本文是 [`governance-simplification-analysis-v1.md`](./governance-simplification-analysis-v1.md) 之后的 v2 改进方案。
+本文曾是 [`governance-simplification-analysis-v1.md`](./governance-simplification-analysis-v1.md) 之后的 v2 改进方案。截至 2026-04-29，本文用途改为“首批范围关闭基线 + backlog 参考”。
+
+### 0.1 首批范围关闭摘要
+
+v2 第一批实现范围已经足够支撑团队停止继续扩张治理面：P0、P2、P3、P5 plan-only 已关闭到可作为当前基线；P1a 只保留 shadow-only；P1b、P4、P5 executing 不再作为当前推进项。后续只有出现真实 incident、明确发布风险，或有单独批准的新计划时，才重新打开 backlog。
+
+本次关闭不是声明所有技术细节都已产品化，而是明确“不要继续把 v2 做大”。下面章节保留原技术细节，用于维护、排障和后续评审；凡未列入关闭矩阵的内容，都只是 backlog/reference。
+
+### 0.2 完成 / Backlog 矩阵
+
+| 范围 | 当前状态 | 关闭含义 | 后续处理 |
+| --- | --- | --- | --- |
+| P0 观测、状态投影、失败快停 | completed / closed enough | clean entrypoints、status/projection、preflight 和诊断边界已足够作为当前基线 | 只做维护和缺陷修复，不新增公开入口 |
+| P1a evidence claim shadow | shadow-only baseline | 只允许 would-reuse audit；命令仍实际执行，不产生 applied skip | 保持 shadow-only，除非单独评审升级 |
+| P1b real reuse / skip | deferred backlog | 真实复用和真实跳过不属于当前关闭范围 | 需要单独评审 cache policy、证据 owner 和 fail-closed 测试 |
+| P2 内容键构建和镜像跳过 | completed / closed enough | 内容键、VERSION truth、digest skip 和镜像搬运审计已足够作为当前基线 | 只补缺陷，不扩大成新的发布证据体系 |
+| P3 session 化 real lane | completed / closed enough | current coverage mapping、session runner 和 shard evidence 已足够作为当前基线 | 不扩大并行或锁模型，除非有明确隔离计划 |
+| P4 rehearsal modes / world manager | deferred backlog | fast、release-fidelity、offline-package 的进一步 world 管理不属于当前推进项 | 只有真实演练 incident 或明确新计划才重启 |
+| P5 DAG scheduler / CI 收口 | plan-only completed; executing deferred | plan-only 能解释潜在并行和锁原因即可；真实执行 scheduler 不属于当前关闭范围 | 没有明确锁隔离计划前，不启用 executing scheduler |
+
+### 0.3 停止线 / 防膨胀政策
+
+1. 不新增公开入口；普通开发、测试、部署、发布继续只使用 clean entrypoints。
+2. 不新增大而全 schema，不建立第二套工程真相；确需补字段时，只能在现有 current truth owner 下做小步变更。
+3. 不启用真实 verification reuse / skip，除非 P1b 经过单独评审并补齐 fail-closed 覆盖。
+4. 不启用 executing scheduler，除非先有明确的 lock isolation 计划、资源隔离证明和回滚路径。
+5. 不为了“治理看起来更完整”而扩大 release gate、rehearsal 范围或证据清单。
+6. 不把 maintainer diagnostic 命令包装成新的公共 muscle memory。
+
+### 0.4 开发者 / 执行者心智模型
+
+普通开发者只需要用干净入口：`npm run verify`、`npm run verify -- --goal=<...> --run`、`npm run release:ready/status`、`npm run rehearse:*`、`make local-real-*`。状态页或命令输出告诉你下一步，不要求你理解内部 `gate:*`、`lane:*`、`backend-real:*` 或 `release:campaign:*`。
+
+维护者可以阅读本文后续技术细节来维护 adapter、证据 writer、status projection 和诊断产物，但这些内部实现要藏在 clean entrypoints 后面。维护者内部复杂度不应该变成普通开发者的操作负担。
 
 v1 主要解决“人类入口和叙事如何收敛”。v2 继续解决“执行平台如何少做重复工作、如何安全复用证据、如何解释长流程状态、如何缩短部署演练反馈”。两者不是替代关系：
 
@@ -23,9 +57,9 @@ v1 主要解决“人类入口和叙事如何收敛”。v2 继续解决“执�
 4. 机器可读治理真相：`scripts/governance/current-gate-manifest.ts`、`current-workflow-manifest.ts`、`current-verification-campaign-manifest.ts`、`current-runtime-line-manifest.ts`
 5. 当前证据与运行计划模型：`current-evidence-claim-schema.ts`、`current-job-metadata-manifest.ts`、`current-resource-lock-manifest.ts`、`governance-run-plan.ts`
 
-本文中的新对象进入实现前，必须同步 contracts、manifests、docs、tests 和 release gate。若本文与 current truth 冲突，以 current truth 为准，并优先修正文档或 manifests，不允许靠口头约定补齐。
+本文保留下来的未关闭对象进入实现前，必须同步 contracts、manifests、docs、tests 和 release gate。若本文与 current truth 冲突，以 current truth 为准，并优先修正文档或 manifests，不允许靠口头约定补齐。
 
-### 0.1 执行者只读合约
+### 0.5 执行者只读合约
 
 普通开发、测试、部署、发布执行者只需要记住下面入口。v2 的新增能力必须藏在这些入口背后，不能新增公开 muscle memory。
 
@@ -46,7 +80,7 @@ v1 主要解决“人类入口和叙事如何收敛”。v2 继续解决“执�
 3. real、release、rehearsal 等重型验证必须通过显式 goal 或对应 clean entrypoint 触发。
 4. 任何自动跳过都必须在报告中说明证据来源；无法证明时 fail-closed。
 
-### 0.2 v2 对 v1 的扩展关系
+### 0.6 v2 对 v1 的扩展关系
 
 开发团队不需要自行合并 v1 和 v2。实施时按以下规则理解：
 
@@ -58,7 +92,7 @@ v1 主要解决“人类入口和叙事如何收敛”。v2 继续解决“执�
 | rehearsal | demo/cluster rehearsal 是本机排演 | standalone `release-fidelity` 是 release-compatible diagnostic；只有 campaign step 内产物才是 V4 release evidence |
 | 旧命令 | 只能作为 internal adapter / maintainer diagnostic | v2 P0 必须继续保证 help/docs/quick path 不把旧命令当普通入口 |
 
-### 0.3 v2 硬前置
+### 0.7 v2 硬前置
 
 任何实现切片开始前，必须先确认：
 
@@ -154,6 +188,8 @@ v2 的目标是：在不降低治理能力的前提下，大幅降低开发、�
 旧 `gate:*`、`lane:*`、`backend-real:*`、`release:campaign:*` 可以继续作为内部 adapter 或 maintainer diagnostic，但普通开发、测试、发布路径应只暴露 v1 定义的 clean human entrypoints。
 
 ## 5. v2 总体架构
+
+本章到第 12 章保留原设计细节，作为当前基线的维护说明和后续 backlog 参考。只有 0.2 矩阵中标为 completed / closed enough 或 shadow-only baseline 的内容属于首批关闭范围；其他内容不能直接当作当前实现命令。
 
 v2 由六个协作模块组成：
 
@@ -769,9 +805,13 @@ current manifests 已经表达了部分依赖关系，但实际执行仍偏串�
 4. 锁冲突时输出等待的 lock owner 和 safe action。
 5. 任何并行失败都不会覆盖其他 producer evidence。
 
-## 13. 执行阶段计划
+## 13. 阶段状态与 backlog 参考
+
+本节不再是开放式执行计划。0.2 矩阵是当前关闭口径；以下交付和验收项保留为维护参考、缺陷排查清单和后续 backlog 评审输入。
 
 ### P0：观测、状态投影、失败快停
+
+关闭口径：completed / closed enough。P0 只允许继续维护 clean entrypoints、status/projection、preflight 和诊断边界，不再因为 v2 继续扩张公开入口。
 
 目标：先让慢流程变得可解释，并把基础错误前移暴露。P0 同时继承 v1 P0：clean human entrypoints 必须保持唯一公开叙事。
 
@@ -805,6 +845,8 @@ current manifests 已经表达了部分依赖关系，但实际执行仍偏串�
 7. minimal lease/status shadow model 能解释 P3 session runner 的前置锁和状态。
 
 ### P1：Evidence claim 运行时 shadow 与后续启用
+
+关闭口径：P1a 是 shadow-only baseline；P1b 是 deferred backlog。当前不能把 would-reuse audit 升级成真实 reuse / skip。
 
 目标：先让低风险 pure checks 形成可审计的 runtime shadow 闭环，不在 P1a 真实跳过命令。当前策略是 `cache_policy=shadow`；真实 reuse / skip 只能放在 P1b 或后续 enablement，并且必须在 cache policy 升级和单独评审后启用。
 
@@ -849,6 +891,8 @@ current manifests 已经表达了部分依赖关系，但实际执行仍偏串�
 
 ### P2：内容键构建和镜像跳过
 
+关闭口径：completed / closed enough。P2 只保留内容键、VERSION truth、digest skip 和镜像搬运审计的维护边界，不扩展成新的 release verdict 来源。
+
 目标：消除 demo/cluster rehearsal 的重复 build/save/load/push/import。
 
 交付：
@@ -873,6 +917,8 @@ current manifests 已经表达了部分依赖关系，但实际执行仍偏串�
 5. `release-fidelity` / `offline-package` 禁止无 digest 证明的人工 skip。
 
 ### P3：Session 化 real lane
+
+关闭口径：completed / closed enough。P3 只保留 current coverage mapping、session runner 和 shard evidence 的维护边界，不借机扩大并行和锁模型。
 
 目标：消除 backend-real 和 mock e2e 的重复启动。P3 开始前必须已有 minimal lease/status：active run、destructive command lock、port family、secret profile lock。
 
@@ -899,6 +945,8 @@ current manifests 已经表达了部分依赖关系，但实际执行仍偏串�
 
 ### P4：Rehearsal modes 和 world manager
 
+关闭口径：deferred backlog。除非有真实 rehearsal incident 或明确新计划，不继续推进 world manager 扩张。
+
 目标：区分本地快反馈、发布可信度、离线包验证。
 
 交付：
@@ -918,9 +966,18 @@ current manifests 已经表达了部分依赖关系，但实际执行仍偏串�
 
 ### P5：DAG scheduler 和 CI 收口
 
-目标：让治理 runner 真正调度，而不是 shell 串行包装。
+关闭口径：plan-only completed; executing deferred。当前只要求能解释潜在并行和锁原因；真实 executing scheduler 必须等明确 lock isolation 计划。
 
-交付：
+目标（首批关闭范围）：只关闭 plan-only 解释，让团队知道潜在并行、锁原因、resume 关系和 CI 收口方向；真实 executing DAG scheduler deferred，不是当前 marching order。
+
+交付（首批已关闭，plan-only）：
+
+1. plan-only 并行和锁原因解释。
+2. plan-only resume / downstream aggregate 关系说明。
+3. CI 收口方向说明。
+4. campaign-scoped aggregate integration 边界说明。
+
+Backlog/reference（未重新打开前不执行）：
 
 1. executing DAG scheduler。
 2. lease acquisition / renewal / release。
@@ -1023,9 +1080,9 @@ v2 实施必须继续 TDD。建议按层补测试：
 | evidence_paths | 权威证据路径 |
 | authority_paths | aggregate/stage/evidence 对应权威来源 |
 
-## 16. 开发切片建议
+## 16. Backlog 切片参考
 
-推荐顺序：
+如果后续因为真实 incident、明确发布风险或单独批准的新计划重新打开 backlog，可以按下面顺序评审。此列表不再表示当前要继续执行的 marching orders：
 
 1. status projection fixture tests。
 2. stage-events/performance/skip-decisions schema。
@@ -1049,7 +1106,7 @@ v2 实施必须继续 TDD。建议按层补测试：
 20. executing DAG scheduler。
 21. CI 收口。
 
-原则：每个切片都必须可独立验收，并且不能要求开发者先理解未来完整平台才能使用。
+原则：每个切片都必须可独立验收，并且不能要求开发者先理解未来完整平台才能使用。未重新打开前，P1b、P4、P5 executing 只保留为参考项。
 
 ## 17. 风险与缓解
 
@@ -1063,26 +1120,27 @@ v2 实施必须继续 TDD。建议按层补测试：
 | Build cache 隐藏基础镜像漂移 | 发布不可复现 | base digest lock、FORCE_REFRESH、build manifest |
 | 文档过度复杂 | 增加心智负担 | 人类入口保持 v1 clean entrypoints，v2 复杂度只在 maintainer 文档 |
 
-## 18. 完成定义
+## 18. 首批范围关闭定义
 
-v2 不能只看脚本通过。完成必须满足：
+首批范围关闭不能只看脚本通过。关闭口径如下：
 
 1. 人类入口没有增加，仍以 `npm run verify`、`npm run release:ready/status`、`npm run rehearse:*`、`make local-real-*` 为主。
-2. 同源码重复 rehearsal 明显减少昂贵 build/image 操作。
-3. backend-real 和 mock lane 的重复启动次数明显下降。
-4. 真实 verification reuse 都有 valid evidence claim；P1a shadow 阶段只有 would-reuse audit，不做 applied skip；operational skip 都有 skip decision audit。
-5. 失败后 status 能明确 primary blocker 和 safe next action。
-6. standalone release-fidelity 产出 release-compatible diagnostic evidence；V4 release evidence 只来自 campaign-scoped producer evidence。
-7. CI 与本地复用同一 run plan 或同一 projection schema。
-8. 文档、manifests、contracts、tests 同步更新，没有并行叙事。
+2. P0 的 status/projection、preflight 和诊断边界足够让普通开发者知道 primary blocker 和 safe next action。
+3. P2 的内容键、VERSION truth、digest skip 和镜像搬运审计足够减少重复 build/image 操作，但不产生新的 release verdict。
+4. P3 的 current coverage mapping、session runner 和 shard evidence 足够减少 backend-real / mock lane 的重复启动，但不扩大 scheduler 或锁模型。
+5. P1a shadow 阶段只有 would-reuse audit，不做 applied skip；P1b 真实 verification reuse / skip 仍是 deferred backlog。
+6. P4 rehearsal world manager 和 P5 executing scheduler 不属于首批关闭条件；没有真实 incident 或明确新计划时不继续推进。
+7. V4 release evidence 只来自 campaign-scoped producer evidence 与 terminal aggregate，不因 v2 关闭而降低发布证据要求。
+8. 文档、manifests、contracts、tests 与首批关闭范围同步更新，没有并行叙事。
 
-## 19. 推荐首批落地范围
+## 19. 首批范围关闭记录
 
-为了最快降低下一次长任务风险，建议首批只做四件事：
+截至 2026-04-29，首批范围不再是建议计划，而是关闭记录：
 
-1. 完整 P0：clean entrypoints/help/docs、`verify --run` CLI contract、status projection、stage timing、sentinel preflight、minimal lease/status shadow。
-2. P1a stable check identity + pure check evidence claim runtime shadow closure；P1b reuse enablement 单独评审。
-3. P2 app 内容键镜像、llmup external image version/source/digest truth、VERSION truth、digest skip。
-4. P3 current coverage mapping + backend-real session runner 的最小 shard 化。
+1. P0：clean entrypoints/help/docs、`verify --run` CLI contract、status projection、stage timing、sentinel preflight、minimal lease/status shadow，关闭到可维护基线。
+2. P1a：stable check identity + pure check evidence claim runtime shadow closure，只保留 shadow-only；P1b reuse enablement deferred。
+3. P2：app 内容键镜像、llmup external image version/source/digest truth、VERSION truth、digest skip，关闭到可维护基线。
+4. P3：current coverage mapping + backend-real session runner 的最小 shard 化，关闭到可维护基线。
+5. P5：plan-only 并行和锁原因解释关闭到可维护基线；executing scheduler deferred。
 
-这四项风险最低、收益最高，并且不会影响 release verdict 权威边界。后续再进入 rehearsal mode、world manager、executing DAG scheduler。
+这些范围风险最低、收益最高，并且不影响 release verdict 权威边界。P1b、P4、P5 executing 只有在真实 incident 或明确新计划下才重新打开。

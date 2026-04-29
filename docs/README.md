@@ -35,6 +35,8 @@
 
 ### Engineering and testing reference
 - [Engineering Docs Index](./engineering/README.md)
+- [Engineering Governance Developer Flow Optimization v2](./engineering/governance-developer-flow-optimization-v2.md)
+  - `first_scope_closed_2026-04-29`; remaining items are backlog/reference, not current marching orders
 - [Testing Docs Index](./testing/README.md)
 - [Diagnostic Catalog v1](./testing/diagnostic-catalog-v1.md)
   - choose `ui_only`, `local_manual`, or `release_grade`
@@ -42,7 +44,7 @@
 - [Verification Campaigns v1](./testing/verification-campaigns-v1.md)
   - release-grade automated verification campaign guide
   - human release entrypoint: `npm run release:ready`
-  - campaign launcher behind the wrapper: `npm run release:campaign:full`
+  - internal adapter `release:campaign:full` behind `npm run release:ready`
   - use this when you need the current testing principles, evidence model, and execution advice
 
 ### Methodology reference

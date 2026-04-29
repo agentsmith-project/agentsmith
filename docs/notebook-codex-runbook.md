@@ -46,10 +46,22 @@
 
 ```bash
 npm run test:notebook:runner:fast
+```
+
+### Real verification clean path
+
+```bash
+make local-real-status
+npm run verify -- --goal=real --run
+```
+
+### Notebook runner owner diagnostics
+
+```bash
 npm run test:notebook:runner:backend-real
 ```
 
-### Terminal-specific validation
+### Terminal-specific owner diagnostics
 
 ```bash
 npm run test:notebook:backend-real:terminal
@@ -70,14 +82,16 @@ npm run release:status
 | --- | --- |
 | internal adapter `gate:fast` / `gate:default` | Fast/default gate owner rerun. |
 | internal adapter `lane:visual` | Visual lane owner diagnostics. |
-| `npm run backend-real:reset` / `npm run backend-real:bootstrap` / `npm run backend-real:ready` | Backend-real environment diagnostics before an owner rerun. |
+| `make local-real-status` / `make local-real-up` | Clean backend-real status/start before an owner rerun. |
+| `npm run backend-real:reset` / `npm run backend-real:bootstrap` / `npm run backend-real:ready` | Maintainer recovery only after clean status / verify paths fail and owner diagnostics require stack recovery. |
 | internal adapter `lane:backend-real:release` | Backend-real release lane owner rerun. |
 | internal verifier `gate:release:full` | Aggregate-only verifier for an existing campaign context; it does not execute suites. |
 
 如果只排 notebook runner：
 - 先看 `npm run test:notebook:runner:fast`
-- 再看 `npm run test:notebook:runner:backend-real`
-- 最后按需要补 terminal matrix 与 UX
+- 再看 `make local-real-status` 和 `npm run verify -- --goal=real --run`
+- 如果问题仍落在 runner owner，再看 `npm run test:notebook:runner:backend-real`
+- 最后按需要补 terminal matrix 与 UX owner diagnostics
 
 ## 4. Current evidence paths
 
@@ -131,28 +145,38 @@ npm run release:status
 
 ## 7. Current troubleshooting shortcuts
 
-1. 看当前 backend-real stack 是否 ready：
+1. 看当前 clean local-real path 是否 ready：
 ```bash
-npm run backend-real:ready
+make local-real-status
 ```
 
-2. 看 notebook runner fast gate：
+2. 如果未启动，先走 clean start：
+```bash
+make local-real-up
+```
+
+3. 看 notebook runner fast gate：
 ```bash
 npm run test:notebook:runner:fast
 ```
 
-3. 看 notebook runner backend-real gate：
+4. 看 real verification clean entrypoint：
+```bash
+npm run verify -- --goal=real --run
+```
+
+5. 只有问题仍落在 notebook runner owner 时，再看 notebook runner backend-real diagnostics：
 ```bash
 npm run test:notebook:runner:backend-real
 ```
 
-4. 如果问题落在 terminal：
+6. 如果问题落在 terminal：
 ```bash
 npm run test:notebook:backend-real:terminal:matrix
 npm run test:e2e:integration:notebook:terminal:ux
 ```
 
-5. 如果问题落在 Context Store / skills / managed credentials：
+7. 如果问题落在 Context Store / skills / managed credentials：
 ```bash
 npm run test:skills:fast
 npm run test:skills:backend-real

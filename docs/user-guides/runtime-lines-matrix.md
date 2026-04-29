@@ -15,7 +15,8 @@
 ## 当前本机操作基线
 
 1. 本机共享一套 substrate，`local-manual`、`demo-rehearsal`、`cluster-rehearsal` 都复用它。
-2. 同一时间只建议一条本地工作线处于 active；切换前先停掉或 reset 当前工作线。
+2. 普通用户只通过 clean human entrypoints 操作：`make local-real-up` / `make local-real-status` / `make local-real-down` / `make local-real-reset` 与 `npm run rehearse:demo` / `npm run rehearse:cluster`。
+3. 同一时间只建议一条本地工作线处于 active；切换前先用 clean entrypoint 停掉、查看或重置当前工作线。
 
 ## 持续生效的 runtime contract
 
@@ -26,10 +27,10 @@
 
 | 运行线 | 当前正式命名 | 主要用途 | external 路径 | internal 路径 | substrate | 备注 |
 |-------|-------------|---------|--------------|--------------|----------|------|
-| 本地真实手测线 | `local-manual` | 日常开发、真实后端手测、notebook / runner 手测 | 默认启用 | 通过 `local-manual-internal-up` 显式开启 | 共享本地 substrate | 当前推荐本机真实手测入口 |
-| demo 本机排演线 | `demo-rehearsal` | 本机排演 demo 发布线 | `DEMO_DEPLOY_MODE=simple` 时 external-only | `DEMO_DEPLOY_MODE=full` 时启用，运行在本地 `kind` | 共享本地 substrate | 使用 scenario-owned `agentsmith-demo` 与 `agentsmith-demo-registry` |
+| 本地真实手测线 | `local-manual` | 日常开发、真实后端手测、notebook / runner 手测 | 通过 `make local-real-up` 启动，`make local-real-status` 查看 | 普通用户不直接开启；仅 owner runbook 明确要求时走 internal owner diagnostic adapter | 共享本地 substrate | 停止/重置使用 `make local-real-down` / `make local-real-reset` |
+| demo 本机排演线 | `demo-rehearsal` | 本机排演 demo 发布线 | `npm run rehearse:demo` | `DEMO_DEPLOY_MODE=full` 时由 clean entrypoint 封装启用，运行在本地 `kind` | 共享本地 substrate | 状态入口是 `npm run rehearse:demo -- --status`；底层 adapters 只属于 owner runbook/internal adapter |
 | demo 正式发布线 | `demo-deploy` | 单机 / demo 环境发布 | `simple` | `full` | 目标主机上的 compose substrate | 目标主机 release 线，不是本机 rehearsal 入口 |
-| cluster 本机排演线 | `cluster-rehearsal` | 本机排演真实集群发布线 | 始终包含 external runner | 始终包含 internal k8s 执行面 | 共享本地 substrate | 使用 scenario-owned `agentsmith-cluster` 与 `agentsmith-cluster-registry` |
+| cluster 本机排演线 | `cluster-rehearsal` | 本机排演真实集群发布线 | `npm run rehearse:cluster` | 由 clean entrypoint 封装 internal k8s 执行面 | 共享本地 substrate | 状态入口是 `npm run rehearse:cluster -- --status`；底层 adapters 只属于 owner runbook/internal adapter |
 | cluster 正式发布线 | `cluster-deploy` | 真实集群发布 | 始终包含 external runner | 始终包含 internal k8s 执行面 | 目标主机上的 compose substrate | mode 描述自动化边界，不是 external/internal 能力差异 |
 <!-- current-runtime-lines:runtime-matrix:end -->
 
@@ -71,8 +72,12 @@
 ### `local-manual`
 
 - 默认只保证 external 路径。
-- 需要 internal notebook / sandbox / JuiceFS 时，再执行：
-  - `make local-manual-internal-up`
+- 普通本机真实手测使用 clean local-real 入口：
+  - `make local-real-up`
+  - `make local-real-status`
+  - `make local-real-down`
+  - `make local-real-reset`
+- 需要 internal notebook / sandbox / JuiceFS 诊断时，只有 owner runbook 明确要求才进入 internal owner diagnostic adapter；它不是普通建议路径。
 
 ### `demo-deploy`
 
@@ -130,12 +135,12 @@
 - `simple` / `full` 行为
 - 本地 `kind` internal 执行面
 
-顺序是：
+普通入口是：
 
-1. `make demo-rehearsal-up`
-2. `make demo-rehearsal-bootstrap`
-3. `make demo-rehearsal-verify`
-4. `make demo-rehearsal-report`
+1. `npm run rehearse:demo`
+2. `npm run rehearse:demo -- --status`
+
+clean entrypoint 会封装底层 `reset` / `up` / `bootstrap` / `verify` / `report` 阶段；底层 adapters 只属于 owner runbook/internal adapter，不列成普通执行顺序。
 
 ### `cluster-rehearsal`
 
@@ -149,12 +154,12 @@
 - sandbox deploy / bootstrap / verify / report
 - generated handoff artifacts under `state/generated/`, so rehearsal `reset` can return to a clean-room starting point
 
-顺序是：
+普通入口是：
 
-1. `make cluster-rehearsal-up`
-2. `make cluster-rehearsal-bootstrap`
-3. `make cluster-rehearsal-verify`
-4. `make cluster-rehearsal-report`
+1. `npm run rehearse:cluster`
+2. `npm run rehearse:cluster -- --status`
+
+clean entrypoint 会封装底层 `reset` / `up` / `bootstrap` / `verify` / `report` 阶段；底层 adapters 只属于 owner runbook/internal adapter，不列成普通执行顺序。
 
 注意：
 
@@ -167,17 +172,19 @@
 
 推荐切换方式：
 
-1. `make local-manual-down`
-2. `make demo-rehearsal-up`
+1. `make local-real-down`
+2. `npm run rehearse:demo`
+3. `npm run rehearse:demo -- --status`
 
 或者：
 
-1. `make demo-rehearsal-down`
-2. `make cluster-rehearsal-up`
+1. `npm run rehearse:demo -- --status`
+2. `npm run rehearse:cluster`
+3. `npm run rehearse:cluster -- --status`
 
-如果底座脏了，再加：
+如果本机真实手测环境脏了，再用 clean local-real 入口重置：
 
-1. `make substrate-reset`
+1. `make local-real-reset`
 
 ## 最短理解
 

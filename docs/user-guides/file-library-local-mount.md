@@ -154,21 +154,27 @@ This is expected. A file library must be empty before it can be deleted.
 
 ## Release Checks
 
-The release-grade validation commands are:
+Release sign-off uses:
 
 ```bash
-npm run test:files:backend-real:smoke
-npm run test:files:backend-real:sync
-npm run test:e2e:integration:files:management-ux
+npm run release:ready
 ```
 
-For the combined real gate:
+For status review after sign-off:
 
 ```bash
-bash scripts/run-file-library-real-gate.sh
+npm run release:status
 ```
 
-Expected resource recovery proof:
+Focused Files owner diagnostics and prerequisite evidence checks include:
+- `npm run test:files:backend-real:smoke`
+- `npm run test:files:backend-real:sync`
+- `npm run test:e2e:integration:files:management-ux`
+- `bash scripts/run-file-library-real-gate.sh`
+
+These module commands are useful when investigating Files behavior or preparing evidence, but they are not release-grade verdicts by themselves.
+
+Expected resource recovery proof from the Files real-gate diagnostic:
 - a `boot-baseline.json` snapshot is captured before the API starts, and `file-library-api-startup.json` turns that boot snapshot into an explicit startup verdict instead of summary-only evidence
 - startup quiesce proof is bound to a saved authority object in `startup-quiesce.authority.json`, so freeze and failure observation both revalidate the same owned listener identity instead of trusting pid-only handoff
 - temporary file-library gateway state returns exactly to the pre-run baseline
@@ -182,7 +188,7 @@ Failure-path expectation:
 - each smoke step must still emit its recovery verify report even when that smoke step itself fails
 - the final summary is allowed to pass only when every required step report exists and all recovery checks return to baseline
 
-The real gate writes a structured recovery report under:
+The Files real-gate diagnostic writes a structured recovery report under:
 - `artifacts/backend-real/current/file-library-real-gate/resource-recovery/boot-baseline.json`
 - `artifacts/backend-real/current/file-library-real-gate/resource-recovery/baseline.json`
 - `artifacts/backend-real/current/file-library-real-gate/resource-recovery/startup-quiesce.snapshot.json`
@@ -200,14 +206,14 @@ The real gate writes a structured recovery report under:
 - `file-library-api-startup.json` distinguishes whether startup was evaluated against the ready baseline, the startup candidate, or the failure observation
 - `baseline.json` exists only when the ready baseline was actually frozen and is the baseline that every smoke step must return to
 
-This report is a file-library real-gate substep artifact.
+This report is a file-library diagnostic substep artifact.
 It is not a new global governance evidence kind.
 
-The Files management walkthrough command above is the release-grade UX check for:
+The Files management walkthrough diagnostic above checks:
 - `ready` libraries remaining mountable
 - `degraded` libraries showing recovery guidance instead of a misleading loading state
 - delete confirmation using explicit cleanup wording
-- screenshot artifacts being generated for release evidence
+- screenshot artifacts being generated for evidence review
 
 The screenshot evidence is written under `test-results/` so the release reviewer can inspect:
 - ready library overview

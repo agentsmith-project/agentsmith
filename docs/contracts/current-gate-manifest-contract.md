@@ -53,7 +53,7 @@ It does not redefine product permissions, route gates, or OpenAPI behavior.
 - does **not** run the full visual lane
 
 3. `lane:visual`
-- the only current command that owns the full visual verification lane
+- the internal evidence owner / registered owner for full visual verification
 - must stay separate from `gate:default`
 - owns required `visual_scene_catalog` story evidence
 - missing catalog evidence is blocking for `visual` and `release`

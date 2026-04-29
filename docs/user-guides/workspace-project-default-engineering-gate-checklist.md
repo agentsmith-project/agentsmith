@@ -35,12 +35,13 @@ Expected:
 
 ## 3. Default Engineering Gate
 
-Run:
+Run the clean PR verification entry:
 
 ```bash
-npx tsc --noEmit
-npm run test:default-e2e
+npm run verify -- --goal=pr --run
 ```
+
+Use `npm run verify` when you only need the dry-run plan.
 
 Expected:
 
@@ -48,11 +49,19 @@ Expected:
 2. Default-route component and route tests pass.
 3. Backend permission and workspace governance tests pass.
 4. Mock lane E2E and targeted visual both pass.
-5. Full visual verification remains in `npm run lane:visual`, not in this default gate.
+5. Full visual verification runs through `npm run verify -- --goal=visual --run`, not through this default gate; internal evidence ownership remains `lane:visual`.
+
+Owner diagnostics:
+
+```bash
+npm run test:default-e2e
+```
+
+`npm run test:default-e2e` is a focused diagnostics / evidence-owner producer rerun. Do not treat it as completion of the default PR gate.
 
 ## 4. Default E2E Coverage
 
-The default gate already runs these:
+The PR verification default gate includes these E2E specs through its internal evidence producers:
 
 1. `e2e/system-workspace-default.spec.ts`
 2. `e2e/workspace-settings.spec.ts`
@@ -65,7 +74,7 @@ Expected:
 
 ## 5. Visual Coverage
 
-This gate owns targeted visual coverage only. Full visual verification belongs to `npm run lane:visual`.
+This gate owns targeted visual coverage only. Run full visual verification with `npm run verify -- --goal=visual --run`; internal evidence ownership remains `lane:visual`.
 
 The default gate also runs targeted visual coverage for the default entry pages:
 
@@ -92,11 +101,19 @@ Then rerun the same command without `--update-snapshots`.
 
 ## 6. Optional Real Backend Verification
 
-Before release-oriented verification, also run:
+When day-to-day verification needs the real backend lane, run:
+
+```bash
+npm run verify -- --goal=real --run
+```
+
+When you need focused owner diagnostics or prerequisite evidence before the release gate, rerun the owner producer:
 
 ```bash
 npm run test:backend-real:core
 ```
+
+`npm run test:backend-real:core` is a focused diagnostics / evidence-owner producer rerun, not the daily real-backend gate entry and not release sign-off. Release sign-off remains `npm run release:ready`.
 
 This adds:
 

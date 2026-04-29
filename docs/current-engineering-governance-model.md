@@ -53,7 +53,7 @@ Current gate truth:
 - gate-result writer truth is `gate_id + line_kind`; adapter fields such as `npm_script` and `ci_job` are runtime metadata, not identity.
 - `failure_class` is a gate-level verdict field, not a best-effort log tag. Current enum: `none`, `product_regression`, `infra_setup_failure`, `environment_conflict`, `contract_drift`, `evidence_missing`.
 - `gate:default` does not own the full visual lane.
-- `lane:visual` is the only current command that owns full visual verification.
+- `lane:visual` is the internal full visual evidence owner / verification owner; human execution uses clean entrypoints such as `npm run verify -- --goal=visual --run` outside release and `npm run release:ready` for release-grade sign-off.
 
 Verification governance rules:
 - Focused `测试` commands and targeted `验证通道` runs are diagnosis paths used to localize failures, verify one subsystem, or regenerate one evidence family.
@@ -199,7 +199,8 @@ Important:
 
 5. Ownership rule
 - `gate:default` may contain targeted visual checks inside domain gates.
-- `lane:visual` is the only current full visual lane.
+- `lane:visual` is the internal full visual evidence owner / verification owner.
+- Human full visual execution outside release uses `npm run verify -- --goal=visual --run`; release-grade sign-off uses `npm run release:ready`.
 - `lane:visual` owns `visual_scene_catalog` evidence through `e2e/visual-baseline-support.ts` and the committed baseline set under `e2e/__screenshots__/visual.spec.ts`.
 - `lane:visual` release authority is producer-owned `artifacts/visual-baseline-reviews/<run-id>/run-manifest.json` with run-scoped `captured/<scenario-id>/<file>` actual screenshots.
 - `test:backend-real:core` and `lane:backend-real:core` own default-tier `ux_trace_bundle` evidence through `artifacts/backend-real/runs/<run-id>/ux-traces`.

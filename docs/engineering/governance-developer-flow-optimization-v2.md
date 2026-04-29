@@ -42,20 +42,20 @@ v2 第一批实现范围已经足够支撑团队停止继续扩张治理面：P0
 
 维护者可以阅读本文后续技术细节来维护 adapter、证据 writer、status projection 和诊断产物，但这些内部实现要藏在 clean entrypoints 后面。维护者内部复杂度不应该变成普通开发者的操作负担。
 
-v1 主要解决“人类入口和叙事如何收敛”。v2 继续解决“执行平台如何少做重复工作、如何安全复用证据、如何解释长流程状态、如何缩短部署演练反馈”。两者不是替代关系：
+历史背景：v1 曾提出“人类入口和叙事如何收敛”的方向，v2 曾继续讨论“执行平台如何少做重复工作、如何安全复用证据、如何解释长流程状态、如何缩短部署演练反馈”。2026-04-29 v2 第一批范围关闭后，v1 只作为历史背景，不再与 v2 合并成当前实施计划。
 
 | 文档 | 关注点 | 不变约束 |
 | --- | --- | --- |
-| v1 | 入口收敛、story/risk/level 模型、evidence claim 方向、governance runner 初步分层 | 不降低 release readiness 证据要求 |
-| v2 | 增量验证、内容键构建、session 化 real lane、rehearsal world 复用、operator projection、阶段化诊断 | 不绕过 producer-owned evidence 和 terminal aggregate |
+| v1 historical background | 入口收敛、story/risk/level 模型、evidence claim 方向、governance runner 初步分层 | 不降低 release readiness 证据要求 |
+| v2 closure record / backlog reference | 增量验证、内容键构建、session 化 real lane、rehearsal world 复用、operator projection、阶段化诊断 | 不绕过 producer-owned evidence 和 terminal aggregate |
 
 本文不是新的 authoritative truth。当前工程真相仍然以以下对象为准：
 
-1. 产品范围与术语：[`docs/项目宪法.md`](../项目宪法.md)、[`docs/contracts/product-terminology.md`](../contracts/product-terminology.md)
-2. 工程治理方法论：[`docs/design/agentsmith-product-engineering-governance-methodology-v1.md`](../design/agentsmith-product-engineering-governance-methodology-v1.md)
-3. v1 治理收敛计划：[`governance-simplification-analysis-v1.md`](./governance-simplification-analysis-v1.md)
-4. 机器可读治理真相：`scripts/governance/current-gate-manifest.ts`、`current-workflow-manifest.ts`、`current-verification-campaign-manifest.ts`、`current-runtime-line-manifest.ts`
-5. 当前证据与运行计划模型：`current-evidence-claim-schema.ts`、`current-job-metadata-manifest.ts`、`current-resource-lock-manifest.ts`、`governance-run-plan.ts`
+1. 当前工程治理：[`docs/current-engineering-governance-model.md`](../current-engineering-governance-model.md)
+2. 机器可读治理真相：`scripts/governance/current-gate-manifest.ts`、`current-workflow-manifest.ts`、`current-verification-campaign-manifest.ts`、`current-runtime-line-manifest.ts`
+3. 当前证据与运行计划模型：`current-evidence-claim-schema.ts`、`current-job-metadata-manifest.ts`、`current-resource-lock-manifest.ts`、`governance-run-plan.ts`
+4. 当前 contracts：[`docs/contracts/`](../contracts/)
+5. 产品范围与术语：[`docs/项目宪法.md`](../项目宪法.md)、[`docs/contracts/product-terminology.md`](../contracts/product-terminology.md)
 
 本文保留下来的未关闭对象进入实现前，必须同步 contracts、manifests、docs、tests 和 release gate。若本文与 current truth 冲突，以 current truth 为准，并优先修正文档或 manifests，不允许靠口头约定补齐。
 
@@ -80,13 +80,13 @@ v1 主要解决“人类入口和叙事如何收敛”。v2 继续解决“执�
 3. real、release、rehearsal 等重型验证必须通过显式 goal 或对应 clean entrypoint 触发。
 4. 任何自动跳过都必须在报告中说明证据来源；无法证明时 fail-closed。
 
-### 0.6 v2 对 v1 的扩展关系
+### 0.6 历史 v1 背景与 v2 闭合关系
 
-开发团队不需要自行合并 v1 和 v2。实施时按以下规则理解：
+开发团队不需要自行合并 v1 和 v2，也不应从 v1 恢复历史实施计划。维护或评审时按以下规则理解：
 
-| 主题 | v1 保持不变 | v2 新增要求 |
+| 主题 | 历史 v1 背景 | v2 关闭口径 |
 | --- | --- | --- |
-| 人类入口 | v1 clean entrypoints 是唯一公开入口 | v2 不新增公开入口，只增强 status/projection 和底层执行 |
+| 人类入口 | clean entrypoints 收敛方向 | v2 不新增公开入口，只维护已关闭的 status/projection 和底层执行边界 |
 | release verdict | 只来自 campaign-scoped producer evidence + terminal aggregate | projection 只能引用 aggregate result，不产生 verdict |
 | evidence claim | 是可复用证据索引，不是 verdict source | claim 只索引 producer-owned result/evidence，不承载 session/build cache |
 | rehearsal | demo/cluster rehearsal 是本机排演 | standalone `release-fidelity` 是 release-compatible diagnostic；只有 campaign step 内产物才是 V4 release evidence |
@@ -130,7 +130,7 @@ v2 的目标是：在不降低治理能力的前提下，大幅降低开发、�
 
 预期效果：
 
-| 场景 | v1 / 当前痛点 | v2 目标 |
+| 场景 | 历史痛点 | v2 目标 |
 | --- | --- | --- |
 | 基础配置错误 | 常在长时间 build/e2e 后才暴露 | 1-2 分钟内由 sentinel preflight 失败快停 |
 | 同源码重复 rehearsal | 仍可能重建 app、重复搬运 llmup 镜像、全量 save/load/push/import | 内容键和外部镜像版本命中后跳过昂贵构建和镜像搬运 |
@@ -185,7 +185,7 @@ v2 的目标是：在不降低治理能力的前提下，大幅降低开发、�
 
 ### 4.6 Keep old complexity internal
 
-旧 `gate:*`、`lane:*`、`backend-real:*`、`release:campaign:*` 可以继续作为内部 adapter 或 maintainer diagnostic，但普通开发、测试、发布路径应只暴露 v1 定义的 clean human entrypoints。
+旧 `gate:*`、`lane:*`、`backend-real:*`、`release:campaign:*` 可以继续作为内部 adapter 或 maintainer diagnostic，但普通开发、测试、发布路径应只暴露当前 clean human entrypoints。
 
 ## 5. v2 总体架构
 
@@ -605,7 +605,9 @@ retry 必须基于结构化结果分类：
 
 ## 10. Rehearsal World Manager
 
-### 10.1 目标
+本节属于 P4 deferred backlog 参考。只有因真实 rehearsal incident 或明确新计划重新打开 P4 时，下列目标、`必须` 和验收项才成为可执行要求；未重启前不得作为当前实施清单。
+
+### 10.1 目标参考
 
 demo/cluster rehearsal 应同时支持快反馈和发布可信度。v2 使用独立 `REHEARSAL_MODE` 明确区分。不要复用 `DEMO_DEPLOY_MODE` 或 `CLUSTER_DEPLOY_MODE` 表达 rehearsal 语义，避免部署模式和演练可信度模式混淆。
 
@@ -669,7 +671,7 @@ fast mode 允许复用 world，但必须同时满足：
 
 否则 fail-closed，要求更高 reset level。
 
-### 10.5 Rehearsal 验收
+### 10.5 Rehearsal 验收参考
 
 1. `fast` 重跑同源码时不重建 world，不全量导入镜像。
 2. standalone `release-fidelity` 仍执行 deploy/bootstrap/verify/report，并产出 release-compatible diagnostic evidence。
@@ -757,11 +759,13 @@ Projection 必须提供 owner map：
 
 ## 12. DAG Scheduling 和资源锁
 
+本节属于 P5 executing deferred 参考。除 plan-only 的并行/锁原因解释外，真实 scheduler、并行执行和锁细化只有因 incident 或明确计划重新打开 P5 executing 后才评审。
+
 ### 12.1 当前问题
 
-current manifests 已经表达了部分依赖关系，但实际执行仍偏串行。v2 应逐步把 run plan 变成真正 scheduler。
+current manifests 已经表达了部分依赖关系，但实际执行仍偏串行。只有重新打开 P5 executing 时，才继续评审把 run plan 变成真正 scheduler。
 
-### 12.2 并行原则
+### 12.2 并行原则参考
 
 可以优先并行：
 
@@ -782,7 +786,7 @@ current manifests 已经表达了部分依赖关系，但实际执行仍偏串�
 
 ### 12.3 资源锁细化
 
-现有 lock 偏粗。v2 应把锁从 local host 级逐步拆为：
+现有 lock 偏粗。只有重新打开 P5 executing 时，才评审把锁从 local host 级逐步拆为：
 
 | Lock | Scope key |
 | --- | --- |
@@ -797,7 +801,7 @@ current manifests 已经表达了部分依赖关系，但实际执行仍偏串�
 
 细化锁必须先 shadow 观察，再启用并发。不能为了并行牺牲隔离。
 
-### 12.4 Scheduler 验收
+### 12.4 Scheduler 验收参考
 
 1. plan-only 输出显示可并行组和锁原因。
 2. 非 release 目标在锁允许时可安全并行 pure checks。
@@ -813,7 +817,7 @@ current manifests 已经表达了部分依赖关系，但实际执行仍偏串�
 
 关闭口径：completed / closed enough。P0 只允许继续维护 clean entrypoints、status/projection、preflight 和诊断边界，不再因为 v2 继续扩张公开入口。
 
-目标：先让慢流程变得可解释，并把基础错误前移暴露。P0 同时继承 v1 P0：clean human entrypoints 必须保持唯一公开叙事。
+目标：先让慢流程变得可解释，并把基础错误前移暴露。P0 沿用已进入 current guidance 的 clean human entrypoints：这些入口必须保持唯一公开叙事。
 
 交付：
 
@@ -876,14 +880,14 @@ current manifests 已经表达了部分依赖关系，但实际执行仍偏串�
 
 #### P1b：reuse / skip enablement
 
-交付：
+交付参考（仅在重新打开 P1b 后评审）：
 
 1. 将具体 pure check 的 cache policy 从 `shadow` 升级为允许真实 reuse / skip 的策略。
 2. 针对每个升级的 producer 单独评审 stable identity、input digest、artifact digest、result digest、freshness 和 failure mode。
 3. 扩展 summary，明确区分 shadow would-reuse、applied reuse、forced rerun 和 fail-closed rerun。
 4. 增加真实 skip 的 contract/unit 覆盖，证明 digest mismatch、缺失 artifact、scope mismatch、producer mismatch 时 fail-closed。
 
-验收：
+验收参考（仅在重新打开 P1b 后适用）：
 
 1. 未完成 cache policy 升级和单独评审前，任何 pure check 都不能真实 reuse / skip。
 2. applied reuse 必须引用 valid claim，并在 audit summary 中给出 claim id、producer、digest 和 freshness。
@@ -947,9 +951,9 @@ current manifests 已经表达了部分依赖关系，但实际执行仍偏串�
 
 关闭口径：deferred backlog。除非有真实 rehearsal incident 或明确新计划，不继续推进 world manager 扩张。
 
-目标：区分本地快反馈、发布可信度、离线包验证。
+目标参考（仅在重新打开后评审）：区分本地快反馈、发布可信度、离线包验证。
 
-交付：
+交付参考（仅在重新打开后评审）：
 
 1. 独立 `REHEARSAL_MODE=fast|release-fidelity|offline-package`。
 2. reset levels。
@@ -957,7 +961,7 @@ current manifests 已经表达了部分依赖关系，但实际执行仍偏串�
 4. manifest hash driven rollout。
 5. no-diff rollout skip evidence。
 
-验收：
+验收参考（仅在重新打开后评审）：
 
 1. fast mode 同源码重跑显著加快。
 2. standalone release-fidelity 不降低 release-compatible diagnostic 证据。
@@ -966,7 +970,7 @@ current manifests 已经表达了部分依赖关系，但实际执行仍偏串�
 
 ### P5：DAG scheduler 和 CI 收口
 
-关闭口径：plan-only completed; executing deferred。当前只要求能解释潜在并行和锁原因；真实 executing scheduler 必须等明确 lock isolation 计划。
+关闭口径：plan-only completed; executing deferred。当前只要求能解释潜在并行和锁原因；真实 executing scheduler 只有在 incident 或明确计划重新打开、且有明确 lock isolation 计划后才评审。
 
 目标（首批关闭范围）：只关闭 plan-only 解释，让团队知道潜在并行、锁原因、resume 关系和 CI 收口方向；真实 executing DAG scheduler deferred，不是当前 marching order。
 
@@ -986,7 +990,7 @@ Backlog/reference（未重新打开前不执行）：
 5. CI 入口收敛。
 6. campaign-scoped aggregate integration。
 
-验收：
+验收参考（executing scheduler 重新打开后才适用）：
 
 1. `gate-default` 和 visual 在 lock manifest 允许后可安全并行；允许前只做 plan-only shadow。
 2. 失败后 resume plan 指出需要补跑的 producers 和 downstream aggregate。
@@ -995,7 +999,7 @@ Backlog/reference（未重新打开前不执行）：
 
 ## 14. TDD 与验证策略
 
-v2 实施必须继续 TDD。建议按层补测试：
+已关闭范围只保留当前回归要求。若 backlog 因 incident 或明确计划重新打开，对应切片必须继续 TDD，并按层补测试：
 
 | 层 | 测试 |
 | --- | --- |
@@ -1019,7 +1023,7 @@ v2 实施必须继续 TDD。建议按层补测试：
 8. `VERSION.release_id` 与 deploy state 一致性测试。
 9. `SKIP_BUNDLED_IMAGE_LOAD` 在 release-fidelity/offline-package 下的 fail-closed 测试。
 
-每个阶段至少需要：
+重新打开的每个阶段至少需要：
 
 1. unit tests。
 2. contract/schema tests。
@@ -1106,7 +1110,7 @@ v2 实施必须继续 TDD。建议按层补测试：
 20. executing DAG scheduler。
 21. CI 收口。
 
-原则：每个切片都必须可独立验收，并且不能要求开发者先理解未来完整平台才能使用。未重新打开前，P1b、P4、P5 executing 只保留为参考项。
+原则：若 backlog 被重新打开，每个切片都必须可独立验收，并且不能要求开发者先理解未来完整平台才能使用。未重新打开前，P1b、P4、P5 executing 只保留为参考项。
 
 ## 17. 风险与缓解
 
@@ -1118,7 +1122,7 @@ v2 实施必须继续 TDD。建议按层补测试：
 | status projection 变成第二套真相 | 用户误判 verdict | projection 只读，并显示 authority paths |
 | session 化导致测试串状态 | 假阳性/假阴性 | shard isolation、DB checkpoint、workspace isolation |
 | Build cache 隐藏基础镜像漂移 | 发布不可复现 | base digest lock、FORCE_REFRESH、build manifest |
-| 文档过度复杂 | 增加心智负担 | 人类入口保持 v1 clean entrypoints，v2 复杂度只在 maintainer 文档 |
+| 文档过度复杂 | 增加心智负担 | 人类入口保持当前 clean entrypoints，v2 复杂度只在 maintainer 文档 |
 
 ## 18. 首批范围关闭定义
 

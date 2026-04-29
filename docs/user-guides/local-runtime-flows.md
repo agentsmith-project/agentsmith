@@ -40,47 +40,46 @@ Machine-readable source:
 - `demo-rehearsal` → `artifacts/runtime/lines/demo-rehearsal/current`
 - `cluster-rehearsal` → `artifacts/runtime/lines/cluster-rehearsal/current`
 
-## 先管底座
+## 普通本机真实环境入口
 
-常用命令：
+普通开发、真实后端手测、人工 UX/UI 巡检默认只用 clean local-real 入口：
 
 ```bash
-make substrate-up
-make substrate-reseed
-make substrate-status
-make substrate-down
-make substrate-reset
+make local-real-up
+make local-real-status
+make local-real-down
+make local-real-reset
 ```
 
 含义：
 
-- `substrate-up`
-  - 启动共享底座
-- `substrate-reseed`
-  - 重建最小可用数据
-- `substrate-status`
-  - 查看底座状态
-- `substrate-down`
-  - 停掉底座，但不删数据
-- `substrate-reset`
-  - 清空底座并回到干净状态
+- `local-real-up`
+  - 启动真实本地环境
+- `local-real-status`
+  - 查看真实本地环境状态
+- `local-real-down`
+  - 停掉真实本地环境
+- `local-real-reset`
+  - 清空并重建真实本地环境
 
 推荐习惯：
 
 ```bash
-make substrate-up
-make substrate-reseed
+make local-real-up
+make local-real-status
 ```
 
 只有在环境明显脏了、端口冲突了、或者要彻底重来时，再用：
 
 ```bash
-make substrate-reset
+make local-real-reset
 ```
+
+底层实现仍然复用共享 substrate 和 `local-manual` runtime line；这些低层命令只用于 maintainer diagnostics、owner runbook 或实现排障，不是新人默认 copyable 路径。
 
 ## 三条本地工作线
 
-### 1. `local-manual`
+### 1. `local_manual` / 本机真实环境
 
 用途：
 
@@ -89,23 +88,20 @@ make substrate-reset
 - Notebook / external runner 手测
 - 默认只保证 external 路径，不默认开启 internal sandbox
 
-常用命令：
+普通入口：
 
 ```bash
-make local-manual-up
-make local-manual-seed-notebook
-make local-manual-status
-make local-manual-down
-make local-manual-reset
+make local-real-up
+make local-real-status
+make local-real-down
+make local-real-reset
 ```
 
 推荐顺序：
 
 ```bash
-make substrate-up
-make substrate-reseed
-make local-manual-up
-make local-manual-seed-notebook
+make local-real-up
+make local-real-status
 ```
 
 默认端口约定：
@@ -116,11 +112,12 @@ PORT_WEB=3101
 PROXY_PORT=39080
 ```
 
-如果 `local-manual-up` 直接提示共享 substrate 端口被占用，说明当前机器上还有别的工作线占着共享底座；先执行对应的 `*-down` 或 `*-reset`，不要强行并跑。
+如果 `local-real-up` 直接提示共享底座端口被占用，说明当前机器上还有别的工作线占着底层环境；先执行对应的 clean `*-down` 或 `*-reset`，不要强行并跑。
 
-如果要在本机补 internal notebook / sandbox / JuiceFS 验证，再执行：
+如果要补 Notebook demo seeding、host external runner 或 internal notebook / sandbox / JuiceFS 验证，只在 owner runbook 明确要求时使用底层 maintainer diagnostic adapter：
 
 ```bash
+make local-manual-seed-notebook
 make local-manual-internal-up
 make local-manual-internal-status
 ```
@@ -140,26 +137,19 @@ make local-manual-internal-down
 - `up` 只推进到 environment-ready
 - `bootstrap` / `verify` / `report` 分阶段执行
 
-常用命令：
+普通入口：
 
 ```bash
-make demo-rehearsal-up
-make demo-rehearsal-bootstrap
-make demo-rehearsal-verify
-make demo-rehearsal-report
-make demo-rehearsal-status
-make demo-rehearsal-down
-make demo-rehearsal-reset
+npm run rehearse:demo
+npm run rehearse:demo -- --status
 ```
 
-推荐顺序：
+底层 `make demo-rehearsal-*` 只作为 owner runbook 里的 internal adapter 使用，不作为普通 copyable 顺序。
+
+切换前如果本机真实环境还在运行，先停 clean local-real：
 
 ```bash
-make local-manual-down
-make demo-rehearsal-up
-make demo-rehearsal-bootstrap
-make demo-rehearsal-verify
-make demo-rehearsal-report
+make local-real-down
 ```
 
 ### 3. `cluster-rehearsal`
@@ -173,27 +163,14 @@ make demo-rehearsal-report
 - `bootstrap` 负责 admin handoff 后续动作、cluster prerequisites、sandbox deploy 和 bootstrap
 - `verify` / `report` 分阶段执行
 
-常用命令：
+普通入口：
 
 ```bash
-make cluster-rehearsal-up
-make cluster-rehearsal-bootstrap
-make cluster-rehearsal-verify
-make cluster-rehearsal-report
-make cluster-rehearsal-status
-make cluster-rehearsal-down
-make cluster-rehearsal-reset
+npm run rehearse:cluster
+npm run rehearse:cluster -- --status
 ```
 
-推荐顺序：
-
-```bash
-make demo-rehearsal-down
-make cluster-rehearsal-up
-make cluster-rehearsal-bootstrap
-make cluster-rehearsal-verify
-make cluster-rehearsal-report
-```
+底层 `make cluster-rehearsal-*` 只作为 owner runbook 里的 internal adapter 使用，不作为普通 copyable 顺序。
 
 ## 怎么切换
 
@@ -203,39 +180,38 @@ make cluster-rehearsal-report
 2. 保留共享底座
 3. 起下一条工作线
 
-例如从 `local-manual` 切到 `demo-rehearsal`：
+例如从本机真实环境切到 `demo-rehearsal`：
 
 ```bash
-make local-manual-down
-make demo-rehearsal-up
+make local-real-down
+npm run rehearse:demo
 ```
 
 例如从 `demo-rehearsal` 切到 `cluster-rehearsal`：
 
 ```bash
-make demo-rehearsal-down
-make cluster-rehearsal-up
+npm run rehearse:cluster
 ```
 
 如果你怀疑底座已经脏了，再加一步：
 
 ```bash
-make substrate-reset
+make local-real-reset
 ```
 
 ## 什么时候用哪条线
 
 - 平时开发和页面 / API 手测
-  - 用 `local-manual`
+  - 用 `make local-real-up`
 - 要快速验证 external notebook / runner
-  - 继续用默认 `local-manual`
+  - 先用 `make local-real-up`，需要 demo seeding 时按 owner diagnostic 执行底层 adapter
 - 要在本机验证 internal notebook / sandbox / JuiceFS
-  - 先起 `local-manual`
-  - 再执行 `local-manual-internal-up`
+  - 先起 `make local-real-up`
+  - 再按 owner diagnostic 执行 internal adapter
 - 要验证 demo 单机发布线
-  - 用 `demo-rehearsal`
+  - 用 `npm run rehearse:demo`
 - 要验证 cluster 发布线
-  - 用 `cluster-rehearsal`
+  - 用 `npm run rehearse:cluster`
 - 要对真实目标主机发布
   - 不用这份文档
   - 看 `demo-deploy-operations.md` 或 `cluster-deploy-operations.md`
@@ -243,17 +219,16 @@ make substrate-reset
 - 要跑 `backend-real` / `run-integration-e2e-full`
   - 默认走独立 support-service 端口
   - 当前基线是 `25432 / 27027 / 26379 / 29000 / 29001 / 28081`
-  - 这条线不需要先停共享 substrate，但仍然要避开同名 `mbos-*` integration 容器残留
+  - 这条线不需要先停共享底层环境，但仍然要避开同名 `mbos-*` integration 容器残留
 
 ## 出问题先看哪里
 
 先看状态：
 
 ```bash
-make substrate-status
-make local-manual-status
-make demo-rehearsal-status
-make cluster-rehearsal-status
+make local-real-status
+npm run rehearse:demo -- --status
+npm run rehearse:cluster -- --status
 ```
 
 再看这几个目录：
@@ -270,6 +245,6 @@ make cluster-rehearsal-status
 
 本机运行时治理只需要记住这三句话：
 
-1. 先起共享底座。
-2. 一次只跑一条工作线。
-3. 切换前先停上一条。
+1. 普通本机真实环境从 `make local-real-up` 开始。
+2. 一次只跑一条本地工作线。
+3. 切换前先停上一条，低层 adapter 只给 maintainer diagnostics 和 owner runbook 用。

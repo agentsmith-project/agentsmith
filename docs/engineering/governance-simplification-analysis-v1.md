@@ -1,14 +1,16 @@
 # Engineering Governance Simplification Analysis v1
 
 更新时间：2026-04-25
-状态：`analysis_for_implementation`
-适用范围：AgentSmith 工程治理、测试治理、发布前验证与本地排演的人机交互简化
+状态：`historical_superseded_reference`
+历史适用范围：AgentSmith 工程治理、测试治理、发布前验证与本地排演的人机交互简化
+
+> Stop: 本文是历史/被 v2 first-scope closure 超越的参考材料。2026-04-29 v2 第一批范围关闭后，不得把本文当作当前实施计划、backlog 或推进依据；当前工程治理以 [`docs/current-engineering-governance-model.md`](../current-engineering-governance-model.md) 和 machine-readable manifests/contracts 为准。
 
 ## 0. 文档地位
 
-这份文档是后续实现工作的工程分析与实施路线，不是新的 authoritative truth。
+这份文档曾是后续实现工作的工程分析与实施路线；现在只保留为历史分析参考，不是当前 implementation plan，也不是新的 authoritative truth。
 
-仍然以这些 current truth 为准：
+阅读本文时仍然以这些 current truth 为准：
 
 1. 产品范围与术语：[`docs/项目宪法.md`](../项目宪法.md) 与 [`docs/contracts/product-terminology.md`](../contracts/product-terminology.md)
 2. UI 风格：[`DESIGN.md`](../../DESIGN.md)
@@ -17,7 +19,7 @@
 5. Gate result schema：`scripts/governance/current-gate-result-schema.ts`
 6. User story contract：[`docs/contracts/user-story-contract-v1.md`](../contracts/user-story-contract-v1.md)
 
-如果本文与上述 truth 冲突，以上述 truth 和 machine-readable manifests 为准。本文中的新命令、新对象、新报告在落地前都只是目标设计；进入 current truth 前必须同步 contracts、manifests、docs 和 gates。
+如果本文与上述 truth 冲突，以上述 truth 和 machine-readable manifests 为准。本文中的新命令、新对象、新报告如未进入 current truth，都只代表历史目标设计，不得作为当前实施计划；任何未来重新启用都必须先同步 contracts、manifests、docs 和 gates。
 
 ## 1. 背景与目标
 

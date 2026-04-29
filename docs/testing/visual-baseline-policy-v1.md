@@ -22,20 +22,17 @@ Owner: Frontend
 
 ## 3. Default engineering gate vs visual verification
 
-默认工程门禁使用：
+常规验证入口按目标选择；需要 full visual 结论时使用：
 ```bash
-npm run gate:default
+npm run verify -- --goal=visual --run
 ```
 
-full visual 验证使用：
-```bash
-npm run lane:visual
-```
+发布收口使用 `npm run release:ready` / `npm run release:status`。
 
 结论：
-- targeted visual 可以属于默认业务链或治理链 gate
-- full visual 只属于 `lane:visual`
-- 发布验收使用 `lane:visual`，而不是让 `gate:default` 代替它
+- targeted visual 可以属于对应业务链或治理链证据
+- full visual 的内部 evidence owner 是 `lane:visual`，但日常不要直接把它当成 copyable workflow
+- 发布验收使用 `npm run release:ready`，不能用默认检查或 visual owner 命令替代
 
 ## 4. Producer-owned evidence contract
 

@@ -77,7 +77,7 @@ npm run rehearse:cluster
 | `local_manual` | 需要真实本地 API / Web / Notebook / Terminal / runner / files 行为。 | `make local-real-up`，然后用 `make local-real-status` 看当前状态。 |
 | `release_grade` | 大改动收口、发布前、incident 修复后的跨层复验。 | `npm run release:ready`，然后用 `npm run release:status` 只读查看 summary/status。 |
 
-如果只是定位问题，先用 [diagnostic catalog](./docs/testing/diagnostic-catalog-v1.md) 找最小诊断命令。诊断命令通过后，仍然要回到 owning gate 或 lane 给正式 verdict。
+如果只是定位问题，先用 [diagnostic catalog](./docs/testing/diagnostic-catalog-v1.md) 找最小诊断命令。诊断命令通过后，按范围回到 `npm run verify -- --goal=... --run`；发布级收口回到 `npm run release:ready`。
 
 Gate adapter fidelity notes:
 - adapter fidelity 统一看 `scripts/governance/current-gate-manifest.ts` 里的 `npmScript`、可选 `ciJob` 与 structured `executionTargets`
@@ -88,15 +88,15 @@ Gate adapter fidelity notes:
 给新开发者的执行边界：
 
 1. 先区分诊断路径和 authoritative verdict
-- `test` family commands、某个 focused Playwright spec、某条 targeted lane adapter，主要用于诊断、复现和缩小问题范围。
-- `gate` family adapter 才是当前工程门禁 verdict surface；普通开发者先用 `npm run verify` 生成计划，不从 gate adapter 目录手工拼流程。
+- `test` family commands、某个 focused Playwright spec、owner runbook 里的 targeted internal adapter，主要用于诊断、复现和缩小问题范围。
+- 普通开发者先用 `npm run verify` 生成计划，并用 `npm run verify -- --goal=... --run` 执行正式验证；不从 gate adapter 目录手工拼流程。
 - `gate:default` 不是 full visual，也不是 release-grade verdict。full visual 的内部 owner 是 `lane:visual`；面向人的发布级自动化入口统一看 `npm run release:ready`，它会在 precheck 通过后委托内部 campaign，并在 campaign context 内调用 terminal aggregate verdict。
 - `gate:release:full` 是 aggregate-only 内部复核器，只能在显式 campaign context 下由 release wrapper 或 owner runbook 使用；它不会执行任何 suite。
 
 2. `command passed` 不等于验收通过
-- 对 evidence-owning gates 和 lanes，证据完整性与命令返回同级。
+- 对 evidence-owning internal adapters，证据完整性与命令返回同级。
 - 需要检查的证据包括 visual review artifacts、`visual_scene_catalog`、`ux_trace_bundle` 等当前文档或 contract 明确要求的产物。
-- 对当前在 `scripts/governance/current-gate-result-schema.ts` 注册了 writer 的 gate/lane，还要检查 canonical `<evidence_dir>/result.json`。
+- 对当前在 `scripts/governance/current-gate-result-schema.ts` 注册了 writer 的内部 owner，还要检查 canonical `<evidence_dir>/result.json`。
 - 如果命令成功但 required machine-readable evidence 缺失，按治理规则仍然算失败。
 
 3. 日常开发、功能收口、release-grade 自动化是三种不同路径
@@ -142,6 +142,8 @@ Gate adapter fidelity notes:
 
 本文件只保留开发/排障入口；操作基线不再等同于系统正确性的前提，具体运行线拓扑与 contract 统一看 runtime-line 文档。
 <!-- current-runtime-lines:development:end -->
+
+本机真实环境的人类入口统一是 `make local-real-*`；`substrate-*` 与 `local-manual-*` 是底层实现 adapter，只在 maintainer diagnostics 或 owner runbook 明确要求时直接使用。
 
 ### Focused Helpers
 
@@ -218,10 +220,10 @@ make e2e-int-chat       # chat 集成测试
 make e2e-int-chat-auto  # 自动启动依赖+API+前端后执行 chat 集成测试
 make e2e-int-chat-ux-auto # 自动启动并执行 chat UX 关键集成用例
 make agent-test-runner AGENT_WS_URL='ws://localhost:20000/api/v1/agent-execution/ws?agent_id=ag_xxx' AGENT_KEY='ask_xxx' # 启动外部 agent 测试进程
-make substrate-up      # 启动受管 substrate
-make substrate-reseed  # 重建 substrate 最小可用数据
-make substrate-down    # 关闭受管 substrate
-make substrate-reset   # 清空并重建 substrate 底座
+make local-real-up      # 启动真实本地环境
+make local-real-status  # 查看真实本地环境状态
+make local-real-down    # 停掉真实本地环境
+make local-real-reset   # 清空并重建真实本地环境
 make openapi-generate # 基于 OpenAPI contract 生成前端类型
 make openapi-check-generated # 校验 generated types 是否需要更新
 make openapi-changelog # 生成 OpenAPI 相对 origin/main 的变更摘要
@@ -229,26 +231,28 @@ make contracts-check-openapi # 检查 OpenAPI 核心覆盖与破坏性变更
 ```
 
 说明：`*-auto` 目标会自动清理代理环境变量（`http_proxy/https_proxy/all_proxy` 等）后再启动服务和执行 Playwright。
+底层 `substrate-*` / `local-manual-*` 目标保留给 maintainer diagnostics、owner runbook 和实现排障，不作为新人默认常用命令。
 
 ## 本地真实手测环境
 
-当前推荐的真实后端手测入口是 `local-manual`，它会把：
+当前推荐的真实后端手测入口是 `make local-real-up`，它会把：
 
 1. integration 依赖
 2. universal-proxy
 3. Node API
 4. Next Web
-5. host external runner（通过 seed notebook demo）
 
-收成一条正式链路。
+收成一条正式链路。`local-real` 是人类入口名，底层仍映射到已注册的 `local-manual` runtime line。
 
-默认 `local-manual` 只保证 external notebook / runner。需要本机完整验证 internal sandbox / JuiceFS / internal notebook 时，再显式开启 internal 增强模式。
+默认 `local-real` 只保证真实本地平台可用，不自动创建 Notebook demo 或 host external runner。需要这些证据，或需要本机完整验证 internal sandbox / JuiceFS / internal notebook 时，再按 owner runbook 显式执行底层 diagnostic adapter。
 
 ### First-time setup
 
 ```bash
 cp .env.local-manual.example .env.local-manual
 ```
+
+模板名保留 `local-manual` 是底层 adapter 命名，不改变普通执行入口。
 
 必须填写：
 
@@ -265,9 +269,9 @@ PRESET_OPENAI_ENDPOINT_PROTOCOL=openai_chat_completions
 
 注意：
 
-1. `local-manual` 现在默认使用共享受管 substrate；需要完整重建底座时，直接使用 `make substrate-reset`
+1. `local-real` 现在默认使用共享受管底层环境；需要完整重建时，直接使用 `make local-real-reset`
 2. 当前本机规则是“共享一套底座，一次只跑一条工作线”
-3. 如果本机要和其它工作线串行切换，`local-manual` 只需要保留自己的 app 端口：
+3. 如果本机要和其它工作线串行切换，`local-real` 只需要保留自己的 app 端口：
 
 ```bash
 PORT_API=21000
@@ -277,21 +281,23 @@ PROXY_PORT=39080
 
 说明：
 
-1. 这组端口只改变本地 API / Web / universal-proxy，不改共享 substrate
-2. `local-manual` 必须读取 substrate 生成的连接文件；底座没起时会直接失败，不再 fallback 自己拼地址
-3. `local-manual` 不再依赖 `LOCAL_MANUAL_REUSE_SUPPORT_SERVICES` 这类隐藏状态开关
-4. `local-manual-down` 默认不再清理未追踪的端口监听，避免误停其它工作线；只有显式设置 `LOCAL_MANUAL_ALLOW_UNTRACKED_PORT_CLEANUP=1` 才会强制按端口清理
+1. 这组端口只改变本地 API / Web / universal-proxy，不改共享底层环境
+2. 底层 adapter 必须读取共享底座生成的连接文件；底座没起时会直接失败，不再 fallback 自己拼地址
+3. 底层 adapter 不再依赖 `LOCAL_MANUAL_REUSE_SUPPORT_SERVICES` 这类隐藏状态开关
+4. 底层 down adapter 默认不再清理未追踪的端口监听，避免误停其它工作线；只有显式设置 `LOCAL_MANUAL_ALLOW_UNTRACKED_PORT_CLEANUP=1` 才会强制按端口清理
 5. 当前单机基线是同一时刻只运行一条工作线；切换前先执行上一条线的 `*-down` 或 `*-reset`
 
 ### Start platform only
 
 ```bash
-make local-manual-up
+make local-real-up
 ```
 
 这一步只启动平台，不自动创建 notebook demo 资源。
 
-### Seed notebook demo and start host runner
+### Seed notebook demo and start host runner only when owner runbook requires it
+
+这一步是底层 owner diagnostic adapter。普通本机真实环境先从 `make local-real-up` 开始；只有需要 Notebook demo / host external runner 证据时再按 runbook 执行。
 
 ```bash
 make local-manual-seed-notebook
@@ -307,17 +313,19 @@ make local-manual-seed-notebook
 ### Check status
 
 ```bash
-make local-manual-status
+make local-real-status
 ```
 
-### Enable local internal sandbox only when needed
+### Enable local internal sandbox only when owner runbook requires it
 
 ```bash
 make local-manual-internal-up
 make local-manual-internal-status
 ```
 
-这一步会在现有 `local-manual` 基础上补：
+这组命令是 internal owner diagnostic adapter，不是普通本机真实环境入口。
+
+这一步会在底层 `local-manual` runtime line 基础上补：
 
 1. 本地 `kind-agentsmith`
 2. `agentsmith-sandbox` namespace
@@ -334,13 +342,13 @@ make local-manual-internal-down
 ### Full reset
 
 ```bash
-make local-manual-reset
+make local-real-reset
 ```
 
 ### Stop everything
 
 ```bash
-make local-manual-down
+make local-real-down
 ```
 
 ## Environment Setup
@@ -349,11 +357,11 @@ Preferred real-backend local entrypoint:
 
 ```bash
 cp .env.local-manual.example .env.local-manual
-make local-manual-up
+make local-real-up
 ```
 
 `.env.local.example` is now a legacy frontend-only shortcut for the narrow case
-where you intentionally run `npm run dev` directly without `local-manual`.
+where you intentionally run `npm run dev` directly without `local-real`.
 
 If you still need that legacy shortcut, copy `.env.local.example` to `.env.local`
 and configure:
@@ -503,13 +511,15 @@ When the current work touches the default workspace/project business chain
 3. `用户访问入口`
 4. `项目创建与进入`
 
-run:
+run the default PR verification entry:
 
 ```bash
-npm run test:default-e2e
+npm run verify -- --goal=pr --run
 ```
 
-This gate bundles:
+Use `npm run verify` when you only need the dry-run plan.
+
+This PR verification covers:
 
 1. contract checks
 2. lint + typecheck
@@ -517,13 +527,27 @@ This gate bundles:
 4. mock lane E2E for `system -> workspace -> project`
 5. targeted visual checks for the default entry pages
 
-If release-oriented verification also needs the real backend lane:
+For focused owner diagnostics on the default workspace/project evidence producer, rerun:
+
+```bash
+npm run test:default-e2e
+```
+
+Treat `npm run test:default-e2e` as a focused diagnostics / evidence-owner producer rerun, not as the default PR gate entry.
+
+If daily verification also needs the real backend lane:
+
+```bash
+npm run verify -- --goal=real --run
+```
+
+For focused owner diagnostics on the real-backend core producer, rerun:
 
 ```bash
 npm run test:backend-real:core
 ```
 
-This backend-real variant auto starts integration dependencies, API, and frontend on dedicated ports.
+This backend-real producer auto starts integration dependencies, API, and frontend on dedicated ports. It is not release sign-off; release-oriented conclusions still use `npm run release:ready`.
 
 ## Release Readiness Checklist
 
@@ -539,7 +563,7 @@ Notes:
 1. `npm run release:ready` is the human-friendly automated release path. It runs the non-verdict precheck first, then delegates to internal campaign adapters that orchestrate `gate:fast`, `gate:default`, `lane:visual`, `gate:release`, demo rehearsal, cluster rehearsal, and the terminal aggregate verdict.
 2. `gate:release:full` is aggregate-only. Treat it as an internal verifier for an explicit campaign context, not as a copyable release command.
 3. When diagnosing a failed campaign, rerun the owning evidence adapter from the owner runbook or manifest, then return to `npm run release:ready`.
-4. Real-lane notebook verification requires `PRESET_ENDPOINT_API_KEY` (or a derived `BACKEND_REAL_API_KEY` alias).
+4. Real-backend notebook verification requires `PRESET_ENDPOINT_API_KEY` (or a derived `BACKEND_REAL_API_KEY` alias).
 5. Fresh demo rehearsal roots seeded by the release campaign keep `infra/deploy/demo/env/site.env.example` secret-free and derive a missing `PRESET_ENDPOINT_API_KEY` from repo-local runtime presets such as `.env.backend-real`.
 
 ## Test & Evidence Directory Contract
@@ -587,19 +611,29 @@ When the current work touches
 4. `Alerts`
 5. governance explainability or drilldown links
 
-run:
+run the default PR verification entry:
 
 ```bash
-npm run test:governance
+npm run verify -- --goal=pr --run
 ```
 
-This gate bundles:
+Use `npm run verify` when you only need the dry-run plan.
+
+This PR verification covers:
 
 1. contract checks
 2. lint + typecheck for governance explainability surfaces
 3. targeted frontend/backend tests for authorization explainability
 4. mock lane E2E for `members -> resource policy -> members`
 5. targeted visual checks for governance pages and overlays
+
+For focused owner diagnostics on the governance evidence producer, rerun:
+
+```bash
+npm run test:governance
+```
+
+Treat `npm run test:governance` as a focused diagnostics / evidence-owner producer rerun, not as the default PR gate entry.
 
 ## API 合约与文档入口
 

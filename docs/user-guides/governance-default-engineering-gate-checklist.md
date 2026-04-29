@@ -37,11 +37,13 @@ Expected:
 
 ## 3. Default Engineering Gate
 
-Run:
+Run the clean PR verification entry:
 
 ```bash
-npm run test:governance
+npm run verify -- --goal=pr --run
 ```
+
+Use `npm run verify` when you only need the dry-run plan.
 
 Expected:
 1. Targeted unit and integration tests pass for members, policy, audit, alerts, and explainability helpers.
@@ -49,7 +51,15 @@ Expected:
 3. Mock lane governance E2E passes.
 4. Targeted visual baselines pass for governance pages and overlays.
 5. Governance data does not silently disappear after API restart.
-6. Full visual verification remains in `npm run lane:visual`, not in this governance gate.
+6. Full visual verification runs through `npm run verify -- --goal=visual --run`, not through this governance gate; internal evidence ownership remains `lane:visual`.
+
+Owner diagnostics:
+
+```bash
+npm run test:governance
+```
+
+`npm run test:governance` is a focused diagnostics / evidence-owner producer rerun. Do not treat it as completion of the default PR gate.
 
 ## 4. Covered Workflow
 
@@ -63,7 +73,7 @@ The default governance gate validates this business flow:
 
 ## 5. Visual Coverage
 
-This gate owns targeted visual coverage only. Full visual verification belongs to `npm run lane:visual`.
+This gate owns targeted visual coverage only. Run full visual verification with `npm run verify -- --goal=visual --run`; internal evidence ownership remains `lane:visual`.
 
 The governance gate also runs targeted visual coverage for:
 1. members

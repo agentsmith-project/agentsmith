@@ -6,7 +6,7 @@
 
 它不做下面这些事：
 - 不发明新的 gate、lane、story 或 release truth
-- 不把 `gate:default` 当成 full visual 或 backend-real release verdict
+- 不把内部 gate / lane 命令当成普通 copyable workflow 或 release verdict
 - 不把 redirect / callback / 兼容入口都算成“逐页视觉审查完成”
 - 不用“页面文件数量”代替真实的产品界面覆盖
 
@@ -58,11 +58,11 @@
 - 需要 full visual 结论时，再跑：
 
 ```bash
-npm run lane:visual
+npm run verify -- --goal=visual --run
 ```
 
 说明：
-- `lane:visual` 是唯一 full visual owner
+- `lane:visual` 是内部 full visual evidence owner，不作为日常 copyable 入口
 - 它不等于真实后端审查
 
 ### `local_manual`
@@ -74,26 +74,21 @@ npm run lane:visual
 建议路径：
 
 ```bash
-make substrate-up
-make substrate-reseed
-make local-manual-up
+make local-real-up
+make local-real-status
 ```
 
-若本次范围触达 notebook/files/internal runner，再补：
+若本次范围触达 notebook/files/internal runner，仍先保持 clean local-real 环境；需要补 Notebook demo seeding 或 internal runner 时，只按 owner diagnostic 执行底层 adapter，不把 `substrate-*` / `local-manual-*` 当建议路径。
 
-```bash
-make local-manual-seed-notebook
-```
-
-如果要生成 standalone 真实后端视觉审查产物，可执行：
+如果要生成 standalone 真实后端视觉审查产物，可执行 focused diagnostic：
 
 ```bash
 npm run test:visual:backend-real:review
 ```
 
 说明：
-- 这是人工审查最常用的路径
-- 它适合反复执行，不要求每次都走完整 release campaign
+- `npm run test:visual:backend-real:review` 仅用于需要 standalone 真实后端视觉产物时的 focused diagnostic
+- 常规路径仍看 clean local-real 环境，加上对应的 `npm run verify -- --goal=... --run` 或 `npm run release:ready`
 
 ### `release_grade`
 
@@ -109,7 +104,7 @@ npm run release:status
 ```
 
 说明：
-- `release:ready` 会先执行非 verdict precheck，precheck 通过后委托 `release:campaign:full` 编排 full visual、backend-real release evidence 和 aggregate verdict
+- `release:ready` 是发布前收口入口，会编排 full visual、backend-real release evidence 和 aggregate verdict
 - 人工 UX/UI 审查仍然需要单独记录，不能被自动化 verdict 替代
 
 ## 4. 审查单位与范围模型
@@ -294,20 +289,20 @@ UX/UI 审查的最小单位不是“一个 `page.tsx` 文件”，而是：
 
 - `ui_only`
   - 最小 targeted checks
-  - 需要 full visual 时：`npm run lane:visual`
+  - 需要 full visual 时：`npm run verify -- --goal=visual --run`
 - `local_manual`
-  - `make substrate-up`
-  - `make substrate-reseed`
-  - `make local-manual-up`
-  - 需要 notebook/files 真实链路时：`make local-manual-seed-notebook`
-  - 需要 standalone 真实界面产物时：`npm run test:visual:backend-real:review`
+  - `make local-real-up`
+  - `make local-real-status`
+  - 需要 notebook/files 真实链路时：保持 clean local-real 环境，必要的底层 seeding 只按 owner diagnostic 执行
+  - 仅当需要 standalone 真实界面产物诊断时：`npm run test:visual:backend-real:review`
 - `release_grade`
   - `npm run release:ready`
   - `npm run release:status`
 
 注意：
-- `gate:default` 不能代替 `lane:visual`
-- `lane:visual` 不能代替 `gate:release`
+- 默认检查不能代替 full visual evidence
+- full visual evidence 不能代替 `npm run release:ready`
+- standalone 真实后端视觉产物诊断不能代替 clean local-real + verify/release 主路径
 - `command passed` 不能代替 evidence completeness
 
 ### 6.3 第三步：收集证据

@@ -17,22 +17,26 @@
 
 1. 看运行线状态
 ```bash
-make substrate-status
-make local-manual-status
+make local-real-status
 ```
 
-2. 看前端/API 是否在线
+2. 如运行线未启动，先启动 clean local-real path
+```bash
+make local-real-up
+```
+
+3. 看前端/API 是否在线
 ```bash
 curl http://localhost:20000/health
 curl http://localhost:3001/en-US/login
 ```
 
-3. 如需刷新本地登录态
+4. 如需刷新本地登录态
 ```bash
 make notebook-agent-refresh-token
 ```
 
-4. 再进入对应主链：
+5. 再进入对应主链：
 - notebook / terminal / runner： [Notebook Codex Runner Runbook](./notebook-codex-runbook.md)
 - CI / integration： [CI Integration Troubleshooting](./ci-integration-troubleshooting.md)
 - 文件库本地挂载： [File Library Client Mount](./user-guides/file-library-local-mount.md)
@@ -48,8 +52,7 @@ Common symptoms:
 
 Recommended checks:
 ```bash
-make substrate-status
-make local-manual-status
+make local-real-status
 make notebook-agent-refresh-token
 ```
 
@@ -70,7 +73,7 @@ curl http://localhost:3001/en-US/login
 
 ## Backend Issues
 
-后端问题的判断标准是 contract、权限、数据真相或治理证据不一致，而不是单个前端断言失败。先保留 run-scoped evidence，再用 backend-real 入口复现。
+后端问题的判断标准是 contract、权限、数据真相或治理证据不一致，而不是单个前端断言失败。先保留 run-scoped evidence，再用 clean real verification 入口复现。
 
 Common symptoms:
 - mock lane 正常但 real backend 行为不同。
@@ -79,8 +82,8 @@ Common symptoms:
 
 Recommended checks:
 ```bash
-npm run backend-real:ready
-make governance-smoke
+make local-real-status
+npm run verify -- --goal=real --run
 ```
 
 ## Timeout Issues
@@ -94,30 +97,27 @@ Common symptoms:
 
 Recommended checks:
 ```bash
-make local-manual-status
-npm run backend-real:ready
+make local-real-status
+npm run verify -- --goal=real --run
 ```
 
 ## 3. 最常用恢复命令
 
-### 重启本地真实手测环境
+### 启动或恢复本地真实环境
 ```bash
-make local-manual-down
-make local-manual-up
-make local-manual-seed-notebook
+make local-real-status
+make local-real-up
 ```
 
-### 仅重启 runner / demo resources
+### 重建本地真实环境
 ```bash
-make local-manual-seed-notebook
+make local-real-reset
+make local-real-up
 ```
 
-### 重建底座
-```bash
-make substrate-reset
-```
+### Maintainer-only: 重建 backend-real stack
+只有在 clean status / verify 路径失败，且 owner diagnostics 或 runbook 指向 backend-real stack recovery 时才使用。
 
-### 重建 backend-real stack
 ```bash
 npm run backend-real:reset
 npm run backend-real:bootstrap

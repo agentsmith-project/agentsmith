@@ -44,7 +44,7 @@ Status: `current reference`
 
 5. visual 证据规则
 - [Visual Baseline Policy v1](./visual-baseline-policy-v1.md)
-- `lane:visual` 是唯一 full visual owner
+- `lane:visual` 是 internal full visual evidence owner
 - `gate:default` 只可能包含 targeted visual，不拥有 full visual
 
 补充目录说明：
@@ -105,17 +105,22 @@ Status: `current reference`
 
 verdict 路径的目标是：**给出当前变更是否可接受的正式判断**。
 
-当前 release-grade 人类可复制入口只保留 clean surface：
+当前人类可复制入口只保留 clean surface：
+- `npm run verify`（dry-run plan）
+- `npm run verify -- --goal=pr --run`
+- `npm run verify -- --goal=real --run`
+- `npm run verify -- --goal=visual --run`
+- `make local-real-up` / `make local-real-status` / `make local-real-down` / `make local-real-reset`
 - `npm run release:ready`
 - `npm run release:status`
 - `npm run rehearse:demo`
 - `npm run rehearse:cluster`
 
-内部 verdict / evidence identity 仍然看 current manifests，例如 `gate:fast`、`gate:default`、`gate:release`、`lane:visual`、`lane:backend-real:release`、`release:campaign:full` 和 `gate:release:full`。这些 identity 可以用于证据所有权、排障归因和 aggregate verification 描述，但不作为 verification campaign guide 的 copyable/default command surface。
+底层 diagnostics / internal identity 仍然看 current manifests 和 owner runbooks，例如 `test:*`、`gate:*`、`lane:*`、`backend-real:*`、`release:campaign:full` 和 `gate:release:full`。这些 identity 可以用于证据所有权、排障归因和 aggregate verification 描述，但不作为 verification campaign guide 的 copyable/default command surface。
 
 其中：
 - `gate:default` 不是 full visual，也不是 full release
-- `lane:visual` 是 full visual 的唯一 owner
+- `lane:visual` 是 full visual 的 internal evidence owner
 - `gate:release` 不替代 `lane:visual`
 - `release:ready` 先跑非 verdict precheck，precheck 失败时不进入 campaign、也不写 release verdict
 - internal adapter `release:campaign:full` 编排 release-grade 所有 required steps，并在最后调用 aggregate-only 的 `gate:release:full`
@@ -175,7 +180,7 @@ verdict 路径的目标是：**给出当前变更是否可接受的正式判断*
 - `lane:cluster-rehearsal`
 
 理解方式：
-- `lane:visual` 证明 full visual
+- internal adapter `lane:visual` 拥有 full visual evidence；release 外 full visual verification 用 `npm run verify -- --goal=visual --run`
 - backend-real lanes 证明真实环境行为与 trace evidence
 
 ### D. 发布级 automated verification campaign
@@ -187,6 +192,7 @@ verdict 路径的目标是：**给出当前变更是否可接受的正式判断*
 
 | Role | Surface | What it proves |
 | --- | --- | --- |
+| human visual entry | `npm run verify -- --goal=visual --run` | release 外 full visual verification |
 | human release entry | `npm run release:ready` | 先执行非 verdict precheck，precheck 通过后进入 official campaign |
 | read-only status | `npm run release:status` | 读取 latest summary / status，不重新聚合 evidence |
 | rehearsal entry | `npm run rehearse:demo` | 必要时单独运行 demo deployment rehearsal 的 clean human path |
@@ -200,7 +206,7 @@ verdict 路径的目标是：**给出当前变更是否可接受的正式判断*
 | rehearsal evidence owner | internal adapter `lane:cluster-rehearsal` | cluster release path 排演证据 |
 | terminal aggregate verdict | internal verifier `gate:release:full` | aggregate-only 聚合已有 campaign evidence，不执行任何 suite |
 
-`npm run release:ready` 是人类入口；internal adapter `release:campaign:full` 必须消费同一组 role 和 evidence truth；不能绕过这些 owner 自己发明 release 判断。`gate:release:full` 如果没有 campaign context，就不应该被新人当作 release 执行入口。
+`npm run release:ready` 是 release-grade sign-off 的人类入口；release 外 full visual verification 用 `npm run verify -- --goal=visual --run`。internal adapter `release:campaign:full` 必须消费同一组 role 和 evidence truth；不能绕过这些 owner 自己发明 release 判断。`gate:release:full` 如果没有 campaign context，就不应该被新人当作 release 执行入口。
 
 手工 Feishu 操作位于 [Release Readiness Checklist](../user-guides/release-readiness-checklist.md) 的 operator 流程中，不属于这份文档定义的 automated campaign 默认范围。
 
@@ -281,14 +287,14 @@ visual baseline 更新不是“修测试”，而是一个受控审查动作。
 
 执行顺序应该是：
 
-1. 先由 `lane:visual` 这个 full visual owner 生成或复核视觉证据
+1. 先用 `npm run verify -- --goal=visual --run` 生成或复核视觉证据；internal evidence owner 是 `lane:visual`
 2. 如果失败，先看截图、trace、相关页面代码
 3. 判断差异是：
 - 产品/样式回归
 - 预期的 UX/UI 改进
 - 环境噪音或错误基线
 4. 只有确认是**预期改动**，才更新 baseline
-5. 更新后必须重新跑 visual lane
+5. 更新后必须重新跑相同 visual clean entrypoint
 
 禁止的做法：
 - 不看图就更新 baseline
@@ -335,9 +341,9 @@ visual baseline 更新不是“修测试”，而是一个受控审查动作。
 - 不要一边红一边继续往后跑
 - 先定位、先修、先在最小切片复现
 
-4. 只在需要 full visual 时跑 `lane:visual`
+4. 只在 release 外需要 full visual 时跑 `npm run verify -- --goal=visual --run`
 - 不是所有改动都要第一步就跑 visual
-- 但 release-grade campaign 最终必须看它
+- release-grade sign-off 用 `npm run release:ready`
 
 5. backend-real 与 release gate 分开理解
 - `test:backend-real:core` / `lane:backend-real:core` 更像默认层真实验证

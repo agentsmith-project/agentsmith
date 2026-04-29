@@ -9,7 +9,7 @@ Current entries:
   - makes clear that diagnostics do not replace verdicts
 - [verification-campaigns-v1](./verification-campaigns-v1.md)
   - release-grade automated verification campaign guidance
-  - human entrypoint is `npm run release:ready`; it delegates to `npm run release:campaign:full` after precheck
+  - human entrypoint is `npm run release:ready`; internal adapter `release:campaign:full` stays behind that entrypoint after precheck
   - explains diagnostic path vs verdict path
   - explains evidence completeness, story truth, and visual admission rules
 - [visual-baseline-policy-v1](./visual-baseline-policy-v1.md)

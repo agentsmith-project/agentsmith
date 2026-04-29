@@ -112,15 +112,26 @@ If any step fails, AgentSmith must roll back already-created resources and mark 
 
 ## Release Validation
 
-Before release, the file library line must pass:
+Before release, use the release sign-off entrypoint:
 
 ```bash
-npx tsc --noEmit
-npm run contracts:check-openapi
-npm run openapi:check-generated
-npm run test:files:backend-real:smoke
-npm run test:files:backend-real:sync
+npm run release:ready
 ```
+
+For release status review:
+
+```bash
+npm run release:status
+```
+
+Files owner prerequisite evidence checks include:
+- `npx tsc --noEmit`
+- `npm run contracts:check-openapi`
+- `npm run openapi:check-generated`
+- `npm run test:files:backend-real:smoke`
+- `npm run test:files:backend-real:sync`
+
+The Files backend-real commands are focused owner diagnostics, not release-grade verdicts by themselves.
 
 Mock lane coverage must also include:
 - Files page CRUD and browser flows

@@ -53,7 +53,9 @@ runner_status() {
 }
 
 echo "Scenario: $(current_active_scenario || true)"
-echo "Substrate: $(curl -sS -o /dev/null -w '%{http_code}' "${MBOS_UNIVERSAL_PROXY_BASE_URL}/admin/state" || true) proxy / $(curl -sS -o /dev/null -w '%{http_code}' "${KEYCLOAK_BASE_URL}/realms/${KEYCLOAK_REALM}/.well-known/openid-configuration" || true) keycloak"
+PROXY_ADMIN_TOKEN="$(universal_proxy_runtime_probe_admin_token 2>/dev/null || true)"
+PROXY_CODE="$(universal_proxy_runtime_probe_status "${MBOS_UNIVERSAL_PROXY_BASE_URL}" "${PROXY_ADMIN_TOKEN}")"
+echo "Substrate: ${PROXY_CODE} proxy / $(curl -sS -o /dev/null -w '%{http_code}' "${KEYCLOAK_BASE_URL}/realms/${KEYCLOAK_REALM}/.well-known/openid-configuration" || true) keycloak"
 APP_MODE=local-manual SUBSTRATE="${SUBSTRATE}" ENV_FILE="${ENV_FILE}" bash "${ROOT_DIR}/scripts/app/status.sh"
 printf 'Runner: '
 runner_status

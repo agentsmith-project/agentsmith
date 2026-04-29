@@ -105,7 +105,6 @@ ensure_cluster_rehearsal_site_env() {
   canonicalize_cluster_rehearsal_site_env_protocol_aliases "${site_env}"
   rewrite_cluster_rehearsal_sandbox_public_base_url "${site_env}"
   ensure_scenario_site_env_proxy_admin_token "${site_env}" "${CLUSTER_REHEARSAL_NAME}"
-  ensure_scenario_site_env_proxy_data_token "${site_env}" "${CLUSTER_REHEARSAL_NAME}"
   render_cluster_rehearsal_kind_config
   validate_cluster_rehearsal_site_env "${site_env}"
 }

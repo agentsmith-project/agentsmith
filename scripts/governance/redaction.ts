@@ -37,6 +37,12 @@ export const PROXY_DATA_TOKEN_ENV_KEYS = [
   'LLM_UNIVERSAL_PROXY_DATA_TOKEN',
 ] as const;
 
+export const PROXY_ADMIN_TOKEN_ENV_KEYS = [
+  'MBOS_UNIVERSAL_PROXY_ADMIN_TOKEN',
+  'LLM_UNIVERSAL_PROXY_ADMIN_TOKEN',
+  'UNIVERSAL_PROXY_RUNTIME_ADMIN_TOKEN',
+] as const;
+
 export const TICKET_AUTH_ENV_KEYS = [
   'RUNNER_TICKET',
   'TASK_TICKET',
@@ -145,6 +151,7 @@ const DEFAULT_PROFILE_KEYS = [
   'CLIENT_SECRET',
   'PASSWORD',
   'DATABASE_PASSWORD',
+  ...PROXY_ADMIN_TOKEN_ENV_KEYS,
   ...TICKET_AUTH_ENV_KEYS,
   ...PROXY_DATA_TOKEN_ENV_KEYS,
   ...SECRET_PROFILE_ENV_KEYS,
@@ -155,6 +162,7 @@ const DEFAULT_PROFILE_KEYS = [
 const DEFAULT_PRESENCE_GROUPS: readonly PresenceGroup[] = [
   { label: 'endpoint.public', keys: DEFAULT_ENDPOINT_KEYS },
   { label: 'endpoint.internal_ws', keys: INTERNAL_EXECUTION_WS_ENV_KEYS },
+  { label: 'auth.proxy_admin_token', keys: PROXY_ADMIN_TOKEN_ENV_KEYS },
   { label: 'auth.proxy_data_token', keys: PROXY_DATA_TOKEN_ENV_KEYS },
   { label: 'auth.ticket', keys: TICKET_AUTH_ENV_KEYS },
   { label: 'auth.authorization', keys: ['AUTHORIZATION'] },
@@ -170,7 +178,7 @@ const DEFAULT_PRESENCE_GROUPS: readonly PresenceGroup[] = [
 
 const SAFE_ADDITIONAL_PRESENCE_LABELS = new Set<string>([
   'probe.internal_execution_ws_base_url_correct',
-  'probe.proxy_data_token_present',
+  'probe.proxy_data_token_absent',
   'probe.ticket_auth_present',
   'probe.keycloak_redirect_bases_present',
   'probe.dns_gateway_reachable',
@@ -190,6 +198,7 @@ const SECRET_KEY_PATTERNS = [
   /api[_-]?key/i,
   /access[_-]?token/i,
   /refresh[_-]?token/i,
+  /admin[_-]?token/i,
   /oauth/i,
   /client[_-]?secret/i,
   /password/i,
@@ -203,6 +212,7 @@ const SECRET_VALUE_PATTERNS = [
   /\bapi[_-]?key\s*[:=]\s*[^"',\s}]+/i,
   /\baccess[_-]?token\s*[:=]\s*[^"',\s}]+/i,
   /\brefresh[_-]?token\s*[:=]\s*[^"',\s}]+/i,
+  /\badmin[_-]?token\s*[:=]\s*[^"',\s}]+/i,
   /\boauth(?:[_-]?token)?\s*[:=]\s*[^"',\s}]+/i,
   /\bclient[_-]?secret\s*[:=]\s*[^"',\s}]+/i,
   /\bpassword\s*[:=]\s*[^"',\s}]+/i,
@@ -212,10 +222,10 @@ const SECRET_VALUE_PATTERNS = [
   /\bAuthorization\s*[:=]\s*[^"',\s}]+/i,
   /\bmanaged[_-]?credentials?(?:\.[A-Za-z0-9_-]+)?\s*[:=]\s*[\[{]/i,
   /\bpassword\s*[:=]\s*[\[{]/i,
-  /["'](?:api_key|access_token|refresh_token|oauth_token|client_secret|password|ticket|managed_credentials)["']\s*:\s*[\[{]/i,
+  /["'](?:api_key|access_token|refresh_token|admin_token|oauth_token|client_secret|password|ticket|managed_credentials)["']\s*:\s*[\[{]/i,
   /["'](?:feishu|value)["']\s*:\s*["'][^"']*(?:raw|secret|credential|token|password|key)[^"']*["']/i,
 ] as const;
-const SENSITIVE_TEXT_KEY = String.raw`[A-Za-z0-9_.-]*(?:api[_-]?key|access[_-]?token|refresh[_-]?token|oauth(?:[_-]?token)?|client[_-]?secret|password|ticket|managed[_-]?credentials?(?:\.[A-Za-z0-9_-]+)?|cookie|authorization)[A-Za-z0-9_.-]*`;
+const SENSITIVE_TEXT_KEY = String.raw`[A-Za-z0-9_.-]*(?:api[_-]?key|access[_-]?token|refresh[_-]?token|admin[_-]?token|oauth(?:[_-]?token)?|client[_-]?secret|password|ticket|managed[_-]?credentials?(?:\.[A-Za-z0-9_-]+)?|cookie|authorization)[A-Za-z0-9_.-]*`;
 const BEARER_VALUE_PATTERN = /\bBearer\s+[A-Za-z0-9._~+/=-]+/gi;
 const SK_VALUE_PATTERN = /\bsk-[A-Za-z0-9][A-Za-z0-9_-]{6,}/gi;
 const SENSITIVE_TEXT_PREFIX_PATTERN = new RegExp(

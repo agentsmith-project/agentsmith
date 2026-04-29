@@ -1303,7 +1303,6 @@ export async function handleChatStreamRoute(args: ChatStreamHandlerArgs): Promis
       route.workspaceId,
       route.projectId,
       endpoint,
-      apiKey,
     );
     upstreamRes = await universalProxyService.forwardRequest({
       req,
@@ -1311,6 +1310,7 @@ export async function handleChatStreamRoute(args: ChatStreamHandlerArgs): Promis
       proxyPath: 'openai/chat/completions',
       model: (raw.model ?? endpoint.model) || endpoint.model,
       requestBody: sourceRequestBody,
+      providerCredential: apiKey,
       signal: streamAbortController.signal,
     });
     await writeActiveExecutionPhase('dispatching', { internalAgent: executionInternalAgent });

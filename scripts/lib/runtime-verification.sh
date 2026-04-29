@@ -634,6 +634,11 @@ gate_wait_for_universal_proxy_admin_state() {
   local probe_url="http://localhost:8080/admin/state"
   local started last_code
 
+  if [[ -z "${admin_token}" ]]; then
+    gate_record_failure "${evidence_dir}" "${classification}" "${stage}" "MBOS_UNIVERSAL_PROXY_ADMIN_TOKEN is required for ${reported_base_url%/}/admin/state bearer probe"
+    return 1
+  fi
+
   if ! gate_require_command \
     "${evidence_dir}" \
     "docker_compose ps --status running universal-proxy | grep -q universal-proxy" \
@@ -651,11 +656,7 @@ gate_wait_for_universal_proxy_admin_state() {
         -e "GATE_PROXY_ADMIN_TOKEN=${admin_token}" \
         universal-proxy \
         sh -lc '
-          if [ -n "$GATE_PROXY_ADMIN_TOKEN" ]; then
-            curl -s -o /dev/null -w "%{http_code}" -H "Authorization: Bearer $GATE_PROXY_ADMIN_TOKEN" "$GATE_PROXY_ADMIN_URL"
-          else
-            curl -s -o /dev/null -w "%{http_code}" "$GATE_PROXY_ADMIN_URL"
-          fi
+          curl -s -o /dev/null -w "%{http_code}" -H "Authorization: Bearer $GATE_PROXY_ADMIN_TOKEN" "$GATE_PROXY_ADMIN_URL"
         ' 2>/dev/null || true
     )"
     if [[ "${last_code}" == "200" ]]; then

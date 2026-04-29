@@ -790,6 +790,8 @@ mkdir -p "\${OUT_DIR}/agentsmith-\${RELEASE_ID}"
       expect(firstToken).not.toBe('');
       expect(secondToken).toBe(firstToken);
       expect(readEnvValue(exampleSiteEnv, 'MBOS_UNIVERSAL_PROXY_ADMIN_TOKEN')).toBe('');
+      expect(readEnvValue(seededSiteEnv, 'MBOS_UNIVERSAL_PROXY_DATA_TOKEN')).toBe('');
+      expect(readEnvValue(exampleSiteEnv, 'MBOS_UNIVERSAL_PROXY_DATA_TOKEN')).toBe('');
     } finally {
       rmSync(tempRoot, { recursive: true, force: true });
     }

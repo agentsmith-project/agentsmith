@@ -35,23 +35,19 @@ run_compose() {
 }
 
 start_local_proxy() {
-  stop_matching_listeners_on_port "${SUBSTRATE_PROXY_PORT}" 'llm-universal-proxy'
-  wait_port_free "${SUBSTRATE_PROXY_PORT}" "substrate proxy" 30
-  if [[ ! -x "${PROXY_ROOT}/target/debug/llm-universal-proxy" ]]; then
-    info "building llm-universal-proxy debug binary"
-    (cd "${PROXY_ROOT}" && cargo build --quiet)
-  fi
-  cat > "${SUBSTRATE_PROXY_CONFIG_FILE}" <<EOF_PROXY
-listen: 127.0.0.1:${SUBSTRATE_PROXY_PORT}
-upstream_timeout_secs: 120
-upstreams: {}
-model_aliases: {}
-EOF_PROXY
-  launch_detached "${SUBSTRATE_PROXY_PID_FILE}" "${SUBSTRATE_PROXY_LOG}" "
-    cd '${PROXY_ROOT}' && \
-    exec ./target/debug/llm-universal-proxy --config '${SUBSTRATE_PROXY_CONFIG_FILE}'
-  "
-  wait_http "${SUBSTRATE_PROXY_BASE_URL}/admin/state" "substrate proxy" 60
+  UNIVERSAL_PROXY_RUNTIME_ROOT_DIR="${ROOT_DIR}" \
+    UNIVERSAL_PROXY_RUNTIME_STATE_DIR="${SUBSTRATE_STATE_ROOT}" \
+    UNIVERSAL_PROXY_RUNTIME_PORT="${SUBSTRATE_PROXY_PORT}" \
+    UNIVERSAL_PROXY_RUNTIME_BASE_URL="${SUBSTRATE_PROXY_BASE_URL}" \
+    UNIVERSAL_PROXY_RUNTIME_DEFAULT_URLS="${SUBSTRATE_PROXY_BASE_URL}" \
+    UNIVERSAL_PROXY_RUNTIME_CONFIG_FILE="${SUBSTRATE_PROXY_CONFIG_FILE}" \
+    UNIVERSAL_PROXY_RUNTIME_CONTAINER_ID_FILE="${SUBSTRATE_STATE_ROOT}/proxy.container-id" \
+    UNIVERSAL_PROXY_RUNTIME_LOG_FILE="${SUBSTRATE_PROXY_LOG}" \
+    UNIVERSAL_PROXY_RUNTIME_CONTAINER_NAME="${SUBSTRATE_UNIVERSAL_PROXY_CONTAINER_NAME:-agentsmith-substrate-${SUBSTRATE}-universal-proxy}" \
+    UNIVERSAL_PROXY_RUNTIME_LABEL="substrate-${SUBSTRATE}" \
+    UNIVERSAL_PROXY_RUNTIME_LOG_PREFIX="[substrate:${SUBSTRATE}]" \
+    universal_proxy_runtime_ensure
+  SUBSTRATE_PROXY_BASE_URL="${MBOS_UNIVERSAL_PROXY_BASE_URL}"
   printf 'ready\n' > "${SUBSTRATE_PROXY_READY_FILE}"
 }
 
@@ -64,6 +60,11 @@ substrate_up() {
 }
 
 substrate_down() {
+  UNIVERSAL_PROXY_RUNTIME_ROOT_DIR="${ROOT_DIR}" \
+    UNIVERSAL_PROXY_RUNTIME_STATE_DIR="${SUBSTRATE_STATE_ROOT}" \
+    UNIVERSAL_PROXY_RUNTIME_CONTAINER_ID_FILE="${SUBSTRATE_STATE_ROOT}/proxy.container-id" \
+    UNIVERSAL_PROXY_RUNTIME_LOG_PREFIX="[substrate:${SUBSTRATE}]" \
+    universal_proxy_runtime_cleanup_managed_container
   stop_pid_file_if_running "${SUBSTRATE_PROXY_PID_FILE}" "substrate proxy"
   rm -f "${SUBSTRATE_PROXY_READY_FILE}" "${SUBSTRATE_PROXY_CONFIG_FILE}"
   run_compose "down" >/dev/null 2>&1 || true
@@ -84,15 +85,18 @@ substrate_status() {
   local keycloak_base_url="${SUBSTRATE_KEYCLOAK_BASE_URL}"
   local keycloak_realm="${SUBSTRATE_KEYCLOAK_REALM}"
   local proxy_base_url="${SUBSTRATE_PROXY_BASE_URL}"
+  local proxy_admin_token="${MBOS_UNIVERSAL_PROXY_ADMIN_TOKEN:-}"
   if [[ -f "${SUBSTRATE_CONNECTION_ENV}" ]]; then
     keycloak_base_url="$(awk -F= '$1=="KEYCLOAK_BASE_URL"{print substr($0, index($0,$2))}' "${SUBSTRATE_CONNECTION_ENV}" | tail -n1)"
     keycloak_realm="$(awk -F= '$1=="KEYCLOAK_REALM"{print substr($0, index($0,$2))}' "${SUBSTRATE_CONNECTION_ENV}" | tail -n1)"
     proxy_base_url="$(awk -F= '$1=="MBOS_UNIVERSAL_PROXY_BASE_URL"{print substr($0, index($0,$2))}' "${SUBSTRATE_CONNECTION_ENV}" | tail -n1)"
+    proxy_admin_token="$(awk -F= '$1=="MBOS_UNIVERSAL_PROXY_ADMIN_TOKEN"{print substr($0, index($0,$2))}' "${SUBSTRATE_CONNECTION_ENV}" | tail -n1)"
     keycloak_base_url="${keycloak_base_url:-${SUBSTRATE_KEYCLOAK_BASE_URL}}"
     keycloak_realm="${keycloak_realm:-${SUBSTRATE_KEYCLOAK_REALM}}"
     proxy_base_url="${proxy_base_url:-${SUBSTRATE_PROXY_BASE_URL}}"
+    proxy_admin_token="${proxy_admin_token:-${MBOS_UNIVERSAL_PROXY_ADMIN_TOKEN:-}}"
   fi
-  local proxy_code="$(curl -sS -o /dev/null -w '%{http_code}' "${proxy_base_url}/admin/state" || true)"
+  local proxy_code="$(universal_proxy_runtime_probe_status "${proxy_base_url}" "${proxy_admin_token}")"
   local keycloak_code="$(curl -sS -o /dev/null -w '%{http_code}' "${keycloak_base_url}/realms/${keycloak_realm}/.well-known/openid-configuration" || true)"
   echo "Substrate: ${SUBSTRATE}"
   echo "Type: ${SUBSTRATE_TYPE}"

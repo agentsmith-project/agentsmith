@@ -11,8 +11,8 @@ const repoRoot = process.cwd();
 const APP_BASE_DIGEST = `sha256:${'a'.repeat(64)}`;
 const APP_MC_DIGEST = `sha256:${'f'.repeat(64)}`;
 const APP_IMAGE_DIGEST = `sha256:${'d'.repeat(64)}`;
-const LLMUP_DIGEST = 'sha256:81c277bcbdbec4645b3e4edce5efa4d1b2253539214ba944f0712798c9a28f22';
-const LLMUP_SOURCE_IMAGE = `ghcr.io/agentsmith-project/llm-universal-proxy:v0.2.23@${LLMUP_DIGEST}`;
+const LLMUP_DIGEST = 'sha256:a6d5b309f25f17cafbd7fadb601fef5f80726c4a299509820e8e863be0928058';
+const LLMUP_SOURCE_IMAGE = `ghcr.io/agentsmith-project/llm-universal-proxy:v0.2.25@${LLMUP_DIGEST}`;
 
 function writeFile(filePath: string, content: string): void {
   mkdirSync(path.dirname(filePath), { recursive: true });
@@ -51,7 +51,7 @@ function writeLlmupImageLock(tempRoot: string): void {
     [
       '# AgentSmith llmup external image lock.',
       '# Format: llmup_version=<version> and llmup_source_image=<image:tag@sha256:digest>',
-      'llmup_version=v0.2.23',
+      'llmup_version=v0.2.25',
       `llmup_source_image=${LLMUP_SOURCE_IMAGE}`,
       '',
     ].join('\n'),
@@ -294,14 +294,14 @@ describe('cluster build-images build artifact broker integration', () => {
 
       expect(plan.targets.map((target) => target.target)).toEqual(['app']);
       expect(manifest.targets.map((target) => target.target)).toEqual(['app']);
-      expect(versionContent).toContain('llmup_version=v0.2.23');
+      expect(versionContent).toContain('llmup_version=v0.2.25');
       expect(versionContent).toContain(`llmup_source_image=${LLMUP_SOURCE_IMAGE}`);
       expect(versionContent).toContain(`llmup_source_image_digest=${LLMUP_DIGEST}`);
       expect(versionContent).toContain(
-        'llm_universal_proxy_image=localhost:5001/mbos/llm-universal-proxy:v0.2.23',
+        'llm_universal_proxy_image=localhost:5001/mbos/llm-universal-proxy:v0.2.25',
       );
       expect(dockerLog).toContain(`docker pull --platform linux/amd64 ${LLMUP_SOURCE_IMAGE}`);
-      expect(dockerLog).toContain(`docker tag ${LLMUP_SOURCE_IMAGE} localhost:5001/mbos/llm-universal-proxy:v0.2.23`);
+      expect(dockerLog).toContain(`docker tag ${LLMUP_SOURCE_IMAGE} localhost:5001/mbos/llm-universal-proxy:v0.2.25`);
       expect(dockerLog).not.toContain('--label com.agentsmith.build.target=llmup');
       expect(dockerLog).not.toContain('release/sources/llm-universal-proxy');
     } finally {
@@ -340,11 +340,11 @@ describe('cluster build-images build artifact broker integration', () => {
 
       expect(versionContent).toContain('release_id=test-release');
       expect(versionContent).toContain(`agentsmith_app_image=${appTarget?.release_alias_ref}`);
-      expect(versionContent).toContain('llmup_version=v0.2.23');
+      expect(versionContent).toContain('llmup_version=v0.2.25');
       expect(versionContent).toContain(`llmup_source_image=${LLMUP_SOURCE_IMAGE}`);
       expect(versionContent).toContain(`llmup_source_image_digest=${LLMUP_DIGEST}`);
       expect(versionContent).toContain(
-        'llm_universal_proxy_image=localhost:5001/mbos/llm-universal-proxy:v0.2.23',
+        'llm_universal_proxy_image=localhost:5001/mbos/llm-universal-proxy:v0.2.25',
       );
       expect(versionContent).not.toContain('agentsmith_app_image=localhost:5001/mbos/agentsmith-app:test-release');
 
@@ -357,7 +357,7 @@ describe('cluster build-images build artifact broker integration', () => {
       expect(dockerLog).toContain('--label com.agentsmith.build.target=app');
       expect(dockerLog).toContain('--label com.agentsmith.build.producer=build-artifact-broker');
       expect(dockerLog).toContain(`docker pull --platform linux/amd64 ${LLMUP_SOURCE_IMAGE}`);
-      expect(dockerLog).toContain(`docker tag ${LLMUP_SOURCE_IMAGE} localhost:5001/mbos/llm-universal-proxy:v0.2.23`);
+      expect(dockerLog).toContain(`docker tag ${LLMUP_SOURCE_IMAGE} localhost:5001/mbos/llm-universal-proxy:v0.2.25`);
       expect(dockerLog).not.toContain('--label com.agentsmith.build.target=llmup');
 
       expect(existsSync(path.join(releaseRoot, 'build-manifest.json'))).toBe(true);
@@ -398,7 +398,7 @@ describe('cluster build-images build artifact broker integration', () => {
         .toBe(false);
       expect(dockerLog).toContain(`docker tag ${appTarget?.content_ref} ${appTarget?.release_alias_ref}`);
       expect(dockerLog).toContain(
-        `docker tag ${LLMUP_SOURCE_IMAGE} localhost:5001/mbos/llm-universal-proxy:v0.2.23`,
+        `docker tag ${LLMUP_SOURCE_IMAGE} localhost:5001/mbos/llm-universal-proxy:v0.2.25`,
       );
 
       const skipDecisions = readNdjson(path.join(releaseRoot, 'skip-decisions.ndjson')) as Array<{
@@ -645,7 +645,7 @@ exit 42
       expect(versionContent).toContain(
         `llmup_source_image=${LLMUP_SOURCE_IMAGE}`,
       );
-      expect(versionContent).toContain('llmup_version=v0.2.23');
+      expect(versionContent).toContain('llmup_version=v0.2.25');
       expect(versionContent).toContain(`llmup_source_image_digest=${LLMUP_DIGEST}`);
       expect(versionContent).not.toContain('llmup_rust_base_image_ref=');
       expect(versionContent).not.toContain('llmup_runtime_base_image_ref=');
@@ -669,7 +669,7 @@ exit 42
       stageBuildImagesFixture(tempRoot);
 
       const result = runBuildImagesResult(tempRoot, {
-        LLMUP_SOURCE_IMAGE: 'ghcr.io/agentsmith-project/llm-universal-proxy:v0.2.23',
+        LLMUP_SOURCE_IMAGE: 'ghcr.io/agentsmith-project/llm-universal-proxy:v0.2.25',
       });
       const releaseRoot = path.join(tempRoot, 'release');
 
@@ -689,7 +689,7 @@ exit 42
       stageBuildImagesFixture(tempRoot);
 
       const result = runBuildImagesResult(tempRoot, {
-        LLMUP_VERSION: 'v0.2.24',
+        LLMUP_VERSION: 'v0.2.26',
         LLMUP_SOURCE_IMAGE,
       });
       const releaseRoot = path.join(tempRoot, 'release');

@@ -8,6 +8,7 @@ source "${ROOT_DIR}/scripts/lib/backend-real-env.sh"
 source "${ROOT_DIR}/scripts/lib/lane-run-state.sh"
 source "${ROOT_DIR}/scripts/lib/next-generated-root-state.sh"
 source "${ROOT_DIR}/scripts/lib/runtime-verification.sh"
+source "${ROOT_DIR}/scripts/lib/universal-proxy-runtime.sh"
 
 SPEC_FILE="${1:-e2e/integration-chat.spec.ts}"
 shift || true
@@ -386,53 +387,22 @@ port_in_use() {
 
 
 ensure_universal_proxy() {
-  if [[ -n "${MBOS_UNIVERSAL_PROXY_BASE_URL:-}" ]]; then
-    curl -fsS "${MBOS_UNIVERSAL_PROXY_BASE_URL}/admin/state" >/dev/null 2>&1
-    return 0
-  fi
-
-  for candidate in "http://127.0.0.1:39080" "http://127.0.0.1:38080"; do
-    if curl -fsS "${candidate}/admin/state" >/dev/null 2>&1; then
-      export MBOS_UNIVERSAL_PROXY_BASE_URL="${candidate}"
-      return 0
-    fi
-  done
-
-  local proxy_root="${ROOT_DIR}/../llm-universal-proxy"
   local proxy_port="${INTEGRATION_UNIVERSAL_PROXY_PORT:-39080}"
-  local proxy_base="http://127.0.0.1:${proxy_port}"
-  local proxy_state_dir="${INTEGRATION_LOG_DIR}/universal-proxy"
-  local proxy_log="${proxy_state_dir}/proxy.log"
-  local proxy_config="${proxy_state_dir}/config.yaml"
-  mkdir -p "${proxy_state_dir}"
+  UNIVERSAL_PROXY_RUNTIME_ROOT_DIR="${ROOT_DIR}" \
+    UNIVERSAL_PROXY_RUNTIME_STATE_DIR="${INTEGRATION_LOG_DIR}/universal-proxy" \
+    UNIVERSAL_PROXY_RUNTIME_PORT="${proxy_port}" \
+    UNIVERSAL_PROXY_RUNTIME_DEFAULT_URLS="${INTEGRATION_UNIVERSAL_PROXY_DEFAULT_URLS:-http://127.0.0.1:${proxy_port} http://127.0.0.1:38080}" \
+    UNIVERSAL_PROXY_RUNTIME_CONTAINER_NAME="${INTEGRATION_UNIVERSAL_PROXY_CONTAINER_NAME:-agentsmith-integration-universal-proxy-${INTEGRATION_RUN_ID}}" \
+    UNIVERSAL_PROXY_RUNTIME_LABEL="integration-e2e-full" \
+    UNIVERSAL_PROXY_RUNTIME_LOG_PREFIX="[integration-e2e-full]" \
+    universal_proxy_runtime_ensure
+}
 
-  if [[ ! -d "${proxy_root}" ]]; then
-    echo "[integration-e2e-full] universal proxy source not found at ${proxy_root}" >&2
-    return 1
-  fi
-  if port_in_use "${proxy_port}"; then
-    echo "[integration-e2e-full] universal proxy port ${proxy_port} is already in use" >&2
-    return 1
-  fi
-  if [[ ! -x "${proxy_root}/target/debug/llm-universal-proxy" ]]; then
-    (cd "${proxy_root}" && run_clean cargo build --quiet)
-  fi
-  cat > "${proxy_config}" <<EOF_PROXY
-listen: 127.0.0.1:${proxy_port}
-upstream_timeout_secs: 120
-upstreams: {}
-model_aliases: {}
-EOF_PROXY
-
-  PROXY_PID="$(
-    start_background_job "${proxy_log}" run_clean "${proxy_root}/target/debug/llm-universal-proxy" --config "${proxy_config}"
-  )"
-  if ! gate_wait_for_http "${INTEGRATION_LOG_DIR}" "${proxy_base}/admin/state" 60 infra_dependency_unready proxy_ready; then
-    echo "--- Universal Proxy log tail ---" >&2
-    tail -n 120 "${proxy_log}" >&2 || true
-    return 1
-  fi
-  export MBOS_UNIVERSAL_PROXY_BASE_URL="${proxy_base}"
+cleanup_universal_proxy() {
+  UNIVERSAL_PROXY_RUNTIME_ROOT_DIR="${ROOT_DIR}" \
+    UNIVERSAL_PROXY_RUNTIME_STATE_DIR="${INTEGRATION_LOG_DIR}/universal-proxy" \
+    UNIVERSAL_PROXY_RUNTIME_LOG_PREFIX="[integration-e2e-full]" \
+    universal_proxy_runtime_cleanup_managed_container
 }
 
 if [[ "${BOOTSTRAP_DEPS}" == "true" ]]; then
@@ -464,12 +434,14 @@ record_service universal_proxy ready "${MBOS_UNIVERSAL_PROXY_BASE_URL:-}"
 if port_in_use "${API_PORT}"; then
   gate_record_failure "${INTEGRATION_LOG_DIR}" "infra_dependency_unready" "api_port" "api port already in use"
   echo "[integration-e2e-full] API port ${API_PORT} is already in use. Stop the process or set INTEGRATION_API_PORT." >&2
+  cleanup_universal_proxy
   exit 1
 fi
 
 if port_in_use "${WEB_PORT}"; then
   gate_record_failure "${INTEGRATION_LOG_DIR}" "infra_dependency_unready" "web_port" "web port already in use"
   echo "[integration-e2e-full] Web port ${WEB_PORT} is already in use. Stop the process or set INTEGRATION_WEB_PORT." >&2
+  cleanup_universal_proxy
   exit 1
 fi
 
@@ -546,6 +518,7 @@ cleanup() {
     return 0
   fi
   stop_background_job "${PLAYWRIGHT_PID}"
+  cleanup_universal_proxy
   stop_background_job "${PROXY_PID}"
   stop_background_job "$(cat "${NEXT_WEB_PID_FILE}" 2>/dev/null || true)"
   stop_background_job "${WEB_PID}"

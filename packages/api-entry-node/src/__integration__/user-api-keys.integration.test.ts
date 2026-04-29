@@ -118,14 +118,7 @@ function startUniversalProxyMockServer(): {
         return;
       }
 
-      if (requestUrl.pathname.includes('/messages/count_tokens')) {
-        res.statusCode = 200;
-        res.setHeader('content-type', 'application/json');
-        res.end(JSON.stringify({ input_tokens: 12 }));
-        return;
-      }
-
-      if (requestUrl.pathname.includes('/messages')) {
+      if (requestUrl.pathname.endsWith('/anthropic/v1/messages')) {
         res.statusCode = 200;
         res.setHeader('content-type', 'application/json');
         res.end(JSON.stringify({
@@ -151,6 +144,54 @@ function startUniversalProxyMockServer(): {
     baseUrl: `http://127.0.0.1:${port}`,
     configRequests: () => adminHarness.configRequests(),
     namespaceRequests: () => namespaceRequests,
+  };
+}
+
+function startAnthropicDirectUpstreamMockServer(): {
+  baseUrl: string;
+  requests: () => Array<{
+    path: string;
+    headers: IncomingHttpHeaders;
+    body: unknown;
+  }>;
+} {
+  const requests: Array<{
+    path: string;
+    headers: IncomingHttpHeaders;
+    body: unknown;
+  }> = [];
+  const server = http.createServer((req, res) => {
+    void (async () => {
+      const requestUrl = new URL(req.url ?? '/', 'http://127.0.0.1');
+      const chunks: Buffer[] = [];
+      for await (const chunk of req) {
+        chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk));
+      }
+      const body = JSON.parse(Buffer.concat(chunks).toString('utf-8') || '{}') as Record<string, unknown>;
+
+      requests.push({
+        path: requestUrl.pathname,
+        headers: req.headers,
+        body,
+      });
+
+      if (req.method === 'POST' && requestUrl.pathname === '/v1/messages/count_tokens') {
+        res.statusCode = 200;
+        res.setHeader('content-type', 'application/json');
+        res.end(JSON.stringify({ input_tokens: 12 }));
+        return;
+      }
+
+      res.statusCode = 404;
+      res.end(JSON.stringify({ error: 'not_found' }));
+    })();
+  });
+  const port = allocateMockPort();
+  server.listen(port, '127.0.0.1');
+  upstreamServers.push(server);
+  return {
+    baseUrl: `http://127.0.0.1:${port}`,
+    requests: () => requests,
   };
 }
 
@@ -231,10 +272,11 @@ describe('user api keys integration', () => {
 
   it('uses personal API keys against canonical llm-gateway paths and rejects legacy bare paths', async () => {
     const universalProxy = startUniversalProxyMockServer();
+    const anthropicDirectUpstream = startAnthropicDirectUpstreamMockServer();
     process.env.MBOS_UNIVERSAL_PROXY_BASE_URL = universalProxy.baseUrl;
     const { baseUrl } = startServer();
     await createProjectEndpoint(baseUrl, 'https://openai-compatible.provider.example/v1', 'openai_chat_completions', 'placeholder-openai-model');
-    await createProjectEndpoint(baseUrl, 'https://anthropic-compatible.provider.example/v1', 'anthropic_messages', 'placeholder-anthropic-model');
+    await createProjectEndpoint(baseUrl, anthropicDirectUpstream.baseUrl, 'anthropic_messages', 'placeholder-anthropic-model');
 
     const keyRes = await apiFetch(baseUrl, '/api/v1/user/keys', {
       method: 'POST',
@@ -326,9 +368,16 @@ describe('user api keys integration', () => {
       expect.arrayContaining([
         expect.stringMatching(/\/openai\/v1\/responses$/),
         expect.stringMatching(/\/anthropic\/v1\/messages$/),
+      ]),
+    );
+    expect(universalProxy.namespaceRequests().map((item) => item.path)).not.toEqual(
+      expect.arrayContaining([
         expect.stringMatching(/\/anthropic\/v1\/messages\/count_tokens$/),
       ]),
     );
+    expect(anthropicDirectUpstream.requests()).toHaveLength(1);
+    expect(anthropicDirectUpstream.requests()[0]?.path).toBe('/v1/messages/count_tokens');
+    expect(anthropicDirectUpstream.requests()[0]?.headers['authorization']).toBe('Bearer sk-anthropic_messages');
 
     const legacyRes = await apiFetchWithToken(
       baseUrl,

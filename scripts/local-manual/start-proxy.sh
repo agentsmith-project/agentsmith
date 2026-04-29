@@ -4,26 +4,23 @@ set -euo pipefail
 source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/common.sh"
 init_local_manual_env
 
-write_proxy_config() {
-  cat > "${PROXY_CONFIG}" <<EOF
-listen: 127.0.0.1:${PROXY_PORT}
-upstream_timeout_secs: 120
-upstreams: {}
-model_aliases: {}
-EOF
-}
+PROXY_PORT="${PROXY_PORT:-${SUBSTRATE_PROXY_PORT}}"
+PROXY_CONFIG="${SUBSTRATE_PROXY_CONFIG_FILE}"
+PROXY_LOG="${SUBSTRATE_PROXY_LOG}"
+PROXY_PORT_FILE="${SUBSTRATE_STATE_ROOT}/proxy.port"
 
-wait_port_free "${PROXY_PORT}" "universal-proxy" 30
-if [[ ! -x "${PROXY_ROOT}/target/debug/llm-universal-proxy" ]]; then
-  info "building llm-universal-proxy debug binary"
-  (cd "${PROXY_ROOT}" && cargo build --quiet)
-fi
-write_proxy_config
-launch_detached "${PROXY_PID_FILE}" "${PROXY_LOG}" "
-  cd '${PROXY_ROOT}' && \
-  exec ./target/debug/llm-universal-proxy --config '${PROXY_CONFIG}'
-"
-wait_http "http://127.0.0.1:${PROXY_PORT}/admin/state" "universal-proxy" 60
-capture_listener_pid "${PROXY_PORT}" "${PROXY_PID_FILE}" "universal-proxy"
+UNIVERSAL_PROXY_RUNTIME_ROOT_DIR="${ROOT_DIR}" \
+  UNIVERSAL_PROXY_RUNTIME_STATE_DIR="${SUBSTRATE_STATE_ROOT}" \
+  UNIVERSAL_PROXY_RUNTIME_PORT="${PROXY_PORT}" \
+  UNIVERSAL_PROXY_RUNTIME_BASE_URL="http://127.0.0.1:${PROXY_PORT}" \
+  UNIVERSAL_PROXY_RUNTIME_DEFAULT_URLS="http://127.0.0.1:${PROXY_PORT}" \
+  UNIVERSAL_PROXY_RUNTIME_CONFIG_FILE="${PROXY_CONFIG}" \
+  UNIVERSAL_PROXY_RUNTIME_CONTAINER_ID_FILE="${SUBSTRATE_STATE_ROOT}/proxy.container-id" \
+  UNIVERSAL_PROXY_RUNTIME_LOG_FILE="${PROXY_LOG}" \
+  UNIVERSAL_PROXY_RUNTIME_CONTAINER_NAME="${LOCAL_MANUAL_UNIVERSAL_PROXY_CONTAINER_NAME:-agentsmith-local-manual-universal-proxy}" \
+  UNIVERSAL_PROXY_RUNTIME_LABEL="local-manual" \
+  UNIVERSAL_PROXY_RUNTIME_LOG_PREFIX="[local-manual]" \
+  universal_proxy_runtime_ensure
+
 printf '%s\n' "${PROXY_PORT}" > "${PROXY_PORT_FILE}"
 write_ready_file "${PROXY_READY_FILE}"

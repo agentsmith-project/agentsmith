@@ -7,8 +7,8 @@ import path from 'node:path';
 import { describe, expect, it } from 'vitest';
 
 const repoRoot = process.cwd();
-const LLMUP_DIGEST = 'sha256:81c277bcbdbec4645b3e4edce5efa4d1b2253539214ba944f0712798c9a28f22';
-const LLMUP_SOURCE_IMAGE = `ghcr.io/agentsmith-project/llm-universal-proxy:v0.2.23@${LLMUP_DIGEST}`;
+const LLMUP_DIGEST = 'sha256:a6d5b309f25f17cafbd7fadb601fef5f80726c4a299509820e8e863be0928058';
+const LLMUP_SOURCE_IMAGE = `ghcr.io/agentsmith-project/llm-universal-proxy:v0.2.25@${LLMUP_DIGEST}`;
 const forbiddenEvidenceTruthFields = new Set([
   'verdict',
   'claim_id',
@@ -187,7 +187,7 @@ function stageDemoBuildBundleFixture(tempRoot: string): void {
     [
       '# AgentSmith llmup external image lock.',
       '# Format: llmup_version=<version> and llmup_source_image=<image:tag@sha256:digest>',
-      'llmup_version=v0.2.23',
+      'llmup_version=v0.2.25',
       `llmup_source_image=${LLMUP_SOURCE_IMAGE}`,
       '',
     ].join('\n'),
@@ -527,10 +527,10 @@ describe('demo build bundle image archives', () => {
       const bundleDir = path.join(tempRoot, 'out', 'agentsmith-test-release');
       const version = readFileSync(path.join(bundleDir, 'VERSION'), 'utf8');
 
-      expect(version).toContain('llmup_version=v0.2.23');
+      expect(version).toContain('llmup_version=v0.2.25');
       expect(version).toContain(`llmup_source_image=${LLMUP_SOURCE_IMAGE}`);
       expect(version).toContain(`llmup_source_image_digest=${LLMUP_DIGEST}`);
-      expect(version).toContain('llm_universal_proxy_image=llm-universal-proxy:v0.2.23');
+      expect(version).toContain('llm_universal_proxy_image=llm-universal-proxy:v0.2.25');
     } finally {
       rmSync(parentRoot, { recursive: true, force: true });
     }
@@ -543,7 +543,7 @@ describe('demo build bundle image archives', () => {
       stageDemoBuildBundleFixture(tempRoot);
 
       const result = runDemoBuildBundleResult(tempRoot, {
-        LLMUP_SOURCE_IMAGE: 'ghcr.io/agentsmith-project/llm-universal-proxy:v0.2.23',
+        LLMUP_SOURCE_IMAGE: 'ghcr.io/agentsmith-project/llm-universal-proxy:v0.2.25',
         SKIP_RELEASE_ARCHIVE: '1',
         SKIP_BUNDLED_IMAGE_ARCHIVE_GENERATION: '1',
       });
@@ -564,7 +564,7 @@ describe('demo build bundle image archives', () => {
       stageDemoBuildBundleFixture(tempRoot);
 
       const result = runDemoBuildBundleResult(tempRoot, {
-        LLMUP_VERSION: 'v0.2.24',
+        LLMUP_VERSION: 'v0.2.26',
         LLMUP_SOURCE_IMAGE,
         SKIP_RELEASE_ARCHIVE: '1',
         SKIP_BUNDLED_IMAGE_ARCHIVE_GENERATION: '1',
@@ -589,7 +589,7 @@ describe('demo build bundle image archives', () => {
       const bundleDir = path.join(tempRoot, 'out', 'agentsmith-test-release');
       const manifestPath = path.join(bundleDir, 'images', 'image-archives.manifest.json');
       const appArchiveRelpath = 'images/agentsmith-app-test-release.tar';
-      const proxyArchiveRelpath = 'images/llm-universal-proxy-v0.2.23.tar';
+      const proxyArchiveRelpath = 'images/llm-universal-proxy-v0.2.25.tar';
       const appArchivePath = path.join(bundleDir, appArchiveRelpath);
       const appProof = readDockerArchiveProof(appArchivePath);
       const proxyProof = readDockerArchiveProof(path.join(bundleDir, proxyArchiveRelpath));
@@ -614,7 +614,7 @@ describe('demo build bundle image archives', () => {
         platform: 'linux/amd64',
       });
       expect(appManifestEntry.image_ref).toBe('agentsmith-app:test-release');
-      expect(proxyManifestEntry.image_ref).toBe('llm-universal-proxy:v0.2.23');
+      expect(proxyManifestEntry.image_ref).toBe('llm-universal-proxy:v0.2.25');
       expect(proxyManifestEntry.archive_config_digest).toBe(proxyProof.configDigest);
       expect(appManifestEntry.source_build_manifest_digest).toBeNull();
       expect(appManifestEntry.source_manifest_digest).toBeNull();

@@ -7,8 +7,6 @@ type RuntimeUpstreamConfig = {
   name: string;
   api_root: string;
   fixed_upstream_format?: 'openai-completion' | 'openai-responses' | 'anthropic' | 'google';
-  fallback_credential_actual: string;
-  auth_policy: 'force_server';
   upstream_headers: Array<[string, string]>;
 };
 
@@ -44,6 +42,7 @@ type ProxyOptions = {
   proxyPath: string;
   model: string;
   requestBody: unknown;
+  providerCredential: string;
   passthroughHeaders?: Record<string, string>;
   signal?: AbortSignal;
 };
@@ -54,6 +53,7 @@ type ProxyForwardOptions = {
   proxyPath: string;
   model: string;
   requestBody: unknown;
+  providerCredential: string;
   passthroughHeaders?: Record<string, string>;
   signal?: AbortSignal;
 };
@@ -81,6 +81,12 @@ const DEFAULT_MAX_TRANSIENT_PROVIDER_RETRIES = 1;
 const DEFAULT_TRANSIENT_PROVIDER_RETRY_DELAY_MS = 250;
 const DEFAULT_MAX_TRANSIENT_PROVIDER_RETRY_DELAY_MS = 1_500;
 const EXPLICIT_TRANSIENT_PROVIDER_HINT_PATTERN = /\b(provider_retryable|capacity|overload(?:ed)?|rate[_ -]?limit|too many requests|retry later|temporar(?:ily)? unavailable)\b/i;
+const DATA_PLANE_PASSTHROUGH_HEADER_ALLOWLIST = new Set([
+  'anthropic-beta',
+  'anthropic-version',
+  'x-request-id',
+  'x-stainless-helper-method',
+]);
 
 function sanitizeBaseUrl(value: string): string {
   return value.trim().replace(/\/+$/, '');
@@ -138,17 +144,12 @@ function routePathForProxyPath(proxyPath: string): string | null {
   if (normalized === 'openai/chat/completions') return '/openai/v1/chat/completions';
   if (normalized === 'openai/responses') return '/openai/v1/responses';
   if (normalized === 'anthropic/messages') return '/anthropic/v1/messages';
-  if (normalized === 'anthropic/messages/count_tokens') return '/anthropic/v1/messages/count_tokens';
   return null;
 }
 
-function requestAllowsAutomaticReplay(method: string | undefined, proxyPath: string): boolean {
+function requestAllowsAutomaticReplay(method: string | undefined, _proxyPath: string): boolean {
   const normalizedMethod = (method ?? 'POST').trim().toUpperCase();
-  if (normalizedMethod === 'GET' || normalizedMethod === 'HEAD') {
-    return true;
-  }
-
-  return normalizedMethod === 'POST' && normalizeProxyPath(proxyPath) === 'anthropic/messages/count_tokens';
+  return normalizedMethod === 'GET' || normalizedMethod === 'HEAD';
 }
 
 function fixedUpstreamFormat(protocol: EndpointUpstreamProtocol): RuntimeUpstreamConfig['fixed_upstream_format'] | undefined {
@@ -158,7 +159,20 @@ function fixedUpstreamFormat(protocol: EndpointUpstreamProtocol): RuntimeUpstrea
   return undefined;
 }
 
-function buildRuntimeConfig(endpoint: EndpointRecord, apiKey: string): RuntimeNamespaceConfig {
+function sanitizeDataPlanePassthroughHeaders(headers?: Record<string, string>): Record<string, string> {
+  const sanitized: Record<string, string> = {};
+  for (const [rawName, rawValue] of Object.entries(headers ?? {})) {
+    const name = rawName.trim().toLowerCase();
+    const value = rawValue.trim();
+    if (!value || !DATA_PLANE_PASSTHROUGH_HEADER_ALLOWLIST.has(name)) {
+      continue;
+    }
+    sanitized[name] = value;
+  }
+  return sanitized;
+}
+
+function buildRuntimeConfig(endpoint: EndpointRecord): RuntimeNamespaceConfig {
   return {
     listen: '0.0.0.0:8080',
     upstream_timeout_secs: endpoint.limits?.timeout_seconds ?? 120,
@@ -166,8 +180,6 @@ function buildRuntimeConfig(endpoint: EndpointRecord, apiKey: string): RuntimeNa
       name: 'primary',
       api_root: normalizeEndpointApiRoot(endpoint),
       fixed_upstream_format: fixedUpstreamFormat(endpoint.upstream_protocol),
-      fallback_credential_actual: apiKey,
-      auth_policy: 'force_server',
       upstream_headers: [],
     }],
     model_aliases: {},
@@ -388,7 +400,6 @@ export class UniversalProxyService {
   constructor(
     private readonly baseUrl: string,
     private readonly adminToken?: string,
-    private readonly dataToken?: string,
     options?: UniversalProxyServiceOptions,
   ) {
     this.options = resolveServiceOptions(options);
@@ -398,8 +409,7 @@ export class UniversalProxyService {
     const raw = env.MBOS_UNIVERSAL_PROXY_BASE_URL?.trim();
     if (!raw) return undefined;
     const adminToken = env.MBOS_UNIVERSAL_PROXY_ADMIN_TOKEN?.trim() || undefined;
-    const dataToken = env.MBOS_UNIVERSAL_PROXY_DATA_TOKEN?.trim() || undefined;
-    return new UniversalProxyService(raw, adminToken, dataToken);
+    return new UniversalProxyService(raw, adminToken);
   }
 
   supportsProxyPath(proxyPath: string): boolean {
@@ -523,10 +533,9 @@ export class UniversalProxyService {
     workspaceId: string,
     projectId: string,
     endpoint: EndpointRecord,
-    apiKey: string,
   ): Promise<string> {
     const namespace = this.buildNamespace(workspaceId, projectId, endpoint.id);
-    const config = buildRuntimeConfig(endpoint, apiKey);
+    const config = buildRuntimeConfig(endpoint);
     const desiredConfigHash = buildConfigHash(config);
     await this.reconcileNamespaceConfig(namespace, config, desiredConfigHash);
     return namespace;
@@ -601,8 +610,8 @@ export class UniversalProxyService {
       method: options.req.method ?? 'POST',
       headers: {
         'content-type': 'application/json',
-        ...(options.passthroughHeaders ?? {}),
-        ...(this.dataToken ? { 'x-llmup-data-token': this.dataToken } : {}),
+        ...sanitizeDataPlanePassthroughHeaders(options.passthroughHeaders),
+        Authorization: `Bearer ${options.providerCredential}`,
       },
       body: JSON.stringify({
         ...(typeof options.requestBody === 'object' && options.requestBody !== null ? options.requestBody as Record<string, unknown> : {}),

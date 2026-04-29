@@ -24,25 +24,9 @@ function stageClusterPrepareFixture(tempRoot: string): void {
     path.join(repoRoot, 'scripts', 'cluster-deploy', 'lib.sh'),
     path.join(tempRoot, 'scripts', 'cluster-deploy', 'lib.sh'),
   );
-
-  writeFileSync(
+  copyFileSync(
+    path.join(repoRoot, 'scripts', 'lib', 'deploy-common.sh'),
     path.join(tempRoot, 'scripts', 'lib', 'deploy-common.sh'),
-    `#!/usr/bin/env bash
-set -euo pipefail
-DEPLOY_ROOT="\${DEPLOY_ROOT:-${tempRoot}/cluster-deploy}"
-CONFIG_DIR="\${CONFIG_DIR:-\${DEPLOY_ROOT}/config}"
-CURRENT_LINK="\${DEPLOY_ROOT}/current"
-RELEASE_ROOT="\${RELEASE_ROOT:-${tempRoot}/release}"
-SHARED_SITE_ENV="\${CONFIG_DIR}/site.env"
-TOOLS_DIR="\${RELEASE_ROOT}/tools"
-INTERNAL_AGENT_K8S_NAMESPACE="\${INTERNAL_AGENT_K8S_NAMESPACE:-agentsmith-internal}"
-ensure_dirs() { mkdir -p "\${DEPLOY_ROOT}" "\${CONFIG_DIR}" "\${RELEASE_ROOT}/env"; }
-state_set() { :; }
-log() { printf '[cluster-prepare-test] %s\\n' "$*"; }
-die() { printf '[cluster-prepare-test] ERROR: %s\\n' "$*" >&2; exit 1; }
-require_cmd() { command -v "$1" >/dev/null 2>&1 || die "missing command: $1"; }
-`,
-    'utf8',
   );
   writeFileSync(
     path.join(tempRoot, 'scripts', 'lib', 'release-stage-common.sh'),
@@ -72,11 +56,38 @@ require_release_path() {
   writeFileSync(path.join(releaseRoot, 'docs', 'contracts', 'cluster-deployment-spec-v1.md'), 'spec\n', 'utf8');
   writeFileSync(path.join(releaseRoot, 'docs', 'user-guides', 'cluster-admin-runbook.md'), 'runbook\n', 'utf8');
   writeFileSync(path.join(releaseRoot, 'compose', 'docker-compose.yml'), 'services: {}\n', 'utf8');
-  writeFileSync(path.join(releaseRoot, 'env', 'site.env'), 'CLUSTER_DEPLOY_MODE=semi-auto\n', 'utf8');
+  writeFileSync(
+    path.join(releaseRoot, 'env', 'site.env'),
+    'CLUSTER_DEPLOY_MODE=semi-auto\nINTERNAL_AGENT_K8S_NAMESPACE=agentsmith-internal\n',
+    'utf8',
+  );
   writeFileSync(path.join(releaseRoot, 'env', 'registry.env'), 'REGISTRY_HOST=localhost:5001\nREGISTRY_PROJECT=mbos\n', 'utf8');
   writeFileSync(path.join(releaseRoot, 'env', 'kubeconfig'), 'clusters:\n- cluster:\n    server: https://127.0.0.1:6443\n', 'utf8');
   writeFileSync(path.join(releaseRoot, 'VERSION'), 'release_id=test-release\nbundled_image_archives_included=0\n', 'utf8');
-  writeExecutable(path.join(releaseRoot, 'tools', 'kubectl'), '#!/usr/bin/env bash\nset -euo pipefail\n');
+  writeExecutable(
+    path.join(releaseRoot, 'tools', 'kubectl'),
+    `#!/usr/bin/env bash
+set -euo pipefail
+for arg in "$@"; do
+  case "$arg" in
+    auth)
+      printf 'yes\\n'
+      exit 0
+      ;;
+    version)
+      exit 0
+      ;;
+    get)
+      exit 0
+      ;;
+    kustomize)
+      exit 0
+      ;;
+  esac
+done
+exit 0
+`,
+  );
 
   const binDir = path.join(tempRoot, 'bin');
   mkdirSync(binDir, { recursive: true });

@@ -58,6 +58,13 @@ function createJsonResponse(body: Record<string, unknown>, status: number, heade
 }
 
 describe('UniversalProxyService', () => {
+  it('does not advertise Anthropic count_tokens as a universal proxy data-plane route', () => {
+    const service = new UniversalProxyService('http://proxy.internal:8080');
+
+    expect(service.supportsProxyPath('anthropic/messages')).toBe(true);
+    expect(service.supportsProxyPath('anthropic/messages/count_tokens')).toBe(false);
+  });
+
   it('adds bearer authorization to admin config pushes when admin token is configured from env', async () => {
     const fetchMock = vi.fn().mockResolvedValue(
       new Response(JSON.stringify({ revision: 'srv_rev_1' }), {
@@ -78,7 +85,6 @@ describe('UniversalProxyService', () => {
       'ws_default',
       'proj_1',
       createEndpoint(),
-      'secret-key',
     );
 
     expect(getRequest(fetchMock).init.headers).toEqual({
@@ -87,7 +93,7 @@ describe('UniversalProxyService', () => {
     });
   });
 
-  it('adds the llmup data token to proxied data requests when configured from env', async () => {
+  it('sends the endpoint credential as standard bearer auth for proxied data requests', async () => {
     const fetchMock = vi.fn().mockResolvedValue(
       createJsonResponse({ id: 'chatcmpl_1', choices: [] }, 200),
     );
@@ -95,7 +101,6 @@ describe('UniversalProxyService', () => {
 
     const service = UniversalProxyService.fromEnv({
       MBOS_UNIVERSAL_PROXY_BASE_URL: 'http://proxy.internal:8080',
-      MBOS_UNIVERSAL_PROXY_DATA_TOKEN: ' proxy-data-token ',
     });
 
     expect(service).toBeDefined();
@@ -107,12 +112,49 @@ describe('UniversalProxyService', () => {
       model: 'demo-model',
       requestBody: { messages: [] },
       passthroughHeaders: { 'x-request-id': 'req_1' },
+      providerCredential: 'secret-key',
     });
 
     expect(getRequest(fetchMock).init.headers).toEqual({
       'content-type': 'application/json',
       'x-request-id': 'req_1',
-      'x-llmup-data-token': 'proxy-data-token',
+      Authorization: 'Bearer secret-key',
+    });
+  });
+
+  it('filters credential-like passthrough headers before forwarding llmup data-plane requests', async () => {
+    const fetchMock = vi.fn().mockResolvedValue(
+      createJsonResponse({ id: 'chatcmpl_1', choices: [] }, 200),
+    );
+    vi.stubGlobal('fetch', fetchMock);
+
+    const service = UniversalProxyService.fromEnv({
+      MBOS_UNIVERSAL_PROXY_BASE_URL: 'http://proxy.internal:8080',
+    });
+
+    expect(service).toBeDefined();
+
+    await service?.forwardRequest({
+      req: createRequest(),
+      namespace: 'ws_default__proj_1__ep_1',
+      proxyPath: 'openai/chat/completions',
+      model: 'demo-model',
+      requestBody: { messages: [] },
+      passthroughHeaders: {
+        Authorization: 'Bearer frontend-jwt',
+        'x-api-key': 'frontend-api-key',
+        cookie: 'session=frontend-session',
+        'anthropic-version': '2023-06-01',
+        'x-request-id': 'req_1',
+      },
+      providerCredential: 'secret-key',
+    });
+
+    expect(getRequest(fetchMock).init.headers).toEqual({
+      'content-type': 'application/json',
+      'anthropic-version': '2023-06-01',
+      'x-request-id': 'req_1',
+      Authorization: 'Bearer secret-key',
     });
   });
 
@@ -135,7 +177,6 @@ describe('UniversalProxyService', () => {
       'ws_default',
       'proj_1',
       createEndpoint(),
-      'secret-key',
     );
 
     expect(getRequest(fetchMock).init.headers).toEqual({
@@ -157,7 +198,6 @@ describe('UniversalProxyService', () => {
       'ws_default',
       'proj_1',
       createEndpoint(),
-      'secret-key',
     );
 
     expect(namespace).toBe('ws_default__proj_1__ep_1');
@@ -166,14 +206,18 @@ describe('UniversalProxyService', () => {
     expect(url).toBe('http://proxy.internal:8080/admin/namespaces/ws_default__proj_1__ep_1/config');
     const payload = JSON.parse(String(init.body)) as {
       if_revision: string | null;
-      config: { upstreams: Array<{ api_root: string; fixed_upstream_format?: string; auth_policy: string }> };
+      config: { upstreams: Array<Record<string, unknown>> };
     };
     expect(payload.if_revision).toBeNull();
     expect(payload.config.upstreams[0]).toMatchObject({
       api_root: 'https://anthropic-compatible.provider.example/v1',
       fixed_upstream_format: 'anthropic',
-      auth_policy: 'force_server',
+      upstream_headers: [],
     });
+    expect(payload.config.upstreams[0]).not.toHaveProperty('fallback_credential_actual');
+    expect(payload.config.upstreams[0]).not.toHaveProperty('auth_policy');
+    expect(payload.config.upstreams[0]).not.toHaveProperty('provider_key_env');
+    expect(String(init.body)).not.toContain('secret-key');
   });
 
   it('normalizes explicit upstream route suffixes out of api_root snapshots', async () => {
@@ -193,7 +237,6 @@ describe('UniversalProxyService', () => {
         upstream_protocol: 'openai_chat_completions',
         base_url: 'https://openai-compatible.provider.example/chat/completions',
       }),
-      'secret-key',
     );
 
     const [, init] = fetchMock.mock.calls[0] as [string, RequestInit];
@@ -217,7 +260,6 @@ describe('UniversalProxyService', () => {
       'ws_default',
       'proj_1',
       createEndpoint(),
-      'secret-key',
     );
     await service.ensureEndpointNamespace(
       'ws_default',
@@ -226,7 +268,6 @@ describe('UniversalProxyService', () => {
         name: 'Renamed Endpoint',
         updated_at: '2026-04-01T12:00:00.000Z',
       }),
-      'secret-key',
     );
 
     expect(fetchMock).toHaveBeenCalledTimes(1);
@@ -254,7 +295,6 @@ describe('UniversalProxyService', () => {
       'ws_default',
       'proj_1',
       createEndpoint(),
-      'secret-key',
     );
     await service.ensureEndpointNamespace(
       'ws_default',
@@ -263,7 +303,6 @@ describe('UniversalProxyService', () => {
         limits: { timeout_seconds: 45 },
         updated_at: '2026-04-01T12:00:00.000Z',
       }),
-      'secret-key',
     );
 
     expect(fetchMock).toHaveBeenCalledTimes(2);
@@ -299,7 +338,6 @@ describe('UniversalProxyService', () => {
       'ws_default',
       'proj_1',
       createEndpoint(),
-      'secret-key',
     );
 
     expect(fetchMock).toHaveBeenCalledTimes(2);
@@ -337,7 +375,6 @@ describe('UniversalProxyService', () => {
       'ws_default',
       'proj_1',
       createEndpoint(),
-      'secret-key',
     );
     await service.ensureEndpointNamespace(
       'ws_default',
@@ -346,7 +383,6 @@ describe('UniversalProxyService', () => {
         limits: { timeout_seconds: 45 },
         updated_at: '2026-04-01T12:00:00.000Z',
       }),
-      'secret-key',
     );
 
     expect(fetchMock).toHaveBeenCalledTimes(3);
@@ -376,7 +412,6 @@ describe('UniversalProxyService', () => {
         'ws_default',
         'proj_1',
         createEndpoint(),
-        'secret-key',
       ),
     ).rejects.toThrow('universal_proxy_config_push_missing_revision');
   });
@@ -394,13 +429,11 @@ describe('UniversalProxyService', () => {
       'ws_default',
       'proj_1',
       createEndpoint(),
-      'secret-key',
     );
     const pendingB = service.ensureEndpointNamespace(
       'ws_default',
       'proj_1',
       createEndpoint(),
-      'secret-key',
     );
 
     expect(fetchMock).toHaveBeenCalledTimes(1);
@@ -440,6 +473,7 @@ describe('UniversalProxyService', () => {
       proxyPath: 'openai/responses',
       model: 'placeholder-model',
       requestBody: { input: 'hello' },
+      providerCredential: 'secret-key',
     });
 
     expect(result).toEqual({ upstream_status: 200, tokens_total: 42 });
@@ -476,6 +510,7 @@ describe('UniversalProxyService', () => {
       proxyPath: 'openai/responses',
       model: 'placeholder-model',
       requestBody: { input: 'hello' },
+      providerCredential: 'secret-key',
     });
 
     expect(fetchMock).toHaveBeenCalledTimes(1);
@@ -512,6 +547,7 @@ describe('UniversalProxyService', () => {
       proxyPath: 'openai/responses',
       model: 'placeholder-model',
       requestBody: { input: 'hello' },
+      providerCredential: 'secret-key',
       signal: abortController.signal,
     });
 
@@ -606,6 +642,7 @@ describe('UniversalProxyService', () => {
         proxyPath,
         model,
         requestBody,
+        providerCredential: 'secret-key',
       });
 
       expect(fetchMock).toHaveBeenCalledTimes(1);
@@ -616,7 +653,7 @@ describe('UniversalProxyService', () => {
     });
   });
 
-  it('keeps transient retries bounded and does not retry clear non-retryable auth failures', async () => {
+  it('keeps replay-safe transient retries bounded and does not retry clear non-retryable auth failures', async () => {
     const retryableFetchMock = vi
       .fn()
       .mockResolvedValueOnce(createJsonResponse({ error: { message: 'overloaded' } }, 503))
@@ -628,19 +665,20 @@ describe('UniversalProxyService', () => {
       transientProviderRetryDelayMs: 0,
     });
     const retryableResponse = await retryingService.forwardRequest({
-      req: createRequest(),
+      req: createRequest('GET'),
       namespace: 'ws_default__proj_1__ep_1',
-      proxyPath: 'anthropic/messages/count_tokens',
-      model: 'claude-sonnet-4-5',
-      requestBody: { messages: [{ role: 'user', content: 'hello' }] },
+      proxyPath: 'openai/responses',
+      model: 'gpt-4.1',
+      requestBody: { input: 'hello' },
+      providerCredential: 'secret-key',
     });
 
     expect(retryableFetchMock).toHaveBeenCalledTimes(2);
     expect(retryableResponse.status).toBe(503);
     expect(await retryableResponse.text()).toContain('still overloaded');
     expect(JSON.parse(String(getRequest(retryableFetchMock, 1).init.body))).toMatchObject({
-      model: 'claude-sonnet-4-5',
-      messages: [{ role: 'user', content: 'hello' }],
+      model: 'gpt-4.1',
+      input: 'hello',
     });
 
     const authFailureFetchMock = vi.fn().mockResolvedValue(
@@ -663,6 +701,7 @@ describe('UniversalProxyService', () => {
       proxyPath: 'openai/chat/completions',
       model: 'gpt-4.1',
       requestBody: { messages: [{ role: 'user', content: 'hello' }] },
+      providerCredential: 'secret-key',
     });
 
     expect(authFailureFetchMock).toHaveBeenCalledTimes(1);

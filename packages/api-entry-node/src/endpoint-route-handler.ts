@@ -84,6 +84,10 @@ const SUPPORTED_CANONICAL_PROXY_PATHS = new Set([
   'openai/chat/completions',
   'openai/responses',
   'anthropic/messages',
+]);
+
+const DIRECT_BRIDGE_CHAT_PROXY_PATHS = new Set([
+  'messages/count_tokens',
   'anthropic/messages/count_tokens',
 ]);
 
@@ -107,6 +111,14 @@ function canonicalUniversalProxyPath(proxyPath: string): string | null {
     .replace(/^\/+/, '')
     .replace(/\/+$/, '');
   return SUPPORTED_CANONICAL_PROXY_PATHS.has(normalized) ? normalized : null;
+}
+
+function directBridgeChatProxyPath(proxyPath: string): string | null {
+  const normalized = proxyPath
+    .trim()
+    .replace(/^\/+/, '')
+    .replace(/\/+$/, '');
+  return DIRECT_BRIDGE_CHAT_PROXY_PATHS.has(normalized) ? 'messages/count_tokens' : null;
 }
 
 export async function handleEndpointRoute(args: EndpointHandlerArgs): Promise<boolean> {
@@ -298,7 +310,11 @@ export async function handleEndpointRoute(args: EndpointHandlerArgs): Promise<bo
       try {
         const normalizedOriginalProxyPath = normalizeGatewayProxyPath(proxyPath);
         const universalProxyService = deps.universalProxyService;
-        if (action === 'chat' && !canonicalUniversalProxyPath(normalizedOriginalProxyPath)) {
+        if (
+          action === 'chat'
+          && !canonicalUniversalProxyPath(normalizedOriginalProxyPath)
+          && !directBridgeChatProxyPath(normalizedOriginalProxyPath)
+        ) {
           json(res, 422, {
             error_code: 'VALIDATION_ERROR',
             message: 'endpoint_proxy_path_not_supported',
@@ -355,16 +371,13 @@ export async function handleEndpointRoute(args: EndpointHandlerArgs): Promise<bo
             ? requestBody
             : (method !== 'GET' && method !== 'HEAD' ? await readBody(req) : {});
         const targetUpstreamProxyPath =
-          normalizedOriginalProxyPath === 'anthropic/messages/count_tokens'
-            ? 'messages/count_tokens'
-            : resolved.proxyPath;
+          directBridgeChatProxyPath(normalizedOriginalProxyPath) ?? resolved.proxyPath;
         const proxyResult = canUseUniversalProxy
           ? await (async () => {
             const namespace = await universalProxyService.ensureEndpointNamespace(
               route.workspaceId,
               route.projectId,
               endpoint,
-              apiKey,
             );
             return universalProxyService.proxyJsonRequest({
               req,
@@ -373,6 +386,7 @@ export async function handleEndpointRoute(args: EndpointHandlerArgs): Promise<bo
               proxyPath: universalProxyPath ?? effectiveProxyPath,
               model: resolvedModel,
               requestBody: resolvedRequestBody,
+              providerCredential: apiKey,
               passthroughHeaders: collectPassthroughHeaders(req),
               signal: downstreamAbort.signal,
             });
@@ -384,7 +398,7 @@ export async function handleEndpointRoute(args: EndpointHandlerArgs): Promise<bo
             ),
             apiKey,
             endpointProtocol: endpoint.upstream_protocol,
-            proxyPath: resolved.proxyPath,
+            proxyPath: targetUpstreamProxyPath,
             model: resolvedModel,
             timeoutSeconds: endpoint.limits?.timeout_seconds,
             requestBody: resolvedRequestBody,
@@ -703,6 +717,7 @@ export async function handleEndpointRoute(args: EndpointHandlerArgs): Promise<bo
       'openai/chat/completions',
       'openai/responses',
       'anthropic/messages',
+      'messages/count_tokens',
       'anthropic/messages/count_tokens',
     ]);
     if (!supportedProxyPaths.has(proxyPath)) {

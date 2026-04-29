@@ -21,7 +21,7 @@ import {
 
 export const ORDERED_SENTINEL_PROBES = [
   'internal_execution_ws_base_url_correct',
-  'proxy_data_token_present',
+  'proxy_data_token_absent',
   'ticket_auth_present',
   'keycloak_redirect_bases_present',
   'dns_gateway_reachable',
@@ -46,7 +46,7 @@ export const DEFAULT_SENTINEL_PROFILE = 'release-ready' as const satisfies Senti
 export const SENTINEL_PROFILE_PROBE_MATRIX = {
   'release-ready': {
     internal_execution_ws_base_url_correct: 'advisory',
-    proxy_data_token_present: 'advisory',
+    proxy_data_token_absent: 'advisory',
     ticket_auth_present: 'advisory',
     keycloak_redirect_bases_present: 'required',
     dns_gateway_reachable: 'advisory',
@@ -58,7 +58,7 @@ export const SENTINEL_PROFILE_PROBE_MATRIX = {
   },
   'verify-real': {
     internal_execution_ws_base_url_correct: 'advisory',
-    proxy_data_token_present: 'advisory',
+    proxy_data_token_absent: 'advisory',
     ticket_auth_present: 'advisory',
     keycloak_redirect_bases_present: 'required',
     dns_gateway_reachable: 'advisory',
@@ -70,7 +70,7 @@ export const SENTINEL_PROFILE_PROBE_MATRIX = {
   },
   'verify-release-real': {
     internal_execution_ws_base_url_correct: 'advisory',
-    proxy_data_token_present: 'advisory',
+    proxy_data_token_absent: 'advisory',
     ticket_auth_present: 'advisory',
     keycloak_redirect_bases_present: 'required',
     dns_gateway_reachable: 'advisory',
@@ -82,7 +82,7 @@ export const SENTINEL_PROFILE_PROBE_MATRIX = {
   },
   'demo-rehearsal': {
     internal_execution_ws_base_url_correct: 'advisory',
-    proxy_data_token_present: 'advisory',
+    proxy_data_token_absent: 'advisory',
     ticket_auth_present: 'advisory',
     keycloak_redirect_bases_present: 'required',
     dns_gateway_reachable: 'advisory',
@@ -94,7 +94,7 @@ export const SENTINEL_PROFILE_PROBE_MATRIX = {
   },
   'cluster-rehearsal': {
     internal_execution_ws_base_url_correct: 'advisory',
-    proxy_data_token_present: 'advisory',
+    proxy_data_token_absent: 'advisory',
     ticket_auth_present: 'advisory',
     keycloak_redirect_bases_present: 'required',
     dns_gateway_reachable: 'advisory',
@@ -270,7 +270,7 @@ function internalExecutionWsBaseUrlCorrect(env: RedactionEnv): boolean {
 
 const DEFAULT_SENTINEL_PROBES: Record<SentinelProbeName, SentinelProbe> = {
   internal_execution_ws_base_url_correct: ({ env }) => internalExecutionWsBaseUrlCorrect(env),
-  proxy_data_token_present: ({ env }) => hasAnyEnv(env, PROXY_DATA_TOKEN_ENV_KEYS),
+  proxy_data_token_absent: ({ env }) => !hasAnyEnv(env, PROXY_DATA_TOKEN_ENV_KEYS),
   ticket_auth_present: ({ env }) => hasAnyEnv(env, TICKET_AUTH_ENV_KEYS),
   keycloak_redirect_bases_present: ({ env }) => hasAnyEnv(env, KEYCLOAK_REDIRECT_BASE_ENV_KEYS),
   dns_gateway_reachable: ({ env }) => truthyEnv(env, ['DNS_GATEWAY_REACHABLE', 'GATEWAY_REACHABLE']),

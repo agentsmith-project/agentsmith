@@ -57,7 +57,6 @@ PY
 }
 
 set_site_env_key MBOS_UNIVERSAL_PROXY_ADMIN_TOKEN fake-proxy-admin-token
-set_site_env_key MBOS_UNIVERSAL_PROXY_DATA_TOKEN fake-proxy-data-token
 
 cat > "${RELEASE_ROOT}/env/registry.env" <<'EOF'
 REGISTRY_HOST=localhost:5001
@@ -102,8 +101,8 @@ release_check_require_exact_line "${RELEASE_ROOT}/env/api.env" 'DOCKER_MANUAL_AG
 release_check_require_exact_line "${RELEASE_ROOT}/env/api.env" 'JUICEFS_BUCKET_ENDPOINT_FOR_GATEWAY=http://minio:9000' '[cluster-rendered-env] missing gateway storage endpoint override'
 release_check_require_exact_line "${RELEASE_ROOT}/env/internal.env" 'MBOS_UNIVERSAL_PROXY_ADMIN_TOKEN=fake-proxy-admin-token' '[cluster-rendered-env] missing universal proxy admin token'
 release_check_require_exact_line "${RELEASE_ROOT}/env/internal.env" 'LLM_UNIVERSAL_PROXY_ADMIN_TOKEN=fake-proxy-admin-token' '[cluster-rendered-env] missing proxy runtime admin token'
-release_check_require_exact_line "${RELEASE_ROOT}/env/internal.env" 'MBOS_UNIVERSAL_PROXY_DATA_TOKEN=fake-proxy-data-token' '[cluster-rendered-env] missing universal proxy data token'
-release_check_require_exact_line "${RELEASE_ROOT}/env/internal.env" 'LLM_UNIVERSAL_PROXY_DATA_TOKEN=fake-proxy-data-token' '[cluster-rendered-env] missing proxy runtime data token'
+release_check_require_exact_line "${RELEASE_ROOT}/env/internal.env" 'LLM_UNIVERSAL_PROXY_AUTH_MODE=client_provider_key' '[cluster-rendered-env] missing proxy runtime auth mode'
+release_check_forbid_pattern "${RELEASE_ROOT}/env/internal.env" 'UNIVERSAL_PROXY_DATA_TOKEN=' '[cluster-rendered-env] obsolete proxy data token rendered'
 release_check_require_exact_line "${RELEASE_ROOT}/env/internal.env" 'INTERNAL_AGENT_DEFAULT_CPU_REQUEST=1' '[cluster-rendered-env] missing internal cpu request default'
 release_check_require_pattern "${RELEASE_ROOT}/env/base.env" '^NO_PROXY=.*(^|,)(postgres|minio)(,|$)' '[cluster-rendered-env] missing compose no_proxy entries'
 release_check_require_exact_line "${RELEASE_ROOT}/env/base.env" 'HTTP_PROXY=' '[cluster-rendered-env] missing cleared HTTP_PROXY'
@@ -163,7 +162,6 @@ text = text.replace("SANDBOX_MANAGER_INGRESS_HOST=sandbox-manager.mbos.imotion.a
 text = text.replace("SANDBOX_MANAGER_PUBLIC_BASE_URL=https://sandbox-manager.mbos.imotion.ai", "SANDBOX_MANAGER_PUBLIC_BASE_URL=http://172.30.1.244")
 text = text.replace("COMPOSE_INTERNAL_SANDBOX_MANAGER_BASE_URL=", "COMPOSE_INTERNAL_SANDBOX_MANAGER_BASE_URL=http://172.30.1.244")
 text = text.replace("MBOS_UNIVERSAL_PROXY_ADMIN_TOKEN=", "MBOS_UNIVERSAL_PROXY_ADMIN_TOKEN=fake-proxy-admin-token")
-text = text.replace("MBOS_UNIVERSAL_PROXY_DATA_TOKEN=", "MBOS_UNIVERSAL_PROXY_DATA_TOKEN=fake-proxy-data-token")
 (release / "env/site.env.example").write_text(text, encoding="utf-8")
 (release / "env/site.env").write_text(text, encoding="utf-8")
 (release / "env/registry.env").write_text(

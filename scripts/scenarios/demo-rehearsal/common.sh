@@ -80,7 +80,6 @@ hydrate_demo_rehearsal_site_env_secrets() {
   local current_value resolved_value
 
   ensure_scenario_site_env_proxy_admin_token "${site_env}" "${DEMO_REHEARSAL_NAME}"
-  ensure_scenario_site_env_proxy_data_token "${site_env}" "${DEMO_REHEARSAL_NAME}"
 
   current_value="$(site_env_value "${site_env}" PRESET_ENDPOINT_API_KEY)"
   if [[ -n "${current_value}" ]]; then

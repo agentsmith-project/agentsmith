@@ -251,12 +251,6 @@ ensure_scenario_site_env_proxy_admin_token() {
   ensure_scenario_site_env_secret "${site_env}" MBOS_UNIVERSAL_PROXY_ADMIN_TOKEN "${scenario_name}-proxy-admin-token"
 }
 
-ensure_scenario_site_env_proxy_data_token() {
-  local site_env="$1"
-  local scenario_name="${2:-scenario}"
-  ensure_scenario_site_env_secret "${site_env}" MBOS_UNIVERSAL_PROXY_DATA_TOKEN "${scenario_name}-proxy-data-token"
-}
-
 render_scenario_owned_kind_config() {
   local template_path="$1"
   local output_path="$2"

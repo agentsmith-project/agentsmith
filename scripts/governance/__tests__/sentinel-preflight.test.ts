@@ -74,12 +74,12 @@ function writeCurrentHydrationShape(root: string): void {
     'FLOW_SITE_ENV_PUBLIC_API_BASE_URL=http://localhost:41000/api/v1',
   ]);
   writeEnv(root, 'artifacts/runtime/scenario/demo-rehearsal/config/site.env', [
-    'MBOS_UNIVERSAL_PROXY_DATA_TOKEN=demo-proxy-data-token',
+    'MBOS_UNIVERSAL_PROXY_ADMIN_TOKEN=demo-proxy-admin-token',
     'PRESET_ENDPOINT_API_KEY=sk-test-demo-rehearsal-value',
     'PRESET_ENDPOINT_MODEL=test-demo-rehearsal-model',
   ]);
   writeEnv(root, 'artifacts/runtime/scenario/cluster-rehearsal/config/site.env', [
-    'MBOS_UNIVERSAL_PROXY_DATA_TOKEN=cluster-proxy-data-token',
+    'MBOS_UNIVERSAL_PROXY_ADMIN_TOKEN=cluster-proxy-admin-token',
     'PRESET_ENDPOINT_API_KEY=sk-test-cluster-rehearsal-value',
     'PRESET_ENDPOINT_MODEL=test-cluster-rehearsal-model',
   ]);
@@ -187,7 +187,7 @@ describe('sentinel preflight', () => {
       env: {},
       probes: probeMap({
         internal_execution_ws_base_url_correct: false,
-        proxy_data_token_present: false,
+        proxy_data_token_absent: false,
         ticket_auth_present: false,
         keycloak_redirect_bases_present: true,
         dns_gateway_reachable: false,
@@ -323,7 +323,7 @@ describe('sentinel preflight', () => {
 
     expect(result.exitCode).toBe(0);
     expect(result.output.presence['probe.internal_execution_ws_base_url_correct']).toBe(true);
-    expect(result.output.presence['probe.proxy_data_token_present']).toBe(true);
+    expect(result.output.presence['probe.proxy_data_token_absent']).toBe(false);
     expect(result.output.presence['endpoint.internal_ws']).toBe(true);
     expect(result.output.presence['auth.proxy_data_token']).toBe(true);
     expect(rendered).not.toContain('172.18.0.1');

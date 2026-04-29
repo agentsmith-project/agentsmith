@@ -42,6 +42,22 @@ INTERNAL_AGENT_K8S_NAMESPACE="\${INTERNAL_AGENT_K8S_NAMESPACE:-agentsmith-intern
 load_release_env() {
   mkdir -p "\${RELEASE_ROOT}" "\${RELEASE_SCRIPT_DIR}" "\${REPORT_DIR}" "\${RELEASE_ROOT}/env"
 }
+load_env_file() {
+  local env_file="$1"
+  local raw_line line key value
+  while IFS= read -r raw_line || [[ -n "\${raw_line}" ]]; do
+    line="\${raw_line#"\${raw_line%%[![:space:]]*}"}"
+    [[ -z "\${line}" || "\${line}" == \\#* || "\${line}" != *=* ]] && continue
+    key="\${line%%=*}"
+    value="\${line#*=}"
+    if [[ "\${value}" =~ ^\\'(.*)\\'$ ]]; then
+      value="\${BASH_REMATCH[1]}"
+    elif [[ "\${value}" =~ ^\\"(.*)\\"$ ]]; then
+      value="\${BASH_REMATCH[1]}"
+    fi
+    export "\${key}=\${value}"
+  done < "\${env_file}"
+}
 docker_run_runtime_proxy_env_args() {
   printf '%s\\n' \
     -e HTTP_PROXY= \

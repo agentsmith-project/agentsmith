@@ -22,6 +22,7 @@ describe('local-manual start-api', () => {
     expect(script).toContain("capture_listener_pid \"${PORT_API}\" \"${API_PID_FILE}\" \"api\"");
     expect(script).toContain("local_manual_write_tracked_service_process_state api");
     expect(script).toContain("printf '%s\\n' \"${PORT_API}\" > \"${API_PORT_FILE}\"");
+    expect(script).toContain("MBOS_UNIVERSAL_PROXY_ADMIN_TOKEN='${MBOS_UNIVERSAL_PROXY_ADMIN_TOKEN:-}'");
   });
 
   it('writes api process-state after capture_listener_pid establishes the listener pid', () => {
@@ -31,6 +32,7 @@ describe('local-manual start-api', () => {
     const scriptsDir = path.join(tempRoot, 'scripts/local-manual');
     const runtimeRoot = path.join(tempRoot, 'artifacts/runtime/lines/local-manual/current');
     const processStateFile = path.join(runtimeRoot, 'api.process.json');
+    const launchCommandFile = path.join(runtimeRoot, 'api-launch-command.sh');
 
     mkdirSync(scriptsDir, { recursive: true });
     mkdirSync(runtimeRoot, { recursive: true });
@@ -69,19 +71,21 @@ MINIO_USE_SSL="0"
 MINIO_ACCESS_KEY="minio"
 MINIO_SECRET_KEY="miniostorage"
 MINIO_BUCKET="artifacts"
-FILE_LIBRARY_CLIENT_POSTGRES_HOST="localhost"
-FILE_LIBRARY_CLIENT_POSTGRES_PORT="15432"
-MBOS_UNIVERSAL_PROXY_BASE_URL="http://localhost:38080"
+	FILE_LIBRARY_CLIENT_POSTGRES_HOST="localhost"
+	FILE_LIBRARY_CLIENT_POSTGRES_PORT="15432"
+	MBOS_UNIVERSAL_PROXY_BASE_URL="http://localhost:38080"
+	MBOS_UNIVERSAL_PROXY_ADMIN_TOKEN="proxy-admin-token"
 
-init_local_manual_env() {
-  mkdir -p "${runtimeRoot}"
+	init_local_manual_env() {
+	  mkdir -p "${runtimeRoot}"
 }
 wait_port_free() {
   :
 }
-launch_detached() {
-  printf '%s\\n' "4100" > "$1"
-}
+	launch_detached() {
+	  printf '%s\\n' "4100" > "$1"
+	  printf '%s\\n' "$3" > "${launchCommandFile}"
+	}
 wait_http() {
   :
 }
@@ -107,5 +111,6 @@ write_ready_file() {
     expect(readFileSync(path.join(runtimeRoot, 'api.port'), 'utf8')).toBe('20000\n');
     expect(readFileSync(processStateFile, 'utf8')).toBe('api|4200|start-api|20000\n');
     expect(readFileSync(path.join(runtimeRoot, 'api.ready'), 'utf8')).toBe('ready\n');
+    expect(readFileSync(launchCommandFile, 'utf8')).toContain("MBOS_UNIVERSAL_PROXY_ADMIN_TOKEN='proxy-admin-token'");
   });
 });

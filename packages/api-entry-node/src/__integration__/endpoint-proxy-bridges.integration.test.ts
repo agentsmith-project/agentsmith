@@ -132,13 +132,6 @@ function startUniversalProxyMockServer(): {
           return;
         }
 
-        if (requestUrl.pathname.endsWith('/anthropic/v1/messages/count_tokens')) {
-          res.statusCode = 200;
-          res.setHeader('content-type', 'application/json');
-          res.end(JSON.stringify({ input_tokens: 12 }));
-          return;
-        }
-
         if (requestUrl.pathname.endsWith('/anthropic/v1/messages')) {
           res.statusCode = 200;
           res.setHeader('content-type', 'application/json');
@@ -165,6 +158,60 @@ function startUniversalProxyMockServer(): {
     baseUrl: `http://127.0.0.1:${port}`,
     configRequests: () => adminHarness.configRequests(),
     namespaceRequests: () => namespaceRequests,
+  };
+}
+
+function startAnthropicDirectUpstreamMockServer(): {
+  baseUrl: string;
+  requests: () => Array<{
+    method: string;
+    path: string;
+    headers: IncomingHttpHeaders;
+    body: unknown;
+  }>;
+} {
+  const requests: Array<{
+    method: string;
+    path: string;
+    headers: IncomingHttpHeaders;
+    body: unknown;
+  }> = [];
+
+  const server = http.createServer((req, res) => {
+    void (async () => {
+      const requestUrl = new URL(req.url ?? '/', 'http://127.0.0.1');
+      const chunks: Buffer[] = [];
+      for await (const chunk of req) {
+        chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk));
+      }
+      const text = Buffer.concat(chunks).toString('utf-8');
+      const body = text ? JSON.parse(text) : {};
+
+      requests.push({
+        method: req.method ?? 'GET',
+        path: requestUrl.pathname,
+        headers: req.headers,
+        body,
+      });
+
+      if (req.method === 'POST' && requestUrl.pathname === '/v1/messages/count_tokens') {
+        res.statusCode = 200;
+        res.setHeader('content-type', 'application/json');
+        res.end(JSON.stringify({ input_tokens: 12 }));
+        return;
+      }
+
+      res.statusCode = 404;
+      res.setHeader('content-type', 'application/json');
+      res.end(JSON.stringify({ error: 'not_found' }));
+    })();
+  });
+  const port = allocateMockProxyPort();
+  server.listen(port, '127.0.0.1');
+  servers.push(server);
+  return {
+    baseUrl: `http://127.0.0.1:${port}`,
+    requests: () => requests,
   };
 }
 
@@ -393,8 +440,9 @@ describe('api-entry-node endpoint proxy and llm-gateway routing', () => {
     expect(firstConfigRequest?.appliedRevision).toEqual(expect.any(String));
   });
 
-  it('forwards anthropic protocol headers through canonical llm-gateway path and preserves messages/count_tokens path', async () => {
+  it('forwards anthropic count_tokens through the direct bridge with protocol headers', async () => {
     const universalProxy = startUniversalProxyMockServer();
+    const directUpstream = startAnthropicDirectUpstreamMockServer();
     process.env.MBOS_UNIVERSAL_PROXY_BASE_URL = universalProxy.baseUrl;
     const { baseUrl } = startServer();
 
@@ -420,7 +468,7 @@ describe('api-entry-node endpoint proxy and llm-gateway routing', () => {
           name: 'gateway-anthropic-endpoint-headers',
           model: 'placeholder-model',
           type: 'catalog',
-          base_url: 'https://anthropic-compatible.provider.example/v1',
+          base_url: directUpstream.baseUrl,
           credential_ref: credential.id,
           provider_family: 'anthropic',
           upstream_protocol: 'anthropic_messages',
@@ -446,17 +494,13 @@ describe('api-entry-node endpoint proxy and llm-gateway routing', () => {
       },
     );
     expect(gatewayRes.status).toBe(200);
-    expect((universalProxy.configRequests()[0]?.body as {
-      if_revision?: string | null;
-      revision?: string;
-    }).revision).toBeUndefined();
-    expect((universalProxy.configRequests()[0]?.body as {
-      if_revision?: string | null;
-    }).if_revision ?? null).toBeNull();
-    expect(universalProxy.namespaceRequests()).toHaveLength(1);
-    expect(universalProxy.namespaceRequests()[0]?.path).toContain('/anthropic/v1/messages/count_tokens');
-    expect(universalProxy.namespaceRequests()[0]?.headers['anthropic-version']).toBe('2023-06-01');
-    expect(universalProxy.namespaceRequests()[0]?.headers['anthropic-beta']).toBe('prompt-caching-2024-07-31');
+    expect(universalProxy.configRequests()).toHaveLength(0);
+    expect(universalProxy.namespaceRequests()).toHaveLength(0);
+    expect(directUpstream.requests()).toHaveLength(1);
+    expect(directUpstream.requests()[0]?.path).toBe('/v1/messages/count_tokens');
+    expect(directUpstream.requests()[0]?.headers['authorization']).toBe('Bearer sk-gateway-ant-headers');
+    expect(directUpstream.requests()[0]?.headers['anthropic-version']).toBe('2023-06-01');
+    expect(directUpstream.requests()[0]?.headers['anthropic-beta']).toBe('prompt-caching-2024-07-31');
   });
 
   it('rejects legacy llm-gateway paths without protocol prefix', async () => {

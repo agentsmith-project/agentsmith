@@ -1,5 +1,5 @@
 import { execFileSync } from 'node:child_process';
-import { readFileSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 import path from 'node:path';
 
 import {
@@ -100,6 +100,55 @@ const clusterDeployOperations = read('docs/user-guides/cluster-deploy-operations
 const governanceModel = read('docs/current-engineering-governance-model.md');
 const localRuntimeFlows = read('docs/user-guides/local-runtime-flows.md');
 const runtimeLinesMatrix = read('docs/user-guides/runtime-lines-matrix.md');
+
+const activeUniversalProxyRuntimeEntrypoints = [
+  'scripts/run-integration-e2e-full.sh',
+  'scripts/substrate/providers/compose.sh',
+  'scripts/local-manual/start-proxy.sh',
+];
+const universalProxyRuntimeSourceScanPaths = [
+  ...activeUniversalProxyRuntimeEntrypoints,
+  'scripts/substrate/common.sh',
+  'scripts/lib/universal-proxy-runtime.sh',
+];
+const forbiddenUniversalProxySourceCouplings = [
+  '../llm-universal-proxy',
+  'PROXY_ROOT',
+  'cargo build',
+  'target/debug/llm-universal-proxy',
+];
+
+for (const entrypoint of activeUniversalProxyRuntimeEntrypoints) {
+  const content = read(entrypoint);
+  if (!content.includes('universal_proxy_runtime_ensure')) {
+    failures.push(`${entrypoint} must call universal_proxy_runtime_ensure for local/backend-real proxy startup`);
+  }
+}
+
+for (const runtimePath of universalProxyRuntimeSourceScanPaths) {
+  const content = read(runtimePath);
+  for (const forbidden of forbiddenUniversalProxySourceCouplings) {
+    if (content.includes(forbidden)) {
+      failures.push(`${runtimePath} must not couple local/backend-real proxy startup to sibling llmup source via ${forbidden}`);
+    }
+  }
+}
+
+const universalProxyRuntimeHelperPath = 'scripts/lib/universal-proxy-runtime.sh';
+if (!existsSync(path.join(rootDir, universalProxyRuntimeHelperPath))) {
+  failures.push('local/backend-real proxy startup must use scripts/lib/universal-proxy-runtime.sh');
+} else {
+  const universalProxyRuntimeHelper = read(universalProxyRuntimeHelperPath);
+  if (!universalProxyRuntimeHelper.includes('resolve_llmup_image_lock')) {
+    failures.push('universal-proxy-runtime.sh must resolve the locked llmup image through llmup-image-lock.sh');
+  }
+  if (/\bUNIVERSAL_PROXY_RUNTIME_IMAGE\b/.test(universalProxyRuntimeHelper)) {
+    failures.push('universal-proxy-runtime.sh must not allow overriding the locked llmup image');
+  }
+  if (!universalProxyRuntimeHelper.includes('MBOS_UNIVERSAL_PROXY_BASE_URL')) {
+    failures.push('universal-proxy-runtime.sh must export MBOS_UNIVERSAL_PROXY_BASE_URL as the runtime truth');
+  }
+}
 
 for (const line of CURRENT_RUNTIME_LINE_MANIFEST) {
   const helperPathTruth = readRuntimeLinePathTruthFromShell(line.id);

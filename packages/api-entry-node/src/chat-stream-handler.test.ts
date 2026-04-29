@@ -1047,7 +1047,8 @@ describe('handleChatStreamRoute session state ordering', () => {
     const universalProxyService = {
       supportsEndpoint: vi.fn(() => true),
       ensureEndpointNamespace: vi.fn(async () => 'ns_direct_stop'),
-      forwardRequest: vi.fn(async ({ signal }: { signal?: AbortSignal }) => {
+      forwardRequest: vi.fn(async ({ providerCredential, signal }: { providerCredential?: string; signal?: AbortSignal }) => {
+        expect(providerCredential).toBe('secret');
         const encoder = new TextEncoder();
         let chunkIndex = 0;
         return new Response(new ReadableStream({
@@ -1157,6 +1158,14 @@ describe('handleChatStreamRoute session state ordering', () => {
     allowCompletion.resolve();
 
     await expect(handlePromise).resolves.toBe(true);
+    expect(universalProxyService.ensureEndpointNamespace).toHaveBeenCalledWith(
+      session.workspace_id,
+      session.project_id,
+      expect.objectContaining({ id: 'ep_direct_stop' }),
+    );
+    expect(universalProxyService.forwardRequest).toHaveBeenCalledWith(expect.objectContaining({
+      providerCredential: 'secret',
+    }));
     await expect(readSessionStreamState(
       cache,
       session.workspace_id,

@@ -228,7 +228,7 @@ describe('demo-rehearsal site env seeding', () => {
     }
   });
 
-  it('hydrates a fresh rehearsal site env with MBOS_UNIVERSAL_PROXY_DATA_TOKEN without mutating the tracked example', () => {
+  it('does not hydrate legacy MBOS_UNIVERSAL_PROXY_DATA_TOKEN into fresh rehearsal site env', () => {
     const tempRoot = mkdtempSync(path.join(os.tmpdir(), 'demo-rehearsal-proxy-data-token-'));
     try {
       stageDemoRehearsalFixture(tempRoot);
@@ -236,13 +236,10 @@ describe('demo-rehearsal site env seeding', () => {
       runDemoRehearsalCommon(tempRoot);
       const seededSiteEnv = path.join(tempRoot, 'scenario', 'config', 'site.env');
       const exampleSiteEnv = path.join(tempRoot, 'infra', 'deploy', 'demo', 'env', 'site.env.example');
-      const firstToken = readEnvValue(seededSiteEnv, 'MBOS_UNIVERSAL_PROXY_DATA_TOKEN');
 
       runDemoRehearsalCommon(tempRoot);
-      const secondToken = readEnvValue(seededSiteEnv, 'MBOS_UNIVERSAL_PROXY_DATA_TOKEN');
 
-      expect(firstToken).not.toBe('');
-      expect(secondToken).toBe(firstToken);
+      expect(readEnvValue(seededSiteEnv, 'MBOS_UNIVERSAL_PROXY_DATA_TOKEN')).toBe('');
       expect(readEnvValue(exampleSiteEnv, 'MBOS_UNIVERSAL_PROXY_DATA_TOKEN')).toBe('');
     } finally {
       rmSync(tempRoot, { recursive: true, force: true });
@@ -284,7 +281,7 @@ describe('demo-rehearsal site env seeding', () => {
     }
   });
 
-  it('preserves an explicit rehearsal MBOS_UNIVERSAL_PROXY_DATA_TOKEN instead of replacing it', () => {
+  it('preserves an explicit legacy MBOS_UNIVERSAL_PROXY_DATA_TOKEN without generating a replacement', () => {
     const tempRoot = mkdtempSync(path.join(os.tmpdir(), 'demo-rehearsal-proxy-data-token-explicit-'));
     try {
       stageDemoRehearsalFixture(tempRoot);

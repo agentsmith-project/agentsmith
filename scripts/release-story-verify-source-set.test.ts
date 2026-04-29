@@ -139,15 +139,23 @@ describe('release story verify source set', () => {
     const runtimeVerification = read('scripts/lib/runtime-verification.sh');
     const demoVerify = read('scripts/demo-deploy/verify.sh');
     const clusterVerify = read('scripts/cluster-deploy/verify.sh');
+    const adminStateGate = runtimeVerification.match(
+      /gate_wait_for_universal_proxy_admin_state\(\) \{[\s\S]*?\n\}\n\n/,
+    )?.[0];
 
-    expect(runtimeVerification).toContain('gate_wait_for_universal_proxy_admin_state()');
-    expect(runtimeVerification).toContain('http://localhost:8080/admin/state');
-    expect(runtimeVerification).toContain('docker_compose exec -T');
-    expect(runtimeVerification).toContain('if [ -n "$GATE_PROXY_ADMIN_TOKEN" ]; then');
-    expect(runtimeVerification).toContain('-H "Authorization: Bearer $GATE_PROXY_ADMIN_TOKEN"');
+    expect(adminStateGate).toContain('gate_wait_for_universal_proxy_admin_state()');
+    expect(adminStateGate).toContain('local probe_url="http://localhost:8080/admin/state"');
+    expect(adminStateGate).toContain('if [[ -z "${admin_token}" ]]; then');
+    expect(adminStateGate).toContain('MBOS_UNIVERSAL_PROXY_ADMIN_TOKEN is required');
+    expect(adminStateGate).toContain('docker_compose exec -T');
+    expect(adminStateGate).toContain('-e "GATE_PROXY_ADMIN_TOKEN=${admin_token}"');
+    expect(adminStateGate).toContain('-H "Authorization: Bearer $GATE_PROXY_ADMIN_TOKEN"');
+    expect(adminStateGate).not.toContain('if [ -n "$GATE_PROXY_ADMIN_TOKEN" ]; then');
+    expect(adminStateGate).not.toContain('curl -s -o /dev/null -w "%{http_code}" "$GATE_PROXY_ADMIN_URL"');
 
     for (const script of [demoVerify, clusterVerify]) {
       expect(script).toContain('gate_wait_for_universal_proxy_admin_state');
+      expect(script).toContain('"${MBOS_UNIVERSAL_PROXY_ADMIN_TOKEN:-}"');
       expect(script).not.toContain('docker_compose ps --status running universal-proxy | grep -q universal-proxy');
     }
   });

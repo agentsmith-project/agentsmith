@@ -10,8 +10,32 @@ source "${ROOT_DIR}/scripts/lib/next-generated-root-state.sh"
 source "${ROOT_DIR}/scripts/lib/runtime-verification.sh"
 source "${ROOT_DIR}/scripts/lib/universal-proxy-runtime.sh"
 
-SPEC_FILE="${1:-e2e/integration-chat.spec.ts}"
-shift || true
+BACKEND_REAL_SESSION_NAME=""
+if [[ "${1:-}" == "--session" ]]; then
+  BACKEND_REAL_SESSION_NAME="${2:-}"
+  if [[ -z "${BACKEND_REAL_SESSION_NAME}" ]]; then
+    echo "[integration-e2e-full] --session requires a session name" >&2
+    exit 1
+  fi
+  shift 2
+fi
+
+if [[ -n "${BACKEND_REAL_SESSION_NAME}" ]]; then
+  if [[ "${BACKEND_REAL_SESSION_NAME}" != "agents-backend-real-runner" ]]; then
+    echo "[integration-e2e-full] unsupported backend-real session: ${BACKEND_REAL_SESSION_NAME}" >&2
+    exit 1
+  fi
+  if [[ "$#" -ne 0 ]]; then
+    echo "[integration-e2e-full] backend-real session ${BACKEND_REAL_SESSION_NAME} does not accept extra arguments" >&2
+    exit 1
+  fi
+  SPEC_FILE="${BACKEND_REAL_SESSION_NAME}"
+  PLAYWRIGHT_EXTRA_ARGS=()
+else
+  SPEC_FILE="${1:-e2e/integration-chat.spec.ts}"
+  shift || true
+  PLAYWRIGHT_EXTRA_ARGS=("$@")
+fi
 
 ORIGINAL_INTEGRATION_API_PORT="${INTEGRATION_API_PORT:-}"
 ORIGINAL_INTEGRATION_WEB_PORT="${INTEGRATION_WEB_PORT:-}"
@@ -60,6 +84,7 @@ INTEGRATION_RUN_ID="${INTEGRATION_RUN_ID:-$(lane_generate_run_id integration)}"
 INTEGRATION_RUN_ROOT="${INTEGRATION_RUN_ROOT:-$(lane_prepare_run_root backend-real "${INTEGRATION_RUN_ID}" current-run)}"
 UX_TRACE_OUTPUT_ROOT="${UX_TRACE_OUTPUT_ROOT:-${INTEGRATION_RUN_ROOT}/ux-traces}"
 INTEGRATION_LOG_DIR="${INTEGRATION_LOG_DIR:-${INTEGRATION_RUN_ROOT}/integration}"
+REAL_SESSION_ROOT="${INTEGRATION_LOG_DIR}/real-session"
 export CURRENT_GATE_RESULT_GATE_ID="${CURRENT_GATE_RESULT_GATE_ID:-lane-backend-real-core}"
 export CURRENT_GATE_RESULT_NPM_SCRIPT="${CURRENT_GATE_RESULT_NPM_SCRIPT:-lane:backend-real:core}"
 export CURRENT_GATE_RESULT_CI_JOB="${CURRENT_GATE_RESULT_CI_JOB:-lane-backend-real-core}"
@@ -103,7 +128,7 @@ API_PID=""
 WEB_PID=""
 PROXY_PID=""
 PLAYWRIGHT_PID=""
-PLAYWRIGHT_STATUS=0
+PLAYWRIGHT_STATUS=1
 KEEP_FAILED_ENV="${INTEGRATION_KEEP_FAILED_ENV:-0}"
 BACKEND_REAL_KEEP_RUNS="${BACKEND_REAL_KEEP_RUNS:-5}"
 
@@ -505,6 +530,7 @@ WEB_PID="$(
 )"
 
 cleanup() {
+  set +e
   capture_integration_lifecycle_observation "pre-stop"
   if [[ "${KEEP_FAILED_ENV}" == "1" && "${PLAYWRIGHT_STATUS}" -ne 0 ]]; then
     lane_mark_status "${INTEGRATION_RUN_ROOT}" failed
@@ -528,15 +554,17 @@ cleanup() {
   wait "${WEB_PID}" >/dev/null 2>&1 || true
   wait "${API_PID}" >/dev/null 2>&1 || true
   capture_integration_lifecycle_observation "post-stop"
-  next_generated_root_clear_lane_owner "${INTEGRATION_RUN_ROOT}"
-  next_generated_root_normalize
-  next_generated_root_finalize_lane_cleanup
+  next_generated_root_clear_lane_owner "${INTEGRATION_RUN_ROOT}" || true
+  next_generated_root_normalize || echo "[integration-e2e-full] cleanup warning: next generated root normalize failed" >&2
+  next_generated_root_finalize_lane_cleanup || echo "[integration-e2e-full] cleanup warning: next generated root finalize failed" >&2
   rm -f "${NEXT_WEB_PID_FILE}"
   if [[ "${PLAYWRIGHT_STATUS}" -eq 0 ]]; then
     lane_mark_status "${INTEGRATION_RUN_ROOT}" success
-    rm -rf "${INTEGRATION_RUN_ROOT}"
-    if [[ -L "$(backend_real_state_root)/integration" ]] && [[ "$(realpath -m "$(backend_real_state_root)/integration")" == "$(realpath -m "${INTEGRATION_LOG_DIR}")" ]]; then
-      rm -f "$(backend_real_state_root)/integration"
+    if [[ -z "${BACKEND_REAL_SESSION_NAME}" ]]; then
+      rm -rf "${INTEGRATION_RUN_ROOT}"
+      if [[ -L "$(backend_real_state_root)/integration" ]] && [[ "$(realpath -m "$(backend_real_state_root)/integration")" == "$(realpath -m "${INTEGRATION_LOG_DIR}")" ]]; then
+        rm -f "$(backend_real_state_root)/integration"
+      fi
     fi
   else
     lane_mark_status "${INTEGRATION_RUN_ROOT}" failed
@@ -546,14 +574,18 @@ cleanup() {
 }
 trap cleanup EXIT
 
+API_READY_ATTEMPTS="${INTEGRATION_API_READY_ATTEMPTS:-120}"
+WEB_READY_ATTEMPTS="${INTEGRATION_WEB_READY_ATTEMPTS:-120}"
+READY_RETRY_SLEEP_SECONDS="${INTEGRATION_READY_RETRY_SLEEP_SECONDS:-1}"
+
 api_ready=0
-for _ in $(seq 1 120); do
+for _ in $(seq 1 "${API_READY_ATTEMPTS}"); do
   code="$(curl -s -o /dev/null -w "%{http_code}" "${INTEGRATION_API_BASE}/api/v1/workspaces" || true)"
   if [[ "${code}" == "200" || "${code}" == "401" || "${code}" == "403" ]]; then
     api_ready=1
     break
   fi
-  sleep 1
+  sleep "${READY_RETRY_SLEEP_SECONDS}"
 done
 
 if [[ "${api_ready}" -ne 1 ]]; then
@@ -567,13 +599,13 @@ gate_record_preflight_check "${INTEGRATION_LOG_DIR}" "api_ready" "passed" "${INT
 record_service api ready "${INTEGRATION_API_BASE}"
 
 web_ready=0
-for _ in $(seq 1 120); do
+for _ in $(seq 1 "${WEB_READY_ATTEMPTS}"); do
   code="$(curl -s -o /dev/null -w "%{http_code}" "${PLAYWRIGHT_BASE_URL}/en-US/login" || true)"
   if [[ "${code}" == "200" || "${code}" == "307" || "${code}" == "308" ]]; then
     web_ready=1
     break
   fi
-  sleep 1
+  sleep "${READY_RETRY_SLEEP_SECONDS}"
 done
 
 if [[ "${web_ready}" -ne 1 ]]; then
@@ -598,48 +630,223 @@ try_warm_route "/${INTEGRATION_LOCALE}/workspaces/ws_default"
 try_warm_route "/${INTEGRATION_LOCALE}/workspaces/ws_default/projects"
 gate_record_preflight_check "${INTEGRATION_LOG_DIR}" "browser_auth_preflight" "passed" "workspace routes warmed"
 
-run_clean env \
-  BASE_URL="${PLAYWRIGHT_BASE_URL}" \
-  INTEGRATION_API_BASE="${INTEGRATION_API_BASE}" \
-  SANDBOX_MANAGER_URL="${SANDBOX_MANAGER_URL:-}" \
-  SANDBOX_SERVICE_KEY="${SANDBOX_SERVICE_KEY:-}" \
-  INTERNAL_AGENT_K8S_NAMESPACE="${INTERNAL_AGENT_K8S_NAMESPACE:-}" \
-  INTERNAL_SANDBOX_REAL_STATE_FILE="${INTERNAL_SANDBOX_REAL_STATE_FILE:-}" \
-  INTERNAL_AGENT_JUICEFS_CSI_DRIVER="${INTERNAL_AGENT_JUICEFS_CSI_DRIVER:-}" \
-  INTERNAL_AGENT_WORKSPACE_CAPACITY="${INTERNAL_AGENT_WORKSPACE_CAPACITY:-}" \
-  INTERNAL_AGENT_JUICEFS_STORAGE_CLASS_NAME="${INTERNAL_AGENT_JUICEFS_STORAGE_CLASS_NAME:-}" \
-  INTERNAL_AGENT_JUICEFS_MOUNT_OPTIONS="${INTERNAL_AGENT_JUICEFS_MOUNT_OPTIONS:-}" \
-  INTERNAL_AGENT_JUICEFS_SUBDIR="${INTERNAL_AGENT_JUICEFS_SUBDIR:-}" \
-  INTERNAL_AGENT_JUICEFS_MOUNT_SERVICE_ACCOUNT="${INTERNAL_AGENT_JUICEFS_MOUNT_SERVICE_ACCOUNT:-}" \
-  INTERNAL_AGENT_JUICEFS_MOUNT_IMAGE="${INTERNAL_AGENT_JUICEFS_MOUNT_IMAGE:-}" \
-  INTERNAL_AGENT_JUICEFS_META_HOST_OVERRIDE="${INTERNAL_AGENT_JUICEFS_META_HOST_OVERRIDE:-}" \
-  INTERNAL_AGENT_JUICEFS_META_PORT_OVERRIDE="${INTERNAL_AGENT_JUICEFS_META_PORT_OVERRIDE:-}" \
-  JUICEFS_BUCKET_ENDPOINT_FOR_INTERNAL_MOUNT="${JUICEFS_BUCKET_ENDPOINT_FOR_INTERNAL_MOUNT:-}" \
-  INTEGRATION_CLIENT_JUICEFS_META_HOST_OVERRIDE="${INTEGRATION_CLIENT_JUICEFS_META_HOST_OVERRIDE:-}" \
-  INTEGRATION_CLIENT_JUICEFS_META_PORT_OVERRIDE="${INTEGRATION_CLIENT_JUICEFS_META_PORT_OVERRIDE:-}" \
-  INTEGRATION_CLIENT_JUICEFS_STORAGE_ENDPOINT_OVERRIDE="${INTEGRATION_CLIENT_JUICEFS_STORAGE_ENDPOINT_OVERRIDE:-}" \
-  INTEGRATION_INTERNAL_AGENT_IMAGE="${INTEGRATION_INTERNAL_AGENT_IMAGE:-}" \
-  INTEGRATION_INTERNAL_CHAT_AGENT_IMAGE="${INTEGRATION_INTERNAL_CHAT_AGENT_IMAGE:-}" \
-  INTEGRATION_CODEX_RUNNER_BASE_DOCKER_IMAGE="${INTEGRATION_CODEX_RUNNER_BASE_DOCKER_IMAGE:-}" \
-  INTEGRATION_CODEX_RUNNER_DOCKER_IMAGE="${INTEGRATION_CODEX_RUNNER_DOCKER_IMAGE:-}" \
-  INTEGRATION_CODEX_RUNNER_REBUILD_BASE_IMAGE="${INTEGRATION_CODEX_RUNNER_REBUILD_BASE_IMAGE:-}" \
-  INTEGRATION_CODEX_RUNNER_REBUILD_IMAGE="${INTEGRATION_CODEX_RUNNER_REBUILD_IMAGE:-}" \
-  INTEGRATION_CODEX_RUNNER_EMBEDDED="${INTEGRATION_CODEX_RUNNER_EMBEDDED:-}" \
-  INTEGRATION_CODEX_RUNNER_BUILTIN_SKILLS="${INTEGRATION_CODEX_RUNNER_BUILTIN_SKILLS:-mbos-context,feishu-docs,jira-ops}" \
-  INTEGRATION_CODEX_RUNNER_BUILTIN_SKILLS_REQUIRED="${INTEGRATION_CODEX_RUNNER_BUILTIN_SKILLS_REQUIRED:-1}" \
-  INTEGRATION_CODEX_RUNNER_BUILTIN_SKILLS_DIR="${INTEGRATION_CODEX_RUNNER_BUILTIN_SKILLS_DIR:-}" \
-  INTEGRATION_CODEX_RUNNER_MOUNT_READY_TIMEOUT_MS="${INTEGRATION_CODEX_RUNNER_MOUNT_READY_TIMEOUT_MS:-120000}" \
-  INTEGRATION_CHAT_RUNNER_BASE_DOCKER_IMAGE="${INTEGRATION_CHAT_RUNNER_BASE_DOCKER_IMAGE:-}" \
-  INTEGRATION_CHAT_RUNNER_REBUILD_BASE_IMAGE="${INTEGRATION_CHAT_RUNNER_REBUILD_BASE_IMAGE:-}" \
-  INTEGRATION_CHAT_RUNNER_REBUILD_IMAGE="${INTEGRATION_CHAT_RUNNER_REBUILD_IMAGE:-}" \
-  INTEGRATION_RUNNER_LOG_DIR="${INTEGRATION_RUNNER_LOG_DIR:-}" \
-  AGENT_EXECUTION_WS_BASE_URL="${AGENT_EXECUTION_WS_BASE_URL:-}" \
-  npx playwright test --config playwright.config.integration.ts "${SPEC_FILE}" --project=chromium --workers=1 "$@" &
-PLAYWRIGHT_PID=$!
-set +e
-wait "${PLAYWRIGHT_PID}"
-PLAYWRIGHT_STATUS=$?
-set -e
+run_playwright_command() {
+  local spec_file="$1"
+  shift
+  run_clean env \
+    BASE_URL="${PLAYWRIGHT_BASE_URL}" \
+    INTEGRATION_API_BASE="${INTEGRATION_API_BASE}" \
+    SANDBOX_MANAGER_URL="${SANDBOX_MANAGER_URL:-}" \
+    SANDBOX_SERVICE_KEY="${SANDBOX_SERVICE_KEY:-}" \
+    INTERNAL_AGENT_K8S_NAMESPACE="${INTERNAL_AGENT_K8S_NAMESPACE:-}" \
+    INTERNAL_SANDBOX_REAL_STATE_FILE="${INTERNAL_SANDBOX_REAL_STATE_FILE:-}" \
+    INTERNAL_AGENT_JUICEFS_CSI_DRIVER="${INTERNAL_AGENT_JUICEFS_CSI_DRIVER:-}" \
+    INTERNAL_AGENT_WORKSPACE_CAPACITY="${INTERNAL_AGENT_WORKSPACE_CAPACITY:-}" \
+    INTERNAL_AGENT_JUICEFS_STORAGE_CLASS_NAME="${INTERNAL_AGENT_JUICEFS_STORAGE_CLASS_NAME:-}" \
+    INTERNAL_AGENT_JUICEFS_MOUNT_OPTIONS="${INTERNAL_AGENT_JUICEFS_MOUNT_OPTIONS:-}" \
+    INTERNAL_AGENT_JUICEFS_SUBDIR="${INTERNAL_AGENT_JUICEFS_SUBDIR:-}" \
+    INTERNAL_AGENT_JUICEFS_MOUNT_SERVICE_ACCOUNT="${INTERNAL_AGENT_JUICEFS_MOUNT_SERVICE_ACCOUNT:-}" \
+    INTERNAL_AGENT_JUICEFS_MOUNT_IMAGE="${INTERNAL_AGENT_JUICEFS_MOUNT_IMAGE:-}" \
+    INTERNAL_AGENT_JUICEFS_META_HOST_OVERRIDE="${INTERNAL_AGENT_JUICEFS_META_HOST_OVERRIDE:-}" \
+    INTERNAL_AGENT_JUICEFS_META_PORT_OVERRIDE="${INTERNAL_AGENT_JUICEFS_META_PORT_OVERRIDE:-}" \
+    JUICEFS_BUCKET_ENDPOINT_FOR_INTERNAL_MOUNT="${JUICEFS_BUCKET_ENDPOINT_FOR_INTERNAL_MOUNT:-}" \
+    INTEGRATION_CLIENT_JUICEFS_META_HOST_OVERRIDE="${INTEGRATION_CLIENT_JUICEFS_META_HOST_OVERRIDE:-}" \
+    INTEGRATION_CLIENT_JUICEFS_META_PORT_OVERRIDE="${INTEGRATION_CLIENT_JUICEFS_META_PORT_OVERRIDE:-}" \
+    INTEGRATION_CLIENT_JUICEFS_STORAGE_ENDPOINT_OVERRIDE="${INTEGRATION_CLIENT_JUICEFS_STORAGE_ENDPOINT_OVERRIDE:-}" \
+    INTEGRATION_INTERNAL_AGENT_IMAGE="${INTEGRATION_INTERNAL_AGENT_IMAGE:-}" \
+    INTEGRATION_INTERNAL_CHAT_AGENT_IMAGE="${INTEGRATION_INTERNAL_CHAT_AGENT_IMAGE:-}" \
+    INTEGRATION_CODEX_RUNNER_BASE_DOCKER_IMAGE="${INTEGRATION_CODEX_RUNNER_BASE_DOCKER_IMAGE:-}" \
+    INTEGRATION_CODEX_RUNNER_DOCKER_IMAGE="${INTEGRATION_CODEX_RUNNER_DOCKER_IMAGE:-}" \
+    INTEGRATION_CODEX_RUNNER_REBUILD_BASE_IMAGE="${INTEGRATION_CODEX_RUNNER_REBUILD_BASE_IMAGE:-}" \
+    INTEGRATION_CODEX_RUNNER_REBUILD_IMAGE="${INTEGRATION_CODEX_RUNNER_REBUILD_IMAGE:-}" \
+    INTEGRATION_CODEX_RUNNER_EMBEDDED="${INTEGRATION_CODEX_RUNNER_EMBEDDED:-}" \
+    INTEGRATION_CODEX_RUNNER_BUILTIN_SKILLS="${INTEGRATION_CODEX_RUNNER_BUILTIN_SKILLS:-mbos-context,feishu-docs,jira-ops}" \
+    INTEGRATION_CODEX_RUNNER_BUILTIN_SKILLS_REQUIRED="${INTEGRATION_CODEX_RUNNER_BUILTIN_SKILLS_REQUIRED:-1}" \
+    INTEGRATION_CODEX_RUNNER_BUILTIN_SKILLS_DIR="${INTEGRATION_CODEX_RUNNER_BUILTIN_SKILLS_DIR:-}" \
+    INTEGRATION_CODEX_RUNNER_MOUNT_READY_TIMEOUT_MS="${INTEGRATION_CODEX_RUNNER_MOUNT_READY_TIMEOUT_MS:-120000}" \
+    INTEGRATION_CHAT_RUNNER_BASE_DOCKER_IMAGE="${INTEGRATION_CHAT_RUNNER_BASE_DOCKER_IMAGE:-}" \
+    INTEGRATION_CHAT_RUNNER_REBUILD_BASE_IMAGE="${INTEGRATION_CHAT_RUNNER_REBUILD_BASE_IMAGE:-}" \
+    INTEGRATION_CHAT_RUNNER_REBUILD_IMAGE="${INTEGRATION_CHAT_RUNNER_REBUILD_IMAGE:-}" \
+    INTEGRATION_RUNNER_LOG_DIR="${INTEGRATION_RUNNER_LOG_DIR:-}" \
+    AGENT_EXECUTION_WS_BASE_URL="${AGENT_EXECUTION_WS_BASE_URL:-}" \
+    npx playwright test --config playwright.config.integration.ts "${spec_file}" --project=chromium --workers=1 "$@"
+}
+
+redact_log_file() {
+  local input_file="$1"
+  local output_file="$2"
+  node - <<'NODE' "${input_file}" "${output_file}"
+const fs = require('node:fs');
+const path = require('node:path');
+const [inputFile, outputFile] = process.argv.slice(2);
+let content = '';
+try {
+  content = fs.readFileSync(inputFile, 'utf8');
+} catch {
+  content = '';
+}
+const sensitiveAssignment = /((?:[A-Za-z0-9_.-]*)(?:api[_-]?key|access[_-]?token|refresh[_-]?token|admin[_-]?token|oauth(?:[_-]?token)?|client[_-]?secret|password|ticket|managed[_-]?credentials?|cookie|authorization)(?:[A-Za-z0-9_.-]*)\s*[:=]\s*)(?:"[^"]*"|'[^']*'|\bBearer\s+[^\s"',}]+|[^\s"',}]+)/gi;
+const redacted = content
+  .replace(sensitiveAssignment, '$1[redacted]')
+  .replace(/\bBearer\s+[A-Za-z0-9._~+/=-]+/gi, 'Bearer [redacted]')
+  .replace(/\bsk-[A-Za-z0-9][A-Za-z0-9_-]{6,}/gi, 'sk-[redacted]');
+fs.mkdirSync(path.dirname(outputFile), { recursive: true });
+fs.writeFileSync(outputFile, redacted);
+NODE
+}
+
+write_shard_result() {
+  local shard_dir="$1"
+  local shard_id="$2"
+  local spec_file="$3"
+  local started_at="$4"
+  local finished_at="$5"
+  local exit_code="$6"
+  shift 6
+  node - <<'NODE' "${shard_dir}/shard-result.json" "${shard_id}" "${spec_file}" "${started_at}" "${finished_at}" "${exit_code}" "$@"
+const fs = require('node:fs');
+const path = require('node:path');
+const [file, shardId, specFile, startedAt, finishedAt, exitCodeRaw, ...args] = process.argv.slice(2);
+const exitCode = Number(exitCodeRaw);
+const started = Date.parse(startedAt);
+const finished = Date.parse(finishedAt);
+const payload = {
+  schema_version: 1,
+  diagnostic_only: true,
+  shard_id: shardId,
+  spec_file: specFile,
+  grep: (() => {
+    const index = args.indexOf('--grep');
+    return index >= 0 ? args[index + 1] ?? null : null;
+  })(),
+  args,
+  diagnostic_state: exitCode === 0 ? 'succeeded' : 'failed',
+  exit_code: exitCode,
+  started_at: startedAt,
+  finished_at: finishedAt,
+  duration_ms: Number.isFinite(started) && Number.isFinite(finished) ? Math.max(0, finished - started) : null,
+  logs: {
+    stdout: 'playwright.stdout.log',
+    stderr: 'playwright.stderr.log',
+  },
+};
+fs.mkdirSync(path.dirname(file), { recursive: true });
+fs.writeFileSync(file, `${JSON.stringify(payload, null, 2)}\n`);
+NODE
+}
+
+write_session_aggregate() {
+  local session_state="$1"
+  node - <<'NODE' "${REAL_SESSION_ROOT}/session-aggregate.json" "${BACKEND_REAL_SESSION_NAME}" "${INTEGRATION_RUN_ID}" "${session_state}" "${REAL_SESSION_ROOT}"
+const fs = require('node:fs');
+const path = require('node:path');
+const [file, sessionName, runId, sessionState, sessionRoot] = process.argv.slice(2);
+const shardIds = ['chat-runner', 'notebook-runner', 'notebook-docker'];
+const shards = shardIds.map((shardId) => {
+  const resultFile = path.join(sessionRoot, 'shards', shardId, 'shard-result.json');
+  if (!fs.existsSync(resultFile)) {
+    return {
+      shard_id: shardId,
+      diagnostic_state: 'not_run',
+      exit_code: null,
+      spec_file: null,
+      grep: null,
+      result_path: path.relative(sessionRoot, resultFile),
+    };
+  }
+  const result = JSON.parse(fs.readFileSync(resultFile, 'utf8'));
+  return {
+    shard_id: result.shard_id,
+    diagnostic_state: result.diagnostic_state,
+    exit_code: result.exit_code,
+    spec_file: result.spec_file,
+    grep: result.grep,
+    result_path: path.relative(sessionRoot, resultFile),
+  };
+});
+const payload = {
+  schema_version: 1,
+  diagnostic_only: true,
+  session_id: sessionName,
+  run_id: runId,
+  diagnostic_state: sessionState,
+  fixed_cost: {
+    startup_count: 1,
+    backend_real_stack_reuse: true,
+  },
+  shards,
+  generated_at: new Date().toISOString(),
+};
+fs.mkdirSync(path.dirname(file), { recursive: true });
+fs.writeFileSync(file, `${JSON.stringify(payload, null, 2)}\n`);
+NODE
+}
+
+run_playwright_shard() {
+  local shard_id="$1"
+  local spec_file="$2"
+  shift 2
+  local shard_dir="${REAL_SESSION_ROOT}/shards/${shard_id}"
+  local stdout_raw="${shard_dir}/playwright.stdout.raw.log"
+  local stderr_raw="${shard_dir}/playwright.stderr.raw.log"
+  local stdout_log="${shard_dir}/playwright.stdout.log"
+  local stderr_log="${shard_dir}/playwright.stderr.log"
+  local started_at finished_at shard_status
+
+  mkdir -p "${shard_dir}"
+  started_at="$(date -u +"%Y-%m-%dT%H:%M:%SZ")"
+  echo "[integration-e2e-full] running backend-real session shard ${shard_id}: ${spec_file}" >&2
+  set +e
+  run_playwright_command "${spec_file}" "$@" >"${stdout_raw}" 2>"${stderr_raw}" &
+  PLAYWRIGHT_PID=$!
+  wait "${PLAYWRIGHT_PID}"
+  shard_status=$?
+  PLAYWRIGHT_PID=""
+  set -e
+  finished_at="$(date -u +"%Y-%m-%dT%H:%M:%SZ")"
+  redact_log_file "${stdout_raw}" "${stdout_log}"
+  redact_log_file "${stderr_raw}" "${stderr_log}"
+  rm -f "${stdout_raw}" "${stderr_raw}"
+  write_shard_result "${shard_dir}" "${shard_id}" "${spec_file}" "${started_at}" "${finished_at}" "${shard_status}" "$@"
+  PLAYWRIGHT_STATUS="${shard_status}"
+  return "${shard_status}"
+}
+
+run_single_playwright() {
+  run_playwright_command "${SPEC_FILE}" "${PLAYWRIGHT_EXTRA_ARGS[@]}" &
+  PLAYWRIGHT_PID=$!
+  set +e
+  wait "${PLAYWRIGHT_PID}"
+  PLAYWRIGHT_STATUS=$?
+  PLAYWRIGHT_PID=""
+  set -e
+  return "${PLAYWRIGHT_STATUS}"
+}
+
+run_backend_real_runner_session_shards() {
+  local session_status=0
+  mkdir -p "${REAL_SESSION_ROOT}/shards"
+  run_playwright_shard "chat-runner" "e2e/integration-chat-llm-runner.spec.ts" || session_status=$?
+  if [[ "${session_status}" -eq 0 ]]; then
+    run_playwright_shard "notebook-runner" "e2e/integration-notebook-codex-runner.spec.ts" --grep-invert docker || session_status=$?
+  fi
+  if [[ "${session_status}" -eq 0 ]]; then
+    run_playwright_shard "notebook-docker" "e2e/integration-notebook-codex-runner.spec.ts" --grep docker || session_status=$?
+  fi
+  if [[ "${session_status}" -eq 0 ]]; then
+    write_session_aggregate "succeeded"
+  else
+    write_session_aggregate "failed"
+  fi
+  return "${session_status}"
+}
+
+if [[ -n "${BACKEND_REAL_SESSION_NAME}" ]]; then
+  run_backend_real_runner_session_shards || PLAYWRIGHT_STATUS=$?
+else
+  run_single_playwright || PLAYWRIGHT_STATUS=$?
+fi
+
 if [[ "${PLAYWRIGHT_STATUS}" -ne 0 ]]; then
   gate_record_failure "${INTEGRATION_LOG_DIR}" "scenario_assertion_failed" "playwright" "playwright exited with status ${PLAYWRIGHT_STATUS}"
   exit "${PLAYWRIGHT_STATUS}"

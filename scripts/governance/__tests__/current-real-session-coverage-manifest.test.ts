@@ -138,6 +138,7 @@ describe('current real session coverage manifest', () => {
       expect.objectContaining({ source_kind: 'npm_script', npm_script: 'test:e2e:integration:agents:chat' }),
       expect.objectContaining({ source_kind: 'npm_script', npm_script: 'test:e2e:integration:notebook' }),
       expect.objectContaining({ source_kind: 'npm_script', npm_script: 'test:e2e:integration:notebook:docker' }),
+      expect.objectContaining({ source_kind: 'npm_script', npm_script: 'test:agents:backend-real:runner' }),
       expect.objectContaining({ source_kind: 'npm_script', npm_script: 'test:internal:backend-real:chat' }),
       expect.objectContaining({ source_kind: 'npm_script', npm_script: 'test:internal:backend-real:notebook-workspace' }),
       expect.objectContaining({ source_kind: 'npm_script', npm_script: 'test:files:backend-real:sync' }),

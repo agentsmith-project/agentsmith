@@ -309,6 +309,27 @@ scenario_service_status() {
   scenario_http_code "${url}"
 }
 
+scenario_presence_label_for_probe() {
+  if "$@"; then
+    printf 'present\n'
+  else
+    printf 'absent\n'
+  fi
+}
+
+render_rehearsal_world_health_snapshot() {
+  local scenario="$1"
+  local scenario_root="$2"
+  shift 2
+
+  env "$@" \
+    node --import tsx "${ROOT_DIR}/scripts/governance/rehearsal-world-health.ts" \
+      "${scenario}" \
+      --root-dir "${ROOT_DIR}" \
+      --scenario-root "${scenario_root}" \
+      --runtime-root "${SCENARIO_RUNTIME_ROOT}"
+}
+
 acquire_scenario_lock() {
   local scenario="$1"
   local scenario_root="${2:-}"

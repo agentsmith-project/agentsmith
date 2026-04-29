@@ -32,9 +32,13 @@ const FORBIDDEN_SKIP_DECISION_FIELDS = [
 function stageClusterRehearsalFixture(tempRoot: string): void {
   for (const relativePath of [
     'scripts/scenarios/cluster-rehearsal/common.sh',
+    'scripts/scenarios/cluster-rehearsal/status.sh',
     'scripts/scenarios/common.sh',
     'scripts/lib/preset-common.sh',
     'scripts/lib/local-kind-world.sh',
+    'scripts/governance/current-rehearsal-world-health-schema.ts',
+    'scripts/governance/rehearsal-world-health.ts',
+    'scripts/governance/redaction.ts',
     'infra/deploy/cluster/env/site.env.example',
     'infra/deploy/demo/kind/config.yaml',
     'infra/flows/cluster-rehearsal.env',
@@ -355,6 +359,41 @@ function readSkipDecisions(releaseRoot: string): Array<Record<string, unknown>> 
 }
 
 describe('cluster-rehearsal generated state ownership', () => {
+  it('renders status.sh as a read-only world health snapshot without skip or verdict semantics', () => {
+    const tempRoot = mkdtempSync(path.join(os.tmpdir(), 'cluster-rehearsal-status-health-'));
+    try {
+      stageClusterRehearsalFixture(tempRoot);
+
+      const output = runClusterRehearsalCommand(
+        tempRoot,
+        `
+          mkdir -p "${tempRoot}/scenario/state" "${tempRoot}/artifacts/runtime"
+          printf '{"release":{"phase":"deploy_app_completed","id":"cluster-status-release"}}\\n' > "${tempRoot}/scenario/state/deploy-state.json"
+          printf 'cluster-rehearsal\\n' > "${tempRoot}/artifacts/runtime/active-scenario.lock"
+          bash "${tempRoot}/scripts/scenarios/cluster-rehearsal/status.sh"
+        `,
+      );
+
+      expect(output).toContain('AgentSmith Rehearsal World Health');
+      expect(output).toContain('Runtime line: cluster-rehearsal');
+      expect(output).toContain('Health: degraded');
+      expect(output).toContain('World:');
+      expect(output).toContain('Public bases: web=http://localhost:43001');
+      expect(output).toContain('Ports: web=43001; api=41000; keycloak=48080; sandbox=29080; registry=5002');
+      expect(output).toContain('Safe reset level: world');
+      expect(output).toContain('Safe next command: make cluster-rehearsal-reset && npm run rehearse:cluster');
+      expect(output).toContain('Authority:');
+      expect(output).toContain('Scenario detail:');
+      expect(output).not.toContain('failure_class');
+      expect(output).not.toContain('claim_id');
+      expect(output).not.toContain('release_decision');
+      expect(output).not.toContain('SKIP_RELEASE_ARCHIVE=1');
+      expect(output).not.toContain('reuse');
+    } finally {
+      rmSync(tempRoot, { recursive: true, force: true });
+    }
+  });
+
   it('canonicalizes legacy operator protocol aliases into scenario-owned site env truth without mutating the operator file', () => {
     const tempRoot = mkdtempSync(path.join(os.tmpdir(), 'cluster-rehearsal-legacy-protocols-'));
 

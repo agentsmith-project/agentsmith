@@ -338,6 +338,8 @@ const REQUIRED_SPEC_SOURCE_FILES = [
   'scripts/workspace-governance-switch-gate.sh',
   'scripts/api-key-endpoint-access-gate.sh',
   'scripts/backend-real-visual-review.sh',
+  'scripts/run-integration-e2e-full.sh',
+  'scripts/run-backend-real-session-shards.sh',
   'scripts/run-integration-release-user-story.sh',
   'scripts/notebook-real-smoke-gate.sh',
   'scripts/files-management-ux-real-gate.sh',

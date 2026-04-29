@@ -10,9 +10,13 @@ const repoRoot = process.cwd();
 function stageDemoRehearsalFixture(tempRoot: string): void {
   for (const relativePath of [
     'scripts/scenarios/demo-rehearsal/common.sh',
+    'scripts/scenarios/demo-rehearsal/status.sh',
     'scripts/scenarios/common.sh',
     'scripts/lib/preset-common.sh',
     'scripts/lib/local-kind-world.sh',
+    'scripts/governance/current-rehearsal-world-health-schema.ts',
+    'scripts/governance/rehearsal-world-health.ts',
+    'scripts/governance/redaction.ts',
     'infra/deploy/demo/env/site.env.example',
     'infra/deploy/demo/kind/config.yaml',
     'infra/flows/demo-rehearsal.env',
@@ -98,6 +102,41 @@ function readEnvValue(filePath: string, key: string): string {
 }
 
 describe('demo-rehearsal site env seeding', () => {
+  it('renders status.sh as a read-only world health snapshot without skip or verdict semantics', () => {
+    const tempRoot = mkdtempSync(path.join(os.tmpdir(), 'demo-rehearsal-status-health-'));
+    try {
+      stageDemoRehearsalFixture(tempRoot);
+
+      const output = runDemoRehearsalCommand(
+        tempRoot,
+        `
+          mkdir -p "${tempRoot}/scenario/state" "${tempRoot}/artifacts/runtime"
+          printf '{"release":{"phase":"deploy_completed","id":"demo-status-release"}}\\n' > "${tempRoot}/scenario/state/deploy-state.json"
+          printf 'demo-rehearsal\\n' > "${tempRoot}/artifacts/runtime/active-scenario.lock"
+          bash "${tempRoot}/scripts/scenarios/demo-rehearsal/status.sh"
+        `,
+      );
+
+      expect(output).toContain('AgentSmith Rehearsal World Health');
+      expect(output).toContain('Runtime line: demo-rehearsal');
+      expect(output).toContain('Health: degraded');
+      expect(output).toContain('World:');
+      expect(output).toContain('Public bases: web=http://localhost:33001');
+      expect(output).toContain('Ports: web=33001; api=40000; keycloak=38080; sandbox=29280; registry=5003');
+      expect(output).toContain('Safe reset level: world');
+      expect(output).toContain('Safe next command: make demo-rehearsal-reset && npm run rehearse:demo');
+      expect(output).toContain('Authority:');
+      expect(output).toContain('Scenario detail:');
+      expect(output).not.toContain('failure_class');
+      expect(output).not.toContain('claim_id');
+      expect(output).not.toContain('release_decision');
+      expect(output).not.toContain('SKIP_RELEASE_ARCHIVE=1');
+      expect(output).not.toContain('reuse');
+    } finally {
+      rmSync(tempRoot, { recursive: true, force: true });
+    }
+  });
+
   it('keeps demo rehearsal local registry host-port truth isolated at 5003', () => {
     const tempRoot = mkdtempSync(path.join(os.tmpdir(), 'demo-rehearsal-registry-port-'));
     try {

@@ -99,8 +99,8 @@ if (rootPackage.scripts?.['test:agents:backend-real:runner'] === undefined) {
   failures.push('package.json is missing test:agents:backend-real:runner');
 }
 
-if (rootPackage.scripts?.['test:agents:backend-real:runner'] !== 'bash scripts/run-integration-e2e-full.sh e2e/integration-chat-llm-runner.spec.ts && bash scripts/run-integration-e2e-full.sh e2e/integration-notebook-codex-runner.spec.ts && bash scripts/run-integration-e2e-full.sh e2e/integration-notebook-codex-runner.spec.ts --grep docker') {
-  failures.push('package.json test:agents:backend-real:runner must point to the canonical chat runner and notebook runner specs');
+if (rootPackage.scripts?.['test:agents:backend-real:runner'] !== 'bash scripts/run-backend-real-session-shards.sh') {
+  failures.push('package.json test:agents:backend-real:runner must point to the canonical backend-real runner session shard wrapper');
 }
 
 if (rootPackage.scripts?.['test:e2e:integration:agents:codex'] !== undefined) {

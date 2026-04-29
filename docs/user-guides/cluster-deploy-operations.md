@@ -8,11 +8,11 @@ Use this page for the **first install** flow.
 
 Current runtime-line methodology, shared-substrate model, and rehearsal/deploy boundaries are summarized in:
 
-- [Runtime Lines Matrix](/home/percy/works/mbos-v1/agentsmith/docs/user-guides/runtime-lines-matrix.md)
+- [Runtime Lines Matrix](./runtime-lines-matrix.md)
 
 For routine version updates of an existing production install, use:
 
-- [Cluster Upgrade Operations](/home/percy/works/mbos-v1/agentsmith/docs/user-guides/cluster-upgrade-operations.md)
+- [Cluster Upgrade Operations](./cluster-upgrade-operations.md)
 
 Keep this distinction simple:
 
@@ -39,7 +39,7 @@ Use it when:
 - the target host runs application services with Docker Compose
 - internal agent execution runs on a real Kubernetes cluster
 - for `semi-auto`, the cluster administrator has already completed the prerequisites in:
-  - [cluster-admin-runbook.md](/home/percy/works/mbos-v1/agentsmith/docs/user-guides/cluster-admin-runbook.md)
+  - [cluster-admin-runbook.md](./cluster-admin-runbook.md)
 
 Do not use it to replace the current demo deployment line.
 
@@ -85,7 +85,7 @@ Tracked examples live under:
 
 Tracked preset defaults live in:
 
-- [presets.env](/home/percy/works/mbos-v1/agentsmith/infra/runtime/presets.env)
+- [presets.env](../../infra/runtime/presets.env)
 
 These defaults include:
 
@@ -199,17 +199,20 @@ This step:
 
 Current required transfer flow:
 
-1. upload from the build machine to `pullot`
+1. upload from the build machine to a transfer host
 2. log in to the real target host
-3. pull the file from `pullot` with `scp`
+3. pull the file from the transfer host with `scp`
 
 Example:
 
 ```bash
-scp -P 12220 ~/agentsmith/cluster-deploy/uploads/agentsmith-<release-id>.tar.gz percy@pullot.com:/home/percy/xfer/agentsmith/
+scp -P <port> "$HOME/agentsmith/cluster-deploy/uploads/agentsmith-<release-id>.tar.gz" \
+  <transfer-user>@<transfer-host>:/path/to/agentsmith/
 ssh <target-host>
 mkdir -p "$HOME/agentsmith/cluster-deploy/uploads"
-scp -P 12220 percy@pullot.com:/home/percy/xfer/agentsmith/agentsmith-<release-id>.tar.gz "$HOME/agentsmith/cluster-deploy/uploads/"
+scp -P <port> \
+  <transfer-user>@<transfer-host>:/path/to/agentsmith/agentsmith-<release-id>.tar.gz \
+  "$HOME/agentsmith/cluster-deploy/uploads/"
 ```
 
 ### 3. Extract on the target host
@@ -290,7 +293,7 @@ This generates:
 
 In `semi-auto`, stop here and wait for the cluster administrator to complete:
 
-- [cluster-admin-runbook.md](/home/percy/works/mbos-v1/agentsmith/docs/user-guides/cluster-admin-runbook.md)
+- [cluster-admin-runbook.md](./cluster-admin-runbook.md)
 
 The administrator must set:
 
@@ -362,7 +365,7 @@ bash scripts/cluster-deploy/report.sh
 
 AgentSmith has been rehearsed locally with:
 
-- a clean Docker Compose install root under `/home/percy/agentsmith/cluster-deploy`
+- a clean Docker Compose install root under `$HOME/agentsmith/cluster-deploy`
 - a clean `kind` cluster named `mbos`
 - `CLUSTER_DEPLOY_MODE=full-auto`
 - the tracked preset defaults from `infra/runtime/presets.env`
@@ -385,7 +388,7 @@ Latest local verification evidence:
   - `4 passed`
 - `bash scripts/cluster-deploy/report.sh`
   - report:
-    - `/home/percy/agentsmith/cluster-deploy/reports/20260327T151718Z.md`
+    - `$HOME/agentsmith/cluster-deploy/reports/<timestamp>.md`
 
 ### Optional wrapper
 

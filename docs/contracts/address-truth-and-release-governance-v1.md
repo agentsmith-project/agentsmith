@@ -12,6 +12,10 @@
 这份文档不是排障手册，也不是部署 runbook。  
 它是这条工作线的指导原则和执行规范。
 
+当前人类发布验收入口仍是 `npm run release:ready` / `npm run release:status`。本文列出的 `test:*`
+命令是地址真相和 bundle 构建前的 producer checks / owner-runbook 前置检查，不是普通 release sign-off
+入口，也不替代 release campaign verdict。
+
 ---
 
 ## 一、核心原则
@@ -234,7 +238,7 @@ Agent 的业务语义仍然只有两种：
 
 ## 六、测试分层
 
-### Layer A：开发快速 gate
+### Layer A：开发快速 producer check
 作用：
 - 最快发现运行时真相不一致
 
@@ -244,11 +248,11 @@ Agent 的业务语义仍然只有两种：
 - 地址解析与 contract 测试
 - `npm run test:client-public-runtime`
 
-### Layer B：本地真实预检
+### Layer B：本地真实预检 producer check
 作用：
 - 在打镜像、打 bundle 前，用真实服务和真实浏览器把关键入口走一遍
 
-固定入口：
+producer 入口：
 - `npm run test:release:precheck`
 
 当前必须覆盖：
@@ -264,11 +268,11 @@ Agent 的业务语义仍然只有两种：
 - external runner file library mount truth
 - internal agent workspace access truth
 
-### Layer C：部署后完整 verify
+### Layer C：部署后完整 verify producer
 作用：
 - 在真实部署产物、真实部署配置、真实 kind/k8s/sandbox 环境里做最终兜底
 
-固定入口：
+producer 入口：
 - `scripts/demo-deploy/verify.sh`
 
 必须完整保留，不做轻量化。
@@ -286,12 +290,13 @@ Agent 的业务语义仍然只有两种：
 
 ---
 
-## 七、发布方式
+## 七、地址真相 producer 顺序
 
 ### 正常顺序
-以后固定按这个顺序工作：
+当 owner runbook 需要手动展开地址真相和 bundle 构建前置检查时，按这个 producer 顺序工作。
+普通发布验收仍从 `npm run release:ready` 开始：
 
-1. 开发快速 gate
+1. 开发快速 producer check
 2. `npm run test:demo-bundle:inputs`
 3. `npm run test:demo-rendered-env`
 4. `npm run test:client-public-runtime`

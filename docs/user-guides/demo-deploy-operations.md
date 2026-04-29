@@ -4,7 +4,7 @@
 
 Current runtime-line methodology, local rehearsal boundaries, and the shared-substrate model are summarized in:
 
-- [Runtime Lines Matrix](/home/percy/works/mbos-v1/agentsmith/docs/user-guides/runtime-lines-matrix.md)
+- [Runtime Lines Matrix](./runtime-lines-matrix.md)
 
 ## Scope
 
@@ -33,7 +33,7 @@ For local development hosts, keep the mental model simple:
 In other words:
 
 - `demo-rehearsal` is the local rehearsal flow on a development host
-- `demo-deploy` is the packaged single-host deployment flow under `/home/percy/agentsmith/deploy`
+- `demo-deploy` is the packaged single-host deployment flow under `$HOME/agentsmith/deploy`
 
 Use it when:
 
@@ -52,16 +52,16 @@ Use `simple` when:
 
 Do not use it as the real-cluster release line. For the real-cluster path, use:
 
-- [Cluster Deploy Operations](/home/percy/works/mbos-v1/agentsmith/docs/user-guides/cluster-deploy-operations.md)
-- [Cluster Deployment Spec](/home/percy/works/mbos-v1/agentsmith/docs/contracts/cluster-deployment-spec-v1.md)
+- [Cluster Deploy Operations](./cluster-deploy-operations.md)
+- [Cluster Deployment Spec](../contracts/cluster-deployment-spec-v1.md)
 
 ## Host
 
-- Demo host: `percy@192.168.0.220`
-- Demo deployment root: `/home/percy/agentsmith/deploy`
-- Shared operator config: `/home/percy/agentsmith/deploy/config/site.env`
+- Demo host: `<demo-user>@<demo-host>`
+- Demo deployment root: `$HOME/agentsmith/deploy`
+- Shared operator config: `$HOME/agentsmith/deploy/config/site.env`
 
-Everything under `/home/percy/agentsmith/deploy` is managed deployment state. Do not copy release files into `$HOME` or patch random working directories.
+Everything under `$HOME/agentsmith/deploy` is managed deployment state. Do not copy release files into random working directories or patch generated files outside the deployment root.
 
 ## Directory Model
 
@@ -121,7 +121,7 @@ UI-facing file library mount instructions must use client-visible addresses. The
 
 ## Standard Flow
 
-Before running, set the mode in `/home/percy/agentsmith/deploy/config/site.env`:
+Before running, set the mode in `$HOME/agentsmith/deploy/config/site.env`:
 
 ```bash
 DEMO_DEPLOY_MODE=full
@@ -136,7 +136,7 @@ DEMO_DEPLOY_MODE=simple
 From the active release directory:
 
 ```bash
-cd /home/percy/agentsmith/deploy/current
+cd "$HOME/agentsmith/deploy/current"
 bash scripts/prepare.sh
 bash scripts/deploy.sh
 bash scripts/bootstrap.sh
@@ -160,14 +160,14 @@ bash scripts/report.sh
 Reset when you need a clean redeploy:
 
 ```bash
-cd /home/percy/agentsmith/deploy/current
+cd "$HOME/agentsmith/deploy/current"
 bash scripts/reset.sh
 ```
 
 Prune history after a successful deploy when you want to reclaim disk:
 
 ```bash
-cd /home/percy/agentsmith/deploy/current
+cd "$HOME/agentsmith/deploy/current"
 bash scripts/prune-history.sh
 ```
 
@@ -180,7 +180,7 @@ Defaults:
 
 ## Current Good State
 
-- `current` points to the active release under `/home/percy/agentsmith/deploy/releases/...`
+- `current` points to the active release under `$HOME/agentsmith/deploy/releases/...`
 - `config/site.env` contains the operator-owned deployment config
 - `deploy` can recreate an unhealthy `kind` cluster automatically in `full`
 - JuiceFS CSI runs on `v0.31.3`
@@ -191,7 +191,7 @@ Defaults:
 
 Only edit:
 
-- `/home/percy/agentsmith/deploy/config/site.env`
+- `$HOME/agentsmith/deploy/config/site.env`
 
 Most operators only need to care about these groups:
 
@@ -261,10 +261,10 @@ These values define the stable Docker network used by the Compose dependencies a
 
 ## Current Verification Result
 
-The current demo deployment flow has been revalidated on the host above with:
+The current demo deployment flow has been revalidated on a configured demo host with:
 
 ```bash
-cd /home/percy/agentsmith/deploy/current
+cd "$HOME/agentsmith/deploy/current"
 bash scripts/prepare.sh
 bash scripts/deploy.sh
 bash scripts/bootstrap.sh
@@ -282,4 +282,4 @@ Expected successful verify summary:
   - `4 passed`
   - `[demo-deploy] verify ok`
 
-Reports are written under `/home/percy/agentsmith/deploy/reports/`.
+Reports are written under `$HOME/agentsmith/deploy/reports/`.

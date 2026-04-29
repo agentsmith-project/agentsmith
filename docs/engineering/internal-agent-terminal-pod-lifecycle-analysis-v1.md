@@ -1,11 +1,16 @@
 # Internal Agent Terminal Pod Lifecycle Analysis v1
 
 Last updated: 2026-04-23  
-Status: `analysis_for_implementation`
+Status: `decision_required_analysis`
+
+> Stop: this is an engineering analysis for terminal/pod lifecycle decisions, not a current implementation plan.
+> Do not start the suggested phases directly from this document. Current implementation truth remains in the contracts
+> listed below and the code they reference; reopen this analysis only after a product/engineering decision records the
+> intended terminal lifecycle model.
 
 ## 1. Scope
 
-This document summarizes the current implementation truth of AgentSmith internal-agent terminal mode, evaluates whether the current pod reclamation behavior matches the product model, and proposes implementation work for the development team.
+This document summarizes the current implementation truth of AgentSmith internal-agent terminal mode, evaluates whether the current pod reclamation behavior matches the product model, and records decision options for the development team.
 
 This is an engineering analysis document. It is not an authoritative product contract and does not replace:
 
@@ -366,27 +371,29 @@ Examples:
 - notebook run and terminal holder coexist with clear precedence
 - pod max lifetime produces deterministic terminal failure state and recoverable UX
 
-## 8. Suggested Delivery Plan
+## 8. Decision-Gated Delivery Reference
 
-### Phase 1: contract and model clarification
+This section is only a reference for a future approved lifecycle change. It is not a current marching order.
+
+### Reference step 1: contract and model clarification
 
 - define the authoritative workload-holder model
 - decide whether terminal is a formal pod holder
 - define expected behavior for idle, disconnect, and absolute lifetime
 
-### Phase 2: backend lifecycle convergence
+### Reference step 2: backend lifecycle convergence
 
 - implement shared holder registration/release
 - route notebook/chat/terminal through the same workload ownership layer
 - make explicit release happen when the last holder is removed
 
-### Phase 3: UX and recovery alignment
+### Reference step 3: UX and recovery alignment
 
 - ensure terminal UI exposes the correct lifecycle semantics
 - show deterministic reasons for terminal closure or reclaim
 - make reconnect/reopen behavior match backend truth
 
-### Phase 4: governance and regression coverage
+### Reference step 4: governance and regression coverage
 
 - add contract tests
 - add integration coverage for workload holder transitions

@@ -380,6 +380,8 @@ The bundle build must fail if any required file, tool, image, or manifest refere
 - Deployment verification must not assume the target host already has repo source code, Node dependencies, or Playwright installed.
 
 ### Local Precheck Contract
+- These commands are pre-build producer checks for release bundle correctness, not the human release sign-off entrypoint.
+- Human release readiness still starts from `npm run release:ready` and is inspected with `npm run release:status`.
 - Before building release images or an offline bundle, developers must run `npm run test:release:precheck`.
 - Before building release images or an offline bundle, developers must also run `npm run test:demo-bundle:inputs`.
 - Before building release images or an offline bundle, developers must also run `npm run test:demo-rendered-env`.

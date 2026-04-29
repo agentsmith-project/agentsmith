@@ -5,9 +5,9 @@
 它不替代详细 runbook。  
 如果你要实际执行命令，继续看：
 
-- [Local Runtime Flows](/home/percy/works/mbos-v1/agentsmith/docs/user-guides/local-runtime-flows.md)
-- [Demo Deploy Operations](/home/percy/works/mbos-v1/agentsmith/docs/user-guides/demo-deploy-operations.md)
-- [Cluster Deploy Operations](/home/percy/works/mbos-v1/agentsmith/docs/user-guides/cluster-deploy-operations.md)
+- [Local Runtime Flows](./local-runtime-flows.md)
+- [Demo Deploy Operations](./demo-deploy-operations.md)
+- [Cluster Deploy Operations](./cluster-deploy-operations.md)
 
 如果你只想记住当前方法论，这一页就是总入口；其它 runbook 只负责展开具体步骤。
 
@@ -65,7 +65,7 @@
 
 正式 contract 见：
 
-- [Substrate Governance And Runtime Lines](/home/percy/works/mbos-v1/agentsmith/docs/contracts/substrate-governance-and-runtime-lines-v1.md)
+- [Substrate Governance And Runtime Lines](../contracts/substrate-governance-and-runtime-lines-v1.md)
 
 ## mode 解释
 

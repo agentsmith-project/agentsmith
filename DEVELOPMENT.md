@@ -1116,14 +1116,14 @@ vi.mock('next/navigation', () => ({
 #### Token expires during SSE stream
 **Problem**: SSE connection drops after some time
 **Solution**: Token refresh is not automatic. Currently requires page refresh.
-TODO: Implement auto-reconnection with token refresh (see Phase 2, Task 2.1)
+Known limitation: auto-reconnection with token refresh is still runtime/security debt. Treat it as a current limitation to verify against the SSE client contract, not as an active historical work item.
 
 ### Build Issues
 
 #### MSW appearing in production bundle
 **Problem**: `grep -r "msw" .next/` finds MSW references
 **Solution**: This is a known issue if MSW is statically imported.
-The fix (Phase 2, Task 2.3) uses dynamic imports to exclude MSW from production.
+Expected fix pattern: use dynamic imports or equivalent production-safe boundaries so MSW stays out of production bundles. Verify with the production bundle check rather than relying on a historical phase label.
 
 #### Type errors after refactoring
 **Problem**: TypeScript errors after changes

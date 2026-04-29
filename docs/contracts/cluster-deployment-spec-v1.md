@@ -105,7 +105,7 @@ The deploy automation must also stop at an explicit administrator handoff point 
 
 All cluster-scope preparation in `semi-auto` belongs to the separate administrator runbook:
 
-- [cluster-admin-runbook.md](/home/percy/works/mbos-v1/agentsmith/docs/user-guides/cluster-admin-runbook.md)
+- [cluster-admin-runbook.md](../user-guides/cluster-admin-runbook.md)
 
 In `full-auto`, AgentSmith is allowed to manage the AgentSmith-owned cluster prerequisites by using `config/admin-kubeconfig`.
 
@@ -293,7 +293,7 @@ Optional operator config:
 
 Environment-independent bootstrap defaults are tracked in:
 
-- [presets.env](/home/percy/works/mbos-v1/agentsmith/infra/runtime/presets.env)
+- [presets.env](../../infra/runtime/presets.env)
 
 These presets are part of the release contract for both `demo-deploy` and `cluster-deploy`.
 
@@ -313,7 +313,7 @@ They currently define:
 
 `render-env.sh`, `bootstrap.sh`, and `verify.sh` consume these preset values through:
 
-- [preset-common.sh](/home/percy/works/mbos-v1/agentsmith/scripts/lib/preset-common.sh)
+- [preset-common.sh](../../scripts/lib/preset-common.sh)
 
 Site-specific operator config may override these values, but the tracked preset file is the default truth for local rehearsal and standard deployment flows.
 - `RUNNER_NODE_BASE_IMAGE`

@@ -122,8 +122,12 @@ test.describe('@lane-real integration desktop auth request complete and work', (
       await expect(page).toHaveURL(new RegExp(`/${LOCALE}/login/workspace\\?desktop_auth_request_id=${started.request_id}`), {
         timeout: 30_000,
       });
-      const workspaceRow = page.getByRole('button', { name: /Default Workspace/i });
+      const workspaceRow = page.getByRole('link', { name: /Default Workspace/i });
       await expect(workspaceRow).toBeVisible({ timeout: 30_000 });
+      await expect(workspaceRow).toHaveAttribute(
+        'href',
+        new RegExp(`/${LOCALE}/workspaces/ws_default/login\\?desktop_auth_request_id=${started.request_id}`),
+      );
       await trace.capture(page, {
         stepId: 'desktop-auth-request',
         action: 'Review desktop request',
@@ -160,8 +164,9 @@ test.describe('@lane-real integration desktop auth request complete and work', (
 
       await page.getByTestId('desktop-auth-complete__workspace-entry-link').click();
       await expect(page).toHaveURL(new RegExp(`/${LOCALE}/login/workspace(?:$|\\?)`), { timeout: 30_000 });
-      const returnWorkspaceRow = page.getByRole('button', { name: /Default Workspace/i });
+      const returnWorkspaceRow = page.getByRole('link', { name: /Default Workspace/i });
       await expect(returnWorkspaceRow).toBeVisible({ timeout: 30_000 });
+      await expect(returnWorkspaceRow).toHaveAttribute('href', `/${LOCALE}/workspaces/ws_default/login`);
       await trace.capture(page, {
         stepId: 'workspace-selection',
         action: 'Continue to workspace sign-in',

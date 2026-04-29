@@ -30,6 +30,10 @@ import {
   selectGovernanceRunStandaloneJobIds,
   type GovernanceRunGoal,
 } from './governance-run-goal-selector';
+import {
+  buildGovernanceDagSchedulerShadow,
+  type GovernanceDagSchedulerShadow,
+} from './governance-dag-scheduler';
 export type { GovernanceRunGoal } from './governance-run-goal-selector';
 
 export const GOVERNANCE_RUN_PLAN_SCHEMA = 'governance-runner-shell-plan.v1' as const;
@@ -167,6 +171,7 @@ export interface GovernanceRunPlan {
   edges: readonly GovernanceRunPlanEdge[];
   locks: readonly GovernanceRunPlanLock[];
   artifact_templates: readonly GovernanceRunPlanArtifactTemplate[];
+  scheduler_shadow: GovernanceDagSchedulerShadow;
 }
 
 export interface BuildGovernanceRunPlanInput {
@@ -205,6 +210,7 @@ const TOP_LEVEL_FIELDS = [
   'edges',
   'locks',
   'artifact_templates',
+  'scheduler_shadow',
 ] as const;
 
 const FORBIDDEN_RUNTIME_KEYS = [
@@ -337,6 +343,39 @@ const NESTED_ALLOWED_FIELD_SETS = new Map<string, ReadonlySet<string>>([
       'producer_npm_script',
     ]),
   ],
+  [
+    'plan.scheduler_shadow',
+    new Set([
+      'execution_policy',
+      'execution_enabled',
+      'max_concurrency_effective',
+      'topology_levels',
+      'parallel_candidates',
+      'terminal_aggregate',
+    ]),
+  ],
+  [
+    'plan.scheduler_shadow.topology_levels[]',
+    new Set(['level_index', 'job_ids']),
+  ],
+  [
+    'plan.scheduler_shadow.parallel_candidates[]',
+    new Set([
+      'level_index',
+      'candidate_job_ids',
+      'runnable_without_lock_conflicts',
+      'reason',
+      'blocked_by_lock',
+    ]),
+  ],
+  [
+    'plan.scheduler_shadow.parallel_candidates[].blocked_by_lock[]',
+    new Set(['lock_id', 'job_ids', 'reason']),
+  ],
+  [
+    'plan.scheduler_shadow.terminal_aggregate',
+    new Set(['job_id', 'aggregate_only', 'waits_for_job_ids']),
+  ],
 ]);
 
 function inputCounts(job: CurrentJobMetadata): GovernanceRunPlanInputCounts {
@@ -432,6 +471,78 @@ function projectArtifactTemplate(template: CurrentArtifactTemplateEntry): Govern
   };
 }
 
+function buildSchedulerShadow(
+  jobs: readonly CurrentJobMetadata[],
+  locks: readonly CurrentResourceLockDefinition[],
+): GovernanceDagSchedulerShadow {
+  const selectedJobIds = new Set(jobs.map((job) => job.id));
+  const jobsById = new Map(jobs.map((job) => [job.id, job]));
+  const selectedDependencyClosureCache = new Map<string, boolean>();
+  // Partial plans cannot assume omitted upstream jobs are already satisfied.
+  const shadowJobs = jobs
+    .filter((job) => jobHasSelectedDependencyClosure({
+      jobId: job.id,
+      jobsById,
+      selectedJobIds,
+      cache: selectedDependencyClosureCache,
+      visiting: new Set<string>(),
+    }))
+    .map((job) => ({
+      id: job.id,
+      dependsOn: [...job.depends_on],
+      executionMode: job.execution_mode,
+      lockIds: [...job.locks],
+    }));
+
+  return buildGovernanceDagSchedulerShadow({
+    jobs: shadowJobs,
+    locks: locks.map((lock) => ({
+      id: lock.id,
+      mode: lock.mode,
+      reason: lock.reason,
+    })),
+    maxConcurrencyEffective: 1,
+  });
+}
+
+function jobHasSelectedDependencyClosure(input: {
+  jobId: string;
+  jobsById: ReadonlyMap<string, CurrentJobMetadata>;
+  selectedJobIds: ReadonlySet<string>;
+  cache: Map<string, boolean>;
+  visiting: Set<string>;
+}): boolean {
+  const cached = input.cache.get(input.jobId);
+  if (cached !== undefined) {
+    return cached;
+  }
+
+  const job = input.jobsById.get(input.jobId);
+  if (!job) {
+    return false;
+  }
+
+  if (input.visiting.has(input.jobId)) {
+    return true;
+  }
+
+  input.visiting.add(input.jobId);
+  const hasSelectedClosure = job.depends_on.every((dependencyId) => {
+    if (!input.selectedJobIds.has(dependencyId)) {
+      return false;
+    }
+
+    return jobHasSelectedDependencyClosure({
+      ...input,
+      jobId: dependencyId,
+    });
+  });
+  input.visiting.delete(input.jobId);
+  input.cache.set(input.jobId, hasSelectedClosure);
+
+  return hasSelectedClosure;
+}
+
 function selectJobs(goal: GovernanceRunGoal, jobId: string | undefined): readonly CurrentJobMetadata[] {
   const selectedJobIds = isReleaseGovernanceRunGoal(goal)
     ? listCurrentJobMetadata()
@@ -521,6 +632,7 @@ export function buildGovernanceRunPlan(input: BuildGovernanceRunPlanInput): Gove
     edges: projectEdges(jobs),
     locks: locks.map(projectLock),
     artifact_templates: artifactTemplateIndex.templates.map(projectArtifactTemplate),
+    scheduler_shadow: buildSchedulerShadow(jobs, locks),
   };
 }
 
@@ -610,6 +722,9 @@ function validateNestedAllowedFields(
 ): void {
   const normalizedPath = normalizePlanPath(path);
   const allowedFields = NESTED_ALLOWED_FIELD_SETS.get(normalizedPath);
+  if (normalizedPath === 'plan.scheduler_shadow.terminal_aggregate' && value === null) {
+    return;
+  }
   if (allowedFields && !isRecord(value)) {
     failures.push({
       path,
@@ -700,6 +815,34 @@ function validateEvidenceClaimSchemaBoundary(
   );
 }
 
+function validateSchedulerShadowBoundary(
+  value: unknown,
+  failures: GovernanceRunPlanValidationFailure[],
+): void {
+  if (!isRecord(value)) {
+    return;
+  }
+
+  validateLiteral(
+    value.execution_policy,
+    'plan_only_shadow',
+    'plan.scheduler_shadow.execution_policy',
+    failures,
+  );
+  validateLiteral(
+    value.execution_enabled,
+    false,
+    'plan.scheduler_shadow.execution_enabled',
+    failures,
+  );
+  validateLiteral(
+    value.max_concurrency_effective,
+    1,
+    'plan.scheduler_shadow.max_concurrency_effective',
+    failures,
+  );
+}
+
 export function validateGovernanceRunPlan(plan: unknown): GovernanceRunPlanValidationResult {
   const failures: GovernanceRunPlanValidationFailure[] = [];
 
@@ -725,12 +868,14 @@ export function validateGovernanceRunPlan(plan: unknown): GovernanceRunPlanValid
   validateNestedAllowedFields(plan.edges, 'plan.edges', failures);
   validateNestedAllowedFields(plan.locks, 'plan.locks', failures);
   validateNestedAllowedFields(plan.artifact_templates, 'plan.artifact_templates', failures);
+  validateNestedAllowedFields(plan.scheduler_shadow, 'plan.scheduler_shadow', failures);
   validateEvidenceClaimSchemaBoundary(
     isRecord(plan.input_manifests)
       ? plan.input_manifests.current_evidence_claim_schema
       : undefined,
     failures,
   );
+  validateSchedulerShadowBoundary(plan.scheduler_shadow, failures);
   validateLiteral(plan.schema, GOVERNANCE_RUN_PLAN_SCHEMA, 'plan.schema', failures);
   validateLiteral(plan.version, GOVERNANCE_RUN_PLAN_VERSION, 'plan.version', failures);
   validateLiteral(plan.mode, 'plan_only', 'plan.mode', failures);

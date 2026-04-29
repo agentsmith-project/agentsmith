@@ -37,6 +37,12 @@ export type CurrentRealSessionProposedShardId =
 
 export type CurrentRealSessionIsolationLevel = 'process' | 'workspace' | 'db-checkpoint' | 'serialized';
 
+export type CurrentRealSessionCoalescingStrategy = 'serial_diagnostic_shards';
+
+export type CurrentRealSessionEvidenceScope = 'per_grep_shard';
+
+export type CurrentRealSessionStackReusePolicy = 'single_backend_real_stack_per_session';
+
 export type CurrentRealSessionMutableResource =
   | 'workspace'
   | 'project'
@@ -103,9 +109,32 @@ export interface CurrentRealSessionCoverageEntry {
   reason: string;
 }
 
+export interface CurrentRealSessionCoalescingShard {
+  coverage_id: string;
+  shard_id: string;
+  spec: string;
+  grep: string;
+  proposed_shard_id: CurrentRealSessionProposedShardId;
+  evidence_owner: CurrentRealSessionEvidenceOwnerId;
+}
+
+export interface CurrentRealSessionCoalescingContract {
+  id: string;
+  session_name: string;
+  session_command: string;
+  strategy: CurrentRealSessionCoalescingStrategy;
+  evidence_scope: CurrentRealSessionEvidenceScope;
+  proposed_shard_id: CurrentRealSessionProposedShardId;
+  evidence_owner: CurrentRealSessionEvidenceOwnerId;
+  stack_reuse: CurrentRealSessionStackReusePolicy;
+  shards: readonly CurrentRealSessionCoalescingShard[];
+  reason: string;
+}
+
 export interface CurrentRealSessionCoverageManifest {
   schema: typeof CURRENT_REAL_SESSION_COVERAGE_MANIFEST_SCHEMA;
   version: typeof CURRENT_REAL_SESSION_COVERAGE_MANIFEST_VERSION;
+  session_coalescing: readonly CurrentRealSessionCoalescingContract[];
   coverage: readonly CurrentRealSessionCoverageEntry[];
 }
 
@@ -174,7 +203,27 @@ const PROVIDER_CREDENTIAL_LOCK_IDS = [
   'provider-secret-profile',
 ] as const;
 
-const TOP_LEVEL_FIELDS = ['schema', 'version', 'coverage'] as const;
+const TOP_LEVEL_FIELDS = ['schema', 'version', 'session_coalescing', 'coverage'] as const;
+const SESSION_COALESCING_CONTRACT_FIELDS = [
+  'id',
+  'session_name',
+  'session_command',
+  'strategy',
+  'evidence_scope',
+  'proposed_shard_id',
+  'evidence_owner',
+  'stack_reuse',
+  'shards',
+  'reason',
+] as const;
+const SESSION_COALESCING_SHARD_FIELDS = [
+  'coverage_id',
+  'shard_id',
+  'spec',
+  'grep',
+  'proposed_shard_id',
+  'evidence_owner',
+] as const;
 const ENTRY_FIELDS = [
   'id',
   'source_kind',
@@ -211,6 +260,26 @@ const REQUIRED_ENTRY_FIELDS = [
   'merge_allowed',
   'reason',
 ] as const;
+const REQUIRED_SESSION_COALESCING_CONTRACT_FIELDS = [
+  'id',
+  'session_name',
+  'session_command',
+  'strategy',
+  'evidence_scope',
+  'proposed_shard_id',
+  'evidence_owner',
+  'stack_reuse',
+  'shards',
+  'reason',
+] as const;
+const REQUIRED_SESSION_COALESCING_SHARD_FIELDS = [
+  'coverage_id',
+  'shard_id',
+  'spec',
+  'grep',
+  'proposed_shard_id',
+  'evidence_owner',
+] as const;
 const SOURCE_KINDS = [
   'current_gate',
   'release_campaign_step',
@@ -244,6 +313,15 @@ const ISOLATION_LEVELS = [
   'db-checkpoint',
   'serialized',
 ] as const satisfies readonly CurrentRealSessionIsolationLevel[];
+const SESSION_COALESCING_STRATEGIES = [
+  'serial_diagnostic_shards',
+] as const satisfies readonly CurrentRealSessionCoalescingStrategy[];
+const SESSION_EVIDENCE_SCOPES = [
+  'per_grep_shard',
+] as const satisfies readonly CurrentRealSessionEvidenceScope[];
+const STACK_REUSE_POLICIES = [
+  'single_backend_real_stack_per_session',
+] as const satisfies readonly CurrentRealSessionStackReusePolicy[];
 const MUTABLE_RESOURCES = [
   'workspace',
   'project',
@@ -272,8 +350,11 @@ const FORBIDDEN_RUNTIME_FIELDS = new Set([
   'runtime_truth',
   'runtimeTruth',
   'verdict',
+  'runtime_verdict',
+  'release_verdict',
   'passed',
   'failed',
+  'claim',
   'claim_id',
   'claimId',
   'evidence_claim_id',
@@ -285,7 +366,10 @@ const FORBIDDEN_RUNTIME_FIELDS = new Set([
   'pid',
   'retry_count',
   'cache_hit',
+  'cache_decision',
   'claim_reuse',
+  'reusable',
+  'reuse_allowed',
 ]);
 const HIGH_RISK_MERGE_RESOURCES = new Set<CurrentRealSessionMutableResource>([
   'ws_default',
@@ -313,11 +397,18 @@ const HIGH_RISK_MERGE_LOCK_IDS = new Set([
 ]);
 const GENERIC_IDS = new Set(['', 'coverage', 'mapping', 'source', 'gate', 'script', 'spec', 'grep']);
 const TOP_LEVEL_FIELD_SET = new Set<string>(TOP_LEVEL_FIELDS);
+const SESSION_COALESCING_CONTRACT_FIELD_SET = new Set<string>(SESSION_COALESCING_CONTRACT_FIELDS);
+const SESSION_COALESCING_SHARD_FIELD_SET = new Set<string>(SESSION_COALESCING_SHARD_FIELDS);
 const ENTRY_FIELD_SET = new Set<string>(ENTRY_FIELDS);
 const REQUIRED_ENTRY_FIELD_SET = new Set<string>(REQUIRED_ENTRY_FIELDS);
+const REQUIRED_SESSION_COALESCING_CONTRACT_FIELD_SET = new Set<string>(REQUIRED_SESSION_COALESCING_CONTRACT_FIELDS);
+const REQUIRED_SESSION_COALESCING_SHARD_FIELD_SET = new Set<string>(REQUIRED_SESSION_COALESCING_SHARD_FIELDS);
 const SOURCE_KIND_SET = new Set<string>(SOURCE_KINDS);
 const SHARD_ID_SET = new Set<string>(PROPOSED_SHARD_IDS);
 const ISOLATION_LEVEL_SET = new Set<string>(ISOLATION_LEVELS);
+const SESSION_COALESCING_STRATEGY_SET = new Set<string>(SESSION_COALESCING_STRATEGIES);
+const SESSION_EVIDENCE_SCOPE_SET = new Set<string>(SESSION_EVIDENCE_SCOPES);
+const STACK_REUSE_POLICY_SET = new Set<string>(STACK_REUSE_POLICIES);
 const MUTABLE_RESOURCE_SET = new Set<string>(MUTABLE_RESOURCES);
 const EVIDENCE_OWNER_SET = new Set<string>(CURRENT_REAL_SESSION_EVIDENCE_OWNER_IDS);
 const EXPLICIT_REAL_SESSION_NPM_SCRIPTS = new Set([
@@ -362,8 +453,18 @@ function toIdPart(value: string): string {
     .replace(/^-+|-+$/g, '');
 }
 
+function grepCoverageId(spec: string, grep: string): string {
+  return `playwright-grep-${toIdPart(spec)}-${toIdPart(grep)}`;
+}
+
 function defineCoverage(entry: CurrentRealSessionCoverageEntry): CurrentRealSessionCoverageEntry {
   return entry;
+}
+
+function defineSessionCoalescingContract(
+  contract: CurrentRealSessionCoalescingContract,
+): CurrentRealSessionCoalescingContract {
+  return contract;
 }
 
 function currentGateCoverage(input: {
@@ -487,7 +588,7 @@ function grepCoverage(input: {
   reason: string;
 }): CurrentRealSessionCoverageEntry {
   return defineCoverage({
-    id: `playwright-grep-${toIdPart(input.spec)}-${toIdPart(input.grep)}`,
+    id: grepCoverageId(input.spec, input.grep),
     source_kind: 'playwright_grep',
     spec: input.spec,
     grep: input.grep,
@@ -500,6 +601,53 @@ function grepCoverage(input: {
     reason: input.reason,
   });
 }
+
+const CHAT_BACKEND_REAL_SESSION_NAME = 'chat-backend-real-runner';
+const CHAT_BACKEND_REAL_SESSION_COMMAND = 'bash scripts/run-integration-e2e-full.sh --session chat-backend-real-runner';
+const CHAT_BACKEND_REAL_SESSION_SHARDS = [
+  {
+    shard_id: 'chat-runner-stream',
+    spec: 'e2e/integration-chat-llm-runner.spec.ts',
+    grep: 'streams multi-turn chat through the real local chat runner and persists replies',
+  },
+  {
+    shard_id: 'chat-runner-continuity',
+    spec: 'e2e/integration-chat-llm-runner.spec.ts',
+    grep: 'preserves conversation continuity across refresh with story-bound trace evidence',
+  },
+  {
+    shard_id: 'chat-runner-workspace-reclaim',
+    spec: 'e2e/integration-chat-llm-runner.spec.ts',
+    grep: 'warns and recreates the session workspace when the local chat workspace has been reclaimed',
+  },
+  {
+    shard_id: 'chat-stop-escalation',
+    spec: 'e2e/integration-chat.spec.ts',
+    grep: 'stop escalation resyncs authoritative thread truth after refresh and keeps composer ready',
+  },
+] as const;
+
+const CHAT_BACKEND_REAL_SESSION_CONTRACT = defineSessionCoalescingContract({
+  id: CHAT_BACKEND_REAL_SESSION_NAME,
+  session_name: CHAT_BACKEND_REAL_SESSION_NAME,
+  session_command: CHAT_BACKEND_REAL_SESSION_COMMAND,
+  strategy: 'serial_diagnostic_shards',
+  evidence_scope: 'per_grep_shard',
+  proposed_shard_id: 'external-chat-runner',
+  evidence_owner: 'backend-real-runner:external-chat',
+  stack_reuse: 'single_backend_real_stack_per_session',
+  shards: CHAT_BACKEND_REAL_SESSION_SHARDS.map((shard) => ({
+    ...shard,
+    coverage_id: grepCoverageId(shard.spec, shard.grep),
+    proposed_shard_id: 'external-chat-runner',
+    evidence_owner: 'backend-real-runner:external-chat',
+  })),
+  reason: 'External chat backend-real greps are serialized diagnostic shards under one backend-real stack, while each grep keeps independent shard evidence.',
+});
+
+const CURRENT_REAL_SESSION_COALESCING_CONTRACTS = [
+  CHAT_BACKEND_REAL_SESSION_CONTRACT,
+] as const satisfies readonly CurrentRealSessionCoalescingContract[];
 
 const CURRENT_GATE_COVERAGE = [
   currentGateCoverage({
@@ -1094,6 +1242,7 @@ const SPEC_COVERAGE = [
 export const CURRENT_REAL_SESSION_COVERAGE_MANIFEST: CurrentRealSessionCoverageManifest = {
   schema: CURRENT_REAL_SESSION_COVERAGE_MANIFEST_SCHEMA,
   version: CURRENT_REAL_SESSION_COVERAGE_MANIFEST_VERSION,
+  session_coalescing: CURRENT_REAL_SESSION_COALESCING_CONTRACTS,
   coverage: [
     ...CURRENT_GATE_COVERAGE,
     ...CAMPAIGN_STEP_COVERAGE,
@@ -1104,6 +1253,10 @@ export const CURRENT_REAL_SESSION_COVERAGE_MANIFEST: CurrentRealSessionCoverageM
 
 export function listCurrentRealSessionCoverageEntries(): readonly CurrentRealSessionCoverageEntry[] {
   return CURRENT_REAL_SESSION_COVERAGE_MANIFEST.coverage;
+}
+
+export function listCurrentRealSessionCoalescingContracts(): readonly CurrentRealSessionCoalescingContract[] {
+  return CURRENT_REAL_SESSION_COVERAGE_MANIFEST.session_coalescing;
 }
 
 export function listCurrentRealSessionCoverageRequiredSources(
@@ -1222,8 +1375,18 @@ export function validateCurrentRealSessionCoverageManifest(
       failures,
     };
   }
+  if (!Array.isArray(manifest.session_coalescing)) {
+    failures.push({
+      index: -1,
+      path: 'manifest.session_coalescing',
+      reason: 'session_coalescing must be an array.',
+    });
+  }
 
   validateCoverageEntries(manifest.coverage, packageScripts, failures);
+  if (Array.isArray(manifest.session_coalescing)) {
+    validateSessionCoalescingContracts(manifest.session_coalescing, manifest.coverage, failures);
+  }
   const discovery = options.requiredSources
     ? { sources: options.requiredSources, failures: options.discoveryFailures ?? [] }
     : discoverCurrentRealSessionCoverageRequiredSources({
@@ -1480,6 +1643,388 @@ function validateCoverageEntries(
     validateSourceReference(entry, packageScripts, index, id, failures);
     validateMergeSafety(entry, index, id, failures);
   });
+}
+
+function validateSessionCoalescingContracts(
+  contracts: readonly unknown[],
+  entries: readonly unknown[],
+  failures: CurrentRealSessionCoverageManifestFailure[],
+): void {
+  const coverageById = new Map<string, Record<string, unknown>>();
+  for (const entry of entries) {
+    if (isRecord(entry) && typeof entry.id === 'string') {
+      coverageById.set(entry.id, entry);
+    }
+  }
+
+  const seenContractIds = new Set<string>();
+  const seenSessionNames = new Set<string>();
+  const coalescedCoverageIds = new Set<string>();
+
+  contracts.forEach((contract, index) => {
+    if (!isRecord(contract)) {
+      failures.push({
+        index,
+        path: `session_coalescing[${index}]`,
+        reason: 'session coalescing contract must be an object.',
+      });
+      return;
+    }
+
+    const id = typeof contract.id === 'string' ? contract.id : undefined;
+    validateAllowedFields(
+      contract,
+      SESSION_COALESCING_CONTRACT_FIELD_SET,
+      'session coalescing contract',
+      `session_coalescing[${index}]`,
+      index,
+      id,
+      failures,
+    );
+    for (const field of REQUIRED_SESSION_COALESCING_CONTRACT_FIELD_SET) {
+      if (!(field in contract)) {
+        failures.push({
+          index,
+          id,
+          path: `session_coalescing[${index}].${field}`,
+          reason: `${field} is required for session coalescing contract.`,
+        });
+      }
+    }
+
+    validateSessionId(contract.id, `session_coalescing[${index}].id`, index, id, seenContractIds, failures);
+    validateSessionRequiredString(contract.session_name, 'session_name', `session_coalescing[${index}].session_name`, index, id, failures, 'session coalescing contract');
+    validateSessionRequiredString(contract.session_command, 'session_command', `session_coalescing[${index}].session_command`, index, id, failures, 'session coalescing contract');
+    validateSessionRequiredString(contract.reason, 'reason', `session_coalescing[${index}].reason`, index, id, failures, 'session coalescing contract');
+    validateSessionEnum(contract.strategy, SESSION_COALESCING_STRATEGY_SET, 'strategy', `session_coalescing[${index}].strategy`, index, id, failures);
+    validateSessionEnum(contract.evidence_scope, SESSION_EVIDENCE_SCOPE_SET, 'evidence_scope', `session_coalescing[${index}].evidence_scope`, index, id, failures);
+    validateSessionEnum(contract.proposed_shard_id, SHARD_ID_SET, 'proposed_shard_id', `session_coalescing[${index}].proposed_shard_id`, index, id, failures);
+    validateSessionEnum(contract.evidence_owner, EVIDENCE_OWNER_SET, 'evidence_owner', `session_coalescing[${index}].evidence_owner`, index, id, failures);
+    validateSessionEnum(contract.stack_reuse, STACK_REUSE_POLICY_SET, 'stack_reuse', `session_coalescing[${index}].stack_reuse`, index, id, failures);
+
+    if (typeof contract.session_name === 'string') {
+      if (seenSessionNames.has(contract.session_name)) {
+        failures.push({
+          index,
+          id,
+          path: `session_coalescing[${index}].session_name`,
+          reason: `duplicate session coalescing session_name "${contract.session_name}".`,
+        });
+      }
+      seenSessionNames.add(contract.session_name);
+    }
+    if (typeof contract.session_name === 'string' && typeof contract.session_command === 'string') {
+      const expectedCommand = `bash scripts/run-integration-e2e-full.sh --session ${contract.session_name}`;
+      if (contract.session_command !== expectedCommand) {
+        failures.push({
+          index,
+          id,
+          path: `session_coalescing[${index}].session_command`,
+          reason: `session_command must be "${expectedCommand}".`,
+        });
+      }
+    }
+
+    if (!Array.isArray(contract.shards)) {
+      failures.push({
+        index,
+        id,
+        path: `session_coalescing[${index}].shards`,
+        reason: 'shards must be an array for session coalescing contract.',
+      });
+      return;
+    }
+    if (contract.shards.length === 0) {
+      failures.push({
+        index,
+        id,
+        path: `session_coalescing[${index}].shards`,
+        reason: 'shards must not be empty for session coalescing contract.',
+      });
+    }
+
+    validateSessionCoalescingShards({
+      contract,
+      contractIndex: index,
+      coverageById,
+      coalescedCoverageIds,
+      failures,
+    });
+  });
+
+  validateRequiredSessionCoalescingContracts(contracts, failures);
+}
+
+function validateSessionCoalescingShards(input: {
+  contract: Record<string, unknown> & { shards: readonly unknown[] };
+  contractIndex: number;
+  coverageById: ReadonlyMap<string, Record<string, unknown>>;
+  coalescedCoverageIds: Set<string>;
+  failures: CurrentRealSessionCoverageManifestFailure[];
+}): void {
+  const { contract, contractIndex, coverageById, coalescedCoverageIds, failures } = input;
+  const contractId = typeof contract.id === 'string' ? contract.id : undefined;
+  const seenCoverageIds = new Set<string>();
+  const seenShardIds = new Set<string>();
+
+  contract.shards.forEach((shard, shardIndex) => {
+    const pathPrefix = `session_coalescing[${contractIndex}].shards[${shardIndex}]`;
+    if (!isRecord(shard)) {
+      failures.push({
+        index: contractIndex,
+        id: contractId,
+        path: pathPrefix,
+        reason: 'session shard must be an object.',
+      });
+      return;
+    }
+
+    validateAllowedFields(
+      shard,
+      SESSION_COALESCING_SHARD_FIELD_SET,
+      'session coalescing shard',
+      pathPrefix,
+      contractIndex,
+      contractId,
+      failures,
+    );
+    for (const field of REQUIRED_SESSION_COALESCING_SHARD_FIELD_SET) {
+      if (!(field in shard)) {
+        failures.push({
+          index: contractIndex,
+          id: contractId,
+          path: `${pathPrefix}.${field}`,
+          reason: `${field} is required for session shard.`,
+        });
+      }
+    }
+
+    validateSessionRequiredString(shard.coverage_id, 'coverage_id', `${pathPrefix}.coverage_id`, contractIndex, contractId, failures);
+    validateSessionId(shard.shard_id, `${pathPrefix}.shard_id`, contractIndex, contractId, seenShardIds, failures);
+    validateSessionRequiredString(shard.spec, 'spec', `${pathPrefix}.spec`, contractIndex, contractId, failures);
+    validateSessionRequiredString(shard.grep, 'grep', `${pathPrefix}.grep`, contractIndex, contractId, failures);
+    validateSessionEnum(shard.proposed_shard_id, SHARD_ID_SET, 'proposed_shard_id', `${pathPrefix}.proposed_shard_id`, contractIndex, contractId, failures);
+    validateSessionEnum(shard.evidence_owner, EVIDENCE_OWNER_SET, 'evidence_owner', `${pathPrefix}.evidence_owner`, contractIndex, contractId, failures);
+
+    if (typeof shard.coverage_id !== 'string') {
+      return;
+    }
+    if (seenCoverageIds.has(shard.coverage_id)) {
+      failures.push({
+        index: contractIndex,
+        id: contractId,
+        path: `${pathPrefix}.coverage_id`,
+        reason: `duplicate session shard coverage_id "${shard.coverage_id}".`,
+      });
+    }
+    seenCoverageIds.add(shard.coverage_id);
+    if (coalescedCoverageIds.has(shard.coverage_id)) {
+      failures.push({
+        index: contractIndex,
+        id: contractId,
+        path: `${pathPrefix}.coverage_id`,
+        reason: `coverage_id "${shard.coverage_id}" is already claimed by another session coalescing contract.`,
+      });
+    }
+    coalescedCoverageIds.add(shard.coverage_id);
+
+    const coverage = coverageById.get(shard.coverage_id);
+    if (!coverage) {
+      failures.push({
+        index: contractIndex,
+        id: contractId,
+        path: `${pathPrefix}.coverage_id`,
+        reason: `unknown session shard coverage_id "${shard.coverage_id}".`,
+      });
+      return;
+    }
+
+    validateSessionShardCoverageAlignment({
+      contract,
+      contractIndex,
+      contractId,
+      shard,
+      shardIndex,
+      coverage,
+      failures,
+    });
+  });
+}
+
+function validateSessionShardCoverageAlignment(input: {
+  contract: Record<string, unknown>;
+  contractIndex: number;
+  contractId: string | undefined;
+  shard: Record<string, unknown>;
+  shardIndex: number;
+  coverage: Record<string, unknown>;
+  failures: CurrentRealSessionCoverageManifestFailure[];
+}): void {
+  const {
+    contract,
+    contractIndex,
+    contractId,
+    shard,
+    shardIndex,
+    coverage,
+    failures,
+  } = input;
+  const pathPrefix = `session_coalescing[${contractIndex}].shards[${shardIndex}]`;
+
+  if (coverage.source_kind !== 'playwright_grep') {
+    failures.push({
+      index: contractIndex,
+      id: contractId,
+      path: `${pathPrefix}.coverage_id`,
+      reason: 'session coalescing shards must reference playwright_grep coverage entries.',
+    });
+  }
+  if (coverage.spec !== shard.spec) {
+    failures.push({
+      index: contractIndex,
+      id: contractId,
+      path: `${pathPrefix}.spec`,
+      reason: 'session shard spec must match referenced coverage spec.',
+    });
+  }
+  if (coverage.grep !== shard.grep) {
+    failures.push({
+      index: contractIndex,
+      id: contractId,
+      path: `${pathPrefix}.grep`,
+      reason: 'session shard grep must match referenced coverage grep.',
+    });
+  }
+  if (coverage.proposed_shard_id !== contract.proposed_shard_id || shard.proposed_shard_id !== contract.proposed_shard_id) {
+    failures.push({
+      index: contractIndex,
+      id: contractId,
+      path: `${pathPrefix}.proposed_shard_id`,
+      reason: 'session shard proposed_shard_id must match the session and referenced coverage proposed_shard_id.',
+    });
+  }
+  if (coverage.evidence_owner !== contract.evidence_owner || shard.evidence_owner !== contract.evidence_owner) {
+    failures.push({
+      index: contractIndex,
+      id: contractId,
+      path: `${pathPrefix}.evidence_owner`,
+      reason: 'session shard evidence_owner must match the session and referenced coverage evidence_owner.',
+    });
+  }
+  if (coverage.isolation_level !== 'serialized' || coverage.merge_allowed !== false) {
+    failures.push({
+      index: contractIndex,
+      id: contractId,
+      path: `${pathPrefix}.coverage_id`,
+      reason: 'session coalesced coverage must remain serialized with merge_allowed=false.',
+    });
+  }
+}
+
+function validateRequiredSessionCoalescingContracts(
+  contracts: readonly unknown[],
+  failures: CurrentRealSessionCoverageManifestFailure[],
+): void {
+  const recordContracts = contracts.filter(isRecord);
+
+  for (const requiredContract of CURRENT_REAL_SESSION_COALESCING_CONTRACTS) {
+    const contract = recordContracts.find((candidate) => candidate.id === requiredContract.id);
+    if (!contract) {
+      failures.push({
+        index: -1,
+        path: 'manifest.session_coalescing',
+        reason: `missing required session coalescing contract ${requiredContract.id}.`,
+      });
+      continue;
+    }
+
+    validateRequiredSessionCoalescingContract(contract, requiredContract, failures);
+  }
+}
+
+function validateRequiredSessionCoalescingContract(
+  contract: Record<string, unknown>,
+  requiredContract: CurrentRealSessionCoalescingContract,
+  failures: CurrentRealSessionCoverageManifestFailure[],
+): void {
+  const contractIndex = -1;
+  const contractId = typeof contract.id === 'string' ? contract.id : undefined;
+  const requiredFields = [
+    'session_name',
+    'session_command',
+    'strategy',
+    'evidence_scope',
+    'proposed_shard_id',
+    'evidence_owner',
+    'stack_reuse',
+  ] as const;
+
+  for (const field of requiredFields) {
+    if (contract[field] !== requiredContract[field]) {
+      failures.push({
+        index: contractIndex,
+        id: contractId,
+        path: `session_coalescing.${requiredContract.id}.${field}`,
+        reason: `required session coalescing contract ${requiredContract.id} must declare ${field}=${requiredContract[field]}.`,
+      });
+    }
+  }
+
+  const shards = Array.isArray(contract.shards) ? contract.shards : [];
+  const recordShards = shards.filter(isRecord);
+  const shardIds = shards.map((shard) => (isRecord(shard) ? shard.shard_id : undefined));
+  const requiredShardIds = requiredContract.shards.map((shard) => shard.shard_id);
+  const requiredShardIdSet = new Set(requiredShardIds);
+  const hasExactShardSequence = (
+    shardIds.length === requiredShardIds.length
+    && shardIds.every((shardId, index) => shardId === requiredShardIds[index])
+  );
+
+  if (!hasExactShardSequence) {
+    failures.push({
+      index: contractIndex,
+      id: contractId,
+      path: `session_coalescing.${requiredContract.id}.shards`,
+      reason: `required session coalescing contract ${requiredContract.id} must declare the exact serial diagnostic shard list in order.`,
+    });
+  }
+
+  shards.forEach((shard, shardIndex) => {
+    if (!isRecord(shard) || typeof shard.shard_id !== 'string' || requiredShardIdSet.has(shard.shard_id)) {
+      return;
+    }
+
+    failures.push({
+      index: contractIndex,
+      id: contractId,
+      path: `session_coalescing.${requiredContract.id}.shards[${shardIndex}].shard_id`,
+      reason: `unknown/extra session shard ${shard.shard_id} for required session coalescing contract ${requiredContract.id}.`,
+    });
+  });
+
+  for (const requiredShard of requiredContract.shards) {
+    const shard = recordShards.find((candidate) => candidate.shard_id === requiredShard.shard_id);
+    if (!shard) {
+      failures.push({
+        index: contractIndex,
+        id: contractId,
+        path: `session_coalescing.${requiredContract.id}.shards`,
+        reason: `missing required session shard ${requiredShard.shard_id}.`,
+      });
+      continue;
+    }
+
+    for (const field of SESSION_COALESCING_SHARD_FIELDS) {
+      if (shard[field] !== requiredShard[field]) {
+        failures.push({
+          index: contractIndex,
+          id: contractId,
+          path: `session_coalescing.${requiredContract.id}.shards.${requiredShard.shard_id}.${field}`,
+          reason: `required session shard ${requiredShard.shard_id} must declare ${field}=${requiredShard[field]}.`,
+        });
+      }
+    }
+  }
 }
 
 function validateSourceReference(
@@ -1789,6 +2334,82 @@ function validateAllowedFields(
         reason: `unknown ${label} field "${key}".`,
       });
     }
+  }
+}
+
+function validateSessionId(
+  value: unknown,
+  pathName: string,
+  index: number,
+  id: string | undefined,
+  seenIds: Set<string>,
+  failures: CurrentRealSessionCoverageManifestFailure[],
+): void {
+  if (typeof value !== 'string') {
+    failures.push({
+      index,
+      id,
+      path: pathName,
+      reason: 'id must be a stable non-generic kebab-case string.',
+    });
+    return;
+  }
+
+  if (!/^[a-z][a-z0-9]*(?:-[a-z0-9]+)*$/.test(value) || GENERIC_IDS.has(value)) {
+    failures.push({
+      index,
+      id,
+      path: pathName,
+      reason: 'id must be a stable non-generic kebab-case string.',
+    });
+  }
+  if (seenIds.has(value)) {
+    failures.push({
+      index,
+      id,
+      path: pathName,
+      reason: `duplicate session id "${value}".`,
+    });
+    return;
+  }
+  seenIds.add(value);
+}
+
+function validateSessionEnum(
+  value: unknown,
+  allowed: ReadonlySet<string>,
+  field: string,
+  pathName: string,
+  index: number,
+  id: string | undefined,
+  failures: CurrentRealSessionCoverageManifestFailure[],
+): void {
+  if (typeof value !== 'string' || !allowed.has(value)) {
+    failures.push({
+      index,
+      id,
+      path: pathName,
+      reason: `${field} is required and must be one of the current real session coalescing schema values.`,
+    });
+  }
+}
+
+function validateSessionRequiredString(
+  value: unknown,
+  field: string,
+  pathName: string,
+  index: number,
+  id: string | undefined,
+  failures: CurrentRealSessionCoverageManifestFailure[],
+  ownerLabel = 'session shard',
+): void {
+  if (typeof value !== 'string' || value.trim().length === 0) {
+    failures.push({
+      index,
+      id,
+      path: pathName,
+      reason: `${field} is required for ${ownerLabel}.`,
+    });
   }
 }
 

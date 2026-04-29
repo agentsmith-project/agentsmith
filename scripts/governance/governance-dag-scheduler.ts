@@ -14,6 +14,16 @@ export interface GovernanceDagSchedulerJob {
   executionMode: CurrentVerificationCampaignExecutionMode;
 }
 
+export interface GovernanceDagSchedulerShadowJob extends GovernanceDagSchedulerJob {
+  lockIds: readonly string[];
+}
+
+export interface GovernanceDagSchedulerShadowLock {
+  id: string;
+  mode: string;
+  reason: string;
+}
+
 export interface GovernanceDagEdge {
   fromJobId: string;
   toJobId: string;
@@ -24,6 +34,46 @@ export interface GovernanceDagTopology {
   levels: readonly (readonly string[])[];
   terminalJobIds: readonly string[];
   edges: readonly GovernanceDagEdge[];
+}
+
+export interface GovernanceDagSchedulerShadowTopologyLevel {
+  level_index: number;
+  job_ids: readonly string[];
+}
+
+export interface GovernanceDagSchedulerShadowBlockedLock {
+  lock_id: string;
+  job_ids: readonly string[];
+  reason: string;
+}
+
+export interface GovernanceDagSchedulerShadowParallelCandidate {
+  level_index: number;
+  candidate_job_ids: readonly string[];
+  runnable_without_lock_conflicts: boolean;
+  reason: 'blocked_by_current_exclusive_locks' | 'no_current_exclusive_lock_conflict';
+  blocked_by_lock: readonly GovernanceDagSchedulerShadowBlockedLock[];
+}
+
+export interface GovernanceDagSchedulerShadowTerminalAggregate {
+  job_id: string;
+  aggregate_only: true;
+  waits_for_job_ids: readonly string[];
+}
+
+export interface GovernanceDagSchedulerShadow {
+  execution_policy: 'plan_only_shadow';
+  execution_enabled: false;
+  max_concurrency_effective: 1;
+  topology_levels: readonly GovernanceDagSchedulerShadowTopologyLevel[];
+  parallel_candidates: readonly GovernanceDagSchedulerShadowParallelCandidate[];
+  terminal_aggregate: GovernanceDagSchedulerShadowTerminalAggregate | null;
+}
+
+export interface BuildGovernanceDagSchedulerShadowInput {
+  jobs: readonly GovernanceDagSchedulerShadowJob[];
+  locks: readonly GovernanceDagSchedulerShadowLock[];
+  maxConcurrencyEffective?: number;
 }
 
 export interface GovernanceDagValidationFailure {
@@ -245,6 +295,110 @@ export function assertGovernanceDagTopology(
   }
 
   throw new Error(validation.failures.map((failure) => failure.message).join(' '));
+}
+
+function blockedLocksForLevel(input: {
+  jobIds: readonly string[];
+  jobsById: ReadonlyMap<string, GovernanceDagSchedulerShadowJob>;
+  locksById: ReadonlyMap<string, GovernanceDagSchedulerShadowLock>;
+}): readonly GovernanceDagSchedulerShadowBlockedLock[] {
+  const jobsByLockId = new Map<string, string[]>();
+
+  for (const jobId of input.jobIds) {
+    const job = input.jobsById.get(jobId);
+    if (!job) {
+      continue;
+    }
+    for (const lockId of job.lockIds) {
+      const lock = input.locksById.get(lockId);
+      if (lock?.mode !== 'exclusive') {
+        continue;
+      }
+      const lockJobIds = jobsByLockId.get(lockId) ?? [];
+      lockJobIds.push(jobId);
+      jobsByLockId.set(lockId, lockJobIds);
+    }
+  }
+
+  return [...jobsByLockId.entries()]
+    .filter(([, jobIds]) => jobIds.length > 1)
+    .map(([lockId, jobIds]) => ({
+      lock_id: lockId,
+      job_ids: jobIds,
+      reason: input.locksById.get(lockId)?.reason ?? `Current exclusive lock ${lockId} blocks this candidate group.`,
+    }));
+}
+
+function terminalAggregateShadow(input: {
+  topology: GovernanceDagTopology;
+  jobsById: ReadonlyMap<string, GovernanceDagSchedulerShadowJob>;
+}): GovernanceDagSchedulerShadowTerminalAggregate | null {
+  const terminalJobId = input.topology.terminalJobIds[0];
+  if (!terminalJobId) {
+    return null;
+  }
+
+  const terminalJob = input.jobsById.get(terminalJobId);
+  if (!terminalJob) {
+    throw new Error(`DAG scheduler shadow lost terminal aggregate job metadata for ${terminalJobId}.`);
+  }
+
+  return {
+    job_id: terminalJob.id,
+    aggregate_only: true,
+    waits_for_job_ids: [...terminalJob.dependsOn],
+  };
+}
+
+export function buildGovernanceDagSchedulerShadow(
+  input: BuildGovernanceDagSchedulerShadowInput,
+): GovernanceDagSchedulerShadow {
+  const maxConcurrencyEffective = input.maxConcurrencyEffective ?? 1;
+  if (maxConcurrencyEffective !== 1) {
+    throw new Error('plan-only scheduler shadow must keep maxConcurrencyEffective fixed at 1.');
+  }
+
+  const topology = assertGovernanceDagTopology(input.jobs);
+  const jobsById = new Map(input.jobs.map((job) => [job.id, job]));
+  const locksById = new Map(input.locks.map((lock) => [lock.id, lock]));
+  const topologyLevels = topology.levels.map((jobIds, index) => ({
+    level_index: index,
+    job_ids: [...jobIds],
+  }));
+  const parallelCandidates = topology.levels
+    .map((jobIds, index): GovernanceDagSchedulerShadowParallelCandidate | null => {
+      if (jobIds.length <= 1) {
+        return null;
+      }
+      const blockedByLock = blockedLocksForLevel({
+        jobIds,
+        jobsById,
+        locksById,
+      });
+
+      return {
+        level_index: index,
+        candidate_job_ids: [...jobIds],
+        runnable_without_lock_conflicts: blockedByLock.length === 0,
+        reason: blockedByLock.length > 0
+          ? 'blocked_by_current_exclusive_locks'
+          : 'no_current_exclusive_lock_conflict',
+        blocked_by_lock: blockedByLock,
+      };
+    })
+    .filter((candidate): candidate is GovernanceDagSchedulerShadowParallelCandidate => candidate !== null);
+
+  return {
+    execution_policy: 'plan_only_shadow',
+    execution_enabled: false,
+    max_concurrency_effective: 1,
+    topology_levels: topologyLevels,
+    parallel_candidates: parallelCandidates,
+    terminal_aggregate: terminalAggregateShadow({
+      topology,
+      jobsById,
+    }),
+  };
 }
 
 function resultLifecycle(outcome: GovernanceDagAdapterOutcome): GovernanceDagJobLifecycle {

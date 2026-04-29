@@ -16,13 +16,40 @@ import { afterEach, describe, expect, it } from 'vitest';
 
 type SessionFixture = {
   apiEnvLog: string;
+  apiStartLog: string;
   binDir: string;
   runRoot: string;
   scriptPath: string;
   stateRoot: string;
   tempRoot: string;
   webEnvLog: string;
+  webStartLog: string;
 };
+
+const CHAT_BACKEND_REAL_SESSION_NAME = 'chat-backend-real-runner';
+
+const CHAT_BACKEND_REAL_SHARDS = [
+  {
+    shardId: 'chat-runner-stream',
+    specFile: 'e2e/integration-chat-llm-runner.spec.ts',
+    grep: 'streams multi-turn chat through the real local chat runner and persists replies',
+  },
+  {
+    shardId: 'chat-runner-continuity',
+    specFile: 'e2e/integration-chat-llm-runner.spec.ts',
+    grep: 'preserves conversation continuity across refresh with story-bound trace evidence',
+  },
+  {
+    shardId: 'chat-runner-workspace-reclaim',
+    specFile: 'e2e/integration-chat-llm-runner.spec.ts',
+    grep: 'warns and recreates the session workspace when the local chat workspace has been reclaimed',
+  },
+  {
+    shardId: 'chat-stop-escalation',
+    specFile: 'e2e/integration-chat.spec.ts',
+    grep: 'stop escalation resyncs authoritative thread truth after refresh and keeps composer ready',
+  },
+] as const;
 
 const FORBIDDEN_RESULT_FIELDS = [
   'verdict',
@@ -35,6 +62,10 @@ const FORBIDDEN_RESULT_FIELDS = [
 
 function readJson(relativePath: string): unknown {
   return JSON.parse(readFileSync(path.join(process.cwd(), relativePath), 'utf8')) as unknown;
+}
+
+function sessionEvidencePath(fixture: SessionFixture, ...segments: string[]): string {
+  return path.join(fixture.runRoot, 'integration', 'real-session', ...segments);
 }
 
 function writeExecutable(filePath: string, content: string): void {
@@ -73,7 +104,9 @@ function prepareSessionFixture(options: {
   const runId = 'backend-real-session-test-run';
   const runRoot = path.join(tempRoot, 'artifacts', 'backend-real', 'runs', runId);
   const apiEnvLog = path.join(tempRoot, 'api-env.log');
+  const apiStartLog = path.join(tempRoot, 'api-starts.log');
   const webEnvLog = path.join(tempRoot, 'web-env.log');
+  const webStartLog = path.join(tempRoot, 'web-starts.log');
 
   mkdirSync(scriptsLibDir, { recursive: true });
   mkdirSync(binDir, { recursive: true });
@@ -237,6 +270,7 @@ gate_run_auth_preflight() { printf 'integration-token\\n'; }
     `#!/usr/bin/env bash
 set -euo pipefail
 
+printf 'web-start\\n' >> "${webStartLog}"
 cat > "${webEnvLog}" <<EOF
 NEXT_DEV_PROCESS_CAPTURED_BY=\${NEXT_DEV_PROCESS_CAPTURED_BY:-}
 EOF
@@ -256,6 +290,7 @@ done
 set -euo pipefail
 
 if [[ "$1" == "run" && "$2" == "api:node:dev" ]]; then
+  printf 'api-start\\n' >> "${apiStartLog}"
   cat > "${apiEnvLog}" <<EOF
 PORT=\${PORT:-}
 EOF
@@ -345,17 +380,19 @@ exit 0
 
   return {
     apiEnvLog,
+    apiStartLog,
     binDir,
     runRoot,
     scriptPath: path.join(scriptsDir, 'run-integration-e2e-full.sh'),
     stateRoot,
     tempRoot,
     webEnvLog,
+    webStartLog,
   };
 }
 
-function runSession(fixture: SessionFixture) {
-  return spawnSync('bash', [fixture.scriptPath, '--session', 'agents-backend-real-runner'], {
+function runSession(fixture: SessionFixture, sessionName = 'agents-backend-real-runner') {
+  return spawnSync('bash', [fixture.scriptPath, '--session', sessionName], {
     cwd: fixture.tempRoot,
     env: {
       ...process.env,
@@ -409,9 +446,16 @@ describe('backend-real external runner session shards', () => {
 
     const runner = readFileSync('scripts/run-integration-e2e-full.sh', 'utf8');
     expect(runner).toContain('run_backend_real_runner_session_shards');
+    expect(runner).toContain('run_backend_real_chat_runner_session_shards');
+    expect(runner).toContain(CHAT_BACKEND_REAL_SESSION_NAME);
     expect(runner).toContain('run_playwright_shard "chat-runner" "e2e/integration-chat-llm-runner.spec.ts"');
     expect(runner).toContain('run_playwright_shard "notebook-runner" "e2e/integration-notebook-codex-runner.spec.ts" --grep-invert docker');
     expect(runner).toContain('run_playwright_shard "notebook-docker" "e2e/integration-notebook-codex-runner.spec.ts" --grep docker');
+    for (const shard of CHAT_BACKEND_REAL_SHARDS) {
+      expect(runner).toContain(
+        `run_playwright_shard "${shard.shardId}" "${shard.specFile}" --grep "${shard.grep}"`,
+      );
+    }
     expect(runner).toContain('API_READY_ATTEMPTS="${INTEGRATION_API_READY_ATTEMPTS:-120}"');
     expect(runner).toContain('WEB_READY_ATTEMPTS="${INTEGRATION_WEB_READY_ATTEMPTS:-120}"');
     expect(runner).toContain('READY_RETRY_SLEEP_SECONDS="${INTEGRATION_READY_RETRY_SLEEP_SECONDS:-1}"');
@@ -432,12 +476,14 @@ describe('backend-real external runner session shards', () => {
     expect(readFileSync(fixture.apiEnvLog, 'utf8')).toContain('PORT=28191');
     expect(readFileSync(fixture.webEnvLog, 'utf8')).toContain('NEXT_DEV_PROCESS_CAPTURED_BY=run-integration-e2e-full');
 
-    const aggregate = JSON.parse(
-      readFileSync(path.join(fixture.runRoot, 'integration', 'real-session', 'session-aggregate.json'), 'utf8'),
-    ) as {
+    const aggregatePath = sessionEvidencePath(fixture, 'aggregate.json');
+    expect(existsSync(aggregatePath)).toBe(true);
+    expect(existsSync(sessionEvidencePath(fixture, 'session-aggregate.json'))).toBe(false);
+
+    const aggregate = JSON.parse(readFileSync(aggregatePath, 'utf8')) as {
       diagnostic_only: boolean;
       fixed_cost: { startup_count: number };
-      shards: Array<{ diagnostic_state: string; shard_id: string }>;
+      shards: Array<{ diagnostic_state: string; result_path: string; shard_id: string }>;
     };
 
     expect(aggregate.diagnostic_only).toBe(true);
@@ -451,9 +497,10 @@ describe('backend-real external runner session shards', () => {
     expectNoForbiddenResultFields(aggregate);
 
     for (const shardId of ['chat-runner', 'notebook-runner', 'notebook-docker']) {
-      const shardDir = path.join(fixture.runRoot, 'integration', 'real-session', 'shards', shardId);
+      const shardDir = sessionEvidencePath(fixture, 'shards', shardId);
       const stdoutLog = readFileSync(path.join(shardDir, 'playwright.stdout.log'), 'utf8');
-      expect(existsSync(path.join(shardDir, 'shard-result.json'))).toBe(true);
+      expect(existsSync(path.join(shardDir, 'result.json'))).toBe(true);
+      expect(existsSync(path.join(shardDir, 'shard-result.json'))).toBe(false);
       expect(stdoutLog).toContain('[redacted]');
       expect(stdoutLog).not.toContain('sk-session-secret');
       expect(stdoutLog).not.toContain('raw-token');
@@ -461,7 +508,118 @@ describe('backend-real external runner session shards', () => {
       expect(stdoutLog).not.toContain('Authorization: [redacted] raw-token');
       expect(readFileSync(path.join(shardDir, 'playwright.stderr.log'), 'utf8')).not.toContain('raw-client-secret');
     }
+    expect(aggregate.shards.map((shard) => shard.result_path)).toEqual([
+      'shards/chat-runner/result.json',
+      'shards/notebook-runner/result.json',
+      'shards/notebook-docker/result.json',
+    ]);
     expect(result.stdout).not.toContain('sk-session-secret');
+    expect(result.stderr).not.toContain('raw-client-secret');
+  }, 15000);
+
+  it('starts backend-real once and runs the external chat greps as serial diagnostic shards', () => {
+    const fixture = prepareSessionFixture();
+    tempRoots.push(fixture.tempRoot);
+
+    const result = runSession(fixture, CHAT_BACKEND_REAL_SESSION_NAME);
+
+    expect(result.status).toBe(0);
+    expect(readFileSync(path.join(fixture.tempRoot, 'playwright-commands.log'), 'utf8').trim().split('\n')).toEqual(
+      CHAT_BACKEND_REAL_SHARDS.map((shard, index) => (
+        `call:${index + 1} playwright test --config playwright.config.integration.ts ${shard.specFile} --project=chromium --workers=1 --grep ${shard.grep}`
+      )),
+    );
+    expect(readFileSync(fixture.apiStartLog, 'utf8').trim().split('\n')).toEqual(['api-start']);
+    expect(readFileSync(fixture.webStartLog, 'utf8').trim().split('\n')).toEqual(['web-start']);
+    expect(readFileSync(fixture.apiEnvLog, 'utf8')).toContain('PORT=28191');
+    expect(readFileSync(fixture.webEnvLog, 'utf8')).toContain('NEXT_DEV_PROCESS_CAPTURED_BY=run-integration-e2e-full');
+
+    const aggregatePath = sessionEvidencePath(fixture, 'aggregate.json');
+    expect(existsSync(aggregatePath)).toBe(true);
+    expect(existsSync(sessionEvidencePath(fixture, 'session-aggregate.json'))).toBe(false);
+
+    const aggregate = JSON.parse(readFileSync(aggregatePath, 'utf8')) as {
+      diagnostic_only: boolean;
+      fixed_cost: { startup_count: number };
+      shards: Array<{ diagnostic_state: string; grep: string | null; result_path: string; shard_id: string }>;
+    };
+
+    expect(aggregate.diagnostic_only).toBe(true);
+    expect(aggregate.fixed_cost.startup_count).toBe(1);
+    expect(aggregate.shards.map((shard) => shard.shard_id)).toEqual(
+      CHAT_BACKEND_REAL_SHARDS.map((shard) => shard.shardId),
+    );
+    expect(aggregate.shards.map((shard) => shard.diagnostic_state)).toEqual([
+      'succeeded',
+      'succeeded',
+      'succeeded',
+      'succeeded',
+    ]);
+    expect(aggregate.shards.map((shard) => shard.grep)).toEqual(
+      CHAT_BACKEND_REAL_SHARDS.map((shard) => shard.grep),
+    );
+    expect(aggregate.shards.map((shard) => shard.result_path)).toEqual(
+      CHAT_BACKEND_REAL_SHARDS.map((shard) => `shards/${shard.shardId}/result.json`),
+    );
+    expectNoForbiddenResultFields(aggregate);
+
+    for (const shard of CHAT_BACKEND_REAL_SHARDS) {
+      const shardDir = sessionEvidencePath(fixture, 'shards', shard.shardId);
+      expect(existsSync(path.join(shardDir, 'result.json'))).toBe(true);
+      expect(existsSync(path.join(shardDir, 'shard-result.json'))).toBe(false);
+      const shardResult = JSON.parse(readFileSync(path.join(shardDir, 'result.json'), 'utf8')) as {
+        grep: string | null;
+        shard_id: string;
+      };
+      const stdoutLog = readFileSync(path.join(shardDir, 'playwright.stdout.log'), 'utf8');
+      const stderrLog = readFileSync(path.join(shardDir, 'playwright.stderr.log'), 'utf8');
+      expect(shardResult).toMatchObject({ shard_id: shard.shardId, grep: shard.grep });
+      expect(stdoutLog).toContain('[redacted]');
+      expect(stdoutLog).not.toContain('sk-session-secret');
+      expect(stdoutLog).not.toContain('raw-token');
+      expect(stdoutLog).not.toContain('Bearer raw-token');
+      expect(stderrLog).not.toContain('raw-client-secret');
+    }
+    expect(result.stdout).not.toContain('sk-session-secret');
+    expect(result.stderr).not.toContain('raw-client-secret');
+  }, 15000);
+
+  it('does not retry a failed external chat shard or run later chat shards after assertion failure', () => {
+    const fixture = prepareSessionFixture({ playwrightFailureAtInvocation: 3 });
+    tempRoots.push(fixture.tempRoot);
+
+    const result = runSession(fixture, CHAT_BACKEND_REAL_SESSION_NAME);
+
+    expect(result.status).toBe(23);
+    expect(readFileSync(path.join(fixture.tempRoot, 'playwright-commands.log'), 'utf8').trim().split('\n')).toEqual(
+      CHAT_BACKEND_REAL_SHARDS.slice(0, 3).map((shard, index) => (
+        `call:${index + 1} playwright test --config playwright.config.integration.ts ${shard.specFile} --project=chromium --workers=1 --grep ${shard.grep}`
+      )),
+    );
+    const aggregatePath = sessionEvidencePath(fixture, 'aggregate.json');
+    expect(existsSync(aggregatePath)).toBe(true);
+    expect(existsSync(sessionEvidencePath(fixture, 'session-aggregate.json'))).toBe(false);
+
+    const aggregate = JSON.parse(readFileSync(aggregatePath, 'utf8')) as {
+      diagnostic_state: string;
+      shards: Array<{ diagnostic_state: string; result_path: string; shard_id: string }>;
+    };
+    expect(aggregate.diagnostic_state).toBe('failed');
+    expect(aggregate.shards.map((shard) => [shard.shard_id, shard.diagnostic_state])).toEqual([
+      ['chat-runner-stream', 'succeeded'],
+      ['chat-runner-continuity', 'succeeded'],
+      ['chat-runner-workspace-reclaim', 'failed'],
+      ['chat-stop-escalation', 'not_run'],
+    ]);
+    expect(aggregate.shards.map((shard) => shard.result_path)).toEqual(
+      CHAT_BACKEND_REAL_SHARDS.map((shard) => `shards/${shard.shardId}/result.json`),
+    );
+    expect(
+      existsSync(sessionEvidencePath(fixture, 'shards', 'chat-runner-workspace-reclaim', 'result.json')),
+    ).toBe(true);
+    expect(
+      existsSync(sessionEvidencePath(fixture, 'shards', 'chat-runner-workspace-reclaim', 'shard-result.json')),
+    ).toBe(false);
     expect(result.stderr).not.toContain('raw-client-secret');
   }, 15000);
 

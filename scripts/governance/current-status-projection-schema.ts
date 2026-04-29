@@ -61,6 +61,33 @@ export interface CurrentStatusProjectionPathRef {
   digest: string | null;
 }
 
+export type CurrentStatusProjectionResumeRecommendationSource =
+  | 'campaign_step_results'
+  | 'terminal_aggregate'
+  | 'not_available';
+
+export type CurrentStatusProjectionResumeRecommendationAction =
+  | 'none'
+  | 'rerun_required'
+  | 'blocked_by_upstream'
+  | 'inspect_authority'
+  | 'not_available';
+
+export interface CurrentStatusProjectionResumeRecommendation {
+  projection_kind: 'read_only';
+  source: CurrentStatusProjectionResumeRecommendationSource;
+  action: CurrentStatusProjectionResumeRecommendationAction;
+  owner_job_id: string | null;
+  owner_gate_id: string | null;
+  producer_job_ids: readonly string[];
+  downstream_aggregate_job_id: 'gate-release-full' | null;
+  step_result_pointer: CurrentStatusProjectionPathRef | null;
+  safe_next_command: string | null;
+  reason_codes: readonly string[];
+  automatic_rerun: false;
+  automatic_skip: false;
+}
+
 export interface CurrentStatusProjectionLockOwnerRef {
   lock_id: string;
   scope_kind: string;
@@ -100,6 +127,7 @@ export interface CurrentStatusProjection {
   downstream_skipped: readonly string[];
   deepest_reason: CurrentStatusProjectionReason | null;
   safe_next_command: string | null;
+  resume_recommendation: CurrentStatusProjectionResumeRecommendation;
   destructive_recovery_command: string | null;
   lock_owner: CurrentStatusProjectionLockOwner | null;
   lease_status_shadow: MinimalLeaseStatusShadow | null;
@@ -145,6 +173,7 @@ const STATUS_PROJECTION_TOP_LEVEL_FIELDS = new Set<string>([
   'downstream_skipped',
   'deepest_reason',
   'safe_next_command',
+  'resume_recommendation',
   'destructive_recovery_command',
   'lock_owner',
   'lease_status_shadow',
@@ -186,6 +215,20 @@ const PRESENTATION_STATUSES = new Set<string>([
   'running',
   'unknown',
   'stale',
+]);
+
+const RESUME_RECOMMENDATION_SOURCES = new Set<string>([
+  'campaign_step_results',
+  'terminal_aggregate',
+  'not_available',
+]);
+
+const RESUME_RECOMMENDATION_ACTIONS = new Set<string>([
+  'none',
+  'rerun_required',
+  'blocked_by_upstream',
+  'inspect_authority',
+  'not_available',
 ]);
 
 const MANUAL_SIGNOFF_STATUSES = new Set<string>(['covered', 'not-covered', 'required']);
@@ -490,6 +533,75 @@ function validateReason(
   validateNullableString(value.source_path, `${path}.source_path`, failures);
 }
 
+function validateResumeRecommendation(
+  value: unknown,
+  path: string,
+  failures: CurrentStatusProjectionValidationFailure[],
+): void {
+  if (!isRecord(value)) {
+    pushFailure(failures, path, `${path} must be an object.`);
+    return;
+  }
+
+  validateNoUnknownFields(value, path, new Set([
+    'projection_kind',
+    'source',
+    'action',
+    'owner_job_id',
+    'owner_gate_id',
+    'producer_job_ids',
+    'downstream_aggregate_job_id',
+    'step_result_pointer',
+    'safe_next_command',
+    'reason_codes',
+    'automatic_rerun',
+    'automatic_skip',
+  ]), failures);
+  validateRequiredFields(value, path, [
+    'projection_kind',
+    'source',
+    'action',
+    'owner_job_id',
+    'owner_gate_id',
+    'producer_job_ids',
+    'downstream_aggregate_job_id',
+    'step_result_pointer',
+    'safe_next_command',
+    'reason_codes',
+    'automatic_rerun',
+    'automatic_skip',
+  ], failures);
+  if (value.projection_kind !== 'read_only') {
+    pushFailure(failures, `${path}.projection_kind`, 'resume recommendation projection_kind must be read_only.');
+  }
+  validateEnum(value.source, RESUME_RECOMMENDATION_SOURCES, `${path}.source`, failures);
+  validateEnum(value.action, RESUME_RECOMMENDATION_ACTIONS, `${path}.action`, failures);
+  validateNullableString(value.owner_job_id, `${path}.owner_job_id`, failures);
+  validateNullableString(value.owner_gate_id, `${path}.owner_gate_id`, failures);
+  validateStringArray(value.producer_job_ids, `${path}.producer_job_ids`, failures);
+  const downstreamAggregate = validateNullableString(
+    value.downstream_aggregate_job_id,
+    `${path}.downstream_aggregate_job_id`,
+    failures,
+  );
+  if (downstreamAggregate !== undefined && downstreamAggregate !== null && downstreamAggregate !== 'gate-release-full') {
+    pushFailure(
+      failures,
+      `${path}.downstream_aggregate_job_id`,
+      'release resume recommendation may only point to gate-release-full as downstream aggregate.',
+    );
+  }
+  if (value.step_result_pointer === null) {
+    // Explicit null keeps the recommendation read-only when no producer pointer is available.
+  } else {
+    validatePathRef(value.step_result_pointer, `${path}.step_result_pointer`, failures);
+  }
+  validateNullableString(value.safe_next_command, `${path}.safe_next_command`, failures);
+  validateStringArray(value.reason_codes, `${path}.reason_codes`, failures);
+  validateBooleanFalse(value.automatic_rerun, `${path}.automatic_rerun`, failures);
+  validateBooleanFalse(value.automatic_skip, `${path}.automatic_skip`, failures);
+}
+
 function validateLockOwnerRef(
   value: unknown,
   path: string,
@@ -677,6 +789,7 @@ export function validateCurrentStatusProjection(value: unknown): CurrentStatusPr
   validateStringArray(value.downstream_skipped, 'projection.downstream_skipped', failures);
   validateReason(value.deepest_reason, 'projection.deepest_reason', failures);
   validateNullableString(value.safe_next_command, 'projection.safe_next_command', failures);
+  validateResumeRecommendation(value.resume_recommendation, 'projection.resume_recommendation', failures);
   validateNullableString(value.destructive_recovery_command, 'projection.destructive_recovery_command', failures);
   validateLockOwner(value.lock_owner, 'projection.lock_owner', failures);
   validateLeaseStatusShadow(value.lease_status_shadow, 'projection.lease_status_shadow', failures);

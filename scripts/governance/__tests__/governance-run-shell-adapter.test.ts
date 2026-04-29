@@ -331,6 +331,7 @@ describe('governance runner shell adapter', () => {
       'edges',
       'locks',
       'artifact_templates',
+      'scheduler_shadow',
     ]);
     expect(plan.input_manifests).toMatchObject({
       current_job_metadata_manifest: {
@@ -414,6 +415,74 @@ describe('governance runner shell adapter', () => {
       producer_step_id: entry.producer.step_id,
       producer_npm_script: entry.producer.npm_script,
     })));
+    expect(plan.scheduler_shadow).toMatchObject({
+      execution_policy: 'plan_only_shadow',
+      execution_enabled: false,
+      max_concurrency_effective: 1,
+      topology_levels: [
+        {
+          level_index: 0,
+          job_ids: ['gate-fast'],
+        },
+        {
+          level_index: 1,
+          job_ids: ['gate-default', 'lane-visual'],
+        },
+        {
+          level_index: 2,
+          job_ids: ['gate-release'],
+        },
+        {
+          level_index: 3,
+          job_ids: ['lane-demo-rehearsal', 'lane-cluster-rehearsal'],
+        },
+        {
+          level_index: 4,
+          job_ids: ['gate-release-full'],
+        },
+      ],
+      terminal_aggregate: {
+        job_id: 'gate-release-full',
+        aggregate_only: true,
+        waits_for_job_ids: [
+          'gate-fast',
+          'gate-default',
+          'lane-visual',
+          'gate-release',
+          'lane-demo-rehearsal',
+          'lane-cluster-rehearsal',
+        ],
+      },
+    });
+    expect(plan.scheduler_shadow.parallel_candidates).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          level_index: 1,
+          candidate_job_ids: ['gate-default', 'lane-visual'],
+          runnable_without_lock_conflicts: false,
+          reason: 'blocked_by_current_exclusive_locks',
+          blocked_by_lock: expect.arrayContaining([
+            expect.objectContaining({
+              lock_id: 'release-campaign-root-writes',
+              job_ids: ['gate-default', 'lane-visual'],
+            }),
+            expect.objectContaining({
+              lock_id: 'fixed-local-ports',
+              job_ids: ['gate-default', 'lane-visual'],
+            }),
+          ]),
+        }),
+        expect.objectContaining({
+          level_index: 3,
+          candidate_job_ids: ['lane-demo-rehearsal', 'lane-cluster-rehearsal'],
+          runnable_without_lock_conflicts: false,
+          reason: 'blocked_by_current_exclusive_locks',
+        }),
+      ]),
+    );
+    expect(JSON.stringify(plan.scheduler_shadow)).not.toMatch(
+      /"results"|"verdict"|"claim_id"|"reusable"|"commands_executed"/,
+    );
     expect(validateGovernanceRunPlan(plan)).toEqual({
       ok: true,
       value: plan,
@@ -540,6 +609,40 @@ describe('governance runner shell adapter', () => {
       jobId: 'unknown-job',
     })).toThrow(/unknown current job id: unknown-job/);
     expectNoForbiddenRuntimeKeys(plan, 'filtered shell plan');
+  });
+
+  it('keeps partial-plan scheduler shadow blocked when selected job dependencies are outside the selection', () => {
+    const plan = buildGovernanceRunPlan({
+      goal: 'release',
+      reportRoot: 'artifacts/governance-runner-shell-plan/test',
+      jobId: 'gate-release',
+    });
+
+    expect(plan.jobs).toHaveLength(1);
+    expect(plan.jobs[0]).toMatchObject({
+      id: 'gate-release',
+      depends_on: ['gate-default', 'lane-visual'],
+    });
+    expect(plan.edges).toEqual([
+      {
+        from_job_id: 'gate-default',
+        to_job_id: 'gate-release',
+        relation: 'depends_on',
+      },
+      {
+        from_job_id: 'lane-visual',
+        to_job_id: 'gate-release',
+        relation: 'depends_on',
+      },
+    ]);
+    expect(plan.scheduler_shadow.topology_levels).toEqual([]);
+    expect(plan.scheduler_shadow.parallel_candidates).toEqual([]);
+    expect(plan.scheduler_shadow.terminal_aggregate).toBeNull();
+    expect(validateGovernanceRunPlan(plan)).toEqual({
+      ok: true,
+      value: plan,
+    });
+    expectNoForbiddenRuntimeKeys(plan, 'partial filtered shell plan');
   });
 
   it('writes only the shell plan file from the CLI run subcommand with status-like path values', async () => {
@@ -925,6 +1028,62 @@ describe('governance runner shell adapter', () => {
       expect(governanceSummary.campaign?.run_id).toBe(releaseSummary.campaign_run_id);
       expect(log).toContain(`run gate:fast|root=${campaignRoot}|run=${expectedRunId}`);
       expect(log).not.toContain(`run=${envRunId}`);
+    });
+  });
+
+  it('keeps release --run delegated with maxConcurrency fixed to 1', async () => {
+    await withTempReportRoot(async (parentRoot) => {
+      const reportRoot = join(parentRoot, 'governance-serial-run-report');
+      const campaignRoot = join(parentRoot, 'serial-campaign-root');
+      let capturedMaxConcurrency: number | undefined;
+
+      await mkdir(campaignRoot, { recursive: true });
+      await withPatchedEnv({
+        RELEASE_CAMPAIGN_ROOT: campaignRoot,
+        RELEASE_CAMPAIGN_RUN_ID: 'serial-run-env-id',
+      }, async () => {
+        vi.resetModules();
+        vi.doMock('../release-campaign-execution', () => ({
+          runReleaseCampaignExecution: (input: { maxConcurrency?: number }) => {
+            capturedMaxConcurrency = input.maxConcurrency;
+            return {
+              exitCode: 0,
+              terminalOutcome: {
+                exitCode: 0,
+                shouldWriteFallbackResult: false,
+                failureClass: 'none',
+                summary: 'mocked serial release campaign execution',
+              },
+            };
+          },
+        }));
+
+        try {
+          const { runGovernanceCli: mockedRunGovernanceCli } = await import('../run-governance');
+          const result = captureProcessWrites(() => mockedRunGovernanceCli([
+            'run',
+            '--goal=release',
+            `--report-root=${reportRoot}`,
+            '--run',
+          ]));
+          const writtenPlan = await readPlanFile(reportRoot) as {
+            scheduler_shadow?: {
+              max_concurrency_effective?: number;
+              execution_policy?: string;
+            };
+          };
+
+          expect(result.code).toBe(0);
+          expect(capturedMaxConcurrency).toBe(1);
+          expect(writtenPlan.scheduler_shadow).toMatchObject({
+            execution_policy: 'plan_only_shadow',
+            max_concurrency_effective: 1,
+          });
+        } finally {
+          vi.doUnmock('../release-campaign-execution');
+          vi.resetModules();
+        }
+      });
     });
   });
 

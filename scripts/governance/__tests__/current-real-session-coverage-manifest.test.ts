@@ -1,4 +1,5 @@
 import { execFileSync } from 'node:child_process';
+import { readFileSync } from 'node:fs';
 import path from 'node:path';
 
 import { describe, expect, it } from 'vitest';
@@ -16,6 +17,38 @@ import {
   validateCurrentRealSessionCoverageManifest,
 } from '../current-real-session-coverage-manifest';
 import { findCurrentVerificationCampaignById } from '../current-verification-campaign-manifest';
+
+const CHAT_BACKEND_REAL_SESSION_NAME = 'chat-backend-real-runner';
+const CHAT_BACKEND_REAL_SESSION_COMMAND = 'bash scripts/run-integration-e2e-full.sh --session chat-backend-real-runner';
+const CHAT_BACKEND_REAL_SESSION_SHARDS = [
+  {
+    shard_id: 'chat-runner-stream',
+    spec: 'e2e/integration-chat-llm-runner.spec.ts',
+    grep: 'streams multi-turn chat through the real local chat runner and persists replies',
+  },
+  {
+    shard_id: 'chat-runner-continuity',
+    spec: 'e2e/integration-chat-llm-runner.spec.ts',
+    grep: 'preserves conversation continuity across refresh with story-bound trace evidence',
+  },
+  {
+    shard_id: 'chat-runner-workspace-reclaim',
+    spec: 'e2e/integration-chat-llm-runner.spec.ts',
+    grep: 'warns and recreates the session workspace when the local chat workspace has been reclaimed',
+  },
+  {
+    shard_id: 'chat-stop-escalation',
+    spec: 'e2e/integration-chat.spec.ts',
+    grep: 'stop escalation resyncs authoritative thread truth after refresh and keeps composer ready',
+  },
+] as const;
+
+type MutableManifestWithSessionCoalescing = CurrentRealSessionCoverageManifest & {
+  session_coalescing: Array<Record<string, unknown> & {
+    id: string;
+    shards: Array<Record<string, unknown>>;
+  }>;
+};
 
 function cloneManifest(): CurrentRealSessionCoverageManifest {
   return structuredClone(CURRENT_REAL_SESSION_COVERAGE_MANIFEST);
@@ -63,6 +96,37 @@ function npmScriptEntry(npmScript: string) {
     throw new Error(`Missing npm_script coverage entry: ${npmScript}`);
   }
   return entry;
+}
+
+function chatSessionContract(manifest: unknown = CURRENT_REAL_SESSION_COVERAGE_MANIFEST) {
+  const contracts = (manifest as { session_coalescing?: unknown }).session_coalescing;
+
+  expect(contracts).toEqual(expect.any(Array));
+  const contract = (contracts as Array<Record<string, unknown>>).find((candidate) => (
+    candidate.session_name === CHAT_BACKEND_REAL_SESSION_NAME
+  ));
+
+  expect(contract).toBeDefined();
+  return contract as Record<string, unknown> & {
+    shards: Array<Record<string, unknown>>;
+  };
+}
+
+function chatGrepEntry(spec: string, grep: string) {
+  const entry = listCurrentRealSessionCoverageEntries().find((candidate) => (
+    candidate.source_kind === 'playwright_grep'
+    && candidate.spec === spec
+    && candidate.grep === grep
+  ));
+
+  if (!entry) {
+    throw new Error(`Missing chat grep coverage entry: ${spec} --grep ${grep}`);
+  }
+  return entry;
+}
+
+function cloneManifestWithSessionCoalescing(): MutableManifestWithSessionCoalescing {
+  return structuredClone(CURRENT_REAL_SESSION_COVERAGE_MANIFEST) as MutableManifestWithSessionCoalescing;
 }
 
 describe('current real session coverage manifest', () => {
@@ -322,6 +386,49 @@ describe('current real session coverage manifest', () => {
     });
   });
 
+  it('declares chat backend-real greps as one serial diagnostic session without changing merge safety', () => {
+    const expectedEntries = CHAT_BACKEND_REAL_SESSION_SHARDS.map((shard) => chatGrepEntry(shard.spec, shard.grep));
+    const contract = chatSessionContract();
+
+    expect(contract).toMatchObject({
+      id: CHAT_BACKEND_REAL_SESSION_NAME,
+      session_name: CHAT_BACKEND_REAL_SESSION_NAME,
+      session_command: CHAT_BACKEND_REAL_SESSION_COMMAND,
+      strategy: 'serial_diagnostic_shards',
+      evidence_scope: 'per_grep_shard',
+      proposed_shard_id: 'external-chat-runner',
+      evidence_owner: 'backend-real-runner:external-chat',
+      stack_reuse: 'single_backend_real_stack_per_session',
+    });
+    expect(contract).not.toHaveProperty('verdict');
+    expect(contract).not.toHaveProperty('claim_id');
+    expect(contract).not.toHaveProperty('reusable');
+    expect(contract.shards).toEqual(
+      CHAT_BACKEND_REAL_SESSION_SHARDS.map((shard, index) => ({
+        ...shard,
+        coverage_id: expectedEntries[index]?.id,
+        proposed_shard_id: 'external-chat-runner',
+        evidence_owner: 'backend-real-runner:external-chat',
+      })),
+    );
+
+    for (const entry of expectedEntries) {
+      expect(entry).toMatchObject({
+        proposed_shard_id: 'external-chat-runner',
+        evidence_owner: 'backend-real-runner:external-chat',
+        isolation_level: 'serialized',
+        merge_allowed: false,
+      });
+    }
+
+    const runner = readFileSync('scripts/run-integration-e2e-full.sh', 'utf8');
+    expect(runner).toContain(CHAT_BACKEND_REAL_SESSION_NAME);
+    expect(runner).toContain('run_backend_real_chat_runner_session_shards');
+    for (const shard of CHAT_BACKEND_REAL_SESSION_SHARDS) {
+      expect(runner).toContain(`run_playwright_shard "${shard.shard_id}" "${shard.spec}" --grep "${shard.grep}"`);
+    }
+  });
+
   it('rejects illegal lock ids, evidence owners, and source references', () => {
     const badLock = cloneManifest();
     badLock.coverage[0] = {
@@ -381,7 +488,7 @@ describe('current real session coverage manifest', () => {
   });
 
   it('rejects runtime truth, verdict, status, passed, and claim fields anywhere in the mapping', () => {
-    for (const field of ['runtime_truth', 'status', 'verdict', 'passed', 'claim_id'] as const) {
+    for (const field of ['runtime_truth', 'status', 'verdict', 'passed', 'claim_id', 'reusable'] as const) {
       const manifest = cloneManifest() as unknown as Record<string, unknown> & {
         coverage: Array<Record<string, unknown>>;
       };
@@ -410,6 +517,75 @@ describe('current real session coverage manifest', () => {
     };
 
     expectValidationFailure(unsafeLockMerge, 'merge_allowed=true is not allowed while high-risk real-lane locks are required');
+  });
+
+  it('rejects invalid session coalescing contracts fail-closed', () => {
+    const unknownContractField = cloneManifestWithSessionCoalescing();
+    unknownContractField.session_coalescing[0] = {
+      ...unknownContractField.session_coalescing[0],
+      parallel_hint: true,
+    };
+    expectValidationFailure(unknownContractField, 'unknown session coalescing contract field "parallel_hint"');
+
+    const illegalStrategy = cloneManifestWithSessionCoalescing();
+    illegalStrategy.session_coalescing[0] = {
+      ...illegalStrategy.session_coalescing[0],
+      strategy: 'parallel_greps',
+    };
+    expectValidationFailure(illegalStrategy, 'strategy is required and must be one of the current real session coalescing schema values');
+
+    const missingGrepShard = cloneManifestWithSessionCoalescing();
+    delete missingGrepShard.session_coalescing[0]?.shards[0]?.grep;
+    expectValidationFailure(missingGrepShard, 'grep is required for session shard');
+
+    const missingRequiredSessionShard = cloneManifestWithSessionCoalescing();
+    missingRequiredSessionShard.session_coalescing[0].shards = missingRequiredSessionShard.session_coalescing[0].shards.slice(1);
+    expectValidationFailure(missingRequiredSessionShard, 'missing required session shard chat-runner-stream');
+
+    const extraValidShardWithReorderedRequiredShards = cloneManifestWithSessionCoalescing();
+    const extraChatGrep = chatGrepEntry('e2e/integration-chat.spec.ts', 'real deepseek');
+    const requiredChatShards = extraValidShardWithReorderedRequiredShards.session_coalescing[0].shards;
+    extraValidShardWithReorderedRequiredShards.session_coalescing[0].shards = [
+      requiredChatShards[1],
+      requiredChatShards[0],
+      ...requiredChatShards.slice(2),
+      {
+        coverage_id: extraChatGrep.id,
+        shard_id: 'chat-real-deepseek',
+        spec: extraChatGrep.spec,
+        grep: extraChatGrep.grep,
+        proposed_shard_id: extraChatGrep.proposed_shard_id,
+        evidence_owner: extraChatGrep.evidence_owner,
+      },
+    ];
+    expectValidationFailure(
+      extraValidShardWithReorderedRequiredShards,
+      `required session coalescing contract ${CHAT_BACKEND_REAL_SESSION_NAME} must declare the exact serial diagnostic shard list in order`,
+    );
+    expectValidationFailure(
+      extraValidShardWithReorderedRequiredShards,
+      `unknown/extra session shard chat-real-deepseek for required session coalescing contract ${CHAT_BACKEND_REAL_SESSION_NAME}`,
+    );
+
+    const runtimeSecondTruth = cloneManifestWithSessionCoalescing();
+    runtimeSecondTruth.session_coalescing[0] = {
+      ...runtimeSecondTruth.session_coalescing[0],
+      reusable: true,
+    };
+    expectValidationFailure(runtimeSecondTruth, 'forbidden runtime truth field "reusable"');
+
+    const mergeBypass = cloneManifestWithSessionCoalescing();
+    const firstCoverageId = mergeBypass.session_coalescing[0]?.shards[0]?.coverage_id;
+    const coverageIndex = mergeBypass.coverage.findIndex((entry) => entry.id === firstCoverageId);
+    expect(coverageIndex).toBeGreaterThanOrEqual(0);
+    mergeBypass.coverage[coverageIndex] = {
+      ...mergeBypass.coverage[coverageIndex],
+      isolation_level: 'workspace',
+      mutable_resources: ['workspace'],
+      lock_ids: [],
+      merge_allowed: true,
+    };
+    expectValidationFailure(mergeBypass, 'session coalesced coverage must remain serialized with merge_allowed=false');
   });
 
   it('keeps the contract CLI aligned with the manifest', () => {

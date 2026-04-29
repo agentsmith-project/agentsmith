@@ -21,7 +21,12 @@ import {
   type CurrentStatusProjectionPhase,
   type CurrentStatusProjectionPresentationStatus,
   type CurrentStatusProjectionReason,
+  type CurrentStatusProjectionResumeRecommendation,
 } from './current-status-projection-schema';
+import {
+  findCurrentVerificationCampaignById,
+  type CurrentVerificationCampaignStep,
+} from './current-verification-campaign-manifest';
 import type {
   MinimalLeaseLockSection,
   MinimalLeaseOwnerRef,
@@ -49,6 +54,15 @@ interface MissingAggregateResult {
 }
 
 type AggregateResultRead = ParsedAggregateResult | MissingAggregateResult;
+
+interface ParsedCampaignStepResult {
+  step: CurrentVerificationCampaignStep;
+  path: string;
+  digest: string;
+  stage: string;
+  summary: string;
+  skipped: boolean;
+}
 
 type RehearsalGoal = Extract<CurrentStatusProjectionGoal, 'demo-rehearsal' | 'cluster-rehearsal'>;
 
@@ -757,6 +771,204 @@ function safeCommandForOwner(owner: string | null, goal: CurrentStatusProjection
   return null;
 }
 
+function releaseFullCampaignSteps(): readonly CurrentVerificationCampaignStep[] {
+  return findCurrentVerificationCampaignById('release-full')?.steps ?? [];
+}
+
+function campaignStepResultPath(campaignRoot: string, step: CurrentVerificationCampaignStep): string {
+  return join(resolve(campaignRoot), step.id, 'result.json');
+}
+
+function readFailedCampaignStepResult(input: {
+  campaignRoot: string;
+  step: CurrentVerificationCampaignStep;
+}): ParsedCampaignStepResult | null {
+  if (input.step.executionMode === 'aggregate_only') {
+    return null;
+  }
+
+  const path = campaignStepResultPath(input.campaignRoot, input.step);
+  if (!existsSync(path)) {
+    return null;
+  }
+
+  let content: string;
+  try {
+    content = readFileSync(path, 'utf8');
+  } catch {
+    return null;
+  }
+
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(content) as unknown;
+  } catch {
+    return null;
+  }
+
+  if (!isRecord(parsed)) {
+    return null;
+  }
+  if (
+    parsed.schema_version !== CURRENT_GATE_RESULT_SCHEMA_VERSION
+    || parsed.gate_id !== input.step.gateId
+    || parsed.status !== 'failed'
+    || typeof parsed.stage !== 'string'
+    || typeof parsed.summary !== 'string'
+  ) {
+    return null;
+  }
+
+  return {
+    step: input.step,
+    path,
+    digest: sha256(content),
+    stage: parsed.stage,
+    summary: parsed.summary,
+    skipped: parsed.stage === 'skipped',
+  };
+}
+
+function releaseStepForOwner(owner: string | null): CurrentVerificationCampaignStep | null {
+  if (!owner) {
+    return null;
+  }
+  return releaseFullCampaignSteps().find((step) => step.id === owner || step.gateId === owner) ?? null;
+}
+
+function failedCampaignStepResultForBlocker(input: {
+  campaignRoot: string | null | undefined;
+  aggregate: ParsedAggregateResult;
+  primaryBlocker: CurrentStatusProjectionBlocker | null;
+}): ParsedCampaignStepResult | null {
+  if (!input.campaignRoot) {
+    return null;
+  }
+
+  const blockerStep = releaseStepForOwner(input.primaryBlocker?.owner ?? null);
+  if (!blockerStep) {
+    return null;
+  }
+  if (!input.aggregate.summary.includes(`Campaign step ${blockerStep.id} did not pass.`)) {
+    return null;
+  }
+
+  return readFailedCampaignStepResult({
+    campaignRoot: input.campaignRoot,
+    step: blockerStep,
+  });
+}
+
+function notAvailableResumeRecommendation(input: {
+  reasonCodes: readonly string[];
+  safeNextCommand: string | null;
+  downstreamAggregateJobId: 'gate-release-full' | null;
+}): CurrentStatusProjectionResumeRecommendation {
+  return {
+    projection_kind: 'read_only',
+    source: 'not_available',
+    action: 'not_available',
+    owner_job_id: null,
+    owner_gate_id: null,
+    producer_job_ids: [],
+    downstream_aggregate_job_id: input.downstreamAggregateJobId,
+    step_result_pointer: null,
+    safe_next_command: input.safeNextCommand,
+    reason_codes: input.reasonCodes,
+    automatic_rerun: false,
+    automatic_skip: false,
+  };
+}
+
+function terminalAggregateResumeRecommendation(input: {
+  presentationStatus: CurrentStatusProjectionPresentationStatus;
+  primaryBlocker: CurrentStatusProjectionBlocker | null;
+  safeNextCommand: string | null;
+}): CurrentStatusProjectionResumeRecommendation {
+  if (input.presentationStatus === 'passed') {
+    return {
+      projection_kind: 'read_only',
+      source: 'terminal_aggregate',
+      action: 'none',
+      owner_job_id: null,
+      owner_gate_id: null,
+      producer_job_ids: [],
+      downstream_aggregate_job_id: 'gate-release-full',
+      step_result_pointer: null,
+      safe_next_command: null,
+      reason_codes: ['terminal_aggregate_passed'],
+      automatic_rerun: false,
+      automatic_skip: false,
+    };
+  }
+
+  const ownerStep = releaseStepForOwner(input.primaryBlocker?.owner ?? null);
+  const reasonCodes = input.presentationStatus === 'stale'
+    ? ['stale_evidence_git_sha']
+    : ['terminal_aggregate_failed'];
+  return {
+    projection_kind: 'read_only',
+    source: 'terminal_aggregate',
+    action: 'inspect_authority',
+    owner_job_id: ownerStep?.id ?? input.primaryBlocker?.owner ?? null,
+    owner_gate_id: ownerStep?.gateId ?? null,
+    producer_job_ids: ownerStep ? [ownerStep.id] : [],
+    downstream_aggregate_job_id: 'gate-release-full',
+    step_result_pointer: null,
+    safe_next_command: input.safeNextCommand,
+    reason_codes: reasonCodes,
+    automatic_rerun: false,
+    automatic_skip: false,
+  };
+}
+
+function resumeRecommendationForRelease(input: {
+  campaignRoot: string | null | undefined;
+  aggregate: ParsedAggregateResult;
+  presentationStatus: CurrentStatusProjectionPresentationStatus;
+  primaryBlocker: CurrentStatusProjectionBlocker | null;
+  safeNextCommand: string | null;
+}): CurrentStatusProjectionResumeRecommendation {
+  if (input.presentationStatus !== 'failed') {
+    return terminalAggregateResumeRecommendation({
+      presentationStatus: input.presentationStatus,
+      primaryBlocker: input.primaryBlocker,
+      safeNextCommand: input.safeNextCommand,
+    });
+  }
+
+  const failedStepResult = failedCampaignStepResultForBlocker({
+    campaignRoot: input.campaignRoot,
+    aggregate: input.aggregate,
+    primaryBlocker: input.primaryBlocker,
+  });
+  if (!failedStepResult) {
+    return terminalAggregateResumeRecommendation({
+      presentationStatus: input.presentationStatus,
+      primaryBlocker: input.primaryBlocker,
+      safeNextCommand: input.safeNextCommand,
+    });
+  }
+
+  return {
+    projection_kind: 'read_only',
+    source: 'campaign_step_results',
+    action: failedStepResult.skipped ? 'blocked_by_upstream' : 'rerun_required',
+    owner_job_id: failedStepResult.step.id,
+    owner_gate_id: failedStepResult.step.gateId,
+    producer_job_ids: [failedStepResult.step.id],
+    downstream_aggregate_job_id: 'gate-release-full',
+    step_result_pointer: {
+      path: redactProjectionPath(failedStepResult.path),
+      digest: failedStepResult.digest,
+    },
+    safe_next_command: safeCommandForOwner(failedStepResult.step.id, 'release-ready'),
+    reason_codes: [failedStepResult.skipped ? 'campaign_step_skipped' : 'campaign_step_failed'],
+    automatic_rerun: false,
+    automatic_skip: false,
+  };
+}
+
 function failedPrimaryBlocker(result: ParsedAggregateResult): CurrentStatusProjectionBlocker {
   const owner = inferBlockedOwner(result.summary) ?? 'gate-release-full';
   return {
@@ -885,6 +1097,7 @@ function buildMissingAggregateProjection(input: {
   });
   const phase: CurrentStatusProjectionPhase = input.options.phase ?? (running ? 'verify' : 'not-started');
   const sourcePath = input.source.path.length > 0 ? redactProjectionPath(input.source.path) : null;
+  const safeNextCommand = safeCommandForOwner(null, input.options.goal);
 
   return {
     schema: CURRENT_STATUS_PROJECTION_SCHEMA,
@@ -906,7 +1119,12 @@ function buildMissingAggregateProjection(input: {
       summary: running ? 'Release aggregate result has not been produced yet.' : redactSensitiveText(input.source.summary),
       source_path: sourcePath,
     },
-    safe_next_command: safeCommandForOwner(null, input.options.goal),
+    safe_next_command: safeNextCommand,
+    resume_recommendation: notAvailableResumeRecommendation({
+      reasonCodes: [running ? 'aggregate_result_pending' : input.source.reasonCode],
+      safeNextCommand,
+      downstreamAggregateJobId: input.options.goal === 'release-ready' ? 'gate-release-full' : null,
+    }),
     destructive_recovery_command: null,
     lock_owner: lockOwnerForInput(input.options),
     lease_status_shadow: leaseStatusShadowForInput(input.options),
@@ -1075,6 +1293,11 @@ function buildMissingRehearsalProjection(input: {
       source_path: safePath,
     },
     safe_next_command: input.source.config.safeNextCommand,
+    resume_recommendation: notAvailableResumeRecommendation({
+      reasonCodes: [input.source.reasonCode],
+      safeNextCommand: input.source.config.safeNextCommand,
+      downstreamAggregateJobId: null,
+    }),
     destructive_recovery_command: null,
     lock_owner: lockOwnerForInput(input.options),
     lease_status_shadow: leaseStatusShadowForInput(input.options),
@@ -1129,6 +1352,11 @@ function buildRehearsalProjection(input: {
       evidenceGitSha: input.options.evidenceGitSha ?? null,
     }),
     safe_next_command: presentationStatus === 'passed' ? null : input.evidence.config.safeNextCommand,
+    resume_recommendation: notAvailableResumeRecommendation({
+      reasonCodes: ['not_release_goal'],
+      safeNextCommand: presentationStatus === 'passed' ? null : input.evidence.config.safeNextCommand,
+      downstreamAggregateJobId: null,
+    }),
     destructive_recovery_command: null,
     lock_owner: lockOwnerForInput(input.options),
     lease_status_shadow: leaseStatusShadowForInput(input.options),
@@ -1200,6 +1428,7 @@ export function buildStatusProjection(input: BuildStatusProjectionInput): Curren
   });
   const primaryBlocker = presentationStatus === 'failed' ? failedPrimaryBlocker(aggregate) : null;
   const blockerOwner = primaryBlocker?.owner ?? null;
+  const safeNextCommand = presentationStatus === 'passed' ? null : safeCommandForOwner(blockerOwner, input.goal);
 
   return {
     schema: CURRENT_STATUS_PROJECTION_SCHEMA,
@@ -1222,7 +1451,14 @@ export function buildStatusProjection(input: BuildStatusProjectionInput): Curren
       currentGitSha: input.currentGitSha ?? null,
       evidenceGitSha: input.evidenceGitSha ?? null,
     }),
-    safe_next_command: presentationStatus === 'passed' ? null : safeCommandForOwner(blockerOwner, input.goal),
+    safe_next_command: safeNextCommand,
+    resume_recommendation: resumeRecommendationForRelease({
+      campaignRoot: input.campaignRoot,
+      aggregate,
+      presentationStatus,
+      primaryBlocker,
+      safeNextCommand,
+    }),
     destructive_recovery_command: null,
     lock_owner: lockOwnerForInput(input),
     lease_status_shadow: leaseStatusShadowForInput(input),
@@ -1272,6 +1508,27 @@ function renderDeepestReason(reason: CurrentStatusProjectionReason | null): stri
     return '<none>';
   }
   return `${redactSensitiveText(reason.code)}: ${redactSensitiveText(reason.summary)}${reason.source_path ? ` @ ${redactProjectionPath(reason.source_path)}` : ''}`;
+}
+
+function renderResumeRecommendation(recommendation: CurrentStatusProjectionResumeRecommendation): string {
+  const pointer = recommendation.step_result_pointer
+    ? `${redactProjectionPath(recommendation.step_result_pointer.path)} (${renderOptional(recommendation.step_result_pointer.digest)})`
+    : '<none>';
+  const owner = recommendation.owner_job_id
+    ? `${recommendation.owner_job_id}${recommendation.owner_gate_id ? `/${recommendation.owner_gate_id}` : ''}`
+    : '<none>';
+  return [
+    `action=${recommendation.action}`,
+    `source=${recommendation.source}`,
+    `owner=${owner}`,
+    `producer_jobs=${recommendation.producer_job_ids.length > 0 ? recommendation.producer_job_ids.join(',') : '<none>'}`,
+    `downstream_aggregate=${renderOptional(recommendation.downstream_aggregate_job_id)}`,
+    `pointer=${pointer}`,
+    `safe_next=${renderOptional(recommendation.safe_next_command)}`,
+    `reason=${recommendation.reason_codes.length > 0 ? recommendation.reason_codes.join(',') : '<none>'}`,
+    `automatic_rerun=${String(recommendation.automatic_rerun)}`,
+    `automatic_skip=${String(recommendation.automatic_skip)}`,
+  ].join('; ');
 }
 
 function renderLocks(lockOwner: CurrentStatusProjection['lock_owner']): string {
@@ -1382,6 +1639,7 @@ export function renderStatusProjection(projection: CurrentStatusProjection): str
     `Deepest reason: ${renderDeepestReason(projection.deepest_reason)}`,
     `Next action: ${renderOptional(projection.safe_next_command)}`,
     `Safe action: ${renderOptional(projection.safe_next_command)}`,
+    `Resume recommendation: ${renderResumeRecommendation(projection.resume_recommendation)}`,
     `Recovery: ${renderOptional(projection.destructive_recovery_command)}`,
     `Freshness: current_git_sha=${renderOptional(projection.current_git_sha)}; evidence_git_sha=${renderOptional(projection.evidence_git_sha)}; run_age_seconds=${renderOptional(projection.run_age_seconds)}`,
     `Locks: ${renderLocks(projection.lock_owner)}`,

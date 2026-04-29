@@ -50,7 +50,7 @@ describe('WorkspaceSelectView', () => {
     } as unknown) as Storage);
   });
 
-  it('keeps project continuation when selecting a workspace from query params', () => {
+  it('renders workspace rows as real links with project continuation from query params', () => {
     mockUseSearchParams.mockReturnValue(new URLSearchParams('project_id=proj_alpha'));
     mockUseWorkspaces.mockReturnValue({
       data: [{ id: 'ws_1', name: 'Workspace One' }],
@@ -62,12 +62,13 @@ describe('WorkspaceSelectView', () => {
 
     render(<WorkspaceSelectView />);
 
-    fireEvent.click(screen.getByTestId('workspace-select__item--ws_1'));
-
-    expect(mockPush).toHaveBeenCalledWith('/workspaces/ws_1/login?project_id=proj_alpha');
+    const workspaceLink = screen.getByRole('link', { name: /workspace one/i });
+    expect(workspaceLink).toHaveAttribute('data-testid', 'workspace-select__item--ws_1');
+    expect(workspaceLink).toHaveAttribute('href', '/en-US/workspaces/ws_1/login?project_id=proj_alpha');
+    expect(mockPush).not.toHaveBeenCalled();
   });
 
-  it('keeps project continuation when selecting a workspace from invite handoff session state', () => {
+  it('renders workspace rows as real links with project continuation from invite handoff session state', () => {
     mockUseSearchParams.mockReturnValue(new URLSearchParams());
     vi.stubGlobal(
       'sessionStorage',
@@ -89,9 +90,58 @@ describe('WorkspaceSelectView', () => {
 
     render(<WorkspaceSelectView />);
 
-    fireEvent.click(screen.getByRole('button', { name: /workspace one/i }));
+    const workspaceLink = screen.getByRole('link', { name: /workspace one/i });
+    expect(workspaceLink).toHaveAttribute('href', '/en-US/workspaces/ws_1/login?project_id=proj_alpha');
+    expect(mockPush).not.toHaveBeenCalled();
+  });
 
-    expect(mockPush).toHaveBeenCalledWith('/workspaces/ws_1/login?project_id=proj_alpha');
+  it('keeps invite handoff continuation when workspace rows load after the mount cleanup', () => {
+    mockUseSearchParams.mockReturnValue(new URLSearchParams());
+    const storedItems = new Map<string, string>([
+      [
+        'agentsmith:invite-handoff',
+        JSON.stringify({ workspaceId: 'ws_1', projectId: 'proj_alpha', storedAt: Date.now() }),
+      ],
+    ]);
+    vi.stubGlobal(
+      'sessionStorage',
+      ({
+        getItem: vi.fn((key: string) => storedItems.get(key) ?? null),
+        setItem: vi.fn((key: string, value: string) => {
+          storedItems.set(key, value);
+        }),
+        removeItem: vi.fn((key: string) => {
+          storedItems.delete(key);
+        }),
+      } as unknown) as Storage,
+    );
+    let workspaceQueryResult = {
+      data: undefined as Array<{ id: string; name: string }> | undefined,
+      isLoading: true,
+      isError: false,
+      error: null as APIError | null,
+      refetch: mockRefetch,
+    };
+    mockUseWorkspaces.mockImplementation(() => workspaceQueryResult);
+
+    const { rerender } = render(<WorkspaceSelectView />);
+
+    expect(screen.getByTestId('workspace-select__loading')).toBeInTheDocument();
+
+    workspaceQueryResult = {
+      data: [{ id: 'ws_1', name: 'Workspace One' }],
+      isLoading: false,
+      isError: false,
+      error: null,
+      refetch: mockRefetch,
+    };
+    rerender(<WorkspaceSelectView />);
+
+    expect(screen.getByRole('link', { name: /workspace one/i })).toHaveAttribute(
+      'href',
+      '/en-US/workspaces/ws_1/login?project_id=proj_alpha',
+    );
+    expect(mockPush).not.toHaveBeenCalled();
   });
 
   it('drops stale invite continuation from another workspace when selecting a new workspace', () => {
@@ -117,10 +167,14 @@ describe('WorkspaceSelectView', () => {
 
     render(<WorkspaceSelectView />);
 
-    fireEvent.click(screen.getByRole('button', { name: /workspace one/i }));
+    const workspaceLink = screen.getByRole('link', { name: /workspace one/i });
+    expect(workspaceLink).toHaveAttribute('href', '/en-US/workspaces/ws_1/login');
+    removeItem.mockClear();
+    workspaceLink.addEventListener('click', (event) => event.preventDefault());
+    fireEvent.click(workspaceLink);
 
     expect(removeItem).toHaveBeenCalledWith('agentsmith:invite-handoff');
-    expect(mockPush).toHaveBeenCalledWith('/workspaces/ws_1/login');
+    expect(mockPush).not.toHaveBeenCalled();
   });
 
   it('returns to invite selection with project continuation when relogging', () => {

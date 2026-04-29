@@ -73,12 +73,12 @@ describe('WorkspaceSelectPage', () => {
     expect(screen.queryByText('Open')).not.toBeInTheDocument();
     expect(screen.queryByTestId('workspace-select__meta')).not.toBeInTheDocument();
     const list = screen.getByRole('list');
-    const workspaceButton = within(list).getByRole('button', { name: /workspace one/i });
-    expect(workspaceButton).toHaveAttribute('data-testid', 'workspace-select__item--ws_1');
-    fireEvent.click(workspaceButton);
-    expect(mockPush).toHaveBeenCalledWith('/workspaces/ws_1/login');
+    const workspaceLink = within(list).getByRole('link', { name: /workspace one/i });
+    expect(workspaceLink).toHaveAttribute('data-testid', 'workspace-select__item--ws_1');
+    expect(workspaceLink).toHaveAttribute('href', '/en-US/workspaces/ws_1/login');
+    expect(mockPush).not.toHaveBeenCalled();
     expect(screen.queryByTestId('workspace-select__card--ws_1')).not.toBeInTheDocument();
-    expect(screen.queryByRole('button', { name: /workspace one/i })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /workspace one/i })).not.toBeInTheDocument();
   });
 
 
@@ -94,9 +94,11 @@ describe('WorkspaceSelectPage', () => {
 
     render(<WorkspaceSelectPage />);
 
-    fireEvent.click(screen.getByTestId('workspace-select__item--ws_1'));
-
-    expect(mockPush).toHaveBeenCalledWith('/workspaces/ws_1/login?project_id=proj_alpha');
+    expect(screen.getByTestId('workspace-select__item--ws_1')).toHaveAttribute(
+      'href',
+      '/en-US/workspaces/ws_1/login?project_id=proj_alpha',
+    );
+    expect(mockPush).not.toHaveBeenCalled();
   });
 
   it('preserves invited project continuation when the selection page falls back to invite handoff session state', () => {
@@ -121,8 +123,11 @@ describe('WorkspaceSelectPage', () => {
 
     render(<WorkspaceSelectPage />);
 
-    fireEvent.click(screen.getByRole('button', { name: /workspace one/i }));
-    expect(mockPush).toHaveBeenCalledWith('/workspaces/ws_1/login?project_id=proj_alpha');
+    expect(screen.getByRole('link', { name: /workspace one/i })).toHaveAttribute(
+      'href',
+      '/en-US/workspaces/ws_1/login?project_id=proj_alpha',
+    );
+    expect(mockPush).not.toHaveBeenCalled();
   });
 
   it('keeps the system 管理侧入口 as a low-emphasis footer link', () => {

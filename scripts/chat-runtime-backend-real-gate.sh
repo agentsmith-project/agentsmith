@@ -39,10 +39,20 @@ run_grep() {
     "${cmd[@]}")
 }
 
-run_grep e2e/integration-chat-llm-runner.spec.ts "streams multi-turn chat through the real local chat runner and persists replies" 20061 3062
-run_grep e2e/integration-chat-llm-runner.spec.ts "preserves conversation continuity across refresh with story-bound trace evidence" 20062 3063
-run_grep e2e/integration-chat-llm-runner.spec.ts "warns and recreates the session workspace when the local chat workspace has been reclaimed" 20063 3064
-run_grep e2e/integration-chat.spec.ts "stop escalation resyncs authoritative thread truth after refresh and keeps composer ready" 20066 3067
+run_external_chat_session() {
+  local api_port="$1"
+  local web_port="$2"
+  cleanup_gate_ports "${api_port}" "${web_port}" "chat-backend-real-runner"
+  info "running external chat runner backend-real session"
+  # External chat specs are session-owned in run-integration-e2e-full.sh:
+  # e2e/integration-chat-llm-runner.spec.ts and e2e/integration-chat.spec.ts.
+  (cd "${ROOT_DIR}" && \
+    INTEGRATION_API_PORT="${api_port}" \
+    INTEGRATION_WEB_PORT="${web_port}" \
+    bash scripts/run-integration-e2e-full.sh --session chat-backend-real-runner)
+}
+
+run_external_chat_session 20061 3062
 (cd "${ROOT_DIR}" && bash scripts/run-internal-chat-real-gate.sh)
 run_grep e2e/integration-membership-chat-isolation.spec.ts "" 20065 3066
 

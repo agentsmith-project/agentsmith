@@ -92,6 +92,26 @@ function writeAggregateResult(campaignRoot: string, overrides: Partial<{
   return path;
 }
 
+function writeFailedCampaignStepResult(campaignRoot: string, stepId = 'gate-default'): string {
+  const path = join(campaignRoot, stepId, 'result.json');
+  writeJson(path, {
+    schema_version: CURRENT_GATE_RESULT_SCHEMA_VERSION,
+    gate_id: stepId,
+    gate_adapter: {
+      npm_script: `gate:${stepId}`,
+      ci_job: null,
+    },
+    status: 'failed',
+    failure_class: 'product_regression',
+    stage: 'execute',
+    line_kind: 'release_campaign_step',
+    evidence_dir: join(campaignRoot, stepId),
+    summary: `Old release campaign step ${stepId} failed with exit code 6.`,
+    generated_at: GENERATED_AT,
+  });
+  return path;
+}
+
 function writeRehearsalResult(gateResultsRoot: string, input: {
   gateId: 'lane-demo-rehearsal' | 'lane-cluster-rehearsal';
   lineKind: 'demo_rehearsal' | 'cluster_rehearsal';
@@ -1035,6 +1055,192 @@ describe('current status projection', () => {
       expect(projection.safe_next_command).toBe('npm run verify -- --goal=release-real --run');
       expect(projection.safe_next_command).not.toBe('npm run verify:release-real');
       expect(JSON.stringify(projection)).not.toContain('npm run verify:release-real');
+    });
+  });
+
+  it('adds a read-only resume recommendation from campaign step results without rerunning or skipping', () => {
+    withTempRoot((campaignRoot) => {
+      const stepResultPath = join(campaignRoot, 'gate-default', 'result.json');
+      writeJson(stepResultPath, {
+        schema_version: CURRENT_GATE_RESULT_SCHEMA_VERSION,
+        gate_id: 'gate-default',
+        gate_adapter: {
+          npm_script: 'gate:default',
+          ci_job: null,
+        },
+        status: 'failed',
+        failure_class: 'product_regression',
+        stage: 'execute',
+        line_kind: 'release_campaign_default',
+        evidence_dir: join(campaignRoot, 'gate-default'),
+        summary: 'Release campaign step gate-default failed with exit code 6.',
+        generated_at: GENERATED_AT,
+      });
+      writeAggregateResult(campaignRoot, {
+        status: 'failed',
+        failure_class: 'product_regression',
+        summary: 'Campaign step gate-default did not pass.',
+      });
+      const stepResultContent = readFileSync(stepResultPath, 'utf8');
+
+      const projection = buildStatusProjection({
+        goal: 'release-ready',
+        campaignRoot,
+        currentGitSha: CURRENT_GIT_SHA,
+        evidenceGitSha: EVIDENCE_GIT_SHA,
+        generatedAt: GENERATED_AT,
+      });
+
+      expect(projection.resume_recommendation).toEqual({
+        projection_kind: 'read_only',
+        source: 'campaign_step_results',
+        action: 'rerun_required',
+        owner_job_id: 'gate-default',
+        owner_gate_id: 'gate-default',
+        producer_job_ids: ['gate-default'],
+        downstream_aggregate_job_id: 'gate-release-full',
+        step_result_pointer: {
+          path: stepResultPath,
+          digest: sha256(stepResultContent),
+        },
+        safe_next_command: 'npm run verify -- --goal=pr --run',
+        reason_codes: ['campaign_step_failed'],
+        automatic_rerun: false,
+        automatic_skip: false,
+      });
+      expect(projection.safe_next_command).toBe('npm run verify -- --goal=pr --run');
+      expect(validateCurrentStatusProjection(projection)).toEqual({ ok: true, value: projection });
+      expect(JSON.stringify(projection)).not.toMatch(/claim_id|reusable|release_verdict|automated_release_verdict/);
+      expect(existsSync(join(campaignRoot, 'status.json'))).toBe(false);
+    });
+  });
+
+  it('does not let an old failed campaign step result override a passed terminal aggregate recommendation', () => {
+    withTempRoot((campaignRoot) => {
+      writeFailedCampaignStepResult(campaignRoot);
+      writeAggregateResult(campaignRoot, {
+        status: 'passed',
+        failure_class: 'none',
+        summary: 'Release-full campaign evidence passed aggregate verification.',
+      });
+
+      const projection = buildStatusProjection({
+        goal: 'release-ready',
+        campaignRoot,
+        currentGitSha: CURRENT_GIT_SHA,
+        evidenceGitSha: EVIDENCE_GIT_SHA,
+        generatedAt: GENERATED_AT,
+      });
+
+      expect(projection.presentation_status).toBe('passed');
+      expect(projection.safe_next_command).toBe(null);
+      expect(projection.resume_recommendation).toEqual({
+        projection_kind: 'read_only',
+        source: 'terminal_aggregate',
+        action: 'none',
+        owner_job_id: null,
+        owner_gate_id: null,
+        producer_job_ids: [],
+        downstream_aggregate_job_id: 'gate-release-full',
+        step_result_pointer: null,
+        safe_next_command: null,
+        reason_codes: ['terminal_aggregate_passed'],
+        automatic_rerun: false,
+        automatic_skip: false,
+      });
+      expect(projection.resume_recommendation).not.toMatchObject({
+        source: 'campaign_step_results',
+        action: 'rerun_required',
+      });
+      expect(validateCurrentStatusProjection(projection)).toEqual({ ok: true, value: projection });
+      expect(JSON.stringify(projection)).not.toMatch(/claim_id|reusable|release_verdict|automated_release_verdict/);
+      expect(existsSync(join(campaignRoot, 'status.json'))).toBe(false);
+    });
+  });
+
+  it('does not let old campaign step results override stale terminal aggregate authority', () => {
+    withTempRoot((campaignRoot) => {
+      writeFailedCampaignStepResult(campaignRoot);
+      writeAggregateResult(campaignRoot, {
+        status: 'failed',
+        failure_class: 'product_regression',
+        summary: 'Campaign step gate-default did not pass.',
+      });
+
+      const projection = buildStatusProjection({
+        goal: 'release-ready',
+        campaignRoot,
+        currentGitSha: CURRENT_GIT_SHA,
+        evidenceGitSha: STALE_EVIDENCE_GIT_SHA,
+        generatedAt: GENERATED_AT,
+      });
+
+      expect(projection.presentation_status).toBe('stale');
+      expect(projection.deepest_reason?.code).toBe('stale_evidence_git_sha');
+      expect(projection.resume_recommendation).toMatchObject({
+        projection_kind: 'read_only',
+        source: 'terminal_aggregate',
+        action: 'inspect_authority',
+        step_result_pointer: null,
+        automatic_rerun: false,
+        automatic_skip: false,
+      });
+      expect(projection.resume_recommendation.reason_codes).toContain('stale_evidence_git_sha');
+      expect(projection.resume_recommendation.reason_codes).not.toContain('campaign_step_failed');
+      expect(projection.resume_recommendation).not.toMatchObject({
+        source: 'campaign_step_results',
+        action: 'rerun_required',
+      });
+      expect(projection.resume_recommendation.safe_next_command).toBe(projection.safe_next_command);
+      expect(validateCurrentStatusProjection(projection)).toEqual({ ok: true, value: projection });
+      expect(JSON.stringify(projection)).not.toMatch(/claim_id|reusable|release_verdict|automated_release_verdict/);
+      expect(existsSync(join(campaignRoot, 'status.json'))).toBe(false);
+    });
+  });
+
+  it('does not use stale step advice when terminal aggregate owns a different blocker', () => {
+    withTempRoot((campaignRoot) => {
+      writeFailedCampaignStepResult(campaignRoot, 'gate-default');
+      writeAggregateResult(campaignRoot, {
+        status: 'failed',
+        failure_class: 'evidence_missing',
+        summary: 'Missing campaign step result: lane-visual',
+      });
+
+      const projection = buildStatusProjection({
+        goal: 'release-ready',
+        campaignRoot,
+        currentGitSha: CURRENT_GIT_SHA,
+        evidenceGitSha: EVIDENCE_GIT_SHA,
+        generatedAt: GENERATED_AT,
+      });
+
+      expect(projection.presentation_status).toBe('failed');
+      expect(projection.primary_blocker).toMatchObject({
+        owner: 'lane-visual',
+      });
+      expect(projection.safe_next_command).toBe('npm run verify -- --goal=visual --run');
+      expect(projection.resume_recommendation).toEqual({
+        projection_kind: 'read_only',
+        source: 'terminal_aggregate',
+        action: 'inspect_authority',
+        owner_job_id: 'lane-visual',
+        owner_gate_id: 'lane-visual',
+        producer_job_ids: ['lane-visual'],
+        downstream_aggregate_job_id: 'gate-release-full',
+        step_result_pointer: null,
+        safe_next_command: 'npm run verify -- --goal=visual --run',
+        reason_codes: ['terminal_aggregate_failed'],
+        automatic_rerun: false,
+        automatic_skip: false,
+      });
+      expect(projection.resume_recommendation).not.toMatchObject({
+        source: 'campaign_step_results',
+        owner_job_id: 'gate-default',
+      });
+      expect(validateCurrentStatusProjection(projection)).toEqual({ ok: true, value: projection });
+      expect(JSON.stringify(projection)).not.toMatch(/claim_id|reusable|release_verdict|automated_release_verdict/);
+      expect(existsSync(join(campaignRoot, 'status.json'))).toBe(false);
     });
   });
 

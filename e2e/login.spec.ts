@@ -3,6 +3,10 @@ import { test, expect } from './fixtures/test-base';
 import { withAuth } from './fixtures/authenticated';
 import { gotoAndWait, gotoAndWaitForRedirect, waitForPageReady } from './utils/navigation';
 
+function escapeRegExp(value: string) {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
 async function clearAuth(page: Page) {
   await page.addInitScript(() => {
     localStorage.removeItem('agentsmith-auth');
@@ -11,10 +15,16 @@ async function clearAuth(page: Page) {
 
 async function selectWorkspaceFromSelection(page: Page, workspaceId: string) {
   const workspaceItem = page.getByTestId(`workspace-select__item--${workspaceId}`);
+  const expectedPath = `/en-US/workspaces/${workspaceId}/login`;
 
   await expect(workspaceItem).toBeVisible();
   await expect(page.getByTestId(`workspace-select__card--${workspaceId}`)).toHaveCount(0);
-  await workspaceItem.click();
+  await expect(workspaceItem).toHaveAttribute('href', expectedPath);
+  await Promise.all([
+    page.waitForURL(new RegExp(`${escapeRegExp(expectedPath)}(?:$|[?#])`), { timeout: 10_000 }),
+    workspaceItem.click(),
+  ]);
+  await waitForPageReady(page);
 }
 
 test.describe('Login Entry', () => {
@@ -39,8 +49,13 @@ test.describe('Login Entry', () => {
   test('system 管理侧入口仍然可以从工作区选择页进入', async ({ page }) => {
     await gotoAndWaitForRedirect(page, '/en-US/login', /\/en-US\/login\/workspace/);
 
-    await page.getByTestId('workspace-select__system-link').click();
-    await page.waitForURL(/\/en-US\/system\/login/, { timeout: 10_000 });
+    const systemLink = page.getByTestId('workspace-select__system-link');
+    await expect(systemLink).toHaveAttribute('href', '/en-US/system/login');
+    await Promise.all([
+      page.waitForURL(/\/en-US\/system\/login(?:$|[?#])/, { timeout: 10_000 }),
+      systemLink.click(),
+    ]);
+    await waitForPageReady(page);
     await expect(page.getByTestId('system-login__heading')).toBeVisible();
   });
 
@@ -62,7 +77,6 @@ test.describe('Workspace Login Journey', () => {
     await waitForPageReady(page);
 
     await selectWorkspaceFromSelection(page, 'ws_default');
-    await page.waitForURL(/\/en-US\/workspaces\/ws_default\/login/, { timeout: 10_000 });
     await expect(page.getByTestId('workspace-login__heading')).toBeVisible();
   });
 
@@ -71,7 +85,6 @@ test.describe('Workspace Login Journey', () => {
     await waitForPageReady(page);
 
     await selectWorkspaceFromSelection(page, 'ws_default');
-    await page.waitForURL(/\/en-US\/workspaces\/ws_default\/login/, { timeout: 10_000 });
 
     await page.getByTestId('workspace-login__email-input').fill('user@test.com');
     await page.getByTestId('workspace-login__submit').click();
@@ -86,7 +99,6 @@ test.describe('Workspace Login Journey', () => {
     await waitForPageReady(page);
 
     await selectWorkspaceFromSelection(page, 'ws_default');
-    await page.waitForURL(/\/en-US\/workspaces\/ws_default\/login/, { timeout: 10_000 });
     await expect(page.getByText('System administration')).toHaveCount(0);
   });
 });

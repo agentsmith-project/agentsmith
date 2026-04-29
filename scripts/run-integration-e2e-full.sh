@@ -21,10 +21,13 @@ if [[ "${1:-}" == "--session" ]]; then
 fi
 
 if [[ -n "${BACKEND_REAL_SESSION_NAME}" ]]; then
-  if [[ "${BACKEND_REAL_SESSION_NAME}" != "agents-backend-real-runner" ]]; then
-    echo "[integration-e2e-full] unsupported backend-real session: ${BACKEND_REAL_SESSION_NAME}" >&2
-    exit 1
-  fi
+  case "${BACKEND_REAL_SESSION_NAME}" in
+    agents-backend-real-runner|chat-backend-real-runner) ;;
+    *)
+      echo "[integration-e2e-full] unsupported backend-real session: ${BACKEND_REAL_SESSION_NAME}" >&2
+      exit 1
+      ;;
+  esac
   if [[ "$#" -ne 0 ]]; then
     echo "[integration-e2e-full] backend-real session ${BACKEND_REAL_SESSION_NAME} does not accept extra arguments" >&2
     exit 1
@@ -703,7 +706,7 @@ write_shard_result() {
   local finished_at="$5"
   local exit_code="$6"
   shift 6
-  node - <<'NODE' "${shard_dir}/shard-result.json" "${shard_id}" "${spec_file}" "${started_at}" "${finished_at}" "${exit_code}" "$@"
+  node - <<'NODE' "${shard_dir}/result.json" "${shard_id}" "${spec_file}" "${started_at}" "${finished_at}" "${exit_code}" "$@"
 const fs = require('node:fs');
 const path = require('node:path');
 const [file, shardId, specFile, startedAt, finishedAt, exitCodeRaw, ...args] = process.argv.slice(2);
@@ -737,13 +740,13 @@ NODE
 
 write_session_aggregate() {
   local session_state="$1"
-  node - <<'NODE' "${REAL_SESSION_ROOT}/session-aggregate.json" "${BACKEND_REAL_SESSION_NAME}" "${INTEGRATION_RUN_ID}" "${session_state}" "${REAL_SESSION_ROOT}"
+  shift
+  node - <<'NODE' "${REAL_SESSION_ROOT}/aggregate.json" "${BACKEND_REAL_SESSION_NAME}" "${INTEGRATION_RUN_ID}" "${session_state}" "${REAL_SESSION_ROOT}" "$@"
 const fs = require('node:fs');
 const path = require('node:path');
-const [file, sessionName, runId, sessionState, sessionRoot] = process.argv.slice(2);
-const shardIds = ['chat-runner', 'notebook-runner', 'notebook-docker'];
+const [file, sessionName, runId, sessionState, sessionRoot, ...shardIds] = process.argv.slice(2);
 const shards = shardIds.map((shardId) => {
-  const resultFile = path.join(sessionRoot, 'shards', shardId, 'shard-result.json');
+  const resultFile = path.join(sessionRoot, 'shards', shardId, 'result.json');
   if (!fs.existsSync(resultFile)) {
     return {
       shard_id: shardId,
@@ -825,6 +828,7 @@ run_single_playwright() {
 
 run_backend_real_runner_session_shards() {
   local session_status=0
+  local shard_ids=("chat-runner" "notebook-runner" "notebook-docker")
   mkdir -p "${REAL_SESSION_ROOT}/shards"
   run_playwright_shard "chat-runner" "e2e/integration-chat-llm-runner.spec.ts" || session_status=$?
   if [[ "${session_status}" -eq 0 ]]; then
@@ -834,15 +838,49 @@ run_backend_real_runner_session_shards() {
     run_playwright_shard "notebook-docker" "e2e/integration-notebook-codex-runner.spec.ts" --grep docker || session_status=$?
   fi
   if [[ "${session_status}" -eq 0 ]]; then
-    write_session_aggregate "succeeded"
+    write_session_aggregate "succeeded" "${shard_ids[@]}"
   else
-    write_session_aggregate "failed"
+    write_session_aggregate "failed" "${shard_ids[@]}"
+  fi
+  return "${session_status}"
+}
+
+run_backend_real_chat_runner_session_shards() {
+  local session_status=0
+  local shard_ids=(
+    "chat-runner-stream"
+    "chat-runner-continuity"
+    "chat-runner-workspace-reclaim"
+    "chat-stop-escalation"
+  )
+  mkdir -p "${REAL_SESSION_ROOT}/shards"
+  run_playwright_shard "chat-runner-stream" "e2e/integration-chat-llm-runner.spec.ts" --grep "streams multi-turn chat through the real local chat runner and persists replies" || session_status=$?
+  if [[ "${session_status}" -eq 0 ]]; then
+    run_playwright_shard "chat-runner-continuity" "e2e/integration-chat-llm-runner.spec.ts" --grep "preserves conversation continuity across refresh with story-bound trace evidence" || session_status=$?
+  fi
+  if [[ "${session_status}" -eq 0 ]]; then
+    run_playwright_shard "chat-runner-workspace-reclaim" "e2e/integration-chat-llm-runner.spec.ts" --grep "warns and recreates the session workspace when the local chat workspace has been reclaimed" || session_status=$?
+  fi
+  if [[ "${session_status}" -eq 0 ]]; then
+    run_playwright_shard "chat-stop-escalation" "e2e/integration-chat.spec.ts" --grep "stop escalation resyncs authoritative thread truth after refresh and keeps composer ready" || session_status=$?
+  fi
+  if [[ "${session_status}" -eq 0 ]]; then
+    write_session_aggregate "succeeded" "${shard_ids[@]}"
+  else
+    write_session_aggregate "failed" "${shard_ids[@]}"
   fi
   return "${session_status}"
 }
 
 if [[ -n "${BACKEND_REAL_SESSION_NAME}" ]]; then
-  run_backend_real_runner_session_shards || PLAYWRIGHT_STATUS=$?
+  case "${BACKEND_REAL_SESSION_NAME}" in
+    agents-backend-real-runner)
+      run_backend_real_runner_session_shards || PLAYWRIGHT_STATUS=$?
+      ;;
+    chat-backend-real-runner)
+      run_backend_real_chat_runner_session_shards || PLAYWRIGHT_STATUS=$?
+      ;;
+  esac
 else
   run_single_playwright || PLAYWRIGHT_STATUS=$?
 fi

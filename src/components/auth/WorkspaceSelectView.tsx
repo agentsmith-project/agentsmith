@@ -1,7 +1,7 @@
 'use client';
 
 import Link from 'next/link';
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
 import { useParams, useSearchParams } from 'next/navigation';
 import { useRouter } from '@/lib/i18n/routing';
 import { useTranslations } from 'next-intl';
@@ -10,7 +10,7 @@ import { Logo } from '@/components/app-shell/Logo';
 import { PageLayout } from '@/components/layout/PageLayout';
 import { PageState } from '@/components/layout/PageState';
 import { useWorkspaces } from '@/lib/hooks/use-workspaces';
-import { buildWorkspaceLoginPath, buildWorkspaceSelectionPath, clearLoginContinuationState, clearLogoutIntent, readInviteHandoff } from '@/lib/auth/invite-handoff';
+import { buildWorkspaceLoginHref, buildWorkspaceSelectionPath, clearLoginContinuationState, clearLogoutIntent, readInviteHandoff } from '@/lib/auth/invite-handoff';
 import { useAuthStore } from '@/lib/stores/authStore';
 import { APIError } from '@/lib/api/errors';
 import { Button } from '@/components/ui/button';
@@ -39,7 +39,7 @@ export function WorkspaceSelectView() {
 
   const isUnauthorized = isError && error instanceof APIError && error.statusCode === 401;
   const desktopAuthRequestId = searchParams.get('desktop_auth_request_id')?.trim() ?? '';
-  const inviteHandoff = readInviteHandoff();
+  const [inviteHandoff] = useState(() => readInviteHandoff());
   const projectId = searchParams.get('project_id')?.trim() ?? '';
 
   useEffect(() => {
@@ -47,17 +47,18 @@ export function WorkspaceSelectView() {
     clearLogoutIntent();
   }, []);
 
-  const handleWorkspaceSelect = (workspaceId: string) => {
+  const getWorkspaceLoginHref = (workspaceId: string) => {
     const workspaceInviteHandoff = inviteHandoff?.workspaceId === workspaceId ? inviteHandoff : null;
+    return buildWorkspaceLoginHref(locale, workspaceId, {
+      desktopAuthRequestId: desktopAuthRequestId || null,
+      projectId: projectId || workspaceInviteHandoff?.projectId || null,
+    });
+  };
+
+  const handleWorkspaceSelect = (workspaceId: string) => {
     if (inviteHandoff && inviteHandoff.workspaceId !== workspaceId) {
       clearLoginContinuationState();
     }
-    router.push(
-      buildWorkspaceLoginPath(workspaceId, {
-        desktopAuthRequestId: desktopAuthRequestId || null,
-        projectId: projectId || workspaceInviteHandoff?.projectId || null,
-      }),
-    );
   };
 
   const handleReLogin = () => {
@@ -135,6 +136,7 @@ export function WorkspaceSelectView() {
                       <WorkspaceRow
                         key={workspace.id}
                         workspace={workspace}
+                        href={getWorkspaceLoginHref(workspace.id)}
                         onSelect={() => handleWorkspaceSelect(workspace.id)}
                       />
                     ))}
@@ -159,19 +161,20 @@ export function WorkspaceSelectView() {
   );
 }
 
-interface WorkspaceCardProps {
+interface WorkspaceRowProps {
   workspace: { id: string; name: string };
+  href: string;
   onSelect: () => void;
 }
 
-function WorkspaceRow({ workspace, onSelect }: WorkspaceCardProps) {
+function WorkspaceRow({ workspace, href, onSelect }: WorkspaceRowProps) {
   return (
     <li className="list-none">
-      <button
-        type="button"
+      <Link
+        href={href}
         data-testid={`workspace-select__item--${workspace.id}`}
         onClick={onSelect}
-        className="flex w-full items-center justify-between gap-4 px-0 py-3 text-left transition-colors duration-150 hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/20"
+        className="flex w-full items-center justify-between gap-4 rounded-md px-0 py-3 text-left transition-colors duration-150 hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/20"
       >
         <div className="flex min-w-0 items-center gap-3">
           <Building2 className="h-4 w-4 shrink-0 text-icon-default" />
@@ -181,7 +184,7 @@ function WorkspaceRow({ workspace, onSelect }: WorkspaceCardProps) {
           </div>
         </div>
         <ChevronRight className="h-3.5 w-3.5 shrink-0 text-tertiary" aria-hidden="true" />
-      </button>
+      </Link>
     </li>
   );
 }

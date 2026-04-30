@@ -54,7 +54,7 @@ describe('chat test support upstream helpers', () => {
     start,
   }) => {
     const originalListen = NetServer.prototype.listen;
-    let releaseListen: (() => void) | null = null;
+    let releaseListen: (() => void) | undefined;
 
     const listenSpy = vi.spyOn(NetServer.prototype, 'listen').mockImplementation(function (
       this: NetServer,
@@ -65,7 +65,7 @@ describe('chat test support upstream helpers', () => {
         throw new Error('unexpected_listen_signature');
       }
       releaseListen = () => {
-        originalListen.call(this, port, host);
+        originalListen.call(this, { port, host });
       };
       return this;
     });
@@ -84,7 +84,11 @@ describe('chat test support upstream helpers', () => {
     expect(listenSpy.mock.calls[0]?.[1]).toBe('127.0.0.1');
     expect(releaseListen).toBeTypeOf('function');
 
-    releaseListen?.();
+    const release = releaseListen;
+    if (!release) {
+      throw new Error('chat_test_listen_release_missing');
+    }
+    release();
     const started = await startedPromise;
 
     expect(resolvedBeforeListening).toBe(false);

@@ -5,7 +5,8 @@ source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/common.sh"
 init_local_manual_env
 
 wait_port_free "${PORT_WEB}" "web" 30
-launch_detached "${WEB_PID_FILE}" "${WEB_LOG}" "
+rm -f "${WEB_PID_FILE}" "${WEB_PROCESS_STATE_FILE}"
+launch_detached "${WEB_LAUNCHER_PID_FILE}" "${WEB_LOG}" "
   cd '${ROOT_DIR}' && \
   export NEXT_PUBLIC_USE_MSW=false \
     NEXT_DIST_DIR='${LOCAL_MANUAL_NEXT_DIST_DIR}' \

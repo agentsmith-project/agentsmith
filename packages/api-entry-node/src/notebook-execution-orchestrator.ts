@@ -156,7 +156,8 @@ export function resolveExecutionApiBase(
   publicBaseUrl: string,
   agent: { mode: 'external' | 'internal'; config?: Record<string, unknown> | null },
 ): string {
-  if (agent.mode === 'external' && isComposeManagedExternalAgent(agent)) {
+  const runnerAgent = { mode: agent.mode, config: agent.config ?? undefined };
+  if (agent.mode === 'external' && isComposeManagedExternalAgent(runnerAgent)) {
     return ensureExecutionApiBase(process.env.INTERNAL_API_BASE_URL) ?? 'http://api:20000/api/v1';
   }
   const explicitExternalBase = ensureExecutionApiBase(process.env.EXTERNAL_AGENT_EXECUTION_HTTP_BASE_URL);

@@ -25,7 +25,6 @@ import {
   getNotebookTaskMetricsPrometheusText,
   getNotebookTaskMetricsSnapshot,
 } from '../notebook-task/task-metrics-api.js';
-import type { JsonValue } from '../json-doc-store.js';
 import { unauthorized } from '../http-utils.js';
 import {
   buildPolicyEnforcement,
@@ -33,6 +32,8 @@ import {
   mergeEscalationState,
   withOverrideEffectiveStatus,
 } from './governance-route-utils.js';
+
+type JsonValue = unknown;
 
 type JsonFn = (res: http.ServerResponse, status: number, body: JsonValue) => void;
 type ReadBodyFn = (req: http.IncomingMessage) => Promise<unknown>;

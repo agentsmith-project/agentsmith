@@ -104,8 +104,6 @@ export async function handleAuditUsageRoute({
       groupByRaw === 'minute'
       || groupByRaw === 'hour'
       || groupByRaw === 'day'
-      || groupByRaw === 'week'
-      || groupByRaw === 'month'
     ) ? groupByRaw : 'hour';
     const payload = await aggregateUsageRecords(deps.docStore, {
       workspaceId: route.workspaceId,

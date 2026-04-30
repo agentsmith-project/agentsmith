@@ -17,6 +17,16 @@ const nextConfig: NextConfig = {
     // Keep default behavior unless explicitly disabled for visual builds.
     ignoreDuringBuilds: process.env.NEXT_DISABLE_ESLINT === '1',
   },
+  webpack: (config) => {
+    config.resolve ??= {};
+    config.resolve.extensionAlias = {
+      ...(config.resolve.extensionAlias ?? {}),
+      '.js': ['.ts', '.tsx', '.js'],
+      '.mjs': ['.mts', '.mjs'],
+      '.cjs': ['.cts', '.cjs'],
+    };
+    return config;
+  },
 };
 
 export default withNextIntl(nextConfig);

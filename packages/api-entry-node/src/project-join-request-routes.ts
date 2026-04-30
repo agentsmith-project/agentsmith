@@ -245,10 +245,11 @@ export async function handleProjectJoinRequestsRoute(args: {
       json(res, 404, { error_code: 'NOT_FOUND', message: 'Join request not found' });
       return true;
     }
+    const reviewedAt = new Date().toISOString();
     const approved: ProjectJoinRequestRecord = {
       ...target,
       status: 'approved',
-      reviewed_at: new Date().toISOString(),
+      reviewed_at: reviewedAt,
       reviewed_by: user.id,
       reject_reason: undefined,
     };
@@ -259,7 +260,7 @@ export async function handleProjectJoinRequestsRoute(args: {
       user_email: approved.user_email,
       user_name: approved.user_name,
       status: 'active',
-      joined_at: approved.reviewed_at,
+      joined_at: reviewedAt,
       approved_via_join_request_id: approved.id,
     });
     await writeProjectAuditEvent(deps, {

@@ -660,7 +660,7 @@ run_playwright_command() {
     INTEGRATION_INTERNAL_CHAT_AGENT_IMAGE="${INTEGRATION_INTERNAL_CHAT_AGENT_IMAGE:-}" \
     INTEGRATION_CODEX_RUNNER_BASE_DOCKER_IMAGE="${INTEGRATION_CODEX_RUNNER_BASE_DOCKER_IMAGE:-}" \
     INTEGRATION_CODEX_RUNNER_DOCKER_IMAGE="${INTEGRATION_CODEX_RUNNER_DOCKER_IMAGE:-}" \
-    INTEGRATION_CODEX_RUNNER_REBUILD_BASE_IMAGE="${INTEGRATION_CODEX_RUNNER_REBUILD_BASE_IMAGE:-}" \
+    INTEGRATION_CODEX_RUNNER_REBUILD_BASE_IMAGE="${INTEGRATION_CODEX_RUNNER_REBUILD_BASE_IMAGE:-0}" \
     INTEGRATION_CODEX_RUNNER_REBUILD_IMAGE="${INTEGRATION_CODEX_RUNNER_REBUILD_IMAGE:-}" \
     INTEGRATION_CODEX_RUNNER_EMBEDDED="${INTEGRATION_CODEX_RUNNER_EMBEDDED:-}" \
     INTEGRATION_CODEX_RUNNER_BUILTIN_SKILLS="${INTEGRATION_CODEX_RUNNER_BUILTIN_SKILLS:-mbos-context,feishu-docs,jira-ops}" \
@@ -668,7 +668,7 @@ run_playwright_command() {
     INTEGRATION_CODEX_RUNNER_BUILTIN_SKILLS_DIR="${INTEGRATION_CODEX_RUNNER_BUILTIN_SKILLS_DIR:-}" \
     INTEGRATION_CODEX_RUNNER_MOUNT_READY_TIMEOUT_MS="${INTEGRATION_CODEX_RUNNER_MOUNT_READY_TIMEOUT_MS:-120000}" \
     INTEGRATION_CHAT_RUNNER_BASE_DOCKER_IMAGE="${INTEGRATION_CHAT_RUNNER_BASE_DOCKER_IMAGE:-}" \
-    INTEGRATION_CHAT_RUNNER_REBUILD_BASE_IMAGE="${INTEGRATION_CHAT_RUNNER_REBUILD_BASE_IMAGE:-}" \
+    INTEGRATION_CHAT_RUNNER_REBUILD_BASE_IMAGE="${INTEGRATION_CHAT_RUNNER_REBUILD_BASE_IMAGE:-0}" \
     INTEGRATION_CHAT_RUNNER_REBUILD_IMAGE="${INTEGRATION_CHAT_RUNNER_REBUILD_IMAGE:-}" \
     INTEGRATION_RUNNER_LOG_DIR="${INTEGRATION_RUNNER_LOG_DIR:-}" \
     AGENT_EXECUTION_WS_BASE_URL="${AGENT_EXECUTION_WS_BASE_URL:-}" \
@@ -872,6 +872,29 @@ run_backend_real_chat_runner_session_shards() {
   return "${session_status}"
 }
 
+classify_playwright_failure() {
+  local status="$1"
+  PLAYWRIGHT_FAILURE_CLASSIFICATION="scenario_assertion_failed"
+  PLAYWRIGHT_FAILURE_STAGE="playwright"
+  PLAYWRIGHT_FAILURE_MESSAGE="playwright exited with status ${status}"
+
+  local search_paths=()
+  if [[ -d "${REAL_SESSION_ROOT}" ]]; then
+    search_paths+=("${REAL_SESSION_ROOT}")
+  fi
+  if [[ -d "${INTEGRATION_LOG_DIR}/playwright" ]]; then
+    search_paths+=("${INTEGRATION_LOG_DIR}/playwright")
+  fi
+
+  if [[ "${#search_paths[@]}" -gt 0 ]] && grep -R -E -q \
+    'docker_(chat_)?runner_image_(build_failed|missing)|docker_runner_(start_failed|connect_timeout)|failed to resolve source metadata|unexpected status from HEAD request' \
+    "${search_paths[@]}" 2>/dev/null; then
+    PLAYWRIGHT_FAILURE_CLASSIFICATION="runner_launch_failed"
+    PLAYWRIGHT_FAILURE_STAGE="runner_image_build"
+    PLAYWRIGHT_FAILURE_MESSAGE="docker runner image build/pull failed; see ${INTEGRATION_LOG_DIR}"
+  fi
+}
+
 if [[ -n "${BACKEND_REAL_SESSION_NAME}" ]]; then
   case "${BACKEND_REAL_SESSION_NAME}" in
     agents-backend-real-runner)
@@ -886,7 +909,8 @@ else
 fi
 
 if [[ "${PLAYWRIGHT_STATUS}" -ne 0 ]]; then
-  gate_record_failure "${INTEGRATION_LOG_DIR}" "scenario_assertion_failed" "playwright" "playwright exited with status ${PLAYWRIGHT_STATUS}"
+  classify_playwright_failure "${PLAYWRIGHT_STATUS}"
+  gate_record_failure "${INTEGRATION_LOG_DIR}" "${PLAYWRIGHT_FAILURE_CLASSIFICATION}" "${PLAYWRIGHT_FAILURE_STAGE}" "${PLAYWRIGHT_FAILURE_MESSAGE}"
   exit "${PLAYWRIGHT_STATUS}"
 fi
 gate_record_success "${INTEGRATION_LOG_DIR}" "playwright"

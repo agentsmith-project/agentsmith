@@ -2,7 +2,7 @@ import type http from 'node:http';
 import type { Duplex } from 'node:stream';
 import { randomUUID } from 'node:crypto';
 import { URL } from 'node:url';
-import { WebSocketServer, type RawData, type WebSocket } from 'ws';
+import { WebSocketServer, WebSocket, type RawData } from 'ws';
 import type { CachePort } from '@mbos/ports';
 import {
   issueInternalTicket,

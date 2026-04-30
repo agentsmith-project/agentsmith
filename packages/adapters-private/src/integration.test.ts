@@ -1,4 +1,5 @@
 import { PassThrough } from 'node:stream';
+import { ReadableStream } from 'node:stream/web';
 import { describe, expect, it, vi } from 'vitest';
 import {
   MinioObjectStore,

@@ -93,6 +93,7 @@ function expectNoForbiddenResultFields(value: unknown): void {
 
 function prepareSessionFixture(options: {
   cleanupFails?: boolean;
+  dockerBuildFailureAtInvocation?: number;
   playwrightFailureAtInvocation?: number;
   startFails?: boolean;
 } = {}): SessionFixture {
@@ -328,6 +329,10 @@ if [[ "$1" == "playwright" && "$2" == "test" ]]; then
   printf 'call:%s %s\\n' "\${count}" "$*" >> "${tempRoot}/playwright-commands.log"
   printf 'stdout PRESET_ENDPOINT_API_KEY=sk-session-secret-%s Authorization: Bearer raw-token-%s\\n' "\${count}" "\${count}"
   printf 'stderr CLIENT_SECRET=raw-client-secret-%s\\n' "\${count}" >&2
+  if [[ "${String(options.dockerBuildFailureAtInvocation ?? 0)}" == "\${count}" ]]; then
+    printf 'Error: docker_runner_image_build_failed:unexpected status from HEAD request to https://docker.m.daocloud.io/v2/library/node/manifests/24.14.1-bookworm?ns=docker.io: 401 Unauthorized\\n'
+    exit 23
+  fi
   if [[ "${String(options.playwrightFailureAtInvocation ?? 0)}" == "\${count}" ]]; then
     exit 23
   fi
@@ -636,6 +641,17 @@ describe('backend-real external runner session shards', () => {
     ]);
     expect(readFileSync(path.join(fixture.runRoot, '.status'), 'utf8')).toContain('failed');
     expect(result.stderr).not.toContain('raw-client-secret');
+  }, 15000);
+
+  it('classifies docker runner image build failures as infra setup rather than product regression', () => {
+    const fixture = prepareSessionFixture({ dockerBuildFailureAtInvocation: 3 });
+    tempRoots.push(fixture.tempRoot);
+
+    const result = runSession(fixture);
+
+    expect(result.status).toBe(23);
+    const failure = readFileSync(path.join(fixture.runRoot, 'integration', 'failure-classification.txt'), 'utf8');
+    expect(failure).toContain('runner_launch_failed:runner_image_build:docker runner image build/pull failed');
   }, 15000);
 
   it('does not run any shard when startup fails but still marks the session failed', () => {

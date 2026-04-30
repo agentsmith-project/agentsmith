@@ -190,6 +190,8 @@ export async function handleEndpointRoute(args: EndpointHandlerArgs): Promise<bo
     if (!route.workspaceId || !route.projectId) {
       return false;
     }
+    const workspaceId = route.workspaceId;
+    const projectId = route.projectId;
     const downstreamAbort = createDownstreamAbortController({
       req,
       res,
@@ -375,15 +377,15 @@ export async function handleEndpointRoute(args: EndpointHandlerArgs): Promise<bo
         const proxyResult = canUseUniversalProxy
           ? await (async () => {
             const namespace = await universalProxyService.ensureEndpointNamespace(
-              route.workspaceId,
-              route.projectId,
+              workspaceId,
+              projectId,
               endpoint,
             );
             return universalProxyService.proxyJsonRequest({
               req,
               res,
               namespace,
-              proxyPath: universalProxyPath ?? effectiveProxyPath,
+              proxyPath: universalProxyPath,
               model: resolvedModel,
               requestBody: resolvedRequestBody,
               providerCredential: apiKey,

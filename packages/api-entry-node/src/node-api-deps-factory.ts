@@ -71,7 +71,7 @@ export function createDefaultNodeApiDeps(): NodeApiDeps {
 
   const agentExecutionService = new AgentExecutionService(agentResourceService);
   const notebookTerminalService = new NotebookTerminalService(cache, agentExecutionService);
-  const internalWorkloadCoordinator = undefined;
+  let internalWorkloadCoordinator: InternalWorkloadCoordinator | undefined;
   const deps: NodeApiDeps = {
     governanceReportsDir: join(process.cwd(), 'artifacts/governance-reports'),
     governanceRunsDir: join(process.cwd(), 'artifacts/governance-runs'),

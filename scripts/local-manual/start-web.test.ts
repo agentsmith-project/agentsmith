@@ -22,8 +22,11 @@ describe('local-manual start-web', () => {
     expect(script).toContain("NEXT_DIST_DIR='${LOCAL_MANUAL_NEXT_DIST_DIR}'");
     expect(script).toContain("NEXT_GENERATED_ROOT_MANAGED='1'");
     expect(script).toContain("NEXT_GENERATED_ROOT_STATE_DIR='${LOCAL_MANUAL_NEXT_ROOT_CONTRACT_DIR}'");
+    expect(script).toContain('launch_detached "${WEB_LAUNCHER_PID_FILE}"');
+    expect(script).toContain("NEXT_DEV_PID_FILE='${WEB_PID_FILE}'");
     expect(script).toContain("NEXT_DEV_PROCESS_STATE_FILE='${WEB_PROCESS_STATE_FILE}'");
     expect(script).toContain("exec npm run dev:test -- --port '${PORT_WEB}'");
+    expect(script).not.toContain('launch_detached "${WEB_PID_FILE}"');
   });
 
   it('launches the web wrapper in managed root mode and writes the readiness marker', () => {
@@ -54,6 +57,7 @@ LOCALE="en-US"
 LOCAL_MANUAL_NEXT_DIST_DIR="${runtimeRoot}/next-dist"
 LOCAL_MANUAL_NEXT_ROOT_CONTRACT_DIR="${runtimeRoot}/next-root-contract"
 WEB_PID_FILE="${runtimeRoot}/web.pid"
+WEB_LAUNCHER_PID_FILE="${runtimeRoot}/web.launcher.pid"
 WEB_PORT_FILE="${runtimeRoot}/web.port"
 WEB_PROCESS_STATE_FILE="${runtimeRoot}/web.process.json"
 WEB_READY_FILE="${runtimeRoot}/web.ready"
@@ -96,8 +100,10 @@ write_ready_file() {
     expect(launchCommand).toContain("NEXT_GENERATED_ROOT_MANAGED='1'");
     expect(launchCommand).toContain(`NEXT_DIST_DIR='${path.join(runtimeRoot, 'next-dist')}'`);
     expect(launchCommand).toContain(`NEXT_GENERATED_ROOT_STATE_DIR='${path.join(runtimeRoot, 'next-root-contract')}'`);
+    expect(launchCommand).toContain(`NEXT_DEV_PID_FILE='${path.join(runtimeRoot, 'web.pid')}'`);
     expect(launchCommand).toContain(`NEXT_DEV_PROCESS_STATE_FILE='${path.join(runtimeRoot, 'web.process.json')}'`);
     expect(launchCommand).toContain("exec npm run dev:test -- --port '3101'");
+    expect(readFileSync(path.join(runtimeRoot, 'web.launcher.pid'), 'utf8')).toBe('5100\n');
     expect(readFileSync(path.join(runtimeRoot, 'web.ready'), 'utf8')).toBe('ready\n');
   });
 });

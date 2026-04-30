@@ -33,6 +33,7 @@ interface ArchiveProof {
   archiveDigest: string;
   configDigest: string;
   imageRef: string;
+  platformManifestDigest?: string;
 }
 
 interface ImageArchiveManifestEntry {
@@ -84,6 +85,10 @@ function sha256Digest(content: Buffer | string): string {
   return `sha256:${createHash('sha256').update(content).digest('hex')}`;
 }
 
+function fakeIndexDigest(imageRef: string, salt = 'stable'): string {
+  return sha256Digest(`fake index for ${imageRef} ${salt}\n`);
+}
+
 function readJsonFile<T>(filePath: string): T {
   return JSON.parse(readFileSync(filePath, 'utf8')) as T;
 }
@@ -101,11 +106,25 @@ function readDockerArchiveProof(archivePath: string): ArchiveProof {
   ) as DockerSaveManifestEntry[];
   const [entry] = manifest;
   const configBytes = execFileSync('tar', ['-xOf', archivePath, entry.Config]);
+  let platformManifestDigest: string | undefined;
+
+  try {
+    const index = JSON.parse(execFileSync('tar', ['-xOf', archivePath, 'index.json'], { encoding: 'utf8' })) as {
+      manifests?: Array<{ digest?: string }>;
+    };
+    const firstDigest = index.manifests?.find((descriptor) => typeof descriptor.digest === 'string')?.digest;
+    if (firstDigest?.match(/^sha256:[a-f0-9]{64}$/)) {
+      platformManifestDigest = firstDigest;
+    }
+  } catch {
+    platformManifestDigest = undefined;
+  }
 
   return {
     archiveDigest: sha256Digest(readFileSync(archivePath)),
     configDigest: sha256Digest(configBytes),
     imageRef: entry.RepoTags[0],
+    platformManifestDigest,
   };
 }
 
@@ -340,9 +359,29 @@ case "$1" in
     ;;
   image)
     if [[ "$2" == "inspect" ]]; then
-      if [[ "\${3:-}" == "--format" ]]; then
-        image_ref="\${@: -1}"
-        python3 - "\${image_ref}" "\${DOCKER_IMAGE_ID_SALT:-stable}" <<'PY'
+      shift 2
+      format=''
+      image_ref=''
+      platform_requested='0'
+      while [[ "$#" -gt 0 ]]; do
+        case "$1" in
+          --platform)
+            platform_requested='1'
+            shift 2
+            ;;
+          --format)
+            format="$2"
+            shift 2
+            ;;
+          *)
+            image_ref="$1"
+            shift
+            ;;
+        esac
+      done
+      if [[ -n "\${format}" ]]; then
+        python3 - "\${image_ref}" "\${DOCKER_IMAGE_ID_SALT:-stable}" "\${format}" "\${DOCKER_IMAGE_ID_MODE:-config}" "\${platform_requested}" <<'PY'
+import gzip
 import hashlib
 import io
 import json
@@ -351,6 +390,9 @@ import tarfile
 
 image_ref = sys.argv[1]
 salt = sys.argv[2]
+inspect_format = sys.argv[3]
+image_id_mode = sys.argv[4]
+platform_requested = sys.argv[5] == "1"
 layer_payload = f"fake layer for {image_ref} {salt}\\n".encode("utf-8")
 layer_buffer = io.BytesIO()
 with tarfile.open(fileobj=layer_buffer, mode="w") as layer_tar:
@@ -363,7 +405,10 @@ with tarfile.open(fileobj=layer_buffer, mode="w") as layer_tar:
     info.uname = "root"
     info.gname = "root"
     layer_tar.addfile(info, io.BytesIO(layer_payload))
-layer_diff_id = "sha256:" + hashlib.sha256(layer_buffer.getvalue()).hexdigest()
+layer_bytes = layer_buffer.getvalue()
+layer_diff_id = "sha256:" + hashlib.sha256(layer_bytes).hexdigest()
+layer_blob_bytes = gzip.compress(layer_bytes, mtime=0)
+layer_blob_digest = "sha256:" + hashlib.sha256(layer_blob_bytes).hexdigest()
 config = {
     "architecture": "amd64",
     "config": {"Image": image_ref, "Salt": salt},
@@ -371,8 +416,47 @@ config = {
     "os": "linux",
     "rootfs": {"diff_ids": [layer_diff_id], "type": "layers"},
 }
-data = (json.dumps(config, sort_keys=True, separators=(",", ":")) + "\\n").encode("utf-8")
-print("sha256:" + hashlib.sha256(data).hexdigest())
+config_bytes = (json.dumps(config, sort_keys=True, separators=(",", ":")) + "\\n").encode("utf-8")
+config_digest = "sha256:" + hashlib.sha256(config_bytes).hexdigest()
+image_manifest = {
+    "schemaVersion": 2,
+    "mediaType": "application/vnd.oci.image.manifest.v1+json",
+    "config": {
+        "mediaType": "application/vnd.oci.image.config.v1+json",
+        "digest": config_digest,
+        "size": len(config_bytes),
+    },
+    "layers": [{
+        "mediaType": "application/vnd.oci.image.layer.v1.tar+gzip",
+        "digest": layer_blob_digest,
+        "size": len(layer_blob_bytes),
+    }],
+}
+image_manifest_bytes = (json.dumps(image_manifest, sort_keys=True, separators=(",", ":")) + "\\n").encode("utf-8")
+platform_manifest_digest = "sha256:" + hashlib.sha256(image_manifest_bytes).hexdigest()
+image_id = config_digest
+if platform_requested:
+    image_id = platform_manifest_digest
+elif image_id_mode == "index":
+    image_id = "sha256:" + hashlib.sha256(f"fake index for {image_ref} {salt}\\n".encode("utf-8")).hexdigest()
+inspect_payload = {
+    "Id": image_id,
+    "Descriptor": {
+        "digest": image_id,
+        "mediaType": "application/vnd.oci.image.manifest.v1+json",
+        "platform": {"architecture": config["architecture"], "os": config["os"]},
+        "size": len(image_manifest_bytes),
+    },
+    "Architecture": config["architecture"],
+    "Os": config["os"],
+    "Created": config["created"],
+    "Config": config["config"],
+    "RootFS": {"Type": "layers", "Layers": config["rootfs"]["diff_ids"]},
+}
+if inspect_format == "{{json .}}":
+    print(json.dumps(inspect_payload, sort_keys=True, separators=(",", ":")))
+else:
+    print(image_id)
 PY
       fi
       exit 0
@@ -405,6 +489,7 @@ PY
     mkdir -p "$(dirname "$output")"
     temp_dir="$(mktemp -d)"
     python3 - "\${temp_dir}" "\${image}" "\${DOCKER_IMAGE_ID_SALT:-stable}" <<'PY'
+import gzip
 import hashlib
 import io
 import json
@@ -429,6 +514,8 @@ with tarfile.open(fileobj=layer_buffer, mode="w") as layer_tar:
     layer_tar.addfile(info, io.BytesIO(layer_payload))
 layer_bytes = layer_buffer.getvalue()
 layer_diff_id = "sha256:" + hashlib.sha256(layer_bytes).hexdigest()
+layer_blob_bytes = gzip.compress(layer_bytes, mtime=0)
+layer_blob_hex = hashlib.sha256(layer_blob_bytes).hexdigest()
 config = {
     "architecture": "amd64",
     "config": {"Image": image_ref, "Salt": salt},
@@ -436,17 +523,51 @@ config = {
     "os": "linux",
     "rootfs": {"diff_ids": [layer_diff_id], "type": "layers"},
 }
-(temp_dir / "layer.tar").write_bytes(layer_bytes)
-(temp_dir / "config.json").write_text(
-    json.dumps(config, sort_keys=True, separators=(",", ":")) + "\\n",
-    encoding="utf-8",
-)
+config_bytes = (json.dumps(config, sort_keys=True, separators=(",", ":")) + "\\n").encode("utf-8")
+config_hex = hashlib.sha256(config_bytes).hexdigest()
+image_manifest = {
+    "schemaVersion": 2,
+    "mediaType": "application/vnd.oci.image.manifest.v1+json",
+    "config": {
+        "mediaType": "application/vnd.oci.image.config.v1+json",
+        "digest": f"sha256:{config_hex}",
+        "size": len(config_bytes),
+    },
+    "layers": [{
+        "mediaType": "application/vnd.oci.image.layer.v1.tar+gzip",
+        "digest": f"sha256:{layer_blob_hex}",
+        "size": len(layer_blob_bytes),
+    }],
+}
+image_manifest_bytes = (json.dumps(image_manifest, sort_keys=True, separators=(",", ":")) + "\\n").encode("utf-8")
+image_manifest_hex = hashlib.sha256(image_manifest_bytes).hexdigest()
+index = {
+    "schemaVersion": 2,
+    "mediaType": "application/vnd.oci.image.index.v1+json",
+    "manifests": [{
+        "mediaType": "application/vnd.oci.image.manifest.v1+json",
+        "digest": f"sha256:{image_manifest_hex}",
+        "size": len(image_manifest_bytes),
+        "platform": {"architecture": "amd64", "os": "linux"},
+    }],
+}
+blob_dir = temp_dir / "blobs" / "sha256"
+blob_dir.mkdir(parents=True, exist_ok=True)
+(blob_dir / layer_blob_hex).write_bytes(layer_blob_bytes)
+(blob_dir / config_hex).write_bytes(config_bytes)
+(blob_dir / image_manifest_hex).write_bytes(image_manifest_bytes)
 (temp_dir / "manifest.json").write_text(
-    json.dumps([{"Config": "config.json", "RepoTags": [image_ref], "Layers": ["layer.tar"]}], separators=(",", ":")) + "\\n",
+    json.dumps([{
+        "Config": f"blobs/sha256/{config_hex}",
+        "RepoTags": [image_ref],
+        "Layers": [f"blobs/sha256/{layer_blob_hex}"],
+    }], separators=(",", ":")) + "\\n",
     encoding="utf-8",
 )
+(temp_dir / "index.json").write_text(json.dumps(index, sort_keys=True, separators=(",", ":")) + "\\n", encoding="utf-8")
+(temp_dir / "oci-layout").write_text('{"imageLayoutVersion":"1.0.0"}\\n', encoding="utf-8")
 PY
-    tar -C "\${temp_dir}" -cf "$output" manifest.json config.json layer.tar
+    tar -C "\${temp_dir}" -cf "$output" manifest.json index.json oci-layout blobs
     rm -rf "\${temp_dir}"
     exit 0
     ;;
@@ -624,7 +745,7 @@ describe('demo build bundle image archives', () => {
     } finally {
       rmSync(tempRoot, { recursive: true, force: true });
     }
-  }, 15000);
+  }, 30000);
 
   it('omits bundled image archives when SKIP_BUNDLED_IMAGE_ARCHIVE_GENERATION=1 while preserving bundle metadata', () => {
     const tempRoot = mkdtempSync(path.join(os.tmpdir(), 'demo-build-bundle-no-images-'));
@@ -708,10 +829,58 @@ describe('demo build bundle image archives', () => {
       expectDockerSaveSkipDecision(decision, imageRef, proof.configDigest);
       expect(decision?.existing_artifact_digest).toBe(proof.archiveDigest);
       expect(dependencyDecision).toBeDefined();
-      expectDockerSaveSkipDecision(dependencyDecision, dependencyImageRef, dependencyProof.configDigest);
+      expect(dependencyProof.platformManifestDigest).toBeDefined();
+      expectDockerSaveSkipDecision(
+        dependencyDecision,
+        dependencyImageRef,
+        dependencyProof.platformManifestDigest as string,
+      );
       expect(dependencyDecision?.existing_artifact_digest).toBe(dependencyProof.archiveDigest);
     } finally {
       rmSync(tempRoot, { recursive: true, force: true });
     }
-  }, 15000);
+  }, 30000);
+
+  it('accepts a platform OCI archive when docker inspect reports an external index digest', () => {
+    const tempRoot = mkdtempSync(path.join(os.tmpdir(), 'demo-build-bundle-platform-index-'));
+
+    try {
+      stageDemoBuildBundleFixture(tempRoot);
+      const dependencyImageRef = 'pgvector/pgvector:pg16';
+      const dependencyArchiveRelpath = 'images/pgvector-pgvector-pg16.tar';
+      const bundleDir = path.join(tempRoot, 'out', 'agentsmith-test-release');
+
+      runDemoBuildBundle(tempRoot, { DOCKER_IMAGE_ID_MODE: 'index', SKIP_RELEASE_ARCHIVE: '1' });
+      rmSync(path.join(tempRoot, 'docker-save.log'), { force: true });
+      runDemoBuildBundle(tempRoot, { DOCKER_IMAGE_ID_MODE: 'index', SKIP_RELEASE_ARCHIVE: '1' });
+
+      const dependencyArchivePath = path.join(bundleDir, dependencyArchiveRelpath);
+      const dependencyProof = readDockerArchiveProof(dependencyArchivePath);
+      const manifest = readJsonFile<ImageArchiveManifest>(
+        path.join(bundleDir, 'images', 'image-archives.manifest.json'),
+      );
+      const dependencyManifestEntry = findManifestArchive(manifest, dependencyArchiveRelpath);
+      const decisions = readNdjsonFile<BuildSkipDecision>(path.join(bundleDir, 'skip-decisions.ndjson'));
+      const dependencyDecision = decisions.find((entry) => entry.target === `image:${dependencyImageRef}`);
+
+      expect(countDockerSaveCalls(tempRoot, dependencyImageRef)).toBe(0);
+      expect(dependencyProof.platformManifestDigest).toBeDefined();
+      expect(dependencyManifestEntry).toMatchObject({
+        image_ref: dependencyImageRef,
+        archive_sha256: dependencyProof.archiveDigest,
+        archive_config_digest: dependencyProof.configDigest,
+        local_image_id: fakeIndexDigest(dependencyImageRef),
+        local_config_digest: null,
+        platform: 'linux/amd64',
+      });
+      expect(dependencyDecision).toBeDefined();
+      expectDockerSaveSkipDecision(
+        dependencyDecision,
+        dependencyImageRef,
+        dependencyProof.platformManifestDigest as string,
+      );
+    } finally {
+      rmSync(tempRoot, { recursive: true, force: true });
+    }
+  }, 30000);
 });

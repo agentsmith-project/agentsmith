@@ -230,5 +230,7 @@ export async function runWritePureCheckProducerEvidenceCli(
 }
 
 if (isCliEntrypoint('write-pure-check-producer-evidence.ts')) {
-  process.exit(await runWritePureCheckProducerEvidenceCli());
+  void runWritePureCheckProducerEvidenceCli().then((exitCode) => {
+    process.exit(exitCode);
+  });
 }

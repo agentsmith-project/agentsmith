@@ -525,13 +525,14 @@ universal_proxy_runtime_ensure() {
 
   explicit_url="${MBOS_UNIVERSAL_PROXY_BASE_URL:-}"
   if [[ -n "${explicit_url}" ]]; then
-    explicit_admin_token="$(universal_proxy_runtime_configured_admin_token 2>/dev/null || true)"
+    explicit_admin_token="$(universal_proxy_runtime_probe_admin_token 2>/dev/null || true)"
     if [[ -z "${explicit_admin_token}" ]]; then
       universal_proxy_runtime_failure_help "explicit MBOS_UNIVERSAL_PROXY_BASE_URL requires MBOS_UNIVERSAL_PROXY_ADMIN_TOKEN for admin bearer probes" "not-used-for-explicit-url"
       return 1
     fi
     if universal_proxy_runtime_probe_url_with_token "${explicit_url}" "${explicit_admin_token}"; then
       export MBOS_UNIVERSAL_PROXY_BASE_URL="${explicit_url%/}"
+      export MBOS_UNIVERSAL_PROXY_ADMIN_TOKEN="${explicit_admin_token}"
       universal_proxy_runtime_info "using explicit universal proxy URL ${MBOS_UNIVERSAL_PROXY_BASE_URL}"
       return 0
     fi

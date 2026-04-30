@@ -280,20 +280,26 @@ async function waitForAbortableDelay(
   if (ms <= 0) {
     return;
   }
+  if (!signal) {
+    await new Promise<void>((resolve) => {
+      setTimeout(resolve, ms);
+    });
+    return;
+  }
 
   await new Promise<void>((resolve, reject) => {
     const timeoutHandle = setTimeout(() => {
-      signal?.removeEventListener('abort', onAbort);
+      signal.removeEventListener('abort', onAbort);
       resolve();
     }, ms);
 
     const onAbort = () => {
       clearTimeout(timeoutHandle);
-      signal?.removeEventListener('abort', onAbort);
+      signal.removeEventListener('abort', onAbort);
       reject(createAbortError(signal.reason, abortMessage));
     };
 
-    signal?.addEventListener('abort', onAbort, { once: true });
+    signal.addEventListener('abort', onAbort, { once: true });
   });
 }
 

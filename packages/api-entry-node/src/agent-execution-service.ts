@@ -20,6 +20,15 @@ export type RunnerSessionDispatchAuthority =
 
 type DispatchScope = 'agent_fallback' | 'session_strict' | 'session_preferred_agent_fallback';
 type AgentSocketLifecyclePhase = 'registering' | 'active' | 'superseded' | 'closing' | 'closed';
+const TERMINAL_AGENT_SOCKET_LIFECYCLE_PHASES: ReadonlySet<AgentSocketLifecyclePhase> = new Set([
+  'superseded',
+  'closing',
+  'closed',
+]);
+
+function isTerminalAgentSocketLifecyclePhase(phase: AgentSocketLifecyclePhase): boolean {
+  return TERMINAL_AGENT_SOCKET_LIFECYCLE_PHASES.has(phase);
+}
 
 export interface AgentStreamEvent {
   type: 'delta' | 'done' | 'error' | 'event' | 'artifact';
@@ -1538,7 +1547,7 @@ export class AgentExecutionService {
   }
 
   private async recheckReadyAuthority(socket: AgentSocketState): Promise<boolean> {
-    if (socket.lifecyclePhase === 'closed' || socket.lifecyclePhase === 'closing' || socket.lifecyclePhase === 'superseded') {
+    if (isTerminalAgentSocketLifecyclePhase(socket.lifecyclePhase)) {
       return false;
     }
 
@@ -1579,7 +1588,7 @@ export class AgentExecutionService {
       }
     }
 
-    if (socket.lifecyclePhase === 'closed' || socket.lifecyclePhase === 'closing' || socket.lifecyclePhase === 'superseded') {
+    if (isTerminalAgentSocketLifecyclePhase(socket.lifecyclePhase)) {
       return false;
     }
     const latestLocal = this.socketsByKey.get(socket.socketKey);

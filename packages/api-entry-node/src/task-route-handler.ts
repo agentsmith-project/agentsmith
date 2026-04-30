@@ -69,6 +69,7 @@ import {
   buildId,
   readTaskInputRefs,
   type TaskListItem,
+  type TaskMessageRecord,
   type TaskRecord,
 } from './notebook-task/task-models.js';
 import { createAndProvisionProjectFileLibrary, mapFileLibraryInfraError } from './project-file-library-service.js';
@@ -101,6 +102,7 @@ import {
   requestNotebookTaskRunStop,
   requestNotebookTaskRunStopTransition,
   type NotebookTaskRunHardTeardownDebtRecord,
+  type NotebookTaskRunState,
   type NotebookTaskRunStopMode,
 } from './notebook-task/task-run-coordination.js';
 import {
@@ -227,14 +229,15 @@ export function resolveTaskWorkspaceMountAccess(input: {
   metadataUrl: string;
   storageBucketUrl?: string;
 } {
+  const agentConfig = input.agentConfig ?? undefined;
   if (input.agentMode === 'external') {
-    if (isComposeManagedExternalAgent({ mode: 'external', config: input.agentConfig })) {
+    if (isComposeManagedExternalAgent({ mode: 'external', config: agentConfig })) {
       return {
         metadataUrl: resolveFileLibraryMetadataUrlForComposeManagedExternalExecution(input.metadataUrl),
         storageBucketUrl: resolveFileLibraryStorageBucketUrlForComposeManagedExternalExecution(input.storageBucketUrl),
       };
     }
-    if (isExternalRunnerRuntime({ mode: 'external', config: input.agentConfig }, 'docker_manual')) {
+    if (isExternalRunnerRuntime({ mode: 'external', config: agentConfig }, 'docker_manual')) {
       return {
         metadataUrl: resolveFileLibraryMetadataUrlForDockerManualExternalExecution(input.metadataUrl),
         storageBucketUrl: resolveFileLibraryStorageBucketUrlForDockerManualExternalExecution(input.storageBucketUrl),
@@ -1579,7 +1582,7 @@ export async function handleTaskRoute(args: TaskRouteHandlerArgs): Promise<boole
     const content = typeof body.content === 'string' ? body.content : '';
     const role = body.role === 'agent' ? 'agent' : 'user';
     let runId: string | null = null;
-    let sharedRunState = null as ReturnType<typeof buildNotebookTaskRunState> | null;
+    let sharedRunState: NotebookTaskRunState | null = null;
     let runLaunchCommitted = false;
     let localRunTrackingReleased = false;
     let sharedRunControlCleared = false;
@@ -1711,6 +1714,10 @@ export async function handleTaskRoute(args: TaskRouteHandlerArgs): Promise<boole
           ACTIVE_RUN_CANCEL_REQUESTED_BY_TASK.delete(route.taskId);
         }
         startupAbortController = new AbortController();
+        const activeRunId = runId;
+        if (!activeRunId || !sharedRunState) {
+          throw new Error('notebook_run_state_missing');
+        }
 
         const abortStartupRun = (): void => {
           if (!startupAbortController?.signal.aborted) {
@@ -1720,18 +1727,18 @@ export async function handleTaskRoute(args: TaskRouteHandlerArgs): Promise<boole
         };
 
         ACTIVE_RUN_CANCEL_BY_TASK.set(route.taskId, {
-          runId,
+          runId: activeRunId,
           requestId: null,
           cancel: abortStartupRun,
           requestCancel: () => {
             const requestedAt = nowIso();
             ACTIVE_RUN_CANCEL_REQUESTED_BY_TASK.set(route.taskId, {
-              runId,
+              runId: activeRunId,
               requestedAt,
             });
             void requestNotebookTaskRunStop(deps.cache, {
               taskId: route.taskId,
-              runId,
+              runId: activeRunId,
               mode: 'cancel',
               requestedAt,
               actorUserId: user.id,
@@ -1744,7 +1751,7 @@ export async function handleTaskRoute(args: TaskRouteHandlerArgs): Promise<boole
         const syncSharedStopRequest = async (): Promise<boolean> => {
           const marker = await getNotebookTaskRunStopRequestForRun(deps.cache, {
             taskId: route.taskId,
-            runId,
+            runId: activeRunId,
           });
           if (!marker) {
             return false;
@@ -1756,7 +1763,7 @@ export async function handleTaskRoute(args: TaskRouteHandlerArgs): Promise<boole
           );
           if (!alreadyDelivered) {
             ACTIVE_RUN_CANCEL_REQUESTED_BY_TASK.set(route.taskId, {
-              runId,
+              runId: activeRunId,
               requestedAt: marker.requested_at,
             });
             const active = ACTIVE_RUN_CANCEL_BY_TASK.get(route.taskId);
@@ -1768,11 +1775,15 @@ export async function handleTaskRoute(args: TaskRouteHandlerArgs): Promise<boole
         };
 
         heartbeatTimer = setInterval(() => {
-          sharedRunState = {
+          if (!sharedRunState) {
+            return;
+          }
+          const refreshedRunState: NotebookTaskRunState = {
             ...sharedRunState,
             heartbeat_at: nowIso(),
           };
-          void refreshNotebookTaskRunLease(deps.cache, sharedRunState).catch(() => undefined);
+          sharedRunState = refreshedRunState;
+          void refreshNotebookTaskRunLease(deps.cache, refreshedRunState).catch(() => undefined);
         }, NOTEBOOK_RUN_LEASE_HEARTBEAT_MS);
         cancelSyncTimer = setInterval(() => {
           void syncSharedStopRequest().catch(() => undefined);
@@ -1838,6 +1849,10 @@ export async function handleTaskRoute(args: TaskRouteHandlerArgs): Promise<boole
               },
             });
             const dispatchedAt = nowIso();
+            if (!sharedRunState) {
+              cancel();
+              return false;
+            }
             sharedRunState = {
               ...sharedRunState,
               request_id: requestId,

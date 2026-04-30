@@ -1,26 +1,26 @@
 import http from 'node:http';
 import { fileURLToPath } from 'node:url';
-import type { ProjectRepoFactoryResult } from '@mbos/adapters-private';
-import { ACTIVE_CHAT_STREAMS } from './chat-stream-state';
+import { ACTIVE_CHAT_STREAMS } from './chat-stream-state.js';
 import {
   createDefaultNodeApiDeps,
   createNodeApiDepsFromEnv,
-} from './node-api-deps-factory';
-import { handleRequest } from './request-handler';
-import { createGovernanceRunner } from './governance-runner';
-import { ensureModelCatalogBootstrap } from './model-catalog-service';
-import { refreshExpiringFeishuConnections } from './feishu-oauth';
+} from './node-api-deps-factory.js';
+import { handleRequest } from './request-handler.js';
+import { createGovernanceRunner } from './governance-runner.js';
+import { ensureModelCatalogBootstrap } from './model-catalog-service.js';
+import { refreshExpiringFeishuConnections } from './feishu-oauth.js';
 export {
   createWorkspaceFoundationStoreResourceFromEnv,
   getWorkspaceFoundationBaseCollections,
   initializeWorkspaceFoundations,
-} from './workspace-foundation-initializer';
+} from './workspace-foundation-initializer.js';
 
-export type { NodeApiDeps } from './node-api-deps';
-export { createDefaultNodeApiDeps } from './node-api-deps-factory';
+export type { NodeApiDeps } from './node-api-deps.js';
+export { createDefaultNodeApiDeps } from './node-api-deps-factory.js';
 
 const DEFAULT_FILE_LIBRARY_GATEWAY_RECONCILE_INTERVAL_MS = 60_000;
 type ClosableDocStore = { close?: () => Promise<void> };
+type NodeApiLifecycle = { shutdown?: () => Promise<void> };
 
 function logGatewayReconcileFailure(error: unknown): void {
   if (error instanceof Error && error.name === 'AbortError') {
@@ -92,7 +92,7 @@ function startGatewayReconcileLoop(manager?: {
 export function createNodeApiServer(
   port = 3010,
   deps = createDefaultNodeApiDeps(),
-  lifecycle?: Pick<ProjectRepoFactoryResult, 'shutdown'>,
+  lifecycle?: NodeApiLifecycle,
   host?: string,
 ): http.Server {
   const gatewayReconcileLoop = startGatewayReconcileLoop(deps.fileLibraryGatewayManager);

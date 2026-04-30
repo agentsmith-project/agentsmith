@@ -84,6 +84,10 @@ function sha256Digest(content: Buffer | string): string {
   return `sha256:${createHash('sha256').update(content).digest('hex')}`;
 }
 
+function fakeIndexDigest(imageRef: string, salt = 'stable'): string {
+  return sha256Digest(`fake index for ${imageRef} ${salt}\n`);
+}
+
 function readJsonFile<T>(filePath: string): T {
   return JSON.parse(readFileSync(filePath, 'utf8')) as T;
 }
@@ -381,8 +385,9 @@ case "$1" in
   image)
     if [[ "$2" == "inspect" ]]; then
       if [[ "\${3:-}" == "--format" ]]; then
+        format="\${4:-}"
         image_ref="\${@: -1}"
-        python3 - "\${image_ref}" "\${DOCKER_IMAGE_ID_SALT:-stable}" <<'PY'
+        python3 - "\${image_ref}" "\${DOCKER_IMAGE_ID_SALT:-stable}" "\${format}" "\${DOCKER_IMAGE_ID_MODE:-config}" <<'PY'
 import hashlib
 import io
 import json
@@ -391,6 +396,8 @@ import tarfile
 
 image_ref = sys.argv[1]
 salt = sys.argv[2]
+inspect_format = sys.argv[3]
+image_id_mode = sys.argv[4]
 layer_payload = f"fake layer for {image_ref} {salt}\\n".encode("utf-8")
 layer_buffer = io.BytesIO()
 with tarfile.open(fileobj=layer_buffer, mode="w") as layer_tar:
@@ -412,7 +419,22 @@ config = {
     "rootfs": {"diff_ids": [layer_diff_id], "type": "layers"},
 }
 data = (json.dumps(config, sort_keys=True, separators=(",", ":")) + "\\n").encode("utf-8")
-print("sha256:" + hashlib.sha256(data).hexdigest())
+config_digest = "sha256:" + hashlib.sha256(data).hexdigest()
+image_id = config_digest
+if image_id_mode == "index":
+    image_id = "sha256:" + hashlib.sha256(f"fake index for {image_ref} {salt}\\n".encode("utf-8")).hexdigest()
+inspect_payload = {
+    "Id": image_id,
+    "Architecture": config["architecture"],
+    "Os": config["os"],
+    "Created": config["created"],
+    "Config": config["config"],
+    "RootFS": {"Type": "layers", "Layers": config["rootfs"]["diff_ids"]},
+}
+if inspect_format == "{{json .}}":
+    print(json.dumps(inspect_payload, sort_keys=True, separators=(",", ":")))
+else:
+    print(image_id)
 PY
       fi
       exit 0
@@ -447,6 +469,7 @@ PY
       exit 0
     fi
     python3 - "\${temp_dir}" "\${image}" "\${DOCKER_IMAGE_ID_SALT:-stable}" <<'PY'
+import gzip
 import hashlib
 import io
 import json
@@ -471,6 +494,8 @@ with tarfile.open(fileobj=layer_buffer, mode="w") as layer_tar:
     layer_tar.addfile(info, io.BytesIO(layer_payload))
 layer_bytes = layer_buffer.getvalue()
 layer_diff_id = "sha256:" + hashlib.sha256(layer_bytes).hexdigest()
+layer_blob_bytes = gzip.compress(layer_bytes, mtime=0)
+layer_blob_hex = hashlib.sha256(layer_blob_bytes).hexdigest()
 config = {
     "architecture": "amd64",
     "config": {"Image": image_ref, "Salt": salt},
@@ -478,17 +503,23 @@ config = {
     "os": "linux",
     "rootfs": {"diff_ids": [layer_diff_id], "type": "layers"},
 }
-(temp_dir / "layer.tar").write_bytes(layer_bytes)
-(temp_dir / "config.json").write_text(
-    json.dumps(config, sort_keys=True, separators=(",", ":")) + "\\n",
-    encoding="utf-8",
-)
+config_bytes = (json.dumps(config, sort_keys=True, separators=(",", ":")) + "\\n").encode("utf-8")
+config_hex = hashlib.sha256(config_bytes).hexdigest()
+blob_dir = temp_dir / "blobs" / "sha256"
+blob_dir.mkdir(parents=True, exist_ok=True)
+(blob_dir / layer_blob_hex).write_bytes(layer_blob_bytes)
+(blob_dir / config_hex).write_bytes(config_bytes)
 (temp_dir / "manifest.json").write_text(
-    json.dumps([{"Config": "config.json", "RepoTags": [image_ref], "Layers": ["layer.tar"]}], separators=(",", ":")) + "\\n",
+    json.dumps([{
+        "Config": f"blobs/sha256/{config_hex}",
+        "RepoTags": [image_ref],
+        "Layers": [f"blobs/sha256/{layer_blob_hex}"],
+    }], separators=(",", ":")) + "\\n",
     encoding="utf-8",
 )
+(temp_dir / "oci-layout").write_text('{"imageLayoutVersion":"1.0.0"}\\n', encoding="utf-8")
 PY
-    tar -C "\${temp_dir}" -cf "$output" manifest.json config.json layer.tar
+    tar -C "\${temp_dir}" -cf "$output" manifest.json oci-layout blobs
     rm -rf "\${temp_dir}"
     exit 0
     ;;
@@ -713,6 +744,36 @@ describe('cluster build bundle archive packaging', () => {
       expect(decision).toBeDefined();
       expectDockerSaveSkipDecision(decision, imageRef, proof.configDigest);
       expect(decision?.existing_artifact_digest).toBe(proof.archiveDigest);
+    } finally {
+      rmSync(tempRoot, { recursive: true, force: true });
+    }
+  }, 30000);
+
+  it('accepts an OCI archive when docker inspect reports an external index digest', () => {
+    const tempRoot = mkdtempSync(path.join(os.tmpdir(), 'cluster-build-bundle-platform-index-'));
+
+    try {
+      stageClusterBuildBundleFixture(tempRoot);
+      const imageRef = 'localhost:5001/mbos/agentsmith-app:release-test-release';
+      const archiveRelpath = 'images/localhost-5001-mbos-agentsmith-app-release-test-release.tar';
+      const bundleDir = path.join(tempRoot, 'out', 'agentsmith-test-release');
+
+      runClusterBuildBundle(tempRoot, { DOCKER_IMAGE_ID_MODE: 'index', SKIP_RELEASE_ARCHIVE: '1' });
+
+      const archivePath = path.join(bundleDir, archiveRelpath);
+      const proof = readDockerArchiveProof(archivePath);
+      const manifest = readJsonFile<ImageArchiveManifest>(
+        path.join(bundleDir, 'images', 'image-archives.manifest.json'),
+      );
+      const manifestEntry = findManifestArchive(manifest, archiveRelpath);
+
+      expect(manifestEntry).toMatchObject({
+        image_ref: imageRef,
+        archive_sha256: proof.archiveDigest,
+        archive_config_digest: proof.configDigest,
+        local_image_id: fakeIndexDigest(imageRef),
+        local_config_digest: null,
+      });
     } finally {
       rmSync(tempRoot, { recursive: true, force: true });
     }

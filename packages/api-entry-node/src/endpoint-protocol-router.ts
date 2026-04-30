@@ -19,7 +19,7 @@ export interface ResolvedEndpointTaskRoute {
 }
 
 export function isCapabilitySupportedByProtocol(
-  protocol: EndpointRecord['upstream_protocol'],
+  protocol: EndpointRecord['upstream_protocol'] | string,
   capability: ResolvedEndpointTaskRoute['capability'],
 ): boolean {
   const effectiveProtocol = protocol;

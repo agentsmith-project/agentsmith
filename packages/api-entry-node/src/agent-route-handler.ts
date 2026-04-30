@@ -9,6 +9,8 @@ import {
   INTERNAL_AGENT_MAX_LIFETIME_MIN_SECONDS,
 } from '@mbos/contracts';
 
+type AgentPresence = 'online' | 'offline' | 'managed';
+
 interface AgentRouteHandlerArgs {
   route: ProjectsRoute;
   method: string;
@@ -133,9 +135,9 @@ function sanitizeAgentForApi<T extends { config?: Record<string, unknown> | unde
 
 export function resolveAgentPresenceForApi(input: {
   mode: 'external' | 'internal';
-  storedPresence: 'online' | 'offline' | 'managed';
+  storedPresence?: AgentPresence;
   socketOnline: boolean;
-}): 'online' | 'offline' | 'managed' {
+}): AgentPresence {
   if (input.mode === 'internal') {
     return 'managed';
   }
@@ -145,9 +147,9 @@ export function resolveAgentPresenceForApi(input: {
 function toPublicAgent<T extends {
   id: string;
   mode: 'external' | 'internal';
-  presence: 'online' | 'offline' | 'managed';
+  presence?: AgentPresence;
   config?: Record<string, unknown> | undefined;
-}>(deps: NodeApiDeps, agent: T): T {
+}>(deps: NodeApiDeps, agent: T): Omit<T, 'presence'> & { presence: AgentPresence } {
   const sanitized = sanitizeAgentForApi(agent);
   return {
     ...sanitized,

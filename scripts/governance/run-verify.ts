@@ -272,7 +272,7 @@ function writeVerifyPureCheckShadowAudit(args: {
   });
   const audit = buildGovernancePureCheckShadowAudit({
     includeMissingChecks: false,
-    generated_at: args.generatedAt,
+    generated_at: new Date().toISOString(),
     evaluations: runtimeShadow.evaluations,
   });
   const auditPath = path.join(args.reportRoot, PURE_CHECK_SHADOW_AUDIT_FILE_NAME);
@@ -547,6 +547,18 @@ function failureClassForNpmScriptResult(result: NpmScriptResult): CurrentGateRes
   return result.status === null ? 'infra_setup_failure' : 'product_regression';
 }
 
+function renderFailedNpmScriptSummary(args: {
+  script: string;
+  status: number | null;
+  reportRoot: string;
+}): string {
+  const exitStatus = args.status === null ? 'terminated without exit status' : `exit ${args.status}`;
+  return [
+    `[verify] failed script: npm run ${args.script} (${exitStatus})`,
+    `[verify] report root: ${args.reportRoot}`,
+  ].join('\n') + '\n';
+}
+
 function scriptExecutionFromNpmResult(
   script: string,
   result: NpmScriptResult,
@@ -700,6 +712,11 @@ export function runVerificationCli(
       executedScripts.push(script);
       scriptExecutions.push(scriptExecution);
       if (result.status !== 0) {
+        stderr.write(renderFailedNpmScriptSummary({
+          script,
+          status: result.status,
+          reportRoot,
+        }));
         const auditPath = writeVerifyPureCheckShadowAudit({
           repoRoot: pureCheckShadowRepoRoot,
           reportRoot,

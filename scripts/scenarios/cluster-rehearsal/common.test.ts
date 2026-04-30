@@ -7,6 +7,7 @@ import {
   readdirSync,
   readFileSync,
   rmSync,
+  symlinkSync,
   writeFileSync,
 } from 'node:fs';
 import os from 'node:os';
@@ -726,6 +727,111 @@ mkdir -p "\${OUT_DIR}/agentsmith-\${RELEASE_ID}"
       expect(withoutFastPath).not.toContain('SKIP_RELEASE_ARCHIVE=1');
       expect(withoutFastPath).toContain('SKIP_BUNDLED_IMAGE_ARCHIVE_GENERATION=');
       expect(withoutFastPath).not.toContain('SKIP_BUNDLED_IMAGE_ARCHIVE_GENERATION=1');
+    } finally {
+      rmSync(tempRoot, { recursive: true, force: true });
+    }
+  });
+
+  it('does not leak current release truth into the next cluster bundle build', () => {
+    const tempRoot = mkdtempSync(path.join(os.tmpdir(), 'cluster-rehearsal-current-release-leak-'));
+
+    try {
+      stageClusterRehearsalFixture(tempRoot);
+      mkdirSync(path.join(tempRoot, 'scripts', 'cluster-deploy'), { recursive: true });
+      writeFileSync(
+        path.join(tempRoot, 'scripts', 'cluster-deploy', 'build-bundle.sh'),
+        `#!/usr/bin/env bash
+set -euo pipefail
+mkdir -p "\${OUT_DIR}/agentsmith-\${RELEASE_ID}"
+{
+  printf 'builder_release_root=%s\\n' "\${RELEASE_ROOT:-}"
+  printf 'builder_release_id=%s\\n' "\${RELEASE_ID:-}"
+} > "\${OUT_DIR}/builder.env"
+cat > "\${OUT_DIR}/agentsmith-\${RELEASE_ID}/VERSION" <<EOF
+release_id=\${RELEASE_ID}
+EOF
+`,
+        { encoding: 'utf8', mode: 0o755 },
+      );
+      const currentRoot = path.join(tempRoot, 'scenario', 'releases', 'agentsmith-old-current');
+      mkdirSync(currentRoot, { recursive: true });
+      writeFileSync(path.join(currentRoot, 'VERSION'), 'release_id=old-current\n', 'utf8');
+      mkdirSync(path.join(tempRoot, 'scenario'), { recursive: true });
+      symlinkSync(currentRoot, path.join(tempRoot, 'scenario', 'current'));
+
+      const output = runClusterRehearsalCommand(
+        tempRoot,
+        `
+          source "${tempRoot}/scripts/scenarios/cluster-rehearsal/common.sh"
+          init_cluster_rehearsal_env
+          printf 'initial_release_root=%s\\n' "\${RELEASE_ROOT}"
+          ensure_cluster_rehearsal_release_bundle
+          cat "${tempRoot}/scenario/releases/builder.env"
+          printf 'final_release_root=%s\\n' "\${RELEASE_ROOT}"
+          printf 'final_release_id=%s\\n' "\${RELEASE_ID}"
+        `,
+      );
+
+      expect(output).toContain(`initial_release_root=${currentRoot}`);
+      expect(output).toContain('builder_release_root=');
+      expect(output).not.toContain(`builder_release_root=${currentRoot}`);
+      expect(output).toContain('builder_release_id=cluster-rehearsal-');
+      expect(output).toContain(`final_release_root=${path.join(tempRoot, 'scenario', 'releases', 'agentsmith-cluster-rehearsal-')}`);
+      expect(output).toContain('final_release_id=cluster-rehearsal-');
+      expect(output).not.toContain('final_release_id=old-current');
+    } finally {
+      rmSync(tempRoot, { recursive: true, force: true });
+    }
+  });
+
+  it('uses scenario-owned registry env for bundle builds instead of operator registry overrides', () => {
+    const tempRoot = mkdtempSync(path.join(os.tmpdir(), 'cluster-rehearsal-registry-env-'));
+
+    try {
+      stageClusterRehearsalFixture(tempRoot);
+      mkdirSync(path.join(tempRoot, '.infra', 'cluster-deploy'), { recursive: true });
+      writeFileSync(
+        path.join(tempRoot, '.infra', 'cluster-deploy', 'registry.env'),
+        [
+          'REGISTRY_HOST=operator-registry.example',
+          'REGISTRY_PROJECT=operator',
+          'APP_NODE_BASE_IMAGE=node:24.14.1-bookworm',
+          '',
+        ].join('\n'),
+        'utf8',
+      );
+      mkdirSync(path.join(tempRoot, 'scripts', 'cluster-deploy'), { recursive: true });
+      writeFileSync(
+        path.join(tempRoot, 'scripts', 'cluster-deploy', 'build-bundle.sh'),
+        `#!/usr/bin/env bash
+set -euo pipefail
+mkdir -p "\${OUT_DIR}/agentsmith-\${RELEASE_ID}"
+printf 'shared_registry_env=%s\\n' "\${CLUSTER_DEPLOY_SHARED_REGISTRY_ENV:-}" > "\${OUT_DIR}/builder.env"
+cat "\${CLUSTER_DEPLOY_SHARED_REGISTRY_ENV:?}" > "\${OUT_DIR}/builder-registry.env"
+cat > "\${OUT_DIR}/agentsmith-\${RELEASE_ID}/VERSION" <<EOF
+release_id=\${RELEASE_ID}
+EOF
+`,
+        { encoding: 'utf8', mode: 0o755 },
+      );
+
+      const output = runClusterRehearsalCommand(
+        tempRoot,
+        `
+          source "${tempRoot}/scripts/scenarios/cluster-rehearsal/common.sh"
+          init_cluster_rehearsal_env
+          ensure_cluster_rehearsal_registry_env
+          ensure_cluster_rehearsal_release_bundle
+          cat "${tempRoot}/scenario/releases/builder.env"
+        `,
+      );
+      const builderRegistryEnv = readFileSync(path.join(tempRoot, 'scenario', 'releases', 'builder-registry.env'), 'utf8');
+
+      expect(output).toContain(`shared_registry_env=${path.join(tempRoot, 'scenario', 'config', 'registry.env')}`);
+      expect(builderRegistryEnv).toContain('REGISTRY_HOST=localhost:5002');
+      expect(builderRegistryEnv).toContain('K8S_REGISTRY_HOST=agentsmith-cluster-registry:5000');
+      expect(builderRegistryEnv).not.toContain('operator-registry.example');
+      expect(builderRegistryEnv).not.toContain('APP_NODE_BASE_IMAGE=');
     } finally {
       rmSync(tempRoot, { recursive: true, force: true });
     }

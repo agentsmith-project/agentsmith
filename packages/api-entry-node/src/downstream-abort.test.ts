@@ -176,7 +176,7 @@ describe('createDownstreamAbortController', () => {
     const upstreamAborted = new Promise<void>((resolve) => {
       resolveUpstreamAborted = resolve;
     });
-    let upstreamSignal: AbortSignal | undefined;
+    let upstreamSignal: AbortSignal | null | undefined;
 
     const fetchMock = vi.fn((_url: string, init?: RequestInit) => new Promise<Response>((_resolve, reject) => {
       upstreamSignal = init?.signal;

@@ -2,7 +2,7 @@
 set -euo pipefail
 
 source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/common.sh"
-init_local_manual_env
+init_local_manual_cleanup_env
 
 if [[ -f "$(backend_real_tmp_file internal)/sandbox-control.env" ]]; then
   bash "${ROOT_DIR}/scripts/local-manual/internal-down.sh" --no-api-restart || true

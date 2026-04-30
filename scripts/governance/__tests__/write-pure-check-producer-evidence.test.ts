@@ -1,3 +1,4 @@
+import { spawnSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
@@ -52,6 +53,46 @@ afterEach(async () => {
 });
 
 describe('write pure check producer evidence CLI', () => {
+  it('runs through the tsx CLI entrypoint without top-level await transform failures', async () => {
+    const root = await makeTempRoot();
+    const reportRoot = join(root, 'reports');
+
+    const result = spawnSync('npx', [
+      'tsx',
+      'scripts/governance/write-pure-check-producer-evidence.ts',
+      '--repo-root',
+      root,
+      '--report-root',
+      reportRoot,
+      '--check-id',
+      'contracts',
+      '--status',
+      'passed',
+      '--failure-class',
+      'none',
+      '--exit-code',
+      '0',
+      '--started-at',
+      STARTED_AT,
+      '--finished-at',
+      FINISHED_AT,
+    ], {
+      cwd: process.cwd(),
+      encoding: 'utf8',
+    });
+
+    expect(result.status).toBe(0);
+    expect(result.stderr).not.toContain('Top-level await');
+    expect(result.stdout).toContain(join(reportRoot, 'pure-check-producer', 'contracts', 'result.json'));
+
+    const evidence = await readPureCheckProducerEvidence({
+      repoRoot: root,
+      reportRoot,
+      checkId: 'contracts',
+    });
+    expect(evidence.ok).toBe(true);
+  });
+
   it('writes passed producer evidence from summary files', async () => {
     const root = await makeTempRoot();
     const reportRoot = join(root, 'reports');

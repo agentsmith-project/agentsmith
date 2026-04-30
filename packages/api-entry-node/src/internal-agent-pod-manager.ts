@@ -123,7 +123,7 @@ function requireWorkspaceMount(workspaceMount: InternalAgentWorkspaceMount | und
       code: 'AGENT_SANDBOX_NOT_CONFIGURED',
     });
   }
-  const mountPath = typeof workspaceMount.mountPath === 'string' ? workspaceMount.mountPath.trim() : '';
+  const mountPath = typeof workspaceMount?.mountPath === 'string' ? workspaceMount.mountPath.trim() : '';
   if (!mountPath) {
     throw Object.assign(new Error('workspace_mount_path_required'), {
       code: 'AGENT_SANDBOX_NOT_CONFIGURED',

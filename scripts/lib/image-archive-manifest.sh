@@ -2,7 +2,7 @@
 set -euo pipefail
 
 IMAGE_ARCHIVE_CACHE_SCHEMA_VERSION="image-archive-cache.v1"
-IMAGE_ARCHIVE_CACHE_SKIP_VALIDATOR="docker save archive manifest.json single RepoTag, Layers members, Config rootfs.diff_ids layer sha256, Config bytes digest, archive sha256, and docker image inspect --format {{.Id}}"
+IMAGE_ARCHIVE_CACHE_SKIP_VALIDATOR="docker save archive manifest.json single RepoTag, Layers members, OCI blob sha256 or legacy rootfs.diff_ids layer sha256, Config bytes digest, local image identity/config-rootfs proof, archive sha256, and docker image inspect --format {{.Id}}/{{json .}}"
 
 image_archive_cache_root() {
   local out_dir="$1"
@@ -40,6 +40,44 @@ image_archive_local_image_id() {
   printf '%s\n' "${image_id}"
 }
 
+image_archive_local_export_digest() {
+  local image_ref="$1"
+  local save_mode="$2"
+  local save_platform="$3"
+  local inspect_output
+  local export_digest
+
+  if [[ "${save_mode}" == "platform" ]]; then
+    if inspect_output="$(docker image inspect --platform "${save_platform}" --format '{{json .}}' "${image_ref}" 2>/dev/null)" \
+      && export_digest="$(python3 -c '
+import json
+import re
+import sys
+
+digest_pattern = re.compile(r"^sha256:[a-f0-9]{64}$")
+try:
+    payload = json.loads(sys.argv[1])
+except (IndexError, json.JSONDecodeError):
+    raise SystemExit(1)
+if not isinstance(payload, dict):
+    raise SystemExit(1)
+descriptor = payload.get("Descriptor")
+descriptor_digest = descriptor.get("digest") if isinstance(descriptor, dict) else None
+image_id = payload.get("Id")
+for value in (descriptor_digest, image_id):
+    if isinstance(value, str) and digest_pattern.match(value):
+        print(value)
+        raise SystemExit(0)
+raise SystemExit(1)
+' "${inspect_output}")"; then
+      printf '%s\n' "${export_digest}"
+      return 0
+    fi
+  fi
+
+  image_archive_local_image_id "${image_ref}"
+}
+
 image_archive_cache_key() {
   local image_ref="$1"
   local local_image_id="$2"
@@ -62,10 +100,12 @@ image_archive_verify_archive() {
   local expected_config_digest="$3"
 
   python3 - "${archive_path}" "${expected_image_ref}" "${expected_config_digest}" <<'PY'
+import gzip
 import hashlib
 import json
 import pathlib
 import re
+import subprocess
 import sys
 import tarfile
 
@@ -127,8 +167,215 @@ def sha256_archive_member(archive, member_name):
     return "sha256:" + digest.hexdigest()
 
 
+def sha256_gzip_uncompressed_archive_member(archive, member_name):
+    try:
+        member = archive.getmember(member_name)
+    except KeyError:
+        fail(f"missing_archive_member:{member_name}")
+    if not member.isfile():
+        fail(f"archive_member_not_file:{member_name}")
+    extracted = archive.extractfile(member)
+    if extracted is None:
+        fail(f"archive_member_unreadable:{member_name}")
+    digest = hashlib.sha256()
+    try:
+        with gzip.GzipFile(fileobj=extracted) as gzip_member:
+            for chunk in iter(lambda: gzip_member.read(1024 * 1024), b""):
+                digest.update(chunk)
+    except (EOFError, OSError):
+        return None
+    return "sha256:" + digest.hexdigest()
+
+
+def oci_blob_digest_from_path(member_name):
+    prefix = "blobs/sha256/"
+    if not isinstance(member_name, str) or not member_name.startswith(prefix):
+        return None
+    hex_digest = member_name[len(prefix):]
+    if re.fullmatch(r"[a-f0-9]{64}", hex_digest):
+        return "sha256:" + hex_digest
+    return None
+
+
+def archive_has_matching_oci_blob(archive, digest):
+    if not digest_pattern.match(digest):
+        return False
+    member_name = "blobs/sha256/" + digest.removeprefix("sha256:")
+    try:
+        return sha256_archive_member(archive, member_name) == digest
+    except SystemExit:
+        return False
+
+
+def read_verified_oci_blob(archive, digest):
+    if not digest_pattern.match(digest):
+        return None
+    member_name = "blobs/sha256/" + digest.removeprefix("sha256:")
+    try:
+        member = archive.getmember(member_name)
+    except KeyError:
+        return None
+    if not member.isfile():
+        return None
+    extracted = archive.extractfile(member)
+    if extracted is None:
+        return None
+    content = extracted.read()
+    return content if sha256_bytes(content) == digest else None
+
+
+def parse_json_bytes(content):
+    try:
+        parsed = json.loads(content.decode("utf-8"))
+    except (UnicodeDecodeError, json.JSONDecodeError):
+        return None
+    return parsed if isinstance(parsed, dict) else None
+
+
+def descriptor_digest(descriptor):
+    if not isinstance(descriptor, dict):
+        return None
+    value = descriptor.get("digest")
+    return value if isinstance(value, str) and digest_pattern.match(value) else None
+
+
+def descriptor_size_matches(descriptor, content):
+    if not isinstance(descriptor, dict):
+        return False
+    size = descriptor.get("size")
+    return not isinstance(size, int) or size == len(content)
+
+
+def oci_image_manifest_matches_entry(archive, digest, archive_config_digest, layer_paths):
+    content = read_verified_oci_blob(archive, digest)
+    if content is None:
+        return False
+    manifest = parse_json_bytes(content)
+    if manifest is None or manifest.get("schemaVersion") != 2:
+        return False
+    config_descriptor = manifest.get("config")
+    if descriptor_digest(config_descriptor) != archive_config_digest:
+        return False
+    config_blob = read_verified_oci_blob(archive, archive_config_digest)
+    if config_blob is None or not descriptor_size_matches(config_descriptor, config_blob):
+        return False
+    layer_descriptors = manifest.get("layers")
+    if not isinstance(layer_descriptors, list) or len(layer_descriptors) != len(layer_paths):
+        return False
+    for descriptor, layer_path in zip(layer_descriptors, layer_paths):
+        layer_digest = oci_blob_digest_from_path(layer_path)
+        if layer_digest is None or descriptor_digest(descriptor) != layer_digest:
+            return False
+        layer_blob = read_verified_oci_blob(archive, layer_digest)
+        if layer_blob is None or not descriptor_size_matches(descriptor, layer_blob):
+            return False
+    return True
+
+
+def oci_descriptor_reaches_entry(archive, digest, archive_config_digest, layer_paths, seen=None):
+    if seen is None:
+        seen = set()
+    if digest in seen:
+        return False
+    seen.add(digest)
+    content = read_verified_oci_blob(archive, digest)
+    if content is None:
+        return False
+    payload = parse_json_bytes(content)
+    if payload is None or payload.get("schemaVersion") != 2:
+        return False
+    if isinstance(payload.get("config"), dict):
+        return oci_image_manifest_matches_entry(archive, digest, archive_config_digest, layer_paths)
+    manifests = payload.get("manifests")
+    if not isinstance(manifests, list):
+        return False
+    for descriptor in manifests:
+        child_digest = descriptor_digest(descriptor)
+        if child_digest is None:
+            continue
+        child_content = read_verified_oci_blob(archive, child_digest)
+        if child_content is None or not descriptor_size_matches(descriptor, child_content):
+            continue
+        if oci_descriptor_reaches_entry(archive, child_digest, archive_config_digest, layer_paths, seen):
+            return True
+    return False
+
+
+def local_image_inspect(image_ref):
+    try:
+        result = subprocess.run(
+            ["docker", "image", "inspect", "--format", "{{json .}}", image_ref],
+            check=False,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.DEVNULL,
+            text=True,
+        )
+    except OSError:
+        return None
+    if result.returncode != 0:
+        return None
+    value = result.stdout.strip().splitlines()[0] if result.stdout.strip() else ""
+    if not value:
+        return None
+    try:
+        parsed = json.loads(value)
+    except json.JSONDecodeError:
+        return None
+    return parsed if isinstance(parsed, dict) else None
+
+
+def meaningful_config_value(value):
+    return value not in (None, "", [], {})
+
+
+def archive_config_matches_local_image(config, diff_ids, expected_digest):
+    local = local_image_inspect(expected_image_ref)
+    if local is None or local.get("Id") != expected_digest:
+        return False
+    rootfs = local.get("RootFS")
+    if not isinstance(rootfs, dict) or rootfs.get("Layers") != diff_ids:
+        return False
+    if config.get("architecture") != local.get("Architecture"):
+        return False
+    if config.get("os") != local.get("Os"):
+        return False
+
+    archive_created = config.get("created")
+    local_created = local.get("Created")
+    if isinstance(archive_created, str) and isinstance(local_created, str) and archive_created != local_created:
+        return False
+
+    archive_config = config.get("config")
+    local_config = local.get("Config")
+    if not isinstance(archive_config, dict) or not isinstance(local_config, dict):
+        return False
+
+    config_keys = [
+        "ArgsEscaped",
+        "Cmd",
+        "Entrypoint",
+        "Env",
+        "ExposedPorts",
+        "Healthcheck",
+        "Labels",
+        "OnBuild",
+        "Shell",
+        "StopSignal",
+        "User",
+        "Volumes",
+        "WorkingDir",
+    ]
+    for key in config_keys:
+        archive_value = archive_config.get(key)
+        local_value = local_config.get(key)
+        if meaningful_config_value(archive_value) or meaningful_config_value(local_value):
+            if archive_value != local_value:
+                return False
+    return True
+
+
 if not digest_pattern.match(expected_config_digest):
-    fail("invalid_expected_config_digest")
+    fail("invalid_expected_image_digest")
 if not image_ref_pattern.match(expected_image_ref):
     fail("invalid_expected_image_ref")
 if not archive_path.is_file():
@@ -156,6 +403,13 @@ try:
         config = json.loads(config_bytes.decode("utf-8"))
         if not isinstance(config, dict):
             fail("invalid_config")
+        archive_config_digest = sha256_bytes(config_bytes)
+        expected_config_blob_digest = oci_blob_digest_from_path(config_path)
+        if expected_config_blob_digest:
+            if archive_config_digest != expected_config_blob_digest:
+                fail("config_blob_digest_mismatch")
+        elif archive_config_digest != expected_config_digest:
+            fail("config_digest_mismatch")
         rootfs = config.get("rootfs")
         if not isinstance(rootfs, dict):
             fail("invalid_rootfs")
@@ -170,11 +424,27 @@ try:
             expected_diff_id = diff_ids[index]
             if not isinstance(expected_diff_id, str) or not digest_pattern.match(expected_diff_id):
                 fail(f"invalid_layer_diff_id:{index}")
-            if sha256_archive_member(archive, layer_path) != expected_diff_id:
+            layer_digest = sha256_archive_member(archive, layer_path)
+            expected_oci_blob_digest = oci_blob_digest_from_path(layer_path)
+            if expected_oci_blob_digest:
+                if layer_digest != expected_oci_blob_digest:
+                    fail(f"layer_blob_digest_mismatch:{index}")
+                uncompressed_digest = sha256_gzip_uncompressed_archive_member(archive, layer_path)
+                if uncompressed_digest is not None:
+                    if uncompressed_digest != expected_diff_id:
+                        fail(f"layer_diff_id_mismatch:{index}")
+                elif layer_digest != expected_diff_id:
+                    fail(f"layer_diff_id_mismatch:{index}")
+            elif layer_digest != expected_diff_id:
                 fail(f"layer_diff_id_mismatch:{index}")
-        archive_config_digest = sha256_bytes(config_bytes)
-        if archive_config_digest != expected_config_digest:
-            fail("config_digest_mismatch")
+        if archive_config_digest != expected_config_digest and not oci_descriptor_reaches_entry(
+            archive,
+            expected_config_digest,
+            archive_config_digest,
+            layers,
+        ):
+            if not archive_config_matches_local_image(config, diff_ids, expected_config_digest):
+                fail("image_identity_mismatch")
 except tarfile.TarError as error:
     fail(f"invalid_tar:{error}")
 except UnicodeDecodeError as error:
@@ -270,7 +540,7 @@ save_image_archive_with_cache() {
   local archive_sha256=""
   local temp_archive_path=""
 
-  if local_image_id="$(image_archive_local_image_id "${image_ref}")"; then
+  if local_image_id="$(image_archive_local_export_digest "${image_ref}" "${save_mode}" "${save_platform}")"; then
     cache_root="$(image_archive_cache_root "${out_dir}")"
     cache_key="$(image_archive_cache_key "${image_ref}" "${local_image_id}" "${save_mode}" "${save_platform}")"
     cache_dir="${cache_root}/${cache_key}"
@@ -294,7 +564,7 @@ save_image_archive_with_cache() {
   image_archive_run_docker_save "${image_ref}" "${archive_path}" "${save_mode}" "${save_platform}"
 
   if [[ -z "${local_image_id}" ]]; then
-    local_image_id="$(image_archive_local_image_id "${image_ref}")" || return 0
+    local_image_id="$(image_archive_local_export_digest "${image_ref}" "${save_mode}" "${save_platform}")" || return 0
     cache_root="$(image_archive_cache_root "${out_dir}")"
     cache_key="$(image_archive_cache_key "${image_ref}" "${local_image_id}" "${save_mode}" "${save_platform}")"
     cache_dir="${cache_root}/${cache_key}"
@@ -436,6 +706,7 @@ archives = []
 for archive_path in archive_paths:
     image_ref, archive_config_digest = parse_archive(archive_path)
     inspected_image_id = local_image_id(image_ref)
+    local_config_digest = archive_config_digest if inspected_image_id == archive_config_digest else None
     archives.append(
         {
             "archive_relpath": archive_path.relative_to(bundle_dir).as_posix(),
@@ -443,11 +714,11 @@ for archive_path in archive_paths:
             "archive_sha256": sha256_file(archive_path),
             "archive_config_digest": archive_config_digest,
             "local_image_id": inspected_image_id,
-            "local_config_digest": inspected_image_id,
+            "local_config_digest": local_config_digest,
             "platform": platform,
             "source_manifest_digest": source_build_manifest_digest,
             "source_build_manifest_digest": source_build_manifest_digest,
-            "validator": "docker save archive manifest.json RepoTags and Config bytes sha256; local docker image inspect optional",
+            "validator": "docker save archive manifest.json RepoTags, Config bytes sha256, and optional local docker image inspect identity",
         }
     )
 

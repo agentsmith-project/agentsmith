@@ -39,6 +39,10 @@ function sanitizeAgentRecord(agent: AgentRecord & Record<string, unknown>): Agen
   return sanitized;
 }
 
+function isAgentRecord(value: AgentRecord | null): value is AgentRecord {
+  return value !== null;
+}
+
 export interface AgentRuntimeState {
   agent_id: string;
   workspace_id: string;
@@ -176,7 +180,7 @@ export class AgentResourceService {
       project_id: projectId,
     });
     const normalized = await Promise.all(items.map((item) => this.hydrateAgentRecord(item)));
-    const hydrated = await Promise.all(normalized.filter(Boolean).map((item) => this.hydratePresence(item)));
+    const hydrated = await Promise.all(normalized.filter(isAgentRecord).map((item) => this.hydratePresence(item)));
     return hydrated.sort((a, b) => b.updated_at.localeCompare(a.updated_at));
   }
 

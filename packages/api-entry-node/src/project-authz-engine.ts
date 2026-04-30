@@ -107,7 +107,7 @@ async function collectPermissionSources(args: {
   projectOwnerId: string;
   projectGovernance?: unknown;
   actorUserId: string;
-}): ProjectAuthorizationSnapshot {
+}): Promise<ProjectAuthorizationSnapshot> {
   const { docStore, workspaceId, projectId, projectOwnerId, actorUserId } = args;
   const storedMembershipStatus = await getMembershipStatus(docStore, workspaceId, projectId, actorUserId);
   const byPermission = new Map<string, ProjectAuthzPermissionSource>();
@@ -200,7 +200,7 @@ export async function evaluateProjectPermissions(args: {
 }): Promise<ProjectAuthorizationEvaluation> {
   const snapshot = await collectPermissionSources(args);
   const sourceByPermission = new Map(snapshot.permission_sources.map((item) => [item.permission, item]));
-  const decisions = args.requiredPermissions.map((permission) => {
+  const decisions: ProjectPermissionDecision[] = args.requiredPermissions.map((permission) => {
     if (snapshot.membership_status === 'pending') {
       return {
         permission,
@@ -225,7 +225,7 @@ export async function evaluateProjectPermissions(args: {
         permission,
         granted: true,
         reason: 'granted_by_member_governance',
-        source: 'permission',
+        source: 'permission' as const,
         source_detail: sourceDetail,
         membership_status: snapshot.membership_status,
       };

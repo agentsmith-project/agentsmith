@@ -23,7 +23,7 @@ function workspaceRecord(args: {
     workspace_admin_user_id: args.adminUserId,
     workspace_admin_name: args.adminName,
     project_creators: args.projectCreators ?? [],
-    idp: {
+    login_idp: {
       kind: 'keycloak' as const,
       url: args.issuerUrl,
       realm: args.realm,

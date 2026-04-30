@@ -31,7 +31,7 @@ import type {
   ObjectStorePort,
   FileLibraryCatalogRepoPort,
 } from '@mbos/ports';
-import { buildFileLibrariesCacheKey } from './cache-keys';
+import { buildFileLibrariesCacheKey } from './cache-keys.js';
 
 export interface ListFileLibraryCatalogsCommand {
   workspaceId: string;

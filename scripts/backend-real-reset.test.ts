@@ -1,4 +1,4 @@
-import { spawnSync } from 'node:child_process';
+import { spawn, spawnSync } from 'node:child_process';
 import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
@@ -6,7 +6,10 @@ import { describe, expect, it } from 'vitest';
 
 type ResetRunOptions = {
   env?: Record<string, string>;
+  fixture?: ResetFixture;
 };
+
+type ResetFixture = ReturnType<typeof createFixture>;
 
 function createFixture() {
   const tempRoot = mkdtempSync(path.join(os.tmpdir(), 'backend-real-reset-'));
@@ -90,7 +93,7 @@ function readLog(file: string): string {
 }
 
 function runReset(options: ResetRunOptions = {}) {
-  const fixture = createFixture();
+  const fixture = options.fixture ?? createFixture();
   const result = spawnSync('bash', [path.join(process.cwd(), 'scripts/backend-real-reset.sh')], {
     cwd: process.cwd(),
     env: {
@@ -108,6 +111,25 @@ function runReset(options: ResetRunOptions = {}) {
     ...result,
     kubectlLog: readLog(fixture.kubectlLog),
   };
+}
+
+function processAlive(pid: number): boolean {
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+async function waitForProcessExit(pid: number, timeoutMs = 5000): Promise<void> {
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    if (!processAlive(pid)) {
+      return;
+    }
+    await new Promise((resolve) => setTimeout(resolve, 100));
+  }
 }
 
 describe('backend-real reset Kubernetes safety guard', () => {
@@ -168,6 +190,57 @@ describe('backend-real reset Kubernetes safety guard', () => {
     expect(result.status).toBe(0);
     expect(result.stdout).toContain('BACKEND_REAL_RESET_KUBE_MODE=skip');
     expect(result.kubectlLog).not.toMatch(/\bdelete\b|\bpatch\b|current-context/);
+  });
+
+  it('stops backend-real-owned sandbox cleaner loops before deleting current state', async () => {
+    const fixture = createFixture();
+    const stateDir = path.join(fixture.tempRoot, 'artifacts/backend-real/current');
+    const runtimeDir = path.join(stateDir, 'internal-chat');
+    const cleanerBin = path.join(runtimeDir, 'sandbox-cleaner');
+    mkdirSync(runtimeDir, { recursive: true });
+    writeFileSync(path.join(runtimeDir, 'sandbox-control.env'), `INTERNAL_REAL_DIR="${runtimeDir}"\n`);
+
+    const cleanerLoop = spawn(
+      'bash',
+      ['-lc', `while true; do : '${cleanerBin}'; sleep 60; done`],
+      { detached: true, stdio: 'ignore' },
+    );
+    if (!cleanerLoop.pid) {
+      throw new Error('failed to start sandbox cleaner fixture process');
+    }
+    const cleanerPid = cleanerLoop.pid;
+    writeFileSync(path.join(runtimeDir, 'sandbox-cleaner.pid'), `${cleanerPid}\n`);
+
+    try {
+      const exited = new Promise((resolve) => {
+        cleanerLoop.once('exit', resolve);
+      });
+      const result = runReset({
+        fixture,
+        env: {
+          BACKEND_REAL_RESET_KUBE_MODE: 'skip',
+        },
+      });
+      await Promise.race([exited, waitForProcessExit(cleanerPid)]);
+
+      expect(result.status).toBe(0);
+      expect(result.stdout).toContain('stopping backend-real sandbox cleaner loops');
+      expect(result.stdout).toContain(`stopping sandbox-cleaner pid=${cleanerPid}`);
+      expect(processAlive(cleanerPid)).toBe(false);
+      expect(existsSync(runtimeDir)).toBe(false);
+    } finally {
+      if (processAlive(cleanerPid)) {
+        try {
+          process.kill(-cleanerPid, 'SIGKILL');
+        } catch {
+          try {
+            process.kill(cleanerPid, 'SIGKILL');
+          } catch {
+            // Already gone.
+          }
+        }
+      }
+    }
   });
 
   it('documents the guarded Kubernetes reset contract in help output', () => {

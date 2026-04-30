@@ -487,7 +487,7 @@ describe('UniversalProxyService', () => {
   });
 
   it('propagates downstream response close to the upstream fetch abort signal during proxyJsonRequest without retrying', async () => {
-    let upstreamSignal: AbortSignal | undefined;
+    let upstreamSignal: AbortSignal | null | undefined;
     const fetchMock = vi.fn((_url: string, init?: RequestInit) => new Promise<Response>((_resolve, reject) => {
       upstreamSignal = init?.signal;
       init?.signal?.addEventListener('abort', () => {

@@ -10,6 +10,7 @@ export interface EnsureFileLibraryGatewayResult {
   port: number;
   status: 'starting' | 'ready' | 'degraded';
   lastStartedAt: string;
+  pid?: number;
 }
 
 export interface FileLibraryGatewayHealth {

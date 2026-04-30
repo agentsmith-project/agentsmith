@@ -113,7 +113,7 @@ describe('model-config-store', () => {
       name: 'Default Workspace',
       workspace_admin: 'owner@example.com',
       project_creators: [],
-      idp: { kind: 'keycloak', url: 'http://localhost:18080', realm: 'mbos', client_id: 'agentsmith' },
+      login_idp: { kind: 'keycloak', url: 'http://localhost:18080', realm: 'mbos', client_id: 'agentsmith' },
       tenant: {
         workspace_id: 'ws_default',
         workspace_name: 'Default Workspace',

@@ -61,6 +61,11 @@ export interface TaskMountDecision {
   reason: string;
 }
 
+export interface AgentSmithOwnedMountDecision {
+  action: 'reclaim_mount' | 'keep';
+  reason: string;
+}
+
 export { extractGatewayProcessIdentity };
 export type { GatewayProcessIdentity } from '../packages/api-entry-node/src/file-library-gateway-ownership.js';
 
@@ -99,7 +104,10 @@ interface PreflightOptions {
   taskMountRoot: string;
   taskMountRegistryPath: string;
   noStateGatewayMinAgeSeconds: number;
+  agentSmithMountMinAgeSeconds: number;
 }
+
+const AGENTSMITH_REAL_FILE_LIBRARY_MOUNT_PREFIX = 'agentsmith-real-file-library-';
 
 const EMPTY_GATEWAY_OWNER_EVIDENCE: GatewayOwnerEvidence = {
   localInstanceId: null,
@@ -298,6 +306,39 @@ export function classifyTaskMountProcess(args: {
   return {
     action: 'reclaim_mount',
     reason: 'runner_absent_for_host_mount',
+  };
+}
+
+export function classifyAgentSmithOwnedMountProcess(args: {
+  processInfo: ManagedProcessInfo;
+  mountPath: string;
+  context: string;
+  minAgeSeconds: number;
+}): AgentSmithOwnedMountDecision {
+  if (!isAgentSmithRealFileLibraryMountPath(args.mountPath)) {
+    return {
+      action: 'keep',
+      reason: 'mount_path_not_agentsmith_owned',
+    };
+  }
+
+  if (args.context === 'full-reset') {
+    return {
+      action: 'reclaim_mount',
+      reason: 'full_reset_agentsmith_temp_mount',
+    };
+  }
+
+  if (args.processInfo.ageSeconds < args.minAgeSeconds) {
+    return {
+      action: 'keep',
+      reason: 'process_too_fresh',
+    };
+  }
+
+  return {
+    action: 'reclaim_mount',
+    reason: 'agentsmith_temp_mount_stale',
   };
 }
 
@@ -527,8 +568,95 @@ export function matchGatewayStateForProcess(args: {
 }
 
 function extractTaskMountPath(command: string, taskMountRoot: string): string | null {
-  const match = command.match(new RegExp(`${escapeForRegExp(path.resolve(taskMountRoot))}${escapeForRegExp(path.sep)}task_[^\s]+`));
-  return match?.[0] ?? null;
+  const mountPath = extractJuicefsMountPath(command);
+  if (!mountPath) {
+    return null;
+  }
+  const resolvedMountPath = path.resolve(mountPath);
+  const resolvedTaskMountRoot = path.resolve(taskMountRoot);
+  const relativePath = path.relative(resolvedTaskMountRoot, resolvedMountPath);
+  if (!relativePath || relativePath.startsWith('..') || path.isAbsolute(relativePath)) {
+    return null;
+  }
+  const firstSegment = relativePath.split(path.sep)[0] ?? '';
+  return firstSegment.startsWith('task_') ? resolvedMountPath : null;
+}
+
+function stripShellQuotes(token: string): string {
+  if (
+    (token.startsWith('"') && token.endsWith('"'))
+    || (token.startsWith("'") && token.endsWith("'"))
+  ) {
+    return token.slice(1, -1);
+  }
+  return token;
+}
+
+function splitCommandTokens(command: string): string[] {
+  return command
+    .match(/"([^"\\]|\\.)*"|'[^']*'|\S+/g)
+    ?.map(stripShellQuotes) ?? [];
+}
+
+function juicefsMountOptionConsumesValue(token: string): boolean {
+  return [
+    '-o',
+    '--cache-dir',
+    '--log',
+    '--bucket',
+    '--attr-cache',
+    '--entry-cache',
+    '--dir-entry-cache',
+  ].includes(token);
+}
+
+export function extractJuicefsMountPath(command: string): string | null {
+  const tokens = splitCommandTokens(command);
+  const mountIndex = tokens.findIndex((token) => token === 'mount');
+  if (mountIndex < 0 || !tokens.slice(0, mountIndex).some((token) => token.includes('juicefs'))) {
+    return null;
+  }
+
+  const positional: string[] = [];
+  for (let index = mountIndex + 1; index < tokens.length; index += 1) {
+    const token = tokens[index] ?? '';
+    if (!token) {
+      continue;
+    }
+    if (juicefsMountOptionConsumesValue(token)) {
+      index += 1;
+      continue;
+    }
+    if (token.startsWith('-')) {
+      continue;
+    }
+    positional.push(token);
+    if (positional.length >= 2) {
+      return positional[1] ?? null;
+    }
+  }
+
+  return null;
+}
+
+function isPathDirectChildOfAnyRoot(pathValue: string, roots: readonly string[]): boolean {
+  const resolvedPath = path.resolve(pathValue);
+  return roots.some((root) => {
+    const resolvedRoot = path.resolve(root);
+    const relativePath = path.relative(resolvedRoot, resolvedPath);
+    return Boolean(relativePath)
+      && !relativePath.startsWith('..')
+      && !path.isAbsolute(relativePath)
+      && !relativePath.includes(path.sep);
+  });
+}
+
+function isAgentSmithRealFileLibraryMountPath(mountPath: string): boolean {
+  const baseName = path.basename(path.resolve(mountPath));
+  if (!baseName.startsWith(AGENTSMITH_REAL_FILE_LIBRARY_MOUNT_PREFIX)) {
+    return false;
+  }
+  return isPathDirectChildOfAnyRoot(mountPath, [os.tmpdir(), '/tmp']);
 }
 
 function serializeGatewayState(state: GatewayStateRecord, ownerProcessPid: number, ownerScope: string): string {
@@ -855,11 +983,17 @@ async function runPreflight(options: PreflightOptions): Promise<void> {
     reclaimedGatewayProcesses += 1;
   }
 
-  const taskMountProcesses = processes
+  const juicefsMountProcesses = processes
     .filter((processInfo) => processInfo.command.includes('juicefs mount'))
     .map((processInfo) => ({
       processInfo,
-      mountPath: extractTaskMountPath(processInfo.command, options.taskMountRoot),
+      mountPath: extractJuicefsMountPath(processInfo.command),
+    }))
+    .filter((entry): entry is { processInfo: ManagedProcessInfo; mountPath: string } => Boolean(entry.mountPath));
+  const taskMountProcesses = juicefsMountProcesses
+    .map((entry) => ({
+      processInfo: entry.processInfo,
+      mountPath: extractTaskMountPath(entry.processInfo.command, options.taskMountRoot),
     }))
     .filter((entry): entry is { processInfo: ManagedProcessInfo; mountPath: string } => Boolean(entry.mountPath));
 
@@ -885,6 +1019,40 @@ async function runPreflight(options: PreflightOptions): Promise<void> {
     }
     const pidSummary = mountProcesses.map((processInfo) => processInfo.pid).join(',');
     logLine(`task-mount mount_path=${mountPath} pids=${pidSummary} action=${decision.action} reason=${decision.reason}`);
+    if (!options.apply) {
+      continue;
+    }
+    if (await reclaimTaskMount({
+      mountPath,
+      mountProcesses,
+    })) {
+      reclaimedMounts += 1;
+    }
+  }
+
+  const agentSmithMountGroups = new Map<string, ManagedProcessInfo[]>();
+  for (const { processInfo, mountPath } of juicefsMountProcesses) {
+    if (seenMountPaths.has(mountPath) || !isAgentSmithRealFileLibraryMountPath(mountPath)) {
+      continue;
+    }
+    const existing = agentSmithMountGroups.get(mountPath) ?? [];
+    existing.push(processInfo);
+    agentSmithMountGroups.set(mountPath, existing);
+  }
+
+  for (const [mountPath, mountProcesses] of agentSmithMountGroups.entries()) {
+    seenMountPaths.add(mountPath);
+    const decision = classifyAgentSmithOwnedMountProcess({
+      processInfo: mountProcesses[0],
+      mountPath,
+      context: options.context,
+      minAgeSeconds: options.agentSmithMountMinAgeSeconds,
+    });
+    if (decision.action === 'keep') {
+      continue;
+    }
+    const pidSummary = mountProcesses.map((processInfo) => processInfo.pid).join(',');
+    logLine(`agentsmith-mount mount_path=${mountPath} pids=${pidSummary} action=${decision.action} reason=${decision.reason}`);
     if (!options.apply) {
       continue;
     }
@@ -950,6 +1118,7 @@ export function resolvePreflightOptions(
       || path.join(env.HOME || os.homedir() || '/tmp', 'ags-workspace'),
     taskMountRegistryPath: resolveTaskMountRegistryPath(env),
     noStateGatewayMinAgeSeconds: Number.parseInt(env.JUICEFS_ORPHAN_NO_STATE_GATEWAY_MIN_AGE_SECONDS ?? '', 10) || 600,
+    agentSmithMountMinAgeSeconds: Number.parseInt(env.JUICEFS_ORPHAN_AGENTSMITH_MOUNT_MIN_AGE_SECONDS ?? '', 10) || 600,
   };
 }
 

@@ -2,6 +2,18 @@
 set -euo pipefail
 source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/common.sh"
 
+if [[ -f "${SUBSTRATE_CONNECTION_ENV}" ]]; then
+  existing_proxy_base_url="$(awk -F= '$1=="MBOS_UNIVERSAL_PROXY_BASE_URL"{print substr($0, index($0,$2))}' "${SUBSTRATE_CONNECTION_ENV}" | tail -n1)"
+  existing_proxy_admin_token="$(awk -F= '$1=="MBOS_UNIVERSAL_PROXY_ADMIN_TOKEN"{print substr($0, index($0,$2))}' "${SUBSTRATE_CONNECTION_ENV}" | tail -n1)"
+  if [[ -n "${existing_proxy_base_url}" ]]; then
+    SUBSTRATE_PROXY_BASE_URL="${existing_proxy_base_url}"
+  fi
+  if [[ -n "${existing_proxy_admin_token}" ]]; then
+    MBOS_UNIVERSAL_PROXY_ADMIN_TOKEN="${existing_proxy_admin_token}"
+    export MBOS_UNIVERSAL_PROXY_ADMIN_TOKEN
+  fi
+fi
+
 write_connection_env
 set -a
 source "${SUBSTRATE_CONNECTION_ENV}"

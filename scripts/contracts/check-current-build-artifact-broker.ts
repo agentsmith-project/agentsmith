@@ -531,7 +531,7 @@ function main(): void {
     input_digest: LOCKED_DIGEST_A,
     existing_artifact_digest: LOCKED_DIGEST_B,
     skip_reason: 'image_archive_cache_verified',
-    validator: 'docker save archive manifest.json single RepoTag, Layers members, Config rootfs.diff_ids layer sha256, Config bytes digest, archive sha256, and docker image inspect --format {{.Id}}',
+    validator: 'docker save archive manifest.json single RepoTag, Layers members, OCI blob sha256 or legacy rootfs.diff_ids layer sha256, Config bytes digest, local image identity/config-rootfs proof, archive sha256, and docker image inspect --format {{.Id}}/{{json .}}',
     generated_at: GENERATED_AT,
   };
   assertValidationOk('docker_save skip decision', validateBuildSkipDecision(dockerSaveSkipDecision));

@@ -1,6 +1,7 @@
 import { EventEmitter } from 'node:events';
-import { createServer, type AddressInfo } from 'node:http';
+import { createServer } from 'node:http';
 import type http from 'node:http';
+import type { AddressInfo } from 'node:net';
 import { PassThrough, Readable } from 'node:stream';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { InMemoryJsonDocStore } from '@mbos/adapters-private';

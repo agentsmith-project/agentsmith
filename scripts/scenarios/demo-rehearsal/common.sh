@@ -117,13 +117,15 @@ ensure_demo_rehearsal_release_bundle() {
   local release_id="demo-rehearsal-$(date -u +%Y%m%dT%H%M%SZ)"
   local skip_release_archive="${SKIP_RELEASE_ARCHIVE:-}"
   local skip_bundled_image_archive_generation="${SKIP_BUNDLED_IMAGE_ARCHIVE_GENERATION:-}"
-  OUT_DIR="${DEMO_REHEARSAL_RELEASES_DIR}" \
+  RELEASE_ROOT= \
+    OUT_DIR="${DEMO_REHEARSAL_RELEASES_DIR}" \
     RELEASE_ID="${release_id}" \
     SKIP_RELEASE_PRECHECK=1 \
     SKIP_RELEASE_ARCHIVE="${skip_release_archive}" \
     SKIP_BUNDLED_IMAGE_ARCHIVE_GENERATION="${skip_bundled_image_archive_generation}" \
     bash "${ROOT_DIR}/scripts/demo-deploy/build-offline-bundle.sh"
   export RELEASE_ROOT="${DEMO_REHEARSAL_RELEASES_DIR}/agentsmith-${release_id}"
+  export RELEASE_ID="${release_id}"
   sync_demo_rehearsal_release_site_env
 }
 

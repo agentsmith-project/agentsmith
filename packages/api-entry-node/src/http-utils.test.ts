@@ -98,7 +98,7 @@ describe('http-utils', () => {
   });
 
   it('propagates downstream response close to the upstream fetch abort signal', async () => {
-    let upstreamSignal: AbortSignal | undefined;
+    let upstreamSignal: AbortSignal | null | undefined;
     const upstream = vi.fn((_url: string, init?: RequestInit) => new Promise<Response>((_resolve, reject) => {
       upstreamSignal = init?.signal;
       init?.signal?.addEventListener('abort', () => {
@@ -134,7 +134,7 @@ describe('http-utils', () => {
   });
 
   it('reuses a parent downstream signal without attaching duplicate request or response close listeners', async () => {
-    let upstreamSignal: AbortSignal | undefined;
+    let upstreamSignal: AbortSignal | null | undefined;
     const upstream = vi.fn((_url: string, init?: RequestInit) => new Promise<Response>((_resolve, reject) => {
       upstreamSignal = init?.signal;
       init?.signal?.addEventListener('abort', () => {

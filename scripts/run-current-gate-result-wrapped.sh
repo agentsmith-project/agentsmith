@@ -208,6 +208,28 @@ process.stdout.write(`${stage.replace(/\s+/g, " ")}\t${summary.replace(/\s+/g, "
   printf 'execute\tchild_exited_nonzero_without_inner_diagnostics: no inner diagnostics observed; child exit status %s' "${child_status}"
 }
 
+gate_select_wrapped_failure_classification() {
+  local selected_summary="$1"
+  local explicit_classification="${CURRENT_GATE_RESULT_FAILURE_CLASSIFICATION:-}"
+
+  if [[ -n "${explicit_classification}" ]]; then
+    printf '%s\n' "${explicit_classification}"
+    return 0
+  fi
+
+  case "${selected_summary}" in
+    *image_archive_contract_drift*|*image_archive_manifest*|*layer_diff_id_mismatch*|*layer_blob_digest_mismatch*|*config_digest_mismatch*|*config_blob_digest_mismatch*|*image_identity_mismatch*)
+      printf 'contract_drift\n'
+      ;;
+    *rehearsal_infra_dependency_unready*|*"Cannot connect to the Docker daemon"*|*"docker daemon"*|*"no space left on device"*)
+      printf 'infra_dependency_unready\n'
+      ;;
+    *)
+      printf 'scenario_assertion_failed\n'
+      ;;
+  esac
+}
+
 RUN_DIAGNOSTICS_STARTED_AT=""
 RUN_DIAGNOSTICS_STARTED_MS=""
 if diagnostic_now="$(gate_current_run_diagnostics_timestamp)"; then
@@ -262,5 +284,6 @@ if ! gate_write_wrapped_run_diagnostics_finish "failed" "" "wrapped_command_exit
 fi
 selected_failure="$(gate_select_wrapped_failure_diagnostic "${status}")"
 IFS=$'\t' read -r selected_stage selected_summary <<<"${selected_failure}"
-gate_record_failure "${EVIDENCE_DIR}" "${CURRENT_GATE_RESULT_FAILURE_CLASSIFICATION:-scenario_assertion_failed}" "${selected_stage:-execute}" "${selected_summary:-child_exited_nonzero_without_inner_diagnostics: no inner diagnostics observed}"
+selected_classification="$(gate_select_wrapped_failure_classification "${selected_summary:-}")"
+gate_record_failure "${EVIDENCE_DIR}" "${selected_classification}" "${selected_stage:-execute}" "${selected_summary:-child_exited_nonzero_without_inner_diagnostics: no inner diagnostics observed}"
 exit "${status}"

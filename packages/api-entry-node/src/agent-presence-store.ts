@@ -294,7 +294,7 @@ class CacheBackedAgentPresenceStore implements AgentPresenceStore {
   }
 
   async upsertConnection(input: RegisterAgentConnectionInput): Promise<AgentPresenceSnapshot> {
-    return this.mutateRecord(input.agentId, (existing) => {
+    return this.mutateRecord<AgentPresenceSnapshot>(input.agentId, (existing) => {
       const now = new Date().toISOString();
       const connectedAt = input.connectedAt ?? now;
       const lastPongAt = input.lastPongAt ?? connectedAt;
@@ -339,7 +339,7 @@ class CacheBackedAgentPresenceStore implements AgentPresenceStore {
   }
 
   async refreshConnection(input: RefreshAgentConnectionInput): Promise<AgentPresenceMutationResult> {
-    return this.mutateRecord(input.agentId, (existing) => {
+    return this.mutateRecord<AgentPresenceMutationResult>(input.agentId, (existing) => {
       const current = existing.connections[input.connectionId];
       if (!current) {
         return {
@@ -373,7 +373,7 @@ class CacheBackedAgentPresenceStore implements AgentPresenceStore {
   }
 
   async releaseConnection(input: ReleaseAgentConnectionInput): Promise<AgentPresenceMutationResult & { released: boolean }> {
-    return this.mutateRecord(input.agentId, (existing) => {
+    return this.mutateRecord<AgentPresenceMutationResult & { released: boolean }>(input.agentId, (existing) => {
       if (!existing.connections[input.connectionId]) {
         return {
           next: existing,

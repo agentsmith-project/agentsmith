@@ -66,6 +66,12 @@ export type UsageQuery = {
   endUserId?: string | null;
   provider?: string | null;
   model?: string | null;
+  requestId?: string | null;
+  decisionId?: string | null;
+  traceRef?: string | null;
+  traceIncidentId?: string | null;
+  traceEscalationId?: string | null;
+  traceRunId?: string | null;
   result?: 'ok' | 'error' | null;
   errorClass?: 'provider_retryable' | 'provider_non_retryable' | 'system_error' | null;
   groupBy: 'day' | 'hour' | 'minute';
@@ -77,7 +83,23 @@ export type UsageQuery = {
 
 export type UsageFactsQuery = Pick<
   UsageQuery,
-  'workspaceId' | 'projectId' | 'startTime' | 'endTime' | 'resourceType' | 'resourceId' | 'endUserId' | 'provider' | 'model' | 'result' | 'errorClass'
+  | 'workspaceId'
+  | 'projectId'
+  | 'startTime'
+  | 'endTime'
+  | 'resourceType'
+  | 'resourceId'
+  | 'endUserId'
+  | 'provider'
+  | 'model'
+  | 'requestId'
+  | 'decisionId'
+  | 'traceRef'
+  | 'traceIncidentId'
+  | 'traceEscalationId'
+  | 'traceRunId'
+  | 'result'
+  | 'errorClass'
 > & {
   sortOrder: 'asc' | 'desc';
   page: number;
@@ -182,7 +204,7 @@ export type EndpointLimitSummary = {
 };
 
 export type LimitsOverview = {
-  endpoints?: EndpointLimitSummary[];
+  endpoints: EndpointLimitSummary[];
 };
 
 export type UsageRecordsSummaryResponse = {

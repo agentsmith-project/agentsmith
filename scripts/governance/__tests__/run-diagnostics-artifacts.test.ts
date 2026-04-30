@@ -891,6 +891,37 @@ describe('current run diagnostics artifacts', () => {
     expectValidPayload('performance', performance);
   });
 
+  it('classifies image archive proof failures as contract drift instead of product regressions', () => {
+    const evidenceDir = mkdtempSync(join(tmpdir(), 'current-run-diagnostics-rehearsal-archive-drift-'));
+    const stageRoot = mkdtempSync(join(tmpdir(), 'current-run-diagnostics-stage-root-'));
+    mkdirSync(stageRoot, { recursive: true });
+    writeStageScript(stageRoot, 'reset', 'printf "%s\\n" reset');
+    writeStageScript(stageRoot, 'up', 'printf "%s\\n" "layer_diff_id_mismatch:0"\nexit 9');
+    for (const stage of ['bootstrap', 'verify', 'report']) {
+      writeStageScript(stageRoot, stage, `printf '%s\\n' "${stage}"`);
+    }
+
+    const wrapped = runWrappedGate({
+      evidenceDir,
+      command: `CURRENT_REHEARSAL_STAGE_ROOT="${stageRoot}" bash scripts/governance/run-rehearsal-stages.sh demo-rehearsal`,
+    });
+
+    expect(wrapped.status).toBe(9);
+    expect(wrapped.result).toMatchObject({
+      status: 'failed',
+      failure_class: 'contract_drift',
+      stage: 'up',
+    });
+    expect(String(wrapped.result?.summary)).toContain('image_archive_contract_drift');
+    const stageEvents = readNdjson(join(evidenceDir, 'stage-events.jsonl'));
+    expect(stageEvents.find((event) => event.stage === 'up' && event.event === 'failed')).toMatchObject({
+      stage: 'up',
+      event: 'failed',
+      stage_failure_reason: 'image_archive_contract_drift',
+    });
+    expect(readFileSync(join(evidenceDir, 'logs', 'up.log'), 'utf8')).toContain('layer_diff_id_mismatch:0');
+  });
+
   it('does not echo raw unknown rehearsal line arguments', () => {
     const result = runCommand('bash', ['scripts/governance/run-rehearsal-stages.sh', '--api_key=raw-secret']);
 

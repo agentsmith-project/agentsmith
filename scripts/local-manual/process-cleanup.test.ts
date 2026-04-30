@@ -132,6 +132,17 @@ async function waitForPidExit(pid: number, timeoutMs = 5_000): Promise<boolean> 
   return !isPidAlive(pid);
 }
 
+async function waitForPidAlive(pid: number, timeoutMs = 5_000): Promise<boolean> {
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    if (isPidAlive(pid)) {
+      return true;
+    }
+    await sleep(100);
+  }
+  return isPidAlive(pid);
+}
+
 function killProcessTreeGroup(pid: number): void {
   try {
     process.kill(-pid, 'SIGKILL');
@@ -648,8 +659,10 @@ describe('local-manual process cleanup contract', () => {
     const rescueBody = extractFunctionBody(common, 'rescue_stop_untracked_local_manual_processes');
 
     expect(common).toContain('LOCAL_MANUAL_ALLOW_UNTRACKED_PROCESS_RESCUE');
+    expect(common).toContain('WEB_LAUNCHER_PID_FILE');
     expect(stopBody).toContain('stop_local_manual_runner_owner_aware');
     expect(stopBody).toContain('stop_local_manual_tracked_service_owner_aware web');
+    expect(stopBody).toContain('stop_local_manual_web_launcher_owner_aware');
     expect(stopBody).toContain('stop_local_manual_tracked_service_owner_aware api');
     expect(stopBody).not.toContain('stop_pid_file_if_running');
     expect(stopBody).not.toContain('stop_matching_processes');
@@ -657,6 +670,66 @@ describe('local-manual process cleanup contract', () => {
     expect(rescueBody).toContain('stop_matching_processes');
     expect(rescueBody).toContain('stop_listeners_on_port');
   });
+
+  it('reclaims a half-started web launcher pid that was written before Next owner state existed', async () => {
+    const fixture = setupCommonFixture();
+    tempRoots.push(fixture.tempRoot);
+    const launcherScript = path.join(fixture.tempRoot, 'web-launcher-without-owner-state.sh');
+    writeFileSync(
+      launcherScript,
+      `#!/usr/bin/env bash
+set -euo pipefail
+exec -a "npm run dev:test -- --port 3001" sleep 300
+`,
+      'utf8',
+    );
+    chmodSync(launcherScript, 0o755);
+    const launcherPid = Number.parseInt(
+      execFileSync(
+        'bash',
+        ['-lc', `setsid bash "${launcherScript}" >/dev/null 2>&1 < /dev/null & echo $!`],
+        {
+          cwd: fixture.tempRoot,
+          encoding: 'utf8',
+          stdio: 'pipe',
+        },
+      ).trim(),
+      10,
+    );
+
+    try {
+      expect(await waitForPidAlive(launcherPid)).toBe(true);
+      writeFileSync(fixture.webPidFile, `${launcherPid}\n`, 'utf8');
+      writeFileSync(fixture.webReadyFile, 'ready\n', 'utf8');
+
+      execFileSync(
+        'bash',
+        [
+          '-lc',
+          `
+            source "${fixture.commonScript}"
+            init_local_manual_env
+            stop_local_manual_processes
+          `,
+        ],
+        {
+          cwd: fixture.tempRoot,
+          env: {
+            ...process.env,
+            LOCAL_MANUAL_ALLOW_MISSING_SUBSTRATE_CONNECTION: '1',
+            PATH: `${path.join(fixture.tempRoot, 'node_modules/.bin')}:${process.env.PATH ?? ''}`,
+          },
+          stdio: 'pipe',
+        },
+      );
+
+      expect(existsSync(fixture.webPidFile)).toBe(false);
+      expect(existsSync(fixture.webReadyFile)).toBe(false);
+      expect(readFileSync(fixture.webEvidenceFile, 'utf8')).toContain('"authority": "launcher_reclaimable"');
+    } finally {
+      killProcessTreeGroup(launcherPid);
+    }
+  }, 10_000);
 
   it('does not let unverified runner ownership block stop-line cleanup', () => {
     const fixture = setupCommonFixture();

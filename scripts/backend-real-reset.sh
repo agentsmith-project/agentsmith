@@ -136,7 +136,149 @@ wait_for_absent() {
   return 1
 }
 
+backend_real_read_pid_file() {
+  local file="$1"
+  if [[ -f "${file}" ]]; then
+    tr -d '[:space:]' < "${file}"
+  fi
+}
+
+backend_real_pid_alive() {
+  local pid="${1:-}"
+  local stat
+  [[ "${pid}" =~ ^[0-9]+$ ]] || return 1
+  kill -0 "${pid}" >/dev/null 2>&1 || return 1
+  stat="$(ps -o stat= -p "${pid}" 2>/dev/null | tr -d '[:space:]' || true)"
+  [[ "${stat}" != Z* ]]
+}
+
+backend_real_process_command() {
+  local pid="$1"
+  ps -ww -p "${pid}" -o command= 2>/dev/null | tr '\n' ' ' | sed 's/[[:space:]]*$//' || true
+}
+
+backend_real_process_group_id() {
+  local pid="$1"
+  ps -o pgid= -p "${pid}" 2>/dev/null | tr -d '[:space:]' || true
+}
+
+backend_real_cleaner_command_owned() {
+  local command="$1"
+  local owner_root="$2"
+  [[ -n "${command}" && -n "${owner_root}" ]] || return 1
+  case "${command}" in
+    *"${owner_root}/"*"/sandbox-cleaner"*|*"${owner_root}/sandbox-cleaner"*) return 0 ;;
+    *) return 1 ;;
+  esac
+}
+
+backend_real_signal_owned_cleaner_pid() {
+  local pid="$1"
+  local signal="$2"
+  local pgid
+  pgid="$(backend_real_process_group_id "${pid}")"
+  if [[ "${pgid}" == "${pid}" ]]; then
+    kill "-${signal}" -- "-${pid}" >/dev/null 2>&1 || true
+    return 0
+  fi
+  kill "-${signal}" "${pid}" >/dev/null 2>&1 || true
+}
+
+backend_real_stop_owned_cleaner_pid() {
+  local pid="$1"
+  local owner_root="$2"
+  local label="$3"
+  local command
+  [[ "${pid}" =~ ^[0-9]+$ ]] || return 0
+  if ! backend_real_pid_alive "${pid}"; then
+    return 0
+  fi
+  command="$(backend_real_process_command "${pid}")"
+  if ! backend_real_cleaner_command_owned "${command}" "${owner_root}"; then
+    info "skipping ${label} pid=${pid}; command does not prove backend-real ownership"
+    return 0
+  fi
+
+  info "stopping ${label} pid=${pid}"
+  backend_real_signal_owned_cleaner_pid "${pid}" TERM
+  for _ in $(seq 1 20); do
+    if ! backend_real_pid_alive "${pid}"; then
+      return 0
+    fi
+    sleep 0.2
+  done
+  backend_real_signal_owned_cleaner_pid "${pid}" KILL
+  for _ in $(seq 1 10); do
+    if ! backend_real_pid_alive "${pid}"; then
+      return 0
+    fi
+    sleep 0.2
+  done
+  info "${label} pid=${pid} still appears alive after SIGKILL"
+}
+
+backend_real_env_path_value() {
+  local file="$1"
+  local key="$2"
+  sed -n \
+    -e "s/^${key}=\"\\(.*\\)\"$/\\1/p" \
+    -e "s/^${key}=\\([^[:space:]#]*\\).*$/\\1/p" \
+    "${file}" 2>/dev/null | tail -n 1 || true
+}
+
+backend_real_runtime_dir_under_state() {
+  local runtime_dir="$1"
+  local resolved_runtime_dir resolved_state_dir
+  [[ -n "${runtime_dir}" ]] || return 1
+  resolved_runtime_dir="$(realpath -m "${runtime_dir}")"
+  resolved_state_dir="$(realpath -m "${STATE_DIR}")"
+  [[ "${resolved_runtime_dir}" == "${resolved_state_dir}" || "${resolved_runtime_dir}" == "${resolved_state_dir}/"* ]]
+}
+
+backend_real_stop_cleaner_runtime_dir() {
+  local runtime_dir="$1"
+  local resolved_runtime_dir pid_file pid
+  backend_real_runtime_dir_under_state "${runtime_dir}" || return 0
+  resolved_runtime_dir="$(realpath -m "${runtime_dir}")"
+  pid_file="${resolved_runtime_dir}/sandbox-cleaner.pid"
+  [[ -f "${pid_file}" ]] || return 0
+  pid="$(backend_real_read_pid_file "${pid_file}")"
+  backend_real_stop_owned_cleaner_pid "${pid}" "${resolved_runtime_dir}" "sandbox-cleaner"
+  if ! backend_real_pid_alive "${pid}"; then
+    rm -f "${pid_file}"
+  fi
+}
+
+stop_backend_real_sandbox_cleaners() {
+  local state_file runtime_dir line pid
+  if [[ ! -d "${STATE_DIR}" ]]; then
+    return 0
+  fi
+
+  info "stopping backend-real sandbox cleaner loops under ${STATE_DIR}"
+  while IFS= read -r state_file; do
+    [[ -n "${state_file}" ]] || continue
+    runtime_dir="$(backend_real_env_path_value "${state_file}" INTERNAL_REAL_DIR)"
+    backend_real_stop_cleaner_runtime_dir "${runtime_dir}"
+  done < <(find "${STATE_DIR}" -type f -name 'sandbox-control.env' 2>/dev/null | sort)
+
+  while IFS= read -r runtime_dir; do
+    [[ -n "${runtime_dir}" ]] || continue
+    backend_real_stop_cleaner_runtime_dir "${runtime_dir}"
+  done < <(find "${STATE_DIR}" -type f -name 'sandbox-cleaner.pid' -printf '%h\n' 2>/dev/null | sort -u)
+
+  while IFS= read -r line; do
+    [[ -n "${line}" ]] || continue
+    line="${line#"${line%%[![:space:]]*}"}"
+    pid="${line%%[[:space:]]*}"
+    [[ "${pid}" =~ ^[0-9]+$ ]] || continue
+    backend_real_stop_owned_cleaner_pid "${pid}" "${STATE_DIR}" "sandbox-cleaner-scan"
+  done < <(ps -ww -eo pid=,command= 2>/dev/null | grep -F "${STATE_DIR}/" | grep -F '/sandbox-cleaner' || true)
+}
+
 prepare_kubernetes_reset
+
+stop_backend_real_sandbox_cleaners
 
 info "clearing backend-real state under ${STATE_DIR}"
 rm -rf "${STATE_DIR}"

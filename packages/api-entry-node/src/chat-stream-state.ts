@@ -63,6 +63,11 @@ export interface ChatSessionExecutionRecord {
   stopEscalationReason?: ChatStopEscalationReason;
 }
 
+type ChatSessionHardTeardownDebtRecord = ChatSessionExecutionRecord & {
+  stopMode: 'terminate';
+  hardTeardownStatus: ChatHardTeardownStatus;
+};
+
 export interface ChatSessionExecutionStopTransitionResult {
   record: ChatSessionExecutionRecord | null;
   previous: ChatSessionExecutionRecord | null;
@@ -168,14 +173,14 @@ function isIncompleteHardTeardownStatus(status: ChatHardTeardownStatus | undefin
 
 export function hasSessionHardTeardownDebt(
   record: ChatSessionExecutionRecord | null | undefined,
-): record is ChatSessionExecutionRecord {
+): record is ChatSessionHardTeardownDebtRecord {
   return record?.stopMode === 'terminate'
     && isHardTeardownStatus(record.hardTeardownStatus);
 }
 
 export function hasIncompleteSessionHardTeardown(
   record: ChatSessionExecutionRecord | null | undefined,
-): record is ChatSessionExecutionRecord {
+): record is ChatSessionHardTeardownDebtRecord {
   return record?.stopMode === 'terminate'
     && isIncompleteHardTeardownStatus(record.hardTeardownStatus);
 }

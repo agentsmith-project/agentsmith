@@ -64,12 +64,17 @@ function createAbortAwareTransport(
   }
 
   return {
-    request(options, callback) {
+    request(
+      optionsOrUrl: string | URL | http.RequestOptions,
+      optionsOrCallback?: http.RequestOptions | ((res: http.IncomingMessage) => void),
+      maybeCallback?: (res: http.IncomingMessage) => void,
+    ) {
+      const callback = typeof optionsOrCallback === 'function' ? optionsOrCallback : maybeCallback;
       let response: http.IncomingMessage | null = null;
       let cleaned = false;
       let removeAbortListener: () => void = () => {};
 
-      const request = baseTransport.request(options, (incoming) => {
+      const handleIncoming = (incoming: http.IncomingMessage): void => {
         response = incoming;
         incoming.once('close', cleanup);
         incoming.once('end', cleanup);
@@ -77,8 +82,17 @@ function createAbortAwareTransport(
           abortRequest(signal.reason);
           return;
         }
-        callback(incoming);
-      });
+        if (callback) {
+          callback(incoming);
+        }
+      };
+      const request = typeof optionsOrCallback === 'object' && optionsOrCallback !== null
+        ? (
+          typeof optionsOrUrl === 'string' || optionsOrUrl instanceof URL
+            ? baseTransport.request(optionsOrUrl, optionsOrCallback, handleIncoming)
+            : baseTransport.request({ ...optionsOrUrl, ...optionsOrCallback }, handleIncoming)
+        )
+        : baseTransport.request(optionsOrUrl, handleIncoming);
 
       const cleanup = () => {
         if (cleaned) {

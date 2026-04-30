@@ -12,7 +12,13 @@ if [[ "${NO_API_RESTART}" == "1" ]]; then
   stop_internal_runtime
   rm -f "${INTERNAL_SANDBOX_STATE_FILE}"
 else
-  restore_local_manual_external_mode
+  if [[ ! -f "${SUBSTRATE_CONNECTION_ENV}" ]]; then
+    internal_info "substrate connection env missing; stopping internal runtime without API restart"
+    stop_internal_runtime
+    rm -f "${INTERNAL_SANDBOX_STATE_FILE}"
+  else
+    restore_local_manual_external_mode
+  fi
 fi
 
 internal_info "down"

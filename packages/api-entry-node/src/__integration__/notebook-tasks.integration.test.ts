@@ -165,7 +165,7 @@ async function createExternalNotebookExecutionAgent(
   const endpoint = await deps.endpointResourceService.createEndpoint(workspaceId, projectId, {
     name: `${name}-endpoint`,
     model: 'gpt-5-codex',
-    type: 'openai',
+    type: 'custom',
     mode: 'openai',
     base_url: options?.endpointBaseUrl ?? 'https://example.com/v1',
     credential_ref: credential.id,
@@ -1838,7 +1838,7 @@ describe('api-entry-node notebook task routes', () => {
     const endpoint = await deps.endpointResourceService.createEndpoint('ws_default', 'proj_1', {
       name: 'internal-pre-dispatch-recovery-endpoint',
       model: 'gpt-5-codex',
-      type: 'openai',
+      type: 'custom',
       mode: 'openai',
       base_url: 'https://example.com/v1',
       credential_ref: credential.id,
@@ -2165,7 +2165,7 @@ describe('api-entry-node notebook task routes', () => {
         body: JSON.stringify({
           name: 'task-endpoint',
           model: 'gpt-5-codex',
-          type: 'openai',
+          type: 'custom',
           mode: 'openai',
           base_url: upstream.baseUrl,
           model_profile: {
@@ -2623,7 +2623,7 @@ describe('api-entry-node notebook task routes', () => {
         body: JSON.stringify({
           name: 'task-endpoint-offline',
           model: 'gpt-5-codex',
-          type: 'openai',
+          type: 'custom',
           mode: 'openai',
           base_url: 'https://example.com/v1',
           model_profile: {
@@ -2836,7 +2836,7 @@ describe('api-entry-node notebook task routes', () => {
         body: JSON.stringify({
           name: 'trace-metrics-endpoint',
           model: 'placeholder-model',
-          type: 'openai',
+          type: 'custom',
           mode: 'responses',
           base_url: 'https://example.com/v1',
           model_profile: {

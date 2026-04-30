@@ -2,7 +2,8 @@ import { createHash, randomUUID } from 'node:crypto';
 import { access, constants, mkdir, mkdtemp, readdir, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
-import { spawn, type ChildProcessWithoutNullStreams } from 'node:child_process';
+import { spawn, type ChildProcessByStdio } from 'node:child_process';
+import type { Readable } from 'node:stream';
 import net from 'node:net';
 import process from 'node:process';
 import { Client as PgClient } from 'pg';
@@ -36,9 +37,13 @@ import type {
   FileLibraryProvisioningResult,
 } from './file-library-orchestrator.js';
 
-type GatewaySession = EnsureFileLibraryGatewayResult & {
+type GatewayStatus = EnsureFileLibraryGatewayResult['status'] | FileLibraryGatewayHealth['status'];
+type GatewayChildProcess = ChildProcessByStdio<null, Readable, Readable>;
+
+type GatewaySession = Omit<EnsureFileLibraryGatewayResult, 'status'> & {
+  status: GatewayStatus;
   pid?: number;
-  child?: ChildProcessWithoutNullStreams;
+  child?: GatewayChildProcess;
   metadataUrl?: string;
   storageBucketUrl?: string;
   lastError?: string;
@@ -55,13 +60,13 @@ interface PersistedGatewayState {
   port: number;
   loopbackUrl: string;
   metadataUrl: string;
-  storageBucketUrl?: string;
+  storageBucketUrl: string | null | undefined;
   logPath: string;
   lastStartedAt: string;
   ownerProcessPid: number;
-  ownerScope?: string;
+  ownerScope: string | null | undefined;
   sessionToken?: string;
-  status: 'starting' | 'ready' | 'degraded';
+  status: GatewayStatus;
 }
 
 function restoreGatewaySessionFromPersistedState(state: PersistedGatewayState): GatewaySession {
@@ -72,10 +77,23 @@ function restoreGatewaySessionFromPersistedState(state: PersistedGatewayState): 
     lastStartedAt: state.lastStartedAt,
     pid: state.pid,
     metadataUrl: state.metadataUrl,
-    storageBucketUrl: state.storageBucketUrl,
+    storageBucketUrl: state.storageBucketUrl ?? undefined,
     logPath: state.logPath,
-    ownerScope: state.ownerScope,
+    ownerScope: state.ownerScope ?? undefined,
     sessionToken: state.sessionToken,
+  };
+}
+
+function toEnsureGatewayResult(session: GatewaySession): EnsureFileLibraryGatewayResult {
+  if (session.status === 'failed' || session.status === 'stopped') {
+    throw new Error('file_library_gateway_not_available');
+  }
+  return {
+    loopbackUrl: session.loopbackUrl,
+    port: session.port,
+    status: session.status,
+    lastStartedAt: session.lastStartedAt,
+    pid: session.pid,
   };
 }
 
@@ -120,7 +138,7 @@ interface GatewayManagerPlatform {
     cmd: string,
     args: string[],
     options: { env: NodeJS.ProcessEnv; argv0?: string },
-  ): ChildProcessWithoutNullStreams;
+  ): GatewayChildProcess;
   listProcesses(): Promise<GatewayProcessInfo[]>;
   processExists(pid: number): boolean;
   killProcess(pid: number, signal: NodeJS.Signals): void;
@@ -129,6 +147,16 @@ interface GatewayManagerPlatform {
   now(): string;
   ownerPid(): number;
 }
+
+type GatewayReconcileInventory = {
+  stateByLibraryId?: ReadonlyMap<string, PersistedGatewayState>;
+  processInventory?: readonly GatewayProcessInfo[];
+  managedProcesses?: readonly ManagedGatewayProcessInfo[];
+  ownerEvidence?: GatewayOwnerEvidence;
+  ownerRuntime?: GatewayOwnerRuntimeLease;
+  allowWeakStateAdoption?: boolean;
+  signal?: AbortSignal;
+};
 
 type GatewayPidAuthorityStatus = 'confirmed' | 'missing' | 'unverified';
 
@@ -1118,14 +1146,14 @@ const gatewayManagerPlatform: GatewayManagerPlatform = {
       .split('\n')
       .map((line) => line.trim())
       .filter(Boolean)
-      .map((line) => {
+      .map((line): GatewayProcessInfo | null => {
         const match = line.match(/^(\d+)\s+(.*)$/);
         if (!match) return null;
         return {
           pid: Number(match[1]),
           args: match[2],
           libraryId: null,
-        } satisfies GatewayProcessInfo;
+        };
       })
       .filter((value): value is GatewayProcessInfo => Boolean(value));
   },
@@ -1524,7 +1552,7 @@ export class InMemoryFileLibraryGatewayManager implements FileLibraryGatewayMana
     throwIfAborted((input as AbortableEnsureFileLibraryGatewayInput).signal, 'file_library_gateway_start_aborted');
     const existing = this.sessions.get(input.libraryId);
     if (existing) {
-      return existing;
+      return toEnsureGatewayResult(existing);
     }
     const port = envNumber('FILE_LIBRARY_GATEWAY_PORT_BASE', 39000) + this.sessions.size + 1;
     const created: GatewaySession = {
@@ -1536,7 +1564,7 @@ export class InMemoryFileLibraryGatewayManager implements FileLibraryGatewayMana
       storageBucketUrl: input.storageBucketUrl,
     };
     this.sessions.set(input.libraryId, created);
-    return created;
+    return toEnsureGatewayResult(created);
   }
 
   async getHealth(libraryId: string): Promise<FileLibraryGatewayHealth> {
@@ -1623,15 +1651,7 @@ export class RealFileLibraryGatewayManager implements FileLibraryGatewayManager 
 
   private startLibraryReconcile(
     libraryId: string,
-    inventory?: {
-      stateByLibraryId: ReadonlyMap<string, PersistedGatewayState>;
-      processInventory: readonly GatewayProcessInfo[];
-      managedProcesses: readonly ManagedGatewayProcessInfo[];
-      ownerEvidence: GatewayOwnerEvidence;
-      ownerRuntime: GatewayOwnerRuntimeLease;
-      allowWeakStateAdoption?: boolean;
-      signal?: AbortSignal;
-    },
+    inventory?: GatewayReconcileInventory,
   ): Promise<void> {
     const existing = this.libraryReconcileInFlight.get(libraryId);
     if (existing) {
@@ -1655,7 +1675,7 @@ export class RealFileLibraryGatewayManager implements FileLibraryGatewayManager 
   private isOwnedGatewaySession(
     session: GatewaySession | undefined,
   ): session is GatewaySession & {
-    child: ChildProcessWithoutNullStreams;
+    child: GatewayChildProcess;
     pid: number;
     ownerScope: string;
     sessionToken: string;
@@ -1671,7 +1691,7 @@ export class RealFileLibraryGatewayManager implements FileLibraryGatewayManager 
   private isOwnedGatewaySessionLive(
     session: GatewaySession | undefined,
   ): session is GatewaySession & {
-    child: ChildProcessWithoutNullStreams;
+    child: GatewayChildProcess;
     pid: number;
     ownerScope: string;
     sessionToken: string;
@@ -1711,7 +1731,7 @@ export class RealFileLibraryGatewayManager implements FileLibraryGatewayManager 
 
   private async waitForOwnedSessionExit(
     session: GatewaySession & {
-      child: ChildProcessWithoutNullStreams;
+      child: GatewayChildProcess;
       pid: number;
     },
     attempts: number,
@@ -1739,14 +1759,14 @@ export class RealFileLibraryGatewayManager implements FileLibraryGatewayManager 
 
   private signalOwnedSessionChild(
     session: GatewaySession & {
-      child: ChildProcessWithoutNullStreams;
+      child: GatewayChildProcess;
       pid: number;
     },
     signal: NodeJS.Signals,
   ): boolean {
     try {
       const kill = (
-        session.child as ChildProcessWithoutNullStreams & {
+        session.child as GatewayChildProcess & {
           kill?: (signal?: NodeJS.Signals) => boolean;
         }
       ).kill;
@@ -1767,7 +1787,7 @@ export class RealFileLibraryGatewayManager implements FileLibraryGatewayManager 
 
   private async terminateOwnedSessionChild(
     session: GatewaySession & {
-      child: ChildProcessWithoutNullStreams;
+      child: GatewayChildProcess;
       pid: number;
     },
   ): Promise<GatewayTerminationStatus> {
@@ -1838,7 +1858,7 @@ export class RealFileLibraryGatewayManager implements FileLibraryGatewayManager 
   private async cleanupOwnedSession(
     libraryId: string,
     session: GatewaySession & {
-      child: ChildProcessWithoutNullStreams;
+      child: GatewayChildProcess;
       pid: number;
       ownerScope: string;
       sessionToken: string;
@@ -1894,15 +1914,7 @@ export class RealFileLibraryGatewayManager implements FileLibraryGatewayManager 
 
   private async reconcileLibrary(
     libraryId: string,
-    inventory?: {
-      stateByLibraryId: ReadonlyMap<string, PersistedGatewayState>;
-      processInventory: readonly GatewayProcessInfo[];
-      managedProcesses: readonly ManagedGatewayProcessInfo[];
-      ownerEvidence: GatewayOwnerEvidence;
-      ownerRuntime: GatewayOwnerRuntimeLease;
-      allowWeakStateAdoption?: boolean;
-      signal?: AbortSignal;
-    },
+    inventory?: GatewayReconcileInventory,
   ): Promise<void> {
     throwIfAborted(inventory?.signal, 'file_library_gateway_reconcile_cancelled');
     const ownerRuntime = inventory?.ownerRuntime ?? await this.ownerRuntimePromise;
@@ -2091,7 +2103,7 @@ export class RealFileLibraryGatewayManager implements FileLibraryGatewayManager 
       this.isOwnedGatewaySessionLive(currentSession)
       && this.canReuseSessionForGatewayInput(currentSession, input)
     ) {
-      return currentSession;
+      return toEnsureGatewayResult(currentSession);
     }
     if (this.isOwnedGatewaySession(currentSession)) {
       await this.cleanupOwnedSession(input.libraryId, currentSession);
@@ -2108,7 +2120,7 @@ export class RealFileLibraryGatewayManager implements FileLibraryGatewayManager 
     if (existing && !this.isOwnedGatewaySession(existing)) {
       this.clearSessionIfCurrent(input.libraryId, existing);
     } else if (this.canReuseSessionForGatewayInput(existing, input)) {
-      return existing;
+      return toEnsureGatewayResult(existing);
     }
     if (existing) {
       this.sessions.delete(input.libraryId);
@@ -2154,7 +2166,7 @@ export class RealFileLibraryGatewayManager implements FileLibraryGatewayManager 
           status: 'ready',
         };
         this.sessions.set(input.libraryId, restored);
-        return restored;
+        return toEnsureGatewayResult(restored);
       }
       const terminationStatus = await terminatePersistedGatewayProcessIfConfirmed({
         platform: this.platform,
@@ -2272,7 +2284,7 @@ export class RealFileLibraryGatewayManager implements FileLibraryGatewayManager 
           status: 'ready',
         });
       }
-      return created;
+      return toEnsureGatewayResult(created);
     } catch (error) {
       created.status = 'failed';
       created.lastError = error instanceof Error ? error.message : 'file_library_gateway_start_failed';

@@ -152,7 +152,26 @@ export async function listAuditEvents(
 
 export async function listUsageFacts(
   docStore: JsonDocStorePort,
-  query: Pick<UsageQuery, 'workspaceId' | 'projectId' | 'startTime' | 'endTime' | 'resourceType' | 'resourceId' | 'endUserId' | 'provider' | 'model' | 'result' | 'errorClass'>,
+  query: Pick<
+    UsageQuery,
+    | 'workspaceId'
+    | 'projectId'
+    | 'startTime'
+    | 'endTime'
+    | 'resourceType'
+    | 'resourceId'
+    | 'endUserId'
+    | 'provider'
+    | 'model'
+    | 'requestId'
+    | 'decisionId'
+    | 'traceRef'
+    | 'traceIncidentId'
+    | 'traceEscalationId'
+    | 'traceRunId'
+    | 'result'
+    | 'errorClass'
+  >,
 ): Promise<UsageFactRecord[]> {
   const rows = (await docStore.list(usageFactsCollection(query.workspaceId), {
     workspace_id: query.workspaceId,
@@ -161,12 +180,20 @@ export async function listUsageFacts(
   const startMs = parseIsoMillis(query.startTime);
   const endMs = parseIsoMillis(query.endTime);
   return rows.filter((row) => {
+    const metadata = row.metadata_json && typeof row.metadata_json === 'object' ? row.metadata_json : undefined;
+    const decisionId = row.decision_id ?? extractDecisionIdFromMetadata(metadata);
     if (!inRange(row.timestamp, startMs, endMs)) return false;
     if (query.resourceType && row.resource_type !== query.resourceType) return false;
     if (query.resourceId && row.resource_id !== query.resourceId) return false;
     if (query.endUserId && row.end_user_id !== query.endUserId) return false;
     if (query.provider && getFactProvider(row) !== query.provider) return false;
     if (query.model && getFactModel(row) !== query.model) return false;
+    if (query.requestId && row.request_id !== query.requestId) return false;
+    if (query.decisionId && decisionId !== query.decisionId) return false;
+    if (query.traceRef && nonEmptyString(metadata?.trace_ref) !== query.traceRef) return false;
+    if (query.traceIncidentId && nonEmptyString(metadata?.trace_incident_id) !== query.traceIncidentId) return false;
+    if (query.traceEscalationId && nonEmptyString(metadata?.trace_escalation_id) !== query.traceEscalationId) return false;
+    if (query.traceRunId && nonEmptyString(metadata?.trace_run_id) !== query.traceRunId) return false;
     if (query.result && row.result !== query.result) return false;
     if (query.errorClass && getFactErrorClass(row) !== query.errorClass) return false;
     return true;

@@ -504,7 +504,6 @@ export async function handleRequest(
         internalTicket,
         json,
         readBody,
-        buildUpstreamUrl,
         sseWrite,
       });
       if (handledChatStream) {

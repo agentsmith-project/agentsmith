@@ -2,6 +2,7 @@ import { afterEach } from 'vitest';
 import { execFileSync } from 'node:child_process';
 import { createSign, generateKeyPairSync } from 'node:crypto';
 import http, { type Server } from 'node:http';
+import type { AddressInfo } from 'node:net';
 import { createDefaultNodeApiDeps, createNodeApiServer } from '../index.js';
 import {
   resetSystemWorkspaceRegistryPersistenceForTest,
@@ -314,7 +315,7 @@ function seedDefaultSystemWorkspace(issuerUrl: string): void {
       workspace_admin_user_id: 'user_owner',
       workspace_admin_name: 'Owner User',
       project_creators: [{ user_id: 'user_test', email: 'test@example.com', name: 'Test User' }],
-      idp: {
+      login_idp: {
         kind: 'keycloak',
         url: issuerUrl,
         realm: 'mbos',

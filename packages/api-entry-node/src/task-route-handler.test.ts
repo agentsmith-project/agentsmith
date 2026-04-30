@@ -176,7 +176,7 @@ describe('task-route-handler workspace access', () => {
       title: 'Busy task',
       agent_id: 'agent_1',
       agent_name: 'Agent One',
-      status: 'active',
+      status: 'active' as const,
       attached_inputs: [],
       created_at: now,
       updated_at: now,
@@ -1546,7 +1546,7 @@ describe('task-route-handler workspace access', () => {
       const endpoint = await deps.endpointResourceService.createEndpoint('ws_default', 'proj_1', {
         name: 'internal pre-dispatch endpoint',
         model: 'gpt-5-codex',
-        type: 'openai',
+        type: 'custom',
         base_url: 'https://example.com/v1',
         status: 'active',
         credential_ref: 'cred_internal_pre_dispatch',
@@ -1762,7 +1762,7 @@ describe('task-route-handler workspace access', () => {
       const endpoint = await deps.endpointResourceService.createEndpoint('ws_default', 'proj_1', {
         name: 'internal pre-dispatch persist-failed endpoint',
         model: 'gpt-5-codex',
-        type: 'openai',
+        type: 'custom',
         base_url: 'https://example.com/v1',
         status: 'active',
         credential_ref: 'cred_internal_pre_dispatch_persist_failed',
@@ -1929,7 +1929,7 @@ describe('task-route-handler workspace access', () => {
       const endpoint = await deps.endpointResourceService.createEndpoint('ws_default', 'proj_1', {
         name: 'internal late-on-dispatched endpoint',
         model: 'gpt-5-codex',
-        type: 'openai',
+        type: 'custom',
         base_url: 'https://example.com/v1',
         status: 'active',
         credential_ref: 'cred_internal_late_on_dispatched',

@@ -14,7 +14,13 @@ export function logChatStreamEvent(input: {
   endpointId?: string;
   status: ChatStreamStatus;
   durationMs?: number;
-  stopReason?: 'user_stop' | 'session_stop' | 'upstream_error' | 'timeout' | 'session_stream_conflict';
+  stopReason?:
+    | 'user_stop'
+    | 'session_stop'
+    | 'upstream_error'
+    | 'timeout'
+    | 'session_stream_conflict'
+    | 'persistence_error';
 }): void {
   if (process.env.NODE_ENV === 'test') {
     return;

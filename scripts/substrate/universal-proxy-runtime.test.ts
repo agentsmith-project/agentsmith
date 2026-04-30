@@ -516,6 +516,28 @@ runtime_label=${container.runtimeLabel}
     expect(result.stdout).toContain('source-ok');
   });
 
+  it('keeps substrate proxy port independent from app-level PROXY_PORT overrides', () => {
+    const tempRoot = createIsolatedRepoRoot('substrate-proxy-port-truth');
+    const fixture = prepareSubstrateFixture(tempRoot);
+    const envFile = path.join(tempRoot, '.env.local-manual');
+    writeFileSync(envFile, 'PROXY_PORT=39080\n', 'utf8');
+
+    const result = spawnSync('bash', ['-lc', `source "${path.join(tempRoot, 'scripts', 'substrate', 'common.sh')}"; printf 'port=%s\\nbase=%s\\n' "$SUBSTRATE_PROXY_PORT" "$SUBSTRATE_PROXY_BASE_URL"`], {
+      cwd: tempRoot,
+      env: {
+        ...process.env,
+        PATH: `${fixture.binDir}:${process.env.PATH ?? ''}`,
+        SUBSTRATE_ENV_FILE: envFile,
+      },
+      encoding: 'utf8',
+      stdio: 'pipe',
+    });
+
+    expect(result.status).toBe(0);
+    expect(result.stdout).toContain('port=38080');
+    expect(result.stdout).toContain('base=http://127.0.0.1:38080');
+  });
+
   it('uses the shared helper and fake docker instead of cargo/source coupling for compose substrate proxy startup', () => {
     const tempRoot = createIsolatedRepoRoot('substrate-compose-managed-proxy');
     const fixture = prepareSubstrateFixture(tempRoot);
@@ -646,6 +668,33 @@ runtime_label=${container.runtimeLabel}
     expect(result.status).toBe(0);
     expect(readFileSync(fixture.curlLog, 'utf8')).toContain('-H Authorization: Bearer fixture-admin-token');
     expect(existsSync(fixture.dockerLog) ? readFileSync(fixture.dockerLog, 'utf8') : '').toBe('');
+  });
+
+  it('reuses saved admin tokens for explicit runtime URLs', () => {
+    const tempRoot = createIsolatedRepoRoot('runtime-explicit-saved-admin-token');
+    const fixture = prepareRuntimeHelperFixture(tempRoot);
+    writeFakeContainer(fixture, {
+      id: 'external',
+      managedBy: 'universal-proxy-runtime',
+      name: 'agentsmith-universal-proxy-39180',
+      runtimeLabel: 'test-runtime',
+    });
+    writeFileSync(path.join(fixture.containersDir, 'started-managed-container.env'), 'id=external\n', 'utf8');
+    writeFileSync(path.join(fixture.stateDir, 'admin.token'), 'saved-admin-token\n', 'utf8');
+
+    const result = runRuntimeHelper(
+      fixture,
+      `export ${runtimeEnvPrefix(fixture)}
+       export MBOS_UNIVERSAL_PROXY_BASE_URL='http://127.0.0.1:39180'
+       unset MBOS_UNIVERSAL_PROXY_ADMIN_TOKEN
+       universal_proxy_runtime_ensure
+       printf 'admin-token=%s\\n' "\${MBOS_UNIVERSAL_PROXY_ADMIN_TOKEN}"`,
+    );
+
+    expect(result.status).toBe(0);
+    expect(result.stdout).toContain('admin-token=saved-admin-token');
+    expect(readFileSync(fixture.curlLog, 'utf8')).toContain('-H Authorization: Bearer saved-admin-token');
+    expect(existsSync(fixture.dockerLog) ? readFileSync(fixture.dockerLog, 'utf8') : '').not.toContain('docker run');
   });
 
   it('removes the recorded container id only after owned docker rm succeeds', () => {

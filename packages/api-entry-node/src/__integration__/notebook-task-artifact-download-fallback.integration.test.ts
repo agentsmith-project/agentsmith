@@ -46,7 +46,7 @@ describe('api-entry-node notebook task artifact download fallback', () => {
       agent_name: 'Agent One',
       workspace_file_library_id: workspaceLibrary.id,
       workspace_file_library_name: workspaceLibrary.name,
-      status: 'active',
+      status: 'active' as const,
       attached_inputs: [],
       created_at: now,
       updated_at: now,

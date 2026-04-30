@@ -36,6 +36,7 @@ LOCAL_MANUAL_INTERNAL_RUNTIME_CLEANUP_MARKER="${LOCAL_MANUAL_ROOT}/local-manual-
 
 API_PID_FILE="${LOCAL_MANUAL_ROOT}/api.pid"
 WEB_PID_FILE="${LOCAL_MANUAL_ROOT}/web.pid"
+WEB_LAUNCHER_PID_FILE="${LOCAL_MANUAL_ROOT}/web.launcher.pid"
 RUNNER_PID_FILE="${LOCAL_MANUAL_ROOT}/runner.pid"
 
 API_READY_FILE="${LOCAL_MANUAL_ROOT}/api.ready"
@@ -160,6 +161,24 @@ require_var() {
   fi
 }
 
+local_manual_port_from_url() {
+  local raw_url="$1"
+  local authority port
+  [[ -n "${raw_url}" ]] || return 1
+  authority="${raw_url#*://}"
+  authority="${authority%%/*}"
+  port="${authority##*:}"
+  [[ -n "${port}" && "${port}" != "${authority}" ]] || return 1
+  printf '%s\n' "${port}"
+}
+
+local_manual_sync_proxy_port_from_base_url() {
+  local port
+  port="$(local_manual_port_from_url "${MBOS_UNIVERSAL_PROXY_BASE_URL:-}" 2>/dev/null || true)"
+  [[ -n "${port}" ]] || return 0
+  PROXY_PORT="${port}"
+}
+
 load_local_manual_substrate_env() {
   if [[ ! -f "${SUBSTRATE_CONNECTION_ENV}" ]]; then
     if [[ "${LOCAL_MANUAL_ALLOW_MISSING_SUBSTRATE_CONNECTION:-0}" == "1" ]]; then
@@ -171,7 +190,7 @@ load_local_manual_substrate_env() {
       PUBLIC_KEYCLOAK_BASE_URL="${PUBLIC_KEYCLOAK_BASE_URL:-${KEYCLOAK_BASE_URL}}"
       INTERNAL_KEYCLOAK_BASE_URL="${INTERNAL_KEYCLOAK_BASE_URL:-${KEYCLOAK_BASE_URL}}"
       KEYCLOAK_URL="${KEYCLOAK_URL:-${KEYCLOAK_BASE_URL}/realms}"
-      PROXY_PORT="${PROXY_PORT:-${MBOS_UNIVERSAL_PROXY_BASE_URL##*:}}"
+      local_manual_sync_proxy_port_from_base_url
       return 0
     fi
     err "missing substrate connection env: ${SUBSTRATE_CONNECTION_ENV}"
@@ -184,7 +203,7 @@ load_local_manual_substrate_env() {
   PUBLIC_KEYCLOAK_BASE_URL="${PUBLIC_KEYCLOAK_BASE_URL:-${KEYCLOAK_BASE_URL}}"
   INTERNAL_KEYCLOAK_BASE_URL="${INTERNAL_KEYCLOAK_BASE_URL:-${KEYCLOAK_BASE_URL}}"
   KEYCLOAK_URL="${KEYCLOAK_URL:-${KEYCLOAK_BASE_URL}/realms}"
-  PROXY_PORT="${PROXY_PORT:-${MBOS_UNIVERSAL_PROXY_BASE_URL##*:}}"
+  local_manual_sync_proxy_port_from_base_url
 }
 
 load_local_manual_internal_env() {
@@ -211,6 +230,11 @@ init_local_manual_env() {
 
   FILE_LIBRARY_CLIENT_POSTGRES_HOST="${FILE_LIBRARY_CLIENT_POSTGRES_HOST:-$(detect_local_manual_file_library_client_postgres_host)}"
   FILE_LIBRARY_CLIENT_POSTGRES_PORT="${FILE_LIBRARY_CLIENT_POSTGRES_PORT:-15432}"
+}
+
+init_local_manual_cleanup_env() {
+  export LOCAL_MANUAL_ALLOW_MISSING_SUBSTRATE_CONNECTION=1
+  init_local_manual_env
 }
 
 
@@ -502,6 +526,12 @@ local_manual_process_cwd() {
   ps -o cwd= -p "${pid}" 2>/dev/null | head -n 1 | xargs
 }
 
+local_manual_process_group_id() {
+  local pid="$1"
+  [[ -n "${pid}" ]] || return 0
+  ps -o pgid= -p "${pid}" 2>/dev/null | tr -d '[:space:]'
+}
+
 local_manual_write_tracked_service_process_state() {
   local kind="$1"
   local pid="$2"
@@ -721,6 +751,10 @@ local_manual_classify_tracked_service_authority() {
         printf 'stale_reclaimable|tracked_pid_missing\n'
         return 0
       fi
+      if local_manual_tracked_service_launcher_without_state_is_reclaimable "${kind}" "${pid}"; then
+        printf 'launcher_reclaimable|tracked_launcher_without_process_state\n'
+        return 0
+      fi
       printf 'unverified|tracked_state_missing\n'
       return 0
       ;;
@@ -729,6 +763,49 @@ local_manual_classify_tracked_service_authority() {
       return 0
       ;;
   esac
+}
+
+local_manual_tracked_service_launcher_without_state_is_reclaimable() {
+  local kind="$1"
+  local pid="$2"
+  local command_line cwd listeners
+  [[ "${kind}" == "web" ]] || return 1
+  command_line="$(local_manual_process_command_line "${pid}")"
+  cwd="$(local_manual_process_cwd "${pid}")"
+  [[ -n "${command_line}" && -n "${cwd}" ]] || return 1
+  local_manual_service_command_matches_kind "${kind}" "${command_line}" || return 1
+  local_manual_service_cwd_matches_kind "${kind}" "${cwd}" || return 1
+  listeners="$(local_manual_service_listener_pids "${kind}")"
+  if [[ -n "${listeners}" ]] && grep -Fxq "${pid}" <<< "${listeners}"; then
+    return 1
+  fi
+  [[ "${command_line}" == *"npm run dev:test"* || "${command_line}" == *"run-next-dev-safe.sh"* ]]
+}
+
+local_manual_stop_reclaimable_launcher_pid() {
+  local pid="$1"
+  local pgid
+  [[ -n "${pid}" ]] || return 0
+  if ! kill -0 "${pid}" >/dev/null 2>&1; then
+    return 0
+  fi
+  pgid="$(local_manual_process_group_id "${pid}")"
+  if [[ -n "${pgid}" && "${pgid}" == "${pid}" && "${pgid}" != "$$" ]]; then
+    kill -TERM -- "-${pgid}" >/dev/null 2>&1 || true
+  else
+    kill "${pid}" >/dev/null 2>&1 || true
+  fi
+  for _ in 1 2 3 4 5; do
+    if ! kill -0 "${pid}" >/dev/null 2>&1; then
+      return 0
+    fi
+    sleep 0.2
+  done
+  if [[ -n "${pgid}" && "${pgid}" == "${pid}" && "${pgid}" != "$$" ]]; then
+    kill -KILL -- "-${pgid}" >/dev/null 2>&1 || true
+  else
+    kill -9 "${pid}" >/dev/null 2>&1 || true
+  fi
 }
 
 local_manual_write_service_stop_evidence() {
@@ -793,6 +870,16 @@ local_manual_apply_tracked_service_stop_authority() {
   if [[ "${authority}" == "stale_reclaimable" ]]; then
     rm -f "${pid_file}"
     local_manual_clear_tracked_service_state "${kind}"
+    return 0
+  fi
+
+  if [[ "${authority}" == "launcher_reclaimable" ]]; then
+    if [[ -n "${pid}" ]] && local_manual_tracked_service_launcher_without_state_is_reclaimable "${kind}" "${pid}"; then
+      local_manual_stop_reclaimable_launcher_pid "${pid}"
+    fi
+    rm -f "${pid_file}"
+    local_manual_clear_tracked_service_state "${kind}"
+    local_manual_write_service_stop_evidence "${kind}" "${authority}" "remove_state_only" "${reason}" "${pid}"
     return 0
   fi
 
@@ -1172,7 +1259,7 @@ remove_local_manual_runtime_files() {
     "${RUNNER_HEALTH_FILE}" "${RUNNER_HEALTH_MONITOR_PID_FILE}" \
     "${API_PORT_FILE}" "${WEB_PORT_FILE}" \
     "${API_PROCESS_STATE_FILE}" "${WEB_PROCESS_STATE_FILE}" \
-    "${API_PID_FILE}" "${WEB_PID_FILE}" "${RUNNER_PID_FILE}" "${RUNNER_OWNER_STATE_FILE}" \
+    "${API_PID_FILE}" "${WEB_PID_FILE}" "${WEB_LAUNCHER_PID_FILE}" "${RUNNER_PID_FILE}" "${RUNNER_OWNER_STATE_FILE}" \
     "${LOCAL_MANUAL_INTERNAL_RUNTIME_CLEANUP_MARKER}"
 }
 
@@ -1352,8 +1439,7 @@ local_manual_signal_runner_pid_list() {
 
 local_manual_runner_process_group_id() {
   local pid="$1"
-  [[ -n "${pid}" ]] || return 0
-  ps -o pgid= -p "${pid}" 2>/dev/null | tr -d '[:space:]'
+  local_manual_process_group_id "${pid}"
 }
 
 local_manual_verify_runner_stop_contract() {
@@ -1441,6 +1527,22 @@ stop_local_manual_runner_owner_aware() {
   return 1
 }
 
+stop_local_manual_web_launcher_owner_aware() {
+  [[ -f "${WEB_LAUNCHER_PID_FILE}" ]] || return 0
+  local pid
+  pid="$(cat "${WEB_LAUNCHER_PID_FILE}" 2>/dev/null || true)"
+  rm -f "${WEB_LAUNCHER_PID_FILE}"
+  [[ -n "${pid}" ]] || return 0
+  if ! kill -0 "${pid}" >/dev/null 2>&1; then
+    return 0
+  fi
+  if ! local_manual_tracked_service_launcher_without_state_is_reclaimable web "${pid}"; then
+    warn "web launcher ownership is unverified; refusing to stop pid=${pid}"
+    return 0
+  fi
+  local_manual_stop_reclaimable_launcher_pid "${pid}"
+}
+
 count_matching_processes() {
   local pattern="$1"
   local pids
@@ -1470,6 +1572,7 @@ rescue_stop_untracked_local_manual_processes() {
 stop_local_manual_processes() {
   stop_local_manual_runner_owner_aware stop_line
   stop_local_manual_tracked_service_owner_aware web
+  stop_local_manual_web_launcher_owner_aware
   stop_local_manual_tracked_service_owner_aware api
 
   rescue_stop_untracked_local_manual_processes

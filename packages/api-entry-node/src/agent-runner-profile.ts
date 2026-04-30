@@ -7,6 +7,7 @@ export type AgentRunnerRuntime =
   | 'k8s_internal';
 
 type AgentConfigLike = AgentRecord['config'] | Record<string, unknown> | null | undefined;
+type AgentRunnerProfileInput = { mode: AgentRecord['mode']; config?: AgentConfigLike } | null | undefined;
 
 function readRunnerRuntime(config: AgentConfigLike): AgentRunnerRuntime | null {
   const raw = typeof config?.runner_runtime === 'string'
@@ -40,7 +41,7 @@ function resolveImplicitExternalRuntime(): Extract<AgentRunnerRuntime, 'dev_dire
 }
 
 export function resolveAgentRunnerRuntime(
-  agent: Pick<AgentRecord, 'mode' | 'config'> | null | undefined,
+  agent: AgentRunnerProfileInput,
 ): AgentRunnerRuntime {
   if (agent?.mode === 'internal') {
     return 'k8s_internal';
@@ -49,13 +50,13 @@ export function resolveAgentRunnerRuntime(
 }
 
 export function isComposeManagedExternalAgent(
-  agent: Pick<AgentRecord, 'mode' | 'config'> | null | undefined,
+  agent: AgentRunnerProfileInput,
 ): boolean {
   return agent?.mode === 'external' && resolveAgentRunnerRuntime(agent) === 'compose_managed';
 }
 
 export function isExternalRunnerRuntime(
-  agent: Pick<AgentRecord, 'mode' | 'config'> | null | undefined,
+  agent: AgentRunnerProfileInput,
   runtime: Extract<AgentRunnerRuntime, 'dev_direct' | 'docker_manual' | 'compose_managed'>,
 ): boolean {
   return agent?.mode === 'external' && resolveAgentRunnerRuntime(agent) === runtime;

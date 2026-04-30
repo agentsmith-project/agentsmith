@@ -45,6 +45,7 @@ init_cluster_rehearsal_env() {
   mkdir -p "${CLUSTER_REHEARSAL_ROOT}" "${CLUSTER_REHEARSAL_RELEASES_DIR}" "${CLUSTER_REHEARSAL_CONFIG_DIR}" "${CLUSTER_REHEARSAL_GENERATED_DIR}"
   export ROOT_DIR
   export CLUSTER_DEPLOY_ROOT="${CLUSTER_REHEARSAL_ROOT}"
+  export CLUSTER_DEPLOY_SHARED_REGISTRY_ENV="${CLUSTER_REHEARSAL_CONFIG_DIR}/registry.env"
   export LOCAL_KIND_CONFIG_PATH="${CLUSTER_REHEARSAL_KIND_CONFIG_PATH}"
   export CLUSTER_DEPLOY_SHARED_KUBECONFIG="${CLUSTER_REHEARSAL_GENERATED_DIR}/kubeconfig"
   export CLUSTER_DEPLOY_SHARED_ADMIN_KUBECONFIG="${CLUSTER_REHEARSAL_GENERATED_DIR}/admin-kubeconfig"
@@ -233,12 +234,14 @@ ensure_cluster_rehearsal_release_bundle() {
   local release_id="cluster-rehearsal-$(date -u +%Y%m%dT%H%M%SZ)"
   local skip_release_archive="${SKIP_RELEASE_ARCHIVE:-}"
   local skip_bundled_image_archive_generation="${SKIP_BUNDLED_IMAGE_ARCHIVE_GENERATION:-}"
-  OUT_DIR="${CLUSTER_REHEARSAL_RELEASES_DIR}" \
+  RELEASE_ROOT= \
+    OUT_DIR="${CLUSTER_REHEARSAL_RELEASES_DIR}" \
     RELEASE_ID="${release_id}" \
     SKIP_RELEASE_ARCHIVE="${skip_release_archive}" \
     SKIP_BUNDLED_IMAGE_ARCHIVE_GENERATION="${skip_bundled_image_archive_generation}" \
     bash "${ROOT_DIR}/scripts/cluster-deploy/build-bundle.sh"
   export RELEASE_ROOT="${CLUSTER_REHEARSAL_RELEASES_DIR}/agentsmith-${release_id}"
+  export RELEASE_ID="${release_id}"
 }
 
 cluster_state_file() {

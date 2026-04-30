@@ -68,7 +68,7 @@ describe('notebook-execution-orchestrator governance preflight', () => {
           model: 'placeholder-model',
           credential_ref: 'cred_1',
           name: 'endpoint-1',
-          type: 'openai',
+          type: 'custom',
           upstream_protocol: 'openai_chat_completions',
           base_url: 'https://example.com',
           model_profile: {
@@ -203,7 +203,7 @@ describe('notebook-execution-orchestrator governance preflight', () => {
           model: 'placeholder-model',
           credential_ref: 'cred_final_order',
           name: 'endpoint-final-order',
-          type: 'openai',
+          type: 'custom',
           upstream_protocol: 'openai_chat_completions',
           base_url: 'https://example.com',
           model_profile: {
@@ -334,7 +334,7 @@ describe('notebook-execution-orchestrator governance preflight', () => {
           model: 'placeholder-model',
           credential_ref: 'cred_finalizing_failure',
           name: 'endpoint-finalizing-failure',
-          type: 'openai',
+          type: 'custom',
           upstream_protocol: 'openai_chat_completions',
           base_url: 'https://example.com',
           model_profile: {
@@ -463,7 +463,7 @@ describe('notebook-execution-orchestrator governance preflight', () => {
           model: 'placeholder-model',
           credential_ref: 'cred_internal',
           name: 'endpoint-internal',
-          type: 'openai',
+          type: 'custom',
           upstream_protocol: 'openai_chat_completions',
           base_url: 'https://example.com',
           model_profile: {
@@ -635,7 +635,7 @@ describe('notebook-execution-orchestrator governance preflight', () => {
           model: 'placeholder-model',
           credential_ref: 'cred_1',
           name: 'endpoint-external',
-          type: 'openai',
+          type: 'custom',
           upstream_protocol: 'openai_chat_completions',
           base_url: 'https://example.com',
           capabilities: [
@@ -880,7 +880,7 @@ describe('notebook-execution-orchestrator governance preflight', () => {
           model: 'placeholder-model',
           credential_ref: 'cred_1',
           name: 'endpoint-empty-error',
-          type: 'openai',
+          type: 'custom',
           upstream_protocol: 'openai_chat_completions',
           base_url: 'https://example.com',
           model_profile: {
@@ -989,7 +989,7 @@ describe('notebook-execution-orchestrator governance preflight', () => {
           model: 'placeholder-model',
           credential_ref: 'cred_external',
           name: 'endpoint-external',
-          type: 'openai',
+          type: 'custom',
           upstream_protocol: 'openai_chat_completions',
           base_url: 'https://example.com',
           model_profile: {
@@ -1095,7 +1095,7 @@ describe('notebook-execution-orchestrator governance preflight', () => {
           model: 'placeholder-model',
           credential_ref: 'cred_invalid',
           name: 'endpoint-invalid',
-          type: 'openai',
+          type: 'custom',
           upstream_protocol: 'openai_chat_completions',
           base_url: 'https://example.com',
           model_profile: {
@@ -1206,7 +1206,7 @@ describe('notebook-execution-orchestrator governance preflight', () => {
           model: 'placeholder-model',
           credential_ref: 'cred_internal_hold',
           name: 'endpoint-internal-hold',
-          type: 'openai',
+          type: 'custom',
           upstream_protocol: 'openai_chat_completions',
           base_url: 'https://example.com',
           model_profile: {
@@ -1350,7 +1350,7 @@ describe('notebook-execution-orchestrator governance preflight', () => {
           model: 'placeholder-model',
           credential_ref: 'cred_internal_abort',
           name: 'endpoint-internal-abort',
-          type: 'openai',
+          type: 'custom',
           upstream_protocol: 'openai_chat_completions',
           base_url: 'https://example.com',
           model_profile: {
@@ -1501,7 +1501,7 @@ describe('notebook-execution-orchestrator governance preflight', () => {
           model: 'placeholder-model',
           credential_ref: 'cred_late_dispatch_cancelled',
           name: 'endpoint-late-dispatch-cancelled',
-          type: 'openai',
+          type: 'custom',
           upstream_protocol: 'openai_chat_completions',
           base_url: 'https://example.com',
           model_profile: {

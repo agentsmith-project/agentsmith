@@ -29,7 +29,7 @@ describe('readRegisteredWorkspaces', () => {
       name: 'Ready Workspace',
       workspace_admin: 'ready@example.com',
       project_creators: [],
-      idp: { kind: 'keycloak', url: 'http://localhost:18080', realm: 'mbos', client_id: 'agentsmith' },
+      login_idp: { kind: 'keycloak', url: 'http://localhost:18080', realm: 'mbos', client_id: 'agentsmith' },
       tenant: {
         workspace_id: 'ws_ready',
         workspace_name: 'Ready Workspace',
@@ -49,7 +49,7 @@ describe('readRegisteredWorkspaces', () => {
       name: 'Disabled Workspace',
       workspace_admin: 'disabled@example.com',
       project_creators: [],
-      idp: { kind: 'keycloak', url: 'http://localhost:18080', realm: 'mbos', client_id: 'agentsmith' },
+      login_idp: { kind: 'keycloak', url: 'http://localhost:18080', realm: 'mbos', client_id: 'agentsmith' },
       tenant: {
         workspace_id: 'ws_disabled',
         workspace_name: 'Disabled Workspace',
@@ -87,7 +87,7 @@ describe('readRegisteredWorkspaces', () => {
         email: 'creator@example.com',
         name: 'creator@example.com',
       }],
-      idp: {
+      login_idp: {
         kind: 'keycloak',
         url: 'http://localhost:18080',
         realm: 'mbos',
@@ -125,7 +125,7 @@ describe('readRegisteredWorkspaces', () => {
             name: 'Next Creator',
           },
         ],
-        idp: expect.objectContaining({
+        login_idp: expect.objectContaining({
           kind: 'keycloak',
           url: 'http://localhost:18080',
           realm: 'mbos',

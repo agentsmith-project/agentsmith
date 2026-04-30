@@ -5,6 +5,8 @@ ROOT_DIR="$(cd "$(dirname "$0")/../.." && pwd)"
 source "${ROOT_DIR}/scripts/lib/release-check-common.sh"
 release_check_init_tmp_root
 RELEASE_ROOT="${TMP_ROOT}/release"
+RELEASE_ID="test-release"
+export RELEASE_ID
 mkdir -p "${RELEASE_ROOT}/env"
 cp "${ROOT_DIR}/infra/deploy/cluster/env/site.env.example" "${RELEASE_ROOT}/env/site.env.example"
 cp "${ROOT_DIR}/infra/deploy/cluster/env/site.env.example" "${RELEASE_ROOT}/env/site.env"

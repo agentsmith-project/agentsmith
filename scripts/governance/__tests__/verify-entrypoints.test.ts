@@ -1961,7 +1961,8 @@ describe('verify human entrypoints', () => {
 
       expect(exitCode).toBe(7);
       expect(aliases).toEqual(['verify:quick']);
-      expect(stderr.join('')).toBe('');
+      expect(stderr.join('')).toContain('[verify] failed script: npm run verify:quick (exit 7)');
+      expect(stderr.join('')).toContain(`[verify] report root: ${root}`);
       expect(stdout.join('')).toContain(`Pure check shadow audit: ${join(root, PURE_CHECK_SHADOW_AUDIT_FILE_NAME)}`);
 
       const audit = JSON.parse(readFileSync(join(root, PURE_CHECK_SHADOW_AUDIT_FILE_NAME), 'utf8')) as {

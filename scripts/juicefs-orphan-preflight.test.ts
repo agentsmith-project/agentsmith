@@ -5,11 +5,13 @@ import { describe, expect, it } from 'vitest';
 import { resolveFileLibraryRuntimeConfig } from '../packages/api-entry-node/src/file-library-runtime.js';
 import {
   buildTaskMountUmountAttempts,
+  classifyAgentSmithOwnedMountProcess,
   classifyGatewayProcessWithoutState,
   classifyTaskMountpointStatus,
   classifyGatewayState,
   classifyTaskMountProcess,
   extractGatewayProcessIdentity,
+  extractJuicefsMountPath,
   hasAnyNotebookRunnerAlive,
   loadTaskMountRegistryOwners,
   matchGatewayStateForProcess,
@@ -641,6 +643,66 @@ describe('juicefs orphan preflight', () => {
     expect(decision).toEqual({
       action: 'keep',
       reason: 'owner_scope_unverified',
+    });
+  });
+
+  it('extracts the mountpoint from a local JuiceFS mount command with backend-real endpoints', () => {
+    const mountPath = path.join(tmpdir(), 'agentsmith-real-file-library-ybtBMN');
+    const command = [
+      'juicefs',
+      'mount',
+      'postgresql://mbos:secret@127.0.0.1:25432/jfs_lib_demo?sslmode=disable',
+      mountPath,
+      '-d',
+      '--bucket',
+      'http://127.0.0.1:29000/jfs-lib-demo',
+      '--attr-cache',
+      '0',
+    ].join(' ');
+
+    expect(extractJuicefsMountPath(command)).toBe(mountPath);
+  });
+
+  it('reclaims AgentSmith-owned file-library temp mounts during full reset even when state is gone', () => {
+    const mountPath = path.join(tmpdir(), 'agentsmith-real-file-library-ybtBMN');
+    const decision = classifyAgentSmithOwnedMountProcess({
+      processInfo: buildProcess({
+        ageSeconds: 5,
+        command: `juicefs mount postgresql://meta ${mountPath} -d --bucket http://127.0.0.1:29000/jfs-lib-demo`,
+      }),
+      mountPath,
+      context: 'full-reset',
+      minAgeSeconds: 600,
+    });
+
+    expect(decision).toEqual({
+      action: 'reclaim_mount',
+      reason: 'full_reset_agentsmith_temp_mount',
+    });
+  });
+
+  it('keeps fresh AgentSmith-owned file-library temp mounts outside full reset but reclaims stale ones', () => {
+    const mountPath = path.join(tmpdir(), 'agentsmith-real-file-library-ybtBMN');
+    const freshDecision = classifyAgentSmithOwnedMountProcess({
+      processInfo: buildProcess({ ageSeconds: 30 }),
+      mountPath,
+      context: 'file-library-real-gate',
+      minAgeSeconds: 600,
+    });
+    const staleDecision = classifyAgentSmithOwnedMountProcess({
+      processInfo: buildProcess({ ageSeconds: 1200 }),
+      mountPath,
+      context: 'file-library-real-gate',
+      minAgeSeconds: 600,
+    });
+
+    expect(freshDecision).toEqual({
+      action: 'keep',
+      reason: 'process_too_fresh',
+    });
+    expect(staleDecision).toEqual({
+      action: 'reclaim_mount',
+      reason: 'agentsmith_temp_mount_stale',
     });
   });
 

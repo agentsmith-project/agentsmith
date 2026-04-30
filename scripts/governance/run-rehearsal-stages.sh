@@ -49,6 +49,7 @@ write_stage_diagnostics() {
   local started_ms="${5:-}"
   local finished_at="${6:-}"
   local finished_ms="${7:-}"
+  local failure_reason="${8:-}"
 
   if [[ -z "${RUN_ROOT}" || -z "${RUN_ID}" ]]; then
     printf '[rehearsal-stages] warning: missing gate diagnostics context for stage %s\n' "${stage}" >&2
@@ -65,14 +66,39 @@ write_stage_diagnostics() {
   CURRENT_RUN_DIAGNOSTICS_STAGE="${stage}" \
   CURRENT_RUN_DIAGNOSTICS_EVENT="${event}" \
   CURRENT_RUN_DIAGNOSTICS_STARTED_AT="${started_at}" \
-  CURRENT_RUN_DIAGNOSTICS_STARTED_MS="${started_ms}" \
-  CURRENT_RUN_DIAGNOSTICS_FINISHED_AT="${finished_at}" \
-  CURRENT_RUN_DIAGNOSTICS_FINISHED_MS="${finished_ms}" \
-  node --import tsx "${ROOT_DIR}/scripts/governance/run-diagnostics-writer.ts"
+    CURRENT_RUN_DIAGNOSTICS_STARTED_MS="${started_ms}" \
+    CURRENT_RUN_DIAGNOSTICS_FINISHED_AT="${finished_at}" \
+    CURRENT_RUN_DIAGNOSTICS_FINISHED_MS="${finished_ms}" \
+    CURRENT_RUN_DIAGNOSTICS_FAILURE_REASON="${failure_reason}" \
+    node --import tsx "${ROOT_DIR}/scripts/governance/run-diagnostics-writer.ts"
+}
+
+classify_stage_failure_reason() {
+  local stage="$1"
+  local stage_log_path="$2"
+
+  if [[ -f "${stage_log_path}" ]]; then
+    if grep -Eq 'layer_diff_id_mismatch|layer_blob_digest_mismatch|config_digest_mismatch|config_blob_digest_mismatch|image_identity_mismatch|image_archive_manifest|missing_archive_member|invalid_manifest_shape|repo_tag_mismatch|invalid_tar' "${stage_log_path}"; then
+      printf 'image_archive_contract_drift\n'
+      return 0
+    fi
+    if grep -Eqi 'Cannot connect to the Docker daemon|docker daemon|failed to dial|no space left on device' "${stage_log_path}"; then
+      printf 'rehearsal_infra_dependency_unready\n'
+      return 0
+    fi
+  fi
+
+  printf 'rehearsal_stage_exited_nonzero\n'
 }
 
 for stage in "${STAGES[@]}"; do
   stage_script="${STAGE_ROOT}/${stage}.sh"
+  stage_log_path=""
+  if [[ -n "${RUN_ROOT}" ]]; then
+    stage_log_path="${RUN_ROOT}/logs/${stage}.log"
+    mkdir -p "$(dirname "${stage_log_path}")"
+    : > "${stage_log_path}"
+  fi
   started_at=""
   started_ms=""
   if diagnostic_now="$(diagnostic_timestamp)"; then
@@ -88,8 +114,13 @@ for stage in "${STAGES[@]}"; do
   fi
 
   set +e
-  bash "${stage_script}"
-  status=$?
+  if [[ -n "${stage_log_path}" ]]; then
+    bash "${stage_script}" 2>&1 | tee "${stage_log_path}"
+    status="${PIPESTATUS[0]}"
+  else
+    bash "${stage_script}"
+    status=$?
+  fi
   set -e
 
   finished_at=""
@@ -107,7 +138,8 @@ for stage in "${STAGES[@]}"; do
       printf '[rehearsal-stages] warning: failed to write %s finish diagnostics\n' "${stage}" >&2
     fi
   else
-    if ! write_stage_diagnostics "rehearsal-stage-finish" "${stage}" "failed" "${started_at}" "${started_ms}" "${finished_at}" "${finished_ms}"; then
+    failure_reason="$(classify_stage_failure_reason "${stage}" "${stage_log_path}")"
+    if ! write_stage_diagnostics "rehearsal-stage-finish" "${stage}" "failed" "${started_at}" "${started_ms}" "${finished_at}" "${finished_ms}" "${failure_reason}"; then
       printf '[rehearsal-stages] warning: failed to write %s failure diagnostics\n' "${stage}" >&2
     fi
     exit "${status}"

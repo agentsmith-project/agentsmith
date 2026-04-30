@@ -3057,7 +3057,7 @@ export async function startChatRunnerProcess(args: {
 export async function ensureInternalChatRunnerImage(): Promise<string> {
   const baseImageTag = process.env.INTEGRATION_CHAT_RUNNER_BASE_DOCKER_IMAGE?.trim() || 'agentsmith-chat-llm-runner-base:local';
   const imageTag = process.env.INTEGRATION_INTERNAL_CHAT_AGENT_IMAGE?.trim() || INTERNAL_CHAT_AGENT_IMAGE;
-  const rebuildBaseImage = process.env.INTEGRATION_CHAT_RUNNER_REBUILD_BASE_IMAGE?.trim() !== '0';
+  const rebuildBaseImage = process.env.INTEGRATION_CHAT_RUNNER_REBUILD_BASE_IMAGE?.trim() === '1';
   const rebuildRunnerImage = process.env.INTEGRATION_CHAT_RUNNER_REBUILD_IMAGE?.trim() !== '0';
   const buildContext = path.resolve(__dirname, '..');
   const buildResult = await spawnAndCapture(
@@ -3100,7 +3100,7 @@ async function startNotebookRunnerDockerProcessInternal(args: NotebookRunnerDock
   const baseImageTag = process.env.INTEGRATION_CODEX_RUNNER_BASE_DOCKER_IMAGE?.trim() || 'agentsmith-notebook-codex-runner-base:local';
   const imageTag = process.env.INTEGRATION_CODEX_RUNNER_DOCKER_IMAGE?.trim() || 'agentsmith-notebook-codex-runner:local';
   const embeddedRunner = process.env.INTEGRATION_CODEX_RUNNER_EMBEDDED?.trim() === '1';
-  const rebuildBaseImage = process.env.INTEGRATION_CODEX_RUNNER_REBUILD_BASE_IMAGE?.trim() !== '0';
+  const rebuildBaseImage = process.env.INTEGRATION_CODEX_RUNNER_REBUILD_BASE_IMAGE?.trim() === '1';
   const rebuildRunnerImage = process.env.INTEGRATION_CODEX_RUNNER_REBUILD_IMAGE?.trim() !== '0';
   const runnerWsUrl = resolveNotebookRunnerSocketUrl(args.scope === 'task_execution'
     ? { wsUrl: args.wsUrl, scope: 'task_execution', taskId: args.taskId }

@@ -1,4 +1,5 @@
 import { Readable } from 'node:stream';
+import type { ReadableStream as WebReadableStream } from 'node:stream/web';
 import { resolveImageMimeType, toImageDataUrl } from './chat-image-utils.js';
 import type { ChatAttachmentRecord, ChatMessageRecord } from './resource-models.js';
 
@@ -16,7 +17,6 @@ type ChatMessageInput = Pick<
   | 'content'
   | 'attachment_snapshots'
   | 'parent_id'
-  | 'created_at'
   | 'logical_id'
   | 'revision_of'
   | 'revision_index'
@@ -24,6 +24,7 @@ type ChatMessageInput = Pick<
   | 'variant_index'
   | 'is_stale'
 > & {
+  created_at?: string;
   attachment_snapshots?: AttachmentSnapshot[];
 };
 
@@ -32,7 +33,7 @@ type DownloadFileLibraryObject = (args: {
   projectId: string;
   libraryId: string;
   key: string;
-}) => Promise<{ body: ReadableStream<Uint8Array> }>;
+}) => Promise<{ body: WebReadableStream<Uint8Array> }>;
 
 function toDataUrl(attachment: ChatAttachmentRecord, mimeType: string | null): string | null {
   return toImageDataUrl(attachment.content_base64, mimeType);

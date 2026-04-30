@@ -115,8 +115,8 @@ function buildProxyUsername(user: AuthenticatedUser): string {
 }
 
 export function selectLatestCanonicalBranchLeaf(
-  messages: Pick<ChatMessageRecord, 'id' | 'role' | 'parent_id' | 'created_at' | 'is_stale'>[],
-): Pick<ChatMessageRecord, 'id' | 'role' | 'parent_id' | 'created_at' | 'is_stale'> | null {
+  messages: ChatMessageRecord[],
+): ChatMessageRecord | null {
   const candidates = messages.filter((item) => item.role !== 'system' && !item.is_stale);
   if (candidates.length === 0) return null;
 
@@ -886,7 +886,10 @@ export async function handleChatStreamRoute(args: ChatStreamHandlerArgs): Promis
     let internalWorkloadHolder: InternalWorkloadHolderRef | undefined;
     try {
       const agent = await deps.agentResourceService.getAgent(route.workspaceId, route.projectId, externalAgentId);
-      const agentExecutionPreferences = readAgentExecutionPreferences(agent ?? {}, 'chat');
+      if (!agent) {
+        throw new AgentStreamRouteError('AGENT_NOT_FOUND', 'agent_not_found');
+      }
+      const agentExecutionPreferences = readAgentExecutionPreferences(agent, 'chat');
       const executionEndpointId = agentExecutionPreferences.endpointId;
       const executionWireApi = agentExecutionPreferences.wireApi;
       const executionModel = (raw.model ?? session.model ?? agentExecutionPreferences.model ?? '').trim();
@@ -941,7 +944,7 @@ export async function handleChatStreamRoute(args: ChatStreamHandlerArgs): Promis
         workspaceId: route.workspaceId,
         projectId: route.projectId,
         payload: {
-          ...(executionEndpointId ? { endpoint_id: executionEndpointId } : {}),
+          endpoint_id: executionEndpointId,
           session_id: route.sessionId,
           agent_id: externalAgentId,
           mode: 'chat',

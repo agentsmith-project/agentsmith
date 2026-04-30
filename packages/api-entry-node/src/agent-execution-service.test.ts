@@ -1252,6 +1252,31 @@ describe('AgentExecutionService', () => {
     });
   });
 
+  it('keeps terminal dispatch session-strict when no notebook execution context is declared', async () => {
+    const { executionService, agent, ws } = await setupExecutionService({ interactionKind: 'notebook' });
+    const terminalFrames: Array<Record<string, unknown>> = [];
+    ws.on('message', (raw) => {
+      const message = JSON.parse(raw.toString('utf-8')) as Record<string, unknown>;
+      if (message.type === 'server.terminal.start') {
+        terminalFrames.push(message);
+      }
+    });
+
+    await expect(executionService.dispatchTerminalSession({
+      workspaceId: 'ws_default',
+      projectId: 'proj_1',
+      sessionId: 'task_requires_terminal_context',
+      agentId: agent.id,
+      terminalSessionId: 'term_requires_terminal_context',
+      payload: {
+        cols: 80,
+        rows: 24,
+      },
+    })).rejects.toThrow('agent_offline');
+
+    expect(terminalFrames).toEqual([]);
+  });
+
   it('keeps compose-managed agent-presence notebook dispatch fenced off when a task-scoped authority exists', async () => {
     const { agentResourceService, executionService, agent, ws } = await setupExecutionService({ interactionKind: 'notebook' });
     const requestFrames: Array<Record<string, unknown>> = [];

@@ -3262,7 +3262,9 @@ describe('task-route-handler workspace access', () => {
 
   it('allows terminal creation to proceed when local runner truth is still online and shared session authority has not materialized yet', async () => {
     const previousPublicApiBase = process.env.PUBLIC_API_BASE_URL;
+    const previousExternalApiBase = process.env.EXTERNAL_AGENT_EXECUTION_HTTP_BASE_URL;
     process.env.PUBLIC_API_BASE_URL = 'http://127.0.0.1:20000/api/v1';
+    process.env.EXTERNAL_AGENT_EXECUTION_HTTP_BASE_URL = 'http://127.0.0.1:20000';
     const docStore = new InMemoryJsonDocStore();
     const cache = new InMemoryCache();
     const now = new Date().toISOString();
@@ -3316,6 +3318,7 @@ describe('task-route-handler workspace access', () => {
               status: 'enabled',
               mode: 'external',
               interaction_kind: 'notebook',
+              config: null,
             }),
           },
           agentExecutionService: {
@@ -3334,9 +3337,19 @@ describe('task-route-handler workspace access', () => {
       } else {
         process.env.PUBLIC_API_BASE_URL = previousPublicApiBase;
       }
+      if (previousExternalApiBase === undefined) {
+        delete process.env.EXTERNAL_AGENT_EXECUTION_HTTP_BASE_URL;
+      } else {
+        process.env.EXTERNAL_AGENT_EXECUTION_HTTP_BASE_URL = previousExternalApiBase;
+      }
     }
 
     expect(createSession).toHaveBeenCalledTimes(1);
+    expect(createSession).toHaveBeenCalledWith(expect.objectContaining({
+      executionContext: expect.objectContaining({
+        runner_session_scope: 'agent_presence',
+      }),
+    }));
     expect(json).toHaveBeenCalledWith(
       expect.anything(),
       201,

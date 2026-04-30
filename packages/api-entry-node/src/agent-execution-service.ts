@@ -1401,10 +1401,11 @@ export class AgentExecutionService {
     debugExecution(
       `dispatch_terminal_start agent_id=${input.agentId} runner_session=${input.sessionId} terminal_session=${input.terminalSessionId}`,
     );
+    const dispatchScope = resolveStreamingDispatchScope(input.payload.executionContext);
     const socket = await this.resolveDispatchSocket({
       agentId: input.agentId,
       sessionId: input.sessionId,
-      scope: 'session_strict',
+      scope: dispatchScope,
     });
     if (!socket) {
       debugExecution(
@@ -1437,7 +1438,7 @@ export class AgentExecutionService {
     const sent = await this.sendDispatchFrameWithAuthorityFence({
       socket,
       sessionId: input.sessionId,
-      scope: 'session_strict',
+      scope: dispatchScope,
       frame: {
         type: 'server.terminal.start',
         session_id: input.sessionId,

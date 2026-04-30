@@ -709,6 +709,7 @@ describe('current workflow governance', () => {
 
     expect(makefile).toMatch(/local-real-up:[\s\S]*\$\(MAKE\) substrate-up[\s\S]*\$\(MAKE\) substrate-reseed[\s\S]*\$\(MAKE\) local-manual-up/);
     expect(makefile).toMatch(/local-real-status:[\s\S]*\$\(MAKE\) substrate-status[\s\S]*\$\(MAKE\) local-manual-status/);
+    expect(makefile).toMatch(/local-manual-reset:[\s\S]*\$\(MAKE\) substrate-reset SUBSTRATE=local-dev[\s\S]*\$\(MAKE\) substrate-up SUBSTRATE=local-dev[\s\S]*\$\(MAKE\) substrate-reseed SUBSTRATE=local-dev[\s\S]*\$\(MAKE\) local-manual-up[\s\S]*\$\(MAKE\) local-manual-seed-notebook/);
     expect(runtimeManifest).not.toMatch(/id:\s*'local-real'/);
     expect(runtimeManifest).not.toMatch(/formalName:\s*'local-real'/);
   });

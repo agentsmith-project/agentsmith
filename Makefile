@@ -660,7 +660,7 @@ local-manual-status:
 
 local-manual-reset:
 	env -u http_proxy -u https_proxy -u all_proxy -u HTTP_PROXY -u HTTPS_PROXY -u ALL_PROXY -u no_proxy -u NO_PROXY \
-	./scripts/local-manual-down.sh && $(MAKE) substrate-reset SUBSTRATE=local-dev && $(MAKE) local-manual-up && $(MAKE) local-manual-seed-notebook
+	./scripts/local-manual-down.sh && $(MAKE) substrate-reset SUBSTRATE=local-dev && $(MAKE) substrate-up SUBSTRATE=local-dev && $(MAKE) substrate-reseed SUBSTRATE=local-dev && $(MAKE) local-manual-up && $(MAKE) local-manual-seed-notebook
 
 local-real-up:
 	$(MAKE) substrate-up

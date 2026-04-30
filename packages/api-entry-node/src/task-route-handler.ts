@@ -63,7 +63,11 @@ import {
   resolveFileLibraryStorageBucketUrlForExternalExecution,
   resolveFileLibraryStorageBucketUrlForInternalExecution,
 } from './file-library-runtime.js';
-import { isComposeManagedExternalAgent, isExternalRunnerRuntime } from './agent-runner-profile.js';
+import {
+  isComposeManagedExternalAgent,
+  isExternalRunnerRuntime,
+  usesAgentPresenceScopedNotebookRunner,
+} from './agent-runner-profile.js';
 import {
   asObject,
   buildId,
@@ -481,6 +485,9 @@ async function buildTaskTerminalExecutionContext(args: {
     username: buildTerminalUsername(args.user),
     api_base: resolveExecutionApiBase(args.publicBaseUrl, args.agent),
     execution_ticket: executionTicket.ticket,
+    runner_session_scope: args.agent.mode === 'external' && usesAgentPresenceScopedNotebookRunner(args.agent)
+      ? 'agent_presence'
+      : 'task_execution',
     workspace_binding_mode: args.agent.mode === 'internal' ? 'pre_mounted' : 'file_library',
     workspace_path: args.agent.mode === 'internal' ? `/workspace/${args.task.id}` : undefined,
     workspace_file_library_id: args.task.workspace_file_library_id ?? null,

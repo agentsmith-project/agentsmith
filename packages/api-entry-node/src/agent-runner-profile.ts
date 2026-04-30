@@ -55,6 +55,14 @@ export function isComposeManagedExternalAgent(
   return agent?.mode === 'external' && resolveAgentRunnerRuntime(agent) === 'compose_managed';
 }
 
+export function usesAgentPresenceScopedNotebookRunner(
+  agent: AgentRunnerProfileInput,
+): boolean {
+  if (agent?.mode !== 'external') return false;
+  const runtime = resolveAgentRunnerRuntime(agent);
+  return runtime === 'compose_managed' || runtime === 'dev_direct';
+}
+
 export function isExternalRunnerRuntime(
   agent: AgentRunnerProfileInput,
   runtime: Extract<AgentRunnerRuntime, 'dev_direct' | 'docker_manual' | 'compose_managed'>,

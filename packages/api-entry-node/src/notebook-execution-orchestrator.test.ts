@@ -731,6 +731,132 @@ describe('notebook-execution-orchestrator governance preflight', () => {
     expect(dispatchArg?.executionContext).not.toHaveProperty('user_bearer_token');
   });
 
+  it('uses agent-presence scope for configless dev-direct external notebook agents', async () => {
+    const previousInternalApiBase = process.env.INTERNAL_API_BASE_URL;
+    const previousExternalApiBase = process.env.EXTERNAL_AGENT_EXECUTION_HTTP_BASE_URL;
+    process.env.INTERNAL_API_BASE_URL = 'http://api:20000';
+    process.env.EXTERNAL_AGENT_EXECUTION_HTTP_BASE_URL = 'http://localhost:21000';
+
+    const dispatchStreamingRequest = vi.fn(async () => ({
+      requestId: 'req_external_dev_direct',
+      cancel: () => undefined,
+      stream: (async function* stream() {})(),
+    }));
+    const deps = {
+      cache: new InMemoryCache(),
+      docStore: new InMemoryJsonDocStore(),
+      agentResourceService: {
+        getAgent: vi.fn(async () => ({
+          id: 'agent_external_dev_direct',
+          status: 'enabled',
+          mode: 'external',
+          config: null,
+          execution_preferences_json: {
+            notebook: {
+              endpoint_id: 'ep_external_dev_direct',
+            },
+          },
+        })),
+      },
+      endpointResourceService: {
+        getEndpoint: vi.fn(async () => ({
+          id: 'ep_external_dev_direct',
+          workspace_id: 'ws_external',
+          project_id: 'proj_external',
+          status: 'active',
+          model: 'placeholder-model',
+          credential_ref: 'cred_1',
+          name: 'endpoint-external-dev-direct',
+          type: 'custom',
+          upstream_protocol: 'openai_chat_completions',
+          base_url: 'https://example.com',
+          capabilities: [
+            { type: 'chat_completion', enabled: true },
+          ],
+          model_profile: {
+            max_context_tokens: 128000,
+          },
+          created_at: new Date().toISOString(),
+          updated_at: new Date().toISOString(),
+        })),
+      },
+      agentExecutionService: {
+        dispatchStreamingRequest,
+      },
+    } as unknown as NodeApiDeps;
+
+    const task = {
+      id: 'task_external_dev_direct',
+      workspace_id: 'ws_external',
+      project_id: 'proj_external',
+      owner_user_id: 'user_external',
+      title: 'external dev direct task',
+      agent_name: 'external agent',
+      status: 'active' as const,
+      attached_inputs: [],
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+      last_activity_at: new Date().toISOString(),
+      agent_id: 'agent_external_dev_direct',
+      workspace_file_library_id: 'flib_external',
+      workspace_file_library_name: 'External Workspace',
+    };
+    const assistantMessage = {
+      id: 'msg_external_dev_direct',
+      task_id: task.id,
+      role: 'agent' as const,
+      content: '',
+      created_at: new Date().toISOString(),
+    };
+
+    try {
+      await runNotebookTaskWithExecutionAgent({
+        deps,
+        task,
+        assistantMessage,
+        agentId: 'agent_external_dev_direct',
+        user: { id: 'user_external', name: 'External User', email: 'external@example.com' },
+        publicBaseUrl: 'http://localhost:20000',
+        buildRunId: () => 'run_external_dev_direct',
+        buildProxyUsername: () => 'external_user',
+        mapTaskMessagesForExecution: () => [],
+        updateTaskActivity: () => undefined,
+        emitTaskEvent: () => undefined,
+        onFinalize: () => undefined,
+        debugLog: () => undefined,
+        taskCollections: {
+          tasks: 'project_tasks',
+          messages: 'project_task_messages',
+        },
+        createTaskArtifact: async () => ({
+          id: 'artifact_external_dev_direct',
+          task_id: task.id,
+          type: 'file',
+          created_at: new Date().toISOString(),
+        }),
+      });
+    } finally {
+      if (previousInternalApiBase === undefined) delete process.env.INTERNAL_API_BASE_URL;
+      else process.env.INTERNAL_API_BASE_URL = previousInternalApiBase;
+      if (previousExternalApiBase === undefined) delete process.env.EXTERNAL_AGENT_EXECUTION_HTTP_BASE_URL;
+      else process.env.EXTERNAL_AGENT_EXECUTION_HTTP_BASE_URL = previousExternalApiBase;
+    }
+
+    expect(dispatchStreamingRequest).toHaveBeenCalledWith(
+      expect.objectContaining({
+        executionContext: expect.objectContaining({
+          api_base: 'http://localhost:21000/api/v1',
+          execution_ticket: expect.stringMatching(/^exec_/),
+          runner_session_scope: 'agent_presence',
+          workspace_binding_mode: 'file_library',
+          workspace_file_library_id: 'flib_external',
+        }),
+      }),
+    );
+    const dispatchArg = dispatchStreamingRequest.mock.calls[0]?.[0] as { executionContext?: Record<string, unknown> } | undefined;
+    expect(dispatchArg?.executionContext).not.toHaveProperty('user_bearer_token');
+  });
+
   it('keeps responses wire_api stable for external notebook dispatch regardless of endpoint protocol', async () => {
     const previousInternalApiBase = process.env.INTERNAL_API_BASE_URL;
     process.env.INTERNAL_API_BASE_URL = 'http://api:20000';

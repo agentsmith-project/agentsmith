@@ -1218,6 +1218,40 @@ describe('AgentExecutionService', () => {
     });
   });
 
+  it('allows notebook terminal dispatch through an agent-level socket when agent presence scope is declared', async () => {
+    const { executionService, agent, ws } = await setupExecutionService({ interactionKind: 'notebook' });
+    const terminalStart = new Promise<Record<string, unknown>>((resolve) => {
+      ws.on('message', (raw) => {
+        const message = JSON.parse(raw.toString('utf-8')) as Record<string, unknown>;
+        if (message.type === 'server.terminal.start') {
+          resolve(message);
+        }
+      });
+    });
+
+    await executionService.dispatchTerminalSession({
+      workspaceId: 'ws_default',
+      projectId: 'proj_1',
+      sessionId: 'task_dev_direct_presence',
+      agentId: agent.id,
+      terminalSessionId: 'term_dev_direct_presence',
+      payload: {
+        cols: 80,
+        rows: 24,
+        executionContext: {
+          interaction_kind: 'notebook',
+          runner_session_scope: 'agent_presence',
+        },
+      },
+    });
+
+    await expect(terminalStart).resolves.toMatchObject({
+      type: 'server.terminal.start',
+      session_id: 'task_dev_direct_presence',
+      terminal_session_id: 'term_dev_direct_presence',
+    });
+  });
+
   it('keeps compose-managed agent-presence notebook dispatch fenced off when a task-scoped authority exists', async () => {
     const { agentResourceService, executionService, agent, ws } = await setupExecutionService({ interactionKind: 'notebook' });
     const requestFrames: Array<Record<string, unknown>> = [];

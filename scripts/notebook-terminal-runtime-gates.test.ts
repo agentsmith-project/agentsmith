@@ -133,6 +133,16 @@ describe('notebook terminal runtime gates', () => {
     expect(stopProcesses).not.toContain('stop_listeners_on_port');
   });
 
+  it('seeds local-manual external notebook agents with explicit dev-direct runtime truth', async () => {
+    const initResources = await readFile(
+      path.resolve(process.cwd(), 'scripts/notebook-agent-init-resources.sh'),
+      'utf-8',
+    );
+
+    expect(initResources).toContain('config:{runner_runtime:"dev_direct"}');
+    expect(initResources).not.toContain('config:{runner_runtime:"compose_managed"}');
+  });
+
   it('runs stale JuiceFS preflight before rebuilding the local-manual world so developer gates clear only historical leftovers', async () => {
     const localManualUp = await readFile(
       path.resolve(process.cwd(), 'scripts/local-manual/up.sh'),

@@ -13,7 +13,7 @@ import { buildTaskTraceEvent, storeTaskTraceEvent } from './notebook-trace-store
 import { buildSandboxStartingEvent, sanitizeWorkloadId } from './internal-agent-pod-manager.js';
 import { enforceEndpointGovernancePreflight } from './governance-endpoint-preflight.js';
 import { JsonDocProjectFileLibraryCatalogRepo } from './file-library-persistence.js';
-import { isComposeManagedExternalAgent } from './agent-runner-profile.js';
+import { isComposeManagedExternalAgent, usesAgentPresenceScopedNotebookRunner } from './agent-runner-profile.js';
 import { issueInternalTicket } from './internal-ticket-store.js';
 import {
   resolveInternalWorkloadCoordinator,
@@ -475,7 +475,7 @@ export async function runNotebookTaskWithExecutionAgent(input: {
         model_auto_compact_token_limit: modelAutoCompactTokenLimit,
         model_catalog: modelCatalog,
         runner_session_scope:
-          agent.mode === 'external' && isComposeManagedExternalAgent(agent)
+          agent.mode === 'external' && usesAgentPresenceScopedNotebookRunner(agent)
             ? 'agent_presence'
             : 'task_execution',
         workspace_binding_mode: agent.mode === 'internal' ? 'pre_mounted' : 'file_library',

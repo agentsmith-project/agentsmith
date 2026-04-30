@@ -3,6 +3,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
   isComposeManagedExternalAgent,
   resolveAgentRunnerRuntime,
+  usesAgentPresenceScopedNotebookRunner,
 } from './agent-runner-profile.js';
 
 describe('agent-runner-profile', () => {
@@ -62,5 +63,31 @@ describe('agent-runner-profile', () => {
       mode: 'external',
       config: { runner_runtime: 'docker_manual' },
     })).toBe(false);
+  });
+
+  it('uses agent-presence notebook dispatch for long-lived external runner runtimes', () => {
+    expect(usesAgentPresenceScopedNotebookRunner({
+      mode: 'external',
+      config: { runner_runtime: 'dev_direct' },
+    })).toBe(true);
+
+    expect(usesAgentPresenceScopedNotebookRunner({
+      mode: 'external',
+      config: { runner_runtime: 'compose_managed' },
+    })).toBe(true);
+
+    expect(usesAgentPresenceScopedNotebookRunner({
+      mode: 'external',
+      config: { runner_runtime: 'docker_manual' },
+    })).toBe(false);
+  });
+
+  it('uses agent-presence notebook dispatch for configless loopback external runners', () => {
+    vi.stubEnv('EXTERNAL_AGENT_EXECUTION_HTTP_BASE_URL', 'http://127.0.0.1:21000');
+
+    expect(usesAgentPresenceScopedNotebookRunner({
+      mode: 'external',
+      config: null,
+    })).toBe(true);
   });
 });

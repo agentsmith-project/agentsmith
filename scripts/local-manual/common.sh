@@ -1211,7 +1211,24 @@ stop_runner_health_monitor() {
 
 start_runner_health_monitor() {
   stop_runner_health_monitor
-  local_manual_runner_health_monitor_loop >/dev/null 2>&1 < /dev/null &
+  local common_file monitor_command
+  printf -v common_file '%q' "${ROOT_DIR}/scripts/local-manual/common.sh"
+  monitor_command="source ${common_file}; init_local_manual_env; local_manual_runner_health_monitor_loop"
+  if command -v setsid >/dev/null 2>&1; then
+    ENV_FILE="${ENV_FILE}" \
+      SUBSTRATE="${SUBSTRATE}" \
+      BACKEND_REAL_STATE_DIR="${BACKEND_REAL_STATE_DIR:-}" \
+      RUNTIME_LINES_ROOT="${RUNTIME_LINES_ROOT:-}" \
+      LOCAL_RUNTIME_PROCESS_STATE_DIR="${LOCAL_RUNTIME_PROCESS_STATE_DIR:-}" \
+      setsid bash -lc "${monitor_command}" >/dev/null 2>&1 < /dev/null &
+  else
+    ENV_FILE="${ENV_FILE}" \
+      SUBSTRATE="${SUBSTRATE}" \
+      BACKEND_REAL_STATE_DIR="${BACKEND_REAL_STATE_DIR:-}" \
+      RUNTIME_LINES_ROOT="${RUNTIME_LINES_ROOT:-}" \
+      LOCAL_RUNTIME_PROCESS_STATE_DIR="${LOCAL_RUNTIME_PROCESS_STATE_DIR:-}" \
+      nohup bash -lc "${monitor_command}" >/dev/null 2>&1 < /dev/null &
+  fi
   mkdir -p "$(dirname "${RUNNER_HEALTH_MONITOR_PID_FILE}")"
   printf '%s\n' "$!" > "${RUNNER_HEALTH_MONITOR_PID_FILE}"
 }

@@ -361,6 +361,81 @@ local_runtime_start_owned_service() {
   printf '%s\n' "${pid}"
 }
 
+local_runtime_start_detached_owned_service() {
+  local service_kind="$1"
+  local port="$2"
+  local log_file="$3"
+  shift 3
+
+  mkdir -p "$(dirname "${log_file}")"
+
+  local run_id line_kind owner_token state_dir pid_capture_file launcher_pid pid command start_wait_attempt
+  run_id="${LOCAL_RUNTIME_RUN_ID:-local-runtime-$$}"
+  line_kind="${LOCAL_RUNTIME_LINE_KIND:-local_runtime}"
+  owner_token="${LOCAL_RUNTIME_OWNER_TOKEN:-${run_id}:${line_kind}:$$}"
+  state_dir="$(local_runtime_process_state_dir)"
+  mkdir -p "${state_dir}"
+  pid_capture_file="${state_dir}/.${service_kind}-${port}-$$.launch.pid"
+  rm -f "${pid_capture_file}"
+
+  if command -v setsid >/dev/null 2>&1; then
+    setsid bash -c '
+      set -euo pipefail
+      pid_capture_file="$1"
+      run_id="$2"
+      line_kind="$3"
+      owner_token="$4"
+      service_kind="$5"
+      shift 5
+      export LOCAL_RUNTIME_RUN_ID="${run_id}"
+      export LOCAL_RUNTIME_LINE_KIND="${line_kind}"
+      export LOCAL_RUNTIME_OWNER_TOKEN="${owner_token}"
+      export LOCAL_RUNTIME_SERVICE_KIND="${service_kind}"
+      export LOCAL_RUNTIME_TREE_ROOT_PID="${BASHPID}"
+      printf "%s\n" "${BASHPID}" > "${pid_capture_file}"
+      exec "$@"
+    ' local-runtime-owned-detached "${pid_capture_file}" "${run_id}" "${line_kind}" "${owner_token}" "${service_kind}" "$@" >"${log_file}" 2>&1 < /dev/null &
+  else
+    nohup bash -c '
+      set -euo pipefail
+      pid_capture_file="$1"
+      run_id="$2"
+      line_kind="$3"
+      owner_token="$4"
+      service_kind="$5"
+      shift 5
+      export LOCAL_RUNTIME_RUN_ID="${run_id}"
+      export LOCAL_RUNTIME_LINE_KIND="${line_kind}"
+      export LOCAL_RUNTIME_OWNER_TOKEN="${owner_token}"
+      export LOCAL_RUNTIME_SERVICE_KIND="${service_kind}"
+      export LOCAL_RUNTIME_TREE_ROOT_PID="${BASHPID}"
+      printf "%s\n" "${BASHPID}" > "${pid_capture_file}"
+      exec "$@"
+    ' local-runtime-owned-detached "${pid_capture_file}" "${run_id}" "${line_kind}" "${owner_token}" "${service_kind}" "$@" >"${log_file}" 2>&1 < /dev/null &
+  fi
+
+  launcher_pid="$!"
+  pid=""
+  for start_wait_attempt in $(seq 1 50); do
+    if [[ -s "${pid_capture_file}" ]]; then
+      pid="$(cat "${pid_capture_file}" 2>/dev/null || true)"
+      break
+    fi
+    if ! local_runtime_pid_is_alive "${launcher_pid}"; then
+      break
+    fi
+    sleep 0.02
+  done
+  rm -f "${pid_capture_file}"
+  pid="${pid:-${launcher_pid}}"
+  command="$*"
+  if ! local_runtime_write_process_sidecar "${service_kind}" "${pid}" "${port}" "${command}"; then
+    kill "${pid}" >/dev/null 2>&1 || true
+    return 1
+  fi
+  printf '%s\n' "${pid}"
+}
+
 local_runtime_find_sidecar() {
   local pid="$1"
   local service_kind="${2:-}"
@@ -432,6 +507,30 @@ process.stdout.write(String(value));
 NODE
 }
 
+local_runtime_verify_exec_handoff_identity() {
+  local pid="$1"
+  local sidecar_file="$2"
+  local sidecar_token="$3"
+  local schema_version sidecar_start_time live_start_time owner_token service_kind
+
+  schema_version="$(local_runtime_read_sidecar_field "${sidecar_file}" schema_version || true)"
+  [[ "${schema_version}" == "2" ]] || return 1
+
+  sidecar_start_time="$(local_runtime_identity_token_start_time "${sidecar_token}" || true)"
+  live_start_time="$(local_runtime_process_start_time "${pid}" || true)"
+  [[ -n "${sidecar_start_time}" && -n "${live_start_time}" && "${sidecar_start_time}" == "${live_start_time}" ]] || return 1
+
+  owner_token="$(local_runtime_read_sidecar_field "${sidecar_file}" owner_token || true)"
+  [[ -n "${owner_token}" ]] || return 1
+  local_runtime_process_owner_token_matches "${pid}" "${owner_token}" || return 1
+
+  service_kind="$(local_runtime_read_sidecar_field "${sidecar_file}" service_kind || true)"
+  [[ -n "${service_kind}" ]] || return 1
+  local_runtime_process_service_kind_matches "${pid}" "${service_kind}" || return 1
+
+  local_runtime_process_tree_root_pid_matches "${pid}" "${pid}" || return 1
+}
+
 local_runtime_verify_owned_process() {
   local pid="$1"
   local service_kind="${2:-}"
@@ -454,6 +553,9 @@ local_runtime_verify_owned_process() {
   sidecar_token="$(local_runtime_read_sidecar_field "${sidecar_file}" process_identity.token || true)"
   live_token="$(local_runtime_process_identity_token "${pid}" || true)"
   if [[ -z "${sidecar_token}" || -z "${live_token}" || "${sidecar_token}" != "${live_token}" ]]; then
+    if [[ -n "${sidecar_token}" ]] && local_runtime_verify_exec_handoff_identity "${pid}" "${sidecar_file}" "${sidecar_token}"; then
+      return 0
+    fi
     echo "[local-runtime-processes] ownership verification failed for pid ${pid}: process identity mismatch" >&2
     return 1
   fi

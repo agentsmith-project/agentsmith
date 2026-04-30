@@ -366,6 +366,111 @@ wait "$child_pid"
     expect(await waitForPidExit(pid)).toBe(true);
   });
 
+  it('accepts a verified owned root after an exec handoff changes the command identity', async () => {
+    const tempRoot = makeTempRoot();
+    const processStateDir = path.join(tempRoot, 'processes');
+    const logFile = path.join(tempRoot, 'runner.log');
+
+    const startResult = runBash(
+      `
+        set -euo pipefail
+        source scripts/lib/local-runtime-processes.sh
+        pid="$(local_runtime_start_owned_service runner 0 "${logFile}" bash -lc 'sleep 0.2; exec -a "make notebook-agent-runner" sleep 300')"
+        command=""
+        for _ in $(seq 1 40); do
+          command="$(local_runtime_process_command "\${pid}" || true)"
+          case "\${command}" in
+            "make notebook-agent-runner"*) break ;;
+          esac
+          sleep 0.1
+        done
+        local_runtime_verify_owned_process "\${pid}" runner 0
+        echo "pid=\${pid}"
+        echo "command=\${command}"
+        local_runtime_stop_owned_process_tree "\${pid}" runner 0
+      `,
+      {
+        LOCAL_RUNTIME_PROCESS_STATE_DIR: processStateDir,
+        LOCAL_RUNTIME_RUN_ID: 'exec-handoff-run',
+        LOCAL_RUNTIME_LINE_KIND: 'local_manual',
+        LOCAL_RUNTIME_OWNER_TOKEN: 'exec-handoff-owner',
+        LOCAL_RUNTIME_TERM_GRACE_ATTEMPTS: '2',
+        LOCAL_RUNTIME_TERM_GRACE_SLEEP_SECONDS: '0.05',
+        LOCAL_RUNTIME_KILL_GRACE_ATTEMPTS: '5',
+        LOCAL_RUNTIME_KILL_GRACE_SLEEP_SECONDS: '0.05',
+      },
+    );
+
+    expect(startResult.status).toBe(0);
+    expect(startResult.stdout).toContain('command=make notebook-agent-runner 300');
+    const pid = Number.parseInt(startResult.stdout.match(/pid=(\d+)/)?.[1] ?? '', 10);
+    expect(pid).toBeGreaterThan(0);
+    expect(await waitForPidExit(pid)).toBe(true);
+  });
+
+  it('keeps a detached owned runner alive after the launcher shell exits', async () => {
+    const tempRoot = makeTempRoot();
+    const processStateDir = path.join(tempRoot, 'processes');
+    const logFile = path.join(tempRoot, 'runner.log');
+    const handoffScript = path.join(tempRoot, 'exec-runner.sh');
+
+    writeFileSync(
+      handoffScript,
+      `#!/usr/bin/env bash
+set -euo pipefail
+sleep 0.2
+exec -a "make notebook-agent-runner" sleep 300
+`,
+      'utf8',
+    );
+    execFileSync('chmod', ['+x', handoffScript], { cwd: repoRoot, stdio: 'pipe' });
+
+    const startResult = runBash(
+      `
+        set -euo pipefail
+        source scripts/lib/local-runtime-processes.sh
+        pid="$(local_runtime_start_detached_owned_service runner 0 "${logFile}" bash "${handoffScript}")"
+        echo "pid=\${pid}"
+      `,
+      {
+        LOCAL_RUNTIME_PROCESS_STATE_DIR: processStateDir,
+        LOCAL_RUNTIME_RUN_ID: 'detached-runner-run',
+        LOCAL_RUNTIME_LINE_KIND: 'local_manual',
+        LOCAL_RUNTIME_OWNER_TOKEN: 'detached-runner-owner',
+      },
+    );
+
+    expect(startResult.status).toBe(0);
+    const pid = Number.parseInt(startResult.stdout.match(/pid=(\d+)/)?.[1] ?? '', 10);
+    expect(pid).toBeGreaterThan(0);
+
+    await new Promise((resolve) => setTimeout(resolve, 600));
+    expect(isPidAlive(pid)).toBe(true);
+
+    const verifyResult = runBash(
+      `
+        set -euo pipefail
+        source scripts/lib/local-runtime-processes.sh
+        command="$(local_runtime_process_command "${pid}" || true)"
+        local_runtime_verify_owned_process "${pid}" runner 0
+        echo "command=\${command}"
+        local_runtime_stop_owned_process_tree "${pid}" runner 0
+      `,
+      {
+        LOCAL_RUNTIME_PROCESS_STATE_DIR: processStateDir,
+        LOCAL_RUNTIME_OWNER_TOKEN: 'detached-runner-owner',
+        LOCAL_RUNTIME_TERM_GRACE_ATTEMPTS: '2',
+        LOCAL_RUNTIME_TERM_GRACE_SLEEP_SECONDS: '0.05',
+        LOCAL_RUNTIME_KILL_GRACE_ATTEMPTS: '5',
+        LOCAL_RUNTIME_KILL_GRACE_SLEEP_SECONDS: '0.05',
+      },
+    );
+
+    expect(verifyResult.status).toBe(0);
+    expect(verifyResult.stdout).toContain('command=make notebook-agent-runner 300');
+    expect(await waitForPidExit(pid)).toBe(true);
+  });
+
   it('refuses to stop a reused pid when the live process identity no longer matches its sidecar', async () => {
     const tempRoot = makeTempRoot();
     const processStateDir = path.join(tempRoot, 'processes');

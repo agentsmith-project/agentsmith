@@ -85,7 +85,11 @@ fi
 RUNNER_OWNER_TOKEN="$(local_manual_resolve_runner_owner_token)"
 export LOCAL_RUNTIME_OWNER_TOKEN="${RUNNER_OWNER_TOKEN}"
 export LOCAL_RUNTIME_LINE_KIND="${LOCAL_RUNTIME_LINE_KIND:-local_manual}"
-runner_pid="$(local_runtime_start_owned_service runner "0" "${RUNNER_LOG}" bash -lc "
+runner_start_fn="local_runtime_start_owned_service"
+if declare -F local_runtime_start_detached_owned_service >/dev/null 2>&1; then
+  runner_start_fn="local_runtime_start_detached_owned_service"
+fi
+runner_pid="$("${runner_start_fn}" runner "0" "${RUNNER_LOG}" bash -lc "
   cd '${ROOT_DIR}' && \
   export MBOS_RUNNER_MODE='${MBOS_RUNNER_MODE:-host_external}' \
     MBOS_AGENT_RUNNER_DEBUG='${MBOS_AGENT_RUNNER_DEBUG:-1}' \

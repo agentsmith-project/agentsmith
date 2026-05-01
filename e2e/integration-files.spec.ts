@@ -30,6 +30,16 @@ type ContentDispositionFilename = {
   value: string;
 };
 
+type UploadedFileLibraryEntry = {
+  kind: 'file';
+  modified_at: string;
+  name: string;
+  path: string;
+  size_bytes: number;
+  content_type?: string;
+  etag?: string;
+};
+
 function requireWorkspaceId(): string {
   if (typeof WORKSPACE_ID !== 'string' || WORKSPACE_ID.trim().length === 0) {
     throw new Error('missing_files_crud_sync_workspace_seed');
@@ -104,6 +114,21 @@ function extractFilenameFromContentDisposition(header: string | null | undefined
   };
 }
 
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+function isUploadedFileLibraryEntry(value: unknown): value is UploadedFileLibraryEntry {
+  if (!isRecord(value)) return false;
+  return (
+    value.kind === 'file'
+    && typeof value.modified_at === 'string'
+    && typeof value.name === 'string'
+    && typeof value.path === 'string'
+    && typeof value.size_bytes === 'number'
+  );
+}
+
 async function dismissOpenFilesDialogs(page: Page) {
   const libraryDeleteConfirm = page.getByTestId('files__library-delete__confirm');
   if (await libraryDeleteConfirm.isVisible().catch(() => false)) {
@@ -150,7 +175,7 @@ test.describe('@lane-real files integration flow', () => {
     try {
       await keycloakLoginToWorkspace(page, workspaceId, KEYCLOAK_DEV_ADMIN_USERNAME, KEYCLOAK_DEV_ADMIN_PASSWORD);
       const { projectId } = await createProjectInWorkspace(page, workspaceId, runtime.projectNamePrefix);
-      await createFileLibraryViaUi(page, workspaceId, projectId, libraryName);
+      const libraryId = await createFileLibraryViaUi(page, workspaceId, projectId, libraryName);
 
       const libraryItem = page.locator('[data-testid^="files__library-item--"]').filter({ hasText: libraryName }).first();
       await expect(libraryItem).toBeVisible({ timeout: 30_000 });
@@ -176,17 +201,33 @@ test.describe('@lane-real files integration flow', () => {
       ).toBeVisible({ timeout: 30_000 });
 
       await page.getByTestId('files__upload').click();
+      const uploadResponsePromise = page.waitForResponse((response) => (
+        response.request().method() === 'POST'
+        && response.url().includes(
+          `/workspaces/${workspaceId}/projects/${projectId}/file-libraries/${libraryId}/upload`,
+        )
+      ));
       await page.locator('input[type="file"]').setInputFiles({
         name: unicodeUploadFileName,
         mimeType: 'text/plain',
         buffer: Buffer.from(unicodeContent, 'utf-8'),
       });
-      await expect(page.locator('text=' + unicodeUploadFileName)).toBeVisible({ timeout: 30_000 });
+      const uploadResponse = await uploadResponsePromise;
+      expect(uploadResponse.ok()).toBeTruthy();
+      const uploadResponseBody: unknown = await uploadResponse.json();
+      expect(isUploadedFileLibraryEntry(uploadResponseBody)).toBeTruthy();
+      if (!isUploadedFileLibraryEntry(uploadResponseBody)) {
+        throw new Error('files_upload_response_missing_file_entry');
+      }
+      expect(uploadResponseBody.name).toBe(unicodeUploadFileName);
+      expect(uploadResponseBody.path).toBe(unicodeUploadFileName);
+      expect(uploadResponseBody.size_bytes).toBe(Buffer.byteLength(unicodeContent, 'utf-8'));
 
       const uploadedRow = page
         .locator('[data-testid="files__object-row"]')
         .filter({ hasText: unicodeUploadFileName })
         .first();
+      await expect(uploadedRow).toBeVisible({ timeout: 30_000 });
       await uploadedRow.getByRole('button').click({ modifiers: [multiSelectModifier] });
       await uploadedRow.locator('input[type="checkbox"]').check();
 
@@ -257,7 +298,9 @@ test.describe('@lane-real files integration flow', () => {
       await expect(movedCheckbox).toBeChecked();
       await page.getByTestId('files__delete').click();
       await page.getByTestId('files__dialog__delete').getByRole('button', { name: /Delete|删除/i }).click();
-      await expect(page.locator('text=' + unicodeRenamedFileName)).toHaveCount(0);
+      await expect(
+        page.locator('[data-testid="files__object-row"]').filter({ hasText: unicodeRenamedFileName }),
+      ).toHaveCount(0);
       await trace.capture(page, { stepId: 'manage-files-from-web' });
       outcome = 'pass';
     } finally {

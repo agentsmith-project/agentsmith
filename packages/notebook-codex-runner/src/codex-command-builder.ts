@@ -9,6 +9,8 @@ function tomlNumber(value: number): string {
   return String(Math.floor(value));
 }
 
+export type CodexApplyPatchToolType = 'freeform' | 'function';
+
 export function buildTaskCodexConfig(args: {
   model: string;
   endpointProxyBase: string;
@@ -115,6 +117,7 @@ export function buildTaskCodexModelCatalog(args: {
   model: string;
   modelContextWindow: number;
   modelAutoCompactTokenLimit: number;
+  applyPatchToolType: CodexApplyPatchToolType;
   inputModalities?: string[];
   supportsSearchTool?: boolean;
   supportsParallelToolCalls?: boolean;
@@ -148,7 +151,7 @@ export function buildTaskCodexModelCatalog(args: {
         default_reasoning_summary: 'auto',
         support_verbosity: false,
         default_verbosity: null,
-        apply_patch_tool_type: 'freeform',
+        apply_patch_tool_type: args.applyPatchToolType,
         web_search_tool_type: 'text',
         truncation_policy: { mode: 'bytes', limit: 10000 },
         supports_parallel_tool_calls: args.supportsParallelToolCalls ?? false,

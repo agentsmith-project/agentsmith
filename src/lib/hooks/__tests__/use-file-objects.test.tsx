@@ -1,14 +1,29 @@
 import { act, renderHook, waitFor } from '@testing-library/react';
-import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import { QueryClient, QueryClientProvider, useInfiniteQuery } from '@tanstack/react-query';
 import type { ReactNode } from 'react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 const {
   mockCreateFolder,
+  mockListObjects,
   mockMoveObject,
+  mockUploadObject,
 } = vi.hoisted(() => ({
   mockCreateFolder: vi.fn().mockResolvedValue(undefined),
+  mockListObjects: vi.fn().mockResolvedValue({
+    prefix: '',
+    items: [],
+    next_continuation_token: null,
+  }),
   mockMoveObject: vi.fn().mockResolvedValue(undefined),
+  mockUploadObject: vi.fn().mockResolvedValue({
+    kind: 'object',
+    key: 'docs/uploaded.txt',
+    name: 'uploaded.txt',
+    size_bytes: 12,
+    content_type: 'text/plain',
+    last_modified: '2026-03-16T08:00:00.000Z',
+  }),
 }));
 
 vi.mock('@/lib/api', () => ({
@@ -16,7 +31,9 @@ vi.mock('@/lib/api', () => ({
   FilesAPI: vi.fn().mockImplementation(function () {
     return {
       createFolder: mockCreateFolder,
+      listObjects: mockListObjects,
       moveObject: mockMoveObject,
+      uploadObject: mockUploadObject,
     };
   }),
 }));
@@ -25,6 +42,13 @@ vi.mock('@/lib/query-keys', () => ({
   queryKeys: {
     fileObjects: {
       _def: ['file-objects'],
+      list: vi.fn((workspaceId: string, projectId: string, libraryId: string, params?: object) => [
+        'file-objects',
+        workspaceId,
+        projectId,
+        libraryId,
+        params,
+      ]),
     },
     fileLibraries: {
       list: vi.fn((workspaceId: string, projectId: string) => ['file-libraries', workspaceId, projectId]),
@@ -32,7 +56,13 @@ vi.mock('@/lib/query-keys', () => ({
   },
 }));
 
-import { useCreateFileFolder, useMoveFileObject } from '../use-file-objects';
+import {
+  useCreateFileFolder,
+  useFileObjects,
+  useFileObjectsInfinite,
+  useMoveFileObject,
+  useUploadFileObject,
+} from '../use-file-objects';
 
 function createDeferred<T>() {
   let resolve!: (value: T | PromiseLike<T>) => void;
@@ -44,7 +74,7 @@ function createDeferred<T>() {
   return { promise, resolve, reject };
 }
 
-function createWrapper() {
+function createQueryClientWrapper() {
   const queryClient = new QueryClient({
     defaultOptions: {
       queries: { retry: false },
@@ -52,9 +82,16 @@ function createWrapper() {
     },
   });
 
-  return function Wrapper({ children }: { children: ReactNode }) {
-    return <QueryClientProvider client={queryClient}>{children}</QueryClientProvider>;
+  return {
+    queryClient,
+    Wrapper({ children }: { children: ReactNode }) {
+      return <QueryClientProvider client={queryClient}>{children}</QueryClientProvider>;
+    },
   };
+}
+
+function createWrapper() {
+  return createQueryClientWrapper().Wrapper;
 }
 
 describe('useFileObjects mutations', () => {
@@ -132,5 +169,139 @@ describe('useFileObjects mutations', () => {
     await act(async () => {
       await mutationPromise;
     });
+  });
+
+  it('scopes upload invalidation to the target library and prefix without refetching unrelated active views', async () => {
+    const targetQueryFn = vi.fn().mockResolvedValue({
+      prefix: 'docs/',
+      items: [],
+      next_continuation_token: null,
+    });
+    const unrelatedQueryFn = vi.fn().mockResolvedValue({
+      prefix: 'other/',
+      items: [],
+      next_continuation_token: null,
+    });
+    const { queryClient, Wrapper } = createQueryClientWrapper();
+    const invalidateSpy = vi.spyOn(queryClient, 'invalidateQueries');
+
+    const { result } = renderHook(() => {
+      const target = useInfiniteQuery({
+        queryKey: [
+          'file-objects',
+          'infinite',
+          'ws_default',
+          'proj_001',
+          'lib_a',
+          { prefix: 'docs/', delimiter: '/', page_size: 200 },
+        ],
+        queryFn: targetQueryFn,
+        initialPageParam: undefined as string | undefined,
+        getNextPageParam: () => undefined,
+      });
+      const unrelated = useInfiniteQuery({
+        queryKey: [
+          'file-objects',
+          'infinite',
+          'ws_default',
+          'proj_001',
+          'lib_b',
+          { prefix: 'other/', delimiter: '/', page_size: 200 },
+        ],
+        queryFn: unrelatedQueryFn,
+        initialPageParam: undefined as string | undefined,
+        getNextPageParam: () => undefined,
+      });
+      const upload = useUploadFileObject();
+      return { target, unrelated, upload };
+    }, {
+      wrapper: Wrapper,
+    });
+
+    await waitFor(() => expect(targetQueryFn).toHaveBeenCalledTimes(1));
+    await waitFor(() => expect(unrelatedQueryFn).toHaveBeenCalledTimes(1));
+
+    await act(async () => {
+      await result.current.upload.mutateAsync({
+        workspaceId: 'ws_default',
+        projectId: 'proj_001',
+        libraryId: 'lib_a',
+        file: new File(['hello'], 'uploaded.txt', { type: 'text/plain' }),
+        prefix: 'docs/',
+      });
+    });
+
+    await waitFor(() => expect(targetQueryFn).toHaveBeenCalledTimes(2));
+    expect(unrelatedQueryFn).toHaveBeenCalledTimes(1);
+    expect(invalidateSpy).not.toHaveBeenCalledWith(expect.objectContaining({
+      queryKey: ['file-objects'],
+    }));
+    expect(invalidateSpy).toHaveBeenCalledWith(expect.objectContaining({
+      predicate: expect.any(Function),
+      refetchType: 'active',
+    }));
+  });
+});
+
+describe('useFileObjects queries', () => {
+  afterEach(() => {
+    vi.restoreAllMocks();
+    vi.clearAllMocks();
+  });
+
+  it('passes the React Query abort signal to object listing requests', async () => {
+    let listingSignal: AbortSignal | undefined;
+    mockListObjects.mockImplementation((
+      _workspaceId: string,
+      _projectId: string,
+      _libraryId: string,
+      _params: object,
+      options?: { signal?: AbortSignal },
+    ) => {
+      listingSignal = options?.signal;
+      return new Promise(() => undefined);
+    });
+
+    const { unmount } = renderHook(
+      () => useFileObjects('ws_default', 'proj_001', 'lib_a', { prefix: '', delimiter: '/', page_size: 200 }),
+      { wrapper: createWrapper() },
+    );
+
+    await waitFor(() => expect(mockListObjects).toHaveBeenCalledTimes(1));
+    expect(listingSignal).toBeDefined();
+
+    unmount();
+
+    expect(listingSignal?.aborted).toBe(true);
+  });
+
+  it('passes the React Query abort signal to infinite object listing requests', async () => {
+    let listingSignal: AbortSignal | undefined;
+    mockListObjects.mockImplementation((
+      _workspaceId: string,
+      _projectId: string,
+      _libraryId: string,
+      _params: object,
+      options?: { signal?: AbortSignal },
+    ) => {
+      listingSignal = options?.signal;
+      return new Promise(() => undefined);
+    });
+
+    const { unmount } = renderHook(
+      () => useFileObjectsInfinite('ws_default', 'proj_001', 'lib_a', {
+        prefix: '',
+        delimiter: '/',
+        page_size: 200,
+      }),
+      { wrapper: createWrapper() },
+    );
+
+    await waitFor(() => expect(mockListObjects).toHaveBeenCalledTimes(1));
+    expect(listingSignal).toBeDefined();
+
+    unmount();
+
+    expect(listingSignal?.aborted).toBe(true);
   });
 });

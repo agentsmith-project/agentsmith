@@ -3196,6 +3196,7 @@
       "uploading": "Uploading {name} ({completed}/{total})",
       "upload_cancel": "Cancel",
       "upload_canceled": "Upload canceled",
+      "upload_sync_missing": "Upload completed, but the file is not visible in the current folder yet. Refresh and try again.",
       "batch_delete_result_title": "Delete completed with failures",
       "batch_download_result_title": "Download completed with failures",
       "batch_result_failed_count": "{failed} item(s) failed",

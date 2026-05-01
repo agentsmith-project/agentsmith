@@ -25,6 +25,7 @@ export type ChangedFileImpactRule =
   | 'runner_context_credential'
   | 'release_real_owner_diagnostic'
   | 'release_deploy_rehearsal'
+  | 'governance_tooling'
   | 'unmapped_source';
 
 export interface StoryLevelStatus {
@@ -195,6 +196,7 @@ const IMPACT_RULE_ORDER: readonly ChangedFileImpactRule[] = [
   'runner_context_credential',
   'release_real_owner_diagnostic',
   'release_deploy_rehearsal',
+  'governance_tooling',
   'unmapped_source',
 ];
 const COMMAND_ORDER = [
@@ -300,25 +302,30 @@ function isGeneratedStorySpec(filePath: string, catalog: VerificationCatalog): b
   return normalizeRepoPath(filePath) === catalog.generated_story_specs.path;
 }
 
+const RUNNER_CONTEXT_CREDENTIAL_PATH_PATTERNS: readonly RegExp[] = [
+  /^scripts\/run-external-runner-dev\.sh$/,
+  /^scripts\/run-internal-notebook-real-gate\.sh$/,
+  /^scripts\/notebook-/,
+  /^scripts\/task-terminal/,
+  /^scripts\/workspace-shared-context/,
+  /^scripts\/.*credential/i,
+  /^e2e\/integration-notebook-terminal/,
+  /^packages\/agent-runner\/src\//,
+  /^packages\/notebook-codex-runner\/src\//,
+  /^packages\/api-entry-node\/src\/(notebook-execution-orchestrator|context-store|context-route-handler|managed-credential-resolver|agent-execution-service|agent-runner-profile)\.[^/]+$/,
+  /^src\/components\/context\//,
+  /^src\/components\/credentials\//,
+  /^src\/components\/notebook\//,
+  /^src\/lib\/api\/endpoints\/context\.ts$/,
+  /^src\/lib\/api\/endpoints\/credentials\.ts$/,
+  /^src\/lib\/api\/types\/context\.ts$/,
+  /^src\/lib\/api\/types\/notebook\.ts$/,
+  /^src\/mocks\/handlers\/context\.ts$/,
+  /^src\/mocks\/handlers\/credentials\.ts$/,
+];
+
 function isRunnerContextOrCredentialPath(filePath: string): boolean {
-  return [
-    /^scripts\/run-external-runner-dev\.sh$/,
-    /^scripts\/run-internal-notebook-real-gate\.sh$/,
-    /^scripts\/notebook-/,
-    /^scripts\/task-terminal/,
-    /^scripts\/workspace-shared-context/,
-    /^scripts\/.*credential/i,
-    /^e2e\/integration-notebook-terminal/,
-    /^src\/components\/context\//,
-    /^src\/components\/credentials\//,
-    /^src\/components\/notebook\//,
-    /^src\/lib\/api\/endpoints\/context\.ts$/,
-    /^src\/lib\/api\/endpoints\/credentials\.ts$/,
-    /^src\/lib\/api\/types\/context\.ts$/,
-    /^src\/lib\/api\/types\/notebook\.ts$/,
-    /^src\/mocks\/handlers\/context\.ts$/,
-    /^src\/mocks\/handlers\/credentials\.ts$/,
-  ].some((pattern) => pattern.test(filePath));
+  return RUNNER_CONTEXT_CREDENTIAL_PATH_PATTERNS.some((pattern) => pattern.test(filePath));
 }
 
 function isReleaseRealOwnerDiagnosticPath(filePath: string): boolean {
@@ -341,7 +348,10 @@ function isReleaseDeployOrRehearsalPath(filePath: string): boolean {
     /^scripts\/scenarios\//,
     /^scripts\/governance\/release/,
     /^scripts\/governance\/run-release/,
+    /^scripts\/governance\/rehearsal(?:-|\.|$)/,
+    /^scripts\/governance\/run-rehearsal(?:-|\.|$)/,
     /^scripts\/governance\/release-campaign/,
+    /^scripts\/governance\/current-rehearsal-/,
     /^scripts\/lib\/release-/,
     /^scripts\/lib\/deploy-/,
     /^scripts\/run-release-local-precheck\.sh$/,
@@ -354,6 +364,13 @@ function isReleaseDeployOrRehearsalPath(filePath: string): boolean {
     /^docs\/user-guides\/.*deploy/i,
     /^docs\/user-guides\/.*release/i,
   ].some((pattern) => pattern.test(filePath));
+}
+
+function isGovernanceToolingPath(filePath: string): boolean {
+  if (isReleaseDeployOrRehearsalPath(filePath)) {
+    return false;
+  }
+  return /^scripts\/governance\/.*\.ts$/.test(filePath);
 }
 
 function levelsForGoal(goal: VerificationGoal): readonly VerificationLevel[] {
@@ -1171,7 +1188,7 @@ export function buildVerificationPlan(input: BuildVerificationPlanInput = {}): V
 
     if (isRunnerContextOrCredentialPath(changedFile)) {
       mapped = true;
-      const action = `Run ${GOVERNED_REAL_VERIFY_COMMAND} with runner, Context Store, and credential owner review.`;
+      const action = `Run ${GOVERNED_REAL_VERIFY_COMMAND} with runner, Context Store, and credential owner review (runner_context_credential).`;
       const surface = 'runner/context-store/credentials';
       const impactedStories = stories.filter((story) => story.lane === 'backend-real');
       const impactSource: VerificationStoryImpactSource = {
@@ -1261,6 +1278,27 @@ export function buildVerificationPlan(input: BuildVerificationPlanInput = {}): V
       });
     }
 
+    if (isGovernanceToolingPath(changedFile)) {
+      mapped = true;
+      const levels: readonly VerificationLevel[] = ['V0', 'V1'];
+      const action = 'Review governance tooling impact, then run the governed PR verification entrypoint.';
+      const surface = 'engineering-governance-tooling';
+      addLevels(accumulator, levels);
+      accumulator.surfaces.add(surface);
+      accumulator.manualReviewRequired = true;
+      accumulator.reasons.push(`${changedFile} touches governance verification tooling.`);
+      pushUnique(accumulator.nextActions, action);
+      recordChangedFileImpact(accumulator, {
+        changedFile,
+        rule: 'governance_tooling',
+        surfaces: [surface],
+        storyIds: [],
+        action,
+        manualReviewRequired: true,
+        broadImpact: false,
+      });
+    }
+
     if (!mapped) {
       const action = 'Manual impact owner triage required; treat all canonical stories as potentially affected until the source path is mapped.';
       const surface = 'unmapped-source';
@@ -1276,7 +1314,7 @@ export function buildVerificationPlan(input: BuildVerificationPlanInput = {}): V
       accumulator.surfaces.add(surface);
       accumulator.broadImpact = true;
       accumulator.manualReviewRequired = true;
-      accumulator.warnings.push(`${changedFile} did not match canonical story markdown, visual code refs, runner/context/credential paths, or release paths.`);
+      accumulator.warnings.push(`${changedFile} did not match canonical story markdown, visual code refs, runner/context/credential paths, release paths, or governance tooling paths.`);
       accumulator.reasons.push(`${changedFile} is unmapped source impact.`);
       pushUnique(accumulator.nextActions, action);
       recordChangedFileImpact(accumulator, {

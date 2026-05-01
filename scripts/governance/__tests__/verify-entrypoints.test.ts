@@ -253,6 +253,15 @@ type ReportTraceabilityGap = {
   next_action: string;
 };
 
+type ReportChangedFileImpact = {
+  changed_file: string;
+  matched_rules: string[];
+  affected_surfaces: string[];
+  story_ids: string[];
+  manual_review_required: boolean;
+  broad_impact: boolean;
+};
+
 type ReportStoryCard = {
   risk_level: string;
   risk_reason: string;
@@ -1476,6 +1485,74 @@ describe('verify human entrypoints', () => {
     }
   });
 
+  it('reports package runner sources as backend-real owner review when pr run blocks implicit real execution', () => {
+    const root = mkdtempSync(join(tmpdir(), 'agentsmith-verify-run-package-real-blocked-'));
+    const logPath = join(root, 'npm.log');
+    const changedFile = 'packages/api-entry-node/src/managed-credential-resolver.ts';
+    try {
+      writeFakeNpm(root, logPath);
+
+      const result = spawnSync('npx', [
+        'tsx',
+        'scripts/governance/run-verify.ts',
+        '--goal=pr',
+        '--run',
+        '--report-root',
+        root,
+        '--changed-file',
+        changedFile,
+      ], {
+        cwd: process.cwd(),
+        env: {
+          ...process.env,
+          PATH: `${root}:${process.env.PATH ?? ''}`,
+        },
+        encoding: 'utf8',
+      });
+
+      expect(result.status).toBe(1);
+      expect(result.stdout).toContain('Affected surfaces: runner/context-store/credentials');
+      expect(result.stdout).toContain('runner_context_credential');
+      expect(result.stdout).not.toContain('unmapped-source');
+      expect(result.stdout).not.toContain('unmapped_source');
+      expect(result.stdout).not.toContain('did not match canonical story markdown');
+      expect(result.stdout).toContain('runner, Context Store, and credential owner review');
+      expect(result.stderr).toContain('--goal=pr --run cannot execute npm run verify -- --goal=real --run');
+      expectCleanVerifyHumanOutput(result.stdout);
+      expectCleanVerifyHumanOutput(result.stderr);
+      expect(existsSync(join(root, 'story-acceptance-report.json'))).toBe(true);
+      expect(existsSync(join(root, 'verification-catalog.json'))).toBe(true);
+      expect(existsSync(logPath)).toBe(false);
+
+      const reportJson = readFileSync(join(root, 'story-acceptance-report.json'), 'utf8');
+      expect(reportJson).toContain('runner_context_credential');
+      expect(reportJson).not.toContain('unmapped-source');
+      expect(reportJson).not.toContain('unmapped_source');
+      const report = JSON.parse(readFileSync(join(root, 'story-acceptance-report.json'), 'utf8')) as {
+        final_verdict: string;
+        recommended_commands: string[];
+        risk_summary: { warnings: string[] };
+        changed_file_impacts: ReportChangedFileImpact[];
+      };
+      expect(report.final_verdict).toBe('not_evaluated_fail_closed');
+      expect(report.recommended_commands).toContain('npm run verify -- --goal=real --run');
+      expect(report.risk_summary.warnings.join('\n')).toContain('--goal=pr --run cannot execute npm run verify -- --goal=real --run');
+      expect(report.risk_summary.warnings.join('\n')).not.toContain('did not match canonical story markdown');
+      expect(report.changed_file_impacts).toEqual([
+        expect.objectContaining({
+          changed_file: changedFile,
+          matched_rules: ['runner_context_credential'],
+          affected_surfaces: ['runner/context-store/credentials'],
+          manual_review_required: true,
+          broad_impact: true,
+        }),
+      ]);
+      expectCleanVerifyReportSurface(root);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
   it('does not implicitly execute release-real diagnostics for non-release-real run goals', () => {
     const root = mkdtempSync(join(tmpdir(), 'agentsmith-verify-run-release-real-blocked-'));
     const logPath = join(root, 'npm.log');
@@ -1556,6 +1633,75 @@ describe('verify human entrypoints', () => {
         'run verify:default',
         'run verify:visual',
       ]);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it('runs quick/default for governance tooling pr runs without unmapped-source impact', () => {
+    const root = mkdtempSync(join(tmpdir(), 'agentsmith-verify-run-governance-tooling-'));
+    const logPath = join(root, 'npm.log');
+    try {
+      writeReportAwareFakeNpm(root, logPath);
+
+      const result = spawnSync('npx', [
+        'tsx',
+        'scripts/governance/run-verify.ts',
+        '--goal=pr',
+        '--run',
+        '--report-root',
+        root,
+        '--changed-file',
+        'scripts/governance/verify-impact-selector.ts',
+      ], {
+        cwd: process.cwd(),
+        env: {
+          ...process.env,
+          PATH: `${root}:${process.env.PATH ?? ''}`,
+        },
+        encoding: 'utf8',
+      });
+
+      expect(result.status).toBe(0);
+      expect(result.stdout).toContain('Affected surfaces: engineering-governance-tooling');
+      expect(result.stdout).not.toContain('unmapped-source');
+      expect(result.stderr).not.toContain('unmapped-source');
+      expect(existsSync(join(root, 'story-acceptance-report.json'))).toBe(true);
+      expect(existsSync(join(root, 'verification-catalog.json'))).toBe(true);
+      expect(readFileSync(logPath, 'utf8').trim().split('\n')).toEqual([
+        'run verify:quick',
+        'run verify:default',
+      ]);
+      expect(readFileSync(logPath, 'utf8')).not.toContain('verify:real');
+
+      const reportJson = readFileSync(join(root, 'story-acceptance-report.json'), 'utf8');
+      const reportMarkdown = readFileSync(join(root, 'story-acceptance-report.md'), 'utf8');
+      expect(reportJson).not.toContain('unmapped-source');
+      expect(reportMarkdown).not.toContain('unmapped-source');
+      const report = JSON.parse(reportJson) as {
+        final_verdict: string;
+        recommended_commands: string[];
+        risk_summary: { manual_review_required: boolean; broad_impact: boolean; warnings: string[] };
+        story_cards: unknown[];
+        changed_file_impacts: ReportChangedFileImpact[];
+      };
+      expect(report.final_verdict).toBe('delegated_to_executed_verification_commands');
+      expect(report.recommended_commands).toEqual(['npm run verify -- --goal=pr --run']);
+      expect(report.risk_summary.manual_review_required).toBe(true);
+      expect(report.risk_summary.broad_impact).toBe(false);
+      expect(report.risk_summary.warnings.join('\n')).not.toContain('did not match canonical story markdown');
+      expect(report.story_cards).toEqual([]);
+      expect(report.changed_file_impacts).toEqual([
+        expect.objectContaining({
+          changed_file: 'scripts/governance/verify-impact-selector.ts',
+          matched_rules: ['governance_tooling'],
+          affected_surfaces: ['engineering-governance-tooling'],
+          story_ids: [],
+          manual_review_required: true,
+          broad_impact: false,
+        }),
+      ]);
+      expectCleanVerifyReportSurface(root);
     } finally {
       rmSync(root, { recursive: true, force: true });
     }

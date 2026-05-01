@@ -83,6 +83,7 @@ function buildProps(overrides: Partial<FilesPageContentProps> = {}): FilesPageCo
     sortBy: 'name',
     sortOrder: 'asc',
     t: (key: string) => key,
+    uploadCanCancel: false,
     uploadCurrentFileName: '',
     uploadCurrentProgress: 0,
     uploadInProgress: false,

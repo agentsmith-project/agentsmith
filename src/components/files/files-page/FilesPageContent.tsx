@@ -67,6 +67,7 @@ interface FilesPageContentProps {
   sortBy: React.ComponentProps<typeof FilesBrowserPane>['sortBy'];
   sortOrder: React.ComponentProps<typeof FilesBrowserPane>['sortOrder'];
   t: (key: string, values?: Record<string, string>) => string;
+  uploadCanCancel: React.ComponentProps<typeof FilesBrowserPane>['uploadCanCancel'];
   uploadCurrentFileName: React.ComponentProps<typeof FilesBrowserPane>['uploadCurrentFileName'];
   uploadCurrentProgress: React.ComponentProps<typeof FilesBrowserPane>['uploadCurrentProgress'];
   uploadInProgress: React.ComponentProps<typeof FilesBrowserPane>['uploadInProgress'];
@@ -130,6 +131,7 @@ export function FilesPageContent({
   sortBy,
   sortOrder,
   t,
+  uploadCanCancel,
   uploadCurrentFileName,
   uploadCurrentProgress,
   uploadInProgress,
@@ -217,6 +219,7 @@ export function FilesPageContent({
               selectedObjectsCount={selectedObjectsCount}
               allSelected={allSelected}
               hasSelection={hasSelection}
+              uploadCanCancel={uploadCanCancel}
               uploadInProgress={uploadInProgress}
               uploadCurrentFileName={uploadCurrentFileName}
               uploadQueueCompleted={uploadQueueCompleted}

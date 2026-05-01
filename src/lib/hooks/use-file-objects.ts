@@ -32,6 +32,76 @@ function invalidateFileObjectCachesInBackground(
   ]);
 }
 
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+function normalizeFileObjectPrefix(prefix: unknown) {
+  return typeof prefix === 'string' ? prefix : '';
+}
+
+function fileObjectQueryKeyMatchesTargetPrefix(
+  queryKey: readonly unknown[],
+  workspaceId: string,
+  projectId: string,
+  libraryId: string,
+  prefix: string,
+) {
+  if (queryKey[0] !== 'file-objects') return false;
+
+  const keyShape = queryKey[1] === 'infinite'
+    ? {
+        workspaceId: queryKey[2],
+        projectId: queryKey[3],
+        libraryId: queryKey[4],
+        params: queryKey[5],
+      }
+    : {
+        workspaceId: queryKey[1],
+        projectId: queryKey[2],
+        libraryId: queryKey[3],
+        params: queryKey[4],
+      };
+
+  if (
+    keyShape.workspaceId !== workspaceId
+    || keyShape.projectId !== projectId
+    || keyShape.libraryId !== libraryId
+  ) {
+    return false;
+  }
+
+  if (!isRecord(keyShape.params)) {
+    return prefix === '';
+  }
+  return normalizeFileObjectPrefix(keyShape.params.prefix) === prefix;
+}
+
+function invalidateUploadTargetFileObjectCachesInBackground(
+  queryClient: ReturnType<typeof useQueryClient>,
+  workspaceId: string,
+  projectId: string,
+  libraryId: string,
+  prefix?: string,
+) {
+  const normalizedPrefix = prefix ?? '';
+  void Promise.allSettled([
+    queryClient.invalidateQueries({
+      predicate: (query) => fileObjectQueryKeyMatchesTargetPrefix(
+        query.queryKey,
+        workspaceId,
+        projectId,
+        libraryId,
+        normalizedPrefix,
+      ),
+      refetchType: 'active',
+    }),
+    queryClient.invalidateQueries({
+      queryKey: queryKeys.fileLibraries.list(workspaceId, projectId),
+    }),
+  ]);
+}
+
 function invalidateFileObjectsOnlyInBackground(
   queryClient: ReturnType<typeof useQueryClient>,
 ) {
@@ -53,9 +123,9 @@ export function useFileObjects(
     queryKey: libraryId
       ? queryKeys.fileObjects.list(workspaceId, projectId, libraryId, params)
       : ['file-objects', 'disabled', workspaceId, projectId, params],
-    queryFn: () => {
+    queryFn: ({ signal }) => {
       if (!libraryId) throw new Error('libraryId is required');
-      return filesAPI.listObjects(workspaceId, projectId, libraryId, params);
+      return filesAPI.listObjects(workspaceId, projectId, libraryId, params, { signal });
     },
     enabled: (options?.enabled ?? true) && !!workspaceId && !!projectId && !!libraryId,
     staleTime: 5_000,
@@ -78,12 +148,12 @@ export function useFileObjectsInfinite(
     queryKey: libraryId
       ? ['file-objects', 'infinite', workspaceId, projectId, libraryId, params]
       : ['file-objects', 'infinite', 'disabled', workspaceId, projectId, params],
-    queryFn: ({ pageParam }) => {
+    queryFn: ({ pageParam, signal }) => {
       if (!libraryId) throw new Error('libraryId is required');
       return filesAPI.listObjects(workspaceId, projectId, libraryId, {
         ...params,
         continuation_token: typeof pageParam === 'string' ? pageParam : undefined,
-      });
+      }, { signal });
     },
     initialPageParam: undefined as string | undefined,
     getNextPageParam: (lastPage) => lastPage.next_continuation_token ?? undefined,
@@ -138,7 +208,13 @@ export function useUploadFileObject() {
         vars.onProgress,
       ),
     onSuccess: (_, vars) => {
-      invalidateFileObjectCachesInBackground(queryClient, vars.workspaceId, vars.projectId);
+      invalidateUploadTargetFileObjectCachesInBackground(
+        queryClient,
+        vars.workspaceId,
+        vars.projectId,
+        vars.libraryId,
+        vars.prefix,
+      );
     },
   });
 }

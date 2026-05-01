@@ -1,5 +1,6 @@
 import type { AuthenticatedUser } from './auth.js';
 import type { NodeApiDeps } from './node-api-deps.js';
+import type { AgentExecutionApplyPatchToolType } from '@mbos/agent-runner';
 import type { AgentExecutionArtifactPayload, AgentExecutionTraceEventPayload } from './agent-execution-service.js';
 import {
   recordNotebookTaskRunCompleted,
@@ -199,10 +200,12 @@ function deriveNotebookModelWindow(profile: { max_context_tokens?: number } | nu
 
 function deriveNotebookCodexModelCatalog(args: {
   capabilities?: Array<{ type?: string; enabled?: boolean }> | null;
+  upstreamProtocol?: string | null;
 }): {
   input_modalities: string[];
   supports_search_tool: boolean;
   supports_parallel_tool_calls: boolean;
+  apply_patch_tool_type: AgentExecutionApplyPatchToolType;
 } {
   const inputModalities = new Set<string>(['text']);
   if (Array.isArray(args.capabilities)) {
@@ -219,7 +222,212 @@ function deriveNotebookCodexModelCatalog(args: {
     // We only expose parallel tool calling when endpoint truth explicitly models it.
     // `supports_tool_call` alone is not enough, and overclaiming breaks compat upstreams.
     supports_parallel_tool_calls: false,
+    apply_patch_tool_type: args.upstreamProtocol === 'openai_responses' ? 'freeform' : 'function',
   };
+}
+
+const MAX_TRACE_DETAIL_SANITIZE_DEPTH = 24;
+
+function normalizeTraceDetailKey(key: string): string {
+  return key.toLowerCase().replace(/[^a-z0-9]/g, '');
+}
+
+function isSensitiveTraceDetailKey(key: string): boolean {
+  const normalized = normalizeTraceDetailKey(key);
+  if (!normalized) return false;
+  if (
+    normalized === 'arguments'
+    || normalized.endsWith('arguments')
+    || normalized === 'args'
+    || normalized.endsWith('args')
+  ) {
+    return true;
+  }
+  if (normalized === 'token' || normalized.endsWith('token')) return true;
+  return (
+    normalized === 'apikey'
+    || normalized.endsWith('apikey')
+    || normalized.includes('secret')
+    || normalized.includes('password')
+    || normalized.includes('credential')
+    || normalized.includes('authorization')
+    || normalized.includes('privatekey')
+    || normalized.includes('accesskey')
+    || normalized === 'cookie'
+    || normalized.endsWith('cookie')
+  );
+}
+
+function isAuthorizationNarrativeBoundary(value: string, index: number): boolean {
+  const rest = value.slice(index);
+  return /^\s+(?:and|but|for|then|while|with)\b/i.test(rest)
+    || /^\s+https?:\/\//i.test(rest);
+}
+
+function findDigestAuthorizationValueEnd(value: string, start: number): number {
+  let index = start;
+  let quote: '"' | "'" | null = null;
+  while (index < value.length) {
+    const char = value[index];
+    if (char === '\r' || char === '\n' || char === ';' || char === '`') break;
+    if (quote) {
+      if (char === quote) quote = null;
+      index += 1;
+      continue;
+    }
+    if (char === '"' || char === "'") {
+      quote = char;
+      index += 1;
+      continue;
+    }
+    if (/\s/.test(char) && isAuthorizationNarrativeBoundary(value, index)) break;
+    index += 1;
+  }
+  return index;
+}
+
+function redactDigestAuthorizationHeaderValues(value: string): string {
+  const digestHeaderPattern = /\b(Authorization["']?\s*[:=]\s*["']?Digest\s+)/gi;
+  let result = '';
+  let lastIndex = 0;
+  let match: RegExpExecArray | null;
+  while ((match = digestHeaderPattern.exec(value)) !== null) {
+    const prefix = match[1];
+    const valueStart = match.index + prefix.length;
+    const valueEnd = findDigestAuthorizationValueEnd(value, valueStart);
+    if (valueEnd <= valueStart) {
+      continue;
+    }
+    result += `${value.slice(lastIndex, valueStart)}[redacted]`;
+    lastIndex = valueEnd;
+    digestHeaderPattern.lastIndex = valueEnd;
+  }
+  return result + value.slice(lastIndex);
+}
+
+function redactAuthorizationHeaderValues(value: string): string {
+  return redactDigestAuthorizationHeaderValues(value)
+    .replace(
+      /\b(Authorization["']?\s*[:=]\s*)(["']?)(?!Digest\b)([A-Za-z][A-Za-z0-9._~-]*)(\s+)([^"'\s`;,&}]+)(\2?)/gi,
+      (_match, prefix: string, quote: string, scheme: string, separator: string) => (
+        `${prefix}${quote}${scheme}${separator}[redacted]${quote}`
+      ),
+    );
+}
+
+function trySanitizeJsonTraceText(value: string): string | null {
+  const trimmed = value.trim();
+  if (!trimmed.startsWith('{') && !trimmed.startsWith('[')) return null;
+  try {
+    const parsed = JSON.parse(trimmed) as unknown;
+    const sanitized = sanitizeTracePayloadValue(parsed, new WeakSet<object>(), 0);
+    if (sanitized === undefined) return null;
+    return JSON.stringify(sanitized);
+  } catch {
+    return null;
+  }
+}
+
+const SENSITIVE_TRACE_TEXT_KEY_SOURCE = [
+  String.raw`api[_-]?key`,
+  String.raw`access[_-]?token`,
+  String.raw`refresh[_-]?token`,
+  String.raw`client[_-]?secret`,
+  'token',
+  'secret',
+  'password',
+  'credential',
+].join('|');
+const SENSITIVE_TRACE_DOUBLE_QUOTED_VALUE_PATTERN = new RegExp(
+  String.raw`((?:["']?)\b(?:${SENSITIVE_TRACE_TEXT_KEY_SOURCE})\b(?:["']?)\s*[:=]\s*)"[^"\r\n]*"`,
+  'gi',
+);
+const SENSITIVE_TRACE_SINGLE_QUOTED_VALUE_PATTERN = new RegExp(
+  String.raw`((?:["']?)\b(?:${SENSITIVE_TRACE_TEXT_KEY_SOURCE})\b(?:["']?)\s*[:=]\s*)'[^'\r\n]*'`,
+  'gi',
+);
+const SENSITIVE_TRACE_UNQUOTED_VALUE_PATTERN = new RegExp(
+  String.raw`((?:["']?)\b(?:${SENSITIVE_TRACE_TEXT_KEY_SOURCE})\b(?:["']?)\s*[:=]\s*)[^'"\s&;,}\]]+`,
+  'gi',
+);
+
+function redactSensitiveKeyValueTraceText(value: string): string {
+  return value
+    .replace(SENSITIVE_TRACE_DOUBLE_QUOTED_VALUE_PATTERN, '$1"[redacted]"')
+    .replace(SENSITIVE_TRACE_SINGLE_QUOTED_VALUE_PATTERN, "$1'[redacted]'")
+    .replace(SENSITIVE_TRACE_UNQUOTED_VALUE_PATTERN, '$1[redacted]');
+}
+
+function redactSensitiveTraceText(value: string): string {
+  const jsonSanitized = trySanitizeJsonTraceText(value);
+  const authorizationSanitized = redactAuthorizationHeaderValues(jsonSanitized ?? value)
+    .replace(/\b(Bearer\s+)[A-Za-z0-9._~+/=-]{8,}\b/gi, '$1[redacted]');
+  return redactSensitiveKeyValueTraceText(authorizationSanitized)
+    .replace(/\bsk-[A-Za-z0-9][A-Za-z0-9_-]{6,}\b/g, 'sk-[redacted]');
+}
+
+function sanitizeTracePayloadValue(value: unknown, seen: WeakSet<object>, depth: number): unknown {
+  if (typeof value === 'string') return redactSensitiveTraceText(value);
+  if (value === null || typeof value !== 'object') return value;
+  if (depth >= MAX_TRACE_DETAIL_SANITIZE_DEPTH) return undefined;
+  if (seen.has(value)) return undefined;
+  seen.add(value);
+  if (Array.isArray(value)) {
+    const sanitizedItems = value.map((item) => {
+      const sanitized = sanitizeTracePayloadValue(item, seen, depth + 1);
+      return sanitized === undefined ? null : sanitized;
+    });
+    seen.delete(value);
+    return sanitizedItems;
+  }
+  const sanitized: Record<string, unknown> = {};
+  for (const [key, childValue] of Object.entries(value)) {
+    if (isSensitiveTraceDetailKey(key)) continue;
+    const sanitizedChild = sanitizeTracePayloadValue(childValue, seen, depth + 1);
+    if (sanitizedChild !== undefined) {
+      sanitized[key] = sanitizedChild;
+    }
+  }
+  seen.delete(value);
+  return sanitized;
+}
+
+function sanitizeTraceDetails(details: Record<string, unknown> | undefined): Record<string, unknown> | undefined {
+  if (!details) return undefined;
+  const sanitized = sanitizeTracePayloadValue(details, new WeakSet<object>(), 0);
+  if (typeof sanitized === 'object' && sanitized !== null && !Array.isArray(sanitized)) {
+    return sanitized as Record<string, unknown>;
+  }
+  return undefined;
+}
+
+function sanitizeTracePayload(payload: AgentExecutionTraceEventPayload): AgentExecutionTraceEventPayload {
+  const sanitizedPayload: AgentExecutionTraceEventPayload = {
+    ...payload,
+    summary: redactSensitiveTraceText(payload.summary),
+  };
+  const sanitizedDetails = sanitizeTraceDetails(payload.details);
+  if (sanitizedDetails) {
+    sanitizedPayload.details = sanitizedDetails;
+  } else {
+    delete sanitizedPayload.details;
+  }
+  if (typeof sanitizedPayload.raw === 'string') {
+    sanitizedPayload.raw = redactSensitiveTraceText(sanitizedPayload.raw);
+  }
+  return sanitizedPayload;
+}
+
+function buildSanitizedTaskTraceEvent(args: {
+  taskId: string;
+  messageId: string;
+  runId: string;
+  payload: AgentExecutionTraceEventPayload;
+}) {
+  return buildTaskTraceEvent({
+    ...args,
+    payload: sanitizeTracePayload(args.payload),
+  });
 }
 
 export async function runNotebookTaskWithExecutionAgent(input: {
@@ -340,6 +548,7 @@ export async function runNotebookTaskWithExecutionAgent(input: {
     const modelAutoCompactTokenLimit = modelWindow.modelAutoCompactTokenLimit;
     const modelCatalog = deriveNotebookCodexModelCatalog({
       capabilities: endpoint.capabilities,
+      upstreamProtocol: endpoint.upstream_protocol,
     });
     if (agent.mode !== 'internal') {
       const preflight = await enforceEndpointGovernancePreflight({
@@ -526,7 +735,7 @@ export async function runNotebookTaskWithExecutionAgent(input: {
         if (event.event.status === 'cancelled') {
           sawCancelledTerminalTrace = true;
         }
-        const traceEvent = buildTaskTraceEvent({
+        const traceEvent = buildSanitizedTaskTraceEvent({
           taskId: task.id,
           messageId: assistantMessage.id,
           runId,
@@ -671,7 +880,7 @@ export async function runNotebookTaskWithExecutionAgent(input: {
     const missingExecutionTrace = traceEventCount === 0;
     if (missingExecutionTrace) {
       const fallbackStatus = terminalResult === 'ok' ? 'success' : 'error';
-      const fallbackTrace = buildTaskTraceEvent({
+      const fallbackTrace = buildSanitizedTaskTraceEvent({
         taskId: task.id,
         messageId: assistantMessage.id,
         runId,
@@ -707,7 +916,7 @@ export async function runNotebookTaskWithExecutionAgent(input: {
     }
     const cancellationRequested = await isCancellationObserved();
     if (cancellationRequested && !sawCancelledTerminalTrace) {
-      const userCancelledTrace = buildTaskTraceEvent({
+      const userCancelledTrace = buildSanitizedTaskTraceEvent({
         taskId: task.id,
         messageId: assistantMessage.id,
         runId,

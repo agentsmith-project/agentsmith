@@ -27,6 +27,7 @@ type FilesBrowserPaneProps = {
   selectedObjectsCount: number;
   allSelected: boolean;
   hasSelection: boolean;
+  uploadCanCancel: boolean;
   uploadInProgress: boolean;
   uploadCurrentFileName: string;
   uploadQueueCompleted: number;
@@ -97,6 +98,7 @@ export function FilesBrowserPane(props: FilesBrowserPaneProps) {
     selectedObjectsCount,
     allSelected,
     hasSelection,
+    uploadCanCancel,
     uploadInProgress,
     uploadCurrentFileName,
     uploadQueueCompleted,
@@ -247,7 +249,15 @@ export function FilesBrowserPane(props: FilesBrowserPaneProps) {
                     </div>
                     <Progress value={uploadCurrentProgress} className="mt-1 h-1.5" />
                   </div>
-                  <Button type="button" variant="ghost" size="sm" className="h-6 px-2 text-xs" onClick={onCancelUpload} data-testid="files__upload-cancel">
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="sm"
+                    className="h-6 px-2 text-xs"
+                    onClick={onCancelUpload}
+                    disabled={!uploadCanCancel}
+                    data-testid="files__upload-cancel"
+                  >
                     <X className="h-3.5 w-3.5 mr-1" />
                     {t('file_manager.upload_cancel')}
                   </Button>

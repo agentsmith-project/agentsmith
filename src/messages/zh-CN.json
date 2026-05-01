@@ -3199,6 +3199,7 @@
       "uploading": "正在上传 {name}（{completed}/{total}）",
       "upload_cancel": "取消",
       "upload_canceled": "上传已取消",
+      "upload_sync_missing": "上传已完成，但当前目录暂未显示该文件。请刷新后重试。",
       "batch_delete_result_title": "删除完成，但存在失败项",
       "batch_download_result_title": "下载完成，但存在失败项",
       "batch_result_failed_count": "失败 {failed} 项",

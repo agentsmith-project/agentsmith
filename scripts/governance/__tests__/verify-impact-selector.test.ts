@@ -561,6 +561,111 @@ describe('verify impact selector', () => {
     });
   });
 
+  it('maps runner and notebook execution package sources to runner owner review instead of unmapped triage', () => {
+    const changedFiles = [
+      'packages/agent-runner/src/index.ts',
+      'packages/notebook-codex-runner/src/runner.ts',
+      'packages/api-entry-node/src/notebook-execution-orchestrator.ts',
+    ];
+    const plan = buildVerificationPlan({ changedFiles });
+
+    expect(plan.requiredLevels).toContain('V3');
+    expect(plan.recommendedCommands).toContain('npm run verify:real');
+    expect(plan.affectedSurfaces).toContain('runner/context-store/credentials');
+    expect(plan.affectedSurfaces).not.toContain('unmapped-source');
+    expect(plan.nextAction).toContain('npm run verify -- --goal=real --run');
+    expect(plan.riskSummary.warnings.join('\n')).not.toContain('did not match canonical story markdown');
+    expect(plan.changedFileImpacts).toEqual(expect.arrayContaining(
+      changedFiles.map((changedFile) => expect.objectContaining({
+        changedFile,
+        matchedRules: ['runner_context_credential'],
+        affectedSurfaces: ['runner/context-store/credentials'],
+        broadImpact: true,
+        manualReviewRequired: true,
+      })),
+    ));
+    expect(plan.storyCards[0]?.manualReviewReasons).toContain('runner/context/credential owner review');
+  });
+
+  it('maps api-entry runner context credential backend sources to runner owner review', () => {
+    const changedFiles = [
+      'packages/api-entry-node/src/notebook-execution-orchestrator.ts',
+      'packages/api-entry-node/src/context-store.ts',
+      'packages/api-entry-node/src/context-route-handler.ts',
+      'packages/api-entry-node/src/managed-credential-resolver.ts',
+      'packages/api-entry-node/src/agent-execution-service.ts',
+      'packages/api-entry-node/src/agent-runner-profile.ts',
+    ];
+    const plan = buildVerificationPlan({ changedFiles });
+
+    expect(plan.requiredLevels).toContain('V3');
+    expect(plan.recommendedCommands).toContain('npm run verify:real');
+    expect(plan.affectedSurfaces).toContain('runner/context-store/credentials');
+    expect(plan.affectedSurfaces).not.toContain('unmapped-source');
+    expect(plan.riskSummary.manualReviewRequired).toBe(true);
+    expect(plan.riskSummary.broadImpact).toBe(true);
+    expect(plan.riskSummary.warnings.join('\n')).not.toContain('did not match canonical story markdown');
+    expect(plan.changedFileImpacts).toHaveLength(changedFiles.length);
+    for (const changedFile of changedFiles) {
+      expect(plan.changedFileImpacts).toContainEqual(expect.objectContaining({
+        changedFile,
+        matchedRules: ['runner_context_credential'],
+        affectedSurfaces: ['runner/context-store/credentials'],
+        manualReviewRequired: true,
+        broadImpact: true,
+      }));
+    }
+    expect(plan.storyCards[0]?.manualReviewReasons).toContain('runner/context/credential owner review');
+  });
+
+  it('keeps pr --run package runner changes fail-closed on backend-real owner verification, not unmapped triage', () => {
+    const plan = buildVerificationPlan({
+      goal: 'pr',
+      goalExplicit: true,
+      run: true,
+      changedFiles: ['packages/api-entry-node/src/context-store.ts'],
+    });
+
+    expect(plan.finalVerdict).toBe('not_evaluated_fail_closed');
+    expect(plan.requiredLevels).toContain('V3');
+    expect(plan.recommendedCommands).toContain('npm run verify:real');
+    expect(plan.affectedSurfaces).toContain('runner/context-store/credentials');
+    expect(plan.affectedSurfaces).not.toContain('unmapped-source');
+    expect(plan.riskSummary.warnings.join('\n')).toContain(
+      '--goal=pr --run cannot execute npm run verify -- --goal=real --run',
+    );
+    expect(plan.riskSummary.warnings.join('\n')).not.toContain('did not match canonical story markdown');
+    expect(plan.changedFileImpacts).toEqual([
+      expect.objectContaining({
+        changedFile: 'packages/api-entry-node/src/context-store.ts',
+        matchedRules: ['runner_context_credential'],
+        affectedSurfaces: ['runner/context-store/credentials'],
+        broadImpact: true,
+        manualReviewRequired: true,
+      }),
+    ]);
+    expect(plan.storyCards[0]?.manualReviewReasons).toContain('runner/context/credential owner review');
+  });
+
+  it('keeps unrelated api-entry-node route sources as unmapped instead of sprawling runner review', () => {
+    const changedFile = 'packages/api-entry-node/src/project-route-handler.ts';
+    const plan = buildVerificationPlan({ changedFiles: [changedFile] });
+
+    expect(plan.requiredLevels).toEqual(['V0', 'V1', 'V2', 'V3']);
+    expect(plan.affectedSurfaces).toEqual(['unmapped-source']);
+    expect(plan.riskSummary.manualReviewRequired).toBe(true);
+    expect(plan.riskSummary.broadImpact).toBe(true);
+    expect(plan.changedFileImpacts).toEqual([
+      expect.objectContaining({
+        changedFile,
+        matchedRules: ['unmapped_source'],
+        affectedSurfaces: ['unmapped-source'],
+        manualReviewRequired: true,
+        broadImpact: true,
+      }),
+    ]);
+  });
+
   it('marks --run without explicit goal as fail-closed and keeps the report non-release', () => {
     const plan = buildVerificationPlan({
       run: true,
@@ -677,6 +782,65 @@ describe('verify impact selector', () => {
     expect(plan.finalVerdict).toBe('not_evaluated_fail_closed');
     expect(plan.releaseVerdict).toBe(false);
     expect(plan.riskSummary.manualReviewRequired).toBe(true);
+  });
+
+  it('maps governance tooling sources to targeted V0/V1 owner review instead of unmapped triage', () => {
+    const changedFiles = [
+      'scripts/governance/verify-impact-selector.ts',
+      'scripts/governance/__tests__/verify-impact-selector.test.ts',
+    ];
+    const plan = buildVerificationPlan({ changedFiles });
+
+    expect(plan.requiredLevels).toEqual(['V0', 'V1']);
+    expect(plan.recommendedCommands).toEqual([
+      'npm run verify:quick',
+      'npm run verify:default',
+    ]);
+    expect(plan.affectedSurfaces).toEqual(['engineering-governance-tooling']);
+    expect(plan.affectedSurfaces).not.toContain('unmapped-source');
+    expect(plan.storyCards).toEqual([]);
+    expect(plan.affectedStories.join('\n')).toContain('mapped operational impact: engineering-governance-tooling');
+    expect(plan.riskSummary.manualReviewRequired).toBe(true);
+    expect(plan.riskSummary.broadImpact).toBe(false);
+    expect(plan.riskSummary.warnings.join('\n')).not.toContain('did not match canonical story markdown');
+    expect(plan.changedFileImpacts).toHaveLength(changedFiles.length);
+    expect(plan.changedFileImpacts).toEqual(expect.arrayContaining(
+      changedFiles.map((changedFile) => expect.objectContaining({
+        changedFile,
+        matchedRules: ['governance_tooling'],
+        affectedSurfaces: ['engineering-governance-tooling'],
+        storyIds: [],
+        manualReviewRequired: true,
+        broadImpact: false,
+      })),
+    ));
+  });
+
+  it.each([
+    'scripts/governance/release-ready.ts',
+    'scripts/governance/run-release-aggregate.ts',
+    'scripts/governance/release-campaign-runner.ts',
+    'scripts/governance/rehearsal-entrypoint.ts',
+    'scripts/governance/rehearsal-world-health.ts',
+    'scripts/governance/current-rehearsal-metadata-schema.ts',
+    'scripts/governance/current-rehearsal-world-health-schema.ts',
+  ])('keeps governance release path %s on V4 release/deploy operator review', (changedFile) => {
+    const plan = buildVerificationPlan({
+      changedFiles: [changedFile],
+    });
+
+    expect(plan.requiredLevels).toEqual(['V4']);
+    expect(plan.recommendedCommands).toEqual([]);
+    expect(plan.affectedSurfaces).toEqual(['release/deploy/rehearsal']);
+    expect(plan.changedFileImpacts).toEqual([
+      expect.objectContaining({
+        changedFile,
+        matchedRules: ['release_deploy_rehearsal'],
+        affectedSurfaces: ['release/deploy/rehearsal'],
+        manualReviewRequired: true,
+        broadImpact: true,
+      }),
+    ]);
   });
 
   it.each([

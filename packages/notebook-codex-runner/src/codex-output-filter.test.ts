@@ -6,6 +6,7 @@ function makeStats(): RunnerFilterStats {
     stderr_superpowers_skill_missing: 0,
     model_metadata_warning: 0,
     stderr_model_refresh_timeout: 0,
+    stderr_rollout_record_missing_thread: 0,
     delta_metadata_warning_event: 0,
     delta_empty_error_shell: 0,
   };
@@ -44,5 +45,16 @@ describe('codex-output-filter', () => {
     const out = sanitizeStderrChunk(input, () => stats);
     expect(out).toBe('next line');
     expect(stats.stderr_model_refresh_timeout).toBe(1);
+  });
+
+  it('removes expected rollout missing-thread stderr noise and counts hit', () => {
+    const stats = makeStats();
+    const input = [
+      '2026-04-29T11:12:13.000000Z ERROR codex_core::session: failed to record rollout items: thread 0196984a-cdbe-7fff-8abc-0123456789ab not found',
+      'next line',
+    ].join('\n');
+    const out = sanitizeStderrChunk(input, () => stats);
+    expect(out).toBe('next line');
+    expect(stats.stderr_rollout_record_missing_thread).toBe(1);
   });
 });

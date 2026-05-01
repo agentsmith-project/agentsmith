@@ -12,7 +12,7 @@ import type {
   FileObjectShareLink,
   FileObjectItem,
 } from '../types';
-import type { ApiClient } from '../client';
+import type { ApiClient, ApiRequestOptions } from '../client';
 
 export class FilesAPI {
   constructor(private client: ApiClient) {}
@@ -64,6 +64,7 @@ export class FilesAPI {
     projectId: string,
     libraryId: string,
     params?: FileObjectsListParams,
+    options?: ApiRequestOptions,
   ): Promise<FileObjectsListResponse> {
     const searchParams = new URLSearchParams();
     if (params?.prefix) searchParams.set('path', params.prefix);
@@ -95,6 +96,7 @@ export class FilesAPI {
       next_continuation_token: string | null;
     }>(
       `/workspaces/${workspaceId}/projects/${projectId}/file-libraries/${libraryId}/entries${query ? `?${query}` : ''}`,
+      options,
     ).then((response) => ({
       prefix: response.path,
       items: response.items.map((item) =>

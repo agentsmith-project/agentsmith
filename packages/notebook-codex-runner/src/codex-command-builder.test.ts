@@ -21,10 +21,10 @@ describe('codex-command-builder', () => {
     expect(config).toContain('model_auto_compact_token_limit = 121600');
     expect(config).toContain('model_catalog_json = "/tmp/catalog.json"');
     expect(config).toContain('env_http_headers = { "x-agentsmith-execution-ticket" = "MBOS_CODEX_PROXY_EXECUTION_TICKET" }');
+    expect(config).not.toContain('max_output_tokens');
     expect(config).not.toContain('Authorization');
     expect(config).not.toContain('MBOS_CODEX_PROXY_AUTH_HEADER');
   });
-
 
   it('omits env-based auth headers when no auth env name is provided', () => {
     const config = buildTaskCodexConfig({
@@ -54,6 +54,7 @@ describe('codex-command-builder', () => {
     expect(args).toContain('model_context_window=128000');
     expect(args).toContain('model_auto_compact_token_limit=121600');
     expect(args).toContain('model_catalog_json="/tmp/catalog.json"');
+    expect(args.join(' ')).not.toContain('max_output_tokens');
     expect(args.join(' ')).not.toContain('experimental_bearer_token');
     expect(args).not.toContain('--full-auto');
   });
@@ -78,6 +79,7 @@ describe('codex-command-builder', () => {
       model: 'placeholder-model',
       modelContextWindow: 128000,
       modelAutoCompactTokenLimit: 121600,
+      applyPatchToolType: 'function',
       inputModalities: ['text'],
       supportsSearchTool: false,
       supportsParallelToolCalls: false,
@@ -91,8 +93,25 @@ describe('codex-command-builder', () => {
     expect(catalog.models[0]?.display_name).toBe('placeholder-model');
     expect(catalog.models[0]?.context_window).toBe(128000);
     expect(catalog.models[0]?.auto_compact_token_limit).toBe(121600);
+    expect(catalog.models[0]?.apply_patch_tool_type).toBe('function');
     expect(catalog.models[0]?.input_modalities).toEqual(['text']);
     expect(catalog.models[0]?.supports_search_tool).toBe(false);
     expect(catalog.models[0]?.supports_parallel_tool_calls).toBe(false);
+    expect(catalog.models[0]).not.toHaveProperty('max_output_tokens');
+    expect(catalogText).not.toContain('max_output_tokens');
+  });
+
+  it('emits a freeform apply_patch tool type only when catalog truth says so', () => {
+    const catalogText = buildTaskCodexModelCatalog({
+      model: 'native-responses-model',
+      modelContextWindow: 128000,
+      modelAutoCompactTokenLimit: 121600,
+      applyPatchToolType: 'freeform',
+    });
+    const catalog = JSON.parse(catalogText) as {
+      models: Array<Record<string, unknown>>;
+    };
+
+    expect(catalog.models[0]?.apply_patch_tool_type).toBe('freeform');
   });
 });

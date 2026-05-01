@@ -1,5 +1,5 @@
 import * as React from 'react';
-import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import { QueryClient, QueryClientProvider, type QueryClientConfig } from '@tanstack/react-query';
 import { render } from '@testing-library/react';
 
 export function createFileLibrary(overrides: Record<string, unknown> = {}) {
@@ -43,9 +43,13 @@ export function createObjectItem(overrides: Record<string, unknown> = {}) {
   };
 }
 
-export function renderWithQueryClient(ui: React.ReactElement) {
+export function renderWithQueryClient(ui: React.ReactElement, config?: QueryClientConfig) {
   const queryClient = new QueryClient({
     defaultOptions: { queries: { retry: false } },
+    ...config,
   });
-  return render(<QueryClientProvider client={queryClient}>{ui}</QueryClientProvider>);
+  return {
+    queryClient,
+    ...render(<QueryClientProvider client={queryClient}>{ui}</QueryClientProvider>),
+  };
 }

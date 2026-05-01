@@ -96,6 +96,14 @@ const runStartedAtByRequestId = new Map<string, number>();
 const reportedArtifactsByRequestId = new Map<string, Set<string>>();
 const visibleAgentCharsByRequestId = new Map<string, number>();
 const commandCountByRequestId = new Map<string, number>();
+const emittedFinalAgentMessageByRequestId = new Set<string>();
+const finalAgentMessageCandidateByRequestId = new Map<string, string>();
+type StandardResponsesTextState = {
+  emittedText: string;
+  sawDelta: boolean;
+  doneSeen: boolean;
+};
+const standardResponsesTextStateByRequestId = new Map<string, StandardResponsesTextState>();
 let connectedResourceProxyBase = '';
 type FilterStats = RunnerFilterStats;
 const filterStatsByRequestId = new Map<string, FilterStats>();
@@ -112,6 +120,7 @@ function getFilterStats(requestId: string): FilterStats {
     stderr_superpowers_skill_missing: 0,
     model_metadata_warning: 0,
     stderr_model_refresh_timeout: 0,
+    stderr_rollout_record_missing_thread: 0,
     delta_metadata_warning_event: 0,
     delta_empty_error_shell: 0,
   };
@@ -253,7 +262,24 @@ function clearRunnerState(): void {
   reportedArtifactsByRequestId.clear();
   visibleAgentCharsByRequestId.clear();
   commandCountByRequestId.clear();
+  emittedFinalAgentMessageByRequestId.clear();
+  finalAgentMessageCandidateByRequestId.clear();
+  standardResponsesTextStateByRequestId.clear();
   filterStatsByRequestId.clear();
+}
+
+function clearRequestRuntimeState(requestId: string): void {
+  runningByRequestId.delete(requestId);
+  cancelRequestedByRequestId.delete(requestId);
+  traceSeqByRequestId.delete(requestId);
+  runStartedAtByRequestId.delete(requestId);
+  filterStatsByRequestId.delete(requestId);
+  reportedArtifactsByRequestId.delete(requestId);
+  visibleAgentCharsByRequestId.delete(requestId);
+  commandCountByRequestId.delete(requestId);
+  emittedFinalAgentMessageByRequestId.delete(requestId);
+  finalAgentMessageCandidateByRequestId.delete(requestId);
+  standardResponsesTextStateByRequestId.delete(requestId);
 }
 
 function waitForCodexProcessClose(child: RunningProcess): Promise<void> {
@@ -450,36 +476,202 @@ function maybeEmitDeltaChunk(requestId: string, chunk: string): number {
   return trimmed.length;
 }
 
-function extractAgentDeltaFromStdoutLine(line: string): string | null {
+function emitDeltaChunkAndTrackVisibleChars(requestId: string, chunk: string): number {
+  const emitted = maybeEmitDeltaChunk(requestId, chunk);
+  if (emitted > 0) {
+    visibleAgentCharsByRequestId.set(requestId, (visibleAgentCharsByRequestId.get(requestId) ?? 0) + emitted);
+  }
+  return emitted;
+}
+
+function getStandardResponsesTextState(requestId: string): StandardResponsesTextState {
+  const existing = standardResponsesTextStateByRequestId.get(requestId);
+  if (existing) return existing;
+  const created: StandardResponsesTextState = {
+    emittedText: '',
+    sawDelta: false,
+    doneSeen: false,
+  };
+  standardResponsesTextStateByRequestId.set(requestId, created);
+  return created;
+}
+
+function markFinalAgentOutputEmitted(requestId: string): void {
+  emittedFinalAgentMessageByRequestId.add(requestId);
+  finalAgentMessageCandidateByRequestId.delete(requestId);
+}
+
+function readStringField(record: Record<string, unknown> | null, field: string): string {
+  const value = record?.[field];
+  return typeof value === 'string' ? value : '';
+}
+
+function readCodexPhase(
+  evt: Record<string, unknown>,
+  payload: Record<string, unknown> | null,
+  item: Record<string, unknown> | null,
+): string {
+  const phase = readStringField(evt, 'phase')
+    || readStringField(payload, 'phase')
+    || readStringField(item, 'phase');
+  return phase.trim();
+}
+
+function readResponseItemMessageText(payload: Record<string, unknown> | null): string {
+  if (!payload || payload.type !== 'message' || payload.role !== 'assistant') return '';
+  const content = payload.content;
+  if (typeof content === 'string') return content;
+  if (!Array.isArray(content)) return '';
+  return content
+    .map((part) => {
+      if (typeof part !== 'object' || part === null) return '';
+      const record = part as Record<string, unknown>;
+      if (typeof record.text === 'string') return record.text;
+      if (typeof record.content === 'string') return record.content;
+      return '';
+    })
+    .join('');
+}
+
+function containsPatchMarkerLine(text: string): boolean {
+  const patchMarkerLinePattern = /^\s*\*{3}\s+(?:(?:Begin Patch|End Patch|End of File)(?=\s|$)|(?:Add File|Update File|Delete File|Move to):(?=\s|$))/i;
+  return text.split('\n').some((line) => patchMarkerLinePattern.test(line));
+}
+
+function isLikelyToolArgumentContaminationText(text: string): boolean {
+  const normalized = text.replace(/\r/g, '').trim();
+  if (!normalized) return false;
+  if (containsPatchMarkerLine(normalized)) return true;
+  if (/\bapply_patch\b\s*(?:<<|[{(])/i.test(normalized)) return true;
+  if (/"type"\s*:\s*"function_call"/i.test(normalized) && /"arguments"\s*:/i.test(normalized)) return true;
+  if (/\bTool call partial arguments\b/i.test(normalized)) return true;
+  if (/\bpartial arguments\b/i.test(normalized) && /\b(function_call|tool call|tool_call|apply_patch|arguments)\b/i.test(normalized)) {
+    return true;
+  }
+  return false;
+}
+
+function isLikelyFinalAssistantMessageText(text: string): boolean {
+  const normalized = text.replace(/\r/g, '').trim();
+  if (!normalized) return false;
+  if (!/[A-Za-z0-9\u4e00-\u9fff]/u.test(normalized)) return false;
+  if (isLikelyToolArgumentContaminationText(normalized)) return false;
+  return true;
+}
+
+function rememberFinalAgentMessageCandidate(requestId: string, text: string): void {
+  const candidate = text.replace(/\r/g, '').trim();
+  if (!isLikelyFinalAssistantMessageText(candidate)) return;
+  finalAgentMessageCandidateByRequestId.set(requestId, candidate);
+}
+
+function emitFinalAgentMessageOnce(requestId: string, text: string): string | null {
+  if (emittedFinalAgentMessageByRequestId.has(requestId)) return null;
+  if (!text.trim()) return null;
+  markFinalAgentOutputEmitted(requestId);
+  return text;
+}
+
+function takeFinalAgentMessageCandidate(requestId: string): string | null {
+  const candidate = finalAgentMessageCandidateByRequestId.get(requestId);
+  finalAgentMessageCandidateByRequestId.delete(requestId);
+  if (!candidate) return null;
+  return emitFinalAgentMessageOnce(requestId, candidate);
+}
+
+function extractStandardResponsesTextDelta(
+  requestId: string,
+  type: string,
+  evt: Record<string, unknown>,
+): string | null {
+  if (type === 'response.output_text.delta') {
+    const delta = typeof evt.delta === 'string' ? evt.delta : '';
+    if (!delta.trim()) return null;
+    const state = getStandardResponsesTextState(requestId);
+    state.sawDelta = true;
+    state.emittedText += delta;
+    markFinalAgentOutputEmitted(requestId);
+    return delta;
+  }
+
+  if (type !== 'response.output_text.done') {
+    return null;
+  }
+
+  const text = typeof evt.text === 'string' ? evt.text : '';
+  if (!text.trim()) return null;
+  const state = getStandardResponsesTextState(requestId);
+  if (state.doneSeen) return null;
+  state.doneSeen = true;
+
+  if (!state.sawDelta) {
+    if (emittedFinalAgentMessageByRequestId.has(requestId)) return null;
+    state.emittedText = text;
+    markFinalAgentOutputEmitted(requestId);
+    return text;
+  }
+
+  if (!text.startsWith(state.emittedText)) {
+    return null;
+  }
+  const suffix = text.slice(state.emittedText.length);
+  state.emittedText = text;
+  if (!suffix.trim()) return null;
+  markFinalAgentOutputEmitted(requestId);
+  return suffix;
+}
+
+function extractAgentDeltaFromStdoutLine(requestId: string, line: string): string | null {
   const evt = parseCodexJsonLine(line);
   if (!evt) {
-    const trimmed = line.trim();
-    return trimmed ? trimmed : null;
+    return null;
   }
   const type = typeof evt.type === 'string' ? evt.type : '';
   const item = typeof evt.item === 'object' && evt.item !== null ? (evt.item as Record<string, unknown>) : null;
   const payload = typeof evt.payload === 'object' && evt.payload !== null ? (evt.payload as Record<string, unknown>) : null;
-  if (type === 'response.output_text.delta' && typeof evt.delta === 'string' && evt.delta.trim()) {
-    return evt.delta;
+  const phase = readCodexPhase(evt, payload, item);
+  const standardResponsesTextDelta = extractStandardResponsesTextDelta(requestId, type, evt);
+  if (standardResponsesTextDelta !== null) {
+    return standardResponsesTextDelta;
   }
-  if (type === 'response.output_text.done' && typeof evt.text === 'string' && evt.text.trim()) {
-    return evt.text;
+  if (type === 'response.output_text.done' && phase === 'final_answer' && typeof evt.text === 'string' && evt.text.trim()) {
+    return emitFinalAgentMessageOnce(requestId, evt.text);
   }
   if (type === 'item.delta') {
-    const delta = typeof evt.delta === 'object' && evt.delta !== null ? (evt.delta as Record<string, unknown>) : null;
-    if (delta && typeof delta.text === 'string' && delta.text.trim()) {
-      return delta.text;
-    }
+    return null;
   }
   if ((type === 'item.completed' || type === 'item.updated') && item?.type === 'agent_message') {
-    if (typeof item.text === 'string' && item.text.trim()) return item.text;
-    if (typeof item.content === 'string' && item.content.trim()) return item.content;
+    const text = typeof item.text === 'string' && item.text.trim()
+      ? item.text
+      : typeof item.content === 'string' && item.content.trim()
+        ? item.content
+        : '';
+    if (phase === 'final_answer') return emitFinalAgentMessageOnce(requestId, text);
+    if (phase === '' && text) rememberFinalAgentMessageCandidate(requestId, text);
+    return null;
+  }
+  if (type === 'response_item') {
+    const text = readResponseItemMessageText(payload ?? item);
+    if (phase === 'final_answer') return emitFinalAgentMessageOnce(requestId, text);
+    if (phase === '' && text) rememberFinalAgentMessageCandidate(requestId, text);
+    return null;
   }
   if (type === 'event_msg' && payload?.type === 'agent_message' && typeof payload.message === 'string' && payload.message.trim()) {
-    return payload.message;
+    if (phase === 'final_answer') return emitFinalAgentMessageOnce(requestId, payload.message);
+    if (phase === '') rememberFinalAgentMessageCandidate(requestId, payload.message);
+    return null;
+  }
+  if (type === 'event_msg' && payload?.type === 'task_complete' && typeof payload.last_agent_message === 'string' && payload.last_agent_message.trim()) {
+    return emitFinalAgentMessageOnce(requestId, payload.last_agent_message);
   }
   if (type === 'task_complete' && payload && typeof payload.last_agent_message === 'string' && payload.last_agent_message.trim()) {
-    return payload.last_agent_message;
+    return emitFinalAgentMessageOnce(requestId, payload.last_agent_message);
+  }
+  if (type === 'task_complete' && typeof evt.last_agent_message === 'string' && evt.last_agent_message.trim()) {
+    return emitFinalAgentMessageOnce(requestId, evt.last_agent_message);
+  }
+  if ((type === 'event_msg' && payload?.type === 'task_complete') || type === 'task_complete') {
+    return takeFinalAgentMessageCandidate(requestId);
   }
   return null;
 }
@@ -492,6 +684,69 @@ function parseCodexJsonLine(line: string): Record<string, unknown> | null {
   } catch {
     return null;
   }
+}
+
+function hasOwnRecordField(record: Record<string, unknown>, field: string): boolean {
+  return Object.prototype.hasOwnProperty.call(record, field);
+}
+
+function measureTraceValueBytes(value: unknown): number {
+  if (typeof value === 'string') return Buffer.byteLength(value, 'utf-8');
+  if (typeof value === 'undefined') return 0;
+  try {
+    return Buffer.byteLength(JSON.stringify(value) ?? '', 'utf-8');
+  } catch {
+    return 0;
+  }
+}
+
+function buildFunctionCallTraceDetails(item: Record<string, unknown>): Record<string, unknown> {
+  const toolName = readStringField(item, 'name') || 'unknown';
+  const callId = readStringField(item, 'call_id');
+  const details: Record<string, unknown> = {
+    tool_name: toolName,
+    ...(callId ? { call_id: callId } : {}),
+  };
+
+  if (hasOwnRecordField(item, 'arguments')) {
+    details.arguments_present = true;
+    details.arguments_bytes = measureTraceValueBytes(item.arguments);
+    details.arguments_redacted = true;
+  }
+
+  return details;
+}
+
+function containsFunctionCallArguments(value: unknown, depth = 0): boolean {
+  if (depth > 8) return false;
+  if (Array.isArray(value)) {
+    return value.some((entry) => containsFunctionCallArguments(entry, depth + 1));
+  }
+  if (typeof value !== 'object' || value === null) return false;
+  const record = value as Record<string, unknown>;
+  if (record.type === 'function_call' && hasOwnRecordField(record, 'arguments')) return true;
+  return Object.values(record).some((entry) => containsFunctionCallArguments(entry, depth + 1));
+}
+
+function containsToolArgumentContamination(value: unknown, depth = 0): boolean {
+  if (depth > 8) return false;
+  if (typeof value === 'string') return isLikelyToolArgumentContaminationText(value);
+  if (Array.isArray(value)) {
+    return value.some((entry) => containsToolArgumentContamination(entry, depth + 1));
+  }
+  if (typeof value !== 'object' || value === null) return false;
+  return Object.values(value as Record<string, unknown>).some((entry) => (
+    containsToolArgumentContamination(entry, depth + 1)
+  ));
+}
+
+function shouldSuppressRawTraceText(raw: string): boolean {
+  const parsed = parseCodexJsonLine(raw);
+  if (parsed) {
+    return containsFunctionCallArguments(parsed) || containsToolArgumentContamination(parsed);
+  }
+  return isLikelyToolArgumentContaminationText(raw)
+    || (/"type"\s*:\s*"function_call"/.test(raw) && /"arguments"\s*:/.test(raw));
 }
 
 function normalizeProxyBase(input: unknown): string {
@@ -529,6 +784,7 @@ function maybeEmitTraceFromStdoutLine(requestId: string, line: string): void {
   };
   const commandText = readCommandText(itemObj);
   // Always emit a high-fidelity raw/debug event so the UI Raw view can show more of Codex's console semantics.
+  const rawTraceLine = shouldSuppressRawTraceText(line) ? undefined : line;
   sendTraceEvent(requestId, {
     category: 'debug',
     phase: 'update',
@@ -539,7 +795,7 @@ function maybeEmitTraceFromStdoutLine(requestId: string, line: string): void {
       event_type: type,
       ...(itemType ? { item_type: itemType } : {}),
     },
-    raw: line,
+    ...(rawTraceLine ? { raw: rawTraceLine } : {}),
   });
   if (type !== 'thread.started'
     && type !== 'turn.started'
@@ -610,13 +866,12 @@ function maybeEmitTraceFromStdoutLine(requestId: string, line: string): void {
   const item = itemObj ?? {};
   if (type === 'item.started' || type === 'item.updated') {
     if (item.type === 'command_execution') {
-      const commandLabel = commandText || 'shell command';
       sendTraceEvent(requestId, {
         category: 'tool',
         phase: type === 'item.started' ? 'start' : 'update',
         status: 'running',
         name: 'codex.command',
-        summary: `Command ${type === 'item.started' ? 'started' : 'updated'}: ${commandLabel}`,
+        summary: `Command ${type === 'item.started' ? 'started' : 'updated'}`,
         details: {
           ...(commandText ? { command: commandText } : {}),
         },
@@ -631,10 +886,7 @@ function maybeEmitTraceFromStdoutLine(requestId: string, line: string): void {
         status: 'running',
         name: 'codex.tool',
         summary: `Tool call ${type === 'item.started' ? 'started' : 'updated'}: ${toolName}`,
-        details: {
-          tool_name: toolName,
-          ...(typeof item.arguments === 'string' ? { arguments: item.arguments } : {}),
-        },
+        details: buildFunctionCallTraceDetails(item),
       });
     }
     return;
@@ -657,10 +909,7 @@ function maybeEmitTraceFromStdoutLine(requestId: string, line: string): void {
       status: 'success',
       name: 'codex.tool',
       summary: `Tool call completed: ${toolName}`,
-      details: {
-        tool_name: toolName,
-        ...(typeof item.arguments === 'string' ? { arguments: item.arguments } : {}),
-      },
+      details: buildFunctionCallTraceDetails(item),
     });
     return;
   }
@@ -669,15 +918,14 @@ function maybeEmitTraceFromStdoutLine(requestId: string, line: string): void {
       ? Math.trunc(item.exit_code)
       : null;
     const status = exitCode === null || exitCode === 0 ? 'success' : 'error';
-    const commandLabel = commandText || 'shell command';
     sendTraceEvent(requestId, {
       category: status === 'success' ? 'tool' : 'error',
       phase: 'end',
       status,
       name: 'codex.command',
       summary: status === 'success'
-        ? `Command completed: ${commandLabel}`
-        : `Command failed${exitCode !== null ? ` (exit ${exitCode})` : ''}: ${commandLabel}`,
+        ? 'Command completed'
+        : `Command failed${exitCode !== null ? ` (exit ${exitCode})` : ''}`,
       details: {
         ...(commandText ? { command: commandText } : {}),
         ...(exitCode !== null ? { exit_code: exitCode } : {}),
@@ -771,12 +1019,9 @@ function flushCodexStdoutBuffer(requestId: string, buffer: string): string {
     const line = rawPart.trim();
     if (!line) continue;
     maybeEmitTraceFromStdoutLine(requestId, line);
-    const agentDelta = extractAgentDeltaFromStdoutLine(line);
+    const agentDelta = extractAgentDeltaFromStdoutLine(requestId, line);
     if (agentDelta) {
-      const emitted = maybeEmitDeltaChunk(requestId, agentDelta);
-      if (emitted > 0) {
-        visibleAgentCharsByRequestId.set(requestId, (visibleAgentCharsByRequestId.get(requestId) ?? 0) + emitted);
-      }
+      emitDeltaChunkAndTrackVisibleChars(requestId, agentDelta);
     }
   }
   remaining = tail;
@@ -786,12 +1031,9 @@ function flushCodexStdoutBuffer(requestId: string, buffer: string): string {
     const line = jsonObject.trim();
     if (!line) continue;
     maybeEmitTraceFromStdoutLine(requestId, line);
-    const agentDelta = extractAgentDeltaFromStdoutLine(line);
+    const agentDelta = extractAgentDeltaFromStdoutLine(requestId, line);
     if (agentDelta) {
-      const emitted = maybeEmitDeltaChunk(requestId, agentDelta);
-      if (emitted > 0) {
-        visibleAgentCharsByRequestId.set(requestId, (visibleAgentCharsByRequestId.get(requestId) ?? 0) + emitted);
-      }
+      emitDeltaChunkAndTrackVisibleChars(requestId, agentDelta);
     }
   }
   return parsed.rest;
@@ -870,6 +1112,8 @@ async function runCodexRequest(requestId: string, payload: ServerStartPayload): 
     : ['text'];
   const modelCatalogSupportsSearchTool = executionContext.model_catalog?.supports_search_tool === true;
   const modelCatalogSupportsParallelToolCalls = executionContext.model_catalog?.supports_parallel_tool_calls === true;
+  const modelCatalogApplyPatchToolType =
+    executionContext.model_catalog?.apply_patch_tool_type === 'freeform' ? 'freeform' : 'function';
   const sessionStateResult = await ensureCodexSessionStateCompatible({
     codexDir: taskPaths.codexDir,
     taskId,
@@ -883,6 +1127,7 @@ async function runCodexRequest(requestId: string, payload: ServerStartPayload): 
       input_modalities: modelCatalogInputModalities,
       supports_search_tool: modelCatalogSupportsSearchTool,
       supports_parallel_tool_calls: modelCatalogSupportsParallelToolCalls,
+      apply_patch_tool_type: modelCatalogApplyPatchToolType,
     }),
   });
   debugLog('validated codex session state', {
@@ -906,6 +1151,7 @@ async function runCodexRequest(requestId: string, payload: ServerStartPayload): 
       model,
       modelContextWindow: modelContextWindow ?? 128000,
       modelAutoCompactTokenLimit: modelAutoCompactTokenLimit ?? Math.floor((modelContextWindow ?? 128000) * 0.9),
+      applyPatchToolType: modelCatalogApplyPatchToolType,
       inputModalities: modelCatalogInputModalities,
       supportsSearchTool: modelCatalogSupportsSearchTool,
       supportsParallelToolCalls: modelCatalogSupportsParallelToolCalls,
@@ -946,6 +1192,7 @@ async function runCodexRequest(requestId: string, payload: ServerStartPayload): 
     model_input_modalities: modelCatalogInputModalities,
     model_supports_search_tool: modelCatalogSupportsSearchTool,
     model_supports_parallel_tool_calls: modelCatalogSupportsParallelToolCalls,
+    model_apply_patch_tool_type: modelCatalogApplyPatchToolType,
     has_execution_ticket: Boolean(executionContext.execution_ticket && executionContext.execution_ticket.trim()),
     interaction_kind: interactionKind,
     resume_session: resumeSession,
@@ -1085,23 +1332,22 @@ async function runCodexRequest(requestId: string, payload: ServerStartPayload): 
       const stats = filterStatsByRequestId.get(requestId);
       if (stats) debugLog('filter stats', { request_id: requestId, ...stats });
     }
-    runStartedAtByRequestId.delete(requestId);
-    filterStatsByRequestId.delete(requestId);
-    reportedArtifactsByRequestId.delete(requestId);
-    visibleAgentCharsByRequestId.delete(requestId);
-    commandCountByRequestId.delete(requestId);
+    clearRequestRuntimeState(requestId);
   });
 
   child.on('close', (code, signal) => {
     stdoutBuffer = flushCodexStdoutBuffer(requestId, stdoutBuffer);
     const trailingLine = stdoutBuffer.trim();
     if (trailingLine.length > 0) {
-      // Final fallback for residual non-JSON text without trailing newline.
-      maybeEmitTraceFromStdoutLine(requestId, trailingLine);
-      const emitted = maybeEmitDeltaChunk(requestId, trailingLine);
-      if (emitted > 0) {
-        visibleAgentCharsByRequestId.set(requestId, (visibleAgentCharsByRequestId.get(requestId) ?? 0) + emitted);
-      }
+      const rawTraceLine = shouldSuppressRawTraceText(trailingLine) ? undefined : trailingLine.slice(0, 4000);
+      sendTraceEvent(requestId, {
+        category: 'debug',
+        phase: 'end',
+        status: 'running',
+        name: 'codex.stdout.trailing_non_json',
+        summary: 'Ignored trailing non-JSON stdout from Codex',
+        ...(rawTraceLine ? { raw: rawTraceLine } : {}),
+      });
       stdoutBuffer = '';
     }
     debugLog('codex process closed', {
@@ -1208,12 +1454,14 @@ async function runCodexRequest(requestId: string, payload: ServerStartPayload): 
           error_code: terminalOutcome.errorCode ?? 'AGENT_CANCELLED',
           error_message: terminalOutcome.errorMessage ?? 'codex_cancelled_by_request',
         });
-        traceSeqByRequestId.delete(requestId);
-        runStartedAtByRequestId.delete(requestId);
-        filterStatsByRequestId.delete(requestId);
+        clearRequestRuntimeState(requestId);
         return;
       }
       if (terminalOutcome.finalStatus === 'success') {
+        const finalCandidate = takeFinalAgentMessageCandidate(requestId);
+        if (finalCandidate) {
+          emitDeltaChunkAndTrackVisibleChars(requestId, finalCandidate);
+        }
         const successPolicy = resolveRunnerSuccessPolicy({
           visibleAgentChars: visibleAgentCharsByRequestId.get(requestId) ?? 0,
           artifactCount: artifacts.length,
@@ -1257,12 +1505,7 @@ async function runCodexRequest(requestId: string, payload: ServerStartPayload): 
             error_code: successPolicy.errorCode ?? 'AGENT_UPSTREAM_ERROR',
             error_message: successPolicy.errorMessage ?? 'runner_success_policy_rejected',
           });
-          traceSeqByRequestId.delete(requestId);
-          runStartedAtByRequestId.delete(requestId);
-          filterStatsByRequestId.delete(requestId);
-          reportedArtifactsByRequestId.delete(requestId);
-          visibleAgentCharsByRequestId.delete(requestId);
-          commandCountByRequestId.delete(requestId);
+          clearRequestRuntimeState(requestId);
           return;
         }
         try {
@@ -1297,12 +1540,7 @@ async function runCodexRequest(requestId: string, payload: ServerStartPayload): 
           finish_reason: 'stop',
           usage_tokens: Math.max(1, userPrompt.length),
         });
-        traceSeqByRequestId.delete(requestId);
-        runStartedAtByRequestId.delete(requestId);
-        filterStatsByRequestId.delete(requestId);
-        reportedArtifactsByRequestId.delete(requestId);
-        visibleAgentCharsByRequestId.delete(requestId);
-        commandCountByRequestId.delete(requestId);
+        clearRequestRuntimeState(requestId);
         return;
       }
       sendTraceEvent(requestId, {
@@ -1331,12 +1569,7 @@ async function runCodexRequest(requestId: string, payload: ServerStartPayload): 
         error_code: terminalOutcome.errorCode ?? 'AGENT_UPSTREAM_ERROR',
         error_message: terminalOutcome.errorMessage ?? `codex_exit_code_${String(code ?? 'unknown')}`,
       });
-      traceSeqByRequestId.delete(requestId);
-      runStartedAtByRequestId.delete(requestId);
-      filterStatsByRequestId.delete(requestId);
-      reportedArtifactsByRequestId.delete(requestId);
-      visibleAgentCharsByRequestId.delete(requestId);
-      commandCountByRequestId.delete(requestId);
+      clearRequestRuntimeState(requestId);
     })().catch((error) => {
       sendTraceEvent(requestId, {
         category: 'warning',
@@ -1351,12 +1584,7 @@ async function runCodexRequest(requestId: string, payload: ServerStartPayload): 
       });
       sendRunLifecycleEvent(requestId, 'failed', 'error', error instanceof Error ? error.message : 'artifact_scan_failed');
       sendRunSummaryEvent(requestId, 'error', { reason: 'artifact_scan_failed' });
-      traceSeqByRequestId.delete(requestId);
-      runStartedAtByRequestId.delete(requestId);
-      filterStatsByRequestId.delete(requestId);
-      reportedArtifactsByRequestId.delete(requestId);
-      visibleAgentCharsByRequestId.delete(requestId);
-      commandCountByRequestId.delete(requestId);
+      clearRequestRuntimeState(requestId);
     });
   });
 }
@@ -1547,7 +1775,7 @@ ws.on('message', (raw) => {
       error_code: 'AGENT_UPSTREAM_ERROR',
       error_message: error instanceof Error ? error.message : 'codex_request_failed',
     });
-    runStartedAtByRequestId.delete(message.request_id!);
+    clearRequestRuntimeState(message.request_id!);
   });
 });
 

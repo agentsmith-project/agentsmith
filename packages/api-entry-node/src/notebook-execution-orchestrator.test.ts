@@ -570,6 +570,7 @@ describe('notebook-execution-orchestrator governance preflight', () => {
             input_modalities: ['text'],
             supports_search_tool: false,
             supports_parallel_tool_calls: false,
+            apply_patch_tool_type: 'function',
           },
           workspace_binding_mode: 'pre_mounted',
           workspace_path: '/workspace/task_internal',
@@ -597,7 +598,7 @@ describe('notebook-execution-orchestrator governance preflight', () => {
     expect(dispatchArg?.executionContext).not.toHaveProperty('user_bearer_token');
   });
 
-  it('uses compose-internal api base for compose-managed external agents', async () => {
+  it('uses function apply_patch catalog truth for OpenAI-chat-compatible compose agents', async () => {
     const previousInternalApiBase = process.env.INTERNAL_API_BASE_URL;
     const previousExternalApiBase = process.env.EXTERNAL_AGENT_EXECUTION_HTTP_BASE_URL;
     process.env.INTERNAL_API_BASE_URL = 'http://api:20000';
@@ -720,6 +721,7 @@ describe('notebook-execution-orchestrator governance preflight', () => {
             input_modalities: ['text', 'image'],
             supports_search_tool: false,
             supports_parallel_tool_calls: false,
+            apply_patch_tool_type: 'function',
           },
           runner_session_scope: 'agent_presence',
           workspace_binding_mode: 'file_library',
@@ -980,6 +982,223 @@ describe('notebook-execution-orchestrator governance preflight', () => {
     );
   });
 
+  it('dispatches freeform apply_patch catalog truth for native OpenAI responses endpoints', async () => {
+    const dispatchStreamingRequest = vi.fn(async () => ({
+      requestId: 'req_native_responses',
+      cancel: () => undefined,
+      stream: (async function* stream() {})(),
+    }));
+    const deps = {
+      cache: new InMemoryCache(),
+      docStore: new InMemoryJsonDocStore(),
+      agentResourceService: {
+        getAgent: vi.fn(async () => ({
+          id: 'agent_native_responses',
+          status: 'enabled',
+          mode: 'external',
+          execution_preferences_json: {
+            notebook: {
+              endpoint_id: 'ep_native_responses',
+              model: 'gpt-native-responses',
+            },
+          },
+        })),
+      },
+      endpointResourceService: {
+        getEndpoint: vi.fn(async () => ({
+          id: 'ep_native_responses',
+          workspace_id: 'ws_native',
+          project_id: 'proj_native',
+          status: 'active',
+          model: 'gpt-native-responses',
+          credential_ref: 'cred_1',
+          name: 'endpoint-native-responses',
+          type: 'catalog',
+          provider_family: 'openai',
+          upstream_protocol: 'openai_responses',
+          base_url: 'https://api.openai.com/v1',
+          model_profile: {
+            max_context_tokens: 128000,
+          },
+          created_at: new Date().toISOString(),
+          updated_at: new Date().toISOString(),
+        })),
+      },
+      agentExecutionService: {
+        dispatchStreamingRequest,
+      },
+    } as unknown as NodeApiDeps;
+
+    const task = {
+      id: 'task_native_responses',
+      workspace_id: 'ws_native',
+      project_id: 'proj_native',
+      owner_user_id: 'user_native',
+      title: 'native responses task',
+      agent_name: 'native responses agent',
+      status: 'active' as const,
+      attached_inputs: [],
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+      last_activity_at: new Date().toISOString(),
+      agent_id: 'agent_native_responses',
+      workspace_file_library_id: 'flib_native',
+      workspace_file_library_name: 'Native Workspace',
+    };
+    const assistantMessage = {
+      id: 'msg_native_responses',
+      task_id: task.id,
+      role: 'agent' as const,
+      content: '',
+      created_at: new Date().toISOString(),
+    };
+
+    await runNotebookTaskWithExecutionAgent({
+      deps,
+      task,
+      assistantMessage,
+      agentId: 'agent_native_responses',
+      user: { id: 'user_native', name: 'Native User', email: 'native@example.com' },
+      publicBaseUrl: 'http://localhost:20000',
+      buildRunId: () => 'run_native_responses',
+      buildProxyUsername: () => 'native_user',
+      mapTaskMessagesForExecution: () => [],
+      updateTaskActivity: () => undefined,
+      emitTaskEvent: () => undefined,
+      onFinalize: () => undefined,
+      debugLog: () => undefined,
+      taskCollections: {
+        tasks: 'project_tasks',
+        messages: 'project_task_messages',
+      },
+      createTaskArtifact: async () => ({
+        id: 'artifact_native_responses',
+        task_id: task.id,
+        type: 'file',
+        created_at: new Date().toISOString(),
+      }),
+    });
+
+    expect(dispatchStreamingRequest).toHaveBeenCalledWith(
+      expect.objectContaining({
+        executionContext: expect.objectContaining({
+          model_catalog: {
+            input_modalities: ['text'],
+            supports_search_tool: false,
+            supports_parallel_tool_calls: false,
+            apply_patch_tool_type: 'freeform',
+          },
+        }),
+      }),
+    );
+  });
+
+  it('dispatches freeform apply_patch catalog truth from upstream_protocol for custom Responses endpoints', async () => {
+    const dispatchStreamingRequest = vi.fn(async () => ({
+      requestId: 'req_custom_responses',
+      cancel: () => undefined,
+      stream: (async function* stream() {})(),
+    }));
+    const deps = {
+      cache: new InMemoryCache(),
+      docStore: new InMemoryJsonDocStore(),
+      agentResourceService: {
+        getAgent: vi.fn(async () => ({
+          id: 'agent_custom_responses',
+          status: 'enabled',
+          mode: 'external',
+          execution_preferences_json: {
+            notebook: {
+              endpoint_id: 'ep_custom_responses',
+              model: 'custom-responses-model',
+            },
+          },
+        })),
+      },
+      endpointResourceService: {
+        getEndpoint: vi.fn(async () => ({
+          id: 'ep_custom_responses',
+          workspace_id: 'ws_custom_responses',
+          project_id: 'proj_custom_responses',
+          status: 'active',
+          model: 'custom-responses-model',
+          credential_ref: 'cred_custom_responses',
+          name: 'endpoint-custom-responses',
+          type: 'custom',
+          provider_family: 'custom',
+          upstream_protocol: 'openai_responses',
+          base_url: 'https://custom.example.test/v1',
+          model_profile: {
+            max_context_tokens: 128000,
+          },
+          created_at: new Date().toISOString(),
+          updated_at: new Date().toISOString(),
+        })),
+      },
+      agentExecutionService: {
+        dispatchStreamingRequest,
+      },
+    } as unknown as NodeApiDeps;
+
+    const task = {
+      id: 'task_custom_responses',
+      workspace_id: 'ws_custom_responses',
+      project_id: 'proj_custom_responses',
+      owner_user_id: 'user_custom_responses',
+      title: 'custom responses task',
+      agent_name: 'custom responses agent',
+      status: 'active' as const,
+      attached_inputs: [],
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+      last_activity_at: new Date().toISOString(),
+      agent_id: 'agent_custom_responses',
+    };
+    const assistantMessage = {
+      id: 'msg_custom_responses',
+      task_id: task.id,
+      role: 'agent' as const,
+      content: '',
+      created_at: new Date().toISOString(),
+    };
+
+    await runNotebookTaskWithExecutionAgent({
+      deps,
+      task,
+      assistantMessage,
+      agentId: 'agent_custom_responses',
+      user: { id: 'user_custom_responses', name: 'Custom User', email: 'custom@example.com' },
+      publicBaseUrl: 'http://localhost:20000',
+      buildRunId: () => 'run_custom_responses',
+      buildProxyUsername: () => 'custom_user',
+      mapTaskMessagesForExecution: () => [],
+      updateTaskActivity: () => undefined,
+      emitTaskEvent: () => undefined,
+      onFinalize: () => undefined,
+      debugLog: () => undefined,
+      taskCollections: {
+        tasks: 'project_tasks',
+        messages: 'project_task_messages',
+      },
+      createTaskArtifact: async () => ({
+        id: 'artifact_custom_responses',
+        task_id: task.id,
+        type: 'file',
+        created_at: new Date().toISOString(),
+      }),
+    });
+
+    expect(dispatchStreamingRequest).toHaveBeenCalledWith(
+      expect.objectContaining({
+        executionContext: expect.objectContaining({
+          model_catalog: expect.objectContaining({
+            apply_patch_tool_type: 'freeform',
+          }),
+        }),
+      }),
+    );
+  });
+
   it('persists a fallback assistant message when execution fails before any visible output', async () => {
     const docStore = new InMemoryJsonDocStore();
     const deps = {
@@ -1187,10 +1406,294 @@ describe('notebook-execution-orchestrator governance preflight', () => {
             input_modalities: ['text'],
             supports_search_tool: false,
             supports_parallel_tool_calls: false,
+            apply_patch_tool_type: 'function',
           },
         }),
       }),
     );
+  });
+
+  it('sanitizes sensitive runner trace details before emitting and persisting notebook traces', async () => {
+    const docStore = new InMemoryJsonDocStore();
+    const emitted: Array<{ type: string; data: unknown }> = [];
+    const sharedAuthorizationSecret = 'same-summary-command-secret-123';
+    const embeddedJsonApiKey = 'sk-embedded-json-root-key';
+    const embeddedJsonClientSecret = 'embedded-json-client-secret';
+    const quotedFallbackApiKey = 'quoted-fallback-api-key';
+    const quotedFallbackClientSecret = 'quoted-fallback-client-secret';
+    const assignedFallbackPassword = 'assigned-fallback-password';
+    const embeddedJsonSummary = `Command failed: {"api_key":"${embeddedJsonApiKey}","client_secret":"${embeddedJsonClientSecret}"}`;
+    const quotedFallbackText = `larger string has "api_key":"${quotedFallbackApiKey}", 'client_secret':'${quotedFallbackClientSecret}', password = "${assignedFallbackPassword}"`;
+    const deps = {
+      cache: new InMemoryCache(),
+      docStore,
+      agentResourceService: {
+        getAgent: vi.fn(async () => ({
+          id: 'agent_trace_sanitize',
+          status: 'enabled',
+          mode: 'external',
+          execution_preferences_json: {
+            notebook: {
+              endpoint_id: 'ep_trace_sanitize',
+              model: 'placeholder-model',
+            },
+          },
+        })),
+      },
+      endpointResourceService: {
+        getEndpoint: vi.fn(async () => ({
+          id: 'ep_trace_sanitize',
+          workspace_id: 'ws_trace_sanitize',
+          project_id: 'proj_trace_sanitize',
+          status: 'active',
+          model: 'placeholder-model',
+          credential_ref: 'cred_trace_sanitize',
+          name: 'endpoint-trace-sanitize',
+          type: 'custom',
+          upstream_protocol: 'openai_chat_completions',
+          base_url: 'https://example.com',
+          model_profile: {
+            max_context_tokens: 128000,
+          },
+          created_at: new Date().toISOString(),
+          updated_at: new Date().toISOString(),
+        })),
+      },
+      agentExecutionService: {
+        dispatchStreamingRequest: vi.fn(async () => ({
+          requestId: 'req_trace_sanitize',
+          cancel: () => undefined,
+          stream: (async function* stream() {
+            yield {
+              type: 'event',
+              event: {
+                sequence: 1,
+                at: new Date().toISOString(),
+                category: 'tool',
+                phase: 'update',
+                status: 'running',
+                name: 'runner.tool_call',
+                summary: `Command failed: curl -H "Authorization: Basic ${sharedAuthorizationSecret}" while preserving summary context`,
+                details: {
+                  tool_name: 'apply_patch',
+                  direct_header: 'Authorization: Basic runner-basic-secret',
+                  quoted_header: 'Authorization: "ApiKey runner-quoted-api-key"',
+                  single_quoted_header: "Authorization='Token runner-single-quoted-token'",
+                  json_header: '{"Authorization":"Basic runner-json-basic-secret"}',
+                  nested_headers: {
+                    headers: {
+                      Authorization: 'ApiKey runner-nested-api-key',
+                    },
+                    visible_label: 'nested header object kept',
+                  },
+                  safe_label: 'Authorization: ApiKey runner-safe-label-key while preserving label text',
+                  command: `curl -H "Authorization: Basic ${sharedAuthorizationSecret}" https://api.example.test/v1/tasks`,
+                  curl_header: 'curl -H "Authorization: Basic runner-curl-basic-secret" https://api.example.test/v1/tasks',
+                  message: 'runner failed with Authorization: Digest username="runner", nonce="runner-digest-nonce" but task id task_trace_sanitize is safe',
+                  safe_message: 'Authorization: Bearer runner-safe-message-token while preserving visible context',
+                  exit_code: 0,
+                  arguments: 'partial arguments: *** Begin Patch\napi_key=sk-real-root-key',
+                  nested: {
+                    tool_name: 'shell',
+                    safe_note: 'inner kept',
+                    arguments: {
+                      command: 'partial arguments include *** Begin Patch',
+                    },
+                    request: {
+                      safe_request_id: 'req_public',
+                      api_key: 'sk-real-nested-key',
+                      token: 'real-runner-token',
+                      secret: 'real-runner-secret',
+                      password: 'real-runner-password',
+                      client_secret: 'real-client-secret',
+                    },
+                  },
+                  calls: [
+                    {
+                      tool_name: 'shell',
+                      status: 'success',
+                      arguments: 'partial arguments: *** Begin Patch',
+                      api_key: 'sk-real-array-key',
+                    },
+                  ],
+                },
+              },
+            } as const;
+            yield {
+              type: 'event',
+              event: {
+                sequence: 2,
+                at: new Date().toISOString(),
+                category: 'debug',
+                phase: 'update',
+                status: 'running',
+                name: 'runner.embedded_secret_trace',
+                summary: embeddedJsonSummary,
+                raw: `${embeddedJsonSummary}; raw ${quotedFallbackText}`,
+                details: {
+                  summary_copy: embeddedJsonSummary,
+                  quoted_key_fragments: quotedFallbackText,
+                  nested_larger_string: {
+                    command_output: `prefix ${embeddedJsonSummary}; suffix ${quotedFallbackText}`,
+                  },
+                },
+              },
+            } as const;
+            yield { type: 'done', finish_reason: 'stop', usage_tokens: 1 } as const;
+          })(),
+        })),
+      },
+    } as unknown as NodeApiDeps;
+
+    const task = {
+      id: 'task_trace_sanitize',
+      workspace_id: 'ws_trace_sanitize',
+      project_id: 'proj_trace_sanitize',
+      owner_user_id: 'user_trace_sanitize',
+      title: 'trace sanitize task',
+      agent_name: 'trace sanitize agent',
+      status: 'active' as const,
+      attached_inputs: [],
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+      last_activity_at: new Date().toISOString(),
+      agent_id: 'agent_trace_sanitize',
+    };
+    const assistantMessage = {
+      id: 'msg_trace_sanitize',
+      task_id: task.id,
+      role: 'agent' as const,
+      content: '',
+      created_at: new Date().toISOString(),
+    };
+
+    await runNotebookTaskWithExecutionAgent({
+      deps,
+      task,
+      assistantMessage,
+      agentId: 'agent_trace_sanitize',
+      user: { id: 'user_trace_sanitize', name: 'Trace User', email: 'trace@example.com' },
+      publicBaseUrl: 'http://localhost:20000',
+      buildRunId: () => 'run_trace_sanitize',
+      buildProxyUsername: () => 'trace_user',
+      mapTaskMessagesForExecution: () => [],
+      updateTaskActivity: () => undefined,
+      emitTaskEvent: (_taskId, payload) => {
+        emitted.push(payload as { type: string; data: unknown });
+      },
+      onFinalize: () => undefined,
+      debugLog: () => undefined,
+      taskCollections: {
+        tasks: 'project_tasks',
+        messages: 'project_task_messages',
+      },
+      createTaskArtifact: async () => ({
+        id: 'artifact_trace_sanitize',
+        task_id: task.id,
+        type: 'file',
+        created_at: new Date().toISOString(),
+      }),
+    });
+
+    const observableTrace = emitted.find((item) => (
+      item.type === 'trace_event'
+      && typeof item.data === 'object'
+      && item.data !== null
+      && !Array.isArray(item.data)
+      && (item.data as { name?: unknown }).name === 'runner.tool_call'
+    ))?.data as { summary?: string; details?: Record<string, unknown> } | undefined;
+    const persistedTraces = await docStore.list<{
+      name: string;
+      summary: string;
+      details?: Record<string, unknown>;
+    }>('ws_trace_sanitize_notebook_task_trace_events', { task_id: task.id });
+    const persistedTrace = persistedTraces.find((item) => item.name === 'runner.tool_call');
+    const observableEmbeddedTrace = emitted.find((item) => (
+      item.type === 'trace_event'
+      && typeof item.data === 'object'
+      && item.data !== null
+      && !Array.isArray(item.data)
+      && (item.data as { name?: unknown }).name === 'runner.embedded_secret_trace'
+    ))?.data as { summary?: string; details?: Record<string, unknown> } | undefined;
+    const persistedEmbeddedTrace = persistedTraces.find((item) => item.name === 'runner.embedded_secret_trace');
+
+    expect(observableTrace?.summary).toBe('Command failed: curl -H "Authorization: Basic [redacted]" while preserving summary context');
+    expect(observableTrace?.details).toMatchObject({
+      tool_name: 'apply_patch',
+      direct_header: 'Authorization: Basic [redacted]',
+      quoted_header: 'Authorization: "ApiKey [redacted]"',
+      single_quoted_header: "Authorization='Token [redacted]'",
+      json_header: '{}',
+      nested_headers: {
+        headers: {},
+        visible_label: 'nested header object kept',
+      },
+      safe_label: 'Authorization: ApiKey [redacted] while preserving label text',
+      command: 'curl -H "Authorization: Basic [redacted]" https://api.example.test/v1/tasks',
+      curl_header: 'curl -H "Authorization: Basic [redacted]" https://api.example.test/v1/tasks',
+      message: 'runner failed with Authorization: Digest [redacted] but task id task_trace_sanitize is safe',
+      safe_message: 'Authorization: Bearer [redacted] while preserving visible context',
+      exit_code: 0,
+      nested: {
+        tool_name: 'shell',
+        safe_note: 'inner kept',
+        request: {
+          safe_request_id: 'req_public',
+        },
+      },
+      calls: [
+        {
+          tool_name: 'shell',
+          status: 'success',
+        },
+      ],
+    });
+    expect(persistedTrace?.summary).toEqual(observableTrace?.summary);
+    expect(persistedTrace?.details).toEqual(observableTrace?.details);
+    expect(observableEmbeddedTrace?.summary).toBe('Command failed: {"api_key":"[redacted]","client_secret":"[redacted]"}');
+    expect(observableEmbeddedTrace?.details).toEqual({
+      summary_copy: 'Command failed: {"api_key":"[redacted]","client_secret":"[redacted]"}',
+      quoted_key_fragments: 'larger string has "api_key":"[redacted]", \'client_secret\':\'[redacted]\', password = "[redacted]"',
+      nested_larger_string: {
+        command_output: 'prefix Command failed: {"api_key":"[redacted]","client_secret":"[redacted]"}; suffix larger string has "api_key":"[redacted]", \'client_secret\':\'[redacted]\', password = "[redacted]"',
+      },
+    });
+    expect(persistedEmbeddedTrace?.summary).toEqual(observableEmbeddedTrace?.summary);
+    expect(persistedEmbeddedTrace?.details).toEqual(observableEmbeddedTrace?.details);
+
+    const traceJson = JSON.stringify({
+      observable: observableTrace,
+      persisted: persistedTrace,
+      observableEmbedded: observableEmbeddedTrace,
+      persistedEmbedded: persistedEmbeddedTrace,
+    });
+    expect(traceJson).not.toContain('*** Begin Patch');
+    expect(traceJson).not.toContain('partial arguments');
+    expect(traceJson).not.toContain('sk-real-root-key');
+    expect(traceJson).not.toContain('sk-real-nested-key');
+    expect(traceJson).not.toContain('sk-real-array-key');
+    expect(traceJson).not.toContain('runner-command-token');
+    expect(traceJson).not.toContain('sk-runner-message-key');
+    expect(traceJson).not.toContain(sharedAuthorizationSecret);
+    expect(traceJson).not.toContain('runner-basic-secret');
+    expect(traceJson).not.toContain('runner-quoted-api-key');
+    expect(traceJson).not.toContain('runner-single-quoted-token');
+    expect(traceJson).not.toContain('runner-json-basic-secret');
+    expect(traceJson).not.toContain('runner-nested-api-key');
+    expect(traceJson).not.toContain('runner-curl-basic-secret');
+    expect(traceJson).not.toContain('runner-safe-label-key');
+    expect(traceJson).not.toContain('cnVubmVyLWNvbW1hbmQtc2VjcmV0');
+    expect(traceJson).not.toContain('runner-digest-nonce');
+    expect(traceJson).not.toContain('runner-safe-message-token');
+    expect(traceJson).not.toContain('real-runner-token');
+    expect(traceJson).not.toContain('real-runner-secret');
+    expect(traceJson).not.toContain('real-runner-password');
+    expect(traceJson).not.toContain('real-client-secret');
+    expect(traceJson).not.toContain(embeddedJsonApiKey);
+    expect(traceJson).not.toContain(embeddedJsonClientSecret);
+    expect(traceJson).not.toContain(quotedFallbackApiKey);
+    expect(traceJson).not.toContain(quotedFallbackClientSecret);
+    expect(traceJson).not.toContain(assignedFallbackPassword);
   });
 
   it('fails fast when endpoint model profile is missing a valid max context window', async () => {

@@ -124,7 +124,15 @@ const {
       errorCode: null,
       errorMessage: null,
     })),
-    resolveRunnerSuccessPolicyMock: vi.fn(() => ({ ok: true as const })),
+    resolveRunnerSuccessPolicyMock: vi.fn((input?: { visibleAgentChars?: number }) => (
+      input?.visibleAgentChars === -1
+        ? {
+          ok: false as const,
+          errorCode: 'AGENT_EMPTY_OUTPUT' as const,
+          errorMessage: 'agent_empty_output',
+        }
+        : { ok: true as const }
+    )),
     scanArtifactsDirectoryMock: vi.fn(async () => []),
     scanWorkspaceFilesSnapshotMock: vi.fn(async () => undefined),
     selectLatestInstructionMock: vi.fn(() => 'latest user instruction'),
@@ -272,6 +280,7 @@ describe('notebook-codex-runner entry lifecycle', () => {
     process.env.MBOS_AGENT_WS_URL = 'ws://127.0.0.1:12345';
     process.env.MBOS_AGENT_KEY = 'ask_test';
     process.env.MBOS_AGENT_RUNNER_DEBUG = '0';
+    resolveRunnerSuccessPolicyMock.mockImplementation(() => ({ ok: true as const }));
     exitSpy = vi.spyOn(process, 'exit').mockImplementation(((() => undefined) as never));
   });
 
@@ -403,15 +412,48 @@ describe('notebook-codex-runner entry lifecycle', () => {
   async function startCodexRun(
     socket: EventEmitter & { send: ReturnType<typeof vi.fn> },
     requestId = 'req_disconnect_test',
+    executionContextOverrides: Record<string, unknown> = {},
   ): Promise<MockCodexChild> {
+    const expectedSpawnCount = spawnMock.mock.calls.length + 1;
     const child = createCodexChild();
     spawnMock.mockReturnValueOnce(child);
     socket.emit('message', serverHello());
-    socket.emit('message', serverRequestStart(requestId));
+    socket.emit('message', serverRequestStart(requestId, executionContextOverrides));
     await vi.waitFor(() => {
-      expect(spawnMock).toHaveBeenCalled();
+      expect(spawnMock).toHaveBeenCalledTimes(expectedSpawnCount);
     });
     return child;
+  }
+
+  async function waitForCodexStdoutListener(child: MockCodexChild): Promise<void> {
+    await vi.waitFor(() => {
+      expect(child.stdout.listenerCount('data')).toBeGreaterThan(0);
+    });
+  }
+
+  function codexStdoutLine(payload: Record<string, unknown>): string {
+    return `${JSON.stringify(payload)}\n`;
+  }
+
+  function readAgentDeltas(
+    socket: EventEmitter & { send: ReturnType<typeof vi.fn> },
+    requestId: string,
+  ): string[] {
+    return readSentFrames(socket)
+      .filter((frame) => frame.type === 'agent.response.delta' && frame.request_id === requestId)
+      .map((frame) => {
+        const payload = frame.payload as { delta?: unknown } | undefined;
+        return typeof payload?.delta === 'string' ? payload.delta : '';
+      })
+      .filter((delta) => delta.length > 0);
+  }
+
+  function readAgentTraceEvents(
+    socket: EventEmitter & { send: ReturnType<typeof vi.fn> },
+    requestId: string,
+  ): Array<Record<string, unknown>> {
+    return readSentFrames(socket)
+      .filter((frame) => frame.type === 'agent.response.event' && frame.request_id === requestId);
   }
 
   async function startTerminalRun(
@@ -430,6 +472,882 @@ describe('notebook-codex-runner entry lifecycle', () => {
     });
     return { child, exitListeners };
   }
+
+  it('streams phase-less standard Responses output_text deltas as visible agent output', async () => {
+    const requestId = 'req_standard_output_text_delta';
+    resolveRunnerSuccessPolicyMock.mockImplementation((input?: { visibleAgentChars?: number }) => (
+      (input?.visibleAgentChars ?? 0) > 0
+        ? { ok: true as const }
+        : {
+          ok: false as const,
+          errorCode: 'AGENT_EMPTY_OUTPUT' as const,
+          errorMessage: 'agent_empty_output',
+        }
+    ));
+
+    await import('./index.js');
+    const socket = websocketInstances.at(-1);
+    if (!socket) {
+      throw new Error('websocket_instance_missing');
+    }
+
+    socket.emit('open');
+    const child = await startCodexRun(socket, requestId);
+    await waitForCodexStdoutListener(child);
+
+    child.stdout.emit('data', Buffer.from([
+      codexStdoutLine({
+        type: 'response.output_text.delta',
+        delta: 'Standard ',
+      }),
+      codexStdoutLine({
+        type: 'response.output_text.delta',
+        delta: 'Responses output.',
+      }),
+    ].join('')));
+    closeCodexChild(child, 0);
+
+    await vi.waitFor(() => {
+      expect(readSentFrames(socket).some((frame) => (
+        frame.type === 'agent.response.done'
+        && frame.request_id === requestId
+      ))).toBe(true);
+    });
+
+    expect(readAgentDeltas(socket, requestId)).toEqual(['Standard ', 'Responses output.']);
+    expect(resolveRunnerSuccessPolicyMock).toHaveBeenCalledWith(expect.objectContaining({
+      visibleAgentChars: 'Standard Responses output.'.length,
+    }));
+    expect(readSentFrames(socket).some((frame) => (
+      frame.type === 'agent.response.error'
+      && frame.request_id === requestId
+      && typeof frame.payload === 'object'
+      && frame.payload !== null
+      && (frame.payload as { error_code?: unknown }).error_code === 'AGENT_EMPTY_OUTPUT'
+    ))).toBe(false);
+  });
+
+  it('emits phase-less standard Responses output_text done text once when no deltas arrived', async () => {
+    const requestId = 'req_standard_output_text_done_only';
+    const finalText = 'Final text from standard Responses done.';
+
+    await import('./index.js');
+    const socket = websocketInstances.at(-1);
+    if (!socket) {
+      throw new Error('websocket_instance_missing');
+    }
+
+    socket.emit('open');
+    const child = await startCodexRun(socket, requestId);
+    await waitForCodexStdoutListener(child);
+
+    child.stdout.emit('data', Buffer.from([
+      codexStdoutLine({
+        type: 'response.output_text.done',
+        text: finalText,
+      }),
+      codexStdoutLine({
+        type: 'response.output_text.done',
+        text: finalText,
+      }),
+    ].join('')));
+    closeCodexChild(child, 0);
+
+    await vi.waitFor(() => {
+      expect(readSentFrames(socket).some((frame) => (
+        frame.type === 'agent.response.done'
+        && frame.request_id === requestId
+      ))).toBe(true);
+    });
+
+    expect(readAgentDeltas(socket, requestId)).toEqual([finalText]);
+  });
+
+  it('does not duplicate output when phase-less standard Responses deltas are followed by done full text', async () => {
+    const requestId = 'req_standard_output_text_delta_then_done';
+
+    await import('./index.js');
+    const socket = websocketInstances.at(-1);
+    if (!socket) {
+      throw new Error('websocket_instance_missing');
+    }
+
+    socket.emit('open');
+    const child = await startCodexRun(socket, requestId);
+    await waitForCodexStdoutListener(child);
+
+    child.stdout.emit('data', Buffer.from([
+      codexStdoutLine({
+        type: 'response.output_text.delta',
+        delta: 'Delta ',
+      }),
+      codexStdoutLine({
+        type: 'response.output_text.delta',
+        delta: 'then done.',
+      }),
+      codexStdoutLine({
+        type: 'response.output_text.done',
+        text: 'Delta then done.',
+      }),
+    ].join('')));
+    closeCodexChild(child, 0);
+
+    await vi.waitFor(() => {
+      expect(readSentFrames(socket).some((frame) => (
+        frame.type === 'agent.response.done'
+        && frame.request_id === requestId
+      ))).toBe(true);
+    });
+
+    expect(readAgentDeltas(socket, requestId)).toEqual(['Delta ', 'then done.']);
+  });
+
+  it('redacts function_call apply_patch arguments from codex tool details and raw trace frames', async () => {
+    const requestId = 'req_trace_apply_patch_redacted';
+    const patchArguments = [
+      'Tool call partial arguments',
+      '*** Begin Patch',
+      '*** Update File: secret.ts',
+      '+leaked patch body should not appear',
+      '*** End Patch',
+    ].join('\n');
+
+    await import('./index.js');
+    const socket = websocketInstances.at(-1);
+    if (!socket) {
+      throw new Error('websocket_instance_missing');
+    }
+
+    socket.emit('open');
+    const child = await startCodexRun(socket, requestId);
+    await waitForCodexStdoutListener(child);
+
+    child.stdout.emit('data', Buffer.from([
+      codexStdoutLine({
+        type: 'item.started',
+        item: {
+          type: 'function_call',
+          name: 'apply_patch',
+          call_id: 'call_apply_patch_1',
+          arguments: patchArguments,
+        },
+      }),
+      codexStdoutLine({
+        type: 'item.updated',
+        item: {
+          type: 'function_call',
+          name: 'apply_patch',
+          call_id: 'call_apply_patch_1',
+          arguments: patchArguments,
+        },
+      }),
+      codexStdoutLine({
+        type: 'item.completed',
+        item: {
+          type: 'function_call',
+          name: 'apply_patch',
+          call_id: 'call_apply_patch_1',
+          arguments: patchArguments,
+        },
+      }),
+    ].join('')));
+    closeCodexChild(child, 0);
+
+    await vi.waitFor(() => {
+      expect(readSentFrames(socket).some((frame) => (
+        frame.type === 'agent.response.done'
+        && frame.request_id === requestId
+      ))).toBe(true);
+    });
+
+    const traceEvents = readAgentTraceEvents(socket, requestId);
+    const toolEvents = traceEvents.filter((frame) => {
+      const payload = frame.payload as { name?: unknown } | undefined;
+      return payload?.name === 'codex.tool';
+    });
+    expect(toolEvents).toHaveLength(3);
+    for (const frame of toolEvents) {
+      const payload = frame.payload as { details?: Record<string, unknown> } | undefined;
+      expect(payload?.details).toEqual({
+        tool_name: 'apply_patch',
+        call_id: 'call_apply_patch_1',
+        arguments_present: true,
+        arguments_bytes: Buffer.byteLength(patchArguments, 'utf-8'),
+        arguments_redacted: true,
+      });
+      expect(payload?.details).not.toHaveProperty('arguments');
+    }
+
+    const serializedTrace = JSON.stringify(traceEvents);
+    expect(serializedTrace).not.toContain('*** Begin Patch');
+    expect(serializedTrace).not.toContain('partial arguments');
+    expect(serializedTrace).not.toContain('leaked patch body should not appear');
+  });
+
+  it('keeps command_execution summaries free of full command secrets while preserving details.command', async () => {
+    const requestId = 'req_command_summary_redacted';
+    const commandSecret = 'runner-command-summary-secret';
+    const command = `curl -H "Authorization: Basic ${commandSecret}" https://api.example.test/v1/tasks`;
+
+    await import('./index.js');
+    const socket = websocketInstances.at(-1);
+    if (!socket) {
+      throw new Error('websocket_instance_missing');
+    }
+
+    socket.emit('open');
+    const child = await startCodexRun(socket, requestId);
+    await waitForCodexStdoutListener(child);
+
+    child.stdout.emit('data', Buffer.from([
+      codexStdoutLine({
+        type: 'item.started',
+        item: {
+          type: 'command_execution',
+          command,
+        },
+      }),
+      codexStdoutLine({
+        type: 'item.completed',
+        item: {
+          type: 'command_execution',
+          command,
+          exit_code: 0,
+        },
+      }),
+    ].join('')));
+    closeCodexChild(child, 0);
+
+    await vi.waitFor(() => {
+      expect(readSentFrames(socket).some((frame) => (
+        frame.type === 'agent.response.done'
+        && frame.request_id === requestId
+      ))).toBe(true);
+    });
+
+    const commandEvents = readAgentTraceEvents(socket, requestId).filter((frame) => {
+      const payload = frame.payload as { name?: unknown } | undefined;
+      return payload?.name === 'codex.command';
+    });
+    expect(commandEvents).toHaveLength(2);
+    for (const frame of commandEvents) {
+      const payload = frame.payload as { summary?: unknown; details?: Record<string, unknown> } | undefined;
+      expect(payload?.summary).not.toContain(command);
+      expect(payload?.summary).not.toContain(commandSecret);
+      expect(payload?.details?.command).toBe(command);
+    }
+  });
+
+  it('emits one clean final answer delta from Codex final-answer surfaces and ignores phase-null contamination', async () => {
+    const cleanFinalAnswer = 'Clean final notebook answer.';
+    const contaminatedMessage = [
+      'partial arguments for a tool call',
+      '*** Begin Patch',
+      '*** Update File: src/example.ts',
+    ].join('\n');
+
+    await import('./index.js');
+    const socket = websocketInstances.at(-1);
+    if (!socket) {
+      throw new Error('websocket_instance_missing');
+    }
+
+    socket.emit('open');
+    const child = await startCodexRun(socket, 'req_clean_final_once');
+    await waitForCodexStdoutListener(child);
+
+    child.stdout.emit('data', Buffer.from([
+      codexStdoutLine({
+        type: 'event_msg',
+        payload: {
+          type: 'agent_message',
+          phase: null,
+          message: contaminatedMessage,
+        },
+      }),
+      codexStdoutLine({
+        type: 'response_item',
+        payload: {
+          type: 'message',
+          role: 'assistant',
+          phase: null,
+          content: [{ type: 'output_text', text: contaminatedMessage }],
+        },
+      }),
+      codexStdoutLine({
+        type: 'event_msg',
+        payload: {
+          type: 'agent_message',
+          phase: 'final_answer',
+          message: cleanFinalAnswer,
+        },
+      }),
+      codexStdoutLine({
+        type: 'response_item',
+        payload: {
+          type: 'message',
+          role: 'assistant',
+          phase: 'final_answer',
+          content: [{ type: 'output_text', text: cleanFinalAnswer }],
+        },
+      }),
+      codexStdoutLine({
+        type: 'event_msg',
+        payload: {
+          type: 'task_complete',
+          last_agent_message: cleanFinalAnswer,
+        },
+      }),
+    ].join('')));
+    closeCodexChild(child, 0);
+
+    await vi.waitFor(() => {
+      const frames = readSentFrames(socket);
+      expect(frames.some((frame) => frame.type === 'agent.response.done' && frame.request_id === 'req_clean_final_once')).toBe(true);
+    });
+
+    const deltas = readAgentDeltas(socket, 'req_clean_final_once');
+    expect(deltas).toEqual([cleanFinalAnswer]);
+    expect(deltas.join('\n')).not.toContain('partial arguments');
+    expect(deltas.join('\n')).not.toContain('*** Begin Patch');
+  });
+
+  it('emits final answers across sequential runs that reuse the same request id after cleanup', async () => {
+    const requestId = 'req_reused_after_cleanup';
+    const firstAnswer = 'First final answer.';
+    const secondAnswer = 'Second final answer.';
+
+    await import('./index.js');
+    const socket = websocketInstances.at(-1);
+    if (!socket) {
+      throw new Error('websocket_instance_missing');
+    }
+
+    socket.emit('open');
+    const firstChild = await startCodexRun(socket, requestId);
+    await waitForCodexStdoutListener(firstChild);
+    firstChild.stdout.emit('data', Buffer.from(codexStdoutLine({
+      type: 'event_msg',
+      payload: {
+        type: 'agent_message',
+        phase: 'final_answer',
+        message: firstAnswer,
+      },
+    })));
+    closeCodexChild(firstChild, 0);
+
+    await vi.waitFor(() => {
+      const doneFrames = readSentFrames(socket)
+        .filter((frame) => frame.type === 'agent.response.done' && frame.request_id === requestId);
+      expect(doneFrames).toHaveLength(1);
+    });
+
+    const secondChild = await startCodexRun(socket, requestId);
+    await waitForCodexStdoutListener(secondChild);
+    secondChild.stdout.emit('data', Buffer.from(codexStdoutLine({
+      type: 'event_msg',
+      payload: {
+        type: 'agent_message',
+        phase: 'final_answer',
+        message: secondAnswer,
+      },
+    })));
+    closeCodexChild(secondChild, 0);
+
+    await vi.waitFor(() => {
+      const doneFrames = readSentFrames(socket)
+        .filter((frame) => frame.type === 'agent.response.done' && frame.request_id === requestId);
+      expect(doneFrames).toHaveLength(2);
+    });
+
+    expect(readAgentDeltas(socket, requestId)).toEqual([firstAnswer, secondAnswer]);
+  });
+
+  it('uses nested event_msg task_complete last_agent_message as final fallback after phase-null messages', async () => {
+    const cleanFinalAnswer = 'Fallback final answer from task_complete.';
+
+    await import('./index.js');
+    const socket = websocketInstances.at(-1);
+    if (!socket) {
+      throw new Error('websocket_instance_missing');
+    }
+
+    socket.emit('open');
+    const child = await startCodexRun(socket, 'req_task_complete_fallback');
+    await waitForCodexStdoutListener(child);
+
+    child.stdout.emit('data', Buffer.from([
+      codexStdoutLine({
+        type: 'event_msg',
+        payload: {
+          type: 'agent_message',
+          phase: null,
+          message: 'partial arguments\n*** Begin Patch',
+        },
+      }),
+      codexStdoutLine({
+        type: 'event_msg',
+        payload: {
+          type: 'task_complete',
+          last_agent_message: cleanFinalAnswer,
+        },
+      }),
+    ].join('')));
+    closeCodexChild(child, 0);
+
+    await vi.waitFor(() => {
+      const frames = readSentFrames(socket);
+      expect(frames.some((frame) => frame.type === 'agent.response.done' && frame.request_id === 'req_task_complete_fallback')).toBe(true);
+    });
+
+    expect(readAgentDeltas(socket, 'req_task_complete_fallback')).toEqual([cleanFinalAnswer]);
+  });
+
+  it('releases a clean phase-null assistant candidate once on successful Codex close', async () => {
+    const cleanFinalAnswer = 'Phase-null provider final answer.';
+    resolveRunnerSuccessPolicyMock.mockImplementation((input?: { visibleAgentChars?: number }) => (
+      (input?.visibleAgentChars ?? 0) > 0
+        ? { ok: true as const }
+        : {
+          ok: false as const,
+          errorCode: 'AGENT_EMPTY_OUTPUT' as const,
+          errorMessage: 'agent_empty_output',
+        }
+    ));
+
+    await import('./index.js');
+    const socket = websocketInstances.at(-1);
+    if (!socket) {
+      throw new Error('websocket_instance_missing');
+    }
+
+    socket.emit('open');
+    const child = await startCodexRun(socket, 'req_phase_null_candidate_close');
+    await waitForCodexStdoutListener(child);
+
+    child.stdout.emit('data', Buffer.from(codexStdoutLine({
+      type: 'response_item',
+      payload: {
+        type: 'message',
+        role: 'assistant',
+        phase: null,
+        content: [{ type: 'output_text', text: cleanFinalAnswer }],
+      },
+    })));
+
+    expect(readAgentDeltas(socket, 'req_phase_null_candidate_close')).toEqual([]);
+    closeCodexChild(child, 0);
+
+    await vi.waitFor(() => {
+      const frames = readSentFrames(socket);
+      expect(frames.some((frame) => (
+        frame.type === 'agent.response.done'
+        && frame.request_id === 'req_phase_null_candidate_close'
+      ))).toBe(true);
+    });
+
+    expect(readAgentDeltas(socket, 'req_phase_null_candidate_close')).toEqual([cleanFinalAnswer]);
+    expect(resolveRunnerSuccessPolicyMock).toHaveBeenCalledWith(expect.objectContaining({
+      visibleAgentChars: cleanFinalAnswer.length,
+    }));
+    expect(readSentFrames(socket).some((frame) => (
+      frame.type === 'agent.response.error'
+      && frame.request_id === 'req_phase_null_candidate_close'
+      && typeof frame.payload === 'object'
+      && frame.payload !== null
+      && (frame.payload as { error_code?: unknown }).error_code === 'AGENT_EMPTY_OUTPUT'
+    ))).toBe(false);
+  });
+
+  it('keeps phase-null bare patch markers out of the final answer candidate without tool argument text', async () => {
+    const requestId = 'req_phase_null_bare_patch_markers';
+    resolveRunnerSuccessPolicyMock.mockImplementation((input?: { visibleAgentChars?: number }) => (
+      (input?.visibleAgentChars ?? 0) > 0
+        ? { ok: true as const }
+        : {
+          ok: false as const,
+          errorCode: 'AGENT_EMPTY_OUTPUT' as const,
+          errorMessage: 'agent_empty_output',
+        }
+    ));
+
+    await import('./index.js');
+    const socket = websocketInstances.at(-1);
+    if (!socket) {
+      throw new Error('websocket_instance_missing');
+    }
+
+    socket.emit('open');
+    const child = await startCodexRun(socket, requestId);
+    await waitForCodexStdoutListener(child);
+
+    child.stdout.emit('data', Buffer.from(codexStdoutLine({
+      type: 'response_item',
+      payload: {
+        type: 'message',
+        role: 'assistant',
+        phase: null,
+        content: [{
+          type: 'output_text',
+          text: [
+            '*** Begin Patch',
+            '*** Update File: src/example.ts',
+            '+export const value = true;',
+            '*** End Patch',
+          ].join('\n'),
+        }],
+      },
+    })));
+
+    expect(readAgentDeltas(socket, requestId)).toEqual([]);
+    closeCodexChild(child, 0);
+
+    await vi.waitFor(() => {
+      const frames = readSentFrames(socket);
+      expect(frames.some((frame) => (
+        frame.type === 'agent.response.error'
+        && frame.request_id === requestId
+        && typeof frame.payload === 'object'
+        && frame.payload !== null
+        && (frame.payload as { error_code?: unknown }).error_code === 'AGENT_EMPTY_OUTPUT'
+      ))).toBe(true);
+    });
+
+    expect(readAgentDeltas(socket, requestId)).toEqual([]);
+    expect(readSentFrames(socket).some((frame) => (
+      frame.type === 'agent.response.done'
+      && frame.request_id === requestId
+    ))).toBe(false);
+  });
+
+  it('keeps phase-null colon-ended patch marker fragments out of final answer candidates', async () => {
+    const markerFragments = [
+      ['update', '*** Update File: src/example.ts'],
+      ['add', '*** Add File: a.ts'],
+      ['delete', '*** Delete File: a.ts'],
+      ['move', '*** Move to: b.ts'],
+    ] as const;
+    resolveRunnerSuccessPolicyMock.mockImplementation((input?: { visibleAgentChars?: number }) => (
+      (input?.visibleAgentChars ?? 0) > 0
+        ? { ok: true as const }
+        : {
+          ok: false as const,
+          errorCode: 'AGENT_EMPTY_OUTPUT' as const,
+          errorMessage: 'agent_empty_output',
+        }
+    ));
+
+    await import('./index.js');
+    const socket = websocketInstances.at(-1);
+    if (!socket) {
+      throw new Error('websocket_instance_missing');
+    }
+
+    socket.emit('open');
+
+    for (const [name, marker] of markerFragments) {
+      const requestId = `req_phase_null_colon_patch_${name}`;
+      const child = await startCodexRun(socket, requestId);
+      await waitForCodexStdoutListener(child);
+
+      child.stdout.emit('data', Buffer.from(codexStdoutLine({
+        type: 'response_item',
+        payload: {
+          type: 'message',
+          role: 'assistant',
+          phase: null,
+          content: [{ type: 'output_text', text: marker }],
+        },
+      })));
+
+      expect(readAgentDeltas(socket, requestId)).toEqual([]);
+      closeCodexChild(child, 0);
+
+      await vi.waitFor(() => {
+        const frames = readSentFrames(socket);
+        expect(frames.some((frame) => (
+          frame.type === 'agent.response.error'
+          && frame.request_id === requestId
+          && typeof frame.payload === 'object'
+          && frame.payload !== null
+          && (frame.payload as { error_code?: unknown }).error_code === 'AGENT_EMPTY_OUTPUT'
+        ))).toBe(true);
+      });
+
+      expect(readAgentDeltas(socket, requestId)).toEqual([]);
+      expect(readSentFrames(socket).some((frame) => (
+        frame.type === 'agent.response.done'
+        && frame.request_id === requestId
+      ))).toBe(false);
+    }
+  });
+
+  it('allows clean phase-null final answers that mention apply_patch as plain text', async () => {
+    const requestId = 'req_phase_null_plain_apply_patch';
+    const cleanFinalAnswer = 'I used apply_patch to update the runner filter and verified it.';
+    resolveRunnerSuccessPolicyMock.mockImplementation((input?: { visibleAgentChars?: number }) => (
+      (input?.visibleAgentChars ?? 0) > 0
+        ? { ok: true as const }
+        : {
+          ok: false as const,
+          errorCode: 'AGENT_EMPTY_OUTPUT' as const,
+          errorMessage: 'agent_empty_output',
+        }
+    ));
+
+    await import('./index.js');
+    const socket = websocketInstances.at(-1);
+    if (!socket) {
+      throw new Error('websocket_instance_missing');
+    }
+
+    socket.emit('open');
+    const child = await startCodexRun(socket, requestId);
+    await waitForCodexStdoutListener(child);
+
+    child.stdout.emit('data', Buffer.from(codexStdoutLine({
+      type: 'event_msg',
+      payload: {
+        type: 'agent_message',
+        phase: null,
+        message: cleanFinalAnswer,
+      },
+    })));
+
+    expect(readAgentDeltas(socket, requestId)).toEqual([]);
+    closeCodexChild(child, 0);
+
+    await vi.waitFor(() => {
+      const frames = readSentFrames(socket);
+      expect(frames.some((frame) => (
+        frame.type === 'agent.response.done'
+        && frame.request_id === requestId
+      ))).toBe(true);
+    });
+
+    expect(readAgentDeltas(socket, requestId)).toEqual([cleanFinalAnswer]);
+    expect(readSentFrames(socket).some((frame) => (
+      frame.type === 'agent.response.error'
+      && frame.request_id === requestId
+    ))).toBe(false);
+  });
+
+  it('suppresses phase-null apply_patch contamination from raw trace frames while keeping clean apply_patch mentions', async () => {
+    const requestId = 'req_phase_null_patch_raw_trace';
+    const cleanFinalAnswer = 'I used apply_patch to update the runner filter and verified it.';
+    const contaminatedText = [
+      'Tool call apply_patch with partial arguments',
+      '*** Begin Patch',
+      '*** Update File: secret.ts',
+      '+leaked patch body should not appear',
+      '*** End Patch',
+    ].join('\n');
+
+    await import('./index.js');
+    const socket = websocketInstances.at(-1);
+    if (!socket) {
+      throw new Error('websocket_instance_missing');
+    }
+
+    socket.emit('open');
+    const child = await startCodexRun(socket, requestId);
+    await waitForCodexStdoutListener(child);
+
+    child.stdout.emit('data', Buffer.from([
+      codexStdoutLine({
+        type: 'response_item',
+        payload: {
+          type: 'message',
+          role: 'assistant',
+          phase: null,
+          content: [{ type: 'output_text', text: contaminatedText }],
+        },
+      }),
+      codexStdoutLine({
+        type: 'event_msg',
+        payload: {
+          type: 'agent_message',
+          phase: null,
+          message: cleanFinalAnswer,
+        },
+      }),
+    ].join('')));
+    closeCodexChild(child, 0);
+
+    await vi.waitFor(() => {
+      expect(readSentFrames(socket).some((frame) => (
+        frame.type === 'agent.response.done'
+        && frame.request_id === requestId
+      ))).toBe(true);
+    });
+
+    const traceJson = JSON.stringify(readAgentTraceEvents(socket, requestId));
+    expect(traceJson).not.toContain('Tool call apply_patch with partial arguments');
+    expect(traceJson).not.toContain('*** Begin Patch');
+    expect(traceJson).not.toContain('leaked patch body should not appear');
+    expect(traceJson).toContain(cleanFinalAnswer);
+    expect(readAgentDeltas(socket, requestId)).toEqual([cleanFinalAnswer]);
+  });
+
+  it('uses top-level task_complete last_agent_message as final fallback', async () => {
+    const cleanFinalAnswer = 'Top-level task complete final answer.';
+
+    await import('./index.js');
+    const socket = websocketInstances.at(-1);
+    if (!socket) {
+      throw new Error('websocket_instance_missing');
+    }
+
+    socket.emit('open');
+    const child = await startCodexRun(socket, 'req_top_level_task_complete');
+    await waitForCodexStdoutListener(child);
+
+    child.stdout.emit('data', Buffer.from(codexStdoutLine({
+      type: 'task_complete',
+      last_agent_message: cleanFinalAnswer,
+    })));
+    closeCodexChild(child, 0);
+
+    await vi.waitFor(() => {
+      const frames = readSentFrames(socket);
+      expect(frames.some((frame) => (
+        frame.type === 'agent.response.done'
+        && frame.request_id === 'req_top_level_task_complete'
+      ))).toBe(true);
+    });
+
+    expect(readAgentDeltas(socket, 'req_top_level_task_complete')).toEqual([cleanFinalAnswer]);
+  });
+
+  it('keeps phase-null apply_patch fragments out of deltas and fails empty-output policy without a clean candidate', async () => {
+    resolveRunnerSuccessPolicyMock.mockImplementation((input?: { visibleAgentChars?: number }) => (
+      (input?.visibleAgentChars ?? 0) > 0
+        ? { ok: true as const }
+        : {
+          ok: false as const,
+          errorCode: 'AGENT_EMPTY_OUTPUT' as const,
+          errorMessage: 'agent_empty_output',
+        }
+    ));
+
+    await import('./index.js');
+    const socket = websocketInstances.at(-1);
+    if (!socket) {
+      throw new Error('websocket_instance_missing');
+    }
+
+    socket.emit('open');
+    const child = await startCodexRun(socket, 'req_phase_null_patch_fragment');
+    await waitForCodexStdoutListener(child);
+
+    child.stdout.emit('data', Buffer.from(codexStdoutLine({
+      type: 'event_msg',
+      payload: {
+        type: 'agent_message',
+        phase: null,
+        message: [
+          'Tool call partial arguments',
+          'apply_patch <<\'PATCH\'',
+          '*** Begin Patch',
+          '*** Update File: src/example.ts',
+        ].join('\n'),
+      },
+    })));
+
+    expect(readAgentDeltas(socket, 'req_phase_null_patch_fragment')).toEqual([]);
+    closeCodexChild(child, 0);
+
+    await vi.waitFor(() => {
+      const frames = readSentFrames(socket);
+      expect(frames.some((frame) => (
+        frame.type === 'agent.response.error'
+        && frame.request_id === 'req_phase_null_patch_fragment'
+        && typeof frame.payload === 'object'
+        && frame.payload !== null
+        && (frame.payload as { error_code?: unknown }).error_code === 'AGENT_EMPTY_OUTPUT'
+      ))).toBe(true);
+    });
+
+    const deltas = readAgentDeltas(socket, 'req_phase_null_patch_fragment');
+    expect(deltas).toEqual([]);
+    expect(deltas.join('\n')).not.toContain('apply_patch');
+    expect(deltas.join('\n')).not.toContain('*** Begin Patch');
+    expect(readSentFrames(socket).some((frame) => (
+      frame.type === 'agent.response.done'
+      && frame.request_id === 'req_phase_null_patch_fragment'
+    ))).toBe(false);
+  });
+
+  it('does not emit incomplete JSON stdout buffer as notebook answer content on close', async () => {
+    await import('./index.js');
+    const socket = websocketInstances.at(-1);
+    if (!socket) {
+      throw new Error('websocket_instance_missing');
+    }
+
+    socket.emit('open');
+    const child = await startCodexRun(socket, 'req_incomplete_json_ignored');
+    await waitForCodexStdoutListener(child);
+
+    child.stdout.emit('data', Buffer.from(
+      '{"type":"response_item","payload":{"type":"message","role":"assistant","phase":null,"content":[{"type":"output_text","text":"Tool call partial arguments *** Begin Patch"',
+    ));
+    closeCodexChild(child, 0);
+
+    await vi.waitFor(() => {
+      const frames = readSentFrames(socket);
+      expect(frames.some((frame) => frame.type === 'agent.response.done' && frame.request_id === 'req_incomplete_json_ignored')).toBe(true);
+    });
+
+    const deltas = readAgentDeltas(socket, 'req_incomplete_json_ignored');
+    expect(deltas).toEqual([]);
+    expect(deltas.join('\n')).not.toContain('Tool call');
+    expect(deltas.join('\n')).not.toContain('partial arguments');
+    expect(deltas.join('\n')).not.toContain('*** Begin Patch');
+  });
+
+  it('passes only emitted final answer characters into the runner success policy', async () => {
+    const cleanFinalAnswer = 'Final visible chars.';
+
+    await import('./index.js');
+    const socket = websocketInstances.at(-1);
+    if (!socket) {
+      throw new Error('websocket_instance_missing');
+    }
+
+    socket.emit('open');
+    const child = await startCodexRun(socket, 'req_visible_chars_final_only');
+    await waitForCodexStdoutListener(child);
+
+    child.stdout.emit('data', Buffer.from([
+      codexStdoutLine({
+        type: 'response_item',
+        payload: {
+          type: 'message',
+          role: 'assistant',
+          phase: null,
+          content: [{ type: 'output_text', text: 'ignored partial arguments *** Begin Patch' }],
+        },
+      }),
+      codexStdoutLine({
+        type: 'response_item',
+        payload: {
+          type: 'message',
+          role: 'assistant',
+          phase: 'final_answer',
+          content: [{ type: 'output_text', text: cleanFinalAnswer }],
+        },
+      }),
+    ].join('')));
+    closeCodexChild(child, 0);
+
+    await vi.waitFor(() => {
+      expect(resolveRunnerSuccessPolicyMock).toHaveBeenCalledWith(expect.objectContaining({
+        visibleAgentChars: cleanFinalAnswer.length,
+      }));
+    });
+    expect(readAgentDeltas(socket, 'req_visible_chars_final_only')).toEqual([cleanFinalAnswer]);
+  });
 
   it('emits terminal error without started when terminal start rejects with invalid_shell', async () => {
     startTerminalProcessMock.mockRejectedValueOnce(new Error('invalid_shell'));
@@ -522,6 +1440,55 @@ describe('notebook-codex-runner entry lifecycle', () => {
     const launchEnv = prepareLaunchCommandMock.mock.calls.at(-1)?.[0]?.env as NodeJS.ProcessEnv | undefined;
     expect(launchEnv?.MBOS_CODEX_PROXY_EXECUTION_TICKET).toBe('ticket_1');
     expect(launchEnv?.MBOS_CODEX_PROXY_AUTH_HEADER).toBeUndefined();
+  });
+
+  it('passes default function and explicit freeform apply_patch tool types into the model catalog', async () => {
+    await import('./index.js');
+    const socket = websocketInstances.at(-1);
+    if (!socket) {
+      throw new Error('websocket_instance_missing');
+    }
+
+    socket.emit('open');
+    const defaultChild = await startCodexRun(socket, 'req_catalog_default_apply_patch', {
+      model_catalog: {
+        input_modalities: ['text'],
+      },
+    });
+
+    await vi.waitFor(() => {
+      expect(buildTaskCodexModelCatalogMock).toHaveBeenLastCalledWith(expect.objectContaining({
+        applyPatchToolType: 'function',
+      }));
+    });
+    closeCodexChild(defaultChild, 0);
+    await vi.waitFor(() => {
+      const frames = readSentFrames(socket);
+      expect(frames.some((frame) => (
+        frame.type === 'agent.response.done'
+        && frame.request_id === 'req_catalog_default_apply_patch'
+      ))).toBe(true);
+    });
+
+    const freeformChild = await startCodexRun(socket, 'req_catalog_freeform_apply_patch', {
+      model_catalog: {
+        apply_patch_tool_type: 'freeform',
+      },
+    });
+
+    await vi.waitFor(() => {
+      expect(buildTaskCodexModelCatalogMock).toHaveBeenLastCalledWith(expect.objectContaining({
+        applyPatchToolType: 'freeform',
+      }));
+    });
+    closeCodexChild(freeformChild, 0);
+    await vi.waitFor(() => {
+      const frames = readSentFrames(socket);
+      expect(frames.some((frame) => (
+        frame.type === 'agent.response.done'
+        && frame.request_id === 'req_catalog_freeform_apply_patch'
+      ))).toBe(true);
+    });
   });
 
   it('does not inject execution ticket env_http_headers or launch env when no execution ticket is present', async () => {

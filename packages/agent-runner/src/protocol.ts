@@ -1,11 +1,13 @@
 export type AgentInteractionKind = 'chat' | 'notebook';
 export const SUPPORTED_AGENT_WIRE_APIS = ['chat', 'responses', 'anthropic_messages'] as const;
 export type AgentWireApi = (typeof SUPPORTED_AGENT_WIRE_APIS)[number];
+export type AgentExecutionApplyPatchToolType = 'freeform' | 'function';
 
 export type AgentExecutionModelCatalog = {
   input_modalities?: string[];
   supports_search_tool?: boolean;
   supports_parallel_tool_calls?: boolean;
+  apply_patch_tool_type?: AgentExecutionApplyPatchToolType;
 };
 
 export type AgentTaskInput = Record<string, unknown>;

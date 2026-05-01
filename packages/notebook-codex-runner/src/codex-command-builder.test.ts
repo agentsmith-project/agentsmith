@@ -12,6 +12,7 @@ describe('codex-command-builder', () => {
       endpointProxyBase: 'http://proxy.local',
       wireApi: 'responses',
       modelContextWindow: 128000,
+      modelMaxOutputTokens: 6400,
       modelAutoCompactTokenLimit: 121600,
       modelCatalogPath: '/tmp/catalog.json',
       executionTicketHeaderEnvName: 'MBOS_CODEX_PROXY_EXECUTION_TICKET',
@@ -44,6 +45,7 @@ describe('codex-command-builder', () => {
       endpointProxyBase: 'http://proxy.local',
       wireApi: 'responses',
       modelContextWindow: 128000,
+      modelMaxOutputTokens: 6400,
       modelAutoCompactTokenLimit: 121600,
       modelCatalogPath: '/tmp/catalog.json',
       resumeSession: true,
@@ -74,11 +76,35 @@ describe('codex-command-builder', () => {
     expect(args).not.toContain('--last');
   });
 
+  it('derives config and exec compact limits from max output tokens without passing raw output limits', () => {
+    const config = buildTaskCodexConfig({
+      model: 'placeholder-model',
+      endpointProxyBase: 'http://proxy.local',
+      wireApi: 'responses',
+      modelContextWindow: 200000,
+      modelMaxOutputTokens: 32000,
+    });
+    const args = buildCodexExecArgs({
+      model: 'placeholder-model',
+      prompt: 'hello',
+      cwd: '/tmp/task',
+      endpointProxyBase: 'http://proxy.local',
+      wireApi: 'responses',
+      modelContextWindow: 200000,
+      modelMaxOutputTokens: 32000,
+    });
+
+    expect(config).toContain('model_auto_compact_token_limit = 168000');
+    expect(config).not.toContain('max_output_tokens');
+    expect(args).toContain('model_auto_compact_token_limit=168000');
+    expect(args.join(' ')).not.toContain('max_output_tokens');
+  });
+
   it('builds a text-only model catalog for a proxy-backed codex alias', () => {
     const catalogText = buildTaskCodexModelCatalog({
       model: 'placeholder-model',
-      modelContextWindow: 128000,
-      modelAutoCompactTokenLimit: 121600,
+      modelContextWindow: 200000,
+      modelMaxOutputTokens: 32000,
       applyPatchToolType: 'function',
       inputModalities: ['text'],
       supportsSearchTool: false,
@@ -91,8 +117,9 @@ describe('codex-command-builder', () => {
     expect(catalog.models).toHaveLength(1);
     expect(catalog.models[0]?.slug).toBe('placeholder-model');
     expect(catalog.models[0]?.display_name).toBe('placeholder-model');
-    expect(catalog.models[0]?.context_window).toBe(128000);
-    expect(catalog.models[0]?.auto_compact_token_limit).toBe(121600);
+    expect(catalog.models[0]?.context_window).toBe(200000);
+    expect(catalog.models[0]?.auto_compact_token_limit).toBe(168000);
+    expect(catalog.models[0]?.effective_context_window_percent).toBe(84);
     expect(catalog.models[0]?.apply_patch_tool_type).toBe('function');
     expect(catalog.models[0]?.input_modalities).toEqual(['text']);
     expect(catalog.models[0]?.supports_search_tool).toBe(false);
@@ -113,5 +140,20 @@ describe('codex-command-builder', () => {
     };
 
     expect(catalog.models[0]?.apply_patch_tool_type).toBe('freeform');
+  });
+
+  it('rounds catalog effective context percent from the emitted compact limit', () => {
+    const catalogText = buildTaskCodexModelCatalog({
+      model: 'notebook-profile-model',
+      modelContextWindow: 128000,
+      modelMaxOutputTokens: 8192,
+      applyPatchToolType: 'function',
+    });
+    const catalog = JSON.parse(catalogText) as {
+      models: Array<Record<string, unknown>>;
+    };
+
+    expect(catalog.models[0]?.auto_compact_token_limit).toBe(119808);
+    expect(catalog.models[0]?.effective_context_window_percent).toBe(94);
   });
 });

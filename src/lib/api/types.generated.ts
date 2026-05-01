@@ -3198,6 +3198,42 @@ export interface components {
                 storage_bucket_url?: string;
             };
         };
+        Task: {
+            /**
+             * Format: date-time
+             * @description Start time of the current active notebook run; omitted when the backend has no active run truth.
+             */
+            active_run_started_at?: string;
+            agent_id: string;
+            agent_name: string;
+            agent_presence?: components["schemas"]["TaskAgentPresence"];
+            attached_inputs: components["schemas"]["TaskInputRef"][];
+            can_escalate?: boolean;
+            /** Format: date-time */
+            created_at: string;
+            /** @enum {string|null} */
+            escalation_reason?: "already_terminating" | "unmanaged_runner" | "unsupported_runner" | null;
+            id: string;
+            /** Format: date-time */
+            last_activity_at: string;
+            owner_user_id: string;
+            project_id: string;
+            run_state?: components["schemas"]["TaskRunState"];
+            stats?: components["schemas"]["TaskStats"];
+            /** @enum {string} */
+            status: "active" | "archived";
+            stop_mode?: components["schemas"]["StopMode"];
+            title: string;
+            /** Format: date-time */
+            updated_at: string;
+            workspace_file_library_id?: string;
+            workspace_file_library_name?: string;
+            workspace_id: string;
+        } & {
+            [key: string]: unknown;
+        };
+        /** @enum {string} */
+        TaskAgentPresence: "online" | "offline" | "managed" | "unknown";
         /** @enum {string} */
         TaskCancelRunEscalationReason: "already_terminating" | "unmanaged_runner" | "unsupported_runner";
         TaskCancelRunRequest: {
@@ -3230,6 +3266,32 @@ export interface components {
             status?: components["schemas"]["TaskCancelRunStatus"];
             stop_mode?: components["schemas"]["StopMode"];
             task_id: string;
+        };
+        TaskInputRef: {
+            id: string;
+            /** @enum {string} */
+            kind: "library_object" | "artifact" | "url";
+        } & {
+            [key: string]: unknown;
+        };
+        TaskListResponse: {
+            has_more?: boolean;
+            items: components["schemas"]["Task"][];
+            page: number;
+            page_size: number;
+            total: number;
+        } & {
+            [key: string]: unknown;
+        };
+        /** @enum {string} */
+        TaskRunState: "running" | "cancelling" | "terminating" | "finalizing" | "idle";
+        TaskStats: {
+            artifact_count?: number;
+            attached_input_count?: number;
+            message_count?: number;
+            user_turn_count?: number;
+        } & {
+            [key: string]: unknown;
         };
         TaskStreamConflictResponse: {
             /** @enum {string} */
@@ -7812,9 +7874,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": {
-                        [key: string]: unknown;
-                    };
+                    "application/json": components["schemas"]["TaskListResponse"];
                 };
             };
             401: components["responses"]["Unauthorized"];
@@ -7836,9 +7896,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": {
-                        [key: string]: unknown;
-                    };
+                    "application/json": components["schemas"]["Task"];
                 };
             };
             401: components["responses"]["Unauthorized"];

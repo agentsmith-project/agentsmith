@@ -372,6 +372,53 @@
                     "model": {
                       "type": "string"
                     },
+                    "model_context_window": {
+                      "type": "integer",
+                      "minimum": 1
+                    },
+                    "model_auto_compact_token_limit": {
+                      "type": "integer",
+                      "minimum": 1
+                    },
+                    "model_limits": {
+                      "type": "object",
+                      "additionalProperties": false,
+                      "properties": {
+                        "context_window": {
+                          "type": "integer",
+                          "minimum": 1
+                        },
+                        "max_output_tokens": {
+                          "type": "integer",
+                          "minimum": 1
+                        }
+                      }
+                    },
+                    "model_catalog": {
+                      "type": "object",
+                      "additionalProperties": false,
+                      "properties": {
+                        "input_modalities": {
+                          "type": "array",
+                          "items": {
+                            "type": "string"
+                          }
+                        },
+                        "supports_search_tool": {
+                          "type": "boolean"
+                        },
+                        "supports_parallel_tool_calls": {
+                          "type": "boolean"
+                        },
+                        "apply_patch_tool_type": {
+                          "type": "string",
+                          "enum": [
+                            "freeform",
+                            "function"
+                          ]
+                        }
+                      }
+                    },
                     "interaction_kind": {
                       "type": "string",
                       "enum": [
@@ -385,7 +432,27 @@
                         "type": "object",
                         "additionalProperties": false,
                         "properties": {
+                          "kind": {
+                            "type": "string",
+                            "enum": [
+                              "library_object",
+                              "artifact",
+                              "url"
+                            ]
+                          },
                           "library_id": {
+                            "type": "string"
+                          },
+                          "key": {
+                            "type": "string"
+                          },
+                          "task_id": {
+                            "type": "string"
+                          },
+                          "artifact_id": {
+                            "type": "string"
+                          },
+                          "url": {
                             "type": "string"
                           },
                           "filename": {

@@ -3,7 +3,7 @@ import { join } from 'node:path';
 
 const SESSION_FINGERPRINT_FILE = '.codex-session-fingerprint.json';
 const RESUME_STATE_FILE = '.agentsmith-codex-resume-state.json';
-const SESSION_STATE_VERSION = 'runner_session_v3';
+const SESSION_STATE_VERSION = 'runner_session_v4';
 const PROMPT_POLICY_VERSION = 'latest_user_only_v1';
 const RESUME_STATE_VERSION = 'runner_resume_state_v1';
 
@@ -15,6 +15,7 @@ type SessionFingerprint = {
   resource_proxy_base: string;
   interaction_kind: 'notebook';
   model_context_window: number | null;
+  model_max_output_tokens: number | null;
   model_auto_compact_token_limit: number | null;
   model_catalog_signature: string | null;
 };
@@ -30,6 +31,7 @@ function buildSessionFingerprint(input: {
   resourceProxyBase: string;
   interactionKind: 'notebook';
   modelContextWindow?: number;
+  modelMaxOutputTokens?: number;
   modelAutoCompactTokenLimit?: number;
   modelCatalogSignature?: string;
 }): SessionFingerprint {
@@ -41,6 +43,7 @@ function buildSessionFingerprint(input: {
     resource_proxy_base: input.resourceProxyBase,
     interaction_kind: input.interactionKind,
     model_context_window: Number.isFinite(input.modelContextWindow) ? Math.floor(input.modelContextWindow!) : null,
+    model_max_output_tokens: Number.isFinite(input.modelMaxOutputTokens) ? Math.floor(input.modelMaxOutputTokens!) : null,
     model_auto_compact_token_limit: Number.isFinite(input.modelAutoCompactTokenLimit)
       ? Math.floor(input.modelAutoCompactTokenLimit!)
       : null,
@@ -136,6 +139,7 @@ export async function ensureCodexSessionStateCompatible(input: {
   resourceProxyBase: string;
   interactionKind: 'notebook';
   modelContextWindow?: number;
+  modelMaxOutputTokens?: number;
   modelAutoCompactTokenLimit?: number;
   modelCatalogSignature?: string;
 }): Promise<{ resetPerformed: boolean; reason: 'missing' | 'unchanged' | 'changed'; resumeAllowed: boolean }> {
@@ -147,6 +151,7 @@ export async function ensureCodexSessionStateCompatible(input: {
     resourceProxyBase: input.resourceProxyBase,
     interactionKind: input.interactionKind,
     modelContextWindow: input.modelContextWindow,
+    modelMaxOutputTokens: input.modelMaxOutputTokens,
     modelAutoCompactTokenLimit: input.modelAutoCompactTokenLimit,
     modelCatalogSignature: input.modelCatalogSignature,
   });

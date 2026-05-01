@@ -207,6 +207,7 @@ describe('current real session coverage manifest', () => {
       expect.objectContaining({ source_kind: 'npm_script', npm_script: 'test:internal:backend-real:notebook-workspace' }),
       expect.objectContaining({ source_kind: 'npm_script', npm_script: 'test:files:backend-real:sync' }),
       expect.objectContaining({ source_kind: 'npm_script', npm_script: 'test:api-key-endpoint-access' }),
+      expect.objectContaining({ source_kind: 'npm_script', npm_script: 'test:e2e:integration:universal-proxy:model-profile' }),
       expect.objectContaining({ source_kind: 'playwright_spec', spec: 'e2e/integration-release-user-story.spec.ts' }),
       expect.objectContaining({
         source_kind: 'playwright_grep',
@@ -222,6 +223,11 @@ describe('current real session coverage manifest', () => {
         source_kind: 'playwright_grep',
         spec: 'e2e/integration-chat.spec.ts',
         grep: 'real deepseek',
+      }),
+      expect.objectContaining({
+        source_kind: 'playwright_grep',
+        spec: 'e2e/integration-universal-proxy-endpoint.spec.ts',
+        grep: 'model profile runtime config',
       }),
     ]));
 
@@ -382,6 +388,51 @@ describe('current real session coverage manifest', () => {
       isolation_level: 'serialized',
       mutable_resources: ['release_campaign_root'],
       lock_ids: ['release-campaign-root-writes'],
+      merge_allowed: false,
+    });
+  });
+
+  it('models universal proxy model profile coverage as focused real-container endpoint evidence', () => {
+    expect(npmScriptEntry('test:e2e:integration:universal-proxy:model-profile')).toMatchObject({
+      proposed_shard_id: 'api-key-endpoint',
+      evidence_owner: 'backend-real-provider:api-key-endpoint',
+      isolation_level: 'serialized',
+      mutable_resources: expect.arrayContaining([
+        'workspace',
+        'project',
+        'endpoint_credentials',
+        'shared_local_substrate',
+        'local_ports',
+      ]),
+      lock_ids: ['shared-local-substrate', 'fixed-local-ports'],
+      merge_allowed: false,
+    });
+
+    const packageJson = JSON.parse(readFileSync('package.json', 'utf8')) as {
+      scripts?: Record<string, string>;
+    };
+    const command = packageJson.scripts?.['test:e2e:integration:universal-proxy:model-profile'];
+    expect(command).toContain('INTEGRATION_UNIVERSAL_PROXY_FORCE_MANAGED=1');
+    expect(command).toContain('INTEGRATION_UNIVERSAL_PROXY_PORT=${INTEGRATION_UNIVERSAL_PROXY_PORT:-39084}');
+
+    const grepEntry = listCurrentRealSessionCoverageEntries().find((entry) => (
+      entry.source_kind === 'playwright_grep'
+      && entry.spec === 'e2e/integration-universal-proxy-endpoint.spec.ts'
+      && entry.grep === 'model profile runtime config'
+    ));
+
+    expect(grepEntry).toMatchObject({
+      proposed_shard_id: 'api-key-endpoint',
+      evidence_owner: 'backend-real-provider:api-key-endpoint',
+      isolation_level: 'serialized',
+      mutable_resources: expect.arrayContaining([
+        'workspace',
+        'project',
+        'endpoint_credentials',
+        'shared_local_substrate',
+        'local_ports',
+      ]),
+      lock_ids: ['shared-local-substrate', 'fixed-local-ports'],
       merge_allowed: false,
     });
   });

@@ -1,6 +1,6 @@
 import { readdir, readFile, stat } from 'node:fs/promises';
 import type { Dirent } from 'node:fs';
-import { basename, extname, join, relative } from 'node:path';
+import { basename, extname, isAbsolute, join, relative } from 'node:path';
 
 export type ScannedArtifact = {
   filename: string;
@@ -44,6 +44,9 @@ export type WorkspaceFileChangeSummary = {
   deleted: string[];
   truncated?: boolean;
 };
+export type WorkspaceFileScanOptions = {
+  runtimeRoot?: string;
+};
 
 function inferArtifactKind(filename: string): {
   artifactType: ScannedArtifact['artifact_type'];
@@ -80,8 +83,7 @@ function inferArtifactKind(filename: string): {
   return { artifactType: 'file', isText: false, isImage: false };
 }
 
-export async function scanArtifactsDirectory(cwd: string, _taskId?: string): Promise<ScannedArtifact[]> {
-  const artifactsDir = join(cwd, '.artifacts');
+export async function scanArtifactsDirectory(artifactsDir: string, _taskId?: string): Promise<ScannedArtifact[]> {
   const relativePrefix = '.artifacts';
   let entries: Dirent[];
   try {
@@ -172,12 +174,38 @@ export function filterNewArtifactsForRun(
   return next;
 }
 
+function isPathInsideOrSame(root: string, target: string): boolean {
+  const rel = relative(root, target);
+  return rel === '' || (!rel.startsWith('..') && !isAbsolute(rel));
+}
+
+function shouldSkipRuntimeRoot(cwd: string, absPath: string, runtimeRoot?: string): boolean {
+  const normalizedRuntimeRoot = runtimeRoot?.trim();
+  if (!normalizedRuntimeRoot) return false;
+  const runtimeRel = relative(cwd, normalizedRuntimeRoot);
+  if (runtimeRel === '' || runtimeRel.startsWith('..') || isAbsolute(runtimeRel)) return false;
+  return isPathInsideOrSame(normalizedRuntimeRoot, absPath);
+}
+
 function shouldSkipWorkspaceEntry(relPath: string, entry: Dirent): boolean {
   const normalized = relPath.replace(/\\/g, '/');
   const parts = normalized.split('/').filter(Boolean);
   if (parts.length === 0) return true;
   const top = parts[0]!;
-  if (top === '.codex' || top === '.artifacts' || top === '.mbos') return true;
+  if (
+    top === '.codex'
+    || top === '.artifacts'
+    || top === '.mbos'
+    || top === '.agents'
+    || top === '.cache'
+    || top === '.config'
+    || top === '.local'
+    || top === '.cargo'
+    || top === '.rustup'
+    || top === '.ipython'
+    || top === '.trash'
+    || top === '.minio.sys'
+  ) return true;
   if (top === '.git' || top === 'node_modules') return true;
   if (entry.name.startsWith('.DS_Store')) return true;
   return false;
@@ -188,6 +216,7 @@ async function walkWorkspaceFiles(
   dir: string,
   out: WorkspaceFileSnapshot,
   state: { scanned: number; stop: boolean },
+  options: WorkspaceFileScanOptions,
 ): Promise<void> {
   if (state.stop) return;
   let entries: Dirent[];
@@ -201,9 +230,10 @@ async function walkWorkspaceFiles(
     const abs = join(dir, entry.name);
     const rel = relative(cwd, abs);
     if (!rel || rel.startsWith('..')) continue;
+    if (shouldSkipRuntimeRoot(cwd, abs, options.runtimeRoot)) continue;
     if (shouldSkipWorkspaceEntry(rel, entry)) continue;
     if (entry.isDirectory()) {
-      await walkWorkspaceFiles(cwd, abs, out, state);
+      await walkWorkspaceFiles(cwd, abs, out, state, options);
       continue;
     }
     if (!entry.isFile()) continue;
@@ -223,10 +253,13 @@ async function walkWorkspaceFiles(
   }
 }
 
-export async function scanWorkspaceFilesSnapshot(cwd: string): Promise<WorkspaceFileSnapshot> {
+export async function scanWorkspaceFilesSnapshot(
+  cwd: string,
+  options: WorkspaceFileScanOptions = {},
+): Promise<WorkspaceFileSnapshot> {
   const snapshot: WorkspaceFileSnapshot = new Map();
   const state = { scanned: 0, stop: false };
-  await walkWorkspaceFiles(cwd, cwd, snapshot, state);
+  await walkWorkspaceFiles(cwd, cwd, snapshot, state, options);
   return snapshot;
 }
 

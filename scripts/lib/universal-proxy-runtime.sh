@@ -21,6 +21,13 @@ universal_proxy_runtime_error() {
   printf '%s ERROR: %s\n' "$(universal_proxy_runtime_prefix)" "$*" >&2
 }
 
+universal_proxy_runtime_truthy() {
+  case "${1:-}" in
+    1|true|TRUE|yes|YES|on|ON) return 0 ;;
+    *) return 1 ;;
+  esac
+}
+
 universal_proxy_runtime_root_dir() {
   printf '%s\n' "${UNIVERSAL_PROXY_RUNTIME_ROOT_DIR:-${ROOT_DIR:-$(pwd)}}"
 }
@@ -451,7 +458,7 @@ universal_proxy_runtime_pull_image() {
 
 universal_proxy_runtime_start_managed_container() {
   local image_ref="$1"
-  local state_dir config_file container_id_file log_file run_error_file container_name runtime_label admin_token port base_url pull_policy timeout_seconds container_id
+  local state_dir config_file container_id_file log_file run_error_file container_name runtime_label admin_token port base_url pull_policy timeout_seconds upstream_host container_id
   state_dir="$(universal_proxy_runtime_state_dir)"
   config_file="$(universal_proxy_runtime_config_file)"
   container_id_file="$(universal_proxy_runtime_container_id_file)"
@@ -464,6 +471,7 @@ universal_proxy_runtime_start_managed_container() {
   base_url="$(universal_proxy_runtime_base_url)"
   pull_policy="${UNIVERSAL_PROXY_DOCKER_PULL_POLICY:-missing}"
   timeout_seconds="${UNIVERSAL_PROXY_RUNTIME_WAIT_TIMEOUT_SECONDS:-60}"
+  upstream_host="${UNIVERSAL_PROXY_RUNTIME_UPSTREAM_HOST:-host.docker.internal}"
 
   mkdir -p "${state_dir}" "$(dirname "${log_file}")"
   universal_proxy_runtime_write_config
@@ -487,6 +495,7 @@ universal_proxy_runtime_start_managed_container() {
       --name "${container_name}" \
       --label com.agentsmith.managed-by=universal-proxy-runtime \
       --label "com.agentsmith.runtime-label=${runtime_label}" \
+      --add-host=host.docker.internal:host-gateway \
       -p "127.0.0.1:${port}:8080" \
       -v "${config_file}:/app/config/config.yaml:ro" \
       -e LLM_UNIVERSAL_PROXY_AUTH_MODE=client_provider_key \
@@ -517,13 +526,25 @@ universal_proxy_runtime_start_managed_container() {
 
   export MBOS_UNIVERSAL_PROXY_BASE_URL="${base_url}"
   export MBOS_UNIVERSAL_PROXY_ADMIN_TOKEN="${admin_token}"
+  export MBOS_UNIVERSAL_PROXY_UPSTREAM_HOST="${upstream_host}"
   universal_proxy_runtime_info "universal proxy ready at ${MBOS_UNIVERSAL_PROXY_BASE_URL}"
 }
 
 universal_proxy_runtime_ensure() {
-  local explicit_url explicit_admin_token explicit_probe_status candidate default_urls image_ref
+  local explicit_url explicit_admin_token explicit_probe_status candidate default_urls image_ref force_managed
 
   explicit_url="${MBOS_UNIVERSAL_PROXY_BASE_URL:-}"
+  force_managed="${UNIVERSAL_PROXY_RUNTIME_FORCE_MANAGED:-0}"
+  if universal_proxy_runtime_truthy "${force_managed}"; then
+    if [[ -n "${explicit_url}" ]]; then
+      universal_proxy_runtime_warn "UNIVERSAL_PROXY_RUNTIME_FORCE_MANAGED=${force_managed} ignores MBOS_UNIVERSAL_PROXY_BASE_URL=${explicit_url}"
+    fi
+    image_ref="$(universal_proxy_runtime_resolve_locked_image)"
+    universal_proxy_runtime_info "forcing managed universal proxy container from locked image ${image_ref}"
+    universal_proxy_runtime_start_managed_container "${image_ref}"
+    return $?
+  fi
+
   if [[ -n "${explicit_url}" ]]; then
     explicit_admin_token="$(universal_proxy_runtime_probe_admin_token 2>/dev/null || true)"
     if [[ -z "${explicit_admin_token}" ]]; then

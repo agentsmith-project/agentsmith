@@ -2,5 +2,5 @@
 # This repository treats llmup as an external image dependency, not an AgentSmith-built target.
 # The digest below is the current pinned release truth for offline/release gates.
 # Format: llmup_version=<version> and llmup_source_image=<image:tag@sha256:digest>
-llmup_version=v0.2.25
-llmup_source_image=ghcr.io/agentsmith-project/llm-universal-proxy:v0.2.25@sha256:a6d5b309f25f17cafbd7fadb601fef5f80726c4a299509820e8e863be0928058
+llmup_version=v0.2.27
+llmup_source_image=ghcr.io/agentsmith-project/llm-universal-proxy:v0.2.27@sha256:4996453b1353868ca9e99c584719c9905e1ebbbd6d2ff585378bc0050989583b

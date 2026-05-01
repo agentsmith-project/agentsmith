@@ -615,7 +615,7 @@ describe('TaskTerminalPanel', () => {
     ).toBe('term_typed_create');
   });
 
-  it('focuses the terminal after a user-triggered open reaches the started state', async () => {
+  it('focuses the terminal after an explicit focus request reaches the started state', async () => {
     const createTerminalSession = vi.fn().mockResolvedValue({
       session_id: 'term_focus',
       status: 'pending',
@@ -630,6 +630,7 @@ describe('TaskTerminalPanel', () => {
         taskTitle="terminal-focus"
         taskApi={{ createTerminalSession, getTerminalSession: vi.fn() } as never}
         onOpenChange={vi.fn()}
+        focusRequestToken={0}
       />,
     );
 
@@ -642,6 +643,7 @@ describe('TaskTerminalPanel', () => {
         taskTitle="terminal-focus"
         taskApi={{ createTerminalSession, getTerminalSession: vi.fn() } as never}
         onOpenChange={vi.fn()}
+        focusRequestToken={1}
       />,
     );
 
@@ -655,6 +657,130 @@ describe('TaskTerminalPanel', () => {
     });
 
     await waitFor(() => expect(terminalFocusMock).toHaveBeenCalledTimes(1));
+  });
+
+  it('focuses an already live terminal only when the focus request token advances', async () => {
+    const createTerminalSession = vi.fn().mockResolvedValue({
+      session_id: 'term_focus_token',
+      status: 'pending',
+      ws_url: 'ws://example.test/terminal-focus-token',
+    });
+    const taskApi = {
+      createTerminalSession,
+      getTerminalSession: vi.fn(),
+    } as never;
+    const { rerender } = render(
+      <TaskTerminalPanel
+        open
+        workspaceId="ws_default"
+        projectId="proj_1"
+        taskId="task_focus_token"
+        taskTitle="terminal-focus-token"
+        taskApi={taskApi}
+        onOpenChange={vi.fn()}
+        focusRequestToken={0}
+      />,
+    );
+
+    await waitFor(() => expect(MockWebSocket.instances).toHaveLength(1));
+    const socket = MockWebSocket.instances[0];
+    act(() => {
+      socket?.open();
+      socket?.onmessage?.({
+        data: JSON.stringify({ type: 'started' }),
+      });
+    });
+
+    await waitFor(() => {
+      expect(terminalWritelnMock).toHaveBeenCalledWith(
+        'Terminal ready for terminal-focus-token\r\n',
+      );
+    });
+    expect(terminalFocusMock).not.toHaveBeenCalled();
+
+    rerender(
+      <TaskTerminalPanel
+        open
+        workspaceId="ws_default"
+        projectId="proj_1"
+        taskId="task_focus_token"
+        taskTitle="terminal-focus-token"
+        taskApi={taskApi}
+        onOpenChange={vi.fn()}
+        focusRequestToken={1}
+      />,
+    );
+
+    await waitFor(() => expect(terminalFocusMock).toHaveBeenCalledTimes(1));
+  });
+
+  it('does not steal focus when a hidden stored session becomes visible without a focus request', async () => {
+    window.sessionStorage.setItem(
+      'agentsmith-terminal-session:ws_default:proj_1:task_visible_restore',
+      'term_visible_restore',
+    );
+    const getTerminalSession = vi.fn().mockResolvedValue({
+      id: 'term_visible_restore',
+      status: 'active',
+      cols: 80,
+      rows: 24,
+      created_at: '2026-04-02T00:00:00Z',
+      last_activity_at: '2026-04-02T00:00:01Z',
+      ws_url: 'ws://example.test/terminal-visible-restore',
+    });
+    const taskApi = {
+      createTerminalSession: vi.fn(),
+      getTerminalSession,
+    } as never;
+    const { rerender } = render(
+      <TaskTerminalPanel
+        open
+        visible={false}
+        workspaceId="ws_default"
+        projectId="proj_1"
+        taskId="task_visible_restore"
+        taskTitle="terminal-visible-restore"
+        taskApi={taskApi}
+        onOpenChange={vi.fn()}
+      />,
+    );
+
+    expect(MockWebSocket.instances).toHaveLength(0);
+
+    rerender(
+      <TaskTerminalPanel
+        open
+        visible
+        workspaceId="ws_default"
+        projectId="proj_1"
+        taskId="task_visible_restore"
+        taskTitle="terminal-visible-restore"
+        taskApi={taskApi}
+        onOpenChange={vi.fn()}
+      />,
+    );
+
+    await waitFor(() => expect(MockWebSocket.instances).toHaveLength(1));
+    const socket = MockWebSocket.instances[0];
+    act(() => {
+      socket?.open();
+      socket?.onmessage?.({
+        data: JSON.stringify({ type: 'started' }),
+      });
+    });
+
+    await waitFor(() => {
+      expect(terminalWritelnMock).toHaveBeenCalledWith(
+        'Terminal ready for terminal-visible-restore\r\n',
+      );
+    });
+    expect(terminalFocusMock).not.toHaveBeenCalled();
+    expect(getTerminalSession).toHaveBeenCalledWith(
+      'ws_default',
+      'proj_1',
+      'task_visible_restore',
+      'term_visible_restore',
+    );
   });
 
   it('keeps an already connected live terminal session alive when the tab becomes hidden', async () => {
@@ -1374,7 +1500,7 @@ describe('TaskTerminalPanel', () => {
       />,
     );
 
-    await waitFor(() => expect(onOpenChange).toHaveBeenCalledWith(false));
+    expect(onOpenChange).not.toHaveBeenCalledWith(false);
 
     act(() => {
       resolveCreate?.({
@@ -1392,9 +1518,218 @@ describe('TaskTerminalPanel', () => {
         'term_pending_close',
       );
     });
+    await waitFor(() => expect(onOpenChange).toHaveBeenCalledWith(false));
     expect(MockWebSocket.instances).toHaveLength(0);
     expect(
       window.sessionStorage.getItem('agentsmith-terminal-session:ws_default:proj_1:task_pending_close'),
+    ).toBeNull();
+  });
+
+  it('keeps a stored terminal session recoverable when REST close fails', async () => {
+    const createTerminalSession = vi.fn();
+    const getTerminalSession = vi.fn().mockResolvedValue({
+      id: 'term_stored_close_failure',
+      status: 'active',
+      cols: 80,
+      rows: 24,
+      created_at: '2026-04-02T00:00:00Z',
+      last_activity_at: '2026-04-02T00:00:01Z',
+      ws_url: 'ws://example.test/terminal-stored-close-failure',
+    });
+    const closeTerminalSession = vi.fn().mockRejectedValue(new Error('close rejected'));
+    const onOpenChange = vi.fn();
+    window.sessionStorage.setItem(
+      'agentsmith-terminal-session:ws_default:proj_1:task_stored_close_failure',
+      'term_stored_close_failure',
+    );
+    const { rerender } = render(
+      <TaskTerminalPanel
+        open
+        workspaceId="ws_default"
+        projectId="proj_1"
+        taskId="task_stored_close_failure"
+        taskTitle="terminal-stored-close-failure"
+        taskApi={{ createTerminalSession, getTerminalSession, closeTerminalSession } as never}
+        onOpenChange={onOpenChange}
+        closeRequestToken={0}
+      />,
+    );
+
+    await waitFor(() => expect(MockWebSocket.instances).toHaveLength(1));
+    const socket = MockWebSocket.instances[0];
+    act(() => {
+      socket?.open();
+      socket?.onmessage?.({
+        data: JSON.stringify({ type: 'started' }),
+      });
+    });
+
+    rerender(
+      <TaskTerminalPanel
+        open
+        workspaceId="ws_default"
+        projectId="proj_1"
+        taskId="task_stored_close_failure"
+        taskTitle="terminal-stored-close-failure"
+        taskApi={{ createTerminalSession, getTerminalSession, closeTerminalSession } as never}
+        onOpenChange={onOpenChange}
+        closeRequestToken={1}
+      />,
+    );
+
+    await waitFor(() => {
+      expect(closeTerminalSession).toHaveBeenCalledWith(
+        'ws_default',
+        'proj_1',
+        'task_stored_close_failure',
+        'term_stored_close_failure',
+      );
+    });
+    await waitFor(() => {
+      expect(screen.getByTestId('notebook__task-terminal')).toHaveTextContent('Failed');
+      expect(screen.getByTestId('notebook__task-terminal')).toHaveTextContent(
+        'Terminal unavailable: close rejected',
+      );
+    });
+    expect(onOpenChange).not.toHaveBeenCalledWith(false);
+    expect(createTerminalSession).not.toHaveBeenCalled();
+    expect(
+      window.sessionStorage.getItem(
+        'agentsmith-terminal-session:ws_default:proj_1:task_stored_close_failure',
+      ),
+    ).toBe('term_stored_close_failure');
+  });
+
+  it('keeps a pending terminal session recoverable when REST close fails after it resolves', async () => {
+    let resolveCreate: ((value: {
+      session_id: string;
+      status: 'pending';
+      ws_url: string;
+    }) => void) | null = null;
+    const createTerminalSession = vi.fn().mockImplementation(
+      () => new Promise((resolve) => {
+        resolveCreate = resolve;
+      }),
+    );
+    const closeTerminalSession = vi.fn().mockRejectedValue(new Error('pending close rejected'));
+    const onOpenChange = vi.fn();
+    const { rerender } = render(
+      <TaskTerminalPanel
+        open
+        workspaceId="ws_default"
+        projectId="proj_1"
+        taskId="task_pending_close_failure"
+        taskTitle="terminal-pending-close-failure"
+        taskApi={{ createTerminalSession, getTerminalSession: vi.fn(), closeTerminalSession } as never}
+        onOpenChange={onOpenChange}
+        closeRequestToken={0}
+      />,
+    );
+
+    await waitFor(() => expect(createTerminalSession).toHaveBeenCalledTimes(1));
+
+    rerender(
+      <TaskTerminalPanel
+        open
+        workspaceId="ws_default"
+        projectId="proj_1"
+        taskId="task_pending_close_failure"
+        taskTitle="terminal-pending-close-failure"
+        taskApi={{ createTerminalSession, getTerminalSession: vi.fn(), closeTerminalSession } as never}
+        onOpenChange={onOpenChange}
+        closeRequestToken={1}
+      />,
+    );
+
+    expect(onOpenChange).not.toHaveBeenCalledWith(false);
+
+    act(() => {
+      resolveCreate?.({
+        session_id: 'term_pending_close_failure',
+        status: 'pending',
+        ws_url: 'ws://example.test/terminal-pending-close-failure',
+      });
+    });
+
+    await waitFor(() => {
+      expect(closeTerminalSession).toHaveBeenCalledWith(
+        'ws_default',
+        'proj_1',
+        'task_pending_close_failure',
+        'term_pending_close_failure',
+      );
+    });
+    await waitFor(() => {
+      expect(screen.getByTestId('notebook__task-terminal')).toHaveTextContent(
+        'Terminal unavailable: pending close rejected',
+      );
+    });
+    expect(onOpenChange).not.toHaveBeenCalledWith(false);
+    expect(MockWebSocket.instances).toHaveLength(0);
+    expect(
+      window.sessionStorage.getItem(
+        'agentsmith-terminal-session:ws_default:proj_1:task_pending_close_failure',
+      ),
+    ).toBe('term_pending_close_failure');
+  });
+
+  it('uses REST close for an active close request instead of treating websocket close as authoritative', async () => {
+    const createTerminalSession = vi.fn().mockResolvedValue({
+      session_id: 'term_active_rest_close',
+      status: 'pending',
+      ws_url: 'ws://example.test/terminal-active-rest-close',
+    });
+    const closeTerminalSession = vi.fn().mockResolvedValue(undefined);
+    const onOpenChange = vi.fn();
+    const { rerender } = render(
+      <TaskTerminalPanel
+        open
+        workspaceId="ws_default"
+        projectId="proj_1"
+        taskId="task_active_rest_close"
+        taskTitle="terminal-active-rest-close"
+        taskApi={{ createTerminalSession, getTerminalSession: vi.fn(), closeTerminalSession } as never}
+        onOpenChange={onOpenChange}
+        closeRequestToken={0}
+      />,
+    );
+
+    await waitFor(() => expect(MockWebSocket.instances).toHaveLength(1));
+    const socket = MockWebSocket.instances[0];
+    act(() => {
+      socket?.open();
+      socket?.onmessage?.({
+        data: JSON.stringify({ type: 'started' }),
+      });
+    });
+
+    rerender(
+      <TaskTerminalPanel
+        open
+        workspaceId="ws_default"
+        projectId="proj_1"
+        taskId="task_active_rest_close"
+        taskTitle="terminal-active-rest-close"
+        taskApi={{ createTerminalSession, getTerminalSession: vi.fn(), closeTerminalSession } as never}
+        onOpenChange={onOpenChange}
+        closeRequestToken={1}
+      />,
+    );
+
+    await waitFor(() => {
+      expect(closeTerminalSession).toHaveBeenCalledWith(
+        'ws_default',
+        'proj_1',
+        'task_active_rest_close',
+        'term_active_rest_close',
+      );
+      expect(onOpenChange).toHaveBeenCalledWith(false);
+    });
+    expect(socket?.send).not.toHaveBeenCalledWith(JSON.stringify({ type: 'terminal.close' }));
+    expect(
+      window.sessionStorage.getItem(
+        'agentsmith-terminal-session:ws_default:proj_1:task_active_rest_close',
+      ),
     ).toBeNull();
   });
 
@@ -1477,6 +1812,7 @@ describe('TaskTerminalPanel', () => {
         'term_pending_reconnect_close',
       );
     });
+    await waitFor(() => expect(onOpenChange).toHaveBeenCalledWith(false));
     expect(createTerminalSession).not.toHaveBeenCalled();
     expect(
       window.sessionStorage.getItem(

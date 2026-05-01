@@ -99,15 +99,16 @@ describe('terminal-runtime', () => {
       cwd: '/workspace',
       source: 'file_library_mount',
       paths: {
-        rootCwd: '/workspace',
         mode: 'docker_external',
+        visibleRoot: '/workspace',
         mountRoot: '/workspace',
         taskRoot: '/workspace',
-        homeDir: '/workspace',
-        codexDir: '/workspace/.codex',
+        runtimeRoot: '/runner-runtime/task_1',
+        homeDir: '/runner-runtime/task_1',
+        codexDir: '/runner-runtime/task_1/.codex',
         artifactsDir: '/workspace/.artifacts',
-        mbosDir: '/workspace/.mbos',
-        skillsDir: '/workspace/.agents/skills',
+        mbosDir: '/runner-runtime/task_1/.mbos',
+        skillsDir: '/runner-runtime/task_1/.agents/skills',
       },
       release: releaseTaskWorkspaceMock,
     });
@@ -119,9 +120,9 @@ describe('terminal-runtime', () => {
       missing: [],
     });
     seedBuiltinSkillsMock.mockResolvedValue({
-      targetDir: '/workspace/.agents/skills',
+      targetDir: '/runner-runtime/task_1/.agents/skills',
       seeded: ['feishu-docs'],
-      manifestPath: '/workspace/.mbos/builtin-skills-manifest.json',
+      manifestPath: '/runner-runtime/task_1/.mbos/builtin-skills-manifest.json',
     });
     prepareLaunchCommandMock.mockImplementation(async (input: { file: string; args: string[]; env: NodeJS.ProcessEnv }) => ({
       file: input.file,
@@ -181,11 +182,11 @@ describe('terminal-runtime', () => {
     });
 
     expect(writeFileMock).toHaveBeenCalledWith(
-      '/workspace/.zshrc',
+      '/runner-runtime/task_1/.zshrc',
       '# AgentSmith Terminal Session\n',
       { flag: 'a' },
     );
-    expect(mkdirMock.mock.calls.map((call) => call[0])).toContain('/workspace/.agents');
+    expect(mkdirMock.mock.calls.map((call) => call[0])).toContain('/runner-runtime/task_1/.agents');
   });
 
   it('retries terminal workspace bootstrap after a retryable task-root write failure', async () => {
@@ -193,7 +194,7 @@ describe('terminal-runtime', () => {
     mkdirMock.mockImplementation(async (target: string) => {
       const seen = mkdirCalls.get(target) ?? 0;
       mkdirCalls.set(target, seen + 1);
-      if (target === '/workspace/.agents/skills' && seen === 0) {
+      if (target === '/runner-runtime/task_1/.agents/skills' && seen === 0) {
         const error = new Error('stale mount write') as NodeJS.ErrnoException;
         error.code = 'EIO';
         throw error;
@@ -295,12 +296,12 @@ describe('terminal-runtime', () => {
         rows: 40,
         name: expect.any(String),
         env: expect.objectContaining({
-          HOME: '/workspace',
-          PYTHONUSERBASE: '/workspace/.local',
+          HOME: '/runner-runtime/task_1',
+          PYTHONUSERBASE: '/runner-runtime/task_1/.local',
           PIP_USER: '1',
-          npm_config_prefix: '/workspace/.local',
-          CARGO_HOME: '/workspace/.cargo',
-          RUSTUP_HOME: '/workspace/.rustup',
+          npm_config_prefix: '/runner-runtime/task_1/.local',
+          CARGO_HOME: '/runner-runtime/task_1/.cargo',
+          RUSTUP_HOME: '/runner-runtime/task_1/.rustup',
           MBOS_AGENT_API_BASE: 'http://localhost:20000',
           MBOS_AGENT_EXECUTION_TICKET: 'ticket_123',
           MBOS_AGENT_WORKSPACE_ID: 'ws_default',
@@ -309,6 +310,12 @@ describe('terminal-runtime', () => {
         }),
       }),
     );
+    expect(prepareLaunchCommandMock).toHaveBeenCalledWith(expect.objectContaining({
+      cwd: '/workspace',
+      env: expect.objectContaining({
+        HOME: '/runner-runtime/task_1',
+      }),
+    }));
     started.child.write('echo hi\n');
     started.child.resize(120, 30);
     started.child.kill('SIGTERM');
@@ -338,13 +345,13 @@ describe('terminal-runtime', () => {
       ['-i'],
       expect.objectContaining({
         env: expect.objectContaining({
-          HOME: '/workspace',
-          HISTFILE: '/workspace/.zsh_history',
-          ZDOTDIR: '/workspace',
-          XDG_CONFIG_HOME: '/workspace/.config',
-          XDG_STATE_HOME: '/workspace/.local/state',
-          XDG_CACHE_HOME: '/workspace/.cache',
-          XDG_DATA_HOME: '/workspace/.local/share',
+          HOME: '/runner-runtime/task_1',
+          HISTFILE: '/runner-runtime/task_1/.zsh_history',
+          ZDOTDIR: '/runner-runtime/task_1',
+          XDG_CONFIG_HOME: '/runner-runtime/task_1/.config',
+          XDG_STATE_HOME: '/runner-runtime/task_1/.local/state',
+          XDG_CACHE_HOME: '/runner-runtime/task_1/.cache',
+          XDG_DATA_HOME: '/runner-runtime/task_1/.local/share',
         }),
       }),
     );

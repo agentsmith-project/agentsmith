@@ -23,7 +23,13 @@ import {
   isTaskRunStateRunning,
   isTaskRunStateStoppingOrFinalizing,
 } from "@/lib/types/task";
-import type { Artifact, Task, TaskMessage, TaskRunState } from "@/lib/types/task";
+import type {
+  Artifact,
+  Task,
+  TaskMessage,
+  TaskRunState,
+  TaskTraceEvent,
+} from "@/lib/types/task";
 import { useRouter, useParams } from "next/navigation";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { queryKeys } from "@/lib/query-keys";
@@ -38,6 +44,7 @@ import {
   collectRecentRunActions,
   createPendingMessage,
   deriveRunAction,
+  type ActiveRunView,
 } from "@/components/notebook/task-page/run-activity";
 import { TaskPageContent } from "@/components/notebook/task-page/TaskPageContent";
 import { TaskPageDialogs } from "@/components/notebook/task-page/TaskPageDialogs";
@@ -49,7 +56,10 @@ import { useTaskTraceState } from "@/components/notebook/task-page/useTaskTraceS
 import { useTaskInputActions } from "@/components/notebook/task-page/useTaskInputActions";
 import { getPublicRuntimeConfig } from "@/lib/public-runtime-config";
 import { makeClientId } from "@/lib/chat/ids";
-import type { TerminalStatus } from "./TaskTerminalPanel";
+import type {
+  TerminalCloseReconcileResult,
+  TerminalStatus,
+} from "./TaskTerminalPanel";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
@@ -71,6 +81,7 @@ interface TerminalWorkspaceTab {
   label: string;
   status: TerminalStatus;
   closeRequestToken: number;
+  focusRequestToken?: number;
   sessionId?: string | null;
 }
 
@@ -96,6 +107,52 @@ function normalizeCancelEscalationReason(
   return typeof reason === "string" && reason.trim().length > 0
     ? reason.trim()
     : null;
+}
+
+function getPendingActiveRunMessageId(taskId: string) {
+  return `pending-active-run:${taskId}`;
+}
+
+function parseIsoTimestampMs(value: string | null | undefined): number | null {
+  if (!value) return null;
+  const parsed = Date.parse(value);
+  return Number.isFinite(parsed) ? parsed : null;
+}
+
+function getMessageCreatedAtMs(
+  messages: TaskMessage[],
+  messageId: string | null,
+): number | null {
+  if (!messageId) return null;
+  return parseIsoTimestampMs(
+    messages.find((message) => message.id === messageId)?.created_at,
+  );
+}
+
+function getEarliestTraceTimestampMs(events: TaskTraceEvent[]): number | null {
+  let earliest: number | null = null;
+  for (const event of events) {
+    const parsed = parseIsoTimestampMs(event.at);
+    if (parsed == null) continue;
+    earliest = earliest == null ? parsed : Math.min(earliest, parsed);
+  }
+  return earliest;
+}
+
+function getEarliestDefinedTimestampMs(
+  values: Array<number | null | undefined>,
+): number | null {
+  let earliest: number | null = null;
+  for (const value of values) {
+    if (value == null) continue;
+    earliest = earliest == null ? value : Math.min(earliest, value);
+  }
+  return earliest;
+}
+
+function getTaskRunStartedAtMs(task: Task | null | undefined): number | null {
+  if (!task) return null;
+  return parseIsoTimestampMs(task.active_run_started_at);
 }
 
 function getAuthoritativeRunInputPlaceholder(
@@ -166,6 +223,96 @@ function isTerminalRunTraceEvent(event: {
     );
   }
   return false;
+}
+
+interface VisibleActiveRunTraceSnapshot {
+  messageId: string;
+  startedAtMs: number;
+  latestAtMs: number;
+}
+
+function getVisibleActiveRunTraceSnapshot(
+  traceEventsByMessageId: Record<string, TaskTraceEvent[]>,
+): VisibleActiveRunTraceSnapshot | null {
+  const runs = new Map<
+    string,
+    {
+      messageId: string;
+      startedAtMs: number;
+      latestAtMs: number;
+      hasTerminalEvent: boolean;
+      hasRunObservation: boolean;
+    }
+  >();
+
+  for (const events of Object.values(traceEventsByMessageId)) {
+    for (const event of events) {
+      if (!event.run_id || event.run_id === "transport") continue;
+      if (event.name.startsWith("transport.")) continue;
+      const eventAtMs = parseIsoTimestampMs(event.at);
+      if (eventAtMs == null) continue;
+      const existing = runs.get(event.run_id);
+      const hasTerminalEvent = isTerminalRunTraceEvent(event);
+      const hasRunObservation = !hasTerminalEvent;
+      if (!existing) {
+        runs.set(event.run_id, {
+          messageId: event.message_id,
+          startedAtMs: eventAtMs,
+          latestAtMs: eventAtMs,
+          hasTerminalEvent,
+          hasRunObservation,
+        });
+        continue;
+      }
+      runs.set(event.run_id, {
+        messageId:
+          eventAtMs < existing.startedAtMs
+            ? event.message_id
+            : existing.messageId,
+        startedAtMs: Math.min(existing.startedAtMs, eventAtMs),
+        latestAtMs: Math.max(existing.latestAtMs, eventAtMs),
+        hasTerminalEvent: existing.hasTerminalEvent || hasTerminalEvent,
+        hasRunObservation: existing.hasRunObservation || hasRunObservation,
+      });
+    }
+  }
+
+  const candidates = [...runs.values()]
+    .filter((run) => run.hasRunObservation && !run.hasTerminalEvent)
+    .sort((left, right) =>
+      right.latestAtMs !== left.latestAtMs
+        ? right.latestAtMs - left.latestAtMs
+        : left.startedAtMs - right.startedAtMs,
+    );
+  const selected = candidates[0];
+  return selected
+    ? {
+        messageId: selected.messageId,
+        startedAtMs: selected.startedAtMs,
+        latestAtMs: selected.latestAtMs,
+      }
+    : null;
+}
+
+function getVisibleActiveRunMessage(
+  messages: TaskMessage[],
+): TaskMessage | null {
+  const latestMessage = [...messages].sort((left, right) =>
+    left.created_at.localeCompare(right.created_at),
+  ).at(-1);
+  if (!latestMessage || latestMessage.role !== "agent") return null;
+  return latestMessage.content.trim().length === 0 ? latestMessage : null;
+}
+
+function getLatestUnansweredUserMessageStartedAtMs(
+  messages: TaskMessage[],
+): number | null {
+  const sortedMessages = [...messages].sort((left, right) =>
+    left.created_at.localeCompare(right.created_at),
+  );
+  const latestMessage = sortedMessages.at(-1);
+  if (!latestMessage || latestMessage.role !== "user") return null;
+  return parseIsoTimestampMs(latestMessage.created_at);
 }
 
 function getTaskTerminalWorkspaceStorageKey(
@@ -248,17 +395,6 @@ function getReconcileRefetchError(result: PromiseSettledResult<unknown>) {
   return result.value.error instanceof Error
     ? result.value.error
     : new Error(String(result.value.error));
-}
-
-function removeListedTerminalSessionById(
-  sessions: ListedTerminalSession[] | null,
-  sessionId: string | null | undefined,
-) {
-  if (!sessionId || sessions === null) {
-    return sessions;
-  }
-  const nextSessions = sessions.filter((session) => session.id !== sessionId);
-  return nextSessions.length === sessions.length ? sessions : nextSessions;
 }
 
 function isTerminalRecoveryTab(tab: TerminalWorkspaceTab) {
@@ -354,8 +490,13 @@ export function TaskPage({
     string | null
   >(null);
   const [streamingContent, setStreamingContent] = React.useState<string>("");
+  const [activeRunTraceMessageId, setActiveRunTraceMessageId] =
+    React.useState<string | null>(null);
   const [isAgentTurnRunning, setIsAgentTurnRunning] = React.useState(false);
   const [runStartedAt, setRunStartedAt] = React.useState<number | null>(null);
+  const [runServerStartedAt, setRunServerStartedAt] = React.useState<
+    number | null
+  >(null);
   const [lastRunActionSummary, setLastRunActionSummary] = React.useState<
     string | null
   >(null);
@@ -402,6 +543,7 @@ export function TaskPage({
   const hydratedTerminalTaskScopeRef = React.useRef<string | null>(null);
   const terminalWorkspaceHydrationRequestRef = React.useRef(0);
   const terminalWorkspaceTruthRequestRef = React.useRef(0);
+  const closingTerminalTabIdsRef = React.useRef<Set<string>>(new Set());
 
   const queryClient = useQueryClient();
   const { handleError } = useErrorHandler();
@@ -413,6 +555,7 @@ export function TaskPage({
   const cancelEscalationTimerRef = React.useRef<number | null>(null);
   const cancelEscalationPromptedRef = React.useRef(false);
   const cancelEscalationCheckInFlightRef = React.useRef(false);
+  const activeRunMessageIdRef = React.useRef<string | null>(null);
   const [runtimeReconciliationActive, setRuntimeReconciliationActive] =
     React.useState(false);
   const sendMessage = useSendMessage();
@@ -498,8 +641,10 @@ export function TaskPage({
   const resetCurrentRunUiState = React.useCallback(() => {
     setStreamingMessageId(null);
     setStreamingContent("");
+    setActiveRunTraceMessageId(null);
     setIsAgentTurnRunning(false);
     setRunStartedAt(null);
+    setRunServerStartedAt(null);
     setRunClockNow(Date.now());
     setLastRunActionSummary(null);
   }, []);
@@ -545,13 +690,6 @@ export function TaskPage({
       .find((message) => message.role === "agent");
     return latestAgentMessage?.id ?? null;
   }, [messages, streamingMessageId]);
-
-  const latestAgentMessageId = React.useMemo(() => {
-    const latestAgentMessage = [...(messages ?? [])]
-      .reverse()
-      .find((message) => message.role === "agent");
-    return latestAgentMessage?.id ?? null;
-  }, [messages]);
 
   const {
     traceFocusMessageId,
@@ -786,12 +924,12 @@ export function TaskPage({
   ]);
 
   React.useEffect(() => {
-    if (!(sendMessage.isPending || isAgentTurnRunning)) return;
+    if (effectiveRunState === "idle") return;
     const timer = setInterval(() => {
       setRunClockNow(Date.now());
     }, 1000);
     return () => clearInterval(timer);
-  }, [isAgentTurnRunning, sendMessage.isPending]);
+  }, [effectiveRunState]);
 
   React.useEffect(() => {
     terminalTabsRef.current = terminalTabs;
@@ -872,9 +1010,23 @@ export function TaskPage({
       onTraceEvent: (traceEvent) => {
         setLastRunActionSummary(traceEvent.summary || traceEvent.name);
         mergeTraceEvents([traceEvent]);
+        if (effectiveRunState !== "idle") {
+          setActiveRunTraceMessageId(traceEvent.message_id);
+        }
+        const terminalTraceMatchesActiveRun =
+          isTerminalRunTraceEvent(traceEvent) &&
+          (
+            streamingMessageId === traceEvent.message_id ||
+            (
+              !streamingMessageId &&
+              (
+                activeRunTraceMessageId === traceEvent.message_id ||
+                activeRunMessageIdRef.current === traceEvent.message_id
+              )
+            )
+          );
         if (
-          streamingMessageId === traceEvent.message_id &&
-          isTerminalRunTraceEvent(traceEvent)
+          terminalTraceMatchesActiveRun
         ) {
           setTaskUpdateCountForCurrentTurn(0);
           resetCurrentRunUiState();
@@ -959,8 +1111,10 @@ export function TaskPage({
         // Clear previous streaming state
         setStreamingMessageId(null);
         setStreamingContent("");
+        setActiveRunTraceMessageId(null);
         setIsAgentTurnRunning(false);
         setRunStartedAt(null);
+        setRunServerStartedAt(null);
         setRunClockNow(Date.now());
         setLastRunActionSummary(null);
         setTaskUpdateCountForCurrentTurn(0);
@@ -979,6 +1133,8 @@ export function TaskPage({
         // If response indicates streaming, set up streaming state
         // The actual streaming content will come through SSE
         if (response.role === "agent") {
+          const responseCreatedAtMs =
+            parseIsoTimestampMs(response.created_at) ?? Date.now();
           queryClient.setQueryData(
             messagesKey,
             (old: TaskMessage[] | undefined) => {
@@ -994,7 +1150,7 @@ export function TaskPage({
               ? {
                   ...old,
                   run_state: "running",
-                  last_activity_at: new Date().toISOString(),
+                  last_activity_at: response.created_at,
                 }
               : old,
           );
@@ -1002,6 +1158,7 @@ export function TaskPage({
           setStreamingContent("");
           setIsAgentTurnRunning(true);
           setRunStartedAt(Date.now());
+          setRunServerStartedAt(responseCreatedAtMs);
           setRunClockNow(Date.now());
           setLastRunActionSummary(tConversation("run_active_default_action"));
           setTaskUpdateCountForCurrentTurn(0);
@@ -1012,6 +1169,7 @@ export function TaskPage({
         );
         setIsAgentTurnRunning(false);
         setRunStartedAt(null);
+        setRunServerStartedAt(null);
         setRunClockNow(Date.now());
         setLastRunActionSummary(null);
         setTaskUpdateCountForCurrentTurn(0);
@@ -1302,34 +1460,102 @@ export function TaskPage({
       `/${locale}/workspaces/${workspaceId}/projects/${projectId}/notebook`,
     );
   };
+  const requestTerminalTabFocus = React.useCallback((tabId: string | null) => {
+    if (!tabId) return;
+    let found = false;
+    const nextTabs = terminalTabsRef.current.map((tab) => {
+      if (tab.id !== tabId) return tab;
+      found = true;
+      return {
+        ...tab,
+        focusRequestToken: (tab.focusRequestToken ?? 0) + 1,
+      };
+    });
+    if (!found) return;
+    terminalTabsRef.current = nextTabs;
+    setTerminalTabs(nextTabs);
+  }, []);
   const handleSetViewMode = React.useCallback((mode: TerminalViewMode) => {
     const terminalSessionCount = terminalWorkspaceHydrationState === "ready"
       ? (terminalTruthSessions?.length ?? 0) + terminalTabs.filter((tab) => !tab.sessionId).length
       : terminalTabs.length;
     if (mode === "terminal" && terminalSessionCount === 0) return;
     setViewMode(mode);
-  }, [terminalTabs, terminalTruthSessions, terminalWorkspaceHydrationState]);
+    if (mode === "terminal") {
+      const nextActiveTerminalTabId =
+        terminalTabs.find((tab) => tab.id === activeTerminalTabIdRef.current)
+          ?.id ??
+        terminalTabs[0]?.id ??
+        null;
+      requestTerminalTabFocus(nextActiveTerminalTabId);
+    }
+  }, [
+    requestTerminalTabFocus,
+    terminalTabs,
+    terminalTruthSessions,
+    terminalWorkspaceHydrationState,
+  ]);
   const hasTask = task != null;
   const taskStatus = task?.status ?? "active";
-  const taskLastActivityAt = task?.last_activity_at ?? null;
   const isDisabled = taskStatus === "archived";
   const isExternalAgentOffline =
     taskAgent?.mode === "external" && taskAgent.presence !== "online";
   const agentIsBusy =
     sendMessage.isPending || isAgentTurnRunning || backendRunBusy;
-  const fallbackRunStartedAt = backendRunBusy
-    ? (() => {
-        const parsed = taskLastActivityAt ? Date.parse(taskLastActivityAt) : NaN;
-        return Number.isFinite(parsed) ? parsed : Date.now();
-      })()
-    : null;
-  const effectiveRunStartedAt = runStartedAt ?? fallbackRunStartedAt;
+  const pendingActiveRunMessageId = getPendingActiveRunMessageId(taskId);
+  const visibleActiveTraceRun = React.useMemo(
+    () => getVisibleActiveRunTraceSnapshot(traceEventsByMessageId),
+    [traceEventsByMessageId],
+  );
+  const visibleActiveRunMessage = React.useMemo(
+    () => getVisibleActiveRunMessage(messagesForDisplay),
+    [messagesForDisplay],
+  );
+  const activeRunMessageId =
+    effectiveRunState !== "idle"
+      ? (streamingMessageId ??
+        activeRunTraceMessageId ??
+        visibleActiveTraceRun?.messageId ??
+        visibleActiveRunMessage?.id ??
+        pendingActiveRunMessageId)
+      : null;
+  React.useEffect(() => {
+    activeRunMessageIdRef.current = activeRunMessageId;
+  }, [activeRunMessageId]);
+  const activeTraceEvents = activeRunMessageId
+    ? (traceEventsByMessageId[activeRunMessageId] ?? [])
+    : [];
+  const activeRunMessageStartedAt =
+    activeRunMessageId && activeRunMessageId !== pendingActiveRunMessageId
+      ? getMessageCreatedAtMs(messagesForDisplay, activeRunMessageId)
+      : null;
+  const activeTraceStartedAt =
+    activeRunMessageId === visibleActiveTraceRun?.messageId
+      ? visibleActiveTraceRun.startedAtMs
+      : getEarliestTraceTimestampMs(activeTraceEvents);
+  const latestUnansweredUserStartedAt =
+    activeRunMessageStartedAt == null && activeTraceStartedAt == null
+      ? getLatestUnansweredUserMessageStartedAtMs(messagesForDisplay)
+      : null;
+  const serverObservedRunStartedAt =
+    effectiveRunState !== "idle"
+      ? (getTaskRunStartedAtMs(task) ??
+        getEarliestDefinedTimestampMs([
+          activeTraceStartedAt,
+          activeRunMessageStartedAt,
+        ]) ??
+        latestUnansweredUserStartedAt)
+      : null;
+  const effectiveRunStartedAt =
+    effectiveRunState !== "idle"
+      ? (serverObservedRunStartedAt ??
+        runServerStartedAt ??
+        runStartedAt ??
+        Date.now())
+      : null;
   const runElapsedSeconds = effectiveRunStartedAt
     ? Math.max(0, Math.floor((runClockNow - effectiveRunStartedAt) / 1000))
     : 0;
-  const activeTraceEvents = streamingMessageId
-    ? (traceEventsByMessageId[streamingMessageId] ?? [])
-    : [];
   const runActionFallbackSummary =
     lastRunActionSummary || tConversation("run_active_default_action");
   const sortedActions = [...activeTraceEvents].sort((a, b) =>
@@ -1346,6 +1572,28 @@ export function TaskPage({
     fallbackSummary: runActionFallbackSummary,
     now: Date.now(),
   });
+  const activeRunStartedAtIso =
+    effectiveRunStartedAt != null
+      ? new Date(effectiveRunStartedAt).toISOString()
+      : null;
+  const activeRunView: ActiveRunView | null =
+    activeRunMessageId && effectiveRunState !== "idle"
+      ? {
+          messageId: activeRunMessageId,
+          runState: effectiveRunState,
+          latestAction: latestRunAction,
+          recentActions: recentRunActions,
+          startedAt: activeRunStartedAtIso,
+          elapsedSeconds: runElapsedSeconds,
+          cancelPending: cancelActiveRun.isPending,
+          onCancel: handleCancelActiveRun,
+          realtimeHealth: {
+            status: connectionStatus ?? "connected",
+            code: effectiveRealtimeFailureCode,
+            message: effectiveRealtimeFailureMessage,
+          },
+        }
+      : null;
   const showSandboxStarting =
     isAgentTurnRunning &&
     activeTraceEvents.some((item) => item.name === "sandbox_starting") &&
@@ -1480,8 +1728,9 @@ export function TaskPage({
         activeTerminalTabIdRef.current = nextActiveTerminalTabId;
       }
       setViewMode("terminal");
+      requestTerminalTabFocus(nextActiveTerminalTabId);
     },
-    [terminalTruthSessions],
+    [requestTerminalTabFocus, terminalTruthSessions],
   );
 
   const resetTerminalWorkspaceState = React.useCallback(() => {
@@ -1597,6 +1846,7 @@ export function TaskPage({
           label: getTerminalWorkspaceTabLabel(tTask, nextOrdinal),
           status: mapListedTerminalSessionStatusToTabStatus(session.status),
           closeRequestToken: 0,
+          focusRequestToken: 0,
           sessionId: session.id,
         };
       });
@@ -1674,6 +1924,8 @@ export function TaskPage({
     hydrateTerminalWorkspaceFromBackendSessions(listedSessions.items, {
       modeStrategy: "preserve-current",
     });
+    hydratedTerminalTaskScopeRef.current = taskScopeKey;
+    setTerminalWorkspaceHydrationState("ready");
     return listedSessions;
   }, [
     beginTerminalWorkspaceTruthRequest,
@@ -1682,6 +1934,7 @@ export function TaskPage({
     projectId,
     taskAPI,
     taskId,
+    taskScopeKey,
     workspaceId,
   ]);
 
@@ -1853,6 +2106,105 @@ export function TaskPage({
     }
   }, [closeAllTerminalTabs, endAllTerminalPending]);
 
+  const reconcileTerminalWorkspaceAfterSessionClose = React.useCallback(
+    async (
+      sessionId: string | null,
+      logContext: string,
+    ): Promise<TerminalCloseReconcileResult> => {
+      try {
+        const listedSessions = await syncTerminalWorkspaceFromBackend();
+        if (!listedSessions) {
+          return "unavailable";
+        }
+        const liveSessions = listedSessions.items.filter(
+          (session) => session.status !== "closed",
+        );
+        if (
+          sessionId &&
+          liveSessions.some((session) => session.id === sessionId)
+        ) {
+          return "retained";
+        }
+        return "closed";
+      } catch (error) {
+        hydratedTerminalTaskScopeRef.current = taskScopeKey;
+        setTerminalWorkspaceHydrationState("unavailable");
+        handleError(error, {
+          logContext,
+        });
+        return "unavailable";
+      }
+    },
+    [
+      handleError,
+      syncTerminalWorkspaceFromBackend,
+      taskScopeKey,
+    ],
+  );
+
+  const removeTerminalTabLocally = React.useCallback(
+    (tabId: string) => {
+      const currentTabs = terminalTabsRef.current;
+      const closingIndex = currentTabs.findIndex((tab) => tab.id === tabId);
+      if (closingIndex < 0) {
+        return;
+      }
+      const closingTab = currentTabs[closingIndex];
+      if (typeof closingTab.sessionId === "string" && closingTab.sessionId.length > 0) {
+        return;
+      }
+      const nextTabs = relabelTerminalWorkspaceTabs(
+        tTask,
+        currentTabs.filter((tab) => tab.id !== tabId),
+      );
+      const nextTerminalTruthSessions = terminalTruthSessionsRef.current;
+      clearTaskTerminalPanelSessionStateForScope(
+        workspaceId,
+        projectId,
+        taskId,
+        tabId,
+      );
+      if (
+        nextTabs.length === 0
+        && nextTerminalTruthSessions !== null
+        && nextTerminalTruthSessions.length > 0
+      ) {
+        hydrateTerminalWorkspaceFromBackendSessions(nextTerminalTruthSessions, {
+          modeStrategy: "preserve-current",
+        });
+        return;
+      }
+      terminalTabsRef.current = nextTabs;
+      setTerminalTabs(nextTabs);
+      nextTerminalTabOrdinalRef.current = getNextTerminalTabOrdinal(nextTabs);
+      if (nextTabs.length === 0) {
+        resetTerminalWorkspaceState();
+        return;
+      }
+      const currentActiveTerminalTabId = activeTerminalTabIdRef.current;
+      if (
+        currentActiveTerminalTabId === tabId ||
+        !nextTabs.some((tab) => tab.id === currentActiveTerminalTabId)
+      ) {
+        const fallbackIndex = Math.max(0, Math.min(closingIndex - 1, nextTabs.length - 1));
+        const nextActiveTerminalTabId =
+          nextTabs[fallbackIndex]?.id ?? nextTabs[0]?.id ?? null;
+        setActiveTerminalTabId(nextActiveTerminalTabId);
+        activeTerminalTabIdRef.current = nextActiveTerminalTabId;
+        requestTerminalTabFocus(nextActiveTerminalTabId);
+      }
+    },
+    [
+      hydrateTerminalWorkspaceFromBackendSessions,
+      projectId,
+      requestTerminalTabFocus,
+      resetTerminalWorkspaceState,
+      tTask,
+      taskId,
+      workspaceId,
+    ],
+  );
+
   if (taskLoading) {
     return <TaskPageLoadingState text={tTask("loading")} />;
   }
@@ -1907,6 +2259,7 @@ export function TaskPage({
       label: getTerminalWorkspaceTabLabel(tTask, nextOrdinal),
       status: "idle",
       closeRequestToken: 0,
+      focusRequestToken: 1,
       sessionId: null,
     };
     const nextTabs = relabelTerminalWorkspaceTabs(tTask, [
@@ -1939,19 +2292,55 @@ export function TaskPage({
     void syncTerminalWorkspaceFromBackend().catch(() => {});
   };
 
-  const closeTerminalTab = (tabId: string) => {
-    setTerminalTabs((prev) =>
-      prev.map((tab) =>
-        tab.id === tabId
-          ? { ...tab, closeRequestToken: tab.closeRequestToken + 1 }
-          : tab,
-      ),
-    );
-    terminalTabsRef.current = terminalTabsRef.current.map((tab) =>
+  const requestTerminalTabPanelClose = (tabId: string) => {
+    const nextTabs = terminalTabsRef.current.map((tab) =>
       tab.id === tabId
         ? { ...tab, closeRequestToken: tab.closeRequestToken + 1 }
         : tab,
     );
+    terminalTabsRef.current = nextTabs;
+    setTerminalTabs(nextTabs);
+  };
+
+  const closeTerminalTab = (tabId: string) => {
+    const tab = terminalTabsRef.current.find((item) => item.id === tabId);
+    if (!tab) return;
+    const sessionId =
+      typeof tab.sessionId === "string" && tab.sessionId.length > 0
+        ? tab.sessionId
+        : null;
+    if (!sessionId) {
+      requestTerminalTabPanelClose(tabId);
+      return;
+    }
+    if (closingTerminalTabIdsRef.current.has(tabId)) {
+      return;
+    }
+    const shouldRefocusAfterClose = activeTerminalTabIdRef.current === tabId;
+    closingTerminalTabIdsRef.current.add(tabId);
+    void (async () => {
+      try {
+        await taskAPI.closeTerminalSession(
+          workspaceId,
+          projectId,
+          taskId,
+          sessionId,
+        );
+        const reconcileResult = await reconcileTerminalWorkspaceAfterSessionClose(
+          sessionId,
+          "TaskPage.closeTerminalTab.hydrate",
+        );
+        if (shouldRefocusAfterClose && reconcileResult !== "unavailable") {
+          requestTerminalTabFocus(activeTerminalTabIdRef.current);
+        }
+      } catch (error) {
+        handleError(error, {
+          logContext: "TaskPage.closeTerminalTab",
+        });
+      } finally {
+        closingTerminalTabIdsRef.current.delete(tabId);
+      }
+    })();
   };
 
   const handleTerminalTabCreateRejected = async () => {
@@ -1972,56 +2361,19 @@ export function TaskPage({
 
   const handleTerminalTabOpenChange = (tabId: string, open: boolean) => {
     if (open) return;
-    const currentTabs = terminalTabsRef.current;
-    const closingIndex = currentTabs.findIndex((tab) => tab.id === tabId);
-    if (closingIndex < 0) {
+    const tab = terminalTabsRef.current.find((item) => item.id === tabId);
+    const sessionId =
+      typeof tab?.sessionId === "string" && tab.sessionId.length > 0
+        ? tab.sessionId
+        : null;
+    if (sessionId) {
+      void reconcileTerminalWorkspaceAfterSessionClose(
+        sessionId,
+        "TaskPage.panelInternalTerminalClose.hydrate",
+      );
       return;
     }
-    const closingTab = currentTabs[closingIndex];
-    const nextTabs = relabelTerminalWorkspaceTabs(
-      tTask,
-      currentTabs.filter((tab) => tab.id !== tabId),
-    );
-    const nextTerminalTruthSessions = removeListedTerminalSessionById(
-      terminalTruthSessionsRef.current,
-      closingTab?.sessionId,
-    );
-    clearTaskTerminalPanelSessionStateForScope(
-      workspaceId,
-      projectId,
-      taskId,
-      tabId,
-    );
-    terminalTruthSessionsRef.current = nextTerminalTruthSessions;
-    setTerminalTruthSessions(nextTerminalTruthSessions);
-    if (
-      nextTabs.length === 0
-      && nextTerminalTruthSessions !== null
-      && nextTerminalTruthSessions.length > 0
-    ) {
-      hydrateTerminalWorkspaceFromBackendSessions(nextTerminalTruthSessions, {
-        modeStrategy: "preserve-current",
-      });
-      return;
-    }
-    terminalTabsRef.current = nextTabs;
-    setTerminalTabs(nextTabs);
-    nextTerminalTabOrdinalRef.current = getNextTerminalTabOrdinal(nextTabs);
-    if (nextTabs.length === 0) {
-      resetTerminalWorkspaceState();
-      return;
-    }
-    const currentActiveTerminalTabId = activeTerminalTabIdRef.current;
-    if (
-      currentActiveTerminalTabId === tabId ||
-      !nextTabs.some((tab) => tab.id === currentActiveTerminalTabId)
-    ) {
-      const fallbackIndex = Math.max(0, Math.min(closingIndex - 1, nextTabs.length - 1));
-      const nextActiveTerminalTabId =
-        nextTabs[fallbackIndex]?.id ?? nextTabs[0]?.id ?? null;
-      setActiveTerminalTabId(nextActiveTerminalTabId);
-      activeTerminalTabIdRef.current = nextActiveTerminalTabId;
-    }
+    removeTerminalTabLocally(tabId);
   };
 
   const terminalWorkspace = hasTerminalSessions ? (
@@ -2082,6 +2434,7 @@ export function TaskPage({
                       setActiveTerminalTabId(tab.id);
                       activeTerminalTabIdRef.current = tab.id;
                       setViewMode("terminal");
+                      requestTerminalTabFocus(tab.id);
                     }}
                   >
                     <span className="truncate">{tab.label}</span>
@@ -2158,6 +2511,7 @@ export function TaskPage({
                 taskTitle={task.title}
                 taskApi={taskAPI}
                 closeRequestToken={tab.closeRequestToken}
+                focusRequestToken={tab.focusRequestToken ?? 0}
                 onSessionResolved={(sessionId) =>
                   handleTerminalTabSessionResolved(tab.id, sessionId)
                 }
@@ -2165,6 +2519,12 @@ export function TaskPage({
                   handleTerminalTabStatusChange(tab.id, status)
                 }
                 onSessionCreateRejected={handleTerminalTabCreateRejected}
+                onSessionCloseReconcile={(sessionId) =>
+                  reconcileTerminalWorkspaceAfterSessionClose(
+                    sessionId ?? tab.sessionId ?? null,
+                    "TaskPage.panelInternalTerminalClose.hydrate",
+                  )
+                }
                 onOpenChange={(open) => handleTerminalTabOpenChange(tab.id, open)}
               />
             </div>
@@ -2303,10 +2663,6 @@ export function TaskPage({
         }
         agentMode={taskAgent?.mode ?? null}
         agentPresence={taskAgent?.presence ?? null}
-        agentRunActivity={{
-          active: agentIsBusy,
-          elapsedSeconds: runElapsedSeconds,
-        }}
         canDeleteTask={canDeleteTask}
         deleteBlockedReason={deleteBlockedReason}
         viewMode={effectiveViewMode}
@@ -2331,7 +2687,7 @@ export function TaskPage({
       />
       <TaskPageContent
         agentIsBusy={agentIsBusy}
-        activeAgentMessageId={streamingMessageId ?? (agentIsBusy ? latestAgentMessageId : null)}
+        activeRunView={activeRunView}
         artifacts={artifactsList}
         artifactsRefreshing={artifactsRefreshing}
         canUpdateTask={canUpdateTask}
@@ -2344,7 +2700,6 @@ export function TaskPage({
         focusTraceMessageId={traceFocusMessageId}
         focusTraceName={traceFocusName}
         focusTraceToken={traceFocusToken}
-        handleCancelActiveRun={handleCancelActiveRun}
         handleDownloadArtifact={handleDownloadArtifact}
         handlePendingRemove={handlePendingRemove}
         handleRefreshArtifacts={async () => {
@@ -2357,22 +2712,14 @@ export function TaskPage({
         loadMoreTracesForMessage={loadMoreTracesForMessage}
         messages={messagesForDisplay}
         onRunActionClick={(action) => {
-          if (!action.traceName || !activeTraceMessageId) return;
-          setTraceFocusMessageId(activeTraceMessageId);
+          const targetMessageId = activeRunView?.messageId ?? activeRunMessageId;
+          if (!action.traceName || !targetMessageId) return;
+          setTraceFocusMessageId(targetMessageId);
           setTraceFocusName(action.traceName);
           setTraceFocusToken((prev) => prev + 1);
         }}
         pendingMessages={pendingMessages}
         projectId={projectId}
-        runActivity={{
-          active: effectiveRunState !== "idle",
-          state: effectiveRunState,
-          elapsedSeconds: runElapsedSeconds,
-          cancelling: cancelActiveRun.isPending && effectiveRunState === "running",
-          lastSummary: latestRunAction.summary,
-          lastKind: latestRunAction.kind,
-          recentActions: recentRunActions,
-        }}
         sandboxStarting={showSandboxStarting}
         sending={sendMessage.isPending}
         showSseDebugPanel={showSseDebugPanel}

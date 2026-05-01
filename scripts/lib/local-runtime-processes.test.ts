@@ -366,6 +366,117 @@ wait "$child_pid"
     expect(await waitForPidExit(pid)).toBe(true);
   });
 
+  it('retries sidecar identity capture when transient process identity reads are unavailable', () => {
+    const tempRoot = makeTempRoot();
+    const processStateDir = path.join(tempRoot, 'processes');
+    const identityAttemptFile = path.join(tempRoot, 'identity-attempts.count');
+
+    const startResult = runBash(
+      `
+        set -euo pipefail
+        source scripts/lib/local-runtime-processes.sh
+        sleep 300 &
+        pid="$!"
+        trap 'kill "\${pid}" >/dev/null 2>&1 || true; wait "\${pid}" 2>/dev/null || true' EXIT
+        eval "$(declare -f local_runtime_process_identity_token | sed '1s/local_runtime_process_identity_token/local_runtime_process_identity_token_original/')"
+        local_runtime_process_identity_token() {
+          local target_pid="$1"
+          local count=0
+          if [[ -f "\${LOCAL_RUNTIME_TEST_IDENTITY_ATTEMPT_FILE}" ]]; then
+            count="$(cat "\${LOCAL_RUNTIME_TEST_IDENTITY_ATTEMPT_FILE}")"
+          fi
+          count="$((count + 1))"
+          printf '%s\n' "\${count}" > "\${LOCAL_RUNTIME_TEST_IDENTITY_ATTEMPT_FILE}"
+          if [[ "\${count}" -lt 3 ]]; then
+            return 1
+          fi
+          local_runtime_process_identity_token_original "\${target_pid}"
+        }
+        local_runtime_write_process_sidecar runner "\${pid}" "0" "sleep 300"
+        echo "pid=\${pid}"
+        echo "attempts=$(cat "\${LOCAL_RUNTIME_TEST_IDENTITY_ATTEMPT_FILE}")"
+      `,
+      {
+        LOCAL_RUNTIME_PROCESS_STATE_DIR: processStateDir,
+        LOCAL_RUNTIME_RUN_ID: 'transient-identity-run',
+        LOCAL_RUNTIME_LINE_KIND: 'local_manual',
+        LOCAL_RUNTIME_OWNER_TOKEN: 'transient-identity-owner',
+        LOCAL_RUNTIME_IDENTITY_CAPTURE_ATTEMPTS: '5',
+        LOCAL_RUNTIME_IDENTITY_CAPTURE_SLEEP_SECONDS: '0.01',
+        LOCAL_RUNTIME_TEST_IDENTITY_ATTEMPT_FILE: identityAttemptFile,
+      },
+    );
+
+    expect(startResult.status).toBe(0);
+    expect(startResult.stdout).toContain('attempts=3');
+
+    const sidecarFiles = existsSync(processStateDir)
+      ? execFileSync('bash', ['-lc', `find "${processStateDir}" -type f -name '*.json' | sort`], {
+        cwd: repoRoot,
+        encoding: 'utf8',
+      }).trim().split('\n').filter(Boolean)
+      : [];
+    expect(sidecarFiles).toHaveLength(1);
+
+    const sidecar = JSON.parse(readFileSync(sidecarFiles[0], 'utf8')) as {
+      process_identity?: { token?: string };
+    };
+    expect(sidecar.process_identity?.token).toMatch(/^pid:[0-9]+:start:[0-9]+:cmd:/);
+  });
+
+  it('fails closed without writing a sidecar when process identity never stabilizes', () => {
+    const tempRoot = makeTempRoot();
+    const processStateDir = path.join(tempRoot, 'processes');
+    const identityAttemptFile = path.join(tempRoot, 'identity-never-stable.count');
+
+    const startResult = runBash(
+      `
+        set -euo pipefail
+        source scripts/lib/local-runtime-processes.sh
+        sleep 300 &
+        pid="$!"
+        trap 'kill "\${pid}" >/dev/null 2>&1 || true; wait "\${pid}" 2>/dev/null || true' EXIT
+        local_runtime_process_identity_token() {
+          local count=0
+          if [[ -f "\${LOCAL_RUNTIME_TEST_IDENTITY_ATTEMPT_FILE}" ]]; then
+            count="$(cat "\${LOCAL_RUNTIME_TEST_IDENTITY_ATTEMPT_FILE}")"
+          fi
+          count="$((count + 1))"
+          printf '%s\n' "\${count}" > "\${LOCAL_RUNTIME_TEST_IDENTITY_ATTEMPT_FILE}"
+          printf 'pid:%s:start:unknown:cmd:test\n' "$1"
+        }
+        set +e
+        local_runtime_write_process_sidecar runner "\${pid}" "0" "sleep 300"
+        write_status="$?"
+        set -e
+        echo "pid=\${pid}"
+        echo "attempts=$(cat "\${LOCAL_RUNTIME_TEST_IDENTITY_ATTEMPT_FILE}")"
+        exit "\${write_status}"
+      `,
+      {
+        LOCAL_RUNTIME_PROCESS_STATE_DIR: processStateDir,
+        LOCAL_RUNTIME_RUN_ID: 'never-stable-identity-run',
+        LOCAL_RUNTIME_LINE_KIND: 'local_manual',
+        LOCAL_RUNTIME_OWNER_TOKEN: 'never-stable-identity-owner',
+        LOCAL_RUNTIME_IDENTITY_CAPTURE_ATTEMPTS: '3',
+        LOCAL_RUNTIME_IDENTITY_CAPTURE_SLEEP_SECONDS: '0.01',
+        LOCAL_RUNTIME_TEST_IDENTITY_ATTEMPT_FILE: identityAttemptFile,
+      },
+    );
+
+    expect(startResult.status).not.toBe(0);
+    expect(startResult.stderr).toContain('cannot capture process identity for runner pid');
+    expect(startResult.stdout).toContain('attempts=3');
+
+    const sidecarFiles = existsSync(processStateDir)
+      ? execFileSync('bash', ['-lc', `find "${processStateDir}" -type f -name '*.json' | sort`], {
+        cwd: repoRoot,
+        encoding: 'utf8',
+      }).trim().split('\n').filter(Boolean)
+      : [];
+    expect(sidecarFiles).toHaveLength(0);
+  });
+
   it('accepts a verified owned root after an exec handoff changes the command identity', async () => {
     const tempRoot = makeTempRoot();
     const processStateDir = path.join(tempRoot, 'processes');
@@ -408,7 +519,7 @@ wait "$child_pid"
     expect(await waitForPidExit(pid)).toBe(true);
   });
 
-  it('keeps a detached owned runner alive after the launcher shell exits', async () => {
+  it('keeps a detached owned runner alive after immediate exec handoff from the launcher shell', async () => {
     const tempRoot = makeTempRoot();
     const processStateDir = path.join(tempRoot, 'processes');
     const logFile = path.join(tempRoot, 'runner.log');
@@ -418,7 +529,6 @@ wait "$child_pid"
       handoffScript,
       `#!/usr/bin/env bash
 set -euo pipefail
-sleep 0.2
 exec -a "make notebook-agent-runner" sleep 300
 `,
       'utf8',
@@ -443,8 +553,6 @@ exec -a "make notebook-agent-runner" sleep 300
     expect(startResult.status).toBe(0);
     const pid = Number.parseInt(startResult.stdout.match(/pid=(\d+)/)?.[1] ?? '', 10);
     expect(pid).toBeGreaterThan(0);
-
-    await new Promise((resolve) => setTimeout(resolve, 600));
     expect(isPidAlive(pid)).toBe(true);
 
     const verifyResult = runBash(

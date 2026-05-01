@@ -1,4 +1,4 @@
-import type { TaskTraceEvent } from '@/lib/types/task';
+import type { TaskRunState, TaskTraceEvent } from '@/lib/types/task';
 
 export type RunActionKind = 'command' | 'tool' | 'output' | 'artifact' | 'lifecycle' | 'error' | 'system';
 
@@ -13,6 +13,22 @@ export type RecentRunAction = {
   summary: string;
   ageSeconds: number;
   traceName: string;
+};
+
+export type ActiveRunView = {
+  messageId: string;
+  runState: Exclude<TaskRunState, 'idle'> | 'reconnecting';
+  latestAction: RunAction;
+  recentActions: RecentRunAction[];
+  startedAt: string | null;
+  elapsedSeconds: number;
+  cancelPending: boolean;
+  onCancel: () => void;
+  realtimeHealth: {
+    status: 'connecting' | 'connected' | 'reconnecting' | 'disconnected' | 'error';
+    code?: string | null;
+    message?: string | null;
+  };
 };
 
 type DeriveRunActionArgs = {
@@ -47,14 +63,14 @@ export function deriveRunAction({ event, fallbackSummary }: DeriveRunActionArgs)
     const deleted = Array.isArray(event.details?.deleted) ? event.details.deleted.length : 0;
     const summary = added || modified || deleted ? `${added} added · ${modified} modified · ${deleted} deleted` : (event.summary || fallbackSummary);
     return {
-      kind: 'artifact',
+      kind: 'system',
       summary,
     };
   }
   if (event.name === 'runner.artifact') {
     const filename = typeof event.details?.filename === 'string' ? event.details.filename.trim() : '';
     return {
-      kind: 'artifact',
+      kind: 'output',
       summary: filename || event.summary || fallbackSummary,
     };
   }
@@ -87,7 +103,7 @@ export function collectRecentRunActions(args: {
   fallbackSummary: string;
   now: number;
 }): RecentRunAction[] {
-  const allowKinds: RunActionKind[] = ['command', 'tool', 'artifact', 'lifecycle', 'error'];
+  const allowKinds: RunActionKind[] = ['command', 'tool', 'output', 'lifecycle', 'error', 'system'];
   const selected: RecentRunAction[] = [];
 
   for (const event of args.sortedActions) {

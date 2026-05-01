@@ -34,7 +34,6 @@ export interface TaskHeaderProps {
   viewMode?: 'conversation' | 'terminal';
   agentMode?: 'external' | 'internal' | null;
   agentPresence?: 'online' | 'offline' | 'managed' | null;
-  agentRunActivity?: { active: boolean; elapsedSeconds: number } | null;
   canDeleteTask?: boolean;
   deleteBlockedReason?: string | null;
   canCreateTerminalSession?: boolean;
@@ -59,7 +58,6 @@ export function TaskHeader({
   viewMode = 'conversation',
   agentMode = null,
   agentPresence = null,
-  agentRunActivity = null,
   canDeleteTask = true,
   deleteBlockedReason = null,
   canCreateTerminalSession = false,
@@ -122,13 +120,6 @@ export function TaskHeader({
       : agentPresence === 'offline'
         ? 'destructive'
         : null;
-  const formatElapsed = (seconds: number): string => {
-    if (!Number.isFinite(seconds) || seconds < 0) return '0s';
-    if (seconds < 60) return `${seconds}s`;
-    const minutes = Math.floor(seconds / 60);
-    const remain = seconds % 60;
-    return remain === 0 ? `${minutes}m` : `${minutes}m ${remain}s`;
-  };
   const agentModeLabel = agentMode === 'internal'
     ? t('agent_mode_internal')
     : agentMode === 'external'
@@ -209,11 +200,6 @@ export function TaskHeader({
             <Badge variant="outline" className="text-[11px]" data-testid="notebook__task-header-workspace-library">
               {t('workspace_file_library_label')}: {workspaceFileLibraryName}
             </Badge>
-            {agentRunActivity?.active ? (
-              <Badge variant="secondary" className="text-[11px]" data-testid="notebook__task-header-agent-busy">
-                {t('agent_busy', { duration: formatElapsed(agentRunActivity.elapsedSeconds) })}
-              </Badge>
-            ) : null}
             {onSetViewMode && hasTerminalTabs ? (
               <div className="inline-flex items-center rounded-lg border border-subtle bg-background/80 p-1">
                 <Button

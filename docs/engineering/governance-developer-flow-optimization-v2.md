@@ -294,7 +294,7 @@ v2 不新增平行 claim truth。实现必须先对齐 `scripts/governance/curre
 pure check reuse 在 P1a 只进入 shadow 闭环，推荐同时保留两类记录：
 
 1. `<run-root>/evidence-claims.jsonl`：run-scoped audit copy，记录本次 run 读到、写入和 would-reuse 的 claim，用于 summary、debug 和审计，不作为跨 run 的 stable source。
-2. `artifacts/governance-claim-store/pure-checks.jsonl`：repo-local stable shadow store，保存 non-release `pure_check_reuse` claim。`cache_policy=shadow` 时只能驱动 would-reuse audit，不能驱动真实 skip。
+2. `artifacts/governance-claim-store/pure-checks.jsonl`：repo-local stable shadow store，保存 non-release `pure_check_reuse` claim；这是 `.gitignore` 忽略的本地生成影子状态，不参与 source 变更影响面选择。`cache_policy=shadow` 时只能驱动 would-reuse audit，不能驱动真实 skip。
 
 `pure_check_reuse` claim 只属于 non-release scope。release campaign 不做跨 campaign pure reuse；发布路径必须重新执行 campaign step，或只消费同一 campaign root 下 producer-owned evidence 与 terminal aggregate。
 
@@ -860,7 +860,7 @@ current manifests 已经表达了部分依赖关系，但实际执行仍偏串�
 
 1. stable check identity 或 owning gate/job mapping。
 2. job metadata `path_globs`、`cache_policy=shadow`、input digest 规则。
-3. Claim Store 最小实现：run-scoped `<run-root>/evidence-claims.jsonl` audit copy，以及 repo-local `artifacts/governance-claim-store/pure-checks.jsonl` stable shadow store。
+3. Claim Store 最小实现：run-scoped `<run-root>/evidence-claims.jsonl` audit copy，以及 repo-local `artifacts/governance-claim-store/pure-checks.jsonl` stable shadow store；后者是本地生成影子状态，必须保持在 Git ignore 边界内。
 4. pure checks input digest 计算。
 5. artifact digest 与 result digest 计算和 validator。
 6. claim store read/write：读取历史 matching claim，写入本次 producer claim。

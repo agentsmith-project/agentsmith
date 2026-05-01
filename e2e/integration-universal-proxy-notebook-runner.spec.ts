@@ -1,6 +1,6 @@
-import http, { type Server } from 'node:http';
+import http from 'node:http';
 import type { AddressInfo } from 'node:net';
-import { readFile, readdir } from 'node:fs/promises';
+import { readFile } from 'node:fs/promises';
 import path from 'node:path';
 import { expect, test, type Page } from '@playwright/test';
 import {
@@ -21,6 +21,20 @@ type UpstreamServer = {
   stop: () => Promise<void>;
   requests?: Array<Record<string, unknown>>;
 };
+
+type NotebookModelProfile = {
+  max_context_tokens: number;
+  max_output_tokens: number;
+};
+
+const UNIVERSAL_PROXY_NOTEBOOK_MODEL_PROFILE: NotebookModelProfile = {
+  max_context_tokens: 128_000,
+  max_output_tokens: 8_192,
+};
+
+function deriveExpectedNotebookAutoCompactTokenLimit(modelProfile: NotebookModelProfile): number {
+  return Math.max(1, modelProfile.max_context_tokens - modelProfile.max_output_tokens);
+}
 
 function requireRealLaneApiKey(): string {
   const value = process.env.BACKEND_REAL_API_KEY?.trim();
@@ -69,23 +83,6 @@ async function waitForTaskArtifacts(args: {
       { timeout: 180_000, intervals: [2_000, 5_000, 10_000] },
     )
     .toBe(true);
-}
-
-async function findFileRecursively(root: string, relativeParts: string[]): Promise<string | null> {
-  const directPath = path.join(root, ...relativeParts);
-  try {
-    await readFile(directPath, 'utf8');
-    return directPath;
-  } catch {
-    // Keep searching.
-  }
-  const entries = await readdir(root, { withFileTypes: true });
-  for (const entry of entries) {
-    if (!entry.isDirectory()) continue;
-    const nested = await findFileRecursively(path.join(root, entry.name), relativeParts);
-    if (nested) return nested;
-  }
-  return null;
 }
 
 async function issueDevToken(page: Page): Promise<string> {
@@ -159,9 +156,7 @@ async function createEndpointViaApi(args: {
   baseUrl: string;
   credentialRef: string;
   upstreamProtocol: 'openai_chat_completions' | 'openai_responses' | 'anthropic_messages';
-  modelProfile?: {
-    max_context_tokens: number;
-  };
+  modelProfile?: NotebookModelProfile;
 }): Promise<string> {
   const providerFamily = args.upstreamProtocol === 'anthropic_messages' ? 'anthropic' : 'custom';
   const response = await args.page.request.post(
@@ -186,7 +181,7 @@ async function createEndpointViaApi(args: {
           ? {
             model_profile: {
               max_context_tokens: args.modelProfile.max_context_tokens,
-              max_output_tokens: 8192,
+              max_output_tokens: args.modelProfile.max_output_tokens,
               supports_file: true,
               supports_tool_call: true,
               supports_reasoning: true,
@@ -653,9 +648,7 @@ test.describe('@lane-real notebook runner protocol blindness via universal proxy
           baseUrl: upstream.baseUrl,
           credentialRef: credential.id,
           upstreamProtocol: scenario.upstreamProtocol,
-          modelProfile: {
-            max_context_tokens: 128000,
-          },
+          modelProfile: UNIVERSAL_PROXY_NOTEBOOK_MODEL_PROFILE,
         });
         const agentBundle = await createExternalNotebookAgentBundle({
           page,
@@ -732,18 +725,19 @@ test.describe('@lane-real notebook runner real upstream stability via universal 
         upstreamProtocol: 'openai_chat_completions' as const,
         baseUrl: BACKEND_REAL_OPENAI_BASE_URL,
         model: BACKEND_REAL_OPENAI_MODEL,
-        expectedCompactLimit: 121600,
+        modelProfile: UNIVERSAL_PROXY_NOTEBOOK_MODEL_PROFILE,
       },
       {
         kind: 'anthropic' as const,
         upstreamProtocol: 'anthropic_messages' as const,
         baseUrl: BACKEND_REAL_ANTHROPIC_BASE_URL,
         model: BACKEND_REAL_MODEL,
-        expectedCompactLimit: 121600,
+        modelProfile: UNIVERSAL_PROXY_NOTEBOOK_MODEL_PROFILE,
       },
     ];
 
     for (const scenario of scenarios) {
+      const expectedCompactLimit = deriveExpectedNotebookAutoCompactTokenLimit(scenario.modelProfile);
       const workspaceLibraryId = await createWorkspaceFileLibraryViaApi({
         page,
         token,
@@ -759,9 +753,7 @@ test.describe('@lane-real notebook runner real upstream stability via universal 
         baseUrl: scenario.baseUrl,
         credentialRef: credential.id,
         upstreamProtocol: scenario.upstreamProtocol,
-        modelProfile: {
-          max_context_tokens: 128000,
-        },
+        modelProfile: scenario.modelProfile,
       });
       const agentBundle = await createExternalNotebookAgentBundle({
         page,
@@ -820,24 +812,21 @@ test.describe('@lane-real notebook runner real upstream stability via universal 
           expectedPath: '.artifacts/starry_sky.png',
         });
 
-        const taskWorkspaceRoot = await runner.resolveTaskWorkspaceRoot();
-        expect(taskWorkspaceRoot).toBeTruthy();
+        const taskRuntimePaths = await runner.resolveTaskRuntimePaths();
+        expect(taskRuntimePaths?.runtimeRoot).toBeTruthy();
+        expect(taskRuntimePaths?.runtimeRoot).not.toBe(taskRuntimePaths?.cwd);
 
-        const configPath = await findFileRecursively(taskWorkspaceRoot!, ['.codex', 'config.toml']);
-        expect(configPath).toBeTruthy();
-        const configText = await readFile(configPath!, 'utf8');
-        expect(configText).toContain('model_context_window = 128000');
-        expect(configText).toContain(`model_auto_compact_token_limit = ${scenario.expectedCompactLimit}`);
+        const configText = await readFile(path.join(taskRuntimePaths!.codexDir, 'config.toml'), 'utf8');
+        expect(configText).toContain(`model_context_window = ${scenario.modelProfile.max_context_tokens}`);
+        expect(configText).toContain(`model_auto_compact_token_limit = ${expectedCompactLimit}`);
         expect(configText).toContain('model_catalog_json = ');
 
-        const catalogPath = await findFileRecursively(taskWorkspaceRoot!, ['.codex', 'catalog.json']);
-        expect(catalogPath).toBeTruthy();
-        const catalog = JSON.parse(await readFile(catalogPath!, 'utf8')) as {
+        const catalog = JSON.parse(await readFile(path.join(taskRuntimePaths!.codexDir, 'catalog.json'), 'utf8')) as {
           models?: Array<Record<string, unknown>>;
         };
-        expect(catalog.models?.[0]?.context_window).toBe(128000);
-        expect(catalog.models?.[0]?.auto_compact_token_limit).toBe(scenario.expectedCompactLimit);
-        expect(catalog.models?.[0]?.input_modalities).toEqual(['text']);
+        expect(catalog.models?.[0]?.context_window).toBe(scenario.modelProfile.max_context_tokens);
+        expect(catalog.models?.[0]?.auto_compact_token_limit).toBe(expectedCompactLimit);
+        expect(catalog.models?.[0]?.input_modalities).toEqual(['text', 'file']);
         expect(catalog.models?.[0]?.supports_search_tool).toBe(false);
 
         await sendNotebookMessage({

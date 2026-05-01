@@ -1,5 +1,6 @@
 import { access } from 'node:fs/promises';
 import { constants as fsConstants } from 'node:fs';
+import { isAbsolute } from 'node:path';
 import { resolveRunnerMode, type RunnerMode } from './task-workspace.js';
 
 type LaunchCommand = {
@@ -53,7 +54,6 @@ function buildBwrapCommand(input: {
     if (typeof value !== 'string') continue;
     forwardedEnv.set(key, value);
   }
-  forwardedEnv.set('HOME', input.cwd);
   if (!forwardedEnv.has('TERM')) {
     forwardedEnv.set('TERM', 'xterm-256color');
   }
@@ -69,8 +69,12 @@ function buildBwrapCommand(input: {
     '--dev', '/dev',
     '--tmpfs', '/tmp',
     '--bind', input.cwd, input.cwd,
-    '--chdir', input.cwd,
   ];
+  const homeDir = forwardedEnv.get('HOME')?.trim();
+  if (homeDir && isAbsolute(homeDir) && homeDir !== input.cwd) {
+    args.push('--bind', homeDir, homeDir);
+  }
+  args.push('--chdir', input.cwd);
   for (const [key, value] of forwardedEnv.entries()) {
     args.push('--setenv', key, value);
   }

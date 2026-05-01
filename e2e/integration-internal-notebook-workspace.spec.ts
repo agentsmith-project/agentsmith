@@ -13,6 +13,7 @@ import {
   createFileLibraryViaUi,
   createInternalCodexAgent,
   createProjectInWorkspace,
+  expectInternalTaskRuntimeStateInPod,
   keycloakLoginToWorkspace,
   mountFileLibraryLocally,
   requestTaskWorkspaceAccess,
@@ -94,7 +95,7 @@ function resolveNotebookCancelTerminateStep(stepId: string) {
   return step;
 }
 
-async function expectTaskRuntimeStatePersisted(args: {
+async function expectTaskArtifactPersisted(args: {
   mountPath: string;
   artifactName: string;
   artifactToken: string;
@@ -102,73 +103,20 @@ async function expectTaskRuntimeStatePersisted(args: {
   await expect
     .poll(
       async () => {
-        const [
-          artifactContent,
-          codexConfig,
-          modelCatalog,
-          skillsManifest,
-          feishuSkill,
-        ] = await Promise.all([
-          readFile(
-            path.join(args.mountPath, ".artifacts", args.artifactName),
-            "utf-8",
-          ).catch(() => null),
-          readFile(
-            path.join(args.mountPath, ".codex", "config.toml"),
-            "utf-8",
-          ).catch(() => null),
-          readFile(
-            path.join(args.mountPath, ".codex", "catalog.json"),
-            "utf-8",
-          ).catch(() => null),
-          readFile(
-            path.join(args.mountPath, ".mbos", "builtin-skills-manifest.json"),
-            "utf-8",
-          ).catch(() => null),
-          readFile(
-            path.join(
-              args.mountPath,
-              ".agents",
-              "skills",
-              "feishu-docs",
-              "SKILL.md",
-            ),
-            "utf-8",
-          ).catch(() => null),
-        ]);
-        const parsedCatalog =
-          typeof modelCatalog === "string"
-            ? (JSON.parse(modelCatalog) as {
-                models?: Array<{ slug?: string; display_name?: string }>;
-              })
-            : null;
+        const artifactContent = await readFile(
+          path.join(args.mountPath, ".artifacts", args.artifactName),
+          "utf-8",
+        ).catch(() => null);
         return {
           artifactReady:
             typeof artifactContent === "string" &&
             artifactContent.includes(args.artifactToken),
-          codexConfigReady:
-            typeof codexConfig === "string" && codexConfig.includes("model = "),
-          modelCatalogReady:
-            Array.isArray(parsedCatalog?.models) &&
-            parsedCatalog.models.some(
-              (entry) =>
-                typeof entry?.slug === "string" && entry.slug.trim().length > 0,
-            ),
-          skillsManifestReady:
-            typeof skillsManifest === "string" &&
-            skillsManifest.includes('"feishu-docs"'),
-          feishuSkillReady:
-            typeof feishuSkill === "string" && feishuSkill.includes("feishu"),
         };
       },
       { timeout: 300_000, intervals: [1_000, 2_000, 5_000, 10_000] },
     )
     .toEqual({
       artifactReady: true,
-      codexConfigReady: true,
-      modelCatalogReady: true,
-      skillsManifestReady: true,
-      feishuSkillReady: true,
     });
 }
 
@@ -724,6 +672,18 @@ test.describe("@lane-real internal notebook workspace via sandbox manager", () =
     );
     expect(workspaceAccessBody.library_root_path).toBe(".");
 
+    const workloadId = sanitizeWorkloadId(taskId);
+    const firstWorkloadPod = await waitForWorkloadPodIdentity({
+      namespace,
+      workloadId,
+      timeoutMs: 120_000,
+    });
+    await expectInternalTaskRuntimeStateInPod({
+      namespace,
+      podName: firstWorkloadPod.name,
+      taskId,
+    });
+
     const localMount = await mountFileLibraryLocally(
       workspaceAccessBody.metadata_url,
       workspaceAccessBody.storage_bucket_url,
@@ -731,7 +691,7 @@ test.describe("@lane-real internal notebook workspace via sandbox manager", () =
     );
     try {
       console.log("[internal-real] verify first artifact via local mount");
-      await expectTaskRuntimeStatePersisted({
+      await expectTaskArtifactPersisted({
         mountPath: resolveMountedTaskRoot(localMount.mountPath, {
           libraryRootPath: workspaceAccessBody.library_root_path,
         }),
@@ -739,12 +699,6 @@ test.describe("@lane-real internal notebook workspace via sandbox manager", () =
         artifactToken: firstToken,
       });
 
-      const workloadId = sanitizeWorkloadId(taskId);
-      const firstWorkloadPod = await waitForWorkloadPodIdentity({
-        namespace,
-        workloadId,
-        timeoutMs: 120_000,
-      });
       console.log("[internal-real] wait for idle reclaim", workloadId);
       await waitForWorkloadPodDeleted({
         namespace,

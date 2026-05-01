@@ -1,5 +1,6 @@
 import { mkdtemp, mkdir, readFile, rm, writeFile } from 'node:fs/promises';
-import { existsSync } from 'node:fs';
+import { spawnSync } from 'node:child_process';
+import { existsSync, readFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
@@ -84,6 +85,24 @@ afterEach(async () => {
 });
 
 describe('pure check runtime shadow', () => {
+  it('keeps the stable claim store classified as ignored generated local shadow state', () => {
+    const gitignore = readFileSync('.gitignore', 'utf8');
+
+    expect(gitignore).toMatch(/^artifacts\/governance-claim-store\/$/m);
+
+    const checkIgnore = spawnSync('git', [
+      'check-ignore',
+      '-v',
+      STABLE_PURE_CHECK_CLAIMS_JSONL_PATH,
+    ], {
+      cwd: process.cwd(),
+      encoding: 'utf8',
+    });
+
+    expect(checkIgnore.status).toBe(0);
+    expect(checkIgnore.stdout).toContain('artifacts/governance-claim-store/');
+  });
+
   it('computes stable input digests from sorted normalized files, git sha, and redacted toolchain identity', async () => {
     const root = await makeTempRoot();
     await writeFixture(root, 'src/z.ts', 'export const z = 1;\n');

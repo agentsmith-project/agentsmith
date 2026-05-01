@@ -236,6 +236,7 @@ if [[ "$1" == "run" && "$2" == "api:node:dev" ]]; then
 PORT=\${PORT:-}
 MBOS_UNIVERSAL_PROXY_BASE_URL=\${MBOS_UNIVERSAL_PROXY_BASE_URL:-}
 MBOS_UNIVERSAL_PROXY_ADMIN_TOKEN=\${MBOS_UNIVERSAL_PROXY_ADMIN_TOKEN:-}
+MBOS_UNIVERSAL_PROXY_UPSTREAM_HOST=\${MBOS_UNIVERSAL_PROXY_UPSTREAM_HOST:-}
 EOF
   trap 'exit 0' TERM INT
   while true; do
@@ -440,9 +441,23 @@ exit 0
     expect(script).toContain('capture_integration_lifecycle_observation "post-stop"');
     expect(script).toContain('next_generated_root_clear_lane_owner "${INTEGRATION_RUN_ROOT}"');
     expect(script).toContain('next_generated_root_finalize_lane_cleanup');
+    expect(script).toContain('UNIVERSAL_PROXY_RUNTIME_FORCE_MANAGED="${INTEGRATION_UNIVERSAL_PROXY_FORCE_MANAGED:-${UNIVERSAL_PROXY_RUNTIME_FORCE_MANAGED:-0}}"');
+    expect(script).toContain('UNIVERSAL_PROXY_RUNTIME_UPSTREAM_HOST="${INTEGRATION_UNIVERSAL_PROXY_UPSTREAM_HOST:-${UNIVERSAL_PROXY_RUNTIME_UPSTREAM_HOST:-host.docker.internal}}"');
     expect(clearLaneOwnerIndex).toBeGreaterThanOrEqual(0);
     expect(normalizeIndex).toBeGreaterThanOrEqual(0);
     expect(clearLaneOwnerIndex).toBeLessThan(normalizeIndex);
+  });
+
+  it('binds focused universal-proxy model-profile evidence to a forced managed locked container', () => {
+    const packageJson = JSON.parse(readFileSync('package.json', 'utf8')) as {
+      scripts?: Record<string, string>;
+    };
+    const command = packageJson.scripts?.['test:e2e:integration:universal-proxy:model-profile'];
+
+    expect(command).toContain('INTEGRATION_UNIVERSAL_PROXY_FORCE_MANAGED=1');
+    expect(command).toContain('INTEGRATION_UNIVERSAL_PROXY_PORT=${INTEGRATION_UNIVERSAL_PROXY_PORT:-39084}');
+    expect(command).toContain('bash scripts/run-integration-e2e-full.sh e2e/integration-universal-proxy-endpoint.spec.ts');
+    expect(command).toContain('--grep "model profile runtime config"');
   });
 
   it('passes runner image controls into the Playwright process instead of forcing hidden rebuild defaults', () => {
@@ -452,6 +467,9 @@ exit 0
     expect(playwrightLaunchIndex).toBeGreaterThanOrEqual(0);
 
     const expectedAssignments = [
+      'MBOS_UNIVERSAL_PROXY_BASE_URL="${MBOS_UNIVERSAL_PROXY_BASE_URL:-}"',
+      'MBOS_UNIVERSAL_PROXY_ADMIN_TOKEN="${MBOS_UNIVERSAL_PROXY_ADMIN_TOKEN:-}"',
+      'MBOS_UNIVERSAL_PROXY_UPSTREAM_HOST="${MBOS_UNIVERSAL_PROXY_UPSTREAM_HOST:-}"',
       'INTEGRATION_CODEX_RUNNER_BASE_DOCKER_IMAGE="${INTEGRATION_CODEX_RUNNER_BASE_DOCKER_IMAGE:-}"',
       'INTEGRATION_CODEX_RUNNER_DOCKER_IMAGE="${INTEGRATION_CODEX_RUNNER_DOCKER_IMAGE:-}"',
       'INTEGRATION_CODEX_RUNNER_REBUILD_BASE_IMAGE="${INTEGRATION_CODEX_RUNNER_REBUILD_BASE_IMAGE:-0}"',
@@ -544,6 +562,32 @@ exit 0
     expect(readFileSync(fixture.apiEnvLog, 'utf8')).toMatch(/MBOS_UNIVERSAL_PROXY_ADMIN_TOKEN=.+/);
   }, 15000);
 
+  it('forces a managed locked proxy even when a default candidate URL is reachable', () => {
+    const tempRoot = mkdtempSync(path.join(os.tmpdir(), 'run-integration-e2e-full-proxy-force-managed-'));
+    tempRoots.push(tempRoot);
+    const fixture = prepareManagedProxyFixture(tempRoot, { curlMode: 'candidate-reachable' });
+
+    const result = runManagedProxyFixture(tempRoot, fixture, {
+      INTEGRATION_UNIVERSAL_PROXY_FORCE_MANAGED: '1',
+      INTEGRATION_UNIVERSAL_PROXY_PORT: '39184',
+      MBOS_UNIVERSAL_PROXY_BASE_URL: 'http://127.0.0.1:38080',
+      MBOS_UNIVERSAL_PROXY_ADMIN_TOKEN: 'fixture-admin-token',
+      MBOS_UNIVERSAL_PROXY_UPSTREAM_HOST: '127.0.0.1',
+    });
+
+    expect(result.status).toBe(17);
+    expect(result.stderr).toContain('UNIVERSAL_PROXY_RUNTIME_FORCE_MANAGED=1 ignores MBOS_UNIVERSAL_PROXY_BASE_URL=http://127.0.0.1:38080');
+    const dockerLog = readFileSync(fixture.dockerLog, 'utf8');
+    const apiEnv = readFileSync(fixture.apiEnvLog, 'utf8');
+    const lockedImage = readLockedLlmupImage();
+    expect(dockerLog).toContain(`docker pull ${lockedImage}`);
+    expect(dockerLog).toContain(`docker run`);
+    expect(dockerLog).toContain(lockedImage);
+    expect(dockerLog).toContain('127.0.0.1:39184:8080');
+    expect(apiEnv).toContain('MBOS_UNIVERSAL_PROXY_BASE_URL=http://127.0.0.1:39184');
+    expect(apiEnv).toContain('MBOS_UNIVERSAL_PROXY_UPSTREAM_HOST=host.docker.internal');
+  }, 15000);
+
   it('starts a managed docker proxy from the locked llmup image when no candidate URL is reachable', () => {
     const tempRoot = mkdtempSync(path.join(os.tmpdir(), 'run-integration-e2e-full-proxy-managed-'));
     tempRoots.push(tempRoot);
@@ -558,9 +602,11 @@ exit 0
     expect(dockerLog).toContain(`docker pull ${lockedImage}`);
     expect(dockerLog).toContain(`docker run`);
     expect(dockerLog).toContain(lockedImage);
+    expect(dockerLog).toContain('--add-host=host.docker.internal:host-gateway');
     expect(dockerLog).toContain('127.0.0.1:39080:8080');
     expect(apiEnv).toContain('MBOS_UNIVERSAL_PROXY_BASE_URL=http://127.0.0.1:39080');
     expect(apiEnv).toMatch(/MBOS_UNIVERSAL_PROXY_ADMIN_TOKEN=.+/);
+    expect(apiEnv).toContain('MBOS_UNIVERSAL_PROXY_UPSTREAM_HOST=host.docker.internal');
   }, 15000);
 
   it('does not start API/Web when managed proxy docker pull fails', () => {

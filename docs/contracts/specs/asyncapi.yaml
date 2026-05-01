@@ -259,6 +259,16 @@ components:
                   model_auto_compact_token_limit:
                     type: integer
                     minimum: 1
+                  model_limits:
+                    type: object
+                    additionalProperties: false
+                    properties:
+                      context_window:
+                        type: integer
+                        minimum: 1
+                      max_output_tokens:
+                        type: integer
+                        minimum: 1
                   model_catalog:
                     type: object
                     additionalProperties: false
@@ -271,6 +281,11 @@ components:
                         type: boolean
                       supports_parallel_tool_calls:
                         type: boolean
+                      apply_patch_tool_type:
+                        type: string
+                        enum:
+                        - freeform
+                        - function
                   interaction_kind:
                     type: string
                     enum:

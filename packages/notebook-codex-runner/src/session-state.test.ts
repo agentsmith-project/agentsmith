@@ -1,4 +1,4 @@
-import { mkdtemp, mkdir, writeFile } from 'node:fs/promises';
+import { mkdtemp, mkdir, readFile, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { afterEach, describe, expect, it } from 'vitest';
@@ -15,6 +15,7 @@ const baseInput = {
   resourceProxyBase: 'http://proxy-a',
   interactionKind: 'notebook' as const,
   modelContextWindow: 128000,
+  modelMaxOutputTokens: 6400,
   modelAutoCompactTokenLimit: 121600,
   modelCatalogSignature: '{"input_modalities":["text"]}',
 };
@@ -45,6 +46,10 @@ describe('ensureCodexSessionStateCompatible', () => {
       codexDir,
       ...baseInput,
     });
+    const fingerprint = JSON.parse(await readFile(join(codexDir, '.codex-session-fingerprint.json'), 'utf8')) as {
+      model_max_output_tokens?: unknown;
+    };
+    expect(fingerprint.model_max_output_tokens).toBe(6400);
     expect(result).toEqual({ resetPerformed: false, reason: 'missing', resumeAllowed: false });
   });
 
@@ -156,6 +161,25 @@ describe('ensureCodexSessionStateCompatible', () => {
       ...baseInput,
       modelContextWindow: 256000,
       modelAutoCompactTokenLimit: 243200,
+    });
+
+    expect(result).toEqual({ resetPerformed: true, reason: 'changed', resumeAllowed: false });
+    await expect(import('node:fs/promises').then(({ access }) => access(join(codexDir, 'state_5.sqlite')))).rejects.toBeTruthy();
+  });
+
+  it('resets persisted session files when model max output limit changes', async () => {
+    const codexDir = await createCodexDir();
+    await ensureCodexSessionStateCompatible({
+      codexDir,
+      ...baseInput,
+    });
+    await seedReusableCodexState(codexDir);
+    await markCodexSessionStateReusable({ codexDir, taskId: baseInput.taskId });
+
+    const result = await ensureCodexSessionStateCompatible({
+      codexDir,
+      ...baseInput,
+      modelMaxOutputTokens: 32000,
     });
 
     expect(result).toEqual({ resetPerformed: true, reason: 'changed', resumeAllowed: false });

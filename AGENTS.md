@@ -64,7 +64,7 @@ npm run contracts:check / contracts:check-openapi / openapi:check-generated
 make local-real-up / local-real-status / local-real-down / local-real-reset
 ```
 
-Raw `test:*`, `gate:*`, `lane:*`, `backend-real:*` 和低层 `make *-rehearsal-*` 命令只作为 focused diagnostics、evidence producer 或 owner runbook adapter；普通验收必须回到 `npm run verify -- --goal=... --run` 或 `npm run release:ready`。
+Raw `test:*`, `gate:*`, `lane:*`, `backend-real:*` 和低层 `make *-rehearsal-*` 命令只作为 progressive validation 里的 focused diagnostics、evidence producer 或 owner runbook adapter；它们不能替代阶段/最终验收，收口时必须按风险回到 `npm run verify -- --goal=... --run` 或 `npm run release:ready`。
 
 ## 架构要点
 
@@ -105,7 +105,13 @@ Raw `test:*`, `gate:*`, `lane:*`, `backend-real:*` 和低层 `make *-rehearsal-*
 
 **unit**: Vitest, jsdom, `**/__tests__/**/*.test.*`
 **e2e**: Playwright, projects: smoke / chromium / visual, fixtures: `e2e/fixtures/test-base.ts`
-**执行**: 不让 Playwright 管理服务启动，手动启动后用 `BASE_URL` 运行，清理代理环境变量，UI 变更需跑 visual e2e
+**执行**: 不让 Playwright 管理服务启动，手动启动后用 `BASE_URL` 运行，清理代理环境变量；UI/visual 变更先跑受影响 visual scenario grep/snapshot，只有视觉系统/整页级改动、最终视觉验收或明确用户/发布要求才跑 full visual catalog
+
+**验证范围控制**:
+- 不要在每个小改动后运行重门禁：`npm run verify -- --goal=real --run`、`npm run release:ready`、full visual catalog、demo/cluster rehearsal 等。
+- 采用渐进验证：每个 change slice 先跑最小相关的 TDD/unit/contract/focused integration/focused e2e/focused visual 命令，用 `npm run verify` dry-run/plan 或 focused diagnostics 判断范围。
+- 重门禁（`npm run verify -- --goal=pr|real|visual --run` / `npm run release:ready`）放在阶段收口、最终交付、合并/发布/部署前，或改动跨多个模块、权限、合约、运行路径时执行。
+- focused 变绿只是局部证据，不是发布签署；最终 evidence 必须匹配用户请求与改动风险。
 
 **skill runtime diagnostics**:
 - 改 builtin skills、runner skill env、Context Store route/store、managed credential resolution 时，至少跑 focused producer `npm run test:skills:fast`
@@ -113,7 +119,7 @@ Raw `test:*`, `gate:*`, `lane:*`, `backend-real:*` 和低层 `make *-rehearsal-*
 - `test:skills:*` 覆盖的是 builtin skills + runner runtime + Context Store 主链，不替代共享 context UI、治理、files 等业务 verification entrypoint
 - notebook runner 主链 owner diagnostics 可用 `npm run test:notebook:runner:fast` / `npm run test:notebook:runner:backend-real`
 - chat runner 主链 owner diagnostics 可用 `npm run test:chat:runner:fast` / `npm run test:chat:runner:backend-real`
-- diagnostics 变绿后，按改动范围回到 `npm run verify -- --goal=... --run`；发布级收口回到 `npm run release:ready`
+- diagnostics 变绿后，按改动范围和当前阶段决定是否升级到 `npm run verify -- --goal=... --run`；发布级收口回到 `npm run release:ready`
 
 ## 测试 ID 规范
 
@@ -155,14 +161,15 @@ Raw `test:*`, `gate:*`, `lane:*`, `backend-real:*` 和低层 `make *-rehearsal-*
 
 当你是在 AgentSmith notebook / terminal runner 的 task workspace 里工作时，必须遵守以下运行时约定：
 
-- `HOME == cwd`，当前工作目录就是 task 的持久 home。
-- 动态配置、缓存、安装产物、用户态工具链、认证文件都必须写在当前 home 下，不能写到 `/etc`、`/usr/local`、`/opt`、`/var/tmp` 等系统级目录。
+- `cwd` 是 task 的用户文件工作区；`HOME` 是 runner-private runtime home，二者不再要求相同。
+- 动态配置、缓存、安装产物、用户态工具链、认证文件都必须写在当前 `HOME` 下，不能写到 `/etc`、`/usr/local`、`/opt`、`/var/tmp` 等系统级目录。
+- 用户可见的生成型 deliverables/artifacts 必须写到 `cwd/.artifacts`；正常编辑 task 工作区内的源文件/项目文件不属于这条限制。
 - builtin skills 的运行时可见路径是 `~/.agents/skills`。
 - AgentSmith 的成员/任务级上下文、简单 credentials、共享说明通过 `mbos-context` builtin skill 和 AgentSmith Context Store 获取，不应假设它们存在于 workspace 文件树中。
 - Context Store 的正式 scopes 是 `member / task / project / workspace`：`member` 表示当前 workspace 内成员私有上下文，`task` 表示当前成员拥有的任务上下文，`project/workspace` 表示共享上下文。
 - 复杂 OAuth 凭据（例如 Feishu）通过只读 context 视图暴露，例如 `managed_credentials.feishu`；不要尝试在 workspace 中查找或持久化这类凭据文件。
 - skill runtime 的正式主链覆盖 chat / notebook / terminal 三条执行路径；如果改动影响 skill env、ticket scope 或 Context Store 路由，必须把对应 `test:skills:*` gate 一起更新或回归验证。
-- Codex 运行时状态位于 `~/.codex`；runner 自己的 task 元数据位于 `~/.mbos`；用户可见输出放在 `~/.artifacts`。
+- Codex 运行时状态位于 `$HOME/.codex`；runner 自己的 task 元数据位于 `$HOME/.mbos`；builtin skills 位于 `$HOME/.agents/skills`。
 - 如果需要安装 Python / Node / Rust 环境或库，只能使用 user 模式并安装到 home 下：
   - Python: `python3 -m pip install --user ...`
   - Node: 使用 user prefix，例如 `npm_config_prefix=$HOME/.local`

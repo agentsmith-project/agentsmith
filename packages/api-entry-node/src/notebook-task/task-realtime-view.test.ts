@@ -1,6 +1,10 @@
 import { afterEach, describe, expect, it } from 'vitest';
 import { createDefaultNodeApiDeps } from '../index.js';
-import { markNotebookTaskRunHardTeardownFailed } from './task-run-coordination.js';
+import {
+  acquireNotebookTaskRunLease,
+  buildNotebookTaskRunState,
+  markNotebookTaskRunHardTeardownFailed,
+} from './task-run-coordination.js';
 import { buildTaskRealtimeView, mapTaskMessagesForExecution } from './task-realtime-view.js';
 import { MESSAGES_BY_TASK } from './task-runtime-state.js';
 import type { TaskRecord } from './task-models.js';
@@ -107,6 +111,48 @@ describe('mapTaskMessagesForExecution', () => {
       stop_mode: 'terminate',
       can_escalate: false,
       escalation_reason: 'already_terminating',
+    });
+  });
+
+  it('exposes the active run start timestamp from shared run state', async () => {
+    const deps = createDefaultNodeApiDeps();
+    deps.agentResourceService.getAgent = async () => ({
+      id: 'agent_realtime_run_started',
+      workspace_id: 'ws_default',
+      project_id: 'proj_1',
+      name: 'Realtime run agent',
+      mode: 'external',
+      presence: 'online',
+      status: 'enabled',
+      interaction_kind: 'notebook',
+    }) as never;
+    const now = '2026-03-18T12:00:00.000Z';
+    const startedAt = '2026-03-18T12:00:03.000Z';
+    const task: TaskRecord = {
+      id: 'task_realtime_run_started',
+      workspace_id: 'ws_default',
+      project_id: 'proj_1',
+      owner_user_id: 'user_1',
+      title: 'Realtime run started task',
+      agent_id: 'agent_realtime_run_started',
+      agent_name: 'Realtime run agent',
+      status: 'active',
+      attached_inputs: [],
+      created_at: now,
+      updated_at: now,
+      last_activity_at: now,
+    };
+
+    await expect(acquireNotebookTaskRunLease(deps.cache, buildNotebookTaskRunState({
+      taskId: task.id,
+      runId: 'run_realtime_started',
+      startedAt,
+    }))).resolves.toBe(true);
+
+    await expect(buildTaskRealtimeView(deps, task.workspace_id, task.project_id, task)).resolves.toMatchObject({
+      id: task.id,
+      run_state: 'running',
+      active_run_started_at: startedAt,
     });
   });
 });

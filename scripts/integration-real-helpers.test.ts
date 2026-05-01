@@ -5,6 +5,8 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import {
   bindNotebookExecutionSocketToTask,
+  buildRunnerRuntimeRootForVisibleWorkspace,
+  buildRunnerRuntimeRootPathPart,
   collectTrackedTaskWorkspaceMounts,
   createExternalConnectionViaApi,
   createExternalRunnerAgentBundle,
@@ -13,6 +15,7 @@ import {
   resolveIntegrationKeycloakBaseUrl,
   resolveNotebookRunnerSocketUrl,
 } from '../e2e/integration-real-helpers';
+import { buildTaskWorkspacePaths } from '../packages/notebook-codex-runner/src/task-workspace.js';
 
 describe('integration-real-helpers', () => {
   const okResponse = <T,>(body: T) => ({
@@ -203,6 +206,55 @@ describe('integration-real-helpers', () => {
 
     expect(source).toContain('assistantMessageId');
     expect(source).toContain('message_id=');
+  });
+
+  it('derives internal runner runtime state from the visible workspace identity, not the bare task id', async () => {
+    const source = await readFile(path.resolve('e2e/integration-real-helpers.ts'), 'utf8');
+
+    expect(source).not.toContain('runtime_root="${base%/}/$task_id"');
+    expect(source).toContain('sha256');
+  });
+
+  it('builds collision-safe runner runtime ids from the normalized visible workspace root', () => {
+    const first = buildRunnerRuntimeRootPathPart('/workspace/team-a/task_shared');
+    const second = buildRunnerRuntimeRootPathPart('/workspace/team-b/task_shared');
+
+    expect(first).toMatch(/^task_shared-[a-f0-9]{16}$/);
+    expect(second).toMatch(/^task_shared-[a-f0-9]{16}$/);
+    expect(first).not.toBe(second);
+    expect(buildRunnerRuntimeRootPathPart('/workspace/team-a/task_shared/')).toBe(first);
+    expect(buildRunnerRuntimeRootForVisibleWorkspace({
+      visibleRoot: '/workspace/team-a/task_shared',
+      runtimeStateBase: '/runner-runtime',
+    })).toBe(`/runner-runtime/${first}`);
+  });
+
+  it('keeps integration helper runtime path derivation consistent with notebook task-workspace paths', () => {
+    const previousStateRoot = process.env.MBOS_AGENT_CODEX_STATE_ROOT;
+    process.env.MBOS_AGENT_CODEX_STATE_ROOT = '/runner-runtime';
+    try {
+      for (const visibleRoot of [
+        '/workspace/task_1',
+        '/workspace/team-a/task_shared',
+        '/workspace/team-b/task_shared',
+      ]) {
+        expect(buildRunnerRuntimeRootForVisibleWorkspace({
+          visibleRoot,
+          runtimeStateBase: '/runner-runtime',
+        })).toBe(buildTaskWorkspacePaths(visibleRoot, 'k8s_internal').runtimeRoot);
+      }
+      process.env.MBOS_AGENT_CODEX_STATE_ROOT = '/workspace/task_1/runtime-state';
+      expect(buildRunnerRuntimeRootForVisibleWorkspace({
+        visibleRoot: '/workspace/task_1',
+        runtimeStateBase: '/workspace/task_1/runtime-state',
+      })).toBe(buildTaskWorkspacePaths('/workspace/task_1', 'k8s_internal').runtimeRoot);
+    } finally {
+      if (previousStateRoot === undefined) {
+        delete process.env.MBOS_AGENT_CODEX_STATE_ROOT;
+      } else {
+        process.env.MBOS_AGENT_CODEX_STATE_ROOT = previousStateRoot;
+      }
+    }
   });
 
   it('prefers KEYCLOAK_BASE_URL over every other integration keycloak env source', () => {

@@ -1,6 +1,6 @@
 import http from 'node:http';
 import type { AddressInfo } from 'node:net';
-import { test, expect, type Page } from '@playwright/test';
+import { test, expect, type APIResponse, type Page } from '@playwright/test';
 import {
   API_BASE,
   KEYCLOAK_DEV_ADMIN_PASSWORD,
@@ -19,6 +19,56 @@ type OpenAiCompatibleError = {
   message: string;
   type: string;
 };
+
+type EndpointModelProfile = {
+  max_context_tokens: number;
+  max_output_tokens: number;
+  supports_file: boolean;
+  supports_tool_call: boolean;
+  supports_reasoning: boolean;
+  price_input_per_1m: number;
+  price_output_per_1m: number;
+  cache_read_discount_ratio: number;
+  cache_write_discount_ratio: number;
+};
+
+type UniversalProxyAdminEnv = {
+  baseUrl: string;
+  adminToken: string;
+};
+
+const RESPONSE_DIAGNOSTIC_BODY_LIMIT = 2000;
+
+async function readResponseTextForDiagnostics(response: APIResponse): Promise<string> {
+  const text = await response.text();
+  if (!text) return '<empty>';
+  return text.length > RESPONSE_DIAGNOSTIC_BODY_LIMIT
+    ? `${text.slice(0, RESPONSE_DIAGNOSTIC_BODY_LIMIT)}...<truncated>`
+    : text;
+}
+
+async function expectApiResponseOk(response: APIResponse, label: string): Promise<void> {
+  if (response.ok()) return;
+  const body = await readResponseTextForDiagnostics(response);
+  throw new Error(`${label}_non_2xx: status=${response.status()} ${response.statusText()} body=${body}`);
+}
+
+function resolveUpstreamAdvertiseHost(): string {
+  return process.env.MBOS_UNIVERSAL_PROXY_UPSTREAM_HOST?.trim() || '127.0.0.1';
+}
+
+function resolveUpstreamListenHost(): string {
+  return process.env.MBOS_UNIVERSAL_PROXY_UPSTREAM_HOST?.trim() ? '0.0.0.0' : '127.0.0.1';
+}
+
+async function listenUpstreamServer(server: http.Server): Promise<UpstreamServer> {
+  await new Promise<void>((resolve) => server.listen(0, resolveUpstreamListenHost(), () => resolve()));
+  const address = server.address() as AddressInfo;
+  return {
+    baseUrl: `http://${resolveUpstreamAdvertiseHost()}:${address.port}/v1`,
+    stop: () => new Promise<void>((resolve) => server.close(() => resolve())),
+  };
+}
 
 function extractResponsesText(body: unknown): string | null {
   if (!body || typeof body !== 'object' || Array.isArray(body)) return null;
@@ -65,6 +115,122 @@ function extractOpenAiCompatibleError(body: unknown): OpenAiCompatibleError | nu
   };
 }
 
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return Boolean(value) && typeof value === 'object' && !Array.isArray(value);
+}
+
+function requireUniversalProxyAdminEnv(): UniversalProxyAdminEnv {
+  const baseUrl = process.env.MBOS_UNIVERSAL_PROXY_BASE_URL?.trim().replace(/\/+$/, '');
+  const adminToken = process.env.MBOS_UNIVERSAL_PROXY_ADMIN_TOKEN?.trim();
+  if (!baseUrl || !adminToken) {
+    throw new Error('universal_proxy_admin_env_missing');
+  }
+  return { baseUrl, adminToken };
+}
+
+function readNamespaceConfigLike(value: unknown): Record<string, unknown> | null {
+  if (!isRecord(value)) return null;
+  const nestedConfig = value.config;
+  if (isRecord(nestedConfig) && Array.isArray(nestedConfig.upstreams)) {
+    return nestedConfig;
+  }
+  if (Array.isArray(value.upstreams)) {
+    return value;
+  }
+  return null;
+}
+
+function findNamespaceConfigInAdminState(
+  value: unknown,
+  namespace: string,
+  seen = new Set<unknown>(),
+): Record<string, unknown> | null {
+  if (!isRecord(value) && !Array.isArray(value)) return null;
+  if (seen.has(value)) return null;
+  seen.add(value);
+
+  if (isRecord(value)) {
+    const namedNamespace =
+      value.namespace === namespace
+      || value.name === namespace
+      || value.id === namespace;
+    if (namedNamespace) {
+      const config = readNamespaceConfigLike(value);
+      if (config) return config;
+    }
+
+    for (const [key, child] of Object.entries(value)) {
+      if (key === namespace) {
+        const config = readNamespaceConfigLike(child);
+        if (config) return config;
+      }
+      const found = findNamespaceConfigInAdminState(child, namespace, seen);
+      if (found) return found;
+    }
+    return null;
+  }
+
+  for (const child of value) {
+    const found = findNamespaceConfigInAdminState(child, namespace, seen);
+    if (found) return found;
+  }
+  return null;
+}
+
+function readPrimaryUpstream(config: Record<string, unknown>): Record<string, unknown> {
+  const upstreams = config.upstreams;
+  if (!Array.isArray(upstreams)) {
+    throw new Error('universal_proxy_namespace_upstreams_missing');
+  }
+  const primary = upstreams.find((item) => isRecord(item) && item.name === 'primary');
+  if (!isRecord(primary)) {
+    throw new Error('universal_proxy_primary_upstream_missing');
+  }
+  return primary;
+}
+
+async function readUniversalProxyNamespaceConfig(page: Page, namespace: string): Promise<Record<string, unknown>> {
+  const { baseUrl, adminToken } = requireUniversalProxyAdminEnv();
+  const headers = { Authorization: `Bearer ${adminToken}` };
+  const configMisses: string[] = [];
+  const stateResponse = await page.request.get(`${baseUrl}/admin/state`, { headers });
+  await expectApiResponseOk(stateResponse, 'universal_proxy_admin_state');
+  const adminState = (await stateResponse.json()) as unknown;
+  const stateConfig = findNamespaceConfigInAdminState(adminState, namespace);
+  if (stateConfig) return stateConfig;
+
+  const encodedNamespace = encodeURIComponent(namespace);
+  const namespaceStateResponse = await page.request.get(
+    `${baseUrl}/admin/namespaces/${encodedNamespace}/state`,
+    { headers },
+  );
+  if (namespaceStateResponse.ok()) {
+    const namespaceStateConfig = readNamespaceConfigLike(await namespaceStateResponse.json());
+    if (namespaceStateConfig) return namespaceStateConfig;
+    configMisses.push('namespace_state_missing_config');
+  } else {
+    configMisses.push(
+      `namespace_state_status=${namespaceStateResponse.status()} body=${await readResponseTextForDiagnostics(namespaceStateResponse)}`,
+    );
+  }
+
+  const namespaceConfigResponse = await page.request.get(
+    `${baseUrl}/admin/namespaces/${encodedNamespace}/config`,
+    { headers },
+  );
+  if (namespaceConfigResponse.ok()) {
+    const namespaceConfig = readNamespaceConfigLike(await namespaceConfigResponse.json());
+    if (namespaceConfig) return namespaceConfig;
+    configMisses.push('namespace_config_missing_config');
+  } else {
+    configMisses.push(
+      `namespace_config_status=${namespaceConfigResponse.status()} body=${await readResponseTextForDiagnostics(namespaceConfigResponse)}`,
+    );
+  }
+
+  throw new Error(`universal_proxy_namespace_config_missing:${namespace}:${configMisses.join(';')}`);
+}
+
 async function issueDevToken(page: Page): Promise<string> {
   const keycloakBaseUrl = resolveIntegrationKeycloakBaseUrl(process.env, { target: 'host' });
   const keycloakRealm = process.env.KEYCLOAK_REALM ?? 'mbos';
@@ -77,7 +243,7 @@ async function issueDevToken(page: Page): Promise<string> {
       password: KEYCLOAK_DEV_ADMIN_PASSWORD,
     },
   });
-  expect(response.ok()).toBeTruthy();
+  await expectApiResponseOk(response, 'keycloak_dev_token');
   const body = (await response.json()) as { access_token?: string };
   if (!body.access_token) throw new Error('access_token_missing');
   return body.access_token;
@@ -94,7 +260,7 @@ async function createProjectViaApi(page: Page, token: string, name: string): Pro
       description: 'Universal proxy backend-real integration project',
     },
   });
-  expect(response.ok()).toBeTruthy();
+  await expectApiResponseOk(response, 'create_project');
   const body = (await response.json()) as { id?: string };
   if (!body.id) throw new Error('project_id_missing');
   return body.id;
@@ -115,7 +281,7 @@ async function createCredentialViaApi(page: Page, token: string, projectId: stri
       },
     },
   );
-  expect(response.ok()).toBeTruthy();
+  await expectApiResponseOk(response, 'create_credential');
   const body = (await response.json()) as { id?: string };
   if (!body.id) throw new Error('credential_id_missing');
   return body.id;
@@ -131,6 +297,7 @@ async function createEndpointViaApi(
     baseUrl: string;
     credentialRef: string;
     upstreamProtocol: 'openai_chat_completions' | 'openai_responses' | 'anthropic_messages';
+    modelProfile?: EndpointModelProfile;
   },
 ): Promise<string> {
   const providerFamily = args.upstreamProtocol === 'anthropic_messages' ? 'anthropic' : 'custom';
@@ -152,10 +319,11 @@ async function createEndpointViaApi(
         capabilities: [{ type: 'chat_completion', enabled: true, default_model_id: args.model }],
         models: [{ capability: 'chat_completion', model_id: args.model, display_name: args.model }],
         defaults: { chat_model_id: args.model },
+        ...(args.modelProfile ? { model_profile: args.modelProfile } : {}),
       },
     },
   );
-  expect(response.ok()).toBeTruthy();
+  await expectApiResponseOk(response, 'create_endpoint');
   const body = (await response.json()) as { id?: string };
   if (!body.id) throw new Error('endpoint_id_missing');
   return body.id;
@@ -192,12 +360,7 @@ async function startOpenAiChatCompletionsUpstream(replyText: string): Promise<Up
     })();
   });
 
-  await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', () => resolve()));
-  const address = server.address() as AddressInfo;
-  return {
-    baseUrl: `http://127.0.0.1:${address.port}/v1`,
-    stop: () => new Promise<void>((resolve) => server.close(() => resolve())),
-  };
+  return listenUpstreamServer(server);
 }
 
 async function startOpenAiChatCompletionsRateLimitThenRecoveryUpstream(args: {
@@ -251,11 +414,9 @@ async function startOpenAiChatCompletionsRateLimitThenRecoveryUpstream(args: {
     })();
   });
 
-  await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', () => resolve()));
-  const address = server.address() as AddressInfo;
+  const upstream = await listenUpstreamServer(server);
   return {
-    baseUrl: `http://127.0.0.1:${address.port}/v1`,
-    stop: () => new Promise<void>((resolve) => server.close(() => resolve())),
+    ...upstream,
     getRequestCount: () => requestCount,
   };
 }
@@ -288,12 +449,7 @@ async function startOpenAiResponsesUpstream(replyText: string): Promise<Upstream
     })();
   });
 
-  await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', () => resolve()));
-  const address = server.address() as AddressInfo;
-  return {
-    baseUrl: `http://127.0.0.1:${address.port}/v1`,
-    stop: () => new Promise<void>((resolve) => server.close(() => resolve())),
-  };
+  return listenUpstreamServer(server);
 }
 
 async function startAnthropicStreamingUpstream(replyText: string): Promise<UpstreamServer> {
@@ -319,12 +475,7 @@ async function startAnthropicStreamingUpstream(replyText: string): Promise<Upstr
     })();
   });
 
-  await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', () => resolve()));
-  const address = server.address() as AddressInfo;
-  return {
-    baseUrl: `http://127.0.0.1:${address.port}/v1`,
-    stop: () => new Promise<void>((resolve) => server.close(() => resolve())),
-  };
+  return listenUpstreamServer(server);
 }
 
 test.describe('@lane-real integration universal proxy endpoint routes', () => {
@@ -358,7 +509,7 @@ test.describe('@lane-real integration universal proxy endpoint routes', () => {
           },
         },
       );
-      expect(response.ok()).toBeTruthy();
+      await expectApiResponseOk(response, 'proxy_openai_responses_from_chat_completions');
       const body = (await response.json()) as unknown;
       expect(extractResponsesText(body)).toBe('dev-universal-responses-ok');
     } finally {
@@ -398,7 +549,7 @@ test.describe('@lane-real integration universal proxy endpoint routes', () => {
           },
         },
       );
-      expect(response.ok()).toBeTruthy();
+      await expectApiResponseOk(response, 'proxy_anthropic_messages_stream');
       const body = await response.text();
       expect(response.headers()['content-type']).toContain('text/event-stream');
       expect(body).toContain('dev-universal-anthropic-ok');
@@ -437,9 +588,84 @@ test.describe('@lane-real integration universal proxy endpoint routes', () => {
           },
         },
       );
-      expect(response.ok()).toBeTruthy();
+      await expectApiResponseOk(response, 'proxy_openai_responses_native');
       const body = (await response.json()) as unknown;
       expect(extractResponsesText(body)).toBe('dev-universal-responses-native-ok');
+    } finally {
+      await upstream.stop();
+    }
+  });
+
+  test('model profile runtime config is accepted and retained by the real universal proxy container', async ({ page }) => {
+    test.setTimeout(240_000);
+    const upstream = await startOpenAiResponsesUpstream('dev-universal-model-profile-ok');
+    const model = 'it-model-profile-runtime';
+    const modelProfile: EndpointModelProfile = {
+      max_context_tokens: 200_000,
+      max_output_tokens: 128_000,
+      supports_file: true,
+      supports_tool_call: true,
+      supports_reasoning: true,
+      price_input_per_1m: 0,
+      price_output_per_1m: 0,
+      cache_read_discount_ratio: 0,
+      cache_write_discount_ratio: 0,
+    };
+
+    try {
+      const token = await issueDevToken(page);
+      const projectId = await createProjectViaApi(page, token, `it-upx-model-profile-${Date.now()}`);
+      const credentialId = await createCredentialViaApi(page, token, projectId);
+      const endpointId = await createEndpointViaApi(page, token, projectId, {
+        name: `it-upx-model-profile-${Date.now()}`,
+        model,
+        baseUrl: upstream.baseUrl,
+        credentialRef: credentialId,
+        upstreamProtocol: 'openai_responses',
+        modelProfile,
+      });
+
+      const response = await page.request.post(
+        `${API_BASE}/api/v1/workspaces/ws_default/projects/${projectId}/endpoints/${endpointId}/proxy/openai/responses`,
+        {
+          headers: {
+            Authorization: `Bearer ${token}`,
+            'Content-Type': 'application/json',
+          },
+          data: {
+            model,
+            input: 'reply with exactly dev-universal-model-profile-ok',
+            max_output_tokens: 64,
+          },
+        },
+      );
+      await expectApiResponseOk(response, 'proxy_model_profile_openai_responses');
+      expect(extractResponsesText((await response.json()) as unknown)).toBe('dev-universal-model-profile-ok');
+
+      const namespace = `ws_default__${projectId}__${endpointId}`;
+      const config = await readUniversalProxyNamespaceConfig(page, namespace);
+      const primary = readPrimaryUpstream(config);
+      expect(primary).toMatchObject({
+        name: 'primary',
+        api_root: upstream.baseUrl,
+        fixed_upstream_format: 'openai-responses',
+        limits: {
+          context_window: modelProfile.max_context_tokens,
+          max_output_tokens: modelProfile.max_output_tokens,
+        },
+        surface_defaults: {
+          modalities: {
+            input: expect.arrayContaining(['text', 'file']),
+            output: expect.arrayContaining(['text']),
+          },
+          tools: {
+            supports_search: false,
+            supports_view_image: false,
+            apply_patch_transport: 'freeform',
+            supports_parallel_calls: false,
+          },
+        },
+      });
     } finally {
       await upstream.stop();
     }
@@ -504,7 +730,7 @@ test.describe('@lane-real integration universal proxy endpoint routes', () => {
           },
         },
       );
-      expect(recoveredResponse.ok()).toBeTruthy();
+      await expectApiResponseOk(recoveredResponse, 'proxy_openai_responses_capacity_recovery');
       const recoveredBody = (await recoveredResponse.json()) as unknown;
       expect(extractResponsesText(recoveredBody)).toBe('dev-universal-capacity-recovered');
       expect(upstream.getRequestCount?.()).toBe(2);

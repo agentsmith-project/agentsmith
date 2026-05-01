@@ -1,8 +1,8 @@
 import { execFile as execFileCallback, spawn, type ChildProcess } from 'node:child_process';
-import { randomUUID } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
 import { mkdir, readFile, writeFile } from 'node:fs/promises';
-import { homedir } from 'node:os';
-import { dirname, join } from 'node:path';
+import { homedir, tmpdir } from 'node:os';
+import { basename, dirname, isAbsolute, join, normalize, relative } from 'node:path';
 import { setTimeout as sleep } from 'node:timers/promises';
 import { promisify } from 'node:util';
 import {
@@ -60,8 +60,10 @@ type TaskWorkspaceAccessPayload = {
 
 export type TaskWorkspacePaths = {
   mode: RunnerMode;
+  visibleRoot: string;
   mountRoot: string;
   taskRoot: string;
+  runtimeRoot: string;
   homeDir: string;
   codexDir: string;
   artifactsDir: string;
@@ -1088,17 +1090,61 @@ export function buildTaskWorkspaceMountPath(input: {
   );
 }
 
-export function buildTaskWorkspacePaths(taskRoot: string, mode: RunnerMode): TaskWorkspacePaths {
-  const mbosDir = join(taskRoot, '.mbos');
+function isPathInsideOrSame(root: string, target: string): boolean {
+  const rel = relative(root, target);
+  return rel === '' || (!rel.startsWith('..') && !isAbsolute(rel));
+}
+
+function resolvePreferredRuntimeStateBase(): string {
+  const configuredRoot = sanitizeWorkspacePath(process.env.MBOS_AGENT_CODEX_STATE_ROOT);
+  const homeRoot = sanitizeWorkspacePath(process.env.HOME) || homedir() || tmpdir();
+  return configuredRoot || join(homeRoot, '.mbos', 'notebook-codex-runner');
+}
+
+function normalizeVisibleRootForRuntimeIdentity(visibleRoot: string): string {
+  const root = sanitizeWorkspacePath(visibleRoot) || 'task-workspace';
+  const normalizedRoot = normalize(root).replace(/\\/g, '/');
+  if (normalizedRoot === '/') return normalizedRoot;
+  return normalizedRoot.replace(/\/+$/, '') || 'task-workspace';
+}
+
+function buildRuntimeRootPathPart(visibleRoot: string): string {
+  const normalizedVisibleRoot = normalizeVisibleRootForRuntimeIdentity(visibleRoot);
+  const visibleRootName = sanitizePathPart(basename(normalizedVisibleRoot), 'task-workspace');
+  const visibleRootHash = createHash('sha256')
+    .update(normalizedVisibleRoot)
+    .digest('hex')
+    .slice(0, 16);
+  return `${visibleRootName}-${visibleRootHash}`;
+}
+
+function buildRuntimeRoot(visibleRoot: string): string {
+  const taskPathPart = buildRuntimeRootPathPart(visibleRoot);
+  const preferredRoot = join(resolvePreferredRuntimeStateBase(), taskPathPart);
+  if (!isPathInsideOrSame(visibleRoot, preferredRoot)) {
+    return preferredRoot;
+  }
+  const siblingRoot = join(dirname(visibleRoot), '.runner-runtime', taskPathPart);
+  if (!isPathInsideOrSame(visibleRoot, siblingRoot)) {
+    return siblingRoot;
+  }
+  return join(tmpdir(), 'agentsmith-codex-runner', taskPathPart);
+}
+
+export function buildTaskWorkspacePaths(visibleRoot: string, mode: RunnerMode): TaskWorkspacePaths {
+  const runtimeRoot = buildRuntimeRoot(visibleRoot);
+  const mbosDir = join(runtimeRoot, '.mbos');
   return {
     mode,
-    mountRoot: taskRoot,
-    taskRoot,
-    homeDir: taskRoot,
-    codexDir: join(taskRoot, '.codex'),
-    artifactsDir: join(taskRoot, '.artifacts'),
+    visibleRoot,
+    mountRoot: visibleRoot,
+    taskRoot: visibleRoot,
+    runtimeRoot,
+    homeDir: runtimeRoot,
+    codexDir: join(runtimeRoot, '.codex'),
+    artifactsDir: join(visibleRoot, '.artifacts'),
     mbosDir,
-    skillsDir: join(taskRoot, '.agents', 'skills'),
+    skillsDir: join(runtimeRoot, '.agents', 'skills'),
   };
 }
 
@@ -1267,8 +1313,8 @@ async function mountTaskWorkspace(
   return session;
 }
 
-async function ensureTaskWorkspaceWritable(taskRoot: string): Promise<void> {
-  await mkdir(join(taskRoot, '.mbos'), { recursive: true });
+async function ensureTaskWorkspaceWritable(paths: TaskWorkspacePaths): Promise<void> {
+  await mkdir(paths.artifactsDir, { recursive: true });
 }
 
 async function waitForChildProcessExit(child: ChildProcess): Promise<boolean> {
@@ -1767,11 +1813,12 @@ export async function prepareTaskWorkspace(input: {
           priorLeaseRevisionFloor,
         });
         workspaceLease = acquired.lease;
-        await ensureTaskWorkspaceWritable(mountPath);
+        const paths = buildTaskWorkspacePaths(mountPath, mode);
+        await ensureTaskWorkspaceWritable(paths);
         return {
           cwd: mountPath,
           source: 'file_library_mount',
-          paths: buildTaskWorkspacePaths(mountPath, mode),
+          paths,
           lease: workspaceLease,
           release: async () => {
             await releaseMountedWorkspaceSession(mountPath, {

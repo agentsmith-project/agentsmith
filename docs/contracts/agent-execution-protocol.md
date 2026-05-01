@@ -58,15 +58,19 @@ All frames are JSON objects:
         | Item | External bare (`file_library`) | External docker (`file_library`) | Internal (`pre_mounted`) |
         | --- | --- | --- | --- |
         | runner mode | `host_external` | `docker_external` | `k8s_internal` |
-        | task root (`cwd`) | `$HOME/ags-workspace/<task_id>/` | `/workspace/<task_id>/` | `/workspace/<task_id>/` |
-        | `HOME` | same as task root | same as task root | same as task root |
-        | Codex state | `<task_root>/.codex/` | `<task_root>/.codex/` | `<task_root>/.codex/` |
-        | skills | `<task_root>/.agents/skills/` | `<task_root>/.agents/skills/` | `<task_root>/.agents/skills/` |
+        | user file workspace (`cwd`) | `${MBOS_AGENT_WORKSPACE_ROOT:-<runner process home>/ags-workspace}/<task_id>/` | `/workspace/<task_id>/` | `/workspace/<task_id>/` |
+        | runner-private runtime home (`HOME`) | `${MBOS_AGENT_CODEX_STATE_ROOT:-<runner process home>/.mbos/notebook-codex-runner}/<runtime_id>/` | `${MBOS_AGENT_CODEX_STATE_ROOT:-<runner process home>/.mbos/notebook-codex-runner}/<runtime_id>/` | `${MBOS_AGENT_CODEX_STATE_ROOT:-<runner process home>/.mbos/notebook-codex-runner}/<runtime_id>/` |
+        | Codex state | `<runtime_home>/.codex/` | `<runtime_home>/.codex/` | `<runtime_home>/.codex/` |
+        | runner metadata | `<runtime_home>/.mbos/` | `<runtime_home>/.mbos/` | `<runtime_home>/.mbos/` |
+        | skills | `<runtime_home>/.agents/skills/` | `<runtime_home>/.agents/skills/` | `<runtime_home>/.agents/skills/` |
+        | user-visible artifacts | `<cwd>/.artifacts/` | `<cwd>/.artifacts/` | `<cwd>/.artifacts/` |
         | agent context / credentials | AgentSmith Context Store member/task/project_member/project/workspace context via capability-aware builtin skill helpers; `mbos-context` remains the generic direct-access skill; managed OAuth credentials are read-only context projections | AgentSmith Context Store member/task/project_member/project/workspace context via capability-aware builtin skill helpers; `mbos-context` remains the generic direct-access skill; managed OAuth credentials are read-only context projections | AgentSmith Context Store member/task/project_member/project/workspace context via capability-aware builtin skill helpers; `mbos-context` remains the generic direct-access skill; managed OAuth credentials are read-only context projections |
 
         Notes:
         - the task mount point is the real JuiceFS-backed working directory for the current task
-        - `cwd` and `HOME` are intentionally the same task root
+        - `cwd` is the user file workspace; `HOME` is the runner-private runtime home used for Codex config, runner metadata, skills, caches, and user-mode installs
+        - `<runtime_id>` is `${basename(normalized_visible_root)}-${sha256(normalized_visible_root).slice(0,16)}`; `normalized_visible_root` is the path-normalized `cwd` with backslashes converted to `/` and trailing slashes removed except for `/`
+        - the hash makes runtime homes collision-safe when two visible workspace roots share the same basename, for example `/workspace/team-a/task_shared` and `/workspace/team-b/task_shared`
         - external child processes are wrapped with `bwrap`; internal workloads keep per-task sandbox isolation
 - `server.request.cancel`
   - payload: `{ "reason": "client_cancelled" }`
@@ -187,7 +191,8 @@ tsx packages/api-entry-node/examples/external-agent-echo.ts
   - Follow-up hardening: replace with short-lived ticket exchange.
 
 - `R3` workspace isolation level:
-  - Runner isolation is task-scoped under `${MBOS_AGENT_CODEX_STATE_ROOT:-/var/tmp/agentsmith-codex}/<workspace-key>/tasks/<task_id>` for Codex state, and credential files are injected under `${MBOS_AGENT_CODEX_STATE_ROOT:-/var/tmp/agentsmith-codex}/<workspace-key>/credentials/<task_id>/`.
-  - Real workspace files remain shared at the workspace root so notebook/file-library behavior is unchanged.
-  - No automatic cleanup and no process/container sandbox in v1.
-  - Ops must enforce periodic cleanup and disk monitoring.
+  - Runner runtime state is task-scoped under `${MBOS_AGENT_CODEX_STATE_ROOT:-$HOME/.mbos/notebook-codex-runner}/<runtime_id>` for Codex state, runner metadata, skills, caches, and user-mode installs.
+  - `<runtime_id>` is derived from the visible workspace root, not from the bare `task_id`: `${basename(normalized_visible_root)}-${sha256(normalized_visible_root).slice(0,16)}`.
+  - Real workspace files remain shared at `cwd`; notebook/file-library behavior and `cwd/.artifacts` deliverables are unchanged.
+  - External e2e runners set `MBOS_AGENT_CODEX_STATE_ROOT` under the temporary workspace root so runtime state is cleaned with the test workspace.
+  - Ops must enforce periodic cleanup and disk monitoring for long-lived runner hosts.

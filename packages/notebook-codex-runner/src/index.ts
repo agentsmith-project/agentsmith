@@ -7,6 +7,7 @@ import {
   buildCodexExecArgs,
   buildTaskCodexConfig,
   buildTaskCodexModelCatalog,
+  resolveModelAutoCompactTokenLimit,
 } from './codex-command-builder.js';
 import { sanitizeAgentDeltaChunk, sanitizeStderrChunk, type RunnerFilterStats } from './codex-output-filter.js';
 import {
@@ -132,6 +133,13 @@ function sanitizePathPart(input: string | undefined, fallback: string): string {
   const value = (input ?? '').trim();
   if (!value) return fallback;
   return value.replace(/[^a-zA-Z0-9._-]/g, '_').slice(0, 64) || fallback;
+}
+
+function positiveInteger(input: unknown): number | undefined {
+  if (typeof input !== 'number' || !Number.isFinite(input) || input <= 0) {
+    return undefined;
+  }
+  return Math.floor(input);
 }
 
 function canSendRunnerFrame(): boolean {
@@ -1096,14 +1104,14 @@ async function runCodexRequest(requestId: string, payload: ServerStartPayload): 
     throw new Error('resource_proxy_base_missing');
   }
   const modelContextWindow =
-    typeof executionContext.model_context_window === 'number' && Number.isFinite(executionContext.model_context_window)
-      ? Math.floor(executionContext.model_context_window)
-      : undefined;
-  const modelAutoCompactTokenLimit =
-    typeof executionContext.model_auto_compact_token_limit === 'number'
-      && Number.isFinite(executionContext.model_auto_compact_token_limit)
-      ? Math.floor(executionContext.model_auto_compact_token_limit)
-      : undefined;
+    positiveInteger(executionContext.model_limits?.context_window)
+      ?? positiveInteger(executionContext.model_context_window);
+  const modelMaxOutputTokens = positiveInteger(executionContext.model_limits?.max_output_tokens);
+  const modelAutoCompactTokenLimit = resolveModelAutoCompactTokenLimit({
+    modelContextWindow,
+    modelMaxOutputTokens,
+    modelAutoCompactTokenLimit: positiveInteger(executionContext.model_auto_compact_token_limit),
+  });
   const modelCatalogInputModalities = Array.isArray(executionContext.model_catalog?.input_modalities)
     ? executionContext.model_catalog?.input_modalities
       ?.filter((item): item is string => typeof item === 'string')
@@ -1122,6 +1130,7 @@ async function runCodexRequest(requestId: string, payload: ServerStartPayload): 
     resourceProxyBase: endpointProxyBase,
     interactionKind,
     modelContextWindow,
+    modelMaxOutputTokens,
     modelAutoCompactTokenLimit,
     modelCatalogSignature: JSON.stringify({
       input_modalities: modelCatalogInputModalities,
@@ -1136,6 +1145,7 @@ async function runCodexRequest(requestId: string, payload: ServerStartPayload): 
     reset_performed: sessionStateResult.resetPerformed,
     reason: sessionStateResult.reason,
     resume_allowed: sessionStateResult.resumeAllowed,
+    model_max_output_tokens: modelMaxOutputTokens ?? null,
   });
   const resumeSession = sessionStateResult.resumeAllowed;
   // codex-cli >=0.104 no longer accepts wire_api=chat in provider config.
@@ -1150,6 +1160,7 @@ async function runCodexRequest(requestId: string, payload: ServerStartPayload): 
     buildTaskCodexModelCatalog({
       model,
       modelContextWindow: modelContextWindow ?? 128000,
+      modelMaxOutputTokens,
       modelAutoCompactTokenLimit: modelAutoCompactTokenLimit ?? Math.floor((modelContextWindow ?? 128000) * 0.9),
       applyPatchToolType: modelCatalogApplyPatchToolType,
       inputModalities: modelCatalogInputModalities,
@@ -1170,6 +1181,7 @@ async function runCodexRequest(requestId: string, payload: ServerStartPayload): 
       endpointProxyBase,
       wireApi,
       modelContextWindow,
+      modelMaxOutputTokens,
       modelAutoCompactTokenLimit,
       modelCatalogPath,
       executionTicketHeaderEnvName: executionContext.execution_ticket
@@ -1187,6 +1199,7 @@ async function runCodexRequest(requestId: string, payload: ServerStartPayload): 
     resource_proxy_base: endpointProxyBase,
     proxy_source: 'server_hello',
     model_context_window: modelContextWindow ?? null,
+    model_max_output_tokens: modelMaxOutputTokens ?? null,
     model_auto_compact_token_limit: modelAutoCompactTokenLimit ?? null,
     model_catalog_path: modelCatalogPath,
     model_input_modalities: modelCatalogInputModalities,
@@ -1212,6 +1225,7 @@ async function runCodexRequest(requestId: string, payload: ServerStartPayload): 
     endpointProxyBase,
     wireApi,
     modelContextWindow,
+    modelMaxOutputTokens,
     modelAutoCompactTokenLimit,
     modelCatalogPath,
     resumeSession,
@@ -1265,6 +1279,7 @@ async function runCodexRequest(requestId: string, payload: ServerStartPayload): 
       model,
       wire_api: wireApi,
       model_context_window: modelContextWindow ?? null,
+      model_max_output_tokens: modelMaxOutputTokens ?? null,
       model_auto_compact_token_limit: modelAutoCompactTokenLimit ?? null,
       model_catalog_path: modelCatalogPath,
       model_input_modalities: modelCatalogInputModalities,
@@ -1274,7 +1289,7 @@ async function runCodexRequest(requestId: string, payload: ServerStartPayload): 
       interaction_kind: interactionKind,
       task_inputs_count: taskInputs.length,
       builtin_skills_count: builtinSkillsResult.available.length,
-      artifacts_dir: './.artifacts/',
+      artifacts_dir: artifactsDir,
     },
   });
   sendTraceEvent(requestId, {
@@ -1284,13 +1299,15 @@ async function runCodexRequest(requestId: string, payload: ServerStartPayload): 
     name: 'runner.policy',
     summary: 'Notebook headless execution policy applied',
     details: {
-      artifacts_dir: './.artifacts/',
+      artifacts_dir: artifactsDir,
     },
   });
 
   let stdoutBuffer = '';
-  const workspaceBeforeSnapshot = await scanWorkspaceFilesSnapshot(cwd);
-  const artifactsBeforeRun = await scanArtifactsDirectory(cwd, taskId);
+  const workspaceBeforeSnapshot = await scanWorkspaceFilesSnapshot(cwd, {
+    runtimeRoot: taskPaths.runtimeRoot,
+  });
+  const artifactsBeforeRun = await scanArtifactsDirectory(taskPaths.artifactsDir, taskId);
   if (artifactsBeforeRun.length > 0) {
     rememberArtifactsForRun(reportedArtifactsByRequestId, requestId, artifactsBeforeRun);
   }
@@ -1365,7 +1382,9 @@ async function runCodexRequest(requestId: string, payload: ServerStartPayload): 
     void (async () => {
       if (workspaceBeforeSnapshot) {
         try {
-          const workspaceAfterSnapshot = await scanWorkspaceFilesSnapshot(cwd);
+          const workspaceAfterSnapshot = await scanWorkspaceFilesSnapshot(cwd, {
+            runtimeRoot: taskPaths.runtimeRoot,
+          });
           const changes = diffWorkspaceFileSnapshots(workspaceBeforeSnapshot, workspaceAfterSnapshot);
           if (changes.added.length > 0 || changes.modified.length > 0 || changes.deleted.length > 0) {
             sendTraceEvent(requestId, {
@@ -1390,7 +1409,7 @@ async function runCodexRequest(requestId: string, payload: ServerStartPayload): 
       const artifacts = filterNewArtifactsForRun(
         reportedArtifactsByRequestId,
         requestId,
-        await scanArtifactsDirectory(cwd, taskId),
+        await scanArtifactsDirectory(taskPaths.artifactsDir, taskId),
       );
       for (const artifact of artifacts) {
         sendTraceEvent(requestId, {

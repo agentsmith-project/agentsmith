@@ -3,7 +3,7 @@ import { buildTaskUserInstallEnv } from './user-install-env.js';
 
 describe('user-install-env', () => {
   it('rewrites leaked shell history and xdg state paths into the task home', () => {
-    const env = buildTaskUserInstallEnv('/workspace/task_1', {
+    const env = buildTaskUserInstallEnv('/runner-runtime/task_1', {
       PATH: '/usr/bin:/bin',
       HISTFILE: '/home/percy/.zsh_history',
       ZDOTDIR: '/home/percy/.config/zsh',
@@ -21,21 +21,30 @@ describe('user-install-env', () => {
     });
 
     expect(env).toMatchObject({
-      HOME: '/workspace/task_1',
-      HISTFILE: '/workspace/task_1/.zsh_history',
-      ZDOTDIR: '/workspace/task_1',
-      XDG_CONFIG_HOME: '/workspace/task_1/.config',
-      XDG_STATE_HOME: '/workspace/task_1/.local/state',
-      XDG_CACHE_HOME: '/workspace/task_1/.cache',
-      XDG_DATA_HOME: '/workspace/task_1/.local/share',
-      LESSHISTFILE: '/workspace/task_1/.local/state/less/history',
-      NODE_REPL_HISTORY: '/workspace/task_1/.local/state/node_repl_history',
-      PYTHON_HISTORY: '/workspace/task_1/.local/state/python_history',
-      SQLITE_HISTORY: '/workspace/task_1/.local/state/sqlite_history',
-      PSQL_HISTORY: '/workspace/task_1/.local/state/psql_history',
-      MYSQL_HISTFILE: '/workspace/task_1/.local/state/mysql_history',
-      IPYTHONDIR: '/workspace/task_1/.ipython',
+      HOME: '/runner-runtime/task_1',
+      HISTFILE: '/runner-runtime/task_1/.zsh_history',
+      ZDOTDIR: '/runner-runtime/task_1',
+      XDG_CONFIG_HOME: '/runner-runtime/task_1/.config',
+      XDG_STATE_HOME: '/runner-runtime/task_1/.local/state',
+      XDG_CACHE_HOME: '/runner-runtime/task_1/.cache',
+      XDG_DATA_HOME: '/runner-runtime/task_1/.local/share',
+      LESSHISTFILE: '/runner-runtime/task_1/.local/state/less/history',
+      NODE_REPL_HISTORY: '/runner-runtime/task_1/.local/state/node_repl_history',
+      PYTHON_HISTORY: '/runner-runtime/task_1/.local/state/python_history',
+      SQLITE_HISTORY: '/runner-runtime/task_1/.local/state/sqlite_history',
+      PSQL_HISTORY: '/runner-runtime/task_1/.local/state/psql_history',
+      MYSQL_HISTFILE: '/runner-runtime/task_1/.local/state/mysql_history',
+      IPYTHONDIR: '/runner-runtime/task_1/.ipython',
+      PYTHONUSERBASE: '/runner-runtime/task_1/.local',
+      npm_config_prefix: '/runner-runtime/task_1/.local',
+      CARGO_HOME: '/runner-runtime/task_1/.cargo',
+      RUSTUP_HOME: '/runner-runtime/task_1/.rustup',
     });
+    expect(env.PATH?.split(':').slice(0, 3)).toEqual([
+      '/runner-runtime/task_1/.local/bin',
+      '/runner-runtime/task_1/.cargo/bin',
+      '/runner-runtime/task_1/.local/share/npm/bin',
+    ]);
   });
 
   it('preserves relative and already task-scoped overrides', () => {

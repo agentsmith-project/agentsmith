@@ -35,10 +35,15 @@ describe('agent-runner protocol execution context guards', () => {
       interaction_kind: 'notebook',
       task_id: 'task_1',
       session_id: 'sess_1',
+      model_limits: {
+        context_window: 200000,
+        max_output_tokens: 32000,
+      },
       model_catalog: {
         input_modalities: ['text'],
         supports_search_tool: false,
         supports_parallel_tool_calls: false,
+        apply_patch_tool_type: 'freeform',
       },
     };
 

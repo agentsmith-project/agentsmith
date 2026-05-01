@@ -8,13 +8,17 @@ import { MessageList } from '../MessageList';
 import type { TaskMessage } from '@/lib/types/task';
 
 vi.mock('../MessageItem', () => ({
-  MessageItem: ({ message, streamingContent, disabled, forceRunning }: any) => (
+  MessageItem: ({ message, streamingContent, disabled, activeRunView }: any) => (
     <div data-testid={`message-item-${message.id}`}>
       <div data-message-role>{message.role}</div>
       <div data-message-content>{message.content || '(empty)'}</div>
       {streamingContent && <div data-streaming>{streamingContent}</div>}
       {disabled && <div data-disabled>disabled</div>}
-      {forceRunning && <div data-force-running>running</div>}
+      {activeRunView && (
+        <div data-active-run-view>
+          {activeRunView.messageId}:{activeRunView.runState}
+        </div>
+      )}
     </div>
   ),
 }));
@@ -194,31 +198,83 @@ describe('MessageList', () => {
       expect(messageItem.querySelector('[data-message-role]')?.textContent).toBe('agent');
     });
 
-    it('forces the active agent message into running state when task truth stays busy after streaming ids clear', () => {
+    it('passes activeRunView only to the active agent message', () => {
       render(
         <MessageList
           messages={mockMessages}
           streamingMessageId={null}
           streamingContent={null}
-          activeAgentMessageId="msg-2"
+          activeRunView={{
+            messageId: 'msg-2',
+            runState: 'running',
+            latestAction: { kind: 'command', summary: 'npm test' },
+            recentActions: [],
+            startedAt: '2024-01-01T00:01:00Z',
+            elapsedSeconds: 12,
+            cancelPending: false,
+            onCancel: vi.fn(),
+            realtimeHealth: { status: 'connected' },
+          }}
         />
       );
 
-      expect(screen.getByTestId('message-item-msg-2').querySelector('[data-force-running]')).toBeInTheDocument();
-      expect(screen.getByTestId('message-item-msg-1').querySelector('[data-force-running]')).not.toBeInTheDocument();
+      expect(screen.getByTestId('message-item-msg-2').querySelector('[data-active-run-view]')).toHaveTextContent('msg-2:running');
+      expect(screen.getByTestId('message-item-msg-1').querySelector('[data-active-run-view]')).not.toBeInTheDocument();
     });
 
-    it('keeps a synthetic streaming agent item in running state when it is the active agent message', () => {
+    it('passes activeRunView to a synthetic streaming agent item when it is the active run message', () => {
       render(
         <MessageList
           messages={[]}
           streamingMessageId="msg-streaming"
           streamingContent="Thinking..."
-          activeAgentMessageId="msg-streaming"
+          activeRunView={{
+            messageId: 'msg-streaming',
+            runState: 'running',
+            latestAction: { kind: 'system', summary: 'Execution started' },
+            recentActions: [],
+            startedAt: '2024-01-01T00:01:00Z',
+            elapsedSeconds: 1,
+            cancelPending: false,
+            onCancel: vi.fn(),
+            realtimeHealth: { status: 'connected' },
+          }}
         />
       );
 
-      expect(screen.getByTestId('message-item-msg-streaming').querySelector('[data-force-running]')).toBeInTheDocument();
+      expect(screen.getByTestId('message-item-msg-streaming').querySelector('[data-active-run-view]')).toHaveTextContent('msg-streaming:running');
+    });
+
+    it('renders a pending active run agent item when the active run message is not in messages yet', () => {
+      render(
+        <MessageList
+          messages={[]}
+          streamingMessageId={null}
+          streamingContent={null}
+          activeRunView={{
+            messageId: 'pending-active-run:task-1',
+            runState: 'running',
+            latestAction: { kind: 'system', summary: 'Execution is running' },
+            recentActions: [],
+            startedAt: '2026-03-06T04:00:00.000Z',
+            elapsedSeconds: 5,
+            cancelPending: false,
+            onCancel: vi.fn(),
+            realtimeHealth: { status: 'connected' },
+          }}
+        />
+      );
+
+      const pendingItem = screen.getByTestId(
+        'message-item-pending-active-run:task-1',
+      );
+      expect(pendingItem).toBeInTheDocument();
+      expect(pendingItem.querySelector('[data-message-role]')).toHaveTextContent(
+        'agent',
+      );
+      expect(
+        pendingItem.querySelector('[data-active-run-view]'),
+      ).toHaveTextContent('pending-active-run:task-1:running');
     });
   });
 

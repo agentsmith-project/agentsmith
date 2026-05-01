@@ -10,6 +10,11 @@ export type AgentExecutionModelCatalog = {
   apply_patch_tool_type?: AgentExecutionApplyPatchToolType;
 };
 
+export type AgentExecutionModelLimits = {
+  context_window?: number;
+  max_output_tokens?: number;
+};
+
 export type AgentTaskInput = Record<string, unknown>;
 
 export type AgentExecutionContextBase = {
@@ -24,6 +29,7 @@ export type AgentExecutionContextBase = {
   run_id?: string;
   model_context_window?: number;
   model_auto_compact_token_limit?: number;
+  model_limits?: AgentExecutionModelLimits;
   model_catalog?: AgentExecutionModelCatalog;
 };
 

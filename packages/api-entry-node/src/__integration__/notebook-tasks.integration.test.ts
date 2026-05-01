@@ -1133,10 +1133,11 @@ describe('api-entry-node notebook task routes', () => {
     expect(createTaskRes.status).toBe(201);
     const task = (await createTaskRes.json()) as { id: string };
 
+    const activeStartedAt = new Date().toISOString();
     const active = buildNotebookTaskRunState({
       taskId: task.id,
       runId: 'run_restart_shared',
-      startedAt: new Date().toISOString(),
+      startedAt: activeStartedAt,
     });
     await expect(acquireNotebookTaskRunLease(deps.cache, active)).resolves.toBe(true);
 
@@ -1155,8 +1156,20 @@ describe('api-entry-node notebook task routes', () => {
         expect.objectContaining({
           id: task.id,
           run_state: 'running',
+          active_run_started_at: activeStartedAt,
         }),
       ]),
+    });
+
+    const detailRes = await apiFetch(
+      secondServer.baseUrl,
+      `/api/v1/workspaces/ws_default/projects/proj_1/tasks/${task.id}`,
+    );
+    expect(detailRes.status).toBe(200);
+    await expect(detailRes.json()).resolves.toMatchObject({
+      id: task.id,
+      run_state: 'running',
+      active_run_started_at: activeStartedAt,
     });
 
     const cancelRes = await apiFetch(

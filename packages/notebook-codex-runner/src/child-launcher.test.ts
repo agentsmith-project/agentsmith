@@ -56,20 +56,20 @@ describe('child-launcher', () => {
     });
   });
 
-  it('wraps external children with bwrap and binds the task root as HOME', async () => {
+  it('wraps external children with bwrap, preserves env HOME, and binds cwd plus HOME writable', async () => {
     process.env.MBOS_RUNNER_MODE = 'docker_external';
     const result = await prepareLaunchCommand({
       file: 'codex',
       args: ['exec', 'hello'],
       cwd: '/workspace/task_1',
       env: {
-        HOME: '/workspace/task_1',
-        PATH: '/workspace/task_1/.local/bin:/workspace/task_1/.cargo/bin:/usr/bin:/bin',
-        PYTHONUSERBASE: '/workspace/task_1/.local',
+        HOME: '/runner-runtime/task_1',
+        PATH: '/runner-runtime/task_1/.local/bin:/runner-runtime/task_1/.cargo/bin:/usr/bin:/bin',
+        PYTHONUSERBASE: '/runner-runtime/task_1/.local',
         PIP_USER: '1',
-        npm_config_prefix: '/workspace/task_1/.local',
-        CARGO_HOME: '/workspace/task_1/.cargo',
-        RUSTUP_HOME: '/workspace/task_1/.rustup',
+        npm_config_prefix: '/runner-runtime/task_1/.local',
+        CARGO_HOME: '/runner-runtime/task_1/.cargo',
+        RUSTUP_HOME: '/runner-runtime/task_1/.rustup',
       },
     });
     expect(result.file).toBe('/usr/bin/bwrap');
@@ -77,13 +77,14 @@ describe('child-launcher', () => {
       '--clearenv',
       '--ro-bind', '/', '/',
       '--bind', '/workspace/task_1', '/workspace/task_1',
+      '--bind', '/runner-runtime/task_1', '/runner-runtime/task_1',
       '--chdir', '/workspace/task_1',
-      '--setenv', 'HOME', '/workspace/task_1',
-      '--setenv', 'PYTHONUSERBASE', '/workspace/task_1/.local',
+      '--setenv', 'HOME', '/runner-runtime/task_1',
+      '--setenv', 'PYTHONUSERBASE', '/runner-runtime/task_1/.local',
       '--setenv', 'PIP_USER', '1',
-      '--setenv', 'npm_config_prefix', '/workspace/task_1/.local',
-      '--setenv', 'CARGO_HOME', '/workspace/task_1/.cargo',
-      '--setenv', 'RUSTUP_HOME', '/workspace/task_1/.rustup',
+      '--setenv', 'npm_config_prefix', '/runner-runtime/task_1/.local',
+      '--setenv', 'CARGO_HOME', '/runner-runtime/task_1/.cargo',
+      '--setenv', 'RUSTUP_HOME', '/runner-runtime/task_1/.rustup',
       '--',
       'codex',
       'exec',

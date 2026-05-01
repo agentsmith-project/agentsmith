@@ -85,6 +85,27 @@ local_runtime_identity_token_start_time() {
   printf '%s\n' "${BASH_REMATCH[1]}"
 }
 
+local_runtime_capture_process_identity_token() {
+  local pid="$1"
+  local attempts="${2:-50}"
+  local sleep_seconds="${3:-0.02}"
+  local attempt token
+
+  for attempt in $(seq 1 "${attempts}"); do
+    token="$(local_runtime_process_identity_token "${pid}" || true)"
+    if [[ -n "${token}" ]] && local_runtime_identity_token_start_time "${token}" >/dev/null 2>&1; then
+      printf '%s\n' "${token}"
+      return 0
+    fi
+
+    local_runtime_pid_is_alive "${pid}" || return 1
+    [[ "${attempt}" -lt "${attempts}" ]] || break
+    sleep "${sleep_seconds}"
+  done
+
+  return 1
+}
+
 local_runtime_process_owner_token() {
   local pid="$1"
   local owner_token
@@ -260,12 +281,14 @@ local_runtime_write_process_sidecar() {
   local pid="$2"
   local port="$3"
   local command="$4"
-  local state_dir sidecar_file token cwd started_at run_id line_kind owner_token process_group_id session_id
+  local state_dir sidecar_file token cwd started_at run_id line_kind owner_token process_group_id session_id identity_attempts identity_sleep_seconds
 
   state_dir="$(local_runtime_process_state_dir)"
   mkdir -p "${state_dir}"
   sidecar_file="$(local_runtime_sidecar_file_for "${service_kind}" "${pid}" "${port}")"
-  token="$(local_runtime_process_identity_token "${pid}")" || {
+  identity_attempts="$(local_runtime_sidecar_identity_capture_attempts)"
+  identity_sleep_seconds="$(local_runtime_sidecar_identity_capture_sleep_seconds)"
+  token="$(local_runtime_capture_process_identity_token "${pid}" "${identity_attempts}" "${identity_sleep_seconds}")" || {
     echo "[local-runtime-processes] cannot capture process identity for ${service_kind} pid ${pid}" >&2
     return 1
   }
@@ -419,9 +442,6 @@ local_runtime_start_detached_owned_service() {
   for start_wait_attempt in $(seq 1 50); do
     if [[ -s "${pid_capture_file}" ]]; then
       pid="$(cat "${pid_capture_file}" 2>/dev/null || true)"
-      break
-    fi
-    if ! local_runtime_pid_is_alive "${launcher_pid}"; then
       break
     fi
     sleep 0.02
@@ -1065,6 +1085,14 @@ local_runtime_positive_decimal_env_or_default() {
     return 0
   fi
   printf '%s\n' "${default_value}"
+}
+
+local_runtime_sidecar_identity_capture_attempts() {
+  local_runtime_positive_integer_env_or_default LOCAL_RUNTIME_IDENTITY_CAPTURE_ATTEMPTS 50
+}
+
+local_runtime_sidecar_identity_capture_sleep_seconds() {
+  local_runtime_positive_decimal_env_or_default LOCAL_RUNTIME_IDENTITY_CAPTURE_SLEEP_SECONDS 0.02
 }
 
 local_runtime_term_grace_attempts() {

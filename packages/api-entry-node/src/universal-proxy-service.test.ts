@@ -220,6 +220,61 @@ describe('UniversalProxyService', () => {
     expect(String(init.body)).not.toContain('secret-key');
   });
 
+  it('pushes endpoint profile limits and surface defaults into the llmup namespace config', async () => {
+    const fetchMock = vi.fn().mockResolvedValue(
+      new Response(JSON.stringify({ revision: 'srv_rev_1' }), {
+        status: 200,
+        headers: { 'content-type': 'application/json' },
+      }),
+    );
+    vi.stubGlobal('fetch', fetchMock);
+
+    const service = new UniversalProxyService('http://proxy.internal:8080');
+    await service.ensureEndpointNamespace(
+      'ws_default',
+      'proj_1',
+      createEndpoint({
+        upstream_protocol: 'openai_responses',
+        capabilities: [
+          { type: 'chat_completion', enabled: true },
+          { type: 'multimodal_completion', enabled: true },
+        ],
+        model_profile: {
+          max_context_tokens: 200000,
+          max_output_tokens: 128000,
+          supports_file: false,
+          supports_tool_call: true,
+          supports_reasoning: true,
+          price_input_per_1m: 2,
+          price_output_per_1m: 8,
+          cache_read_discount_ratio: 0.5,
+        },
+      }),
+    );
+
+    const payload = JSON.parse(String(getRequest(fetchMock).init.body)) as {
+      config: { upstreams: Array<Record<string, unknown>> };
+    };
+    expect(payload.config.upstreams[0]).toMatchObject({
+      limits: {
+        context_window: 200000,
+        max_output_tokens: 128000,
+      },
+      surface_defaults: {
+        modalities: {
+          input: ['text', 'image'],
+          output: ['text'],
+        },
+        tools: {
+          supports_search: false,
+          supports_view_image: false,
+          apply_patch_transport: 'freeform',
+          supports_parallel_calls: false,
+        },
+      },
+    });
+  });
+
   it('normalizes explicit upstream route suffixes out of api_root snapshots', async () => {
     const fetchMock = vi.fn().mockResolvedValue(
       new Response(JSON.stringify({ revision: 'srv_rev_1' }), {

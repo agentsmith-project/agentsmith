@@ -8,10 +8,52 @@ type MockES = {
   onopen: (() => void) | null;
   onmessage: ((event: MessageEvent) => void) | null;
   onerror: ((event: Event) => void) | null;
+  listeners: Record<string, Array<(event: MessageEvent) => void>>;
+  addEventListener: ReturnType<typeof vi.fn>;
   close: ReturnType<typeof vi.fn>;
 };
 
 let currentEventSource: MockES | null = null;
+
+function createMockEventSource(): MockES {
+  const listeners: MockES['listeners'] = {};
+  currentEventSource = {
+    readyState: 0,
+    onopen: null,
+    onmessage: null,
+    onerror: null,
+    listeners,
+    addEventListener: vi.fn((type: string, listener: (event: MessageEvent) => void) => {
+      listeners[type] = [...(listeners[type] ?? []), listener];
+    }),
+    close: vi.fn(),
+  };
+  return currentEventSource;
+}
+
+function createDeferred<T>() {
+  let resolve!: (value: T | PromiseLike<T>) => void;
+  let reject!: (reason?: unknown) => void;
+  const promise = new Promise<T>((promiseResolve, promiseReject) => {
+    resolve = promiseResolve;
+    reject = promiseReject;
+  });
+  return { promise, resolve, reject };
+}
+
+function dispatchNamedEvent(
+  eventSource: MockES | null,
+  type: string,
+  data: unknown,
+  lastEventId?: string,
+) {
+  eventSource?.listeners[type]?.forEach((listener) => {
+    listener({
+      data: JSON.stringify(data),
+      lastEventId,
+    } as unknown as MessageEvent);
+  });
+}
 
 vi.mock('@/lib/api', () => {
   class MockTaskAPI {
@@ -30,14 +72,7 @@ vi.mock('@/lib/api', () => {
 
 vi.mock('@/lib/api/sse-client', () => ({
   createAuthenticatedSSEAsync: vi.fn(async (_path: string, _ticket: string) => {
-    currentEventSource = {
-      readyState: 0,
-      onopen: null,
-      onmessage: null,
-      onerror: null,
-      close: vi.fn(),
-    };
-    return currentEventSource;
+    return createMockEventSource();
   }),
 }));
 
@@ -346,5 +381,209 @@ describe('useTaskSSE', () => {
     });
 
     expect(currentEventSource).not.toBe(first);
+  });
+
+  it('treats named ping events as watchdog heartbeat without reconnecting', async () => {
+    vi.useFakeTimers();
+    const onDebug = vi.fn();
+    const onMessage = vi.fn();
+    const onTraceEvent = vi.fn();
+
+    renderHook(() =>
+      useTaskSSE('ws_default', 'proj_1', 'task_watchdog_ping', {
+        onDebug,
+        onMessage,
+        onTraceEvent,
+        reconnectInterval: 10,
+        maxReconnectAttempts: 2,
+        watchdogEnabled: true,
+        watchdogTimeoutMs: 1_000,
+      } as Parameters<typeof useTaskSSE>[3]),
+    );
+
+    await act(async () => {
+      await Promise.resolve();
+    });
+    expect(currentEventSource).not.toBeNull();
+
+    act(() => {
+      currentEventSource?.onopen?.();
+    });
+
+    const first = currentEventSource;
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(900);
+    });
+
+    act(() => {
+      dispatchNamedEvent(first, 'ping', { type: 'ping' }, 'ping-1');
+    });
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(999);
+    });
+
+    expect(first?.close).not.toHaveBeenCalled();
+    expect(currentEventSource).toBe(first);
+    expect(onMessage).not.toHaveBeenCalled();
+    expect(onTraceEvent).not.toHaveBeenCalled();
+    expect(onDebug).toHaveBeenCalledWith(
+      expect.objectContaining({ phase: 'heartbeat', summary: 'event=ping' }),
+    );
+    expect(onDebug).not.toHaveBeenCalledWith(
+      expect.objectContaining({
+        phase: 'sse_error',
+        summary: expect.stringContaining('watchdog_timeout_ms=1000'),
+      }),
+    );
+  });
+
+  it('closes late-resolving stale EventSources after reconnect or unmount without callbacks or retries', async () => {
+    vi.useFakeTimers();
+    const onDebug = vi.fn();
+    const onMessage = vi.fn();
+    const onError = vi.fn();
+    const reconnectDeferred = createDeferred<EventSource>();
+    const unmountDeferred = createDeferred<EventSource>();
+    const activeAfterReconnect = createMockEventSource();
+
+    vi.mocked(createAuthenticatedSSEAsync)
+      .mockImplementationOnce(() => reconnectDeferred.promise)
+      .mockImplementationOnce(async () => activeAfterReconnect as unknown as EventSource)
+      .mockImplementationOnce(() => unmountDeferred.promise);
+
+    const hook = renderHook(
+      ({ taskId }) =>
+        useTaskSSE('ws_default', 'proj_1', taskId, {
+          onDebug,
+          onMessage,
+          onError,
+          reconnectInterval: 10,
+          maxReconnectAttempts: 2,
+        }),
+      { initialProps: { taskId: 'task_late_1' } },
+    );
+
+    await act(async () => {
+      await Promise.resolve();
+    });
+    expect(createAuthenticatedSSEAsync).toHaveBeenCalledTimes(1);
+
+    hook.rerender({ taskId: 'task_late_2' });
+
+    await act(async () => {
+      await Promise.resolve();
+    });
+    expect(createAuthenticatedSSEAsync).toHaveBeenCalledTimes(2);
+
+    await act(async () => {
+      await Promise.resolve();
+    });
+
+    const staleAfterReconnect = createMockEventSource();
+    await act(async () => {
+      reconnectDeferred.resolve(staleAfterReconnect as unknown as EventSource);
+      await reconnectDeferred.promise;
+      await Promise.resolve();
+    });
+
+    expect(staleAfterReconnect.close).toHaveBeenCalledTimes(1);
+
+    act(() => {
+      staleAfterReconnect.onopen?.();
+      staleAfterReconnect.onmessage?.({
+        data: JSON.stringify({
+          type: 'message',
+          data: {
+            id: 'msg_stale',
+            task_id: 'task_late_1',
+            role: 'agent',
+            content: 'stale message',
+            created_at: new Date().toISOString(),
+          },
+        }),
+        lastEventId: 'evt-stale',
+      } as unknown as MessageEvent);
+      staleAfterReconnect.onerror?.({} as Event);
+      dispatchNamedEvent(staleAfterReconnect, 'ping', { type: 'ping' }, 'evt-stale-ping');
+    });
+
+    expect(onMessage).not.toHaveBeenCalled();
+    expect(onError).not.toHaveBeenCalled();
+    expect(onDebug).not.toHaveBeenCalledWith(expect.objectContaining({ phase: 'sse_error' }));
+    expect(onDebug).not.toHaveBeenCalledWith(expect.objectContaining({ phase: 'reconnect_scheduled' }));
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(10);
+    });
+
+    expect(createAuthenticatedSSEAsync).toHaveBeenCalledTimes(2);
+
+    act(() => {
+      hook.result.current.disconnect();
+    });
+
+    expect(activeAfterReconnect.close).toHaveBeenCalledTimes(1);
+    hook.unmount();
+    onDebug.mockClear();
+    onMessage.mockClear();
+    onError.mockClear();
+
+    const unmountHook = renderHook(() =>
+      useTaskSSE('ws_default', 'proj_1', 'task_late_unmount', {
+        onDebug,
+        onMessage,
+        onError,
+        reconnectInterval: 10,
+        maxReconnectAttempts: 2,
+      }),
+    );
+
+    await act(async () => {
+      await Promise.resolve();
+    });
+    expect(createAuthenticatedSSEAsync).toHaveBeenCalledTimes(3);
+
+    unmountHook.unmount();
+
+    const staleAfterUnmount = createMockEventSource();
+    await act(async () => {
+      unmountDeferred.resolve(staleAfterUnmount as unknown as EventSource);
+      await unmountDeferred.promise;
+      await Promise.resolve();
+    });
+
+    expect(staleAfterUnmount.close).toHaveBeenCalledTimes(1);
+
+    act(() => {
+      staleAfterUnmount.onopen?.();
+      staleAfterUnmount.onmessage?.({
+        data: JSON.stringify({
+          type: 'message',
+          data: {
+            id: 'msg_after_unmount',
+            task_id: 'task_late_unmount',
+            role: 'agent',
+            content: 'after unmount',
+            created_at: new Date().toISOString(),
+          },
+        }),
+        lastEventId: 'evt-after-unmount',
+      } as unknown as MessageEvent);
+      staleAfterUnmount.onerror?.({} as Event);
+      dispatchNamedEvent(staleAfterUnmount, 'ping', { type: 'ping' }, 'evt-after-unmount-ping');
+    });
+
+    expect(onMessage).not.toHaveBeenCalled();
+    expect(onError).not.toHaveBeenCalled();
+    expect(onDebug).not.toHaveBeenCalledWith(expect.objectContaining({ phase: 'sse_error' }));
+    expect(onDebug).not.toHaveBeenCalledWith(expect.objectContaining({ phase: 'reconnect_scheduled' }));
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(10);
+    });
+
+    expect(createAuthenticatedSSEAsync).toHaveBeenCalledTimes(3);
   });
 });

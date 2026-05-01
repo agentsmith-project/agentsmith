@@ -3626,8 +3626,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "type": "object",
-                  "additionalProperties": true
+                  "$ref": "#/components/schemas/TaskListResponse"
                 }
               }
             }
@@ -3653,8 +3652,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "type": "object",
-                  "additionalProperties": true
+                  "$ref": "#/components/schemas/Task"
                 }
               }
             }
@@ -8529,6 +8527,202 @@
           "cancel",
           "terminate"
         ]
+      },
+      "TaskRunState": {
+        "type": "string",
+        "enum": [
+          "running",
+          "cancelling",
+          "terminating",
+          "finalizing",
+          "idle"
+        ]
+      },
+      "TaskAgentPresence": {
+        "type": "string",
+        "enum": [
+          "online",
+          "offline",
+          "managed",
+          "unknown"
+        ]
+      },
+      "TaskInputRef": {
+        "type": "object",
+        "additionalProperties": true,
+        "required": [
+          "id",
+          "kind"
+        ],
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "kind": {
+            "type": "string",
+            "enum": [
+              "library_object",
+              "artifact",
+              "url"
+            ]
+          }
+        }
+      },
+      "TaskStats": {
+        "type": "object",
+        "additionalProperties": true,
+        "properties": {
+          "user_turn_count": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "message_count": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "artifact_count": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "attached_input_count": {
+            "type": "integer",
+            "minimum": 0
+          }
+        }
+      },
+      "Task": {
+        "type": "object",
+        "additionalProperties": true,
+        "required": [
+          "id",
+          "workspace_id",
+          "project_id",
+          "owner_user_id",
+          "title",
+          "agent_id",
+          "agent_name",
+          "status",
+          "attached_inputs",
+          "created_at",
+          "updated_at",
+          "last_activity_at"
+        ],
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "workspace_id": {
+            "type": "string"
+          },
+          "project_id": {
+            "type": "string"
+          },
+          "owner_user_id": {
+            "type": "string"
+          },
+          "title": {
+            "type": "string"
+          },
+          "agent_id": {
+            "type": "string"
+          },
+          "agent_name": {
+            "type": "string"
+          },
+          "workspace_file_library_id": {
+            "type": "string"
+          },
+          "workspace_file_library_name": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "active",
+              "archived"
+            ]
+          },
+          "attached_inputs": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/TaskInputRef"
+            }
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "updated_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "last_activity_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "agent_presence": {
+            "$ref": "#/components/schemas/TaskAgentPresence"
+          },
+          "run_state": {
+            "$ref": "#/components/schemas/TaskRunState"
+          },
+          "active_run_started_at": {
+            "type": "string",
+            "format": "date-time",
+            "description": "Start time of the current active notebook run; omitted when the backend has no active run truth."
+          },
+          "stop_mode": {
+            "$ref": "#/components/schemas/StopMode"
+          },
+          "can_escalate": {
+            "type": "boolean"
+          },
+          "escalation_reason": {
+            "type": "string",
+            "nullable": true,
+            "enum": [
+              "already_terminating",
+              "unmanaged_runner",
+              "unsupported_runner"
+            ]
+          },
+          "stats": {
+            "$ref": "#/components/schemas/TaskStats"
+          }
+        }
+      },
+      "TaskListResponse": {
+        "type": "object",
+        "additionalProperties": true,
+        "required": [
+          "items",
+          "total",
+          "page",
+          "page_size"
+        ],
+        "properties": {
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Task"
+            }
+          },
+          "total": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "page": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "page_size": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "has_more": {
+            "type": "boolean"
+          }
+        }
       },
       "ChatStopRequest": {
         "type": "object",

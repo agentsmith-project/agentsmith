@@ -1,5 +1,6 @@
 import { access, appendFile, mkdir, mkdtemp, readFile, readdir, rm, writeFile } from 'node:fs/promises';
 import http from 'node:http';
+import { createHash } from 'node:crypto';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { setTimeout as setTimeoutPromise } from 'node:timers/promises';
@@ -75,6 +76,51 @@ export type SupportedChatWireApi = 'chat' | 'responses' | 'anthropic_messages';
 
 function trimTrailingSlash(value: string): string {
   return value.trim().replace(/\/+$/, '');
+}
+
+function sanitizeRunnerRuntimePathPart(input: string | null | undefined, fallback: string): string {
+  const value = (input ?? '').trim();
+  if (!value) return fallback;
+  return value.replace(/[^a-zA-Z0-9._-]/g, '_').slice(0, 128) || fallback;
+}
+
+export function normalizeVisibleWorkspaceRootForRunnerRuntime(visibleRoot: string): string {
+  const root = visibleRoot.trim() || 'task-workspace';
+  const normalizedRoot = path.normalize(root).replace(/\\/g, '/');
+  if (normalizedRoot === '/') return normalizedRoot;
+  return normalizedRoot.replace(/\/+$/, '') || 'task-workspace';
+}
+
+export function buildRunnerRuntimeRootPathPart(visibleRoot: string): string {
+  const normalizedVisibleRoot = normalizeVisibleWorkspaceRootForRunnerRuntime(visibleRoot);
+  const visibleRootName = sanitizeRunnerRuntimePathPart(path.basename(normalizedVisibleRoot), 'task-workspace');
+  const visibleRootHash = createHash('sha256')
+    .update(normalizedVisibleRoot)
+    .digest('hex')
+    .slice(0, 16);
+  return `${visibleRootName}-${visibleRootHash}`;
+}
+
+function isPathInsideOrSame(root: string, target: string): boolean {
+  const rel = path.relative(root, target);
+  return rel === '' || (!rel.startsWith('..') && !path.isAbsolute(rel));
+}
+
+export function buildRunnerRuntimeRootForVisibleWorkspace(input: {
+  visibleRoot: string;
+  runtimeStateBase: string;
+  tmpRoot?: string;
+}): string {
+  const runtimeRootPathPart = buildRunnerRuntimeRootPathPart(input.visibleRoot);
+  const preferredRoot = path.join(input.runtimeStateBase, runtimeRootPathPart);
+  if (!isPathInsideOrSame(input.visibleRoot, preferredRoot)) {
+    return preferredRoot;
+  }
+  const siblingRoot = path.join(path.dirname(input.visibleRoot), '.runner-runtime', runtimeRootPathPart);
+  if (!isPathInsideOrSame(input.visibleRoot, siblingRoot)) {
+    return siblingRoot;
+  }
+  return path.join(input.tmpRoot ?? tmpdir(), 'agentsmith-codex-runner', runtimeRootPathPart);
 }
 
 function firstNonEmptyEnvValue(
@@ -272,7 +318,81 @@ export async function collectTrackedTaskWorkspaceMounts(workspaceRoot: string): 
 
 const PREPARED_TASK_WORKSPACE_LOG_PREFIX = '[notebook-codex-runner][debug] prepared task workspace ';
 
+export type PreparedTaskRuntimePaths = {
+  cwd: string;
+  runtimeRoot: string;
+  homeDir: string;
+  codexDir: string;
+  codexConfigPath: string;
+  modelCatalogPath: string;
+  mbosDir: string;
+  skillsDir: string;
+  artifactsDir: string;
+};
+
+function readNonEmptyString(input: Record<string, unknown>, key: string): string | null {
+  const value = input[key];
+  return typeof value === 'string' && value.trim().length > 0 ? value.trim() : null;
+}
+
+function resolvePreparedTaskRuntimePaths(payload: Record<string, unknown>): PreparedTaskRuntimePaths | null {
+  const cwd = readNonEmptyString(payload, 'cwd');
+  const codexConfigPath = readNonEmptyString(payload, 'codex_config');
+  const modelCatalogPath = readNonEmptyString(payload, 'model_catalog_path');
+  const skillsDirFromLog = readNonEmptyString(payload, 'builtin_skills_runtime_dir');
+  const artifactsDir = readNonEmptyString(payload, 'artifacts_dir');
+  const codexDir = codexConfigPath
+    ? path.dirname(codexConfigPath)
+    : modelCatalogPath
+      ? path.dirname(modelCatalogPath)
+      : null;
+  const runtimeRootFromCodex = codexDir ? path.dirname(codexDir) : null;
+  const runtimeRootFromSkills = skillsDirFromLog
+    ? path.dirname(path.dirname(skillsDirFromLog))
+    : null;
+  const runtimeRoot = runtimeRootFromCodex ?? runtimeRootFromSkills;
+  if (!cwd || !runtimeRoot || !codexDir || !artifactsDir) {
+    return null;
+  }
+  return {
+    cwd,
+    runtimeRoot,
+    homeDir: runtimeRoot,
+    codexDir,
+    codexConfigPath: codexConfigPath ?? path.join(codexDir, 'config.toml'),
+    modelCatalogPath: modelCatalogPath ?? path.join(codexDir, 'catalog.json'),
+    mbosDir: path.join(runtimeRoot, '.mbos'),
+    skillsDir: skillsDirFromLog ?? path.join(runtimeRoot, '.agents', 'skills'),
+    artifactsDir,
+  };
+}
+
+export function findPreparedTaskRuntimePathsInRunnerLog(logText: string): PreparedTaskRuntimePaths | null {
+  const lines = logText.split('\n');
+  for (let index = lines.length - 1; index >= 0; index -= 1) {
+    const line = lines[index]?.trim();
+    if (!line || !line.startsWith(PREPARED_TASK_WORKSPACE_LOG_PREFIX)) {
+      continue;
+    }
+    const payload = line.slice(PREPARED_TASK_WORKSPACE_LOG_PREFIX.length);
+    try {
+      const parsed = JSON.parse(payload) as Record<string, unknown>;
+      const runtimePaths = resolvePreparedTaskRuntimePaths(parsed);
+      if (runtimePaths) {
+        return runtimePaths;
+      }
+    } catch {
+      continue;
+    }
+  }
+  return null;
+}
+
 export function findPreparedTaskWorkspaceRootInRunnerLog(logText: string): string | null {
+  const runtimePaths = findPreparedTaskRuntimePathsInRunnerLog(logText);
+  if (runtimePaths) {
+    return runtimePaths.cwd;
+  }
   const lines = logText.split('\n');
   for (let index = lines.length - 1; index >= 0; index -= 1) {
     const line = lines[index]?.trim();
@@ -299,6 +419,40 @@ export async function readPreparedTaskWorkspaceRootFromRunnerLog(logPath: string
   } catch {
     return null;
   }
+}
+
+export async function readPreparedTaskRuntimePathsFromRunnerLog(logPath: string): Promise<PreparedTaskRuntimePaths | null> {
+  try {
+    const logText = await readFile(logPath, 'utf8');
+    return findPreparedTaskRuntimePathsInRunnerLog(logText);
+  } catch {
+    return null;
+  }
+}
+
+function rewritePathPrefix(value: string, fromPrefix: string, toPrefix: string): string {
+  const normalizedFrom = fromPrefix.replace(/\/+$/, '');
+  if (value === normalizedFrom) return toPrefix;
+  if (!value.startsWith(`${normalizedFrom}/`)) return value;
+  return path.join(toPrefix, value.slice(normalizedFrom.length + 1));
+}
+
+function rewritePreparedTaskRuntimePathsPrefix(
+  paths: PreparedTaskRuntimePaths,
+  fromPrefix: string,
+  toPrefix: string,
+): PreparedTaskRuntimePaths {
+  return {
+    cwd: rewritePathPrefix(paths.cwd, fromPrefix, toPrefix),
+    runtimeRoot: rewritePathPrefix(paths.runtimeRoot, fromPrefix, toPrefix),
+    homeDir: rewritePathPrefix(paths.homeDir, fromPrefix, toPrefix),
+    codexDir: rewritePathPrefix(paths.codexDir, fromPrefix, toPrefix),
+    codexConfigPath: rewritePathPrefix(paths.codexConfigPath, fromPrefix, toPrefix),
+    modelCatalogPath: rewritePathPrefix(paths.modelCatalogPath, fromPrefix, toPrefix),
+    mbosDir: rewritePathPrefix(paths.mbosDir, fromPrefix, toPrefix),
+    skillsDir: rewritePathPrefix(paths.skillsDir, fromPrefix, toPrefix),
+    artifactsDir: rewritePathPrefix(paths.artifactsDir, fromPrefix, toPrefix),
+  };
 }
 
 async function cleanupTrackedTaskWorkspaceMounts(workspaceRoot: string): Promise<void> {
@@ -2681,6 +2835,61 @@ export async function patchWorkloadPodExpiry(args: {
   }
 }
 
+export async function expectInternalTaskRuntimeStateInPod(args: {
+  namespace: string;
+  podName: string;
+  taskId: string;
+  visibleWorkspaceRoot?: string;
+  timeoutMs?: number;
+}): Promise<void> {
+  const visibleWorkspaceRoot = args.visibleWorkspaceRoot ?? `/workspace/${args.taskId}`;
+  const runtimeRootPathPart = buildRunnerRuntimeRootPathPart(visibleWorkspaceRoot);
+  await expect
+    .poll(
+      async () => {
+        const script = [
+          'runtime_root_path_part="$1"',
+          'visible_root="$2"',
+          'base="${MBOS_AGENT_CODEX_STATE_ROOT:-${HOME:-/tmp}/.mbos/notebook-codex-runner}"',
+          '[ -n "$base" ] || base="/"',
+          'runtime_root="${base%/}/$runtime_root_path_part"',
+          'case "$runtime_root" in "$visible_root"|"$visible_root"/*) visible_parent="${visible_root%/*}"; [ "$visible_parent" = "$visible_root" ] && visible_parent="/"; runtime_root="${visible_parent%/}/.runner-runtime/$runtime_root_path_part";; esac',
+          'case "$runtime_root" in "$visible_root"|"$visible_root"/*) tmp_root="${TMPDIR:-/tmp}"; runtime_root="${tmp_root%/}/agentsmith-codex-runner/$runtime_root_path_part";; esac',
+          'config="$runtime_root/.codex/config.toml"',
+          'catalog="$runtime_root/.codex/catalog.json"',
+          'manifest="$runtime_root/.mbos/builtin-skills-manifest.json"',
+          'skill="$runtime_root/.agents/skills/feishu-docs/SKILL.md"',
+          'config_ready=0; [ -f "$config" ] && grep -q "model = " "$config" && config_ready=1',
+          'catalog_ready=0; [ -f "$catalog" ] && grep -q "\\"models\\"" "$catalog" && catalog_ready=1',
+          'manifest_ready=0; [ -f "$manifest" ] && grep -q "\\"feishu-docs\\"" "$manifest" && manifest_ready=1',
+          'skill_ready=0; [ -f "$skill" ] && grep -qi "feishu" "$skill" && skill_ready=1',
+          'printf "runtime_root_path_part=%s\\nruntime_root=%s\\nconfig_ready=%s\\ncatalog_ready=%s\\nmanifest_ready=%s\\nskill_ready=%s\\n" "$runtime_root_path_part" "$runtime_root" "$config_ready" "$catalog_ready" "$manifest_ready" "$skill_ready"',
+        ].join('\n');
+        const result = await spawnAndCapture(
+          'kubectl',
+          ['exec', '-n', args.namespace, args.podName, '--', 'sh', '-lc', script, 'sh', runtimeRootPathPart, visibleWorkspaceRoot],
+          { env: withoutProxyEnv(process.env) },
+        );
+        const output = result.stdout;
+        return {
+          runtimeRootReady: /runtime_root=\/.+/.test(output),
+          codexConfigReady: output.includes('config_ready=1'),
+          modelCatalogReady: output.includes('catalog_ready=1'),
+          skillsManifestReady: output.includes('manifest_ready=1'),
+          feishuSkillReady: output.includes('skill_ready=1'),
+        };
+      },
+      { timeout: args.timeoutMs ?? 120_000, intervals: [1_000, 2_000, 5_000] },
+    )
+    .toEqual({
+      runtimeRootReady: true,
+      codexConfigReady: true,
+      modelCatalogReady: true,
+      skillsManifestReady: true,
+      feishuSkillReady: true,
+    });
+}
+
 export async function deleteInternalWorkloadViaManager(args: {
   workspaceId: string;
   projectId: string;
@@ -2805,7 +3014,9 @@ export type CodexRunnerProcessHandle = {
   proc: ChildProcessWithIgnoredStdin;
   logPath: string;
   workspaceRoot: string;
+  runtimeStateRoot: string;
   resolveTaskWorkspaceRoot: () => Promise<string | null>;
+  resolveTaskRuntimePaths: () => Promise<PreparedTaskRuntimePaths | null>;
   stop: () => Promise<void>;
 };
 
@@ -2824,6 +3035,7 @@ async function startNotebookRunnerProcessInternal(args: NotebookRunnerProcessSta
       : { wsUrl: args.wsUrl, scope: 'agent_presence' });
     const logPath = path.join(tmpdir(), `agentsmith-notebook-runner-${Date.now()}.log`);
     const workspaceRoot = path.join(tmpdir(), `agentsmith-notebook-workspaces-${Date.now()}`);
+    const runtimeStateRoot = path.join(workspaceRoot, 'runtime-state');
     const builtinSkillsDir = path.resolve(__dirname, '../packages/notebook-codex-runner/builtin-skills');
     const proc = spawn(
       'npm',
@@ -2837,6 +3049,7 @@ async function startNotebookRunnerProcessInternal(args: NotebookRunnerProcessSta
           MBOS_AGENT_CODEX_YOLO: '1',
           MBOS_AGENT_RUNNER_DEBUG: '1',
           MBOS_AGENT_WORKSPACE_ROOT: workspaceRoot,
+          MBOS_AGENT_CODEX_STATE_ROOT: runtimeStateRoot,
           MBOS_AGENT_BUILTIN_SKILLS_DIR: builtinSkillsDir,
           MBOS_AGENT_BUILTIN_SKILLS: 'mbos-context,feishu-docs,jira-ops',
           MBOS_AGENT_BUILTIN_SKILLS_REQUIRED: '1',
@@ -2863,7 +3076,9 @@ async function startNotebookRunnerProcessInternal(args: NotebookRunnerProcessSta
           proc,
           logPath,
           workspaceRoot,
+          runtimeStateRoot,
           resolveTaskWorkspaceRoot: async () => readPreparedTaskWorkspaceRootFromRunnerLog(logPath),
+          resolveTaskRuntimePaths: async () => readPreparedTaskRuntimePathsFromRunnerLog(logPath),
           stop: async () => {
             if (!proc.killed && proc.exitCode === null) {
               const pid = proc.pid;
@@ -2891,6 +3106,7 @@ async function startNotebookRunnerProcessInternal(args: NotebookRunnerProcessSta
             }
             await cleanupTrackedTaskWorkspaceMounts(workspaceRoot);
             await unmountWorkspaceTree(workspaceRoot);
+            await rm(runtimeStateRoot, { recursive: true, force: true }).catch(() => undefined);
             await rm(workspaceRoot, { recursive: true, force: true }).catch(() => undefined);
           },
         });
@@ -3083,8 +3299,10 @@ export async function ensureInternalChatRunnerImage(): Promise<string> {
 export type CodexRunnerDockerHandle = {
   containerName: string;
   workspaceRoot: string;
+  runtimeStateRoot: string;
   imageTag: string;
   logPath: string;
+  resolveTaskRuntimePaths: () => Promise<PreparedTaskRuntimePaths | null>;
   stop: () => Promise<void>;
 };
 
@@ -3135,6 +3353,7 @@ async function startNotebookRunnerDockerProcessInternal(args: NotebookRunnerDock
   }
 
   const workspaceRoot = path.join(tmpdir(), `agentsmith-notebook-docker-workspaces-${Date.now()}`);
+  const runtimeStateRoot = path.join(workspaceRoot, 'runtime-state');
   await mkdir(workspaceRoot, { recursive: true });
   const containerName = `agentsmith-notebook-runner-${Date.now()}`;
   const requestedRunnerLogDir = process.env.INTEGRATION_RUNNER_LOG_DIR?.trim() || path.join(process.cwd(), 'test-results', 'runner-logs');
@@ -3203,6 +3422,8 @@ async function startNotebookRunnerDockerProcessInternal(args: NotebookRunnerDock
     '--env',
     'MBOS_AGENT_WORKSPACE_ROOT=/workspace',
     '--env',
+    'MBOS_AGENT_CODEX_STATE_ROOT=/workspace/runtime-state',
+    '--env',
     `MBOS_AGENT_BUILTIN_SKILLS_DIR=${builtinSkillsDir}`,
     '--env',
     `MBOS_AGENT_BUILTIN_SKILLS=${builtinSkillsList}`,
@@ -3237,12 +3458,26 @@ async function startNotebookRunnerDockerProcessInternal(args: NotebookRunnerDock
       return {
         containerName,
         workspaceRoot,
+        runtimeStateRoot,
         imageTag,
         logPath: runnerLogPath,
+        resolveTaskRuntimePaths: async () => {
+          const currentLogs = await spawnAndCapture('docker', ['logs', containerName]).catch(() => ({
+            code: 1,
+            stdout: '',
+            stderr: '',
+          }));
+          const parsed = findPreparedTaskRuntimePathsInRunnerLog(`${currentLogs.stdout}\n${currentLogs.stderr}`);
+          if (parsed) return rewritePreparedTaskRuntimePathsPrefix(parsed, '/workspace', workspaceRoot);
+          await preserveRunnerLogs();
+          const fromLog = await readPreparedTaskRuntimePathsFromRunnerLog(runnerLogPath);
+          return fromLog ? rewritePreparedTaskRuntimePathsPrefix(fromLog, '/workspace', workspaceRoot) : null;
+        },
         stop: async () => {
           await preserveRunnerLogs();
           await spawnAndCapture('docker', ['rm', '-f', containerName]);
           await unmountWorkspaceTree(workspaceRoot);
+          await rm(runtimeStateRoot, { recursive: true, force: true }).catch(() => undefined);
           await rm(workspaceRoot, { recursive: true, force: true }).catch(() => undefined);
         },
       };

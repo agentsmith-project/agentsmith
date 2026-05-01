@@ -3,6 +3,7 @@
  */
 
 import * as React from 'react';
+import { readFileSync } from 'node:fs';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { act, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
@@ -14,7 +15,12 @@ import {
   mergeTerminalTabStatus,
 } from '../TaskPage';
 import { TaskPageContent } from '../task-page/TaskPageContent';
+import {
+  collectRecentRunActions,
+  deriveRunAction,
+} from '../task-page/run-activity';
 import { ApiError } from '@/lib/api/client';
+import type { Task, TaskTraceEvent } from '@/lib/types/task';
 import {
   mockArtifacts,
   mockMessages,
@@ -290,7 +296,6 @@ vi.mock('../TaskHeader', () => ({
       onDeleted,
       onCreateNew,
       onLeave,
-      agentRunActivity,
       canCreateTerminalSession,
       deleteBlockedReason,
       headerAccessory,
@@ -298,7 +303,7 @@ vi.mock('../TaskHeader', () => ({
     return (
       <div data-testid="task-header">
       <div data-testid="task-title">{task.title}</div>
-      <div data-testid="task-header-busy">{String(!!agentRunActivity?.active)}</div>
+      <div data-testid="task-header-busy">{String(!!props.agentRunActivity?.active)}</div>
       <div data-testid="task-header-terminal-create-enabled">
         {String(!!canCreateTerminalSession)}
       </div>
@@ -343,8 +348,7 @@ vi.mock('../ConversationPanel', () => ({
       onSendMessage,
       onTraceExpand,
       onTraceLoadMore,
-      onCancelActiveRun,
-      runActivity,
+      activeRunView,
       pendingQueue,
       disabled,
       sending,
@@ -354,14 +358,17 @@ vi.mock('../ConversationPanel', () => ({
     return (
       <div data-testid="conversation-panel">
       <button onClick={() => onSendMessage('Test message')}>Send Message</button>
-      <button onClick={() => onCancelActiveRun?.()}>Cancel Active Run</button>
+      <button onClick={() => activeRunView?.onCancel?.()}>Cancel Active Run</button>
       {messages?.some((m: any) => m.role === 'agent') && (
         <>
           <button onClick={() => onTraceExpand?.('msg-2')}>Expand Trace</button>
           <button onClick={() => onTraceLoadMore?.('msg-2')}>Load More Trace</button>
         </>
       )}
-      <div data-testid="conversation-run-active">{String(!!runActivity?.active)}</div>
+      <div data-testid="conversation-run-active">{String(!!activeRunView)}</div>
+      <div data-testid="conversation-active-run-message">{activeRunView?.messageId ?? ''}</div>
+      <div data-testid="conversation-active-run-state">{activeRunView?.runState ?? ''}</div>
+      <div data-testid="conversation-active-run-elapsed">{String(activeRunView?.elapsedSeconds ?? '')}</div>
       <div data-testid="conversation-pending-count">{String((pendingQueue ?? []).length)}</div>
       {blockedState && (!messages || messages.length === 0) ? (
         <div data-testid="conversation-blocked-state">
@@ -580,6 +587,108 @@ describe('TaskPage', () => {
     consoleErrorSpy.mock.calls.filter((call: unknown[]) =>
       call.some((message: unknown) => String(message).includes('not wrapped in act')),
     );
+
+  describe('Task Contract', () => {
+    it('reads active run start time through the Task contract instead of probing unknown payload fields', () => {
+      const source = readFileSync('src/components/notebook/TaskPage.tsx', 'utf8');
+
+      expect(source).toContain('task.active_run_started_at');
+      expect(source).not.toContain('as unknown as Record<string, unknown>');
+      expect(source).not.toContain('"run_started_at"');
+      expect(source).not.toContain('"current_run_started_at"');
+    });
+  });
+
+  describe('Run Activity Classification', () => {
+    const baseTrace = {
+      task_id: mockTaskId,
+      message_id: 'msg-2',
+      run_id: 'run-1',
+      phase: 'end',
+      status: 'success',
+      summary: 'Trace completed',
+    } satisfies Partial<TaskTraceEvent>;
+
+    it('does not treat workspace file changes as artifact activity', () => {
+      const action = deriveRunAction({
+        event: {
+          ...baseTrace,
+          id: 'trace-files-changed',
+          seq: 1,
+          at: '2026-03-06T04:00:01.000Z',
+          category: 'artifact',
+          name: 'workspace.files_changed',
+          details: {
+            added: ['reports/result.md'],
+            modified: ['src/notebook.ts'],
+            deleted: [],
+          },
+        } as TaskTraceEvent,
+        fallbackSummary: 'Working',
+      });
+
+      expect(action).toEqual({
+        kind: 'system',
+        summary: '1 added · 1 modified · 0 deleted',
+      });
+      expect(action.kind).not.toBe('artifact');
+    });
+
+    it('uses output semantics for runner artifact events in recent run activity', () => {
+      const runnerArtifactTrace: TaskTraceEvent = {
+        ...baseTrace,
+        id: 'trace-runner-artifact',
+        seq: 2,
+        at: '2026-03-06T04:00:02.000Z',
+        category: 'artifact',
+        name: 'runner.artifact',
+        details: { filename: 'reports/result.md' },
+      } as TaskTraceEvent;
+      const filesChangedTrace: TaskTraceEvent = {
+        ...baseTrace,
+        id: 'trace-files-changed',
+        seq: 1,
+        at: '2026-03-06T04:00:01.000Z',
+        category: 'artifact',
+        name: 'workspace.files_changed',
+        details: {
+          added: ['reports/result.md'],
+          modified: [],
+          deleted: [],
+        },
+      } as TaskTraceEvent;
+
+      expect(
+        deriveRunAction({
+          event: runnerArtifactTrace,
+          fallbackSummary: 'Working',
+        }),
+      ).toEqual({
+        kind: 'output',
+        summary: 'reports/result.md',
+      });
+
+      const recentActions = collectRecentRunActions({
+        sortedActions: [runnerArtifactTrace, filesChangedTrace],
+        fallbackSummary: 'Working',
+        now: Date.parse('2026-03-06T04:00:03.000Z'),
+      });
+
+      expect(recentActions).toEqual([
+        expect.objectContaining({
+          kind: 'output',
+          summary: 'reports/result.md',
+          traceName: 'runner.artifact',
+        }),
+        expect.objectContaining({
+          kind: 'system',
+          summary: '1 added · 0 modified · 0 deleted',
+          traceName: 'workspace.files_changed',
+        }),
+      ]);
+      expect(recentActions.map((item) => item.kind)).not.toContain('artifact');
+    });
+  });
 
   describe('Loading State', () => {
     it('renders loading state', () => {
@@ -877,7 +986,7 @@ describe('TaskPage', () => {
 
       const taskPageContentProps = {
         agentIsBusy: false,
-        activeAgentMessageId: null,
+        activeRunView: null,
         artifacts: [],
         artifactsRefreshing: false,
         canUpdateTask: true,
@@ -894,7 +1003,6 @@ describe('TaskPage', () => {
         focusTraceMessageId: null,
         focusTraceName: null,
         focusTraceToken: 0,
-        handleCancelActiveRun: vi.fn(),
         handleDownloadArtifact: vi.fn(),
         handlePendingRemove: vi.fn(),
         handleRefreshArtifacts: vi.fn(),
@@ -907,14 +1015,6 @@ describe('TaskPage', () => {
         onRunActionClick: vi.fn(),
         pendingMessages: [],
         projectId: mockProjectId,
-        runActivity: {
-          active: false,
-          elapsedSeconds: 0,
-          cancelling: false,
-          lastSummary: undefined,
-          lastKind: undefined,
-          recentActions: [],
-        },
         sandboxStarting: false,
         sending: false,
         showSseDebugPanel: false,
@@ -1045,18 +1145,259 @@ describe('TaskPage', () => {
         await renderComponentReady();
 
         expect(latestConversationPanelPropsRef.current.disabled).toBe(true);
-        expect(latestConversationPanelPropsRef.current.runActivity).toMatchObject({
-          active: true,
-          state: runState,
+        expect(latestConversationPanelPropsRef.current.activeRunView).toMatchObject({
+          messageId: 'pending-active-run:task-1',
+          runState,
+          cancelPending: false,
         });
         expect(latestConversationPanelPropsRef.current.inputPlaceholder).toBe(
           expectedPlaceholder,
         );
-        expect(latestTaskHeaderPropsRef.current.agentRunActivity).toMatchObject({
-          active: true,
-        });
+        expect(latestTaskHeaderPropsRef.current.agentRunActivity).toBeUndefined();
+        expect(screen.getByTestId('task-header-busy')).toHaveTextContent('false');
       },
     );
+
+    it('uses a pending active run message instead of the stale latest agent message when backend run truth is active', async () => {
+      const user = userEvent.setup();
+      mockTaskHookState.task = {
+        ...mockTask,
+        run_state: 'running',
+        last_activity_at: '2026-03-06T04:00:10.000Z',
+      };
+      mockTaskHookState.messages = [
+        mockMessages[0],
+        {
+          ...mockMessages[1],
+          id: 'msg-old-agent',
+          content: 'Previous run answer',
+          created_at: '2026-03-06T03:59:00.000Z',
+        },
+      ];
+
+      await renderComponentReady();
+
+      expect(latestConversationPanelPropsRef.current.activeRunView).toMatchObject({
+        messageId: 'pending-active-run:task-1',
+        runState: 'running',
+        cancelPending: false,
+      });
+      expect(latestConversationPanelPropsRef.current.activeRunView?.messageId).not.toBe(
+        'msg-old-agent',
+      );
+
+      await user.click(screen.getByText('Cancel Active Run'));
+
+      await waitFor(() => {
+        expect(mockTaskApiCancelRun).toHaveBeenCalledWith(
+          mockWorkspaceId,
+          mockProjectId,
+          mockTaskId,
+        );
+        expect(mockUseTaskRefetch).toHaveBeenCalled();
+        expect(mockUseTaskMessagesRefetch).toHaveBeenCalled();
+        expect(mockTaskApiListTraces).toHaveBeenCalledWith(
+          mockWorkspaceId,
+          mockProjectId,
+          mockTaskId,
+          expect.objectContaining({ page_size: 500 }),
+        );
+      });
+    });
+
+    it('uses the active trace message_id over the stale latest agent message and starts elapsed from trace time', async () => {
+      mockTaskHookState.task = {
+        ...mockTask,
+        run_state: 'running',
+        last_activity_at: '2026-03-06T04:00:10.000Z',
+      };
+      mockTaskHookState.messages = [
+        mockMessages[0],
+        {
+          ...mockMessages[1],
+          id: 'msg-old-agent',
+          content: 'Previous run answer',
+          created_at: '2026-03-06T03:59:00.000Z',
+        },
+      ];
+
+      await renderComponentReady();
+
+      await act(async () => {
+        latestTaskSseOptionsRef.current?.onTraceEvent?.({
+          id: 'trace_current_run_start',
+          task_id: mockTaskId,
+          message_id: 'msg-current-run',
+          run_id: 'run-current',
+          seq: 1,
+          at: '2026-03-06T04:00:00.000Z',
+          category: 'lifecycle',
+          phase: 'start',
+          status: 'running',
+          name: 'run.lifecycle',
+          summary: 'Run started',
+        } satisfies TaskTraceEvent);
+      });
+
+      await waitFor(() => {
+        expect(latestConversationPanelPropsRef.current.activeRunView).toMatchObject({
+          messageId: 'msg-current-run',
+          runState: 'running',
+          startedAt: '2026-03-06T04:00:00.000Z',
+        });
+      });
+      expect(latestConversationPanelPropsRef.current.activeRunView?.messageId).not.toBe(
+        'msg-old-agent',
+      );
+      expect(latestConversationPanelPropsRef.current.activeRunView?.startedAt).not.toBe(
+        '2026-03-06T04:00:10.000Z',
+      );
+    });
+
+    it('uses the server-created active run message timestamp for elapsed recovery on refresh', async () => {
+      const dateNowSpy = vi
+        .spyOn(Date, 'now')
+        .mockReturnValue(Date.parse('2026-03-06T04:00:10.000Z'));
+      try {
+        mockTaskHookState.task = {
+          ...mockTask,
+          run_state: 'running',
+          last_activity_at: '2026-03-06T04:00:10.000Z',
+        };
+        mockTaskHookState.messages = [
+          {
+            ...mockMessages[0],
+            id: 'msg-old-user',
+            content: 'Previous request',
+            created_at: '2026-03-06T03:58:50.000Z',
+          },
+          {
+            ...mockMessages[1],
+            id: 'msg-old-agent',
+            content: 'Previous run answer',
+            created_at: '2026-03-06T03:59:00.000Z',
+          },
+          {
+            ...mockMessages[0],
+            id: 'msg-current-user',
+            content: 'Current request',
+            created_at: '2026-03-06T03:59:58.000Z',
+          },
+          {
+            ...mockMessages[1],
+            id: 'msg-current-run',
+            content: '',
+            created_at: '2026-03-06T04:00:00.000Z',
+          },
+        ];
+
+        await renderComponentReady();
+
+        expect(latestConversationPanelPropsRef.current.activeRunView).toMatchObject({
+          messageId: 'msg-current-run',
+          runState: 'running',
+          startedAt: '2026-03-06T04:00:00.000Z',
+          elapsedSeconds: 10,
+        });
+      } finally {
+        dateNowSpy.mockRestore();
+      }
+    });
+
+    it('uses the formal task active run start timestamp without resetting elapsed to the message timestamp', async () => {
+      const dateNowSpy = vi
+        .spyOn(Date, 'now')
+        .mockReturnValue(Date.parse('2026-03-06T04:00:10.000Z'));
+      try {
+        const activeTask: Task = {
+          ...mockTask,
+          run_state: 'running',
+          active_run_started_at: '2026-03-06T04:00:00.000Z',
+          last_activity_at: '2026-03-06T04:00:10.000Z',
+        };
+        mockTaskHookState.task = activeTask;
+        mockTaskHookState.messages = [
+          {
+            ...mockMessages[0],
+            id: 'msg-current-user',
+            content: 'Current request',
+            created_at: '2026-03-06T04:00:01.000Z',
+          },
+          {
+            ...mockMessages[1],
+            id: 'msg-current-run',
+            content: '',
+            created_at: '2026-03-06T04:00:05.000Z',
+          },
+        ];
+
+        await renderComponentReady();
+
+        expect(latestConversationPanelPropsRef.current.activeRunView).toMatchObject({
+          messageId: 'msg-current-run',
+          runState: 'running',
+          startedAt: '2026-03-06T04:00:00.000Z',
+          elapsedSeconds: 10,
+        });
+        expect(latestConversationPanelPropsRef.current.activeRunView?.startedAt).not.toBe(
+          '2026-03-06T04:00:05.000Z',
+        );
+      } finally {
+        dateNowSpy.mockRestore();
+      }
+    });
+
+    it('focuses the active run message when a latest action is clicked', async () => {
+      mockTaskHookState.task = {
+        ...mockTask,
+        run_state: 'running',
+        last_activity_at: '2026-03-06T04:00:10.000Z',
+      };
+      mockTaskHookState.messages = [
+        {
+          ...mockMessages[0],
+          id: 'msg-current-user',
+          content: 'Current request',
+          created_at: '2026-03-06T03:59:58.000Z',
+        },
+        {
+          ...mockMessages[1],
+          id: 'msg-current-run',
+          content: '',
+          created_at: '2026-03-06T04:00:00.000Z',
+        },
+      ];
+
+      await renderComponentReady();
+
+      expect(latestConversationPanelPropsRef.current.activeRunView?.messageId).toBe(
+        'msg-current-run',
+      );
+      const initialFocusToken =
+        latestConversationPanelPropsRef.current.focusTraceToken;
+
+      await act(async () => {
+        latestConversationPanelPropsRef.current.onRunActionClick({
+          id: 'trace-current-tool',
+          kind: 'tool',
+          summary: 'Read files',
+          ageSeconds: 0,
+          traceName: 'codex.tool',
+        });
+      });
+
+      await waitFor(() => {
+        expect(latestConversationPanelPropsRef.current.focusTraceMessageId).toBe(
+          'msg-current-run',
+        );
+        expect(latestConversationPanelPropsRef.current.focusTraceName).toBe(
+          'codex.tool',
+        );
+        expect(latestConversationPanelPropsRef.current.focusTraceToken).toBeGreaterThan(
+          initialFocusToken,
+        );
+      });
+    });
 
     it('stays conversation-first when storage prefers terminal but backend reports no live terminal sessions', async () => {
       window.sessionStorage.setItem(
@@ -1235,6 +1576,9 @@ describe('TaskPage', () => {
           'terminal-session-1',
         );
       });
+      const initialSecondTabFocusToken =
+        latestTaskTerminalPanelPropsByTabIdRef.current['terminal-session-2']
+          ?.focusRequestToken ?? 0;
 
       const secondTerminalTabButton = screen
         .getByTestId('notebook__task-terminal-tab-terminal-session-2')
@@ -1251,6 +1595,10 @@ describe('TaskPage', () => {
           'terminal-session-2',
         );
         expect(latestTaskTerminalPanelPropsRef.current.tabId).toBe('terminal-session-2');
+        expect(
+          latestTaskTerminalPanelPropsByTabIdRef.current['terminal-session-2']
+            .focusRequestToken,
+        ).toBeGreaterThan(initialSecondTabFocusToken);
       });
 
       await act(async () => {
@@ -1840,6 +2188,7 @@ describe('TaskPage', () => {
         );
         expect(latestTaskHeaderPropsRef.current.viewMode).toBe('terminal');
         expect(latestTaskHeaderPropsRef.current.terminalSessionCount).toBe(1);
+        expect(latestTaskTerminalPanelPropsRef.current.focusRequestToken).toBeGreaterThan(0);
         expect(latestTaskHeaderPropsRef.current.onCreateTerminalSession).toBeUndefined();
         expect(screen.queryByTestId('conversation-panel')).not.toBeInTheDocument();
         expect(screen.queryByTestId('notebook__task-terminal-status-strip')).not.toBeInTheDocument();
@@ -2080,6 +2429,8 @@ describe('TaskPage', () => {
       });
       expect(latestTaskTerminalPanelPropsRef.current.open).toBe(true);
       expect(latestTaskTerminalPanelPropsRef.current.visible).toBe(false);
+      const hiddenTerminalFocusToken =
+        latestTaskTerminalPanelPropsRef.current.focusRequestToken ?? 0;
       expect(screen.getByTestId('notebook__conversation-blocked-action')).toHaveTextContent(
         'Open Terminal Workspace',
       );
@@ -2089,6 +2440,9 @@ describe('TaskPage', () => {
       });
       expect(latestTaskTerminalPanelPropsRef.current.open).toBe(true);
       expect(latestTaskTerminalPanelPropsRef.current.visible).toBe(true);
+      expect(latestTaskTerminalPanelPropsRef.current.focusRequestToken).toBeGreaterThan(
+        hiddenTerminalFocusToken,
+      );
     });
 
     it('reconciles local terminal tabs with backend truth when ending all sessions from the conversation strip', async () => {
@@ -2457,6 +2811,13 @@ describe('TaskPage', () => {
       await user.click(screen.getByTestId('notebook__task-terminal-close-terminal-session-2'));
 
       await waitFor(() => {
+        expect(mockTaskApiCloseTerminalSession).toHaveBeenCalledWith(
+          mockWorkspaceId,
+          mockProjectId,
+          mockTaskId,
+          'backend-session-2',
+        );
+        expect(mockTaskApiListTerminalSessions).toHaveBeenCalledTimes(2);
         expect(screen.getByTestId('notebook__task-terminal-shell-summary')).toHaveTextContent(
           '1 terminal session is using this task',
         );
@@ -2491,6 +2852,274 @@ describe('TaskPage', () => {
           'Open Terminal Workspace',
         );
       }, { timeout: 250 });
+    });
+
+    it('keeps a terminal tab visible and blocking when DELETE succeeds but backend still lists the session', async () => {
+      const user = userEvent.setup();
+      mockTaskHookState.messages = [];
+      window.sessionStorage.setItem(
+        `agentsmith-terminal-workspace:${mockWorkspaceId}:${mockProjectId}:${mockTaskId}`,
+        JSON.stringify({
+          preferredViewMode: 'terminal',
+          preferredActiveSessionId: 'backend-session-1',
+          artifactsDrawerOpen: true,
+        }),
+      );
+      const listedSession = {
+        id: 'backend-session-1',
+        status: 'active' as const,
+        created_at: '2026-04-13T01:00:00.000Z',
+      };
+      mockTaskApiListTerminalSessions
+        .mockResolvedValue({
+          total: 1,
+          items: [listedSession],
+        })
+        .mockResolvedValueOnce({
+          total: 1,
+          items: [listedSession],
+        })
+        .mockResolvedValueOnce({
+          total: 1,
+          items: [listedSession],
+        });
+
+      renderComponent();
+
+      await waitFor(() => {
+        expect(screen.getByTestId('notebook__task-terminal-workspace')).toHaveAttribute(
+          'data-active-terminal-tab-id',
+          'terminal-session-1',
+        );
+        expect(latestTaskHeaderPropsRef.current.terminalSessionCount).toBe(1);
+      });
+
+      await user.click(screen.getByTestId('notebook__task-terminal-close-terminal-session-1'));
+
+      await waitFor(() => {
+        expect(mockTaskApiCloseTerminalSession).toHaveBeenCalledWith(
+          mockWorkspaceId,
+          mockProjectId,
+          mockTaskId,
+          'backend-session-1',
+        );
+        expect(mockTaskApiListTerminalSessions).toHaveBeenNthCalledWith(
+          2,
+          mockWorkspaceId,
+          mockProjectId,
+          mockTaskId,
+        );
+        expect(screen.getByTestId('notebook__task-terminal-tab-terminal-session-1')).toBeInTheDocument();
+        expect(screen.getByTestId('notebook__task-terminal-workspace')).toHaveAttribute(
+          'data-active-terminal-tab-id',
+          'terminal-session-1',
+        );
+        expect(latestTaskHeaderPropsRef.current.terminalSessionCount).toBe(1);
+        expect(latestTaskHeaderPropsRef.current.deleteBlockedReason).toBe(
+          'End all terminal sessions before deleting this task.',
+        );
+      });
+
+      await act(async () => {
+        latestTaskHeaderPropsRef.current.onSetViewMode('conversation');
+      });
+
+      await waitFor(() => {
+        expect(screen.getByTestId('conversation-blocked-title')).toHaveTextContent(
+          '1 terminal session is using this task',
+        );
+        expect(latestConversationPanelPropsRef.current.inputPlaceholder).toBe(
+          'End terminal sessions before starting a new agent run.',
+        );
+      });
+    });
+
+    it('keeps the terminal tab recoverable when DELETE succeeds but backend truth hydration fails', async () => {
+      const user = userEvent.setup();
+      mockTaskHookState.messages = [];
+      window.sessionStorage.setItem(
+        `agentsmith-terminal-workspace:${mockWorkspaceId}:${mockProjectId}:${mockTaskId}`,
+        JSON.stringify({
+          preferredViewMode: 'terminal',
+          preferredActiveSessionId: 'backend-session-1',
+          artifactsDrawerOpen: true,
+        }),
+      );
+      let listTerminalSessionsCallCount = 0;
+      mockTaskApiListTerminalSessions.mockImplementation(() => {
+        listTerminalSessionsCallCount += 1;
+        if (listTerminalSessionsCallCount === 1) {
+          return Promise.resolve({
+            total: 1,
+            items: [
+              {
+                id: 'backend-session-1',
+                status: 'active',
+                created_at: '2026-04-13T01:00:00.000Z',
+              },
+            ],
+          });
+        }
+        return Promise.reject(new Error('terminal truth unavailable after close'));
+      });
+
+      renderComponent();
+
+      await waitFor(() => {
+        expect(screen.getByTestId('notebook__task-terminal-workspace')).toHaveAttribute(
+          'data-active-terminal-tab-id',
+          'terminal-session-1',
+        );
+        expect(latestTaskHeaderPropsRef.current.terminalSessionCount).toBe(1);
+      });
+
+      await user.click(screen.getByTestId('notebook__task-terminal-close-terminal-session-1'));
+
+      await waitFor(() => {
+        expect(mockTaskApiCloseTerminalSession).toHaveBeenCalledWith(
+          mockWorkspaceId,
+          mockProjectId,
+          mockTaskId,
+          'backend-session-1',
+        );
+        expect(mockTaskApiCloseTerminalSession).toHaveBeenCalledTimes(1);
+        expect(screen.getByTestId('notebook__task-terminal-tab-terminal-session-1')).toBeInTheDocument();
+        expect(latestTaskHeaderPropsRef.current.terminalSessionCount).toBe(1);
+        expect(latestTaskHeaderPropsRef.current.terminalTruthState).toBe('unavailable');
+        expect(latestTaskHeaderPropsRef.current.deleteBlockedReason).toBe(
+          'Terminal session status is temporarily unavailable. Retry before deleting this task.',
+        );
+        expect(screen.getByTestId('notebook__task-terminal-truth-unavailable')).toHaveTextContent(
+          'Terminal session status is temporarily unavailable',
+        );
+      });
+      expect(mockTaskApiListTerminalSessions).toHaveBeenCalledTimes(2);
+      expect(mockHandleError).toHaveBeenCalledWith(
+        expect.any(Error),
+        expect.objectContaining({
+          logContext: 'TaskPage.closeTerminalTab.hydrate',
+        }),
+      );
+    });
+
+    it('keeps a terminal tab visible when panel-internal close succeeds but backend list still returns the session', async () => {
+      mockTaskHookState.messages = [];
+      window.sessionStorage.setItem(
+        `agentsmith-terminal-workspace:${mockWorkspaceId}:${mockProjectId}:${mockTaskId}`,
+        JSON.stringify({
+          preferredViewMode: 'terminal',
+          preferredActiveSessionId: 'backend-session-1',
+          artifactsDrawerOpen: true,
+        }),
+      );
+      const listedSession = {
+        id: 'backend-session-1',
+        status: 'active' as const,
+        created_at: '2026-04-13T01:00:00.000Z',
+      };
+      mockTaskApiListTerminalSessions
+        .mockResolvedValueOnce({
+          total: 1,
+          items: [listedSession],
+        })
+        .mockResolvedValueOnce({
+          total: 1,
+          items: [listedSession],
+        });
+
+      renderComponent();
+
+      await waitFor(() => {
+        expect(screen.getByTestId('notebook__task-terminal-workspace')).toHaveAttribute(
+          'data-active-terminal-tab-id',
+          'terminal-session-1',
+        );
+        expect(latestTaskTerminalPanelPropsRef.current.sessionStorageScope).toBe(
+          'terminal-session-1',
+        );
+      });
+
+      let reconcileResult: string | null = null;
+      await act(async () => {
+        reconcileResult = await latestTaskTerminalPanelPropsRef.current.onSessionCloseReconcile(
+          'backend-session-1',
+        );
+      });
+
+      await waitFor(() => {
+        expect(reconcileResult).toBe('retained');
+        expect(mockTaskApiListTerminalSessions).toHaveBeenCalledTimes(2);
+        expect(screen.getByTestId('notebook__task-terminal-tab-terminal-session-1')).toBeInTheDocument();
+        expect(screen.getByTestId('notebook__task-terminal-workspace')).toHaveAttribute(
+          'data-active-terminal-tab-id',
+          'terminal-session-1',
+        );
+        expect(latestTaskHeaderPropsRef.current.terminalSessionCount).toBe(1);
+        expect(latestTaskHeaderPropsRef.current.deleteBlockedReason).toBe(
+          'End all terminal sessions before deleting this task.',
+        );
+      });
+    });
+
+    it('keeps a terminal tab and marks terminal truth unavailable when panel-internal close succeeds but relist fails', async () => {
+      mockTaskHookState.messages = [];
+      window.sessionStorage.setItem(
+        `agentsmith-terminal-workspace:${mockWorkspaceId}:${mockProjectId}:${mockTaskId}`,
+        JSON.stringify({
+          preferredViewMode: 'terminal',
+          preferredActiveSessionId: 'backend-session-1',
+          artifactsDrawerOpen: true,
+        }),
+      );
+      mockTaskApiListTerminalSessions
+        .mockResolvedValueOnce({
+          total: 1,
+          items: [
+            {
+              id: 'backend-session-1',
+              status: 'active',
+              created_at: '2026-04-13T01:00:00.000Z',
+            },
+          ],
+        })
+        .mockRejectedValueOnce(new Error('terminal truth unavailable after panel close'));
+
+      renderComponent();
+
+      await waitFor(() => {
+        expect(screen.getByTestId('notebook__task-terminal-workspace')).toHaveAttribute(
+          'data-active-terminal-tab-id',
+          'terminal-session-1',
+        );
+        expect(latestTaskHeaderPropsRef.current.terminalSessionCount).toBe(1);
+      });
+
+      let reconcileResult: string | null = null;
+      await act(async () => {
+        reconcileResult = await latestTaskTerminalPanelPropsRef.current.onSessionCloseReconcile(
+          'backend-session-1',
+        );
+      });
+
+      await waitFor(() => {
+        expect(reconcileResult).toBe('unavailable');
+        expect(mockTaskApiListTerminalSessions).toHaveBeenCalledTimes(2);
+        expect(screen.getByTestId('notebook__task-terminal-tab-terminal-session-1')).toBeInTheDocument();
+        expect(latestTaskHeaderPropsRef.current.terminalSessionCount).toBe(1);
+        expect(latestTaskHeaderPropsRef.current.terminalTruthState).toBe('unavailable');
+        expect(latestTaskHeaderPropsRef.current.deleteBlockedReason).toBe(
+          'Terminal session status is temporarily unavailable. Retry before deleting this task.',
+        );
+        expect(screen.getByTestId('notebook__task-terminal-truth-unavailable')).toHaveTextContent(
+          'Terminal session status is temporarily unavailable',
+        );
+      });
+      expect(mockHandleError).toHaveBeenCalledWith(
+        expect.any(Error),
+        expect.objectContaining({
+          logContext: 'TaskPage.panelInternalTerminalClose.hydrate',
+        }),
+      );
     });
 
     it('focuses the recovery tab when reopen terminal workspace is used from a mixed hidden blocker', async () => {
@@ -3169,7 +3798,9 @@ describe('TaskPage', () => {
 
       await user.click(screen.getByText('Send Message'));
       expect(screen.getByTestId('conversation-run-active')).toHaveTextContent('true');
-      expect(screen.getByTestId('task-header-busy')).toHaveTextContent('true');
+      expect(screen.getByTestId('conversation-active-run-message')).toHaveTextContent('new-msg-id');
+      expect(screen.getByTestId('conversation-active-run-state')).toHaveTextContent('running');
+      expect(screen.getByTestId('task-header-busy')).toHaveTextContent('false');
 
       await act(async () => {
         latestTaskSseOptionsRef.current?.onTraceEvent?.({
@@ -3187,7 +3818,7 @@ describe('TaskPage', () => {
         });
       });
       expect(screen.getByTestId('conversation-run-active')).toHaveTextContent('true');
-      expect(screen.getByTestId('task-header-busy')).toHaveTextContent('true');
+      expect(screen.getByTestId('task-header-busy')).toHaveTextContent('false');
 
       await act(async () => {
         latestTaskSseOptionsRef.current?.onTraceEvent?.({
@@ -3215,6 +3846,11 @@ describe('TaskPage', () => {
       await user.click(screen.getByText('Send Message'));
       expect(mockSendMessageMutateAsync).toHaveBeenCalledTimes(1);
       expect(screen.getByTestId('conversation-run-active')).toHaveTextContent('true');
+      expect(latestConversationPanelPropsRef.current.activeRunView).toMatchObject({
+        messageId: 'new-msg-id',
+        runState: 'running',
+        cancelPending: false,
+      });
 
       await user.click(screen.getByText('Send Message'));
       expect(mockSendMessageMutateAsync).toHaveBeenCalledTimes(1);
@@ -3232,6 +3868,7 @@ describe('TaskPage', () => {
 
       await user.click(screen.getByText('Send Message'));
       expect(screen.getByTestId('conversation-run-active')).toHaveTextContent('true');
+      expect(latestConversationPanelPropsRef.current.activeRunView?.onCancel).toEqual(expect.any(Function));
 
       await user.click(screen.getByText('Cancel Active Run'));
 
@@ -3723,7 +4360,7 @@ describe('TaskPage', () => {
 
       await user.click(screen.getByText('Send Message'));
       expect(screen.getByTestId('conversation-run-active')).toHaveTextContent('true');
-      expect(screen.getByTestId('task-header-busy')).toHaveTextContent('true');
+      expect(screen.getByTestId('task-header-busy')).toHaveTextContent('false');
 
       await act(async () => {
         latestTaskSseOptionsRef.current?.onTraceEvent?.(terminalTraceEvent);
@@ -3731,6 +4368,104 @@ describe('TaskPage', () => {
 
       expect(screen.getByTestId('conversation-run-active')).toHaveTextContent('false');
       expect(screen.getByTestId('task-header-busy')).toHaveTextContent('false');
+    });
+
+    it('reconciles a re-entry active run without streamingMessageId when its terminal completion trace arrives', async () => {
+      mockTaskHookState.task = {
+        ...mockTask,
+        run_state: 'running',
+        last_activity_at: '2026-03-06T04:00:10.000Z',
+      };
+      mockTaskHookState.messages = [
+        {
+          ...mockMessages[0],
+          id: 'msg-current-user',
+          content: 'Current request',
+          created_at: '2026-03-06T04:00:00.000Z',
+        },
+        {
+          ...mockMessages[1],
+          id: 'msg-current-run',
+          content: '',
+          created_at: '2026-03-06T04:00:01.000Z',
+        },
+      ];
+      mockUseTaskRefetch.mockImplementation(async () => ({
+        data: mockTaskHookState.task,
+      }));
+
+      const view = await renderComponentReady();
+
+      await waitFor(() => {
+        expect(latestConversationPanelPropsRef.current.streamingMessageId).toBeNull();
+        expect(latestConversationPanelPropsRef.current.activeRunView).toMatchObject({
+          messageId: 'msg-current-run',
+          runState: 'running',
+        });
+      });
+
+      await waitFor(() => {
+        expect(mockUseTaskRefetch).toHaveBeenCalled();
+      });
+      mockUseTaskRefetch.mockClear();
+      mockUseTaskMessagesRefetch.mockClear();
+      mockTaskArtifactsRefetch.mockClear();
+      mockTaskApiListTraces.mockClear();
+      mockUseTaskRefetch.mockImplementation(async () => {
+        mockTaskHookState.task = {
+          ...mockTask,
+          run_state: 'idle',
+          last_activity_at: '2026-03-06T04:00:12.000Z',
+        };
+        return { data: mockTaskHookState.task };
+      });
+
+      await act(async () => {
+        latestTaskSseOptionsRef.current?.onTraceEvent?.({
+          id: 'trace_reentry_terminal_done',
+          task_id: mockTaskId,
+          message_id: 'msg-current-run',
+          run_id: 'run-current',
+          seq: 12,
+          at: '2026-03-06T04:00:12.000Z',
+          category: 'lifecycle',
+          phase: 'end',
+          status: 'success',
+          name: 'execution.terminal',
+          summary: 'Run completed',
+        } satisfies TaskTraceEvent);
+      });
+
+      await waitFor(() => {
+        expect(mockUseTaskRefetch).toHaveBeenCalled();
+        expect(mockUseTaskMessagesRefetch).toHaveBeenCalled();
+        expect(mockTaskArtifactsRefetch).toHaveBeenCalled();
+        expect(mockTaskApiListTraces).toHaveBeenCalledWith(
+          mockWorkspaceId,
+          mockProjectId,
+          mockTaskId,
+          expect.objectContaining({ page_size: 500 }),
+        );
+      });
+
+      view.rerender(
+        <QueryClientProvider client={view.queryClient}>
+          <TaskPage
+            workspaceId={mockWorkspaceId}
+            projectId={mockProjectId}
+            taskId={mockTaskId}
+            canCreateTask={true}
+            canUpdateTask={true}
+            canDeleteTask={true}
+            canUseTerminal={true}
+          />
+        </QueryClientProvider>,
+      );
+
+      await waitFor(() => {
+        expect(latestConversationPanelPropsRef.current.activeRunView).toBeNull();
+        expect(screen.getByTestId('conversation-run-active')).toHaveTextContent('false');
+      });
     });
 
     it('does not clear streaming state immediately during an idle gap after send', async () => {

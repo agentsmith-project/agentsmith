@@ -1,4 +1,5 @@
 import { EventEmitter } from 'node:events';
+import { relative } from 'node:path';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 const { execFileMock, mkdirMock, fetchMock, readFileMock, spawnMock, writeFileMock } = vi.hoisted(() => ({
@@ -67,6 +68,12 @@ function findRegistrySession(
 function expectIsoTimestamp(value: unknown): void {
   expect(typeof value).toBe('string');
   expect(Number.isNaN(Date.parse(String(value)))).toBe(false);
+}
+
+function expectPathOutside(root: string, target: string): void {
+  const rel = relative(root, target);
+  expect(rel).not.toBe('');
+  expect(rel.startsWith('..')).toBe(true);
 }
 
 function buildRunnerProcessCommand(args: {
@@ -200,18 +207,26 @@ describe('task-workspace', () => {
     })).toBe('/workspace/task_1');
   });
 
-  it('builds task-root-scoped runtime paths under the task directory', () => {
+  it('builds explicit visible, runtime, and artifact roots for a task workspace', () => {
+    process.env.MBOS_AGENT_CODEX_STATE_ROOT = '/runner-runtime';
+
     const paths = buildTaskWorkspacePaths('/workspace/task_1', 'docker_external');
     expect(paths).toMatchObject({
       mode: 'docker_external',
+      visibleRoot: '/workspace/task_1',
       mountRoot: '/workspace/task_1',
       taskRoot: '/workspace/task_1',
-      homeDir: '/workspace/task_1',
-      codexDir: '/workspace/task_1/.codex',
       artifactsDir: '/workspace/task_1/.artifacts',
-      mbosDir: '/workspace/task_1/.mbos',
-      skillsDir: '/workspace/task_1/.agents/skills',
     });
+    expect(paths.runtimeRoot).toMatch(/^\/runner-runtime\/task_1-[a-f0-9]{16}$/);
+    expect(paths.homeDir).toBe(paths.runtimeRoot);
+    expect(paths.codexDir).toBe(`${paths.runtimeRoot}/.codex`);
+    expect(paths.mbosDir).toBe(`${paths.runtimeRoot}/.mbos`);
+    expect(paths.skillsDir).toBe(`${paths.runtimeRoot}/.agents/skills`);
+    expectPathOutside(paths.visibleRoot, paths.homeDir);
+    expectPathOutside(paths.visibleRoot, paths.codexDir);
+    expectPathOutside(paths.visibleRoot, paths.mbosDir);
+    expectPathOutside(paths.visibleRoot, paths.skillsDir);
   });
 
   it('prefers an explicit workspace path for pre-mounted internal runs', () => {
@@ -275,6 +290,7 @@ describe('task-workspace', () => {
   it('mounts external file-library workspaces directly at the task directory', async () => {
     process.env.MBOS_RUNNER_MODE = 'docker_external';
     process.env.MBOS_AGENT_WORKSPACE_ROOT = '/tmp/runner-root';
+    process.env.MBOS_AGENT_CODEX_STATE_ROOT = '/runner-runtime';
     fetchMock.mockResolvedValue({
       ok: true,
       json: async () => ({
@@ -316,9 +332,17 @@ describe('task-workspace', () => {
     );
     expect(resolved.cwd).toBe('/workspace/task_1');
     expect(resolved.source).toBe('file_library_mount');
-    expect(resolved.paths.homeDir).toBe('/workspace/task_1');
-    expect(resolved.paths.codexDir).toBe('/workspace/task_1/.codex');
-    expect(resolved.paths.mbosDir).toBe('/workspace/task_1/.mbos');
+    expect(resolved.paths.visibleRoot).toBe('/workspace/task_1');
+    expect(resolved.paths.runtimeRoot).toMatch(/^\/runner-runtime\/task_1-[a-f0-9]{16}$/);
+    expect(resolved.paths.homeDir).toBe(resolved.paths.runtimeRoot);
+    expect(resolved.paths.codexDir).toBe(`${resolved.paths.runtimeRoot}/.codex`);
+    expect(resolved.paths.mbosDir).toBe(`${resolved.paths.runtimeRoot}/.mbos`);
+    expect(resolved.paths.skillsDir).toBe(`${resolved.paths.runtimeRoot}/.agents/skills`);
+    expect(resolved.paths.artifactsDir).toBe('/workspace/task_1/.artifacts');
+    expectPathOutside(resolved.cwd, resolved.paths.homeDir);
+    expectPathOutside(resolved.cwd, resolved.paths.codexDir);
+    expectPathOutside(resolved.cwd, resolved.paths.mbosDir);
+    expectPathOutside(resolved.cwd, resolved.paths.skillsDir);
     expect(typeof resolved.release).toBe('function');
     expect(writeFileMock).toHaveBeenCalledWith(
       '/tmp/runner-root/task-workspace-mount-sessions.json',
@@ -1394,7 +1418,7 @@ describe('task-workspace', () => {
     mkdirMock.mockImplementation(async (target: string) => {
       const seen = mkdirCalls.get(target) ?? 0;
       mkdirCalls.set(target, seen + 1);
-      if (target === '/workspace/task_1/.mbos' && seen === 0) {
+      if (target === '/workspace/task_1/.artifacts' && seen === 0) {
         const error = new Error('stale mount') as NodeJS.ErrnoException;
         error.code = 'EIO';
         throw error;
@@ -1854,6 +1878,7 @@ describe('task-workspace', () => {
 
   it('uses the explicit internal task path for pre-mounted workspaces', async () => {
     process.env.MBOS_RUNNER_MODE = 'k8s_internal';
+    process.env.MBOS_AGENT_CODEX_STATE_ROOT = '/runner-runtime';
 
     const resolved = await prepareTaskWorkspace({
       executionContext: {
@@ -1866,9 +1891,59 @@ describe('task-workspace', () => {
 
     expect(resolved.cwd).toBe('/workspace/task_internal');
     expect(resolved.source).toBe('workspace_path');
-    expect(resolved.paths.codexDir).toBe('/workspace/task_internal/.codex');
-    expect(resolved.paths.mbosDir).toBe('/workspace/task_internal/.mbos');
-    expect(resolved.paths.skillsDir).toBe('/workspace/task_internal/.agents/skills');
+    expect(resolved.paths.visibleRoot).toBe('/workspace/task_internal');
+    expect(resolved.paths.runtimeRoot).toMatch(/^\/runner-runtime\/task_internal-[a-f0-9]{16}$/);
+    expect(resolved.paths.homeDir).toBe(resolved.paths.runtimeRoot);
+    expect(resolved.paths.codexDir).toBe(`${resolved.paths.runtimeRoot}/.codex`);
+    expect(resolved.paths.mbosDir).toBe(`${resolved.paths.runtimeRoot}/.mbos`);
+    expect(resolved.paths.skillsDir).toBe(`${resolved.paths.runtimeRoot}/.agents/skills`);
+    expect(resolved.paths.artifactsDir).toBe('/workspace/task_internal/.artifacts');
+    expectPathOutside(resolved.cwd, resolved.paths.homeDir);
+    expectPathOutside(resolved.cwd, resolved.paths.codexDir);
+    expectPathOutside(resolved.cwd, resolved.paths.mbosDir);
+    expectPathOutside(resolved.cwd, resolved.paths.skillsDir);
+  });
+
+  it('isolates runtime roots for pre-mounted workspaces with matching visible basenames', async () => {
+    process.env.MBOS_RUNNER_MODE = 'k8s_internal';
+    process.env.MBOS_AGENT_CODEX_STATE_ROOT = '/runner-runtime';
+
+    const first = await prepareTaskWorkspace({
+      executionContext: {
+        workspace_binding_mode: 'pre_mounted',
+        workspace_path: '/workspace/team-a/task_shared',
+      },
+      username: 'alice',
+      taskId: 'task_a',
+    });
+    const second = await prepareTaskWorkspace({
+      executionContext: {
+        workspace_binding_mode: 'pre_mounted',
+        workspace_path: '/workspace/team-b/task_shared',
+      },
+      username: 'alice',
+      taskId: 'task_b',
+    });
+    const stableFirst = await prepareTaskWorkspace({
+      executionContext: {
+        workspace_binding_mode: 'pre_mounted',
+        workspace_path: '/workspace/team-a/task_shared/',
+      },
+      username: 'alice',
+      taskId: 'task_a',
+    });
+
+    expect(first.cwd).toBe('/workspace/team-a/task_shared');
+    expect(second.cwd).toBe('/workspace/team-b/task_shared');
+    expect(first.paths.runtimeRoot).toMatch(/^\/runner-runtime\/task_shared-[a-f0-9]{16}$/);
+    expect(second.paths.runtimeRoot).toMatch(/^\/runner-runtime\/task_shared-[a-f0-9]{16}$/);
+    expect(first.paths.runtimeRoot).not.toBe(second.paths.runtimeRoot);
+    expect(first.paths.homeDir).not.toBe(second.paths.homeDir);
+    expect(first.paths.codexDir).not.toBe(second.paths.codexDir);
+    expect(first.paths.mbosDir).not.toBe(second.paths.mbosDir);
+    expect(first.paths.skillsDir).not.toBe(second.paths.skillsDir);
+    expect(first.paths.runtimeRoot).toBe(stableFirst.paths.runtimeRoot);
+    expect(first.paths.homeDir).toBe(stableFirst.paths.homeDir);
   });
 
   it('recognizes retryable mount failures', () => {

@@ -24,12 +24,12 @@
 ## 2. Current runtime contract
 
 当前三条运行模式共享这些不变量：
-- `cwd` 始终是 task-scoped workspace
-- `HOME` 与 `cwd` 相同
-- Codex runtime 状态写到 task-local `~/.codex`
-- runner runtime 元数据写到 task-local `~/.mbos`
-- builtin skills 安装到 task-local `~/.agents/skills`
-- 用户可见 deliverables 写到 task-local `./.artifacts/`
+- `cwd` 始终是 task-scoped 用户文件工作区
+- `HOME` 是 runner-private runtime home，与 `cwd` 分离
+- Codex runtime 状态写到 `$HOME/.codex`
+- runner runtime 元数据写到 `$HOME/.mbos`
+- builtin skills 安装到 `$HOME/.agents/skills`
+- 用户可见 deliverables 写到 `cwd/.artifacts/`
 - 共享上下文、简单 credentials、managed OAuth credentials 通过 AgentSmith Context Store 暴露，不应假设存在于 workspace 文件树
 
 ### Runtime modes

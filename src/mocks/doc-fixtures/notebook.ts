@@ -62,6 +62,7 @@ export const docTaskFixtures: Task[] = [
     updated_at: '2026-03-17T09:03:00Z',
     last_activity_at: '2026-03-17T09:03:00Z',
     run_state: 'running',
+    active_run_started_at: '2026-03-17T09:02:20Z',
   },
 ];
 

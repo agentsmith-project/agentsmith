@@ -23,6 +23,8 @@ export type TerminalStatus =
   | 'closed'
   | 'failed';
 
+export type TerminalCloseReconcileResult = 'closed' | 'retained' | 'unavailable';
+
 type TerminalProgressReason = 'runner_offline' | 'run_in_progress' | null;
 
 export function getTaskTerminalSessionStorageKey(
@@ -249,10 +251,14 @@ export interface TaskTerminalPanelProps {
   taskApi: TaskAPI;
   disabled?: boolean;
   closeRequestToken?: number;
+  focusRequestToken?: number;
   onOpenChange: (open: boolean) => void;
   onSessionResolved?: (sessionId: string) => void;
   onStatusChange?: (status: TerminalStatus) => void;
   onSessionCreateRejected?: () => void | Promise<void>;
+  onSessionCloseReconcile?: (
+    sessionId: string | null,
+  ) => TerminalCloseReconcileResult | Promise<TerminalCloseReconcileResult>;
 }
 
 export function TaskTerminalPanel({
@@ -267,10 +273,12 @@ export function TaskTerminalPanel({
   taskApi,
   disabled = false,
   closeRequestToken = 0,
+  focusRequestToken = 0,
   onOpenChange,
   onSessionResolved,
   onStatusChange,
   onSessionCreateRejected,
+  onSessionCloseReconcile,
 }: TaskTerminalPanelProps) {
   const t = useTranslations('notebook.task');
   const containerRef = React.useRef<HTMLDivElement | null>(null);
@@ -287,11 +295,13 @@ export function TaskTerminalPanel({
   const reconnectingRef = React.useRef(false);
   const fitFrameRef = React.useRef<number | null>(null);
   const closeRequestTokenRef = React.useRef(closeRequestToken);
-  const previousVisibleRef = React.useRef(visible);
+  const focusRequestTokenRef = React.useRef(0);
   const visibleRef = React.useRef(visible);
   const pendingTerminalFocusRef = React.useRef(false);
   const pendingResolutionCloseRef = React.useRef(false);
   const pendingTransportReconnectRef = React.useRef(false);
+  const authoritativeCloseInFlightRef = React.useRef(false);
+  const suppressResolvedConnectionAfterCloseRef = React.useRef(false);
   const unmountingRef = React.useRef(false);
   const [hasInteractiveMount, setHasInteractiveMount] = React.useState(open && visible);
   const [connectionRetryToken, setConnectionRetryToken] = React.useState(0);
@@ -303,6 +313,7 @@ export function TaskTerminalPanel({
   const onSessionResolvedRef = React.useRef(onSessionResolved);
   const onStatusChangeRef = React.useRef(onStatusChange);
   const onSessionCreateRejectedRef = React.useRef(onSessionCreateRejected);
+  const onSessionCloseReconcileRef = React.useRef(onSessionCloseReconcile);
   const sessionStorageKey = React.useMemo(
     () => getTaskTerminalSessionStorageKey(workspaceId, projectId, taskId, sessionStorageScope),
     [projectId, sessionStorageScope, taskId, workspaceId],
@@ -331,6 +342,10 @@ export function TaskTerminalPanel({
   React.useEffect(() => {
     onSessionCreateRejectedRef.current = onSessionCreateRejected;
   }, [onSessionCreateRejected]);
+
+  React.useEffect(() => {
+    onSessionCloseReconcileRef.current = onSessionCloseReconcile;
+  }, [onSessionCloseReconcile]);
 
   React.useEffect(() => {
     statusRef.current = status;
@@ -362,17 +377,10 @@ export function TaskTerminalPanel({
 
   React.useEffect(() => {
     visibleRef.current = visible;
-  }, [visible]);
-
-  React.useEffect(() => {
-    if (!previousVisibleRef.current && open && visible) {
-      pendingTerminalFocusRef.current = true;
-    }
     if (!visible) {
       pendingTerminalFocusRef.current = false;
     }
-    previousVisibleRef.current = visible;
-  }, [open, visible]);
+  }, [visible]);
 
   const readStoredSessionId = React.useCallback(() => {
     if (typeof window === 'undefined') return null;
@@ -410,6 +418,8 @@ export function TaskTerminalPanel({
   );
 
   const finalizeClosedSession = React.useCallback(() => {
+    authoritativeCloseInFlightRef.current = false;
+    suppressResolvedConnectionAfterCloseRef.current = false;
     pendingTransportReconnectRef.current = false;
     reconnectingRef.current = false;
     setErrorMessage(null);
@@ -417,6 +427,70 @@ export function TaskTerminalPanel({
     invalidateSessionHandle({ clearStored: true });
     updateStatus('closed');
   }, [invalidateSessionHandle, updateStatus]);
+
+  const markAuthoritativeCloseFailed = React.useCallback((error: unknown, sessionId: string | null) => {
+    authoritativeCloseInFlightRef.current = false;
+    explicitCloseRequestedRef.current = false;
+    pendingResolutionCloseRef.current = false;
+    reconnectingRef.current = false;
+    invalidateSessionHandle();
+    if (sessionId) {
+      storeSessionId(sessionId);
+      onSessionResolvedRef.current?.(sessionId);
+    }
+    const message = error instanceof Error ? error.message : 'task_terminal_session_close_failed';
+    const friendlyReason = describeTerminalError(translationRef.current, message);
+    updateStatus('failed');
+    setErrorMessage(friendlyReason);
+    setProgressReason(null);
+    toast.error(friendlyReason);
+  }, [invalidateSessionHandle, storeSessionId, updateStatus]);
+
+  const restoreSessionAfterUnconfirmedClose = React.useCallback(
+    (
+      sessionId: string | null,
+      result: Exclude<TerminalCloseReconcileResult, 'closed'>,
+    ) => {
+      authoritativeCloseInFlightRef.current = false;
+      explicitCloseRequestedRef.current = false;
+      pendingResolutionCloseRef.current = false;
+      suppressResolvedConnectionAfterCloseRef.current = false;
+      pendingTransportReconnectRef.current = false;
+      reconnectingRef.current = Boolean(sessionId);
+      invalidateSessionHandle();
+      if (sessionId) {
+        storeSessionId(sessionId);
+        onSessionResolvedRef.current?.(sessionId);
+      }
+      setProgressReason(null);
+      if (result === 'retained') {
+        setErrorMessage(null);
+        updateStatus('recovering');
+        setConnectionRetryToken((current) => current + 1);
+        return;
+      }
+      updateStatus(statusRef.current === 'failed' ? 'failed' : 'recovering');
+    },
+    [invalidateSessionHandle, storeSessionId, updateStatus],
+  );
+
+  const reconcileClosedSession = React.useCallback(
+    async (sessionId: string | null) => {
+      const reconcile = onSessionCloseReconcileRef.current;
+      if (!reconcile) {
+        finalizeClosedSession();
+        onOpenChangeRef.current(false);
+        return;
+      }
+      const result = await reconcile(sessionId);
+      if (result === 'retained' || result === 'unavailable') {
+        restoreSessionAfterUnconfirmedClose(sessionId, result);
+        return;
+      }
+      finalizeClosedSession();
+    },
+    [finalizeClosedSession, restoreSessionAfterUnconfirmedClose],
+  );
 
   const createSessionWithRetry = React.useCallback(async () => {
     let lastError: unknown = null;
@@ -596,9 +670,29 @@ export function TaskTerminalPanel({
 
   const focusTerminalIfRequested = React.useCallback(() => {
     if (!pendingTerminalFocusRef.current) return;
+    if (!visibleRef.current) return;
+    if (!terminalRef.current) return;
     terminalRef.current?.focus();
     pendingTerminalFocusRef.current = false;
   }, []);
+
+  React.useEffect(() => {
+    if (focusRequestToken <= focusRequestTokenRef.current) return;
+    focusRequestTokenRef.current = focusRequestToken;
+    if (focusRequestToken <= 0) return;
+    pendingTerminalFocusRef.current = true;
+    if (!open || !visible || !hasInteractiveMount || !terminalRef.current) return;
+    const frame = window.requestAnimationFrame(() => {
+      focusTerminalIfRequested();
+    });
+    return () => window.cancelAnimationFrame(frame);
+  }, [
+    focusRequestToken,
+    focusTerminalIfRequested,
+    hasInteractiveMount,
+    open,
+    visible,
+  ]);
 
   React.useEffect(() => {
     if (!open || !visible || !hasInteractiveMount) return;
@@ -655,7 +749,7 @@ export function TaskTerminalPanel({
     pendingResolutionCloseRef.current = false;
 
     void resolveSession().then((resolution) => {
-      if (pendingResolutionCloseRef.current) {
+      if (pendingResolutionCloseRef.current || suppressResolvedConnectionAfterCloseRef.current) {
         return;
       }
       if (cancelled || !terminalRef.current) return;
@@ -778,6 +872,10 @@ export function TaskTerminalPanel({
           return;
         }
         if (message.type === 'exited') {
+          if (authoritativeCloseInFlightRef.current) {
+            terminalRef.current.writeln(`\r\n${translationRef.current('terminal_closed')}`);
+            return;
+          }
           finalizeClosedSession();
           terminalRef.current.writeln(`\r\n${translationRef.current('terminal_closed')}`);
           if (explicitCloseRequestedRef.current) {
@@ -805,6 +903,9 @@ export function TaskTerminalPanel({
         dataDisposable.dispose();
         releaseSocketResources({ close: false });
         if (cancelled || unmountingRef.current) return;
+        if (authoritativeCloseInFlightRef.current) {
+          return;
+        }
         if (explicitCloseRequestedRef.current) {
           finalizeClosedSession();
           onOpenChangeRef.current(false);
@@ -921,77 +1022,54 @@ export function TaskTerminalPanel({
     explicitCloseRequestedRef.current = true;
     const storedSessionId = readStoredSessionId();
     const pendingResolution = sessionResolutionPromiseRef.current ?? getCachedTerminalSessionResolution(sessionStorageKey);
-    clearStoredSessionId();
-    if (storedSessionId && statusRef.current === 'failed') {
+    if (storedSessionId) {
+      pendingResolutionCloseRef.current = true;
+      authoritativeCloseInFlightRef.current = true;
+      suppressResolvedConnectionAfterCloseRef.current = true;
+      invalidateSessionHandle();
       cleanupSocket();
       void taskApi
         .closeTerminalSession(workspaceId, projectId, taskId, storedSessionId)
-        .catch(() => {
-          // Best-effort cleanup for failed sessions that still exist in backend state.
-        })
-        .finally(() => {
-          finalizeClosedSession();
-          onOpenChangeRef.current(false);
+        .then(() => reconcileClosedSession(storedSessionId))
+        .catch((error) => {
+          markAuthoritativeCloseFailed(error, storedSessionId);
         });
-      return;
-    }
-    if (socketRef.current?.readyState === WebSocket.OPEN) {
-      socketRef.current.send(JSON.stringify({ type: 'terminal.close' }));
       return;
     }
     if (pendingResolution) {
       pendingResolutionCloseRef.current = true;
-      invalidateSessionHandle({ clearStored: true });
-      if (storedSessionId) {
-        void taskApi
-          .closeTerminalSession(workspaceId, projectId, taskId, storedSessionId)
-          .catch(() => {
-            // Best-effort cleanup for hidden/disconnected stored sessions.
-          })
-          .finally(() => {
-            finalizeClosedSession();
-          });
-        onOpenChangeRef.current(false);
-        return;
-      }
-      void pendingResolution
-        .then((resolution) => {
-          return taskApi.closeTerminalSession(
+      authoritativeCloseInFlightRef.current = true;
+      suppressResolvedConnectionAfterCloseRef.current = true;
+      invalidateSessionHandle();
+      cleanupSocket();
+      void (async () => {
+        let resolvedSessionId: string | null = null;
+        try {
+          const resolution = await pendingResolution;
+          resolvedSessionId = getClosableSessionIdFromResolution(resolution);
+          await taskApi.closeTerminalSession(
             workspaceId,
             projectId,
             taskId,
-            getClosableSessionIdFromResolution(resolution),
+            resolvedSessionId,
           );
-        })
-        .catch(() => {
-          // Best-effort cleanup for sessions that resolved after the tab was already closed.
-        })
-        .finally(() => {
-          finalizeClosedSession();
-        });
-      onOpenChangeRef.current(false);
+          await reconcileClosedSession(resolvedSessionId);
+        } catch (error) {
+          markAuthoritativeCloseFailed(error, resolvedSessionId);
+        }
+      })();
       return;
     }
-    if (storedSessionId) {
-      void taskApi
-        .closeTerminalSession(workspaceId, projectId, taskId, storedSessionId)
-        .catch(() => {
-          // Best-effort cleanup for hidden/disconnected sessions.
-        })
-        .finally(() => {
-          finalizeClosedSession();
-          onOpenChangeRef.current(false);
-        });
-      return;
-    }
+    cleanupSocket();
     finalizeClosedSession();
     onOpenChangeRef.current(false);
   }, [
     cleanupSocket,
-    clearStoredSessionId,
     finalizeClosedSession,
     invalidateSessionHandle,
+    markAuthoritativeCloseFailed,
     projectId,
+    reconcileClosedSession,
     readStoredSessionId,
     sessionStorageKey,
     taskApi,

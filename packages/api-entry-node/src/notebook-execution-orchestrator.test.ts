@@ -1339,6 +1339,7 @@ describe('notebook-execution-orchestrator governance preflight', () => {
           base_url: 'https://example.com',
           model_profile: {
             max_context_tokens: 200000,
+            max_output_tokens: 32000,
           },
           created_at: new Date().toISOString(),
           updated_at: new Date().toISOString(),
@@ -1401,7 +1402,11 @@ describe('notebook-execution-orchestrator governance preflight', () => {
       expect.objectContaining({
         executionContext: expect.objectContaining({
           model_context_window: 200000,
-          model_auto_compact_token_limit: 180000,
+          model_auto_compact_token_limit: 168000,
+          model_limits: {
+            context_window: 200000,
+            max_output_tokens: 32000,
+          },
           model_catalog: {
             input_modalities: ['text'],
             supports_search_tool: false,

@@ -11,13 +11,30 @@ function resolveRepoPath(targetPath: string): string {
   return path.resolve(REPO_ROOT, targetPath);
 }
 
-async function main(): Promise<void> {
-  const inputPath = resolveRepoPath(process.argv[2] ?? 'docs/contracts/specs/openapi.yaml');
-  const outputPath = resolveRepoPath(process.argv[3] ?? 'docs/contracts/specs/openapi.json');
-  const yaml = await readFile(inputPath, 'utf-8');
-  const spec = YAML.parse(yaml) as unknown;
-  await writeFile(outputPath, `${JSON.stringify(spec, null, 2)}\n`, 'utf-8');
-  process.stdout.write(`[openapi] generated ${path.relative(REPO_ROOT, outputPath)} from ${path.relative(REPO_ROOT, inputPath)}\n`);
+export function renderSpecJsonFromYaml(yamlSource: string): string {
+  const spec = YAML.parse(yamlSource) as unknown;
+  return `${JSON.stringify(spec, null, 2)}\n`;
 }
 
-void main();
+export async function syncSpecJson(input: string, output: string): Promise<{
+  inputPath: string;
+  outputPath: string;
+}> {
+  const inputPath = resolveRepoPath(input);
+  const outputPath = resolveRepoPath(output);
+  const yaml = await readFile(inputPath, 'utf-8');
+  await writeFile(outputPath, renderSpecJsonFromYaml(yaml), 'utf-8');
+  return { inputPath, outputPath };
+}
+
+async function main(): Promise<void> {
+  const { inputPath, outputPath } = await syncSpecJson(
+    process.argv[2] ?? 'docs/contracts/specs/openapi.yaml',
+    process.argv[3] ?? 'docs/contracts/specs/openapi.json',
+  );
+  process.stdout.write(`[contracts] generated ${path.relative(REPO_ROOT, outputPath)} from ${path.relative(REPO_ROOT, inputPath)}\n`);
+}
+
+if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
+  void main();
+}

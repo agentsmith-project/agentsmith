@@ -95,7 +95,8 @@ function expectRelativeLibraryRootPath(value: string | null | undefined): void {
 }
 
 async function expectTaskRuntimeStatePersisted(args: {
-  mountPath: string;
+  artifactsRoot: string;
+  runtimeRoot: string;
   artifactName: string;
   artifactToken: string;
 }): Promise<void> {
@@ -103,11 +104,11 @@ async function expectTaskRuntimeStatePersisted(args: {
     .poll(
       async () => {
         const [artifactContent, codexConfig, modelCatalog, skillsManifest, feishuSkill] = await Promise.all([
-          readFile(path.join(args.mountPath, '.artifacts', args.artifactName), 'utf-8').catch(() => null),
-          readFile(path.join(args.mountPath, '.codex', 'config.toml'), 'utf-8').catch(() => null),
-          readFile(path.join(args.mountPath, '.codex', 'catalog.json'), 'utf-8').catch(() => null),
-          readFile(path.join(args.mountPath, '.mbos', 'builtin-skills-manifest.json'), 'utf-8').catch(() => null),
-          readFile(path.join(args.mountPath, '.agents', 'skills', 'feishu-docs', 'SKILL.md'), 'utf-8').catch(() => null),
+          readFile(path.join(args.artifactsRoot, '.artifacts', args.artifactName), 'utf-8').catch(() => null),
+          readFile(path.join(args.runtimeRoot, '.codex', 'config.toml'), 'utf-8').catch(() => null),
+          readFile(path.join(args.runtimeRoot, '.codex', 'catalog.json'), 'utf-8').catch(() => null),
+          readFile(path.join(args.runtimeRoot, '.mbos', 'builtin-skills-manifest.json'), 'utf-8').catch(() => null),
+          readFile(path.join(args.runtimeRoot, '.agents', 'skills', 'feishu-docs', 'SKILL.md'), 'utf-8').catch(() => null),
         ]);
         const parsedCatalog = typeof modelCatalog === 'string'
           ? JSON.parse(modelCatalog) as { models?: Array<{ slug?: string; display_name?: string }> }
@@ -131,6 +132,19 @@ async function expectTaskRuntimeStatePersisted(args: {
       skillsManifestReady: true,
       feishuSkillReady: true,
     });
+}
+
+async function expectTaskArtifactPersisted(args: {
+  mountPath: string;
+  artifactName: string;
+  artifactToken: string;
+}): Promise<void> {
+  await expect
+    .poll(
+      () => readFile(path.join(args.mountPath, '.artifacts', args.artifactName), 'utf-8').catch(() => null),
+      { timeout: 90_000, intervals: [1_000, 2_000, 5_000] },
+    )
+    .toContain(args.artifactToken);
 }
 
 function isRetryableUpstreamCapacityError(content: string | null | undefined): boolean {
@@ -556,6 +570,16 @@ test.describe('@lane-real notebook external agent via real codex runner', () => 
       await expect(verifiedDownload.text()).resolves.toContain(replyToken);
       await captureTrace('download-artifact');
 
+      const runtimePaths = await runner.resolveTaskRuntimePaths();
+      expect(runtimePaths?.runtimeRoot).toBeTruthy();
+      expect(runtimePaths?.runtimeRoot).not.toBe(runtimePaths?.cwd);
+      await expectTaskRuntimeStatePersisted({
+        artifactsRoot: runtimePaths!.cwd,
+        runtimeRoot: runtimePaths!.runtimeRoot,
+        artifactName,
+        artifactToken: replyToken,
+      });
+
       await runner.stop();
       runnerStopped = true;
 
@@ -564,7 +588,7 @@ test.describe('@lane-real notebook external agent via real codex runner', () => 
         workspaceAccessBody.storage_bucket_url,
       );
       try {
-        await expectTaskRuntimeStatePersisted({
+        await expectTaskArtifactPersisted({
           mountPath: resolveMountedTaskRoot(localMount.mountPath, {
             libraryRootPath: workspaceAccessBody.library_root_path,
           }),
@@ -1189,6 +1213,16 @@ test.describe('@lane-real notebook external agent via real codex runner', () => 
       expect(workspaceAccessBody.metadata_url).toBeTruthy();
       expectRelativeLibraryRootPath(workspaceAccessBody.library_root_path);
 
+      const runtimePaths = await runner.resolveTaskRuntimePaths();
+      expect(runtimePaths?.runtimeRoot).toBeTruthy();
+      expect(runtimePaths?.runtimeRoot).not.toBe(runtimePaths?.cwd);
+      await expectTaskRuntimeStatePersisted({
+        artifactsRoot: runtimePaths!.cwd,
+        runtimeRoot: runtimePaths!.runtimeRoot,
+        artifactName,
+        artifactToken: replyToken,
+      });
+
       await runner.stop();
       runnerStopped = true;
 
@@ -1197,7 +1231,7 @@ test.describe('@lane-real notebook external agent via real codex runner', () => 
         workspaceAccessBody.storage_bucket_url,
       );
       try {
-        await expectTaskRuntimeStatePersisted({
+        await expectTaskArtifactPersisted({
           mountPath: resolveMountedTaskRoot(localMount.mountPath, {
             libraryRootPath: workspaceAccessBody.library_root_path,
           }),

@@ -44,6 +44,7 @@ const {
   releaseAllPreparedTaskWorkspacesMock,
   resolveBuiltinSkillsConfigMock,
   resolveCodexTerminalOutcomeMock,
+  resolveModelAutoCompactTokenLimitMock,
   resolveRunnerSuccessPolicyMock,
   scanArtifactsDirectoryMock,
   scanWorkspaceFilesSnapshotMock,
@@ -91,19 +92,21 @@ const {
       args: input.args,
       env: input.env,
     })),
-    prepareNotebookWorkspaceAssetsMock: vi.fn(async () => ({ artifactsDir: '/workspace/.artifacts' })),
+    prepareNotebookWorkspaceAssetsMock: vi.fn(async () => ({ artifactsDir: '/workspace/task_1/.artifacts' })),
     prepareTaskWorkspaceMock: vi.fn(async () => ({
       cwd: '/workspace/task_1',
       source: 'file_library_mount' as const,
       paths: {
         mode: 'docker_external' as const,
+        visibleRoot: '/workspace/task_1',
         mountRoot: '/workspace/task_1',
         taskRoot: '/workspace/task_1',
-        homeDir: '/workspace/task_1',
-        codexDir: '/workspace/task_1/.codex',
+        runtimeRoot: '/runner-runtime/task_1',
+        homeDir: '/runner-runtime/task_1',
+        codexDir: '/runner-runtime/task_1/.codex',
         artifactsDir: '/workspace/task_1/.artifacts',
-        mbosDir: '/workspace/task_1/.mbos',
-        skillsDir: '/workspace/task_1/.agents/skills',
+        mbosDir: '/runner-runtime/task_1/.mbos',
+        skillsDir: '/runner-runtime/task_1/.agents/skills',
       },
       release: vi.fn(async () => undefined),
     })),
@@ -124,6 +127,28 @@ const {
       errorCode: null,
       errorMessage: null,
     })),
+    resolveModelAutoCompactTokenLimitMock: vi.fn((input: {
+      modelContextWindow?: number;
+      modelMaxOutputTokens?: number;
+      modelAutoCompactTokenLimit?: number;
+    }) => {
+      const positiveInteger = (value: number | undefined): number | undefined => (
+        typeof value === 'number' && Number.isFinite(value) && value > 0 ? Math.floor(value) : undefined
+      );
+      const modelContextWindow = positiveInteger(input.modelContextWindow);
+      const modelMaxOutputTokens = positiveInteger(input.modelMaxOutputTokens);
+      const explicitCompactLimit = positiveInteger(input.modelAutoCompactTokenLimit);
+      const derivedCompactLimit = modelContextWindow !== undefined && modelMaxOutputTokens !== undefined
+        ? Math.max(1, modelContextWindow - modelMaxOutputTokens)
+        : undefined;
+      if (
+        explicitCompactLimit !== undefined
+        && (derivedCompactLimit === undefined || explicitCompactLimit === derivedCompactLimit)
+      ) {
+        return explicitCompactLimit;
+      }
+      return derivedCompactLimit ?? explicitCompactLimit;
+    }),
     resolveRunnerSuccessPolicyMock: vi.fn((input?: { visibleAgentChars?: number }) => (
       input?.visibleAgentChars === -1
         ? {
@@ -137,9 +162,9 @@ const {
     scanWorkspaceFilesSnapshotMock: vi.fn(async () => undefined),
     selectLatestInstructionMock: vi.fn(() => 'latest user instruction'),
     seedBuiltinSkillsMock: vi.fn(async () => ({
-      targetDir: '/workspace/task_1/.agents/skills',
+      targetDir: '/runner-runtime/task_1/.agents/skills',
       seeded: [],
-      manifestPath: '/workspace/task_1/.mbos/builtin-skills-manifest.json',
+      manifestPath: '/runner-runtime/task_1/.mbos/builtin-skills-manifest.json',
     })),
     sanitizeAgentDeltaChunkMock: vi.fn((chunk: string) => chunk),
     sanitizeStderrChunkMock: vi.fn((chunk: string) => chunk),
@@ -220,6 +245,7 @@ vi.mock('./codex-command-builder.js', () => ({
   buildCodexExecArgs: buildCodexExecArgsMock,
   buildTaskCodexConfig: buildTaskCodexConfigMock,
   buildTaskCodexModelCatalog: buildTaskCodexModelCatalogMock,
+  resolveModelAutoCompactTokenLimit: resolveModelAutoCompactTokenLimitMock,
 }));
 
 vi.mock('./codex-output-filter.js', () => ({
@@ -1442,6 +1468,124 @@ describe('notebook-codex-runner entry lifecycle', () => {
     expect(launchEnv?.MBOS_CODEX_PROXY_AUTH_HEADER).toBeUndefined();
   });
 
+  it('runs Codex from the visible workspace while HOME and artifact scans use explicit runtime paths', async () => {
+    await import('./index.js');
+    const socket = websocketInstances.at(-1);
+    if (!socket) {
+      throw new Error('websocket_instance_missing');
+    }
+
+    socket.emit('open');
+    const child = await startCodexRun(socket, 'req_path_boundaries');
+
+    await vi.waitFor(() => {
+      expect(buildCodexExecArgsMock).toHaveBeenCalledWith(expect.objectContaining({
+        cwd: '/workspace/task_1',
+      }));
+      expect(prepareLaunchCommandMock).toHaveBeenCalledWith(expect.objectContaining({
+        cwd: '/workspace/task_1',
+        env: expect.objectContaining({
+          HOME: '/runner-runtime/task_1',
+        }),
+      }));
+      expect(scanWorkspaceFilesSnapshotMock).toHaveBeenCalledWith('/workspace/task_1', {
+        runtimeRoot: '/runner-runtime/task_1',
+      });
+      expect(scanArtifactsDirectoryMock).toHaveBeenCalledWith('/workspace/task_1/.artifacts', 'task_1');
+    });
+
+    closeCodexChild(child, 0);
+  });
+
+  it('derives compact limit from executionContext.model_limits max output when API compact limit is missing', async () => {
+    await import('./index.js');
+    const socket = websocketInstances.at(-1);
+    if (!socket) {
+      throw new Error('websocket_instance_missing');
+    }
+
+    socket.emit('open');
+    const child = await startCodexRun(socket, 'req_model_limits_derived_compact', {
+      model_limits: {
+        context_window: 200000,
+        max_output_tokens: 32000,
+      },
+    });
+
+    await vi.waitFor(() => {
+      expect(buildCodexExecArgsMock).toHaveBeenCalledWith(expect.objectContaining({
+        modelContextWindow: 200000,
+        modelMaxOutputTokens: 32000,
+        modelAutoCompactTokenLimit: 168000,
+      }));
+      expect(buildTaskCodexConfigMock).toHaveBeenCalledWith(expect.objectContaining({
+        modelContextWindow: 200000,
+        modelMaxOutputTokens: 32000,
+        modelAutoCompactTokenLimit: 168000,
+      }));
+      expect(buildTaskCodexModelCatalogMock).toHaveBeenCalledWith(expect.objectContaining({
+        modelContextWindow: 200000,
+        modelMaxOutputTokens: 32000,
+        modelAutoCompactTokenLimit: 168000,
+      }));
+      expect(ensureCodexSessionStateCompatibleMock).toHaveBeenCalledWith(expect.objectContaining({
+        modelContextWindow: 200000,
+        modelMaxOutputTokens: 32000,
+        modelAutoCompactTokenLimit: 168000,
+      }));
+    });
+
+    closeCodexChild(child, 0);
+  });
+
+  it('passes model output limit changes into session compatibility fingerprint input', async () => {
+    await import('./index.js');
+    const socket = websocketInstances.at(-1);
+    if (!socket) {
+      throw new Error('websocket_instance_missing');
+    }
+
+    socket.emit('open');
+    const firstChild = await startCodexRun(socket, 'req_output_limit_32k', {
+      model_auto_compact_token_limit: 168000,
+      model_limits: {
+        context_window: 200000,
+        max_output_tokens: 32000,
+      },
+    });
+    closeCodexChild(firstChild, 0);
+
+    await vi.waitFor(() => {
+      expect(readSentFrames(socket).some((frame) => (
+        frame.type === 'agent.response.done'
+        && frame.request_id === 'req_output_limit_32k'
+      ))).toBe(true);
+    });
+
+    const secondChild = await startCodexRun(socket, 'req_output_limit_64k', {
+      model_auto_compact_token_limit: 136000,
+      model_limits: {
+        context_window: 200000,
+        max_output_tokens: 64000,
+      },
+    });
+
+    await vi.waitFor(() => {
+      expect(ensureCodexSessionStateCompatibleMock).toHaveBeenCalledWith(expect.objectContaining({
+        modelContextWindow: 200000,
+        modelMaxOutputTokens: 32000,
+        modelAutoCompactTokenLimit: 168000,
+      }));
+      expect(ensureCodexSessionStateCompatibleMock).toHaveBeenCalledWith(expect.objectContaining({
+        modelContextWindow: 200000,
+        modelMaxOutputTokens: 64000,
+        modelAutoCompactTokenLimit: 136000,
+      }));
+    });
+
+    closeCodexChild(secondChild, 0);
+  });
+
   it('passes default function and explicit freeform apply_patch tool types into the model catalog', async () => {
     await import('./index.js');
     const socket = websocketInstances.at(-1);
@@ -1557,7 +1701,7 @@ describe('notebook-codex-runner entry lifecycle', () => {
 
     await vi.waitFor(() => {
       expect(markCodexSessionStateReusableMock).toHaveBeenCalledWith({
-        codexDir: '/workspace/task_1/.codex',
+        codexDir: '/runner-runtime/task_1/.codex',
         taskId: 'task_1',
       });
     });

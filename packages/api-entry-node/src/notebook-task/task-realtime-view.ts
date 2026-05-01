@@ -173,6 +173,7 @@ export async function buildTaskRealtimeView(
     ...task,
     agent_presence: agentPresence,
     run_state: mapNotebookRunPhaseToTaskRunState(activeRun, hardTeardownDebt),
+    ...(activeRun?.started_at ? { active_run_started_at: activeRun.started_at } : {}),
     ...buildNotebookRunRealtimeTruth(deps, agent, activeRun, hardTeardownDebt),
     stats: {
       user_turn_count: userTurnCount,

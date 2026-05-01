@@ -113,6 +113,7 @@ export interface Task {
   last_activity_at: string; // ISO 8601
   agent_presence?: 'online' | 'offline' | 'managed' | 'unknown';
   run_state?: TaskRunState;
+  active_run_started_at?: string; // ISO 8601, present when backend has active run truth
   stop_mode?: 'cancel' | 'terminate';
   can_escalate?: boolean;
   escalation_reason?: string | null;

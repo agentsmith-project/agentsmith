@@ -1,7 +1,13 @@
 import { describe, expect, it } from 'vitest';
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import {
+  diffWorkspaceFileSnapshots,
   filterNewArtifactsForRun,
   rememberArtifactsForRun,
+  scanArtifactsDirectory,
+  scanWorkspaceFilesSnapshot,
   type ScannedArtifact,
 } from './artifact-scan.js';
 
@@ -44,5 +50,66 @@ describe('filterNewArtifactsForRun', () => {
     rememberArtifactsForRun(seen, 'run-a', [existing]);
 
     expect(filterNewArtifactsForRun(seen, 'run-a', [existing, created])).toEqual([created]);
+  });
+});
+
+describe('scanArtifactsDirectory', () => {
+  it('scans only the explicit artifact root instead of inferring from cwd', async () => {
+    const root = mkdtempSync(join(tmpdir(), 'runner-artifact-scan-'));
+    try {
+      const visibleRoot = join(root, 'visible');
+      const explicitArtifactsDir = join(root, 'explicit-artifacts');
+      mkdirSync(join(visibleRoot, '.artifacts'), { recursive: true });
+      mkdirSync(explicitArtifactsDir, { recursive: true });
+      writeFileSync(join(visibleRoot, '.artifacts', 'ignored.txt'), 'from visible cwd');
+      writeFileSync(join(explicitArtifactsDir, 'result.txt'), 'from explicit artifact root');
+
+      const artifacts = await scanArtifactsDirectory(explicitArtifactsDir, 'task_1');
+
+      expect(artifacts.map((artifact) => artifact.task_relative_path)).toEqual(['.artifacts/result.txt']);
+      expect(artifacts[0]?.content).toBe('from explicit artifact root');
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+});
+
+describe('workspace file snapshots', () => {
+  it('filters file-library reserved namespaces and runtime/cache roots from workspace diffs', async () => {
+    const visibleRoot = mkdtempSync(join(tmpdir(), 'runner-workspace-scan-'));
+    try {
+      const runtimeRoot = join(visibleRoot, '.runner-runtime');
+      mkdirSync(join(visibleRoot, '.trash'), { recursive: true });
+      mkdirSync(join(visibleRoot, '.minio.sys'), { recursive: true });
+      mkdirSync(join(visibleRoot, '.cache'), { recursive: true });
+      mkdirSync(join(visibleRoot, '.config'), { recursive: true });
+      mkdirSync(join(visibleRoot, '.local'), { recursive: true });
+      mkdirSync(join(visibleRoot, '.agents', 'skills'), { recursive: true });
+      mkdirSync(join(visibleRoot, '.codex'), { recursive: true });
+      mkdirSync(join(visibleRoot, '.mbos'), { recursive: true });
+      mkdirSync(runtimeRoot, { recursive: true });
+      writeFileSync(join(visibleRoot, 'user.txt'), 'user file');
+      writeFileSync(join(visibleRoot, '.trash', 'deleted.txt'), 'reserved');
+      writeFileSync(join(visibleRoot, '.minio.sys', 'meta.bin'), 'reserved');
+      writeFileSync(join(visibleRoot, '.cache', 'tool-cache'), 'cache');
+      writeFileSync(join(visibleRoot, '.config', 'tool.json'), 'config');
+      writeFileSync(join(visibleRoot, '.local', 'state.db'), 'local');
+      writeFileSync(join(visibleRoot, '.agents', 'skills', 'skill.md'), 'skill');
+      writeFileSync(join(visibleRoot, '.codex', 'state.sqlite'), 'state');
+      writeFileSync(join(visibleRoot, '.mbos', 'RUNNER_RUNTIME.md'), 'runtime');
+      writeFileSync(join(runtimeRoot, 'state.json'), 'runtime root');
+
+      const after = await scanWorkspaceFilesSnapshot(visibleRoot, { runtimeRoot });
+      const changes = diffWorkspaceFileSnapshots(new Map(), after);
+
+      expect(changes.added).toEqual(['user.txt']);
+      expect(JSON.stringify(changes)).not.toContain('.trash');
+      expect(JSON.stringify(changes)).not.toContain('.minio.sys');
+      expect(JSON.stringify(changes)).not.toContain('.cache');
+      expect(JSON.stringify(changes)).not.toContain('.config');
+      expect(JSON.stringify(changes)).not.toContain('.runner-runtime');
+    } finally {
+      rmSync(visibleRoot, { recursive: true, force: true });
+    }
   });
 });

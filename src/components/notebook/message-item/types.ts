@@ -19,5 +19,11 @@ export type TraceStep = {
   events: TaskTraceEvent[];
 };
 
+export type PrimaryOutcome = {
+  status: TraceSummary['status'];
+  cancelledOutcome?: TraceSummary['cancelledOutcome'];
+  recoveredIssueCount: number;
+};
+
 export type TransportTraceKind = 'gap_fill' | 'reconcile';
 export type TransportTracePhase = 'start' | 'done' | 'error';

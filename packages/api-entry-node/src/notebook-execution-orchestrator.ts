@@ -1,6 +1,5 @@
 import type { AuthenticatedUser } from './auth.js';
 import type { NodeApiDeps } from './node-api-deps.js';
-import type { AgentExecutionApplyPatchToolType } from '@mbos/agent-runner';
 import type { AgentExecutionArtifactPayload, AgentExecutionTraceEventPayload } from './agent-execution-service.js';
 import {
   recordNotebookTaskRunCompleted,
@@ -21,6 +20,7 @@ import {
   type InternalWorkloadHolderRef,
 } from './internal-workload-coordinator.js';
 import { markNotebookTaskRunFinalizing } from './notebook-task/task-run-coordination.js';
+import { deriveEndpointEffectiveModelRuntimeConfig } from './universal-proxy-service.js';
 export {
   readInternalWorkloadHolderSnapshotForTests,
   resetInternalWorkloadHolderCoordinatorForTests,
@@ -178,52 +178,20 @@ export function resolveExecutionApiBase(
   return ensureExecutionApiBase(publicBaseUrl) ?? publicBaseUrl;
 }
 
-function deriveNotebookModelWindow(profile: { max_context_tokens?: number } | null | undefined): {
-  modelContextWindow: number;
-  modelAutoCompactTokenLimit: number;
-} {
-  const rawWindow = profile?.max_context_tokens;
-  const modelContextWindow =
-    typeof rawWindow === 'number' && Number.isFinite(rawWindow) && rawWindow > 0
-      ? Math.floor(rawWindow)
-      : null;
-  if (!modelContextWindow) {
+function requireNotebookModelContextWindow(contextWindow: number | undefined): number {
+  if (!contextWindow) {
     throw Object.assign(new Error('endpoint_model_context_window_invalid'), {
       code: 'ENDPOINT_MODEL_CONTEXT_WINDOW_INVALID',
     });
   }
-  return {
-    modelContextWindow,
-    modelAutoCompactTokenLimit: Math.max(1, Math.floor(modelContextWindow * 0.9)),
-  };
+  return contextWindow;
 }
 
-function deriveNotebookCodexModelCatalog(args: {
-  capabilities?: Array<{ type?: string; enabled?: boolean }> | null;
-  upstreamProtocol?: string | null;
-}): {
-  input_modalities: string[];
-  supports_search_tool: boolean;
-  supports_parallel_tool_calls: boolean;
-  apply_patch_tool_type: AgentExecutionApplyPatchToolType;
-} {
-  const inputModalities = new Set<string>(['text']);
-  if (Array.isArray(args.capabilities)) {
-    for (const capability of args.capabilities) {
-      if (capability?.enabled !== true) continue;
-      if (capability.type === 'multimodal_completion') {
-        inputModalities.add('image');
-      }
-    }
+function deriveNotebookAutoCompactTokenLimit(contextWindow: number, maxOutputTokens: number | undefined): number {
+  if (typeof maxOutputTokens === 'number') {
+    return Math.max(1, contextWindow - maxOutputTokens);
   }
-  return {
-    input_modalities: [...inputModalities],
-    supports_search_tool: false,
-    // We only expose parallel tool calling when endpoint truth explicitly models it.
-    // `supports_tool_call` alone is not enough, and overclaiming breaks compat upstreams.
-    supports_parallel_tool_calls: false,
-    apply_patch_tool_type: args.upstreamProtocol === 'openai_responses' ? 'freeform' : 'function',
-  };
+  return Math.max(1, Math.floor(contextWindow * 0.9));
 }
 
 const MAX_TRACE_DETAIL_SANITIZE_DEPTH = 24;
@@ -543,13 +511,15 @@ export async function runNotebookTaskWithExecutionAgent(input: {
       throw Object.assign(new Error('endpoint_not_available'), { code: 'VALIDATION_ERROR' });
     }
     const endpointModel = endpoint.model?.trim() ?? '';
-    const modelWindow = deriveNotebookModelWindow(endpoint.model_profile);
-    const modelContextWindow = modelWindow.modelContextWindow;
-    const modelAutoCompactTokenLimit = modelWindow.modelAutoCompactTokenLimit;
-    const modelCatalog = deriveNotebookCodexModelCatalog({
-      capabilities: endpoint.capabilities,
-      upstreamProtocol: endpoint.upstream_protocol,
-    });
+    const effectiveModelConfig = deriveEndpointEffectiveModelRuntimeConfig(endpoint);
+    const modelContextWindow = requireNotebookModelContextWindow(effectiveModelConfig.limits?.context_window);
+    const maxOutputTokens = effectiveModelConfig.limits?.max_output_tokens;
+    const modelAutoCompactTokenLimit = deriveNotebookAutoCompactTokenLimit(modelContextWindow, maxOutputTokens);
+    const modelLimits = {
+      context_window: modelContextWindow,
+      ...(typeof maxOutputTokens === 'number' ? { max_output_tokens: maxOutputTokens } : {}),
+    };
+    const modelCatalog = effectiveModelConfig.model_catalog;
     if (agent.mode !== 'internal') {
       const preflight = await enforceEndpointGovernancePreflight({
         deps,
@@ -682,6 +652,7 @@ export async function runNotebookTaskWithExecutionAgent(input: {
         model,
         model_context_window: modelContextWindow,
         model_auto_compact_token_limit: modelAutoCompactTokenLimit,
+        model_limits: modelLimits,
         model_catalog: modelCatalog,
         runner_session_scope:
           agent.mode === 'external' && usesAgentPresenceScopedNotebookRunner(agent)

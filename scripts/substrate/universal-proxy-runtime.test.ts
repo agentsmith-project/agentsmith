@@ -633,6 +633,7 @@ runtime_label=${container.runtimeLabel}
     const curlLog = readFileSync(fixture.curlLog, 'utf8');
     expect(dockerLog).toContain('-e LLM_UNIVERSAL_PROXY_AUTH_MODE=client_provider_key');
     expect(dockerLog).toMatch(/-e LLM_UNIVERSAL_PROXY_ADMIN_TOKEN=[^ ]+/);
+    expect(dockerLog).toContain('--add-host=host.docker.internal:host-gateway');
     expect(dockerLog).not.toContain('LLM_UNIVERSAL_PROXY_KEY');
     expect(curlLog).toMatch(/-H Authorization: Bearer [^ ]+ .*\/admin\/state/);
   });
@@ -695,6 +696,43 @@ runtime_label=${container.runtimeLabel}
     expect(result.stdout).toContain('admin-token=saved-admin-token');
     expect(readFileSync(fixture.curlLog, 'utf8')).toContain('-H Authorization: Bearer saved-admin-token');
     expect(existsSync(fixture.dockerLog) ? readFileSync(fixture.dockerLog, 'utf8') : '').not.toContain('docker run');
+  });
+
+  it('force-managed mode ignores explicit/reachable proxy env and starts the locked container', () => {
+    const tempRoot = createIsolatedRepoRoot('runtime-force-managed-locked-container');
+    const fixture = prepareRuntimeHelperFixture(tempRoot);
+    writeFileSync(
+      path.join(fixture.containersDir, 'started-managed-container.env'),
+      `id=external-proxy
+name=external-proxy
+managed_by=someone-else
+runtime_label=external
+`,
+      'utf8',
+    );
+
+    const result = runRuntimeHelper(
+      fixture,
+      `export ${runtimeEnvPrefix(fixture, {
+        MBOS_UNIVERSAL_PROXY_BASE_URL: 'http://127.0.0.1:49999',
+        MBOS_UNIVERSAL_PROXY_ADMIN_TOKEN: 'explicit-admin-token',
+        MBOS_UNIVERSAL_PROXY_UPSTREAM_HOST: '127.0.0.1',
+        UNIVERSAL_PROXY_RUNTIME_FORCE_MANAGED: '1',
+      })}
+       universal_proxy_runtime_ensure
+       printf 'base=%s\\nupstream=%s\\n' "\${MBOS_UNIVERSAL_PROXY_BASE_URL}" "\${MBOS_UNIVERSAL_PROXY_UPSTREAM_HOST}"`,
+    );
+
+    expect(result.status).toBe(0);
+    expect(result.stderr).toContain('UNIVERSAL_PROXY_RUNTIME_FORCE_MANAGED=1 ignores MBOS_UNIVERSAL_PROXY_BASE_URL=http://127.0.0.1:49999');
+    expect(result.stdout).toContain('base=http://127.0.0.1:39180');
+    expect(result.stdout).toContain('upstream=host.docker.internal');
+    const dockerLog = readFileSync(fixture.dockerLog, 'utf8');
+    const lockedImage = readLockedLlmupImage();
+    expect(dockerLog).toContain(`docker pull ${lockedImage}`);
+    expect(dockerLog).toContain('docker run');
+    expect(dockerLog).toContain(lockedImage);
+    expect(dockerLog).toContain('--add-host=host.docker.internal:host-gateway');
   });
 
   it('removes the recorded container id only after owned docker rm succeeds', () => {

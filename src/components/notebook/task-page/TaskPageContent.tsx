@@ -5,10 +5,11 @@ import { ArtifactsPanel } from "@/components/notebook/ArtifactsPanel";
 import { ConversationPanel } from "@/components/notebook/ConversationPanel";
 import { NotebookSseDebugPanel } from "@/components/notebook/NotebookSseDebugPanel";
 import type { Artifact, TaskMessage } from "@/lib/types/task";
+import type { ActiveRunView } from "@/components/notebook/task-page/run-activity";
 
 interface TaskPageContentProps {
   agentIsBusy: boolean;
-  activeAgentMessageId: string | null;
+  activeRunView: ActiveRunView | null;
   artifacts: Artifact[];
   artifactsRefreshing: boolean;
   canUpdateTask: boolean;
@@ -31,7 +32,6 @@ interface TaskPageContentProps {
   focusTraceMessageId: string | null;
   focusTraceName: string | null;
   focusTraceToken: number;
-  handleCancelActiveRun: () => void;
   handleDownloadArtifact: (artifact: Artifact) => Promise<void>;
   handlePendingRemove: (id: string) => void;
   handleRefreshArtifacts: () => Promise<void>;
@@ -42,9 +42,6 @@ interface TaskPageContentProps {
   loadMoreTracesForMessage: (messageId: string) => void;
   messages: TaskMessage[];
   pendingMessages: Array<{ id: string; content: string }>;
-  runActivity: NonNullable<
-    React.ComponentProps<typeof ConversationPanel>["runActivity"]
-  >;
   sandboxStarting: boolean;
   sending: boolean;
   showSseDebugPanel: boolean;
@@ -84,7 +81,7 @@ interface TaskPageContentProps {
 
 export function TaskPageContent({
   agentIsBusy,
-  activeAgentMessageId,
+  activeRunView,
   artifacts,
   artifactsRefreshing,
   canUpdateTask,
@@ -97,7 +94,6 @@ export function TaskPageContent({
   focusTraceMessageId,
   focusTraceName,
   focusTraceToken,
-  handleCancelActiveRun,
   handleDownloadArtifact,
   handlePendingRemove,
   handleRefreshArtifacts,
@@ -110,7 +106,6 @@ export function TaskPageContent({
   onRunActionClick,
   pendingMessages,
   projectId: _projectId,
-  runActivity,
   sandboxStarting,
   sending,
   showSseDebugPanel,
@@ -193,15 +188,13 @@ export function TaskPageContent({
                   pendingQueue={pendingMessages}
                   onPendingUpdate={handlePendingUpdate}
                   onPendingRemove={handlePendingRemove}
-                  runActivity={runActivity}
-                  onCancelActiveRun={handleCancelActiveRun}
+                  activeRunView={activeRunView}
                   onRunActionClick={onRunActionClick}
                   focusTraceMessageId={focusTraceMessageId}
                   focusTraceName={focusTraceName}
                   focusTraceToken={focusTraceToken}
                   sandboxStarting={sandboxStarting}
                   disabled={disabled}
-                  activeAgentMessageId={activeAgentMessageId}
                   sending={sending}
                   inputPlaceholder={inputPlaceholder}
                   blockedState={conversationBlockedState}

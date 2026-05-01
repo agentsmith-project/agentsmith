@@ -914,6 +914,16 @@ const NPM_SCRIPT_COVERAGE = [
     reason: 'API key endpoint access uses shared endpoint credentials and provider quota.',
   }),
   ...npmScriptCoverageGroup([
+    'test:e2e:integration:universal-proxy:model-profile',
+  ], {
+    proposed_shard_id: 'api-key-endpoint',
+    evidence_owner: 'backend-real-provider:api-key-endpoint',
+    isolation_level: 'serialized',
+    mutable_resources: ['workspace', 'project', 'endpoint_credentials', 'shared_local_substrate', 'local_ports'],
+    lock_ids: ['shared-local-substrate', 'fixed-local-ports'],
+    reason: 'Universal proxy model profile coverage creates endpoint credentials and validates retained namespace config on a forced managed proxy container started from the llmup image lock.',
+  }),
+  ...npmScriptCoverageGroup([
     'test:visual:backend-real:review',
   ], {
     proposed_shard_id: 'release-backend-real',
@@ -1164,6 +1174,16 @@ const SPEC_COVERAGE = [
     mutable_resources: ['endpoint_credentials', 'provider_quota', 'shared_local_substrate'],
     lock_ids: BACKEND_REAL_LOCK_IDS,
     reason: 'API key gateway coverage mutates endpoint credentials and provider access observations.',
+  }),
+  grepCoverage({
+    spec: 'e2e/integration-universal-proxy-endpoint.spec.ts',
+    grep: 'model profile runtime config',
+    proposed_shard_id: 'api-key-endpoint',
+    evidence_owner: 'backend-real-provider:api-key-endpoint',
+    isolation_level: 'serialized',
+    mutable_resources: ['workspace', 'project', 'endpoint_credentials', 'shared_local_substrate', 'local_ports'],
+    lock_ids: ['shared-local-substrate', 'fixed-local-ports'],
+    reason: 'Model profile grep validates endpoint runtime config retention inside a forced managed universal proxy container started from the llmup image lock.',
   }),
   specCoverage({
     spec: 'e2e/integration-internal-chat-runner.spec.ts',

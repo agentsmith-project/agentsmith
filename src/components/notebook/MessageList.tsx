@@ -4,6 +4,7 @@ import type { TaskMessage, TaskTraceEvent } from '@/lib/types/task';
 import type { NotebookTraceFailureKind } from '@/lib/build-failure-explainability';
 import { MessageItem } from './MessageItem';
 import { EmptyState } from '@/components/ui/loading';
+import type { ActiveRunView } from '@/components/notebook/task-page/run-activity';
 
 export interface MessageListProps {
   messages: TaskMessage[];
@@ -18,9 +19,10 @@ export interface MessageListProps {
   traceLoadMoreLoadingByMessageId?: Record<string, boolean>;
   traceErrorByMessageId?: Record<string, { kind: NotebookTraceFailureKind; message: string }>;
   disabled?: boolean;
-  activeAgentMessageId?: string | null;
+  activeRunView?: ActiveRunView | null;
   onTraceExpand?: (messageId: string) => void;
   onTraceLoadMore?: (messageId: string) => void;
+  onRunActionClick?: (action: { traceName?: string; summary: string }) => void;
 }
 
 export function MessageList({
@@ -36,9 +38,10 @@ export function MessageList({
   traceLoadMoreLoadingByMessageId,
   traceErrorByMessageId,
   disabled = false,
-  activeAgentMessageId = null,
+  activeRunView = null,
   onTraceExpand,
   onTraceLoadMore,
+  onRunActionClick,
 }: MessageListProps) {
   const messagesEndRef = React.useRef<HTMLDivElement>(null);
   const contentRef = React.useRef<HTMLDivElement>(null);
@@ -102,7 +105,20 @@ export function MessageList({
     return () => observer.disconnect();
   }, [scrollToBottom]);
 
-  if (messages.length === 0 && !streamingContent) {
+  const hasStreamingSyntheticMessage =
+    streamingMessageId != null &&
+    !messages.some((message) => message.id === streamingMessageId);
+  const hasPendingActiveRunMessage =
+    activeRunView != null &&
+    activeRunView.messageId !== streamingMessageId &&
+    !messages.some((message) => message.id === activeRunView.messageId);
+
+  if (
+    messages.length === 0 &&
+    !streamingMessageId &&
+    !streamingContent &&
+    !activeRunView
+  ) {
     return (
       <div className="h-full flex items-center justify-center">
         <EmptyState
@@ -117,8 +133,10 @@ export function MessageList({
     <div ref={containerRef} className="h-full overflow-y-auto px-3 py-3 sm:px-4 lg:px-5">
       <div ref={contentRef} className="space-y-3">
         {messages.map((message) => {
-          const isActiveAgentMessage =
-            message.role === 'agent' && message.id === activeAgentMessageId;
+          const messageActiveRunView =
+            message.role === 'agent' && activeRunView?.messageId === message.id
+              ? activeRunView
+              : null;
           return (
             <MessageItem
               key={message.id}
@@ -134,35 +152,71 @@ export function MessageList({
               traceLoadMoreLoading={traceLoadMoreLoadingByMessageId?.[message.id] ?? false}
               traceError={traceErrorByMessageId?.[message.id]}
               disabled={disabled}
-              forceRunning={isActiveAgentMessage}
+              activeRunView={messageActiveRunView}
               onTraceExpand={onTraceExpand}
               onTraceLoadMore={onTraceLoadMore}
+              onRunActionClick={onRunActionClick}
             />
           );
         })}
-        {streamingMessageId && !messages.find((m) => m.id === streamingMessageId) && (
-        <MessageItem
-          message={{
-            id: streamingMessageId,
-            task_id: '',
-            role: 'agent',
-            content: '',
-            created_at: new Date().toISOString(),
-          }}
-          focusTraceName={focusTraceMessageId === streamingMessageId ? focusTraceName : null}
-          focusTraceToken={focusTraceMessageId === streamingMessageId ? focusTraceToken : 0}
-          streamingContent={streamingContent}
-          traceEvents={traceEventsByMessageId?.[streamingMessageId] ?? []}
-          traceHasMore={traceHasMoreByMessageId?.[streamingMessageId] ?? false}
-          traceDetailsLoading={traceLoadingByMessageId?.[streamingMessageId] ?? false}
-          traceLoadMoreLoading={traceLoadMoreLoadingByMessageId?.[streamingMessageId] ?? false}
-          traceError={traceErrorByMessageId?.[streamingMessageId]}
-          disabled={disabled}
-          forceRunning={streamingMessageId === activeAgentMessageId}
-          onTraceExpand={onTraceExpand}
-          onTraceLoadMore={onTraceLoadMore}
-        />
-      )}
+        {hasStreamingSyntheticMessage && streamingMessageId ? (
+          <MessageItem
+            message={{
+              id: streamingMessageId,
+              task_id: '',
+              role: 'agent',
+              content: '',
+              created_at: new Date().toISOString(),
+            }}
+            focusTraceName={focusTraceMessageId === streamingMessageId ? focusTraceName : null}
+            focusTraceToken={focusTraceMessageId === streamingMessageId ? focusTraceToken : 0}
+            streamingContent={streamingContent}
+            traceEvents={traceEventsByMessageId?.[streamingMessageId] ?? []}
+            traceHasMore={traceHasMoreByMessageId?.[streamingMessageId] ?? false}
+            traceDetailsLoading={traceLoadingByMessageId?.[streamingMessageId] ?? false}
+            traceLoadMoreLoading={traceLoadMoreLoadingByMessageId?.[streamingMessageId] ?? false}
+            traceError={traceErrorByMessageId?.[streamingMessageId]}
+            disabled={disabled}
+            activeRunView={
+              activeRunView?.messageId === streamingMessageId
+                ? activeRunView
+                : null
+            }
+            onTraceExpand={onTraceExpand}
+            onTraceLoadMore={onTraceLoadMore}
+            onRunActionClick={onRunActionClick}
+          />
+        ) : null}
+        {hasPendingActiveRunMessage && activeRunView ? (
+          <MessageItem
+            message={{
+              id: activeRunView.messageId,
+              task_id: '',
+              role: 'agent',
+              content: '',
+              created_at: activeRunView.startedAt ?? new Date().toISOString(),
+            }}
+            focusTraceName={
+              focusTraceMessageId === activeRunView.messageId ? focusTraceName : null
+            }
+            focusTraceToken={
+              focusTraceMessageId === activeRunView.messageId ? focusTraceToken : 0
+            }
+            streamingContent={null}
+            traceEvents={traceEventsByMessageId?.[activeRunView.messageId] ?? []}
+            traceHasMore={traceHasMoreByMessageId?.[activeRunView.messageId] ?? false}
+            traceDetailsLoading={traceLoadingByMessageId?.[activeRunView.messageId] ?? false}
+            traceLoadMoreLoading={
+              traceLoadMoreLoadingByMessageId?.[activeRunView.messageId] ?? false
+            }
+            traceError={traceErrorByMessageId?.[activeRunView.messageId]}
+            disabled={disabled}
+            activeRunView={activeRunView}
+            onTraceExpand={onTraceExpand}
+            onTraceLoadMore={onTraceLoadMore}
+            onRunActionClick={onRunActionClick}
+          />
+        ) : null}
         <div ref={messagesEndRef} />
       </div>
     </div>

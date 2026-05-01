@@ -1,5 +1,6 @@
 import type { TaskTraceEvent } from "@/lib/types/task";
 import type {
+  PrimaryOutcome,
   TraceStep,
   TraceSummary,
   TransportTraceKind,
@@ -17,15 +18,15 @@ export type RenderableExecutionStep = {
 
 export type RenderableExecution = {
   summary: TraceSummary & { durationText?: string };
+  primaryOutcome: PrimaryOutcome;
+  recoveredIssues: RenderableExecutionStep[];
+  diagnostics: RenderableExecutionStep[];
+  userActionItems: RenderableExecutionStep[];
   steps: RenderableExecutionStep[];
 };
 
-const MAX_STEP_DETAIL_CHARS = 300;
-
-function truncateStepDetail(detail: string): string {
-  const normalized = detail.replace(/\r\n?/g, "\n").trim();
-  if (normalized.length <= MAX_STEP_DETAIL_CHARS) return normalized;
-  return `${normalized.slice(0, Math.max(0, MAX_STEP_DETAIL_CHARS - 1)).trimEnd()}…`;
+function normalizeStepDetail(detail: string): string {
+  return detail.replace(/\r\n?/g, "\n").trim();
 }
 
 function isReasoningTraceName(name: string): boolean {
@@ -33,9 +34,16 @@ function isReasoningTraceName(name: string): boolean {
 }
 
 function isReasoningStep(step: RenderableExecutionStep): boolean {
+  if (step.traceNames.some(isReasoningTraceName)) return true;
   if (step.title !== "process_stage_preparing") return false;
   if (/reason(?:ing)?|thinking/i.test(step.detail)) return true;
-  return step.traceNames.some(isReasoningTraceName);
+  return false;
+}
+
+function isVisibleExecutionStep(
+  step: RenderableExecutionStep,
+): boolean {
+  return !isReasoningStep(step);
 }
 
 export function getTransportTraceMeta(
@@ -256,9 +264,12 @@ export function summarizeTraceEvents(
     runningIndex > terminalIndex
       ? "running"
       : (terminalStatus ?? (runningIndex >= 0 ? "running" : "idle"));
-  const preliminaryStatus = cancellationOverride
-    ? "cancelled"
-    : (runSummaryStatus ?? lifecycleStatus ?? inferredStatus);
+  const preliminaryStatus =
+    runSummaryStatus === "success"
+      ? "success"
+      : cancellationOverride
+        ? "cancelled"
+        : (runSummaryStatus ?? lifecycleStatus ?? inferredStatus);
   const resolvedStatus: TraceSummary["status"] =
     preliminaryStatus === "cancelled" && !hasFinalizedMarker
       ? "running"
@@ -430,10 +441,7 @@ function summarizeFileChanges(
   return null;
 }
 
-function mapTraceStep(
-  step: TraceStep,
-  answerPreview?: string,
-): RenderableExecutionStep | null {
+function mapTraceStep(step: TraceStep): RenderableExecutionStep | null {
   const latestEvent = step.events[step.events.length - 1];
   if (!latestEvent) return null;
   if (latestEvent.category === "debug" || getTransportTraceMeta(latestEvent))
@@ -448,7 +456,7 @@ function mapTraceStep(
     return {
       key: step.key,
       title: "process_stage_running_command",
-      detail: truncateStepDetail(command),
+      detail: normalizeStepDetail(command),
       status: step.status,
       at: latestEvent.at,
       traceNames: step.events.map((event) => event.name),
@@ -464,7 +472,7 @@ function mapTraceStep(
     return {
       key: step.key,
       title: "process_stage_using_tool",
-      detail: truncateStepDetail(toolName),
+      detail: normalizeStepDetail(toolName),
       status: step.status,
       at: latestEvent.at,
       traceNames: step.events.map((event) => event.name),
@@ -474,8 +482,8 @@ function mapTraceStep(
   if (step.name === "workspace.files_changed") {
     return {
       key: step.key,
-      title: "process_stage_updating_files",
-      detail: truncateStepDetail(
+      title: "process_stage_workspace_diagnostics",
+      detail: normalizeStepDetail(
         summarizeFileChanges(latestEvent.details) ?? latestEvent.summary,
       ),
       status: step.status,
@@ -492,8 +500,8 @@ function mapTraceStep(
         : latestEvent.summary;
     return {
       key: step.key,
-      title: "process_stage_updating_files",
-      detail: truncateStepDetail(filename),
+      title: "process_stage_runner_output",
+      detail: normalizeStepDetail(filename),
       status: step.status,
       at: latestEvent.at,
       traceNames: step.events.map((event) => event.name),
@@ -504,7 +512,9 @@ function mapTraceStep(
     return {
       key: step.key,
       title: "process_stage_preparing_response",
-      detail: truncateStepDetail(answerPreview || latestEvent.summary),
+      detail:
+        normalizeStepDetail(latestEvent.summary) ||
+        "process_writing_final_answer",
       status: step.status,
       at: latestEvent.at,
       traceNames: step.events.map((event) => event.name),
@@ -515,7 +525,7 @@ function mapTraceStep(
     return {
       key: step.key,
       title: "process_stage_failed",
-      detail: truncateStepDetail(latestEvent.summary),
+      detail: normalizeStepDetail(latestEvent.summary),
       status: "error",
       at: latestEvent.at,
       traceNames: step.events.map((event) => event.name),
@@ -525,8 +535,8 @@ function mapTraceStep(
   if (latestEvent.category === "artifact") {
     return {
       key: step.key,
-      title: "process_stage_updating_files",
-      detail: truncateStepDetail(latestEvent.summary),
+      title: "process_stage_workspace_diagnostics",
+      detail: normalizeStepDetail(latestEvent.summary),
       status: step.status,
       at: latestEvent.at,
       traceNames: step.events.map((event) => event.name),
@@ -537,7 +547,7 @@ function mapTraceStep(
     return {
       key: step.key,
       title: "process_stage_exploring",
-      detail: truncateStepDetail(latestEvent.summary),
+      detail: normalizeStepDetail(latestEvent.summary),
       status: step.status,
       at: latestEvent.at,
       traceNames: step.events.map((event) => event.name),
@@ -577,24 +587,91 @@ function dedupeRenderableSteps(
   return deduped;
 }
 
+function compareTraceEvents(a: TaskTraceEvent, b: TaskTraceEvent): number {
+  return a.seq !== b.seq ? a.seq - b.seq : a.at.localeCompare(b.at);
+}
+
+function findFinalSuccessEvent(
+  traceEvents: TaskTraceEvent[],
+): TaskTraceEvent | null {
+  return (
+    [...traceEvents]
+      .filter(isExecutionTraceEvent)
+      .sort(compareTraceEvents)
+      .reverse()
+      .find((event) => {
+        if (
+          event.name === "run.summary" &&
+          event.details?.final_status === "success"
+        )
+          return true;
+        return (
+          event.name === "run.lifecycle" &&
+          event.details?.run_phase === "completed"
+        );
+      }) ?? null
+  );
+}
+
+function isRecoveredIssueCandidate(event: TaskTraceEvent): boolean {
+  if (event.name === "run.summary" || event.name === "run.lifecycle")
+    return false;
+  return (
+    event.category === "error" ||
+    event.status === "error" ||
+    event.status === "cancelled"
+  );
+}
+
+function buildRecoveredIssues(
+  traceEvents: TaskTraceEvent[],
+  summaryStatus: TraceSummary["status"],
+): RenderableExecutionStep[] {
+  if (summaryStatus !== "success") return [];
+  const finalSuccessEvent = findFinalSuccessEvent(traceEvents);
+  if (!finalSuccessEvent) return [];
+  const recoveredEvents = traceEvents
+    .filter(isExecutionTraceEvent)
+    .filter((event) => event.run_id === finalSuccessEvent.run_id)
+    .filter((event) => compareTraceEvents(event, finalSuccessEvent) < 0)
+    .filter(isRecoveredIssueCandidate);
+  if (recoveredEvents.length === 0) return [];
+  const recoveredEventIds = new Set(recoveredEvents.map((event) => event.id));
+  return dedupeRenderableSteps(
+    aggregateTraceSteps(traceEvents)
+      .filter((step) =>
+        step.events.some((event) => recoveredEventIds.has(event.id)),
+      )
+      .map((step) => mapTraceStep(step))
+      .filter((step): step is RenderableExecutionStep => step != null)
+      .filter(isVisibleExecutionStep),
+  );
+}
+
 export function buildRenderableExecution(args: {
   traceEvents: TaskTraceEvent[];
   streamingContent?: string | null;
   fallbackAnswer?: string;
 }): RenderableExecution {
-  const { traceEvents, streamingContent, fallbackAnswer } = args;
-  const answerPreview = truncateStepDetail(
-    (fallbackAnswer && fallbackAnswer.trim()) ||
-      (streamingContent ? decodeCodexEventText(streamingContent).trim() : "") ||
-      "",
-  );
+  const { traceEvents, streamingContent } = args;
   const summary = summarizeTraceEvents(traceEvents);
   const steps = dedupeRenderableSteps(
     aggregateTraceSteps(traceEvents)
-      .map((step) => mapTraceStep(step, answerPreview))
+      .map((step) => mapTraceStep(step))
       .filter((step): step is RenderableExecutionStep => step != null)
-      .filter((step) => !isReasoningStep(step)),
+      .filter(isVisibleExecutionStep),
   );
+  const recoveredIssues = buildRecoveredIssues(
+    traceEvents,
+    summary.status,
+  );
+  const primaryOutcome: PrimaryOutcome = {
+    status: summary.status,
+    ...(summary.cancelledOutcome
+      ? { cancelledOutcome: summary.cancelledOutcome }
+      : {}),
+    recoveredIssueCount: recoveredIssues.length,
+  };
 
   if (steps.length === 0 && summary.status === "running") {
     const lifecycleEvent = [...traceEvents]
@@ -607,7 +684,7 @@ export function buildRenderableExecution(args: {
       steps.push({
         key: `${lifecycleEvent.id}:lifecycle`,
         title: getLifecyclePhaseTitle(lifecycleEvent.details?.run_phase),
-        detail: truncateStepDetail(lifecycleEvent.summary),
+        detail: normalizeStepDetail(lifecycleEvent.summary),
         status: "running",
         at: lifecycleEvent.at,
         traceNames: [lifecycleEvent.name],
@@ -616,7 +693,7 @@ export function buildRenderableExecution(args: {
       steps.push({
         key: "streaming-response",
         title: "process_stage_preparing_response",
-        detail: answerPreview || "process_writing_final_answer",
+        detail: "process_writing_final_answer",
         status: "running",
         traceNames: ["streaming.response"],
       });
@@ -630,6 +707,10 @@ export function buildRenderableExecution(args: {
         ? { durationText: formatDuration(summary.durationMs) }
         : {}),
     },
+    primaryOutcome,
+    recoveredIssues,
+    diagnostics: steps,
+    userActionItems: [],
     steps,
   };
 }

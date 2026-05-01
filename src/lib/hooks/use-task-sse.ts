@@ -9,10 +9,13 @@ import { TaskAPI, API_BASE, getApiClient } from '@/lib/api';
 import type { TaskMessage, Artifact, Task, TaskTraceEvent } from '@/lib/types/task';
 import { createAuthenticatedSSEAsync } from '@/lib/api/sse-client';
 
-export interface TaskSSEEvent {
-  type: 'message' | 'artifact' | 'task_update' | 'trace_event' | 'error';
-  data: TaskMessage | Artifact | Task | TaskTraceEvent | { message: string; code?: string };
-}
+export type TaskSSEEvent =
+  | { type: 'message'; data: TaskMessage }
+  | { type: 'artifact'; data: Artifact }
+  | { type: 'task_update'; data: Task }
+  | { type: 'trace_event'; data: TaskTraceEvent }
+  | { type: 'error'; data: { message: string; code?: string } }
+  | { type: 'ping'; data?: unknown };
 
 export interface TaskSSEDebugEvent {
   at: string;
@@ -20,6 +23,7 @@ export interface TaskSSEDebugEvent {
     | 'connect_start'
     | 'open'
     | 'message'
+    | 'heartbeat'
     | 'parse_error'
     | 'sse_error'
     | 'reconnect_scheduled'
@@ -93,6 +97,7 @@ export function useTaskSSE(
   const watchdogTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const lastEventIdRef = useRef<string | null>(null);
   const hasOpenedRef = useRef(false);
+  const connectionIdRef = useRef(0);
 
   // Store callbacks in refs to prevent them from causing reconnection cycles
   const callbacksRef = useRef<CallbackRefs>({
@@ -131,6 +136,11 @@ export function useTaskSSE(
   }, []);
 
   const handleStreamFailure = useCallback((eventSource: EventSource, summary: string) => {
+    if (eventSourceRef.current !== eventSource) {
+      eventSource.close();
+      return;
+    }
+
     clearWatchdog();
     const readyState = eventSource.readyState;
     emitDebug({ phase: 'sse_error', summary });
@@ -179,16 +189,30 @@ export function useTaskSSE(
     }, watchdogTimeoutMs);
   }, [clearWatchdog, handleStreamFailure, watchdogEnabled, watchdogTimeoutMs]);
 
+  const handleHeartbeat = useCallback((eventSource: EventSource, eventName: string) => {
+    emitDebug({ phase: 'heartbeat', summary: `event=${eventName}` });
+    scheduleWatchdog(eventSource);
+  }, [emitDebug, scheduleWatchdog]);
+
   const connect = useCallback(() => {
     if (!enabled || !workspaceId || !projectId || !taskId) {
       return;
     }
 
     clearWatchdog();
+    const connectionId = connectionIdRef.current + 1;
+    connectionIdRef.current = connectionId;
+
+    if (reconnectTimeoutRef.current) {
+      clearTimeout(reconnectTimeoutRef.current);
+      reconnectTimeoutRef.current = null;
+    }
 
     // Close existing connection if any
     if (eventSourceRef.current) {
-      eventSourceRef.current.close();
+      const previousEventSource = eventSourceRef.current;
+      eventSourceRef.current = null;
+      previousEventSource.close();
     }
 
     const client = getApiClient();
@@ -223,7 +247,17 @@ export function useTaskSSE(
           API_BASE,
         );
 
+        if (connectionIdRef.current !== connectionId) {
+          eventSource.close();
+          return;
+        }
+
+        eventSourceRef.current = eventSource;
+        const isCurrentEventSource = () =>
+          connectionIdRef.current === connectionId && eventSourceRef.current === eventSource;
+
         eventSource.onopen = () => {
+          if (!isCurrentEventSource()) return;
           setConnectionStatus('connected');
           setConnectionErrorCode(null);
           setConnectionErrorMessage(null);
@@ -239,9 +273,20 @@ export function useTaskSSE(
           }
         };
 
+        eventSource.addEventListener('ping', () => {
+          if (!isCurrentEventSource()) return;
+          handleHeartbeat(eventSource, 'ping');
+        });
+
         eventSource.onmessage = (event) => {
+          if (!isCurrentEventSource()) return;
           try {
             const data = JSON.parse(event.data) as TaskSSEEvent;
+            if (data.type === 'ping') {
+              handleHeartbeat(eventSource, 'ping');
+              return;
+            }
+
             emitDebug({ phase: 'message', summary: `type=${data.type}` });
             scheduleWatchdog(eventSource);
 
@@ -282,11 +327,17 @@ export function useTaskSSE(
         };
 
         eventSource.onerror = (_error) => {
+          if (!isCurrentEventSource()) {
+            eventSource.close();
+            return;
+          }
           handleStreamFailure(eventSource, `ready_state=${eventSource.readyState}`);
         };
-
-        eventSourceRef.current = eventSource;
       } catch (err) {
+        if (connectionIdRef.current !== connectionId) {
+          return;
+        }
+
         setConnectionStatus('error');
         const message = err instanceof Error ? err.message : 'SSE connection failed';
         const code = typeof err === 'object' && err !== null && 'code' in err && typeof err.code === 'string'
@@ -311,6 +362,7 @@ export function useTaskSSE(
     projectId,
     taskId,
     emitDebug,
+    handleHeartbeat,
     handleStreamFailure,
     scheduleWatchdog,
   ]);
@@ -332,9 +384,11 @@ export function useTaskSSE(
     }
 
     return () => {
+      connectionIdRef.current += 1;
       clearWatchdog();
       if (reconnectTimeoutRef.current) {
         clearTimeout(reconnectTimeoutRef.current);
+        reconnectTimeoutRef.current = null;
       }
       if (eventSourceRef.current) {
         eventSourceRef.current.close();
@@ -346,9 +400,11 @@ export function useTaskSSE(
   }, [clearWatchdog, enabled, connect]);
 
   const disconnect = useCallback(() => {
+    connectionIdRef.current += 1;
     clearWatchdog();
     if (reconnectTimeoutRef.current) {
       clearTimeout(reconnectTimeoutRef.current);
+      reconnectTimeoutRef.current = null;
     }
     if (eventSourceRef.current) {
       eventSourceRef.current.close();

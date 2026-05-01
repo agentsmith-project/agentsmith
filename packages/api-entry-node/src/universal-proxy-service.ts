@@ -8,6 +8,36 @@ type RuntimeUpstreamConfig = {
   api_root: string;
   fixed_upstream_format?: 'openai-completion' | 'openai-responses' | 'anthropic' | 'google';
   upstream_headers: Array<[string, string]>;
+  limits?: EffectiveEndpointModelRuntimeConfig['limits'];
+  surface_defaults?: EffectiveEndpointModelRuntimeConfig['surface_defaults'];
+};
+
+type EndpointModelModality = 'text' | 'image' | 'audio' | 'pdf' | 'file' | 'video';
+type EndpointApplyPatchTransport = 'function' | 'freeform';
+
+export type EffectiveEndpointModelRuntimeConfig = {
+  limits?: {
+    context_window?: number;
+    max_output_tokens?: number;
+  };
+  surface_defaults: {
+    modalities: {
+      input: EndpointModelModality[];
+      output: EndpointModelModality[];
+    };
+    tools: {
+      supports_search: false;
+      supports_view_image: false;
+      apply_patch_transport: EndpointApplyPatchTransport;
+      supports_parallel_calls: false;
+    };
+  };
+  model_catalog: {
+    input_modalities: EndpointModelModality[];
+    supports_search_tool: false;
+    supports_parallel_tool_calls: false;
+    apply_patch_tool_type: EndpointApplyPatchTransport;
+  };
 };
 
 type RuntimeConfigSnapshot = {
@@ -159,6 +189,76 @@ function fixedUpstreamFormat(protocol: EndpointUpstreamProtocol): RuntimeUpstrea
   return undefined;
 }
 
+function readPositiveInteger(value: unknown): number | undefined {
+  if (typeof value !== 'number' || !Number.isFinite(value) || value <= 0) {
+    return undefined;
+  }
+  return Math.floor(value);
+}
+
+function addModality(modalities: EndpointModelModality[], modality: EndpointModelModality): void {
+  if (!modalities.includes(modality)) {
+    modalities.push(modality);
+  }
+}
+
+export function deriveEndpointEffectiveModelRuntimeConfig(endpoint: EndpointRecord): EffectiveEndpointModelRuntimeConfig {
+  const contextWindow = readPositiveInteger(endpoint.model_profile?.max_context_tokens);
+  const maxOutputTokens = readPositiveInteger(endpoint.model_profile?.max_output_tokens);
+  const inputModalities: EndpointModelModality[] = ['text'];
+  const outputModalities: EndpointModelModality[] = ['text'];
+
+  for (const capability of endpoint.capabilities ?? []) {
+    if (capability.enabled !== true) continue;
+    if (capability.type === 'multimodal_completion') {
+      addModality(inputModalities, 'image');
+    }
+    if (capability.type === 'image_generation') {
+      addModality(outputModalities, 'image');
+    }
+    if (capability.type === 'video_generation') {
+      addModality(outputModalities, 'video');
+    }
+  }
+
+  if (endpoint.model_profile?.supports_file === true) {
+    addModality(inputModalities, 'file');
+  }
+
+  const applyPatchTransport: EndpointApplyPatchTransport =
+    endpoint.upstream_protocol === 'openai_responses' ? 'freeform' : 'function';
+  const limits =
+    contextWindow || maxOutputTokens
+      ? {
+          ...(contextWindow ? { context_window: contextWindow } : {}),
+          ...(maxOutputTokens ? { max_output_tokens: maxOutputTokens } : {}),
+        }
+      : undefined;
+  const surfaceDefaults: EffectiveEndpointModelRuntimeConfig['surface_defaults'] = {
+    modalities: {
+      input: [...inputModalities],
+      output: [...outputModalities],
+    },
+    tools: {
+      supports_search: false,
+      supports_view_image: false,
+      apply_patch_transport: applyPatchTransport,
+      supports_parallel_calls: false,
+    },
+  };
+
+  return {
+    ...(limits ? { limits } : {}),
+    surface_defaults: surfaceDefaults,
+    model_catalog: {
+      input_modalities: [...inputModalities],
+      supports_search_tool: false,
+      supports_parallel_tool_calls: false,
+      apply_patch_tool_type: applyPatchTransport,
+    },
+  };
+}
+
 function sanitizeDataPlanePassthroughHeaders(headers?: Record<string, string>): Record<string, string> {
   const sanitized: Record<string, string> = {};
   for (const [rawName, rawValue] of Object.entries(headers ?? {})) {
@@ -173,6 +273,7 @@ function sanitizeDataPlanePassthroughHeaders(headers?: Record<string, string>): 
 }
 
 function buildRuntimeConfig(endpoint: EndpointRecord): RuntimeNamespaceConfig {
+  const effectiveModelConfig = deriveEndpointEffectiveModelRuntimeConfig(endpoint);
   return {
     listen: '0.0.0.0:8080',
     upstream_timeout_secs: endpoint.limits?.timeout_seconds ?? 120,
@@ -181,6 +282,8 @@ function buildRuntimeConfig(endpoint: EndpointRecord): RuntimeNamespaceConfig {
       api_root: normalizeEndpointApiRoot(endpoint),
       fixed_upstream_format: fixedUpstreamFormat(endpoint.upstream_protocol),
       upstream_headers: [],
+      ...(effectiveModelConfig.limits ? { limits: effectiveModelConfig.limits } : {}),
+      surface_defaults: effectiveModelConfig.surface_defaults,
     }],
     model_aliases: {},
     hooks: {

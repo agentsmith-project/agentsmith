@@ -27,6 +27,10 @@
 ### `notebook-runner/`
 - notebook runner / external agent 相关的长期运行产物
 
+### `engineering/`
+- 一次性开发计划、handoff plan 和实现证据
+- 不作为 current docs、产品 contract 或最终 UX/UI 规范
+
 ## 不应该放在这里的内容
 
 - Playwright 单次运行失败截图

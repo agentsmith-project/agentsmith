@@ -64,7 +64,7 @@ vi.mock('../ConversationInput', () => ({
 }));
 
 vi.mock('../MessageList', () => ({
-  MessageList: ({ messages, streamingMessageId, streamingContent, disabled: _disabled }: any) => (
+  MessageList: ({ messages, streamingMessageId, streamingContent, activeRunView, disabled: _disabled }: any) => (
     <div data-testid="message-list">
       {messages.map((msg: TaskMessage) => (
         <div key={msg.id} data-testid={`message-${msg.id}`}>
@@ -74,6 +74,11 @@ vi.mock('../MessageList', () => ({
       {streamingMessageId && (
         <div data-testid="streaming-message">{streamingContent}</div>
       )}
+      {activeRunView ? (
+        <div data-testid="message-list-active-run">
+          {activeRunView.messageId}:{activeRunView.runState}
+        </div>
+      ) : null}
     </div>
   ),
 }));
@@ -97,6 +102,21 @@ describe('ConversationPanel', () => {
   ];
 
   const mockOnSendMessage = vi.fn();
+  const createActiveRunView = (overrides = {}) => ({
+    messageId: 'msg-2',
+    runState: 'running' as const,
+    latestAction: {
+      kind: 'output' as const,
+      summary: 'Writing a very long execution update that belongs inside the active AI bubble instead of the conversation status banner.',
+    },
+    recentActions: [],
+    startedAt: '2024-01-01T00:01:00Z',
+    elapsedSeconds: 125,
+    cancelPending: false,
+    onCancel: vi.fn(),
+    realtimeHealth: { status: 'connected' as const },
+    ...overrides,
+  });
 
   beforeEach(() => {
     vi.clearAllMocks();
@@ -433,57 +453,82 @@ describe('ConversationPanel', () => {
     });
   });
 
-  describe('Run Activity Banner', () => {
-    it('renders a compact latest-action summary and cancel action while running', () => {
+  describe('Active Run View', () => {
+    it('passes the active run view to the message list without rendering a top active-run banner or cancel action', () => {
       render(
         <ConversationPanel
           messages={mockMessages}
           onSendMessage={mockOnSendMessage}
-          onCancelActiveRun={vi.fn()}
-          runActivity={{
-            active: true,
-            elapsedSeconds: 125,
-            recentActions: [
-              {
-                id: 'action-1',
-                kind: 'output',
-                summary: 'Writing a very long execution update that should be truncated before it can ever stretch the notebook task status banner into multiple rows of noisy text for the user.',
-                ageSeconds: 0,
-                traceName: 'codex.exec',
-              },
-            ],
-          }}
+          activeRunView={createActiveRunView()}
         />
       );
 
-      const summary = screen.getByTestId('notebook__run-activity-summary');
-      expect(summary).toBeInTheDocument();
-      expect(summary.textContent?.length ?? 0).toBeLessThanOrEqual(96);
-      expect(summary).toHaveAttribute(
-        'title',
-        'Writing a very long execution update that should be truncated before it can ever stretch the notebook task status banner into multiple rows of noisy text for the user.',
-      );
-      expect(screen.getByTestId('notebook__run-active-cancel')).toHaveTextContent('common.cancel');
+      expect(screen.getByTestId('message-list-active-run')).toHaveTextContent('msg-2:running');
+      expect(screen.queryByTestId('notebook__execution-visibility')).not.toBeInTheDocument();
+      expect(screen.queryByTestId('notebook__run-activity-summary')).not.toBeInTheDocument();
+      expect(screen.queryByTestId('notebook__run-active-cancel')).not.toBeInTheDocument();
       expect(screen.queryByTestId('notebook__execution-visibility-toggle')).not.toBeInTheDocument();
     });
 
-    it('falls back to lastSummary when no recent action exists', () => {
+    it.each(['reconnecting', 'disconnected'] as const)(
+      'keeps transient %s realtime status out of the top banner while an active run owns the footer state',
+      (connectionStatus) => {
+        render(
+          <ConversationPanel
+            messages={mockMessages}
+            onSendMessage={mockOnSendMessage}
+            connectionStatus={connectionStatus}
+            activeRunView={createActiveRunView({
+              realtimeHealth: { status: connectionStatus },
+            })}
+          />
+        );
+
+        expect(screen.getByTestId('message-list-active-run')).toHaveTextContent('msg-2:running');
+        expect(screen.queryByTestId('notebook__execution-visibility')).not.toBeInTheDocument();
+        expect(screen.queryByTestId('notebook__sse-status')).not.toBeInTheDocument();
+        expect(screen.queryByText('Recovering live task stream')).not.toBeInTheDocument();
+        expect(screen.queryByText('Live task stream disconnected')).not.toBeInTheDocument();
+      },
+    );
+
+    it('still shows unrecoverable realtime errors above the message list when user action may be needed', () => {
       render(
         <ConversationPanel
           messages={mockMessages}
           onSendMessage={mockOnSendMessage}
-          runActivity={{
-            active: true,
-            elapsedSeconds: 10,
-            lastSummary: 'Preparing notebook artifacts for the next execution turn',
-            recentActions: [],
-          }}
+          connectionStatus="error"
+          connectionErrorCode="TASK_EVENTS_RECOVERY_EXHAUSTED"
+          activeRunView={createActiveRunView({
+            realtimeHealth: {
+              status: 'error',
+              code: 'TASK_EVENTS_RECOVERY_EXHAUSTED',
+            },
+          })}
         />
       );
 
-      expect(screen.getByTestId('notebook__run-activity-summary')).toHaveTextContent(
-        'Preparing notebook artifacts for the next execution turn',
+      expect(screen.getByTestId('notebook__execution-visibility')).toBeInTheDocument();
+      expect(screen.getByTestId('notebook__sse-status')).toHaveTextContent(
+        'Realtime task recovery exhausted',
       );
+      expect(screen.getByTestId('message-list-active-run')).toHaveTextContent('msg-2:running');
+    });
+
+    it('still renders real connection and sandbox notices above the message list', () => {
+      render(
+        <ConversationPanel
+          messages={mockMessages}
+          onSendMessage={mockOnSendMessage}
+          connectionStatus="reconnecting"
+          sandboxStarting
+        />
+      );
+
+      expect(screen.getByTestId('notebook__execution-visibility')).toBeInTheDocument();
+      expect(screen.getAllByText('Recovering live task stream').length).toBeGreaterThan(0);
+      expect(screen.getByTestId('notebook__sandbox-starting')).toBeInTheDocument();
+      expect(screen.queryByTestId('notebook__run-active-cancel')).not.toBeInTheDocument();
     });
   });
 

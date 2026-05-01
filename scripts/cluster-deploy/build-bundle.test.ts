@@ -7,8 +7,8 @@ import path from 'node:path';
 import { describe, expect, it } from 'vitest';
 
 const repoRoot = process.cwd();
-const LLMUP_DIGEST = 'sha256:a6d5b309f25f17cafbd7fadb601fef5f80726c4a299509820e8e863be0928058';
-const LLMUP_SOURCE_IMAGE = `ghcr.io/agentsmith-project/llm-universal-proxy:v0.2.25@${LLMUP_DIGEST}`;
+const LLMUP_DIGEST = 'sha256:4996453b1353868ca9e99c584719c9905e1ebbbd6d2ff585378bc0050989583b';
+const LLMUP_SOURCE_IMAGE = `ghcr.io/agentsmith-project/llm-universal-proxy:v0.2.27@${LLMUP_DIGEST}`;
 const forbiddenEvidenceTruthFields = new Set([
   'verdict',
   'claim_id',
@@ -261,8 +261,8 @@ agentsmith_chat_runner_image=localhost:5001/mbos/agentsmith-chat-llm-runner:\${R
 agentsmith_chat_runner_k8s_image=kind-registry:5000/mbos/agentsmith-chat-llm-runner:\${RELEASE_ID}
 agentsmith_verify_runner_image=localhost:5001/mbos/agentsmith-verify-runner:\${RELEASE_ID}
 sandbox_manager_image=localhost:5001/mbos/sandbox-manager:\${RELEASE_ID}
-llm_universal_proxy_image=localhost:5001/mbos/llm-universal-proxy:v0.2.25
-llmup_version=v0.2.25
+llm_universal_proxy_image=localhost:5001/mbos/llm-universal-proxy:v0.2.27
+llmup_version=v0.2.27
 llmup_source_image=${LLMUP_SOURCE_IMAGE}
 llmup_source_image_digest=${LLMUP_DIGEST}
 registry_host=localhost:5001
@@ -571,11 +571,11 @@ describe('cluster build bundle archive packaging', () => {
 
       expect(buildImagesEnv).toContain('UNIVERSAL_PROXY_SOURCE_DIR_OVERRIDE=');
       expect(buildImagesEnv).not.toContain('llm-universal-proxy');
-      expect(version).toContain('llmup_version=v0.2.25');
+      expect(version).toContain('llmup_version=v0.2.27');
       expect(version).toContain(`llmup_source_image=${LLMUP_SOURCE_IMAGE}`);
       expect(version).toContain(`llmup_source_image_digest=${LLMUP_DIGEST}`);
       expect(version).toContain(
-        'llm_universal_proxy_image=localhost:5001/mbos/llm-universal-proxy:v0.2.25',
+        'llm_universal_proxy_image=localhost:5001/mbos/llm-universal-proxy:v0.2.27',
       );
     } finally {
       rmSync(parentRoot, { recursive: true, force: true });
@@ -601,7 +601,7 @@ describe('cluster build bundle archive packaging', () => {
       const manifestPath = path.join(bundleDir, 'images', 'image-archives.manifest.json');
       const manifest = readJsonFile<ImageArchiveManifest>(manifestPath);
       const appArchiveRelpath = 'images/localhost-5001-mbos-agentsmith-app-release-test-release.tar';
-      const proxyArchiveRelpath = 'images/localhost-5001-mbos-llm-universal-proxy-v0.2.25.tar';
+      const proxyArchiveRelpath = 'images/localhost-5001-mbos-llm-universal-proxy-v0.2.27.tar';
       const appArchivePath = path.join(bundleDir, appArchiveRelpath);
       const appProof = readDockerArchiveProof(appArchivePath);
       const appManifestEntry = findManifestArchive(manifest, appArchiveRelpath);
@@ -923,7 +923,7 @@ describe('cluster build bundle archive packaging', () => {
       );
       expect(readFileSync(path.join(bundleDir, 'build-images-env.log'), 'utf8')).not.toContain(fixedLlmupRoot);
       expect(readFileSync(path.join(bundleDir, 'VERSION'), 'utf8')).toContain(
-        'llm_universal_proxy_image=localhost:5001/mbos/llm-universal-proxy:v0.2.25',
+        'llm_universal_proxy_image=localhost:5001/mbos/llm-universal-proxy:v0.2.27',
       );
     } finally {
       rmSync(tempRoot, { recursive: true, force: true });

@@ -318,6 +318,7 @@ export const taskFixtures: Task[] = [
     last_activity_at: '2026-01-28T13:45:00Z',
     agent_presence: 'managed',
     run_state: 'running',
+    active_run_started_at: '2026-01-28T13:44:30Z',
   },
 ];
 

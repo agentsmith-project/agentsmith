@@ -1621,9 +1621,10 @@ describe('TaskPage', () => {
       let pollTerminalWorkspace: (() => void) | null = null;
       const setIntervalSpy = vi
         .spyOn(window, 'setInterval')
-        .mockImplementation(((callback: TimerHandler) => {
-          pollTerminalWorkspace =
-            typeof callback === 'function' ? (callback as () => void) : null;
+        .mockImplementation(((callback: TimerHandler, timeout?: number) => {
+          if (timeout === 1000 && typeof callback === 'function') {
+            pollTerminalWorkspace = callback as () => void;
+          }
           return 1 as unknown as number;
         }) as typeof window.setInterval);
       const clearIntervalSpy = vi
@@ -2210,6 +2211,347 @@ describe('TaskPage', () => {
           'End terminal sessions before starting a new agent run.',
         );
       });
+    });
+
+    it('uses the next terminal poll after a stale empty preserve to converge to conversation when backend remains empty', async () => {
+      let pollTerminalWorkspace: (() => void) | null = null;
+      const setIntervalSpy = vi
+        .spyOn(window, 'setInterval')
+        .mockImplementation(((callback: TimerHandler, timeout?: number) => {
+          if (timeout === 1000 && typeof callback === 'function') {
+            pollTerminalWorkspace = callback as () => void;
+          }
+          return 1 as unknown as number;
+        }) as typeof window.setInterval);
+      const clearIntervalSpy = vi
+        .spyOn(window, 'clearInterval')
+        .mockImplementation((() => {}) as typeof window.clearInterval);
+
+      try {
+        mockTaskApiListTerminalSessions
+          .mockResolvedValueOnce({ total: 0, items: [] })
+          .mockResolvedValueOnce({ total: 0, items: [] })
+          .mockResolvedValueOnce({ total: 0, items: [] });
+
+        await renderComponentAndWaitForTerminalHydration();
+
+        await act(async () => {
+          latestTaskHeaderPropsRef.current.onCreateTerminalSession();
+        });
+
+        await waitFor(() => {
+          expect(latestTaskHeaderPropsRef.current.viewMode).toBe('terminal');
+          expect(latestTaskHeaderPropsRef.current.terminalSessionCount).toBe(1);
+          expect(screen.getByTestId('task-terminal-panel-active')).toBeInTheDocument();
+        });
+
+        await act(async () => {
+          latestTaskTerminalPanelPropsRef.current.onSessionResolved('backend-session-1');
+          await Promise.resolve();
+        });
+
+        await waitFor(() => {
+          expect(mockTaskApiListTerminalSessions).toHaveBeenCalledTimes(2);
+          expect(latestTaskHeaderPropsRef.current.viewMode).toBe('terminal');
+          expect(latestTaskHeaderPropsRef.current.terminalSessionCount).toBe(1);
+          expect(screen.getByTestId('notebook__task-terminal-tab-terminal-session-1')).toBeInTheDocument();
+        });
+        expect(mockClearTaskTerminalPanelSessionStateForScope).not.toHaveBeenCalledWith(
+          mockWorkspaceId,
+          mockProjectId,
+          mockTaskId,
+          'terminal-session-1',
+        );
+
+        await waitFor(() => {
+          expect(pollTerminalWorkspace).toBeTypeOf('function');
+        });
+
+        await act(async () => {
+          pollTerminalWorkspace?.();
+          await Promise.resolve();
+        });
+
+        await waitFor(() => {
+          expect(mockTaskApiListTerminalSessions).toHaveBeenCalledTimes(3);
+          expect(latestTaskHeaderPropsRef.current.viewMode).toBe('conversation');
+          expect(latestTaskHeaderPropsRef.current.terminalSessionCount).toBe(0);
+          expect(screen.queryByTestId('notebook__task-terminal-tab-terminal-session-1')).not.toBeInTheDocument();
+          expect(screen.queryByTestId('notebook__task-terminal-shell')).not.toBeInTheDocument();
+          expect(screen.getByTestId('conversation-panel')).toBeInTheDocument();
+        });
+      } finally {
+        setIntervalSpy.mockRestore();
+        clearIntervalSpy.mockRestore();
+      }
+    });
+
+    it('uses the next terminal poll after a stale empty preserve to reconcile when backend lists the resolved session', async () => {
+      let pollTerminalWorkspace: (() => void) | null = null;
+      const setIntervalSpy = vi
+        .spyOn(window, 'setInterval')
+        .mockImplementation(((callback: TimerHandler, timeout?: number) => {
+          if (timeout === 1000 && typeof callback === 'function') {
+            pollTerminalWorkspace = callback as () => void;
+          }
+          return 1 as unknown as number;
+        }) as typeof window.setInterval);
+      const clearIntervalSpy = vi
+        .spyOn(window, 'clearInterval')
+        .mockImplementation((() => {}) as typeof window.clearInterval);
+
+      try {
+        mockTaskApiListTerminalSessions
+          .mockResolvedValueOnce({ total: 0, items: [] })
+          .mockResolvedValueOnce({ total: 0, items: [] })
+          .mockResolvedValueOnce({
+            total: 1,
+            items: [
+              {
+                id: 'backend-session-1',
+                status: 'active',
+                created_at: '2026-04-13T01:00:00.000Z',
+              },
+            ],
+          });
+
+        await renderComponentAndWaitForTerminalHydration();
+
+        await act(async () => {
+          latestTaskHeaderPropsRef.current.onCreateTerminalSession();
+        });
+
+        await waitFor(() => {
+          expect(latestTaskHeaderPropsRef.current.viewMode).toBe('terminal');
+          expect(latestTaskHeaderPropsRef.current.terminalSessionCount).toBe(1);
+          expect(screen.getByTestId('task-terminal-panel-active')).toBeInTheDocument();
+        });
+
+        await act(async () => {
+          latestTaskTerminalPanelPropsRef.current.onSessionResolved('backend-session-1');
+          await Promise.resolve();
+        });
+
+        await waitFor(() => {
+          expect(mockTaskApiListTerminalSessions).toHaveBeenCalledTimes(2);
+          expect(latestTaskHeaderPropsRef.current.viewMode).toBe('terminal');
+          expect(latestTaskHeaderPropsRef.current.terminalSessionCount).toBe(1);
+          expect(screen.getByTestId('notebook__task-terminal-tab-terminal-session-1')).toBeInTheDocument();
+        });
+
+        await waitFor(() => {
+          expect(pollTerminalWorkspace).toBeTypeOf('function');
+        });
+
+        await act(async () => {
+          pollTerminalWorkspace?.();
+          await Promise.resolve();
+        });
+
+        await waitFor(() => {
+          expect(mockTaskApiListTerminalSessions).toHaveBeenCalledTimes(3);
+          expect(latestTaskHeaderPropsRef.current.viewMode).toBe('terminal');
+          expect(latestTaskHeaderPropsRef.current.terminalSessionCount).toBe(1);
+          expect(screen.getByTestId('task-terminal-panel-active')).toBeInTheDocument();
+          expect(screen.getByTestId('notebook__task-terminal-tab-terminal-session-1')).toHaveTextContent(
+            'Active',
+          );
+        });
+      } finally {
+        setIntervalSpy.mockRestore();
+        clearIntervalSpy.mockRestore();
+      }
+    });
+
+    it('does not preserve a resolved terminal tab after the user closes it before the stale empty sync returns', async () => {
+      const user = userEvent.setup();
+      const resolvedSessionSync = createDeferred<{ total: number; items: [] }>();
+      const closeSession = createDeferred<void>();
+      mockTaskApiListTerminalSessions
+        .mockResolvedValueOnce({ total: 0, items: [] })
+        .mockReturnValueOnce(resolvedSessionSync.promise as any);
+      mockTaskApiCloseTerminalSession.mockReturnValueOnce(closeSession.promise);
+
+      await renderComponentAndWaitForTerminalHydration();
+
+      await act(async () => {
+        latestTaskHeaderPropsRef.current.onCreateTerminalSession();
+      });
+      await waitFor(() => {
+        expect(screen.getByTestId('notebook__task-terminal-tab-terminal-session-1')).toBeInTheDocument();
+      });
+
+      await act(async () => {
+        latestTaskTerminalPanelPropsRef.current.onSessionResolved('backend-session-1');
+      });
+      await waitFor(() => {
+        expect(mockTaskApiListTerminalSessions).toHaveBeenCalledTimes(2);
+      });
+
+      await user.click(screen.getByTestId('notebook__task-terminal-close-terminal-session-1'));
+      expect(mockTaskApiCloseTerminalSession).toHaveBeenCalledWith(
+        mockWorkspaceId,
+        mockProjectId,
+        mockTaskId,
+        'backend-session-1',
+      );
+
+      await act(async () => {
+        resolvedSessionSync.resolve({ total: 0, items: [] });
+        await resolvedSessionSync.promise;
+      });
+
+      await waitFor(() => {
+        expect(latestTaskHeaderPropsRef.current.viewMode).toBe('conversation');
+        expect(latestTaskHeaderPropsRef.current.terminalSessionCount).toBe(0);
+        expect(screen.queryByTestId('notebook__task-terminal-tab-terminal-session-1')).not.toBeInTheDocument();
+        expect(screen.getByTestId('conversation-panel')).toBeInTheDocument();
+      });
+
+      await act(async () => {
+        closeSession.resolve();
+        await closeSession.promise;
+      });
+    });
+
+    it('does not count a local closed terminal tab as occupying a session slot', async () => {
+      await renderComponentAndWaitForTerminalHydration();
+
+      await act(async () => {
+        latestTaskHeaderPropsRef.current.onCreateTerminalSession();
+      });
+
+      await waitFor(() => {
+        expect(latestTaskHeaderPropsRef.current.viewMode).toBe('terminal');
+        expect(latestTaskHeaderPropsRef.current.terminalSessionCount).toBe(1);
+        expect(screen.getByTestId('task-terminal-panel-active')).toBeInTheDocument();
+      });
+
+      await act(async () => {
+        latestTaskTerminalPanelPropsRef.current.onStatusChange('closed');
+      });
+
+      await waitFor(() => {
+        expect(latestTaskHeaderPropsRef.current.viewMode).toBe('conversation');
+        expect(latestTaskHeaderPropsRef.current.terminalSessionCount).toBe(0);
+        expect(latestTaskHeaderPropsRef.current.canCreateTerminalSession).toBe(true);
+        expect(latestTaskHeaderPropsRef.current.deleteBlockedReason).toBeNull();
+        expect(latestConversationPanelPropsRef.current.inputPlaceholder).toBeUndefined();
+        expect(screen.queryByTestId('notebook__task-terminal-shell')).not.toBeInTheDocument();
+      });
+    });
+
+    it('does not bring back a locally closed terminal tab when creating another terminal', async () => {
+      await renderComponentAndWaitForTerminalHydration();
+
+      await act(async () => {
+        latestTaskHeaderPropsRef.current.onCreateTerminalSession();
+      });
+
+      await waitFor(() => {
+        expect(latestTaskHeaderPropsRef.current.viewMode).toBe('terminal');
+        expect(screen.getByTestId('notebook__task-terminal-tab-terminal-session-1')).toBeInTheDocument();
+      });
+
+      await act(async () => {
+        latestTaskTerminalPanelPropsRef.current.onStatusChange('closed');
+      });
+
+      await waitFor(() => {
+        expect(latestTaskHeaderPropsRef.current.viewMode).toBe('conversation');
+        expect(latestTaskHeaderPropsRef.current.terminalSessionCount).toBe(0);
+      });
+
+      await act(async () => {
+        latestTaskHeaderPropsRef.current.onCreateTerminalSession();
+      });
+
+      await waitFor(() => {
+        expect(latestTaskHeaderPropsRef.current.viewMode).toBe('terminal');
+        expect(latestTaskHeaderPropsRef.current.terminalSessionCount).toBe(1);
+        expect(screen.getAllByTestId(/^notebook__task-terminal-tab-terminal-session-\d+$/)).toHaveLength(1);
+        expect(screen.getByTestId(/^notebook__task-terminal-tab-terminal-session-\d+$/)).not.toHaveTextContent(
+          'Closed',
+        );
+        expect(
+          screen
+            .getByTestId('notebook__task-terminal-workspace')
+            .getAttribute('data-active-terminal-tab-id'),
+        ).toMatch(/^terminal-session-\d+$/);
+      });
+    });
+
+    it('keeps terminal mode when preserve-current sync returns immediately after opening a hidden terminal workspace', async () => {
+      let pollTerminalWorkspace: (() => void) | null = null;
+      const setIntervalSpy = vi
+        .spyOn(window, 'setInterval')
+        .mockImplementation(((callback: TimerHandler, timeout?: number) => {
+          if (timeout === 1000 && typeof callback === 'function') {
+            pollTerminalWorkspace = callback as () => void;
+          }
+          return 1 as unknown as number;
+        }) as typeof window.setInterval);
+      const clearIntervalSpy = vi
+        .spyOn(window, 'clearInterval')
+        .mockImplementation((() => {}) as typeof window.clearInterval);
+
+      try {
+        window.sessionStorage.setItem(
+          `agentsmith-terminal-workspace:${mockWorkspaceId}:${mockProjectId}:${mockTaskId}`,
+          JSON.stringify({
+            preferredViewMode: 'conversation',
+            preferredActiveSessionId: 'backend-session-1',
+            artifactsDrawerOpen: true,
+          }),
+        );
+        mockTaskApiListTerminalSessions
+          .mockResolvedValueOnce({
+            total: 1,
+            items: [
+              {
+                id: 'backend-session-1',
+                status: 'active',
+                created_at: '2026-04-13T01:00:00.000Z',
+              },
+            ],
+          })
+          .mockResolvedValue({
+            total: 1,
+            items: [
+              {
+                id: 'backend-session-1',
+                status: 'active',
+                created_at: '2026-04-13T01:00:00.000Z',
+              },
+            ],
+          });
+
+        renderComponent();
+
+        await waitFor(() => {
+          expect(screen.getByTestId('notebook__task-terminal-status-action')).toBeInTheDocument();
+          expect(latestTaskHeaderPropsRef.current.viewMode).toBe('conversation');
+          expect(pollTerminalWorkspace).toBeTypeOf('function');
+        });
+
+        await act(async () => {
+          latestTaskHeaderPropsRef.current.onSetViewMode('terminal');
+          pollTerminalWorkspace?.();
+          await Promise.resolve();
+        });
+
+        await waitFor(() => {
+          expect(mockTaskApiListTerminalSessions).toHaveBeenCalledTimes(2);
+        });
+        expect(latestTaskHeaderPropsRef.current.viewMode).toBe('terminal');
+        expect(latestTaskHeaderPropsRef.current.terminalSessionCount).toBe(1);
+        expect(screen.getByTestId('task-terminal-panel-active')).toBeInTheDocument();
+        expect(latestTaskTerminalPanelPropsRef.current.visible).toBe(true);
+        expect(screen.queryByTestId('conversation-panel')).not.toBeInTheDocument();
+      } finally {
+        setIntervalSpy.mockRestore();
+        clearIntervalSpy.mockRestore();
+      }
     });
 
     it('creates up to three terminal tabs and blocks a fourth creation', async () => {

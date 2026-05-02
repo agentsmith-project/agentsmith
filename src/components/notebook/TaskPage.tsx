@@ -182,6 +182,61 @@ function mapListedTerminalSessionStatusToTabStatus(
   return "active";
 }
 
+function getTerminalSessionIdentityForSessionId(sessionId: string): string {
+  return `session:${sessionId}`;
+}
+
+function getTerminalSessionIdentityForTab(tab: TerminalWorkspaceTab): string {
+  return typeof tab.sessionId === "string" && tab.sessionId.length > 0
+    ? getTerminalSessionIdentityForSessionId(tab.sessionId)
+    : `tab:${tab.id}`;
+}
+
+function isListedTerminalSessionRecovering(
+  status: ListedTerminalSession["status"],
+): boolean {
+  return status === "failed" || status === "disconnected";
+}
+
+function isTerminalTabRecovering(status: TerminalStatus): boolean {
+  return status === "failed" || status === "recovering";
+}
+
+function getTerminalSessionOccupancySnapshot({
+  terminalTruthResolved,
+  terminalTruthSessions,
+  terminalTabs,
+}: {
+  terminalTruthResolved: boolean;
+  terminalTruthSessions: ListedTerminalSession[] | null;
+  terminalTabs: TerminalWorkspaceTab[];
+}): { count: number; recoveryCount: number } {
+  const entries = new Map<string, { recovering: boolean }>();
+  if (terminalTruthResolved) {
+    for (const session of terminalTruthSessions ?? []) {
+      if (session.status === "closed") continue;
+      entries.set(getTerminalSessionIdentityForSessionId(session.id), {
+        recovering: isListedTerminalSessionRecovering(session.status),
+      });
+    }
+  }
+  for (const tab of terminalTabs) {
+    if (tab.status === "closed") continue;
+    const identity = getTerminalSessionIdentityForTab(tab);
+    const existing = entries.get(identity);
+    entries.set(identity, {
+      recovering:
+        (existing?.recovering ?? false) || isTerminalTabRecovering(tab.status),
+    });
+  }
+  return {
+    count: entries.size,
+    recoveryCount: Array.from(entries.values()).filter(
+      (entry) => entry.recovering,
+    ).length,
+  };
+}
+
 export function mergeTerminalTabStatus(
   currentStatus: TerminalStatus,
   nextStatus: ListedTerminalSession["status"],
@@ -545,6 +600,17 @@ export function TaskPage({
   const terminalWorkspaceHydrationRequestRef = React.useRef(0);
   const terminalWorkspaceTruthRequestRef = React.useRef(0);
   const closingTerminalTabIdsRef = React.useRef<Set<string>>(new Set());
+  const closingTerminalSessionIdsRef = React.useRef<Set<string>>(new Set());
+  const terminalSessionIdsAwaitingBackendTruthRef = React.useRef<Set<string>>(
+    new Set(),
+  );
+  const terminalSessionIdsWithPreservedEmptyTruthRef = React.useRef<Set<string>>(
+    new Set(),
+  );
+  const commitViewMode = React.useCallback((mode: TerminalViewMode) => {
+    viewModeRef.current = mode;
+    setViewMode(mode);
+  }, []);
 
   const queryClient = useQueryClient();
   const { handleError } = useErrorHandler();
@@ -1477,11 +1543,13 @@ export function TaskPage({
     setTerminalTabs(nextTabs);
   }, []);
   const handleSetViewMode = React.useCallback((mode: TerminalViewMode) => {
-    const terminalSessionCount = terminalWorkspaceHydrationState === "ready"
-      ? (terminalTruthSessions?.length ?? 0) + terminalTabs.filter((tab) => !tab.sessionId).length
-      : terminalTabs.length;
-    if (mode === "terminal" && terminalSessionCount === 0) return;
-    setViewMode(mode);
+    const currentTerminalSessionCount = getTerminalSessionOccupancySnapshot({
+      terminalTruthResolved: terminalWorkspaceHydrationState === "ready",
+      terminalTruthSessions,
+      terminalTabs,
+    }).count;
+    if (mode === "terminal" && currentTerminalSessionCount === 0) return;
+    commitViewMode(mode);
     if (mode === "terminal") {
       const nextActiveTerminalTabId =
         terminalTabs.find((tab) => tab.id === activeTerminalTabIdRef.current)
@@ -1491,6 +1559,7 @@ export function TaskPage({
       requestTerminalTabFocus(nextActiveTerminalTabId);
     }
   }, [
+    commitViewMode,
     requestTerminalTabFocus,
     terminalTabs,
     terminalTruthSessions,
@@ -1606,10 +1675,12 @@ export function TaskPage({
         item.status === "cancelled",
     );
   const terminalTruthResolved = terminalWorkspaceHydrationState === "ready";
-  const terminalSessionCount = terminalTruthResolved
-    ? (terminalTruthSessions?.length ?? 0) +
-      terminalTabs.filter((tab) => !tab.sessionId).length
-    : terminalTabs.length;
+  const terminalOccupancySnapshot = getTerminalSessionOccupancySnapshot({
+    terminalTruthResolved,
+    terminalTruthSessions,
+    terminalTabs,
+  });
+  const terminalSessionCount = terminalOccupancySnapshot.count;
   const hasTerminalSessions = terminalSessionCount > 0;
   const terminalBootstrapPending =
     hasTask &&
@@ -1631,19 +1702,7 @@ export function TaskPage({
       : false;
   const showArtifactsToggle =
     hasArtifacts && effectiveViewMode === "conversation";
-  const terminalRecoveryCount = terminalTruthResolved
-    ? (terminalTruthSessions ?? []).filter(
-        (session) =>
-          session.status === "failed" || session.status === "disconnected",
-      ).length +
-      terminalTabs.filter(
-        (tab) =>
-          !tab.sessionId &&
-          (tab.status === "failed" || tab.status === "recovering"),
-      ).length
-    : terminalTabs.filter(
-        (tab) => tab.status === "failed" || tab.status === "recovering",
-      ).length;
+  const terminalRecoveryCount = terminalOccupancySnapshot.recoveryCount;
   const terminalHasRecovery = terminalRecoveryCount > 0;
   const terminalHasRecoveryOnly =
     terminalHasRecovery && terminalRecoveryCount >= terminalSessionCount;
@@ -1728,10 +1787,10 @@ export function TaskPage({
         setActiveTerminalTabId(nextActiveTerminalTabId);
         activeTerminalTabIdRef.current = nextActiveTerminalTabId;
       }
-      setViewMode("terminal");
+      commitViewMode("terminal");
       requestTerminalTabFocus(nextActiveTerminalTabId);
     },
-    [requestTerminalTabFocus, terminalTruthSessions],
+    [commitViewMode, requestTerminalTabFocus, terminalTruthSessions],
   );
 
   const resetTerminalWorkspaceState = React.useCallback(() => {
@@ -1748,15 +1807,25 @@ export function TaskPage({
     setTerminalTabs([]);
     setActiveTerminalTabId(null);
     activeTerminalTabIdRef.current = null;
-    setViewMode("conversation");
+    commitViewMode("conversation");
     setTerminalTruthSessions([]);
+    closingTerminalTabIdsRef.current.clear();
+    closingTerminalSessionIdsRef.current.clear();
+    terminalSessionIdsAwaitingBackendTruthRef.current.clear();
+    terminalSessionIdsWithPreservedEmptyTruthRef.current.clear();
     nextTerminalTabOrdinalRef.current = 1;
     initialStoredTerminalWorkspaceStateRef.current = {
       preferredViewMode: "conversation",
       preferredActiveSessionId: null,
       artifactsDrawerOpen: nextArtifactsDrawerOpen,
     };
-  }, [preferredArtifactsDrawerOpenRef, projectId, taskId, workspaceId]);
+  }, [
+    commitViewMode,
+    preferredArtifactsDrawerOpenRef,
+    projectId,
+    taskId,
+    workspaceId,
+  ]);
 
   const clearTerminalWorkspaceStateFromBackend = React.useCallback(
     (artifactsDrawerPreference?: boolean) => {
@@ -1778,8 +1847,12 @@ export function TaskPage({
         activeTerminalTabIdRef.current = null;
       }
       if (viewModeRef.current !== "conversation") {
-        setViewMode("conversation");
+        commitViewMode("conversation");
       }
+      closingTerminalTabIdsRef.current.clear();
+      closingTerminalSessionIdsRef.current.clear();
+      terminalSessionIdsAwaitingBackendTruthRef.current.clear();
+      terminalSessionIdsWithPreservedEmptyTruthRef.current.clear();
       const nextArtifactsDrawerOpen =
         artifactsDrawerPreference ?? preferredArtifactsDrawerOpenRef.current;
       if (preferredArtifactsDrawerOpenRef.current !== nextArtifactsDrawerOpen) {
@@ -1793,7 +1866,7 @@ export function TaskPage({
       };
       setTerminalTruthSessions([]);
     },
-    [projectId, taskId, workspaceId],
+    [commitViewMode, projectId, taskId, workspaceId],
   );
 
   const hydrateTerminalWorkspaceFromBackendSessions = React.useCallback(
@@ -1830,6 +1903,83 @@ export function TaskPage({
           ? viewModeRef.current === "terminal"
           : initialStoredTerminalWorkspaceStateRef.current?.preferredViewMode ===
             "terminal";
+      const listedSessionIds = new Set(sessions.map((session) => session.id));
+      listedSessionIds.forEach((sessionId) => {
+        terminalSessionIdsAwaitingBackendTruthRef.current.delete(sessionId);
+        terminalSessionIdsWithPreservedEmptyTruthRef.current.delete(sessionId);
+      });
+      const isTerminalTabClosing = (tab: TerminalWorkspaceTab) =>
+        closingTerminalTabIdsRef.current.has(tab.id) ||
+        (typeof tab.sessionId === "string" &&
+          tab.sessionId.length > 0 &&
+          closingTerminalSessionIdsRef.current.has(tab.sessionId));
+      const shouldPreserveLocalTabsForStaleEmptySnapshot =
+        modeStrategy === "preserve-current" &&
+        sessions.length === 0 &&
+        currentTabs.some((tab) => {
+          if (tab.status === "closed") return false;
+          if (isTerminalTabClosing(tab)) return false;
+          if (typeof tab.sessionId !== "string" || tab.sessionId.length === 0) {
+            return false;
+          }
+          return (
+            terminalSessionIdsAwaitingBackendTruthRef.current.has(tab.sessionId) &&
+            !terminalSessionIdsWithPreservedEmptyTruthRef.current.has(tab.sessionId)
+          );
+        });
+
+      if (shouldPreserveLocalTabsForStaleEmptySnapshot) {
+        const preservedTabs = relabelTerminalWorkspaceTabs(
+          tTask,
+          currentTabs.filter(
+            (tab) => tab.status !== "closed" && !isTerminalTabClosing(tab),
+          ),
+        );
+        const preservedTabIds = new Set(preservedTabs.map((tab) => tab.id));
+        currentTabs
+          .filter((tab) => !preservedTabIds.has(tab.id))
+          .forEach((tab) => {
+            clearTaskTerminalPanelSessionStateForScope(
+              workspaceId,
+              projectId,
+              taskId,
+              tab.id,
+            );
+            if (typeof tab.sessionId === "string" && tab.sessionId.length > 0) {
+              terminalSessionIdsAwaitingBackendTruthRef.current.delete(tab.sessionId);
+              terminalSessionIdsWithPreservedEmptyTruthRef.current.delete(tab.sessionId);
+            }
+          });
+        preservedTabs.forEach((tab) => {
+          if (typeof tab.sessionId !== "string" || tab.sessionId.length === 0) {
+            return;
+          }
+          storeTaskTerminalPanelSessionIdForScope(
+            workspaceId,
+            projectId,
+            taskId,
+            tab.id,
+            tab.sessionId,
+          );
+          if (terminalSessionIdsAwaitingBackendTruthRef.current.has(tab.sessionId)) {
+            terminalSessionIdsAwaitingBackendTruthRef.current.delete(tab.sessionId);
+            terminalSessionIdsWithPreservedEmptyTruthRef.current.add(tab.sessionId);
+          }
+        });
+        const nextActiveTerminalTabId =
+          preservedTabs.find((tab) => tab.id === activeTerminalTabIdRef.current)
+            ?.id ??
+          preservedTabs[0]?.id ??
+          null;
+        terminalTabsRef.current = preservedTabs;
+        setTerminalTabs(preservedTabs);
+        nextTerminalTabOrdinalRef.current = getNextTerminalTabOrdinal(preservedTabs);
+        setActiveTerminalTabId(nextActiveTerminalTabId);
+        activeTerminalTabIdRef.current = nextActiveTerminalTabId;
+        commitViewMode(shouldRestoreTerminalMode ? "terminal" : "conversation");
+        setPreferredArtifactsDrawerOpen(preferredArtifactsDrawerOpen);
+        return;
+      }
 
       const nextTabs = liveSessions.map((session) => {
         const existingTab = currentTabsBySessionId.get(session.id);
@@ -1863,6 +2013,10 @@ export function TaskPage({
             taskId,
             tab.id,
           );
+          if (typeof tab.sessionId === "string" && tab.sessionId.length > 0) {
+            terminalSessionIdsAwaitingBackendTruthRef.current.delete(tab.sessionId);
+            terminalSessionIdsWithPreservedEmptyTruthRef.current.delete(tab.sessionId);
+          }
         });
 
       relabeledTabs.forEach((tab) => {
@@ -1916,11 +2070,12 @@ export function TaskPage({
       nextTerminalTabOrdinalRef.current = getNextTerminalTabOrdinal(nextRelabeledTabs);
       setActiveTerminalTabId(nextActiveTerminalTabId);
       activeTerminalTabIdRef.current = nextActiveTerminalTabId;
-      setViewMode(shouldRestoreTerminalMode ? "terminal" : "conversation");
+      commitViewMode(shouldRestoreTerminalMode ? "terminal" : "conversation");
       setPreferredArtifactsDrawerOpen(preferredArtifactsDrawerOpen);
     },
     [
       clearTerminalWorkspaceStateFromBackend,
+      commitViewMode,
       preferredArtifactsDrawerOpenRef,
       projectId,
       tTask,
@@ -2032,7 +2187,24 @@ export function TaskPage({
   React.useEffect(() => {
     if (taskStatus !== "active") return;
     if (terminalWorkspaceHydrationState !== "ready") return;
-    if ((terminalTruthSessions?.length ?? 0) === 0) return;
+    const hasTerminalTabsPendingBackendTruth = terminalTabs.some((tab) => {
+      if (tab.status === "closed") return false;
+      if (closingTerminalTabIdsRef.current.has(tab.id)) return false;
+      if (typeof tab.sessionId !== "string" || tab.sessionId.length === 0) {
+        return false;
+      }
+      if (closingTerminalSessionIdsRef.current.has(tab.sessionId)) return false;
+      return (
+        terminalSessionIdsAwaitingBackendTruthRef.current.has(tab.sessionId) ||
+        terminalSessionIdsWithPreservedEmptyTruthRef.current.has(tab.sessionId)
+      );
+    });
+    if (
+      (terminalTruthSessions?.length ?? 0) === 0 &&
+      !hasTerminalTabsPendingBackendTruth
+    ) {
+      return;
+    }
     const timer = window.setInterval(() => {
       void syncTerminalWorkspaceFromBackend().catch(() => {});
     }, 1000);
@@ -2040,6 +2212,7 @@ export function TaskPage({
   }, [
     syncTerminalWorkspaceFromBackend,
     taskStatus,
+    terminalTabs,
     terminalTruthSessions,
     terminalWorkspaceHydrationState,
   ]);
@@ -2269,6 +2442,22 @@ export function TaskPage({
       }
       return;
     }
+    const currentOpenTabs = terminalTabsRef.current.filter((tab) => {
+      if (tab.status !== "closed") return true;
+      clearTaskTerminalPanelSessionStateForScope(
+        workspaceId,
+        projectId,
+        taskId,
+        tab.id,
+      );
+      if (typeof tab.sessionId === "string" && tab.sessionId.length > 0) {
+        terminalSessionIdsAwaitingBackendTruthRef.current.delete(tab.sessionId);
+        terminalSessionIdsWithPreservedEmptyTruthRef.current.delete(tab.sessionId);
+        closingTerminalSessionIdsRef.current.delete(tab.sessionId);
+      }
+      closingTerminalTabIdsRef.current.delete(tab.id);
+      return false;
+    });
     const nextOrdinal = nextTerminalTabOrdinalRef.current;
     nextTerminalTabOrdinalRef.current += 1;
     const tabId = `terminal-session-${nextOrdinal}`;
@@ -2281,17 +2470,26 @@ export function TaskPage({
       sessionId: null,
     };
     const nextTabs = relabelTerminalWorkspaceTabs(tTask, [
-      ...terminalTabsRef.current,
+      ...currentOpenTabs,
       newTab,
     ]);
     setTerminalTabs(nextTabs);
     terminalTabsRef.current = nextTabs;
     setActiveTerminalTabId(tabId);
     activeTerminalTabIdRef.current = tabId;
-    setViewMode("terminal");
+    commitViewMode("terminal");
   };
 
   const handleTerminalTabStatusChange = (tabId: string, status: TerminalStatus) => {
+    if (status === "closed") {
+      const tab = terminalTabsRef.current.find((item) => item.id === tabId);
+      const hasResolvedSession =
+        typeof tab?.sessionId === "string" && tab.sessionId.length > 0;
+      if (!hasResolvedSession) {
+        removeTerminalTabLocally(tabId);
+        return;
+      }
+    }
     setTerminalTabs((prev) =>
       prev.map((tab) => (tab.id === tabId ? { ...tab, status } : tab)),
     );
@@ -2301,6 +2499,23 @@ export function TaskPage({
   };
 
   const handleTerminalTabSessionResolved = (tabId: string, sessionId: string) => {
+    const resolvingTab = terminalTabsRef.current.find((tab) => tab.id === tabId);
+    if (!resolvingTab) return;
+    if (
+      closingTerminalTabIdsRef.current.has(tabId) ||
+      closingTerminalSessionIdsRef.current.has(sessionId)
+    ) {
+      return;
+    }
+    const backendAlreadyListsSession =
+      terminalTruthSessionsRef.current?.some((session) => session.id === sessionId) ??
+      false;
+    if (
+      !backendAlreadyListsSession &&
+      !terminalSessionIdsWithPreservedEmptyTruthRef.current.has(sessionId)
+    ) {
+      terminalSessionIdsAwaitingBackendTruthRef.current.add(sessionId);
+    }
     setTerminalTabs((prev) =>
       prev.map((tab) => (tab.id === tabId ? { ...tab, sessionId } : tab)),
     );
@@ -2336,6 +2551,9 @@ export function TaskPage({
     }
     const shouldRefocusAfterClose = activeTerminalTabIdRef.current === tabId;
     closingTerminalTabIdsRef.current.add(tabId);
+    closingTerminalSessionIdsRef.current.add(sessionId);
+    terminalSessionIdsAwaitingBackendTruthRef.current.delete(sessionId);
+    terminalSessionIdsWithPreservedEmptyTruthRef.current.delete(sessionId);
     void (async () => {
       try {
         await taskAPI.closeTerminalSession(
@@ -2357,6 +2575,7 @@ export function TaskPage({
         });
       } finally {
         closingTerminalTabIdsRef.current.delete(tabId);
+        closingTerminalSessionIdsRef.current.delete(sessionId);
       }
     })();
   };
@@ -2451,7 +2670,7 @@ export function TaskPage({
                     onClick={() => {
                       setActiveTerminalTabId(tab.id);
                       activeTerminalTabIdRef.current = tab.id;
-                      setViewMode("terminal");
+                      commitViewMode("terminal");
                       requestTerminalTabFocus(tab.id);
                     }}
                   >

@@ -93,6 +93,10 @@ interface PendingTerminal {
   push: (event: AgentTerminalEvent) => void;
   close: () => void;
   fail: (error: Error) => void;
+  runnerSessionId: string;
+  controlScope: DispatchScope;
+  readyForInput?: boolean;
+  pendingInput?: string;
   firstEventTimer?: NodeJS.Timeout;
   idleTimer?: NodeJS.Timeout;
   maxRuntimeTimer?: NodeJS.Timeout;
@@ -999,6 +1003,7 @@ export class AgentExecutionService {
   private queueTerminalControlFrame(input: {
     socket: AgentSocketState;
     sessionId: string;
+    scope: DispatchScope;
     terminalSessionId: string;
     type: 'server.terminal.stdin' | 'server.terminal.resize' | 'server.terminal.close';
     payload: Record<string, unknown>;
@@ -1006,7 +1011,7 @@ export class AgentExecutionService {
     const task = this.resolveDispatchSocket({
       agentId: input.socket.agentId,
       sessionId: input.sessionId,
-      scope: 'session_strict',
+      scope: input.scope,
     }).then((authoritativeSocket) => {
       if (!authoritativeSocket || authoritativeSocket !== input.socket) {
         return;
@@ -1036,6 +1041,44 @@ export class AgentExecutionService {
       });
     });
     void this.trackBackgroundTask(task);
+  }
+
+  private queueTerminalInputFrame(input: {
+    socket: AgentSocketState;
+    pendingTerminal: PendingTerminal;
+    terminalSessionId: string;
+    data: string;
+  }): void {
+    if (!input.pendingTerminal.readyForInput) {
+      input.pendingTerminal.pendingInput = `${input.pendingTerminal.pendingInput ?? ''}${input.data}`;
+      return;
+    }
+    this.queueTerminalControlFrame({
+      socket: input.socket,
+      sessionId: input.pendingTerminal.runnerSessionId,
+      scope: input.pendingTerminal.controlScope,
+      terminalSessionId: input.terminalSessionId,
+      type: 'server.terminal.stdin',
+      payload: { data: input.data },
+    });
+  }
+
+  private flushBufferedTerminalInput(
+    socket: AgentSocketState,
+    terminalSessionId: string,
+    pendingTerminal: PendingTerminal,
+  ): void {
+    const data = pendingTerminal.pendingInput;
+    pendingTerminal.pendingInput = undefined;
+    if (!data) return;
+    this.queueTerminalControlFrame({
+      socket,
+      sessionId: pendingTerminal.runnerSessionId,
+      scope: pendingTerminal.controlScope,
+      terminalSessionId,
+      type: 'server.terminal.stdin',
+      payload: { data },
+    });
   }
 
   private async registerSocketLifecycle(args: {
@@ -1433,6 +1476,8 @@ export class AgentExecutionService {
       push: queue.push,
       close: queue.close,
       fail: queue.fail,
+      runnerSessionId: input.sessionId,
+      controlScope: dispatchScope,
     };
     socket.terminalBySessionId.set(input.terminalSessionId, pending);
     this.armTerminalTimeouts(socket, input.terminalSessionId, pending);
@@ -1470,18 +1515,18 @@ export class AgentExecutionService {
     return {
       stream: queue.iterable,
       writeInput: (data: string) => {
-        this.queueTerminalControlFrame({
+        this.queueTerminalInputFrame({
           socket,
-          sessionId: input.sessionId,
+          pendingTerminal: pending,
           terminalSessionId: input.terminalSessionId,
-          type: 'server.terminal.stdin',
-          payload: { data },
+          data,
         });
       },
       resize: (cols: number, rows: number) => {
         this.queueTerminalControlFrame({
           socket,
           sessionId: input.sessionId,
+          scope: dispatchScope,
           terminalSessionId: input.terminalSessionId,
           type: 'server.terminal.resize',
           payload: { cols, rows },
@@ -1491,6 +1536,7 @@ export class AgentExecutionService {
         this.queueTerminalControlFrame({
           socket,
           sessionId: input.sessionId,
+          scope: dispatchScope,
           terminalSessionId: input.terminalSessionId,
           type: 'server.terminal.close',
           payload: {},
@@ -1505,11 +1551,15 @@ export class AgentExecutionService {
     sessionId: string;
     agentId: string;
     terminalSessionId: string;
+    executionContext?: Record<string, unknown>;
   }): Promise<'signaled' | 'agent_offline' | 'agent_workspace_mismatch'> {
+    const dispatchScope = input.executionContext
+      ? resolveStreamingDispatchScope(input.executionContext)
+      : 'session_strict';
     const socket = await this.resolveDispatchSocket({
       agentId: input.agentId,
       sessionId: input.sessionId,
-      scope: 'session_strict',
+      scope: dispatchScope,
     });
     if (!socket) {
       return 'agent_offline';
@@ -1521,7 +1571,7 @@ export class AgentExecutionService {
     const sent = await this.sendDispatchFrameWithAuthorityFence({
       socket,
       sessionId: input.sessionId,
-      scope: 'session_strict',
+      scope: dispatchScope,
       frame: {
         type: 'server.terminal.close',
         session_id: input.sessionId,
@@ -1787,6 +1837,10 @@ export class AgentExecutionService {
           session_id: terminalSessionId,
           chunk: payload.payload.chunk,
         });
+        if (!pendingTerminal.readyForInput) {
+          pendingTerminal.readyForInput = true;
+          this.flushBufferedTerminalInput(socket, terminalSessionId, pendingTerminal);
+        }
         return;
       }
 

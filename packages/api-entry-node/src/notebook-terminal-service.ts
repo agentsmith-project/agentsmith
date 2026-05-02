@@ -781,6 +781,7 @@ export class NotebookTerminalService {
             sessionId: string;
             agentId: string;
             terminalSessionId: string;
+            executionContext?: Record<string, unknown>;
           }) => Promise<unknown>;
         }
       ).closeTerminalSession;
@@ -791,6 +792,7 @@ export class NotebookTerminalService {
           sessionId: session.runnerSessionId,
           agentId: session.agentId,
           terminalSessionId: session.id,
+          ...(session.executionContext ? { executionContext: session.executionContext } : {}),
         }).catch(() => undefined);
       }
     }

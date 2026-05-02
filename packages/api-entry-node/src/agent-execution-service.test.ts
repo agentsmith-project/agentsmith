@@ -1252,6 +1252,161 @@ describe('AgentExecutionService', () => {
     });
   });
 
+  it('keeps notebook terminal control frames on the agent presence dispatch scope', async () => {
+    const { executionService, agent, ws } = await setupExecutionService({ interactionKind: 'notebook' });
+    const controlFrames: Array<Record<string, unknown>> = [];
+    const terminalControls = new Promise<Array<Record<string, unknown>>>((resolve) => {
+      ws.on('message', (raw) => {
+        const message = JSON.parse(raw.toString('utf-8')) as Record<string, unknown>;
+        if (
+          message.type === 'server.terminal.stdin'
+          || message.type === 'server.terminal.resize'
+          || message.type === 'server.terminal.close'
+        ) {
+          controlFrames.push(message);
+        }
+        if (controlFrames.length === 3) {
+          resolve(controlFrames);
+        }
+      });
+    });
+
+    const terminal = await executionService.dispatchTerminalSession({
+      workspaceId: 'ws_default',
+      projectId: 'proj_1',
+      sessionId: 'task_dev_direct_presence_control',
+      agentId: agent.id,
+      terminalSessionId: 'term_dev_direct_presence_control',
+      payload: {
+        cols: 80,
+        rows: 24,
+        executionContext: {
+          interaction_kind: 'notebook',
+          runner_session_scope: 'agent_presence',
+        },
+      },
+    });
+    const terminalEvents = terminal.stream[Symbol.asyncIterator]();
+    ws.send(JSON.stringify({
+      type: 'agent.terminal.output',
+      terminal_session_id: 'term_dev_direct_presence_control',
+      payload: {
+        terminal_session_id: 'term_dev_direct_presence_control',
+        chunk: 'ready prompt',
+      },
+    }));
+    await expect(terminalEvents.next()).resolves.toMatchObject({
+      done: false,
+      value: expect.objectContaining({
+        type: 'output',
+        session_id: 'term_dev_direct_presence_control',
+      }),
+    });
+
+    terminal.writeInput('echo scoped control\n');
+    terminal.resize(100, 32);
+    terminal.close();
+
+    await expect(terminalControls).resolves.toEqual([
+      expect.objectContaining({
+        type: 'server.terminal.stdin',
+        session_id: 'task_dev_direct_presence_control',
+        terminal_session_id: 'term_dev_direct_presence_control',
+        payload: { data: 'echo scoped control\n' },
+      }),
+      expect.objectContaining({
+        type: 'server.terminal.resize',
+        session_id: 'task_dev_direct_presence_control',
+        terminal_session_id: 'term_dev_direct_presence_control',
+        payload: { cols: 100, rows: 32 },
+      }),
+      expect.objectContaining({
+        type: 'server.terminal.close',
+        session_id: 'task_dev_direct_presence_control',
+        terminal_session_id: 'term_dev_direct_presence_control',
+        payload: {},
+      }),
+    ]);
+  });
+
+  it('buffers notebook terminal stdin until the runner emits first output', async () => {
+    const { executionService, agent, ws } = await setupExecutionService({ interactionKind: 'notebook' });
+    const stdinFrames: Array<Record<string, unknown>> = [];
+    const stdinFlushed = new Promise<Array<Record<string, unknown>>>((resolve) => {
+      ws.on('message', (raw) => {
+        const message = JSON.parse(raw.toString('utf-8')) as Record<string, unknown>;
+        if (message.type === 'server.terminal.stdin') {
+          stdinFrames.push(message);
+          resolve(stdinFrames);
+        }
+      });
+    });
+
+    const terminal = await executionService.dispatchTerminalSession({
+      workspaceId: 'ws_default',
+      projectId: 'proj_1',
+      sessionId: 'task_dev_direct_presence_buffered_input',
+      agentId: agent.id,
+      terminalSessionId: 'term_dev_direct_presence_buffered_input',
+      payload: {
+        cols: 80,
+        rows: 24,
+        executionContext: {
+          interaction_kind: 'notebook',
+          runner_session_scope: 'agent_presence',
+        },
+      },
+    });
+
+    terminal.writeInput('echo early');
+    terminal.writeInput(' input\n');
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    expect(stdinFrames).toEqual([]);
+
+    const terminalEvents = terminal.stream[Symbol.asyncIterator]();
+    ws.send(JSON.stringify({
+      type: 'agent.terminal.started',
+      terminal_session_id: 'term_dev_direct_presence_buffered_input',
+      payload: {
+        terminal_session_id: 'term_dev_direct_presence_buffered_input',
+      },
+    }));
+    await expect(terminalEvents.next()).resolves.toMatchObject({
+      done: false,
+      value: expect.objectContaining({
+        type: 'started',
+        session_id: 'term_dev_direct_presence_buffered_input',
+      }),
+    });
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    expect(stdinFrames).toEqual([]);
+
+    ws.send(JSON.stringify({
+      type: 'agent.terminal.output',
+      terminal_session_id: 'term_dev_direct_presence_buffered_input',
+      payload: {
+        terminal_session_id: 'term_dev_direct_presence_buffered_input',
+        chunk: 'percy%',
+      },
+    }));
+    await expect(terminalEvents.next()).resolves.toMatchObject({
+      done: false,
+      value: expect.objectContaining({
+        type: 'output',
+        session_id: 'term_dev_direct_presence_buffered_input',
+      }),
+    });
+
+    await expect(stdinFlushed).resolves.toEqual([
+      expect.objectContaining({
+        type: 'server.terminal.stdin',
+        session_id: 'task_dev_direct_presence_buffered_input',
+        terminal_session_id: 'term_dev_direct_presence_buffered_input',
+        payload: { data: 'echo early input\n' },
+      }),
+    ]);
+  });
+
   it('keeps terminal dispatch session-strict when no notebook execution context is declared', async () => {
     const { executionService, agent, ws } = await setupExecutionService({ interactionKind: 'notebook' });
     const terminalFrames: Array<Record<string, unknown>> = [];
@@ -1685,6 +1840,36 @@ describe('AgentExecutionService', () => {
       type: 'server.terminal.close',
       session_id: 'task_1',
       terminal_session_id: 'term_persisted',
+    });
+  });
+
+  it('sends persisted terminal close through the agent presence dispatch scope', async () => {
+    const { executionService, agent, ws } = await setupExecutionService({ interactionKind: 'notebook' });
+    const closeFrame = new Promise<Record<string, unknown>>((resolve) => {
+      ws.on('message', (raw) => {
+        const message = JSON.parse(raw.toString('utf-8')) as Record<string, unknown>;
+        if (message.type === 'server.terminal.close') {
+          resolve(message);
+        }
+      });
+    });
+
+    await expect(executionService.closeTerminalSession({
+      workspaceId: 'ws_default',
+      projectId: 'proj_1',
+      sessionId: 'task_presence_persisted_close',
+      agentId: agent.id,
+      terminalSessionId: 'term_presence_persisted_close',
+      executionContext: {
+        interaction_kind: 'notebook',
+        runner_session_scope: 'agent_presence',
+      },
+    })).resolves.toBe('signaled');
+
+    await expect(closeFrame).resolves.toMatchObject({
+      type: 'server.terminal.close',
+      session_id: 'task_presence_persisted_close',
+      terminal_session_id: 'term_presence_persisted_close',
     });
   });
 

@@ -2101,6 +2101,53 @@ describe('NotebookTerminalService', () => {
     ).resolves.toEqual([]);
   });
 
+  it('preserves persisted execution context when closing a reload-interrupted terminal session', async () => {
+    const cache = new InMemoryCache();
+    const firstService = new NotebookTerminalService(cache, {
+      dispatchTerminalSession: vi.fn(),
+    } as never);
+    const executionContext = {
+      interaction_kind: 'notebook',
+      runner_session_scope: 'agent_presence',
+    };
+
+    const created = await firstService.createSession({
+      workspaceId: 'ws_default',
+      projectId: 'proj_1',
+      taskId: 'task_presence',
+      agentId: 'agent_1',
+      runnerSessionId: 'task_presence',
+      userId: 'user_1',
+      cols: 80,
+      rows: 24,
+      executionContext,
+    });
+
+    const closeTerminalSession = vi.fn(async () => 'signaled');
+    const reloadedService = new NotebookTerminalService(cache, {
+      dispatchTerminalSession: vi.fn(),
+      closeTerminalSession,
+    } as never);
+
+    await expect(
+      reloadedService.deleteSession({
+        workspaceId: 'ws_default',
+        projectId: 'proj_1',
+        taskId: 'task_presence',
+        userId: 'user_1',
+        sessionId: created.sessionId,
+      }),
+    ).resolves.toBe(true);
+    expect(closeTerminalSession).toHaveBeenCalledWith({
+      workspaceId: 'ws_default',
+      projectId: 'proj_1',
+      sessionId: 'task_presence',
+      agentId: 'agent_1',
+      terminalSessionId: created.sessionId,
+      executionContext,
+    });
+  });
+
   it('does not advertise a persisted failed session as reconnectable after service reload', async () => {
     const cache = new InMemoryCache();
     const firstService = new NotebookTerminalService(cache, {

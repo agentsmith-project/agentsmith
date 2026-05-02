@@ -32,6 +32,8 @@ const VISUAL_CHAT_RUNTIME_SESSION_ID = 'session_001';
 const VISUAL_CHAT_ESCALATION_DELAY_MS = 30_000;
 const VISUAL_NOTEBOOK_CANCEL_ESCALATION_DELAY_MS = 30_000;
 const VISUAL_NOTEBOOK_SSE_RECONNECT_DELAY_MS = 3_000;
+const VISUAL_NOTEBOOK_LONG_LATEST_ACTION =
+  'python scripts/run_notebook_recovery_probe.py --workspace very-long-workspace-name --project very-long-project-name --task very-long-task-name --with-many-flags --and-extra-operator-context --final-marker';
 const test = base;
 type ScreenshotComparator = (
   actual: Buffer,
@@ -1041,6 +1043,84 @@ async function seedVisualNotebookRunState(
   });
 }
 
+async function seedVisualNotebookLongActionRunState(page: Page, route: string) {
+  const { taskId } = extractNotebookTaskRouteParts(route);
+  const startedAt = new Date(Date.now() - 65_000).toISOString();
+  const futureActivityAt = new Date(Date.now() + 5 * 60 * 1000).toISOString();
+  const userMessageId = 'msg_visual_notebook_long_action_user';
+  const agentMessageId = 'msg_visual_notebook_long_action_agent';
+  const runId = 'run_visual_notebook_long_action_001';
+
+  await installVisualNotebookHarness(page, {
+    taskPatchesByTaskId: {
+      [taskId]: {
+        run_state: 'running',
+        status: 'active',
+        updated_at: futureActivityAt,
+        last_activity_at: futureActivityAt,
+        stop_mode: null,
+        can_escalate: false,
+        escalation_reason: null,
+        active_run_started_at: startedAt,
+      },
+    },
+    messagesByTaskId: {
+      [taskId]: [
+        {
+          id: userMessageId,
+          task_id: taskId,
+          role: 'user',
+          content: 'Run the notebook recovery probe with the full diagnostic context.',
+          created_at: startedAt,
+        },
+        {
+          id: agentMessageId,
+          task_id: taskId,
+          role: 'agent',
+          content: '',
+          created_at: new Date(Date.now() - 60_000).toISOString(),
+        },
+      ],
+    },
+    tracesByTaskId: {
+      [taskId]: [
+        {
+          id: 'trace_visual_notebook_long_action_001',
+          task_id: taskId,
+          message_id: agentMessageId,
+          run_id: runId,
+          seq: 2_000_001,
+          at: new Date(Date.now() - 60_000).toISOString(),
+          category: 'lifecycle',
+          phase: 'start',
+          status: 'running',
+          name: 'run.lifecycle',
+          summary: 'Execution started',
+          details: {
+            stage: 'dispatching',
+          },
+        },
+        {
+          id: 'trace_visual_notebook_long_action_002',
+          task_id: taskId,
+          message_id: agentMessageId,
+          run_id: runId,
+          seq: 2_000_002,
+          at: new Date(Date.now() - 55_000).toISOString(),
+          category: 'tool',
+          phase: 'start',
+          status: 'running',
+          name: 'codex.command',
+          summary: 'Running notebook recovery probe',
+          details: {
+            command: VISUAL_NOTEBOOK_LONG_LATEST_ACTION,
+          },
+        },
+      ],
+    },
+  });
+}
+
 async function seedVisualNotebookCancelEscalation(page: Page, route: string) {
   const futureActivityAt = new Date(Date.now() + 5 * 60 * 1000).toISOString();
   await patchVisualNotebookTaskTruth(page, route, {
@@ -1052,6 +1132,95 @@ async function seedVisualNotebookCancelEscalation(page: Page, route: string) {
     can_escalate: true,
     escalation_reason: 'agent did not acknowledge cancel',
   });
+}
+
+async function expectVisualNotebookActiveRunFooter(page: Page): Promise<{
+  activeRunFooter: Locator;
+  latestAction: Locator;
+  cancel: Locator;
+}> {
+  await waitForVisualNotebookTaskSurface(page);
+  const activeRunFooter = page.getByTestId('notebook__message-active-run-footer');
+  const latestAction = activeRunFooter.getByTestId('notebook__message-active-run-latest-action');
+  const cancel = activeRunFooter.getByTestId('notebook__message-active-run-cancel');
+
+  await expect(activeRunFooter).toBeVisible();
+  await expect(activeRunFooter.getByTestId('notebook__message-active-run-status')).toContainText('Running');
+  await expect(activeRunFooter.getByTestId('notebook__message-active-run-elapsed')).toContainText('Elapsed:');
+  await expect(latestAction).toContainText('Latest action:');
+  await expect(cancel).toBeVisible();
+
+  return { activeRunFooter, latestAction, cancel };
+}
+
+async function expectVisualNotebookLongActiveRunFooterLayout(page: Page) {
+  const { activeRunFooter, latestAction, cancel } = await expectVisualNotebookActiveRunFooter(page);
+
+  await expect(latestAction).toContainText(VISUAL_NOTEBOOK_LONG_LATEST_ACTION, { timeout: 15_000 });
+  await expect(latestAction).toHaveAttribute('title', VISUAL_NOTEBOOK_LONG_LATEST_ACTION);
+  await expect(cancel).toHaveAccessibleName('Cancel current run');
+
+  const latestMetrics = await latestAction.evaluate((element) => {
+    const node = element as HTMLElement;
+    const style = window.getComputedStyle(node);
+    return {
+      clientWidth: node.clientWidth,
+      scrollWidth: node.scrollWidth,
+      overflowX: style.overflowX,
+      textOverflow: style.textOverflow,
+      whiteSpace: style.whiteSpace,
+    };
+  });
+  expect(latestMetrics.clientWidth).toBeGreaterThan(0);
+  expect(latestMetrics.scrollWidth).toBeGreaterThan(latestMetrics.clientWidth + 1);
+  expect(latestMetrics.overflowX).toBe('hidden');
+  expect(latestMetrics.textOverflow).toBe('ellipsis');
+  expect(latestMetrics.whiteSpace).toBe('nowrap');
+
+  const cancelMetrics = await cancel.evaluate((element) => {
+    const node = element as HTMLElement;
+    const style = window.getComputedStyle(node);
+    return {
+      clientWidth: node.clientWidth,
+      scrollWidth: node.scrollWidth,
+      rectCount: node.getClientRects().length,
+      whiteSpace: style.whiteSpace,
+    };
+  });
+  expect(cancelMetrics.clientWidth).toBeGreaterThan(0);
+  expect(cancelMetrics.scrollWidth).toBeLessThanOrEqual(cancelMetrics.clientWidth + 2);
+  expect(cancelMetrics.rectCount).toBe(1);
+  expect(cancelMetrics.whiteSpace).toBe('nowrap');
+
+  const layoutMetrics = await activeRunFooter.evaluate((footer) => {
+    const latest = footer.querySelector('[data-testid="notebook__message-active-run-latest-action"]');
+    const cancelButton = footer.querySelector('[data-testid="notebook__message-active-run-cancel"]');
+    if (!(latest instanceof HTMLElement) || !(cancelButton instanceof HTMLElement)) {
+      return null;
+    }
+
+    const footerRect = footer.getBoundingClientRect();
+    const latestRect = latest.getBoundingClientRect();
+    const cancelRect = cancelButton.getBoundingClientRect();
+    return {
+      footerRight: footerRect.right,
+      latestWidth: latestRect.width,
+      cancelWidth: cancelRect.width,
+      cancelRight: cancelRect.right,
+      cancelLeft: cancelRect.left,
+      latestLeft: latestRect.left,
+      latestCenterY: latestRect.top + latestRect.height / 2,
+      cancelCenterY: cancelRect.top + cancelRect.height / 2,
+    };
+  });
+  if (!layoutMetrics) {
+    throw new Error('Active run footer layout metrics are unavailable.');
+  }
+  expect(layoutMetrics.latestWidth).toBeGreaterThan(0);
+  expect(layoutMetrics.cancelWidth).toBeGreaterThan(0);
+  expect(layoutMetrics.cancelLeft).toBeGreaterThan(layoutMetrics.latestLeft);
+  expect(layoutMetrics.cancelRight).toBeLessThanOrEqual(layoutMetrics.footerRight + 1);
+  expect(Math.abs(layoutMetrics.latestCenterY - layoutMetrics.cancelCenterY)).toBeLessThanOrEqual(2);
 }
 
 async function installVisualNotebookEventSourceFailureHarness(page: Page) {
@@ -1818,10 +1987,25 @@ const VISUAL_SCENE_SETUP_REGISTRY: Partial<Record<string, VisualScenarioSetup>> 
       await seedVisualNotebookRunState(page, scenario.route, 'running');
     },
     afterNavigate: async ({ page }) => {
-      await waitForVisualNotebookTaskSurface(page);
-      await expect(page.getByTestId('notebook__run-activity-summary')).toBeVisible();
-      await expect(page.getByTestId('notebook__run-active-cancel')).toBeVisible();
+      await expectVisualNotebookActiveRunFooter(page);
       await expect(notebookConversationTextarea(page)).toBeEnabled();
+    },
+    screenshotOptions: {
+      maskTestIds: ['notebook__message-active-run-elapsed'],
+      maxDiffPixelRatio: 0.008,
+    },
+  },
+  'notebook-task-running-long-action-narrow': {
+    beforeNavigate: async ({ page, scenario }) => {
+      await seedVisualNotebookLongActionRunState(page, scenario.route);
+    },
+    afterNavigate: async ({ page }) => {
+      await expectVisualNotebookLongActiveRunFooterLayout(page);
+      await expect(notebookConversationTextarea(page)).toBeEnabled();
+    },
+    screenshotOptions: {
+      maskTestIds: ['notebook__message-active-run-elapsed'],
+      maxDiffPixelRatio: 0.008,
     },
   },
   'notebook-task-terminating': {
@@ -2104,9 +2288,40 @@ function screenshotOptionsFor(
   };
 }
 
+function parseCatalogViewportNote(setupNotes: readonly string[]): { width: number; height: number } | null {
+  const viewportNotes = setupNotes.filter((note) => note.startsWith('viewport:'));
+  if (viewportNotes.length === 0) {
+    return null;
+  }
+  if (viewportNotes.length > 1) {
+    throw new Error(`Visual scenario has multiple viewport setup notes: ${viewportNotes.join(', ')}`);
+  }
+
+  const viewportNote = viewportNotes[0];
+  if (!viewportNote) {
+    return null;
+  }
+  const match = /^viewport:(\d{3,4})x(\d{3,4})$/.exec(viewportNote);
+  if (!match) {
+    throw new Error(`Unsupported visual viewport setup note: ${viewportNote}`);
+  }
+  const [, widthText, heightText] = match;
+  if (!widthText || !heightText) {
+    throw new Error(`Unsupported visual viewport setup note: ${viewportNote}`);
+  }
+
+  const width = Number.parseInt(widthText, 10);
+  const height = Number.parseInt(heightText, 10);
+  if (width < 320 || height < 240) {
+    throw new Error(`Visual viewport setup note is too small: ${viewportNote}`);
+  }
+  return { width, height };
+}
+
 async function applyCatalogViewport(page: Page, scenario: VisualBaselineExecutorScenario) {
-  if (scenario.setupNotes.includes('viewport:1440x900')) {
-    await page.setViewportSize({ width: 1440, height: 900 });
+  const notedViewport = parseCatalogViewportNote(scenario.setupNotes);
+  if (notedViewport) {
+    await page.setViewportSize(notedViewport);
     return;
   }
   if (scenario.viewport === 'ultrawide') {

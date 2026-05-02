@@ -61,9 +61,21 @@
       "authLane": "authed",
       "stableMarkers": [
         "notebook__task-header",
-        "notebook__execution-visibility",
-        "notebook__run-activity-summary",
-        "notebook__run-active-cancel",
+        "notebook__message-active-run-footer",
+        "notebook__message-active-run-cancel",
+        "notebook__conversation-input"
+      ]
+    },
+    {
+      "sceneId": "notebook-task-running-long-action-narrow",
+      "route": "/en-US/workspaces/ws_default/projects/proj_001/notebook/tasks/task_001",
+      "recipeFamily": "work_surface_immersive",
+      "authLane": "authed",
+      "stableMarkers": [
+        "notebook__task-header",
+        "notebook__message-active-run-footer",
+        "notebook__message-active-run-latest-action",
+        "notebook__message-active-run-cancel",
         "notebook__conversation-input"
       ]
     },
@@ -336,7 +348,7 @@
         {
           "sceneId": "notebook-task-running",
           "scenarioId": "notebook-task-running",
-          "scenario": "The current task is actively running, with a visible latest-action summary and a same-surface stop affordance instead of a silent busy state.",
+          "scenario": "The current task is actively running, with the AI message active footer showing latest-action context and a same-surface stop affordance instead of a silent busy state.",
           "group": "project_pages",
           "codeRefs": [
             "e2e/visual.spec.ts",
@@ -359,13 +371,52 @@
           "semanticAssertions": {
             "requiredViewportTestIds": [
               "notebook__task-header",
-              "notebook__execution-visibility",
-              "notebook__run-activity-summary",
-              "notebook__run-active-cancel",
+              "notebook__message-active-run-footer",
+              "notebook__message-active-run-status",
+              "notebook__message-active-run-elapsed",
+              "notebook__message-active-run-latest-action",
+              "notebook__message-active-run-cancel",
               "notebook__conversation-input"
             ],
-            "prominentActionScopeTestIds": [
-              "notebook__execution-visibility"
+            "maxProminentActions": 0,
+            "forbiddenVisibleText": [
+              "Unknown",
+              "Agent Unknown",
+              "Unknown Runner"
+            ]
+          }
+        },
+        {
+          "sceneId": "notebook-task-running-long-action-narrow",
+          "scenarioId": "notebook-task-running-long-action-narrow",
+          "scenario": "The active AI message footer stays single-row on a narrower desktop viewport when the latest action is a long command, keeping the cancel affordance visible with its full accessible name.",
+          "group": "project_pages",
+          "codeRefs": [
+            "e2e/visual.spec.ts",
+            "src/app/[locale]/workspaces/[workspace]/projects/[project]/(shell)/notebook/tasks/[taskId]/page.tsx",
+            "src/components/notebook/TaskPage.tsx",
+            "src/components/notebook/ConversationPanel.tsx",
+            "src/components/notebook/MessageItem.tsx"
+          ],
+          "capture": "full_page",
+          "authLane": "authed",
+          "uxState": "happy",
+          "setupNotes": [
+            "viewport:1100x700"
+          ],
+          "themes": [
+            "light",
+            "dark"
+          ],
+          "semanticAssertions": {
+            "requiredViewportTestIds": [
+              "notebook__task-header",
+              "notebook__message-active-run-footer",
+              "notebook__message-active-run-status",
+              "notebook__message-active-run-elapsed",
+              "notebook__message-active-run-latest-action",
+              "notebook__message-active-run-cancel",
+              "notebook__conversation-input"
             ],
             "maxProminentActions": 0,
             "forbiddenVisibleText": [

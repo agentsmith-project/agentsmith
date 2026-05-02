@@ -1,6 +1,9 @@
 import { describe, expect, it, vi } from 'vitest';
 import { InMemoryCache } from '@mbos/adapters-private';
-import { NotebookTerminalService } from './notebook-terminal-service.js';
+import {
+  NOTEBOOK_TASK_TERMINAL_RECONNECT_VIEW,
+  NotebookTerminalService,
+} from './notebook-terminal-service.js';
 import { resolveInternalTicket } from './internal-ticket-store.js';
 
 class FakeWebSocket {
@@ -121,6 +124,28 @@ function createDeferred<T>() {
 }
 
 const TERMINAL_SERVICE_RELOAD_CLOSE_REASON = 'terminal_connection_failed_service_reload';
+function sentPayloads(ws: FakeWebSocket): Array<Record<string, unknown>> {
+  return ws.sent.map((payload) => JSON.parse(payload) as Record<string, unknown>);
+}
+
+function emitBrowserMessage(ws: FakeWebSocket, payload: Record<string, unknown>): void {
+  ws.emit('message', Buffer.from(JSON.stringify(payload)));
+}
+
+function emitReconnect(
+  ws: FakeWebSocket,
+  sessionId: string,
+  overrides: Record<string, unknown> = {},
+): void {
+  emitBrowserMessage(ws, {
+    type: 'terminal.reconnect',
+    terminal_session_id: sessionId,
+    view: NOTEBOOK_TASK_TERMINAL_RECONNECT_VIEW,
+    cols: 80,
+    rows: 24,
+    ...overrides,
+  });
+}
 
 async function seedSessionForServiceReload(status: 'pending' | 'active' | 'disconnected') {
   const cache = new InMemoryCache();
@@ -152,6 +177,7 @@ async function seedSessionForServiceReload(status: 'pending' | 'active' | 'disco
     await (service as unknown as {
       bindBrowserSocket: (browserSocket: FakeWebSocket, session: NonNullable<typeof session>) => Promise<void>;
     }).bindBrowserSocket(ws, session!);
+    emitReconnect(ws, created.sessionId);
 
     await runtimeEvents.push({
       type: 'started',
@@ -224,6 +250,44 @@ describe('NotebookTerminalService', () => {
     expect(ticket?.payload.terminal_session_id).toBe(created.sessionId);
   });
 
+  it('rejects cached websocket ticket upgrades after current terminal-use permission is revoked', async () => {
+    const cache = new InMemoryCache();
+    let terminalUseAllowed = true;
+    const service = new NotebookTerminalService(cache, {
+      dispatchTerminalSession: vi.fn(),
+    } as never, {
+      authorizeTerminalUse: vi.fn(async () => terminalUseAllowed),
+    } as never);
+
+    const created = await service.createSession({
+      workspaceId: 'ws_default',
+      projectId: 'proj_1',
+      taskId: 'task_1',
+      agentId: 'agent_1',
+      runnerSessionId: 'task_1',
+      userId: 'user_1',
+      cols: 120,
+      rows: 32,
+    });
+
+    terminalUseAllowed = false;
+    const upgradeSocket = {
+      write: vi.fn(),
+      destroy: vi.fn(),
+    };
+
+    service.handleUpgrade(
+      { url: created.wsPath } as never,
+      upgradeSocket as never,
+      Buffer.alloc(0),
+    );
+
+    await waitForAssertion(() => {
+      expect(upgradeSocket.write).toHaveBeenCalledWith('HTTP/1.1 403 Forbidden\r\n\r\n');
+    });
+    expect(upgradeSocket.destroy).toHaveBeenCalledTimes(1);
+  });
+
   it('records terminal session completion metadata through lifecycle hooks', async () => {
     const cache = new InMemoryCache();
     const onSessionCreated = vi.fn();
@@ -274,6 +338,1234 @@ describe('NotebookTerminalService', () => {
     });
   });
 
+  it('rejects terminal side-effect messages before the browser reconnect handshake', async () => {
+    const cache = new InMemoryCache();
+    const writeInput = vi.fn();
+    const resize = vi.fn();
+    const close = vi.fn();
+    const service = new NotebookTerminalService(cache, {
+      dispatchTerminalSession: vi.fn(async () => ({
+        writeInput,
+        resize,
+        close,
+        stream: (async function* stream() {
+          await new Promise(() => undefined);
+        })(),
+      })),
+    } as never);
+
+    const created = await service.createSession({
+      workspaceId: 'ws_default',
+      projectId: 'proj_1',
+      taskId: 'task_1',
+      agentId: 'agent_1',
+      runnerSessionId: 'task_1',
+      userId: 'user_1',
+      cols: 80,
+      rows: 24,
+    });
+
+    const session = await service.getSession(created.sessionId);
+    const ws = new FakeWebSocket();
+    await (service as unknown as {
+      bindBrowserSocket: (browserSocket: FakeWebSocket, session: NonNullable<typeof session>) => Promise<void>;
+    }).bindBrowserSocket(ws, session!);
+
+    emitBrowserMessage(ws, { type: 'terminal.stdin', data: 'echo unsafe\n' });
+
+    expect(writeInput).not.toHaveBeenCalled();
+    expect(resize).not.toHaveBeenCalled();
+    expect(close).not.toHaveBeenCalled();
+    expect(sentPayloads(ws)).toContainEqual({
+      type: 'terminal.error',
+      terminal_session_id: created.sessionId,
+      error_code: 'handshake_required',
+      error_message: 'terminal_reconnect_required',
+    });
+    expect(ws.closeCalls).toContainEqual({ code: 1008, reason: 'handshake_required' });
+    await expect(service.getSession(created.sessionId)).resolves.toMatchObject({
+      id: created.sessionId,
+      status: 'failed',
+      closeReason: 'handshake_required',
+    });
+    await expect(
+      service.hasLiveSessionsForTask({
+        workspaceId: 'ws_default',
+        projectId: 'proj_1',
+        taskId: 'task_1',
+        userId: 'user_1',
+      }),
+    ).resolves.toBe(false);
+  });
+
+  it('validates terminal reconnect payloads before dispatching the runtime', async () => {
+    const cache = new InMemoryCache();
+    const dispatchTerminalSession = vi.fn();
+    const service = new NotebookTerminalService(cache, {
+      dispatchTerminalSession,
+    } as never);
+
+    const created = await service.createSession({
+      workspaceId: 'ws_default',
+      projectId: 'proj_1',
+      taskId: 'task_1',
+      agentId: 'agent_1',
+      runnerSessionId: 'task_1',
+      userId: 'user_1',
+      cols: 80,
+      rows: 24,
+    });
+
+    const session = await service.getSession(created.sessionId);
+    const ws = new FakeWebSocket();
+    await (service as unknown as {
+      bindBrowserSocket: (browserSocket: FakeWebSocket, session: NonNullable<typeof session>) => Promise<void>;
+    }).bindBrowserSocket(ws, session!);
+
+    emitReconnect(ws, created.sessionId, { after_seq: -1 });
+
+    expect(dispatchTerminalSession).not.toHaveBeenCalled();
+    expect(sentPayloads(ws)).toContainEqual({
+      type: 'terminal.error',
+      terminal_session_id: created.sessionId,
+      error_code: 'invalid_reconnect_payload',
+      error_message: 'invalid_reconnect_payload',
+    });
+    expect(ws.closeCalls).toContainEqual({ code: 1008, reason: 'invalid_reconnect_payload' });
+    await expect(service.getSession(created.sessionId)).resolves.toMatchObject({
+      id: created.sessionId,
+      status: 'failed',
+      closeReason: 'invalid_reconnect_payload',
+    });
+    await expect(service.issueReconnectTicket(created.sessionId)).resolves.toBeNull();
+    await expect(
+      service.hasLiveSessionsForTask({
+        workspaceId: 'ws_default',
+        projectId: 'proj_1',
+        taskId: 'task_1',
+        userId: 'user_1',
+      }),
+    ).resolves.toBe(false);
+  });
+
+  it('rejects reconnect payloads using the legacy helper view instead of the task terminal contract view', async () => {
+    const cache = new InMemoryCache();
+    const dispatchTerminalSession = vi.fn();
+    const service = new NotebookTerminalService(cache, {
+      dispatchTerminalSession,
+    } as never);
+
+    const created = await service.createSession({
+      workspaceId: 'ws_default',
+      projectId: 'proj_1',
+      taskId: 'task_1',
+      agentId: 'agent_1',
+      runnerSessionId: 'task_1',
+      userId: 'user_1',
+      cols: 80,
+      rows: 24,
+    });
+
+    const session = await service.getSession(created.sessionId);
+    const ws = new FakeWebSocket();
+    await (service as unknown as {
+      bindBrowserSocket: (browserSocket: FakeWebSocket, session: NonNullable<typeof session>) => Promise<void>;
+    }).bindBrowserSocket(ws, session!);
+
+    emitReconnect(ws, created.sessionId, { view: 'terminal' });
+
+    expect(dispatchTerminalSession).not.toHaveBeenCalled();
+    expect(sentPayloads(ws)).toContainEqual({
+      type: 'terminal.error',
+      terminal_session_id: created.sessionId,
+      error_code: 'invalid_reconnect_payload',
+      error_message: 'invalid_reconnect_payload',
+    });
+    expect(ws.closeCalls).toContainEqual({ code: 1008, reason: 'invalid_reconnect_payload' });
+  });
+
+  it('closes a cold pending terminal when the browser disconnects before handshake', async () => {
+    const cache = new InMemoryCache();
+    const dispatchTerminalSession = vi.fn();
+    const service = new NotebookTerminalService(cache, {
+      dispatchTerminalSession,
+    } as never);
+
+    const created = await service.createSession({
+      workspaceId: 'ws_default',
+      projectId: 'proj_1',
+      taskId: 'task_1',
+      agentId: 'agent_1',
+      runnerSessionId: 'task_1',
+      userId: 'user_1',
+      cols: 80,
+      rows: 24,
+    });
+
+    const session = await service.getSession(created.sessionId);
+    const ws = new FakeWebSocket();
+    await (service as unknown as {
+      bindBrowserSocket: (browserSocket: FakeWebSocket, session: NonNullable<typeof session>) => Promise<void>;
+    }).bindBrowserSocket(ws, session!);
+
+    ws.close(1000, 'browser_tab_closed_before_handshake');
+
+    expect(dispatchTerminalSession).not.toHaveBeenCalled();
+    await expect(service.getSession(created.sessionId)).resolves.toMatchObject({
+      id: created.sessionId,
+      status: 'closed',
+      closeReason: 'browser_disconnected_before_handshake',
+    });
+    await expect(service.issueReconnectTicket(created.sessionId)).resolves.toBeNull();
+    await expect(
+      service.hasLiveSessionsForTask({
+        workspaceId: 'ws_default',
+        projectId: 'proj_1',
+        taskId: 'task_1',
+        userId: 'user_1',
+      }),
+    ).resolves.toBe(false);
+  });
+
+  it('keeps terminal input disabled after cold reconnect replay until the runtime reports ready', async () => {
+    const cache = new InMemoryCache();
+    const runtimeEvents = createControlledRuntimeStream<TerminalRuntimeEvent>();
+    const writeInput = vi.fn();
+    const runtime = {
+      writeInput,
+      resize: vi.fn(),
+      close: vi.fn(),
+      stream: runtimeEvents.stream,
+    };
+    const dispatchDeferred = createDeferred<typeof runtime>();
+    const service = new NotebookTerminalService(cache, {
+      dispatchTerminalSession: vi.fn(() => dispatchDeferred.promise),
+    } as never);
+
+    const created = await service.createSession({
+      workspaceId: 'ws_default',
+      projectId: 'proj_1',
+      taskId: 'task_1',
+      agentId: 'agent_1',
+      runnerSessionId: 'task_1',
+      userId: 'user_1',
+      cols: 80,
+      rows: 24,
+    });
+
+    const session = await service.getSession(created.sessionId);
+    const ws = new FakeWebSocket();
+    await (service as unknown as {
+      bindBrowserSocket: (browserSocket: FakeWebSocket, session: NonNullable<typeof session>) => Promise<void>;
+    }).bindBrowserSocket(ws, session!);
+    emitReconnect(ws, created.sessionId);
+
+    await waitForAssertion(() => {
+      expect(sentPayloads(ws)).toContainEqual({
+        type: 'terminal.replay_end',
+        terminal_session_id: created.sessionId,
+        status: 'complete',
+        gap: false,
+        latest_seq: 0,
+        input_enabled: false,
+      });
+    });
+    expect(sentPayloads(ws)).not.toContainEqual(expect.objectContaining({
+      type: 'terminal.state',
+      state: 'ready',
+      input_enabled: true,
+    }));
+
+    dispatchDeferred.resolve(runtime);
+    await runtimeEvents.push({
+      type: 'started',
+      session_id: created.sessionId,
+      cols: 80,
+      rows: 24,
+    });
+
+    await waitForAssertion(() => {
+      expect(sentPayloads(ws)).toContainEqual({
+        type: 'terminal.state',
+        terminal_session_id: created.sessionId,
+        state: 'ready',
+        status: 'active',
+        input_enabled: true,
+        cols: 80,
+        rows: 24,
+      });
+    });
+    emitBrowserMessage(ws, { type: 'terminal.stdin', data: 'echo ready\n' });
+    expect(writeInput).toHaveBeenCalledWith('echo ready\n');
+  });
+
+  it('rejects stdin after reconnect while runtime exists but has not enabled terminal input', async () => {
+    const cache = new InMemoryCache();
+    const runtimeEvents = createControlledRuntimeStream<TerminalRuntimeEvent>();
+    const writeInput = vi.fn();
+    const resize = vi.fn();
+    const runtime = {
+      writeInput,
+      resize,
+      close: vi.fn(),
+      stream: runtimeEvents.stream,
+    };
+    const dispatchDeferred = createDeferred<typeof runtime>();
+    const service = new NotebookTerminalService(cache, {
+      dispatchTerminalSession: vi.fn(() => dispatchDeferred.promise),
+    } as never);
+
+    const created = await service.createSession({
+      workspaceId: 'ws_default',
+      projectId: 'proj_1',
+      taskId: 'task_1',
+      agentId: 'agent_1',
+      runnerSessionId: 'task_1',
+      userId: 'user_1',
+      cols: 80,
+      rows: 24,
+    });
+
+    const session = await service.getSession(created.sessionId);
+    const ws = new FakeWebSocket();
+    await (service as unknown as {
+      bindBrowserSocket: (browserSocket: FakeWebSocket, session: NonNullable<typeof session>) => Promise<void>;
+    }).bindBrowserSocket(ws, session!);
+    emitReconnect(ws, created.sessionId);
+
+    await waitForAssertion(() => {
+      expect(sentPayloads(ws)).toContainEqual(expect.objectContaining({
+        type: 'terminal.replay_end',
+        terminal_session_id: created.sessionId,
+        input_enabled: false,
+      }));
+    });
+    dispatchDeferred.resolve(runtime);
+    await waitForAssertion(async () => {
+      expect((await service.getSession(created.sessionId))?.runtime).toBe(runtime);
+    });
+    writeInput.mockClear();
+    resize.mockClear();
+
+    emitBrowserMessage(ws, { type: 'terminal.stdin', data: 'echo unsafe\n' });
+
+    expect(writeInput).not.toHaveBeenCalled();
+    expect(resize).not.toHaveBeenCalled();
+    expect(sentPayloads(ws)).toContainEqual({
+      type: 'terminal.error',
+      terminal_session_id: created.sessionId,
+      error_code: 'terminal_not_ready',
+      error_message: 'terminal_not_ready',
+    });
+    expect(ws.closeCalls).toContainEqual({ code: 1008, reason: 'terminal_not_ready' });
+  });
+
+  it('rejects resize after reconnect while runtime exists but has not enabled terminal input', async () => {
+    const cache = new InMemoryCache();
+    const runtimeEvents = createControlledRuntimeStream<TerminalRuntimeEvent>();
+    const writeInput = vi.fn();
+    const resize = vi.fn();
+    const runtime = {
+      writeInput,
+      resize,
+      close: vi.fn(),
+      stream: runtimeEvents.stream,
+    };
+    const dispatchDeferred = createDeferred<typeof runtime>();
+    const service = new NotebookTerminalService(cache, {
+      dispatchTerminalSession: vi.fn(() => dispatchDeferred.promise),
+    } as never);
+
+    const created = await service.createSession({
+      workspaceId: 'ws_default',
+      projectId: 'proj_1',
+      taskId: 'task_1',
+      agentId: 'agent_1',
+      runnerSessionId: 'task_1',
+      userId: 'user_1',
+      cols: 80,
+      rows: 24,
+    });
+
+    const session = await service.getSession(created.sessionId);
+    const ws = new FakeWebSocket();
+    await (service as unknown as {
+      bindBrowserSocket: (browserSocket: FakeWebSocket, session: NonNullable<typeof session>) => Promise<void>;
+    }).bindBrowserSocket(ws, session!);
+    emitReconnect(ws, created.sessionId);
+
+    await waitForAssertion(() => {
+      expect(sentPayloads(ws)).toContainEqual(expect.objectContaining({
+        type: 'terminal.replay_end',
+        terminal_session_id: created.sessionId,
+        input_enabled: false,
+      }));
+    });
+    dispatchDeferred.resolve(runtime);
+    await waitForAssertion(async () => {
+      expect((await service.getSession(created.sessionId))?.runtime).toBe(runtime);
+    });
+    writeInput.mockClear();
+    resize.mockClear();
+
+    emitBrowserMessage(ws, { type: 'terminal.resize', cols: 100, rows: 30 });
+
+    expect(writeInput).not.toHaveBeenCalled();
+    expect(resize).not.toHaveBeenCalled();
+    expect(sentPayloads(ws)).toContainEqual({
+      type: 'terminal.error',
+      terminal_session_id: created.sessionId,
+      error_code: 'terminal_not_ready',
+      error_message: 'terminal_not_ready',
+    });
+    expect(ws.closeCalls).toContainEqual({ code: 1008, reason: 'terminal_not_ready' });
+  });
+
+  it('replays session-scoped terminal output seqs after reconnect without synthetic started', async () => {
+    const cache = new InMemoryCache();
+    const runtimeEvents = createControlledRuntimeStream<TerminalRuntimeEvent>();
+    const service = new NotebookTerminalService(cache, {
+      dispatchTerminalSession: vi.fn(async () => ({
+        writeInput: vi.fn(),
+        resize: vi.fn(),
+        close: vi.fn(),
+        stream: runtimeEvents.stream,
+      })),
+    } as never);
+
+    const created = await service.createSession({
+      workspaceId: 'ws_default',
+      projectId: 'proj_1',
+      taskId: 'task_1',
+      agentId: 'agent_1',
+      runnerSessionId: 'task_1',
+      userId: 'user_1',
+      cols: 80,
+      rows: 24,
+    });
+
+    const session = await service.getSession(created.sessionId);
+    const firstWs = new FakeWebSocket();
+    await (service as unknown as {
+      bindBrowserSocket: (browserSocket: FakeWebSocket, session: NonNullable<typeof session>) => Promise<void>;
+    }).bindBrowserSocket(firstWs, session!);
+    emitReconnect(firstWs, created.sessionId);
+
+    await runtimeEvents.push({
+      type: 'started',
+      session_id: created.sessionId,
+      cols: 80,
+      rows: 24,
+    });
+    await runtimeEvents.push({
+      type: 'output',
+      session_id: created.sessionId,
+      chunk: 'first\n',
+    });
+    firstWs.close(1000, 'browser_tab_closed');
+    await runtimeEvents.push({
+      type: 'output',
+      session_id: created.sessionId,
+      chunk: 'second\n',
+    });
+
+    const disconnectedSession = await service.getSession(created.sessionId);
+    const secondWs = new FakeWebSocket();
+    await (service as unknown as {
+      bindBrowserSocket: (browserSocket: FakeWebSocket, session: NonNullable<typeof disconnectedSession>) => Promise<void>;
+    }).bindBrowserSocket(secondWs, disconnectedSession!);
+    emitReconnect(secondWs, created.sessionId, { after_seq: 1 });
+
+    await waitForAssertion(() => {
+      expect(sentPayloads(secondWs)).toEqual([
+        {
+          type: 'terminal.replay_start',
+          terminal_session_id: created.sessionId,
+          status: 'complete',
+          gap: false,
+          after_seq: 1,
+          earliest_seq: 1,
+          latest_seq: 2,
+        },
+        {
+          type: 'terminal.output',
+          terminal_session_id: created.sessionId,
+          chunk: 'second\n',
+          seq: 2,
+        },
+        {
+          type: 'terminal.replay_end',
+          terminal_session_id: created.sessionId,
+          status: 'complete',
+          gap: false,
+          latest_seq: 2,
+          input_enabled: true,
+        },
+      ]);
+    });
+
+  });
+
+  it('allows terminal input immediately when reconnecting to an already active runtime', async () => {
+    const cache = new InMemoryCache();
+    const runtimeEvents = createControlledRuntimeStream<TerminalRuntimeEvent>();
+    const writeInput = vi.fn();
+    const service = new NotebookTerminalService(cache, {
+      dispatchTerminalSession: vi.fn(async () => ({
+        writeInput,
+        resize: vi.fn(),
+        close: vi.fn(),
+        stream: runtimeEvents.stream,
+      })),
+    } as never);
+
+    const created = await service.createSession({
+      workspaceId: 'ws_default',
+      projectId: 'proj_1',
+      taskId: 'task_1',
+      agentId: 'agent_1',
+      runnerSessionId: 'task_1',
+      userId: 'user_1',
+      cols: 80,
+      rows: 24,
+    });
+
+    const session = await service.getSession(created.sessionId);
+    const firstWs = new FakeWebSocket();
+    await (service as unknown as {
+      bindBrowserSocket: (browserSocket: FakeWebSocket, session: NonNullable<typeof session>) => Promise<void>;
+    }).bindBrowserSocket(firstWs, session!);
+    emitReconnect(firstWs, created.sessionId);
+    await runtimeEvents.push({
+      type: 'started',
+      session_id: created.sessionId,
+      cols: 80,
+      rows: 24,
+    });
+    await waitForAssertion(() => {
+      expect(sentPayloads(firstWs)).toContainEqual(expect.objectContaining({
+        type: 'terminal.state',
+        terminal_session_id: created.sessionId,
+        input_enabled: true,
+      }));
+    });
+    firstWs.close(1000, 'browser_tab_closed');
+
+    const disconnectedSession = await service.getSession(created.sessionId);
+    const secondWs = new FakeWebSocket();
+    await (service as unknown as {
+      bindBrowserSocket: (browserSocket: FakeWebSocket, session: NonNullable<typeof disconnectedSession>) => Promise<void>;
+    }).bindBrowserSocket(secondWs, disconnectedSession!);
+    emitReconnect(secondWs, created.sessionId, { after_seq: 0 });
+
+    await waitForAssertion(() => {
+      expect(sentPayloads(secondWs)).toContainEqual({
+        type: 'terminal.replay_end',
+        terminal_session_id: created.sessionId,
+        status: 'complete',
+        gap: false,
+        latest_seq: 0,
+        input_enabled: true,
+      });
+    });
+    emitBrowserMessage(secondWs, { type: 'terminal.stdin', data: 'echo still-live\n' });
+    expect(writeInput).toHaveBeenCalledWith('echo still-live\n');
+  });
+
+  it('rejects reconnect when project terminal-use permission has been revoked after the ticket was issued', async () => {
+    const cache = new InMemoryCache();
+    let terminalUseAllowed = true;
+    const authorizeTerminalUse = vi.fn(async () => terminalUseAllowed);
+    const runtimeEvents = createControlledRuntimeStream<TerminalRuntimeEvent>();
+    const writeInput = vi.fn();
+    const resize = vi.fn();
+    const service = new NotebookTerminalService(cache, {
+      dispatchTerminalSession: vi.fn(async () => ({
+        writeInput,
+        resize,
+        close: vi.fn(),
+        stream: runtimeEvents.stream,
+      })),
+    } as never, {
+      authorizeTerminalUse,
+    } as never);
+
+    const created = await service.createSession({
+      workspaceId: 'ws_default',
+      projectId: 'proj_1',
+      taskId: 'task_1',
+      agentId: 'agent_1',
+      runnerSessionId: 'task_1',
+      userId: 'user_1',
+      cols: 80,
+      rows: 24,
+    });
+
+    const session = await service.getSession(created.sessionId);
+    const firstWs = new FakeWebSocket();
+    await (service as unknown as {
+      bindBrowserSocket: (browserSocket: FakeWebSocket, session: NonNullable<typeof session>) => Promise<void>;
+    }).bindBrowserSocket(firstWs, session!);
+    emitReconnect(firstWs, created.sessionId);
+    await runtimeEvents.push({
+      type: 'started',
+      session_id: created.sessionId,
+      cols: 80,
+      rows: 24,
+    });
+    firstWs.close(1000, 'browser_tab_closed');
+
+    const disconnectedSession = await service.getSession(created.sessionId);
+    const secondWs = new FakeWebSocket();
+    await (service as unknown as {
+      bindBrowserSocket: (browserSocket: FakeWebSocket, session: NonNullable<typeof disconnectedSession>) => Promise<void>;
+    }).bindBrowserSocket(secondWs, disconnectedSession!);
+    terminalUseAllowed = false;
+    writeInput.mockClear();
+    resize.mockClear();
+
+    emitReconnect(secondWs, created.sessionId, { after_seq: 0 });
+
+    await waitForAssertion(() => {
+      expect(sentPayloads(secondWs)).toContainEqual({
+        type: 'terminal.error',
+        terminal_session_id: created.sessionId,
+        error_code: 'terminal_permission_revoked',
+        error_message: 'terminal_permission_revoked',
+      });
+    });
+    expect(writeInput).not.toHaveBeenCalled();
+    expect(resize).not.toHaveBeenCalled();
+    expect(secondWs.closeCalls).toContainEqual({ code: 1008, reason: 'terminal_permission_revoked' });
+    expect(authorizeTerminalUse).toHaveBeenLastCalledWith({
+      workspaceId: 'ws_default',
+      projectId: 'proj_1',
+      taskId: 'task_1',
+      userId: 'user_1',
+      terminalSessionId: created.sessionId,
+      requiredPermission: 'project:terminal:use',
+    });
+  });
+
+  it('rejects stdin when project terminal-use permission is revoked on an already open socket', async () => {
+    const cache = new InMemoryCache();
+    let terminalUseAllowed = true;
+    const authorizeTerminalUse = vi.fn(async () => terminalUseAllowed);
+    const runtimeEvents = createControlledRuntimeStream<TerminalRuntimeEvent>();
+    const writeInput = vi.fn();
+    const resize = vi.fn();
+    const service = new NotebookTerminalService(cache, {
+      dispatchTerminalSession: vi.fn(async () => ({
+        writeInput,
+        resize,
+        close: vi.fn(),
+        stream: runtimeEvents.stream,
+      })),
+    } as never, {
+      authorizeTerminalUse,
+    } as never);
+
+    const created = await service.createSession({
+      workspaceId: 'ws_default',
+      projectId: 'proj_1',
+      taskId: 'task_1',
+      agentId: 'agent_1',
+      runnerSessionId: 'task_1',
+      userId: 'user_1',
+      cols: 80,
+      rows: 24,
+    });
+
+    const session = await service.getSession(created.sessionId);
+    const ws = new FakeWebSocket();
+    await (service as unknown as {
+      bindBrowserSocket: (browserSocket: FakeWebSocket, session: NonNullable<typeof session>) => Promise<void>;
+    }).bindBrowserSocket(ws, session!);
+    emitReconnect(ws, created.sessionId);
+    await runtimeEvents.push({
+      type: 'started',
+      session_id: created.sessionId,
+      cols: 80,
+      rows: 24,
+    });
+    await waitForAssertion(() => {
+      expect(sentPayloads(ws)).toContainEqual(expect.objectContaining({
+        type: 'terminal.state',
+        terminal_session_id: created.sessionId,
+        input_enabled: true,
+      }));
+    });
+
+    terminalUseAllowed = false;
+    writeInput.mockClear();
+    resize.mockClear();
+    emitBrowserMessage(ws, { type: 'terminal.stdin', data: 'echo revoked\n' });
+
+    await waitForAssertion(() => {
+      expect(sentPayloads(ws)).toContainEqual({
+        type: 'terminal.error',
+        terminal_session_id: created.sessionId,
+        error_code: 'terminal_permission_revoked',
+        error_message: 'terminal_permission_revoked',
+      });
+    });
+    expect(writeInput).not.toHaveBeenCalled();
+    expect(resize).not.toHaveBeenCalled();
+    expect(ws.closeCalls).toContainEqual({ code: 1008, reason: 'terminal_permission_revoked' });
+  });
+
+  it('rejects resize when project terminal-use permission is revoked on an already open socket', async () => {
+    const cache = new InMemoryCache();
+    let terminalUseAllowed = true;
+    const authorizeTerminalUse = vi.fn(async () => terminalUseAllowed);
+    const runtimeEvents = createControlledRuntimeStream<TerminalRuntimeEvent>();
+    const writeInput = vi.fn();
+    const resize = vi.fn();
+    const service = new NotebookTerminalService(cache, {
+      dispatchTerminalSession: vi.fn(async () => ({
+        writeInput,
+        resize,
+        close: vi.fn(),
+        stream: runtimeEvents.stream,
+      })),
+    } as never, {
+      authorizeTerminalUse,
+    } as never);
+
+    const created = await service.createSession({
+      workspaceId: 'ws_default',
+      projectId: 'proj_1',
+      taskId: 'task_1',
+      agentId: 'agent_1',
+      runnerSessionId: 'task_1',
+      userId: 'user_1',
+      cols: 80,
+      rows: 24,
+    });
+
+    const session = await service.getSession(created.sessionId);
+    const ws = new FakeWebSocket();
+    await (service as unknown as {
+      bindBrowserSocket: (browserSocket: FakeWebSocket, session: NonNullable<typeof session>) => Promise<void>;
+    }).bindBrowserSocket(ws, session!);
+    emitReconnect(ws, created.sessionId);
+    await runtimeEvents.push({
+      type: 'started',
+      session_id: created.sessionId,
+      cols: 80,
+      rows: 24,
+    });
+    await waitForAssertion(() => {
+      expect(sentPayloads(ws)).toContainEqual(expect.objectContaining({
+        type: 'terminal.state',
+        terminal_session_id: created.sessionId,
+        input_enabled: true,
+      }));
+    });
+
+    terminalUseAllowed = false;
+    writeInput.mockClear();
+    resize.mockClear();
+    emitBrowserMessage(ws, { type: 'terminal.resize', cols: 100, rows: 30 });
+
+    await waitForAssertion(() => {
+      expect(sentPayloads(ws)).toContainEqual({
+        type: 'terminal.error',
+        terminal_session_id: created.sessionId,
+        error_code: 'terminal_permission_revoked',
+        error_message: 'terminal_permission_revoked',
+      });
+    });
+    expect(writeInput).not.toHaveBeenCalled();
+    expect(resize).not.toHaveBeenCalled();
+    expect(ws.closeCalls).toContainEqual({ code: 1008, reason: 'terminal_permission_revoked' });
+  });
+
+  it('ignores a stale reconnect whose async permission check resolves after a newer browser bind', async () => {
+    const cache = new InMemoryCache();
+    const pendingAuthorizations: Array<ReturnType<typeof createDeferred<boolean>>> = [];
+    const authorizeTerminalUse = vi.fn(() => pendingAuthorizations.shift()?.promise ?? true);
+    const runtimeEvents = createControlledRuntimeStream<TerminalRuntimeEvent>();
+    const writeInput = vi.fn();
+    const resize = vi.fn();
+    const runtime = {
+      writeInput,
+      resize,
+      close: vi.fn(),
+      stream: runtimeEvents.stream,
+    };
+    const service = new NotebookTerminalService(cache, {
+      dispatchTerminalSession: vi.fn(async () => runtime),
+    } as never, {
+      authorizeTerminalUse,
+    } as never);
+
+    const created = await service.createSession({
+      workspaceId: 'ws_default',
+      projectId: 'proj_1',
+      taskId: 'task_1',
+      agentId: 'agent_1',
+      runnerSessionId: 'task_1',
+      userId: 'user_1',
+      cols: 80,
+      rows: 24,
+    });
+
+    const session = await service.getSession(created.sessionId);
+    const firstWs = new FakeWebSocket();
+    await (service as unknown as {
+      bindBrowserSocket: (browserSocket: FakeWebSocket, session: NonNullable<typeof session>) => Promise<void>;
+    }).bindBrowserSocket(firstWs, session!);
+    emitReconnect(firstWs, created.sessionId);
+    await runtimeEvents.push({
+      type: 'started',
+      session_id: created.sessionId,
+      cols: 80,
+      rows: 24,
+    });
+    await waitForAssertion(async () => {
+      expect(await service.getSession(created.sessionId)).toMatchObject({
+        id: created.sessionId,
+        status: 'active',
+      });
+    });
+    firstWs.close(1000, 'browser_tab_closed');
+    await waitForAssertion(async () => {
+      expect(await service.getSession(created.sessionId)).toMatchObject({
+        id: created.sessionId,
+        status: 'disconnected',
+        cols: 80,
+        rows: 24,
+      });
+    });
+
+    resize.mockClear();
+    writeInput.mockClear();
+    const staleReconnectAuthorization = createDeferred<boolean>();
+    pendingAuthorizations.push(staleReconnectAuthorization);
+
+    const disconnectedSession = await service.getSession(created.sessionId);
+    const staleWs = new FakeWebSocket();
+    await (service as unknown as {
+      bindBrowserSocket: (browserSocket: FakeWebSocket, session: NonNullable<typeof disconnectedSession>) => Promise<void>;
+    }).bindBrowserSocket(staleWs, disconnectedSession!);
+    emitReconnect(staleWs, created.sessionId, { cols: 100, rows: 30, after_seq: 0 });
+    await waitForAssertion(() => {
+      expect(authorizeTerminalUse).toHaveBeenCalledTimes(2);
+    });
+
+    const currentSession = await service.getSession(created.sessionId);
+    const currentWs = new FakeWebSocket();
+    await (service as unknown as {
+      bindBrowserSocket: (browserSocket: FakeWebSocket, session: NonNullable<typeof currentSession>) => Promise<void>;
+    }).bindBrowserSocket(currentWs, currentSession!);
+
+    staleReconnectAuthorization.resolve(true);
+    await Promise.resolve();
+    await Promise.resolve();
+
+    expect(staleWs.closeCalls).toContainEqual({ code: 1012, reason: 'terminal_replaced' });
+    expect(currentWs.sent).toEqual([]);
+    expect(writeInput).not.toHaveBeenCalled();
+    expect(resize).not.toHaveBeenCalled();
+    await expect(service.getSession(created.sessionId)).resolves.toMatchObject({
+      id: created.sessionId,
+      status: 'disconnected',
+      cols: 80,
+      rows: 24,
+      browserHandshakeComplete: false,
+    });
+  });
+
+  it('ignores stale stdin and resize frames whose async permission checks resolve after a newer browser bind', async () => {
+    const cache = new InMemoryCache();
+    const pendingAuthorizations: Array<ReturnType<typeof createDeferred<boolean>>> = [];
+    const authorizeTerminalUse = vi.fn(() => pendingAuthorizations.shift()?.promise ?? true);
+    const runtimeEvents = createControlledRuntimeStream<TerminalRuntimeEvent>();
+    const writeInput = vi.fn();
+    const resize = vi.fn();
+    const runtime = {
+      writeInput,
+      resize,
+      close: vi.fn(),
+      stream: runtimeEvents.stream,
+    };
+    const service = new NotebookTerminalService(cache, {
+      dispatchTerminalSession: vi.fn(async () => runtime),
+    } as never, {
+      authorizeTerminalUse,
+    } as never);
+
+    const created = await service.createSession({
+      workspaceId: 'ws_default',
+      projectId: 'proj_1',
+      taskId: 'task_1',
+      agentId: 'agent_1',
+      runnerSessionId: 'task_1',
+      userId: 'user_1',
+      cols: 80,
+      rows: 24,
+    });
+
+    const session = await service.getSession(created.sessionId);
+    const staleWs = new FakeWebSocket();
+    await (service as unknown as {
+      bindBrowserSocket: (browserSocket: FakeWebSocket, session: NonNullable<typeof session>) => Promise<void>;
+    }).bindBrowserSocket(staleWs, session!);
+    emitReconnect(staleWs, created.sessionId);
+    await runtimeEvents.push({
+      type: 'started',
+      session_id: created.sessionId,
+      cols: 80,
+      rows: 24,
+    });
+    await waitForAssertion(async () => {
+      expect(await service.getSession(created.sessionId)).toMatchObject({
+        id: created.sessionId,
+        status: 'active',
+      });
+    });
+
+    writeInput.mockClear();
+    resize.mockClear();
+    const staleStdinAuthorization = createDeferred<boolean>();
+    const staleResizeAuthorization = createDeferred<boolean>();
+    pendingAuthorizations.push(staleStdinAuthorization, staleResizeAuthorization);
+
+    emitBrowserMessage(staleWs, { type: 'terminal.stdin', data: 'echo stale\n' });
+    emitBrowserMessage(staleWs, { type: 'terminal.resize', cols: 100, rows: 30 });
+    await waitForAssertion(() => {
+      expect(authorizeTerminalUse).toHaveBeenCalledTimes(3);
+    });
+
+    const currentSession = await service.getSession(created.sessionId);
+    const currentWs = new FakeWebSocket();
+    await (service as unknown as {
+      bindBrowserSocket: (browserSocket: FakeWebSocket, session: NonNullable<typeof currentSession>) => Promise<void>;
+    }).bindBrowserSocket(currentWs, currentSession!);
+
+    staleStdinAuthorization.resolve(true);
+    staleResizeAuthorization.resolve(true);
+    await Promise.resolve();
+    await Promise.resolve();
+
+    expect(staleWs.closeCalls).toContainEqual({ code: 1012, reason: 'terminal_replaced' });
+    expect(currentWs.sent).toEqual([]);
+    expect(writeInput).not.toHaveBeenCalled();
+    expect(resize).not.toHaveBeenCalled();
+    await expect(service.getSession(created.sessionId)).resolves.toMatchObject({
+      id: created.sessionId,
+      status: 'active',
+      cols: 80,
+      rows: 24,
+      browserHandshakeComplete: false,
+    });
+  });
+
+  it.each(['close', 'error'] as const)(
+    'ignores a stale browser socket %s after a newer ready browser bind',
+    async (eventName) => {
+      const cache = new InMemoryCache();
+      const runtimeEvents = createControlledRuntimeStream<TerminalRuntimeEvent>();
+      const writeInput = vi.fn();
+      const resize = vi.fn();
+      const runtime = {
+        writeInput,
+        resize,
+        close: vi.fn(),
+        stream: runtimeEvents.stream,
+      };
+      const service = new NotebookTerminalService(cache, {
+        dispatchTerminalSession: vi.fn(async () => runtime),
+      } as never);
+
+      const created = await service.createSession({
+        workspaceId: 'ws_default',
+        projectId: 'proj_1',
+        taskId: 'task_1',
+        agentId: 'agent_1',
+        runnerSessionId: 'task_1',
+        userId: 'user_1',
+        cols: 80,
+        rows: 24,
+      });
+
+      const session = await service.getSession(created.sessionId);
+      const staleWs = new FakeWebSocket();
+      await (service as unknown as {
+        bindBrowserSocket: (browserSocket: FakeWebSocket, session: NonNullable<typeof session>) => Promise<void>;
+      }).bindBrowserSocket(staleWs, session!);
+      emitReconnect(staleWs, created.sessionId);
+      await runtimeEvents.push({
+        type: 'started',
+        session_id: created.sessionId,
+        cols: 80,
+        rows: 24,
+      });
+      await waitForAssertion(async () => {
+        expect(await service.getSession(created.sessionId)).toMatchObject({
+          id: created.sessionId,
+          status: 'active',
+          browserHandshakeComplete: true,
+        });
+      });
+
+      const currentSession = await service.getSession(created.sessionId);
+      const currentWs = new FakeWebSocket();
+      await (service as unknown as {
+        bindBrowserSocket: (browserSocket: FakeWebSocket, session: NonNullable<typeof currentSession>) => Promise<void>;
+      }).bindBrowserSocket(currentWs, currentSession!);
+      emitReconnect(currentWs, created.sessionId, { after_seq: 0 });
+      await waitForAssertion(async () => {
+        expect(await service.getSession(created.sessionId)).toMatchObject({
+          id: created.sessionId,
+          status: 'active',
+          browserHandshakeComplete: true,
+          browserReplayInProgress: false,
+        });
+      });
+
+      writeInput.mockClear();
+      resize.mockClear();
+      currentWs.sent.length = 0;
+
+      if (eventName === 'close') {
+        staleWs.emit('close', 1006, Buffer.from('late_network_close'));
+      } else {
+        staleWs.emit('error', new Error('late_network_error'));
+      }
+
+      await Promise.resolve();
+      await expect(service.getSession(created.sessionId)).resolves.toMatchObject({
+        id: created.sessionId,
+        status: 'active',
+        browserHandshakeComplete: true,
+        browserReplayInProgress: false,
+      });
+
+      emitBrowserMessage(currentWs, { type: 'terminal.stdin', data: 'echo current\n' });
+      emitBrowserMessage(currentWs, { type: 'terminal.resize', cols: 100, rows: 30 });
+
+      await waitForAssertion(() => {
+        expect(writeInput).toHaveBeenCalledWith('echo current\n');
+        expect(resize).toHaveBeenCalledWith(100, 30);
+      });
+      expect(sentPayloads(currentWs)).not.toContainEqual(expect.objectContaining({
+        error_code: 'handshake_required',
+      }));
+    },
+  );
+
+  it('keeps a disconnected runtime reconnectable after an invalid reconnect attempt', async () => {
+    const cache = new InMemoryCache();
+    const runtimeEvents = createControlledRuntimeStream<TerminalRuntimeEvent>();
+    const runtimeClose = vi.fn();
+    const service = new NotebookTerminalService(cache, {
+      dispatchTerminalSession: vi.fn(async () => ({
+        writeInput: vi.fn(),
+        resize: vi.fn(),
+        close: runtimeClose,
+        stream: runtimeEvents.stream,
+      })),
+    } as never);
+
+    const created = await service.createSession({
+      workspaceId: 'ws_default',
+      projectId: 'proj_1',
+      taskId: 'task_1',
+      agentId: 'agent_1',
+      runnerSessionId: 'task_1',
+      userId: 'user_1',
+      cols: 80,
+      rows: 24,
+    });
+
+    const session = await service.getSession(created.sessionId);
+    const firstWs = new FakeWebSocket();
+    await (service as unknown as {
+      bindBrowserSocket: (browserSocket: FakeWebSocket, session: NonNullable<typeof session>) => Promise<void>;
+    }).bindBrowserSocket(firstWs, session!);
+    emitReconnect(firstWs, created.sessionId);
+    await runtimeEvents.push({
+      type: 'started',
+      session_id: created.sessionId,
+      cols: 80,
+      rows: 24,
+    });
+    firstWs.close(1000, 'browser_tab_closed');
+
+    await waitForAssertion(async () => {
+      expect(await service.getSession(created.sessionId)).toMatchObject({
+        id: created.sessionId,
+        status: 'disconnected',
+      });
+    });
+
+    const disconnectedSession = await service.getSession(created.sessionId);
+    const invalidWs = new FakeWebSocket();
+    await (service as unknown as {
+      bindBrowserSocket: (browserSocket: FakeWebSocket, session: NonNullable<typeof disconnectedSession>) => Promise<void>;
+    }).bindBrowserSocket(invalidWs, disconnectedSession!);
+    emitReconnect(invalidWs, created.sessionId, { after_seq: -1 });
+
+    expect(invalidWs.closeCalls).toContainEqual({ code: 1008, reason: 'invalid_reconnect_payload' });
+    await expect(service.getSession(created.sessionId)).resolves.toMatchObject({
+      id: created.sessionId,
+      status: 'disconnected',
+    });
+    await expect(service.issueReconnectTicket(created.sessionId)).resolves.toMatchObject({
+      wsPath: expect.stringContaining(`session_id=${created.sessionId}`),
+    });
+    expect(runtimeClose).not.toHaveBeenCalled();
+  });
+
+  it('bounds terminal replay by chunk count and marks older cursors as partial', async () => {
+    const cache = new InMemoryCache();
+    const runtimeEvents = createControlledRuntimeStream<TerminalRuntimeEvent>();
+    const service = new NotebookTerminalService(cache, {
+      dispatchTerminalSession: vi.fn(async () => ({
+        writeInput: vi.fn(),
+        resize: vi.fn(),
+        close: vi.fn(),
+        stream: runtimeEvents.stream,
+      })),
+    } as never, {
+      replayMaxChunks: 2,
+      replayMaxBytes: 1_000,
+    });
+
+    const created = await service.createSession({
+      workspaceId: 'ws_default',
+      projectId: 'proj_1',
+      taskId: 'task_1',
+      agentId: 'agent_1',
+      runnerSessionId: 'task_1',
+      userId: 'user_1',
+      cols: 80,
+      rows: 24,
+    });
+
+    const session = await service.getSession(created.sessionId);
+    const firstWs = new FakeWebSocket();
+    await (service as unknown as {
+      bindBrowserSocket: (browserSocket: FakeWebSocket, session: NonNullable<typeof session>) => Promise<void>;
+    }).bindBrowserSocket(firstWs, session!);
+    emitReconnect(firstWs, created.sessionId);
+
+    await runtimeEvents.push({ type: 'output', session_id: created.sessionId, chunk: 'one\n' });
+    await runtimeEvents.push({ type: 'output', session_id: created.sessionId, chunk: 'two\n' });
+    await runtimeEvents.push({ type: 'output', session_id: created.sessionId, chunk: 'three\n' });
+    firstWs.close(1000, 'browser_tab_closed');
+
+    const disconnectedSession = await service.getSession(created.sessionId);
+    const secondWs = new FakeWebSocket();
+    await (service as unknown as {
+      bindBrowserSocket: (browserSocket: FakeWebSocket, session: NonNullable<typeof disconnectedSession>) => Promise<void>;
+    }).bindBrowserSocket(secondWs, disconnectedSession!);
+    emitReconnect(secondWs, created.sessionId, { after_seq: 0 });
+
+    await waitForAssertion(() => {
+      expect(sentPayloads(secondWs)).toEqual([
+        {
+          type: 'terminal.replay_start',
+          terminal_session_id: created.sessionId,
+          status: 'partial',
+          gap: true,
+          after_seq: 0,
+          earliest_seq: 2,
+          latest_seq: 3,
+        },
+        { type: 'terminal.output', terminal_session_id: created.sessionId, chunk: 'two\n', seq: 2 },
+        { type: 'terminal.output', terminal_session_id: created.sessionId, chunk: 'three\n', seq: 3 },
+        {
+          type: 'terminal.replay_end',
+          terminal_session_id: created.sessionId,
+          status: 'partial',
+          gap: true,
+          latest_seq: 3,
+          input_enabled: true,
+        },
+      ]);
+    });
+
+  });
+
+  it('marks future terminal replay cursors as unavailable instead of silently accepting them', async () => {
+    const cache = new InMemoryCache();
+    const runtimeEvents = createControlledRuntimeStream<TerminalRuntimeEvent>();
+    const service = new NotebookTerminalService(cache, {
+      dispatchTerminalSession: vi.fn(async () => ({
+        writeInput: vi.fn(),
+        resize: vi.fn(),
+        close: vi.fn(),
+        stream: runtimeEvents.stream,
+      })),
+    } as never);
+
+    const created = await service.createSession({
+      workspaceId: 'ws_default',
+      projectId: 'proj_1',
+      taskId: 'task_1',
+      agentId: 'agent_1',
+      runnerSessionId: 'task_1',
+      userId: 'user_1',
+      cols: 80,
+      rows: 24,
+    });
+
+    const session = await service.getSession(created.sessionId);
+    const firstWs = new FakeWebSocket();
+    await (service as unknown as {
+      bindBrowserSocket: (browserSocket: FakeWebSocket, session: NonNullable<typeof session>) => Promise<void>;
+    }).bindBrowserSocket(firstWs, session!);
+    emitReconnect(firstWs, created.sessionId);
+    await runtimeEvents.push({ type: 'output', session_id: created.sessionId, chunk: 'only\n' });
+    firstWs.close(1000, 'browser_tab_closed');
+
+    const disconnectedSession = await service.getSession(created.sessionId);
+    const secondWs = new FakeWebSocket();
+    await (service as unknown as {
+      bindBrowserSocket: (browserSocket: FakeWebSocket, session: NonNullable<typeof disconnectedSession>) => Promise<void>;
+    }).bindBrowserSocket(secondWs, disconnectedSession!);
+    emitReconnect(secondWs, created.sessionId, { after_seq: 99 });
+
+    await waitForAssertion(() => {
+      expect(sentPayloads(secondWs)).toEqual([
+        {
+          type: 'terminal.replay_start',
+          terminal_session_id: created.sessionId,
+          status: 'unavailable',
+          gap: true,
+          after_seq: 99,
+          earliest_seq: 1,
+          latest_seq: 1,
+          next_seq: 2,
+          error_code: 'future_after_seq',
+        },
+        {
+          type: 'terminal.replay_end',
+          terminal_session_id: created.sessionId,
+          status: 'unavailable',
+          gap: true,
+          latest_seq: 1,
+          next_seq: 2,
+          input_enabled: true,
+        },
+      ]);
+    });
+
+    await runtimeEvents.push({ type: 'output', session_id: created.sessionId, chunk: 'live-after-gap\n' });
+
+    await waitForAssertion(() => {
+      expect(sentPayloads(secondWs)).toContainEqual({
+        type: 'terminal.output',
+        terminal_session_id: created.sessionId,
+        chunk: 'live-after-gap\n',
+        seq: 2,
+      });
+    });
+  });
+
   it('keeps disconnect grace outside close hooks until the session actually times out', async () => {
     vi.useFakeTimers();
     try {
@@ -308,6 +1600,7 @@ describe('NotebookTerminalService', () => {
       await (service as unknown as {
         bindBrowserSocket: (browserSocket: FakeWebSocket, session: NonNullable<typeof session>) => Promise<void>;
       }).bindBrowserSocket(ws, session!);
+      emitReconnect(ws, created.sessionId);
 
       await runtimeEvents.push({
         type: 'started',
@@ -504,6 +1797,7 @@ describe('NotebookTerminalService', () => {
     await (service as unknown as {
       bindBrowserSocket: (ws: FakeWebSocket, session: NonNullable<typeof session>) => Promise<void>;
     }).bindBrowserSocket(ws, session!);
+    emitReconnect(ws, created.sessionId);
 
     session!.browserSocket = undefined;
     failStream.resolve();
@@ -543,6 +1837,7 @@ describe('NotebookTerminalService', () => {
     await (service as unknown as {
       bindBrowserSocket: (ws: FakeWebSocket, session: NonNullable<typeof session>) => Promise<void>;
     }).bindBrowserSocket(firstWs, session!);
+    emitReconnect(firstWs, created.sessionId);
 
     await runtimeEvents.push({
       type: 'started',
@@ -590,6 +1885,7 @@ describe('NotebookTerminalService', () => {
     await (service as unknown as {
       bindBrowserSocket: (ws: FakeWebSocket, session: NonNullable<typeof disconnectedSession>) => Promise<void>;
     }).bindBrowserSocket(secondWs, disconnectedSession!);
+    emitReconnect(secondWs, created.sessionId);
 
     await waitForAssertion(async () => {
       expect(await service.getSession(created.sessionId)).toMatchObject({
@@ -635,6 +1931,7 @@ describe('NotebookTerminalService', () => {
     await (service as unknown as {
       bindBrowserSocket: (ws: FakeWebSocket, session: NonNullable<typeof session>) => Promise<void>;
     }).bindBrowserSocket(firstWs, session!);
+    emitReconnect(firstWs, created.sessionId);
 
     await waitForAssertion(async () => {
       expect(await service.getSession(created.sessionId)).toMatchObject({
@@ -665,6 +1962,7 @@ describe('NotebookTerminalService', () => {
     await (service as unknown as {
       bindBrowserSocket: (ws: FakeWebSocket, session: NonNullable<typeof disconnectedSession>) => Promise<void>;
     }).bindBrowserSocket(secondWs, disconnectedSession!);
+    emitReconnect(secondWs, created.sessionId, { after_seq: 0 });
 
     await waitForAssertion(async () => {
       expect(await service.getSession(created.sessionId)).toMatchObject({
@@ -673,12 +1971,16 @@ describe('NotebookTerminalService', () => {
       });
     });
     expect(dispatchTerminalSession).toHaveBeenCalledTimes(1);
-    expect(secondWs.sent).toContain(JSON.stringify({
-      type: 'started',
-      session_id: created.sessionId,
-      cols: 80,
-      rows: 24,
-    }));
+    expect(sentPayloads(secondWs).some((payload) => payload.type === 'started')).toBe(false);
+    expect(sentPayloads(secondWs)).toContainEqual({
+      type: 'terminal.replay_start',
+      terminal_session_id: created.sessionId,
+      status: 'complete',
+      gap: false,
+      after_seq: 0,
+      earliest_seq: null,
+      latest_seq: 0,
+    });
   });
 
   it('keeps a disconnected terminal reconnectable across an 85-second realistic reload and re-entry window by default', async () => {
@@ -712,6 +2014,7 @@ describe('NotebookTerminalService', () => {
       await (service as unknown as {
         bindBrowserSocket: (ws: FakeWebSocket, session: NonNullable<typeof session>) => Promise<void>;
       }).bindBrowserSocket(ws, session!);
+      emitReconnect(ws, created.sessionId);
       const reconnectGraceMs = (service as unknown as { reconnectGraceMs: number }).reconnectGraceMs;
       expect(reconnectGraceMs).toBeGreaterThanOrEqual(90_000);
       expect(reconnectGraceMs).toBeLessThanOrEqual(120_000);
@@ -780,6 +2083,7 @@ describe('NotebookTerminalService', () => {
       await (service as unknown as {
         bindBrowserSocket: (ws: FakeWebSocket, session: NonNullable<typeof session>) => Promise<void>;
       }).bindBrowserSocket(ws, session!);
+      emitReconnect(ws, created.sessionId);
 
       await runtimeEvents.push({
         type: 'started',
@@ -845,6 +2149,7 @@ describe('NotebookTerminalService', () => {
       await (service as unknown as {
         bindBrowserSocket: (ws: FakeWebSocket, session: NonNullable<typeof session>) => Promise<void>;
       }).bindBrowserSocket(ws, session!);
+      emitReconnect(ws, created.sessionId);
       const reconnectGraceMs = (service as unknown as { reconnectGraceMs: number }).reconnectGraceMs;
       expect(reconnectGraceMs).toBeGreaterThanOrEqual(90_000);
       expect(reconnectGraceMs).toBeLessThanOrEqual(120_000);
@@ -924,6 +2229,7 @@ describe('NotebookTerminalService', () => {
       await (service as unknown as {
         bindBrowserSocket: (ws: FakeWebSocket, session: NonNullable<typeof session>) => Promise<void>;
       }).bindBrowserSocket(ws, session!);
+      emitReconnect(ws, created.sessionId);
 
       await runtimeEvents.push({
         type: 'started',
@@ -986,6 +2292,7 @@ describe('NotebookTerminalService', () => {
       await (service as unknown as {
         bindBrowserSocket: (ws: FakeWebSocket, session: NonNullable<typeof session>) => Promise<void>;
       }).bindBrowserSocket(firstWs, session!);
+      emitReconnect(firstWs, created.sessionId);
 
       await runtimeEvents.push({
         type: 'started',
@@ -1007,6 +2314,7 @@ describe('NotebookTerminalService', () => {
       await (service as unknown as {
         bindBrowserSocket: (ws: FakeWebSocket, session: NonNullable<typeof disconnectedSession>) => Promise<void>;
       }).bindBrowserSocket(secondWs, disconnectedSession!);
+      emitReconnect(secondWs, created.sessionId);
 
       await waitForAssertion(async () => {
         expect(await service.getSession(created.sessionId)).toMatchObject({
@@ -1058,6 +2366,7 @@ describe('NotebookTerminalService', () => {
     await (service as unknown as {
       bindBrowserSocket: (ws: FakeWebSocket, session: NonNullable<typeof session>) => Promise<void>;
     }).bindBrowserSocket(firstWs, session!);
+    emitReconnect(firstWs, created.sessionId);
 
     await runtimeEvents.push({
       type: 'started',
@@ -1090,6 +2399,7 @@ describe('NotebookTerminalService', () => {
       await (service as unknown as {
         bindBrowserSocket: (ws: FakeWebSocket, session: NonNullable<typeof disconnectedSession>) => Promise<void>;
       }).bindBrowserSocket(secondWs, disconnectedSession!);
+      emitReconnect(secondWs, created.sessionId);
 
       await waitForAssertion(async () => {
         expect(await service.getSession(created.sessionId)).toMatchObject({
@@ -1149,12 +2459,14 @@ describe('NotebookTerminalService', () => {
     const firstBind = (service as unknown as {
       bindBrowserSocket: (ws: FakeWebSocket, session: NonNullable<typeof session>) => Promise<void>;
     }).bindBrowserSocket(firstWs, session!);
+    emitReconnect(firstWs, created.sessionId);
 
     await firstDispatchStarted.promise;
 
     const secondBind = (service as unknown as {
       bindBrowserSocket: (ws: FakeWebSocket, session: NonNullable<typeof session>) => Promise<void>;
     }).bindBrowserSocket(secondWs, session!);
+    emitReconnect(secondWs, created.sessionId);
 
     expect(dispatchTerminalSession).toHaveBeenCalledTimes(1);
     await Promise.resolve();
@@ -1184,17 +2496,100 @@ describe('NotebookTerminalService', () => {
     });
     expect(firstWs.closeCalls).toContainEqual({ code: 1012, reason: 'terminal_replaced' });
     expect(firstWs.sent).not.toContain(JSON.stringify({
-      type: 'started',
-      session_id: created.sessionId,
+      type: 'terminal.state',
+      terminal_session_id: created.sessionId,
+      state: 'ready',
+      status: 'active',
+      input_enabled: true,
       cols: 80,
       rows: 24,
     }));
     expect(secondWs.sent).toContain(JSON.stringify({
+      type: 'terminal.state',
+      terminal_session_id: created.sessionId,
+      state: 'ready',
+      status: 'active',
+      input_enabled: true,
+      cols: 80,
+      rows: 24,
+    }));
+  });
+
+  it('returns input_enabled true when the runtime becomes ready between browser binds', async () => {
+    const cache = new InMemoryCache();
+    const runtimeEvents = createControlledRuntimeStream<TerminalRuntimeEvent>();
+    const writeInput = vi.fn();
+    const runtime = {
+      writeInput,
+      resize: vi.fn(),
+      close: vi.fn(),
+      stream: runtimeEvents.stream,
+    };
+    const dispatchDeferred = createDeferred<typeof runtime>();
+    const dispatchTerminalSession = vi.fn(() => dispatchDeferred.promise);
+    const service = new NotebookTerminalService(cache, {
+      dispatchTerminalSession,
+    } as never);
+
+    const created = await service.createSession({
+      workspaceId: 'ws_default',
+      projectId: 'proj_1',
+      taskId: 'task_1',
+      agentId: 'agent_1',
+      runnerSessionId: 'task_1',
+      userId: 'user_1',
+      cols: 80,
+      rows: 24,
+    });
+
+    const session = await service.getSession(created.sessionId);
+    const firstWs = new FakeWebSocket();
+    await (service as unknown as {
+      bindBrowserSocket: (browserSocket: FakeWebSocket, session: NonNullable<typeof session>) => Promise<void>;
+    }).bindBrowserSocket(firstWs, session!);
+    emitReconnect(firstWs, created.sessionId);
+    await waitForAssertion(() => {
+      expect(dispatchTerminalSession).toHaveBeenCalledTimes(1);
+    });
+
+    const pendingSession = await service.getSession(created.sessionId);
+    const secondWs = new FakeWebSocket();
+    await (service as unknown as {
+      bindBrowserSocket: (browserSocket: FakeWebSocket, session: NonNullable<typeof pendingSession>) => Promise<void>;
+    }).bindBrowserSocket(secondWs, pendingSession!);
+
+    dispatchDeferred.resolve(runtime);
+    await runtimeEvents.push({
       type: 'started',
       session_id: created.sessionId,
       cols: 80,
       rows: 24,
-    }));
+    });
+    await waitForAssertion(async () => {
+      const updated = await service.getSession(created.sessionId);
+      expect(updated?.runtime).toBe(runtime);
+      expect(updated?.runtimeReady).toBe(true);
+    });
+
+    emitReconnect(secondWs, created.sessionId, { after_seq: 0 });
+
+    await waitForAssertion(() => {
+      expect(sentPayloads(secondWs)).toContainEqual({
+        type: 'terminal.replay_end',
+        terminal_session_id: created.sessionId,
+        status: 'complete',
+        gap: false,
+        latest_seq: 0,
+        input_enabled: true,
+      });
+    });
+    await expect(service.getSession(created.sessionId)).resolves.toMatchObject({
+      id: created.sessionId,
+      status: 'active',
+    });
+
+    emitBrowserMessage(secondWs, { type: 'terminal.stdin', data: 'echo ready-after-bind\n' });
+    expect(writeInput).toHaveBeenCalledWith('echo ready-after-bind\n');
   });
 
   it('fails a pending session when the runner never emits terminal start events', async () => {
@@ -1230,6 +2625,7 @@ describe('NotebookTerminalService', () => {
     await (service as unknown as {
       bindBrowserSocket: (ws: FakeWebSocket, session: NonNullable<typeof session>) => Promise<void>;
     }).bindBrowserSocket(ws, session!);
+    emitReconnect(ws, created.sessionId);
 
     await waitForAssertion(async () => {
       const updated = await service.getSession(created.sessionId);
@@ -1281,6 +2677,7 @@ describe('NotebookTerminalService', () => {
       await (service as unknown as {
         bindBrowserSocket: (ws: FakeWebSocket, session: NonNullable<typeof session>) => Promise<void>;
       }).bindBrowserSocket(ws, session!);
+      emitReconnect(ws, created.sessionId);
 
       await vi.advanceTimersByTimeAsync(19_000);
       await expect(service.getSession(created.sessionId)).resolves.toMatchObject({
@@ -1333,7 +2730,11 @@ describe('NotebookTerminalService', () => {
       bindBrowserSocket: (ws: FakeWebSocket, session: NonNullable<typeof session>) => Promise<void>;
     }).bindBrowserSocket(ws, session!);
 
-    expect(dispatchTerminalSession).toHaveBeenCalledTimes(1);
+    expect(dispatchTerminalSession).not.toHaveBeenCalled();
+    emitReconnect(ws, created.sessionId);
+    await waitForAssertion(() => {
+      expect(dispatchTerminalSession).toHaveBeenCalledTimes(1);
+    });
     await waitForAssertion(async () => {
       const updated = await service.getSession(created.sessionId);
       expect(updated).toMatchObject({
@@ -1600,6 +3001,7 @@ describe('NotebookTerminalService', () => {
     await (service as unknown as {
       bindBrowserSocket: (browserSocket: FakeWebSocket, session: NonNullable<typeof session>) => Promise<void>;
     }).bindBrowserSocket(ws, session!);
+    emitReconnect(ws, created.sessionId);
 
     await runtimeEvents.push({
       type: 'started',
@@ -1650,6 +3052,7 @@ describe('NotebookTerminalService', () => {
       await (service as unknown as {
         bindBrowserSocket: (browserSocket: FakeWebSocket, session: NonNullable<typeof session>) => Promise<void>;
       }).bindBrowserSocket(ws, session!);
+      emitReconnect(ws, created.sessionId);
 
       await runtimeEvents.push({
         type: 'started',

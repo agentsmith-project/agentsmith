@@ -1467,6 +1467,8 @@ describe('TaskPage', () => {
         expect(screen.queryByTestId('conversation-panel')).not.toBeInTheDocument();
         expect(latestTaskHeaderPropsRef.current.viewMode).toBe('terminal');
         expect(latestTaskHeaderPropsRef.current.terminalSessionCount).toBe(2);
+        expect(latestTaskTerminalPanelPropsRef.current.tabId).toBe('terminal-session-2');
+        expect(latestTaskTerminalPanelPropsRef.current.focusRequestToken).toBeGreaterThan(0);
       });
     });
 

@@ -241,8 +241,58 @@ export interface TaskTerminalSessionStatus {
   ws_url?: string | null;
 }
 
+export const TASK_TERMINAL_RECONNECT_VIEW = 'notebook.task_terminal' as const;
+export type TaskTerminalReconnectView = typeof TASK_TERMINAL_RECONNECT_VIEW;
+
 export type TaskTerminalServerEvent =
   | { type: 'started'; session_id: string; cols?: number; rows?: number }
   | { type: 'output'; session_id: string; chunk: string }
   | { type: 'exited'; session_id: string; exit_code: number | null; signal: string | null }
-  | { type: 'error'; session_id?: string; error_code: string; error_message: string };
+  | { type: 'error'; session_id?: string; error_code?: string; error_message: string }
+  | {
+      type: 'terminal.replay_start';
+      terminal_session_id: string;
+      session_id?: string;
+      earliest_seq?: number | null;
+      latest_seq?: number | null;
+      next_seq?: number | null;
+      after_seq?: number | null;
+      gap?: boolean;
+      status?: 'complete' | 'partial' | 'unavailable' | string;
+    }
+  | {
+      type: 'terminal.output';
+      terminal_session_id: string;
+      session_id?: string;
+      seq: number;
+      encoding?: 'utf8' | 'base64';
+      data?: string;
+      chunk?: string;
+    }
+  | {
+      type: 'terminal.replay_end';
+      terminal_session_id: string;
+      session_id?: string;
+      latest_seq?: number | null;
+      next_seq?: number | null;
+      gap?: boolean;
+      status?: 'complete' | 'partial' | 'unavailable' | string;
+      input_enabled?: boolean;
+    }
+  | {
+      type: 'terminal.state';
+      terminal_session_id: string;
+      session_id?: string;
+      state?: string;
+      status?: string;
+      input_enabled?: boolean;
+      reason?: string | null;
+    }
+  | {
+      type: 'terminal.error';
+      terminal_session_id: string;
+      session_id?: string;
+      error_code?: string;
+      error_message?: string;
+      reason?: string | null;
+    };

@@ -957,8 +957,8 @@
     "entryRoute": "/en-US/workspaces/ws_default/projects/proj_001/notebook",
     "goal": "用一组 mock-lane story scenes 统一描述 notebook task 的列表、创建、详情、产物检查，以及 cancel / force-stop confirm / provider error / SSE / terminal blocker 这些必须按用户心智说真话的状态同步时刻。",
     "sourceRef": "e2e/stories/mock-lane/mock-lane-notebook-task-lifecycle.story.md#mock-lane-notebook-task-lifecycle",
-    "sourceFingerprint": "1aaaeacc3641f9a0996fbcf5cc5fc90be577e59d7880689b13e17284102e1ae2",
-    "storyFingerprint": "bef66c7a13913fc26e383e2850233d9fdbf52fb2d8adfdacbe7b81e537e12c8b",
+    "sourceFingerprint": "2cd2a5b2e296318678882f10c767a2afa45222fc15d435ed22d9b30723f7e9ed",
+    "storyFingerprint": "dda840a307e104abbff0a43af47410645488dee99edea07a7df422b8a3c1c7a8",
     "stepMapFingerprint": "fafa2add94be782963e45a8208404b3c19434432fa192bd4ea65d270302241de",
     "sceneIds": [
       "notebook-task-lifecycle-list",
@@ -966,6 +966,7 @@
       "notebook-task-lifecycle-detail",
       "notebook-task-lifecycle-artifact",
       "notebook-task-running",
+      "notebook-task-running-long-action-narrow",
       "notebook-task-cancelling",
       "notebook-cancel-escalation-confirm",
       "notebook-task-terminating",

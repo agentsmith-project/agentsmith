@@ -11,7 +11,11 @@ const terminalWriteMock = vi.fn();
 const terminalDisposeMock = vi.fn();
 const terminalLoadAddonMock = vi.fn();
 const terminalOpenMock = vi.fn();
-const terminalOnDataMock = vi.fn(() => ({ dispose: vi.fn() }));
+const terminalDataHandlers: Array<(data: string) => void> = [];
+const terminalOnDataMock = vi.fn((handler: (data: string) => void) => {
+  terminalDataHandlers.push(handler);
+  return { dispose: vi.fn() };
+});
 const terminalFocusMock = vi.fn();
 const fitMock = vi.fn();
 const fitDisposeMock = vi.fn();
@@ -53,6 +57,9 @@ vi.mock('next-intl', () => ({
       terminal_status_active: 'Active',
       terminal_status_closed: 'Closed',
       terminal_status_failed: 'Failed',
+      terminal_replay_partial: 'Some earlier terminal output is no longer available.',
+      terminal_replay_gap: 'Some terminal output may be missing. Reconnecting to recover a continuous stream.',
+      terminal_attach_unavailable: 'This terminal session cannot be attached right now.',
       terminal_close: 'End Session',
       terminal_error_hint: `Terminal unavailable: ${values?.reason ?? ''}`,
       terminal_banner: `Terminal ready for ${values?.title ?? 'task'}`,
@@ -109,6 +116,7 @@ describe('TaskTerminalPanel', () => {
 
   beforeEach(() => {
     vi.clearAllMocks();
+    terminalDataHandlers.length = 0;
     MockWebSocket.instances = [];
     vi.stubGlobal('WebSocket', MockWebSocket as unknown as typeof WebSocket);
     window.sessionStorage.clear();
@@ -351,6 +359,857 @@ describe('TaskTerminalPanel', () => {
     expect(onStatusChange).toHaveBeenCalledWith('failed');
   });
 
+  it('sends terminal.reconnect on websocket open and gates stdin and resize until input is enabled', async () => {
+    const createTerminalSession = vi.fn().mockResolvedValue({
+      session_id: 'term_handshake',
+      status: 'pending',
+      ws_url: 'ws://example.test/terminal-handshake',
+    });
+
+    render(
+      <TaskTerminalPanel
+        open
+        workspaceId="ws_default"
+        projectId="proj_1"
+        taskId="task_handshake"
+        taskTitle="terminal-handshake"
+        taskApi={{ createTerminalSession, getTerminalSession: vi.fn() } as never}
+        onOpenChange={vi.fn()}
+      />,
+    );
+
+    await waitFor(() => expect(MockWebSocket.instances).toHaveLength(1));
+    const socket = MockWebSocket.instances[0];
+
+    act(() => {
+      socket?.open();
+    });
+
+    await waitFor(() => expect(socket?.send).toHaveBeenCalledTimes(1));
+    const sentBeforeHandshake = socket?.send.mock.calls.map(([raw]) => JSON.parse(String(raw)));
+    expect(sentBeforeHandshake).toEqual([
+      expect.objectContaining({
+        type: 'terminal.reconnect',
+        terminal_session_id: 'term_handshake',
+        view: 'notebook.task_terminal',
+        cols: 80,
+        rows: 24,
+      }),
+    ]);
+
+    act(() => {
+      terminalDataHandlers[0]?.('echo gated\n');
+      window.dispatchEvent(new Event('resize'));
+    });
+
+    expect(
+      socket?.send.mock.calls.map(([raw]) => JSON.parse(String(raw))).map((message) => message.type),
+    ).toEqual(['terminal.reconnect']);
+
+    act(() => {
+      socket?.onmessage?.({
+        data: JSON.stringify({ type: 'terminal.replay_start', terminal_session_id: 'term_handshake' }),
+      });
+      socket?.onmessage?.({
+        data: JSON.stringify({
+          type: 'terminal.replay_end',
+          terminal_session_id: 'term_handshake',
+          input_enabled: false,
+        }),
+      });
+      terminalDataHandlers[0]?.('echo live\n');
+      window.dispatchEvent(new Event('resize'));
+    });
+
+    expect(
+      socket?.send.mock.calls.map(([raw]) => JSON.parse(String(raw))).map((message) => message.type),
+    ).toEqual(['terminal.reconnect']);
+
+    act(() => {
+      socket?.onmessage?.({
+        data: JSON.stringify({
+          type: 'terminal.state',
+          terminal_session_id: 'term_handshake',
+          state: 'ready',
+          input_enabled: true,
+        }),
+      });
+      terminalDataHandlers[0]?.('echo live\n');
+      window.dispatchEvent(new Event('resize'));
+    });
+
+    await waitFor(() => {
+      const sentTypes = socket?.send.mock.calls
+        .map(([raw]) => JSON.parse(String(raw)))
+        .map((message) => message.type);
+      expect(sentTypes).toContain('terminal.stdin');
+      expect(sentTypes).toContain('terminal.resize');
+    });
+  });
+
+  it('allows stdin and resize directly when replay_end explicitly enables input', async () => {
+    const createTerminalSession = vi.fn().mockResolvedValue({
+      session_id: 'term_existing_runtime',
+      status: 'pending',
+      ws_url: 'ws://example.test/terminal-existing-runtime',
+    });
+
+    render(
+      <TaskTerminalPanel
+        open
+        workspaceId="ws_default"
+        projectId="proj_1"
+        taskId="task_existing_runtime"
+        taskTitle="terminal-existing-runtime"
+        taskApi={{ createTerminalSession, getTerminalSession: vi.fn() } as never}
+        onOpenChange={vi.fn()}
+      />,
+    );
+
+    await waitFor(() => expect(MockWebSocket.instances).toHaveLength(1));
+    const socket = MockWebSocket.instances[0];
+    act(() => {
+      socket?.open();
+      socket?.onmessage?.({
+        data: JSON.stringify({
+          type: 'terminal.replay_end',
+          terminal_session_id: 'term_existing_runtime',
+          input_enabled: true,
+        }),
+      });
+      terminalDataHandlers[0]?.('echo attached\n');
+      window.dispatchEvent(new Event('resize'));
+    });
+
+    await waitFor(() => {
+      const sentTypes = socket?.send.mock.calls
+        .map(([raw]) => JSON.parse(String(raw)))
+        .map((message) => message.type);
+      expect(sentTypes).toContain('terminal.stdin');
+      expect(sentTypes).toContain('terminal.resize');
+    });
+  });
+
+  it('ignores a stale socket close after remount without clearing the current socket readiness', async () => {
+    const createTerminalSession = vi.fn().mockResolvedValue({
+      session_id: 'term_stale_close',
+      status: 'pending',
+      ws_url: 'ws://example.test/terminal-stale-close',
+    });
+    const taskApi = {
+      createTerminalSession,
+      getTerminalSession: vi.fn(),
+    } as never;
+    const rectSpy = vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockReturnValue({
+      x: 0,
+      y: 0,
+      width: 640,
+      height: 360,
+      top: 0,
+      left: 0,
+      right: 640,
+      bottom: 360,
+      toJSON: () => ({}),
+    } as DOMRect);
+    const { rerender } = render(
+      <TaskTerminalPanel
+        open
+        workspaceId="ws_default"
+        projectId="proj_1"
+        taskId="task_stale_close"
+        taskTitle="terminal-stale-close"
+        taskApi={taskApi}
+        onOpenChange={vi.fn()}
+      />,
+    );
+
+    await waitFor(() => expect(MockWebSocket.instances).toHaveLength(1));
+    const staleSocket = MockWebSocket.instances[0];
+    const staleClose = staleSocket?.onclose;
+    if (staleSocket) {
+      staleSocket.onclose = null;
+    }
+
+    rerender(
+      <TaskTerminalPanel
+        open={false}
+        workspaceId="ws_default"
+        projectId="proj_1"
+        taskId="task_stale_close"
+        taskTitle="terminal-stale-close"
+        taskApi={taskApi}
+        onOpenChange={vi.fn()}
+      />,
+    );
+
+    rerender(
+      <TaskTerminalPanel
+        open
+        workspaceId="ws_default"
+        projectId="proj_1"
+        taskId="task_stale_close"
+        taskTitle="terminal-stale-close"
+        taskApi={taskApi}
+        onOpenChange={vi.fn()}
+      />,
+    );
+
+    await waitFor(() => expect(MockWebSocket.instances).toHaveLength(2));
+    const currentSocket = MockWebSocket.instances[1];
+    act(() => {
+      currentSocket?.open();
+      currentSocket?.onmessage?.({
+        data: JSON.stringify({
+          type: 'terminal.replay_end',
+          terminal_session_id: 'term_stale_close',
+          input_enabled: true,
+        }),
+      });
+    });
+    currentSocket?.send.mockClear();
+
+    act(() => {
+      staleClose?.({ reason: '' });
+      terminalDataHandlers[terminalDataHandlers.length - 1]?.('echo current\n');
+      window.dispatchEvent(new Event('resize'));
+    });
+
+    await waitFor(() => {
+      const sentTypes = currentSocket?.send.mock.calls
+        .map(([raw]) => JSON.parse(String(raw)))
+        .map((message) => message.type);
+      expect(sentTypes).toContain('terminal.stdin');
+      expect(sentTypes).toContain('terminal.resize');
+    });
+    rectSpy.mockRestore();
+  });
+
+  it('applies replay output by session sequence and keeps terminal state copy out of the xterm buffer', async () => {
+    const createTerminalSession = vi.fn().mockResolvedValue({
+      session_id: 'term_replay',
+      status: 'pending',
+      ws_url: 'ws://example.test/terminal-replay',
+    });
+
+    render(
+      <TaskTerminalPanel
+        open
+        workspaceId="ws_default"
+        projectId="proj_1"
+        taskId="task_replay"
+        taskTitle="terminal-replay"
+        taskApi={{ createTerminalSession, getTerminalSession: vi.fn() } as never}
+        onOpenChange={vi.fn()}
+      />,
+    );
+
+    await waitFor(() => expect(MockWebSocket.instances).toHaveLength(1));
+    const socket = MockWebSocket.instances[0];
+    act(() => {
+      socket?.open();
+      socket?.onmessage?.({
+        data: JSON.stringify({ type: 'terminal.replay_start', terminal_session_id: 'term_replay' }),
+      });
+      socket?.onmessage?.({
+        data: JSON.stringify({
+          type: 'terminal.output',
+          terminal_session_id: 'term_replay',
+          seq: 1,
+          encoding: 'utf8',
+          data: 'hello',
+        }),
+      });
+      socket?.onmessage?.({
+        data: JSON.stringify({
+          type: 'terminal.output',
+          terminal_session_id: 'term_replay',
+          seq: 1,
+          encoding: 'utf8',
+          data: 'hello',
+        }),
+      });
+      socket?.onmessage?.({
+        data: JSON.stringify({
+          type: 'terminal.output',
+          terminal_session_id: 'term_replay',
+          seq: 2,
+          encoding: 'base64',
+          data: 'd29ybGQ=',
+        }),
+      });
+      socket?.onmessage?.({
+        data: JSON.stringify({ type: 'terminal.replay_end', terminal_session_id: 'term_replay' }),
+      });
+      socket?.onmessage?.({
+        data: JSON.stringify({
+          type: 'terminal.state',
+          terminal_session_id: 'term_replay',
+          state: 'ready',
+          input_enabled: true,
+        }),
+      });
+    });
+
+    expect(terminalWriteMock).toHaveBeenCalledTimes(2);
+    expect(terminalWriteMock).toHaveBeenNthCalledWith(1, 'hello');
+    expect(terminalWriteMock).toHaveBeenNthCalledWith(2, 'world');
+    expect(terminalWritelnMock).not.toHaveBeenCalledWith(expect.stringContaining('Connecting'));
+    expect(terminalWritelnMock).not.toHaveBeenCalledWith(expect.stringContaining('Terminal ready'));
+    expect(screen.getByTestId('notebook__task-terminal')).not.toHaveTextContent('Terminal ready');
+  });
+
+  it('decodes split multibyte UTF-8 base64 terminal output with session decoder state', async () => {
+    const createTerminalSession = vi.fn().mockResolvedValue({
+      session_id: 'term_split_utf8',
+      status: 'pending',
+      ws_url: 'ws://example.test/terminal-split-utf8',
+    });
+
+    render(
+      <TaskTerminalPanel
+        open
+        workspaceId="ws_default"
+        projectId="proj_1"
+        taskId="task_split_utf8"
+        taskTitle="terminal-split-utf8"
+        taskApi={{ createTerminalSession, getTerminalSession: vi.fn() } as never}
+        onOpenChange={vi.fn()}
+      />,
+    );
+
+    await waitFor(() => expect(MockWebSocket.instances).toHaveLength(1));
+    const socket = MockWebSocket.instances[0];
+    act(() => {
+      socket?.open();
+      socket?.onmessage?.({
+        data: JSON.stringify({ type: 'terminal.replay_start', terminal_session_id: 'term_split_utf8' }),
+      });
+      socket?.onmessage?.({
+        data: JSON.stringify({
+          type: 'terminal.output',
+          terminal_session_id: 'term_split_utf8',
+          seq: 1,
+          encoding: 'base64',
+          data: '5Lg=',
+        }),
+      });
+      socket?.onmessage?.({
+        data: JSON.stringify({
+          type: 'terminal.output',
+          terminal_session_id: 'term_split_utf8',
+          seq: 2,
+          encoding: 'base64',
+          data: 'rQ==',
+        }),
+      });
+    });
+
+    const renderedOutput = terminalWriteMock.mock.calls.map(([value]) => String(value)).join('');
+    expect(renderedOutput).toBe('中');
+    expect(renderedOutput).not.toContain('\uFFFD');
+  });
+
+  it('preserves base64 decoder state across partial replay_end into live output', async () => {
+    const createTerminalSession = vi.fn().mockResolvedValue({
+      session_id: 'term_partial_split_utf8',
+      status: 'pending',
+      ws_url: 'ws://example.test/terminal-partial-split-utf8',
+    });
+
+    render(
+      <TaskTerminalPanel
+        open
+        workspaceId="ws_default"
+        projectId="proj_1"
+        taskId="task_partial_split_utf8"
+        taskTitle="terminal-partial-split-utf8"
+        taskApi={{ createTerminalSession, getTerminalSession: vi.fn() } as never}
+        onOpenChange={vi.fn()}
+      />,
+    );
+
+    await waitFor(() => expect(MockWebSocket.instances).toHaveLength(1));
+    const socket = MockWebSocket.instances[0];
+    act(() => {
+      socket?.open();
+      socket?.onmessage?.({
+        data: JSON.stringify({
+          type: 'terminal.replay_start',
+          terminal_session_id: 'term_partial_split_utf8',
+          status: 'partial',
+          gap: true,
+          earliest_seq: 1,
+          latest_seq: 1,
+        }),
+      });
+      socket?.onmessage?.({
+        data: JSON.stringify({
+          type: 'terminal.output',
+          terminal_session_id: 'term_partial_split_utf8',
+          seq: 1,
+          encoding: 'base64',
+          data: '5Lg=',
+        }),
+      });
+      socket?.onmessage?.({
+        data: JSON.stringify({
+          type: 'terminal.replay_end',
+          terminal_session_id: 'term_partial_split_utf8',
+          status: 'partial',
+          gap: true,
+          latest_seq: 1,
+          input_enabled: true,
+        }),
+      });
+      socket?.onmessage?.({
+        data: JSON.stringify({
+          type: 'terminal.output',
+          terminal_session_id: 'term_partial_split_utf8',
+          seq: 2,
+          encoding: 'base64',
+          data: 'rQ==',
+        }),
+      });
+    });
+
+    const renderedOutput = terminalWriteMock.mock.calls.map(([value]) => String(value)).join('');
+    expect(renderedOutput).toBe('中');
+    expect(renderedOutput).not.toContain('\uFFFD');
+  });
+
+  it('drops base64 decoder state when unavailable replay declares an unprovable byte boundary', async () => {
+    const createTerminalSession = vi.fn().mockResolvedValue({
+      session_id: 'term_unavailable_decoder',
+      status: 'pending',
+      ws_url: 'ws://example.test/terminal-unavailable-decoder',
+    });
+
+    render(
+      <TaskTerminalPanel
+        open
+        workspaceId="ws_default"
+        projectId="proj_1"
+        taskId="task_unavailable_decoder"
+        taskTitle="terminal-unavailable-decoder"
+        taskApi={{ createTerminalSession, getTerminalSession: vi.fn() } as never}
+        onOpenChange={vi.fn()}
+      />,
+    );
+
+    await waitFor(() => expect(MockWebSocket.instances).toHaveLength(1));
+    const socket = MockWebSocket.instances[0];
+    act(() => {
+      socket?.open();
+      socket?.onmessage?.({
+        data: JSON.stringify({
+          type: 'terminal.replay_start',
+          terminal_session_id: 'term_unavailable_decoder',
+          status: 'complete',
+          gap: false,
+        }),
+      });
+      socket?.onmessage?.({
+        data: JSON.stringify({
+          type: 'terminal.output',
+          terminal_session_id: 'term_unavailable_decoder',
+          seq: 1,
+          encoding: 'base64',
+          data: '5Lg=',
+        }),
+      });
+      socket?.onmessage?.({
+        data: JSON.stringify({
+          type: 'terminal.replay_start',
+          terminal_session_id: 'term_unavailable_decoder',
+          status: 'unavailable',
+          gap: true,
+          latest_seq: 1,
+          next_seq: 2,
+        }),
+      });
+      socket?.onmessage?.({
+        data: JSON.stringify({
+          type: 'terminal.replay_end',
+          terminal_session_id: 'term_unavailable_decoder',
+          status: 'unavailable',
+          gap: true,
+          latest_seq: 1,
+          next_seq: 2,
+          input_enabled: true,
+        }),
+      });
+      socket?.onmessage?.({
+        data: JSON.stringify({
+          type: 'terminal.output',
+          terminal_session_id: 'term_unavailable_decoder',
+          seq: 2,
+          encoding: 'base64',
+          data: 'T0sK',
+        }),
+      });
+    });
+
+    const renderedOutput = terminalWriteMock.mock.calls.map(([value]) => String(value)).join('');
+    expect(renderedOutput).toBe('OK\n');
+    expect(renderedOutput).not.toContain('\uFFFD');
+  });
+
+  it('does not let duplicate base64 output mutate decoder state before seq acceptance', async () => {
+    const createTerminalSession = vi.fn().mockResolvedValue({
+      session_id: 'term_duplicate_decoder',
+      status: 'pending',
+      ws_url: 'ws://example.test/terminal-duplicate-decoder',
+    });
+
+    render(
+      <TaskTerminalPanel
+        open
+        workspaceId="ws_default"
+        projectId="proj_1"
+        taskId="task_duplicate_decoder"
+        taskTitle="terminal-duplicate-decoder"
+        taskApi={{ createTerminalSession, getTerminalSession: vi.fn() } as never}
+        onOpenChange={vi.fn()}
+      />,
+    );
+
+    await waitFor(() => expect(MockWebSocket.instances).toHaveLength(1));
+    const socket = MockWebSocket.instances[0];
+    act(() => {
+      socket?.open();
+      socket?.onmessage?.({
+        data: JSON.stringify({ type: 'terminal.replay_start', terminal_session_id: 'term_duplicate_decoder' }),
+      });
+      socket?.onmessage?.({
+        data: JSON.stringify({
+          type: 'terminal.output',
+          terminal_session_id: 'term_duplicate_decoder',
+          seq: 1,
+          encoding: 'base64',
+          data: '5Lg=',
+        }),
+      });
+      socket?.onmessage?.({
+        data: JSON.stringify({
+          type: 'terminal.output',
+          terminal_session_id: 'term_duplicate_decoder',
+          seq: 1,
+          encoding: 'base64',
+          data: 'rQ==',
+        }),
+      });
+      socket?.onmessage?.({
+        data: JSON.stringify({
+          type: 'terminal.output',
+          terminal_session_id: 'term_duplicate_decoder',
+          seq: 2,
+          encoding: 'base64',
+          data: 'rQ==',
+        }),
+      });
+    });
+
+    const renderedOutput = terminalWriteMock.mock.calls.map(([value]) => String(value)).join('');
+    expect(renderedOutput).toBe('中');
+    expect(renderedOutput).not.toContain('\uFFFD');
+  });
+
+  it('ignores stale socket messages after remount without writing xterm or advancing seq state', async () => {
+    const createTerminalSession = vi.fn().mockResolvedValue({
+      session_id: 'term_stale_message',
+      status: 'pending',
+      ws_url: 'ws://example.test/terminal-stale-message',
+    });
+    const taskApi = {
+      createTerminalSession,
+      getTerminalSession: vi.fn(),
+    } as never;
+    const { rerender } = render(
+      <TaskTerminalPanel
+        open
+        workspaceId="ws_default"
+        projectId="proj_1"
+        taskId="task_stale_message"
+        taskTitle="terminal-stale-message"
+        taskApi={taskApi}
+        onOpenChange={vi.fn()}
+      />,
+    );
+
+    await waitFor(() => expect(MockWebSocket.instances).toHaveLength(1));
+    const staleSocket = MockWebSocket.instances[0];
+    const staleMessage = staleSocket?.onmessage;
+    if (staleSocket) {
+      staleSocket.onclose = null;
+    }
+
+    rerender(
+      <TaskTerminalPanel
+        open={false}
+        workspaceId="ws_default"
+        projectId="proj_1"
+        taskId="task_stale_message"
+        taskTitle="terminal-stale-message"
+        taskApi={taskApi}
+        onOpenChange={vi.fn()}
+      />,
+    );
+
+    rerender(
+      <TaskTerminalPanel
+        open
+        workspaceId="ws_default"
+        projectId="proj_1"
+        taskId="task_stale_message"
+        taskTitle="terminal-stale-message"
+        taskApi={taskApi}
+        onOpenChange={vi.fn()}
+      />,
+    );
+
+    await waitFor(() => expect(MockWebSocket.instances).toHaveLength(2));
+    const currentSocket = MockWebSocket.instances[1];
+    act(() => {
+      currentSocket?.open();
+      currentSocket?.onmessage?.({
+        data: JSON.stringify({ type: 'terminal.replay_start', terminal_session_id: 'term_stale_message' }),
+      });
+    });
+    terminalWriteMock.mockClear();
+
+    act(() => {
+      staleMessage?.({
+        data: JSON.stringify({
+          type: 'terminal.output',
+          terminal_session_id: 'term_stale_message',
+          seq: 1,
+          chunk: 'stale output',
+        }),
+      });
+    });
+    expect(terminalWriteMock).not.toHaveBeenCalled();
+
+    act(() => {
+      currentSocket?.onmessage?.({
+        data: JSON.stringify({
+          type: 'terminal.output',
+          terminal_session_id: 'term_stale_message',
+          seq: 1,
+          encoding: 'base64',
+          data: '5Lg=',
+        }),
+      });
+      currentSocket?.onmessage?.({
+        data: JSON.stringify({
+          type: 'terminal.output',
+          terminal_session_id: 'term_stale_message',
+          seq: 2,
+          encoding: 'base64',
+          data: 'rQ==',
+        }),
+      });
+    });
+
+    const renderedOutput = terminalWriteMock.mock.calls.map(([value]) => String(value)).join('');
+    expect(renderedOutput).toBe('中');
+    expect(renderedOutput).not.toContain('\uFFFD');
+  });
+
+  it('clears decoder state when a gapped base64 output is rejected before later accepted output', async () => {
+    const createTerminalSession = vi.fn().mockResolvedValue({
+      session_id: 'term_gap_decoder',
+      status: 'pending',
+      ws_url: 'ws://example.test/terminal-gap-decoder',
+    });
+    const getTerminalSession = vi.fn().mockResolvedValue({
+      id: 'term_gap_decoder',
+      status: 'disconnected',
+      cols: 80,
+      rows: 24,
+      created_at: '2026-04-02T00:00:00Z',
+      last_activity_at: '2026-04-02T00:00:02Z',
+      ws_url: 'ws://example.test/terminal-gap-decoder-recovered',
+    });
+
+    render(
+      <TaskTerminalPanel
+        open
+        workspaceId="ws_default"
+        projectId="proj_1"
+        taskId="task_gap_decoder"
+        taskTitle="terminal-gap-decoder"
+        taskApi={{ createTerminalSession, getTerminalSession } as never}
+        onOpenChange={vi.fn()}
+      />,
+    );
+
+    await waitFor(() => expect(MockWebSocket.instances).toHaveLength(1));
+    const socket = MockWebSocket.instances[0];
+    act(() => {
+      socket?.open();
+      socket?.onmessage?.({
+        data: JSON.stringify({ type: 'terminal.replay_start', terminal_session_id: 'term_gap_decoder' }),
+      });
+      socket?.onmessage?.({
+        data: JSON.stringify({
+          type: 'terminal.output',
+          terminal_session_id: 'term_gap_decoder',
+          seq: 1,
+          encoding: 'base64',
+          data: '5Lg=',
+        }),
+      });
+      socket?.onmessage?.({
+        data: JSON.stringify({
+          type: 'terminal.output',
+          terminal_session_id: 'term_gap_decoder',
+          seq: 3,
+          encoding: 'base64',
+          data: '5Lg=',
+        }),
+      });
+    });
+
+    await waitFor(() => expect(MockWebSocket.instances).toHaveLength(2));
+    const recoveredSocket = MockWebSocket.instances[1];
+    act(() => {
+      recoveredSocket?.open();
+      recoveredSocket?.onmessage?.({
+        data: JSON.stringify({
+          type: 'terminal.replay_start',
+          terminal_session_id: 'term_gap_decoder',
+          status: 'complete',
+          gap: false,
+          earliest_seq: 2,
+          latest_seq: 2,
+        }),
+      });
+      recoveredSocket?.onmessage?.({
+        data: JSON.stringify({
+          type: 'terminal.output',
+          terminal_session_id: 'term_gap_decoder',
+          seq: 2,
+          encoding: 'base64',
+          data: '5paH',
+        }),
+      });
+    });
+
+    const renderedOutput = terminalWriteMock.mock.calls.map(([value]) => String(value)).join('');
+    expect(renderedOutput).toBe('文');
+    expect(renderedOutput).not.toContain('\uFFFD');
+  });
+
+  it('surfaces a replay sequence gap outside xterm without writing synthetic recovery text into the buffer', async () => {
+    const createTerminalSession = vi.fn().mockResolvedValue({
+      session_id: 'term_gap',
+      status: 'pending',
+      ws_url: 'ws://example.test/terminal-gap',
+    });
+
+    render(
+      <TaskTerminalPanel
+        open
+        workspaceId="ws_default"
+        projectId="proj_1"
+        taskId="task_gap"
+        taskTitle="terminal-gap"
+        taskApi={{ createTerminalSession, getTerminalSession: vi.fn() } as never}
+        onOpenChange={vi.fn()}
+      />,
+    );
+
+    await waitFor(() => expect(MockWebSocket.instances).toHaveLength(1));
+    const socket = MockWebSocket.instances[0];
+    act(() => {
+      socket?.open();
+      socket?.onmessage?.({
+        data: JSON.stringify({ type: 'terminal.replay_start', terminal_session_id: 'term_gap' }),
+      });
+      socket?.onmessage?.({
+        data: JSON.stringify({
+          type: 'terminal.output',
+          terminal_session_id: 'term_gap',
+          seq: 2,
+          encoding: 'utf8',
+          data: 'late output',
+        }),
+      });
+    });
+
+    await waitFor(() => {
+      expect(screen.getByTestId('notebook__task-terminal')).toHaveTextContent(
+        'Some terminal output may be missing. Reconnecting to recover a continuous stream.',
+      );
+    });
+    expect(terminalWriteMock).not.toHaveBeenCalledWith('late output');
+    expect(terminalWritelnMock).not.toHaveBeenCalledWith(
+      expect.stringContaining('Some terminal output may be missing'),
+    );
+  });
+
+  it('continues live output after unavailable replay by aligning to the server continuation seq', async () => {
+    const createTerminalSession = vi.fn().mockResolvedValue({
+      session_id: 'term_unavailable',
+      status: 'pending',
+      ws_url: 'ws://example.test/terminal-unavailable',
+    });
+
+    render(
+      <TaskTerminalPanel
+        open
+        workspaceId="ws_default"
+        projectId="proj_1"
+        taskId="task_unavailable"
+        taskTitle="terminal-unavailable"
+        taskApi={{ createTerminalSession, getTerminalSession: vi.fn() } as never}
+        onOpenChange={vi.fn()}
+      />,
+    );
+
+    await waitFor(() => expect(MockWebSocket.instances).toHaveLength(1));
+    const socket = MockWebSocket.instances[0];
+    act(() => {
+      socket?.open();
+      socket?.onmessage?.({
+        data: JSON.stringify({
+          type: 'terminal.replay_start',
+          terminal_session_id: 'term_unavailable',
+          status: 'unavailable',
+          gap: true,
+          latest_seq: 1,
+          next_seq: 2,
+        }),
+      });
+      socket?.onmessage?.({
+        data: JSON.stringify({
+          type: 'terminal.replay_end',
+          terminal_session_id: 'term_unavailable',
+          status: 'unavailable',
+          gap: true,
+          latest_seq: 1,
+          next_seq: 2,
+          input_enabled: true,
+        }),
+      });
+      socket?.onmessage?.({
+        data: JSON.stringify({
+          type: 'terminal.output',
+          terminal_session_id: 'term_unavailable',
+          seq: 2,
+          chunk: 'live-after-unavailable\n',
+        }),
+      });
+    });
+
+    expect(terminalWriteMock).toHaveBeenCalledWith('live-after-unavailable\n');
+    expect(socket?.close).not.toHaveBeenCalled();
+    expect(MockWebSocket.instances).toHaveLength(1);
+    expect(screen.getByTestId('notebook__task-terminal')).toHaveTextContent(
+      'Some earlier terminal output is no longer available.',
+    );
+  });
+
   it('deletes a failed backend session when the user ends the failed terminal tab', async () => {
     const createTerminalSession = vi.fn().mockResolvedValue({
       session_id: 'term_failed_close',
@@ -440,7 +1299,7 @@ describe('TaskTerminalPanel', () => {
     );
     expect(screen.getByTestId('notebook__task-terminal')).not.toHaveTextContent('Connecting');
     expect(screen.getByTestId('notebook__task-terminal')).not.toHaveTextContent('Preparing');
-    expect(terminalWritelnMock).toHaveBeenCalledWith('Reconnecting to the previous terminal session...');
+    expect(terminalWritelnMock).not.toHaveBeenCalledWith('Reconnecting to the previous terminal session...');
   });
 
   it('retries the same stored session after an unexpected reconnect-time websocket close instead of getting stuck closed', async () => {
@@ -669,6 +1528,7 @@ describe('TaskTerminalPanel', () => {
       createTerminalSession,
       getTerminalSession: vi.fn(),
     } as never;
+    const onStatusChange = vi.fn();
     const { rerender } = render(
       <TaskTerminalPanel
         open
@@ -678,6 +1538,7 @@ describe('TaskTerminalPanel', () => {
         taskTitle="terminal-focus-token"
         taskApi={taskApi}
         onOpenChange={vi.fn()}
+        onStatusChange={onStatusChange}
         focusRequestToken={0}
       />,
     );
@@ -691,11 +1552,10 @@ describe('TaskTerminalPanel', () => {
       });
     });
 
-    await waitFor(() => {
-      expect(terminalWritelnMock).toHaveBeenCalledWith(
-        'Terminal ready for terminal-focus-token\r\n',
-      );
-    });
+    await waitFor(() => expect(onStatusChange).toHaveBeenCalledWith('active'));
+    expect(terminalWritelnMock).not.toHaveBeenCalledWith(
+      'Terminal ready for terminal-focus-token\r\n',
+    );
     expect(terminalFocusMock).not.toHaveBeenCalled();
 
     rerender(
@@ -707,6 +1567,7 @@ describe('TaskTerminalPanel', () => {
         taskTitle="terminal-focus-token"
         taskApi={taskApi}
         onOpenChange={vi.fn()}
+        onStatusChange={onStatusChange}
         focusRequestToken={1}
       />,
     );
@@ -769,11 +1630,10 @@ describe('TaskTerminalPanel', () => {
       });
     });
 
-    await waitFor(() => {
-      expect(terminalWritelnMock).toHaveBeenCalledWith(
-        'Terminal ready for terminal-visible-restore\r\n',
-      );
-    });
+    await Promise.resolve();
+    expect(terminalWritelnMock).not.toHaveBeenCalledWith(
+      'Terminal ready for terminal-visible-restore\r\n',
+    );
     expect(terminalFocusMock).not.toHaveBeenCalled();
     expect(getTerminalSession).toHaveBeenCalledWith(
       'ws_default',
@@ -1153,9 +2013,86 @@ describe('TaskTerminalPanel', () => {
       });
     });
 
-    await waitFor(() => {
-      expect(terminalWritelnMock).toHaveBeenCalledWith('Terminal ready for terminal-mount\r\n');
+    await Promise.resolve();
+    expect(terminalWritelnMock).not.toHaveBeenCalledWith('Terminal ready for terminal-mount\r\n');
+    expect(terminalFocusMock).not.toHaveBeenCalled();
+  });
+
+  it('does not steal focus from editable controls when a pending terminal focus request completes', async () => {
+    const createTerminalSession = vi.fn().mockResolvedValue({
+      session_id: 'term_focus_guard',
+      status: 'pending',
+      ws_url: 'ws://example.test/terminal-focus-guard',
     });
+
+    const { rerender } = render(
+      <>
+        <input aria-label="Chat draft" />
+        <TaskTerminalPanel
+          open={false}
+          workspaceId="ws_default"
+          projectId="proj_1"
+          taskId="task_focus_guard"
+          taskTitle="terminal-focus-guard"
+          taskApi={{ createTerminalSession, getTerminalSession: vi.fn() } as never}
+          onOpenChange={vi.fn()}
+          focusRequestToken={0}
+        />
+      </>,
+    );
+
+    const input = screen.getByLabelText('Chat draft');
+    act(() => {
+      input.focus();
+    });
+
+    rerender(
+      <>
+        <input aria-label="Chat draft" />
+        <TaskTerminalPanel
+          open
+          workspaceId="ws_default"
+          projectId="proj_1"
+          taskId="task_focus_guard"
+          taskTitle="terminal-focus-guard"
+          taskApi={{ createTerminalSession, getTerminalSession: vi.fn() } as never}
+          onOpenChange={vi.fn()}
+          focusRequestToken={1}
+        />
+      </>,
+    );
+
+    await waitFor(() => expect(MockWebSocket.instances).toHaveLength(1));
+    const socket = MockWebSocket.instances[0];
+
+    act(() => {
+      socket?.open();
+      socket?.onmessage?.({
+        data: JSON.stringify({
+          type: 'terminal.replay_end',
+          terminal_session_id: 'term_focus_guard',
+          input_enabled: true,
+        }),
+      });
+    });
+
+    await Promise.resolve();
+    expect(terminalFocusMock).not.toHaveBeenCalled();
+    expect(document.activeElement).toBe(input);
+
+    act(() => {
+      input.blur();
+      socket?.onmessage?.({
+        data: JSON.stringify({
+          type: 'terminal.state',
+          terminal_session_id: 'term_focus_guard',
+          state: 'ready',
+          input_enabled: true,
+        }),
+      });
+    });
+
+    await Promise.resolve();
     expect(terminalFocusMock).not.toHaveBeenCalled();
   });
 

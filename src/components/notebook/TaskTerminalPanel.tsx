@@ -13,6 +13,17 @@ import type {
 } from '@/lib/types/task';
 import { toast } from '@/components/ui/toast';
 import { useTranslations } from 'next-intl';
+import {
+  TASK_TERMINAL_RECONNECT_VIEW,
+  decodeTerminalOutputPayload,
+  isEditableFocusOwner,
+  readTerminalInputEnabled,
+  readTerminalOutputPayloadIdentity,
+  readTerminalProtocolNumber,
+  readTerminalProtocolSessionId,
+  readTerminalStateValue,
+  terminalEventBelongsToSession,
+} from './task-terminal-protocol';
 
 export type TerminalStatus =
   | 'idle'
@@ -269,7 +280,6 @@ export function TaskTerminalPanel({
   projectId,
   taskId,
   sessionStorageScope = 'default',
-  taskTitle,
   taskApi,
   disabled = false,
   closeRequestToken = 0,
@@ -286,9 +296,16 @@ export function TaskTerminalPanel({
   const fitAddonRef = React.useRef<FitAddon | null>(null);
   const socketRef = React.useRef<WebSocket | null>(null);
   const resizeHandlerRef = React.useRef<(() => void) | null>(null);
-  const readyBannerWrittenRef = React.useRef(false);
+  const resizeObserverRef = React.useRef<ResizeObserver | null>(null);
+  const handshakeReadyRef = React.useRef(false);
+  const lastAppliedSeqBySessionRef = React.useRef<Map<string, number>>(new Map());
+  const acceptedSeqBoundaryBySessionRef = React.useRef<Map<string, number>>(new Map());
+  const expectedNextSeqBySessionRef = React.useRef<Map<string, number>>(new Map());
+  const appliedPayloadsBySessionRef = React.useRef<Map<string, Map<number, string>>>(new Map());
+  const terminalOutputDecodersBySessionRef = React.useRef<Map<string, TextDecoder>>(new Map());
   const [status, setStatus] = React.useState<TerminalStatus>('idle');
   const [errorMessage, setErrorMessage] = React.useState<string | null>(null);
+  const [degradationMessage, setDegradationMessage] = React.useState<string | null>(null);
   const [progressReason, setProgressReason] = React.useState<TerminalProgressReason>(null);
   const statusRef = React.useRef<TerminalStatus>('idle');
   const explicitCloseRequestedRef = React.useRef(false);
@@ -308,7 +325,6 @@ export function TaskTerminalPanel({
   const sessionResolutionPromiseRef =
     React.useRef<Promise<TerminalSessionResolution> | null>(null);
   const translationRef = React.useRef(t);
-  const taskTitleRef = React.useRef(taskTitle);
   const onOpenChangeRef = React.useRef(onOpenChange);
   const onSessionResolvedRef = React.useRef(onSessionResolved);
   const onStatusChangeRef = React.useRef(onStatusChange);
@@ -322,10 +338,6 @@ export function TaskTerminalPanel({
   React.useEffect(() => {
     translationRef.current = t;
   }, [t]);
-
-  React.useEffect(() => {
-    taskTitleRef.current = taskTitle;
-  }, [taskTitle]);
 
   React.useEffect(() => {
     onOpenChangeRef.current = onOpenChange;
@@ -422,7 +434,9 @@ export function TaskTerminalPanel({
     suppressResolvedConnectionAfterCloseRef.current = false;
     pendingTransportReconnectRef.current = false;
     reconnectingRef.current = false;
+    terminalOutputDecodersBySessionRef.current.clear();
     setErrorMessage(null);
+    setDegradationMessage(null);
     setProgressReason(null);
     invalidateSessionHandle({ clearStored: true });
     updateStatus('closed');
@@ -442,6 +456,7 @@ export function TaskTerminalPanel({
     const friendlyReason = describeTerminalError(translationRef.current, message);
     updateStatus('failed');
     setErrorMessage(friendlyReason);
+    setDegradationMessage(null);
     setProgressReason(null);
     toast.error(friendlyReason);
   }, [invalidateSessionHandle, storeSessionId, updateStatus]);
@@ -463,6 +478,7 @@ export function TaskTerminalPanel({
         onSessionResolvedRef.current?.(sessionId);
       }
       setProgressReason(null);
+      setDegradationMessage(null);
       if (result === 'retained') {
         setErrorMessage(null);
         updateStatus('recovering');
@@ -507,10 +523,12 @@ export function TaskTerminalPanel({
           setProgressReason('runner_offline');
           updateStatus('preparing');
           setErrorMessage(null);
+          setDegradationMessage(null);
         } else if (message.includes('task_run_in_progress')) {
           setProgressReason('run_in_progress');
           updateStatus('preparing');
           setErrorMessage(null);
+          setDegradationMessage(null);
         } else {
           throw error;
         }
@@ -628,11 +646,18 @@ export function TaskTerminalPanel({
     workspaceId,
   ]);
 
-  const releaseSocketResources = React.useCallback(({ close = true }: { close?: boolean } = {}) => {
+  const releaseSocketResources = React.useCallback(({
+    close = true,
+    socket: expectedSocket,
+  }: { close?: boolean; socket?: WebSocket | null } = {}) => {
+    if (expectedSocket && socketRef.current !== expectedSocket) {
+      return;
+    }
     if (resizeHandlerRef.current) {
       window.removeEventListener('resize', resizeHandlerRef.current);
       resizeHandlerRef.current = null;
     }
+    handshakeReadyRef.current = false;
     const socket = socketRef.current;
     socketRef.current = null;
     if (socket) {
@@ -672,6 +697,10 @@ export function TaskTerminalPanel({
     if (!pendingTerminalFocusRef.current) return;
     if (!visibleRef.current) return;
     if (!terminalRef.current) return;
+    if (isEditableFocusOwner(document.activeElement)) {
+      pendingTerminalFocusRef.current = false;
+      return;
+    }
     terminalRef.current?.focus();
     pendingTerminalFocusRef.current = false;
   }, []);
@@ -705,6 +734,8 @@ export function TaskTerminalPanel({
       window.cancelAnimationFrame(fitFrameRef.current);
       fitFrameRef.current = null;
     }
+    resizeObserverRef.current?.disconnect();
+    resizeObserverRef.current = null;
     fitAddonRef.current?.dispose();
     fitAddonRef.current = null;
     terminalRef.current?.dispose();
@@ -731,12 +762,155 @@ export function TaskTerminalPanel({
       scheduleFit();
       terminalRef.current = terminal;
       fitAddonRef.current = fitAddon;
-      readyBannerWrittenRef.current = false;
+      if (typeof ResizeObserver !== 'undefined') {
+        const observer = new ResizeObserver(() => {
+          scheduleFit();
+          resizeHandlerRef.current?.();
+        });
+        observer.observe(containerRef.current);
+        resizeObserverRef.current = observer;
+      }
     }
     return () => {
       disposeTerminal();
     };
   }, [disposeTerminal, hasInteractiveMount, open, scheduleFit]);
+
+  const sendTerminalResize = React.useCallback((socket: WebSocket) => {
+    if (socketRef.current !== socket) return;
+    if (!handshakeReadyRef.current) return;
+    if (!terminalRef.current) {
+      return;
+    }
+    if (fitAddonRef.current && isTerminalContainerLaidOut()) {
+      fitAddonRef.current.fit();
+      scheduleFit();
+    }
+    if (socket.readyState !== WebSocket.OPEN) return;
+    socket.send(JSON.stringify({
+      type: 'terminal.resize',
+      cols: terminalRef.current.cols,
+      rows: terminalRef.current.rows,
+    }));
+  }, [isTerminalContainerLaidOut, scheduleFit]);
+
+  const markTerminalHandshakeReady = React.useCallback((socket: WebSocket) => {
+    if (socketRef.current !== socket) return;
+    handshakeReadyRef.current = true;
+    pendingTransportReconnectRef.current = false;
+    reconnectingRef.current = false;
+    updateStatus('active');
+    setErrorMessage(null);
+    setProgressReason(null);
+    sendTerminalResize(socket);
+    focusTerminalIfRequested();
+  }, [focusTerminalIfRequested, sendTerminalResize, updateStatus]);
+
+  const alignUnavailableReplayContinuation = React.useCallback((
+    sessionId: string,
+    message: TaskTerminalServerEvent,
+  ) => {
+    if (!('status' in message) || message.status !== 'unavailable') {
+      return false;
+    }
+    const explicitNextSeq = readTerminalProtocolNumber(message, 'next_seq');
+    const latestSeq = readTerminalProtocolNumber(message, 'latest_seq');
+    const continuationSeq = explicitNextSeq ?? (latestSeq !== null ? latestSeq + 1 : null);
+    if (continuationSeq === null) {
+      return true;
+    }
+    const nextExpectedSeq = Math.max(1, continuationSeq);
+    expectedNextSeqBySessionRef.current.set(sessionId, nextExpectedSeq);
+    acceptedSeqBoundaryBySessionRef.current.set(sessionId, nextExpectedSeq - 1);
+    return true;
+  }, []);
+
+  const getAppliedPayloadsForSession = React.useCallback((sessionId: string) => {
+    const existing = appliedPayloadsBySessionRef.current.get(sessionId);
+    if (existing) return existing;
+    const created = new Map<number, string>();
+    appliedPayloadsBySessionRef.current.set(sessionId, created);
+    return created;
+  }, []);
+
+  const getTerminalOutputDecoderForSession = React.useCallback((sessionId: string) => {
+    if (typeof TextDecoder === 'undefined') return null;
+    const existing = terminalOutputDecodersBySessionRef.current.get(sessionId);
+    if (existing) return existing;
+    const created = new TextDecoder();
+    terminalOutputDecodersBySessionRef.current.set(sessionId, created);
+    return created;
+  }, []);
+
+  const markProtocolDegraded = React.useCallback((message: string, sessionId?: string) => {
+    if (sessionId) {
+      terminalOutputDecodersBySessionRef.current.delete(sessionId);
+    }
+    setDegradationMessage(message);
+    pendingTransportReconnectRef.current = true;
+    handshakeReadyRef.current = false;
+    updateStatus('recovering');
+    const socket = socketRef.current;
+    if (socket && socket.readyState === WebSocket.OPEN) {
+      socket.close();
+    }
+  }, [updateStatus]);
+
+  const shouldAcceptSequencedTerminalOutput = React.useCallback((
+    sessionId: string,
+    seq: number,
+    payloadIdentity: string,
+  ) => {
+    const expectedSeq =
+      expectedNextSeqBySessionRef.current.get(sessionId) ??
+      ((lastAppliedSeqBySessionRef.current.get(sessionId) ?? 0) + 1);
+    const appliedPayloads = getAppliedPayloadsForSession(sessionId);
+
+    if (seq < expectedSeq) {
+      const previousPayloadIdentity = appliedPayloads.get(seq);
+      if (previousPayloadIdentity !== undefined && previousPayloadIdentity !== payloadIdentity) {
+        setErrorMessage(translationRef.current('terminal_error_connection_failed'));
+        setDegradationMessage(null);
+        updateStatus('failed');
+      }
+      return false;
+    }
+
+    if (seq > expectedSeq) {
+      markProtocolDegraded(translationRef.current('terminal_replay_gap'), sessionId);
+      return false;
+    }
+
+    return true;
+  }, [
+    getAppliedPayloadsForSession,
+    markProtocolDegraded,
+    updateStatus,
+  ]);
+
+  const applySequencedTerminalOutput = React.useCallback((
+    sessionId: string,
+    seq: number,
+    payload: string,
+    payloadIdentity: string,
+  ) => {
+    const appliedPayloads = getAppliedPayloadsForSession(sessionId);
+    terminalRef.current?.write(payload);
+    lastAppliedSeqBySessionRef.current.set(sessionId, seq);
+    acceptedSeqBoundaryBySessionRef.current.set(sessionId, seq);
+    expectedNextSeqBySessionRef.current.set(sessionId, seq + 1);
+    appliedPayloads.set(seq, payloadIdentity);
+    if (appliedPayloads.size > 1000) {
+      const oldestSeq = Math.min(...appliedPayloads.keys());
+      appliedPayloads.delete(oldestSeq);
+    }
+    scheduleFit();
+    focusTerminalIfRequested();
+  }, [
+    focusTerminalIfRequested,
+    getAppliedPayloadsForSession,
+    scheduleFit,
+  ]);
 
   React.useEffect(() => {
     if (!open || !hasInteractiveMount || disabled || !terminalRef.current || socketRef.current) return;
@@ -761,10 +935,8 @@ export function TaskTerminalPanel({
           resolution.reason ?? 'terminal_connection_failed',
         );
         setErrorMessage(friendlyReason);
+        setDegradationMessage(null);
         setProgressReason(null);
-        terminalRef.current.writeln(
-          `\r\n${translationRef.current('terminal_failed', { reason: friendlyReason })}`,
-        );
         return;
       }
       if (resolution.kind === 'closed') {
@@ -787,17 +959,17 @@ export function TaskTerminalPanel({
       }
       const session = resolution.handle;
       updateStatus(reconnectingRef.current ? 'recovering' : 'preparing');
+      setErrorMessage(null);
       setProgressReason(null);
-      terminalRef.current.writeln(
-        reconnectingRef.current
-          ? translationRef.current('terminal_reconnecting')
-          : translationRef.current('terminal_connecting'),
-      );
-        const socket = new WebSocket(session.wsUrl);
+      handshakeReadyRef.current = false;
+      const socket = new WebSocket(session.wsUrl);
       socketRef.current = socket;
+      const isCurrentSocket = () => socketRef.current === socket;
 
       const dataDisposable = terminalRef.current.onData((data) => {
+        if (!isCurrentSocket()) return;
         if (socket.readyState !== WebSocket.OPEN) return;
+        if (!handshakeReadyRef.current) return;
         socket.send(JSON.stringify({
           type: 'terminal.stdin',
           data,
@@ -805,36 +977,46 @@ export function TaskTerminalPanel({
       });
 
       const resizeHandler = () => {
+        if (!isCurrentSocket()) return;
         if (
           !terminalRef.current
           || !fitAddonRef.current
-          || socket.readyState !== WebSocket.OPEN
           || !isTerminalContainerLaidOut()
         ) {
           return;
         }
         fitAddonRef.current.fit();
         scheduleFit();
-        socket.send(JSON.stringify({
-          type: 'terminal.resize',
-          cols: terminalRef.current.cols,
-          rows: terminalRef.current.rows,
-        }));
+        sendTerminalResize(socket);
       };
       resizeHandlerRef.current = resizeHandler;
       window.addEventListener('resize', resizeHandler);
 
       socket.onopen = () => {
+        if (cancelled || !isCurrentSocket()) return;
         updateStatus('connecting');
         setErrorMessage(null);
         setProgressReason(null);
         pendingTransportReconnectRef.current = false;
-        reconnectingRef.current = false;
         fitAddonRef.current?.fit();
         scheduleFit();
-        resizeHandler();
+        const lastAppliedSeq = lastAppliedSeqBySessionRef.current.get(session.sessionId) ?? 0;
+        const acceptedSeqBoundary =
+          acceptedSeqBoundaryBySessionRef.current.get(session.sessionId) ?? 0;
+        const afterSeq = Math.max(lastAppliedSeq, acceptedSeqBoundary);
+        socket.send(JSON.stringify({
+          type: 'terminal.reconnect',
+          terminal_session_id: session.sessionId,
+          view: TASK_TERMINAL_RECONNECT_VIEW,
+          cols: terminalRef.current?.cols ?? 120,
+          rows: terminalRef.current?.rows ?? 30,
+          ...(afterSeq > 0
+            ? { after_seq: afterSeq }
+            : {}),
+        }));
       };
       socket.onmessage = (event) => {
+        if (cancelled || !isCurrentSocket()) return;
         if (!terminalRef.current) return;
         let message: TaskTerminalServerEvent;
         try {
@@ -842,25 +1024,121 @@ export function TaskTerminalPanel({
         } catch {
           return;
         }
-        if (message.type === 'started') {
+        if (!terminalEventBelongsToSession(message, session.sessionId)) {
+          return;
+        }
+        if (message.type === 'terminal.replay_start') {
           pendingTransportReconnectRef.current = false;
-          if (!readyBannerWrittenRef.current && terminalRef.current) {
-            terminalRef.current.writeln(`${translationRef.current('terminal_banner', { title: taskTitleRef.current })}\r\n`);
-            readyBannerWrittenRef.current = true;
+          const replayUnavailable = alignUnavailableReplayContinuation(session.sessionId, message);
+          const earliestSeq = readTerminalProtocolNumber(message, 'earliest_seq');
+          const currentLastSeq = lastAppliedSeqBySessionRef.current.get(session.sessionId) ?? 0;
+          const nextExpectedSeq =
+            earliestSeq !== null && earliestSeq > currentLastSeq + 1
+              ? earliestSeq
+              : currentLastSeq + 1;
+          if (!replayUnavailable) {
+            expectedNextSeqBySessionRef.current.set(session.sessionId, nextExpectedSeq);
           }
-          updateStatus('active');
-          setErrorMessage(null);
+          if (message.gap === true || message.status === 'partial' || message.status === 'unavailable') {
+            terminalOutputDecodersBySessionRef.current.delete(session.sessionId);
+            setDegradationMessage(translationRef.current('terminal_replay_partial'));
+          } else {
+            setDegradationMessage(null);
+          }
+          return;
+        }
+        if (message.type === 'terminal.output') {
+          pendingTransportReconnectRef.current = false;
+          const messageSessionId = readTerminalProtocolSessionId(message) ?? session.sessionId;
+          const seq = readTerminalProtocolNumber(message, 'seq');
+          const payloadIdentity = readTerminalOutputPayloadIdentity(message);
+          if (seq === null || payloadIdentity === null) return;
+          if (!shouldAcceptSequencedTerminalOutput(messageSessionId, seq, payloadIdentity)) return;
+          const payload = decodeTerminalOutputPayload(
+            message,
+            getTerminalOutputDecoderForSession(messageSessionId),
+          );
+          if (payload === null) return;
+          applySequencedTerminalOutput(messageSessionId, seq, payload, payloadIdentity);
+          return;
+        }
+        if (message.type === 'terminal.replay_end') {
+          alignUnavailableReplayContinuation(session.sessionId, message);
+          if (message.gap === true || message.status === 'partial' || message.status === 'unavailable') {
+            if (message.status === 'unavailable') {
+              terminalOutputDecodersBySessionRef.current.delete(session.sessionId);
+            }
+            setDegradationMessage(translationRef.current('terminal_replay_partial'));
+          } else {
+            setDegradationMessage(null);
+          }
+          if (readTerminalInputEnabled(message) === true) {
+            markTerminalHandshakeReady(socket);
+          } else {
+            handshakeReadyRef.current = false;
+          }
+          return;
+        }
+        if (message.type === 'terminal.state') {
+          const state = readTerminalStateValue(message);
+          const inputEnabled = readTerminalInputEnabled(message);
+          if (state === 'ready' || state === 'active' || state === 'connected') {
+            if (inputEnabled === false) {
+              handshakeReadyRef.current = false;
+              return;
+            }
+            setDegradationMessage(null);
+            markTerminalHandshakeReady(socket);
+            return;
+          }
+          if (state === 'partial' || state === 'connected_partial_replay') {
+            setDegradationMessage(translationRef.current('terminal_replay_partial'));
+            if (inputEnabled === true) {
+              markTerminalHandshakeReady(socket);
+            } else {
+              handshakeReadyRef.current = false;
+            }
+            return;
+          }
+          if (state === 'starting' || state === 'pending' || state === 'waiting') {
+            handshakeReadyRef.current = false;
+            updateStatus(reconnectingRef.current ? 'recovering' : 'connecting');
+            return;
+          }
+          if (state === 'closed' || state === 'session_ended') {
+            finalizeClosedSession();
+            return;
+          }
+          if (state === 'failed' || state === 'unavailable' || state === 'attach_unavailable') {
+            invalidateSessionHandle();
+            updateStatus('failed');
+            setErrorMessage(
+              state === 'attach_unavailable'
+                ? translationRef.current('terminal_attach_unavailable')
+                : translationRef.current('terminal_error_connection_failed'),
+            );
+            setProgressReason(null);
+            return;
+          }
+        }
+        if (message.type === 'terminal.error') {
+          pendingTransportReconnectRef.current = false;
+          invalidateSessionHandle();
+          updateStatus('failed');
+          const reason = message.error_message ?? message.reason ?? 'terminal_connection_failed';
+          const friendlyReason = describeTerminalError(translationRef.current, reason);
+          setErrorMessage(friendlyReason);
+          setDegradationMessage(null);
           setProgressReason(null);
-          scheduleFit();
-          focusTerminalIfRequested();
+          return;
+        }
+        if (message.type === 'started') {
+          setDegradationMessage(null);
+          markTerminalHandshakeReady(socket);
           return;
         }
         if (message.type === 'output') {
           pendingTransportReconnectRef.current = false;
-          if (!readyBannerWrittenRef.current && terminalRef.current) {
-            terminalRef.current.writeln(`${translationRef.current('terminal_banner', { title: taskTitleRef.current })}\r\n`);
-            readyBannerWrittenRef.current = true;
-          }
           if (statusRef.current !== 'active') {
             updateStatus('active');
             setErrorMessage(null);
@@ -873,11 +1151,9 @@ export function TaskTerminalPanel({
         }
         if (message.type === 'exited') {
           if (authoritativeCloseInFlightRef.current) {
-            terminalRef.current.writeln(`\r\n${translationRef.current('terminal_closed')}`);
             return;
           }
           finalizeClosedSession();
-          terminalRef.current.writeln(`\r\n${translationRef.current('terminal_closed')}`);
           if (explicitCloseRequestedRef.current) {
             onOpenChangeRef.current(false);
           }
@@ -887,21 +1163,28 @@ export function TaskTerminalPanel({
           pendingTransportReconnectRef.current = false;
           invalidateSessionHandle();
           updateStatus('failed');
-          const friendlyReason = describeTerminalError(translationRef.current, message.error_message);
+          const friendlyReason = describeTerminalError(
+            translationRef.current,
+            message.error_message ?? 'terminal_connection_failed',
+          );
           setErrorMessage(friendlyReason);
+          setDegradationMessage(null);
           setProgressReason(null);
-          terminalRef.current.writeln(`\r\n${translationRef.current('terminal_failed', { reason: friendlyReason })}`);
         }
       };
       socket.onerror = () => {
+        if (cancelled || !isCurrentSocket()) return;
         pendingTransportReconnectRef.current = true;
         updateStatus('failed');
         setErrorMessage(translationRef.current('terminal_error_connection_failed'));
+        setDegradationMessage(null);
         setProgressReason(null);
       };
       socket.onclose = (event) => {
+        const wasCurrentSocket = isCurrentSocket();
         dataDisposable.dispose();
-        releaseSocketResources({ close: false });
+        if (!wasCurrentSocket) return;
+        releaseSocketResources({ close: false, socket });
         if (cancelled || unmountingRef.current) return;
         if (authoritativeCloseInFlightRef.current) {
           return;
@@ -916,6 +1199,7 @@ export function TaskTerminalPanel({
           invalidateSessionHandle();
           updateStatus('failed');
           setErrorMessage(translationRef.current('terminal_error_taken_over'));
+          setDegradationMessage(null);
           return;
         }
         clearCachedTerminalSessionResolution(sessionStorageKey);
@@ -969,6 +1253,7 @@ export function TaskTerminalPanel({
       }
       updateStatus('failed');
       setErrorMessage(friendlyReason);
+      setDegradationMessage(null);
       setProgressReason(null);
       invalidateSessionHandle({ clearStored: true });
       toast.error(friendlyReason);
@@ -982,21 +1267,27 @@ export function TaskTerminalPanel({
       cleanupSocket();
     };
   }, [
+    alignUnavailableReplayContinuation,
+    applySequencedTerminalOutput,
     cleanupSocket,
     connectionRetryToken,
     disabled,
     finalizeClosedSession,
     focusTerminalIfRequested,
+    getTerminalOutputDecoderForSession,
     hasInteractiveMount,
     invalidateSessionHandle,
     isTerminalContainerLaidOut,
+    markTerminalHandshakeReady,
     updateStatus,
     open,
     readStoredSessionId,
     releaseSocketResources,
     resolveSession,
     scheduleFit,
+    sendTerminalResize,
     sessionStorageKey,
+    shouldAcceptSequencedTerminalOutput,
   ]);
 
   React.useEffect(() => {
@@ -1102,8 +1393,23 @@ export function TaskTerminalPanel({
     'border',
     'border-subtle',
     'bg-[#0f141d]',
-    (status !== 'active' || errorMessage) ? 'rounded-b-md border-t-0' : 'rounded-md',
+    (status !== 'active' || errorMessage || degradationMessage)
+      ? 'rounded-b-md border-t-0'
+      : 'rounded-md',
   ].join(' ');
+  const terminalStatusMessage =
+    degradationMessage ??
+    (status === 'recovering'
+      ? t('terminal_reconnecting')
+      : status === 'preparing'
+        ? (
+          progressReason === 'run_in_progress'
+            ? t('terminal_preparing_run_busy')
+            : t('terminal_preparing_environment')
+        )
+        : status === 'connecting'
+          ? t('terminal_connecting')
+          : null);
 
   return (
     <div
@@ -1112,8 +1418,11 @@ export function TaskTerminalPanel({
       aria-hidden={!visible}
       data-testid={tabId ? `notebook__task-terminal-${tabId}` : 'notebook__task-terminal'}
     >
-      {(status !== 'active' || errorMessage) ? (
-        <div className="flex items-center justify-between gap-3 rounded-t-md border border-subtle bg-surface/70 px-4 py-2">
+      {(status !== 'active' || errorMessage || degradationMessage) ? (
+        <div
+          className="flex items-center justify-between gap-3 rounded-t-md border border-subtle bg-surface/70 px-4 py-2"
+          aria-live="polite"
+        >
           <Badge variant={
             status === 'failed' || status === 'recovering'
               ? 'destructive'
@@ -1123,22 +1432,18 @@ export function TaskTerminalPanel({
           }>
             {t(`terminal_status_${status}`)}
           </Badge>
-          {status === 'recovering' ? (
+          {terminalStatusMessage ? (
             <div className="min-w-0 text-xs text-foreground">
-              {t('terminal_reconnecting')}
-            </div>
-          ) : null}
-          {status === 'preparing' ? (
-            <div className="min-w-0 text-xs text-foreground">
-              {progressReason === 'run_in_progress'
-                ? t('terminal_preparing_run_busy')
-                : t('terminal_preparing_environment')}
+              {terminalStatusMessage}
             </div>
           ) : null}
         </div>
       ) : null}
       {errorMessage ? (
-        <div className="border-x border-b border-subtle bg-error/10 px-4 py-3 text-xs text-error">
+        <div
+          className="border-x border-b border-subtle bg-error/10 px-4 py-3 text-xs text-error"
+          aria-live="polite"
+        >
           <div className="flex items-start justify-between gap-3">
             <div className="min-w-0">
               <div>{t('terminal_error_hint', { reason: errorMessage })}</div>

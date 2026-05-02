@@ -73,6 +73,7 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import { getTerminalSessionSummaryLabel } from "./terminal-session-summary";
+import { isEditableFocusOwner } from "./task-terminal-protocol";
 
 type TerminalViewMode = "conversation" | "terminal";
 
@@ -1881,9 +1882,6 @@ export function TaskPage({
         return;
       }
 
-      terminalTabsRef.current = relabeledTabs;
-      setTerminalTabs(relabeledTabs);
-      nextTerminalTabOrdinalRef.current = getNextTerminalTabOrdinal(relabeledTabs);
       const nextActiveTerminalTabId =
         modeStrategy === "preserve-current"
           ? (relabeledTabs.find((tab) => tab.id === activeTerminalTabIdRef.current)
@@ -1896,6 +1894,26 @@ export function TaskPage({
               ?.id ??
             relabeledTabs[0]?.id ??
             null);
+      const shouldRequestRestoreFocus =
+        modeStrategy === "restore-initial" &&
+        shouldRestoreTerminalMode &&
+        nextActiveTerminalTabId !== null &&
+        !isEditableFocusOwner(
+          typeof document === "undefined" ? null : document.activeElement,
+        );
+      const nextRelabeledTabs = shouldRequestRestoreFocus
+        ? relabeledTabs.map((tab) =>
+            tab.id === nextActiveTerminalTabId
+              ? {
+                  ...tab,
+                  focusRequestToken: (tab.focusRequestToken ?? 0) + 1,
+                }
+              : tab,
+          )
+        : relabeledTabs;
+      terminalTabsRef.current = nextRelabeledTabs;
+      setTerminalTabs(nextRelabeledTabs);
+      nextTerminalTabOrdinalRef.current = getNextTerminalTabOrdinal(nextRelabeledTabs);
       setActiveTerminalTabId(nextActiveTerminalTabId);
       activeTerminalTabIdRef.current = nextActiveTerminalTabId;
       setViewMode(shouldRestoreTerminalMode ? "terminal" : "conversation");

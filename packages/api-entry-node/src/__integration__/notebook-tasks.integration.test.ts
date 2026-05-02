@@ -3216,7 +3216,7 @@ describe('api-entry-node notebook task routes', () => {
     }
   });
 
-  it('lets a downgraded task owner list and delete existing terminal sessions while keeping create gated', async () => {
+  it('requires terminal-use for interactive terminal create/list/get while keeping delete metadata cleanup available', async () => {
     const previousPublicApiBase = process.env.PUBLIC_API_BASE_URL;
     const deps = createDefaultNodeApiDeps();
     deps.agentExecutionService.getAgentSessionOnlineState = () => true;
@@ -3322,14 +3322,10 @@ describe('api-entry-node notebook task routes', () => {
         `/api/v1/workspaces/ws_default/projects/${project.id}/tasks/${taskId}/terminal/sessions`,
         'test-token',
       );
-      expect(listAfterDowngrade.status).toBe(200);
+      expect(listAfterDowngrade.status).toBe(403);
       await expect(listAfterDowngrade.json()).resolves.toMatchObject({
-        total: 1,
-        items: [
-          expect.objectContaining({
-            id: createdTerminal.session_id,
-          }),
-        ],
+        error_code: 'FORBIDDEN',
+        missing_permissions: ['project:terminal:use'],
       });
 
       const getAfterDowngrade = await apiFetchWithToken(
@@ -3337,9 +3333,10 @@ describe('api-entry-node notebook task routes', () => {
         `/api/v1/workspaces/ws_default/projects/${project.id}/tasks/${taskId}/terminal/sessions/${createdTerminal.session_id}`,
         'test-token',
       );
-      expect(getAfterDowngrade.status).toBe(200);
+      expect(getAfterDowngrade.status).toBe(403);
       await expect(getAfterDowngrade.json()).resolves.toMatchObject({
-        id: createdTerminal.session_id,
+        error_code: 'FORBIDDEN',
+        missing_permissions: ['project:terminal:use'],
       });
 
       const deleteAfterDowngrade = await apiFetchWithToken(
@@ -3349,6 +3346,18 @@ describe('api-entry-node notebook task routes', () => {
         { method: 'DELETE' },
       );
       expect(deleteAfterDowngrade.status).toBe(204);
+
+      await saveProjectPermissionTemplate(
+        deps.docStore,
+        'ws_default',
+        project.id,
+        {
+          ...downgradedTemplate,
+          description: 'Allows notebook task work and terminal session access after cleanup.',
+          permissions: ['project:endpoint:use', 'project:agent:use', 'project:terminal:use'],
+          updated_at: new Date().toISOString(),
+        },
+      );
 
       const listAfterDelete = await apiFetchWithToken(
         baseUrl,

@@ -643,6 +643,113 @@ describe("MessageItem", () => {
     expect(onCancel).toHaveBeenCalledTimes(1);
   });
 
+  it("keeps a long latest action in the active footer left column without letting it wrap or squeeze cancel", () => {
+    const longLatestAction =
+      "python scripts/run_notebook_recovery_probe.py --workspace very-long-workspace-name --project very-long-project-name --task very-long-task-name --with-many-flags --and-extra-operator-context --final-marker";
+
+    render(
+      <MessageItem
+        message={{ ...agentMessage, content: "" }}
+        activeRunView={activeRunView({
+          latestAction: { kind: "command", summary: longLatestAction },
+          recentActions: [],
+        })}
+      />,
+    );
+
+    const footer = screen.getByTestId("notebook__message-active-run-footer");
+    const meta = within(footer).getByTestId("notebook__message-active-run-meta");
+    const latestAction = within(footer).getByTestId(
+      "notebook__message-active-run-latest-action",
+    );
+    const cancel = within(footer).getByTestId(
+      "notebook__message-active-run-cancel",
+    );
+
+    expect(footer).toHaveClass("grid");
+    expect(footer).toHaveClass("grid-cols-[minmax(0,1fr)_auto]");
+    expect(footer).not.toHaveClass("flex-wrap");
+    expect(meta).toHaveClass("min-w-0");
+    expect(meta).toHaveClass("overflow-hidden");
+    expect(latestAction).toHaveClass("min-w-0");
+    expect(latestAction).toHaveClass("truncate");
+    expect(latestAction).toHaveClass("whitespace-nowrap");
+    expect(latestAction).toHaveAttribute("title", longLatestAction);
+    expect(cancel).toHaveClass("shrink-0");
+    expect(cancel).toHaveClass("whitespace-nowrap");
+    expect(cancel).toHaveAccessibleName("Cancel current run");
+  });
+
+  it("keeps the active footer two-column layout stable when there is no latest action", () => {
+    render(
+      <MessageItem
+        message={{ ...agentMessage, content: "" }}
+        activeRunView={activeRunView({
+          latestAction: { kind: "system", summary: "" },
+          recentActions: [],
+        })}
+      />,
+    );
+
+    const footer = screen.getByTestId("notebook__message-active-run-footer");
+    const meta = within(footer).getByTestId("notebook__message-active-run-meta");
+    const cancel = within(footer).getByTestId(
+      "notebook__message-active-run-cancel",
+    );
+
+    expect(footer).toHaveClass("grid");
+    expect(footer).toHaveClass("grid-cols-[minmax(0,1fr)_auto]");
+    expect(meta).toHaveClass("min-w-0");
+    expect(meta).toHaveClass("overflow-hidden");
+    expect(
+      within(footer).queryByTestId("notebook__message-active-run-latest-action"),
+    ).not.toBeInTheDocument();
+    expect(cancel).toHaveClass("shrink-0");
+    expect(cancel).toHaveClass("whitespace-nowrap");
+    expect(cancel).toHaveAccessibleName("Cancel current run");
+  });
+
+  it("keeps traceName latest action click and cancel click independent in the active footer", async () => {
+    const user = userEvent.setup();
+    const onCancel = vi.fn();
+    const onRunActionClick = vi.fn();
+    const actionSummary = "npm run focused:notebook-footer";
+
+    render(
+      <MessageItem
+        message={{ ...agentMessage, content: "" }}
+        activeRunView={activeRunView({
+          latestAction: { kind: "command", summary: "fallback command" },
+          recentActions: [
+            {
+              id: "trace-command-action",
+              kind: "command",
+              summary: actionSummary,
+              ageSeconds: 2,
+              traceName: "codex.command",
+            },
+          ],
+          onCancel,
+        })}
+        onRunActionClick={onRunActionClick}
+      />,
+    );
+
+    const footer = screen.getByTestId("notebook__message-active-run-footer");
+    await user.click(
+      within(footer).getByTestId("notebook__message-active-run-latest-action"),
+    );
+    await user.click(
+      within(footer).getByTestId("notebook__message-active-run-cancel"),
+    );
+
+    expect(onRunActionClick).toHaveBeenCalledWith({
+      traceName: "codex.command",
+      summary: actionSummary,
+    });
+    expect(onCancel).toHaveBeenCalledTimes(1);
+  });
+
   it("disables the active footer cancel button while the current run cancel request is pending", () => {
     render(
       <MessageItem

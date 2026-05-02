@@ -25,6 +25,11 @@ const DEFAULT_TERMINAL_REENTRY_OVERHEAD_MS = 20_000;
 const DEFAULT_TERMINAL_RECONNECT_GRACE_FLOOR_MS = 90_000;
 const MAX_TERMINAL_RECONNECT_GRACE_MS = 2 * 60_000;
 const TERMINAL_SERVICE_RELOAD_CLOSE_REASON = 'terminal_connection_failed_service_reload';
+const DEFAULT_TERMINAL_REPLAY_MAX_CHUNKS = 500;
+const DEFAULT_TERMINAL_REPLAY_MAX_BYTES = 256 * 1024;
+const DEFAULT_TERMINAL_REPLAY_TTL_MS = 10 * 60_000;
+const MAX_QUEUED_BROWSER_EVENTS = 1_000;
+export const NOTEBOOK_TASK_TERMINAL_RECONNECT_VIEW = 'notebook.task_terminal';
 
 function parsePositiveIntegerEnv(name: string): number | null {
   const raw = process.env[name]?.trim();
@@ -87,6 +92,7 @@ type RegisteredTerminalSession = {
   status: 'pending' | 'active' | 'disconnected' | 'closed' | 'failed';
   browserSocket?: WebSocket;
   runtime?: TerminalRuntime;
+  runtimeReady?: boolean;
   runtimeDispatchPromise?: Promise<TerminalRuntime>;
   disconnectTimer?: NodeJS.Timeout;
   disconnectVersion?: number;
@@ -98,6 +104,12 @@ type RegisteredTerminalSession = {
   endedAt?: string;
   closeReason?: string;
   exitCode?: number | null;
+  browserHandshakeComplete?: boolean;
+  browserReplayInProgress?: boolean;
+  queuedBrowserEvents?: TerminalBrowserPayload[];
+  outputReplayRing?: TerminalOutputReplayEntry[];
+  outputReplayRingBytes?: number;
+  nextOutputSeq?: number;
 };
 
 type TerminalRuntimeEvent = {
@@ -110,6 +122,32 @@ type TerminalRuntimeEvent = {
   signal?: string | null;
   error_code?: string;
   error_message?: string;
+};
+
+type TerminalBrowserPayload = Record<string, unknown> & {
+  type: string;
+  terminal_session_id?: string;
+  session_id?: string;
+};
+
+type TerminalOutputReplayEntry = {
+  seq: number;
+  chunk: string;
+  byteLength: number;
+  recordedAtMs: number;
+};
+
+type TerminalReplayStatus = 'complete' | 'partial' | 'unavailable';
+
+type TerminalReplayPlan = {
+  status: TerminalReplayStatus;
+  gap: boolean;
+  afterSeq: number | null;
+  earliestSeq: number | null;
+  latestSeq: number;
+  nextSeq: number;
+  entries: TerminalOutputReplayEntry[];
+  errorCode?: 'future_after_seq';
 };
 
 type TerminalRuntime = {
@@ -134,15 +172,36 @@ type TerminalSessionScopeInput = {
   sessionId: string;
 };
 
+export type NotebookTerminalAuthorizationInput = {
+  workspaceId: string;
+  projectId: string;
+  taskId: string;
+  userId: string;
+  terminalSessionId: string;
+  requiredPermission: 'project:terminal:use';
+};
+
+export type NotebookTerminalAuthorizationHook = (
+  input: NotebookTerminalAuthorizationInput,
+) => boolean | Promise<boolean>;
+
+type NotebookTerminalAuthorizationHooks = {
+  authorizeTerminalUse?: NotebookTerminalAuthorizationHook;
+};
+
 export class NotebookTerminalService {
   private readonly wsServer: WebSocketServer;
   private readonly sessions = new Map<string, RegisteredTerminalSession>();
   private configuredLifecycleHooks: NotebookTerminalLifecycleHooks = {};
   private readonly registeredLifecycleHooks = new Map<string, NotebookTerminalLifecycleHooks>();
+  private configuredAuthorizationHooks: NotebookTerminalAuthorizationHooks = {};
   private readonly reconnectGraceMs: number;
   private readonly maxSessionsPerTask = 3;
   private readonly sessionTtlSeconds = 24 * 60 * 60;
   private readonly startupTimeoutMs: number;
+  private readonly replayMaxChunks: number;
+  private readonly replayMaxBytes: number;
+  private readonly replayTtlMs: number;
 
   constructor(
     private readonly cache: CachePort,
@@ -150,6 +209,10 @@ export class NotebookTerminalService {
     options?: {
       startupTimeoutMs?: number;
       reconnectGraceMs?: number;
+      replayMaxChunks?: number;
+      replayMaxBytes?: number;
+      replayTtlMs?: number;
+      authorizeTerminalUse?: NotebookTerminalAuthorizationHook;
     },
   ) {
     this.wsServer = new WebSocketServer({ noServer: true });
@@ -158,10 +221,31 @@ export class NotebookTerminalService {
       MAX_TERMINAL_RECONNECT_GRACE_MS,
       Math.max(25, options?.reconnectGraceMs ?? resolveDefaultTerminalReconnectGraceMs()),
     );
+    this.replayMaxChunks = Math.max(
+      1,
+      Math.floor(options?.replayMaxChunks ?? DEFAULT_TERMINAL_REPLAY_MAX_CHUNKS),
+    );
+    this.replayMaxBytes = Math.max(
+      1,
+      Math.floor(options?.replayMaxBytes ?? DEFAULT_TERMINAL_REPLAY_MAX_BYTES),
+    );
+    this.replayTtlMs = Math.max(
+      25,
+      Math.floor(options?.replayTtlMs ?? DEFAULT_TERMINAL_REPLAY_TTL_MS),
+    );
+    if (options?.authorizeTerminalUse) {
+      this.configuredAuthorizationHooks = {
+        authorizeTerminalUse: options.authorizeTerminalUse,
+      };
+    }
   }
 
   configureLifecycleHooks(hooks: NotebookTerminalLifecycleHooks): void {
     this.configuredLifecycleHooks = hooks;
+  }
+
+  configureAuthorizationHooks(hooks: NotebookTerminalAuthorizationHooks): void {
+    this.configuredAuthorizationHooks = hooks;
   }
 
   registerLifecycleHooks(key: string, hooks: NotebookTerminalLifecycleHooks): void {
@@ -207,6 +291,171 @@ export class NotebookTerminalService {
     socket.close(code, reason);
   }
 
+  private sendTerminalErrorAndClose(
+    socket: WebSocket | undefined,
+    sessionId: string,
+    errorCode: string,
+    errorMessage: string,
+    closeReason = errorCode,
+  ): void {
+    this.sendToBrowserSocket(socket, {
+      type: 'terminal.error',
+      terminal_session_id: sessionId,
+      error_code: errorCode,
+      error_message: errorMessage,
+    });
+    this.closeBrowserSocket(socket, 1008, closeReason);
+  }
+
+  private canFailUnestablishedSession(session: RegisteredTerminalSession): boolean {
+    return (
+      !session.runtime
+      && !session.runtimeDispatchPromise
+      && session.status !== 'closed'
+      && session.status !== 'failed'
+    );
+  }
+
+  private sendTerminalErrorFailingUnestablishedSessionAndClose(
+    session: RegisteredTerminalSession,
+    socket: WebSocket | undefined,
+    errorCode: string,
+    errorMessage: string,
+    closeReason = errorCode,
+  ): void {
+    this.sendToBrowserSocket(socket, {
+      type: 'terminal.error',
+      terminal_session_id: session.id,
+      error_code: errorCode,
+      error_message: errorMessage,
+    });
+    if (this.canFailUnestablishedSession(session)) {
+      this.finishSession(session.id, 'failed', closeReason);
+    }
+    this.closeBrowserSocket(socket, 1008, closeReason);
+  }
+
+  private isTerminalInputEnabled(session: RegisteredTerminalSession): boolean {
+    return Boolean(session.runtime)
+      && session.runtimeReady === true
+      && session.status !== 'closed'
+      && session.status !== 'failed';
+  }
+
+  private buildTerminalAuthorizationInput(
+    session: RegisteredTerminalSession,
+  ): NotebookTerminalAuthorizationInput {
+    return {
+      workspaceId: session.workspaceId,
+      projectId: session.projectId,
+      taskId: session.taskId,
+      userId: session.userId,
+      terminalSessionId: session.id,
+      requiredPermission: 'project:terminal:use',
+    };
+  }
+
+  private isPromiseLike<T>(value: T | Promise<T>): value is Promise<T> {
+    return typeof (value as Promise<T>)?.then === 'function';
+  }
+
+  private isTerminalUseAuthorized(session: RegisteredTerminalSession): boolean | Promise<boolean> {
+    const authorizeTerminalUse = this.configuredAuthorizationHooks.authorizeTerminalUse;
+    if (!authorizeTerminalUse) {
+      return true;
+    }
+    try {
+      return authorizeTerminalUse(this.buildTerminalAuthorizationInput(session));
+    } catch {
+      return false;
+    }
+  }
+
+  private denyTerminalUse(
+    session: RegisteredTerminalSession,
+    socket: WebSocket | undefined,
+  ): void {
+    this.sendTerminalErrorAndClose(
+      socket,
+      session.id,
+      'terminal_permission_revoked',
+      'terminal_permission_revoked',
+    );
+  }
+
+  private ensureTerminalUseAuthorized(
+    session: RegisteredTerminalSession,
+    socket: WebSocket | undefined,
+  ): boolean | Promise<boolean> {
+    const authorized = this.isTerminalUseAuthorized(session);
+    if (!this.isPromiseLike(authorized)) {
+      if (!authorized) {
+        this.denyTerminalUse(session, socket);
+      }
+      return authorized;
+    }
+    return authorized.then(
+      (granted) => {
+        if (!granted) {
+          this.denyTerminalUse(session, socket);
+        }
+        return granted;
+      },
+      () => {
+        this.denyTerminalUse(session, socket);
+        return false;
+      },
+    );
+  }
+
+  private ensureTerminalInputAccepted(
+    session: RegisteredTerminalSession,
+    socket: WebSocket | undefined,
+  ): boolean | Promise<boolean> {
+    if (!this.isTerminalInputEnabled(session)) {
+      this.sendTerminalErrorAndClose(
+        socket,
+        session.id,
+        'terminal_not_ready',
+        'terminal_not_ready',
+      );
+      return false;
+    }
+    return this.ensureTerminalUseAuthorized(session, socket);
+  }
+
+  private queueOrSendBrowserPayload(
+    session: RegisteredTerminalSession,
+    payload: TerminalBrowserPayload,
+  ): void {
+    if (!this.isOpenSocket(session.browserSocket)) return;
+    if (session.browserReplayInProgress) {
+      const queued = session.queuedBrowserEvents ?? [];
+      queued.push(payload);
+      if (queued.length > MAX_QUEUED_BROWSER_EVENTS) {
+        queued.splice(0, queued.length - MAX_QUEUED_BROWSER_EVENTS);
+      }
+      session.queuedBrowserEvents = queued;
+      return;
+    }
+    if (!session.browserHandshakeComplete) {
+      return;
+    }
+    this.sendToBrowserSocket(session.browserSocket, payload);
+  }
+
+  private flushQueuedBrowserPayloads(session: RegisteredTerminalSession): void {
+    if (!this.isOpenSocket(session.browserSocket) || !session.browserHandshakeComplete) {
+      session.queuedBrowserEvents = [];
+      return;
+    }
+    const queued = session.queuedBrowserEvents ?? [];
+    session.queuedBrowserEvents = [];
+    for (const payload of queued) {
+      this.sendToBrowserSocket(session.browserSocket, payload);
+    }
+  }
+
   private sessionCacheKey(sessionId: string): string {
     return `notebook_terminal_session:${sessionId}`;
   }
@@ -249,6 +498,7 @@ export class NotebookTerminalService {
       exitCode: session.exitCode ?? null,
       browserSocket: undefined,
       runtime: undefined,
+      runtimeReady: false,
       runtimeDispatchPromise: undefined,
       disconnectTimer: undefined,
       disconnectVersion: undefined,
@@ -431,6 +681,191 @@ export class NotebookTerminalService {
     return (session.bindVersion ?? 0) === bindVersion;
   }
 
+  private isCurrentBrowserBind(
+    session: RegisteredTerminalSession,
+    socket: WebSocket | undefined,
+    bindVersion: number,
+  ): socket is WebSocket {
+    return Boolean(socket)
+      && this.isLatestBindVersion(session, bindVersion)
+      && session.browserSocket === socket;
+  }
+
+  private trimReplayRing(session: RegisteredTerminalSession): void {
+    const ring = session.outputReplayRing ?? [];
+    if (ring.length === 0) {
+      session.outputReplayRing = [];
+      session.outputReplayRingBytes = 0;
+      return;
+    }
+
+    const expiresBefore = Date.now() - this.replayTtlMs;
+    while (ring.length > 0 && ring[0]!.recordedAtMs < expiresBefore) {
+      const removed = ring.shift()!;
+      session.outputReplayRingBytes = Math.max(0, (session.outputReplayRingBytes ?? 0) - removed.byteLength);
+    }
+    while (ring.length > this.replayMaxChunks) {
+      const removed = ring.shift()!;
+      session.outputReplayRingBytes = Math.max(0, (session.outputReplayRingBytes ?? 0) - removed.byteLength);
+    }
+    while (ring.length > 0 && (session.outputReplayRingBytes ?? 0) > this.replayMaxBytes) {
+      const removed = ring.shift()!;
+      session.outputReplayRingBytes = Math.max(0, (session.outputReplayRingBytes ?? 0) - removed.byteLength);
+    }
+    session.outputReplayRing = ring;
+  }
+
+  private recordTerminalOutput(
+    session: RegisteredTerminalSession,
+    event: TerminalRuntimeEvent,
+  ): TerminalBrowserPayload {
+    const seq = session.nextOutputSeq ?? 1;
+    session.nextOutputSeq = seq + 1;
+    const chunk = typeof event.chunk === 'string' ? event.chunk : '';
+    const byteLength = Buffer.byteLength(chunk, 'utf-8');
+
+    if (byteLength <= this.replayMaxBytes) {
+      const ring = session.outputReplayRing ?? [];
+      ring.push({
+        seq,
+        chunk,
+        byteLength,
+        recordedAtMs: Date.now(),
+      });
+      session.outputReplayRing = ring;
+      session.outputReplayRingBytes = (session.outputReplayRingBytes ?? 0) + byteLength;
+      this.trimReplayRing(session);
+    } else {
+      session.outputReplayRing = [];
+      session.outputReplayRingBytes = 0;
+    }
+
+    return {
+      type: 'terminal.output',
+      terminal_session_id: session.id,
+      chunk,
+      seq,
+    };
+  }
+
+  private buildReplayPlan(
+    session: RegisteredTerminalSession,
+    afterSeq: number | null,
+  ): TerminalReplayPlan {
+    this.trimReplayRing(session);
+    const ring = session.outputReplayRing ?? [];
+    const latestSeq = (session.nextOutputSeq ?? 1) - 1;
+    const nextSeq = latestSeq + 1;
+    const earliestSeq = ring[0]?.seq ?? null;
+
+    if (latestSeq === 0) {
+      return {
+        status: 'complete',
+        gap: false,
+        afterSeq,
+        earliestSeq: null,
+        latestSeq,
+        nextSeq,
+        entries: [],
+      };
+    }
+
+    if (ring.length === 0 || earliestSeq === null) {
+      return {
+        status: 'unavailable',
+        gap: true,
+        afterSeq,
+        earliestSeq: null,
+        latestSeq,
+        nextSeq,
+        entries: [],
+      };
+    }
+
+    if (afterSeq !== null && afterSeq > latestSeq) {
+      return {
+        status: 'unavailable',
+        gap: true,
+        afterSeq,
+        earliestSeq,
+        latestSeq,
+        nextSeq,
+        entries: [],
+        errorCode: 'future_after_seq',
+      };
+    }
+
+    if (afterSeq === null) {
+      const gap = earliestSeq > 1;
+      return {
+        status: gap ? 'partial' : 'complete',
+        gap,
+        afterSeq,
+        earliestSeq,
+        latestSeq,
+        nextSeq,
+        entries: [...ring],
+      };
+    }
+
+    if (afterSeq < earliestSeq - 1) {
+      return {
+        status: 'partial',
+        gap: true,
+        afterSeq,
+        earliestSeq,
+        latestSeq,
+        nextSeq,
+        entries: [...ring],
+      };
+    }
+
+    return {
+      status: 'complete',
+      gap: false,
+      afterSeq,
+      earliestSeq,
+      latestSeq,
+      nextSeq,
+      entries: ring.filter((entry) => entry.seq > afterSeq),
+    };
+  }
+
+  private sendReplay(
+    session: RegisteredTerminalSession,
+    socket: WebSocket | undefined,
+    replay: TerminalReplayPlan,
+  ): void {
+    this.sendToBrowserSocket(socket, {
+      type: 'terminal.replay_start',
+      terminal_session_id: session.id,
+      status: replay.status,
+      gap: replay.gap,
+      after_seq: replay.afterSeq,
+      earliest_seq: replay.earliestSeq,
+      latest_seq: replay.latestSeq,
+      ...(replay.status === 'unavailable' ? { next_seq: replay.nextSeq } : {}),
+      ...(replay.errorCode ? { error_code: replay.errorCode } : {}),
+    });
+    for (const entry of replay.entries) {
+      this.sendToBrowserSocket(socket, {
+        type: 'terminal.output',
+        terminal_session_id: session.id,
+        chunk: entry.chunk,
+        seq: entry.seq,
+      });
+    }
+    this.sendToBrowserSocket(socket, {
+      type: 'terminal.replay_end',
+      terminal_session_id: session.id,
+      status: replay.status,
+      gap: replay.gap,
+      latest_seq: replay.latestSeq,
+      ...(replay.status === 'unavailable' ? { next_seq: replay.nextSeq } : {}),
+      input_enabled: this.isTerminalInputEnabled(session),
+    });
+  }
+
   private clearDisconnectTimer(session: RegisteredTerminalSession): void {
     if (!session.disconnectTimer) return;
     clearTimeout(session.disconnectTimer);
@@ -446,19 +881,22 @@ export class NotebookTerminalService {
     session.streamBound = true;
     void (async () => {
       for await (const event of runtime.stream) {
+        const inputWasEnabled = this.isTerminalInputEnabled(session);
         debugTerminal('runtime_event', {
           session_id: session.id,
           type: event.type,
         });
         if (event.type === 'started') {
           this.clearStartupTimer(session);
-          if (this.isOpenSocket(session.browserSocket)) {
+          session.runtimeReady = true;
+          if (this.isOpenSocket(session.browserSocket) && session.browserHandshakeComplete) {
             session.status = 'active';
           }
         }
         if (event.type === 'output') {
           this.clearStartupTimer(session);
-          if (this.isOpenSocket(session.browserSocket)) {
+          session.runtimeReady = true;
+          if (this.isOpenSocket(session.browserSocket) && session.browserHandshakeComplete) {
             session.status = 'active';
           }
         }
@@ -469,10 +907,44 @@ export class NotebookTerminalService {
           session.closeReason = event.type === 'exited'
             ? 'process_exited'
             : (event.error_message?.trim() || 'runtime_error');
+          session.runtimeReady = false;
         }
         session.lastActivityAt = new Date().toISOString();
         await this.persistSession(session);
-        this.sendToBrowserSocket(session.browserSocket, event);
+        const inputBecameEnabled = !inputWasEnabled && this.isTerminalInputEnabled(session);
+        if (inputBecameEnabled || event.type === 'started') {
+          this.queueOrSendBrowserPayload(session, {
+            type: 'terminal.state',
+            terminal_session_id: session.id,
+            state: 'ready',
+            status: 'active',
+            input_enabled: true,
+            ...(typeof event.cols === 'number' ? { cols: event.cols } : {}),
+            ...(typeof event.rows === 'number' ? { rows: event.rows } : {}),
+          });
+        }
+        if (event.type === 'output') {
+          this.queueOrSendBrowserPayload(session, this.recordTerminalOutput(session, event));
+        } else if (event.type === 'exited') {
+          this.queueOrSendBrowserPayload(session, {
+            type: 'terminal.state',
+            terminal_session_id: session.id,
+            state: 'closed',
+            status: 'closed',
+            input_enabled: false,
+            exit_code: typeof event.exit_code === 'number' ? event.exit_code : null,
+            signal: event.signal ?? null,
+          });
+        } else if (event.type === 'error') {
+          this.queueOrSendBrowserPayload(session, {
+            type: 'terminal.error',
+            terminal_session_id: session.id,
+            error_code: event.error_code,
+            error_message: event.error_message ?? 'runtime_error',
+          });
+        } else {
+          // `started` is represented by the terminal.state ready frame above.
+        }
       }
       this.closeBrowserSocket(session.browserSocket, 1000, 'terminal_complete');
       this.finishSession(
@@ -538,13 +1010,25 @@ export class NotebookTerminalService {
       closeReason: string;
       terminalStatus: 'closed' | 'failed';
       terminalCloseReason: string;
+      unestablishedTerminalCloseReason?: string;
     },
   ): void {
     if (session.browserSocket !== ws) {
       return;
     }
     session.browserSocket = undefined;
-    if (!session.runtime || session.status === 'closed' || session.status === 'failed') {
+    session.browserHandshakeComplete = false;
+    session.browserReplayInProgress = false;
+    session.queuedBrowserEvents = [];
+    if (session.status === 'closed' || session.status === 'failed') {
+      return;
+    }
+    if (!session.runtime) {
+      this.finishSession(
+        session.id,
+        options.terminalStatus,
+        options.unestablishedTerminalCloseReason ?? options.terminalCloseReason,
+      );
       return;
     }
     this.clearDisconnectTimer(session);
@@ -557,7 +1041,11 @@ export class NotebookTerminalService {
       if ((session.disconnectVersion ?? 0) !== disconnectVersion) {
         return;
       }
-      if (session.browserSocket || !session.runtime || session.status !== 'disconnected') {
+      if (
+        (session.browserSocket && session.browserHandshakeComplete)
+        || !session.runtime
+        || session.status !== 'disconnected'
+      ) {
         return;
       }
       session.runtime?.close();
@@ -574,8 +1062,8 @@ export class NotebookTerminalService {
       if (!this.sessions.has(session.id)) return;
       if (session.status !== 'pending') return;
       this.sendToBrowserSocket(session.browserSocket, {
-        type: 'error',
-        session_id: session.id,
+        type: 'terminal.error',
+        terminal_session_id: session.id,
         error_code: 'TERMINAL_START_TIMEOUT',
         error_message: 'terminal_start_timeout',
       });
@@ -656,6 +1144,7 @@ export class NotebookTerminalService {
   } | null> {
     const session = await this.resolveLiveBindableSession(sessionId);
     if (!session) return null;
+    if (!await Promise.resolve(this.isTerminalUseAuthorized(session))) return null;
     const issued = await issueInternalTicket(this.cache, {
       purpose: 'terminal_ws_access',
       userId: session.userId,
@@ -848,9 +1337,18 @@ export class NotebookTerminalService {
           socket.destroy();
           return;
         }
-
-        this.wsServer.handleUpgrade(req, socket, head, (ws) => {
-          void this.bindBrowserSocket(ws, registered);
+        void Promise.resolve(this.isTerminalUseAuthorized(registered)).then((authorized) => {
+          if (!authorized) {
+            socket.write('HTTP/1.1 403 Forbidden\r\n\r\n');
+            socket.destroy();
+            return;
+          }
+          this.wsServer.handleUpgrade(req, socket, head, (ws) => {
+            void this.bindBrowserSocket(ws, registered);
+          });
+        }).catch(() => {
+          socket.write('HTTP/1.1 500 Internal Server Error\r\n\r\n');
+          socket.destroy();
         });
       }).catch(() => {
         socket.write('HTTP/1.1 500 Internal Server Error\r\n\r\n');
@@ -870,39 +1368,83 @@ export class NotebookTerminalService {
       runner_session_id: session.runnerSessionId,
     });
     const bindVersion = this.nextBindVersion(session);
-    this.clearDisconnectTimer(session);
     this.closeBrowserSocket(session.browserSocket, 1012, 'terminal_replaced');
     session.browserSocket = ws;
-    if (session.runtime) {
-      session.status = session.status === 'failed' || session.status === 'closed'
-        ? session.status
-        : 'active';
-      this.clearStartupTimer(session);
-    } else {
+    session.browserHandshakeComplete = false;
+    session.browserReplayInProgress = false;
+    session.queuedBrowserEvents = [];
+    if (!session.runtime && session.status !== 'closed' && session.status !== 'failed') {
       session.status = 'pending';
     }
     session.lastActivityAt = new Date().toISOString();
 
     ws.on('message', (raw) => {
-      if (session.browserSocket !== ws || !session.runtime) return;
-      this.handleBrowserMessage(session, session.runtime, raw);
+      if (!this.isCurrentBrowserBind(session, ws, bindVersion)) return;
+      void this.handleBrowserMessage(session, raw, bindVersion).catch(() => {
+        this.sendTerminalErrorAndClose(
+          ws,
+          session.id,
+          'terminal_message_failed',
+          'terminal_message_failed',
+        );
+      });
     });
     ws.on('close', (_code, reasonBuffer) => {
       const reason = reasonBuffer.toString();
+      if (!this.isCurrentBrowserBind(session, ws, bindVersion)) {
+        return;
+      }
       if (reason === 'terminal_replaced') {
         return;
+      }
+      const wasHandshakeComplete = session.browserHandshakeComplete;
+      session.browserHandshakeComplete = false;
+      session.browserReplayInProgress = false;
+      session.queuedBrowserEvents = [];
+      if (!wasHandshakeComplete) {
+        if (session.status === 'disconnected' && session.runtime) {
+          if (session.browserSocket === ws) {
+            session.browserSocket = undefined;
+          }
+          return;
+        }
+        if (this.canFailUnestablishedSession(session)) {
+          this.finishSession(session.id, 'closed', 'browser_disconnected_before_handshake');
+          return;
+        }
       }
       this.scheduleBrowserDisconnectResolution(session, ws, {
         closeReason: 'browser_disconnected',
         terminalStatus: 'closed',
         terminalCloseReason: 'browser_disconnected_timeout',
+        unestablishedTerminalCloseReason: 'browser_disconnected_before_runtime',
       });
     });
     ws.on('error', () => {
+      if (!this.isCurrentBrowserBind(session, ws, bindVersion)) {
+        return;
+      }
+      const wasHandshakeComplete = session.browserHandshakeComplete;
+      session.browserHandshakeComplete = false;
+      session.browserReplayInProgress = false;
+      session.queuedBrowserEvents = [];
+      if (!wasHandshakeComplete) {
+        if (session.status === 'disconnected' && session.runtime) {
+          if (session.browserSocket === ws) {
+            session.browserSocket = undefined;
+          }
+          return;
+        }
+        if (this.canFailUnestablishedSession(session)) {
+          this.finishSession(session.id, 'failed', 'browser_socket_error_before_handshake');
+          return;
+        }
+      }
       this.scheduleBrowserDisconnectResolution(session, ws, {
         closeReason: 'browser_socket_error',
         terminalStatus: 'failed',
         terminalCloseReason: 'browser_socket_error',
+        unestablishedTerminalCloseReason: 'browser_socket_error_before_runtime',
       });
     });
 
@@ -911,13 +1453,141 @@ export class NotebookTerminalService {
     if (!this.isLatestBindVersion(session, bindVersion)) {
       return;
     }
+  }
 
-    const hadRuntimeBeforeBind = Boolean(session.runtime);
+  private parseBrowserPayload(raw: RawData): Record<string, unknown> | null {
+    try {
+      const parsed = JSON.parse(raw.toString('utf-8')) as unknown;
+      if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
+        return null;
+      }
+      return parsed as Record<string, unknown>;
+    } catch {
+      return null;
+    }
+  }
+
+  private parsePositiveDimension(value: unknown, minimum: number): number | null {
+    if (typeof value !== 'number' || !Number.isFinite(value)) return null;
+    const normalized = Math.floor(value);
+    if (normalized < minimum) return null;
+    return normalized;
+  }
+
+  private parseAfterSeq(value: unknown): number | null | undefined {
+    if (value === undefined || value === null) return null;
+    if (
+      typeof value !== 'number'
+      || !Number.isSafeInteger(value)
+      || value < 0
+    ) {
+      return undefined;
+    }
+    return value;
+  }
+
+  private isTerminalSideEffectType(type: string): boolean {
+    return type === 'terminal.stdin'
+      || type === 'terminal.resize'
+      || type === 'terminal.close';
+  }
+
+  private async completeReconnectHandshake(
+    session: RegisteredTerminalSession,
+    payload: Record<string, unknown>,
+    bindVersion: number,
+  ): Promise<void> {
+    const ws = session.browserSocket;
+    const terminalSessionId = typeof payload.terminal_session_id === 'string'
+      ? payload.terminal_session_id.trim()
+      : '';
+    const view = typeof payload.view === 'string' ? payload.view.trim() : '';
+    const cols = this.parsePositiveDimension(payload.cols, 20);
+    const rows = this.parsePositiveDimension(payload.rows, 5);
+    const afterSeq = this.parseAfterSeq(payload.after_seq);
+
+    if (
+      terminalSessionId !== session.id
+      || view !== NOTEBOOK_TASK_TERMINAL_RECONNECT_VIEW
+      || cols === null
+      || rows === null
+      || afterSeq === undefined
+    ) {
+      this.sendTerminalErrorFailingUnestablishedSessionAndClose(
+        session,
+        ws,
+        'invalid_reconnect_payload',
+        'invalid_reconnect_payload',
+      );
+      return;
+    }
+
+    if (!this.isCurrentBrowserBind(session, ws, bindVersion)) {
+      return;
+    }
+    const reconnectAuthorized = this.ensureTerminalUseAuthorized(session, ws);
+    if (this.isPromiseLike(reconnectAuthorized)) {
+      if (!await reconnectAuthorized) {
+        return;
+      }
+      if (!this.isCurrentBrowserBind(session, ws, bindVersion)) {
+        return;
+      }
+    } else if (!reconnectAuthorized) {
+      return;
+    }
+    if (!this.isCurrentBrowserBind(session, ws, bindVersion)) {
+      return;
+    }
+
+    this.clearDisconnectTimer(session);
+    session.browserHandshakeComplete = true;
+    session.browserReplayInProgress = true;
+    session.queuedBrowserEvents = [];
+    session.cols = cols;
+    session.rows = rows;
+    session.lastActivityAt = new Date().toISOString();
+    if (session.runtime) {
+      if (this.isTerminalInputEnabled(session)) {
+        session.status = 'active';
+        this.clearStartupTimer(session);
+        session.runtime.resize(cols, rows);
+      }
+    } else if (session.status !== 'closed' && session.status !== 'failed') {
+      session.status = 'pending';
+    }
+    await this.persistSession(session);
+
+    const browserBindStillCurrent = this.isCurrentBrowserBind(session, ws, bindVersion);
+    if (browserBindStillCurrent) {
+      const replay = this.buildReplayPlan(session, afterSeq);
+      this.sendReplay(session, ws, replay);
+      session.browserReplayInProgress = false;
+      this.flushQueuedBrowserPayloads(session);
+    } else {
+      session.browserReplayInProgress = false;
+      session.queuedBrowserEvents = [];
+    }
+
+    if (session.runtime || session.status === 'closed' || session.status === 'failed') {
+      return;
+    }
+
+    if (browserBindStillCurrent) {
+      this.sendToBrowserSocket(ws, {
+        type: 'terminal.state',
+        terminal_session_id: session.id,
+        state: 'starting',
+        status: session.status,
+        input_enabled: false,
+      });
+    }
+
     try {
       await this.ensureSessionRuntime(session);
     } catch (error) {
       const message = error instanceof Error ? error.message : 'terminal_dispatch_failed';
-      if (!this.isLatestBindVersion(session, bindVersion) || message === 'terminal_dispatch_abandoned') {
+      if (!this.isCurrentBrowserBind(session, ws, bindVersion) || message === 'terminal_dispatch_abandoned') {
         return;
       }
       debugTerminal('dispatch_failed', {
@@ -927,62 +1597,111 @@ export class NotebookTerminalService {
         runner_session_id: session.runnerSessionId,
         error: message,
       });
-      this.sendToBrowserSocket(session.browserSocket, {
-        type: 'error',
-        session_id: session.id,
+      this.sendToBrowserSocket(ws, {
+        type: 'terminal.error',
+        terminal_session_id: session.id,
         error_code: 'TERMINAL_DISPATCH_FAILED',
         error_message: message,
       });
-      this.closeBrowserSocket(session.browserSocket, 1011, 'terminal_dispatch_failed');
+      this.closeBrowserSocket(ws, 1011, 'terminal_dispatch_failed');
       this.finishSession(session.id, 'failed', message);
-      return;
-    }
-
-    if (!this.isLatestBindVersion(session, bindVersion)) {
-      return;
-    }
-    if (hadRuntimeBeforeBind) {
-      this.sendToBrowserSocket(session.browserSocket, {
-        type: 'started',
-        session_id: session.id,
-        cols: session.cols,
-        rows: session.rows,
-      });
     }
   }
 
-  private handleBrowserMessage(
+  private async handleBrowserMessage(
     session: RegisteredTerminalSession,
-    runtime: {
-      writeInput: (data: string) => void;
-      resize: (cols: number, rows: number) => void;
-      close: () => void;
-    },
     raw: RawData,
-  ): void {
-    let payload: { type?: string; data?: string; cols?: number; rows?: number };
-    try {
-      payload = JSON.parse(raw.toString('utf-8')) as { type?: string; data?: string; cols?: number; rows?: number };
-    } catch {
+    bindVersion: number,
+  ): Promise<void> {
+    const payload = this.parseBrowserPayload(raw);
+    if (!payload) return;
+    const type = typeof payload.type === 'string' ? payload.type : '';
+    const ws = session.browserSocket;
+    if (!this.isCurrentBrowserBind(session, ws, bindVersion)) {
       return;
     }
+
     session.lastActivityAt = new Date().toISOString();
-    if (payload.type === 'terminal.stdin' && typeof payload.data === 'string') {
-      runtime.writeInput(payload.data);
+
+    if (!session.browserHandshakeComplete) {
+      if (type === 'terminal.reconnect') {
+        await this.completeReconnectHandshake(session, payload, bindVersion);
+        return;
+      }
+      if (this.isTerminalSideEffectType(type)) {
+        this.sendTerminalErrorFailingUnestablishedSessionAndClose(
+          session,
+          ws,
+          'handshake_required',
+          'terminal_reconnect_required',
+        );
+      }
       return;
     }
-    if (
-      payload.type === 'terminal.resize'
-      && typeof payload.cols === 'number'
-      && typeof payload.rows === 'number'
-    ) {
-      session.cols = Math.max(20, Math.floor(payload.cols));
-      session.rows = Math.max(5, Math.floor(payload.rows));
-      runtime.resize(session.cols, session.rows);
+
+    if (type === 'terminal.reconnect') {
+      await this.completeReconnectHandshake(session, payload, bindVersion);
       return;
     }
-    if (payload.type === 'terminal.close') {
-      runtime.close();
+
+    if (type === 'terminal.resize') {
+      const cols = this.parsePositiveDimension(payload.cols, 20);
+      const rows = this.parsePositiveDimension(payload.rows, 5);
+      if (cols === null || rows === null) {
+        this.sendTerminalErrorAndClose(
+          ws,
+          session.id,
+          'invalid_resize_payload',
+          'invalid_resize_payload',
+        );
+        return;
+      }
+      const inputAccepted = this.ensureTerminalInputAccepted(session, ws);
+      if (this.isPromiseLike(inputAccepted)) {
+        if (!await inputAccepted) {
+          return;
+        }
+        if (!this.isCurrentBrowserBind(session, ws, bindVersion)) {
+          return;
+        }
+      } else if (!inputAccepted) {
+        return;
+      }
+      if (!this.isCurrentBrowserBind(session, ws, bindVersion)) {
+        return;
+      }
+      session.cols = cols;
+      session.rows = rows;
+      session.runtime?.resize(cols, rows);
+      await this.persistSession(session);
+      return;
+    }
+
+    if (type === 'terminal.stdin' && typeof payload.data === 'string') {
+      const inputAccepted = this.ensureTerminalInputAccepted(session, ws);
+      if (this.isPromiseLike(inputAccepted)) {
+        if (!await inputAccepted) {
+          return;
+        }
+        if (!this.isCurrentBrowserBind(session, ws, bindVersion)) {
+          return;
+        }
+      } else if (!inputAccepted) {
+        return;
+      }
+      if (!this.isCurrentBrowserBind(session, ws, bindVersion)) {
+        return;
+      }
+      session.runtime?.writeInput(payload.data);
+      return;
+    }
+
+    if (type === 'terminal.close') {
+      if (session.runtime) {
+        session.runtime.close();
+      } else {
+        this.finishSession(session.id, 'closed', 'ended_by_user');
+      }
     }
   }
 
@@ -1003,7 +1722,13 @@ export class NotebookTerminalService {
     if (closeReason?.trim()) session.closeReason = closeReason.trim();
     if (exitCode !== undefined) session.exitCode = exitCode;
     session.browserSocket = undefined;
+    session.browserHandshakeComplete = false;
+    session.browserReplayInProgress = false;
+    session.queuedBrowserEvents = [];
+    session.outputReplayRing = [];
+    session.outputReplayRingBytes = 0;
     session.runtime = undefined;
+    session.runtimeReady = false;
     session.runtimeDispatchPromise = undefined;
     session.streamBound = false;
     void this.persistSession(session);
@@ -1020,7 +1745,13 @@ export class NotebookTerminalService {
       this.closeBrowserSocket(session.browserSocket, 1001, 'server_shutdown');
       session.runtime?.close();
       session.browserSocket = undefined;
+      session.browserHandshakeComplete = false;
+      session.browserReplayInProgress = false;
+      session.queuedBrowserEvents = [];
+      session.outputReplayRing = [];
+      session.outputReplayRingBytes = 0;
       session.runtime = undefined;
+      session.runtimeReady = false;
       session.runtimeDispatchPromise = undefined;
       session.streamBound = false;
     }

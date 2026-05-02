@@ -57,6 +57,35 @@ import { UniversalProxyService } from './universal-proxy-service.js';
 import { NotebookTerminalService } from './notebook-terminal-service.js';
 import { InternalWorkloadCoordinator } from './internal-workload-coordinator.js';
 import { INTERNAL_AGENT_KEEPALIVE_INTERVAL_SECONDS } from '@mbos/contracts';
+import { evaluateProjectPermissions } from './project-authz-engine.js';
+
+function configureNotebookTerminalAuthorization(deps: Pick<
+  NodeApiDeps,
+  'docStore' | 'getProjectUseCase' | 'notebookTerminalService'
+>): void {
+  deps.notebookTerminalService.configureAuthorizationHooks({
+    authorizeTerminalUse: async (input) => {
+      try {
+        const project = await deps.getProjectUseCase.execute({
+          workspaceId: input.workspaceId,
+          projectId: input.projectId,
+        });
+        const evaluation = await evaluateProjectPermissions({
+          docStore: deps.docStore,
+          workspaceId: input.workspaceId,
+          projectId: input.projectId,
+          projectOwnerId: project.owner_id,
+          projectGovernance: project.governance_json,
+          actorUserId: input.userId,
+          requiredPermissions: [input.requiredPermission],
+        });
+        return evaluation.decisions.every((decision) => decision.granted);
+      } catch {
+        return false;
+      }
+    },
+  });
+}
 
 export function createDefaultNodeApiDeps(): NodeApiDeps {
   const projectRepo = createProjectRepoFactoryResult({}).projectRepo;
@@ -115,6 +144,7 @@ export function createDefaultNodeApiDeps(): NodeApiDeps {
     fileLibraryGatewayManager: new InMemoryFileLibraryGatewayManager(),
     universalProxyService: UniversalProxyService.fromEnv(process.env),
   };
+  configureNotebookTerminalAuthorization(deps);
   notebookTerminalService.configureLifecycleHooks({
     onSessionCreated: async (session) => {
       if (!internalWorkloadCoordinator) return;
@@ -317,6 +347,7 @@ export function createNodeApiDepsFromEnv(env: NodeJS.ProcessEnv): {
         : new InMemoryFileLibraryGatewayManager(),
       ...(universalProxyService ? { universalProxyService } : {}),
     };
+  configureNotebookTerminalAuthorization(deps);
   notebookTerminalService.configureLifecycleHooks({
     onSessionCreated: async (session) => {
       if (!internalWorkloadCoordinator) return;

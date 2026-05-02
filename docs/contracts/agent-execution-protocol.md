@@ -151,7 +151,39 @@ The frontend keeps the same chat SSE consumption model used by endpoint streamin
   - Unsupported `agent.response.*` types with a valid `request_id` fail that request with `AGENT_PROTOCOL_ERROR`.
   - Invalid JSON frame closes socket with close code `1003` (`invalid_json`).
 
-## 7. Chat Stream Error Mapping
+## 7. Browser Notebook Terminal WS
+
+This section covers the browser-facing terminal websocket issued by notebook task terminal routes. It does not change the runner-side terminal protocol.
+
+- The first browser business frame must be `terminal.reconnect`.
+- Before a valid reconnect handshake, `terminal.stdin`, `terminal.resize`, and `terminal.close` are rejected with `terminal.error` and the websocket is closed.
+- `terminal.reconnect` payload fields:
+  - `terminal_session_id: string`
+  - `view: "notebook.task_terminal"`
+  - `cols: number`
+  - `rows: number`
+  - `after_seq?: number | null`
+- `view` is a strict contract constant, not opaque metadata. API entry rejects missing, empty, or non-`notebook.task_terminal` views with `terminal.error` / `invalid_reconnect_payload` and closes the websocket.
+- On successful reconnect, API entry emits `terminal.replay_start`, zero or more `terminal.output` replay frames, and `terminal.replay_end`.
+- Browser-facing reconnect/replay frames use `terminal_session_id` as the session identifier. Legacy runtime frames using `session_id` are accepted only for older browser terminal links and are not emitted by the reconnect/replay path.
+- `terminal.output.seq` is monotonic only within one `terminal_session_id`; it is not a global audit cursor and is not durable across API entry restarts.
+- `terminal.output` carries real terminal bytes with `seq` and either `chunk` or `encoding`/`data`. Browser UI must not synthesize missing output.
+- For `encoding: "base64"`, `data` is arbitrary terminal byte chunk data. Browser decoding must use session-scoped streaming UTF-8 decoder state so multibyte characters split across frames are not corrupted.
+- For `status: "partial"`, the browser may discard decoder state at `terminal.replay_start` because bytes before the replay window are missing, but it must preserve decoder state accumulated from replayed output across `terminal.replay_end` into later live `terminal.output` frames at the next seq.
+- For `status: "unavailable"`, `next_seq` only realigns the seq cursor; byte continuity is not proven. The browser must discard pending UTF-8 decoder state before accepting later live output at that boundary.
+- `terminal.replay_start` and `terminal.replay_end` use `status: "complete" | "partial" | "unavailable"` plus `gap` and seq range metadata. When `status` is `"unavailable"` because replay cannot satisfy the browser cursor, both frames may include `next_seq`.
+- `next_seq` is the next acceptable `terminal.output.seq` for subsequent live output. It is a continuity boundary for the browser, not evidence that missing replay output has been recovered.
+- When an unavailable replay includes `next_seq`, the browser should show a degraded replay state, align its expected live-output seq to `next_seq`, and accept later `terminal.output` frames at that boundary. It must not render placeholder bytes, fabricate missing output, or reconnect-loop solely to fill the unavailable replay range.
+- `terminal.replay_end.input_enabled` tells the browser whether `terminal.stdin` / `terminal.resize` may be sent immediately after replay. Replay completion and input readiness are not the same thing.
+- When `terminal.replay_end.input_enabled` is `false`, the browser must keep `terminal.stdin` / `terminal.resize` gated until API entry emits `terminal.state` with `state: "ready"`/`"active"`/`"connected"` or explicit `input_enabled: true`.
+- If the runtime is still starting after replay, API entry emits `terminal.state` with `input_enabled: false`; after the runner runtime reports started/active, API entry emits `terminal.state` with `input_enabled: true`.
+- API entry accepts `terminal.stdin` and `terminal.resize` only when backend runtime truth says terminal input is enabled for that session. A completed browser reconnect handshake or replay completion alone is not sufficient; post-handshake/pre-ready input is rejected with `terminal.error` and a websocket close, without writing pseudo output.
+- Browser-facing terminal failures are emitted as `terminal.error`.
+- Replay source is an API-entry in-memory bounded ring. If `after_seq` is older than the ring, replay is `partial` with `gap: true`; if the ring is unavailable or `after_seq` is ahead of the latest known seq, replay is `unavailable`, and future cursors use `error_code: "future_after_seq"` plus `next_seq`.
+- Reconnect must not synthesize a `started` frame. Browser UI should treat replay status as terminal recovery metadata, not terminal bytes.
+- Routes that issue an interactive terminal `ws_url` or ticket require `project:terminal:use` in addition to task access. Reconnect handshakes and each `terminal.stdin` / `terminal.resize` frame re-check current backend permission truth; revoked permission rejects the frame and closes the websocket instead of trusting a cached ticket or open socket.
+
+## 8. Chat Stream Error Mapping
 
 When chat session is bound to `external_agent_id`, server returns explicit API error codes for stream bootstrap failures:
 
@@ -160,14 +192,14 @@ When chat session is bound to `external_agent_id`, server returns explicit API e
 - `AGENT_UPSTREAM_ERROR`: agent reported upstream error
 
 Frontend maps these codes to explicit user-facing error banners.
-## 8. Related REST APIs
+## 9. Related REST APIs
 
 - `GET /api/v1/workspaces/{ws}/projects/{project}/agents/{agentId}/connection-info`
 - `GET/POST /api/v1/workspaces/{ws}/projects/{project}/agents/{agentId}/keys`
 - `DELETE /api/v1/workspaces/{ws}/projects/{project}/agents/{agentId}/keys/{keyId}`
 - `GET /api/v1/workspaces/{ws}/projects/{project}/agents/{agentId}/execution-config`
 
-## 9. Echo Example
+## 10. Echo Example
 
 Reference implementation:
 
@@ -182,7 +214,7 @@ MBOS_AGENT_KEY='ask_xxx' \
 tsx packages/api-entry-node/examples/external-agent-echo.ts
 ```
 
-## 10. Risk Register (Notebook Codex v1)
+## 11. Risk Register (Notebook Codex v1)
 
 - `R1` user token forwarding to runner:
   - MBOS forwards user bearer token in execution context for project proxy auth/audit.

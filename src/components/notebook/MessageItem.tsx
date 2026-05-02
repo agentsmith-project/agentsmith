@@ -561,13 +561,16 @@ export function MessageItem({
 
         {isActiveRun && activeRunView ? (
           <div
-            className="mt-3 flex flex-wrap items-center justify-between gap-3 border-t border-subtle pt-3 text-[11px]"
+            className="mt-3 grid grid-cols-[minmax(0,1fr)_auto] items-center gap-3 border-t border-subtle pt-3 text-[11px]"
             data-testid="notebook__message-active-run-footer"
           >
-            <div className="flex min-w-0 flex-wrap items-center gap-2 text-tertiary">
+            <div
+              className="flex min-w-0 items-center gap-2 overflow-hidden whitespace-nowrap text-tertiary"
+              data-testid="notebook__message-active-run-meta"
+            >
               <span
                 className={cn(
-                  "inline-flex items-center gap-1.5 rounded-full border px-2 py-0.5 font-medium",
+                  "inline-flex shrink-0 items-center gap-1.5 rounded-full border px-2 py-0.5 font-medium whitespace-nowrap",
                   activeFooterState === "realtime_error"
                     ? "border-error/30 bg-error/8 text-error"
                     : activeFooterState === "reconnecting"
@@ -585,7 +588,7 @@ export function MessageItem({
                 {tNotebookConversation(activeFooterStatusKey)}
               </span>
               <span
-                className="text-tertiary"
+                className="shrink-0 whitespace-nowrap text-tertiary"
                 data-testid="notebook__message-active-run-elapsed"
               >
                 {tNotebookConversation("active_run_elapsed", {
@@ -596,7 +599,7 @@ export function MessageItem({
                 latestAction?.traceName ? (
                   <button
                     type="button"
-                    className="max-w-[min(560px,100%)] truncate text-left text-secondary hover:text-primary"
+                    className="min-w-0 flex-1 truncate whitespace-nowrap text-left text-secondary hover:text-primary"
                     onClick={() =>
                       onRunActionClick?.({
                         traceName: latestAction.traceName,
@@ -612,7 +615,7 @@ export function MessageItem({
                   </button>
                 ) : (
                   <span
-                    className="max-w-[min(560px,100%)] truncate text-secondary"
+                    className="min-w-0 flex-1 truncate whitespace-nowrap text-secondary"
                     title={latestActionSummary}
                     data-testid="notebook__message-active-run-latest-action"
                   >
@@ -627,7 +630,7 @@ export function MessageItem({
               type="button"
               variant="outline"
               size="sm"
-              className="h-7 shrink-0 px-2.5 text-[11px]"
+              className="h-7 shrink-0 whitespace-nowrap px-2.5 text-[11px]"
               onClick={activeRunView.onCancel}
               disabled={cancelDisabled}
               data-testid="notebook__message-active-run-cancel"

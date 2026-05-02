@@ -16,7 +16,7 @@ describe('requiredProjectPermissions', () => {
     ).toEqual(['project:endpoint:use', 'project:terminal:use']);
   });
 
-  it('treats existing terminal session management as task-use access instead of terminal-create access', () => {
+  it('requires terminal-use for terminal routes that can issue interactive websocket tickets', () => {
     expect(
       requiredProjectPermissions(
         {
@@ -28,7 +28,7 @@ describe('requiredProjectPermissions', () => {
         },
         'GET',
       ),
-    ).toEqual(['project:endpoint:use']);
+    ).toEqual(['project:endpoint:use', 'project:terminal:use']);
 
     expect(
       requiredProjectPermissions(
@@ -40,8 +40,10 @@ describe('requiredProjectPermissions', () => {
         },
         'GET',
       ),
-    ).toEqual(['project:endpoint:use']);
+    ).toEqual(['project:endpoint:use', 'project:terminal:use']);
+  });
 
+  it('keeps deleting existing terminal session metadata on task-use access', () => {
     expect(
       requiredProjectPermissions(
         {

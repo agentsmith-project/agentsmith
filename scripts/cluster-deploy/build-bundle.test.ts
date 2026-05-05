@@ -256,9 +256,7 @@ EOF
 cat > "\${RELEASE_ROOT}/VERSION" <<EOF
 release_id=\${RELEASE_ID}
 agentsmith_app_image=localhost:5001/mbos/agentsmith-app:\${release_alias}
-agentsmith_runner_image=localhost:5001/mbos/agentsmith-notebook-codex-runner:\${RELEASE_ID}
-agentsmith_chat_runner_image=localhost:5001/mbos/agentsmith-chat-llm-runner:\${RELEASE_ID}
-agentsmith_chat_runner_k8s_image=kind-registry:5000/mbos/agentsmith-chat-llm-runner:\${RELEASE_ID}
+agentsmith_agent_task_runner_image=localhost:5001/mbos/agentsmith-agent-task-runner:\${RELEASE_ID}
 agentsmith_verify_runner_image=localhost:5001/mbos/agentsmith-verify-runner:\${RELEASE_ID}
 sandbox_manager_image=localhost:5001/mbos/sandbox-manager:\${RELEASE_ID}
 llm_universal_proxy_image=localhost:5001/mbos/llm-universal-proxy:v0.2.27
@@ -303,7 +301,7 @@ release_story_verify_source_set() {
   );
 
   for (const relativePath of [
-    'scripts/check-preset-external-file-library.sh',
+    'scripts/check-preset-agent-task-file-library.sh',
     'scripts/file-library-real-smoke.sh',
     'scripts/cluster-upgrade-smoke.sh',
     'scripts/lib/release-stage-common.sh',
@@ -325,7 +323,7 @@ release_story_verify_source_set() {
     path.join(tempRoot, 'scripts', 'lib', 'image-archive-manifest.sh'),
   );
 
-  writeFile(path.join(tempRoot, 'scripts', 'notebook-agent-refresh-token.js'), 'console.log("ok");\n');
+  writeFile(path.join(tempRoot, 'scripts', 'agent-runner-refresh-token.js'), 'console.log("ok");\n');
   writeFile(path.join(tempRoot, 'infra', 'runtime', 'presets.env'), 'PRESET_ENDPOINT_MODEL=placeholder-model\n');
 
   writeFile(path.join(tempRoot, 'infra', 'deploy', 'cluster', 'docker-compose.yml'), 'services: {}\n');
@@ -358,14 +356,11 @@ release_story_verify_source_set() {
     'docs/user-guides/cluster-upgrade-operations.md',
     'e2e/integration-real-helpers.ts',
     'e2e/integration-files.spec.ts',
-    'e2e/notebook-execution-outcome.ts',
+    'e2e/agent-task-execution-outcome.ts',
     'e2e/integration-workspace-access.ts',
     'e2e/integration-workspace-entry.spec.ts',
     'e2e/integration-workspace-publish-usable.spec.ts',
-    'e2e/integration-preset-external-file-library.spec.ts',
-    'e2e/integration-internal-chat-runner.spec.ts',
-    'e2e/integration-chat-local-upstream.ts',
-    'e2e/internal-chat-isolation-probe.ts',
+    'e2e/integration-preset-agent-task-file-library.spec.ts',
     'e2e/stories/backend-real/example.story.md',
   ]) {
     writeFile(path.join(tempRoot, relativePath), 'placeholder\n');

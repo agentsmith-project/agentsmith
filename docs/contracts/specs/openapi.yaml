@@ -11,13 +11,13 @@ tags:
   - name: Workspaces
   - name: Projects
   - name: Chat
-  - name: Agents
+  - name: Agent Runners
   - name: Endpoints
   - name: Sources
   - name: Contracts
   - name: Credentials
-  - name: Notebook
-    description: Notebook tasks and execution trace APIs
+  - name: Agent Tasks
+    description: Agent task execution, terminal, artifact, and trace APIs
   - name: Authorization
     description: Unified authorization decision API
   - name: SSE
@@ -323,89 +323,102 @@ paths:
           $ref: "#/components/responses/Unauthorized"
         "403":
           $ref: "#/components/responses/Forbidden"
-  /api/v1/workspaces/{workspaceId}/projects/{projectId}/agents:
+  /api/v1/workspaces/{workspaceId}/projects/{projectId}/agent-runners:
     parameters:
       - $ref: "#/components/parameters/workspaceId"
       - $ref: "#/components/parameters/projectId"
     get:
       tags:
-        - Agents
-      operationId: listAgents
+        - Agent Runners
+      operationId: listAgentRunners
+      summary: List agent runners
       responses:
         "200":
-          description: Agent list
+          description: Agent runner list
           content:
             application/json:
               schema:
-                type: array
-                items:
-                  $ref: "#/components/schemas/Agent"
+                $ref: "#/components/schemas/AgentRunnerListResponse"
     post:
       tags:
-        - Agents
-      operationId: createAgent
+        - Agent Runners
+      operationId: createAgentRunner
+      summary: Create an agent runner
       requestBody:
         required: true
         content:
           application/json:
             schema:
-              $ref: "#/components/schemas/CreateAgentRequest"
+              $ref: "#/components/schemas/CreateAgentRunnerRequest"
       responses:
         "201":
-          description: Agent created
+          description: Agent runner created
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/Agent"
-  /api/v1/workspaces/{workspaceId}/projects/{projectId}/agents/{agentId}:
+                $ref: "#/components/schemas/AgentRunner"
+        "400":
+          description: Unsupported legacy agent runner field
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/UnsupportedFieldError"
+  /api/v1/workspaces/{workspaceId}/projects/{projectId}/agent-runners/{agentRunnerId}:
     parameters:
       - $ref: "#/components/parameters/workspaceId"
       - $ref: "#/components/parameters/projectId"
-      - $ref: "#/components/parameters/agentId"
+      - $ref: "#/components/parameters/agentRunnerId"
     get:
       tags:
-        - Agents
-      operationId: getAgent
+        - Agent Runners
+      operationId: getAgentRunner
       responses:
         "200":
-          description: Agent
+          description: Agent runner
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/Agent"
+                $ref: "#/components/schemas/AgentRunner"
     patch:
       tags:
-        - Agents
-      operationId: updateAgent
+        - Agent Runners
+      operationId: updateAgentRunner
+      summary: Update an agent runner
       requestBody:
         required: true
         content:
           application/json:
             schema:
-              $ref: "#/components/schemas/UpdateAgentRequest"
+              $ref: "#/components/schemas/UpdateAgentRunnerRequest"
       responses:
         "200":
-          description: Updated
+          description: Agent runner updated
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/Agent"
+                $ref: "#/components/schemas/AgentRunner"
+        "400":
+          description: Unsupported legacy agent runner field
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/UnsupportedFieldError"
     delete:
       tags:
-        - Agents
-      operationId: deleteAgent
+        - Agent Runners
+      operationId: deleteAgentRunner
       responses:
         "204":
           description: Deleted
-  /api/v1/workspaces/{workspaceId}/projects/{projectId}/agents/{agentId}/connection-info:
+  /api/v1/workspaces/{workspaceId}/projects/{projectId}/agent-runners/{agentRunnerId}/connection-info:
     parameters:
       - $ref: "#/components/parameters/workspaceId"
       - $ref: "#/components/parameters/projectId"
-      - $ref: "#/components/parameters/agentId"
+      - $ref: "#/components/parameters/agentRunnerId"
     get:
       tags:
-        - Agents
-      operationId: getAgentConnectionInfo
+        - Agent Runners
+      operationId: getAgentRunnerConnectionInfo
       responses:
         "200":
           description: Connection info
@@ -415,18 +428,27 @@ paths:
                 type: object
                 required:
                   - ws_url
+                  - agent_runner_id
+                  - protocol_version
+                  - heartbeat_interval_sec
                 properties:
                   ws_url:
                     type: string
-  /api/v1/workspaces/{workspaceId}/projects/{projectId}/agents/{agentId}/keys:
+                  agent_runner_id:
+                    type: string
+                  protocol_version:
+                    type: string
+                  heartbeat_interval_sec:
+                    type: integer
+  /api/v1/workspaces/{workspaceId}/projects/{projectId}/agent-runners/{agentRunnerId}/keys:
     parameters:
       - $ref: "#/components/parameters/workspaceId"
       - $ref: "#/components/parameters/projectId"
-      - $ref: "#/components/parameters/agentId"
+      - $ref: "#/components/parameters/agentRunnerId"
     get:
       tags:
-        - Agents
-      operationId: listAgentKeys
+        - Agent Runners
+      operationId: listAgentRunnerKeys
       responses:
         "200":
           description: Key list
@@ -435,28 +457,28 @@ paths:
               schema:
                 type: array
                 items:
-                  $ref: "#/components/schemas/AgentKey"
+                  $ref: "#/components/schemas/AgentRunnerKey"
     post:
       tags:
-        - Agents
-      operationId: createAgentKey
+        - Agent Runners
+      operationId: createAgentRunnerKey
       responses:
         "201":
           description: Key created
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/CreateAgentKeyResponse"
-  /api/v1/workspaces/{workspaceId}/projects/{projectId}/agents/{agentId}/keys/{keyId}:
+                $ref: "#/components/schemas/CreateAgentRunnerKeyResponse"
+  /api/v1/workspaces/{workspaceId}/projects/{projectId}/agent-runners/{agentRunnerId}/keys/{keyId}:
     parameters:
       - $ref: "#/components/parameters/workspaceId"
       - $ref: "#/components/parameters/projectId"
-      - $ref: "#/components/parameters/agentId"
+      - $ref: "#/components/parameters/agentRunnerId"
       - $ref: "#/components/parameters/keyId"
     delete:
       tags:
-        - Agents
-      operationId: deleteAgentKey
+        - Agent Runners
+      operationId: deleteAgentRunnerKey
       responses:
         "204":
           description: Deleted
@@ -1474,6 +1496,9 @@ paths:
         "409":
           description: Workspace Feishu not enabled
   /api/v1/workspaces/{workspaceId}/projects/{projectId}:
+    parameters:
+      - $ref: "#/components/parameters/workspaceId"
+      - $ref: "#/components/parameters/projectId"
     get:
       tags:
         - Projects
@@ -1485,6 +1510,44 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/ProjectWithMembership"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+    patch:
+      tags:
+        - Projects
+      operationId: updateProject
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateProjectRequest"
+      responses:
+        "200":
+          description: Updated project
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Project"
+        "400":
+          description: Validation error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+    delete:
+      tags:
+        - Projects
+      operationId: deleteProject
+      responses:
+        "204":
+          description: Deleted
         "401":
           $ref: "#/components/responses/Unauthorized"
         "403":
@@ -1662,10 +1725,14 @@ paths:
             schema:
               type: object
               additionalProperties: true
-  /api/v1/workspaces/{workspaceId}/projects/{projectId}/agents/{agentId}/diagnostics:
+  /api/v1/workspaces/{workspaceId}/projects/{projectId}/agent-runners/{agentRunnerId}/diagnostics:
+    parameters:
+      - $ref: "#/components/parameters/workspaceId"
+      - $ref: "#/components/parameters/projectId"
+      - $ref: "#/components/parameters/agentRunnerId"
     get:
       tags:
-        - Agents
+        - Agent Runners
       operationId: get_agentDiagnostics
       responses:
         "200":
@@ -1679,10 +1746,14 @@ paths:
           $ref: "#/components/responses/Unauthorized"
         "403":
           $ref: "#/components/responses/Forbidden"
-  /api/v1/workspaces/{workspaceId}/projects/{projectId}/agents/{agentId}/execution-config:
+  /api/v1/workspaces/{workspaceId}/projects/{projectId}/agent-runners/{agentRunnerId}/execution-config:
+    parameters:
+      - $ref: "#/components/parameters/workspaceId"
+      - $ref: "#/components/parameters/projectId"
+      - $ref: "#/components/parameters/agentRunnerId"
     get:
       tags:
-        - Agents
+        - Agent Runners
       operationId: get_agentExecutionConfig
       responses:
         "200":
@@ -1691,7 +1762,22 @@ paths:
             application/json:
               schema:
                 type: object
-                additionalProperties: true
+                additionalProperties: false
+                required:
+                  - project_id
+                  - agent_runner_id
+                  - execution_preferences
+                  - schema_version
+                properties:
+                  project_id:
+                    type: string
+                  agent_runner_id:
+                    type: string
+                  execution_preferences:
+                    type: object
+                    additionalProperties: true
+                  schema_version:
+                    type: integer
         "401":
           $ref: "#/components/responses/Unauthorized"
         "403":
@@ -2177,8 +2263,9 @@ paths:
   /api/v1/workspaces/{workspaceId}/projects/{projectId}/tasks:
     get:
       tags:
-        - Notebook
+        - Agent Tasks
       operationId: listTasks
+      summary: List agent tasks
       responses:
         "200":
           description: OK
@@ -2190,11 +2277,53 @@ paths:
           $ref: "#/components/responses/Unauthorized"
         "403":
           $ref: "#/components/responses/Forbidden"
+    post:
+      tags:
+        - Agent Tasks
+      operationId: createTask
+      summary: Create an agent task
+      description: Creates an agent task without requiring runner selection fields. Task runs resolve the project default managed agent runner at execution time.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateTaskRequest"
+      responses:
+        "201":
+          description: Agent task created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Task"
+        "400":
+          description: Unsupported legacy task runner selector field
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/UnsupportedFieldError"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "409":
+          description: Workspace or file library conflict
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+        "422":
+          description: Validation error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
   /api/v1/workspaces/{workspaceId}/projects/{projectId}/tasks/{taskId}:
     get:
       tags:
-        - Notebook
+        - Agent Tasks
       operationId: getTask
+      summary: Get an agent task
       responses:
         "200":
           description: OK
@@ -2206,68 +2335,76 @@ paths:
           $ref: "#/components/responses/Unauthorized"
         "403":
           $ref: "#/components/responses/Forbidden"
-  /api/v1/workspaces/{workspaceId}/projects/{projectId}/tasks/{taskId}/messages:
+  /api/v1/workspaces/{workspaceId}/projects/{projectId}/tasks/{taskId}/activity:
     get:
       tags:
-        - Notebook
-      operationId: listTaskMessages
+        - Agent Tasks
+      operationId: listTaskActivity
+      summary: List agent task activity
+      description: Returns user intent and runner output activity for an Agent Task. Public activity items do not expose Chat message roles.
       responses:
         "200":
           description: OK
           content:
             application/json:
               schema:
-                type: object
-                additionalProperties: true
+                type: array
+                items:
+                  $ref: "#/components/schemas/TaskActivityItem"
         "401":
           $ref: "#/components/responses/Unauthorized"
         "403":
           $ref: "#/components/responses/Forbidden"
+  /api/v1/workspaces/{workspaceId}/projects/{projectId}/tasks/{taskId}/runs:
     post:
       tags:
-        - Notebook
-      operationId: createTaskMessageAndRun
-      description: Creates a notebook message and, for user role, starts
-        external-agent execution with streaming updates via
-        /tasks/{taskId}/events.
+        - Agent Tasks
+      operationId: startTaskRun
+      summary: Start an agent task run
+      description: Starts an Agent Task run from user intent and optional input references. Backend runner resolution is authoritative; clients do not send runner selectors or message roles.
       responses:
         "200":
-          description: Message accepted
+          description: Run accepted
           content:
             application/json:
               schema:
-                type: object
-                additionalProperties: true
+                $ref: "#/components/schemas/TaskActivityItem"
+        "400":
+          description: Unsupported legacy task runner selector or message field
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/UnsupportedFieldError"
         "401":
           $ref: "#/components/responses/Unauthorized"
         "403":
           $ref: "#/components/responses/Forbidden"
         "409":
-          description: TASK_STREAM_CONFLICT or task_terminal_sessions_active
+          description: TASK_STREAM_CONFLICT, task_terminal_sessions_active, or agent runner resolution failure
           content:
             application/json:
               schema:
                 oneOf:
                   - $ref: "#/components/schemas/TaskStreamConflictResponse"
+                  - $ref: "#/components/schemas/AgentRunnerResolutionError"
                   - $ref: "#/components/schemas/ApiError"
         "422":
           description: Validation error (for example TASK_AGENT_ENDPOINT_NOT_CONFIGURED)
         "502":
-          description: External agent execution error
+          description: Agent task runner execution error
             (AGENT_OFFLINE/AGENT_PROTOCOL_ERROR/AGENT_UPSTREAM_ERROR)
       requestBody:
         required: true
         content:
           application/json:
             schema:
-              type: object
-              additionalProperties: true
+              $ref: "#/components/schemas/StartTaskRunRequest"
   /api/v1/workspaces/{workspaceId}/projects/{projectId}/tasks/{taskId}/cancel:
     post:
       tags:
-        - Notebook
+        - Agent Tasks
       operationId: cancelTaskRun
-      description: Requests cancellation of the currently active notebook run.
+      description: Requests cancellation of the currently active agent task run.
       requestBody:
         required: false
         content:
@@ -2298,7 +2435,7 @@ paths:
   /api/v1/workspaces/{workspaceId}/projects/{projectId}/tasks/{taskId}/artifacts:
     get:
       tags:
-        - Notebook
+        - Agent Tasks
       operationId: listTaskArtifacts
       responses:
         "200":
@@ -2328,8 +2465,9 @@ paths:
                         - other
                     task_relative_path:
                       type: string
-                      description: Relative path inside the notebook task working directory for
-                        execution-originated artifacts.
+                      description: Relative path inside the agent task working directory for
+                        execution-originated artifacts. The backend only accepts
+                        artifact paths under `.artifacts`.
                     title:
                       type: string
                     content:
@@ -2351,7 +2489,7 @@ paths:
   /api/v1/workspaces/{workspaceId}/projects/{projectId}/tasks/{taskId}/workspace-access:
     post:
       tags:
-        - Notebook
+        - Agent Tasks
       operationId: getTaskWorkspaceAccess
       responses:
         "200":
@@ -2405,7 +2543,7 @@ paths:
   /api/v1/workspaces/{workspaceId}/projects/{projectId}/tasks/{taskId}/terminal/sessions:
     get:
       tags:
-        - Notebook
+        - Agent Tasks
       operationId: listTaskTerminalSessions
       responses:
         "200":
@@ -2426,7 +2564,7 @@ paths:
                     items:
                       type: object
                       required:
-                        - id
+                        - terminal_session_id
                         - status
                         - cols
                         - rows
@@ -2436,9 +2574,16 @@ paths:
                         - close_reason
                         - exit_code
                         - ws_url
+                        - runner_id
                       properties:
-                        id:
+                        terminal_session_id:
                           type: string
+                        runner_id:
+                          type: string
+                          description: Resolved Agent Runner id used by this terminal session.
+                        runner_session_id:
+                          type: string
+                          description: Internal runner session id used by this terminal session.
                         status:
                           type: string
                           enum:
@@ -2478,7 +2623,7 @@ paths:
           $ref: "#/components/responses/NotFound"
     post:
       tags:
-        - Notebook
+        - Agent Tasks
       operationId: createTaskTerminalSession
       requestBody:
         required: false
@@ -2501,12 +2646,19 @@ paths:
               schema:
                 type: object
                 required:
-                  - session_id
+                  - terminal_session_id
+                  - runner_id
                   - status
                   - ws_url
                 properties:
-                  session_id:
+                  terminal_session_id:
                     type: string
+                  runner_id:
+                    type: string
+                    description: Resolved Agent Runner id used by this terminal session.
+                  runner_session_id:
+                    type: string
+                    description: Internal runner session id used by this terminal session.
                   status:
                     type: string
                     enum:
@@ -2528,7 +2680,7 @@ paths:
   /api/v1/workspaces/{workspaceId}/projects/{projectId}/tasks/{taskId}/terminal/sessions/{terminalSessionId}:
     get:
       tags:
-        - Notebook
+        - Agent Tasks
       operationId: getTaskTerminalSession
       responses:
         "200":
@@ -2538,7 +2690,7 @@ paths:
               schema:
                 type: object
                 required:
-                  - id
+                  - terminal_session_id
                   - status
                   - cols
                   - rows
@@ -2548,9 +2700,16 @@ paths:
                   - close_reason
                   - exit_code
                   - ws_url
+                  - runner_id
                 properties:
-                  id:
+                  terminal_session_id:
                     type: string
+                  runner_id:
+                    type: string
+                    description: Resolved Agent Runner id used by this terminal session.
+                  runner_session_id:
+                    type: string
+                    description: Internal runner session id used by this terminal session.
                   status:
                     type: string
                     enum:
@@ -2590,7 +2749,7 @@ paths:
           $ref: "#/components/responses/NotFound"
     delete:
       tags:
-        - Notebook
+        - Agent Tasks
       operationId: deleteTaskTerminalSession
       responses:
         "204":
@@ -2604,7 +2763,7 @@ paths:
   /api/v1/workspaces/{workspaceId}/projects/{projectId}/tasks/{taskId}/artifacts/{artifactId}/download:
     get:
       tags:
-        - Notebook
+        - Agent Tasks
       operationId: downloadTaskArtifact
       responses:
         "200":
@@ -2621,9 +2780,9 @@ paths:
   /api/v1/workspaces/{workspaceId}/projects/{projectId}/tasks/{taskId}/events:
     get:
       tags:
-        - Notebook
+        - Agent Tasks
       operationId: listTaskEvents
-      description: Server-Sent Events stream for notebook task execution updates
+      description: Server-Sent Events stream for agent task execution updates
         (message/task_update/error/ping).
       responses:
         "200":
@@ -2638,14 +2797,14 @@ paths:
           $ref: "#/components/responses/Forbidden"
   /api/v1/workspaces/{workspaceId}/projects/{projectId}/tasks/{taskId}/traces:
     get:
-      summary: List notebook execution trace events
+      summary: List agent task execution trace events
       description: >
-        Returns execution trace events for a notebook task. Results can be
-        scoped to a specific message or run,
+        Returns execution trace events for an agent task. Results can be
+        scoped to a specific activity item or run,
 
         and paged using cursor-style parameters (`after_id` / `before_id`).
       tags:
-        - Notebook
+        - Agent Tasks
       parameters:
         - in: path
           name: workspaceId
@@ -2666,7 +2825,7 @@ paths:
           name: message_id
           schema:
             type: string
-          description: Limit traces to a specific agent message.
+          description: Limit traces to a specific task activity item.
         - in: query
           name: run_id
           schema:
@@ -2782,7 +2941,7 @@ paths:
   /api/v1/workspaces/{workspaceId}/projects/{projectId}/tasks/{taskId}/inputs:
     get:
       tags:
-        - Notebook
+        - Agent Tasks
       operationId: listTaskInputs
       responses:
         "200":
@@ -2799,7 +2958,7 @@ paths:
   /api/v1/workspaces/{workspaceId}/projects/{projectId}/tasks/{taskId}/inputs/{inputId}:
     get:
       tags:
-        - Notebook
+        - Agent Tasks
       operationId: getTaskInputItem
       responses:
         "200":
@@ -5065,8 +5224,8 @@ components:
       required: true
       schema:
         type: string
-    agentId:
-      name: agentId
+    agentRunnerId:
+      name: agentRunnerId
       in: path
       required: true
       schema:
@@ -5238,9 +5397,6 @@ components:
         governance_json:
           type: object
           additionalProperties: true
-        execution_preferences_json:
-          type: object
-          additionalProperties: true
         limits_json:
           type: object
           additionalProperties: true
@@ -5281,11 +5437,57 @@ components:
             $ref: "#/components/schemas/ProjectWithMembership"
     CreateProjectRequest:
       type: object
+      additionalProperties: false
       required:
         - name
       properties:
         name:
           type: string
+        description:
+          type: string
+        visibility:
+          type: string
+          enum:
+            - public
+            - private
+        join_policy:
+          type: string
+          enum:
+            - approval_required
+            - open
+    UpdateProjectRequest:
+      type: object
+      additionalProperties: false
+      minProperties: 1
+      properties:
+        name:
+          type: string
+        description:
+          type: string
+        owner_id:
+          type: string
+        visibility:
+          type: string
+          enum:
+            - public
+            - private
+        join_policy:
+          type: string
+          enum:
+            - approval_required
+            - open
+        status:
+          type: string
+          enum:
+            - active
+            - archived
+            - deleted
+        governance_json:
+          type: object
+          additionalProperties: true
+        limits_json:
+          type: object
+          additionalProperties: true
     ChatSession:
       type: object
       required:
@@ -5300,8 +5502,6 @@ components:
         model:
           type: string
         endpoint_id:
-          type: string
-        external_agent_id:
           type: string
         execution_status:
           type: string
@@ -5346,6 +5546,34 @@ components:
         - offline
         - managed
         - unknown
+    TaskRunSummary:
+      type: object
+      additionalProperties: false
+      required:
+        - id
+        - status
+        - runner_id
+      properties:
+        id:
+          type: string
+        status:
+          type: string
+          enum:
+            - queued
+            - running
+            - stopping
+            - succeeded
+            - failed
+            - canceled
+        runner_id:
+          type: string
+          description: Resolved agent runner id used for this run.
+        started_at:
+          type: string
+          format: date-time
+        finished_at:
+          type: string
+          format: date-time
     TaskInputRef:
       type: object
       additionalProperties: true
@@ -5355,6 +5583,18 @@ components:
       properties:
         id:
           type: string
+        kind:
+          type: string
+          enum:
+            - library_object
+            - artifact
+            - url
+    TaskInputRefInput:
+      type: object
+      additionalProperties: true
+      required:
+        - kind
+      properties:
         kind:
           type: string
           enum:
@@ -5377,6 +5617,81 @@ components:
         attached_input_count:
           type: integer
           minimum: 0
+    CreateTaskRequest:
+      type: object
+      additionalProperties: false
+      required:
+        - title
+      properties:
+        title:
+          type: string
+        prompt:
+          type: string
+          description: Initial user prompt. The task runner is resolved when a run starts.
+        input_refs:
+          type: array
+          items:
+            $ref: "#/components/schemas/TaskInputRefInput"
+        initial_inputs:
+          type: array
+          deprecated: true
+          items:
+            $ref: "#/components/schemas/TaskInputRefInput"
+        workspace_mode:
+          type: string
+          enum:
+            - create_new
+            - use_existing
+        workspace_name:
+          type: string
+        workspace_file_library_id:
+          type: string
+    StartTaskRunRequest:
+      type: object
+      additionalProperties: false
+      required:
+        - intent
+      properties:
+        intent:
+          type: string
+          minLength: 1
+          description: User intent for this Agent Task run.
+        input_refs:
+          type: array
+          items:
+            $ref: "#/components/schemas/TaskInputRefInput"
+    TaskActivityItem:
+      type: object
+      additionalProperties: false
+      required:
+        - id
+        - task_id
+        - kind
+        - actor
+        - content
+        - created_at
+      properties:
+        id:
+          type: string
+        task_id:
+          type: string
+        kind:
+          type: string
+          enum:
+            - user_intent
+            - runner_output
+        actor:
+          type: string
+          enum:
+            - user
+            - runner
+        content:
+          type: string
+        created_at:
+          type: string
+          format: date-time
+        run_id:
+          type: string
     Task:
       type: object
       additionalProperties: true
@@ -5386,9 +5701,8 @@ components:
         - project_id
         - owner_user_id
         - title
-        - agent_id
-        - agent_name
         - status
+        - lifecycle_status
         - attached_inputs
         - created_at
         - updated_at
@@ -5404,15 +5718,18 @@ components:
           type: string
         title:
           type: string
-        agent_id:
-          type: string
-        agent_name:
+        prompt:
           type: string
         workspace_file_library_id:
           type: string
         workspace_file_library_name:
           type: string
         status:
+          type: string
+          enum:
+            - active
+            - archived
+        lifecycle_status:
           type: string
           enum:
             - active
@@ -5434,10 +5751,12 @@ components:
           $ref: "#/components/schemas/TaskAgentPresence"
         run_state:
           $ref: "#/components/schemas/TaskRunState"
+        active_run:
+          $ref: "#/components/schemas/TaskRunSummary"
         active_run_started_at:
           type: string
           format: date-time
-          description: Start time of the current active notebook run; omitted when the backend has no active run truth.
+          description: Start time of the current active agent task run; omitted when the backend has no active run truth.
         stop_mode:
           $ref: "#/components/schemas/StopMode"
         can_escalate:
@@ -5694,8 +6013,6 @@ components:
           type: string
         endpoint_id:
           type: string
-        external_agent_id:
-          type: string
     UpdateChatSessionRequest:
       type: object
       properties:
@@ -5704,8 +6021,6 @@ components:
         model:
           type: string
         endpoint_id:
-          type: string
-        external_agent_id:
           type: string
         pinned:
           type: boolean
@@ -5813,54 +6128,161 @@ components:
               type: string
             imported_key:
               type: string
-    Agent:
+    AgentRunnerStatus:
+      type: string
+      enum:
+        - draft
+        - connected
+        - ready
+        - degraded
+        - offline
+    AgentRunnerCapabilities:
       type: object
+      additionalProperties: true
+      properties:
+        streaming_completion:
+          type: boolean
+        multimodal_completion:
+          type: boolean
+        accepted_mime_types:
+          type: array
+          items:
+            type: string
+        max_file_count:
+          type: integer
+          minimum: 0
+        max_total_bytes:
+          type: integer
+          minimum: 0
+        terminal:
+          type: boolean
+        artifacts:
+          type: boolean
+        file_inputs:
+          type: boolean
+        url_inputs:
+          type: boolean
+        task_execution:
+          type: boolean
+    AgentRunnerDiagnostics:
+      type: object
+      additionalProperties: true
+      properties:
+        presence:
+          type: string
+          enum:
+            - online
+            - offline
+            - managed
+    AgentRunner:
+      type: object
+      description: Public Agent Runner resource. Legacy fields `mode`, `runner_runtime`, `interaction_kind`, and external/internal runner selectors are not accepted in request payloads.
       required:
         - id
+        - project_id
         - name
+        - is_default
         - status
+        - capabilities
+        - diagnostics
+        - created_at
+        - updated_at
       properties:
         id:
           type: string
+        project_id:
+          type: string
         name:
           type: string
-        status:
+        description:
           type: string
-    CreateAgentRequest:
+        is_default:
+          type: boolean
+        status:
+          $ref: "#/components/schemas/AgentRunnerStatus"
+        default_endpoint_id:
+          type: string
+          description: Project endpoint selected by default for task runs.
+        capabilities:
+          $ref: "#/components/schemas/AgentRunnerCapabilities"
+        diagnostics:
+          $ref: "#/components/schemas/AgentRunnerDiagnostics"
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+    AgentRunnerListResponse:
       type: object
       required:
-        - name
-        - type
+        - items
+        - total
+        - page
+        - page_size
       properties:
-        name:
-          type: string
-        type:
-          type: string
-          enum:
-            - external
-        description:
-          type: string
-        execution_preferences:
-          type: object
-          additionalProperties: true
-    UpdateAgentRequest:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/AgentRunner"
+        total:
+          type: integer
+          minimum: 0
+        page:
+          type: integer
+          minimum: 1
+        page_size:
+          type: integer
+          minimum: 1
+        has_more:
+          type: boolean
+    CreateAgentRunnerRequest:
       type: object
+      additionalProperties: false
+      required:
+        - name
       properties:
         name:
           type: string
         description:
           type: string
-        execution_preferences:
-          type: object
-          additionalProperties: true
-    AgentKey:
+        is_default:
+          type: boolean
+        status:
+          $ref: "#/components/schemas/AgentRunnerStatus"
+        default_endpoint_id:
+          type: string
+        capabilities:
+          $ref: "#/components/schemas/AgentRunnerCapabilities"
+        diagnostics:
+          $ref: "#/components/schemas/AgentRunnerDiagnostics"
+    UpdateAgentRunnerRequest:
+      type: object
+      additionalProperties: false
+      properties:
+        name:
+          type: string
+        description:
+          type: string
+        is_default:
+          type: boolean
+        status:
+          $ref: "#/components/schemas/AgentRunnerStatus"
+        default_endpoint_id:
+          type: string
+        capabilities:
+          $ref: "#/components/schemas/AgentRunnerCapabilities"
+    AgentRunnerKey:
       type: object
       required:
         - id
+        - agent_runner_id
         - key_prefix
         - status
       properties:
         id:
+          type: string
+        agent_runner_id:
           type: string
         key_prefix:
           type: string
@@ -5872,13 +6294,16 @@ components:
         created_at:
           type: string
           format: date-time
-    CreateAgentKeyResponse:
+    CreateAgentRunnerKeyResponse:
       type: object
       required:
         - id
+        - agent_runner_id
         - key_prefix
       properties:
         id:
+          type: string
+        agent_runner_id:
           type: string
         key_prefix:
           type: string
@@ -6324,9 +6749,19 @@ components:
             - PERMISSION_DENIED
             - RESOURCE_NOT_FOUND
             - RESOURCE_ALREADY_EXISTS
+            - RESOURCE_CONFLICT
             - VALIDATION_ERROR
+            - FORBIDDEN
             - RATE_LIMIT_EXCEEDED
             - SPENDING_LIMIT_EXCEEDED
+            - AGENT_OFFLINE
+            - unsupported_field
+            - agent_runner_unavailable
+            - agent_runner_model_unconfigured
+            - agent_runner_capability_mismatch
+            - agent_runner_default_conflict
+            - agent_runner_selection_required
+            - agent_runner_selection_ambiguous
             - INTERNAL_ERROR
         message:
           type: string
@@ -6342,6 +6777,61 @@ components:
           type: string
           format: date-time
           description: When the error occurred
+    UnsupportedFieldError:
+      type: object
+      additionalProperties: false
+      required:
+        - error_code
+        - message
+        - fields
+      properties:
+        error_code:
+          type: string
+          enum:
+            - unsupported_field
+        message:
+          type: string
+          enum:
+            - unsupported_field
+        fields:
+          type: array
+          items:
+            type: string
+            enum:
+              - mode
+              - runner_runtime
+              - interaction_kind
+              - type
+              - execution_preferences
+              - execution_preferences_json
+              - agent_id
+              - agent_name
+              - runner_id
+    AgentRunnerResolutionError:
+      type: object
+      additionalProperties: false
+      required:
+        - error_code
+        - message
+      properties:
+        error_code:
+          type: string
+          enum:
+            - agent_runner_unavailable
+            - agent_runner_model_unconfigured
+            - agent_runner_capability_mismatch
+            - agent_runner_default_conflict
+            - agent_runner_selection_required
+            - agent_runner_selection_ambiguous
+        message:
+          type: string
+          enum:
+            - agent_runner_unavailable
+            - agent_runner_model_unconfigured
+            - agent_runner_capability_mismatch
+            - agent_runner_default_conflict
+            - agent_runner_selection_required
+            - agent_runner_selection_ambiguous
     TaskTraceEvent:
       type: object
       required:

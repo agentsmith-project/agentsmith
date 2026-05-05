@@ -118,19 +118,19 @@ export type StoryExternalDependency = {
   note?: string;
 };
 
-export type StoryRuntimeNotebookTurnDefinition = {
+export type StoryRuntimeAgentTaskTurnDefinition = {
   prompt: string;
   expectedToken: string;
   expectedArtifactPath: string;
   minAgentMessages?: number;
 };
 
-export type StoryRuntimeNotebookFlowDefinition = {
-  turnOne: StoryRuntimeNotebookTurnDefinition;
-  turnTwo: StoryRuntimeNotebookTurnDefinition;
+export type StoryRuntimeAgentTaskFlowDefinition = {
+  turnOne: StoryRuntimeAgentTaskTurnDefinition;
+  turnTwo: StoryRuntimeAgentTaskTurnDefinition;
 };
 
-export type StoryRuntimeVisualReviewNotebookTaskDefinition = {
+export type StoryRuntimeVisualReviewAgentTaskDefinition = {
   taskTitlePrefix: string;
   expectedTokenPrefix: string;
   artifactNamePrefix: string;
@@ -141,11 +141,11 @@ export type StoryRuntimeVisualReviewNotebookTaskDefinition = {
 
 export type StoryRuntimeVisualReviewDefinition = {
   scenes: readonly StoryRuntimeVisualReviewSceneDefinition[];
-  notebookTask?: StoryRuntimeVisualReviewNotebookTaskDefinition;
+  agentTask?: StoryRuntimeVisualReviewAgentTaskDefinition;
 };
 
 export type StoryRuntimeData = {
-  notebook?: Record<string, StoryRuntimeNotebookFlowDefinition>;
+  agentTask?: Record<string, StoryRuntimeAgentTaskFlowDefinition>;
   visualReview?: StoryRuntimeVisualReviewDefinition;
 };
 

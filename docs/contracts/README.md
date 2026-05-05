@@ -13,7 +13,7 @@
   - `permission gate`：产品权限门禁
   - `engineering gate`：工程验收门禁
 - `product-terminology.md` 是当前产品对象、正式命名、IA 边界的真相源。
-- 当前产品文档与 UI 统一使用 `Execution target` 作为执行目标表述，并使用 `Shared context` 作为共享上下文对象名。
+- 当前产品文档与 UI 统一使用 `Model` 作为 Chat 选择器、`Agent tasks` 作为任务执行入口、`Agent Runners` 作为任务执行能力配置面，并使用 `Shared context` 作为共享上下文对象名。
 
 ## 核心合同
 
@@ -41,7 +41,8 @@
 ## 模块合同
 
 - `chat-frontend-module-map.md`
-- `notebook-frontend-module-map.md`
+- `agent-task-frontend-module-map.md`
+- `agent-runners-frontend-module-map.md`
 - `files-frontend-module-map.md`
 - `endpoints-frontend-module-map.md`
 - `endpoints-capability-contract.md`

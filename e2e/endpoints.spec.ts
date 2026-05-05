@@ -122,7 +122,10 @@ test.describe('Endpoints Page', () => {
   });
 
   test('shows build header actions', async ({ authedPage }) => {
-    await expect(authedPage.getByTestId('endpoints__open-agents')).toHaveAttribute('href', /\/agents$/);
+    await expect(authedPage.getByTestId('endpoints__open-agent-runners')).toHaveAttribute(
+      'href',
+      /\/agent-runners$/,
+    );
     await expect(authedPage.getByTestId('endpoints__open-chat')).toHaveCount(0);
     await expect(authedPage.getByTestId('endpoints__open-notebook')).toHaveCount(0);
   });

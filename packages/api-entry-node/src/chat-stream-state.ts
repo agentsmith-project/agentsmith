@@ -33,7 +33,6 @@ export type ChatStopEscalationReason = 'STOP_ESCALATION_UNAVAILABLE';
 export type ChatHardTeardownStatus = 'pending' | 'requested' | 'failed';
 export type ChatSessionExecutionStatus = 'running' | 'stopping' | 'terminating' | 'completed' | 'stopped' | 'failed';
 export type ChatSessionExecutionPhase = 'bootstrapping' | 'dispatching' | 'streaming' | 'terminal';
-export type ChatSessionExecutionTransport = 'direct_provider' | 'agent_runner';
 
 export interface ChatSessionExecutionRecord {
   workspaceId: string;
@@ -41,15 +40,12 @@ export interface ChatSessionExecutionRecord {
   sessionId: string;
   streamId: string;
   ownerInstanceId: string;
-  transport: ChatSessionExecutionTransport;
-  internalAgent?: boolean;
   status: ChatSessionExecutionStatus;
   phase: ChatSessionExecutionPhase;
   startedAt: string;
   updatedAt: string;
   requestId?: string;
   endpointId?: string | null;
-  externalAgentId?: string | null;
   stopRequestedAt?: string;
   stopRequestedBy?: string;
   stopReason?: 'user_stop' | 'session_stop';
@@ -93,6 +89,16 @@ type ChatSessionExecutionStopInput = Pick<ChatSessionExecutionRecord, 'workspace
 const CHAT_EXECUTION_OWNER_INSTANCE_ID = process.env.CHAT_STREAM_INSTANCE_ID?.trim()
   || `api-${process.pid}`;
 const sessionExecutionLocalLocks = new Map<string, Promise<void>>();
+const LEGACY_SESSION_EXECUTION_FIELDS = new Set([
+  'transport',
+  'internalAgent',
+  'externalAgentId',
+  'external_agent_id',
+  'chat_runner',
+  'agent_runner',
+  'runnerTransport',
+  'runner_transport',
+]);
 
 interface ChatHardTeardownReleaseFenceRecord {
   kind: 'chat_hard_teardown_release_fence';
@@ -143,7 +149,22 @@ export async function writeSessionStreamState(
   status: SessionStreamStatus,
   ttlSeconds: number,
 ): Promise<void> {
-  await cache.set(sessionStreamStateKey(workspaceId, projectId, sessionId), status, ttlSeconds);
+  const now = new Date().toISOString();
+  await writeSessionExecutionRecord(
+    cache,
+    {
+      workspaceId,
+      projectId,
+      sessionId,
+      streamId: '',
+      ownerInstanceId: CHAT_EXECUTION_OWNER_INSTANCE_ID,
+      status,
+      phase: sessionPhaseForStatus(status),
+      startedAt: now,
+      updatedAt: now,
+    },
+    ttlSeconds,
+  );
 }
 
 function isSessionStatus(value: unknown): value is ChatSessionExecutionStatus {
@@ -165,6 +186,12 @@ function isHardTeardownStatus(value: unknown): value is ChatHardTeardownStatus {
 
 function isTerminalSessionExecutionStatus(status: ChatSessionExecutionStatus): boolean {
   return status === 'completed' || status === 'stopped' || status === 'failed';
+}
+
+function sessionPhaseForStatus(status: ChatSessionExecutionStatus): ChatSessionExecutionPhase {
+  if (status === 'running') return 'streaming';
+  if (status === 'stopping' || status === 'terminating') return 'dispatching';
+  return 'terminal';
 }
 
 function isIncompleteHardTeardownStatus(status: ChatHardTeardownStatus | undefined): boolean {
@@ -200,26 +227,34 @@ function isSessionPhase(value: unknown): value is ChatSessionExecutionPhase {
     || value === 'terminal';
 }
 
+function hasLegacySessionExecutionField(input: Record<string, unknown>): boolean {
+  for (const key of LEGACY_SESSION_EXECUTION_FIELDS) {
+    if (Object.prototype.hasOwnProperty.call(input, key)) return true;
+  }
+  return false;
+}
+
+function hasLegacySessionExecutionEndpoint(input: Record<string, unknown>): boolean {
+  return typeof input.endpointId === 'string' && input.endpointId.startsWith('agent:');
+}
+
+function assertNoLegacySessionExecutionInput(input: unknown): void {
+  if (typeof input !== 'object' || input === null || Array.isArray(input)) return;
+  const record = input as Record<string, unknown>;
+  if (hasLegacySessionExecutionField(record) || hasLegacySessionExecutionEndpoint(record)) {
+    throw new Error('chat_session_execution_legacy_field');
+  }
+}
+
 function parseSessionExecutionRecord(
   raw: string | null,
   identity: Pick<ChatSessionExecutionRecord, 'workspaceId' | 'projectId' | 'sessionId'>,
 ): ChatSessionExecutionRecord | null {
   if (!raw) return null;
-  if (isSessionStatus(raw)) {
-    return {
-      ...identity,
-      streamId: '',
-      ownerInstanceId: CHAT_EXECUTION_OWNER_INSTANCE_ID,
-      transport: 'direct_provider',
-      status: raw,
-      phase: raw === 'running' ? 'streaming' : (raw === 'stopping' || raw === 'terminating') ? 'dispatching' : 'terminal',
-      startedAt: '',
-      updatedAt: '',
-    };
-  }
   try {
-    const parsed = JSON.parse(raw) as Partial<ChatSessionExecutionRecord>;
+    const parsed = JSON.parse(raw) as Partial<ChatSessionExecutionRecord> & Record<string, unknown>;
     if (!parsed || typeof parsed !== 'object') return null;
+    if (hasLegacySessionExecutionField(parsed) || hasLegacySessionExecutionEndpoint(parsed)) return null;
     if (!isSessionStatus(parsed.status)) return null;
     if (!isSessionPhase(parsed.phase)) return null;
     const workspaceId = typeof parsed.workspaceId === 'string' && parsed.workspaceId.length > 0
@@ -235,24 +270,18 @@ function parseSessionExecutionRecord(
     const ownerInstanceId = typeof parsed.ownerInstanceId === 'string' && parsed.ownerInstanceId.length > 0
       ? parsed.ownerInstanceId
       : CHAT_EXECUTION_OWNER_INSTANCE_ID;
-    const transport = parsed.transport === 'agent_runner' ? 'agent_runner' : 'direct_provider';
     return {
       workspaceId,
       projectId,
       sessionId,
       streamId,
       ownerInstanceId,
-      transport,
-      ...(typeof parsed.internalAgent === 'boolean' ? { internalAgent: parsed.internalAgent } : {}),
       status: parsed.status,
       phase: parsed.phase,
       startedAt: typeof parsed.startedAt === 'string' ? parsed.startedAt : '',
       updatedAt: typeof parsed.updatedAt === 'string' ? parsed.updatedAt : '',
       ...(typeof parsed.requestId === 'string' ? { requestId: parsed.requestId } : {}),
       ...(typeof parsed.endpointId === 'string' || parsed.endpointId === null ? { endpointId: parsed.endpointId } : {}),
-      ...(typeof parsed.externalAgentId === 'string' || parsed.externalAgentId === null
-        ? { externalAgentId: parsed.externalAgentId }
-        : {}),
       ...(typeof parsed.stopRequestedAt === 'string' ? { stopRequestedAt: parsed.stopRequestedAt } : {}),
       ...(typeof parsed.stopRequestedBy === 'string' ? { stopRequestedBy: parsed.stopRequestedBy } : {}),
       ...(parsed.stopReason === 'user_stop' || parsed.stopReason === 'session_stop'
@@ -261,9 +290,7 @@ function parseSessionExecutionRecord(
       ...(isStopMode(parsed.stopMode) ? { stopMode: parsed.stopMode } : {}),
       ...(isHardTeardownStatus(parsed.hardTeardownStatus)
         ? { hardTeardownStatus: parsed.hardTeardownStatus }
-        : typeof parsed.hardTeardownRequestedAt === 'string'
-          ? { hardTeardownStatus: 'requested' as const }
-          : {}),
+        : {}),
       ...(typeof parsed.hardTeardownRequestedAt === 'string'
         ? { hardTeardownRequestedAt: parsed.hardTeardownRequestedAt }
         : {}),
@@ -504,18 +531,65 @@ export async function writeSessionExecutionRecord(
   record: ChatSessionExecutionRecord,
   ttlSeconds: number,
 ): Promise<void> {
+  assertNoLegacySessionExecutionInput(record);
+  const sanitized = sanitizeSessionExecutionRecord(record);
   await cache.set(
-    sessionStreamStateKey(record.workspaceId, record.projectId, record.sessionId),
-    JSON.stringify(record),
+    sessionStreamStateKey(sanitized.workspaceId, sanitized.projectId, sanitized.sessionId),
+    serializeSessionExecutionRecord(sanitized),
     ttlSeconds,
   );
-  if (hasSessionHardTeardownDebt(record)) {
-    await writeSessionHardTeardownDebtRecord(cache, record);
+  if (hasSessionHardTeardownDebt(sanitized)) {
+    await writeSessionHardTeardownDebtRecord(cache, sanitized);
   }
 }
 
 function serializeSessionExecutionRecord(record: ChatSessionExecutionRecord): string {
-  return JSON.stringify(record);
+  assertNoLegacySessionExecutionInput(record);
+  return JSON.stringify(sanitizeSessionExecutionRecord(record));
+}
+
+function sanitizeSessionExecutionRecord(record: ChatSessionExecutionRecord): ChatSessionExecutionRecord {
+  assertNoLegacySessionExecutionInput(record);
+  return {
+    workspaceId: record.workspaceId,
+    projectId: record.projectId,
+    sessionId: record.sessionId,
+    streamId: record.streamId,
+    ownerInstanceId: record.ownerInstanceId,
+    status: record.status,
+    phase: record.phase,
+    startedAt: record.startedAt,
+    updatedAt: record.updatedAt,
+    ...(typeof record.requestId === 'string' ? { requestId: record.requestId } : {}),
+    ...(typeof record.endpointId === 'string' || record.endpointId === null ? { endpointId: record.endpointId } : {}),
+    ...(typeof record.stopRequestedAt === 'string' ? { stopRequestedAt: record.stopRequestedAt } : {}),
+    ...(typeof record.stopRequestedBy === 'string' ? { stopRequestedBy: record.stopRequestedBy } : {}),
+    ...(record.stopReason === 'user_stop' || record.stopReason === 'session_stop'
+      ? { stopReason: record.stopReason }
+      : {}),
+    ...(isStopMode(record.stopMode) ? { stopMode: record.stopMode } : {}),
+    ...(isHardTeardownStatus(record.hardTeardownStatus)
+      ? { hardTeardownStatus: record.hardTeardownStatus }
+      : {}),
+    ...(typeof record.hardTeardownRequestedAt === 'string'
+      ? { hardTeardownRequestedAt: record.hardTeardownRequestedAt }
+      : {}),
+    ...(typeof record.hardTeardownLastAttemptAt === 'string'
+      ? { hardTeardownLastAttemptAt: record.hardTeardownLastAttemptAt }
+      : {}),
+    ...(typeof record.hardTeardownLastError === 'string'
+      ? { hardTeardownLastError: record.hardTeardownLastError }
+      : {}),
+    ...(typeof record.hardTeardownAttemptCount === 'number' && Number.isFinite(record.hardTeardownAttemptCount)
+      ? { hardTeardownAttemptCount: record.hardTeardownAttemptCount }
+      : {}),
+    ...(typeof record.hardTeardownAttemptId === 'string'
+      ? { hardTeardownAttemptId: record.hardTeardownAttemptId }
+      : {}),
+    ...(record.stopEscalationReason === 'STOP_ESCALATION_UNAVAILABLE'
+      ? { stopEscalationReason: record.stopEscalationReason }
+      : {}),
+  };
 }
 
 async function withLocalSessionExecutionLock<T>(key: string, fn: () => Promise<T>): Promise<T> {
@@ -540,21 +614,19 @@ export async function beginSessionExecution(
   },
   ttlSeconds: number,
 ): Promise<ChatSessionExecutionRecord | null> {
+  assertNoLegacySessionExecutionInput(input);
   const record: ChatSessionExecutionRecord = {
     workspaceId: input.workspaceId,
     projectId: input.projectId,
     sessionId: input.sessionId,
     streamId: input.streamId,
     ownerInstanceId: input.ownerInstanceId?.trim() || CHAT_EXECUTION_OWNER_INSTANCE_ID,
-    transport: input.transport,
-    ...(typeof input.internalAgent === 'boolean' ? { internalAgent: input.internalAgent } : {}),
     status: 'running',
     phase: 'bootstrapping',
     startedAt: input.startedAt,
     updatedAt: input.updatedAt ?? input.startedAt,
     ...(typeof input.requestId === 'string' ? { requestId: input.requestId } : {}),
     ...(input.endpointId !== undefined ? { endpointId: input.endpointId } : {}),
-    ...(input.externalAgentId !== undefined ? { externalAgentId: input.externalAgentId } : {}),
   };
   const key = sessionStreamStateKey(input.workspaceId, input.projectId, input.sessionId);
   const identity = {
@@ -616,11 +688,12 @@ export async function patchSessionExecutionRecord(
     );
     const next = mutate(current);
     if (!next) return null;
-    await cache.set(key, serializeSessionExecutionRecord(next), ttlSeconds);
-    if (hasSessionHardTeardownDebt(next)) {
-      await writeSessionHardTeardownDebtRecord(cache, next);
+    const sanitizedNext = sanitizeSessionExecutionRecord(next);
+    await cache.set(key, serializeSessionExecutionRecord(sanitizedNext), ttlSeconds);
+    if (hasSessionHardTeardownDebt(sanitizedNext)) {
+      await writeSessionHardTeardownDebtRecord(cache, sanitizedNext);
     }
-    return next;
+    return sanitizedNext;
   };
 
   if (typeof cache.compareAndSet !== 'function') {
@@ -635,17 +708,18 @@ export async function patchSessionExecutionRecord(
     );
     const next = mutate(current);
     if (!next) return null;
+    const sanitizedNext = sanitizeSessionExecutionRecord(next);
     const committed = await cache.compareAndSet(
       key,
       currentRaw,
-      serializeSessionExecutionRecord(next),
+      serializeSessionExecutionRecord(sanitizedNext),
       ttlSeconds,
     );
     if (committed) {
-      if (hasSessionHardTeardownDebt(next)) {
-        await writeSessionHardTeardownDebtRecord(cache, next);
+      if (hasSessionHardTeardownDebt(sanitizedNext)) {
+        await writeSessionHardTeardownDebtRecord(cache, sanitizedNext);
       }
-      return next;
+      return sanitizedNext;
     }
   }
 
@@ -657,11 +731,11 @@ export async function markSessionExecutionPhase(
   input: Pick<ChatSessionExecutionRecord, 'workspaceId' | 'projectId' | 'sessionId'> & {
     phase: ChatSessionExecutionPhase;
     requestId?: string;
-    internalAgent?: boolean;
     updatedAt?: string;
   },
   ttlSeconds: number,
 ): Promise<ChatSessionExecutionRecord | null> {
+  assertNoLegacySessionExecutionInput(input);
   return patchSessionExecutionRecord(
     cache,
     input,
@@ -672,7 +746,6 @@ export async function markSessionExecutionPhase(
         phase: input.phase,
         updatedAt: input.updatedAt ?? new Date().toISOString(),
         ...(typeof input.requestId === 'string' ? { requestId: input.requestId } : {}),
-        ...(typeof input.internalAgent === 'boolean' ? { internalAgent: input.internalAgent } : {}),
       };
     },
     ttlSeconds,
@@ -701,9 +774,7 @@ function resolveSessionExecutionStopTransition(
       next: null,
     };
   }
-  const currentHardTeardownStatus = current.hardTeardownStatus ?? (
-    current.hardTeardownRequestedAt ? 'requested' : undefined
-  );
+  const currentHardTeardownStatus = current.hardTeardownStatus;
   const terminalStatus = isTerminalSessionExecutionStatus(current.status);
   const terminalHardTeardownDebt = terminalStatus
     && current.stopMode === 'terminate'
@@ -806,12 +877,13 @@ export async function requestSessionExecutionStopTransition(
     );
     const transition = resolveSessionExecutionStopTransition(current, input);
     if (!transition.next) return transition;
-    await cache.set(key, serializeSessionExecutionRecord(transition.next), STREAM_REGISTRY_TTL_SECONDS);
-    if (hasSessionHardTeardownDebt(transition.next)) {
-      await writeSessionHardTeardownDebtRecord(cache, transition.next);
+    const sanitizedNext = sanitizeSessionExecutionRecord(transition.next);
+    await cache.set(key, serializeSessionExecutionRecord(sanitizedNext), STREAM_REGISTRY_TTL_SECONDS);
+    if (hasSessionHardTeardownDebt(sanitizedNext)) {
+      await writeSessionHardTeardownDebtRecord(cache, sanitizedNext);
     }
     return {
-      record: transition.next,
+      record: sanitizedNext,
       previous: transition.previous,
       changed: transition.changed,
       hardTeardownRequired: transition.hardTeardownRequired,
@@ -831,18 +903,19 @@ export async function requestSessionExecutionStopTransition(
     );
     const transition = resolveSessionExecutionStopTransition(current, input);
     if (!transition.next) return transition;
+    const sanitizedNext = sanitizeSessionExecutionRecord(transition.next);
     const committed = await cache.compareAndSet(
       key,
       currentRaw,
-      serializeSessionExecutionRecord(transition.next),
+      serializeSessionExecutionRecord(sanitizedNext),
       STREAM_REGISTRY_TTL_SECONDS,
     );
     if (committed) {
-      if (hasSessionHardTeardownDebt(transition.next)) {
-        await writeSessionHardTeardownDebtRecord(cache, transition.next);
+      if (hasSessionHardTeardownDebt(sanitizedNext)) {
+        await writeSessionHardTeardownDebtRecord(cache, sanitizedNext);
       }
       return {
-        record: transition.next,
+        record: sanitizedNext,
         previous: transition.previous,
         changed: transition.changed,
         hardTeardownRequired: transition.hardTeardownRequired,
@@ -1007,16 +1080,14 @@ export async function finalizeSessionExecution(
   input: Pick<ChatSessionExecutionRecord, 'workspaceId' | 'projectId' | 'sessionId'> & {
     streamId?: string;
     status: 'completed' | 'stopped' | 'failed';
-    transport?: ChatSessionExecutionTransport;
-    internalAgent?: boolean;
     endpointId?: string | null;
-    externalAgentId?: string | null;
     requestId?: string;
     startedAt?: string;
     updatedAt?: string;
     stopReason?: 'user_stop' | 'session_stop';
   },
 ): Promise<ChatSessionExecutionRecord> {
+  assertNoLegacySessionExecutionInput(input);
   const current = await readSessionExecutionRecord(cache, input.workspaceId, input.projectId, input.sessionId);
   const updatedAt = input.updatedAt ?? new Date().toISOString();
   const next: ChatSessionExecutionRecord = {
@@ -1025,10 +1096,6 @@ export async function finalizeSessionExecution(
     sessionId: input.sessionId,
     streamId: current?.streamId ?? input.streamId ?? '',
     ownerInstanceId: current?.ownerInstanceId ?? CHAT_EXECUTION_OWNER_INSTANCE_ID,
-    transport: current?.transport ?? input.transport ?? 'direct_provider',
-    ...(typeof (current?.internalAgent ?? input.internalAgent) === 'boolean'
-      ? { internalAgent: current?.internalAgent ?? input.internalAgent }
-      : {}),
     status: input.status,
     phase: 'terminal',
     startedAt: current?.startedAt ?? input.startedAt ?? updatedAt,
@@ -1036,9 +1103,6 @@ export async function finalizeSessionExecution(
     ...(current?.requestId ?? input.requestId ? { requestId: current?.requestId ?? input.requestId } : {}),
     ...(current?.endpointId !== undefined || input.endpointId !== undefined
       ? { endpointId: current?.endpointId ?? input.endpointId ?? null }
-      : {}),
-    ...(current?.externalAgentId !== undefined || input.externalAgentId !== undefined
-      ? { externalAgentId: current?.externalAgentId ?? input.externalAgentId ?? null }
       : {}),
     ...(current?.stopRequestedAt ? { stopRequestedAt: current.stopRequestedAt } : {}),
     ...(current?.stopRequestedBy ? { stopRequestedBy: current.stopRequestedBy } : {}),

@@ -37,6 +37,6 @@ info "Web: http://localhost:${PORT_WEB}/${LOCALE}/login/workspace"
 info "API: http://localhost:${PORT_API}"
 info "Keycloak: ${KEYCLOAK_BASE_URL}"
 info "Proxy: ${MBOS_UNIVERSAL_PROXY_BASE_URL}"
-info "Next step for notebook manual testing: make local-manual-seed-notebook"
+info "Next step for agent-task manual testing: make local-manual-seed-agent-task"
 disarm_scenario_lock_cleanup
 trap - EXIT INT TERM

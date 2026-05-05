@@ -631,7 +631,7 @@ describe('current workflow governance', () => {
     for (const doc of [
       'docs/testing/verification-campaigns-v1.md',
       'docs/user-guides/release-readiness-checklist.md',
-      'docs/notebook-codex-runbook.md',
+      'docs/agent-task-runner-runbook.md',
     ]) {
       const content = readRepoFile(doc);
       expect(content, `${doc} must expose release:ready as the human release entrypoint`).toContain(
@@ -709,7 +709,7 @@ describe('current workflow governance', () => {
 
     expect(makefile).toMatch(/local-real-up:[\s\S]*\$\(MAKE\) substrate-up[\s\S]*\$\(MAKE\) substrate-reseed[\s\S]*\$\(MAKE\) local-manual-up/);
     expect(makefile).toMatch(/local-real-status:[\s\S]*\$\(MAKE\) substrate-status[\s\S]*\$\(MAKE\) local-manual-status/);
-    expect(makefile).toMatch(/local-manual-reset:[\s\S]*\$\(MAKE\) substrate-reset SUBSTRATE=local-dev[\s\S]*\$\(MAKE\) substrate-up SUBSTRATE=local-dev[\s\S]*\$\(MAKE\) substrate-reseed SUBSTRATE=local-dev[\s\S]*\$\(MAKE\) local-manual-up[\s\S]*\$\(MAKE\) local-manual-seed-notebook/);
+    expect(makefile).toMatch(/local-manual-reset:[\s\S]*\$\(MAKE\) substrate-reset SUBSTRATE=local-dev[\s\S]*\$\(MAKE\) substrate-up SUBSTRATE=local-dev[\s\S]*\$\(MAKE\) substrate-reseed SUBSTRATE=local-dev[\s\S]*\$\(MAKE\) local-manual-up[\s\S]*\$\(MAKE\) local-manual-seed-agent-task/);
     expect(runtimeManifest).not.toMatch(/id:\s*'local-real'/);
     expect(runtimeManifest).not.toMatch(/formalName:\s*'local-real'/);
   });

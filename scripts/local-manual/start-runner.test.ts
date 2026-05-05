@@ -217,7 +217,7 @@ function writeOwnedRunnerTreeScripts(tempRoot: string) {
     level1Script,
     `#!/usr/bin/env bash
 set -euo pipefail
-bash -lc 'exec -a "make notebook-runner" bash "${level2Script}"' &
+bash -lc 'exec -a "make agent-task-runner" bash "${level2Script}"' &
 child=$!
 wait "$child"
 `,
@@ -229,7 +229,7 @@ wait "$child"
     level2Script,
     `#!/usr/bin/env bash
 set -euo pipefail
-bash -lc 'exec -a "npm run dev -w @mbos/notebook-codex-runner" bash "${level3Script}"' &
+bash -lc 'exec -a "npm run dev -w @mbos/agent-task-runner" bash "${level3Script}"' &
 child=$!
 wait "$child"
 `,
@@ -241,8 +241,7 @@ wait "$child"
     level3Script,
     `#!/usr/bin/env bash
 set -euo pipefail
-cd "${path.join(repoRoot, 'packages/notebook-codex-runner')}"
-exec node "${fakeTsxCli}" src/index.ts
+exec -a "agentsmith-agent-task-runner runner_instance_id=local-manual-test" node "${fakeTsxCli}" src/index.ts
 `,
     'utf8',
   );
@@ -251,7 +250,7 @@ exec node "${fakeTsxCli}" src/index.ts
   return { level1Script };
 }
 
-function spawnDetachedOwnedRunnerTree(tempRoot: string, rootLabel = 'make notebook-agent-runner'): number {
+function spawnDetachedOwnedRunnerTree(tempRoot: string, rootLabel = 'make agent-task-runner-from-state'): number {
   const { level1Script } = writeOwnedRunnerTreeScripts(tempRoot);
   const launcherScript = path.join(tempRoot, 'runner-launcher.sh');
   writeFileSync(
@@ -282,7 +281,7 @@ exec -a "${rootLabel}" bash "${level1Script}"
   return pid;
 }
 
-function spawnDetachedSiblingProcess(label = 'make notebook-runner unrelated-sibling'): number {
+function spawnDetachedSiblingProcess(label = 'make agent-task-runner unrelated-sibling'): number {
   const siblingScript = path.join(os.tmpdir(), `local-manual-sibling-${process.pid}-${Date.now()}-${Math.random().toString(16).slice(2)}.sh`);
   writeFileSync(
     siblingScript,
@@ -348,8 +347,8 @@ exec /bin/date "$@"
     path.join(fakeBin, 'make'),
     `#!/usr/bin/env bash
 set -euo pipefail
-if [[ "$#" -ge 1 && "$1" == "notebook-agent-runner" ]]; then
-  bash -lc 'exec -a "make notebook-runner" bash "${level1Script}"' &
+if [[ "$#" -ge 1 && "$1" == "agent-task-runner-from-state" ]]; then
+  bash -lc 'exec -a "make agent-task-runner" bash "${level1Script}"' &
   child=$!
   wait "$child"
   exit 0

@@ -276,7 +276,7 @@ state_write_summary() {
     printf 'PROJECT_ID=%s\n' "$(state_get project.id)"
     printf 'ANTHROPIC_ENDPOINT_ID=%s\n' "$(state_get endpoint.anthropic_id)"
     printf 'OPENAI_ENDPOINT_ID=%s\n' "$(state_get endpoint.openai_id)"
-    printf 'AGENT_ID=%s\n' "$(state_get agent.id)"
-    printf 'WS_URL=%s\n' "$(state_get agent.ws_url)"
+    printf 'AGENT_RUNNER_ID=%s\n' "$(state_get agent_runner.id)"
+    printf 'WS_URL=%s\n' "$(state_get agent_runner.ws_url)"
   } > "${file}"
 }

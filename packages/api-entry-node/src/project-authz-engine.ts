@@ -320,7 +320,18 @@ export async function resolveVisibleProjectRoleForActor(args: {
 function mapProjectActionToPermission(action: string): string | null {
   if (action.startsWith('project.audit.')) return 'project:audit:read';
   if (action.startsWith('project.usage.')) return 'project:endpoint:use';
-  if (action.startsWith('project.terminal.')) return 'project:terminal:use';
+  if (action.startsWith('project.agent_task.terminal.') || action.startsWith('project.terminal.')) {
+    return 'project:agent_task:terminal';
+  }
+  if (action.startsWith('project.agent_task.')) return 'project:agent_task:use';
+  if (action.startsWith('project.agent_runner.')) {
+    if (/connection|key|secret|credential|manage|create|update|delete|default|publish|unpublish/i.test(action)) {
+      return 'project:agent_runner:manage';
+    }
+    return /read|list|browse|diagnostic/i.test(action)
+      ? 'project:agent_runner:read'
+      : 'project:agent_runner:manage';
+  }
   if (action === 'project.read') return 'project:endpoint:use';
   if (action === 'project.delete' || action.startsWith('project.owner.') || action.startsWith('project.settings.lifecycle.')) {
     return 'project:lifecycle:update';
@@ -347,13 +358,12 @@ function mapResourceActionToPermission(resourceType: Exclude<ResourceType, 'proj
       ? 'project:endpoint:use'
       : 'project:files:update';
   }
-  if (/public|publish|unpublish/i.test(action)) {
-    return 'project:agent:public';
+  if (/connection|key|secret|credential|manage|create|update|delete|default|publish|unpublish|invoke|use/i.test(action)) {
+    return 'project:agent_runner:manage';
   }
-  if (/read|list|browse|invoke|use/i.test(action)) {
-    return 'project:agent:use';
-  }
-  return 'project:agent:manage';
+  return /read|list|browse|diagnostic/i.test(action)
+    ? 'project:agent_runner:read'
+    : 'project:agent_runner:manage';
 }
 
 export function mapAuthorizationRequestToPermission(args: {

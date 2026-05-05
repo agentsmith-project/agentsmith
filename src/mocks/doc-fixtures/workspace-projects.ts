@@ -1,4 +1,4 @@
-import type { Project, Credential, Endpoint, Agent } from '@/lib/api/types';
+import type { Project, Credential, Endpoint, AgentRunner } from '@/lib/api/types';
 import type { Member, JoinRequest } from '../fixtures/members';
 import type { FileLibrary } from '@/lib/api/types';
 import { PROJECT_BUILT_IN_TEMPLATE_PERMISSIONS } from '@/lib/constants/permissions';
@@ -18,7 +18,7 @@ export const docProjectFixtures: Project[] = [
     id: 'proj_001',
     workspace_id: 'ws_default',
     name: '企业级 AI 运营治理',
-    description: '用于统一管理 endpoint、智能体、文件库、Notebook 与审计用量的示例项目。',
+    description: '用于统一管理 endpoint、Agent 任务、文件库、Agent Runners 与审计用量的示例项目。',
     visibility: 'private',
     join_policy: 'approval_required',
     owner_id: 'user_001',
@@ -160,7 +160,7 @@ export const docEndpointFixtures: Endpoint[] = [
     id: 'endpoint_001',
     project_id: 'proj_001',
     name: 'placeholder-model 主生产',
-    description: '用于对话、Notebook 和智能体任务的主生产模型入口。',
+    description: '用于对话和 Agent 任务的主生产模型入口。',
     model: 'placeholder-model',
     type: 'custom',
     provider_family: 'custom',
@@ -200,33 +200,25 @@ export const docEndpointFixtures: Endpoint[] = [
   },
 ];
 
-export const docAgentFixtures: Agent[] = [
+export const docAgentRunnerFixtures: AgentRunner[] = [
   {
     id: 'agent_001',
     project_id: 'proj_001',
     name: '运营审计助手',
-    description: '通过外部 codex runner 执行审计分析、Notebook 调度和知识问答。',
-    mode: 'external',
-    presence: 'online',
-    status: 'enabled',
-    interaction_kind: 'notebook',
-    config: {
-      image: 'notebook-codex-runner:stable',
-      env: {
-        MODEL: 'placeholder-model',
-        LANG: 'zh-CN',
-      },
-      max_concurrent_sessions_override: 20,
+    description: '通过托管 Runner 执行审计分析、Agent 任务调度和知识问答。',
+    is_default: true,
+    default_endpoint_id: 'ep_deepseek_chat',
+    status: 'ready',
+    capabilities: {
+      task_execution: true,
+      terminal: true,
+      artifacts: true,
+      file_inputs: true,
     },
-    external_stats: {
-      source_ip: '10.20.31.42',
-      connection_duration_sec: 8600,
-      qpm: 18,
+    diagnostics: {
+      presence: 'managed',
+      queue_depth: 2,
     },
-    owner_id: 'user_001',
-    owner_name: '许琳',
-    admin_id: 'user_002',
-    admin_name: '周岩',
     created_at: '2026-03-02T09:00:00Z',
     updated_at: '2026-03-17T08:45:00Z',
   },

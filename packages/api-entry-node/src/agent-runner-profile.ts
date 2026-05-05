@@ -1,28 +1,10 @@
-import type { AgentRecord } from './resource-models.js';
+import type { AgentRecord, AgentRunnerProviderKind } from './resource-models.js';
 
-export type AgentRunnerRuntime =
-  | 'dev_direct'
-  | 'docker_manual'
-  | 'compose_managed'
-  | 'k8s_internal';
+type AgentRunnerProfileInput = (
+  Pick<AgentRecord, 'runner_provider'>
+) | null | undefined;
 
-type AgentConfigLike = AgentRecord['config'] | Record<string, unknown> | null | undefined;
-type AgentRunnerProfileInput = { mode: AgentRecord['mode']; config?: AgentConfigLike } | null | undefined;
-
-function readRunnerRuntime(config: AgentConfigLike): AgentRunnerRuntime | null {
-  const raw = typeof config?.runner_runtime === 'string'
-    ? config.runner_runtime.trim()
-    : '';
-  switch (raw) {
-    case 'dev_direct':
-    case 'docker_manual':
-    case 'compose_managed':
-    case 'k8s_internal':
-      return raw;
-    default:
-      return null;
-  }
-}
+type AgentRunnerRuntime = 'dev_direct' | 'docker_manual' | 'compose_managed' | 'k8s_internal';
 
 function isLoopbackLikeHost(hostname: string): boolean {
   const normalized = hostname.trim().toLowerCase();
@@ -30,7 +12,7 @@ function isLoopbackLikeHost(hostname: string): boolean {
 }
 
 function resolveImplicitExternalRuntime(): Extract<AgentRunnerRuntime, 'dev_direct' | 'docker_manual'> {
-  const rawBase = process.env.EXTERNAL_AGENT_EXECUTION_HTTP_BASE_URL?.trim();
+  const rawBase = process.env.AGENT_RUNNER_DEVELOPER_EXECUTION_HTTP_BASE_URL?.trim();
   if (!rawBase) return 'docker_manual';
   try {
     const parsed = new URL(rawBase);
@@ -40,32 +22,45 @@ function resolveImplicitExternalRuntime(): Extract<AgentRunnerRuntime, 'dev_dire
   }
 }
 
-export function resolveAgentRunnerRuntime(
-  agent: AgentRunnerProfileInput,
-): AgentRunnerRuntime {
-  if (agent?.mode === 'internal') {
-    return 'k8s_internal';
-  }
-  return readRunnerRuntime(agent?.config) ?? resolveImplicitExternalRuntime();
+export function resolveAgentRunnerRuntime(agent: AgentRunnerProfileInput): AgentRunnerRuntime {
+  if (isManagedAgentRunner(agent)) return 'k8s_internal';
+  return resolveImplicitExternalRuntime();
 }
 
-export function isComposeManagedExternalAgent(
-  agent: AgentRunnerProfileInput,
-): boolean {
-  return agent?.mode === 'external' && resolveAgentRunnerRuntime(agent) === 'compose_managed';
+export function isComposeManagedExternalAgent(agent: AgentRunnerProfileInput): boolean {
+  return isDeveloperAgentRunner(agent) && resolveAgentRunnerRuntime(agent) === 'compose_managed';
 }
 
-export function usesAgentPresenceScopedNotebookRunner(
-  agent: AgentRunnerProfileInput,
-): boolean {
-  if (agent?.mode !== 'external') return false;
-  const runtime = resolveAgentRunnerRuntime(agent);
-  return runtime === 'compose_managed' || runtime === 'dev_direct';
+export function usesAgentPresenceScopedNotebookRunner(agent: AgentRunnerProfileInput): boolean {
+  return usesAgentPresenceScopedTaskRunner(agent);
 }
 
 export function isExternalRunnerRuntime(
   agent: AgentRunnerProfileInput,
   runtime: Extract<AgentRunnerRuntime, 'dev_direct' | 'docker_manual' | 'compose_managed'>,
 ): boolean {
-  return agent?.mode === 'external' && resolveAgentRunnerRuntime(agent) === runtime;
+  return isDeveloperAgentRunner(agent) && resolveAgentRunnerRuntime(agent) === runtime;
+}
+
+export function resolveAgentRunnerProviderKind(agent: AgentRunnerProfileInput): AgentRunnerProviderKind {
+  if (agent?.runner_provider === 'developer' || agent?.runner_provider === 'managed') {
+    return agent.runner_provider;
+  }
+  return 'managed';
+}
+
+export function isManagedAgentRunner(agent: AgentRunnerProfileInput): boolean {
+  return resolveAgentRunnerProviderKind(agent) === 'managed';
+}
+
+export function isDeveloperAgentRunner(agent: AgentRunnerProfileInput): boolean {
+  return resolveAgentRunnerProviderKind(agent) === 'developer';
+}
+
+export function usesAgentPresenceScopedTaskRunner(agent: AgentRunnerProfileInput): boolean {
+  return isDeveloperAgentRunner(agent);
+}
+
+export function usesInternalApiBaseForTaskRunner(agent: AgentRunnerProfileInput): boolean {
+  return isManagedAgentRunner(agent);
 }

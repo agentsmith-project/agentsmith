@@ -37,7 +37,7 @@
   "runtimeData": {
     "membersInviteFirstUse": {
       "privateProjectNamePrefix": "Story Member Access",
-      "sharedRunnerProjectNamePrefix": "Story Shared Runner",
+      "sharedChatProjectNamePrefix": "Story Shared Chat",
       "credentialNamePrefix": "Story Member Endpoint Credential",
       "endpointNamePrefix": "Story Member Endpoint",
       "ownerPrivateMessagePrefix": "OWNER_PRIVATE_MESSAGE",
@@ -118,10 +118,10 @@
       ]
     },
     {
-      "stepId": "verify-shared-runner-isolation",
-      "intent": "Confirm a shared chat runner can be reused without leaking one member's session content to another.",
-      "action": "Verify shared runner isolation",
-      "expectedFeedback": "共享 runner pod 只复用算力，不复用成员的会话内容。",
+      "stepId": "verify-chat-session-isolation",
+      "intent": "Confirm shared project chat usage does not leak one member's session content to another.",
+      "action": "Verify chat session isolation",
+      "expectedFeedback": "共享项目下的 Chat 使用不复用成员的私有会话内容。",
       "note": "系统可以共享执行资源，但不能共享用户私有会话。",
       "evidence": [
         "trace"

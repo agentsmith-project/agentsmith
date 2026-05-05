@@ -13,8 +13,7 @@ const DIGEST_A = `sha256:${'a'.repeat(64)}`;
 const DIGEST_B = `sha256:${'b'.repeat(64)}`;
 
 const DEMO_KIND_IMAGES = [
-  'agentsmith-runner:test',
-  'agentsmith-chat-runner:test',
+  'agentsmith-agent-task-runner:test',
   'sandbox-manager:test',
   'juicedata/juicefs-csi-driver:v0.31.3',
   'juicedata/csi-dashboard:v0.31.3',
@@ -113,8 +112,7 @@ function writeDemoReleaseVersion(tempRoot: string, bundledImageArchivesIncluded:
     [
       'release_id=release-test',
       'agentsmith_app_image=agentsmith-app:test',
-      'agentsmith_runner_image=agentsmith-runner:test',
-      'agentsmith_chat_runner_image=agentsmith-chat-runner:test',
+      'agentsmith_agent_task_runner_image=agentsmith-agent-task-runner:test',
       'sandbox_manager_image=sandbox-manager:test',
       'llm_universal_proxy_image=llm-universal-proxy:test',
       `bundled_image_archives_included=${bundledImageArchivesIncluded ? '1' : '0'}`,
@@ -238,8 +236,7 @@ render_k8s_external_dependency_services() { :; }
     [
       'release_id=release-test',
       'agentsmith_app_image=agentsmith-app:test',
-      'agentsmith_runner_image=agentsmith-runner:test',
-      'agentsmith_chat_runner_image=agentsmith-chat-runner:test',
+      'agentsmith_agent_task_runner_image=agentsmith-agent-task-runner:test',
       'sandbox_manager_image=sandbox-manager:test',
       'llm_universal_proxy_image=llm-universal-proxy:test',
       'bundled_image_archives_included=1',
@@ -601,7 +598,7 @@ describe('demo deploy bundled image loading', () => {
 
   it('loads bundled kind image archive when only local RepoDigest matches kind containerd target digest', () => {
     const tempRoot = mkdtempSync(path.join(os.tmpdir(), 'demo-deploy-kind-bundled-fail-closed-'));
-    const image = 'agentsmith-runner:test';
+    const image = 'agentsmith-agent-task-runner:test';
     try {
       stageDemoDeployFixture(tempRoot);
       writeDemoKindImageArchives(tempRoot);
@@ -621,7 +618,7 @@ describe('demo deploy bundled image loading', () => {
 
   it('skips local-image kind preload when local RepoDigest matches kind containerd target digest', () => {
     const tempRoot = mkdtempSync(path.join(os.tmpdir(), 'demo-deploy-kind-local-skip-'));
-    const image = 'agentsmith-runner:test';
+    const image = 'agentsmith-agent-task-runner:test';
     try {
       stageDemoDeployFixture(tempRoot);
       writeDemoReleaseVersion(tempRoot, false);
@@ -652,7 +649,7 @@ describe('demo deploy bundled image loading', () => {
 
   it('does not skip local-image kind preload when only Docker image ID matches kind target digest', () => {
     const tempRoot = mkdtempSync(path.join(os.tmpdir(), 'demo-deploy-kind-local-id-no-skip-'));
-    const image = 'agentsmith-runner:test';
+    const image = 'agentsmith-agent-task-runner:test';
     try {
       stageDemoDeployFixture(tempRoot);
       writeDemoReleaseVersion(tempRoot, false);
@@ -724,7 +721,7 @@ describe('demo deploy bundled image loading', () => {
 
     for (const testCase of cases) {
       const tempRoot = mkdtempSync(path.join(os.tmpdir(), `demo-deploy-kind-fail-closed-${testCase.name}-`));
-      const image = 'agentsmith-runner:test';
+      const image = 'agentsmith-agent-task-runner:test';
       try {
         stageDemoDeployFixture(tempRoot);
         writeDemoReleaseVersion(tempRoot, false);
@@ -744,7 +741,7 @@ describe('demo deploy bundled image loading', () => {
 
   it('forces kind preload without probing or writing a skip decision when FORCE_KIND_PRELOAD=1', () => {
     const tempRoot = mkdtempSync(path.join(os.tmpdir(), 'demo-deploy-kind-force-preload-'));
-    const image = 'agentsmith-runner:test';
+    const image = 'agentsmith-agent-task-runner:test';
     try {
       stageDemoDeployFixture(tempRoot);
       writeDemoReleaseVersion(tempRoot, false);
@@ -776,8 +773,7 @@ describe('demo deploy bundled image loading', () => {
         [
           'release_id=release-test',
           'agentsmith_app_image=agentsmith-app:test',
-          'agentsmith_runner_image=agentsmith-runner:test',
-          'agentsmith_chat_runner_image=agentsmith-chat-runner:test',
+          'agentsmith_agent_task_runner_image=agentsmith-agent-task-runner:test',
           'sandbox_manager_image=sandbox-manager:test',
           'llm_universal_proxy_image=llm-universal-proxy:test',
           'bundled_image_archives_included=0',
@@ -790,7 +786,7 @@ describe('demo deploy bundled image loading', () => {
       runDemoLoadKindImages(tempRoot);
       const kindLog = readFileSync(path.join(tempRoot, 'kind.log'), 'utf8');
 
-      expect(kindLog).toContain('load docker-image agentsmith-runner:test');
+      expect(kindLog).toContain('load docker-image agentsmith-agent-task-runner:test');
       expect(kindLog).not.toContain('load image-archive');
     } finally {
       rmSync(tempRoot, { recursive: true, force: true });
@@ -806,8 +802,7 @@ describe('demo deploy bundled image loading', () => {
         [
           'release_id=release-test',
           'agentsmith_app_image=agentsmith-app:test',
-          'agentsmith_runner_image=agentsmith-runner:test',
-          'agentsmith_chat_runner_image=agentsmith-chat-runner:test',
+          'agentsmith_agent_task_runner_image=agentsmith-agent-task-runner:test',
           'sandbox_manager_image=sandbox-manager:test',
           'llm_universal_proxy_image=llm-universal-proxy:test',
           'bundled_image_archives_included=0',

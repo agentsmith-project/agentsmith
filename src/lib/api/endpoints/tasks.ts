@@ -1,16 +1,16 @@
 /**
  * Task API Endpoints
  *
- * Typed API functions for Task operations, messages, and artifacts.
+ * Typed API functions for Task operations, activity, runs, and artifacts.
  */
 
 import type {
   Task,
-  TaskMessage,
+  TaskActivityItem,
   Artifact,
   CreateTaskRequest,
   UpdateTaskRequest,
-  SendMessageRequest,
+  StartTaskRunRequest,
   TaskListParams,
   TaskListResponse,
   TaskTraceListResponse,
@@ -161,30 +161,30 @@ export class TaskAPI {
   }
 
   /**
-   * List messages in a task
+   * List activity in a task
    */
-  async listMessages(
+  async listActivity(
     workspaceId: string,
     projectId: string,
     taskId: string,
-  ): Promise<TaskMessage[]> {
-    return this.client.get<TaskMessage[]>(
-      `/workspaces/${workspaceId}/projects/${projectId}/tasks/${taskId}/messages`,
+  ): Promise<TaskActivityItem[]> {
+    return this.client.get<TaskActivityItem[]>(
+      `/workspaces/${workspaceId}/projects/${projectId}/tasks/${taskId}/activity`,
     );
   }
 
   /**
-   * Send a message to the agent.
+   * Start a task run.
    * The backend rejects a new user run when the task still has live terminal sessions.
    */
-  async sendMessage(
+  async startRun(
     workspaceId: string,
     projectId: string,
     taskId: string,
-    data: SendMessageRequest,
-  ): Promise<TaskMessage> {
-    return this.client.post<TaskMessage>(
-      `/workspaces/${workspaceId}/projects/${projectId}/tasks/${taskId}/messages`,
+    data: StartTaskRunRequest,
+  ): Promise<TaskActivityItem> {
+    return this.client.post<TaskActivityItem>(
+      `/workspaces/${workspaceId}/projects/${projectId}/tasks/${taskId}/runs`,
       data,
     );
   }
@@ -218,7 +218,7 @@ export class TaskAPI {
   }
 
   /**
-   * List execution trace events in a task (optionally scoped to a message/run)
+   * List execution trace events in a task (optionally scoped to activity/run)
    */
   async listTraces(
     workspaceId: string,
@@ -330,11 +330,11 @@ export class TaskAPI {
 // Export request/response types for use in hooks
 export type {
   Task,
-  TaskMessage,
+  TaskActivityItem,
   Artifact,
   CreateTaskRequest,
   UpdateTaskRequest,
-  SendMessageRequest,
+  StartTaskRunRequest,
   TaskListParams,
   TaskListResponse,
   TaskTraceEvent,

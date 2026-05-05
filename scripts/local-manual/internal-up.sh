@@ -12,7 +12,7 @@ cleanup_on_exit() {
 trap 'cleanup_on_exit $?' EXIT INT TERM
 
 ensure_local_manual_ready
-ensure_notebook_demo_seeded
+ensure_agent_task_demo_seeded
 ensure_kind_cluster
 ensure_internal_runner_image
 ensure_juicefs_csi
@@ -20,10 +20,9 @@ ensure_internal_external_dependency_services
 INTERNAL_RUNTIME_STARTED=1
 start_internal_runtime
 restart_api_with_mode 1
-ensure_internal_agent_state
+ensure_internal_runner_state
 
 internal_info "ready"
 internal_info "Sandbox manager: ${INTERNAL_SANDBOX_MANAGER_URL_VALUE}"
 internal_info "Namespace: ${K8S_NAMESPACE}"
-internal_info "Internal agent: $(state_get internal_agent.name) ($(state_get internal_agent.id))"
 trap - EXIT INT TERM

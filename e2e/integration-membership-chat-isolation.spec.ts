@@ -3,8 +3,6 @@ import {
   API_BASE,
   BACKEND_REAL_ANTHROPIC_BASE_URL,
   BACKEND_REAL_MODEL,
-  createChatSessionViaApi,
-  createExternalRunnerAgentBundle,
   createCredentialViaUi,
   createEndpointViaApi,
   createProjectInWorkspace,
@@ -16,8 +14,6 @@ import {
   KEYCLOAK_INTEGRATION_MEMBER_USERNAME,
   keycloakLoginToWorkspace,
   LOCALE,
-  startChatRunnerProcess,
-  waitForAgentPresenceOnline,
 } from './integration-real-helpers';
 import { readStoredAuthToken } from './integration-workspace-access';
 import { loadStoryDefinitionSync } from './story-loader';
@@ -26,18 +22,12 @@ import { createUxTraceBundleWriter } from './trace-bundle-support';
 
 const INVITE_TO_FIRST_EFFECTIVE_WORK_STORY = loadStoryDefinitionSync('invite-to-first-effective-work');
 const INVITE_TO_FIRST_EFFECTIVE_WORK_BINDING = buildTraceStoryBinding(INVITE_TO_FIRST_EFFECTIVE_WORK_STORY);
-const MEMBERS_INVITE_PRIVACY_STORY = loadStoryDefinitionSync('members-invite-and-chat-privacy');
-const MEMBERS_INVITE_PRIVACY_BINDING = buildTraceStoryBinding(MEMBERS_INVITE_PRIVACY_STORY);
 
 type MembersInviteRuntime = {
   privateProjectNamePrefix: string;
-  sharedRunnerProjectNamePrefix: string;
   credentialNamePrefix: string;
   endpointNamePrefix: string;
   ownerPrivateMessagePrefix: string;
-  sharedChatTitlePrefix: string;
-  ownerTokenPrefix: string;
-  memberTokenPrefix: string;
 };
 
 function resolveStoryStep(binding: TraceStoryBinding, stepId: string, storyId: string) {
@@ -50,7 +40,7 @@ function resolveStoryStep(binding: TraceStoryBinding, stepId: string, storyId: s
 
 function requireMembersInviteRuntime(
   story: { runtimeData?: unknown; storyId: string },
-  runtimeKey: 'inviteToFirstEffectiveWork' | 'membersInviteFirstUse',
+  runtimeKey: 'inviteToFirstEffectiveWork',
 ): MembersInviteRuntime {
   const runtimeRoot = story.runtimeData as Record<string, unknown> | undefined;
   const runtime = runtimeRoot?.[runtimeKey] as Record<string, unknown> | undefined;
@@ -59,13 +49,9 @@ function requireMembersInviteRuntime(
   }
   for (const key of [
     'privateProjectNamePrefix',
-    'sharedRunnerProjectNamePrefix',
     'credentialNamePrefix',
     'endpointNamePrefix',
     'ownerPrivateMessagePrefix',
-    'sharedChatTitlePrefix',
-    'ownerTokenPrefix',
-    'memberTokenPrefix',
   ] as const) {
     if (typeof runtime[key] !== 'string' || runtime[key].trim().length === 0) {
       throw new Error(`missing_members_invite_runtime_data:${story.storyId}:${runtimeKey}:${key}`);
@@ -143,51 +129,6 @@ async function createChatSession(
   const payload = await response.json() as { id?: string };
   expect(payload.id).toBeTruthy();
   return payload.id ?? '';
-}
-
-async function waitForAssistantToken(page: import('@playwright/test').Page, workspaceId: string, projectId: string, sessionId: string, token: string): Promise<void> {
-  const authToken = await readStoredAuthToken(page);
-  await expect
-    .poll(
-      async () => {
-        const response = await page.request.get(
-          `${API_BASE}/api/v1/workspaces/${workspaceId}/projects/${projectId}/chat/sessions/${sessionId}/messages`,
-          { headers: { Authorization: `Bearer ${authToken}` } },
-        );
-        if (!response.ok()) return false;
-        const payload = await response.json() as { items?: Array<{ role?: string; content?: string }> };
-        return (payload.items ?? []).some((item) => item.role === 'assistant' && item.content?.includes(token));
-      },
-      { timeout: 240_000, intervals: [1_000, 2_000, 5_000] },
-    )
-    .toBe(true);
-}
-
-async function runChatStreamTurn(
-  page: import('@playwright/test').Page,
-  workspaceId: string,
-  projectId: string,
-  sessionId: string,
-  content: string,
-): Promise<string> {
-  const token = await readStoredAuthToken(page);
-  const response = await page.request.post(
-    `${API_BASE}/api/v1/workspaces/${workspaceId}/projects/${projectId}/chat/sessions/${sessionId}/messages/stream`,
-    {
-      headers: {
-        Authorization: `Bearer ${token}`,
-        'Content-Type': 'application/json',
-      },
-      data: {
-        input: {
-          role: 'user',
-          content,
-        },
-      },
-    },
-  );
-  expect(response.ok()).toBeTruthy();
-  return response.text();
 }
 
 async function postChatMessage(page: import('@playwright/test').Page, workspaceId: string, projectId: string, sessionId: string, content: string): Promise<void> {
@@ -343,158 +284,6 @@ test.describe('@lane-real invite flow and chat isolation', () => {
       outcome = 'pass';
     } finally {
       await memberContext.close();
-      await trace.finish({ outcome });
-    }
-  });
-
-  test('shares one chat runner pod across owner and member sessions without leaking session content', async ({ browser, page }) => {
-    test.setTimeout(720_000);
-    const workspaceId = 'ws_default';
-    const apiKey = requireApiKey();
-    const runtime = requireMembersInviteRuntime(MEMBERS_INVITE_PRIVACY_STORY, 'membersInviteFirstUse');
-    await ensureIntegrationKeycloakUsers();
-
-    await keycloakLoginToWorkspace(page, workspaceId, KEYCLOAK_DEV_ADMIN_USERNAME, KEYCLOAK_DEV_ADMIN_PASSWORD);
-    const projectName = `${runtime.sharedRunnerProjectNamePrefix} ${Date.now()}`;
-    const { projectId } = await createProjectInWorkspace(page, workspaceId, projectName, {
-      visibility: 'private',
-      joinPolicy: 'approval_required',
-    });
-
-    const credentialName = `${runtime.credentialNamePrefix} ${Date.now()}`;
-    await createCredentialViaUi(page, workspaceId, projectId, credentialName, apiKey);
-    const endpointId = await createEndpointViaApi(page, workspaceId, projectId, {
-      endpointName: `${runtime.endpointNamePrefix} ${Date.now()}`,
-      endpointModel: BACKEND_REAL_MODEL,
-      upstreamBaseUrl: BACKEND_REAL_ANTHROPIC_BASE_URL,
-      credentialName,
-    });
-    const chatTitle = `${runtime.sharedChatTitlePrefix}-${Date.now()}`;
-    const agentBundle = await createExternalRunnerAgentBundle(page, {
-      workspaceId,
-      projectId,
-      endpointId,
-      title: chatTitle,
-      interactionKind: 'chat',
-    });
-
-    const runner = await startChatRunnerProcess({
-      wsUrl: agentBundle.wsUrl,
-      agentKey: agentBundle.agentKey,
-    });
-    test.info().annotations.push({ type: 'codex_runner_log', description: runner.logPath });
-
-    const invitePath = await createInvite(page, workspaceId, projectId, KEYCLOAK_INTEGRATION_MEMBER_EMAIL);
-    const ownerToken = `${runtime.ownerTokenPrefix}_${Date.now()}`;
-    const memberToken = `${runtime.memberTokenPrefix}_${Date.now()}`;
-    const trace = await createUxTraceBundleWriter({
-      outputRoot: process.env.UX_TRACE_OUTPUT_ROOT,
-      lane: 'backend-real',
-      suite: 'integration-membership-chat-isolation',
-      storyId: MEMBERS_INVITE_PRIVACY_STORY.storyId,
-      title: MEMBERS_INVITE_PRIVACY_STORY.title,
-      actor: MEMBERS_INVITE_PRIVACY_STORY.actor,
-      route: `/${LOCALE}/join`,
-      specFile: 'e2e/integration-membership-chat-isolation.spec.ts',
-      browser: 'chromium',
-      goal: MEMBERS_INVITE_PRIVACY_STORY.goal,
-      preconditions: [...(MEMBERS_INVITE_PRIVACY_STORY.preconditions ?? [])],
-      seedData: [...(MEMBERS_INVITE_PRIVACY_STORY.seedData ?? [])],
-      storyBinding: MEMBERS_INVITE_PRIVACY_BINDING,
-    });
-    const capturePrivacyTrace = async (pageRef: import('@playwright/test').Page, stepId: string) => {
-      const storyStep = resolveStoryStep(MEMBERS_INVITE_PRIVACY_BINDING, stepId, MEMBERS_INVITE_PRIVACY_STORY.storyId);
-      await trace.capture(pageRef, {
-        stepId,
-        action: storyStep.action,
-        target: storyStep.target,
-        note: storyStep.note ?? storyStep.expectedFeedback,
-      });
-    };
-    let outcome: 'pass' | 'fail' = 'fail';
-
-    try {
-      await waitForAgentPresenceOnline(page, workspaceId, projectId, agentBundle.agentId);
-      const ownerSessionId = (await createChatSessionViaApi({
-        page,
-        workspaceId,
-        projectId,
-        externalAgentId: agentBundle.agentId,
-        title: `${chatTitle}-owner`,
-      })).id;
-      const ownerStream = await runChatStreamTurn(
-        page,
-        workspaceId,
-        projectId,
-        ownerSessionId,
-        `Reply with exactly ${ownerToken}.`,
-      );
-      expect(ownerStream).toContain(ownerToken);
-      await waitForAssistantToken(page, workspaceId, projectId, ownerSessionId, ownerToken);
-
-      const memberContext = await browser.newContext();
-      const memberPage = await memberContext.newPage();
-      try {
-        await keycloakLoginToWorkspace(
-          memberPage,
-          workspaceId,
-          KEYCLOAK_INTEGRATION_MEMBER_USERNAME,
-          KEYCLOAK_INTEGRATION_MEMBER_PASSWORD,
-          { ensureProjectCreatorAccess: false },
-        );
-        await memberPage.goto(`/${LOCALE}${invitePath}`);
-        await expect(memberPage.getByTestId('join__auto-accepting')).toBeVisible({ timeout: 30_000 });
-        await capturePrivacyTrace(memberPage, 'accept-invite');
-        await expect(memberPage).toHaveURL(new RegExp(`/${LOCALE}/workspaces/${workspaceId}/projects/${projectId}/overview$`), { timeout: 30_000 });
-        await expect(memberPage.getByTestId('project-overview__page')).toBeVisible({ timeout: 30_000 });
-        await capturePrivacyTrace(memberPage, 'verify-member-first-access');
-        await memberPage.getByTestId('project-overview__primary-cta').click();
-        await expect(memberPage.getByTestId('chat__surface')).toBeVisible({ timeout: 30_000 });
-        await capturePrivacyTrace(memberPage, 'start-first-chat-use');
-
-        const memberSessionId = (await createChatSessionViaApi({
-          page: memberPage,
-          workspaceId,
-          projectId,
-          externalAgentId: agentBundle.agentId,
-          title: `${chatTitle}-member`,
-        })).id;
-        const memberStream = await runChatStreamTurn(
-          memberPage,
-          workspaceId,
-          projectId,
-          memberSessionId,
-          `Reply with exactly ${memberToken}.`,
-        );
-        expect(memberStream).toContain(memberToken);
-        await waitForAssistantToken(memberPage, workspaceId, projectId, memberSessionId, memberToken);
-
-        const ownerAuthToken = await readStoredAuthToken(page);
-        const ownerMessagesRes = await page.request.get(
-          `${API_BASE}/api/v1/workspaces/${workspaceId}/projects/${projectId}/chat/sessions/${ownerSessionId}/messages`,
-          { headers: { Authorization: `Bearer ${ownerAuthToken}` } },
-        );
-        expect(ownerMessagesRes.ok()).toBeTruthy();
-        const ownerMessages = await ownerMessagesRes.json() as { items?: Array<{ role?: string; content?: string }> };
-        expect((ownerMessages.items ?? []).some((item) => item.role === 'assistant' && item.content?.includes(ownerToken))).toBe(true);
-        expect((ownerMessages.items ?? []).some((item) => item.role === 'assistant' && item.content?.includes(memberToken))).toBe(false);
-
-        const memberMessagesRes = await memberPage.request.get(
-          `${API_BASE}/api/v1/workspaces/${workspaceId}/projects/${projectId}/chat/sessions/${memberSessionId}/messages`,
-          { headers: { Authorization: `Bearer ${await readStoredAuthToken(memberPage)}` } },
-        );
-        expect(memberMessagesRes.ok()).toBeTruthy();
-        const memberMessages = await memberMessagesRes.json() as { items?: Array<{ role?: string; content?: string }> };
-        expect((memberMessages.items ?? []).some((item) => item.role === 'assistant' && item.content?.includes(memberToken))).toBe(true);
-        expect((memberMessages.items ?? []).some((item) => item.role === 'assistant' && item.content?.includes(ownerToken))).toBe(false);
-        await capturePrivacyTrace(memberPage, 'verify-chat-privacy');
-        await capturePrivacyTrace(memberPage, 'verify-shared-runner-isolation');
-        outcome = 'pass';
-      } finally {
-        await memberContext.close();
-      }
-    } finally {
-      await runner.stop();
       await trace.finish({ outcome });
     }
   });

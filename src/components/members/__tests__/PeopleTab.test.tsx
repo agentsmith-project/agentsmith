@@ -35,7 +35,7 @@ const members = Array.from({ length: 25 }).map((_, index) => ({
     index === 0
       ? ['project:membership:update']
       : index === 1
-        ? ['project:agent:use']
+        ? ['project:agent_task:use']
         : [],
   status: 'active' as const,
   joined_at: '2026-02-01T00:00:00Z',

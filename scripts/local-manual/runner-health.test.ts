@@ -192,7 +192,7 @@ function runRunnerHealthState(args: RunnerHealthFixtureArgs): string {
 function runnerHealthArtifact(state: 'connected' | 'shutting_down' | 'disconnected' | 'stale', pid = process.pid) {
   return JSON.stringify({
     schema_version: 2,
-    contract: 'notebook-codex-runner.lifecycle.v1',
+    contract: 'agent-task-runner.lifecycle.v1',
     state,
     pid,
     observed_at: new Date().toISOString(),
@@ -302,7 +302,7 @@ describe('local-manual runner health', () => {
       const repoRoot = process.cwd();
 
       withRunnerHealthFixture({
-        logContent: '[notebook-codex-runner] runner_state=connected reason=websocket_open\n',
+        logContent: '[agent-task-runner] runner_state=connected reason=websocket_open\n',
         pidValue: process.pid,
         readyFileContent: 'ready',
         healthContent: runnerHealthArtifact(artifactState),
@@ -362,7 +362,7 @@ describe('local-manual runner health', () => {
     const repoRoot = process.cwd();
 
     withRunnerHealthFixture({
-      logContent: '[notebook-codex-runner] runner_state=connected reason=websocket_open\n',
+      logContent: '[agent-task-runner] runner_state=connected reason=websocket_open\n',
       pidValue: process.pid,
       readyFileContent: 'ready',
     }, ({ tempRoot, backendRealRoot, logFile, pidFile, readyFile, healthFile }) => {
@@ -612,7 +612,7 @@ NODE
 
   it('reports shutting_down from a fresh runner health artifact instead of collapsing it to connected or disconnected', () => {
     const state = withOwnedRunnerAuthority<string>({
-      logContent: '[notebook-codex-runner] runner_state=connected reason=websocket_open\n',
+      logContent: '[agent-task-runner] runner_state=connected reason=websocket_open\n',
       healthState: 'shutting_down',
       snippet: ({ repoRoot, backendRealRoot, logFile, pidFile, readyFile, healthFile, ownerStateFile, processStateDir }) => `
         set -euo pipefail
@@ -635,7 +635,7 @@ NODE
 
   it('rejects an old connected log when no fresh health artifact exists', () => {
     const state = runRunnerHealthState({
-      logContent: '[notebook-codex-runner] connected\n',
+      logContent: '[agent-task-runner] connected\n',
       pidValue: process.pid,
       readyFileContent: 'ready',
     });
@@ -645,7 +645,7 @@ NODE
 
   it('reports disconnected when the fresh health artifact says the socket is disconnected', () => {
     const state = withOwnedRunnerAuthority<string>({
-      logContent: '[notebook-codex-runner] connected\n[notebook-codex-runner] disconnected\n',
+      logContent: '[agent-task-runner] connected\n[agent-task-runner] disconnected\n',
       healthState: 'disconnected',
       snippet: ({ repoRoot, backendRealRoot, logFile, pidFile, readyFile, healthFile, ownerStateFile, processStateDir }) => `
         set -euo pipefail
@@ -674,7 +674,7 @@ NODE
       maxAgeSeconds: 1,
       healthContent: JSON.stringify({
         schema_version: 2,
-        contract: 'notebook-codex-runner.lifecycle.v1',
+        contract: 'agent-task-runner.lifecycle.v1',
         state: 'connected',
         pid: process.pid,
         observed_at: new Date(Date.now() - 60_000).toISOString(),
@@ -687,7 +687,7 @@ NODE
 
   it('reports disconnected when the runner pid is gone even if an old connected log remains', () => {
     const state = runRunnerHealthState({
-      logContent: '[notebook-codex-runner] connected\n',
+      logContent: '[agent-task-runner] connected\n',
       pidValue: 99999999,
       readyFileContent: 'ready',
       healthContent: runnerHealthArtifact('connected', 99999999),
@@ -699,8 +699,8 @@ NODE
   it('treats connected followed by shutting_down as shutting_down in the latest lifecycle log transition', () => {
     const state = runCommonSnippet({
       logContent: [
-        '[notebook-codex-runner] runner_state=connected reason=websocket_open',
-        '[notebook-codex-runner] shutting down (websocket_close)',
+        '[agent-task-runner] runner_state=connected reason=websocket_open',
+        '[agent-task-runner] shutting down (websocket_close)',
       ].join('\n'),
       pidValue: process.pid,
     }, 'local_manual_runner_latest_socket_log_state');
@@ -711,8 +711,8 @@ NODE
   it('writes a v2 shutting_down health artifact from a single monitor observation', () => {
     const output = withOwnedRunnerAuthority<string>({
       logContent: [
-        '[notebook-codex-runner] runner_state=connected reason=websocket_open',
-        '[notebook-codex-runner] runner_state=shutting_down reason=websocket_close',
+        '[agent-task-runner] runner_state=connected reason=websocket_open',
+        '[agent-task-runner] runner_state=shutting_down reason=websocket_close',
       ].join('\n'),
       healthState: 'connected',
       snippet: ({ repoRoot, backendRealRoot, logFile, pidFile, readyFile, healthFile, ownerStateFile, processStateDir }) => `

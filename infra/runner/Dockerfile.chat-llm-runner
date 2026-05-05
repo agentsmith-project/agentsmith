@@ -1,6 +1,0 @@
-ARG RUNNER_BASE_IMAGE=agentsmith-chat-llm-runner-base:local
-
-FROM ${RUNNER_BASE_IMAGE}
-
-COPY packages/agent-runner/src ./packages/agent-runner/src
-COPY packages/chat-llm-runner/src ./packages/chat-llm-runner/src

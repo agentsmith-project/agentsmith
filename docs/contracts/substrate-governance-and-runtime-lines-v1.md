@@ -57,7 +57,7 @@ Current app members may include:
 
 - API
 - Web
-- external runner
+- managed Agent task runner configuration
 - sandbox manager when a scenario needs it
 
 `app` must consume the rendered substrate connection truth and must not invent its own dependency addresses.

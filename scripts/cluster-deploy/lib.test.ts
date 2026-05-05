@@ -23,8 +23,7 @@ const FORBIDDEN_SKIP_DECISION_FIELDS = [
 
 const PUSH_IMAGE_ENV_KEYS = [
   'APP_IMAGE',
-  'RUNNER_IMAGE',
-  'CHAT_RUNNER_IMAGE',
+  'AGENT_TASK_RUNNER_IMAGE',
   'VERIFY_RUNNER_IMAGE',
   'SANDBOX_MANAGER_IMAGE',
   'UNIVERSAL_PROXY_IMAGE',
@@ -496,11 +495,11 @@ describe('cluster deploy registry push skip', () => {
 
   it('pushes when docker image inspect only has an ImageID or lacks a matching RepoDigest', () => {
     const imageWithOnlyId = 'registry.test/mbos/agentsmith-app:release-test';
-    const imageWithoutMatchingRepo = 'registry.test/mbos/agentsmith-runner:release-test';
+    const imageWithoutMatchingRepo = 'registry.test/mbos/agentsmith-agent-task-runner:release-test';
 
     for (const [name, image, localInspectJson] of [
       ['only-id', imageWithOnlyId, JSON.stringify({ Id: DIGEST_A, RepoDigests: [] })],
-      ['wrong-repo', imageWithoutMatchingRepo, JSON.stringify(['registry.test/other/agentsmith-runner@' + DIGEST_A])],
+      ['wrong-repo', imageWithoutMatchingRepo, JSON.stringify(['registry.test/other/agentsmith-agent-task-runner@' + DIGEST_A])],
     ] as const) {
       const tempRoot = mkdtempSync(path.join(os.tmpdir(), `cluster-lib-push-${name}-`));
       try {
@@ -521,7 +520,7 @@ describe('cluster deploy registry push skip', () => {
 
   it('pushes when the remote manifest probe fails or returns a non-sha256 digest', () => {
     const probeFailureImage = 'registry.test/mbos/agentsmith-app:release-test';
-    const invalidDigestImage = 'registry.test/mbos/agentsmith-runner:release-test';
+    const invalidDigestImage = 'registry.test/mbos/agentsmith-agent-task-runner:release-test';
 
     for (const [name, image, configureRemote] of [
       [

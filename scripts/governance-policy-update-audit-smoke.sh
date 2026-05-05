@@ -56,7 +56,7 @@ main() {
     exit 1
   }
   if ! token_is_valid "${token}"; then
-    err "token invalid/expired; run: BASE_URL=http://localhost:3001 make notebook-agent-refresh-token"
+    err "token invalid/expired; run: BASE_URL=http://localhost:3001 make agent-runner-refresh-token"
     exit 1
   fi
 

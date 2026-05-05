@@ -5,7 +5,7 @@
   "actor": "project owner / member",
   "lane": "backend-real",
   "entryRoute": "/en-US/workspaces/ws_default/projects",
-  "goal": "project owner can configure credentials, endpoints, and agents; members can use agents but cannot manage them.",
+  "goal": "project owner can configure credentials, endpoints, and Agent Runners; members can use Agent Runners but cannot manage them.",
   "preconditions": [
     "backend-real stack is ready",
     "workspace ws_default is available",
@@ -20,7 +20,7 @@
   "seedData": [
     "ws_default"
   ],
-  "narrative": "runtime setup should feel like a governed project configuration flow: first prepare credentials and endpoints, then establish agents, and finally validate member-only usage vs manage permissions.",
+  "narrative": "runtime setup should feel like a governed project configuration flow: first prepare credentials and endpoints, then establish Agent Runners, and finally validate member-only usage vs manage permissions.",
   "scenes": [
     {
       "sceneId": "project-credentials",
@@ -37,17 +37,18 @@
       ]
     },
     {
-      "sceneId": "project-agents",
-      "route": "/en-US/workspaces/{workspaceId}/projects/{projectId}/agents",
+      "sceneId": "project-agent-runners",
+      "route": "/en-US/workspaces/{workspaceId}/projects/{projectId}/agent-runners",
       "stableMarkers": [
-        "agents__create-btn"
+        "agent-runners__create-btn"
       ]
     },
     {
-      "sceneId": "project-notebook",
-      "route": "/en-US/workspaces/{workspaceId}/projects/{projectId}/notebook",
+      "sceneId": "project-agent-tasks",
+      "route": "/en-US/workspaces/{workspaceId}/projects/{projectId}/agent-tasks",
       "stableMarkers": [
-        "notebook__task-header"
+        "agent-tasks__task-list",
+        "agent-tasks__create-task-btn"
       ]
     },
     {
@@ -76,7 +77,7 @@
     "agentSetup": {
       "credentialNamePrefix": "Project Governance Credential",
       "endpointNamePrefix": "Agent Permissions Endpoint",
-      "externalTitlePrefix": "Agent Permissions",
+      "agentTaskRunnerTitlePrefix": "Agent Permissions",
       "memberTaskTitlePrefix": "Agent Member Task"
     }
   },
@@ -118,25 +119,25 @@
       ]
     },
     {
-      "stepId": "agents-created",
-      "sceneId": "project-agents",
-      "intent": "Create agents that will be used by project members.",
-      "action": "Create agents",
-      "target": "agents__create-btn",
-      "expectedFeedback": "agent 已创建且可供普通成员使用",
-      "note": "agent 已创建且可供普通成员使用",
+      "stepId": "agent-runners-created",
+      "sceneId": "project-agent-runners",
+      "intent": "Create Agent Runners that will be used by project members.",
+      "action": "Create Agent Runners",
+      "target": "agent-runners__create-btn",
+      "expectedFeedback": "Agent Runner 已创建且可供普通成员使用",
+      "note": "Agent Runner 已创建且可供普通成员使用",
       "evidence": [
         "trace"
       ]
     },
     {
       "stepId": "member-task-created",
-      "sceneId": "project-notebook",
-      "intent": "Create a notebook task as a member and run it through the prepared agent setup.",
-      "action": "Create member notebook task",
-      "target": "notebook__create-task-btn",
-      "expectedFeedback": "member 能创建任务并收到 agent 响应",
-      "note": "member 能创建任务并收到 agent 响应",
+      "sceneId": "project-agent-tasks",
+      "intent": "Create a Agent Task as a member and run it through the prepared agent setup.",
+      "action": "Create member Agent Task",
+      "target": "agent-tasks__create-task-btn",
+      "expectedFeedback": "member 能创建任务并收到 Agent Task 响应",
+      "note": "member 能创建任务并收到 Agent Task 响应",
       "evidence": [
         "trace"
       ]
@@ -144,7 +145,7 @@
     {
       "stepId": "member-manage-forbidden",
       "sceneId": "project-members",
-      "intent": "Confirm members can use agents but cannot manage them.",
+      "intent": "Confirm members can use Agent Runners but cannot manage them.",
       "action": "Verify member manage permissions",
       "target": "members__search-input",
       "expectedFeedback": "member 对管理接口保持 403",

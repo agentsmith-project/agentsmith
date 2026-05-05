@@ -4,7 +4,6 @@ export const chatSessionUpdateFields = [
   'title',
   'model',
   'endpoint_id',
-  'external_agent_id',
   'pinned',
   'starred',
 ] as const;
@@ -18,13 +17,9 @@ export interface PendingSessionUpdateOptions {
 type ChatSessionComparableTruth = Partial<Record<ChatSessionUpdateField, string | boolean | null | undefined>>;
 
 function normalizeComparableValue(
-  field: ChatSessionUpdateField,
+  _field: ChatSessionUpdateField,
   value: string | boolean | null | undefined,
 ): string | boolean | undefined {
-  if (field === 'external_agent_id' && value == null) {
-    return undefined;
-  }
-
   return value ?? undefined;
 }
 
@@ -49,10 +44,9 @@ export function doesSessionMatchPatch(
   });
 }
 
-export function isExecutionTargetUpdate(data: ChatSessionUpdateData): boolean {
+export function isModelBindingUpdate(data: ChatSessionUpdateData): boolean {
   return (
     'endpoint_id' in data
-    || 'external_agent_id' in data
     || 'model' in data
   );
 }
@@ -74,9 +68,9 @@ export async function applyChatSessionUpdate(args: {
 }): Promise<void> {
   const { input, mutateAsync, setPendingSessionUpdate } = args;
   const patch = { ...input.data };
-  const trackPendingExecutionTarget = isExecutionTargetUpdate(patch);
+  const trackPendingModelBinding = isModelBindingUpdate(patch);
 
-  if (trackPendingExecutionTarget) {
+  if (trackPendingModelBinding) {
     setPendingSessionUpdate(input.sessionId, patch);
   }
 
@@ -86,7 +80,7 @@ export async function applyChatSessionUpdate(args: {
       data: patch,
     });
   } catch (error) {
-    if (trackPendingExecutionTarget) {
+    if (trackPendingModelBinding) {
       setPendingSessionUpdate(input.sessionId, null, {
         onlyIfCurrentPatch: patch,
       });

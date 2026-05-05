@@ -37,7 +37,7 @@ Modes:
 Use it when:
 
 - the target host runs application services with Docker Compose
-- internal agent execution runs on a real Kubernetes cluster
+- sandbox execution runs on a real Kubernetes cluster
 - for `semi-auto`, the cluster administrator has already completed the prerequisites in:
   - [cluster-admin-runbook.md](./cluster-admin-runbook.md)
 
@@ -275,7 +275,7 @@ This stage starts only:
 - `api`
 - `web`
 
-`external-runner` is not expected to connect in this stage. It is provisioned and connected later by `bootstrap`.
+Managed agent-task runner configuration is not expected to execute in this stage. Bootstrap seeds the managed runner record after app services are reachable.
 
 ### 9. Generate the administrator handoff package
 
@@ -483,7 +483,7 @@ Instead, the deployment renders:
 - `postgres-external`
 - `minio-external`
 
-as namespaced `Service + Endpoints`, and internal agent workloads access those service names.
+as namespaced `Service + Endpoints`, and sandbox workloads access those service names.
 
 ## Cleanup
 

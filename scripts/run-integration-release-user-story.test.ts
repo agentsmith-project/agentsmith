@@ -3,16 +3,19 @@ import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 
 describe('run-integration-release-user-story integration dependency contract', () => {
-  it('honors caller-provided codex runner images as internal runner aliases instead of forcing a hidden rebuild', () => {
+  it('honors caller-provided Agent Task runner images without legacy codex runner aliases', () => {
     const script = readFileSync('scripts/run-integration-release-user-story.sh', 'utf8');
 
+    expect(script).toContain('RUNNER_KIND="${INTEGRATION_INTERNAL_AGENT_RUNNER_KIND:-agent-task}"');
     expect(script).toContain(
-      'RUNNER_IMAGE="${INTEGRATION_INTERNAL_AGENT_IMAGE:-${INTEGRATION_CODEX_RUNNER_DOCKER_IMAGE:-$(runner_default_image "${RUNNER_KIND}")}}"',
+      'RUNNER_IMAGE="${INTEGRATION_INTERNAL_AGENT_IMAGE:-${INTEGRATION_AGENT_TASK_RUNNER_DOCKER_IMAGE:-$(runner_default_image "${RUNNER_KIND}")}}"',
     );
     expect(script).toContain(
-      'RUNNER_BASE_IMAGE="${INTEGRATION_INTERNAL_AGENT_BASE_IMAGE:-${INTEGRATION_CODEX_RUNNER_BASE_DOCKER_IMAGE:-$(runner_default_base_image "${RUNNER_KIND}")}}"',
+      'RUNNER_BASE_IMAGE="${INTEGRATION_INTERNAL_AGENT_BASE_IMAGE:-${INTEGRATION_AGENT_TASK_RUNNER_BASE_DOCKER_IMAGE:-$(runner_default_base_image "${RUNNER_KIND}")}}"',
     );
-    expect(script).toContain('BUILD_RUNNER_IMAGE="${INTEGRATION_BUILD_INTERNAL_AGENT_IMAGE:-${INTEGRATION_CODEX_RUNNER_REBUILD_IMAGE:-1}}"');
+    expect(script).toContain('BUILD_RUNNER_IMAGE="${INTEGRATION_BUILD_INTERNAL_AGENT_IMAGE:-${INTEGRATION_AGENT_TASK_RUNNER_REBUILD_IMAGE:-1}}"');
+    expect(script).not.toContain('INTEGRATION_CODEX_RUNNER');
+    expect(script).not.toContain(':-notebook');
   });
 
   it('uses integration dependency ports as the single source of truth for internal runner mounts and child lane env', () => {
@@ -22,10 +25,10 @@ describe('run-integration-release-user-story integration dependency contract', (
     expect(script).toContain('INTEGRATION_MINIO_API_PORT="${INTEGRATION_MINIO_API_PORT:-29000}"');
 
     expect(script).toContain(
-      'EXTERNAL_AGENT_JUICEFS_META_PORT_OVERRIDE_VALUE="${EXTERNAL_AGENT_JUICEFS_META_PORT_OVERRIDE:-${INTEGRATION_POSTGRES_PORT}}"',
+      'AGENT_RUNNER_DEVELOPER_JUICEFS_META_PORT_OVERRIDE_VALUE="${AGENT_RUNNER_DEVELOPER_JUICEFS_META_PORT_OVERRIDE:-${INTEGRATION_POSTGRES_PORT}}"',
     );
     expect(script).toContain(
-      'EXTERNAL_AGENT_JUICEFS_STORAGE_ENDPOINT_OVERRIDE_VALUE="${EXTERNAL_AGENT_JUICEFS_STORAGE_ENDPOINT_OVERRIDE:-http://127.0.0.1:${INTEGRATION_MINIO_API_PORT}}"',
+      'AGENT_RUNNER_DEVELOPER_JUICEFS_STORAGE_ENDPOINT_OVERRIDE_VALUE="${AGENT_RUNNER_DEVELOPER_JUICEFS_STORAGE_ENDPOINT_OVERRIDE:-http://127.0.0.1:${INTEGRATION_MINIO_API_PORT}}"',
     );
 
     expect(script).toContain('render_k8s_external_dependency_services \\');
@@ -38,8 +41,8 @@ describe('run-integration-release-user-story integration dependency contract', (
     expect(script).toContain('INTEGRATION_POSTGRES_PORT="${INTEGRATION_POSTGRES_PORT}" \\');
     expect(script).toContain('INTEGRATION_MINIO_API_PORT="${INTEGRATION_MINIO_API_PORT}" \\');
 
-    expect(script).not.toContain('EXTERNAL_AGENT_JUICEFS_META_PORT_OVERRIDE_VALUE="${EXTERNAL_AGENT_JUICEFS_META_PORT_OVERRIDE:-15432}"');
-    expect(script).not.toContain('EXTERNAL_AGENT_JUICEFS_STORAGE_ENDPOINT_OVERRIDE_VALUE="${EXTERNAL_AGENT_JUICEFS_STORAGE_ENDPOINT_OVERRIDE:-http://127.0.0.1:19000}"');
+    expect(script).not.toContain('AGENT_RUNNER_DEVELOPER_JUICEFS_META_PORT_OVERRIDE_VALUE="${AGENT_RUNNER_DEVELOPER_JUICEFS_META_PORT_OVERRIDE:-15432}"');
+    expect(script).not.toContain('AGENT_RUNNER_DEVELOPER_JUICEFS_STORAGE_ENDPOINT_OVERRIDE_VALUE="${AGENT_RUNNER_DEVELOPER_JUICEFS_STORAGE_ENDPOINT_OVERRIDE:-http://127.0.0.1:19000}"');
     expect(script).not.toContain('STORAGE_ENDPOINT="localhost:19000"');
     expect(script).not.toContain('endpoint: localhost:19000');
   });

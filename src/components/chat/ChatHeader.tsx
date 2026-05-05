@@ -2,7 +2,7 @@ import * as React from 'react';
 import { ChevronDown, Plus } from 'lucide-react';
 import { useTranslations } from 'next-intl';
 
-import type { Agent, ChatSession, Endpoint } from '@/lib/api/types';
+import type { ChatSession, Endpoint } from '@/lib/api/types';
 import { getChatContentWidthClass, type ChatLayoutMode } from '@/lib/chat/layout';
 import {
   CHAT_STREAM_ESCALATION_CONFIRMATION_REQUEST_EVENT,
@@ -33,30 +33,22 @@ import {
 import { EditableSessionTitle } from '@/components/chat/chat-header/EditableSessionTitle';
 import {
   findCurrentEndpoint,
-  findCurrentExternalAgent,
   getStreamStatusText,
 } from '@/components/chat/chat-header/utils';
 
-function renderExecutionTargetLabel({
+function renderModelLabel({
   session,
   currentEndpoint,
-  currentAgent,
-  selectExecutionTargetLabel,
-  externalAgentLabel,
+  selectModelLabel,
 }: {
   session: ChatSession | null;
   currentEndpoint: Endpoint | null | undefined;
-  currentAgent: Agent | null | undefined;
-  selectExecutionTargetLabel: string;
-  externalAgentLabel: string;
+  selectModelLabel: string;
 }) {
   if (!session) {
-    return selectExecutionTargetLabel;
+    return selectModelLabel;
   }
-  if (session.external_agent_id) {
-    return currentAgent?.name ?? externalAgentLabel;
-  }
-  return currentEndpoint?.name || session.endpoint_id || selectExecutionTargetLabel;
+  return currentEndpoint?.name || session.endpoint_id || selectModelLabel;
 }
 
 function isStopEscalationUnavailable(session: ChatSession | null) {
@@ -67,7 +59,7 @@ function isStopEscalationUnavailable(session: ChatSession | null) {
   );
 }
 
-function isExecutionTargetLocked(streamStatus: SessionStreamStatus) {
+function isModelSelectorLocked(streamStatus: SessionStreamStatus) {
   return (
     streamStatus === 'connecting'
     || streamStatus === 'recovering'
@@ -80,11 +72,9 @@ function isExecutionTargetLocked(streamStatus: SessionStreamStatus) {
 export function ChatHeader({
   session,
   endpoints,
-  externalAgents,
   streamStatus,
   onRename,
   onSelectEndpoint,
-  onSelectExternalAgent,
   onCreateThread,
   canCreateThread = true,
   createPending = false,
@@ -92,11 +82,9 @@ export function ChatHeader({
 }: {
   session: ChatSession | null;
   endpoints: Endpoint[];
-  externalAgents?: Agent[];
   streamStatus: SessionStreamStatus;
   onRename: (title: string) => void;
   onSelectEndpoint: (endpoint: Endpoint) => void;
-  onSelectExternalAgent?: (agent: Agent) => void;
   onCreateThread?: () => void;
   canCreateThread?: boolean;
   createPending?: boolean;
@@ -105,7 +93,7 @@ export function ChatHeader({
   const t = useTranslations('chat');
   const [editing, setEditing] = React.useState(false);
   const [draftTitle, setDraftTitle] = React.useState(session?.title || '');
-  const [executionTargetOpen, setExecutionTargetOpen] = React.useState(false);
+  const [modelSelectorOpen, setModelSelectorOpen] = React.useState(false);
   const [escalationRequest, setEscalationRequest] =
     React.useState<ChatStreamEscalationConfirmationRequestDetail | null>(null);
   const contentWidthClass = getChatContentWidthClass(layoutMode);
@@ -118,13 +106,9 @@ export function ChatHeader({
   const currentEndpoint = React.useMemo(() => {
     return findCurrentEndpoint(session, endpoints) ?? undefined;
   }, [endpoints, session]);
-  const currentAgent = React.useMemo(() => {
-    return findCurrentExternalAgent(session, externalAgents ?? []) ?? undefined;
-  }, [externalAgents, session]);
-  const usingExternalAgent = !!session?.external_agent_id;
   const stopEscalationUnavailable = React.useMemo(() => isStopEscalationUnavailable(session), [session]);
-  const executionTargetLocked = React.useMemo(
-    () => isExecutionTargetLocked(streamStatus),
+  const modelSelectorLocked = React.useMemo(
+    () => isModelSelectorLocked(streamStatus),
     [streamStatus],
   );
 
@@ -203,19 +187,11 @@ export function ChatHeader({
           />
           <div className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-0.5 text-[11px] text-tertiary">
             {session ? (
-              usingExternalAgent ? (
-                <span className="truncate">
-                  {currentAgent?.name ?? t('header.external_agent')}
-                  <span className="text-tertiary/70"> · </span>
-                  {session.external_agent_id}
-                </span>
-              ) : (
-                <span className="truncate">
-                  {currentEndpoint?.name || session.endpoint_id}
-                  <span className="text-tertiary/70"> · </span>
-                  {currentEndpoint?.model || session.model}
-                </span>
-              )
+              <span className="truncate">
+                {currentEndpoint?.name || session.endpoint_id}
+                <span className="text-tertiary/70"> · </span>
+                {currentEndpoint?.model || session.model}
+              </span>
             ) : (
               <span className="truncate">{t('header.no_active_thread_hint')}</span>
             )}
@@ -233,35 +209,33 @@ export function ChatHeader({
 
         <div className="flex items-center gap-1.5 pt-0.5">
           {session ? (
-            <DropdownMenu open={executionTargetOpen} onOpenChange={setExecutionTargetOpen}>
+            <DropdownMenu open={modelSelectorOpen} onOpenChange={setModelSelectorOpen}>
               <DropdownMenuTrigger asChild>
                 <Button
                   variant="outline"
                   size="sm"
                   className="gap-2"
-                  disabled={executionTargetLocked}
-                  data-testid="chat__execution-target-trigger"
+                  disabled={modelSelectorLocked}
+                  data-testid="chat__model-trigger"
                 >
                   <span className="max-w-[220px] truncate">
-                    {renderExecutionTargetLabel({
+                    {renderModelLabel({
                       session,
                       currentEndpoint,
-                      currentAgent,
-                      selectExecutionTargetLabel: t('header.select_execution_target'),
-                      externalAgentLabel: t('header.external_agent'),
+                      selectModelLabel: t('header.select_model'),
                     })}
                   </span>
                   <ChevronDown className="h-4 w-4 text-icon-default" />
                 </Button>
               </DropdownMenuTrigger>
               <DropdownMenuContent align="end" className="min-w-[18rem]">
-                <div className="px-3 py-2 text-xs text-tertiary">{t('header.execution_target')}</div>
+                <div className="px-3 py-2 text-xs text-tertiary">{t('header.model')}</div>
                 <DropdownMenuSeparator />
                 <div className="px-3 py-2 text-[11px] font-medium uppercase tracking-[0.14em] text-tertiary">
                   {t('header.endpoints')}
                 </div>
-                {endpoints.length === 0 && (externalAgents ?? []).length === 0 ? (
-                  <div className="px-3 py-2 text-sm text-tertiary">{t('header.no_execution_targets')}</div>
+                {endpoints.length === 0 ? (
+                  <div className="px-3 py-2 text-sm text-tertiary">{t('header.no_models')}</div>
                 ) : (
                   endpoints.map((endpoint) => {
                     const disabled = endpoint.status === 'disabled';
@@ -269,12 +243,12 @@ export function ChatHeader({
                     return (
                       <DropdownMenuItem
                         key={endpoint.id}
-                        data-testid={`chat__execution-target-endpoint--${endpoint.id}`}
+                        data-testid={`chat__model-endpoint--${endpoint.id}`}
                         data-disabled={disabled ? '' : undefined}
                         onSelect={(event) => {
                           event.preventDefault();
-                          setExecutionTargetOpen(false);
-                          if (disabled || executionTargetLocked) return;
+                          setModelSelectorOpen(false);
+                          if (disabled || modelSelectorLocked) return;
                           onSelectEndpoint(endpoint);
                         }}
                         className={cn(active && 'bg-hover')}
@@ -290,32 +264,6 @@ export function ChatHeader({
                     );
                   })
                 )}
-                {(externalAgents ?? []).length > 0 ? (
-                  <>
-                    <DropdownMenuSeparator />
-                    <div className="px-3 py-2 text-[11px] font-medium uppercase tracking-[0.14em] text-tertiary">
-                      {t('header.agents')}
-                    </div>
-                    {(externalAgents ?? []).map((agent) => (
-                      <DropdownMenuItem
-                        key={agent.id}
-                        data-testid={`chat__execution-target-agent--${agent.id}`}
-                        onSelect={(event) => {
-                          event.preventDefault();
-                          setExecutionTargetOpen(false);
-                          if (executionTargetLocked) return;
-                          onSelectExternalAgent?.(agent);
-                        }}
-                        className={cn(session.external_agent_id === agent.id && 'bg-hover')}
-                      >
-                        <div className="min-w-0 flex-1">
-                          <div className="truncate text-sm">{agent.name}</div>
-                          <div className="truncate text-xs text-tertiary">{t('header.agent_execution_target_hint')}</div>
-                        </div>
-                      </DropdownMenuItem>
-                    ))}
-                  </>
-                ) : null}
               </DropdownMenuContent>
             </DropdownMenu>
           ) : (

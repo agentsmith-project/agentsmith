@@ -6,14 +6,14 @@ runner_lifecycle_latest_log_transition_stream() {
   local line
 
   while IFS= read -r line || [[ -n "${line}" ]]; do
-    if [[ "${line}" =~ \[notebook-codex-runner\]\ runner_state=(connected|shutting_down|disconnected)([[:space:]]+reason=([^[:space:]]+))? ]]; then
+    if [[ "${line}" =~ \[agent-task-runner\]\ runner_state=(connected|shutting_down|disconnected)([[:space:]]+reason=([^[:space:]]+))? ]]; then
       current_state="${BASH_REMATCH[1]}"
       current_reason="${BASH_REMATCH[3]:-lifecycle_log}"
       continue
     fi
 
     case "${line}" in
-      *"[notebook-codex-runner] shutting down ("*)
+      *"[agent-task-runner] shutting down ("*)
         current_state="shutting_down"
         current_reason="${line#*shutting down (}"
         current_reason="${current_reason%%)*}"
@@ -21,7 +21,7 @@ runner_lifecycle_latest_log_transition_stream() {
           current_reason="legacy_shutting_down"
         fi
         ;;
-      *"[notebook-codex-runner] connected"*)
+      *"[agent-task-runner] connected"*)
         current_state="connected"
         current_reason="legacy_connected"
         ;;
@@ -29,7 +29,7 @@ runner_lifecycle_latest_log_transition_stream() {
         current_state="connected"
         current_reason="debug_websocket_open"
         ;;
-      *"[notebook-codex-runner] disconnected"*)
+      *"[agent-task-runner] disconnected"*)
         current_state="disconnected"
         current_reason="legacy_disconnected"
         ;;

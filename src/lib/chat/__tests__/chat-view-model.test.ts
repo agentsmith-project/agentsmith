@@ -154,7 +154,7 @@ describe('buildChatViewModel', () => {
     expect(model.mergedStreamingSessionIds).toContain(session.id);
   });
 
-  it('keeps terminal hard teardown debt active even when the backend execution is terminal', () => {
+  it('ignores stale terminal teardown markers once backend execution is terminal', () => {
     const session = makeSession({
       execution_status: 'stopped',
       stop_mode: 'terminate',
@@ -168,9 +168,9 @@ describe('buildChatViewModel', () => {
       streamStateBySession: {},
     });
 
-    expect(model.activeStreamStatus).toBe('terminating');
-    expect(model.disabled).toBe(true);
-    expect(model.mergedStreamingSessionIds).toContain(session.id);
+    expect(model.activeStreamStatus).toBe('stopped');
+    expect(model.disabled).toBe(false);
+    expect(model.mergedStreamingSessionIds).not.toContain(session.id);
   });
 
   it.each([
@@ -338,14 +338,14 @@ describe('buildChatViewModel', () => {
         [session.id]: {
           status: 'error',
           assistant: null,
-          errorCode: 'AGENT_UPSTREAM_ERROR',
+          errorCode: 'STREAM_UPSTREAM_ERROR',
           errorMessage: 'Provider attach failed',
         },
       },
     });
 
     expect(model.activeStreamStatus).toBe('streaming');
-    expect(model.activeStreamErrorCode).toBe('AGENT_UPSTREAM_ERROR');
+    expect(model.activeStreamErrorCode).toBe('STREAM_UPSTREAM_ERROR');
     expect(model.activeStreamErrorMessage).toBe('Provider attach failed');
     expect(model.disabled).toBe(true);
   });
@@ -362,14 +362,14 @@ describe('buildChatViewModel', () => {
           content: 'Provider stayed unavailable',
           message_status: 'failed',
           error_message: 'Provider stayed unavailable',
-          error_code: 'AGENT_UPSTREAM_ERROR',
+          error_code: 'STREAM_UPSTREAM_ERROR',
         }),
       ],
       streamStateBySession: {},
     });
 
     expect(model.activeStreamStatus).toBe('error');
-    expect(model.activeStreamErrorCode).toBe('AGENT_UPSTREAM_ERROR');
+    expect(model.activeStreamErrorCode).toBe('STREAM_UPSTREAM_ERROR');
     expect(model.activeStreamErrorMessage).toBe('Provider stayed unavailable');
     expect(model.disabled).toBe(false);
   });
@@ -381,7 +381,7 @@ describe('buildChatViewModel', () => {
       content: 'Hidden provider failure',
       message_status: 'failed',
       error_message: 'Hidden provider failure',
-      error_code: 'AGENT_UPSTREAM_ERROR',
+      error_code: 'STREAM_UPSTREAM_ERROR',
     });
     const visibleAssistant = makeMessage({
       id: 'msg_visible_clean',

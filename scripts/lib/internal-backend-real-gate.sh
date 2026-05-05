@@ -311,8 +311,10 @@ internal_real_gate_reset_runtime() {
 }
 
 prepare_internal_backend_real_gate_runtime() {
+  local rebuild_runner_base_image
   internal_real_gate_require_host_tools
   BUILD_RUNNER_IMAGE="${BUILD_RUNNER_IMAGE:-1}"
+  rebuild_runner_base_image="${INTEGRATION_INTERNAL_AGENT_REBUILD_BASE_IMAGE:-1}"
   CONTEXT_NAME="${CONTEXT_NAME:-$(kubectl config current-context 2>/dev/null || true)}"
   KIND_CLUSTER_NAME="${KIND_CLUSTER_NAME:-$(internal_real_gate_default_kind_cluster_name)}"
   KIND_CONTEXT_NAME="${KIND_CONTEXT_NAME:-kind-${KIND_CLUSTER_NAME}}"
@@ -320,7 +322,7 @@ prepare_internal_backend_real_gate_runtime() {
 
   if [[ "${BUILD_RUNNER_IMAGE}" == "1" ]]; then
     internal_real_gate_info "building internal runner image ${RUNNER_IMAGE} from current workspace"
-    build_runner_image "${RUNNER_KIND}" "${RUNNER_BASE_IMAGE}" "${RUNNER_IMAGE}" "${DOCKER_BUILD_PROXY_VALUE}" "0" "1"
+    build_runner_image "${RUNNER_KIND}" "${RUNNER_BASE_IMAGE}" "${RUNNER_IMAGE}" "${DOCKER_BUILD_PROXY_VALUE}" "${rebuild_runner_base_image}" "1"
   elif ! docker image inspect "${RUNNER_IMAGE}" >/dev/null 2>&1; then
     echo "[internal-real-gate] runner image not found: ${RUNNER_IMAGE}" >&2
     echo "[internal-real-gate] build it first or leave INTEGRATION_BUILD_INTERNAL_AGENT_IMAGE=1." >&2

@@ -620,10 +620,10 @@ describe('verification catalog', () => {
       'chat-day-two-thread-workflow',
       'chat-stop-terminate-idempotent-state-resync',
     ]);
-    expect(entriesBySpec.get('e2e/integration-notebook-terminal-ux.spec.ts')).toEqual([
-      'notebook-terminal-reentry-recovery',
-      'notebook-terminal-truth-unavailable-retry',
-      'notebook-terminal-workspace-multi-session',
+    expect(entriesBySpec.get('e2e/integration-agent-task-terminal-ux.spec.ts')).toEqual([
+      'agent-task-terminal-reentry-recovery',
+      'agent-task-terminal-truth-unavailable-retry',
+      'agent-task-terminal-workspace-multi-session',
     ]);
     expect(entriesBySpec.get('e2e/integration-visual-review.spec.ts')).toEqual(expect.arrayContaining([
       'project-surface-handoff-continuity',
@@ -811,12 +811,12 @@ describe('verification catalog', () => {
 
   it('projects backend-real stories with V3 owner and artifact template without inspecting artifacts', () => {
     const catalog = buildVerificationCatalog();
-    const story = catalog.story_by_id['notebook-first-success'];
+    const story = catalog.story_by_id['agent-task-first-success'];
     const v3 = catalog.evidence.levels.V3;
 
     expect(story).toMatchObject({
       lane: 'backend-real',
-      sourceFile: 'e2e/stories/backend-real/notebook-first-success.story.md',
+      sourceFile: 'e2e/stories/backend-real/agent-task-first-success.story.md',
       requiredLevels: ['V0', 'V1', 'V3'],
     });
     expect(v3).toMatchObject({
@@ -830,7 +830,7 @@ describe('verification catalog', () => {
   it('projects risk policy refs and only raises canonical story levels', () => {
     const catalog = buildVerificationCatalog();
     const unicodeStory = catalog.story_by_id['unicode-filename-round-trip'];
-    const notebookStory = catalog.story_by_id['notebook-first-success'];
+    const agentTaskStory = catalog.story_by_id['agent-task-first-success'];
 
     expect(unicodeStory).toMatchObject({
       riskPolicyRefs: ['file_continuity_integrity'],
@@ -839,7 +839,7 @@ describe('verification catalog', () => {
       riskPolicyLevelFloor: ['V0', 'V1', 'V2', 'V3'],
       requiredLevels: ['V0', 'V1', 'V2', 'V3'],
     });
-    expect(notebookStory).toMatchObject({
+    expect(agentTaskStory).toMatchObject({
       riskPolicyRefs: ['core_ai_workflow'],
       riskPolicyRiskFloor: 'R1',
       riskPolicyLevelFloor: ['V0', 'V1', 'V3'],

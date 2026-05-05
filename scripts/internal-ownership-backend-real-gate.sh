@@ -11,7 +11,7 @@ info() { echo "[internal-ownership-backend-real-gate] $*"; }
 info "running local internal smoke"
 (cd "${ROOT_DIR}" && bash scripts/local-manual-internal-smoke.sh)
 
-info "running backend-real internal notebook gate"
-(cd "${ROOT_DIR}" && bash scripts/run-internal-notebook-real-gate.sh)
+info "running backend-real internal agent-task gate"
+(cd "${ROOT_DIR}" && bash scripts/run-internal-agent-task-real-gate.sh)
 
 info "internal ownership backend-real gate passed"

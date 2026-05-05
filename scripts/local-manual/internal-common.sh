@@ -63,7 +63,7 @@ MOUNT_OPTIONS="${INTERNAL_AGENT_JUICEFS_MOUNT_OPTIONS:-}"
 SUBDIR="${INTERNAL_AGENT_JUICEFS_SUBDIR:-}"
 MOUNT_SERVICE_ACCOUNT="${INTERNAL_AGENT_JUICEFS_MOUNT_SERVICE_ACCOUNT:-}"
 MOUNT_IMAGE_OVERRIDE="${INTERNAL_AGENT_JUICEFS_MOUNT_IMAGE:-}"
-RUNNER_KIND="${LOCAL_MANUAL_INTERNAL_AGENT_RUNNER_KIND:-notebook}"
+RUNNER_KIND="${LOCAL_MANUAL_INTERNAL_AGENT_RUNNER_KIND:-agent-task}"
 RUNNER_IMAGE="${LOCAL_MANUAL_INTERNAL_AGENT_IMAGE:-$(runner_default_image "${RUNNER_KIND}")}"
 RUNNER_BASE_IMAGE="${LOCAL_MANUAL_INTERNAL_AGENT_BASE_IMAGE:-$(runner_default_base_image "${RUNNER_KIND}")}"
 DOCKER_BUILD_PROXY_VALUE="${LOCAL_MANUAL_INTERNAL_DOCKER_BUILD_PROXY:-${DOCKER_BUILD_PROXY:-${HTTP_PROXY:-}}}"
@@ -98,10 +98,10 @@ ensure_local_manual_ready() {
   fi
 }
 
-ensure_notebook_demo_seeded() {
-  if ! runner_socket_is_connected || [[ -z "$(state_get project.id)" || -z "$(state_get agent.id)" ]]; then
-    internal_info "seeding notebook demo resources"
-    LOCAL_MANUAL_ENABLE_INTERNAL=0 bash "${ROOT_DIR}/scripts/local-manual/seed-notebook-demo.sh"
+ensure_agent_task_demo_seeded() {
+  if ! runner_socket_is_connected || [[ -z "$(state_get project.id)" || -z "$(state_get agent_runner.id)" ]]; then
+    internal_info "seeding agent-task demo resources"
+    LOCAL_MANUAL_ENABLE_INTERNAL=0 bash "${ROOT_DIR}/scripts/local-manual/seed-agent-task-demo.sh"
   fi
 }
 
@@ -393,83 +393,36 @@ restart_api_with_mode() {
   LOCAL_MANUAL_ENABLE_INTERNAL="${internal_flag}" bash "${ROOT_DIR}/scripts/local-manual/start-api.sh"
 }
 
-ensure_internal_agent_state() {
+ensure_internal_runner_state() {
   ensure_internal_common_runtime_env
-  local token project_id endpoint_id existing_agent
+  local token project_id endpoint_id existing_runner
   token="$(cat "$(backend_real_token_file)" 2>/dev/null || true)"
   project_id="$(state_get project.id)"
   endpoint_id="$(state_get endpoint.id)"
-  existing_agent="$(state_get internal_agent.id)"
+  existing_runner="$(state_get agent_runner.id)"
   [[ -n "${token}" && -n "${project_id}" && -n "${endpoint_id}" ]] || {
-    internal_info "notebook demo state missing after internal API restart; reseeding notebook demo resources"
-    ensure_notebook_demo_seeded
+    internal_info "agent-task demo state missing after internal API restart; reseeding agent-task demo resources"
+    ensure_agent_task_demo_seeded
     token="$(cat "$(backend_real_token_file)" 2>/dev/null || true)"
     project_id="$(state_get project.id)"
     endpoint_id="$(state_get endpoint.id)"
-    existing_agent="$(state_get internal_agent.id)"
+    existing_runner="$(state_get agent_runner.id)"
     [[ -n "${token}" && -n "${project_id}" && -n "${endpoint_id}" ]] || {
-      internal_err "missing notebook demo state; run make local-manual-seed-notebook first"
+      internal_err "missing agent-task demo state; run make local-manual-seed-agent-task first"
       exit 1
     }
   }
 
-  if [[ -n "${existing_agent}" ]]; then
+  if [[ -n "${existing_runner}" ]]; then
     local status
     status="$(curl -sS -o /dev/null -w '%{http_code}' \
-      "http://localhost:${PORT_API}/api/v1/workspaces/${WORKSPACE_ID}/projects/${project_id}/agents/${existing_agent}" \
+      "http://localhost:${PORT_API}/api/v1/workspaces/${WORKSPACE_ID}/projects/${project_id}/agent-runners/${existing_runner}" \
       -H "Authorization: Bearer ${token}" || true)"
     if [[ "${status}" == "200" ]]; then
       return 0
     fi
   fi
 
-  internal_info "creating internal notebook agent"
-  local payload response
-  payload="$(
-    node - <<'NODE' "${endpoint_id}" "${RUNNER_IMAGE}" "${PRESET_ENDPOINT_MODEL:-placeholder-model}"
-const [endpointId, image, model] = process.argv.slice(2);
-process.stdout.write(JSON.stringify({
-  name: `demo-internal-agent-${Date.now()}`,
-  mode: 'internal',
-  interaction_kind: 'notebook',
-  execution_preferences: {
-    notebook: {
-      endpoint_id: endpointId,
-      wire_api: 'responses',
-      model,
-    },
-  },
-  config: {
-    image,
-    endpoint_id: endpointId,
-    cpu_request: '500m',
-    cpu_limit: '2',
-    memory_request: '512Mi',
-    memory_limit: '4Gi',
-    idle_timeout_sec: 300,
-    max_lifetime_sec: 3600,
-  },
-  capabilities: {
-    streaming_completion: true,
-  },
-}));
-NODE
-  )"
-  response="$(curl -sS \
-    -H "Authorization: Bearer ${token}" \
-    -H 'Content-Type: application/json' \
-    -X POST \
-    --data "${payload}" \
-    "http://localhost:${PORT_API}/api/v1/workspaces/${WORKSPACE_ID}/projects/${project_id}/agents")"
-  local agent_json
-  agent_json="$(node - <<'NODE' "${response}"
-const payload = JSON.parse(process.argv[2]);
-if (!payload.id) {
-  process.stderr.write(JSON.stringify(payload));
-  process.exit(1);
-}
-process.stdout.write(JSON.stringify({ id: payload.id, name: payload.name || '' }));
-NODE
-  )"
-  state_set_json internal_agent "${agent_json}"
+  internal_info "managed agent-task runner state missing after internal API restart; reseeding agent-task demo resources"
+  LOCAL_MANUAL_ENABLE_INTERNAL=0 bash "${ROOT_DIR}/scripts/local-manual/seed-agent-task-demo.sh"
 }

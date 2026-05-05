@@ -90,14 +90,14 @@ const OVERVIEW_NEXT_STEP_PRIORITY: Array<{
   descriptionKey: string;
 }> = [
   { href: 'chat', descriptionKey: 'next_steps.chat_description' },
-  { href: 'notebook', descriptionKey: 'next_steps.notebook_description' },
+  { href: 'agent-tasks', descriptionKey: 'next_steps.agent_tasks_description' },
   { href: 'files', descriptionKey: 'next_steps.files_description' },
   { href: 'context', descriptionKey: 'next_steps.context_description' },
   { href: 'members', descriptionKey: 'next_steps.members_description' },
   { href: 'settings', descriptionKey: 'next_steps.settings_description' },
   { href: 'audit', descriptionKey: 'next_steps.audit_description' },
   { href: 'endpoints', descriptionKey: 'next_steps.endpoints_description' },
-  { href: 'agents', descriptionKey: 'next_steps.agents_description' },
+  { href: 'agent-runners', descriptionKey: 'next_steps.agent_runners_description' },
 ];
 
 export function buildOverviewNextStepEntries(

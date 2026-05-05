@@ -254,7 +254,7 @@ release_story_verify_source_set() {
   );
 
   for (const relativePath of [
-    'scripts/check-preset-external-file-library.sh',
+    'scripts/check-preset-agent-task-file-library.sh',
     'scripts/file-library-real-smoke.sh',
     'scripts/demo-deploy-modes-gate.sh',
     'scripts/lib/common.sh',
@@ -274,7 +274,7 @@ release_story_verify_source_set() {
     path.join(tempRoot, 'scripts', 'lib', 'image-archive-manifest.sh'),
   );
 
-  writeFile(path.join(tempRoot, 'scripts', 'notebook-agent-refresh-token.js'), 'console.log("ok");\n');
+  writeFile(path.join(tempRoot, 'scripts', 'agent-runner-refresh-token.js'), 'console.log("ok");\n');
   writeFile(path.join(tempRoot, 'README-demo-deploy.md'), 'demo bundle\n');
   writeFile(path.join(tempRoot, 'infra', 'runtime', 'presets.env'), 'PRESET_ENDPOINT_MODEL=placeholder-model\n');
 
@@ -308,26 +308,23 @@ release_story_verify_source_set() {
     'docs/user-guides/demo-deploy-simple-quickstart-zh.md',
     'e2e/integration-real-helpers.ts',
     'e2e/integration-files.spec.ts',
-    'e2e/notebook-execution-outcome.ts',
+    'e2e/agent-task-execution-outcome.ts',
     'e2e/integration-workspace-access.ts',
     'e2e/integration-workspace-entry.spec.ts',
     'e2e/integration-workspace-publish-usable.spec.ts',
-    'e2e/integration-preset-external-file-library.spec.ts',
-    'e2e/integration-internal-chat-runner.spec.ts',
-    'e2e/integration-chat-local-upstream.ts',
-    'e2e/internal-chat-isolation-probe.ts',
+    'e2e/integration-preset-agent-task-file-library.spec.ts',
     'e2e/stories/backend-real/example.story.md',
     'infra/deploy/Dockerfile.agentsmith-app-base',
     'infra/deploy/Dockerfile.agentsmith-app',
     'infra/deploy/Dockerfile.agentsmith-verify-runner-base',
     'infra/deploy/Dockerfile.agentsmith-verify-runner',
-    'infra/runner/Dockerfile.notebook-codex-runner-base',
-    'infra/runner/Dockerfile.chat-llm-runner-base',
+    'infra/runner/Dockerfile.agent-task-runner-base',
+    'infra/runner/Dockerfile.agent-task-runner',
     'package.json',
     'package-lock.json',
     'packages/adapters-cf/package.json',
     'packages/adapters-private/package.json',
-    'packages/notebook-codex-runner/package.json',
+    'packages/agent-task-runner/package.json',
     'packages/api-entry-cf/package.json',
     'packages/api-entry-node/package.json',
     'packages/application/package.json',
@@ -335,7 +332,6 @@ release_story_verify_source_set() {
     'packages/domain/package.json',
     'packages/ports/package.json',
     'packages/agent-runner/package.json',
-    'packages/chat-llm-runner/package.json',
   ]) {
     writeFile(path.join(tempRoot, relativePath), 'placeholder\n');
   }

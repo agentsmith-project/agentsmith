@@ -15,7 +15,6 @@ export interface ChatSession {
   title: string;
   model: string;
   endpoint_id: string;
-  external_agent_id?: string;
   pinned?: boolean;
   starred?: boolean;
   created_at: string;

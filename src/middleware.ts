@@ -2,7 +2,7 @@
  * Next.js Middleware
  *
  * Runs next-intl middleware for locale-from-URL (so /zh-CN/ shows Chinese),
- * plus custom route validation (e.g. invalid task ID redirect).
+ * plus custom route validation (e.g. invalid Agent task ID redirect).
  */
 
 import createMiddleware from 'next-intl/middleware';
@@ -22,10 +22,10 @@ export async function middleware(request: NextRequest) {
     return NextResponse.next();
   }
 
-  // Custom: invalid task ID -> redirect to notebook list
-  // Pattern: /[locale]/workspaces/[workspace]/projects/[project]/notebook/tasks/[taskId]
+  // Custom: invalid task ID -> redirect to Agent tasks list
+  // Pattern: /[locale]/workspaces/[workspace]/projects/[project]/agent-tasks/[taskId]
   const taskMatch = pathname.match(
-    /\/([^/]+)\/workspaces\/([^/]+)\/projects\/([^/]+)\/notebook\/tasks\/([^/]+)/,
+    /\/([^/]+)\/workspaces\/([^/]+)\/projects\/([^/]+)\/agent-tasks\/([^/]+)/,
   );
 
   if (taskMatch) {
@@ -33,7 +33,7 @@ export async function middleware(request: NextRequest) {
     const validation = validateTaskId(taskId);
     if (!validation.valid) {
       const redirectUrl = new URL(
-        `/${locale}/workspaces/${workspace}/projects/${project}/notebook`,
+        `/${locale}/workspaces/${workspace}/projects/${project}/agent-tasks`,
         request.url,
       );
       return NextResponse.redirect(redirectUrl);

@@ -1,14 +1,12 @@
-import { WebSocket } from 'ws';
 import { expect, test, type Page } from '@playwright/test';
 import {
-  createInternalCodexAgent,
-  deleteInternalWorkloadViaManager,
-  waitForAgentPresenceOnline,
+  createAgentTaskViaApi,
+  createManagedAgentRunnerViaApi,
+  startAgentTaskRunViaApi,
+  waitForRunnerOutputToken,
 } from './integration-real-helpers';
 import {
-  bindNotebookExecutionSocketToTask,
   openFileLibraryRoot,
-  waitForNotebookAgentReply,
   waitForTaskArtifacts,
 } from './integration-governance-runtime-support';
 import { readStoredAuthToken } from './integration-workspace-access';
@@ -30,17 +28,12 @@ const PROJECT_CREATOR_PASSWORD = process.env.INTEGRATION_USER_PASSWORD ?? 'integ
 const MEMBER_USERNAME = process.env.INTEGRATION_MEMBER_USERNAME ?? 'integration-member';
 const MEMBER_PASSWORD = process.env.INTEGRATION_MEMBER_PASSWORD ?? 'integration-member-123';
 const PROJECT_CREATOR_EMAIL = 'integration-user@example.com';
-const NOTEBOOK_EXPECTED_TOKEN = `REAL_VISUAL_NOTEBOOK_OK_${Date.now()}`;
-const NOTEBOOK_ARTIFACT_NAME = `visual-review-summary-${Date.now()}.md`;
+const AGENT_TASK_EXPECTED_TOKEN = `REAL_VISUAL_AGENT_TASK_OK_${Date.now()}`;
+const AGENT_TASK_ARTIFACT_NAME = `visual-review-summary-${Date.now()}.md`;
 type ProjectContext = {
   workspaceId: string;
   projectId: string;
   projectName: string;
-};
-
-type ExecutionWsMessage = {
-  type?: string;
-  request_id?: string;
 };
 
 type VisualReviewTraceMeta = {
@@ -391,68 +384,14 @@ function apiBaseForPage(_page: Page): string {
   return process.env.INTEGRATION_API_BASE ?? 'http://localhost:20070';
 }
 
-async function createAgent(page: Page, workspaceId: string, projectId: string): Promise<string> {
-  const agentName = `Real Visual Agent ${Date.now()}`;
-  await gotoWithRetry(page, `/${LOCALE}/workspaces/${workspaceId}/projects/${projectId}/agents`);
-  await expect(page.getByTestId('agents__create-btn')).toBeVisible({ timeout: 30_000 });
-  await page.getByTestId('agents__create-btn').click();
-  const dialog = page.getByTestId('agents__create-dialog');
-  await expect(dialog).toBeVisible();
-  await dialog.locator('#agent-name').fill(agentName);
-  await dialog.locator('#agent-interaction-kind').selectOption('notebook');
-  const endpointSelect = dialog.locator('#agent-execution-endpoint-id');
-  await expect(endpointSelect).toBeVisible({ timeout: 30_000 });
-  await endpointSelect.selectOption({ index: 0 });
-  await dialog.getByRole('button', { name: /^next$/i }).click();
-  await expect(dialog.getByTestId('agents__create-dialog__product-summary')).toBeVisible({ timeout: 30_000 });
-  await dialog.getByRole('button', { name: /create/i }).click();
-  await expect(page.getByText(agentName)).toBeVisible({ timeout: 30_000 });
-  return agentName;
-}
-
-async function resolveAgentId(page: Page, apiBase: string, workspaceId: string, projectId: string, token: string, agentName: string): Promise<string> {
-  const response = await page.request.get(`${apiBase}/api/v1/workspaces/${workspaceId}/projects/${projectId}/agents`, {
-    headers: { Authorization: `Bearer ${token}` },
-  });
-  expect(response.ok()).toBeTruthy();
-  const body = (await response.json()) as { items?: Array<{ id: string; name: string }> };
-  const agentId = body.items?.find((item) => item.name === agentName)?.id;
-  if (!agentId) {
-    throw new Error('agent_id_not_found');
-  }
-  return agentId;
-}
-
-async function createAgentKeyAndConnectionInfo(page: Page, apiBase: string, workspaceId: string, projectId: string, agentId: string, token: string) {
-  const createKeyResponse = await page.request.post(
-    `${apiBase}/api/v1/workspaces/${workspaceId}/projects/${projectId}/agents/${agentId}/keys`,
-    { headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' }, data: {} },
-  );
-  expect(createKeyResponse.ok()).toBeTruthy();
-  const keyBody = (await createKeyResponse.json()) as { key: string };
-  const connectionResponse = await page.request.get(
-    `${apiBase}/api/v1/workspaces/${workspaceId}/projects/${projectId}/agents/${agentId}/connection-info`,
-    { headers: { Authorization: `Bearer ${token}` } },
-  );
-  expect(connectionResponse.ok()).toBeTruthy();
-  const connectionBody = (await connectionResponse.json()) as { ws_url: string };
-  return {
-    agentKey: keyBody.key,
-    wsUrl: connectionBody.ws_url.replace('ws://localhost:20000', apiBase.replace('http://', 'ws://')),
-  };
-}
-
-async function runNotebookTask(args: {
+async function runAgentTask(args: {
   page: Page;
   context: ProjectContext;
-  agentId: string;
   fileLibraryId: string;
   expectedToken: string;
   artifactName: string;
-  wsUrl: string;
-  agentKey: string;
 }) {
-  const { page, context, agentId, fileLibraryId, expectedToken, artifactName, wsUrl, agentKey } = args;
+  const { page, context, fileLibraryId, expectedToken, artifactName } = args;
   const taskTitle = `Release Review Task ${Date.now()}`;
   const artifactContent = [
     '# Market sizing summary',
@@ -462,34 +401,22 @@ async function runNotebookTask(args: {
     '- Recommendation: prioritize search plus retail media in the next planning cycle',
   ].join('\n');
   const expectedReply = `${expectedToken} ${artifactName}`;
-  const taskId = await createNotebookTaskViaApi({
+  const taskId = await createAgentTaskViaApi({
     page,
     workspaceId: context.workspaceId,
     projectId: context.projectId,
     title: taskTitle,
-    agentId,
     fileLibraryId,
   });
-  await gotoWithRetry(page, `/${LOCALE}/workspaces/${context.workspaceId}/projects/${context.projectId}/notebook/tasks/${taskId}`);
-  await expect(page.getByTestId('notebook__conversation-input')).toBeVisible({ timeout: 30_000 });
+  await gotoWithRetry(page, `/${LOCALE}/workspaces/${context.workspaceId}/projects/${context.projectId}/agent-tasks/${taskId}`);
+  await expect(page.getByTestId('agent-tasks__conversation-input')).toBeVisible({ timeout: 30_000 });
 
-  const executionBridge = startNotebookArtifactBridge({
+  const run = await startAgentTaskRunViaApi({
     page,
-    wsUrl: bindNotebookExecutionSocketToTask({ wsUrl, taskId }),
-    agentKey,
     workspaceId: context.workspaceId,
     projectId: context.projectId,
-    fileLibraryId,
-    artifactName,
-    artifactContent,
-    expectedReply,
-  });
-  await executionBridge.ready;
-  await waitForAgentPresenceOnline(page, context.workspaceId, context.projectId, agentId);
-
-  try {
-    const input = page.getByTestId('notebook__conversation-input').locator('textarea').first();
-    await input.fill([
+    taskId,
+    intent: [
       'Run the following shell command exactly, then reply with the token and filename.',
       '```bash',
       `mkdir -p .artifacts && cat <<'EOF' > .artifacts/${artifactName}`,
@@ -497,341 +424,24 @@ async function runNotebookTask(args: {
       'EOF',
       '```',
       `After the file is written, reply with exactly: ${expectedReply}`,
-    ].join(' '));
-    await page.getByTestId('notebook__send-btn').click();
-    const authoritativeReply = await waitForNotebookTaskToken({
-      page,
-      workspaceId: context.workspaceId,
-      projectId: context.projectId,
-      taskId,
-      token: expectedToken,
-    });
-    const observedReply = await executionBridge.observedReply;
-    await waitForTaskArtifacts({
-      page,
-      workspaceId: context.workspaceId,
-      projectId: context.projectId,
-      taskId,
-      expectedPath: `.artifacts/${artifactName}`,
-    });
-    expect(observedReply).toContain(expectedToken);
-    expect(authoritativeReply).toContain(expectedToken);
-  } finally {
-    await executionBridge.stop();
-  }
-}
-
-async function createNotebookTaskViaApi(args: {
-  page: Page;
-  workspaceId: string;
-  projectId: string;
-  title: string;
-  agentId: string;
-  fileLibraryId: string;
-}): Promise<string> {
-  const token = await readStoredAuthToken(args.page);
-  const response = await args.page.request.post(
-    `${apiBaseForPage(args.page)}/api/v1/workspaces/${args.workspaceId}/projects/${args.projectId}/tasks`,
-    {
-      headers: {
-        Authorization: `Bearer ${token}`,
-        'Content-Type': 'application/json',
-      },
-      data: {
-        title: args.title,
-        agent_id: args.agentId,
-        workspace_file_library_id: args.fileLibraryId,
-      },
-    },
-  );
-  if (!response.ok()) {
-    const body = await response.text().catch(() => '');
-    throw new Error(`create_notebook_task_failed:${response.status()}:${body}`);
-  }
-  const payload = (await response.json().catch(() => null)) as { id?: string; data?: { id?: string } } | null;
-  const taskId = payload?.id ?? payload?.data?.id;
-  expect(taskId).toBeTruthy();
-  return taskId!;
-}
-
-async function sendNotebookTaskMessage(args: {
-  page: Page;
-  workspaceId: string;
-  projectId: string;
-  taskId: string;
-  content: string;
-}): Promise<void> {
-  const token = await readStoredAuthToken(args.page);
-  const response = await args.page.request.post(
-    `${apiBaseForPage(args.page)}/api/v1/workspaces/${args.workspaceId}/projects/${args.projectId}/tasks/${args.taskId}/messages`,
-    {
-      headers: {
-        Authorization: `Bearer ${token}`,
-        'Content-Type': 'application/json',
-      },
-      data: {
-        role: 'user',
-        content: args.content,
-      },
-    },
-  );
-  expect(response.ok()).toBeTruthy();
-}
-
-async function waitForNotebookTaskToken(args: {
-  page: Page;
-  workspaceId: string;
-  projectId: string;
-  taskId: string;
-  token: string;
-  minAgentMessages?: number;
-}): Promise<string> {
-  void args.minAgentMessages;
-  return waitForNotebookAgentReply({
-    page: args.page,
-    workspaceId: args.workspaceId,
-    projectId: args.projectId,
-    taskId: args.taskId,
-    token: args.token,
+    ].join(' '),
   });
-}
-
-async function uploadVisualReviewArtifact(args: {
-  page: Page;
-  workspaceId: string;
-  projectId: string;
-  fileLibraryId: string;
-  artifactName: string;
-  artifactContent: string;
-}): Promise<void> {
-  const token = await readStoredAuthToken(args.page);
-  const response = await args.page.request.post(
-    `${apiBaseForPage(args.page)}/api/v1/workspaces/${args.workspaceId}/projects/${args.projectId}/file-libraries/${args.fileLibraryId}/upload`,
-    {
-      headers: {
-        Authorization: `Bearer ${token}`,
-      },
-      multipart: {
-        prefix: '.artifacts',
-        overwrite: 'true',
-        file: {
-          name: args.artifactName,
-          mimeType: 'text/markdown',
-          buffer: Buffer.from(args.artifactContent, 'utf-8'),
-        },
-      },
-    },
-  );
-  expect(response.ok()).toBeTruthy();
-}
-
-function startNotebookArtifactBridge(args: {
-  page: Page;
-  wsUrl: string;
-  agentKey: string;
-  workspaceId: string;
-  projectId: string;
-  fileLibraryId: string;
-  artifactName: string;
-  artifactContent: string;
-  expectedReply: string;
-}) {
-  let helloResolved = false;
-  let helloResolve!: () => void;
-  let helloReject!: (reason?: unknown) => void;
-  let observedResolve!: (reply: string) => void;
-  let observedReject!: (reason?: unknown) => void;
-  let handledRequestId: string | null = null;
-
-  const ready = new Promise<void>((resolve, reject) => {
-    helloResolve = resolve;
-    helloReject = reject;
+  await waitForRunnerOutputToken({
+    page,
+    workspaceId: context.workspaceId,
+    projectId: context.projectId,
+    taskId,
+    token: expectedToken,
+    runnerOutputActivityId: run.runnerOutputActivityId,
+    runId: run.runId,
   });
-  const observedReply = new Promise<string>((resolve, reject) => {
-    observedResolve = resolve;
-    observedReject = reject;
+  await waitForTaskArtifacts({
+    page,
+    workspaceId: context.workspaceId,
+    projectId: context.projectId,
+    taskId,
+    expectedPath: `.artifacts/${artifactName}`,
   });
-
-  const ws = new WebSocket(args.wsUrl, {
-    headers: { Authorization: `Bearer ${args.agentKey}` },
-  });
-
-  ws.once('error', (error) => {
-    if (!helloResolved) {
-      helloReject(error);
-    }
-    observedReject(error);
-  });
-
-  ws.on('open', () => {
-    ws.send(JSON.stringify({
-      type: 'agent.ready',
-      timestamp: new Date().toISOString(),
-      payload: {
-        capabilities: {
-          streaming_completion: true,
-          multimodal_completion: false,
-        },
-      },
-    }));
-  });
-
-  ws.on('message', (raw) => {
-    const msg = JSON.parse(raw.toString('utf-8')) as ExecutionWsMessage;
-
-    if (msg.type === 'server.ping') {
-      ws.send(JSON.stringify({ type: 'agent.pong', timestamp: new Date().toISOString(), payload: {} }));
-      return;
-    }
-
-    if (msg.type === 'server.hello') {
-      helloResolved = true;
-      helloResolve();
-      return;
-    }
-
-    if (msg.type !== 'server.request.start' || !msg.request_id || handledRequestId === msg.request_id) {
-      return;
-    }
-    handledRequestId = msg.request_id;
-
-    void (async () => {
-      try {
-        await uploadVisualReviewArtifact({
-          page: args.page,
-          workspaceId: args.workspaceId,
-          projectId: args.projectId,
-          fileLibraryId: args.fileLibraryId,
-          artifactName: args.artifactName,
-          artifactContent: args.artifactContent,
-        });
-        ws.send(JSON.stringify({
-          type: 'agent.response.artifact',
-          request_id: msg.request_id,
-          timestamp: new Date().toISOString(),
-          payload: {
-            filename: args.artifactName,
-            task_relative_path: `.artifacts/${args.artifactName}`,
-            artifact_type: 'text',
-            mime_type: 'text/markdown',
-            file_size: Buffer.byteLength(args.artifactContent, 'utf-8'),
-            title: args.artifactName,
-            content: args.artifactContent,
-          },
-        }));
-        ws.send(JSON.stringify({
-          type: 'agent.response.delta',
-          request_id: msg.request_id,
-          timestamp: new Date().toISOString(),
-          payload: { delta: args.expectedReply },
-        }));
-        ws.send(JSON.stringify({
-          type: 'agent.response.done',
-          request_id: msg.request_id,
-          timestamp: new Date().toISOString(),
-          payload: { finish_reason: 'stop', usage_tokens: args.expectedReply.length },
-        }));
-        observedResolve(args.expectedReply);
-      } catch (error) {
-        ws.send(JSON.stringify({
-          type: 'agent.response.error',
-          request_id: msg.request_id,
-          timestamp: new Date().toISOString(),
-          payload: {
-            error_code: 'AGENT_BRIDGE_ERROR',
-            error_message: error instanceof Error ? error.message : 'bridge_failed',
-          },
-        }));
-        observedReject(error);
-      }
-    })();
-  });
-
-  return {
-    ready,
-    observedReply,
-    stop: () =>
-      new Promise<void>((resolve) => {
-        if (ws.readyState === WebSocket.CLOSED) {
-          resolve();
-          return;
-        }
-        ws.once('close', () => resolve());
-        ws.close();
-      }),
-  };
-}
-
-function startAgentPresenceBridge(args: {
-  wsUrl: string;
-  agentKey: string;
-}) {
-  let helloResolved = false;
-  let helloResolve!: () => void;
-  let helloReject!: (reason?: unknown) => void;
-
-  const ready = new Promise<void>((resolve, reject) => {
-    helloResolve = resolve;
-    helloReject = reject;
-  });
-
-  const ws = new WebSocket(args.wsUrl, {
-    headers: { Authorization: `Bearer ${args.agentKey}` },
-  });
-
-  ws.once('error', (error) => {
-    if (!helloResolved) {
-      helloReject(error);
-    }
-  });
-
-  ws.on('open', () => {
-    ws.send(JSON.stringify({
-      type: 'agent.ready',
-      timestamp: new Date().toISOString(),
-      payload: {
-        capabilities: {
-          streaming_completion: true,
-          multimodal_completion: false,
-        },
-      },
-    }));
-  });
-
-  ws.on('message', (raw) => {
-    const msg = JSON.parse(raw.toString('utf-8')) as ExecutionWsMessage;
-    if (msg.type === 'server.ping') {
-      ws.send(JSON.stringify({ type: 'agent.pong', timestamp: new Date().toISOString(), payload: {} }));
-      return;
-    }
-    if (msg.type === 'server.hello') {
-      helloResolved = true;
-      helloResolve();
-    }
-  });
-
-  return {
-    ready,
-    stop: () =>
-      new Promise<void>((resolve) => {
-        if (ws.readyState === WebSocket.CLOSED) {
-          resolve();
-          return;
-        }
-        ws.once('close', () => resolve());
-        ws.close();
-      }),
-  };
-}
-
-function sanitizeWorkloadId(taskId: string): string {
-  const normalized = taskId
-    .toLowerCase()
-    .replace(/[^a-z0-9-]/g, '-')
-    .replace(/-{2,}/g, '-')
-    .replace(/^-+|-+$/g, '')
-    .slice(0, 63);
-  return normalized || 'workload';
 }
 
 async function captureProjectPages(
@@ -852,11 +462,11 @@ async function captureProjectPages(
   const pages: Array<{ name: string; path: string; waitFor?: string }> = [
     { name: 'project-overview', path: `/${LOCALE}/workspaces/${context.workspaceId}/projects/${context.projectId}/overview`, waitFor: 'project-overview__page' },
     { name: 'project-chat', path: `/${LOCALE}/workspaces/${context.workspaceId}/projects/${context.projectId}/chat`, waitFor: 'chat__main-pane' },
-    { name: 'project-notebook', path: `/${LOCALE}/workspaces/${context.workspaceId}/projects/${context.projectId}/notebook`, waitFor: 'notebook__task-list' },
+    { name: 'project-agent-tasks', path: `/${LOCALE}/workspaces/${context.workspaceId}/projects/${context.projectId}/agent-tasks`, waitFor: 'agent-tasks__task-list' },
     { name: 'project-files', path: `/${LOCALE}/workspaces/${context.workspaceId}/projects/${context.projectId}/files`, waitFor: 'files__library-create' },
     { name: 'project-endpoints', path: `/${LOCALE}/workspaces/${context.workspaceId}/projects/${context.projectId}/endpoints`, waitFor: 'endpoints__create-btn' },
     { name: 'project-credentials', path: `/${LOCALE}/workspaces/${context.workspaceId}/projects/${context.projectId}/credentials`, waitFor: 'credentials__create-btn' },
-    { name: 'project-agents', path: `/${LOCALE}/workspaces/${context.workspaceId}/projects/${context.projectId}/agents`, waitFor: 'agents__create-btn' },
+    { name: 'project-agent-runners', path: `/${LOCALE}/workspaces/${context.workspaceId}/projects/${context.projectId}/agent-runners`, waitFor: 'agent-runners__create-btn' },
     { name: 'project-members', path: `/${LOCALE}/workspaces/${context.workspaceId}/projects/${context.projectId}/members`, waitFor: 'members__search-input' },
     { name: 'project-resource-policy', path: `/${LOCALE}/workspaces/${context.workspaceId}/projects/${context.projectId}/resource-policy`, waitFor: 'resource-policy__editor' },
     { name: 'project-audit', path: `/${LOCALE}/workspaces/${context.workspaceId}/projects/${context.projectId}/audit`, waitFor: 'audit__page' },
@@ -942,18 +552,18 @@ async function captureProjectSurfaceHandoffContinuity(
       waitFor: 'chat__main-pane',
     },
     {
-      name: 'handoff-to-notebook',
-      action: 'Switch to notebook',
-      target: 'sidebar__nav-item--notebook',
-      notes: '从 chat 切到 notebook，继续同一个项目工作流。',
-      route: `/${LOCALE}/workspaces/${context.workspaceId}/projects/${context.projectId}/notebook`,
-      waitFor: 'notebook__task-list',
+      name: 'handoff-to-agent-tasks',
+      action: 'Switch to Agent Tasks',
+      target: 'sidebar__nav-item--agent-tasks',
+      notes: '从 chat 切到 Agent Tasks，继续同一个项目工作流。',
+      route: `/${LOCALE}/workspaces/${context.workspaceId}/projects/${context.projectId}/agent-tasks`,
+      waitFor: 'agent-tasks__task-list',
     },
     {
       name: 'handoff-to-files',
       action: 'Switch to files',
       target: 'sidebar__nav-item--files',
-      notes: '从 notebook 切到 files，仍保留项目壳层上下文。',
+      notes: '从 Agent Tasks 切到 files，仍保留项目壳层上下文。',
       route: `/${LOCALE}/workspaces/${context.workspaceId}/projects/${context.projectId}/files`,
       waitFor: 'files__library-create',
     },
@@ -989,7 +599,6 @@ async function captureProjectSurfaceHandoffContinuity(
 test.describe('@lane-real integration visual review', () => {
   test('captures real backend screenshots for main system and project surfaces', async ({ page }) => {
     test.setTimeout(900_000);
-    const apiBase = process.env.INTEGRATION_API_BASE ?? 'http://localhost:20070';
     const providerApiKey = requireRealLaneApiKey();
     const storyBinding = VISUAL_REVIEW_STORY_BINDING;
     const trace = await createUxTraceBundleWriter({
@@ -1145,8 +754,6 @@ test.describe('@lane-real integration visual review', () => {
         notes: '批准并授予项目管理权限后的成员治理页',
       });
 
-      const projectOwnerToken = await readStoredAuthToken(page);
-
       await gotoWithRetry(page, `/${LOCALE}/workspaces/${workspaceId}/projects/${project.projectId}/credentials`);
       await expect(page.getByTestId('credentials__create-btn')).toBeVisible({ timeout: 30_000 });
       await page.getByTestId('credentials__create-btn').click();
@@ -1185,39 +792,31 @@ test.describe('@lane-real integration visual review', () => {
         notes: '真实 endpoint 列表',
       });
 
-      await gotoWithRetry(page, `/${LOCALE}/workspaces/${workspaceId}/projects/${project.projectId}/agents`);
-      await expect(page.getByTestId('agents__create-btn')).toBeVisible({ timeout: 30_000 });
-      await page.getByTestId('agents__create-btn').click();
-      await expect(page.getByTestId('agents__create-dialog')).toBeVisible();
+      await gotoWithRetry(page, `/${LOCALE}/workspaces/${workspaceId}/projects/${project.projectId}/agent-runners`);
+      await expect(page.getByTestId('agent-runners__create-btn')).toBeVisible({ timeout: 30_000 });
+      await page.getByTestId('agent-runners__create-btn').click();
+      await expect(page.getByTestId('agent-runners__create-dialog')).toBeVisible();
       await settlePage(page);
       await capturePage(page, captures, {
-        name: 'dialog-create-agent-real',
+        name: 'dialog-create-agent-runner-real',
         role: 'project owner',
-        notes: '真实环境 agent 创建对话框',
+        notes: '真实环境 Agent Runner 创建对话框',
       });
-      await page.getByTestId('agents__create-dialog').getByRole('button', { name: /cancel|取消/i }).click();
-      const agentName = await createAgent(page, workspaceId, project.projectId);
+      await page.getByTestId('agent-runners__create-dialog').getByRole('button', { name: /cancel|取消/i }).click();
+      const runnerInfo = await createManagedAgentRunnerViaApi(page, {
+        workspaceId,
+        projectId: project.projectId,
+        endpointId: endpointInfo.endpointId,
+        title: `Real Visual Agent Task Runner ${Date.now()}`,
+      });
+      await gotoWithRetry(page, `/${LOCALE}/workspaces/${workspaceId}/projects/${project.projectId}/agent-runners`);
+      await expect(page.getByText(runnerInfo.runnerName)).toBeVisible({ timeout: 30_000 });
       await settlePage(page);
       await capturePage(page, captures, {
-        name: 'project-agents-real',
+        name: 'project-agent-runners-real',
         role: 'project owner',
-        notes: '真实 agent 列表',
+        notes: '真实 Agent Runner 列表',
       });
-
-      const agentId = await resolveAgentId(page, apiBase, workspaceId, project.projectId, projectOwnerToken, agentName);
-      const connectionInfo = await createAgentKeyAndConnectionInfo(page, apiBase, workspaceId, project.projectId, agentId, projectOwnerToken);
-
-      await gotoWithRetry(page, `/${LOCALE}/workspaces/${workspaceId}/projects/${project.projectId}/agents`);
-      await expect(page.getByTestId(`agents__keys-btn--${agentId}`)).toBeVisible({ timeout: 30_000 });
-      await page.getByTestId(`agents__keys-btn--${agentId}`).click();
-      await expect(page.getByTestId('agents__keys__sheet')).toBeVisible({ timeout: 30_000 });
-      await settlePage(page);
-      await capturePage(page, captures, {
-        name: 'dialog-agent-connection-info-real',
-        role: 'project owner',
-        notes: '真实 external agent 的 key 与连接信息对话框',
-      });
-      await page.keyboard.press('Escape');
 
       await gotoWithRetry(page, `/${LOCALE}/workspaces/${workspaceId}/projects/${project.projectId}/files`);
       await expect(page.getByTestId('files__library-create')).toBeVisible({ timeout: 30_000 });
@@ -1263,176 +862,46 @@ test.describe('@lane-real integration visual review', () => {
       await page.keyboard.press('Escape');
       await expect(page.getByTestId('files__dialog__desktop-mount-access')).toBeHidden({ timeout: 10_000 });
 
-      const presenceBridge = startAgentPresenceBridge({
-        wsUrl: connectionInfo.wsUrl,
-        agentKey: connectionInfo.agentKey,
+      await captureProjectPages(page, capturePage, captures, project, 'project owner');
+      await runAgentTask({
+        page,
+        context: project,
+        fileLibraryId: visualLibraryId!,
+        expectedToken: AGENT_TASK_EXPECTED_TOKEN,
+        artifactName: AGENT_TASK_ARTIFACT_NAME,
       });
-      await presenceBridge.ready;
-      await waitForAgentPresenceOnline(page, workspaceId, project.projectId, agentId);
-
-      try {
-        await captureProjectPages(page, capturePage, captures, project, 'project owner');
-        await runNotebookTask({
-          page,
-          context: project,
-          agentId,
-          fileLibraryId: visualLibraryId!,
-          expectedToken: NOTEBOOK_EXPECTED_TOKEN,
-          artifactName: NOTEBOOK_ARTIFACT_NAME,
-          wsUrl: connectionInfo.wsUrl,
-          agentKey: connectionInfo.agentKey,
-        });
+      await settlePage(page);
+      await capturePage(page, captures, {
+        name: 'project-agent-task-detail-real',
+        role: 'project owner',
+        notes: 'Agent Task 真实任务完成后的详情页',
+      });
+      const traceToggle = page.getByTestId('agent-tasks__message-process-details-toggle').first();
+      if (await traceToggle.isVisible({ timeout: 5_000 }).catch(() => false)) {
+        await traceToggle.click();
+        await expect(page.getByTestId('agent-tasks__message-process-panel')).toBeVisible({ timeout: 30_000 });
         await settlePage(page);
         await capturePage(page, captures, {
-          name: 'project-notebook-task-detail-real',
+          name: 'project-agent-task-trace-real',
           role: 'project owner',
-          notes: 'notebook 真实任务完成后的详情页',
+          notes: '真实 Agent Task 的执行 trace 面板',
         });
-        const traceToggle = page.getByTestId('notebook__message-trace-toggle').first();
-        if (await traceToggle.isVisible({ timeout: 5_000 }).catch(() => false)) {
-          await traceToggle.click();
-          await expect(page.getByTestId('notebook__message-trace-panel')).toBeVisible({ timeout: 30_000 });
-          await settlePage(page);
-          await capturePage(page, captures, {
-            name: 'project-notebook-trace-real',
-            role: 'project owner',
-            notes: '真实 notebook 任务的执行 trace 面板',
-          });
-        }
-
-        await openFileLibraryRoot({
-          page,
-          workspaceId,
-          projectId: project.projectId,
-          libraryName: 'Visual Review Library',
-        });
-        const artifactsRow = page.getByTestId('files__object-row').filter({ hasText: '.artifacts' }).first();
-        await expect(artifactsRow).toBeVisible({ timeout: 30_000 });
-        await settlePage(page);
-        await capturePage(page, captures, {
-          name: 'project-files-notebook-workspace-real',
-          role: 'project owner',
-          notes: 'notebook 任务绑定的文件库根目录，.artifacts 交付目录已经在 Files 页面中可见',
-        });
-      } finally {
-        await presenceBridge.stop();
       }
 
-      if (
-        process.env.SANDBOX_MANAGER_URL?.trim()
-        && process.env.SANDBOX_SERVICE_KEY?.trim()
-        && process.env.INTERNAL_AGENT_K8S_NAMESPACE?.trim()
-      ) {
-        const internalAgent = await createInternalCodexAgent(page, {
-          workspaceId,
-          projectId: project.projectId,
-          endpointId: endpointInfo.endpointId,
-          title: 'internal-visual-review-agent',
-        });
-        const internalExpectedToken = `INTERNAL_VISUAL_NOTEBOOK_OK_${Date.now()}`;
-        const internalArtifactName = `internal-visual-review-${Date.now()}.md`;
-        const internalTaskTitle = `Internal Visual Review ${Date.now()}`;
-        const internalTaskId = await createNotebookTaskViaApi({
-          page,
-          workspaceId,
-          projectId: project.projectId,
-          title: internalTaskTitle,
-          agentId: internalAgent.agentId,
-          fileLibraryId: visualLibraryId!,
-        });
-
-        await gotoWithRetry(page, `/${LOCALE}/workspaces/${workspaceId}/projects/${project.projectId}/notebook`);
-        await expect(page.getByTestId('notebook__task-list')).toBeVisible({ timeout: 30_000 });
-        await page.getByTestId('notebook__task-list').getByText(internalTaskTitle).first().click();
-        await expect(page.getByTestId('notebook__conversation-input')).toBeVisible({ timeout: 30_000 });
-
-        await sendNotebookTaskMessage({
-          page,
-          workspaceId,
-          projectId: project.projectId,
-          taskId: internalTaskId,
-          content: [
-            'Run the following shell command exactly, then reply with the token and filename.',
-            '```bash',
-            `mkdir -p .artifacts && cat <<'EOF' > .artifacts/${internalArtifactName}`,
-            '# Internal workspace summary',
-            `- Token: ${internalExpectedToken}`,
-            '- Mode: internal-k8s',
-            '- Insight: JuiceFS CSI mounted workspace remained consistent across notebook execution',
-            'EOF',
-            '```',
-            `After the file is written, reply with exactly: ${internalExpectedToken} ${internalArtifactName}`,
-          ].join(' '),
-        });
-        await page.waitForTimeout(1_500);
-        await settlePage(page);
-        await capturePage(page, captures, {
-          name: 'project-notebook-task-internal-preparing-real',
-          role: 'project owner',
-          notes: 'internal agent lazy start 后的 notebook 任务执行中状态',
-        });
-
-        await waitForNotebookTaskToken({
-          page,
-          workspaceId,
-          projectId: project.projectId,
-          taskId: internalTaskId,
-          token: internalExpectedToken,
-        });
-        await settlePage(page);
-        await capturePage(page, captures, {
-          name: 'project-notebook-task-internal-detail-real',
-          role: 'project owner',
-          notes: 'internal-k8s notebook 任务完成后的详情页，工作目录固定为 /workspace',
-        });
-
-        const internalWorkloadId = sanitizeWorkloadId(internalTaskId);
-        await deleteInternalWorkloadViaManager({
-          workspaceId,
-          projectId: project.projectId,
-          workloadId: internalWorkloadId,
-        });
-        await page.waitForTimeout(3_000);
-
-        const resumeToken = `INTERNAL_VISUAL_NOTEBOOK_RESUME_${Date.now()}`;
-        await sendNotebookTaskMessage({
-          page,
-          workspaceId,
-          projectId: project.projectId,
-          taskId: internalTaskId,
-          content: `Reply with exactly ${resumeToken} after verifying the existing .artifacts/${internalArtifactName} file is still present in the workspace.`,
-        });
-        await waitForNotebookTaskToken({
-          page,
-          workspaceId,
-          projectId: project.projectId,
-          taskId: internalTaskId,
-          token: resumeToken,
-          minAgentMessages: 2,
-        });
-
-        await waitForTaskArtifacts({
-          page,
-          workspaceId,
-          projectId: project.projectId,
-          taskId: internalTaskId,
-          expectedPath: `.artifacts/${internalArtifactName}`,
-        });
-        await openFileLibraryRoot({
-          page,
-          workspaceId,
-          projectId: project.projectId,
-          libraryName: 'Visual Review Library',
-        });
-        const internalArtifactsRow = page.getByTestId('files__object-row').filter({ hasText: '.artifacts' }).first();
-        await expect(internalArtifactsRow).toBeVisible({ timeout: 30_000 });
-        await settlePage(page);
-        await capturePage(page, captures, {
-          name: 'project-files-internal-workspace-real',
-          role: 'project owner',
-          notes: 'internal-k8s 任务恢复后，.artifacts 交付目录仍在 Files 页面中可见',
-        });
-      }
+      await openFileLibraryRoot({
+        page,
+        workspaceId,
+        projectId: project.projectId,
+        libraryName: 'Visual Review Library',
+      });
+      const artifactsRow = page.getByTestId('files__object-row').filter({ hasText: '.artifacts' }).first();
+      await expect(artifactsRow).toBeVisible({ timeout: 30_000 });
+      await settlePage(page);
+      await capturePage(page, captures, {
+        name: 'project-files-agent-task-workspace-real',
+        role: 'project owner',
+        notes: 'Agent Task 绑定的文件库根目录，.artifacts 交付目录已经在 Files 页面中可见',
+      });
 
       await gotoWithRetry(page, `/${LOCALE}/workspaces/${workspaceId}/projects/${project.projectId}/usage`);
       await expect(page.getByTestId('usage__view')).toBeVisible({ timeout: 30_000 });
@@ -1478,7 +947,7 @@ test.describe('@lane-real integration visual review', () => {
     }
   });
 
-  test('captures project surface handoff continuity for a normal project member moving among overview, chat, notebook, and files', async ({ page }) => {
+  test('captures project surface handoff continuity for a normal project member moving among overview, chat, agent-task, and files', async ({ page }) => {
     test.setTimeout(600_000);
     const storyBinding = PROJECT_SURFACE_HANDOFF_STORY_BINDING;
     const trace = await createUxTraceBundleWriter({

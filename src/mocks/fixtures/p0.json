@@ -36,7 +36,7 @@
       "user_id": "u_2",
       "user_email": "dev2@corp.com",
       "user_name": "Dev Two",
-      "reason": "Need access to debug agent responses",
+      "reason": "Need access to debug Agent task responses",
       "status": "pending",
       "requested_at": "2026-02-01T08:00:00Z"
     },
@@ -107,33 +107,49 @@
       "upstream_protocol": "anthropic_messages"
     }
   ],
-  "agents": [
+  "agent_runners": [
     {
       "id": "ag_1",
       "project_id": "proj_001",
-      "name": "Support Agent",
-      "description": "Handles basic support requests",
-      "mode": "external",
-      "presence": "online",
-      "status": "enabled",
-      "interaction_kind": "chat",
+      "name": "Support Runner",
+      "description": "Handles basic Agent task support requests",
+      "is_default": true,
+      "default_endpoint_id": "ep_001",
+      "status": "ready",
+      "capabilities": {
+        "task_execution": true,
+        "terminal": true,
+        "artifacts": true,
+        "file_inputs": true
+      },
+      "diagnostics": {
+        "presence": "managed"
+      },
       "created_at": "2026-02-01T00:00:00Z",
       "updated_at": "2026-02-01T00:00:00Z"
     },
     {
       "id": "ag_2",
       "project_id": "proj_001",
-      "name": "Research Agent",
-      "description": "Data analysis and research assistant",
-      "mode": "internal",
-      "presence": "managed",
-      "status": "enabled",
-      "interaction_kind": "notebook",
+      "name": "Research Runner",
+      "description": "Runs data analysis and research Agent tasks",
+      "is_default": false,
+      "default_endpoint_id": "ep_002",
+      "status": "ready",
+      "capabilities": {
+        "task_execution": true,
+        "terminal": true,
+        "artifacts": true,
+        "file_inputs": true
+      },
+      "diagnostics": {
+        "presence": "managed"
+      },
       "created_at": "2026-01-20T00:00:00Z",
       "updated_at": "2026-01-28T00:00:00Z"
     }
   ],
-  "agent_diagnostics": {
+  "agent_runner_diagnostics": {
     "last_error": "Rate limit exceeded on upstream endpoint",
     "last_error_at": "2026-02-03T08:00:00Z",
     "retry_backoff_sec": 12,
@@ -180,9 +196,9 @@
       "project_id": "proj_001",
       "actor_type": "user",
       "actor_id": "u_1",
-      "action": "agent.create",
-      "resource_type": "agent",
-      "resource_id": "ag_1",
+      "action": "agent_runner.create",
+      "resource_type": "agent_runner",
+      "resource_id": "runner_1",
       "result": "ok",
       "request_id": "req_abc002"
     },
@@ -429,9 +445,9 @@
       "cost_usd": 12.5
     },
     {
-      "resource_id": "ag_1",
-      "resource_type": "agent",
-      "resource_name": "Support Agent",
+      "resource_id": "runner_1",
+      "resource_type": "agent_runner",
+      "resource_name": "Support Runner",
       "requests": 8450,
       "tokens": 4200000,
       "errors": 12,

@@ -15,46 +15,46 @@
     "ws_default"
   ],
   "runtimeData": {
-    "notebook": {
-      "external_create": {
+    "agentTask": {
+      "managed_create": {
         "turnOne": {
-          "prompt": "Create notes/external_story.txt with exactly one line: external turn 1. Then reply with exactly EXT_T1_OK.",
-          "expectedToken": "EXT_T1_OK",
-          "expectedArtifactPath": ".artifacts/external_summary.md"
+          "prompt": "Create notes/managed_story.txt with exactly one line: managed turn 1. Then reply with exactly MANAGED_T1_OK.",
+          "expectedToken": "MANAGED_T1_OK",
+          "expectedArtifactPath": ".artifacts/managed_summary.md"
         },
         "turnTwo": {
-          "prompt": "Read notes/external_story.txt, append a second line external turn 2, create .artifacts/external_summary.md summarizing the file, then reply with exactly EXT_T2_OK.",
-          "expectedToken": "EXT_T2_OK",
-          "expectedArtifactPath": ".artifacts/external_summary.md"
+          "prompt": "Read notes/managed_story.txt, append a second line managed turn 2, create .artifacts/managed_summary.md summarizing the file, then reply with exactly MANAGED_T2_OK.",
+          "expectedToken": "MANAGED_T2_OK",
+          "expectedArtifactPath": ".artifacts/managed_summary.md"
         }
       },
-      "external_reuse": {
+      "managed_reuse": {
         "turnOne": {
-          "prompt": "Read notes/external_story.txt and reply with exactly EXT_REUSE_T1_OK if it still contains both lines.",
-          "expectedToken": "EXT_REUSE_T1_OK",
-          "expectedArtifactPath": ".artifacts/external_reuse.md"
+          "prompt": "Read notes/managed_story.txt and reply with exactly MANAGED_REUSE_T1_OK if it still contains both lines.",
+          "expectedToken": "MANAGED_REUSE_T1_OK",
+          "expectedArtifactPath": ".artifacts/managed_reuse.md"
         },
         "turnTwo": {
-          "prompt": "Create .artifacts/external_reuse.md that says the reused workspace is intact, then reply with exactly EXT_REUSE_T2_OK.",
-          "expectedToken": "EXT_REUSE_T2_OK",
-          "expectedArtifactPath": ".artifacts/external_reuse.md"
+          "prompt": "Create .artifacts/managed_reuse.md that says the reused workspace is intact, then reply with exactly MANAGED_REUSE_T2_OK.",
+          "expectedToken": "MANAGED_REUSE_T2_OK",
+          "expectedArtifactPath": ".artifacts/managed_reuse.md"
         }
       },
-      "internal": {
+      "managed_continuity": {
         "turnOne": {
-          "prompt": "Run the following shell command exactly, then reply with exactly INT_T1_OK. ```bash mkdir -p notes && cat <<'EOF' > notes/internal_story.txt internal turn 1 EOF ```",
-          "expectedToken": "INT_T1_OK",
-          "expectedArtifactPath": ".artifacts/internal_summary.md"
+          "prompt": "Run the following shell command exactly, then reply with exactly MANAGED_CONT_T1_OK. ```bash mkdir -p notes && cat <<'EOF' > notes/managed_continuity.txt managed continuity turn 1 EOF ```",
+          "expectedToken": "MANAGED_CONT_T1_OK",
+          "expectedArtifactPath": ".artifacts/managed_continuity.md"
         },
         "turnTwo": {
-          "prompt": "Run the following shell commands exactly, then reply with exactly INT_T2_OK. ```bash if [ ! -f notes/internal_story.txt ]; then echo 'missing-internal-story' >&2; exit 1; fi printf '\\ninternal turn 2\\n' >> notes/internal_story.txt mkdir -p .artifacts cat <<'EOF' > .artifacts/internal_summary.md # Internal Story Summary internal turn 1 internal turn 2 EOF ```",
-          "expectedToken": "INT_T2_OK",
-          "expectedArtifactPath": ".artifacts/internal_summary.md"
+          "prompt": "Run the following shell commands exactly, then reply with exactly MANAGED_CONT_T2_OK. ```bash if [ ! -f notes/managed_continuity.txt ]; then echo 'missing-managed-continuity' >&2; exit 1; fi printf '\\nmanaged continuity turn 2\\n' >> notes/managed_continuity.txt mkdir -p .artifacts cat <<'EOF' > .artifacts/managed_continuity.md # Managed Continuity Summary managed continuity turn 1 managed continuity turn 2 EOF ```",
+          "expectedToken": "MANAGED_CONT_T2_OK",
+          "expectedArtifactPath": ".artifacts/managed_continuity.md"
         }
       }
     }
   },
-  "narrative": "系统、工作区、项目、Notebook、Files 和 Usage 的真实发布主链，需要由一份稳定 story contract 统一描述 trace 行为与验收证据。",
+  "narrative": "系统、工作区、项目、Agent Task、Files 和 Usage 的真实发布主链，需要由一份稳定 story contract 统一描述 trace 行为与验收证据。",
   "scenes": [
     {
       "sceneId": "system-login",
@@ -122,17 +122,17 @@
       ]
     },
     {
-      "sceneId": "project-agents",
-      "route": "/en-US/workspaces/{workspaceId}/projects/{projectId}/agents",
+      "sceneId": "project-agent-runners",
+      "route": "/en-US/workspaces/{workspaceId}/projects/{projectId}/agent-runners",
       "stableMarkers": [
-        "agents__heading"
+        "agent-runners__table"
       ]
     },
     {
-      "sceneId": "project-notebook",
-      "route": "/en-US/workspaces/{workspaceId}/projects/{projectId}/notebook",
+      "sceneId": "project-agent-tasks",
+      "route": "/en-US/workspaces/{workspaceId}/projects/{projectId}/agent-tasks/{taskId}",
       "stableMarkers": [
-        "notebook__task-header"
+        "agent-task__task-header"
       ]
     },
     {
@@ -309,25 +309,25 @@
       ]
     },
     {
-      "stepId": "agents-list-external",
-      "sceneId": "project-agents",
-      "intent": "Inspect the external agent list.",
-      "action": "Review agents",
-      "target": "agents__heading",
-      "expectedFeedback": "外部 agent 已创建",
-      "note": "外部 agent 已创建",
+      "stepId": "agent-runners-managed-list",
+      "sceneId": "project-agent-runners",
+      "intent": "Inspect the managed Agent Runner list.",
+      "action": "Review Agent Runners",
+      "target": "agent-runners__table",
+      "expectedFeedback": "托管 Agent Runner 已创建",
+      "note": "托管 Agent Runner 已创建",
       "evidence": [
         "trace"
       ]
     },
     {
-      "stepId": "agents-list-internal",
-      "sceneId": "project-agents",
-      "intent": "Inspect the internal agent list.",
-      "action": "Review internal agent",
-      "target": "agents__heading",
-      "expectedFeedback": "内部 agent 已创建",
-      "note": "内部 agent 已创建",
+      "stepId": "agent-runners-managed-health",
+      "sceneId": "project-agent-runners",
+      "intent": "Inspect the managed Agent Runner list.",
+      "action": "Review managed Agent Runner",
+      "target": "agent-runners__table",
+      "expectedFeedback": "托管 Agent Runner 的健康状态可见",
+      "note": "托管 Agent Runner 的健康状态可见",
       "evidence": [
         "trace"
       ]
@@ -345,61 +345,61 @@
       ]
     },
     {
-      "stepId": "notebook-task-external-1",
-      "sceneId": "project-notebook",
-      "intent": "Create the first external notebook task.",
-      "action": "Create external notebook task",
-      "target": "notebook__task-header",
-      "expectedFeedback": "external task A 创建成功",
-      "note": "external task A 创建成功",
+      "stepId": "agent-task-managed-1",
+      "sceneId": "project-agent-tasks",
+      "intent": "Create the first managed Agent Task.",
+      "action": "Create managed Agent Task",
+      "target": "agent-task__task-header",
+      "expectedFeedback": "managed Agent Task A 创建成功",
+      "note": "managed Agent Task A 创建成功",
       "evidence": [
         "trace"
       ]
     },
     {
-      "stepId": "files-artifacts-external",
+      "stepId": "files-artifacts-managed",
       "sceneId": "project-files",
-      "intent": "Inspect external task artifacts in Files.",
+      "intent": "Inspect managed Agent Task artifacts in Files.",
       "action": "Inspect generated artifacts",
       "target": "files__objects-table",
-      "expectedFeedback": "external task 的 .artifacts 已可见",
-      "note": "external task 的 .artifacts 已可见",
+      "expectedFeedback": "managed Agent Task 的 .artifacts 已可见",
+      "note": "managed Agent Task 的 .artifacts 已可见",
       "evidence": [
         "trace"
       ]
     },
     {
-      "stepId": "notebook-task-detail-external",
-      "sceneId": "project-notebook",
-      "intent": "Inspect the external task detail view.",
+      "stepId": "agent-task-detail-managed",
+      "sceneId": "project-agent-tasks",
+      "intent": "Inspect the managed Agent Task detail view.",
       "action": "Review task detail",
-      "target": "notebook__task-header",
-      "expectedFeedback": "external task 详情页",
-      "note": "external task 详情页",
+      "target": "agent-task__task-header",
+      "expectedFeedback": "managed Agent Task 详情页",
+      "note": "managed Agent Task 详情页",
       "evidence": [
         "trace"
       ]
     },
     {
-      "stepId": "notebook-task-detail-external-reuse",
-      "sceneId": "project-notebook",
+      "stepId": "agent-task-detail-managed-reuse",
+      "sceneId": "project-agent-tasks",
       "intent": "Inspect the reused workspace task.",
       "action": "Review reused workspace task",
-      "target": "notebook__task-header",
-      "expectedFeedback": "external task B 复用 workspace 成功",
-      "note": "external task B 复用 workspace 成功",
+      "target": "agent-task__task-header",
+      "expectedFeedback": "managed Agent Task B 复用 workspace 成功",
+      "note": "managed Agent Task B 复用 workspace 成功",
       "evidence": [
         "trace"
       ]
     },
     {
-      "stepId": "files-artifacts-internal",
+      "stepId": "files-artifacts-managed-continuity",
       "sceneId": "project-files",
-      "intent": "Inspect internal task artifacts in Files.",
-      "action": "Inspect internal artifacts",
+      "intent": "Inspect managed Agent Task artifacts in Files.",
+      "action": "Inspect managed continuity artifacts",
       "target": "files__objects-table",
-      "expectedFeedback": "internal task 的 .artifacts 已可见",
-      "note": "internal task 的 .artifacts 已可见",
+      "expectedFeedback": "managed Agent Task 的 .artifacts 已可见",
+      "note": "managed Agent Task 的 .artifacts 已可见",
       "evidence": [
         "trace"
       ]
@@ -407,7 +407,7 @@
     {
       "stepId": "usage-overview",
       "sceneId": "project-usage",
-      "intent": "Inspect usage after notebook activity.",
+      "intent": "Inspect usage after agent-task activity.",
       "action": "Review usage metrics",
       "target": "usage__view",
       "expectedFeedback": "usage 页面已验证 endpoint 请求数据",

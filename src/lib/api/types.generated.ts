@@ -290,82 +290,92 @@ export interface paths {
         parameters: {
             query?: never;
             header?: never;
-            path?: never;
+            path: {
+                projectId: components["parameters"]["projectId"];
+                workspaceId: components["parameters"]["workspaceId"];
+            };
             cookie?: never;
         };
         get: operations["get_item"];
         put?: never;
         post?: never;
+        delete: operations["deleteProject"];
+        options?: never;
+        head?: never;
+        patch: operations["updateProject"];
+        trace?: never;
+    };
+    "/api/v1/workspaces/{workspaceId}/projects/{projectId}/agent-runners": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                projectId: components["parameters"]["projectId"];
+                workspaceId: components["parameters"]["workspaceId"];
+            };
+            cookie?: never;
+        };
+        /** List agent runners */
+        get: operations["listAgentRunners"];
+        put?: never;
+        /** Create an agent runner */
+        post: operations["createAgentRunner"];
         delete?: never;
         options?: never;
         head?: never;
         patch?: never;
         trace?: never;
     };
-    "/api/v1/workspaces/{workspaceId}/projects/{projectId}/agents": {
+    "/api/v1/workspaces/{workspaceId}/projects/{projectId}/agent-runners/{agentRunnerId}": {
         parameters: {
             query?: never;
             header?: never;
             path: {
+                agentRunnerId: components["parameters"]["agentRunnerId"];
                 projectId: components["parameters"]["projectId"];
                 workspaceId: components["parameters"]["workspaceId"];
             };
             cookie?: never;
         };
-        get: operations["listAgents"];
-        put?: never;
-        post: operations["createAgent"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/v1/workspaces/{workspaceId}/projects/{projectId}/agents/{agentId}": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                agentId: components["parameters"]["agentId"];
-                projectId: components["parameters"]["projectId"];
-                workspaceId: components["parameters"]["workspaceId"];
-            };
-            cookie?: never;
-        };
-        get: operations["getAgent"];
-        put?: never;
-        post?: never;
-        delete: operations["deleteAgent"];
-        options?: never;
-        head?: never;
-        patch: operations["updateAgent"];
-        trace?: never;
-    };
-    "/api/v1/workspaces/{workspaceId}/projects/{projectId}/agents/{agentId}/connection-info": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                agentId: components["parameters"]["agentId"];
-                projectId: components["parameters"]["projectId"];
-                workspaceId: components["parameters"]["workspaceId"];
-            };
-            cookie?: never;
-        };
-        get: operations["getAgentConnectionInfo"];
+        get: operations["getAgentRunner"];
         put?: never;
         post?: never;
+        delete: operations["deleteAgentRunner"];
+        options?: never;
+        head?: never;
+        /** Update an agent runner */
+        patch: operations["updateAgentRunner"];
+        trace?: never;
+    };
+    "/api/v1/workspaces/{workspaceId}/projects/{projectId}/agent-runners/{agentRunnerId}/connection-info": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                agentRunnerId: components["parameters"]["agentRunnerId"];
+                projectId: components["parameters"]["projectId"];
+                workspaceId: components["parameters"]["workspaceId"];
+            };
+            cookie?: never;
+        };
+        get: operations["getAgentRunnerConnectionInfo"];
+        put?: never;
+        post?: never;
         delete?: never;
         options?: never;
         head?: never;
         patch?: never;
         trace?: never;
     };
-    "/api/v1/workspaces/{workspaceId}/projects/{projectId}/agents/{agentId}/diagnostics": {
+    "/api/v1/workspaces/{workspaceId}/projects/{projectId}/agent-runners/{agentRunnerId}/diagnostics": {
         parameters: {
             query?: never;
             header?: never;
-            path?: never;
+            path: {
+                agentRunnerId: components["parameters"]["agentRunnerId"];
+                projectId: components["parameters"]["projectId"];
+                workspaceId: components["parameters"]["workspaceId"];
+            };
             cookie?: never;
         };
         get: operations["get_agentDiagnostics"];
@@ -377,11 +387,15 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/v1/workspaces/{workspaceId}/projects/{projectId}/agents/{agentId}/execution-config": {
+    "/api/v1/workspaces/{workspaceId}/projects/{projectId}/agent-runners/{agentRunnerId}/execution-config": {
         parameters: {
             query?: never;
             header?: never;
-            path?: never;
+            path: {
+                agentRunnerId: components["parameters"]["agentRunnerId"];
+                projectId: components["parameters"]["projectId"];
+                workspaceId: components["parameters"]["workspaceId"];
+            };
             cookie?: never;
         };
         get: operations["get_agentExecutionConfig"];
@@ -393,32 +407,32 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/v1/workspaces/{workspaceId}/projects/{projectId}/agents/{agentId}/keys": {
+    "/api/v1/workspaces/{workspaceId}/projects/{projectId}/agent-runners/{agentRunnerId}/keys": {
         parameters: {
             query?: never;
             header?: never;
             path: {
-                agentId: components["parameters"]["agentId"];
+                agentRunnerId: components["parameters"]["agentRunnerId"];
                 projectId: components["parameters"]["projectId"];
                 workspaceId: components["parameters"]["workspaceId"];
             };
             cookie?: never;
         };
-        get: operations["listAgentKeys"];
+        get: operations["listAgentRunnerKeys"];
         put?: never;
-        post: operations["createAgentKey"];
+        post: operations["createAgentRunnerKey"];
         delete?: never;
         options?: never;
         head?: never;
         patch?: never;
         trace?: never;
     };
-    "/api/v1/workspaces/{workspaceId}/projects/{projectId}/agents/{agentId}/keys/{keyId}": {
+    "/api/v1/workspaces/{workspaceId}/projects/{projectId}/agent-runners/{agentRunnerId}/keys/{keyId}": {
         parameters: {
             query?: never;
             header?: never;
             path: {
-                agentId: components["parameters"]["agentId"];
+                agentRunnerId: components["parameters"]["agentRunnerId"];
                 keyId: components["parameters"]["keyId"];
                 projectId: components["parameters"]["projectId"];
                 workspaceId: components["parameters"]["workspaceId"];
@@ -428,7 +442,7 @@ export interface paths {
         get?: never;
         put?: never;
         post?: never;
-        delete: operations["deleteAgentKey"];
+        delete: operations["deleteAgentRunnerKey"];
         options?: never;
         head?: never;
         patch?: never;
@@ -1952,9 +1966,14 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
+        /** List agent tasks */
         get: operations["listTasks"];
         put?: never;
-        post?: never;
+        /**
+         * Create an agent task
+         * @description Creates an agent task without requiring runner selection fields. Task runs resolve the project default managed agent runner at execution time.
+         */
+        post: operations["createTask"];
         delete?: never;
         options?: never;
         head?: never;
@@ -1968,7 +1987,28 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
+        /** Get an agent task */
         get: operations["getTask"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/workspaces/{workspaceId}/projects/{projectId}/tasks/{taskId}/activity": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List agent task activity
+         * @description Returns user intent and runner output activity for an Agent Task. Public activity items do not expose Chat message roles.
+         */
+        get: operations["listTaskActivity"];
         put?: never;
         post?: never;
         delete?: never;
@@ -2018,7 +2058,7 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** @description Requests cancellation of the currently active notebook run. */
+        /** @description Requests cancellation of the currently active agent task run. */
         post: operations["cancelTaskRun"];
         delete?: never;
         options?: never;
@@ -2033,7 +2073,7 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** @description Server-Sent Events stream for notebook task execution updates (message/task_update/error/ping). */
+        /** @description Server-Sent Events stream for agent task execution updates (message/task_update/error/ping). */
         get: operations["listTaskEvents"];
         put?: never;
         post?: never;
@@ -2075,17 +2115,20 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/v1/workspaces/{workspaceId}/projects/{projectId}/tasks/{taskId}/messages": {
+    "/api/v1/workspaces/{workspaceId}/projects/{projectId}/tasks/{taskId}/runs": {
         parameters: {
             query?: never;
             header?: never;
             path?: never;
             cookie?: never;
         };
-        get: operations["listTaskMessages"];
+        get?: never;
         put?: never;
-        /** @description Creates a notebook message and, for user role, starts external-agent execution with streaming updates via /tasks/{taskId}/events. */
-        post: operations["createTaskMessageAndRun"];
+        /**
+         * Start an agent task run
+         * @description Starts an Agent Task run from user intent and optional input references. Backend runner resolution is authoritative; clients do not send runner selectors or message roles.
+         */
+        post: operations["startTaskRun"];
         delete?: never;
         options?: never;
         head?: never;
@@ -2132,8 +2175,8 @@ export interface paths {
             cookie?: never;
         };
         /**
-         * List notebook execution trace events
-         * @description Returns execution trace events for a notebook task. Results can be scoped to a specific message or run,
+         * List agent task execution trace events
+         * @description Returns execution trace events for an agent task. Results can be scoped to a specific activity item or run,
          *     and paged using cursor-style parameters (`after_id` / `before_id`).
          */
         get: {
@@ -2143,7 +2186,7 @@ export interface paths {
                     after_id?: string;
                     /** @description Return events older than the given trace event id (load earlier logs). */
                     before_id?: string;
-                    /** @description Limit traces to a specific agent message. */
+                    /** @description Limit traces to a specific task activity item. */
                     message_id?: string;
                     /** @description Maximum number of events to return. */
                     page_size?: number;
@@ -2351,12 +2394,45 @@ export interface paths {
 export type webhooks = Record<string, never>;
 export interface components {
     schemas: {
-        Agent: {
+        /** @description Public Agent Runner resource. Legacy fields `mode`, `runner_runtime`, `interaction_kind`, and external/internal runner selectors are not accepted in request payloads. */
+        AgentRunner: {
+            capabilities: components["schemas"]["AgentRunnerCapabilities"];
+            /** Format: date-time */
+            created_at: string;
+            /** @description Project endpoint selected by default for task runs. */
+            default_endpoint_id?: string;
+            description?: string;
+            diagnostics: components["schemas"]["AgentRunnerDiagnostics"];
             id: string;
+            is_default: boolean;
             name: string;
-            status: string;
+            project_id: string;
+            status: components["schemas"]["AgentRunnerStatus"];
+            /** Format: date-time */
+            updated_at: string;
         };
-        AgentKey: {
+        AgentRunnerCapabilities: {
+            accepted_mime_types?: string[];
+            artifacts?: boolean;
+            file_inputs?: boolean;
+            max_file_count?: number;
+            max_total_bytes?: number;
+            multimodal_completion?: boolean;
+            streaming_completion?: boolean;
+            task_execution?: boolean;
+            terminal?: boolean;
+            url_inputs?: boolean;
+        } & {
+            [key: string]: unknown;
+        };
+        AgentRunnerDiagnostics: {
+            /** @enum {string} */
+            presence?: "online" | "offline" | "managed";
+        } & {
+            [key: string]: unknown;
+        };
+        AgentRunnerKey: {
+            agent_runner_id: string;
             /** Format: date-time */
             created_at?: string;
             id: string;
@@ -2364,6 +2440,21 @@ export interface components {
             /** @enum {string} */
             status: "active" | "revoked";
         };
+        AgentRunnerListResponse: {
+            has_more?: boolean;
+            items: components["schemas"]["AgentRunner"][];
+            page: number;
+            page_size: number;
+            total: number;
+        };
+        AgentRunnerResolutionError: {
+            /** @enum {string} */
+            error_code: "agent_runner_unavailable" | "agent_runner_model_unconfigured" | "agent_runner_capability_mismatch" | "agent_runner_default_conflict" | "agent_runner_selection_required" | "agent_runner_selection_ambiguous";
+            /** @enum {string} */
+            message: "agent_runner_unavailable" | "agent_runner_model_unconfigured" | "agent_runner_capability_mismatch" | "agent_runner_default_conflict" | "agent_runner_selection_required" | "agent_runner_selection_ambiguous";
+        };
+        /** @enum {string} */
+        AgentRunnerStatus: "draft" | "connected" | "ready" | "degraded" | "offline";
         /** @description Alert behavior settings */
         AlertBehavior: {
             /** @description Minimum time between alerts */
@@ -2513,7 +2604,7 @@ export interface components {
              * @description Machine-readable error code
              * @enum {string}
              */
-            error_code: "UNAUTHORIZED" | "PERMISSION_DENIED" | "RESOURCE_NOT_FOUND" | "RESOURCE_ALREADY_EXISTS" | "VALIDATION_ERROR" | "RATE_LIMIT_EXCEEDED" | "SPENDING_LIMIT_EXCEEDED" | "INTERNAL_ERROR";
+            error_code: "UNAUTHORIZED" | "PERMISSION_DENIED" | "RESOURCE_NOT_FOUND" | "RESOURCE_ALREADY_EXISTS" | "RESOURCE_CONFLICT" | "VALIDATION_ERROR" | "FORBIDDEN" | "RATE_LIMIT_EXCEEDED" | "SPENDING_LIMIT_EXCEEDED" | "AGENT_OFFLINE" | "unsupported_field" | "agent_runner_unavailable" | "agent_runner_model_unconfigured" | "agent_runner_capability_mismatch" | "agent_runner_default_conflict" | "agent_runner_selection_required" | "agent_runner_selection_ambiguous" | "INTERNAL_ERROR";
             /** @description Human-readable error message */
             message: string;
             /** @description Unique identifier for the request (for debugging) */
@@ -2669,7 +2760,6 @@ export interface components {
             escalation_reason?: "STOP_ESCALATION_UNAVAILABLE" | null;
             /** @enum {string} */
             execution_status?: "running" | "stopping" | "terminating" | "completed" | "stopped" | "failed";
-            external_agent_id?: string;
             id: string;
             model: string;
             stop_mode?: components["schemas"]["StopMode"];
@@ -2716,20 +2806,21 @@ export interface components {
             /** @enum {boolean} */
             success: true;
         };
-        CreateAgentKeyResponse: {
+        CreateAgentRunnerKeyResponse: {
+            agent_runner_id: string;
             id: string;
             /** @description Displayed only once */
             key?: string;
             key_prefix: string;
         };
-        CreateAgentRequest: {
+        CreateAgentRunnerRequest: {
+            capabilities?: components["schemas"]["AgentRunnerCapabilities"];
+            default_endpoint_id?: string;
             description?: string;
-            execution_preferences?: {
-                [key: string]: unknown;
-            };
+            diagnostics?: components["schemas"]["AgentRunnerDiagnostics"];
+            is_default?: boolean;
             name: string;
-            /** @enum {string} */
-            type: "external";
+            status?: components["schemas"]["AgentRunnerStatus"];
         };
         CreateChatMessageRequest: {
             content: string | unknown[];
@@ -2750,7 +2841,6 @@ export interface components {
         };
         CreateChatSessionRequest: {
             endpoint_id?: string;
-            external_agent_id?: string;
             model: string;
             title: string;
         };
@@ -2785,7 +2875,24 @@ export interface components {
             invite_url: string;
         };
         CreateProjectRequest: {
+            description?: string;
+            /** @enum {string} */
+            join_policy?: "approval_required" | "open";
             name: string;
+            /** @enum {string} */
+            visibility?: "public" | "private";
+        };
+        CreateTaskRequest: {
+            /** @deprecated */
+            initial_inputs?: components["schemas"]["TaskInputRefInput"][];
+            input_refs?: components["schemas"]["TaskInputRefInput"][];
+            /** @description Initial user prompt. The task runner is resolved when a run starts. */
+            prompt?: string;
+            title: string;
+            workspace_file_library_id?: string;
+            /** @enum {string} */
+            workspace_mode?: "create_new" | "use_existing";
+            workspace_name?: string;
         };
         DeleteFileLibraryEntriesRequest: {
             paths: string[];
@@ -3101,9 +3208,6 @@ export interface components {
             admin_member_ids?: string[];
             created_at: string;
             description?: string;
-            execution_preferences_json?: {
-                [key: string]: unknown;
-            };
             governance_json?: {
                 [key: string]: unknown;
             };
@@ -3180,6 +3284,11 @@ export interface components {
             /** @description Short-lived token (UUID) */
             ticket: string;
         };
+        StartTaskRunRequest: {
+            input_refs?: components["schemas"]["TaskInputRefInput"][];
+            /** @description User intent for this Agent Task run. */
+            intent: string;
+        };
         /** @enum {string} */
         StopMode: "cancel" | "terminate";
         StorageCredentialExchangeResponse: {
@@ -3199,13 +3308,12 @@ export interface components {
             };
         };
         Task: {
+            active_run?: components["schemas"]["TaskRunSummary"];
             /**
              * Format: date-time
-             * @description Start time of the current active notebook run; omitted when the backend has no active run truth.
+             * @description Start time of the current active agent task run; omitted when the backend has no active run truth.
              */
             active_run_started_at?: string;
-            agent_id: string;
-            agent_name: string;
             agent_presence?: components["schemas"]["TaskAgentPresence"];
             attached_inputs: components["schemas"]["TaskInputRef"][];
             can_escalate?: boolean;
@@ -3216,8 +3324,11 @@ export interface components {
             id: string;
             /** Format: date-time */
             last_activity_at: string;
+            /** @enum {string} */
+            lifecycle_status: "active" | "archived";
             owner_user_id: string;
             project_id: string;
+            prompt?: string;
             run_state?: components["schemas"]["TaskRunState"];
             stats?: components["schemas"]["TaskStats"];
             /** @enum {string} */
@@ -3231,6 +3342,18 @@ export interface components {
             workspace_id: string;
         } & {
             [key: string]: unknown;
+        };
+        TaskActivityItem: {
+            /** @enum {string} */
+            actor: "user" | "runner";
+            content: string;
+            /** Format: date-time */
+            created_at: string;
+            id: string;
+            /** @enum {string} */
+            kind: "user_intent" | "runner_output";
+            run_id?: string;
+            task_id: string;
         };
         /** @enum {string} */
         TaskAgentPresence: "online" | "offline" | "managed" | "unknown";
@@ -3274,6 +3397,12 @@ export interface components {
         } & {
             [key: string]: unknown;
         };
+        TaskInputRefInput: {
+            /** @enum {string} */
+            kind: "library_object" | "artifact" | "url";
+        } & {
+            [key: string]: unknown;
+        };
         TaskListResponse: {
             has_more?: boolean;
             items: components["schemas"]["Task"][];
@@ -3285,6 +3414,17 @@ export interface components {
         };
         /** @enum {string} */
         TaskRunState: "running" | "cancelling" | "terminating" | "finalizing" | "idle";
+        TaskRunSummary: {
+            /** Format: date-time */
+            finished_at?: string;
+            id: string;
+            /** @description Resolved agent runner id used for this run. */
+            runner_id: string;
+            /** Format: date-time */
+            started_at?: string;
+            /** @enum {string} */
+            status: "queued" | "running" | "stopping" | "succeeded" | "failed" | "canceled";
+        };
         TaskStats: {
             artifact_count?: number;
             attached_input_count?: number;
@@ -3352,16 +3492,23 @@ export interface components {
                 [key: string]: unknown;
             };
         };
-        UpdateAgentRequest: {
+        UnsupportedFieldError: {
+            /** @enum {string} */
+            error_code: "unsupported_field";
+            fields: ("mode" | "runner_runtime" | "interaction_kind" | "type" | "execution_preferences" | "execution_preferences_json" | "agent_id" | "agent_name" | "runner_id")[];
+            /** @enum {string} */
+            message: "unsupported_field";
+        };
+        UpdateAgentRunnerRequest: {
+            capabilities?: components["schemas"]["AgentRunnerCapabilities"];
+            default_endpoint_id?: string;
             description?: string;
-            execution_preferences?: {
-                [key: string]: unknown;
-            };
+            is_default?: boolean;
             name?: string;
+            status?: components["schemas"]["AgentRunnerStatus"];
         };
         UpdateChatSessionRequest: {
             endpoint_id?: string;
-            external_agent_id?: string;
             model?: string;
             pinned?: boolean;
             starred?: boolean;
@@ -3371,6 +3518,23 @@ export interface components {
         UpdateFileLibraryRequest: {
             description?: string;
             name?: string;
+        };
+        UpdateProjectRequest: {
+            description?: string;
+            governance_json?: {
+                [key: string]: unknown;
+            };
+            /** @enum {string} */
+            join_policy?: "approval_required" | "open";
+            limits_json?: {
+                [key: string]: unknown;
+            };
+            name?: string;
+            owner_id?: string;
+            /** @enum {string} */
+            status?: "active" | "archived" | "deleted";
+            /** @enum {string} */
+            visibility?: "public" | "private";
         };
         UsageDataPoint: {
             bytes_in?: number;
@@ -3752,7 +3916,7 @@ export interface components {
         };
     };
     parameters: {
-        agentId: string;
+        agentRunnerId: string;
         endpointId: string;
         keyId: string;
         libraryId: string;
@@ -4364,7 +4528,10 @@ export interface operations {
         parameters: {
             query?: never;
             header?: never;
-            path?: never;
+            path: {
+                projectId: components["parameters"]["projectId"];
+                workspaceId: components["parameters"]["workspaceId"];
+            };
             cookie?: never;
         };
         requestBody?: never;
@@ -4382,7 +4549,7 @@ export interface operations {
             403: components["responses"]["Forbidden"];
         };
     };
-    listAgents: {
+    deleteProject: {
         parameters: {
             query?: never;
             header?: never;
@@ -4394,18 +4561,18 @@ export interface operations {
         };
         requestBody?: never;
         responses: {
-            /** @description Agent list */
-            200: {
+            /** @description Deleted */
+            204: {
                 headers: {
                     [name: string]: unknown;
                 };
-                content: {
-                    "application/json": components["schemas"]["Agent"][];
-                };
+                content?: never;
             };
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
         };
     };
-    createAgent: {
+    updateProject: {
         parameters: {
             query?: never;
             header?: never;
@@ -4417,27 +4584,37 @@ export interface operations {
         };
         requestBody: {
             content: {
-                "application/json": components["schemas"]["CreateAgentRequest"];
+                "application/json": components["schemas"]["UpdateProjectRequest"];
             };
         };
         responses: {
-            /** @description Agent created */
-            201: {
+            /** @description Updated project */
+            200: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Agent"];
+                    "application/json": components["schemas"]["Project"];
                 };
             };
+            /** @description Validation error */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
         };
     };
-    getAgent: {
+    listAgentRunners: {
         parameters: {
             query?: never;
             header?: never;
             path: {
-                agentId: components["parameters"]["agentId"];
                 projectId: components["parameters"]["projectId"];
                 workspaceId: components["parameters"]["workspaceId"];
             };
@@ -4445,23 +4622,83 @@ export interface operations {
         };
         requestBody?: never;
         responses: {
-            /** @description Agent */
+            /** @description Agent runner list */
             200: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Agent"];
+                    "application/json": components["schemas"]["AgentRunnerListResponse"];
                 };
             };
         };
     };
-    deleteAgent: {
+    createAgentRunner: {
         parameters: {
             query?: never;
             header?: never;
             path: {
-                agentId: components["parameters"]["agentId"];
+                projectId: components["parameters"]["projectId"];
+                workspaceId: components["parameters"]["workspaceId"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CreateAgentRunnerRequest"];
+            };
+        };
+        responses: {
+            /** @description Agent runner created */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AgentRunner"];
+                };
+            };
+            /** @description Unsupported legacy agent runner field */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["UnsupportedFieldError"];
+                };
+            };
+        };
+    };
+    getAgentRunner: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                agentRunnerId: components["parameters"]["agentRunnerId"];
+                projectId: components["parameters"]["projectId"];
+                workspaceId: components["parameters"]["workspaceId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Agent runner */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AgentRunner"];
+                };
+            };
+        };
+    };
+    deleteAgentRunner: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                agentRunnerId: components["parameters"]["agentRunnerId"];
                 projectId: components["parameters"]["projectId"];
                 workspaceId: components["parameters"]["workspaceId"];
             };
@@ -4478,12 +4715,12 @@ export interface operations {
             };
         };
     };
-    updateAgent: {
+    updateAgentRunner: {
         parameters: {
             query?: never;
             header?: never;
             path: {
-                agentId: components["parameters"]["agentId"];
+                agentRunnerId: components["parameters"]["agentRunnerId"];
                 projectId: components["parameters"]["projectId"];
                 workspaceId: components["parameters"]["workspaceId"];
             };
@@ -4491,27 +4728,36 @@ export interface operations {
         };
         requestBody: {
             content: {
-                "application/json": components["schemas"]["UpdateAgentRequest"];
+                "application/json": components["schemas"]["UpdateAgentRunnerRequest"];
             };
         };
         responses: {
-            /** @description Updated */
+            /** @description Agent runner updated */
             200: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Agent"];
+                    "application/json": components["schemas"]["AgentRunner"];
+                };
+            };
+            /** @description Unsupported legacy agent runner field */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["UnsupportedFieldError"];
                 };
             };
         };
     };
-    getAgentConnectionInfo: {
+    getAgentRunnerConnectionInfo: {
         parameters: {
             query?: never;
             header?: never;
             path: {
-                agentId: components["parameters"]["agentId"];
+                agentRunnerId: components["parameters"]["agentRunnerId"];
                 projectId: components["parameters"]["projectId"];
                 workspaceId: components["parameters"]["workspaceId"];
             };
@@ -4526,6 +4772,9 @@ export interface operations {
                 };
                 content: {
                     "application/json": {
+                        agent_runner_id: string;
+                        heartbeat_interval_sec: number;
+                        protocol_version: string;
                         ws_url: string;
                     };
                 };
@@ -4536,7 +4785,11 @@ export interface operations {
         parameters: {
             query?: never;
             header?: never;
-            path?: never;
+            path: {
+                agentRunnerId: components["parameters"]["agentRunnerId"];
+                projectId: components["parameters"]["projectId"];
+                workspaceId: components["parameters"]["workspaceId"];
+            };
             cookie?: never;
         };
         requestBody?: never;
@@ -4560,7 +4813,11 @@ export interface operations {
         parameters: {
             query?: never;
             header?: never;
-            path?: never;
+            path: {
+                agentRunnerId: components["parameters"]["agentRunnerId"];
+                projectId: components["parameters"]["projectId"];
+                workspaceId: components["parameters"]["workspaceId"];
+            };
             cookie?: never;
         };
         requestBody?: never;
@@ -4572,7 +4829,12 @@ export interface operations {
                 };
                 content: {
                     "application/json": {
-                        [key: string]: unknown;
+                        agent_runner_id: string;
+                        execution_preferences: {
+                            [key: string]: unknown;
+                        };
+                        project_id: string;
+                        schema_version: number;
                     };
                 };
             };
@@ -4580,12 +4842,12 @@ export interface operations {
             403: components["responses"]["Forbidden"];
         };
     };
-    listAgentKeys: {
+    listAgentRunnerKeys: {
         parameters: {
             query?: never;
             header?: never;
             path: {
-                agentId: components["parameters"]["agentId"];
+                agentRunnerId: components["parameters"]["agentRunnerId"];
                 projectId: components["parameters"]["projectId"];
                 workspaceId: components["parameters"]["workspaceId"];
             };
@@ -4599,17 +4861,17 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["AgentKey"][];
+                    "application/json": components["schemas"]["AgentRunnerKey"][];
                 };
             };
         };
     };
-    createAgentKey: {
+    createAgentRunnerKey: {
         parameters: {
             query?: never;
             header?: never;
             path: {
-                agentId: components["parameters"]["agentId"];
+                agentRunnerId: components["parameters"]["agentRunnerId"];
                 projectId: components["parameters"]["projectId"];
                 workspaceId: components["parameters"]["workspaceId"];
             };
@@ -4623,17 +4885,17 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["CreateAgentKeyResponse"];
+                    "application/json": components["schemas"]["CreateAgentRunnerKeyResponse"];
                 };
             };
         };
     };
-    deleteAgentKey: {
+    deleteAgentRunnerKey: {
         parameters: {
             query?: never;
             header?: never;
             path: {
-                agentId: components["parameters"]["agentId"];
+                agentRunnerId: components["parameters"]["agentRunnerId"];
                 keyId: components["parameters"]["keyId"];
                 projectId: components["parameters"]["projectId"];
                 workspaceId: components["parameters"]["workspaceId"];
@@ -7881,6 +8143,59 @@ export interface operations {
             403: components["responses"]["Forbidden"];
         };
     };
+    createTask: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CreateTaskRequest"];
+            };
+        };
+        responses: {
+            /** @description Agent task created */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Task"];
+                };
+            };
+            /** @description Unsupported legacy task runner selector field */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["UnsupportedFieldError"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            /** @description Workspace or file library conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Validation error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+        };
+    };
     getTask: {
         parameters: {
             query?: never;
@@ -7897,6 +8212,28 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["Task"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+        };
+    };
+    listTaskActivity: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TaskActivityItem"][];
                 };
             };
             401: components["responses"]["Unauthorized"];
@@ -7926,7 +8263,7 @@ export interface operations {
                         id: string;
                         mime_type?: string;
                         task_id: string;
-                        /** @description Relative path inside the notebook task working directory for execution-originated artifacts. */
+                        /** @description Relative path inside the agent task working directory for execution-originated artifacts. The backend only accepts artifact paths under `.artifacts`. */
                         task_relative_path?: string;
                         thumbnail_url?: string;
                         title?: string;
@@ -8075,31 +8412,7 @@ export interface operations {
             403: components["responses"]["Forbidden"];
         };
     };
-    listTaskMessages: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description OK */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": {
-                        [key: string]: unknown;
-                    };
-                };
-            };
-            401: components["responses"]["Unauthorized"];
-            403: components["responses"]["Forbidden"];
-        };
-    };
-    createTaskMessageAndRun: {
+    startTaskRun: {
         parameters: {
             query?: never;
             header?: never;
@@ -8108,32 +8421,37 @@ export interface operations {
         };
         requestBody: {
             content: {
-                "application/json": {
-                    [key: string]: unknown;
-                };
+                "application/json": components["schemas"]["StartTaskRunRequest"];
             };
         };
         responses: {
-            /** @description Message accepted */
+            /** @description Run accepted */
             200: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": {
-                        [key: string]: unknown;
-                    };
+                    "application/json": components["schemas"]["TaskActivityItem"];
+                };
+            };
+            /** @description Unsupported legacy task runner selector or message field */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["UnsupportedFieldError"];
                 };
             };
             401: components["responses"]["Unauthorized"];
             403: components["responses"]["Forbidden"];
-            /** @description TASK_STREAM_CONFLICT or task_terminal_sessions_active */
+            /** @description TASK_STREAM_CONFLICT, task_terminal_sessions_active, or agent runner resolution failure */
             409: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["TaskStreamConflictResponse"] | components["schemas"]["ApiError"];
+                    "application/json": components["schemas"]["TaskStreamConflictResponse"] | components["schemas"]["AgentRunnerResolutionError"] | components["schemas"]["ApiError"];
                 };
             };
             /** @description Validation error (for example TASK_AGENT_ENDPOINT_NOT_CONFIGURED) */
@@ -8143,7 +8461,7 @@ export interface operations {
                 };
                 content?: never;
             };
-            /** @description External agent execution error (AGENT_OFFLINE/AGENT_PROTOCOL_ERROR/AGENT_UPSTREAM_ERROR) */
+            /** @description Agent task runner execution error (AGENT_OFFLINE/AGENT_PROTOCOL_ERROR/AGENT_UPSTREAM_ERROR) */
             502: {
                 headers: {
                     [name: string]: unknown;
@@ -8176,12 +8494,16 @@ export interface operations {
                             /** Format: date-time */
                             ended_at: string | null;
                             exit_code: number | null;
-                            id: string;
                             /** Format: date-time */
                             last_activity_at: string;
                             rows: number;
+                            /** @description Resolved Agent Runner id used by this terminal session. */
+                            runner_id: string;
+                            /** @description Internal runner session id used by this terminal session. */
+                            runner_session_id?: string;
                             /** @enum {string} */
                             status: "pending" | "active" | "disconnected" | "closed" | "failed";
+                            terminal_session_id: string;
                             ws_url: string | null;
                         }[];
                         total: number;
@@ -8217,9 +8539,13 @@ export interface operations {
                 };
                 content: {
                     "application/json": {
-                        session_id: string;
+                        /** @description Resolved Agent Runner id used by this terminal session. */
+                        runner_id: string;
+                        /** @description Internal runner session id used by this terminal session. */
+                        runner_session_id?: string;
                         /** @enum {string} */
                         status: "pending" | "active" | "disconnected" | "closed" | "failed";
+                        terminal_session_id: string;
                         ws_url: string;
                     };
                 };
@@ -8253,12 +8579,16 @@ export interface operations {
                         /** Format: date-time */
                         ended_at: string | null;
                         exit_code: number | null;
-                        id: string;
                         /** Format: date-time */
                         last_activity_at: string;
                         rows: number;
+                        /** @description Resolved Agent Runner id used by this terminal session. */
+                        runner_id: string;
+                        /** @description Internal runner session id used by this terminal session. */
+                        runner_session_id?: string;
                         /** @enum {string} */
                         status: "pending" | "active" | "disconnected" | "closed" | "failed";
+                        terminal_session_id: string;
                         ws_url: string | null;
                     };
                 };

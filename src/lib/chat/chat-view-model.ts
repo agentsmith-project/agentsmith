@@ -26,8 +26,6 @@ function isLocalStreamActive(status: SessionStreamStatus): boolean {
 
 function isSessionTerminating(session: ChatSession | null | undefined): boolean {
   if (!session) return false;
-  const hasTerminalDebt = session.termination_state === 'terminating';
-  if (hasTerminalDebt) return true;
   if (isFinalChatExecutionStatus(session.execution_status)) return false;
   if (session.stop_mode === 'cancel') return false;
   return (

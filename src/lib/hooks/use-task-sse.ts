@@ -6,11 +6,11 @@
 
 import { useEffect, useRef, useState, useCallback } from 'react';
 import { TaskAPI, API_BASE, getApiClient } from '@/lib/api';
-import type { TaskMessage, Artifact, Task, TaskTraceEvent } from '@/lib/types/task';
+import type { TaskActivityItem, Artifact, Task, TaskTraceEvent } from '@/lib/types/task';
 import { createAuthenticatedSSEAsync } from '@/lib/api/sse-client';
 
 export type TaskSSEEvent =
-  | { type: 'message'; data: TaskMessage }
+  | { type: 'activity_item'; data: TaskActivityItem }
   | { type: 'artifact'; data: Artifact }
   | { type: 'task_update'; data: Task }
   | { type: 'trace_event'; data: TaskTraceEvent }
@@ -40,7 +40,7 @@ export interface TaskSSEDebugEvent {
 }
 
 export interface UseTaskSSEOptions {
-  onMessage?: (message: TaskMessage) => void;
+  onMessage?: (message: TaskActivityItem) => void;
   onArtifact?: (artifact: Artifact) => void;
   onTaskUpdate?: (task: Task) => void;
   onTraceEvent?: (event: TaskTraceEvent) => void;
@@ -296,8 +296,8 @@ export function useTaskSSE(
             }
 
             switch (data.type) {
-              case 'message':
-                callbacksRef.current.onMessage?.(data.data as TaskMessage);
+              case 'activity_item':
+                callbacksRef.current.onMessage?.(data.data as TaskActivityItem);
                 break;
               case 'artifact':
                 callbacksRef.current.onArtifact?.(data.data as Artifact);

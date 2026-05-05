@@ -82,7 +82,7 @@ describe('SessionRecoveryProvider', () => {
       sseAllowJwtFallback: false,
       trustedImageDomains: [],
       bypassAuth: false,
-      notebookSseDebugPanel: false,
+      agentTaskSseDebugPanel: false,
       docFixtures: false,
     };
     storeModule = await import('@/lib/stores/authStore');

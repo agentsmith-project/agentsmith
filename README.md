@@ -2,8 +2,8 @@
 
 AgentSmith is the enterprise control plane for the Microservices-Based Agent System (MBOS). It is used to:
 
-- operate AI agents through project-scoped Chat and Notebook workflows
-- manage AI resources such as files, endpoints, project secrets, and agents
+- use Chat for governed model conversations and Agent tasks for file-backed work
+- manage AI resources such as Files, Endpoints, Project secrets, and Agent Runners
 - govern project resource configuration, usage, and cost with project-scoped policy evidence
 
 Core product positioning:
@@ -14,8 +14,8 @@ Core product positioning:
 
 Current product terminology:
 - [`docs/contracts/product-terminology.md`](./docs/contracts/product-terminology.md) is the authoritative source for product-facing object names and IA boundaries.
-- Use `Execution target`, `Project secrets`, `Shared context`, `Access guide`, and `Files` in user-facing product descriptions.
-- Do not collapse `Endpoint` and `Agent` into a generic model-source concept in product-facing docs or UI copy.
+- Use `Model`, `Endpoint`, `Project secrets`, `Shared context`, `Access guide`, and `Files` in user-facing product descriptions.
+- Do not describe Chat or Agent tasks as runner-backed user workflows. Runner configuration belongs in Agent Runners administration surfaces.
 
 ## Tech Stack
 
@@ -47,7 +47,7 @@ Before you run commands, choose one entry path:
 | Entry path | Choose it when | Start here |
 | --- | --- | --- |
 | `ui_only` | You are changing frontend UI, copy, client state, or mock-only behavior. | `npm install`, `npm run dev`, then `npm run verify` for the dry-run plan. |
-| `local_manual` | You need the real local API, Notebook, Terminal, runner, files, or backend behavior. | `make local-real-up` and `make local-real-status` (adapter over local-manual). |
+| `local_manual` | You need the real local API, Agent tasks, Terminal, runner, files, or backend behavior. | `make local-real-up` and `make local-real-status` (adapter over local-manual). |
 | `release_grade` | You need a release-level answer after a large change, release prep, or incident fix. | Run `npm run release:ready`; use `npm run release:status` to read the latest summary. |
 
 Use the [diagnostic catalog](./docs/testing/diagnostic-catalog-v1.md) when you need the smallest command that can reproduce or narrow a failure. Diagnostic commands help you find the problem; gates give the final verdict for a layer.
@@ -141,7 +141,7 @@ Current local runtime baseline:
 - Rehearsal lines validate release paths on a development host; deploy lines operate on target-host release roots.
 
 Current local flows:
-- `local-manual` — Daily development, real-backend manual validation, and notebook / runner checks.
+- `local-manual` — Daily development, real-backend manual validation, and Agent task / Agent Runner checks.
 - `demo-rehearsal` — Local rehearsal of the demo deploy flow on a development host. Uses `agentsmith-demo` / `agentsmith-demo-registry`.
 - `cluster-rehearsal` — Local rehearsal of the real-cluster deployment flow on a development host. Uses `agentsmith-cluster` / `agentsmith-cluster-registry`.
 
@@ -151,12 +151,12 @@ Use `Local Runtime Flows` for local commands and switching. Use the deploy runbo
 ### No-Sandbox Deployment Baseline
 
 ```bash
-make notebook-agent-no-sandbox-smoke
+make agent-task-no-sandbox-smoke
 ```
 
 This validates the required behavior for MVP deployment without sandbox:
-- current API/Web/Runner path is healthy (`make local-real-status`)
-- internal-agent sandbox path is fail-fast with explicit `AGENT_SANDBOX_NOT_CONFIGURED`
+- current API/Web/Agent task path is healthy (`make local-real-status`)
+- sandbox-backed task path is fail-fast with explicit `AGENT_SANDBOX_NOT_CONFIGURED`
 
 ### Internal Adapters And Owner Diagnostics
 

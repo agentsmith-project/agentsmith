@@ -114,11 +114,12 @@ describe('useTaskSSE', () => {
     act(() => {
       currentEventSource?.onmessage?.({
         data: JSON.stringify({
-          type: 'message',
+          type: 'activity_item',
           data: {
             id: 'msg_1',
             task_id: 'task_1',
-            role: 'agent',
+            kind: 'runner_output',
+            actor: 'runner',
             content: 'hello',
             created_at: new Date().toISOString(),
           },
@@ -130,7 +131,7 @@ describe('useTaskSSE', () => {
     expect(onMessage).toHaveBeenCalled();
     expect(onDebug).toHaveBeenCalledWith(expect.objectContaining({ phase: 'connect_start' }));
     expect(onDebug).toHaveBeenCalledWith(expect.objectContaining({ phase: 'open' }));
-    expect(onDebug).toHaveBeenCalledWith(expect.objectContaining({ phase: 'message', summary: 'type=message' }));
+    expect(onDebug).toHaveBeenCalledWith(expect.objectContaining({ phase: 'message', summary: 'type=activity_item' }));
 
     act(() => {
       currentEventSource?.onmessage?.({
@@ -209,11 +210,12 @@ describe('useTaskSSE', () => {
     act(() => {
       currentEventSource?.onmessage?.({
         data: JSON.stringify({
-          type: 'message',
+          type: 'activity_item',
           data: {
             id: 'msg_1',
             task_id: 'task_3',
-            role: 'agent',
+            kind: 'runner_output',
+            actor: 'runner',
             content: 'hello',
             created_at: new Date().toISOString(),
           },
@@ -307,11 +309,12 @@ describe('useTaskSSE', () => {
     act(() => {
       currentEventSource?.onmessage?.({
         data: JSON.stringify({
-          type: 'message',
+          type: 'activity_item',
           data: {
             id: 'msg_1',
             task_id: 'task_6',
-            role: 'agent',
+            kind: 'runner_output',
+            actor: 'runner',
             content: 'hello',
             created_at: new Date().toISOString(),
           },
@@ -494,11 +497,12 @@ describe('useTaskSSE', () => {
       staleAfterReconnect.onopen?.();
       staleAfterReconnect.onmessage?.({
         data: JSON.stringify({
-          type: 'message',
+          type: 'activity_item',
           data: {
             id: 'msg_stale',
             task_id: 'task_late_1',
-            role: 'agent',
+            kind: 'runner_output',
+            actor: 'runner',
             content: 'stale message',
             created_at: new Date().toISOString(),
           },
@@ -560,11 +564,12 @@ describe('useTaskSSE', () => {
       staleAfterUnmount.onopen?.();
       staleAfterUnmount.onmessage?.({
         data: JSON.stringify({
-          type: 'message',
+          type: 'activity_item',
           data: {
             id: 'msg_after_unmount',
             task_id: 'task_late_unmount',
-            role: 'agent',
+            kind: 'runner_output',
+            actor: 'runner',
             content: 'after unmount',
             created_at: new Date().toISOString(),
           },

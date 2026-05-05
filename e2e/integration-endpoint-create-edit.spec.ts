@@ -34,7 +34,7 @@ type EndpointFlowRuntime = {
 type AgentSetupRuntime = {
   credentialNamePrefix: string;
   endpointNamePrefix: string;
-  externalTitlePrefix: string;
+  agentTaskRunnerTitlePrefix: string;
   memberTaskTitlePrefix: string;
 };
 
@@ -69,7 +69,7 @@ function requireAgentSetupRuntime(): AgentSetupRuntime {
   if (!agentSetup) {
     throw new Error('missing_project_governance_runtime:agentSetup');
   }
-  for (const field of ['credentialNamePrefix', 'endpointNamePrefix', 'externalTitlePrefix', 'memberTaskTitlePrefix'] as const) {
+  for (const field of ['credentialNamePrefix', 'endpointNamePrefix', 'agentTaskRunnerTitlePrefix', 'memberTaskTitlePrefix'] as const) {
     if (typeof agentSetup[field] !== 'string' || agentSetup[field].trim().length === 0) {
       throw new Error(`missing_project_governance_runtime:agentSetup.${field}`);
     }

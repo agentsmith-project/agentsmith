@@ -11,8 +11,8 @@
 
 `simple` 模式的意思是：
 
-- 只部署 external agent
-- 不部署 internal agent
+- 只部署 managed Agent Runner 所需的 demo 主链
+- 不部署本地 kind sandbox
 - 不需要主机预装和运维 kind / kubectl
 - 不需要实际部署 JuiceFS CSI
 - 不需要实际部署 sandbox-manager
@@ -33,20 +33,19 @@ simple 模式会部署这些服务：
 - Redis
 - MinIO
 - universal-proxy
-- external-runner
 
 simple 模式不会部署这些东西：
 
 - kind
-- internal sandbox
+- sandbox
 - JuiceFS CSI
 - sandbox-manager
-- internal agent
+- long-lived runner service
 
 所以如果你的目标只是：
 
 - 局域网里给别人访问网页
-- 演示 chat / notebook / files / endpoint / external agent
+- 演示 Chat / Agent tasks / Files / Endpoints / Agent Runners
 
 那 simple 模式就够了。
 
@@ -246,9 +245,8 @@ simple 模式下，这一步会做这些事：
   - Keycloak
 - 启动 app
   - API
-  - Web
-  - universal-proxy
-  - external-runner
+- Web
+- universal-proxy
 
 simple 模式下不会启动：
 
@@ -277,12 +275,12 @@ simple 模式下，这一步会创建和初始化：
 - preset project
 - preset credential
 - preset endpoints
-- preset external agent
-- external runner 运行时连接信息
+- preset agent-task runner
+- managed runner 配置
 
 simple 模式下不会创建：
 
-- preset internal agent
+- internal k8s agent-task runner
 
 如果 bootstrap 成功，说明 demo 的“基础业务对象”已经准备好了。
 
@@ -302,13 +300,13 @@ simple 模式下，这一步会验证：
 - API 可访问
 - Keycloak 可访问
 - universal-proxy 正常
-- external-runner 正常
-- preset project / endpoint / external agent 已创建
-- external notebook / files / user story 主链通过
+- agent-task runner 配置已完成
+- preset project / endpoint / managed runner 已创建
+- agent-task / files / user story 主链通过
 
 simple 模式下不会检查：
 
-- internal agent
+- sandbox runner
 - sandbox-manager
 - kind
 - internal workload pod
@@ -415,9 +413,9 @@ docker ps
 
 如果 agent 不能工作，先看：
 
-- `external-runner`
 - `universal-proxy`
 - `api`
+- bootstrap 写入的 managed runner 配置
 
 如果是文件库问题，先看：
 
@@ -451,17 +449,17 @@ PUBLIC_WEB_BASE_URL=http://localhost:3001
 
 ### 坑 3：以为 simple 模式完全不需要 bundle 里的 kind / kubectl 文件
 
-simple 模式不需要你在主机上预装和运维 kind / kubectl。  
+simple 模式不需要你在主机上预装和运维 kind / kubectl。
 但同一个安装包也支持 `full` 模式，所以 bundle 里仍然会带这些工具文件。
 
 只要你按 simple 模式部署，不会真的去创建和使用 internal k8s 组件。
 
-### 坑 4：simple 模式下还想验证 internal agent
+### 坑 4：simple 模式下还想验证 sandbox runner
 
-simple 模式本来就没有 internal agent。  
+simple 模式本来就没有 sandbox runner。
 这不是故障，是预期。
 
-如果你要 internal agent，就应该部署 `full` 模式。
+如果你要本地 kind sandbox 仿真，就应该部署 `full` 模式。
 
 ---
 
@@ -470,13 +468,13 @@ simple 模式本来就没有 internal agent。
 选 `simple`，适合：
 
 - 快速演示
-- 只看 external agent
+- 只看 Chat / Agent tasks / Files / Endpoints / Agent Runners 主链
 - 不想装 k8s 相关东西
 - 只需要一台机器、局域网访问
 
 选 `full`，适合：
 
-- 需要 internal agent
+- 需要本地 kind sandbox 仿真
 - 需要完整 demo 面
 - 需要验证 sandbox / internal workload
 

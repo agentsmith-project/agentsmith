@@ -10,7 +10,7 @@
   "kind": "journey",
   "lane": "backend-real",
   "entryRoute": "/en-US/workspaces/ws_default/projects/{projectId}/chat",
-  "goal": "项目操作人员在 chat 里遇到外部 AI runtime 离线时，应该立刻看到明确的恢复动作；完成重新连接后，能在同一条对话链里再次成功。",
+  "goal": "项目操作人员在 chat 里遇到 endpoint/model runtime 离线时，应该立刻看到明确的恢复动作；完成重新连接后，能在同一条对话链里再次成功。",
   "gatePolicy": {
     "tier": "default",
     "requiredEvidence": [
@@ -27,10 +27,10 @@
   ],
   "externalDependencies": [
     {
-      "dependencyId": "external-agent-chat-runtime",
+      "dependencyId": "chat-endpoint-runtime",
       "kind": "service",
       "required": true,
-      "note": "backend-real recovery story needs a reconnectable external agent websocket runtime."
+      "note": "backend-real recovery story needs a reconnectable chat endpoint/model runtime."
     }
   ],
   "runtimeData": {
@@ -55,7 +55,7 @@
     {
       "stepId": "open-chat-runtime-recovery",
       "sceneId": "project-chat",
-      "intent": "Open the project chat surface that depends on an external runtime.",
+      "intent": "Open the project chat surface that depends on an endpoint/model runtime.",
       "action": "Open runtime-backed chat",
       "target": "chat__composer",
       "expectedFeedback": "项目操作人员进入可发送消息的 chat 工作面。",
@@ -67,10 +67,10 @@
     {
       "stepId": "trigger-runtime-failure",
       "sceneId": "project-chat",
-      "intent": "Send a message while the external runtime is offline.",
+      "intent": "Send a message while the endpoint/model runtime is offline.",
       "action": "Trigger offline runtime failure",
       "target": "chat__send-btn",
-      "expectedFeedback": "界面明确显示 external agent 离线，而不是静默失败。",
+      "expectedFeedback": "界面明确显示 managed Agent Runner 离线，而不是静默失败。",
       "note": "用户先看到故障，才能判断自己是否需要恢复动作。",
       "evidence": [
         "trace"

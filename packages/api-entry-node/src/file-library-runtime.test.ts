@@ -9,15 +9,11 @@ import { resolveApiEntryPackageRoot } from './file-library-gateway-paths.js';
 
 import {
   RealFileLibraryGatewayManager,
-  resolveFileLibraryMetadataUrlForDockerManualExternalExecution,
   getFileLibraryRuntimeReadiness,
-  resolveFileLibraryMetadataUrlForComposeManagedExternalExecution,
-  resolveFileLibraryMetadataUrlForExternalExecution,
+  resolveFileLibraryMetadataUrlForDeveloperRunnerExecution,
   resolveFileLibraryMetadataUrlForInternalExecution,
   resolveFileLibraryRuntimeConfig,
-  resolveFileLibraryStorageBucketUrlForDockerManualExternalExecution,
-  resolveFileLibraryStorageBucketUrlForComposeManagedExternalExecution,
-  resolveFileLibraryStorageBucketUrlForExternalExecution,
+  resolveFileLibraryStorageBucketUrlForDeveloperRunnerExecution,
   resolveFileLibraryStorageBucketUrlForGatewayRuntime,
   resolveFileLibraryStorageBucketUrlForClientMount,
   resolveFileLibraryStorageBucketUrlForInternalExecution,
@@ -222,130 +218,63 @@ describe('file-library-runtime readiness', () => {
     }
   });
 
-  it('rewrites loopback file library access for external runner execution', () => {
+  it('rewrites loopback file library access for developer runner execution', () => {
     const env = {
-      EXTERNAL_AGENT_EXECUTION_HTTP_BASE_URL: 'http://172.18.0.1:20000',
+      AGENT_RUNNER_DEVELOPER_EXECUTION_HTTP_BASE_URL: 'http://172.18.0.1:20000',
     } as NodeJS.ProcessEnv;
 
     expect(
-      resolveFileLibraryMetadataUrlForExternalExecution(
+      resolveFileLibraryMetadataUrlForDeveloperRunnerExecution(
         'postgres://jfsu_user:secret@localhost:15432/jfs_lib_demo?sslmode=disable',
         env,
       ),
     ).toBe('postgres://jfsu_user:secret@172.18.0.1:15432/jfs_lib_demo?sslmode=disable');
 
     expect(
-      resolveFileLibraryStorageBucketUrlForExternalExecution(
+      resolveFileLibraryStorageBucketUrlForDeveloperRunnerExecution(
         'http://localhost:19000/jfs-lib-demo',
         env,
       ),
     ).toBe('http://172.18.0.1:19000/jfs-lib-demo');
   });
 
-  it('prefers explicit external runner JuiceFS overrides over execution API host inference', () => {
+  it('prefers explicit developer runner JuiceFS overrides over execution API host inference', () => {
     const env = {
-      EXTERNAL_AGENT_EXECUTION_HTTP_BASE_URL: 'http://host.docker.internal:20000',
-      EXTERNAL_AGENT_JUICEFS_META_HOST_OVERRIDE: '192.168.0.220',
-      EXTERNAL_AGENT_JUICEFS_META_PORT_OVERRIDE: '15432',
-      EXTERNAL_AGENT_JUICEFS_STORAGE_ENDPOINT_OVERRIDE: 'http://192.168.0.220:19000',
+      AGENT_RUNNER_DEVELOPER_EXECUTION_HTTP_BASE_URL: 'http://host.docker.internal:20000',
+      AGENT_RUNNER_DEVELOPER_JUICEFS_META_HOST_OVERRIDE: '192.168.0.220',
+      AGENT_RUNNER_DEVELOPER_JUICEFS_META_PORT_OVERRIDE: '15432',
+      AGENT_RUNNER_DEVELOPER_JUICEFS_STORAGE_ENDPOINT_OVERRIDE: 'http://192.168.0.220:19000',
     } as NodeJS.ProcessEnv;
 
     expect(
-      resolveFileLibraryMetadataUrlForExternalExecution(
+      resolveFileLibraryMetadataUrlForDeveloperRunnerExecution(
         'postgres://jfsu_user:secret@files.example.com:15432/jfs_lib_demo?sslmode=disable',
         env,
       ),
     ).toBe('postgres://jfsu_user:secret@192.168.0.220:15432/jfs_lib_demo?sslmode=disable');
 
     expect(
-      resolveFileLibraryStorageBucketUrlForExternalExecution(
+      resolveFileLibraryStorageBucketUrlForDeveloperRunnerExecution(
         'https://files.example.com:19000/jfs-lib-demo',
         env,
       ),
     ).toBe('http://192.168.0.220:19000/jfs-lib-demo');
   });
 
-  it('rewrites loopback file library access for compose-managed external runner execution', () => {
+  it('preserves non-loopback file library access for developer runner execution', () => {
     const env = {
-      DATABASE_URL: 'postgresql://mbos:secret@postgres:5432/mbos',
-      MINIO_ENDPOINT: 'minio',
-      MINIO_PORT: '9000',
-      MINIO_USE_SSL: 'false',
+      AGENT_RUNNER_DEVELOPER_EXECUTION_HTTP_BASE_URL: 'http://172.18.0.1:20000',
     } as NodeJS.ProcessEnv;
 
     expect(
-      resolveFileLibraryMetadataUrlForComposeManagedExternalExecution(
-        'postgres://jfsu_user:secret@localhost:15432/jfs_lib_demo?sslmode=disable',
-        env,
-      ),
-    ).toBe('postgres://jfsu_user:secret@postgres:5432/jfs_lib_demo?sslmode=disable');
-
-    expect(
-      resolveFileLibraryStorageBucketUrlForComposeManagedExternalExecution(
-        'http://localhost:19000/jfs-lib-demo',
-        env,
-      ),
-    ).toBe('http://minio:9000/jfs-lib-demo');
-  });
-
-  it('rewrites client-visible file library access for docker-manual external runner execution', () => {
-    const env = {
-      DOCKER_MANUAL_AGENT_JUICEFS_META_HOST_OVERRIDE: 'host.docker.internal',
-      FILE_LIBRARY_CLIENT_POSTGRES_PORT: '15432',
-      DOCKER_MANUAL_AGENT_JUICEFS_STORAGE_ENDPOINT_OVERRIDE: 'http://host.docker.internal:19000',
-      MINIO_API_PORT: '19000',
-    } as NodeJS.ProcessEnv;
-
-    expect(
-      resolveFileLibraryMetadataUrlForDockerManualExternalExecution(
-        'postgres://jfsu_user:secret@192.168.0.220:15432/jfs_lib_demo?sslmode=disable',
-        env,
-      ),
-    ).toBe('postgres://jfsu_user:secret@host.docker.internal:15432/jfs_lib_demo?sslmode=disable');
-
-    expect(
-      resolveFileLibraryStorageBucketUrlForDockerManualExternalExecution(
-        'http://192.168.0.220:19000/jfs-lib-demo',
-        env,
-      ),
-    ).toBe('http://host.docker.internal:19000/jfs-lib-demo');
-  });
-
-  it('does not guess docker-manual file library access when overrides are missing', () => {
-    const env = {
-      FILE_LIBRARY_CLIENT_POSTGRES_PORT: '15432',
-      MINIO_API_PORT: '19000',
-    } as NodeJS.ProcessEnv;
-
-    expect(
-      resolveFileLibraryMetadataUrlForDockerManualExternalExecution(
-        'postgres://jfsu_user:secret@192.168.0.220:15432/jfs_lib_demo?sslmode=disable',
-        env,
-      ),
-    ).toBe('postgres://jfsu_user:secret@192.168.0.220:15432/jfs_lib_demo?sslmode=disable');
-
-    expect(
-      resolveFileLibraryStorageBucketUrlForDockerManualExternalExecution(
-        'http://192.168.0.220:19000/jfs-lib-demo',
-        env,
-      ),
-    ).toBe('http://192.168.0.220:19000/jfs-lib-demo');
-  });
-
-  it('preserves non-loopback file library access for external runner execution', () => {
-    const env = {
-      EXTERNAL_AGENT_EXECUTION_HTTP_BASE_URL: 'http://172.18.0.1:20000',
-    } as NodeJS.ProcessEnv;
-
-    expect(
-      resolveFileLibraryMetadataUrlForExternalExecution(
+      resolveFileLibraryMetadataUrlForDeveloperRunnerExecution(
         'postgres://jfsu_user:secret@postgres.example.internal:15432/jfs_lib_demo?sslmode=disable',
         env,
       ),
     ).toBe('postgres://jfsu_user:secret@172.18.0.1:15432/jfs_lib_demo?sslmode=disable');
 
     expect(
-      resolveFileLibraryStorageBucketUrlForExternalExecution(
+      resolveFileLibraryStorageBucketUrlForDeveloperRunnerExecution(
         'http://minio.example.internal:19000/jfs-lib-demo',
         env,
       ),

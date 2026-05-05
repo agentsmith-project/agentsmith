@@ -19,9 +19,15 @@ Applies to:
 
 - Use explicit route-level permission gates for protected modules.
   - Chat: `project:endpoint:use`
-  - Notebook: `project:endpoint:use`
+  - Agent tasks: `project:agent_task:use`
+  - Agent task terminal controls: `project:agent_task:use` + `project:agent_task:terminal`
+  - Agent Runners: `project:agent_runner:read` or `project:agent_runner:manage`
+  - Files: `project:endpoint:use`
+  - Usage: `project:endpoint:use`
+  - Access guide: `project:endpoint:use`
 - Workspace project list route (`/workspaces/[workspace]/projects`) may bootstrap with authenticated workspace context before project context exists.
 - Backend remains the final authorization authority (`401/403`).
+- Route labels and route policies must use active route surfaces: `chat`, `agent-tasks`, `files`, `usage`, `use-guide`, and `agent-runners`; do not add `/notebook` or `/agents` aliases.
 
 ## 3. Test Contract
 

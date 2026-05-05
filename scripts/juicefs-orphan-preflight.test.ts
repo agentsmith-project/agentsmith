@@ -12,7 +12,7 @@ import {
   classifyTaskMountProcess,
   extractGatewayProcessIdentity,
   extractJuicefsMountPath,
-  hasAnyNotebookRunnerAlive,
+  hasAnyAgentTaskRunnerAlive,
   loadTaskMountRegistryOwners,
   matchGatewayStateForProcess,
   resolvePreflightOptions,
@@ -53,14 +53,14 @@ function buildProcess(overrides: Partial<ManagedProcessInfo> = {}): ManagedProce
 function buildRunnerProcess(pid: number, instanceId?: string): ManagedProcessInfo {
   return buildProcess({
     pid,
-    command: `node /workspace/packages/notebook-codex-runner/dist/index.js${instanceId ? ` runner_instance_id=${instanceId}` : ''}`,
+    command: `node /workspace/packages/agent-task-runner/dist/index.js${instanceId ? ` runner_instance_id=${instanceId}` : ''}`,
   });
 }
 
 function buildCanonicalTsxRunnerProcess(pid: number, overrides: Partial<ManagedProcessInfo> = {}): ManagedProcessInfo {
   return buildProcess({
     pid,
-    cwd: '/home/percy/works/mbos-v1/agentsmith/packages/notebook-codex-runner',
+    cwd: '/home/percy/works/mbos-v1/agentsmith/packages/agent-task-runner',
     command: 'tsx src/index.ts',
     ...overrides,
   });
@@ -69,14 +69,14 @@ function buildCanonicalTsxRunnerProcess(pid: number, overrides: Partial<ManagedP
 function buildRunnerTitleProcess(pid: number, instanceId: string): ManagedProcessInfo {
   return buildProcess({
     pid,
-    command: `agentsmith-notebook-codex-runner runner_instance_id=${instanceId}`,
+    command: `agentsmith-agent-task-runner runner_instance_id=${instanceId}`,
   });
 }
 
-function buildNonRunnerNotebookCommandProcess(pid: number): ManagedProcessInfo {
+function buildNonRunnerAgentTaskCommandProcess(pid: number): ManagedProcessInfo {
   return buildProcess({
     pid,
-    command: 'vitest packages/notebook-codex-runner/src/index.ts --runInBand',
+    command: 'vitest packages/agent-task-runner/src/index.ts --runInBand',
   });
 }
 
@@ -722,10 +722,10 @@ describe('juicefs orphan preflight', () => {
     });
   });
 
-  it('recognizes the runner process title used by notebook-codex-runner when deciding ownerless mount liveness', () => {
+  it('recognizes the runner process title used by agent-task-runner when deciding ownerless mount liveness', () => {
     const runnerProcess = buildRunnerTitleProcess(8100, 'runner-live');
     const livePids = new Set([runnerProcess.pid]);
-    const anyRunnerAlive = hasAnyNotebookRunnerAlive({
+    const anyRunnerAlive = hasAnyAgentTaskRunnerAlive({
       trackedRunnerPid: null,
       livePids,
       processes: [runnerProcess],
@@ -750,11 +750,11 @@ describe('juicefs orphan preflight', () => {
     });
   });
 
-  it('recognizes canonical tsx src/index.ts launches only when cwd resolves to notebook-codex-runner', () => {
+  it('recognizes canonical tsx src/index.ts launches only when cwd resolves to agent-task-runner', () => {
     const runnerProcess = buildCanonicalTsxRunnerProcess(8100);
     const livePids = new Set([runnerProcess.pid]);
 
-    const anyRunnerAlive = hasAnyNotebookRunnerAlive({
+    const anyRunnerAlive = hasAnyAgentTaskRunnerAlive({
       trackedRunnerPid: null,
       livePids,
       processes: [runnerProcess],
@@ -763,13 +763,13 @@ describe('juicefs orphan preflight', () => {
     expect(anyRunnerAlive).toBe(true);
   });
 
-  it('does not treat another package tsx src/index.ts launch as notebook runner liveness', () => {
+  it('does not treat another package tsx src/index.ts launch as Agent task runner liveness', () => {
     const apiProcess = buildCanonicalTsxRunnerProcess(8100, {
       cwd: '/home/percy/works/mbos-v1/agentsmith/packages/api-entry-node',
     });
     const livePids = new Set([apiProcess.pid]);
 
-    const anyRunnerAlive = hasAnyNotebookRunnerAlive({
+    const anyRunnerAlive = hasAnyAgentTaskRunnerAlive({
       trackedRunnerPid: null,
       livePids,
       processes: [apiProcess],
@@ -778,10 +778,10 @@ describe('juicefs orphan preflight', () => {
     expect(anyRunnerAlive).toBe(false);
   });
 
-  it('does not treat test-style commands that merely mention notebook-codex-runner as live runners', () => {
-    const noisyProcess = buildNonRunnerNotebookCommandProcess(8100);
+  it('does not treat test-style commands that merely mention agent-task-runner as live runners', () => {
+    const noisyProcess = buildNonRunnerAgentTaskCommandProcess(8100);
     const livePids = new Set([noisyProcess.pid]);
-    const anyRunnerAlive = hasAnyNotebookRunnerAlive({
+    const anyRunnerAlive = hasAnyAgentTaskRunnerAlive({
       trackedRunnerPid: null,
       livePids,
       processes: [noisyProcess],
@@ -793,7 +793,7 @@ describe('juicefs orphan preflight', () => {
   it('does not reclaim ownerless mounts when the tracked runner pid is a live supervisor whose child is the canonical tsx runner', () => {
     const supervisorProcess = buildProcess({
       pid: 8100,
-      command: 'make notebook-agent-runner',
+      command: 'make agent-task-runner-from-state',
     });
     const runnerProcess = buildCanonicalTsxRunnerProcess(8101, {
       ppid: supervisorProcess.pid,
@@ -803,7 +803,7 @@ describe('juicefs orphan preflight', () => {
       [supervisorProcess.pid, supervisorProcess],
       [runnerProcess.pid, runnerProcess],
     ]);
-    const anyRunnerAlive = hasAnyNotebookRunnerAlive({
+    const anyRunnerAlive = hasAnyAgentTaskRunnerAlive({
       trackedRunnerPid: supervisorProcess.pid,
       livePids,
       processes: [supervisorProcess, runnerProcess],
@@ -832,7 +832,7 @@ describe('juicefs orphan preflight', () => {
       command: 'node /tmp/unrelated-service.js',
     });
     const livePids = new Set([reusedPidProcess.pid]);
-    const anyRunnerAlive = hasAnyNotebookRunnerAlive({
+    const anyRunnerAlive = hasAnyAgentTaskRunnerAlive({
       trackedRunnerPid: reusedPidProcess.pid,
       livePids,
       processes: [reusedPidProcess],

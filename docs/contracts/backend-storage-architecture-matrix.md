@@ -76,16 +76,16 @@ Audience: 架构评审、后端、前端、测试、发布负责人
 | 项目主数据 | project routes / workspace scoped collections | project records | `docStore` / Mongo | 主数据 | 通过 | 标准 workspace-scoped 真相 |
 | Endpoint 配置 | `packages/api-entry-node/src/endpoint-resource-service.ts` | endpoint records | `docStore` / Mongo | 主数据 | 通过 | 符合企业控制面模式 |
 | Project secrets / 凭据引用 | `packages/api-entry-node/src/endpoint-resource-service.ts` 等 | credentials / secret refs | `docStore` / Mongo | 主数据 | 通过 | 需持续保证 secret-at-rest 约束 |
-| Agents 主数据 | `packages/api-entry-node/src/agent-resource-service.ts` | agent records / keys | `docStore` / Mongo | 主数据 | 通过 | 与 presence 分层 |
-| Agent 在线状态 | `packages/api-entry-node/src/agent-resource-service.ts` | heartbeat / presence | shared cache / Redis + 本地 socket 镜像 | 共享运行态 | 通过 | 当前实现适合多实例 presence 投影 |
+| Agent Runners 主数据 | `packages/api-entry-node/src/agent-resource-service.ts` | runner records / keys | `docStore` / Mongo | 主数据 | 通过 | 与 presence 分层 |
+| Agent Runner 在线状态 | `packages/api-entry-node/src/agent-resource-service.ts` | heartbeat / presence | shared cache / Redis + 本地 socket 镜像 | 共享运行态 | 通过 | 当前实现适合多实例 presence 投影 |
 | 用户外部连接 | `packages/api-entry-node/src/user-external-connections-store.ts` | external connections | `docStore` / Mongo | 主数据 | 通过 | 外部账号绑定真相已持久化 |
 | Feishu OAuth state | `packages/api-entry-node/src/feishu-oauth.ts` | OAuth callback state | shared cache / Redis TTL | 共享运行态 | 通过 | API 重启后回调可继续完成 |
 | 文件库 catalog / backend / mount access | `packages/api-entry-node/src/file-library-persistence.ts`, `packages/api-entry-node/src/project-file-library-routes.ts` | catalog / backend / mount access | `docStore` / Mongo | 主数据 | 通过 | 已修复 API 重启即丢问题 |
 | 文件库 gateway 运行态 | `packages/api-entry-node/src/file-library-runtime.ts` | gateway sessions / child proc state | 进程内内存 | 瞬态运行态 | 条件通过 | 连接型运行态，若未来多实例 HA 需增强 |
 | Chat 主数据 | `packages/api-entry-node/src/chat-resource-service.ts` | sessions / messages / attachments | `docStore` / Mongo | 主数据 | 通过 | 当前真相清晰 |
 | Chat 流式状态 | `packages/api-entry-node/src/chat-stream-state.ts` | active stream registry / abort handles | 本地内存 + shared cache | 共享/瞬态混合 | 通过 | 分层合理 |
-| Notebook 主数据 | `packages/api-entry-node/src/task-route-handler.ts`, `packages/api-entry-node/src/notebook-task/task-store.ts`, `packages/api-entry-node/src/notebook-trace-store.ts` | tasks / messages / artifacts / traces | `docStore` / Mongo | 主数据 | 通过 | 已与 file library workspace 真相打通 |
-| Notebook 当前运行控制 | `packages/api-entry-node/src/notebook-task/task-runtime-state.ts`, `packages/api-entry-node/src/notebook-task-sse-broker.ts` | active runs / cancel handles / hot cache | 进程内内存 | 瞬态运行态 | 条件通过 | 当前架构可接受，但不是 HA 执行控制 |
+| Agent task 主数据 | `packages/api-entry-node/src/task-route-handler.ts`, `packages/api-entry-node/src/notebook-task/task-store.ts`, `packages/api-entry-node/src/notebook-trace-store.ts` | tasks / messages / artifacts / traces | `docStore` / Mongo | 主数据 | 通过 | 已与 file library workspace 真相打通 |
+| Agent task 当前运行控制 | `packages/api-entry-node/src/notebook-task/task-runtime-state.ts`, `packages/api-entry-node/src/notebook-task-sse-broker.ts` | active runs / cancel handles / hot cache | 进程内内存 | 瞬态运行态 | 条件通过 | 当前架构可接受，但不是 HA 执行控制 |
 | 项目资源策略主数据 | `packages/api-entry-node/src/project-resource-policy-store.ts` | allow-list / limits / policies | `docStore` / Mongo | 主数据 | 通过 | 已从旧 Map store 收敛 |
 | 资源策略分钟级频控 | `packages/api-entry-node/src/project-resource-policy-enforcer.ts` | minute bucket counters | shared cache / Redis | 共享运行态 | 通过 | 已支持跨重启/跨实例共享 |
 | 成员治理 | `packages/api-entry-node/src/project-member-governance-persistence.ts`, `packages/api-entry-node/src/project-authz-engine.ts` | memberships / groups / templates / permissions / history | `docStore` / Mongo | 主数据 | 通过 | 达到产品级治理真相 |
@@ -105,7 +105,7 @@ Audience: 架构评审、后端、前端、测试、发布负责人
 
 - system workspace 配置
 - file library
-- notebook task / artifact / trace 主数据
+- Agent task / artifact / trace 主数据
 - chat 主数据
 - resource policy 主数据
 - member governance
@@ -125,7 +125,7 @@ Audience: 架构评审、后端、前端、测试、发布负责人
 
 以下模块当前设计是合理的，但它们的成熟度依赖部署假设：
 
-- notebook 当前运行控制
+- Agent task 当前运行控制
 - SSE tickets
 - file library gateway runtime
 
@@ -149,7 +149,7 @@ Audience: 架构评审、后端、前端、测试、发布负责人
 ### 需要明确部署前提
 
 - SSE ticket 单进程模型
-- notebook active run / cancel 进程内控制
+- Agent task active run / cancel 进程内控制
 - file library gateway 进程内会话模型
 
 ### 不纳入产品主数据成熟度主线
@@ -167,7 +167,7 @@ Audience: 架构评审、后端、前端、测试、发布负责人
 若目标从“正式发布可用”进一步提升到“更强的多实例与高可用成熟度”，建议按以下顺序推进：
 
 1. SSE ticket 共享化
-2. notebook active run / cancel 控制共享化
+2. Agent task active run / cancel 控制共享化
 3. file library gateway manager 外部化
 4. 如需继续提升工程证据链，再单独立项治理证据型存储外部化
 

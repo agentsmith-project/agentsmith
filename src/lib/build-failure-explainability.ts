@@ -7,7 +7,7 @@ export type ChatStreamFailureKind =
   | 'agent_upstream'
   | 'interrupted';
 
-export type NotebookRealtimeFailureKind =
+export type AgentTaskRealtimeFailureKind =
   | 'connecting'
   | 'reconnecting'
   | 'disconnected'
@@ -21,7 +21,7 @@ export type NotebookRealtimeFailureKind =
   | 'ticket_network'
   | 'reconcile_failed';
 
-export type NotebookTraceFailureKind =
+export type AgentTaskTraceFailureKind =
   | 'trace_unavailable'
   | 'trace_forbidden'
   | 'trace_network'
@@ -42,10 +42,10 @@ export function classifyChatStreamFailure(errorCode?: string | null): ChatStream
   }
 }
 
-export function classifyNotebookRealtimeFailure(
+export function classifyAgentTaskRealtimeFailure(
   connectionStatus: 'connecting' | 'connected' | 'reconnecting' | 'disconnected' | 'error',
   errorCode?: string | null,
-): NotebookRealtimeFailureKind | null {
+): AgentTaskRealtimeFailureKind | null {
   if (connectionStatus === 'connected') return null;
   if (connectionStatus === 'error') {
     switch (errorCode) {
@@ -74,7 +74,7 @@ export function classifyNotebookRealtimeFailure(
   return connectionStatus;
 }
 
-export function classifyNotebookTraceFailure(error: unknown): NotebookTraceFailureKind {
+export function classifyAgentTaskTraceFailure(error: unknown): AgentTaskTraceFailureKind {
   if (error instanceof ApiError) {
     if (error.isNotFoundError()) {
       return 'trace_unavailable';

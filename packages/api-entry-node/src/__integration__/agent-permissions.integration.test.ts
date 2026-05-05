@@ -1,31 +1,61 @@
 import { describe, expect, it } from 'vitest';
-import { apiFetchWithToken, startServer } from './test-support.js';
+import { apiFetchWithToken, startServerWithDeps } from './test-support.js';
+import { createDefaultNodeApiDeps } from '../index.js';
+import {
+  upsertProjectMemberPermissionState,
+  upsertProjectMembershipRecord,
+} from '../project-member-governance-persistence.js';
 
 describe('api-entry-node agent permissions integration', () => {
-  it('lets members use agents but blocks agent management routes', async () => {
-    const { baseUrl, deps } = startServer();
-    const created = await deps.agentResourceService.createAgent('ws_default', 'proj_1', {
-      name: 'Managed Agent',
-      mode: 'external',
-      interaction_kind: 'chat',
+  it('lets read-scoped members list Agent Runners but blocks management routes', async () => {
+    const deps = createDefaultNodeApiDeps();
+    const project = await deps.createProjectUseCase.execute({
+      workspaceId: 'ws_default',
+      actorId: 'user_owner',
+      input: {
+        name: `Agent Runner Read ${Math.random().toString(16).slice(2)}`,
+        visibility: 'private',
+        join_policy: 'approval_required',
+      },
+    });
+    const { baseUrl } = startServerWithDeps(deps);
+    await upsertProjectMembershipRecord(deps.docStore, 'ws_default', project.id, {
+      project_id: project.id,
+      user_id: 'user_test',
+      user_email: 'test@example.com',
+      user_name: 'Test User',
+      status: 'active',
+      joined_at: new Date().toISOString(),
+    });
+    await upsertProjectMemberPermissionState(
+      deps.docStore,
+      'ws_default',
+      project.id,
+      'user_test',
+      {
+        mode: 'custom',
+        template: null,
+        permissions: ['project:agent_runner:read'],
+      },
+    );
+    const agentRunnerPath = `/api/v1/workspaces/ws_default/projects/${project.id}/agent-runners`;
+    const created = await deps.agentResourceService.createAgent('ws_default', project.id, {
+      name: 'Managed Agent Runner',
+      runner_provider: 'managed',
       status: 'enabled',
+      runner_status: 'ready',
       owner_id: 'user_owner',
       visibility: 'public',
-      execution_preferences_json: {
-        chat: {
-          endpoint_id: 'ep_default',
-          wire_api: 'responses',
-          model: 'placeholder-model',
-        },
+      default_endpoint_id: 'ep_default',
+      capabilities: {
+        task_execution: true,
+        terminal: true,
       },
-      config: {
-        _external_key_source: 'generated',
-      } as never,
     });
 
     const listRes = await apiFetchWithToken(
       baseUrl,
-      '/api/v1/workspaces/ws_default/projects/proj_1/agents',
+      agentRunnerPath,
       'test-token',
     );
     expect(listRes.status).toBe(200);
@@ -34,7 +64,7 @@ describe('api-entry-node agent permissions integration', () => {
 
     const patchRes = await apiFetchWithToken(
       baseUrl,
-      `/api/v1/workspaces/ws_default/projects/proj_1/agents/${created.id}`,
+      `${agentRunnerPath}/${created.id}`,
       'test-token',
       {
         method: 'PATCH',
@@ -46,7 +76,7 @@ describe('api-entry-node agent permissions integration', () => {
 
     const keyRes = await apiFetchWithToken(
       baseUrl,
-      `/api/v1/workspaces/ws_default/projects/proj_1/agents/${created.id}/keys`,
+      `${agentRunnerPath}/${created.id}/keys`,
       'test-token',
       { method: 'POST' },
     );
@@ -54,7 +84,7 @@ describe('api-entry-node agent permissions integration', () => {
 
     const deleteRes = await apiFetchWithToken(
       baseUrl,
-      `/api/v1/workspaces/ws_default/projects/proj_1/agents/${created.id}`,
+      `${agentRunnerPath}/${created.id}`,
       'test-token',
       { method: 'DELETE' },
     );

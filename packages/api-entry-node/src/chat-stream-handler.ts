@@ -9,7 +9,6 @@ import {
   ACTIVE_CHAT_STREAMS,
   beginSessionExecution,
   finalizeSessionExecution,
-  hasSessionHardTeardownDebt,
   markSessionExecutionPhase,
   readSessionExecutionRecord,
   STREAM_REGISTRY_FINAL_TTL_SECONDS,
@@ -31,16 +30,7 @@ import {
   resolveChatInputsFromAttachmentIndex,
   toChatAttachmentSnapshots,
 } from './chat-input-refs.js';
-import { sanitizeWorkloadId } from './internal-agent-pod-manager.js';
-import { issueInternalTicket, type ResolvedInternalTicket } from './internal-ticket-store.js';
-import { resolveRequiredConfiguredPublicApiBase } from './agent-execution-api-base.js';
-import { readAgentExecutionPreferences } from './agent-execution-preferences.js';
-import { resolveExecutionApiBase } from './notebook-execution-orchestrator.js';
-import { ensureInternalChatSessionWorkspace } from './chat-internal-workspace.js';
-import {
-  resolveInternalWorkloadCoordinator,
-  type InternalWorkloadHolderRef,
-} from './internal-workload-coordinator.js';
+import type { ResolvedInternalTicket } from './internal-ticket-store.js';
 
 interface ChatStreamHandlerArgs {
   route: ChatRoute;
@@ -58,60 +48,12 @@ interface ChatStreamHandlerArgs {
 const MAX_ATTACHMENTS_PER_MESSAGE = 8;
 const MAX_ATTACHMENT_TOTAL_SIZE_BYTES = 60 * 1024 * 1024;
 
-class AgentStreamRouteError extends Error {
-  code: string;
-
-  constructor(code: string, message: string) {
-    super(message);
-    this.name = 'AgentStreamRouteError';
-    this.code = code;
-  }
-}
-
-function mapAgentDispatchError(error: unknown): AgentStreamRouteError {
-  if (error instanceof AgentStreamRouteError) return error;
-  const codeCandidate = error && typeof error === 'object'
-    ? (error as { code?: unknown }).code
-    : undefined;
-  if (
-    typeof codeCandidate === 'string'
-    && (codeCandidate.startsWith('AGENT_SANDBOX_') || codeCandidate === 'AGENT_EXECUTION_API_BASE_NOT_CONFIGURED')
-  ) {
-    return new AgentStreamRouteError(codeCandidate, codeCandidate.toLowerCase());
-  }
-  const message = error instanceof Error ? error.message : 'agent_stream_error';
-  const sandboxStatusMatch = message.match(/sandbox_manager_error:\s*[a-z_]+\s+(\d{3})\b/i)
-    ?? message.match(/sandbox_manager_error:\s*(\d{3})\b/i);
-  const sandboxStatus = sandboxStatusMatch ? Number.parseInt(sandboxStatusMatch[1], 10) : null;
-  if (sandboxStatus === 403) {
-    return new AgentStreamRouteError('AGENT_SANDBOX_FORBIDDEN', 'agent_sandbox_forbidden');
-  }
-  if (sandboxStatus === 404) {
-    return new AgentStreamRouteError('AGENT_SANDBOX_NOT_FOUND', 'agent_sandbox_not_found');
-  }
-  if (sandboxStatus !== null && sandboxStatus >= 500) {
-    return new AgentStreamRouteError('AGENT_SANDBOX_UNAVAILABLE', 'agent_sandbox_unavailable');
-  }
-  if (message === 'agent_offline') {
-    return new AgentStreamRouteError('AGENT_OFFLINE', 'agent_offline');
-  }
-  if (message === 'agent_workspace_mismatch') {
-    return new AgentStreamRouteError('AGENT_WORKSPACE_MISMATCH', 'agent_workspace_mismatch');
-  }
-  return new AgentStreamRouteError('AGENT_STREAM_ERROR', message);
-}
-
 function endpointSupportsMultimodal(endpoint: { capabilities?: Array<{ type: string; enabled: boolean }> }): boolean {
   return (
     endpoint.capabilities?.some(
       (capability) => capability.type === 'multimodal_completion' && capability.enabled,
     ) ?? false
   );
-}
-
-function buildProxyUsername(user: AuthenticatedUser): string {
-  const base = (user.email || user.id || 'unknown').toLowerCase();
-  return base.replace(/[^a-z0-9._-]/g, '_').slice(0, 64) || 'unknown';
 }
 
 export function selectLatestCanonicalBranchLeaf(
@@ -163,10 +105,6 @@ function readAttachmentIdsFromInput(rawAttachments: unknown): string[] | null {
     out.push(item);
   }
   return out;
-}
-
-function buildSessionExecutionTransport(useExternalAgent: boolean) {
-  return useExternalAgent ? 'agent_runner' : 'direct_provider';
 }
 
 export async function handleChatStreamRoute(args: ChatStreamHandlerArgs): Promise<boolean> {
@@ -260,12 +198,10 @@ export async function handleChatStreamRoute(args: ChatStreamHandlerArgs): Promis
     route.sessionId,
   );
   const authoritativeSessionState = authoritativeExecution?.status ?? null;
-  const authoritativeHardTeardownDebt = hasSessionHardTeardownDebt(authoritativeExecution);
   if (
     authoritativeSessionState === 'running' ||
     authoritativeSessionState === 'stopping' ||
-    authoritativeSessionState === 'terminating' ||
-    authoritativeHardTeardownDebt
+    authoritativeSessionState === 'terminating'
   ) {
     logChatStreamEvent({
       workspaceId: route.workspaceId,
@@ -278,12 +214,6 @@ export async function handleChatStreamRoute(args: ChatStreamHandlerArgs): Promis
     json(res, 409, {
       error_code: 'CHAT_SESSION_STREAM_CONFLICT',
       message: 'chat_session_stream_conflict',
-      ...(authoritativeHardTeardownDebt
-        ? {
-            reason: 'hard_teardown_pending',
-            hard_teardown_status: authoritativeExecution.hardTeardownStatus,
-          }
-        : {}),
     });
     return true;
   }
@@ -311,46 +241,39 @@ export async function handleChatStreamRoute(args: ChatStreamHandlerArgs): Promis
     branch_leaf_message_id?: string;
     input?: { role?: 'user'; content?: string; inputs?: unknown; attachments?: unknown };
   };
-  const useExternalAgent = typeof session.external_agent_id === 'string' && session.external_agent_id.length > 0;
-  const endpointId = useExternalAgent ? null : (raw.endpoint_id ?? session.endpoint_id);
-  const endpoint = endpointId
-    ? await deps.endpointResourceService.getEndpoint(route.workspaceId, route.projectId, endpointId)
-    : null;
+  const endpointId = raw.endpoint_id ?? session.endpoint_id;
+  const endpoint = await deps.endpointResourceService.getEndpoint(route.workspaceId, route.projectId, endpointId);
   const requestId = typeof req.headers['x-request-id'] === 'string' ? req.headers['x-request-id'] : null;
-  if (!useExternalAgent) {
-    if (!endpoint || endpoint.status !== 'active' || !endpoint.credential_ref) {
-      json(res, 422, { error_code: 'VALIDATION_ERROR', message: 'chat_endpoint_unavailable' });
-      return true;
-    }
-    const governancePreflight = await enforceEndpointGovernancePreflight({
-      deps,
-      workspaceId: route.workspaceId,
-      projectId: route.projectId,
-      endpoint,
-      userId: user.id,
-      requestId,
-      source: 'chat_stream_preflight',
-      contextMetadata: {
-        session_id: route.sessionId,
-      },
-      recordAccessDeniedEvidence: false,
-    });
-    if (!governancePreflight.allowed) {
-      if (governancePreflight.retryAfterSeconds) {
-        res.setHeader('Retry-After', String(governancePreflight.retryAfterSeconds));
-      }
-      json(res, governancePreflight.statusCode, governancePreflight.responseBody);
-      return true;
-    }
+  if (!endpoint || endpoint.status !== 'active' || !endpoint.credential_ref) {
+    json(res, 422, { error_code: 'VALIDATION_ERROR', message: 'chat_endpoint_unavailable' });
+    return true;
   }
-  const apiKey = endpoint?.credential_ref
-    ? await deps.endpointResourceService.getCredentialSecret(
-      route.workspaceId,
-      route.projectId,
-      endpoint.credential_ref,
-    )
-    : null;
-  if (!useExternalAgent && !apiKey) {
+  const governancePreflight = await enforceEndpointGovernancePreflight({
+    deps,
+    workspaceId: route.workspaceId,
+    projectId: route.projectId,
+    endpoint,
+    userId: user.id,
+    requestId,
+    source: 'chat_stream_preflight',
+    contextMetadata: {
+      session_id: route.sessionId,
+    },
+    recordAccessDeniedEvidence: false,
+  });
+  if (!governancePreflight.allowed) {
+    if (governancePreflight.retryAfterSeconds) {
+      res.setHeader('Retry-After', String(governancePreflight.retryAfterSeconds));
+    }
+    json(res, governancePreflight.statusCode, governancePreflight.responseBody);
+    return true;
+  }
+  const apiKey = await deps.endpointResourceService.getCredentialSecret(
+    route.workspaceId,
+    route.projectId,
+    endpoint.credential_ref,
+  );
+  if (!apiKey) {
     json(res, 422, { error_code: 'VALIDATION_ERROR', message: 'chat_endpoint_credential_missing' });
     return true;
   }
@@ -371,10 +294,8 @@ export async function handleChatStreamRoute(args: ChatStreamHandlerArgs): Promis
   const streamId = `stream_${Date.now()}_${Math.random().toString(16).slice(2)}`;
   const streamStartedAt = new Date().toISOString();
   const streamStartedAtMs = Date.now();
-  const streamEndpointId = useExternalAgent ? `agent:${session.external_agent_id}` : (endpoint?.id ?? '');
-  const streamModel = useExternalAgent ? (raw.model ?? session.model) : (endpoint?.model ?? session.model);
-  const executionTransport = buildSessionExecutionTransport(useExternalAgent);
-  let executionInternalAgent = false;
+  const streamEndpointId = endpoint.id;
+  const streamModel = endpoint.model ?? session.model;
   let sessionExecutionBootstrapped = false;
   const ensureSessionExecutionBootstrapped = async (): Promise<boolean> => {
     if (sessionExecutionBootstrapped) return true;
@@ -385,22 +306,12 @@ export async function handleChatStreamRoute(args: ChatStreamHandlerArgs): Promis
         projectId: route.projectId,
         sessionId: route.sessionId,
         streamId,
-        transport: executionTransport,
-        internalAgent: executionInternalAgent,
         startedAt: streamStartedAt,
         endpointId: streamEndpointId,
-        externalAgentId: session.external_agent_id ?? null,
       },
       STREAM_REGISTRY_TTL_SECONDS,
     );
     if (!execution) {
-      const blockingExecution = await readSessionExecutionRecord(
-        deps.cache,
-        route.workspaceId,
-        route.projectId,
-        route.sessionId,
-      );
-      const hardTeardownDebt = hasSessionHardTeardownDebt(blockingExecution);
       logChatStreamEvent({
         workspaceId: route.workspaceId,
         projectId: route.projectId,
@@ -412,12 +323,6 @@ export async function handleChatStreamRoute(args: ChatStreamHandlerArgs): Promis
       json(res, 409, {
         error_code: 'CHAT_SESSION_STREAM_CONFLICT',
         message: 'chat_session_stream_conflict',
-        ...(hardTeardownDebt
-          ? {
-              reason: 'hard_teardown_pending',
-              hard_teardown_status: blockingExecution.hardTeardownStatus,
-            }
-          : {}),
       });
       return false;
     }
@@ -460,17 +365,7 @@ export async function handleChatStreamRoute(args: ChatStreamHandlerArgs): Promis
       source_object_key?: string;
     }> = [];
     if (inputRefs.length > 0 || attachmentIdsFromInput.length > 0) {
-      if (useExternalAgent) {
-        const agent = await deps.agentResourceService.getAgent(
-          route.workspaceId,
-          route.projectId,
-          session.external_agent_id ?? '',
-        );
-        if (!agent || !agent.capabilities?.multimodal_completion) {
-          json(res, 422, { error_code: 'VALIDATION_ERROR', message: 'external_agent_not_multimodal' });
-          return true;
-        }
-      } else if (!endpoint || !endpointSupportsMultimodal(endpoint)) {
+      if (!endpointSupportsMultimodal(endpoint)) {
         json(res, 422, { error_code: 'VALIDATION_ERROR', message: 'chat_endpoint_not_multimodal' });
         return true;
       }
@@ -630,8 +525,7 @@ export async function handleChatStreamRoute(args: ChatStreamHandlerArgs): Promis
     requestId,
     metadata: {
       stream_id: streamId,
-      endpoint_id: endpoint?.id ?? null,
-      external_agent_id: session.external_agent_id ?? null,
+      endpoint_id: endpoint.id,
     },
   });
   ACTIVE_CHAT_STREAMS.set(streamId, {
@@ -694,10 +588,7 @@ export async function handleChatStreamRoute(args: ChatStreamHandlerArgs): Promis
         sessionId: route.sessionId,
         streamId,
         status,
-        transport: executionTransport,
-        internalAgent: executionInternalAgent,
         endpointId: streamEndpointId,
-        externalAgentId: session.external_agent_id ?? null,
         updatedAt,
       },
     );
@@ -705,7 +596,7 @@ export async function handleChatStreamRoute(args: ChatStreamHandlerArgs): Promis
 
   const writeActiveExecutionPhase = async (
     phase: 'dispatching' | 'streaming',
-    extra?: { requestId?: string; internalAgent?: boolean },
+    extra?: { requestId?: string },
   ) => {
     await markSessionExecutionPhase(
       deps.cache,
@@ -715,7 +606,6 @@ export async function handleChatStreamRoute(args: ChatStreamHandlerArgs): Promis
         sessionId: route.sessionId,
         phase,
         ...(extra?.requestId ? { requestId: extra.requestId } : {}),
-        ...(typeof extra?.internalAgent === 'boolean' ? { internalAgent: extra.internalAgent } : {}),
       },
       STREAM_REGISTRY_TTL_SECONDS,
     );
@@ -881,397 +771,6 @@ export async function handleChatStreamRoute(args: ChatStreamHandlerArgs): Promis
     return true;
   };
 
-  if (useExternalAgent) {
-    const externalAgentId = session.external_agent_id ?? '';
-    let internalWorkloadHolder: InternalWorkloadHolderRef | undefined;
-    try {
-      const agent = await deps.agentResourceService.getAgent(route.workspaceId, route.projectId, externalAgentId);
-      if (!agent) {
-        throw new AgentStreamRouteError('AGENT_NOT_FOUND', 'agent_not_found');
-      }
-      const agentExecutionPreferences = readAgentExecutionPreferences(agent, 'chat');
-      const executionEndpointId = agentExecutionPreferences.endpointId;
-      const executionWireApi = agentExecutionPreferences.wireApi;
-      const executionModel = (raw.model ?? session.model ?? agentExecutionPreferences.model ?? '').trim();
-      if (!executionEndpointId) {
-        throw new AgentStreamRouteError('AGENT_ENDPOINT_NOT_CONFIGURED', 'agent_endpoint_not_configured');
-      }
-      if (agent?.mode === 'internal') {
-        executionInternalAgent = true;
-        const workspaceBindingManager = deps.internalAgentWorkspaceBindingManager ?? deps.internalAgentWorkspaceProvisioner;
-        if (!deps.internalAgentPodManager || !workspaceBindingManager) {
-          throw new AgentStreamRouteError('AGENT_SANDBOX_NOT_CONFIGURED', 'agent_sandbox_not_configured');
-        }
-        const preparedSession = await ensureInternalChatSessionWorkspace({
-          deps,
-          session,
-          agent,
-        });
-        const workspaceBinding = await workspaceBindingManager.ensureWorkspaceBinding({
-          workspaceId: route.workspaceId,
-          projectId: route.projectId,
-          fileLibraryId: preparedSession.workspaceFileLibraryId,
-          taskId: route.sessionId,
-        });
-        const workloadId = sanitizeWorkloadId(route.sessionId);
-        await deps.internalAgentPodManager.ensureAgentReady({
-          workspaceId: route.workspaceId,
-          projectId: route.projectId,
-          workloadId,
-          sessionId: route.sessionId,
-          agent,
-          workspaceMount: workspaceBinding.workspaceMount,
-        });
-        const internalWorkloadCoordinator = resolveInternalWorkloadCoordinator(deps);
-        const workloadHolder: InternalWorkloadHolderRef = {
-          workspaceId: route.workspaceId,
-          projectId: route.projectId,
-          workloadId,
-          holderKind: 'chat_stream',
-          holderId: route.sessionId,
-          epoch: streamId,
-        };
-        if (!internalWorkloadCoordinator) {
-          throw new AgentStreamRouteError('AGENT_SANDBOX_NOT_CONFIGURED', 'agent_sandbox_not_configured');
-        }
-        await internalWorkloadCoordinator.acquireHolder(workloadHolder);
-        internalWorkloadHolder = workloadHolder;
-      }
-      const issuedExecutionTicket = await issueInternalTicket(deps.cache, {
-        purpose: 'agent_execution',
-        userId: user.id,
-        prefix: 'exec',
-        workspaceId: route.workspaceId,
-        projectId: route.projectId,
-        payload: {
-          endpoint_id: executionEndpointId,
-          session_id: route.sessionId,
-          agent_id: externalAgentId,
-          mode: 'chat',
-        },
-        ttlMs: 8 * 60 * 60 * 1000,
-        maxUses: 500,
-      });
-      if (await maybeFinalizeStoppedBeforeDispatch()) {
-        return true;
-      }
-      const dispatched = await deps.agentExecutionService.dispatchStreamingRequest({
-        workspaceId: route.workspaceId,
-        projectId: route.projectId,
-        sessionId: route.sessionId,
-        agentId: externalAgentId,
-        model: executionModel || 'chat-agent-model',
-        messages: upstreamMessages,
-        executionContext: {
-          interaction_kind: 'chat',
-          workspace_id: route.workspaceId,
-          project_id: route.projectId,
-          session_id: route.sessionId,
-          username: buildProxyUsername(user),
-          execution_ticket: issuedExecutionTicket.ticket,
-          api_base: resolveExecutionApiBase(resolveRequiredConfiguredPublicApiBase(), agent),
-          endpoint_id: executionEndpointId,
-          wire_api: executionWireApi,
-          model: executionModel || undefined,
-        },
-      });
-      await writeActiveExecutionPhase('dispatching', {
-        requestId: dispatched.requestId,
-        internalAgent: executionInternalAgent,
-      });
-
-      res.statusCode = 200;
-      res.setHeader('Content-Type', 'text/event-stream; charset=utf-8');
-      res.setHeader('Cache-Control', 'no-cache');
-      res.setHeader('Connection', 'keep-alive');
-      res.setHeader('x-chat-stream-id', streamId);
-      if (typeof res.flushHeaders === 'function') {
-        res.flushHeaders();
-      }
-      broadcast(streamId, 'meta', {
-        stream_id: streamId,
-        session_id: route.sessionId,
-        model: streamModel,
-        endpoint_id: streamEndpointId,
-        assistant_message_id: createdAssistant.id,
-        parent_message_id: parentForAssistant,
-        variant_group_id: variantMeta.variantGroupId,
-        variant_index: variantMeta.variantIndex,
-      });
-
-      const pingTimer = setInterval(() => {
-        const record = ACTIVE_CHAT_STREAMS.get(streamId);
-        if (!record || record.clients.size === 0) return;
-        broadcast(streamId, 'ping', { ts: Date.now() });
-      }, 15_000);
-      let stopWatcherCancelled = false;
-      const stopWatcher = setInterval(() => {
-        if (stopWatcherCancelled) return;
-        void (async () => {
-          const execution = await readSessionExecutionRecord(
-            deps.cache,
-            route.workspaceId,
-            route.projectId,
-            route.sessionId,
-          );
-          if (execution?.status !== 'stopping' && execution?.status !== 'terminating' && execution?.status !== 'stopped') {
-            return;
-          }
-          const activeRecord = ACTIVE_CHAT_STREAMS.get(streamId);
-          if (activeRecord) {
-            activeRecord.stopReason = execution.stopReason ?? activeRecord.stopReason ?? 'session_stop';
-          }
-          streamAbortController.abort();
-        })().catch(() => undefined);
-      }, 250);
-
-      let assistantText = '';
-      let finishReason: string | null = null;
-      let usageTokens: number | undefined;
-      let messageStatus: 'streaming' | 'completed' | 'stopped' | 'failed' = 'completed';
-      let agentErrorCode: string | null = null;
-      let agentErrorMessage: string | null = null;
-      let persistedLength = 0;
-      const persistAssistantProgress = async (force: boolean) => {
-        if (!force && assistantText.length - persistedLength < 32) {
-          return;
-        }
-        await deps.chatResourceService.updateAssistantMessage(
-          route.workspaceId,
-          route.projectId,
-          route.sessionId,
-          createdAssistant.id,
-          {
-            content: assistantText,
-            messageStatus: 'streaming',
-          },
-        );
-        persistedLength = assistantText.length;
-      };
-
-      const active = ACTIVE_CHAT_STREAMS.get(streamId);
-      if (active) {
-        const originalAbort = active.abortController.abort.bind(active.abortController);
-        active.abortController.abort = () => {
-          dispatched.cancel();
-          originalAbort();
-        };
-      }
-
-      try {
-        for await (const event of dispatched.stream) {
-          await writeActiveExecutionPhase('streaming', { internalAgent: executionInternalAgent });
-          if (event.type === 'delta') {
-            if (!event.delta) continue;
-            assistantText += event.delta;
-            const record = ACTIVE_CHAT_STREAMS.get(streamId);
-            if (record) record.contentSoFar = assistantText;
-            broadcast(streamId, 'delta', { message_id: createdAssistant.id, delta: event.delta });
-            await persistAssistantProgress(false);
-            continue;
-          }
-          if (event.type === 'done') {
-            finishReason = event.finish_reason ?? 'stop';
-            usageTokens = event.usage_tokens;
-            break;
-          }
-          if (event.type === 'event') {
-            if (event.event?.category === 'warning') {
-              broadcast(streamId, 'warning', {
-                code: event.event.name,
-                message: event.event.summary,
-                details: event.event.details ?? null,
-              });
-            }
-            continue;
-          }
-          if (event.type === 'error') {
-            messageStatus = 'failed';
-            await safePersistAssistantTerminalFailure({
-              content: assistantText,
-              errorCode: event.error_code ?? 'AGENT_UPSTREAM_ERROR',
-              errorMessage: event.error_message ?? 'agent_upstream_error',
-            });
-            agentErrorCode = event.error_code ?? 'AGENT_UPSTREAM_ERROR';
-            agentErrorMessage = event.error_message ?? 'agent_upstream_error';
-            break;
-          }
-        }
-        if (streamAbortController.signal.aborted || finishReason === 'cancelled') {
-          messageStatus = 'stopped';
-        }
-      } catch (error) {
-        if (streamAbortController.signal.aborted) {
-          messageStatus = 'stopped';
-        } else {
-          stopWatcherCancelled = true;
-          clearInterval(stopWatcher);
-          clearInterval(pingTimer);
-          await closeStreamAsFailed({
-            errorCode: 'AGENT_STREAM_ERROR',
-            errorMessage: error instanceof Error ? error.message : 'agent_stream_error',
-          });
-          logChatStreamEvent({
-            workspaceId: route.workspaceId,
-            projectId: route.projectId,
-            sessionId: route.sessionId,
-            streamId,
-            endpointId: streamEndpointId,
-            status: 'failed',
-            durationMs: Date.now() - streamStartedAtMs,
-            stopReason: 'upstream_error',
-          });
-          throw error;
-        }
-      }
-
-      if (agentErrorCode) {
-        stopWatcherCancelled = true;
-        clearInterval(stopWatcher);
-        clearInterval(pingTimer);
-        await closeStreamAsFailed({
-          errorCode: agentErrorCode,
-          errorMessage: agentErrorMessage ?? 'agent_upstream_error',
-          requestId: dispatched.requestId,
-          content: assistantText,
-        });
-        if (executionInternalAgent && agentErrorCode === 'AGENT_CANCEL_TIMEOUT') {
-          const internalWorkloadCoordinator = resolveInternalWorkloadCoordinator(deps);
-          if (internalWorkloadCoordinator) {
-            void internalWorkloadCoordinator.requestHardTeardown({
-              workspaceId: route.workspaceId,
-              projectId: route.projectId,
-              workloadId: sanitizeWorkloadId(route.sessionId),
-              epoch: streamId,
-            }).catch((error: unknown) => {
-              console.warn(
-                '[sandbox] requestHardTeardown failed for chat session %s: %s',
-                route.sessionId,
-                error instanceof Error ? error.message : String(error),
-              );
-            });
-          }
-        }
-        logChatStreamEvent({
-          workspaceId: route.workspaceId,
-          projectId: route.projectId,
-          sessionId: route.sessionId,
-          streamId,
-          endpointId: streamEndpointId,
-          status: 'failed',
-          durationMs: Date.now() - streamStartedAtMs,
-          stopReason: 'upstream_error',
-        });
-        return true;
-      }
-
-      let finalizedId = createdAssistant.id;
-      try {
-        await persistAssistantProgress(true);
-        const finalized = await deps.chatResourceService.updateAssistantMessage(
-          route.workspaceId,
-          route.projectId,
-          route.sessionId,
-          createdAssistant.id,
-          {
-            content: assistantText,
-            finishReason,
-            tokens: usageTokens,
-            messageStatus,
-          },
-        );
-        finalizedId = finalized?.id ?? createdAssistant.id;
-      } catch (error) {
-        stopWatcherCancelled = true;
-        clearInterval(stopWatcher);
-        clearInterval(pingTimer);
-        await closeStreamAsFailed({
-          errorCode: 'CHAT_STREAM_FINALIZE_ERROR',
-          errorMessage: error instanceof Error ? error.message : 'chat_stream_finalize_error',
-          content: assistantText,
-          finishReason,
-          tokens: usageTokens,
-        });
-        logChatStreamEvent({
-          workspaceId: route.workspaceId,
-          projectId: route.projectId,
-          sessionId: route.sessionId,
-          streamId,
-          endpointId: streamEndpointId,
-          status: 'failed',
-          durationMs: Date.now() - streamStartedAtMs,
-          stopReason: 'persistence_error',
-        });
-        return true;
-      }
-      stopWatcherCancelled = true;
-      clearInterval(stopWatcher);
-      clearInterval(pingTimer);
-      const activeRecord = ACTIVE_CHAT_STREAMS.get(streamId);
-      const stopReason = messageStatus === 'stopped' ? activeRecord?.stopReason ?? 'session_stop' : undefined;
-      if (activeRecord) {
-        activeRecord.status = 'finished';
-      }
-      await writeTerminalStreamState(messageStatus === 'stopped' ? 'stopped' : 'completed');
-      broadcast(streamId, 'done', {
-        message_id: finalizedId,
-        finish_reason: finishReason,
-        tokens: usageTokens,
-        message_status: messageStatus,
-      });
-      closeActiveClients();
-      ACTIVE_CHAT_STREAMS.delete(streamId);
-      logChatStreamEvent({
-        workspaceId: route.workspaceId,
-        projectId: route.projectId,
-        sessionId: route.sessionId,
-        streamId,
-        endpointId: streamEndpointId,
-        status: messageStatus === 'stopped' ? 'stopped' : 'completed',
-        durationMs: Date.now() - streamStartedAtMs,
-        stopReason,
-      });
-      return true;
-    } catch (error) {
-      ACTIVE_CHAT_STREAMS.delete(streamId);
-      const mappedError = mapAgentDispatchError(error);
-      await safePersistAssistantTerminalFailure({
-        content: '',
-        errorCode: mappedError.code,
-        errorMessage: mappedError.message,
-      });
-      await writeTerminalStreamState('failed');
-      if (!res.headersSent) {
-        const statusCode = mappedError.code === 'UNAUTHORIZED'
-          ? 401
-          : mappedError.code === 'AGENT_EXECUTION_API_BASE_NOT_CONFIGURED'
-            ? 500
-          : mappedError.code === 'AGENT_SANDBOX_RATE_LIMITED'
-            ? 429
-            : (mappedError.code.startsWith('AGENT_SANDBOX_') ? 422 : 502);
-        json(res, statusCode, { error_code: mappedError.code, message: mappedError.message });
-      } else if (isWritable(res)) {
-        broadcast(streamId, 'error', {
-          error_code: mappedError.code,
-          message: mappedError.message,
-        });
-        res.end();
-      }
-      return true;
-    } finally {
-      const internalWorkloadCoordinator = resolveInternalWorkloadCoordinator(deps);
-      if (internalWorkloadHolder && internalWorkloadCoordinator) {
-        await internalWorkloadCoordinator.releaseHolder(internalWorkloadHolder).catch((error: unknown) => {
-          console.warn(
-            '[sandbox] releaseHolder failed for chat session %s: %s',
-            route.sessionId,
-            error instanceof Error ? error.message : String(error),
-          );
-        });
-      }
-    }
-  }
-
   if (!endpoint || !apiKey) {
     json(res, 422, { error_code: 'VALIDATION_ERROR', message: 'chat_endpoint_unavailable' });
     return true;
@@ -1316,7 +815,7 @@ export async function handleChatStreamRoute(args: ChatStreamHandlerArgs): Promis
       providerCredential: apiKey,
       signal: streamAbortController.signal,
     });
-    await writeActiveExecutionPhase('dispatching', { internalAgent: executionInternalAgent });
+    await writeActiveExecutionPhase('dispatching');
   } catch (error) {
     if (streamAbortController.signal.aborted) {
       return maybeFinalizeStoppedBeforeDispatch();
@@ -1473,7 +972,7 @@ export async function handleChatStreamRoute(args: ChatStreamHandlerArgs): Promis
         buffer = buffer.slice(sepIndex + 2);
         const chunks = parseOpenAIStreamChunk(consumable);
         for (const chunk of chunks) {
-          await writeActiveExecutionPhase('streaming', { internalAgent: executionInternalAgent });
+          await writeActiveExecutionPhase('streaming');
           if (chunk.done) {
             if (chunk.finishReason) {
               finishReason = chunk.finishReason;
@@ -1496,7 +995,7 @@ export async function handleChatStreamRoute(args: ChatStreamHandlerArgs): Promis
       if (buffer.trim().length > 0) {
         const chunks = parseOpenAIStreamChunk(buffer);
         for (const chunk of chunks) {
-          await writeActiveExecutionPhase('streaming', { internalAgent: executionInternalAgent });
+          await writeActiveExecutionPhase('streaming');
           if (chunk.done) {
             if (chunk.finishReason) {
               finishReason = chunk.finishReason;
@@ -1516,7 +1015,7 @@ export async function handleChatStreamRoute(args: ChatStreamHandlerArgs): Promis
         }
       }
     } else {
-      await writeActiveExecutionPhase('streaming', { internalAgent: executionInternalAgent });
+      await writeActiveExecutionPhase('streaming');
       const completionPayloadRaw = await upstreamRes.json().catch(() => ({}));
       const completionPayload = completionPayloadRaw;
       assistantText = safeAssistantContent(completionPayload);
@@ -1607,21 +1106,6 @@ export async function handleChatStreamRoute(args: ChatStreamHandlerArgs): Promis
           session_id: route.sessionId,
         },
       });
-      if (useExternalAgent && session.external_agent_id) {
-        await writeProjectUsageFact(deps, {
-          workspaceId: route.workspaceId,
-          projectId: route.projectId,
-          resourceType: 'agent',
-          resourceId: session.external_agent_id,
-          endUserId: user.id,
-          requestId,
-          requests: 1,
-          durationMs: Date.now() - streamStartedAtMs,
-          result: 'error',
-          errorCode,
-          metadata: { stream_id: streamId, source: 'chat_stream', session_id: route.sessionId },
-        });
-      }
       throw error;
     }
   }
@@ -1764,26 +1248,5 @@ export async function handleChatStreamRoute(args: ChatStreamHandlerArgs): Promis
       model: endpoint?.model ?? session.model,
     },
   });
-  if (useExternalAgent && session.external_agent_id) {
-    await writeProjectUsageFact(deps, {
-      workspaceId: route.workspaceId,
-      projectId: route.projectId,
-      resourceType: 'agent',
-      resourceId: session.external_agent_id,
-      endUserId: user.id,
-      requestId,
-      requests: 1,
-      durationMs,
-      result: 'ok',
-      metadata: {
-        stream_id: streamId,
-        source: 'chat_stream',
-        session_id: route.sessionId,
-        message_status: messageStatus,
-        stop_reason: stopReason ?? null,
-      },
-    });
-  }
-
   return true;
 }

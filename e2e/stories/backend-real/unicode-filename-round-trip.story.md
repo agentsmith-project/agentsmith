@@ -1,7 +1,7 @@
 ---
 {
   "storyId": "unicode-filename-round-trip",
-  "title": "Unicode filename round-trip across Files, notebook artifacts, download, and mount",
+  "title": "Unicode filename round-trip across Files, agent-task artifacts, download, and mount",
   "actor": "project member",
   "family": "unicode-file-continuity",
   "personas": [
@@ -10,7 +10,7 @@
   "kind": "journey",
   "lane": "backend-real",
   "entryRoute": "/en-US/workspaces/{workspaceId}/projects/{projectId}/files",
-  "goal": "成员使用非 ASCII 文件名工作时，Files、Notebook、.artifacts、下载结果和本地挂载都必须保留同一份文件名真相；用户不应该为了避开系统差异，被迫把真实文件重命名成英文占位符。",
+  "goal": "成员使用非 ASCII 文件名工作时，Files、Agent Task、.artifacts、下载结果和本地挂载都必须保留同一份文件名真相；用户不应该为了避开系统差异，被迫把真实文件重命名成英文占位符。",
   "gatePolicy": {
     "tier": "default",
     "requiredEvidence": [
@@ -36,7 +36,7 @@
       "dependencyId": "provider-api-key",
       "kind": "credential",
       "required": true,
-      "note": "notebook artifact generation in the unicode round-trip story needs a runnable AI path."
+      "note": "agent-task artifact generation in the unicode round-trip story needs a runnable AI path."
     }
   ],
   "runtimeData": {
@@ -45,7 +45,7 @@
       "artifactFileName": "交付总结-uberblick-東京.md"
     }
   },
-  "narrative": "文件名 round-trip 的主故事不是编码细节，而是成员真实面对的文件对象保持同一个名字。用户在 Files 里看到的 Unicode 名称，到了 notebook task、.artifacts、下载文件和本地挂载里，都应该还是同一个名字；如果系统在任何一段把它偷偷改写、转义或丢字，用户面对的就不再是同一份工作成果。",
+  "narrative": "文件名 round-trip 的主故事不是编码细节，而是成员真实面对的文件对象保持同一个名字。用户在 Files 里看到的 Unicode 名称，到了 Agent Task、.artifacts、下载文件和本地挂载里，都应该还是同一个名字；如果系统在任何一段把它偷偷改写、转义或丢字，用户面对的就不再是同一份工作成果。",
   "scenes": [
     {
       "sceneId": "project-files",
@@ -58,12 +58,12 @@
       ]
     },
     {
-      "sceneId": "notebook-task",
-      "route": "/en-US/workspaces/{workspaceId}/projects/{projectId}/notebook/tasks/{taskId}",
+      "sceneId": "agent-task",
+      "route": "/en-US/workspaces/{workspaceId}/projects/{projectId}/agent-tasks/{taskId}",
       "stableMarkers": [
-        "notebook__task-header",
-        "notebook__conversation-input",
-        "notebook__send-btn"
+        "agent-task__task-header",
+        "agent-tasks__conversation-input",
+        "agent-tasks__send-btn"
       ]
     }
   ],
@@ -93,12 +93,12 @@
       ]
     },
     {
-      "stepId": "use-the-unicode-file-in-notebook-and-write-a-unicode-artifact",
-      "sceneId": "notebook-task",
-      "intent": "Keep the same naming truth while notebook work produces a deliverable.",
-      "action": "Use the Unicode-named file in notebook and write a Unicode-named artifact",
-      "target": "notebook__conversation-input",
-      "expectedFeedback": "notebook task 能消费原始 Unicode 文件，并产出同样保留 Unicode 文件名的 artifact。",
+      "stepId": "use-the-unicode-file-in-agent-task-and-write-a-unicode-artifact",
+      "sceneId": "agent-task",
+      "intent": "Keep the same naming truth while agent-task work produces a deliverable.",
+      "action": "Use the Unicode-named file in agent-task and write a Unicode-named artifact",
+      "target": "agent-tasks__conversation-input",
+      "expectedFeedback": "Agent Task 能消费原始 Unicode 文件，并产出同样保留 Unicode 文件名的 artifact。",
       "note": "AI-native 工作流不应该要求用户为了 runner 兼容性先手工改名。",
       "evidence": [
         "trace"
@@ -111,7 +111,7 @@
       "action": "Return to Files and inspect the Unicode-named artifact",
       "target": "files__objects-table",
       "expectedFeedback": "回到 Files 后，artifact 继续保留原本的 Unicode 名称，没有乱码、转义串或截断名。",
-      "note": "artifact continuity 是 Files 与 notebook 之间最容易暴露文件名漂移的地方。",
+      "note": "artifact continuity 是 Files 与 Agent Task 之间最容易暴露文件名漂移的地方。",
       "evidence": [
         "trace"
       ]
@@ -131,4 +131,4 @@
   ]
 }
 ---
-Canonical backend-real story for Unicode filename continuity across Files, notebook artifacts, download, and mounted library access.
+Canonical backend-real story for Unicode filename continuity across Files, agent-task artifacts, download, and mounted library access.

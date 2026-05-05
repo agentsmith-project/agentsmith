@@ -4,7 +4,7 @@
 - Workflow: `.github/workflows/integration-e2e.yml`
 - Jobs:
   - `integration-agent`
-  - `integration-notebook-agent`
+  - `integration-agent-task`
 
 ## Where to look first
 1. Open job summary, read `Failure Tag`.
@@ -28,7 +28,7 @@
     - `npm run integration:deps:init:keycloak`
   - Re-run suite with explicit ports:
     - `make e2e-int-agent-auto PORT_API=20030 PORT_WEB=3011`
-    - `make e2e-int-notebook-agent-auto PORT_API=20031 PORT_WEB=3013`
+    - `make e2e-int-agent-task-auto PORT_API=20031 PORT_WEB=3013`
 
 ### `INT-INFRA-BOOT`
 - Symptom:
@@ -67,15 +67,15 @@
   - Reconfigure notebook endpoint binding.
   - Validate endpoint credentials/base_url.
   - Re-run notebook integration:
-    - `make e2e-int-notebook-agent-auto PORT_API=20031 PORT_WEB=3013`
+    - `make e2e-int-agent-task-auto PORT_API=20031 PORT_WEB=3013`
 
 ## Fast local reproduce commands
 ```bash
 # external agent chat integration
 make e2e-int-agent-auto PORT_API=20030 PORT_WEB=3011
 
-# notebook external-agent integration
-make e2e-int-notebook-agent-auto PORT_API=20031 PORT_WEB=3013
+# agent-task external-agent integration
+make e2e-int-agent-task-auto PORT_API=20031 PORT_WEB=3013
 ```
 
 ## Escalation checklist

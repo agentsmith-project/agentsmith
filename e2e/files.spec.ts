@@ -115,10 +115,10 @@ test.describe('Files Page (file library browser)', () => {
 
   test('relies on sidebar navigation instead of build header actions', async ({ authedPage }) => {
     await expect(authedPage.getByTestId('files__open-chat')).toHaveCount(0);
-    await expect(authedPage.getByTestId('files__open-notebook')).toHaveCount(0);
+    await expect(authedPage.getByTestId('files__open-agent-tasks')).toHaveCount(0);
     await expect(authedPage.getByTestId('files__open-endpoints')).toHaveCount(0);
     await expect(authedPage.getByTestId('sidebar__nav-item--chat')).toHaveAttribute('href', /\/chat$/);
-    await expect(authedPage.getByTestId('sidebar__nav-item--notebook')).toHaveAttribute('href', /\/notebook$/);
+    await expect(authedPage.getByTestId('sidebar__nav-item--agent-tasks')).toHaveAttribute('href', /\/agent-tasks$/);
     await expect(authedPage.getByTestId('sidebar__nav-item--endpoints')).toHaveAttribute('href', /\/endpoints$/);
   });
 

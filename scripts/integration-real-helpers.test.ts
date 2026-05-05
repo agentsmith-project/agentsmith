@@ -1,21 +1,119 @@
-import { describe, expect, it, vi } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { APIRequestContext } from '@playwright/test';
+import { createServer, type Server } from 'node:http';
 import { mkdtemp, readFile, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
+import { WebSocketServer, type WebSocket as ServerWebSocket } from 'ws';
 import {
-  bindNotebookExecutionSocketToTask,
+  API_BASE,
+  bindAgentTaskExecutionSocketToTask,
+  buildCreateProjectRequestBody,
   buildRunnerRuntimeRootForVisibleWorkspace,
   buildRunnerRuntimeRootPathPart,
   collectTrackedTaskWorkspaceMounts,
+  createAgentTaskRunnerBundleViaApi,
+  createAgentTaskViaApi,
   createExternalConnectionViaApi,
-  createExternalRunnerAgentBundle,
+  createManagedAgentRunnerViaApi,
+  createProjectInWorkspace,
+  createTerminalSessionViaApi,
+  expectTerminalSessionRunnerEvidenceViaApi,
   findPreparedTaskWorkspaceRootInRunnerLog,
   parseWorkloadPodSnapshot,
   resolveIntegrationKeycloakBaseUrl,
-  resolveNotebookRunnerSocketUrl,
+  resolveAgentTaskRunnerSocketUrl,
+  resolveTerminalSessionCreateTimeoutMs,
+  runTerminalCommandInSession,
+  runTerminalCommandViaWs,
+  startAgentTaskRunViaApi,
+  startMockFeishuMcpServer,
+  startMockJiraServer,
+  waitForRunnerOutputToken,
 } from '../e2e/integration-real-helpers';
-import { buildTaskWorkspacePaths } from '../packages/notebook-codex-runner/src/task-workspace.js';
+import { buildTaskWorkspacePaths } from '../packages/agent-task-runner/src/task-workspace.js';
+
+type TerminalTestServer = {
+  url: string;
+  close: () => Promise<void>;
+};
+
+const terminalTestServers: TerminalTestServer[] = [];
+
+async function listen(httpServer: Server): Promise<number> {
+  await new Promise<void>((resolve) => {
+    httpServer.listen(0, '127.0.0.1', resolve);
+  });
+  const address = httpServer.address();
+  if (!address || typeof address === 'string') {
+    throw new Error('terminal_test_server_address_unavailable');
+  }
+  return address.port;
+}
+
+async function startTerminalWsTestServer(
+  onConnection: (socket: ServerWebSocket, requestUrl: string) => void,
+): Promise<TerminalTestServer> {
+  const httpServer = createServer();
+  const wsServer = new WebSocketServer({ server: httpServer });
+  wsServer.on('connection', (socket, request) => {
+    onConnection(socket, request.url ?? '/');
+  });
+  const port = await listen(httpServer);
+  const server = {
+    url: `ws://127.0.0.1:${port}`,
+    close: async () => {
+      for (const client of wsServer.clients) {
+        client.close();
+      }
+      await new Promise<void>((resolve, reject) => {
+        wsServer.close((error) => {
+          if (error) reject(error);
+          else resolve();
+        });
+      });
+      await new Promise<void>((resolve, reject) => {
+        httpServer.close((error) => {
+          if (error) reject(error);
+          else resolve();
+        });
+      });
+    },
+  };
+  terminalTestServers.push(server);
+  return server;
+}
+
+async function startRejectedUpgradeServer(statusCode: 401 | 403): Promise<TerminalTestServer> {
+  const httpServer = createServer();
+  httpServer.on('upgrade', (_request, socket) => {
+    socket.write(`HTTP/1.1 ${statusCode} Unauthorized\r\nConnection: close\r\n\r\n`);
+    socket.destroy();
+  });
+  const port = await listen(httpServer);
+  const server = {
+    url: `ws://127.0.0.1:${port}`,
+    close: async () => {
+      await new Promise<void>((resolve, reject) => {
+        httpServer.close((error) => {
+          if (error) reject(error);
+          else resolve();
+        });
+      });
+    },
+  };
+  terminalTestServers.push(server);
+  return server;
+}
+
+function parseClientFrame(raw: Buffer): Record<string, unknown> {
+  return JSON.parse(raw.toString('utf8')) as Record<string, unknown>;
+}
+
+afterEach(async () => {
+  const servers = terminalTestServers.splice(0);
+  await Promise.all(servers.map((server) => server.close()));
+});
 
 describe('integration-real-helpers', () => {
   const okResponse = <T,>(body: T) => ({
@@ -25,10 +123,468 @@ describe('integration-real-helpers', () => {
     text: async () => JSON.stringify(body),
   });
 
+  describe('terminal session API helper', () => {
+    const terminalSessionRecord = (
+      overrides: Record<string, unknown> = {},
+    ): Record<string, unknown> => ({
+      terminal_session_id: 'term_canonical',
+      runner_id: 'runner_1',
+      runner_session_id: 'task_1',
+      status: 'running',
+      ws_url: 'ws://127.0.0.1:20000/terminal/term_canonical',
+      close_reason: null,
+      created_at: '2026-05-05T00:00:00.000Z',
+      last_activity_at: '2026-05-05T00:00:00.000Z',
+      ended_at: null,
+      exit_code: null,
+      cols: 120,
+      rows: 40,
+      ...overrides,
+    });
+
+    it('uses canonical terminal_session_id from create-session payloads', async () => {
+      const post = vi.fn().mockResolvedValue(okResponse({
+        terminal_session_id: 'term_canonical',
+        session_id: 'term_legacy',
+        runner_id: 'runner_1',
+        runner_session_id: 'task_1',
+        ws_url: 'ws://127.0.0.1:20000/terminal/term_canonical',
+      }));
+      const page = {
+        evaluate: vi.fn().mockResolvedValue(JSON.stringify({ state: { token: 'mock_token' } })),
+        request: { post },
+      } as unknown as Parameters<typeof createTerminalSessionViaApi>[0]['page'];
+
+      await expect(createTerminalSessionViaApi({
+        page,
+        workspaceId: 'ws_default',
+        projectId: 'proj_1',
+        taskId: 'task_1',
+      })).resolves.toEqual({
+        sessionId: 'term_canonical',
+        wsUrl: 'ws://127.0.0.1:20000/terminal/term_canonical',
+        runnerId: 'runner_1',
+        runnerSessionId: 'task_1',
+      });
+      expect(post).toHaveBeenCalledWith(
+        expect.stringContaining('/api/v1/workspaces/ws_default/projects/proj_1/tasks/task_1/terminal/sessions'),
+        expect.objectContaining({
+          timeout: 300_000,
+          data: {
+            cols: 120,
+            rows: 40,
+          },
+        }),
+      );
+    });
+
+    it('keeps terminal create request timeout aligned with managed runner startup SLA', async () => {
+      expect(resolveTerminalSessionCreateTimeoutMs({})).toBe(300_000);
+      expect(resolveTerminalSessionCreateTimeoutMs({
+        INTEGRATION_TERMINAL_SESSION_CREATE_TIMEOUT_MS: '90000',
+      })).toBe(90_000);
+
+      const post = vi.fn().mockRejectedValue(new Error('apiRequestContext.post: Timeout 15000ms exceeded'));
+      const page = {
+        evaluate: vi.fn().mockResolvedValue(JSON.stringify({ state: { token: 'mock_token' } })),
+        request: { post },
+      } as unknown as Parameters<typeof createTerminalSessionViaApi>[0]['page'];
+
+      await expect(createTerminalSessionViaApi({
+        page,
+        workspaceId: 'ws_default',
+        projectId: 'proj_1',
+        taskId: 'task_1',
+      })).rejects.toThrow('create_terminal_session_request_failed:task_1:timeout_ms=300000');
+      expect(post).toHaveBeenCalledWith(
+        expect.stringContaining('/api/v1/workspaces/ws_default/projects/proj_1/tasks/task_1/terminal/sessions'),
+        expect.objectContaining({
+          timeout: 300_000,
+        }),
+      );
+    });
+
+    it('rejects create-session payloads that only expose legacy session_id', async () => {
+      const post = vi.fn().mockResolvedValue(okResponse({
+        session_id: 'term_legacy',
+        ws_url: 'ws://127.0.0.1:20000/terminal/term_legacy',
+      }));
+      const page = {
+        evaluate: vi.fn().mockResolvedValue(JSON.stringify({ state: { token: 'mock_token' } })),
+        request: { post },
+      } as unknown as Parameters<typeof createTerminalSessionViaApi>[0]['page'];
+
+      await expect(createTerminalSessionViaApi({
+        page,
+        workspaceId: 'ws_default',
+        projectId: 'proj_1',
+        taskId: 'task_1',
+      })).rejects.toThrow('terminal_session_payload_incomplete');
+    });
+
+    it('matches terminal runner evidence against listed terminal_session_id only', async () => {
+      const get = vi.fn().mockImplementation(async (url: string) => {
+        if (url.endsWith('/terminal/sessions')) {
+          return okResponse({
+            total: 2,
+            items: [
+              terminalSessionRecord({
+                terminal_session_id: 'term_shadow',
+                id: 'term_canonical',
+                session_id: 'term_canonical',
+                runner_id: 'runner_shadow',
+                runner_session_id: 'task_shadow',
+              }),
+              terminalSessionRecord(),
+            ],
+          });
+        }
+        if (url.endsWith('/terminal/sessions/term_canonical')) {
+          return okResponse(terminalSessionRecord());
+        }
+        throw new Error(`unexpected_get:${url}`);
+      });
+      const page = {
+        evaluate: vi.fn().mockResolvedValue(JSON.stringify({ state: { token: 'mock_token' } })),
+        request: { get },
+      } as unknown as Parameters<typeof expectTerminalSessionRunnerEvidenceViaApi>[0]['page'];
+
+      await expect(expectTerminalSessionRunnerEvidenceViaApi({
+        page,
+        workspaceId: 'ws_default',
+        projectId: 'proj_1',
+        taskId: 'task_1',
+        sessionId: 'term_canonical',
+        runnerId: 'runner_1',
+        timeoutMs: 50,
+      })).resolves.toMatchObject({
+        terminal_session_id: 'term_canonical',
+        runner_id: 'runner_1',
+        runner_session_id: 'task_1',
+      });
+    });
+
+    it('rejects terminal runner evidence list entries that only expose legacy id/session_id', async () => {
+      const get = vi.fn().mockImplementation(async (url: string) => {
+        if (url.endsWith('/terminal/sessions')) {
+          return okResponse({
+            total: 1,
+            items: [
+              terminalSessionRecord({
+                terminal_session_id: undefined,
+                id: 'term_canonical',
+                session_id: 'term_canonical',
+              }),
+            ],
+          });
+        }
+        if (url.endsWith('/terminal/sessions/term_canonical')) {
+          return okResponse(terminalSessionRecord());
+        }
+        throw new Error(`unexpected_get:${url}`);
+      });
+      const page = {
+        evaluate: vi.fn().mockResolvedValue(JSON.stringify({ state: { token: 'mock_token' } })),
+        request: { get },
+      } as unknown as Parameters<typeof expectTerminalSessionRunnerEvidenceViaApi>[0]['page'];
+
+      await expect(expectTerminalSessionRunnerEvidenceViaApi({
+        page,
+        workspaceId: 'ws_default',
+        projectId: 'proj_1',
+        taskId: 'task_1',
+        sessionId: 'term_canonical',
+        runnerId: 'runner_1',
+        timeoutMs: 50,
+      })).rejects.toThrow();
+    });
+  });
+
+  describe('terminal websocket command helper', () => {
+    it('sends terminal.reconnect before resize/stdin and collects terminal.output chunks', async () => {
+      const clientFrames: Record<string, unknown>[] = [];
+      const server = await startTerminalWsTestServer((socket) => {
+        socket.on('message', (raw) => {
+          const frame = parseClientFrame(raw as Buffer);
+          clientFrames.push(frame);
+          if (frame.type === 'terminal.reconnect') {
+            socket.send(JSON.stringify({
+              type: 'terminal.replay_start',
+              terminal_session_id: 'term_1',
+              status: 'complete',
+              gap: false,
+              earliest_seq: 1,
+              latest_seq: 1,
+            }));
+            socket.send(JSON.stringify({
+              type: 'terminal.output',
+              terminal_session_id: 'term_1',
+              seq: 1,
+              chunk: 'boot\n',
+            }));
+            socket.send(JSON.stringify({
+              type: 'terminal.replay_end',
+              terminal_session_id: 'term_1',
+              status: 'complete',
+              gap: false,
+              latest_seq: 1,
+              input_enabled: true,
+            }));
+            return;
+          }
+          if (frame.type === 'terminal.stdin') {
+            socket.send(JSON.stringify({
+              type: 'terminal.output',
+              terminal_session_id: 'term_1',
+              seq: 2,
+              chunk: 'READY\n',
+            }));
+          }
+        });
+      });
+
+      const output = await runTerminalCommandViaWs({
+        wsUrl: server.url,
+        terminalSessionId: 'term_1',
+        command: 'echo READY',
+        waitFor: ['boot', 'READY'],
+        timeoutMs: 2_000,
+      });
+
+      expect(output).toContain('boot');
+      expect(output).toContain('READY');
+      expect(clientFrames.map((frame) => frame.type)).toEqual([
+        'terminal.reconnect',
+        'terminal.resize',
+        'terminal.stdin',
+      ]);
+      expect(clientFrames[0]).toMatchObject({
+        type: 'terminal.reconnect',
+        terminal_session_id: 'term_1',
+        view: 'agent_task.task_terminal',
+        cols: 120,
+        rows: 40,
+      });
+    });
+
+    it('does not send resize/stdin until terminal input is enabled', async () => {
+      const clientFrames: Record<string, unknown>[] = [];
+      let resolvePreReadyFrames: (types: unknown[]) => void = () => undefined;
+      const preReadyFrames = new Promise<unknown[]>((resolve) => {
+        resolvePreReadyFrames = resolve;
+      });
+      const server = await startTerminalWsTestServer((socket) => {
+        socket.on('message', (raw) => {
+          const frame = parseClientFrame(raw as Buffer);
+          clientFrames.push(frame);
+          if (frame.type === 'terminal.reconnect') {
+            socket.send(JSON.stringify({
+              type: 'terminal.replay_start',
+              terminal_session_id: 'term_1',
+              status: 'complete',
+              gap: false,
+              earliest_seq: 1,
+              latest_seq: 1,
+            }));
+            socket.send(JSON.stringify({
+              type: 'terminal.replay_end',
+              terminal_session_id: 'term_1',
+              status: 'complete',
+              gap: false,
+              latest_seq: 1,
+              input_enabled: false,
+            }));
+            setTimeout(() => {
+              resolvePreReadyFrames(clientFrames.map((seenFrame) => seenFrame.type));
+              socket.send(JSON.stringify({
+                type: 'terminal.state',
+                terminal_session_id: 'term_1',
+                state: 'ready',
+                input_enabled: true,
+              }));
+            }, 25);
+            return;
+          }
+          if (frame.type === 'terminal.stdin') {
+            socket.send(JSON.stringify({
+              type: 'terminal.output',
+              terminal_session_id: 'term_1',
+              seq: 1,
+              chunk: 'STATE_READY_DONE\n',
+            }));
+          }
+        });
+      });
+
+      const commandPromise = runTerminalCommandViaWs({
+        wsUrl: server.url,
+        terminalSessionId: 'term_1',
+        command: 'printf STATE_READY_DONE',
+        waitFor: ['STATE_READY_DONE'],
+        timeoutMs: 2_000,
+      });
+
+      await expect(preReadyFrames).resolves.toEqual(['terminal.reconnect']);
+      await expect(commandPromise).resolves.toContain('STATE_READY_DONE');
+      expect(clientFrames.map((frame) => frame.type)).toEqual([
+        'terminal.reconnect',
+        'terminal.resize',
+        'terminal.stdin',
+      ]);
+    });
+
+    it('fails explicitly on terminal.error with error code and message', async () => {
+      const server = await startTerminalWsTestServer((socket) => {
+        socket.on('message', () => {
+          socket.send(JSON.stringify({
+            type: 'terminal.error',
+            terminal_session_id: 'term_1',
+            error_code: 'handshake_required',
+            error_message: 'terminal.reconnect must be sent first',
+          }));
+          socket.close();
+        });
+      });
+
+      await expect(runTerminalCommandViaWs({
+        wsUrl: server.url,
+        terminalSessionId: 'term_1',
+        command: 'echo never',
+        waitFor: ['never'],
+        timeoutMs: 1_000,
+      })).rejects.toThrow('terminal_ws_error:handshake_required:terminal.reconnect must be sent first');
+    });
+
+    it('rejects terminal websocket frames that only carry legacy session_id', async () => {
+      const server = await startTerminalWsTestServer((socket) => {
+        socket.on('message', (raw) => {
+          const frame = parseClientFrame(raw as Buffer);
+          if (frame.type === 'terminal.reconnect') {
+            socket.send(JSON.stringify({
+              type: 'terminal.output',
+              session_id: 'term_1',
+              chunk: 'legacy session frame\n',
+            }));
+          }
+        });
+      });
+
+      await expect(runTerminalCommandViaWs({
+        wsUrl: server.url,
+        terminalSessionId: 'term_1',
+        command: 'echo never',
+        waitFor: ['never'],
+        timeoutMs: 1_000,
+      })).rejects.toThrow('legacy_terminal_ws_session_id_not_supported');
+    });
+
+    it('rejects legacy generic terminal websocket error frames', async () => {
+      const server = await startTerminalWsTestServer((socket) => {
+        socket.on('message', (raw) => {
+          const frame = parseClientFrame(raw as Buffer);
+          if (frame.type === 'terminal.reconnect') {
+            socket.send(JSON.stringify({
+              type: 'error',
+              terminal_session_id: 'term_1',
+              code: 'legacy_error',
+              message: 'legacy error frame',
+            }));
+          }
+        });
+      });
+
+      await expect(runTerminalCommandViaWs({
+        wsUrl: server.url,
+        terminalSessionId: 'term_1',
+        command: 'echo never',
+        waitFor: ['never'],
+        timeoutMs: 1_000,
+      })).rejects.toThrow('legacy_terminal_ws_error_frame_not_supported');
+    });
+
+    it('gets a fresh ws_url before retrying a not-ready terminal websocket connection', async () => {
+      const connections: string[] = [];
+      const server = await startTerminalWsTestServer((socket, requestUrl) => {
+        connections.push(requestUrl);
+        if (requestUrl === '/ticket-1') {
+          socket.close();
+          return;
+        }
+        socket.on('message', (raw) => {
+          const frame = parseClientFrame(raw as Buffer);
+          if (frame.type === 'terminal.reconnect') {
+            socket.send(JSON.stringify({
+              type: 'terminal.replay_end',
+              terminal_session_id: 'term_1',
+              status: 'complete',
+              gap: false,
+              latest_seq: 0,
+              input_enabled: true,
+            }));
+            return;
+          }
+          if (frame.type === 'terminal.stdin') {
+            socket.send(JSON.stringify({
+              type: 'terminal.output',
+              terminal_session_id: 'term_1',
+              seq: 1,
+              chunk: 'FRESH_TICKET_DONE\n',
+            }));
+          }
+        });
+      });
+      let sessionReadCount = 0;
+      const get = vi.fn().mockImplementation(async () => {
+        sessionReadCount += 1;
+        return okResponse({ ws_url: `${server.url}/ticket-${sessionReadCount}` });
+      });
+      const page = {
+        evaluate: vi.fn().mockResolvedValue(JSON.stringify({ state: { token: 'mock_token' } })),
+        request: { get },
+      } as unknown as Parameters<typeof runTerminalCommandInSession>[0]['page'];
+
+      const output = await runTerminalCommandInSession({
+        page,
+        workspaceId: 'ws_default',
+        projectId: 'proj_1',
+        taskId: 'task_1',
+        sessionId: 'term_1',
+        command: 'printf FRESH_TICKET_DONE',
+        waitFor: ['FRESH_TICKET_DONE'],
+        timeoutMs: 3_000,
+      });
+
+      expect(output).toContain('FRESH_TICKET_DONE');
+      expect(get).toHaveBeenCalledTimes(2);
+      expect(connections).toEqual(['/ticket-1', '/ticket-2']);
+    });
+
+    it('limits terminal websocket auth failures to one fresh-ticket retry', async () => {
+      const server = await startRejectedUpgradeServer(401);
+      const get = vi.fn().mockResolvedValue(okResponse({ ws_url: server.url }));
+      const page = {
+        evaluate: vi.fn().mockResolvedValue(JSON.stringify({ state: { token: 'mock_token' } })),
+        request: { get },
+      } as unknown as Parameters<typeof runTerminalCommandInSession>[0]['page'];
+
+      await expect(runTerminalCommandInSession({
+        page,
+        workspaceId: 'ws_default',
+        projectId: 'proj_1',
+        taskId: 'task_1',
+        sessionId: 'term_1',
+        command: 'echo never',
+        waitFor: ['never'],
+        timeoutMs: 3_000,
+      })).rejects.toThrow('terminal_ws_auth_failed:Unexpected server response: 401');
+      expect(get).toHaveBeenCalledTimes(2);
+    });
+  });
+
   it('keeps workspace landing path builders sourced from the shared helper instead of the app boundary', async () => {
     const source = await readFile(path.resolve('e2e/integration-real-helpers.ts'), 'utf8');
 
-    expect(source).toContain("from '@mbos/contracts/src/auth-handoff-paths'");
+    expect(source).toMatch(/from ["']@mbos\/contracts\/src\/auth-handoff-paths["']/);
     expect(source).not.toContain("from '../src/lib/auth/invite-handoff'");
   });
 
@@ -76,6 +632,73 @@ describe('integration-real-helpers', () => {
     })).rejects.toThrow('auth_token_not_found_for_external_connection_seed');
   });
 
+  it('creates project request bodies without duplicating URL workspace truth', () => {
+    const payload = buildCreateProjectRequestBody('Agent Task Project', {
+      visibility: 'private',
+      joinPolicy: 'approval_required',
+    });
+
+    expect(payload).toEqual({
+      name: 'Agent Task Project',
+      visibility: 'private',
+      join_policy: 'approval_required',
+    });
+    expect(payload).not.toHaveProperty('workspace_id');
+  });
+
+  it('posts project creation with workspace only in the URL', async () => {
+    let currentUrl = 'about:blank';
+    const post = vi.fn().mockResolvedValue(okResponse({ id: 'proj_created' }));
+    const page = {
+      constructor: { name: 'Page' },
+      context: vi.fn(() => ({ _options: {} })),
+      evaluate: vi.fn().mockResolvedValue(JSON.stringify({ state: { token: 'mock_token' } })),
+      goto: vi.fn(async (url: string) => {
+        currentUrl = url;
+      }),
+      locator: vi.fn(() => ({
+        textContent: vi.fn().mockResolvedValue('project overview loaded'),
+      })),
+      mainFrame: vi.fn(() => ({
+        _expect: vi.fn(async () => ({
+          log: [],
+          matches: true,
+          received: currentUrl,
+        })),
+      })),
+      request: { post },
+      url: vi.fn(() => currentUrl),
+      waitForFunction: vi.fn(),
+      waitForTimeout: vi.fn(),
+    } as unknown as Parameters<typeof createProjectInWorkspace>[0];
+    const options = {
+      visibility: 'public',
+      joinPolicy: 'open',
+      workspace_id: 'ws_body_regression',
+    } as const;
+
+    await createProjectInWorkspace(
+      page,
+      'ws_url_truth',
+      'Agent Task Project',
+      options,
+    );
+
+    expect(post).toHaveBeenCalledWith(
+      `${API_BASE}/api/v1/workspaces/ws_url_truth/projects`,
+      expect.objectContaining({
+        data: {
+          name: expect.stringMatching(/^Agent Task Project \d+$/),
+          visibility: 'public',
+          join_policy: 'open',
+        },
+      }),
+    );
+    const [, requestOptions] = post.mock.calls[0] ?? [];
+    expect(requestOptions?.data).not.toHaveProperty('workspace_id');
+    expect(requestOptions?.data).not.toHaveProperty('workspaceId');
+  });
+
   it('collects tracked host-external task mounts from the runner registry', async () => {
     const workspaceRoot = await mkdtemp(path.join(tmpdir(), 'integration-helper-runner-'));
     await writeFile(
@@ -97,10 +720,10 @@ describe('integration-real-helpers', () => {
     ]);
   });
 
-  it('extracts the prepared task workspace cwd from notebook runner debug logs', () => {
+  it('extracts the prepared task workspace cwd from Agent task runner debug logs', () => {
     const logText = [
-      '[notebook-codex-runner][debug] received start {"task_id":"task_123"}',
-      '[notebook-codex-runner][debug] prepared task workspace {"cwd":"/home/alice/ags-workspace/task_123","codex_config":"/home/alice/ags-workspace/task_123/.codex/config.toml"}',
+      '[agent-task-runner][debug] received start {"task_id":"task_123"}',
+      '[agent-task-runner][debug] prepared task workspace {"cwd":"/home/alice/ags-workspace/task_123","codex_config":"/home/alice/ags-workspace/task_123/.codex/config.toml"}',
     ].join('\n');
 
     expect(findPreparedTaskWorkspaceRootInRunnerLog(logText)).toBe('/home/alice/ags-workspace/task_123');
@@ -108,15 +731,15 @@ describe('integration-real-helpers', () => {
 
   it('prefers the latest prepared task workspace entry when a runner reconnects across tasks', () => {
     const logText = [
-      '[notebook-codex-runner][debug] prepared task workspace {"cwd":"/home/alice/ags-workspace/task_old"}',
-      '[notebook-codex-runner][debug] prepared task workspace {"cwd":"/home/alice/ags-workspace/task_new"}',
+      '[agent-task-runner][debug] prepared task workspace {"cwd":"/home/alice/ags-workspace/task_old"}',
+      '[agent-task-runner][debug] prepared task workspace {"cwd":"/home/alice/ags-workspace/task_new"}',
     ].join('\n');
 
     expect(findPreparedTaskWorkspaceRootInRunnerLog(logText)).toBe('/home/alice/ags-workspace/task_new');
   });
 
   it('returns null when the runner log has not yet declared a prepared task workspace', () => {
-    expect(findPreparedTaskWorkspaceRootInRunnerLog('[notebook-codex-runner] connected')).toBeNull();
+    expect(findPreparedTaskWorkspaceRootInRunnerLog('[agent-task-runner] connected')).toBeNull();
   });
 
   it('parses workload pod readiness truth from kubernetes pod list payloads', () => {
@@ -180,31 +803,10 @@ describe('integration-real-helpers', () => {
     });
   });
 
-  it('keeps terminate recovery spec on ready-aware pod and execution outcome helpers', async () => {
-    const source = await readFile(path.resolve('e2e/integration-internal-notebook-workspace.spec.ts'), 'utf8');
-
-    expect(source).toContain('waitForNotebookExecutionOutcome');
-    expect(source).toContain('waitForWorkloadPodReady');
-    expect(source).not.toMatch(
-      /waitForAssistantToken\(\{\s*page,\s*workspaceId: "ws_default",\s*projectId,\s*taskId,\s*token: terminateRecoveryToken,/,
-    );
-  });
-
-  it('binds the terminate recovery assistant message id into the scoped outcome wait', async () => {
-    const source = await readFile(path.resolve('e2e/integration-internal-notebook-workspace.spec.ts'), 'utf8');
-
-    expect(source).toMatch(
-      /const \{ assistantMessageId: terminateRecoveryAssistantMessageId \}\s*=\s*await sendTaskMessage\(/,
-    );
-    expect(source).toMatch(
-      /waitForNotebookExecutionOutcome\(\{\s*page,\s*workspaceId: "ws_default",\s*projectId,\s*taskId,\s*token: terminateRecoveryToken,\s*assistantMessageId: terminateRecoveryAssistantMessageId,/,
-    );
-  });
-
-  it('scopes notebook execution outcome polling to the current assistant message boundary', async () => {
+  it('scopes Agent Task execution outcome polling to the current runner output activity boundary', async () => {
     const source = await readFile(path.resolve('e2e/integration-real-helpers.ts'), 'utf8');
 
-    expect(source).toContain('assistantMessageId');
+    expect(source).toContain('runnerOutputActivityId');
     expect(source).toContain('message_id=');
   });
 
@@ -225,13 +827,13 @@ describe('integration-real-helpers', () => {
     expect(buildRunnerRuntimeRootPathPart('/workspace/team-a/task_shared/')).toBe(first);
     expect(buildRunnerRuntimeRootForVisibleWorkspace({
       visibleRoot: '/workspace/team-a/task_shared',
-      runtimeStateBase: '/runner-runtime',
-    })).toBe(`/runner-runtime/${first}`);
+      runtimeStateBase: '/runner-state',
+    })).toBe(`/runner-state/${first}`);
   });
 
   it('keeps integration helper runtime path derivation consistent with notebook task-workspace paths', () => {
     const previousStateRoot = process.env.MBOS_AGENT_CODEX_STATE_ROOT;
-    process.env.MBOS_AGENT_CODEX_STATE_ROOT = '/runner-runtime';
+    process.env.MBOS_AGENT_CODEX_STATE_ROOT = '/runner-state';
     try {
       for (const visibleRoot of [
         '/workspace/task_1',
@@ -240,7 +842,7 @@ describe('integration-real-helpers', () => {
       ]) {
         expect(buildRunnerRuntimeRootForVisibleWorkspace({
           visibleRoot,
-          runtimeStateBase: '/runner-runtime',
+          runtimeStateBase: '/runner-state',
         })).toBe(buildTaskWorkspacePaths(visibleRoot, 'k8s_internal').runtimeRoot);
       }
       process.env.MBOS_AGENT_CODEX_STATE_ROOT = '/workspace/task_1/runtime-state';
@@ -330,97 +932,438 @@ describe('integration-real-helpers', () => {
     expect(() => resolveIntegrationKeycloakBaseUrl({})).toThrow('integration_keycloak_base_url_missing');
   });
 
-  it('binds notebook execution sockets to the task session while preserving other query params', () => {
+  it('binds Agent Task execution sockets to the task runner session while preserving other query params', () => {
     expect(
-      bindNotebookExecutionSocketToTask({
-        wsUrl: 'ws://localhost:20000/api/v1/agent-execution/ws?agent_id=ag_1&foo=bar',
+      bindAgentTaskExecutionSocketToTask({
+        wsUrl: 'ws://localhost:20000/api/v1/agent-execution/ws?agent_runner_id=runner_1&foo=bar',
         taskId: 'task_123',
       }),
-    ).toBe('ws://localhost:20000/api/v1/agent-execution/ws?agent_id=ag_1&foo=bar&session_id=task_123');
+    ).toBe('ws://localhost:20000/api/v1/agent-execution/ws?agent_runner_id=runner_1&foo=bar&runner_session_id=task_123');
   });
 
-  it('replaces stale notebook execution session ids with the current task id', () => {
-    expect(
-      bindNotebookExecutionSocketToTask({
-        wsUrl: 'wss://runner.example.com/api/v1/agent-execution/ws?agent_id=ag_1&session_id=task_old',
+  it('rejects legacy session_id in Agent Task runner socket URLs', () => {
+    expect(() =>
+      bindAgentTaskExecutionSocketToTask({
+        wsUrl: 'wss://runner.example.com/api/v1/agent-execution/ws?agent_runner_id=runner_1&session_id=task_old&runner_session_id=task_older',
         taskId: 'task_new',
       }),
-    ).toBe('wss://runner.example.com/api/v1/agent-execution/ws?agent_id=ag_1&session_id=task_new');
+    ).toThrow('legacy_session_id_not_supported_for_agent_task_runner_socket');
   });
 
-  it('keeps notebook presence runner sockets agent-scoped before task creation', () => {
+  it('keeps Agent Runner presence sockets runner-scoped before task creation', () => {
     expect(
-      resolveNotebookRunnerSocketUrl({
-        wsUrl: 'ws://localhost:20000/api/v1/agent-execution/ws?agent_id=ag_1',
-        scope: 'agent_presence',
+      resolveAgentTaskRunnerSocketUrl({
+        wsUrl: 'ws://localhost:20000/api/v1/agent-execution/ws?agent_runner_id=runner_1',
+        scope: 'runner_presence',
       }),
-    ).toBe('ws://localhost:20000/api/v1/agent-execution/ws?agent_id=ag_1');
+    ).toBe('ws://localhost:20000/api/v1/agent-execution/ws?agent_runner_id=runner_1');
   });
 
-  it('requires a task id when resolving a task-bound notebook runner socket', () => {
+  it('requires a task id when resolving a task-bound Agent task runner socket', () => {
     expect(() =>
-      resolveNotebookRunnerSocketUrl({
-        wsUrl: 'ws://localhost:20000/api/v1/agent-execution/ws?agent_id=ag_1',
+      resolveAgentTaskRunnerSocketUrl({
+        wsUrl: 'ws://localhost:20000/api/v1/agent-execution/ws?agent_runner_id=runner_1',
         scope: 'task_execution',
       }),
-    ).toThrow('task_id_required_for_task_bound_notebook_runner');
+    ).toThrow('task_id_required_for_task_bound_agent_task_runner');
   });
 
-  it('creates anthropic chat runner bundles with the anthropic_messages wire selected from endpoint upstream_protocol', async () => {
+  it('returns pod-reachable mock Jira URLs derived from the Agent execution websocket host', async () => {
+    const previousWsBaseUrl = process.env.AGENT_EXECUTION_WS_BASE_URL;
+    const previousGateway = process.env.INTEGRATION_POD_HOST_GATEWAY;
+    process.env.AGENT_EXECUTION_WS_BASE_URL = 'ws://172.19.0.1:20075';
+    delete process.env.INTEGRATION_POD_HOST_GATEWAY;
+    const server = await startMockJiraServer({
+      displayName: 'Pod Jira',
+      expectedToken: 'jira-token',
+    });
+    try {
+      expect(server.baseUrl).toMatch(/^http:\/\/172\.19\.0\.1:\d+$/);
+    } finally {
+      await server.stop();
+      if (previousWsBaseUrl === undefined) {
+        delete process.env.AGENT_EXECUTION_WS_BASE_URL;
+      } else {
+        process.env.AGENT_EXECUTION_WS_BASE_URL = previousWsBaseUrl;
+      }
+      if (previousGateway === undefined) {
+        delete process.env.INTEGRATION_POD_HOST_GATEWAY;
+      } else {
+        process.env.INTEGRATION_POD_HOST_GATEWAY = previousGateway;
+      }
+    }
+  });
+
+  it('uses the explicit pod host gateway override for mock Feishu MCP endpoints', async () => {
+    const previousWsBaseUrl = process.env.AGENT_EXECUTION_WS_BASE_URL;
+    const previousGateway = process.env.INTEGRATION_POD_HOST_GATEWAY;
+    process.env.AGENT_EXECUTION_WS_BASE_URL = 'ws://127.0.0.1:20076';
+    process.env.INTEGRATION_POD_HOST_GATEWAY = '10.88.0.1';
+    const server = await startMockFeishuMcpServer({
+      expectedToken: 'feishu-token',
+      toolName: 'mock_tool',
+    });
+    try {
+      expect(server.endpoint).toMatch(/^http:\/\/10\.88\.0\.1:\d+\/mcp$/);
+    } finally {
+      await server.stop();
+      if (previousWsBaseUrl === undefined) {
+        delete process.env.AGENT_EXECUTION_WS_BASE_URL;
+      } else {
+        process.env.AGENT_EXECUTION_WS_BASE_URL = previousWsBaseUrl;
+      }
+      if (previousGateway === undefined) {
+        delete process.env.INTEGRATION_POD_HOST_GATEWAY;
+      } else {
+        process.env.INTEGRATION_POD_HOST_GATEWAY = previousGateway;
+      }
+    }
+  });
+
+  it('creates a managed Agent Runner without legacy runner selectors or chat session side effects', async () => {
     const post = vi.fn().mockImplementation(async (url: string, options?: { data?: Record<string, unknown> }) => {
-      if (url.includes('/agents/') && url.endsWith('/keys')) {
-        return okResponse({ key: 'agent_key_1' });
-      }
-      if (url.endsWith('/chat/sessions')) {
-        return okResponse({ id: 'sess_1' });
-      }
-      if (url.endsWith('/agents')) {
-        return okResponse({ id: 'ag_1' });
+      if (url.endsWith('/agent-runners')) {
+        return okResponse({
+          id: 'ag_runner_1',
+          name: options?.data?.name,
+          status: options?.data?.status,
+          is_default: options?.data?.is_default,
+          default_endpoint_id: options?.data?.default_endpoint_id,
+          capabilities: options?.data?.capabilities,
+          diagnostics: { presence: 'managed' },
+        });
       }
       throw new Error(`unexpected_post:${url}:${JSON.stringify(options?.data ?? null)}`);
     });
-    const get = vi.fn().mockImplementation(async (url: string) => {
-      if (url.endsWith('/endpoints/ep_anthropic')) {
+    const page = {
+      evaluate: vi.fn().mockResolvedValue(JSON.stringify({ state: { token: 'mock_token' } })),
+      request: { post },
+    } as unknown as Parameters<typeof createManagedAgentRunnerViaApi>[0];
+
+    const runner = await createManagedAgentRunnerViaApi(page, {
+      workspaceId: 'ws_default',
+      projectId: 'proj_1',
+      endpointId: 'ep_task',
+      title: 'agent-task-runner',
+    });
+
+    expect(runner).toMatchObject({
+      runnerId: 'ag_runner_1',
+      runnerName: 'agent-task-runner',
+      status: 'ready',
+      isDefault: true,
+      defaultEndpointId: 'ep_task',
+    });
+    expect(post).toHaveBeenCalledTimes(1);
+    expect(post).toHaveBeenCalledWith(
+      expect.stringContaining('/api/v1/workspaces/ws_default/projects/proj_1/agent-runners'),
+      expect.objectContaining({
+        data: expect.objectContaining({
+          name: 'agent-task-runner',
+          status: 'ready',
+          is_default: true,
+          default_endpoint_id: 'ep_task',
+        }),
+      }),
+    );
+    const payload = post.mock.calls[0]?.[1]?.data as Record<string, unknown>;
+    expect(payload).not.toHaveProperty('mode');
+    expect(payload).not.toHaveProperty('runner_runtime');
+    expect(payload).not.toHaveProperty('interaction_kind');
+    expect(payload).not.toHaveProperty('execution_preferences');
+    expect(payload).not.toHaveProperty('external_agent_id');
+  });
+
+  it('creates Agent Tasks without binding agent_id at task creation time', async () => {
+    const post = vi.fn().mockImplementation(async (url: string, options?: { data?: Record<string, unknown> }) => {
+      if (url.endsWith('/tasks')) {
         return okResponse({
-          id: 'ep_anthropic',
-          provider_family: 'custom',
-          upstream_protocol: 'anthropic_messages',
+          id: 'task_1',
+          title: options?.data?.title,
+          workspace_file_library_id: options?.data?.workspace_file_library_id,
         });
       }
-      if (url.includes('/agents/ag_1/connection-info')) {
-        return okResponse({ ws_url: 'ws://localhost:20000/api/v1/agent-execution/ws?agent_id=ag_1' });
+      throw new Error(`unexpected_post:${url}:${JSON.stringify(options?.data ?? null)}`);
+    });
+    const page = {
+      evaluate: vi.fn().mockResolvedValue(JSON.stringify({ state: { token: 'mock_token' } })),
+      request: { post },
+    } as unknown as Parameters<typeof createAgentTaskViaApi>[0]['page'];
+
+    await expect(createAgentTaskViaApi({
+      page,
+      workspaceId: 'ws_default',
+      projectId: 'proj_1',
+      title: 'Agent Task without explicit runner',
+      fileLibraryId: 'fl_1',
+    })).resolves.toBe('task_1');
+
+    const payload = post.mock.calls[0]?.[1]?.data as Record<string, unknown>;
+    expect(payload).toMatchObject({
+      title: 'Agent Task without explicit runner',
+      workspace_file_library_id: 'fl_1',
+    });
+    expect(payload).not.toHaveProperty('agent_id');
+  });
+
+  it('starts Agent Task runs through the public runs API with intent and without message roles', async () => {
+    const post = vi.fn().mockImplementation(async (url: string, options?: { data?: Record<string, unknown> }) => {
+      if (url.endsWith('/tasks/task_1/runs')) {
+        return okResponse({
+          id: 'activity_runner_1',
+          task_id: 'task_1',
+          kind: 'runner_output',
+          actor: 'runner',
+          content: '',
+          run_id: 'run_1',
+        });
+      }
+      throw new Error(`unexpected_post:${url}:${JSON.stringify(options?.data ?? null)}`);
+    });
+    const page = {
+      evaluate: vi.fn().mockResolvedValue(JSON.stringify({ state: { token: 'mock_token' } })),
+      request: { post },
+    } as unknown as Parameters<typeof startAgentTaskRunViaApi>[0]['page'];
+
+    await expect(startAgentTaskRunViaApi({
+      page,
+      workspaceId: 'ws_default',
+      projectId: 'proj_1',
+      taskId: 'task_1',
+      intent: 'run task',
+    })).resolves.toEqual({
+      runnerOutputActivityId: 'activity_runner_1',
+      runId: 'run_1',
+    });
+
+    expect(post).toHaveBeenCalledWith(
+      expect.stringContaining('/api/v1/workspaces/ws_default/projects/proj_1/tasks/task_1/runs'),
+      expect.objectContaining({
+        data: {
+          intent: 'run task',
+        },
+      }),
+    );
+    const payload = post.mock.calls[0]?.[1]?.data as Record<string, unknown>;
+    expect(payload).not.toHaveProperty('role');
+    expect(payload).not.toHaveProperty('content');
+    expect(payload).not.toHaveProperty('agent_id');
+    expect(payload).not.toHaveProperty('runner_id');
+  });
+
+  it('fast-fails runner output token waits on runner error traces with trace summary context', async () => {
+    const get = vi.fn().mockImplementation(async (url: string) => {
+      if (url.includes('/activity')) {
+        return okResponse([
+          { id: 'activity_user', kind: 'user_intent', actor: 'user', content: 'run task' },
+          { id: 'activity_runner', kind: 'runner_output', actor: 'runner', content: '' },
+        ]);
+      }
+      if (url.includes('/traces?')) {
+        return okResponse({
+          items: [
+            {
+              message_id: 'activity_runner',
+              category: 'error',
+              phase: 'end',
+              status: 'error',
+              name: 'execution.terminal',
+              summary: 'agent_task_runner_mode_invalid:missing',
+            },
+          ],
+        });
+      }
+      if (url.endsWith('/tasks/task_1')) {
+        return okResponse({ id: 'task_1', run_state: 'running' });
       }
       throw new Error(`unexpected_get:${url}`);
     });
     const page = {
       evaluate: vi.fn().mockResolvedValue(JSON.stringify({ state: { token: 'mock_token' } })),
-      request: {
-        get,
-        post,
-      },
-    } as unknown as Parameters<typeof createExternalRunnerAgentBundle>[0];
+      request: { get },
+      waitForTimeout: vi.fn(),
+    } as unknown as Parameters<typeof waitForRunnerOutputToken>[0]['page'];
 
-    await createExternalRunnerAgentBundle(page, {
+    let thrown: Error | null = null;
+    try {
+      await waitForRunnerOutputToken({
+        page,
+        workspaceId: 'ws_default',
+        projectId: 'proj_1',
+        taskId: 'task_1',
+        token: 'EXPECTED_TOKEN',
+      });
+    } catch (error) {
+      thrown = error instanceof Error ? error : new Error(String(error));
+    }
+
+    expect(thrown?.message).toContain('runner_output_token_failed:terminal_trace_failure');
+    expect(thrown?.message).toContain('traces:');
+    expect(thrown?.message).toContain('error/error execution.terminal: agent_task_runner_mode_invalid:missing');
+    expect(page.waitForTimeout).not.toHaveBeenCalled();
+  });
+
+  it('keeps waiting after non-terminal codex command error traces so the model can recover', async () => {
+    let activityReadCount = 0;
+    const get = vi.fn().mockImplementation(async (url: string) => {
+      if (url.includes('/activity')) {
+        activityReadCount += 1;
+        return okResponse(activityReadCount === 1
+          ? [
+              { id: 'activity_user', kind: 'user_intent', actor: 'user', content: 'run task' },
+              { id: 'activity_runner', kind: 'runner_output', actor: 'runner', content: '' },
+            ]
+          : [
+              { id: 'activity_user', kind: 'user_intent', actor: 'user', content: 'run task' },
+              { id: 'activity_runner', kind: 'runner_output', actor: 'runner', content: 'Recovered with EXPECTED_TOKEN' },
+            ]);
+      }
+      if (url.includes('/traces?')) {
+        return okResponse({
+          items: [
+            {
+              message_id: 'activity_runner',
+              category: 'error',
+              phase: 'end',
+              status: 'error',
+              name: 'codex.command',
+              summary: 'Command failed (exit 1)',
+            },
+          ],
+        });
+      }
+      if (url.endsWith('/tasks/task_1')) {
+        return okResponse({ id: 'task_1', run_state: 'running' });
+      }
+      throw new Error(`unexpected_get:${url}`);
+    });
+    const page = {
+      evaluate: vi.fn().mockResolvedValue(JSON.stringify({ state: { token: 'mock_token' } })),
+      request: { get },
+      waitForTimeout: vi.fn().mockResolvedValue(undefined),
+    } as unknown as Parameters<typeof waitForRunnerOutputToken>[0]['page'];
+
+    await expect(waitForRunnerOutputToken({
+      page,
       workspaceId: 'ws_default',
       projectId: 'proj_1',
-      endpointId: 'ep_anthropic',
-      title: 'anthropic-chat',
-      interactionKind: 'chat',
+      taskId: 'task_1',
+      token: 'EXPECTED_TOKEN',
+      timeoutMs: 10_000,
+    })).resolves.toBeUndefined();
+    expect(activityReadCount).toBe(2);
+    expect(page.waitForTimeout).toHaveBeenCalledTimes(1);
+  });
+
+  it('fast-fails runner output token waits on synthesized runner output errors', async () => {
+    const get = vi.fn().mockImplementation(async (url: string) => {
+      if (url.includes('/activity')) {
+        return okResponse([
+          {
+            id: 'activity_runner',
+            kind: 'runner_output',
+            actor: 'runner',
+            content: 'Execution failed before any visible output was produced.\nError code: AGENT_UPSTREAM_ERROR',
+          },
+        ]);
+      }
+      if (url.includes('/traces?')) {
+        return okResponse({ items: [] });
+      }
+      if (url.endsWith('/tasks/task_1')) {
+        return okResponse({ id: 'task_1', run_state: 'idle' });
+      }
+      throw new Error(`unexpected_get:${url}`);
+    });
+    const page = {
+      evaluate: vi.fn().mockResolvedValue(JSON.stringify({ state: { token: 'mock_token' } })),
+      request: { get },
+      waitForTimeout: vi.fn(),
+    } as unknown as Parameters<typeof waitForRunnerOutputToken>[0]['page'];
+
+    await expect(waitForRunnerOutputToken({
+      page,
+      workspaceId: 'ws_default',
+      projectId: 'proj_1',
+      taskId: 'task_1',
+      token: 'EXPECTED_TOKEN',
+    })).rejects.toThrow('runner_output_token_failed:runner_output_error');
+    expect(page.waitForTimeout).not.toHaveBeenCalled();
+  });
+
+  it('creates Agent Task runner bundles without external mode, legacy selectors, or chat session side effects', async () => {
+    const post = vi.fn().mockImplementation(async (url: string, options?: { data?: Record<string, unknown> }) => {
+      if (url.endsWith('/agent-runners')) {
+        return okResponse({
+          id: 'runner_1',
+          name: options?.data?.name,
+          status: options?.data?.status,
+          is_default: options?.data?.is_default,
+          default_endpoint_id: options?.data?.default_endpoint_id,
+          capabilities: options?.data?.capabilities,
+          diagnostics: options?.data?.diagnostics,
+        });
+      }
+      if (url.endsWith('/tasks')) {
+        return okResponse({
+          id: 'task_1',
+          title: options?.data?.title,
+          active_run: null,
+        });
+      }
+      throw new Error(`unexpected_post:${url}:${JSON.stringify(options?.data ?? null)}`);
+    });
+    const page = {
+      evaluate: vi.fn().mockResolvedValue(JSON.stringify({ state: { token: 'mock_token' } })),
+      request: {
+        post,
+      },
+    } as unknown as Parameters<typeof createAgentTaskRunnerBundleViaApi>[0];
+
+    const bundle = await createAgentTaskRunnerBundleViaApi(page, {
+      workspaceId: 'ws_default',
+      projectId: 'proj_1',
+      endpointId: 'ep_task',
+      runnerTitle: 'agent-task-runner',
+      taskTitle: 'agent-task',
+      workspaceName: 'Agent Task Workspace',
     });
 
+    expect(bundle).toMatchObject({
+      runnerId: 'runner_1',
+      runnerName: 'agent-task-runner',
+      taskId: 'task_1',
+    });
+    expect(post).toHaveBeenCalledTimes(2);
     expect(post).toHaveBeenCalledWith(
-      expect.stringContaining('/api/v1/workspaces/ws_default/projects/proj_1/agents'),
+      expect.stringContaining('/api/v1/workspaces/ws_default/projects/proj_1/agent-runners'),
       expect.objectContaining({
         data: expect.objectContaining({
-          interaction_kind: 'chat',
-          execution_preferences: {
-            chat: expect.objectContaining({
-              endpoint_id: 'ep_anthropic',
-              wire_api: 'anthropic_messages',
-            }),
-          },
+          name: 'agent-task-runner',
+          is_default: true,
+          default_endpoint_id: 'ep_task',
+          status: 'ready',
         }),
       }),
     );
+    expect(post).toHaveBeenCalledWith(
+      expect.stringContaining('/api/v1/workspaces/ws_default/projects/proj_1/tasks'),
+      expect.objectContaining({
+        data: expect.objectContaining({
+          title: 'agent-task',
+          workspace_name: 'Agent Task Workspace',
+        }),
+      }),
+    );
+    const runnerPayload = post.mock.calls[0]?.[1]?.data as Record<string, unknown>;
+    const taskPayload = post.mock.calls[1]?.[1]?.data as Record<string, unknown>;
+    expect(runnerPayload).not.toHaveProperty('mode');
+    expect(runnerPayload).not.toHaveProperty('runner_runtime');
+    expect(runnerPayload).not.toHaveProperty('interaction_kind');
+    expect(runnerPayload).not.toHaveProperty('execution_preferences');
+    expect(runnerPayload).not.toHaveProperty('external_agent_id');
+    expect(taskPayload).not.toHaveProperty('agent_id');
+    expect(taskPayload).not.toHaveProperty('runner_id');
+    expect(taskPayload).not.toHaveProperty('agent_name');
   });
 });

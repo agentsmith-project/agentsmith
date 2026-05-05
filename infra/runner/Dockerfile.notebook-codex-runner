@@ -1,7 +1,0 @@
-ARG RUNNER_BASE_IMAGE=agentsmith-notebook-codex-runner-base:local
-
-FROM ${RUNNER_BASE_IMAGE}
-
-COPY packages/agent-runner/src ./packages/agent-runner/src
-COPY packages/notebook-codex-runner/src ./packages/notebook-codex-runner/src
-COPY packages/notebook-codex-runner/builtin-skills /etc/codex/skills

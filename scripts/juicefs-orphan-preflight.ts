@@ -16,9 +16,9 @@ import {
   type GatewayOwnerEvidence,
 } from '../packages/api-entry-node/src/file-library-gateway-ownership.js';
 import {
-  isNotebookRunnerProcessSnapshot,
-  notebookRunnerProcessNeedsCwd,
-} from '../packages/notebook-codex-runner/src/task-workspace-ownership.js';
+  agentTaskRunnerProcessNeedsCwd,
+  isAgentTaskRunnerProcessSnapshot,
+} from '../packages/agent-task-runner/src/task-workspace-ownership.js';
 import { resolveFileLibraryGatewayPaths } from '../packages/api-entry-node/src/file-library-gateway-paths.js';
 
 const execFileAsync = promisify(execFile);
@@ -273,7 +273,7 @@ export function classifyTaskMountProcess(args: {
   if (args.ownerProcessPid !== null) {
     const ownerProcess = args.processTableByPid?.get(args.ownerProcessPid) ?? null;
     if (ownerProcess) {
-      if (isNotebookRunnerProcessSnapshot(ownerProcess)) {
+      if (isAgentTaskRunnerProcessSnapshot(ownerProcess)) {
         return {
           action: 'keep',
           reason: 'mount_owner_alive',
@@ -356,7 +356,7 @@ function buildProcessChildrenByPid(processes: readonly ManagedProcessInfo[]): Ma
   return childrenByPid;
 }
 
-function hasTrackedNotebookRunnerAlive(args: {
+function hasTrackedAgentTaskRunnerAlive(args: {
   trackedRunnerPid: number | null;
   livePids: ReadonlySet<number>;
   processTableByPid: ReadonlyMap<number, ManagedProcessInfo>;
@@ -366,7 +366,7 @@ function hasTrackedNotebookRunnerAlive(args: {
     return false;
   }
   const trackedProcess = args.processTableByPid.get(args.trackedRunnerPid) ?? null;
-  if (trackedProcess && isNotebookRunnerProcessSnapshot(trackedProcess)) {
+  if (trackedProcess && isAgentTaskRunnerProcessSnapshot(trackedProcess)) {
     return true;
   }
 
@@ -380,7 +380,7 @@ function hasTrackedNotebookRunnerAlive(args: {
       continue;
     }
     visited.add(processInfo.pid);
-    if (args.livePids.has(processInfo.pid) && isNotebookRunnerProcessSnapshot(processInfo)) {
+    if (args.livePids.has(processInfo.pid) && isAgentTaskRunnerProcessSnapshot(processInfo)) {
       return true;
     }
     queue.push(...(childrenByPid.get(processInfo.pid) ?? []));
@@ -389,13 +389,13 @@ function hasTrackedNotebookRunnerAlive(args: {
   return false;
 }
 
-export function hasAnyNotebookRunnerAlive(args: {
+export function hasAnyAgentTaskRunnerAlive(args: {
   trackedRunnerPid: number | null;
   livePids: ReadonlySet<number>;
   processes: readonly ManagedProcessInfo[];
 }): boolean {
   const processTableByPid = buildProcessTableByPid(args.processes);
-  const trackedRunnerAlive = hasTrackedNotebookRunnerAlive({
+  const trackedRunnerAlive = hasTrackedAgentTaskRunnerAlive({
     trackedRunnerPid: args.trackedRunnerPid,
     livePids: args.livePids,
     processTableByPid,
@@ -403,7 +403,7 @@ export function hasAnyNotebookRunnerAlive(args: {
   });
   return Boolean(
     trackedRunnerAlive
-      || args.processes.some((processInfo) => isNotebookRunnerProcessSnapshot(processInfo)),
+      || args.processes.some((processInfo) => isAgentTaskRunnerProcessSnapshot(processInfo)),
   );
 }
 
@@ -523,7 +523,7 @@ export async function loadProcessTable(): Promise<ManagedProcessInfo[]> {
     })
     .filter((value): value is ManagedProcessInfo => value !== null);
   await Promise.all(processes.map(async (processInfo) => {
-    if (!notebookRunnerProcessNeedsCwd(processInfo.command)) {
+    if (!agentTaskRunnerProcessNeedsCwd(processInfo.command)) {
       return;
     }
     processInfo.cwd = await loadProcessCwd(processInfo.pid);
@@ -885,7 +885,7 @@ async function runPreflight(options: PreflightOptions): Promise<void> {
   const trackedRunnerPid = await safeReadPidFile(runnerPidFile);
   const apiProcessRegex = new RegExp(`${escapeForRegExp(options.rootDir)}.*node_modules/.bin/tsx\\s+src/index.ts`);
 
-  const anyRunnerAlive = hasAnyNotebookRunnerAlive({
+  const anyRunnerAlive = hasAnyAgentTaskRunnerAlive({
     trackedRunnerPid,
     livePids,
     processes,

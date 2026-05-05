@@ -135,7 +135,7 @@ export function AuditDetailDrawer({
     })}`
     : null;
   const resourcePolicyHref = basePath && event.resource_id
-    && (event.resource_type === 'endpoint' || event.resource_type === 'file_library' || event.resource_type === 'agent')
+    && (event.resource_type === 'endpoint' || event.resource_type === 'file_library' || event.resource_type === 'agent_runner')
     ? `${basePath}/resource-policy${buildSharedOpsFilterQuery({}, {
       resource_type: event.resource_type,
       resource_id: event.resource_id,
@@ -220,7 +220,7 @@ export function AuditDetailDrawer({
                 variant={
                   event.actor_type === 'user'
                     ? 'default'
-                    : event.actor_type === 'agent'
+                    : event.actor_type === 'runner'
                       ? 'secondary'
                       : 'outline'
                 }

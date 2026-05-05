@@ -29,8 +29,8 @@ const WORKSPACE_FOUNDATION_DOMAINS = [
     baseCollections: ['project_audit_events', 'project_usage_facts'],
   },
   {
-    domain: 'notebook',
-    baseCollections: ['notebook_tasks', 'notebook_task_messages', 'notebook_task_artifacts', 'notebook_task_trace_events'],
+    domain: 'agent_task',
+    baseCollections: ['agent_tasks', 'agent_task_messages', 'agent_task_artifacts', 'agent_task_trace_events'],
   },
   {
     domain: 'governance',

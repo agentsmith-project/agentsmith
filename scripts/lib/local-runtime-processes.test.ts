@@ -486,12 +486,12 @@ wait "$child_pid"
       `
         set -euo pipefail
         source scripts/lib/local-runtime-processes.sh
-        pid="$(local_runtime_start_owned_service runner 0 "${logFile}" bash -lc 'sleep 0.2; exec -a "make notebook-agent-runner" sleep 300')"
+        pid="$(local_runtime_start_owned_service runner 0 "${logFile}" bash -lc 'sleep 0.2; exec -a "make agent-task-runner-from-state" sleep 300')"
         command=""
         for _ in $(seq 1 40); do
           command="$(local_runtime_process_command "\${pid}" || true)"
           case "\${command}" in
-            "make notebook-agent-runner"*) break ;;
+            "make agent-task-runner-from-state"*) break ;;
           esac
           sleep 0.1
         done
@@ -513,7 +513,7 @@ wait "$child_pid"
     );
 
     expect(startResult.status).toBe(0);
-    expect(startResult.stdout).toContain('command=make notebook-agent-runner 300');
+    expect(startResult.stdout).toContain('command=make agent-task-runner-from-state 300');
     const pid = Number.parseInt(startResult.stdout.match(/pid=(\d+)/)?.[1] ?? '', 10);
     expect(pid).toBeGreaterThan(0);
     expect(await waitForPidExit(pid)).toBe(true);
@@ -529,7 +529,7 @@ wait "$child_pid"
       handoffScript,
       `#!/usr/bin/env bash
 set -euo pipefail
-exec -a "make notebook-agent-runner" sleep 300
+exec -a "make agent-task-runner-from-state" sleep 300
 `,
       'utf8',
     );
@@ -575,7 +575,7 @@ exec -a "make notebook-agent-runner" sleep 300
     );
 
     expect(verifyResult.status).toBe(0);
-    expect(verifyResult.stdout).toContain('command=make notebook-agent-runner 300');
+    expect(verifyResult.stdout).toContain('command=make agent-task-runner-from-state 300');
     expect(await waitForPidExit(pid)).toBe(true);
   });
 

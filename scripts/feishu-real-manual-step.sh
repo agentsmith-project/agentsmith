@@ -17,7 +17,7 @@ info() { echo "[feishu-real-manual-step] $*"; }
 
 if [[ ! -f "${TOKEN_FILE}" ]]; then
   echo "[feishu-real-manual-step] token file missing: ${TOKEN_FILE}" >&2
-  echo "[feishu-real-manual-step] run: make notebook-agent-refresh-token" >&2
+  echo "[feishu-real-manual-step] run: make agent-runner-refresh-token" >&2
   exit 1
 fi
 

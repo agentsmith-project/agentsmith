@@ -11,83 +11,62 @@ describe('agent-runner-profile', () => {
     vi.unstubAllEnvs();
   });
 
-  it('defaults external agents to docker_manual runtime', () => {
+  it('defaults developer runners to docker_manual runtime', () => {
     expect(resolveAgentRunnerRuntime({
-      mode: 'external',
-      config: {},
+      runner_provider: 'developer',
     })).toBe('docker_manual');
   });
 
-  it('treats configless external agents as dev_direct when execution base is loopback', () => {
-    vi.stubEnv('EXTERNAL_AGENT_EXECUTION_HTTP_BASE_URL', 'http://localhost:21000');
+  it('treats developer runners as dev_direct when execution base is loopback', () => {
+    vi.stubEnv('AGENT_RUNNER_DEVELOPER_EXECUTION_HTTP_BASE_URL', 'http://localhost:21000');
     expect(resolveAgentRunnerRuntime({
-      mode: 'external',
-      config: null,
+      runner_provider: 'developer',
     })).toBe('dev_direct');
   });
 
-  it('keeps configless external agents as docker_manual when execution base is non-loopback', () => {
-    vi.stubEnv('EXTERNAL_AGENT_EXECUTION_HTTP_BASE_URL', 'http://host.docker.internal:20000');
+  it('keeps developer runners as docker_manual when execution base is non-loopback', () => {
+    vi.stubEnv('AGENT_RUNNER_DEVELOPER_EXECUTION_HTTP_BASE_URL', 'http://host.docker.internal:20000');
     expect(resolveAgentRunnerRuntime({
-      mode: 'external',
-      config: null,
+      runner_provider: 'developer',
     })).toBe('docker_manual');
   });
 
-  it('resolves explicit external runtimes from config', () => {
+  it('does not read legacy runner_runtime config as runtime truth', () => {
     expect(resolveAgentRunnerRuntime({
-      mode: 'external',
-      config: { runner_runtime: 'dev_direct' },
-    })).toBe('dev_direct');
-
-    expect(resolveAgentRunnerRuntime({
-      mode: 'external',
+      runner_provider: 'developer',
       config: { runner_runtime: 'compose_managed' },
-    })).toBe('compose_managed');
+    } as never)).toBe('docker_manual');
   });
 
-  it('forces internal agents to k8s_internal runtime', () => {
+  it('forces managed runners to k8s_internal runtime', () => {
     expect(resolveAgentRunnerRuntime({
-      mode: 'internal',
-      config: { runner_runtime: 'docker_manual' },
+      runner_provider: 'managed',
     })).toBe('k8s_internal');
   });
 
-  it('identifies compose-managed external agents only from runtime truth', () => {
+  it('does not identify compose-managed runners from legacy config', () => {
     expect(isComposeManagedExternalAgent({
-      mode: 'external',
+      runner_provider: 'developer',
       config: { runner_runtime: 'compose_managed' },
+    } as never)).toBe(false);
+  });
+
+  it('uses agent-presence notebook dispatch for developer runners', () => {
+    expect(usesAgentPresenceScopedNotebookRunner({
+      runner_provider: 'developer',
     })).toBe(true);
 
-    expect(isComposeManagedExternalAgent({
-      mode: 'external',
-      config: { runner_runtime: 'docker_manual' },
+    expect(usesAgentPresenceScopedNotebookRunner({
+      runner_provider: 'managed',
     })).toBe(false);
   });
 
-  it('uses agent-presence notebook dispatch for long-lived external runner runtimes', () => {
-    expect(usesAgentPresenceScopedNotebookRunner({
-      mode: 'external',
-      config: { runner_runtime: 'dev_direct' },
-    })).toBe(true);
-
-    expect(usesAgentPresenceScopedNotebookRunner({
-      mode: 'external',
-      config: { runner_runtime: 'compose_managed' },
-    })).toBe(true);
-
-    expect(usesAgentPresenceScopedNotebookRunner({
-      mode: 'external',
-      config: { runner_runtime: 'docker_manual' },
-    })).toBe(false);
-  });
-
-  it('uses agent-presence notebook dispatch for configless loopback external runners', () => {
-    vi.stubEnv('EXTERNAL_AGENT_EXECUTION_HTTP_BASE_URL', 'http://127.0.0.1:21000');
+  it('does not infer developer runner semantics from legacy mode', () => {
+    vi.stubEnv('AGENT_RUNNER_DEVELOPER_EXECUTION_HTTP_BASE_URL', 'http://127.0.0.1:21000');
 
     expect(usesAgentPresenceScopedNotebookRunner({
       mode: 'external',
       config: null,
-    })).toBe(true);
+    } as never)).toBe(false);
   });
 });

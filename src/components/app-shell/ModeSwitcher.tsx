@@ -2,7 +2,7 @@ import * as React from 'react';
 import { MessageSquare, Workflow } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 
-export type Mode = 'chat' | 'notebook';
+export type Mode = 'chat' | 'agent_tasks';
 
 interface ModeSwitcherProps {
   value: Mode;
@@ -16,7 +16,7 @@ const modes: Array<{
   icon: LucideIcon;
 }> = [
   { value: 'chat', label: 'Chat', icon: MessageSquare },
-  { value: 'notebook', label: 'Notebook', icon: Workflow },
+  { value: 'agent_tasks', label: 'Agent tasks', icon: Workflow },
 ];
 
 export function ModeSwitcher({ value, onChange, className = '' }: ModeSwitcherProps) {

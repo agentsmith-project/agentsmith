@@ -62,12 +62,12 @@ describe('Audit Field Standardization', () => {
       const event: StandardizedAuditEvent = {
         actor: { type: 'user', id: 'user-123' },
         target: {
-          type: 'agent',
-          id: 'agent-789',
+          type: 'agent_runner',
+          id: 'runner-789',
           workspace_id: 'ws-1',
           project_id: 'proj-1',
         },
-        action: 'agent.create',
+        action: 'agent_runner.create',
         at: '2026-02-27T10:00:00Z',
         request_id: 'req-abc123',
       };
@@ -134,14 +134,14 @@ describe('Audit Field Standardization', () => {
       });
     });
 
-    it('handles agent actor type', () => {
+    it('handles runner actor type', () => {
       const auditEvent = {
         id: 'audit-003',
         timestamp: '2026-02-27T10:00:00Z',
         workspace_id: 'ws-1',
         project_id: 'proj-1',
-        actor_type: 'agent' as const,
-        actor_id: 'agent-789',
+        actor_type: 'runner' as const,
+        actor_id: 'runner-789',
         action: 'endpoint.invoke',
         resource_type: 'endpoint',
         resource_id: 'endpoint-001',
@@ -153,8 +153,8 @@ describe('Audit Field Standardization', () => {
 
       const standardized = standardizeAuditEvent(auditEvent);
 
-      expect(standardized.actor.type).toBe('agent');
-      expect(standardized.actor.id).toBe('agent-789');
+      expect(standardized.actor.type).toBe('runner');
+      expect(standardized.actor.id).toBe('runner-789');
     });
   });
 
@@ -190,8 +190,8 @@ describe('Audit Field Standardization', () => {
         },
         {
           actor: { type: 'user', id: 'user-789' },
-          target: { type: 'agent', id: 'agent-001', workspace_id: 'ws-1', project_id: 'proj-1' },
-          action: 'agent.create',
+          target: { type: 'agent_runner', id: 'runner-001', workspace_id: 'ws-1', project_id: 'proj-1' },
+          action: 'agent_runner.create',
           at: '2026-02-27T11:00:00Z',
           request_id: 'req-002',
         },

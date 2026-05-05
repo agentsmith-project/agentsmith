@@ -17,9 +17,9 @@ import {
   nowIso,
 } from './task-runtime-state.js';
 
-const TASKS_COLLECTION = 'notebook_tasks';
-const TASK_MESSAGES_COLLECTION = 'notebook_task_messages';
-const TASK_ARTIFACTS_COLLECTION = 'notebook_task_artifacts';
+const TASKS_COLLECTION = 'agent_tasks';
+const TASK_MESSAGES_COLLECTION = 'agent_task_messages';
+const TASK_ARTIFACTS_COLLECTION = 'agent_task_artifacts';
 
 export function notebookTasksCollection(workspaceId: string): string {
   return resolveWorkspaceScopedCollection(TASKS_COLLECTION, workspaceId);
@@ -95,6 +95,9 @@ export async function createTaskArtifactRecord(
   }
   const normalizedTitle = payload.title?.trim() || payload.filename?.trim() || undefined;
   const normalizedPath = payload.task_relative_path.trim();
+  if (normalizedPath !== '.artifacts' && !normalizedPath.startsWith('.artifacts/')) {
+    throw new Error('task_artifact_path_outside_artifacts');
+  }
   const items = getTaskArtifacts(taskId);
   const existing = items.find((item) => {
     if (item.type !== payload.artifact_type) return false;

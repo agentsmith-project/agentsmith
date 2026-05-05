@@ -40,7 +40,7 @@ npm run openapi:check-generated
 - Resource Governance: `frontend-resource-policy-governance-v1.md`
 - Endpoint Capabilities: `endpoints-capability-contract.md`
 - Endpoint Proxy Bridge: `endpoint-proxy-protocol-bridge-contract.md`
-- Notebook/Chat/Files/Projects module maps: see `docs/contracts/README.md`
+- Chat/Agent tasks/Agent Runners/Files/Projects module maps: see `docs/contracts/README.md`
 
 ## Notes for Consumers
 

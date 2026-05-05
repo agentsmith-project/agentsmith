@@ -37,7 +37,6 @@ WEB_PORT="\${WEB_PORT:-3001}"
 KEYCLOAK_PORT="\${KEYCLOAK_PORT:-18080}"
 MINIO_API_PORT="\${MINIO_API_PORT:-19000}"
 SANDBOX_HOST_PORT="\${SANDBOX_HOST_PORT:-29180}"
-EXTERNAL_AGENT_EXECUTION_HTTP_BASE_URL="\${EXTERNAL_AGENT_EXECUTION_HTTP_BASE_URL:-http://127.0.0.1:20000}"
 INTERNAL_AGENT_K8S_NAMESPACE="\${INTERNAL_AGENT_K8S_NAMESPACE:-agentsmith-internal}"
 load_release_env() {
   mkdir -p "\${RELEASE_ROOT}" "\${RELEASE_SCRIPT_DIR}" "\${REPORT_DIR}" "\${RELEASE_ROOT}/env"
@@ -163,12 +162,12 @@ gate_record_success() { :; }
   );
 
   writeExecutable(
-    path.join(tempRoot, 'release', 'scripts', 'check-preset-external-file-library.sh'),
+    path.join(tempRoot, 'release', 'scripts', 'check-preset-agent-task-file-library.sh'),
     `#!/usr/bin/env bash
 set -euo pipefail
 if [[ -n "\${WORKSPACE_ACCESS_EVIDENCE_FILE:-}" ]]; then
   mkdir -p "$(dirname "\${WORKSPACE_ACCESS_EVIDENCE_FILE}")"
-  printf '{"mode":"external"}\\n' > "\${WORKSPACE_ACCESS_EVIDENCE_FILE}"
+  printf '{"mode":"agent-task"}\\n' > "\${WORKSPACE_ACCESS_EVIDENCE_FILE}"
 fi
 exit 0
 `,
@@ -178,8 +177,7 @@ exit 0
     path.join(tempRoot, 'release', 'VERSION'),
     [
       'release_id=test-release',
-      'agentsmith_runner_image=agentsmith-runner:test',
-      'agentsmith_chat_runner_image=agentsmith-chat-runner:test',
+      'agentsmith_agent_task_runner_image=agentsmith-agent-task-runner:test',
       'agentsmith_verify_runner_image=agentsmith-verify-runner:test',
       '',
     ].join('\n'),
@@ -188,14 +186,12 @@ exit 0
   for (const relativePath of [
     'e2e/integration-real-helpers.ts',
     'e2e/integration-files.spec.ts',
-    'e2e/notebook-execution-outcome.ts',
+    'e2e/agent-task-execution-outcome.ts',
     'e2e/integration-workspace-access.ts',
     'e2e/integration-workspace-entry.spec.ts',
     'e2e/integration-workspace-publish-usable.spec.ts',
-    'e2e/integration-preset-external-file-library.spec.ts',
-    'e2e/integration-internal-chat-runner.spec.ts',
+    'e2e/integration-preset-agent-task-file-library.spec.ts',
     'e2e/integration-chat-local-upstream.ts',
-    'e2e/internal-chat-isolation-probe.ts',
     'e2e/integration-release-user-story.spec.ts',
   ]) {
     writeFile(path.join(tempRoot, relativePath), 'placeholder\n');
@@ -258,6 +254,8 @@ describe('demo verify mode contract', () => {
       expect(dockerLog).not.toContain('/usr/local/bin/kubectl');
       expect(dockerLog).not.toContain('/tmp/verify-kubeconfig');
       expect(dockerLog).not.toContain('integration-internal-chat-runner.spec.ts:/app/e2e/integration-internal-chat-runner.spec.ts:ro');
+      expect(dockerLog).not.toContain('EXTERNAL_AGENT_');
+      expect(dockerLog).not.toContain('DOCKER_MANUAL_AGENT_');
     } finally {
       rmSync(tempRoot, { recursive: true, force: true });
     }
@@ -279,7 +277,7 @@ describe('demo verify mode contract', () => {
     }
   });
 
-  it('mounts the internal chat spec and kube inputs in full mode', () => {
+  it('mounts kube inputs without internal chat runner specs in full mode', () => {
     const tempRoot = mkdtempSync(path.join(os.tmpdir(), 'demo-verify-full-'));
     try {
       stageDemoVerifyFixture(tempRoot);
@@ -295,10 +293,12 @@ describe('demo verify mode contract', () => {
       const dockerLog = readFileSync(path.join(tempRoot, 'docker.log'), 'utf8');
       expect(dockerLog).toContain('/usr/local/bin/kubectl');
       expect(dockerLog).toContain('/tmp/verify-kubeconfig');
-      expect(dockerLog).toContain('integration-internal-chat-runner.spec.ts:/app/e2e/integration-internal-chat-runner.spec.ts:ro');
-      expect(dockerLog).toContain('integration-chat-local-upstream.ts:/app/e2e/integration-chat-local-upstream.ts:ro');
-      expect(dockerLog).toContain('internal-chat-isolation-probe.ts:/app/e2e/internal-chat-isolation-probe.ts:ro');
+      expect(dockerLog).not.toContain('integration-internal-chat-runner.spec.ts:/app/e2e/integration-internal-chat-runner.spec.ts:ro');
+      expect(dockerLog).not.toContain('integration-chat-local-upstream.ts:/app/e2e/integration-chat-local-upstream.ts:ro');
+      expect(dockerLog).not.toContain('internal-chat-isolation-probe.ts:/app/e2e/internal-chat-isolation-probe.ts:ro');
       expect(dockerLog).toContain('KUBECONFIG=/tmp/verify-kubeconfig');
+      expect(dockerLog).not.toContain('EXTERNAL_AGENT_');
+      expect(dockerLog).not.toContain('DOCKER_MANUAL_AGENT_');
     } finally {
       rmSync(tempRoot, { recursive: true, force: true });
     }

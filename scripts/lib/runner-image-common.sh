@@ -3,7 +3,7 @@
 require_runner_kind() {
   local kind="$1"
   case "${kind}" in
-    notebook|chat) ;;
+    agent-task) ;;
     *)
       echo "[runner-image-common] unsupported runner kind: ${kind}" >&2
       return 1
@@ -15,48 +15,33 @@ runner_base_dockerfile() {
   local kind="$1"
   local source_root="${2:-${ROOT_DIR}}"
   require_runner_kind "${kind}" || return 1
-  case "${kind}" in
-    notebook) printf '%s/infra/runner/Dockerfile.notebook-codex-runner-base\n' "${source_root}" ;;
-    chat) printf '%s/infra/runner/Dockerfile.chat-llm-runner-base\n' "${source_root}" ;;
-  esac
+  printf '%s/infra/runner/Dockerfile.agent-task-runner-base\n' "${source_root}"
 }
 
 runner_app_dockerfile() {
   local kind="$1"
   local source_root="${2:-${ROOT_DIR}}"
   require_runner_kind "${kind}" || return 1
-  case "${kind}" in
-    notebook) printf '%s/infra/runner/Dockerfile.notebook-codex-runner\n' "${source_root}" ;;
-    chat) printf '%s/infra/runner/Dockerfile.chat-llm-runner\n' "${source_root}" ;;
-  esac
+  printf '%s/infra/runner/Dockerfile.agent-task-runner\n' "${source_root}"
 }
 
 runner_default_base_image() {
   local kind="$1"
   require_runner_kind "${kind}" || return 1
-  case "${kind}" in
-    notebook) printf 'agentsmith-notebook-codex-runner-base:local\n' ;;
-    chat) printf 'agentsmith-chat-llm-runner-base:local\n' ;;
-  esac
+  printf 'agentsmith-agent-task-runner-base:local\n'
 }
 
 runner_default_image() {
   local kind="$1"
   require_runner_kind "${kind}" || return 1
-  case "${kind}" in
-    notebook) printf 'agentsmith-notebook-codex-runner:local\n' ;;
-    chat) printf 'agentsmith-chat-llm-runner:local\n' ;;
-  esac
+  printf 'agentsmith-agent-task-runner:local\n'
 }
 
 runner_release_base_image() {
   local kind="$1"
   local release_id="$2"
   require_runner_kind "${kind}" || return 1
-  case "${kind}" in
-    notebook) printf 'agentsmith-notebook-codex-runner-base:%s\n' "${release_id}" ;;
-    chat) printf 'agentsmith-chat-llm-runner-base:%s\n' "${release_id}" ;;
-  esac
+  printf 'agentsmith-agent-task-runner-base:%s\n' "${release_id}"
 }
 
 runner_release_image() {
@@ -64,10 +49,7 @@ runner_release_image() {
   local release_id="$2"
   local image_prefix="$3"
   require_runner_kind "${kind}" || return 1
-  case "${kind}" in
-    notebook) printf '%s/agentsmith-notebook-codex-runner:%s\n' "${image_prefix}" "${release_id}" ;;
-    chat) printf '%s/agentsmith-chat-llm-runner:%s\n' "${image_prefix}" "${release_id}" ;;
-  esac
+  printf '%s/agentsmith-agent-task-runner:%s\n' "${image_prefix}" "${release_id}"
 }
 
 runner_default_node_base_image() {

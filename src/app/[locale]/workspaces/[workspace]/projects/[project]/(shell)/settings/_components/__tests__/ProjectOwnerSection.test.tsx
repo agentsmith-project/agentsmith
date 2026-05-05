@@ -14,7 +14,6 @@ describe('ProjectOwnerSection', () => {
           description: 'desc',
           visibility: 'private',
           join_policy: 'approval_required',
-          execution_preferences_json: {},
           governance_json: {},
           admin_member_ids: ['admin_1'],
           limits_json: {},

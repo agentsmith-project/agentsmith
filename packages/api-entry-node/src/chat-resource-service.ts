@@ -93,7 +93,6 @@ export class ChatResourceService {
     ownerUserId: string;
     model: string;
     endpointId: string;
-    externalAgentId?: string;
     workspaceFileLibraryId?: string;
     workspaceFileLibraryName?: string;
     title?: string;
@@ -107,7 +106,6 @@ export class ChatResourceService {
       title: input.title?.trim() || 'New Chat',
       model: input.model,
       endpoint_id: input.endpointId,
-      external_agent_id: input.externalAgentId,
       workspace_file_library_id: input.workspaceFileLibraryId,
       workspace_file_library_name: input.workspaceFileLibraryName,
       pinned: false,

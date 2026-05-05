@@ -138,7 +138,6 @@ export interface ChatSessionRecord {
   title: string;
   model: string;
   endpoint_id: string;
-  external_agent_id?: string;
   workspace_file_library_id?: string;
   workspace_file_library_name?: string;
   pinned?: boolean;
@@ -154,13 +153,30 @@ export interface ChatSessionRecord {
   escalation_reason?: 'STOP_ESCALATION_UNAVAILABLE';
 }
 
+export type AgentRunnerStatus = 'draft' | 'connected' | 'ready' | 'degraded' | 'offline';
+export type AgentRunnerProviderKind = 'managed' | 'developer';
+
+export interface AgentRunnerCapabilities {
+  streaming_completion?: boolean;
+  multimodal_completion?: boolean;
+  accepted_mime_types?: string[];
+  max_file_count?: number;
+  max_total_bytes?: number;
+  terminal?: boolean;
+  artifacts?: boolean;
+  file_inputs?: boolean;
+  url_inputs?: boolean;
+  task_execution?: boolean;
+  [key: string]: unknown;
+}
+
 export interface AgentRecord {
   id: string;
   workspace_id: string;
   project_id: string;
   name: string;
   description?: string;
-  mode: 'external' | 'internal';
+  runner_provider?: AgentRunnerProviderKind;
   presence?: 'online' | 'offline' | 'managed';
   status: 'enabled' | 'disabled';
   config?: {
@@ -175,21 +191,17 @@ export interface AgentRecord {
     max_lifetime_sec?: number;
     _internal_key_id?: string;
     _internal_raw_key?: string;
-    runner_runtime?: 'dev_direct' | 'docker_manual' | 'compose_managed' | 'k8s_internal';
     max_concurrent_sessions_override?: number;
   };
   execution_preferences_json?: Record<string, unknown>;
-  interaction_kind?: 'chat' | 'notebook';
+  is_default?: boolean;
+  default_endpoint_id?: string;
+  runner_status?: AgentRunnerStatus;
+  diagnostics?: Record<string, unknown>;
   owner_id?: string;
   admin_id?: string;
   visibility?: 'private' | 'public';
-  capabilities?: {
-    streaming_completion?: boolean;
-    multimodal_completion?: boolean;
-    accepted_mime_types?: string[];
-    max_file_count?: number;
-    max_total_bytes?: number;
-  };
+  capabilities?: AgentRunnerCapabilities;
   created_at: string;
   updated_at: string;
   last_seen_at?: string;

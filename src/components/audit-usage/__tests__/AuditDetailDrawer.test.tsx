@@ -5,7 +5,7 @@ import { AuditDetailDrawer } from '../AuditDetailDrawer';
 vi.mock('next-intl', () => ({
   useTranslations: () => (key: string, values?: Record<string, string>) => {
     if (key === 'summary.user_actor') return 'User';
-    if (key === 'summary.agent_actor') return 'Agent';
+    if (key === 'summary.runner_actor') return 'Runner';
     if (key === 'summary.plugin_actor') return 'Plugin';
     if (key === 'summary.system_actor') return 'System';
     if (key === 'summary.result_ok') return 'succeeded';

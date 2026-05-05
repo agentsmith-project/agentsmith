@@ -28,9 +28,10 @@ function getMemberAccessProfile(member: { permissions?: string[] }) {
     return 'governance';
   }
   if (
-    permissions.includes('project:agent:use')
-    || permissions.includes('project:agent:manage')
-    || permissions.includes('project:agent:public')
+    permissions.includes('project:agent_task:use')
+    || permissions.includes('project:agent_task:terminal')
+    || permissions.includes('project:agent_runner:read')
+    || permissions.includes('project:agent_runner:manage')
   ) {
     return 'resource_manage';
   }

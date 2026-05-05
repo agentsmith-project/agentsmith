@@ -10,10 +10,10 @@ import { test, expect, goToProject, goTo } from './fixtures/test-base';
 const SIDEBAR_NAV_ITEMS = [
   'overview',
   'chat',
-  'notebook',
+  'agent-tasks',
+  'agent-runners',
   'files',
   'use-guide',
-  'agents',
   'endpoints',
   'resource-policy',
   'context',

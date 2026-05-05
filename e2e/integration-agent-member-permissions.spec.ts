@@ -5,9 +5,9 @@ import {
   BACKEND_REAL_MODEL,
   createCredentialViaUi,
   createEndpointViaApi,
-  createExternalRunnerAgentBundle,
   createFileLibraryViaUi,
-  createNotebookTaskViaApi,
+  createAgentTaskViaApi,
+  createManagedAgentRunnerViaApi,
   createProjectInWorkspace,
   ensureIntegrationKeycloakUsers,
   KEYCLOAK_DEV_ADMIN_PASSWORD,
@@ -16,9 +16,6 @@ import {
   KEYCLOAK_INTEGRATION_MEMBER_USERNAME,
   keycloakLoginToWorkspace,
   LOCALE,
-  reconnectCodexRunnerProcessToTask,
-  startCodexRunnerProcess,
-  waitForAgentPresenceOnline,
 } from './integration-real-helpers';
 import { readStoredAuthToken } from './integration-workspace-access';
 import { buildTraceStoryBinding } from './story-trace-binding';
@@ -32,7 +29,7 @@ const WORKSPACE_ID = RUNTIME_SETUP_STORY.seedData?.[0];
 type AgentSetupRuntime = {
   credentialNamePrefix: string;
   endpointNamePrefix: string;
-  externalTitlePrefix: string;
+  agentTaskRunnerTitlePrefix: string;
   memberTaskTitlePrefix: string;
 };
 
@@ -49,7 +46,7 @@ function requireAgentSetupRuntime(): AgentSetupRuntime {
   if (!agentSetup) {
     throw new Error('missing_project_governance_runtime:agentSetup');
   }
-  for (const field of ['credentialNamePrefix', 'endpointNamePrefix', 'externalTitlePrefix', 'memberTaskTitlePrefix'] as const) {
+  for (const field of ['credentialNamePrefix', 'endpointNamePrefix', 'agentTaskRunnerTitlePrefix', 'memberTaskTitlePrefix'] as const) {
     if (typeof agentSetup[field] !== 'string' || agentSetup[field].trim().length === 0) {
       throw new Error(`missing_project_governance_runtime:agentSetup.${field}`);
     }
@@ -112,7 +109,6 @@ test.describe('@lane-real ordinary members can use agents but cannot manage them
 
     const memberContext = await browser.newContext();
     const memberPage = await memberContext.newPage();
-    let runner: { stop(): Promise<void> } | null = null;
     try {
       await keycloakLoginToWorkspace(memberPage, workspaceId, KEYCLOAK_DEV_ADMIN_USERNAME, KEYCLOAK_DEV_ADMIN_PASSWORD);
       const { projectId } = await createProjectInWorkspace(memberPage, workspaceId, 'Agent Member Permissions', {
@@ -129,11 +125,11 @@ test.describe('@lane-real ordinary members can use agents but cannot manage them
         upstreamBaseUrl: BACKEND_REAL_ANTHROPIC_BASE_URL,
         credentialName,
       });
-      const agentBundle = await createExternalRunnerAgentBundle(memberPage, {
+      const agentRunner = await createManagedAgentRunnerViaApi(memberPage, {
         workspaceId,
         projectId,
         endpointId,
-        title: `${RUNTIME_SETUP.externalTitlePrefix} ${Date.now()}`,
+        title: `${RUNTIME_SETUP.agentTaskRunnerTitlePrefix} ${Date.now()}`,
       });
       await trace.capture(memberPage, { stepId: 'agents-created' });
       const invitePath = await createInvite(page, workspaceId, projectId, 'integration-member@example.com');
@@ -154,32 +150,19 @@ test.describe('@lane-real ordinary members can use agents but cannot manage them
 
         const memberLibraryName = `Agent Member Library ${Date.now()}`;
         const memberLibraryId = await createFileLibraryViaUi(joinPage, workspaceId, projectId, memberLibraryName);
-        runner = await startCodexRunnerProcess({
-          wsUrl: agentBundle.wsUrl,
-          agentKey: agentBundle.agentKey,
-        });
-        await waitForAgentPresenceOnline(joinPage, workspaceId, projectId, agentBundle.agentId);
-        const taskId = await createNotebookTaskViaApi({
+        const taskId = await createAgentTaskViaApi({
           page: joinPage,
           workspaceId,
           projectId,
           title: `${RUNTIME_SETUP.memberTaskTitlePrefix} ${Date.now()}`,
-          agentId: agentBundle.agentId,
           fileLibraryId: memberLibraryId,
         });
-        runner = await reconnectCodexRunnerProcessToTask({
-          presenceRunner: runner,
-          wsUrl: agentBundle.wsUrl,
-          agentKey: agentBundle.agentKey,
-          taskId,
-        });
-        await waitForAgentPresenceOnline(joinPage, workspaceId, projectId, agentBundle.agentId);
         expect(taskId).toBeTruthy();
         await trace.capture(joinPage, { stepId: 'member-task-created' });
 
         const memberToken = await readStoredAuthToken(joinPage);
         const patchResponse = await joinPage.request.patch(
-          `${API_BASE}/api/v1/workspaces/${workspaceId}/projects/${projectId}/agents/${agentBundle.agentId}`,
+          `${API_BASE}/api/v1/workspaces/${workspaceId}/projects/${projectId}/agent-runners/${agentRunner.runnerId}`,
           {
             headers: {
               Authorization: `Bearer ${memberToken}`,
@@ -191,7 +174,7 @@ test.describe('@lane-real ordinary members can use agents but cannot manage them
         expect(patchResponse.status()).toBe(403);
 
         const keyResponse = await joinPage.request.post(
-          `${API_BASE}/api/v1/workspaces/${workspaceId}/projects/${projectId}/agents/${agentBundle.agentId}/keys`,
+          `${API_BASE}/api/v1/workspaces/${workspaceId}/projects/${projectId}/agent-runners/${agentRunner.runnerId}/keys`,
           {
             headers: {
               Authorization: `Bearer ${memberToken}`,
@@ -203,7 +186,7 @@ test.describe('@lane-real ordinary members can use agents but cannot manage them
         expect(keyResponse.status()).toBe(403);
 
         const deleteResponse = await joinPage.request.delete(
-          `${API_BASE}/api/v1/workspaces/${workspaceId}/projects/${projectId}/agents/${agentBundle.agentId}`,
+          `${API_BASE}/api/v1/workspaces/${workspaceId}/projects/${projectId}/agent-runners/${agentRunner.runnerId}`,
           {
             headers: { Authorization: `Bearer ${memberToken}` },
           },
@@ -215,7 +198,6 @@ test.describe('@lane-real ordinary members can use agents but cannot manage them
         await joinContext.close();
       }
     } finally {
-      await runner?.stop();
       await memberContext.close();
       await trace.finish({
         outcome,

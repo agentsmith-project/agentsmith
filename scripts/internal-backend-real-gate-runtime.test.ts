@@ -7,17 +7,15 @@ function read(relativePath: string): string {
 }
 
 describe('internal backend-real gate runtime contract', () => {
-  it('keeps chat and notebook gates aligned on shared internal sandbox bootstrap', () => {
+  it('keeps the Agent Task gate aligned on shared internal sandbox bootstrap', () => {
     const helper = read('scripts/lib/internal-backend-real-gate.sh');
-    const chatGate = read('scripts/run-internal-chat-real-gate.sh');
-    const notebookGate = read('scripts/run-internal-notebook-real-gate.sh');
+    const agentTaskGate = read('scripts/run-internal-agent-task-real-gate.sh');
 
-    expect(chatGate).toContain('source "${ROOT_DIR}/scripts/lib/internal-backend-real-gate.sh"');
-    expect(notebookGate).toContain('source "${ROOT_DIR}/scripts/lib/internal-backend-real-gate.sh"');
+    expect(agentTaskGate).toContain('source "${ROOT_DIR}/scripts/lib/internal-backend-real-gate.sh"');
 
-    expect(chatGate).toContain('prepare_internal_backend_real_gate_runtime');
-    expect(notebookGate).toContain('prepare_internal_backend_real_gate_runtime');
-    expect(chatGate).not.toContain('missing SANDBOX_MANAGER_URL for internal chat backend-real coverage');
+    expect(agentTaskGate).toContain('prepare_internal_backend_real_gate_runtime');
+    expect(agentTaskGate).toContain('export RUNTIME_RUNNER_MODES="${RUNTIME_RUNNER_MODES:-managed_runner}"');
+    expect(agentTaskGate).not.toContain('RUNTIME_RUNNER_MODES="${RUNTIME_RUNNER_MODES:-external_host');
 
     expect(helper).toContain('SANDBOX_MANAGER_URL_VALUE="${SANDBOX_MANAGER_URL:-http://127.0.0.1:${SANDBOX_PORT}}"');
     expect(helper).toContain(
@@ -37,20 +35,38 @@ describe('internal backend-real gate runtime contract', () => {
     );
     expect(helper).toContain('render_k8s_external_dependency_services \\');
     expect(helper).toContain('INTERNAL_SANDBOX_REAL_STATE_FILE="${spec_state_file}" bash "${CONTROL_SCRIPT}" start-manager 1>&2');
+    expect(helper).toContain('rebuild_runner_base_image="${INTEGRATION_INTERNAL_AGENT_REBUILD_BASE_IMAGE:-1}"');
+    expect(helper).toContain(
+      'build_runner_image "${RUNNER_KIND}" "${RUNNER_BASE_IMAGE}" "${RUNNER_IMAGE}" "${DOCKER_BUILD_PROXY_VALUE}" "${rebuild_runner_base_image}" "1"',
+    );
+    expect(helper).not.toContain(
+      'build_runner_image "${RUNNER_KIND}" "${RUNNER_BASE_IMAGE}" "${RUNNER_IMAGE}" "${DOCKER_BUILD_PROXY_VALUE}" "0" "1"',
+    );
 
-    expect(chatGate).toContain('SANDBOX_MANAGER_URL="${SANDBOX_MANAGER_URL_VALUE}" \\');
-    expect(chatGate).toContain('SANDBOX_SERVICE_KEY="${SANDBOX_SERVICE_KEY_VALUE}" \\');
-    expect(chatGate).toContain('INTERNAL_AGENT_K8S_NAMESPACE="${K8S_NAMESPACE}" \\');
-    expect(chatGate).toContain('INTERNAL_AGENT_JUICEFS_META_HOST_OVERRIDE="${INTERNAL_AGENT_JUICEFS_META_HOST_OVERRIDE_VALUE}" \\');
-    expect(chatGate).toContain('JUICEFS_BUCKET_ENDPOINT_FOR_INTERNAL_MOUNT="${JUICEFS_BUCKET_ENDPOINT_FOR_INTERNAL_MOUNT_VALUE}" \\');
-    expect(chatGate).toContain('INTEGRATION_CLIENT_JUICEFS_META_HOST_OVERRIDE="${INTEGRATION_CLIENT_JUICEFS_META_HOST_OVERRIDE_VALUE}" \\');
-    expect(chatGate).toContain('INTEGRATION_CLIENT_JUICEFS_META_PORT_OVERRIDE="${INTEGRATION_CLIENT_JUICEFS_META_PORT_OVERRIDE_VALUE}" \\');
-    expect(chatGate).toContain(
+    expect(agentTaskGate).toContain('SANDBOX_MANAGER_URL="${SANDBOX_MANAGER_URL_VALUE}" \\');
+    expect(agentTaskGate).toContain('SANDBOX_SERVICE_KEY="${SANDBOX_SERVICE_KEY_VALUE}" \\');
+    expect(agentTaskGate).toContain('INTERNAL_AGENT_K8S_NAMESPACE="${K8S_NAMESPACE}" \\');
+    expect(agentTaskGate).toContain('INTERNAL_AGENT_JUICEFS_META_HOST_OVERRIDE="${INTERNAL_AGENT_JUICEFS_META_HOST_OVERRIDE_VALUE}" \\');
+    expect(agentTaskGate).toContain('JUICEFS_BUCKET_ENDPOINT_FOR_INTERNAL_MOUNT="${JUICEFS_BUCKET_ENDPOINT_FOR_INTERNAL_MOUNT_VALUE}" \\');
+    expect(agentTaskGate).toContain('INTEGRATION_CLIENT_JUICEFS_META_HOST_OVERRIDE="${INTEGRATION_CLIENT_JUICEFS_META_HOST_OVERRIDE_VALUE}" \\');
+    expect(agentTaskGate).toContain('INTEGRATION_CLIENT_JUICEFS_META_PORT_OVERRIDE="${INTEGRATION_CLIENT_JUICEFS_META_PORT_OVERRIDE_VALUE}" \\');
+    expect(agentTaskGate).toContain(
       'INTEGRATION_CLIENT_JUICEFS_STORAGE_ENDPOINT_OVERRIDE="${INTEGRATION_CLIENT_JUICEFS_STORAGE_ENDPOINT_OVERRIDE_VALUE}" \\',
     );
-    expect(chatGate).toContain('INTEGRATION_INTERNAL_CHAT_AGENT_IMAGE="${RUNNER_IMAGE}" \\');
-    expect(chatGate).toContain('INTEGRATION_CHAT_RUNNER_BASE_DOCKER_IMAGE="${RUNNER_BASE_IMAGE}" \\');
-    expect(chatGate).toContain('INTEGRATION_CHAT_RUNNER_REBUILD_BASE_IMAGE=0 \\');
-    expect(chatGate).toContain('INTEGRATION_CHAT_RUNNER_REBUILD_IMAGE=0 \\');
+    expect(agentTaskGate).toContain('INTEGRATION_INTERNAL_AGENT_IMAGE="${RUNNER_IMAGE}" \\');
+    expect(agentTaskGate).toContain('INTEGRATION_INTERNAL_AGENT_BASE_IMAGE="${RUNNER_BASE_IMAGE}" \\');
+    expect(agentTaskGate).toContain(
+      'INTEGRATION_INTERNAL_AGENT_REBUILD_BASE_IMAGE="${INTEGRATION_INTERNAL_AGENT_REBUILD_BASE_IMAGE:-1}" \\',
+    );
+    expect(agentTaskGate).toContain('INTEGRATION_INTERNAL_AGENT_REBUILD_IMAGE=0 \\');
+  });
+
+  it('fails direct managed Agent Task run-integration usage before Playwright when sandbox env is missing', () => {
+    const integrationGate = read('scripts/run-integration-e2e-full.sh');
+
+    expect(integrationGate).toContain('preflight_managed_agent_task_sandbox_env');
+    expect(integrationGate).toContain('managed_agent_task_sandbox_env');
+    expect(integrationGate).toContain('Managed Agent Task backend-real coverage requires sandbox bootstrap');
+    expect(integrationGate).toContain('agent-task-backend-real-runner|e2e/integration-agent-task-runner.spec.ts');
   });
 });

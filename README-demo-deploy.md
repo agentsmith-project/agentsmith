@@ -7,12 +7,11 @@ This bundle supports two deployment modes:
   - local `kind`
   - JuiceFS CSI
   - `sandbox-manager`
-  - external and internal agents
+  - managed agent-task runner image and sandbox resources
 - `simple`
   - Docker Compose substrate and app
   - `universal-proxy`
-  - `external-runner`
-  - external agents only
+  - managed agent-task runner config
 
 Set the mode in `env/site.env` before running:
 

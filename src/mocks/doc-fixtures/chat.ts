@@ -92,7 +92,7 @@ export const docChatMessages: DocChatMessage[] = [
     id: 'chat_doc_msg_007',
     session_id: 'chat_doc_002',
     role: 'assistant',
-    content: '今天优先关注 3 类异常：\n\n- Claude endpoint 在 14:00 后出现连续 429\n- 两个成员在未审批情况下创建了高成本 Notebook 任务\n- 文件库“运营周报文件库”有一次大文件批量删除操作，需要人工确认是否合规',
+    content: '今天优先关注 3 类异常：\n\n- Claude endpoint 在 14:00 后出现连续 429\n- 两个成员在未审批情况下创建了高成本 Agent 任务\n- 文件库“运营周报文件库”有一次大文件批量删除操作，需要人工确认是否合规',
     created_at: '2026-03-16T14:00:18Z',
   },
 ];

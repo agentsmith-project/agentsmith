@@ -47,9 +47,9 @@ artifacts/product-docs/<run-id>/
 当前默认覆盖：
 - 工作区与项目入口
 - Chat 多轮会话
-- Notebook 列表与任务详情
+- Agent tasks 列表与任务详情
 - Files 页面与本地挂载说明
-- Endpoints / Project secrets / Agents / Members / Policy / Audit / Usage / Settings
+- Endpoints / Project secrets / Agent Runners / Members / Policy / Audit / Usage / Settings
 
 ## 注意事项
 

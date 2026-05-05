@@ -8,10 +8,10 @@ import {
   useHasAnyPermission,
   useHasAllPermissions,
   useCanAccessChat,
-  useCanAccessNotebook,
-  useCanUseNotebookTerminal,
+  useCanAccessAgentTasks,
+  useCanUseAgentTaskTerminal,
   useCanReadAudit,
-  useAgentPageCapabilities,
+  useAgentRunnerPageCapabilities,
   useAlertPageCapabilities,
   useEndpointPageCapabilities,
   useFilesPageCapabilities,
@@ -214,7 +214,7 @@ describe('use-permissions hooks', () => {
     });
   });
 
-  describe('chat/notebook access hooks', () => {
+  describe('chat/agent task access hooks', () => {
     it('useCanAccessChat should require project:endpoint:use', () => {
       const mockProject = {
         id: 'proj_001',
@@ -238,7 +238,30 @@ describe('use-permissions hooks', () => {
       expect(result.current).toBe(true);
     });
 
-    it('useCanAccessNotebook should require project:endpoint:use', () => {
+    it('useCanAccessAgentTasks should require project:agent_task:use', () => {
+      const mockProject = {
+        id: 'proj_001',
+        workspace_id: 'ws_default',
+        name: 'Test Project',
+        owner_id: 'user_001',
+        status: 'active' as const,
+        visibility: 'public' as const,
+        created_at: '2026-01-01T00:00:00Z',
+        updated_at: '2026-01-01T00:00:00Z',
+        membership_status: 'active' as const,
+        permissions: ['project:agent_task:use'],
+      };
+
+      mockUseProject.mockReturnValue({ data: mockProject, isLoading: false });
+
+      const { result } = renderHook(() => useCanAccessAgentTasks(), {
+        wrapper: createWrapper(),
+      });
+
+      expect(result.current).toBe(true);
+    });
+
+    it('useCanAccessAgentTasks should reject endpoint-only access', () => {
       const mockProject = {
         id: 'proj_001',
         workspace_id: 'ws_default',
@@ -254,14 +277,14 @@ describe('use-permissions hooks', () => {
 
       mockUseProject.mockReturnValue({ data: mockProject, isLoading: false });
 
-      const { result } = renderHook(() => useCanAccessNotebook(), {
+      const { result } = renderHook(() => useCanAccessAgentTasks(), {
         wrapper: createWrapper(),
       });
 
-      expect(result.current).toBe(true);
+      expect(result.current).toBe(false);
     });
 
-    it('useCanUseNotebookTerminal should require project:terminal:use', () => {
+    it('useCanUseAgentTaskTerminal should require project:agent_task:terminal', () => {
       const mockProject = {
         id: 'proj_001',
         workspace_id: 'ws_default',
@@ -272,12 +295,12 @@ describe('use-permissions hooks', () => {
         created_at: '2026-01-01T00:00:00Z',
         updated_at: '2026-01-01T00:00:00Z',
         membership_status: 'active' as const,
-        permissions: ['project:endpoint:use', 'project:terminal:use'],
+        permissions: ['project:agent_task:use', 'project:agent_task:terminal'],
       };
 
       mockUseProject.mockReturnValue({ data: mockProject, isLoading: false });
 
-      const { result } = renderHook(() => useCanUseNotebookTerminal(), {
+      const { result } = renderHook(() => useCanUseAgentTaskTerminal(), {
         wrapper: createWrapper(),
       });
 
@@ -307,7 +330,7 @@ describe('use-permissions hooks', () => {
       expect(result.current).toBe(false);
     });
 
-    it('useCanUseNotebookTerminal should return false without project:terminal:use', () => {
+    it('useCanUseAgentTaskTerminal should return false without project:agent_task:terminal', () => {
       const mockProject = {
         id: 'proj_001',
         workspace_id: 'ws_default',
@@ -318,12 +341,12 @@ describe('use-permissions hooks', () => {
         created_at: '2026-01-01T00:00:00Z',
         updated_at: '2026-01-01T00:00:00Z',
         membership_status: 'active' as const,
-        permissions: ['project:endpoint:use', 'project:agent:use'],
+        permissions: ['project:agent_task:use'],
       };
 
       mockUseProject.mockReturnValue({ data: mockProject, isLoading: false });
 
-      const { result } = renderHook(() => useCanUseNotebookTerminal(), {
+      const { result } = renderHook(() => useCanUseAgentTaskTerminal(), {
         wrapper: createWrapper(),
       });
 
@@ -602,7 +625,33 @@ describe('use-permissions hooks', () => {
   });
 
   describe('page capability hooks', () => {
-    it('useAgentPageCapabilities should separate agent use from manage', () => {
+    it('useAgentRunnerPageCapabilities should separate runner read from manage', () => {
+      mockUseProject.mockReturnValue({
+        data: {
+          id: 'proj_001',
+          workspace_id: 'ws_default',
+          name: 'Test Project',
+          owner_id: 'user_001',
+          status: 'active' as const,
+          visibility: 'public' as const,
+          created_at: '2026-01-01T00:00:00Z',
+          updated_at: '2026-01-01T00:00:00Z',
+          membership_status: 'active' as const,
+          permissions: ['project:agent_runner:read', 'project:agent_runner:manage'],
+        },
+        isLoading: false,
+      });
+
+      const { result } = renderHook(() => useAgentRunnerPageCapabilities(), {
+        wrapper: createWrapper(),
+      });
+
+      expect(result.current.canRead).toBe(true);
+      expect(result.current.canCreate).toBe(true);
+      expect(result.current.canRunDiagnostics).toBe(true);
+    });
+
+    it('useAgentRunnerPageCapabilities rejects legacy agent permissions', () => {
       mockUseProject.mockReturnValue({
         data: {
           id: 'proj_001',
@@ -619,15 +668,13 @@ describe('use-permissions hooks', () => {
         isLoading: false,
       });
 
-      const { result } = renderHook(() => useAgentPageCapabilities(), {
+      const { result } = renderHook(() => useAgentRunnerPageCapabilities(), {
         wrapper: createWrapper(),
       });
 
-      expect(result.current.canRead).toBe(true);
-      expect(result.current.canUse).toBe(true);
-      expect(result.current.canCreate).toBe(true);
-      expect(result.current.canIssueKeys).toBe(true);
-      expect(result.current.canPublic).toBe(true);
+      expect(result.current.canRead).toBe(false);
+      expect(result.current.canCreate).toBe(false);
+      expect(result.current.canRunDiagnostics).toBe(false);
     });
 
     it('useEndpointPageCapabilities should allow read when use or manage exists', () => {
@@ -683,11 +730,11 @@ describe('use-permissions hooks', () => {
       });
 
       expect(result.current.canUseProject).toBe(true);
-      expect(result.current.canUseAgents).toBe(false);
+      expect(result.current.canUseAgentTasks).toBe(false);
       expect(result.current.canManageMembership).toBe(true);
       expect(result.current.canReadAudit).toBe(true);
       expect(result.current.canReadProjectSettings).toBe(true);
-      expect(result.current.canManageAgents).toBe(false);
+      expect(result.current.canManageAgentRunners).toBe(false);
     });
 
     it('useAlertPageCapabilities should separate read and manage', () => {

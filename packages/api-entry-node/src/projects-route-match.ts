@@ -39,7 +39,8 @@ export type ProjectsRoute =
     taskId: string;
     inputId: string;
   }
-  | { kind: 'taskMessages'; workspaceId: string; projectId: string; taskId: string }
+  | { kind: 'taskActivity'; workspaceId: string; projectId: string; taskId: string }
+  | { kind: 'taskRuns'; workspaceId: string; projectId: string; taskId: string }
   | { kind: 'taskCancelRun'; workspaceId: string; projectId: string; taskId: string }
   | { kind: 'taskTraces'; workspaceId: string; projectId: string; taskId: string }
   | { kind: 'taskArtifacts'; workspaceId: string; projectId: string; taskId: string }
@@ -640,15 +641,27 @@ export function matchProjectsRoute(url: string): ProjectsRoute | null {
     };
   }
 
-  const taskMessagesMatched = pathname.match(
-    /^\/api\/v1\/workspaces\/([^/]+)\/projects\/([^/]+)\/tasks\/([^/]+)\/messages\/?$/,
+  const taskActivityMatched = pathname.match(
+    /^\/api\/v1\/workspaces\/([^/]+)\/projects\/([^/]+)\/tasks\/([^/]+)\/activity\/?$/,
   );
-  if (taskMessagesMatched) {
+  if (taskActivityMatched) {
     return {
-      kind: 'taskMessages',
-      workspaceId: decodeURIComponent(taskMessagesMatched[1]),
-      projectId: decodeURIComponent(taskMessagesMatched[2]),
-      taskId: decodeURIComponent(taskMessagesMatched[3]),
+      kind: 'taskActivity',
+      workspaceId: decodeURIComponent(taskActivityMatched[1]),
+      projectId: decodeURIComponent(taskActivityMatched[2]),
+      taskId: decodeURIComponent(taskActivityMatched[3]),
+    };
+  }
+
+  const taskRunsMatched = pathname.match(
+    /^\/api\/v1\/workspaces\/([^/]+)\/projects\/([^/]+)\/tasks\/([^/]+)\/runs\/?$/,
+  );
+  if (taskRunsMatched) {
+    return {
+      kind: 'taskRuns',
+      workspaceId: decodeURIComponent(taskRunsMatched[1]),
+      projectId: decodeURIComponent(taskRunsMatched[2]),
+      taskId: decodeURIComponent(taskRunsMatched[3]),
     };
   }
 
@@ -779,7 +792,7 @@ export function matchProjectsRoute(url: string): ProjectsRoute | null {
   }
 
   const agentKeyItemMatched = pathname.match(
-    /^\/api\/v1\/workspaces\/([^/]+)\/projects\/([^/]+)\/agents\/([^/]+)\/keys\/([^/]+)\/?$/,
+    /^\/api\/v1\/workspaces\/([^/]+)\/projects\/([^/]+)\/agent-runners\/([^/]+)\/keys\/([^/]+)\/?$/,
   );
   if (agentKeyItemMatched) {
     return {
@@ -792,7 +805,7 @@ export function matchProjectsRoute(url: string): ProjectsRoute | null {
   }
 
   const agentKeysMatched = pathname.match(
-    /^\/api\/v1\/workspaces\/([^/]+)\/projects\/([^/]+)\/agents\/([^/]+)\/keys\/?$/,
+    /^\/api\/v1\/workspaces\/([^/]+)\/projects\/([^/]+)\/agent-runners\/([^/]+)\/keys\/?$/,
   );
   if (agentKeysMatched) {
     return {
@@ -804,7 +817,7 @@ export function matchProjectsRoute(url: string): ProjectsRoute | null {
   }
 
   const agentConnectionInfoMatched = pathname.match(
-    /^\/api\/v1\/workspaces\/([^/]+)\/projects\/([^/]+)\/agents\/([^/]+)\/connection-info\/?$/,
+    /^\/api\/v1\/workspaces\/([^/]+)\/projects\/([^/]+)\/agent-runners\/([^/]+)\/connection-info\/?$/,
   );
   if (agentConnectionInfoMatched) {
     return {
@@ -816,7 +829,7 @@ export function matchProjectsRoute(url: string): ProjectsRoute | null {
   }
 
   const agentExecutionConfigMatched = pathname.match(
-    /^\/api\/v1\/workspaces\/([^/]+)\/projects\/([^/]+)\/agents\/([^/]+)\/execution-config\/?$/,
+    /^\/api\/v1\/workspaces\/([^/]+)\/projects\/([^/]+)\/agent-runners\/([^/]+)\/execution-config\/?$/,
   );
   if (agentExecutionConfigMatched) {
     return {
@@ -828,7 +841,7 @@ export function matchProjectsRoute(url: string): ProjectsRoute | null {
   }
 
   const agentDiagnosticsMatched = pathname.match(
-    /^\/api\/v1\/workspaces\/([^/]+)\/projects\/([^/]+)\/agents\/([^/]+)\/diagnostics\/?$/,
+    /^\/api\/v1\/workspaces\/([^/]+)\/projects\/([^/]+)\/agent-runners\/([^/]+)\/diagnostics\/?$/,
   );
   if (agentDiagnosticsMatched) {
     return {
@@ -840,7 +853,7 @@ export function matchProjectsRoute(url: string): ProjectsRoute | null {
   }
 
   const agentItemMatched = pathname.match(
-    /^\/api\/v1\/workspaces\/([^/]+)\/projects\/([^/]+)\/agents\/([^/]+)\/?$/,
+    /^\/api\/v1\/workspaces\/([^/]+)\/projects\/([^/]+)\/agent-runners\/([^/]+)\/?$/,
   );
   if (agentItemMatched) {
     return {
@@ -852,7 +865,7 @@ export function matchProjectsRoute(url: string): ProjectsRoute | null {
   }
 
   const agentsMatched = pathname.match(
-    /^\/api\/v1\/workspaces\/([^/]+)\/projects\/([^/]+)\/agents\/?$/,
+    /^\/api\/v1\/workspaces\/([^/]+)\/projects\/([^/]+)\/agent-runners\/?$/,
   );
   if (agentsMatched) {
     return {

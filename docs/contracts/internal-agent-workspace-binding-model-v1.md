@@ -49,7 +49,7 @@ By separating:
 - persisted binding record
 - execution-facing mount contract
 
-we keep the current implementation compatible while moving toward a more platform-owned binding lifecycle.
+the current implementation follows the platform-owned binding lifecycle instead of carrying a compatibility bridge.
 
 ## Current Direction
 

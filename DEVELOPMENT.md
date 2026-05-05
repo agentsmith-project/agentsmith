@@ -13,8 +13,8 @@ Repo version files:
 ## Product Terminology Guardrails
 
 - [`docs/contracts/product-terminology.md`](./docs/contracts/product-terminology.md) is the authoritative source for product-facing object names and IA boundaries.
-- Use `Execution target`, `Project secrets`, `Shared context`, `Access guide`, and `Files` in user-facing product descriptions, UI copy, and product docs.
-- Do not collapse `Endpoint` and `Agent` into a generic model-source concept in product-facing docs, UI copy, or test narratives.
+- Use `Model`, `Endpoint`, `Project secrets`, `Shared context`, `Access guide`, and `Files` in user-facing product descriptions, UI copy, and product docs.
+- Do not describe Chat or Agent tasks as runner-backed user workflows. Runner configuration belongs in Agent Runners administration surfaces.
 
 ## Current Engineering Workflow
 
@@ -74,7 +74,7 @@ npm run rehearse:cluster
 | Entry path | 适用情况 | 先跑什么 |
 | --- | --- | --- |
 | `ui_only` | 只改前端 UI、文案、mock 交互、客户端状态。 | `npm run dev`，然后用 `npm run verify` 生成 dry-run plan。 |
-| `local_manual` | 需要真实本地 API / Web / Notebook / Terminal / runner / files 行为。 | `make local-real-up`，然后用 `make local-real-status` 看当前状态。 |
+| `local_manual` | 需要真实本地 API / Web / Agent tasks / Terminal / runner / files 行为。 | `make local-real-up`，然后用 `make local-real-status` 看当前状态。 |
 | `release_grade` | 大改动收口、发布前、incident 修复后的跨层复验。 | `npm run release:ready`，然后用 `npm run release:status` 只读查看 summary/status。 |
 
 如果只是定位问题，先用 [diagnostic catalog](./docs/testing/diagnostic-catalog-v1.md) 找最小诊断命令。诊断命令通过后，按范围回到 `npm run verify -- --goal=... --run`；发布级收口回到 `npm run release:ready`。
@@ -136,7 +136,7 @@ Gate adapter fidelity notes:
 - rehearsal 线负责在开发机上排演 release 路径；deploy 线负责目标主机上的正式发布。
 
 当前本机工作线：
-- `local-manual` — 日常开发、真实后端手测、notebook / runner 主链手测。
+- `local-manual` — 日常开发、真实后端手测、Agent task / Agent Runner 主链手测。
 - `demo-rehearsal` — demo 发布线的本机排演入口，使用 `agentsmith-demo` / `agentsmith-demo-registry`。
 - `cluster-rehearsal` — cluster 发布线的本机排演入口，使用 `agentsmith-cluster` / `agentsmith-cluster-registry`。
 
@@ -244,7 +244,7 @@ make contracts-check-openapi # 检查 OpenAPI 核心覆盖与破坏性变更
 
 收成一条正式链路。`local-real` 是人类入口名，底层仍映射到已注册的 `local-manual` runtime line。
 
-默认 `local-real` 只保证真实本地平台可用，不自动创建 Notebook demo 或 host external runner。需要这些证据，或需要本机完整验证 internal sandbox / JuiceFS / internal notebook 时，再按 owner runbook 显式执行底层 diagnostic adapter。
+默认 `local-real` 只保证真实本地平台可用，不自动创建 Agent task demo 或本机 runner 诊断资源。需要这些证据，或需要本机完整验证 sandbox / JuiceFS 时，再按 owner runbook 显式执行底层 diagnostic adapter。
 
 ### First-time setup
 
@@ -293,22 +293,21 @@ PROXY_PORT=39080
 make local-real-up
 ```
 
-这一步只启动平台，不自动创建 notebook demo 资源。
+这一步只启动平台，不自动创建 Agent task demo 资源。
 
-### Seed notebook demo and start host runner only when owner runbook requires it
+### Seed Agent task demo only when owner runbook requires it
 
-这一步是底层 owner diagnostic adapter。普通本机真实环境先从 `make local-real-up` 开始；只有需要 Notebook demo / host external runner 证据时再按 runbook 执行。
+这一步是底层 owner diagnostic adapter。普通本机真实环境先从 `make local-real-up` 开始；只有需要 Agent task demo 证据时再按 runbook 执行。
 
 ```bash
-make local-manual-seed-notebook
+make local-manual-seed-agent-task
 ```
 
 这一步会：
 
 1. 刷新 `dev-admin` token
-2. 创建 project / credential / endpoint / external agent / key
-3. 启动 host external runner
-4. 输出 notebook URL
+2. 创建 project / credential / endpoint / managed runner config
+3. 输出 Agent task URL
 
 ### Check status
 
@@ -331,7 +330,7 @@ make local-manual-internal-status
 2. `agentsmith-sandbox` namespace
 3. JuiceFS CSI
 4. local sandbox manager / cleaner
-5. internal notebook agent
+5. sandbox workload
 
 结束后如果想回到默认 external-only 模式：
 
@@ -563,7 +562,7 @@ Notes:
 1. `npm run release:ready` is the human-friendly automated release path. It runs the non-verdict precheck first, then delegates to internal campaign adapters that orchestrate `gate:fast`, `gate:default`, `lane:visual`, `gate:release`, demo rehearsal, cluster rehearsal, and the terminal aggregate verdict.
 2. `gate:release:full` is aggregate-only. Treat it as an internal verifier for an explicit campaign context, not as a copyable release command.
 3. When diagnosing a failed campaign, rerun the owning evidence adapter from the owner runbook or manifest, then return to `npm run release:ready`.
-4. Real-backend notebook verification requires `PRESET_ENDPOINT_API_KEY` (or a derived `BACKEND_REAL_API_KEY` alias).
+4. Real-backend Agent task verification requires `PRESET_ENDPOINT_API_KEY` (or a derived `BACKEND_REAL_API_KEY` alias).
 5. Fresh demo rehearsal roots seeded by the release campaign keep `infra/deploy/demo/env/site.env.example` secret-free and derive a missing `PRESET_ENDPOINT_API_KEY` from repo-local runtime presets such as `.env.backend-real`.
 
 ## Test & Evidence Directory Contract
@@ -597,7 +596,7 @@ Notes:
 1. 日常失败排查看 `test-results/`
 2. mock visual 基线看 `e2e/__screenshots__/`
 3. 真实后端人工界面审查看 `artifacts/backend-real-visual/<run-id>/`
-4. notebook / integration 当前运行态日志与状态优先看 `artifacts/backend-real/runs/<run-id>/...`
+4. Agent task / integration 当前运行态日志与状态优先看 `artifacts/backend-real/runs/<run-id>/...`
 5. 不再新增泛化的 `tests/` 目录承载主测试代码
 6. `artifacts/system-workspace-provisioning/` 仍是当前工作区发布/初始化尝试记录输出路径，不要按新目录约定直接重命名或手工迁走
 
@@ -717,14 +716,14 @@ npm run test:e2e -- --project=chromium
 ```bash
 npm run test:e2e:integration:minimal
 npm run test:e2e:integration:chat
-npm run test:e2e:integration:agents
+npm run test:e2e:integration:agent-task
 ```
 
 ### 3) Use route-targeted smoke for fast triage
 
 ```bash
 BASE_URL=http://localhost:3001 npx playwright test --project=smoke e2e/smoke.spec.ts \
-  --grep "loads /zh-CN/workspaces/ws_default/projects/proj_001/agents$" \
+  --grep "loads /zh-CN/workspaces/ws_default/projects/proj_001/agent-tasks$" \
   --workers=1 --max-failures=1
 ```
 
@@ -748,9 +747,9 @@ make e2e-int-chat-local-api
 make e2e-int-agent-local-api
 ```
 
-## Notebook External Agent + Execution Trace UI Workstream (Process Record, 2026-02)
+## Agent Task Execution Trace Workstream
 
-This section records the recent notebook external-agent workline (Codex runner + trace UI + production hardening), its current state, and the next-stage plan.
+This section records the current Agent task trace UI and evidence workflow. The user-facing surface is Agent tasks; runner identity and runner diagnostics stay in Agent Runners/admin surfaces.
 
 ### Internal Release Scope Clarification (Product Governance Pages)
 
@@ -768,188 +767,25 @@ See also:
 - `docs/contracts/product-terminology.md`
 - `docs/user-guides/README.md`
 
-### Scope (What this workline covered)
+### Current Scope
 
-- Notebook task execution via external agent execution (`notebook-codex-runner`, Codex script mode)
-- Endpoint proxy protocol bridging for OpenAI Responses and streaming translation on canonical proxy paths
-- Notebook message bubble execution details UI (expandable trace panel)
-- Trace storage/query/replay path (`trace_event` SSE + `/tasks/:taskId/traces`)
-- Production-readiness for notebook task execution:
-  - persistence (docStore-backed)
-  - retention/payload limits
-  - metrics/monitoring
-  - load testing and benchmark tooling
+- Agent task activity shows execution details, recovered issues, final answer, terminal sessions, and artifacts.
+- Trace storage/query/replay uses task routes such as `/tasks/:taskId/traces` and task SSE replay.
+- Artifact collection displays files from the task `.artifacts` directory only.
+- Chat model selection remains Endpoint-backed and does not dispatch Agent Runners.
 
-### Delivered (Functional)
+### Current Diagnostics
 
-#### 1) External Agent Notebook Pipeline
-- End-to-end notebook external-agent flow works with real backend + external Codex runner.
-- Runner creates per-task workdir under `/tmp/<username>/<task_id>`.
-- Runner supports Codex yolo mode and trusted current workdir/no-git project mode.
-- Notebook task no longer auto-closes after a single external-agent turn (multi-turn behavior fixed).
+- UI-focused Agent task changes should start with focused component tests under `src/components/agent-tasks/__tests__/`.
+- Runner/context owner diagnostics use `npm run test:agent-task:runner:fast`.
+- Backend-real Agent task owner diagnostics use `npm run test:agent-task:runner:backend-real` when the change touches runner execution context, ticket scope, Context Store, or managed credentials.
 
-Primary files (implemented across this workline):
-- `packages/notebook-codex-runner/src/index.ts`
-- `packages/api-entry-node/src/task-route-handler.ts`
-- `packages/api-entry-node/src/agent-execution-service.ts`
+### Where To Continue
 
-#### 2) Execution Trace UI (Notebook Message Bubble)
-- Agent message bubbles support expandable execution details (default collapsed).
-- Views:
-  - `Timeline`
-  - `Raw` (Codex CLI-oriented fidelity)
-- Features:
-  - local filter (`All / Progress / Tool / Alerts / Debug`)
-  - stats header (count/duration/warnings/errors/truncated hint)
-  - copy trace logs
-  - lazy-load trace per message (`message_id`)
-  - "Load earlier logs" pagination (`before_id`)
-- Frontend debug support:
-  - notebook SSE debug panel (development only)
-  - reconnect gap-fill debug events
-
-Primary files:
-- `src/components/notebook/TaskPage.tsx`
-- `src/components/notebook/MessageItem.tsx`
-- `src/lib/hooks/use-task-sse.ts`
-- `src/lib/api/endpoints/tasks.ts`
-
-#### 3) Trace Transport / Contracts
-- Execution protocol extended with `agent.response.event`.
-- Notebook task SSE extended with `trace_event`.
-- `/tasks/:taskId/traces` query endpoint added and evolved:
-  - filters: `message_id`, `run_id`, `after_id`, `before_id`, `page_size`
-  - returns pagination metadata (`has_more`, `next_after_id`)
-- Task SSE replay support:
-  - `last_event_id` replay for task events (buffered history)
-
-### Delivered (Production Hardening / Operability)
-
-#### 4) Persistence
-- Notebook task data (tasks/messages/artifacts/traces) supports docStore-backed persistence in `api-entry-node`.
-- Trace storage is write-through to docStore with in-memory cache/read-through behavior.
-- In memory-only mode, behavior remains process-local and ephemeral (documented).
-
-#### 5) Retention / Payload Limits
-- Trace event count retention limit per task (`NOTEBOOK_TRACE_MAX_EVENTS`)
-- Trace details payload size limit (`NOTEBOOK_TRACE_DETAILS_MAX_BYTES`)
-- Truncation markers and truncation accounting metrics added
-- Retention truncation is consistent with persisted trace records (docStore deletion on trim)
-
-#### 6) Monitoring / Metrics
-- Internal metrics JSON endpoint (auth required):
-  - `/api/v1/internal/notebook-task-metrics`
-- Prometheus text export endpoint (auth required):
-  - `/api/v1/internal/notebook-task-metrics/prometheus`
-- Metrics include:
-  - task run lifecycle counters
-  - active runs / SSE clients
-  - trace recorded / truncated / details truncated
-  - `/traces` query counters + latency histogram by scope (`task/message/run/message_run`)
-
-#### 7) Load Testing / Benchmarks / Baselines
-Added tooling and Make targets for:
-- smoke: `make notebook-agent-smoke-task`, `make notebook-agent-smoke-full`
-- monitoring: `make notebook-agent-monitor`
-- load test: `make notebook-agent-load-test`
-- load matrix: `make notebook-agent-load-matrix`
-- benchmark baseline: `make notebook-agent-benchmark-baseline`
-- compare baselines: `make notebook-agent-benchmark-compare`
-- message-scoped traces query benchmark: `make notebook-agent-traces-query-bench`
-- page-size sweep for traces query: `make notebook-agent-traces-query-sweep`
-- compare page-size sweeps: `make notebook-agent-traces-query-sweep-compare`
-- benchmark result archive (repo-local artifacts metadata): `make notebook-agent-benchmark-archive`
-
-### Delivered (Docs / Contracts / Specs)
-
-- Notebook Codex Runner Runbook (authoritative operational workflow for this workline):
-  - `docs/notebook-codex-runbook.md`
-- Execution protocol contract:
-  - `docs/contracts/agent-execution-protocol.md`
-- Notebook module/contract mapping docs updated:
-  - `docs/contracts/notebook-frontend-module-map.md`
-- Main generated specs updated to include notebook traces + execution event coverage:
-  - `docs/contracts/specs/openapi.yaml`
-  - `docs/contracts/specs/openapi.json`
-  - `docs/contracts/specs/asyncapi.yaml`
-  - `docs/contracts/specs/asyncapi.json`
-- Supplement specs retained as compatibility/reference snapshots where applicable and documented in:
-  - `docs/contracts/README.md`
-
-### Validation Summary (What was actually tested)
-
-#### Real Chain (Repeatedly)
-- API (`:20000`) + Web (`:3001`) + external `notebook-codex-runner`
-- real local Keycloak auth
-- real provider-compatible endpoint via endpoint proxy
-- notebook smoke tasks complete successfully and return final responses (`chain ok`)
-
-#### UI / Frontend
-- unit tests for notebook trace panel interactions (expand/filter/raw/copy/stats/pagination)
-- page-level Playwright coverage for notebook trace panel interactions (MSW/mock)
-
-#### Backend / Execution
-- notebook task execution/API targeted tests:
-  - `trace_event` handling
-  - `/traces` paging and replay paths
-  - retention + details truncation behavior
-  - metrics / Prometheus export
-  - persisted trace retention truncation consistency
-
-#### Performance / Capacity (Initial Baselines)
-- end-to-end load/matrix benchmarks (real Codex + provider-backed path)
-- message-scoped `/traces?message_id=...` benchmarks (memory vs Mongo/docStore)
-- page-size sweeps (`20/50/200/500`) and compare tooling
-- observed result so far:
-  - message-scoped `/traces` query remains low-ms and is not the current bottleneck
-
-### Known Boundaries / Open Items (Not blockers for current stage)
-
-1. Notebook task execution persistence relies on docStore backend for restart durability
-- Memory mode remains ephemeral by design.
-
-2. Benchmark variance is heavily influenced by upstream model/runtime
-- End-to-end latency should be analyzed with multiple runs and compare tools.
-- `/traces` query-specific benchmarks are the more stable signal for trace panel performance.
-
-3. Prometheus alert thresholds are bootstrap values
-- Should be tightened after collecting more production-like baseline data.
-
-### Next-Stage Plan (High Value, Non-UI-Fine-Tuning)
-
-#### A. Production Baselines / SLO Calibration
-- Run and archive standard memory + Mongo baseline sets per engineering verification round.
-- Use:
-  - `notebook-agent-benchmark-baseline`
-  - `notebook-agent-benchmark-compare`
-  - `notebook-agent-traces-query-sweep`
-  - `notebook-agent-traces-query-sweep-compare`
-  - `notebook-agent-benchmark-archive`
-- Calibrate Prometheus alert thresholds using observed p95/p99 and success rate.
-
-#### B. Mongo / DocStore Performance Tuning
-- Validate recommended indexes under larger real trace volumes.
-- Re-run message-scoped traces query sweep after index changes and compare.
-
-#### C. CI / Periodic Regression (Ops-Oriented)
-- Add a lightweight scheduled or manual benchmark smoke:
-  - `traces-query-bench` or a small sweep
-- Persist result artifacts and compare against previous baseline.
-
-#### D. Security Hardening (Tracked Risk Follow-up)
-- Replace bearer forwarding to runner with short-lived ticket exchange (planned hardening item).
-- Keep trace event payload sanitization coverage strong (tests + review).
-
-### Where to Continue
-
-If this workline is resumed later, start from:
-1. `Notebook Codex Runner Runbook` (`docs/notebook-codex-runbook.md`) (current operational truth)
-2. benchmark/compare/archive scripts in `scripts/`
-3. notebook trace execution implementation in:
-   - `packages/api-entry-node/src/task-route-handler.ts`
-   - `packages/notebook-codex-runner/src/index.ts`
-   - `src/components/notebook/TaskPage.tsx`
-   - `src/components/notebook/MessageItem.tsx`
+Start from:
+1. `docs/agent-task-runner-runbook.md` for current Agent task runner owner diagnostics.
+2. `docs/contracts/agent-task-frontend-module-map.md` for frontend module boundaries.
+3. `src/components/agent-tasks/TaskPage.tsx` and `src/components/agent-tasks/MessageItem.tsx` for the task activity UI.
 
 ### 4) Distinguish infra failure from app failure
 
@@ -1169,60 +1005,17 @@ npm install
 npx tsc --noEmit
 ```
 
-## Notebook Codex v1 Known Risks
+## Agent Task Inputs And Artifacts
 
-- `R1` Token forwarding to external agent runner
-  - Notebook codex runs may forward user bearer token to the external runner so it can call endpoint proxy with user-scoped auth/audit controls.
-  - Do not print token in logs and do not persist token on disk.
-  - Prefer short-lived sessions and rotate identity tokens by standard auth policy.
-
-- `R3` Directory-only workspace isolation
-  - Runner workdir is `/tmp/<username>/<task_id>` in v1.
-  - No auto-cleanup and no sandbox/container isolation in v1.
-  - Add periodic cleanup in ops (example: delete task dirs older than 14 days) and monitor `/tmp` disk usage.
-
-## Notebook Codex v1 Follow-up (Inputs / Artifacts / Headless Workflow)
-
-This follow-up extends the external notebook-agent execution line toward a NotebookLM-like workflow:
-
-- notebook task inputs from Files are injected to external execution context as `task_inputs`
-- runner writes task-local manifest: `<task_cwd>/.mbos/task-inputs.json`
-- runner writes task-local `AGENTS.md` (headless rules, artifact dir rules, input helper guidance)
-- runner installs task-local Codex skill:
-  - `./.codex/skills/file-read/`
-  - helper: `fetch_input.mjs` (downloads attached source files through AgentSmith API)
-- runner uses per-task session continuity:
-  - first turn `codex exec ...`
-  - later turns in same task cwd `codex exec resume --last ...`
-- runner scans `<task_cwd>/artifacts/` after Codex exit and emits:
-  - `agent.response.artifact`
-  - `agent.response.event(category=artifact)` for trace/debug fidelity
-- backend persists notebook task artifacts and surfaces them via task artifact APIs / `Artifacts` panel
-
-Real-chain validation completed:
-- `resume --last` confirmed in runner debug argv
-- task-local skill used by Codex to fetch attached source files into `./inputs/`
-- artifact outputs in `./artifacts/` surfaced in notebook artifacts list
-
-Current known boundary:
-- runner-side artifact dedupe is process-local (in-memory fingerprint cache)
-- after runner restart, the first artifact scan may re-report historical files already present in `artifacts/`
-- functional correctness is preserved, but cross-runner-restart artifact idempotency is not yet enforced
-
-## Unified InputRefs / Default Library Migration Notes (Chat + Notebook)
-
-- Notebook task inputs use `/tasks/:taskId/inputs` with `InputRef`-style records (`library_object`, `url`, `artifact`).
-- Files default path now uses project `file-libraries`; raw uploads land in a deterministic project library (`Project Uploads`) instead of personal upload storage.
-- Notebook `source` UI is intentionally paused: the dialog shell remains visible, but it no longer performs file attachment/import logic.
-- Notebook artifacts can still be attached back into task inputs as first-class `artifact` refs (output-to-input loop).
+- Agent task inputs use `/tasks/:taskId/inputs` with `InputRef`-style records (`library_object`, `url`, `artifact`).
+- Files default path uses project `file-libraries`; raw uploads land in a deterministic project library (`Project Uploads`) instead of personal upload storage.
+- Agent task artifacts can be attached back into task inputs as first-class `artifact` refs.
+- User-visible generated deliverables are collected from the task `.artifacts` directory.
 - Chat message `inputs` and attachment provenance support first-class `url` refs and project file-library-backed object refs.
-- Shared backend resolver layering is now in place:
-- Backend input-resolution code is partially shared: chat input parsing/attachment resolution is centralized in `chat-input-refs.ts`, and notebook input detail/execution mapping is centralized in `notebook-input-refs.ts`.
-- Shared backend resolver layering is now in place:
+- Shared backend resolver layering is in place:
   - `input-ref-resolver.ts` (ref keys / imported object extraction / dedupe helpers)
   - `input-ref-input-resolver.ts` (object/url/artifact request metadata resolution + fallback rules)
-  - request-specific adapters build on top (`chat-input-refs.ts`, `notebook-input-refs.ts`)
-- Chat `attachments/init` now normalizes `library_object` / `url` attachment metadata via the shared request metadata resolver (avoids handler-local drift in filename/type/size fallback rules).
+  - request-specific adapters build on top of the shared resolver layer
 
 ## Governance Backend (Audit / Usage) — Product-Grade v1 (Internal)
 
@@ -1236,8 +1029,8 @@ Current known boundary:
 - `/api/v1/workspaces/:workspaceId/projects/:projectId/usage/kpi`
   - aggregates today/yesterday KPI from usage facts
 - Initial instrumentation coverage includes:
-  - Notebook task lifecycle / task input attach-remove / artifact creation
-  - Notebook task run usage (duration, tokens when available)
+  - Agent task lifecycle / task input attach-remove / artifact creation
+  - Agent task run usage (duration, tokens when available)
   - Chat message creation / attachment creation
   - Chat stream run lifecycle + usage
   - Endpoint proxy request usage (success/error, duration)
@@ -1246,6 +1039,6 @@ Current known boundary:
   - unified backend authz decisions and `/authorize` explain payloads
   - endpoint allow-list / rate / limit effects
   - source-library allow-list / rate / upload limit effects
-  - notebook/chat agent access and agent request-rate effects
+  - Chat model access and Agent task request-rate effects
   - member permission, limit, suspend / restore / revoke downstream effects
   - opaque SSE ticket issuance with JWT query fallback disabled

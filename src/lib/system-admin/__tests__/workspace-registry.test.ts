@@ -184,13 +184,16 @@ describe('system workspace registry', () => {
     expect(artifact.foundation_result?.data_foundations.domains).toEqual(
       expect.arrayContaining([
         expect.objectContaining({
-          domain: 'notebook',
+          domain: 'agent_task',
           status: 'ready',
-          collections: expect.arrayContaining(['ws_platform_ops_notebook_tasks']),
+          collections: expect.arrayContaining(['ws_platform_ops_agent_tasks']),
         }),
       ]),
     );
     expect(artifact.foundation_result?.data_foundations.materialized_collections).toContain(
+      'ws_platform_ops_agent_tasks',
+    );
+    expect(artifact.foundation_result?.data_foundations.materialized_collections).not.toContain(
       'ws_platform_ops_notebook_tasks',
     );
     await expect(getPublicSystemWorkspace('platform_ops')).resolves.toEqual(

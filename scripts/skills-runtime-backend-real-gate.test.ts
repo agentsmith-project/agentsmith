@@ -9,7 +9,9 @@ type GateGrepEntry = {
 };
 
 const GATE_SCRIPT_PATH = 'scripts/skills-runtime-backend-real-gate.sh';
+const INTERNAL_AGENT_TASK_GATE_SCRIPT_PATH = 'scripts/run-internal-agent-task-real-gate.sh';
 const RUN_GREP_PATTERN = /^\s*run_grep\s+(\S+)\s+"([^"]*)"\s+\d+\s+\d+\s*$/;
+const INTERNAL_RUN_GREP_PATTERN = /^\s*run_internal_spec_grep\s+(\S+)\s+"([^"]*)"\s+\d+\s+\d+(?:\s+\|\|.*)?$/;
 const PLAYWRIGHT_TEST_TITLE_PATTERN = /\btest(?:\.(?:only|skip|fixme|fail))?\(\s*(['"`])([\s\S]*?)\1\s*,/g;
 
 async function readGateEntries(): Promise<GateGrepEntry[]> {
@@ -35,14 +37,48 @@ async function readGateEntries(): Promise<GateGrepEntry[]> {
   return entries;
 }
 
+async function readInternalGateEntries(): Promise<GateGrepEntry[]> {
+  const source = await readFile(path.resolve(process.cwd(), INTERNAL_AGENT_TASK_GATE_SCRIPT_PATH), 'utf-8');
+  const entries: GateGrepEntry[] = [];
+
+  for (const [index, line] of source.split('\n').entries()) {
+    const match = line.match(INTERNAL_RUN_GREP_PATTERN);
+    if (!match) {
+      continue;
+    }
+    const [, specFile, label] = match;
+    if (!label) {
+      continue;
+    }
+    entries.push({
+      specFile,
+      label,
+      lineNumber: index + 1,
+    });
+  }
+
+  return entries;
+}
+
 async function readPlaywrightTitles(specFile: string): Promise<string[]> {
   const source = await readFile(path.resolve(process.cwd(), specFile), 'utf-8');
   return Array.from(source.matchAll(PLAYWRIGHT_TEST_TITLE_PATTERN), (match) => match[2]);
 }
 
 describe('skills runtime backend-real gate', () => {
+  it('delegates managed Agent Task coverage to the internal sandbox backend-real wrapper', async () => {
+    const source = await readFile(path.resolve(process.cwd(), GATE_SCRIPT_PATH), 'utf-8');
+
+    expect(source).toContain('bash scripts/run-internal-agent-task-real-gate.sh --skills-runtime');
+    expect(source).not.toContain('bash scripts/run-integration-e2e-full.sh');
+    expect(source).not.toContain('RUNTIME_RUNNER_MODES="${RUNTIME_RUNNER_MODES:-external_host');
+  });
+
   it('keeps every grep label aligned with a real Playwright title in the target spec', async () => {
-    const entries = await readGateEntries();
+    const entries = [
+      ...await readGateEntries(),
+      ...await readInternalGateEntries(),
+    ];
 
     expect(entries.length).toBeGreaterThan(0);
 

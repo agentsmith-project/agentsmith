@@ -11,8 +11,8 @@ import { gotoAndWait } from './utils/navigation';
 const PROJECT_SECTIONS = [
   'overview',
   'chat',
-  'notebook',
-  'agents',
+  'agent-tasks',
+  'agent-runners',
   'endpoints',
   'members',
   'audit',

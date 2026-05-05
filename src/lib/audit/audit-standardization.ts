@@ -20,7 +20,7 @@ import type { AuditEvent } from '@/lib/api/types';
  * Actor who performed the audit action
  */
 export interface AuditActor {
-  /** Actor type from audit records. Known values include user, agent, and plugin. */
+  /** Actor type from audit records. Known values include user, runner, and plugin. */
   type: string;
   /** Unique identifier for the actor */
   id: string;
@@ -32,7 +32,7 @@ export interface AuditActor {
  * Target resource that was affected by the audit action
  */
 export interface AuditTarget {
-  /** Resource type (e.g., member, agent, endpoint, project) */
+  /** Resource type (e.g., member, agent_runner, endpoint, project) */
   type: string;
   /** Unique identifier for the target resource */
   id: string;
@@ -62,7 +62,7 @@ export interface StandardizedAuditEvent {
   actor: AuditActor;
   /** What was affected */
   target: AuditTarget;
-  /** What was done (e.g., 'member.add', 'agent.update') */
+  /** What was done (e.g., 'member.add', 'agent_runner.update') */
   action: string;
   /** When it happened (ISO 8601 timestamp) */
   at: string;

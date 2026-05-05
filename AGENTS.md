@@ -16,9 +16,9 @@ AgentSmith = MBOS 企业级控制面前端。**当前职责**: AI 智能体使�
 
 **定位**: 企业级控制面，非 ToC 产品，非低代码平台。**后端为唯一权威**。
 
-**范围**: 认证/身份、工作区、项目、Chat、Notebook、Files、Agents、Endpoints、资源策略、成员、凭据、审计与用量、设置。
+**范围**: 认证/身份、工作区、项目、Chat、Agent tasks、Files、Agent Runners、Endpoints、资源策略、成员、Project secrets、审计与用量、设置。
 
-**非范围**: 文件级策略、Chat/Notebook 独立配额、角色名鉴权、性能压测、E2E 覆盖后端鉴权。
+**非范围**: 文件级策略、Chat/Agent-task 独立配额、角色名鉴权、性能压测、E2E 覆盖后端鉴权。
 
 **设计原则**: (1) Token 唯一做门禁 (2) URL 为真相源 (3) 设计系统唯一来源 (4) 安全校验不可省。
 
@@ -83,7 +83,7 @@ Raw `test:*`, `gate:*`, `lane:*`, `backend-real:*` 和低层 `make *-rehearsal-*
 **library**: next-intl
 **locales**: en-US, zh-CN
 **keys**: snake_case
-**namespaces**: common, nav, auth, workspace, project, sources, members, studio, chat, audit, usage, overview, agents, endpoints, settings, errors
+**namespaces**: common, nav, auth, workspace, project, members, chat, audit, usage, overview, agent_tasks, agent_runners, endpoints, settings, errors, files, alerts, context_store, resource_policy
 
 ## 环境配置
 
@@ -115,10 +115,9 @@ Raw `test:*`, `gate:*`, `lane:*`, `backend-real:*` 和低层 `make *-rehearsal-*
 
 **skill runtime diagnostics**:
 - 改 builtin skills、runner skill env、Context Store route/store、managed credential resolution 时，至少跑 focused producer `npm run test:skills:fast`
-- 改 chat/notebook/terminal execution context、agent ticket scope、Context Store ownership 时，再加跑 focused producer `npm run test:skills:backend-real`
+- 改 Agent task / terminal execution context、runner ticket scope、Context Store ownership 时，再加跑 focused producer `npm run test:skills:backend-real`
 - `test:skills:*` 覆盖的是 builtin skills + runner runtime + Context Store 主链，不替代共享 context UI、治理、files 等业务 verification entrypoint
-- notebook runner 主链 owner diagnostics 可用 `npm run test:notebook:runner:fast` / `npm run test:notebook:runner:backend-real`
-- chat runner 主链 owner diagnostics 可用 `npm run test:chat:runner:fast` / `npm run test:chat:runner:backend-real`
+- Agent task runner 主链 owner diagnostics 可用 `npm run test:agent-task:runner:fast` / `npm run test:agent-task:runner:backend-real`
 - diagnostics 变绿后，按改动范围和当前阶段决定是否升级到 `npm run verify -- --goal=... --run`；发布级收口回到 `npm run release:ready`
 
 ## 测试 ID 规范
@@ -159,7 +158,7 @@ Raw `test:*`, `gate:*`, `lane:*`, `backend-real:*` 和低层 `make *-rehearsal-*
 
 ## Runner Home 约定
 
-当你是在 AgentSmith notebook / terminal runner 的 task workspace 里工作时，必须遵守以下运行时约定：
+当你是在 AgentSmith Agent task / terminal runner 的 task workspace 里工作时，必须遵守以下运行时约定：
 
 - `cwd` 是 task 的用户文件工作区；`HOME` 是 runner-private runtime home，二者不再要求相同。
 - 动态配置、缓存、安装产物、用户态工具链、认证文件都必须写在当前 `HOME` 下，不能写到 `/etc`、`/usr/local`、`/opt`、`/var/tmp` 等系统级目录。
@@ -168,7 +167,7 @@ Raw `test:*`, `gate:*`, `lane:*`, `backend-real:*` 和低层 `make *-rehearsal-*
 - AgentSmith 的成员/任务级上下文、简单 credentials、共享说明通过 `mbos-context` builtin skill 和 AgentSmith Context Store 获取，不应假设它们存在于 workspace 文件树中。
 - Context Store 的正式 scopes 是 `member / task / project / workspace`：`member` 表示当前 workspace 内成员私有上下文，`task` 表示当前成员拥有的任务上下文，`project/workspace` 表示共享上下文。
 - 复杂 OAuth 凭据（例如 Feishu）通过只读 context 视图暴露，例如 `managed_credentials.feishu`；不要尝试在 workspace 中查找或持久化这类凭据文件。
-- skill runtime 的正式主链覆盖 chat / notebook / terminal 三条执行路径；如果改动影响 skill env、ticket scope 或 Context Store 路由，必须把对应 `test:skills:*` gate 一起更新或回归验证。
+- skill runtime 的正式主链覆盖 Agent task / terminal 执行路径；如果改动影响 skill env、ticket scope 或 Context Store 路由，必须把对应 `test:skills:*` gate 一起更新或回归验证。
 - Codex 运行时状态位于 `$HOME/.codex`；runner 自己的 task 元数据位于 `$HOME/.mbos`；builtin skills 位于 `$HOME/.agents/skills`。
 - 如果需要安装 Python / Node / Rust 环境或库，只能使用 user 模式并安装到 home 下：
   - Python: `python3 -m pip install --user ...`

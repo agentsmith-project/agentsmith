@@ -24,7 +24,7 @@
 - [UX/UI Review Record Template](./user-guides/uxui-review-record-template.md)
 - 可复制填写的标准审查记录模板；用于把 scene-level review 结论收成统一格式
 - [Troubleshooting Guide](./troubleshooting-guide-v1.md)
-- [Notebook Codex Runner Runbook](./notebook-codex-runbook.md)
+- [Agent Task Runner Runbook](./agent-task-runner-runbook.md)
 - [CI Integration Troubleshooting](./ci-integration-troubleshooting.md)
 
 ### UX and design

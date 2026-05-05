@@ -34,6 +34,10 @@ const REMOVED_PERMISSION_TOKENS = [
   'project:endpoint:invoke',
   'project:agent:create',
   'project:agent:publish',
+  'project:agent:use',
+  'project:agent:manage',
+  'project:agent:public',
+  'project:terminal:use',
 ] as const;
 
 const REMOVED_TOKEN_ALLOWLIST = new Set<string>([
@@ -42,8 +46,7 @@ const REMOVED_TOKEN_ALLOWLIST = new Set<string>([
 ]);
 
 const REMOVED_TOKEN_DOC_ALLOWLIST = new Set<string>([
-  'docs/contracts/auth-permission-model.md',
-  'docs/contracts/frontend-token-interaction-contract.md',
+  'docs/contracts/product-terminology.md',
 ]);
 
 function collectPageFiles(dir: string): string[] {

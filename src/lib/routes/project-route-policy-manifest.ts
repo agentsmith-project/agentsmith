@@ -2,10 +2,10 @@ import { createProjectRoutePolicy } from './project-route-policy';
 import { PROJECT_SETTINGS_READ_PERMISSIONS } from '@/lib/projects/project-settings-access';
 
 export const PROJECT_ROUTE_POLICY_MANIFEST = {
-  'src/app/[locale]/workspaces/[workspace]/projects/[project]/(shell)/agents/page.tsx': createProjectRoutePolicy({
-    permissions: ['project:agent:use', 'project:agent:manage', 'project:agent:public'],
-    href: 'agents',
-    navLabelKey: 'agents',
+  'src/app/[locale]/workspaces/[workspace]/projects/[project]/(shell)/agent-runners/page.tsx': createProjectRoutePolicy({
+    permissions: ['project:agent_runner:read', 'project:agent_runner:manage'],
+    href: 'agent-runners',
+    navLabelKey: 'agent_runners',
     navSection: 'develop',
     navOrder: 10,
   }),
@@ -75,10 +75,10 @@ export const PROJECT_ROUTE_POLICY_MANIFEST = {
     navOrder: 50,
     relatedHrefs: ['credentials', 'resource-policy', 'context', 'audit', 'settings'],
   }),
-  'src/app/[locale]/workspaces/[workspace]/projects/[project]/(shell)/notebook/page.tsx': createProjectRoutePolicy({
-    permissions: ['project:endpoint:use'],
-    href: 'notebook',
-    navLabelKey: 'notebook',
+  'src/app/[locale]/workspaces/[workspace]/projects/[project]/(shell)/agent-tasks/page.tsx': createProjectRoutePolicy({
+    permissions: ['project:agent_task:use'],
+    href: 'agent-tasks',
+    navLabelKey: 'agent_tasks',
     navSection: 'use',
     navOrder: 20,
   }),
@@ -93,10 +93,10 @@ export const PROJECT_ROUTE_POLICY_MANIFEST = {
     governanceObject: false,
     relatedHrefs: ['context', 'settings'],
   }),
-  'src/app/[locale]/workspaces/[workspace]/projects/[project]/(shell)/notebook/tasks/[taskId]/page.tsx': createProjectRoutePolicy({
-    permissions: ['project:endpoint:use'],
-    href: 'notebook',
-    navLabelKey: 'notebook',
+  'src/app/[locale]/workspaces/[workspace]/projects/[project]/(shell)/agent-tasks/[taskId]/page.tsx': createProjectRoutePolicy({
+    permissions: ['project:agent_task:use'],
+    href: 'agent-tasks',
+    navLabelKey: 'agent_tasks',
     navSection: 'use',
     navOrder: 20,
     sidebar: false,

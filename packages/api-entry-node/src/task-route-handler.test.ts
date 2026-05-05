@@ -3,6 +3,7 @@ import type http from 'node:http';
 import { PassThrough } from 'node:stream';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { InMemoryCache, InMemoryJsonDocStore } from '@mbos/adapters-private';
+import { assertTaskExecutionContext } from '@mbos/agent-runner';
 
 import {
   __resetInternalTerminalWorkloadLifecycleForTests,
@@ -25,12 +26,14 @@ import {
   refreshNotebookTaskRunLease,
 } from './notebook-task/task-run-coordination.js';
 import { buildTaskRealtimeView } from './notebook-task/task-realtime-view.js';
+import { listAuditEvents } from './audit-usage-store.js';
 import { clearNotebookTaskEventState, emitNotebookTaskEvent } from './notebook-task-sse-broker.js';
 import {
   ACTIVE_RUNS_BY_TASK,
   ACTIVE_RUN_CANCEL_BY_TASK,
   ACTIVE_RUN_CANCEL_REQUESTED_BY_TASK,
   ARTIFACTS_BY_TASK,
+  getTasks,
   TASKS_BY_PROJECT,
 } from './notebook-task/task-runtime-state.js';
 import {
@@ -38,6 +41,7 @@ import {
   notebookTaskMessagesCollection,
   notebookTasksCollection,
 } from './notebook-task/task-store.js';
+import { resolveInternalTicket } from './internal-ticket-store.js';
 
 const { createFileLibraryGatewayClientMock } = vi.hoisted(() => ({
   createFileLibraryGatewayClientMock: vi.fn(),
@@ -84,9 +88,9 @@ describe('task-route-handler workspace access', () => {
     };
   }
 
-  it('keeps local mount access untouched for non-external agents', () => {
+  it('keeps local mount access untouched when no runner provider is selected', () => {
     const resolved = resolveTaskWorkspaceMountAccess({
-      agentMode: 'internal',
+      runnerProvider: null,
       metadataUrl: 'postgres://jfsu_user:secret@localhost:15432/jfs_lib_demo?sslmode=disable',
       storageBucketUrl: 'http://localhost:19000/jfs-lib-demo',
     });
@@ -94,6 +98,684 @@ describe('task-route-handler workspace access', () => {
     expect(resolved).toEqual({
       metadataUrl: 'postgres://jfsu_user:secret@localhost:15432/jfs_lib_demo?sslmode=disable',
       storageBucketUrl: 'http://localhost:19000/jfs-lib-demo',
+    });
+  });
+
+  it('creates an agent task without requiring agent_id', async () => {
+    const deps = createDefaultNodeApiDeps();
+    const json = vi.fn();
+
+    await expect(handleTaskRoute({
+      route: {
+        kind: 'tasks',
+        workspaceId: 'ws_default',
+        projectId: 'proj_1',
+      } as never,
+      method: 'POST',
+      req: { headers: {}, url: '' } as never,
+      res: {} as never,
+      deps,
+      user: { id: 'user_1' } as never,
+      json,
+      readBody: vi.fn(async () => ({
+        title: 'Runnerless task',
+        prompt: 'Summarize the release notes',
+      })),
+    })).resolves.toBe(true);
+
+    const body = json.mock.calls[0]?.[2] as Record<string, unknown>;
+    expect(json.mock.calls[0]?.[1]).toBe(201);
+    expect(body).toMatchObject({
+      title: 'Runnerless task',
+      prompt: 'Summarize the release notes',
+      lifecycle_status: 'active',
+    });
+    expect(body).not.toHaveProperty('agent_id');
+  });
+
+  it.each(['agent_id', 'agent_name', 'runner_id'])(
+    'rejects legacy selector field %s on task create',
+    async (field) => {
+      const deps = createDefaultNodeApiDeps();
+      const json = vi.fn();
+
+      await expect(handleTaskRoute({
+        route: {
+          kind: 'tasks',
+          workspaceId: 'ws_default',
+          projectId: 'proj_1',
+        } as never,
+        method: 'POST',
+        req: { headers: {}, url: '' } as never,
+        res: {} as never,
+        deps,
+        user: { id: 'user_1' } as never,
+        json,
+        readBody: vi.fn(async () => ({
+          title: 'Legacy selector task',
+          [field]: 'legacy-selector',
+        })),
+      })).resolves.toBe(true);
+
+      expect(json).toHaveBeenCalledWith(
+        expect.anything(),
+        400,
+        {
+          error_code: 'unsupported_field',
+          message: 'unsupported_field',
+          fields: [field],
+        },
+      );
+      expect(getTasks('ws_default', 'proj_1')).toHaveLength(0);
+    },
+  );
+
+  it.each(['agent_id', 'agent_name', 'runner_id'])(
+    'rejects legacy selector field %s on task run dispatch payload',
+    async (field) => {
+      const deps = createDefaultNodeApiDeps();
+      const createJson = vi.fn();
+
+      await expect(handleTaskRoute({
+        route: { kind: 'tasks', workspaceId: 'ws_default', projectId: 'proj_1' } as never,
+        method: 'POST',
+        req: { headers: {}, url: '' } as never,
+        res: {} as never,
+        deps,
+        user: { id: 'user_1' } as never,
+        json: createJson,
+        readBody: vi.fn(async () => ({
+          title: 'Runnerless task',
+          prompt: 'Created without a runner selector',
+        })),
+      })).resolves.toBe(true);
+      const createdTask = createJson.mock.calls[0]?.[2] as { id: string };
+
+      const runJson = vi.fn();
+      await expect(handleTaskRoute({
+        route: {
+          kind: 'taskRuns',
+          workspaceId: 'ws_default',
+          projectId: 'proj_1',
+          taskId: createdTask.id,
+        } as never,
+        method: 'POST',
+        req: { headers: {}, url: '' } as never,
+        res: {} as never,
+        deps,
+        user: { id: 'user_1', email: 'user_1@example.com' } as never,
+        json: runJson,
+        readBody: vi.fn(async () => ({
+          intent: 'Run now',
+          [field]: 'legacy-selector',
+        })),
+      })).resolves.toBe(true);
+
+      expect(runJson).toHaveBeenCalledWith(
+        expect.anything(),
+        400,
+        {
+          error_code: 'unsupported_field',
+          message: 'unsupported_field',
+          fields: [field],
+        },
+      );
+      expect(ACTIVE_RUNS_BY_TASK.has(createdTask.id)).toBe(false);
+    },
+  );
+
+  it('returns task activity without exposing message roles or agent actor vocabulary', async () => {
+    const deps = createDefaultNodeApiDeps();
+    const now = '2026-03-06T04:00:00.000Z';
+    await deps.docStore.upsert(notebookTasksCollection('ws_default'), 'task_public_activity', {
+      id: 'task_public_activity',
+      workspace_id: 'ws_default',
+      project_id: 'proj_1',
+      owner_user_id: 'user_1',
+      title: 'Public activity task',
+      status: 'active',
+      attached_inputs: [],
+      created_at: now,
+      updated_at: now,
+      last_activity_at: now,
+    });
+    await deps.docStore.upsert(notebookTaskMessagesCollection('ws_default'), 'msg_public_user', {
+      id: 'msg_public_user',
+      task_id: 'task_public_activity',
+      role: 'user',
+      content: 'Please inspect the report',
+      created_at: now,
+    });
+    await deps.docStore.upsert(notebookTaskMessagesCollection('ws_default'), 'msg_public_runner', {
+      id: 'msg_public_runner',
+      task_id: 'task_public_activity',
+      role: 'agent',
+      content: 'The report is complete',
+      created_at: '2026-03-06T04:00:01.000Z',
+      turn_id: 'run_public_activity',
+    });
+
+    const json = vi.fn();
+    await expect(handleTaskRoute({
+      route: {
+        kind: 'taskActivity',
+        workspaceId: 'ws_default',
+        projectId: 'proj_1',
+        taskId: 'task_public_activity',
+      } as never,
+      method: 'GET',
+      req: { headers: {}, url: '' } as never,
+      res: {} as never,
+      deps,
+      user: { id: 'user_1' } as never,
+      json,
+      readBody: vi.fn(),
+    })).resolves.toBe(true);
+
+    expect(json).toHaveBeenCalledWith(
+      expect.anything(),
+      200,
+      [
+        {
+          id: 'msg_public_user',
+          task_id: 'task_public_activity',
+          kind: 'user_intent',
+          actor: 'user',
+          content: 'Please inspect the report',
+          created_at: now,
+        },
+        {
+          id: 'msg_public_runner',
+          task_id: 'task_public_activity',
+          kind: 'runner_output',
+          actor: 'runner',
+          content: 'The report is complete',
+          created_at: '2026-03-06T04:00:01.000Z',
+          run_id: 'run_public_activity',
+        },
+      ],
+    );
+    const responseBody = json.mock.calls[0]?.[2] as unknown;
+    expect(JSON.stringify(responseBody)).not.toContain('"role"');
+    expect(JSON.stringify(responseBody)).not.toContain('"agent"');
+  });
+
+  it.each(['role', 'content', 'agent_id', 'agent_name', 'runner_id'])(
+    'rejects unsupported public run field %s on task run dispatch',
+    async (field) => {
+      const deps = createDefaultNodeApiDeps();
+      const now = new Date().toISOString();
+      await deps.docStore.upsert(notebookTasksCollection('ws_default'), 'task_public_run_reject', {
+        id: 'task_public_run_reject',
+        workspace_id: 'ws_default',
+        project_id: 'proj_1',
+        owner_user_id: 'user_1',
+        title: 'Public run reject task',
+        status: 'active',
+        attached_inputs: [],
+        created_at: now,
+        updated_at: now,
+        last_activity_at: now,
+      });
+
+      const json = vi.fn();
+      await expect(handleTaskRoute({
+        route: {
+          kind: 'taskRuns',
+          workspaceId: 'ws_default',
+          projectId: 'proj_1',
+          taskId: 'task_public_run_reject',
+        } as never,
+        method: 'POST',
+        req: { headers: {}, url: '' } as never,
+        res: {} as never,
+        deps,
+        user: { id: 'user_1', email: 'user_1@example.com' } as never,
+        json,
+        readBody: vi.fn(async () => ({
+          intent: 'Run the task',
+          [field]: 'legacy-message-shape',
+        })),
+      })).resolves.toBe(true);
+
+      expect(json).toHaveBeenCalledWith(
+        expect.anything(),
+        400,
+        {
+          error_code: 'unsupported_field',
+          message: 'unsupported_field',
+          fields: [field],
+        },
+      );
+      expect(ACTIVE_RUNS_BY_TASK.has('task_public_run_reject')).toBe(false);
+    },
+  );
+
+  it.each(['agent_id', 'agent_name', 'runner_id'])(
+    'rejects legacy selector field %s on task patch',
+    async (field) => {
+      const deps = createDefaultNodeApiDeps();
+      const now = new Date().toISOString();
+      await deps.docStore.upsert(notebookTasksCollection('ws_default'), 'task_patch_legacy_selector', {
+        id: 'task_patch_legacy_selector',
+        workspace_id: 'ws_default',
+        project_id: 'proj_1',
+        owner_user_id: 'user_1',
+        title: 'Patch legacy selector task',
+        status: 'active',
+        attached_inputs: [],
+        created_at: now,
+        updated_at: now,
+        last_activity_at: now,
+      });
+      const json = vi.fn();
+
+      await expect(handleTaskRoute({
+        route: {
+          kind: 'taskItem',
+          workspaceId: 'ws_default',
+          projectId: 'proj_1',
+          taskId: 'task_patch_legacy_selector',
+        } as never,
+        method: 'PATCH',
+        req: { headers: {}, url: '' } as never,
+        res: {} as never,
+        deps,
+        user: { id: 'user_1' } as never,
+        json,
+        readBody: vi.fn(async () => ({
+          title: 'Patched title',
+          [field]: 'legacy-selector',
+        })),
+      })).resolves.toBe(true);
+
+      expect(json).toHaveBeenCalledWith(
+        expect.anything(),
+        400,
+        {
+          error_code: 'unsupported_field',
+          message: 'unsupported_field',
+          fields: [field],
+        },
+      );
+      await expect(deps.docStore.get(notebookTasksCollection('ws_default'), 'task_patch_legacy_selector'))
+        .resolves.toMatchObject({ title: 'Patch legacy selector task' });
+    },
+  );
+
+  it('does not expose legacy agent fields on task detail or list responses', async () => {
+    const deps = createDefaultNodeApiDeps();
+    deps.agentResourceService.getAgent = vi.fn(async () => {
+      throw new Error('legacy task agent field must not be used');
+    });
+    const now = new Date().toISOString();
+    await deps.docStore.upsert(notebookTasksCollection('ws_default'), 'task_public_legacy_fields', {
+      id: 'task_public_legacy_fields',
+      workspace_id: 'ws_default',
+      project_id: 'proj_1',
+      owner_user_id: 'user_1',
+      title: 'Public legacy fields task',
+      agent_id: 'agent_legacy_public',
+      agent_name: 'Legacy Public Agent',
+      status: 'active',
+      attached_inputs: [],
+      created_at: now,
+      updated_at: now,
+      last_activity_at: now,
+    });
+
+    const detailJson = vi.fn();
+    await expect(handleTaskRoute({
+      route: {
+        kind: 'taskItem',
+        workspaceId: 'ws_default',
+        projectId: 'proj_1',
+        taskId: 'task_public_legacy_fields',
+      } as never,
+      method: 'GET',
+      req: { headers: {}, url: '' } as never,
+      res: {} as never,
+      deps,
+      user: { id: 'user_1' } as never,
+      json: detailJson,
+      readBody: vi.fn(),
+    })).resolves.toBe(true);
+    const detailBody = detailJson.mock.calls[0]?.[2] as Record<string, unknown>;
+    expect(detailBody).not.toHaveProperty('agent_id');
+    expect(detailBody).not.toHaveProperty('agent_name');
+
+    const listJson = vi.fn();
+    await expect(handleTaskRoute({
+      route: {
+        kind: 'tasks',
+        workspaceId: 'ws_default',
+        projectId: 'proj_1',
+      } as never,
+      method: 'GET',
+      req: { headers: {}, url: '/api/v1/workspaces/ws_default/projects/proj_1/tasks' } as never,
+      res: {} as never,
+      deps,
+      user: { id: 'user_1' } as never,
+      json: listJson,
+      readBody: vi.fn(),
+    })).resolves.toBe(true);
+    const listBody = listJson.mock.calls[0]?.[2] as { items?: Array<Record<string, unknown>> };
+    expect(listBody.items?.[0]).not.toHaveProperty('agent_id');
+    expect(listBody.items?.[0]).not.toHaveProperty('agent_name');
+    expect(deps.agentResourceService.getAgent).not.toHaveBeenCalled();
+  });
+
+  it('resolves the default ready Agent Runner at run dispatch and records runner_id on active_run', async () => {
+    const previousPublicApiBase = process.env.PUBLIC_API_BASE_URL;
+    process.env.PUBLIC_API_BASE_URL = 'http://localhost:20000';
+    const deps = createDefaultNodeApiDeps();
+    try {
+      const endpoint = await deps.endpointResourceService.createEndpoint('ws_default', 'proj_1', {
+      name: 'task runner endpoint',
+      model: 'gpt-5-codex',
+      type: 'custom',
+      base_url: 'https://example.com/v1',
+      status: 'active',
+      upstream_protocol: 'openai_chat_completions',
+      model_profile: {
+        max_context_tokens: 128000,
+        max_output_tokens: 8192,
+        supports_file: false,
+        supports_tool_call: true,
+        supports_reasoning: false,
+        price_input_per_1m: 0,
+        price_output_per_1m: 0,
+        cache_read_discount_ratio: 0,
+        cache_write_discount_ratio: 0,
+      },
+      });
+      deps.internalAgentPodManager = {
+        ensureAgentReady: vi.fn(async () => undefined),
+        keepalive: vi.fn(async () => undefined),
+        releasePod: vi.fn(async () => undefined),
+      };
+      deps.internalAgentWorkspaceBindingManager = {
+        ensureWorkspaceBinding: vi.fn(async () => ({
+          workspaceMount: {
+            mountPath: '/workspace/task',
+            metadataUrl: 'postgres://jfsu_user:secret@postgres:5432/jfs_lib_demo?sslmode=disable',
+            storageBucketUrl: 'http://minio:9000/jfs-lib-demo',
+          },
+        })),
+      } as never;
+      const runner = await deps.agentResourceService.createAgent('ws_default', 'proj_1', {
+      name: 'Default task runner',
+      status: 'enabled',
+      presence: 'managed',
+      runner_status: 'ready',
+      is_default: true,
+      default_endpoint_id: endpoint.id,
+      capabilities: {
+        terminal: true,
+        artifacts: true,
+      },
+      execution_preferences_json: {
+        task: {
+          endpoint_id: endpoint.id,
+        },
+      },
+      } as never);
+      deps.agentExecutionService.dispatchStreamingRequest = vi.fn(async () => ({
+      requestId: 'req_runner_dispatch',
+      cancel: vi.fn(),
+      stream: (async function* () {
+        await new Promise<void>(() => undefined);
+      })(),
+      })) as never;
+
+      const createJson = vi.fn();
+      await expect(handleTaskRoute({
+      route: { kind: 'tasks', workspaceId: 'ws_default', projectId: 'proj_1' } as never,
+      method: 'POST',
+      req: { headers: {}, url: '' } as never,
+      res: {} as never,
+      deps,
+      user: { id: 'user_1' } as never,
+      json: createJson,
+      readBody: vi.fn(async () => ({
+        title: 'Dispatch through default runner',
+        prompt: 'Do the thing',
+      })),
+      })).resolves.toBe(true);
+      const createdTask = createJson.mock.calls[0]?.[2] as { id: string };
+
+      const runJson = vi.fn();
+      await expect(handleTaskRoute({
+      route: {
+        kind: 'taskRuns',
+        workspaceId: 'ws_default',
+        projectId: 'proj_1',
+        taskId: createdTask.id,
+      } as never,
+      method: 'POST',
+      req: { headers: {}, url: '' } as never,
+      res: {} as never,
+      deps,
+      user: { id: 'user_1', email: 'user_1@example.com' } as never,
+      json: runJson,
+      readBody: vi.fn(async () => ({ intent: 'Run now' })),
+      })).resolves.toBe(true);
+
+      await vi.waitFor(() => {
+        expect(deps.agentExecutionService.dispatchStreamingRequest).toHaveBeenCalledWith(
+          expect.objectContaining({
+            agentId: runner.id,
+            executionContext: expect.objectContaining({
+              wire_api: 'openai_responses',
+            }),
+          }),
+        );
+      });
+      const dispatchArg = (deps.agentExecutionService.dispatchStreamingRequest as unknown as ReturnType<typeof vi.fn>)
+        .mock.calls[0]?.[0] as { executionContext?: Record<string, unknown> } | undefined;
+      expect(dispatchArg?.executionContext).not.toHaveProperty('interaction_kind');
+      await expect(buildTaskRealtimeView(
+      deps,
+      'ws_default',
+      'proj_1',
+      (await deps.docStore.get(notebookTasksCollection('ws_default'), createdTask.id)) as never,
+      )).resolves.toMatchObject({
+      id: createdTask.id,
+      active_run: {
+        runner_id: runner.id,
+        status: 'running',
+      },
+      });
+    } finally {
+      if (previousPublicApiBase === undefined) delete process.env.PUBLIC_API_BASE_URL;
+      else process.env.PUBLIC_API_BASE_URL = previousPublicApiBase;
+    }
+  });
+
+  it('fails closed and audits when multiple default Agent Runners are present', async () => {
+    const deps = createDefaultNodeApiDeps();
+    const endpoint = await deps.endpointResourceService.createEndpoint('ws_default', 'proj_1', {
+      name: 'conflict endpoint',
+      model: 'gpt-5-codex',
+      type: 'custom',
+      base_url: 'https://example.com/v1',
+      status: 'active',
+      upstream_protocol: 'openai_chat_completions',
+      model_profile: {
+        max_context_tokens: 128000,
+      },
+    });
+    for (const name of ['Runner A', 'Runner B']) {
+      await deps.agentResourceService.createAgent('ws_default', 'proj_1', {
+        name,
+        status: 'enabled',
+        presence: 'managed',
+        runner_status: 'ready',
+        is_default: true,
+        default_endpoint_id: endpoint.id,
+        capabilities: {
+          artifacts: true,
+          terminal: true,
+        },
+      } as never);
+    }
+    const createJson = vi.fn();
+    await expect(handleTaskRoute({
+      route: { kind: 'tasks', workspaceId: 'ws_default', projectId: 'proj_1' } as never,
+      method: 'POST',
+      req: { headers: {}, url: '' } as never,
+      res: {} as never,
+      deps,
+      user: { id: 'user_1' } as never,
+      json: createJson,
+      readBody: vi.fn(async () => ({
+        title: 'Conflict task',
+        prompt: 'Should fail closed',
+      })),
+    })).resolves.toBe(true);
+    const createdTask = createJson.mock.calls[0]?.[2] as { id: string };
+
+    const runJson = vi.fn();
+    await expect(handleTaskRoute({
+      route: {
+        kind: 'taskRuns',
+        workspaceId: 'ws_default',
+        projectId: 'proj_1',
+        taskId: createdTask.id,
+      } as never,
+      method: 'POST',
+      req: { headers: { 'x-request-id': 'req_conflict' }, url: '' } as never,
+      res: {} as never,
+      deps,
+      user: { id: 'user_1', email: 'user_1@example.com' } as never,
+      json: runJson,
+      readBody: vi.fn(async () => ({ intent: 'Run now' })),
+    })).resolves.toBe(true);
+
+    expect(runJson).toHaveBeenCalledWith(
+      expect.anything(),
+      409,
+      {
+        error_code: 'agent_runner_default_conflict',
+        message: 'agent_runner_default_conflict',
+      },
+    );
+    await expect(listAuditEvents(deps.docStore, {
+      workspaceId: 'ws_default',
+      projectId: 'proj_1',
+      startTime: '2026-01-01T00:00:00.000Z',
+      endTime: '2027-01-01T00:00:00.000Z',
+      page: 1,
+      pageSize: 20,
+      sortOrder: 'asc',
+      action: 'agent_runner.resolution.failed',
+    })).resolves.toMatchObject({
+      total: 1,
+      items: [
+        {
+          result: 'error',
+          error_code: 'agent_runner_default_conflict',
+          metadata_json: expect.objectContaining({
+            failure_code: 'agent_runner_default_conflict',
+          }),
+        },
+      ],
+    });
+  });
+
+  it('fails closed when exactly one eligible Agent Runner exists but no default is configured', async () => {
+    const deps = createDefaultNodeApiDeps();
+    const endpoint = await deps.endpointResourceService.createEndpoint('ws_default', 'proj_1', {
+      name: 'non-default endpoint',
+      model: 'gpt-5-codex',
+      type: 'custom',
+      base_url: 'https://example.com/v1',
+      status: 'active',
+      upstream_protocol: 'openai_chat_completions',
+      model_profile: {
+        max_context_tokens: 128000,
+      },
+    });
+    await deps.agentResourceService.createAgent('ws_default', 'proj_1', {
+      name: 'Only non-default runner',
+      status: 'enabled',
+      presence: 'managed',
+      runner_status: 'ready',
+      is_default: false,
+      default_endpoint_id: endpoint.id,
+      capabilities: {
+        artifacts: true,
+        terminal: true,
+      },
+    } as never);
+    deps.agentExecutionService.dispatchStreamingRequest = vi.fn(async () => ({
+      requestId: 'req_should_not_dispatch',
+      cancel: vi.fn(),
+      stream: (async function* () {})(),
+    })) as never;
+
+    const createJson = vi.fn();
+    await expect(handleTaskRoute({
+      route: { kind: 'tasks', workspaceId: 'ws_default', projectId: 'proj_1' } as never,
+      method: 'POST',
+      req: { headers: {}, url: '' } as never,
+      res: {} as never,
+      deps,
+      user: { id: 'user_1' } as never,
+      json: createJson,
+      readBody: vi.fn(async () => ({
+        title: 'No default task',
+        prompt: 'Should require explicit admin default',
+      })),
+    })).resolves.toBe(true);
+    const createdTask = createJson.mock.calls[0]?.[2] as { id: string };
+
+    const runJson = vi.fn();
+    await expect(handleTaskRoute({
+      route: {
+        kind: 'taskRuns',
+        workspaceId: 'ws_default',
+        projectId: 'proj_1',
+        taskId: createdTask.id,
+      } as never,
+      method: 'POST',
+      req: { headers: { 'x-request-id': 'req_selection_required' }, url: '' } as never,
+      res: {} as never,
+      deps,
+      user: { id: 'user_1', email: 'user_1@example.com' } as never,
+      json: runJson,
+      readBody: vi.fn(async () => ({ intent: 'Run now' })),
+    })).resolves.toBe(true);
+
+    expect(runJson).toHaveBeenCalledWith(
+      expect.anything(),
+      409,
+      {
+        error_code: 'agent_runner_selection_required',
+        message: 'agent_runner_selection_required',
+      },
+    );
+    expect(deps.agentExecutionService.dispatchStreamingRequest).not.toHaveBeenCalled();
+    await expect(listAuditEvents(deps.docStore, {
+      workspaceId: 'ws_default',
+      projectId: 'proj_1',
+      startTime: '2026-01-01T00:00:00.000Z',
+      endTime: '2027-01-01T00:00:00.000Z',
+      page: 1,
+      pageSize: 20,
+      sortOrder: 'asc',
+      action: 'agent_runner.resolution.failed',
+    })).resolves.toMatchObject({
+      total: 1,
+      items: [
+        {
+          result: 'error',
+          error_code: 'agent_runner_selection_required',
+          metadata_json: expect.objectContaining({
+            failure_code: 'agent_runner_selection_required',
+          }),
+        },
+      ],
     });
   });
 
@@ -217,6 +899,124 @@ describe('task-route-handler workspace access', () => {
     });
   });
 
+  it('fails closed on cancel when shared active run truth has no runner evidence', async () => {
+    const deps = createDefaultNodeApiDeps();
+    deps.agentResourceService.getAgent = vi.fn(async () => ({
+      id: 'agent_legacy_cancel',
+      name: 'Legacy Cancel Agent',
+      mode: 'internal',
+      interaction_kind: 'notebook',
+      status: 'enabled',
+    }) as never);
+    const now = new Date().toISOString();
+    await deps.docStore.upsert(notebookTasksCollection('ws_default'), 'task_cancel_missing_runner_evidence', {
+      id: 'task_cancel_missing_runner_evidence',
+      workspace_id: 'ws_default',
+      project_id: 'proj_1',
+      owner_user_id: 'user_1',
+      title: 'Cancel missing runner evidence task',
+      agent_id: 'agent_legacy_cancel',
+      agent_name: 'Legacy Cancel Agent',
+      status: 'active',
+      attached_inputs: [],
+      created_at: now,
+      updated_at: now,
+      last_activity_at: now,
+    });
+    await expect(acquireNotebookTaskRunLease(deps.cache, buildNotebookTaskRunState({
+      taskId: 'task_cancel_missing_runner_evidence',
+      runId: 'run_cancel_missing_runner_evidence',
+      startedAt: now,
+    }))).resolves.toBe(true);
+
+    const json = vi.fn();
+    await expect(handleTaskRoute({
+      route: {
+        kind: 'taskCancelRun',
+        workspaceId: 'ws_default',
+        projectId: 'proj_1',
+        taskId: 'task_cancel_missing_runner_evidence',
+      } as never,
+      method: 'POST',
+      req: { headers: {}, url: '' } as never,
+      res: {} as never,
+      deps,
+      user: { id: 'user_1' } as never,
+      json,
+      readBody: vi.fn(async () => ({ mode: 'terminate' })),
+    })).resolves.toBe(true);
+
+    expect(json).toHaveBeenCalledWith(
+      expect.anything(),
+      409,
+      {
+        error_code: 'TASK_RUNNER_EVIDENCE_MISSING',
+        message: 'task_runner_evidence_missing',
+        task_id: 'task_cancel_missing_runner_evidence',
+        run_id: 'run_cancel_missing_runner_evidence',
+      },
+    );
+    expect(deps.agentResourceService.getAgent).not.toHaveBeenCalled();
+  });
+
+  it('fails closed on archive when active run truth has no runner evidence', async () => {
+    const deps = createDefaultNodeApiDeps();
+    deps.agentResourceService.getAgent = vi.fn(async () => {
+      throw new Error('legacy task agent field must not be used');
+    });
+    const now = new Date().toISOString();
+    await deps.docStore.upsert(notebookTasksCollection('ws_default'), 'task_archive_missing_runner_evidence', {
+      id: 'task_archive_missing_runner_evidence',
+      workspace_id: 'ws_default',
+      project_id: 'proj_1',
+      owner_user_id: 'user_1',
+      title: 'Archive missing runner evidence task',
+      agent_id: 'agent_legacy_archive',
+      agent_name: 'Legacy Archive Agent',
+      status: 'active',
+      attached_inputs: [],
+      created_at: now,
+      updated_at: now,
+      last_activity_at: now,
+    });
+    await expect(acquireNotebookTaskRunLease(deps.cache, buildNotebookTaskRunState({
+      taskId: 'task_archive_missing_runner_evidence',
+      runId: 'run_archive_missing_runner_evidence',
+      startedAt: now,
+    }))).resolves.toBe(true);
+
+    const json = vi.fn();
+    await expect(handleTaskRoute({
+      route: {
+        kind: 'taskItem',
+        workspaceId: 'ws_default',
+        projectId: 'proj_1',
+        taskId: 'task_archive_missing_runner_evidence',
+      } as never,
+      method: 'PATCH',
+      req: { headers: {}, url: '' } as never,
+      res: {} as never,
+      deps,
+      user: { id: 'user_1' } as never,
+      json,
+      readBody: vi.fn(async () => ({ status: 'archived' })),
+    })).resolves.toBe(true);
+
+    expect(json).toHaveBeenCalledWith(
+      expect.anything(),
+      409,
+      {
+        error_code: 'TASK_RUNNER_EVIDENCE_MISSING',
+        message: 'task_runner_evidence_missing',
+        task_id: 'task_archive_missing_runner_evidence',
+        run_id: 'run_archive_missing_runner_evidence',
+      },
+    );
+    await expect(deps.docStore.get(notebookTasksCollection('ws_default'), 'task_archive_missing_runner_evidence'))
+      .resolves.toMatchObject({ status: 'active' });
+    expect(deps.agentResourceService.getAgent).not.toHaveBeenCalled();
+  });
+
   it('upgrades stale internal run ownership to terminate and requests hard teardown', async () => {
     const deps = createDefaultNodeApiDeps();
     const requestHardTeardown = vi.fn(async () => undefined);
@@ -250,6 +1050,7 @@ describe('task-route-handler workspace access', () => {
     await expect(acquireNotebookTaskRunLease(deps.cache, buildNotebookTaskRunState({
       taskId: 'task_stale_internal',
       runId: 'run_stale_internal',
+      runnerId: 'agent_internal',
       startedAt: '2026-03-18T06:00:00.000Z',
       heartbeatAt: '2026-03-18T06:00:00.000Z',
       ownerInstanceId: 'api-stale-owner',
@@ -330,6 +1131,7 @@ describe('task-route-handler workspace access', () => {
     await expect(acquireNotebookTaskRunLease(deps.cache, buildNotebookTaskRunState({
       taskId: 'task_internal_active_cancel',
       runId: 'run_internal_active_cancel',
+      runnerId: 'agent_internal_active',
       requestId: 'req_internal_active_cancel',
       startedAt: now,
       heartbeatAt: now,
@@ -500,6 +1302,7 @@ describe('task-route-handler workspace access', () => {
     await expect(acquireNotebookTaskRunLease(deps.cache, buildNotebookTaskRunState({
       taskId: 'task_internal_upgrade',
       runId: 'run_internal_upgrade',
+      runnerId: 'agent_internal_upgrade',
       requestId: 'req_internal_upgrade',
       startedAt: now,
       heartbeatAt: now,
@@ -619,6 +1422,7 @@ describe('task-route-handler workspace access', () => {
     await expect(acquireNotebookTaskRunLease(deps.cache, buildNotebookTaskRunState({
       taskId: 'task_internal_retry',
       runId: 'run_internal_retry',
+      runnerId: 'agent_internal_retry',
       requestId: 'req_internal_retry',
       startedAt: now,
       heartbeatAt: now,
@@ -714,6 +1518,7 @@ describe('task-route-handler workspace access', () => {
     await expect(acquireNotebookTaskRunLease(deps.cache, buildNotebookTaskRunState({
       taskId: 'task_internal_pending_retry',
       runId: 'run_internal_pending_retry',
+      runnerId: 'agent_internal_pending_retry',
       requestId: 'req_internal_pending_retry',
       phase: 'terminating',
       startedAt: now,
@@ -822,6 +1627,7 @@ describe('task-route-handler workspace access', () => {
     await expect(acquireNotebookTaskRunLease(deps.cache, buildNotebookTaskRunState({
       taskId: 'task_internal_real_retry',
       runId: 'run_internal_real_retry',
+      runnerId: 'agent_internal_real_retry',
       requestId: 'req_internal_real_retry',
       startedAt: now,
       heartbeatAt: now,
@@ -929,6 +1735,7 @@ describe('task-route-handler workspace access', () => {
     await expect(acquireNotebookTaskRunLease(deps.cache, buildNotebookTaskRunState({
       taskId: 'task_internal_late_holder',
       runId: 'run_internal_late_holder',
+      runnerId: 'agent_internal_late_holder',
       requestId: 'req_internal_late_holder',
       startedAt: now,
       heartbeatAt: now,
@@ -1044,6 +1851,7 @@ describe('task-route-handler workspace access', () => {
     await expect(acquireNotebookTaskRunLease(deps.cache, buildNotebookTaskRunState({
       taskId: 'task_internal_live_retry',
       runId: 'run_internal_live_retry',
+      runnerId: 'agent_internal_live_retry',
       requestId: 'req_internal_live_retry',
       startedAt: now,
       heartbeatAt: now,
@@ -1197,6 +2005,7 @@ describe('task-route-handler workspace access', () => {
     await expect(acquireNotebookTaskRunLease(deps.cache, buildNotebookTaskRunState({
       taskId: 'task_internal_finalizing_debt',
       runId: 'run_internal_finalizing_debt',
+      runnerId: 'agent_internal_finalizing_debt',
       requestId: 'req_internal_finalizing_debt',
       phase: 'finalizing',
       startedAt: now,
@@ -1252,19 +2061,13 @@ describe('task-route-handler workspace access', () => {
     await expect(getNotebookTaskRunHardTeardownDebt(deps.cache, 'task_internal_finalizing_debt')).resolves.toBeNull();
   });
 
-  it('retries terminal internal hard teardown debt after active run state was cleared', async () => {
+  it('fails closed for terminal hard teardown debt after active run state was cleared without runner evidence', async () => {
     const deps = createDefaultNodeApiDeps();
     const requestHardTeardown = vi.fn(async () => undefined);
     deps.internalWorkloadCoordinator = {
       requestHardTeardown,
     } as never;
-    deps.agentResourceService.getAgent = vi.fn(async () => ({
-      id: 'agent_internal_terminal_debt',
-      name: 'Internal Terminal Debt Agent',
-      mode: 'internal',
-      interaction_kind: 'notebook',
-      status: 'enabled',
-    }) as never);
+    deps.agentResourceService.getAgent = vi.fn();
 
     const now = new Date().toISOString();
     await deps.docStore.upsert(notebookTasksCollection('ws_default'), 'task_internal_terminal_debt', {
@@ -1307,40 +2110,17 @@ describe('task-route-handler workspace access', () => {
 
     expect(json).toHaveBeenCalledWith(
       expect.anything(),
-      202,
-      expect.objectContaining({
-        status: 'terminating',
+      409,
+      {
+        error_code: 'TASK_RUNNER_EVIDENCE_MISSING',
+        message: 'task_runner_evidence_missing',
         task_id: 'task_internal_terminal_debt',
         run_id: 'run_internal_terminal_debt',
-        request_id: null,
-        stop_mode: 'terminate',
-      }),
+      },
     );
-    expect(requestHardTeardown).toHaveBeenCalledTimes(1);
+    expect(requestHardTeardown).not.toHaveBeenCalled();
+    expect(deps.agentResourceService.getAgent).not.toHaveBeenCalled();
     await expect(getNotebookTaskRunState(deps.cache, 'task_internal_terminal_debt')).resolves.toBeNull();
-
-    const retryJson = vi.fn();
-    await expect(handleTaskRoute({
-      route: {
-        kind: 'taskCancelRun',
-        workspaceId: 'ws_default',
-        projectId: 'proj_1',
-        taskId: 'task_internal_terminal_debt',
-      } as never,
-      method: 'POST',
-      req: { headers: {}, url: '' } as never,
-      res: {} as never,
-      deps,
-      user: { id: 'user_1' } as never,
-      json: retryJson,
-      readBody: vi.fn(async () => ({ mode: 'terminate' })),
-    })).resolves.toBe(true);
-    expect(retryJson).toHaveBeenCalledWith(
-      expect.anything(),
-      409,
-      { error_code: 'TASK_RUN_NOT_ACTIVE', message: 'task_run_not_active' },
-    );
-    expect(requestHardTeardown).toHaveBeenCalledTimes(1);
   });
 
   it('rejects a new user run while terminal hard teardown debt exists without masking the debt', async () => {
@@ -1370,7 +2150,7 @@ describe('task-route-handler workspace access', () => {
     const json = vi.fn();
     await expect(handleTaskRoute({
       route: {
-        kind: 'taskMessages',
+        kind: 'taskRuns',
         workspaceId: 'ws_default',
         projectId: 'proj_1',
         taskId: 'task_terminal_debt_new_run',
@@ -1381,7 +2161,7 @@ describe('task-route-handler workspace access', () => {
       deps,
       user: { id: 'user_1' } as never,
       json,
-      readBody: vi.fn(async () => ({ role: 'user', content: 'start after debt' })),
+      readBody: vi.fn(async () => ({ intent: 'Run now' })),
     })).resolves.toBe(true);
 
     expect(json).toHaveBeenCalledWith(
@@ -1422,6 +2202,7 @@ describe('task-route-handler workspace access', () => {
     await expect(acquireNotebookTaskRunLease(deps.cache, buildNotebookTaskRunState({
       taskId: 'task_finalizing_debt_new_run',
       runId: 'run_finalizing_debt_new_run',
+      runnerId: 'agent_finalizing_debt_new_run',
       phase: 'finalizing',
       startedAt: now,
       heartbeatAt: now,
@@ -1444,7 +2225,7 @@ describe('task-route-handler workspace access', () => {
     const json = vi.fn();
     await expect(handleTaskRoute({
       route: {
-        kind: 'taskMessages',
+        kind: 'taskRuns',
         workspaceId: 'ws_default',
         projectId: 'proj_1',
         taskId: 'task_finalizing_debt_new_run',
@@ -1455,7 +2236,7 @@ describe('task-route-handler workspace access', () => {
       deps,
       user: { id: 'user_1' } as never,
       json,
-      readBody: vi.fn(async () => ({ role: 'user', content: 'start while finalizing debt' })),
+      readBody: vi.fn(async () => ({ intent: 'Run now' })),
     })).resolves.toBe(true);
 
     expect(json).toHaveBeenCalledWith(
@@ -1560,6 +2341,15 @@ describe('task-route-handler workspace access', () => {
         mode: 'internal',
         interaction_kind: 'notebook',
         status: 'enabled',
+        presence: 'managed',
+        runner_status: 'ready',
+        is_default: true,
+        default_endpoint_id: endpoint.id,
+        capabilities: {
+          task_execution: true,
+          terminal: true,
+          artifacts: true,
+        },
         config: {
           image: 'runner:v1',
           _internal_raw_key: 'ask_test',
@@ -1567,7 +2357,7 @@ describe('task-route-handler workspace access', () => {
         owner_id: 'user_test',
         visibility: 'private',
         execution_preferences_json: {
-          notebook: {
+          task: {
             endpoint_id: endpoint.id,
           },
         },
@@ -1606,7 +2396,7 @@ describe('task-route-handler workspace access', () => {
       const postJson = vi.fn();
       await expect(handleTaskRoute({
         route: {
-          kind: 'taskMessages',
+          kind: 'taskRuns',
           workspaceId: 'ws_default',
           projectId: 'proj_1',
           taskId: task.id,
@@ -1617,7 +2407,7 @@ describe('task-route-handler workspace access', () => {
         deps,
         user: { id: 'user_1', email: 'user_1@example.com' } as never,
         json: postJson,
-        readBody: vi.fn(async () => ({ role: 'user', content: 'terminate before dispatch starts' })),
+        readBody: vi.fn(async () => ({ intent: 'Run now' })),
       })).resolves.toBe(true);
 
       const assistantMessage = postJson.mock.calls[0]?.[2] as { id: string; content: string };
@@ -1776,6 +2566,15 @@ describe('task-route-handler workspace access', () => {
         mode: 'internal',
         interaction_kind: 'notebook',
         status: 'enabled',
+        presence: 'managed',
+        runner_status: 'ready',
+        is_default: true,
+        default_endpoint_id: endpoint.id,
+        capabilities: {
+          task_execution: true,
+          terminal: true,
+          artifacts: true,
+        },
         config: {
           image: 'runner:v1',
           _internal_raw_key: 'ask_test',
@@ -1783,7 +2582,7 @@ describe('task-route-handler workspace access', () => {
         owner_id: 'user_test',
         visibility: 'private',
         execution_preferences_json: {
-          notebook: {
+          task: {
             endpoint_id: endpoint.id,
           },
         },
@@ -1821,7 +2620,7 @@ describe('task-route-handler workspace access', () => {
 
       await expect(handleTaskRoute({
         route: {
-          kind: 'taskMessages',
+          kind: 'taskRuns',
           workspaceId: 'ws_default',
           projectId: 'proj_1',
           taskId: task.id,
@@ -1832,7 +2631,7 @@ describe('task-route-handler workspace access', () => {
         deps,
         user: { id: 'user_1', email: 'user_1@example.com' } as never,
         json: vi.fn(),
-        readBody: vi.fn(async () => ({ role: 'user', content: 'cancel before dispatch and fail persist' })),
+        readBody: vi.fn(async () => ({ intent: 'Run now' })),
       })).resolves.toBe(true);
 
       await startupObserved.promise;
@@ -1943,6 +2742,15 @@ describe('task-route-handler workspace access', () => {
         mode: 'internal',
         interaction_kind: 'notebook',
         status: 'enabled',
+        presence: 'managed',
+        runner_status: 'ready',
+        is_default: true,
+        default_endpoint_id: endpoint.id,
+        capabilities: {
+          task_execution: true,
+          terminal: true,
+          artifacts: true,
+        },
         config: {
           image: 'runner:v1',
           _internal_raw_key: 'ask_test',
@@ -1950,7 +2758,7 @@ describe('task-route-handler workspace access', () => {
         owner_id: 'user_test',
         visibility: 'private',
         execution_preferences_json: {
-          notebook: {
+          task: {
             endpoint_id: endpoint.id,
           },
         },
@@ -1989,7 +2797,7 @@ describe('task-route-handler workspace access', () => {
       const firstMessageJson = vi.fn();
       await expect(handleTaskRoute({
         route: {
-          kind: 'taskMessages',
+          kind: 'taskRuns',
           workspaceId: 'ws_default',
           projectId: 'proj_1',
           taskId: task.id,
@@ -2000,7 +2808,7 @@ describe('task-route-handler workspace access', () => {
         deps,
         user: { id: 'user_1', email: 'user_1@example.com' } as never,
         json: firstMessageJson,
-        readBody: vi.fn(async () => ({ role: 'user', content: 'first run should terminate before dispatch resolves' })),
+        readBody: vi.fn(async () => ({ intent: 'Run now' })),
       })).resolves.toBe(true);
       const firstAssistantMessage = firstMessageJson.mock.calls[0]?.[2] as { id: string; content: string };
       expect(firstAssistantMessage).toMatchObject({
@@ -2035,6 +2843,7 @@ describe('task-route-handler workspace access', () => {
       await expect(acquireNotebookTaskRunLease(deps.cache, buildNotebookTaskRunState({
         taskId: task.id,
         runId: secondRunId,
+        runnerId: agent.id,
         requestId: 'req_second_dispatch',
         startedAt: new Date().toISOString(),
         heartbeatAt: new Date().toISOString(),
@@ -2128,6 +2937,7 @@ describe('task-route-handler workspace access', () => {
     await expect(acquireNotebookTaskRunLease(deps.cache, buildNotebookTaskRunState({
       taskId: 'task_internal_concurrent',
       runId: 'run_internal_concurrent',
+      runnerId: 'agent_internal_concurrent',
       requestId: 'req_internal_concurrent',
       startedAt: now,
       heartbeatAt: now,
@@ -2183,8 +2993,7 @@ describe('task-route-handler workspace access', () => {
     deps.agentResourceService.getAgent = vi.fn(async () => ({
       id: 'agent_external_terminate',
       name: 'External Terminate Agent',
-      mode: 'external',
-      interaction_kind: 'notebook',
+      runner_provider: 'developer',
       status: 'enabled',
       presence: 'online',
     }) as never);
@@ -2207,6 +3016,7 @@ describe('task-route-handler workspace access', () => {
     await expect(acquireNotebookTaskRunLease(deps.cache, buildNotebookTaskRunState({
       taskId: 'task_external_terminate',
       runId: 'run_external_terminate',
+      runnerId: 'agent_external_terminate',
       requestId: 'req_external_terminate',
       startedAt: now,
       heartbeatAt: now,
@@ -2260,8 +3070,7 @@ describe('task-route-handler workspace access', () => {
     deps.agentResourceService.getAgent = vi.fn(async () => ({
       id: 'agent_external',
       name: 'External Agent',
-      mode: 'external',
-      interaction_kind: 'notebook',
+      runner_provider: 'developer',
       status: 'enabled',
       presence: 'online',
     }) as never);
@@ -2284,6 +3093,7 @@ describe('task-route-handler workspace access', () => {
     await expect(acquireNotebookTaskRunLease(deps.cache, buildNotebookTaskRunState({
       taskId: 'task_stale_external',
       runId: 'run_stale_external',
+      runnerId: 'agent_external',
       startedAt: '2026-03-18T07:00:00.000Z',
       heartbeatAt: '2026-03-18T07:00:00.000Z',
       ownerInstanceId: 'api-stale-owner',
@@ -2336,6 +3146,12 @@ describe('task-route-handler workspace access', () => {
       updated_at: now,
       last_activity_at: now,
     });
+    await expect(acquireNotebookTaskRunLease(deps.cache, buildNotebookTaskRunState({
+      taskId,
+      runId: 'run_events_snapshot_first',
+      runnerId: 'runner_events_snapshot_first',
+      startedAt: now,
+    }))).resolves.toBe(true);
 
     let releaseAgentLookup!: () => void;
     let notifyAgentLookupStarted!: () => void;
@@ -2345,16 +3161,16 @@ describe('task-route-handler workspace access', () => {
     const agentLookupGate = new Promise<void>((resolve) => {
       releaseAgentLookup = resolve;
     });
-    deps.agentResourceService.getAgent = vi.fn(async () => {
+    deps.agentResourceService.getAgent = vi.fn(async (_workspaceId, _projectId, agentId) => {
+      expect(agentId).toBe('runner_events_snapshot_first');
       notifyAgentLookupStarted();
       await agentLookupGate;
       return {
-        id: 'agent_1',
-        name: 'Agent One',
+        id: 'runner_events_snapshot_first',
+        name: 'Runner One',
         status: 'enabled',
-        mode: 'external',
+        runner_provider: 'developer',
         presence: 'online',
-        interaction_kind: 'notebook',
       } as never;
     });
 
@@ -2391,11 +3207,12 @@ describe('task-route-handler workspace access', () => {
 
     await agentLookupStarted;
     emitNotebookTaskEvent(taskId, {
-      type: 'message',
+      type: 'activity_item',
       data: {
         id: 'msg_live_after_subscribe',
         task_id: taskId,
-        role: 'agent',
+        kind: 'runner_output',
+        actor: 'runner',
         content: 'live update',
         created_at: now,
       },
@@ -2408,6 +3225,9 @@ describe('task-route-handler workspace access', () => {
     const liveIndex = payload.indexOf('msg_live_after_subscribe');
     expect(snapshotIndex).toBeGreaterThanOrEqual(0);
     expect(liveIndex).toBeGreaterThan(snapshotIndex);
+    expect(payload).toContain('"runner_id":"runner_events_snapshot_first"');
+    expect(payload).not.toContain('"agent_id"');
+    expect(payload).not.toContain('"agent_name"');
 
     req.emit('close');
     clearNotebookTaskEventState(taskId);
@@ -2441,7 +3261,7 @@ describe('task-route-handler workspace access', () => {
     process.env.JUICEFS_BUCKET_ENDPOINT_FOR_INTERNAL_MOUNT = 'http://minio-external.agentsmith-sandbox.svc.cluster.local:9000';
     try {
       const resolved = resolveTaskWorkspaceMountAccess({
-        agentMode: 'internal',
+        runnerProvider: 'managed',
         metadataUrl: 'postgres://jfsu_user:secret@files.example.com:15432/jfs_lib_demo?sslmode=disable',
         storageBucketUrl: 'https://files.example.com:19000/jfs-lib-demo',
       });
@@ -2460,15 +3280,12 @@ describe('task-route-handler workspace access', () => {
     }
   });
 
-  it('rewrites loopback mount access for external runner execution', () => {
-    const previousExternalExecutionBase = process.env.EXTERNAL_AGENT_EXECUTION_HTTP_BASE_URL;
-    process.env.EXTERNAL_AGENT_EXECUTION_HTTP_BASE_URL = 'http://172.18.0.1:20000';
+  it('rewrites loopback mount access for developer runner execution', () => {
+    const previousExternalExecutionBase = process.env.AGENT_RUNNER_DEVELOPER_EXECUTION_HTTP_BASE_URL;
+    process.env.AGENT_RUNNER_DEVELOPER_EXECUTION_HTTP_BASE_URL = 'http://172.18.0.1:20000';
     try {
       const resolved = resolveTaskWorkspaceMountAccess({
-        agentMode: 'external',
-        agentConfig: {
-          runner_runtime: 'dev_direct',
-        },
+        runnerProvider: 'developer',
         metadataUrl: 'postgres://jfsu_user:secret@localhost:15432/jfs_lib_demo?sslmode=disable',
         storageBucketUrl: 'http://localhost:19000/jfs-lib-demo',
       });
@@ -2479,22 +3296,19 @@ describe('task-route-handler workspace access', () => {
       });
     } finally {
       if (previousExternalExecutionBase === undefined) {
-        delete process.env.EXTERNAL_AGENT_EXECUTION_HTTP_BASE_URL;
+        delete process.env.AGENT_RUNNER_DEVELOPER_EXECUTION_HTTP_BASE_URL;
       } else {
-        process.env.EXTERNAL_AGENT_EXECUTION_HTTP_BASE_URL = previousExternalExecutionBase;
+        process.env.AGENT_RUNNER_DEVELOPER_EXECUTION_HTTP_BASE_URL = previousExternalExecutionBase;
       }
     }
   });
 
   it('rewrites non-loopback mount access to the docker-manual runner host', () => {
-    const previousExternalExecutionBase = process.env.EXTERNAL_AGENT_EXECUTION_HTTP_BASE_URL;
-    process.env.EXTERNAL_AGENT_EXECUTION_HTTP_BASE_URL = 'http://host.docker.internal:20000';
+    const previousExternalExecutionBase = process.env.AGENT_RUNNER_DEVELOPER_EXECUTION_HTTP_BASE_URL;
+    process.env.AGENT_RUNNER_DEVELOPER_EXECUTION_HTTP_BASE_URL = 'http://host.docker.internal:20000';
     try {
       const resolved = resolveTaskWorkspaceMountAccess({
-        agentMode: 'external',
-        agentConfig: {
-          runner_runtime: 'dev_direct',
-        },
+        runnerProvider: 'developer',
         metadataUrl: 'postgres://jfsu_user:secret@mbos.imotion.ai:15432/jfs_lib_demo?sslmode=disable',
         storageBucketUrl: 'http://mbos.imotion.ai:19000/jfs-lib-demo',
       });
@@ -2505,28 +3319,25 @@ describe('task-route-handler workspace access', () => {
       });
     } finally {
       if (previousExternalExecutionBase === undefined) {
-        delete process.env.EXTERNAL_AGENT_EXECUTION_HTTP_BASE_URL;
+        delete process.env.AGENT_RUNNER_DEVELOPER_EXECUTION_HTTP_BASE_URL;
       } else {
-        process.env.EXTERNAL_AGENT_EXECUTION_HTTP_BASE_URL = previousExternalExecutionBase;
+        process.env.AGENT_RUNNER_DEVELOPER_EXECUTION_HTTP_BASE_URL = previousExternalExecutionBase;
       }
     }
   });
 
-  it('prefers explicit external runner JuiceFS overrides when configured', () => {
-    const previousExternalExecutionBase = process.env.EXTERNAL_AGENT_EXECUTION_HTTP_BASE_URL;
-    const previousExternalMetaHost = process.env.EXTERNAL_AGENT_JUICEFS_META_HOST_OVERRIDE;
-    const previousExternalMetaPort = process.env.EXTERNAL_AGENT_JUICEFS_META_PORT_OVERRIDE;
-    const previousExternalStorageEndpoint = process.env.EXTERNAL_AGENT_JUICEFS_STORAGE_ENDPOINT_OVERRIDE;
-    process.env.EXTERNAL_AGENT_EXECUTION_HTTP_BASE_URL = 'http://host.docker.internal:20000';
-    process.env.EXTERNAL_AGENT_JUICEFS_META_HOST_OVERRIDE = '192.168.0.220';
-    process.env.EXTERNAL_AGENT_JUICEFS_META_PORT_OVERRIDE = '15432';
-    process.env.EXTERNAL_AGENT_JUICEFS_STORAGE_ENDPOINT_OVERRIDE = 'http://192.168.0.220:19000';
+  it('prefers explicit developer runner JuiceFS overrides when configured', () => {
+    const previousExternalExecutionBase = process.env.AGENT_RUNNER_DEVELOPER_EXECUTION_HTTP_BASE_URL;
+    const previousExternalMetaHost = process.env.AGENT_RUNNER_DEVELOPER_JUICEFS_META_HOST_OVERRIDE;
+    const previousExternalMetaPort = process.env.AGENT_RUNNER_DEVELOPER_JUICEFS_META_PORT_OVERRIDE;
+    const previousExternalStorageEndpoint = process.env.AGENT_RUNNER_DEVELOPER_JUICEFS_STORAGE_ENDPOINT_OVERRIDE;
+    process.env.AGENT_RUNNER_DEVELOPER_EXECUTION_HTTP_BASE_URL = 'http://host.docker.internal:20000';
+    process.env.AGENT_RUNNER_DEVELOPER_JUICEFS_META_HOST_OVERRIDE = '192.168.0.220';
+    process.env.AGENT_RUNNER_DEVELOPER_JUICEFS_META_PORT_OVERRIDE = '15432';
+    process.env.AGENT_RUNNER_DEVELOPER_JUICEFS_STORAGE_ENDPOINT_OVERRIDE = 'http://192.168.0.220:19000';
     try {
       const resolved = resolveTaskWorkspaceMountAccess({
-        agentMode: 'external',
-        agentConfig: {
-          runner_runtime: 'dev_direct',
-        },
+        runnerProvider: 'developer',
         metadataUrl: 'postgres://jfsu_user:secret@files.example.com:15432/jfs_lib_demo?sslmode=disable',
         storageBucketUrl: 'http://files.example.com:19000/jfs-lib-demo',
       });
@@ -2536,18 +3347,18 @@ describe('task-route-handler workspace access', () => {
         storageBucketUrl: 'http://192.168.0.220:19000/jfs-lib-demo',
       });
     } finally {
-      if (previousExternalExecutionBase === undefined) delete process.env.EXTERNAL_AGENT_EXECUTION_HTTP_BASE_URL;
-      else process.env.EXTERNAL_AGENT_EXECUTION_HTTP_BASE_URL = previousExternalExecutionBase;
-      if (previousExternalMetaHost === undefined) delete process.env.EXTERNAL_AGENT_JUICEFS_META_HOST_OVERRIDE;
-      else process.env.EXTERNAL_AGENT_JUICEFS_META_HOST_OVERRIDE = previousExternalMetaHost;
-      if (previousExternalMetaPort === undefined) delete process.env.EXTERNAL_AGENT_JUICEFS_META_PORT_OVERRIDE;
-      else process.env.EXTERNAL_AGENT_JUICEFS_META_PORT_OVERRIDE = previousExternalMetaPort;
-      if (previousExternalStorageEndpoint === undefined) delete process.env.EXTERNAL_AGENT_JUICEFS_STORAGE_ENDPOINT_OVERRIDE;
-      else process.env.EXTERNAL_AGENT_JUICEFS_STORAGE_ENDPOINT_OVERRIDE = previousExternalStorageEndpoint;
+      if (previousExternalExecutionBase === undefined) delete process.env.AGENT_RUNNER_DEVELOPER_EXECUTION_HTTP_BASE_URL;
+      else process.env.AGENT_RUNNER_DEVELOPER_EXECUTION_HTTP_BASE_URL = previousExternalExecutionBase;
+      if (previousExternalMetaHost === undefined) delete process.env.AGENT_RUNNER_DEVELOPER_JUICEFS_META_HOST_OVERRIDE;
+      else process.env.AGENT_RUNNER_DEVELOPER_JUICEFS_META_HOST_OVERRIDE = previousExternalMetaHost;
+      if (previousExternalMetaPort === undefined) delete process.env.AGENT_RUNNER_DEVELOPER_JUICEFS_META_PORT_OVERRIDE;
+      else process.env.AGENT_RUNNER_DEVELOPER_JUICEFS_META_PORT_OVERRIDE = previousExternalMetaPort;
+      if (previousExternalStorageEndpoint === undefined) delete process.env.AGENT_RUNNER_DEVELOPER_JUICEFS_STORAGE_ENDPOINT_OVERRIDE;
+      else process.env.AGENT_RUNNER_DEVELOPER_JUICEFS_STORAGE_ENDPOINT_OVERRIDE = previousExternalStorageEndpoint;
     }
   });
 
-  it('rewrites loopback mount access for compose-managed external runner execution', () => {
+  it('leaves developer runner mount access to the provider adapter instead of selecting compose runtime in the route', () => {
     const previousDatabaseUrl = process.env.DATABASE_URL;
     const previousMinioEndpoint = process.env.MINIO_ENDPOINT;
     const previousMinioPort = process.env.MINIO_PORT;
@@ -2558,17 +3369,14 @@ describe('task-route-handler workspace access', () => {
     process.env.MINIO_USE_SSL = 'false';
     try {
       const resolved = resolveTaskWorkspaceMountAccess({
-        agentMode: 'external',
-        agentConfig: {
-          runner_runtime: 'compose_managed',
-        },
+        runnerProvider: 'developer',
         metadataUrl: 'postgres://jfsu_user:secret@localhost:15432/jfs_lib_demo?sslmode=disable',
         storageBucketUrl: 'http://localhost:19000/jfs-lib-demo',
       });
 
       expect(resolved).toEqual({
-        metadataUrl: 'postgres://jfsu_user:secret@postgres:5432/jfs_lib_demo?sslmode=disable',
-        storageBucketUrl: 'http://minio:9000/jfs-lib-demo',
+        metadataUrl: 'postgres://jfsu_user:secret@localhost:15432/jfs_lib_demo?sslmode=disable',
+        storageBucketUrl: 'http://localhost:19000/jfs-lib-demo',
       });
     } finally {
       if (previousDatabaseUrl === undefined) delete process.env.DATABASE_URL;
@@ -2582,7 +3390,7 @@ describe('task-route-handler workspace access', () => {
     }
   });
 
-  it('rewrites client-visible mount access for docker-manual external runner execution', () => {
+  it('ignores docker-manual runtime selectors in task route mount resolution', () => {
     const previousDockerManualHost = process.env.DOCKER_MANUAL_AGENT_JUICEFS_META_HOST_OVERRIDE;
     const previousDockerManualPort = process.env.DOCKER_MANUAL_AGENT_JUICEFS_META_PORT_OVERRIDE;
     const previousDockerManualEndpoint = process.env.DOCKER_MANUAL_AGENT_JUICEFS_STORAGE_ENDPOINT_OVERRIDE;
@@ -2595,17 +3403,14 @@ describe('task-route-handler workspace access', () => {
     process.env.MINIO_API_PORT = '19000';
     try {
       const resolved = resolveTaskWorkspaceMountAccess({
-        agentMode: 'external',
-        agentConfig: {
-          runner_runtime: 'docker_manual',
-        },
+        runnerProvider: 'developer',
         metadataUrl: 'postgres://jfsu_user:secret@192.168.0.220:15432/jfs_lib_demo?sslmode=disable',
         storageBucketUrl: 'http://192.168.0.220:19000/jfs-lib-demo',
       });
 
       expect(resolved).toEqual({
-        metadataUrl: 'postgres://jfsu_user:secret@host.docker.internal:15432/jfs_lib_demo?sslmode=disable',
-        storageBucketUrl: 'http://host.docker.internal:19000/jfs-lib-demo',
+        metadataUrl: 'postgres://jfsu_user:secret@192.168.0.220:15432/jfs_lib_demo?sslmode=disable',
+        storageBucketUrl: 'http://192.168.0.220:19000/jfs-lib-demo',
       });
     } finally {
       if (previousDockerManualHost === undefined) delete process.env.DOCKER_MANUAL_AGENT_JUICEFS_META_HOST_OVERRIDE;
@@ -2630,7 +3435,7 @@ describe('task-route-handler workspace access', () => {
     process.env.JUICEFS_BUCKET_ENDPOINT_FOR_INTERNAL_MOUNT = 'http://minio-external.agentsmith-sandbox.svc.cluster.local:9000';
     try {
       const resolved = resolveTaskWorkspaceMountAccess({
-        agentMode: 'internal',
+        runnerProvider: 'managed',
         metadataUrl: 'postgres://jfsu_user:secret@localhost:15432/jfs_lib_demo?sslmode=disable',
         storageBucketUrl: 'http://localhost:19000/jfs-lib-demo',
       });
@@ -3172,7 +3977,7 @@ describe('task-route-handler workspace access', () => {
     expect(contentDisposition.fallback).toMatch(/\.png$/);
   });
 
-  it('uses session dispatch authority for terminal creation even when local online booleans are still true', async () => {
+  it('does not use legacy task agent_id for terminal creation when no default runner is available', async () => {
     const previousPublicApiBase = process.env.PUBLIC_API_BASE_URL;
     process.env.PUBLIC_API_BASE_URL = 'http://127.0.0.1:20000/api/v1';
     const docStore = new InMemoryJsonDocStore();
@@ -3225,13 +4030,7 @@ describe('task-route-handler workspace access', () => {
             createSession,
           },
           agentResourceService: {
-            getAgent: vi.fn().mockResolvedValue({
-              id: 'agent_1',
-              name: 'Agent One',
-              status: 'enabled',
-              mode: 'external',
-              interaction_kind: 'notebook',
-            }),
+            listAgents: vi.fn().mockResolvedValue([]),
           },
           agentExecutionService: {
             getAgentSessionOnlineState: vi.fn().mockReturnValue(true),
@@ -3251,20 +4050,20 @@ describe('task-route-handler workspace access', () => {
       }
     }
 
-    expect(getAgentSessionDispatchAuthority).toHaveBeenCalledWith('agent_1', 'task_1');
+    expect(getAgentSessionDispatchAuthority).not.toHaveBeenCalled();
     expect(createSession).not.toHaveBeenCalled();
     expect(json).toHaveBeenCalledWith(
       expect.anything(),
       409,
-      { error_code: 'RESOURCE_CONFLICT', message: 'task_runner_remote_owned' },
+      { error_code: 'agent_runner_unavailable', message: 'agent_runner_unavailable' },
     );
   });
 
-  it('allows terminal creation to proceed when local runner truth is still online and shared session authority has not materialized yet', async () => {
+  it('does not use legacy task agent_id for terminal creation when local runner truth has not materialized', async () => {
     const previousPublicApiBase = process.env.PUBLIC_API_BASE_URL;
-    const previousExternalApiBase = process.env.EXTERNAL_AGENT_EXECUTION_HTTP_BASE_URL;
+    const previousExternalApiBase = process.env.AGENT_RUNNER_DEVELOPER_EXECUTION_HTTP_BASE_URL;
     process.env.PUBLIC_API_BASE_URL = 'http://127.0.0.1:20000/api/v1';
-    process.env.EXTERNAL_AGENT_EXECUTION_HTTP_BASE_URL = 'http://127.0.0.1:20000';
+    process.env.AGENT_RUNNER_DEVELOPER_EXECUTION_HTTP_BASE_URL = 'http://127.0.0.1:20000';
     const docStore = new InMemoryJsonDocStore();
     const cache = new InMemoryCache();
     const now = new Date().toISOString();
@@ -3312,14 +4111,7 @@ describe('task-route-handler workspace access', () => {
             createSession,
           },
           agentResourceService: {
-            getAgent: vi.fn().mockResolvedValue({
-              id: 'agent_1',
-              name: 'Agent One',
-              status: 'enabled',
-              mode: 'external',
-              interaction_kind: 'notebook',
-              config: null,
-            }),
+            listAgents: vi.fn().mockResolvedValue([]),
           },
           agentExecutionService: {
             getAgentSessionOnlineState: vi.fn().mockReturnValue(true),
@@ -3338,26 +4130,507 @@ describe('task-route-handler workspace access', () => {
         process.env.PUBLIC_API_BASE_URL = previousPublicApiBase;
       }
       if (previousExternalApiBase === undefined) {
-        delete process.env.EXTERNAL_AGENT_EXECUTION_HTTP_BASE_URL;
+        delete process.env.AGENT_RUNNER_DEVELOPER_EXECUTION_HTTP_BASE_URL;
       } else {
-        process.env.EXTERNAL_AGENT_EXECUTION_HTTP_BASE_URL = previousExternalApiBase;
+        process.env.AGENT_RUNNER_DEVELOPER_EXECUTION_HTTP_BASE_URL = previousExternalApiBase;
       }
     }
 
-    expect(createSession).toHaveBeenCalledTimes(1);
-    expect(createSession).toHaveBeenCalledWith(expect.objectContaining({
-      executionContext: expect.objectContaining({
-        runner_session_scope: 'agent_presence',
-      }),
-    }));
+    expect(createSession).not.toHaveBeenCalled();
     expect(json).toHaveBeenCalledWith(
       expect.anything(),
-      201,
-      expect.objectContaining({
-        session_id: 'term_1',
-        status: 'pending',
-      }),
+      409,
+      { error_code: 'agent_runner_unavailable', message: 'agent_runner_unavailable' },
     );
+  });
+
+  it('exposes terminal session runner evidence without mutating task active_run', async () => {
+    const previousPublicApiBase = process.env.PUBLIC_API_BASE_URL;
+    process.env.PUBLIC_API_BASE_URL = 'http://127.0.0.1:20000/api/v1';
+    const deps = createDefaultNodeApiDeps();
+    const ensureAgentReady = vi.fn(async () => undefined);
+    deps.internalAgentPodManager = {
+      ensureAgentReady,
+      keepalive: vi.fn(async () => undefined),
+      releasePod: vi.fn(async () => undefined),
+    };
+    deps.internalAgentWorkspaceBindingManager = {
+      ensureWorkspaceBinding: vi.fn(async (input: {
+        workspaceId: string;
+        projectId: string;
+        fileLibraryId: string;
+        taskId: string;
+      }) => ({
+        binding: {
+          id: 'bind_terminal_evidence',
+          workspace_id: input.workspaceId,
+          project_id: input.projectId,
+          file_library_id: input.fileLibraryId,
+          kind: 'juicefs_volume',
+          status: 'ready',
+          metadata_url: 'postgres://jfsu_user:secret@localhost:15432/jfs_terminal_evidence?sslmode=disable',
+          storage_bucket_url: 'http://localhost:19000/jfs-terminal-evidence',
+          created_at: '2026-04-05T00:00:00.000Z',
+          updated_at: '2026-04-05T00:00:00.000Z',
+        },
+        workspaceMount: {
+          bindingId: 'bind_terminal_evidence',
+          mountPath: `/workspace/${input.taskId}`,
+          fileLibraryId: input.fileLibraryId,
+        },
+      })),
+    } as never;
+
+    try {
+      const endpoint = await deps.endpointResourceService.createEndpoint('ws_default', 'proj_1', {
+        name: 'terminal evidence endpoint',
+        model: 'gpt-5-codex',
+        type: 'custom',
+        base_url: 'https://example.com/v1',
+        status: 'active',
+        upstream_protocol: 'openai_responses',
+        model_profile: {
+          max_context_tokens: 128000,
+          max_output_tokens: 8192,
+          supports_file: false,
+          supports_tool_call: true,
+          supports_reasoning: false,
+          price_input_per_1m: 0,
+          price_output_per_1m: 0,
+          cache_read_discount_ratio: 0,
+          cache_write_discount_ratio: 0,
+        },
+      });
+      const runner = await deps.agentResourceService.createAgent('ws_default', 'proj_1', {
+        name: 'Default terminal evidence runner',
+        status: 'enabled',
+        presence: 'managed',
+        runner_status: 'ready',
+        is_default: true,
+        default_endpoint_id: endpoint.id,
+        capabilities: {
+          terminal: true,
+          artifacts: true,
+        },
+      } as never);
+
+      const taskCreateJson = vi.fn();
+      await expect(handleTaskRoute({
+        route: { kind: 'tasks', workspaceId: 'ws_default', projectId: 'proj_1' } as never,
+        method: 'POST',
+        req: { headers: {}, url: '' } as never,
+        res: {} as never,
+        deps,
+        user: { id: 'user_1', email: 'user_1@example.com' } as never,
+        json: taskCreateJson,
+        readBody: vi.fn(async () => ({
+          title: 'Runnerless terminal evidence task',
+          prompt: 'Open a terminal only',
+          workspace_name: 'Runnerless Terminal Evidence Workspace',
+        })),
+      })).resolves.toBe(true);
+      const createdTask = taskCreateJson.mock.calls[0]?.[2] as {
+        id: string;
+        active_run?: unknown;
+        agent_id?: string;
+      };
+      expect(createdTask.agent_id).toBeUndefined();
+      expect(createdTask.active_run).toBeUndefined();
+
+      const terminalCreateJson = vi.fn();
+      await expect(handleTaskRoute({
+        route: {
+          kind: 'taskTerminalSessions',
+          workspaceId: 'ws_default',
+          projectId: 'proj_1',
+          taskId: createdTask.id,
+        } as never,
+        method: 'POST',
+        req: {
+          headers: { 'x-request-id': 'req_terminal_runner_evidence' },
+          url: `/api/v1/workspaces/ws_default/projects/proj_1/tasks/${createdTask.id}/terminal/sessions`,
+        } as never,
+        res: { setHeader: vi.fn() } as never,
+        deps,
+        user: { id: 'user_1', email: 'user_1@example.com' } as never,
+        json: terminalCreateJson,
+        readBody: vi.fn(async () => ({ cols: 100, rows: 32 })),
+      })).resolves.toBe(true);
+      const createdSession = terminalCreateJson.mock.calls[0]?.[2] as {
+        terminal_session_id: string;
+        runner_id?: string;
+        runner_session_id?: string;
+        ws_url?: string;
+      };
+      expect(terminalCreateJson.mock.calls[0]?.[1]).toBe(201);
+      expect(createdSession).toMatchObject({
+        runner_id: runner.id,
+        runner_session_id: createdTask.id,
+      });
+      expect(createdSession.terminal_session_id).toMatch(/^term_/);
+      expect(createdSession).not.toHaveProperty('session_id');
+      const terminalWsUrl = new URL(createdSession.ws_url ?? '', 'http://localhost');
+      expect(terminalWsUrl.searchParams.get('terminal_session_id')).toBe(createdSession.terminal_session_id);
+      expect(terminalWsUrl.searchParams.has('session_id')).toBe(false);
+
+      const taskGetJson = vi.fn();
+      await expect(handleTaskRoute({
+        route: {
+          kind: 'taskItem',
+          workspaceId: 'ws_default',
+          projectId: 'proj_1',
+          taskId: createdTask.id,
+        } as never,
+        method: 'GET',
+        req: { headers: {}, url: '' } as never,
+        res: {} as never,
+        deps,
+        user: { id: 'user_1', email: 'user_1@example.com' } as never,
+        json: taskGetJson,
+        readBody: vi.fn(),
+      })).resolves.toBe(true);
+      const taskAfterTerminalOpen = taskGetJson.mock.calls[0]?.[2] as {
+        active_run?: unknown;
+        active_run_started_at?: string;
+      };
+      expect(taskAfterTerminalOpen.active_run).toBeUndefined();
+      expect(taskAfterTerminalOpen.active_run_started_at).toBeUndefined();
+      await expect(getNotebookTaskRunState(deps.cache, createdTask.id)).resolves.toBeNull();
+
+      const listJson = vi.fn();
+      await expect(handleTaskRoute({
+        route: {
+          kind: 'taskTerminalSessions',
+          workspaceId: 'ws_default',
+          projectId: 'proj_1',
+          taskId: createdTask.id,
+        } as never,
+        method: 'GET',
+        req: { headers: {}, url: '' } as never,
+        res: { setHeader: vi.fn() } as never,
+        deps,
+        user: { id: 'user_1', email: 'user_1@example.com' } as never,
+        json: listJson,
+        readBody: vi.fn(),
+      })).resolves.toBe(true);
+      const listBody = listJson.mock.calls[0]?.[2] as { items?: Array<Record<string, unknown>>; total?: number };
+      expect(listBody).toMatchObject({
+        total: 1,
+        items: [
+          {
+            terminal_session_id: createdSession.terminal_session_id,
+            runner_id: runner.id,
+            runner_session_id: createdTask.id,
+          },
+        ],
+      });
+      expect(listBody.items?.[0]).not.toHaveProperty('id');
+
+      const getJson = vi.fn();
+      await expect(handleTaskRoute({
+        route: {
+          kind: 'taskTerminalSession',
+          workspaceId: 'ws_default',
+          projectId: 'proj_1',
+          taskId: createdTask.id,
+          terminalSessionId: createdSession.terminal_session_id,
+        } as never,
+        method: 'GET',
+        req: { headers: {}, url: '' } as never,
+        res: { setHeader: vi.fn() } as never,
+        deps,
+        user: { id: 'user_1', email: 'user_1@example.com' } as never,
+        json: getJson,
+        readBody: vi.fn(),
+      })).resolves.toBe(true);
+      const getBody = getJson.mock.calls[0]?.[2] as Record<string, unknown>;
+      expect(getBody).toMatchObject({
+        terminal_session_id: createdSession.terminal_session_id,
+        runner_id: runner.id,
+        runner_session_id: createdTask.id,
+      });
+      expect(getBody).not.toHaveProperty('id');
+
+      await expect(listAuditEvents(deps.docStore, {
+        workspaceId: 'ws_default',
+        projectId: 'proj_1',
+        startTime: '2026-01-01T00:00:00.000Z',
+        endTime: '2027-01-01T00:00:00.000Z',
+        page: 1,
+        pageSize: 20,
+        sortOrder: 'asc',
+        action: 'notebook.task.terminal.opened',
+      })).resolves.toMatchObject({
+        total: 1,
+        items: [
+          {
+            resource_id: createdSession.terminal_session_id,
+            metadata_json: expect.objectContaining({
+              task_id: createdTask.id,
+              runner_id: runner.id,
+              runner_session_id: createdTask.id,
+            }),
+          },
+        ],
+      });
+      const openedAudit = (await listAuditEvents(deps.docStore, {
+        workspaceId: 'ws_default',
+        projectId: 'proj_1',
+        startTime: '2026-01-01T00:00:00.000Z',
+        endTime: '2027-01-01T00:00:00.000Z',
+        page: 1,
+        pageSize: 20,
+        sortOrder: 'asc',
+        action: 'notebook.task.terminal.opened',
+      })).items[0];
+      expect(openedAudit.metadata_json).not.toHaveProperty('agent_id');
+    } finally {
+      if (previousPublicApiBase === undefined) delete process.env.PUBLIC_API_BASE_URL;
+      else process.env.PUBLIC_API_BASE_URL = previousPublicApiBase;
+    }
+  });
+
+  it('passes canonical task terminal execution context to terminal session creation', async () => {
+    const previousPublicApiBase = process.env.PUBLIC_API_BASE_URL;
+    process.env.PUBLIC_API_BASE_URL = 'http://127.0.0.1:20000/api/v1';
+    const deps = createDefaultNodeApiDeps();
+    deps.internalAgentPodManager = {
+      ensureAgentReady: vi.fn(async () => undefined),
+      keepalive: vi.fn(async () => undefined),
+      releasePod: vi.fn(async () => undefined),
+    };
+    deps.internalAgentWorkspaceBindingManager = {
+      ensureWorkspaceBinding: vi.fn(async (input: {
+        workspaceId: string;
+        projectId: string;
+        fileLibraryId: string;
+        taskId: string;
+      }) => ({
+        binding: {
+          id: 'bind_terminal_context',
+          workspace_id: input.workspaceId,
+          project_id: input.projectId,
+          file_library_id: input.fileLibraryId,
+          kind: 'juicefs_volume',
+          status: 'ready',
+          metadata_url: 'postgres://jfsu_user:secret@localhost:15432/jfs_terminal_context?sslmode=disable',
+          storage_bucket_url: 'http://localhost:19000/jfs-terminal-context',
+          created_at: '2026-04-05T00:00:00.000Z',
+          updated_at: '2026-04-05T00:00:00.000Z',
+        },
+        workspaceMount: {
+          bindingId: 'bind_terminal_context',
+          mountPath: `/workspace/${input.taskId}`,
+          fileLibraryId: input.fileLibraryId,
+        },
+      })),
+    } as never;
+
+    try {
+      const endpoint = await deps.endpointResourceService.createEndpoint('ws_default', 'proj_1', {
+        name: 'terminal context endpoint',
+        model: 'gpt-5-codex',
+        type: 'custom',
+        base_url: 'https://example.com/v1',
+        status: 'active',
+        upstream_protocol: 'openai_responses',
+      });
+      const runner = await deps.agentResourceService.createAgent('ws_default', 'proj_1', {
+        name: 'Terminal context runner',
+        status: 'enabled',
+        presence: 'managed',
+        runner_status: 'ready',
+        is_default: true,
+        default_endpoint_id: endpoint.id,
+        capabilities: {
+          task_execution: true,
+          terminal: true,
+          artifacts: true,
+        },
+      } as never);
+
+      const now = new Date().toISOString();
+      await deps.docStore.upsert(notebookTasksCollection('ws_default'), 'task_terminal_context', {
+        id: 'task_terminal_context',
+        workspace_id: 'ws_default',
+        project_id: 'proj_1',
+        owner_user_id: 'user_1',
+        title: 'Terminal context task',
+        workspace_file_library_id: 'lib_terminal_context',
+        workspace_file_library_name: 'Terminal Context Workspace',
+        status: 'active',
+        attached_inputs: [],
+        created_at: now,
+        updated_at: now,
+        last_activity_at: now,
+      });
+      const createSession = vi.spyOn(deps.notebookTerminalService, 'createSession');
+
+      const json = vi.fn();
+      await expect(handleTaskRoute({
+        route: {
+          kind: 'taskTerminalSessions',
+          workspaceId: 'ws_default',
+          projectId: 'proj_1',
+          taskId: 'task_terminal_context',
+        } as never,
+        method: 'POST',
+        req: {
+          headers: {},
+          url: '/api/v1/workspaces/ws_default/projects/proj_1/tasks/task_terminal_context/terminal/sessions',
+        } as never,
+        res: { setHeader: vi.fn() } as never,
+        deps,
+        user: { id: 'user_1', email: 'user_1@example.com' } as never,
+        json,
+        readBody: vi.fn(async () => ({ cols: 96, rows: 28 })),
+      })).resolves.toBe(true);
+
+      expect(json.mock.calls[0]?.[1]).toBe(201);
+      expect(createSession).toHaveBeenCalledTimes(1);
+      const executionContext = createSession.mock.calls[0]?.[0].executionContext;
+      expect(() => assertTaskExecutionContext(executionContext)).not.toThrow();
+      expect(executionContext).toMatchObject({
+        workspace_id: 'ws_default',
+        project_id: 'proj_1',
+        task_id: 'task_terminal_context',
+        runner_id: runner.id,
+        runner_session_scope: 'task_execution',
+      });
+      expect(executionContext).not.toHaveProperty('session_id');
+      expect(executionContext).not.toHaveProperty('agent_id');
+      expect(executionContext).not.toHaveProperty('interaction_kind');
+      const executionTicket = String(executionContext?.execution_ticket ?? '');
+      await expect(resolveInternalTicket(deps.cache, executionTicket, 'agent_execution')).resolves.toMatchObject({
+        payload: {
+          endpoint_id: 'terminal',
+          task_id: 'task_terminal_context',
+          runner_session_id: 'task_terminal_context',
+          agent_runner_id: runner.id,
+        },
+      });
+    } finally {
+      if (previousPublicApiBase === undefined) delete process.env.PUBLIC_API_BASE_URL;
+      else process.env.PUBLIC_API_BASE_URL = previousPublicApiBase;
+    }
+  });
+
+  it('creates managed terminal sessions without synchronously waiting for internal pod readiness', async () => {
+    const previousPublicApiBase = process.env.PUBLIC_API_BASE_URL;
+    process.env.PUBLIC_API_BASE_URL = 'http://127.0.0.1:20000/api/v1';
+    const deps = createDefaultNodeApiDeps();
+    const ensureWorkspaceBinding = vi.fn(async () => {
+      throw new Error('workspace_binding_should_wait_for_terminal_runtime_dispatch');
+    });
+    const ensureAgentReady = vi.fn(async () => {
+      throw new Error('agent_ready_should_wait_for_terminal_runtime_dispatch');
+    });
+    deps.internalAgentPodManager = {
+      ensureAgentReady,
+      keepalive: vi.fn(async () => undefined),
+      releasePod: vi.fn(async () => undefined),
+    };
+    deps.internalAgentWorkspaceBindingManager = {
+      ensureWorkspaceBinding,
+    } as never;
+
+    try {
+      const endpoint = await deps.endpointResourceService.createEndpoint('ws_default', 'proj_1', {
+        name: 'terminal async create endpoint',
+        model: 'gpt-5-codex',
+        type: 'custom',
+        base_url: 'https://example.com/v1',
+        status: 'active',
+        upstream_protocol: 'openai_responses',
+      });
+      const runner = await deps.agentResourceService.createAgent('ws_default', 'proj_1', {
+        name: 'Terminal async create runner',
+        status: 'enabled',
+        presence: 'managed',
+        runner_status: 'ready',
+        is_default: true,
+        default_endpoint_id: endpoint.id,
+        capabilities: {
+          task_execution: true,
+          terminal: true,
+          artifacts: true,
+        },
+      } as never);
+
+      const now = new Date().toISOString();
+      await deps.docStore.upsert('project_file_libraries', 'lib_terminal_async_create', {
+        id: 'lib_terminal_async_create',
+        workspace_id: 'ws_default',
+        project_id: 'proj_1',
+        name: 'Terminal Async Create Workspace',
+        status: 'ready',
+        filesystem_name: 'flib-terminal-async-create',
+        created_by_user_id: 'user_1',
+        created_at: now,
+        updated_at: now,
+      });
+      await deps.docStore.upsert(notebookTasksCollection('ws_default'), 'task_terminal_async_create', {
+        id: 'task_terminal_async_create',
+        workspace_id: 'ws_default',
+        project_id: 'proj_1',
+        owner_user_id: 'user_1',
+        title: 'Terminal async create task',
+        workspace_file_library_id: 'lib_terminal_async_create',
+        workspace_file_library_name: 'Terminal Async Create Workspace',
+        status: 'active',
+        attached_inputs: [],
+        created_at: now,
+        updated_at: now,
+        last_activity_at: now,
+      });
+
+      const createSession = vi.spyOn(deps.notebookTerminalService, 'createSession');
+      const json = vi.fn();
+      await expect(handleTaskRoute({
+        route: {
+          kind: 'taskTerminalSessions',
+          workspaceId: 'ws_default',
+          projectId: 'proj_1',
+          taskId: 'task_terminal_async_create',
+        } as never,
+        method: 'POST',
+        req: {
+          headers: {},
+          url: '/api/v1/workspaces/ws_default/projects/proj_1/tasks/task_terminal_async_create/terminal/sessions',
+        } as never,
+        res: { setHeader: vi.fn() } as never,
+        deps,
+        user: { id: 'user_1', email: 'user_1@example.com' } as never,
+        json,
+        readBody: vi.fn(async () => ({ cols: 96, rows: 28 })),
+      })).resolves.toBe(true);
+
+      expect(ensureWorkspaceBinding).not.toHaveBeenCalled();
+      expect(ensureAgentReady).not.toHaveBeenCalled();
+      expect(createSession).toHaveBeenCalledWith(expect.objectContaining({
+        agentId: runner.id,
+        runnerSessionId: 'task_terminal_async_create',
+        runtimeDispatchContext: {
+          managedInternalAgent: {
+            workspaceFileLibraryId: 'lib_terminal_async_create',
+          },
+        },
+      }));
+      const createdSession = json.mock.calls[0]?.[2] as {
+        terminal_session_id: string;
+        status: string;
+        ws_url: string;
+      };
+      expect(json.mock.calls[0]?.[1]).toBe(201);
+      expect(createdSession).toMatchObject({
+        status: 'pending',
+      });
+      expect(createdSession.terminal_session_id).toMatch(/^term_/);
+      expect(createdSession.ws_url).toContain('terminal_session_id=');
+    } finally {
+      if (previousPublicApiBase === undefined) delete process.env.PUBLIC_API_BASE_URL;
+      else process.env.PUBLIC_API_BASE_URL = previousPublicApiBase;
+    }
   });
 
   it('releases the internal task workload when the last live internal terminal session ends without any active run', async () => {
@@ -3404,11 +4677,31 @@ describe('task-route-handler workspace access', () => {
         })),
       } as never;
 
+      const endpoint = await deps.endpointResourceService.createEndpoint('ws_default', 'proj_1', {
+        name: 'internal terminal endpoint',
+        model: 'gpt-5-codex',
+        type: 'custom',
+        base_url: 'https://example.com/v1',
+        status: 'active',
+        upstream_protocol: 'openai_responses',
+        model_profile: {
+          max_context_tokens: 128000,
+        },
+      });
       const agent = await deps.agentResourceService.createAgent('ws_default', 'proj_1', {
         name: 'internal-terminal-agent',
         mode: 'internal',
         interaction_kind: 'notebook',
         status: 'enabled',
+        presence: 'managed',
+        runner_status: 'ready',
+        is_default: true,
+        default_endpoint_id: endpoint.id,
+        capabilities: {
+          task_execution: true,
+          terminal: true,
+          artifacts: true,
+        },
         config: {
           image: 'runner:v1',
           _internal_raw_key: 'ask_test',
@@ -3416,8 +4709,8 @@ describe('task-route-handler workspace access', () => {
         owner_id: 'user_test',
         visibility: 'private',
         execution_preferences_json: {
-          notebook: {
-            endpoint_id: 'ep_internal',
+          task: {
+            endpoint_id: endpoint.id,
           },
         },
       });
@@ -3473,10 +4766,15 @@ describe('task-route-handler workspace access', () => {
           json,
           readBody: vi.fn().mockResolvedValue({ cols: 80 + index, rows: 24 + index }),
         })).resolves.toBe(true);
-        createdSessionIds.push((json.mock.calls[0]?.[2] as { session_id: string }).session_id);
+        const createdSession = json.mock.calls[0]?.[2] as {
+          terminal_session_id: string;
+          session_id?: string;
+        };
+        expect(createdSession).not.toHaveProperty('session_id');
+        createdSessionIds.push(createdSession.terminal_session_id);
       }
 
-      expect(ensureAgentReady).toHaveBeenCalledTimes(2);
+      expect(ensureAgentReady).not.toHaveBeenCalled();
       expect(releasePod).not.toHaveBeenCalled();
 
       for (const [index, sessionId] of createdSessionIds.entries()) {
@@ -3517,7 +4815,7 @@ describe('task-route-handler workspace access', () => {
     }
   });
 
-  it('routes internal task archive and delete hard teardown through the coordinator instead of calling releasePod directly', async () => {
+  it('does not route archive or delete hard teardown from legacy task agent fields', async () => {
     const deps = createDefaultNodeApiDeps();
     const requestHardTeardown = vi.fn(async () => undefined);
     const releasePod = vi.fn(async () => undefined);
@@ -3612,20 +4910,13 @@ describe('task-route-handler workspace access', () => {
       readBody: vi.fn(),
     })).resolves.toBe(true);
 
-    expect(requestHardTeardown).toHaveBeenNthCalledWith(1, {
-      workspaceId: 'ws_default',
-      projectId: 'proj_1',
-      workloadId: sanitizeWorkloadId('task_internal_archive'),
-    });
-    expect(requestHardTeardown).toHaveBeenNthCalledWith(2, {
-      workspaceId: 'ws_default',
-      projectId: 'proj_1',
-      workloadId: sanitizeWorkloadId('task_internal_delete'),
-    });
+    expect(archiveJson.mock.calls[0]?.[2]).not.toHaveProperty('agent_id');
+    expect(archiveJson.mock.calls[0]?.[2]).not.toHaveProperty('agent_name');
+    expect(requestHardTeardown).not.toHaveBeenCalled();
     expect(releasePod).not.toHaveBeenCalled();
   });
 
-  it('falls back to direct releasePod for internal task archive and delete when no coordinator is available', async () => {
+  it('does not fall back to direct releasePod from legacy task agent fields', async () => {
     const deps = createDefaultNodeApiDeps();
     const releasePod = vi.fn(async () => undefined);
     deps.internalWorkloadCoordinator = undefined;
@@ -3715,18 +5006,7 @@ describe('task-route-handler workspace access', () => {
       readBody: vi.fn(),
     })).resolves.toBe(true);
 
-    expect(releasePod).toHaveBeenNthCalledWith(
-      1,
-      'ws_default',
-      'proj_1',
-      sanitizeWorkloadId('task_internal_archive_fallback'),
-    );
-    expect(releasePod).toHaveBeenNthCalledWith(
-      2,
-      'ws_default',
-      'proj_1',
-      sanitizeWorkloadId('task_internal_delete_fallback'),
-    );
+    expect(releasePod).not.toHaveBeenCalled();
   });
 
   it('maps remote-owned runner authority to a distinct route error instead of task_runner_offline', async () => {

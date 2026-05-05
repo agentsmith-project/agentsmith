@@ -22,10 +22,12 @@ describe('internal-ticket-store', () => {
       payload: {
         endpoint_id: 'ep_1',
         task_id: 'task_1',
+        runner_session_id: 'task_1',
+        agent_runner_id: 'runner_1',
         session_id: 'task_1',
         agent_id: 'agent_1',
         mode: 'notebook',
-      },
+      } as never,
       maxUses: 3,
     });
     issuedTickets.push(issued.ticket);
@@ -41,8 +43,14 @@ describe('internal-ticket-store', () => {
       payload: expect.objectContaining({
         endpoint_id: 'ep_1',
         task_id: 'task_1',
+        runner_session_id: 'task_1',
+        agent_runner_id: 'runner_1',
       }),
     });
+    const resolved = await resolveInternalTicket(cache, issued.ticket, 'agent_execution');
+    expect(resolved?.payload).not.toHaveProperty('session_id');
+    expect(resolved?.payload).not.toHaveProperty('agent_id');
+    expect(resolved?.payload).not.toHaveProperty('mode');
   });
 
   it('rejects purpose mismatches without consuming the stored ticket', async () => {

@@ -63,10 +63,10 @@ describe('local-manual owner janitor cli', () => {
 set -euo pipefail
 if [[ "$#" -ge 2 && "$1" == "-ww" && "$2" == "-eo" ]]; then
   cat <<'EOF_PS'
-4100 1 make notebook-agent-runner
-4101 4100 make notebook-runner
-4102 4101 npm run dev -w @mbos/notebook-codex-runner
-4103 4102 node /repo/node_modules/tsx/dist/cli.mjs /repo/packages/notebook-codex-runner/src/index.ts
+4100 1 make agent-task-runner-from-state
+4101 4100 make agent-task-runner
+4102 4101 npm run dev -w @mbos/agent-task-runner
+4103 4102 node /repo/node_modules/tsx/dist/cli.mjs /repo/packages/agent-task-runner/src/index.ts
 ${largeProcessTable}
 EOF_PS
   exit 0

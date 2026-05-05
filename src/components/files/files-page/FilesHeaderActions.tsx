@@ -37,11 +37,11 @@ export function FilesHeaderActions({ basePath, t }: FilesHeaderActionsProps) {
         {t('open_chat')}
       </ActionLink>
       <ActionLink
-        href={`${basePath}/notebook`}
+        href={`${basePath}/agent-tasks`}
         className={cn(buttonVariants({ variant: 'outline', size: 'sm' }))}
-        testId="files__open-notebook"
+        testId="files__open-agent-tasks"
       >
-        {t('open_notebook')}
+        {t('open_agent_tasks')}
       </ActionLink>
       <ActionLink
         href={`${basePath}/endpoints`}

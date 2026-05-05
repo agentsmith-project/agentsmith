@@ -31,14 +31,27 @@ describe('project route policy manifest', () => {
     expect(personalContextPolicy?.navLabelKey).toBe('member_project_title');
   });
 
-  it('keeps notebook task detail out of sidebar navigation', () => {
-    const notebookPolicy = findProjectRoutePolicyByHref('notebook');
+  it('keeps agent task detail out of sidebar navigation', () => {
+    const agentTasksPolicy = findProjectRoutePolicyByHref('agent-tasks');
     const sidebarPolicies = listSidebarProjectRoutePolicies();
 
-    expect(notebookPolicy).not.toBeNull();
+    expect(agentTasksPolicy).not.toBeNull();
+    expect(agentTasksPolicy?.permissions).toEqual(['project:agent_task:use']);
+    expect(agentTasksPolicy?.navLabelKey).toBe('agent_tasks');
     expect(
-      sidebarPolicies.filter((policy) => policy.href === 'notebook'),
+      sidebarPolicies.filter((policy) => policy.href === 'agent-tasks'),
     ).toHaveLength(1);
+    expect(findProjectRoutePolicyByHref('notebook')).toBeNull();
+  });
+
+  it('uses the target Agent Runners route and permissions', () => {
+    const agentRunnersPolicy = findProjectRoutePolicyByHref('agent-runners');
+
+    expect(agentRunnersPolicy).not.toBeNull();
+    expect(agentRunnersPolicy?.permissions).toEqual(['project:agent_runner:read', 'project:agent_runner:manage']);
+    expect(agentRunnersPolicy?.navLabelKey).toBe('agent_runners');
+    expect(agentRunnersPolicy?.navSection).toBe('develop');
+    expect(findProjectRoutePolicyByHref('agents')).toBeNull();
   });
 
   it('keeps governance surfaces explicit and ordered', () => {

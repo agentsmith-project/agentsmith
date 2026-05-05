@@ -14,9 +14,9 @@ export function buildBuildDiagnosticsOpsQuery(now = new Date()): string {
   });
 }
 
-export function buildAgentDiagnosticsLink(basePath: string, agentId?: string | null): string {
-  if (!agentId) {
-    return `${basePath}/agents`;
+export function buildAgentRunnerDiagnosticsLink(basePath: string, runnerId?: string | null): string {
+  if (!runnerId) {
+    return `${basePath}/agent-runners`;
   }
-  return `${basePath}/agents?agent=${encodeURIComponent(agentId)}`;
+  return `${basePath}/agent-runners?runner=${encodeURIComponent(runnerId)}`;
 }

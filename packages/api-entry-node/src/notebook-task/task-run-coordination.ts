@@ -27,6 +27,7 @@ export interface NotebookTaskRunHardTeardownState {
 export interface NotebookTaskRunHardTeardownDebtRecord {
   task_id: string;
   run_id: string;
+  runner_id?: string;
   request_id?: string;
   requested_at: string;
   actor_user_id?: string;
@@ -56,6 +57,7 @@ export interface NotebookTaskRunFinalizationState {
 export interface NotebookTaskRunState {
   task_id: string;
   run_id: string;
+  runner_id?: string;
   owner_instance_id: string;
   phase: NotebookTaskRunPhase;
   started_at: string;
@@ -235,6 +237,7 @@ function parseHardTeardownDebtRecord(raw: string | null): NotebookTaskRunHardTea
     run_id: parsed.run_id,
     requested_at: typeof parsed.requested_at === 'string' ? parsed.requested_at : '',
     status: parsed.status,
+    ...(typeof parsed.runner_id === 'string' ? { runner_id: parsed.runner_id } : {}),
     ...(typeof parsed.request_id === 'string' ? { request_id: parsed.request_id } : {}),
     ...(typeof parsed.actor_user_id === 'string' ? { actor_user_id: parsed.actor_user_id } : {}),
     ...(typeof parsed.last_attempt_at === 'string' ? { last_attempt_at: parsed.last_attempt_at } : {}),
@@ -379,6 +382,7 @@ function buildHardTeardownDebtFromRunState(state: NotebookTaskRunState): Noteboo
     run_id: state.run_id,
     requested_at: hardTeardown?.requested_at ?? state.stop.requested_at,
     status: hardTeardown?.status ?? 'pending',
+    ...(state.runner_id ? { runner_id: state.runner_id } : {}),
     ...(state.request_id ? { request_id: state.request_id } : {}),
     ...(state.stop.actor_user_id ? { actor_user_id: state.stop.actor_user_id } : {}),
     ...(hardTeardown?.last_attempt_at ? { last_attempt_at: hardTeardown.last_attempt_at } : {}),
@@ -406,6 +410,7 @@ export function buildNotebookTaskRunState(input: {
   ownerInstanceId?: string;
   phase?: NotebookTaskRunPhase;
   startedAt: string;
+  runnerId?: string;
   heartbeatAt?: string;
   requestId?: string;
   dispatchedAt?: string;
@@ -415,6 +420,7 @@ export function buildNotebookTaskRunState(input: {
   return {
     task_id: input.taskId,
     run_id: input.runId,
+    ...(input.runnerId ? { runner_id: input.runnerId } : {}),
     owner_instance_id: input.ownerInstanceId?.trim() || NOTEBOOK_RUN_OWNER_INSTANCE_ID,
     phase: input.phase ?? 'running',
     started_at: input.startedAt,
@@ -815,6 +821,9 @@ export async function markNotebookTaskRunHardTeardownRequested(
       ?? currentDebt?.requested_at
       ?? input.requestedAt,
     status: 'requested',
+    ...(nextForRun?.runner_id ?? currentDebt?.runner_id
+      ? { runner_id: nextForRun?.runner_id ?? currentDebt?.runner_id }
+      : {}),
     ...(nextForRun?.request_id ?? currentDebt?.request_id
       ? { request_id: nextForRun?.request_id ?? currentDebt?.request_id }
       : {}),
@@ -956,6 +965,9 @@ export async function markNotebookTaskRunHardTeardownFailed(
       ?? currentDebt?.requested_at
       ?? input.attemptedAt,
     status: 'failed',
+    ...(nextForRun?.runner_id ?? currentDebt?.runner_id
+      ? { runner_id: nextForRun?.runner_id ?? currentDebt?.runner_id }
+      : {}),
     ...(nextForRun?.request_id ?? currentDebt?.request_id
       ? { request_id: nextForRun?.request_id ?? currentDebt?.request_id }
       : {}),

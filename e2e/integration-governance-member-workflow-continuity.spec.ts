@@ -5,21 +5,18 @@ import {
   createChatSessionViaApi,
   createCredentialViaUi,
   createEndpointViaApi,
-  createExternalRunnerAgentBundle,
+  createManagedAgentRunnerViaApi,
   createProjectInWorkspace,
   ensureIntegrationKeycloakUsers,
-  expectNotebookTaskConversationSurface,
+  expectAgentTaskConversationSurface,
   KEYCLOAK_DEV_ADMIN_PASSWORD,
   KEYCLOAK_DEV_ADMIN_USERNAME,
   KEYCLOAK_INTEGRATION_MEMBER_PASSWORD,
   KEYCLOAK_INTEGRATION_MEMBER_USERNAME,
   keycloakLoginToWorkspace,
   LOCALE,
-  reconnectCodexRunnerProcessToTask,
-  sendTaskMessage,
-  startChatRunnerProcess,
-  startCodexRunnerProcess,
-  waitForAgentPresenceOnline,
+  startAgentTaskRunViaApi,
+  waitForRunnerOutputToken,
 } from './integration-real-helpers';
 import { buildTraceStoryBinding } from './story-trace-binding';
 import { loadStoryDefinitionSync } from './story-loader';
@@ -27,14 +24,13 @@ import { createUxTraceBundleWriter } from './trace-bundle-support';
 import {
   assertProjectUnavailableOnRoutes,
   createInviteViaUi,
-  createNotebookTaskWithNewWorkspaceViaApi,
+  createAgentTaskWithNewWorkspaceViaApi,
+  openAgentTaskDetail,
   readUserIdFromJwt,
   removeProjectMemberByApi,
   runChatStreamTurn,
   setProjectAdminMembership,
   waitForAssistantToken,
-  openNotebookTaskDetail,
-  waitForNotebookAgentToken,
   waitForTaskArtifacts,
 } from './integration-governance-runtime-support';
 import { readStoredAuthToken } from './integration-workspace-access';
@@ -52,11 +48,11 @@ type RuntimeData = {
   credentialNamePrefix: string;
   endpointNamePrefix: string;
   chatAgentTitlePrefix: string;
-  notebookAgentTitlePrefix: string;
+  agentTaskRunnerTitlePrefix: string;
   taskWorkspacePrefix: string;
-  notebookTaskTitlePrefix: string;
+  agentTaskTitlePrefix: string;
   chatTokenPrefix: string;
-  notebookTokenPrefix: string;
+  agentTaskTokenPrefix: string;
   artifactNamePrefix: string;
 };
 
@@ -71,11 +67,11 @@ function requireRuntime(): RuntimeData {
     'credentialNamePrefix',
     'endpointNamePrefix',
     'chatAgentTitlePrefix',
-    'notebookAgentTitlePrefix',
+    'agentTaskRunnerTitlePrefix',
     'taskWorkspacePrefix',
-    'notebookTaskTitlePrefix',
+    'agentTaskTitlePrefix',
     'chatTokenPrefix',
-    'notebookTokenPrefix',
+    'agentTaskTokenPrefix',
     'artifactNamePrefix',
   ] as const) {
     if (typeof runtime[key] !== 'string' || runtime[key].trim().length === 0) {
@@ -98,94 +94,76 @@ async function runMemberWorkCycle(args: {
   workspaceId: string;
   projectId: string;
   taskWorkspaceName: string;
-  notebookTaskTitle: string;
-  notebookAgentId: string;
-  notebookRunnerWsUrl: string;
-  notebookRunnerAgentKey: string;
-  notebookToken: string;
+  agentTaskTitle: string;
+  agentTaskToken: string;
   artifactName: string;
-  chatAgentId?: string;
+  endpointId?: string;
   chatToken?: string;
 }): Promise<string> {
-  const presenceRunner = await startCodexRunnerProcess({
-    wsUrl: args.notebookRunnerWsUrl,
-    agentKey: args.notebookRunnerAgentKey,
-  });
-  await waitForAgentPresenceOnline(args.page, args.workspaceId, args.projectId, args.notebookAgentId);
-  const createdTask = await createNotebookTaskWithNewWorkspaceViaApi({
+  const createdTask = await createAgentTaskWithNewWorkspaceViaApi({
     page: args.page,
     workspaceId: args.workspaceId,
     projectId: args.projectId,
-    title: args.notebookTaskTitle,
-    agentId: args.notebookAgentId,
+    title: args.agentTaskTitle,
     workspaceName: args.taskWorkspaceName,
   });
-  const runner = await reconnectCodexRunnerProcessToTask({
-    presenceRunner,
-    wsUrl: args.notebookRunnerWsUrl,
-    agentKey: args.notebookRunnerAgentKey,
+
+  const run = await startAgentTaskRunViaApi({
+    page: args.page,
+    workspaceId: args.workspaceId,
+    projectId: args.projectId,
     taskId: createdTask.taskId,
+    intent: [
+      `Run the following shell commands exactly, then reply with exactly ${args.agentTaskToken}.`,
+      '```bash',
+      'mkdir -p .artifacts',
+      `cat <<'EOF' > .artifacts/${args.artifactName}`,
+      '# Governance Runtime Artifact',
+      `- Token: ${args.agentTaskToken}`,
+      '- Scope: member runtime continuity',
+      'EOF',
+      '```',
+    ].join('\n'),
+  });
+  await waitForRunnerOutputToken({
+    page: args.page,
+    workspaceId: args.workspaceId,
+    projectId: args.projectId,
+    taskId: createdTask.taskId,
+    token: args.agentTaskToken,
+    runnerOutputActivityId: run.runnerOutputActivityId,
+    runId: run.runId,
+  });
+  await waitForTaskArtifacts({
+    page: args.page,
+    workspaceId: args.workspaceId,
+    projectId: args.projectId,
+    taskId: createdTask.taskId,
+    expectedPath: `.artifacts/${args.artifactName}`,
   });
 
-  try {
-    await waitForAgentPresenceOnline(args.page, args.workspaceId, args.projectId, args.notebookAgentId);
-    await sendTaskMessage({
-      page: args.page,
-      workspaceId: args.workspaceId,
-      projectId: args.projectId,
-      taskId: createdTask.taskId,
-      content: [
-        `Run the following shell commands exactly, then reply with exactly ${args.notebookToken}.`,
-        '```bash',
-        'mkdir -p .artifacts',
-        `cat <<'EOF' > .artifacts/${args.artifactName}`,
-        '# Governance Runtime Artifact',
-        `- Token: ${args.notebookToken}`,
-        '- Scope: member runtime continuity',
-        'EOF',
-        '```',
-      ].join('\n'),
-    });
-    await waitForNotebookAgentToken({
-      page: args.page,
-      workspaceId: args.workspaceId,
-      projectId: args.projectId,
-      taskId: createdTask.taskId,
-      token: args.notebookToken,
-    });
-    await waitForTaskArtifacts({
-      page: args.page,
-      workspaceId: args.workspaceId,
-      projectId: args.projectId,
-      taskId: createdTask.taskId,
-      expectedPath: `.artifacts/${args.artifactName}`,
-    });
-  } finally {
-    await runner.stop();
-  }
-
-  await openNotebookTaskDetail({
+  await openAgentTaskDetail({
     page: args.page,
     workspaceId: args.workspaceId,
     projectId: args.projectId,
     taskId: createdTask.taskId,
   });
-  await expectNotebookTaskConversationSurface({
+  await expectAgentTaskConversationSurface({
     page: args.page,
     openTerminalAction: 'enabled',
     terminalModeEnabled: false,
     blocked: false,
   });
-  await expect(args.page.getByTestId('notebook__artifact-card')).toBeVisible({ timeout: 30_000 });
-  await expect(args.page.getByTestId('notebook__task-header-workspace-library')).toBeVisible({ timeout: 30_000 });
+  await expect(args.page.getByTestId('agent-tasks__artifact-card')).toBeVisible({ timeout: 30_000 });
+  await expect(args.page.getByTestId('agent-task__task-header-workspace-library')).toBeVisible({ timeout: 30_000 });
 
-  if (args.chatAgentId && args.chatToken) {
+  if (args.endpointId && args.chatToken) {
     const sessionId = (await createChatSessionViaApi({
       page: args.page,
       workspaceId: args.workspaceId,
       projectId: args.projectId,
-      externalAgentId: args.chatAgentId,
-      title: `${args.notebookTaskTitle}-chat`,
+      endpointId: args.endpointId,
+      title: `${args.agentTaskTitle}-chat`,
     })).id;
     const stream = await runChatStreamTurn({
       page: args.page,
@@ -204,7 +182,7 @@ async function runMemberWorkCycle(args: {
     });
   }
 
-  return runner.logPath;
+  return `agent-task-run:${createdTask.taskId}`;
 }
 
 test.describe('@lane-real governance change then member keeps working', () => {
@@ -251,12 +229,11 @@ test.describe('@lane-real governance change then member keeps working', () => {
         credentialName,
       });
 
-      const notebookBundle = await createExternalRunnerAgentBundle(page, {
+      await createManagedAgentRunnerViaApi(page, {
         workspaceId: WORKSPACE_ID,
         projectId,
         endpointId,
-        title: `${runtime.notebookAgentTitlePrefix} ${Date.now()}`,
-        interactionKind: 'notebook',
+        title: `${runtime.agentTaskRunnerTitlePrefix} ${Date.now()}`,
       });
 
       const inviteToken = await createInviteViaUi({
@@ -300,15 +277,12 @@ test.describe('@lane-real governance change then member keeps working', () => {
           workspaceId: WORKSPACE_ID,
           projectId,
           taskWorkspaceName: `${runtime.taskWorkspacePrefix} admin ${Date.now()}`,
-          notebookTaskTitle: `${runtime.notebookTaskTitlePrefix} admin ${Date.now()}`,
-          notebookAgentId: notebookBundle.agentId,
-          notebookRunnerWsUrl: notebookBundle.wsUrl,
-          notebookRunnerAgentKey: notebookBundle.agentKey,
-          notebookToken: `${runtime.notebookTokenPrefix}_ADMIN_${Date.now()}`,
+          agentTaskTitle: `${runtime.agentTaskTitlePrefix} admin ${Date.now()}`,
+          agentTaskToken: `${runtime.agentTaskTokenPrefix}_ADMIN_${Date.now()}`,
           artifactName: `${runtime.artifactNamePrefix}-admin-${Date.now()}.md`,
         });
         runnerLogs.push(adminRunnerLog);
-        test.info().annotations.push({ type: 'notebook_runner_log', description: adminRunnerLog });
+        test.info().annotations.push({ type: 'agent_task_runner_log', description: adminRunnerLog });
 
         await setProjectAdminMembership({
           page,
@@ -328,15 +302,12 @@ test.describe('@lane-real governance change then member keeps working', () => {
           workspaceId: WORKSPACE_ID,
           projectId,
           taskWorkspaceName: `${runtime.taskWorkspacePrefix} member ${Date.now()}`,
-          notebookTaskTitle: `${runtime.notebookTaskTitlePrefix} member ${Date.now()}`,
-          notebookAgentId: notebookBundle.agentId,
-          notebookRunnerWsUrl: notebookBundle.wsUrl,
-          notebookRunnerAgentKey: notebookBundle.agentKey,
-          notebookToken: `${runtime.notebookTokenPrefix}_MEMBER_${Date.now()}`,
+          agentTaskTitle: `${runtime.agentTaskTitlePrefix} member ${Date.now()}`,
+          agentTaskToken: `${runtime.agentTaskTokenPrefix}_MEMBER_${Date.now()}`,
           artifactName: `${runtime.artifactNamePrefix}-member-${Date.now()}.md`,
         });
         runnerLogs.push(memberRunnerLog);
-        test.info().annotations.push({ type: 'notebook_runner_log', description: memberRunnerLog });
+        test.info().annotations.push({ type: 'agent_task_runner_log', description: memberRunnerLog });
         await trace.capture(memberPage, { stepId: 'continue-member-work' });
 
         outcome = 'pass';
@@ -371,8 +342,7 @@ test.describe('@lane-real governance change then member keeps working', () => {
     });
     let outcome: 'pass' | 'fail' = 'fail';
 
-    const chatRunnerLogs: string[] = [];
-    const notebookRunnerLogs: string[] = [];
+    const agentTaskRunnerLogs: string[] = [];
 
     try {
       await keycloakLoginToWorkspace(page, WORKSPACE_ID, KEYCLOAK_DEV_ADMIN_USERNAME, KEYCLOAK_DEV_ADMIN_PASSWORD, {
@@ -392,19 +362,12 @@ test.describe('@lane-real governance change then member keeps working', () => {
         credentialName,
       });
 
-      const notebookBundle = await createExternalRunnerAgentBundle(page, {
+      await createManagedAgentRunnerViaApi(page, {
         workspaceId: WORKSPACE_ID,
         projectId,
         endpointId,
-        title: `${runtime.notebookAgentTitlePrefix} ${Date.now()}`,
-        interactionKind: 'notebook',
+        title: `${runtime.agentTaskRunnerTitlePrefix} ${Date.now()}`,
       });
-
-      const chatRunner = await startChatRunnerProcess({ wsUrl: chatBundle.wsUrl, agentKey: chatBundle.agentKey });
-      chatRunnerLogs.push(chatRunner.logPath);
-      test.info().annotations.push({ type: 'chat_runner_log', description: chatRunner.logPath });
-
-      await waitForAgentPresenceOnline(page, WORKSPACE_ID, projectId, chatBundle.agentId);
 
       const inviteToken = await createInviteViaUi({
         page,
@@ -435,17 +398,14 @@ test.describe('@lane-real governance change then member keeps working', () => {
           workspaceId: WORKSPACE_ID,
           projectId,
           taskWorkspaceName: `${runtime.taskWorkspacePrefix} baseline ${Date.now()}`,
-          notebookTaskTitle: `${runtime.notebookTaskTitlePrefix} baseline ${Date.now()}`,
-          notebookAgentId: notebookBundle.agentId,
-          notebookRunnerWsUrl: notebookBundle.wsUrl,
-          notebookRunnerAgentKey: notebookBundle.agentKey,
-          chatAgentId: chatBundle.agentId,
-          notebookToken: `${runtime.notebookTokenPrefix}_BASE_${Date.now()}`,
+          agentTaskTitle: `${runtime.agentTaskTitlePrefix} baseline ${Date.now()}`,
+          endpointId,
+          agentTaskToken: `${runtime.agentTaskTokenPrefix}_BASE_${Date.now()}`,
           chatToken: `${runtime.chatTokenPrefix}_BASE_${Date.now()}`,
           artifactName: `${runtime.artifactNamePrefix}-baseline-${Date.now()}.md`,
         });
-        notebookRunnerLogs.push(baselineRunnerLog);
-        test.info().annotations.push({ type: 'notebook_runner_log', description: baselineRunnerLog });
+        agentTaskRunnerLogs.push(baselineRunnerLog);
+        test.info().annotations.push({ type: 'agent_task_runner_log', description: baselineRunnerLog });
         await trace.capture(memberPage, { stepId: 'member-first-success' });
 
         await setProjectAdminMembership({
@@ -462,17 +422,14 @@ test.describe('@lane-real governance change then member keeps working', () => {
           workspaceId: WORKSPACE_ID,
           projectId,
           taskWorkspaceName: `${runtime.taskWorkspacePrefix} promoted ${Date.now()}`,
-          notebookTaskTitle: `${runtime.notebookTaskTitlePrefix} promoted ${Date.now()}`,
-          notebookAgentId: notebookBundle.agentId,
-          notebookRunnerWsUrl: notebookBundle.wsUrl,
-          notebookRunnerAgentKey: notebookBundle.agentKey,
-          chatAgentId: chatBundle.agentId,
-          notebookToken: `${runtime.notebookTokenPrefix}_PROMOTED_${Date.now()}`,
+          agentTaskTitle: `${runtime.agentTaskTitlePrefix} promoted ${Date.now()}`,
+          endpointId,
+          agentTaskToken: `${runtime.agentTaskTokenPrefix}_PROMOTED_${Date.now()}`,
           chatToken: `${runtime.chatTokenPrefix}_PROMOTED_${Date.now()}`,
           artifactName: `${runtime.artifactNamePrefix}-promoted-${Date.now()}.md`,
         });
-        notebookRunnerLogs.push(promotedRunnerLog);
-        test.info().annotations.push({ type: 'notebook_runner_log', description: promotedRunnerLog });
+        agentTaskRunnerLogs.push(promotedRunnerLog);
+        test.info().annotations.push({ type: 'agent_task_runner_log', description: promotedRunnerLog });
         await trace.capture(memberPage, { stepId: 'promote-member-and-continue-work' });
 
         await setProjectAdminMembership({
@@ -489,17 +446,14 @@ test.describe('@lane-real governance change then member keeps working', () => {
           workspaceId: WORKSPACE_ID,
           projectId,
           taskWorkspaceName: `${runtime.taskWorkspacePrefix} demoted ${Date.now()}`,
-          notebookTaskTitle: `${runtime.notebookTaskTitlePrefix} demoted ${Date.now()}`,
-          notebookAgentId: notebookBundle.agentId,
-          notebookRunnerWsUrl: notebookBundle.wsUrl,
-          notebookRunnerAgentKey: notebookBundle.agentKey,
-          chatAgentId: chatBundle.agentId,
-          notebookToken: `${runtime.notebookTokenPrefix}_DEMOTED_${Date.now()}`,
+          agentTaskTitle: `${runtime.agentTaskTitlePrefix} demoted ${Date.now()}`,
+          endpointId,
+          agentTaskToken: `${runtime.agentTaskTokenPrefix}_DEMOTED_${Date.now()}`,
           chatToken: `${runtime.chatTokenPrefix}_DEMOTED_${Date.now()}`,
           artifactName: `${runtime.artifactNamePrefix}-demoted-${Date.now()}.md`,
         });
-        notebookRunnerLogs.push(demotedRunnerLog);
-        test.info().annotations.push({ type: 'notebook_runner_log', description: demotedRunnerLog });
+        agentTaskRunnerLogs.push(demotedRunnerLog);
+        test.info().annotations.push({ type: 'agent_task_runner_log', description: demotedRunnerLog });
         await trace.capture(memberPage, { stepId: 'demote-member-and-continue-work' });
 
         await removeProjectMemberByApi({
@@ -522,7 +476,7 @@ test.describe('@lane-real governance change then member keeps working', () => {
             page: verificationPage,
             workspaceId: WORKSPACE_ID,
             projectId,
-            routes: ['overview', 'chat', 'notebook', 'files'],
+            routes: ['overview', 'chat', 'agent-tasks', 'files'],
           });
           await trace.capture(verificationPage, { stepId: 'remove-member-and-lose-project-access' });
         } finally {
@@ -532,10 +486,9 @@ test.describe('@lane-real governance change then member keeps working', () => {
         outcome = 'pass';
       } finally {
         await memberContext.close();
-        await chatRunner.stop();
       }
     } finally {
-      await trace.finish({ outcome, finishedAt: new Date().toISOString(), notes: [...chatRunnerLogs, ...notebookRunnerLogs] });
+      await trace.finish({ outcome, finishedAt: new Date().toISOString(), notes: [...agentTaskRunnerLogs] });
     }
   });
 });

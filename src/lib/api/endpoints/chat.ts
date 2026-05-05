@@ -19,7 +19,6 @@ export interface CreateSessionRequest {
   title?: string;
   model?: string;
   endpoint_id?: string;
-  external_agent_id?: string;
 }
 
 export interface CreateMessageRequest {
@@ -35,7 +34,6 @@ export interface UpdateSessionRequest {
   starred?: boolean;
   model?: string;
   endpoint_id?: string;
-  external_agent_id?: string;
 }
 
 export interface EditMessageRequest {

@@ -150,7 +150,7 @@ const development = read('DEVELOPMENT.md');
 const governanceModel = read('docs/current-engineering-governance-model.md');
 const gateContract = read('docs/contracts/current-gate-manifest-contract.md');
 const gateResultContract = read('docs/contracts/current-gate-result-schema-contract.md');
-const notebookCodexRunbook = read('docs/notebook-codex-runbook.md');
+const agentTaskRunnerRunbook = read('docs/agent-task-runner-runbook.md');
 const verificationCampaigns = read('docs/testing/verification-campaigns-v1.md');
 const workspaceDefaultChecklist = read('docs/user-guides/workspace-project-default-engineering-gate-checklist.md');
 const governanceDefaultChecklist = read('docs/user-guides/governance-default-engineering-gate-checklist.md');
@@ -282,9 +282,8 @@ for (const scriptName of ['lane:visual', 'lane:demo-rehearsal', 'lane:cluster-re
 }
 requireMatch(backendRealRun, /FIRST_LANE_API_PORT="\$\{INTEGRATION_API_PORT:-20040\}"[\s\S]*FIRST_LANE_WEB_PORT="\$\{INTEGRATION_WEB_PORT:-3041\}"/, 'backend-real-run must resolve first-lane ports from inherited integration ports before defaulting to 20040/3041', failures);
 requireMatch(backendRealRun, /cleanup_gate_ports "\$\{FIRST_LANE_API_PORT\}" "\$\{FIRST_LANE_WEB_PORT\}" e2e\/integration-minimal\.spec\.ts/, 'backend-real-run must clean stale ports before the external default backend-real lane using the resolved first-lane ports', failures);
-requireMatch(backendRealRun, /cleanup_gate_ports 20060 3061 e2e\/integration-system-notebook-default\.spec\.ts/, 'backend-real-run must clean stale ports before the notebook backend-real smoke lane', failures);
-requireMatch(backendRealRun, /cleanup_gate_ports 20064 3065 e2e\/integration-chat-llm-runner\.spec\.ts/, 'backend-real-run must clean stale ports before the external chat runner backend-real lane', failures);
-requireMatch(backendRealRun, /cleanup_gate_ports 20064 3065 e2e\/integration-notebook-codex-runner\.spec\.ts/, 'backend-real-run must clean stale ports before the external notebook runner backend-real lane', failures);
+requireMatch(backendRealRun, /cleanup_gate_ports 20060 3061 e2e\/integration-agent-task-runner\.spec\.ts/, 'backend-real-run must clean stale ports before the agent-task backend-real smoke lane', failures);
+requireMatch(backendRealRun, /cleanup_gate_ports 20064 3065 e2e\/integration-agent-task-runner\.spec\.ts/, 'backend-real-run must clean stale ports before the agent-task runner backend-real lane', failures);
 requireMatch(integrationE2EFull, /clear_runtime_stack_env[\s\S]*resolve_loopback_runtime_stack/, 'run-integration-e2e-full must clear inherited runtime stack addresses before rebuilding its isolated loopback stack', failures);
 requireMatch(integrationE2EFull, /UX_TRACE_OUTPUT_ROOT="\$\{UX_TRACE_OUTPUT_ROOT:-\$\{INTEGRATION_RUN_ROOT\}\/ux-traces\}"/, 'run-integration-e2e-full must root backend-real ux trace bundles under artifacts/backend-real/runs/<run-id>/ux-traces by default', failures);
 
@@ -365,7 +364,7 @@ forbidMatch(releaseChecklist, /\bnpm run (?:gate|lane|backend-real):[a-z0-9:_-]+
 forbidMatch(releaseChecklist, /\bnpm run release:campaign:full\b/, 'release checklist must not present release:campaign:full as a copyable human default', failures);
 forbidMatch(releaseChecklist, /\bRELEASE_CAMPAIGN_ROOT=<campaign-root>\s+npm run gate:release:full\b/, 'release checklist must not present gate:release:full as a copyable human default', failures);
 forbidMatch(releaseChecklist, /gate:release:full as the full release command/, 'release checklist must not describe gate:release:full as the full release command', failures);
-assertReleaseHumanEntrypointSurface(notebookCodexRunbook, 'notebook codex runbook', failures);
+assertReleaseHumanEntrypointSurface(agentTaskRunnerRunbook, 'Agent task runner runbook', failures);
 assertReleaseHumanEntrypointSurface(verificationCampaigns, 'verification campaigns guide', failures);
 requireMatch(releaseChecklist, /does not run the full visual lane|不能被 `gate:default` 代替/, 'release checklist must explain that gate:default does not run the full visual lane', failures);
 requireMatch(releaseChecklist, /visual_scene_catalog/, 'release checklist must identify visual_scene_catalog as a required release evidence kind', failures);

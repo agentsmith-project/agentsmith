@@ -11,11 +11,6 @@ import {
   type ChatSessionExecutionRecord,
   type ChatStopEscalationReason,
   type ChatStopMode,
-  hasSessionHardTeardownDebt,
-  hasIncompleteSessionHardTeardown,
-  markSessionHardTeardownFailed,
-  markSessionHardTeardownRequested,
-  markSessionHardTeardownReleased,
   readSessionExecutionRecord,
   STREAM_REGISTRY_TTL_SECONDS,
   listActiveSessionStreams,
@@ -34,10 +29,6 @@ import {
 import {
   resolveInputRef,
 } from './input-ref-input-resolver.js';
-import { ensureInternalChatSessionWorkspace } from './chat-internal-workspace.js';
-import { mapFileLibraryInfraError } from './project-file-library-service.js';
-import { sanitizeWorkloadId } from './internal-agent-pod-manager.js';
-import { resolveInternalWorkloadCoordinator } from './internal-workload-coordinator.js';
 import type { ChatSessionRecord } from './resource-models.js';
 
 interface ChatNonStreamHandlerArgs {
@@ -55,7 +46,6 @@ interface ChatNonStreamHandlerArgs {
 const MAX_ATTACHMENTS_PER_MESSAGE = 8;
 const MAX_ATTACHMENT_FILE_SIZE_BYTES = 20 * 1024 * 1024;
 const MAX_ATTACHMENT_TOTAL_SIZE_BYTES = 60 * 1024 * 1024;
-const chatHardTeardownInFlight = new Map<string, Promise<void>>();
 
 type StopState = 'stopping' | 'terminating' | 'not_found_or_finished';
 type ActiveStopState = Exclude<StopState, 'not_found_or_finished'> | 'running';
@@ -81,30 +71,11 @@ async function resolveStopCapability(input: {
   execution?: ChatSessionExecutionRecord | null;
   allowAgentLookup?: boolean;
 }): Promise<StopCapability> {
-  let internalAgent = input.execution?.transport === 'agent_runner' && input.execution.internalAgent === true;
-  if (!internalAgent && input.allowAgentLookup !== false && input.session?.external_agent_id) {
-    const agent = input.deps.agentResourceService
-      ? await input.deps.agentResourceService.getAgent(
-        input.workspaceId,
-        input.projectId,
-        input.session.external_agent_id,
-      ).catch(() => null)
-      : null;
-    internalAgent = agent?.mode === 'internal';
-  }
-  if (!internalAgent) {
-    return {
-      supportsTerminate: false,
-      unavailableReason: 'STOP_ESCALATION_UNAVAILABLE',
-    };
-  }
-  const internalWorkloadCoordinator = resolveInternalWorkloadCoordinator(input.deps);
-  return internalWorkloadCoordinator
-    ? { supportsTerminate: true }
-    : {
-        supportsTerminate: false,
-        unavailableReason: 'STOP_ESCALATION_UNAVAILABLE',
-      };
+  void input;
+  return {
+    supportsTerminate: false,
+    unavailableReason: 'STOP_ESCALATION_UNAVAILABLE',
+  };
 }
 
 function resolveEffectiveStopMode(
@@ -157,17 +128,15 @@ function buildSessionStopTruth(
 ): Pick<ChatSessionRecord, 'execution_status' | 'termination_state' | 'stop_mode' | 'can_escalate' | 'escalation_reason'> {
   if (!execution) return {};
   const active = isActiveStopState(execution.status);
-  const hardTeardownDebt = hasSessionHardTeardownDebt(execution);
   const stopMode = execution.stopMode ?? (
     active ? execution.status === 'terminating' ? 'terminate' : 'cancel' : undefined
   );
   const canEscalate = active && capability.supportsTerminate && stopMode !== 'terminate';
   const escalationReason = canEscalate
     ? undefined
-    : execution.stopEscalationReason ?? (active || hardTeardownDebt ? capability.unavailableReason : undefined);
+    : execution.stopEscalationReason ?? (active ? capability.unavailableReason : undefined);
   return {
     execution_status: execution.status,
-    ...(hardTeardownDebt ? { termination_state: 'terminating' as const } : {}),
     ...(stopMode ? { stop_mode: stopMode } : {}),
     can_escalate: canEscalate,
     ...(escalationReason ? { escalation_reason: escalationReason } : {}),
@@ -186,7 +155,7 @@ async function attachSessionStopTruth(input: {
     input.projectId,
     input.session.id,
   );
-  const capability = execution && (isActiveStopState(execution.status) || hasSessionHardTeardownDebt(execution))
+  const capability = execution && isActiveStopState(execution.status)
     ? await resolveStopCapability({
       deps: input.deps,
       workspaceId: input.workspaceId,
@@ -202,103 +171,6 @@ async function attachSessionStopTruth(input: {
     ...input.session,
     ...buildSessionStopTruth(execution, capability),
   };
-}
-
-async function requestInternalChatHardTeardown(
-  deps: NodeApiDeps,
-  workspaceId: string,
-  projectId: string,
-  sessionId: string,
-  epoch?: string,
-): Promise<void> {
-  const internalWorkloadCoordinator = resolveInternalWorkloadCoordinator(deps);
-  if (!internalWorkloadCoordinator) return;
-  const workloadId = sanitizeWorkloadId(sessionId);
-  const key = `${workspaceId}/${projectId}/${workloadId}/${epoch ?? ''}`;
-  let promise = chatHardTeardownInFlight.get(key);
-  if (!promise) {
-    promise = internalWorkloadCoordinator.requestHardTeardown({
-      workspaceId,
-      projectId,
-      workloadId,
-      ...(epoch ? { epoch } : {}),
-    });
-    chatHardTeardownInFlight.set(key, promise);
-    void promise.then(
-      () => {
-        if (chatHardTeardownInFlight.get(key) === promise) {
-          chatHardTeardownInFlight.delete(key);
-        }
-      },
-      () => {
-        if (chatHardTeardownInFlight.get(key) === promise) {
-          chatHardTeardownInFlight.delete(key);
-        }
-      },
-    );
-  }
-  await promise;
-}
-
-function toErrorMessage(error: unknown): string {
-  return error instanceof Error ? error.message : String(error);
-}
-
-async function dispatchInternalChatHardTeardown(input: {
-  deps: NodeApiDeps;
-  workspaceId: string;
-  projectId: string;
-  sessionId: string;
-  epoch?: string;
-}): Promise<void> {
-  const attemptedAt = new Date().toISOString();
-  const claim = await markSessionHardTeardownRequested(input.deps.cache, {
-    workspaceId: input.workspaceId,
-    projectId: input.projectId,
-    sessionId: input.sessionId,
-    requestedAt: attemptedAt,
-    ...(input.epoch ? { streamId: input.epoch } : {}),
-  });
-  if (!hasIncompleteSessionHardTeardown(claim) || claim.hardTeardownStatus !== 'requested') {
-    return;
-  }
-  const attemptId = claim.hardTeardownAttemptId;
-  const generation = claim.hardTeardownAttemptCount;
-  try {
-    await requestInternalChatHardTeardown(
-      input.deps,
-      input.workspaceId,
-      input.projectId,
-      input.sessionId,
-      input.epoch,
-    );
-    await markSessionHardTeardownReleased(input.deps.cache, {
-      workspaceId: input.workspaceId,
-      projectId: input.projectId,
-      sessionId: input.sessionId,
-      releasedAt: new Date().toISOString(),
-      streamId: claim.streamId,
-      ...(attemptId ? { attemptId } : {}),
-      ...(typeof generation === 'number' ? { generation } : {}),
-    });
-  } catch (error) {
-    const errorMessage = toErrorMessage(error);
-    await markSessionHardTeardownFailed(input.deps.cache, {
-      workspaceId: input.workspaceId,
-      projectId: input.projectId,
-      sessionId: input.sessionId,
-      attemptedAt,
-      errorMessage,
-      streamId: claim.streamId,
-      ...(attemptId ? { attemptId } : {}),
-      ...(typeof generation === 'number' ? { generation } : {}),
-    });
-    console.warn(
-      '[sandbox] requestHardTeardown failed for chat session %s: %s',
-      input.sessionId,
-      errorMessage,
-    );
-  }
 }
 
 function endpointSupportsMultimodal(endpoint: { capabilities?: Array<{ type: string; enabled: boolean }> }): boolean {
@@ -366,6 +238,14 @@ function validateAttachmentPayload(raw: {
   return null;
 }
 
+function hasUnsupportedExternalAgentField(body: unknown): boolean {
+  return (
+    typeof body === 'object'
+    && body !== null
+    && Object.prototype.hasOwnProperty.call(body, 'external_agent_id')
+  );
+}
+
 async function resolveChatInputAttachments(
   deps: NodeApiDeps,
   workspaceId: string,
@@ -414,47 +294,13 @@ export async function handleChatNonStreamRoute(args: ChatNonStreamHandlerArgs): 
   }
 
   if (route.kind === 'chatSessions' && method === 'POST') {
-    const raw = (await readBody(req)) as {
+    const raw = (await readBody(req)) as Record<string, unknown> & {
       title?: string;
       model?: string;
       endpoint_id?: string;
-      external_agent_id?: string;
     };
-    const externalAgentId = typeof raw.external_agent_id === 'string' ? raw.external_agent_id : undefined;
-    if (externalAgentId) {
-      const agent = await deps.agentResourceService.getAgent(route.workspaceId, route.projectId, externalAgentId);
-      if (!agent || agent.status !== 'enabled') {
-        json(res, 422, { error_code: 'VALIDATION_ERROR', message: 'external_agent_unavailable' });
-        return true;
-      }
-      const created = await deps.chatResourceService.createSession({
-        workspaceId: route.workspaceId,
-        projectId: route.projectId,
-        ownerUserId: user.id,
-        title: raw.title,
-        model: raw.model ?? 'external-agent',
-        endpointId: raw.endpoint_id ?? '',
-        externalAgentId,
-      });
-      if (agent.mode !== 'internal') {
-        json(res, 201, created);
-        return true;
-      }
-      try {
-        const resolved = await ensureInternalChatSessionWorkspace({
-          deps,
-          session: created,
-          agent,
-        });
-        json(res, 201, resolved.session);
-      } catch (error) {
-        await deps.chatResourceService.deleteSession(route.workspaceId, route.projectId, created.id).catch(() => undefined);
-        const mapped = mapFileLibraryInfraError(error);
-        json(res, mapped.statusCode, {
-          error_code: mapped.errorCode,
-          message: mapped.message,
-        });
-      }
+    if (hasUnsupportedExternalAgentField(raw)) {
+      json(res, 400, { error_code: 'unsupported_field', message: 'external_agent_id' });
       return true;
     }
     const endpoints = await deps.endpointResourceService.listEndpoints(route.workspaceId, route.projectId);
@@ -500,14 +346,11 @@ export async function handleChatNonStreamRoute(args: ChatNonStreamHandlerArgs): 
 
   if (route.kind === 'chatSessionItem' && method === 'PATCH') {
     const raw = (await readBody(req)) as Record<string, unknown>;
-    const patch = { ...raw };
-    if (typeof raw.external_agent_id === 'string' && raw.external_agent_id.length > 0) {
-      const agent = await deps.agentResourceService.getAgent(route.workspaceId, route.projectId, raw.external_agent_id);
-      if (!agent || agent.status !== 'enabled') {
-        json(res, 422, { error_code: 'VALIDATION_ERROR', message: 'external_agent_unavailable' });
-        return true;
-      }
+    if (hasUnsupportedExternalAgentField(raw)) {
+      json(res, 400, { error_code: 'unsupported_field', message: 'external_agent_id' });
+      return true;
     }
+    const patch = { ...raw };
     const session = await deps.chatResourceService.getSessionForUser(
       route.workspaceId,
       route.projectId,
@@ -557,23 +400,6 @@ export async function handleChatNonStreamRoute(args: ChatNonStreamHandlerArgs): 
     if (!deleted) {
       json(res, 404, { error_code: 'RESOURCE_NOT_FOUND', message: 'chat_session_not_found' });
       return true;
-    }
-    const agent = session.external_agent_id
-      ? await deps.agentResourceService.getAgent(
-        route.workspaceId,
-        route.projectId,
-        session.external_agent_id,
-      )
-      : null;
-    if (agent?.mode === 'internal') {
-      const internalWorkloadCoordinator = resolveInternalWorkloadCoordinator(deps);
-      if (internalWorkloadCoordinator) {
-        await internalWorkloadCoordinator.requestHardTeardown({
-          workspaceId: route.workspaceId,
-          projectId: route.projectId,
-          workloadId: sanitizeWorkloadId(route.sessionId),
-        });
-      }
     }
     json(res, 200, { success: true });
     return true;
@@ -635,22 +461,8 @@ export async function handleChatNonStreamRoute(args: ChatNonStreamHandlerArgs): 
         ...(stopEscalationReason ? { stopEscalationReason } : {}),
       },
     );
-    if (
-      stopTransition.hardTeardownDispatchRequired
-      && capability.supportsTerminate
-    ) {
-      await dispatchInternalChatHardTeardown({
-        deps,
-        workspaceId: route.workspaceId,
-        projectId: route.projectId,
-        sessionId: route.sessionId,
-        epoch: execution?.streamId ?? currentExecution?.streamId,
-      });
-    }
     const stopMode = execution?.stopMode ?? effectiveStopMode;
-    const state: StopState = hasIncompleteSessionHardTeardown(execution)
-      ? 'terminating'
-      : execution?.status === 'terminating'
+    const state: StopState = execution?.status === 'terminating'
       ? 'terminating'
       : execution?.status === 'stopping'
         ? 'stopping'
@@ -783,26 +595,14 @@ export async function handleChatNonStreamRoute(args: ChatNonStreamHandlerArgs): 
     }
     const attachmentSnapshots = [];
     if (inputRefs.length > 0) {
-      if (session.external_agent_id) {
-        const agent = await deps.agentResourceService.getAgent(
-          route.workspaceId,
-          route.projectId,
-          session.external_agent_id,
-        );
-        if (!agent || !agent.capabilities?.multimodal_completion) {
-          json(res, 422, { error_code: 'VALIDATION_ERROR', message: 'external_agent_not_multimodal' });
-          return true;
-        }
-      } else {
-        const endpoint = await deps.endpointResourceService.getEndpoint(
-          route.workspaceId,
-          route.projectId,
-          session.endpoint_id,
-        );
-        if (!endpoint || !endpointSupportsMultimodal(endpoint)) {
-          json(res, 422, { error_code: 'VALIDATION_ERROR', message: 'chat_endpoint_not_multimodal' });
-          return true;
-        }
+      const endpoint = await deps.endpointResourceService.getEndpoint(
+        route.workspaceId,
+        route.projectId,
+        session.endpoint_id,
+      );
+      if (!endpoint || !endpointSupportsMultimodal(endpoint)) {
+        json(res, 422, { error_code: 'VALIDATION_ERROR', message: 'chat_endpoint_not_multimodal' });
+        return true;
       }
       const resolved = await resolveChatInputAttachments(
         deps,
@@ -1134,14 +934,6 @@ export async function handleChatNonStreamRoute(args: ChatNonStreamHandlerArgs): 
       execution.streamId === route.streamId &&
       isActiveStopState(execution.status),
     );
-    const executionHasHardTeardownDebt = Boolean(
-      execution &&
-      execution.workspaceId === route.workspaceId &&
-      execution.projectId === route.projectId &&
-      execution.sessionId === route.sessionId &&
-      execution.streamId === route.streamId &&
-      hasIncompleteSessionHardTeardown(execution),
-    );
     const registryCanStop = Boolean(
       !execution &&
       registry &&
@@ -1150,26 +942,12 @@ export async function handleChatNonStreamRoute(args: ChatNonStreamHandlerArgs): 
       registry.sessionId === route.sessionId &&
       isActiveStreamRegistryStatus(registry.status),
     );
-    const canStop = Boolean(activeRunning) || executionCanStop || registryCanStop || executionHasHardTeardownDebt;
-    let sessionForCapability: ChatSessionRecord | null = null;
-    if (
-      canStop &&
-      requestedMode === 'terminate' &&
-      !(execution?.transport === 'agent_runner' && execution.internalAgent === true) &&
-      deps.chatResourceService
-    ) {
-      sessionForCapability = await deps.chatResourceService.getSessionForUser(
-        route.workspaceId,
-        route.projectId,
-        route.sessionId,
-        user.id,
-      ).catch(() => null);
-    }
+    const canStop = Boolean(activeRunning) || executionCanStop || registryCanStop;
     const capability = await resolveStopCapability({
       deps,
       workspaceId: route.workspaceId,
       projectId: route.projectId,
-      session: sessionForCapability,
+      session: null,
       execution,
       allowAgentLookup: requestedMode === 'terminate',
     });
@@ -1185,7 +963,7 @@ export async function handleChatNonStreamRoute(args: ChatNonStreamHandlerArgs): 
     const stopEscalationReason = requestedMode === 'terminate' && effectiveStopMode !== 'terminate'
       ? capability.unavailableReason
       : undefined;
-    const stopTransition = await requestSessionExecutionStopTransition(deps.cache, {
+    await requestSessionExecutionStopTransition(deps.cache, {
       workspaceId: route.workspaceId,
       projectId: route.projectId,
       sessionId: route.sessionId,
@@ -1195,39 +973,25 @@ export async function handleChatNonStreamRoute(args: ChatNonStreamHandlerArgs): 
       ...(stopEscalationReason ? { stopEscalationReason } : {}),
     });
     const activeStatus = effectiveStopMode === 'terminate' ? 'terminating' : 'stopping';
-    if (!executionHasHardTeardownDebt) {
-      await writeStreamRegistry(
-        deps.cache,
-        {
-          streamId: route.streamId,
-          workspaceId: route.workspaceId,
-          projectId: route.projectId,
-          sessionId: route.sessionId,
-          status: activeStatus,
-          updatedAt: new Date().toISOString(),
-        },
-        STREAM_REGISTRY_TTL_SECONDS,
-      );
-    }
+    await writeStreamRegistry(
+      deps.cache,
+      {
+        streamId: route.streamId,
+        workspaceId: route.workspaceId,
+        projectId: route.projectId,
+        sessionId: route.sessionId,
+        status: activeStatus,
+        updatedAt: new Date().toISOString(),
+      },
+      STREAM_REGISTRY_TTL_SECONDS,
+    );
     if (activeRunning) {
       activeRunning.status = activeStatus;
       activeRunning.stopReason = 'user_stop';
       activeRunning.abortController.abort();
     }
-    if (
-      stopTransition.hardTeardownDispatchRequired
-      && capability.supportsTerminate
-    ) {
-      await dispatchInternalChatHardTeardown({
-        deps,
-        workspaceId: route.workspaceId,
-        projectId: route.projectId,
-        sessionId: route.sessionId,
-        epoch: route.streamId,
-      });
-    }
     json(res, 202, buildStopResponse({ streamId: route.streamId }, {
-      state: executionHasHardTeardownDebt ? 'terminating' : activeStatus,
+      state: activeStatus,
       stopMode: effectiveStopMode,
       capability,
     }));

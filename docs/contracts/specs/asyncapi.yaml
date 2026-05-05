@@ -1,21 +1,21 @@
 asyncapi: 3.0.0
 info:
-  title: MBOS External Agent Execution Channel
+  title: MBOS Agent Task Runner Execution Channel
   version: 1.0.0
-  description: Runtime WebSocket protocol between MBOS and external agents.
+  description: Runtime WebSocket protocol between MBOS and task-only Agent Runners.
 servers:
   local:
     host: localhost:20000
     pathname: /api/v1/agent-execution/ws
     protocol: ws
-    description: 'Use query parameter agent_id and header Authorization: Bearer ask_*'
+    description: 'Use query parameter agent_runner_id and header Authorization: Bearer ask_*'
 channels:
   agentRuntime:
-    address: /api/v1/agent-execution/ws?agent_id={agentId}
+    address: /api/v1/agent-execution/ws?agent_runner_id={agentRunnerId}
     parameters:
-      agentId:
-        description: Agent identifier
-        location: $message.header#/agent_id
+      agentRunnerId:
+        description: Agent Runner identifier
+        location: $message.header#/agent_runner_id
     messages:
       serverHello:
         $ref: '#/components/messages/serverHello'
@@ -74,7 +74,7 @@ components:
           type: string
         request_id:
           type: string
-        session_id:
+        runner_session_id:
           type: string
         timestamp:
           type: string
@@ -142,6 +142,7 @@ components:
           type: string
         task_relative_path:
           type: string
+          description: Relative artifact path under `.artifacts`.
         artifact_type:
           type: string
           enum:
@@ -207,6 +208,8 @@ components:
             const: server.request.start
           request_id:
             type: string
+          runner_session_id:
+            type: string
           timestamp:
             type: string
             format: date-time
@@ -228,6 +231,7 @@ components:
                   additionalProperties: true
               execution_context:
                 type: object
+                description: Public TaskExecutionContext for task runs and terminal startup; terminal contexts use task_id, runner_id, runner_session_scope and must not include legacy top-level session_id, agent_id, or interaction_kind.
                 additionalProperties: false
                 properties:
                   workspace_id:
@@ -237,6 +241,8 @@ components:
                   task_id:
                     type: string
                   run_id:
+                    type: string
+                  runner_id:
                     type: string
                   username:
                     type: string
@@ -249,8 +255,9 @@ components:
                   wire_api:
                     type: string
                     enum:
-                    - chat
-                    - responses
+                    - openai_chat_completions
+                    - openai_responses
+                    - anthropic_messages
                   model:
                     type: string
                   model_context_window:
@@ -286,11 +293,11 @@ components:
                         enum:
                         - freeform
                         - function
-                  interaction_kind:
+                  runner_session_scope:
                     type: string
                     enum:
-                      - chat
-                      - notebook
+                      - agent_presence
+                      - task_execution
                   task_inputs:
                     type: array
                     items:
@@ -348,6 +355,8 @@ components:
           type:
             const: server.request.cancel
           request_id:
+            type: string
+          runner_session_id:
             type: string
           timestamp:
             type: string
@@ -488,7 +497,7 @@ components:
                 type: string
     agentResponseEvent:
       name: agent.response.event
-      summary: Structured execution telemetry event (notebook/chat diagnostics and
+      summary: Structured execution telemetry event (agent task diagnostics and
         expandable trace UI)
       payload:
         type: object
@@ -509,8 +518,8 @@ components:
             $ref: '#/components/schemas/AgentResponseEventPayload'
     agentResponseArtifact:
       name: agent.response.artifact
-      summary: Artifact emitted by the runner for notebook task outputs discovered
-        in the task workspace artifacts directory.
+      summary: Artifact emitted by the runner for agent task outputs discovered
+        in the task workspace `.artifacts` directory.
       payload:
         type: object
         required:

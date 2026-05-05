@@ -6,8 +6,8 @@ import {
   createCredentialViaUi,
   createEndpointViaApi,
   createFileLibraryViaUi,
-  createInternalCodexAgent,
-  createNotebookTaskViaApi,
+  createInternalAgentTaskRunnerViaApi,
+  createAgentTaskViaApi,
   createProjectInWorkspace,
   mountFileLibraryLocally,
   KEYCLOAK_DEV_ADMIN_PASSWORD,
@@ -18,9 +18,9 @@ import {
   sanitizeWorkloadId,
   requestTaskWorkspaceAccess,
   resolveMountedTaskRoot,
-  sendTaskMessage,
+  startAgentTaskRunViaApi,
+  waitForAgentTaskExecutionOutcome,
   waitForJuicefsCsiReady,
-  waitForNotebookExecutionOutcome,
   waitForWorkloadPodDeleted,
   waitForWorkloadPodIdentity,
   waitForWorkloadPodPresent,
@@ -49,7 +49,7 @@ const INTERNAL_CLIENT_MOUNT_OVERRIDES = {
   storageEndpointOverride: process.env.INTEGRATION_CLIENT_JUICEFS_STORAGE_ENDPOINT_OVERRIDE?.trim() || undefined,
 } as const;
 
-function buildNotebookCommand(token: string, fileName: string): string {
+function buildAgentTaskIntent(token: string, fileName: string): string {
   return [
     'Run the following shell command exactly, then reply with the token and filename.',
     '```bash',
@@ -80,7 +80,7 @@ test.describe('@lane-real internal sandbox reclaim', () => {
       upstreamBaseUrl: BACKEND_REAL_ANTHROPIC_BASE_URL,
       credentialName,
     });
-    const internalAgent = await createInternalCodexAgent(page, {
+    await createInternalAgentTaskRunnerViaApi(page, {
       workspaceId: 'ws_default',
       projectId,
       endpointId,
@@ -91,22 +91,21 @@ test.describe('@lane-real internal sandbox reclaim', () => {
 
     await waitForJuicefsCsiReady({ namespace: process.env.JUICEFS_CSI_NAMESPACE?.trim() || "kube-system" });
 
-    const taskId1 = await createNotebookTaskViaApi({
+    const taskId1 = await createAgentTaskViaApi({
       page,
       workspaceId: 'ws_default',
       projectId,
       title: `Idle Reclaim Task ${Date.now()}`,
-      agentId: internalAgent.agentId,
       fileLibraryId,
     });
     const token1 = `INTERNAL_IDLE_RECLAIM_${Date.now()}`;
     const firstArtifactName = `idle-reclaim-${Date.now()}.md`;
-    const { assistantMessageId: firstAssistantMessageId } = await sendTaskMessage({
+    const firstRun = await startAgentTaskRunViaApi({
       page,
       workspaceId: 'ws_default',
       projectId,
       taskId: taskId1,
-      content: buildNotebookCommand(token1, firstArtifactName),
+      intent: buildAgentTaskIntent(token1, firstArtifactName),
     });
 
     const workloadId1 = sanitizeWorkloadId(taskId1);
@@ -124,13 +123,14 @@ test.describe('@lane-real internal sandbox reclaim', () => {
       INTERNAL_CLIENT_MOUNT_OVERRIDES,
     );
     try {
-      await waitForNotebookExecutionOutcome({
+      await waitForAgentTaskExecutionOutcome({
         page,
         workspaceId: 'ws_default',
         projectId,
         taskId: taskId1,
         token: token1,
-        assistantMessageId: firstAssistantMessageId,
+        runnerOutputActivityId: firstRun.runnerOutputActivityId,
+        runId: firstRun.runId,
         artifactPath: path.join(resolveMountedTaskRoot(localMount1.mountPath, {
           libraryRootPath: workspaceAccess1.library_root_path,
         }),
@@ -157,21 +157,20 @@ test.describe('@lane-real internal sandbox reclaim', () => {
       projectId,
       `Internal Reclaim Restart ${Date.now()}`,
     );
-    const taskId2 = await createNotebookTaskViaApi({
+    const taskId2 = await createAgentTaskViaApi({
       page,
       workspaceId: 'ws_default',
       projectId,
       title: `Restart Reclaim Task ${Date.now()}`,
-      agentId: internalAgent.agentId,
       fileLibraryId: restartFileLibraryId,
     });
     const token2 = `INTERNAL_RESTART_RECLAIM_${Date.now()}`;
-    await sendTaskMessage({
+    await startAgentTaskRunViaApi({
       page,
       workspaceId: 'ws_default',
       projectId,
       taskId: taskId2,
-      content: buildNotebookCommand(token2, `restart-reclaim-${Date.now()}.md`),
+      intent: buildAgentTaskIntent(token2, `restart-reclaim-${Date.now()}.md`),
     });
 
     const workloadId2 = sanitizeWorkloadId(taskId2);

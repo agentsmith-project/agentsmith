@@ -333,6 +333,28 @@ describe('api-entry-node project routes integration', () => {
     expect(listBefore.status).toBe(200);
     expect(await listBefore.json()).toEqual({ items: [] });
 
+    const legacyCreateRes = await apiFetch(baseUrl, '/api/v1/workspaces/ws_default/projects', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        name: 'Legacy Project',
+        visibility: 'private',
+        join_policy: 'approval_required',
+        execution_preferences_json: { notebook_endpoint_id: 'ep_notebook' },
+      }),
+    });
+    expect(legacyCreateRes.status).toBe(400);
+    const legacyCreateBody = (await legacyCreateRes.json()) as {
+      error_code?: string;
+      message?: string;
+    };
+    expect(legacyCreateBody.error_code).toBe('VALIDATION_ERROR');
+    expect(legacyCreateBody.message).toContain('execution_preferences_json');
+
+    const listAfterLegacyCreate = await apiFetch(baseUrl, '/api/v1/workspaces/ws_default/projects');
+    expect(listAfterLegacyCreate.status).toBe(200);
+    expect(await listAfterLegacyCreate.json()).toEqual({ items: [] });
+
     const createRes = await apiFetch(baseUrl, '/api/v1/workspaces/ws_default/projects', {
       method: 'POST',
       headers: {
@@ -385,6 +407,28 @@ describe('api-entry-node project routes integration', () => {
     expect(gotAfterPatch.name).toBe('Renamed Project');
     expect(gotAfterPatch.description).toBe('Updated from patch');
 
+    const legacyExecutionPrefsRes = await apiFetch(baseUrl, `/api/v1/workspaces/ws_default/projects/${created.id}`, {
+      method: 'PATCH',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        name: 'Legacy Should Fail',
+        execution_preferences_json: { notebook_endpoint_id: 'ep_notebook' },
+      }),
+    });
+    expect(legacyExecutionPrefsRes.status).toBe(400);
+    const legacyExecutionPrefsBody = (await legacyExecutionPrefsRes.json()) as {
+      error_code?: string;
+      message?: string;
+    };
+    expect(legacyExecutionPrefsBody.error_code).toBe('VALIDATION_ERROR');
+    expect(legacyExecutionPrefsBody.message).toContain('execution_preferences_json');
+
+    const gotAfterLegacyPatch = await apiFetch(baseUrl, `/api/v1/workspaces/ws_default/projects/${created.id}`);
+    expect(gotAfterLegacyPatch.status).toBe(200);
+    const unchanged = (await gotAfterLegacyPatch.json()) as { name: string; execution_preferences_json?: unknown };
+    expect(unchanged.name).toBe('Renamed Project');
+    expect(unchanged).not.toHaveProperty('execution_preferences_json');
+
     const deleteRes = await apiFetch(baseUrl, `/api/v1/workspaces/ws_default/projects/${created.id}`, {
       method: 'DELETE',
     });
@@ -430,7 +474,7 @@ describe('api-entry-node project routes integration', () => {
       ]),
     );
     expect(got.permissions).toContain('project:endpoint:use');
-    expect(got.permissions).toContain('project:agent:manage');
+    expect(got.permissions).toContain('project:agent_runner:manage');
     expect(got.permissions).toContain('project:governance:update');
     expect(got.membership_status).toBe('active');
 

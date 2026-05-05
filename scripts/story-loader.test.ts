@@ -62,7 +62,7 @@ function buildJsonFrontmatterStory(overrides: Record<string, unknown> = {}): str
       },
     ],
     runtimeData: {
-      notebook: {
+      agent_tasks: {
         external_create: {
           turnOne: {
             prompt: 'Create notes/external_story.txt and reply with EXT_T1_OK.',
@@ -123,7 +123,7 @@ describe('story loader', () => {
       },
     ]);
     expect(story.runtimeData).toEqual({
-      notebook: {
+      agent_tasks: {
         external_create: {
           turnOne: {
             prompt: 'Create notes/external_story.txt and reply with EXT_T1_OK.',
@@ -133,7 +133,7 @@ describe('story loader', () => {
         },
       },
     });
-    expect(Object.keys(story.runtimeData?.notebook?.external_create ?? {})).toEqual(['turnOne']);
+    expect(Object.keys(story.runtimeData?.agent_tasks?.external_create ?? {})).toEqual(['turnOne']);
   });
 
   it.each([
@@ -207,48 +207,48 @@ describe('story loader', () => {
     });
   });
 
-  it('keeps notebook lifecycle visual scenes anchored to same-surface running and terminal recovery contracts', async () => {
-    const story = await loadCommittedStoryDefinitionById('mock-lane-notebook-task-lifecycle');
-    const running = getRequiredStoryVisualSceneBundle(story, 'notebook-task-running');
+  it('keeps agent task lifecycle visual scenes anchored to same-surface running and terminal recovery contracts', async () => {
+    const story = await loadCommittedStoryDefinitionById('mock-lane-agent-task-lifecycle');
+    const running = getRequiredStoryVisualSceneBundle(story, 'agent-task-running');
     const hiddenTerminalBlocked = getRequiredStoryVisualSceneBundle(
       story,
-      'notebook-hidden-terminal-blocked',
+      'agent-task-hidden-terminal-blocked',
     );
     const terminalTruthUnavailable = getRequiredStoryVisualSceneBundle(
       story,
-      'notebook-terminal-truth-unavailable',
+      'agent-task-terminal-truth-unavailable',
     );
 
     expect(listStoryVisualSceneIds(story)).toEqual(listStorySceneIds(story));
-    expect(running.storyScene.stableMarkers).toContain('notebook__run-active-cancel');
+    expect(running.storyScene.stableMarkers).toContain('agent-tasks__message-active-run-cancel');
     expect(running.visualScene.semanticAssertions?.requiredViewportTestIds).toEqual(
-      expect.arrayContaining(['notebook__run-active-cancel']),
+      expect.arrayContaining(['agent-tasks__message-active-run-cancel']),
     );
 
     expect(hiddenTerminalBlocked.storyScene.stableMarkers).toEqual(
       expect.arrayContaining([
-        'notebook__task-terminal-status-action',
-        'notebook__task-terminal-status-end-all',
+        'agent-tasks__task-terminal-status-action',
+        'agent-tasks__task-terminal-status-end-all',
       ]),
     );
     expect(hiddenTerminalBlocked.visualScene.semanticAssertions?.requiredViewportTestIds).toEqual(
       expect.arrayContaining([
-        'notebook__task-terminal-status-action',
-        'notebook__task-terminal-status-end-all',
+        'agent-tasks__task-terminal-status-action',
+        'agent-tasks__task-terminal-status-end-all',
       ]),
     );
     expect(hiddenTerminalBlocked.visualScene.semanticAssertions?.requiredViewportTestIds).not.toContain(
-      'notebook__conversation-blocked-action',
+      'agent-tasks__conversation-blocked-action',
     );
 
     expect(terminalTruthUnavailable.storyScene.stableMarkers).toContain(
-      'notebook__task-terminal-truth-unavailable-retry',
+      'agent-tasks__task-terminal-truth-unavailable-retry',
     );
     expect(terminalTruthUnavailable.visualScene.semanticAssertions?.requiredViewportTestIds).toEqual(
-      expect.arrayContaining(['notebook__task-terminal-truth-unavailable-retry']),
+      expect.arrayContaining(['agent-tasks__task-terminal-truth-unavailable-retry']),
     );
     expect(terminalTruthUnavailable.visualScene.semanticAssertions?.requiredViewportTestIds).not.toContain(
-      'notebook__conversation-blocked-action',
+      'agent-tasks__conversation-blocked-action',
     );
   });
 

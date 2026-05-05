@@ -180,16 +180,16 @@ describe('matchProjectsRoute', () => {
       projectId: 'proj_1',
     });
   });
-  it('matches agent management and key routes', () => {
+  it('matches agent runner management and key routes only on the canonical public namespace', () => {
     expect(
-      matchProjectsRoute('/api/v1/workspaces/ws_default/projects/proj_1/agents'),
+      matchProjectsRoute('/api/v1/workspaces/ws_default/projects/proj_1/agent-runners'),
     ).toEqual({
       kind: 'agents',
       workspaceId: 'ws_default',
       projectId: 'proj_1',
     });
     expect(
-      matchProjectsRoute('/api/v1/workspaces/ws_default/projects/proj_1/agents/ag_1'),
+      matchProjectsRoute('/api/v1/workspaces/ws_default/projects/proj_1/agent-runners/ag_1'),
     ).toEqual({
       kind: 'agentItem',
       workspaceId: 'ws_default',
@@ -197,7 +197,7 @@ describe('matchProjectsRoute', () => {
       agentId: 'ag_1',
     });
     expect(
-      matchProjectsRoute('/api/v1/workspaces/ws_default/projects/proj_1/agents/ag_1/connection-info'),
+      matchProjectsRoute('/api/v1/workspaces/ws_default/projects/proj_1/agent-runners/ag_1/connection-info'),
     ).toEqual({
       kind: 'agentConnectionInfo',
       workspaceId: 'ws_default',
@@ -205,7 +205,7 @@ describe('matchProjectsRoute', () => {
       agentId: 'ag_1',
     });
     expect(
-      matchProjectsRoute('/api/v1/workspaces/ws_default/projects/proj_1/agents/ag_1/keys/key_1'),
+      matchProjectsRoute('/api/v1/workspaces/ws_default/projects/proj_1/agent-runners/ag_1/keys/key_1'),
     ).toEqual({
       kind: 'agentKeyItem',
       workspaceId: 'ws_default',
@@ -213,6 +213,10 @@ describe('matchProjectsRoute', () => {
       agentId: 'ag_1',
       keyId: 'key_1',
     });
+
+    expect(matchProjectsRoute('/api/v1/workspaces/ws_default/projects/proj_1/agents')).toBeNull();
+    expect(matchProjectsRoute('/api/v1/workspaces/ws_default/projects/proj_1/agents/ag_1')).toBeNull();
+    expect(matchProjectsRoute('/api/v1/workspaces/ws_default/projects/proj_1/agents/ag_1/keys')).toBeNull();
   });
 
   it('matches file library control plane and browser routes', () => {
@@ -604,6 +608,30 @@ describe('matchProjectsRoute', () => {
       taskId: 'task_1',
       terminalSessionId: 'term_1',
     });
+  });
+
+  it('matches Agent Task activity and run routes without exposing legacy task messages', () => {
+    expect(
+      matchProjectsRoute('/api/v1/workspaces/ws_default/projects/proj_1/tasks/task_1/activity'),
+    ).toEqual({
+      kind: 'taskActivity',
+      workspaceId: 'ws_default',
+      projectId: 'proj_1',
+      taskId: 'task_1',
+    });
+
+    expect(
+      matchProjectsRoute('/api/v1/workspaces/ws_default/projects/proj_1/tasks/task_1/runs'),
+    ).toEqual({
+      kind: 'taskRuns',
+      workspaceId: 'ws_default',
+      projectId: 'proj_1',
+      taskId: 'task_1',
+    });
+
+    expect(
+      matchProjectsRoute('/api/v1/workspaces/ws_default/projects/proj_1/tasks/task_1/messages'),
+    ).toBeNull();
   });
 
   it('returns null for unknown route', () => {

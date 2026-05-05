@@ -208,6 +208,9 @@ const COMMAND_ORDER = [
 ] as const;
 const REAL_VERIFY_COMMAND = 'npm run verify:real';
 const RELEASE_REAL_VERIFY_COMMAND = 'npm run verify:release-real';
+const AGENT_TASK_RUNNER_FAST_COMMAND = 'npm run test:agent-task:runner:fast';
+const AGENT_TASK_RUNNER_BACKEND_REAL_COMMAND = 'npm run test:agent-task:runner:backend-real';
+const AGENT_TASK_INTEGRATION_COMMAND = 'npm run test:e2e:integration:agent-task';
 const GOVERNED_REAL_VERIFY_COMMAND = 'npm run verify -- --goal=real --run';
 const GOVERNED_RELEASE_REAL_VERIFY_COMMAND = 'npm run verify -- --goal=release-real --run';
 const GOVERNED_VERIFY_COMMAND_BY_INTERNAL_ALIAS: Record<string, string> = {
@@ -303,15 +306,16 @@ function isGeneratedStorySpec(filePath: string, catalog: VerificationCatalog): b
 }
 
 const RUNNER_CONTEXT_CREDENTIAL_PATH_PATTERNS: readonly RegExp[] = [
-  /^scripts\/run-external-runner-dev\.sh$/,
-  /^scripts\/run-internal-notebook-real-gate\.sh$/,
+  /^scripts\/skills-runtime-/,
+  /^scripts\/.*agent-task.*runner/i,
+  /^scripts\/run-internal-agent-task-real-gate\.sh$/,
   /^scripts\/notebook-/,
   /^scripts\/task-terminal/,
   /^scripts\/workspace-shared-context/,
   /^scripts\/.*credential/i,
-  /^e2e\/integration-notebook-terminal/,
+  /^e2e\/integration-agent-task-terminal/,
   /^packages\/agent-runner\/src\//,
-  /^packages\/notebook-codex-runner\/src\//,
+  /^packages\/agent-task-runner\/src\//,
   /^packages\/api-entry-node\/src\/(notebook-execution-orchestrator|context-store|context-route-handler|managed-credential-resolver|agent-execution-service|agent-runner-profile)\.[^/]+$/,
   /^src\/components\/context\//,
   /^src\/components\/credentials\//,
@@ -1188,7 +1192,7 @@ export function buildVerificationPlan(input: BuildVerificationPlanInput = {}): V
 
     if (isRunnerContextOrCredentialPath(changedFile)) {
       mapped = true;
-      const action = `Run ${GOVERNED_REAL_VERIFY_COMMAND} with runner, Context Store, and credential owner review (runner_context_credential).`;
+      const action = `Run ${AGENT_TASK_RUNNER_FAST_COMMAND}, ${AGENT_TASK_RUNNER_BACKEND_REAL_COMMAND}, ${AGENT_TASK_INTEGRATION_COMMAND}, then ${GOVERNED_REAL_VERIFY_COMMAND} with runner, Context Store, and credential owner review (runner_context_credential).`;
       const surface = 'runner/context-store/credentials';
       const impactedStories = stories.filter((story) => story.lane === 'backend-real');
       const impactSource: VerificationStoryImpactSource = {
@@ -1202,6 +1206,9 @@ export function buildVerificationPlan(input: BuildVerificationPlanInput = {}): V
       accumulator.surfaces.add(surface);
       accumulator.broadImpact = true;
       accumulator.manualReviewRequired = true;
+      accumulator.commands.add(AGENT_TASK_RUNNER_FAST_COMMAND);
+      accumulator.commands.add(AGENT_TASK_RUNNER_BACKEND_REAL_COMMAND);
+      accumulator.commands.add(AGENT_TASK_INTEGRATION_COMMAND);
       accumulator.reasons.push(`${changedFile} touches runner, Context Store, or credential behavior.`);
       pushUnique(accumulator.nextActions, action);
       recordChangedFileImpact(accumulator, {

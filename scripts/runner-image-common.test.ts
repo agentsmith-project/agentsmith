@@ -45,14 +45,14 @@ exit 0
 
   mkdirSync(binDir, { recursive: true });
   writeExecutable(path.join(binDir, 'docker'), dockerScript);
-  writeFile(path.join(tempRoot, 'infra', 'runner', 'Dockerfile.notebook-codex-runner-base'), 'ARG NODE_BASE_IMAGE\nFROM ${NODE_BASE_IMAGE}\n');
-  writeFile(path.join(tempRoot, 'infra', 'runner', 'Dockerfile.notebook-codex-runner'), 'ARG RUNNER_BASE_IMAGE\nFROM ${RUNNER_BASE_IMAGE}\n');
+  writeFile(path.join(tempRoot, 'infra', 'runner', 'Dockerfile.agent-task-runner-base'), 'ARG NODE_BASE_IMAGE\nFROM ${NODE_BASE_IMAGE}\n');
+  writeFile(path.join(tempRoot, 'infra', 'runner', 'Dockerfile.agent-task-runner'), 'ARG RUNNER_BASE_IMAGE\nFROM ${RUNNER_BASE_IMAGE}\n');
 
   const script = `
 set -euo pipefail
 ROOT_DIR="${repoRoot}"
 source "${repoRoot}/scripts/lib/runner-image-common.sh"
-build_runner_image notebook agentsmith-notebook-codex-runner-base:local agentsmith-notebook-codex-runner:local "" 1 1 "${tempRoot}"
+build_runner_image agent-task agentsmith-agent-task-runner-base:local agentsmith-agent-task-runner:local "" 1 1 "${tempRoot}"
 `;
   const result = spawnSync('bash', ['-lc', script], {
     cwd: repoRoot,
@@ -91,14 +91,14 @@ describe('runner image build base fallback', () => {
     tempRoots.push(result.tempRoot);
 
     expect(result.status).toBe(0);
-    expect(result.stderr).toContain('base image build failed for notebook with NODE_BASE_IMAGE=node:24.14.1-bookworm');
+    expect(result.stderr).toContain('base image build failed for agent-task with NODE_BASE_IMAGE=node:24.14.1-bookworm');
     expect(result.stderr).toContain('401 Unauthorized');
     expect(result.stderr).toContain(
-      'built notebook runner base image with fallback NODE_BASE_IMAGE=public.ecr.aws/docker/library/node:24.14.1-bookworm',
+      'built agent-task runner base image with fallback NODE_BASE_IMAGE=public.ecr.aws/docker/library/node:24.14.1-bookworm',
     );
     expect(result.dockerLog).toContain('NODE_BASE_IMAGE=node:24.14.1-bookworm');
     expect(result.dockerLog).toContain('NODE_BASE_IMAGE=public.ecr.aws/docker/library/node:24.14.1-bookworm');
-    expect(result.dockerLog).toContain('RUNNER_BASE_IMAGE=agentsmith-notebook-codex-runner-base:local');
+    expect(result.dockerLog).toContain('RUNNER_BASE_IMAGE=agentsmith-agent-task-runner-base:local');
   });
 
   it('fails closed when fallback base images are explicitly disabled', () => {

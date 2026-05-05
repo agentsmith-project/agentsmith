@@ -2,7 +2,40 @@ import { describe, expect, it } from 'vitest';
 import { requiredProjectPermissions } from './required-project-permissions.js';
 
 describe('requiredProjectPermissions', () => {
-  it('requires both task-use and terminal-use permissions for creating new terminal sessions', () => {
+  it('requires Agent task use for task create/run/update/archive routes without legacy agent tokens', () => {
+    expect(
+      requiredProjectPermissions(
+        { kind: 'tasks', workspaceId: 'ws_default', projectId: 'proj_1' },
+        'POST',
+      ),
+    ).toEqual(['project:agent_task:use']);
+
+    expect(
+      requiredProjectPermissions(
+        {
+          kind: 'taskMessages',
+          workspaceId: 'ws_default',
+          projectId: 'proj_1',
+          taskId: 'task_1',
+        },
+        'POST',
+      ),
+    ).toEqual(['project:agent_task:use']);
+
+    expect(
+      requiredProjectPermissions(
+        {
+          kind: 'taskItem',
+          workspaceId: 'ws_default',
+          projectId: 'proj_1',
+          taskId: 'task_1',
+        },
+        'PATCH',
+      ),
+    ).toEqual(['project:agent_task:use']);
+  });
+
+  it('requires Agent task terminal permission for creating new terminal sessions', () => {
     expect(
       requiredProjectPermissions(
         {
@@ -13,10 +46,10 @@ describe('requiredProjectPermissions', () => {
         },
         'POST',
       ),
-    ).toEqual(['project:endpoint:use', 'project:terminal:use']);
+    ).toEqual(['project:agent_task:terminal']);
   });
 
-  it('requires terminal-use for terminal routes that can issue interactive websocket tickets', () => {
+  it('requires Agent task terminal permission for terminal routes that can issue interactive websocket tickets', () => {
     expect(
       requiredProjectPermissions(
         {
@@ -28,7 +61,7 @@ describe('requiredProjectPermissions', () => {
         },
         'GET',
       ),
-    ).toEqual(['project:endpoint:use', 'project:terminal:use']);
+    ).toEqual(['project:agent_task:terminal']);
 
     expect(
       requiredProjectPermissions(
@@ -40,10 +73,10 @@ describe('requiredProjectPermissions', () => {
         },
         'GET',
       ),
-    ).toEqual(['project:endpoint:use', 'project:terminal:use']);
+    ).toEqual(['project:agent_task:terminal']);
   });
 
-  it('keeps deleting existing terminal session metadata on task-use access', () => {
+  it('keeps terminal session delete behind Agent task terminal permission', () => {
     expect(
       requiredProjectPermissions(
         {
@@ -55,7 +88,44 @@ describe('requiredProjectPermissions', () => {
         },
         'DELETE',
       ),
-    ).toEqual(['project:endpoint:use']);
+    ).toEqual(['project:agent_task:terminal']);
+  });
+
+  it('requires Agent Runner read/manage permissions without legacy agent tokens', () => {
+    expect(
+      requiredProjectPermissions(
+        { kind: 'agents', workspaceId: 'ws_default', projectId: 'proj_1' },
+        'GET',
+      ),
+    ).toEqual(['project:agent_runner:read']);
+
+    expect(
+      requiredProjectPermissions(
+        { kind: 'agentDiagnostics', workspaceId: 'ws_default', projectId: 'proj_1', agentId: 'ag_1' },
+        'GET',
+      ),
+    ).toEqual(['project:agent_runner:read']);
+
+    expect(
+      requiredProjectPermissions(
+        { kind: 'agents', workspaceId: 'ws_default', projectId: 'proj_1' },
+        'POST',
+      ),
+    ).toEqual(['project:agent_runner:manage']);
+
+    expect(
+      requiredProjectPermissions(
+        { kind: 'agentConnectionInfo', workspaceId: 'ws_default', projectId: 'proj_1', agentId: 'ag_1' },
+        'GET',
+      ),
+    ).toEqual(['project:agent_runner:manage']);
+
+    expect(
+      requiredProjectPermissions(
+        { kind: 'agentKeys', workspaceId: 'ws_default', projectId: 'proj_1', agentId: 'ag_1' },
+        'POST',
+      ),
+    ).toEqual(['project:agent_runner:manage']);
   });
 
   it('requires project:files:update for file-library writes and project:endpoint:use for reads', () => {

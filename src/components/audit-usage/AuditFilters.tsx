@@ -58,7 +58,7 @@ function hasAdvancedQueryFilters(filters: AuditListParams, defaultEndUserId?: st
 
 function getActorTypeLabel(actorType: NonNullable<AuditListParams['actor_type']>, commonT: ReturnType<typeof useTranslations>) {
   if (actorType === 'user') return commonT('user');
-  if (actorType === 'agent') return commonT('agent');
+  if (actorType === 'runner') return commonT('runner');
   if (actorType === 'plugin') return commonT('plugin');
   return formatFilterToken(actorType);
 }
@@ -430,7 +430,7 @@ export function AuditFilters({
                   value={filters.actor_type || 'all'}
                   onValueChange={(value) => handleSelectFilterChange(
                     'actor_type',
-                    value === 'all' ? undefined : value as 'user' | 'agent' | 'plugin',
+                    value === 'all' ? undefined : value as 'user' | 'runner' | 'plugin',
                   )}
                 >
                   <SelectTrigger id="audit-filter-actor-type">
@@ -439,7 +439,7 @@ export function AuditFilters({
                   <SelectContent>
                     <SelectItem value="all">{commonT('all')}</SelectItem>
                     <SelectItem value="user">{commonT('user')}</SelectItem>
-                    <SelectItem value="agent">{commonT('agent')}</SelectItem>
+                    <SelectItem value="runner">{commonT('runner')}</SelectItem>
                     <SelectItem value="plugin">{commonT('plugin')}</SelectItem>
                   </SelectContent>
                 </Select>

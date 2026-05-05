@@ -24,8 +24,8 @@ const DIRS = [
   '02-projects',
   '03-overview',
   '04-chat',
-  '05-notebook',
-  '06-agents',
+  '05-agent-tasks',
+  '06-agent-runners',
   '07-endpoints',
   '08-members',
   '09-audit',
@@ -122,43 +122,43 @@ test.describe('Screenshot Capture', () => {
     await navigateForCapture(page, `/zh-CN/workspaces/${WS_ID}/projects/${PROJECT_ID}/chat`);
     await page.screenshot({ path: path.join(BASE, '04-chat', 'chat.png'), fullPage: true });
 
-    // === 05-notebook ===
-    await navigateForCapture(page, `/zh-CN/workspaces/${WS_ID}/projects/${PROJECT_ID}/notebook`);
-    await page.screenshot({ path: path.join(BASE, '05-notebook', 'notebook.png'), fullPage: true });
+    // === 05-agent-tasks ===
+    await navigateForCapture(page, `/zh-CN/workspaces/${WS_ID}/projects/${PROJECT_ID}/agent-tasks`);
+    await page.screenshot({ path: path.join(BASE, '05-agent-tasks', 'agent-tasks.png'), fullPage: true });
 
-    const createTaskBtn = page.getByTestId('notebook__create-task-btn');
+    const createTaskBtn = page.getByTestId('agent-tasks__create-task-btn');
     if (await createTaskBtn.isVisible()) {
       await createTaskBtn.click();
       await page.waitForTimeout(500);
-      await page.screenshot({ path: path.join(BASE, '05-notebook', 'create-task-dialog.png'), fullPage: true });
+      await page.screenshot({ path: path.join(BASE, '05-agent-tasks', 'create-task-dialog.png'), fullPage: true });
       await page.keyboard.press('Escape');
     }
 
-    await navigateForCapture(page, `/zh-CN/workspaces/${WS_ID}/projects/${PROJECT_ID}/notebook/tasks/task_001`);
+    await navigateForCapture(page, `/zh-CN/workspaces/${WS_ID}/projects/${PROJECT_ID}/agent-tasks/task_001`);
     await page.waitForSelector('[data-testid="page-state__success"], [data-testid="page-layout"], [data-testid="page-state__loading"]', {
       timeout: 15000,
     }).catch(() => {});
-    await page.screenshot({ path: path.join(BASE, '05-notebook', 'task-detail.png'), fullPage: true });
+    await page.screenshot({ path: path.join(BASE, '05-agent-tasks', 'agent-task-detail.png'), fullPage: true });
 
-    // === 06-agents ===
-    await navigateForCapture(page, `/zh-CN/workspaces/${WS_ID}/projects/${PROJECT_ID}/agents`);
-    await page.screenshot({ path: path.join(BASE, '06-agents', 'agents.png'), fullPage: true });
-    const createAgentBtn = page.getByTestId('agents__create-btn');
-    if (await createAgentBtn.isVisible().catch(() => false)) {
-      await createAgentBtn.click();
+    // === 06-agent-runners ===
+    await navigateForCapture(page, `/zh-CN/workspaces/${WS_ID}/projects/${PROJECT_ID}/agent-runners`);
+    await page.screenshot({ path: path.join(BASE, '06-agent-runners', 'agent-runners.png'), fullPage: true });
+    const createRunnerBtn = page.getByTestId('agent-runners__create-btn');
+    if (await createRunnerBtn.isVisible().catch(() => false)) {
+      await createRunnerBtn.click();
       await page.waitForTimeout(500);
-      if (await page.getByTestId('agents__create-dialog').isVisible().catch(() => false)) {
-        await page.screenshot({ path: path.join(BASE, '06-agents', 'create-agent-dialog.png'), fullPage: true });
+      if (await page.getByTestId('agent-runners__create-dialog').isVisible().catch(() => false)) {
+        await page.screenshot({ path: path.join(BASE, '06-agent-runners', 'create-agent-runner-dialog.png'), fullPage: true });
       }
       await page.keyboard.press('Escape');
       await page.waitForTimeout(300);
     }
-    const agentKeysBtn = page.locator('[data-testid^="agents__keys-btn--"]').first();
-    if (await agentKeysBtn.isVisible().catch(() => false)) {
-      await agentKeysBtn.click();
+    const connectionKeysBtn = page.locator('[data-testid^="agent-runners__connection-keys-btn--"]').first();
+    if (await connectionKeysBtn.isVisible().catch(() => false)) {
+      await connectionKeysBtn.click();
       await page.waitForTimeout(500);
-      if (await page.getByTestId('agents__dialog__keys').isVisible().catch(() => false)) {
-        await page.screenshot({ path: path.join(BASE, '06-agents', 'connection-info-dialog.png'), fullPage: true });
+      if (await page.getByTestId('agent-runners__connection-keys-sheet').isVisible().catch(() => false)) {
+        await page.screenshot({ path: path.join(BASE, '06-agent-runners', 'connection-keys-dialog.png'), fullPage: true });
       }
       await page.keyboard.press('Escape');
       await page.waitForTimeout(300);
@@ -302,9 +302,9 @@ test.describe('Screenshot Capture', () => {
       path.join(BASE, '02-projects', 'projects-list.png'),
       path.join(BASE, '03-overview', 'overview.png'),
       path.join(BASE, '04-chat', 'chat.png'),
-      path.join(BASE, '05-notebook', 'notebook.png'),
-      path.join(BASE, '05-notebook', 'task-detail.png'),
-      path.join(BASE, '06-agents', 'agents.png'),
+      path.join(BASE, '05-agent-tasks', 'agent-tasks.png'),
+      path.join(BASE, '05-agent-tasks', 'agent-task-detail.png'),
+      path.join(BASE, '06-agent-runners', 'agent-runners.png'),
       path.join(BASE, '07-endpoints', 'endpoints.png'),
       path.join(BASE, '08-members', 'members-list.png'),
       path.join(BASE, '09-audit', 'audit.png'),

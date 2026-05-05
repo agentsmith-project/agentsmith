@@ -27,17 +27,18 @@ describe('project-surface-access', () => {
     expect(
       listAccessibleSidebarProjectRoutePolicies([
         'project:endpoint:use',
-        'project:agent:manage',
+        'project:agent_task:use',
+        'project:agent_runner:manage',
         'project:governance:update',
       ]).map((policy) => policy.href),
     ).toEqual([
       'overview',
       'chat',
-      'notebook',
+      'agent-tasks',
       'files',
       'usage',
       'use-guide',
-      'agents',
+      'agent-runners',
       'endpoints',
       'resource-policy',
       'context',

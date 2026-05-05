@@ -36,7 +36,7 @@ export const GOVERNANCE_CHECK_DEFINITIONS: GovernanceCheckDefinition[] = [
     id: 'lane-real-core',
     name: 'Core backend-real',
     category: 'lane-real-core',
-    command: 'make notebook-agent-engineering-smoke-full',
+    command: 'make agent-task-engineering-smoke-full',
     timeout: 600_000,
     evidenceType: 'backend-real',
   },

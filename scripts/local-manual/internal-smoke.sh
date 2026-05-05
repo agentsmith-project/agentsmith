@@ -4,16 +4,15 @@ set -euo pipefail
 source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/internal-common.sh"
 
 ensure_local_manual_ready
-ensure_notebook_demo_seeded
+ensure_agent_task_demo_seeded
 bash "${ROOT_DIR}/scripts/local-manual/internal-up.sh"
 
 TOKEN="$(cat "$(backend_real_token_file)")"
 PROJECT_ID="$(state_get project.id)"
-AGENT_ID="$(state_get internal_agent.id)"
 
 TASK_ID="$(
-  node - <<'NODE' "${TOKEN}" "${WORKSPACE_ID}" "${PROJECT_ID}" "${AGENT_ID}" "${PORT_API}"
-const [token, workspaceId, projectId, agentId, port] = process.argv.slice(2);
+  node - <<'NODE' "${TOKEN}" "${WORKSPACE_ID}" "${PROJECT_ID}" "${PORT_API}"
+const [token, workspaceId, projectId, port] = process.argv.slice(2);
 const base = `http://localhost:${port}/api/v1/workspaces/${workspaceId}/projects/${projectId}`;
 const headers = { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' };
 const request = async (url, init) => {
@@ -31,7 +30,6 @@ const task = await request(`${base}/tasks`, {
   headers,
   body: JSON.stringify({
     title: `Internal Smoke ${Date.now()}`,
-    agent_id: agentId,
     ...(workspaceLibraryId
       ? { workspace_file_library_id: workspaceLibraryId }
       : { workspace_mode: 'create_new' }),
@@ -39,12 +37,11 @@ const task = await request(`${base}/tasks`, {
 });
 const taskId = task?.id;
 if (!taskId) throw new Error('task_id_missing');
-await request(`${base}/tasks/${taskId}/messages`, {
+await request(`${base}/tasks/${taskId}/runs`, {
   method: 'POST',
   headers,
   body: JSON.stringify({
-    role: 'user',
-    content: 'Reply exactly: internal smoke ok',
+    intent: 'Reply exactly: internal smoke ok',
   }),
 });
 process.stdout.write(taskId);

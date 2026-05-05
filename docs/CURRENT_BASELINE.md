@@ -15,7 +15,7 @@
 4. [Current Engineering Governance Model](./current-engineering-governance-model.md)
 5. [Contracts Index](./contracts/README.md)
 6. [User Guides Index](./user-guides/README.md)
-7. [Notebook Codex Runner Runbook](./notebook-codex-runbook.md)
+7. [Agent Task Runner Runbook](./agent-task-runner-runbook.md)
 
 Governance v2 closure pointer: [Engineering Governance Developer Flow Optimization v2](./engineering/governance-developer-flow-optimization-v2.md) is `first_scope_closed_2026-04-29`; remaining items are backlog/reference, not current marching orders.
 
@@ -48,7 +48,7 @@ Git 历史足够承担追溯职责；current docs 只保留今天仍需要被阅
 2. [Current Engineering Governance Model](./current-engineering-governance-model.md)
 3. [Diagnostic Catalog v1](./testing/diagnostic-catalog-v1.md)
 4. [Troubleshooting Guide](./troubleshooting-guide-v1.md)
-5. [Notebook Codex Runner Runbook](./notebook-codex-runbook.md)
+5. [Agent Task Runner Runbook](./agent-task-runner-runbook.md)
 6. [Verification Campaigns v1](./testing/verification-campaigns-v1.md)
 
 ## 4. 冲突时按谁为准

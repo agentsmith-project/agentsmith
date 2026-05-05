@@ -5,7 +5,7 @@ import { AuditTable } from '../AuditTable';
 vi.mock('next-intl', () => ({
   useTranslations: () => (key: string, values?: Record<string, string>) => {
     if (key === 'summary.user_actor') return 'User';
-    if (key === 'summary.agent_actor') return 'Agent';
+    if (key === 'summary.runner_actor') return 'Runner';
     if (key === 'summary.plugin_actor') return 'Plugin';
     if (key === 'summary.system_actor') return 'System';
     if (key === 'summary.result_ok') return 'succeeded';
@@ -82,8 +82,8 @@ describe('AuditTable', () => {
             timestamp: '2026-03-01T01:00:00.000Z',
             workspace_id: 'ws_1',
             project_id: 'proj_1',
-            actor_type: 'agent',
-            actor_id: 'agent_1',
+            actor_type: 'runner',
+            actor_id: 'runner_1',
             action: 'endpoint.invoke',
             result: 'ok',
             request_id: 'req_event',
@@ -115,7 +115,7 @@ describe('AuditTable', () => {
     expect(screen.getByTestId('audit__category-badge--event')).toBeInTheDocument();
     expect(screen.getByTestId('audit__category-badge--anomaly')).toBeInTheDocument();
     expect(screen.getByText('User Created Credential on endpoint_1 and succeeded')).toBeInTheDocument();
-    expect(screen.getByText('Agent Invoked on endpoint_1 and succeeded')).toBeInTheDocument();
+    expect(screen.getByText('Runner Invoked on endpoint_1 and succeeded')).toBeInTheDocument();
     expect(screen.getByText('User Triggered Governance Block on endpoint_2 and failed')).toBeInTheDocument();
   });
 
@@ -399,13 +399,13 @@ describe('AuditTable', () => {
             project_id: 'proj_1',
             actor_type: 'user',
             actor_id: 'user_14',
-            action: 'agent.key.issue',
-            resource_type: 'agent',
-            resource_id: 'agent_14',
+            action: 'agent_runner.key.issue',
+            resource_type: 'agent_runner',
+            resource_id: 'runner_14',
             result: 'ok',
             request_id: 'req_agent_key_issue',
             metadata_json: {
-              name: 'Support Agent',
+              name: 'Support Runner',
             },
           },
         ]}
@@ -414,7 +414,7 @@ describe('AuditTable', () => {
 
     expect(screen.getByText('Managed Member Access')).toBeInTheDocument();
     expect(screen.getByText('User Managed Member Access on proj_1 and failed')).toBeInTheDocument();
-    expect(screen.getByText('Issued Agent Key')).toBeInTheDocument();
-    expect(screen.getByText('User Issued Agent Key on Agent Support Agent and succeeded')).toBeInTheDocument();
+    expect(screen.getByText('Issued Agent Runner Key')).toBeInTheDocument();
+    expect(screen.getByText('User Issued Agent Runner Key on Agent Runner Support Runner and succeeded')).toBeInTheDocument();
   });
 });

@@ -33,7 +33,6 @@ export function useChatData(args: UseChatDataArgs): UseChatDataResult {
       const data = query.state.data as { items: ChatSession[] } | undefined;
       const items = data?.items ?? [];
       return items.some((s) =>
-        s.termination_state === 'terminating' ||
         s.execution_status === 'running' ||
         s.execution_status === 'stopping' ||
         s.execution_status === 'terminating'

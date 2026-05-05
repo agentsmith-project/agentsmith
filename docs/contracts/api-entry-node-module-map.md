@@ -40,13 +40,13 @@
 
 - `chat-resource-service.ts`
 - chat 会话、消息、附件资源读写逻辑
-- 会话支持 `external_agent_id` 线程绑定
+- Chat 会话仅绑定 endpoint/model；`external_agent_id` 是旧字段，HTTP create/update 只允许作为 `400 unsupported_field` 拒收证据出现
 
 - `agent-resource-service.ts`
-- agent/agent-key 资源读写与连接状态元信息
+- Agent Runner/runner-key 资源读写与连接状态元信息
 
 - `agent-execution-service.ts`
-- external agent websocket execution channel（鉴权、在线会话、请求分发、流式事件回传）
+- Agent task runner websocket execution channel（鉴权、在线会话、请求分发、流式事件回传）
 
 - `endpoint-resource-service.ts`
 - endpoint/credential 资源读写与 OpenAI-compatible 批量导入逻辑

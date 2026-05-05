@@ -3,27 +3,28 @@ import { VISUAL_TEST_REFERENCE_NOW_ISO } from '@/lib/mock-time';
 import type {
   CreateTaskTerminalSessionRequest,
   Task,
+  TaskActivityItem,
   TaskRunState,
   TaskTerminalSessionCreateResponse,
   TaskTerminalSessionStatus,
 } from '@/lib/types/task';
 import {
   taskFixtures,
-  taskMessageFixtures,
+  taskActivityFixtures,
   artifactFixtures,
   taskTraceFixtures,
-} from '../fixtures/notebook';
+} from '../fixtures/agent-tasks';
 import { DOC_FIXTURES_ENABLED } from '../doc-fixtures/mode';
 import {
   docTaskFixtures,
-  docTaskMessageFixtures,
+  docTaskActivityFixtures,
   docArtifactFixtures,
   docTaskTraceFixtures,
-} from '../doc-fixtures/notebook';
+} from '../doc-fixtures/agent-tasks';
 
 const tasks: Task[] = (DOC_FIXTURES_ENABLED ? docTaskFixtures : taskFixtures)
   .map((task) => ({ ...task })) as Task[];
-const taskMessages = DOC_FIXTURES_ENABLED ? [...docTaskMessageFixtures] : [...taskMessageFixtures];
+const taskActivities = DOC_FIXTURES_ENABLED ? [...docTaskActivityFixtures] : [...taskActivityFixtures];
 const artifacts = DOC_FIXTURES_ENABLED ? [...docArtifactFixtures] : [...artifactFixtures];
 const taskTraces = DOC_FIXTURES_ENABLED ? [...docTaskTraceFixtures] : [...taskTraceFixtures];
 const API_V1_PATTERN = '*/api/v1';
@@ -105,6 +106,10 @@ function readMockTaskStopRuntimeStore(): Record<string, unknown> {
   } catch {
     return {};
   }
+}
+
+function asRecord(input: unknown): Record<string, unknown> {
+  return input && typeof input === 'object' ? input as Record<string, unknown> : {};
 }
 
 function readPersistedMockTaskStopRuntimeTruth(
@@ -304,7 +309,7 @@ export function createMockTaskTerminalSession(args: {
   const scopeKey = taskTerminalScopeKey(args);
   const now = VISUAL_TEST_REFERENCE_NOW_ISO;
   const session: TaskTerminalSessionStatus = {
-    id: sessionId,
+    terminal_session_id: sessionId,
     status: 'active',
     cols: args.cols ?? 120,
     rows: args.rows ?? 30,
@@ -320,7 +325,7 @@ export function createMockTaskTerminalSession(args: {
     session,
   ]);
   return {
-    session_id: session.id,
+    terminal_session_id: session.terminal_session_id,
     status: session.status,
     ws_url: session.ws_url ?? '',
   };
@@ -436,6 +441,15 @@ export const taskHandlers = [
   }),
   http.post(`${API_V1_PATTERN}/workspaces/:ws/projects/:prj/tasks`, async ({ request, params }) => {
     const body: any = await request.json().catch(() => ({}));
+    const unsupportedFields = ['agent_id', 'agent_name', 'runner_id'].filter((field) => (
+      Object.prototype.hasOwnProperty.call(body ?? {}, field)
+    ));
+    if (unsupportedFields.length > 0) {
+      return HttpResponse.json(
+        { error_code: 'unsupported_field', message: 'unsupported_field', fields: unsupportedFields },
+        { status: 400 },
+      );
+    }
     const workspaceMode = typeof body?.workspace_mode === 'string' ? body.workspace_mode.trim() : '';
     const workspaceFileLibraryId = typeof body?.workspace_file_library_id === 'string'
       ? body.workspace_file_library_id.trim()
@@ -459,8 +473,6 @@ export const taskHandlers = [
       project_id: params.prj as string,
       owner_user_id: 'user_001',
       title: body?.title ?? 'New Task',
-      agent_id: body?.agent_id ?? 'ag_2',
-      agent_name: body?.agent_name ?? 'Research Agent',
       workspace_file_library_id: workspaceMode === 'create_new'
         ? `flib_${Math.random().toString(36).slice(2, 10)}`
         : workspaceFileLibraryId,
@@ -689,7 +701,7 @@ export const taskHandlers = [
       taskId: String(params.id ?? ''),
     });
     const session = listLiveTerminalSessionsForScope(scopeKey)
-      .find((item) => item.id === String(params.terminalSessionId ?? ''));
+      .find((item) => item.terminal_session_id === String(params.terminalSessionId ?? ''));
     if (!session) {
       return HttpResponse.json({ error_code: 'task_terminal_session_missing', message: 'task_terminal_session_missing' }, { status: 404 });
     }
@@ -703,7 +715,7 @@ export const taskHandlers = [
     });
     const sessions = terminalSessionsByScope.get(scopeKey) ?? [];
     terminalSessionsByScope.set(scopeKey, sessions.map((session) =>
-      session.id === String(params.terminalSessionId ?? '')
+      session.terminal_session_id === String(params.terminalSessionId ?? '')
         ? {
             ...session,
             status: 'closed',
@@ -714,9 +726,9 @@ export const taskHandlers = [
     ));
     return HttpResponse.json(null, { status: 204 });
   }),
-  http.get(`${API_V1_PATTERN}/workspaces/:ws/projects/:prj/tasks/:id/messages`, ({ params }) => {
+  http.get(`${API_V1_PATTERN}/workspaces/:ws/projects/:prj/tasks/:id/activity`, ({ params }) => {
     const taskId = params.id as string;
-    const items = taskMessages.filter((m) => m.task_id === taskId);
+    const items = taskActivities.filter((m) => m.task_id === taskId);
     return HttpResponse.json(items);
   }),
   http.get(`${API_V1_PATTERN}/workspaces/:ws/projects/:prj/tasks/:id/traces`, ({ request, params }) => {
@@ -769,7 +781,7 @@ export const taskHandlers = [
       next_after_id: start > 0 ? sliced[0]?.id ?? null : null,
     });
   }),
-  http.post(`${API_V1_PATTERN}/workspaces/:ws/projects/:prj/tasks/:id/messages`, async ({ request, params }) => {
+  http.post(`${API_V1_PATTERN}/workspaces/:ws/projects/:prj/tasks/:id/runs`, async ({ request, params }) => {
     const taskId = params.id as string;
     const task = tasks.find((item) => item.id === taskId);
     if (task && task.run_state && task.run_state !== 'idle') {
@@ -778,17 +790,44 @@ export const taskHandlers = [
         message: 'task_run_in_progress',
       }, { status: 409 });
     }
-    const body: any = await request.json().catch(() => ({}));
+    const body = asRecord(await request.json().catch(() => ({})));
+    const unsupportedFields = ['role', 'content', 'agent_id', 'agent_name', 'runner_id']
+      .filter((field) => Object.prototype.hasOwnProperty.call(body, field));
+    if (unsupportedFields.length > 0) {
+      return HttpResponse.json({
+        error_code: 'unsupported_field',
+        message: 'unsupported_field',
+        fields: unsupportedFields,
+      }, { status: 400 });
+    }
+    const intent = typeof body.intent === 'string' ? body.intent : '';
+    if (!intent.trim()) {
+      return HttpResponse.json({
+        error_code: 'VALIDATION_ERROR',
+        message: 'task_run_intent_required',
+        field: 'intent',
+      }, { status: 422 });
+    }
     const now = new Date().toISOString();
-    const message = {
+    const userActivity: TaskActivityItem = {
       id: `msg_${Math.random().toString(36).slice(2, 8)}`,
       task_id: taskId,
-      role: body?.role ?? 'user',
-      content: body?.content ?? '',
+      kind: 'user_intent',
+      actor: 'user',
+      content: intent,
       created_at: now,
     };
-    taskMessages.push(message);
-    return HttpResponse.json(message);
+    const runnerActivity: TaskActivityItem = {
+      id: `msg_${Math.random().toString(36).slice(2, 8)}`,
+      task_id: taskId,
+      kind: 'runner_output',
+      actor: 'runner',
+      content: '',
+      created_at: now,
+      run_id: `run_${Math.random().toString(36).slice(2, 8)}`,
+    };
+    taskActivities.push(userActivity, runnerActivity);
+    return HttpResponse.json(runnerActivity);
   }),
   http.get(`${API_V1_PATTERN}/workspaces/:ws/projects/:prj/tasks/:id/artifacts`, ({ params }) => {
     const taskId = params.id as string;

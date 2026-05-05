@@ -9,11 +9,11 @@ It exists alongside, not instead of, the current `demo-deploy` demo line:
 - `demo-deploy`
   - demo / single-host installation
   - server-local image management
-  - `kind` used to simulate the internal agent execution surface
+  - `kind` used to simulate the sandbox execution surface
 - `cluster-deploy`
   - real-environment installation
   - application services and data services still run on Docker Compose
-  - internal agent execution runs on a real Kubernetes cluster
+  - sandbox execution runs on a real Kubernetes cluster
   - installation is still performed from an offline bundle on the target host
 
 ## Delivery Model
@@ -131,7 +131,7 @@ Application stage:
 - `api`
 - `web`
 
-`external-runner` is provisioned during bootstrap after the preset external agent runtime env has been written.
+Bootstrap provisions the managed Agent Runner default record after endpoint seed data exists. The cluster line does not deploy a Compose runner service.
 
 ### Real Kubernetes Cluster
 
@@ -309,7 +309,7 @@ They currently define:
   - context and output token defaults
 - system admin credentials
 - test user credentials
-- default workspace / project / credential / endpoint / agent names
+- default workspace / project / credential / endpoint / Agent Runner names
 
 `render-env.sh`, `bootstrap.sh`, and `verify.sh` consume these preset values through:
 
@@ -420,7 +420,7 @@ The minimum release proof for `cluster-deploy` is:
 2. rendered env checks pass
 3. cluster admin prerequisites are already complete
 4. `prepare -> publish-images -> deploy-substrate -> deploy-app -> prepare-admin-handoff -> deploy-sandbox -> bootstrap -> verify -> report` passes on the target host
-5. external and internal notebook flows succeed
+5. managed Agent task flows succeed
 6. `verify` includes explicit Files correctness validation:
    - temporary file library create/delete
    - folder create

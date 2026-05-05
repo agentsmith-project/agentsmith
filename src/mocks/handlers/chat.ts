@@ -97,6 +97,14 @@ function isTerminateStopMode(body: unknown) {
   return record.mode === 'terminate';
 }
 
+function hasUnsupportedExternalAgentField(body: unknown): boolean {
+  return (
+    typeof body === 'object'
+    && body !== null
+    && Object.prototype.hasOwnProperty.call(body, 'external_agent_id')
+  );
+}
+
 function ensureMockChatStopRuntime(sessionId: string, mode: MockChatStopEscalationMode) {
   const existing = mockChatStopRuntimeBySession.get(sessionId);
   if (existing && existing.capabilityMode === mode) return existing;
@@ -225,7 +233,13 @@ export const chatHandlers = [
     return HttpResponse.json(decorateSessionForMockStop(request, session));
   }),
   http.post(`${API_V1_PATTERN}/workspaces/:ws/projects/:prj/chat/sessions`, async ({ request }) => {
-    const body = (await request.json().catch(() => ({}))) as Partial<ChatSessionLike>;
+    const body = (await request.json().catch(() => ({}))) as Partial<ChatSessionLike> & Record<string, unknown>;
+    if (hasUnsupportedExternalAgentField(body)) {
+      return HttpResponse.json(
+        { error_code: 'unsupported_field', message: 'external_agent_id' },
+        { status: 400 },
+      );
+    }
     const newSession = {
       id: `session_${Date.now()}`,
       project_id: 'proj_001',
@@ -242,7 +256,13 @@ export const chatHandlers = [
     return HttpResponse.json(newSession, { status: 201 });
   }),
   http.patch(`${API_V1_PATTERN}/workspaces/:ws/projects/:prj/chat/sessions/:id`, async ({ params, request }) => {
-    const body = (await request.json().catch(() => ({}))) as Partial<ChatSessionLike>;
+    const body = (await request.json().catch(() => ({}))) as Partial<ChatSessionLike> & Record<string, unknown>;
+    if (hasUnsupportedExternalAgentField(body)) {
+      return HttpResponse.json(
+        { error_code: 'unsupported_field', message: 'external_agent_id' },
+        { status: 400 },
+      );
+    }
     const idx = sessions.findIndex((s) => s.id === params.id);
     if (idx < 0) return HttpResponse.json({ error: 'not_found' }, { status: 404 });
     const next: ChatSessionLike = {

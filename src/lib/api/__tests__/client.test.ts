@@ -50,7 +50,7 @@ describe('API_BASE', () => {
         sseAllowJwtFallback: false,
         trustedImageDomains: [],
         bypassAuth: false,
-        notebookSseDebugPanel: false,
+        agentTaskSseDebugPanel: false,
         docFixtures: false,
       },
     });

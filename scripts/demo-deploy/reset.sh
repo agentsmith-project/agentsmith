@@ -28,8 +28,7 @@ cleanup_stale_demo_runtime_containers() {
   local name
   for name in \
     agentsmith-demo-api-1 \
-    agentsmith-demo-web-1 \
-    agentsmith-demo-external-runner-1; do
+    agentsmith-demo-web-1; do
     docker rm -f "${name}" >/dev/null 2>&1 || true
   done
 }
@@ -37,9 +36,9 @@ cleanup_stale_demo_runtime_containers() {
 if [[ -f "${RELEASE_ROOT}/compose/docker-compose.yml" ]]; then
   if [[ ! -f "${RELEASE_ROOT}/compose/.env" && -f "${RELEASE_ROOT}/VERSION" ]]; then
     APP_IMAGE="$(awk -F= '$1=="agentsmith_app_image"{print $2}' "${RELEASE_ROOT}/VERSION")"
-    RUNNER_IMAGE="$(awk -F= '$1=="agentsmith_runner_image"{print $2}' "${RELEASE_ROOT}/VERSION")"
+    AGENT_TASK_RUNNER_IMAGE="$(awk -F= '$1=="agentsmith_agent_task_runner_image"{print $2}' "${RELEASE_ROOT}/VERSION")"
     UNIVERSAL_PROXY_IMAGE="$(awk -F= '$1=="llm_universal_proxy_image"{print $2}' "${RELEASE_ROOT}/VERSION")"
-    write_compose_env "${APP_IMAGE}" "${RUNNER_IMAGE}" "${UNIVERSAL_PROXY_IMAGE}"
+    write_compose_env "${APP_IMAGE}" "${AGENT_TASK_RUNNER_IMAGE}" "${UNIVERSAL_PROXY_IMAGE}"
   fi
   docker_compose down -v --remove-orphans || true
 fi

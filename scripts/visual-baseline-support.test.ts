@@ -259,16 +259,16 @@ describe('visual baseline support', () => {
     expect(resolveVisualBaselineSemanticAssertions('workspace-overview').forbiddenVisibleText).toContain('overview_updated_at');
   });
 
-  it('requires notebook create-task CTA semantic visibility in the first viewport instead of DOM visibility only', () => {
-    const notebook = groupVisualBaselineCatalogByScenario().get('notebook');
-    const lifecycleList = groupVisualBaselineCatalogByScenario().get('notebook-task-lifecycle-list');
-    expect(notebook).toBeDefined();
+  it('requires agent-tasks create-task CTA semantic visibility in the first viewport instead of DOM visibility only', () => {
+    const agentTasks = groupVisualBaselineCatalogByScenario().get('agent-tasks');
+    const lifecycleList = groupVisualBaselineCatalogByScenario().get('agent-task-lifecycle-list');
+    expect(agentTasks).toBeDefined();
     expect(lifecycleList).toBeDefined();
 
-    expect(notebook?.semanticAssertions.requiredViewportTestIds).toContain('notebook__create-task-btn');
-    expect(lifecycleList?.semanticAssertions.requiredViewportTestIds).toContain('notebook__create-task-btn');
-    expect(resolveVisualBaselineSemanticAssertions('notebook-task-lifecycle-list').requiredViewportTestIds)
-      .toContain('notebook__create-task-btn');
+    expect(agentTasks?.semanticAssertions.requiredViewportTestIds).toContain('agent-tasks__create-task-btn');
+    expect(lifecycleList?.semanticAssertions.requiredViewportTestIds).toContain('agent-tasks__create-task-btn');
+    expect(resolveVisualBaselineSemanticAssertions('agent-task-lifecycle-list').requiredViewportTestIds)
+      .toContain('agent-tasks__create-task-btn');
   });
 
   it('keeps chat search-empty recovery informational while the header CTA stays visible', () => {
@@ -285,8 +285,8 @@ describe('visual baseline support', () => {
   });
 
   it('forbids stitched create-task dialog copy and top-level workspace wording in visual semantics', () => {
-    const dialog = groupVisualBaselineCatalogByScenario().get('notebook-create-task-dialog');
-    const lifecycleDialog = groupVisualBaselineCatalogByScenario().get('notebook-task-lifecycle-create-dialog');
+    const dialog = groupVisualBaselineCatalogByScenario().get('agent-tasks-create-task-dialog');
+    const lifecycleDialog = groupVisualBaselineCatalogByScenario().get('agent-task-lifecycle-create-dialog');
     expect(dialog).toBeDefined();
     expect(lifecycleDialog).toBeDefined();
 
@@ -387,7 +387,7 @@ describe('visual baseline support', () => {
 
   it('declares required viewer-local datetime metadata for scenes that expose user-facing timestamps', () => {
     const connectedConnections = groupVisualBaselineCatalogByScenario().get('workspace-connections-feishu-connected');
-    const notebookLifecycleList = groupVisualBaselineCatalogByScenario().get('notebook-task-lifecycle-list');
+    const agentTaskLifecycleList = groupVisualBaselineCatalogByScenario().get('agent-task-lifecycle-list');
     const systemWorkspacesDefault = groupVisualBaselineCatalogByScenario().get('system-workspaces-default');
     const systemWorkspacesEditMode = groupVisualBaselineCatalogByScenario().get('system-workspaces-edit-mode');
     const failedSystemWorkspaces = groupVisualBaselineCatalogByScenario().get('system-workspaces-failed-state');
@@ -396,11 +396,11 @@ describe('visual baseline support', () => {
     expect(connectedConnections?.semanticAssertions.requiredViewerLocalDateTimeTestIds).toEqual([
       'workspace-connections__last-refresh-value',
     ]);
-    expect(notebookLifecycleList?.semanticAssertions.requiredViewerLocalDateTimeTestIds).toEqual([
-      'notebook__task-card--task_001::notebook__task-last-activity',
-      'notebook__task-card--task_001::notebook__task-created-at',
-      'notebook__task-card--task_002::notebook__task-last-activity',
-      'notebook__task-card--task_002::notebook__task-created-at',
+    expect(agentTaskLifecycleList?.semanticAssertions.requiredViewerLocalDateTimeTestIds).toEqual([
+      'agent-tasks__task-card--task_001::agent-tasks__task-last-activity',
+      'agent-tasks__task-card--task_001::agent-tasks__task-created-at',
+      'agent-tasks__task-card--task_002::agent-tasks__task-last-activity',
+      'agent-tasks__task-card--task_002::agent-tasks__task-created-at',
     ]);
     expect(systemWorkspacesDefault?.semanticAssertions.requiredViewerLocalDateTimeTestIds).toEqual([
       'system-workspaces__list::system-workspaces__card-initialized-at--ws_seeded',
@@ -856,10 +856,10 @@ describe('visual baseline support', () => {
 
     expect(grouped.get('chat-operate')?.storyId).toBe('mock-lane-chat-operate-and-recover');
     expect(grouped.get('chat-recover-empty')?.storyId).toBe('mock-lane-chat-operate-and-recover');
-    expect(grouped.get('notebook-task-lifecycle-list')?.storyId).toBe('mock-lane-notebook-task-lifecycle');
-    expect(grouped.get('notebook-task-lifecycle-create-dialog')?.storyId).toBe('mock-lane-notebook-task-lifecycle');
-    expect(grouped.get('notebook-task-lifecycle-detail')?.storyId).toBe('mock-lane-notebook-task-lifecycle');
-    expect(grouped.get('notebook-task-lifecycle-artifact')?.storyId).toBe('mock-lane-notebook-task-lifecycle');
+    expect(grouped.get('agent-task-lifecycle-list')?.storyId).toBe('mock-lane-agent-task-lifecycle');
+    expect(grouped.get('agent-task-lifecycle-create-dialog')?.storyId).toBe('mock-lane-agent-task-lifecycle');
+    expect(grouped.get('agent-task-lifecycle-detail')?.storyId).toBe('mock-lane-agent-task-lifecycle');
+    expect(grouped.get('agent-task-lifecycle-artifact')?.storyId).toBe('mock-lane-agent-task-lifecycle');
     expect(grouped.get('project-settings-review')?.storyId).toBe('mock-lane-settings-and-members-review');
     expect(grouped.get('project-members-review')?.storyId).toBe('mock-lane-settings-and-members-review');
   });
@@ -893,21 +893,21 @@ describe('visual baseline support', () => {
     );
   });
 
-  it('keeps notebook lifecycle baseline metadata derived from canonical story scenes and targeted CTA invariants', async () => {
-    const story = await loadStoryDefinition('mock-lane-notebook-task-lifecycle');
-    const running = getRequiredStoryVisualSceneBundle(story, 'notebook-task-running');
+  it('keeps agent-tasks lifecycle baseline metadata derived from canonical story scenes and targeted CTA invariants', async () => {
+    const story = await loadStoryDefinition('mock-lane-agent-task-lifecycle');
+    const running = getRequiredStoryVisualSceneBundle(story, 'agent-task-running');
     const hiddenTerminalBlocked = getRequiredStoryVisualSceneBundle(
       story,
-      'notebook-hidden-terminal-blocked',
+      'agent-task-hidden-terminal-blocked',
     );
     const terminalTruthUnavailable = getRequiredStoryVisualSceneBundle(
       story,
-      'notebook-terminal-truth-unavailable',
+      'agent-task-terminal-truth-unavailable',
     );
     const grouped = groupVisualBaselineCatalogByScenario();
-    const runningCatalog = grouped.get('notebook-task-running');
-    const hiddenTerminalCatalog = grouped.get('notebook-hidden-terminal-blocked');
-    const terminalTruthUnavailableCatalog = grouped.get('notebook-terminal-truth-unavailable');
+    const runningCatalog = grouped.get('agent-task-running');
+    const hiddenTerminalCatalog = grouped.get('agent-task-hidden-terminal-blocked');
+    const terminalTruthUnavailableCatalog = grouped.get('agent-task-terminal-truth-unavailable');
 
     expect(listVisualBaselineExecutorScenarios()
       .filter((entry) => entry.storyId === story.storyId)
@@ -919,7 +919,7 @@ describe('visual baseline support', () => {
     expect(runningCatalog?.storySceneId).toBe(running.visualScene.sceneId);
     expect(runningCatalog?.stableMarkers).toEqual(running.storyScene.stableMarkers);
     expect(runningCatalog?.semanticAssertions.requiredViewportTestIds).toEqual(
-      expect.arrayContaining(['notebook__run-active-cancel']),
+      expect.arrayContaining(['agent-tasks__message-active-run-cancel']),
     );
 
     expect(hiddenTerminalCatalog?.storyId).toBe(story.storyId);
@@ -927,12 +927,12 @@ describe('visual baseline support', () => {
     expect(hiddenTerminalCatalog?.stableMarkers).toEqual(hiddenTerminalBlocked.storyScene.stableMarkers);
     expect(hiddenTerminalCatalog?.semanticAssertions.requiredViewportTestIds).toEqual(
       expect.arrayContaining([
-        'notebook__task-terminal-status-action',
-        'notebook__task-terminal-status-end-all',
+        'agent-tasks__task-terminal-status-action',
+        'agent-tasks__task-terminal-status-end-all',
       ]),
     );
     expect(hiddenTerminalCatalog?.semanticAssertions.requiredViewportTestIds).not.toContain(
-      'notebook__conversation-blocked-action',
+      'agent-tasks__conversation-blocked-action',
     );
 
     expect(terminalTruthUnavailableCatalog?.storyId).toBe(story.storyId);
@@ -941,58 +941,58 @@ describe('visual baseline support', () => {
       terminalTruthUnavailable.storyScene.stableMarkers,
     );
     expect(terminalTruthUnavailableCatalog?.semanticAssertions.requiredViewportTestIds).toEqual(
-      expect.arrayContaining(['notebook__task-terminal-truth-unavailable-retry']),
+      expect.arrayContaining(['agent-tasks__task-terminal-truth-unavailable-retry']),
     );
     expect(terminalTruthUnavailableCatalog?.semanticAssertions.requiredViewportTestIds).not.toContain(
-      'notebook__conversation-blocked-action',
+      'agent-tasks__conversation-blocked-action',
     );
   });
 
-  it('catalogs notebook escalation, provider recovery, and terminal recovery CTA scenes as first-class visual baselines', () => {
+  it('catalogs agent-tasks escalation, provider recovery, and terminal recovery CTA scenes as first-class visual baselines', () => {
     const grouped = groupVisualBaselineCatalogByScenario();
 
-    expect(grouped.get('notebook-cancel-escalation-confirm')).toMatchObject({
-      storyId: 'mock-lane-notebook-task-lifecycle',
+    expect(grouped.get('agent-task-cancel-escalation-confirm')).toMatchObject({
+      storyId: 'mock-lane-agent-task-lifecycle',
       recipeFamily: 'overlay_dialog',
       semanticAssertions: {
         requiredViewportTestIds: [
-          'notebook__task-header',
-          'notebook__cancel-escalation-dialog',
-          'notebook__cancel-escalation-cancel',
-          'notebook__cancel-escalation-confirm',
+          'agent-task__task-header',
+          'agent-tasks__cancel-escalation-dialog',
+          'agent-tasks__cancel-escalation-cancel',
+          'agent-tasks__cancel-escalation-confirm',
         ],
       },
     });
 
-    expect(grouped.get('notebook-provider-upstream-error')).toMatchObject({
-      storyId: 'mock-lane-notebook-task-lifecycle',
+    expect(grouped.get('agent-task-provider-upstream-error')).toMatchObject({
+      storyId: 'mock-lane-agent-task-lifecycle',
       recipeFamily: 'work_surface_immersive',
       semanticAssertions: {
         requiredViewportTestIds: [
-          'notebook__task-header',
-          'notebook__agent-message-bubble',
-          'notebook__message-run-status',
-          'notebook__send-btn',
+          'agent-task__task-header',
+          'agent-tasks__agent-message-bubble',
+          'agent-tasks__message-run-status',
+          'agent-tasks__send-btn',
         ],
       },
     });
 
-    expect(grouped.get('notebook-hidden-terminal-blocked')).toMatchObject({
+    expect(grouped.get('agent-task-hidden-terminal-blocked')).toMatchObject({
       semanticAssertions: {
         requiredViewportTestIds: expect.arrayContaining([
-          'notebook__task-terminal-status-action',
-          'notebook__task-terminal-status-end-all',
+          'agent-tasks__task-terminal-status-action',
+          'agent-tasks__task-terminal-status-end-all',
         ]),
-        prominentActionScopeTestIds: ['notebook__task-terminal-status-strip'],
+        prominentActionScopeTestIds: ['agent-tasks__task-terminal-status-strip'],
       },
     });
 
-    expect(grouped.get('notebook-terminal-truth-unavailable')).toMatchObject({
+    expect(grouped.get('agent-task-terminal-truth-unavailable')).toMatchObject({
       semanticAssertions: {
         requiredViewportTestIds: expect.arrayContaining([
-          'notebook__task-terminal-truth-unavailable-retry',
+          'agent-tasks__task-terminal-truth-unavailable-retry',
         ]),
-        prominentActionScopeTestIds: ['notebook__task-terminal-truth-unavailable'],
+        prominentActionScopeTestIds: ['agent-tasks__task-terminal-truth-unavailable'],
       },
     });
   });
@@ -1124,26 +1124,26 @@ describe('visual baseline support', () => {
       'context-store__editor-card',
     ]);
 
-    expect(resolveVisualBaselineStableMarkers('notebook-task-lifecycle-list')).toEqual([
-      'notebook__task-list',
-      'notebook__task-card',
-      'notebook__create-task-btn',
+    expect(resolveVisualBaselineStableMarkers('agent-task-lifecycle-list')).toEqual([
+      'agent-tasks__task-list',
+      'agent-tasks__task-card',
+      'agent-tasks__create-task-btn',
     ]);
 
-    expect(resolveVisualBaselineStableMarkers('notebook-task-lifecycle-create-dialog')).toEqual([
-      'notebook__create-task-btn',
+    expect(resolveVisualBaselineStableMarkers('agent-task-lifecycle-create-dialog')).toEqual([
+      'agent-tasks__create-task-btn',
     ]);
 
-    expect(resolveVisualBaselineStableMarkers('notebook-task-lifecycle-detail')).toEqual([
-      'notebook__task-header',
-      'notebook__conversation-input',
-      'notebook__send-btn',
+    expect(resolveVisualBaselineStableMarkers('agent-task-lifecycle-detail')).toEqual([
+      'agent-task__task-header',
+      'agent-tasks__conversation-input',
+      'agent-tasks__send-btn',
     ]);
 
-    expect(resolveVisualBaselineStableMarkers('notebook-task-lifecycle-artifact')).toEqual([
-      'notebook__task-header',
-      'notebook__artifact-card',
-      'notebook__artifact-hover-panel',
+    expect(resolveVisualBaselineStableMarkers('agent-task-lifecycle-artifact')).toEqual([
+      'agent-task__task-header',
+      'agent-tasks__artifact-card',
+      'agent-tasks__artifact-hover-panel',
     ]);
 
     expect(resolveVisualBaselineStableMarkers('workspace-settings')).toEqual([

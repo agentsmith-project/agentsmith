@@ -32,7 +32,7 @@ test.describe('Project Overview', () => {
     await expect(developSummary).toBeVisible({ timeout: 10000 });
 
     await expect(primaryTask).toContainText(/chat/i);
-    await expect(authedPage.getByTestId('project-overview__secondary-step--notebook')).toBeVisible();
+    await expect(authedPage.getByTestId('project-overview__secondary-step--agent-tasks')).toBeVisible();
     await expect(authedPage.getByTestId('project-overview__secondary-step--files')).toBeVisible();
     await expect(authedPage.getByTestId('project-overview__secondary-step--context')).toBeVisible();
     await expect(useSummary).toContainText(/usage/i);
@@ -43,7 +43,7 @@ test.describe('Project Overview', () => {
     await expect(governanceSummary).toContainText(/members/i);
     await expect(governanceSummary).toContainText(/audit/i);
     await expect(governanceSummary).toContainText(/settings/i);
-    await expect(developSummary).toContainText(/agents/i);
+    await expect(developSummary).toContainText(/agent runners/i);
   });
 
   test('navigates to usage from sidebar while overview remains summary-only', async ({ authedPage }) => {

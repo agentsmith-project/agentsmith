@@ -164,7 +164,7 @@ function splitCsv(value) {
 const runtime = {
   line_id: lineId,
   line_kind: lineKind,
-  runner_modes: splitCsv(env.RUNTIME_RUNNER_MODES || env.MBOS_RUNNER_MODE),
+  runner_modes: splitCsv(env.RUNTIME_RUNNER_MODES || 'managed_agent_task'),
   browser_urls: {
     web: env.RUNTIME_BROWSER_WEB_BASE_URL ?? null,
     keycloak: env.RUNTIME_BROWSER_KEYCLOAK_BASE_URL ?? null,
@@ -195,12 +195,12 @@ const runtime = {
     sandbox: env.INTERNAL_SANDBOX_MANAGER_PORT ?? env.SANDBOX_HOST_PORT ?? null,
   },
   image_refs: {
-    runner: env.INTEGRATION_CODEX_RUNNER_DOCKER_IMAGE ?? env.INTEGRATION_INTERNAL_AGENT_IMAGE ?? env.RUNNER_IMAGE ?? null,
+    runner: env.INTEGRATION_AGENT_TASK_RUNNER_DOCKER_IMAGE ?? env.INTEGRATION_INTERNAL_AGENT_IMAGE ?? env.RUNNER_IMAGE ?? null,
     verify: env.VERIFY_RUNNER_IMAGE ?? null,
     sandbox_manager: env.SANDBOX_MANAGER_IMAGE ?? env.K8S_SANDBOX_MANAGER_IMAGE ?? null,
   },
   workspace_model: {
-    runner_mode: env.MBOS_RUNNER_MODE ?? null,
+    runner_mode: 'managed_agent_task',
     library_root_semantics: env.RUNTIME_LIBRARY_ROOT_SEMANTICS ?? 'file-library relative root',
     container_workspace_semantics: env.RUNTIME_CONTAINER_WORKSPACE_SEMANTICS ?? 'runner cwd inside bound workspace',
     host_workspace_root: env.HOME ? `${env.HOME}/ags-workspace` : null,
@@ -234,7 +234,7 @@ const keys = [
   'SANDBOX_MANAGER_URL',
   'INTERNAL_AGENT_K8S_NAMESPACE',
   'INTEGRATION_INTERNAL_AGENT_IMAGE',
-  'INTEGRATION_CODEX_RUNNER_DOCKER_IMAGE',
+  'INTEGRATION_AGENT_TASK_RUNNER_DOCKER_IMAGE',
   'RUNTIME_PUBLIC_WEB_BASE_URL',
   'RUNTIME_PUBLIC_API_BASE_URL',
   'RUNTIME_PUBLIC_KEYCLOAK_BASE_URL',
@@ -602,7 +602,7 @@ gate_write_mount_tree() {
 }
 
 
-gate_wait_for_external_runner_connection() {
+gate_wait_for_agent_task_runner_connection() {
   local evidence_dir="$1"
   local container_name="$2"
   local timeout_seconds="${3:-60}"
@@ -617,7 +617,7 @@ gate_wait_for_external_runner_connection() {
     fi
     now="$(date +%s)"
     if (( now - started >= timeout_seconds )); then
-      gate_record_failure "${evidence_dir}" "runner_launch_failed" "infra_preflight_external_runner" "external-runner not connected"
+      gate_record_failure "${evidence_dir}" "runner_launch_failed" "infra_preflight_agent_task_runner" "agent-task runner not connected"
       return 1
     fi
     sleep 2

@@ -77,7 +77,6 @@ export interface Project {
   owner_id: string;
   status: 'active' | 'archived' | 'deleted';
   governance_json?: Record<string, unknown>;
-  execution_preferences_json?: Record<string, unknown>;
   limits_json?: Record<string, unknown>;
   admin_member_ids?: string[];
   created_at: string;

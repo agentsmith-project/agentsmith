@@ -138,14 +138,14 @@ describe('workspace foundation initializer', () => {
         collections: ['ws_platform_ops_project_audit_events', 'ws_platform_ops_project_usage_facts'],
       },
       {
-        domain: 'notebook',
+        domain: 'agent_task',
         status: 'ready',
         init_error: null,
         collections: [
-          'ws_platform_ops_notebook_tasks',
-          'ws_platform_ops_notebook_task_messages',
-          'ws_platform_ops_notebook_task_artifacts',
-          'ws_platform_ops_notebook_task_trace_events',
+          'ws_platform_ops_agent_tasks',
+          'ws_platform_ops_agent_task_messages',
+          'ws_platform_ops_agent_task_artifacts',
+          'ws_platform_ops_agent_task_trace_events',
         ],
       },
       {
@@ -203,7 +203,7 @@ describe('workspace foundation initializer', () => {
       }),
       expect.objectContaining({ domain: 'agents', status: 'not_started', init_error: null }),
       expect.objectContaining({ domain: 'audit_usage', status: 'not_started', init_error: null }),
-      expect.objectContaining({ domain: 'notebook', status: 'not_started', init_error: null }),
+      expect.objectContaining({ domain: 'agent_task', status: 'not_started', init_error: null }),
       expect.objectContaining({ domain: 'governance', status: 'not_started', init_error: null }),
     ]);
     expect(result.data_foundations.materialized_collections).toEqual([

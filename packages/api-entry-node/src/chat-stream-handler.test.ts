@@ -3,7 +3,6 @@ import { EventEmitter } from 'node:events';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { InMemoryCache, InMemoryJsonDocStore } from '@mbos/adapters-private';
 import type { NodeApiDeps } from './node-api-deps.js';
-import { InternalWorkloadCoordinator } from './internal-workload-coordinator.js';
 import type { ChatMessageRecord } from './resource-models.js';
 import { handleChatNonStreamRoute } from './chat-non-stream-handler.js';
 import {
@@ -116,10 +115,12 @@ function createResponse(): http.ServerResponse & {
   return res;
 }
 
-function createExternalAgentStreamDeps(args?: {
+function createEndpointStreamDeps(args?: {
   cache?: InMemoryCache;
-  getAgent?: ReturnType<typeof vi.fn>;
-  dispatchStreamingRequest?: ReturnType<typeof vi.fn>;
+  getEndpoint?: ReturnType<typeof vi.fn>;
+  getCredentialSecret?: ReturnType<typeof vi.fn>;
+  forwardRequest?: ReturnType<typeof vi.fn>;
+  ensureEndpointNamespace?: ReturnType<typeof vi.fn>;
 }) {
   const cache = args?.cache ?? new InMemoryCache();
   const docStore = new InMemoryJsonDocStore();
@@ -131,42 +132,43 @@ function createExternalAgentStreamDeps(args?: {
     project_id: 'proj_external_stream',
     owner_user_id: 'user_external_stream',
     title: 'External Stream',
-    model: 'external-agent',
-    endpoint_id: '',
-    external_agent_id: 'agent_external_stream',
+    model: 'deepseek-chat',
+    endpoint_id: 'ep_external_stream',
     created_at: createdAt,
     updated_at: createdAt,
     message_count: 0,
     total_tokens: 0,
   };
-  const getAgent = args?.getAgent ?? vi.fn(async () => ({
-    id: 'agent_external_stream',
+  const endpoint = {
+    id: 'ep_external_stream',
     workspace_id: 'ws_external_stream',
     project_id: 'proj_external_stream',
-    name: 'external-stream-agent',
-    mode: 'external',
-    status: 'enabled',
-    execution_preferences_json: {
-      chat: {
-        endpoint_id: 'ep_external_stream',
-        wire_api: 'chat',
-      },
-    },
-    capabilities: {
-      streaming_completion: true,
-      multimodal_completion: false,
-    },
+    name: 'External Stream Endpoint',
+    provider: 'openai',
+    model: 'deepseek-chat',
+    base_url: 'https://provider.example/v1',
+    status: 'active',
+    credential_ref: 'cred_external_stream',
+    capabilities: [{ type: 'chat_completion', enabled: true }],
     created_at: createdAt,
     updated_at: createdAt,
-  }));
-  const dispatchStreamingRequest = args?.dispatchStreamingRequest ?? vi.fn(async () => ({
-    requestId: 'req_external_stream',
-    cancel: () => undefined,
-    stream: (async function* stream() {
-      yield { type: 'delta' as const, delta: 'hello' };
-      yield { type: 'done' as const, finish_reason: 'stop', usage_tokens: 5 };
-    })(),
-  }));
+  };
+  const getEndpoint = args?.getEndpoint ?? vi.fn(async () => endpoint);
+  const getCredentialSecret = args?.getCredentialSecret ?? vi.fn(async () => 'secret');
+  const ensureEndpointNamespace = args?.ensureEndpointNamespace ?? vi.fn(async () => 'ns_external_stream');
+  const forwardRequest = args?.forwardRequest ?? vi.fn(async () => {
+    const encoder = new TextEncoder();
+    return new Response(new ReadableStream({
+      start(controller) {
+        controller.enqueue(encoder.encode('data: {"choices":[{"delta":{"content":"hello"}}]}\n\n'));
+        controller.enqueue(encoder.encode('data: {"choices":[{"finish_reason":"stop"}],"usage":{"total_tokens":5}}\n\n'));
+        controller.enqueue(encoder.encode('data: [DONE]\n\n'));
+        controller.close();
+      },
+    }), {
+      headers: { 'content-type': 'text/event-stream' },
+    });
+  });
   const createMessage = vi.fn(async (input: {
     role: 'user' | 'assistant' | 'system';
     content: string;
@@ -231,11 +233,14 @@ function createExternalAgentStreamDeps(args?: {
       listAttachmentsByIds: vi.fn(async () => []),
       updateAssistantMessage,
     },
-    agentResourceService: {
-      getAgent,
+    endpointResourceService: {
+      getEndpoint,
+      getCredentialSecret,
     },
-    agentExecutionService: {
-      dispatchStreamingRequest,
+    universalProxyService: {
+      supportsEndpoint: vi.fn(() => true),
+      ensureEndpointNamespace,
+      forwardRequest,
     },
     downloadFileLibraryObjectUseCase: {
       execute: vi.fn(async () => {
@@ -250,8 +255,11 @@ function createExternalAgentStreamDeps(args?: {
     messages,
     session,
     createMessage,
-    dispatchStreamingRequest,
-    getAgent,
+    endpoint,
+    getEndpoint,
+    getCredentialSecret,
+    ensureEndpointNamespace,
+    forwardRequest,
   };
 }
 
@@ -328,192 +336,50 @@ describe('selectLatestCanonicalBranchLeaf', () => {
     expect(selected?.id).toBe(newer.id);
   });
 
-  it('registers and releases an internal chat workload holder around the active stream', async () => {
+  it('streams through the configured endpoint proxy without runner workload state', async () => {
     const previousPublicApiBase = process.env.PUBLIC_API_BASE_URL;
     process.env.PUBLIC_API_BASE_URL = 'http://localhost:20000';
-    const streamGate = createDeferred<void>();
-    const keepalive = vi.fn(async () => undefined);
-    const releasePod = vi.fn(async () => undefined);
-    const internalWorkloadCoordinator = new InternalWorkloadCoordinator({
-      keepalive,
-      releasePod,
-    });
-    const messages: ChatMessageRecord[] = [];
-    const createdAt = new Date().toISOString();
-    const req = {
-      headers: {},
-    } as http.IncomingMessage;
+    const { cache, deps, forwardRequest, ensureEndpointNamespace } = createEndpointStreamDeps();
+    const req = { headers: {} } as http.IncomingMessage;
     const res = createResponse();
     const json = vi.fn();
     const sseWrite = vi.fn();
-    const dispatchStreamingRequest = vi.fn(async () => ({
-      requestId: 'req_chat_internal_holder',
-      cancel: () => undefined,
-      stream: (async function* stream() {
-        await streamGate.promise;
-        yield { type: 'delta', delta: 'hello' };
-        yield { type: 'done', finish_reason: 'stop', usage_tokens: 5 };
-      })(),
-    }));
-    const deps = {
-      cache: new InMemoryCache(),
-      docStore: new InMemoryJsonDocStore(),
-      chatResourceService: {
-        getSessionForUser: vi.fn(async () => ({
-          id: 'session_internal_holder',
-          workspace_id: 'ws_chat_holder',
-          project_id: 'proj_chat_holder',
-          owner_user_id: 'user_chat_holder',
-          title: 'Internal Chat Holder',
-          model: 'gpt-5-codex',
-          endpoint_id: '',
-          external_agent_id: 'agent_chat_internal_holder',
-          workspace_file_library_id: 'flib_chat_holder',
-          workspace_file_library_name: 'Chat Holder Workspace',
-          created_at: createdAt,
-          updated_at: createdAt,
-          message_count: 0,
-          total_tokens: 0,
-        })),
-        listMessages: vi.fn(async () => [...messages]),
-        getMessage: vi.fn(async () => null),
-        createMessage: vi.fn(async (input: {
-          role: 'user' | 'assistant' | 'system';
-          content: string;
-          parentId?: string | null;
-          variantGroupId?: string;
-          variantIndex?: number;
-          messageStatus?: 'streaming' | 'completed' | 'stopped' | 'failed';
-        }) => {
-          const created: ChatMessageRecord = {
-            id: `msg_${messages.length + 1}`,
-            workspace_id: 'ws_chat_holder',
-            project_id: 'proj_chat_holder',
-            session_id: 'session_internal_holder',
-            role: input.role,
-            content: input.content,
-            created_at: createdAt,
-            finish_reason: null,
-            message_status: input.messageStatus,
-            error_code: null,
-            error_message: null,
-            parent_id: input.parentId ?? null,
-            variant_group_id: input.variantGroupId,
-            variant_index: input.variantIndex,
-            is_stale: false,
-          };
-          messages.push(created);
-          return created;
-        }),
-        buildNextAssistantVariant: vi.fn(async () => ({
-          variantGroupId: 'variant_chat_holder',
-          variantIndex: 0,
-        })),
-        listAttachments: vi.fn(async () => []),
-        listAttachmentsByIds: vi.fn(async () => []),
-        updateAssistantMessage: vi.fn(async (
-          _workspaceId: string,
-          _projectId: string,
-          _sessionId: string,
-          messageId: string,
-          patch: Partial<ChatMessageRecord>,
-        ) => {
-          const index = messages.findIndex((message) => message.id === messageId);
-          if (index >= 0) {
-            messages[index] = {
-              ...messages[index],
-              ...patch,
-            };
-            return messages[index];
-          }
-          return null;
-        }),
-      },
-      agentResourceService: {
-        getAgent: vi.fn(async () => ({
-          id: 'agent_chat_internal_holder',
-          workspace_id: 'ws_chat_holder',
-          project_id: 'proj_chat_holder',
-          name: 'internal-chat-holder',
-          mode: 'internal',
-          status: 'enabled',
-          config: {
-            image: 'runner:v1',
-            _internal_raw_key: 'ask_test',
-          },
-          execution_preferences_json: {
-            chat: {
-              endpoint_id: 'ep_chat_internal_holder',
-            },
-          },
-          created_at: createdAt,
-          updated_at: createdAt,
-        })),
-      },
-      agentExecutionService: {
-        dispatchStreamingRequest,
-      },
-      internalWorkloadCoordinator,
-      internalAgentPodManager: {
-        ensureAgentReady: vi.fn(async () => undefined),
-        keepalive: vi.fn(async () => undefined),
-      },
-      internalAgentWorkspaceBindingManager: {
-        ensureWorkspaceBinding: vi.fn(async () => ({
-          workspaceMount: {
-            bindingId: 'binding_chat_holder',
-            mountPath: '/workspace/chat-holder',
-          },
-          binding: {
-            file_library_id: 'flib_chat_holder',
-          },
-        })),
-      },
-      downloadFileLibraryObjectUseCase: {
-        execute: vi.fn(async () => {
-          throw new Error('should_not_download_attachments_in_holder_test');
-        }),
-      },
-    } as unknown as NodeApiDeps;
 
-    const handlePromise = handleChatStreamRoute({
+    await expect(handleChatStreamRoute({
       route: {
         kind: 'chatMessagesStream',
-        workspaceId: 'ws_chat_holder',
-        projectId: 'proj_chat_holder',
-        sessionId: 'session_internal_holder',
+        workspaceId: 'ws_external_stream',
+        projectId: 'proj_external_stream',
+        sessionId: 'session_external_stream',
       },
       method: 'POST',
       req,
       res,
       deps,
-      user: { id: 'user_chat_holder', name: 'Chat Holder User', email: 'chat-holder@example.com' },
+      user: { id: 'user_external_stream', name: 'External Stream User', email: 'external-stream@example.com' },
       json,
       readBody: async () => ({
-        input: { role: 'user', content: 'hello internal holder' },
+        input: { role: 'user', content: 'hello endpoint stream' },
       }),
       sseWrite,
-    });
+    })).resolves.toBe(true);
 
-    await vi.waitFor(() => {
-      expect(dispatchStreamingRequest).toHaveBeenCalledTimes(1);
-      expect(internalWorkloadCoordinator.readSnapshotForTests()).toEqual([
-        {
-          workspaceId: 'ws_chat_holder',
-          projectId: 'proj_chat_holder',
-          workloadId: 'session-internal-holder',
-          holders: ['chat_stream:session_internal_holder'],
-          hardTeardownRequested: false,
-        },
-      ]);
+    expect(ensureEndpointNamespace).toHaveBeenCalledWith(
+      'ws_external_stream',
+      'proj_external_stream',
+      expect.objectContaining({ id: 'ep_external_stream' }),
+    );
+    expect(forwardRequest).toHaveBeenCalledTimes(1);
+    await expect(readSessionExecutionRecord(
+      cache,
+      'ws_external_stream',
+      'proj_external_stream',
+      'session_external_stream',
+    )).resolves.toMatchObject({
+      endpointId: 'ep_external_stream',
+      status: 'completed',
+      phase: 'terminal',
     });
-    expect(keepalive).toHaveBeenCalledTimes(1);
-
-    streamGate.resolve();
-    await expect(handlePromise).resolves.toBe(true);
-    expect(internalWorkloadCoordinator.readSnapshotForTests()).toEqual([]);
-    expect(releasePod).not.toHaveBeenCalled();
-    await internalWorkloadCoordinator.shutdown();
 
     if (previousPublicApiBase === undefined) {
       delete process.env.PUBLIC_API_BASE_URL;
@@ -531,7 +397,7 @@ describe('handleChatStreamRoute session state ordering', () => {
   it('treats session execution_status=stopping as an authoritative stream conflict even without an active record', async () => {
     const previousPublicApiBase = process.env.PUBLIC_API_BASE_URL;
     process.env.PUBLIC_API_BASE_URL = 'http://localhost:20000';
-    const { cache, deps, dispatchStreamingRequest, createMessage } = createExternalAgentStreamDeps();
+    const { cache, deps, forwardRequest, createMessage } = createEndpointStreamDeps();
     const req = { headers: {} } as http.IncomingMessage;
     const res = createResponse();
     const json = vi.fn();
@@ -570,7 +436,7 @@ describe('handleChatStreamRoute session state ordering', () => {
         message: 'chat_session_stream_conflict',
       });
       expect(createMessage).not.toHaveBeenCalled();
-      expect(dispatchStreamingRequest).not.toHaveBeenCalled();
+      expect(forwardRequest).not.toHaveBeenCalled();
     } finally {
       if (previousPublicApiBase === undefined) {
         delete process.env.PUBLIC_API_BASE_URL;
@@ -585,7 +451,7 @@ describe('handleChatStreamRoute session state ordering', () => {
     async (hardTeardownStatus) => {
       const previousPublicApiBase = process.env.PUBLIC_API_BASE_URL;
       process.env.PUBLIC_API_BASE_URL = 'http://localhost:20000';
-      const { cache, deps, dispatchStreamingRequest, createMessage } = createExternalAgentStreamDeps();
+      const { cache, deps, forwardRequest, createMessage } = createEndpointStreamDeps();
       const req = { headers: {} } as http.IncomingMessage;
       const res = createResponse();
       const json = vi.fn();
@@ -598,8 +464,6 @@ describe('handleChatStreamRoute session state ordering', () => {
           sessionId: 'session_external_stream',
           streamId: `stream_terminal_${hardTeardownStatus}_debt`,
           ownerInstanceId: 'api-terminal-debt',
-          transport: 'agent_runner',
-          internalAgent: true,
           status: 'stopped',
           phase: 'terminal',
           startedAt: '2026-04-23T12:00:00.000Z',
@@ -636,11 +500,9 @@ describe('handleChatStreamRoute session state ordering', () => {
         expect(json).toHaveBeenCalledWith(res, 409, {
           error_code: 'CHAT_SESSION_STREAM_CONFLICT',
           message: 'chat_session_stream_conflict',
-          reason: 'hard_teardown_pending',
-          hard_teardown_status: hardTeardownStatus,
         });
         expect(createMessage).not.toHaveBeenCalled();
-        expect(dispatchStreamingRequest).not.toHaveBeenCalled();
+        expect(forwardRequest).not.toHaveBeenCalled();
         await expect(readSessionExecutionRecord(
           cache,
           'ws_external_stream',
@@ -663,16 +525,10 @@ describe('handleChatStreamRoute session state ordering', () => {
     },
   );
 
-  it('allows a new stream only after terminate retries and clears terminal hard teardown debt', async () => {
+  it('allows a new endpoint stream after prior terminal execution truth without runner cleanup', async () => {
     const previousPublicApiBase = process.env.PUBLIC_API_BASE_URL;
     process.env.PUBLIC_API_BASE_URL = 'http://localhost:20000';
-    const { cache, deps, dispatchStreamingRequest, createMessage } = createExternalAgentStreamDeps();
-    const releasePod = vi.fn(async () => undefined);
-    const internalWorkloadCoordinator = new InternalWorkloadCoordinator({
-      keepalive: vi.fn(async () => undefined),
-      releasePod,
-    });
-    deps.internalWorkloadCoordinator = internalWorkloadCoordinator;
+    const { cache, deps, forwardRequest, createMessage } = createEndpointStreamDeps();
 
     await writeSessionExecutionRecord(
       cache,
@@ -680,64 +536,18 @@ describe('handleChatStreamRoute session state ordering', () => {
         workspaceId: 'ws_external_stream',
         projectId: 'proj_external_stream',
         sessionId: 'session_external_stream',
-        streamId: 'stream_terminal_retry_debt',
-        ownerInstanceId: 'api-terminal-debt',
-        transport: 'agent_runner',
-        internalAgent: true,
-        status: 'stopped',
+        streamId: 'stream_previous_terminal',
+        ownerInstanceId: 'api-previous',
+        status: 'completed',
         phase: 'terminal',
         startedAt: '2026-04-23T12:00:00.000Z',
         updatedAt: '2026-04-23T12:00:05.000Z',
-        stopMode: 'terminate',
-        stopReason: 'session_stop',
-        hardTeardownStatus: 'failed',
-        hardTeardownLastError: 'terminal release failed',
-        hardTeardownAttemptCount: 1,
+        endpointId: 'ep_external_stream',
       },
       60,
     );
 
     try {
-      const stopJson = vi.fn();
-      await expect(handleChatNonStreamRoute({
-        route: {
-          kind: 'chatSessionStop',
-          workspaceId: 'ws_external_stream',
-          projectId: 'proj_external_stream',
-          sessionId: 'session_external_stream',
-        },
-        method: 'POST',
-        req: { headers: {} } as http.IncomingMessage,
-        res: {} as http.ServerResponse,
-        deps,
-        user: { id: 'user_external_stream', name: 'External Stream User', email: 'external-stream@example.com' },
-        requestUrl: new URL('http://localhost/api/v1/workspaces/ws_external_stream/projects/proj_external_stream/chat/sessions/session_external_stream/stop'),
-        json: stopJson,
-        readBody: async () => ({ mode: 'terminate' }),
-      })).resolves.toBe(true);
-
-      expect(stopJson).toHaveBeenCalledWith(
-        expect.anything(),
-        202,
-        expect.objectContaining({
-          state: 'terminating',
-          stop_mode: 'terminate',
-        }),
-      );
-      expect(releasePod).toHaveBeenCalledTimes(1);
-      const clearedDebt = await readSessionExecutionRecord(
-        cache,
-        'ws_external_stream',
-        'proj_external_stream',
-        'session_external_stream',
-      );
-      expect(clearedDebt).toMatchObject({
-        status: 'stopped',
-        phase: 'terminal',
-        stopMode: 'terminate',
-      });
-      expect(clearedDebt?.hardTeardownStatus).toBeUndefined();
-
       await expect(handleChatStreamRoute({
         route: {
           kind: 'chatMessagesStream',
@@ -758,7 +568,7 @@ describe('handleChatStreamRoute session state ordering', () => {
       })).resolves.toBe(true);
 
       expect(createMessage).toHaveBeenCalled();
-      expect(dispatchStreamingRequest).toHaveBeenCalledTimes(1);
+      expect(forwardRequest).toHaveBeenCalledTimes(1);
       await expect(readSessionExecutionRecord(
         cache,
         'ws_external_stream',
@@ -767,9 +577,9 @@ describe('handleChatStreamRoute session state ordering', () => {
       )).resolves.toMatchObject({
         status: 'completed',
         phase: 'terminal',
+        endpointId: 'ep_external_stream',
       });
     } finally {
-      await internalWorkloadCoordinator.shutdown();
       if (previousPublicApiBase === undefined) {
         delete process.env.PUBLIC_API_BASE_URL;
       } else {
@@ -781,7 +591,7 @@ describe('handleChatStreamRoute session state ordering', () => {
   it('creates a bootstrapping execution record before the first message write', async () => {
     const previousPublicApiBase = process.env.PUBLIC_API_BASE_URL;
     process.env.PUBLIC_API_BASE_URL = 'http://localhost:20000';
-    const { cache, deps } = createExternalAgentStreamDeps();
+    const { cache, deps } = createEndpointStreamDeps();
     const originalCreateMessage = deps.chatResourceService.createMessage;
     const seenExecutionPhases: string[] = [];
     deps.chatResourceService.createMessage = vi.fn(async (...args: Parameters<typeof originalCreateMessage>) => {
@@ -825,12 +635,18 @@ describe('handleChatStreamRoute session state ordering', () => {
     }
   });
 
-  it('does not dispatch an external agent request after session stop wins in the pre-dispatch window', async () => {
+  it('does not forward to the endpoint after session stop wins in the pre-dispatch window', async () => {
     const previousPublicApiBase = process.env.PUBLIC_API_BASE_URL;
     process.env.PUBLIC_API_BASE_URL = 'http://localhost:20000';
-    const agentLookupGate = createDeferred<Awaited<ReturnType<ReturnType<typeof vi.fn>>>>();
-    const getAgent = vi.fn(async () => agentLookupGate.promise);
-    const { cache, deps, messages, dispatchStreamingRequest } = createExternalAgentStreamDeps({ getAgent });
+    const compileGate = createDeferred<void>();
+    buildChatExecutionMessagesMock.mockImplementationOnce(async () => {
+      await compileGate.promise;
+      return {
+        messages: [{ role: 'user', content: 'hello pre-dispatch stop' }],
+        missingCurrentImageDataUrl: false,
+      };
+    });
+    const { cache, deps, messages, forwardRequest } = createEndpointStreamDeps();
     const streamReq = { headers: {} } as http.IncomingMessage;
     const streamRes = createResponse();
     const streamJson = vi.fn();
@@ -858,8 +674,13 @@ describe('handleChatStreamRoute session state ordering', () => {
         sseWrite,
       });
 
-      await vi.waitFor(() => {
-        expect(getAgent).toHaveBeenCalledTimes(1);
+      await vi.waitFor(async () => {
+        expect(await readSessionExecutionRecord(
+          cache,
+          'ws_external_stream',
+          'proj_external_stream',
+          'session_external_stream',
+        )).toMatchObject({ status: 'running', phase: 'bootstrapping' });
       });
 
       await expect(handleChatNonStreamRoute({
@@ -889,30 +710,11 @@ describe('handleChatStreamRoute session state ordering', () => {
         escalation_reason: 'STOP_ESCALATION_UNAVAILABLE',
       });
 
-      agentLookupGate.resolve({
-        id: 'agent_external_stream',
-        workspace_id: 'ws_external_stream',
-        project_id: 'proj_external_stream',
-        name: 'external-stream-agent',
-        mode: 'external',
-        status: 'enabled',
-        execution_preferences_json: {
-          chat: {
-            endpoint_id: 'ep_external_stream',
-            wire_api: 'chat',
-          },
-        },
-        capabilities: {
-          streaming_completion: true,
-          multimodal_completion: false,
-        },
-        created_at: new Date().toISOString(),
-        updated_at: new Date().toISOString(),
-      });
+      compileGate.resolve();
 
       await expect(streamPromise).resolves.toBe(true);
 
-      expect(dispatchStreamingRequest).not.toHaveBeenCalled();
+      expect(forwardRequest).not.toHaveBeenCalled();
       await expect(readSessionStreamState(
         cache,
         'ws_external_stream',
@@ -938,7 +740,7 @@ describe('handleChatStreamRoute session state ordering', () => {
     const previousPublicApiBase = process.env.PUBLIC_API_BASE_URL;
     process.env.PUBLIC_API_BASE_URL = 'http://localhost:20000';
     const doneStateReads: Array<Promise<string | null>> = [];
-    const { cache, deps } = createExternalAgentStreamDeps();
+    const { cache, deps } = createEndpointStreamDeps();
     const req = { headers: {} } as http.IncomingMessage;
     const res = createResponse();
     const json = vi.fn();
@@ -1182,7 +984,7 @@ describe('handleChatStreamRoute session state ordering', () => {
   it('finalizes execution truth as failed when terminal assistant persistence throws', async () => {
     const previousPublicApiBase = process.env.PUBLIC_API_BASE_URL;
     process.env.PUBLIC_API_BASE_URL = 'http://localhost:20000';
-    const { cache, deps } = createExternalAgentStreamDeps();
+    const { cache, deps } = createEndpointStreamDeps();
     const originalUpdate = deps.chatResourceService.updateAssistantMessage;
     let finalizeAttempt = false;
     deps.chatResourceService.updateAssistantMessage = vi.fn(async (...args: Parameters<typeof originalUpdate>) => {
@@ -1230,200 +1032,64 @@ describe('handleChatStreamRoute session state ordering', () => {
     }
   });
 
-  it('escalates internal agent cancellation timeout into hard teardown', async () => {
+  it('keeps endpoint upstream failures on the endpoint path without runner teardown', async () => {
     const previousPublicApiBase = process.env.PUBLIC_API_BASE_URL;
     process.env.PUBLIC_API_BASE_URL = 'http://localhost:20000';
-    const streamGate = createDeferred<void>();
     const requestHardTeardown = vi.fn(async () => undefined);
-    const releasePod = vi.fn(async () => undefined);
-    const internalWorkloadCoordinator = new InternalWorkloadCoordinator({
-      keepalive: vi.fn(async () => undefined),
-      releasePod,
+    const getAgent = vi.fn(async () => null);
+    const forwardRequest = vi.fn(async () => new Response(
+      JSON.stringify({ error: { message: 'upstream unavailable' } }),
+      {
+        status: 502,
+        headers: { 'content-type': 'application/json' },
+      },
+    ));
+    const { cache, deps } = createEndpointStreamDeps({
+      forwardRequest,
     });
-    internalWorkloadCoordinator.requestHardTeardown = requestHardTeardown;
-    const messages: ChatMessageRecord[] = [];
-    const createdAt = new Date().toISOString();
-    const deps = {
-      cache: new InMemoryCache(),
-      docStore: new InMemoryJsonDocStore(),
-      chatResourceService: {
-        getSessionForUser: vi.fn(async () => ({
-          id: 'session_internal_cancel_timeout',
-          workspace_id: 'ws_internal_cancel_timeout',
-          project_id: 'proj_internal_cancel_timeout',
-          owner_user_id: 'user_internal_cancel_timeout',
-          title: 'Internal Cancel Timeout',
-          model: 'gpt-5-codex',
-          endpoint_id: '',
-          external_agent_id: 'agent_internal_cancel_timeout',
-          workspace_file_library_id: 'flib_internal_cancel_timeout',
-          workspace_file_library_name: 'Internal Cancel Timeout Workspace',
-          created_at: createdAt,
-          updated_at: createdAt,
-          message_count: 0,
-          total_tokens: 0,
-        })),
-        listMessages: vi.fn(async () => [...messages]),
-        getMessage: vi.fn(async () => null),
-        createMessage: vi.fn(async (input: {
-          role: 'user' | 'assistant' | 'system';
-          content: string;
-          parentId?: string | null;
-          variantGroupId?: string;
-          variantIndex?: number;
-          messageStatus?: 'streaming' | 'completed' | 'stopped' | 'failed';
-        }) => {
-          const created: ChatMessageRecord = {
-            id: `msg_${messages.length + 1}`,
-            workspace_id: 'ws_internal_cancel_timeout',
-            project_id: 'proj_internal_cancel_timeout',
-            session_id: 'session_internal_cancel_timeout',
-            role: input.role,
-            content: input.content,
-            created_at: createdAt,
-            finish_reason: null,
-            message_status: input.messageStatus,
-            error_code: null,
-            error_message: null,
-            parent_id: input.parentId ?? null,
-            variant_group_id: input.variantGroupId,
-            variant_index: input.variantIndex,
-            is_stale: false,
-          };
-          messages.push(created);
-          return created;
-        }),
-        buildNextAssistantVariant: vi.fn(async () => ({
-          variantGroupId: 'variant_internal_cancel_timeout',
-          variantIndex: 0,
-        })),
-        listAttachments: vi.fn(async () => []),
-        listAttachmentsByIds: vi.fn(async () => []),
-        updateAssistantMessage: vi.fn(async (
-          _workspaceId: string,
-          _projectId: string,
-          _sessionId: string,
-          messageId: string,
-          patch: Partial<ChatMessageRecord>,
-        ) => {
-          const index = messages.findIndex((message) => message.id === messageId);
-          if (index >= 0) {
-            messages[index] = { ...messages[index], ...patch };
-            return messages[index];
-          }
-          return null;
-        }),
-      },
-      agentResourceService: {
-        getAgent: vi.fn(async () => ({
-          id: 'agent_internal_cancel_timeout',
-          workspace_id: 'ws_internal_cancel_timeout',
-          project_id: 'proj_internal_cancel_timeout',
-          name: 'internal-cancel-timeout-agent',
-          mode: 'internal',
-          status: 'enabled',
-          config: {
-            image: 'runner:v1',
-            _internal_raw_key: 'ask_test',
-          },
-          execution_preferences_json: {
-            chat: {
-              endpoint_id: 'ep_internal_cancel_timeout',
-            },
-          },
-          created_at: createdAt,
-          updated_at: createdAt,
-        })),
-      },
-      agentExecutionService: {
-        dispatchStreamingRequest: vi.fn(async () => ({
-          requestId: 'req_internal_cancel_timeout',
-          cancel: vi.fn(() => undefined),
-          stream: (async function* stream() {
-            await streamGate.promise;
-            yield {
-              type: 'error' as const,
-              error_code: 'AGENT_CANCEL_TIMEOUT',
-              error_message: 'agent_cancel_timeout',
-            };
-          })(),
-        })),
-      },
-      internalWorkloadCoordinator,
-      internalAgentPodManager: {
-        ensureAgentReady: vi.fn(async () => undefined),
-        keepalive: vi.fn(async () => undefined),
-      },
-      internalAgentWorkspaceBindingManager: {
-        ensureWorkspaceBinding: vi.fn(async () => ({
-          workspaceMount: {
-            bindingId: 'binding_internal_cancel_timeout',
-            mountPath: '/workspace/internal-cancel-timeout',
-          },
-          binding: {
-            file_library_id: 'flib_internal_cancel_timeout',
-          },
-        })),
-      },
-      downloadFileLibraryObjectUseCase: {
-        execute: vi.fn(async () => {
-          throw new Error('should_not_download_attachments_in_internal_cancel_timeout_test');
-        }),
-      },
-    } as unknown as NodeApiDeps;
+    deps.agentResourceService = { getAgent } as never;
+    deps.internalWorkloadCoordinator = { requestHardTeardown } as never;
 
     try {
-      const handlePromise = handleChatStreamRoute({
+      const json = vi.fn();
+      await expect(handleChatStreamRoute({
         route: {
           kind: 'chatMessagesStream',
-          workspaceId: 'ws_internal_cancel_timeout',
-          projectId: 'proj_internal_cancel_timeout',
-          sessionId: 'session_internal_cancel_timeout',
+          workspaceId: 'ws_external_stream',
+          projectId: 'proj_external_stream',
+          sessionId: 'session_external_stream',
         },
         method: 'POST',
         req: { headers: {} } as http.IncomingMessage,
         res: createResponse(),
         deps,
-        user: { id: 'user_internal_cancel_timeout', name: 'Internal Cancel Timeout', email: 'internal-cancel-timeout@example.com' },
-        json: vi.fn(),
+        user: { id: 'user_external_stream', name: 'External Stream User', email: 'external-stream@example.com' },
+        json,
         readBody: async () => ({
-          input: { role: 'user', content: 'hello internal cancel timeout' },
+          input: { role: 'user', content: 'hello upstream failure' },
         }),
         sseWrite: vi.fn(),
-      });
+      })).resolves.toBe(true);
 
-      await vi.waitFor(async () => {
-        expect(await readSessionExecutionRecord(
-          deps.cache,
-          'ws_internal_cancel_timeout',
-          'proj_internal_cancel_timeout',
-          'session_internal_cancel_timeout',
-        )).toMatchObject({ status: 'running' });
-      });
-
-      await requestSessionExecutionStop(deps.cache, {
-        workspaceId: 'ws_internal_cancel_timeout',
-        projectId: 'proj_internal_cancel_timeout',
-        sessionId: 'session_internal_cancel_timeout',
-        requestedBy: 'user_internal_cancel_timeout',
-        stopReason: 'session_stop',
-      });
-      streamGate.resolve();
-
-      await expect(handlePromise).resolves.toBe(true);
-      expect(requestHardTeardown).toHaveBeenCalledWith({
-        workspaceId: 'ws_internal_cancel_timeout',
-        projectId: 'proj_internal_cancel_timeout',
-        workloadId: 'session-internal-cancel-timeout',
-        epoch: expect.any(String),
-      });
+      expect(json).toHaveBeenCalledWith(
+        expect.anything(),
+        502,
+        { error: { message: 'upstream unavailable' } },
+      );
+      await expect(readSessionStreamState(
+        cache,
+        'ws_external_stream',
+        'proj_external_stream',
+        'session_external_stream',
+      )).resolves.toBe('failed');
+      expect(getAgent).not.toHaveBeenCalled();
+      expect(requestHardTeardown).not.toHaveBeenCalled();
     } finally {
       if (previousPublicApiBase === undefined) {
         delete process.env.PUBLIC_API_BASE_URL;
       } else {
         process.env.PUBLIC_API_BASE_URL = previousPublicApiBase;
       }
-      await internalWorkloadCoordinator.shutdown();
     }
   });
 });

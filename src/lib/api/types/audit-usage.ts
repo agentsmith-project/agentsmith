@@ -5,7 +5,7 @@ export interface AuditEvent {
   timestamp: string;
   workspace_id: string;
   project_id: string;
-  actor_type: 'user' | 'agent' | 'plugin' | string;
+  actor_type: 'user' | 'runner' | 'plugin' | string;
   actor_id: string;
   action: string;
   resource_type?: string;
@@ -76,7 +76,7 @@ export interface AuditListParams extends PaginationParams {
   start_time: string;
   end_time: string;
   action?: string;
-  actor_type?: 'user' | 'agent' | 'plugin';
+  actor_type?: 'user' | 'runner' | 'plugin';
   actor_id?: string;
   end_user_id?: string;
   resource_type?: string;

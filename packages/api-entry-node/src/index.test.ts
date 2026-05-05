@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { WebSocket } from "ws";
-import { CHAT_RUNNER_SPEC, NOTEBOOK_RUNNER_SPEC } from "@mbos/agent-runner";
+import { NOTEBOOK_RUNNER_SPEC } from "@mbos/agent-runner";
 import { createDefaultNodeApiDeps } from "./index.js";
 import {
   JsonDocProjectFileLibraryBackendRepo,
@@ -9,19 +9,31 @@ import {
 } from "./file-library-persistence.js";
 import { sanitizeWorkloadId } from "./internal-agent-pod-manager.js";
 import { UniversalProxyService } from "./universal-proxy-service.js";
-import { startUniversalProxyChatServer } from "./__integration__/chat-test-support.js";
-import { readAgentExecutionPreferences } from "./agent-execution-preferences.js";
+import {
+  cleanupChatUpstreamServers,
+  startUniversalProxyChatServer,
+} from "./__integration__/chat-test-support.js";
 import {
   apiFetch,
+  apiFetchWithToken,
   startServer,
   startServerWithDeps,
 } from "./__integration__/test-support.js";
+import {
+  acquireNotebookTaskRunLease,
+  buildNotebookTaskRunState,
+} from "./notebook-task/task-run-coordination.js";
+import {
+  upsertProjectMemberPermissionState,
+  upsertProjectMembershipRecord,
+} from "./project-member-governance-persistence.js";
 
 const originalGatewayReconcileInterval = process.env.FILE_LIBRARY_GATEWAY_RECONCILE_INTERVAL_MS;
 const originalFeishuRefreshEnabled = process.env.FEISHU_OAUTH_REFRESH_RUNNER_ENABLED;
 
-afterEach(() => {
+afterEach(async () => {
   vi.restoreAllMocks();
+  await cleanupChatUpstreamServers();
   if (originalGatewayReconcileInterval === undefined) delete process.env.FILE_LIBRARY_GATEWAY_RECONCILE_INTERVAL_MS;
   else process.env.FILE_LIBRARY_GATEWAY_RECONCILE_INTERVAL_MS = originalGatewayReconcileInterval;
   if (originalFeishuRefreshEnabled === undefined) delete process.env.FEISHU_OAUTH_REFRESH_RUNNER_ENABLED;
@@ -65,6 +77,208 @@ function buildNotebookExecutionPreferences(endpointId = "ep_notebook_default") {
   };
 }
 
+type ChatEndpointCapability = {
+  type: "chat_completion" | "multimodal_completion";
+  enabled: boolean;
+  default_model_id?: string;
+};
+
+function buildOpenAIStreamResponse(
+  chunks = ["echo:", " hello"],
+  usageTokens = 6,
+): Response {
+  const encoder = new TextEncoder();
+  return new Response(
+    new ReadableStream({
+      start(controller) {
+        chunks.forEach((chunk) => {
+          controller.enqueue(
+            encoder.encode(
+              `data: {"id":"chatcmpl_test","object":"chat.completion.chunk","choices":[{"delta":{"content":${JSON.stringify(chunk)}},"finish_reason":null}]}\n\n`,
+            ),
+          );
+        });
+        controller.enqueue(
+          encoder.encode(
+            `data: {"id":"chatcmpl_test","object":"chat.completion.chunk","choices":[{"delta":{},"finish_reason":"stop"}],"usage":{"total_tokens":${usageTokens}}}\n\n`,
+          ),
+        );
+        controller.enqueue(encoder.encode("data: [DONE]\n\n"));
+        controller.close();
+      },
+    }),
+    { headers: { "content-type": "text/event-stream" } },
+  );
+}
+
+function buildSlowOpenAIStreamResponse(): Response {
+  const encoder = new TextEncoder();
+  return new Response(
+    new ReadableStream({
+      start(controller) {
+        controller.enqueue(
+          encoder.encode(
+            'data: {"id":"chatcmpl_slow","object":"chat.completion.chunk","choices":[{"delta":{"content":"Hello"},"finish_reason":null}]}\n\n',
+          ),
+        );
+        setTimeout(() => {
+          controller.enqueue(
+            encoder.encode(
+              'data: {"id":"chatcmpl_slow","object":"chat.completion.chunk","choices":[{"delta":{"content":" after stop"},"finish_reason":null}]}\n\n',
+            ),
+          );
+        }, 250);
+        setTimeout(() => {
+          controller.enqueue(
+            encoder.encode(
+              'data: {"id":"chatcmpl_slow","object":"chat.completion.chunk","choices":[{"delta":{},"finish_reason":"stop"}],"usage":{"total_tokens":12}}\n\n',
+            ),
+          );
+          controller.enqueue(encoder.encode("data: [DONE]\n\n"));
+          controller.close();
+        }, 500);
+      },
+    }),
+    { headers: { "content-type": "text/event-stream" } },
+  );
+}
+
+function installMockUniversalProxy(
+  deps: ReturnType<typeof createDefaultNodeApiDeps>,
+  responseFactory: () => Response = () => buildOpenAIStreamResponse(),
+) {
+  const service = new UniversalProxyService("http://127.0.0.1:9");
+  const ensureEndpointNamespace = vi
+    .spyOn(service, "ensureEndpointNamespace")
+    .mockResolvedValue("ns_chat_test");
+  const forwardRequest = vi
+    .spyOn(service, "forwardRequest")
+    .mockImplementation(async () => responseFactory());
+  deps.universalProxyService = service;
+  return { ensureEndpointNamespace, forwardRequest };
+}
+
+async function createChatEndpoint(
+  baseUrl: string,
+  input?: {
+    name?: string;
+    model?: string;
+    baseUrl?: string;
+    capabilities?: ChatEndpointCapability[];
+  },
+): Promise<{ id: string; model: string }> {
+  const model = input?.model ?? "deepseek-chat";
+  const createCredential = await apiFetch(
+    baseUrl,
+    "/api/v1/workspaces/ws_default/projects/proj_1/credentials",
+    {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        name: `${input?.name ?? "chat-endpoint"}-key`,
+        type: "api_key",
+        value: "sk-chat-test",
+      }),
+    },
+  );
+  expect(createCredential.status).toBe(201);
+  const credential = (await createCredential.json()) as { id: string };
+
+  const capabilities = input?.capabilities ?? [
+    {
+      type: "chat_completion" as const,
+      enabled: true,
+      default_model_id: model,
+    },
+  ];
+  const createEndpoint = await apiFetch(
+    baseUrl,
+    "/api/v1/workspaces/ws_default/projects/proj_1/endpoints",
+    {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        name: input?.name ?? `chat-endpoint-${Math.random().toString(16).slice(2)}`,
+        model,
+        type: "custom",
+        base_url: input?.baseUrl ?? "https://provider.example/v1",
+        credential_ref: credential.id,
+        provider_family: "custom",
+        upstream_protocol: "openai_chat_completions",
+        capabilities,
+        models: [{ capability: "chat_completion", model_id: model }],
+        defaults: { chat_model_id: model },
+      }),
+    },
+  );
+  expect(createEndpoint.status).toBe(201);
+  const endpoint = (await createEndpoint.json()) as { id: string };
+  return { id: endpoint.id, model };
+}
+
+async function createEndpointChatSession(
+  baseUrl: string,
+  input?: {
+    name?: string;
+    model?: string;
+    capabilities?: ChatEndpointCapability[];
+  },
+): Promise<{ endpoint: { id: string; model: string }; session: { id: string } }> {
+  const endpoint = await createChatEndpoint(baseUrl, input);
+  const createSession = await apiFetch(
+    baseUrl,
+    "/api/v1/workspaces/ws_default/projects/proj_1/chat/sessions",
+    {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        endpoint_id: endpoint.id,
+        model: endpoint.model,
+      }),
+    },
+  );
+  expect(createSession.status).toBe(201);
+  const session = (await createSession.json()) as { id: string };
+  return { endpoint, session };
+}
+
+async function createProjectWithAgentRunnerManage(
+  deps: ReturnType<typeof createDefaultNodeApiDeps>,
+): Promise<string> {
+  const project = await deps.createProjectUseCase.execute({
+    workspaceId: "ws_default",
+    actorId: "user_test",
+    input: {
+      name: `Agent Runner Route ${Math.random().toString(16).slice(2)}`,
+      visibility: "private",
+      join_policy: "approval_required",
+    },
+  });
+  await upsertProjectMembershipRecord(deps.docStore, "ws_default", project.id, {
+    project_id: project.id,
+    user_id: "user_test",
+    user_email: "test@example.com",
+    user_name: "Test User",
+    status: "active",
+    joined_at: new Date().toISOString(),
+  });
+  await upsertProjectMemberPermissionState(
+    deps.docStore,
+    "ws_default",
+    project.id,
+    "user_test",
+    {
+      mode: "custom",
+      template: null,
+      permissions: [
+        "project:agent_runner:read",
+        "project:agent_runner:manage",
+      ],
+    },
+  );
+  return project.id;
+}
+
 const NOTEBOOK_RUNNER_DISPATCH_TIMEOUT_MS = 1_500;
 const NOTEBOOK_RUNNER_SETTLE_MS = 200;
 
@@ -83,7 +297,7 @@ function buildNotebookRunnerWsUrl(
     wsUrl.replace("ws://localhost:20000", baseUrl.replace("http://", "ws://")),
   );
   if (sessionId) {
-    resolved.searchParams.set("session_id", sessionId);
+    resolved.searchParams.set("runner_session_id", sessionId);
   }
   return resolved.toString();
 }
@@ -137,6 +351,7 @@ async function expectNotebookRunnerDispatch(
 }
 
 async function createNotebookExternalAgentFixture(
+  deps: ReturnType<typeof createDefaultNodeApiDeps>,
   baseUrl: string,
   workspaceLibraryName: string,
 ): Promise<{
@@ -209,55 +424,48 @@ async function createNotebookExternalAgentFixture(
   expect(createEndpoint.status).toBe(201);
   const endpoint = (await createEndpoint.json()) as { id: string };
 
-  const createAgent = await apiFetch(
-    baseUrl,
-    "/api/v1/workspaces/ws_default/projects/proj_1/agents",
+  const agent = await deps.agentResourceService.createAgent(
+    "ws_default",
+    "proj_1",
     {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        name: "External notebook agent",
-        mode: "external",
-        interaction_kind: "notebook",
-        execution_preferences: {
-          notebook: {
-            endpoint_id: endpoint.id,
-            wire_api: "responses",
-            model: "placeholder-model",
-          },
+      name: "Notebook task runner",
+      runner_provider: "developer",
+      status: "enabled",
+      presence: "offline",
+      runner_status: "ready",
+      is_default: true,
+      default_endpoint_id: endpoint.id,
+      execution_preferences_json: {
+        agent_task: {
+          endpoint_id: endpoint.id,
+          wire_api: "openai_responses",
         },
-        capabilities: {
-          streaming_completion: true,
-          multimodal_completion: false,
-        },
-      }),
+      },
+      capabilities: {
+        streaming_completion: true,
+        multimodal_completion: false,
+        task_execution: true,
+        terminal: true,
+        artifacts: true,
+      },
+      owner_id: "user_test",
+      visibility: "private",
     },
   );
-  expect(createAgent.status).toBe(201);
-  const agent = (await createAgent.json()) as { id: string };
+  await deps.agentResourceService.clearDefaultAgentRunnersExcept(
+    "ws_default",
+    "proj_1",
+    agent.id,
+  );
 
   const workspaceLibrary = await createFileLibrary(baseUrl, workspaceLibraryName);
 
-  const createAgentKeyRes = await apiFetch(
-    baseUrl,
-    `/api/v1/workspaces/ws_default/projects/proj_1/agents/${agent.id}/keys`,
-    {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: "{}",
-    },
+  const agentKey = await deps.agentResourceService.createAgentKey(
+    "ws_default",
+    "proj_1",
+    agent.id,
   );
-  expect(createAgentKeyRes.status).toBe(201);
-  const agentKey = (await createAgentKeyRes.json()) as { key: string };
-
-  const connectionInfoRes = await apiFetch(
-    baseUrl,
-    `/api/v1/workspaces/ws_default/projects/proj_1/agents/${agent.id}/connection-info`,
-  );
-  expect(connectionInfoRes.status).toBe(200);
-  const connectionInfo = (await connectionInfoRes.json()) as {
-    ws_url: string;
-  };
+  const connectionInfo = deps.agentResourceService.buildConnectionInfo(agent);
 
   return {
     agent,
@@ -269,7 +477,6 @@ async function createNotebookExternalAgentFixture(
 
 async function createNotebookTask(
   baseUrl: string,
-  agentId: string,
   workspaceFileLibraryId: string,
   title: string,
 ): Promise<{ id: string }> {
@@ -281,7 +488,6 @@ async function createNotebookTask(
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         title,
-        agent_id: agentId,
         workspace_file_library_id: workspaceFileLibraryId,
       }),
     },
@@ -290,18 +496,18 @@ async function createNotebookTask(
   return (await createTaskRes.json()) as { id: string };
 }
 
-async function postNotebookTaskMessage(
+async function postNotebookTaskRun(
   baseUrl: string,
   taskId: string,
   content: string,
 ): Promise<Response> {
   return apiFetch(
     baseUrl,
-    `/api/v1/workspaces/ws_default/projects/proj_1/tasks/${taskId}/messages`,
+    `/api/v1/workspaces/ws_default/projects/proj_1/tasks/${taskId}/runs`,
     {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ role: "user", content }),
+      body: JSON.stringify({ intent: content }),
     },
   );
 }
@@ -898,737 +1104,275 @@ describe("api-entry-node sse ticket routes", () => {
   });
 });
 
-describe("agent execution preferences", () => {
-  it("preserves anthropic_messages chat wire preferences instead of collapsing them to chat", () => {
-    expect(
-      readAgentExecutionPreferences({
-        interaction_kind: "chat",
-        execution_preferences_json: {
-          chat: {
-            endpoint_id: "ep_anthropic",
-            wire_api: "anthropic_messages",
-            model: "claude-sonnet",
-          },
-        },
-      }),
-    ).toEqual({
-      interactionKind: "chat",
-      endpointId: "ep_anthropic",
-      wireApi: "anthropic_messages",
-      model: "claude-sonnet",
-      executor: null,
-    });
-  });
-});
-
 describe("api-entry-node projects routes", () => {
-  it("streams chat via external agent websocket execution channel with anthropic_messages wire preserved", async () => {
-    const previousPublicApiBase = process.env.PUBLIC_API_BASE_URL;
-    let ws: WebSocket | null = null;
-    try {
-      const { baseUrl } = startServer();
-      process.env.PUBLIC_API_BASE_URL = baseUrl;
+  it("streams chat via endpoint universal proxy with canonical endpoint request", async () => {
+    const { baseUrl, deps } = startServer();
+    const { forwardRequest } = installMockUniversalProxy(deps);
+    const { endpoint, session } = await createEndpointChatSession(baseUrl, {
+      name: "chat-proxy-stream",
+    });
 
-      const createAgentRes = await apiFetch(
-        baseUrl,
-        "/api/v1/workspaces/ws_default/projects/proj_1/agents",
-        {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            name: "echo-agent",
-            mode: "external",
-            interaction_kind: "chat",
-            execution_preferences: buildChatExecutionPreferences(
-              "ep_chat_default",
-              "anthropic_messages",
-            ),
-            capabilities: {
-              streaming_completion: true,
-              multimodal_completion: true,
-            },
-          }),
+    const streamRes = await apiFetch(
+      baseUrl,
+      `/api/v1/workspaces/ws_default/projects/proj_1/chat/sessions/${session.id}/messages/stream`,
+      {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Host: "evil.example",
+          "X-Forwarded-Host": "evil.example",
+          "X-Forwarded-Proto": "https",
         },
-      );
-      expect(createAgentRes.status).toBe(201);
-      const agent = (await createAgentRes.json()) as { id: string };
-      await createFileLibrary(baseUrl, "Truncate Trace Workspace");
-
-      const keyRes = await apiFetch(
-        baseUrl,
-        `/api/v1/workspaces/ws_default/projects/proj_1/agents/${agent.id}/keys`,
-        {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: "{}",
-        },
-      );
-      expect(keyRes.status).toBe(201);
-      const keyPayload = (await keyRes.json()) as { key: string };
-      expect(keyPayload.key).toBeTruthy();
-
-      const connInfoRes = await apiFetch(
-        baseUrl,
-        `/api/v1/workspaces/ws_default/projects/proj_1/agents/${agent.id}/connection-info`,
-      );
-      expect(connInfoRes.status).toBe(200);
-      const connInfo = (await connInfoRes.json()) as { ws_url: string };
-      const wsUrl = connInfo.ws_url.replace(
-        "ws://localhost:20000",
-        baseUrl.replace("http://", "ws://"),
-      );
-
-      ws = new WebSocket(wsUrl, {
-        headers: { Authorization: `Bearer ${keyPayload.key}` },
-      });
-      let observedExecutionTicket = "";
-      let observedLegacyBearer = "";
-      let observedApiBase = "";
-      let observedEndpointId = "";
-      let observedWireApi = "";
-      await new Promise<void>((resolve, reject) => {
-        ws.once("open", () => {
-          ws.send(
-            JSON.stringify({
-              type: "agent.ready",
-              payload: {
-                runner_spec: CHAT_RUNNER_SPEC,
-                capabilities: {
-                  wire_api: "responses",
-                  streaming_completion: true,
-                },
-              },
-            }),
-          );
-          resolve();
-        });
-        ws.once("error", reject);
-      });
-      ws.on("message", (raw) => {
-        const msg = JSON.parse(raw.toString("utf-8")) as {
-          type?: string;
-          request_id?: string;
-          payload?: {
-            messages?: unknown[];
-            execution_context?: {
-              api_base?: string;
-              interaction_kind?: string;
-              task_id?: string;
-              endpoint_id?: string;
-              wire_api?: string;
-              execution_ticket?: string;
-              user_bearer_token?: string;
-            };
-          };
-        };
-        if (msg.type !== "server.request.start" || !msg.request_id) return;
-        observedApiBase = msg.payload?.execution_context?.api_base ?? "";
-        expect(msg.payload?.execution_context?.interaction_kind).toBe("chat");
-        expect(msg.payload?.execution_context?.task_id).toBeUndefined();
-        observedEndpointId = msg.payload?.execution_context?.endpoint_id ?? "";
-        observedWireApi = msg.payload?.execution_context?.wire_api ?? "";
-        observedExecutionTicket =
-          msg.payload?.execution_context?.execution_ticket ?? "";
-        observedLegacyBearer =
-          msg.payload?.execution_context?.user_bearer_token ?? "";
-        ws.send(
-          JSON.stringify({
-            type: "agent.response.event",
-            request_id: msg.request_id,
-            payload: {
-              sequence: 1,
-              at: new Date().toISOString(),
-              category: "warning",
-              phase: "update",
-              status: "running",
-              name: "session.workspace_recreated",
-              summary: "chat_session_workspace_recreated",
-              details: {
-                session_id: "external-chat-session",
-              },
-            },
-          }),
-        );
-        ws.send(
-          JSON.stringify({
-            type: "agent.response.delta",
-            request_id: msg.request_id,
-            payload: { delta: "echo:" },
-          }),
-        );
-        ws.send(
-          JSON.stringify({
-            type: "agent.response.delta",
-            request_id: msg.request_id,
-            payload: { delta: " hello" },
-          }),
-        );
-        ws.send(
-          JSON.stringify({
-            type: "agent.response.done",
-            request_id: msg.request_id,
-            payload: { finish_reason: "stop", usage_tokens: 6 },
-          }),
-        );
-      });
-
-      const createSessionRes = await apiFetch(
-        baseUrl,
-        "/api/v1/workspaces/ws_default/projects/proj_1/chat/sessions",
-        {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            external_agent_id: agent.id,
-            model: "external-echo",
-          }),
-        },
-      );
-      expect(createSessionRes.status).toBe(201);
-      const session = (await createSessionRes.json()) as { id: string };
-
-      const streamRes = await apiFetch(
-        baseUrl,
-        `/api/v1/workspaces/ws_default/projects/proj_1/chat/sessions/${session.id}/messages/stream`,
-        {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            Host: "evil.example",
-            "X-Forwarded-Host": "evil.example",
-            "X-Forwarded-Proto": "https",
-          },
-          body: JSON.stringify({
-            input: { role: "user", content: "hello" },
-          }),
-        },
-      );
-      expect(streamRes.status).toBe(200);
-      const text = await streamRes.text();
-      expect(text).toContain("event: warning");
-      expect(text).toContain('"code":"session.workspace_recreated"');
-      expect(text).toContain("event: delta");
-      expect(text).toContain("echo:");
-      expect(text).toContain("event: done");
-      expect(observedApiBase).toBe(`${baseUrl}/api/v1`);
-      expect(observedEndpointId).toBe("ep_chat_default");
-      expect(observedWireApi).toBe("anthropic_messages");
-      expect(observedExecutionTicket).toMatch(/^exec_/);
-      expect(observedLegacyBearer).toBe("");
-    } finally {
-      ws?.close();
-      if (previousPublicApiBase === undefined) {
-        delete process.env.PUBLIC_API_BASE_URL;
-      } else {
-        process.env.PUBLIC_API_BASE_URL = previousPublicApiBase;
-      }
-    }
+        body: JSON.stringify({
+          input: { role: "user", content: "hello" },
+        }),
+      },
+    );
+    expect(streamRes.status).toBe(200);
+    const text = await streamRes.text();
+    expect(text).toContain("event: delta");
+    expect(text).toContain("echo:");
+    expect(text).toContain("event: done");
+    expect(forwardRequest).toHaveBeenCalledTimes(1);
+    const dispatch = forwardRequest.mock.calls[0]?.[0];
+    expect(dispatch).toMatchObject({
+      namespace: "ns_chat_test",
+      proxyPath: "openai/chat/completions",
+      model: endpoint.model,
+      providerCredential: "sk-chat-test",
+    });
+    expect(dispatch?.requestBody).toMatchObject({
+      stream: true,
+      messages: [{ role: "user", content: "hello" }],
+    });
+    expect(dispatch?.requestBody).not.toHaveProperty("execution_context");
   });
 
-  it("stops an external agent chat stream by propagating cancel to the runner", async () => {
-    const previousPublicApiBase = process.env.PUBLIC_API_BASE_URL;
-    let ws: WebSocket | null = null;
-    try {
-      const { baseUrl } = startServer();
-      process.env.PUBLIC_API_BASE_URL = baseUrl;
+  it("stops an endpoint chat stream through session stop state", async () => {
+    const { baseUrl, deps } = startServer();
+    const { forwardRequest } = installMockUniversalProxy(
+      deps,
+      buildSlowOpenAIStreamResponse,
+    );
+    const { session } = await createEndpointChatSession(baseUrl, {
+      name: "chat-proxy-stop",
+    });
 
-      const createAgentRes = await apiFetch(
-        baseUrl,
-        "/api/v1/workspaces/ws_default/projects/proj_1/agents",
-        {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            name: "cancel-agent",
-            mode: "external",
-            interaction_kind: "chat",
-            execution_preferences: buildChatExecutionPreferences(),
-            capabilities: {
-              streaming_completion: true,
-              multimodal_completion: true,
-            },
-          }),
-        },
-      );
-      expect(createAgentRes.status).toBe(201);
-      const agent = (await createAgentRes.json()) as { id: string };
+    const streamRes = await apiFetch(
+      baseUrl,
+      `/api/v1/workspaces/ws_default/projects/proj_1/chat/sessions/${session.id}/messages/stream`,
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          input: { role: "user", content: "stop me" },
+        }),
+      },
+    );
+    expect(streamRes.status).toBe(200);
+    await new Promise((resolve) => setTimeout(resolve, 50));
 
-      const keyRes = await apiFetch(
-        baseUrl,
-        `/api/v1/workspaces/ws_default/projects/proj_1/agents/${agent.id}/keys`,
-        {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: "{}",
-        },
-      );
-      expect(keyRes.status).toBe(201);
-      const keyPayload = (await keyRes.json()) as { key: string };
-
-      const connInfoRes = await apiFetch(
-        baseUrl,
-        `/api/v1/workspaces/ws_default/projects/proj_1/agents/${agent.id}/connection-info`,
-      );
-      expect(connInfoRes.status).toBe(200);
-      const connInfo = (await connInfoRes.json()) as { ws_url: string };
-      const wsUrl = connInfo.ws_url.replace(
-        "ws://localhost:20000",
-        baseUrl.replace("http://", "ws://"),
-      );
-
-      ws = new WebSocket(wsUrl, {
-        headers: { Authorization: `Bearer ${keyPayload.key}` },
-      });
-      let activeRequestId = "";
-      let cancelObserved = false;
-      await new Promise<void>((resolve, reject) => {
-        ws.once("open", () => {
-          ws?.send(
-            JSON.stringify({
-              type: "agent.ready",
-              payload: {
-                runner_spec: CHAT_RUNNER_SPEC,
-                capabilities: {
-                  wire_api: "chat",
-                  streaming_completion: true,
-                },
-              },
-            }),
-          );
-          resolve();
-        });
-        ws.once("error", reject);
-      });
-      ws.on("message", (raw) => {
-        const msg = JSON.parse(raw.toString("utf-8")) as {
-          type?: string;
-          request_id?: string;
-        };
-        if (msg.type === "server.request.start" && msg.request_id) {
-          activeRequestId = msg.request_id;
-          return;
-        }
-        if (msg.type === "server.request.cancel" && msg.request_id === activeRequestId) {
-          cancelObserved = true;
-          ws?.send(
-            JSON.stringify({
-              type: "agent.response.done",
-              request_id: msg.request_id,
-              payload: { finish_reason: "cancelled", usage_tokens: 0 },
-            }),
-          );
-        }
-      });
-
-      const createSessionRes = await apiFetch(
-        baseUrl,
-        "/api/v1/workspaces/ws_default/projects/proj_1/chat/sessions",
-        {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            title: "cancel-session",
-            endpoint_id: "",
-            external_agent_id: agent.id,
-            model: "external-cancel",
-          }),
-        },
-      );
-      expect(createSessionRes.status).toBe(201);
-      const session = (await createSessionRes.json()) as { id: string };
-
-      const streamRes = await apiFetch(
-        baseUrl,
-        `/api/v1/workspaces/ws_default/projects/proj_1/chat/sessions/${session.id}/messages/stream`,
-        {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            input: { role: "user", content: "stop me" },
-          }),
-        },
-      );
-      expect(streamRes.status).toBe(200);
-      await new Promise((resolve) => setTimeout(resolve, 50));
-
-      const stopRes = await apiFetch(
-        baseUrl,
-        `/api/v1/workspaces/ws_default/projects/proj_1/chat/sessions/${session.id}/stop`,
-        {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({}),
-        },
-      );
-      expect(stopRes.status).toBe(202);
-      const streamText = await streamRes.text();
-      expect(cancelObserved).toBe(true);
-      expect(streamText).toContain('event: done');
-      expect(streamText).toContain('"message_status":"stopped"');
-      expect(streamText).toContain('"finish_reason":"cancelled"');
-    } finally {
-      ws?.close();
-      if (previousPublicApiBase === undefined) {
-        delete process.env.PUBLIC_API_BASE_URL;
-      } else {
-        process.env.PUBLIC_API_BASE_URL = previousPublicApiBase;
-      }
-    }
+    const stopRes = await apiFetch(
+      baseUrl,
+      `/api/v1/workspaces/ws_default/projects/proj_1/chat/sessions/${session.id}/stop`,
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({}),
+      },
+    );
+    expect(stopRes.status).toBe(202);
+    await expect(stopRes.json()).resolves.toMatchObject({
+      state: "stopping",
+      stop_mode: "cancel",
+    });
+    const streamText = await streamRes.text();
+    expect(forwardRequest).toHaveBeenCalledTimes(1);
+    expect(streamText).toContain("event: done");
+    expect(streamText).toContain('"message_status":"stopped"');
   });
 
-  it("filters historical chat image data urls before dispatching external agent requests", async () => {
-    const previousPublicApiBase = process.env.PUBLIC_API_BASE_URL;
-    let ws: WebSocket | null = null;
-    try {
-      const { baseUrl, deps } = startServer();
-      process.env.PUBLIC_API_BASE_URL = baseUrl;
-
-      const createAgentRes = await apiFetch(
-        baseUrl,
-        "/api/v1/workspaces/ws_default/projects/proj_1/agents",
+  it("filters historical chat image data urls before dispatching endpoint requests", async () => {
+    const { baseUrl, deps } = startServer();
+    const { forwardRequest } = installMockUniversalProxy(deps);
+    const { endpoint, session } = await createEndpointChatSession(baseUrl, {
+      name: "history-filter-endpoint",
+      capabilities: [
         {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            name: "history-filter-agent",
-            mode: "external",
-            interaction_kind: "chat",
-            execution_preferences: buildChatExecutionPreferences(),
-            capabilities: {
-              streaming_completion: true,
-              multimodal_completion: true,
-            },
-          }),
+          type: "chat_completion",
+          enabled: true,
+          default_model_id: "deepseek-chat",
         },
-      );
-      expect(createAgentRes.status).toBe(201);
-      const agent = (await createAgentRes.json()) as { id: string };
-
-      const createKeyRes = await apiFetch(
-        baseUrl,
-        `/api/v1/workspaces/ws_default/projects/proj_1/agents/${agent.id}/keys`,
         {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: "{}",
+          type: "multimodal_completion",
+          enabled: true,
+          default_model_id: "deepseek-chat",
         },
-      );
-      expect(createKeyRes.status).toBe(201);
-      const keyPayload = (await createKeyRes.json()) as { key: string };
+      ],
+    });
 
-      const connInfoRes = await apiFetch(
-        baseUrl,
-        `/api/v1/workspaces/ws_default/projects/proj_1/agents/${agent.id}/connection-info`,
-      );
-      expect(connInfoRes.status).toBe(200);
-      const connInfo = (await connInfoRes.json()) as { ws_url: string };
-      const wsUrl = connInfo.ws_url.replace(
-        "ws://localhost:20000",
-        baseUrl.replace("http://", "ws://"),
-      );
-
-      ws = new WebSocket(wsUrl, {
-        headers: { Authorization: `Bearer ${keyPayload.key}` },
-      });
-      const ready = new Promise<void>((resolve, reject) => {
-        ws?.once("open", () => {
-          ws?.send(
-            JSON.stringify({
-              type: "agent.ready",
-              payload: {
-                runner_spec: CHAT_RUNNER_SPEC,
-                capabilities: {
-                  wire_api: "responses",
-                  streaming_completion: true,
-                },
-              },
-            }),
-          );
-          resolve();
-        });
-        ws?.once("error", reject);
-      });
-      const observedMessages = new Promise<Array<Record<string, unknown>>>(
-        (resolve) => {
-          ws?.on("message", (raw) => {
-            const msg = JSON.parse(raw.toString("utf-8")) as {
-              type?: string;
-              request_id?: string;
-              payload?: { messages?: Array<Record<string, unknown>> };
-            };
-            if (msg.type !== "server.request.start" || !msg.request_id) return;
-            resolve(msg.payload?.messages ?? []);
-            ws?.send(
-              JSON.stringify({
-                type: "agent.response.done",
-                request_id: msg.request_id,
-                payload: { finish_reason: "stop", usage_tokens: 1 },
-              }),
-            );
-          });
-        },
-      );
-      await ready;
-
-      const session = await deps.chatResourceService.createSession({
-        workspaceId: "ws_default",
-        projectId: "proj_1",
-        ownerUserId: "user_test",
-        model: "external-echo",
-        endpointId: "",
-        externalAgentId: agent.id,
-      });
-      const historicalAttachment =
-        await deps.chatResourceService.initAttachment({
-          workspaceId: "ws_default",
-          projectId: "proj_1",
-          sessionId: session.id,
-          fileName: "history.png",
-          fileType: "image/png",
-          fileSize: 4,
-          contentBase64: "AAAA",
-        });
-      await deps.chatResourceService.createMessage({
-        workspaceId: "ws_default",
-        projectId: "proj_1",
-        sessionId: session.id,
-        role: "user",
-        content: "history image",
-        attachmentSnapshots: [
-          {
-            id: historicalAttachment.id,
-            file_name: historicalAttachment.file_name,
-            file_type: historicalAttachment.file_type,
-            file_size: historicalAttachment.file_size,
-          },
-        ],
-      });
-      const currentAttachment = await deps.chatResourceService.initAttachment({
-        workspaceId: "ws_default",
-        projectId: "proj_1",
-        sessionId: session.id,
-        fileName: "current.png",
-        fileType: "image/png",
-        fileSize: 4,
-        contentBase64: "BBBB",
-      });
-
-      const streamRes = await apiFetch(
-        baseUrl,
-        `/api/v1/workspaces/ws_default/projects/proj_1/chat/sessions/${session.id}/messages/stream`,
+    const historicalAttachment = await deps.chatResourceService.initAttachment({
+      workspaceId: "ws_default",
+      projectId: "proj_1",
+      sessionId: session.id,
+      fileName: "history.png",
+      fileType: "image/png",
+      fileSize: 4,
+      contentBase64: "AAAA",
+    });
+    await deps.chatResourceService.createMessage({
+      workspaceId: "ws_default",
+      projectId: "proj_1",
+      sessionId: session.id,
+      role: "user",
+      content: "history image",
+      attachmentSnapshots: [
         {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            input: {
-              role: "user",
-              content: "current image",
-              attachments: [currentAttachment.id],
-            },
-          }),
+          id: historicalAttachment.id,
+          file_name: historicalAttachment.file_name,
+          file_type: historicalAttachment.file_type,
+          file_size: historicalAttachment.file_size,
         },
-      );
-      expect(streamRes.status).toBe(200);
-      await streamRes.text();
+      ],
+    });
+    const currentAttachment = await deps.chatResourceService.initAttachment({
+      workspaceId: "ws_default",
+      projectId: "proj_1",
+      sessionId: session.id,
+      fileName: "current.png",
+      fileType: "image/png",
+      fileSize: 4,
+      contentBase64: "BBBB",
+    });
 
-      const messages = await observedMessages;
-      expect(messages).toHaveLength(2);
-      expect(messages[0]).toEqual({
-        role: "user",
-        content: [
-          { type: "text", text: "history image" },
-          {
-            type: "text",
-            text: "[attached_image] history.png (image/png, 4B)",
+    const streamRes = await apiFetch(
+      baseUrl,
+      `/api/v1/workspaces/ws_default/projects/proj_1/chat/sessions/${session.id}/messages/stream`,
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          endpoint_id: endpoint.id,
+          input: {
+            role: "user",
+            content: "current image",
+            attachments: [currentAttachment.id],
           },
-        ],
-      });
-      expect(messages[1]).toEqual({
-        role: "user",
-        content: [
-          { type: "text", text: "current image" },
-          {
-            type: "image_url",
-            image_url: { url: "data:image/png;base64,BBBB" },
-          },
-        ],
-      });
-    } finally {
-      if (
-        ws &&
-        (ws.readyState === WebSocket.OPEN ||
-          ws.readyState === WebSocket.CONNECTING)
-      ) {
-        ws.close();
-      }
-      if (previousPublicApiBase === undefined) {
-        delete process.env.PUBLIC_API_BASE_URL;
-      } else {
-        process.env.PUBLIC_API_BASE_URL = previousPublicApiBase;
-      }
-    }
+        }),
+      },
+    );
+    expect(streamRes.status).toBe(200);
+    await streamRes.text();
+
+    const requestBody = forwardRequest.mock.calls[0]?.[0].requestBody as {
+      messages?: Array<Record<string, unknown>>;
+    };
+    expect(requestBody.messages).toHaveLength(2);
+    expect(requestBody.messages?.[0]).toEqual({
+      role: "user",
+      content: [
+        { type: "text", text: "history image" },
+        {
+          type: "text",
+          text: "[attached_image] history.png (image/png, 4B)",
+        },
+      ],
+    });
+    expect(requestBody.messages?.[1]).toEqual({
+      role: "user",
+      content: [
+        { type: "text", text: "current image" },
+        {
+          type: "image_url",
+          image_url: { url: "data:image/png;base64,BBBB" },
+        },
+      ],
+    });
   });
 
   it("falls back to the latest visible session leaf when branch_leaf_message_id is omitted", async () => {
     const deps = createDefaultNodeApiDeps();
-    const dispatchStreamingRequest = vi.fn(async () => ({
-      requestId: "req_chat_leaf_fallback",
-      stream: (async function* streamEvents() {
-        yield { type: "done", finish_reason: "stop", usage_tokens: 1 };
-      })(),
-      cancel: vi.fn(),
-    }));
-    deps.agentExecutionService.dispatchStreamingRequest =
-      dispatchStreamingRequest as typeof deps.agentExecutionService.dispatchStreamingRequest;
-    const previousPublicApiBase = process.env.PUBLIC_API_BASE_URL;
-    try {
-      const { baseUrl } = startServerWithDeps(deps);
-      process.env.PUBLIC_API_BASE_URL = baseUrl;
+    const { forwardRequest } = installMockUniversalProxy(deps);
+    const { baseUrl } = startServerWithDeps(deps);
+    const { endpoint } = await createEndpointChatSession(baseUrl, {
+      name: "leaf-fallback-endpoint",
+    });
+    const session = await deps.chatResourceService.createSession({
+      workspaceId: "ws_default",
+      projectId: "proj_1",
+      ownerUserId: "user_test",
+      model: endpoint.model,
+      endpointId: endpoint.id,
+    });
+    const historyUser = await deps.chatResourceService.createMessage({
+      workspaceId: "ws_default",
+      projectId: "proj_1",
+      sessionId: session.id,
+      role: "user",
+      content: "history prompt",
+    });
 
-      const agent = await deps.agentResourceService.createAgent(
-        "ws_default",
-        "proj_1",
-        {
-          name: "leaf-fallback-agent",
-          mode: "external",
-          interaction_kind: "chat",
-          status: "enabled",
-          owner_id: "user_test",
-          visibility: "private",
-          execution_preferences_json: buildChatExecutionPreferences(),
-          capabilities: {
-            streaming_completion: true,
+    const streamRes = await apiFetch(
+      baseUrl,
+      `/api/v1/workspaces/ws_default/projects/proj_1/chat/sessions/${session.id}/messages/stream`,
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          input: {
+            role: "user",
+            content: "follow-up prompt",
           },
-        },
-      );
-
-      const session = await deps.chatResourceService.createSession({
-        workspaceId: "ws_default",
-        projectId: "proj_1",
-        ownerUserId: "user_test",
-        model: "external-echo",
-        endpointId: "",
-        externalAgentId: agent.id,
-      });
-      const historyUser = await deps.chatResourceService.createMessage({
-        workspaceId: "ws_default",
-        projectId: "proj_1",
-        sessionId: session.id,
-        role: "user",
-        content: "history prompt",
-      });
-
-      const streamRes = await apiFetch(
-        baseUrl,
-        `/api/v1/workspaces/ws_default/projects/proj_1/chat/sessions/${session.id}/messages/stream`,
-        {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            input: {
-              role: "user",
-              content: "follow-up prompt",
-            },
-          }),
-        },
-      );
-      expect(streamRes.status).toBe(200);
-      await streamRes.text();
-
-      expect(dispatchStreamingRequest).toHaveBeenCalledTimes(1);
-      expect(dispatchStreamingRequest).toHaveBeenCalledWith(
-        expect.objectContaining({
-          messages: [
-            { role: "user", content: "history prompt" },
-            { role: "user", content: "follow-up prompt" },
-          ],
         }),
-      );
+      },
+    );
+    expect(streamRes.status).toBe(200);
+    await streamRes.text();
 
-      const messages = await deps.chatResourceService.listMessages(
-        "ws_default",
-        "proj_1",
-        session.id,
-      );
-      const followupUser = messages.find((item) => item.content === "follow-up prompt");
-      expect(followupUser?.parent_id).toBe(historyUser.id);
-    } finally {
-      if (previousPublicApiBase === undefined) {
-        delete process.env.PUBLIC_API_BASE_URL;
-      } else {
-        process.env.PUBLIC_API_BASE_URL = previousPublicApiBase;
-      }
-    }
+    expect(forwardRequest).toHaveBeenCalledTimes(1);
+    expect(forwardRequest.mock.calls[0]?.[0].requestBody).toMatchObject({
+      messages: [
+        { role: "user", content: "history prompt" },
+        { role: "user", content: "follow-up prompt" },
+      ],
+    });
+
+    const messages = await deps.chatResourceService.listMessages(
+      "ws_default",
+      "proj_1",
+      session.id,
+    );
+    const followupUser = messages.find((item) => item.content === "follow-up prompt");
+    expect(followupUser?.parent_id).toBe(historyUser.id);
   });
 
-  it("fails fast for external chat agent execution when public api base is not configured", async () => {
-    const previousPublicApiBase = process.env.PUBLIC_API_BASE_URL;
-    let ws: WebSocket | null = null;
-    delete process.env.PUBLIC_API_BASE_URL;
-    try {
-      const { baseUrl } = startServer();
+  it("rejects legacy external chat Agent Runner create wire", async () => {
+    const { baseUrl } = startServer();
 
-      const createAgentRes = await apiFetch(
-        baseUrl,
-        "/api/v1/workspaces/ws_default/projects/proj_1/agents",
-        {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            name: "echo-agent",
-            mode: "external",
-            interaction_kind: "chat",
-            execution_preferences: buildChatExecutionPreferences(),
-            capabilities: {
-              streaming_completion: true,
-              multimodal_completion: true,
-            },
-          }),
-        },
-      );
-      expect(createAgentRes.status).toBe(201);
-      const agent = (await createAgentRes.json()) as { id: string };
-
-      const keyRes = await apiFetch(
-        baseUrl,
-        `/api/v1/workspaces/ws_default/projects/proj_1/agents/${agent.id}/keys`,
-        {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: "{}",
-        },
-      );
-      expect(keyRes.status).toBe(201);
-      const keyPayload = (await keyRes.json()) as { key: string };
-
-      const connInfoRes = await apiFetch(
-        baseUrl,
-        `/api/v1/workspaces/ws_default/projects/proj_1/agents/${agent.id}/connection-info`,
-      );
-      expect(connInfoRes.status).toBe(200);
-      const connInfo = (await connInfoRes.json()) as { ws_url: string };
-      const wsUrl = connInfo.ws_url.replace(
-        "ws://localhost:20000",
-        baseUrl.replace("http://", "ws://"),
-      );
-
-      await expect(
-        new Promise<void>((resolve, reject) => {
-          ws = new WebSocket(wsUrl, {
-            headers: { Authorization: `Bearer ${keyPayload.key}` },
-          });
-          ws.once("open", () => reject(new Error("unexpected_websocket_open")));
-          ws.once("error", reject);
+    const createAgentRes = await apiFetch(
+      baseUrl,
+      "/api/v1/workspaces/ws_default/projects/proj_1/agent-runners",
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          name: "legacy-external-chat-agent",
+          mode: "external",
+          interaction_kind: "chat",
+          execution_preferences: buildChatExecutionPreferences(),
+          capabilities: {
+            streaming_completion: true,
+            multimodal_completion: true,
+          },
         }),
-      ).rejects.toThrow("Unexpected server response: 500");
-    } finally {
-      ws?.close();
-      if (previousPublicApiBase === undefined) {
-        delete process.env.PUBLIC_API_BASE_URL;
-      } else {
-        process.env.PUBLIC_API_BASE_URL = previousPublicApiBase;
-      }
-    }
+      },
+    );
+    expect(createAgentRes.status).toBe(400);
+    await expect(createAgentRes.json()).resolves.toMatchObject({
+      error_code: "unsupported_field",
+      message: "unsupported_field",
+      fields: ["mode", "interaction_kind", "execution_preferences"],
+    });
   });
 
   it("enforces endpoint requests_per_minute policy for chat stream preflight", async () => {
@@ -1770,81 +1514,38 @@ describe("api-entry-node projects routes", () => {
     }
   });
 
-  it("returns AGENT_OFFLINE when external agent session streams without active execution socket", async () => {
-    const previousPublicApiBase = process.env.PUBLIC_API_BASE_URL;
-    try {
-      const { baseUrl } = startServer();
-      process.env.PUBLIC_API_BASE_URL = baseUrl;
-
-      const createAgentRes = await apiFetch(
-        baseUrl,
-        "/api/v1/workspaces/ws_default/projects/proj_1/agents",
-        {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            name: "offline-agent",
-            mode: "external",
-            interaction_kind: "chat",
-            execution_preferences: buildChatExecutionPreferences(),
-            capabilities: {
-              streaming_completion: true,
-              multimodal_completion: false,
-            },
-          }),
-        },
-      );
-      expect(createAgentRes.status).toBe(201);
-      const agent = (await createAgentRes.json()) as { id: string };
-
-      const createSessionRes = await apiFetch(
-        baseUrl,
-        "/api/v1/workspaces/ws_default/projects/proj_1/chat/sessions",
-        {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            external_agent_id: agent.id,
-            model: "external-echo",
-          }),
-        },
-      );
-      expect(createSessionRes.status).toBe(201);
-      const session = (await createSessionRes.json()) as { id: string };
-
-      const streamRes = await apiFetch(
-        baseUrl,
-        `/api/v1/workspaces/ws_default/projects/proj_1/chat/sessions/${session.id}/messages/stream`,
-        {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            input: { role: "user", content: "hello" },
-          }),
-        },
-      );
-      expect(streamRes.status).toBe(502);
-      const body = (await streamRes.json()) as {
-        error_code?: string;
-        message?: string;
-      };
-      expect(body.error_code).toBe("AGENT_OFFLINE");
-      expect(body.message).toBe("agent_offline");
-    } finally {
-      if (previousPublicApiBase === undefined) {
-        delete process.env.PUBLIC_API_BASE_URL;
-      } else {
-        process.env.PUBLIC_API_BASE_URL = previousPublicApiBase;
-      }
-    }
-  });
-
-  it("validates interaction kind and required execution preferences for agent create/update", async () => {
+  it("rejects legacy external_agent_id chat sessions", async () => {
     const { baseUrl } = startServer();
 
-    const createWithoutKindRes = await apiFetch(
+    const createSessionRes = await apiFetch(
       baseUrl,
-      "/api/v1/workspaces/ws_default/projects/proj_1/agents",
+      "/api/v1/workspaces/ws_default/projects/proj_1/chat/sessions",
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          external_agent_id: "ag_legacy_chat",
+          model: "external-echo",
+        }),
+      },
+    );
+    expect(createSessionRes.status).toBe(400);
+    await expect(createSessionRes.json()).resolves.toMatchObject({
+      error_code: "unsupported_field",
+      message: "external_agent_id",
+    });
+  });
+
+  it("rejects legacy Agent Runner public fields on create/update", async () => {
+    const deps = createDefaultNodeApiDeps();
+    const projectId = await createProjectWithAgentRunnerManage(deps);
+    const { baseUrl } = startServerWithDeps(deps);
+    const agentRunnerPath = `/api/v1/workspaces/ws_default/projects/${projectId}/agent-runners`;
+    const ownerFetch = (path: string, init?: RequestInit) =>
+      apiFetchWithToken(baseUrl, path, "test-token", init);
+
+    const createWithoutKindRes = await ownerFetch(
+      agentRunnerPath,
       {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -1855,15 +1556,14 @@ describe("api-entry-node projects routes", () => {
         }),
       },
     );
-    expect(createWithoutKindRes.status).toBe(422);
+    expect(createWithoutKindRes.status).toBe(400);
     await expect(createWithoutKindRes.json()).resolves.toMatchObject({
-      error_code: "VALIDATION_ERROR",
-      message: "agent_interaction_kind_required",
+      error_code: "unsupported_field",
+      fields: ["mode", "execution_preferences"],
     });
 
-    const createWithInvalidKindRes = await apiFetch(
-      baseUrl,
-      "/api/v1/workspaces/ws_default/projects/proj_1/agents",
+    const createWithInvalidKindRes = await ownerFetch(
+      agentRunnerPath,
       {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -1875,15 +1575,14 @@ describe("api-entry-node projects routes", () => {
         }),
       },
     );
-    expect(createWithInvalidKindRes.status).toBe(422);
+    expect(createWithInvalidKindRes.status).toBe(400);
     await expect(createWithInvalidKindRes.json()).resolves.toMatchObject({
-      error_code: "VALIDATION_ERROR",
-      message: "agent_interaction_kind_required",
+      error_code: "unsupported_field",
+      fields: ["mode", "interaction_kind", "execution_preferences"],
     });
 
-    const createChatWithoutEndpointRes = await apiFetch(
-      baseUrl,
-      "/api/v1/workspaces/ws_default/projects/proj_1/agents",
+    const createChatWithoutEndpointRes = await ownerFetch(
+      agentRunnerPath,
       {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -1898,15 +1597,14 @@ describe("api-entry-node projects routes", () => {
         }),
       },
     );
-    expect(createChatWithoutEndpointRes.status).toBe(422);
+    expect(createChatWithoutEndpointRes.status).toBe(400);
     await expect(createChatWithoutEndpointRes.json()).resolves.toMatchObject({
-      error_code: "VALIDATION_ERROR",
-      message: "agent_chat_endpoint_required",
+      error_code: "unsupported_field",
+      fields: ["mode", "interaction_kind"],
     });
 
-    const createWithoutEndpointRes = await apiFetch(
-      baseUrl,
-      "/api/v1/workspaces/ws_default/projects/proj_1/agents",
+    const createWithoutEndpointRes = await ownerFetch(
+      agentRunnerPath,
       {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -1921,26 +1619,24 @@ describe("api-entry-node projects routes", () => {
         }),
       },
     );
-    expect(createWithoutEndpointRes.status).toBe(422);
+    expect(createWithoutEndpointRes.status).toBe(400);
     await expect(createWithoutEndpointRes.json()).resolves.toMatchObject({
-      error_code: "VALIDATION_ERROR",
-      message: "agent_notebook_endpoint_required",
+      error_code: "unsupported_field",
+      fields: ["mode", "interaction_kind"],
     });
 
-    const createChatAgentRes = await apiFetch(
-      baseUrl,
-      "/api/v1/workspaces/ws_default/projects/proj_1/agents",
+    const createChatAgentRes = await ownerFetch(
+      agentRunnerPath,
       {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          name: "nb-agent-patch",
-          mode: "external",
-          interaction_kind: "chat",
-          execution_preferences: buildChatExecutionPreferences("ep_chat_patch"),
+          name: "agent-runner-patch-target",
+          status: "ready",
+          default_endpoint_id: "ep_chat_patch",
           capabilities: {
-            streaming_completion: true,
-            multimodal_completion: false,
+            task_execution: true,
+            terminal: true,
           },
         }),
       },
@@ -1948,17 +1644,12 @@ describe("api-entry-node projects routes", () => {
     expect(createChatAgentRes.status).toBe(201);
     const created = (await createChatAgentRes.json()) as {
       id: string;
-      interaction_kind?: string;
-      execution_preferences_json?: Record<string, unknown>;
+      default_endpoint_id?: string;
     };
-    expect(created.interaction_kind).toBe("chat");
-    expect(created.execution_preferences_json).toEqual(
-      buildChatExecutionPreferences("ep_chat_patch"),
-    );
+    expect(created.default_endpoint_id).toBe("ep_chat_patch");
 
-    const patchInvalidRes = await apiFetch(
-      baseUrl,
-      `/api/v1/workspaces/ws_default/projects/proj_1/agents/${created.id}`,
+    const patchInvalidRes = await ownerFetch(
+      `${agentRunnerPath}/${created.id}`,
       {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
@@ -1969,15 +1660,14 @@ describe("api-entry-node projects routes", () => {
         }),
       },
     );
-    expect(patchInvalidRes.status).toBe(422);
+    expect(patchInvalidRes.status).toBe(400);
     await expect(patchInvalidRes.json()).resolves.toMatchObject({
-      error_code: "VALIDATION_ERROR",
-      message: "agent_interaction_kind_required",
+      error_code: "unsupported_field",
+      fields: ["interaction_kind", "execution_preferences"],
     });
 
-    const patchMissingNotebookPrefRes = await apiFetch(
-      baseUrl,
-      `/api/v1/workspaces/ws_default/projects/proj_1/agents/${created.id}`,
+    const patchMissingNotebookPrefRes = await ownerFetch(
+      `${agentRunnerPath}/${created.id}`,
       {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
@@ -1986,72 +1676,87 @@ describe("api-entry-node projects routes", () => {
         }),
       },
     );
-    expect(patchMissingNotebookPrefRes.status).toBe(422);
+    expect(patchMissingNotebookPrefRes.status).toBe(400);
     await expect(patchMissingNotebookPrefRes.json()).resolves.toMatchObject({
-      error_code: "VALIDATION_ERROR",
-      message: "agent_notebook_endpoint_required",
+      error_code: "unsupported_field",
+      fields: ["interaction_kind"],
     });
   });
 
-  it("returns interaction_kind and execution_preferences_json consistently from create/list/get", async () => {
-    const { baseUrl } = startServer();
+  it("returns target Agent Runner readiness shape from create/list/get", async () => {
+    const deps = createDefaultNodeApiDeps();
+    const projectId = await createProjectWithAgentRunnerManage(deps);
+    const { baseUrl } = startServerWithDeps(deps);
+    const agentRunnerPath = `/api/v1/workspaces/ws_default/projects/${projectId}/agent-runners`;
+    const ownerFetch = (path: string, init?: RequestInit) =>
+      apiFetchWithToken(baseUrl, path, "test-token", init);
 
-    const createRes = await apiFetch(
-      baseUrl,
-      "/api/v1/workspaces/ws_default/projects/proj_1/agents",
+    const createRes = await ownerFetch(
+      agentRunnerPath,
       {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           name: "shape-agent",
-          mode: "external",
-          interaction_kind: "chat",
-          execution_preferences: buildChatExecutionPreferences("ep_shape_chat"),
+          status: "ready",
+          is_default: true,
+          default_endpoint_id: "ep_shape_chat",
+          capabilities: {
+            task_execution: true,
+            terminal: true,
+          },
         }),
       },
     );
     expect(createRes.status).toBe(201);
     const created = (await createRes.json()) as Record<string, unknown>;
-    expect(created.interaction_kind).toBe("chat");
-    expect(created.execution_preferences_json).toEqual(
-      buildChatExecutionPreferences("ep_shape_chat"),
-    );
+    expect(created.status).toBe("ready");
+    expect(created.default_endpoint_id).toBe("ep_shape_chat");
     expect(created).not.toHaveProperty("interaction_mode");
+    expect(created).not.toHaveProperty("interaction_kind");
+    expect(created).not.toHaveProperty("execution_preferences_json");
+    expect(created).not.toHaveProperty("execution_preferences");
+    expect(created).not.toHaveProperty("mode");
+    expect(created).not.toHaveProperty("config");
 
-    const listRes = await apiFetch(
-      baseUrl,
-      "/api/v1/workspaces/ws_default/projects/proj_1/agents",
+    const listRes = await ownerFetch(
+      agentRunnerPath,
     );
     expect(listRes.status).toBe(200);
     const listBody = (await listRes.json()) as {
       items: Record<string, unknown>[];
     };
     const listed = listBody.items.find((item) => item.id === created.id);
-    expect(listed?.interaction_kind).toBe("chat");
-    expect(listed?.execution_preferences_json).toEqual(
-      buildChatExecutionPreferences("ep_shape_chat"),
-    );
+    expect(listed?.status).toBe("ready");
+    expect(listed?.default_endpoint_id).toBe("ep_shape_chat");
     expect(listed).not.toHaveProperty("interaction_mode");
+    expect(listed).not.toHaveProperty("interaction_kind");
+    expect(listed).not.toHaveProperty("execution_preferences_json");
+    expect(listed).not.toHaveProperty("execution_preferences");
+    expect(listed).not.toHaveProperty("mode");
+    expect(listed).not.toHaveProperty("config");
 
-    const itemRes = await apiFetch(
-      baseUrl,
-      `/api/v1/workspaces/ws_default/projects/proj_1/agents/${created.id}`,
+    const itemRes = await ownerFetch(
+      `${agentRunnerPath}/${created.id}`,
     );
     expect(itemRes.status).toBe(200);
     const itemBody = (await itemRes.json()) as Record<string, unknown>;
-    expect(itemBody.interaction_kind).toBe("chat");
-    expect(itemBody.execution_preferences_json).toEqual(
-      buildChatExecutionPreferences("ep_shape_chat"),
-    );
+    expect(itemBody.status).toBe("ready");
+    expect(itemBody.default_endpoint_id).toBe("ep_shape_chat");
     expect(itemBody).not.toHaveProperty("interaction_mode");
+    expect(itemBody).not.toHaveProperty("interaction_kind");
+    expect(itemBody).not.toHaveProperty("execution_preferences_json");
+    expect(itemBody).not.toHaveProperty("execution_preferences");
+    expect(itemBody).not.toHaveProperty("mode");
+    expect(itemBody).not.toHaveProperty("config");
   });
 
-  it("fails fast when creating internal agent without sandbox manager configured", async () => {
+  it("rejects legacy internal Agent Runner create payloads before sandbox checks", async () => {
     const { baseUrl } = startServer();
 
     const createInternalRes = await apiFetch(
       baseUrl,
-      "/api/v1/workspaces/ws_default/projects/proj_1/agents",
+      "/api/v1/workspaces/ws_default/projects/proj_1/agent-runners",
       {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -2066,22 +1771,25 @@ describe("api-entry-node projects routes", () => {
         }),
       },
     );
-    expect(createInternalRes.status).toBe(422);
-    const body = (await createInternalRes.json()) as { error_code?: string };
-    expect(body.error_code).toBe("AGENT_SANDBOX_NOT_CONFIGURED");
+    expect(createInternalRes.status).toBe(400);
+    await expect(createInternalRes.json()).resolves.toMatchObject({
+      error_code: "unsupported_field",
+      message: "unsupported_field",
+      fields: [
+        "mode",
+        "interaction_kind",
+        "execution_preferences",
+        "config.image",
+      ],
+    });
   });
 
-  it("validates internal agent idle timeout floor on create", async () => {
-    const { baseUrl, deps } = startServer();
-    deps.internalAgentPodManager = {
-      ensureAgentReady: vi.fn(async () => undefined),
-      keepalive: vi.fn(async () => undefined),
-      releasePod: vi.fn(async () => undefined),
-    };
+  it("rejects legacy internal Agent Runner idle timeout create payloads", async () => {
+    const { baseUrl } = startServer();
 
     const createInternalRes = await apiFetch(
       baseUrl,
-      "/api/v1/workspaces/ws_default/projects/proj_1/agents",
+      "/api/v1/workspaces/ws_default/projects/proj_1/agent-runners",
       {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -2097,82 +1805,72 @@ describe("api-entry-node projects routes", () => {
         }),
       },
     );
-    expect(createInternalRes.status).toBe(422);
-    const body = (await createInternalRes.json()) as { message?: string };
-    expect(body.message).toBe("idle_timeout_sec_too_low");
+    expect(createInternalRes.status).toBe(400);
+    await expect(createInternalRes.json()).resolves.toMatchObject({
+      error_code: "unsupported_field",
+      fields: [
+        "mode",
+        "interaction_kind",
+        "execution_preferences",
+        "config.image",
+      ],
+    });
   });
 
-  it("validates internal agent max lifetime against idle timeout on patch", async () => {
-    const { baseUrl, deps } = startServer();
-    deps.internalAgentPodManager = {
-      ensureAgentReady: vi.fn(async () => undefined),
-      keepalive: vi.fn(async () => undefined),
-      releasePod: vi.fn(async () => undefined),
-    };
+  it("rejects legacy internal Agent Runner patch config fields", async () => {
+    const deps = createDefaultNodeApiDeps();
+    const projectId = await createProjectWithAgentRunnerManage(deps);
+    const { baseUrl } = startServerWithDeps(deps);
+    const agentRunnerPath = `/api/v1/workspaces/ws_default/projects/${projectId}/agent-runners`;
+    const ownerFetch = (path: string, init?: RequestInit) =>
+      apiFetchWithToken(baseUrl, path, "test-token", init);
 
-    const createInternalRes = await apiFetch(
-      baseUrl,
-      "/api/v1/workspaces/ws_default/projects/proj_1/agents",
+    const createInternalRes = await ownerFetch(
+      agentRunnerPath,
       {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          name: "internal-patch-validate",
-          mode: "internal",
-          interaction_kind: "chat",
-          execution_preferences: buildChatExecutionPreferences(),
-          config: {
-            image: "runner:v1",
-            idle_timeout_sec: 300,
-            max_lifetime_sec: 3600,
-          },
+          name: "agent-runner-patch-config-target",
+          status: "ready",
+          default_endpoint_id: "ep_internal_target",
         }),
       },
     );
     expect(createInternalRes.status).toBe(201);
     const created = (await createInternalRes.json()) as { id: string };
 
-    const patchRes = await apiFetch(
-      baseUrl,
-      `/api/v1/workspaces/ws_default/projects/proj_1/agents/${created.id}`,
+    const patchRes = await ownerFetch(
+      `${agentRunnerPath}/${created.id}`,
       {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
+          mode: "internal",
+          interaction_kind: "chat",
+          execution_preferences: buildChatExecutionPreferences(),
           config: {
+            image: "runner:v1",
             idle_timeout_sec: 900,
             max_lifetime_sec: 700,
           },
         }),
       },
     );
-    expect(patchRes.status).toBe(422);
-    const body = (await patchRes.json()) as { message?: string };
-    expect(body.message).toBe("max_lifetime_sec_lt_idle_timeout_sec");
+    expect(patchRes.status).toBe(400);
+    await expect(patchRes.json()).resolves.toMatchObject({
+      error_code: "unsupported_field",
+      fields: [
+        "mode",
+        "interaction_kind",
+        "execution_preferences",
+        "config.image",
+      ],
+    });
   });
 
-  it("returns AGENT_SANDBOX_NOT_CONFIGURED for internal agent chat stream without pod manager", async () => {
-    const { baseUrl, deps } = startServer();
-    const internalAgent = await deps.agentResourceService.createAgent(
-      "ws_default",
-      "proj_1",
-      {
-        name: "internal-chat",
-        mode: "internal",
-        interaction_kind: "chat",
-        status: "enabled",
-        config: {
-          image: "runner:v1",
-        } as never,
-        execution_preferences_json: {
-          chat: {
-            endpoint_id: "ep_internal_chat_missing_pod",
-          },
-        },
-        owner_id: "user_test",
-        visibility: "private",
-      },
-    );
+  it("rejects legacy internal chat sessions that target an Agent Runner", async () => {
+    const { baseUrl } = startServer();
 
     const createSessionRes = await apiFetch(
       baseUrl,
@@ -2181,165 +1879,47 @@ describe("api-entry-node projects routes", () => {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          external_agent_id: internalAgent.id,
+          external_agent_id: "ag_internal_chat",
           model: "gpt-5-codex",
         }),
       },
     );
-    expect(createSessionRes.status).toBe(201);
-    const session = (await createSessionRes.json()) as { id: string };
-
-    const streamRes = await apiFetch(
-      baseUrl,
-      `/api/v1/workspaces/ws_default/projects/proj_1/chat/sessions/${session.id}/messages/stream`,
-      {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          input: { role: "user", content: "hello internal" },
-        }),
-      },
-    );
-    expect(streamRes.status).toBe(422);
-    const body = (await streamRes.json()) as { error_code?: string };
-    expect(body.error_code).toBe("AGENT_SANDBOX_NOT_CONFIGURED");
+    expect(createSessionRes.status).toBe(400);
+    await expect(createSessionRes.json()).resolves.toMatchObject({
+      error_code: "unsupported_field",
+      message: "external_agent_id",
+    });
   });
 
-  it("starts and clears internal chat keepalive timer when streaming via internal agent", async () => {
-    const deps = createDefaultNodeApiDeps();
+  it("does not start internal chat keepalive for legacy Agent Runner chat sessions", async () => {
+    const { baseUrl, deps } = startServer();
     const ensureAgentReady = vi.fn(async () => undefined);
     const keepalive = vi.fn(async () => undefined);
-    const ensureWorkspaceBinding = vi.fn(async () => ({
-      workspaceMount: {
-        bindingId: "flib_internal_chat_binding",
-        mountPath: "/workspace/chat-session",
-      },
-      binding: {
-        file_library_id: "flib_internal_chat",
-        workspace_id: "ws_default",
-        project_id: "proj_1",
-        namespace: "default",
-        secret_name: "secret",
-        pv_name: "pv",
-        pvc_name: "pvc",
-        volume_handle: "handle",
-        filesystem_name: "flib-internal-chat",
-        created_at: new Date().toISOString(),
-        updated_at: new Date().toISOString(),
-      },
-    }));
     deps.internalAgentPodManager = {
       ensureAgentReady,
       keepalive,
       releasePod: vi.fn(async () => undefined),
     };
-    deps.internalAgentWorkspaceBindingManager = {
-      ensureWorkspaceBinding,
-      deleteWorkspaceBinding: vi.fn(async () => undefined),
-    };
-    const dispatchStreamingRequest = vi.fn(async () => ({
-      requestId: "req_internal_chat_keepalive",
-      stream: (async function* streamEvents() {
-        yield { type: "delta", delta: "hello" };
-        yield { type: "done", finish_reason: "stop", usage_tokens: 5 };
-      })(),
-      cancel: vi.fn(),
-    }));
-    deps.agentExecutionService.dispatchStreamingRequest =
-      dispatchStreamingRequest as typeof deps.agentExecutionService.dispatchStreamingRequest;
-    const setIntervalSpy = vi.spyOn(globalThis, "setInterval");
-    const clearIntervalSpy = vi.spyOn(globalThis, "clearInterval");
-    const previousPublicApiBase = process.env.PUBLIC_API_BASE_URL;
-    try {
-      const { baseUrl } = startServerWithDeps(deps);
-      process.env.PUBLIC_API_BASE_URL = baseUrl;
 
-      const internalAgent = await deps.agentResourceService.createAgent(
-        "ws_default",
-        "proj_1",
-        {
-          name: "internal-chat-keepalive",
-          mode: "internal",
-          interaction_kind: "chat",
-          status: "enabled",
-          config: {
-            image: "runner:v1",
-            _internal_raw_key: "ask_test",
-          } as never,
-          owner_id: "user_test",
-          visibility: "private",
-          execution_preferences_json: {
-            chat: {
-              endpoint_id: "ep_internal",
-            },
-          },
-        },
-      );
-
-      const createSessionRes = await apiFetch(
-        baseUrl,
-        "/api/v1/workspaces/ws_default/projects/proj_1/chat/sessions",
-        {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            external_agent_id: internalAgent.id,
-            model: "gpt-5-codex",
-          }),
-        },
-      );
-      expect(createSessionRes.status).toBe(201);
-      const session = (await createSessionRes.json()) as {
-        id: string;
-        workspace_file_library_id?: string;
-      };
-      expect(session.workspace_file_library_id).toMatch(/^flib_/);
-
-      const streamRes = await apiFetch(
-        baseUrl,
-        `/api/v1/workspaces/ws_default/projects/proj_1/chat/sessions/${session.id}/messages/stream`,
-        {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            input: { role: "user", content: "hello internal keepalive" },
-          }),
-        },
-      );
-      expect(streamRes.status).toBe(200);
-      expect(ensureWorkspaceBinding).toHaveBeenCalledTimes(1);
-      expect(ensureWorkspaceBinding).toHaveBeenCalledWith({
-        workspaceId: "ws_default",
-        projectId: "proj_1",
-        fileLibraryId: session.workspace_file_library_id,
-        taskId: session.id,
-      });
-      expect(ensureAgentReady).toHaveBeenCalledTimes(1);
-      expect(keepalive).toHaveBeenCalled();
-      expect(ensureAgentReady).toHaveBeenCalledWith(
-        expect.objectContaining({
-          sessionId: session.id,
-          workloadId: sanitizeWorkloadId(session.id),
-          workspaceMount: {
-            bindingId: "flib_internal_chat_binding",
-            mountPath: "/workspace/chat-session",
-          },
+    const createSessionRes = await apiFetch(
+      baseUrl,
+      "/api/v1/workspaces/ws_default/projects/proj_1/chat/sessions",
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          external_agent_id: "ag_internal_keepalive",
+          model: "gpt-5-codex",
         }),
-      );
-      expect(dispatchStreamingRequest).toHaveBeenCalledTimes(1);
-      expect(setIntervalSpy.mock.calls.some((call) => call[1] === 60_000)).toBe(
-        true,
-      );
-      expect(clearIntervalSpy).toHaveBeenCalled();
-    } finally {
-      setIntervalSpy.mockRestore();
-      clearIntervalSpy.mockRestore();
-      if (previousPublicApiBase === undefined) {
-        delete process.env.PUBLIC_API_BASE_URL;
-      } else {
-        process.env.PUBLIC_API_BASE_URL = previousPublicApiBase;
-      }
-    }
+      },
+    );
+    expect(createSessionRes.status).toBe(400);
+    await expect(createSessionRes.json()).resolves.toMatchObject({
+      error_code: "unsupported_field",
+      message: "external_agent_id",
+    });
+    expect(ensureAgentReady).not.toHaveBeenCalled();
+    expect(keepalive).not.toHaveBeenCalled();
   });
 
   it("releases internal workload pod when notebook task is archived", async () => {
@@ -2356,20 +1936,17 @@ describe("api-entry-node projects routes", () => {
       "ws_default",
       "proj_1",
       {
-        name: "internal-notebook",
-        mode: "internal",
-        interaction_kind: "notebook",
+        name: "managed-agent-task-runner",
+        runner_provider: "managed",
         status: "enabled",
-        config: {
-          image: "runner:v1",
-          _internal_raw_key: "ask_test",
-        } as never,
+        runner_status: "ready",
+        is_default: true,
         owner_id: "user_test",
         visibility: "private",
-        execution_preferences_json: {
-          notebook: {
-            endpoint_id: "ep_internal",
-          },
+        default_endpoint_id: "ep_internal",
+        capabilities: {
+          task_execution: true,
+          terminal: true,
         },
       },
     );
@@ -2382,7 +1959,6 @@ describe("api-entry-node projects routes", () => {
         headers: { "content-type": "application/json" },
         body: JSON.stringify({
           title: "Internal Task",
-          agent_id: internalAgent.id,
           workspace_mode: "create_new",
           initial_inputs: [],
         }),
@@ -2390,6 +1966,18 @@ describe("api-entry-node projects routes", () => {
     );
     expect(taskRes.status).toBe(201);
     const task = (await taskRes.json()) as { id: string };
+    await expect(
+      acquireNotebookTaskRunLease(
+        deps.cache,
+        buildNotebookTaskRunState({
+          taskId: task.id,
+          runId: "run_release_archive",
+          runnerId: internalAgent.id,
+          startedAt: new Date().toISOString(),
+          ownerInstanceId: "index-test",
+        }),
+      ),
+    ).resolves.toBe(true);
 
     const archiveRes = await apiFetch(
       baseUrl,
@@ -2415,22 +2003,21 @@ describe("api-entry-node projects routes", () => {
       keepalive: vi.fn(async () => undefined),
       releasePod: vi.fn(async () => undefined),
     };
+    const projectId = await createProjectWithAgentRunnerManage(deps);
     const { baseUrl } = startServerWithDeps(deps);
+    const agentRunnerPath = `/api/v1/workspaces/ws_default/projects/${projectId}/agent-runners`;
+    const ownerFetch = (path: string, init?: RequestInit) =>
+      apiFetchWithToken(baseUrl, path, "test-token", init);
 
-    const createRes = await apiFetch(
-      baseUrl,
-      "/api/v1/workspaces/ws_default/projects/proj_1/agents",
+    const createRes = await ownerFetch(
+      agentRunnerPath,
       {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          name: "internal-sanitized",
-          mode: "internal",
-          interaction_kind: "chat",
-          execution_preferences: buildChatExecutionPreferences(),
-          config: {
-            image: "runner:v1",
-          },
+          name: "managed-sanitized",
+          status: "ready",
+          default_endpoint_id: "ep_sanitized",
         }),
       },
     );
@@ -2442,9 +2029,8 @@ describe("api-entry-node projects routes", () => {
     expect(created.config?._internal_raw_key).toBeUndefined();
     expect(created.config?._internal_key_id).toBeUndefined();
 
-    const listRes = await apiFetch(
-      baseUrl,
-      "/api/v1/workspaces/ws_default/projects/proj_1/agents",
+    const listRes = await ownerFetch(
+      agentRunnerPath,
     );
     expect(listRes.status).toBe(200);
     const listBody = (await listRes.json()) as {
@@ -2455,9 +2041,8 @@ describe("api-entry-node projects routes", () => {
     expect(listed?.config?._internal_raw_key).toBeUndefined();
     expect(listed?.config?._internal_key_id).toBeUndefined();
 
-    const itemRes = await apiFetch(
-      baseUrl,
-      `/api/v1/workspaces/ws_default/projects/proj_1/agents/${created.id}`,
+    const itemRes = await ownerFetch(
+      `${agentRunnerPath}/${created.id}`,
     );
     expect(itemRes.status).toBe(200);
     const itemBody = (await itemRes.json()) as {
@@ -2468,7 +2053,7 @@ describe("api-entry-node projects routes", () => {
 
     const stored = await deps.agentResourceService.getAgent(
       "ws_default",
-      "proj_1",
+      projectId,
       created.id,
     );
     expect(
@@ -2481,38 +2066,8 @@ describe("api-entry-node projects routes", () => {
     ).toBe("string");
   });
 
-  it("releases internal workload pod when notebook task is deleted", async () => {
-    const deps = createDefaultNodeApiDeps();
-    const releasePod = vi.fn(async () => undefined);
-    deps.internalAgentPodManager = {
-      ensureAgentReady: vi.fn(async () => undefined),
-      keepalive: vi.fn(async () => undefined),
-      releasePod,
-    };
-    const { baseUrl } = startServerWithDeps(deps);
-
-    const internalAgent = await deps.agentResourceService.createAgent(
-      "ws_default",
-      "proj_1",
-      {
-        name: "internal-notebook-delete",
-        mode: "internal",
-        interaction_kind: "notebook",
-        status: "enabled",
-        config: {
-          image: "runner:v1",
-          _internal_raw_key: "ask_test",
-        } as never,
-        owner_id: "user_test",
-        visibility: "private",
-        execution_preferences_json: {
-          notebook: {
-            endpoint_id: "ep_internal",
-          },
-        },
-      },
-    );
-
+  it("rejects legacy task agent_id selector on create", async () => {
+    const { baseUrl } = startServer();
     const taskRes = await apiFetch(
       baseUrl,
       "/api/v1/workspaces/ws_default/projects/proj_1/tasks",
@@ -2520,29 +2075,19 @@ describe("api-entry-node projects routes", () => {
         method: "POST",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({
-          title: "Internal Task Delete",
-          agent_id: internalAgent.id,
+          title: "Legacy Task Agent Selector",
+          agent_id: "ag_legacy_task",
           workspace_mode: "create_new",
           initial_inputs: [],
         }),
       },
     );
-    expect(taskRes.status).toBe(201);
-    const task = (await taskRes.json()) as { id: string };
-
-    const deleteRes = await apiFetch(
-      baseUrl,
-      `/api/v1/workspaces/ws_default/projects/proj_1/tasks/${task.id}`,
-      {
-        method: "DELETE",
-      },
-    );
-    expect(deleteRes.status).toBe(200);
-    expect(releasePod).toHaveBeenCalledWith(
-      "ws_default",
-      "proj_1",
-      sanitizeWorkloadId(task.id),
-    );
+    expect(taskRes.status).toBe(400);
+    await expect(taskRes.json()).resolves.toMatchObject({
+      error_code: "unsupported_field",
+      message: "unsupported_field",
+      fields: ["agent_id"],
+    });
   });
 
   it("normalizes endpoint base_url when full chat/completions path is provided", async () => {
@@ -2638,9 +2183,10 @@ describe("api-entry-node projects routes", () => {
     const previousPublicApiBase = process.env.PUBLIC_API_BASE_URL;
     const socketsToClose: WebSocket[] = [];
     try {
-      const { baseUrl } = startServer();
+      const { baseUrl, deps } = startServer();
       process.env.PUBLIC_API_BASE_URL = `${baseUrl}/api/v1`;
       const fixture = await createNotebookExternalAgentFixture(
+        deps,
         baseUrl,
         "Truncate Trace Workspace",
       );
@@ -2652,7 +2198,6 @@ describe("api-entry-node projects routes", () => {
       socketsToClose.push(agentScopedRunner.ws);
       const task = await createNotebookTask(
         baseUrl,
-        fixture.agent.id,
         fixture.workspaceLibrary.id,
         "Truncate trace details",
       );
@@ -2689,7 +2234,7 @@ describe("api-entry-node projects routes", () => {
       });
       socketsToClose.push(taskScopedRunner.ws);
 
-      const postMessageRes = await postNotebookTaskMessage(baseUrl, task.id, "run");
+      const postMessageRes = await postNotebookTaskRun(baseUrl, task.id, "run");
       expect(postMessageRes.status).toBe(200);
       await expectNotebookRunnerDispatch(
         taskScopedRunner.firstDispatch,
@@ -2740,6 +2285,7 @@ describe("api-entry-node projects routes", () => {
       const { baseUrl } = startServerWithDeps(deps);
       process.env.PUBLIC_API_BASE_URL = `${baseUrl}/api/v1`;
       const fixture = await createNotebookExternalAgentFixture(
+        deps,
         baseUrl,
         "Persist Notebook Workspace",
       );
@@ -2751,7 +2297,6 @@ describe("api-entry-node projects routes", () => {
       socketsToClose.push(agentScopedRunner.ws);
       const task = await createNotebookTask(
         baseUrl,
-        fixture.agent.id,
         fixture.workspaceLibrary.id,
         "Persist notebook docs",
       );
@@ -2794,7 +2339,7 @@ describe("api-entry-node projects routes", () => {
       });
       socketsToClose.push(taskScopedRunner.ws);
 
-      const postMessageRes = await postNotebookTaskMessage(baseUrl, task.id, "run");
+      const postMessageRes = await postNotebookTaskRun(baseUrl, task.id, "run");
       expect(postMessageRes.status).toBe(200);
       await expectNotebookRunnerDispatch(
         taskScopedRunner.firstDispatch,
@@ -2805,14 +2350,14 @@ describe("api-entry-node projects routes", () => {
 
       for (let attempt = 0; attempt < 200; attempt += 1) {
         const traces = await deps.docStore.list<{ task_id: string }>(
-          "ws_default_notebook_task_trace_events",
+          "ws_default_agent_task_trace_events",
           { task_id: task.id },
         );
         const msgs = await deps.docStore.list<{
           task_id: string;
           role: string;
           content: string;
-        }>("ws_default_notebook_task_messages", { task_id: task.id });
+        }>("ws_default_agent_task_messages", { task_id: task.id });
         if (
           traces.some((trace) => trace.task_id === task.id) &&
           msgs.some(
@@ -2825,31 +2370,31 @@ describe("api-entry-node projects routes", () => {
       }
 
       const baseTasks = await deps.docStore.list<{ id: string }>(
-        "notebook_tasks",
+        "agent_tasks",
         {},
       );
       const baseMessages = await deps.docStore.list<{
         task_id: string;
         role: string;
         content: string;
-      }>("notebook_task_messages", { task_id: task.id });
+      }>("agent_task_messages", { task_id: task.id });
       const baseTraces = await deps.docStore.list<{
         task_id: string;
         category: string;
-      }>("notebook_task_trace_events", { task_id: task.id });
+      }>("agent_task_trace_events", { task_id: task.id });
       const storedTasks = await deps.docStore.list<{ id: string }>(
-        "ws_default_notebook_tasks",
+        "ws_default_agent_tasks",
         {},
       );
       const storedMessages = await deps.docStore.list<{
         task_id: string;
         role: string;
         content: string;
-      }>("ws_default_notebook_task_messages", { task_id: task.id });
+      }>("ws_default_agent_task_messages", { task_id: task.id });
       const storedTraces = await deps.docStore.list<{
         task_id: string;
         category: string;
-      }>("ws_default_notebook_task_trace_events", { task_id: task.id });
+      }>("ws_default_agent_task_trace_events", { task_id: task.id });
 
       expect(baseTasks).toHaveLength(0);
       expect(baseMessages).toHaveLength(0);
@@ -2880,6 +2425,7 @@ describe("api-entry-node projects routes", () => {
       const { baseUrl } = startServerWithDeps(deps);
       process.env.PUBLIC_API_BASE_URL = `${baseUrl}/api/v1`;
       const fixture = await createNotebookExternalAgentFixture(
+        deps,
         baseUrl,
         "Trace Retention Workspace",
       );
@@ -2891,7 +2437,6 @@ describe("api-entry-node projects routes", () => {
       socketsToClose.push(agentScopedRunner.ws);
       const task = await createNotebookTask(
         baseUrl,
-        fixture.agent.id,
         fixture.workspaceLibrary.id,
         "Trace retention bound",
       );
@@ -2928,7 +2473,7 @@ describe("api-entry-node projects routes", () => {
       });
       socketsToClose.push(taskScopedRunner.ws);
 
-      const postMessageRes = await postNotebookTaskMessage(baseUrl, task.id, "run");
+      const postMessageRes = await postNotebookTaskRun(baseUrl, task.id, "run");
       expect(postMessageRes.status).toBe(200);
       await expectNotebookRunnerDispatch(
         taskScopedRunner.firstDispatch,
@@ -2947,7 +2492,7 @@ describe("api-entry-node projects routes", () => {
           task_id: string;
           summary: string;
           name: string;
-        }>("ws_default_notebook_task_trace_events", { task_id: task.id });
+        }>("ws_default_agent_task_trace_events", { task_id: task.id });
         if (
           storedTraces.some((t) => t.name === "trace.buffer") ||
           (storedTraces.length === 1000 &&

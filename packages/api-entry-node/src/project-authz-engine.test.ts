@@ -78,8 +78,13 @@ describe('project-authz-engine', () => {
     }));
 
     expect(permissions.has('project:endpoint:use')).toBe(true);
-    expect(permissions.has('project:agent:manage')).toBe(true);
-    expect(permissions.has('project:agent:public')).toBe(true);
+    expect(permissions.has('project:agent_task:use')).toBe(true);
+    expect(permissions.has('project:agent_task:terminal')).toBe(true);
+    expect(permissions.has('project:agent_runner:read')).toBe(true);
+    expect(permissions.has('project:agent_runner:manage')).toBe(true);
+    expect(permissions.has('project:agent:manage')).toBe(false);
+    expect(permissions.has('project:agent:public')).toBe(false);
+    expect(permissions.has('project:terminal:use')).toBe(false);
     expect(permissions.has('project:governance:update')).toBe(true);
     expect(permissions.has('project:files:update')).toBe(true);
   });
@@ -119,22 +124,27 @@ describe('project-authz-engine', () => {
     ).toEqual([]);
   });
 
-  it('grants terminal access only from explicit permission sources', async () => {
+  it('grants Agent task terminal access only from explicit target permission sources', async () => {
     const docStore = new InMemoryJsonDocStore();
     const workspaceId = `ws_${Date.now()}`;
     const projectId = `proj_${Math.random().toString(36).slice(2, 10)}`;
-    await upsertProjectMembershipRecord(docStore, workspaceId, projectId, {
+    const template = {
+      id: 'pt_agent_task_use_only',
       project_id: projectId,
-      user_id: 'user_test',
-      role: 'member',
-      status: 'active',
-      joined_at: new Date().toISOString(),
-    });
-
-    await upsertProjectMemberPermissionState(docStore, workspaceId, projectId, 'user_test', {
-      mode: 'custom',
-      template: null,
-      permissions: ['project:endpoint:use', 'project:agent:use'],
+      name: 'Agent task use only',
+      permissions: ['project:endpoint:use', 'project:agent_task:use'],
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+    };
+    await saveProjectPermissionTemplate(docStore, workspaceId, projectId, template);
+    await saveProjectGroup(docStore, workspaceId, projectId, {
+      id: 'grp_agent_task_use_only',
+      project_id: projectId,
+      name: 'Agent task use only',
+      permission_template_id: template.id,
+      member_ids: ['user_test'],
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
     });
 
     const visible = await resolveVisibleProjectPermissionsForActor({
@@ -144,7 +154,9 @@ describe('project-authz-engine', () => {
       projectOwnerId: 'user_owner',
       actorUserId: 'user_test',
     });
-    expect(visible).toContain('project:terminal:use');
+    expect(visible).toContain('project:agent_task:use');
+    expect(visible).not.toContain('project:agent_task:terminal');
+    expect(visible).not.toContain('project:terminal:use');
 
     const evaluation = await evaluateProjectPermissions({
       docStore,
@@ -152,11 +164,28 @@ describe('project-authz-engine', () => {
       projectId,
       projectOwnerId: 'user_owner',
       actorUserId: 'user_test',
-      requiredPermissions: ['project:terminal:use'],
+      requiredPermissions: ['project:agent_task:terminal'],
     });
-    expect(evaluation.decisions[0]?.granted).toBe(true);
-    expect(evaluation.decisions[0]?.reason).toBe('granted_by_member_governance');
-    expect(evaluation.decisions[0]?.source_detail?.type).not.toBe('compat_implied');
+    expect(evaluation.decisions[0]?.granted).toBe(false);
+    expect(evaluation.decisions[0]?.reason).toBe('permission_not_granted');
+
+    await saveProjectPermissionTemplate(docStore, workspaceId, projectId, {
+      ...template,
+      permissions: ['project:endpoint:use', 'project:agent_task:use', 'project:agent_task:terminal'],
+      updated_at: new Date().toISOString(),
+    });
+
+    const grantedEvaluation = await evaluateProjectPermissions({
+      docStore,
+      workspaceId,
+      projectId,
+      projectOwnerId: 'user_owner',
+      actorUserId: 'user_test',
+      requiredPermissions: ['project:agent_task:terminal'],
+    });
+    expect(grantedEvaluation.decisions[0]?.granted).toBe(true);
+    expect(grantedEvaluation.decisions[0]?.reason).toBe('granted_by_member_governance');
+    expect(grantedEvaluation.decisions[0]?.source_detail?.type).toBe('group_template');
   });
 
   it('allows workspace governance admins to discover private projects without project membership', async () => {
@@ -283,9 +312,17 @@ describe('project-authz-engine', () => {
     expect(mapAuthorizationRequestToPermission({ resourceType: 'endpoint', action: 'endpoint.invoke' })).toBe('project:endpoint:use');
     expect(mapAuthorizationRequestToPermission({ resourceType: 'endpoint', action: 'endpoint.update' })).toBe('project:governance:update');
     expect(mapAuthorizationRequestToPermission({ resourceType: 'project', action: 'project.audit.view' })).toBe('project:audit:read');
+    expect(mapAuthorizationRequestToPermission({ resourceType: 'project', action: 'project.agent_task.run' })).toBe('project:agent_task:use');
+    expect(mapAuthorizationRequestToPermission({ resourceType: 'project', action: 'project.agent_task.terminal.open' })).toBe('project:agent_task:terminal');
+    expect(mapAuthorizationRequestToPermission({ resourceType: 'project', action: 'project.terminal.open' })).toBe('project:agent_task:terminal');
+    expect(mapAuthorizationRequestToPermission({ resourceType: 'project', action: 'project.agent_runner.diagnostics.read' })).toBe('project:agent_runner:read');
+    expect(mapAuthorizationRequestToPermission({ resourceType: 'project', action: 'project.agent_runner.keys.create' })).toBe('project:agent_runner:manage');
     expect(mapAuthorizationRequestToPermission({ resourceType: 'project', action: 'project.member.view' })).toBe('project:membership:update');
     expect(mapAuthorizationRequestToPermission({ resourceType: 'project', action: 'project.governance.credentials.update' })).toBe('project:governance:update');
     expect(mapAuthorizationRequestToPermission({ resourceType: 'file_library', action: 'file_library.list' })).toBe('project:endpoint:use');
     expect(mapAuthorizationRequestToPermission({ resourceType: 'file_library', action: 'file_library.upload' })).toBe('project:files:update');
+    expect(mapAuthorizationRequestToPermission({ resourceType: 'agent', action: 'agent.list' })).toBe('project:agent_runner:read');
+    expect(mapAuthorizationRequestToPermission({ resourceType: 'agent', action: 'agent.connection_info.read' })).toBe('project:agent_runner:manage');
+    expect(mapAuthorizationRequestToPermission({ resourceType: 'agent', action: 'agent.publish' })).toBe('project:agent_runner:manage');
   });
 });

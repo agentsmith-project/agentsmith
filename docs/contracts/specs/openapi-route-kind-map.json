@@ -240,7 +240,7 @@
     "method": "post"
   },
   "agents": {
-    "path": "/api/v1/workspaces/{workspaceId}/projects/{projectId}/agents",
+    "path": "/api/v1/workspaces/{workspaceId}/projects/{projectId}/agent-runners",
     "method": "get"
   },
   "llmUnifiedChat": {
@@ -264,27 +264,27 @@
     "method": "post"
   },
   "agentItem": {
-    "path": "/api/v1/workspaces/{workspaceId}/projects/{projectId}/agents/{agentId}",
+    "path": "/api/v1/workspaces/{workspaceId}/projects/{projectId}/agent-runners/{agentRunnerId}",
     "method": "get"
   },
   "agentDiagnostics": {
-    "path": "/api/v1/workspaces/{workspaceId}/projects/{projectId}/agents/{agentId}/diagnostics",
+    "path": "/api/v1/workspaces/{workspaceId}/projects/{projectId}/agent-runners/{agentRunnerId}/diagnostics",
     "method": "get"
   },
   "agentExecutionConfig": {
-    "path": "/api/v1/workspaces/{workspaceId}/projects/{projectId}/agents/{agentId}/execution-config",
+    "path": "/api/v1/workspaces/{workspaceId}/projects/{projectId}/agent-runners/{agentRunnerId}/execution-config",
     "method": "get"
   },
   "agentConnectionInfo": {
-    "path": "/api/v1/workspaces/{workspaceId}/projects/{projectId}/agents/{agentId}/connection-info",
+    "path": "/api/v1/workspaces/{workspaceId}/projects/{projectId}/agent-runners/{agentRunnerId}/connection-info",
     "method": "get"
   },
   "agentKeys": {
-    "path": "/api/v1/workspaces/{workspaceId}/projects/{projectId}/agents/{agentId}/keys",
+    "path": "/api/v1/workspaces/{workspaceId}/projects/{projectId}/agent-runners/{agentRunnerId}/keys",
     "method": "get"
   },
   "agentKeyItem": {
-    "path": "/api/v1/workspaces/{workspaceId}/projects/{projectId}/agents/{agentId}/keys/{keyId}",
+    "path": "/api/v1/workspaces/{workspaceId}/projects/{projectId}/agent-runners/{agentRunnerId}/keys/{keyId}",
     "method": "delete"
   },
   "endpoints": {
@@ -355,9 +355,13 @@
     "path": "/api/v1/workspaces/{workspaceId}/projects/{projectId}/tasks/{taskId}",
     "method": "get"
   },
-  "taskMessages": {
-    "path": "/api/v1/workspaces/{workspaceId}/projects/{projectId}/tasks/{taskId}/messages",
+  "taskActivity": {
+    "path": "/api/v1/workspaces/{workspaceId}/projects/{projectId}/tasks/{taskId}/activity",
     "method": "get"
+  },
+  "taskRuns": {
+    "path": "/api/v1/workspaces/{workspaceId}/projects/{projectId}/tasks/{taskId}/runs",
+    "method": "post"
   },
   "taskCancelRun": {
     "path": "/api/v1/workspaces/{workspaceId}/projects/{projectId}/tasks/{taskId}/cancel",

@@ -70,7 +70,7 @@ function buildRunnerWsUrl(
     wsUrl.replace("ws://localhost:20000", baseUrl.replace("http://", "ws://")),
   );
   if (sessionId) {
-    resolved.searchParams.set("session_id", sessionId);
+    resolved.searchParams.set("runner_session_id", sessionId);
   }
   return resolved.toString();
 }
@@ -127,7 +127,7 @@ async function openReadyNotebookRunnerSocket(input: {
             type: "agent.ready",
             payload: {
               runner_spec: NOTEBOOK_RUNNER_SPEC,
-              capabilities: { mode: "external", wire_api: "responses" },
+              capabilities: { wire_api: "responses" },
             },
           }),
         );
@@ -207,7 +207,7 @@ describe("api-entry-node notebook task event routes", () => {
   it("replays buffered task events after last_event_id for notebook task SSE", async () => {
     const previousPublicApiBase = process.env.PUBLIC_API_BASE_URL;
     process.env.PUBLIC_API_BASE_URL = "";
-    const { baseUrl } = startServer();
+    const { baseUrl, deps } = startServer();
     process.env.PUBLIC_API_BASE_URL = `${baseUrl}/api/v1`;
     try {
       const createCredential = await apiFetch(
@@ -259,53 +259,28 @@ describe("api-entry-node notebook task event routes", () => {
       expect(createEndpoint.status).toBe(201);
       const endpoint = (await createEndpoint.json()) as { id: string };
 
-      const createAgent = await apiFetch(
-        baseUrl,
-        "/api/v1/workspaces/ws_default/projects/proj_1/agents",
-        {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            name: "External notebook agent",
-            mode: "external",
-            interaction_kind: "notebook",
-            execution_preferences: {
-              notebook: {
-                endpoint_id: endpoint.id,
-                wire_api: "responses",
-                model: "placeholder-model",
-              },
-            },
-            capabilities: {
-              streaming_completion: true,
-              multimodal_completion: false,
-            },
-          }),
+      const agent = await deps.agentResourceService.createAgent("ws_default", "proj_1", {
+        name: "External notebook agent",
+        runner_provider: "developer",
+        is_default: true,
+        status: "enabled",
+        runner_status: "ready",
+        default_endpoint_id: endpoint.id,
+        owner_id: "user_test",
+        visibility: "private",
+        capabilities: {
+          task_execution: true,
+          artifacts: true,
+          streaming_completion: true,
+          multimodal_completion: false,
         },
-      );
-      expect(createAgent.status).toBe(201);
-      const agent = (await createAgent.json()) as { id: string };
+      });
 
-      const createAgentKeyRes = await apiFetch(
-        baseUrl,
-        `/api/v1/workspaces/ws_default/projects/proj_1/agents/${agent.id}/keys`,
-        {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: "{}",
-        },
-      );
-      expect(createAgentKeyRes.status).toBe(201);
-      const agentKey = (await createAgentKeyRes.json()) as { key: string };
-
-      const connectionInfoRes = await apiFetch(
-        baseUrl,
-        `/api/v1/workspaces/ws_default/projects/proj_1/agents/${agent.id}/connection-info`,
-      );
-      expect(connectionInfoRes.status).toBe(200);
-      const connectionInfo = (await connectionInfoRes.json()) as {
-        ws_url: string;
-      };
+      const agentKey = await deps.agentResourceService.createAgentKey("ws_default", "proj_1", agent.id);
+      const connectionInfo = deps.agentResourceService.buildConnectionInfo({
+        id: agent.id,
+        runner_provider: "developer",
+      });
 
       const agentScopedRunner = await openReadyNotebookRunnerSocket({
         baseUrl,
@@ -335,7 +310,6 @@ describe("api-entry-node notebook task event routes", () => {
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
             title: "Task SSE replay",
-            agent_id: agent.id,
             workspace_file_library_id: workspaceLibrary.id,
           }),
         },
@@ -391,11 +365,11 @@ describe("api-entry-node notebook task event routes", () => {
 
       const postMessageRes = await apiFetch(
         baseUrl,
-        `/api/v1/workspaces/ws_default/projects/proj_1/tasks/${task.id}/messages`,
+        `/api/v1/workspaces/ws_default/projects/proj_1/tasks/${task.id}/runs`,
         {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ role: "user", content: "run" }),
+          body: JSON.stringify({ intent: "run" }),
         },
       );
       expect(postMessageRes.status).toBe(200);
@@ -438,19 +412,18 @@ describe("api-entry-node notebook task event routes", () => {
     const { baseUrl, deps } = startServer();
     const agent = await deps.agentResourceService.createAgent("ws_default", "proj_1", {
       name: "Persisted fallback notebook agent",
-      mode: "external",
-      interaction_kind: "notebook",
+      runner_provider: "developer",
       status: "enabled",
       presence: "online",
-      config: {
-        _external_key_source: "generated",
-      } as never,
+      is_default: true,
+      default_endpoint_id: "ep_unused",
       owner_id: "user_test",
       visibility: "private",
-      execution_preferences_json: {
-        notebook: {
-          endpoint_id: "ep_unused",
-        },
+      capabilities: {
+        task_execution: true,
+        artifacts: true,
+        streaming_completion: true,
+        multimodal_completion: false,
       },
     });
     await deps.agentResourceService.markAgentConnected(agent.id, {
@@ -479,7 +452,6 @@ describe("api-entry-node notebook task event routes", () => {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           title: "Persisted fallback task",
-          agent_id: agent.id,
           workspace_file_library_id: workspaceLibrary.id,
         }),
       },
@@ -569,7 +541,7 @@ describe("api-entry-node notebook task event routes", () => {
     expect(
       replayBlocks.some(
         (item) =>
-          item.payload?.type === "message" &&
+          item.payload?.type === "activity_item" &&
           item.payload?.data &&
           (item.payload.data as { id?: string }).id === "msg_persisted_agent",
       ),

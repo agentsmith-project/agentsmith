@@ -6,7 +6,7 @@
 
 export { WorkspaceAPI } from './workspaces';
 export { ProjectAPI } from './projects';
-export { AgentAPI } from './agents';
+export { AgentRunnerAPI } from './agent-runners';
 export { EndpointAPI } from './endpoints';
 export { CredentialsAPI } from './credentials';
 export { MemberAPI } from './members';
@@ -25,7 +25,7 @@ export { ContextAPI } from './context';
 
 // Re-export types
 export type { CreateProjectRequest, UpdateProjectRequest } from './projects';
-export type { CreateAgentRequest, UpdateAgentRequest } from './agents';
+export type { CreateAgentRunnerRequest, UpdateAgentRunnerRequest } from './agent-runners';
 export type {
   CreateEndpointRequest,
   UpdateEndpointRequest,
@@ -51,11 +51,11 @@ export type {
 export type { CreateSessionRequest, CreateMessageRequest } from './chat';
 export type {
   Task,
-  TaskMessage,
+  TaskActivityItem,
   Artifact,
   CreateTaskRequest,
   UpdateTaskRequest,
-  SendMessageRequest,
+  StartTaskRunRequest,
   TaskListParams,
   TaskListResponse,
 } from './tasks';

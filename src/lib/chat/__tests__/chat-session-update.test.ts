@@ -4,7 +4,7 @@ import {
   applyChatSessionUpdate,
   type ChatSessionUpdateData,
   type PendingSessionUpdateOptions,
-  doesSessionMatchPatch,
+  chatSessionUpdateFields,
   mergeSessionWithPendingUpdate,
 } from '@/lib/chat/chat-session-update';
 
@@ -27,7 +27,7 @@ function createDeferredPromise<T>(): DeferredPromise<T> {
 }
 
 describe('chat-session-update helpers', () => {
-  it('rolls back pending execution target patch when update fails', async () => {
+  it('rolls back pending model binding patch when update fails', async () => {
     const mutateAsync = vi.fn().mockRejectedValue(new Error('update failed'));
     const setPendingSessionUpdate = vi.fn();
 
@@ -37,7 +37,6 @@ describe('chat-session-update helpers', () => {
           sessionId: 'sess_1',
           data: {
             endpoint_id: 'ep_2',
-            external_agent_id: undefined,
             model: 'claude-3-7-sonnet',
           },
         },
@@ -48,19 +47,17 @@ describe('chat-session-update helpers', () => {
 
     expect(setPendingSessionUpdate).toHaveBeenNthCalledWith(1, 'sess_1', {
       endpoint_id: 'ep_2',
-      external_agent_id: undefined,
       model: 'claude-3-7-sonnet',
     });
     expect(setPendingSessionUpdate).toHaveBeenNthCalledWith(2, 'sess_1', null, {
       onlyIfCurrentPatch: {
         endpoint_id: 'ep_2',
-        external_agent_id: undefined,
         model: 'claude-3-7-sonnet',
       },
     });
   });
 
-  it('does not let an older failed execution-target update clear a newer pending patch', async () => {
+  it('does not let an older failed model binding update clear a newer pending patch', async () => {
     let currentPendingPatch: Record<string, ChatSessionUpdateData | undefined> = {};
     const firstUpdate = createDeferredPromise<never>();
     const mutateAsync = vi.fn()
@@ -95,7 +92,6 @@ describe('chat-session-update helpers', () => {
         sessionId: 'sess_1',
         data: {
           endpoint_id: 'ep_old',
-          external_agent_id: undefined,
           model: 'model-old',
         },
       },
@@ -110,7 +106,6 @@ describe('chat-session-update helpers', () => {
         sessionId: 'sess_1',
         data: {
           endpoint_id: 'ep_new',
-          external_agent_id: undefined,
           model: 'model-new',
         },
       },
@@ -123,36 +118,21 @@ describe('chat-session-update helpers', () => {
     await expect(firstRequest).rejects.toThrow('old update failed');
     expect(currentPendingPatch['sess_1']).toEqual({
       endpoint_id: 'ep_new',
-      external_agent_id: undefined,
       model: 'model-new',
     });
   });
 
-  it('treats null backend truth as matching a cleared external agent patch', () => {
-    expect(
-      doesSessionMatchPatch(
-        {
-          endpoint_id: 'ep_2',
-          external_agent_id: null,
-          model: 'claude-3-7-sonnet',
-        },
-        {
-          endpoint_id: 'ep_2',
-          external_agent_id: undefined,
-          model: 'claude-3-7-sonnet',
-        },
-      ),
-    ).toBe(true);
+  it('does not treat external_agent_id as a supported session update field', () => {
+    expect(chatSessionUpdateFields).not.toContain('external_agent_id');
   });
 
-  it('clears the visible external agent binding while a pending endpoint switch is in flight', () => {
+  it('merges endpoint/model while a pending endpoint switch is in flight', () => {
     const session: ChatSession = {
       id: 'sess_1',
       project_id: 'proj_1',
       title: 'Session',
       model: 'gpt-4o',
       endpoint_id: 'ep_1',
-      external_agent_id: 'agent_1',
       created_at: new Date().toISOString(),
       updated_at: new Date().toISOString(),
       message_count: 0,
@@ -162,12 +142,10 @@ describe('chat-session-update helpers', () => {
     expect(
       mergeSessionWithPendingUpdate(session, {
         endpoint_id: 'ep_2',
-        external_agent_id: undefined,
         model: 'claude-3-7-sonnet',
       }),
     ).toMatchObject({
       endpoint_id: 'ep_2',
-      external_agent_id: undefined,
       model: 'claude-3-7-sonnet',
     });
   });

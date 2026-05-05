@@ -244,7 +244,9 @@ requireMatch(governanceModel, /execution target/i, 'current engineering governan
 requireMatch(governanceModel, /operator hint/i, 'current engineering governance model must describe command as an operator hint');
 requireMatch(development, /operator hint/i, 'DEVELOPMENT must describe command as an operator hint');
 requireMatch(contractsIndex, /product-terminology\.md/, 'contracts README is missing the product terminology contract reference');
-requireMatch(contractsIndex, /Execution target/, 'contracts README must describe Execution target as part of the current terminology contract');
+requireMatch(contractsIndex, /Model/, 'contracts README must describe Model as part of the current terminology contract');
+requireMatch(contractsIndex, /Agent tasks/, 'contracts README must describe Agent tasks as part of the current terminology contract');
+requireMatch(contractsIndex, /Agent Runners/, 'contracts README must describe Agent Runners as part of the current terminology contract');
 requireMatch(contractsIndex, /Shared context/, 'contracts README must describe Shared context as part of the current terminology contract');
 
 for (const term of CURRENT_WORKFLOW_TOP_LEVEL_TERMS) {
@@ -474,9 +476,11 @@ requireMatch(constitution, /ownership 未证实前不得 destructive cleanup/, '
 forbidMatch(constitution, /smoke \+ chromium/, 'constitution still uses legacy smoke + chromium wording');
 
 const requiredProductTerminologyChecks: Array<{ pattern: RegExp; message: string }> = [
-  { pattern: /Execution target/, message: 'product terminology contract must define Execution target' },
+  { pattern: /Model/, message: 'product terminology contract must define Model as the Chat selector' },
   { pattern: /Endpoint/, message: 'product terminology contract must define Endpoint' },
-  { pattern: /Agent/, message: 'product terminology contract must define Agent' },
+  { pattern: /Agent tasks/, message: 'product terminology contract must define Agent tasks' },
+  { pattern: /Agent Runners/, message: 'product terminology contract must define Agent Runners' },
+  { pattern: /Agent Runner/, message: 'product terminology contract must define Agent Runner' },
   { pattern: /shared project library/, message: 'product terminology contract must define Files as the shared project library' },
   { pattern: /Shared context/, message: 'product terminology contract must define Shared context' },
   { pattern: /Project secrets/, message: 'product terminology contract must define Project secrets' },
@@ -510,13 +514,13 @@ requireMatch(
 );
 requireMatch(
   productTerminology,
-  /do not describe `Endpoint` and `Agent` as interchangeable model sources/,
-  'product terminology contract must forbid collapsing Endpoint and Agent into generic model-source wording',
+  /Product-facing Chat UI must use `Model`/,
+  'product terminology contract must require Model as the Chat selector',
 );
 requireMatch(
   productTerminology,
-  /must not be described as a second model catalog or a generic provider picker/,
-  'product terminology contract must explicitly forbid describing Execution target as a generic provider picker',
+  /Agent task dispatch is backend-owned and resolves the eligible default Agent Runner/,
+  'product terminology contract must keep Agent Runner selection backend-owned',
 );
 
 const verificationCatalog = buildVerificationCatalog({

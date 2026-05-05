@@ -119,7 +119,6 @@ async function resolveContextAccess(args: {
     const ticketProjectId = internalTicket.project_id ?? null;
     const ticketTaskId = internalTicket.payload.task_id ?? null;
     const ticketUserId = user.id;
-    const ticketMode = internalTicket.payload.mode;
 
     if ((scope === 'project' || scope === 'task') && !ticketProjectId) {
       return { error: { status: 403, message: 'context_project_scope_not_available' } };
@@ -127,7 +126,7 @@ async function resolveContextAccess(args: {
     if (scope === 'project_member' && !ticketProjectId) {
       return { error: { status: 403, message: 'context_project_member_scope_not_available' } };
     }
-    if (scope === 'task' && (ticketMode !== 'notebook' || !ticketTaskId)) {
+    if (scope === 'task' && !ticketTaskId) {
       return { error: { status: 403, message: 'context_task_scope_not_available' } };
     }
     if (scope === 'member' && !ticketWorkspaceId) {

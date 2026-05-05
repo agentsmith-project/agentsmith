@@ -2,7 +2,7 @@ import { execFileSync } from 'node:child_process';
 import { readFileSync, readlinkSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { isNotebookRunnerProcessSnapshot } from '../../packages/notebook-codex-runner/src/task-workspace-ownership.js';
+import { isAgentTaskRunnerProcessSnapshot } from '../../packages/agent-task-runner/src/task-workspace-ownership.js';
 
 type JanitorAuthority =
   | 'current_active'
@@ -540,7 +540,7 @@ export function buildLocalManualOwnerJanitorPlan(
       if (!currentProcess) {
         continue;
       }
-      if (isNotebookRunnerProcessSnapshot(currentProcess)) {
+      if (isAgentTaskRunnerProcessSnapshot(currentProcess)) {
         return true;
       }
       processQueue.push(...(childrenByPid.get(currentProcess.pid) ?? []));
@@ -550,11 +550,11 @@ export function buildLocalManualOwnerJanitorPlan(
 
   const trackedProcessIsCurrentRunner = (trackedRunnerPid: number): boolean => {
     const trackedProcess = processByPid.get(trackedRunnerPid);
-    return trackedProcess ? isNotebookRunnerProcessSnapshot(trackedProcess) : false;
+    return trackedProcess ? isAgentTaskRunnerProcessSnapshot(trackedProcess) : false;
   };
 
   const isTrackedRunnerSupervisorCommand = (command: string | undefined): boolean => {
-    return typeof command === 'string' && command.includes('make notebook-agent-runner');
+    return typeof command === 'string' && command.includes('make agent-task-runner-from-state');
   };
 
   const collectOwnedProcessTreePids = (rootPid: number): number[] => {

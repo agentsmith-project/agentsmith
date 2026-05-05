@@ -37,7 +37,7 @@
   "runtimeData": {
     "inviteToFirstEffectiveWork": {
       "privateProjectNamePrefix": "Story Invite First Work",
-      "sharedRunnerProjectNamePrefix": "Story Shared Runner",
+      "sharedChatProjectNamePrefix": "Story Shared Chat",
       "credentialNamePrefix": "Story Invite Endpoint Credential",
       "endpointNamePrefix": "Story Invite Endpoint",
       "ownerPrivateMessagePrefix": "OWNER_PRIVATE_MESSAGE",

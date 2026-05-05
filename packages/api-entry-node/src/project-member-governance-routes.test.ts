@@ -314,8 +314,8 @@ describe('project-member-governance-routes', () => {
       expect.objectContaining({
         platform_permissions: expect.arrayContaining([
           'project:endpoint:use',
-          'project:agent:manage',
-          'project:agent:public',
+          'project:agent_runner:read',
+          'project:agent_runner:manage',
           'project:governance:update',
           'project:membership:update',
           'project:admins:update',

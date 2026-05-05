@@ -53,16 +53,16 @@ afterEach(() => {
 });
 
 describe('useChatThreadActions', () => {
-  it('does not switch execution target while the active stream is still backend-authoritative', () => {
+  it('does not switch model while the active stream is still backend-authoritative', () => {
     const updateSession = vi.fn();
 
     const { result } = renderHook(() =>
       useChatThreadActions({
         canUseChat: true,
         canManageChatSessions: true,
-        canChangeExecutionTarget: false,
+        canChangeModel: false,
         sessions: [createSession()],
-        activeSession: createSession({ external_agent_id: 'agent_1' }),
+        activeSession: createSession(),
         createSession: vi.fn(),
         updateSession,
         setCurrentSessionId: vi.fn(),
@@ -92,7 +92,7 @@ describe('useChatThreadActions', () => {
           canUseChat: true,
           canManageChatSessions: true,
           sessions: [createSession()],
-          activeSession: createSession({ external_agent_id: 'agent_1' }),
+          activeSession: createSession(),
           createSession: vi.fn(),
           updateSession,
           setCurrentSessionId: vi.fn(),
@@ -113,7 +113,6 @@ describe('useChatThreadActions', () => {
         sessionId: 'session_1',
         data: {
           endpoint_id: 'ep_2',
-          external_agent_id: undefined,
           model: 'claude-3-7-sonnet',
         },
       });
@@ -122,5 +121,24 @@ describe('useChatThreadActions', () => {
     } finally {
       window.removeEventListener('unhandledrejection', handleUnhandledRejection);
     }
+  });
+
+  it('does not expose an external agent selector action from chat thread actions', () => {
+    const { result } = renderHook(() =>
+      useChatThreadActions({
+        canUseChat: true,
+        canManageChatSessions: true,
+        sessions: [createSession()],
+        activeSession: createSession(),
+        createSession: vi.fn(),
+        updateSession: vi.fn(),
+        setCurrentSessionId: vi.fn(),
+        setEditingMessageId: vi.fn(),
+        setThreadToDelete: vi.fn(),
+        setDeleteThreadDialogOpen: vi.fn(),
+      }),
+    );
+
+    expect(result.current).not.toHaveProperty('onSelectExternalAgent');
   });
 });

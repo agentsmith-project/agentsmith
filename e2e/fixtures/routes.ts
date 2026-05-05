@@ -19,9 +19,9 @@ export const ROUTES = {
   project: [
     { path: '/zh-CN/workspaces/ws_default/projects/proj_001/overview', testId: 'project-overview__page' },
     { path: '/zh-CN/workspaces/ws_default/projects/proj_001/chat', testId: 'chat__main-pane' },
-    { path: '/zh-CN/workspaces/ws_default/projects/proj_001/notebook', testId: 'notebook__task-list' },
-    { path: '/zh-CN/workspaces/ws_default/projects/proj_001/notebook/tasks/task_001', testId: 'notebook__task-header' },
-    { path: '/zh-CN/workspaces/ws_default/projects/proj_001/agents', testId: 'agents__table' },
+    { path: '/zh-CN/workspaces/ws_default/projects/proj_001/agent-tasks', testId: 'agent-tasks__task-list' },
+    { path: '/zh-CN/workspaces/ws_default/projects/proj_001/agent-tasks/task_001', testId: 'agent-task__task-header' },
+    { path: '/zh-CN/workspaces/ws_default/projects/proj_001/agent-runners', testId: 'agent-runners__table' },
     { path: '/zh-CN/workspaces/ws_default/projects/proj_001/endpoints', testId: 'endpoints__table' },
     { path: '/zh-CN/workspaces/ws_default/projects/proj_001/resource-policy', testId: 'resource-policy__editor' },
     { path: '/zh-CN/workspaces/ws_default/projects/proj_001/members', testId: 'members__table' },

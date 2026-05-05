@@ -181,29 +181,29 @@ describe('visual semantic viewport assertions', () => {
     expect(() => assertSingularSemanticTargetMatchCount({
       count: 2,
       kind: 'viewer-local datetime target',
-      reference: 'notebook__task-last-activity',
-    })).toThrow(/requires unique viewer-local datetime target: notebook__task-last-activity/);
+      reference: 'agent-tasks__task-last-activity',
+    })).toThrow(/requires unique viewer-local datetime target: agent-tasks__task-last-activity/);
   });
 
   it('accepts a singular scoped viewer-local datetime target match', () => {
     expect(() => assertSingularSemanticTargetMatchCount({
       count: 1,
       kind: 'viewer-local datetime target',
-      reference: 'notebook__task-card--task_001::notebook__task-last-activity',
+      reference: 'agent-tasks__task-card--task_001::agent-tasks__task-last-activity',
     })).not.toThrow();
   });
 
-  it('requires the notebook lifecycle list story to use unique surface-scoped datetime targets', () => {
-    const story = parseStoryFrontMatter('e2e/stories/mock-lane/mock-lane-notebook-task-lifecycle.story.md');
-    const notebookLifecycleListScene = story.runtimeData?.visualReview?.scenes?.find(
-      (scene) => scene.sceneId === 'notebook-task-lifecycle-list',
+  it('requires the agent task lifecycle list story to use unique surface-scoped datetime targets', () => {
+    const story = parseStoryFrontMatter('e2e/stories/mock-lane/mock-lane-agent-task-lifecycle.story.md');
+    const agentTaskLifecycleListScene = story.runtimeData?.visualReview?.scenes?.find(
+      (scene) => scene.sceneId === 'agent-task-lifecycle-list',
     );
 
-    expect(notebookLifecycleListScene?.semanticAssertions?.requiredViewerLocalDateTimeTestIds ?? []).toEqual([
-      'notebook__task-card--task_001::notebook__task-last-activity',
-      'notebook__task-card--task_001::notebook__task-created-at',
-      'notebook__task-card--task_002::notebook__task-last-activity',
-      'notebook__task-card--task_002::notebook__task-created-at',
+    expect(agentTaskLifecycleListScene?.semanticAssertions?.requiredViewerLocalDateTimeTestIds ?? []).toEqual([
+      'agent-tasks__task-card--task_001::agent-tasks__task-last-activity',
+      'agent-tasks__task-card--task_001::agent-tasks__task-created-at',
+      'agent-tasks__task-card--task_002::agent-tasks__task-last-activity',
+      'agent-tasks__task-card--task_002::agent-tasks__task-created-at',
     ]);
   });
 
@@ -391,13 +391,13 @@ describe('visual semantic singular target auto-wait assertions', () => {
         throw new Error(`unexpected selector: ${selector}`);
       },
       getByTestId(testId: string) {
-        if (testId === 'notebook__task-card--task_001') {
+        if (testId === 'agent-tasks__task-card--task_001') {
           return {
             async count() {
               return 1;
             },
             getByTestId(targetTestId: string) {
-              if (targetTestId === 'notebook__task-last-activity') {
+              if (targetTestId === 'agent-tasks__task-last-activity') {
                 return viewerLocalDateTimeTarget;
               }
               throw new Error(`unexpected scoped target test id: ${targetTestId}`);
@@ -415,7 +415,7 @@ describe('visual semantic singular target auto-wait assertions', () => {
       forbiddenVisibleText: [],
       forbiddenVisibleTextPatterns: [],
       requiredViewportTestIds: [],
-      requiredViewerLocalDateTimeTestIds: ['notebook__task-card--task_001::notebook__task-last-activity'],
+      requiredViewerLocalDateTimeTestIds: ['agent-tasks__task-card--task_001::agent-tasks__task-last-activity'],
       primaryActionTestIds: [],
       prominentActionScopeTestIds: [],
       maxProminentActions: null,
@@ -441,7 +441,7 @@ describe('visual semantic singular target auto-wait assertions', () => {
         throw new Error(`unexpected selector: ${selector}`);
       },
       getByTestId(testId: string) {
-        if (testId === 'notebook__task-last-activity') {
+        if (testId === 'agent-tasks__task-last-activity') {
           return new DuplicateViewerLocalDateTimeLocator();
         }
         throw new Error(`unexpected test id: ${testId}`);
@@ -455,10 +455,10 @@ describe('visual semantic singular target auto-wait assertions', () => {
       forbiddenVisibleText: [],
       forbiddenVisibleTextPatterns: [],
       requiredViewportTestIds: [],
-      requiredViewerLocalDateTimeTestIds: ['notebook__task-last-activity'],
+      requiredViewerLocalDateTimeTestIds: ['agent-tasks__task-last-activity'],
       primaryActionTestIds: [],
       prominentActionScopeTestIds: [],
       maxProminentActions: null,
-    })).rejects.toThrow(/requires unique viewer-local datetime target: notebook__task-last-activity/);
+    })).rejects.toThrow(/requires unique viewer-local datetime target: agent-tasks__task-last-activity/);
   });
 });

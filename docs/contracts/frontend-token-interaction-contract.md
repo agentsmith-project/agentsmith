@@ -1,6 +1,6 @@
 # Frontend Token & Interaction Contract (MVP)
 
-Last updated: 2026-04-29
+Last updated: 2026-05-05
 Owner: Frontend
 Audience: Frontend, Backend Auth, QA
 
@@ -33,10 +33,10 @@ Related docs:
 
 ### Project
 - `project:endpoint:use`
-- `project:agent:use`
-- `project:terminal:use`
-- `project:agent:manage`
-- `project:agent:public`
+- `project:agent_task:use`
+- `project:agent_task:terminal`
+- `project:agent_runner:read`
+- `project:agent_runner:manage`
 - `project:audit:read`
 - `project:governance:update`
 - `project:membership:update`
@@ -49,11 +49,11 @@ Related docs:
 - Projects list: `workspace:read`
 - Project overview: `project:endpoint:use`
 - Chat: `project:endpoint:use`
-- Notebook list/detail: `project:endpoint:use`
-- Notebook terminal session use: `project:terminal:use`
+- Agent tasks list/detail: `project:agent_task:use`
+- Agent task terminal session use: `project:agent_task:use` + `project:agent_task:terminal`
 - Files: `project:endpoint:use`
 - Endpoints: `project:endpoint:use`
-- Agents: `project:agent:use` or `project:agent:manage`
+- Agent Runners: `project:agent_runner:read` or `project:agent_runner:manage`
 - Members: `project:membership:update`
 - Shared context: `project:governance:update`
 - Project secrets: `project:governance:update`
@@ -66,7 +66,9 @@ Related docs:
 
 Current split-token status:
 - Files mutations are now governed by `project:files:update` end to end.
-- Notebook terminal session use remains on `project:terminal:use`.
+- Agent task route access is governed by `project:agent_task:use`.
+- Agent task terminal session use is governed by `project:agent_task:terminal` and requires task access.
+- Agent Runner read/manage is split between `project:agent_runner:read` and `project:agent_runner:manage`.
 - Shared context remains on `project:governance:update`.
 - Project secrets remain on `project:governance:update`.
 - Resource Policy remains on `project:governance:update`.
@@ -84,8 +86,9 @@ Current split-token status:
 - Resource policy save: `project:governance:update`
 - Alert rule and notification-status management: `project:audit:read` (current MVP alert surface gate)
 - Member/template/group management and join request decisions: `project:membership:update`
-- Agent create/update/delete/key issue/key revoke: `project:agent:manage`
-- Agent publish/unpublish visibility changes: `project:agent:public`
+- Agent task create/run/update/archive/cancel: `project:agent_task:use`
+- Agent task terminal open/reconnect/input/resize/close: `project:agent_task:use` + `project:agent_task:terminal`
+- Agent Runner create/update/delete/default/key issue/key revoke: `project:agent_runner:manage`
 
 Current action split status:
 - Endpoint governance writes: `project:governance:update`
@@ -93,6 +96,9 @@ Current action split status:
 - Project secret create/rotate/delete: `project:governance:update`
 - Resource policy save: `project:governance:update`
 - Member/template/group management and join request decisions: `project:membership:update`
+- Agent task create/run/update/archive/cancel: `project:agent_task:use`
+- Agent task terminal controls: `project:agent_task:terminal`
+- Agent Runner create/update/delete/default/key mutations: `project:agent_runner:manage`
 - Project admin assignment: `project:admins:update`
 - Project delete / owner transfer / lifecycle settings: `project:lifecycle:update`
 

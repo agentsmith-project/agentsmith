@@ -11,7 +11,7 @@ bash "${ROOT_DIR}/scripts/cluster-deploy/render-env.sh"
 load_release_env
 require_version_images
 
-write_compose_env "${APP_IMAGE}" "${RUNNER_IMAGE}" "${UNIVERSAL_PROXY_IMAGE}"
+write_compose_env "${APP_IMAGE}" "${AGENT_TASK_RUNNER_IMAGE}" "${UNIVERSAL_PROXY_IMAGE}"
 mkdir -p "${CLUSTER_DEPLOY_ROOT}/releases"
 ln -sfn "${RELEASE_ROOT}" "${CURRENT_LINK}"
 

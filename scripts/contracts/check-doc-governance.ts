@@ -1,5 +1,6 @@
 import fs from 'node:fs';
 import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 
 const ROOT = process.cwd();
 
@@ -105,7 +106,30 @@ const BANNED_RULES: Array<{ rule: string; regex: RegExp; detail: string; current
     regex: /PRESET_OPENAI_ENDPOINT_PROTOCOL=openai_compatible/,
     detail: 'Current preset protocol examples must use canonical protocol names.',
   },
+  {
+    rule: 'legacy-runtime-compatibility-wording',
+    regex: /compatibility requires it|backward compatibility|compatible while moving toward/i,
+    detail: 'Pre-GA current docs must state the target model directly, not describe legacy compatibility bridges.',
+  },
+  {
+    rule: 'retired-agent-task-runbook-name',
+    regex: /notebook-codex-runbook\.md|Notebook Codex Runner Runbook/,
+    detail: 'Current docs must use Agent Task Runner Runbook and docs/agent-task-runner-runbook.md.',
+  },
 ];
+
+const REDIRECT_STATUS_REGEX = /Status:\s*`redirect`/i;
+
+const HISTORICAL_LIFECYCLE_MARKERS = [
+  'handoff',
+  'refactor',
+  'migration',
+  'retro',
+  'todo',
+  'phase',
+  'archive',
+  'redirect',
+] as const;
 
 function toRel(filePath: string): string {
   return path.relative(ROOT, filePath).replaceAll(path.sep, '/');
@@ -138,17 +162,23 @@ function collectMarkdownFiles(target: string): string[] {
   return out;
 }
 
-function isHistoricalDoc(relativePath: string, content: string): boolean {
+function containsHistoricalLifecycleMarker(value: string): boolean {
+  return HISTORICAL_LIFECYCLE_MARKERS.some((marker) => {
+    const markerRegex = new RegExp(`(^|[^a-z0-9])${marker}([^a-z0-9]|$)`, 'i');
+    return markerRegex.test(value);
+  });
+}
+
+export function isHistoricalDoc(relativePath: string, content: string): boolean {
   const normalized = relativePath.toLowerCase();
   const basename = path.basename(normalized);
   const titleLine = content.split('\n', 1)[0]?.toLowerCase() ?? '';
-  const historicalMarkers = ['handoff', 'refactor', 'migration', 'retro', 'todo', 'phase', 'task'];
 
   return (
     normalized.startsWith('docs/archive/')
-    || /Status:\s*`redirect`/.test(content)
-    || historicalMarkers.some((marker) => basename.includes(marker))
-    || historicalMarkers.some((marker) => titleLine.includes(marker))
+    || REDIRECT_STATUS_REGEX.test(content)
+    || containsHistoricalLifecycleMarker(basename)
+    || containsHistoricalLifecycleMarker(titleLine)
     || /Historical handoff note/i.test(content)
   );
 }
@@ -168,7 +198,7 @@ function findViolations(filePath: string, content: string): Violation[] {
     });
   }
 
-  if (/Status:\s*`redirect`/.test(content)) {
+  if (REDIRECT_STATUS_REGEX.test(content)) {
     violations.push({
       file: relativePath,
       line: 1,
@@ -247,7 +277,7 @@ function checkHistoricalDocsPlacement(filePath: string, content: string): Violat
       line: 1,
       rule: 'historical-doc-present',
       detail:
-        'Historical task/refactor/migration/retro/todo docs must not remain in the current documentation tree. Delete them instead of keeping compatibility material.',
+        'Historical handoff/refactor/migration/retro/todo/phase/archive/redirect docs must not remain in the current documentation tree. Delete them instead of keeping compatibility material.',
     },
   ];
 }
@@ -298,4 +328,10 @@ function main(): void {
   console.log(`[docs-governance] check passed. scanned ${files.length} markdown files.`);
 }
 
-main();
+function isMainModule(): boolean {
+  return Boolean(process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url));
+}
+
+if (isMainModule()) {
+  main();
+}

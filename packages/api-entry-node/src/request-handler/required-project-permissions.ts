@@ -24,25 +24,10 @@ export function requiredProjectPermissions(route: ProjectsRoute, method: string)
   }
 
   if (isTaskRoute(route)) {
-    if (route.kind === 'tasks' && method === 'POST') {
-      return ['project:endpoint:use', 'project:agent:use'];
-    }
-    if (route.kind === 'taskMessages' && method === 'POST') {
-      return ['project:endpoint:use', 'project:agent:use'];
-    }
-    if (route.kind === 'taskTerminalSessions' && method === 'POST') {
-      return ['project:endpoint:use', 'project:terminal:use'];
-    }
-    if (
-      (route.kind === 'taskTerminalSessions' || route.kind === 'taskTerminalSession')
-      && method === 'GET'
-    ) {
-      return ['project:endpoint:use', 'project:terminal:use'];
-    }
     if (route.kind === 'taskTerminalSessions' || route.kind === 'taskTerminalSession') {
-      return ['project:endpoint:use'];
+      return ['project:agent_task:terminal'];
     }
-    return ['project:endpoint:use'];
+    return ['project:agent_task:use'];
   }
 
   if (route.kind === 'audit') {
@@ -104,12 +89,14 @@ export function requiredProjectPermissions(route: ProjectsRoute, method: string)
   }
 
   if (isAgentRoute(route)) {
-    if (route.kind === 'agentKeys' || route.kind === 'agentKeyItem') return ['project:agent:manage'];
+    if (route.kind === 'agentKeys' || route.kind === 'agentKeyItem') return ['project:agent_runner:manage'];
     if (route.kind === 'agentDiagnostics' || route.kind === 'agentExecutionConfig' || route.kind === 'agentConnectionInfo') {
-      return ['project:agent:manage'];
+      return route.kind === 'agentDiagnostics' && method === 'GET'
+        ? ['project:agent_runner:read']
+        : ['project:agent_runner:manage'];
     }
-    if (method === 'GET') return ['project:agent:use'];
-    return ['project:agent:manage'];
+    if (method === 'GET') return ['project:agent_runner:read'];
+    return ['project:agent_runner:manage'];
   }
 
   if (route.kind === 'credentials' || route.kind === 'credentialItem' || route.kind === 'credentialRotate') {

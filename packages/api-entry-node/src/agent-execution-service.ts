@@ -3,15 +3,11 @@ import type { Duplex } from 'node:stream';
 import { randomUUID } from 'node:crypto';
 import { URL } from 'node:url';
 import { WebSocketServer, type RawData, type WebSocket } from 'ws';
-import { isMatchingRunnerSpec, type AgentRunnerSpec } from '@mbos/agent-runner';
 import type { AgentResourceService } from './agent-resource-service.js';
-import { resolveRequiredConfiguredPublicApiBase } from './agent-execution-api-base.js';
+import { resolveConfiguredPublicApiBase } from './agent-execution-api-base.js';
 import { AGENT_CONNECTION_TTL_MS } from './agent-presence-store.js';
-import {
-  readAgentExecutionPreferences,
-  resolveAgentInteractionKind,
-} from './agent-execution-preferences.js';
 import { resolveExecutionApiBase } from './notebook-execution-orchestrator.js';
+import type { AgentRecord } from './resource-models.js';
 
 export type RunnerSessionDispatchAuthority =
   | 'local_dispatchable'
@@ -43,7 +39,7 @@ export interface AgentStreamEvent {
 
 export interface AgentTerminalEvent {
   type: 'started' | 'output' | 'exited' | 'error';
-  session_id?: string;
+  terminal_session_id: string;
   cols?: number;
   rows?: number;
   chunk?: string;
@@ -86,7 +82,7 @@ interface PendingStream {
   idleTimer?: NodeJS.Timeout;
   maxRuntimeTimer?: NodeJS.Timeout;
   hasReceivedMeaningfulOutput?: boolean;
-  interactionKind?: 'chat' | 'notebook';
+  lifecycleTraceEventsAreMeaningful?: boolean;
 }
 
 interface PendingTerminal {
@@ -271,6 +267,10 @@ function parseArtifactPayload(input: unknown): AgentExecutionArtifactPayload | n
   const artifactType = input.artifact_type;
   if (typeof filename !== 'string' || filename.trim().length === 0) return null;
   if (typeof taskRelativePath !== 'string' || taskRelativePath.trim().length === 0) return null;
+  const normalizedTaskRelativePath = taskRelativePath.trim();
+  if (normalizedTaskRelativePath !== '.artifacts' && !normalizedTaskRelativePath.startsWith('.artifacts/')) {
+    return null;
+  }
   if (artifactType !== 'text' && artifactType !== 'image' && artifactType !== 'file' && artifactType !== 'other') {
     return null;
   }
@@ -288,7 +288,7 @@ function parseArtifactPayload(input: unknown): AgentExecutionArtifactPayload | n
   if (thumbnailUrl !== undefined && typeof thumbnailUrl !== 'string') return null;
   return {
     filename: filename.trim(),
-    task_relative_path: taskRelativePath.trim(),
+    task_relative_path: normalizedTaskRelativePath,
     artifact_type: artifactType,
     ...(typeof mimeType === 'string' && mimeType.trim() ? { mime_type: mimeType.trim() } : {}),
     ...(typeof fileSize === 'number' ? { file_size: fileSize } : {}),
@@ -302,28 +302,24 @@ function isPlainObject(input: unknown): input is Record<string, unknown> {
   return typeof input === 'object' && input !== null && !Array.isArray(input);
 }
 
+function readNonEmptyString(input: unknown): string | null {
+  if (typeof input !== 'string') return null;
+  const trimmed = input.trim();
+  return trimmed ? trimmed : null;
+}
+
+function readRunnerExecutionEndpointId(
+  agent: Pick<AgentRecord, 'default_endpoint_id'>,
+): string | null {
+  return readNonEmptyString(agent.default_endpoint_id);
+}
+
 function resolveStreamingDispatchScope(executionContext?: Record<string, unknown>): DispatchScope {
-  if (executionContext?.interaction_kind !== 'notebook') {
-    return 'agent_fallback';
-  }
-  return executionContext.runner_session_scope === 'agent_presence'
+  return executionContext?.runner_session_scope === 'agent_presence'
     ? 'session_preferred_agent_fallback'
-    : 'session_strict';
-}
-
-function readRunnerSpec(input: unknown): Partial<AgentRunnerSpec> | null {
-  if (!isPlainObject(input)) return null;
-  const runnerSpec = input.runner_spec;
-  if (!isPlainObject(runnerSpec)) return null;
-  return runnerSpec as Partial<AgentRunnerSpec>;
-}
-
-function resolveStreamInteractionKind(
-  executionContext?: Record<string, unknown>,
-): 'chat' | 'notebook' | undefined {
-  return executionContext?.interaction_kind === 'chat' || executionContext?.interaction_kind === 'notebook'
-    ? executionContext.interaction_kind
-    : undefined;
+    : executionContext?.runner_session_scope === 'task_execution'
+      ? 'session_strict'
+      : 'agent_fallback';
 }
 
 export type AgentExecutionServiceOptions = {
@@ -458,10 +454,10 @@ export class AgentExecutionService {
       return;
     }
 
-    const agentId = url.searchParams.get('agent_id') || '';
-    const sessionId = url.searchParams.get('session_id') || undefined;
+    const agentId = readNonEmptyString(url.searchParams.get('agent_runner_id')) ?? '';
+    const sessionId = readNonEmptyString(url.searchParams.get('runner_session_id')) ?? undefined;
     if (!agentId) {
-      debugExecution('reject missing_agent_id');
+      debugExecution('reject missing_agent_runner_id');
       socket.write('HTTP/1.1 400 Bad Request\r\n\r\n');
       socket.destroy();
       return;
@@ -496,26 +492,10 @@ export class AgentExecutionService {
         return;
       }
       debugExecution(`accept agent_id=${agentId} ws=${keyRecord.workspace_id} proj=${keyRecord.project_id}`);
-      const interactionKind = resolveAgentInteractionKind(agent);
-      if (!interactionKind) {
-        debugExecution(`reject interaction_kind_required agent_id=${agentId}`);
-        await this.agentResourceService.updateAgentRuntimeState(
-          keyRecord.workspace_id,
-          keyRecord.project_id,
-          agentId,
-          {
-            last_error: 'agent_interaction_kind_required',
-            last_error_at: new Date().toISOString(),
-          },
-        );
-        socket.write('HTTP/1.1 403 Forbidden\r\n\r\n');
-        socket.destroy();
-        return;
-      }
-
-      const executionEndpointId = readAgentExecutionPreferences(agent, interactionKind).endpointId;
-      const executionApiBase = executionEndpointId
-        ? resolveExecutionApiBase(resolveRequiredConfiguredPublicApiBase(), agent)
+      const executionEndpointId = readRunnerExecutionEndpointId(agent);
+      const configuredApiBase = executionEndpointId ? resolveConfiguredPublicApiBase() : null;
+      const executionApiBase = executionEndpointId && configuredApiBase
+        ? resolveExecutionApiBase(configuredApiBase, agent)
         : null;
       const resourceProxyBaseUrl = executionEndpointId && executionApiBase
         ? `${executionApiBase}/workspaces/${encodeURIComponent(keyRecord.workspace_id)}`
@@ -613,7 +593,7 @@ export class AgentExecutionService {
     this.clearTerminalTimers(pending);
     pending.push({
       type: 'error',
-      session_id: terminalSessionId,
+      terminal_session_id: terminalSessionId,
       error_code: errorCode,
       error_message: errorMessage,
     });
@@ -642,7 +622,7 @@ export class AgentExecutionService {
     pending: PendingStream,
     eventPayload: AgentExecutionTraceEventPayload,
   ): boolean {
-    if (pending.interactionKind === 'chat' && eventPayload.category === 'lifecycle') {
+    if (eventPayload.category === 'lifecycle' && !pending.lifecycleTraceEventsAreMeaningful) {
       return false;
     }
     return true;
@@ -1021,7 +1001,7 @@ export class AgentExecutionService {
       }
       const sent = this.trySendSocketFrame(input.socket, {
         type: input.type,
-        session_id: input.sessionId,
+        runner_session_id: input.sessionId,
         terminal_session_id: input.terminalSessionId,
         timestamp: new Date().toISOString(),
         payload: input.payload,
@@ -1252,7 +1232,7 @@ export class AgentExecutionService {
       this.clearTerminalTimers(pending);
       pending.push({
         type: 'error',
-        session_id: terminalSessionId,
+        terminal_session_id: terminalSessionId,
         error_code: options.errorCode,
         error_message: options.errorMessage,
       });
@@ -1355,7 +1335,9 @@ export class AgentExecutionService {
       push: queue.push,
       close: queue.close,
       fail: queue.fail,
-      interactionKind: resolveStreamInteractionKind(input.executionContext),
+      lifecycleTraceEventsAreMeaningful:
+        input.executionContext?.runner_session_scope === 'task_execution'
+        || input.executionContext?.runner_session_scope === 'agent_presence',
     };
     socket.pendingByRequestId.set(requestId, pending);
     this.armStreamTimeouts(socket, requestId, pending);
@@ -1367,7 +1349,7 @@ export class AgentExecutionService {
       frame: {
         type: 'server.request.start',
         request_id: requestId,
-        session_id: input.sessionId,
+        runner_session_id: input.sessionId,
         timestamp: new Date().toISOString(),
         payload: {
           model: input.model,
@@ -1395,7 +1377,7 @@ export class AgentExecutionService {
             JSON.stringify({
               type: 'server.request.cancel',
               request_id: requestId,
-              session_id: input.sessionId,
+              runner_session_id: input.sessionId,
               timestamp: new Date().toISOString(),
               payload: { reason: 'client_cancelled' },
             }),
@@ -1488,7 +1470,7 @@ export class AgentExecutionService {
       scope: dispatchScope,
       frame: {
         type: 'server.terminal.start',
-        session_id: input.sessionId,
+        runner_session_id: input.sessionId,
         terminal_session_id: input.terminalSessionId,
         timestamp: new Date().toISOString(),
         payload: {
@@ -1574,7 +1556,7 @@ export class AgentExecutionService {
       scope: dispatchScope,
       frame: {
         type: 'server.terminal.close',
-        session_id: input.sessionId,
+        runner_session_id: input.sessionId,
         terminal_session_id: input.terminalSessionId,
         timestamp: new Date().toISOString(),
         payload: {},
@@ -1665,51 +1647,7 @@ export class AgentExecutionService {
       return;
     }
     try {
-      const current = await this.agentResourceService.getAgent(socket.workspaceId, socket.projectId, socket.agentId);
-      const interactionKind = current ? resolveAgentInteractionKind(current) : null;
       if (!(await this.recheckReadyAuthority(socket))) {
-        return;
-      }
-      if (!interactionKind) {
-        await this.agentResourceService.updateAgentRuntimeState(
-          socket.workspaceId,
-          socket.projectId,
-          socket.agentId,
-          {
-            last_error: 'agent_interaction_kind_required',
-            last_error_at: new Date().toISOString(),
-          },
-        );
-        this.releaseSocketState(socket, {
-          errorCode: 'AGENT_INTERACTION_KIND_REQUIRED',
-          errorMessage: 'agent_interaction_kind_required',
-          closeCode: 1008,
-          closeReason: 'agent_interaction_kind_required',
-        });
-        return;
-      }
-
-      const runnerSpec = readRunnerSpec(payload);
-      if (runnerSpec && !isMatchingRunnerSpec(interactionKind, runnerSpec)) {
-        await this.agentResourceService.updateAgentRuntimeState(
-          socket.workspaceId,
-          socket.projectId,
-          socket.agentId,
-          {
-            last_error: 'agent_runner_spec_mismatch',
-            last_error_at: new Date().toISOString(),
-            runner_spec_mismatch: {
-              expected_interaction_kind: interactionKind,
-              actual_runner_spec: runnerSpec as Record<string, unknown>,
-            },
-          },
-        );
-        this.releaseSocketState(socket, {
-          errorCode: 'AGENT_RUNNER_SPEC_MISMATCH',
-          errorMessage: 'agent_runner_spec_mismatch',
-          closeCode: 1008,
-          closeReason: 'agent_runner_spec_mismatch',
-        });
         return;
       }
 
@@ -1730,9 +1668,7 @@ export class AgentExecutionService {
           metadata: {
             ...metadata,
             ready_at: new Date().toISOString(),
-            ...(runnerSpec ? { runner_spec: runnerSpec as Record<string, unknown> } : {}),
           },
-          ...(runnerSpec ? { runner_spec_mismatch: undefined } : {}),
         },
       );
     } catch (error) {
@@ -1796,22 +1732,42 @@ export class AgentExecutionService {
       return;
     }
 
-    const terminalSessionId =
-      typeof payload.payload?.terminal_session_id === 'string'
-        ? payload.payload.terminal_session_id
-        : (typeof (payload as { terminal_session_id?: unknown }).terminal_session_id === 'string'
-          ? (payload as { terminal_session_id?: string }).terminal_session_id ?? null
-          : null);
+    const isTerminalMessage = typeof payload.type === 'string' && payload.type.startsWith('agent.terminal.');
+    const legacyTerminalSessionId = isTerminalMessage
+      ? readNonEmptyString((payload as { session_id?: unknown }).session_id)
+        ?? readNonEmptyString(payload.payload?.session_id)
+      : null;
+    if (legacyTerminalSessionId) {
+      this.failPendingTerminal(
+        socket,
+        legacyTerminalSessionId,
+        'AGENT_PROTOCOL_ERROR',
+        'agent_terminal_legacy_session_id_unsupported',
+      );
+      return;
+    }
+
+    const terminalSessionId = readNonEmptyString((payload as { terminal_session_id?: unknown }).terminal_session_id);
     if (terminalSessionId) {
       const pendingTerminal = socket.terminalBySessionId.get(terminalSessionId);
       if (!pendingTerminal) return;
+      const payloadTerminalSessionId = readNonEmptyString(payload.payload?.terminal_session_id);
+      if (payloadTerminalSessionId && payloadTerminalSessionId !== terminalSessionId) {
+        this.failPendingTerminal(
+          socket,
+          terminalSessionId,
+          'AGENT_PROTOCOL_ERROR',
+          'agent_terminal_session_mismatch',
+        );
+        return;
+      }
 
       if (payload.type === 'agent.terminal.started') {
         debugExecution(`terminal_started agent_id=${socket.agentId} runner_session=${socket.sessionId ?? ''} terminal_session=${terminalSessionId}`);
         this.markTerminalEvent(socket, terminalSessionId, pendingTerminal);
         pendingTerminal.push({
           type: 'started',
-          session_id: terminalSessionId,
+          terminal_session_id: terminalSessionId,
           cols: typeof payload.payload?.cols === 'number' ? payload.payload.cols : undefined,
           rows: typeof payload.payload?.rows === 'number' ? payload.payload.rows : undefined,
         });
@@ -1834,7 +1790,7 @@ export class AgentExecutionService {
         }
         pendingTerminal.push({
           type: 'output',
-          session_id: terminalSessionId,
+          terminal_session_id: terminalSessionId,
           chunk: payload.payload.chunk,
         });
         if (!pendingTerminal.readyForInput) {
@@ -1850,7 +1806,7 @@ export class AgentExecutionService {
         this.clearTerminalTimers(pendingTerminal);
         pendingTerminal.push({
           type: 'exited',
-          session_id: terminalSessionId,
+          terminal_session_id: terminalSessionId,
           exit_code: typeof payload.payload?.exit_code === 'number' ? payload.payload.exit_code : null,
           signal: typeof payload.payload?.signal === 'string' ? payload.payload.signal : null,
         });
@@ -1864,7 +1820,7 @@ export class AgentExecutionService {
         this.clearTerminalTimers(pendingTerminal);
         pendingTerminal.push({
           type: 'error',
-          session_id: terminalSessionId,
+          terminal_session_id: terminalSessionId,
           error_code:
             typeof payload.payload?.error_code === 'string' ? payload.payload.error_code : 'AGENT_UPSTREAM_ERROR',
           error_message:

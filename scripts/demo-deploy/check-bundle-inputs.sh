@@ -45,12 +45,12 @@ for relative in manifest.get("bundle_files", []):
       source = root_dir / "scripts" / "lib" / "common.sh"
     elif relative == "scripts/demo-deploy-modes-gate.sh":
       source = root_dir / "scripts" / "demo-deploy-modes-gate.sh"
-    elif relative == "scripts/check-preset-external-file-library.sh":
-      source = root_dir / "scripts" / "check-preset-external-file-library.sh"
+    elif relative == "scripts/check-preset-agent-task-file-library.sh":
+      source = root_dir / "scripts" / "check-preset-agent-task-file-library.sh"
     elif relative == "scripts/file-library-real-smoke.sh":
       source = root_dir / "scripts" / "file-library-real-smoke.sh"
-    elif relative == "scripts/notebook-agent-refresh-token.js":
-      source = root_dir / "scripts" / "notebook-agent-refresh-token.js"
+    elif relative == "scripts/agent-runner-refresh-token.js":
+      source = root_dir / "scripts" / "agent-runner-refresh-token.js"
     elif relative.startswith("scripts/lib/"):
       source = root_dir / "scripts" / "lib" / pathlib.Path(relative).name
     elif relative.startswith("scripts/substrate/"):

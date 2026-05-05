@@ -128,10 +128,6 @@ export class UpdateProjectUseCase {
       patch.governance_json = input.governance_json;
     }
 
-    if (input.execution_preferences_json !== undefined) {
-      patch.execution_preferences_json = input.execution_preferences_json;
-    }
-
     if (input.limits_json !== undefined) {
       patch.limits_json = input.limits_json;
     }

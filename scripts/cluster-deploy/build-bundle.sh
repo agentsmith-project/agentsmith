@@ -69,9 +69,8 @@ cp "${ROOT_DIR}/packages/adapters-private/sql/projects.sql" "${BUNDLE_DIR}/postg
 cp "${ROOT_DIR}/infra/integration/minio/init-minio.sh" "${BUNDLE_DIR}/minio/"
 cp "${ROOT_DIR}/infra/integration/keycloak/realm-mbos-dev.json" "${BUNDLE_DIR}/keycloak/"
 cp "${ROOT_DIR}/infra/deploy/shared/universal-proxy/config.yaml" "${BUNDLE_DIR}/universal-proxy/config.yaml"
-cp "${ROOT_DIR}/scripts/check-preset-external-file-library.sh" "${BUNDLE_DIR}/scripts/check-preset-external-file-library.sh"
 cp "${ROOT_DIR}/scripts/file-library-real-smoke.sh" "${BUNDLE_DIR}/scripts/file-library-real-smoke.sh"
-cp "${ROOT_DIR}/scripts/notebook-agent-refresh-token.js" "${BUNDLE_DIR}/scripts/notebook-agent-refresh-token.js"
+cp "${ROOT_DIR}/scripts/agent-runner-refresh-token.js" "${BUNDLE_DIR}/scripts/agent-runner-refresh-token.js"
 cp "${ROOT_DIR}/scripts/cluster-deploy/"*.sh "${BUNDLE_DIR}/scripts/cluster-deploy/"
 rm -f \
   "${BUNDLE_DIR}/scripts/cluster-deploy/build-bundle.sh" \
@@ -94,14 +93,11 @@ cp -R "${ROOT_DIR}/infra/deploy/cluster/addons/ingress-nginx/." "${BUNDLE_DIR}/a
 cp -R "${ROOT_DIR}/infra/deploy/cluster/addons/juicefs-csi/." "${BUNDLE_DIR}/addons/juicefs-csi/"
 copy_bundle_file "${ROOT_DIR}/e2e/integration-real-helpers.ts" "${BUNDLE_DIR}/e2e/integration-real-helpers.ts"
 copy_bundle_file "${ROOT_DIR}/e2e/integration-files.spec.ts" "${BUNDLE_DIR}/e2e/integration-files.spec.ts"
-copy_bundle_file "${ROOT_DIR}/e2e/notebook-execution-outcome.ts" "${BUNDLE_DIR}/e2e/notebook-execution-outcome.ts"
+copy_bundle_file "${ROOT_DIR}/e2e/agent-task-execution-outcome.ts" "${BUNDLE_DIR}/e2e/agent-task-execution-outcome.ts"
 copy_bundle_file "${ROOT_DIR}/e2e/integration-workspace-access.ts" "${BUNDLE_DIR}/e2e/integration-workspace-access.ts"
 copy_bundle_file "${ROOT_DIR}/e2e/integration-workspace-entry.spec.ts" "${BUNDLE_DIR}/e2e/integration-workspace-entry.spec.ts"
 copy_bundle_file "${ROOT_DIR}/e2e/integration-workspace-publish-usable.spec.ts" "${BUNDLE_DIR}/e2e/integration-workspace-publish-usable.spec.ts"
-copy_bundle_file "${ROOT_DIR}/e2e/integration-preset-external-file-library.spec.ts" "${BUNDLE_DIR}/e2e/integration-preset-external-file-library.spec.ts"
-copy_bundle_file "${ROOT_DIR}/e2e/integration-internal-chat-runner.spec.ts" "${BUNDLE_DIR}/e2e/integration-internal-chat-runner.spec.ts"
-copy_bundle_file "${ROOT_DIR}/e2e/integration-chat-local-upstream.ts" "${BUNDLE_DIR}/e2e/integration-chat-local-upstream.ts"
-copy_bundle_file "${ROOT_DIR}/e2e/internal-chat-isolation-probe.ts" "${BUNDLE_DIR}/e2e/internal-chat-isolation-probe.ts"
+copy_bundle_file "${ROOT_DIR}/e2e/integration-preset-agent-task-file-library.spec.ts" "${BUNDLE_DIR}/e2e/integration-preset-agent-task-file-library.spec.ts"
 while IFS= read -r relative_path; do
   [[ -n "${relative_path}" ]] || continue
   copy_bundle_file "${ROOT_DIR}/${relative_path}" "${BUNDLE_DIR}/${relative_path}"
@@ -111,7 +107,7 @@ cp "${ROOT_DIR}/docs/contracts/cluster-deployment-spec-v1.md" "${BUNDLE_DIR}/doc
 cp "${ROOT_DIR}/docs/user-guides/cluster-deploy-operations.md" "${BUNDLE_DIR}/docs/user-guides/cluster-deploy-operations.md"
 cp "${ROOT_DIR}/docs/user-guides/cluster-upgrade-operations.md" "${BUNDLE_DIR}/docs/user-guides/cluster-upgrade-operations.md"
 cp "$(PATH="${ORIGINAL_PATH}" type -P kubectl)" "${TOOLS_DIR}/kubectl"
-chmod +x "${BUNDLE_DIR}/scripts/check-preset-external-file-library.sh" "${BUNDLE_DIR}/scripts/cluster-upgrade-smoke.sh" "${BUNDLE_DIR}"/scripts/cluster-deploy/*.sh "${BUNDLE_DIR}/scripts/cluster-deploy/lib.sh" "${BUNDLE_DIR}/scripts/lib/"*.sh "${TOOLS_DIR}/kubectl"
+chmod +x "${BUNDLE_DIR}/scripts/cluster-upgrade-smoke.sh" "${BUNDLE_DIR}"/scripts/cluster-deploy/*.sh "${BUNDLE_DIR}/scripts/cluster-deploy/lib.sh" "${BUNDLE_DIR}/scripts/lib/"*.sh "${TOOLS_DIR}/kubectl"
 
 DEPLOY_ROOT="${OUT_DIR}/.cluster-build-${RELEASE_ID}" \
 RELEASE_ROOT="${BUNDLE_DIR}" \
@@ -145,16 +141,14 @@ INGRESS_NGINX_CONTROLLER_IMAGE="$(dep_registry_ref "registry.k8s.io/ingress-ngin
 INGRESS_NGINX_CERTGEN_IMAGE="$(dep_registry_ref "registry.k8s.io/ingress-nginx/kube-webhook-certgen:v1.6.9" "${TARGET_REGISTRY_HOST}" "${TARGET_REGISTRY_PROJECT}")"
 
 APP_IMAGE="$(awk -F= '$1=="agentsmith_app_image"{print $2}' "${BUNDLE_DIR}/VERSION")"
-RUNNER_IMAGE="$(awk -F= '$1=="agentsmith_runner_image"{print $2}' "${BUNDLE_DIR}/VERSION")"
-CHAT_RUNNER_IMAGE="$(awk -F= '$1=="agentsmith_chat_runner_image"{print $2}' "${BUNDLE_DIR}/VERSION")"
+AGENT_TASK_RUNNER_IMAGE="$(awk -F= '$1=="agentsmith_agent_task_runner_image"{print $2}' "${BUNDLE_DIR}/VERSION")"
 VERIFY_RUNNER_IMAGE="$(awk -F= '$1=="agentsmith_verify_runner_image"{print $2}' "${BUNDLE_DIR}/VERSION")"
 SANDBOX_MANAGER_IMAGE="$(awk -F= '$1=="sandbox_manager_image"{print $2}' "${BUNDLE_DIR}/VERSION")"
 UNIVERSAL_PROXY_IMAGE="$(awk -F= '$1=="llm_universal_proxy_image"{print $2}' "${BUNDLE_DIR}/VERSION")"
 
 FIRST_PARTY_IMAGES=(
   "${APP_IMAGE}"
-  "${RUNNER_IMAGE}"
-  "${CHAT_RUNNER_IMAGE}"
+  "${AGENT_TASK_RUNNER_IMAGE}"
   "${VERIFY_RUNNER_IMAGE}"
   "${SANDBOX_MANAGER_IMAGE}"
   "${UNIVERSAL_PROXY_IMAGE}"

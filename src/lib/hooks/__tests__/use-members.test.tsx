@@ -125,7 +125,7 @@ describe('use-members cache invalidation', () => {
     await act(async () => {
       await result.current.mutateAsync({
         mode: 'custom',
-        permissions: ['project:agent:manage'],
+        permissions: ['project:agent_runner:manage'],
       });
     });
 
@@ -193,7 +193,7 @@ describe('use-members cache invalidation', () => {
     await act(async () => {
       await result.current.mutateAsync({
         memberIds: [memberId],
-        permissions: ['project:agent:use'],
+        permissions: ['project:agent_task:use'],
       });
     });
 

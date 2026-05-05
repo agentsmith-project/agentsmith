@@ -60,7 +60,7 @@ refresh_member_token() {
     USERNAME="${MEMBER_USERNAME}" \
     PASSWORD="${MEMBER_PASSWORD}" \
     TOKEN_OUT_FILE="${out_file}" \
-    node ./scripts/notebook-agent-refresh-token.js >/dev/null
+    node ./scripts/agent-runner-refresh-token.js >/dev/null
 }
 
 resolve_member_user_id_from_members() {
@@ -124,7 +124,7 @@ main() {
     exit 1
   }
   if ! token_is_valid "${owner_token}"; then
-    err "owner token invalid/expired; run: BASE_URL=${BASE_URL} make notebook-agent-refresh-token"
+    err "owner token invalid/expired; run: BASE_URL=${BASE_URL} make agent-runner-refresh-token"
     exit 1
   fi
 

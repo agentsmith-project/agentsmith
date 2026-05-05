@@ -38,7 +38,6 @@ export const ProjectWithMembershipSchema = z.object({
   owner_id: z.string(),
   status: z.enum(['active', 'archived', 'deleted']),
   governance_json: z.record(z.string(), z.unknown()).optional(),
-  execution_preferences_json: z.record(z.string(), z.unknown()).optional(),
   limits_json: z.record(z.string(), z.unknown()).optional(),
   admin_member_ids: z.array(z.string()).optional(),
   created_at: z.string(),

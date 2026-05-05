@@ -1340,8 +1340,8 @@ describe('api-entry-node project members governance routes', () => {
     expect(await restoredPermissionsRes.json()).toEqual({
       platform_permissions: [
         'project:endpoint:use',
-        'project:agent:use',
-        'project:terminal:use',
+        'project:agent_task:use',
+        'project:agent_task:terminal',
         'project:audit:read',
         'project:membership:update',
       ],

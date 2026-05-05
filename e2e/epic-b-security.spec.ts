@@ -52,12 +52,12 @@ test.describe('Epic B1: SSE Ticket Migration', () => {
     });
   });
 
-  test.describe('SSE Connection - Notebook', () => {
+  test.describe('SSE Connection - Agent Tasks', () => {
     test.beforeEach(async ({ authedPage }) => {
-      await goToProject(authedPage, 'notebook');
+      await goToProject(authedPage, 'agent-tasks');
     });
 
-    test('notebook page loads successfully (SSE endpoint available)', async ({ authedPage }) => {
+    test('Agent Tasks page loads successfully (SSE endpoint available)', async ({ authedPage }) => {
       await expect(authedPage.getByTestId('page-state__success')).toBeVisible({ timeout: 10000 });
     });
 
@@ -65,7 +65,7 @@ test.describe('Epic B1: SSE Ticket Migration', () => {
       await expect(authedPage.getByTestId('page-state__success')).toBeVisible({ timeout: 10000 });
 
       // Task execution panel should be present
-      await expect(authedPage.getByTestId('notebook__task-list')).toBeVisible();
+      await expect(authedPage.getByTestId('agent-tasks__task-list')).toBeVisible();
     });
   });
 

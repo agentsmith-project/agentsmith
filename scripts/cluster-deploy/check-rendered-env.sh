@@ -70,10 +70,7 @@ EOF
 cat > "${RELEASE_ROOT}/VERSION" <<'EOF'
 release_id=test-release
 agentsmith_app_image=localhost:5001/mbos/agentsmith-app:test-release
-agentsmith_runner_image=localhost:5001/mbos/agentsmith-notebook-codex-runner:test-release
-agentsmith_runner_k8s_image=kind-registry:5000/mbos/agentsmith-notebook-codex-runner:test-release
-agentsmith_chat_runner_image=localhost:5001/mbos/agentsmith-chat-llm-runner:test-release
-agentsmith_chat_runner_k8s_image=kind-registry:5000/mbos/agentsmith-chat-llm-runner:test-release
+agentsmith_agent_task_runner_image=localhost:5001/mbos/agentsmith-agent-task-runner:test-release
 agentsmith_verify_runner_image=localhost:5001/mbos/agentsmith-verify-runner:test-release
 sandbox_manager_image=localhost:5001/mbos/sandbox-manager:test-release
 sandbox_manager_k8s_image=kind-registry:5000/mbos/sandbox-manager:test-release
@@ -98,8 +95,8 @@ DEPLOY_ROOT="${TMP_ROOT}/cluster-root" RELEASE_ROOT="${RELEASE_ROOT}" \
 release_check_require_exact_line "${RELEASE_ROOT}/env/api.env" 'SANDBOX_MANAGER_URL=https://sandbox-manager.mbos.imotion.ai' '[cluster-rendered-env] missing sandbox manager url'
 release_check_require_exact_line "${RELEASE_ROOT}/env/api.env" 'AGENT_EXECUTION_HTTP_BASE_URL=https://mbos.imotion.ai' '[cluster-rendered-env] missing internal agent execution http base'
 release_check_require_exact_line "${RELEASE_ROOT}/env/api.env" 'AGENT_EXECUTION_WS_BASE_URL=wss://mbos.imotion.ai' '[cluster-rendered-env] missing internal agent execution websocket base'
-release_check_require_exact_line "${RELEASE_ROOT}/env/api.env" 'DOCKER_MANUAL_AGENT_JUICEFS_META_HOST_OVERRIDE=host.docker.internal' '[cluster-rendered-env] missing docker manual metadata host override'
-release_check_require_exact_line "${RELEASE_ROOT}/env/api.env" 'DOCKER_MANUAL_AGENT_JUICEFS_STORAGE_ENDPOINT_OVERRIDE=http://host.docker.internal:19000' '[cluster-rendered-env] missing docker manual storage endpoint override'
+release_check_forbid_pattern "${RELEASE_ROOT}/env/api.env" '^EXTERNAL_AGENT_' '[cluster-rendered-env] unexpected external agent env'
+release_check_forbid_pattern "${RELEASE_ROOT}/env/api.env" '^DOCKER_MANUAL_AGENT_' '[cluster-rendered-env] unexpected docker manual agent env'
 release_check_require_exact_line "${RELEASE_ROOT}/env/api.env" 'JUICEFS_BUCKET_ENDPOINT_FOR_GATEWAY=http://minio:9000' '[cluster-rendered-env] missing gateway storage endpoint override'
 release_check_require_exact_line "${RELEASE_ROOT}/env/internal.env" 'MBOS_UNIVERSAL_PROXY_ADMIN_TOKEN=fake-proxy-admin-token' '[cluster-rendered-env] missing universal proxy admin token'
 release_check_require_exact_line "${RELEASE_ROOT}/env/internal.env" 'LLM_UNIVERSAL_PROXY_ADMIN_TOKEN=fake-proxy-admin-token' '[cluster-rendered-env] missing proxy runtime admin token'
@@ -184,10 +181,7 @@ text = text.replace("MBOS_UNIVERSAL_PROXY_ADMIN_TOKEN=", "MBOS_UNIVERSAL_PROXY_A
         [
             "release_id=test-release",
             "agentsmith_app_image=localhost:5001/mbos/agentsmith-app:test-release",
-            "agentsmith_runner_image=localhost:5001/mbos/agentsmith-notebook-codex-runner:test-release",
-            "agentsmith_runner_k8s_image=kind-registry:5000/mbos/agentsmith-notebook-codex-runner:test-release",
-            "agentsmith_chat_runner_image=localhost:5001/mbos/agentsmith-chat-llm-runner:test-release",
-            "agentsmith_chat_runner_k8s_image=kind-registry:5000/mbos/agentsmith-chat-llm-runner:test-release",
+            "agentsmith_agent_task_runner_image=localhost:5001/mbos/agentsmith-agent-task-runner:test-release",
             "agentsmith_verify_runner_image=localhost:5001/mbos/agentsmith-verify-runner:test-release",
             "sandbox_manager_image=localhost:5001/mbos/sandbox-manager:test-release",
             "sandbox_manager_k8s_image=kind-registry:5000/mbos/sandbox-manager:test-release",

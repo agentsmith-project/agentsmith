@@ -31,18 +31,18 @@ That governance document does not override this spec. It explains how developmen
   - local `kind`
   - JuiceFS CSI
   - `sandbox-manager`
-  - external and internal agents
+  - managed Agent task runner configuration
+  - sandbox workload execution for Agent tasks
 - `DEMO_DEPLOY_MODE=simple`
   - Docker Compose substrate and app
   - `universal-proxy`
-  - `external-runner`
-  - external agents only
+  - managed Agent task runner configuration
   - no `kind`, JuiceFS CSI, or `sandbox-manager`
 
 ### Topology
 - Host services run with Docker Compose.
-- Internal agent workloads run in a local `kind` Kubernetes cluster only in `full`.
-- JuiceFS CSI is the only internal workspace persistence model in `full`.
+- Sandbox workloads run in a local `kind` Kubernetes cluster only in `full`.
+- JuiceFS CSI is the only sandbox workspace persistence model in `full`.
 
 ### Compose Services
 - `postgres`
@@ -52,7 +52,6 @@ That governance document does not override this spec. It explains how developmen
 - `keycloak`
 - `api`
 - `web`
-- `external-runner`
 
 ### kind Services (`full` only)
 - `juicefs-csi-controller`
@@ -71,8 +70,8 @@ That governance document does not override this spec. It explains how developmen
 
 These six stages are the only supported deployment flow.
 
-- `simple` deploys, bootstraps, verifies, and reports only the external-agent surface.
-- `full` deploys, bootstraps, verifies, and reports the complete external + internal surface.
+- `simple` deploys, bootstraps, verifies, and reports the Compose app plus managed Agent Runner seed.
+- `full` deploys, bootstraps, verifies, and reports the Compose app plus sandbox-backed Agent task execution surface.
 
 ## Offline Bundle Manifest Contract
 
@@ -128,18 +127,18 @@ The API container must use the container-internal MinIO admin address:
 
 The deployment flow must not reuse public MinIO ports such as `19000` for container-internal admin traffic.
 
-### Agent Execution Addresses
+### Agent Task Execution Addresses
 - These addresses are runtime-derived, not operator-provided.
-- External runner execution uses a runner-visible host alias derived by the deployment environment.
-- Internal agent execution uses stable Kubernetes service names for external dependencies.
-- The deployment/bootstrap layer is responsible for binding those service names to the actual external PostgreSQL and MinIO targets.
+- Managed Agent task execution uses runner-visible host aliases derived by the deployment environment.
+- Sandbox execution uses stable Kubernetes service names for data dependencies.
+- The deployment/bootstrap layer is responsible for binding those service names to the actual PostgreSQL and MinIO targets.
 - The HTTP and WS variants must stay aligned to the same resolved host identity for the current deployment.
 - The deployment flow must fail fast if runtime execution hosts cannot be resolved.
 
 ### Agent Workspace Mount Options
 - `MBOS_AGENT_JUICEFS_MOUNT_OPTIONS`
 
-This value controls user-space JuiceFS mount options for external runner file-library workspaces. The default deployed value should be empty so mounts prefer consistency-oriented behavior. Performance-oriented options such as `writeback_cache` must only be enabled explicitly and documented for the target environment.
+This value controls user-space JuiceFS mount options for Agent task runner file-library workspaces. The default deployed value should be empty so mounts prefer consistency-oriented behavior. Performance-oriented options such as `writeback_cache` must only be enabled explicitly and documented for the target environment.
 
 ### Runtime Proxy Model
 - `RUNTIME_PROXY_MODE`
@@ -160,14 +159,14 @@ Runtime proxy configuration is formal operator input, not an implicit hard-coded
 `NO_PROXY` / `no_proxy` must keep the merged deployment strategy:
 - built-in runtime bypass hosts are always included
 - operator-supplied `RUNTIME_ADDITIONAL_NO_PROXY` entries are appended
-- existing shell `NO_PROXY` / `no_proxy` input remains honored for backward compatibility
+- existing shell `NO_PROXY` / `no_proxy` input is inherited only as part of the current `inherit` runtime proxy mode
 
 The same runtime proxy truth must drive:
 - rendered `base.env` / `internal.env`
-- docker runtime `-e` arguments for external runner / verify containers
-- external runner reuse or rebuild decisions during bootstrap
+- docker runtime `-e` arguments for verify containers and any managed runner launch checks
+- managed runner image/runtime launch decisions during bootstrap
 
-External runner reuse must fail closed when the runtime proxy env fingerprint differs, even if `NO_PROXY` still matches.
+Runtime proxy fingerprints must fail closed when proxy values differ, even if `NO_PROXY` still matches.
 
 ### Internal Sandbox Address
 - `SANDBOX_HOST_PORT`
@@ -200,7 +199,7 @@ A workspace may be marked `ready` only when:
 - the system management record exists
 - the backend workspace registration exists
 - workspace-scoped collections are materialized
-- project/files/notebook APIs can resolve the workspace
+- project/files/Agent task APIs can resolve the workspace
 
 Publishing a workspace must complete the full backend initialization path before writing `ready`.
 
@@ -297,8 +296,7 @@ Preset workspace admin and project creator identities are selected by stable use
 - `PRESET_CREDENTIAL_NAME`
 - `PRESET_ANTHROPIC_ENDPOINT_NAME`
 - `PRESET_OPENAI_ENDPOINT_NAME`
-- `PRESET_EXTERNAL_AGENT_NAME`
-- `PRESET_INTERNAL_AGENT_NAME`
+- `PRESET_AGENT_RUNNER_NAME`
 - `PRESET_ENDPOINT_API_KEY`
 - `PRESET_ENDPOINT_MODEL`
 - `PRESET_ENDPOINT_MAX_CONTEXT_TOKENS`
@@ -350,7 +348,7 @@ The bundle is always complete. Operators choose `simple` or `full` at deploy tim
 ### Required Images in Bundle
 - Compose dependency images
 - AgentSmith app image
-- external runner image
+- Agent task runner image
 - deployment verify runner image
 - sandbox manager image
 - kind node image
@@ -362,7 +360,7 @@ The bundle build must fail if any required file, tool, image, or manifest refere
 ### Verify Execution Contract
 - Deployment verification must run from a bundled verify image, not from ad hoc host source trees.
 - The verify image must include the Playwright integration configuration and all files needed for the release user story.
-- Deployment verification must include an explicit Files correctness check in addition to the notebook/agent release stories.
+- Deployment verification must include an explicit Files correctness check in addition to the Chat/Agent task release stories.
 - That Files check must validate:
   - temporary file library create/delete
   - folder create
@@ -375,7 +373,7 @@ The bundle build must fail if any required file, tool, image, or manifest refere
   - client-visible mount address truth
 - The verify image must be able to:
   - reach the deployed Web/API/Keycloak endpoints over host networking
-  - use the host Docker daemon to start the external runner test container
+  - use the host Docker daemon for bundled verify helpers when a scenario requires a containerized check
   - use `juicefs` locally to observe mounted file library contents
 - Deployment verification must not assume the target host already has repo source code, Node dependencies, or Playwright installed.
 
@@ -386,7 +384,7 @@ The bundle build must fail if any required file, tool, image, or manifest refere
 - Before building release images or an offline bundle, developers must also run `npm run test:demo-bundle:inputs`.
 - Before building release images or an offline bundle, developers must also run `npm run test:demo-rendered-env`.
 - Before building release images or an offline bundle, developers must also run `npm run test:client-public-runtime`.
-- Developers running an external runner directly from source must use `npm run agent:external:dev` with the same `site.env` schema instead of ad hoc env exports.
+- Developers running a local Agent task runner directly from source must use `npm run agent:task-runner` with the same rendered runtime env schema instead of ad hoc env exports.
 - The local precheck must use locally started Web/API services and real Keycloak dependencies instead of a release bundle.
 - The local precheck must fail fast if:
   - the system administrator login flow cannot reach `/system/workspaces`
@@ -395,7 +393,7 @@ The bundle build must fail if any required file, tool, image, or manifest refere
   - `Default Workspace -> Projects` shows a denied state before membership data has finished loading
   - a newly published workspace cannot be opened by its admin and queried through `/api/v1/workspaces/{id}/projects`
   - workspace settings cannot resolve project creator directory search results from the published workspace identity provider
-  - the system-to-notebook default story fails in the local backend-real run
+  - the system-to-Agent-task default story fails in the local backend-real run
 - The local precheck is the earliest required browser-level gate for release work. The bundled `verify` stage is the final confirmation gate, not the first place these failures should appear.
 - `scripts/demo-deploy/build-offline-bundle.sh` must run the bundle input check, the rendered-env check, and the client-public-runtime check before the first Docker image build unless an operator explicitly opts out with `SKIP_BUNDLE_INPUTS_CHECK=1`.
 - `scripts/demo-deploy/build-offline-bundle.sh` may additionally run `npm run test:release:precheck` only when the operator explicitly enables `RUN_RELEASE_PRECHECK=1`.
@@ -409,34 +407,27 @@ Bootstrap must be idempotent and must initialize the environment in this order:
 3. default workspace
 4. demo project
 5. demo credentials and endpoints
-6. external and internal agents in `full`, external agent only in `simple`
-7. preset external runner runtime credentials
+6. managed Agent Runner default configuration
+7. Agent task runner image/runtime metadata
 
 Bootstrap is complete only when:
 - `ws_default` exists and is `ready`
 - `Demo Project` exists
 - both demo endpoints exist
-- the preset external agent exists
-- the preset internal agent exists in `full`
-- preset external agent key and websocket URL have been generated into `env/runner-runtime.env`
-- the compose `external-runner` service has connected successfully
+- the preset Agent Runner exists, is ready, and is the project default
+- the preset Agent Runner points at the seeded default endpoint
+- Agent task runner image metadata has been recorded for diagnostics
 
 ## Runner Runtime Contract
 
-Agent mode and runner runtime are separate truths.
+Agent task execution has one deployment target: managed Agent Runner resolution.
 
-- `external` agents may run as:
-  - `dev_direct`
-  - `docker_manual`
-  - `compose_managed`
-- `internal` agents run as:
-  - `k8s_internal`
+- Deployments seed one ready default Agent Runner through `PRESET_AGENT_RUNNER_NAME`.
+- Chat never dispatches through Agent Runners.
+- The deploy line must not expose runner mode selection, manual docker runner setup, or compose runner services.
+- Developer mode is a local-only runner entrypoint and is not a deployment runtime.
 
-The deployment seed must create the preset external agent with `runner_runtime=compose_managed`.
-
-Except for `dev_direct`, runner behavior must still be controlled by runtime env and runtime access contracts, but notebook and chat may use different runner images when they are different runner apps.
-
-Task workspace access and connection info must branch on `runner_runtime`, not on host-specific address guesses.
+Task workspace access and connection info are derived from the managed Agent Runner plus runtime address truth, not from host-specific address guesses.
 
 ## Verify Contract
 
@@ -460,7 +451,7 @@ Verification must run in two layers.
 - `ws_default` is visible
 - `Demo Project` is visible
 - both seeded endpoints exist
-- both seeded agents exist
+- the seeded Agent Runner exists and is default
 - the seeded workspace/project path is accessible without `workspace_not_found`
 
 #### New Workspace Story
@@ -468,7 +459,7 @@ Verification must run in two layers.
 - workspace admin logs in
 - the new workspace projects page opens
 - a project can be created without `workspace_not_found`
-- external and internal notebook tasks run
+- Agent tasks run and record managed runner selection
 - files and `.artifacts` are visible
 - usage reflects both endpoints
 

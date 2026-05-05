@@ -33,7 +33,8 @@ const webServerCommand = [
 // from this default range and must be run explicitly when needed.
 const defaultE2ESpecMatch = [
   /account\.spec\.ts$/,
-  /agents\.spec\.ts$/,
+  /agent-runners\.spec\.ts$/,
+  /agent-tasks\.spec\.ts$/,
   /audit\.spec\.ts$/,
   /chat\.spec\.ts$/,
   /context-store\.spec\.ts$/,
@@ -42,7 +43,6 @@ const defaultE2ESpecMatch = [
   /files\.spec\.ts$/,
   /governance-default\.spec\.ts$/,
   /login\.spec\.ts$/,
-  /notebook\.spec\.ts$/,
   /overview\.spec\.ts$/,
   /projects-join-governance\.spec\.ts$/,
   /workspace-settings\.spec\.ts$/,

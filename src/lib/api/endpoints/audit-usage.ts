@@ -572,7 +572,7 @@ export class UsageAPI {
       end_time: string;
       granularity?: 'hour' | 'day' | 'week' | 'month';
       metric?: 'tokens' | 'requests' | 'cost' | 'bytes';
-      resource_type?: 'endpoint' | 'file_library' | 'agent';
+      resource_type?: 'endpoint' | 'file_library' | 'agent_runner';
       resource_id?: string;
       end_user_id?: string;
     },

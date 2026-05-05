@@ -155,7 +155,7 @@ export function AuditTable({
           const event = info.row.original;
           const actorType = event.actor_type;
           const variant =
-            actorType === 'user' ? 'default' : actorType === 'agent' ? 'secondary' : 'outline';
+            actorType === 'user' ? 'default' : actorType === 'runner' ? 'secondary' : 'outline';
           return (
             <div className="flex items-center gap-2">
               <Badge variant={variant} className="text-xs">

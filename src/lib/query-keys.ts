@@ -136,7 +136,7 @@ export const queryKeys = {
       ['file-object-meta', workspaceId, projectId, libraryId, key] as const,
   },
 
-  /** Tasks (notebook) */
+  /** Agent tasks */
   tasks: {
     _def: ['tasks'] as const,
     scope: (workspaceId: string, projectId: string) =>
@@ -145,8 +145,8 @@ export const queryKeys = {
       ['tasks', workspaceId, projectId, params] as const,
     detail: (workspaceId: string, projectId: string, taskId: string) =>
       ['task', workspaceId, projectId, taskId] as const,
-    messages: (workspaceId: string, projectId: string, taskId: string) =>
-      ['task-messages', workspaceId, projectId, taskId] as const,
+    activity: (workspaceId: string, projectId: string, taskId: string) =>
+      ['task-activity', workspaceId, projectId, taskId] as const,
     attachedFiles: (workspaceId: string, projectId: string, taskId: string) =>
       ['task-attached-files', workspaceId, projectId, taskId] as const,
     traces: (workspaceId: string, projectId: string, taskId: string, params?: object) =>
@@ -155,15 +155,15 @@ export const queryKeys = {
       ['task-artifacts', workspaceId, projectId, taskId] as const,
   },
 
-  /** Agents */
-  agents: {
-    _def: ['agents'] as const,
+  /** Agent runners */
+  agentRunners: {
+    _def: ['agent-runners'] as const,
     list: (workspaceId: string, projectId: string) =>
-      ['agents', workspaceId, projectId] as const,
-    keys: (workspaceId: string, projectId: string, agentId: string) =>
-      ['agents', workspaceId, projectId, agentId, 'keys'] as const,
-    diagnostics: (workspaceId: string, projectId: string, agentId: string) =>
-      ['agents', workspaceId, projectId, agentId, 'diagnostics'] as const,
+      ['agent-runners', workspaceId, projectId] as const,
+    keys: (workspaceId: string, projectId: string, runnerId: string) =>
+      ['agent-runners', workspaceId, projectId, runnerId, 'keys'] as const,
+    diagnostics: (workspaceId: string, projectId: string, runnerId: string) =>
+      ['agent-runners', workspaceId, projectId, runnerId, 'diagnostics'] as const,
   },
 
   /** Endpoints */

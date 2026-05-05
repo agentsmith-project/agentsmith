@@ -28,7 +28,7 @@ clear_runtime_stack_env
 resolve_loopback_runtime_stack "${API_PORT}" "${WEB_PORT}" "${KEYCLOAK_PORT}" "${KEYCLOAK_REALM}" "${KEYCLOAK_CLIENT_ID}"
 PLAYWRIGHT_BASE_URL="${INTEGRATION_BASE_URL:-${RUNTIME_BROWSER_WEB_BASE_URL}}"
 INTEGRATION_API_BASE="${INTEGRATION_API_BASE:-${RUNTIME_HOST_API_BASE_URL}}"
-EXTERNAL_AGENT_EXECUTION_HTTP_BASE_URL="${EXTERNAL_AGENT_EXECUTION_HTTP_BASE_URL:-${INTEGRATION_API_BASE}}"
+AGENT_RUNNER_DEVELOPER_EXECUTION_HTTP_BASE_URL="${AGENT_RUNNER_DEVELOPER_EXECUTION_HTTP_BASE_URL:-${INTEGRATION_API_BASE}}"
 INTEGRATION_LOCALE="${INTEGRATION_LOCALE:-en-US}"
 INTEGRATION_DEV_ADMIN_USERNAME="${INTEGRATION_DEV_ADMIN_USERNAME:-dev-admin}"
 INTEGRATION_DEV_ADMIN_PASSWORD="${INTEGRATION_DEV_ADMIN_PASSWORD:-dev-admin-123}"
@@ -245,7 +245,7 @@ API_PID="$(
   MINIO_BUCKET="${MINIO_BUCKET:-mbos-dev}" \
   SANDBOX_MANAGER_URL="${SANDBOX_MANAGER_URL:-}" \
   SANDBOX_SERVICE_KEY="${SANDBOX_SERVICE_KEY:-}" \
-  EXTERNAL_AGENT_EXECUTION_HTTP_BASE_URL="${EXTERNAL_AGENT_EXECUTION_HTTP_BASE_URL}" \
+  AGENT_RUNNER_DEVELOPER_EXECUTION_HTTP_BASE_URL="${AGENT_RUNNER_DEVELOPER_EXECUTION_HTTP_BASE_URL}" \
   INTERNAL_AGENT_K8S_NAMESPACE="${INTERNAL_AGENT_K8S_NAMESPACE:-}" \
   INTERNAL_AGENT_JUICEFS_CSI_DRIVER="${INTERNAL_AGENT_JUICEFS_CSI_DRIVER:-}" \
   INTERNAL_AGENT_WORKSPACE_CAPACITY="${INTERNAL_AGENT_WORKSPACE_CAPACITY:-}" \
@@ -330,7 +330,7 @@ curl -fsS "${INTEGRATION_API_BASE}/api/v1/me/profile" \
   }
 
 info "public-auth gate passed"
-info "running system admin entry, workspace public/login truth, workspace entry, publish usable, directory search, and system-to-notebook precheck"
+info "running system admin entry, workspace public/login truth, workspace entry, publish usable, directory search, and Agent Task precheck"
 
 BASE_URL="${PLAYWRIGHT_BASE_URL}" \
 INTEGRATION_API_BASE="${INTEGRATION_API_BASE}" \
@@ -348,7 +348,7 @@ run_clean npx playwright test \
   e2e/integration-workspace-entry.spec.ts \
   e2e/integration-workspace-publish-usable.spec.ts \
   e2e/integration-workspace-settings-directory.spec.ts \
-  e2e/integration-system-notebook-default.spec.ts \
+  e2e/integration-agent-task-runner.spec.ts \
   --project=chromium \
   --workers=1 &
 PLAYWRIGHT_PID=$!

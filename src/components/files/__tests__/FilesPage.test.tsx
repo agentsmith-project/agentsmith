@@ -42,7 +42,7 @@ vi.mock('next-intl', () => ({
         upload_files: 'Upload Files',
         search_placeholder: 'Search files...',
         open_chat: 'Open Chat',
-        open_notebook: 'Open Notebook',
+        open_agent_tasks: 'Open Agent tasks',
         open_endpoints: 'Open Endpoints',
         'file_manager.root': 'Root',
         'file_manager.items': 'items',

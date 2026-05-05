@@ -5,74 +5,6 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ROOT_DIR="$(cd "${SCRIPT_DIR}/../.." && pwd)"
 # shellcheck disable=SC1091
 source "${ROOT_DIR}/scripts/lib/preset-common.sh"
-# shellcheck disable=SC1091
-source "${ROOT_DIR}/scripts/lib/runner-lifecycle-log.sh"
-
-external_runner_env_listing() {
-  docker inspect -f '{{range .Config.Env}}{{println .}}{{end}}' "${EXTERNAL_RUNNER_CONTAINER_NAME}" 2>/dev/null
-}
-
-external_runner_env_value_from_listing() {
-  local env_listing="$1"
-  local key="$2"
-  printf '%s\n' "${env_listing}" | awk -F= -v target="${key}" '
-    $1 == target {
-      print substr($0, length(target) + 2)
-      found = 1
-      exit
-    }
-    END {
-      if (!found) {
-        print ""
-      }
-    }
-  '
-}
-
-expected_runner_no_proxy_value() {
-  printf '%s\n' "${RUNNER_NO_PROXY:-${NO_PROXY:-${no_proxy:-}}}"
-}
-
-external_runner_has_expected_no_proxy() {
-  local env_listing current_no_proxy current_no_proxy_lower expected_no_proxy
-  env_listing="$(external_runner_env_listing || true)"
-  [[ -n "${env_listing}" ]] || return 1
-  expected_no_proxy="$(expected_runner_no_proxy_value)"
-  current_no_proxy="$(external_runner_env_value_from_listing "${env_listing}" NO_PROXY)"
-  current_no_proxy_lower="$(external_runner_env_value_from_listing "${env_listing}" no_proxy)"
-  [[ "${current_no_proxy}" == "${expected_no_proxy}" && "${current_no_proxy_lower}" == "${expected_no_proxy}" ]]
-}
-
-external_runner_has_expected_mode() {
-  local env_listing current_mode current_agent_mode
-  env_listing="$(external_runner_env_listing || true)"
-  [[ -n "${env_listing}" ]] || return 1
-  current_mode="$(external_runner_env_value_from_listing "${env_listing}" MBOS_RUNNER_MODE)"
-  current_agent_mode="$(external_runner_env_value_from_listing "${env_listing}" MBOS_AGENT_RUNNER_MODE)"
-  [[ "${current_mode}" == "docker_external" || "${current_agent_mode}" == "docker_external" ]]
-}
-
-runtime_proxy_env_fingerprint_from_listing() {
-  local env_listing="$1"
-  local runtime_proxy_key
-  local -a runtime_proxy_lines=()
-
-  while IFS= read -r runtime_proxy_key; do
-    [[ -n "${runtime_proxy_key}" ]] || continue
-    runtime_proxy_lines+=("${runtime_proxy_key}=$(external_runner_env_value_from_listing "${env_listing}" "${runtime_proxy_key}")")
-  done < <(runtime_proxy_env_names)
-
-  runtime_proxy_env_fingerprint_from_lines "${runtime_proxy_lines[@]}"
-}
-
-external_runner_has_expected_runtime_proxy_env() {
-  local env_listing current_fingerprint expected_fingerprint
-  env_listing="$(external_runner_env_listing || true)"
-  [[ -n "${env_listing}" ]] || return 1
-  current_fingerprint="$(runtime_proxy_env_fingerprint_from_listing "${env_listing}")"
-  expected_fingerprint="$(runtime_proxy_env_fingerprint)"
-  [[ "${current_fingerprint}" == "${expected_fingerprint}" ]]
-}
 
 run_deploy_bootstrap() {
   load_agentsmith_presets "${ROOT_DIR}"
@@ -80,21 +12,6 @@ run_deploy_bootstrap() {
   apply_non_environment_preset_defaults
   apply_preset_endpoint_defaults
   runtime_proxy_mode >/dev/null
-  local bootstrap_mode=""
-  local bootstrap_internal_agent_enabled="1"
-  if command -v demo_deploy_mode >/dev/null 2>&1; then
-    bootstrap_mode="$(demo_deploy_mode)"
-    if demo_mode_is_full; then
-      bootstrap_internal_agent_enabled="1"
-    else
-      bootstrap_internal_agent_enabled="0"
-    fi
-  elif command -v cluster_deploy_mode >/dev/null 2>&1; then
-    bootstrap_mode="$(cluster_deploy_mode)"
-    bootstrap_internal_agent_enabled="1"
-  else
-    die "bootstrap mode resolver is unavailable"
-  fi
 
   HOST_LOCAL_API_BASE_URL="${HOST_LOCAL_API_BASE_URL:-http://127.0.0.1:${API_PORT:-20000}}"
   HOST_LOCAL_KEYCLOAK_BASE_URL="${HOST_LOCAL_KEYCLOAK_BASE_URL:-http://127.0.0.1:${KEYCLOAK_PORT:-18080}}"
@@ -118,64 +35,18 @@ run_deploy_bootstrap() {
   PRESET_OPENAI_ENDPOINT_NAME="${PRESET_OPENAI_ENDPOINT_NAME:-preset-openai-endpoint}"
   PRESET_OPENAI_ENDPOINT_BASE_URL="${PRESET_OPENAI_ENDPOINT_BASE_URL:-https://openai-compatible.provider.example/v1}"
   PRESET_OPENAI_ENDPOINT_PROTOCOL="${PRESET_OPENAI_ENDPOINT_PROTOCOL:-openai_chat_completions}"
-  RUNNER_IMAGE="${RUNNER_IMAGE:-$(awk -F= '$1=="agentsmith_runner_image"{print $2}' "${RELEASE_ROOT}/VERSION")}"
-  INTERNAL_AGENT_IMAGE="${INTERNAL_AGENT_IMAGE:-$(awk -F= '$1=="agentsmith_runner_image"{print $2}' "${RELEASE_ROOT}/VERSION")}"
+  AGENT_TASK_RUNNER_IMAGE="${AGENT_TASK_RUNNER_IMAGE:-$(awk -F= '$1=="agentsmith_agent_task_runner_image"{print $2}' "${RELEASE_ROOT}/VERSION")}"
   PUBLIC_WEB_BASE_URL="${PUBLIC_WEB_BASE_URL:-http://localhost:3001}"
   KEYCLOAK_REDIRECT_WEB_BASES="${INTEGRATION_PUBLIC_WEB_BASES:-${PUBLIC_WEB_BASE_URL}}"
   PRESET_PROJECT_NAME="${PRESET_PROJECT_NAME:-Demo Project}"
   PRESET_CREDENTIAL_NAME="${PRESET_CREDENTIAL_NAME:-preset-shared-key}"
-  PRESET_EXTERNAL_AGENT_NAME="${PRESET_EXTERNAL_AGENT_NAME:-demo-external-agent}"
-  PRESET_INTERNAL_AGENT_NAME="${PRESET_INTERNAL_AGENT_NAME:-demo-internal-agent}"
-  PRESET_INTERNAL_AGENT_IDLE_TIMEOUT_SECONDS="${PRESET_INTERNAL_AGENT_IDLE_TIMEOUT_SECONDS:-300}"
-  PRESET_INTERNAL_AGENT_MAX_LIFETIME_SECONDS="${PRESET_INTERNAL_AGENT_MAX_LIFETIME_SECONDS:-3600}"
-  COMPOSE_PROJECT_NAME="${COMPOSE_PROJECT_NAME:-agentsmith-demo}"
-  EXTERNAL_RUNNER_CONTAINER_NAME="${EXTERNAL_RUNNER_CONTAINER_NAME:-${COMPOSE_PROJECT_NAME}-external-runner-1}"
-  EXTERNAL_RUNNER_DEFAULT_NETWORK="${EXTERNAL_RUNNER_DEFAULT_NETWORK:-${COMPOSE_PROJECT_NAME}_default}"
-  RUNNER_NO_PROXY="${NO_PROXY:-${no_proxy:-}}"
-  PREVIOUS_EXTERNAL_AGENT_ID="$(state_get agent.external_id 2>/dev/null || true)"
+  PRESET_AGENT_RUNNER_NAME="${PRESET_AGENT_RUNNER_NAME:-demo-agent-task-runner}"
 
   [[ -n "${PRESET_ENDPOINT_API_KEY}" ]] || die "missing PRESET_ENDPOINT_API_KEY"
   [[ -n "${BOOTSTRAP_MONGO_URL}" ]] || die "missing BOOTSTRAP_MONGO_URL"
   [[ -n "${BOOTSTRAP_MONGO_DB_NAME}" ]] || die "missing BOOTSTRAP_MONGO_DB_NAME"
   [[ -n "${PRESET_ANTHROPIC_ENDPOINT_BASE_URL}" ]] || die "missing PRESET_ANTHROPIC_ENDPOINT_BASE_URL"
   [[ -n "${PRESET_OPENAI_ENDPOINT_BASE_URL}" ]] || die "missing PRESET_OPENAI_ENDPOINT_BASE_URL"
-
-  external_runner_running() {
-    docker inspect -f '{{.State.Running}}' "${EXTERNAL_RUNNER_CONTAINER_NAME}" 2>/dev/null | grep -q true
-  }
-
-  external_runner_current_image() {
-    docker inspect -f '{{.Config.Image}}' "${EXTERNAL_RUNNER_CONTAINER_NAME}" 2>/dev/null
-  }
-
-  external_runner_matches_release_image() {
-    local current_image
-    current_image="$(external_runner_current_image 2>/dev/null || true)"
-    [[ -n "${current_image}" && "${current_image}" == "${RUNNER_IMAGE}" ]]
-  }
-
-  external_runner_connected() {
-    local runner_logs
-    runner_logs="$(docker logs "${EXTERNAL_RUNNER_CONTAINER_NAME}" 2>&1 || true)"
-    runner_lifecycle_logs_connected "${runner_logs}"
-  }
-
-  wait_docker_daemon() {
-    local started
-    started="$(date +%s)"
-    until docker info >/dev/null 2>&1; do
-      if (( "$(date +%s)" - started > 120 )); then
-        die "docker daemon did not recover after restart"
-      fi
-      sleep 2
-    done
-  }
-
-  recreate_compose_services_after_docker_restart() {
-    docker_compose up -d postgres mongo redis minio minio-init keycloak universal-proxy api web >/dev/null
-    wait_http "${HOST_LOCAL_KEYCLOAK_BASE_URL}/realms/${KEYCLOAK_REALM}/.well-known/openid-configuration" 240
-    wait_tcp "127.0.0.1" "${API_PORT:-20000}" 240
-  }
 
   wait_keycloak_admin_token_via_api_container() {
     local started status
@@ -200,96 +71,6 @@ run_deploy_bootstrap() {
       fi
       sleep 2
     done
-  }
-
-  cleanup_replacement_external_runner_containers() {
-    local ids
-    ids="$(
-      docker ps -a \
-        --filter "name=_${EXTERNAL_RUNNER_CONTAINER_NAME}$" \
-        --format '{{.ID}}' | tr '\n' ' '
-    )"
-    if [[ -n "${ids// }" ]]; then
-      timeout 10 docker rm -f ${ids} >/dev/null 2>&1 || true
-    fi
-  }
-
-  quarantine_stale_external_runner() {
-    local current_image stale_name suffix
-    current_image="$(docker inspect -f '{{.Config.Image}}' "${EXTERNAL_RUNNER_CONTAINER_NAME}" 2>/dev/null || true)"
-    if [[ -z "${current_image}" || "${current_image}" == "${RUNNER_IMAGE}" ]]; then
-      return 0
-    fi
-
-    suffix="$(date +%s)"
-    stale_name="${EXTERNAL_RUNNER_CONTAINER_NAME}-stale-${suffix}"
-    log "quarantining stale external-runner container ${EXTERNAL_RUNNER_CONTAINER_NAME}"
-    docker update --restart=no "${EXTERNAL_RUNNER_CONTAINER_NAME}" >/dev/null 2>&1 || true
-    docker rename "${EXTERNAL_RUNNER_CONTAINER_NAME}" "${stale_name}" >/dev/null
-    docker network disconnect -f "${EXTERNAL_RUNNER_DEFAULT_NETWORK}" "${stale_name}" >/dev/null 2>&1 || true
-    cleanup_replacement_external_runner_containers
-  }
-
-  ensure_external_runner_slot_available() {
-    cleanup_replacement_external_runner_containers
-    if docker ps -a --format '{{.Names}}' | grep -qx "${EXTERNAL_RUNNER_CONTAINER_NAME}"; then
-      quarantine_stale_external_runner
-    fi
-  }
-
-  run_external_runner_up() {
-    local output status
-    local -a runtime_proxy_env_args=()
-    mapfile -t runtime_proxy_env_args < <(docker_run_runtime_proxy_env_args)
-    set +e
-    output="$(
-      docker run -d \
-        --name "${EXTERNAL_RUNNER_CONTAINER_NAME}" \
-        --restart unless-stopped \
-        --network "${EXTERNAL_RUNNER_DEFAULT_NETWORK}" \
-        --privileged \
-        --device /dev/fuse:/dev/fuse \
-        --security-opt apparmor:unconfined \
-        --env-file "${RELEASE_ROOT}/env/base.env" \
-        --env-file "${RELEASE_ROOT}/env/runner.env" \
-        --env-file "${RELEASE_ROOT}/env/runner-runtime.env" \
-        "${runtime_proxy_env_args[@]}" \
-        -e "NO_PROXY=${RUNNER_NO_PROXY}" \
-        -e "no_proxy=${RUNNER_NO_PROXY}" \
-        --add-host host.docker.internal:host-gateway \
-        "${RUNNER_IMAGE}" 2>&1
-    )"
-    status=$?
-    set -e
-    if (( status == 0 )); then
-      return 0
-    fi
-
-    if grep -q 'did not receive an exit event' <<<"${output}"; then
-      log "docker reported a stuck external-runner stop; restarting docker daemon once"
-      sudo systemctl restart docker
-      wait_docker_daemon
-      recreate_compose_services_after_docker_restart
-      docker run -d \
-        --name "${EXTERNAL_RUNNER_CONTAINER_NAME}" \
-        --restart unless-stopped \
-        --network "${EXTERNAL_RUNNER_DEFAULT_NETWORK}" \
-        --privileged \
-        --device /dev/fuse:/dev/fuse \
-        --security-opt apparmor:unconfined \
-        --env-file "${RELEASE_ROOT}/env/base.env" \
-        --env-file "${RELEASE_ROOT}/env/runner.env" \
-        --env-file "${RELEASE_ROOT}/env/runner-runtime.env" \
-        "${runtime_proxy_env_args[@]}" \
-        -e "NO_PROXY=${RUNNER_NO_PROXY}" \
-        -e "no_proxy=${RUNNER_NO_PROXY}" \
-        --add-host host.docker.internal:host-gateway \
-        "${RUNNER_IMAGE}" >/dev/null
-      return 0
-    fi
-
-    printf '%s\n' "${output}" >&2
-    return "${status}"
   }
 
   docker_compose exec -T postgres bash -lc '
@@ -409,141 +190,29 @@ run_deploy_bootstrap() {
     -H 'Content-Type: application/json' \
     -d "$(endpoint_payload "${PRESET_OPENAI_ENDPOINT_NAME}" "${PRESET_OPENAI_ENDPOINT_PROTOCOL}" "${PRESET_OPENAI_ENDPOINT_BASE_URL}")" >/dev/null
 
-  agent_list_resp="$(
-    curl -sS "${PROJECT_BASE}/agents?page=1&page_size=100" \
+  runner_list_resp="$(
+    curl -sS "${PROJECT_BASE}/agent-runners?page=1&page_size=100" \
       -H "Authorization: Bearer ${TOKEN}"
   )"
-  EXTERNAL_AGENT_ID="$(printf '%s' "${agent_list_resp}" | json_find_named_id "${PRESET_EXTERNAL_AGENT_NAME}")"
-  if [[ -z "${EXTERNAL_AGENT_ID}" ]]; then
-    external_agent_resp="$(
-      curl -sS -X POST "${PROJECT_BASE}/agents" \
+  AGENT_RUNNER_ID="$(printf '%s' "${runner_list_resp}" | json_find_named_id "${PRESET_AGENT_RUNNER_NAME}")"
+  runner_payload() {
+    docker_compose exec -T api node -e 'console.log(JSON.stringify({name:process.argv[1], status:"ready", is_default:true, default_endpoint_id:process.argv[2], description:"Managed Agent task runner baseline", diagnostics:{image:process.argv[3]}, capabilities:{streaming_completion:true,multimodal_completion:false,terminal:true,artifacts:true}}))' \
+      "${PRESET_AGENT_RUNNER_NAME}" "${ANTHROPIC_ENDPOINT_ID}" "${AGENT_TASK_RUNNER_IMAGE}"
+  }
+  if [[ -z "${AGENT_RUNNER_ID}" ]]; then
+    runner_resp="$(
+      curl -sS -X POST "${PROJECT_BASE}/agent-runners" \
         -H "Authorization: Bearer ${TOKEN}" \
         -H 'Content-Type: application/json' \
-        -d "$(docker_compose exec -T api node -e 'console.log(JSON.stringify({name:process.argv[3], mode:"external", interaction_kind:"notebook", execution_preferences:{notebook:{endpoint_id:process.argv[1], wire_api:"responses", model:process.argv[2]}}, config:{runner_runtime:"compose_managed"}, capabilities:{streaming_completion:true,multimodal_completion:false}}))' "${ANTHROPIC_ENDPOINT_ID}" "${PRESET_ENDPOINT_MODEL}" "${PRESET_EXTERNAL_AGENT_NAME}")"
+        -d "$(runner_payload)"
     )"
-    EXTERNAL_AGENT_ID="$(printf '%s' "${external_agent_resp}" | json_extract id)"
-  fi
-
-  curl -sS -X PATCH "${PROJECT_BASE}/agents/${EXTERNAL_AGENT_ID}" \
-    -H "Authorization: Bearer ${TOKEN}" \
-    -H 'Content-Type: application/json' \
-      -d "$(docker_compose exec -T api node -e 'console.log(JSON.stringify({execution_preferences:{notebook:{endpoint_id:process.argv[1], wire_api:"responses", model:process.argv[2]}}, config:{runner_runtime:"compose_managed"}}))' "${ANTHROPIC_ENDPOINT_ID}" "${PRESET_ENDPOINT_MODEL}")" >/dev/null
-
-  EXTERNAL_AGENT_KEY="${MBOS_AGENT_KEY:-}"
-  if [[ -z "${EXTERNAL_AGENT_KEY}" ]]; then
-    external_agent_key_resp="$(
-      curl -sS -X POST "${PROJECT_BASE}/agents/${EXTERNAL_AGENT_ID}/keys" \
-        -H "Authorization: Bearer ${TOKEN}" \
-        -H 'Content-Type: application/json' \
-        -d '{}'
-    )"
-    EXTERNAL_AGENT_KEY="$(printf '%s' "${external_agent_key_resp}" | json_extract key)"
-  fi
-
-  external_connection_resp="$(
-    curl -sS "${PROJECT_BASE}/agents/${EXTERNAL_AGENT_ID}/connection-info" \
-      -H "Authorization: Bearer ${TOKEN}"
-  )"
-  EXTERNAL_AGENT_WS_URL="$(printf '%s' "${external_connection_resp}" | json_extract ws_url)"
-
-  INTERNAL_AGENT_ID=""
-  if [[ "${bootstrap_internal_agent_enabled}" == "1" ]]; then
-    INTERNAL_AGENT_ID="$(printf '%s' "${agent_list_resp}" | json_find_named_id "${PRESET_INTERNAL_AGENT_NAME}")"
-    if [[ -z "${INTERNAL_AGENT_ID}" ]]; then
-      internal_agent_resp="$(
-        curl -sS -X POST "${PROJECT_BASE}/agents" \
-          -H "Authorization: Bearer ${TOKEN}" \
-          -H 'Content-Type: application/json' \
-          -d "$(docker_compose exec -T api node -e 'console.log(JSON.stringify({name:process.argv[6], mode:"internal", interaction_kind:"notebook", execution_preferences:{notebook:{endpoint_id:process.argv[1], wire_api:"responses", model:process.argv[2]}}, config:{image:process.argv[3], endpoint_id:process.argv[1], cpu_request:"500m", cpu_limit:"2", memory_request:"512Mi", memory_limit:"4Gi", idle_timeout_sec:Number(process.argv[4]), max_lifetime_sec:Number(process.argv[5])}, capabilities:{streaming_completion:true}}))' "${ANTHROPIC_ENDPOINT_ID}" "${PRESET_ENDPOINT_MODEL}" "${INTERNAL_AGENT_IMAGE}" "${PRESET_INTERNAL_AGENT_IDLE_TIMEOUT_SECONDS}" "${PRESET_INTERNAL_AGENT_MAX_LIFETIME_SECONDS}" "${PRESET_INTERNAL_AGENT_NAME}")"
-      )"
-      INTERNAL_AGENT_ID="$(printf '%s' "${internal_agent_resp}" | json_extract id)"
-    fi
-
-    curl -sS -X PATCH "${PROJECT_BASE}/agents/${INTERNAL_AGENT_ID}" \
+    AGENT_RUNNER_ID="$(printf '%s' "${runner_resp}" | json_extract id)"
+  else
+    curl -sS -X PATCH "${PROJECT_BASE}/agent-runners/${AGENT_RUNNER_ID}" \
       -H "Authorization: Bearer ${TOKEN}" \
       -H 'Content-Type: application/json' \
-      -d "$(docker_compose exec -T api node -e 'console.log(JSON.stringify({execution_preferences:{notebook:{endpoint_id:process.argv[1], wire_api:"responses", model:process.argv[2]}}, config:{image:process.argv[3], endpoint_id:process.argv[1], cpu_request:"500m", cpu_limit:"2", memory_request:"512Mi", memory_limit:"4Gi", idle_timeout_sec:Number(process.argv[4]), max_lifetime_sec:Number(process.argv[5])}}))' "${ANTHROPIC_ENDPOINT_ID}" "${PRESET_ENDPOINT_MODEL}" "${INTERNAL_AGENT_IMAGE}" "${PRESET_INTERNAL_AGENT_IDLE_TIMEOUT_SECONDS}" "${PRESET_INTERNAL_AGENT_MAX_LIFETIME_SECONDS}")" >/dev/null
+      -d "$(runner_payload)" >/dev/null
   fi
-
-  cat > "${RELEASE_ROOT}/env/runner-runtime.env" <<EOF
-# Generated by bootstrap.sh after preset external agent provisioning.
-# Operators must not edit this file manually.
-MBOS_RUNNER_MODE=docker_external
-MBOS_AGENT_WS_URL=${EXTERNAL_AGENT_WS_URL}
-MBOS_AGENT_KEY=${EXTERNAL_AGENT_KEY}
-EOF
-
-  if external_runner_running && external_runner_connected && external_runner_matches_release_image && external_runner_has_expected_no_proxy && external_runner_has_expected_runtime_proxy_env && external_runner_has_expected_mode && [[ -n "${PREVIOUS_EXTERNAL_AGENT_ID}" && "${PREVIOUS_EXTERNAL_AGENT_ID}" == "${EXTERNAL_AGENT_ID}" ]]; then
-    log "checking existing external-runner readiness"
-    existing_runner_ready=0
-    for _ in $(seq 1 20); do
-      if bash "${RELEASE_SCRIPT_DIR}/check-preset-external-file-library.sh" >/dev/null 2>&1; then
-        existing_runner_ready=1
-        break
-      fi
-      sleep 3
-    done
-    if [[ "${existing_runner_ready}" == "1" ]]; then
-      log "reusing connected external-runner"
-    else
-      log "existing external-runner did not recover; recreating"
-      timeout 10 docker rm -f "${EXTERNAL_RUNNER_CONTAINER_NAME}" >/dev/null 2>&1 || true
-      run_external_runner_up
-      started="$(date +%s)"
-      until external_runner_connected; do
-        if (( "$(date +%s)" - started > 120 )); then
-          die "external-runner failed to connect during bootstrap"
-        fi
-        sleep 2
-      done
-    fi
-  elif external_runner_running && external_runner_connected && external_runner_matches_release_image && external_runner_has_expected_no_proxy && external_runner_has_expected_runtime_proxy_env && external_runner_has_expected_mode; then
-    log "external-runner is connected for a stale external agent; recreating"
-    timeout 10 docker rm -f "${EXTERNAL_RUNNER_CONTAINER_NAME}" >/dev/null 2>&1 || true
-    ensure_external_runner_slot_available
-    run_external_runner_up
-    started="$(date +%s)"
-    until external_runner_connected; do
-      if (( "$(date +%s)" - started > 120 )); then
-        die "external-runner failed to reconnect during bootstrap"
-      fi
-      sleep 2
-    done
-  else
-    if external_runner_running && ! external_runner_matches_release_image; then
-      log "existing external-runner image does not match current release; recreating"
-      quarantine_stale_external_runner
-      run_external_runner_up
-    elif external_runner_running && external_runner_connected && ! external_runner_has_expected_no_proxy; then
-      log "existing external-runner proxy environment is stale; recreating"
-      timeout 10 docker rm -f "${EXTERNAL_RUNNER_CONTAINER_NAME}" >/dev/null 2>&1 || true
-      ensure_external_runner_slot_available
-      run_external_runner_up
-    elif external_runner_running && external_runner_connected && ! external_runner_has_expected_runtime_proxy_env; then
-      log "existing external-runner proxy environment is stale; recreating"
-      timeout 10 docker rm -f "${EXTERNAL_RUNNER_CONTAINER_NAME}" >/dev/null 2>&1 || true
-      ensure_external_runner_slot_available
-      run_external_runner_up
-    elif external_runner_running && external_runner_connected && ! external_runner_has_expected_mode; then
-      log "existing external-runner mode environment is stale; recreating"
-      timeout 10 docker rm -f "${EXTERNAL_RUNNER_CONTAINER_NAME}" >/dev/null 2>&1 || true
-      ensure_external_runner_slot_available
-      run_external_runner_up
-    else
-      timeout 10 docker rm -f "${EXTERNAL_RUNNER_CONTAINER_NAME}" >/dev/null 2>&1 || true
-      ensure_external_runner_slot_available
-      run_external_runner_up
-    fi
-    started="$(date +%s)"
-    until external_runner_connected; do
-      if (( "$(date +%s)" - started > 120 )); then
-        die "external-runner failed to connect during bootstrap"
-      fi
-      sleep 2
-    done
-  fi
-
-  bash "${RELEASE_SCRIPT_DIR}/check-preset-external-file-library.sh"
 
   state_set release.phase bootstrap_completed
   state_set workspace.id "${WORKSPACE_ID}"
@@ -551,15 +220,6 @@ EOF
   state_set credential.id "${CREDENTIAL_ID}"
   state_set endpoint.anthropic_id "${ANTHROPIC_ENDPOINT_ID}"
   state_set endpoint.openai_id "${OPENAI_ENDPOINT_ID}"
-  state_set agent.external_id "${EXTERNAL_AGENT_ID}"
-  if [[ "${bootstrap_internal_agent_enabled}" == "1" ]]; then
-    state_set agent.internal_id "${INTERNAL_AGENT_ID}"
-  else
-    state_set agent.internal_id skipped
-  fi
-  state_set agent.external_runner_connected true
-  state_set agent.external_runner_ws_url "${EXTERNAL_AGENT_WS_URL}"
-  state_set bootstrap.mode "${bootstrap_mode}"
-
-  log "bootstrap ok"
+  state_set agent_runner.id "${AGENT_RUNNER_ID}"
+  state_set agent_runner.managed true
 }

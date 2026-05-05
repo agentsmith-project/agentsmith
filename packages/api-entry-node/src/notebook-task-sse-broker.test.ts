@@ -28,8 +28,8 @@ describe('notebook-task-sse-broker', () => {
     const taskId = 'task_test_broker_1';
     clearNotebookTaskEventState(taskId);
 
-    emitNotebookTaskEvent(taskId, { type: 'message', data: { id: 'm1' } });
-    emitNotebookTaskEvent(taskId, { type: 'message', data: { id: 'm2' } });
+    emitNotebookTaskEvent(taskId, { type: 'activity_item', data: { id: 'm1' } });
+    emitNotebookTaskEvent(taskId, { type: 'activity_item', data: { id: 'm2' } });
     emitNotebookTaskEvent(taskId, { type: 'task_update', data: { id: taskId } });
 
     const { res, writes } = createFakeSseResponse();
@@ -47,7 +47,7 @@ describe('notebook-task-sse-broker', () => {
     const taskId = 'task_test_broker_missing';
     clearNotebookTaskEventState(taskId);
 
-    emitNotebookTaskEvent(taskId, { type: 'message', data: { id: 'm1' } });
+    emitNotebookTaskEvent(taskId, { type: 'activity_item', data: { id: 'm1' } });
     emitNotebookTaskEvent(taskId, { type: 'task_update', data: { id: taskId } });
 
     const { res, writes } = createFakeSseResponse();
@@ -69,7 +69,7 @@ describe('notebook-task-sse-broker', () => {
     const { res, writes } = createFakeSseResponse();
     subscribeNotebookTaskEvents(taskId, res, { buffered: true });
 
-    emitNotebookTaskEvent(taskId, { type: 'message', data: { id: 'm_live' } });
+    emitNotebookTaskEvent(taskId, { type: 'activity_item', data: { id: 'm_live' } });
     expect(writes).toEqual([]);
 
     res.write('data: {"type":"task_update","data":{"id":"task_test_broker_buffered"}}\n\n');

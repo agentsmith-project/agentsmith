@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { createDefaultNodeApiDeps } from '../index.js';
 import {
   acquireNotebookTaskRunLease,
@@ -70,15 +70,7 @@ describe('mapTaskMessagesForExecution', () => {
 
   it('exposes terminal hard teardown debt as terminating realtime truth without an active run', async () => {
     const deps = createDefaultNodeApiDeps();
-    deps.agentResourceService.getAgent = async () => ({
-      id: 'agent_internal_debt',
-      workspace_id: 'ws_default',
-      project_id: 'proj_1',
-      name: 'Internal debt agent',
-      mode: 'internal',
-      status: 'enabled',
-      interaction_kind: 'notebook',
-    }) as never;
+    deps.agentResourceService.getAgent = vi.fn();
     deps.internalWorkloadCoordinator = {
       requestHardTeardown: async () => undefined,
     } as never;
@@ -89,8 +81,6 @@ describe('mapTaskMessagesForExecution', () => {
       project_id: 'proj_1',
       owner_user_id: 'user_1',
       title: 'Realtime debt task',
-      agent_id: 'agent_internal_debt',
-      agent_name: 'Internal debt agent',
       status: 'active',
       attached_inputs: [],
       created_at: now,
@@ -105,13 +95,52 @@ describe('mapTaskMessagesForExecution', () => {
       errorMessage: 'release failed after active run cleared',
     });
 
-    await expect(buildTaskRealtimeView(deps, task.workspace_id, task.project_id, task)).resolves.toMatchObject({
+    const realtime = await buildTaskRealtimeView(deps, task.workspace_id, task.project_id, task);
+    expect(realtime).toMatchObject({
       id: task.id,
       run_state: 'terminating',
       stop_mode: 'terminate',
       can_escalate: false,
-      escalation_reason: 'already_terminating',
+      escalation_reason: 'unsupported_runner',
     });
+    expect(realtime).not.toHaveProperty('agent_id');
+    expect(realtime).not.toHaveProperty('agent_name');
+    expect(realtime).not.toHaveProperty('agent_presence');
+    expect(deps.agentResourceService.getAgent).not.toHaveBeenCalled();
+  });
+
+  it('does not derive runner or presence truth from legacy task agent fields without an active run', async () => {
+    const deps = createDefaultNodeApiDeps();
+    deps.agentResourceService.getAgent = vi.fn(async () => {
+      throw new Error('legacy task agent field must not be used');
+    });
+    const now = '2026-03-18T12:00:00.000Z';
+    const task = {
+      id: 'task_realtime_legacy_only',
+      workspace_id: 'ws_default',
+      project_id: 'proj_1',
+      owner_user_id: 'user_1',
+      title: 'Legacy-only task',
+      agent_id: 'agent_legacy_only',
+      agent_name: 'Legacy-only agent',
+      status: 'active',
+      attached_inputs: [],
+      created_at: now,
+      updated_at: now,
+      last_activity_at: now,
+    } as unknown as TaskRecord;
+
+    const realtime = await buildTaskRealtimeView(deps, task.workspace_id, task.project_id, task);
+
+    expect(realtime).toMatchObject({
+      id: task.id,
+      run_state: 'idle',
+    });
+    expect(realtime).not.toHaveProperty('agent_id');
+    expect(realtime).not.toHaveProperty('agent_name');
+    expect(realtime).not.toHaveProperty('agent_presence');
+    expect(realtime).not.toHaveProperty('active_run');
+    expect(deps.agentResourceService.getAgent).not.toHaveBeenCalled();
   });
 
   it('exposes the active run start timestamp from shared run state', async () => {
@@ -134,8 +163,6 @@ describe('mapTaskMessagesForExecution', () => {
       project_id: 'proj_1',
       owner_user_id: 'user_1',
       title: 'Realtime run started task',
-      agent_id: 'agent_realtime_run_started',
-      agent_name: 'Realtime run agent',
       status: 'active',
       attached_inputs: [],
       created_at: now,
@@ -154,5 +181,60 @@ describe('mapTaskMessagesForExecution', () => {
       run_state: 'running',
       active_run_started_at: startedAt,
     });
+  });
+
+  it('uses active_run.runner_id for runner presence even when legacy task fields disagree', async () => {
+    const deps = createDefaultNodeApiDeps();
+    deps.agentResourceService.getAgent = vi.fn(async (_workspaceId, _projectId, agentId) => {
+      if (agentId !== 'runner_active_truth') {
+        throw new Error(`legacy runner lookup attempted:${agentId}`);
+      }
+      return {
+        id: 'runner_active_truth',
+        workspace_id: 'ws_default',
+        project_id: 'proj_1',
+        name: 'Active truth runner',
+        mode: 'external',
+        presence: 'online',
+        status: 'enabled',
+        interaction_kind: 'notebook',
+      } as never;
+    });
+    const now = '2026-03-18T12:00:00.000Z';
+    const task = {
+      id: 'task_realtime_runner_truth',
+      workspace_id: 'ws_default',
+      project_id: 'proj_1',
+      owner_user_id: 'user_1',
+      title: 'Realtime runner truth task',
+      agent_id: 'agent_legacy_wrong',
+      agent_name: 'Legacy wrong runner',
+      status: 'active',
+      attached_inputs: [],
+      created_at: now,
+      updated_at: now,
+      last_activity_at: now,
+    } as unknown as TaskRecord;
+    await expect(acquireNotebookTaskRunLease(deps.cache, buildNotebookTaskRunState({
+      taskId: task.id,
+      runId: 'run_realtime_runner_truth',
+      runnerId: 'runner_active_truth',
+      startedAt: now,
+    }))).resolves.toBe(true);
+
+    const realtime = await buildTaskRealtimeView(deps, task.workspace_id, task.project_id, task);
+
+    expect(deps.agentResourceService.getAgent).toHaveBeenCalledWith('ws_default', 'proj_1', 'runner_active_truth');
+    expect(realtime).toMatchObject({
+      id: task.id,
+      agent_presence: 'online',
+      active_run: {
+        id: 'run_realtime_runner_truth',
+        runner_id: 'runner_active_truth',
+        status: 'running',
+      },
+    });
+    expect(realtime).not.toHaveProperty('agent_id');
+    expect(realtime).not.toHaveProperty('agent_name');
   });
 });

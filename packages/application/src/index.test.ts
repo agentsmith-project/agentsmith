@@ -341,6 +341,26 @@ describe('Project use cases', () => {
     expect(created.created_at).toBe('2026-02-08T00:00:00.000Z');
   });
 
+  it('rejects legacy project execution preferences during create', async () => {
+    const repo = new FakeProjectRepo();
+    const useCase = new CreateProjectUseCase(repo, new FixedIdGenerator(), new FixedClock());
+
+    await expect(
+      useCase.execute({
+        workspaceId: 'ws_default',
+        actorId: 'user_1',
+        input: {
+          name: 'Should Not Create',
+          visibility: 'private',
+          join_policy: 'approval_required',
+          execution_preferences_json: { notebook_endpoint_id: 'ep_notebook' },
+        } as unknown as Parameters<CreateProjectUseCase['execute']>[0]['input'],
+      }),
+    ).rejects.toThrow(/execution_preferences_json/);
+
+    await expect(repo.listByWorkspace('ws_default')).resolves.toEqual([]);
+  });
+
   it('lists projects by workspace only', async () => {
     const repo = new FakeProjectRepo([
       {
@@ -408,7 +428,7 @@ describe('Project use cases', () => {
     expect(updated.updated_at).toBe('2026-02-08T00:00:00.000Z');
   });
 
-  it('updates project metadata and execution config fields', async () => {
+  it('updates project governance and limits metadata fields', async () => {
     const repo = new FakeProjectRepo([
       {
         id: 'proj_1',
@@ -419,7 +439,6 @@ describe('Project use cases', () => {
         owner_id: 'user_1',
         status: 'active',
         governance_json: {},
-        execution_preferences_json: {},
         limits_json: {},
         created_at: '2026-02-08T00:00:00.000Z',
         updated_at: '2026-02-08T00:00:00.000Z',
@@ -432,16 +451,44 @@ describe('Project use cases', () => {
       input: {
         owner_id: 'user_alt',
         governance_json: { governance_mode: 'groups_only' },
-        execution_preferences_json: { notebook_endpoint_id: 'ep_notebook' },
         limits_json: { requests_per_day: 1000 },
       },
     });
 
     expect(updated.owner_id).toBe('user_alt');
     expect(updated.governance_json).toEqual({ governance_mode: 'groups_only' });
-    expect(updated.execution_preferences_json).toEqual({ notebook_endpoint_id: 'ep_notebook' });
     expect(updated.limits_json).toEqual({ requests_per_day: 1000 });
     expect(updated.updated_at).toBe('2026-02-08T00:00:00.000Z');
+  });
+
+  it('rejects legacy project execution preferences instead of silently stripping them', async () => {
+    const repo = new FakeProjectRepo([
+      {
+        id: 'proj_1',
+        workspace_id: 'ws_a',
+        name: 'A',
+        visibility: 'private',
+        join_policy: 'approval_required',
+        owner_id: 'user_1',
+        status: 'active',
+        created_at: '2026-02-08T00:00:00.000Z',
+        updated_at: '2026-02-08T00:00:00.000Z',
+      },
+    ]);
+
+    await expect(
+      new UpdateProjectUseCase(repo, new FixedClock()).execute({
+        workspaceId: 'ws_a',
+        projectId: 'proj_1',
+        input: {
+          name: 'Should Not Apply',
+          execution_preferences_json: { notebook_endpoint_id: 'ep_notebook' },
+        } as unknown as Parameters<UpdateProjectUseCase['execute']>[0]['input'],
+      }),
+    ).rejects.toThrow(/execution_preferences_json/);
+
+    const stored = await repo.getById('ws_a', 'proj_1');
+    expect(stored?.name).toBe('A');
   });
 
   it('deletes project and then cannot retrieve it', async () => {

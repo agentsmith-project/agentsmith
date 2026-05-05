@@ -102,7 +102,7 @@ describe('verify impact selector', () => {
     const backendRealPlan = buildVerificationPlan({
       catalog,
       changedFiles: [
-        'scripts/run-external-runner-dev.sh',
+        'scripts/skills-runtime-backend-real-gate.sh',
         'src/lib/api/endpoints/context.ts',
       ],
     });
@@ -298,9 +298,9 @@ describe('verify impact selector', () => {
 
   it('does not let R3 policy refs lower backend-real baseline risk or levels', () => {
     const story = loadCommittedStoryDefinitionsSync()
-      .find((candidate) => candidate.storyId === 'notebook-first-success');
+      .find((candidate) => candidate.storyId === 'agent-task-first-success');
     if (!story) {
-      throw new Error('notebook-first-success story fixture is required');
+      throw new Error('agent-task-first-success story fixture is required');
     }
     const catalog = buildVerificationCatalog({
       stories: [story],
@@ -308,7 +308,7 @@ describe('verify impact selector', () => {
       storyRiskPolicy: {
         schema: CURRENT_STORY_RISK_POLICY_SCHEMA,
         stories: {
-          'notebook-first-success': {
+          'agent-task-first-success': {
             policy_refs: ['low_risk_reference'],
           },
         },
@@ -335,15 +335,15 @@ describe('verify impact selector', () => {
 
   it('maps canonical story markdown changes to the exact story and requires manual review', () => {
     const plan = buildVerificationPlan({
-      changedFiles: ['e2e/stories/backend-real/notebook-first-success.story.md'],
+      changedFiles: ['e2e/stories/backend-real/agent-task-first-success.story.md'],
     });
 
-    expect(plan.affectedStories).toEqual(['notebook-first-success']);
+    expect(plan.affectedStories).toEqual(['agent-task-first-success']);
     expect(plan.storyCards).toHaveLength(1);
     expect(plan.storyCards[0]).toMatchObject({
-      storyId: 'notebook-first-success',
+      storyId: 'agent-task-first-success',
       lane: 'backend-real',
-      sourceFile: 'e2e/stories/backend-real/notebook-first-success.story.md',
+      sourceFile: 'e2e/stories/backend-real/agent-task-first-success.story.md',
       risk: 'required',
       evidenceStatus: 'not_evaluated',
     });
@@ -359,7 +359,7 @@ describe('verify impact selector', () => {
         '--report-root',
         reportRoot,
         '--changed-file',
-        'e2e/stories/backend-real/notebook-first-success.story.md',
+        'e2e/stories/backend-real/agent-task-first-success.story.md',
       ], {
         cwd: process.cwd(),
         encoding: 'utf8',
@@ -372,7 +372,7 @@ describe('verify impact selector', () => {
         story_cards: ReportStoryCard[];
         release_verdict: boolean;
       };
-      const reportCard = report.story_cards.find((card) => card.story_id === 'notebook-first-success');
+      const reportCard = report.story_cards.find((card) => card.story_id === 'agent-task-first-success');
       const v3Evidence = reportCard?.evidence_cards.find((card) => card.level === 'V3');
 
       expect(report.schema).toBe('agentsmith_story_acceptance_report/v1');
@@ -385,7 +385,7 @@ describe('verify impact selector', () => {
         artifact_path_template_reason: null,
       });
       expect(report.traceability_gaps.some((gap) => (
-        gap.story_id === 'notebook-first-success' && gap.level === 'V3'
+        gap.story_id === 'agent-task-first-success' && gap.level === 'V3'
       ))).toBe(false);
       expect(report.release_verdict).toBe(false);
       expect(reportStatusValues(report.story_cards)).not.toContain('passed');
@@ -458,47 +458,46 @@ describe('verify impact selector', () => {
     ]));
   });
 
-  it('keeps trace story cards and runner/context broad review for trace-bound notebook specs', () => {
+  it('keeps trace story cards and runner/context broad review for agent-task terminal specs', () => {
     const plan = buildVerificationPlan({
-      changedFiles: ['e2e/integration-notebook-terminal-ux.spec.ts'],
+      changedFiles: [
+        'e2e/integration-agent-task-terminal-ux.spec.ts',
+      ],
     });
-    const impact = plan.changedFileImpacts.find(
-      (candidate) => candidate.changedFile === 'e2e/integration-notebook-terminal-ux.spec.ts',
+    const terminalImpact = plan.changedFileImpacts.find(
+      (candidate) => candidate.changedFile === 'e2e/integration-agent-task-terminal-ux.spec.ts',
     );
     const storyCard = plan.storyCards.find(
-      (card) => card.storyId === 'notebook-terminal-workspace-multi-session',
+      (card) => card.storyId === 'agent-task-terminal-workspace-multi-session',
     );
 
-    expect(plan.affectedStories).toContain('notebook-terminal-workspace-multi-session');
-    expect(plan.affectedStories).toContain('notebook-terminal-truth-unavailable-retry');
-    expect(plan.affectedStories).toContain('notebook-terminal-reentry-recovery');
-    expect(impact).toMatchObject({
-      matchedRules: ['trace_spec_story_binding', 'runner_context_credential'],
+    expect(plan.affectedStories).toContain('agent-task-terminal-workspace-multi-session');
+    expect(plan.affectedStories).toContain('agent-task-terminal-truth-unavailable-retry');
+    expect(plan.affectedStories).toContain('agent-task-terminal-reentry-recovery');
+    expect(terminalImpact).toMatchObject({
       broadImpact: true,
       manualReviewRequired: true,
     });
-    expect(impact?.storyIds).toEqual(expect.arrayContaining([
-      'notebook-terminal-workspace-multi-session',
-      'notebook-terminal-truth-unavailable-retry',
-      'notebook-terminal-reentry-recovery',
+    expect(terminalImpact?.matchedRules).toEqual(expect.arrayContaining([
+      'trace_spec_story_binding',
+      'runner_context_credential',
+    ]));
+    expect(terminalImpact?.storyIds).toEqual(expect.arrayContaining([
+      'agent-task-terminal-workspace-multi-session',
+      'agent-task-terminal-truth-unavailable-retry',
+      'agent-task-terminal-reentry-recovery',
     ]));
     expect(plan.riskSummary.broadImpact).toBe(true);
     expect(plan.riskSummary.manualReviewRequired).toBe(true);
     expect(plan.affectedSurfaces).not.toContain('unmapped-source');
-    expect(plan.affectedSurfaces).toContain('trace-spec:e2e/integration-notebook-terminal-ux.spec.ts');
+    expect(plan.affectedSurfaces).toContain('trace-spec:e2e/integration-agent-task-terminal-ux.spec.ts');
     expect(plan.affectedSurfaces).toContain('runner/context-store/credentials');
     expect(storyCard?.impactSources).toEqual(expect.arrayContaining([
       expect.objectContaining({
         rule: 'trace_spec_story_binding',
         broadImpact: false,
       }),
-      expect.objectContaining({
-        rule: 'runner_context_credential',
-        broadImpact: true,
-        manualReviewRequired: true,
-      }),
     ]));
-    expect(storyCard?.manualReviewReasons).toContain('runner/context/credential owner review');
   });
 
   it('keeps trace story cards and V4 release review for trace-bound release user story specs', () => {
@@ -541,13 +540,16 @@ describe('verify impact selector', () => {
   it('fails closed to V3 real-backend verification for runner, Context Store, and credential paths', () => {
     const plan = buildVerificationPlan({
       changedFiles: [
-        'scripts/run-external-runner-dev.sh',
+        'scripts/skills-runtime-backend-real-gate.sh',
         'src/lib/api/endpoints/context.ts',
         'src/lib/api/endpoints/credentials.ts',
       ],
     });
 
     expect(plan.requiredLevels).toContain('V3');
+    expect(plan.recommendedCommands).toContain('npm run test:agent-task:runner:fast');
+    expect(plan.recommendedCommands).toContain('npm run test:agent-task:runner:backend-real');
+    expect(plan.recommendedCommands).toContain('npm run test:e2e:integration:agent-task');
     expect(plan.recommendedCommands).toContain('npm run verify:real');
     expect(plan.affectedSurfaces).toContain('runner/context-store/credentials');
     expect(plan.finalVerdict).toContain('not_evaluated');
@@ -564,7 +566,7 @@ describe('verify impact selector', () => {
   it('maps runner and notebook execution package sources to runner owner review instead of unmapped triage', () => {
     const changedFiles = [
       'packages/agent-runner/src/index.ts',
-      'packages/notebook-codex-runner/src/runner.ts',
+      'packages/agent-task-runner/src/runner.ts',
       'packages/api-entry-node/src/notebook-execution-orchestrator.ts',
     ];
     const plan = buildVerificationPlan({ changedFiles });
@@ -907,7 +909,7 @@ describe('verify impact selector', () => {
       ],
     });
     const mockLaneCard = plan.storyCards.find((card) => card.storyId === 'mock-lane-chat-operate-and-recover');
-    const backendRealCard = plan.storyCards.find((card) => card.storyId === 'notebook-first-success');
+    const backendRealCard = plan.storyCards.find((card) => card.storyId === 'agent-task-first-success');
     const backendRealVisualCard = plan.storyCards.find((card) => card.storyId === 'real-backend-visual-review');
 
     expect(plan.requiredLevels).toEqual(['V0', 'V1', 'V2', 'V3']);
@@ -922,7 +924,7 @@ describe('verify impact selector', () => {
       changeDetectionFailure: 'git unavailable',
     });
     const mockLaneCard = plan.storyCards.find((card) => card.storyId === 'mock-lane-chat-operate-and-recover');
-    const backendRealCard = plan.storyCards.find((card) => card.storyId === 'notebook-first-success');
+    const backendRealCard = plan.storyCards.find((card) => card.storyId === 'agent-task-first-success');
 
     expect(plan.requiredLevels).toEqual(['V0', 'V1', 'V2', 'V3']);
     expect(plan.affectedSurfaces).toContain('change-detection-failed');

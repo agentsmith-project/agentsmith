@@ -3,7 +3,7 @@ import type { CachePort, JsonDocStorePort } from '@mbos/ports';
 import type { AgentRecord, AgentServiceKeyRecord } from './resource-models.js';
 import { resolveWorkspaceScopedCollection } from './workspace-tenant-collections.js';
 import { listRegisteredWorkspaceIds } from './workspace-registry.js';
-import { resolveAgentRunnerRuntime } from './agent-runner-profile.js';
+import { isDeveloperAgentRunner, isManagedAgentRunner } from './agent-runner-profile.js';
 import {
   createAgentPresenceStore,
   type AgentConnectionState,
@@ -11,13 +11,21 @@ import {
   type RegisterAgentConnectionInput,
 } from './agent-presence-store.js';
 
+const MANAGED_AGENT_RUNNER_DEFAULT_IMAGE = 'agentsmith-agent-task-runner:local';
+
+function resolveManagedAgentRunnerImage(env: NodeJS.ProcessEnv = process.env): string {
+  return env.INTERNAL_AGENT_IMAGE?.trim()
+    || env.INTEGRATION_INTERNAL_AGENT_IMAGE?.trim()
+    || MANAGED_AGENT_RUNNER_DEFAULT_IMAGE;
+}
+
 function sanitizeAgentRecord(agent: AgentRecord & Record<string, unknown>): AgentRecord {
   const sanitized: AgentRecord = {
     id: agent.id,
     workspace_id: agent.workspace_id,
     project_id: agent.project_id,
     name: agent.name,
-    mode: agent.mode,
+    runner_provider: agent.runner_provider === 'developer' ? 'developer' : 'managed',
     status: agent.status,
     created_at: agent.created_at,
     updated_at: agent.updated_at,
@@ -29,7 +37,10 @@ function sanitizeAgentRecord(agent: AgentRecord & Record<string, unknown>): Agen
   if (agent.execution_preferences_json !== undefined) {
     sanitized.execution_preferences_json = agent.execution_preferences_json;
   }
-  if (agent.interaction_kind !== undefined) sanitized.interaction_kind = agent.interaction_kind;
+  if (agent.is_default !== undefined) sanitized.is_default = agent.is_default === true;
+  if (agent.default_endpoint_id !== undefined) sanitized.default_endpoint_id = agent.default_endpoint_id;
+  if (agent.runner_status !== undefined) sanitized.runner_status = agent.runner_status;
+  if (agent.diagnostics !== undefined) sanitized.diagnostics = agent.diagnostics;
   if (agent.owner_id !== undefined) sanitized.owner_id = agent.owner_id;
   if (agent.admin_id !== undefined) sanitized.admin_id = agent.admin_id;
   if (agent.visibility !== undefined) sanitized.visibility = agent.visibility;
@@ -50,10 +61,6 @@ export interface AgentRuntimeState {
   metadata?: Record<string, unknown>;
   last_error?: string;
   last_error_at?: string;
-  runner_spec_mismatch?: {
-    expected_interaction_kind: 'chat' | 'notebook';
-    actual_runner_spec?: Record<string, unknown>;
-  };
 }
 
 function sanitizeBaseUrl(value: string | undefined | null): string | null {
@@ -98,31 +105,26 @@ function deriveWebSocketBaseFromHttpBase(value: string | undefined | null): stri
   }
 }
 
-function resolveConnectionWsBase(agent: Pick<AgentRecord, 'mode' | 'config'>): string {
-  const runtime = resolveAgentRunnerRuntime(agent);
-  if (agent.mode === 'external') {
-    if (runtime === 'compose_managed') {
-      return (
-        deriveWebSocketBaseFromHttpBase(process.env.INTERNAL_API_BASE_URL)
-        ?? 'ws://api:20000'
-      );
-    }
+function resolveConnectionWsBase(agent: Pick<AgentRecord, 'runner_provider'>): string {
+  if (isDeveloperAgentRunner(agent)) {
     return (
-      deriveWebSocketBaseFromHttpBase(process.env.EXTERNAL_AGENT_EXECUTION_HTTP_BASE_URL)
-      ?? deriveWebSocketBaseFromHttpBase(process.env.PUBLIC_API_BASE_URL)
+      deriveWebSocketBaseFromHttpBase(process.env.PUBLIC_API_BASE_URL)
+      ?? sanitizeWebSocketOriginBaseUrl(process.env.AGENT_EXECUTION_WS_BASE_URL)
+      ?? deriveWebSocketBaseFromHttpBase(process.env.AGENT_EXECUTION_HTTP_BASE_URL)
       ?? 'ws://localhost:20000'
     );
   }
   return (
     sanitizeWebSocketOriginBaseUrl(process.env.AGENT_EXECUTION_WS_BASE_URL)
     ?? deriveWebSocketBaseFromHttpBase(process.env.AGENT_EXECUTION_HTTP_BASE_URL)
+    ?? deriveWebSocketBaseFromHttpBase(process.env.INTERNAL_API_BASE_URL)
     ?? 'ws://localhost:20000'
   );
 }
 
 export interface AgentConnectionInfo {
   ws_url: string;
-  agent_id: string;
+  agent_runner_id: string;
   protocol_version: string;
   heartbeat_interval_sec: number;
 }
@@ -174,6 +176,25 @@ export class AgentResourceService {
     return `ask_${randomBytes(24).toString('hex')}`;
   }
 
+  private buildManagedAgentPrivateConfig(inputConfig: AgentRecord['config'] | undefined): AgentRecord['config'] {
+    const existing = inputConfig ?? {};
+    const image = typeof existing.image === 'string' && existing.image.trim()
+      ? existing.image.trim()
+      : resolveManagedAgentRunnerImage();
+    const rawKey = typeof existing._internal_raw_key === 'string' && existing._internal_raw_key.trim()
+      ? existing._internal_raw_key.trim()
+      : this.generatePlainKey();
+    const keyId = typeof existing._internal_key_id === 'string' && existing._internal_key_id.trim()
+      ? existing._internal_key_id.trim()
+      : this.agentKeyId();
+    return {
+      ...existing,
+      image,
+      _internal_key_id: keyId,
+      _internal_raw_key: rawKey,
+    };
+  }
+
   async listAgents(workspaceId: string, projectId: string): Promise<AgentRecord[]> {
     const items = await this.docStore.list<AgentRecord & Record<string, unknown>>(this.agentsCollection(workspaceId), {
       workspace_id: workspaceId,
@@ -209,18 +230,24 @@ export class AgentResourceService {
     input: Partial<AgentRecord>,
   ): Promise<AgentRecord> {
     const now = new Date().toISOString();
+    const runnerProvider = input.runner_provider === 'developer' ? 'developer' : 'managed';
     const agent: AgentRecord = {
       id: this.agentId(),
       workspace_id: workspaceId,
       project_id: projectId,
       name: String(input.name ?? '').trim(),
       description: input.description?.trim() || undefined,
-      mode: input.mode === 'internal' ? 'internal' : 'external',
-      interaction_kind: input.interaction_kind,
-      presence: input.mode === 'internal' ? 'managed' : 'offline',
+      runner_provider: runnerProvider,
+      presence: input.presence ?? (runnerProvider === 'developer' ? 'offline' : 'managed'),
       status: input.status ?? 'enabled',
-      config: input.config,
+      config: runnerProvider === 'managed'
+        ? this.buildManagedAgentPrivateConfig(input.config)
+        : input.config,
       execution_preferences_json: input.execution_preferences_json,
+      is_default: input.is_default === true,
+      default_endpoint_id: input.default_endpoint_id?.trim() || undefined,
+      runner_status: input.runner_status,
+      diagnostics: input.diagnostics,
       owner_id: input.owner_id,
       admin_id: input.admin_id,
       visibility: input.visibility === 'public' ? 'public' : 'private',
@@ -237,6 +264,25 @@ export class AgentResourceService {
     };
     await this.docStore.upsert(this.agentsCollection(workspaceId), agent.id, agent);
     return agent;
+  }
+
+  async clearDefaultAgentRunnersExcept(
+    workspaceId: string,
+    projectId: string,
+    runnerId: string,
+  ): Promise<void> {
+    const items = await this.docStore.list<AgentRecord & Record<string, unknown>>(this.agentsCollection(workspaceId), {
+      workspace_id: workspaceId,
+      project_id: projectId,
+    });
+    await Promise.all(items.map(async (item) => {
+      if (item.id === runnerId || item.is_default !== true) return;
+      await this.docStore.upsert(this.agentsCollection(workspaceId), item.id, {
+        ...sanitizeAgentRecord(item),
+        is_default: false,
+        updated_at: new Date().toISOString(),
+      });
+    }));
   }
 
   canAccessAgent(agent: AgentRecord, actorUserId: string, includeAll: boolean): boolean {
@@ -358,13 +404,45 @@ export class AgentResourceService {
       ),
     );
     const matched = allActiveKeys.flat().find((item) => item.key_hash === hash) ?? null;
-    if (!matched) return null;
+    if (!matched) {
+      return this.verifyManagedAgentPrivateKey(agentId, token, hash);
+    }
     const touched: AgentServiceKeyRecord = {
       ...matched,
       last_used_at: new Date().toISOString(),
     };
     await this.docStore.upsert(this.agentKeysCollection(matched.workspace_id), touched.id, touched);
     return touched;
+  }
+
+  private async verifyManagedAgentPrivateKey(
+    agentId: string,
+    token: string,
+    tokenHash: string,
+  ): Promise<AgentServiceKeyRecord | null> {
+    const collections = await this.listRegisteredWorkspaceCollections(AgentResourceService.agentsCollection);
+    for (const collection of collections) {
+      const item = await this.docStore.get<AgentRecord & Record<string, unknown>>(collection, agentId);
+      if (!item || item.status !== 'enabled') continue;
+      const agent = sanitizeAgentRecord(item);
+      if (!isManagedAgentRunner(agent)) continue;
+      const rawKey = typeof agent.config?._internal_raw_key === 'string'
+        ? agent.config._internal_raw_key.trim()
+        : '';
+      if (!rawKey || this.hashKey(rawKey) !== tokenHash) continue;
+      return {
+        id: agent.config?._internal_key_id?.trim() || `internal:${agent.id}`,
+        workspace_id: agent.workspace_id,
+        project_id: agent.project_id,
+        agent_id: agent.id,
+        key_prefix: token.slice(0, 12),
+        key_hash: tokenHash,
+        status: 'active',
+        created_at: agent.created_at,
+        last_used_at: new Date().toISOString(),
+      };
+    }
+    return null;
   }
 
   private async listRegisteredWorkspaceCollections(baseCollection: string): Promise<string[]> {
@@ -453,7 +531,7 @@ export class AgentResourceService {
       };
     }
     const existing = await this.findAgentById(input.agentId);
-    const nextPresence = existing?.mode === 'internal' ? 'managed' : 'offline';
+    const nextPresence = existing && isManagedAgentRunner(existing) ? 'managed' : 'offline';
     await this.syncStoredPresenceProjection({
       workspaceId: input.workspaceId,
       projectId: input.projectId,
@@ -504,7 +582,7 @@ export class AgentResourceService {
         agent.workspace_id,
         agent.project_id,
         agentId,
-        agent.mode === 'internal' ? 'managed' : 'offline',
+        isManagedAgentRunner(agent) ? 'managed' : 'offline',
         new Date().toISOString(),
       );
     }
@@ -587,11 +665,11 @@ export class AgentResourceService {
     return snapshot.connections.find((connection) => connection.session_id === undefined) ?? null;
   }
 
-  buildConnectionInfo(agent: Pick<AgentRecord, 'id' | 'mode' | 'config'>): AgentConnectionInfo {
+  buildConnectionInfo(agent: Pick<AgentRecord, 'id' | 'runner_provider'>): AgentConnectionInfo {
     const wsBase = resolveConnectionWsBase(agent);
     return {
-      ws_url: `${wsBase.replace(/\/$/, '')}/api/v1/agent-execution/ws?agent_id=${encodeURIComponent(agent.id)}`,
-      agent_id: agent.id,
+      ws_url: `${wsBase.replace(/\/$/, '')}/api/v1/agent-execution/ws?agent_runner_id=${encodeURIComponent(agent.id)}`,
+      agent_runner_id: agent.id,
       protocol_version: '1.0',
       heartbeat_interval_sec: 15,
     };
@@ -611,13 +689,12 @@ export class AgentResourceService {
       connected_at: conn?.connected_at,
       last_pong_at: conn?.last_pong_at,
       presence: agent.presence,
-      ...(runtime?.runner_spec_mismatch ? { runner_spec_mismatch: runtime.runner_spec_mismatch } : {}),
       ...(runtime?.metadata ? { runtime_metadata: runtime.metadata } : {}),
     };
   }
 
   private async hydratePresence(agent: AgentRecord): Promise<AgentRecord> {
-    if (agent.mode === 'internal') {
+    if (isManagedAgentRunner(agent)) {
       return agent;
     }
     const connection = await this.getConnectionInfo(agent.id);

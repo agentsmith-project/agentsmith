@@ -1,6 +1,8 @@
 import type http from 'node:http';
 import type { NodeApiDeps } from '../node-api-deps.js';
 import { resolveInternalWorkloadCoordinator } from '../internal-workload-coordinator.js';
+import { isManagedAgentRunner } from '../agent-runner-profile.js';
+import type { AgentRecord } from '../resource-models.js';
 import {
   getNotebookTaskRunHardTeardownDebt,
   getNotebookTaskRunState,
@@ -8,7 +10,7 @@ import {
   type NotebookTaskRunState,
   type NotebookTaskRunStopMode,
 } from './task-run-coordination.js';
-import type { TaskListItem, TaskRecord } from './task-models.js';
+import { sanitizeTaskRecordForActiveModel, type TaskListItem, type TaskRecord } from './task-models.js';
 import { loadTaskArtifacts, loadTaskMessages } from './task-store.js';
 import { getTaskArtifacts, getTaskMessages } from './task-runtime-state.js';
 
@@ -18,7 +20,7 @@ export type NotebookRunStopEscalationReason =
   | 'unmanaged_runner'
   | 'unsupported_runner';
 
-type NotebookRunAgentMode = { mode?: 'external' | 'internal' } | null | undefined;
+type NotebookRunAgentProfile = Pick<AgentRecord, 'runner_provider'> | null | undefined;
 
 function mapNotebookRunPhaseToTaskRunState(
   activeRun: Awaited<ReturnType<typeof getNotebookTaskRunState>>,
@@ -32,6 +34,13 @@ function mapNotebookRunPhaseToTaskRunState(
   return 'running';
 }
 
+function mapNotebookRunPhaseToActiveRunStatus(
+  activeRun: NotebookTaskRunState,
+): NonNullable<TaskListItem['active_run']>['status'] {
+  if (activeRun.phase === 'cancelling' || activeRun.phase === 'terminating') return 'stopping';
+  return 'running';
+}
+
 function mapNotebookRunStopStatus(state: NotebookTaskRunState): NotebookRunStopStatus {
   return state.stop?.mode === 'terminate' || state.phase === 'terminating'
     ? 'terminating'
@@ -40,20 +49,20 @@ function mapNotebookRunStopStatus(state: NotebookTaskRunState): NotebookRunStopS
 
 export function canRequestNotebookRunHardTerminate(
   deps: NodeApiDeps,
-  agent: NotebookRunAgentMode,
+  agent: NotebookRunAgentProfile,
 ): boolean {
-  return agent?.mode === 'internal' && resolveInternalWorkloadCoordinator(deps) !== undefined;
+  return Boolean(agent && isManagedAgentRunner(agent) && resolveInternalWorkloadCoordinator(deps) !== undefined);
 }
 
 export function resolveNotebookRunEscalation(
   deps: NodeApiDeps,
-  agent: NotebookRunAgentMode,
+  agent: NotebookRunAgentProfile,
   state: NotebookTaskRunState,
 ): { can_escalate: boolean; escalation_reason?: NotebookRunStopEscalationReason } {
   if (state.stop?.mode === 'terminate' || state.phase === 'terminating') {
     return { can_escalate: false, escalation_reason: 'already_terminating' };
   }
-  if (agent?.mode !== 'internal') {
+  if (!agent || !isManagedAgentRunner(agent)) {
     return { can_escalate: false, escalation_reason: 'unsupported_runner' };
   }
   if (!canRequestNotebookRunHardTerminate(deps, agent)) {
@@ -70,7 +79,7 @@ function resolveNotebookRunStopMode(state: NotebookTaskRunState): NotebookTaskRu
 
 export function buildNotebookRunStopTruthResponse(input: {
   deps: NodeApiDeps;
-  agent: NotebookRunAgentMode;
+  agent: NotebookRunAgentProfile;
   taskId: string;
   state: NotebookTaskRunState;
   requestId?: string | null;
@@ -125,7 +134,7 @@ export function buildNotebookRunStopEscalationUnavailableResponse(input: {
 
 function buildNotebookRunRealtimeTruth(
   deps: NodeApiDeps,
-  agent: NotebookRunAgentMode,
+  agent: NotebookRunAgentProfile,
   activeRun: Awaited<ReturnType<typeof getNotebookTaskRunState>>,
   hardTeardownDebt?: NotebookTaskRunHardTeardownDebtRecord | null,
 ): Pick<TaskListItem, 'stop_mode' | 'can_escalate' | 'escalation_reason'> {
@@ -136,7 +145,7 @@ function buildNotebookRunRealtimeTruth(
       can_escalate: false,
       escalation_reason: canRequestNotebookRunHardTerminate(deps, agent)
         ? 'already_terminating'
-        : agent?.mode === 'internal' ? 'unmanaged_runner' : 'unsupported_runner',
+        : agent && isManagedAgentRunner(agent) ? 'unmanaged_runner' : 'unsupported_runner',
     };
   }
   const escalation = resolveNotebookRunEscalation(deps, agent, activeRun);
@@ -163,16 +172,33 @@ export async function buildTaskRealtimeView(
     getNotebookTaskRunState(deps.cache, task.id),
     getNotebookTaskRunHardTeardownDebt(deps.cache, task.id),
   ]);
-  const agent = await deps.agentResourceService.getAgent(workspaceId, projectId, task.agent_id);
-  const agentPresence: TaskListItem['agent_presence'] = (
-    !agent ? 'unknown'
-    : agent.mode === 'internal' ? 'managed'
-    : (agent.presence === 'online' ? 'online' : 'offline')
-  );
-  return {
-    ...task,
-    agent_presence: agentPresence,
+  const activeRunnerId = activeRun?.runner_id?.trim() ?? '';
+  const agent = activeRunnerId
+    ? await deps.agentResourceService.getAgent(workspaceId, projectId, activeRunnerId)
+    : null;
+  const agentPresence: TaskListItem['agent_presence'] | undefined = activeRunnerId
+    ? (
+      !agent ? 'unknown'
+      : isManagedAgentRunner(agent) ? 'managed'
+      : (agent.presence === 'online' ? 'online' : 'offline')
+    )
+    : undefined;
+  const publicTask = sanitizeTaskRecordForActiveModel(task);
+  const result: TaskListItem = {
+    ...publicTask,
+    lifecycle_status: task.status,
+    ...(agentPresence ? { agent_presence: agentPresence } : {}),
     run_state: mapNotebookRunPhaseToTaskRunState(activeRun, hardTeardownDebt),
+    ...(activeRun && activeRunnerId
+      ? {
+        active_run: {
+          id: activeRun.run_id,
+          status: mapNotebookRunPhaseToActiveRunStatus(activeRun),
+          runner_id: activeRunnerId,
+          ...(activeRun.started_at ? { started_at: activeRun.started_at } : {}),
+        },
+      }
+      : {}),
     ...(activeRun?.started_at ? { active_run_started_at: activeRun.started_at } : {}),
     ...buildNotebookRunRealtimeTruth(deps, agent, activeRun, hardTeardownDebt),
     stats: {
@@ -182,6 +208,7 @@ export async function buildTaskRealtimeView(
       attached_input_count: task.attached_inputs.length,
     },
   };
+  return result;
 }
 
 export function mapTaskMessagesForExecution(taskId: string, assistantMessageId: string): Array<Record<string, unknown>> {

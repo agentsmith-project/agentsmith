@@ -30,10 +30,10 @@ import { VISUAL_TEST_REFERENCE_NOW_ISO } from '@/lib/mock-time';
 const WS_ID = 'ws_default';
 const VISUAL_CHAT_RUNTIME_SESSION_ID = 'session_001';
 const VISUAL_CHAT_ESCALATION_DELAY_MS = 30_000;
-const VISUAL_NOTEBOOK_CANCEL_ESCALATION_DELAY_MS = 30_000;
-const VISUAL_NOTEBOOK_SSE_RECONNECT_DELAY_MS = 3_000;
-const VISUAL_NOTEBOOK_LONG_LATEST_ACTION =
-  'python scripts/run_notebook_recovery_probe.py --workspace very-long-workspace-name --project very-long-project-name --task very-long-task-name --with-many-flags --and-extra-operator-context --final-marker';
+const VISUAL_AGENT_TASK_CANCEL_ESCALATION_DELAY_MS = 30_000;
+const VISUAL_AGENT_TASK_SSE_RECONNECT_DELAY_MS = 3_000;
+const VISUAL_AGENT_TASK_LONG_LATEST_ACTION =
+  'python scripts/run_agent_task_recovery_probe.py --workspace very-long-workspace-name --project very-long-project-name --task very-long-task-name --with-many-flags --and-extra-operator-context --final-marker';
 const test = base;
 type ScreenshotComparator = (
   actual: Buffer,
@@ -137,7 +137,7 @@ async function stableNavigate(page: Page, path: string) {
       document.querySelectorAll('nextjs-portal').forEach((portal) => {
         portal.remove();
       });
-      document.querySelectorAll('[data-testid="notebook__sse-debug-panel"]').forEach((panel) => {
+      document.querySelectorAll('[data-testid="agent-tasks__sse-debug-panel"]').forEach((panel) => {
         (panel as HTMLElement).style.display = 'none';
       });
     };
@@ -395,11 +395,11 @@ async function waitForVisualRouteWorkspaceIdentityReady(page: Page, scenario: Vi
   await expect(switcher).not.toContainText(/Select Workspace|选择工作空间/, { timeout: 15_000 });
 }
 
-async function waitForNotebookTerminalTruthReady(page: Page) {
-  await expect(page.getByTestId('notebook__task-header')).toHaveAttribute('data-terminal-truth-state', 'ready', {
+async function waitForAgentTaskTerminalTruthReady(page: Page) {
+  await expect(page.getByTestId('agent-task__task-header')).toHaveAttribute('data-terminal-truth-state', 'ready', {
     timeout: 15_000,
   });
-  await expect(page.getByTestId('notebook__task-terminal-truth-unavailable')).toHaveCount(0);
+  await expect(page.getByTestId('agent-tasks__task-terminal-truth-unavailable')).toHaveCount(0);
 }
 
 async function expectLocatorWithinViewport(page: Page, locator: Locator) {
@@ -550,11 +550,11 @@ function extractProjectRouteParts(route: string) {
   };
 }
 
-function extractNotebookTaskRouteParts(route: string) {
+function extractAgentTaskRouteParts(route: string) {
   const projectRoute = extractProjectRouteParts(route);
-  const match = route.match(/\/notebook\/tasks\/([^/?#]+)/);
+  const match = route.match(/\/agent-tasks\/([^/?#]+)/);
   if (!match) {
-    throw new Error(`Visual notebook scenario route must include a task id: ${route}`);
+    throw new Error(`Visual agent task scenario route must include a task id: ${route}`);
   }
   return {
     ...projectRoute,
@@ -562,9 +562,9 @@ function extractNotebookTaskRouteParts(route: string) {
   };
 }
 
-function notebookConversationTextarea(page: Page) {
+function agentTaskConversationTextarea(page: Page) {
   return page
-    .getByTestId('notebook__conversation-input')
+    .getByTestId('agent-tasks__conversation-input')
     .locator('textarea, input[type="text"], [contenteditable="true"]')
     .first();
 }
@@ -757,25 +757,24 @@ async function bindVisualChatSessionToEndpoint(
     body: {
       endpoint_id: options.endpointId,
       model: options.model,
-      external_agent_id: null,
     },
   });
 }
 
-async function patchVisualNotebookTaskTruth(
+async function patchVisualAgentTaskTruth(
   page: Page,
   route: string,
   patch: Record<string, unknown>,
 ) {
-  const { taskId } = extractNotebookTaskRouteParts(route);
-  await installVisualNotebookHarness(page, {
+  const { taskId } = extractAgentTaskRouteParts(route);
+  await installVisualAgentTaskHarness(page, {
     taskPatchesByTaskId: {
       [taskId]: patch,
     },
   });
 }
 
-async function createVisualNotebookTerminalSession(
+async function createVisualAgentTaskTerminalSession(
   page: Page,
   route: string,
   options: {
@@ -784,8 +783,8 @@ async function createVisualNotebookTerminalSession(
     status?: 'active' | 'disconnected' | 'failed';
   } = {},
 ) {
-  const { taskId } = extractNotebookTaskRouteParts(route);
-  await installVisualNotebookHarness(page, {
+  const { taskId } = extractAgentTaskRouteParts(route);
+  await installVisualAgentTaskHarness(page, {
     terminalSessionsByTaskId: {
       [taskId]: {
         mode: 'ready',
@@ -806,7 +805,7 @@ async function createVisualNotebookTerminalSession(
   });
 }
 
-async function installVisualNotebookHarness(
+async function installVisualAgentTaskHarness(
   page: Page,
   options: {
     taskPatchesByTaskId?: Record<string, Record<string, unknown>>;
@@ -821,8 +820,8 @@ async function installVisualNotebookHarness(
 ) {
   await page.addInitScript((config) => {
     type HarnessWindow = Window & {
-      __agsVisualNotebookHarnessInstalled?: boolean;
-      __agsVisualNotebookHarnessConfig?: {
+      __agsVisualAgentTaskHarnessInstalled?: boolean;
+      __agsVisualAgentTaskHarnessConfig?: {
         taskPatchesByTaskId?: Record<string, Record<string, unknown>>;
         messagesByTaskId?: Record<string, Array<Record<string, unknown>>>;
         tracesByTaskId?: Record<string, Array<Record<string, unknown>>>;
@@ -835,8 +834,8 @@ async function installVisualNotebookHarness(
     };
 
     const win = window as HarnessWindow;
-    const previousConfig = win.__agsVisualNotebookHarnessConfig ?? {};
-    win.__agsVisualNotebookHarnessConfig = {
+    const previousConfig = win.__agsVisualAgentTaskHarnessConfig ?? {};
+    win.__agsVisualAgentTaskHarnessConfig = {
       ...previousConfig,
       taskPatchesByTaskId: {
         ...(previousConfig.taskPatchesByTaskId ?? {}),
@@ -855,7 +854,7 @@ async function installVisualNotebookHarness(
         ...(config.terminalSessionsByTaskId ?? {}),
       },
     };
-    if (win.__agsVisualNotebookHarnessInstalled) {
+    if (win.__agsVisualAgentTaskHarnessInstalled) {
       return;
     }
 
@@ -872,7 +871,7 @@ async function installVisualNotebookHarness(
 
       const response = await originalFetch(input, init);
       const method = (request?.method ?? init?.method ?? 'GET').toUpperCase();
-      const activeConfig = win.__agsVisualNotebookHarnessConfig ?? {};
+      const activeConfig = win.__agsVisualAgentTaskHarnessConfig ?? {};
       const taskDetailMatch = url.pathname.match(/\/api\/v1\/workspaces\/[^/]+\/projects\/[^/]+\/tasks\/([^/]+)$/);
       if (method === 'GET' && taskDetailMatch) {
         const taskId = decodeURIComponent(taskDetailMatch[1]);
@@ -971,35 +970,35 @@ async function installVisualNotebookHarness(
       return response;
     };
 
-    win.__agsVisualNotebookHarnessInstalled = true;
+    win.__agsVisualAgentTaskHarnessInstalled = true;
   }, options);
 }
 
-async function installVisualNotebookMessagesOverride(
+async function installVisualAgentTaskMessagesOverride(
   page: Page,
   route: string,
   items: Array<Record<string, unknown>>,
 ) {
-  const { taskId } = extractNotebookTaskRouteParts(route);
-  await installVisualNotebookHarness(page, {
+  const { taskId } = extractAgentTaskRouteParts(route);
+  await installVisualAgentTaskHarness(page, {
     messagesByTaskId: {
       [taskId]: items,
     },
   });
 }
 
-async function seedVisualNotebookConversationHistory(page: Page, route: string) {
-  const { taskId } = extractNotebookTaskRouteParts(route);
-  await installVisualNotebookMessagesOverride(page, route, [
+async function seedVisualAgentTaskConversationHistory(page: Page, route: string) {
+  const { taskId } = extractAgentTaskRouteParts(route);
+  await installVisualAgentTaskMessagesOverride(page, route, [
     {
-      id: 'msg_visual_notebook_user_001',
+      id: 'msg_visual_agent_task_user_001',
       task_id: taskId,
       role: 'user',
       content: 'Review the existing task progress before retrying.',
       created_at: '2026-04-12T09:12:00.000Z',
     },
     {
-      id: 'msg_visual_notebook_agent_001',
+      id: 'msg_visual_agent_task_agent_001',
       task_id: taskId,
       role: 'agent',
       content: 'The task already has prior context on this surface.',
@@ -1008,26 +1007,26 @@ async function seedVisualNotebookConversationHistory(page: Page, route: string) 
   ]);
 }
 
-async function installVisualNotebookTraceOverride(
+async function installVisualAgentTaskTraceOverride(
   page: Page,
   route: string,
   items: Array<Record<string, unknown>>,
 ) {
-  const { taskId } = extractNotebookTaskRouteParts(route);
-  await installVisualNotebookHarness(page, {
+  const { taskId } = extractAgentTaskRouteParts(route);
+  await installVisualAgentTaskHarness(page, {
     tracesByTaskId: {
       [taskId]: items,
     },
   });
 }
 
-async function seedVisualNotebookRunState(
+async function seedVisualAgentTaskRunState(
   page: Page,
   route: string,
   runState: 'running' | 'cancelling' | 'terminating' | 'finalizing' | 'idle',
 ) {
   const futureActivityAt = new Date(Date.now() + 5 * 60 * 1000).toISOString();
-  await patchVisualNotebookTaskTruth(page, route, {
+  await patchVisualAgentTaskTruth(page, route, {
     run_state: runState,
     status: 'active',
     updated_at: futureActivityAt,
@@ -1043,15 +1042,15 @@ async function seedVisualNotebookRunState(
   });
 }
 
-async function seedVisualNotebookLongActionRunState(page: Page, route: string) {
-  const { taskId } = extractNotebookTaskRouteParts(route);
+async function seedVisualAgentTaskLongActionRunState(page: Page, route: string) {
+  const { taskId } = extractAgentTaskRouteParts(route);
   const startedAt = new Date(Date.now() - 65_000).toISOString();
   const futureActivityAt = new Date(Date.now() + 5 * 60 * 1000).toISOString();
-  const userMessageId = 'msg_visual_notebook_long_action_user';
-  const agentMessageId = 'msg_visual_notebook_long_action_agent';
-  const runId = 'run_visual_notebook_long_action_001';
+  const userMessageId = 'msg_visual_agent_task_long_action_user';
+  const agentMessageId = 'msg_visual_agent_task_long_action_agent';
+  const runId = 'run_visual_agent_task_long_action_001';
 
-  await installVisualNotebookHarness(page, {
+  await installVisualAgentTaskHarness(page, {
     taskPatchesByTaskId: {
       [taskId]: {
         run_state: 'running',
@@ -1070,7 +1069,7 @@ async function seedVisualNotebookLongActionRunState(page: Page, route: string) {
           id: userMessageId,
           task_id: taskId,
           role: 'user',
-          content: 'Run the notebook recovery probe with the full diagnostic context.',
+          content: 'Run the agent task recovery probe with the full diagnostic context.',
           created_at: startedAt,
         },
         {
@@ -1085,7 +1084,7 @@ async function seedVisualNotebookLongActionRunState(page: Page, route: string) {
     tracesByTaskId: {
       [taskId]: [
         {
-          id: 'trace_visual_notebook_long_action_001',
+          id: 'trace_visual_agent_task_long_action_001',
           task_id: taskId,
           message_id: agentMessageId,
           run_id: runId,
@@ -1101,7 +1100,7 @@ async function seedVisualNotebookLongActionRunState(page: Page, route: string) {
           },
         },
         {
-          id: 'trace_visual_notebook_long_action_002',
+          id: 'trace_visual_agent_task_long_action_002',
           task_id: taskId,
           message_id: agentMessageId,
           run_id: runId,
@@ -1111,9 +1110,9 @@ async function seedVisualNotebookLongActionRunState(page: Page, route: string) {
           phase: 'start',
           status: 'running',
           name: 'codex.command',
-          summary: 'Running notebook recovery probe',
+          summary: 'Running agent task recovery probe',
           details: {
-            command: VISUAL_NOTEBOOK_LONG_LATEST_ACTION,
+            command: VISUAL_AGENT_TASK_LONG_LATEST_ACTION,
           },
         },
       ],
@@ -1121,9 +1120,9 @@ async function seedVisualNotebookLongActionRunState(page: Page, route: string) {
   });
 }
 
-async function seedVisualNotebookCancelEscalation(page: Page, route: string) {
+async function seedVisualAgentTaskCancelEscalation(page: Page, route: string) {
   const futureActivityAt = new Date(Date.now() + 5 * 60 * 1000).toISOString();
-  await patchVisualNotebookTaskTruth(page, route, {
+  await patchVisualAgentTaskTruth(page, route, {
     run_state: 'cancelling',
     status: 'active',
     updated_at: futureActivityAt,
@@ -1134,30 +1133,30 @@ async function seedVisualNotebookCancelEscalation(page: Page, route: string) {
   });
 }
 
-async function expectVisualNotebookActiveRunFooter(page: Page): Promise<{
+async function expectVisualAgentTaskActiveRunFooter(page: Page): Promise<{
   activeRunFooter: Locator;
   latestAction: Locator;
   cancel: Locator;
 }> {
-  await waitForVisualNotebookTaskSurface(page);
-  const activeRunFooter = page.getByTestId('notebook__message-active-run-footer');
-  const latestAction = activeRunFooter.getByTestId('notebook__message-active-run-latest-action');
-  const cancel = activeRunFooter.getByTestId('notebook__message-active-run-cancel');
+  await waitForVisualAgentTaskSurface(page);
+  const activeRunFooter = page.getByTestId('agent-tasks__message-active-run-footer');
+  const latestAction = activeRunFooter.getByTestId('agent-tasks__message-active-run-latest-action');
+  const cancel = activeRunFooter.getByTestId('agent-tasks__message-active-run-cancel');
 
   await expect(activeRunFooter).toBeVisible();
-  await expect(activeRunFooter.getByTestId('notebook__message-active-run-status')).toContainText('Running');
-  await expect(activeRunFooter.getByTestId('notebook__message-active-run-elapsed')).toContainText('Elapsed:');
+  await expect(activeRunFooter.getByTestId('agent-tasks__message-active-run-status')).toContainText('Running');
+  await expect(activeRunFooter.getByTestId('agent-tasks__message-active-run-elapsed')).toContainText('Elapsed:');
   await expect(latestAction).toContainText('Latest action:');
   await expect(cancel).toBeVisible();
 
   return { activeRunFooter, latestAction, cancel };
 }
 
-async function expectVisualNotebookLongActiveRunFooterLayout(page: Page) {
-  const { activeRunFooter, latestAction, cancel } = await expectVisualNotebookActiveRunFooter(page);
+async function expectVisualAgentTaskLongActiveRunFooterLayout(page: Page) {
+  const { activeRunFooter, latestAction, cancel } = await expectVisualAgentTaskActiveRunFooter(page);
 
-  await expect(latestAction).toContainText(VISUAL_NOTEBOOK_LONG_LATEST_ACTION, { timeout: 15_000 });
-  await expect(latestAction).toHaveAttribute('title', VISUAL_NOTEBOOK_LONG_LATEST_ACTION);
+  await expect(latestAction).toContainText(VISUAL_AGENT_TASK_LONG_LATEST_ACTION, { timeout: 15_000 });
+  await expect(latestAction).toHaveAttribute('title', VISUAL_AGENT_TASK_LONG_LATEST_ACTION);
   await expect(cancel).toHaveAccessibleName('Cancel current run');
 
   const latestMetrics = await latestAction.evaluate((element) => {
@@ -1193,8 +1192,8 @@ async function expectVisualNotebookLongActiveRunFooterLayout(page: Page) {
   expect(cancelMetrics.whiteSpace).toBe('nowrap');
 
   const layoutMetrics = await activeRunFooter.evaluate((footer) => {
-    const latest = footer.querySelector('[data-testid="notebook__message-active-run-latest-action"]');
-    const cancelButton = footer.querySelector('[data-testid="notebook__message-active-run-cancel"]');
+    const latest = footer.querySelector('[data-testid="agent-tasks__message-active-run-latest-action"]');
+    const cancelButton = footer.querySelector('[data-testid="agent-tasks__message-active-run-cancel"]');
     if (!(latest instanceof HTMLElement) || !(cancelButton instanceof HTMLElement)) {
       return null;
     }
@@ -1223,17 +1222,17 @@ async function expectVisualNotebookLongActiveRunFooterLayout(page: Page) {
   expect(Math.abs(layoutMetrics.latestCenterY - layoutMetrics.cancelCenterY)).toBeLessThanOrEqual(2);
 }
 
-async function installVisualNotebookEventSourceFailureHarness(page: Page) {
+async function installVisualAgentTaskEventSourceFailureHarness(page: Page) {
   await page.addInitScript(() => {
     type HarnessWindow = Window & {
-      __agsVisualNotebookEventSourceInstalled?: boolean;
+      __agsVisualAgentTaskEventSourceInstalled?: boolean;
     };
     const win = window as HarnessWindow;
-    if (win.__agsVisualNotebookEventSourceInstalled) {
+    if (win.__agsVisualAgentTaskEventSourceInstalled) {
       return;
     }
 
-    class VisualNotebookEventSource implements EventSource {
+    class VisualAgentTaskEventSource implements EventSource {
       static readonly CONNECTING = 0;
       static readonly OPEN = 1;
       static readonly CLOSED = 2;
@@ -1243,7 +1242,7 @@ async function installVisualNotebookEventSourceFailureHarness(page: Page) {
       readonly CLOSED = 2;
       readonly url: string;
       readonly withCredentials: boolean;
-      readyState = VisualNotebookEventSource.CONNECTING;
+      readyState = VisualAgentTaskEventSource.CONNECTING;
       private failureTimer: number | null = null;
       private onopenHandler: ((this: EventSource, ev: Event) => unknown) | null = null;
       private onmessageHandler: ((this: EventSource, ev: MessageEvent<string>) => unknown) | null = null;
@@ -1281,19 +1280,19 @@ async function installVisualNotebookEventSourceFailureHarness(page: Page) {
       }
 
       private scheduleFailure() {
-        if (this.failureTimer !== null || this.readyState === VisualNotebookEventSource.CLOSED) {
+        if (this.failureTimer !== null || this.readyState === VisualAgentTaskEventSource.CLOSED) {
           return;
         }
         this.failureTimer = window.setTimeout(() => {
           this.failureTimer = null;
-          if (this.readyState === VisualNotebookEventSource.CLOSED) {
+          if (this.readyState === VisualAgentTaskEventSource.CLOSED) {
             return;
           }
           if (!this.onerrorHandler) {
             this.scheduleFailure();
             return;
           }
-          this.readyState = VisualNotebookEventSource.CLOSED;
+          this.readyState = VisualAgentTaskEventSource.CLOSED;
           this.onerrorHandler.call(this as unknown as EventSource, new Event('error'));
         }, 50);
       }
@@ -1311,12 +1310,12 @@ async function installVisualNotebookEventSourceFailureHarness(page: Page) {
           window.clearTimeout(this.failureTimer);
           this.failureTimer = null;
         }
-        this.readyState = VisualNotebookEventSource.CLOSED;
+        this.readyState = VisualAgentTaskEventSource.CLOSED;
       }
     }
 
-    window.EventSource = VisualNotebookEventSource as unknown as typeof window.EventSource;
-    win.__agsVisualNotebookEventSourceInstalled = true;
+    window.EventSource = VisualAgentTaskEventSource as unknown as typeof window.EventSource;
+    win.__agsVisualAgentTaskEventSourceInstalled = true;
   });
 }
 
@@ -1372,11 +1371,11 @@ async function triggerVisualChatCapacityRecovery(page: Page) {
   await expect(chatComposerTextarea(page)).toBeEditable();
 }
 
-async function waitForVisualNotebookTaskSurface(page: Page) {
-  await expect(page.getByTestId('notebook__task-header')).toBeVisible();
-  await waitForNotebookTerminalTruthReady(page);
-  await expect(page.getByTestId('notebook__conversation-input')).toBeVisible();
-  await expect(page.getByTestId('notebook__send-btn')).toBeVisible();
+async function waitForVisualAgentTaskSurface(page: Page) {
+  await expect(page.getByTestId('agent-task__task-header')).toBeVisible();
+  await waitForAgentTaskTerminalTruthReady(page);
+  await expect(page.getByTestId('agent-tasks__conversation-input')).toBeVisible();
+  await expect(page.getByTestId('agent-tasks__send-btn')).toBeVisible();
 }
 
 const VISUAL_SCENE_SETUP_REGISTRY: Partial<Record<string, VisualScenarioSetup>> = {
@@ -1385,9 +1384,9 @@ const VISUAL_SCENE_SETUP_REGISTRY: Partial<Record<string, VisualScenarioSetup>> 
       await expect(page.getByTestId('use-guide__page')).toBeVisible();
     },
   },
-  agents: {
+  'agent-runners': {
     afterNavigate: async ({ page }) => {
-      await expect(page.getByTestId('agents__create-btn')).toBeVisible();
+      await expect(page.getByTestId('agent-runners__create-btn')).toBeVisible();
     },
   },
   'alerts-notifications-tab': {
@@ -1585,9 +1584,9 @@ const VISUAL_SCENE_SETUP_REGISTRY: Partial<Record<string, VisualScenarioSetup>> 
       await expect(page.getByTestId('public-auth__shell')).toHaveAttribute('data-layout', 'split');
     },
   },
-  'dialog-create-agent': {
+  'dialog-create-agent-runner': {
     afterNavigate: async ({ page }) => {
-      await page.getByTestId('agents__create-btn').click();
+      await page.getByTestId('agent-runners__create-btn').click();
       await expect(page.getByRole('dialog')).toBeVisible();
     },
   },
@@ -1738,174 +1737,193 @@ const VISUAL_SCENE_SETUP_REGISTRY: Partial<Record<string, VisualScenarioSetup>> 
       await page.waitForTimeout(400);
     },
   },
-  notebook: {
+  'agent-tasks': {
     afterNavigate: async ({ page }) => {
-      await expect(page.getByTestId('notebook__task-list')).toBeVisible();
+      await expect(page.getByTestId('agent-tasks__task-list')).toBeVisible();
     },
   },
-  'notebook-create-task-dialog': {
+  'agent-tasks-create-task-dialog': {
     afterNavigate: async ({ page }) => {
-      await page.getByTestId('notebook__create-task-btn').click();
+      await page.getByTestId('agent-tasks__create-task-btn').click();
       await expect(page.getByRole('dialog')).toBeVisible();
     },
   },
-  'notebook-task-detail': {
+  'agent-task-detail': {
     afterNavigate: async ({ page }) => {
-      await expect(page.getByTestId('notebook__task-header')).toBeVisible();
-      await waitForNotebookTerminalTruthReady(page);
+      await expect(page.getByTestId('agent-task__task-header')).toBeVisible();
+      await waitForAgentTaskTerminalTruthReady(page);
     },
   },
-  'notebook-task-detail-artifact-hover': {
+  'agent-task-detail-artifact-hover': {
     afterNavigate: async ({ page }) => {
-      await waitForNotebookTerminalTruthReady(page);
-      const firstArtifact = page.getByTestId('notebook__artifact-card').first();
+      await waitForAgentTaskTerminalTruthReady(page);
+      const firstArtifact = page.getByTestId('agent-tasks__artifact-card').first();
       await expect(firstArtifact).toBeVisible();
       await firstArtifact.hover();
-      await expect(page.getByTestId('notebook__artifact-hover-panel')).toBeVisible();
+      await expect(page.getByTestId('agent-tasks__artifact-hover-panel')).toBeVisible();
     },
   },
-  'notebook-task-lifecycle-artifact': {
+  'agent-task-lifecycle-artifact': {
     afterNavigate: async ({ page }) => {
-      await expect(page.getByTestId('notebook__task-header')).toBeVisible();
-      await waitForNotebookTerminalTruthReady(page);
-      const artifact = page.getByTestId('notebook__artifact-card').first();
+      await expect(page.getByTestId('agent-task__task-header')).toBeVisible();
+      await waitForAgentTaskTerminalTruthReady(page);
+      const artifact = page.getByTestId('agent-tasks__artifact-card').first();
       await expect(artifact).toBeVisible();
       await artifact.hover();
-      await expect(page.getByTestId('notebook__artifact-hover-panel')).toBeVisible();
+      await expect(page.getByTestId('agent-tasks__artifact-hover-panel')).toBeVisible();
     },
   },
-  'notebook-task-lifecycle-create-dialog': {
+  'agent-task-lifecycle-create-dialog': {
     afterNavigate: async ({ page }) => {
-      await expect(page.getByTestId('notebook__create-task-btn')).toBeVisible();
-      await page.getByTestId('notebook__create-task-btn').click();
+      await expect(page.getByTestId('agent-tasks__create-task-btn')).toBeVisible();
+      await page.getByTestId('agent-tasks__create-task-btn').click();
       await expect(page.getByRole('dialog')).toBeVisible();
     },
   },
-  'notebook-task-lifecycle-detail': {
+  'agent-task-lifecycle-detail': {
     afterNavigate: async ({ page }) => {
-      await expect(page.getByTestId('notebook__task-header')).toBeVisible();
-      await waitForNotebookTerminalTruthReady(page);
-      await expect(page.getByTestId('notebook__conversation-input')).toBeVisible();
-      await expect(page.getByTestId('notebook__send-btn')).toBeVisible();
+      await expect(page.getByTestId('agent-task__task-header')).toBeVisible();
+      await waitForAgentTaskTerminalTruthReady(page);
+      await expect(page.getByTestId('agent-tasks__conversation-input')).toBeVisible();
+      await expect(page.getByTestId('agent-tasks__send-btn')).toBeVisible();
     },
   },
-  'notebook-task-lifecycle-list': {
+  'agent-task-lifecycle-list': {
     afterNavigate: async ({ page }) => {
-      await expect(page.getByTestId('notebook__task-list')).toBeVisible();
-      await expect(page.getByTestId('notebook__task-card').first()).toBeVisible();
-      await expect(page.getByTestId('notebook__create-task-btn')).toBeVisible();
+      await expect(page.getByTestId('agent-tasks__task-list')).toBeVisible();
+      await expect(page.getByTestId('agent-tasks__task-card').first()).toBeVisible();
+      await expect(page.getByTestId('agent-tasks__create-task-btn')).toBeVisible();
     },
   },
-  'notebook-hidden-terminal-blocked': {
+  'agent-task-hidden-terminal-blocked': {
     beforeNavigate: async ({ page, scenario }) => {
-      await createVisualNotebookTerminalSession(page, scenario.route, {
+      await createVisualAgentTaskTerminalSession(page, scenario.route, {
         status: 'failed',
       });
-      await seedVisualNotebookConversationHistory(page, scenario.route);
+      await seedVisualAgentTaskConversationHistory(page, scenario.route);
     },
     afterNavigate: async ({ page }) => {
-      await waitForNotebookTerminalTruthReady(page);
-      await expect(page.getByTestId('notebook__task-terminal-status-strip')).toBeVisible();
-      await expect(page.getByTestId('notebook__task-terminal-status-strip')).toContainText('terminal session');
-      await expect(page.getByTestId('notebook__task-terminal-status-action')).toHaveText('Reopen Terminal Workspace');
-      await expect(page.getByTestId('notebook__task-terminal-status-end-all')).toBeVisible();
-      await expect(page.getByTestId('notebook__conversation-blocked-state')).toHaveCount(0);
-      await expect(notebookConversationTextarea(page)).toHaveAttribute(
+      await waitForAgentTaskTerminalTruthReady(page);
+      await expect(page.getByTestId('agent-tasks__task-terminal-status-strip')).toBeVisible();
+      await expect(page.getByTestId('agent-tasks__task-terminal-status-strip')).toContainText('terminal session');
+      await expect(page.getByTestId('agent-tasks__task-terminal-status-action')).toHaveText('Reopen Terminal Workspace');
+      await expect(page.getByTestId('agent-tasks__task-terminal-status-end-all')).toBeVisible();
+      await expect(page.getByTestId('agent-tasks__conversation-blocked-state')).toHaveCount(0);
+      await expect(agentTaskConversationTextarea(page)).toHaveAttribute(
         'placeholder',
         'End terminal sessions before starting a new agent run.',
       );
     },
   },
-  'notebook-cancel-escalation-confirm': {
+  'agent-task-cancel-escalation-confirm': {
     beforeNavigate: async ({ page, scenario }) => {
       await installVisualExactTimeoutRewrite(page, {
-        [VISUAL_NOTEBOOK_CANCEL_ESCALATION_DELAY_MS]: 25,
+        [VISUAL_AGENT_TASK_CANCEL_ESCALATION_DELAY_MS]: 25,
       });
-      await seedVisualNotebookCancelEscalation(page, scenario.route);
+      await seedVisualAgentTaskCancelEscalation(page, scenario.route);
     },
     afterNavigate: async ({ page }) => {
-      await expect(page.getByTestId('notebook__task-header')).toBeVisible();
-      await waitForNotebookTerminalTruthReady(page);
-      await expect(page.getByTestId('notebook__cancel-escalation-dialog')).toBeVisible({ timeout: 15_000 });
-      await expect(page.getByTestId('notebook__cancel-escalation-cancel')).toBeVisible();
-      await expect(page.getByTestId('notebook__cancel-escalation-confirm')).toBeVisible();
+      await expect(page.getByTestId('agent-task__task-header')).toBeVisible();
+      await waitForAgentTaskTerminalTruthReady(page);
+      await expect(page.getByTestId('agent-tasks__cancel-escalation-dialog')).toBeVisible({ timeout: 15_000 });
+      await expect(page.getByTestId('agent-tasks__cancel-escalation-cancel')).toBeVisible();
+      await expect(page.getByTestId('agent-tasks__cancel-escalation-confirm')).toBeVisible();
+    },
+    screenshotOptions: {
+      maskTestIds: ['agent-tasks__message-active-run-elapsed'],
+      maxDiffPixelRatio: 0.002,
     },
   },
-  'notebook-sse-reconnecting': {
+  'agent-task-sse-reconnecting': {
     beforeNavigate: async ({ page, scenario }) => {
-      await seedVisualNotebookRunState(page, scenario.route, 'running');
+      await seedVisualAgentTaskRunState(page, scenario.route, 'running');
       await installVisualExactTimeoutRewrite(page, {
-        [VISUAL_NOTEBOOK_SSE_RECONNECT_DELAY_MS]: 60_000,
+        [VISUAL_AGENT_TASK_SSE_RECONNECT_DELAY_MS]: 60_000,
       });
-      await installVisualNotebookEventSourceFailureHarness(page);
+      await installVisualAgentTaskEventSourceFailureHarness(page);
     },
     afterNavigate: async ({ page }) => {
-      await waitForVisualNotebookTaskSurface(page);
-      await expect(page.getByTestId('notebook__sse-status')).toContainText('Recovering live task stream', {
+      await waitForVisualAgentTaskSurface(page);
+      const activeRunFooter = page.getByTestId('agent-tasks__message-active-run-footer');
+      await expect(activeRunFooter.getByTestId('agent-tasks__message-active-run-status')).toContainText('Reconnecting', {
         timeout: 15_000,
       });
     },
+    screenshotOptions: {
+      maskTestIds: ['agent-tasks__message-active-run-elapsed'],
+      maxDiffPixelRatio: 0.002,
+    },
   },
-  'notebook-sse-unavailable-reconcile': {
+  'agent-task-sse-unavailable-reconcile': {
     beforeNavigate: async ({ page, scenario }) => {
-      await seedVisualNotebookRunState(page, scenario.route, 'running');
+      await seedVisualAgentTaskRunState(page, scenario.route, 'running');
       await installVisualExactTimeoutRewrite(page, {
-        [VISUAL_NOTEBOOK_SSE_RECONNECT_DELAY_MS]: 10,
+        [VISUAL_AGENT_TASK_SSE_RECONNECT_DELAY_MS]: 10,
       });
-      await installVisualNotebookEventSourceFailureHarness(page);
+      await installVisualAgentTaskEventSourceFailureHarness(page);
     },
     afterNavigate: async ({ page }) => {
-      await waitForVisualNotebookTaskSurface(page);
-      await expect(page.getByTestId('notebook__sse-status')).toContainText('Realtime task stream unavailable', {
+      await waitForVisualAgentTaskSurface(page);
+      await expect(page.getByTestId('agent-tasks__sse-status')).toContainText('Realtime task stream unavailable', {
         timeout: 25_000,
       });
     },
+    screenshotOptions: {
+      maskTestIds: ['agent-tasks__message-active-run-elapsed'],
+      maxDiffPixelRatio: 0.002,
+    },
   },
-  'notebook-task-cancelling': {
+  'agent-task-cancelling': {
     beforeNavigate: async ({ page, scenario }) => {
-      await seedVisualNotebookRunState(page, scenario.route, 'cancelling');
+      await seedVisualAgentTaskRunState(page, scenario.route, 'cancelling');
     },
     afterNavigate: async ({ page }) => {
-      await waitForVisualNotebookTaskSurface(page);
-      await expect(page.getByTestId('notebook__run-activity-summary')).toContainText(
-        'Waiting for the agent to stop the current run.',
-      );
-      await expect(notebookConversationTextarea(page)).toHaveAttribute(
+      await waitForVisualAgentTaskSurface(page);
+      const activeRunFooter = page.getByTestId('agent-tasks__message-active-run-footer');
+      await expect(activeRunFooter.getByTestId('agent-tasks__message-active-run-status')).toContainText('Cancelling');
+      await expect(agentTaskConversationTextarea(page)).toHaveAttribute(
         'placeholder',
         'Wait for the current run to stop before sending another message.',
       );
     },
+    screenshotOptions: {
+      maskTestIds: ['agent-tasks__message-active-run-elapsed'],
+      maxDiffPixelRatio: 0.002,
+    },
   },
-  'notebook-task-finalizing': {
+  'agent-task-finalizing': {
     beforeNavigate: async ({ page, scenario }) => {
-      await seedVisualNotebookRunState(page, scenario.route, 'finalizing');
+      await seedVisualAgentTaskRunState(page, scenario.route, 'finalizing');
     },
     afterNavigate: async ({ page }) => {
-      await waitForVisualNotebookTaskSurface(page);
-      await expect(page.getByTestId('notebook__run-activity-summary')).toContainText(
-        'The run has ended. Saving the final answer and artifacts.',
-      );
-      await expect(notebookConversationTextarea(page)).toHaveAttribute(
+      await waitForVisualAgentTaskSurface(page);
+      const activeRunFooter = page.getByTestId('agent-tasks__message-active-run-footer');
+      await expect(activeRunFooter.getByTestId('agent-tasks__message-active-run-status')).toContainText('Saving');
+      await expect(agentTaskConversationTextarea(page)).toHaveAttribute(
         'placeholder',
         'Wait for the final results to finish saving before sending another message.',
       );
     },
+    screenshotOptions: {
+      maskTestIds: ['agent-tasks__message-active-run-elapsed'],
+      maxDiffPixelRatio: 0.002,
+    },
   },
-  'notebook-task-recovered-ready': {
+  'agent-task-recovered-ready': {
     beforeNavigate: async ({ page, scenario }) => {
-      await seedVisualNotebookRunState(page, scenario.route, 'idle');
+      await seedVisualAgentTaskRunState(page, scenario.route, 'idle');
     },
     afterNavigate: async ({ page }) => {
-      await waitForVisualNotebookTaskSurface(page);
-      await expect(page.getByTestId('notebook__run-activity-summary')).toHaveCount(0);
-      await expect(notebookConversationTextarea(page)).toBeEnabled();
+      await waitForVisualAgentTaskSurface(page);
+      await expect(page.getByTestId('agent-tasks__message-active-run-footer')).toHaveCount(0);
+      await expect(agentTaskConversationTextarea(page)).toBeEnabled();
     },
   },
-  'notebook-provider-upstream-error': {
+  'agent-task-provider-upstream-error': {
     beforeNavigate: async ({ page, scenario }) => {
-      const { taskId } = extractNotebookTaskRouteParts(scenario.route);
-      await seedVisualNotebookRunState(page, scenario.route, 'idle');
-      await installVisualNotebookMessagesOverride(page, scenario.route, [
+      const { taskId } = extractAgentTaskRouteParts(scenario.route);
+      await seedVisualAgentTaskRunState(page, scenario.route, 'idle');
+      await installVisualAgentTaskMessagesOverride(page, scenario.route, [
         {
           id: 'msg_visual_provider_user',
           task_id: taskId,
@@ -1921,7 +1939,7 @@ const VISUAL_SCENE_SETUP_REGISTRY: Partial<Record<string, VisualScenarioSetup>> 
           created_at: '2026-04-12T09:14:06.000Z',
         },
       ]);
-      await installVisualNotebookTraceOverride(page, scenario.route, [
+      await installVisualAgentTaskTraceOverride(page, scenario.route, [
         {
           id: 'trace_visual_provider_001',
           task_id: taskId,
@@ -1933,7 +1951,7 @@ const VISUAL_SCENE_SETUP_REGISTRY: Partial<Record<string, VisualScenarioSetup>> 
           phase: 'start',
           status: 'running',
           name: 'codex.exec',
-          summary: 'Starting notebook execution',
+          summary: 'Starting agent task execution',
         },
         {
           id: 'trace_visual_provider_002',
@@ -1963,7 +1981,7 @@ const VISUAL_SCENE_SETUP_REGISTRY: Partial<Record<string, VisualScenarioSetup>> 
           phase: 'end',
           status: 'error',
           name: 'run.summary',
-          summary: 'Notebook run failed',
+          summary: 'Agent task run failed',
           details: {
             final_status: 'error',
             duration_ms: 4000,
@@ -1972,72 +1990,75 @@ const VISUAL_SCENE_SETUP_REGISTRY: Partial<Record<string, VisualScenarioSetup>> 
       ]);
     },
     afterNavigate: async ({ page }) => {
-      await waitForVisualNotebookTaskSurface(page);
-      await expect(page.getByTestId('notebook__agent-message-bubble')).toBeVisible();
-      await expect(page.getByTestId('notebook__message-run-status')).toContainText('Needs retry', {
+      await waitForVisualAgentTaskSurface(page);
+      await expect(page.getByTestId('agent-tasks__agent-message-bubble')).toBeVisible();
+      await expect(page.getByTestId('agent-tasks__message-run-status')).toContainText('Needs retry', {
         timeout: 15_000,
       });
-      await expect(page.getByTestId('notebook__message-final-answer')).toContainText('upstream error');
-      await expect(page.getByTestId('notebook__send-btn')).toBeVisible();
-      await expect(notebookConversationTextarea(page)).toBeEnabled();
+      await expect(page.getByTestId('agent-tasks__message-final-answer')).toContainText('upstream error');
+      await expect(page.getByTestId('agent-tasks__send-btn')).toBeVisible();
+      await expect(agentTaskConversationTextarea(page)).toBeEnabled();
     },
   },
-  'notebook-task-running': {
+  'agent-task-running': {
     beforeNavigate: async ({ page, scenario }) => {
-      await seedVisualNotebookRunState(page, scenario.route, 'running');
+      await seedVisualAgentTaskRunState(page, scenario.route, 'running');
     },
     afterNavigate: async ({ page }) => {
-      await expectVisualNotebookActiveRunFooter(page);
-      await expect(notebookConversationTextarea(page)).toBeEnabled();
+      await expectVisualAgentTaskActiveRunFooter(page);
+      await expect(agentTaskConversationTextarea(page)).toBeEnabled();
     },
     screenshotOptions: {
-      maskTestIds: ['notebook__message-active-run-elapsed'],
+      maskTestIds: ['agent-tasks__message-active-run-elapsed'],
       maxDiffPixelRatio: 0.008,
     },
   },
-  'notebook-task-running-long-action-narrow': {
+  'agent-task-running-long-action-narrow': {
     beforeNavigate: async ({ page, scenario }) => {
-      await seedVisualNotebookLongActionRunState(page, scenario.route);
+      await seedVisualAgentTaskLongActionRunState(page, scenario.route);
     },
     afterNavigate: async ({ page }) => {
-      await expectVisualNotebookLongActiveRunFooterLayout(page);
-      await expect(notebookConversationTextarea(page)).toBeEnabled();
+      await expectVisualAgentTaskLongActiveRunFooterLayout(page);
+      await expect(agentTaskConversationTextarea(page)).toBeEnabled();
     },
     screenshotOptions: {
-      maskTestIds: ['notebook__message-active-run-elapsed'],
+      maskTestIds: ['agent-tasks__message-active-run-elapsed'],
       maxDiffPixelRatio: 0.008,
     },
   },
-  'notebook-task-terminating': {
+  'agent-task-terminating': {
     beforeNavigate: async ({ page, scenario }) => {
-      await seedVisualNotebookRunState(page, scenario.route, 'terminating');
+      await seedVisualAgentTaskRunState(page, scenario.route, 'terminating');
     },
     afterNavigate: async ({ page }) => {
-      await waitForVisualNotebookTaskSurface(page);
-      await expect(page.getByTestId('notebook__run-activity-summary')).toContainText(
-        'Ending the current execution environment before the next action can start.',
-      );
-      await expect(notebookConversationTextarea(page)).toHaveAttribute(
+      await waitForVisualAgentTaskSurface(page);
+      const activeRunFooter = page.getByTestId('agent-tasks__message-active-run-footer');
+      await expect(activeRunFooter.getByTestId('agent-tasks__message-active-run-status')).toContainText('Stopping');
+      await expect(agentTaskConversationTextarea(page)).toHaveAttribute(
         'placeholder',
         'Wait for the current execution environment to finish stopping before sending another message.',
       );
     },
+    screenshotOptions: {
+      maskTestIds: ['agent-tasks__message-active-run-elapsed'],
+      maxDiffPixelRatio: 0.002,
+    },
   },
-  'notebook-terminal-truth-unavailable': {
+  'agent-task-terminal-truth-unavailable': {
     beforeNavigate: async ({ page, scenario }) => {
-      await seedVisualNotebookConversationHistory(page, scenario.route);
+      await seedVisualAgentTaskConversationHistory(page, scenario.route);
       await seedVisualMswHeaders(page, {
         'x-mock-terminal-truth': 'unavailable',
       });
     },
     afterNavigate: async ({ page }) => {
-      await expect(page.getByTestId('notebook__task-header')).toHaveAttribute('data-terminal-truth-state', 'unavailable', {
+      await expect(page.getByTestId('agent-task__task-header')).toHaveAttribute('data-terminal-truth-state', 'unavailable', {
         timeout: 15_000,
       });
-      await expect(page.getByTestId('notebook__task-terminal-truth-unavailable')).toBeVisible();
-      await expect(page.getByTestId('notebook__task-terminal-truth-unavailable-retry')).toHaveText('Retry terminal status check');
-      await expect(page.getByTestId('notebook__conversation-blocked-state')).toHaveCount(0);
-      await expect(notebookConversationTextarea(page)).toBeDisabled();
+      await expect(page.getByTestId('agent-tasks__task-terminal-truth-unavailable')).toBeVisible();
+      await expect(page.getByTestId('agent-tasks__task-terminal-truth-unavailable-retry')).toHaveText('Retry terminal status check');
+      await expect(page.getByTestId('agent-tasks__conversation-blocked-state')).toHaveCount(0);
+      await expect(agentTaskConversationTextarea(page)).toBeDisabled();
     },
   },
   'notification-center-join-request': {

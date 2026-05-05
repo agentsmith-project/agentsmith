@@ -20,7 +20,7 @@ import type {
   Task,
   CreateTaskRequest,
   UpdateTaskRequest,
-  SendMessageRequest,
+  StartTaskRunRequest,
   TaskListParams,
   TaskTraceListResponse,
   TaskAttachedInputDetail,
@@ -183,9 +183,9 @@ export function useDeleteTask() {
 }
 
 /**
- * Hook to query messages in a task
+ * Hook to query activity in a task
  */
-export function useTaskMessages(
+export function useTaskActivity(
   workspaceId: string,
   projectId: string,
   taskId: string,
@@ -193,17 +193,17 @@ export function useTaskMessages(
   const taskAPI = new TaskAPI(getApiClient());
 
   return useQuery({
-    queryKey: queryKeys.tasks.messages(workspaceId, projectId, taskId),
-    queryFn: () => taskAPI.listMessages(workspaceId, projectId, taskId),
+    queryKey: queryKeys.tasks.activity(workspaceId, projectId, taskId),
+    queryFn: () => taskAPI.listActivity(workspaceId, projectId, taskId),
     enabled: !!workspaceId && !!projectId && !!taskId,
     staleTime: 5000, // 5 seconds
   });
 }
 
 /**
- * Hook to send a message
+ * Hook to start a task run
  */
-export function useSendMessage() {
+export function useStartTaskRun() {
   const queryClient = useQueryClient();
   const taskAPI = new TaskAPI(getApiClient());
 
@@ -217,11 +217,11 @@ export function useSendMessage() {
       workspaceId: string;
       projectId: string;
       taskId: string;
-      data: SendMessageRequest;
-    }) => taskAPI.sendMessage(workspaceId, projectId, taskId, data),
+      data: StartTaskRunRequest;
+    }) => taskAPI.startRun(workspaceId, projectId, taskId, data),
     onSuccess: (_, variables) => {
       queryClient.invalidateQueries({
-        queryKey: queryKeys.tasks.messages(variables.workspaceId, variables.projectId, variables.taskId),
+        queryKey: queryKeys.tasks.activity(variables.workspaceId, variables.projectId, variables.taskId),
       });
       queryClient.invalidateQueries({
         queryKey: queryKeys.tasks.detail(variables.workspaceId, variables.projectId, variables.taskId),

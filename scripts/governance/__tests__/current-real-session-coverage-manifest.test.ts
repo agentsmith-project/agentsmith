@@ -18,23 +18,13 @@ import {
 } from '../current-real-session-coverage-manifest';
 import { findCurrentVerificationCampaignById } from '../current-verification-campaign-manifest';
 
-const CHAT_BACKEND_REAL_SESSION_NAME = 'chat-backend-real-runner';
-const CHAT_BACKEND_REAL_SESSION_COMMAND = 'bash scripts/run-integration-e2e-full.sh --session chat-backend-real-runner';
+const CHAT_BACKEND_REAL_SESSION_NAME = 'chat-backend-real-endpoint';
+const CHAT_BACKEND_REAL_SESSION_COMMAND = 'bash scripts/run-integration-e2e-full.sh --session chat-backend-real-endpoint';
 const CHAT_BACKEND_REAL_SESSION_SHARDS = [
   {
-    shard_id: 'chat-runner-stream',
-    spec: 'e2e/integration-chat-llm-runner.spec.ts',
-    grep: 'streams multi-turn chat through the real local chat runner and persists replies',
-  },
-  {
-    shard_id: 'chat-runner-continuity',
-    spec: 'e2e/integration-chat-llm-runner.spec.ts',
-    grep: 'preserves conversation continuity across refresh with story-bound trace evidence',
-  },
-  {
-    shard_id: 'chat-runner-workspace-reclaim',
-    spec: 'e2e/integration-chat-llm-runner.spec.ts',
-    grep: 'warns and recreates the session workspace when the local chat workspace has been reclaimed',
+    shard_id: 'chat-endpoint-real-completion',
+    spec: 'e2e/integration-chat.spec.ts',
+    grep: 'real deepseek',
   },
   {
     shard_id: 'chat-stop-escalation',
@@ -197,27 +187,20 @@ describe('current real session coverage manifest', () => {
 
     expect(requiredSources).toEqual(expect.arrayContaining([
       expect.objectContaining({ source_kind: 'npm_script', npm_script: 'test:skills:backend-real' }),
-      expect.objectContaining({ source_kind: 'npm_script', npm_script: 'test:notebook:runner:backend-real' }),
-      expect.objectContaining({ source_kind: 'npm_script', npm_script: 'test:chat:runner:backend-real' }),
-      expect.objectContaining({ source_kind: 'npm_script', npm_script: 'test:e2e:integration:agents:chat' }),
-      expect.objectContaining({ source_kind: 'npm_script', npm_script: 'test:e2e:integration:notebook' }),
-      expect.objectContaining({ source_kind: 'npm_script', npm_script: 'test:e2e:integration:notebook:docker' }),
-      expect.objectContaining({ source_kind: 'npm_script', npm_script: 'test:agents:backend-real:runner' }),
-      expect.objectContaining({ source_kind: 'npm_script', npm_script: 'test:internal:backend-real:chat' }),
-      expect.objectContaining({ source_kind: 'npm_script', npm_script: 'test:internal:backend-real:notebook-workspace' }),
+      expect.objectContaining({ source_kind: 'npm_script', npm_script: 'test:agent-task:runner:backend-real' }),
+      expect.objectContaining({ source_kind: 'npm_script', npm_script: 'test:e2e:integration:chat:real' }),
+      expect.objectContaining({ source_kind: 'npm_script', npm_script: 'test:e2e:integration:agent-task' }),
+      expect.objectContaining({ source_kind: 'npm_script', npm_script: 'test:e2e:integration:agent-task:terminal:ux' }),
+      expect.objectContaining({ source_kind: 'npm_script', npm_script: 'test:agent-task:backend-real:runner' }),
+      expect.objectContaining({ source_kind: 'npm_script', npm_script: 'test:internal:backend-real:agent-task-workspace' }),
       expect.objectContaining({ source_kind: 'npm_script', npm_script: 'test:files:backend-real:sync' }),
       expect.objectContaining({ source_kind: 'npm_script', npm_script: 'test:api-key-endpoint-access' }),
       expect.objectContaining({ source_kind: 'npm_script', npm_script: 'test:e2e:integration:universal-proxy:model-profile' }),
       expect.objectContaining({ source_kind: 'playwright_spec', spec: 'e2e/integration-release-user-story.spec.ts' }),
       expect.objectContaining({
         source_kind: 'playwright_grep',
-        spec: 'e2e/integration-notebook-codex-runner.spec.ts',
-        grep: 'docker',
-      }),
-      expect.objectContaining({
-        source_kind: 'playwright_grep',
-        spec: 'e2e/integration-notebook-codex-runner.spec.ts',
-        grep: 'uses feishu-docs managed credential projection in a real notebook codex runner task',
+        spec: 'e2e/integration-agent-task-runner.spec.ts',
+        grep: 'uses feishu-docs managed credential projection in a real Agent Task run resolved by the default Agent Runner',
       }),
       expect.objectContaining({
         source_kind: 'playwright_grep',
@@ -247,12 +230,12 @@ describe('current real session coverage manifest', () => {
     const missingGrep = cloneManifest();
     missingGrep.coverage = missingGrep.coverage.filter((entry) => !(
       entry.source_kind === 'playwright_grep'
-      && entry.spec === 'e2e/integration-chat-llm-runner.spec.ts'
-      && entry.grep === 'streams multi-turn chat through the real local chat runner and persists replies'
+      && entry.spec === 'e2e/integration-chat.spec.ts'
+      && entry.grep === 'real deepseek'
     ));
     expectValidationFailure(
       missingGrep,
-      'missing current real session coverage source: playwright_grep:e2e/integration-chat-llm-runner.spec.ts',
+      'missing current real session coverage source: playwright_grep:e2e/integration-chat.spec.ts',
     );
 
     expectValidationFailureWithSources(
@@ -276,7 +259,10 @@ describe('current real session coverage manifest', () => {
       },
       readShellFile: (relativePath) => (
         relativePath === 'scripts/new-backend-real-gate.sh'
-          ? 'run_grep e2e/integration-chat-llm-runner.spec.ts "streams multi-turn chat through the real local chat runner and persists replies" 21001 3101\n'
+          ? [
+            'run_grep e2e/integration-chat.spec.ts "real deepseek" 21001 3101',
+            'run_internal_spec_grep e2e/integration-context-store-isolation.spec.ts "member context stays private between workspace members" 20079 3101 || skills_status=$?',
+          ].join('\n')
           : undefined
       ),
     });
@@ -286,8 +272,19 @@ describe('current real session coverage manifest', () => {
       expect.objectContaining({ source_kind: 'npm_script', npm_script: 'test:new-backend-real' }),
       expect.objectContaining({
         source_kind: 'playwright_grep',
-        spec: 'e2e/integration-chat-llm-runner.spec.ts',
-        grep: 'streams multi-turn chat through the real local chat runner and persists replies',
+        spec: 'e2e/integration-chat.spec.ts',
+        grep: 'real deepseek',
+      }),
+      expect.objectContaining({
+        source_kind: 'playwright_grep',
+        spec: 'e2e/integration-context-store-isolation.spec.ts',
+        grep: 'member context stays private between workspace members',
+      }),
+    ]));
+    expect(discovery.sources).not.toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        source_kind: 'playwright_spec',
+        spec: 'e2e/integration-context-store-isolation.spec.ts',
       }),
     ]));
 
@@ -298,7 +295,7 @@ describe('current real session coverage manifest', () => {
       },
       readShellFile: (relativePath) => (
         relativePath === 'scripts/direct-backend-real-gate.sh'
-          ? 'npx playwright test e2e/integration-notebook-codex-runner.spec.ts --grep docker\n'
+          ? 'npx playwright test e2e/integration-agent-task-runner.spec.ts --grep docker\n'
           : undefined
       ),
     });
@@ -308,7 +305,7 @@ describe('current real session coverage manifest', () => {
       expect.objectContaining({ source_kind: 'npm_script', npm_script: 'test:direct-backend-real' }),
       expect.objectContaining({
         source_kind: 'playwright_grep',
-        spec: 'e2e/integration-notebook-codex-runner.spec.ts',
+        spec: 'e2e/integration-agent-task-runner.spec.ts',
         grep: 'docker',
       }),
     ]));
@@ -447,8 +444,8 @@ describe('current real session coverage manifest', () => {
       session_command: CHAT_BACKEND_REAL_SESSION_COMMAND,
       strategy: 'serial_diagnostic_shards',
       evidence_scope: 'per_grep_shard',
-      proposed_shard_id: 'external-chat-runner',
-      evidence_owner: 'backend-real-runner:external-chat',
+      proposed_shard_id: 'chat-endpoint-real',
+      evidence_owner: 'backend-real-chat:endpoint',
       stack_reuse: 'single_backend_real_stack_per_session',
     });
     expect(contract).not.toHaveProperty('verdict');
@@ -458,15 +455,15 @@ describe('current real session coverage manifest', () => {
       CHAT_BACKEND_REAL_SESSION_SHARDS.map((shard, index) => ({
         ...shard,
         coverage_id: expectedEntries[index]?.id,
-        proposed_shard_id: 'external-chat-runner',
-        evidence_owner: 'backend-real-runner:external-chat',
+        proposed_shard_id: 'chat-endpoint-real',
+        evidence_owner: 'backend-real-chat:endpoint',
       })),
     );
 
     for (const entry of expectedEntries) {
       expect(entry).toMatchObject({
-        proposed_shard_id: 'external-chat-runner',
-        evidence_owner: 'backend-real-runner:external-chat',
+        proposed_shard_id: 'chat-endpoint-real',
+        evidence_owner: 'backend-real-chat:endpoint',
         isolation_level: 'serialized',
         merge_allowed: false,
       });
@@ -474,7 +471,7 @@ describe('current real session coverage manifest', () => {
 
     const runner = readFileSync('scripts/run-integration-e2e-full.sh', 'utf8');
     expect(runner).toContain(CHAT_BACKEND_REAL_SESSION_NAME);
-    expect(runner).toContain('run_backend_real_chat_runner_session_shards');
+    expect(runner).toContain('run_backend_real_chat_endpoint_session_shards');
     for (const shard of CHAT_BACKEND_REAL_SESSION_SHARDS) {
       expect(runner).toContain(`run_playwright_shard "${shard.shard_id}" "${shard.spec}" --grep "${shard.grep}"`);
     }
@@ -591,7 +588,7 @@ describe('current real session coverage manifest', () => {
 
     const missingRequiredSessionShard = cloneManifestWithSessionCoalescing();
     missingRequiredSessionShard.session_coalescing[0].shards = missingRequiredSessionShard.session_coalescing[0].shards.slice(1);
-    expectValidationFailure(missingRequiredSessionShard, 'missing required session shard chat-runner-stream');
+    expectValidationFailure(missingRequiredSessionShard, 'missing required session shard chat-endpoint-real-completion');
 
     const extraValidShardWithReorderedRequiredShards = cloneManifestWithSessionCoalescing();
     const extraChatGrep = chatGrepEntry('e2e/integration-chat.spec.ts', 'real deepseek');

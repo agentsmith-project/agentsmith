@@ -30,7 +30,7 @@ runner_status() {
   local runner_count
   local socket_state
   pid="$(cat "${RUNNER_PID_FILE}" 2>/dev/null || true)"
-  runner_count="$(count_matching_processes 'make notebook-agent-runner')"
+  runner_count="$(count_matching_processes 'make agent-task-runner-from-state')"
   socket_state="$(runner_socket_health_state)"
   if [[ "${socket_state}" == "connected" ]]; then
     if [[ -n "${pid}" ]] && kill -0 "${pid}" >/dev/null 2>&1; then
@@ -62,5 +62,5 @@ runner_status
 
 PROJECT_ID="$(state_get project.id)"
 if [[ -n "${PROJECT_ID}" ]]; then
-  echo "Notebook: http://localhost:${PORT_WEB}/${LOCALE}/workspaces/${WORKSPACE_ID}/projects/${PROJECT_ID}/notebook"
+  echo "Agent tasks: http://localhost:${PORT_WEB}/${LOCALE}/workspaces/${WORKSPACE_ID}/projects/${PROJECT_ID}/agent-tasks"
 fi

@@ -164,7 +164,7 @@ export function useChatMutations(args: UseChatMutationsArgs) {
   const updateSessionMutation = useMutation({
     mutationFn: async (input: {
       sessionId: string;
-      data: Partial<Pick<ChatSession, 'title' | 'model' | 'endpoint_id' | 'external_agent_id' | 'pinned' | 'starred'>>;
+      data: Partial<Pick<ChatSession, 'title' | 'model' | 'endpoint_id' | 'pinned' | 'starred'>>;
     }) => chatAPI.updateSession(workspaceId, projectId, input.sessionId, input.data),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: chatSessionsKey(workspaceId, projectId) }),
   });

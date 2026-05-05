@@ -105,32 +105,26 @@ APP_BASE_HASH="$(hash_files \
   "${ROOT_DIR}/package-lock.json" \
   "${ROOT_DIR}/packages/adapters-cf/package.json" \
   "${ROOT_DIR}/packages/adapters-private/package.json" \
-  "${ROOT_DIR}/packages/notebook-codex-runner/package.json" \
+  "${ROOT_DIR}/packages/agent-task-runner/package.json" \
   "${ROOT_DIR}/packages/api-entry-cf/package.json" \
   "${ROOT_DIR}/packages/api-entry-node/package.json" \
   "${ROOT_DIR}/packages/application/package.json" \
   "${ROOT_DIR}/packages/contracts/package.json" \
   "${ROOT_DIR}/packages/domain/package.json" \
   "${ROOT_DIR}/packages/ports/package.json")"
-RUNNER_BASE_HASH="$(hash_files \
-  "${ROOT_DIR}/infra/runner/Dockerfile.notebook-codex-runner-base" \
+AGENT_TASK_RUNNER_BASE_HASH="$(hash_files \
+  "${ROOT_DIR}/infra/runner/Dockerfile.agent-task-runner-base" \
   "${ROOT_DIR}/package.json" \
   "${ROOT_DIR}/package-lock.json" \
   "${ROOT_DIR}/packages/agent-runner/package.json" \
-  "${ROOT_DIR}/packages/notebook-codex-runner/package.json")"
-CHAT_RUNNER_BASE_HASH="$(hash_files \
-  "${ROOT_DIR}/infra/runner/Dockerfile.chat-llm-runner-base" \
-  "${ROOT_DIR}/package.json" \
-  "${ROOT_DIR}/package-lock.json" \
-  "${ROOT_DIR}/packages/agent-runner/package.json" \
-  "${ROOT_DIR}/packages/chat-llm-runner/package.json")"
+  "${ROOT_DIR}/packages/agent-task-runner/package.json")"
 VERIFY_RUNNER_BASE_HASH="$(hash_files \
   "${ROOT_DIR}/infra/deploy/Dockerfile.agentsmith-verify-runner-base" \
   "${ROOT_DIR}/package.json" \
   "${ROOT_DIR}/package-lock.json" \
   "${ROOT_DIR}/packages/adapters-cf/package.json" \
   "${ROOT_DIR}/packages/adapters-private/package.json" \
-  "${ROOT_DIR}/packages/notebook-codex-runner/package.json" \
+  "${ROOT_DIR}/packages/agent-task-runner/package.json" \
   "${ROOT_DIR}/packages/api-entry-cf/package.json" \
   "${ROOT_DIR}/packages/api-entry-node/package.json" \
   "${ROOT_DIR}/packages/application/package.json" \
@@ -139,12 +133,10 @@ VERIFY_RUNNER_BASE_HASH="$(hash_files \
   "${ROOT_DIR}/packages/ports/package.json")"
 
 APP_BASE_IMAGE="${APP_BASE_IMAGE:-agentsmith-app-base:${APP_BASE_HASH}}"
-RUNNER_BASE_IMAGE="${RUNNER_BASE_IMAGE:-agentsmith-notebook-codex-runner-base:${RUNNER_BASE_HASH}}"
-CHAT_RUNNER_BASE_IMAGE="${CHAT_RUNNER_BASE_IMAGE:-agentsmith-chat-llm-runner-base:${CHAT_RUNNER_BASE_HASH}}"
+AGENT_TASK_RUNNER_BASE_IMAGE="${AGENT_TASK_RUNNER_BASE_IMAGE:-agentsmith-agent-task-runner-base:${AGENT_TASK_RUNNER_BASE_HASH}}"
 VERIFY_RUNNER_BASE_IMAGE="${VERIFY_RUNNER_BASE_IMAGE:-agentsmith-verify-runner-base:${VERIFY_RUNNER_BASE_HASH}}"
 APP_IMAGE="${APP_IMAGE:-agentsmith-app:${RELEASE_ID}}"
-RUNNER_IMAGE="${RUNNER_IMAGE:-agentsmith-notebook-codex-runner:${RELEASE_ID}}"
-CHAT_RUNNER_IMAGE="${CHAT_RUNNER_IMAGE:-agentsmith-chat-llm-runner:${RELEASE_ID}}"
+AGENT_TASK_RUNNER_IMAGE="${AGENT_TASK_RUNNER_IMAGE:-agentsmith-agent-task-runner:${RELEASE_ID}}"
 VERIFY_RUNNER_IMAGE="${VERIFY_RUNNER_IMAGE:-agentsmith-verify-runner:${RELEASE_ID}}"
 SANDBOX_MANAGER_IMAGE="${SANDBOX_MANAGER_IMAGE:-sandbox-manager:${RELEASE_ID}}"
 resolve_llmup_image_lock "${LLMUP_IMAGE_LOCK}"
@@ -171,13 +163,10 @@ docker_build_local "${BUILD_ARGS[@]}" -t "${APP_BASE_IMAGE}" -f "${ROOT_DIR}/inf
 echo "[bundle] building app image ${APP_IMAGE}"
 docker_build_local "${BUILD_ARGS[@]}" --build-arg APP_BASE_IMAGE="${APP_BASE_IMAGE}" -t "${APP_IMAGE}" -f "${ROOT_DIR}/infra/deploy/Dockerfile.agentsmith-app" "${ROOT_DIR}"
 
-echo "[bundle] building external runner base image ${RUNNER_BASE_IMAGE}"
+echo "[bundle] building agent task runner image ${AGENT_TASK_RUNNER_IMAGE}"
 RUNNER_IMAGE_DOCKER_BUILD_PROXY="${DOCKER_BUILD_PROXY:-${HTTP_PROXY:-}}"
 export RUNNER_IMAGE_DOCKER_BUILD_PROXY
-build_runner_image notebook "${RUNNER_BASE_IMAGE}" "${RUNNER_IMAGE}" "${RUNNER_IMAGE_DOCKER_BUILD_PROXY}" "1" "1" "${ROOT_DIR}"
-
-echo "[bundle] building chat runner base image ${CHAT_RUNNER_BASE_IMAGE}"
-build_runner_image chat "${CHAT_RUNNER_BASE_IMAGE}" "${CHAT_RUNNER_IMAGE}" "${RUNNER_IMAGE_DOCKER_BUILD_PROXY}" "1" "1" "${ROOT_DIR}"
+build_runner_image agent-task "${AGENT_TASK_RUNNER_BASE_IMAGE}" "${AGENT_TASK_RUNNER_IMAGE}" "${RUNNER_IMAGE_DOCKER_BUILD_PROXY}" "1" "1" "${ROOT_DIR}"
 
 echo "[bundle] building verify runner base image ${VERIFY_RUNNER_BASE_IMAGE}"
 docker_build_local "${BUILD_ARGS[@]}" -t "${VERIFY_RUNNER_BASE_IMAGE}" -f "${ROOT_DIR}/infra/deploy/Dockerfile.agentsmith-verify-runner-base" "${ROOT_DIR}"
@@ -218,10 +207,8 @@ done
 BUILT_IMAGES=(
   "${APP_BASE_IMAGE}"
   "${APP_IMAGE}"
-  "${RUNNER_BASE_IMAGE}"
-  "${RUNNER_IMAGE}"
-  "${CHAT_RUNNER_BASE_IMAGE}"
-  "${CHAT_RUNNER_IMAGE}"
+  "${AGENT_TASK_RUNNER_BASE_IMAGE}"
+  "${AGENT_TASK_RUNNER_IMAGE}"
   "${VERIFY_RUNNER_BASE_IMAGE}"
   "${VERIFY_RUNNER_IMAGE}"
   "${SANDBOX_MANAGER_IMAGE}"
@@ -275,9 +262,8 @@ cp "${ROOT_DIR}/infra/deploy/demo/deployment.manifest.json" "${BUNDLE_DIR}/deplo
 cp "${ROOT_DIR}/infra/deploy/demo/env/site.env.example" "${BUNDLE_DIR}/env/site.env.example"
 cp "${ROOT_DIR}/infra/deploy/demo/kind/config.yaml" "${BUNDLE_DIR}/kind/config.yaml"
 cp "${ROOT_DIR}/infra/deploy/shared/universal-proxy/config.yaml" "${BUNDLE_DIR}/universal-proxy/config.yaml"
-cp "${ROOT_DIR}/scripts/check-preset-external-file-library.sh" "${BUNDLE_DIR}/scripts/check-preset-external-file-library.sh"
 cp "${ROOT_DIR}/scripts/file-library-real-smoke.sh" "${BUNDLE_DIR}/scripts/file-library-real-smoke.sh"
-cp "${ROOT_DIR}/scripts/notebook-agent-refresh-token.js" "${BUNDLE_DIR}/scripts/notebook-agent-refresh-token.js"
+cp "${ROOT_DIR}/scripts/agent-runner-refresh-token.js" "${BUNDLE_DIR}/scripts/agent-runner-refresh-token.js"
 cp "${ROOT_DIR}/infra/deploy/demo/k8s/juicefs-csi.yaml" "${BUNDLE_DIR}/k8s/juicefs-csi.yaml"
 cp "${ROOT_DIR}/infra/integration/postgres-init/001-create-databases.sql" "${BUNDLE_DIR}/postgres-init/"
 cp "${ROOT_DIR}/packages/adapters-private/sql/projects.sql" "${BUNDLE_DIR}/postgres-init/"
@@ -302,14 +288,11 @@ cp "${ROOT_DIR}/infra/runtime/presets.env" "${BUNDLE_DIR}/infra/runtime/presets.
 chmod +x "${BUNDLE_DIR}"/scripts/*.sh "${BUNDLE_DIR}/scripts/lib/"*.sh
 copy_bundle_file "${ROOT_DIR}/e2e/integration-real-helpers.ts" "${BUNDLE_DIR}/e2e/integration-real-helpers.ts"
 copy_bundle_file "${ROOT_DIR}/e2e/integration-files.spec.ts" "${BUNDLE_DIR}/e2e/integration-files.spec.ts"
-copy_bundle_file "${ROOT_DIR}/e2e/notebook-execution-outcome.ts" "${BUNDLE_DIR}/e2e/notebook-execution-outcome.ts"
+copy_bundle_file "${ROOT_DIR}/e2e/agent-task-execution-outcome.ts" "${BUNDLE_DIR}/e2e/agent-task-execution-outcome.ts"
 copy_bundle_file "${ROOT_DIR}/e2e/integration-workspace-access.ts" "${BUNDLE_DIR}/e2e/integration-workspace-access.ts"
 copy_bundle_file "${ROOT_DIR}/e2e/integration-workspace-entry.spec.ts" "${BUNDLE_DIR}/e2e/integration-workspace-entry.spec.ts"
 copy_bundle_file "${ROOT_DIR}/e2e/integration-workspace-publish-usable.spec.ts" "${BUNDLE_DIR}/e2e/integration-workspace-publish-usable.spec.ts"
-copy_bundle_file "${ROOT_DIR}/e2e/integration-preset-external-file-library.spec.ts" "${BUNDLE_DIR}/e2e/integration-preset-external-file-library.spec.ts"
-copy_bundle_file "${ROOT_DIR}/e2e/integration-internal-chat-runner.spec.ts" "${BUNDLE_DIR}/e2e/integration-internal-chat-runner.spec.ts"
-copy_bundle_file "${ROOT_DIR}/e2e/integration-chat-local-upstream.ts" "${BUNDLE_DIR}/e2e/integration-chat-local-upstream.ts"
-copy_bundle_file "${ROOT_DIR}/e2e/internal-chat-isolation-probe.ts" "${BUNDLE_DIR}/e2e/internal-chat-isolation-probe.ts"
+copy_bundle_file "${ROOT_DIR}/e2e/integration-preset-agent-task-file-library.spec.ts" "${BUNDLE_DIR}/e2e/integration-preset-agent-task-file-library.spec.ts"
 while IFS= read -r relative_path; do
   [[ -n "${relative_path}" ]] || continue
   copy_bundle_file "${ROOT_DIR}/${relative_path}" "${BUNDLE_DIR}/${relative_path}"
@@ -332,10 +315,8 @@ cat > "${BUNDLE_DIR}/VERSION" <<EOF
 release_id=${RELEASE_ID}
 agentsmith_app_base_image=${APP_BASE_IMAGE}
 agentsmith_app_image=${APP_IMAGE}
-agentsmith_runner_base_image=${RUNNER_BASE_IMAGE}
-agentsmith_runner_image=${RUNNER_IMAGE}
-agentsmith_chat_runner_base_image=${CHAT_RUNNER_BASE_IMAGE}
-agentsmith_chat_runner_image=${CHAT_RUNNER_IMAGE}
+agentsmith_agent_task_runner_base_image=${AGENT_TASK_RUNNER_BASE_IMAGE}
+agentsmith_agent_task_runner_image=${AGENT_TASK_RUNNER_IMAGE}
 agentsmith_verify_runner_base_image=${VERIFY_RUNNER_BASE_IMAGE}
 agentsmith_verify_runner_image=${VERIFY_RUNNER_IMAGE}
 sandbox_manager_image=${SANDBOX_MANAGER_IMAGE}

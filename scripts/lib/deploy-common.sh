@@ -509,7 +509,7 @@ compose_runtime_no_proxy() {
   merge_no_proxy_entries \
     "${RUNTIME_ADDITIONAL_NO_PROXY:-}" \
     "${NO_PROXY:-${no_proxy:-}}" \
-    "postgres,mongo,redis,minio,keycloak,api,web,external-runner,universal-proxy,host.docker.internal,postgres-external,minio-external,sandbox-manager" \
+    "postgres,mongo,redis,minio,keycloak,api,web,universal-proxy,host.docker.internal,postgres-external,minio-external,sandbox-manager" \
     "$(no_proxy_hosts_from_inputs "$@")"
 }
 
@@ -647,12 +647,12 @@ docker_run_runtime_proxy_env_args() {
 
 write_compose_env() {
   local app_image="${1:-}"
-  local runner_image="${2:-}"
+  local agent_task_runner_image="${2:-}"
   local universal_proxy_image="${3:-}"
   mkdir -p "${RELEASE_ROOT}/compose"
   cat > "${RELEASE_ROOT}/compose/.env" <<EOF
 AGENTSMITH_APP_IMAGE=${app_image}
-AGENTSMITH_RUNNER_IMAGE=${runner_image}
+AGENTSMITH_AGENT_TASK_RUNNER_IMAGE=${agent_task_runner_image}
 LLM_UNIVERSAL_PROXY_IMAGE=${universal_proxy_image}
 POSTGRES_USER=${POSTGRES_USER:-mbos}
 POSTGRES_PASSWORD=${POSTGRES_PASSWORD:-mbos_dev_password}

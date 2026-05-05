@@ -121,14 +121,14 @@ test('generate chinese product documentation artifacts', async ({ page, authedPa
     group: 'workspace',
     role: '项目成员',
     route: `/${DOC_LOCALE}/workspaces/${WORKSPACE_ID}/projects/${PROJECT_ID}/overview`,
-    summary: '项目总览页集中展示项目运行状态、关键入口和治理维度，是进入 Chat、Notebook、Files 和治理页面的统一入口。',
+    summary: '项目总览页集中展示项目运行状态、关键入口和治理维度，是进入 Chat、Agent 任务、Files 和治理页面的统一入口。',
     contentPoints: [
       '页面展示项目核心说明和关键工作台入口。',
       '用户可从这里快速跳转到聊天、任务、文件和治理相关页面。',
     ],
     userSteps: [
       '进入项目后先查看总览信息。',
-      '根据目标工作选择 Chat、Notebook、Files 或治理页面。',
+      '根据目标工作选择 Chat、Agent 任务、Files 或治理页面。',
     ],
   });
 
@@ -157,89 +157,89 @@ test('generate chinese product documentation artifacts', async ({ page, authedPa
     ],
   });
 
-  await stableNavigate(authedPage, `/${DOC_LOCALE}/workspaces/${WORKSPACE_ID}/projects/${PROJECT_ID}/notebook`);
-  await expect(authedPage.getByTestId('notebook__task-list')).toBeVisible();
+  await stableNavigate(authedPage, `/${DOC_LOCALE}/workspaces/${WORKSPACE_ID}/projects/${PROJECT_ID}/agent-tasks`);
+  await expect(authedPage.getByTestId('agent-tasks__task-list')).toBeVisible();
   await writeDocArtifact(authedPage, manifest, {
-    id: 'project-notebook-list',
-    title: 'Notebook 任务列表',
-    group: 'notebook',
+    id: 'project-agent-tasks-list',
+    title: 'Agent 任务列表',
+    group: 'agent_tasks',
     role: '项目成员',
-    route: `/${DOC_LOCALE}/workspaces/${WORKSPACE_ID}/projects/${PROJECT_ID}/notebook`,
-    summary: 'Notebook 页面展示长期任务列表，适合执行更长流程的智能体任务、保留上下文和沉淀产物。',
+    route: `/${DOC_LOCALE}/workspaces/${WORKSPACE_ID}/projects/${PROJECT_ID}/agent-tasks`,
+    summary: 'Agent 任务页面展示长期任务列表，适合执行更长流程的智能体任务、保留上下文和沉淀产物。',
     contentPoints: [
-      '列表中展示任务标题、状态、绑定智能体和最近活动时间。',
+      '列表中展示任务标题、状态、Agent Runner 和最近活动时间。',
       '适合用于执行审计分析、报告汇总、文件处理等长流程任务。',
     ],
     userSteps: [
-      '进入 Notebook 查看现有任务。',
+      '进入 Agent 任务查看现有任务。',
       '点击某个任务进入详情页继续查看执行过程和结果。',
     ],
   });
-  const createTaskButton = authedPage.getByTestId('notebook__create-task-btn');
+  const createTaskButton = authedPage.getByTestId('agent-tasks__create-task-btn');
   if (await createTaskButton.isVisible().catch(() => false)) {
     await createTaskButton.click();
     await expect(authedPage.getByRole('dialog')).toBeVisible();
     await writeDocArtifact(authedPage, manifest, {
-      id: 'dialog-notebook-task-create',
+      id: 'dialog-agent-task-create',
       title: '创建任务对话框',
-      group: 'notebook',
+      group: 'agent_tasks',
       role: '项目成员',
-      route: `/${DOC_LOCALE}/workspaces/${WORKSPACE_ID}/projects/${PROJECT_ID}/notebook`,
-      summary: '创建任务对话框用于新建长期运行的智能体任务，选择执行智能体并设定任务标题，是 Notebook 工作流的起点。',
+      route: `/${DOC_LOCALE}/workspaces/${WORKSPACE_ID}/projects/${PROJECT_ID}/agent-tasks`,
+      summary: '创建任务对话框用于新建长期运行的智能体任务，并设定任务标题，是 Agent 任务工作流的起点。',
       contentPoints: [
-        '表单展示任务标题、可用智能体选择和关键提示信息。',
+        '表单展示任务标题、任务工作区设置和关键提示信息。',
         '适合说明长期任务与普通聊天的区别。',
       ],
       userSteps: [
         '点击“创建任务”。',
-        '填写任务标题并选择执行智能体。',
+        '填写任务标题并确认任务工作区设置。',
         '提交后进入任务详情页观察执行过程。',
       ],
     });
     await dismissOpenDialogs(authedPage);
   }
 
-  await stableNavigate(authedPage, `/${DOC_LOCALE}/workspaces/${WORKSPACE_ID}/projects/${PROJECT_ID}/notebook/tasks/task_doc_001`);
-  await expect(authedPage.getByTestId('notebook__task-header')).toBeVisible();
-  const traceToggle = authedPage.getByTestId('notebook__message-trace-toggle').first();
-  if (await traceToggle.isVisible().catch(() => false)) {
-    await traceToggle.click();
+  await stableNavigate(authedPage, `/${DOC_LOCALE}/workspaces/${WORKSPACE_ID}/projects/${PROJECT_ID}/agent-tasks/task_doc_001`);
+  await expect(authedPage.getByTestId('agent-task__task-header')).toBeVisible();
+  const processDetailsToggle = authedPage.getByTestId('agent-tasks__message-process-details-toggle').first();
+  if (await processDetailsToggle.isVisible().catch(() => false)) {
+    await processDetailsToggle.click();
   }
   await writeDocArtifact(authedPage, manifest, {
-    id: 'project-notebook-task-detail',
-    title: 'Notebook 任务详情',
-    group: 'notebook',
+    id: 'project-agent-task-detail',
+    title: 'Agent 任务详情',
+    group: 'agent_tasks',
     role: '项目成员',
-    route: `/${DOC_LOCALE}/workspaces/${WORKSPACE_ID}/projects/${PROJECT_ID}/notebook/tasks/task_doc_001`,
-    summary: '任务详情页集中展示任务消息、运行状态、trace 和产物，是长期智能体执行的核心证据页面。',
+    route: `/${DOC_LOCALE}/workspaces/${WORKSPACE_ID}/projects/${PROJECT_ID}/agent-tasks/task_doc_001`,
+    summary: '任务详情页集中展示任务消息、运行状态、执行过程和产物，是长期智能体执行的核心证据页面。',
     contentPoints: [
-      '页面展示任务标题、绑定 agent、消息过程和最终产物。',
-      '示例任务包含 trace、artifact 和已完成状态，适合用于功能说明书。',
+      '页面展示任务标题、Agent Runner、消息过程和最终产物。',
+      '示例任务包含执行过程、artifact 和已完成状态，适合用于功能说明书。',
     ],
     userSteps: [
       '打开具体任务查看执行过程。',
-      '展开 trace 面板定位关键步骤。',
+      '展开执行过程面板定位关键步骤。',
       '查看或下载产物文件。',
     ],
   });
-  const tracePanel = authedPage.getByTestId('notebook__message-trace-panel');
-  if (await tracePanel.count().catch(() => 0)) {
-    await expect(tracePanel).toBeVisible();
+  const processPanel = authedPage.getByTestId('agent-tasks__message-process-panel');
+  if (await processPanel.count().catch(() => 0)) {
+    await expect(processPanel).toBeVisible();
     await writeDocArtifact(authedPage, manifest, {
-      id: 'project-notebook-trace-detail',
-      title: 'Notebook 执行 Trace 视图',
-      group: 'notebook',
+      id: 'project-agent-task-process-detail',
+      title: 'Agent 任务执行过程视图',
+      group: 'agent_tasks',
       role: '项目成员',
-      route: `/${DOC_LOCALE}/workspaces/${WORKSPACE_ID}/projects/${PROJECT_ID}/notebook/tasks/task_doc_001`,
-      summary: 'Trace 视图用于查看智能体任务的执行细节、关键事件和异常线索，是任务排障与复盘的重要视图。',
+      route: `/${DOC_LOCALE}/workspaces/${WORKSPACE_ID}/projects/${PROJECT_ID}/agent-tasks/task_doc_001`,
+      summary: '执行过程视图用于查看智能体任务的执行细节、关键事件和异常线索，是任务排障与复盘的重要视图。',
       contentPoints: [
-        '面板展示执行步骤、事件筛选和原始日志视图。',
+        '面板展示执行步骤和关键事件摘要。',
         '适合在说明书中展示长期任务的执行可观测性。',
       ],
       userSteps: [
         '在任务消息区域点击“执行详情”。',
-        '切换筛选和原始日志视图。',
-        '根据 trace 内容定位问题或复核执行过程。',
+        '查看过程步骤和异常提示。',
+        '根据执行过程内容定位问题或复核执行过程。',
       ],
     });
   }
@@ -379,7 +379,7 @@ test('generate chinese product documentation artifacts', async ({ page, authedPa
     group: 'governance',
     role: '项目管理员',
     route: `/${DOC_LOCALE}/workspaces/${WORKSPACE_ID}/projects/${PROJECT_ID}/endpoints`,
-    summary: 'Endpoint 页面统一管理各类模型入口，是 AI 开发工具、智能体和 Notebook 的统一接入面。',
+    summary: 'Endpoint 页面统一管理各类模型入口，是 Chat、Agent 任务和 Agent Runner 的统一接入面。',
     contentPoints: [
       '页面展示 endpoint 名称、模型、协议、状态和基础限额。',
       '示例中包含 placeholder-model 主生产和 Claude 复杂推理两个入口。',
@@ -387,7 +387,7 @@ test('generate chinese product documentation artifacts', async ({ page, authedPa
     userSteps: [
       '创建或编辑 endpoint。',
       '为 endpoint 绑定 credential。',
-      '将 endpoint 分配给 Chat、Notebook 或 agent 使用。',
+      '将 endpoint 分配给 Chat、Agent 任务或 Agent Runner 使用。',
     ],
   });
   await authedPage.getByTestId('endpoints__create-btn').click();
@@ -401,7 +401,7 @@ test('generate chinese product documentation artifacts', async ({ page, authedPa
     summary: '创建 Endpoint 对话框用于定义模型入口、协议、模型名和绑定凭据，是企业级统一接入的核心配置入口。',
     contentPoints: [
       '表单展示 endpoint 名称、协议类型、模型标识、凭据绑定等字段。',
-      '创建后可被 Chat、Notebook 和智能体统一复用。',
+      '创建后可被 Chat、Agent 任务和 Agent Runner 统一复用。',
     ],
     userSteps: [
       '点击“创建 Endpoint”。',
@@ -411,65 +411,65 @@ test('generate chinese product documentation artifacts', async ({ page, authedPa
   });
   await dismissOpenDialogs(authedPage);
 
-  await stableNavigate(authedPage, `/${DOC_LOCALE}/workspaces/${WORKSPACE_ID}/projects/${PROJECT_ID}/agents`);
-  await expect(authedPage.getByTestId('agents__table')).toBeVisible();
+  await stableNavigate(authedPage, `/${DOC_LOCALE}/workspaces/${WORKSPACE_ID}/projects/${PROJECT_ID}/agent-runners`);
+  await expect(authedPage.getByTestId('agent-runners__table')).toBeVisible();
   await writeDocArtifact(authedPage, manifest, {
-    id: 'project-agents',
-    title: '智能体管理',
+    id: 'project-agent-runners',
+    title: 'Agent Runner 管理',
     group: 'governance',
     role: '项目管理员',
-    route: `/${DOC_LOCALE}/workspaces/${WORKSPACE_ID}/projects/${PROJECT_ID}/agents`,
-    summary: '智能体页面用于管理 external/internal agent，查看在线状态、运行模式和入口能力。',
+    route: `/${DOC_LOCALE}/workspaces/${WORKSPACE_ID}/projects/${PROJECT_ID}/agent-runners`,
+    summary: 'Agent Runner 页面用于管理项目级 runner 配置，查看 readiness、能力和默认 endpoint。',
     contentPoints: [
-      '页面展示智能体名称、模式、在线状态和负责管理员。',
-      '适合用来说明 external agent 与 codex runner 的接入路径。',
+      '页面展示 runner 名称、readiness、能力、默认 endpoint 和负责管理员。',
+      '适合用来说明项目级 Agent Runner 的连接与治理入口。',
     ],
     userSteps: [
-      '查看当前项目下的智能体清单。',
-      '根据状态判断是聊天、Notebook 还是双模式使用。',
-      '进一步打开连接信息或服务 key 管理。',
+      '查看当前项目下的 Agent Runner 清单。',
+      '根据 readiness 和能力判断 runner 是否可用于任务执行。',
+      '进一步打开 connection keys 管理。',
     ],
   });
-  await authedPage.getByTestId('agents__create-btn').click();
-  await expect(authedPage.getByTestId('agents__create-dialog')).toBeVisible();
+  await authedPage.getByTestId('agent-runners__create-btn').click();
+  await expect(authedPage.getByTestId('agent-runners__create-dialog')).toBeVisible();
   await writeDocArtifact(authedPage, manifest, {
-    id: 'dialog-agent-create',
-    title: '创建智能体对话框',
+    id: 'dialog-agent-runner-create',
+    title: '创建 Agent Runner 对话框',
     group: 'governance',
     role: '项目管理员',
-    route: `/${DOC_LOCALE}/workspaces/${WORKSPACE_ID}/projects/${PROJECT_ID}/agents`,
-    summary: '创建智能体对话框用于定义 agent 的名称、运行模式、能力边界和接入方式，是管理 external agent 的关键入口。',
+    route: `/${DOC_LOCALE}/workspaces/${WORKSPACE_ID}/projects/${PROJECT_ID}/agent-runners`,
+    summary: '创建 Agent Runner 对话框用于定义 runner 名称、能力、默认 endpoint 和说明，是项目级 runner 配置入口。',
     contentPoints: [
-      '表单展示智能体名称、模式、说明和可选行为配置。',
-      '适合说明 external agent 与本地 codex runner 的接入关系。',
+      '表单展示 runner 名称、说明、默认 endpoint 和 capabilities。',
+      '适合说明 Agent Runner 如何被项目任务调度使用。',
     ],
     userSteps: [
-      '点击“创建智能体”。',
-      '填写名称、模式和说明。',
-      '保存后再配置连接信息或服务 key。',
+      '点击“创建 Agent Runner”。',
+      '填写名称、说明和能力配置。',
+      '保存后再配置 connection keys。',
     ],
   });
   await dismissOpenDialogs(authedPage);
 
-  const keysButton = authedPage.locator('[data-testid^="agents__keys-btn--"]').first();
+  const keysButton = authedPage.locator('[data-testid^="agent-runners__connection-keys-btn--"]').first();
   if (await keysButton.isVisible().catch(() => false)) {
     await keysButton.click();
-    await expect(authedPage.getByTestId('agents__dialog__keys')).toBeVisible();
+    await expect(authedPage.getByTestId('agent-runners__connection-keys-sheet')).toBeVisible();
     await writeDocArtifact(authedPage, manifest, {
-      id: 'dialog-agent-connection-info',
-      title: '智能体连接信息对话框',
+      id: 'dialog-agent-runner-connection-keys',
+      title: 'Agent Runner Connection Keys',
       group: 'governance',
       role: '项目管理员',
-      route: `/${DOC_LOCALE}/workspaces/${WORKSPACE_ID}/projects/${PROJECT_ID}/agents`,
-      summary: '连接信息对话框展示 external agent 的连接地址、服务 key 和接入说明，用于接入本地 codex runner。',
+      route: `/${DOC_LOCALE}/workspaces/${WORKSPACE_ID}/projects/${PROJECT_ID}/agent-runners`,
+      summary: 'Connection keys 面板展示 runner WebSocket 地址、connection key 列表和接入说明，用于连接项目级 Agent Runner。',
       contentPoints: [
-        '展示 WebSocket 地址和服务 key 列表。',
-        '用于说明 external agent 与本地 runner 的连接方式。',
+        '展示 WebSocket 地址和 connection key 列表。',
+        '用于说明 Agent Runner 与项目控制面的连接方式。',
       ],
       userSteps: [
-        '在智能体列表中打开 key/连接信息。',
-        '复制连接地址与 key。',
-        '在本地 runner 中完成接入。',
+        '在 Agent Runner 列表中打开 connection keys。',
+        '复制连接地址并创建 connection key。',
+        '在 runner 环境中完成接入。',
       ],
     });
     await authedPage.keyboard.press('Escape');

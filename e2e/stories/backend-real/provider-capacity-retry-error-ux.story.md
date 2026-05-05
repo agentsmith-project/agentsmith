@@ -10,7 +10,7 @@
   "kind": "journey",
   "lane": "backend-real",
   "entryRoute": "/en-US/workspaces/{workspaceId}/projects/{projectId}/chat",
-  "goal": "当 provider 短时拥塞或返回不可恢复错误时，成员应在 Chat / Notebook 工作面立刻知道自己该稍后重试、切换可用 endpoint，还是请项目操作人员修复配置；自己的线程、task 和已输入内容不应该在报错时一起丢失。",
+  "goal": "当 provider 短时拥塞或返回不可恢复错误时，成员应在 Chat / Agent Task 工作面立刻知道自己该稍后重试、切换可用 endpoint，还是请项目操作人员修复配置；自己的线程、task 和已输入内容不应该在报错时一起丢失。",
   "gatePolicy": {
     "tier": "default",
     "requiredEvidence": [
@@ -46,13 +46,13 @@
       ]
     },
     {
-      "sceneId": "notebook-task",
-      "route": "/en-US/workspaces/{workspaceId}/projects/{projectId}/notebook/tasks/{taskId}",
+      "sceneId": "agent-task",
+      "route": "/en-US/workspaces/{workspaceId}/projects/{projectId}/agent-tasks/{taskId}",
       "stableMarkers": [
-        "notebook__task-header",
-        "notebook__message-process-error",
-        "notebook__conversation-input",
-        "notebook__send-btn"
+        "agent-task__task-header",
+        "agent-tasks__message-process-error",
+        "agent-tasks__conversation-input",
+        "agent-tasks__send-btn"
       ]
     }
   ],
@@ -82,25 +82,25 @@
       ]
     },
     {
-      "stepId": "surface-retryable-capacity-or-retry-limit-in-notebook",
-      "sceneId": "notebook-task",
-      "intent": "See a retryable notebook failure without losing the task context.",
-      "action": "Send a notebook turn while the provider reports capacity pressure or retry exhaustion",
-      "target": "notebook__message-process-error",
-      "expectedFeedback": "notebook task 在原地告诉成员这是可重试的 provider capacity 问题，并保留已有 task 历史与当前工作上下文。",
-      "note": "Notebook 不应把 retryable capacity 错误包装成任务已坏掉的终局。",
+      "stepId": "surface-retryable-capacity-or-retry-limit-in-agent-task",
+      "sceneId": "agent-task",
+      "intent": "See a retryable agent-task failure without losing the task context.",
+      "action": "Send a agent-task turn while the provider reports capacity pressure or retry exhaustion",
+      "target": "agent-tasks__message-process-error",
+      "expectedFeedback": "Agent Task 在原地告诉成员这是可重试的 provider capacity 问题，并保留已有 task 历史与当前工作上下文。",
+      "note": "Agent Task 不应把 retryable capacity 错误包装成任务已坏掉的终局。",
       "evidence": [
         "trace"
       ]
     },
     {
-      "stepId": "retry-the-same-notebook-task-after-capacity-recovers",
-      "sceneId": "notebook-task",
-      "intent": "Continue notebook work after the upstream recovers.",
-      "action": "Retry the same notebook task after capacity recovers",
-      "target": "notebook__send-btn",
-      "expectedFeedback": "成员在同一个 notebook task 里重试并恢复成功，不需要重建 task 才能继续工作。",
-      "note": "task continuity 对 notebook 来说和 thread continuity 一样重要。",
+      "stepId": "retry-the-same-agent-task-after-capacity-recovers",
+      "sceneId": "agent-task",
+      "intent": "Continue agent-task work after the upstream recovers.",
+      "action": "Retry the same Agent Task after capacity recovers",
+      "target": "agent-tasks__send-btn",
+      "expectedFeedback": "成员在同一个 Agent Task 里重试并恢复成功，不需要重建 task 才能继续工作。",
+      "note": "task continuity 对 agent-task 来说和 thread continuity 一样重要。",
       "evidence": [
         "trace"
       ]

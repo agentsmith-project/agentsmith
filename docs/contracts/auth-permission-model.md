@@ -17,10 +17,10 @@ Clarify the boundary between authentication data and authorization enforcement t
 - Source of truth: `src/lib/constants/permissions.ts`.
 - Current project-level permissions in MVP are:
   - `project:endpoint:use`
-  - `project:agent:use`
-  - `project:terminal:use`
-  - `project:agent:manage`
-  - `project:agent:public`
+  - `project:agent_task:use`
+  - `project:agent_task:terminal`
+  - `project:agent_runner:read`
+  - `project:agent_runner:manage`
   - `project:audit:read`
   - `project:governance:update`
   - `project:membership:update`
@@ -131,6 +131,12 @@ Current project-scope model:
 - Holds governance authority but not ownership authority.
 
 4. Active project-scope permissions
+- `project:endpoint:use`
+- `project:agent_task:use`
+- `project:agent_task:terminal`
+- `project:agent_runner:read`
+- `project:agent_runner:manage`
+- `project:audit:read`
 - `project:governance:update`
 - `project:files:update`
 - `project:membership:update`
@@ -138,7 +144,12 @@ Current project-scope model:
 - `project:lifecycle:update`
 
 Current split-token scope:
-- `project:terminal:use` covers notebook task terminal access and must be granted explicitly
+- `project:endpoint:use` covers Chat, Endpoint read/use, Files read/use, Usage, and Access guide access
+- `project:agent_task:use` covers Agent task list/detail/create/run/update/archive/cancel
+- `project:agent_task:terminal` covers Agent task terminal access and must be granted explicitly with task access
+- `project:agent_runner:read` covers Agent Runner read and diagnostics surfaces
+- `project:agent_runner:manage` covers Agent Runner create/update/delete/default and connection key mutations
+- `project:audit:read` covers Audit and Alert Center read/action access in the current MVP alert surface
 - `project:governance:update` covers project secrets, resource policy, endpoint governance, and similar governance surfaces
 - `project:files:update` covers file-library create/update/delete/move/upload/share-link writes
 - `project:membership:update` covers join requests, member lifecycle writes, templates, and groups
@@ -186,8 +197,8 @@ This section is authoritative for current permission boundaries and any remainin
 | Section | Description | Pages |
 |---------|-------------|-------|
 | `home` | Overview and landing | Overview |
-| `use` | End-user daily AI tools | Chat, Notebook, Files |
-| `develop` | Developer agent building | Agents |
+| `use` | End-user daily AI tools | Chat, Agent tasks, Files, Usage, Access guide |
+| `develop` | Developer task execution capability | Agent Runners |
 | `govern` | Configuration and policy | Endpoints, Policy, Shared context, Project secrets, Members, Audit, Settings |
 | `operate` | Execution-related backend operations | Internal execution/configuration routes plus supporting operational signals such as Alerts; user-facing evidence review still goes through Audit |
 

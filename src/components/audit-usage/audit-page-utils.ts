@@ -117,7 +117,7 @@ export function buildAuditFiltersFromSearchParams(
   const sortByRaw = searchParams.get('sort_by');
   const sortOrderRaw = searchParams.get('sort_order');
   const actorType =
-    actorTypeRaw === 'user' || actorTypeRaw === 'agent' || actorTypeRaw === 'plugin'
+    actorTypeRaw === 'user' || actorTypeRaw === 'runner' || actorTypeRaw === 'plugin'
       ? actorTypeRaw
       : undefined;
   const result = resultRaw === 'ok' || resultRaw === 'error' ? resultRaw : undefined;

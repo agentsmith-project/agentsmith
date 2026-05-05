@@ -22,7 +22,7 @@ fi
 
 if [[ -n "${BACKEND_REAL_SESSION_NAME}" ]]; then
   case "${BACKEND_REAL_SESSION_NAME}" in
-    agents-backend-real-runner|chat-backend-real-runner) ;;
+    agent-task-backend-real-runner|chat-backend-real-endpoint) ;;
     *)
       echo "[integration-e2e-full] unsupported backend-real session: ${BACKEND_REAL_SESSION_NAME}" >&2
       exit 1
@@ -81,7 +81,7 @@ REDIS_PORT="${REDIS_PORT:-${INTEGRATION_REDIS_PORT:-26379}}"
 MINIO_API_PORT="${MINIO_API_PORT:-${INTEGRATION_MINIO_API_PORT:-29000}}"
 MINIO_CONSOLE_PORT="${MINIO_CONSOLE_PORT:-${INTEGRATION_MINIO_CONSOLE_PORT:-29001}}"
 KEYCLOAK_PORT="${KEYCLOAK_PORT:-${INTEGRATION_KEYCLOAK_PORT:-28081}}"
-export RUNTIME_RUNNER_MODES="${RUNTIME_RUNNER_MODES:-$([[ -n "${SANDBOX_MANAGER_URL:-}" ]] && printf 'external_host,internal_k8s' || printf 'external_host')}"
+export RUNTIME_RUNNER_MODES="${RUNTIME_RUNNER_MODES:-managed_runner}"
 ensure_backend_real_state
 INTEGRATION_RUN_ID="${INTEGRATION_RUN_ID:-$(lane_generate_run_id integration)}"
 INTEGRATION_RUN_ROOT="${INTEGRATION_RUN_ROOT:-$(lane_prepare_run_root backend-real "${INTEGRATION_RUN_ID}" current-run)}"
@@ -140,6 +140,49 @@ record_service() {
   local status="$2"
   local detail="${3:-}"
   gate_record_service_status "${INTEGRATION_LOG_DIR}" "${service_name}" "${status}" "${detail}"
+}
+
+managed_agent_task_sandbox_required() {
+  case "${BACKEND_REAL_SESSION_NAME:-${SPEC_FILE}}" in
+    agent-task-backend-real-runner|e2e/integration-agent-task-runner.spec.ts)
+      return 0
+      ;;
+    *)
+      return 1
+      ;;
+  esac
+}
+
+preflight_managed_agent_task_sandbox_env() {
+  if ! managed_agent_task_sandbox_required; then
+    return 0
+  fi
+
+  local missing=()
+  if [[ -z "${SANDBOX_MANAGER_URL:-}" ]]; then
+    missing+=("SANDBOX_MANAGER_URL")
+  fi
+  if [[ -z "${SANDBOX_SERVICE_KEY:-}" ]]; then
+    missing+=("SANDBOX_SERVICE_KEY")
+  fi
+  if [[ -z "${AGENT_EXECUTION_WS_BASE_URL:-}" ]]; then
+    missing+=("AGENT_EXECUTION_WS_BASE_URL")
+  fi
+  if [[ -z "${INTERNAL_AGENT_K8S_NAMESPACE:-}" ]]; then
+    missing+=("INTERNAL_AGENT_K8S_NAMESPACE")
+  fi
+  if [[ "${#missing[@]}" -eq 0 ]]; then
+    gate_record_preflight_check "${INTEGRATION_LOG_DIR}" "managed_agent_task_sandbox_env" "passed" "sandbox env present"
+    return 0
+  fi
+
+  local missing_text
+  missing_text="$(IFS=,; printf '%s' "${missing[*]}")"
+  gate_record_failure "${INTEGRATION_LOG_DIR}" "infra_dependency_unready" "managed_agent_task_sandbox_env" "Managed Agent Task backend-real coverage requires sandbox bootstrap; missing ${missing_text}. Use scripts/run-internal-agent-task-real-gate.sh --skills-runtime or provide the managed sandbox env."
+  echo "[integration-e2e-full] Managed Agent Task backend-real coverage requires sandbox bootstrap." >&2
+  echo "[integration-e2e-full] Missing: ${missing_text}" >&2
+  echo "[integration-e2e-full] Use scripts/run-internal-agent-task-real-gate.sh --skills-runtime or provide the managed sandbox env." >&2
+  exit 1
 }
 
 
@@ -435,6 +478,8 @@ cleanup_universal_proxy() {
     universal_proxy_runtime_cleanup_managed_container
 }
 
+preflight_managed_agent_task_sandbox_env
+
 if [[ "${BOOTSTRAP_DEPS}" == "true" ]]; then
   run_clean_with_integration_env npm run integration:deps:up
   run_clean_with_integration_env make deps-ready
@@ -500,12 +545,14 @@ API_PID="$(
     MINIO_BUCKET="${MINIO_BUCKET:-mbos-dev}" \
     SANDBOX_MANAGER_URL="${SANDBOX_MANAGER_URL:-}" \
     SANDBOX_SERVICE_KEY="${SANDBOX_SERVICE_KEY:-}" \
+    INTERNAL_AGENT_IMAGE="${INTERNAL_AGENT_IMAGE:-${INTEGRATION_INTERNAL_AGENT_IMAGE:-}}" \
+    INTEGRATION_INTERNAL_AGENT_IMAGE="${INTEGRATION_INTERNAL_AGENT_IMAGE:-}" \
     INTERNAL_AGENT_K8S_NAMESPACE="${INTERNAL_AGENT_K8S_NAMESPACE:-}" \
     INTERNAL_AGENT_JUICEFS_CSI_DRIVER="${INTERNAL_AGENT_JUICEFS_CSI_DRIVER:-}" \
     INTERNAL_AGENT_WORKSPACE_CAPACITY="${INTERNAL_AGENT_WORKSPACE_CAPACITY:-}" \
-    EXTERNAL_AGENT_JUICEFS_META_HOST_OVERRIDE="${EXTERNAL_AGENT_JUICEFS_META_HOST_OVERRIDE:-127.0.0.1}" \
-    EXTERNAL_AGENT_JUICEFS_META_PORT_OVERRIDE="${EXTERNAL_AGENT_JUICEFS_META_PORT_OVERRIDE:-${POSTGRES_PORT}}" \
-    EXTERNAL_AGENT_JUICEFS_STORAGE_ENDPOINT_OVERRIDE="${EXTERNAL_AGENT_JUICEFS_STORAGE_ENDPOINT_OVERRIDE:-http://127.0.0.1:${MINIO_API_PORT}}" \
+    AGENT_RUNNER_DEVELOPER_JUICEFS_META_HOST_OVERRIDE="${AGENT_RUNNER_DEVELOPER_JUICEFS_META_HOST_OVERRIDE:-127.0.0.1}" \
+    AGENT_RUNNER_DEVELOPER_JUICEFS_META_PORT_OVERRIDE="${AGENT_RUNNER_DEVELOPER_JUICEFS_META_PORT_OVERRIDE:-${POSTGRES_PORT}}" \
+    AGENT_RUNNER_DEVELOPER_JUICEFS_STORAGE_ENDPOINT_OVERRIDE="${AGENT_RUNNER_DEVELOPER_JUICEFS_STORAGE_ENDPOINT_OVERRIDE:-http://127.0.0.1:${MINIO_API_PORT}}" \
     INTERNAL_AGENT_JUICEFS_META_HOST_OVERRIDE="${INTERNAL_AGENT_JUICEFS_META_HOST_OVERRIDE:-}" \
     INTERNAL_AGENT_JUICEFS_META_PORT_OVERRIDE="${INTERNAL_AGENT_JUICEFS_META_PORT_OVERRIDE:-}" \
     JUICEFS_BUCKET_ENDPOINT_FOR_INTERNAL_MOUNT="${JUICEFS_BUCKET_ENDPOINT_FOR_INTERNAL_MOUNT:-}" \
@@ -662,19 +709,18 @@ run_playwright_command() {
     INTEGRATION_CLIENT_JUICEFS_META_PORT_OVERRIDE="${INTEGRATION_CLIENT_JUICEFS_META_PORT_OVERRIDE:-}" \
     INTEGRATION_CLIENT_JUICEFS_STORAGE_ENDPOINT_OVERRIDE="${INTEGRATION_CLIENT_JUICEFS_STORAGE_ENDPOINT_OVERRIDE:-}" \
     INTEGRATION_INTERNAL_AGENT_IMAGE="${INTEGRATION_INTERNAL_AGENT_IMAGE:-}" \
-    INTEGRATION_INTERNAL_CHAT_AGENT_IMAGE="${INTEGRATION_INTERNAL_CHAT_AGENT_IMAGE:-}" \
-    INTEGRATION_CODEX_RUNNER_BASE_DOCKER_IMAGE="${INTEGRATION_CODEX_RUNNER_BASE_DOCKER_IMAGE:-}" \
-    INTEGRATION_CODEX_RUNNER_DOCKER_IMAGE="${INTEGRATION_CODEX_RUNNER_DOCKER_IMAGE:-}" \
-    INTEGRATION_CODEX_RUNNER_REBUILD_BASE_IMAGE="${INTEGRATION_CODEX_RUNNER_REBUILD_BASE_IMAGE:-0}" \
-    INTEGRATION_CODEX_RUNNER_REBUILD_IMAGE="${INTEGRATION_CODEX_RUNNER_REBUILD_IMAGE:-}" \
-    INTEGRATION_CODEX_RUNNER_EMBEDDED="${INTEGRATION_CODEX_RUNNER_EMBEDDED:-}" \
-    INTEGRATION_CODEX_RUNNER_BUILTIN_SKILLS="${INTEGRATION_CODEX_RUNNER_BUILTIN_SKILLS:-mbos-context,feishu-docs,jira-ops}" \
-    INTEGRATION_CODEX_RUNNER_BUILTIN_SKILLS_REQUIRED="${INTEGRATION_CODEX_RUNNER_BUILTIN_SKILLS_REQUIRED:-1}" \
-    INTEGRATION_CODEX_RUNNER_BUILTIN_SKILLS_DIR="${INTEGRATION_CODEX_RUNNER_BUILTIN_SKILLS_DIR:-}" \
-    INTEGRATION_CODEX_RUNNER_MOUNT_READY_TIMEOUT_MS="${INTEGRATION_CODEX_RUNNER_MOUNT_READY_TIMEOUT_MS:-120000}" \
-    INTEGRATION_CHAT_RUNNER_BASE_DOCKER_IMAGE="${INTEGRATION_CHAT_RUNNER_BASE_DOCKER_IMAGE:-}" \
-    INTEGRATION_CHAT_RUNNER_REBUILD_BASE_IMAGE="${INTEGRATION_CHAT_RUNNER_REBUILD_BASE_IMAGE:-0}" \
-    INTEGRATION_CHAT_RUNNER_REBUILD_IMAGE="${INTEGRATION_CHAT_RUNNER_REBUILD_IMAGE:-}" \
+    INTEGRATION_INTERNAL_AGENT_BASE_IMAGE="${INTEGRATION_INTERNAL_AGENT_BASE_IMAGE:-}" \
+    INTEGRATION_INTERNAL_AGENT_REBUILD_BASE_IMAGE="${INTEGRATION_INTERNAL_AGENT_REBUILD_BASE_IMAGE:-0}" \
+    INTEGRATION_INTERNAL_AGENT_REBUILD_IMAGE="${INTEGRATION_INTERNAL_AGENT_REBUILD_IMAGE:-}" \
+    INTEGRATION_AGENT_TASK_RUNNER_BASE_DOCKER_IMAGE="${INTEGRATION_AGENT_TASK_RUNNER_BASE_DOCKER_IMAGE:-}" \
+    INTEGRATION_AGENT_TASK_RUNNER_DOCKER_IMAGE="${INTEGRATION_AGENT_TASK_RUNNER_DOCKER_IMAGE:-}" \
+    INTEGRATION_AGENT_TASK_RUNNER_REBUILD_BASE_IMAGE="${INTEGRATION_AGENT_TASK_RUNNER_REBUILD_BASE_IMAGE:-0}" \
+    INTEGRATION_AGENT_TASK_RUNNER_REBUILD_IMAGE="${INTEGRATION_AGENT_TASK_RUNNER_REBUILD_IMAGE:-}" \
+    INTEGRATION_AGENT_TASK_RUNNER_EMBEDDED="${INTEGRATION_AGENT_TASK_RUNNER_EMBEDDED:-}" \
+    INTEGRATION_AGENT_TASK_RUNNER_BUILTIN_SKILLS="${INTEGRATION_AGENT_TASK_RUNNER_BUILTIN_SKILLS:-mbos-context,feishu-docs,jira-ops}" \
+    INTEGRATION_AGENT_TASK_RUNNER_BUILTIN_SKILLS_REQUIRED="${INTEGRATION_AGENT_TASK_RUNNER_BUILTIN_SKILLS_REQUIRED:-1}" \
+    INTEGRATION_AGENT_TASK_RUNNER_BUILTIN_SKILLS_DIR="${INTEGRATION_AGENT_TASK_RUNNER_BUILTIN_SKILLS_DIR:-}" \
+    INTEGRATION_AGENT_TASK_RUNNER_MOUNT_READY_TIMEOUT_MS="${INTEGRATION_AGENT_TASK_RUNNER_MOUNT_READY_TIMEOUT_MS:-120000}" \
     INTEGRATION_RUNNER_LOG_DIR="${INTEGRATION_RUNNER_LOG_DIR:-}" \
     AGENT_EXECUTION_WS_BASE_URL="${AGENT_EXECUTION_WS_BASE_URL:-}" \
     npx playwright test --config playwright.config.integration.ts "${spec_file}" --project=chromium --workers=1 "$@"
@@ -831,17 +877,11 @@ run_single_playwright() {
   return "${PLAYWRIGHT_STATUS}"
 }
 
-run_backend_real_runner_session_shards() {
+run_agent_task_backend_real_session_shards() {
   local session_status=0
-  local shard_ids=("chat-runner" "notebook-runner" "notebook-docker")
+  local shard_ids=("agent-task-runner")
   mkdir -p "${REAL_SESSION_ROOT}/shards"
-  run_playwright_shard "chat-runner" "e2e/integration-chat-llm-runner.spec.ts" || session_status=$?
-  if [[ "${session_status}" -eq 0 ]]; then
-    run_playwright_shard "notebook-runner" "e2e/integration-notebook-codex-runner.spec.ts" --grep-invert docker || session_status=$?
-  fi
-  if [[ "${session_status}" -eq 0 ]]; then
-    run_playwright_shard "notebook-docker" "e2e/integration-notebook-codex-runner.spec.ts" --grep docker || session_status=$?
-  fi
+  run_playwright_shard "agent-task-runner" "e2e/integration-agent-task-runner.spec.ts" --grep-invert docker || session_status=$?
   if [[ "${session_status}" -eq 0 ]]; then
     write_session_aggregate "succeeded" "${shard_ids[@]}"
   else
@@ -850,22 +890,14 @@ run_backend_real_runner_session_shards() {
   return "${session_status}"
 }
 
-run_backend_real_chat_runner_session_shards() {
+run_backend_real_chat_endpoint_session_shards() {
   local session_status=0
   local shard_ids=(
-    "chat-runner-stream"
-    "chat-runner-continuity"
-    "chat-runner-workspace-reclaim"
+    "chat-endpoint-real-completion"
     "chat-stop-escalation"
   )
   mkdir -p "${REAL_SESSION_ROOT}/shards"
-  run_playwright_shard "chat-runner-stream" "e2e/integration-chat-llm-runner.spec.ts" --grep "streams multi-turn chat through the real local chat runner and persists replies" || session_status=$?
-  if [[ "${session_status}" -eq 0 ]]; then
-    run_playwright_shard "chat-runner-continuity" "e2e/integration-chat-llm-runner.spec.ts" --grep "preserves conversation continuity across refresh with story-bound trace evidence" || session_status=$?
-  fi
-  if [[ "${session_status}" -eq 0 ]]; then
-    run_playwright_shard "chat-runner-workspace-reclaim" "e2e/integration-chat-llm-runner.spec.ts" --grep "warns and recreates the session workspace when the local chat workspace has been reclaimed" || session_status=$?
-  fi
+  run_playwright_shard "chat-endpoint-real-completion" "e2e/integration-chat.spec.ts" --grep "real deepseek" || session_status=$?
   if [[ "${session_status}" -eq 0 ]]; then
     run_playwright_shard "chat-stop-escalation" "e2e/integration-chat.spec.ts" --grep "stop escalation resyncs authoritative thread truth after refresh and keeps composer ready" || session_status=$?
   fi
@@ -902,11 +934,11 @@ classify_playwright_failure() {
 
 if [[ -n "${BACKEND_REAL_SESSION_NAME}" ]]; then
   case "${BACKEND_REAL_SESSION_NAME}" in
-    agents-backend-real-runner)
-      run_backend_real_runner_session_shards || PLAYWRIGHT_STATUS=$?
+    agent-task-backend-real-runner)
+      run_agent_task_backend_real_session_shards || PLAYWRIGHT_STATUS=$?
       ;;
-    chat-backend-real-runner)
-      run_backend_real_chat_runner_session_shards || PLAYWRIGHT_STATUS=$?
+    chat-backend-real-endpoint)
+      run_backend_real_chat_endpoint_session_shards || PLAYWRIGHT_STATUS=$?
       ;;
   esac
 else

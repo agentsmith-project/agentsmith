@@ -19,7 +19,7 @@ This directory contains all React components for the AgentSmith application.
 
 **Examples**:
 - `components/files/` - Files module components
-- `components/notebook/` - Notebook / Task module components
+- `components/agent-tasks/` - Agent task module components
 - `components/audit-usage/` - Audit & Usage module components
 
 ### Shared Components

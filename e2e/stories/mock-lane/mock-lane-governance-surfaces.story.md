@@ -6,7 +6,7 @@
   "lane": "mock-lane",
   "entryRoute": "/en-US/system/workspaces",
   "goal": "统一描述 system 管理侧与 project governance 核心面的 mock-lane visual scene 真相。",
-  "narrative": "Governance scenes cover system workspace management, membership and access governance, agents, endpoints, resource policy, and project settings surfaces without mixing in monitoring or connection lifecycle flows.",
+  "narrative": "Governance scenes cover system workspace management, membership and access governance, Agent Runners, endpoints, resource policy, and project settings surfaces without mixing in monitoring or connection lifecycle flows.",
   "scenes": [
     {
       "sceneId": "system-workspaces-empty",
@@ -86,21 +86,21 @@
       ]
     },
     {
-      "sceneId": "agents",
-      "route": "/en-US/workspaces/ws_default/projects/proj_001/agents",
+      "sceneId": "agent-runners",
+      "route": "/en-US/workspaces/ws_default/projects/proj_001/agent-runners",
       "recipeFamily": "work_surface_standard",
       "authLane": "authed",
       "stableMarkers": [
-        "agents__create-btn"
+        "agent-runners__create-btn"
       ]
     },
     {
-      "sceneId": "dialog-create-agent",
-      "route": "/en-US/workspaces/ws_default/projects/proj_001/agents",
+      "sceneId": "dialog-create-agent-runner",
+      "route": "/en-US/workspaces/ws_default/projects/proj_001/agent-runners",
       "recipeFamily": "overlay_dialog",
       "authLane": "authed",
       "stableMarkers": [
-        "agents__create-dialog"
+        "agent-runners__create-dialog"
       ]
     },
     {
@@ -436,13 +436,13 @@
           ]
         },
         {
-          "sceneId": "agents",
-          "scenarioId": "agents",
-          "scenario": "Agents index page.",
+          "sceneId": "agent-runners",
+          "scenarioId": "agent-runners",
+          "scenario": "Agent Runners index page.",
           "group": "governance_pages",
           "codeRefs": [
             "e2e/visual.spec.ts",
-            "src/app/[locale]/workspaces/[workspace]/projects/[project]/(shell)/agents/page.tsx"
+            "src/app/[locale]/workspaces/[workspace]/projects/[project]/(shell)/agent-runners/page.tsx"
           ],
           "capture": "full_page",
           "authLane": "authed",
@@ -452,13 +452,13 @@
           ]
         },
         {
-          "sceneId": "dialog-create-agent",
-          "scenarioId": "dialog-create-agent",
-          "scenario": "Create-agent dialog.",
+          "sceneId": "dialog-create-agent-runner",
+          "scenarioId": "dialog-create-agent-runner",
+          "scenario": "Create Agent Runner dialog.",
           "group": "overlay_cases",
           "codeRefs": [
             "e2e/visual.spec.ts",
-            "src/components/agents/CreateAgentDialog.tsx"
+            "src/components/agent-runners/CreateAgentDialog.tsx"
           ],
           "capture": "full_page",
           "authLane": "authed",

@@ -33,11 +33,11 @@ curl http://localhost:3001/en-US/login
 
 4. 如需刷新本地登录态
 ```bash
-make notebook-agent-refresh-token
+make agent-runner-refresh-token
 ```
 
 5. 再进入对应主链：
-- notebook / terminal / runner： [Notebook Codex Runner Runbook](./notebook-codex-runbook.md)
+- Agent tasks / terminal / runner: [Agent Task Runner Runbook](./agent-task-runner-runbook.md)
 - CI / integration： [CI Integration Troubleshooting](./ci-integration-troubleshooting.md)
 - 文件库本地挂载： [File Library Client Mount](./user-guides/file-library-local-mount.md)
 
@@ -48,12 +48,12 @@ make notebook-agent-refresh-token
 Common symptoms:
 - 页面跳回登录页或工作区选择页。
 - SSE / backend-real 请求返回 `401` 或 `403`。
-- notebook / terminal runner 显示认证上下文不可用。
+- Agent task / terminal runner 显示认证上下文不可用。
 
 Recommended checks:
 ```bash
 make local-real-status
-make notebook-agent-refresh-token
+make agent-runner-refresh-token
 ```
 
 ## Network Issues
@@ -196,4 +196,4 @@ NEXT_PUBLIC_KEYCLOAK_CLIENT_ID=agentsmith
 2. [Current Baseline (Whitelist)](./CURRENT_BASELINE.md)
 3. [Development Guide](../DEVELOPMENT.md)
 4. [User Guides Index](./user-guides/README.md)
-5. [Notebook Codex Runner Runbook](./notebook-codex-runbook.md)
+5. [Agent Task Runner Runbook](./agent-task-runner-runbook.md)

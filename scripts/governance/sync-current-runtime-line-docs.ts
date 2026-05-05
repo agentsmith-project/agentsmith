@@ -63,7 +63,7 @@ function renderLocalFlowListZh(lines: readonly CurrentRuntimeLineDefinition[]): 
   return lines.map((line) => {
     switch (line.id) {
       case 'local-manual':
-        return '- `local-manual` — 日常开发、真实后端手测、notebook / runner 主链手测。';
+        return '- `local-manual` — 日常开发、真实后端手测、Agent task / Agent Runner 主链手测。';
       case 'demo-rehearsal':
         return '- `demo-rehearsal` — demo 发布线的本机排演入口，使用 `agentsmith-demo` / `agentsmith-demo-registry`。';
       case 'cluster-rehearsal':
@@ -181,11 +181,11 @@ function renderLocalRuntimeFlowsBlock(): string {
 
 function renderRuntimeLinesMatrixBlock(): string {
   const rows = [
-    '| 本地真实手测线 | `local-manual` | 日常开发、真实后端手测、notebook / runner 手测 | 默认启用 | 仅 owner runbook 通过 `make local-manual-internal-up` 显式开启 | 共享本地 substrate | 当前推荐本机真实手测入口 |',
+    '| 本地真实手测线 | `local-manual` | 日常开发、真实后端手测、Agent task / Agent Runner 手测 | 默认启用 | 仅 owner runbook 通过 `make local-manual-internal-up` 显式开启 | 共享本地 substrate | 当前推荐本机真实手测入口 |',
     '| demo 本机排演线 | `demo-rehearsal` | 本机排演 demo 发布线 | `DEMO_DEPLOY_MODE=simple` 时 external-only | `DEMO_DEPLOY_MODE=full` 时启用，运行在本地 `kind` | 共享本地 substrate | 使用 scenario-owned `agentsmith-demo` 与 `agentsmith-demo-registry` |',
     '| demo 正式发布线 | `demo-deploy` | 单机 / demo 环境发布 | `simple` | `full` | 目标主机上的 compose substrate | 目标主机 release 线，不是本机 rehearsal 入口 |',
-    '| cluster 本机排演线 | `cluster-rehearsal` | 本机排演真实集群发布线 | 始终包含 external runner | 始终包含 internal k8s 执行面 | 共享本地 substrate | 使用 scenario-owned `agentsmith-cluster` 与 `agentsmith-cluster-registry` |',
-    '| cluster 正式发布线 | `cluster-deploy` | 真实集群发布 | 始终包含 external runner | 始终包含 internal k8s 执行面 | 目标主机上的 compose substrate | mode 描述自动化边界，不是 external/internal 能力差异 |',
+    '| cluster 本机排演线 | `cluster-rehearsal` | 本机排演真实集群发布线 | 始终包含 managed agent-task runner | 始终包含 internal k8s 执行面 | 共享本地 substrate | 使用 scenario-owned `agentsmith-cluster` 与 `agentsmith-cluster-registry` |',
+    '| cluster 正式发布线 | `cluster-deploy` | 真实集群发布 | 始终包含 managed agent-task runner | 始终包含 internal k8s 执行面 | 目标主机上的 compose substrate | mode 描述自动化边界，不是 runner 能力差异 |',
   ];
 
   return [

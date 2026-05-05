@@ -79,8 +79,29 @@ export const CURRENT_STORY_RISK_POLICY = {
     'ai-runtime-failure-and-recovery': {
       policy_refs: ['runtime_agent_control'],
     },
+    'agent-task-artifact-to-files-download': {
+      policy_refs: ['file_continuity_integrity'],
+    },
+    'agent-task-cancel-terminate-refresh-recovery': {
+      policy_refs: ['runtime_agent_control'],
+    },
+    'agent-task-first-success': {
+      policy_refs: ['core_ai_workflow'],
+    },
+    'agent-task-terminal-reentry-recovery': {
+      policy_refs: ['runtime_agent_control'],
+    },
+    'agent-task-terminal-truth-unavailable-retry': {
+      policy_refs: ['runtime_agent_control'],
+    },
+    'agent-task-terminal-workspace-multi-session': {
+      policy_refs: ['runtime_agent_control'],
+    },
     'api-key-to-endpoint-consumption': {
       policy_refs: ['identity_access_boundary', 'audit_usage_billing'],
+    },
+    'chat-agent-task-target-model-continuity': {
+      policy_refs: ['runtime_agent_control'],
     },
     'chat-conversation-continuity': {
       policy_refs: ['core_ai_workflow'],
@@ -102,9 +123,6 @@ export const CURRENT_STORY_RISK_POLICY = {
     },
     'governance-change-then-member-keeps-working': {
       policy_refs: ['release_blocking_governance'],
-    },
-    'internal-external-chat-notebook-proxy-matrix': {
-      policy_refs: ['runtime_agent_control'],
     },
     'invite-to-first-effective-work': {
       policy_refs: ['identity_access_boundary'],
@@ -130,7 +148,7 @@ export const CURRENT_STORY_RISK_POLICY = {
     'mock-lane-governance-surfaces': {
       policy_refs: ['visual_product_experience', 'release_blocking_governance'],
     },
-    'mock-lane-notebook-task-lifecycle': {
+    'mock-lane-agent-task-lifecycle': {
       policy_refs: ['visual_product_experience', 'standard_mock_workflow'],
     },
     'mock-lane-self-service': {
@@ -141,24 +159,6 @@ export const CURRENT_STORY_RISK_POLICY = {
     },
     'mock-lane-workspace-project-core': {
       policy_refs: ['visual_product_experience', 'standard_mock_workflow'],
-    },
-    'notebook-artifact-to-files-download': {
-      policy_refs: ['file_continuity_integrity'],
-    },
-    'notebook-cancel-terminate-refresh-recovery': {
-      policy_refs: ['runtime_agent_control'],
-    },
-    'notebook-first-success': {
-      policy_refs: ['core_ai_workflow'],
-    },
-    'notebook-terminal-reentry-recovery': {
-      policy_refs: ['runtime_agent_control'],
-    },
-    'notebook-terminal-truth-unavailable-retry': {
-      policy_refs: ['runtime_agent_control'],
-    },
-    'notebook-terminal-workspace-multi-session': {
-      policy_refs: ['runtime_agent_control'],
     },
     'personal-self-service-lifecycle': {
       policy_refs: ['data_isolation_privacy'],

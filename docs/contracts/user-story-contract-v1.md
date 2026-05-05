@@ -140,7 +140,7 @@ The markdown body is optional and ignored by the loader for canonical stories.
 
 ### Runtime data
 
-- `notebook?: Record<string, StoryRuntimeNotebookFlowDefinition>`
+- `agentTask?: Record<string, StoryRuntimeAgentTaskFlowDefinition>`
 - `visualReview?: StoryRuntimeVisualReviewDefinition`
 
 ### Visual review scene
@@ -180,21 +180,21 @@ Use `surface::target` when the same target family can appear in multiple surface
 ### Visual review
 
 - `scenes: StoryRuntimeVisualReviewSceneDefinition[]`
-- `notebookTask?: StoryRuntimeVisualReviewNotebookTaskDefinition`
+- `agentTask?: StoryRuntimeVisualReviewAgentTaskDefinition`
 
-### Notebook turn
+### Agent task turn
 
 - `prompt: string`
 - `expectedToken: string`
 - `expectedArtifactPath: string`
 - `minAgentMessages?: number`
 
-### Notebook flow
+### Agent task flow
 
-- `turnOne: StoryRuntimeNotebookTurnDefinition`
-- `turnTwo: StoryRuntimeNotebookTurnDefinition`
+- `turnOne: StoryRuntimeAgentTaskTurnDefinition`
+- `turnTwo: StoryRuntimeAgentTaskTurnDefinition`
 
-### Visual review notebook task
+### Visual review Agent task
 
 - `taskTitlePrefix: string`
 - `expectedTokenPrefix: string`

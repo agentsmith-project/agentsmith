@@ -1,6 +1,6 @@
 import { useCallback } from 'react';
 import { useTranslations } from 'next-intl';
-import type { Endpoint, ChatSession, Agent } from '@/lib/api/types';
+import type { Endpoint, ChatSession } from '@/lib/api/types';
 import { toast } from '@/components/ui/toast';
 import {
   fireAndForgetSessionUpdate,
@@ -15,7 +15,7 @@ interface ThreadToDelete {
 interface UseChatThreadActionsArgs {
   canUseChat: boolean;
   canManageChatSessions: boolean;
-  canChangeExecutionTarget?: boolean;
+  canChangeModel?: boolean;
   sessions: ChatSession[];
   activeSession: ChatSession | null;
   createSession: () => void;
@@ -38,7 +38,6 @@ interface UseChatThreadActionsResult {
   onDeleteThreadRequest: (sessionId: string) => void;
   onRenameActiveSession: (title: string) => void;
   onSelectActiveEndpoint: (endpoint: Endpoint) => void;
-  onSelectExternalAgent: (agent: Agent) => void;
 }
 
 export function useChatThreadActions(args: UseChatThreadActionsArgs): UseChatThreadActionsResult {
@@ -46,7 +45,7 @@ export function useChatThreadActions(args: UseChatThreadActionsArgs): UseChatThr
   const {
     canUseChat,
     canManageChatSessions,
-    canChangeExecutionTarget = true,
+    canChangeModel = true,
     sessions,
     activeSession,
     createSession,
@@ -103,24 +102,14 @@ export function useChatThreadActions(args: UseChatThreadActionsArgs): UseChatThr
   }, [activeSession, canManageChatSessions, updateSession]);
 
   const onSelectActiveEndpoint = useCallback((endpoint: Endpoint) => {
-    if (!canManageChatSessions || !activeSession || !canChangeExecutionTarget) return;
+    if (!canManageChatSessions || !activeSession || !canChangeModel) return;
     fireAndForgetSessionUpdate(updateSession, {
       sessionId: activeSession.id,
-      data: { endpoint_id: endpoint.id, external_agent_id: undefined, model: endpoint.model },
+      data: { endpoint_id: endpoint.id, model: endpoint.model },
     }, {
       onError: handleUpdateFailure,
     });
-  }, [activeSession, canChangeExecutionTarget, canManageChatSessions, handleUpdateFailure, updateSession]);
-
-  const onSelectExternalAgent = useCallback((agent: Agent) => {
-    if (!canManageChatSessions || !activeSession || !canChangeExecutionTarget) return;
-    fireAndForgetSessionUpdate(updateSession, {
-      sessionId: activeSession.id,
-      data: { external_agent_id: agent.id, endpoint_id: '', model: activeSession.model || 'external-agent' },
-    }, {
-      onError: handleUpdateFailure,
-    });
-  }, [activeSession, canChangeExecutionTarget, canManageChatSessions, handleUpdateFailure, updateSession]);
+  }, [activeSession, canChangeModel, canManageChatSessions, handleUpdateFailure, updateSession]);
 
   return {
     onSelectThread,
@@ -131,6 +120,5 @@ export function useChatThreadActions(args: UseChatThreadActionsArgs): UseChatThr
     onDeleteThreadRequest,
     onRenameActiveSession,
     onSelectActiveEndpoint,
-    onSelectExternalAgent,
   };
 }

@@ -30,22 +30,22 @@ test.describe('Controls Matrix', () => {
     await expect(authedPage.getByTestId('chat__composer')).toBeVisible();
     await expect(authedPage.getByTestId('chat__send-btn')).toBeVisible();
 
-    await goToProject(authedPage, 'notebook');
-    await expect(authedPage.getByTestId('notebook__task-list')).toBeVisible();
-    await expect(authedPage.getByTestId('notebook__create-task-btn')).toBeVisible();
+    await goToProject(authedPage, 'agent-tasks');
+    await expect(authedPage.getByTestId('agent-tasks__task-list')).toBeVisible();
+    await expect(authedPage.getByTestId('agent-tasks__create-task-btn')).toBeVisible();
 
-    await goToProject(authedPage, 'notebook/tasks/task_001');
-    await expect(authedPage.getByTestId('notebook__task-header')).toBeVisible();
-    await expect(authedPage.getByTestId('notebook__conversation-input')).toBeVisible();
-    await expect(authedPage.getByTestId('notebook__send-btn')).toBeVisible();
+    await goToProject(authedPage, 'agent-tasks/task_001');
+    await expect(authedPage.getByTestId('agent-task__task-header')).toBeVisible();
+    await expect(authedPage.getByTestId('agent-tasks__conversation-input')).toBeVisible();
+    await expect(authedPage.getByTestId('agent-tasks__send-btn')).toBeVisible();
 
     await goToProject(authedPage, 'files');
     await expect(authedPage.getByTestId('files__library-list')).toBeVisible();
     await expect(authedPage.getByTestId('files__upload')).toBeVisible();
     await expect(authedPage.getByTestId('files__new-folder')).toBeVisible();
 
-    await goToProject(authedPage, 'agents');
-    await expect(authedPage.getByTestId('agents__create-btn')).toBeVisible();
+    await goToProject(authedPage, 'agent-runners');
+    await expect(authedPage.getByTestId('agent-runners__create-btn')).toBeVisible();
 
     await goToProject(authedPage, 'endpoints');
     await expect(authedPage.getByTestId('endpoints__create-btn')).toBeVisible();
@@ -93,20 +93,20 @@ test.describe('Controls Matrix', () => {
   test('navigation retains project scope', async ({ authedPage }) => {
     await goToProject(authedPage, 'overview');
     const chatNav = authedPage.getByTestId('sidebar__nav-item--chat');
-    const notebookNav = authedPage.getByTestId('sidebar__nav-item--notebook');
+    const agentTasksNav = authedPage.getByTestId('sidebar__nav-item--agent-tasks');
     await expect(chatNav).toBeVisible();
-    await expect(notebookNav).toBeVisible();
+    await expect(agentTasksNav).toBeVisible();
 
     const expectedChatPath = `/${LOCALE}/workspaces/${WS_ID}/projects/${PROJECT_ID}/chat`;
-    const expectedNotebookPath = `/${LOCALE}/workspaces/${WS_ID}/projects/${PROJECT_ID}/notebook`;
+    const expectedAgentTasksPath = `/${LOCALE}/workspaces/${WS_ID}/projects/${PROJECT_ID}/agent-tasks`;
     await expect(chatNav).toHaveAttribute('href', expectedChatPath);
-    await expect(notebookNav).toHaveAttribute('href', expectedNotebookPath);
+    await expect(agentTasksNav).toHaveAttribute('href', expectedAgentTasksPath);
 
     await goToProject(authedPage, 'chat');
     await expect(authedPage).toHaveURL(new RegExp(`${expectedChatPath}$`));
-    await goToProject(authedPage, 'notebook');
+    await goToProject(authedPage, 'agent-tasks');
     await expect(authedPage).toHaveURL(
-      new RegExp(`${expectedNotebookPath}$`)
+      new RegExp(`${expectedAgentTasksPath}$`)
     );
   });
 });

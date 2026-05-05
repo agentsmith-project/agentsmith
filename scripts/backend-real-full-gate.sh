@@ -144,17 +144,17 @@ ensure_local_release_stack() {
 
 prewarm_internal_kind_cluster() {
   if ! command -v kind >/dev/null 2>&1; then
-    gate_record_failure "${LOCAL_READY_LOG_DIR}" "infra_dependency_unready" "kind_missing" "kind is required for internal notebook backend-real coverage"
-    echo "[backend-real-full-gate] kind is required for internal notebook backend-real coverage." >&2
+    gate_record_failure "${LOCAL_READY_LOG_DIR}" "infra_dependency_unready" "kind_missing" "kind is required for internal agent-task backend-real coverage"
+    echo "[backend-real-full-gate] kind is required for internal agent-task backend-real coverage." >&2
     exit 1
   fi
   if ! command -v kubectl >/dev/null 2>&1; then
-    gate_record_failure "${LOCAL_READY_LOG_DIR}" "infra_dependency_unready" "kubectl_missing" "kubectl is required for internal notebook backend-real coverage"
-    echo "[backend-real-full-gate] kubectl is required for internal notebook backend-real coverage." >&2
+    gate_record_failure "${LOCAL_READY_LOG_DIR}" "infra_dependency_unready" "kubectl_missing" "kubectl is required for internal agent-task backend-real coverage"
+    echo "[backend-real-full-gate] kubectl is required for internal agent-task backend-real coverage." >&2
     exit 1
   fi
 
-  info "prewarming local kind cluster for internal notebook backend-real coverage"
+  info "prewarming local kind cluster for internal agent-task backend-real coverage"
   LOCAL_KIND_CLUSTER_NAME="${INTERNAL_AGENT_KIND_CLUSTER_NAME:-agentsmith}" \
   LOCAL_KIND_CONFIG_PATH="${ROOT_DIR}/infra/deploy/demo/kind/config.yaml" \
   LOCAL_KIND_CONTROL_PLANE_NODE_NAME="${INTERNAL_AGENT_KIND_CLUSTER_NAME:-agentsmith}-control-plane" \

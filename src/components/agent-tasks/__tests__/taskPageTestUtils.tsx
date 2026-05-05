@@ -1,0 +1,64 @@
+import * as React from 'react';
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import { render } from '@testing-library/react';
+import type { Artifact, Task, TaskActivityItem } from '@/lib/types/task';
+
+export const mockTask: Task = {
+  id: 'task-1',
+  workspace_id: 'workspace-1',
+  project_id: 'project-1',
+  owner_user_id: 'user-1',
+  title: 'Test Task',
+  status: 'active',
+  attached_inputs: [
+    { id: 'in_1', kind: 'library_object', library_id: 'lib-1', key: 'docs/source-1.txt', name: 'source-1.txt' },
+    { id: 'in_2', kind: 'library_object', library_id: 'lib-1', key: 'docs/source-2.txt', name: 'source-2.txt' },
+  ],
+  created_at: '2024-01-01T00:00:00Z',
+  updated_at: '2024-01-02T00:00:00Z',
+  last_activity_at: '2024-01-02T12:00:00Z',
+};
+
+export const mockMessages: TaskActivityItem[] = [
+  {
+    id: 'msg-1',
+    task_id: 'task-1',
+    kind: 'user_intent',
+    actor: 'user',
+    content: 'Hello',
+    created_at: '2024-01-01T00:00:00Z',
+  },
+  {
+    id: 'msg-2',
+    task_id: 'task-1',
+    kind: 'runner_output',
+    actor: 'runner',
+    content: 'Hi there!',
+    created_at: '2024-01-01T00:01:00Z',
+  },
+];
+
+export const mockArtifacts: Artifact[] = [
+  {
+    id: 'artifact-1',
+    task_id: 'task-1',
+    type: 'text',
+    title: 'Text Artifact',
+    content: 'Artifact content',
+    created_at: '2024-01-01T00:00:00Z',
+  },
+];
+
+export function renderWithAgentTaskQueryClient(ui: React.ReactElement) {
+  const queryClient = new QueryClient({
+    defaultOptions: {
+      queries: {
+        retry: false,
+      },
+    },
+  });
+  return {
+    queryClient,
+    ...render(<QueryClientProvider client={queryClient}>{ui}</QueryClientProvider>),
+  };
+}

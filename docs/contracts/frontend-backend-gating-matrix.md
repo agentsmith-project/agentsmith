@@ -1,6 +1,6 @@
 # Frontend-Backend Gating Matrix (Page/Operation Level)
 
-Last updated: 2026-04-29
+Last updated: 2026-05-05
 Owner: Frontend
 Audience: Backend auth team, QA, FE
 
@@ -18,10 +18,10 @@ Backend enforces `401/403`; frontend applies route/component gates.
 ## Canonical Project Permissions (MVP)
 
 - `project:endpoint:use`
-- `project:agent:use`
-- `project:terminal:use`
-- `project:agent:manage`
-- `project:agent:public`
+- `project:agent_task:use`
+- `project:agent_task:terminal`
+- `project:agent_runner:read`
+- `project:agent_runner:manage`
 - `project:audit:read`
 - `project:governance:update`
 - `project:membership:update`
@@ -36,16 +36,16 @@ Backend enforces `401/403`; frontend applies route/component gates.
 | projects list | view projects | `workspace:read` | `/workspaces/{ws}/projects` | error state or empty permissions fallback |
 | projects list | create project | `workspace:project:create` | `POST /workspaces/{ws}/projects` | disable create button + toast/error |
 | projects list | delete project | `project:lifecycle:update` | `DELETE /workspaces/{ws}/projects/{project}` | destructive dialog fails gracefully |
-| chat | access chat page and stream completion | `project:endpoint:use` | `/chat/sessions`, `/messages`, `/attachments`, stream routes | page-level permission denied |
-| notebook list/detail | access notebook page and task operations | `project:endpoint:use` | `GET/POST/PATCH/DELETE /tasks*`, `GET /tasks/{id}/events` | page-level permission denied |
+| chat | access chat page and model completion | `project:endpoint:use` | `/chat/sessions`, `/messages`, `/attachments`, stream routes | page-level permission denied |
+| agent tasks | access task list/detail and create/run/update/archive/cancel tasks | `project:agent_task:use` | `GET/POST/PATCH/DELETE /tasks*`, `GET /tasks/{id}/events`, task message/run/cancel routes | page-level permission denied |
+| agent task terminal | open/reconnect/input/resize/close terminal sessions | `project:agent_task:use` + `project:agent_task:terminal` | task terminal ticket/session routes and terminal websocket frames | terminal controls disabled or denied |
 | files | view/use project file libraries | `project:endpoint:use` | `GET /file-libraries*` | page-level permission denied |
 | files | create/update/delete/move/upload/share file or library | `project:files:update` | `POST/PATCH/DELETE /file-libraries*`, `POST /file-libraries/*/(folders|move|upload|share-link)` | mutating controls disabled |
-| agents | view/use visible agents | `project:agent:use` or `project:agent:manage` | `GET /agents*`, `GET /agents/{id}/execution-config`, `GET /agents/{id}/connection-info` | page-level permission denied |
-| agents | create/update/delete own agent and keys | `project:agent:manage` | `POST/PATCH/DELETE /agents*`, `POST/DELETE /agents/{id}/keys*` | mutating controls disabled |
-| agents | publish/unpublish agent to project | `project:agent:public` | `PATCH /agents/{id}` (visibility/public flags) | publish controls disabled |
+| Agent Runners | view runner configuration and diagnostics | `project:agent_runner:read` or `project:agent_runner:manage` | `GET /agent-runners*`, `GET /agent-runners/{id}/execution-config`, `GET /agent-runners/{id}/connection-info`, `GET /agent-runners/{id}/diagnostics` | page-level permission denied |
+| Agent Runners | create/update/delete/default runners and issue/revoke connection keys | `project:agent_runner:manage` | `POST/PATCH/DELETE /agent-runners*`, `POST/DELETE /agent-runners/{id}/keys*` | mutating controls disabled |
 | endpoints | view/use endpoints | `project:endpoint:use` | `GET /endpoints*` | page-level permission denied |
 | endpoints | create/update/delete endpoint | `project:governance:update` | `POST/PUT/DELETE /endpoints*` | mutating controls disabled |
-| resource policy | view/update endpoint/agent policy | `project:governance:update` | `GET/PATCH /resources/{endpoint\|agent}/{id}/policy` | mutating controls disabled |
+| resource policy | view/update endpoint and Agent Runner policy | `project:governance:update` | `GET/PATCH /resources/{endpoint\|agent}/{id}/policy` | mutating controls disabled |
 | Project secrets | view/manage project secrets | `project:governance:update` | `GET/POST/DELETE /credentials*` | page-level permission denied |
 | members | view/manage members/templates/groups | `project:membership:update` | `/members/*`, `/invites`, `/join-requests/*`, `/groups*`, `/permission-templates*`, `/spending-limit-templates*` | page-level permission denied or mutating controls disabled |
 | settings | view project settings shell | `project:governance:update` or `project:admins:update` or `project:lifecycle:update` | `GET /projects/{id}` | page-level permission denied |
@@ -68,9 +68,24 @@ Backend enforces `401/403`; frontend applies route/component gates.
    - return `project_summary` with `project_used/project_max/project_remaining/project_usage_pct`.
 8. Files default path now runs on JuiceFS-backed project `file-libraries`.
    New Files frontend or backend work must target `file-libraries`.
+9. Chat is Endpoint/Model-only. It must not dispatch Agent Runners or accept legacy runner binding fields.
+10. Agent task dispatch is backend-owned and resolves the eligible default Agent Runner at run time.
 
 ## Current Split-Permission Status
 
+- `project:endpoint:use`
+  - Chat access, send/stream/stop/delete
+  - endpoint read/use
+  - Files read/use
+  - Usage and Access guide read access
+- `project:agent_task:use`
+  - Agent task list/detail/create/run/update/archive/cancel
+- `project:agent_task:terminal`
+  - Agent task terminal open/reconnect/input/resize/close, always paired with task access
+- `project:agent_runner:read`
+  - Agent Runner list/detail/diagnostics read
+- `project:agent_runner:manage`
+  - Agent Runner create/update/delete/default and connection key mutations
 - `project:governance:update`
   - endpoints governance writes
   - project secrets

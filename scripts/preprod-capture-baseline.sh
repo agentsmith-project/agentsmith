@@ -8,7 +8,7 @@ OUT_BASENAME="${OUT_BASENAME:-BASELINE_$(date +%Y%m%d)}"
 
 API_CONTAINER="${API_CONTAINER:-agentsmith-preprod-api}"
 WEB_CONTAINER="${WEB_CONTAINER:-agentsmith-preprod-web}"
-RUNNER_CONTAINER="${RUNNER_CONTAINER:-agentsmith-preprod-notebook-runner}"
+RUNNER_CONTAINER="${RUNNER_CONTAINER:-agentsmith-preprod-agent-task-runner}"
 
 info() { echo "[preprod-baseline] $*"; }
 err() { echo "[preprod-baseline] ERROR: $*" >&2; }
@@ -81,13 +81,13 @@ WEB_ENV="${WEB_ENV:-$DEPLOY_DIR/web.env}"
 
 API_CONTAINER="${API_CONTAINER:-agentsmith-preprod-api}"
 WEB_CONTAINER="${WEB_CONTAINER:-agentsmith-preprod-web}"
-RUNNER_CONTAINER="${RUNNER_CONTAINER:-agentsmith-preprod-notebook-runner}"
+RUNNER_CONTAINER="${RUNNER_CONTAINER:-agentsmith-preprod-agent-task-runner}"
 
 API_IMAGE="${API_IMAGE:-agentsmith-deploy:d0a7aae}"
 WEB_IMAGE="${WEB_IMAGE:-agentsmith-deploy:d0a7aae}"
-RUNNER_IMAGE="${RUNNER_IMAGE:-agentsmith-notebook-codex-runner:cnpy312-v1}"
+RUNNER_IMAGE="${RUNNER_IMAGE:-agentsmith-agent-task-runner:cnpy312-v1}"
 
-MBOS_AGENT_WS_URL="${MBOS_AGENT_WS_URL:-ws://localhost:20000/api/v1/agent-execution/ws?agent_id=ag_1772685779403_6631}"
+MBOS_AGENT_WS_URL="${MBOS_AGENT_WS_URL:-ws://localhost:20000/api/v1/agent-execution/ws?agent_runner_id=agr_1772685779403_6631}"
 MBOS_AGENT_KEY="${MBOS_AGENT_KEY:-ask_9650f58723ad6abdd86b3c66e82886e22741a41992526e44}"
 MBOS_AGENT_BUILTIN_SKILLS_DIR="${MBOS_AGENT_BUILTIN_SKILLS_DIR:-}"
 
@@ -115,12 +115,12 @@ docker run -d --name "$RUNNER_CONTAINER" --restart unless-stopped --network host
   -e MBOS_AGENT_KEY="$MBOS_AGENT_KEY" \
   -v "$APP_DIR:/app" \
   "$RUNNER_IMAGE" \
-  bash -lc 'python3.12 --version && node -v && codex --version && npm run agent:notebook-runner'
+  bash -lc 'python3.12 --version && node -v && codex --version && npm run agent:task-runner'
 
 sleep 6
 curl -sS -o /dev/null -w "[rollback] API openapi HTTP %{http_code}\n" http://localhost:20000/api/v1/openapi.json
 curl -sS -o /dev/null -w "[rollback] Web login HTTP %{http_code}\n" http://localhost:3001/zh-CN/login
-docker ps --format "table {{.Names}}\t{{.Image}}\t{{.Status}}" | grep -E "agentsmith-preprod-(api|web|notebook-runner)"
+docker ps --format "table {{.Names}}\t{{.Image}}\t{{.Status}}" | grep -E "agentsmith-preprod-(api|web|agent-task-runner)"
 EOT
 chmod +x "\$DEPLOY_DIR/rollback-to-\${OUT_BASENAME}.sh"
 

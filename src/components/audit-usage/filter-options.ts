@@ -5,11 +5,11 @@ export const AUDIT_ACTION_OPTIONS = [
   'member.add',
   'member.update',
   'member.remove',
-  'agent.create',
-  'agent.update',
-  'agent.delete',
-  'agent.key.issue',
-  'agent.key.revoke',
+  'agent_runner.create',
+  'agent_runner.update',
+  'agent_runner.delete',
+  'agent_runner.key.issue',
+  'agent_runner.key.revoke',
   'endpoint.create',
   'endpoint.update',
   'endpoint.delete',
@@ -26,7 +26,7 @@ export const AUDIT_ACTION_OPTIONS = [
 export const AUDIT_RESOURCE_TYPE_OPTIONS = [
   'project',
   'member',
-  'agent',
+  'agent_runner',
   'endpoint',
   'file_library',
   'source_file',
@@ -37,7 +37,7 @@ export const AUDIT_RESOURCE_TYPE_OPTIONS = [
 export const USAGE_RESOURCE_TYPE_OPTIONS = [
   'endpoint',
   'file_library',
-  'agent',
+  'agent_runner',
 ] as const;
 
 export function formatFilterToken(value: string): string {

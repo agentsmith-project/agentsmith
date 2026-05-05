@@ -9,11 +9,11 @@ describe('user story contract docs', () => {
 
     expect(contractSource).toContain('note?: string;');
     expect(contractSource).toContain('runtimeData?: StoryRuntimeData;');
-    expect(contractSource).toContain('export type StoryRuntimeNotebookTurnDefinition');
-    expect(contractSource).toContain('export type StoryRuntimeNotebookFlowDefinition');
+    expect(contractSource).toContain('export type StoryRuntimeAgentTaskTurnDefinition');
+    expect(contractSource).toContain('export type StoryRuntimeAgentTaskFlowDefinition');
     expect(contractSource).toContain('export type StoryRuntimeVisualReviewSceneDefinition');
     expect(contractSource).toContain('export type StoryRuntimeVisualReviewDefinition');
-    expect(contractSource).toContain('export type StoryRuntimeVisualReviewNotebookTaskDefinition');
+    expect(contractSource).toContain('export type StoryRuntimeVisualReviewAgentTaskDefinition');
     expect(contractSource).toContain('export type StoryRuntimeVisualSemanticAssertionsDefinition');
     expect(contractSource).toContain('export type StoryRuntimeData');
     expect(contractSource).toContain('export type StoryVisualReviewScenarioGroup');
@@ -45,7 +45,7 @@ describe('user story contract docs', () => {
     expect(docSource).toContain('- `kind:');
     expect(docSource).toContain('- `required?: boolean`');
     expect(docSource).toContain('### Runtime data');
-    expect(docSource).toContain('- `notebook?: Record<string, StoryRuntimeNotebookFlowDefinition>`');
+    expect(docSource).toContain('- `agentTask?: Record<string, StoryRuntimeAgentTaskFlowDefinition>`');
     expect(docSource).toContain('- `visualReview?: StoryRuntimeVisualReviewDefinition`');
     expect(docSource).toContain('### Visual review scene');
     expect(docSource).toContain('- `sceneId: string`');
@@ -75,16 +75,16 @@ describe('user story contract docs', () => {
     expect(docSource).toContain('surface::target');
     expect(docSource).toContain('### Visual review');
     expect(docSource).toContain('- `scenes: StoryRuntimeVisualReviewSceneDefinition[]`');
-    expect(docSource).toContain('- `notebookTask?: StoryRuntimeVisualReviewNotebookTaskDefinition`');
-    expect(docSource).toContain('### Notebook turn');
+    expect(docSource).toContain('- `agentTask?: StoryRuntimeVisualReviewAgentTaskDefinition`');
+    expect(docSource).toContain('### Agent task turn');
     expect(docSource).toContain('- `prompt: string`');
     expect(docSource).toContain('- `expectedToken: string`');
     expect(docSource).toContain('- `expectedArtifactPath: string`');
     expect(docSource).toContain('- `minAgentMessages?: number`');
-    expect(docSource).toContain('### Notebook flow');
-    expect(docSource).toContain('- `turnOne: StoryRuntimeNotebookTurnDefinition`');
-    expect(docSource).toContain('- `turnTwo: StoryRuntimeNotebookTurnDefinition`');
-    expect(docSource).toContain('### Visual review notebook task');
+    expect(docSource).toContain('### Agent task flow');
+    expect(docSource).toContain('- `turnOne: StoryRuntimeAgentTaskTurnDefinition`');
+    expect(docSource).toContain('- `turnTwo: StoryRuntimeAgentTaskTurnDefinition`');
+    expect(docSource).toContain('### Visual review Agent task');
     expect(docSource).toContain('- `taskTitlePrefix: string`');
     expect(docSource).toContain('- `expectedTokenPrefix: string`');
     expect(docSource).toContain('- `artifactNamePrefix: string`');

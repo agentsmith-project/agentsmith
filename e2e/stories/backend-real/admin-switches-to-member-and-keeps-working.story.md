@@ -11,7 +11,7 @@
   "kind": "journey",
   "lane": "backend-real",
   "entryRoute": "/en-US/workspaces/ws_default/projects",
-  "goal": "项目管理员被降回普通成员后，自己还能继续做 notebook 和 files 的真实工作，但治理入口要立即收缩，不允许旧的 admin surface 继续留在页面里。",
+  "goal": "项目管理员被降回普通成员后，自己还能继续做 agent-task 和 files 的真实工作，但治理入口要立即收缩，不允许旧的 admin surface 继续留在页面里。",
   "gatePolicy": {
     "tier": "default",
     "requiredEvidence": [
@@ -42,14 +42,14 @@
       "memberDisplayName": "Integration Member",
       "credentialNamePrefix": "Admin Switch Credential",
       "endpointNamePrefix": "Admin Switch Endpoint",
-      "notebookAgentTitlePrefix": "Admin Switch Notebook Agent",
+      "agentTaskRunnerTitlePrefix": "Admin Switch Agent Task Agent",
       "taskWorkspacePrefix": "Admin Switch Workspace",
-      "notebookTaskTitlePrefix": "Admin Switch Task",
-      "notebookTokenPrefix": "ADMIN_SWITCH_NOTEBOOK",
+      "agentTaskTitlePrefix": "Admin Switch Task",
+      "agentTaskTokenPrefix": "ADMIN_SWITCH_AGENT_TASK",
       "artifactNamePrefix": "admin-switch-artifact"
     }
   },
-  "narrative": "管理员最在意的不是自己某一刻是不是 admin，而是当治理能力被收回时，自己还能不能顺利继续原本的 notebook 和 files 工作；治理面必须收缩，工作面必须继续，界面不能让人误以为自己还在拥有旧的 admin 特权。",
+  "narrative": "管理员最在意的不是自己某一刻是不是 admin，而是当治理能力被收回时，自己还能不能顺利继续原本的 agent-task 和 files 工作；治理面必须收缩，工作面必须继续，界面不能让人误以为自己还在拥有旧的 admin 特权。",
   "scenes": [
     {
       "sceneId": "project-settings",
@@ -59,11 +59,11 @@
       ]
     },
     {
-      "sceneId": "project-notebook-task",
-      "route": "/en-US/workspaces/{workspaceId}/projects/{projectId}/notebook/tasks/{taskId}",
+      "sceneId": "project-agent-task",
+      "route": "/en-US/workspaces/{workspaceId}/projects/{projectId}/agent-tasks/{taskId}",
       "stableMarkers": [
-        "notebook__task-header",
-        "notebook__artifact-card"
+        "agent-task__task-header",
+        "agent-tasks__artifact-card"
       ]
     },
     {
@@ -113,12 +113,12 @@
     },
     {
       "stepId": "continue-member-work",
-      "sceneId": "project-notebook-task",
+      "sceneId": "project-agent-task",
       "intent": "Continue normal member work after the governance surface disappears.",
       "action": "Continue member work",
-      "target": "notebook__artifact-card",
-      "expectedFeedback": "治理面收回后，notebook 和 files 的日常工作仍然可用，成员应继续看到自己的任务产物和项目内容。",
-      "note": "角色降级不应该打断 notebook/files 正常工作流。",
+      "target": "agent-tasks__artifact-card",
+      "expectedFeedback": "治理面收回后，agent-task 和 files 的日常工作仍然可用，成员应继续看到自己的任务产物和项目内容。",
+      "note": "角色降级不应该打断 agent-task/files 正常工作流。",
       "evidence": [
         "trace"
       ]

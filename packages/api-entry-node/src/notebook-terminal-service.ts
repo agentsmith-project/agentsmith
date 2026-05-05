@@ -29,7 +29,7 @@ const DEFAULT_TERMINAL_REPLAY_MAX_CHUNKS = 500;
 const DEFAULT_TERMINAL_REPLAY_MAX_BYTES = 256 * 1024;
 const DEFAULT_TERMINAL_REPLAY_TTL_MS = 10 * 60_000;
 const MAX_QUEUED_BROWSER_EVENTS = 1_000;
-export const NOTEBOOK_TASK_TERMINAL_RECONNECT_VIEW = 'notebook.task_terminal';
+const AGENT_TASK_TERMINAL_RECONNECT_VIEW = 'agent_task.task_terminal';
 
 function parsePositiveIntegerEnv(name: string): number | null {
   const raw = process.env[name]?.trim();
@@ -89,6 +89,7 @@ type RegisteredTerminalSession = {
   rows: number;
   shell?: string;
   executionContext?: Record<string, unknown>;
+  runtimeDispatchContext?: Record<string, unknown>;
   status: 'pending' | 'active' | 'disconnected' | 'closed' | 'failed';
   browserSocket?: WebSocket;
   runtime?: TerminalRuntime;
@@ -114,7 +115,7 @@ type RegisteredTerminalSession = {
 
 type TerminalRuntimeEvent = {
   type: 'started' | 'output' | 'exited' | 'error';
-  session_id?: string;
+  terminal_session_id: string;
   cols?: number;
   rows?: number;
   chunk?: string;
@@ -127,7 +128,6 @@ type TerminalRuntimeEvent = {
 type TerminalBrowserPayload = Record<string, unknown> & {
   type: string;
   terminal_session_id?: string;
-  session_id?: string;
 };
 
 type TerminalOutputReplayEntry = {
@@ -161,6 +161,7 @@ type PersistedTerminalSession = Omit<RegisteredTerminalSession, 'browserSocket'>
 
 type NotebookTerminalLifecycleHooks = {
   onSessionCreated?: (session: RegisteredTerminalSession) => void | Promise<void>;
+  beforeSessionRuntimeDispatch?: (session: RegisteredTerminalSession) => void | Promise<void>;
   onSessionClosed?: (session: RegisteredTerminalSession) => void | Promise<void>;
 };
 
@@ -178,7 +179,7 @@ export type NotebookTerminalAuthorizationInput = {
   taskId: string;
   userId: string;
   terminalSessionId: string;
-  requiredPermission: 'project:terminal:use';
+  requiredPermission: 'project:agent_task:terminal';
 };
 
 export type NotebookTerminalAuthorizationHook = (
@@ -254,6 +255,10 @@ export class NotebookTerminalService {
 
   private async notifySessionCreated(session: RegisteredTerminalSession): Promise<void> {
     await this.callLifecycleHooks(session, 'onSessionCreated');
+  }
+
+  private async notifyBeforeSessionRuntimeDispatch(session: RegisteredTerminalSession): Promise<void> {
+    await this.callLifecycleHooks(session, 'beforeSessionRuntimeDispatch');
   }
 
   private async notifySessionClosed(session: RegisteredTerminalSession): Promise<void> {
@@ -351,7 +356,7 @@ export class NotebookTerminalService {
       taskId: session.taskId,
       userId: session.userId,
       terminalSessionId: session.id,
-      requiredPermission: 'project:terminal:use',
+      requiredPermission: 'project:agent_task:terminal',
     };
   }
 
@@ -553,6 +558,7 @@ export class NotebookTerminalService {
       rows: session.rows,
       ...(session.shell ? { shell: session.shell } : {}),
       ...(session.executionContext ? { executionContext: session.executionContext } : {}),
+      ...(session.runtimeDispatchContext ? { runtimeDispatchContext: session.runtimeDispatchContext } : {}),
       status: session.status,
       createdAt: session.createdAt,
       lastActivityAt: session.lastActivityAt,
@@ -748,6 +754,30 @@ export class NotebookTerminalService {
     };
   }
 
+  private isCanonicalRuntimeEventForSession(
+    session: RegisteredTerminalSession,
+    event: TerminalRuntimeEvent,
+  ): boolean {
+    const eventSessionId = typeof event.terminal_session_id === 'string'
+      ? event.terminal_session_id.trim()
+      : '';
+    return eventSessionId === session.id
+      && !Object.prototype.hasOwnProperty.call(event, 'session_id');
+  }
+
+  private failRuntimeSessionMismatch(session: RegisteredTerminalSession): void {
+    const socket = session.browserSocket;
+    this.sendToBrowserSocket(socket, {
+      type: 'terminal.error',
+      terminal_session_id: session.id,
+      error_code: 'TERMINAL_RUNTIME_SESSION_MISMATCH',
+      error_message: 'terminal_runtime_session_mismatch',
+    });
+    this.closeBrowserSocket(socket, 1011, 'terminal_runtime_session_mismatch');
+    session.runtime?.close();
+    this.finishSession(session.id, 'failed', 'terminal_runtime_session_mismatch');
+  }
+
   private buildReplayPlan(
     session: RegisteredTerminalSession,
     afterSeq: number | null,
@@ -881,9 +911,13 @@ export class NotebookTerminalService {
     session.streamBound = true;
     void (async () => {
       for await (const event of runtime.stream) {
+        if (!this.isCanonicalRuntimeEventForSession(session, event)) {
+          this.failRuntimeSessionMismatch(session);
+          return;
+        }
         const inputWasEnabled = this.isTerminalInputEnabled(session);
         debugTerminal('runtime_event', {
-          session_id: session.id,
+          terminal_session_id: session.id,
           type: event.type,
         });
         if (event.type === 'started') {
@@ -955,7 +989,7 @@ export class NotebookTerminalService {
       );
     })().catch(() => {
       debugTerminal('runtime_stream_failed', {
-        session_id: session.id,
+        terminal_session_id: session.id,
       });
       this.closeBrowserSocket(session.browserSocket, 1011, 'terminal_stream_failed');
       this.finishSession(session.id, 'failed', 'terminal_stream_failed');
@@ -968,19 +1002,25 @@ export class NotebookTerminalService {
       return session.runtime;
     }
     if (!session.runtimeDispatchPromise) {
-      const dispatchPromise = this.agentExecutionService.dispatchTerminalSession({
-        workspaceId: session.workspaceId,
-        projectId: session.projectId,
-        sessionId: session.runnerSessionId,
-        agentId: session.agentId,
-        terminalSessionId: session.id,
-        payload: {
-          cols: session.cols,
-          rows: session.rows,
-          ...(session.shell ? { shell: session.shell } : {}),
-          ...(session.executionContext ? { executionContext: session.executionContext } : {}),
-        },
-      }).then((runtime) => {
+      const dispatchPromise = (async () => {
+        await this.notifyBeforeSessionRuntimeDispatch(session);
+        if (!this.sessions.has(session.id) || session.status === 'closed' || session.status === 'failed') {
+          throw new Error('terminal_dispatch_abandoned');
+        }
+        return this.agentExecutionService.dispatchTerminalSession({
+          workspaceId: session.workspaceId,
+          projectId: session.projectId,
+          sessionId: session.runnerSessionId,
+          agentId: session.agentId,
+          terminalSessionId: session.id,
+          payload: {
+            cols: session.cols,
+            rows: session.rows,
+            ...(session.shell ? { shell: session.shell } : {}),
+            ...(session.executionContext ? { executionContext: session.executionContext } : {}),
+          },
+        });
+      })().then((runtime) => {
         if (!this.sessions.has(session.id) || session.status === 'closed' || session.status === 'failed') {
           runtime.close();
           throw new Error('terminal_dispatch_abandoned');
@@ -1084,6 +1124,7 @@ export class NotebookTerminalService {
     rows: number;
     shell?: string;
     executionContext?: Record<string, unknown>;
+    runtimeDispatchContext?: Record<string, unknown>;
   }): Promise<{
     sessionId: string;
     wsPath: string;
@@ -1106,6 +1147,7 @@ export class NotebookTerminalService {
       rows: Math.max(5, input.rows),
       ...(input.shell?.trim() ? { shell: input.shell.trim() } : {}),
       ...(input.executionContext ? { executionContext: input.executionContext } : {}),
+      ...(input.runtimeDispatchContext ? { runtimeDispatchContext: input.runtimeDispatchContext } : {}),
       status: 'pending',
       createdAt: now,
       lastActivityAt: now,
@@ -1133,7 +1175,7 @@ export class NotebookTerminalService {
       wsPath: `/api/v1/workspaces/${encodeURIComponent(input.workspaceId)}`
         + `/projects/${encodeURIComponent(input.projectId)}`
         + `/tasks/${encodeURIComponent(input.taskId)}`
-        + `/terminal/ws?session_id=${encodeURIComponent(sessionId)}&ticket=${encodeURIComponent(issued.ticket)}`,
+        + `/terminal/ws?terminal_session_id=${encodeURIComponent(sessionId)}&ticket=${encodeURIComponent(issued.ticket)}`,
       wsTicket: issued.ticket,
     };
   }
@@ -1162,7 +1204,7 @@ export class NotebookTerminalService {
       wsPath: `/api/v1/workspaces/${encodeURIComponent(session.workspaceId)}`
         + `/projects/${encodeURIComponent(session.projectId)}`
         + `/tasks/${encodeURIComponent(session.taskId)}`
-        + `/terminal/ws?session_id=${encodeURIComponent(session.id)}&ticket=${encodeURIComponent(issued.ticket)}`,
+        + `/terminal/ws?terminal_session_id=${encodeURIComponent(session.id)}&ticket=${encodeURIComponent(issued.ticket)}`,
       wsTicket: issued.ticket,
     };
   }
@@ -1307,7 +1349,7 @@ export class NotebookTerminalService {
     const workspaceId = decodeURIComponent(matched[1] ?? '');
     const projectId = decodeURIComponent(matched[2] ?? '');
     const taskId = decodeURIComponent(matched[3] ?? '');
-    const sessionId = url.searchParams.get('session_id')?.trim() ?? '';
+    const sessionId = url.searchParams.get('terminal_session_id')?.trim() ?? '';
     const ticket = url.searchParams.get('ticket')?.trim() ?? '';
     if (!sessionId || !ticket) {
       socket.write('HTTP/1.1 401 Unauthorized\r\n\r\n');
@@ -1362,9 +1404,9 @@ export class NotebookTerminalService {
 
   private async bindBrowserSocket(ws: WebSocket, session: RegisteredTerminalSession): Promise<void> {
     debugTerminal('bind_browser_socket', {
-      session_id: session.id,
+      terminal_session_id: session.id,
       task_id: session.taskId,
-      agent_id: session.agentId,
+      agent_runner_id: session.agentId,
       runner_session_id: session.runnerSessionId,
     });
     const bindVersion = this.nextBindVersion(session);
@@ -1502,13 +1544,15 @@ export class NotebookTerminalService {
       ? payload.terminal_session_id.trim()
       : '';
     const view = typeof payload.view === 'string' ? payload.view.trim() : '';
+    const hasUnsupportedView = Object.prototype.hasOwnProperty.call(payload, 'view')
+      && view !== AGENT_TASK_TERMINAL_RECONNECT_VIEW;
     const cols = this.parsePositiveDimension(payload.cols, 20);
     const rows = this.parsePositiveDimension(payload.rows, 5);
     const afterSeq = this.parseAfterSeq(payload.after_seq);
 
     if (
       terminalSessionId !== session.id
-      || view !== NOTEBOOK_TASK_TERMINAL_RECONNECT_VIEW
+      || hasUnsupportedView
       || cols === null
       || rows === null
       || afterSeq === undefined
@@ -1591,9 +1635,9 @@ export class NotebookTerminalService {
         return;
       }
       debugTerminal('dispatch_failed', {
-        session_id: session.id,
+        terminal_session_id: session.id,
         task_id: session.taskId,
-        agent_id: session.agentId,
+        agent_runner_id: session.agentId,
         runner_session_id: session.runnerSessionId,
         error: message,
       });

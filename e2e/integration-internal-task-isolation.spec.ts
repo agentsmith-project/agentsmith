@@ -4,7 +4,8 @@ import {
   BACKEND_REAL_MODEL,
   createCredentialViaUi,
   createEndpointViaApi,
-  createInternalCodexAgent,
+  createInternalAgentTaskRunnerViaApi,
+  createAgentTaskViaApi,
   createProjectInWorkspace,
   ensureIntegrationKeycloakUsers,
   KEYCLOAK_DEV_ADMIN_PASSWORD,
@@ -12,9 +13,9 @@ import {
   KEYCLOAK_INTEGRATION_MEMBER_PASSWORD,
   KEYCLOAK_INTEGRATION_MEMBER_USERNAME,
   keycloakLoginToWorkspace,
-  createNotebookTaskViaApi,
-  sendTaskMessage,
   sanitizeWorkloadId,
+  startAgentTaskRunViaApi,
+  waitForRunnerOutputToken,
   waitForWorkloadPodIdentity,
   LOCALE,
   API_BASE,
@@ -100,7 +101,7 @@ async function expectFilesLibraryVisibility(args: {
   await expect(hiddenLibrary).toHaveCount(0);
 }
 
-test.describe('@lane-real internal notebook task isolation by user', () => {
+test.describe('@lane-real internal Agent Task isolation by user', () => {
   test('different users get different tasks, hidden from each other, with different workload pods', async ({ browser, page }) => {
     test.setTimeout(1_200_000);
     const { namespace, apiKey } = requireInternalEnv();
@@ -121,7 +122,7 @@ test.describe('@lane-real internal notebook task isolation by user', () => {
       upstreamBaseUrl: BACKEND_REAL_ANTHROPIC_BASE_URL,
       credentialName,
     });
-    const agent = await createInternalCodexAgent(page, {
+    await createInternalAgentTaskRunnerViaApi(page, {
       workspaceId,
       projectId,
       endpointId,
@@ -149,20 +150,18 @@ test.describe('@lane-real internal notebook task isolation by user', () => {
       await memberPage.waitForURL(/\/login\/workspace/, { timeout: 30_000 });
       const memberFileLibraryId = await createFileLibrary(memberPage, workspaceId, projectId, memberLibraryName);
 
-      const ownerTaskId = await createNotebookTaskViaApi({
+      const ownerTaskId = await createAgentTaskViaApi({
         page,
         workspaceId,
         projectId,
         title: `Owner Internal Task ${Date.now()}`,
-        agentId: agent.agentId,
         fileLibraryId: ownerFileLibraryId,
       });
-      const memberTaskId = await createNotebookTaskViaApi({
+      const memberTaskId = await createAgentTaskViaApi({
         page: memberPage,
         workspaceId,
         projectId,
         title: `Member Internal Task ${Date.now()}`,
-        agentId: agent.agentId,
         fileLibraryId: memberFileLibraryId,
       });
 
@@ -208,19 +207,39 @@ test.describe('@lane-real internal notebook task isolation by user', () => {
       );
       expect(memberCannotReadOwner.status()).toBe(404);
 
-      await sendTaskMessage({
+      const ownerReplyToken = `OWNER_TASK_ISOLATION_${Date.now()}`;
+      const memberReplyToken = `MEMBER_TASK_ISOLATION_${Date.now()}`;
+      const ownerRun = await startAgentTaskRunViaApi({
         page,
         workspaceId,
         projectId,
         taskId: ownerTaskId,
-        content: `Reply with OWNER_TASK_ISOLATION_${Date.now()}`,
+        intent: `Reply with ${ownerReplyToken}`,
       });
-      await sendTaskMessage({
+      const memberRun = await startAgentTaskRunViaApi({
         page: memberPage,
         workspaceId,
         projectId,
         taskId: memberTaskId,
-        content: `Reply with MEMBER_TASK_ISOLATION_${Date.now()}`,
+        intent: `Reply with ${memberReplyToken}`,
+      });
+      await waitForRunnerOutputToken({
+        page,
+        workspaceId,
+        projectId,
+        taskId: ownerTaskId,
+        token: ownerReplyToken,
+        runnerOutputActivityId: ownerRun.runnerOutputActivityId,
+        runId: ownerRun.runId,
+      });
+      await waitForRunnerOutputToken({
+        page: memberPage,
+        workspaceId,
+        projectId,
+        taskId: memberTaskId,
+        token: memberReplyToken,
+        runnerOutputActivityId: memberRun.runnerOutputActivityId,
+        runId: memberRun.runId,
       });
 
       const ownerPod = await waitForWorkloadPodIdentity({

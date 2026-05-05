@@ -11,7 +11,7 @@ type ProjectModuleHeaderProps = {
 };
 
 /**
- * Shared module header row used by project pages (chat/files/notebook).
+ * Shared module header row used by project pages (chat/files/agent tasks).
  * Keeps title baseline, row height, and spacing consistent across modules.
  */
 export function ProjectModuleHeader({

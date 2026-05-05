@@ -35,10 +35,10 @@ export type ProjectBuiltInGroupRecord = {
 
 const PROJECT_OWNER_TEMPLATE_PERMISSIONS = [
   'project:endpoint:use',
-  'project:agent:use',
-  'project:terminal:use',
-  'project:agent:manage',
-  'project:agent:public',
+  'project:agent_task:use',
+  'project:agent_task:terminal',
+  'project:agent_runner:read',
+  'project:agent_runner:manage',
   'project:audit:read',
   'project:governance:update',
   'project:membership:update',
@@ -49,10 +49,10 @@ const PROJECT_OWNER_TEMPLATE_PERMISSIONS = [
 
 const PROJECT_ADMIN_TEMPLATE_PERMISSIONS = [
   'project:endpoint:use',
-  'project:agent:use',
-  'project:terminal:use',
-  'project:agent:manage',
-  'project:agent:public',
+  'project:agent_task:use',
+  'project:agent_task:terminal',
+  'project:agent_runner:read',
+  'project:agent_runner:manage',
   'project:audit:read',
   'project:governance:update',
   'project:membership:update',
@@ -62,8 +62,8 @@ const PROJECT_ADMIN_TEMPLATE_PERMISSIONS = [
 
 const PROJECT_MEMBER_TEMPLATE_PERMISSIONS = [
   'project:endpoint:use',
-  'project:agent:use',
-  'project:terminal:use',
+  'project:agent_task:use',
+  'project:agent_task:terminal',
 ] as const;
 
 export const PROJECT_BUILT_IN_TEMPLATES: Record<ProjectBuiltInTemplateKey, ProjectBuiltInTemplateRecord> = {

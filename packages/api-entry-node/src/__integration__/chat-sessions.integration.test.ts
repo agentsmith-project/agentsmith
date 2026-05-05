@@ -2,7 +2,6 @@ import { afterEach, describe, expect, it } from 'vitest';
 import { createDefaultNodeApiDeps } from '../index.js';
 import { UniversalProxyService } from '../universal-proxy-service.js';
 import { apiFetch, startServer, startServerWithDeps } from './test-support.js';
-import { JsonDocProjectFileLibraryCatalogRepo } from '../file-library-persistence.js';
 import {
   cleanupChatUpstreamServers,
   parseSseEventPayload,
@@ -73,7 +72,7 @@ async function createChatEndpointAndSession(baseUrl: string, endpointBaseUrl: st
 }
 
 describe('api-entry-node chat session routes', () => {
-  it('provisions a workspace file library for internal-agent chat sessions', async () => {
+  it('rejects external_agent_id on chat session create and update', async () => {
     const deps = createDefaultNodeApiDeps();
     const { baseUrl } = startServerWithDeps(deps);
     const internalAgent = await deps.agentResourceService.createAgent(
@@ -110,26 +109,30 @@ describe('api-entry-node chat session routes', () => {
         }),
       },
     );
-    expect(createSession.status).toBe(201);
-    const session = (await createSession.json()) as {
-      id: string;
-      workspace_file_library_id?: string;
-      workspace_file_library_name?: string;
-    };
-    expect(session.workspace_file_library_id).toMatch(/^flib_/);
-    expect(session.workspace_file_library_name).toBeTruthy();
+    expect(createSession.status).toBe(400);
+    await expect(createSession.json()).resolves.toMatchObject({
+      error_code: 'unsupported_field',
+      message: 'external_agent_id',
+    });
 
-    const catalogRepo = new JsonDocProjectFileLibraryCatalogRepo(deps.docStore);
-    const workspaceLibrary = await catalogRepo.getById(
-      'ws_default',
-      'proj_1',
-      session.workspace_file_library_id ?? '',
+    const upstream = await startOpenAICompatibleUpstreamServer();
+    const { sessionId } = await createChatEndpointAndSession(baseUrl, upstream.baseUrl);
+
+    const updateSession = await apiFetch(
+      baseUrl,
+      `/api/v1/workspaces/ws_default/projects/proj_1/chat/sessions/${sessionId}`,
+      {
+        method: 'PATCH',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          external_agent_id: internalAgent.id,
+        }),
+      },
     );
-    expect(workspaceLibrary).toMatchObject({
-      id: session.workspace_file_library_id,
-      name: session.workspace_file_library_name,
-      created_by_user_id: 'user_test',
-      status: 'ready',
+    expect(updateSession.status).toBe(400);
+    await expect(updateSession.json()).resolves.toMatchObject({
+      error_code: 'unsupported_field',
+      message: 'external_agent_id',
     });
   });
 

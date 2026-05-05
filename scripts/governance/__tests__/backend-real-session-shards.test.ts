@@ -26,23 +26,13 @@ type SessionFixture = {
   webStartLog: string;
 };
 
-const CHAT_BACKEND_REAL_SESSION_NAME = 'chat-backend-real-runner';
+const CHAT_BACKEND_REAL_SESSION_NAME = 'chat-backend-real-endpoint';
 
 const CHAT_BACKEND_REAL_SHARDS = [
   {
-    shardId: 'chat-runner-stream',
-    specFile: 'e2e/integration-chat-llm-runner.spec.ts',
-    grep: 'streams multi-turn chat through the real local chat runner and persists replies',
-  },
-  {
-    shardId: 'chat-runner-continuity',
-    specFile: 'e2e/integration-chat-llm-runner.spec.ts',
-    grep: 'preserves conversation continuity across refresh with story-bound trace evidence',
-  },
-  {
-    shardId: 'chat-runner-workspace-reclaim',
-    specFile: 'e2e/integration-chat-llm-runner.spec.ts',
-    grep: 'warns and recreates the session workspace when the local chat workspace has been reclaimed',
+    shardId: 'chat-endpoint-real-completion',
+    specFile: 'e2e/integration-chat.spec.ts',
+    grep: 'real deepseek',
   },
   {
     shardId: 'chat-stop-escalation',
@@ -396,7 +386,7 @@ exit 0
   };
 }
 
-function runSession(fixture: SessionFixture, sessionName = 'agents-backend-real-runner') {
+function runSession(fixture: SessionFixture, sessionName = 'agent-task-backend-real-runner') {
   return spawnSync('bash', [fixture.scriptPath, '--session', sessionName], {
     cwd: fixture.tempRoot,
     env: {
@@ -421,7 +411,7 @@ function runSession(fixture: SessionFixture, sessionName = 'agents-backend-real-
   });
 }
 
-describe('backend-real external runner session shards', () => {
+describe('backend-real Agent task runner session shards', () => {
   const tempRoots: string[] = [];
 
   afterEach(() => {
@@ -435,27 +425,28 @@ describe('backend-real external runner session shards', () => {
 
   it('routes the package script through one backend-real session wrapper instead of three full startups', () => {
     const packageJson = readJson('package.json') as { scripts?: Record<string, string> };
-    const script = packageJson.scripts?.['test:agents:backend-real:runner'] ?? '';
+    const script = packageJson.scripts?.['test:agent-task:backend-real:runner'] ?? '';
 
     expect(script).toBe('bash scripts/run-backend-real-session-shards.sh');
     expect(script.match(/run-integration-e2e-full\.sh/g) ?? []).toHaveLength(0);
   });
 
-  it('keeps the session wrapper shell-valid and pins exactly the three external runner shards', () => {
+  it('keeps the session wrapper shell-valid and pins the agent-task runner shard', () => {
     expect(() => execFileSync('bash', ['-n', 'scripts/run-backend-real-session-shards.sh'])).not.toThrow();
 
     const wrapper = readFileSync('scripts/run-backend-real-session-shards.sh', 'utf8');
     expect(wrapper).toContain('--session');
-    expect(wrapper).toContain('agents-backend-real-runner');
+    expect(wrapper).toContain('agent-task-backend-real-runner');
     expect(wrapper).not.toMatch(/&&\s*bash scripts\/run-integration-e2e-full\.sh/);
 
     const runner = readFileSync('scripts/run-integration-e2e-full.sh', 'utf8');
-    expect(runner).toContain('run_backend_real_runner_session_shards');
-    expect(runner).toContain('run_backend_real_chat_runner_session_shards');
+    expect(runner).toContain('run_agent_task_backend_real_session_shards');
+    expect(runner).toContain('run_backend_real_chat_endpoint_session_shards');
     expect(runner).toContain(CHAT_BACKEND_REAL_SESSION_NAME);
-    expect(runner).toContain('run_playwright_shard "chat-runner" "e2e/integration-chat-llm-runner.spec.ts"');
-    expect(runner).toContain('run_playwright_shard "notebook-runner" "e2e/integration-notebook-codex-runner.spec.ts" --grep-invert docker');
-    expect(runner).toContain('run_playwright_shard "notebook-docker" "e2e/integration-notebook-codex-runner.spec.ts" --grep docker');
+    expect(runner).toContain('run_playwright_shard "agent-task-runner" "e2e/integration-agent-task-runner.spec.ts" --grep-invert docker');
+    expect(runner).not.toContain('run_playwright_shard "chat-runner"');
+    expect(runner).not.toContain('run_playwright_shard "notebook-runner"');
+    expect(runner).not.toContain('run_playwright_shard "notebook-docker"');
     for (const shard of CHAT_BACKEND_REAL_SHARDS) {
       expect(runner).toContain(
         `run_playwright_shard "${shard.shardId}" "${shard.specFile}" --grep "${shard.grep}"`,
@@ -466,7 +457,7 @@ describe('backend-real external runner session shards', () => {
     expect(runner).toContain('READY_RETRY_SLEEP_SECONDS="${INTEGRATION_READY_RETRY_SLEEP_SECONDS:-1}"');
   });
 
-  it('starts backend-real once, runs the three shards serially, and writes diagnostic-only aggregate evidence', () => {
+  it('starts backend-real once, runs the agent-task shard, and writes diagnostic-only aggregate evidence', () => {
     const fixture = prepareSessionFixture();
     tempRoots.push(fixture.tempRoot);
 
@@ -474,9 +465,7 @@ describe('backend-real external runner session shards', () => {
 
     expect(result.status).toBe(0);
     expect(readFileSync(path.join(fixture.tempRoot, 'playwright-commands.log'), 'utf8').trim().split('\n')).toEqual([
-      'call:1 playwright test --config playwright.config.integration.ts e2e/integration-chat-llm-runner.spec.ts --project=chromium --workers=1',
-      'call:2 playwright test --config playwright.config.integration.ts e2e/integration-notebook-codex-runner.spec.ts --project=chromium --workers=1 --grep-invert docker',
-      'call:3 playwright test --config playwright.config.integration.ts e2e/integration-notebook-codex-runner.spec.ts --project=chromium --workers=1 --grep docker',
+      'call:1 playwright test --config playwright.config.integration.ts e2e/integration-agent-task-runner.spec.ts --project=chromium --workers=1 --grep-invert docker',
     ]);
     expect(readFileSync(fixture.apiEnvLog, 'utf8')).toContain('PORT=28191');
     expect(readFileSync(fixture.webEnvLog, 'utf8')).toContain('NEXT_DEV_PROCESS_CAPTURED_BY=run-integration-e2e-full');
@@ -493,15 +482,11 @@ describe('backend-real external runner session shards', () => {
 
     expect(aggregate.diagnostic_only).toBe(true);
     expect(aggregate.fixed_cost.startup_count).toBe(1);
-    expect(aggregate.shards.map((shard) => shard.shard_id)).toEqual([
-      'chat-runner',
-      'notebook-runner',
-      'notebook-docker',
-    ]);
-    expect(aggregate.shards.map((shard) => shard.diagnostic_state)).toEqual(['succeeded', 'succeeded', 'succeeded']);
+    expect(aggregate.shards.map((shard) => shard.shard_id)).toEqual(['agent-task-runner']);
+    expect(aggregate.shards.map((shard) => shard.diagnostic_state)).toEqual(['succeeded']);
     expectNoForbiddenResultFields(aggregate);
 
-    for (const shardId of ['chat-runner', 'notebook-runner', 'notebook-docker']) {
+    for (const shardId of ['agent-task-runner']) {
       const shardDir = sessionEvidencePath(fixture, 'shards', shardId);
       const stdoutLog = readFileSync(path.join(shardDir, 'playwright.stdout.log'), 'utf8');
       expect(existsSync(path.join(shardDir, 'result.json'))).toBe(true);
@@ -513,11 +498,7 @@ describe('backend-real external runner session shards', () => {
       expect(stdoutLog).not.toContain('Authorization: [redacted] raw-token');
       expect(readFileSync(path.join(shardDir, 'playwright.stderr.log'), 'utf8')).not.toContain('raw-client-secret');
     }
-    expect(aggregate.shards.map((shard) => shard.result_path)).toEqual([
-      'shards/chat-runner/result.json',
-      'shards/notebook-runner/result.json',
-      'shards/notebook-docker/result.json',
-    ]);
+    expect(aggregate.shards.map((shard) => shard.result_path)).toEqual(['shards/agent-task-runner/result.json']);
     expect(result.stdout).not.toContain('sk-session-secret');
     expect(result.stderr).not.toContain('raw-client-secret');
   }, 15000);
@@ -557,8 +538,6 @@ describe('backend-real external runner session shards', () => {
     expect(aggregate.shards.map((shard) => shard.diagnostic_state)).toEqual([
       'succeeded',
       'succeeded',
-      'succeeded',
-      'succeeded',
     ]);
     expect(aggregate.shards.map((shard) => shard.grep)).toEqual(
       CHAT_BACKEND_REAL_SHARDS.map((shard) => shard.grep),
@@ -590,14 +569,14 @@ describe('backend-real external runner session shards', () => {
   }, 15000);
 
   it('does not retry a failed external chat shard or run later chat shards after assertion failure', () => {
-    const fixture = prepareSessionFixture({ playwrightFailureAtInvocation: 3 });
+    const fixture = prepareSessionFixture({ playwrightFailureAtInvocation: 1 });
     tempRoots.push(fixture.tempRoot);
 
     const result = runSession(fixture, CHAT_BACKEND_REAL_SESSION_NAME);
 
     expect(result.status).toBe(23);
     expect(readFileSync(path.join(fixture.tempRoot, 'playwright-commands.log'), 'utf8').trim().split('\n')).toEqual(
-      CHAT_BACKEND_REAL_SHARDS.slice(0, 3).map((shard, index) => (
+      CHAT_BACKEND_REAL_SHARDS.slice(0, 1).map((shard, index) => (
         `call:${index + 1} playwright test --config playwright.config.integration.ts ${shard.specFile} --project=chromium --workers=1 --grep ${shard.grep}`
       )),
     );
@@ -611,40 +590,37 @@ describe('backend-real external runner session shards', () => {
     };
     expect(aggregate.diagnostic_state).toBe('failed');
     expect(aggregate.shards.map((shard) => [shard.shard_id, shard.diagnostic_state])).toEqual([
-      ['chat-runner-stream', 'succeeded'],
-      ['chat-runner-continuity', 'succeeded'],
-      ['chat-runner-workspace-reclaim', 'failed'],
+      ['chat-endpoint-real-completion', 'failed'],
       ['chat-stop-escalation', 'not_run'],
     ]);
     expect(aggregate.shards.map((shard) => shard.result_path)).toEqual(
       CHAT_BACKEND_REAL_SHARDS.map((shard) => `shards/${shard.shardId}/result.json`),
     );
     expect(
-      existsSync(sessionEvidencePath(fixture, 'shards', 'chat-runner-workspace-reclaim', 'result.json')),
+      existsSync(sessionEvidencePath(fixture, 'shards', 'chat-endpoint-real-completion', 'result.json')),
     ).toBe(true);
     expect(
-      existsSync(sessionEvidencePath(fixture, 'shards', 'chat-runner-workspace-reclaim', 'shard-result.json')),
+      existsSync(sessionEvidencePath(fixture, 'shards', 'chat-endpoint-real-completion', 'shard-result.json')),
     ).toBe(false);
     expect(result.stderr).not.toContain('raw-client-secret');
   }, 15000);
 
   it('does not retry a failed shard or let cleanup failures overwrite the original assertion failure', () => {
-    const fixture = prepareSessionFixture({ cleanupFails: true, playwrightFailureAtInvocation: 2 });
+    const fixture = prepareSessionFixture({ cleanupFails: true, playwrightFailureAtInvocation: 1 });
     tempRoots.push(fixture.tempRoot);
 
     const result = runSession(fixture);
 
     expect(result.status).toBe(23);
     expect(readFileSync(path.join(fixture.tempRoot, 'playwright-commands.log'), 'utf8').trim().split('\n')).toEqual([
-      'call:1 playwright test --config playwright.config.integration.ts e2e/integration-chat-llm-runner.spec.ts --project=chromium --workers=1',
-      'call:2 playwright test --config playwright.config.integration.ts e2e/integration-notebook-codex-runner.spec.ts --project=chromium --workers=1 --grep-invert docker',
+      'call:1 playwright test --config playwright.config.integration.ts e2e/integration-agent-task-runner.spec.ts --project=chromium --workers=1 --grep-invert docker',
     ]);
     expect(readFileSync(path.join(fixture.runRoot, '.status'), 'utf8')).toContain('failed');
     expect(result.stderr).not.toContain('raw-client-secret');
   }, 15000);
 
   it('classifies docker runner image build failures as infra setup rather than product regression', () => {
-    const fixture = prepareSessionFixture({ dockerBuildFailureAtInvocation: 3 });
+    const fixture = prepareSessionFixture({ dockerBuildFailureAtInvocation: 1 });
     tempRoots.push(fixture.tempRoot);
 
     const result = runSession(fixture);

@@ -17,7 +17,7 @@ describe('e2e auth route policy', () => {
     expect(isE2EProtectedRoute('/en-US/workspaces/ws_default')).toBe(true);
     expect(isE2EProtectedRoute('/en-US/workspaces/ws_default/login')).toBe(true);
     expect(isE2EProtectedRoute('/en-US/workspaces/ws_default/projects')).toBe(true);
-    expect(isE2EProtectedRoute('/en-US/workspaces/ws_default/projects/proj_001/notebook')).toBe(true);
+    expect(isE2EProtectedRoute('/en-US/workspaces/ws_default/projects/proj_001/agent-tasks')).toBe(true);
     expect(isE2EAuthRecoveryPath('/en-US/workspaces/ws_default/login')).toBe(false);
     expect(isE2EAuthRecoveryPath('/en-US/workspaces/ws_default/projects')).toBe(false);
   });

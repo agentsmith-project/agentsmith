@@ -58,11 +58,12 @@ describe('notebook-trace-store', () => {
 
     await storeTaskTraceEvent(deps, 'ws_default', 'task_1', event);
 
+    expect(await docStore.list('agent_task_trace_events', {})).toHaveLength(0);
     expect(await docStore.list('notebook_task_trace_events', {})).toHaveLength(0);
-    expect(await docStore.list('ws_default_notebook_task_trace_events', {})).toHaveLength(1);
+    expect(await docStore.list('ws_default_agent_task_trace_events', {})).toHaveLength(1);
     expect(await loadTaskTraceEvents(deps, 'ws_default', 'task_1')).toHaveLength(1);
 
     await deleteTaskTraceEvents(deps, 'ws_default', 'task_1');
-    expect(await docStore.list('ws_default_notebook_task_trace_events', {})).toHaveLength(0);
+    expect(await docStore.list('ws_default_agent_task_trace_events', {})).toHaveLength(0);
   });
 });

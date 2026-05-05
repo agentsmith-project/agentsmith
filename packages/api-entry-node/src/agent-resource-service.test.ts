@@ -14,24 +14,22 @@ describe('AgentResourceService', () => {
 
   afterEach(() => {
     resetSystemWorkspaceRegistryPersistenceForTest();
-    delete process.env.EXTERNAL_AGENT_EXECUTION_HTTP_BASE_URL;
     delete process.env.PUBLIC_API_BASE_URL;
     delete process.env.INTERNAL_API_BASE_URL;
     delete process.env.AGENT_EXECUTION_WS_BASE_URL;
     delete process.env.AGENT_EXECUTION_HTTP_BASE_URL;
   });
 
-  it('creates external agent with expected defaults', async () => {
+  it('creates developer agent runner with expected defaults', async () => {
     const service = new AgentResourceService(new InMemoryJsonDocStore());
     const created = await service.createAgent('ws_default', 'proj_1', {
-      name: '  External Echo  ',
-      mode: 'external',
-      interaction_kind: 'chat',
+      name: '  Developer Echo  ',
+      runner_provider: 'developer',
     });
 
-    expect(created.name).toBe('External Echo');
-    expect(created.mode).toBe('external');
-    expect(created.interaction_kind).toBe('chat');
+    expect(created.name).toBe('Developer Echo');
+    expect(created.runner_provider).toBe('developer');
+    expect(created).not.toHaveProperty('interaction_kind');
     expect(created.presence).toBe('offline');
     expect(created.capabilities).toBeDefined();
     expect(created.capabilities?.streaming_completion).toBe(true);
@@ -43,7 +41,7 @@ describe('AgentResourceService', () => {
     const service = new AgentResourceService(new InMemoryJsonDocStore());
     const created = await service.createAgent('ws_default', 'proj_1', {
       name: 'No Default Interaction Kind',
-      mode: 'external',
+      runner_provider: 'developer',
     });
 
     expect(created.interaction_kind).toBeUndefined();
@@ -81,30 +79,28 @@ describe('AgentResourceService', () => {
     expect(stored?.interaction_mode).toBe('chat');
   });
 
-  it('builds compose-internal connection info for compose-managed external agents', async () => {
+  it('builds developer connection info with canonical runner query params', async () => {
     process.env.INTERNAL_API_BASE_URL = 'http://api:20000';
-    process.env.EXTERNAL_AGENT_EXECUTION_HTTP_BASE_URL = 'http://host.docker.internal:20000';
+    process.env.PUBLIC_API_BASE_URL = 'http://host.docker.internal:20000/api/v1';
 
     const service = new AgentResourceService(new InMemoryJsonDocStore());
     const connectionInfo = service.buildConnectionInfo({
-      id: 'ag_external_compose',
-      mode: 'external',
-      config: {
-        runner_runtime: 'compose_managed',
-      },
+      id: 'ag_developer_1',
+      runner_provider: 'developer',
     });
 
     expect(connectionInfo.ws_url).toBe(
-      'ws://api:20000/api/v1/agent-execution/ws?agent_id=ag_external_compose',
+      'ws://host.docker.internal:20000/api/v1/agent-execution/ws?agent_runner_id=ag_developer_1',
     );
+    expect(connectionInfo.agent_runner_id).toBe('ag_developer_1');
+    expect(connectionInfo).not.toHaveProperty('agent_id');
   });
 
   it('preserves existing agent fields when partial updates omit them', async () => {
     const service = new AgentResourceService(new InMemoryJsonDocStore());
     const created = await service.createAgent('ws_default', 'proj_1', {
       name: 'compose external',
-      mode: 'external',
-      interaction_kind: 'notebook',
+      runner_provider: 'developer',
       status: 'enabled',
       visibility: 'private',
       config: {
@@ -122,8 +118,7 @@ describe('AgentResourceService', () => {
     expect(updated).toEqual(
       expect.objectContaining({
         id: created.id,
-        mode: 'external',
-        interaction_kind: 'notebook',
+        runner_provider: 'developer',
         status: 'enabled',
         visibility: 'private',
         config: expect.objectContaining({
@@ -138,7 +133,7 @@ describe('AgentResourceService', () => {
     const service = new AgentResourceService(new InMemoryJsonDocStore());
     const agent = await service.createAgent('ws_default', 'proj_1', {
       name: 'key-test',
-      mode: 'external',
+      runner_provider: 'developer',
     });
 
     const { record, key } = await service.createAgentKey('ws_default', 'proj_1', agent.id);
@@ -159,7 +154,7 @@ describe('AgentResourceService', () => {
     const service = new AgentResourceService(new InMemoryJsonDocStore(), cache);
     const agent = await service.createAgent('ws_default', 'proj_1', {
       name: 'delete-test',
-      mode: 'external',
+      runner_provider: 'developer',
     });
     await service.createAgentKey('ws_default', 'proj_1', agent.id);
     await service.markAgentConnected(agent.id, { protocol_version: '1.0', remote_ip: '127.0.0.1' });
@@ -197,7 +192,7 @@ describe('AgentResourceService', () => {
     const service = new AgentResourceService(docStore);
     const agent = await service.createAgent('ws_default', 'proj_1', {
       name: 'tenant-agent',
-      mode: 'external',
+      runner_provider: 'developer',
     });
     const { record } = await service.createAgentKey('ws_default', 'proj_1', agent.id);
 
@@ -234,7 +229,7 @@ describe('AgentResourceService', () => {
     const service = new AgentResourceService(docStore);
     const agent = await service.createAgent('ws_default', 'proj_1', {
       name: 'tenant-agent-default-path',
-      mode: 'external',
+      runner_provider: 'developer',
     });
     const { record, key } = await service.createAgentKey('ws_default', 'proj_1', agent.id);
 
@@ -269,7 +264,7 @@ describe('AgentResourceService', () => {
     const service = new AgentResourceService(docStore);
     const agent = await service.createAgent('ws_integration_mainline', 'proj_1', {
       name: 'repo-registry-agent',
-      mode: 'external',
+      runner_provider: 'developer',
     });
     const { record, key } = await service.createAgentKey('ws_integration_mainline', 'proj_1', agent.id);
 
@@ -285,7 +280,7 @@ describe('AgentResourceService', () => {
     const reader = new AgentResourceService(docStore, cache);
     const agent = await writer.createAgent('ws_default', 'proj_1', {
       name: 'shared-presence-agent',
-      mode: 'external',
+      runner_provider: 'developer',
     });
 
     await writer.markAgentConnected(agent.id, {
@@ -310,7 +305,7 @@ describe('AgentResourceService', () => {
     const reader = new AgentResourceService(docStore, cache);
     const agent = await writer.createAgent('ws_default', 'proj_1', {
       name: 'lease-reconnect-agent',
-      mode: 'external',
+      runner_provider: 'developer',
     });
 
     await writer.registerAgentConnection({
@@ -365,7 +360,7 @@ describe('AgentResourceService', () => {
     const reader = new AgentResourceService(docStore, cache);
     const agent = await service.createAgent('ws_default', 'proj_1', {
       name: 'lease-session-agent',
-      mode: 'external',
+      runner_provider: 'developer',
     });
 
     await service.registerAgentConnection({
@@ -427,7 +422,7 @@ describe('AgentResourceService', () => {
     const service = new AgentResourceService(docStore, cache);
     const agent = await service.createAgent('ws_default', 'proj_1', {
       name: 'lease-stale-refresh-agent',
-      mode: 'external',
+      runner_provider: 'developer',
     });
 
     await service.registerAgentConnection({
@@ -479,7 +474,7 @@ describe('AgentResourceService', () => {
     const service = new AgentResourceService(docStore, cache);
     const agent = await service.createAgent('ws_default', 'proj_1', {
       name: 'strict-session-authority-agent',
-      mode: 'external',
+      runner_provider: 'developer',
     });
 
     await service.registerAgentConnection({
@@ -509,7 +504,7 @@ describe('AgentResourceService', () => {
     const service = new AgentResourceService(docStore, cache);
     const agent = await service.createAgent('ws_default', 'proj_1', {
       name: 'projection-register-agent',
-      mode: 'external',
+      runner_provider: 'developer',
     });
 
     const originalUpsert = docStore.upsert.bind(docStore);
@@ -560,7 +555,7 @@ describe('AgentResourceService', () => {
     const service = new AgentResourceService(docStore, cache);
     const agent = await service.createAgent('ws_default', 'proj_1', {
       name: 'projection-release-agent',
-      mode: 'external',
+      runner_provider: 'developer',
     });
 
     await service.registerAgentConnection({
@@ -610,33 +605,32 @@ describe('AgentResourceService', () => {
     }));
   });
 
-  it('builds external agent connection info from external execution base', () => {
-    process.env.EXTERNAL_AGENT_EXECUTION_HTTP_BASE_URL = 'http://host.docker.internal:20000';
+  it('builds developer agent runner connection info from public execution base', () => {
+    process.env.PUBLIC_API_BASE_URL = 'http://host.docker.internal:20000/api/v1';
     process.env.AGENT_EXECUTION_WS_BASE_URL = 'ws://10.88.0.1:20000';
 
     const service = new AgentResourceService(new InMemoryJsonDocStore());
     const connectionInfo = service.buildConnectionInfo({
-      id: 'ag_external_1',
-      mode: 'external',
+      id: 'ag_developer_1',
+      runner_provider: 'developer',
     });
 
     expect(connectionInfo.ws_url).toBe(
-      'ws://host.docker.internal:20000/api/v1/agent-execution/ws?agent_id=ag_external_1',
+      'ws://host.docker.internal:20000/api/v1/agent-execution/ws?agent_runner_id=ag_developer_1',
     );
   });
 
-  it('builds internal agent connection info from internal execution base', () => {
-    process.env.EXTERNAL_AGENT_EXECUTION_HTTP_BASE_URL = 'http://host.docker.internal:20000';
+  it('builds managed agent runner connection info from internal execution base', () => {
     process.env.AGENT_EXECUTION_WS_BASE_URL = 'ws://10.88.0.1:20000';
 
     const service = new AgentResourceService(new InMemoryJsonDocStore());
     const connectionInfo = service.buildConnectionInfo({
-      id: 'ag_internal_1',
-      mode: 'internal',
+      id: 'ag_managed_1',
+      runner_provider: 'managed',
     });
 
     expect(connectionInfo.ws_url).toBe(
-      'ws://10.88.0.1:20000/api/v1/agent-execution/ws?agent_id=ag_internal_1',
+      'ws://10.88.0.1:20000/api/v1/agent-execution/ws?agent_runner_id=ag_managed_1',
     );
   });
 
@@ -645,12 +639,12 @@ describe('AgentResourceService', () => {
 
     const service = new AgentResourceService(new InMemoryJsonDocStore());
     const connectionInfo = service.buildConnectionInfo({
-      id: 'ag_internal_1',
-      mode: 'internal',
+      id: 'ag_managed_1',
+      runner_provider: 'managed',
     });
 
     expect(connectionInfo.ws_url).toBe(
-      'ws://10.88.0.1:41000/api/v1/agent-execution/ws?agent_id=ag_internal_1',
+      'ws://10.88.0.1:41000/api/v1/agent-execution/ws?agent_runner_id=ag_managed_1',
     );
   });
 });

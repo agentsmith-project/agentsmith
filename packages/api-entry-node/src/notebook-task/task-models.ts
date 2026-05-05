@@ -6,8 +6,7 @@ export interface TaskRecord {
   project_id: string;
   owner_user_id: string;
   title: string;
-  agent_id: string;
-  agent_name: string;
+  prompt?: string;
   workspace_file_library_id?: string;
   workspace_file_library_name?: string;
   status: 'active' | 'archived';
@@ -17,9 +16,31 @@ export interface TaskRecord {
   last_activity_at: string;
 }
 
+type PersistedTaskRecordWithUnsupportedLegacyFields = TaskRecord & {
+  agent_id?: unknown;
+  agent_name?: unknown;
+};
+
+export function sanitizeTaskRecordForActiveModel(input: TaskRecord): TaskRecord {
+  const {
+    agent_id: _unsupportedLegacyAgentId,
+    agent_name: _unsupportedLegacyAgentName,
+    ...activeRecord
+  } = input as PersistedTaskRecordWithUnsupportedLegacyFields;
+  return activeRecord;
+}
+
 export interface TaskListItem extends TaskRecord {
   agent_presence?: 'online' | 'offline' | 'managed' | 'unknown';
   run_state?: 'running' | 'cancelling' | 'terminating' | 'finalizing' | 'idle';
+  lifecycle_status?: 'active' | 'archived';
+  active_run?: {
+    id: string;
+    status: 'queued' | 'running' | 'stopping' | 'succeeded' | 'failed' | 'canceled';
+    runner_id: string;
+    started_at?: string;
+    finished_at?: string;
+  };
   active_run_started_at?: string;
   stop_mode?: 'cancel' | 'terminate';
   can_escalate?: boolean;
@@ -173,8 +194,9 @@ export function readTaskInputRefs(raw: unknown): TaskInputRefRecord[] {
 export function normalizeTaskRecord(input: TaskRecord): TaskRecord {
   const raw = asObject(input);
   const attachedInputs = readTaskInputRefs(raw.attached_inputs);
+  const activeRecord = sanitizeTaskRecordForActiveModel(input);
   return {
-    ...input,
+    ...activeRecord,
     attached_inputs: attachedInputs,
   };
 }

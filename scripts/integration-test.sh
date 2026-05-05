@@ -206,8 +206,8 @@ for locale in "${LOCALES[@]}"; do
   # Project pages
   test_url "$BASE_URL/$locale/workspaces/$WORKSPACE_ID/projects/$PROJECT_ID/overview" "Project Overview" 200
   test_url "$BASE_URL/$locale/workspaces/$WORKSPACE_ID/projects/$PROJECT_ID/chat" "Chat Workspace" 200
-  test_url "$BASE_URL/$locale/workspaces/$WORKSPACE_ID/projects/$PROJECT_ID/notebook" "Notebook Workspace" 200
-  test_url "$BASE_URL/$locale/workspaces/$WORKSPACE_ID/projects/$PROJECT_ID/agents" "Agents Management" 200
+  test_url "$BASE_URL/$locale/workspaces/$WORKSPACE_ID/projects/$PROJECT_ID/agent-tasks" "Agent Tasks" 200
+  test_url "$BASE_URL/$locale/workspaces/$WORKSPACE_ID/projects/$PROJECT_ID/agent-runners" "Agent Runners" 200
   test_url "$BASE_URL/$locale/workspaces/$WORKSPACE_ID/projects/$PROJECT_ID/endpoints" "Endpoints Management" 200
   test_url "$BASE_URL/$locale/workspaces/$WORKSPACE_ID/projects/$PROJECT_ID/members" "Members Management" 200
   test_url "$BASE_URL/$locale/workspaces/$WORKSPACE_ID/projects/$PROJECT_ID/audit" "Audit Log" 200

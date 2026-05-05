@@ -2,7 +2,7 @@
 
 import * as React from 'react';
 
-import type { Agent, Attachment, ChatMessage, ChatSession, Endpoint } from '@/lib/api/types';
+import type { Attachment, ChatMessage, ChatSession, Endpoint } from '@/lib/api/types';
 import { deriveChatComposerState } from '@/lib/chat/composer-state';
 import type { SessionStreamStatus, SessionStreamingAssistant } from '@/lib/chat/stream-state';
 
@@ -40,7 +40,6 @@ export interface ChatMainPaneProps {
   currentSessionId: string | null;
   activeSession: ChatSession | null;
   endpoints: Endpoint[];
-  externalAgents?: Agent[];
   messages: ChatMessage[];
   messagesLoading: boolean;
   attachments: Attachment[];
@@ -65,7 +64,6 @@ export interface ChatMainPaneProps {
   onCreateThread: () => void;
   onRenameActiveSession: (title: string) => void;
   onSelectActiveEndpoint: (endpoint: Endpoint) => void;
-  onSelectExternalAgent?: (agent: Agent) => void;
   onSelectVariant: (groupId: string, nextIndex: number) => void;
   onEditMessage: (message: ChatMessage) => void;
   onEditCommit: (message: ChatMessage, nextContent: string) => void;
@@ -105,7 +103,6 @@ export function ChatMainPane(props: ChatMainPaneProps) {
     currentSessionId,
     activeSession,
     endpoints,
-    externalAgents = [],
     messages,
     messagesLoading,
     attachments,
@@ -130,7 +127,6 @@ export function ChatMainPane(props: ChatMainPaneProps) {
     onCreateThread,
     onRenameActiveSession,
     onSelectActiveEndpoint,
-    onSelectExternalAgent = () => {},
     onSelectVariant,
     onEditMessage,
     onEditCommit,
@@ -183,7 +179,7 @@ export function ChatMainPane(props: ChatMainPaneProps) {
   const showStreamErrorRecovery =
     currentSessionId !== null
     && normalizedStreamErrorMessage.length > 0;
-  const canChangeExecutionTarget = !disabled;
+  const canChangeModel = !disabled;
   const streamErrorLooksRetryable = isRetryableProviderCapacityError(
     activeStreamErrorCode,
     normalizedStreamErrorMessage,
@@ -208,11 +204,9 @@ export function ChatMainPane(props: ChatMainPaneProps) {
       <ChatHeader
         session={activeSession}
         endpoints={endpoints}
-        externalAgents={externalAgents}
         streamStatus={activeStreamStatus}
         onRename={onRenameActiveSession}
         onSelectEndpoint={onSelectActiveEndpoint}
-        onSelectExternalAgent={onSelectExternalAgent}
         onCreateThread={onCreateThread}
         canCreateThread={canUseChat}
         createPending={createPending}
@@ -246,12 +240,12 @@ export function ChatMainPane(props: ChatMainPaneProps) {
                     </div>
                     <div className="space-y-1 text-xs text-tertiary">
                       <div>{labels.streamErrorRecoverySameThreadHint}</div>
-                      {canChangeExecutionTarget && recoveryEndpoints.length > 0 ? (
+                      {canChangeModel && recoveryEndpoints.length > 0 ? (
                         <div>{labels.streamErrorRecoveryEndpointHint}</div>
                       ) : null}
                     </div>
                   </div>
-                  {canChangeExecutionTarget && recoveryEndpoints.length > 0 ? (
+                  {canChangeModel && recoveryEndpoints.length > 0 ? (
                     <div className="flex flex-wrap gap-2">
                       {recoveryEndpoints.map((endpoint) => (
                         <Button

@@ -81,12 +81,12 @@ for relative in manifest.get("bundle_files", []):
         source = root_dir / "infra" / "deploy" / "shared" / "universal-proxy" / pathlib.Path(relative).name
     elif relative.startswith("scripts/cluster-deploy/"):
         source = root_dir / relative
-    elif relative == "scripts/check-preset-external-file-library.sh":
-        source = root_dir / "scripts" / "check-preset-external-file-library.sh"
+    elif relative == "scripts/check-preset-agent-task-file-library.sh":
+        source = root_dir / "scripts" / "check-preset-agent-task-file-library.sh"
     elif relative == "scripts/file-library-real-smoke.sh":
         source = root_dir / "scripts" / "file-library-real-smoke.sh"
-    elif relative == "scripts/notebook-agent-refresh-token.js":
-        source = root_dir / "scripts" / "notebook-agent-refresh-token.js"
+    elif relative == "scripts/agent-runner-refresh-token.js":
+        source = root_dir / "scripts" / "agent-runner-refresh-token.js"
     elif relative.startswith("scripts/substrate/"):
         source = root_dir / "scripts" / "substrate" / pathlib.Path(relative).name
     elif relative.startswith("scripts/app/"):

@@ -11,7 +11,7 @@ IMAGE_TAG="${3:-}"
 SOURCE_ROOT="${4:-${ROOT_DIR}}"
 
 if [[ -z "${RUNNER_KIND}" || -z "${BASE_IMAGE}" || -z "${IMAGE_TAG}" ]]; then
-  echo "usage: scripts/build-runner-image.sh <notebook|chat> <base-image> <image-tag> [source-root]" >&2
+  echo "usage: scripts/build-runner-image.sh <agent-task> <base-image> <image-tag> [source-root]" >&2
   exit 1
 fi
 

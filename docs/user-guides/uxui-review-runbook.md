@@ -68,7 +68,7 @@ npm run verify -- --goal=visual --run
 ### `local_manual`
 
 适用：
-- 需要真实本地 API / Web / Notebook / Terminal / runner / files 行为
+- 需要真实本地 API / Web / Agent tasks / Terminal / runner / files 行为
 - 需要做日常人工 UAT 和人工 UX/UI 巡检
 
 建议路径：
@@ -78,7 +78,7 @@ make local-real-up
 make local-real-status
 ```
 
-若本次范围触达 notebook/files/internal runner，仍先保持 clean local-real 环境；需要补 Notebook demo seeding 或 internal runner 时，只按 owner diagnostic 执行底层 adapter，不把 `substrate-*` / `local-manual-*` 当建议路径。
+若本次范围触达 Agent tasks / files / runner，仍先保持 clean local-real 环境；需要补 Agent task demo seeding 或 sandbox runner 时，只按 owner diagnostic 执行底层 adapter，不把 `substrate-*` / `local-manual-*` 当建议路径。
 
 如果要生成 standalone 真实后端视觉审查产物，可执行 focused diagnostic：
 
@@ -158,8 +158,8 @@ UX/UI 审查的最小单位不是“一个 `page.tsx` 文件”，而是：
 包含：
 - overview
 - chat
-- notebook
-- notebook task detail
+- agent tasks
+- agent task detail
 - files
 - access guide
 - 其他沉浸式或主工作面
@@ -169,7 +169,7 @@ UX/UI 审查的最小单位不是“一个 `page.tsx` 文件”，而是：
 包含：
 - endpoints
 - project secrets
-- agents
+- agent runners
 - members
 - resource policy
 - audit
@@ -229,7 +229,7 @@ UX/UI 审查的最小单位不是“一个 `page.tsx` 文件”，而是：
 
 下列页面必须额外检查长任务和恢复状态：
 - chat
-- notebook
+- agent tasks
 - files
 - 任何需要 SSE、streaming、task execution 的界面
 
@@ -293,7 +293,7 @@ UX/UI 审查的最小单位不是“一个 `page.tsx` 文件”，而是：
 - `local_manual`
   - `make local-real-up`
   - `make local-real-status`
-  - 需要 notebook/files 真实链路时：保持 clean local-real 环境，必要的底层 seeding 只按 owner diagnostic 执行
+  - 需要 Agent tasks / files 真实链路时：保持 clean local-real 环境，必要的底层 seeding 只按 owner diagnostic 执行
   - 仅当需要 standalone 真实界面产物诊断时：`npm run test:visual:backend-real:review`
 - `release_grade`
   - `npm run release:ready`

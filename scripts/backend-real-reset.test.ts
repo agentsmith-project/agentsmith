@@ -195,7 +195,7 @@ describe('backend-real reset Kubernetes safety guard', () => {
   it('stops backend-real-owned sandbox cleaner loops before deleting current state', async () => {
     const fixture = createFixture();
     const stateDir = path.join(fixture.tempRoot, 'artifacts/backend-real/current');
-    const runtimeDir = path.join(stateDir, 'internal-chat');
+    const runtimeDir = path.join(stateDir, 'internal-agent-task');
     const cleanerBin = path.join(runtimeDir, 'sandbox-cleaner');
     mkdirSync(runtimeDir, { recursive: true });
     writeFileSync(path.join(runtimeDir, 'sandbox-control.env'), `INTERNAL_REAL_DIR="${runtimeDir}"\n`);

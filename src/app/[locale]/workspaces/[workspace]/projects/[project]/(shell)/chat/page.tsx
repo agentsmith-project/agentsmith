@@ -11,14 +11,13 @@
 'use client';
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { useQuery, useQueryClient } from '@tanstack/react-query';
+import { useQueryClient } from '@tanstack/react-query';
 import { useTranslations } from 'next-intl';
 import { useAuthStore } from '@/lib/stores/authStore';
 import { getApiClient } from '@/lib/api';
 import { ChatAPI } from '@/lib/api/endpoints/chat';
 import { EndpointAPI } from '@/lib/api/endpoints/endpoints';
 import { FilesAPI } from '@/lib/api/endpoints/files';
-import { AgentAPI } from '@/lib/api/endpoints/agents';
 import type { ChatMessage, ChatSession } from '@/lib/api/types';
 import { buildVariantGroups, buildVisibleChain } from '@/lib/chat/branch';
 import { patchChatMessageInCache, upsertChatMessageInCache } from '@/lib/chat/messages-cache';
@@ -93,7 +92,6 @@ export default function ChatPage({ params }: ChatPageProps) {
   const chatAPI = useMemo(() => new ChatAPI(apiClient), [apiClient]);
   const endpointAPI = useMemo(() => new EndpointAPI(apiClient), [apiClient]);
   const sourcesAPI = useMemo(() => new FilesAPI(apiClient), [apiClient]);
-  const agentAPI = useMemo(() => new AgentAPI(apiClient), [apiClient]);
 
   const {
     sessions,
@@ -110,22 +108,6 @@ export default function ChatPage({ params }: ChatPageProps) {
     currentSessionId,
     canReadThreads,
   });
-  const { data: agentData } = useQuery({
-    queryKey: ['agents', workspaceId, projectId, 'chat'],
-    queryFn: () => agentAPI.list(workspaceId, projectId, { page: 1, page_size: 500 }),
-    enabled: !!workspaceId && !!projectId && canReadThreads,
-  });
-  const externalAgents = useMemo(
-    () =>
-      (agentData?.items ?? []).filter(
-        (agent) =>
-          agent.mode === 'external'
-          && agent.status === 'enabled'
-          && agent.interaction_kind === 'chat',
-      ),
-    [agentData],
-  );
-
   useEffect(() => {
     if (sessions.length === 0) {
       if (currentSessionId !== null) setCurrentSessionId(null);
@@ -208,21 +190,14 @@ export default function ChatPage({ params }: ChatPageProps) {
     if (!activeSession) return null;
     return endpoints.find((endpoint) => endpoint.id === activeSession.endpoint_id) ?? null;
   }, [activeSession, endpoints]);
-  const activeExternalAgent = useMemo(() => {
-    if (!activeSession?.external_agent_id) return null;
-    return externalAgents.find((agent) => agent.id === activeSession.external_agent_id) ?? null;
-  }, [activeSession?.external_agent_id, externalAgents]);
   const canAttachFiles = useMemo(() => {
-    if (activeSession?.external_agent_id) {
-      return activeExternalAgent?.capabilities?.multimodal_completion ?? false;
-    }
     if (!activeEndpoint) return false;
     return (
       activeEndpoint.capabilities?.some(
         (capability) => capability.type === 'multimodal_completion' && capability.enabled,
       ) ?? false
     );
-  }, [activeEndpoint, activeExternalAgent?.capabilities?.multimodal_completion, activeSession?.external_agent_id]);
+  }, [activeEndpoint]);
   const {
     createSessionMutation,
     updateSessionMutation,
@@ -301,10 +276,10 @@ export default function ChatPage({ params }: ChatPageProps) {
       streamingFailed: t('streaming_failed'),
       stopRequiredBeforeReplaceFailed: t('stream_stop_required_before_replace_failed'),
       stopFailedRetry: t('stream_stop_failed_retry'),
-      streamErrorAgentOffline: t('stream_error_agent_offline'),
-      streamErrorAgentTimeout: t('stream_error_agent_timeout'),
-      streamErrorAgentProtocol: t('stream_error_agent_protocol'),
-      streamErrorAgentUpstream: t('stream_error_agent_upstream'),
+      streamErrorProviderUnavailable: t('stream_error_provider_unavailable'),
+      streamErrorProviderTimeout: t('stream_error_provider_timeout'),
+      streamErrorProviderProtocol: t('stream_error_provider_protocol'),
+      streamErrorProviderUpstream: t('stream_error_provider_upstream'),
       streamWarningSessionWorkspaceRecreated: t('stream_warning_session_workspace_recreated'),
     },
     upsertStreamAssistantToCache,
@@ -386,11 +361,10 @@ export default function ChatPage({ params }: ChatPageProps) {
     onDeleteThreadRequest: handleDeleteThreadRequest,
     onRenameActiveSession: handleRenameActiveSession,
     onSelectActiveEndpoint: handleSelectActiveEndpoint,
-    onSelectExternalAgent: handleSelectExternalAgent,
   } = useChatThreadActions({
     canUseChat,
     canManageChatSessions,
-    canChangeExecutionTarget: !disabled,
+    canChangeModel: !disabled,
     sessions,
     activeSession,
     createSession: () => createSessionMutation.mutate(),
@@ -509,7 +483,6 @@ export default function ChatPage({ params }: ChatPageProps) {
               currentSessionId={currentSessionId}
               activeSession={activeSession}
               endpoints={endpoints}
-              externalAgents={externalAgents}
               messages={messages}
               messagesLoading={messagesLoading}
               attachments={attachments}
@@ -554,7 +527,6 @@ export default function ChatPage({ params }: ChatPageProps) {
               onCreateThread={handleCreateThread}
               onRenameActiveSession={handleRenameActiveSession}
               onSelectActiveEndpoint={handleSelectActiveEndpoint}
-              onSelectExternalAgent={handleSelectExternalAgent}
               onSelectVariant={handleSelectVariant}
               onEditMessage={handleEditMessage}
               onEditCommit={handleEditCommit}

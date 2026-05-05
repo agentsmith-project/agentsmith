@@ -10,9 +10,8 @@ export interface SseAccessTicketPayload {
 export interface AgentExecutionTicketPayload {
   endpoint_id: string;
   task_id?: string;
-  session_id?: string;
-  agent_id?: string;
-  mode: 'notebook' | 'chat';
+  runner_session_id?: string;
+  agent_runner_id?: string;
 }
 
 export interface TerminalWsAccessTicketPayload {
@@ -73,6 +72,31 @@ function toResolvedTicket<P extends InternalTicketPurpose>(
   };
 }
 
+function normalizeAgentExecutionTicketPayload(input: AgentExecutionTicketPayload): AgentExecutionTicketPayload {
+  return {
+    endpoint_id: input.endpoint_id,
+    ...(typeof input.task_id === 'string' && input.task_id.trim() ? { task_id: input.task_id.trim() } : {}),
+    ...(typeof input.runner_session_id === 'string' && input.runner_session_id.trim()
+      ? { runner_session_id: input.runner_session_id.trim() }
+      : {}),
+    ...(typeof input.agent_runner_id === 'string' && input.agent_runner_id.trim()
+      ? { agent_runner_id: input.agent_runner_id.trim() }
+      : {}),
+  };
+}
+
+function normalizeInternalTicketPayload<P extends InternalTicketPurpose>(
+  purpose: P,
+  payload: InternalTicketPayloadByPurpose[P],
+): InternalTicketPayloadByPurpose[P] {
+  if (purpose === 'agent_execution') {
+    return normalizeAgentExecutionTicketPayload(
+      payload as AgentExecutionTicketPayload,
+    ) as InternalTicketPayloadByPurpose[P];
+  }
+  return payload;
+}
+
 export async function issueInternalTicket<P extends InternalTicketPurpose>(
   cache: CachePort,
   args: {
@@ -103,7 +127,7 @@ export async function issueInternalTicket<P extends InternalTicketPurpose>(
     expires_at_ms: now + ttlMs,
     max_uses: maxUses,
     remaining_uses: maxUses,
-    payload: args.payload,
+    payload: normalizeInternalTicketPayload(args.purpose, args.payload),
   };
   await cache.set(ticketKey(ticket), JSON.stringify(record), Math.max(1, Math.ceil(ttlMs / 1000)));
   return {

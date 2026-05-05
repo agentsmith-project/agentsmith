@@ -24,7 +24,7 @@ export interface TaskTraceEventRecord {
 }
 
 const TRACE_EVENTS_BY_TASK = new Map<string, TaskTraceEventRecord[]>();
-const TASK_TRACE_EVENTS_COLLECTION = 'notebook_task_trace_events';
+const TASK_TRACE_EVENTS_COLLECTION = 'agent_task_trace_events';
 const MAX_TRACE_EVENTS_PER_TASK = Math.max(100, Number(process.env.NOTEBOOK_TRACE_MAX_EVENTS ?? '1000') || 1000);
 const MAX_TRACE_DETAILS_BYTES = Math.max(512, Number(process.env.NOTEBOOK_TRACE_DETAILS_MAX_BYTES ?? '16384') || 16384);
 

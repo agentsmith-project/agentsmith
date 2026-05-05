@@ -1,12 +1,12 @@
 asyncapi: 3.0.0
 info:
-  title: MBOS External Agent Execution Channel WS Supplement
+  title: MBOS Agent Task Runner Execution Channel WS Supplement
   version: 1.0.0
   description: |
     Additive contract supplement for execution-channel frames currently implemented in code but not yet merged into generated `specs/asyncapi.*`.
 channels:
   agentExecution:
-    address: /api/v1/agent-execution/ws?agent_id={agentId}
+    address: /api/v1/agent-execution/ws?agent_runner_id={agentRunnerId}
     messages:
       agentResponseEvent:
         $ref: '#/components/messages/agentResponseEvent'
@@ -21,7 +21,7 @@ components:
   messages:
     agentResponseEvent:
       name: agent.response.event
-      summary: Structured execution telemetry event (notebook/chat diagnostics and expandable trace UI)
+      summary: Structured execution telemetry event (agent task diagnostics and expandable activity UI)
       payload:
         type: object
         required:

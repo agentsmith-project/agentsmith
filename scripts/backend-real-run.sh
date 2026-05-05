@@ -41,38 +41,37 @@ run_real_cmd() {
 FIRST_LANE_API_PORT="${INTEGRATION_API_PORT:-20040}"
 FIRST_LANE_WEB_PORT="${INTEGRATION_WEB_PORT:-3041}"
 
-info "running external default backend-real checks"
+info "running default backend-real checks"
 cleanup_gate_ports "${FIRST_LANE_API_PORT}" "${FIRST_LANE_WEB_PORT}" e2e/integration-minimal.spec.ts
 run_real_cmd \
   INTEGRATION_API_PORT="${FIRST_LANE_API_PORT}" \
   INTEGRATION_WEB_PORT="${FIRST_LANE_WEB_PORT}" \
   npm run test:backend-real:core
 
-info "running notebook backend-real smoke"
-cleanup_gate_ports 20060 3061 e2e/integration-system-notebook-default.spec.ts
+info "running agent-task backend-real smoke"
+cleanup_gate_ports 20060 3061 e2e/integration-agent-task-runner.spec.ts
 run_real_cmd \
   INTEGRATION_API_PORT=20060 \
   INTEGRATION_WEB_PORT=3061 \
-  npm run test:notebook:backend-real:smoke
+  npm run test:agent-task:backend-real:smoke
 
-info "running external codex backend-real checks"
-cleanup_gate_ports 20064 3065 e2e/integration-chat-llm-runner.spec.ts
-cleanup_gate_ports 20064 3065 e2e/integration-notebook-codex-runner.spec.ts
+info "running agent-task runner backend-real checks"
+cleanup_gate_ports 20064 3065 e2e/integration-agent-task-runner.spec.ts
 run_real_cmd \
   INTEGRATION_API_PORT=20064 \
   INTEGRATION_WEB_PORT=3065 \
-  npm run test:agents:backend-real:runner
+  npm run test:agent-task:backend-real:runner
 
 info "running file library backend-real gate"
 run_real_cmd \
   FILE_LIBRARY_GATE_API_PORT=21010 \
   bash scripts/run-file-library-real-gate.sh
 
-info "running internal notebook backend-real gate"
+info "running internal agent-task backend-real gate"
 run_real_cmd \
   INTEGRATION_API_PORT=20072 \
   INTEGRATION_WEB_PORT=3072 \
-  npm run test:internal:backend-real:notebook-workspace
+  npm run test:internal:backend-real:agent-task-workspace
 
 state_set_string release.phase "run_completed"
 state_set_string release.last_run_at "$(date -u +%Y-%m-%dT%H:%M:%SZ)"

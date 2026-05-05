@@ -10,7 +10,7 @@ type WrapperPortContract = {
 
 const wrapperPortContracts: WrapperPortContract[] = [
   {
-    scriptPath: 'scripts/notebook-real-smoke-gate.sh',
+    scriptPath: 'scripts/agent-task-real-smoke-gate.sh',
     apiResolution: 'API_PORT="${INTEGRATION_API_PORT:-20060}"',
     webResolution: 'WEB_PORT="${INTEGRATION_WEB_PORT:-3061}"',
   },
@@ -20,12 +20,7 @@ const wrapperPortContracts: WrapperPortContract[] = [
     webResolution: 'WEB_PORT="${INTEGRATION_WEB_PORT:-3071}"',
   },
   {
-    scriptPath: 'scripts/run-internal-chat-real-gate.sh',
-    apiResolution: 'API_PORT="${INTEGRATION_API_PORT:-20064}"',
-    webResolution: 'WEB_PORT="${INTEGRATION_WEB_PORT:-3065}"',
-  },
-  {
-    scriptPath: 'scripts/run-internal-notebook-real-gate.sh',
+    scriptPath: 'scripts/run-internal-agent-task-real-gate.sh',
     apiResolution: 'API_PORT="${INTEGRATION_API_PORT:-20072}"',
     webResolution: 'WEB_PORT="${INTEGRATION_WEB_PORT:-3072}"',
   },
@@ -59,7 +54,7 @@ describe('backend-real wrapper port preservation contract', () => {
 
   it('does not interpolate backend-real API keys into command strings that are echoed by wrappers', () => {
     const scriptPaths = [
-      'scripts/notebook-real-smoke-gate.sh',
+      'scripts/agent-task-real-smoke-gate.sh',
       'scripts/backend-real-visual-review.sh',
       'scripts/backend-real-full-gate.sh',
     ];

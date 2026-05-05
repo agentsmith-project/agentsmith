@@ -461,11 +461,12 @@ test.describe('Chat Page', () => {
     await expect(newThreadBtn).toBeEnabled();
   });
 
-  test('should rely on sidebar navigation instead of header cross-links', async ({ authedPage }) => {
+  test('should expose Agent tasks handoff and sidebar routes', async ({ authedPage }) => {
+    await expect(authedPage.getByTestId('chat__open-agent-tasks')).toHaveAttribute('href', /\/agent-tasks$/);
+    await expect(authedPage.getByTestId('chat__open-endpoints')).toHaveAttribute('href', /\/endpoints$/);
+    await expect(authedPage.getByTestId('chat__open-files')).toHaveAttribute('href', /\/files$/);
     await expect(authedPage.getByTestId('chat__open-notebook')).toHaveCount(0);
-    await expect(authedPage.getByTestId('chat__open-endpoints')).toHaveCount(0);
-    await expect(authedPage.getByTestId('chat__open-files')).toHaveCount(0);
-    await expect(authedPage.getByTestId('sidebar__nav-item--notebook')).toHaveAttribute('href', /\/notebook$/);
+    await expect(authedPage.getByTestId('sidebar__nav-item--agent-tasks')).toHaveAttribute('href', /\/agent-tasks$/);
     await expect(authedPage.getByTestId('sidebar__nav-item--files')).toHaveAttribute('href', /\/files$/);
     await expect(authedPage.getByTestId('sidebar__nav-item--endpoints')).toHaveAttribute('href', /\/endpoints$/);
   });

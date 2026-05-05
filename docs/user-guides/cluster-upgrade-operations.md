@@ -10,7 +10,6 @@ Upgrade updates only:
 
 - compose `api`
 - compose `web`
-- compose `external-runner`
 - compose `universal-proxy`
 - namespaced sandbox resources in `mbos`
 
@@ -33,9 +32,9 @@ Upgrade also does **not** run:
 
 ## Important Rule
 
-`external-runner` keeps using the current runtime credentials from the live release.
+Managed agent-task runner configuration keeps using the current release's seeded runner record.
 
-The upgrade line copies the existing `env/runner-runtime.env` from the current release into the new one before restarting app services. It does not mint a new agent key and it does not re-bootstrap preset data.
+The upgrade line carries managed runner release state forward before restarting app services. It does not mint a new agent key and it does not re-bootstrap preset data.
 
 ## Required Files
 
@@ -112,7 +111,7 @@ After upgrade:
 - `api` is reachable
 - `web` is reachable
 - `universal-proxy` is running
-- `external-runner` reconnects with the preserved runtime env
+- managed agent-task runner configuration remains available
 - `sandbox-manager` is ready in namespace `mbos`
 - `upgrade-files-verify.sh` passes
 - substrate services and existing business data remain untouched

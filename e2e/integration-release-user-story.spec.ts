@@ -3,13 +3,12 @@ import {
   API_BASE,
   KEYCLOAK_DEV_ADMIN_PASSWORD,
   KEYCLOAK_DEV_ADMIN_USERNAME,
+  createManagedAgentRunnerViaApi,
   createCredentialViaUi,
   createProjectInWorkspace,
-  expectNotebookTaskConversationSurface,
-  reconnectCodexRunnerDockerProcessToTask,
+  expectAgentTaskConversationSurface,
   resolveIntegrationKeycloakBaseUrl,
-  startCodexRunnerDockerProcess,
-  waitForAgentPresenceOnline,
+  waitForRunnerOutputToken,
 } from './integration-real-helpers';
 import { readStoredAuthToken } from './integration-workspace-access';
 import {
@@ -32,25 +31,25 @@ const SYSTEM_ADMIN_USERNAME = 'mbos-admin';
 const SYSTEM_ADMIN_PASSWORD = 'mbos-admin';
 const MEMBER_USERNAME = process.env.INTEGRATION_USER_USERNAME ?? 'integration-user';
 const MEMBER_PASSWORD = process.env.INTEGRATION_USER_PASSWORD ?? 'integration-user-123';
-const MEMBER_EMAIL = 'integration-user@example.com';
-const INTERNAL_AGENT_IMAGE =
-  process.env.INTEGRATION_INTERNAL_AGENT_IMAGE?.trim() ||
-  process.env.INTEGRATION_CODEX_RUNNER_DOCKER_IMAGE?.trim() ||
-  'agentsmith-notebook-codex-runner:local';
 const DEMO_DEPLOY_MODE = process.env.INTEGRATION_DEMO_DEPLOY_MODE?.trim() || 'full';
 const DEMO_MODE_IS_FULL = DEMO_DEPLOY_MODE === 'full';
 const CREATE_NEW_TASK_RESPONSE_TIMEOUT_MS = 60_000;
 const RELEASE_STORY_BINDING = buildTraceStoryBinding(RELEASE_USER_STORY.storyDefinition);
 
-type ReleaseNotebookFlowTurn = {
+type ReleaseAgentTaskFlowTurn = {
   prompt: string;
   expectedToken: string;
   expectedArtifactPath: string;
 };
 
-type ReleaseNotebookFlow = {
-  turnOne: ReleaseNotebookFlowTurn;
-  turnTwo: ReleaseNotebookFlowTurn;
+type ReleaseAgentTaskFlow = {
+  turnOne: ReleaseAgentTaskFlowTurn;
+  turnTwo: ReleaseAgentTaskFlowTurn;
+};
+
+type AgentTaskRunStart = {
+  runnerOutputActivityId: string;
+  runId?: string;
 };
 
 function resolveReleaseStoryStep(stepId: string) {
@@ -66,18 +65,12 @@ function resolveReleaseStoryStepNote(stepId: string): string {
   return step.note ?? step.expectedFeedback;
 }
 
-function requireReleaseNotebookFlow(flowKey: string): ReleaseNotebookFlow {
-  const flow = RELEASE_USER_STORY.storyDefinition.runtimeData?.notebook?.[flowKey];
+function requireReleaseAgentTaskFlow(flowKey: string): ReleaseAgentTaskFlow {
+  const flow = RELEASE_USER_STORY.storyDefinition.runtimeData?.agentTask?.[flowKey];
   if (!flow) {
-    throw new Error(`missing_release_story_runtime_data:notebook.${flowKey}`);
+    throw new Error(`missing_release_story_runtime_data:agentTask.${flowKey}`);
   }
-  return flow as ReleaseNotebookFlow;
-}
-
-function expectRelativeLibraryRootPath(value: string | null | undefined): void {
-  expect(value).toBeTruthy();
-  expect(value?.startsWith('/')).toBe(false);
-  expect(value?.includes('..')).toBe(false);
+  return flow as ReleaseAgentTaskFlow;
 }
 
 function requireRealLaneApiKey(): string {
@@ -286,22 +279,6 @@ async function createAndPublishWorkspace(page: Page): Promise<string> {
   return workspaceId;
 }
 
-async function saveWorkspaceProjectCreators(page: Page, workspaceId: string): Promise<void> {
-  await gotoWithRetry(page, `/${LOCALE}/workspaces/${workspaceId}/settings`);
-  await expect(page.getByTestId('ws-settings__project-creators')).toBeVisible({ timeout: 30_000 });
-  const searchInput = page.getByTestId('ws-settings__project-creators-input');
-  await searchInput.fill(MEMBER_EMAIL);
-  const creatorOption = page.getByTestId('ws-settings__project-creators-results').getByRole('button', {
-    name: new RegExp(MEMBER_EMAIL.replace('.', '\\.')),
-  });
-  await expect(creatorOption).toBeVisible({ timeout: 15_000 });
-  await creatorOption.click();
-  await page.getByTestId('ws-settings__project-creators-save').click();
-  await expect
-    .poll(async () => page.getByTestId('ws-settings__project-creators-selected').textContent(), { timeout: 20_000 })
-    .toContain(MEMBER_EMAIL);
-}
-
 async function requestProjectAccess(page: Page, workspaceId: string, projectId: string): Promise<void> {
   await gotoWithRetry(page, `/${LOCALE}/workspaces/${workspaceId}/projects`);
   const requestButton = page.getByTestId(`projects__join-request-btn--${projectId}`);
@@ -417,85 +394,10 @@ async function updateResourcePolicyViaUi(args: {
   expect(response.ok()).toBeTruthy();
 }
 
-async function createAgentViaUi(args: {
-  page: Page;
-  workspaceId: string;
-  projectId: string;
-  name: string;
-  mode: 'external' | 'internal';
-  endpointId: string;
-  image?: string;
-}): Promise<void> {
-  const { page, workspaceId, projectId, name, mode, endpointId, image } = args;
-  await gotoWithRetry(page, `/${LOCALE}/workspaces/${workspaceId}/projects/${projectId}/agents`);
-  await expect(page.getByTestId('agents__create-btn')).toBeVisible({ timeout: 30_000 });
-  await page.getByTestId('agents__create-btn').click();
-  const dialog = page.getByTestId('agents__create-dialog');
-  await expect(dialog).toBeVisible();
-  await dialog.locator('#agent-name').fill(name);
-  await dialog.locator('#agent-interaction-kind').selectOption('notebook');
-  if (mode === 'internal') {
-    await dialog.locator('input[name="mode"][value="internal"]').click();
-  }
-  await dialog.locator('#agent-execution-endpoint-id').selectOption(endpointId);
-  await dialog.getByRole('button', { name: /^next$/i }).click();
-  await expect(dialog.getByTestId('agents__create-dialog__product-summary')).toBeVisible({ timeout: 30_000 });
-  if (mode === 'internal') {
-    await dialog.locator('#agent-image').fill(image ?? INTERNAL_AGENT_IMAGE);
-  }
-  const createResponse = page.waitForResponse((response) =>
-    response.request().method() === 'POST'
-    && response.url().includes(`/api/v1/workspaces/${workspaceId}/projects/${projectId}/agents`),
-  );
-  await dialog.getByRole('button', { name: /^create$/i }).click();
-  const response = await createResponse;
-  expect(response.ok()).toBeTruthy();
-  const createdAgent = (await response.json()) as { id: string };
-  const token = await readStoredAuthToken(page);
-  const visibilityResponse = await page.request.patch(
-    `${API_BASE}/api/v1/workspaces/${workspaceId}/projects/${projectId}/agents/${createdAgent.id}`,
-    {
-      headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
-      data: { visibility: 'public' },
-    },
-  );
-  expect(visibilityResponse.ok()).toBeTruthy();
-  await expect(dialog).toBeHidden({ timeout: 30_000 });
-  await expect(page.getByText(name)).toBeVisible({ timeout: 30_000 });
-}
-
-async function resolveAgent(page: Page, workspaceId: string, projectId: string, agentName: string): Promise<{ id: string; wsUrl?: string; key?: string }> {
-  const token = await readStoredAuthToken(page);
-  const listResponse = await page.request.get(`${API_BASE}/api/v1/workspaces/${workspaceId}/projects/${projectId}/agents`, {
-    headers: { Authorization: `Bearer ${token}` },
-  });
-  expect(listResponse.ok()).toBeTruthy();
-  const body = (await listResponse.json()) as { items?: Array<{ id: string; name: string }> };
-  const agentId = body.items?.find((item) => item.name === agentName)?.id;
-  if (!agentId) throw new Error(`agent_id_not_found:${agentName}`);
-
-  const result: { id: string; wsUrl?: string; key?: string } = { id: agentId };
-  const keyResponse = await page.request.post(`${API_BASE}/api/v1/workspaces/${workspaceId}/projects/${projectId}/agents/${agentId}/keys`, {
-    headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
-    data: {},
-  });
-  if (keyResponse.ok()) {
-    const keyBody = (await keyResponse.json()) as { key: string };
-    result.key = keyBody.key;
-    const connectionResponse = await page.request.get(`${API_BASE}/api/v1/workspaces/${workspaceId}/projects/${projectId}/agents/${agentId}/connection-info`, {
-      headers: { Authorization: `Bearer ${token}` },
-    });
-    expect(connectionResponse.ok()).toBeTruthy();
-    const connectionBody = (await connectionResponse.json()) as { ws_url: string };
-    result.wsUrl = connectionBody.ws_url.replace('ws://localhost:20000', API_BASE.replace('http://', 'ws://'));
-  }
-  return result;
-}
-
 async function openCreateTaskDialog(page: Page, workspaceId: string, projectId: string): Promise<void> {
-  await gotoWithRetry(page, `/${LOCALE}/workspaces/${workspaceId}/projects/${projectId}/notebook`);
-  await expect(page.getByTestId('notebook__create-task-btn')).toBeVisible({ timeout: 30_000 });
-  await page.getByTestId('notebook__create-task-btn').click();
+  await gotoWithRetry(page, `/${LOCALE}/workspaces/${workspaceId}/projects/${projectId}/agent-tasks`);
+  await expect(page.getByTestId('agent-tasks__create-task-btn')).toBeVisible({ timeout: 30_000 });
+  await page.getByTestId('agent-tasks__create-task-btn').click();
   await expect(page.getByRole('dialog')).toBeVisible({ timeout: 30_000 });
 }
 
@@ -504,17 +406,14 @@ async function createTaskViaUi(args: {
   workspaceId: string;
   projectId: string;
   title: string;
-  agentName: string;
   workspaceMode: 'create_new' | 'use_existing';
   workspaceName?: string;
   existingWorkspaceName?: string;
 }): Promise<{ taskId: string; workspaceName: string }> {
-  const { page, workspaceId, projectId, title, agentName, workspaceMode, workspaceName, existingWorkspaceName } = args;
+  const { page, workspaceId, projectId, title, workspaceMode, workspaceName, existingWorkspaceName } = args;
   await openCreateTaskDialog(page, workspaceId, projectId);
   const dialog = page.getByRole('dialog');
   await dialog.locator('#task-title').fill(title);
-  await dialog.locator('#task-agent').click();
-  await page.getByRole('option', { name: new RegExp(agentName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')) }).click();
   if (workspaceMode === 'use_existing') {
     await dialog.getByRole('radio', { name: /continue an existing task workspace/i }).click();
     await dialog.getByTestId('task-create__file-library').click();
@@ -536,28 +435,53 @@ async function createTaskViaUi(args: {
     const body = await createResponse.text().catch(() => '');
     throw new Error(`task_create_failed:${createResponse.status}:${body}`);
   }
-  await page.waitForURL(new RegExp(`/${LOCALE}/workspaces/${workspaceId}/projects/${projectId}/notebook/tasks/.+`), {
+  await page.waitForURL(new RegExp(`/${LOCALE}/workspaces/${workspaceId}/projects/${projectId}/agent-tasks/.+`), {
     timeout: 30_000,
   });
-  await expectNotebookTaskConversationSurface({
+  await expectAgentTaskConversationSurface({
     page,
     openTerminalAction: 'enabled',
     terminalModeEnabled: false,
     blocked: false,
   });
-  const taskId = page.url().match(/\/tasks\/([^/?#]+)/)?.[1];
+  const taskId = page.url().match(/\/agent-tasks\/([^/?#]+)/)?.[1];
   if (!taskId) throw new Error('task_id_not_found_after_create');
-  const workspaceBadge = await page.getByTestId('notebook__task-header-workspace-library').textContent();
+  const workspaceBadge = await page.getByTestId('agent-task__task-header-workspace-library').textContent();
   const resolvedWorkspaceName = workspaceBadge?.split(':').slice(1).join(':').trim();
   if (!resolvedWorkspaceName) throw new Error('task_workspace_name_not_found');
   return { taskId, workspaceName: resolvedWorkspaceName };
 }
 
-async function sendNotebookMessage(page: Page, content: string): Promise<void> {
-  const input = page.getByTestId('notebook__conversation-input').locator('textarea').first();
+async function sendAgentTaskMessage(page: Page, content: string): Promise<AgentTaskRunStart> {
+  const input = page.getByTestId('agent-tasks__conversation-input').locator('textarea').first();
   await expect(input).toBeVisible({ timeout: 30_000 });
   await input.fill(content);
-  await page.getByTestId('notebook__send-btn').click();
+  const runResponsePromise = page.waitForResponse(
+    (response) =>
+      response.request().method() === 'POST'
+      && /\/api\/v1\/workspaces\/[^/]+\/projects\/[^/]+\/tasks\/[^/]+\/runs$/.test(response.url()),
+    { timeout: 30_000 },
+  );
+  await page.getByTestId('agent-tasks__send-btn').click();
+  const runResponse = await runResponsePromise;
+  if (!runResponse.ok()) {
+    const body = await runResponse.text().catch(() => '');
+    throw new Error(`agent_task_run_failed:${runResponse.status()}:${body}`);
+  }
+  const payload = (await runResponse.json().catch(() => null)) as {
+    id?: string;
+    run_id?: string;
+    actor?: string;
+    kind?: string;
+  } | null;
+  const runnerOutputActivityId = payload?.id?.trim();
+  if (!runnerOutputActivityId || payload?.actor !== 'runner' || payload.kind !== 'runner_output') {
+    throw new Error('agent_task_run_response_missing_runner_output');
+  }
+  return {
+    runnerOutputActivityId,
+    ...(payload.run_id?.trim() ? { runId: payload.run_id.trim() } : {}),
+  };
 }
 
 async function waitForAgentReply(args: {
@@ -567,26 +491,18 @@ async function waitForAgentReply(args: {
   taskId: string;
   expectedToken: string;
   minAgentMessages: number;
+  run: AgentTaskRunStart;
 }): Promise<void> {
-  await expect.poll(async () => {
-    const token = await readStoredAuthToken(args.page);
-    const activeTaskId = args.page.url().match(/\/tasks\/([^/?#]+)/)?.[1]?.trim() || null;
-    const candidateTaskIds = Array.from(new Set([activeTaskId, args.taskId].filter((value): value is string => Boolean(value))));
-    for (const taskId of candidateTaskIds) {
-      const response = await args.page.request.get(`${API_BASE}/api/v1/workspaces/${args.workspaceId}/projects/${args.projectId}/tasks/${taskId}/messages`, {
-        headers: { Authorization: `Bearer ${token}` },
-      });
-      if (!response.ok()) continue;
-      const payload = (await response.json()) as Array<{ role?: string; content?: string }> | { messages?: Array<{ role?: string; content?: string }> };
-      const messages = Array.isArray(payload) ? payload : payload.messages ?? [];
-      const agentMessages = messages.filter((item) => item.role === 'agent');
-      if (agentMessages.length < args.minAgentMessages) continue;
-      if (agentMessages.some((item) => item.content?.includes(args.expectedToken))) {
-        return true;
-      }
-    }
-    return false;
-  }, { timeout: 300_000, intervals: [1_000, 2_000, 5_000] }).toBe(true);
+  await waitForRunnerOutputToken({
+    page: args.page,
+    workspaceId: args.workspaceId,
+    projectId: args.projectId,
+    taskId: args.taskId,
+    token: args.expectedToken,
+    runnerOutputActivityId: args.run.runnerOutputActivityId,
+    runId: args.run.runId,
+    minRunnerOutputs: args.minAgentMessages,
+  });
 }
 
 async function deleteCurrentTaskViaUi(page: Page, workspaceId: string, projectId: string): Promise<void> {
@@ -594,7 +510,7 @@ async function deleteCurrentTaskViaUi(page: Page, workspaceId: string, projectId
   const dialog = page.getByRole('alertdialog');
   await expect(dialog).toBeVisible({ timeout: 10_000 });
   await dialog.getByRole('button', { name: /delete task|^delete$/i }).click();
-  await page.waitForURL(new RegExp(`/${LOCALE}/workspaces/${workspaceId}/projects/${projectId}/notebook$`), { timeout: 30_000 });
+  await page.waitForURL(new RegExp(`/${LOCALE}/workspaces/${workspaceId}/projects/${projectId}/agent-tasks$`), { timeout: 30_000 });
 }
 
 async function openWorkspaceFilesRoot(args: {
@@ -645,64 +561,6 @@ async function waitForTaskArtifacts(args: {
     const payload = (await response.json()) as Array<{ task_relative_path?: string }>;
     return payload.some((item) => item.task_relative_path === args.expectedPath);
   }, { timeout: 120_000, intervals: [1_000, 2_000, 5_000] }).toBe(true);
-}
-
-function externalExecutionHost(): string {
-  const dockerManualHost = process.env.DOCKER_MANUAL_AGENT_JUICEFS_META_HOST_OVERRIDE?.trim();
-  if (dockerManualHost) {
-    return dockerManualHost;
-  }
-  if (process.env.EXTERNAL_AGENT_EXECUTION_HTTP_BASE_URL?.includes('host.docker.internal')) {
-    return 'host.docker.internal';
-  }
-  const explicitMetaHost = process.env.EXTERNAL_AGENT_JUICEFS_META_HOST_OVERRIDE?.trim();
-  if (explicitMetaHost) {
-    return explicitMetaHost;
-  }
-  const source = process.env.EXTERNAL_AGENT_EXECUTION_HTTP_BASE_URL?.trim() || API_BASE;
-  return new URL(source).hostname;
-}
-
-function matchesAllowedExternalWorkspaceHost(actualHost: string, expectedHost: string): boolean {
-  const normalizedActual = actualHost.trim().toLowerCase();
-  const normalizedExpected = expectedHost.trim().toLowerCase();
-  if (normalizedActual === normalizedExpected) {
-    return true;
-  }
-
-  const loopbackHosts = new Set(['localhost', '127.0.0.1', 'host.docker.internal']);
-  return loopbackHosts.has(normalizedActual) && loopbackHosts.has(normalizedExpected);
-}
-
-async function expectExternalTaskWorkspaceAccessReachable(args: {
-  page: Page;
-  workspaceId: string;
-  projectId: string;
-  taskId: string;
-}): Promise<void> {
-  const token = await readStoredAuthToken(args.page);
-  const response = await args.page.request.post(
-    `${API_BASE}/api/v1/workspaces/${args.workspaceId}/projects/${args.projectId}/tasks/${args.taskId}/workspace-access`,
-    {
-      headers: { Authorization: `Bearer ${token}` },
-    },
-  );
-  expect(response.ok()).toBeTruthy();
-  const workspaceAccess = (await response.json()) as {
-    metadata_url: string;
-    storage_bucket_url?: string;
-    container_workspace_path?: string | null;
-    library_root_path?: string | null;
-  };
-  const expectedHost = externalExecutionHost();
-  expect(matchesAllowedExternalWorkspaceHost(new URL(workspaceAccess.metadata_url).hostname, expectedHost)).toBe(true);
-  expectRelativeLibraryRootPath(workspaceAccess.library_root_path);
-  expect(workspaceAccess.container_workspace_path ?? null).toBeNull();
-  if (workspaceAccess.storage_bucket_url) {
-    expect(matchesAllowedExternalWorkspaceHost(new URL(workspaceAccess.storage_bucket_url).hostname, expectedHost)).toBe(
-      true,
-    );
-  }
 }
 
 async function waitForUsageFacts(args: {
@@ -780,7 +638,6 @@ test.describe('@lane-real release user story end-to-end', () => {
       storyBinding: RELEASE_STORY_BINDING,
     });
     let outcome: 'pass' | 'fail' = 'fail';
-    let externalRunner: { stop(): Promise<void> } | null = null;
 
     const captureTrace = async (stepId: string, action?: string, target?: string, note?: string): Promise<void> => {
       const storyStep = resolveReleaseStoryStep(stepId);
@@ -871,192 +728,142 @@ test.describe('@lane-real release user story end-to-end', () => {
       });
       await captureTrace('resource-policy', 'Review resource policy', 'resource-policy__table', '双 endpoint 的资源策略已就绪');
 
-      const externalAgentName = `External Story Agent ${Date.now()}`;
-      const internalAgentName = `Internal Story Agent ${Date.now()}`;
-      await createAgentViaUi({
-        page,
+      await createManagedAgentRunnerViaApi(page, {
         workspaceId,
         projectId,
-        name: externalAgentName,
-        mode: 'external',
         endpointId: primaryEndpointId,
+        title: `Managed Agent Task Runner ${Date.now()}`,
       });
-      await captureTrace('agents-list-external', 'Review agents', 'agents__heading', '外部 agent 已创建');
-      if (DEMO_MODE_IS_FULL) {
-        await createAgentViaUi({
-          page,
-          workspaceId,
-          projectId,
-          name: internalAgentName,
-          mode: 'internal',
-          endpointId: secondaryEndpointId,
-          image: INTERNAL_AGENT_IMAGE,
-        });
-        await captureTrace('agents-list-internal', 'Review internal agent', 'agents__heading', '内部 agent 已创建');
-      }
+      await gotoWithRetry(page, `/${LOCALE}/workspaces/${workspaceId}/projects/${projectId}/agent-runners`);
+      await expect(page.getByTestId('agent-runners__table')).toBeVisible({ timeout: 30_000 });
+      await captureTrace('agent-runners-managed-list', 'Review Agent Runners', 'agent-runners__table', '托管 Agent Runner 已创建');
+      await captureTrace('agent-runners-managed-health', 'Review managed Agent Runner', 'agent-runners__table', '托管 Agent Runner 的健康状态可见');
 
-      const externalAgent = await resolveAgent(page, workspaceId, projectId, externalAgentName);
-      if (!externalAgent.wsUrl || !externalAgent.key) {
-        throw new Error('external_agent_connection_info_missing');
-      }
       await loginToWorkspace(page, workspaceId, MEMBER_USERNAME, MEMBER_PASSWORD);
       await captureTrace('member-workspace-home', 'Return as member', 'projects__heading', '成员重新进入 workspace');
 
-      externalRunner = await startCodexRunnerDockerProcess({
-        wsUrl: externalAgent.wsUrl,
-        agentKey: externalAgent.key,
-      });
-      await waitForAgentPresenceOnline(page, workspaceId, projectId, externalAgent.id);
-      const externalTaskOne = await createTaskViaUi({
+      const managedTaskOne = await createTaskViaUi({
         page,
         workspaceId,
         projectId,
-        title: `External Task A ${Date.now()}`,
-        agentName: externalAgentName,
+        title: `Managed Agent Task A ${Date.now()}`,
         workspaceMode: 'create_new',
-        workspaceName: `External Workspace ${Date.now()}`,
+        workspaceName: `Managed Agent Task Workspace ${Date.now()}`,
       });
-      await captureTrace('notebook-task-external-1', 'Create external notebook task', 'notebook__task-header', 'external task A 创建成功');
-      await expectExternalTaskWorkspaceAccessReachable({
-        page,
-        workspaceId,
-        projectId,
-        taskId: externalTaskOne.taskId,
-      });
-      externalRunner = await reconnectCodexRunnerDockerProcessToTask({
-        presenceRunner: externalRunner,
-        wsUrl: externalAgent.wsUrl,
-        agentKey: externalAgent.key,
-        taskId: externalTaskOne.taskId,
-      });
-      await waitForAgentPresenceOnline(page, workspaceId, projectId, externalAgent.id);
-      const externalCreateFlow = requireReleaseNotebookFlow('external_create');
-      await sendNotebookMessage(page, externalCreateFlow.turnOne.prompt);
+      await captureTrace('agent-task-managed-1', 'Create managed Agent Task', 'agent-task__task-header', 'managed Agent Task A created');
+      const managedCreateFlow = requireReleaseAgentTaskFlow('managed_create');
+      const managedCreateRunOne = await sendAgentTaskMessage(page, managedCreateFlow.turnOne.prompt);
       await waitForAgentReply({
         page,
         workspaceId,
         projectId,
-        taskId: externalTaskOne.taskId,
-        expectedToken: externalCreateFlow.turnOne.expectedToken,
+        taskId: managedTaskOne.taskId,
+        expectedToken: managedCreateFlow.turnOne.expectedToken,
         minAgentMessages: 1,
+        run: managedCreateRunOne,
       });
-      await sendNotebookMessage(page, externalCreateFlow.turnTwo.prompt);
+      const managedCreateRunTwo = await sendAgentTaskMessage(page, managedCreateFlow.turnTwo.prompt);
       await waitForAgentReply({
         page,
         workspaceId,
         projectId,
-        taskId: externalTaskOne.taskId,
-        expectedToken: externalCreateFlow.turnTwo.expectedToken,
+        taskId: managedTaskOne.taskId,
+        expectedToken: managedCreateFlow.turnTwo.expectedToken,
         minAgentMessages: 2,
+        run: managedCreateRunTwo,
       });
       await waitForTaskArtifacts({
         page,
         workspaceId,
         projectId,
-        taskId: externalTaskOne.taskId,
-        expectedPath: externalCreateFlow.turnTwo.expectedArtifactPath,
+        taskId: managedTaskOne.taskId,
+        expectedPath: managedCreateFlow.turnTwo.expectedArtifactPath,
       });
-      const externalSummaryName = externalCreateFlow.turnTwo.expectedArtifactPath.split('/').pop() ?? externalCreateFlow.turnTwo.expectedArtifactPath;
+      const managedSummaryName = managedCreateFlow.turnTwo.expectedArtifactPath.split('/').pop() ?? managedCreateFlow.turnTwo.expectedArtifactPath;
       await openWorkspaceFilesRoot({
         page,
         workspaceId,
         projectId,
-        workspaceName: externalTaskOne.workspaceName,
+        workspaceName: managedTaskOne.workspaceName,
       });
       await openFolderByName(page, '.artifacts');
-      await expect(page.getByText(externalSummaryName)).toBeVisible({ timeout: 30_000 });
-      await captureTrace('files-artifacts-external', 'Inspect generated artifacts', 'files__objects-table', 'external task 的 .artifacts 已可见');
+      await expect(page.getByText(managedSummaryName)).toBeVisible({ timeout: 30_000 });
+      await captureTrace('files-artifacts-managed', 'Inspect generated artifacts', 'files__objects-table', 'managed Agent Task .artifacts visible');
 
       await loginToWorkspace(page, workspaceId, MEMBER_USERNAME, MEMBER_PASSWORD);
-      await gotoWithRetry(page, `/${LOCALE}/workspaces/${workspaceId}/projects/${projectId}/notebook/tasks/${externalTaskOne.taskId}`);
-      await expectNotebookTaskConversationSurface({
+      await gotoWithRetry(page, `/${LOCALE}/workspaces/${workspaceId}/projects/${projectId}/agent-tasks/${managedTaskOne.taskId}`);
+      await expectAgentTaskConversationSurface({
         page,
         openTerminalAction: 'enabled',
         terminalModeEnabled: false,
         blocked: false,
       });
-      await captureTrace('notebook-task-detail-external', 'Review task detail', 'notebook__task-header', 'external task 详情页');
-      await externalRunner.stop();
-      externalRunner = null;
+      await captureTrace('agent-task-detail-managed', 'Review task detail', 'agent-task__task-header', 'managed Agent Task detail');
 
       await deleteCurrentTaskViaUi(page, workspaceId, projectId);
 
-      externalRunner = await startCodexRunnerDockerProcess({
-        wsUrl: externalAgent.wsUrl,
-        agentKey: externalAgent.key,
-      });
-      await waitForAgentPresenceOnline(page, workspaceId, projectId, externalAgent.id);
-      const externalTaskTwo = await createTaskViaUi({
+      const managedTaskTwo = await createTaskViaUi({
         page,
         workspaceId,
         projectId,
-        title: `External Task B ${Date.now()}`,
-        agentName: externalAgentName,
+        title: `Managed Agent Task B ${Date.now()}`,
         workspaceMode: 'use_existing',
-        existingWorkspaceName: externalTaskOne.workspaceName,
+        existingWorkspaceName: managedTaskOne.workspaceName,
       });
-      await expectExternalTaskWorkspaceAccessReachable({
-        page,
-        workspaceId,
-        projectId,
-        taskId: externalTaskTwo.taskId,
-      });
-      expect(externalTaskTwo.workspaceName).toBe(externalTaskOne.workspaceName);
-      externalRunner = await reconnectCodexRunnerDockerProcessToTask({
-        presenceRunner: externalRunner,
-        wsUrl: externalAgent.wsUrl,
-        agentKey: externalAgent.key,
-        taskId: externalTaskTwo.taskId,
-      });
-      await waitForAgentPresenceOnline(page, workspaceId, projectId, externalAgent.id);
-      const externalReuseFlow = requireReleaseNotebookFlow('external_reuse');
-      await sendNotebookMessage(page, externalReuseFlow.turnOne.prompt);
+      expect(managedTaskTwo.workspaceName).toBe(managedTaskOne.workspaceName);
+      const managedReuseFlow = requireReleaseAgentTaskFlow('managed_reuse');
+      const managedReuseRunOne = await sendAgentTaskMessage(page, managedReuseFlow.turnOne.prompt);
       await waitForAgentReply({
         page,
         workspaceId,
         projectId,
-        taskId: externalTaskTwo.taskId,
-        expectedToken: externalReuseFlow.turnOne.expectedToken,
+        taskId: managedTaskTwo.taskId,
+        expectedToken: managedReuseFlow.turnOne.expectedToken,
         minAgentMessages: 1,
+        run: managedReuseRunOne,
       });
-      await sendNotebookMessage(page, externalReuseFlow.turnTwo.prompt);
+      const managedReuseRunTwo = await sendAgentTaskMessage(page, managedReuseFlow.turnTwo.prompt);
       await waitForAgentReply({
         page,
         workspaceId,
         projectId,
-        taskId: externalTaskTwo.taskId,
-        expectedToken: externalReuseFlow.turnTwo.expectedToken,
+        taskId: managedTaskTwo.taskId,
+        expectedToken: managedReuseFlow.turnTwo.expectedToken,
         minAgentMessages: 2,
+        run: managedReuseRunTwo,
       });
       await waitForTaskArtifacts({
         page,
         workspaceId,
         projectId,
-        taskId: externalTaskTwo.taskId,
-        expectedPath: externalReuseFlow.turnTwo.expectedArtifactPath,
+        taskId: managedTaskTwo.taskId,
+        expectedPath: managedReuseFlow.turnTwo.expectedArtifactPath,
       });
-      await expectNotebookTaskConversationSurface({
+      await expectAgentTaskConversationSurface({
         page,
         openTerminalAction: 'enabled',
         terminalModeEnabled: false,
         blocked: false,
       });
-      await captureTrace('notebook-task-detail-external-reuse', 'Review reused workspace task', 'notebook__task-header', 'external task B 复用 workspace 成功');
-      await externalRunner.stop();
-      externalRunner = null;
+      await captureTrace('agent-task-detail-managed-reuse', 'Review reused workspace task', 'agent-task__task-header', 'managed Agent Task B reused workspace');
 
       if (DEMO_MODE_IS_FULL) {
+        await createManagedAgentRunnerViaApi(page, {
+          workspaceId,
+          projectId,
+          endpointId: secondaryEndpointId,
+          title: `Managed Continuity Runner ${Date.now()}`,
+        });
         const internalTask = await createTaskViaUi({
           page,
           workspaceId,
           projectId,
           title: `Internal Task ${Date.now()}`,
-          agentName: internalAgentName,
           workspaceMode: 'create_new',
-          workspaceName: `Internal Workspace ${Date.now()}`,
+          workspaceName: `Managed Continuity Workspace ${Date.now()}`,
         });
-        const internalFlow = requireReleaseNotebookFlow('internal');
-        await sendNotebookMessage(page, internalFlow.turnOne.prompt);
+        const internalFlow = requireReleaseAgentTaskFlow('managed_continuity');
+        const internalRunOne = await sendAgentTaskMessage(page, internalFlow.turnOne.prompt);
         await waitForAgentReply({
           page,
           workspaceId,
@@ -1064,8 +871,9 @@ test.describe('@lane-real release user story end-to-end', () => {
           taskId: internalTask.taskId,
           expectedToken: internalFlow.turnOne.expectedToken,
           minAgentMessages: 1,
+          run: internalRunOne,
         });
-        await sendNotebookMessage(page, internalFlow.turnTwo.prompt);
+        const internalRunTwo = await sendAgentTaskMessage(page, internalFlow.turnTwo.prompt);
         await waitForAgentReply({
           page,
           workspaceId,
@@ -1073,6 +881,7 @@ test.describe('@lane-real release user story end-to-end', () => {
           taskId: internalTask.taskId,
           expectedToken: internalFlow.turnTwo.expectedToken,
           minAgentMessages: 2,
+          run: internalRunTwo,
         });
         await waitForTaskArtifacts({
           page,
@@ -1090,7 +899,7 @@ test.describe('@lane-real release user story end-to-end', () => {
         });
         await openFolderByName(page, '.artifacts');
         await expect(page.getByText(internalSummaryName)).toBeVisible({ timeout: 30_000 });
-        await captureTrace('files-artifacts-internal', 'Inspect internal artifacts', 'files__objects-table', 'internal task 的 .artifacts 已可见');
+        await captureTrace('files-artifacts-managed-continuity', 'Inspect managed continuity artifacts', 'files__objects-table', 'managed Agent Task 的 .artifacts 已可见');
 
         await loginToWorkspace(page, workspaceId, MEMBER_USERNAME, MEMBER_PASSWORD);
       }
@@ -1126,16 +935,10 @@ test.describe('@lane-real release user story end-to-end', () => {
       expect(projectName).toContain('Release Story Project');
       outcome = 'pass';
     } finally {
-      try {
-        await trace.finish({
-          outcome,
-          finishedAt: new Date().toISOString(),
-        });
-      } finally {
-        if (externalRunner) {
-          await externalRunner.stop();
-        }
-      }
+      await trace.finish({
+        outcome,
+        finishedAt: new Date().toISOString(),
+      });
     }
   });
 });

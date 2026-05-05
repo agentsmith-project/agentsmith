@@ -28,7 +28,7 @@ run_spec() {
 }
 
 run_spec e2e/integration-membership-chat-isolation.spec.ts
-run_spec e2e/integration-external-task-isolation.spec.ts
+run_spec e2e/integration-agent-task-isolation.spec.ts
 run_spec e2e/integration-usage-self-scope.spec.ts
 run_spec e2e/integration-agent-member-permissions.spec.ts
 

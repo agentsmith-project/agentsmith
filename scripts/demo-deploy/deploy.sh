@@ -12,8 +12,7 @@ source "${ROOT_DIR}/scripts/substrate/deploy-common.sh"
 source "${ROOT_DIR}/scripts/app/deploy-common.sh"
 
 APP_IMAGE="$(awk -F= '$1=="agentsmith_app_image"{print $2}' "${RELEASE_ROOT}/VERSION")"
-RUNNER_IMAGE="$(awk -F= '$1=="agentsmith_runner_image"{print $2}' "${RELEASE_ROOT}/VERSION")"
-CHAT_RUNNER_IMAGE="$(awk -F= '$1=="agentsmith_chat_runner_image"{print $2}' "${RELEASE_ROOT}/VERSION")"
+AGENT_TASK_RUNNER_IMAGE="$(awk -F= '$1=="agentsmith_agent_task_runner_image"{print $2}' "${RELEASE_ROOT}/VERSION")"
 SANDBOX_MANAGER_IMAGE="$(awk -F= '$1=="sandbox_manager_image"{print $2}' "${RELEASE_ROOT}/VERSION")"
 UNIVERSAL_PROXY_IMAGE="$(awk -F= '$1=="llm_universal_proxy_image"{print $2}' "${RELEASE_ROOT}/VERSION")"
 KIND_CLUSTER_NAME="${KIND_CLUSTER_NAME:-${LOCAL_KIND_CLUSTER_NAME:-agentsmith}}"
@@ -317,8 +316,7 @@ load_demo_kind_images() {
   local image archive_path
   local juicefs_csi_version="${JUICEFS_CSI_VERSION:-v0.31.3}"
   local -a kind_images=(
-    "${RUNNER_IMAGE}"
-    "${CHAT_RUNNER_IMAGE}"
+    "${AGENT_TASK_RUNNER_IMAGE}"
     "${SANDBOX_MANAGER_IMAGE}"
     "juicedata/juicefs-csi-driver:${juicefs_csi_version}"
     "juicedata/csi-dashboard:${juicefs_csi_version}"
@@ -368,15 +366,6 @@ recreate_kind_cluster_for_demo() {
   ensure_demo_kind_cluster
 }
 
-ensure_demo_external_runner_slot_available() {
-  if ! docker ps -a --format '{{.Names}}' | grep -qx "${DEMO_EXTERNAL_RUNNER_CONTAINER_NAME}"; then
-    return 0
-  fi
-
-  log "removing pre-existing external-runner container ${DEMO_EXTERNAL_RUNNER_CONTAINER_NAME} so demo deploy can recreate it deterministically"
-  docker rm -f "${DEMO_EXTERNAL_RUNNER_CONTAINER_NAME}" >/dev/null 2>&1 || true
-}
-
 main() {
   ensure_dirs
   load_site_env
@@ -384,9 +373,8 @@ main() {
   HOST_LOCAL_WEB_BASE_URL="${HOST_LOCAL_WEB_BASE_URL:-http://127.0.0.1:${WEB_PORT:-3001}}"
   HOST_LOCAL_KEYCLOAK_BASE_URL="${HOST_LOCAL_KEYCLOAK_BASE_URL:-http://127.0.0.1:${KEYCLOAK_PORT:-18080}}"
   DEMO_COMPOSE_PROJECT_NAME="${DEMO_COMPOSE_PROJECT_NAME:-agentsmith-demo}"
-  DEMO_EXTERNAL_RUNNER_CONTAINER_NAME="${EXTERNAL_RUNNER_CONTAINER_NAME:-${DEMO_COMPOSE_PROJECT_NAME}-external-runner-1}"
 
-  write_compose_env "${APP_IMAGE}" "${RUNNER_IMAGE}" "${UNIVERSAL_PROXY_IMAGE}"
+  write_compose_env "${APP_IMAGE}" "${AGENT_TASK_RUNNER_IMAGE}" "${UNIVERSAL_PROXY_IMAGE}"
 
   mkdir -p "${DEMO_DEPLOY_ROOT}/releases"
   ln -sfn "${RELEASE_ROOT}" "${CURRENT_LINK}"
@@ -420,7 +408,6 @@ bash "${RELEASE_SCRIPT_DIR}/render-env.sh"
 load_release_env
 
 release_substrate_up
-ensure_demo_external_runner_slot_available
 release_app_up
 wait_http "${HOST_LOCAL_KEYCLOAK_BASE_URL}/realms/${KEYCLOAK_REALM}/.well-known/openid-configuration" 240
 wait_tcp "127.0.0.1" "${API_PORT}" 240
@@ -669,7 +656,6 @@ EOF
   wait_tcp "127.0.0.1" "${SANDBOX_HOST_PORT:-29180}" 240
   wait_http "http://localhost:${SANDBOX_HOST_PORT:-29180}/readyz" 240
 
-  ensure_demo_external_runner_slot_available
   release_app_up
   wait_tcp "127.0.0.1" "${API_PORT}" 240
   wait_http "${HOST_LOCAL_WEB_BASE_URL}/api/public/workspaces" 240

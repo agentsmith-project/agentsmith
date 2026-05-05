@@ -96,4 +96,4 @@ Every policy mutation should record:
 
 1. Cross-project governance templates.
 2. Advanced override conflict explainers beyond current preview UX.
-3. Chat/Notebook-specific independent spending dimensions.
+3. Chat/Agent-task-specific independent spending dimensions.

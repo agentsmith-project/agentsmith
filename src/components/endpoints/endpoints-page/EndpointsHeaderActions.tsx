@@ -17,11 +17,11 @@ export function EndpointsHeaderActions({
   return (
     <div className="flex flex-wrap items-center gap-2">
       <Link
-        href={`${basePath}/agents`}
+        href={`${basePath}/agent-runners`}
         className={cn(buttonVariants({ variant: 'ghost', size: 'sm' }))}
-        data-testid="endpoints__open-agents"
+        data-testid="endpoints__open-agent-runners"
       >
-        {t('open_agents')}
+        {t('open_agent_runners')}
       </Link>
     </div>
   );

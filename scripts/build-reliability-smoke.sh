@@ -76,10 +76,10 @@ ensure_web
 info "running build reliability contract suite"
 npm run test:run -- \
   src/lib/hooks/__tests__/use-task-sse.test.ts \
-  src/components/notebook/__tests__/MessageItem.test.tsx \
+  src/components/agent-tasks/__tests__/MessageItem.test.tsx \
   src/lib/__tests__/build-failure-explainability.test.ts \
   src/components/chat/__tests__/ChatMainPane.test.tsx \
-  src/components/notebook/__tests__/ConversationPanel.test.tsx
+  src/components/agent-tasks/__tests__/ConversationPanel.test.tsx
 
 info "running chat recovery integration lane"
 INTEGRATION_API_PORT="${CHAT_API_PORT}" \
@@ -87,10 +87,10 @@ BASE_URL="${BASE_URL}" \
 npm run test:e2e:integration:chat:with-api -- \
   --grep "chat can recover by switching endpoint after upstream failure|refresh recovers stream id and stop uses stream-level route"
 
-info "running notebook external execution service integration lane"
+info "running agent-task external execution service integration lane"
 INTEGRATION_API_PORT="${NOTEBOOK_API_PORT}" \
 BASE_URL="${BASE_URL}" \
-npm run test:e2e:integration:notebook-external:with-api
+npm run test:e2e:integration:agent-task:with-api
 
 if [[ -n "${BUILD_RELIABILITY_EVIDENCE_PATH}" ]]; then
   info "writing build reliability evidence"

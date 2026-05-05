@@ -48,10 +48,10 @@ export interface UseChatStreamingArgs {
     streamingFailed: string;
     stopRequiredBeforeReplaceFailed: string;
     stopFailedRetry: string;
-    streamErrorAgentOffline: string;
-    streamErrorAgentTimeout: string;
-    streamErrorAgentProtocol: string;
-    streamErrorAgentUpstream: string;
+    streamErrorProviderUnavailable: string;
+    streamErrorProviderTimeout: string;
+    streamErrorProviderProtocol: string;
+    streamErrorProviderUpstream: string;
     streamWarningSessionWorkspaceRecreated: string;
     streamStopEscalationUnavailable?: string;
   };
@@ -103,8 +103,6 @@ function getChatSessionEscalationReason(session: ChatSessionEscalationTruth): st
 }
 
 function isChatSessionTerminatingTruth(session: ChatSessionEscalationTruth): boolean {
-  const hasTerminalDebt = session.termination_state === 'terminating';
-  if (hasTerminalDebt) return true;
   if (isFinalChatExecutionStatus(session.execution_status)) return false;
   if (session.stop_mode === 'cancel') return false;
   return (
@@ -181,13 +179,19 @@ function mapStreamErrorMessage(error: unknown, messages: UseChatStreamingArgs['m
     code,
     {
       CHAT_EMPTY_RESPONSE: messages.streamErrorEmptyResponse,
-      AGENT_TIMEOUT: messages.streamErrorAgentTimeout,
-      AGENT_PROTOCOL_ERROR: messages.streamErrorAgentProtocol,
-      AGENT_UPSTREAM_ERROR: messages.streamErrorAgentUpstream,
-      AGENT_OFFLINE: messages.streamErrorAgentOffline,
+      STREAM_INACTIVITY_TIMEOUT: messages.streamErrorProviderTimeout,
+      STREAM_UPSTREAM_CONNECT_ERROR: messages.streamErrorProviderUnavailable,
+      STREAM_UPSTREAM_ERROR: messages.streamErrorProviderUpstream,
+      PROVIDER_TIMEOUT: messages.streamErrorProviderTimeout,
+      PROVIDER_PROTOCOL_ERROR: messages.streamErrorProviderProtocol,
+      PROVIDER_UPSTREAM_ERROR: messages.streamErrorProviderUpstream,
+      PROVIDER_UNAVAILABLE: messages.streamErrorProviderUnavailable,
     },
     '',
   );
+  if (code.startsWith('STREAM_UPSTREAM_')) {
+    return messages.streamErrorProviderUpstream;
+  }
   if (mapped) return mapped;
   if (error instanceof Error) return error.message;
   return messages.streamingFailed;
@@ -582,10 +586,10 @@ export function useChatStreaming(args: UseChatStreamingArgs): UseChatStreamingRe
       cancelled = true;
     };
   }, [
-    messages.streamErrorAgentOffline,
-    messages.streamErrorAgentProtocol,
-    messages.streamErrorAgentTimeout,
-    messages.streamErrorAgentUpstream,
+    messages.streamErrorProviderProtocol,
+    messages.streamErrorProviderTimeout,
+    messages.streamErrorProviderUnavailable,
+    messages.streamErrorProviderUpstream,
     messages.streamError,
     messages.streamErrorEmptyResponse,
     messages.streamingFailed,

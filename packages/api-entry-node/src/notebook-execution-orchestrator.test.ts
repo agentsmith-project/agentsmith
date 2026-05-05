@@ -10,6 +10,7 @@ import {
   buildNotebookTaskRunState,
   getNotebookTaskRunState,
 } from './notebook-task/task-run-coordination.js';
+import { resolveInternalTicket } from './internal-ticket-store.js';
 
 function createDeferred<T = void>(): {
   promise: Promise<T>;
@@ -51,6 +52,7 @@ describe('notebook-execution-orchestrator governance preflight', () => {
         getAgent: vi.fn(async () => ({
           id: 'agent_1',
           status: 'enabled',
+          runner_provider: 'developer',
           mode: 'external',
           execution_preferences_json: {
             notebook: {
@@ -186,6 +188,7 @@ describe('notebook-execution-orchestrator governance preflight', () => {
         getAgent: vi.fn(async () => ({
           id: 'agent_final_order',
           status: 'enabled',
+          runner_provider: 'developer',
           mode: 'external',
           execution_preferences_json: {
             notebook: {
@@ -245,6 +248,7 @@ describe('notebook-execution-orchestrator governance preflight', () => {
       content: '',
       created_at: new Date().toISOString(),
     };
+    const activityItems: unknown[] = [];
 
     await runNotebookTaskWithExecutionAgent({
       deps,
@@ -258,8 +262,9 @@ describe('notebook-execution-orchestrator governance preflight', () => {
       mapTaskMessagesForExecution: () => [],
       updateTaskActivity: () => undefined,
       emitTaskEvent: (_taskId, payload) => {
-        if (payload.type === 'message') {
-          steps.push('emit_message');
+        if (payload.type === 'activity_item') {
+          steps.push('emit_activity_item');
+          activityItems.push(payload.data);
         }
         if (payload.type === 'task_update') {
           steps.push('emit_task_update');
@@ -285,9 +290,18 @@ describe('notebook-execution-orchestrator governance preflight', () => {
       'persist_message',
       'persist_task',
       'finalize',
-      'emit_message',
+      'emit_activity_item',
       'emit_task_update',
     ]);
+    expect(activityItems).toEqual([
+      expect.objectContaining({
+        id: 'msg_final_order',
+        task_id: 'task_final_order',
+        kind: 'runner_output',
+        actor: 'runner',
+      }),
+    ]);
+    expect(JSON.stringify(activityItems)).not.toContain('"role"');
   });
 
   it('marks the shared run as finalizing instead of clearing it to idle when terminal truth persistence fails', async () => {
@@ -317,6 +331,7 @@ describe('notebook-execution-orchestrator governance preflight', () => {
         getAgent: vi.fn(async () => ({
           id: 'agent_finalizing_failure',
           status: 'enabled',
+          runner_provider: 'developer',
           mode: 'external',
           execution_preferences_json: {
             notebook: {
@@ -564,6 +579,7 @@ describe('notebook-execution-orchestrator governance preflight', () => {
         executionContext: expect.objectContaining({
           api_base: 'http://172.19.0.1:20072/api/v1',
           execution_ticket: expect.stringMatching(/^exec_/),
+          runner_id: 'agent_internal',
           model_context_window: 256000,
           model_auto_compact_token_limit: 230400,
           model_catalog: {
@@ -596,13 +612,22 @@ describe('notebook-execution-orchestrator governance preflight', () => {
     });
     const dispatchArg = dispatchStreamingRequest.mock.calls[0]?.[0] as { executionContext?: Record<string, unknown> } | undefined;
     expect(dispatchArg?.executionContext).not.toHaveProperty('user_bearer_token');
+    const executionTicket = String(dispatchArg?.executionContext?.execution_ticket ?? '');
+    await expect(resolveInternalTicket(deps.cache, executionTicket, 'agent_execution')).resolves.toMatchObject({
+      payload: {
+        endpoint_id: 'ep_internal',
+        task_id: 'task_internal',
+        runner_session_id: 'task_internal',
+        agent_runner_id: 'agent_internal',
+      },
+    });
   });
 
   it('uses function apply_patch catalog truth for OpenAI-chat-compatible compose agents', async () => {
     const previousInternalApiBase = process.env.INTERNAL_API_BASE_URL;
-    const previousExternalApiBase = process.env.EXTERNAL_AGENT_EXECUTION_HTTP_BASE_URL;
+    const previousExternalApiBase = process.env.AGENT_RUNNER_DEVELOPER_EXECUTION_HTTP_BASE_URL;
     process.env.INTERNAL_API_BASE_URL = 'http://api:20000';
-    process.env.EXTERNAL_AGENT_EXECUTION_HTTP_BASE_URL = 'http://host.docker.internal:20000';
+    process.env.AGENT_RUNNER_DEVELOPER_EXECUTION_HTTP_BASE_URL = 'http://host.docker.internal:20000';
 
     const dispatchStreamingRequest = vi.fn(async () => ({
       requestId: 'req_external_compose',
@@ -616,6 +641,7 @@ describe('notebook-execution-orchestrator governance preflight', () => {
         getAgent: vi.fn(async () => ({
           id: 'agent_external_compose',
           status: 'enabled',
+          runner_provider: 'developer',
           mode: 'external',
           config: {
             runner_runtime: 'compose_managed',
@@ -708,15 +734,16 @@ describe('notebook-execution-orchestrator governance preflight', () => {
     } finally {
       if (previousInternalApiBase === undefined) delete process.env.INTERNAL_API_BASE_URL;
       else process.env.INTERNAL_API_BASE_URL = previousInternalApiBase;
-      if (previousExternalApiBase === undefined) delete process.env.EXTERNAL_AGENT_EXECUTION_HTTP_BASE_URL;
-      else process.env.EXTERNAL_AGENT_EXECUTION_HTTP_BASE_URL = previousExternalApiBase;
+      if (previousExternalApiBase === undefined) delete process.env.AGENT_RUNNER_DEVELOPER_EXECUTION_HTTP_BASE_URL;
+      else process.env.AGENT_RUNNER_DEVELOPER_EXECUTION_HTTP_BASE_URL = previousExternalApiBase;
     }
 
     expect(dispatchStreamingRequest).toHaveBeenCalledWith(
       expect.objectContaining({
         executionContext: expect.objectContaining({
-          api_base: 'http://api:20000/api/v1',
+          api_base: 'http://host.docker.internal:20000/api/v1',
           execution_ticket: expect.stringMatching(/^exec_/),
+          runner_id: 'agent_external_compose',
           model_catalog: {
             input_modalities: ['text', 'image'],
             supports_search_tool: false,
@@ -735,9 +762,9 @@ describe('notebook-execution-orchestrator governance preflight', () => {
 
   it('uses agent-presence scope for configless dev-direct external notebook agents', async () => {
     const previousInternalApiBase = process.env.INTERNAL_API_BASE_URL;
-    const previousExternalApiBase = process.env.EXTERNAL_AGENT_EXECUTION_HTTP_BASE_URL;
+    const previousExternalApiBase = process.env.AGENT_RUNNER_DEVELOPER_EXECUTION_HTTP_BASE_URL;
     process.env.INTERNAL_API_BASE_URL = 'http://api:20000';
-    process.env.EXTERNAL_AGENT_EXECUTION_HTTP_BASE_URL = 'http://localhost:21000';
+    process.env.AGENT_RUNNER_DEVELOPER_EXECUTION_HTTP_BASE_URL = 'http://localhost:21000';
 
     const dispatchStreamingRequest = vi.fn(async () => ({
       requestId: 'req_external_dev_direct',
@@ -751,6 +778,7 @@ describe('notebook-execution-orchestrator governance preflight', () => {
         getAgent: vi.fn(async () => ({
           id: 'agent_external_dev_direct',
           status: 'enabled',
+          runner_provider: 'developer',
           mode: 'external',
           config: null,
           execution_preferences_json: {
@@ -840,8 +868,8 @@ describe('notebook-execution-orchestrator governance preflight', () => {
     } finally {
       if (previousInternalApiBase === undefined) delete process.env.INTERNAL_API_BASE_URL;
       else process.env.INTERNAL_API_BASE_URL = previousInternalApiBase;
-      if (previousExternalApiBase === undefined) delete process.env.EXTERNAL_AGENT_EXECUTION_HTTP_BASE_URL;
-      else process.env.EXTERNAL_AGENT_EXECUTION_HTTP_BASE_URL = previousExternalApiBase;
+      if (previousExternalApiBase === undefined) delete process.env.AGENT_RUNNER_DEVELOPER_EXECUTION_HTTP_BASE_URL;
+      else process.env.AGENT_RUNNER_DEVELOPER_EXECUTION_HTTP_BASE_URL = previousExternalApiBase;
     }
 
     expect(dispatchStreamingRequest).toHaveBeenCalledWith(
@@ -849,6 +877,7 @@ describe('notebook-execution-orchestrator governance preflight', () => {
         executionContext: expect.objectContaining({
           api_base: 'http://localhost:21000/api/v1',
           execution_ticket: expect.stringMatching(/^exec_/),
+          runner_id: 'agent_external_dev_direct',
           runner_session_scope: 'agent_presence',
           workspace_binding_mode: 'file_library',
           workspace_file_library_id: 'flib_external',
@@ -859,9 +888,11 @@ describe('notebook-execution-orchestrator governance preflight', () => {
     expect(dispatchArg?.executionContext).not.toHaveProperty('user_bearer_token');
   });
 
-  it('keeps responses wire_api stable for external notebook dispatch regardless of endpoint protocol', async () => {
+  it('uses canonical agent_task wire_api for external task dispatch regardless of endpoint protocol', async () => {
     const previousInternalApiBase = process.env.INTERNAL_API_BASE_URL;
+    const previousDeveloperApiBase = process.env.AGENT_RUNNER_DEVELOPER_EXECUTION_HTTP_BASE_URL;
     process.env.INTERNAL_API_BASE_URL = 'http://api:20000';
+    process.env.AGENT_RUNNER_DEVELOPER_EXECUTION_HTTP_BASE_URL = 'http://api:20000';
 
     const dispatchStreamingRequest = vi.fn(async () => ({
       requestId: 'req_external_responses',
@@ -875,14 +906,16 @@ describe('notebook-execution-orchestrator governance preflight', () => {
         getAgent: vi.fn(async () => ({
           id: 'agent_external_responses',
           status: 'enabled',
+          runner_provider: 'developer',
           mode: 'external',
+          default_endpoint_id: 'ep_anthropic',
           config: {
             runner_runtime: 'compose_managed',
           },
           execution_preferences_json: {
-            notebook: {
+            agent_task: {
               endpoint_id: 'ep_anthropic',
-              wire_api: 'responses',
+              wire_api: 'openai_responses',
               model: 'placeholder-model',
             },
           },
@@ -966,6 +999,8 @@ describe('notebook-execution-orchestrator governance preflight', () => {
     } finally {
       if (previousInternalApiBase === undefined) delete process.env.INTERNAL_API_BASE_URL;
       else process.env.INTERNAL_API_BASE_URL = previousInternalApiBase;
+      if (previousDeveloperApiBase === undefined) delete process.env.AGENT_RUNNER_DEVELOPER_EXECUTION_HTTP_BASE_URL;
+      else process.env.AGENT_RUNNER_DEVELOPER_EXECUTION_HTTP_BASE_URL = previousDeveloperApiBase;
     }
 
     expect(dispatchStreamingRequest).toHaveBeenCalledWith(
@@ -974,7 +1009,8 @@ describe('notebook-execution-orchestrator governance preflight', () => {
         messages: [{ role: 'user', content: 'reply exactly OK' }],
         executionContext: expect.objectContaining({
           endpoint_id: 'ep_anthropic',
-          wire_api: 'responses',
+          runner_id: 'agent_external_responses',
+          wire_api: 'openai_responses',
           model: 'placeholder-model',
           api_base: 'http://api:20000/api/v1',
         }),
@@ -995,6 +1031,7 @@ describe('notebook-execution-orchestrator governance preflight', () => {
         getAgent: vi.fn(async () => ({
           id: 'agent_native_responses',
           status: 'enabled',
+          runner_provider: 'developer',
           mode: 'external',
           execution_preferences_json: {
             notebook: {
@@ -1106,6 +1143,7 @@ describe('notebook-execution-orchestrator governance preflight', () => {
         getAgent: vi.fn(async () => ({
           id: 'agent_custom_responses',
           status: 'enabled',
+          runner_provider: 'developer',
           mode: 'external',
           execution_preferences_json: {
             notebook: {
@@ -1208,6 +1246,7 @@ describe('notebook-execution-orchestrator governance preflight', () => {
         getAgent: vi.fn(async () => ({
           id: 'agent_empty_error',
           status: 'enabled',
+          runner_provider: 'developer',
           mode: 'external',
           execution_preferences_json: {
             notebook: {
@@ -1315,6 +1354,7 @@ describe('notebook-execution-orchestrator governance preflight', () => {
         getAgent: vi.fn(async () => ({
           id: 'agent_external',
           status: 'enabled',
+          runner_provider: 'developer',
           mode: 'external',
           execution_preferences_json: {
             notebook: {
@@ -1436,6 +1476,7 @@ describe('notebook-execution-orchestrator governance preflight', () => {
         getAgent: vi.fn(async () => ({
           id: 'agent_trace_sanitize',
           status: 'enabled',
+          runner_provider: 'developer',
           mode: 'external',
           execution_preferences_json: {
             notebook: {
@@ -1611,7 +1652,7 @@ describe('notebook-execution-orchestrator governance preflight', () => {
       name: string;
       summary: string;
       details?: Record<string, unknown>;
-    }>('ws_trace_sanitize_notebook_task_trace_events', { task_id: task.id });
+    }>('ws_trace_sanitize_agent_task_trace_events', { task_id: task.id });
     const persistedTrace = persistedTraces.find((item) => item.name === 'runner.tool_call');
     const observableEmbeddedTrace = emitted.find((item) => (
       item.type === 'trace_event'
@@ -1711,6 +1752,7 @@ describe('notebook-execution-orchestrator governance preflight', () => {
         getAgent: vi.fn(async () => ({
           id: 'agent_invalid_window',
           status: 'enabled',
+          runner_provider: 'developer',
           mode: 'external',
           execution_preferences_json: {
             notebook: {
@@ -2118,6 +2160,7 @@ describe('notebook-execution-orchestrator governance preflight', () => {
         getAgent: vi.fn(async () => ({
           id: 'agent_late_dispatch_cancelled',
           status: 'enabled',
+          runner_provider: 'developer',
           mode: 'external',
           execution_preferences_json: {
             notebook: {

@@ -6,9 +6,9 @@ import {
   LOCALE,
   createCredentialViaUi,
   createEndpointViaApi,
-  createExternalRunnerAgentBundle,
   createFileLibraryViaUi,
-  createNotebookTaskViaApi,
+  createAgentTaskViaApi,
+  createManagedAgentRunnerViaApi,
   createProjectInWorkspace,
   ensureIntegrationKeycloakUsers,
   getContextEntryViaApi,
@@ -20,9 +20,6 @@ import {
   KEYCLOAK_INTEGRATION_USER_USERNAME,
   keycloakLoginToWorkspace,
   putContextEntryViaApi,
-  reconnectCodexRunnerProcessToTask,
-  startCodexRunnerProcess,
-  waitForAgentPresenceOnline,
 } from './integration-real-helpers';
 import { readStoryDefinitionFromMarkdownFileSync } from './story-loader';
 import { buildTraceStoryBinding } from './story-trace-binding';
@@ -482,81 +479,61 @@ test.describe('@lane-real context store isolation', () => {
       upstreamBaseUrl: BACKEND_REAL_ANTHROPIC_BASE_URL,
       credentialName,
     });
-    const agentBundle = await createExternalRunnerAgentBundle(page, {
+    await createManagedAgentRunnerViaApi(page, {
       workspaceId: 'ws_default',
       projectId,
       endpointId,
       title: `task-isolation-${Date.now()}`,
     });
 
-    let runner = await startCodexRunnerProcess({
-      wsUrl: agentBundle.wsUrl,
-      agentKey: agentBundle.agentKey,
+    const taskId = await createAgentTaskViaApi({
+      page,
+      workspaceId: 'ws_default',
+      projectId,
+      title: `Task Isolation ${Date.now()}`,
+      fileLibraryId,
     });
-    test.info().annotations.push({ type: 'codex_runner_presence_log', description: runner.logPath });
 
+    const contextKey = `notes.task_private_${Date.now()}`;
+    const contextValue = `task_private_${Date.now()}`;
+    await putContextEntryViaApi({
+      page,
+      scope: 'task',
+      workspaceId: 'ws_default',
+      projectId,
+      taskId,
+      key: contextKey,
+      content: contextValue,
+    });
+
+    const memberContext = await browser.newContext();
+    const memberPage = await memberContext.newPage();
     try {
-      await waitForAgentPresenceOnline(page, 'ws_default', projectId, agentBundle.agentId);
-      const taskId = await createNotebookTaskViaApi({
-        page,
-        workspaceId: 'ws_default',
-        projectId,
-        title: `Task Isolation ${Date.now()}`,
-        agentId: agentBundle.agentId,
-        fileLibraryId,
-      });
-      runner = await reconnectCodexRunnerProcessToTask({
-        presenceRunner: runner,
-        wsUrl: agentBundle.wsUrl,
-        agentKey: agentBundle.agentKey,
-        taskId,
-      });
-      test.info().annotations.push({ type: 'codex_runner_log', description: runner.logPath });
-      await waitForAgentPresenceOnline(page, 'ws_default', projectId, agentBundle.agentId);
+      await keycloakLoginToWorkspace(
+        memberPage,
+        'ws_default',
+        KEYCLOAK_INTEGRATION_MEMBER_USERNAME,
+        KEYCLOAK_INTEGRATION_MEMBER_PASSWORD,
+      );
 
-      const contextKey = `notes.task_private_${Date.now()}`;
-      const contextValue = `task_private_${Date.now()}`;
-      await putContextEntryViaApi({
-        page,
+      const memberToken = await readStoredAuthToken(memberPage);
+      const params = new URLSearchParams({
         scope: 'task',
-        workspaceId: 'ws_default',
-        projectId,
-        taskId,
         key: contextKey,
-        content: contextValue,
+        workspace_id: 'ws_default',
+        project_id: projectId,
+        task_id: taskId,
       });
-
-      const memberContext = await browser.newContext();
-      const memberPage = await memberContext.newPage();
-      try {
-        await keycloakLoginToWorkspace(
-          memberPage,
-          'ws_default',
-          KEYCLOAK_INTEGRATION_MEMBER_USERNAME,
-          KEYCLOAK_INTEGRATION_MEMBER_PASSWORD,
-        );
-
-        const memberToken = await readStoredAuthToken(memberPage);
-        const params = new URLSearchParams({
-          scope: 'task',
-          key: contextKey,
-          workspace_id: 'ws_default',
-          project_id: projectId,
-          task_id: taskId,
-        });
-        const response = await memberPage.request.get(
-          `${API_BASE}/api/v1/context?${params.toString()}`,
-          { headers: { Authorization: `Bearer ${memberToken}` } },
-        );
-        expect([403, 404]).toContain(response.status());
-        const body = (await response.json().catch(() => null)) as { error_code?: string; message?: string } | null;
-        expect(body?.message).toBe('context_task_not_found');
-        expect(['FORBIDDEN', 'NOT_FOUND']).toContain(body?.error_code ?? '');
-      } finally {
-        await memberContext.close();
-      }
+      const response = await memberPage.request.get(
+        `${API_BASE}/api/v1/context?${params.toString()}`,
+        { headers: { Authorization: `Bearer ${memberToken}` } },
+      );
+      expect([403, 404]).toContain(response.status());
+      const body = (await response.json().catch(() => null)) as { error_code?: string; message?: string } | null;
+      expect(body?.message).toBe('context_task_not_found');
+      expect(['FORBIDDEN', 'NOT_FOUND']).toContain(body?.error_code ?? '');
     } finally {
-      await runner.stop();
+      await memberContext.close();
     }
   });
 });

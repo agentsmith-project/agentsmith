@@ -13,7 +13,7 @@ export interface PublicRuntimeConfig {
   sseAllowJwtFallback: boolean;
   trustedImageDomains: string[];
   bypassAuth: boolean;
-  notebookSseDebugPanel: boolean;
+  agentTaskSseDebugPanel: boolean;
   docFixtures: boolean;
 }
 
@@ -56,7 +56,7 @@ export function readPublicRuntimeConfigFromEnv(
     sseAllowJwtFallback: parseBoolean(env.NEXT_PUBLIC_SSE_ALLOW_JWT_FALLBACK),
     trustedImageDomains: parseCsv(env.NEXT_PUBLIC_TRUSTED_IMAGE_DOMAINS),
     bypassAuth: parseBoolean(env.NEXT_PUBLIC_BYPASS_AUTH),
-    notebookSseDebugPanel: parseBoolean(env.NEXT_PUBLIC_NOTEBOOK_SSE_DEBUG_PANEL),
+    agentTaskSseDebugPanel: parseBoolean(env.NEXT_PUBLIC_AGENT_TASK_SSE_DEBUG_PANEL),
     docFixtures: parseBoolean(env.NEXT_PUBLIC_DOC_FIXTURES),
   };
 }

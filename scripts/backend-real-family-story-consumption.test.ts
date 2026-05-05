@@ -64,11 +64,8 @@ describe('backend-real family story consumption', () => {
   });
 
   it('loads story definitions in the backend-real family specs instead of hard-coding daily-use runtime details inline', async () => {
-    const chatSource = await readFile(path.resolve(process.cwd(), 'e2e/integration-chat-llm-runner.spec.ts'), 'utf-8');
     const filesCrudSource = await readFile(path.resolve(process.cwd(), 'e2e/integration-files.spec.ts'), 'utf-8');
     const filesSyncSource = await readFile(path.resolve(process.cwd(), 'e2e/integration-files-mount-sync.spec.ts'), 'utf-8');
-    const notebookSource = await readFile(path.resolve(process.cwd(), 'e2e/integration-notebook-codex-runner.spec.ts'), 'utf-8');
-    const notebookTerminalSource = await readFile(path.resolve(process.cwd(), 'e2e/integration-notebook-terminal-ux.spec.ts'), 'utf-8');
     const apiKeySource = await readFile(path.resolve(process.cwd(), 'e2e/integration-api-key-gateway.spec.ts'), 'utf-8');
     const contextSource = await readFile(path.resolve(process.cwd(), 'e2e/integration-context-store-isolation.spec.ts'), 'utf-8');
     const filesSource = await readFile(path.resolve(process.cwd(), 'e2e/integration-files-management-ux.spec.ts'), 'utf-8');
@@ -77,11 +74,6 @@ describe('backend-real family story consumption', () => {
     const workspaceSettingsSource = await readFile(path.resolve(process.cwd(), 'e2e/integration-workspace-settings-directory.spec.ts'), 'utf-8');
     const endpointSource = await readFile(path.resolve(process.cwd(), 'e2e/integration-endpoint-create-edit.spec.ts'), 'utf-8');
     const agentMemberSource = await readFile(path.resolve(process.cwd(), 'e2e/integration-agent-member-permissions.spec.ts'), 'utf-8');
-
-    expect(chatSource).toContain("loadStoryDefinitionSync('chat-conversation-continuity')");
-    expect(chatSource).toContain('buildTraceStoryBinding');
-    expect(chatSource).not.toContain('What token did I ask you to remember? Reply with only the token.');
-    expect(chatSource).not.toContain('MEM_${Date.now()}');
 
     expect(filesCrudSource).toContain("loadStoryDefinitionSync('files-crud-and-sync')");
     expect(filesCrudSource).toContain('buildTraceStoryBinding');
@@ -95,36 +87,6 @@ describe('backend-real family story consumption', () => {
     expect(filesSyncSource).not.toContain('from-local.txt');
     expect(filesSyncSource).not.toContain('from-web.txt');
     expect(filesSyncSource).not.toContain('Mount Sync');
-
-    expect(notebookSource).toContain("loadStoryDefinitionSync('notebook-artifact-to-files-download')");
-    expect(notebookSource).toContain('buildTraceStoryBinding');
-    expect(notebookSource).toContain("].join('\\n')");
-    expect(notebookSource).not.toContain('North America consumer electronics');
-
-    expect(notebookTerminalSource).toContain("loadStoryDefinitionSync('notebook-terminal-workspace-multi-session')");
-    expect(notebookTerminalSource).toContain("loadStoryDefinitionSync('notebook-terminal-truth-unavailable-retry')");
-    expect(notebookTerminalSource).toContain('buildTraceStoryBinding');
-    expect(notebookTerminalSource).toContain('createUxTraceBundleWriter');
-    expect(notebookTerminalSource).toContain("captureTerminalTrace(page, 'create-second-terminal-session')");
-    expect(notebookTerminalSource).toContain("captureTerminalTrace(page, 'reload-task-and-preserve-backend-session-ids')");
-    expect(notebookTerminalSource).toContain("captureTerminalTrace(page, 'reject-new-run-while-live-terminal-sessions-exist')");
-    expect(notebookTerminalSource).toContain("captureTruthUnavailableTrace(page, 'return-to-task-while-terminal-truth-is-unavailable')");
-    expect(notebookTerminalSource).toContain("captureTruthUnavailableTrace(page, 'keep-run-and-delete-fail-closed-while-terminal-truth-is-missing')");
-    expect(notebookTerminalSource).toContain("captureTruthUnavailableTrace(page, 'retry-terminal-truth-check-from-blocked-task')");
-    expect(notebookTerminalSource).toContain("captureTruthUnavailableTrace(page, 'unlock-task-after-terminal-truth-recovers')");
-    expect(notebookTerminalSource).toContain("captureTerminalTrace(page, 'reopen-terminal-workspace-after-reload')");
-    expect(notebookTerminalSource).toContain("captureTerminalTrace(page, 'end-one-terminal-session-without-disrupting-others')");
-    expect(notebookTerminalSource).toContain("captureTerminalTrace(page, 'end-last-terminal-session-and-resume-agent-work')");
-    expect(notebookTerminalSource).toContain("page.reload({ waitUntil: 'domcontentloaded' })");
-    expect(notebookTerminalSource).toContain("message: 'task_terminal_sessions_active'");
-    expect(notebookTerminalSource).toContain('notebook__task-terminal-status-strip');
-    expect(notebookTerminalSource).toContain('End All Sessions');
-    expect(notebookTerminalSource).toContain('Retry terminal status check');
-    expect(notebookTerminalSource).not.toContain("toContainText('No such file or directory')");
-    expect(notebookTerminalSource).not.toContain("toContainText('Terminal session closed.')");
-    expect(notebookTerminalSource).not.toContain("captureTerminalTrace(page, 'reload-task-and-restore-terminal-truth')");
-    expect(notebookTerminalSource).not.toContain('Terminal session still active');
-    expect(notebookTerminalSource).not.toContain("captureTerminalTrace(page, 'show-hidden-terminal-session')");
 
     expect(apiKeySource).toContain("loadStoryDefinitionSync('api-key-to-endpoint-consumption')");
     expect(apiKeySource).toContain('buildTraceStoryBinding');
@@ -147,14 +109,12 @@ describe('backend-real family story consumption', () => {
     expect(filesSource).toContain('createUxTraceBundleWriter');
     expect(filesSource).not.toContain('Release UX Degraded');
 
-    expect(membersSource).toContain("loadStoryDefinitionSync('members-invite-and-chat-privacy')");
     expect(membersSource).toContain('buildTraceStoryBinding');
     expect(membersSource).toContain('createUxTraceBundleWriter');
     expect(membersSource).toContain("captureInviteFirstWorkTrace(memberPage, 'inspect-invite-truth')");
     expect(membersSource).toContain("captureInviteFirstWorkTrace(memberPage, 'continue-to-invited-workspace-login')");
     expect(membersSource).toContain("captureInviteFirstWorkTrace(memberPage, 'complete-workspace-login-and-accept')");
-    expect(membersSource).toContain("capturePrivacyTrace(memberPage, 'verify-member-first-access')");
-    expect(membersSource).toContain("capturePrivacyTrace(memberPage, 'verify-chat-privacy')");
+    expect(membersSource).not.toContain('capturePrivacyTrace');
     expect(membersSource).not.toContain('Invite Chat Isolation');
     expect(membersSource).not.toContain('OWNER_PRIVATE_MESSAGE_');
     expect(membersSource).not.toContain('choose-invited-workspace');
@@ -190,18 +150,18 @@ describe('backend-real family story consumption', () => {
     expect(agentMemberSource).not.toContain('member-use-only-agent');
   });
 
-  it('keeps notebook artifact prompts executable as multiline shell commands', () => {
-    const story = loadCommittedStoryDefinitionByIdSync('notebook-artifact-to-files-download');
-    const runtime = (story.runtimeData as Record<string, unknown> | undefined)?.notebookArtifactDownload as
+  it('keeps Agent Task artifact prompts executable as multiline shell commands', () => {
+    const story = loadCommittedStoryDefinitionByIdSync('agent-task-artifact-to-files-download');
+    const runtime = (story.runtimeData as Record<string, unknown> | undefined)?.agentTaskArtifactDownload as
       | Record<string, unknown>
       | undefined;
 
     expect(typeof runtime?.createPrompt).toBe('string');
     const prompt = runtime?.createPrompt as string;
     expect(prompt).toContain('```bash\n');
-    expect(prompt).toContain("\nmkdir -p .artifacts && cat <<'EOF' > .artifacts/story-notebook-download.md\n");
+    expect(prompt).toContain("\nmkdir -p .artifacts && cat <<'EOF' > .artifacts/story-agent-task-download.md\n");
     expect(prompt).toContain('\nEOF\n```');
-    expect(prompt).toContain('\nAfter the file is written, reply with exactly: NOTEBOOK_ARTIFACT_DOWNLOAD_OK');
+    expect(prompt).toContain('\nAfter the file is written, reply with exactly: AGENT_TASK_ARTIFACT_DOWNLOAD_OK');
   });
 
   it('keeps api key and personal context stories aligned with the member journey assumptions', () => {
@@ -243,58 +203,38 @@ describe('backend-real family story consumption', () => {
     expect(workspaceSettingsStory.goal).not.toContain('directory search');
   });
 
-  it('keeps the chat day-two and first notebook stories aligned with common user journeys instead of runner internals', () => {
+  it('keeps the chat day-two and first Agent Task stories aligned with common user journeys instead of runner internals', () => {
     const chatDayTwoStory = loadCommittedStoryDefinitionByIdSync('chat-day-two-thread-workflow');
     expect(chatDayTwoStory.goal).toContain('第二天');
     expect(chatDayTwoStory.goal).not.toContain('upstream');
 
-    const notebookFirstStory = loadCommittedStoryDefinitionByIdSync('notebook-first-success');
-    expect(notebookFirstStory.goal).toContain('第一次');
-    expect(notebookFirstStory.goal).not.toContain('WebSocket');
+    const agentTaskFirstStory = loadCommittedStoryDefinitionByIdSync('agent-task-first-success');
+    expect(agentTaskFirstStory.goal).toContain('第一次');
+    expect(agentTaskFirstStory.goal).not.toContain('WebSocket');
   });
 
-  it('keeps chat continuity focused on post-refresh recall instead of first-turn token echo', async () => {
-    const story = loadCommittedStoryDefinitionByIdSync('chat-conversation-continuity');
-    const runtimeRoot = story.runtimeData as Record<string, unknown> | undefined;
-    const chatRuntime = runtimeRoot?.chat as Record<string, unknown> | undefined;
-    const continuity = chatRuntime?.continuity as Record<string, unknown> | undefined;
-    const chatSource = await readFile(path.resolve(process.cwd(), 'e2e/integration-chat-llm-runner.spec.ts'), 'utf-8');
-    const rememberPhasePattern =
-      /const rememberedMessages = await waitForLatestAssistantContent\(\{\s*page,\s*projectId,\s*sessionId: agentBundle\.sessionId,\s*minMessages: 2,\s*\}\);/s;
-    const recallPhasePattern =
-      /const sessionMessages = await waitForLatestAssistantContent\(\{\s*page,\s*projectId,\s*sessionId: agentBundle\.sessionId,\s*requiredSubstring: runtime\.rememberToken,\s*minMessages: 4,\s*\}\);/s;
-
-    expect(continuity?.rememberPrompt).toContain('Remember this token for our session: CHAT_CONTINUITY_OK.');
-    expect(continuity?.rememberPrompt).not.toContain('Make sure your reply includes the token.');
-    expect(continuity?.recallPrompt).toContain('Reply with exactly the token and nothing else.');
-    expect(chatSource).toContain("hasText: runtime.rememberPrompt");
-    expect(chatSource).toMatch(rememberPhasePattern);
-    expect(chatSource).toMatch(recallPhasePattern);
-    expect(chatSource).not.toContain("hasText: runtime.rememberToken }).first()).toBeVisible({ timeout: 240_000");
-  });
-
-  it('keeps notebook terminal recovery stories in the generated catalog with canonical source refs', async () => {
+  it('keeps Agent Task terminal recovery stories in the generated catalog with canonical source refs', async () => {
     const specs = await readGeneratedStorySpecs();
-    const notebookTerminalStories = [
-      loadCommittedStoryDefinitionByIdSync('notebook-terminal-reentry-recovery'),
-      loadCommittedStoryDefinitionByIdSync('notebook-terminal-truth-unavailable-retry'),
-      loadCommittedStoryDefinitionByIdSync('notebook-terminal-workspace-multi-session'),
+    const agentTaskTerminalStories = [
+      loadCommittedStoryDefinitionByIdSync('agent-task-terminal-reentry-recovery'),
+      loadCommittedStoryDefinitionByIdSync('agent-task-terminal-truth-unavailable-retry'),
+      loadCommittedStoryDefinitionByIdSync('agent-task-terminal-workspace-multi-session'),
     ];
 
-    for (const story of notebookTerminalStories) {
+    for (const story of agentTaskTerminalStories) {
       const spec = specs.find((entry) => entry.storyId === story.storyId);
 
-      expect(story.family).toBe('notebook-terminal-workspace');
+      expect(story.family).toBe('agent-task-terminal-workspace');
       expect(spec?.sourceRef).toBe(expectedSourceRefForStory(story));
       expect(spec?.stepIds).toEqual(story.steps.map((step) => step.stepId));
       expect(spec?.traceStepIds).toEqual(story.steps.map((step) => step.stepId));
     }
   });
 
-  it('keeps notebook terminal recovery language aligned with broken-session product truth instead of a narrower failed-session label', async () => {
-    const recoveryStory = loadCommittedStoryDefinitionByIdSync('notebook-terminal-reentry-recovery');
+  it('keeps Agent Task terminal recovery language aligned with broken-session product truth instead of a narrower failed-session label', async () => {
+    const recoveryStory = loadCommittedStoryDefinitionByIdSync('agent-task-terminal-reentry-recovery');
     const specs = await readGeneratedStorySpecs();
-    const recoverySpec = specs.find((entry) => entry.storyId === 'notebook-terminal-reentry-recovery');
+    const recoverySpec = specs.find((entry) => entry.storyId === 'agent-task-terminal-reentry-recovery');
 
     expect(recoveryStory.goal).toContain('需要恢复');
     expect(recoveryStory.goal).not.toContain('failed terminal');
@@ -368,11 +308,11 @@ describe('backend-real family story consumption', () => {
     expect(specs.find((entry) => entry.storyId === 'files-crud-and-sync')?.sourceRef).toBe(
       'e2e/stories/backend-real/files-crud-and-sync.story.md#files-crud-and-sync',
     );
-    expect(specs.find((entry) => entry.storyId === 'notebook-artifact-to-files-download')?.sourceRef).toBe(
-      'e2e/stories/backend-real/notebook-artifact-to-files-download.story.md#notebook-artifact-to-files-download',
+    expect(specs.find((entry) => entry.storyId === 'agent-task-artifact-to-files-download')?.sourceRef).toBe(
+      'e2e/stories/backend-real/agent-task-artifact-to-files-download.story.md#agent-task-artifact-to-files-download',
     );
-    expect(specs.find((entry) => entry.storyId === 'notebook-first-success')?.sourceRef).toBe(
-      'e2e/stories/backend-real/notebook-first-success.story.md#notebook-first-success',
+    expect(specs.find((entry) => entry.storyId === 'agent-task-first-success')?.sourceRef).toBe(
+      'e2e/stories/backend-real/agent-task-first-success.story.md#agent-task-first-success',
     );
     expect(specs.find((entry) => entry.storyId === 'api-key-to-endpoint-consumption')?.sourceRef).toBe(
       'e2e/stories/backend-real/api-key-to-endpoint-consumption.story.md#api-key-to-endpoint-consumption',

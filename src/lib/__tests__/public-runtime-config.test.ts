@@ -42,7 +42,7 @@ describe('public runtime config', () => {
         sseAllowJwtFallback: false,
         trustedImageDomains: [],
         bypassAuth: false,
-        notebookSseDebugPanel: false,
+        agentTaskSseDebugPanel: false,
         docFixtures: false,
       },
     });

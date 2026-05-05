@@ -50,7 +50,7 @@ function buildRunnerWsUrl(
     wsUrl.replace("ws://localhost:20000", baseUrl.replace("http://", "ws://")),
   );
   if (sessionId) {
-    resolved.searchParams.set("session_id", sessionId);
+    resolved.searchParams.set("runner_session_id", sessionId);
   }
   return resolved.toString();
 }
@@ -69,7 +69,11 @@ async function expectRunnerDispatch(
   ]);
 }
 
-async function createNotebookArtifactFixture(baseUrl: string, workspaceName: string): Promise<{
+async function createNotebookArtifactFixture(
+  deps: ReturnType<typeof startServer>["deps"],
+  baseUrl: string,
+  workspaceName: string,
+): Promise<{
   workspaceLibrary: { id: string };
   agent: { id: string };
   runnerKey: string;
@@ -123,51 +127,28 @@ async function createNotebookArtifactFixture(baseUrl: string, workspaceName: str
   expect(endpointRes.status).toBe(201);
   const endpoint = (await endpointRes.json()) as { id: string };
 
-  const agentRes = await apiFetch(
-    baseUrl,
-    "/api/v1/workspaces/ws_default/projects/proj_1/agents",
-    {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        name: "NotebookAgent",
-        mode: "external",
-        interaction_kind: "notebook",
-        execution_preferences: {
-          notebook: {
-            endpoint_id: endpoint.id,
-            model: "gpt-5-codex",
-            wire_api: "responses",
-          },
-        },
-        capabilities: {
-          streaming_completion: true,
-          multimodal_completion: false,
-        },
-      }),
+  const agent = await deps.agentResourceService.createAgent("ws_default", "proj_1", {
+    name: "NotebookAgent",
+    runner_provider: "developer",
+    is_default: true,
+    status: "enabled",
+    runner_status: "ready",
+    default_endpoint_id: endpoint.id,
+    owner_id: "user_test",
+    visibility: "private",
+    capabilities: {
+      task_execution: true,
+      artifacts: true,
+      streaming_completion: true,
+      multimodal_completion: false,
     },
-  );
-  expect(agentRes.status).toBe(201);
-  const agent = (await agentRes.json()) as { id: string };
+  });
 
-  const keyRes = await apiFetch(
-    baseUrl,
-    `/api/v1/workspaces/ws_default/projects/proj_1/agents/${agent.id}/keys`,
-    {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ name: "runner" }),
-    },
-  );
-  expect(keyRes.status).toBe(201);
-  const keyResp = (await keyRes.json()) as { key: string };
-
-  const connInfoRes = await apiFetch(
-    baseUrl,
-    `/api/v1/workspaces/ws_default/projects/proj_1/agents/${agent.id}/connection-info`,
-  );
-  expect(connInfoRes.status).toBe(200);
-  const connInfo = (await connInfoRes.json()) as { ws_url: string };
+  const keyResp = await deps.agentResourceService.createAgentKey("ws_default", "proj_1", agent.id);
+  const connInfo = deps.agentResourceService.buildConnectionInfo({
+    id: agent.id,
+    runner_provider: "developer",
+  });
 
   return {
     workspaceLibrary,
@@ -191,7 +172,6 @@ async function createNotebookTask(input: {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         title: input.title,
-        agent_id: input.agentId,
         workspace_file_library_id: input.workspaceFileLibraryId,
       }),
     },
@@ -262,35 +242,6 @@ async function openReadyNotebookRunnerSocket(input: {
   };
 }
 
-async function waitForExecutionOfflineTrace(
-  baseUrl: string,
-  taskId: string,
-): Promise<{ summary?: string; details?: Record<string, unknown> }> {
-  for (let attempt = 0; attempt < 20; attempt += 1) {
-    const tracesRes = await apiFetch(
-      baseUrl,
-      `/api/v1/workspaces/ws_default/projects/proj_1/tasks/${taskId}/traces`,
-    );
-    expect(tracesRes.status).toBe(200);
-    const tracesBody = (await tracesRes.json()) as {
-      items: Array<{
-        status?: string;
-        name?: string;
-        summary?: string;
-        details?: Record<string, unknown>;
-      }>;
-    };
-    const terminalTrace = tracesBody.items.find(
-      (item) => item.name === "execution.terminal" && item.status === "error",
-    );
-    if (terminalTrace) {
-      return terminalTrace;
-    }
-    await delay(20);
-  }
-  throw new Error("execution.terminal offline trace did not materialize");
-}
-
 async function listNotebookTaskArtifacts(
   baseUrl: string,
   taskId: string,
@@ -324,18 +275,18 @@ async function waitForNotebookTaskArtifacts(
   return listNotebookTaskArtifacts(baseUrl, taskId);
 }
 
-async function postNotebookTaskMessage(
+async function postNotebookTaskRun(
   baseUrl: string,
   taskId: string,
   content: string,
 ): Promise<Response> {
   return apiFetch(
     baseUrl,
-    `/api/v1/workspaces/ws_default/projects/proj_1/tasks/${taskId}/messages`,
+    `/api/v1/workspaces/ws_default/projects/proj_1/tasks/${taskId}/runs`,
     {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ role: "user", content }),
+      body: JSON.stringify({ intent: content }),
     },
   );
 }
@@ -344,10 +295,11 @@ describe("api-entry-node notebook task artifact routes", () => {
   it("deduplicates notebook task artifacts by task_relative_path across repeated execution artifact frames", async () => {
     const previousPublicApiBase = process.env.PUBLIC_API_BASE_URL;
     process.env.PUBLIC_API_BASE_URL = "";
-    const { baseUrl } = startServer();
+    const { baseUrl, deps } = startServer();
     process.env.PUBLIC_API_BASE_URL = `${baseUrl}/api/v1`;
     try {
       const fixture = await createNotebookArtifactFixture(
+        deps,
         baseUrl,
         "Artifact Dedupe Workspace",
       );
@@ -411,7 +363,7 @@ describe("api-entry-node notebook task artifact routes", () => {
         },
       });
 
-      const postMessageRes = await postNotebookTaskMessage(baseUrl, task.id, "run");
+      const postMessageRes = await postNotebookTaskRun(baseUrl, task.id, "run");
       expect(postMessageRes.status).toBe(200);
       await expectRunnerDispatch(
         runner.firstDispatch,
@@ -440,10 +392,11 @@ describe("api-entry-node notebook task artifact routes", () => {
   it("downloads notebook task artifact content in local backend when inline content is available", async () => {
     const previousPublicApiBase = process.env.PUBLIC_API_BASE_URL;
     process.env.PUBLIC_API_BASE_URL = "";
-    const { baseUrl } = startServer();
+    const { baseUrl, deps } = startServer();
     process.env.PUBLIC_API_BASE_URL = `${baseUrl}/api/v1`;
     try {
       const fixture = await createNotebookArtifactFixture(
+        deps,
         baseUrl,
         "Artifact Download Workspace",
       );
@@ -490,7 +443,7 @@ describe("api-entry-node notebook task artifact routes", () => {
         },
       });
 
-      const postMessageRes = await postNotebookTaskMessage(baseUrl, task.id, "run");
+      const postMessageRes = await postNotebookTaskRun(baseUrl, task.id, "run");
       expect(postMessageRes.status).toBe(200);
       await expectRunnerDispatch(
         runner.firstDispatch,
@@ -526,13 +479,14 @@ describe("api-entry-node notebook task artifact routes", () => {
     }
   }, 30_000);
 
-  it("does not dispatch notebook execution to an agent-scoped runner without a task-scoped websocket and leaves no artifacts", async () => {
+  it("dispatches developer notebook execution to the agent-scoped runner when no task-scoped websocket is present", async () => {
     const previousPublicApiBase = process.env.PUBLIC_API_BASE_URL;
     process.env.PUBLIC_API_BASE_URL = "";
-    const { baseUrl } = startServer();
+    const { baseUrl, deps } = startServer();
     process.env.PUBLIC_API_BASE_URL = `${baseUrl}/api/v1`;
     try {
       const fixture = await createNotebookArtifactFixture(
+        deps,
         baseUrl,
         "Artifact Offline Workspace",
       );
@@ -540,6 +494,15 @@ describe("api-entry-node notebook task artifact routes", () => {
         baseUrl,
         runnerWsUrl: fixture.runnerWsUrl,
         runnerKey: fixture.runnerKey,
+        onRequestStart: (ws, requestId) => {
+          ws.send(
+            JSON.stringify({
+              type: "agent.response.done",
+              request_id: requestId,
+              payload: { finish_reason: "stop" },
+            }),
+          );
+        },
       });
       const task = await createNotebookTask({
         baseUrl,
@@ -548,7 +511,7 @@ describe("api-entry-node notebook task artifact routes", () => {
         title: "artifact-offline",
       });
 
-      const postMessageRes = await postNotebookTaskMessage(
+      const postMessageRes = await postNotebookTaskRun(
         baseUrl,
         task.id,
         "run without task-scoped runner",
@@ -556,14 +519,11 @@ describe("api-entry-node notebook task artifact routes", () => {
       expect(postMessageRes.status).toBe(200);
 
       await delay(NO_DISPATCH_SETTLE_MS);
-      expect(agentScopedRunner.getDispatchCount()).toBe(0);
-
-      const terminalTrace = await waitForExecutionOfflineTrace(baseUrl, task.id);
-      expect(terminalTrace.summary).toContain("AGENT_OFFLINE");
-      expect(
-        (terminalTrace.details as { synthesized?: boolean } | undefined)
-          ?.synthesized,
-      ).toBe(true);
+      await expectRunnerDispatch(
+        agentScopedRunner.firstDispatch,
+        "artifact agent-scoped runner fallback",
+      );
+      expect(agentScopedRunner.getDispatchCount()).toBe(1);
 
       const artifacts = await waitForNotebookTaskArtifacts(
         baseUrl,

@@ -27,8 +27,8 @@ describe('overview page utils', () => {
       }),
       createProjectRoutePolicy({
         permissions: ['project:endpoint:use'],
-        href: 'notebook',
-        navLabelKey: 'notebook',
+        href: 'agent-tasks',
+        navLabelKey: 'agent_tasks',
         navSection: 'use',
         navOrder: 20,
       }),
@@ -54,9 +54,9 @@ describe('overview page utils', () => {
         navOrder: 50,
       }),
       createProjectRoutePolicy({
-        permissions: ['project:agent:use'],
-        href: 'agents',
-        navLabelKey: 'agents',
+        permissions: ['project:agent_runner:read'],
+        href: 'agent-runners',
+        navLabelKey: 'agent_runners',
         navSection: 'develop',
         navOrder: 10,
       }),
@@ -86,9 +86,9 @@ describe('overview page utils', () => {
         description: 'next_steps.chat_description',
       },
       {
-        href: 'notebook',
-        label: 'notebook',
-        description: 'next_steps.notebook_description',
+        href: 'agent-tasks',
+        label: 'agent_tasks',
+        description: 'next_steps.agent_tasks_description',
       },
       {
         href: 'files',
@@ -105,7 +105,7 @@ describe('overview page utils', () => {
     const { primaryStep, secondarySteps } = splitOverviewPrimaryStep(featuredEntries);
 
     expect(primaryStep?.href).toBe('chat');
-    expect(secondarySteps.map((entry) => entry.href)).toEqual(['notebook', 'files', 'context']);
+    expect(secondarySteps.map((entry) => entry.href)).toEqual(['agent-tasks', 'files', 'context']);
 
     const summary = buildOverviewSurfaceSummary(
       policies,
@@ -119,7 +119,7 @@ describe('overview page utils', () => {
       { href: 'use-guide', label: 'api_access_guide' },
     ]);
     expect(summary.developLabels).toEqual([
-      { href: 'agents', label: 'agents' },
+      { href: 'agent-runners', label: 'agent_runners' },
     ]);
     expect(summary.governLabels).toEqual([
       { href: 'resource-policy', label: 'resource_policy' },
@@ -130,6 +130,6 @@ describe('overview page utils', () => {
     expect(overviewTestIds.page).toBe('project-overview__page');
     expect(overviewTestIds.primaryCta).toBe('project-overview__primary-cta');
     expect(overviewTestIds.surfaceGroup('govern')).toBe('project-overview__surface-group--govern');
-    expect(getOverviewSecondaryStepTestId('notebook')).toBe('project-overview__secondary-step--notebook');
+    expect(getOverviewSecondaryStepTestId('agent-tasks')).toBe('project-overview__secondary-step--agent-tasks');
   });
 });

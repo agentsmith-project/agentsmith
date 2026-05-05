@@ -1,4 +1,4 @@
-export * from './agents';
+export * from './agent-runners';
 export * from './audit-usage';
 export * from './chat';
 export * from './common';
@@ -7,6 +7,5 @@ export * from './endpoints';
 export * from './endpoints-core';
 export * from './files';
 export * from './governance';
-export * from './notebook';
 export * from './user';
 export * from './workspace-projects';

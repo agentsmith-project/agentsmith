@@ -586,7 +586,7 @@ describe('backend-real full gate runtime ownership contract', () => {
 
     expect(script).toContain('STARTUP_WARMUP_TOKEN_FILE=');
     expect(script).toContain('perform_startup_authenticated_docstore_warmup()');
-    expect(script).toContain('node "${ROOT_DIR}/scripts/notebook-agent-refresh-token.js" > "${STARTUP_WARMUP_TOKEN_FILE}"');
+    expect(script).toContain('node "${ROOT_DIR}/scripts/agent-runner-refresh-token.js" > "${STARTUP_WARMUP_TOKEN_FILE}"');
     expect(script).toContain('Authorization: Bearer $(cat "${STARTUP_WARMUP_TOKEN_FILE}")');
     expect(script).toContain('"${API_BASE%/}/api/v1/me/desktop/file-libraries"');
     expect(script).toContain('authenticated docStore warmup failed before freezing the ready baseline');

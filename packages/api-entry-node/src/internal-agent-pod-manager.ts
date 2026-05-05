@@ -1,4 +1,5 @@
 import type { AgentRecord } from './resource-models.js';
+import { isManagedAgentRunner } from './agent-runner-profile.js';
 import type { ExecResponse, PodStatusResponse, SandboxPodCreateBody } from './sandbox-manager-client.js';
 import type { RunnerSessionDispatchAuthority } from './agent-execution-service.js';
 import type { InternalAgentWorkspaceMount } from './internal-agent-workspace-provisioner.js';
@@ -69,6 +70,7 @@ interface InternalAgentPodManagerOptions {
 const INTERNAL_AGENT_BUILTIN_SKILLS_DIR = process.env.INTERNAL_AGENT_BUILTIN_SKILLS_DIR?.trim() || '/etc/codex/skills';
 const INTERNAL_AGENT_BUILTIN_SKILLS = process.env.INTERNAL_AGENT_BUILTIN_SKILLS?.trim() || 'mbos-context,feishu-docs,jira-ops';
 const INTERNAL_AGENT_BUILTIN_SKILLS_REQUIRED = process.env.INTERNAL_AGENT_BUILTIN_SKILLS_REQUIRED?.trim() || '1';
+const INTERNAL_AGENT_TASK_RUNNER_MODE = 'managed_platform';
 
 function defaultSleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
@@ -184,7 +186,12 @@ function readInternalConfig(agent: AgentRecord): {
   const cfg = (agent.config ?? {}) as Record<string, unknown>;
   const image = typeof cfg.image === 'string' ? cfg.image.trim() : '';
   const rawKey = typeof cfg._internal_raw_key === 'string' ? cfg._internal_raw_key.trim() : '';
-  if (!image || !rawKey) {
+  if (!image) {
+    throw Object.assign(new Error('agent_runner_image_unconfigured'), {
+      code: 'AGENT_RUNNER_IMAGE_UNCONFIGURED',
+    });
+  }
+  if (!rawKey) {
     throw Object.assign(new Error('internal_agent_execution_not_configured'), {
       code: 'AGENT_SANDBOX_NOT_CONFIGURED',
     });
@@ -253,8 +260,8 @@ export class InternalAgentPodManagerImpl implements InternalAgentPodManager {
     signal?: AbortSignal;
   }): Promise<void> {
     const { workspaceId, projectId, workloadId, agent, signal } = input;
-    if (agent.mode !== 'internal') {
-      throw Object.assign(new Error('agent_mode_not_internal'), { code: 'AGENT_SANDBOX_NOT_CONFIGURED' });
+    if (!isManagedAgentRunner(agent)) {
+      throw Object.assign(new Error('agent_runner_provider_not_managed'), { code: 'AGENT_SANDBOX_NOT_CONFIGURED' });
     }
     throwIfAborted(signal);
     const workspaceMount = requireWorkspaceMount(input.workspaceMount);
@@ -476,8 +483,8 @@ export class InternalAgentPodManagerImpl implements InternalAgentPodManager {
     );
     throwIfAborted(signal);
     const wsBaseUrl = normalizeAgentWebSocketBaseUrl(this.wsBaseUrl);
-    const wsUrl = `${wsBaseUrl}/api/v1/agent-execution/ws?agent_id=${encodeURIComponent(agent.id)}${
-      sessionId ? `&session_id=${encodeURIComponent(sessionId)}` : ''
+    const wsUrl = `${wsBaseUrl}/api/v1/agent-execution/ws?agent_runner_id=${encodeURIComponent(agent.id)}${
+      sessionId ? `&runner_session_id=${encodeURIComponent(sessionId)}` : ''
     }`;
 
     for (let attempt = 0; attempt < 3; attempt += 1) {
@@ -509,6 +516,7 @@ export class InternalAgentPodManagerImpl implements InternalAgentPodManager {
               MBOS_AGENT_BUILTIN_SKILLS: INTERNAL_AGENT_BUILTIN_SKILLS,
               MBOS_AGENT_BUILTIN_SKILLS_REQUIRED: INTERNAL_AGENT_BUILTIN_SKILLS_REQUIRED,
               ...(config.env ?? {}),
+              MBOS_AGENT_TASK_RUNNER_MODE: INTERNAL_AGENT_TASK_RUNNER_MODE,
             },
             cpu_request: config.cpuRequest ?? '500m',
             cpu_limit: config.cpuLimit ?? '2',

@@ -1,25 +1,25 @@
 .PHONY: help help-extended quick-help help-glossary bootstrap deps-up deps-ready deps-down deps-reset deps-smoke deps-logs deps-ps deps-init deps-init-postgres deps-init-keycloak \
 	check-api-port api-dev api-dev-min web web-msw \
 	e2e e2e-local \
-	e2e-int-minimal e2e-int-chat e2e-int-agent e2e-int-chat-real e2e-int-local \
-	e2e-int-minimal-local-api e2e-int-chat-local-api e2e-int-agent-local-api e2e-int-chat-real-local-api \
-	e2e-int-chat-auto e2e-int-agent-auto e2e-int-notebook-agent-auto e2e-int-chat-ux-auto \
+	e2e-int-minimal e2e-int-chat e2e-int-agent-task e2e-int-chat-real e2e-int-local \
+	e2e-int-minimal-local-api e2e-int-chat-local-api e2e-int-agent-task-local-api e2e-int-chat-real-local-api \
+	e2e-int-chat-auto e2e-int-agent-task-auto e2e-int-chat-ux-auto \
 	e2e-int-core-local-api e2e-int-core-auto governance-core-smoke \
-	agent-test-runner notebook-runner chat-runner notebook-agent-refresh-token notebook-agent-smoke-task notebook-agent-credential-sync-smoke \
-	notebook-agent-engineering-smoke notebook-agent-engineering-smoke-full governance-smoke governance-pages-real-backend-smoke governance-pages-real-backend-smoke-strict governance-pages-real-backend-smoke-tolerant governance-pages-real-backend-interaction-smoke governance-pages-real-backend-interaction-smoke-strict governance-pages-real-backend-interaction-smoke-tolerant governance-policy-effect-smoke \
+	agent-task-runner agent-runner-refresh-token agent-task-smoke-task agent-task-credential-sync-smoke \
+	agent-task-engineering-smoke agent-task-engineering-smoke-full governance-smoke governance-pages-real-backend-smoke governance-pages-real-backend-smoke-strict governance-pages-real-backend-smoke-tolerant governance-pages-real-backend-interaction-smoke governance-pages-real-backend-interaction-smoke-strict governance-pages-real-backend-interaction-smoke-tolerant governance-policy-effect-smoke \
 	substrate-up substrate-down substrate-reset substrate-reseed substrate-status \
 	governance-policy-access-effect-smoke governance-policy-group-access-effect-smoke governance-policy-update-audit-smoke governance-config-audit-effect-smoke governance-policy-spending-effect-smoke governance-policy-requests-rate-effect-smoke governance-member-permission-effect-smoke governance-member-lifecycle-effect-smoke \
 	build-reliability-smoke workspace-governance-smoke workspace-overview-smoke \
-	notebook-agent-smoke-full notebook-agent-init-resources notebook-agent-runner \
+	agent-task-smoke-full agent-runner-init-resources agent-task-runner-from-state \
 	local-real-up local-real-down local-real-status local-real-reset \
-	local-manual-up local-manual-down local-manual-status local-manual-reset local-manual-seed-notebook \
+	local-manual-up local-manual-down local-manual-status local-manual-reset local-manual-seed-agent-task \
 	local-manual-internal-up local-manual-internal-down local-manual-internal-status local-manual-internal-reset local-manual-internal-smoke \
 	demo-rehearsal-up demo-rehearsal-down demo-rehearsal-status demo-rehearsal-reset demo-rehearsal-bootstrap demo-rehearsal-verify demo-rehearsal-report \
 	cluster-rehearsal-up cluster-rehearsal-down cluster-rehearsal-status cluster-rehearsal-reset cluster-rehearsal-bootstrap cluster-rehearsal-verify cluster-rehearsal-report \
-	notebook-agent-no-sandbox-smoke notebook-agent-no-sandbox-assert \
-	notebook-agent-monitor notebook-agent-load-test notebook-agent-load-matrix \
-	notebook-agent-benchmark-baseline notebook-agent-benchmark-compare notebook-agent-traces-query-bench \
-	notebook-agent-traces-query-sweep notebook-agent-traces-query-sweep-compare notebook-agent-benchmark-archive \
+	agent-task-no-sandbox-smoke agent-task-no-sandbox-assert \
+	agent-task-monitor agent-task-load-test agent-task-load-matrix \
+	agent-task-benchmark-baseline agent-task-benchmark-compare agent-task-traces-query-bench \
+	agent-task-traces-query-sweep agent-task-traces-query-sweep-compare agent-task-benchmark-archive \
 	model-request-stream-bench model-request-stream-bench-gate usage-report-runner-status usage-report-run-due \
 	openapi-generate openapi-check-generated openapi-changelog contracts-check-openapi urls \
 	verify-contracts verify-governance \
@@ -59,7 +59,7 @@ DATABASE_URL ?= postgresql://mbos:mbos_dev_password@localhost:15432/mbos
 REDIS_URL ?= redis://localhost:16379
 MONGO_URL ?= mongodb://mbos:mbos_dev_password@localhost:17017/admin
 MONGO_DB_NAME ?= mbos
-BUILTIN_SKILLS_DIR_DEFAULT ?= $(CURDIR)/packages/notebook-codex-runner/builtin-skills
+BUILTIN_SKILLS_DIR_DEFAULT ?= $(CURDIR)/packages/agent-task-runner/builtin-skills
 MBOS_UNIVERSAL_PROXY_BASE_URL ?= http://127.0.0.1:38080
 
 LOCALE ?= en-US
@@ -379,8 +379,8 @@ e2e-int-minimal:
 e2e-int-chat:
 	$(NPM) run test:e2e:integration:chat
 
-e2e-int-agent:
-	$(NPM) run test:e2e:integration:agents
+e2e-int-agent-task:
+	$(NPM) run test:e2e:integration:agent-task
 
 e2e-int-chat-real:
 	$(NPM) run test:e2e:integration:chat:real
@@ -401,11 +401,11 @@ e2e-int-chat-local-api:
 	KEYCLOAK_REALM=$(KEYCLOAK_REALM) \
 	$(NPM) run test:e2e:integration:chat:with-api
 
-e2e-int-agent-local-api:
+e2e-int-agent-task-local-api:
 	INTEGRATION_API_PORT=$(PORT_API) \
 	KEYCLOAK_BASE_URL=$(KEYCLOAK_BASE_URL) \
 	KEYCLOAK_REALM=$(KEYCLOAK_REALM) \
-	$(NPM) run test:e2e:integration:agents:with-api
+	$(NPM) run test:e2e:integration:agent-task:with-api
 
 e2e-int-chat-real-local-api:
 	INTEGRATION_API_PORT=$(PORT_API) \
@@ -422,23 +422,14 @@ e2e-int-chat-auto:
 	KEYCLOAK_CLIENT_ID=$(KEYCLOAK_CLIENT_ID) \
 	./scripts/run-integration-e2e-full.sh e2e/integration-chat.spec.ts
 
-e2e-int-agent-auto:
+e2e-int-agent-task-auto:
 	INTEGRATION_API_PORT=$(PORT_API) \
 	INTEGRATION_WEB_PORT=$(PORT_WEB) \
 	KEYCLOAK_BASE_URL=$(KEYCLOAK_BASE_URL) \
 	KEYCLOAK_REALM=$(KEYCLOAK_REALM) \
 	KEYCLOAK_URL=$(KEYCLOAK_URL) \
 	KEYCLOAK_CLIENT_ID=$(KEYCLOAK_CLIENT_ID) \
-	./scripts/run-integration-e2e-full.sh e2e/integration-agents-external.spec.ts
-
-e2e-int-notebook-agent-auto:
-	INTEGRATION_API_PORT=$(PORT_API) \
-	INTEGRATION_WEB_PORT=$(PORT_WEB) \
-	KEYCLOAK_BASE_URL=$(KEYCLOAK_BASE_URL) \
-	KEYCLOAK_REALM=$(KEYCLOAK_REALM) \
-	KEYCLOAK_URL=$(KEYCLOAK_URL) \
-	KEYCLOAK_CLIENT_ID=$(KEYCLOAK_CLIENT_ID) \
-	./scripts/run-integration-e2e-full.sh e2e/integration-notebook-external.spec.ts
+	./scripts/run-integration-e2e-full.sh e2e/integration-agent-task-runner.spec.ts --grep-invert docker
 
 e2e-int-chat-ux-auto:
 	INTEGRATION_API_PORT=$(PORT_API) \
@@ -486,54 +477,26 @@ e2e-int-core-auto:
 governance-core-smoke:
 	@set -e; \
 	$(MAKE) e2e-int-core-local-api; \
-	BASE_URL=$${BASE_URL:-http://localhost:3001} $(MAKE) notebook-agent-refresh-token; \
+	BASE_URL=$${BASE_URL:-http://localhost:3001} $(MAKE) agent-runner-refresh-token; \
 	$(MAKE) governance-policy-requests-rate-effect-smoke; \
 	$(MAKE) governance-report REPORT_ARCHIVE=1 REPORT_CHECKS=typecheck,openapi-check,contracts-check
 
-agent-test-runner:
+agent-task-runner:
 	@if [ -z "$(AGENT_WS_URL)" ] || [ -z "$(AGENT_KEY)" ]; then \
 		echo "[make] Missing AGENT_WS_URL or AGENT_KEY."; \
 		echo "[make] Example:"; \
-		echo "  make agent-test-runner AGENT_WS_URL='ws://localhost:20000/api/v1/agent-execution/ws?agent_id=ag_xxx' AGENT_KEY='ask_xxx'"; \
+		echo "  make agent-task-runner AGENT_WS_URL='ws://localhost:20000/api/v1/agent-execution/ws?agent_runner_id=runner_xxx' AGENT_KEY='ask_xxx'"; \
 		exit 1; \
 	fi
 	env -u http_proxy -u https_proxy -u all_proxy -u HTTP_PROXY -u HTTPS_PROXY -u ALL_PROXY -u no_proxy -u NO_PROXY \
-	MBOS_RUNNER_MODE="$${MBOS_RUNNER_MODE:-host_external}" \
-	MBOS_AGENT_WS_URL="$(AGENT_WS_URL)" \
-	MBOS_AGENT_KEY="$(AGENT_KEY)" \
-	MBOS_AGENT_MODE="$(AGENT_MODE)" \
-	$(NPM) run agent:test-runner
-
-notebook-runner:
-	@if [ -z "$(AGENT_WS_URL)" ] || [ -z "$(AGENT_KEY)" ]; then \
-		echo "[make] Missing AGENT_WS_URL or AGENT_KEY."; \
-		echo "[make] Example:"; \
-		echo "  make notebook-runner AGENT_WS_URL='ws://localhost:20000/api/v1/agent-execution/ws?agent_id=ag_xxx' AGENT_KEY='ask_xxx'"; \
-		exit 1; \
-	fi
-	env -u http_proxy -u https_proxy -u all_proxy -u HTTP_PROXY -u HTTPS_PROXY -u ALL_PROXY -u no_proxy -u NO_PROXY \
-	MBOS_RUNNER_MODE="$${MBOS_RUNNER_MODE:-host_external}" \
 	MBOS_AGENT_WS_URL="$(AGENT_WS_URL)" \
 	MBOS_AGENT_KEY="$(AGENT_KEY)" \
 	MBOS_AGENT_BUILTIN_SKILLS_DIR="$${MBOS_AGENT_BUILTIN_SKILLS_DIR:-$(BUILTIN_SKILLS_DIR_DEFAULT)}" \
 	MBOS_AGENT_BUILTIN_SKILLS="$${MBOS_AGENT_BUILTIN_SKILLS:-feishu-docs,jira-ops}" \
 	MBOS_AGENT_BUILTIN_SKILLS_REQUIRED="$${MBOS_AGENT_BUILTIN_SKILLS_REQUIRED:-1}" \
-	$(NPM) run agent:notebook-runner
+	$(NPM) run agent:task-runner
 
-chat-runner:
-	@if [ -z "$(AGENT_WS_URL)" ] || [ -z "$(AGENT_KEY)" ]; then \
-		echo "[make] Missing AGENT_WS_URL or AGENT_KEY."; \
-		echo "[make] Example:"; \
-		echo "  make chat-runner AGENT_WS_URL='ws://localhost:20000/api/v1/agent-execution/ws?agent_id=ag_xxx' AGENT_KEY='ask_xxx'"; \
-		exit 1; \
-	fi
-	env -u http_proxy -u https_proxy -u all_proxy -u HTTP_PROXY -u HTTPS_PROXY -u ALL_PROXY -u no_proxy -u NO_PROXY \
-	MBOS_RUNNER_MODE="$${MBOS_RUNNER_MODE:-host_external}" \
-	MBOS_AGENT_WS_URL="$(AGENT_WS_URL)" \
-	MBOS_AGENT_KEY="$(AGENT_KEY)" \
-	$(NPM) run agent:chat-runner
-
-notebook-agent-refresh-token:
+agent-runner-refresh-token:
 	env -u http_proxy -u https_proxy -u all_proxy -u HTTP_PROXY -u HTTPS_PROXY -u ALL_PROXY -u no_proxy -u NO_PROXY \
 	MBOS_DEV_USERNAME="$(INTEGRATION_DEV_ADMIN_USERNAME)" \
 	MBOS_DEV_PASSWORD="$(INTEGRATION_DEV_ADMIN_PASSWORD)" \
@@ -542,13 +505,13 @@ notebook-agent-refresh-token:
 	KEYCLOAK_BASE_URL="$(KEYCLOAK_BASE_URL)" \
 	REFRESH_TOKEN_FORCE_PASSWORD_GRANT=1 \
 	REFRESH_TOKEN_READ_APP_SESSION=0 \
-	node ./scripts/notebook-agent-refresh-token.js
+	node ./scripts/agent-runner-refresh-token.js
 
-notebook-agent-init-resources:
+agent-runner-init-resources:
 	@if [ -z "$(PRESET_ENDPOINT_API_KEY)" ]; then \
 		echo "[make] Missing PRESET_ENDPOINT_API_KEY."; \
 		echo "[make] Example:"; \
-		echo "  PRESET_ENDPOINT_API_KEY='***' PRESET_ANTHROPIC_ENDPOINT_BASE_URL='<YOUR_ANTHROPIC_BASE_URL>' PRESET_ENDPOINT_MODEL='<YOUR_MODEL_ID>' PRESET_ANTHROPIC_ENDPOINT_PROTOCOL='anthropic_messages' make notebook-agent-init-resources"; \
+		echo "  PRESET_ENDPOINT_API_KEY='***' PRESET_ANTHROPIC_ENDPOINT_BASE_URL='<YOUR_ANTHROPIC_BASE_URL>' PRESET_ENDPOINT_MODEL='<YOUR_MODEL_ID>' PRESET_ANTHROPIC_ENDPOINT_PROTOCOL='anthropic_messages' make agent-runner-init-resources"; \
 		exit 1; \
 	fi
 	env -u http_proxy -u https_proxy -u all_proxy -u HTTP_PROXY -u HTTPS_PROXY -u ALL_PROXY -u no_proxy -u NO_PROXY \
@@ -558,19 +521,18 @@ notebook-agent-init-resources:
 	PRESET_ANTHROPIC_ENDPOINT_PROTOCOL="$(PRESET_ANTHROPIC_ENDPOINT_PROTOCOL)" \
 	PRESET_ENDPOINT_MAX_CONTEXT_TOKENS="$(PRESET_ENDPOINT_MAX_CONTEXT_TOKENS)" \
 	PRESET_ENDPOINT_MAX_OUTPUT_TOKENS="$(PRESET_ENDPOINT_MAX_OUTPUT_TOKENS)" \
-	./scripts/notebook-agent-init-resources.sh
+	./scripts/agent-runner-init-resources.sh
 
-notebook-agent-runner:
+agent-task-runner-from-state:
 	@set -e; \
 	STATE_FILE="$${BACKEND_REAL_STATE_FILE:-$(CURDIR)/artifacts/backend-real/current/state.json}"; \
-	WS_URL="$${AGENT_WS_URL:-$$(node -e 'const fs=require("node:fs"); const f=process.argv[1]; if(fs.existsSync(f)){const j=JSON.parse(fs.readFileSync(f,"utf8")); process.stdout.write(j?.agent?.ws_url||"")}' "$$STATE_FILE" 2>/dev/null || true)}"; \
-	AGENT_KEY_VALUE="$${AGENT_KEY:-$$(node -e 'const fs=require("node:fs"); const f=process.argv[1]; if(fs.existsSync(f)){const j=JSON.parse(fs.readFileSync(f,"utf8")); process.stdout.write(j?.agent?.key||"")}' "$$STATE_FILE" 2>/dev/null || true)}"; \
+	WS_URL="$${AGENT_WS_URL:-$$(node -e 'const fs=require("node:fs"); const f=process.argv[1]; if(fs.existsSync(f)){const j=JSON.parse(fs.readFileSync(f,"utf8")); process.stdout.write(j?.agent_runner?.ws_url||"")}' "$$STATE_FILE" 2>/dev/null || true)}"; \
+	AGENT_KEY_VALUE="$${AGENT_KEY:-$$(node -e 'const fs=require("node:fs"); const f=process.argv[1]; if(fs.existsSync(f)){const j=JSON.parse(fs.readFileSync(f,"utf8")); process.stdout.write(j?.agent_runner?.key||"")}' "$$STATE_FILE" 2>/dev/null || true)}"; \
 	if [ -z "$$WS_URL" ] || [ -z "$$AGENT_KEY_VALUE" ]; then \
-		echo "[make] Missing AGENT_WS_URL/AGENT_KEY and no backend-real state agent metadata found."; \
+		echo "[make] Missing AGENT_WS_URL/AGENT_KEY and no backend-real state agent runner metadata found."; \
 		exit 1; \
 	fi; \
 	env -u http_proxy -u https_proxy -u all_proxy -u HTTP_PROXY -u HTTPS_PROXY -u ALL_PROXY -u no_proxy -u NO_PROXY \
-	MBOS_RUNNER_MODE="$${MBOS_RUNNER_MODE:-host_external}" \
 	MBOS_AGENT_WS_URL="$$WS_URL" \
 	MBOS_AGENT_KEY="$$AGENT_KEY_VALUE" \
 	MBOS_AGENT_BUILTIN_SKILLS_DIR="$${MBOS_AGENT_BUILTIN_SKILLS_DIR:-$(BUILTIN_SKILLS_DIR_DEFAULT)}" \
@@ -581,7 +543,7 @@ notebook-agent-runner:
 	MBOS_AGENT_CODEX_YOLO="$${MBOS_AGENT_CODEX_YOLO:-1}" \
 	AGENT_WS_URL="$$WS_URL" \
 	AGENT_KEY="$$AGENT_KEY_VALUE" \
-	$(MAKE) notebook-runner
+	$(MAKE) agent-task-runner
 
 substrate-up:
 	SUBSTRATE="$${SUBSTRATE:-local-dev}" \
@@ -649,8 +611,8 @@ cluster-rehearsal-report:
 local-manual-up:
 	./scripts/local-manual-up.sh
 
-local-manual-seed-notebook:
-	./scripts/local-manual/seed-notebook-demo.sh
+local-manual-seed-agent-task:
+	./scripts/local-manual/seed-agent-task-demo.sh
 
 local-manual-down:
 	./scripts/local-manual-down.sh
@@ -660,7 +622,7 @@ local-manual-status:
 
 local-manual-reset:
 	env -u http_proxy -u https_proxy -u all_proxy -u HTTP_PROXY -u HTTPS_PROXY -u ALL_PROXY -u no_proxy -u NO_PROXY \
-	./scripts/local-manual-down.sh && $(MAKE) substrate-reset SUBSTRATE=local-dev && $(MAKE) substrate-up SUBSTRATE=local-dev && $(MAKE) substrate-reseed SUBSTRATE=local-dev && $(MAKE) local-manual-up && $(MAKE) local-manual-seed-notebook
+	./scripts/local-manual-down.sh && $(MAKE) substrate-reset SUBSTRATE=local-dev && $(MAKE) substrate-up SUBSTRATE=local-dev && $(MAKE) substrate-reseed SUBSTRATE=local-dev && $(MAKE) local-manual-up && $(MAKE) local-manual-seed-agent-task
 
 local-real-up:
 	$(MAKE) substrate-up
@@ -693,34 +655,34 @@ local-manual-internal-reset:
 local-manual-internal-smoke:
 	./scripts/local-manual-internal-smoke.sh
 
-notebook-agent-no-sandbox-smoke:
+agent-task-no-sandbox-smoke:
 	@set -e; \
 	echo "[make] no-sandbox smoke: real dev stack readiness check"; \
 	$(MAKE) local-manual-status; \
 	echo "[make] no-sandbox smoke: internal path must fail fast when sandbox is absent"; \
-	$(MAKE) notebook-agent-no-sandbox-assert
+	$(MAKE) agent-task-no-sandbox-assert
 
-notebook-agent-no-sandbox-assert:
+agent-task-no-sandbox-assert:
 	$(NPM) -s run test -- packages/api-entry-node/src/index.test.ts -t "AGENT_SANDBOX_NOT_CONFIGURED for internal agent"
 
-notebook-agent-smoke-task:
+agent-task-smoke-task:
 	env -u http_proxy -u https_proxy -u all_proxy -u HTTP_PROXY -u HTTPS_PROXY -u ALL_PROXY -u no_proxy -u NO_PROXY \
-	./scripts/notebook-agent-smoke-task.sh
+	./scripts/agent-task-smoke-task.sh
 
-notebook-agent-credential-sync-smoke:
+agent-task-credential-sync-smoke:
 	env -u http_proxy -u https_proxy -u all_proxy -u HTTP_PROXY -u HTTPS_PROXY -u ALL_PROXY -u no_proxy -u NO_PROXY \
-	./scripts/notebook-agent-credential-sync-smoke.sh
+	./scripts/agent-task-credential-sync-smoke.sh
 
-notebook-agent-engineering-smoke:
+agent-task-engineering-smoke:
 	env -u http_proxy -u https_proxy -u all_proxy -u HTTP_PROXY -u HTTPS_PROXY -u ALL_PROXY -u no_proxy -u NO_PROXY \
-	./scripts/notebook-agent-engineering-smoke.sh
+	./scripts/agent-task-engineering-smoke.sh
 
-notebook-agent-engineering-smoke-full:
+agent-task-engineering-smoke-full:
 	@set -e; \
 	echo "[make] checking real dev stack status..."; \
 	$(MAKE) local-manual-status; \
 	echo "[make] running engineering smoke bundle..."; \
-	$(MAKE) notebook-agent-engineering-smoke
+	$(MAKE) agent-task-engineering-smoke
 
 governance-pages-real-backend-smoke:
 	$(MAKE) governance-pages-real-backend-smoke-tolerant
@@ -806,7 +768,7 @@ governance-smoke:
 		STEP_NAME="$$1"; \
 		if ! $(MAKE) "$$STEP_NAME"; then \
 			echo "[make] $$STEP_NAME failed; attempting token refresh and retry once"; \
-			if ! BASE_URL="$${BASE_URL:-http://localhost:3001}" REFRESH_TOKEN_READ_APP_SESSION=0 $(MAKE) notebook-agent-refresh-token; then \
+			if ! BASE_URL="$${BASE_URL:-http://localhost:3001}" REFRESH_TOKEN_READ_APP_SESSION=0 $(MAKE) agent-runner-refresh-token; then \
 				echo "[make] token refresh failed while retrying $$STEP_NAME"; \
 				exit 1; \
 			fi; \
@@ -829,21 +791,20 @@ governance-smoke:
 		node ./scripts/write-governance-evidence.js "$${GOVERNANCE_EVIDENCE_PATH}"; \
 	fi
 
-notebook-agent-smoke-full:
+agent-task-smoke-full:
 	@set -e; \
 	STATE_FILE="$${BACKEND_REAL_STATE_FILE:-$(CURDIR)/artifacts/backend-real/current/state.json}"; \
 	RUNNER_LOG="$${RUNNER_LOG:-$(CURDIR)/artifacts/backend-real/current/runner-smoke.log}"; \
-	WS_URL="$${AGENT_WS_URL:-$$(node -e 'const fs=require("node:fs"); const f=process.argv[1]; if(fs.existsSync(f)){const j=JSON.parse(fs.readFileSync(f,"utf8")); process.stdout.write(j?.agent?.ws_url||"")}' "$$STATE_FILE" 2>/dev/null || true)}"; \
-	AGENT_KEY_VALUE="$${AGENT_KEY:-$$(node -e 'const fs=require("node:fs"); const f=process.argv[1]; if(fs.existsSync(f)){const j=JSON.parse(fs.readFileSync(f,"utf8")); process.stdout.write(j?.agent?.key||"")}' "$$STATE_FILE" 2>/dev/null || true)}"; \
+	WS_URL="$${AGENT_WS_URL:-$$(node -e 'const fs=require("node:fs"); const f=process.argv[1]; if(fs.existsSync(f)){const j=JSON.parse(fs.readFileSync(f,"utf8")); process.stdout.write(j?.agent_runner?.ws_url||"")}' "$$STATE_FILE" 2>/dev/null || true)}"; \
+	AGENT_KEY_VALUE="$${AGENT_KEY:-$$(node -e 'const fs=require("node:fs"); const f=process.argv[1]; if(fs.existsSync(f)){const j=JSON.parse(fs.readFileSync(f,"utf8")); process.stdout.write(j?.agent_runner?.key||"")}' "$$STATE_FILE" 2>/dev/null || true)}"; \
 	if [ -z "$$WS_URL" ] || [ -z "$$AGENT_KEY_VALUE" ]; then \
-		echo "[make] Missing AGENT_WS_URL/AGENT_KEY and no backend-real state agent metadata found."; \
+		echo "[make] Missing AGENT_WS_URL/AGENT_KEY and no backend-real state agent runner metadata found."; \
 		exit 1; \
 	fi; \
 	echo "[make] refreshing token..."; \
-	$(MAKE) notebook-agent-refresh-token; \
-	echo "[make] starting notebook-runner in background..."; \
+	$(MAKE) agent-runner-refresh-token; \
+	echo "[make] starting agent-task-runner in background..."; \
 	( env -u http_proxy -u https_proxy -u all_proxy -u HTTP_PROXY -u HTTPS_PROXY -u ALL_PROXY -u no_proxy -u NO_PROXY \
-		MBOS_RUNNER_MODE="$${MBOS_RUNNER_MODE:-host_external}" \
 		MBOS_AGENT_WS_URL="$$WS_URL" \
 		MBOS_AGENT_KEY="$$AGENT_KEY_VALUE" \
 		MBOS_AGENT_BUILTIN_SKILLS_DIR="$${MBOS_AGENT_BUILTIN_SKILLS_DIR:-$(BUILTIN_SKILLS_DIR_DEFAULT)}" \
@@ -852,7 +813,7 @@ notebook-agent-smoke-full:
 		MBOS_AGENT_RUNNER_DEBUG="$${MBOS_AGENT_RUNNER_DEBUG:-1}" \
 		MBOS_AGENT_TASK_TIMEOUT_SEC="$${MBOS_AGENT_TASK_TIMEOUT_SEC:-120}" \
 		MBOS_AGENT_CODEX_YOLO="$${MBOS_AGENT_CODEX_YOLO:-1}" \
-		$(NPM) run agent:notebook-runner ) > "$$RUNNER_LOG" 2>&1 & \
+		$(NPM) run agent:task-runner ) > "$$RUNNER_LOG" 2>&1 & \
 	RUNNER_PID=$$!; \
 	trap 'kill $$RUNNER_PID >/dev/null 2>&1 || true' EXIT INT TERM; \
 	sleep 3; \
@@ -863,73 +824,73 @@ notebook-agent-smoke-full:
 	fi; \
 	echo "[make] waiting for agent runner websocket to be ready..."; \
 	for i in 1 2 3 4 5 6 7 8 9 10; do \
-		if rg -q "\\[notebook-codex-runner\\] connected|websocket open" "$$RUNNER_LOG" 2>/dev/null; then \
+		if rg -q "\\[agent-task-runner\\] connected|websocket open" "$$RUNNER_LOG" 2>/dev/null; then \
 			break; \
 		fi; \
 		sleep 1; \
 	done; \
-	echo "[make] running notebook smoke task..."; \
+	echo "[make] running agent-task smoke task..."; \
 	set +e; \
-	$(MAKE) notebook-agent-smoke-task; \
+	$(MAKE) agent-task-smoke-task; \
 	SMOKE_RC=$$?; \
 	set -e; \
 	if [ "$$SMOKE_RC" -eq 42 ]; then \
 		echo "[make] smoke failed due to expired token; refreshing and retrying once..."; \
-		$(MAKE) notebook-agent-refresh-token; \
-		$(MAKE) notebook-agent-smoke-task; \
+		$(MAKE) agent-runner-refresh-token; \
+		$(MAKE) agent-task-smoke-task; \
 	elif [ "$$SMOKE_RC" -ne 0 ]; then \
 		exit "$$SMOKE_RC"; \
 	fi; \
 	echo "[make] smoke done. recent runner log:"; \
 	tail -n 40 "$$RUNNER_LOG" || true
 
-notebook-agent-monitor:
+agent-task-monitor:
 	env -u http_proxy -u https_proxy -u all_proxy -u HTTP_PROXY -u HTTPS_PROXY -u ALL_PROXY -u no_proxy -u NO_PROXY \
-	./scripts/notebook-agent-monitor.sh
+	./scripts/agent-task-monitor.sh
 
-notebook-agent-load-test:
+agent-task-load-test:
 	env -u http_proxy -u https_proxy -u all_proxy -u HTTP_PROXY -u HTTPS_PROXY -u ALL_PROXY -u no_proxy -u NO_PROXY \
-	./scripts/notebook-agent-load-test.sh
+	./scripts/agent-task-load-test.sh
 
-notebook-agent-load-matrix:
+agent-task-load-matrix:
 	env -u http_proxy -u https_proxy -u all_proxy -u HTTP_PROXY -u HTTPS_PROXY -u ALL_PROXY -u no_proxy -u NO_PROXY \
-	./scripts/notebook-agent-load-matrix.sh
+	./scripts/agent-task-load-matrix.sh
 
-notebook-agent-benchmark-baseline:
+agent-task-benchmark-baseline:
 	env -u http_proxy -u https_proxy -u all_proxy -u HTTP_PROXY -u HTTPS_PROXY -u ALL_PROXY -u no_proxy -u NO_PROXY \
-	./scripts/notebook-agent-benchmark-baseline.sh
+	./scripts/agent-task-benchmark-baseline.sh
 
-notebook-agent-benchmark-compare:
+agent-task-benchmark-compare:
 	@if [ -z "$$BASELINE_A_DIR" ] || [ -z "$$BASELINE_B_DIR" ]; then \
-		echo "[make] Usage: BASELINE_A_DIR=/tmp/... BASELINE_B_DIR=/tmp/... make notebook-agent-benchmark-compare"; \
+		echo "[make] Usage: BASELINE_A_DIR=/tmp/... BASELINE_B_DIR=/tmp/... make agent-task-benchmark-compare"; \
 		exit 1; \
 	fi
 	env -u http_proxy -u https_proxy -u all_proxy -u HTTP_PROXY -u HTTPS_PROXY -u ALL_PROXY -u no_proxy -u NO_PROXY \
-	node ./scripts/notebook-agent-benchmark-compare.js
+	node ./scripts/agent-task-benchmark-compare.js
 
-notebook-agent-benchmark-archive:
+agent-task-benchmark-archive:
 	@if [ -z "$$SOURCE_DIR" ]; then \
-		echo "[make] Usage: SOURCE_DIR=/tmp/... make notebook-agent-benchmark-archive"; \
+		echo "[make] Usage: SOURCE_DIR=/tmp/... make agent-task-benchmark-archive"; \
 		exit 1; \
 	fi
 	env -u http_proxy -u https_proxy -u all_proxy -u HTTP_PROXY -u HTTPS_PROXY -u ALL_PROXY -u no_proxy -u NO_PROXY \
-	node ./scripts/notebook-agent-benchmark-archive.js
+	node ./scripts/agent-task-benchmark-archive.js
 
-notebook-agent-traces-query-bench:
+agent-task-traces-query-bench:
 	env -u http_proxy -u https_proxy -u all_proxy -u HTTP_PROXY -u HTTPS_PROXY -u ALL_PROXY -u no_proxy -u NO_PROXY \
-	./scripts/notebook-agent-traces-query-bench.sh
+	./scripts/agent-task-traces-query-bench.sh
 
-notebook-agent-traces-query-sweep:
+agent-task-traces-query-sweep:
 	env -u http_proxy -u https_proxy -u all_proxy -u HTTP_PROXY -u HTTPS_PROXY -u ALL_PROXY -u no_proxy -u NO_PROXY \
-	./scripts/notebook-agent-traces-query-sweep.sh
+	./scripts/agent-task-traces-query-sweep.sh
 
-notebook-agent-traces-query-sweep-compare:
+agent-task-traces-query-sweep-compare:
 	@if [ -z "$$SWEEP_A_DIR" ] || [ -z "$$SWEEP_B_DIR" ]; then \
-		echo "[make] Usage: SWEEP_A_DIR=/tmp/... SWEEP_B_DIR=/tmp/... make notebook-agent-traces-query-sweep-compare"; \
+		echo "[make] Usage: SWEEP_A_DIR=/tmp/... SWEEP_B_DIR=/tmp/... make agent-task-traces-query-sweep-compare"; \
 		exit 1; \
 	fi
 	env -u http_proxy -u https_proxy -u all_proxy -u HTTP_PROXY -u HTTPS_PROXY -u ALL_PROXY -u no_proxy -u NO_PROXY \
-	node ./scripts/notebook-agent-traces-query-sweep-compare.js
+	node ./scripts/agent-task-traces-query-sweep-compare.js
 
 model-request-stream-bench:
 	env -u http_proxy -u https_proxy -u all_proxy -u HTTP_PROXY -u HTTPS_PROXY -u ALL_PROXY -u no_proxy -u NO_PROXY \

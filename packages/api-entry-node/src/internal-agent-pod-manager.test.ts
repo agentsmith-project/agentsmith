@@ -103,6 +103,63 @@ describe('internal-agent-pod-manager', () => {
     expect(onlineStateStore.getAgentSessionOnlineState).toHaveBeenCalledWith('ag_1', 'task_1');
   });
 
+  it('pins k8s managed runner pods to the canonical managed_platform runner mode env', async () => {
+    const createOrEnsurePod = vi.fn().mockResolvedValue({ httpStatus: 201, pod: { phase: 'Running' } });
+    const manager = new InternalAgentPodManagerImpl(
+      {
+        checkReady: vi.fn().mockResolvedValue(undefined),
+        getPodStatus: vi.fn()
+          .mockResolvedValueOnce({ phase: 'offline' })
+          .mockResolvedValueOnce({ phase: 'Running' }),
+        createOrEnsurePod,
+        deletePod: vi.fn().mockResolvedValue(undefined),
+        keepalive: vi.fn().mockResolvedValue(null),
+        exec: vi.fn(),
+      },
+      {
+        getAgentOnlineState: vi.fn()
+          .mockReturnValueOnce(false)
+          .mockReturnValueOnce(false)
+          .mockReturnValueOnce(true),
+        getAgentSessionOnlineState: vi.fn()
+          .mockReturnValueOnce(false)
+          .mockReturnValueOnce(false)
+          .mockReturnValueOnce(true),
+      },
+      'ws://api:20000',
+      {
+        phasePollIntervalMs: 1,
+        onlinePollIntervalMs: 1,
+      },
+    );
+
+    await manager.ensureAgentReady({
+      workspaceId: 'ws_1',
+      projectId: 'proj_1',
+      workloadId: 'task_1',
+      sessionId: 'task_1',
+      agent: buildAgent({
+        image: 'runner:v1',
+        _internal_raw_key: 'ask_xxx',
+        env: {
+          MBOS_AGENT_TASK_RUNNER_MODE: 'developer',
+          MBOS_RUNNER_MODE: 'k8s_internal',
+        },
+      }),
+      workspaceMount: {
+        bindingId: 'flib_demo',
+        mountPath: '/workspace/task_1',
+      },
+    });
+
+    const podBody = createOrEnsurePod.mock.calls[0]?.[3];
+    expect(podBody).toEqual(expect.objectContaining({
+      env: expect.objectContaining({
+        MBOS_AGENT_TASK_RUNNER_MODE: 'managed_platform',
+      }),
+    }));
+  });
+
   it('normalizes internal websocket base before appending the agent execution endpoint path', async () => {
     const createOrEnsurePod = vi.fn().mockResolvedValue({ httpStatus: 201, pod: { phase: 'Running' } });
     const manager = new InternalAgentPodManagerImpl(
@@ -155,7 +212,7 @@ describe('internal-agent-pod-manager', () => {
       expect.objectContaining({
         env: expect.objectContaining({
           MBOS_AGENT_WS_URL:
-            'ws://172.19.0.1:41000/api/v1/agent-execution/ws?agent_id=ag_1&session_id=task_1',
+            'ws://172.19.0.1:41000/api/v1/agent-execution/ws?agent_runner_id=ag_1&runner_session_id=task_1',
         }),
       }),
       undefined,
@@ -189,6 +246,38 @@ describe('internal-agent-pod-manager', () => {
         },
       }),
     ).rejects.toMatchObject({ code: 'AGENT_SANDBOX_NOT_CONFIGURED' });
+  });
+
+  it('classifies missing managed runner image as image configuration infra failure', async () => {
+    const manager = new InternalAgentPodManagerImpl(
+      {
+        checkReady: vi.fn().mockResolvedValue(undefined),
+        getPodStatus: vi.fn().mockResolvedValue({ phase: 'offline' }),
+        createOrEnsurePod: vi.fn(),
+        deletePod: vi.fn(),
+        keepalive: vi.fn(),
+        exec: vi.fn(),
+      },
+      { getAgentOnlineState: vi.fn().mockReturnValue(false) },
+      'ws://api:20000',
+    );
+
+    await expect(
+      manager.ensureAgentReady({
+        workspaceId: 'ws_1',
+        projectId: 'proj_1',
+        workloadId: 'task_1',
+        sessionId: 'task_1',
+        agent: buildAgent({ _internal_raw_key: 'ask_test' }),
+        workspaceMount: {
+          bindingId: 'flib_demo',
+          mountPath: '/workspace/task_1',
+        },
+      }),
+    ).rejects.toMatchObject({
+      code: 'AGENT_RUNNER_IMAGE_UNCONFIGURED',
+      message: 'agent_runner_image_unconfigured',
+    });
   });
 
   it('fails fast when workspace binding is missing', async () => {

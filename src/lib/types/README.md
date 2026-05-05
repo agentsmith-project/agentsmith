@@ -27,7 +27,7 @@ This directory contains frontend-specific type definitions that are not part of 
 - Frontend-only utility types
 
 **Examples**:
-- `Task`, `TaskMessage`, `Artifact` (if these are frontend-only transformations)
+- `Task`, `TaskActivityItem`, `Artifact` (if these are frontend-only transformations)
 - Component-specific prop interfaces
 
 ## Migration Notes

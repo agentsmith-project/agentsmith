@@ -12,7 +12,7 @@ WORKDIR /app
 COPY package.json package-lock.json ./
 COPY packages/adapters-cf/package.json ./packages/adapters-cf/package.json
 COPY packages/adapters-private/package.json ./packages/adapters-private/package.json
-COPY packages/notebook-codex-runner/package.json ./packages/notebook-codex-runner/package.json
+COPY packages/agent-task-runner/package.json ./packages/agent-task-runner/package.json
 COPY packages/api-entry-cf/package.json ./packages/api-entry-cf/package.json
 COPY packages/api-entry-node/package.json ./packages/api-entry-node/package.json
 COPY packages/application/package.json ./packages/application/package.json

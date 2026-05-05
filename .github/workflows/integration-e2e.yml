@@ -10,13 +10,13 @@ on:
         type: choice
         options:
           - all
-          - agent
-          - notebook-agent
+          - agent-task
   pull_request:
     paths:
       - "e2e/**"
       - "packages/api-entry-node/**"
-      - "packages/agent-codex-runner/**"
+      - "packages/agent-runner/**"
+      - "packages/agent-task-runner/**"
       - "scripts/run-integration-e2e-full.sh"
       - "scripts/integration-keycloak-init.ts"
       - "infra/integration/**"
@@ -27,8 +27,8 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  integration-agent:
-    if: ${{ github.event_name != 'workflow_dispatch' || inputs.suite == 'all' || inputs.suite == 'agent' }}
+  integration-agent-task:
+    if: ${{ github.event_name != 'workflow_dispatch' || inputs.suite == 'all' || inputs.suite == 'agent-task' }}
     runs-on: ubuntu-latest
     timeout-minutes: 45
     steps:
@@ -47,91 +47,36 @@ jobs:
       - name: Install Playwright (chromium)
         run: npx playwright install --with-deps chromium
 
-      - name: Run external-agent integration suite
+      - name: Run Agent task integration suite
         run: |
           set -euo pipefail
           mkdir -p artifacts/backend-real/current/ci
-          make e2e-int-agent-auto PORT_API=20030 PORT_WEB=3011 2>&1 | tee artifacts/backend-real/current/ci/integration-agent.log
+          npm run test:e2e:integration:agent-task 2>&1 | tee artifacts/backend-real/current/ci/integration-agent-task.log
 
-      - name: Failure Attribution (agent)
+      - name: Failure Attribution (agent-task)
         if: failure()
         run: |
           set -euo pipefail
-          tag="INT-AGENT-UNKNOWN"
-          if grep -R -n "redirect_uri" test-results artifacts/backend-real/current/ci/integration-agent.log artifacts/backend-real/current/integration/web.log 2>/dev/null; then
+          tag="INT-AGENT-TASK-UNKNOWN"
+          if grep -R -n "redirect_uri" test-results artifacts/backend-real/current/ci/integration-agent-task.log artifacts/backend-real/current/integration/web.log 2>/dev/null; then
             tag="INT-KEYCLOAK-REDIRECT"
-          elif grep -R -n "AGENT_OFFLINE" test-results artifacts/backend-real/current/ci/integration-agent.log artifacts/backend-real/current/integration/api.log 2>/dev/null; then
-            tag="INT-AGENT-OFFLINE"
-          elif grep -R -n "ECONNREFUSED\\|did not become ready in time" artifacts/backend-real/current/ci/integration-agent.log artifacts/backend-real/current/integration/api.log artifacts/backend-real/current/integration/web.log 2>/dev/null; then
+          elif grep -R -n "TASK_STREAM_CONFLICT\\|AGENT_OFFLINE\\|AGENT_PROTOCOL_ERROR" test-results artifacts/backend-real/current/ci/integration-agent-task.log artifacts/backend-real/current/integration/api.log 2>/dev/null; then
+            tag="INT-AGENT-TASK-EXECUTION"
+          elif grep -R -n "ECONNREFUSED\\|did not become ready in time" artifacts/backend-real/current/ci/integration-agent-task.log artifacts/backend-real/current/integration/api.log artifacts/backend-real/current/integration/web.log 2>/dev/null; then
             tag="INT-INFRA-BOOT"
           fi
           echo "### Failure Tag: ${tag}" >> "$GITHUB_STEP_SUMMARY"
-          echo "- job: integration-agent" >> "$GITHUB_STEP_SUMMARY"
-          echo "- spec: e2e/integration-agents-external.spec.ts" >> "$GITHUB_STEP_SUMMARY"
+          echo "- job: integration-agent-task" >> "$GITHUB_STEP_SUMMARY"
+          echo "- spec: e2e/integration-agent-task-runner.spec.ts" >> "$GITHUB_STEP_SUMMARY"
 
-      - name: Upload logs and test artifacts (agent)
+      - name: Upload logs and test artifacts (agent-task)
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: integration-agent-artifacts
+          name: integration-agent-task-artifacts
           if-no-files-found: ignore
           path: |
-            artifacts/backend-real/current/ci/integration-agent.log
-            artifacts/backend-real/current/integration/api.log
-            artifacts/backend-real/current/integration/web.log
-            test-results/**
-            playwright-report/**
-
-  integration-notebook-agent:
-    if: ${{ github.event_name != 'workflow_dispatch' || inputs.suite == 'all' || inputs.suite == 'notebook-agent' }}
-    runs-on: ubuntu-latest
-    timeout-minutes: 45
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Setup Node
-        uses: actions/setup-node@v4
-        with:
-          node-version: 24.14.1
-          cache: npm
-
-      - name: Install dependencies
-        run: npm ci
-
-      - name: Install Playwright (chromium)
-        run: npx playwright install --with-deps chromium
-
-      - name: Run notebook external-agent integration suite
-        run: |
-          set -euo pipefail
-          mkdir -p artifacts/backend-real/current/ci
-          make e2e-int-notebook-agent-auto PORT_API=20031 PORT_WEB=3013 2>&1 | tee artifacts/backend-real/current/ci/integration-notebook-agent.log
-
-      - name: Failure Attribution (notebook)
-        if: failure()
-        run: |
-          set -euo pipefail
-          tag="INT-NOTEBOOK-UNKNOWN"
-          if grep -R -n "redirect_uri" test-results artifacts/backend-real/current/ci/integration-notebook-agent.log artifacts/backend-real/current/integration/web.log 2>/dev/null; then
-            tag="INT-KEYCLOAK-REDIRECT"
-          elif grep -R -n "TASK_STREAM_CONFLICT\\|AGENT_OFFLINE\\|AGENT_PROTOCOL_ERROR" test-results artifacts/backend-real/current/ci/integration-notebook-agent.log artifacts/backend-real/current/integration/api.log 2>/dev/null; then
-            tag="INT-NOTEBOOK-EXECUTION"
-          elif grep -R -n "ECONNREFUSED\\|did not become ready in time" artifacts/backend-real/current/ci/integration-notebook-agent.log artifacts/backend-real/current/integration/api.log artifacts/backend-real/current/integration/web.log 2>/dev/null; then
-            tag="INT-INFRA-BOOT"
-          fi
-          echo "### Failure Tag: ${tag}" >> "$GITHUB_STEP_SUMMARY"
-          echo "- job: integration-notebook-agent" >> "$GITHUB_STEP_SUMMARY"
-          echo "- spec: e2e/integration-notebook-external.spec.ts" >> "$GITHUB_STEP_SUMMARY"
-
-      - name: Upload logs and test artifacts (notebook)
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: integration-notebook-agent-artifacts
-          if-no-files-found: ignore
-          path: |
-            artifacts/backend-real/current/ci/integration-notebook-agent.log
+            artifacts/backend-real/current/ci/integration-agent-task.log
             artifacts/backend-real/current/integration/api.log
             artifacts/backend-real/current/integration/web.log
             test-results/**

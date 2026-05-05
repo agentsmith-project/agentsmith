@@ -67,7 +67,7 @@ wait_runner_connected() {
   done
 }
 
-info "ensuring a single local external runner instance"
+info "ensuring a single local agent-task runner instance"
 # common.sh delegates tracked runner ownership checks to owner-janitor.ts.
 if ! stop_local_manual_runner_owner_aware replace_runner; then
   err "runner ownership is unverified; refusing to replace the tracked local-manual runner"
@@ -91,11 +91,10 @@ if declare -F local_runtime_start_detached_owned_service >/dev/null 2>&1; then
 fi
 runner_pid="$("${runner_start_fn}" runner "0" "${RUNNER_LOG}" bash -lc "
   cd '${ROOT_DIR}' && \
-  export MBOS_RUNNER_MODE='${MBOS_RUNNER_MODE:-host_external}' \
-    MBOS_AGENT_RUNNER_DEBUG='${MBOS_AGENT_RUNNER_DEBUG:-1}' \
+  export MBOS_AGENT_RUNNER_DEBUG='${MBOS_AGENT_RUNNER_DEBUG:-1}' \
     MBOS_AGENT_TASK_TIMEOUT_SEC='${MBOS_AGENT_TASK_TIMEOUT_SEC:-120}' \
     MBOS_AGENT_CODEX_YOLO='${MBOS_AGENT_CODEX_YOLO:-1}' && \
-  exec make notebook-agent-runner
+  exec make agent-task-runner-from-state
 ")"
 RUNNER_LAUNCH_PID="${runner_pid}"
 RUNNER_LAUNCH_OWNER_TOKEN="${RUNNER_OWNER_TOKEN}"

@@ -14,11 +14,11 @@ export function ChatHeaderActions({ basePath, t }: ChatHeaderActionsProps) {
   return (
     <div className="flex flex-wrap items-center gap-2">
       <Link
-        href={`${basePath}/notebook`}
+        href={`${basePath}/agent-tasks`}
         className={cn(buttonVariants({ variant: 'action', size: 'sm' }))}
-        data-testid="chat__open-notebook"
+        data-testid="chat__open-agent-tasks"
       >
-        {t('open_notebook')}
+        {t('open_agent_tasks')}
       </Link>
       <Link
         href={`${basePath}/endpoints`}

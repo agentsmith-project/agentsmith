@@ -1062,15 +1062,15 @@ EOF
     }
   });
 
-  it('preloads both notebook and chat runner images into the rehearsal kind node', () => {
+  it('preloads Agent Task runner images into the rehearsal kind node', () => {
     const commonScript = readFileSync(path.join(process.cwd(), 'scripts', 'scenarios', 'cluster-rehearsal', 'common.sh'), 'utf8');
 
     expect(commonScript).toContain('local host_images=(');
     expect(commonScript).toContain('local kind_images=(');
     expect(commonScript).toContain('"${RUNNER_IMAGE}"');
-    expect(commonScript).toContain('"${CHAT_RUNNER_IMAGE}"');
     expect(commonScript).toContain('"${K8S_RUNNER_IMAGE}"');
-    expect(commonScript).toContain('"${K8S_CHAT_RUNNER_IMAGE}"');
+    expect(commonScript).not.toContain('"${CHAT_RUNNER_IMAGE}"');
+    expect(commonScript).not.toContain('"${K8S_CHAT_RUNNER_IMAGE}"');
   });
 
   it('skips kind image preload when local and kind containerd manifest digests match and records an audit decision', () => {

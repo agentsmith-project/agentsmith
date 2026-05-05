@@ -6,7 +6,7 @@ import { gotoAndWait, waitForPageReady } from './utils/navigation';
 export type DocCapture = {
   id: string;
   title: string;
-  group: 'workspace' | 'chat' | 'notebook' | 'files' | 'governance';
+  group: 'workspace' | 'chat' | 'agent_tasks' | 'files' | 'governance';
   role: string;
   route: string;
   summary: string;
@@ -27,7 +27,7 @@ export const DOC_OUTPUT_DIR = process.env.DOC_ARTIFACTS_OUTPUT_DIR
 const GROUP_LABELS: Record<DocCapture['group'], string> = {
   workspace: '工作区与项目',
   chat: 'Chat 对话',
-  notebook: 'Notebook 任务',
+  agent_tasks: 'Agent 任务',
   files: '文件管理',
   governance: '治理与运营',
 };

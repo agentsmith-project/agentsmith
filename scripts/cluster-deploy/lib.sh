@@ -204,10 +204,7 @@ require_version_images() {
     load_registry_env
   fi
   APP_IMAGE="$(read_version_value agentsmith_app_image)"
-  RUNNER_IMAGE="$(read_version_value agentsmith_runner_image)"
-  CHAT_RUNNER_IMAGE="$(read_version_value agentsmith_chat_runner_image)"
-  K8S_RUNNER_IMAGE="$(read_version_value agentsmith_runner_k8s_image)"
-  K8S_CHAT_RUNNER_IMAGE="$(read_version_value agentsmith_chat_runner_k8s_image)"
+  AGENT_TASK_RUNNER_IMAGE="$(read_version_value agentsmith_agent_task_runner_image)"
   SANDBOX_MANAGER_IMAGE="$(read_version_value sandbox_manager_image)"
   K8S_SANDBOX_MANAGER_IMAGE="$(read_version_value sandbox_manager_k8s_image)"
   UNIVERSAL_PROXY_IMAGE="$(read_version_value llm_universal_proxy_image)"
@@ -222,18 +219,6 @@ require_version_images() {
   INGRESS_NGINX_CONTROLLER_IMAGE="$(read_version_value ingress_nginx_controller_image)"
   INGRESS_NGINX_CERTGEN_IMAGE="$(read_version_value ingress_nginx_certgen_image)"
   local image_var image_value k8s_var_name k8s_value
-  if [[ -z "${K8S_RUNNER_IMAGE}" ]]; then
-    K8S_RUNNER_IMAGE="${RUNNER_IMAGE}"
-  fi
-  if [[ -n "${K8S_REGISTRY_HOST:-}" && -n "${REGISTRY_HOST:-}" && "${K8S_RUNNER_IMAGE}" == "${REGISTRY_HOST}/"* ]]; then
-    K8S_RUNNER_IMAGE="${K8S_REGISTRY_HOST}/${K8S_RUNNER_IMAGE#${REGISTRY_HOST}/}"
-  fi
-  if [[ -z "${K8S_CHAT_RUNNER_IMAGE}" ]]; then
-    K8S_CHAT_RUNNER_IMAGE="${CHAT_RUNNER_IMAGE}"
-  fi
-  if [[ -n "${K8S_REGISTRY_HOST:-}" && -n "${REGISTRY_HOST:-}" && "${K8S_CHAT_RUNNER_IMAGE}" == "${REGISTRY_HOST}/"* ]]; then
-    K8S_CHAT_RUNNER_IMAGE="${K8S_REGISTRY_HOST}/${K8S_CHAT_RUNNER_IMAGE#${REGISTRY_HOST}/}"
-  fi
   if [[ -z "${K8S_SANDBOX_MANAGER_IMAGE}" ]]; then
     K8S_SANDBOX_MANAGER_IMAGE="${SANDBOX_MANAGER_IMAGE}"
   fi
@@ -259,8 +244,8 @@ require_version_images() {
     printf -v "${k8s_var_name}" '%s' "${k8s_value}"
     export "${k8s_var_name}"
   done
-  export APP_IMAGE RUNNER_IMAGE CHAT_RUNNER_IMAGE K8S_RUNNER_IMAGE K8S_CHAT_RUNNER_IMAGE SANDBOX_MANAGER_IMAGE K8S_SANDBOX_MANAGER_IMAGE UNIVERSAL_PROXY_IMAGE VERIFY_RUNNER_IMAGE JUICEFS_MOUNT_IMAGE JUICEFS_CSI_DRIVER_IMAGE JUICEFS_CSI_DASHBOARD_IMAGE JUICEFS_CSI_PROVISIONER_IMAGE JUICEFS_CSI_RESIZER_IMAGE JUICEFS_CSI_LIVENESSPROBE_IMAGE JUICEFS_CSI_NODE_REGISTRAR_IMAGE INGRESS_NGINX_CONTROLLER_IMAGE INGRESS_NGINX_CERTGEN_IMAGE K8S_JUICEFS_MOUNT_IMAGE K8S_JUICEFS_CSI_DRIVER_IMAGE K8S_JUICEFS_CSI_DASHBOARD_IMAGE K8S_JUICEFS_CSI_PROVISIONER_IMAGE K8S_JUICEFS_CSI_RESIZER_IMAGE K8S_JUICEFS_CSI_LIVENESSPROBE_IMAGE K8S_JUICEFS_CSI_NODE_REGISTRAR_IMAGE K8S_INGRESS_NGINX_CONTROLLER_IMAGE K8S_INGRESS_NGINX_CERTGEN_IMAGE
-  [[ -n "${APP_IMAGE}" && -n "${RUNNER_IMAGE}" && -n "${CHAT_RUNNER_IMAGE}" && -n "${SANDBOX_MANAGER_IMAGE}" && -n "${UNIVERSAL_PROXY_IMAGE}" && -n "${VERIFY_RUNNER_IMAGE}" ]] \
+  export APP_IMAGE AGENT_TASK_RUNNER_IMAGE SANDBOX_MANAGER_IMAGE K8S_SANDBOX_MANAGER_IMAGE UNIVERSAL_PROXY_IMAGE VERIFY_RUNNER_IMAGE JUICEFS_MOUNT_IMAGE JUICEFS_CSI_DRIVER_IMAGE JUICEFS_CSI_DASHBOARD_IMAGE JUICEFS_CSI_PROVISIONER_IMAGE JUICEFS_CSI_RESIZER_IMAGE JUICEFS_CSI_LIVENESSPROBE_IMAGE JUICEFS_CSI_NODE_REGISTRAR_IMAGE INGRESS_NGINX_CONTROLLER_IMAGE INGRESS_NGINX_CERTGEN_IMAGE K8S_JUICEFS_MOUNT_IMAGE K8S_JUICEFS_CSI_DRIVER_IMAGE K8S_JUICEFS_CSI_DASHBOARD_IMAGE K8S_JUICEFS_CSI_PROVISIONER_IMAGE K8S_JUICEFS_CSI_RESIZER_IMAGE K8S_JUICEFS_CSI_LIVENESSPROBE_IMAGE K8S_JUICEFS_CSI_NODE_REGISTRAR_IMAGE K8S_INGRESS_NGINX_CONTROLLER_IMAGE K8S_INGRESS_NGINX_CERTGEN_IMAGE
+  [[ -n "${APP_IMAGE}" && -n "${AGENT_TASK_RUNNER_IMAGE}" && -n "${SANDBOX_MANAGER_IMAGE}" && -n "${UNIVERSAL_PROXY_IMAGE}" && -n "${VERIFY_RUNNER_IMAGE}" ]] \
     || die "VERSION is missing prebuilt image refs; rebuild bundle on the development machine with cluster:bundle"
   [[ -n "${JUICEFS_MOUNT_IMAGE}" ]] \
     || die "VERSION is missing bundled JuiceFS mount image ref; rebuild bundle on the development machine with cluster:bundle"
@@ -438,8 +423,7 @@ push_release_images() {
   local image local_manifest_digest remote_manifest_digest
   for image in \
     "${APP_IMAGE}" \
-    "${RUNNER_IMAGE}" \
-    "${CHAT_RUNNER_IMAGE}" \
+    "${AGENT_TASK_RUNNER_IMAGE}" \
     "${VERIFY_RUNNER_IMAGE}" \
     "${SANDBOX_MANAGER_IMAGE}" \
     "${UNIVERSAL_PROXY_IMAGE}" \
@@ -540,21 +524,8 @@ current_release_root() {
   readlink -f "${CURRENT_LINK}"
 }
 
-copy_runner_runtime_env_from_current_release() {
-  local current_root current_runtime target_runtime ws_url agent_key
-  current_root="$(current_release_root 2>/dev/null || true)"
-  [[ -n "${current_root}" ]] || die "upgrade requires an existing current release under ${CURRENT_LINK}"
-  current_runtime="${current_root}/env/runner-runtime.env"
-  target_runtime="${RELEASE_ROOT}/env/runner-runtime.env"
-  [[ -f "${current_runtime}" ]] || die "upgrade requires ${current_runtime}"
-  ws_url="$(awk -F= '$1=="MBOS_AGENT_WS_URL"{print $2}' "${current_runtime}" | tail -n1)"
-  agent_key="$(awk -F= '$1=="MBOS_AGENT_KEY"{print $2}' "${current_runtime}" | tail -n1)"
-  [[ -n "${ws_url}" && -n "${agent_key}" ]] \
-    || die "upgrade requires a non-empty runner-runtime.env in the current release"
-  if [[ "$(readlink -f "${current_runtime}")" == "$(readlink -f "${target_runtime}")" ]]; then
-    return 0
-  fi
-  cp "${current_runtime}" "${target_runtime}"
+carry_managed_runner_release_state() {
+  current_release_root >/dev/null 2>&1 || die "upgrade requires an existing current release under ${CURRENT_LINK}"
 }
 
 write_admin_ready_template() {

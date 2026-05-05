@@ -13,18 +13,15 @@ vi.mock('next-intl', () => ({
   useTranslations: (namespace: string) => (key: string) => {
     const translations: Record<string, Record<string, string>> = {
       chat: {
-        'header.execution_target': 'Execution target',
-        'header.select_execution_target': 'Select execution target',
-        'header.execution_targets': 'Execution targets',
+        'header.model': 'Model',
+        'header.select_model': 'Select model',
+        'header.models': 'Models',
         'header.endpoints': 'Endpoints',
-        'header.agents': 'Agents',
-        'header.no_execution_targets': 'No execution targets',
-        'header.agent_execution_target_hint': 'Runner-managed execution target',
-        'header.external_agent': 'External Agent',
+        'header.no_models': 'No models',
         'header.disabled': 'Disabled',
         'header.default_title': 'Chat',
         'header.rename_thread': 'Rename thread',
-        'header.no_active_thread_hint': 'Create or select a thread first, then choose an execution target and send messages',
+        'header.no_active_thread_hint': 'Create or select a thread first, then choose a model and send messages',
         'header.status_generating': 'Generating…',
         'header.status_recovering': 'Recovering stream...',
         'composer.stop': 'Stop',
@@ -142,16 +139,16 @@ describe('ChatHeader', () => {
       expect(endpointText).toContain('gpt-4');
     });
 
-    it('should render execution target selector button', () => {
+    it('should render model selector button', () => {
       render(<ChatHeader {...defaultProps} />);
 
-      expect(screen.getByTestId('chat__execution-target-trigger')).toHaveTextContent('Primary Endpoint');
+      expect(screen.getByTestId('chat__model-trigger')).toHaveTextContent('Primary Endpoint');
     });
 
-    it('disables execution target switching while the current thread is still active', () => {
+    it('disables model switching while the current thread is still active', () => {
       render(<ChatHeader {...defaultProps} streamStatus="streaming" />);
 
-      expect(screen.getByTestId('chat__execution-target-trigger')).toBeDisabled();
+      expect(screen.getByTestId('chat__model-trigger')).toBeDisabled();
     });
   });
 
@@ -404,11 +401,11 @@ describe('ChatHeader', () => {
     });
   });
 
-  describe('Execution Target Selector', () => {
-    it('should show execution target dropdown trigger', () => {
+  describe('Model Selector', () => {
+    it('should show model dropdown trigger', () => {
       render(<ChatHeader {...defaultProps} />);
 
-      const trigger = screen.getByTestId('chat__execution-target-trigger');
+      const trigger = screen.getByTestId('chat__model-trigger');
       expect(trigger).toBeInTheDocument();
       expect(trigger).toHaveTextContent('Primary Endpoint');
     });
@@ -417,27 +414,28 @@ describe('ChatHeader', () => {
       const user = userEvent.setup();
       render(<ChatHeader {...defaultProps} />);
 
-      const trigger = screen.getByTestId('chat__execution-target-trigger');
+      const trigger = screen.getByTestId('chat__model-trigger');
       await user.click(trigger);
 
-      expect(screen.getByText('Execution target')).toBeInTheDocument();
+      expect(screen.getByText('Model')).toBeInTheDocument();
     });
 
-    it('should list endpoints and agents in grouped dropdown sections', async () => {
+    it('should list endpoint-backed models without an Agents group', async () => {
       const user = userEvent.setup();
       render(<ChatHeader {...defaultProps} />);
 
-      const trigger = screen.getByTestId('chat__execution-target-trigger');
+      const trigger = screen.getByTestId('chat__model-trigger');
       await user.click(trigger);
 
       expect(screen.getByText('Endpoints')).toBeInTheDocument();
+      expect(screen.queryByText('Agents')).not.toBeInTheDocument();
     });
 
     it('should show model names in endpoint rows', async () => {
       const user = userEvent.setup();
       render(<ChatHeader {...defaultProps} />);
 
-      const trigger = screen.getByTestId('chat__execution-target-trigger');
+      const trigger = screen.getByTestId('chat__model-trigger');
       await user.click(trigger);
 
       expect(screen.getByText('gpt-3.5-turbo')).toBeInTheDocument();
@@ -447,10 +445,10 @@ describe('ChatHeader', () => {
       const user = userEvent.setup();
       render(<ChatHeader {...defaultProps} />);
 
-      const trigger = screen.getByTestId('chat__execution-target-trigger');
+      const trigger = screen.getByTestId('chat__model-trigger');
       await user.click(trigger);
 
-      const secondaryOption = screen.getByTestId('chat__execution-target-endpoint--endpoint-2');
+      const secondaryOption = screen.getByTestId('chat__model-endpoint--endpoint-2');
       await user.click(secondaryOption);
 
       expect(defaultProps.onSelectEndpoint).toHaveBeenCalledWith(mockEndpoints[1]);
@@ -460,17 +458,17 @@ describe('ChatHeader', () => {
       const user = userEvent.setup();
       render(<ChatHeader {...defaultProps} />);
 
-      const trigger = screen.getByTestId('chat__execution-target-trigger');
+      const trigger = screen.getByTestId('chat__model-trigger');
       await user.click(trigger);
 
-      expect(screen.getByTestId('chat__execution-target-endpoint--endpoint-1')).toHaveClass('bg-hover');
+      expect(screen.getByTestId('chat__model-endpoint--endpoint-1')).toHaveClass('bg-hover');
     });
 
     it('should disable selection of disabled endpoints', async () => {
       const user = userEvent.setup();
       render(<ChatHeader {...defaultProps} />);
 
-      const trigger = screen.getByTestId('chat__execution-target-trigger');
+      const trigger = screen.getByTestId('chat__model-trigger');
       await user.click(trigger);
 
       const disabledOption = screen.getByText('Disabled Endpoint');
@@ -482,7 +480,7 @@ describe('ChatHeader', () => {
       const user = userEvent.setup();
       render(<ChatHeader {...defaultProps} />);
 
-      const trigger = screen.getByTestId('chat__execution-target-trigger');
+      const trigger = screen.getByTestId('chat__model-trigger');
       await user.click(trigger);
 
       const disabledOption = screen.getByText('Disabled Endpoint');
@@ -495,31 +493,31 @@ describe('ChatHeader', () => {
       const user = userEvent.setup();
       render(<ChatHeader {...defaultProps} />);
 
-      const trigger = screen.getByTestId('chat__execution-target-trigger');
+      const trigger = screen.getByTestId('chat__model-trigger');
       await user.click(trigger);
 
       expect(screen.getByText('Disabled')).toBeInTheDocument();
     });
 
-    it('should fall back to session endpoint id when no execution target match exists', async () => {
+    it('should fall back to session endpoint id when no model match exists', async () => {
       render(<ChatHeader {...defaultProps} endpoints={[]} />);
 
-      expect(screen.getByTestId('chat__execution-target-trigger')).toHaveTextContent('endpoint-1');
+      expect(screen.getByTestId('chat__model-trigger')).toHaveTextContent('endpoint-1');
     });
 
     it('should close dropdown after selection', async () => {
       const user = userEvent.setup();
       render(<ChatHeader {...defaultProps} />);
 
-      const trigger = screen.getByTestId('chat__execution-target-trigger');
+      const trigger = screen.getByTestId('chat__model-trigger');
       await user.click(trigger);
 
-      expect(screen.getByText('Execution target')).toBeInTheDocument();
+      expect(screen.getByText('Model')).toBeInTheDocument();
 
-      const secondaryOption = screen.getByTestId('chat__execution-target-endpoint--endpoint-2');
+      const secondaryOption = screen.getByTestId('chat__model-endpoint--endpoint-2');
       await user.click(secondaryOption);
 
-      expect(screen.queryByText('Execution target')).not.toBeInTheDocument();
+      expect(screen.queryByText('Model')).not.toBeInTheDocument();
     });
   });
 

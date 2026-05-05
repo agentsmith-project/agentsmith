@@ -1,7 +1,9 @@
 import type http from 'node:http';
+import { assertTaskExecutionContext } from '@mbos/agent-runner';
 import type { AuthenticatedUser } from './auth.js';
 import type { RunnerSessionDispatchAuthority } from './agent-execution-service.js';
 import type { NodeApiDeps } from './node-api-deps.js';
+import type { AgentRecord, EndpointRecord } from './resource-models.js';
 import { buildAttachmentContentDisposition } from './http-utils.js';
 import {
   observeNotebookTraceQueryLatency,
@@ -30,6 +32,7 @@ import {
 } from './agent-execution-api-base.js';
 import { buildNotebookTaskInputs, type NotebookTaskInputRefRecord } from './notebook-input-refs.js';
 import { writeProjectAuditEvent } from './audit-usage-recorders.js';
+import { enforceEndpointGovernancePreflight } from './governance-endpoint-preflight.js';
 import type { ProjectsRoute } from './projects-route-match.js';
 import { sanitizeWorkloadId } from './internal-agent-pod-manager.js';
 import {
@@ -54,19 +57,15 @@ import {
   pipeGatewayDownloadToHttpResponse,
 } from './object-stream-bridge.js';
 import {
-  resolveFileLibraryMetadataUrlForDockerManualExternalExecution,
-  resolveFileLibraryMetadataUrlForComposeManagedExternalExecution,
-  resolveFileLibraryMetadataUrlForExternalExecution,
-  resolveFileLibraryMetadataUrlForInternalExecution,
-  resolveFileLibraryStorageBucketUrlForDockerManualExternalExecution,
-  resolveFileLibraryStorageBucketUrlForComposeManagedExternalExecution,
-  resolveFileLibraryStorageBucketUrlForExternalExecution,
-  resolveFileLibraryStorageBucketUrlForInternalExecution,
+  resolveFileLibraryMetadataUrlForDeveloperRunnerExecution,
+  resolveFileLibraryMetadataUrlForManagedRunnerExecution,
+  resolveFileLibraryStorageBucketUrlForDeveloperRunnerExecution,
+  resolveFileLibraryStorageBucketUrlForManagedRunnerExecution,
 } from './file-library-runtime.js';
 import {
-  isComposeManagedExternalAgent,
-  isExternalRunnerRuntime,
-  usesAgentPresenceScopedNotebookRunner,
+  isDeveloperAgentRunner,
+  isManagedAgentRunner,
+  usesAgentPresenceScopedTaskRunner,
 } from './agent-runner-profile.js';
 import {
   asObject,
@@ -157,6 +156,26 @@ const NOTEBOOK_RUN_LEASE_HEARTBEAT_MS = 15_000;
 const NOTEBOOK_RUN_CANCEL_POLL_MS = 1_000;
 const NOTEBOOK_RUN_OWNER_STALE_AFTER_MS = (NOTEBOOK_RUN_LEASE_HEARTBEAT_MS * 2) + 5_000;
 
+type AgentRunnerResolutionErrorCode =
+  | 'agent_runner_unavailable'
+  | 'agent_runner_model_unconfigured'
+  | 'agent_runner_capability_mismatch'
+  | 'agent_runner_default_conflict'
+  | 'agent_runner_selection_required'
+  | 'agent_runner_selection_ambiguous';
+
+type AgentRunnerResolutionResult =
+  | {
+      ok: true;
+      runner: AgentRecord;
+      endpoint: EndpointRecord;
+    }
+  | {
+      ok: false;
+      code: AgentRunnerResolutionErrorCode;
+      metadata?: Record<string, unknown>;
+    };
+
 type InternalTaskWorkloadIdentity = {
   workspaceId: string;
   projectId: string;
@@ -164,6 +183,196 @@ type InternalTaskWorkloadIdentity = {
   userId: string;
   agentId: string;
 };
+
+type ManagedTerminalRuntimeDispatchContext = {
+  managedInternalAgent: {
+    workspaceFileLibraryId: string;
+  };
+};
+
+const UNSUPPORTED_ACTIVE_TASK_SELECTOR_FIELDS = ['agent_id', 'agent_name', 'runner_id'] as const;
+const UNSUPPORTED_PUBLIC_TASK_RUN_FIELDS = ['role', 'content', ...UNSUPPORTED_ACTIVE_TASK_SELECTOR_FIELDS] as const;
+
+type TaskActivityItem = {
+  id: string;
+  task_id: string;
+  kind: 'user_intent' | 'runner_output';
+  actor: 'user' | 'runner';
+  content: string;
+  created_at: string;
+  run_id?: string;
+};
+
+function collectUnsupportedFields(
+  body: Record<string, unknown>,
+  fields: readonly string[],
+): string[] {
+  return fields.filter((field) => Object.prototype.hasOwnProperty.call(body, field));
+}
+
+function mapTaskMessageRecordToActivityItem(message: TaskMessageRecord): TaskActivityItem {
+  return {
+    id: message.id,
+    task_id: message.task_id,
+    kind: message.role === 'user' ? 'user_intent' : 'runner_output',
+    actor: message.role === 'user' ? 'user' : 'runner',
+    content: message.content,
+    created_at: message.created_at,
+    ...(message.turn_id ? { run_id: message.turn_id } : {}),
+  };
+}
+
+function emitNotebookTaskActivityEvent(taskId: string, message: TaskMessageRecord): void {
+  emitNotebookTaskEvent(taskId, {
+    type: 'activity_item',
+    data: mapTaskMessageRecordToActivityItem(message),
+  });
+}
+
+function readAgentRunnerStatus(agent: AgentRecord): 'draft' | 'connected' | 'ready' | 'degraded' | 'offline' {
+  if (agent.runner_status) return agent.runner_status;
+  if (agent.status !== 'enabled') return 'offline';
+  if (agent.presence === 'managed' || agent.presence === 'online') return 'ready';
+  return 'offline';
+}
+
+function readRunnerDefaultEndpointId(agent: AgentRecord): string {
+  return agent.default_endpoint_id?.trim() ?? '';
+}
+
+function runnerSupportsTaskRun(
+  agent: AgentRecord,
+  task: TaskRecord,
+  requestedInputs: ReturnType<typeof readTaskInputRefs>,
+  options?: {
+    needsTerminal?: boolean;
+  },
+): boolean {
+  const capabilities = agent.capabilities ?? {};
+  if (capabilities.task_execution === false) return false;
+  if (capabilities.artifacts === false) return false;
+  if (options?.needsTerminal && capabilities.terminal === false) return false;
+  const allInputs = [...task.attached_inputs, ...requestedInputs];
+  if (capabilities.file_inputs === false && allInputs.some((item) => item.kind === 'library_object' || item.kind === 'artifact')) {
+    return false;
+  }
+  if (capabilities.url_inputs === false && allInputs.some((item) => item.kind === 'url')) {
+    return false;
+  }
+  const maxFileCount = typeof capabilities.max_file_count === 'number' && Number.isFinite(capabilities.max_file_count)
+    ? Math.max(0, Math.floor(capabilities.max_file_count))
+    : undefined;
+  if (maxFileCount !== undefined && allInputs.filter((item) => item.kind === 'library_object' || item.kind === 'artifact').length > maxFileCount) {
+    return false;
+  }
+  return true;
+}
+
+async function resolveProjectAgentRunnerForTaskRun(args: {
+  deps: NodeApiDeps;
+  workspaceId: string;
+  projectId: string;
+  task: TaskRecord;
+  user: AuthenticatedUser;
+  requestedInputs: ReturnType<typeof readTaskInputRefs>;
+  requestId?: string | null;
+  needsTerminal?: boolean;
+}): Promise<AgentRunnerResolutionResult> {
+  const allRunners = (await args.deps.agentResourceService.listAgents(args.workspaceId, args.projectId))
+    .filter((agent) => agent.status === 'enabled');
+  const defaultRunners = allRunners.filter((agent) => agent.is_default === true);
+  if (defaultRunners.length > 1) {
+    return {
+      ok: false,
+      code: 'agent_runner_default_conflict',
+      metadata: { runner_ids: defaultRunners.map((item) => item.id) },
+    };
+  }
+
+  const readyRunners = allRunners.filter((agent) => readAgentRunnerStatus(agent) === 'ready');
+  if (readyRunners.length === 0) {
+    return { ok: false, code: 'agent_runner_unavailable' };
+  }
+
+  const endpointCandidates: Array<{ runner: AgentRecord; endpoint: EndpointRecord }> = [];
+  for (const runner of readyRunners) {
+    const endpointId = readRunnerDefaultEndpointId(runner);
+    if (!endpointId) continue;
+    const endpoint = await args.deps.endpointResourceService.getEndpoint(args.workspaceId, args.projectId, endpointId);
+    if (!endpoint || endpoint.status !== 'active' || !endpoint.model?.trim()) continue;
+    const preflight = await enforceEndpointGovernancePreflight({
+      deps: args.deps,
+      workspaceId: args.workspaceId,
+      projectId: args.projectId,
+      endpoint,
+      userId: args.user.id,
+      requestId: args.requestId,
+      source: 'agent_runner_resolution',
+      contextMetadata: {
+        task_id: args.task.id,
+        runner_id: runner.id,
+      },
+      recordAccessDeniedEvidence: false,
+    });
+    if (!preflight.allowed) continue;
+    endpointCandidates.push({ runner, endpoint });
+  }
+  if (endpointCandidates.length === 0) {
+    return { ok: false, code: 'agent_runner_model_unconfigured' };
+  }
+
+  const capabilityCandidates = endpointCandidates.filter(({ runner }) => runnerSupportsTaskRun(
+    runner,
+    args.task,
+    args.requestedInputs,
+    { needsTerminal: args.needsTerminal },
+  ));
+  if (capabilityCandidates.length === 0) {
+    return { ok: false, code: 'agent_runner_capability_mismatch' };
+  }
+
+  const defaultCandidate = capabilityCandidates.find(({ runner }) => runner.is_default === true);
+  if (defaultCandidate) {
+    return { ok: true, ...defaultCandidate };
+  }
+  return {
+    ok: false,
+    code: 'agent_runner_selection_required',
+    metadata: { runner_ids: capabilityCandidates.map(({ runner }) => runner.id) },
+  };
+}
+
+async function writeAgentRunnerResolutionAudit(args: {
+  deps: NodeApiDeps;
+  workspaceId: string;
+  projectId: string;
+  user: AuthenticatedUser;
+  taskId: string;
+  requestId?: string | null;
+  result: AgentRunnerResolutionResult;
+}): Promise<void> {
+  await writeProjectAuditEvent(args.deps, {
+    workspaceId: args.workspaceId,
+    projectId: args.projectId,
+    actor: { type: 'user', id: args.user.id },
+    action: args.result.ok ? 'agent_runner.resolution.succeeded' : 'agent_runner.resolution.failed',
+    result: args.result.ok ? 'ok' : 'error',
+    requestId: args.requestId,
+    resourceType: 'notebook_task',
+    resourceId: args.taskId,
+    errorCode: args.result.ok ? undefined : args.result.code,
+    errorMessage: args.result.ok ? undefined : args.result.code,
+    metadata: args.result.ok
+      ? {
+        runner_id: args.result.runner.id,
+        endpoint_id: args.result.endpoint.id,
+      }
+      : {
+        failure_code: args.result.code,
+        ...(args.result.metadata ?? {}),
+      },
+  });
+}
 
 function parseNotebookRunStopMode(raw: unknown): NotebookTaskRunStopMode | null {
   if (raw === undefined || raw === null || raw === '') {
@@ -225,37 +434,23 @@ async function ensureOwnedLibraryObjectInputs(args: {
 }
 
 export function resolveTaskWorkspaceMountAccess(input: {
-  agentMode: 'external' | 'internal' | null;
-  agentConfig?: Record<string, unknown> | null;
+  runnerProvider: 'managed' | 'developer' | null;
   metadataUrl: string;
   storageBucketUrl?: string;
 }): {
   metadataUrl: string;
   storageBucketUrl?: string;
 } {
-  const agentConfig = input.agentConfig ?? undefined;
-  if (input.agentMode === 'external') {
-    if (isComposeManagedExternalAgent({ mode: 'external', config: agentConfig })) {
-      return {
-        metadataUrl: resolveFileLibraryMetadataUrlForComposeManagedExternalExecution(input.metadataUrl),
-        storageBucketUrl: resolveFileLibraryStorageBucketUrlForComposeManagedExternalExecution(input.storageBucketUrl),
-      };
-    }
-    if (isExternalRunnerRuntime({ mode: 'external', config: agentConfig }, 'docker_manual')) {
-      return {
-        metadataUrl: resolveFileLibraryMetadataUrlForDockerManualExternalExecution(input.metadataUrl),
-        storageBucketUrl: resolveFileLibraryStorageBucketUrlForDockerManualExternalExecution(input.storageBucketUrl),
-      };
-    }
+  if (input.runnerProvider === 'developer') {
     return {
-      metadataUrl: resolveFileLibraryMetadataUrlForExternalExecution(input.metadataUrl),
-      storageBucketUrl: resolveFileLibraryStorageBucketUrlForExternalExecution(input.storageBucketUrl),
+      metadataUrl: resolveFileLibraryMetadataUrlForDeveloperRunnerExecution(input.metadataUrl),
+      storageBucketUrl: resolveFileLibraryStorageBucketUrlForDeveloperRunnerExecution(input.storageBucketUrl),
     };
   }
-  if (input.agentMode === 'internal') {
+  if (input.runnerProvider === 'managed') {
     return {
-      metadataUrl: resolveFileLibraryMetadataUrlForInternalExecution(input.metadataUrl),
-      storageBucketUrl: resolveFileLibraryStorageBucketUrlForInternalExecution(input.storageBucketUrl),
+      metadataUrl: resolveFileLibraryMetadataUrlForManagedRunnerExecution(input.metadataUrl),
+      storageBucketUrl: resolveFileLibraryStorageBucketUrlForManagedRunnerExecution(input.storageBucketUrl),
     };
   }
   return {
@@ -307,7 +502,10 @@ async function writeNotebookTaskSseSnapshot(args: {
   if (args.includeMessages) {
     await loadTaskMessages(args.deps, args.taskId);
     for (const message of getTaskMessages(args.taskId)) {
-      writeNotebookTaskSseEvent(args.res, { type: 'message', data: message });
+      writeNotebookTaskSseEvent(args.res, {
+        type: 'activity_item',
+        data: mapTaskMessageRecordToActivityItem(message),
+      });
     }
   }
   if (args.includeArtifacts) {
@@ -401,6 +599,8 @@ export function mapRunnerSessionAuthorityToTaskRouteError(
 function serializeTerminalSessionResponse(input: {
   session: {
     id: string;
+    agentId: string;
+    runnerSessionId: string;
     status: 'pending' | 'active' | 'disconnected' | 'closed' | 'failed';
     cols: number;
     rows: number;
@@ -412,7 +612,9 @@ function serializeTerminalSessionResponse(input: {
   };
   wsUrl: string | null;
 }): {
-  id: string;
+  terminal_session_id: string;
+  runner_id: string;
+  runner_session_id: string;
   status: 'pending' | 'active' | 'disconnected' | 'closed' | 'failed';
   cols: number;
   rows: number;
@@ -424,7 +626,9 @@ function serializeTerminalSessionResponse(input: {
   ws_url: string | null;
 } {
   return {
-    id: input.session.id,
+    terminal_session_id: input.session.id,
+    runner_id: input.session.agentId,
+    runner_session_id: input.session.runnerSessionId,
     status: input.session.status,
     cols: input.session.cols,
     rows: input.session.rows,
@@ -441,7 +645,7 @@ async function buildTaskTerminalExecutionContext(args: {
   deps: NodeApiDeps;
   task: TaskRecord;
   user: AuthenticatedUser;
-  agent: { mode: 'external' | 'internal'; config?: Record<string, unknown> | null };
+  agent: AgentRecord;
   publicBaseUrl: string;
 }): Promise<Record<string, unknown>> {
   const taskInputs = await buildNotebookTaskInputs({
@@ -465,37 +669,37 @@ async function buildTaskTerminalExecutionContext(args: {
     prefix: 'exec',
     workspaceId: args.task.workspace_id,
     projectId: args.task.project_id,
-    payload: {
-      endpoint_id: 'terminal',
-      task_id: args.task.id,
-      session_id: args.task.id,
-      agent_id: args.task.agent_id,
-      mode: 'notebook',
-    },
+      payload: {
+        endpoint_id: 'terminal',
+        task_id: args.task.id,
+        runner_session_id: args.task.id,
+        agent_runner_id: args.agent.id,
+      },
     ttlMs: 8 * 60 * 60 * 1000,
     maxUses: 500,
   });
 
-  return {
-    interaction_kind: 'notebook',
+  const executionContext = {
     workspace_id: args.task.workspace_id,
     project_id: args.task.project_id,
     task_id: args.task.id,
-    session_id: args.task.id,
+    runner_id: args.agent.id,
     username: buildTerminalUsername(args.user),
     api_base: resolveExecutionApiBase(args.publicBaseUrl, args.agent),
     execution_ticket: executionTicket.ticket,
-    runner_session_scope: args.agent.mode === 'external' && usesAgentPresenceScopedNotebookRunner(args.agent)
+    runner_session_scope: usesAgentPresenceScopedTaskRunner(args.agent)
       ? 'agent_presence'
       : 'task_execution',
-    workspace_binding_mode: args.agent.mode === 'internal' ? 'pre_mounted' : 'file_library',
-    workspace_path: args.agent.mode === 'internal' ? `/workspace/${args.task.id}` : undefined,
+    workspace_binding_mode: isManagedAgentRunner(args.agent) ? 'pre_mounted' : 'file_library',
+    workspace_path: isManagedAgentRunner(args.agent) ? `/workspace/${args.task.id}` : undefined,
     workspace_file_library_id: args.task.workspace_file_library_id ?? null,
     workspace_file_library_name: args.task.workspace_file_library_name ?? null,
     workspace_dir_name: workspaceLibrary?.filesystem_name
       ?? sanitizeFileLibraryWorkspaceDirName(args.task.workspace_file_library_name, args.task.workspace_file_library_id),
     task_inputs: taskInputs,
   };
+  assertTaskExecutionContext(executionContext);
+  return executionContext;
 }
 
 function findActiveTaskUsingWorkspace(
@@ -520,7 +724,7 @@ async function maybeReleaseInternalAgentWorkload(
     identity.projectId,
     identity.agentId,
   );
-  if (!agent || agent.mode !== 'internal') return;
+  if (!agent || !isManagedAgentRunner(agent)) return;
   if (!options?.force) {
     const hasLiveTerminalHolders = await hasBlockingTerminalSessionsForTask({
       terminalService: deps.notebookTerminalService,
@@ -558,6 +762,64 @@ async function maybeReleaseInternalAgentWorkload(
     sanitizeWorkloadId(identity.taskId),
   ).catch((err: unknown) => {
     console.warn('[sandbox] releasePod failed for task %s: %s', identity.taskId, err instanceof Error ? err.message : err);
+  });
+}
+
+function readManagedTerminalRuntimeDispatchContext(
+  raw: Record<string, unknown> | undefined,
+): ManagedTerminalRuntimeDispatchContext | null {
+  const managedInternalAgent = raw?.managedInternalAgent;
+  if (!managedInternalAgent || typeof managedInternalAgent !== 'object' || Array.isArray(managedInternalAgent)) {
+    return null;
+  }
+  const workspaceFileLibraryId = (managedInternalAgent as Record<string, unknown>).workspaceFileLibraryId;
+  if (typeof workspaceFileLibraryId !== 'string' || workspaceFileLibraryId.trim().length === 0) {
+    return null;
+  }
+  return {
+    managedInternalAgent: {
+      workspaceFileLibraryId: workspaceFileLibraryId.trim(),
+    },
+  };
+}
+
+async function ensureManagedTerminalRuntimeReady(
+  deps: NodeApiDeps,
+  session: {
+    workspaceId: string;
+    projectId: string;
+    taskId: string;
+    agentId: string;
+    runnerSessionId: string;
+    runtimeDispatchContext?: Record<string, unknown>;
+  },
+): Promise<void> {
+  const runtimeDispatchContext = readManagedTerminalRuntimeDispatchContext(session.runtimeDispatchContext);
+  if (!runtimeDispatchContext) return;
+  if (!deps.internalAgentPodManager || !deps.internalAgentWorkspaceBindingManager) {
+    throw new Error('task_terminal_internal_runtime_unavailable');
+  }
+  const agent = await deps.agentResourceService.getAgent(
+    session.workspaceId,
+    session.projectId,
+    session.agentId,
+  );
+  if (!agent || !isManagedAgentRunner(agent)) {
+    throw new Error('task_agent_not_available');
+  }
+  const workspaceBinding = await deps.internalAgentWorkspaceBindingManager.ensureWorkspaceBinding({
+    workspaceId: session.workspaceId,
+    projectId: session.projectId,
+    fileLibraryId: runtimeDispatchContext.managedInternalAgent.workspaceFileLibraryId,
+    taskId: session.taskId,
+  });
+  await deps.internalAgentPodManager.ensureAgentReady({
+    workspaceId: session.workspaceId,
+    projectId: session.projectId,
+    workloadId: sanitizeWorkloadId(session.taskId),
+    sessionId: session.runnerSessionId,
+    agent,
+    workspaceMount: workspaceBinding.workspaceMount,
   });
 }
 
@@ -602,9 +864,26 @@ function normalizeErrorMessage(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
 }
 
+function buildTaskRunnerEvidenceMissingResponse(input: {
+  taskId: string;
+  runId?: string | null;
+}): {
+  error_code: 'TASK_RUNNER_EVIDENCE_MISSING';
+  message: 'task_runner_evidence_missing';
+  task_id: string;
+  run_id?: string;
+} {
+  return {
+    error_code: 'TASK_RUNNER_EVIDENCE_MISSING',
+    message: 'task_runner_evidence_missing',
+    task_id: input.taskId,
+    ...(input.runId ? { run_id: input.runId } : {}),
+  };
+}
+
 function buildNotebookHardTeardownDebtStopResponse(input: {
   deps: NodeApiDeps;
-  agent: { mode?: 'external' | 'internal' } | null | undefined;
+  agent: AgentRecord | null | undefined;
   taskId: string;
   debt: NotebookTaskRunHardTeardownDebtRecord;
 }): {
@@ -625,7 +904,7 @@ function buildNotebookHardTeardownDebtStopResponse(input: {
     can_escalate: false,
     escalation_reason: canRequestNotebookRunHardTerminate(input.deps, input.agent)
       ? 'already_terminating'
-      : input.agent?.mode === 'internal' ? 'unmanaged_runner' : 'unsupported_runner',
+      : input.agent && isManagedAgentRunner(input.agent) ? 'unmanaged_runner' : 'unsupported_runner',
   };
 }
 
@@ -696,6 +975,15 @@ function ensureInternalTerminalLifecycleIntegration(deps: NodeApiDeps): void {
         userId: string;
         agentId: string;
       }) => void | Promise<void>;
+      beforeSessionRuntimeDispatch?: (session: {
+        workspaceId: string;
+        projectId: string;
+        taskId: string;
+        userId: string;
+        agentId: string;
+        runnerSessionId: string;
+        runtimeDispatchContext?: Record<string, unknown>;
+      }) => void | Promise<void>;
       onSessionClosed?: (session: {
         workspaceId: string;
         projectId: string;
@@ -712,6 +1000,9 @@ function ensureInternalTerminalLifecycleIntegration(deps: NodeApiDeps): void {
     return;
   }
   service.registerLifecycleHooks('task_route_handler_internal_terminal_workload', {
+    beforeSessionRuntimeDispatch: async (session) => {
+      await ensureManagedTerminalRuntimeReady(deps, session);
+    },
     onSessionClosed: async (session) => {
       await maybeReleaseInternalAgentWorkload(deps, {
         workspaceId: session.workspaceId,
@@ -825,7 +1116,7 @@ async function streamTaskArtifactFromWorkspaceLibrary(args: {
   }
 }
 
-async function ensureExternalTaskRunnerSessionDispatchable(args: {
+async function ensureTaskRunnerSessionDispatchable(args: {
   deps: NodeApiDeps;
   agentId: string;
   sessionId: string;
@@ -890,39 +1181,36 @@ export async function handleTaskRoute(args: TaskRouteHandlerArgs): Promise<boole
   if (route.kind === 'tasks' && method === 'POST') {
     await loadProjectTasks(deps, route.workspaceId, route.projectId);
     const body = asObject(await readBody(req));
+    const unsupportedFields = collectUnsupportedFields(body, UNSUPPORTED_ACTIVE_TASK_SELECTOR_FIELDS);
+    if (unsupportedFields.length > 0) {
+      json(res, 400, {
+        error_code: 'unsupported_field',
+        message: 'unsupported_field',
+        fields: unsupportedFields,
+      });
+      return true;
+    }
     const title = typeof body.title === 'string' ? body.title.trim() : '';
-    const agentId = typeof body.agent_id === 'string' ? body.agent_id.trim() : '';
+    const prompt = typeof body.prompt === 'string' ? body.prompt.trim() : '';
     const workspaceMode = typeof body.workspace_mode === 'string' ? body.workspace_mode.trim() : '';
     const workspaceFileLibraryId = typeof body.workspace_file_library_id === 'string'
       ? body.workspace_file_library_id.trim()
       : '';
+    const effectiveWorkspaceMode = workspaceMode || (workspaceFileLibraryId ? 'use_existing' : 'create_new');
     const requestedWorkspaceName = typeof body.workspace_name === 'string' ? body.workspace_name.trim() : '';
     if (!title) {
       json(res, 422, { error_code: 'VALIDATION_ERROR', message: 'task_title_required' });
       return true;
     }
-    if (!agentId) {
-      json(res, 422, { error_code: 'VALIDATION_ERROR', message: 'agent_id_required' });
-      return true;
-    }
-    if (workspaceMode !== 'create_new' && !workspaceFileLibraryId) {
+    if (effectiveWorkspaceMode !== 'create_new' && !workspaceFileLibraryId) {
       json(res, 422, { error_code: 'VALIDATION_ERROR', message: 'workspace_file_library_id_required' });
       return true;
     }
 
-    const agent = await deps.agentResourceService.getAgent(route.workspaceId, route.projectId, agentId);
-    if (!agent || agent.status !== 'enabled' || agent.interaction_kind === 'chat') {
-      json(res, 404, { error_code: 'RESOURCE_NOT_FOUND', message: 'agent_not_found_or_not_notebook_compatible' });
-      return true;
-    }
-    if (agent.mode === 'external' && agent.presence !== 'online') {
-      json(res, 409, { error_code: 'AGENT_OFFLINE', message: 'agent_offline' });
-      return true;
-    }
     let workspaceFileLibrary = workspaceFileLibraryId
       ? await catalogRepo.getById(route.workspaceId, route.projectId, workspaceFileLibraryId)
       : null;
-    if (workspaceMode === 'create_new') {
+    if (effectiveWorkspaceMode === 'create_new') {
       try {
         workspaceFileLibrary = await createAndProvisionProjectFileLibrary({
           deps,
@@ -969,7 +1257,7 @@ export async function handleTaskRoute(args: TaskRouteHandlerArgs): Promise<boole
     }
 
     const createdAt = nowIso();
-    const initialInputs = readTaskInputRefs(body.initial_inputs);
+    const initialInputs = readTaskInputRefs(body.input_refs ?? body.initial_inputs);
     if (!(await ensureOwnedLibraryObjectInputs({
       catalogRepo,
       workspaceId: route.workspaceId,
@@ -987,8 +1275,7 @@ export async function handleTaskRoute(args: TaskRouteHandlerArgs): Promise<boole
       project_id: route.projectId,
       owner_user_id: user.id,
       title,
-      agent_id: agent.id,
-      agent_name: agent.name,
+      ...(prompt ? { prompt } : {}),
       workspace_file_library_id: workspaceFileLibrary.id,
       workspace_file_library_name: workspaceFileLibrary.name,
       status: 'active',
@@ -1008,7 +1295,6 @@ export async function handleTaskRoute(args: TaskRouteHandlerArgs): Promise<boole
       resourceId: task.id,
       requestId: typeof req.headers['x-request-id'] === 'string' ? req.headers['x-request-id'] : null,
       metadata: {
-        agent_id: task.agent_id,
         workspace_file_library_id: task.workspace_file_library_id,
         initial_input_count: task.attached_inputs.length,
       },
@@ -1051,31 +1337,52 @@ export async function handleTaskRoute(args: TaskRouteHandlerArgs): Promise<boole
     const cols = typeof body.cols === 'number' && Number.isFinite(body.cols) ? Math.floor(body.cols) : 120;
     const rows = typeof body.rows === 'number' && Number.isFinite(body.rows) ? Math.floor(body.rows) : 30;
     const shell = typeof body.shell === 'string' ? body.shell.trim() : '';
-    const agent = await deps.agentResourceService.getAgent(route.workspaceId, route.projectId, task.agent_id);
+    const resolution = await resolveProjectAgentRunnerForTaskRun({
+      deps,
+      workspaceId: route.workspaceId,
+      projectId: route.projectId,
+      task,
+      user,
+      requestedInputs: [],
+      requestId: typeof req.headers['x-request-id'] === 'string' ? req.headers['x-request-id'] : null,
+      needsTerminal: true,
+    });
+    if (!resolution.ok) {
+      await writeAgentRunnerResolutionAudit({
+        deps,
+        workspaceId: route.workspaceId,
+        projectId: route.projectId,
+        user,
+        taskId: route.taskId,
+        requestId: typeof req.headers['x-request-id'] === 'string' ? req.headers['x-request-id'] : null,
+        result: resolution,
+      });
+      json(res, 409, {
+        error_code: resolution.code,
+        message: resolution.code,
+      });
+      return true;
+    }
+    const agent = resolution.runner;
+    await writeAgentRunnerResolutionAudit({
+      deps,
+      workspaceId: route.workspaceId,
+      projectId: route.projectId,
+      user,
+      taskId: route.taskId,
+      requestId: typeof req.headers['x-request-id'] === 'string' ? req.headers['x-request-id'] : null,
+      result: resolution,
+    });
     if (!agent || agent.status !== 'enabled') {
       json(res, 409, { error_code: 'RESOURCE_CONFLICT', message: 'task_agent_not_available' });
       return true;
     }
-    if (agent.mode === 'internal') {
+    if (isManagedAgentRunner(agent)) {
       if (!deps.internalAgentPodManager || !deps.internalAgentWorkspaceBindingManager || !task.workspace_file_library_id) {
         json(res, 409, { error_code: 'RESOURCE_CONFLICT', message: 'task_terminal_internal_runtime_unavailable' });
         return true;
       }
-      const workspaceBinding = await deps.internalAgentWorkspaceBindingManager.ensureWorkspaceBinding({
-        workspaceId: task.workspace_id,
-        projectId: task.project_id,
-        fileLibraryId: task.workspace_file_library_id,
-        taskId: task.id,
-      });
-      await deps.internalAgentPodManager.ensureAgentReady({
-        workspaceId: task.workspace_id,
-        projectId: task.project_id,
-        workloadId: sanitizeWorkloadId(task.id),
-        sessionId: task.id,
-        agent,
-        workspaceMount: workspaceBinding.workspaceMount,
-      });
-    } else if (!(await ensureExternalTaskRunnerSessionDispatchable({
+    } else if (!(await ensureTaskRunnerSessionDispatchable({
       deps,
       agentId: agent.id,
       sessionId: task.id,
@@ -1098,13 +1405,22 @@ export async function handleTaskRoute(args: TaskRouteHandlerArgs): Promise<boole
         workspaceId: task.workspace_id,
         projectId: task.project_id,
         taskId: task.id,
-        agentId: task.agent_id,
+        agentId: agent.id,
         runnerSessionId: task.id,
         userId: user.id,
         cols,
         rows,
         ...(shell ? { shell } : {}),
         executionContext,
+        ...(isManagedAgentRunner(agent) && task.workspace_file_library_id
+          ? {
+            runtimeDispatchContext: {
+              managedInternalAgent: {
+                workspaceFileLibraryId: task.workspace_file_library_id,
+              },
+            },
+          }
+          : {}),
       });
     } catch (error) {
       const message = error instanceof Error ? error.message : 'task_terminal_session_create_failed';
@@ -1124,15 +1440,18 @@ export async function handleTaskRoute(args: TaskRouteHandlerArgs): Promise<boole
       requestId: typeof req.headers['x-request-id'] === 'string' ? req.headers['x-request-id'] : null,
       metadata: {
         task_id: task.id,
-        agent_id: task.agent_id,
-        runner_mode: agent.mode,
+        runner_id: agent.id,
+        runner_session_id: task.id,
+        runner_provider: agent.runner_provider ?? 'managed',
         cols,
         rows,
         ...(shell ? { shell } : {}),
       },
     });
     json(res, 201, {
-      session_id: created.sessionId,
+      terminal_session_id: created.sessionId,
+      runner_id: agent.id,
+      runner_session_id: task.id,
       status: 'pending',
       ws_url: `${resolveTerminalWebSocketBaseUrl(req)}${created.wsPath}`,
     });
@@ -1269,21 +1588,26 @@ export async function handleTaskRoute(args: TaskRouteHandlerArgs): Promise<boole
       json(res, 404, { error_code: 'RESOURCE_NOT_FOUND', message: 'file_library_mount_access_not_found' });
       return true;
     }
-    const agent = await deps.agentResourceService.getAgent(
-      route.workspaceId,
-      route.projectId,
-      task.agent_id,
-    );
+    const ticketAgentRunnerId = isAgentExecutionTicket(internalTicket)
+      && typeof internalTicket.payload.agent_runner_id === 'string'
+      ? internalTicket.payload.agent_runner_id.trim()
+      : '';
+    const agent = ticketAgentRunnerId
+      ? await deps.agentResourceService.getAgent(
+        route.workspaceId,
+        route.projectId,
+        ticketAgentRunnerId,
+      )
+      : null;
     const executionMountAccess = resolveTaskWorkspaceMountAccess({
-      agentMode: agent?.mode ?? null,
-      agentConfig: agent?.config,
+      runnerProvider: agent?.runner_provider ?? null,
       metadataUrl: mountAccess.metadata_url,
       storageBucketUrl: mountAccess.storage_bucket_url,
     });
     json(res, 200, {
       task_id: task.id,
       workspace_binding_mode: 'file_library',
-      container_workspace_path: agent?.mode === 'internal' ? `/workspace/${task.id}` : null,
+      container_workspace_path: agent && isManagedAgentRunner(agent) ? `/workspace/${task.id}` : null,
       library_root_path: '.',
       workspace_dir_name: workspaceFileLibrary.filesystem_name,
       file_library_id: workspaceFileLibrary.id,
@@ -1305,7 +1629,24 @@ export async function handleTaskRoute(args: TaskRouteHandlerArgs): Promise<boole
       return true;
     }
     const body = asObject(await readBody(req));
+    const unsupportedFields = collectUnsupportedFields(body, UNSUPPORTED_ACTIVE_TASK_SELECTOR_FIELDS);
+    if (unsupportedFields.length > 0) {
+      json(res, 400, {
+        error_code: 'unsupported_field',
+        message: 'unsupported_field',
+        fields: unsupportedFields,
+      });
+      return true;
+    }
     const previousStatus = task.status;
+    const sharedActive = await getNotebookTaskRunState(deps.cache, route.taskId);
+    if (previousStatus === 'active' && body.status === 'archived' && sharedActive && !sharedActive.runner_id?.trim()) {
+      json(res, 409, buildTaskRunnerEvidenceMissingResponse({
+        taskId: route.taskId,
+        runId: sharedActive.run_id,
+      }));
+      return true;
+    }
     if (typeof body.title === 'string' && body.title.trim()) {
       task.title = body.title.trim();
     }
@@ -1317,18 +1658,19 @@ export async function handleTaskRoute(args: TaskRouteHandlerArgs): Promise<boole
     if (
       previousStatus === 'active'
       && task.status === 'archived'
+      && sharedActive?.runner_id?.trim()
     ) {
       await maybeReleaseInternalAgentWorkload(deps, {
         workspaceId: route.workspaceId,
         projectId: route.projectId,
         taskId: task.id,
         userId: task.owner_user_id,
-        agentId: task.agent_id,
+        agentId: sharedActive.runner_id.trim(),
       }, {
         force: true,
       });
     }
-    json(res, 200, task);
+    json(res, 200, await buildTaskRealtimeView(deps, route.workspaceId, route.projectId, task));
     return true;
   }
 
@@ -1347,6 +1689,21 @@ export async function handleTaskRoute(args: TaskRouteHandlerArgs): Promise<boole
       });
       return true;
     }
+    const hardTeardownDebt = await getNotebookTaskRunHardTeardownDebt(deps.cache, route.taskId);
+    if (hardTeardownDebt) {
+      if (!hardTeardownDebt.runner_id?.trim()) {
+        json(res, 409, buildTaskRunnerEvidenceMissingResponse({
+          taskId: route.taskId,
+          runId: hardTeardownDebt.run_id,
+        }));
+        return true;
+      }
+      json(res, 409, {
+        error_code: 'RESOURCE_CONFLICT',
+        message: 'task_run_hard_teardown_pending',
+      });
+      return true;
+    }
     if (await hasBlockingTerminalSessionsForTask({
       terminalService: deps.notebookTerminalService,
       workspaceId: route.workspaceId,
@@ -1360,7 +1717,7 @@ export async function handleTaskRoute(args: TaskRouteHandlerArgs): Promise<boole
       });
       return true;
     }
-    const [removedTask] = tasks.splice(index, 1);
+    tasks.splice(index, 1);
     ACTIVE_RUNS_BY_TASK.delete(route.taskId);
     ACTIVE_RUN_CANCEL_BY_TASK.delete(route.taskId);
     ACTIVE_RUN_CANCEL_REQUESTED_BY_TASK.delete(route.taskId);
@@ -1373,17 +1730,6 @@ export async function handleTaskRoute(args: TaskRouteHandlerArgs): Promise<boole
     await deleteTaskMessages(deps, route.taskId);
     await deleteTaskArtifacts(deps, route.taskId);
     await deleteTaskTraceEvents(deps, route.workspaceId, route.taskId);
-    if (removedTask) {
-      await maybeReleaseInternalAgentWorkload(deps, {
-        workspaceId: route.workspaceId,
-        projectId: route.projectId,
-        taskId: removedTask.id,
-        userId: removedTask.owner_user_id,
-        agentId: removedTask.agent_id,
-      }, {
-        force: true,
-      });
-    }
     json(res, 200, { success: true });
     return true;
   }
@@ -1509,15 +1855,15 @@ export async function handleTaskRoute(args: TaskRouteHandlerArgs): Promise<boole
     return true;
   }
 
-  if (route.kind === 'taskMessages' && method === 'GET') {
-    await loadTaskMessages(deps, route.taskId);
+  if (route.kind === 'taskActivity' && method === 'GET') {
     await loadProjectTasks(deps, route.workspaceId, route.projectId);
     const task = findTaskForOwner(route.workspaceId, route.projectId, route.taskId, user.id);
     if (!task) {
       json(res, 404, { error_code: 'RESOURCE_NOT_FOUND', message: 'task_not_found' });
       return true;
     }
-    json(res, 200, getTaskMessages(route.taskId));
+    await loadTaskMessages(deps, route.taskId);
+    json(res, 200, getTaskMessages(route.taskId).map(mapTaskMessageRecordToActivityItem));
     return true;
   }
 
@@ -1577,7 +1923,7 @@ export async function handleTaskRoute(args: TaskRouteHandlerArgs): Promise<boole
     return true;
   }
 
-  if (route.kind === 'taskMessages' && method === 'POST') {
+  if (route.kind === 'taskRuns' && method === 'POST') {
     await loadProjectTasks(deps, route.workspaceId, route.projectId);
     await loadTaskMessages(deps, route.taskId);
     const task = findTaskForOwner(route.workspaceId, route.projectId, route.taskId, user.id);
@@ -1586,9 +1932,27 @@ export async function handleTaskRoute(args: TaskRouteHandlerArgs): Promise<boole
       return true;
     }
     const body = asObject(await readBody(req));
-    const content = typeof body.content === 'string' ? body.content : '';
-    const role = body.role === 'agent' ? 'agent' : 'user';
+    const unsupportedFields = collectUnsupportedFields(body, UNSUPPORTED_PUBLIC_TASK_RUN_FIELDS);
+    if (unsupportedFields.length > 0) {
+      json(res, 400, {
+        error_code: 'unsupported_field',
+        message: 'unsupported_field',
+        fields: unsupportedFields,
+      });
+      return true;
+    }
+    const content = typeof body.intent === 'string' ? body.intent : '';
+    if (!content.trim()) {
+      json(res, 422, {
+        error_code: 'VALIDATION_ERROR',
+        message: 'task_run_intent_required',
+        field: 'intent',
+      });
+      return true;
+    }
+    const role = 'user' as const;
     let runId: string | null = null;
+    let resolvedRunner: Extract<AgentRunnerResolutionResult, { ok: true }> | null = null;
     let sharedRunState: NotebookTaskRunState | null = null;
     let runLaunchCommitted = false;
     let localRunTrackingReleased = false;
@@ -1662,11 +2026,65 @@ export async function handleTaskRoute(args: TaskRouteHandlerArgs): Promise<boole
         });
         return true;
       }
+      if (await getNotebookTaskRunState(deps.cache, route.taskId)) {
+        const blockingDebt = await getNotebookTaskRunHardTeardownDebt(deps.cache, route.taskId);
+        json(res, 409, {
+          error_code: 'TASK_STREAM_CONFLICT',
+          message: 'task_stream_conflict',
+          ...(blockingDebt
+            ? {
+                reason: 'hard_teardown_pending',
+                hard_teardown_status: blockingDebt.status,
+              }
+            : {}),
+        });
+        return true;
+      }
+      const requestedInputs = readTaskInputRefs(body.input_refs);
+      const resolution = await resolveProjectAgentRunnerForTaskRun({
+        deps,
+        workspaceId: route.workspaceId,
+        projectId: route.projectId,
+        task,
+        user,
+        requestedInputs,
+        requestId: typeof req.headers['x-request-id'] === 'string' ? req.headers['x-request-id'] : null,
+      });
+      if (!resolution.ok) {
+        await writeAgentRunnerResolutionAudit({
+          deps,
+          workspaceId: route.workspaceId,
+          projectId: route.projectId,
+          user,
+          taskId: route.taskId,
+          requestId: typeof req.headers['x-request-id'] === 'string' ? req.headers['x-request-id'] : null,
+          result: resolution,
+        });
+        json(res, 409, {
+          error_code: resolution.code,
+          message: resolution.code,
+        });
+        return true;
+      }
+      resolvedRunner = resolution;
+      await writeAgentRunnerResolutionAudit({
+        deps,
+        workspaceId: route.workspaceId,
+        projectId: route.projectId,
+        user,
+        taskId: route.taskId,
+        requestId: typeof req.headers['x-request-id'] === 'string' ? req.headers['x-request-id'] : null,
+        result: resolution,
+      });
+      if (requestedInputs.length > 0) {
+        task.attached_inputs = [...task.attached_inputs, ...requestedInputs];
+      }
       runId = buildId('run');
       const startedAt = nowIso();
       sharedRunState = buildNotebookTaskRunState({
         taskId: route.taskId,
         runId,
+        runnerId: resolution.runner.id,
         startedAt,
         ownerInstanceId: getNotebookRunOwnerInstanceId(),
       });
@@ -1706,6 +2124,7 @@ export async function handleTaskRoute(args: TaskRouteHandlerArgs): Promise<boole
           role: 'agent',
           content: '',
           created_at: nowIso(),
+          ...(runId ? { turn_id: runId } : {}),
         };
         await deps.docStore.upsert<TaskMessageRecord>(notebookTaskMessagesCollection(route.workspaceId), assistantMessage.id, assistantMessage);
         getTaskMessages(route.taskId).push(assistantMessage);
@@ -1796,11 +2215,14 @@ export async function handleTaskRoute(args: TaskRouteHandlerArgs): Promise<boole
           void syncSharedStopRequest().catch(() => undefined);
         }, NOTEBOOK_RUN_CANCEL_POLL_MS);
 
+        if (!resolvedRunner) {
+          throw new Error('agent_runner_resolution_missing');
+        }
         const runPromise = runNotebookTaskWithExecutionAgent({
           deps,
           task,
           assistantMessage,
-          agentId: task.agent_id,
+          agentId: resolvedRunner.runner.id,
           user,
           publicBaseUrl: resolveRequiredConfiguredPublicApiBase(),
           buildRunId: () => runId ?? buildId('run'),
@@ -1928,22 +2350,22 @@ export async function handleTaskRoute(args: TaskRouteHandlerArgs): Promise<boole
           await finalizeAcquiredRun({ clearSharedControl: shouldClearSharedControl });
         });
 
-        emitNotebookTaskEvent(route.taskId, { type: 'message', data: message });
-        emitNotebookTaskEvent(route.taskId, { type: 'message', data: assistantMessage });
+        emitNotebookTaskActivityEvent(route.taskId, message);
+        emitNotebookTaskActivityEvent(route.taskId, assistantMessage);
         emitNotebookTaskEvent(route.taskId, {
           type: 'task_update',
           data: await buildTaskRealtimeView(deps, route.workspaceId, route.projectId, task),
         });
-        json(res, 200, assistantMessage);
+        json(res, 200, mapTaskMessageRecordToActivityItem(assistantMessage));
         return true;
       }
 
-      emitNotebookTaskEvent(route.taskId, { type: 'message', data: message });
+      emitNotebookTaskActivityEvent(route.taskId, message);
       emitNotebookTaskEvent(route.taskId, {
         type: 'task_update',
         data: await buildTaskRealtimeView(deps, route.workspaceId, route.projectId, task),
       });
-      json(res, 200, message);
+      json(res, 200, mapTaskMessageRecordToActivityItem(message));
       return true;
     } catch (error) {
       if (!runLaunchCommitted) {
@@ -1987,15 +2409,28 @@ export async function handleTaskRoute(args: TaskRouteHandlerArgs): Promise<boole
       json(res, 409, { error_code: 'TASK_RUN_NOT_ACTIVE', message: 'task_run_not_active' });
       return true;
     }
+    if (active && !sharedActive && !hasTerminalHardTeardownDebt) {
+      ACTIVE_RUN_CANCEL_BY_TASK.delete(route.taskId);
+      ACTIVE_RUN_CANCEL_REQUESTED_BY_TASK.delete(route.taskId);
+      ACTIVE_RUNS_BY_TASK.delete(route.taskId);
+      json(res, 409, { error_code: 'TASK_RUN_NOT_ACTIVE', message: 'task_run_not_active' });
+      return true;
+    }
     if (sharedActive?.phase === 'finalizing' && !hasSharedHardTeardownDebt) {
       json(res, 409, { error_code: 'TASK_RUN_FINALIZING', message: 'task_run_finalizing' });
       return true;
     }
-    const agent = await deps.agentResourceService.getAgent(
-      route.workspaceId,
-      route.projectId,
-      task.agent_id,
-    );
+    const activeRunnerId = sharedActive?.runner_id?.trim() || hardTeardownDebt?.runner_id?.trim() || '';
+    if ((sharedActive || hasTerminalHardTeardownDebt) && !activeRunnerId) {
+      json(res, 409, buildTaskRunnerEvidenceMissingResponse({
+        taskId: route.taskId,
+        runId: sharedActive?.run_id ?? hardTeardownDebt?.run_id,
+      }));
+      return true;
+    }
+    const agent = activeRunnerId
+      ? await deps.agentResourceService.getAgent(route.workspaceId, route.projectId, activeRunnerId)
+      : null;
     const canHardTerminate = canRequestNotebookRunHardTerminate(deps, agent);
     const runId = active?.runId ?? sharedActive?.run_id ?? hardTeardownDebt?.run_id ?? 'unknown';
     const requestId = active?.requestId ?? sharedActive?.request_id ?? hardTeardownDebt?.request_id ?? null;
@@ -2006,7 +2441,7 @@ export async function handleTaskRoute(args: TaskRouteHandlerArgs): Promise<boole
       && !hasTerminalHardTeardownDebt
     ) {
       const reason: Exclude<NotebookRunStopEscalationReason, 'already_terminating'> = (
-        agent?.mode === 'internal' ? 'unmanaged_runner' : 'unsupported_runner'
+        agent && isManagedAgentRunner(agent) ? 'unmanaged_runner' : 'unsupported_runner'
       );
       json(res, 409, buildNotebookRunStopEscalationUnavailableResponse({
         taskId: route.taskId,
@@ -2018,7 +2453,7 @@ export async function handleTaskRoute(args: TaskRouteHandlerArgs): Promise<boole
     }
     if (hasHardTeardownDebt && !canHardTerminate) {
       const reason: Exclude<NotebookRunStopEscalationReason, 'already_terminating'> = (
-        agent?.mode === 'internal' ? 'unmanaged_runner' : 'unsupported_runner'
+        agent && isManagedAgentRunner(agent) ? 'unmanaged_runner' : 'unsupported_runner'
       );
       if (sharedActive) {
         json(res, 409, buildNotebookRunStopEscalationUnavailableResponse({
@@ -2051,7 +2486,7 @@ export async function handleTaskRoute(args: TaskRouteHandlerArgs): Promise<boole
       !active
       && sharedActive
       && !ownerFresh
-      && agent?.mode === 'internal'
+      && Boolean(agent && isManagedAgentRunner(agent))
       && canHardTerminate,
     );
     const resolvedMode: NotebookTaskRunStopMode = (
@@ -2061,7 +2496,7 @@ export async function handleTaskRoute(args: TaskRouteHandlerArgs): Promise<boole
         ? 'terminate'
         : 'cancel'
     );
-    if (!active && sharedActive && !ownerFresh && agent?.mode === 'internal' && !canHardTerminate) {
+    if (!active && sharedActive && !ownerFresh && agent && isManagedAgentRunner(agent) && !canHardTerminate) {
       json(res, 409, buildNotebookRunStopEscalationUnavailableResponse({
         taskId: route.taskId,
         state: sharedActive,
@@ -2070,7 +2505,7 @@ export async function handleTaskRoute(args: TaskRouteHandlerArgs): Promise<boole
       }));
       return true;
     }
-    if (!active && sharedActive && !ownerFresh && agent?.mode !== 'internal') {
+    if (!active && sharedActive && !ownerFresh && (!agent || !isManagedAgentRunner(agent))) {
       json(res, 409, {
         error_code: 'TASK_RUN_OWNER_UNAVAILABLE',
         message: 'task_run_owner_unavailable',
@@ -2080,11 +2515,11 @@ export async function handleTaskRoute(args: TaskRouteHandlerArgs): Promise<boole
     const requestedAt = nowIso();
     const useLocalStartupAbortOnly = Boolean(
       resolvedMode === 'terminate'
-      && agent?.mode === 'internal'
+      && Boolean(agent && isManagedAgentRunner(agent))
       && active?.runId === runId
       && requestId === null
     );
-    const delivery = resolvedMode === 'terminate' && agent?.mode === 'internal' && !useLocalStartupAbortOnly
+    const delivery = resolvedMode === 'terminate' && agent && isManagedAgentRunner(agent) && !useLocalStartupAbortOnly
       ? 'internal_teardown_requested'
       : active
         ? 'owner_attached'

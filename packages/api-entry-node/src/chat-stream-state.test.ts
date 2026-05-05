@@ -44,20 +44,129 @@ afterEach(() => {
 });
 
 describe('chat session execution record', () => {
-  it('reads legacy string state as session execution status', async () => {
+  it('rejects raw string session state instead of parsing legacy status compatibility', async () => {
     const cache = new InMemoryCache();
 
-    await writeSessionStreamState(cache, 'ws_legacy', 'proj_legacy', 'sess_legacy', 'running', 60);
+    await cache.set('chat:session-stream:ws_raw_string:proj_raw_string:sess_raw_string', 'running', 60);
 
-    await expect(readSessionStreamState(cache, 'ws_legacy', 'proj_legacy', 'sess_legacy')).resolves.toBe('running');
-    await expect(readSessionExecutionRecord(cache, 'ws_legacy', 'proj_legacy', 'sess_legacy')).resolves.toMatchObject({
-      workspaceId: 'ws_legacy',
-      projectId: 'proj_legacy',
-      sessionId: 'sess_legacy',
+    await expect(readSessionStreamState(cache, 'ws_raw_string', 'proj_raw_string', 'sess_raw_string')).resolves.toBeNull();
+    await expect(readSessionExecutionRecord(
+      cache,
+      'ws_raw_string',
+      'proj_raw_string',
+      'sess_raw_string',
+    )).resolves.toBeNull();
+  });
+
+  it('writes session stream state as canonical structured execution truth', async () => {
+    const cache = new InMemoryCache();
+
+    await writeSessionStreamState(cache, 'ws_state', 'proj_state', 'sess_state', 'running', 60);
+
+    const raw = await cache.get('chat:session-stream:ws_state:proj_state:sess_state');
+    expect(raw).toContain('"status":"running"');
+    expect(raw).not.toBe('running');
+    await expect(readSessionStreamState(cache, 'ws_state', 'proj_state', 'sess_state')).resolves.toBe('running');
+    await expect(readSessionExecutionRecord(cache, 'ws_state', 'proj_state', 'sess_state')).resolves.toMatchObject({
+      workspaceId: 'ws_state',
+      projectId: 'proj_state',
+      sessionId: 'sess_state',
       status: 'running',
       phase: 'streaming',
-      transport: 'direct_provider',
     });
+  });
+
+  it('rejects legacy runner fields from structured state reads and writes', async () => {
+    const cache = new InMemoryCache();
+
+    await cache.set(
+      'chat:session-stream:ws_legacy_shape:proj_legacy_shape:sess_legacy_shape',
+      JSON.stringify({
+        workspaceId: 'ws_legacy_shape',
+        projectId: 'proj_legacy_shape',
+        sessionId: 'sess_legacy_shape',
+        streamId: 'stream_legacy_shape',
+        ownerInstanceId: 'api-test',
+        transport: 'agent_runner',
+        internalAgent: true,
+        status: 'running',
+        phase: 'streaming',
+        startedAt: '2026-04-23T12:00:00.000Z',
+        updatedAt: '2026-04-23T12:00:00.000Z',
+        endpointId: 'ep_legacy_shape',
+        externalAgentId: 'agent_legacy_shape',
+      }),
+      60,
+    );
+
+    const parsed = await readSessionExecutionRecord(
+      cache,
+      'ws_legacy_shape',
+      'proj_legacy_shape',
+      'sess_legacy_shape',
+    );
+    expect(parsed).toBeNull();
+
+    await expect(writeSessionExecutionRecord(
+      cache,
+      {
+        workspaceId: 'ws_clean_write',
+        projectId: 'proj_clean_write',
+        sessionId: 'sess_clean_write',
+        streamId: 'stream_clean_write',
+        ownerInstanceId: 'api-test',
+        transport: 'agent_runner',
+        internalAgent: true,
+        status: 'running',
+        phase: 'streaming',
+        startedAt: '2026-04-23T12:00:00.000Z',
+        updatedAt: '2026-04-23T12:00:00.000Z',
+        endpointId: 'ep_clean_write',
+        externalAgentId: 'agent_clean_write',
+      } as never,
+      60,
+    )).rejects.toThrowError('chat_session_execution_legacy_field');
+
+    const storedRaw = await cache.get('chat:session-stream:ws_clean_write:proj_clean_write:sess_clean_write');
+    expect(storedRaw).toBeNull();
+  });
+
+  it('rejects legacy external agent endpoint ids instead of normalizing them', async () => {
+    const cache = new InMemoryCache();
+
+    await expect(writeSessionExecutionRecord(
+      cache,
+      {
+        workspaceId: 'ws_agent_endpoint',
+        projectId: 'proj_agent_endpoint',
+        sessionId: 'sess_agent_endpoint',
+        streamId: 'stream_agent_endpoint',
+        ownerInstanceId: 'api-test',
+        status: 'running',
+        phase: 'streaming',
+        startedAt: '2026-04-23T12:00:00.000Z',
+        updatedAt: '2026-04-23T12:00:00.000Z',
+        endpointId: 'agent:agent_legacy',
+      },
+      60,
+    )).rejects.toThrowError('chat_session_execution_legacy_field');
+  });
+
+  it('rejects legacy runner fields on begin execution inputs', async () => {
+    const cache = new InMemoryCache();
+
+    await expect(beginSessionExecution(
+      cache,
+      {
+        workspaceId: 'ws_begin_legacy',
+        projectId: 'proj_begin_legacy',
+        sessionId: 'sess_begin_legacy',
+        streamId: 'stream_begin_legacy',
+        startedAt: '2026-04-23T12:00:00.000Z',
+        transport: 'agent_runner',
+      } as never,
+      60,
+    )).rejects.toThrowError('chat_session_execution_legacy_field');
   });
 
   it('persists and reads the structured session execution record', async () => {
@@ -71,15 +180,12 @@ describe('chat session execution record', () => {
         sessionId: 'sess_record',
         streamId: 'stream_record',
         ownerInstanceId: 'api-test',
-        transport: 'agent_runner',
-        internalAgent: true,
         status: 'stopping',
         phase: 'dispatching',
         startedAt: '2026-04-23T12:00:00.000Z',
         updatedAt: '2026-04-23T12:00:01.000Z',
         requestId: 'req_record',
         endpointId: 'ep_record',
-        externalAgentId: 'agent_record',
         stopRequestedAt: '2026-04-23T12:00:01.000Z',
         stopReason: 'session_stop',
       },
@@ -92,15 +198,12 @@ describe('chat session execution record', () => {
       sessionId: 'sess_record',
       streamId: 'stream_record',
       ownerInstanceId: 'api-test',
-      transport: 'agent_runner',
-      internalAgent: true,
       status: 'stopping',
       phase: 'dispatching',
       startedAt: '2026-04-23T12:00:00.000Z',
       updatedAt: '2026-04-23T12:00:01.000Z',
       requestId: 'req_record',
       endpointId: 'ep_record',
-      externalAgentId: 'agent_record',
       stopRequestedAt: '2026-04-23T12:00:01.000Z',
       stopReason: 'session_stop',
     });
@@ -118,8 +221,6 @@ describe('chat session execution record', () => {
         sessionId: 'sess_terminate',
         streamId: 'stream_terminate',
         ownerInstanceId: 'api-test',
-        transport: 'agent_runner',
-        internalAgent: true,
         status: 'running',
         phase: 'streaming',
         startedAt: '2026-04-23T12:00:00.000Z',
@@ -169,8 +270,6 @@ describe('chat session execution record', () => {
         sessionId: 'sess_terminate_cas',
         streamId: 'stream_terminate_cas',
         ownerInstanceId: 'api-test',
-        transport: 'agent_runner',
-        internalAgent: true,
         status: 'running',
         phase: 'streaming',
         startedAt: '2026-04-23T12:00:00.000Z',
@@ -225,8 +324,6 @@ describe('chat session execution record', () => {
         sessionId: 'sess_terminal_debt',
         streamId: 'stream_terminal_debt',
         ownerInstanceId: 'api-test',
-        transport: 'agent_runner',
-        internalAgent: true,
         status: 'stopped',
         phase: 'terminal',
         startedAt: '2026-04-23T12:00:00.000Z',
@@ -284,8 +381,6 @@ describe('chat session execution record', () => {
         sessionId: 'sess_terminal_requested_debt',
         streamId: 'stream_terminal_requested_debt',
         ownerInstanceId: 'api-test',
-        transport: 'agent_runner',
-        internalAgent: true,
         status: 'stopped',
         phase: 'terminal',
         startedAt: '2026-04-23T12:00:00.000Z',
@@ -330,8 +425,6 @@ describe('chat session execution record', () => {
         sessionId: 'sess_ttl_debt',
         streamId: 'stream_ttl_debt',
         ownerInstanceId: 'api-test',
-        transport: 'agent_runner',
-        internalAgent: true,
         status: 'stopped',
         phase: 'terminal',
         startedAt: '2026-04-23T12:30:00.000Z',
@@ -367,8 +460,6 @@ describe('chat session execution record', () => {
         projectId: 'proj_ttl_debt',
         sessionId: 'sess_ttl_debt',
         streamId: 'stream_after_ttl',
-        transport: 'agent_runner',
-        internalAgent: true,
         startedAt: '2026-04-23T12:30:03.000Z',
       },
       60,
@@ -386,8 +477,6 @@ describe('chat session execution record', () => {
         sessionId: 'sess_release_debt',
         streamId: 'stream_release_debt',
         ownerInstanceId: 'api-test',
-        transport: 'agent_runner',
-        internalAgent: true,
         status: 'stopped',
         phase: 'terminal',
         startedAt: '2026-04-23T12:40:00.000Z',
@@ -437,8 +526,6 @@ describe('chat session execution record', () => {
         projectId: 'proj_release_debt',
         sessionId: 'sess_release_debt',
         streamId: 'stream_after_release',
-        transport: 'agent_runner',
-        internalAgent: true,
         startedAt: '2026-04-23T12:40:06.000Z',
       },
       60,
@@ -459,8 +546,6 @@ describe('chat session execution record', () => {
         sessionId: 'sess_release_fence',
         streamId: 'stream_release_fence',
         ownerInstanceId: 'api-test',
-        transport: 'agent_runner',
-        internalAgent: true,
         status: 'stopped',
         phase: 'terminal',
         startedAt: '2026-04-23T13:00:00.000Z',
@@ -549,8 +634,6 @@ describe('chat session execution record', () => {
         projectId: 'proj_release_fence',
         sessionId: 'sess_release_fence',
         streamId: 'stream_after_fenced_release',
-        transport: 'agent_runner',
-        internalAgent: true,
         startedAt: '2026-04-23T13:00:07.000Z',
       },
       60,
@@ -571,8 +654,6 @@ describe('chat session execution record', () => {
         sessionId: 'sess_failure_fence',
         streamId: 'stream_failure_fence',
         ownerInstanceId: 'api-test',
-        transport: 'agent_runner',
-        internalAgent: true,
         status: 'terminating',
         phase: 'dispatching',
         startedAt: '2026-04-23T13:10:00.000Z',
@@ -622,7 +703,7 @@ describe('chat session execution record', () => {
     });
   });
 
-  it('does not overwrite structured execution records with legacy state when stopping active streams', async () => {
+  it('does not overwrite structured execution records with fallback state when stopping active streams', async () => {
     const cache = new InMemoryCache();
     await writeSessionExecutionRecord(
       cache,
@@ -632,13 +713,10 @@ describe('chat session execution record', () => {
         sessionId: 'sess_structured_stop',
         streamId: 'stream_structured_stop',
         ownerInstanceId: 'api-test',
-        transport: 'agent_runner',
-        internalAgent: true,
         status: 'running',
         phase: 'streaming',
         startedAt: '2026-04-23T12:00:00.000Z',
         updatedAt: '2026-04-23T12:00:00.000Z',
-        externalAgentId: 'agent_structured_stop',
       },
       60,
     );
@@ -651,7 +729,7 @@ describe('chat session execution record', () => {
       status: 'running',
       assistantMessageId: 'msg_structured_stop',
       parentMessageId: null,
-      endpointId: 'agent:agent_structured_stop',
+      endpointId: 'ep_structured_stop',
       model: 'gpt-5-codex',
       contentSoFar: '',
       clients: new Set(),
@@ -672,11 +750,8 @@ describe('chat session execution record', () => {
       'sess_structured_stop',
     )).resolves.toMatchObject({
       streamId: 'stream_structured_stop',
-      transport: 'agent_runner',
-      internalAgent: true,
       status: 'stopping',
       stopMode: 'cancel',
-      externalAgentId: 'agent_structured_stop',
     });
   });
 });

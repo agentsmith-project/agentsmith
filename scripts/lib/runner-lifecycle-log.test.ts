@@ -49,8 +49,8 @@ function isConnected(logContent: string): boolean {
 describe('runner lifecycle log parser', () => {
   it('treats connected followed by stable shutting_down as not healthy', () => {
     const logs = [
-      '[notebook-codex-runner] runner_state=connected reason=websocket_open',
-      '[notebook-codex-runner] runner_state=shutting_down reason=websocket_close',
+      '[agent-task-runner] runner_state=connected reason=websocket_open',
+      '[agent-task-runner] runner_state=shutting_down reason=websocket_close',
     ].join('\n');
 
     expect(latestState(logs)).toBe('shutting_down');
@@ -59,8 +59,8 @@ describe('runner lifecycle log parser', () => {
 
   it('treats connected followed by stable disconnected as not healthy', () => {
     const logs = [
-      '[notebook-codex-runner] runner_state=connected reason=websocket_open',
-      '[notebook-codex-runner] runner_state=disconnected reason=websocket_close',
+      '[agent-task-runner] runner_state=connected reason=websocket_open',
+      '[agent-task-runner] runner_state=disconnected reason=websocket_close',
     ].join('\n');
 
     expect(latestState(logs)).toBe('disconnected');
@@ -69,8 +69,8 @@ describe('runner lifecycle log parser', () => {
 
   it('treats legacy connected followed by legacy shutting down as not healthy', () => {
     const logs = [
-      '[notebook-codex-runner] connected',
-      '[notebook-codex-runner] shutting down (websocket_close)',
+      '[agent-task-runner] connected',
+      '[agent-task-runner] shutting down (websocket_close)',
     ].join('\n');
 
     expect(latestState(logs)).toBe('shutting_down');
@@ -78,12 +78,12 @@ describe('runner lifecycle log parser', () => {
   });
 
   it('returns stale when no lifecycle transition is observed', () => {
-    expect(latestState('[notebook-codex-runner] booting\n')).toBe('stale');
-    expect(isConnected('[notebook-codex-runner] booting\n')).toBe(false);
+    expect(latestState('[agent-task-runner] booting\n')).toBe('stale');
+    expect(isConnected('[agent-task-runner] booting\n')).toBe(false);
   });
 
   it('keeps a lone legacy connected line compatible for old runner images', () => {
-    expect(latestState('[notebook-codex-runner] connected\n')).toBe('connected');
-    expect(isConnected('[notebook-codex-runner] connected\n')).toBe(true);
+    expect(latestState('[agent-task-runner] connected\n')).toBe('connected');
+    expect(isConnected('[agent-task-runner] connected\n')).toBe(true);
   });
 });

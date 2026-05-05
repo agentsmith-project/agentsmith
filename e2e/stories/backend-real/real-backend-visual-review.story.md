@@ -80,10 +80,10 @@
       ]
     },
     {
-      "sceneId": "project-notebook",
-      "route": "/en-US/workspaces/{workspaceId}/projects/{projectId}/notebook",
+      "sceneId": "project-agent-tasks",
+      "route": "/en-US/workspaces/{workspaceId}/projects/{projectId}/agent-tasks",
       "stableMarkers": [
-        "notebook__task-list"
+        "agent-tasks__task-list"
       ]
     },
     {
@@ -108,10 +108,10 @@
       ]
     },
     {
-      "sceneId": "project-agents",
-      "route": "/en-US/workspaces/{workspaceId}/projects/{projectId}/agents",
+      "sceneId": "project-agent-runners",
+      "route": "/en-US/workspaces/{workspaceId}/projects/{projectId}/agent-runners",
       "stableMarkers": [
-        "agents__create-btn"
+        "agent-runners__create-btn"
       ]
     },
     {
@@ -309,13 +309,13 @@
       ]
     },
     {
-      "stepId": "project-notebook",
-      "sceneId": "project-notebook",
-      "intent": "Open project notebook",
-      "action": "Open project notebook",
-      "target": "notebook__task-list",
-      "expectedFeedback": "真实 backend 的 notebook 工作面",
-      "note": "真实 backend 的 notebook 工作面",
+      "stepId": "project-agent-tasks",
+      "sceneId": "project-agent-tasks",
+      "intent": "Open project agent-task",
+      "action": "Open project agent-task",
+      "target": "agent-tasks__task-list",
+      "expectedFeedback": "真实 backend 的 Agent Task 工作面",
+      "note": "真实 backend 的 Agent Task 工作面",
       "evidence": [
         "trace",
         "visual"
@@ -361,13 +361,13 @@
       ]
     },
     {
-      "stepId": "project-agents",
-      "sceneId": "project-agents",
-      "intent": "Open project agents",
-      "action": "Open project agents",
-      "target": "agents__create-btn",
-      "expectedFeedback": "真实 backend 的 agents 工作面",
-      "note": "真实 backend 的 agents 工作面",
+      "stepId": "project-agent-runners",
+      "sceneId": "project-agent-runners",
+      "intent": "Open project Agent Runners",
+      "action": "Open project Agent Runners",
+      "target": "agent-runners__create-btn",
+      "expectedFeedback": "真实 backend 的 Agent Runners 工作面",
+      "note": "真实 backend 的 Agent Runners 工作面",
       "evidence": [
         "trace",
         "visual"

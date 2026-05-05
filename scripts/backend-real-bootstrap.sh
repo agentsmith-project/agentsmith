@@ -60,8 +60,8 @@ run_keycloak_init_with_retry
 info "ensuring default workspace"
 (cd "${ROOT_DIR}" && MONGO_URL="${MONGO_URL}" MONGO_DB_NAME="${MONGO_DB_NAME}" KEYCLOAK_BASE_URL="${KEYCLOAK_BASE_URL}" KEYCLOAK_REALM="${KEYCLOAK_REALM}" KEYCLOAK_CLIENT_ID="${KEYCLOAK_CLIENT_ID}" npx tsx scripts/ensure-default-workspace.ts >/dev/null)
 
-info "refreshing notebook token"
-(cd "${ROOT_DIR}" && REFRESH_TOKEN_FORCE_PASSWORD_GRANT=1 BASE_URL="${RUNTIME_BROWSER_WEB_BASE_URL}" make notebook-agent-refresh-token >/dev/null)
+info "refreshing agent runner token"
+(cd "${ROOT_DIR}" && REFRESH_TOKEN_FORCE_PASSWORD_GRANT=1 BASE_URL="${RUNTIME_BROWSER_WEB_BASE_URL}" make agent-runner-refresh-token >/dev/null)
 
 state_set_string release.phase "bootstrap_completed"
 state_set_string workspace.id "ws_default"

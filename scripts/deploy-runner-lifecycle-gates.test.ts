@@ -5,7 +5,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
 
-const rawHistoricalConnectedGrep = /grep\s+(-q\s+)?['"]\\?\[notebook-codex-runner\\?\]\s+connected['"]/;
+const rawHistoricalConnectedGrep = /grep\s+(-q\s+)?['"]\\?\[agent-task-runner\\?\]\s+connected['"]/;
 
 async function readRepoFile(relativePath: string): Promise<string> {
   return readFile(path.resolve(process.cwd(), relativePath), 'utf8');
@@ -86,32 +86,14 @@ function runRuntimeNoProxy(env: NodeJS.ProcessEnv = {}): string {
   }
 }
 
-function runBootstrapRuntimeProxyReuseCheck(envListing: string, env: NodeJS.ProcessEnv = {}): string {
-  const tempRoot = mkdtempSync(path.join(os.tmpdir(), 'bootstrap-runtime-proxy-'));
+function runRuntimeProxyFingerprint(env: NodeJS.ProcessEnv = {}): string {
+  const tempRoot = mkdtempSync(path.join(os.tmpdir(), 'runtime-proxy-fingerprint-'));
   try {
     const releaseRoot = stageBundledKubectlFixture(tempRoot);
     const result = runBash(
       `
         source scripts/lib/common.sh
-        source scripts/lib/bootstrap-common.sh
-
-        docker() {
-          if [[ "$1" == "inspect" && "$2" == "-f" ]]; then
-            cat <<'EOF'
-${envListing}
-EOF
-            return 0
-          fi
-          printf 'unexpected docker invocation: %s\\n' "$*" >&2
-          return 1
-        }
-
-        EXTERNAL_RUNNER_CONTAINER_NAME=test-external-runner
-        if external_runner_has_expected_runtime_proxy_env; then
-          printf 'match\\n'
-        else
-          printf 'mismatch\\n'
-        fi
+        printf '%s\\n' "$(runtime_proxy_env_fingerprint)"
       `,
       {
         HOME: tempRoot,
@@ -128,19 +110,21 @@ EOF
 }
 
 describe('deploy runner lifecycle gates', () => {
-  it('keeps external Docker runner checks on the shared lifecycle parser instead of raw historical grep', async () => {
+  it('keeps Agent task runner checks on the shared lifecycle parser instead of raw log grep', async () => {
     const bootstrapCommon = await readRepoFile('scripts/lib/bootstrap-common.sh');
     const runtimeVerification = await readRepoFile('scripts/lib/runtime-verification.sh');
     const upgradeStatus = await readRepoFile('scripts/cluster-deploy/upgrade-status.sh');
 
-    for (const source of [bootstrapCommon, runtimeVerification, upgradeStatus]) {
+    for (const source of [runtimeVerification]) {
       expect(source).toContain('runner-lifecycle-log.sh');
       expect(source).toContain('runner_lifecycle_logs_connected');
       expect(source).not.toMatch(rawHistoricalConnectedGrep);
     }
+    expect(bootstrapCommon).not.toContain('external_runner_has_expected_runtime_proxy_env');
+    expect(upgradeStatus).not.toMatch(rawHistoricalConnectedGrep);
   });
 
-  it('keeps local-manual runner health on the same lifecycle parser used by external Docker runner checks', async () => {
+  it('keeps local-manual runner health on the same lifecycle parser used by deployment runner checks', async () => {
     const localManualCommon = await readRepoFile('scripts/local-manual/common.sh');
 
     expect(localManualCommon).toContain('runner-lifecycle-log.sh');
@@ -157,8 +141,42 @@ describe('deploy runner lifecycle gates', () => {
     expect(bootstrapCommon).not.toContain('INTEGRATION_PUBLIC_WEB_BASES="\'"${PUBLIC_WEB_BASE_URL}"\'"');
   });
 
-  it('keeps rendered env and Docker runtime launches on a shared runtime proxy helper', async () => {
+  it('seeds managed Agent Runners through the target route without legacy runner payload fields', async () => {
     const bootstrapCommon = await readRepoFile('scripts/lib/bootstrap-common.sh');
+    const initResources = await readRepoFile('scripts/agent-runner-init-resources.sh');
+
+    for (const source of [bootstrapCommon, initResources]) {
+      expect(source).toContain('/agent-runners');
+      expect(source).not.toContain('/agents?page');
+      expect(source).not.toContain('/agents/${');
+      expect(source).not.toContain('mode:"managed"');
+      expect(source).not.toContain("mode: 'internal'");
+      expect(source).not.toContain('runner_runtime');
+      expect(source).not.toContain('execution_preferences');
+      expect(source).not.toContain('external_agent_id');
+    }
+
+    expect(initResources).toContain('AGENT_RUNNER_ID=');
+    expect(initResources).toContain('state_set_string agent_runner.id');
+    expect(initResources).toContain('AGENT_RUNNER_ID=${AGENT_RUNNER_ID}');
+    expect(initResources).not.toContain('AGENT_ID=${AGENT_ID}');
+  });
+
+  it('checks preset Agent task file-library readiness without task runner selectors', async () => {
+    const rootPresetCheck = await readRepoFile('scripts/check-preset-agent-task-file-library.sh');
+    const demoPresetCheck = await readRepoFile('scripts/demo-deploy/check-preset-agent-task-file-library.sh');
+
+    for (const source of [rootPresetCheck, demoPresetCheck]) {
+      expect(source).toContain('/agent-runners?page=1&page_size=100');
+      expect(source).not.toContain('/agents?page=1&page_size=100');
+      expect(source).not.toContain('"agent_id"');
+      expect(source).not.toContain('"runner_id"');
+      expect(source).not.toContain('AGENT_ID');
+      expect(source).toContain('AGENT_RUNNER_ID');
+    }
+  });
+
+  it('keeps rendered env and Docker runtime launches on a shared runtime proxy helper', async () => {
     const clusterVerify = await readRepoFile('scripts/cluster-deploy/verify.sh');
     const demoRender = await readRepoFile('scripts/demo-deploy/render-env.sh');
     const clusterRender = await readRepoFile('scripts/cluster-deploy/render-env.sh');
@@ -169,10 +187,22 @@ describe('deploy runner lifecycle gates', () => {
     expect(deployCommon).toContain('runtime_proxy_mode');
     expect(deployCommon).toContain('runtime_proxy_env_fingerprint');
 
-    expect(bootstrapCommon).toContain('docker_run_runtime_proxy_env_args');
     expect(clusterVerify).toContain('docker_run_runtime_proxy_env_args');
     expect(demoRender).toContain('compose_runtime_proxy_env');
     expect(clusterRender).toContain('compose_runtime_proxy_env');
+  });
+
+  it('does not pass formal external agent runtime env through deploy verification', async () => {
+    const demoRender = await readRepoFile('scripts/demo-deploy/render-env.sh');
+    const demoVerify = await readRepoFile('scripts/demo-deploy/verify.sh');
+    const clusterRender = await readRepoFile('scripts/cluster-deploy/render-env.sh');
+    const clusterVerify = await readRepoFile('scripts/cluster-deploy/verify.sh');
+
+    for (const source of [demoRender, demoVerify, clusterRender, clusterVerify]) {
+      expect(source).not.toContain('EXTERNAL_AGENT_EXECUTION_HTTP_BASE_URL');
+      expect(source).not.toContain('EXTERNAL_AGENT_JUICEFS_');
+      expect(source).not.toContain('DOCKER_MANUAL_AGENT_');
+    }
   });
 
   it('renders docker runtime proxy env args from sanitized, inherit, and custom runtime proxy truth', () => {
@@ -262,23 +292,16 @@ describe('deploy runner lifecycle gates', () => {
     expect(noProxy).toContain('cache.example.test');
   });
 
-  it('marks external runner runtime proxy env as stale when proxy values drift but NO_PROXY stays the same', async () => {
-    const bootstrapCommon = await readRepoFile('scripts/lib/bootstrap-common.sh');
-
-    expect(bootstrapCommon).toContain('external_runner_has_expected_runtime_proxy_env');
-    expect(bootstrapCommon).toContain('proxy environment is stale');
-
-    const driftResult = runBootstrapRuntimeProxyReuseCheck(
-      [
-        'HTTP_PROXY=http://old-http.example:8080',
-        'HTTPS_PROXY=http://old-https.example:8443',
-        'ALL_PROXY=socks5://old-all.example:1080',
-        'http_proxy=http://old-http.example:8080',
-        'https_proxy=http://old-https.example:8443',
-        'all_proxy=socks5://old-all.example:1080',
-        'NO_PROXY=shared.internal',
-        'no_proxy=shared.internal',
-      ].join('\n'),
+  it('changes the runtime proxy fingerprint when proxy values drift even if NO_PROXY stays the same', () => {
+    const oldFingerprint = runRuntimeProxyFingerprint({
+      RUNTIME_PROXY_MODE: 'custom',
+      RUNTIME_HTTP_PROXY: 'http://old-http.example:8080',
+      RUNTIME_HTTPS_PROXY: 'http://old-https.example:8443',
+      RUNTIME_ALL_PROXY: 'socks5://old-all.example:1080',
+      NO_PROXY: 'shared.internal',
+      no_proxy: 'shared.internal',
+    });
+    const newFingerprint = runRuntimeProxyFingerprint(
       {
         RUNTIME_PROXY_MODE: 'custom',
         RUNTIME_HTTP_PROXY: 'http://new-http.example:8080',
@@ -289,6 +312,6 @@ describe('deploy runner lifecycle gates', () => {
       },
     );
 
-    expect(driftResult).toBe('mismatch');
+    expect(newFingerprint).not.toBe(oldFingerprint);
   });
 });

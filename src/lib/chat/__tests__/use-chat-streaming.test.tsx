@@ -37,10 +37,10 @@ const streamMessages = {
   streamingFailed: 'streaming failed',
   stopRequiredBeforeReplaceFailed: 'stop required',
   stopFailedRetry: 'stop failed',
-  streamErrorAgentOffline: 'agent offline',
-  streamErrorAgentTimeout: 'agent timeout',
-  streamErrorAgentProtocol: 'agent protocol error',
-  streamErrorAgentUpstream: 'agent upstream error',
+  streamErrorProviderUnavailable: 'provider unavailable',
+  streamErrorProviderTimeout: 'provider timeout',
+  streamErrorProviderProtocol: 'provider protocol error',
+  streamErrorProviderUpstream: 'provider upstream error',
   streamWarningSessionWorkspaceRecreated: 'workspace reclaimed',
   streamStopEscalationUnavailable: 'Forced stop is not available.',
 };
@@ -995,7 +995,7 @@ describe('useChatStreaming attach recovery', () => {
     const fetchMock = vi.fn().mockResolvedValue(
       createSseResponse([
         { event: 'meta', data: { stream_id: 'st_recovery', assistant_message_id: 'm_asst' } },
-        { event: 'error', data: { error_code: 'AGENT_UPSTREAM_ERROR', message: 'Provider attach failed' } },
+        { event: 'error', data: { error_code: 'STREAM_UPSTREAM_ERROR', message: 'Provider attach failed' } },
       ]),
     );
     vi.stubGlobal('fetch', fetchMock as unknown as typeof fetch);
@@ -1056,7 +1056,7 @@ describe('useChatStreaming attach recovery', () => {
 
       expect(result.current.streamStateBySession['s_1']).toMatchObject({
         status: 'error',
-        errorMessage: 'agent upstream error',
+        errorMessage: 'provider upstream error',
       });
 
       await act(async () => {
@@ -1065,7 +1065,7 @@ describe('useChatStreaming attach recovery', () => {
 
       expect(result.current.streamStateBySession['s_1']).toMatchObject({
         status: 'error',
-        errorMessage: 'agent upstream error',
+        errorMessage: 'provider upstream error',
       });
     } finally {
       vi.stubGlobal('fetch', originalFetch);
@@ -1073,12 +1073,12 @@ describe('useChatStreaming attach recovery', () => {
     }
   });
 
-  it('maps agent protocol stream error to dedicated user message', async () => {
+  it('maps provider protocol stream error to dedicated user message', async () => {
     const originalFetch = global.fetch;
     const fetchMock = vi.fn().mockResolvedValue(
       createSseResponse([
         { event: 'meta', data: { stream_id: 'st_protocol', assistant_message_id: 'm_asst' } },
-        { event: 'error', data: { error_code: 'AGENT_PROTOCOL_ERROR', message: 'agent_response_delta_invalid' } },
+        { event: 'error', data: { error_code: 'PROVIDER_PROTOCOL_ERROR', message: 'provider_response_delta_invalid' } },
       ]),
     );
     vi.stubGlobal('fetch', fetchMock as unknown as typeof fetch);
@@ -1141,7 +1141,7 @@ describe('useChatStreaming attach recovery', () => {
     await waitFor(() => {
       expect(result.current.streamStateBySession['s_1']?.status ?? 'idle').toBe('error');
     });
-    expect(toast.error).toHaveBeenCalledWith('agent protocol error');
+    expect(toast.error).toHaveBeenCalledWith('provider protocol error');
 
     vi.stubGlobal('fetch', originalFetch);
   });

@@ -6,7 +6,7 @@
   "lane": "mock-lane",
   "entryRoute": "/en-US/workspaces/ws_default",
   "goal": "统一描述 workspace 与 project 核心工作面的 mock-lane visual scene 真相。",
-  "narrative": "Workspace/project core scenes cover workspace home, project discovery, overview, chat, notebook, files, and the key modal states in that workflow without mixing in connection lifecycle management.",
+  "narrative": "Workspace/project core scenes cover workspace home, project discovery, overview, chat, Agent tasks, files, and the key modal states in that workflow without mixing in connection lifecycle management.",
   "scenes": [
     {
       "sceneId": "workspace-home-project-creator",
@@ -162,44 +162,44 @@
       ]
     },
     {
-      "sceneId": "notebook",
-      "route": "/en-US/workspaces/ws_default/projects/proj_001/notebook",
+      "sceneId": "agent-tasks",
+      "route": "/en-US/workspaces/ws_default/projects/proj_001/agent-tasks",
       "recipeFamily": "work_surface_immersive",
       "authLane": "authed",
       "stableMarkers": [
-        "notebook__task-list",
-        "notebook__create-task-btn"
+        "agent-tasks__task-list",
+        "agent-tasks__create-task-btn"
       ]
     },
     {
-      "sceneId": "notebook-create-task-dialog",
-      "route": "/en-US/workspaces/ws_default/projects/proj_001/notebook",
+      "sceneId": "agent-tasks-create-task-dialog",
+      "route": "/en-US/workspaces/ws_default/projects/proj_001/agent-tasks",
       "recipeFamily": "overlay_dialog",
       "authLane": "authed",
       "stableMarkers": [
-        "notebook__create-task-btn"
+        "agent-tasks__create-task-btn"
       ]
     },
     {
-      "sceneId": "notebook-task-detail",
-      "route": "/en-US/workspaces/ws_default/projects/proj_001/notebook/tasks/task_001",
+      "sceneId": "agent-task-detail",
+      "route": "/en-US/workspaces/ws_default/projects/proj_001/agent-tasks/task_001",
       "recipeFamily": "work_surface_immersive",
       "authLane": "authed",
       "stableMarkers": [
-        "notebook__task-header",
-        "notebook__conversation-input",
-        "notebook__send-btn"
+        "agent-task__task-header",
+        "agent-tasks__conversation-input",
+        "agent-tasks__send-btn"
       ]
     },
     {
-      "sceneId": "notebook-task-detail-artifact-hover",
-      "route": "/en-US/workspaces/ws_default/projects/proj_001/notebook/tasks/task_001",
+      "sceneId": "agent-task-detail-artifact-hover",
+      "route": "/en-US/workspaces/ws_default/projects/proj_001/agent-tasks/task_001",
       "recipeFamily": "work_surface_immersive",
       "authLane": "authed",
       "stableMarkers": [
-        "notebook__task-header",
-        "notebook__artifact-card",
-        "notebook__artifact-hover-panel"
+        "agent-task__task-header",
+        "agent-tasks__artifact-card",
+        "agent-tasks__artifact-hover-panel"
       ]
     },
     {
@@ -544,20 +544,20 @@
           ]
         },
         {
-          "sceneId": "notebook",
-          "scenarioId": "notebook",
-          "scenario": "Notebook list work surface.",
+          "sceneId": "agent-tasks",
+          "scenarioId": "agent-tasks",
+          "scenario": "Agent tasks list work surface.",
           "group": "project_pages",
           "codeRefs": [
             "e2e/visual.spec.ts",
-            "src/app/[locale]/workspaces/[workspace]/projects/[project]/(shell)/notebook/page.tsx"
+            "src/app/[locale]/workspaces/[workspace]/projects/[project]/(shell)/agent-tasks/page.tsx"
           ],
           "capture": "full_page",
           "authLane": "authed",
           "uxState": "happy",
           "semanticAssertions": {
             "requiredViewportTestIds": [
-              "notebook__create-task-btn"
+              "agent-tasks__create-task-btn"
             ]
           },
           "themes": [
@@ -566,13 +566,13 @@
           ]
         },
         {
-          "sceneId": "notebook-create-task-dialog",
-          "scenarioId": "notebook-create-task-dialog",
-          "scenario": "Create task dialog opened from notebook.",
+          "sceneId": "agent-tasks-create-task-dialog",
+          "scenarioId": "agent-tasks-create-task-dialog",
+          "scenario": "Create task dialog opened from Agent tasks.",
           "group": "project_pages",
           "codeRefs": [
             "e2e/visual.spec.ts",
-            "src/app/[locale]/workspaces/[workspace]/projects/[project]/(shell)/notebook/page.tsx"
+            "src/app/[locale]/workspaces/[workspace]/projects/[project]/(shell)/agent-tasks/page.tsx"
           ],
           "capture": "full_page",
           "authLane": "authed",
@@ -591,13 +591,13 @@
           ]
         },
         {
-          "sceneId": "notebook-task-detail",
-          "scenarioId": "notebook-task-detail",
-          "scenario": "Notebook task detail surface.",
+          "sceneId": "agent-task-detail",
+          "scenarioId": "agent-task-detail",
+          "scenario": "Agent task detail surface.",
           "group": "project_pages",
           "codeRefs": [
             "e2e/visual.spec.ts",
-            "src/app/[locale]/workspaces/[workspace]/projects/[project]/(shell)/notebook/tasks/[taskId]/page.tsx"
+            "src/app/[locale]/workspaces/[workspace]/projects/[project]/(shell)/agent-tasks/[taskId]/page.tsx"
           ],
           "capture": "full_page",
           "authLane": "authed",
@@ -607,13 +607,13 @@
           ]
         },
         {
-          "sceneId": "notebook-task-detail-artifact-hover",
-          "scenarioId": "notebook-task-detail-artifact-hover",
-          "scenario": "Notebook task detail with artifact hover state visible.",
+          "sceneId": "agent-task-detail-artifact-hover",
+          "scenarioId": "agent-task-detail-artifact-hover",
+          "scenario": "Agent task detail with artifact hover state visible.",
           "group": "project_pages",
           "codeRefs": [
             "e2e/visual.spec.ts",
-            "src/app/[locale]/workspaces/[workspace]/projects/[project]/(shell)/notebook/tasks/[taskId]/page.tsx"
+            "src/app/[locale]/workspaces/[workspace]/projects/[project]/(shell)/agent-tasks/[taskId]/page.tsx"
           ],
           "capture": "full_page",
           "authLane": "authed",

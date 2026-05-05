@@ -55,7 +55,8 @@ async function setupExecutionService(options?: {
 
   const agent = await agentResourceService.createAgent('ws_default', 'proj_1', {
     name: 'execution-agent',
-    mode: 'external',
+    runner_provider: 'developer',
+    ...(options?.endpointId ? { default_endpoint_id: options.endpointId } : {}),
     ...(persistedInteractionKind ? { interaction_kind: persistedInteractionKind } : {}),
     ...(options?.endpointId
       ? {
@@ -69,7 +70,7 @@ async function setupExecutionService(options?: {
   });
   const keyPair = await agentResourceService.createAgentKey('ws_default', 'proj_1', agent.id);
 
-  const ws = new WebSocket(`${wsBase}/api/v1/agent-execution/ws?agent_id=${encodeURIComponent(agent.id)}`, {
+  const ws = new WebSocket(`${wsBase}/api/v1/agent-execution/ws?agent_runner_id=${encodeURIComponent(agent.id)}`, {
     headers: { Authorization: `Bearer ${keyPair.key}` },
   });
   sockets.push(ws);
@@ -120,10 +121,16 @@ async function openAgentWebSocket(input: {
   agentId: string;
   key: string;
   sessionId?: string;
+  queryMode?: 'canonical' | 'legacy';
 }): Promise<WebSocket> {
   const url = new URL(`${input.wsBase}/api/v1/agent-execution/ws`);
-  url.searchParams.set('agent_id', input.agentId);
-  if (input.sessionId) url.searchParams.set('session_id', input.sessionId);
+  if (input.queryMode === 'legacy') {
+    url.searchParams.set('agent_id', input.agentId);
+    if (input.sessionId) url.searchParams.set('session_id', input.sessionId);
+  } else {
+    url.searchParams.set('agent_runner_id', input.agentId);
+    if (input.sessionId) url.searchParams.set('runner_session_id', input.sessionId);
+  }
   const ws = new WebSocket(url.toString(), {
     headers: { Authorization: `Bearer ${input.key}` },
   });
@@ -291,6 +298,62 @@ describe('AgentExecutionService', () => {
     expect(source).not.toContain('markAgentConnected(');
   });
 
+  it('accepts canonical runner websocket query params and records session scoped presence', async () => {
+    const agentResourceService = new AgentResourceService(new InMemoryJsonDocStore());
+    const executionService = new AgentExecutionService(agentResourceService);
+    const wsBase = await startExecutionServer(executionService);
+    const agent = await agentResourceService.createAgent('ws_default', 'proj_1', {
+      name: 'canonical-runner-query',
+      runner_provider: 'developer',
+    });
+    const keyPair = await agentResourceService.createAgentKey('ws_default', 'proj_1', agent.id);
+
+    await openAgentWebSocket({
+      wsBase,
+      agentId: agent.id,
+      key: keyPair.key,
+      sessionId: 'task_canonical_query',
+      queryMode: 'canonical',
+    });
+
+    await expect(
+      waitForSessionConnectionInfo(
+        agentResourceService,
+        agent.id,
+        'task_canonical_query',
+        (connection) => connection?.session_id === 'task_canonical_query',
+      ),
+    ).resolves.toEqual(expect.objectContaining({
+      session_id: 'task_canonical_query',
+      active_connection_count: 1,
+    }));
+    expect(executionService.getAgentSessionOnlineState(agent.id, 'task_canonical_query')).toBe(true);
+  });
+
+  it('rejects legacy runner websocket query params without recording presence', async () => {
+    const agentResourceService = new AgentResourceService(new InMemoryJsonDocStore());
+    const executionService = new AgentExecutionService(agentResourceService);
+    const wsBase = await startExecutionServer(executionService);
+    const agent = await agentResourceService.createAgent('ws_default', 'proj_1', {
+      name: 'legacy-runner-query',
+      runner_provider: 'developer',
+    });
+    const keyPair = await agentResourceService.createAgentKey('ws_default', 'proj_1', agent.id);
+
+    await expect(openAgentWebSocket({
+      wsBase,
+      agentId: agent.id,
+      key: keyPair.key,
+      sessionId: 'task_legacy_query',
+      queryMode: 'legacy',
+    })).rejects.toThrow(/Unexpected server response: 400/);
+
+    await expect(agentResourceService.getSessionConnectionInfo(agent.id, 'task_legacy_query', {
+      allowAgentFallback: false,
+    })).resolves.toBeNull();
+    expect(executionService.getAgentSessionOnlineState(agent.id, 'task_legacy_query')).toBe(false);
+  });
+
   it('includes static resource proxy base in server.hello when agent endpoint is configured', async () => {
     process.env.PUBLIC_API_BASE_URL = 'http://trusted.example/api/v1';
     const { helloFramePromise } = await setupExecutionService({
@@ -343,17 +406,12 @@ describe('AgentExecutionService', () => {
 
     const agent = await agentResourceService.createAgent('ws_default', 'proj_1', {
       name: 'secure-agent',
-      mode: 'external',
-      interaction_kind: 'chat',
-      execution_preferences_json: {
-        chat: {
-          endpoint_id: 'ep_secure',
-        },
-      },
+      runner_provider: 'developer',
+      default_endpoint_id: 'ep_secure',
     });
     const keyPair = await agentResourceService.createAgentKey('ws_default', 'proj_1', agent.id);
 
-    const ws = new WebSocket(`ws://127.0.0.1:${address.port}/api/v1/agent-execution/ws?agent_id=${encodeURIComponent(agent.id)}`, {
+    const ws = new WebSocket(`ws://127.0.0.1:${address.port}/api/v1/agent-execution/ws?agent_runner_id=${encodeURIComponent(agent.id)}`, {
       headers: {
         Authorization: `Bearer ${keyPair.key}`,
         Host: 'evil.example:8443',
@@ -439,17 +497,11 @@ describe('AgentExecutionService', () => {
     );
   });
 
-  it('records runner_spec mismatch in diagnostics without mutating execution preferences', async () => {
+  it('accepts runner_spec metadata without mutating execution preferences or matching interaction kind', async () => {
     process.env.PUBLIC_API_BASE_URL = 'http://trusted.example/api/v1';
     const { agentResourceService, agent, ws } = await setupExecutionService({
       interactionKind: 'chat',
       endpointId: 'ep_chat',
-    });
-
-    const closed = new Promise<{ code: number; reason: string }>((resolve) => {
-      ws.on('close', (code, reason) => {
-        resolve({ code, reason: reason.toString('utf-8') });
-      });
     });
 
     ws.send(JSON.stringify({
@@ -466,10 +518,7 @@ describe('AgentExecutionService', () => {
       },
     }));
 
-    await expect(closed).resolves.toEqual({
-      code: 1008,
-      reason: 'agent_runner_spec_mismatch',
-    });
+    await new Promise((resolve) => setTimeout(resolve, 50));
 
     const updated = await agentResourceService.getAgent('ws_default', 'proj_1', agent.id);
     expect(updated?.execution_preferences_json).toEqual({
@@ -477,26 +526,16 @@ describe('AgentExecutionService', () => {
         endpoint_id: 'ep_chat',
       },
     });
-    await expect(
-      agentResourceService.getDiagnostics('ws_default', 'proj_1', agent.id),
-    ).resolves.toEqual(expect.objectContaining({
-      last_error: 'agent_runner_spec_mismatch',
-      last_error_at: expect.any(String),
-      runner_spec_mismatch: {
-        expected_interaction_kind: 'chat',
-        actual_runner_spec: {
-          interaction_kind: 'notebook',
-          app_family: 'codex_runner',
-          protocol_version: '1.0',
-          context_model: 'cli_session',
-          workspace_policy: 'persistent_task_workspace',
-          supports_terminal: true,
-        },
+    const diagnostics = await agentResourceService.getDiagnostics('ws_default', 'proj_1', agent.id);
+    expect(diagnostics).toEqual(expect.objectContaining({
+      runtime_metadata: {
+        ready_at: expect.any(String),
       },
     }));
+    expect(diagnostics).not.toHaveProperty('runner_spec_mismatch');
   });
 
-  it('rejects agent.ready when the persisted agent is missing interaction_kind and records diagnostics', async () => {
+  it('accepts agent runner websocket connections without persisted interaction_kind', async () => {
     const agentResourceService = new AgentResourceService(new InMemoryJsonDocStore());
     const executionService = new AgentExecutionService(agentResourceService);
     const server = http.createServer((_req, res) => {
@@ -519,26 +558,20 @@ describe('AgentExecutionService', () => {
     });
     const keyPair = await agentResourceService.createAgentKey('ws_default', 'proj_1', agent.id);
     const ws = new WebSocket(
-      `ws://127.0.0.1:${address.port}/api/v1/agent-execution/ws?agent_id=${encodeURIComponent(agent.id)}`,
+      `ws://127.0.0.1:${address.port}/api/v1/agent-execution/ws?agent_runner_id=${encodeURIComponent(agent.id)}`,
       { headers: { Authorization: `Bearer ${keyPair.key}` } },
     );
     sockets.push(ws);
 
-    const error = await new Promise<Error>((resolve) => {
-      ws.once('error', (event) => resolve(event as Error));
+    await new Promise<void>((resolve, reject) => {
+      ws.once('open', () => resolve());
+      ws.once('error', reject);
     });
 
-    expect(error.message).toContain('Unexpected server response: 403');
-
-    await expect(
-      agentResourceService.getDiagnostics('ws_default', 'proj_1', agent.id),
-    ).resolves.toEqual(expect.objectContaining({
-      last_error: 'agent_interaction_kind_required',
-      last_error_at: expect.any(String),
-    }));
+    expect(ws.readyState).toBe(ws.OPEN);
   });
 
-  it('rejects unsupported interaction_mode records with interaction_kind_required', async () => {
+  it('accepts legacy interaction_mode records without using them as a runner gate', async () => {
     const docStore = new InMemoryJsonDocStore();
     const agentResourceService = new AgentResourceService(docStore);
     const executionService = new AgentExecutionService(agentResourceService);
@@ -570,34 +603,23 @@ describe('AgentExecutionService', () => {
     const keyPair = await agentResourceService.createAgentKey('ws_default', 'proj_1', 'ag_legacy_chat');
 
     const ws = new WebSocket(
-      `ws://127.0.0.1:${address.port}/api/v1/agent-execution/ws?agent_id=ag_legacy_chat`,
+      `ws://127.0.0.1:${address.port}/api/v1/agent-execution/ws?agent_runner_id=ag_legacy_chat`,
       { headers: { Authorization: `Bearer ${keyPair.key}` } },
     );
     sockets.push(ws);
 
-    const error = await new Promise<Error>((resolve) => {
-      ws.once('error', (event) => resolve(event as Error));
+    await new Promise<void>((resolve, reject) => {
+      ws.once('open', () => resolve());
+      ws.once('error', reject);
     });
 
-    expect(error.message).toContain('Unexpected server response: 403');
-    await expect(
-      agentResourceService.getDiagnostics('ws_default', 'proj_1', 'ag_legacy_chat'),
-    ).resolves.toEqual(expect.objectContaining({
-      last_error: 'agent_interaction_kind_required',
-      last_error_at: expect.any(String),
-    }));
+    expect(ws.readyState).toBe(ws.OPEN);
   });
 
-  it('rejects runner_spec interaction_kind mismatch during agent.ready handshake', async () => {
+  it('does not reject runner_spec interaction_kind mismatch during agent.ready handshake', async () => {
     const { agentResourceService, agent, ws } = await setupExecutionService();
     await agentResourceService.updateAgent('ws_default', 'proj_1', agent.id, {
       interaction_kind: 'chat',
-    });
-
-    const closed = new Promise<{ code: number; reason: string }>((resolve) => {
-      ws.on('close', (code, reason) => {
-        resolve({ code, reason: reason.toString('utf-8') });
-      });
     });
 
     ws.send(JSON.stringify({
@@ -609,22 +631,14 @@ describe('AgentExecutionService', () => {
       },
     }));
 
-    await expect(closed).resolves.toEqual({
-      code: 1008,
-      reason: 'agent_runner_spec_mismatch',
-    });
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    expect(ws.readyState).toBe(ws.OPEN);
   });
 
-  it('rejects runner_spec when notebook fields do not match the expected notebook app contract', async () => {
+  it('does not reject runner_spec when task runner fields differ from the old notebook app contract', async () => {
     const { agentResourceService, agent, ws } = await setupExecutionService();
     await agentResourceService.updateAgent('ws_default', 'proj_1', agent.id, {
       interaction_kind: 'notebook',
-    });
-
-    const closed = new Promise<{ code: number; reason: string }>((resolve) => {
-      ws.on('close', (code, reason) => {
-        resolve({ code, reason: reason.toString('utf-8') });
-      });
     });
 
     ws.send(JSON.stringify({
@@ -641,10 +655,8 @@ describe('AgentExecutionService', () => {
       },
     }));
 
-    await expect(closed).resolves.toEqual({
-      code: 1008,
-      reason: 'agent_runner_spec_mismatch',
-    });
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    expect(ws.readyState).toBe(ws.OPEN);
   });
 
   it('closes the socket without unhandled rejections when agent.ready authority validation throws', async () => {
@@ -722,23 +734,23 @@ describe('AgentExecutionService', () => {
       interactionKind: 'chat',
     });
     const first = ws;
-    const originalGetAgent = agentResourceService.getAgent.bind(agentResourceService);
-    let resolveGetAgentEntered!: () => void;
-    const getAgentEntered = new Promise<void>((resolve) => {
-      resolveGetAgentEntered = resolve;
+    const originalGetSessionConnectionInfo = agentResourceService.getSessionConnectionInfo.bind(agentResourceService);
+    let resolveAuthorityLookupEntered!: () => void;
+    const authorityLookupEntered = new Promise<void>((resolve) => {
+      resolveAuthorityLookupEntered = resolve;
     });
-    let releaseGetAgent!: () => void;
-    const getAgentResume = new Promise<void>((resolve) => {
-      releaseGetAgent = resolve;
+    let releaseAuthorityLookup!: () => void;
+    const authorityLookupResume = new Promise<void>((resolve) => {
+      releaseAuthorityLookup = resolve;
     });
-    let pauseNextReadyLookup = true;
-    vi.spyOn(agentResourceService, 'getAgent').mockImplementation(async (...args) => {
-      if (pauseNextReadyLookup) {
-        pauseNextReadyLookup = false;
-        resolveGetAgentEntered();
-        await getAgentResume;
+    let pauseNextAuthorityLookup = true;
+    vi.spyOn(agentResourceService, 'getSessionConnectionInfo').mockImplementation(async (...args) => {
+      if (pauseNextAuthorityLookup) {
+        pauseNextAuthorityLookup = false;
+        resolveAuthorityLookupEntered();
+        await authorityLookupResume;
       }
-      return originalGetAgent(...args);
+      return originalGetSessionConnectionInfo(...args);
     });
 
     try {
@@ -751,7 +763,7 @@ describe('AgentExecutionService', () => {
         },
       }));
 
-      await getAgentEntered;
+      await authorityLookupEntered;
       const firstClosed = new Promise<void>((resolve) => {
         first.once('close', () => resolve());
       });
@@ -761,7 +773,7 @@ describe('AgentExecutionService', () => {
         key: keyPair.key,
       });
       await firstClosed;
-      releaseGetAgent();
+      releaseAuthorityLookup();
       await new Promise((resolve) => setTimeout(resolve, 50));
 
       const runtime = await agentResourceService.getAgentRuntimeState('ws_default', 'proj_1', agent.id);
@@ -854,7 +866,7 @@ describe('AgentExecutionService', () => {
     const keyPair = await agentResourceService.createAgentKey('ws_default', 'proj_1', agent.id);
 
     const replacement = new WebSocket(
-      `${wsBase}/api/v1/agent-execution/ws?agent_id=${encodeURIComponent(agent.id)}`,
+      `${wsBase}/api/v1/agent-execution/ws?agent_runner_id=${encodeURIComponent(agent.id)}`,
       { headers: { Authorization: `Bearer ${keyPair.key}` } },
     );
     sockets.push(replacement);
@@ -1148,7 +1160,7 @@ describe('AgentExecutionService', () => {
     expect(dispatched.requestId).toEqual(expect.any(String));
     await expect(secondFrame).resolves.toMatchObject({
       type: 'server.request.start',
-      session_id: 'task_takeover_dispatch',
+      runner_session_id: 'task_takeover_dispatch',
       request_id: dispatched.requestId,
     });
     await new Promise((resolve) => setTimeout(resolve, 40));
@@ -1161,7 +1173,7 @@ describe('AgentExecutionService', () => {
     );
   });
 
-  it('does not fall back from notebook session dispatch to an unscoped agent socket', async () => {
+  it('does not fall back from task session dispatch to an unscoped agent socket', async () => {
     const { executionService, agent, ws } = await setupExecutionService({ interactionKind: 'notebook' });
     const requestFrames: Array<Record<string, unknown>> = [];
     ws.on('message', (raw) => {
@@ -1177,9 +1189,9 @@ describe('AgentExecutionService', () => {
       sessionId: 'task_requires_scoped_socket',
       agentId: agent.id,
       model: 'external-test',
-      messages: [{ role: 'user', content: 'notebook strict authority' }],
+      messages: [{ role: 'user', content: 'task strict authority' }],
       executionContext: {
-        interaction_kind: 'notebook',
+        runner_session_scope: 'task_execution',
       },
     })).rejects.toThrow('agent_offline');
 
@@ -1211,11 +1223,13 @@ describe('AgentExecutionService', () => {
     });
 
     expect(dispatched.requestId).toEqual(expect.any(String));
-    await expect(startFrame).resolves.toMatchObject({
+    const frame = await startFrame;
+    expect(frame).toMatchObject({
       type: 'server.request.start',
-      session_id: 'task_compose_presence',
+      runner_session_id: 'task_compose_presence',
       request_id: dispatched.requestId,
     });
+    expect(frame).not.toHaveProperty('session_id');
   });
 
   it('allows notebook terminal dispatch through an agent-level socket when agent presence scope is declared', async () => {
@@ -1245,11 +1259,13 @@ describe('AgentExecutionService', () => {
       },
     });
 
-    await expect(terminalStart).resolves.toMatchObject({
+    const startFrame = await terminalStart;
+    expect(startFrame).toMatchObject({
       type: 'server.terminal.start',
-      session_id: 'task_dev_direct_presence',
+      runner_session_id: 'task_dev_direct_presence',
       terminal_session_id: 'term_dev_direct_presence',
     });
+    expect(startFrame).not.toHaveProperty('session_id');
   });
 
   it('keeps notebook terminal control frames on the agent presence dispatch scope', async () => {
@@ -1299,7 +1315,7 @@ describe('AgentExecutionService', () => {
       done: false,
       value: expect.objectContaining({
         type: 'output',
-        session_id: 'term_dev_direct_presence_control',
+        terminal_session_id: 'term_dev_direct_presence_control',
       }),
     });
 
@@ -1310,23 +1326,78 @@ describe('AgentExecutionService', () => {
     await expect(terminalControls).resolves.toEqual([
       expect.objectContaining({
         type: 'server.terminal.stdin',
-        session_id: 'task_dev_direct_presence_control',
+        runner_session_id: 'task_dev_direct_presence_control',
         terminal_session_id: 'term_dev_direct_presence_control',
         payload: { data: 'echo scoped control\n' },
       }),
       expect.objectContaining({
         type: 'server.terminal.resize',
-        session_id: 'task_dev_direct_presence_control',
+        runner_session_id: 'task_dev_direct_presence_control',
         terminal_session_id: 'term_dev_direct_presence_control',
         payload: { cols: 100, rows: 32 },
       }),
       expect.objectContaining({
         type: 'server.terminal.close',
-        session_id: 'task_dev_direct_presence_control',
+        runner_session_id: 'task_dev_direct_presence_control',
         terminal_session_id: 'term_dev_direct_presence_control',
         payload: {},
       }),
     ]);
+    for (const frame of controlFrames) {
+      expect(frame).not.toHaveProperty('session_id');
+    }
+  });
+
+  it('does not accept payload-only terminal_session_id as a terminal event selector', async () => {
+    const { executionService, agent, ws } = await setupExecutionService({ interactionKind: 'notebook' });
+    const terminal = await executionService.dispatchTerminalSession({
+      workspaceId: 'ws_default',
+      projectId: 'proj_1',
+      sessionId: 'task_terminal_payload_only_selector',
+      agentId: agent.id,
+      terminalSessionId: 'term_payload_only_selector',
+      payload: {
+        cols: 80,
+        rows: 24,
+        executionContext: {
+          interaction_kind: 'notebook',
+          runner_session_scope: 'agent_presence',
+        },
+      },
+    });
+    const terminalEvents = terminal.stream[Symbol.asyncIterator]();
+    const nextEvent = terminalEvents.next();
+
+    ws.send(JSON.stringify({
+      type: 'agent.terminal.output',
+      payload: {
+        terminal_session_id: 'term_payload_only_selector',
+        chunk: 'legacy payload selector',
+      },
+    }));
+
+    await expect(Promise.race([
+      nextEvent.then(() => 'event'),
+      new Promise<'timeout'>((resolve) => setTimeout(() => resolve('timeout'), 50)),
+    ])).resolves.toBe('timeout');
+
+    ws.send(JSON.stringify({
+      type: 'agent.terminal.output',
+      terminal_session_id: 'term_payload_only_selector',
+      payload: {
+        terminal_session_id: 'term_payload_only_selector',
+        chunk: 'canonical selector',
+      },
+    }));
+
+    await expect(nextEvent).resolves.toMatchObject({
+      done: false,
+      value: expect.objectContaining({
+        type: 'output',
+        terminal_session_id: 'term_payload_only_selector',
+        chunk: 'canonical selector',
+      }),
+    });
   });
 
   it('buffers notebook terminal stdin until the runner emits first output', async () => {
@@ -1375,7 +1446,7 @@ describe('AgentExecutionService', () => {
       done: false,
       value: expect.objectContaining({
         type: 'started',
-        session_id: 'term_dev_direct_presence_buffered_input',
+        terminal_session_id: 'term_dev_direct_presence_buffered_input',
       }),
     });
     await new Promise((resolve) => setTimeout(resolve, 50));
@@ -1393,14 +1464,14 @@ describe('AgentExecutionService', () => {
       done: false,
       value: expect.objectContaining({
         type: 'output',
-        session_id: 'term_dev_direct_presence_buffered_input',
+        terminal_session_id: 'term_dev_direct_presence_buffered_input',
       }),
     });
 
     await expect(stdinFlushed).resolves.toEqual([
       expect.objectContaining({
         type: 'server.terminal.stdin',
-        session_id: 'task_dev_direct_presence_buffered_input',
+        runner_session_id: 'task_dev_direct_presence_buffered_input',
         terminal_session_id: 'term_dev_direct_presence_buffered_input',
         payload: { data: 'echo early input\n' },
       }),
@@ -1503,7 +1574,7 @@ describe('AgentExecutionService', () => {
     expect(dispatched.requestId).toEqual(expect.any(String));
     await expect(startFrame).resolves.toMatchObject({
       type: 'server.request.start',
-      session_id: 'chat_agent_level_fallback',
+      runner_session_id: 'chat_agent_level_fallback',
       request_id: dispatched.requestId,
     });
   });
@@ -1513,11 +1584,11 @@ describe('AgentExecutionService', () => {
     const keyPair = await agentResourceService.createAgentKey('ws_default', 'proj_1', agent.id);
 
     const sessionA = new WebSocket(
-      `${wsBase}/api/v1/agent-execution/ws?agent_id=${encodeURIComponent(agent.id)}&session_id=task_a`,
+      `${wsBase}/api/v1/agent-execution/ws?agent_runner_id=${encodeURIComponent(agent.id)}&runner_session_id=task_a`,
       { headers: { Authorization: `Bearer ${keyPair.key}` } },
     );
     const sessionB = new WebSocket(
-      `${wsBase}/api/v1/agent-execution/ws?agent_id=${encodeURIComponent(agent.id)}&session_id=task_b`,
+      `${wsBase}/api/v1/agent-execution/ws?agent_runner_id=${encodeURIComponent(agent.id)}&runner_session_id=task_b`,
       { headers: { Authorization: `Bearer ${keyPair.key}` } },
     );
     sockets.push(sessionA, sessionB);
@@ -1745,12 +1816,12 @@ describe('AgentExecutionService', () => {
     expect(dispatched.requestId).toEqual(expect.any(String));
     await expect(firstRequestFrame).resolves.toMatchObject({
       type: 'server.request.start',
-      session_id: 'chat_session_handoff',
+      runner_session_id: 'chat_session_handoff',
     });
     expect(firstRequestFrames).toEqual([
       expect.objectContaining({
         type: 'server.request.start',
-        session_id: 'chat_session_handoff',
+        runner_session_id: 'chat_session_handoff',
       }),
     ]);
   });
@@ -1838,7 +1909,7 @@ describe('AgentExecutionService', () => {
 
     await expect(closeFrame).resolves.toMatchObject({
       type: 'server.terminal.close',
-      session_id: 'task_1',
+      runner_session_id: 'task_1',
       terminal_session_id: 'term_persisted',
     });
   });
@@ -1866,11 +1937,13 @@ describe('AgentExecutionService', () => {
       },
     })).resolves.toBe('signaled');
 
-    await expect(closeFrame).resolves.toMatchObject({
+    const frame = await closeFrame;
+    expect(frame).toMatchObject({
       type: 'server.terminal.close',
-      session_id: 'task_presence_persisted_close',
+      runner_session_id: 'task_presence_persisted_close',
       terminal_session_id: 'term_presence_persisted_close',
     });
+    expect(frame).not.toHaveProperty('session_id');
   });
 
   it('stops stale terminal handles from sending stdin, resize, or close frames after remote takeover', async () => {
@@ -1932,7 +2005,7 @@ describe('AgentExecutionService', () => {
     });
     await expect(terminalStart).resolves.toMatchObject({
       type: 'server.terminal.start',
-      session_id: 'task_terminal_takeover',
+      runner_session_id: 'task_terminal_takeover',
       terminal_session_id: 'term_takeover',
     });
 
@@ -2100,7 +2173,7 @@ describe('AgentExecutionService', () => {
     const wsBase = await startExecutionServer(executionService);
     const agent = await agentResourceService.createAgent('ws_default', 'proj_1', {
       name: 'heartbeat-authority-failure-agent',
-      mode: 'external',
+      runner_provider: 'developer',
       interaction_kind: 'chat',
     });
     const keyPair = await agentResourceService.createAgentKey('ws_default', 'proj_1', agent.id);
@@ -2143,7 +2216,7 @@ describe('AgentExecutionService', () => {
     const wsBase = await startExecutionServer(executionService);
     const agent = await agentResourceService.createAgent('ws_default', 'proj_1', {
       name: 'heartbeat-serialization-agent',
-      mode: 'external',
+      runner_provider: 'developer',
       interaction_kind: 'chat',
     });
     const keyPair = await agentResourceService.createAgentKey('ws_default', 'proj_1', agent.id);
@@ -2255,7 +2328,7 @@ describe('AgentExecutionService', () => {
     const wsBase = await startExecutionServer(executionService);
     const agent = await agentResourceService.createAgent('ws_default', 'proj_1', {
       name: 'register-failure-agent',
-      mode: 'external',
+      runner_provider: 'developer',
       interaction_kind: 'chat',
     });
     const keyPair = await agentResourceService.createAgentKey('ws_default', 'proj_1', agent.id);
@@ -2304,7 +2377,7 @@ describe('AgentExecutionService', () => {
 
     await expect(startFrame).resolves.toMatchObject({
       type: 'server.request.start',
-      session_id: 'sess_first_event_timeout',
+      runner_session_id: 'sess_first_event_timeout',
     });
     const iterator = dispatched.stream[Symbol.asyncIterator]();
     await expect(iterator.next()).resolves.toEqual({
@@ -2370,7 +2443,7 @@ describe('AgentExecutionService', () => {
 
     await expect(startFrame).resolves.toMatchObject({
       type: 'server.request.start',
-      session_id: 'sess_chat_running_only',
+      runner_session_id: 'sess_chat_running_only',
     });
     const iterator = dispatched.stream[Symbol.asyncIterator]();
     await expect(iterator.next()).resolves.toMatchObject({
@@ -2394,7 +2467,7 @@ describe('AgentExecutionService', () => {
     });
   });
 
-  it('treats notebook lifecycle trace events as meaningful output and falls back to idle timeout', async () => {
+  it('treats task runner lifecycle trace events as meaningful output and falls back to idle timeout', async () => {
     const { executionService, agent, keyPair, wsBase } = await setupExecutionService({
       interactionKind: 'notebook',
       executionServiceOptions: {
@@ -2441,13 +2514,13 @@ describe('AgentExecutionService', () => {
       model: 'external-test',
       messages: [{ role: 'user', content: 'hello' }],
       executionContext: {
-        interaction_kind: 'notebook',
+        runner_session_scope: 'task_execution',
       },
     });
 
     await expect(startFrame).resolves.toMatchObject({
       type: 'server.request.start',
-      session_id: 'task_trace_event',
+      runner_session_id: 'task_trace_event',
     });
     const iterator = dispatched.stream[Symbol.asyncIterator]();
     await expect(iterator.next()).resolves.toMatchObject({
@@ -2510,7 +2583,7 @@ describe('AgentExecutionService', () => {
 
     await expect(startFrame).resolves.toMatchObject({
       type: 'server.terminal.start',
-      session_id: 'task_1',
+      runner_session_id: 'task_1',
       terminal_session_id: 'term_first_event_timeout',
     });
     const iterator = terminal.stream[Symbol.asyncIterator]();
@@ -2518,7 +2591,7 @@ describe('AgentExecutionService', () => {
       done: false,
       value: {
         type: 'error',
-        session_id: 'term_first_event_timeout',
+        terminal_session_id: 'term_first_event_timeout',
         error_code: 'AGENT_TERMINAL_TIMEOUT',
         error_message: 'agent_terminal_first_event_timeout',
       },

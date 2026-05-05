@@ -1,37 +1,44 @@
 import { describe, expect, it } from 'vitest';
+import { readFileSync } from 'node:fs';
+import path from 'node:path';
 import {
-  CHAT_RUNNER_SPEC,
-  NOTEBOOK_RUNNER_SPEC,
-  isMatchingRunnerSpec,
+  AGENT_TASK_RUNNER_SPEC,
+  isAgentTaskRunnerSpec,
 } from './runner-spec.js';
 
-describe('runner specs', () => {
-  it('defines stable notebook and chat runner specs', () => {
-    expect(NOTEBOOK_RUNNER_SPEC).toMatchObject({
-      interaction_kind: 'notebook',
-      app_family: 'codex_runner',
-      context_model: 'cli_session',
+describe('agent task runner spec', () => {
+  it('defines the stable task-only runner spec without workload discriminants', () => {
+    expect(AGENT_TASK_RUNNER_SPEC).toEqual({
+      app_family: 'agent_task_runner',
+      protocol_version: '1.0',
+      context_model: 'task',
       workspace_policy: 'persistent_task_workspace',
       supports_terminal: true,
     });
-    expect(CHAT_RUNNER_SPEC).toMatchObject({
-      interaction_kind: 'chat',
-      app_family: 'llm_runner',
-      context_model: 'explicit_dialogue',
-      workspace_policy: 'ephemeral_session_dir',
-      supports_terminal: false,
-    });
+    expect(AGENT_TASK_RUNNER_SPEC).not.toHaveProperty('interaction_kind');
   });
 
-  it('matches only fully formed specs of the expected interaction kind', () => {
-    expect(isMatchingRunnerSpec('chat', CHAT_RUNNER_SPEC)).toBe(true);
-    expect(isMatchingRunnerSpec('notebook', NOTEBOOK_RUNNER_SPEC)).toBe(true);
-    expect(isMatchingRunnerSpec('chat', NOTEBOOK_RUNNER_SPEC)).toBe(false);
-    expect(isMatchingRunnerSpec('notebook', CHAT_RUNNER_SPEC)).toBe(false);
-    expect(isMatchingRunnerSpec('chat', { interaction_kind: 'chat' })).toBe(false);
-    expect(isMatchingRunnerSpec('notebook', {
-      ...NOTEBOOK_RUNNER_SPEC,
-      supports_terminal: false,
-    })).toBe(false);
+  it('matches only the fully formed task runner spec', () => {
+    expect(isAgentTaskRunnerSpec(AGENT_TASK_RUNNER_SPEC)).toBe(true);
+    expect(isAgentTaskRunnerSpec({ ...AGENT_TASK_RUNNER_SPEC, supports_terminal: false })).toBe(false);
+    expect(isAgentTaskRunnerSpec({ ...AGENT_TASK_RUNNER_SPEC, context_model: 'notebook' })).toBe(false);
+    expect(isAgentTaskRunnerSpec({ ...AGENT_TASK_RUNNER_SPEC, interaction_kind: 'notebook' })).toBe(false);
+    expect(isAgentTaskRunnerSpec({ ...AGENT_TASK_RUNNER_SPEC, workload: 'chat' })).toBe(false);
+    expect(isAgentTaskRunnerSpec({ ...AGENT_TASK_RUNNER_SPEC, workload: 'notebook' })).toBe(false);
+    expect(isAgentTaskRunnerSpec({ ...AGENT_TASK_RUNNER_SPEC, chat: true })).toBe(false);
+    expect(isAgentTaskRunnerSpec({ ...AGENT_TASK_RUNNER_SPEC, notebook: true })).toBe(false);
+    expect(isAgentTaskRunnerSpec({ app_family: 'agent_task_runner' })).toBe(false);
+    expect(isAgentTaskRunnerSpec(null)).toBe(false);
+  });
+
+  it('does not publish legacy runner spec matching aliases', () => {
+    const runnerSpecSource = readFileSync(
+      path.join(process.cwd(), 'packages/agent-runner/src/runner-spec.ts'),
+      'utf8',
+    );
+
+    expect(runnerSpecSource).not.toContain('isMatchingRunnerSpec');
+    expect(runnerSpecSource).not.toContain('CHAT_RUNNER_SPEC');
+    expect(runnerSpecSource).not.toContain('NOTEBOOK_RUNNER_SPEC');
   });
 });

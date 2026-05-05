@@ -27,12 +27,10 @@ KEYCLOAK_REALM="${KEYCLOAK_REALM:-mbos}"
 KEYCLOAK_CLIENT_ID="${KEYCLOAK_CLIENT_ID:-agentsmith}"
 INTEGRATION_DEV_ADMIN_USERNAME="${INTEGRATION_DEV_ADMIN_USERNAME:-dev-admin}"
 INTEGRATION_DEV_ADMIN_PASSWORD="${INTEGRATION_DEV_ADMIN_PASSWORD:-dev-admin-123}"
-COMPOSE_PROJECT_NAME="${COMPOSE_PROJECT_NAME:-agentsmith-cluster}"
-EXTERNAL_RUNNER_CONTAINER_NAME="${EXTERNAL_RUNNER_CONTAINER_NAME:-${COMPOSE_PROJECT_NAME}-external-runner-1}"
 VERIFY_EVIDENCE_DIR="${REPORT_DIR}/verify-artifacts/evidence"
 mkdir -p "${VERIFY_EVIDENCE_DIR}"
 export RUNTIME_LINE_ID="${RELEASE_ID}"
-export RUNTIME_RUNNER_MODES="${RUNTIME_RUNNER_MODES:-external_host,internal_k8s}"
+export RUNTIME_RUNNER_MODES="${RUNTIME_RUNNER_MODES:-managed_runner}"
 resolve_public_runtime_stack \
   "${PUBLIC_WEB_BASE_URL}" \
   "${PUBLIC_API_BASE_URL}" \
@@ -97,10 +95,6 @@ gate_record_preflight_check "${VERIFY_EVIDENCE_DIR}" "host_local_stack" "passed"
 
 gate_require_command "${VERIFY_EVIDENCE_DIR}" "kubectl get deploy sandbox-manager -n '${INTERNAL_AGENT_K8S_NAMESPACE}' >/dev/null" sandbox_startup_failed infra_preflight_sandbox "sandbox-manager deploy missing"
 gate_require_command "${VERIFY_EVIDENCE_DIR}" "kubectl get cronjob sandbox-manager-cleaner -n '${INTERNAL_AGENT_K8S_NAMESPACE}' >/dev/null" sandbox_startup_failed infra_preflight_sandbox "sandbox-manager-cleaner missing"
-gate_require_command "${VERIFY_EVIDENCE_DIR}" "docker inspect -f '{{.State.Running}}' '${EXTERNAL_RUNNER_CONTAINER_NAME}' 2>/dev/null | grep -q true" runner_launch_failed infra_preflight_external_runner "external-runner not running"
-if ! gate_wait_for_external_runner_connection "${VERIFY_EVIDENCE_DIR}" "${EXTERNAL_RUNNER_CONTAINER_NAME}" 60; then
-  exit 1
-fi
 PROXY_ADMIN_STATE_BASE_URL="${MBOS_UNIVERSAL_PROXY_BASE_URL:-http://universal-proxy:8080}"
 if ! gate_wait_for_universal_proxy_admin_state \
   "${VERIFY_EVIDENCE_DIR}" \
@@ -111,9 +105,7 @@ if ! gate_wait_for_universal_proxy_admin_state \
   infra_preflight_proxy; then
   exit 1
 fi
-record_service external_runner ready "${EXTERNAL_RUNNER_CONTAINER_NAME}"
 record_service universal_proxy ready "${PROXY_ADMIN_STATE_BASE_URL%/}/admin/state"
-gate_record_preflight_check "${VERIFY_EVIDENCE_DIR}" "external_runner" "passed" "${EXTERNAL_RUNNER_CONTAINER_NAME}"
 gate_record_preflight_check "${VERIFY_EVIDENCE_DIR}" "universal_proxy" "passed" "${PROXY_ADMIN_STATE_BASE_URL%/}/admin/state"
 
 ACCESS_TOKEN="$(gate_run_auth_preflight   "${VERIFY_EVIDENCE_DIR}"   "${HOST_LOCAL_KEYCLOAK_BASE_URL}"   "${KEYCLOAK_REALM}"   "${KEYCLOAK_CLIENT_ID}"   "${INTEGRATION_DEV_ADMIN_USERNAME}"   "${INTEGRATION_DEV_ADMIN_PASSWORD}"   "${HOST_LOCAL_API_BASE_URL}/api/v1/me/profile"   "failed to obtain dev-admin token during verify"   "verify token missing access_token"   "authenticated /api/v1/me/profile unavailable")" || exit 1
@@ -130,15 +122,6 @@ if [[ -z "${PRESET_PROJECT_ID}" ]]; then
   exit 1
 fi
 record_task_summary "{\"workspace_id\":\"ws_default\",\"project_id\":\"${PRESET_PROJECT_ID}\",\"line_kind\":\"cluster_deploy_verify\"}"
-
-WORKSPACE_ACCESS_EVIDENCE_FILE="${VERIFY_EVIDENCE_DIR}/workspace-access-external.json" \
-bash "${ROOT_DIR}/scripts/check-preset-external-file-library.sh" || {
-  gate_record_failure "${VERIFY_EVIDENCE_DIR}" "workspace_contract_failed" "scenario_gate_workspace_access" "preset external file-library verification failed"
-  exit 1
-}
-if [[ -f "${VERIFY_EVIDENCE_DIR}/workspace-access-external.json" ]]; then
-  gate_record_workspace_access "${VERIFY_EVIDENCE_DIR}" "external" "${VERIFY_EVIDENCE_DIR}/workspace-access-external.json"
-fi
 
 API_BASE="${HOST_LOCAL_API_BASE_URL}" \
 KEYCLOAK_BASE_URL="${HOST_LOCAL_KEYCLOAK_BASE_URL}" \
@@ -158,14 +141,11 @@ bash "${ROOT_DIR}/scripts/file-library-real-smoke.sh" || {
 mkdir -p "${REPORT_DIR}/verify-artifacts"
 VERIFY_INTEGRATION_REAL_HELPERS="$(resolve_verify_source_file "e2e/integration-real-helpers.ts")"
 VERIFY_INTEGRATION_FILES_SPEC="$(resolve_verify_source_file "e2e/integration-files.spec.ts")"
-VERIFY_NOTEBOOK_EXECUTION_OUTCOME="$(resolve_verify_source_file "e2e/notebook-execution-outcome.ts")"
+VERIFY_AGENT_TASK_EXECUTION_OUTCOME="$(resolve_verify_source_file "e2e/agent-task-execution-outcome.ts")"
 VERIFY_INTEGRATION_WORKSPACE_ACCESS="$(resolve_verify_source_file "e2e/integration-workspace-access.ts")"
 VERIFY_INTEGRATION_WORKSPACE_ENTRY_SPEC="$(resolve_verify_source_file "e2e/integration-workspace-entry.spec.ts")"
 VERIFY_INTEGRATION_WORKSPACE_PUBLISH_SPEC="$(resolve_verify_source_file "e2e/integration-workspace-publish-usable.spec.ts")"
-VERIFY_INTEGRATION_PRESET_FILELIB_SPEC="$(resolve_verify_source_file "e2e/integration-preset-external-file-library.spec.ts")"
-VERIFY_INTEGRATION_INTERNAL_CHAT_RUNNER_SPEC="$(resolve_verify_source_file "e2e/integration-internal-chat-runner.spec.ts")"
-VERIFY_INTEGRATION_CHAT_LOCAL_UPSTREAM="$(resolve_verify_source_file "e2e/integration-chat-local-upstream.ts")"
-VERIFY_INTERNAL_CHAT_ISOLATION_PROBE="$(resolve_verify_source_file "e2e/internal-chat-isolation-probe.ts")"
+VERIFY_INTEGRATION_PRESET_FILELIB_SPEC="$(resolve_verify_source_file "e2e/integration-preset-agent-task-file-library.spec.ts")"
 VERIFY_BUNDLED_KUBECTL="${RELEASE_ROOT}/tools/kubectl"
 [[ -x "${VERIFY_BUNDLED_KUBECTL}" ]] || die "bundled kubectl missing from release tools"
 ensure_operator_manager_kubeconfig
@@ -184,14 +164,13 @@ INTEGRATION_INTERNAL_WORKLOAD_UPSTREAM_HOST_VALUE="${INTEGRATION_INTERNAL_WORKLO
 if [[ -z "${INTEGRATION_INTERNAL_WORKLOAD_UPSTREAM_HOST_VALUE}" ]] && detect_kind_gateway_ip >/dev/null 2>&1; then
   INTEGRATION_INTERNAL_WORKLOAD_UPSTREAM_HOST_VALUE="$(detect_kind_gateway_ip)"
 fi
-[[ -n "${INTEGRATION_INTERNAL_WORKLOAD_UPSTREAM_HOST_VALUE}" ]] || die "internal chat verify upstream host is empty; set INTEGRATION_INTERNAL_WORKLOAD_UPSTREAM_HOST or make the kind gateway detectable"
+[[ -n "${INTEGRATION_INTERNAL_WORKLOAD_UPSTREAM_HOST_VALUE}" ]] || die "managed runner verify upstream host is empty; set INTEGRATION_INTERNAL_WORKLOAD_UPSTREAM_HOST or make the kind gateway detectable"
 VERIFY_PLAYWRIGHT_SPECS=(
   e2e/integration-files.spec.ts
   e2e/integration-workspace-entry.spec.ts
   e2e/integration-workspace-publish-usable.spec.ts
-  e2e/integration-preset-external-file-library.spec.ts
+  e2e/integration-preset-agent-task-file-library.spec.ts
   e2e/integration-release-user-story.spec.ts
-  e2e/integration-internal-chat-runner.spec.ts
 )
 VERIFY_RUNTIME_PROXY_ENV_ARGS=()
 mapfile -t VERIFY_RUNTIME_PROXY_ENV_ARGS < <(docker_run_runtime_proxy_env_args)
@@ -208,25 +187,15 @@ docker run --rm \
   -v "${VERIFY_KUBECONFIG_SOURCE}:/tmp/verify-kubeconfig:ro" \
   -v "${VERIFY_INTEGRATION_REAL_HELPERS}:/app/e2e/integration-real-helpers.ts:ro" \
   -v "${VERIFY_INTEGRATION_FILES_SPEC}:/app/e2e/integration-files.spec.ts:ro" \
-  -v "${VERIFY_NOTEBOOK_EXECUTION_OUTCOME}:/app/e2e/notebook-execution-outcome.ts:ro" \
+  -v "${VERIFY_AGENT_TASK_EXECUTION_OUTCOME}:/app/e2e/agent-task-execution-outcome.ts:ro" \
   -v "${VERIFY_INTEGRATION_WORKSPACE_ACCESS}:/app/e2e/integration-workspace-access.ts:ro" \
   -v "${VERIFY_INTEGRATION_WORKSPACE_ENTRY_SPEC}:/app/e2e/integration-workspace-entry.spec.ts:ro" \
   -v "${VERIFY_INTEGRATION_WORKSPACE_PUBLISH_SPEC}:/app/e2e/integration-workspace-publish-usable.spec.ts:ro" \
-  -v "${VERIFY_INTEGRATION_PRESET_FILELIB_SPEC}:/app/e2e/integration-preset-external-file-library.spec.ts:ro" \
-  -v "${VERIFY_INTEGRATION_INTERNAL_CHAT_RUNNER_SPEC}:/app/e2e/integration-internal-chat-runner.spec.ts:ro" \
-  -v "${VERIFY_INTEGRATION_CHAT_LOCAL_UPSTREAM}:/app/e2e/integration-chat-local-upstream.ts:ro" \
-  -v "${VERIFY_INTERNAL_CHAT_ISOLATION_PROBE}:/app/e2e/internal-chat-isolation-probe.ts:ro" \
+  -v "${VERIFY_INTEGRATION_PRESET_FILELIB_SPEC}:/app/e2e/integration-preset-agent-task-file-library.spec.ts:ro" \
   "${RELEASE_STORY_VERIFY_MOUNTS[@]}" \
   -e BASE_URL="${HOST_LOCAL_WEB_BASE_URL}" \
   -e INTEGRATION_API_BASE="${HOST_LOCAL_API_BASE_URL}" \
   -e KUBECONFIG=/tmp/verify-kubeconfig \
-  -e EXTERNAL_AGENT_EXECUTION_HTTP_BASE_URL="${PUBLIC_API_BASE_URL}" \
-  -e EXTERNAL_AGENT_JUICEFS_META_HOST_OVERRIDE="${CLIENT_PUBLIC_POSTGRES_HOST}" \
-  -e EXTERNAL_AGENT_JUICEFS_META_PORT_OVERRIDE="${CLIENT_PUBLIC_POSTGRES_PORT}" \
-  -e EXTERNAL_AGENT_JUICEFS_STORAGE_ENDPOINT_OVERRIDE="${CLIENT_PUBLIC_MINIO_ENDPOINT}" \
-  -e DOCKER_MANUAL_AGENT_JUICEFS_META_HOST_OVERRIDE="host.docker.internal" \
-  -e DOCKER_MANUAL_AGENT_JUICEFS_META_PORT_OVERRIDE="${CLIENT_PUBLIC_POSTGRES_PORT}" \
-  -e DOCKER_MANUAL_AGENT_JUICEFS_STORAGE_ENDPOINT_OVERRIDE="http://host.docker.internal:${MINIO_API_PORT:-19000}" \
   -e INTEGRATION_CLIENT_JUICEFS_META_HOST_OVERRIDE="127.0.0.1" \
   -e INTEGRATION_CLIENT_JUICEFS_META_PORT_OVERRIDE="${CLIENT_PUBLIC_POSTGRES_PORT}" \
   -e INTEGRATION_CLIENT_JUICEFS_STORAGE_ENDPOINT_OVERRIDE="http://127.0.0.1:${MINIO_API_PORT:-19000}" \
@@ -241,16 +210,13 @@ docker run --rm \
   -e BACKEND_REAL_ANTHROPIC_BASE_URL="${BACKEND_REAL_ANTHROPIC_BASE_URL}" \
   -e BACKEND_REAL_OPENAI_BASE_URL="${BACKEND_REAL_OPENAI_BASE_URL}" \
   -e BACKEND_REAL_MODEL="${PRESET_ENDPOINT_MODEL:-placeholder-model}" \
-  -e INTEGRATION_CODEX_RUNNER_DOCKER_IMAGE="${RUNNER_IMAGE}" \
-  -e INTEGRATION_INTERNAL_AGENT_IMAGE="${K8S_RUNNER_IMAGE}" \
-  -e INTEGRATION_INTERNAL_CHAT_AGENT_IMAGE="${K8S_CHAT_RUNNER_IMAGE}" \
+  -e INTEGRATION_AGENT_TASK_RUNNER_IMAGE="${AGENT_TASK_RUNNER_IMAGE}" \
+  -e INTEGRATION_AGENT_TASK_RUNNER_DOCKER_IMAGE="${AGENT_TASK_RUNNER_IMAGE}" \
+  -e INTEGRATION_INTERNAL_AGENT_IMAGE="${AGENT_TASK_RUNNER_IMAGE}" \
   -e INTEGRATION_INTERNAL_WORKLOAD_UPSTREAM_HOST="${INTEGRATION_INTERNAL_WORKLOAD_UPSTREAM_HOST_VALUE}" \
-  -e INTEGRATION_CHAT_RUNNER_BASE_DOCKER_IMAGE="${CHAT_RUNNER_IMAGE}" \
-  -e INTEGRATION_CHAT_RUNNER_REBUILD_BASE_IMAGE=0 \
-  -e INTEGRATION_CHAT_RUNNER_REBUILD_IMAGE=0 \
-  -e INTEGRATION_CODEX_RUNNER_EMBEDDED=1 \
-  -e INTEGRATION_CODEX_RUNNER_BUILTIN_SKILLS="${INTEGRATION_CODEX_RUNNER_BUILTIN_SKILLS:-feishu-docs,jira-ops}" \
-  -e INTEGRATION_CODEX_RUNNER_BUILTIN_SKILLS_REQUIRED="${INTEGRATION_CODEX_RUNNER_BUILTIN_SKILLS_REQUIRED:-1}" \
+  -e INTEGRATION_AGENT_TASK_RUNNER_EMBEDDED=1 \
+  -e INTEGRATION_AGENT_TASK_RUNNER_BUILTIN_SKILLS="${INTEGRATION_AGENT_TASK_RUNNER_BUILTIN_SKILLS:-feishu-docs,jira-ops}" \
+  -e INTEGRATION_AGENT_TASK_RUNNER_BUILTIN_SKILLS_REQUIRED="${INTEGRATION_AGENT_TASK_RUNNER_BUILTIN_SKILLS_REQUIRED:-1}" \
   -e INTEGRATION_RUNNER_LOG_DIR=/app/test-results/runner-logs \
   -e RESET_FIRST=0 \
   "${VERIFY_RUNNER_IMAGE}" \

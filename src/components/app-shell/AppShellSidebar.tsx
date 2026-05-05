@@ -51,11 +51,11 @@ const PROJECT_MENU_SECTIONS: Array<{ id: ProjectMenuSection; labelKey: string }>
 const PROJECT_MENU_ICON_BY_HREF: Record<string, LucideIcon> = {
   overview: LayoutDashboard,
   chat: MessageSquare,
-  notebook: Wrench,
+  'agent-tasks': Wrench,
   files: FolderOpen,
   usage: BarChart3,
   'use-guide': BookOpen,
-  agents: Bot,
+  'agent-runners': Bot,
   endpoints: Server,
   'resource-policy': SlidersHorizontal,
   context: ScrollText,

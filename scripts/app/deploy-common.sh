@@ -2,11 +2,11 @@
 set -euo pipefail
 
 release_app_services() {
-  printf '%s\n' api web external-runner
+  printf '%s\n' api web
 }
 
 release_app_upgrade_services() {
-  printf '%s\n' api web external-runner universal-proxy
+  printf '%s\n' api web universal-proxy
 }
 
 release_compose_project_name() {

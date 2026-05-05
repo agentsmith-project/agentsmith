@@ -1,8 +1,12 @@
 import { expect, type Page } from '@playwright/test';
-import { API_BASE, LOCALE, bindNotebookExecutionSocketToTask } from './integration-real-helpers';
+import {
+  API_BASE,
+  LOCALE,
+  bindAgentTaskExecutionSocketToTask,
+} from './integration-real-helpers';
 import { readStoredAuthToken } from './integration-workspace-access';
 
-export { bindNotebookExecutionSocketToTask };
+export { bindAgentTaskExecutionSocketToTask };
 
 export function readUserIdFromJwt(token: string): string {
   const [, payload] = token.split('.');
@@ -157,7 +161,7 @@ export async function waitForAssistantToken(args: {
     .toBe(true);
 }
 
-export async function waitForNotebookAgentReply(args: {
+export async function waitForAgentTaskRunnerReply(args: {
   page: Page;
   workspaceId: string;
   projectId: string;
@@ -172,7 +176,7 @@ export async function waitForNotebookAgentReply(args: {
         let response;
         try {
           response = await args.page.request.get(
-            `${API_BASE}/api/v1/workspaces/${args.workspaceId}/projects/${args.projectId}/tasks/${args.taskId}/messages`,
+            `${API_BASE}/api/v1/workspaces/${args.workspaceId}/projects/${args.projectId}/tasks/${args.taskId}/activity`,
             { headers: { Authorization: `Bearer ${authToken}` } },
           );
         } catch {
@@ -180,10 +184,10 @@ export async function waitForNotebookAgentReply(args: {
           return null;
         }
         if (!response.ok()) return null;
-        const messages = (await response.json()) as Array<{ role?: string; content?: string }>;
+        const activities = (await response.json()) as Array<{ actor?: string; content?: string }>;
         matchedReply =
-          messages.find(
-            (item) => item.role === 'agent' && item.content?.includes(args.token),
+          activities.find(
+            (item) => item.actor === 'runner' && item.content?.includes(args.token),
           )?.content ?? null;
         return matchedReply;
       },
@@ -193,22 +197,21 @@ export async function waitForNotebookAgentReply(args: {
   return matchedReply ?? '';
 }
 
-export async function waitForNotebookAgentToken(args: {
+export async function waitForAgentTaskRunnerToken(args: {
   page: Page;
   workspaceId: string;
   projectId: string;
   taskId: string;
   token: string;
 }): Promise<void> {
-  await waitForNotebookAgentReply(args);
+  await waitForAgentTaskRunnerReply(args);
 }
 
-export async function createNotebookTaskWithNewWorkspaceViaApi(args: {
+export async function createAgentTaskWithNewWorkspaceViaApi(args: {
   page: Page;
   workspaceId: string;
   projectId: string;
   title: string;
-  agentId: string;
   workspaceName: string;
 }): Promise<{ taskId: string; fileLibraryId: string; fileLibraryName: string }> {
   const token = await readStoredAuthToken(args.page);
@@ -221,7 +224,6 @@ export async function createNotebookTaskWithNewWorkspaceViaApi(args: {
       },
       data: {
         title: args.title,
-        agent_id: args.agentId,
         workspace_mode: 'create_new',
         workspace_name: args.workspaceName,
       },
@@ -229,7 +231,7 @@ export async function createNotebookTaskWithNewWorkspaceViaApi(args: {
   );
   if (!response.ok()) {
     const body = await response.text().catch(() => '');
-    throw new Error(`create_notebook_task_with_new_workspace_failed:${response.status()}:${body}`);
+    throw new Error(`create_agent_task_with_new_workspace_failed:${response.status()}:${body}`);
   }
   const payload = (await response.json().catch(() => null)) as {
     id?: string;
@@ -241,7 +243,7 @@ export async function createNotebookTaskWithNewWorkspaceViaApi(args: {
   const fileLibraryId = payload?.workspace_file_library_id;
   const fileLibraryName = payload?.workspace_file_library_name;
   if (!taskId || !fileLibraryId || !fileLibraryName) {
-    throw new Error('create_notebook_task_with_new_workspace_payload_incomplete');
+    throw new Error('create_agent_task_with_new_workspace_payload_incomplete');
   }
   return { taskId, fileLibraryId, fileLibraryName };
 }
@@ -270,15 +272,15 @@ export async function waitForTaskArtifacts(args: {
   }, { timeout: 180_000, intervals: [1_000, 2_000, 5_000] }).toBe(true);
 }
 
-export async function openNotebookTaskDetail(args: {
+export async function openAgentTaskDetail(args: {
   page: Page;
   workspaceId: string;
   projectId: string;
   taskId: string;
 }) {
-  await args.page.goto(`/${LOCALE}/workspaces/${args.workspaceId}/projects/${args.projectId}/notebook/tasks/${args.taskId}`);
-  await expect(args.page.getByTestId('notebook__task-header')).toBeVisible({ timeout: 30_000 });
-  await expect(args.page.getByTestId('notebook__artifacts-refresh')).toBeVisible({ timeout: 30_000 });
+  await args.page.goto(`/${LOCALE}/workspaces/${args.workspaceId}/projects/${args.projectId}/agent-tasks/${args.taskId}`);
+  await expect(args.page.getByTestId('agent-task__task-header')).toBeVisible({ timeout: 30_000 });
+  await expect(args.page.getByTestId('agent-tasks__conversation-input')).toBeVisible({ timeout: 30_000 });
 }
 
 export async function openFileLibraryRoot(args: {

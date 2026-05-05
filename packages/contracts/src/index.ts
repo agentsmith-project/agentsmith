@@ -20,18 +20,18 @@ export const ProjectSchema = z.object({
   owner_id: z.string().min(1),
   status: ProjectStatusSchema,
   governance_json: z.record(z.string(), z.unknown()).optional(),
-  execution_preferences_json: z.record(z.string(), z.unknown()).optional(),
   limits_json: z.record(z.string(), z.unknown()).optional(),
+  admin_member_ids: z.array(z.string().min(1)).optional(),
   created_at: z.string().datetime(),
   updated_at: z.string().datetime(),
-});
+}).strict();
 
 export const CreateProjectRequestSchema = z.object({
   name: z.string().min(1).max(120),
   description: z.string().max(1000).optional(),
   visibility: ProjectVisibilitySchema.default('private'),
   join_policy: ProjectJoinPolicySchema.default('approval_required'),
-});
+}).strict();
 
 export const UpdateProjectRequestSchema = z
   .object({
@@ -42,9 +42,9 @@ export const UpdateProjectRequestSchema = z
     join_policy: ProjectJoinPolicySchema.optional(),
     status: ProjectStatusSchema.optional(),
     governance_json: z.record(z.string(), z.unknown()).optional(),
-    execution_preferences_json: z.record(z.string(), z.unknown()).optional(),
     limits_json: z.record(z.string(), z.unknown()).optional(),
   })
+  .strict()
   .refine((value) => Object.keys(value).length > 0, {
     message: 'at_least_one_field_required',
   });
@@ -384,7 +384,7 @@ export const WorkspaceFoundationInitializationResultSchema = z.object({
       'chat',
       'agents',
       'audit_usage',
-      'notebook',
+      'agent_task',
       'governance',
     ])
     .nullable(),
@@ -403,7 +403,7 @@ export const WorkspaceFoundationInitializationResultSchema = z.object({
           'chat',
           'agents',
           'audit_usage',
-          'notebook',
+          'agent_task',
           'governance',
         ]),
         status: z.enum(['ready', 'failed', 'not_started']),

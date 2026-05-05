@@ -28,11 +28,11 @@
 
 | 运行线 | 当前正式命名 | 主要用途 | external 路径 | internal 路径 | substrate | 备注 |
 |-------|-------------|---------|--------------|--------------|----------|------|
-| 本地真实手测线 | `local-manual` | 日常开发、真实后端手测、notebook / runner 手测 | 默认启用 | 仅 owner runbook 通过 `make local-manual-internal-up` 显式开启 | 共享本地 substrate | 当前推荐本机真实手测入口 |
+| 本地真实手测线 | `local-manual` | 日常开发、真实后端手测、Agent task / Agent Runner 手测 | 默认启用 | 仅 owner runbook 通过 `make local-manual-internal-up` 显式开启 | 共享本地 substrate | 当前推荐本机真实手测入口 |
 | demo 本机排演线 | `demo-rehearsal` | 本机排演 demo 发布线 | `DEMO_DEPLOY_MODE=simple` 时 external-only | `DEMO_DEPLOY_MODE=full` 时启用，运行在本地 `kind` | 共享本地 substrate | 使用 scenario-owned `agentsmith-demo` 与 `agentsmith-demo-registry` |
 | demo 正式发布线 | `demo-deploy` | 单机 / demo 环境发布 | `simple` | `full` | 目标主机上的 compose substrate | 目标主机 release 线，不是本机 rehearsal 入口 |
-| cluster 本机排演线 | `cluster-rehearsal` | 本机排演真实集群发布线 | 始终包含 external runner | 始终包含 internal k8s 执行面 | 共享本地 substrate | 使用 scenario-owned `agentsmith-cluster` 与 `agentsmith-cluster-registry` |
-| cluster 正式发布线 | `cluster-deploy` | 真实集群发布 | 始终包含 external runner | 始终包含 internal k8s 执行面 | 目标主机上的 compose substrate | mode 描述自动化边界，不是 external/internal 能力差异 |
+| cluster 本机排演线 | `cluster-rehearsal` | 本机排演真实集群发布线 | 始终包含 managed agent-task runner | 始终包含 internal k8s 执行面 | 共享本地 substrate | 使用 scenario-owned `agentsmith-cluster` 与 `agentsmith-cluster-registry` |
+| cluster 正式发布线 | `cluster-deploy` | 真实集群发布 | 始终包含 managed agent-task runner | 始终包含 internal k8s 执行面 | 目标主机上的 compose substrate | mode 描述自动化边界，不是 runner 能力差异 |
 <!-- current-runtime-lines:runtime-matrix:end -->
 
 ## Runtime 状态目录真相
@@ -59,9 +59,9 @@
   - 在目标环境上执行正式发布
 - `mode`
   - 当前运行线内部的能力边界或自动化边界
-- `external path`
-  - system 管理侧之外的外部 agent / 用户访问链路
-- `internal path`
+- `managed runner path`
+  - Agent task 的正式执行主链
+- `sandbox path`
   - system 管理侧内部的 sandbox / k8s 执行链路
 
 正式 contract 见：
@@ -78,12 +78,12 @@
   - `make local-real-status`
   - `make local-real-down`
   - `make local-real-reset`
-- 需要 internal notebook / sandbox / JuiceFS 诊断时，只有 owner runbook 明确要求才进入 internal owner diagnostic adapter；它不是普通建议路径。
+- 需要 Agent task sandbox / JuiceFS 诊断时，只有 owner runbook 明确要求才进入 internal owner diagnostic adapter；它不是普通建议路径。
 
 ### `demo-deploy`
 
 - `DEMO_DEPLOY_MODE=simple`
-  - external-only
+  - managed runner主链
   - 不启用 local `kind` / JuiceFS CSI / sandbox-manager
 - `DEMO_DEPLOY_MODE=full`
   - external + internal

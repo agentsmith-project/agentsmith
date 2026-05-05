@@ -25,14 +25,14 @@
     ],
     "lane": "backend-real",
     "entryRoute": "/en-US/workspaces/ws_default/projects",
-    "goal": "项目管理员被降回普通成员后，自己还能继续做 notebook 和 files 的真实工作，但治理入口要立即收缩，不允许旧的 admin surface 继续留在页面里。",
+    "goal": "项目管理员被降回普通成员后，自己还能继续做 agent-task 和 files 的真实工作，但治理入口要立即收缩，不允许旧的 admin surface 继续留在页面里。",
     "sourceRef": "e2e/stories/backend-real/admin-switches-to-member-and-keeps-working.story.md#admin-switches-to-member-and-keeps-working",
-    "sourceFingerprint": "f40f8382fc5b4d54dbd75abd440e7b06091ee6e9306270c036353bbbed1d66c1",
-    "storyFingerprint": "918c860dff1fca5af57a5e341078cf295623ae8b382e14d3cf841771301613eb",
-    "stepMapFingerprint": "60e18a51a838c3143389b05c49ed9ad058d1fbfd8b480f6229b986d9c092762d",
+    "sourceFingerprint": "5388fe14a0b03154bc604acbad4ae34990c4e224ab955408a7789f1613592f13",
+    "storyFingerprint": "f06a7fd4852fe0ab3282d6a5d711305ff7b9166d4272424e8781a413b06557d3",
+    "stepMapFingerprint": "ba6d7416a04efb3aad1cd2c18c1db2f44404559ec257ce062b191c7ebf088473",
     "sceneIds": [
       "project-settings",
-      "project-notebook-task",
+      "project-agent-task",
       "project-files"
     ],
     "stepIds": [
@@ -46,6 +46,325 @@
       "demote-admin-to-member",
       "lose-governance-surface",
       "continue-member-work"
+    ],
+    "visualStepIds": []
+  },
+  {
+    "storyId": "agent-task-artifact-to-files-download",
+    "title": "Agent Task artifact to files download",
+    "actor": "project member",
+    "family": "agent-task-artifact-to-files-download",
+    "personas": [
+      "project member"
+    ],
+    "kind": "journey",
+    "gatePolicy": {
+      "tier": "default",
+      "requiredEvidence": [
+        "trace"
+      ]
+    },
+    "externalDependencies": [],
+    "lane": "backend-real",
+    "entryRoute": "/en-US/workspaces/ws_default/projects/{projectId}/agent-tasks/{taskId}",
+    "goal": "项目成员运行 Agent Task 任务后，可以在 Files 中找到交付物并下载验证内容。",
+    "sourceRef": "e2e/stories/backend-real/agent-task-artifact-to-files-download.story.md#agent-task-artifact-to-files-download",
+    "sourceFingerprint": "bf0cc641657b39501964b1d758796962cdb9db531021a3148c4c461e36e7cc23",
+    "storyFingerprint": "bc0400b222571b2194fadbb5791abc693d319785e739666116339c4f7a8746a2",
+    "stepMapFingerprint": "bf235f660b678874c5edc07c31312737772c1c577a62dc5d63f3b9b01940f44b",
+    "sceneIds": [
+      "agent-task-detail",
+      "project-files"
+    ],
+    "stepIds": [
+      "open-agent-task",
+      "open-files-artifacts",
+      "download-artifact"
+    ],
+    "traceStepIds": [
+      "open-agent-task",
+      "open-files-artifacts",
+      "download-artifact"
+    ],
+    "visualStepIds": []
+  },
+  {
+    "storyId": "agent-task-cancel-terminate-refresh-recovery",
+    "title": "Agent Task cancel, terminate, and refresh recovery",
+    "actor": "project member",
+    "family": "agent-task-stop-recovery",
+    "personas": [
+      "project member"
+    ],
+    "kind": "journey",
+    "gatePolicy": {
+      "tier": "default",
+      "requiredEvidence": [
+        "trace"
+      ]
+    },
+    "externalDependencies": [
+      {
+        "dependencyId": "agent-task-runtime",
+        "kind": "service",
+        "required": true,
+        "note": "backend-real agent-task stop recovery story needs a live Agent Task runtime with authoritative stop state after refresh."
+      }
+    ],
+    "lane": "backend-real",
+    "entryRoute": "/en-US/workspaces/{workspaceId}/projects/{projectId}/agent-tasks/{taskId}",
+    "goal": "项目成员在 agent-task 里叫停一条失控或过慢的运行时，应该先能 cancel，再在需要时升级为 terminate；刷新或重新进入同一 task 后，产品必须继续说真话，不让旧运行幽灵式复活，也不把成员卡死在不能恢复工作的假忙碌状态里。",
+    "sourceRef": "e2e/stories/backend-real/agent-task-cancel-terminate-refresh-recovery.story.md#agent-task-cancel-terminate-refresh-recovery",
+    "sourceFingerprint": "862af468d41ee34ab860b6f91e77f962b87ccb1a94ff2e742b0ba8efe4917f7b",
+    "storyFingerprint": "0b6203aaaf05765493c556decf550bac4b18b47f6b17f4e67eb3b13911de21cc",
+    "stepMapFingerprint": "25404763492848a880d94ff806f34e7dd02e318e0cd42267881ce5bd0c27929c",
+    "sceneIds": [
+      "agent-task"
+    ],
+    "stepIds": [
+      "reenter-running-agent-task",
+      "cancel-the-active-run-from-the-task-surface",
+      "escalate-a-stuck-cancel-to-terminate",
+      "refresh-the-task-while-stop-truth-is-still-settling",
+      "recover-the-same-task-after-stop-settles",
+      "continue-the-next-turn-in-the-same-task"
+    ],
+    "traceStepIds": [
+      "reenter-running-agent-task",
+      "cancel-the-active-run-from-the-task-surface",
+      "escalate-a-stuck-cancel-to-terminate",
+      "refresh-the-task-while-stop-truth-is-still-settling",
+      "recover-the-same-task-after-stop-settles",
+      "continue-the-next-turn-in-the-same-task"
+    ],
+    "visualStepIds": []
+  },
+  {
+    "storyId": "agent-task-first-success",
+    "title": "First agent-task success",
+    "actor": "system 管理侧 / workspace admin / project member",
+    "family": "agent-task-first-success",
+    "personas": [
+      "system 管理侧",
+      "workspace admin",
+      "project member"
+    ],
+    "kind": "journey",
+    "gatePolicy": {
+      "tier": "default",
+      "requiredEvidence": [
+        "trace"
+      ]
+    },
+    "externalDependencies": [
+      {
+        "dependencyId": "provider-api-key",
+        "kind": "credential",
+        "required": true,
+        "note": "backend-real agent-task onboarding story needs a runnable endpoint credential."
+      }
+    ],
+    "lane": "backend-real",
+    "entryRoute": "/en-US/system/login",
+    "goal": "新工作区准备完成后，workspace admin 应先把 agent-task 配到可用，再让成员第一次进入 agent-task 就能成功创建任务并拿到第一条有效结果，而不是停在配置或运行失败上。",
+    "sourceRef": "e2e/stories/backend-real/agent-task-first-success.story.md#agent-task-first-success",
+    "sourceFingerprint": "e850d2dd5bf3c96a65db406b2d3bd339d9d2404a94549b920181d97d1b502cf2",
+    "storyFingerprint": "f8d838b1e57baf8fc7f55d1ce2b7b614485091a02d0909bc484b15017f1c0e83",
+    "stepMapFingerprint": "1de8bd54c85ff9e1c3828fb220b674935affcb5f33bb1f1db05ca211e6767112",
+    "sceneIds": [
+      "system-login",
+      "system-workspaces",
+      "project-agent-runners",
+      "project-members",
+      "project-agent-tasks",
+      "agent-task-detail"
+    ],
+    "stepIds": [
+      "open-system-login",
+      "publish-workspace",
+      "configure-agent-task-project",
+      "grant-member-agent-task-access",
+      "run-first-agent-task"
+    ],
+    "traceStepIds": [
+      "open-system-login",
+      "publish-workspace",
+      "configure-agent-task-project",
+      "grant-member-agent-task-access",
+      "run-first-agent-task"
+    ],
+    "visualStepIds": []
+  },
+  {
+    "storyId": "agent-task-terminal-reentry-recovery",
+    "title": "Agent Task terminal re-entry and recovery in the same task",
+    "actor": "project member",
+    "family": "agent-task-terminal-workspace",
+    "personas": [
+      "project member"
+    ],
+    "kind": "journey",
+    "gatePolicy": {
+      "tier": "default",
+      "requiredEvidence": [
+        "trace"
+      ]
+    },
+    "externalDependencies": [
+      {
+        "dependencyId": "agent-task-terminal-runtime",
+        "kind": "service",
+        "required": true,
+        "note": "backend-real terminal recovery story needs a live terminal session service behind Agent Tasks."
+      }
+    ],
+    "lane": "backend-real",
+    "entryRoute": "/en-US/workspaces/{workspaceId}/projects/{projectId}/agent-tasks/{taskId}",
+    "goal": "项目成员重新进入一个被 terminal work 打断的 Agent Task 时，产品必须先 fail-closed 保护任务真相：如果 terminal 仍需恢复或状态已经坏掉，就不能假装 task 已经释放，也不能放行新的创建、run 或删除；用户应该能在同一 task 内重新连接 backend 仍持有的 session id，识别哪一条 terminal 现在需要恢复，结束那条问题 session，并立即开出新的 terminal 继续工作。",
+    "sourceRef": "e2e/stories/backend-real/agent-task-terminal-reentry-recovery.story.md#agent-task-terminal-reentry-recovery",
+    "sourceFingerprint": "ac36d212966cb9aa240fcd94e2fdef9fd032f946b0950138358cda0700e9efab",
+    "storyFingerprint": "b496d36a9fe01315ef27243a11d0e0f1d12fab8ae5d4d6e450e81b53b8b0d544",
+    "stepMapFingerprint": "7c0c2d2756818a9a203397a9546059d3fad081aa698b9ee6f068707cbfc0b1b7",
+    "sceneIds": [
+      "agent-task"
+    ],
+    "stepIds": [
+      "return-to-interrupted-agent-task",
+      "lose-terminal-connection-without-ending-task",
+      "reload-task-and-fail-closed-on-recovery-needed-terminal",
+      "keep-create-run-and-delete-fail-closed-until-terminal-truth-recovers",
+      "reopen-terminal-workspace-and-reconnect-existing-session",
+      "confirm-reconnected-terminal-is-still-usable",
+      "surface-broken-terminal-session-inside-same-task",
+      "clear-broken-session-and-keep-task-owned",
+      "start-fresh-terminal-session-after-recovery",
+      "end-recovered-terminal-session-and-return-to-agent-work"
+    ],
+    "traceStepIds": [
+      "return-to-interrupted-agent-task",
+      "lose-terminal-connection-without-ending-task",
+      "reload-task-and-fail-closed-on-recovery-needed-terminal",
+      "keep-create-run-and-delete-fail-closed-until-terminal-truth-recovers",
+      "reopen-terminal-workspace-and-reconnect-existing-session",
+      "confirm-reconnected-terminal-is-still-usable",
+      "surface-broken-terminal-session-inside-same-task",
+      "clear-broken-session-and-keep-task-owned",
+      "start-fresh-terminal-session-after-recovery",
+      "end-recovered-terminal-session-and-return-to-agent-work"
+    ],
+    "visualStepIds": []
+  },
+  {
+    "storyId": "agent-task-terminal-truth-unavailable-retry",
+    "title": "Agent Task terminal truth must be retried before the task unlocks",
+    "actor": "project member",
+    "family": "agent-task-terminal-workspace",
+    "personas": [
+      "project member"
+    ],
+    "kind": "journey",
+    "gatePolicy": {
+      "tier": "default",
+      "requiredEvidence": [
+        "trace"
+      ]
+    },
+    "externalDependencies": [
+      {
+        "dependencyId": "agent-task-terminal-runtime",
+        "kind": "service",
+        "required": true,
+        "note": "backend-real agent-task terminal truth story needs Agent Task terminal status from the live backend."
+      }
+    ],
+    "lane": "backend-real",
+    "entryRoute": "/en-US/workspaces/{workspaceId}/projects/{projectId}/agent-tasks/{taskId}",
+    "goal": "当项目成员重新进入 Agent Task 时，如果 terminal 真相暂时不可用，产品必须先 fail-closed：Conversation、运行和删除都继续锁定，直到用户在当前 task 里明确重试 terminal 状态检查，并在 backend terminal truth 恢复后立刻同步解锁。",
+    "sourceRef": "e2e/stories/backend-real/agent-task-terminal-truth-unavailable-retry.story.md#agent-task-terminal-truth-unavailable-retry",
+    "sourceFingerprint": "ea3a096dd5bbba24945b34354824be2beb27b5bdc340809d5f72fc98cd89466f",
+    "storyFingerprint": "0f8a7ff1169a12a1fdfa8f4a85aa15cca7b212e4e454a30452c1bb2162fd3cd5",
+    "stepMapFingerprint": "880565358b7f6ad824cb872511f267950cb8c2d85e034f2d27a9050504b74ae1",
+    "sceneIds": [
+      "agent-task"
+    ],
+    "stepIds": [
+      "return-to-task-while-terminal-truth-is-unavailable",
+      "keep-run-and-delete-fail-closed-while-terminal-truth-is-missing",
+      "retry-terminal-truth-check-from-blocked-task",
+      "unlock-task-after-terminal-truth-recovers"
+    ],
+    "traceStepIds": [
+      "return-to-task-while-terminal-truth-is-unavailable",
+      "keep-run-and-delete-fail-closed-while-terminal-truth-is-missing",
+      "retry-terminal-truth-check-from-blocked-task",
+      "unlock-task-after-terminal-truth-recovers"
+    ],
+    "visualStepIds": []
+  },
+  {
+    "storyId": "agent-task-terminal-workspace-multi-session",
+    "title": "Agent Task terminal workspace with multiple sessions",
+    "actor": "project member",
+    "family": "agent-task-terminal-workspace",
+    "personas": [
+      "project member"
+    ],
+    "kind": "journey",
+    "gatePolicy": {
+      "tier": "default",
+      "requiredEvidence": [
+        "trace"
+      ]
+    },
+    "externalDependencies": [
+      {
+        "dependencyId": "agent-task-terminal-runtime",
+        "kind": "service",
+        "required": true,
+        "note": "backend-real terminal workspace story needs a live terminal session service behind Agent Tasks."
+      }
+    ],
+    "lane": "backend-real",
+    "entryRoute": "/en-US/workspaces/{workspaceId}/projects/{projectId}/agent-tasks/{taskId}",
+    "goal": "项目成员回到已有 Agent Task 继续工作时，应该先从 Conversation 进入 Terminal workspace，在同一 task 下面创建多个 terminal sessions 并在 tabs 间切换；当 live terminal 仍存在时，任务删除必须继续被阻止，第四个 terminal 也不能以假 tab 的方式出现；即使刷新或重新进入 task 页，界面也必须按 backend list 和同一批 session id 恢复这些 live sessions 与任务仍被占用的真相；关闭一个 session 不能影响其他 session，直到最后一个 session 结束后才真正释放任务并恢复 agent 输入。",
+    "sourceRef": "e2e/stories/backend-real/agent-task-terminal-workspace-multi-session.story.md#agent-task-terminal-workspace-multi-session",
+    "sourceFingerprint": "ddc275cb36a6ce964e3639a7eb43d7aabafca9850fe7fef6ed630e5e9dd33a8e",
+    "storyFingerprint": "a31a45438ff010a3dbfbc31b427da8298223c105350461b0b8f4c882a14613db",
+    "stepMapFingerprint": "05929f305939b27a850505950fcd28b726dd4a82daf84ed809ad95cd94cbedcf",
+    "sceneIds": [
+      "agent-task"
+    ],
+    "stepIds": [
+      "return-to-agent-task",
+      "open-terminal-workspace",
+      "wait-for-first-terminal-session",
+      "create-second-terminal-session",
+      "create-third-terminal-session",
+      "keep-task-delete-blocked-while-live-terminal-sessions-exist",
+      "reject-phantom-fourth-terminal-session",
+      "switch-between-terminal-sessions",
+      "return-to-conversation-while-terminal-stays-active",
+      "reload-task-and-preserve-backend-session-ids",
+      "reject-new-run-while-live-terminal-sessions-exist",
+      "reopen-terminal-workspace-after-reload",
+      "end-one-terminal-session-without-disrupting-others",
+      "end-last-terminal-session-and-resume-agent-work"
+    ],
+    "traceStepIds": [
+      "return-to-agent-task",
+      "open-terminal-workspace",
+      "wait-for-first-terminal-session",
+      "create-second-terminal-session",
+      "create-third-terminal-session",
+      "keep-task-delete-blocked-while-live-terminal-sessions-exist",
+      "reject-phantom-fourth-terminal-session",
+      "switch-between-terminal-sessions",
+      "return-to-conversation-while-terminal-stays-active",
+      "reload-task-and-preserve-backend-session-ids",
+      "reject-new-run-while-live-terminal-sessions-exist",
+      "reopen-terminal-workspace-after-reload",
+      "end-one-terminal-session-without-disrupting-others",
+      "end-last-terminal-session-and-resume-agent-work"
     ],
     "visualStepIds": []
   },
@@ -66,19 +385,19 @@
     },
     "externalDependencies": [
       {
-        "dependencyId": "external-agent-chat-runtime",
+        "dependencyId": "chat-endpoint-runtime",
         "kind": "service",
         "required": true,
-        "note": "backend-real recovery story needs a reconnectable external agent websocket runtime."
+        "note": "backend-real recovery story needs a reconnectable chat endpoint/model runtime."
       }
     ],
     "lane": "backend-real",
     "entryRoute": "/en-US/workspaces/ws_default/projects/{projectId}/chat",
-    "goal": "项目操作人员在 chat 里遇到外部 AI runtime 离线时，应该立刻看到明确的恢复动作；完成重新连接后，能在同一条对话链里再次成功。",
+    "goal": "项目操作人员在 chat 里遇到 endpoint/model runtime 离线时，应该立刻看到明确的恢复动作；完成重新连接后，能在同一条对话链里再次成功。",
     "sourceRef": "e2e/stories/backend-real/ai-runtime-failure-and-recovery.story.md#ai-runtime-failure-and-recovery",
-    "sourceFingerprint": "08325ab8a1cf93bca728ca917affd9280e02e22d398a73b54222d7b985865889",
-    "storyFingerprint": "c36c756daa86c81fb69eefaa768f49befa18d45946ea53d680f475c00873ab02",
-    "stepMapFingerprint": "1a1866c76bb41560884961f072896a9b48425d8d59083b30f21c28b396ea2d07",
+    "sourceFingerprint": "914cf0aa8bdebffcc28eab9909096f22eade991b95b5fb91c0d35f31e2d15129",
+    "storyFingerprint": "444d713afc4b64ab22f2d864f6cb21f4468e1a9f96919038db55b915f903edfe",
+    "stepMapFingerprint": "de58e977e64ea15a98db771e997893511bada1e1b77e6c34815cf25adfae6795",
     "sceneIds": [
       "project-chat"
     ],
@@ -132,6 +451,65 @@
       "review-use-guide",
       "create-personal-api-key",
       "consume-endpoint"
+    ],
+    "visualStepIds": []
+  },
+  {
+    "storyId": "chat-agent-task-target-model-continuity",
+    "title": "Chat endpoint and managed Agent Task runner continuity",
+    "actor": "project member",
+    "family": "ai-work-target-model",
+    "personas": [
+      "project member"
+    ],
+    "kind": "journey",
+    "gatePolicy": {
+      "tier": "default",
+      "requiredEvidence": [
+        "trace"
+      ]
+    },
+    "externalDependencies": [
+      {
+        "dependencyId": "provider-api-key",
+        "kind": "credential",
+        "required": true,
+        "note": "backend-real target model story needs a valid upstream credential for the project endpoint."
+      },
+      {
+        "dependencyId": "managed-agent-task-runner",
+        "kind": "service",
+        "required": true,
+        "note": "Agent Task work is validated through the managed runner path, not a legacy compatibility selector."
+      }
+    ],
+    "lane": "backend-real",
+    "entryRoute": "/en-US/workspaces/{workspaceId}/projects/{projectId}/chat",
+    "goal": "项目成员在同一个项目里使用 Chat 与 Agent Task 时，Chat 只呈现 endpoint/model 选择，Agent Task 只呈现托管 Agent Runner；用户不需要理解旧兼容多路径，仍然能把同一份项目上下文带着走。",
+    "sourceRef": "e2e/stories/backend-real/chat-agent-task-target-model-continuity.story.md#chat-agent-task-target-model-continuity",
+    "sourceFingerprint": "35c2092c819653255721fcad025f1c98e657a59edd636c6ae1d0224b8f2fa23e",
+    "storyFingerprint": "57e0e35ce643fe206dc5a8b507dce0c963b791305832795c85a067e1cb184889",
+    "stepMapFingerprint": "6117b4658e7a164f38e76ca51b3b42c56eef0cd86129decfb5c27c566a01b7ca",
+    "sceneIds": [
+      "project-chat",
+      "project-agent-runners",
+      "agent-task"
+    ],
+    "stepIds": [
+      "work-through-chat-endpoint-model",
+      "keep-chat-work-on-the-same-project-context",
+      "prepare-managed-agent-task-runner",
+      "complete-managed-agent-task",
+      "continue-managed-agent-task-work",
+      "keep-project-truth-consistent-across-chat-and-agent-task"
+    ],
+    "traceStepIds": [
+      "work-through-chat-endpoint-model",
+      "keep-chat-work-on-the-same-project-context",
+      "prepare-managed-agent-task-runner",
+      "complete-managed-agent-task",
+      "continue-managed-agent-task-work",
+      "keep-project-truth-consistent-across-chat-and-agent-task"
     ],
     "visualStepIds": []
   },
@@ -444,15 +822,15 @@
     ],
     "lane": "backend-real",
     "entryRoute": "/en-US/workspaces/ws_default/projects",
-    "goal": "项目成员在治理变更之后，chat、notebook task detail artifacts continuity 的真实可用状态必须立刻跟着变化：普通成员继续完成自己的 chat 和 notebook 任务，并在 notebook task detail 中继续看到自己任务产物；升权后在继续工作的同时获得新的治理能力；降权后继续工作但失去这些额外能力；被移除后则不再继续看到旧项目。",
+    "goal": "项目成员在治理变更之后，chat、Agent Task detail artifacts continuity 的真实可用状态必须立刻跟着变化：普通成员继续完成自己的 chat 和 Agent Task 任务，并在 Agent Task detail 中继续看到自己任务产物；升权后在继续工作的同时获得新的治理能力；降权后继续工作但失去这些额外能力；被移除后则不再继续看到旧项目。",
     "sourceRef": "e2e/stories/backend-real/governance-change-then-member-keeps-working.story.md#governance-change-then-member-keeps-working",
-    "sourceFingerprint": "6799914266bd3563e45fa5ecb95b2caa069ff054cd8362cea6d8536297741723",
-    "storyFingerprint": "fc6e0b609ca4cc814f7105365d38ce9cdb950203b716b86368bc1644aa59d410",
-    "stepMapFingerprint": "5b777a62fc1f2b0fdb2ea3e676e48e057feea28ebf9011f3cf5ba0ce4dff71d6",
+    "sourceFingerprint": "b6a6903398e52ba16f9779d9380158b387fc4b56d3492ea61f01e194ccd28623",
+    "storyFingerprint": "b07e41f703957fb545296f24e34400b8af0525ef845291a3bc51496ea24b4396",
+    "stepMapFingerprint": "fe9bd3ec4a3c986b6307c7c3314061c4e160c4995844abed1962eb5b9d74c9b9",
     "sceneIds": [
       "project-chat",
-      "project-notebook",
-      "project-notebook-task",
+      "project-agent-tasks",
+      "project-agent-task",
       "project-settings",
       "project-overview"
     ],
@@ -467,68 +845,6 @@
       "promote-member-and-continue-work",
       "demote-member-and-continue-work",
       "remove-member-and-lose-project-access"
-    ],
-    "visualStepIds": []
-  },
-  {
-    "storyId": "internal-external-chat-notebook-proxy-matrix",
-    "title": "Internal and external chat/notebook continuity through the universal proxy matrix",
-    "actor": "project member",
-    "family": "ai-work-matrix",
-    "personas": [
-      "project member"
-    ],
-    "kind": "journey",
-    "gatePolicy": {
-      "tier": "default",
-      "requiredEvidence": [
-        "trace"
-      ]
-    },
-    "externalDependencies": [
-      {
-        "dependencyId": "llm-universal-proxy",
-        "kind": "service",
-        "required": true,
-        "note": "backend-real AI matrix story depends on llm-universal-proxy carrying the supported protocol matrix without leaking protocol details into the product surface."
-      },
-      {
-        "dependencyId": "internal-agent-runtime",
-        "kind": "service",
-        "required": true,
-        "note": "the internal half of the matrix needs a live internal runner path for chat and notebook."
-      },
-      {
-        "dependencyId": "provider-api-key",
-        "kind": "credential",
-        "required": true,
-        "note": "the external half of the matrix needs a valid upstream credential."
-      }
-    ],
-    "lane": "backend-real",
-    "entryRoute": "/en-US/workspaces/{workspaceId}/projects/{projectId}/chat",
-    "goal": "项目成员在同一个项目里切换 internal / external 的 chat 与 notebook 工作时，四条主线都应通过统一的项目级 AI 入口稳定可用；用户不需要理解底层协议、provider 差异或哪一路经过 llm-universal-proxy，仍然能把同一份项目上下文带着走。",
-    "sourceRef": "e2e/stories/backend-real/internal-external-chat-notebook-proxy-matrix.story.md#internal-external-chat-notebook-proxy-matrix",
-    "sourceFingerprint": "c92a1d7dcde84abb9ae174443bb3e0d08e010277533f16e0a923b91d95bb2d28",
-    "storyFingerprint": "1932413009c20315f3a5ce77545db6c358e14edc23ea4c200b1e5dac9ec9c62d",
-    "stepMapFingerprint": "d7a3edf9440484e12e1d4b128d1da31dfa3e6b91022340d45e959c244e47e4df",
-    "sceneIds": [
-      "project-chat",
-      "notebook-task"
-    ],
-    "stepIds": [
-      "work-through-the-external-chat-path",
-      "switch-to-the-internal-chat-path-without-leaving-chat-work",
-      "complete-an-external-notebook-task",
-      "complete-an-internal-notebook-task",
-      "keep-project-truth-consistent-across-all-four-paths"
-    ],
-    "traceStepIds": [
-      "work-through-the-external-chat-path",
-      "switch-to-the-internal-chat-path-without-leaving-chat-work",
-      "complete-an-external-notebook-task",
-      "complete-an-internal-notebook-task",
-      "keep-project-truth-consistent-across-all-four-paths"
     ],
     "visualStepIds": []
   },
@@ -560,8 +876,8 @@
     "entryRoute": "/en-US/join",
     "goal": "被邀请成员先看到公开 invite 真相并理解被邀请的 workspace 和 project；如果已经登录，join 页应直接接受邀请并落到被邀请项目的 overview；如果尚未登录，join 页应先保留 pending invite，并直接进入被邀请 workspace 的登录入口，登录后完成 accept，再落到 overview 并开始第一次有效工作。",
     "sourceRef": "e2e/stories/backend-real/invite-to-first-effective-work.story.md#invite-to-first-effective-work",
-    "sourceFingerprint": "964cb92cc6f4996a0d22d5f339addb7553ee0b2e3245358c634a53e8315abd71",
-    "storyFingerprint": "cea5397e61dd72f03d76bf11925fc6031242b88d8ce3cde6abbeda3399f8bf98",
+    "sourceFingerprint": "082755c934ed836a5686bbbadec3c1e7cdc054913f72685688f0f9d2f893c69a",
+    "storyFingerprint": "64923709324db6c162f4228a72085cad4ff1b097f1bebf808ce647fa376ee506",
     "stepMapFingerprint": "53e96e4d2a6bdd4e66025a0d4405671c2bd874cd198a44772c9ce3dd2512470c",
     "sceneIds": [
       "join-invite",
@@ -615,9 +931,9 @@
     "entryRoute": "/en-US/join",
     "goal": "被邀请的成员在已登录状态下接受邀请后，应该直接落到项目 overview，立刻成为可用成员并开始第一次使用；与此同时，别人的私人聊天内容不能泄露给他。",
     "sourceRef": "e2e/stories/backend-real/members-invite-and-chat-privacy.story.md#members-invite-and-chat-privacy",
-    "sourceFingerprint": "71d171ce286bdaedc8989b8d86575d48a1a950b60422ee6b66a72d469f6ed0ff",
-    "storyFingerprint": "eb6f78b44302487cfae84dcbf35083d1925db653863cc1622ad914eb73242db8",
-    "stepMapFingerprint": "34d6616c8a5fb6f33052ba03f8d366b512017a51b231088a0a2e34412421f905",
+    "sourceFingerprint": "2f2b6ea1c292461f7e9ad94018e7869281451ed6c2235120d81894d65b1fe83d",
+    "storyFingerprint": "507f94461f8d5e389a22f751dd085872192154b03c279b265c64a64f9595c928",
+    "stepMapFingerprint": "6aedb36368fa19339e5217e3585716bde9aaadc11505a443ab088b732f3938f7",
     "sceneIds": [
       "join-invite",
       "project-overview",
@@ -628,14 +944,14 @@
       "verify-member-first-access",
       "start-first-chat-use",
       "verify-chat-privacy",
-      "verify-shared-runner-isolation"
+      "verify-chat-session-isolation"
     ],
     "traceStepIds": [
       "accept-invite",
       "verify-member-first-access",
       "start-first-chat-use",
       "verify-chat-privacy",
-      "verify-shared-runner-isolation"
+      "verify-chat-session-isolation"
     ],
     "visualStepIds": []
   },
@@ -695,6 +1011,61 @@
       "demote-member-back",
       "remove-member",
       "verify-removed-access"
+    ],
+    "visualStepIds": []
+  },
+  {
+    "storyId": "mock-lane-agent-task-lifecycle",
+    "title": "Mock lane agent task lifecycle scenes",
+    "actor": "authenticated project member",
+    "family": "agent-task-lifecycle",
+    "personas": [
+      "authenticated project member"
+    ],
+    "kind": "journey",
+    "gatePolicy": {
+      "tier": "default",
+      "requiredEvidence": [
+        "trace"
+      ]
+    },
+    "externalDependencies": [],
+    "lane": "mock-lane",
+    "entryRoute": "/en-US/workspaces/ws_default/projects/proj_001/agent-tasks",
+    "goal": "用一组 mock-lane story scenes 统一描述 agent task 的列表、创建、详情、产物检查，以及 cancel / force-stop confirm / provider error / SSE / terminal blocker 这些必须按用户心智说真话的状态同步时刻。",
+    "sourceRef": "e2e/stories/mock-lane/mock-lane-agent-task-lifecycle.story.md#mock-lane-agent-task-lifecycle",
+    "sourceFingerprint": "6e8062cbc01ba5288780d4f8d82b282bacfde77859a384456af1cf9470eb9263",
+    "storyFingerprint": "cea1d39b62376ee8a80d8a02f5a585013aa703b7b3e79d58f62528bac858f7d9",
+    "stepMapFingerprint": "5fe082ef7a08d78954ec8b6b8c242975820ab83debd807ad52703132469c6d34",
+    "sceneIds": [
+      "agent-task-lifecycle-list",
+      "agent-task-lifecycle-create-dialog",
+      "agent-task-lifecycle-detail",
+      "agent-task-lifecycle-artifact",
+      "agent-task-running",
+      "agent-task-running-long-action-narrow",
+      "agent-task-cancelling",
+      "agent-task-cancel-escalation-confirm",
+      "agent-task-terminating",
+      "agent-task-finalizing",
+      "agent-task-sse-reconnecting",
+      "agent-task-sse-unavailable-reconcile",
+      "agent-task-recovered-ready",
+      "agent-task-provider-upstream-error",
+      "agent-task-hidden-terminal-blocked",
+      "agent-task-terminal-truth-unavailable"
+    ],
+    "stepIds": [
+      "agent-task-lifecycle-open-list",
+      "agent-task-lifecycle-open-create-dialog",
+      "agent-task-lifecycle-open-detail",
+      "agent-task-lifecycle-open-artifact"
+    ],
+    "traceStepIds": [
+      "agent-task-lifecycle-open-list",
+      "agent-task-lifecycle-open-create-dialog",
+      "agent-task-lifecycle-open-detail",
+      "agent-task-lifecycle-open-artifact"
     ],
     "visualStepIds": []
   },
@@ -900,8 +1271,8 @@
     "entryRoute": "/en-US/system/workspaces",
     "goal": "统一描述 system 管理侧与 project governance 核心面的 mock-lane visual scene 真相。",
     "sourceRef": "e2e/stories/mock-lane/mock-lane-governance-surfaces.story.md#mock-lane-governance-surfaces",
-    "sourceFingerprint": "44434828babc5d486af59b1a3d52d092e44ba3da853caa196988fbc376e0af86",
-    "storyFingerprint": "f380eb0e43be5103b0cbb7289021b6034c07de9d265b7457ec0251ae6c22539f",
+    "sourceFingerprint": "1e293e65184eb49af7e0e6183a5b4579aa320165d26ff608cd0d37268e170803",
+    "storyFingerprint": "d4736c0bbb496a660de22401020b581dbe8c48f02026034d80e60b89a4eb696a",
     "stepMapFingerprint": "f99ec14da80cffc353760d6ea51b65e8d2555e30be432554aab37189c5855ff6",
     "sceneIds": [
       "system-workspaces-empty",
@@ -911,8 +1282,8 @@
       "system-workspaces-failed-state",
       "system-workspaces-delete-confirmation",
       "system-info",
-      "agents",
-      "dialog-create-agent",
+      "agent-runners",
+      "dialog-create-agent-runner",
       "endpoints",
       "dialog-edit-endpoint",
       "dialog-create-endpoint",
@@ -934,61 +1305,6 @@
     "traceStepIds": [
       "open-system-workspaces",
       "open-members-governance"
-    ],
-    "visualStepIds": []
-  },
-  {
-    "storyId": "mock-lane-notebook-task-lifecycle",
-    "title": "Mock lane notebook task lifecycle scenes",
-    "actor": "authenticated project member",
-    "family": "notebook-task-lifecycle",
-    "personas": [
-      "authenticated project member"
-    ],
-    "kind": "journey",
-    "gatePolicy": {
-      "tier": "default",
-      "requiredEvidence": [
-        "trace"
-      ]
-    },
-    "externalDependencies": [],
-    "lane": "mock-lane",
-    "entryRoute": "/en-US/workspaces/ws_default/projects/proj_001/notebook",
-    "goal": "用一组 mock-lane story scenes 统一描述 notebook task 的列表、创建、详情、产物检查，以及 cancel / force-stop confirm / provider error / SSE / terminal blocker 这些必须按用户心智说真话的状态同步时刻。",
-    "sourceRef": "e2e/stories/mock-lane/mock-lane-notebook-task-lifecycle.story.md#mock-lane-notebook-task-lifecycle",
-    "sourceFingerprint": "2cd2a5b2e296318678882f10c767a2afa45222fc15d435ed22d9b30723f7e9ed",
-    "storyFingerprint": "dda840a307e104abbff0a43af47410645488dee99edea07a7df422b8a3c1c7a8",
-    "stepMapFingerprint": "fafa2add94be782963e45a8208404b3c19434432fa192bd4ea65d270302241de",
-    "sceneIds": [
-      "notebook-task-lifecycle-list",
-      "notebook-task-lifecycle-create-dialog",
-      "notebook-task-lifecycle-detail",
-      "notebook-task-lifecycle-artifact",
-      "notebook-task-running",
-      "notebook-task-running-long-action-narrow",
-      "notebook-task-cancelling",
-      "notebook-cancel-escalation-confirm",
-      "notebook-task-terminating",
-      "notebook-task-finalizing",
-      "notebook-sse-reconnecting",
-      "notebook-sse-unavailable-reconcile",
-      "notebook-task-recovered-ready",
-      "notebook-provider-upstream-error",
-      "notebook-hidden-terminal-blocked",
-      "notebook-terminal-truth-unavailable"
-    ],
-    "stepIds": [
-      "notebook-task-lifecycle-open-list",
-      "notebook-task-lifecycle-open-create-dialog",
-      "notebook-task-lifecycle-open-detail",
-      "notebook-task-lifecycle-open-artifact"
-    ],
-    "traceStepIds": [
-      "notebook-task-lifecycle-open-list",
-      "notebook-task-lifecycle-open-create-dialog",
-      "notebook-task-lifecycle-open-detail",
-      "notebook-task-lifecycle-open-artifact"
     ],
     "visualStepIds": []
   },
@@ -1093,8 +1409,8 @@
     "entryRoute": "/en-US/workspaces/ws_default",
     "goal": "统一描述 workspace 与 project 核心工作面的 mock-lane visual scene 真相。",
     "sourceRef": "e2e/stories/mock-lane/mock-lane-workspace-project-core.story.md#mock-lane-workspace-project-core",
-    "sourceFingerprint": "0bf36d5dfc3faeaaca5bc927d1b16670db1c7e39125953a001a34a461f6a6cc1",
-    "storyFingerprint": "a130c3b2820a08863e78ed7088c38aa7d3a623fb01c322079f85727f163dd328",
+    "sourceFingerprint": "515eb0f6040acae97a7eac70bb4c7e7f51523263d67d4debff0b331a3a9fed10",
+    "storyFingerprint": "df7f86b0810a0d8e6dc6c312c2b9ec713b0fddd5e4b62b5155e68b39a777698e",
     "stepMapFingerprint": "fc217664c231e04f7a2d5f64c6dea4fad526df3315c22b642acc893f36901b93",
     "sceneIds": [
       "workspace-home-project-creator",
@@ -1112,10 +1428,10 @@
       "project-overview",
       "chat-standard",
       "chat-ultrawide",
-      "notebook",
-      "notebook-create-task-dialog",
-      "notebook-task-detail",
-      "notebook-task-detail-artifact-hover",
+      "agent-tasks",
+      "agent-tasks-create-task-dialog",
+      "agent-task-detail",
+      "agent-task-detail-artifact-hover",
       "files",
       "files-selection-details",
       "dialog-files-create-folder",
@@ -1131,324 +1447,6 @@
     "traceStepIds": [
       "open-workspace-home",
       "open-project-overview"
-    ],
-    "visualStepIds": []
-  },
-  {
-    "storyId": "notebook-artifact-to-files-download",
-    "title": "Notebook artifact to files download",
-    "actor": "project member",
-    "family": "notebook-artifact-to-files-download",
-    "personas": [
-      "project member"
-    ],
-    "kind": "journey",
-    "gatePolicy": {
-      "tier": "default",
-      "requiredEvidence": [
-        "trace"
-      ]
-    },
-    "externalDependencies": [],
-    "lane": "backend-real",
-    "entryRoute": "/en-US/workspaces/ws_default/projects/{projectId}/notebook",
-    "goal": "项目成员运行 notebook 任务后，可以在 Files 中找到交付物并下载验证内容。",
-    "sourceRef": "e2e/stories/backend-real/notebook-artifact-to-files-download.story.md#notebook-artifact-to-files-download",
-    "sourceFingerprint": "765067e51184da43bce605a6ff427b4dc0add554f01a66261b4eaca9a63d1631",
-    "storyFingerprint": "3e783e185b6a98eefa2ba4b21f5c0da784e179b158dd129f14aa6c3faf0e7977",
-    "stepMapFingerprint": "f268a1c63ef0bdc079a1fbc2e3722d20b81d923db67abc628554517ba9049ef8",
-    "sceneIds": [
-      "project-notebook",
-      "project-files"
-    ],
-    "stepIds": [
-      "open-notebook-task",
-      "open-files-artifacts",
-      "download-artifact"
-    ],
-    "traceStepIds": [
-      "open-notebook-task",
-      "open-files-artifacts",
-      "download-artifact"
-    ],
-    "visualStepIds": []
-  },
-  {
-    "storyId": "notebook-cancel-terminate-refresh-recovery",
-    "title": "Notebook cancel, terminate, and refresh recovery",
-    "actor": "project member",
-    "family": "notebook-stop-recovery",
-    "personas": [
-      "project member"
-    ],
-    "kind": "journey",
-    "gatePolicy": {
-      "tier": "default",
-      "requiredEvidence": [
-        "trace"
-      ]
-    },
-    "externalDependencies": [
-      {
-        "dependencyId": "notebook-task-runtime",
-        "kind": "service",
-        "required": true,
-        "note": "backend-real notebook stop recovery story needs a live notebook task runtime with authoritative stop state after refresh."
-      }
-    ],
-    "lane": "backend-real",
-    "entryRoute": "/en-US/workspaces/{workspaceId}/projects/{projectId}/notebook/tasks/{taskId}",
-    "goal": "项目成员在 notebook 里叫停一条失控或过慢的运行时，应该先能 cancel，再在需要时升级为 terminate；刷新或重新进入同一 task 后，产品必须继续说真话，不让旧运行幽灵式复活，也不把成员卡死在不能恢复工作的假忙碌状态里。",
-    "sourceRef": "e2e/stories/backend-real/notebook-cancel-terminate-refresh-recovery.story.md#notebook-cancel-terminate-refresh-recovery",
-    "sourceFingerprint": "ff1d203b9b7af07a6a241411076c2dcf7e34fa4376195719a4297e2842d94081",
-    "storyFingerprint": "1bac3c978cfddfc7d2ad8ca159d265ec1259d8017343cd95cecbfddcbe304754",
-    "stepMapFingerprint": "06b4337146bb0f9b8be7ae2314e49962a741af1ea8197f54730478166bd8f0e0",
-    "sceneIds": [
-      "notebook-task"
-    ],
-    "stepIds": [
-      "reenter-running-notebook-task",
-      "cancel-the-active-run-from-the-task-surface",
-      "escalate-a-stuck-cancel-to-terminate",
-      "refresh-the-task-while-stop-truth-is-still-settling",
-      "recover-the-same-task-after-stop-settles",
-      "continue-the-next-turn-in-the-same-task"
-    ],
-    "traceStepIds": [
-      "reenter-running-notebook-task",
-      "cancel-the-active-run-from-the-task-surface",
-      "escalate-a-stuck-cancel-to-terminate",
-      "refresh-the-task-while-stop-truth-is-still-settling",
-      "recover-the-same-task-after-stop-settles",
-      "continue-the-next-turn-in-the-same-task"
-    ],
-    "visualStepIds": []
-  },
-  {
-    "storyId": "notebook-first-success",
-    "title": "First notebook success",
-    "actor": "system 管理侧 / workspace admin / project member",
-    "family": "notebook-first-success",
-    "personas": [
-      "system 管理侧",
-      "workspace admin",
-      "project member"
-    ],
-    "kind": "journey",
-    "gatePolicy": {
-      "tier": "default",
-      "requiredEvidence": [
-        "trace"
-      ]
-    },
-    "externalDependencies": [
-      {
-        "dependencyId": "provider-api-key",
-        "kind": "credential",
-        "required": true,
-        "note": "backend-real notebook onboarding story needs a runnable endpoint credential."
-      }
-    ],
-    "lane": "backend-real",
-    "entryRoute": "/en-US/system/login",
-    "goal": "新工作区准备完成后，workspace admin 应先把 notebook 配到可用，再让成员第一次进入 notebook 就能成功创建任务并拿到第一条有效结果，而不是停在配置或运行失败上。",
-    "sourceRef": "e2e/stories/backend-real/notebook-first-success.story.md#notebook-first-success",
-    "sourceFingerprint": "76c432198b00754d2036e7f11c7ca5c8ede2a0f19817eea86258b6c6e1d16da6",
-    "storyFingerprint": "1ffa40b7db8a57f90ec02bb659c39fdb3a3f0ade113cee6dc8ce15d15fc43b82",
-    "stepMapFingerprint": "5a1d367b0392176359966de1d9d4c6a1576e91ef564e65c76a85682c3aebe699",
-    "sceneIds": [
-      "system-login",
-      "system-workspaces",
-      "project-agents",
-      "project-members",
-      "project-notebook"
-    ],
-    "stepIds": [
-      "open-system-login",
-      "publish-workspace",
-      "configure-notebook-project",
-      "grant-member-notebook-access",
-      "run-first-notebook-task"
-    ],
-    "traceStepIds": [
-      "open-system-login",
-      "publish-workspace",
-      "configure-notebook-project",
-      "grant-member-notebook-access",
-      "run-first-notebook-task"
-    ],
-    "visualStepIds": []
-  },
-  {
-    "storyId": "notebook-terminal-reentry-recovery",
-    "title": "Notebook terminal re-entry and recovery in the same task",
-    "actor": "project member",
-    "family": "notebook-terminal-workspace",
-    "personas": [
-      "project member"
-    ],
-    "kind": "journey",
-    "gatePolicy": {
-      "tier": "default",
-      "requiredEvidence": [
-        "trace"
-      ]
-    },
-    "externalDependencies": [
-      {
-        "dependencyId": "notebook-terminal-runtime",
-        "kind": "service",
-        "required": true,
-        "note": "backend-real terminal recovery story needs a live terminal session service behind notebook tasks."
-      }
-    ],
-    "lane": "backend-real",
-    "entryRoute": "/en-US/workspaces/{workspaceId}/projects/{projectId}/notebook/tasks/{taskId}",
-    "goal": "项目成员重新进入一个被 terminal work 打断的 notebook task 时，产品必须先 fail-closed 保护任务真相：如果 terminal 仍需恢复或状态已经坏掉，就不能假装 task 已经释放，也不能放行新的创建、run 或删除；用户应该能在同一 task 内重新连接 backend 仍持有的 session id，识别哪一条 terminal 现在需要恢复，结束那条问题 session，并立即开出新的 terminal 继续工作。",
-    "sourceRef": "e2e/stories/backend-real/notebook-terminal-reentry-recovery.story.md#notebook-terminal-reentry-recovery",
-    "sourceFingerprint": "6fe0d5f349da759ad0287ebfe461cd07822a97554319fbe04cf6ed98fa29a813",
-    "storyFingerprint": "48833fd4483ba283344242eb3a944842e472c40a5d8c6a9f01c1def579dc5e40",
-    "stepMapFingerprint": "27b904f9b6e966a497a4004454e8132725aa77c9f50dcc180c0cccd63193b616",
-    "sceneIds": [
-      "notebook-task"
-    ],
-    "stepIds": [
-      "return-to-interrupted-notebook-task",
-      "lose-terminal-connection-without-ending-task",
-      "reload-task-and-fail-closed-on-recovery-needed-terminal",
-      "keep-create-run-and-delete-fail-closed-until-terminal-truth-recovers",
-      "reopen-terminal-workspace-and-reconnect-existing-session",
-      "confirm-reconnected-terminal-is-still-usable",
-      "surface-broken-terminal-session-inside-same-task",
-      "clear-broken-session-and-keep-task-owned",
-      "start-fresh-terminal-session-after-recovery",
-      "end-recovered-terminal-session-and-return-to-agent-work"
-    ],
-    "traceStepIds": [
-      "return-to-interrupted-notebook-task",
-      "lose-terminal-connection-without-ending-task",
-      "reload-task-and-fail-closed-on-recovery-needed-terminal",
-      "keep-create-run-and-delete-fail-closed-until-terminal-truth-recovers",
-      "reopen-terminal-workspace-and-reconnect-existing-session",
-      "confirm-reconnected-terminal-is-still-usable",
-      "surface-broken-terminal-session-inside-same-task",
-      "clear-broken-session-and-keep-task-owned",
-      "start-fresh-terminal-session-after-recovery",
-      "end-recovered-terminal-session-and-return-to-agent-work"
-    ],
-    "visualStepIds": []
-  },
-  {
-    "storyId": "notebook-terminal-truth-unavailable-retry",
-    "title": "Notebook terminal truth must be retried before the task unlocks",
-    "actor": "project member",
-    "family": "notebook-terminal-workspace",
-    "personas": [
-      "project member"
-    ],
-    "kind": "journey",
-    "gatePolicy": {
-      "tier": "default",
-      "requiredEvidence": [
-        "trace"
-      ]
-    },
-    "externalDependencies": [
-      {
-        "dependencyId": "notebook-terminal-runtime",
-        "kind": "service",
-        "required": true,
-        "note": "backend-real notebook terminal truth story needs notebook task terminal status from the live backend."
-      }
-    ],
-    "lane": "backend-real",
-    "entryRoute": "/en-US/workspaces/{workspaceId}/projects/{projectId}/notebook/tasks/{taskId}",
-    "goal": "当项目成员重新进入 notebook task 时，如果 terminal 真相暂时不可用，产品必须先 fail-closed：Conversation、运行和删除都继续锁定，直到用户在当前 task 里明确重试 terminal 状态检查，并在 backend terminal truth 恢复后立刻同步解锁。",
-    "sourceRef": "e2e/stories/backend-real/notebook-terminal-truth-unavailable-retry.story.md#notebook-terminal-truth-unavailable-retry",
-    "sourceFingerprint": "bc34bf9b49d3a00bcf6afe6fb5c6b5c49614ab40d349ecbf51d98d80a98b0a92",
-    "storyFingerprint": "ed5a9d6a73bebc314de4be8296adbe7f76cb4e5baabd4b6d1763752fdecffa16",
-    "stepMapFingerprint": "b5bbd8825a94a639e6b31a290012d3c9570a4a9744675246892d10ca53d87766",
-    "sceneIds": [
-      "notebook-task"
-    ],
-    "stepIds": [
-      "return-to-task-while-terminal-truth-is-unavailable",
-      "keep-run-and-delete-fail-closed-while-terminal-truth-is-missing",
-      "retry-terminal-truth-check-from-blocked-task",
-      "unlock-task-after-terminal-truth-recovers"
-    ],
-    "traceStepIds": [
-      "return-to-task-while-terminal-truth-is-unavailable",
-      "keep-run-and-delete-fail-closed-while-terminal-truth-is-missing",
-      "retry-terminal-truth-check-from-blocked-task",
-      "unlock-task-after-terminal-truth-recovers"
-    ],
-    "visualStepIds": []
-  },
-  {
-    "storyId": "notebook-terminal-workspace-multi-session",
-    "title": "Notebook terminal workspace with multiple sessions",
-    "actor": "project member",
-    "family": "notebook-terminal-workspace",
-    "personas": [
-      "project member"
-    ],
-    "kind": "journey",
-    "gatePolicy": {
-      "tier": "default",
-      "requiredEvidence": [
-        "trace"
-      ]
-    },
-    "externalDependencies": [
-      {
-        "dependencyId": "notebook-terminal-runtime",
-        "kind": "service",
-        "required": true,
-        "note": "backend-real terminal workspace story needs a live terminal session service behind notebook tasks."
-      }
-    ],
-    "lane": "backend-real",
-    "entryRoute": "/en-US/workspaces/{workspaceId}/projects/{projectId}/notebook/tasks/{taskId}",
-    "goal": "项目成员回到已有 notebook task 继续工作时，应该先从 Conversation 进入 Terminal workspace，在同一 task 下面创建多个 terminal sessions 并在 tabs 间切换；当 live terminal 仍存在时，任务删除必须继续被阻止，第四个 terminal 也不能以假 tab 的方式出现；即使刷新或重新进入 task 页，界面也必须按 backend list 和同一批 session id 恢复这些 live sessions 与任务仍被占用的真相；关闭一个 session 不能影响其他 session，直到最后一个 session 结束后才真正释放任务并恢复 agent 输入。",
-    "sourceRef": "e2e/stories/backend-real/notebook-terminal-workspace-multi-session.story.md#notebook-terminal-workspace-multi-session",
-    "sourceFingerprint": "1d85c950baf5b367bf36097a0dd2a2b01ea58f2befc079ad0f3d2d56dff6c4d6",
-    "storyFingerprint": "b8d2486291457c7e1ca9c394148ea29fb4adad3bad7ab07e36933ad28aafd8d7",
-    "stepMapFingerprint": "7d613e26db6e80c12b24f2dca797119c11d60d4da441912560c89609c9b0f4e1",
-    "sceneIds": [
-      "notebook-task"
-    ],
-    "stepIds": [
-      "return-to-notebook-task",
-      "open-terminal-workspace",
-      "wait-for-first-terminal-session",
-      "create-second-terminal-session",
-      "create-third-terminal-session",
-      "keep-task-delete-blocked-while-live-terminal-sessions-exist",
-      "reject-phantom-fourth-terminal-session",
-      "switch-between-terminal-sessions",
-      "return-to-conversation-while-terminal-stays-active",
-      "reload-task-and-preserve-backend-session-ids",
-      "reject-new-run-while-live-terminal-sessions-exist",
-      "reopen-terminal-workspace-after-reload",
-      "end-one-terminal-session-without-disrupting-others",
-      "end-last-terminal-session-and-resume-agent-work"
-    ],
-    "traceStepIds": [
-      "return-to-notebook-task",
-      "open-terminal-workspace",
-      "wait-for-first-terminal-session",
-      "create-second-terminal-session",
-      "create-third-terminal-session",
-      "keep-task-delete-blocked-while-live-terminal-sessions-exist",
-      "reject-phantom-fourth-terminal-session",
-      "switch-between-terminal-sessions",
-      "return-to-conversation-while-terminal-stays-active",
-      "reload-task-and-preserve-backend-session-ids",
-      "reject-new-run-while-live-terminal-sessions-exist",
-      "reopen-terminal-workspace-after-reload",
-      "end-one-terminal-session-without-disrupting-others",
-      "end-last-terminal-session-and-resume-agent-work"
     ],
     "visualStepIds": []
   },
@@ -1588,23 +1586,23 @@
     "externalDependencies": [],
     "lane": "backend-real",
     "entryRoute": "/en-US/workspaces/ws_default/projects",
-    "goal": "project owner can configure credentials, endpoints, and agents; members can use agents but cannot manage them.",
+    "goal": "project owner can configure credentials, endpoints, and Agent Runners; members can use Agent Runners but cannot manage them.",
     "sourceRef": "e2e/stories/backend-real/project-governance-runtime-setup.story.md#project-governance-runtime-setup",
-    "sourceFingerprint": "0bc7bb7e709f3b57ac659644bdccc134211a75bf39b3d140df8a72d8e4cd9d14",
-    "storyFingerprint": "89986492c58de3a0d59d5afbaa841a38b2ab73e9600ff37fa6d6b8f797233c3f",
-    "stepMapFingerprint": "26b951dbea60a499021ea76933e3370b0c700cec4e77866f19096c3adbdada97",
+    "sourceFingerprint": "7ec52df2ad8cdbc96ae82f939b89adc660f70ee5cbb7b9a573e29e4eb6231a20",
+    "storyFingerprint": "1fcf210c52962628db2bfcf60f55b41d3b1003a2f46fa8e81dde5479951d2e2a",
+    "stepMapFingerprint": "13d969b0860fdc4cd86b8485ece5e1bdd7ddbab5868c8763660bbb6bd9c118a5",
     "sceneIds": [
       "project-credentials",
       "project-endpoints",
-      "project-agents",
-      "project-notebook",
+      "project-agent-runners",
+      "project-agent-tasks",
       "project-members"
     ],
     "stepIds": [
       "credentials-list",
       "endpoint-custom-created",
       "endpoint-catalog-edited",
-      "agents-created",
+      "agent-runners-created",
       "member-task-created",
       "member-manage-forbidden"
     ],
@@ -1612,7 +1610,7 @@
       "credentials-list",
       "endpoint-custom-created",
       "endpoint-catalog-edited",
-      "agents-created",
+      "agent-runners-created",
       "member-task-created",
       "member-manage-forbidden"
     ],
@@ -1686,28 +1684,28 @@
     "externalDependencies": [],
     "lane": "backend-real",
     "entryRoute": "/en-US/workspaces/{workspaceId}/projects/{projectId}/overview",
-    "goal": "项目成员从 overview 连续切到 chat、notebook、files，再返回 overview 时，工作上下文仍然连续，不需要重新解释自己正在做什么。",
+    "goal": "项目成员从 overview 连续切到 chat、Agent Task、files，再返回 overview 时，工作上下文仍然连续，不需要重新解释自己正在做什么。",
     "sourceRef": "e2e/stories/backend-real/project-surface-handoff-continuity.story.md#project-surface-handoff-continuity",
-    "sourceFingerprint": "7d70bfbcc4d90b2e47be84e5ff2907b990dbdcb1dd364492c403ccbbdd4a5443",
-    "storyFingerprint": "6160ce51bf4117085c27d1ee4b2b37bf096f2ad7b3d4edb24c34adcf475219cd",
-    "stepMapFingerprint": "67fb268c52ed3658677832d5caab5dcc150614efc2277de54dc673089386f6b1",
+    "sourceFingerprint": "3deaf41e7f20cc5be660c152def8eb2c2181a4ff262e3c15284988077f9861aa",
+    "storyFingerprint": "df3388eeb6b1bc95c675355e1e87f5004c8b12eb7ac14ab5054bcfe4e8d972a7",
+    "stepMapFingerprint": "d40d4ff131c84906eabd933f3c73c5ff43c913850d4d1767fa2bf41b59ac127c",
     "sceneIds": [
       "project-overview",
       "project-chat",
-      "project-notebook",
+      "project-agent-tasks",
       "project-files"
     ],
     "stepIds": [
       "open-project-overview",
       "handoff-to-chat",
-      "handoff-to-notebook",
+      "handoff-to-agent-tasks",
       "handoff-to-files",
       "return-to-overview"
     ],
     "traceStepIds": [
       "open-project-overview",
       "handoff-to-chat",
-      "handoff-to-notebook",
+      "handoff-to-agent-tasks",
       "handoff-to-files",
       "return-to-overview"
     ],
@@ -1738,27 +1736,27 @@
     ],
     "lane": "backend-real",
     "entryRoute": "/en-US/workspaces/{workspaceId}/projects/{projectId}/chat",
-    "goal": "当 provider 短时拥塞或返回不可恢复错误时，成员应在 Chat / Notebook 工作面立刻知道自己该稍后重试、切换可用 endpoint，还是请项目操作人员修复配置；自己的线程、task 和已输入内容不应该在报错时一起丢失。",
+    "goal": "当 provider 短时拥塞或返回不可恢复错误时，成员应在 Chat / Agent Task 工作面立刻知道自己该稍后重试、切换可用 endpoint，还是请项目操作人员修复配置；自己的线程、task 和已输入内容不应该在报错时一起丢失。",
     "sourceRef": "e2e/stories/backend-real/provider-capacity-retry-error-ux.story.md#provider-capacity-retry-error-ux",
-    "sourceFingerprint": "67fa2862860c6c2f3100dfe7090d5dea8c727caafa1bd66b6afe66953ea64cef",
-    "storyFingerprint": "65022b0f07411b542692c4201023ca0478e630347074771ab5777f05ff319d96",
-    "stepMapFingerprint": "6f117859ae9bcca62e26cc7f2d211ee97eb2b9ae62e8c5086291afbc9fb709a7",
+    "sourceFingerprint": "9d8d8d033c108938c5539d5e27daf544bc7bb760406a03a26b272185ebb46701",
+    "storyFingerprint": "2e7c8b34786c4f110fb597908f401b225aa99e89d3f06bc17950f221ec9cf6c7",
+    "stepMapFingerprint": "c90c17476d3409cb524fb7bdf9b80708ac60034cd321f5e0ad6908b300e93e02",
     "sceneIds": [
       "project-chat",
-      "notebook-task"
+      "agent-task"
     ],
     "stepIds": [
       "surface-retryable-provider-capacity-in-chat",
       "recover-the-same-chat-thread-after-capacity-clears",
-      "surface-retryable-capacity-or-retry-limit-in-notebook",
-      "retry-the-same-notebook-task-after-capacity-recovers",
+      "surface-retryable-capacity-or-retry-limit-in-agent-task",
+      "retry-the-same-agent-task-after-capacity-recovers",
       "distinguish-non-retryable-provider-errors-from-retry-later-states"
     ],
     "traceStepIds": [
       "surface-retryable-provider-capacity-in-chat",
       "recover-the-same-chat-thread-after-capacity-clears",
-      "surface-retryable-capacity-or-retry-limit-in-notebook",
-      "retry-the-same-notebook-task-after-capacity-recovers",
+      "surface-retryable-capacity-or-retry-limit-in-agent-task",
+      "retry-the-same-agent-task-after-capacity-recovers",
       "distinguish-non-retryable-provider-errors-from-retry-later-states"
     ],
     "visualStepIds": []
@@ -1785,9 +1783,9 @@
     "entryRoute": "/en-US/system/login",
     "goal": "用真实 backend 复核系统、工作区和项目核心界面的 UX/UI 质量。",
     "sourceRef": "e2e/stories/backend-real/real-backend-visual-review.story.md#real-backend-visual-review",
-    "sourceFingerprint": "88a8992533d4f09bfd9a3f419ee49dd107cbe49b078cb2b55fdbc3e3913b42b3",
-    "storyFingerprint": "0ac332a23117731f16ca4cd84bc218ac775a6d119c2ebba61879d8a5aa7db573",
-    "stepMapFingerprint": "66e3719ba6cf225749b373f45c8be4b97a968660a2caef3d32014b4f7d5027ea",
+    "sourceFingerprint": "502262bf99c88eeb61ea06408b619a5b8f55e91db4e4b8afbc097bd7ecc82669",
+    "storyFingerprint": "b2d16634e36ec51cefba8eaf218f5311cfecffca601678163368e0e4deb03e5c",
+    "stepMapFingerprint": "6f8e05101dfea6b40be742f81a820751e1e6404d6d0e2ce7f6e5dd1fc0a5079a",
     "sceneIds": [
       "system-login",
       "system-workspaces",
@@ -1798,11 +1796,11 @@
       "workspace-projects",
       "project-overview",
       "project-chat",
-      "project-notebook",
+      "project-agent-tasks",
       "project-files",
       "project-endpoints",
       "project-credentials",
-      "project-agents",
+      "project-agent-runners",
       "project-members",
       "project-resource-policy",
       "project-audit",
@@ -1823,11 +1821,11 @@
       "dialog-create-project-real",
       "project-overview",
       "project-chat",
-      "project-notebook",
+      "project-agent-tasks",
       "project-files",
       "project-endpoints",
       "project-credentials",
-      "project-agents",
+      "project-agent-runners",
       "project-members",
       "project-resource-policy",
       "project-audit",
@@ -1848,11 +1846,11 @@
       "dialog-create-project-real",
       "project-overview",
       "project-chat",
-      "project-notebook",
+      "project-agent-tasks",
       "project-files",
       "project-endpoints",
       "project-credentials",
-      "project-agents",
+      "project-agent-runners",
       "project-members",
       "project-resource-policy",
       "project-audit",
@@ -1873,11 +1871,11 @@
       "dialog-create-project-real",
       "project-overview",
       "project-chat",
-      "project-notebook",
+      "project-agent-tasks",
       "project-files",
       "project-endpoints",
       "project-credentials",
-      "project-agents",
+      "project-agent-runners",
       "project-members",
       "project-resource-policy",
       "project-audit",
@@ -1910,9 +1908,9 @@
     "entryRoute": "/en-US/system/login",
     "goal": "用真实 backend 走完发布关键用户故事，并把关键 UI 状态写成 trace bundle。",
     "sourceRef": "e2e/stories/backend-real/release-user-story-end-to-end.story.md#release-user-story-end-to-end",
-    "sourceFingerprint": "3ffb17c546f432783d8b3ecd138a4c5ccb119491bd0af2c93b2ec90c17c9ac1b",
-    "storyFingerprint": "5f9d36e6084d5dbc81a7ee612034caf614248cf8febc61d914d74f01f46b421c",
-    "stepMapFingerprint": "7564da3d8ec512241fd37daaac7fc258ceb5488a52b88cb34517b88ce8275035",
+    "sourceFingerprint": "a64a71d482a0ed370950f067b7b7c5a77181f01e6b29476a973b54c2f01baf46",
+    "storyFingerprint": "5750f8cdce5cd90b26afa5a56633fc904698fc9bfa5157521ff2a9bbb70c3176",
+    "stepMapFingerprint": "bb58ea863f703f2de5924f00bf606a8945d8995fdf44954e4c1b2627a6cef952",
     "sceneIds": [
       "system-login",
       "system-workspaces",
@@ -1923,8 +1921,8 @@
       "project-credentials",
       "project-endpoints",
       "project-resource-policy",
-      "project-agents",
-      "project-notebook",
+      "project-agent-runners",
+      "project-agent-tasks",
       "project-files",
       "project-usage"
     ],
@@ -1942,14 +1940,14 @@
       "credentials-list",
       "endpoints-list",
       "resource-policy",
-      "agents-list-external",
-      "agents-list-internal",
+      "agent-runners-managed-list",
+      "agent-runners-managed-health",
       "member-workspace-home",
-      "notebook-task-external-1",
-      "files-artifacts-external",
-      "notebook-task-detail-external",
-      "notebook-task-detail-external-reuse",
-      "files-artifacts-internal",
+      "agent-task-managed-1",
+      "files-artifacts-managed",
+      "agent-task-detail-managed",
+      "agent-task-detail-managed-reuse",
+      "files-artifacts-managed-continuity",
       "usage-overview"
     ],
     "traceStepIds": [
@@ -1966,14 +1964,14 @@
       "credentials-list",
       "endpoints-list",
       "resource-policy",
-      "agents-list-external",
-      "agents-list-internal",
+      "agent-runners-managed-list",
+      "agent-runners-managed-health",
       "member-workspace-home",
-      "notebook-task-external-1",
-      "files-artifacts-external",
-      "notebook-task-detail-external",
-      "notebook-task-detail-external-reuse",
-      "files-artifacts-internal",
+      "agent-task-managed-1",
+      "files-artifacts-managed",
+      "agent-task-detail-managed",
+      "agent-task-detail-managed-reuse",
+      "files-artifacts-managed-continuity",
       "usage-overview"
     ],
     "visualStepIds": []
@@ -2128,7 +2126,7 @@
   },
   {
     "storyId": "unicode-filename-round-trip",
-    "title": "Unicode filename round-trip across Files, notebook artifacts, download, and mount",
+    "title": "Unicode filename round-trip across Files, agent-task artifacts, download, and mount",
     "actor": "project member",
     "family": "unicode-file-continuity",
     "personas": [
@@ -2152,31 +2150,31 @@
         "dependencyId": "provider-api-key",
         "kind": "credential",
         "required": true,
-        "note": "notebook artifact generation in the unicode round-trip story needs a runnable AI path."
+        "note": "agent-task artifact generation in the unicode round-trip story needs a runnable AI path."
       }
     ],
     "lane": "backend-real",
     "entryRoute": "/en-US/workspaces/{workspaceId}/projects/{projectId}/files",
-    "goal": "成员使用非 ASCII 文件名工作时，Files、Notebook、.artifacts、下载结果和本地挂载都必须保留同一份文件名真相；用户不应该为了避开系统差异，被迫把真实文件重命名成英文占位符。",
+    "goal": "成员使用非 ASCII 文件名工作时，Files、Agent Task、.artifacts、下载结果和本地挂载都必须保留同一份文件名真相；用户不应该为了避开系统差异，被迫把真实文件重命名成英文占位符。",
     "sourceRef": "e2e/stories/backend-real/unicode-filename-round-trip.story.md#unicode-filename-round-trip",
-    "sourceFingerprint": "b293c8c4dc3ca37b31ed0dc3e64d2e2ee99ecd1995a1a3ec0ad5aaa98530cb1c",
-    "storyFingerprint": "ce3f414d5598fd4d1a6715e70e954d5391a174e05ace3323191ddc2413376ced",
-    "stepMapFingerprint": "18f5d116eacd77f34e5b45ffb5bdd2479eb3d79bac9a3ef5360de24b87fb2c4a",
+    "sourceFingerprint": "a18756e83d6435c3d138476518c215b4b721688ddcd8436cf39c0e0798e9bccc",
+    "storyFingerprint": "1621d4a1117256587f9b66b4bfbd7540a76ee8b5010ce049cff296262da5f424",
+    "stepMapFingerprint": "9b58968e41f6256ee7d0124b4b2587a653b724591a8414c01beab0e19179c95f",
     "sceneIds": [
       "project-files",
-      "notebook-task"
+      "agent-task"
     ],
     "stepIds": [
       "see-the-unicode-file-name-in-files-without-fallback-renaming",
       "confirm-the-mounted-library-keeps-the-same-unicode-name",
-      "use-the-unicode-file-in-notebook-and-write-a-unicode-artifact",
+      "use-the-unicode-file-in-agent-task-and-write-a-unicode-artifact",
       "return-to-files-and-see-the-unicode-artifact-unchanged",
       "download-the-unicode-artifact-with-the-same-name"
     ],
     "traceStepIds": [
       "see-the-unicode-file-name-in-files-without-fallback-renaming",
       "confirm-the-mounted-library-keeps-the-same-unicode-name",
-      "use-the-unicode-file-in-notebook-and-write-a-unicode-artifact",
+      "use-the-unicode-file-in-agent-task-and-write-a-unicode-artifact",
       "return-to-files-and-see-the-unicode-artifact-unchanged",
       "download-the-unicode-artifact-with-the-same-name"
     ],

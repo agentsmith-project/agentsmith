@@ -160,13 +160,13 @@ test.describe('Table Selection', () => {
 
 test.describe('Dialog Escape Key', () => {
   test('dialogs close on Escape key press', async ({ authedPage }) => {
-    await goToProject(authedPage, 'agents');
+    await goToProject(authedPage, 'agent-runners');
 
-    await expect(authedPage.getByTestId('agents__table')).toBeVisible({ timeout: 10000 });
+    await expect(authedPage.getByTestId('agent-runners__table')).toBeVisible({ timeout: 10000 });
 
     // Open create dialog
-    await authedPage.getByTestId('agents__create-btn').click();
-    const dialog = authedPage.getByTestId('agents__create-dialog');
+    await authedPage.getByTestId('agent-runners__create-btn').click();
+    const dialog = authedPage.getByTestId('agent-runners__create-dialog');
     await expect(dialog).toBeVisible();
 
     // Press Escape to close

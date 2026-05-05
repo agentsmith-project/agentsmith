@@ -192,15 +192,15 @@ export const MAJOR_PRODUCT_SURFACE_COVERAGE: readonly ProductSurfaceCoverage[] =
     ],
   },
   {
-    surfaceId: 'notebook_and_terminal_work',
-    label: 'Notebook and terminal work',
+    surfaceId: 'agent_task_and_terminal_work',
+    label: 'Agent Task and terminal work',
     storyIds: [
-      'notebook-first-success',
-      'notebook-artifact-to-files-download',
-      'notebook-cancel-terminate-refresh-recovery',
-      'notebook-terminal-workspace-multi-session',
-      'notebook-terminal-reentry-recovery',
-      'notebook-terminal-truth-unavailable-retry',
+      'agent-task-first-success',
+      'agent-task-artifact-to-files-download',
+      'agent-task-cancel-terminate-refresh-recovery',
+      'agent-task-terminal-workspace-multi-session',
+      'agent-task-terminal-reentry-recovery',
+      'agent-task-terminal-truth-unavailable-retry',
     ],
   },
   {
@@ -221,7 +221,7 @@ export const MAJOR_PRODUCT_SURFACE_COVERAGE: readonly ProductSurfaceCoverage[] =
       'workspace-connections-to-project-use',
       'api-key-to-endpoint-consumption',
       'ai-runtime-failure-and-recovery',
-      'internal-external-chat-notebook-proxy-matrix',
+      'chat-agent-task-target-model-continuity',
       'provider-capacity-retry-error-ux',
       'use-guide-first-consumption',
     ],
@@ -253,18 +253,18 @@ export const CHAT_VISUAL_STATE_MATRIX_SCENARIO_IDS = [
   'chat-provider-capacity-retry',
 ] as const;
 
-export const NOTEBOOK_VISUAL_STATE_MATRIX_SCENARIO_IDS = [
-  'notebook-task-running',
-  'notebook-task-cancelling',
-  'notebook-cancel-escalation-confirm',
-  'notebook-task-terminating',
-  'notebook-task-finalizing',
-  'notebook-sse-reconnecting',
-  'notebook-sse-unavailable-reconcile',
-  'notebook-task-recovered-ready',
-  'notebook-provider-upstream-error',
-  'notebook-hidden-terminal-blocked',
-  'notebook-terminal-truth-unavailable',
+export const AGENT_TASK_VISUAL_STATE_MATRIX_SCENARIO_IDS = [
+  'agent-task-running',
+  'agent-task-cancelling',
+  'agent-task-cancel-escalation-confirm',
+  'agent-task-terminating',
+  'agent-task-finalizing',
+  'agent-task-sse-reconnecting',
+  'agent-task-sse-unavailable-reconcile',
+  'agent-task-recovered-ready',
+  'agent-task-provider-upstream-error',
+  'agent-task-hidden-terminal-blocked',
+  'agent-task-terminal-truth-unavailable',
 ] as const;
 
 type VisualStateMatrixScenarioContract = {
@@ -286,7 +286,7 @@ const DEFAULT_VISUAL_STATE_MATRIX_FORBIDDEN_TEXT = [
   'Unknown Runner',
 ] as const;
 
-const CHAT_AND_NOTEBOOK_VISUAL_STATE_MATRIX_CONTRACTS: readonly VisualStateMatrixScenarioContract[] = [
+const CHAT_AND_AGENT_TASK_VISUAL_STATE_MATRIX_CONTRACTS: readonly VisualStateMatrixScenarioContract[] = [
   {
     storyId: 'mock-lane-chat-operate-and-recover',
     sceneId: 'chat-streaming-active',
@@ -392,197 +392,199 @@ const CHAT_AND_NOTEBOOK_VISUAL_STATE_MATRIX_CONTRACTS: readonly VisualStateMatri
     },
   },
   {
-    storyId: 'mock-lane-notebook-task-lifecycle',
-    sceneId: 'notebook-task-running',
-    scenarioId: 'notebook-task-running',
+    storyId: 'mock-lane-agent-task-lifecycle',
+    sceneId: 'agent-task-running',
+    scenarioId: 'agent-task-running',
     uxState: 'happy',
     semanticAssertions: {
       requiredViewportTestIds: [
-        'notebook__task-header',
-        'notebook__execution-visibility',
-        'notebook__run-activity-summary',
-        'notebook__run-active-cancel',
-        'notebook__conversation-input',
+        'agent-task__task-header',
+        'agent-tasks__message-active-run-footer',
+        'agent-tasks__message-active-run-status',
+        'agent-tasks__message-active-run-elapsed',
+        'agent-tasks__message-active-run-latest-action',
+        'agent-tasks__message-active-run-cancel',
+        'agent-tasks__conversation-input',
       ],
-      prominentActionScopeTestIds: ['notebook__execution-visibility'],
       maxProminentActions: 0,
       forbiddenVisibleText: DEFAULT_VISUAL_STATE_MATRIX_FORBIDDEN_TEXT,
     },
   },
   {
-    storyId: 'mock-lane-notebook-task-lifecycle',
-    sceneId: 'notebook-task-cancelling',
-    scenarioId: 'notebook-task-cancelling',
+    storyId: 'mock-lane-agent-task-lifecycle',
+    sceneId: 'agent-task-cancelling',
+    scenarioId: 'agent-task-cancelling',
     uxState: 'diagnostic',
     semanticAssertions: {
       requiredViewportTestIds: [
-        'notebook__task-header',
-        'notebook__run-activity-summary',
-        'notebook__conversation-input',
-        'notebook__send-btn',
+        'agent-task__task-header',
+        'agent-tasks__message-active-run-footer',
+        'agent-tasks__conversation-input',
+        'agent-tasks__send-btn',
       ],
-      prominentActionScopeTestIds: ['notebook__conversation-input'],
+      prominentActionScopeTestIds: ['agent-tasks__conversation-input'],
       maxProminentActions: 0,
       forbiddenVisibleText: DEFAULT_VISUAL_STATE_MATRIX_FORBIDDEN_TEXT,
     },
   },
   {
-    storyId: 'mock-lane-notebook-task-lifecycle',
-    sceneId: 'notebook-cancel-escalation-confirm',
-    scenarioId: 'notebook-cancel-escalation-confirm',
+    storyId: 'mock-lane-agent-task-lifecycle',
+    sceneId: 'agent-task-cancel-escalation-confirm',
+    scenarioId: 'agent-task-cancel-escalation-confirm',
     uxState: 'degraded',
     semanticAssertions: {
       requiredViewportTestIds: [
-        'notebook__task-header',
-        'notebook__cancel-escalation-dialog',
-        'notebook__cancel-escalation-cancel',
-        'notebook__cancel-escalation-confirm',
+        'agent-task__task-header',
+        'agent-tasks__cancel-escalation-dialog',
+        'agent-tasks__cancel-escalation-cancel',
+        'agent-tasks__cancel-escalation-confirm',
       ],
-      prominentActionScopeTestIds: ['notebook__cancel-escalation-dialog'],
+      prominentActionScopeTestIds: ['agent-tasks__cancel-escalation-dialog'],
       maxProminentActions: 0,
       forbiddenVisibleText: DEFAULT_VISUAL_STATE_MATRIX_FORBIDDEN_TEXT,
     },
   },
   {
-    storyId: 'mock-lane-notebook-task-lifecycle',
-    sceneId: 'notebook-task-terminating',
-    scenarioId: 'notebook-task-terminating',
+    storyId: 'mock-lane-agent-task-lifecycle',
+    sceneId: 'agent-task-terminating',
+    scenarioId: 'agent-task-terminating',
     uxState: 'diagnostic',
     semanticAssertions: {
       requiredViewportTestIds: [
-        'notebook__task-header',
-        'notebook__run-activity-summary',
-        'notebook__conversation-input',
-        'notebook__send-btn',
+        'agent-task__task-header',
+        'agent-tasks__message-active-run-footer',
+        'agent-tasks__conversation-input',
+        'agent-tasks__send-btn',
       ],
-      prominentActionScopeTestIds: ['notebook__conversation-input'],
+      prominentActionScopeTestIds: ['agent-tasks__conversation-input'],
       maxProminentActions: 0,
       forbiddenVisibleText: DEFAULT_VISUAL_STATE_MATRIX_FORBIDDEN_TEXT,
     },
   },
   {
-    storyId: 'mock-lane-notebook-task-lifecycle',
-    sceneId: 'notebook-task-finalizing',
-    scenarioId: 'notebook-task-finalizing',
+    storyId: 'mock-lane-agent-task-lifecycle',
+    sceneId: 'agent-task-finalizing',
+    scenarioId: 'agent-task-finalizing',
     uxState: 'diagnostic',
     semanticAssertions: {
       requiredViewportTestIds: [
-        'notebook__task-header',
-        'notebook__run-activity-summary',
-        'notebook__conversation-input',
-        'notebook__send-btn',
+        'agent-task__task-header',
+        'agent-tasks__message-active-run-footer',
+        'agent-tasks__conversation-input',
+        'agent-tasks__send-btn',
       ],
-      prominentActionScopeTestIds: ['notebook__conversation-input'],
+      prominentActionScopeTestIds: ['agent-tasks__conversation-input'],
       maxProminentActions: 0,
       forbiddenVisibleText: DEFAULT_VISUAL_STATE_MATRIX_FORBIDDEN_TEXT,
     },
   },
   {
-    storyId: 'mock-lane-notebook-task-lifecycle',
-    sceneId: 'notebook-sse-reconnecting',
-    scenarioId: 'notebook-sse-reconnecting',
+    storyId: 'mock-lane-agent-task-lifecycle',
+    sceneId: 'agent-task-sse-reconnecting',
+    scenarioId: 'agent-task-sse-reconnecting',
     uxState: 'diagnostic',
     semanticAssertions: {
       requiredViewportTestIds: [
-        'notebook__task-header',
-        'notebook__sse-status',
-        'notebook__conversation-input',
-        'notebook__send-btn',
+        'agent-task__task-header',
+        'agent-tasks__message-active-run-footer',
+        'agent-tasks__message-active-run-status',
+        'agent-tasks__conversation-input',
+        'agent-tasks__send-btn',
       ],
-      prominentActionScopeTestIds: ['notebook__conversation-input'],
+      prominentActionScopeTestIds: ['agent-tasks__conversation-input'],
       maxProminentActions: 0,
       forbiddenVisibleText: DEFAULT_VISUAL_STATE_MATRIX_FORBIDDEN_TEXT,
     },
   },
   {
-    storyId: 'mock-lane-notebook-task-lifecycle',
-    sceneId: 'notebook-sse-unavailable-reconcile',
-    scenarioId: 'notebook-sse-unavailable-reconcile',
+    storyId: 'mock-lane-agent-task-lifecycle',
+    sceneId: 'agent-task-sse-unavailable-reconcile',
+    scenarioId: 'agent-task-sse-unavailable-reconcile',
     uxState: 'degraded',
     semanticAssertions: {
       requiredViewportTestIds: [
-        'notebook__task-header',
-        'notebook__sse-status',
-        'notebook__sse-status-open-audit',
-        'notebook__sse-status-open-usage',
+        'agent-task__task-header',
+        'agent-tasks__sse-status',
+        'agent-tasks__sse-status-open-audit',
+        'agent-tasks__sse-status-open-usage',
       ],
-      prominentActionScopeTestIds: ['notebook__execution-visibility'],
+      prominentActionScopeTestIds: ['agent-tasks__execution-visibility'],
       maxProminentActions: 0,
       forbiddenVisibleText: DEFAULT_VISUAL_STATE_MATRIX_FORBIDDEN_TEXT,
     },
   },
   {
-    storyId: 'mock-lane-notebook-task-lifecycle',
-    sceneId: 'notebook-task-recovered-ready',
-    scenarioId: 'notebook-task-recovered-ready',
+    storyId: 'mock-lane-agent-task-lifecycle',
+    sceneId: 'agent-task-recovered-ready',
+    scenarioId: 'agent-task-recovered-ready',
     uxState: 'happy',
     semanticAssertions: {
       requiredViewportTestIds: [
-        'notebook__task-header',
-        'notebook__conversation-input',
-        'notebook__send-btn',
+        'agent-task__task-header',
+        'agent-tasks__conversation-input',
+        'agent-tasks__send-btn',
       ],
-      prominentActionScopeTestIds: ['notebook__conversation-input'],
+      prominentActionScopeTestIds: ['agent-tasks__conversation-input'],
       maxProminentActions: 0,
       forbiddenVisibleText: DEFAULT_VISUAL_STATE_MATRIX_FORBIDDEN_TEXT,
     },
   },
   {
-    storyId: 'mock-lane-notebook-task-lifecycle',
-    sceneId: 'notebook-provider-upstream-error',
-    scenarioId: 'notebook-provider-upstream-error',
+    storyId: 'mock-lane-agent-task-lifecycle',
+    sceneId: 'agent-task-provider-upstream-error',
+    scenarioId: 'agent-task-provider-upstream-error',
     uxState: 'degraded',
     semanticAssertions: {
       requiredViewportTestIds: [
-        'notebook__task-header',
-        'notebook__agent-message-bubble',
-        'notebook__message-run-status',
-        'notebook__send-btn',
+        'agent-task__task-header',
+        'agent-tasks__agent-message-bubble',
+        'agent-tasks__message-run-status',
+        'agent-tasks__send-btn',
       ],
-      prominentActionScopeTestIds: ['notebook__conversation-input'],
+      prominentActionScopeTestIds: ['agent-tasks__conversation-input'],
       maxProminentActions: 0,
       forbiddenVisibleText: DEFAULT_VISUAL_STATE_MATRIX_FORBIDDEN_TEXT,
     },
   },
   {
-    storyId: 'mock-lane-notebook-task-lifecycle',
-    sceneId: 'notebook-hidden-terminal-blocked',
-    scenarioId: 'notebook-hidden-terminal-blocked',
+    storyId: 'mock-lane-agent-task-lifecycle',
+    sceneId: 'agent-task-hidden-terminal-blocked',
+    scenarioId: 'agent-task-hidden-terminal-blocked',
     uxState: 'degraded',
     semanticAssertions: {
       requiredViewportTestIds: [
-        'notebook__task-header',
-        'notebook__task-terminal-status-strip',
-        'notebook__task-terminal-status-action',
-        'notebook__task-terminal-status-end-all',
+        'agent-task__task-header',
+        'agent-tasks__task-terminal-status-strip',
+        'agent-tasks__task-terminal-status-action',
+        'agent-tasks__task-terminal-status-end-all',
       ],
-      prominentActionScopeTestIds: ['notebook__task-terminal-status-strip'],
+      prominentActionScopeTestIds: ['agent-tasks__task-terminal-status-strip'],
       maxProminentActions: 0,
       forbiddenVisibleText: DEFAULT_VISUAL_STATE_MATRIX_FORBIDDEN_TEXT,
     },
   },
   {
-    storyId: 'mock-lane-notebook-task-lifecycle',
-    sceneId: 'notebook-terminal-truth-unavailable',
-    scenarioId: 'notebook-terminal-truth-unavailable',
+    storyId: 'mock-lane-agent-task-lifecycle',
+    sceneId: 'agent-task-terminal-truth-unavailable',
+    scenarioId: 'agent-task-terminal-truth-unavailable',
     uxState: 'degraded',
     semanticAssertions: {
       requiredViewportTestIds: [
-        'notebook__task-header',
-        'notebook__task-terminal-truth-unavailable',
-        'notebook__task-terminal-truth-unavailable-retry',
+        'agent-task__task-header',
+        'agent-tasks__task-terminal-truth-unavailable',
+        'agent-tasks__task-terminal-truth-unavailable-retry',
       ],
-      prominentActionScopeTestIds: ['notebook__task-terminal-truth-unavailable'],
+      prominentActionScopeTestIds: ['agent-tasks__task-terminal-truth-unavailable'],
       maxProminentActions: 0,
       forbiddenVisibleText: DEFAULT_VISUAL_STATE_MATRIX_FORBIDDEN_TEXT,
     },
   },
 ] as const;
 
-const HAPPY_NOTEBOOK_VISUAL_SCENARIO_IDS = new Set([
-  'notebook-task-lifecycle-list',
-  'notebook-task-lifecycle-detail',
-  'notebook-task-detail',
+const HAPPY_AGENT_TASK_VISUAL_SCENARIO_IDS = new Set([
+  'agent-task-lifecycle-list',
+  'agent-task-lifecycle-detail',
+  'agent-task-detail',
 ]);
 
 const HAPPY_SCENE_FORBIDDEN_DEGRADED_TERMS = [
@@ -741,13 +743,13 @@ export function validateMajorProductSurfaceCoverage(
   return issues;
 }
 
-export function validateChatNotebookVisualStateMatrixCoverage(
+export function validateChatAgentTaskVisualStateMatrixCoverage(
   stories: readonly StoryDefinition[],
 ): VisualStateMatrixContractIssue[] {
   const issues: VisualStateMatrixContractIssue[] = [];
   const storiesById = new Map(stories.map((story) => [story.storyId, story] as const));
 
-  for (const contract of CHAT_AND_NOTEBOOK_VISUAL_STATE_MATRIX_CONTRACTS) {
+  for (const contract of CHAT_AND_AGENT_TASK_VISUAL_STATE_MATRIX_CONTRACTS) {
     const story = storiesById.get(contract.storyId);
     if (!story) {
       issues.push({
@@ -848,7 +850,7 @@ export function validateVisualStoryRuntimeContracts(
           scenarioId: visualScene.scenarioId,
         });
       }
-      if (HAPPY_NOTEBOOK_VISUAL_SCENARIO_IDS.has(visualScene.scenarioId) && visualScene.uxState !== 'happy') {
+      if (HAPPY_AGENT_TASK_VISUAL_SCENARIO_IDS.has(visualScene.scenarioId) && visualScene.uxState !== 'happy') {
         issues.push({
           issue: 'missing_happy_ux_state',
           storyId: story.storyId,

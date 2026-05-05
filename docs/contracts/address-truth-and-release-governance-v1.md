@@ -54,22 +54,15 @@
 - runner 执行地址
 - k8s workload 地址
 
-### 4. Runner 运行模式是正式 Runtime Truth
-Agent 的业务语义仍然只有两种：
-- `external`
-- `internal`
-
-但运行方式必须单独建模：
-- `dev_direct`
-- `docker_manual`
-- `compose_managed`
-- `k8s_internal`
+### 4. Managed Agent Runner 是正式执行真相
+Agent task 的部署语义只有一个：后端解析到 managed Agent Runner，并由部署层提供可审计的 runner image、endpoint、workspace access 与地址真相。
 
 规则：
-- external 可运行在 `dev_direct` / `docker_manual` / `compose_managed`
-- internal 固定运行在 `k8s_internal`
-- 除 `dev_direct` 外，runner 仍必须受统一的地址解析、workspace access 与运行时合约约束，但 notebook/chat 作为不同 runner app 时可以使用不同 runner image
-- 地址解析、workspace access、file library access 都必须按 `runner_runtime` 分流，而不是靠“是不是 external”去猜
+- Chat 只走 endpoint/model，不走 Agent Runner
+- Agent task 由后端选择 managed Agent Runner
+- 部署不暴露 runner mode、手动 docker runner 或 compose runner 服务
+- Developer mode 只是本地开发入口，不是部署 runtime
+- 地址解析、workspace access、file library access 都必须从 managed Agent Runner 与当前部署地址真相派生，不能靠机器位置猜
 
 ### 5. Email 选人，ID 落库
 - 界面和 preset 配置用 email/username 选人
@@ -105,7 +98,7 @@ Agent 的业务语义仍然只有两种：
 - docker bridge IP
 - `host.docker.internal`
 - kind gateway IP
-- external/internal agent 的执行地址成品值
+- Agent Runner 或 sandbox workload 的执行地址成品值
 - internal JuiceFS host override 的最终值
 
 这些都必须由系统解析得到，而不是让 operator 手填。
@@ -127,10 +120,10 @@ Agent 的业务语义仍然只有两种：
 ### 2. `resolve-runtime-addresses.sh`
 职责：
 - 基于当前运行环境解析：
-  - runner 可见 host
+  - Agent task runner 可见 host
   - kind/k8s 可见 host
   - sandbox manager 对应入口
-  - file library 对 `dev_direct` / `docker_manual` / `compose_managed` / `k8s_internal` 可见的地址
+  - file library 对 Agent task runner、sandbox workload、浏览器与宿主机可见的地址
 
 要求：
 - 解析失败立即退出
@@ -177,21 +170,18 @@ Agent 的业务语义仍然只有两种：
 - 禁止 loopback
 - 不能复用容器内或 kind 内地址
 
-### 2. `external_runner_mount_access`
+### 2. `agent_task_runner_mount_access`
 用途：
-- external runner 自动挂载任务工作区
+- Agent task runner 自动挂载任务工作区
 
 特点：
 - 必须是 runner 可见地址
 - 禁止 loopback
 - 不能复用 client 地址
-- 其中：
-  - `dev_direct` 使用 host-local truth
-  - `docker_manual` / `compose_managed` 使用 runner-visible truth
 
-### 3. `internal_agent_mount_access`
+### 3. `sandbox_workload_mount_access`
 用途：
-- internal agent / sandbox / kind workload
+- sandbox / kind workload
 
 特点：
 - 必须是 internal/k8s-safe truth
@@ -200,8 +190,8 @@ Agent 的业务语义仍然只有两种：
 
 ### 规则
 - UI 只展示 client mount access
-- API 根据执行模式返回 external/internal 对应 access
-- runner 和 internal agent 不再接收 client mount access
+- API 根据执行方返回 Agent task runner 或 sandbox 对应 access
+- runner 和 sandbox workload 不再接收 client mount access
 
 ---
 
@@ -213,13 +203,13 @@ Agent 的业务语义仍然只有两种：
 - 动态身份漂移问题
 - 页面入口权限时序问题
 - workspace 发布后端不可用问题
-- 文件库 external/internal 地址错配问题
+- 文件库 runner/sandbox 地址错配问题
 
 ### 开发阶段必须遵守
 - 新增地址相关逻辑时，先写 contract 和测试，再改实现
 - 不允许再把环境偶然地址写进正式配置
 - 不允许再用“运行时猜环境”的方式补丁式修复
-- 开发机直接运行 external runner 必须走正式入口 `scripts/run-external-runner-dev.sh`
+- 开发机直接运行 Agent task runner 必须走正式入口 `npm run agent:task-runner`
 
 ### 开发阶段必须覆盖的测试
 - token claims / callback auth chain
@@ -229,10 +219,10 @@ Agent 的业务语义仍然只有两种：
 - workspace publish usable
 - directory search truth
 - runtime address resolution
-- file library local/external/internal access 分流
-- runner runtime resolution
-- external runner access 不能返回 loopback
-- internal agent access 不能返回 host-local truth
+- file library local/runner/sandbox access 分流
+- managed runner address resolution
+- Agent task runner access 不能返回 loopback
+- sandbox workload access 不能返回 host-local truth
 
 ---
 
@@ -262,11 +252,11 @@ producer 入口：
 - `workspace_entry`
 - `workspace_publish_usable`
 - `workspace_settings_directory`
-- `system_to_notebook_mainline`
+- `system_to_agent_task_mainline`
 
 应继续保持：
-- external runner file library mount truth
-- internal agent workspace access truth
+- Agent task runner file library mount truth
+- sandbox workload workspace access truth
 
 ### Layer C：部署后完整 verify producer
 作用：
@@ -284,9 +274,9 @@ producer 入口：
 - `release_story`
 
 并在真实部署态再次确认：
-- external runner mount access truth
-- internal agent mount access truth
-- notebook / files / `.artifacts` / usage
+- Agent task runner mount access truth
+- sandbox workload mount access truth
+- Agent tasks / files / `.artifacts` / usage
 
 ---
 
@@ -325,8 +315,8 @@ producer 入口：
 - runtime address 无法解析
 - rendered env 关键角色缺失
 - public/internal truth 矛盾
-- external runner 收到 loopback mount access
-- internal agent 收到 host-local mount access
+- Agent task runner 收到 loopback mount access
+- sandbox workload 收到 host-local mount access
 - workspace 发布后 system 侧 ready 但后端仍不可访问
 
 不允许：
@@ -361,7 +351,7 @@ producer 入口：
 - 配置 schema 在开发、本地部署、远端部署中完全一致
 - operator 不再填写 docker/kind 特有 IP
 - `deploy` 不再改写真相
-- external runner / internal agent / 浏览器 / 宿主机都使用各自正确地址
+- Agent task runner / sandbox workload / 浏览器 / 宿主机都使用各自正确地址
 - 浏览器 public 配置属于运行时真相，不允许再依赖 Next.js 构建期 `NEXT_PUBLIC_*` 固化
 
 ## Browser Public Config Rule

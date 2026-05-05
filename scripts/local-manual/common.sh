@@ -241,9 +241,9 @@ init_local_manual_cleanup_env() {
 
 resolve_local_manual_runner_modes() {
   if [[ "${LOCAL_MANUAL_ENABLE_INTERNAL}" == "1" ]]; then
-    printf 'external_host,internal_k8s\n'
+    printf 'developer_runner,managed_agent_task\n'
   else
-    printf 'external_host\n'
+    printf 'developer_runner\n'
   fi
 }
 
@@ -1058,7 +1058,7 @@ if (!allowedStates.has(state)) {
 }
 const payload = {
   schema_version: 2,
-  contract: 'notebook-codex-runner.lifecycle.v1',
+  contract: 'agent-task-runner.lifecycle.v1',
   state,
   pid: Number.isFinite(pid) && pid > 0 ? pid : null,
   observed_at: new Date().toISOString(),
@@ -1094,7 +1094,7 @@ const observedMs = Date.parse(String(payload?.observed_at ?? ''));
 const ageMs = Date.now() - observedMs;
 if (
   payload?.schema_version !== 2
-  || payload?.contract !== 'notebook-codex-runner.lifecycle.v1'
+  || payload?.contract !== 'agent-task-runner.lifecycle.v1'
   || !allowedStates.has(payload?.state)
   || !Number.isFinite(observedMs)
   || !Number.isFinite(maxAgeSeconds)
@@ -1579,7 +1579,7 @@ rescue_stop_untracked_local_manual_processes() {
   stop_matching_processes "npm run dev:test -- --port ${PORT_WEB}"
   stop_matching_processes "next dev --port ${PORT_WEB}"
   stop_matching_processes 'node .*/node_modules/.bin/tsx src/index.ts'
-  stop_matching_processes 'make notebook-runner'
+  stop_matching_processes 'make agent-task-runner'
   if [[ "${LOCAL_MANUAL_ALLOW_UNTRACKED_PORT_CLEANUP}" == "1" ]]; then
     stop_listeners_on_port "${PORT_WEB}"
     stop_listeners_on_port "${PORT_API}"

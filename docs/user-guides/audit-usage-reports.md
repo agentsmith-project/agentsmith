@@ -88,7 +88,7 @@ Select specific action categories:
 Filter by who performed actions:
 
 - **Users**: Human user actions
-- **Agents**: Automated agent actions
+- **Agent Runners**: Agent task runner actions
 - **System**: System-generated events
 
 #### By Result

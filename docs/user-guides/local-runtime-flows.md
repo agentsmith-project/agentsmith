@@ -27,7 +27,7 @@ Machine-readable source:
 
 ## 当前本机工作线
 
-- `local-manual` — 日常开发、真实后端手测、notebook / runner 主链手测。
+- `local-manual` — 日常开发、真实后端手测、Agent task / Agent Runner 主链手测。
 - `demo-rehearsal` — demo 发布线的本机排演入口，使用 `agentsmith-demo` / `agentsmith-demo-registry`。
 - `cluster-rehearsal` — cluster 发布线的本机排演入口，使用 `agentsmith-cluster` / `agentsmith-cluster-registry`。
 <!-- current-runtime-lines:local-runtime-flows:end -->
@@ -85,7 +85,7 @@ make local-real-reset
 
 - 日常本地开发
 - 真实后端手测
-- Notebook / external runner 手测
+- agent-task runner 手测
 - 默认只保证 external 路径，不默认开启 internal sandbox
 
 普通入口：
@@ -114,10 +114,10 @@ PROXY_PORT=39080
 
 如果 `local-real-up` 直接提示共享底座端口被占用，说明当前机器上还有别的工作线占着底层环境；先执行对应的 clean `*-down` 或 `*-reset`，不要强行并跑。
 
-如果要补 Notebook demo seeding、host external runner 或 internal notebook / sandbox / JuiceFS 验证，只在 owner runbook 明确要求时使用底层 maintainer diagnostic adapter：
+如果要补 agent-task demo seeding、host agent-task runner 或 sandbox / JuiceFS 验证，只在 owner runbook 明确要求时使用底层 maintainer diagnostic adapter：
 
 ```bash
-make local-manual-seed-notebook
+make local-manual-seed-agent-task
 make local-manual-internal-up
 make local-manual-internal-status
 ```
@@ -203,9 +203,9 @@ make local-real-reset
 
 - 平时开发和页面 / API 手测
   - 用 `make local-real-up`
-- 要快速验证 external notebook / runner
+- 要快速验证 Agent tasks / runner
   - 先用 `make local-real-up`，需要 demo seeding 时按 owner diagnostic 执行底层 adapter
-- 要在本机验证 internal notebook / sandbox / JuiceFS
+- 要在本机验证 Agent tasks / sandbox / JuiceFS
   - 先起 `make local-real-up`
   - 再按 owner diagnostic 执行 internal adapter
 - 要验证 demo 单机发布线

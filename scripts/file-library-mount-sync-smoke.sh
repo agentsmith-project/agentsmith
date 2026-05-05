@@ -288,7 +288,7 @@ MBOS_DEV_PASSWORD="${MBOS_DEV_PASSWORD}" \
 KEYCLOAK_BASE_URL="${KEYCLOAK_BASE_URL}" \
 KEYCLOAK_REALM="${KEYCLOAK_REALM}" \
 KEYCLOAK_CLIENT_ID="${KEYCLOAK_CLIENT_ID}" \
-node "${ROOT_DIR}/scripts/notebook-agent-refresh-token.js" > "${TOKEN_FILE}"
+node "${ROOT_DIR}/scripts/agent-runner-refresh-token.js" > "${TOKEN_FILE}"
 
 discover_workspace
 discover_project

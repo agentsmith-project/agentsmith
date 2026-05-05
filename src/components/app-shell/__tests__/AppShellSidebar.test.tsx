@@ -20,11 +20,11 @@ vi.mock('next-intl', () => ({
       nav: {
         overview: 'Overview',
         chat: 'Chat',
-        notebook: 'Notebook',
+        agent_tasks: 'Agent Tasks',
         files: 'Files',
         usage: 'Usage',
         api_access_guide: 'Access guide',
-        agents: 'Agents',
+        agent_runners: 'Agent Runners',
         endpoints: 'Endpoints',
         resource_policy: 'Policy',
         credentials: 'Project secrets',
@@ -56,8 +56,8 @@ const mockUseHasWorkspacePermission = vi.fn(
 );
 const mockProjectPermissions = vi.fn<() => string[]>(() => [
   'project:endpoint:use',
-  'project:agent:use',
-  'project:agent:manage',
+  'project:agent_task:use',
+  'project:agent_runner:manage',
   'project:governance:update',
   'project:membership:update',
   'project:audit:read',
@@ -123,8 +123,8 @@ describe('AppShellSidebar (simplified MVP navigation)', () => {
     });
     mockProjectPermissions.mockReturnValue([
       'project:endpoint:use',
-      'project:agent:use',
-      'project:agent:manage',
+      'project:agent_task:use',
+      'project:agent_runner:manage',
       'project:governance:update',
       'project:membership:update',
       'project:audit:read',
@@ -154,7 +154,7 @@ describe('AppShellSidebar (simplified MVP navigation)', () => {
 
     const useSection = within(screen.getByTestId('sidebar')).getByTestId('sidebar__section--use');
     expect(within(useSection).getByTestId('sidebar__nav-item--chat')).toBeInTheDocument();
-    expect(within(useSection).getByTestId('sidebar__nav-item--notebook')).toBeInTheDocument();
+    expect(within(useSection).getByTestId('sidebar__nav-item--agent-tasks')).toBeInTheDocument();
     expect(within(useSection).getByTestId('sidebar__nav-item--files')).toBeInTheDocument();
     expect(within(useSection).getByTestId('sidebar__nav-item--usage')).toBeInTheDocument();
     expect(within(useSection).getByTestId('sidebar__nav-item--use-guide')).toBeInTheDocument();
@@ -238,6 +238,15 @@ describe('AppShellSidebar (simplified MVP navigation)', () => {
     expect(within(governSection).getByText('Policy')).toBeInTheDocument();
     expect(within(governSection).getByText('Shared context')).toBeInTheDocument();
     expect(within(governSection).getByText('Project secrets')).toBeInTheDocument();
+  });
+
+  it('shows agent runner management under Develop when reachable', () => {
+    const wrapper = createWrapper();
+    render(<AppShellSidebar />, { wrapper });
+
+    const developSection = within(screen.getByTestId('sidebar')).getByTestId('sidebar__section--develop');
+    expect(within(developSection).getByTestId('sidebar__nav-item--agent-runners')).toBeInTheDocument();
+    expect(within(developSection).getByText('Agent Runners')).toBeInTheDocument();
   });
 
   it('shows governance links according to the reachable sidebar surfaces', () => {

@@ -1,10 +1,7 @@
-import type { AgentInteractionKind } from './protocol.js';
-
-export type AgentRunnerContextModel = 'explicit_dialogue' | 'cli_session';
-export type AgentRunnerWorkspacePolicy = 'ephemeral_session_dir' | 'persistent_task_workspace';
+export type AgentRunnerContextModel = 'task';
+export type AgentRunnerWorkspacePolicy = 'persistent_task_workspace';
 
 export interface AgentRunnerSpec {
-  interaction_kind: AgentInteractionKind;
   app_family: string;
   protocol_version: '1.0';
   context_model: AgentRunnerContextModel;
@@ -12,36 +9,31 @@ export interface AgentRunnerSpec {
   supports_terminal: boolean;
 }
 
-export const NOTEBOOK_RUNNER_SPEC: AgentRunnerSpec = {
-  interaction_kind: 'notebook',
-  app_family: 'codex_runner',
+export const AGENT_TASK_RUNNER_SPEC: AgentRunnerSpec = {
+  app_family: 'agent_task_runner',
   protocol_version: '1.0',
-  context_model: 'cli_session',
+  context_model: 'task',
   workspace_policy: 'persistent_task_workspace',
   supports_terminal: true,
 };
 
-export const CHAT_RUNNER_SPEC: AgentRunnerSpec = {
-  interaction_kind: 'chat',
-  app_family: 'llm_runner',
-  protocol_version: '1.0',
-  context_model: 'explicit_dialogue',
-  workspace_policy: 'ephemeral_session_dir',
-  supports_terminal: false,
-};
+function hasLegacyWorkloadDiscriminant(actual: Record<string, unknown>): boolean {
+  return Object.prototype.hasOwnProperty.call(actual, 'interaction_kind')
+    || Object.prototype.hasOwnProperty.call(actual, 'workload')
+    || Object.prototype.hasOwnProperty.call(actual, 'chat')
+    || Object.prototype.hasOwnProperty.call(actual, 'notebook');
+}
 
-export function isMatchingRunnerSpec(
-  expectedInteractionKind: AgentInteractionKind,
-  actual: Partial<AgentRunnerSpec> | null | undefined,
+export function isAgentTaskRunnerSpec(
+  actual: Partial<AgentRunnerSpec> | Record<string, unknown> | null | undefined,
 ): boolean {
   if (!actual) return false;
-  const expected = expectedInteractionKind === 'chat' ? CHAT_RUNNER_SPEC : NOTEBOOK_RUNNER_SPEC;
+  if (hasLegacyWorkloadDiscriminant(actual)) return false;
   return (
-    actual.interaction_kind === expected.interaction_kind
-    && actual.app_family === expected.app_family
-    && actual.protocol_version === expected.protocol_version
-    && actual.context_model === expected.context_model
-    && actual.workspace_policy === expected.workspace_policy
-    && actual.supports_terminal === expected.supports_terminal
+    actual.app_family === AGENT_TASK_RUNNER_SPEC.app_family
+    && actual.protocol_version === AGENT_TASK_RUNNER_SPEC.protocol_version
+    && actual.context_model === AGENT_TASK_RUNNER_SPEC.context_model
+    && actual.workspace_policy === AGENT_TASK_RUNNER_SPEC.workspace_policy
+    && actual.supports_terminal === AGENT_TASK_RUNNER_SPEC.supports_terminal
   );
 }

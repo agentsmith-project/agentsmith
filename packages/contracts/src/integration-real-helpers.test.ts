@@ -1,19 +1,15 @@
-import type { Page } from '@playwright/test';
-import { describe, expect, it, vi } from 'vitest';
+import type { Page } from "@playwright/test";
+import { describe, expect, it, vi } from "vitest";
 
-vi.mock('../../../e2e/integration-workspace-access', () => ({
+vi.mock("../../../e2e/integration-workspace-access", () => ({
   ensureWorkspaceProjectCreatorAccess: vi.fn(),
-  readStoredAuthToken: vi.fn(async () => 'fixture-token'),
+  readStoredAuthToken: vi.fn(async () => "fixture-token"),
 }));
 
 import {
   API_BASE,
-  BACKEND_REAL_MODEL,
-  createInternalChatAgent,
-  resolveChatWireApiForEndpointUpstreamProtocol,
-} from '../../../e2e/integration-real-helpers';
-
-type SupportedChatEndpointUpstreamProtocol = Parameters<typeof resolveChatWireApiForEndpointUpstreamProtocol>[0];
+  createManagedAgentRunnerViaApi,
+} from "../../../e2e/integration-real-helpers";
 
 function createJsonResponse(payload: unknown) {
   return {
@@ -22,18 +18,23 @@ function createJsonResponse(payload: unknown) {
   };
 }
 
-function createInternalChatAgentPageStub(
-  upstreamProtocol: SupportedChatEndpointUpstreamProtocol,
-): {
+function createManagedAgentRunnerPageStub(): {
   page: Page;
-  get: ReturnType<typeof vi.fn>;
   post: ReturnType<typeof vi.fn>;
 } {
-  const get = vi.fn().mockResolvedValue(
-    createJsonResponse({ upstream_protocol: upstreamProtocol }),
-  );
+  const get = vi
+    .fn()
+    .mockRejectedValue(new Error("managed_agent_runner_helper_should_not_read_endpoint"));
   const post = vi.fn().mockResolvedValue(
-    createJsonResponse({ id: 'agent_internal_chat_123' }),
+    createJsonResponse({
+      id: "runner_agent_task_123",
+      name: "agent-task-runner",
+      status: "ready",
+      is_default: true,
+      default_endpoint_id: "endpoint_123",
+      capabilities: { task_execution: true },
+      diagnostics: { target: "agent_task_runner" },
+    }),
   );
 
   return {
@@ -43,62 +44,41 @@ function createInternalChatAgentPageStub(
         post,
       },
     } as unknown as Page,
-    get,
     post,
   };
 }
 
-describe('resolveChatWireApiForEndpointUpstreamProtocol', () => {
-  it.each([
-    ['openai_chat_completions', 'chat'],
-    ['openai_responses', 'responses'],
-    ['anthropic_messages', 'anthropic_messages'],
-  ] as const)('maps %s to %s', (upstreamProtocol, expectedWireApi) => {
-    expect(resolveChatWireApiForEndpointUpstreamProtocol(upstreamProtocol)).toBe(expectedWireApi);
-  });
-});
+describe("createManagedAgentRunnerViaApi", () => {
+  it("creates a managed Agent Runner through the canonical agent-runners API", async () => {
+    const { page, post } = createManagedAgentRunnerPageStub();
 
-describe('createInternalChatAgent', () => {
-  it.each([
-    ['openai_responses', 'responses'],
-    ['anthropic_messages', 'anthropic_messages'],
-  ] as const)('uses %s endpoint protocol when creating the internal chat agent', async (upstreamProtocol, expectedWireApi) => {
-    const { page, get, post } = createInternalChatAgentPageStub(upstreamProtocol);
-
-    const agent = await createInternalChatAgent(page, {
-      workspaceId: 'ws_default',
-      projectId: 'proj_default',
-      endpointId: 'endpoint_123',
-      title: 'internal-chat',
+    const runner = await createManagedAgentRunnerViaApi(page, {
+      workspaceId: "ws_default",
+      projectId: "proj_default",
+      endpointId: "endpoint_123",
+      title: "agent-task-runner",
     });
 
-    expect(get).toHaveBeenCalledWith(
-      `${API_BASE}/api/v1/workspaces/ws_default/projects/proj_default/endpoints/endpoint_123`,
-      {
-        headers: { Authorization: 'Bearer fixture-token' },
-      },
-    );
     expect(post).toHaveBeenCalledWith(
-      `${API_BASE}/api/v1/workspaces/ws_default/projects/proj_default/agents`,
+      `${API_BASE}/api/v1/workspaces/ws_default/projects/proj_default/agent-runners`,
       expect.objectContaining({
         headers: {
-          Authorization: 'Bearer fixture-token',
-          'Content-Type': 'application/json',
+          Authorization: "Bearer fixture-token",
+          "Content-Type": "application/json",
         },
         data: expect.objectContaining({
-          mode: 'internal',
-          interaction_kind: 'chat',
-          execution_preferences: {
-            chat: {
-              endpoint_id: 'endpoint_123',
-              wire_api: expectedWireApi,
-              model: BACKEND_REAL_MODEL,
-            },
-          },
+          name: "agent-task-runner",
+          is_default: true,
+          status: "ready",
+          default_endpoint_id: "endpoint_123",
         }),
       }),
     );
-    expect(agent.agentId).toBe('agent_internal_chat_123');
-    expect(agent.agentName).toMatch(/^internal-chat-\d+$/);
+    const [, requestOptions] = post.mock.calls[0] ?? [];
+    expect(requestOptions?.data).not.toHaveProperty("mode");
+    expect(requestOptions?.data).not.toHaveProperty("interaction_kind");
+    expect(requestOptions?.data).not.toHaveProperty("external_agent_id");
+    expect(runner.runnerId).toBe("runner_agent_task_123");
+    expect(runner.runnerName).toBe("agent-task-runner");
   });
 });

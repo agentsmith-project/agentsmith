@@ -29,7 +29,7 @@ refresh_token() {
     KEYCLOAK_REALM="${KEYCLOAK_REALM}" \
     TOKEN_OUT_FILE="${TOKEN_FILE}" \
     PRINT_TOKEN=1 \
-    node ./scripts/notebook-agent-refresh-token.js 2>/dev/null || true
+    node ./scripts/agent-runner-refresh-token.js 2>/dev/null || true
   )"
   [[ -n "${refreshed}" ]] || return 1
   printf '%s' "${refreshed}" > "${TOKEN_FILE}"

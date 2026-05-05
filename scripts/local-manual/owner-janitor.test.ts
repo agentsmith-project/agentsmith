@@ -54,7 +54,7 @@ EOF_PS
   exit 0
 fi
 if [[ "$#" -ge 5 && "$1" == "-ww" && "$2" == "-o" && "$3" == "cwd=" && "$4" == "-p" ]]; then
-  printf '%s\\n' '${path.join(repoRoot, 'packages/notebook-codex-runner')}'
+  printf '%s\\n' '${path.join(repoRoot, 'packages/agent-task-runner')}'
   exit 0
 fi
 printf 'unsupported ps invocation: %s\\n' "$*" >&2
@@ -220,22 +220,22 @@ describe('local-manual owner janitor', () => {
       processes: [
         buildProcess({
           pid: 4100,
-          command: 'make notebook-agent-runner',
+          command: 'make agent-task-runner-from-state',
         }),
         buildProcess({
           pid: 4101,
           ppid: 4100,
-          command: 'make notebook-runner',
+          command: 'make agent-task-runner',
         }),
         buildProcess({
           pid: 4102,
           ppid: 4101,
-          command: 'npm run dev -w @mbos/notebook-codex-runner',
+          command: 'npm run dev -w @mbos/agent-task-runner',
         }),
         buildProcess({
           pid: 4103,
           ppid: 4102,
-          cwd: '/repo/packages/notebook-codex-runner',
+          cwd: '/repo/packages/agent-task-runner',
           command: 'node /repo/node_modules/tsx/dist/cli.mjs src/index.ts',
         }),
       ],
@@ -262,10 +262,10 @@ describe('local-manual owner janitor', () => {
       trackedRunnerPid: 4100,
       intent: 'replace_runner',
       processTable: [
-        '4100 1 /tmp/fake-bin/make notebook-agent-runner',
+        '4100 1 /tmp/fake-bin/make agent-task-runner-from-state',
         '4101 4100 /bin/bash /tmp/runner-supervisor-child.sh',
-        '4102 4101 make notebook-runner',
-        '4103 4102 npm run dev -w @mbos/notebook-codex-runner',
+        '4102 4101 make agent-task-runner',
+        '4103 4102 npm run dev -w @mbos/agent-task-runner',
         `4104 4103 node ${path.join(repoRoot, 'node_modules/tsx/dist/cli.mjs')} src/index.ts`,
       ],
     });
@@ -288,9 +288,9 @@ describe('local-manual owner janitor', () => {
       trackedRunnerPid: 4100,
       intent: 'replace_runner',
       processTable: [
-        '4100 1 /tmp/fake-bin/make notebook-agent-runner',
-        '4101 4100 make notebook-runner',
-        '4102 4101 npm run dev -w @mbos/notebook-codex-runner',
+        '4100 1 /tmp/fake-bin/make agent-task-runner-from-state',
+        '4101 4100 make agent-task-runner',
+        '4102 4101 npm run dev -w @mbos/agent-task-runner',
         `4103 4102 node ${path.join(repoRoot, 'node_modules/tsx/dist/cli.mjs')} src/not-runner.ts`,
       ],
     });
@@ -307,9 +307,9 @@ describe('local-manual owner janitor', () => {
       trackedRunnerPid: 4100,
       intent: 'stop_line',
       processTable: [
-        '4100 1 /tmp/fake-bin/make notebook-agent-runner',
-        '4101 4100 make notebook-runner',
-        '4102 4101 npm run dev -w @mbos/notebook-codex-runner',
+        '4100 1 /tmp/fake-bin/make agent-task-runner-from-state',
+        '4101 4100 make agent-task-runner',
+        '4102 4101 npm run dev -w @mbos/agent-task-runner',
       ],
     });
 

@@ -882,13 +882,13 @@ export function resolveFileLibraryRuntimeConfig(env: NodeJS.ProcessEnv = process
   };
 }
 
-function resolveExternalExecutionHost(env: NodeJS.ProcessEnv = process.env): string | null {
-  const explicit = env.EXTERNAL_AGENT_JUICEFS_META_HOST_OVERRIDE?.trim();
+function resolveDeveloperRunnerExecutionHost(env: NodeJS.ProcessEnv = process.env): string | null {
+  const explicit = env.AGENT_RUNNER_DEVELOPER_JUICEFS_META_HOST_OVERRIDE?.trim();
   if (explicit) {
     return explicit;
   }
   const candidates = [
-    env.EXTERNAL_AGENT_EXECUTION_HTTP_BASE_URL?.trim(),
+    env.AGENT_RUNNER_DEVELOPER_EXECUTION_HTTP_BASE_URL?.trim(),
     env.AGENT_EXECUTION_HTTP_BASE_URL?.trim(),
   ].filter(Boolean) as string[];
   for (const candidate of candidates) {
@@ -931,16 +931,16 @@ function resolveBucketEndpointForClientMount(env: NodeJS.ProcessEnv = process.en
     || undefined;
 }
 
-export function resolveFileLibraryMetadataUrlForExternalExecution(
+export function resolveFileLibraryMetadataUrlForDeveloperRunnerExecution(
   metadataUrl: string,
   env: NodeJS.ProcessEnv = process.env,
 ): string {
-  const executionHost = resolveExternalExecutionHost(env);
+  const executionHost = resolveDeveloperRunnerExecutionHost(env);
   if (!executionHost) return metadataUrl;
   try {
     const parsed = new URL(metadataUrl);
     parsed.hostname = executionHost;
-    const explicitPort = env.EXTERNAL_AGENT_JUICEFS_META_PORT_OVERRIDE?.trim();
+    const explicitPort = env.AGENT_RUNNER_DEVELOPER_JUICEFS_META_PORT_OVERRIDE?.trim();
     if (explicitPort) {
       parsed.port = explicitPort;
     }
@@ -950,47 +950,12 @@ export function resolveFileLibraryMetadataUrlForExternalExecution(
   }
 }
 
-export function resolveFileLibraryMetadataUrlForComposeManagedExternalExecution(
-  metadataUrl: string,
-  env: NodeJS.ProcessEnv = process.env,
-): string {
-  const databaseUrl = env.DATABASE_URL?.trim();
-  if (!databaseUrl) return metadataUrl;
-  try {
-    const parsed = new URL(metadataUrl);
-    const database = new URL(databaseUrl);
-    parsed.hostname = database.hostname;
-    parsed.port = database.port;
-    return parsed.toString();
-  } catch {
-    return metadataUrl;
-  }
-}
-
-export function resolveFileLibraryMetadataUrlForDockerManualExternalExecution(
-  metadataUrl: string,
-  env: NodeJS.ProcessEnv = process.env,
-): string {
-  const explicitHost = env.DOCKER_MANUAL_AGENT_JUICEFS_META_HOST_OVERRIDE?.trim();
-  if (!explicitHost) return metadataUrl;
-  try {
-    const parsed = new URL(metadataUrl);
-    parsed.hostname = explicitHost;
-    parsed.port = env.DOCKER_MANUAL_AGENT_JUICEFS_META_PORT_OVERRIDE?.trim()
-      || env.FILE_LIBRARY_CLIENT_POSTGRES_PORT?.trim()
-      || '15432';
-    return parsed.toString();
-  } catch {
-    return metadataUrl;
-  }
-}
-
-export function resolveFileLibraryStorageBucketUrlForExternalExecution(
+export function resolveFileLibraryStorageBucketUrlForDeveloperRunnerExecution(
   storageBucketUrl: string | undefined,
   env: NodeJS.ProcessEnv = process.env,
 ): string | undefined {
   if (!storageBucketUrl?.trim()) return storageBucketUrl;
-  const explicitEndpoint = env.EXTERNAL_AGENT_JUICEFS_STORAGE_ENDPOINT_OVERRIDE?.trim();
+  const explicitEndpoint = env.AGENT_RUNNER_DEVELOPER_JUICEFS_STORAGE_ENDPOINT_OVERRIDE?.trim();
   if (explicitEndpoint) {
     try {
       return replaceUrlOrigin(storageBucketUrl, explicitEndpoint);
@@ -998,51 +963,12 @@ export function resolveFileLibraryStorageBucketUrlForExternalExecution(
       return storageBucketUrl;
     }
   }
-  const executionHost = resolveExternalExecutionHost(env);
+  const executionHost = resolveDeveloperRunnerExecutionHost(env);
   if (!executionHost) return storageBucketUrl;
   try {
     const parsed = new URL(storageBucketUrl);
     parsed.hostname = executionHost;
     return parsed.toString();
-  } catch {
-    return storageBucketUrl;
-  }
-}
-
-export function resolveFileLibraryStorageBucketUrlForComposeManagedExternalExecution(
-  storageBucketUrl: string | undefined,
-  env: NodeJS.ProcessEnv = process.env,
-): string | undefined {
-  if (!storageBucketUrl?.trim()) return storageBucketUrl;
-  const endpoint = env.MINIO_ENDPOINT?.trim();
-  if (!endpoint) return storageBucketUrl;
-  const port = env.MINIO_PORT?.trim() || '9000';
-  const useSsl = env.MINIO_USE_SSL?.trim() === 'true';
-  try {
-    const parsed = new URL(storageBucketUrl);
-    parsed.protocol = useSsl ? 'https:' : 'http:';
-    parsed.hostname = endpoint;
-    parsed.port = port;
-    return parsed.toString();
-  } catch {
-    return storageBucketUrl;
-  }
-}
-
-export function resolveFileLibraryStorageBucketUrlForDockerManualExternalExecution(
-  storageBucketUrl: string | undefined,
-  env: NodeJS.ProcessEnv = process.env,
-): string | undefined {
-  if (!storageBucketUrl?.trim()) return storageBucketUrl;
-  const explicitEndpoint = env.DOCKER_MANUAL_AGENT_JUICEFS_STORAGE_ENDPOINT_OVERRIDE?.trim();
-  if (!explicitEndpoint) return storageBucketUrl;
-  const loopbackPort = env.DOCKER_MANUAL_AGENT_JUICEFS_STORAGE_PORT_OVERRIDE?.trim()
-    || env.MINIO_API_PORT?.trim()
-    || env.FILE_LIBRARY_CLIENT_MINIO_PORT?.trim()
-    || '19000';
-  const endpoint = explicitEndpoint || `http://localhost:${loopbackPort}`;
-  try {
-    return replaceUrlOrigin(storageBucketUrl, endpoint);
   } catch {
     return storageBucketUrl;
   }
@@ -1078,6 +1004,11 @@ export function resolveFileLibraryStorageBucketUrlForInternalExecution(
     return storageBucketUrl;
   }
 }
+
+export const resolveFileLibraryMetadataUrlForManagedRunnerExecution =
+  resolveFileLibraryMetadataUrlForInternalExecution;
+export const resolveFileLibraryStorageBucketUrlForManagedRunnerExecution =
+  resolveFileLibraryStorageBucketUrlForInternalExecution;
 
 export function resolveFileLibraryStorageBucketUrlForGatewayRuntime(
   storageBucketUrl: string | undefined,

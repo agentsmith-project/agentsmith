@@ -337,7 +337,7 @@ perform_startup_authenticated_docstore_warmup() {
   KEYCLOAK_BASE_URL="${KEYCLOAK_BASE_URL}" \
   KEYCLOAK_REALM="${KEYCLOAK_REALM}" \
   KEYCLOAK_CLIENT_ID="${KEYCLOAK_CLIENT_ID}" \
-  node "${ROOT_DIR}/scripts/notebook-agent-refresh-token.js" > "${STARTUP_WARMUP_TOKEN_FILE}"
+  node "${ROOT_DIR}/scripts/agent-runner-refresh-token.js" > "${STARTUP_WARMUP_TOKEN_FILE}"
 
   local status
   status="$(

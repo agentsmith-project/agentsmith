@@ -22,8 +22,6 @@ async function postJson(path: string, body: JsonObject) {
 async function createRunningTask(title: string) {
   const response = await postJson('/api/v1/workspaces/ws_001/projects/proj_001/tasks', {
     title,
-    agent_id: 'ag_2',
-    agent_name: 'Research Agent',
     workspace_mode: 'create_new',
     run_state: 'running',
   });
@@ -34,6 +32,38 @@ async function createRunningTask(title: string) {
 }
 
 describe('msw stop/cancel contracts', () => {
+  it('rejects external_agent_id on chat session create and update', async () => {
+    const create = await postJson(
+      '/api/v1/workspaces/ws_001/projects/proj_001/chat/sessions',
+      {
+        endpoint_id: 'ep_openai_001',
+        model: 'gpt-4o-mini',
+        external_agent_id: 'agent_legacy',
+      },
+    );
+
+    expect(create.status).toBe(400);
+    await expect(create.json()).resolves.toMatchObject({
+      error_code: 'unsupported_field',
+      message: 'external_agent_id',
+    });
+
+    const update = await fetch(
+      'http://localhost/api/v1/workspaces/ws_001/projects/proj_001/chat/sessions/chat_001',
+      {
+        method: 'PATCH',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ external_agent_id: 'agent_legacy' }),
+      },
+    );
+
+    expect(update.status).toBe(400);
+    await expect(update.json()).resolves.toMatchObject({
+      error_code: 'unsupported_field',
+      message: 'external_agent_id',
+    });
+  });
+
   it('returns required chat not_found_or_finished fields with production 202', async () => {
     const response = await postJson(
       '/api/v1/workspaces/ws_001/projects/proj_001/chat/sessions/session_unit_not_running/stop',

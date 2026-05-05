@@ -44,7 +44,7 @@
 示例：
 - `mode` 写 `local_manual` 或 `release_grade`
 - `scope_summary` 写“project work surfaces + governance overlays”
-- `change_scope` 写“新增 notebook trace panel 与 files 挂载说明交互”
+- `change_scope` 写“新增 Agent task activity panel 与 files 挂载说明交互”
 
 ---
 

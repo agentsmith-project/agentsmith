@@ -1,7 +1,7 @@
 /**
  * Task Type Definitions
  *
- * Types for Task, TaskMessage, Artifact and related operations.
+ * Types for Task, activity, artifacts and related operations.
  */
 
 export type TaskStatus = 'active' | 'archived';
@@ -102,8 +102,6 @@ export interface Task {
   project_id: string;
   owner_user_id: string;
   title: string;
-  agent_id: string; // Fixed after creation, cannot be changed
-  agent_name: string; // Redundant field for display
   workspace_file_library_id?: string;
   workspace_file_library_name?: string;
   status: TaskStatus;
@@ -111,8 +109,16 @@ export interface Task {
   created_at: string; // ISO 8601
   updated_at: string; // ISO 8601
   last_activity_at: string; // ISO 8601
+  runner_status?: 'draft' | 'connected' | 'ready' | 'degraded' | 'offline' | 'unknown';
   agent_presence?: 'online' | 'offline' | 'managed' | 'unknown';
   run_state?: TaskRunState;
+  active_run?: {
+    id: string;
+    status: 'queued' | 'running' | 'stopping' | 'succeeded' | 'failed' | 'canceled';
+    runner_id: string;
+    started_at?: string;
+    finished_at?: string;
+  };
   active_run_started_at?: string; // ISO 8601, present when backend has active run truth
   stop_mode?: 'cancel' | 'terminate';
   can_escalate?: boolean;
@@ -125,13 +131,14 @@ export interface Task {
   };
 }
 
-export interface TaskMessage {
+export interface TaskActivityItem {
   id: string;
   task_id: string;
-  role: 'user' | 'agent';
+  kind: 'user_intent' | 'runner_output';
+  actor: 'user' | 'runner';
   content: string;
   created_at: string; // ISO 8601
-  turn_id?: string; // Associated turn ID (if any)
+  run_id?: string; // Associated run ID (if any)
 }
 
 export type ArtifactType = 'text' | 'image' | 'file' | 'other';
@@ -141,7 +148,7 @@ export interface Artifact {
   task_id: string;
   turn_id?: string; // Associated turn ID
   type: ArtifactType;
-  task_relative_path?: string; // Relative path in notebook task working directory (if applicable)
+  task_relative_path?: string; // Relative path in task working directory (if applicable)
   title?: string;
   content?: string; // Text content or file URL
   thumbnail_url?: string; // Image thumbnail URL
@@ -178,7 +185,6 @@ export interface TaskTraceListResponse {
 
 export interface CreateTaskRequest {
   title: string;
-  agent_id: string;
   workspace_file_library_id?: string;
   workspace_mode?: 'create_new';
   workspace_name?: string;
@@ -194,9 +200,13 @@ export interface UpdateTaskRequest {
   status?: TaskStatus;
 }
 
-export interface SendMessageRequest {
-  task_id: string;
-  content: string;
+export interface StartTaskRunRequest {
+  intent: string;
+  input_refs?: Array<
+    | { kind: 'library_object'; library_id: string; key: string; name?: string; content_type?: string; size_bytes?: number }
+    | { kind: 'artifact'; task_id: string; artifact_id: string; task_relative_path?: string; name?: string; content_type?: string; size_bytes?: number }
+    | { kind: 'url'; url: string; name?: string; imported_library_id?: string; imported_key?: string; content_type?: string; size_bytes?: number }
+  >;
 }
 
 export interface TaskListParams {
@@ -223,13 +233,17 @@ export interface CreateTaskTerminalSessionRequest {
 }
 
 export interface TaskTerminalSessionCreateResponse {
-  session_id: string;
+  terminal_session_id: string;
+  runner_id?: string;
+  runner_session_id?: string;
   status: 'pending' | 'active' | 'disconnected' | 'closed' | 'failed';
   ws_url: string;
 }
 
 export interface TaskTerminalSessionStatus {
-  id: string;
+  terminal_session_id: string;
+  runner_id?: string;
+  runner_session_id?: string;
   status: 'pending' | 'active' | 'disconnected' | 'closed' | 'failed';
   cols: number;
   rows: number;
@@ -241,18 +255,13 @@ export interface TaskTerminalSessionStatus {
   ws_url?: string | null;
 }
 
-export const TASK_TERMINAL_RECONNECT_VIEW = 'notebook.task_terminal' as const;
+export const TASK_TERMINAL_RECONNECT_VIEW = 'agent_task.task_terminal' as const;
 export type TaskTerminalReconnectView = typeof TASK_TERMINAL_RECONNECT_VIEW;
 
 export type TaskTerminalServerEvent =
-  | { type: 'started'; session_id: string; cols?: number; rows?: number }
-  | { type: 'output'; session_id: string; chunk: string }
-  | { type: 'exited'; session_id: string; exit_code: number | null; signal: string | null }
-  | { type: 'error'; session_id?: string; error_code?: string; error_message: string }
   | {
       type: 'terminal.replay_start';
       terminal_session_id: string;
-      session_id?: string;
       earliest_seq?: number | null;
       latest_seq?: number | null;
       next_seq?: number | null;
@@ -263,7 +272,6 @@ export type TaskTerminalServerEvent =
   | {
       type: 'terminal.output';
       terminal_session_id: string;
-      session_id?: string;
       seq: number;
       encoding?: 'utf8' | 'base64';
       data?: string;
@@ -272,7 +280,6 @@ export type TaskTerminalServerEvent =
   | {
       type: 'terminal.replay_end';
       terminal_session_id: string;
-      session_id?: string;
       latest_seq?: number | null;
       next_seq?: number | null;
       gap?: boolean;
@@ -282,7 +289,6 @@ export type TaskTerminalServerEvent =
   | {
       type: 'terminal.state';
       terminal_session_id: string;
-      session_id?: string;
       state?: string;
       status?: string;
       input_enabled?: boolean;
@@ -291,7 +297,6 @@ export type TaskTerminalServerEvent =
   | {
       type: 'terminal.error';
       terminal_session_id: string;
-      session_id?: string;
       error_code?: string;
       error_message?: string;
       reason?: string | null;

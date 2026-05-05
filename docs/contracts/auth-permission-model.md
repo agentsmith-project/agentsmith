@@ -145,10 +145,10 @@ Current project-scope model:
 
 Current split-token scope:
 - `project:endpoint:use` covers Chat, Endpoint read/use, Files read/use, Usage, and Access guide access
-- `project:agent_task:use` covers Agent task list/detail/create/run/update/archive/cancel
-- `project:agent_task:terminal` covers Agent task terminal access and must be granted explicitly with task access
-- `project:agent_runner:read` covers Agent Runner read and diagnostics surfaces
-- `project:agent_runner:manage` covers Agent Runner create/update/delete/default and connection key mutations
+- `project:agent_task:use` covers Agent task list/detail/create/run/update/archive/cancel, Project default run start, selection snapshot fetch, and Developer runner test task only when paired with runner-manage/action affordance
+- `project:agent_task:terminal` covers Agent task terminal access and must be granted explicitly with task access; backend terminal create/open/reconnect/input/resize/close must require both `project:agent_task:use` and `project:agent_task:terminal`
+- `project:agent_runner:read` covers Agent Runner route/list/status read and display-safe diagnostics only when backend `actions.view_diagnostics.allowed=true`
+- `project:agent_runner:manage` covers Developer runner create/edit/disable/delete, Developer runner explicit selection, Test connection, connection key/one-time-secret/mutating connection actions, System managed Project default/status/setup actions, and Developer runner test task only when paired with `project:agent_task:use`
 - `project:audit:read` covers Audit and Alert Center read/action access in the current MVP alert surface
 - `project:governance:update` covers project secrets, resource policy, endpoint governance, and similar governance surfaces
 - `project:files:update` covers file-library create/update/delete/move/upload/share-link writes
@@ -168,6 +168,24 @@ Practical effect:
 - but cannot manage lifecycle or delegate management
 
 This section is authoritative for current permission boundaries and any remaining cleanup work.
+
+Runner selection and Agent Runners operation rules:
+
+| Operation | Required authority |
+| --- | --- |
+| Ordinary Project default run | `project:agent_task:use` |
+| Selection snapshot fetch | `project:agent_task:use` |
+| Project default safe snapshot row | `project:agent_task:use` |
+| Explicit non-default System managed row/select action | Backend row-level `project:agent_task:use` + `project:agent_runner:read` + policy/capability/readiness + `actions.select_for_task.allowed` |
+| Explicit Developer runner row/select action | Backend row-level `project:agent_task:use` + `project:agent_runner:manage` + policy/capability/readiness/freshness + `actions.select_for_task.allowed` |
+| Agent Runners route gate | `project:agent_runner:read` or `project:agent_runner:manage` |
+| Display-safe diagnostics/view_diagnostics | `project:agent_runner:read` or `project:agent_runner:manage` + backend `actions.view_diagnostics.allowed` |
+| Developer runner Test connection | `project:agent_runner:manage` + backend `actions.test_connection.allowed` |
+| Developer runner test task | `project:agent_task:use` + `project:agent_runner:manage` + backend `actions.run_test_task.allowed` |
+
+`StartTaskRun` must recompute selection authority, readiness, policy, capability, and freshness at submit time. Selection snapshots are UI affordance snapshots, not durable authorization artifacts. Action `required_permissions` values are per-row/per-operation diagnostic metadata and must not be treated as a frontend authorization source or as a fixed permission recipe for every `select_for_task`.
+
+UI audiences such as Ordinary task user, Execution expert, Runner maintainer, and Diagnostics viewer are backend-affordance-derived presentation contexts, not role names.
 
 ## Capability Boundary (Accepted Target)
 
@@ -206,5 +224,7 @@ This section is authoritative for current permission boundaries and any remainin
 
 - Use identical permission vocabulary in FE and BE.
 - Do not introduce new permission points without updating this file and `src/lib/constants/permissions.ts`.
+- This milestone does not introduce separate Developer runner ownership/test authority; any future split from `project:agent_runner:manage` requires an RFC and permission contract update.
+- Developer runner test task creates standard task/run evidence, so it must keep the explicit `project:agent_task:use` requirement in addition to runner-manage/action affordance.
 - Keep page/operation mapping in `frontend-backend-gating-matrix.md`.
 - Keep status/error schema in the active contract set in `docs/contracts/`.

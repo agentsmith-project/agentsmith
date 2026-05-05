@@ -4,13 +4,13 @@ Status: `current-target`
 Owner: Product + Engineering
 Last updated: 2026-05-05
 
-## Status / Purpose / Blocking Contract Conflict
+## Status / Purpose
 
 This is a pre-GA target plan, not a compatibility plan. Active product behavior, public contracts, route manifests, generated types, deployment truth, gates, user guides, and copy move directly to this model with no legacy aliases, bridges, double-read paths, fallback APIs, or compatibility views.
 
 This plan is planning evidence only. Implementation may rely on target names, fields, permissions, deployment behavior, or gates only after authoritative contracts and generated artifacts are updated and passing.
 
-Blocking contract conflict: `docs/contracts/product-terminology.md` currently says Chat selection must not be called `Model` and should be called `Execution target`. This target requires Chat selection to be `Model`, backed by an `Endpoint`. The terminology contract, permission model, module maps, OpenAPI/AsyncAPI specs, generated types, SDK exports, deployment truth, and gates must be updated before implementation treats `Model` as contract truth.
+Contract note: `docs/contracts/product-terminology.md` is the authoritative source for current product-facing names. Chat selection is `Model`, backed by an `Endpoint`; Agent task expert selection, when allowed, is run-scoped `Execution environment`.
 
 Legacy terms may appear only as negative evidence, forbidden-scan patterns, one-shot cleanup/assertion evidence, or archived-doc references. Those mentions prove removal; they do not define supported runtime or API behavior.
 
@@ -20,14 +20,15 @@ Legacy terms may appear only as negative evidence, forbidden-scan patterns, one-
 2. Chat-type Agent, Notebook-type Agent, and all Agent type selectors are gone. There is no Chat/Notebook workload choice in UI, API, SDK, or wire contracts.
 3. `Notebook` becomes `Agent tasks`; current `Agents` becomes `Agent Runners`. Active routes are `/chat`, `/agent-tasks`, `/agent-tasks/[taskId]`, and `/agent-runners`.
 4. `/notebook` and `/agents` are not target aliases.
-5. Agent task create/run accepts task intent and optional inputs, not `runner_id`, old `agent_id`, or old `agent_name`. Users do not pick runners.
-6. Backend dispatch resolves exactly one eligible default Agent Runner. Failure is a typed error plus audit evidence; user dispatch never silently auto-fills or guesses a runner.
-7. Agent Runners are developer/governance-side task execution capability configuration. They are not a user execution entrypoint and expose no Chat/Notebook type, external/internal mode, or docker/k8s runtime choice.
-8. Public runner SDK and wire contracts are task-only: no chat/notebook public contexts, no `interaction_kind`, no `external_agent_id`, and no `chat_runner`.
-9. Developer mode is local debugging only. It shares public SDK semantics with managed runner execution, returns explicit typed errors/capability responses for unavailable local capabilities, and is absent from demo, cluster, release, and formal deployment truth.
-10. Formal deployment uses managed runner execution only. External docker runner deploy/runtime is removed, while Docker/Compose/Kubernetes infrastructure for demo, cluster, integration, base images, sandbox, app, and verification is retained.
-11. Artifacts are collected only from `.artifacts`. Other task workspace files may exist and be edited, but are not collected or displayed as artifacts.
-12. Removed-data closure is export-before-delete/rewrite/assert, idempotent, retention/access/redaction-owned, audit-schema-owned, and proves active runtime no longer depends on old Chat Agent, Notebook Agent, external runner, `mode`, `runner_runtime`, `interaction_kind`, or `external_agent_id` fields.
+5. Agent task `CreateTask` accepts task intent and optional inputs, not `runner_selection`, `runner_id`, old `agent_id`, or old `agent_name`. Ordinary users do not pick runners.
+6. `StartTaskRun` is the canonical run contract and may accept run-scoped `runner_selection` only for an expert `Execution environment` flow when the backend selection snapshot exposes per-row `actions.select_for_task`. UI create-and-start behavior must call CreateTask then StartTaskRun and must not store selector state on the task. `StartTaskRun` must recompute selection authority and cannot trust an older snapshot.
+7. Backend dispatch resolves exactly one eligible System managed Project default for ordinary runs. Explicit selection validates the exact selected runner and never falls back to Project default after selection failure.
+8. Agent Runners are developer/governance-side task execution capability configuration. They are not an ordinary user execution entrypoint and expose no Chat/Notebook type, external/internal mode, or docker/k8s runtime choice.
+9. Public runner SDK and wire contracts are task-only: no chat/notebook public contexts, no `interaction_kind`, no `external_agent_id`, and no `chat_runner`.
+10. Developer mode is local debugging/testing only. It may appear in Agent Runners when development/local capability is enabled by backend affordance, but it is not a formal deployment runtime, cannot become Project default, and cannot be managed release proof.
+11. Formal deployment uses managed runner execution only. External docker runner deploy/runtime is removed, while Docker/Compose/Kubernetes infrastructure for demo, cluster, integration, base images, sandbox, app, and verification is retained.
+12. Artifacts are collected only from `.artifacts`. Other task workspace files may exist and be edited, but are not collected or displayed as artifacts.
+13. Removed-data closure is export-before-delete/rewrite/assert, idempotent, retention/access/redaction-owned, audit-schema-owned, and proves active runtime no longer depends on old Chat Agent, Notebook Agent, external runner, `mode`, `runner_runtime`, `interaction_kind`, or `external_agent_id` fields.
 
 ## Product Surfaces, Routes, Permissions
 
@@ -38,10 +39,12 @@ Backend authorization is authoritative; frontend gates are routing and UX guards
 | Surface | Active route | Target meaning | Route gate | Mutation/action gate | Must not expose |
 | --- | --- | --- | --- | --- | --- |
 | Chat | `/chat` | Project LLM/model conversation. User-facing selector is `Model`, derived from Endpoint truth. | `project:endpoint:use` | send/stream/stop/delete: `project:endpoint:use` | Agent Runner picker, runner readiness, runner diagnostics, runner dispatch, legacy Chat Agent fields |
-| Agent tasks | `/agent-tasks`, `/agent-tasks/[taskId]` | User task workspace with inputs, activity, final answer, terminal sessions, and artifacts. | `project:agent_task:use` | create/run/update/archive/cancel: `project:agent_task:use` | runner picker, hidden default, URL/local-storage runner override, Agent type selector |
-| Agent task terminal | nested under task route | Task-scoped terminal session. | `project:agent_task:use` + `project:agent_task:terminal` | open/reconnect/input/resize/close: same | terminal outside task scope, backend-authz bypass |
-| Agent Runners | `/agent-runners` | Developer/governance configuration for task execution capability. | `project:agent_runner:read` | create/update/delete/default/connection/diagnostics: `project:agent_runner:manage` | user run entrypoint, Chat/Notebook type, external/internal, docker/compose/k8s runtime choice |
+| Agent tasks | `/agent-tasks`, `/agent-tasks/[taskId]` | User task workspace with inputs, activity, final answer, terminal sessions, and artifacts. Ordinary users use Project default; expert run-scoped `Execution environment` appears only from backend selection snapshot/affordance. | `project:agent_task:use` | create/update/archive/cancel, selection snapshot fetch, and Project default start: `project:agent_task:use`; explicit non-default System managed selection: `project:agent_task:use` plus `project:agent_runner:read` plus per-row affordance; Developer runner selection: `project:agent_task:use` plus `project:agent_runner:manage` plus per-row affordance | ordinary runner picker, hidden default, URL/local-storage runner override, Agent type selector |
+| Agent task terminal | nested under task route | Task-scoped terminal session. | `project:agent_task:use` + `project:agent_task:terminal` | create/open/reconnect/input/resize/close: same | terminal outside task scope, backend-authz bypass |
+| Agent Runners | `/agent-runners` | Developer/governance configuration for task execution capability. Developer runner create/test actions appear only when backend affordances allow them. | `project:agent_runner:read` or `project:agent_runner:manage` | display-safe diagnostics: read-or-manage plus `view_diagnostics`; Developer runner create/edit/disable/delete/key/Test connection: `project:agent_runner:manage` plus action; Developer runner test task: `project:agent_task:use` plus `project:agent_runner:manage` plus `run_test_task`; System managed Project default setup/status action: `project:agent_runner:manage` plus action | ordinary user run entrypoint, Chat/Notebook type, external/internal, docker/compose/k8s runtime choice |
 | Endpoints | existing endpoint routes | Governed model capability: provider/model/policy/secret binding. | existing endpoint governance tokens | endpoint management remains governance-side | runner-owned model truth |
+
+UI audiences such as Ordinary task user, Execution expert, Runner maintainer, and Diagnostics viewer are derived from backend affordances and safe response shape. They are not role names and must not be used as authorization inputs.
 
 ## Runtime Contracts
 
@@ -64,35 +67,50 @@ Target Chat contract:
 Target Agent task contract:
 
 1. Agent task is not a Chat session. Task APIs do not expose public `interaction_kind` or Chat message semantics.
-2. Task create/run payloads do not require or accept runner selection fields; payloads containing `runner_id`, old `agent_id`, or old `agent_name` fail closed with `400 unsupported_field`.
-3. The frontend has no visible picker, hidden default, URL override, local-storage preference, advanced Agent selector, or Chat/Notebook type selector.
-4. Dispatch records the selected `runner_id` on the run summary and audit evidence only after backend resolution succeeds.
-5. Task lifecycle and run status are separate. Activity and final answer are task/run state, not Chat messages.
-6. The task workspace owns file edits, terminal sessions, inputs, context, credentials, activity, final answer, and artifact collection.
-7. Terminal tickets, reconnects, input, resize, and close are task-scoped and permission checked.
-8. Errors include user-safe messages plus typed error codes and diagnostic/audit ids where relevant.
+2. `CreateTask` does not require or accept runner selection fields; payloads containing `runner_selection`, `runner_id`, old `agent_id`, or old `agent_name` fail closed with `400 unsupported_field`.
+3. `StartTaskRun` is the only milestone run contract that may accept `runner_selection`. `CreateTask` plus `StartTaskRun` is the canonical sequence for UI create-and-start.
+4. The frontend has no ordinary runner picker, hidden default, URL override, local-storage preference, stale hidden form selector, advanced Agent selector, or Chat/Notebook type selector.
+5. A permissioned expert may see run-scoped `Execution environment` only under Advanced/Execution settings, sourced from a backend selection snapshot that returns Project default, selectable/disabled environments, reason codes, and per-row `actions.select_for_task`; it must not use the full Agent Runner list or return secrets/full diagnostics.
+6. Selection snapshot fetch requires `project:agent_task:use`. A Project default safe row may be returned with task-use; non-default System managed rows require backend row-level `project:agent_runner:read` plus policy/capability/readiness; Developer runner rows require backend row-level `project:agent_runner:manage` plus policy/capability/readiness/freshness.
+7. If the actor has no selection authority, the snapshot may return only the Project default safe row. It must not leak invisible runner names, private diagnostics, endpoint details, or internal capability data. A previously selected environment that becomes denied or unavailable may return only as a safe disabled selected row with a reason code.
+8. Dispatch records `resolved_runner_id` on the run summary and audit evidence only after backend resolution succeeds.
+9. Task lifecycle and run status are separate. Activity and final answer are task/run state, not Chat messages.
+10. The task workspace owns file edits, terminal sessions, inputs, context, credentials, activity, final answer, and artifact collection.
+11. Terminal session creation resolves exactly once and persists `resolved_runner_id` on the terminal session. Reconnect/input/resize/close reuse the session runner and never re-resolve Project default.
+12. Terminal creation uses the active run/test run's resolved runner when attached to a run; standalone task terminals use Project default at creation and do not require an active run.
+13. Terminal tickets, reconnects, input, resize, and close are task-scoped and must require `project:agent_task:use` plus `project:agent_task:terminal`.
+14. Ordinary users see productized Activity/Execution details summaries. Raw event view appears only when audit/diagnostics affordance allows it and must not display raw diagnostics, secrets, or internal paths.
+15. Errors include user-safe messages plus typed error codes and diagnostic/audit ids where relevant; backend reason codes are mapped to audience-safe i18n copy rather than rendered directly.
 
 ### Runner Resolution
 
-Backend resolves the Agent Runner at run dispatch. A project must have exactly one eligible default managed Agent Runner.
+Backend resolves the Agent Runner at run dispatch. Ordinary runs use the eligible System managed Project default. Explicit expert selection validates the exact selected Execution environment from the backend selection snapshot.
 
-Eligibility requires a project-scoped runner that is ready, marked default, has `default_endpoint_id`, points to a same-project enabled Endpoint, is policy-allowed for the actor/task, resolves to a usable provider/model, and satisfies requested input, terminal, artifact, context, credential, lifecycle, stop, diagnostic, and model capabilities.
+Project default eligibility requires a project-scoped System managed runner that is ready, marked default, has `default_endpoint_id`, points to a same-project enabled Endpoint, is policy-allowed for the actor/task, resolves to a usable provider/model, and satisfies requested input, terminal, artifact, context, credential, lifecycle, stop, diagnostic, and model capabilities.
 
 Resolution behavior:
 
-1. Backend enforces at most one `is_default=true` Agent Runner per project.
+1. Backend enforces at most one `is_default=true` System managed Agent Runner per project.
 2. Setting a default atomically clears the previous default and writes audit.
 3. Multiple active defaults fail with `409 agent_runner_default_conflict`.
-4. No ready managed runner fails with `409 agent_runner_unavailable`.
+4. No ready System managed runner fails with `409 agent_runner_unavailable`.
 5. No usable default endpoint/model fails with `409 agent_runner_model_unconfigured`.
 6. Capability mismatch fails with `409 agent_runner_capability_mismatch`.
 7. No eligible default fails with `409 agent_runner_selection_required`.
 8. Ambiguous eligibility fails with `409 agent_runner_selection_ambiguous`.
 9. Bootstrap and admin configuration may persist a default runner, but user run dispatch must fail closed instead of silently choosing one.
+10. Explicit non-default System managed selection requires same project, `project:agent_task:use`, `project:agent_runner:read`, `actions.select_for_task.allowed`, readiness, policy, and capability checks.
+11. Explicit Developer runner selection requires same project, `project:agent_task:use`, `project:agent_runner:manage`, `actions.select_for_task.allowed`, readiness, freshness, policy, and capability checks.
+12. `StartTaskRun` recomputes selection authority at submit time. Snapshot state is advisory UI state, not durable authorization.
+13. Explicit selection failure never falls back to Project default.
 
 ### Agent Runners + SDK/Provider
 
 Agent Runner records are project-scoped and task-only. The surface may show readiness, default endpoint binding, capabilities, diagnostics, connection state, and audit/usage links.
+
+Public records must distinguish System managed and Developer runner through stable public `kind`/source/action affordance concepts. Public create can create Developer runners only; it cannot create System managed runners, set `is_default`, set `default_endpoint_id`, or issue/revoke keys for System managed runners.
+
+Display-safe diagnostics require `project:agent_runner:read` or `project:agent_runner:manage` plus `actions.view_diagnostics.allowed`. Test connection, connection key, one-time secret, and mutating connection actions require `project:agent_runner:manage` plus the matching action. Dedicated Developer runner test task requires `project:agent_task:use`, `project:agent_runner:manage`, and `actions.run_test_task.allowed` because it creates standard task/run evidence.
 
 Connection keys, websocket/presence, diagnostics, and audit event names use `agent_runner` naming. Secrets, credentials, service keys, endpoint secrets, and token material are redacted.
 
@@ -111,11 +129,12 @@ Forbidden public exports and wire concepts:
 Provider rules:
 
 1. `ManagedRunnerProvider` is the only provider enabled in formal deployment.
-2. `DeveloperRunnerProvider` is enabled only by local development config.
-3. Build/CI assertions prove developer provider registration is impossible in production, demo, cluster, release, or formal deployment environments.
-4. Providers hide environment differences from public SDK semantics.
-5. Providers must not silently downgrade workspace, artifact, context, credential, terminal, lifecycle, stop, diagnostic, or model capabilities.
-6. Missing capability returns an explicit capability response or typed error.
+2. `DeveloperRunnerProvider` is enabled only by local development config or an equivalent development capability flag.
+3. If the developer provider is not enabled, Developer runner create/action affordances are hidden or disabled by backend response and backend rejects direct calls.
+4. Build/CI assertions prove developer provider registration is impossible in production, demo, cluster, release, or formal deployment environments.
+5. Providers hide environment differences from public SDK semantics.
+6. Providers must not silently downgrade workspace, artifact, context, credential, terminal, lifecycle, stop, diagnostic, or model capabilities.
+7. Missing capability returns an explicit capability response or typed error.
 
 ## Deployment Truth
 
@@ -123,10 +142,10 @@ Provider rules:
 | --- | --- | --- |
 | Formal deployment | Managed Agent task runner execution only. | Developer mode and external docker runner deploy/runtime are absent from UI, env, manifests, bootstrap, release, and verify truth. |
 | Demo and cluster | Managed runner execution through backend provider truth. | No developer provider, no manual runner service, no external-runner-only simple mode. |
-| Developer local | Local debugging for runner developers, sharing public SDK semantics with managed runner. | Local-only config; not evidence for formal deployment readiness. |
+| Developer local | Local debugging/testing for runner developers, sharing public SDK semantics with managed runner. | Local-real is an adapter/evidence line, not a runtime identity; Developer runner evidence is not formal deployment readiness or managed release proof. |
 | External docker runner | Deploy/runtime path is removed. | Do not remove Docker/Compose/Kubernetes primitives used by demo, cluster, integration, base images, sandbox, app packaging, or verification plumbing. |
 | Naming | Runner image/package/release names use `agent-task` or `task-runner`. | No Chat runner or Notebook runner release names in active deployment truth. |
-| Bootstrap | May seed Endpoints and one managed default Agent Runner when required. | Must not create Chat Agents, Notebook Agents, external/internal agent modes, or start an external docker runner. |
+| Bootstrap | May seed Endpoints and one System managed Project default Agent Runner when required. | Must not create Chat Agents, Notebook Agents, external/internal agent modes, Developer runner defaults, or start an external docker runner. |
 
 ## One-Shot Cleanup, Audit, Data Closure
 
@@ -147,7 +166,7 @@ Notebook and Agent legacy data:
 DB and retention closure:
 
 1. Project-scoped unique default runner constraint and transaction are owned.
-2. New task runs require `runner_id` after dispatch succeeds.
+2. New task runs require `resolved_runner_id` after dispatch succeeds.
 3. Legacy fields are removed from, or write-blocked in, active runtime.
 4. Cleanup order is export-before-delete/rewrite/assert with rerun behavior and rollback boundary defined.
 5. Archive location, retention, access control, PII redaction, secret redaction, and audit event schema are owned.
@@ -158,14 +177,15 @@ Required audit coverage:
 1. Chat model send/stream/stop/delete.
 2. Agent task create/run/cancel/fail/archive.
 3. Runner resolution success/failure.
-4. Agent Runner default and default endpoint changes.
-5. Runner connection key issue/revoke and diagnostics access.
-6. Terminal open/reconnect/input/resize/close.
-7. Artifact scan.
-8. Managed credential/context access.
-9. Removed-field cleanup dry-run/apply/assertion.
+4. Agent Runner Project default/status/setup actions; public UI cannot edit underlying System managed configuration.
+5. Runner connection key issue/revoke/expiry and diagnostics/Test connection access.
+6. Dedicated Developer runner test-task start, including standard task/run evidence marked `runner_test`, `resolved_runner_id`, and selection metadata.
+7. Terminal create/open/reconnect/input/resize/close and terminal runner resolution.
+8. Artifact scan.
+9. Managed credential/context access.
+10. Removed-field cleanup dry-run/apply/assertion.
 
-Audit events include actor, timestamp, project/task/run/session/runner/endpoint ids as applicable, action, result/error code, diagnostic id, schema/script version, and redacted metadata.
+Audit events include actor, timestamp, project/task/run/session/runner/endpoint ids as applicable, action, result/error code, diagnostic id, schema/script version, and redacted metadata. Secret redaction covers diagnostics and Test connection across ingress logging, storage, response serialization, and audit.
 
 ## Verification And Gates
 
@@ -175,8 +195,8 @@ Use focused evidence first for the touched slice. Heavy gates are phase closure,
 | --- | --- | --- |
 | Contracts and terminology | terminology, permission, route, OpenAPI/AsyncAPI, generated type, SDK export checks | `contracts:check`, OpenAPI/generated checks, forbidden scan |
 | Chat | endpoint-only create/patch/read/send/stream/stop/delete; legacy field rejection; active storage assertion | focused tests plus PR gate |
-| Agent tasks | create/run without runner selection; backend resolution; activity/final answer/SSE; terminal; artifact scan proving `.artifacts` only and non-`.artifacts` workspace files are not collected/displayed as artifacts | focused unit/integration/e2e plus PR gate |
-| Agent Runners, SDK, providers | default uniqueness, endpoint validity, diagnostics, connection keys, SDK export scan, managed/developer provider behavior | focused runner tests plus PR gate |
+| Agent tasks | CreateTask rejects runner fields; StartTaskRun owns run-scoped selection and revalidates authority; task-use snapshot fetch; snapshot no-leak behavior; backend resolution; Activity/Execution details plus raw event gating; terminal session runner binding and terminal permission gates; artifact scan proving `.artifacts` only and non-`.artifacts` workspace files are not collected/displayed as artifacts | focused unit/integration/e2e plus PR gate |
+| Agent Runners, SDK, providers | System managed-only default, public kind/source, public create restrictions, status/setup actions only for System managed public UI, display-safe diagnostics/read-or-manage affordance, Test connection redaction, connection keys and expiry, dedicated Developer runner test task with task-use plus runner-manage, SDK export scan, managed/developer provider behavior | focused runner tests plus PR gate |
 | One-shot cleanup and audit | dry-run/apply/assertion, idempotency, retention/access/redaction, audit schema | cleanup evidence plus PR gate |
 | Deployment truth | render/bundle/bootstrap/verify for changed demo, cluster, release, runner image, sandbox, or scripts | PR gate plus release gate |
 
@@ -197,10 +217,10 @@ Forbidden scan rules:
 Forbidden workarounds:
 
 1. Any Chat Agent compatibility mode, alias, bridge, double-read, fallback API, or Chat legacy runner field read/write path.
-2. Hidden runner picker, local runner preference, or URL runner override in Agent task UI.
-3. Dispatch-time default auto-fill or silent runner auto-selection in user run dispatch.
+2. Hidden runner picker, ordinary runner picker, local runner preference, or URL runner override in Agent task UI. The only allowed selector is run-scoped expert `Execution environment` sourced from backend selection snapshot/affordance.
+3. Frontend default auto-fill, hidden runner persistence, or silent runner guessing beyond backend System managed Project default resolution.
 4. Public `interaction_kind` or chat/notebook runner SDK exports.
-5. Developer mode in demo, cluster, release, or formal deployment truth.
+5. Developer mode in demo, cluster, release, or formal deployment truth, or as Project default / managed release proof.
 6. External docker runner wrapper as production, demo, cluster, or release path.
 7. Runtime, API, UI, or route aliases for `/notebook` or `/agents`.
 8. Role-name authorization, invented permission tokens, hook-short-circuit permission checks, unvalidated route params, or silent provider downgrade.

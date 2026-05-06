@@ -40,6 +40,8 @@
 | Managed docker | demo / cluster deploy managed agent-task runner | `file_library` | runner container | `/workspace/<task_id>/` |
 | Sandbox k8s | sandbox workload pod | `pre_mounted` | workload container | `/workspace/<task_id>/` |
 
+Local/manual profiles that exercise the deployment default managed runner must prove the runner has a valid internal sandbox/runtime configuration before task execution. If the sandbox is unavailable, task creation or create-and-start should fail with a clear unavailable/configuration state instead of producing `AGENT_SANDBOX_NOT_CONFIGURED` after dispatch. Any sandbox/pod-internal API base must be reachable from inside that environment and must not rely on browser-host `localhost`.
+
 ## 3. Current operational entrypoints
 
 ### Agent-task runner fast owner diagnostic
@@ -89,9 +91,9 @@ npm run release:status
 
 如果只排 agent-task runner：
 - 先看 owner diagnostic：`npm run test:agent-task:runner:fast`
-- 再看 `make local-real-status` 和 `npm run verify -- --goal=real --run`
-- 如果问题仍落在 runner owner，再看 `npm run test:agent-task:runner:backend-real`
-- 最后按需要补 terminal matrix 与 UX owner diagnostics
+- 再看 focused backend-real diagnostics：`npm run test:agent-task:runner:backend-real`
+- 按需要补 terminal matrix 与 UX owner diagnostics
+- 阶段收口或跨模块变更时再回到 `make local-real-status` 和 `npm run verify -- --goal=real --run`
 
 ## 4. Current evidence paths
 
@@ -112,8 +114,12 @@ npm run release:status
 ### Runner config
 
 - Agent Runners are task-only execution capability records.
-- The default Endpoint/model binding is configured in Agent Runners administration surfaces.
-- User task creation and run actions do not accept runner selection fields.
+- The default managed runner is deployment/system-side configuration and is read-only from frontend/project APIs.
+- The current milestone has exactly one deployment default managed runner available across workspaces/projects.
+- Model/endpoint access is resolved through project Endpoint/model governance, not through mutable frontend runner configuration.
+- User task creation may omit `bound_runner_id` to bind the default managed runner, or authorized expert creation may send `bound_runner_id` for a Developer runner.
+- Run, retry, terminal, and recovery actions do not accept runner selection fields; they use the task's immutable bound runner.
+- Public Agent Runners create/update/delete/key APIs manage Developer runners only and must reject managed runner config/default/key mutation fields.
 
 ### Runner env vars
 
@@ -156,14 +162,14 @@ make local-real-up
 npm run test:agent-task:runner:fast
 ```
 
-4. 看 real verification clean entrypoint：
-```bash
-npm run verify -- --goal=real --run
-```
-
-5. 只有问题仍落在 agent-task runner owner 时，再看 agent-task runner backend-real diagnostics：
+4. 看 focused backend-real runner diagnostics：
 ```bash
 npm run test:agent-task:runner:backend-real
+```
+
+5. 阶段收口或跨模块变更时再看 real verification clean entrypoint：
+```bash
+npm run verify -- --goal=real --run
 ```
 
 6. 如果问题落在 terminal：
@@ -177,6 +183,12 @@ npm run test:e2e:integration:agent-task:terminal:ux
 npm run test:skills:fast
 npm run test:skills:backend-real
 ```
+
+手测/回归时必须确认：
+- default managed runner seed/config 走 system-side/internal path，不走 public Agent Runners create API
+- default managed sandbox 已配置，或 task creation/create-and-start 提前暴露 unavailable/configuration state
+- sandbox/pod 内部 API base 不是 browser-host `localhost`
+- managed runner 和 Developer runner 两条 task/terminal/recovery smoke 都有证据
 
 ## 8. What this runbook no longer contains
 

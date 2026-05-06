@@ -113,6 +113,9 @@
       "project_id": "proj_001",
       "name": "Support Runner",
       "description": "Handles basic Agent task support requests",
+      "kind": "system_managed",
+      "source": "system",
+      "read_only": true,
       "is_default": true,
       "default_endpoint_id": "ep_001",
       "status": "ready",
@@ -125,6 +128,18 @@
       "diagnostics": {
         "presence": "managed"
       },
+      "actions": {
+        "set_project_default": { "operation": "set_project_default", "visible": true, "allowed": false, "required_permissions": [], "danger_level": "none" },
+        "bind_to_task": { "operation": "bind_to_task", "visible": false, "allowed": false, "required_permissions": [], "danger_level": "none" },
+        "run_test_task": { "operation": "run_test_task", "visible": false, "allowed": false, "required_permissions": [], "danger_level": "none" },
+        "edit": { "operation": "edit", "visible": false, "allowed": false, "required_permissions": [], "danger_level": "none" },
+        "disable": { "operation": "disable", "visible": false, "allowed": false, "required_permissions": [], "danger_level": "none" },
+        "delete": { "operation": "delete", "visible": false, "allowed": false, "required_permissions": [], "danger_level": "high" },
+        "issue_connection_key": { "operation": "issue_connection_key", "visible": false, "allowed": false, "required_permissions": [], "danger_level": "none" },
+        "revoke_connection_key": { "operation": "revoke_connection_key", "visible": false, "allowed": false, "required_permissions": [], "danger_level": "none" },
+        "test_connection": { "operation": "test_connection", "visible": false, "allowed": false, "required_permissions": [], "danger_level": "none" },
+        "view_diagnostics": { "operation": "view_diagnostics", "visible": true, "allowed": true, "required_permissions": [], "danger_level": "none" }
+      },
       "created_at": "2026-02-01T00:00:00Z",
       "updated_at": "2026-02-01T00:00:00Z"
     },
@@ -132,10 +147,12 @@
       "id": "ag_2",
       "project_id": "proj_001",
       "name": "Research Runner",
-      "description": "Runs data analysis and research Agent tasks",
+      "description": "Developer runner for local research task checks",
+      "kind": "developer",
+      "source": "developer",
+      "read_only": false,
       "is_default": false,
-      "default_endpoint_id": "ep_002",
-      "status": "ready",
+      "status": "connected",
       "capabilities": {
         "task_execution": true,
         "terminal": true,
@@ -143,7 +160,19 @@
         "file_inputs": true
       },
       "diagnostics": {
-        "presence": "managed"
+        "presence": "online"
+      },
+      "actions": {
+        "set_project_default": { "operation": "set_project_default", "visible": false, "allowed": false, "required_permissions": [], "danger_level": "none" },
+        "bind_to_task": { "operation": "bind_to_task", "visible": false, "allowed": false, "required_permissions": [], "danger_level": "none" },
+        "run_test_task": { "operation": "run_test_task", "visible": true, "allowed": true, "required_permissions": [], "danger_level": "none" },
+        "edit": { "operation": "edit", "visible": true, "allowed": true, "required_permissions": [], "danger_level": "none" },
+        "disable": { "operation": "disable", "visible": false, "allowed": false, "required_permissions": [], "danger_level": "none" },
+        "delete": { "operation": "delete", "visible": true, "allowed": true, "required_permissions": [], "danger_level": "high" },
+        "issue_connection_key": { "operation": "issue_connection_key", "visible": true, "allowed": true, "required_permissions": [], "danger_level": "none" },
+        "revoke_connection_key": { "operation": "revoke_connection_key", "visible": true, "allowed": true, "required_permissions": [], "danger_level": "none" },
+        "test_connection": { "operation": "test_connection", "visible": true, "allowed": true, "required_permissions": [], "danger_level": "none" },
+        "view_diagnostics": { "operation": "view_diagnostics", "visible": true, "allowed": true, "required_permissions": [], "danger_level": "none" }
       },
       "created_at": "2026-01-20T00:00:00Z",
       "updated_at": "2026-01-28T00:00:00Z"

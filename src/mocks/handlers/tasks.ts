@@ -2,8 +2,12 @@ import { http, HttpResponse } from 'msw';
 import { VISUAL_TEST_REFERENCE_NOW_ISO } from '@/lib/mock-time';
 import type {
   CreateTaskTerminalSessionRequest,
+  TaskRunnerBindingKind,
   Task,
   TaskActivityItem,
+  TaskRunnerBindingSource,
+  TaskRunnerBindingOption,
+  TaskRunnerBindingReasonCode,
   TaskRunState,
   TaskTerminalSessionCreateResponse,
   TaskTerminalSessionStatus,
@@ -14,6 +18,9 @@ import {
   artifactFixtures,
   taskTraceFixtures,
 } from '../fixtures/agent-tasks';
+import { agentRunnerFixtures } from '../fixtures/agent-runners';
+import { memberProjectMembershipFixtures } from '../fixtures/members';
+import { readMockAuthActorFromRequest } from '../utils/mock-auth-token';
 import { DOC_FIXTURES_ENABLED } from '../doc-fixtures/mode';
 import {
   docTaskFixtures,
@@ -28,12 +35,105 @@ const taskActivities = DOC_FIXTURES_ENABLED ? [...docTaskActivityFixtures] : [..
 const artifacts = DOC_FIXTURES_ENABLED ? [...docArtifactFixtures] : [...artifactFixtures];
 const taskTraces = DOC_FIXTURES_ENABLED ? [...docTaskTraceFixtures] : [...taskTraceFixtures];
 const API_V1_PATTERN = '*/api/v1';
+const LEGACY_RUN_SELECTION_FIELD = ['runner', 'selection'].join('_');
 const MOCK_SSE_TICKET_PREFIX = 'mock_sse_';
 const MOCK_TASK_STOP_RUNTIME_STORAGE_KEY = 'agentsmith:mock-task-stop-runtime';
 const terminalSessionsByScope = new Map<string, TaskTerminalSessionStatus[]>();
 const issuedMockSseTickets = new Map<string, { bearerToken: string; expiresAt: string; maxConnections: number }>();
 let nextTerminalSessionOrdinal = 1;
 let nextMockSseTicketOrdinal = 1;
+type TaskAgentPresence = Exclude<Task['agent_presence'], undefined>;
+const TASK_AGENT_PRESENCE_VALUES = ['online', 'offline', 'managed', 'unknown'] as const satisfies readonly TaskAgentPresence[];
+
+function isTaskAgentPresence(value: string): value is TaskAgentPresence {
+  return (TASK_AGENT_PRESENCE_VALUES as readonly string[]).includes(value);
+}
+
+function normalizeTaskAgentPresence(input: unknown): TaskAgentPresence {
+  if (typeof input === 'string') {
+    const value = input.trim();
+    if (isTaskAgentPresence(value)) {
+      return value;
+    }
+  }
+  return 'managed';
+}
+
+export function createMockRunnerTestTaskRunEvidence(input: {
+  workspaceId: string;
+  projectId: string;
+  runnerId: string;
+  taskId: string;
+  runId: string;
+  intent?: string;
+}): Task {
+  const existing = tasks.find((task) => task.id === input.taskId);
+  if (existing) return existing;
+  const now = new Date().toISOString();
+  const task: Task = {
+    id: input.taskId,
+    workspace_id: input.workspaceId,
+    project_id: input.projectId,
+    owner_user_id: 'user_001',
+    title: 'Developer runner test task',
+    source: 'runner_test',
+    runner_test: true,
+    workspace_file_library_id: `lib_${input.taskId}`,
+    workspace_file_library_name: 'Developer Runner Test Workspace',
+    bound_runner_id: input.runnerId,
+    bound_runner_kind: 'developer',
+    runner_binding_source: 'explicit',
+    bound_at: now,
+    bound_by_user_id: 'user_001',
+    status: 'active',
+    attached_inputs: [],
+    created_at: now,
+    updated_at: now,
+    last_activity_at: now,
+    agent_presence: 'online',
+    run_state: 'running',
+    active_run: {
+      id: input.runId,
+      status: 'running',
+      runner_id: input.runnerId,
+      source: 'runner_test',
+      runner_test: true,
+      started_at: now,
+    },
+    active_run_started_at: now,
+    stats: {
+      user_turn_count: 1,
+      message_count: 2,
+      artifact_count: 0,
+      attached_input_count: 0,
+    },
+  };
+  tasks.unshift(task);
+  taskActivities.push(
+    {
+      id: `msg_${input.taskId}_user`,
+      task_id: input.taskId,
+      kind: 'user_intent',
+      actor: 'user',
+      content: input.intent?.trim() || 'developer_runner_connection_check',
+      created_at: now,
+      source: 'runner_test',
+      runner_test: true,
+    },
+    {
+      id: `msg_${input.taskId}_runner`,
+      task_id: input.taskId,
+      kind: 'runner_output',
+      actor: 'runner',
+      content: '',
+      created_at: now,
+      run_id: input.runId,
+      source: 'runner_test',
+      runner_test: true,
+    },
+  );
+  return task;
+}
 
 type MockTaskStopMode = 'cancel' | 'terminate';
 type MockTaskStopEscalationMode = 'supported' | 'unsupported';
@@ -373,6 +473,134 @@ function createMockTaskEventsStream(taskId: string): ReadableStream<Uint8Array> 
   });
 }
 
+function mockBindingSummary(
+  state: string,
+  reason_code?: TaskRunnerBindingReasonCode,
+) {
+  return {
+    state,
+    summary: state,
+    ...(reason_code ? { reason_code } : {}),
+  };
+}
+
+function mockBindingAction(
+  allowed: boolean,
+  required_permissions: string[],
+  reason_code?: TaskRunnerBindingReasonCode,
+) {
+  return {
+    operation: 'bind_to_task' as const,
+    visible: true,
+    allowed,
+    ...(reason_code ? { reason_code } : {}),
+    required_permissions,
+    danger_level: 'none' as const,
+  };
+}
+
+function mockRunnerBindingReason(runner: typeof agentRunnerFixtures[number]): TaskRunnerBindingReasonCode | undefined {
+  if (runner.status !== 'ready') return 'agent_runner_unavailable' as const;
+  if (runner.capabilities?.task_execution === false) return 'agent_runner_capability_mismatch' as const;
+  return undefined;
+}
+
+function buildMockDefaultRunnerBindingOption(
+  projectId: string,
+): TaskRunnerBindingOption {
+  const defaultRunner = agentRunnerFixtures.find((item) => (
+    item.project_id === projectId &&
+    item.kind === 'system_managed' &&
+    item.is_default === true
+  ));
+  const reason = defaultRunner ? mockRunnerBindingReason(defaultRunner) : 'agent_runner_unavailable';
+  return {
+    option_id: 'default_managed',
+    label: 'Default managed runner',
+    bound_runner_kind: 'managed',
+    runner_binding_source: 'default_managed',
+    readiness: mockBindingSummary(reason ? 'unavailable' : 'ready', reason),
+    capability: mockBindingSummary(reason === 'agent_runner_capability_mismatch' ? 'incompatible' : 'compatible', reason === 'agent_runner_capability_mismatch' ? reason : undefined),
+    ...(reason ? { disabled_reason_code: reason } : {}),
+    actions: {
+      bind_to_task: mockBindingAction(!reason, ['project:agent_task:use'], reason),
+    },
+  };
+}
+
+function buildMockDeveloperRunnerBindingOption(
+  runner: typeof agentRunnerFixtures[number],
+): TaskRunnerBindingOption {
+  const requiredPermissions = ['project:agent_task:use', 'project:agent_runner:manage'];
+  const reason = mockRunnerBindingReason(runner);
+  return {
+    option_id: runner.id,
+    agent_runner_id: runner.id,
+    label: runner.name,
+    bound_runner_kind: 'developer',
+    runner_binding_source: 'explicit',
+    readiness: mockBindingSummary(reason ? 'unavailable' : 'ready', reason === 'agent_runner_unavailable' ? reason : undefined),
+    capability: mockBindingSummary(reason === 'agent_runner_capability_mismatch' ? 'incompatible' : 'compatible', reason === 'agent_runner_capability_mismatch' ? reason : undefined),
+    freshness: mockBindingSummary(runner.status === 'ready' ? 'fresh' : 'missing', runner.status === 'ready' ? undefined : 'agent_runner_disconnected'),
+    ...(reason ? { disabled_reason_code: reason } : {}),
+    actions: {
+      bind_to_task: mockBindingAction(!reason, requiredPermissions, reason),
+    },
+  };
+}
+
+function hasMockRunnerBindingManageAuthority(request: Request, projectId: string) {
+  const actor = readMockAuthActorFromRequest(request);
+  const membership = memberProjectMembershipFixtures.find((item) => (
+    item.project_id === projectId &&
+    item.user_id === actor.userId &&
+    item.status === 'active'
+  ));
+  return membership?.permissions.some((permission) => (
+    permission === 'project:agent_runner:manage'
+  )) ?? false;
+}
+
+function readMockExplicitBoundRunnerId(body: Record<string, unknown>): string {
+  return typeof body.bound_runner_id === 'string'
+    ? body.bound_runner_id.trim()
+    : '';
+}
+
+function findMockExplicitBoundRunnerTarget(
+  projectId: string,
+  runnerId: string,
+): typeof agentRunnerFixtures[number] | undefined {
+  return agentRunnerFixtures.find((item) => (
+    item.id === runnerId &&
+    item.project_id === projectId
+  ));
+}
+
+function resolveMockTaskBoundRunner(
+  projectId: string,
+  body: Record<string, unknown>,
+): typeof agentRunnerFixtures[number] | null {
+  const explicitRunnerId = readMockExplicitBoundRunnerId(body);
+  if (explicitRunnerId) {
+    const runner = agentRunnerFixtures.find((item) => (
+      item.id === explicitRunnerId &&
+      item.project_id === projectId &&
+      item.kind === 'developer' &&
+      item.status === 'ready' &&
+      item.capabilities?.task_execution !== false
+    ));
+    return runner ?? null;
+  }
+  return agentRunnerFixtures.find((item) => (
+    item.project_id === projectId &&
+    item.kind === 'system_managed' &&
+    item.is_default === true &&
+    item.status === 'ready' &&
+    item.capabilities?.task_execution !== false
+  )) ?? null;
+}
+
 export const taskHandlers = [
   http.post(`${API_V1_PATTERN}/sse-ticket`, ({ request }) => {
     if (readMockTaskRealtimeMode(request) === 'sse_ticket_upstream') {
@@ -430,6 +658,27 @@ export const taskHandlers = [
       has_more: start + pageSize < tasks.length,
     });
   }),
+  http.get(`${API_V1_PATTERN}/workspaces/:ws/projects/:prj/tasks/runner-binding-options`, ({ request, params }) => {
+    const projectId = params.prj as string;
+    if (!hasMockRunnerBindingManageAuthority(request, projectId)) {
+      return HttpResponse.json({
+        options: [
+          buildMockDefaultRunnerBindingOption(projectId),
+        ],
+        generated_at: VISUAL_TEST_REFERENCE_NOW_ISO,
+      });
+    }
+    const options = [
+      buildMockDefaultRunnerBindingOption(projectId),
+      ...agentRunnerFixtures
+        .filter((runner) => runner.project_id === projectId && runner.kind === 'developer')
+        .map((runner) => buildMockDeveloperRunnerBindingOption(runner)),
+    ];
+    return HttpResponse.json({
+      options,
+      generated_at: VISUAL_TEST_REFERENCE_NOW_ISO,
+    });
+  }),
   http.get(`${API_V1_PATTERN}/workspaces/:ws/projects/:prj/tasks/:id`, ({ params }) => {
     const taskId = params.id as string;
     const task = tasks.find((r) => r.id === taskId);
@@ -441,7 +690,17 @@ export const taskHandlers = [
   }),
   http.post(`${API_V1_PATTERN}/workspaces/:ws/projects/:prj/tasks`, async ({ request, params }) => {
     const body: any = await request.json().catch(() => ({}));
-    const unsupportedFields = ['agent_id', 'agent_name', 'runner_id'].filter((field) => (
+    const unsupportedFields = [
+      'agent_id',
+      'agent_name',
+      'runner_id',
+      LEGACY_RUN_SELECTION_FIELD,
+      'is_default',
+      'default_endpoint_id',
+      'config',
+      'capabilities',
+      'runner_provider',
+    ].filter((field) => (
       Object.prototype.hasOwnProperty.call(body ?? {}, field)
     ));
     if (unsupportedFields.length > 0) {
@@ -463,16 +722,46 @@ export const taskHandlers = [
         return HttpResponse.json({ error_code: 'RESOURCE_CONFLICT', message: 'workspace_file_library_in_use' }, { status: 409 });
       }
     }
+    const projectId = String(params.prj ?? '');
+    const explicitRunnerId = readMockExplicitBoundRunnerId(body ?? {});
+    const explicitRunnerTarget = explicitRunnerId
+      ? findMockExplicitBoundRunnerTarget(projectId, explicitRunnerId)
+      : undefined;
+    if (explicitRunnerTarget?.kind === 'system_managed') {
+      return HttpResponse.json({
+        error_code: 'invalid_binding_target',
+        message: 'invalid_binding_target',
+        field: 'bound_runner_id',
+        details: {
+          bound_runner_id: explicitRunnerId,
+          expected_bound_runner_kind: 'developer',
+          actual_bound_runner_kind: 'managed',
+        },
+      }, { status: 422 });
+    }
+    const boundRunner = resolveMockTaskBoundRunner(projectId, body ?? {});
+    if (!boundRunner) {
+      return HttpResponse.json({
+        error_code: 'agent_runner_unavailable',
+        message: 'agent_runner_unavailable',
+      }, { status: 409 });
+    }
     const now = new Date().toISOString();
     const generatedWorkspaceName = typeof body?.workspace_name === 'string' && body.workspace_name.trim().length > 0
       ? body.workspace_name.trim()
       : `${body?.title ?? 'New Task'} Workspace`;
+    const boundRunnerKind: TaskRunnerBindingKind = boundRunner.kind === 'developer' ? 'developer' : 'managed';
     const newTask = {
       id: `task_${Math.random().toString(36).slice(2, 8)}`,
       workspace_id: params.ws as string,
       project_id: params.prj as string,
       owner_user_id: 'user_001',
       title: body?.title ?? 'New Task',
+      bound_runner_id: boundRunner.id,
+      bound_runner_kind: boundRunnerKind,
+    runner_binding_source: (body?.bound_runner_id ? 'explicit' : 'default_managed') as TaskRunnerBindingSource,
+      bound_at: now,
+      bound_by_user_id: readMockAuthActorFromRequest(request).userId,
       workspace_file_library_id: workspaceMode === 'create_new'
         ? `flib_${Math.random().toString(36).slice(2, 10)}`
         : workspaceFileLibraryId,
@@ -487,7 +776,7 @@ export const taskHandlers = [
       created_at: now,
       updated_at: now,
       last_activity_at: now,
-      agent_presence: body?.agent_presence ?? 'managed',
+      agent_presence: normalizeTaskAgentPresence(body?.agent_presence),
       run_state: body?.run_state ?? 'idle',
     };
     tasks.unshift(newTask);
@@ -499,8 +788,34 @@ export const taskHandlers = [
     if (!task) {
       return HttpResponse.json({ error: 'task_not_found' }, { status: 404 });
     }
-    const body: any = await request.json().catch(() => ({}));
-    Object.assign(task, body, { updated_at: new Date().toISOString() });
+    const body = asRecord(await request.json().catch(() => ({})));
+    const unsupportedFields = [
+      'agent_id',
+      'agent_name',
+      'runner_id',
+      LEGACY_RUN_SELECTION_FIELD,
+      'bound_runner_id',
+      'agent_runner_id',
+      'is_default',
+      'default_endpoint_id',
+      'config',
+      'capabilities',
+      'runner_provider',
+    ].filter((field) => Object.prototype.hasOwnProperty.call(body, field));
+    if (unsupportedFields.length > 0) {
+      return HttpResponse.json({
+        error_code: 'unsupported_field',
+        message: 'unsupported_field',
+        fields: unsupportedFields,
+      }, { status: 400 });
+    }
+    if (typeof body.title === 'string' && body.title.trim().length > 0) {
+      task.title = body.title.trim();
+    }
+    if (body.status === 'active' || body.status === 'archived') {
+      task.status = body.status;
+    }
+    task.updated_at = new Date().toISOString();
     return HttpResponse.json(task);
   }),
   http.delete(`${API_V1_PATTERN}/workspaces/:ws/projects/:prj/tasks/:id`, ({ params }) => {
@@ -791,7 +1106,19 @@ export const taskHandlers = [
       }, { status: 409 });
     }
     const body = asRecord(await request.json().catch(() => ({})));
-    const unsupportedFields = ['role', 'content', 'agent_id', 'agent_name', 'runner_id']
+    const unsupportedFields = [
+      'role',
+      'content',
+      'agent_id',
+      'agent_name',
+      'runner_id',
+      LEGACY_RUN_SELECTION_FIELD,
+      'bound_runner_id',
+      'agent_runner_id',
+      'is_default',
+      'default_endpoint_id',
+      'config',
+    ]
       .filter((field) => Object.prototype.hasOwnProperty.call(body, field));
     if (unsupportedFields.length > 0) {
       return HttpResponse.json({

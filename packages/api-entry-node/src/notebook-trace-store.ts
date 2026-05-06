@@ -181,7 +181,7 @@ export function buildTaskTraceEvent(args: {
     message_id: messageId,
     run_id: runId,
     seq: payload.sequence,
-    at: payload.at,
+    at: nowIso(),
     category: payload.category,
     ...(payload.phase ? { phase: payload.phase } : {}),
     ...(payload.status ? { status: payload.status } : {}),

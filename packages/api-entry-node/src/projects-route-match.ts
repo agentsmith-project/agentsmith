@@ -40,6 +40,7 @@ export type ProjectsRoute =
     inputId: string;
   }
   | { kind: 'taskActivity'; workspaceId: string; projectId: string; taskId: string }
+  | { kind: 'taskRunnerBindingOptions'; workspaceId: string; projectId: string }
   | { kind: 'taskRuns'; workspaceId: string; projectId: string; taskId: string }
   | { kind: 'taskCancelRun'; workspaceId: string; projectId: string; taskId: string }
   | { kind: 'taskTraces'; workspaceId: string; projectId: string; taskId: string }
@@ -87,6 +88,8 @@ export type ProjectsRoute =
   | { kind: 'agentDiagnostics'; workspaceId: string; projectId: string; agentId: string }
   | { kind: 'agentExecutionConfig'; workspaceId: string; projectId: string; agentId: string }
   | { kind: 'agentConnectionInfo'; workspaceId: string; projectId: string; agentId: string }
+  | { kind: 'agentTestConnection'; workspaceId: string; projectId: string; agentId: string }
+  | { kind: 'agentTestTaskRuns'; workspaceId: string; projectId: string; agentId: string }
   | { kind: 'agentKeys'; workspaceId: string; projectId: string; agentId: string }
   | {
     kind: 'agentKeyItem';
@@ -653,6 +656,17 @@ export function matchProjectsRoute(url: string): ProjectsRoute | null {
     };
   }
 
+  const taskRunnerBindingOptionsMatched = pathname.match(
+    /^\/api\/v1\/workspaces\/([^/]+)\/projects\/([^/]+)\/tasks\/runner-binding-options\/?$/,
+  );
+  if (taskRunnerBindingOptionsMatched) {
+    return {
+      kind: 'taskRunnerBindingOptions',
+      workspaceId: decodeURIComponent(taskRunnerBindingOptionsMatched[1]),
+      projectId: decodeURIComponent(taskRunnerBindingOptionsMatched[2]),
+    };
+  }
+
   const taskRunsMatched = pathname.match(
     /^\/api\/v1\/workspaces\/([^/]+)\/projects\/([^/]+)\/tasks\/([^/]+)\/runs\/?$/,
   );
@@ -825,6 +839,30 @@ export function matchProjectsRoute(url: string): ProjectsRoute | null {
       workspaceId: decodeURIComponent(agentConnectionInfoMatched[1]),
       projectId: decodeURIComponent(agentConnectionInfoMatched[2]),
       agentId: decodeURIComponent(agentConnectionInfoMatched[3]),
+    };
+  }
+
+  const agentTestConnectionMatched = pathname.match(
+    /^\/api\/v1\/workspaces\/([^/]+)\/projects\/([^/]+)\/agent-runners\/([^/]+)\/test-connection\/?$/,
+  );
+  if (agentTestConnectionMatched) {
+    return {
+      kind: 'agentTestConnection',
+      workspaceId: decodeURIComponent(agentTestConnectionMatched[1]),
+      projectId: decodeURIComponent(agentTestConnectionMatched[2]),
+      agentId: decodeURIComponent(agentTestConnectionMatched[3]),
+    };
+  }
+
+  const agentTestTaskRunsMatched = pathname.match(
+    /^\/api\/v1\/workspaces\/([^/]+)\/projects\/([^/]+)\/agent-runners\/([^/]+)\/test-task-runs\/?$/,
+  );
+  if (agentTestTaskRunsMatched) {
+    return {
+      kind: 'agentTestTaskRuns',
+      workspaceId: decodeURIComponent(agentTestTaskRunsMatched[1]),
+      projectId: decodeURIComponent(agentTestTaskRunsMatched[2]),
+      agentId: decodeURIComponent(agentTestTaskRunsMatched[3]),
     };
   }
 

@@ -10,6 +10,13 @@ const messages = {
     detail_diagnostics_empty: 'No diagnostics available.',
     diagnostics_backoff: 'Backing off',
     diagnostics_last_error_at: 'Last error recorded at {value}',
+    diagnostics_status_label: 'Operational status',
+    diagnostics_connection_issue_title: 'Connection needs attention',
+    diagnostics_connection_issue_description: 'Check the runner connection, then retry the connection check.',
+    diagnostics_access_issue_title: 'Action is not currently allowed',
+    diagnostics_access_issue_description: 'Review access for this Developer runner before retrying.',
+    diagnostics_general_issue_title: 'Diagnostics need attention',
+    diagnostics_general_issue_description: 'Review the runner setup, then retry the check.',
     diagnostics_runner_spec_mismatch_title: 'Runner app does not match this configuration',
     diagnostics_runner_spec_mismatch_description:
       'Reconnect a matching task runner before retrying.',
@@ -17,7 +24,6 @@ const messages = {
     diagnostics_restarts: 'Restarts',
     diagnostics_cpu_percent: 'CPU',
     diagnostics_memory_mb: 'Memory',
-    diagnostics_raw_error: 'Raw error',
   },
 };
 
@@ -47,7 +53,7 @@ describe('AgentRunnerDiagnosticsPanel', () => {
     expect(screen.getByText('No diagnostics available.')).toBeInTheDocument();
   });
 
-  it('renders a friendly runner spec mismatch explanation and raw diagnostics details', () => {
+  it('renders a friendly runner spec mismatch explanation and operational details', () => {
     render(
       <AgentRunnerDiagnosticsPanel
         diagnostics={{
@@ -66,13 +72,30 @@ describe('AgentRunnerDiagnosticsPanel', () => {
     expect(
       screen.getByText('Reconnect a matching task runner before retrying.'),
     ).toBeInTheDocument();
-    expect(screen.getByText('Raw error')).toBeInTheDocument();
-    expect(screen.getByText('agent_runner_spec_mismatch')).toBeInTheDocument();
+    expect(screen.getByText('Operational status')).toBeInTheDocument();
+    expect(screen.queryByText('Raw error')).not.toBeInTheDocument();
+    expect(screen.queryByText('agent_runner_spec_mismatch')).not.toBeInTheDocument();
     expect(screen.getByText('Last error recorded at 2026-04-09T17:18:00.000Z')).toBeInTheDocument();
     expect(screen.getByText('Backing off: 30s')).toBeInTheDocument();
     expect(screen.getByText('Queue Depth: 2')).toBeInTheDocument();
     expect(screen.getByText('Restarts: 1')).toBeInTheDocument();
     expect(screen.getByText('CPU: 11%')).toBeInTheDocument();
     expect(screen.getByText('Memory: 256 MB')).toBeInTheDocument();
+  });
+
+  it('maps implementation-shaped diagnostics codes to safe operational copy', () => {
+    render(
+      <AgentRunnerDiagnosticsPanel
+        diagnostics={{
+          last_error: 'agent_runner_runtime_unavailable',
+          last_error_at: '2026-04-09T17:18:00.000Z',
+        }}
+      />,
+    );
+
+    expect(screen.getByText('Connection needs attention')).toBeInTheDocument();
+    expect(screen.getByText('Check the runner connection, then retry the connection check.')).toBeInTheDocument();
+    expect(screen.queryByText('agent_runner_runtime_unavailable')).not.toBeInTheDocument();
+    expect(screen.queryByText('Raw error')).not.toBeInTheDocument();
   });
 });

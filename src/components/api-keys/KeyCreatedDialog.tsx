@@ -27,13 +27,22 @@ export function KeyCreatedDialog({
   onOpenChange,
   keyValue,
   keyPrefix,
-  scope: _scope = 'user',
+  scope = 'user',
 }: KeyCreatedDialogProps) {
   const t = useTranslations('user_keys');
   const commonT = useTranslations('common');
   const [copied, setCopied] = React.useState(false);
 
   const displayValue = (keyValue || keyPrefix || '').trim();
+  const successTitleKey = scope === 'project'
+    ? 'create_connection_key_success_title'
+    : 'create_success_title';
+  const successHintKey = scope === 'project'
+    ? 'create_connection_key_success_hint'
+    : 'create_success_hint';
+  const prefixOnlyKey = scope === 'project'
+    ? 'create_connection_key_success_prefix_only'
+    : 'create_success_prefix_only';
 
   const handleCopy = async () => {
     if (!keyValue) return;
@@ -58,9 +67,9 @@ export function KeyCreatedDialog({
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
             <Key className="w-5 h-5 text-accent" />
-            {t('create_success_title')}
+            {t(successTitleKey)}
           </DialogTitle>
-          <DialogDescription>{t('create_success_hint')}</DialogDescription>
+          <DialogDescription>{t(successHintKey)}</DialogDescription>
         </DialogHeader>
         <div className="space-y-4 py-4">
           <div className="flex items-center gap-2">
@@ -84,13 +93,13 @@ export function KeyCreatedDialog({
           </div>
           {!keyValue && keyPrefix && (
             <p className="text-xs text-tertiary">
-              {t('create_success_prefix_only')}
+              {t(prefixOnlyKey)}
             </p>
           )}
         </div>
         <div className="flex justify-end">
           <Button variant="primary" onClick={handleClose}>
-            {commonT('confirm')}
+            {scope === 'project' ? commonT('done') : commonT('confirm')}
           </Button>
         </div>
       </DialogContent>

@@ -4,6 +4,7 @@ import type { AgentRecord, AgentServiceKeyRecord } from './resource-models.js';
 import { resolveWorkspaceScopedCollection } from './workspace-tenant-collections.js';
 import { listRegisteredWorkspaceIds } from './workspace-registry.js';
 import { isDeveloperAgentRunner, isManagedAgentRunner } from './agent-runner-profile.js';
+import { recordAuditEvent } from './audit-usage-store.js';
 import {
   createAgentPresenceStore,
   type AgentConnectionState,
@@ -12,6 +13,58 @@ import {
 } from './agent-presence-store.js';
 
 const MANAGED_AGENT_RUNNER_DEFAULT_IMAGE = 'agentsmith-agent-task-runner:local';
+const AGENT_SERVICE_KEY_TTL_MS = 7 * 24 * 60 * 60 * 1000;
+const DEPLOYMENT_DEFAULT_MANAGED_RUNNER_DIAGNOSTIC = 'deployment_default';
+
+export type AgentRunnerConnectionTestStatus = 'connected' | 'disconnected' | 'stale';
+export type AgentRunnerConnectionFreshnessState = 'fresh' | 'missing' | 'stale';
+
+export interface AgentRunnerKeyExpiryCleanupEvidence {
+  workspace_id: string;
+  project_id: string;
+  agent_runner_id: string;
+  key_id: string;
+  key_prefix: string;
+  expires_at?: string;
+  cleanup_result: 'marked_expired';
+  disconnected: boolean;
+}
+
+export interface AgentRunnerConnectionTestResult {
+  agent_runner_id: string;
+  status: AgentRunnerConnectionTestStatus;
+  checked_at: string;
+  timeout_ms: number;
+  freshness: {
+    state: AgentRunnerConnectionFreshnessState;
+    active_connection_count: number;
+    connected_at?: string;
+    last_pong_at?: string;
+    last_seen_at?: string;
+  };
+  capabilities: AgentRecord['capabilities'];
+  errors: Array<{
+    code: 'agent_runner_disconnected' | 'agent_runner_stale';
+    message: string;
+  }>;
+  cleanup?: {
+    key_expiry?: AgentRunnerKeyExpiryCleanupEvidence;
+  };
+}
+
+export interface DeploymentDefaultManagedAgentRunnerInput extends Partial<AgentRecord> {
+  endpointId?: string;
+}
+
+interface NormalizeKeyExpiryResult {
+  record: AgentServiceKeyRecord;
+  cleanup?: AgentRunnerKeyExpiryCleanupEvidence;
+}
+
+interface ConnectionAuthCheckResult {
+  active: boolean;
+  cleanup?: AgentRunnerKeyExpiryCleanupEvidence;
+}
 
 function resolveManagedAgentRunnerImage(env: NodeJS.ProcessEnv = process.env): string {
   return env.INTERNAL_AGENT_IMAGE?.trim()
@@ -52,6 +105,52 @@ function sanitizeAgentRecord(agent: AgentRecord & Record<string, unknown>): Agen
 
 function isAgentRecord(value: AgentRecord | null): value is AgentRecord {
   return value !== null;
+}
+
+export function deploymentDefaultManagedAgentRunnerId(workspaceId: string, projectId: string): string {
+  const digest = createHash('sha256')
+    .update(`${workspaceId}:${projectId}`)
+    .digest('hex')
+    .slice(0, 16);
+  return `ag_managed_default_${digest}`;
+}
+
+function readExecutionPreferenceEndpointId(preferences: Record<string, unknown> | undefined): string {
+  const namespaces = ['agent_task', 'task', 'notebook'];
+  for (const namespace of namespaces) {
+    const value = preferences?.[namespace];
+    if (!value || typeof value !== 'object' || Array.isArray(value)) continue;
+    const endpointId = (value as Record<string, unknown>).endpoint_id;
+    if (typeof endpointId === 'string' && endpointId.trim()) {
+      return endpointId.trim();
+    }
+  }
+  return '';
+}
+
+function withManagedEndpointPreferences(
+  preferences: Record<string, unknown> | undefined,
+  endpointId: string,
+): Record<string, unknown> | undefined {
+  if (!endpointId) {
+    return preferences;
+  }
+  const base = preferences ?? {};
+  const mergeNamespace = (namespace: string): Record<string, unknown> => {
+    const existing = base[namespace];
+    return {
+      ...(existing && typeof existing === 'object' && !Array.isArray(existing)
+        ? existing as Record<string, unknown>
+        : {}),
+      endpoint_id: endpointId,
+    };
+  };
+  return {
+    ...base,
+    agent_task: mergeNamespace('agent_task'),
+    task: mergeNamespace('task'),
+    notebook: mergeNamespace('notebook'),
+  };
 }
 
 export interface AgentRuntimeState {
@@ -161,11 +260,11 @@ export class AgentResourceService {
   }
 
   private agentId(): string {
-    return `ag_${Date.now()}_${Math.floor(Math.random() * 10000)}`;
+    return `ag_${Date.now()}_${randomBytes(8).toString('hex')}`;
   }
 
   private agentKeyId(): string {
-    return `agk_${Date.now()}_${Math.floor(Math.random() * 10000)}`;
+    return `agk_${Date.now()}_${randomBytes(8).toString('hex')}`;
   }
 
   private hashKey(secret: string): string {
@@ -174,6 +273,44 @@ export class AgentResourceService {
 
   private generatePlainKey(): string {
     return `ask_${randomBytes(24).toString('hex')}`;
+  }
+
+  private keyExpiresAt(nowMs = Date.now()): string {
+    return new Date(nowMs + AGENT_SERVICE_KEY_TTL_MS).toISOString();
+  }
+
+  private isExpiredKey(record: AgentServiceKeyRecord, nowMs = Date.now()): boolean {
+    if (record.status !== 'active') return false;
+    const expiresAtMs = Date.parse(record.expires_at ?? '');
+    return Number.isFinite(expiresAtMs) && expiresAtMs <= nowMs;
+  }
+
+  private async normalizeKeyExpiry(
+    workspaceId: string,
+    record: AgentServiceKeyRecord,
+    nowMs = Date.now(),
+  ): Promise<NormalizeKeyExpiryResult> {
+    if (!this.isExpiredKey(record, nowMs)) {
+      return { record };
+    }
+    const expired: AgentServiceKeyRecord = {
+      ...record,
+      status: 'expired',
+    };
+    await this.docStore.upsert(this.agentKeysCollection(workspaceId), record.id, expired);
+    const disconnected = await this.releaseConnectionsAuthenticatedByKey(record);
+    const cleanup: AgentRunnerKeyExpiryCleanupEvidence = {
+      workspace_id: record.workspace_id,
+      project_id: record.project_id,
+      agent_runner_id: record.agent_id,
+      key_id: record.id,
+      key_prefix: record.key_prefix,
+      ...(record.expires_at ? { expires_at: record.expires_at } : {}),
+      cleanup_result: 'marked_expired',
+      disconnected,
+    };
+    await this.recordKeyExpiryCleanupAudit(cleanup);
+    return { record: expired, cleanup };
   }
 
   private buildManagedAgentPrivateConfig(inputConfig: AgentRecord['config'] | undefined): AgentRecord['config'] {
@@ -244,7 +381,7 @@ export class AgentResourceService {
         ? this.buildManagedAgentPrivateConfig(input.config)
         : input.config,
       execution_preferences_json: input.execution_preferences_json,
-      is_default: input.is_default === true,
+      is_default: runnerProvider === 'managed' && input.is_default === true,
       default_endpoint_id: input.default_endpoint_id?.trim() || undefined,
       runner_status: input.runner_status,
       diagnostics: input.diagnostics,
@@ -264,6 +401,79 @@ export class AgentResourceService {
     };
     await this.docStore.upsert(this.agentsCollection(workspaceId), agent.id, agent);
     return agent;
+  }
+
+  async upsertDeploymentDefaultManagedAgentRunner(
+    workspaceId: string,
+    projectId: string,
+    input: DeploymentDefaultManagedAgentRunnerInput,
+  ): Promise<AgentRecord> {
+    const id = deploymentDefaultManagedAgentRunnerId(workspaceId, projectId);
+    const now = new Date().toISOString();
+    const existing = await this.docStore.get<AgentRecord & Record<string, unknown>>(
+      this.agentsCollection(workspaceId),
+      id,
+    );
+    const existingRecord = existing ? sanitizeAgentRecord(existing) : null;
+    const endpointId = input.endpointId?.trim()
+      || readExecutionPreferenceEndpointId(input.execution_preferences_json)
+      || readExecutionPreferenceEndpointId(existingRecord?.execution_preferences_json)
+      || '';
+    const defaultEndpointId = input.default_endpoint_id?.trim()
+      || endpointId
+      || existingRecord?.default_endpoint_id?.trim()
+      || undefined;
+    const config = this.buildManagedAgentPrivateConfig(input.config ?? existingRecord?.config);
+    const agent: AgentRecord = {
+      id,
+      workspace_id: workspaceId,
+      project_id: projectId,
+      name: input.name?.trim() || existingRecord?.name || 'Default managed runner',
+      description: input.description?.trim() || existingRecord?.description,
+      runner_provider: 'managed',
+      presence: input.presence ?? existingRecord?.presence ?? 'managed',
+      status: input.status ?? existingRecord?.status ?? 'enabled',
+      config,
+      execution_preferences_json: withManagedEndpointPreferences(
+        input.execution_preferences_json ?? existingRecord?.execution_preferences_json,
+        endpointId,
+      ),
+      is_default: input.is_default ?? existingRecord?.is_default ?? false,
+      default_endpoint_id: defaultEndpointId,
+      runner_status: input.runner_status ?? existingRecord?.runner_status ?? 'ready',
+      diagnostics: {
+        ...(existingRecord?.diagnostics ?? {}),
+        ...(input.diagnostics ?? {}),
+        managed_runner_projection: DEPLOYMENT_DEFAULT_MANAGED_RUNNER_DIAGNOSTIC,
+      },
+      owner_id: input.owner_id ?? existingRecord?.owner_id ?? 'system',
+      admin_id: input.admin_id ?? existingRecord?.admin_id ?? 'system',
+      visibility: input.visibility ?? existingRecord?.visibility ?? 'public',
+      capabilities: input.capabilities ?? existingRecord?.capabilities ?? {
+        streaming_completion: true,
+        multimodal_completion: false,
+        accepted_mime_types: ['image/png', 'image/jpeg', 'image/webp', 'text/plain', 'application/pdf'],
+        max_file_count: 8,
+        max_total_bytes: 60 * 1024 * 1024,
+        terminal: true,
+        artifacts: true,
+        file_inputs: true,
+        url_inputs: true,
+        task_execution: true,
+      },
+      created_at: existingRecord?.created_at ?? now,
+      updated_at: now,
+      last_seen_at: input.last_seen_at ?? existingRecord?.last_seen_at,
+    };
+    await this.docStore.upsert(this.agentsCollection(workspaceId), id, agent);
+    return agent;
+  }
+
+  async getDeploymentDefaultManagedAgentRunner(
+    workspaceId: string,
+    projectId: string,
+  ): Promise<AgentRecord | null> {
+    return this.getAgent(workspaceId, projectId, deploymentDefaultManagedAgentRunnerId(workspaceId, projectId));
   }
 
   async clearDefaultAgentRunnersExcept(
@@ -313,6 +523,10 @@ export class AgentResourceService {
       description: patch.description !== undefined ? patch.description?.trim() || undefined : existing.description,
       updated_at: new Date().toISOString(),
     };
+    updated.runner_provider = updated.runner_provider === 'developer' ? 'developer' : 'managed';
+    if (updated.runner_provider === 'developer') {
+      updated.is_default = false;
+    }
     await this.docStore.upsert(this.agentsCollection(workspaceId), agentId, updated);
     return updated;
   }
@@ -340,15 +554,34 @@ export class AgentResourceService {
       project_id: projectId,
       agent_id: agentId,
     });
-    return items.sort((a, b) => b.created_at.localeCompare(a.created_at));
+    const normalized = await Promise.all(
+      items.map(async (item) => (await this.normalizeKeyExpiry(workspaceId, item)).record),
+    );
+    return normalized.sort((a, b) => b.created_at.localeCompare(a.created_at));
   }
 
   async createAgentKey(
     workspaceId: string,
     projectId: string,
     agentId: string,
-  ): Promise<{ record: AgentServiceKeyRecord; key: string }> {
+  ): Promise<{ record: AgentServiceKeyRecord; key: string; revokedKeyIds: string[] }> {
+    const existingKeys = await this.listAgentKeys(workspaceId, projectId, agentId);
+    const revokedKeyIds = existingKeys
+      .filter((existing) => existing.status === 'active')
+      .map((existing) => existing.id);
+    await Promise.all(existingKeys.map(async (existing) => {
+      if (existing.status !== 'active') return;
+      await this.docStore.upsert(this.agentKeysCollection(workspaceId), existing.id, {
+        ...existing,
+        status: 'revoked',
+      } satisfies AgentServiceKeyRecord);
+    }));
+    if (revokedKeyIds.length > 0) {
+      await this.markAgentDisconnected(agentId);
+    }
+
     const key = this.generatePlainKey();
+    const now = Date.now();
     const record: AgentServiceKeyRecord = {
       id: this.agentKeyId(),
       workspace_id: workspaceId,
@@ -357,10 +590,11 @@ export class AgentResourceService {
       key_prefix: key.slice(0, 12),
       key_hash: this.hashKey(key),
       status: 'active',
-      created_at: new Date().toISOString(),
+      created_at: new Date(now).toISOString(),
+      expires_at: this.keyExpiresAt(now),
     };
     await this.docStore.upsert(this.agentKeysCollection(workspaceId), record.id, record);
-    return { record, key };
+    return { record, key, revokedKeyIds };
   }
 
   async revokeAgentKey(
@@ -386,6 +620,9 @@ export class AgentResourceService {
       status: 'revoked',
     };
     await this.docStore.upsert(this.agentKeysCollection(workspaceId), keyId, revoked);
+    if (existing.status === 'active') {
+      await this.markAgentDisconnected(agentId);
+    }
     return true;
   }
 
@@ -406,6 +643,10 @@ export class AgentResourceService {
     const matched = allActiveKeys.flat().find((item) => item.key_hash === hash) ?? null;
     if (!matched) {
       return this.verifyManagedAgentPrivateKey(agentId, token, hash);
+    }
+    if (this.isExpiredKey(matched)) {
+      await this.normalizeKeyExpiry(matched.workspace_id, matched);
+      return null;
     }
     const touched: AgentServiceKeyRecord = {
       ...matched,
@@ -472,6 +713,9 @@ export class AgentResourceService {
       agent_id: input.agentId,
       workspace_id: input.workspaceId,
       project_id: input.projectId,
+      auth_kind: input.authenticatedKey?.kind ?? 'legacy',
+      ...(input.authenticatedKey?.keyId ? { auth_key_id: input.authenticatedKey.keyId } : {}),
+      ...(input.authenticatedKey?.expiresAt ? { auth_key_expires_at: input.authenticatedKey.expiresAt } : {}),
       connected_at: input.connectedAt ?? lastSeenAt,
       last_pong_at: input.lastPongAt ?? lastSeenAt,
       expires_at: lastSeenAt,
@@ -548,7 +792,10 @@ export class AgentResourceService {
   }
 
   async isAgentConnectionCurrent(agentId: string, connectionId: string): Promise<boolean> {
-    return this.agentPresenceStore.isConnectionCurrent(agentId, connectionId);
+    const snapshot = await this.agentPresenceStore.getPresence(agentId);
+    const connection = snapshot.connections.find((item) => item.connection_id === connectionId);
+    if (!connection) return false;
+    return this.isConnectionAuthActive(connection);
   }
 
   async markAgentConnected(
@@ -646,6 +893,102 @@ export class AgentResourceService {
     return snapshot.latestConnection;
   }
 
+  async testAgentConnection(
+    workspaceId: string,
+    projectId: string,
+    agentId: string,
+    input?: {
+      timeoutMs?: number;
+    },
+  ): Promise<AgentRunnerConnectionTestResult | null> {
+    const agent = await this.getAgent(workspaceId, projectId, agentId);
+    if (!agent) return null;
+    const checkedAt = new Date().toISOString();
+    const connection = await this.getConnectionInfo(agentId);
+    if (connection) {
+      const authCheck = await this.checkConnectionAuthActive(connection);
+      if (!authCheck.active) {
+        await this.releaseAgentConnection({
+          workspaceId: connection.workspace_id || workspaceId,
+          projectId: connection.project_id || projectId,
+          agentId,
+          connectionId: connection.connection_id,
+        });
+        const lastSeenAt = connection.last_pong_at ?? connection.connected_at;
+        return {
+          agent_runner_id: agentId,
+          status: 'stale',
+          checked_at: checkedAt,
+          timeout_ms: input?.timeoutMs ?? 1000,
+          freshness: {
+            state: 'stale',
+            active_connection_count: 0,
+            last_seen_at: lastSeenAt,
+          },
+          capabilities: agent.capabilities ?? {},
+          errors: [
+            {
+              code: 'agent_runner_stale',
+              message: 'agent_runner_stale',
+            },
+          ],
+          ...(authCheck.cleanup
+            ? {
+              cleanup: {
+                key_expiry: authCheck.cleanup,
+              },
+            }
+            : {}),
+        };
+      }
+      return {
+        agent_runner_id: agentId,
+        status: 'connected',
+        checked_at: checkedAt,
+        timeout_ms: input?.timeoutMs ?? 1000,
+        freshness: {
+          state: 'fresh',
+          active_connection_count: connection.active_connection_count ?? 1,
+          connected_at: connection.connected_at,
+          ...(connection.last_pong_at ? { last_pong_at: connection.last_pong_at } : {}),
+          last_seen_at: connection.last_pong_at ?? connection.connected_at,
+        },
+        capabilities: agent.capabilities ?? {},
+        errors: [],
+      };
+    }
+
+    const lastSeenAt = agent.last_seen_at?.trim();
+    const status: AgentRunnerConnectionTestStatus = lastSeenAt ? 'stale' : 'disconnected';
+    const code = lastSeenAt ? 'agent_runner_stale' : 'agent_runner_disconnected';
+    const cleanupEvents = await this.cleanupExpiredActiveKeysForAgent(workspaceId, projectId, agentId);
+    return {
+      agent_runner_id: agentId,
+      status,
+      checked_at: checkedAt,
+      timeout_ms: input?.timeoutMs ?? 1000,
+      freshness: {
+        state: lastSeenAt ? 'stale' : 'missing',
+        active_connection_count: 0,
+        ...(lastSeenAt ? { last_seen_at: lastSeenAt } : {}),
+      },
+      capabilities: agent.capabilities ?? {},
+      errors: [
+        {
+          code,
+          message: code,
+        },
+      ],
+      ...(cleanupEvents[0]
+        ? {
+          cleanup: {
+            key_expiry: cleanupEvents[0],
+          },
+        }
+        : {}),
+    };
+  }
+
   async getSessionConnectionInfo(
     agentId: string,
     sessionId?: string,
@@ -663,6 +1006,18 @@ export class AgentResourceService {
       return null;
     }
     return snapshot.connections.find((connection) => connection.session_id === undefined) ?? null;
+  }
+
+  async getAuthorizedSessionConnectionInfo(
+    agentId: string,
+    sessionId?: string,
+    options?: {
+      allowAgentFallback?: boolean;
+    },
+  ): Promise<AgentConnectionState | null> {
+    const connection = await this.getSessionConnectionInfo(agentId, sessionId, options);
+    if (!connection) return null;
+    return (await this.isConnectionAuthActive(connection)) ? connection : null;
   }
 
   buildConnectionInfo(agent: Pick<AgentRecord, 'id' | 'runner_provider'>): AgentConnectionInfo {
@@ -722,6 +1077,118 @@ export class AgentResourceService {
       return sanitizeAgentRecord(item);
     }
     return null;
+  }
+
+  private async isConnectionAuthActive(connection: AgentConnectionState): Promise<boolean> {
+    return (await this.checkConnectionAuthActive(connection)).active;
+  }
+
+  private async checkConnectionAuthActive(connection: AgentConnectionState): Promise<ConnectionAuthCheckResult> {
+    if (connection.auth_kind === 'service_key') {
+      const keyId = connection.auth_key_id?.trim();
+      if (!keyId) return { active: false };
+      const key = await this.docStore.get<AgentServiceKeyRecord>(
+        this.agentKeysCollection(connection.workspace_id),
+        keyId,
+      );
+      if (
+        !key ||
+        key.workspace_id !== connection.workspace_id ||
+        key.project_id !== connection.project_id ||
+        key.agent_id !== connection.agent_id
+      ) {
+        return { active: false };
+      }
+      const normalized = await this.normalizeKeyExpiry(connection.workspace_id, key);
+      return {
+        active: normalized.record.status === 'active' && !this.isExpiredKey(normalized.record),
+        ...(normalized.cleanup ? { cleanup: normalized.cleanup } : {}),
+      };
+    }
+
+    if (connection.auth_kind === 'managed_private_key') {
+      const agent = await this.docStore.get<AgentRecord & Record<string, unknown>>(
+        this.agentsCollection(connection.workspace_id),
+        connection.agent_id,
+      );
+      if (!agent || agent.workspace_id !== connection.workspace_id || agent.project_id !== connection.project_id) {
+        return { active: false };
+      }
+      const normalized = sanitizeAgentRecord(agent);
+      if (!isManagedAgentRunner(normalized) || normalized.status !== 'enabled') {
+        return { active: false };
+      }
+      const configuredKeyId = normalized.config?._internal_key_id?.trim() || `internal:${normalized.id}`;
+      return { active: connection.auth_key_id === configuredKeyId };
+    }
+
+    return { active: false };
+  }
+
+  private async releaseConnectionsAuthenticatedByKey(record: AgentServiceKeyRecord): Promise<boolean> {
+    const snapshot = await this.agentPresenceStore.getPresence(record.agent_id);
+    const matchingConnections = snapshot.connections.filter((connection) => (
+      connection.auth_kind === 'service_key'
+      && connection.auth_key_id === record.id
+      && connection.workspace_id === record.workspace_id
+      && connection.project_id === record.project_id
+    ));
+    let disconnected = false;
+    for (const connection of matchingConnections) {
+      const released = await this.releaseAgentConnection({
+        workspaceId: connection.workspace_id,
+        projectId: connection.project_id,
+        agentId: record.agent_id,
+        connectionId: connection.connection_id,
+      });
+      disconnected = disconnected || released.released;
+    }
+    return disconnected;
+  }
+
+  private async cleanupExpiredActiveKeysForAgent(
+    workspaceId: string,
+    projectId: string,
+    agentId: string,
+  ): Promise<AgentRunnerKeyExpiryCleanupEvidence[]> {
+    const activeKeys = await this.docStore.list<AgentServiceKeyRecord>(this.agentKeysCollection(workspaceId), {
+      workspace_id: workspaceId,
+      project_id: projectId,
+      agent_id: agentId,
+      status: 'active',
+    });
+    const normalized = await Promise.all(
+      activeKeys.map((key) => this.normalizeKeyExpiry(workspaceId, key)),
+    );
+    return normalized
+      .map((item) => item.cleanup)
+      .filter((item): item is AgentRunnerKeyExpiryCleanupEvidence => item !== undefined);
+  }
+
+  private async recordKeyExpiryCleanupAudit(cleanup: AgentRunnerKeyExpiryCleanupEvidence): Promise<void> {
+    const metadata: Record<string, unknown> = {
+      workspace_id: cleanup.workspace_id,
+      project_id: cleanup.project_id,
+      agent_runner_id: cleanup.agent_runner_id,
+      key_id: cleanup.key_id,
+      key_prefix: cleanup.key_prefix,
+      ...(cleanup.expires_at ? { expires_at: cleanup.expires_at } : {}),
+      cleanup_result: cleanup.cleanup_result,
+      disconnected: cleanup.disconnected,
+    };
+    await recordAuditEvent(this.docStore, {
+      id: `aud_agent_runner_connection_key_expired_${cleanup.key_id}`,
+      workspace_id: cleanup.workspace_id,
+      project_id: cleanup.project_id,
+      actor_type: 'agent',
+      actor_id: cleanup.agent_runner_id,
+      action: 'agent_runner.connection_key.expired',
+      result: 'ok',
+      request_id: `req_agent_runner_connection_key_expired_${cleanup.key_id}`,
+      resource_type: 'agent_runner',
+      resource_id: cleanup.agent_runner_id,
+      metadata_json: metadata,
+    });
   }
 
   private async writeStoredPresence(

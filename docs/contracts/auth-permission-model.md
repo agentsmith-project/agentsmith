@@ -145,10 +145,10 @@ Current project-scope model:
 
 Current split-token scope:
 - `project:endpoint:use` covers Chat, Endpoint read/use, Files read/use, Usage, and Access guide access
-- `project:agent_task:use` covers Agent task list/detail/create/run/update/archive/cancel, Project default run start, selection snapshot fetch, and Developer runner test task only when paired with runner-manage/action affordance
+- `project:agent_task:use` covers Agent task list/detail/create/run/update/archive/cancel, default managed runner binding at task creation, binding-options fetch, and Developer runner test task only when paired with runner-manage/action affordance
 - `project:agent_task:terminal` covers Agent task terminal access and must be granted explicitly with task access; backend terminal create/open/reconnect/input/resize/close must require both `project:agent_task:use` and `project:agent_task:terminal`
 - `project:agent_runner:read` covers Agent Runner route/list/status read and display-safe diagnostics only when backend `actions.view_diagnostics.allowed=true`
-- `project:agent_runner:manage` covers Developer runner create/edit/disable/delete, Developer runner explicit selection, Test connection, connection key/one-time-secret/mutating connection actions, System managed Project default/status/setup actions, and Developer runner test task only when paired with `project:agent_task:use`
+- `project:agent_runner:manage` covers Developer runner create/edit/disable/delete, Developer runner explicit task binding and later Developer-bound task execution/recovery/terminal use, Test connection, connection key/one-time-secret/mutating connection actions, and Developer runner test task only when paired with `project:agent_task:use`
 - `project:audit:read` covers Audit and Alert Center read/action access in the current MVP alert surface
 - `project:governance:update` covers project secrets, resource policy, endpoint governance, and similar governance surfaces
 - `project:files:update` covers file-library create/update/delete/move/upload/share-link writes
@@ -169,23 +169,25 @@ Practical effect:
 
 This section is authoritative for current permission boundaries and any remaining cleanup work.
 
-Runner selection and Agent Runners operation rules:
+Runner binding and Agent Runners operation rules:
 
 | Operation | Required authority |
 | --- | --- |
-| Ordinary Project default run | `project:agent_task:use` |
-| Selection snapshot fetch | `project:agent_task:use` |
-| Project default safe snapshot row | `project:agent_task:use` |
-| Explicit non-default System managed row/select action | Backend row-level `project:agent_task:use` + `project:agent_runner:read` + policy/capability/readiness + `actions.select_for_task.allowed` |
-| Explicit Developer runner row/select action | Backend row-level `project:agent_task:use` + `project:agent_runner:manage` + policy/capability/readiness/freshness + `actions.select_for_task.allowed` |
+| Ordinary default managed task binding | `project:agent_task:use` |
+| Binding options fetch | `project:agent_task:use` |
+| Default managed binding option | `project:agent_task:use` |
+| Explicit Developer runner bind action | Backend row-level `project:agent_task:use` + `project:agent_runner:manage` + policy/capability/readiness/freshness + binding action affordance |
+| Run/retry/recovery of a managed-bound task | `project:agent_task:use`; backend resolves the task's immutable bound runner |
+| Run/retry/recovery of a Developer-runner-bound task | `project:agent_task:use` + `project:agent_runner:manage` + backend bound-runner use affordance |
+| Terminal creation/recovery for a Developer-runner-bound task | `project:agent_task:use` + `project:agent_task:terminal` + `project:agent_runner:manage` + backend bound-runner use affordance |
 | Agent Runners route gate | `project:agent_runner:read` or `project:agent_runner:manage` |
 | Display-safe diagnostics/view_diagnostics | `project:agent_runner:read` or `project:agent_runner:manage` + backend `actions.view_diagnostics.allowed` |
 | Developer runner Test connection | `project:agent_runner:manage` + backend `actions.test_connection.allowed` |
 | Developer runner test task | `project:agent_task:use` + `project:agent_runner:manage` + backend `actions.run_test_task.allowed` |
 
-`StartTaskRun` must recompute selection authority, readiness, policy, capability, and freshness at submit time. Selection snapshots are UI affordance snapshots, not durable authorization artifacts. Action `required_permissions` values are per-row/per-operation diagnostic metadata and must not be treated as a frontend authorization source or as a fixed permission recipe for every `select_for_task`.
+`CreateTask` must recompute binding authority, readiness, policy, capability, and freshness at submit time. Binding-options responses are UI affordance snapshots, not durable authorization artifacts. `StartTaskRun` must not accept runner selection fields. Action `required_permissions` values are per-row/per-operation diagnostic metadata and must not be treated as a frontend authorization source or as a fixed permission recipe for runner binding.
 
-UI audiences such as Ordinary task user, Execution expert, Runner maintainer, and Diagnostics viewer are backend-affordance-derived presentation contexts, not role names.
+UI audiences such as Ordinary task user, Expert task creator, Runner maintainer, and Diagnostics viewer are backend-affordance-derived presentation contexts, not role names.
 
 ## Capability Boundary (Accepted Target)
 

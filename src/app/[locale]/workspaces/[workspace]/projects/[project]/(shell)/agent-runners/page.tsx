@@ -10,11 +10,11 @@ import { useEffect, useMemo, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useTranslations } from 'next-intl';
 import { useSearchParams } from 'next/navigation';
-import { Bot, Plus } from 'lucide-react';
+import { Plus, RefreshCw } from 'lucide-react';
 import { AgentRunnerAPI, getApiClient } from '@/lib/api';
 import type { AgentDiagnostics } from '@/lib/api/types';
 import { toast } from '@/components/ui/toast';
-import { EmptyState, PageLoading } from '@/components/ui/loading';
+import { PageLoading } from '@/components/ui/loading';
 import { Button } from '@/components/ui/button';
 import { AgentRunnerKeysDialog } from '@/components/api-keys/AgentRunnerKeysDialog';
 import { CreateAgentRunnerDialog } from '@/components/agent-runners/CreateAgentRunnerDialog';
@@ -36,10 +36,10 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog';
-import { AgentRunnerDetailsCard } from './_components/AgentRunnerDetailsCard';
-import { AgentRunnersHeaderActions } from './_components/AgentRunnersHeaderActions';
+import { AgentRunnerProjectDefaultStatus } from './_components/AgentRunnerProjectDefaultStatus';
+import { AgentRunnerSection } from './_components/AgentRunnerSection';
 import { AgentRunnersTable } from './_components/AgentRunnersTable';
-import type { AgentRunnerPageRecord, AgentRunnerStatusUpdateInput } from './agent-runners-page-types';
+import type { AgentRunnerPageRecord } from './agent-runners-page-types';
 
 interface AgentRunnersPageProps {
   params: Promise<{ workspace: string; project: string; locale: string }>;
@@ -64,39 +64,38 @@ export default function AgentRunnersPage({ params }: AgentRunnersPageProps) {
   const workspaceId = resolvedParams?.workspace ?? '';
   const projectId = resolvedParams?.project ?? '';
   const locale = resolvedParams?.locale ?? 'en-US';
-  const basePath = `/${locale}/workspaces/${workspaceId}/projects/${projectId}`;
 
   const runnerAPI = new AgentRunnerAPI(getApiClient());
   const runnerQueryKey = ['agent-runners', workspaceId, projectId] as const;
 
-  const { data: runnersData, isLoading: runnersLoading } = useQuery({
+  const {
+    data: runnersData,
+    isLoading: runnersLoading,
+    isFetching: runnersFetching,
+    refetch: refetchRunners,
+  } = useQuery({
     queryKey: runnerQueryKey,
     queryFn: () => runnerAPI.list(workspaceId, projectId),
     enabled: !!workspaceId && !!projectId && capabilities.canRead,
   });
 
+  const createDeveloperRunnerAction = runnersData?.actions?.create_developer_runner;
+  const showCreateDeveloperRunnerAction = createDeveloperRunnerAction?.visible === true;
+  const canCreateDeveloperRunner = showCreateDeveloperRunnerAction
+    && createDeveloperRunnerAction.allowed === true;
+  const canViewSelectedDiagnostics = detailsRunner?.actions?.view_diagnostics?.visible === true
+    && detailsRunner.actions.view_diagnostics.allowed === true;
+
   const { data: diagnosticsData, isLoading: diagnosticsLoading } = useQuery({
     queryKey: ['agent-runners', workspaceId, projectId, detailsRunner?.id, 'diagnostics'],
     queryFn: () =>
       detailsRunner ? runnerAPI.getDiagnostics(workspaceId, projectId, detailsRunner.id) : Promise.resolve(null),
-    enabled: !!detailsRunner && !!workspaceId && !!projectId && capabilities.canRead,
+    enabled: detailsOpen && !!detailsRunner && !!workspaceId && !!projectId && capabilities.canRead && canViewSelectedDiagnostics,
   });
 
   const invalidateRunners = () => {
     queryClient.invalidateQueries({ queryKey: runnerQueryKey });
   };
-
-  const updateRunnerMutation = useMutation({
-    mutationFn: ({ runnerId, data }: { runnerId: string; data: AgentRunnerStatusUpdateInput }) =>
-      runnerAPI.update(workspaceId, projectId, runnerId, data),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: runnerQueryKey });
-      toast.success(t('edit_dialog.success'));
-    },
-    onError: () => {
-      toast.error(tToast('update_agent_runner_failed'));
-    },
-  });
 
   const deleteRunnerMutation = useMutation({
     mutationFn: (runnerId: string) => runnerAPI.delete(workspaceId, projectId, runnerId),
@@ -113,8 +112,25 @@ export default function AgentRunnersPage({ params }: AgentRunnersPageProps) {
     () => (runnersData?.items ?? []) as AgentRunnerPageRecord[],
     [runnersData?.items],
   );
+  const systemManagedRunners = runners.filter((runner) => runner.kind === 'system_managed');
+  const developerRunners = runners.filter((runner) => runner.kind === 'developer');
+  const projectDefaultRunner = systemManagedRunners.find((runner) => runner.is_default)
+    ?? runners.find((runner) => runner.kind === 'system_managed' && runner.is_default);
   const readyCount = runners.filter((runner) => runner.status === 'ready').length;
-  const diagnosticIssueCount = runners.filter((runner) => runner.diagnostics?.last_error).length;
+  const diagnosticIssueCount = runners.filter((runner) => (
+    typeof runner.diagnostics?.last_error === 'string' && runner.diagnostics.last_error.trim().length > 0
+  )).length;
+  const expandedRunnerId = detailsOpen ? detailsRunner?.id ?? null : null;
+  const expandedDiagnostics = (diagnosticsData as AgentDiagnostics | null | undefined) ?? null;
+
+  const openRunnerDetails = (runner: AgentRunnerPageRecord) => {
+    if (detailsOpen && detailsRunner?.id === runner.id) {
+      setDetailsOpen(false);
+      return;
+    }
+    setDetailsRunner(runner);
+    setDetailsOpen(true);
+  };
 
   useEffect(() => {
     const requestedRunnerId = searchParams.get('runner');
@@ -167,7 +183,6 @@ export default function AgentRunnersPage({ params }: AgentRunnersPageProps) {
             title={t('title')}
             subtitle={t('subtitle')}
             variant="compact"
-            actions={<AgentRunnersHeaderActions basePath={basePath} t={t} />}
           />
         )}
         toolbar={(
@@ -183,69 +198,117 @@ export default function AgentRunnersPage({ params }: AgentRunnersPageProps) {
             </div>
             <Button
               type="button"
-              variant="action"
-              onClick={() => setCreateDialogOpen(true)}
-              disabled={!capabilities.canManage}
-              data-testid="agent-runners__create-btn"
+              variant="ghost"
+              onClick={() => {
+                void refetchRunners();
+              }}
+              disabled={runnersFetching}
+              data-testid="agent-runners__refresh-btn"
               className="gap-2"
             >
-              <Plus className="h-4 w-4" />
-              {t('create')}
+              <RefreshCw className="h-4 w-4" />
+              {t('refresh')}
             </Button>
+            {showCreateDeveloperRunnerAction ? (
+              <Button
+                type="button"
+                variant="action"
+                onClick={() => {
+                  if (!canCreateDeveloperRunner) return;
+                  setCreateDialogOpen(true);
+                }}
+                disabled={!canCreateDeveloperRunner}
+                title={canCreateDeveloperRunner ? t('create_developer') : t('action_disabled_reason')}
+                data-testid="agent-runners__create-btn"
+                className="gap-2"
+              >
+                <Plus className="h-4 w-4" />
+                {t('create_developer')}
+              </Button>
+            ) : null}
           </PageToolbar>
         )}
       >
         <div className="flex w-full flex-col gap-6">
+          <AgentRunnerProjectDefaultStatus runner={projectDefaultRunner} t={t} />
+
           {runnersLoading ? (
             <PageLoading />
-          ) : runners.length === 0 ? (
-            <EmptyState
-              icon={Bot}
-              title={t('empty.title')}
-              description={t('empty.description')}
-              action={capabilities.canManage ? {
-                label: t('create'),
-                onClick: () => setCreateDialogOpen(true),
-              } : undefined}
-            />
           ) : (
-            <AgentRunnersTable
-              runners={runners}
-              canManageRunners={capabilities.canManage}
-              isUpdating={updateRunnerMutation.isPending}
-              t={t}
-              onDeleteRequest={(runner) => {
-                setRunnerToDelete(runner);
-                setDeleteConfirmOpen(true);
-              }}
-              onEditClick={(runner) => {
-                setEditDialogRunner(runner);
-                setDetailsRunner(runner);
-                setDetailsOpen(true);
-              }}
-              onConnectionKeysClick={(runner) => setConnectionKeysRunner(runner)}
-              onRowClick={(runner) => {
-                setDetailsRunner(runner);
-                setDetailsOpen(true);
-              }}
-              onStatusToggle={(input) => updateRunnerMutation.mutate(input)}
-            />
-          )}
+            <>
+              <AgentRunnerSection
+                title={t('system_managed_section_title')}
+                description={t('system_managed_section_description')}
+                count={systemManagedRunners.length}
+                testId="agent-runners__system-managed-section"
+                emptyLabel={t('system_managed_empty')}
+              >
+                <AgentRunnersTable
+                  runners={systemManagedRunners}
+                  isUpdating={deleteRunnerMutation.isPending}
+                  t={t}
+                  testId="agent-runners__system-managed-table"
+                  onDeleteRequest={(runner) => {
+                    setRunnerToDelete(runner);
+                    setDeleteConfirmOpen(true);
+                  }}
+                  onEditClick={(runner) => {
+                    setEditDialogRunner(runner);
+                    setDetailsRunner(runner);
+                    setDetailsOpen(true);
+                  }}
+                  onConnectionKeysClick={(runner) => setConnectionKeysRunner(runner)}
+                  onViewDiagnosticsClick={(runner) => {
+                    setDetailsRunner(runner);
+                    setDetailsOpen(true);
+                  }}
+                  onRowClick={openRunnerDetails}
+                  expandedRunnerId={expandedRunnerId}
+                  expandedDiagnostics={expandedDiagnostics}
+                  expandedDiagnosticsLoading={diagnosticsLoading}
+                  onDetailsClose={() => setDetailsOpen(false)}
+                />
+              </AgentRunnerSection>
 
-          {detailsRunner && detailsOpen ? (
-            <AgentRunnerDetailsCard
-              runner={detailsRunner}
-              diagnostics={diagnosticsData as AgentDiagnostics | null}
-              diagnosticsLoading={diagnosticsLoading}
-              t={t}
-              onClose={() => setDetailsOpen(false)}
-            />
-          ) : null}
+              <AgentRunnerSection
+                title={t('developer_section_title')}
+                description={t('developer_section_description')}
+                count={developerRunners.length}
+                testId="agent-runners__developer-section"
+                emptyLabel={t('developer_empty')}
+              >
+                <AgentRunnersTable
+                  runners={developerRunners}
+                  isUpdating={deleteRunnerMutation.isPending}
+                  t={t}
+                  onDeleteRequest={(runner) => {
+                    setRunnerToDelete(runner);
+                    setDeleteConfirmOpen(true);
+                  }}
+                  onEditClick={(runner) => {
+                    setEditDialogRunner(runner);
+                    setDetailsRunner(runner);
+                    setDetailsOpen(true);
+                  }}
+                  onConnectionKeysClick={(runner) => setConnectionKeysRunner(runner)}
+                  onViewDiagnosticsClick={(runner) => {
+                    setDetailsRunner(runner);
+                    setDetailsOpen(true);
+                  }}
+                  onRowClick={openRunnerDetails}
+                  expandedRunnerId={expandedRunnerId}
+                  expandedDiagnostics={expandedDiagnostics}
+                  expandedDiagnosticsLoading={diagnosticsLoading}
+                  onDetailsClose={() => setDetailsOpen(false)}
+                />
+              </AgentRunnerSection>
+            </>
+          )}
         </div>
 
         <CreateAgentRunnerDialog
-          open={capabilities.canManage && createDialogOpen}
-          onOpenChange={setCreateDialogOpen}
+          open={canCreateDeveloperRunner && createDialogOpen}
+          onOpenChange={(open) => setCreateDialogOpen(open && canCreateDeveloperRunner)}
           workspaceId={workspaceId}
           projectId={projectId}
           onSuccess={invalidateRunners}
@@ -270,6 +333,10 @@ export default function AgentRunnersPage({ params }: AgentRunnersPageProps) {
             projectId={projectId}
             runnerId={connectionKeysRunner.id}
             runnerName={connectionKeysRunner.name}
+            runnerKind={connectionKeysRunner.kind}
+            readOnly={connectionKeysRunner.read_only}
+            runnerStatus={connectionKeysRunner.status}
+            actions={connectionKeysRunner.actions}
           />
         ) : null}
 

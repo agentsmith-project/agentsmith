@@ -284,7 +284,7 @@ describe('use-permissions hooks', () => {
       expect(result.current).toBe(false);
     });
 
-    it('useCanUseAgentTaskTerminal should require project:agent_task:terminal', () => {
+    it('useCanUseAgentTaskTerminal should require project:agent_task:use and project:agent_task:terminal', () => {
       const mockProject = {
         id: 'proj_001',
         workspace_id: 'ws_default',
@@ -305,6 +305,29 @@ describe('use-permissions hooks', () => {
       });
 
       expect(result.current).toBe(true);
+    });
+
+    it('useCanUseAgentTaskTerminal should return false with terminal permission but without task use', () => {
+      const mockProject = {
+        id: 'proj_001',
+        workspace_id: 'ws_default',
+        name: 'Test Project',
+        owner_id: 'user_001',
+        status: 'active' as const,
+        visibility: 'public' as const,
+        created_at: '2026-01-01T00:00:00Z',
+        updated_at: '2026-01-01T00:00:00Z',
+        membership_status: 'active' as const,
+        permissions: ['project:agent_task:terminal'],
+      };
+
+      mockUseProject.mockReturnValue({ data: mockProject, isLoading: false });
+
+      const { result } = renderHook(() => useCanUseAgentTaskTerminal(), {
+        wrapper: createWrapper(),
+      });
+
+      expect(result.current).toBe(false);
     });
 
     it('useCanAccessChat should reject removed project:endpoint:invoke permission name', () => {

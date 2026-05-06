@@ -79,4 +79,22 @@ describe('TaskAPI public Agent Task activity/run surface', () => {
     expect(postedBody).not.toHaveProperty('role');
     expect(postedBody).not.toHaveProperty('content');
   });
+
+  it('fetches runner binding options from the dedicated task route', async () => {
+    const client = createMockClient();
+    vi.mocked(client.get).mockResolvedValue({
+      options: [],
+      generated_at: '2026-05-05T00:00:00.000Z',
+    });
+    const api = new TaskAPI(client);
+
+    await api.getRunnerBindingOptions('ws_default', 'proj_1');
+
+    expect(client.get).toHaveBeenCalledWith(
+      '/workspaces/ws_default/projects/proj_1/tasks/runner-binding-options',
+    );
+    expect(client.get).not.toHaveBeenCalledWith(
+      expect.stringContaining('/agent-runners'),
+    );
+  });
 });

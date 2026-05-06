@@ -12,6 +12,8 @@ import {
 import { classifyAgentTaskTraceFailure, type AgentTaskTraceFailureKind } from '@/lib/build-failure-explainability';
 import type { TaskSSEDebugEvent } from '@/lib/hooks/use-task-sse';
 
+const TRACE_DETAILS_UNAVAILABLE_MESSAGE = 'Task trace details could not be loaded.';
+
 export function useTaskTraceState(args: {
   workspaceId: string;
   projectId: string;
@@ -128,7 +130,7 @@ export function useTaskTraceState(args: {
         ...prev,
         [messageId]: {
           kind: classifyAgentTaskTraceFailure(err),
-          message: err instanceof Error ? err.message : 'Task trace details could not be loaded.',
+          message: TRACE_DETAILS_UNAVAILABLE_MESSAGE,
         },
       }));
       handleError(err, { logContext: 'TaskPage.traceMessageBackfill' });
@@ -167,7 +169,7 @@ export function useTaskTraceState(args: {
         ...prev,
         [messageId]: {
           kind: classifyAgentTaskTraceFailure(err),
-          message: err instanceof Error ? err.message : 'Task trace details could not be loaded.',
+          message: TRACE_DETAILS_UNAVAILABLE_MESSAGE,
         },
       }));
       handleError(err, { logContext: 'TaskPage.traceMessageLoadMore' });

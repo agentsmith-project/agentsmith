@@ -8,12 +8,10 @@ import { EditAgentRunnerDialog } from '../EditAgentRunnerDialog';
 const {
   mockCreate,
   mockUpdate,
-  mockEndpointList,
   mockToastSuccess,
 } = vi.hoisted(() => ({
   mockCreate: vi.fn(),
   mockUpdate: vi.fn(),
-  mockEndpointList: vi.fn(),
   mockToastSuccess: vi.fn(),
 }));
 
@@ -69,9 +67,6 @@ vi.mock('@/lib/api', () => ({
     create = mockCreate;
     update = mockUpdate;
   },
-  EndpointAPI: class {
-    list = mockEndpointList;
-  },
 }));
 
 vi.mock('@/components/ui/toast', () => ({
@@ -102,39 +97,33 @@ describe('Agent Runner dialogs', () => {
     vi.clearAllMocks();
     mockCreate.mockResolvedValue({ id: 'runner_1' });
     mockUpdate.mockResolvedValue({ id: 'runner_1' });
-    mockEndpointList.mockResolvedValue({
-      items: [
-        {
-          id: 'ep_active_1',
-          name: 'OpenAI Main',
-          model: 'gpt-4.1',
-          provider_family: 'openai',
-          status: 'active',
-        },
-      ],
-    });
   });
 
-  it('creates a runner without workload type or runtime mode fields', async () => {
+  it('creates a Developer runner with name and description only', async () => {
     renderWithProviders(
       <CreateAgentRunnerDialog open onOpenChange={vi.fn()} workspaceId="ws_1" projectId="proj_1" />,
     );
 
+    expect(screen.queryByText('Default endpoint')).not.toBeInTheDocument();
+    expect(screen.queryByText('Capabilities')).not.toBeInTheDocument();
+
     fireEvent.change(await screen.findByPlaceholderText('Runner name'), {
-      target: { value: 'managed task runner' },
+      target: { value: 'developer task runner' },
+    });
+    fireEvent.change(screen.getByPlaceholderText('Optional description'), {
+      target: { value: 'Local development checks' },
     });
     fireEvent.click(screen.getByRole('button', { name: 'Create' }));
 
     await waitFor(() => expect(mockCreate).toHaveBeenCalled());
     const payload = mockCreate.mock.calls[0][2];
-    expect(payload.name).toBe('managed task runner');
-    expect(payload.default_endpoint_id).toBe('ep_active_1');
-    expect(payload.mode).toBeUndefined();
-    expect(payload.runner_runtime).toBeUndefined();
-    expect(payload.interaction_kind).toBeUndefined();
+    expect(payload).toEqual({
+      name: 'developer task runner',
+      description: 'Local development checks',
+    });
   });
 
-  it('edits runner readiness configuration without legacy selectors', async () => {
+  it('edits only Developer runner name and description metadata', async () => {
     renderWithProviders(
       <EditAgentRunnerDialog
         open
@@ -144,23 +133,28 @@ describe('Agent Runner dialogs', () => {
         runner={{
           id: 'runner_1',
           name: 'Managed Runner',
-          default_endpoint_id: 'ep_active_1',
-          capabilities: { terminal: true, artifacts: true, file_inputs: true },
+          description: 'Old description',
         }}
       />,
     );
 
+    expect(screen.queryByText('Default endpoint')).not.toBeInTheDocument();
+    expect(screen.queryByText('Capabilities')).not.toBeInTheDocument();
     expect(screen.queryByText(/chat|notebook|external|internal|docker|compose/i)).not.toBeInTheDocument();
+
     fireEvent.change(await screen.findByDisplayValue('Managed Runner'), {
       target: { value: 'Primary Runner' },
+    });
+    fireEvent.change(screen.getByDisplayValue('Old description'), {
+      target: { value: 'Updated description' },
     });
     fireEvent.click(screen.getByRole('button', { name: 'Save' }));
 
     await waitFor(() => expect(mockUpdate).toHaveBeenCalled());
     const payload = mockUpdate.mock.calls[0][3];
-    expect(payload.name).toBe('Primary Runner');
-    expect(payload.mode).toBeUndefined();
-    expect(payload.runner_runtime).toBeUndefined();
-    expect(payload.interaction_kind).toBeUndefined();
+    expect(payload).toEqual({
+      name: 'Primary Runner',
+      description: 'Updated description',
+    });
   });
 });

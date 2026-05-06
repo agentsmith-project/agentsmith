@@ -527,9 +527,14 @@ agent-task-runner-from-state:
 	@set -e; \
 	STATE_FILE="$${BACKEND_REAL_STATE_FILE:-$(CURDIR)/artifacts/backend-real/current/state.json}"; \
 	WS_URL="$${AGENT_WS_URL:-$$(node -e 'const fs=require("node:fs"); const f=process.argv[1]; if(fs.existsSync(f)){const j=JSON.parse(fs.readFileSync(f,"utf8")); process.stdout.write(j?.agent_runner?.ws_url||"")}' "$$STATE_FILE" 2>/dev/null || true)}"; \
-	AGENT_KEY_VALUE="$${AGENT_KEY:-$$(node -e 'const fs=require("node:fs"); const f=process.argv[1]; if(fs.existsSync(f)){const j=JSON.parse(fs.readFileSync(f,"utf8")); process.stdout.write(j?.agent_runner?.key||"")}' "$$STATE_FILE" 2>/dev/null || true)}"; \
+	AGENT_KEY_VALUE="$${AGENT_KEY:-}"; \
+	if [ -z "$$AGENT_KEY_VALUE" ]; then \
+		RUNNER_ENV="$$(BACKEND_REAL_STATE_FILE="$$STATE_FILE" AGENT_WS_URL="$$WS_URL" MONGO_URL="$(MONGO_URL)" MONGO_DB_NAME="$(MONGO_DB_NAME)" npx tsx scripts/agent-runner-resolve-managed-runner-env.ts)"; \
+		WS_URL="$$(printf '%s\n' "$$RUNNER_ENV" | awk -F= '$$1=="AGENT_WS_URL"{print substr($$0,index($$0,"=")+1); exit}')"; \
+		AGENT_KEY_VALUE="$$(printf '%s\n' "$$RUNNER_ENV" | awk -F= '$$1=="AGENT_KEY"{print substr($$0,index($$0,"=")+1); exit}')"; \
+	fi; \
 	if [ -z "$$WS_URL" ] || [ -z "$$AGENT_KEY_VALUE" ]; then \
-		echo "[make] Missing AGENT_WS_URL/AGENT_KEY and no backend-real state agent runner metadata found."; \
+		echo "[make] Missing AGENT_WS_URL/AGENT_KEY and no managed runner launch env found."; \
 		exit 1; \
 	fi; \
 	env -u http_proxy -u https_proxy -u all_proxy -u HTTP_PROXY -u HTTPS_PROXY -u ALL_PROXY -u no_proxy -u NO_PROXY \
@@ -796,9 +801,14 @@ agent-task-smoke-full:
 	STATE_FILE="$${BACKEND_REAL_STATE_FILE:-$(CURDIR)/artifacts/backend-real/current/state.json}"; \
 	RUNNER_LOG="$${RUNNER_LOG:-$(CURDIR)/artifacts/backend-real/current/runner-smoke.log}"; \
 	WS_URL="$${AGENT_WS_URL:-$$(node -e 'const fs=require("node:fs"); const f=process.argv[1]; if(fs.existsSync(f)){const j=JSON.parse(fs.readFileSync(f,"utf8")); process.stdout.write(j?.agent_runner?.ws_url||"")}' "$$STATE_FILE" 2>/dev/null || true)}"; \
-	AGENT_KEY_VALUE="$${AGENT_KEY:-$$(node -e 'const fs=require("node:fs"); const f=process.argv[1]; if(fs.existsSync(f)){const j=JSON.parse(fs.readFileSync(f,"utf8")); process.stdout.write(j?.agent_runner?.key||"")}' "$$STATE_FILE" 2>/dev/null || true)}"; \
+	AGENT_KEY_VALUE="$${AGENT_KEY:-}"; \
+	if [ -z "$$AGENT_KEY_VALUE" ]; then \
+		RUNNER_ENV="$$(BACKEND_REAL_STATE_FILE="$$STATE_FILE" AGENT_WS_URL="$$WS_URL" MONGO_URL="$(MONGO_URL)" MONGO_DB_NAME="$(MONGO_DB_NAME)" npx tsx scripts/agent-runner-resolve-managed-runner-env.ts)"; \
+		WS_URL="$$(printf '%s\n' "$$RUNNER_ENV" | awk -F= '$$1=="AGENT_WS_URL"{print substr($$0,index($$0,"=")+1); exit}')"; \
+		AGENT_KEY_VALUE="$$(printf '%s\n' "$$RUNNER_ENV" | awk -F= '$$1=="AGENT_KEY"{print substr($$0,index($$0,"=")+1); exit}')"; \
+	fi; \
 	if [ -z "$$WS_URL" ] || [ -z "$$AGENT_KEY_VALUE" ]; then \
-		echo "[make] Missing AGENT_WS_URL/AGENT_KEY and no backend-real state agent runner metadata found."; \
+		echo "[make] Missing AGENT_WS_URL/AGENT_KEY and no managed runner launch env found."; \
 		exit 1; \
 	fi; \
 	echo "[make] refreshing token..."; \

@@ -41,6 +41,8 @@ vi.mock("next-intl", () => ({
         active_run_status_finalizing: "Saving",
         active_run_status_terminating: "Stopping",
         active_run_latest_action: "Latest action: {summary}",
+        runner_test_badge: "runner_test",
+        runner_test_source_value: "Developer runner test",
         run_cancel: "Cancel current run",
         run_cancel_submitting: "Cancelling...",
         process_cancel_reason_user_stopped:
@@ -53,6 +55,8 @@ vi.mock("next-intl", () => ({
         process_recovered_history_summary:
           "{recovered} recovered issues · {steps} execution steps",
         process_details_unavailable: "Execution details unavailable",
+        process_details_unavailable_description:
+          "Execution details could not be loaded. Refresh if the run timeline still looks incomplete.",
         process_details_expand: "Show details",
         process_details_collapse: "Hide details",
         process_history_region_label: "Execution history",
@@ -63,7 +67,7 @@ vi.mock("next-intl", () => ({
         process_stage_running_command: "Running command",
         process_stage_using_tool: "Using tool",
         process_stage_updating_files: "Updating files",
-        process_stage_workspace_diagnostics: "Workspace diagnostics",
+        process_stage_workspace_diagnostics: "Workspace changes",
         process_stage_runner_output: "Generated output",
         process_stage_preparing_response: "Preparing response",
         process_stage_failed: "Failed",
@@ -221,7 +225,10 @@ describe("MessageItem", () => {
       screen.getByTestId("agent-tasks__message-process-details-toggle"),
     );
     expect(screen.getByText("Running command")).toBeInTheDocument();
-    expect(screen.getByText("pnpm test --filter agent-task")).toBeInTheDocument();
+    expect(screen.getByText("Command completed #2")).toBeInTheDocument();
+    expect(
+      screen.queryByText("pnpm test --filter agent-task"),
+    ).not.toBeInTheDocument();
   });
 
   it("renders agent status metadata in the footer", () => {
@@ -257,6 +264,137 @@ describe("MessageItem", () => {
       "Duration: 55s",
     );
     expect(within(footer).getByText("06:31 AM")).toBeInTheDocument();
+  });
+
+  it("surfaces runner_test source on execution summary messages", () => {
+    render(
+      <MessageItem
+        message={{
+          ...agentMessage,
+          id: "msg-runner-test",
+          run_id: "run_runner_test_1",
+          source: "runner_test",
+          runner_test: true,
+        } as TaskActivityItem}
+      />,
+    );
+
+    const footer = screen.getByTestId("agent-tasks__message-status-footer");
+    const badge = within(footer).getByTestId("agent-tasks__runner-test-badge");
+    expect(badge).toHaveTextContent("runner_test");
+    expect(badge).toHaveAttribute("title", "Developer runner test");
+  });
+
+  it("does not render raw trace error messages inside expanded process details", async () => {
+    const user = userEvent.setup();
+
+    render(
+      <MessageItem
+        message={agentMessage}
+        traceError={{
+          kind: "trace_network",
+          message: "fetch failed: token=raw-secret upstream=trace-store",
+        }}
+      />,
+    );
+
+    expect(screen.getByTestId("agent-tasks__message-process-summary")).toHaveTextContent(
+      "Execution details unavailable",
+    );
+
+    await user.click(
+      screen.getByTestId("agent-tasks__message-process-details-toggle"),
+    );
+
+    expect(screen.getByTestId("agent-tasks__message-process-error")).toHaveTextContent(
+      "Execution details could not be loaded. Refresh if the run timeline still looks incomplete.",
+    );
+    expect(screen.queryByText(/token=raw-secret/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/upstream=trace-store/)).not.toBeInTheDocument();
+  });
+
+  it("keeps ordinary execution-detail copy free of diagnostics and raw runner terms", async () => {
+    const user = userEvent.setup();
+    const ordinaryTaskDenylist = [
+      /runner/i,
+      /diagnostics/i,
+      /diagnostic id/i,
+      /diagnostic entrypoint/i,
+      /raw event/i,
+      /raw diagnostics/i,
+      /reason_code/i,
+      /required_permissions/i,
+    ];
+
+    render(
+      <MessageItem
+        message={agentMessage}
+        traceError={{
+          kind: "trace_network",
+          message:
+            "runner diagnostics diagnostic id diag_123 diagnostic entrypoint /raw reason_code=agent_runner_unavailable required_permissions=project:agent_runner:read raw event",
+        }}
+      />,
+    );
+
+    await user.click(
+      screen.getByTestId("agent-tasks__message-process-details-toggle"),
+    );
+
+    const renderedCopy =
+      screen.getByTestId("agent-tasks__agent-message-bubble").textContent ?? "";
+    for (const denied of ordinaryTaskDenylist) {
+      expect(renderedCopy).not.toMatch(denied);
+    }
+  });
+
+  it("does not render raw trace summary or command details inside expanded execution details", async () => {
+    const user = userEvent.setup();
+    const traces: TaskTraceEvent[] = [
+      {
+        id: "trace-malicious-command",
+        task_id: "task-1",
+        message_id: "msg-agent",
+        run_id: "run-1",
+        seq: 1,
+        at: "2024-01-01T14:31:01Z",
+        category: "tool",
+        phase: "end",
+        status: "success",
+        name: "codex.command",
+        summary:
+          "raw event TOKEN=abc secret required_permissions reason_code raw diagnostics /internal/diagnostic_entrypoint",
+        details: {
+          command: "TOKEN=abc secret /internal/diagnostic_entrypoint",
+          tool_name: "diagnostic_entrypoint",
+          required_permissions: ["project:agent_runner:read"],
+          reason_code: "agent_runner_unavailable",
+          diagnostics: "raw diagnostics",
+        },
+      },
+    ];
+
+    render(<MessageItem message={agentMessage} traceEvents={traces} />);
+
+    await user.click(
+      screen.getByTestId("agent-tasks__message-process-details-toggle"),
+    );
+
+    const renderedCopy =
+      screen.getByTestId("agent-tasks__agent-message-bubble").textContent ?? "";
+    expect(renderedCopy).toContain("Running command");
+    for (const denied of [
+      "TOKEN=abc",
+      "secret",
+      "required_permissions",
+      "reason_code",
+      "raw event",
+      "raw diagnostics",
+      "/internal/",
+      "diagnostic_entrypoint",
+    ]) {
+      expect(renderedCopy).not.toContain(denied);
+    }
   });
 
   it("keeps recovered issues separate from execution history and shows recovered details only when expanded", async () => {
@@ -357,11 +495,14 @@ describe("MessageItem", () => {
     expect(within(recoveredIssues).getByText("Recovered issues")).toBeInTheDocument();
     expect(within(recoveredIssues).getByText("Running command")).toBeInTheDocument();
     expect(
-      within(recoveredIssues).getByText("npm run agent-task:probe"),
+      within(recoveredIssues).getByText("Command failed #1"),
     ).toBeInTheDocument();
+    expect(
+      within(recoveredIssues).queryByText("npm run agent-task:probe"),
+    ).not.toBeInTheDocument();
 
     const history = screen.getByTestId("agent-tasks__message-process-steps");
-    expect(within(history).getByText("Workspace diagnostics")).toBeInTheDocument();
+    expect(within(history).getByText("Workspace changes")).toBeInTheDocument();
     expect(within(history).getByText("1 added · 1 modified · 0 deleted")).toBeInTheDocument();
     expect(within(history).queryByText("npm run agent-task:probe")).not.toBeInTheDocument();
     expect(screen.getAllByTestId("agent-tasks__message-step-row")).toHaveLength(2);
@@ -454,7 +595,8 @@ describe("MessageItem", () => {
       screen.queryByText(/private thinking detail/i),
     ).not.toBeInTheDocument();
     expect(screen.getByText("Running command")).toBeInTheDocument();
-    expect(screen.getByText("npm run agent-task:probe")).toBeInTheDocument();
+    expect(screen.getByText("Command completed #3")).toBeInTheDocument();
+    expect(screen.queryByText("npm run agent-task:probe")).not.toBeInTheDocument();
   });
 
   it("keeps trace errors collapsed with an unavailable-details summary while the trace slot stays before the final answer", async () => {
@@ -488,7 +630,10 @@ describe("MessageItem", () => {
     await user.click(
       screen.getByTestId("agent-tasks__message-process-details-toggle"),
     );
-    expect(screen.getByText("Trace detail fetch failed")).toBeInTheDocument();
+    expect(screen.queryByText("Trace detail fetch failed")).not.toBeInTheDocument();
+    expect(screen.getByText(
+      "Execution details could not be loaded. Refresh if the run timeline still looks incomplete.",
+    )).toBeInTheDocument();
   });
 
   it("wires execution details and history toggles to expanded regions", async () => {
@@ -577,8 +722,8 @@ describe("MessageItem", () => {
     );
 
     const bubble = screen.getByTestId("agent-tasks__agent-message-bubble");
-    expect(screen.getByText("Generated output")).toBeInTheDocument();
-    expect(screen.getByText("reports/result.md")).toBeInTheDocument();
+    expect(screen.getAllByText("Generated output").length).toBeGreaterThan(0);
+    expect(screen.queryByText("reports/result.md")).not.toBeInTheDocument();
     expect(within(bubble).queryByText(/Artifact/i)).not.toBeInTheDocument();
     expect(within(bubble).queryByText(/产物/)).not.toBeInTheDocument();
   });
@@ -1048,9 +1193,12 @@ describe("MessageItem", () => {
       .getAllByTestId("agent-tasks__message-step-detail")
       .map((element) => element.textContent ?? "")
       .join("\n");
-    expect(detailText).toContain(longCommand);
-    expect(detailText).toContain(longToolName);
-    expect(detailText).toContain(longRunnerOutput);
+    expect(detailText).toContain("Command completed #2");
+    expect(detailText).toContain("Tool completed #3");
+    expect(detailText).toContain("Generated output");
+    expect(detailText).not.toContain(longCommand);
+    expect(detailText).not.toContain(longToolName);
+    expect(detailText).not.toContain(longRunnerOutput);
     expect(detailText).toContain(longProgressText);
     expect(detailText).not.toContain("…");
   });

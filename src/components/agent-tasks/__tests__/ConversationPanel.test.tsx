@@ -20,13 +20,13 @@ vi.mock('next-intl', () => ({
       'agent_tasks.conversation.realtime_status_error_title': 'Live task stream recovery failed',
       'agent_tasks.conversation.realtime_status_error_description': 'Recent reconnect attempts did not recover the stream. Retry or refresh to continue.',
       'agent_tasks.conversation.realtime_status_ticket_unavailable_title': 'Live updates paused',
-      'agent_tasks.conversation.realtime_status_ticket_unavailable_description': 'The task is still available, but live updates could not start in this environment. Refresh or open diagnostics if the timeline does not update.',
+      'agent_tasks.conversation.realtime_status_ticket_unavailable_description': 'The task is still available, but live updates could not start in this environment. Refresh if the timeline does not update.',
       'agent_tasks.conversation.realtime_status_ticket_unauthorized_title': 'Realtime ticket request denied',
       'agent_tasks.conversation.realtime_status_ticket_unauthorized_description': 'The current session is not allowed to open a realtime Agent task stream.',
       'agent_tasks.conversation.realtime_status_ticket_rate_limited_title': 'Realtime ticket request rate limited',
       'agent_tasks.conversation.realtime_status_ticket_rate_limited_description': 'Ticket issuance is temporarily throttled. Retry after the current limit window clears.',
       'agent_tasks.conversation.realtime_status_stream_unavailable_title': 'Realtime task stream unavailable',
-      'agent_tasks.conversation.realtime_status_stream_unavailable_description': 'The Agent task event stream did not open in this environment. Check the task events endpoint before retrying.',
+      'agent_tasks.conversation.realtime_status_stream_unavailable_description': 'The Agent task event stream did not open in this environment. Refresh the task before retrying.',
       'agent_tasks.conversation.realtime_status_stream_interrupted_title': 'Realtime task stream interrupted',
       'agent_tasks.conversation.realtime_status_stream_interrupted_description': 'The live task stream opened earlier but is no longer delivering updates.',
       'agent_tasks.conversation.realtime_status_stream_recovery_exhausted_title': 'Realtime task recovery exhausted',
@@ -44,7 +44,13 @@ vi.mock('next-intl', () => ({
 }));
 
 vi.mock('../ConversationInput', () => ({
-  ConversationInput: ({ value, onChange, onSend, disabled, sending }: any) => (
+  ConversationInput: ({
+    value,
+    onChange,
+    onSend,
+    disabled,
+    sending,
+  }: any) => (
     <div data-testid="conversation-input">
       <textarea
         data-testid="input-textarea"
@@ -178,6 +184,7 @@ describe('ConversationPanel', () => {
 
       expect(screen.getByTestId('agent-tasks__sandbox-starting')).toBeInTheDocument();
       expect(screen.getByText('Preparing managed execution environment')).toBeInTheDocument();
+      expect(screen.getByTestId('agent-tasks__execution-visibility')).not.toHaveTextContent(/sandbox/i);
     });
   });
 
@@ -374,25 +381,46 @@ describe('ConversationPanel', () => {
       const status = screen.getByTestId('agent-tasks__sse-status');
       expect(status).toHaveTextContent('Live updates paused');
       expect(status).toHaveTextContent(
-        'The task is still available, but live updates could not start in this environment. Refresh or open diagnostics if the timeline does not update.',
+        'The task is still available, but live updates could not start in this environment. Refresh if the timeline does not update.',
       );
       expect(status).not.toHaveTextContent(/SSE ticket|ticket service|ticket endpoint/i);
     });
 
-    it('shows reconcile-failed explanation with execution message', () => {
+    it('shows reconcile-failed explanation without raw execution error text', () => {
       render(
         <ConversationPanel
           messages={mockMessages}
           onSendMessage={mockOnSendMessage}
           connectionStatus="error"
           connectionErrorCode="TRACE_RECONCILE_FAILED"
-          connectionErrorMessage="Trace tail fetch returned 503"
+          connectionErrorMessage="Trace tail fetch returned 503 with internal request detail"
         />
       );
 
       const status = screen.getByTestId('agent-tasks__sse-status');
       expect(status).toHaveTextContent('Trace recovery needs manual refresh');
-      expect(status).toHaveTextContent('Trace tail fetch returned 503');
+      expect(status).toHaveTextContent('The realtime stream reconnected, but trace backfill did not complete. Refresh to rebuild the task timeline.');
+      expect(status).not.toHaveTextContent('Trace tail fetch returned 503 with internal request detail');
+    });
+
+    it('does not expose raw stream error messages in the ordinary SSE banner', () => {
+      render(
+        <ConversationPanel
+          messages={mockMessages}
+          onSendMessage={mockOnSendMessage}
+          connectionStatus="error"
+          connectionErrorCode="TASK_EVENTS_STREAM_UNAVAILABLE"
+          connectionErrorMessage="EventSource failed: token=raw-secret status=502"
+        />
+      );
+
+      const status = screen.getByTestId('agent-tasks__sse-status');
+      expect(status).toHaveTextContent('Realtime task stream unavailable');
+      expect(status).toHaveTextContent(
+        'The Agent task event stream did not open in this environment. Refresh the task before retrying.',
+      );
+      expect(status).not.toHaveTextContent('token=raw-secret');
+      expect(status).not.toHaveTextContent('EventSource failed');
     });
 
     it('shows stream-unavailable explanation when task events never open', () => {
@@ -407,7 +435,7 @@ describe('ConversationPanel', () => {
 
       const status = screen.getByTestId('agent-tasks__sse-status');
       expect(status).toHaveTextContent('Realtime task stream unavailable');
-      expect(status).toHaveTextContent('The Agent task event stream did not open in this environment. Check the task events endpoint before retrying.');
+      expect(status).toHaveTextContent('The Agent task event stream did not open in this environment. Refresh the task before retrying.');
     });
 
     it('shows stream-recovery-exhausted explanation after reconnect budget is spent', () => {
@@ -425,7 +453,28 @@ describe('ConversationPanel', () => {
       expect(status).toHaveTextContent('The task stream could not recover after multiple reconnect attempts.');
     });
 
-    it('shows task diagnostics links without exposing runner diagnostics', () => {
+    it('does not show task diagnostics links by default even when links are supplied', () => {
+      const diagnosticsLinks = {
+        audit: '/audit?result=error',
+        usage: '/usage?result=error',
+      };
+
+      render(
+        <ConversationPanel
+          messages={mockMessages}
+          onSendMessage={mockOnSendMessage}
+          connectionStatus="error"
+          connectionErrorCode="TASK_EVENTS_STREAM_UNAVAILABLE"
+          diagnosticsLinks={diagnosticsLinks}
+        />
+      );
+
+      expect(screen.queryByTestId('agent-tasks__sse-status-open-audit')).not.toBeInTheDocument();
+      expect(screen.queryByTestId('agent-tasks__sse-status-open-usage')).not.toBeInTheDocument();
+      expect(screen.queryByText(/diagnostics/i)).not.toBeInTheDocument();
+    });
+
+    it('shows task diagnostics links only when an explicit affordance is supplied', () => {
       const diagnosticsLinks = {
         audit: '/audit?result=error',
         usage: '/usage?result=error',
@@ -439,6 +488,7 @@ describe('ConversationPanel', () => {
           connectionStatus="error"
           connectionErrorCode="TASK_EVENTS_STREAM_UNAVAILABLE"
           diagnosticsLinks={diagnosticsLinks}
+          diagnosticsLinksAffordance={{ auditUsage: true }}
         />
       );
 
@@ -545,6 +595,45 @@ describe('ConversationPanel', () => {
 
       expect(screen.getByTestId('agent-tasks__conversation-empty-state')).toBeInTheDocument();
       expect(screen.queryByTestId('message-list')).not.toBeInTheDocument();
+    });
+
+    it('does not show empty-state audit or usage links without an explicit diagnostics affordance', () => {
+      render(
+        <ConversationPanel
+          messages={[]}
+          onSendMessage={mockOnSendMessage}
+          diagnosticsLinks={{
+            audit: '/audit?result=error',
+            usage: '/usage?result=error',
+          }}
+        />
+      );
+
+      expect(screen.queryByTestId('agent-tasks__conversation-empty-open-audit')).not.toBeInTheDocument();
+      expect(screen.queryByTestId('agent-tasks__conversation-empty-open-usage')).not.toBeInTheDocument();
+    });
+
+    it('shows empty-state audit and usage links when the diagnostics affordance is explicit', () => {
+      render(
+        <ConversationPanel
+          messages={[]}
+          onSendMessage={mockOnSendMessage}
+          diagnosticsLinks={{
+            audit: '/audit?result=error',
+            usage: '/usage?result=error',
+          }}
+          diagnosticsLinksAffordance={{ auditUsage: true }}
+        />
+      );
+
+      expect(screen.getByTestId('agent-tasks__conversation-empty-open-audit')).toHaveAttribute(
+        'href',
+        '/audit?result=error',
+      );
+      expect(screen.getByTestId('agent-tasks__conversation-empty-open-usage')).toHaveAttribute(
+        'href',
+        '/usage?result=error',
+      );
     });
 
     it('renders a blocked state instead of start-a-conversation cues when terminal work is blocking the task', async () => {

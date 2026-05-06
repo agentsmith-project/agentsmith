@@ -2,6 +2,23 @@ import type { components } from '../types.generated';
 
 export type AgentRunnerCapabilities = components['schemas']['AgentRunnerCapabilities'];
 export type AgentRunnerStatus = components['schemas']['AgentRunnerStatus'];
+export type AgentRunnerKind = components['schemas']['AgentRunnerKind'];
+export type AgentRunnerSource = components['schemas']['AgentRunnerSource'];
+export type AgentRunnerActionOperation = components['schemas']['AgentRunnerActionOperation'];
+export type AgentRunnerActionAffordance = components['schemas']['AgentRunnerActionAffordance'];
+export type AgentRunnerActions = components['schemas']['AgentRunnerActions'];
+export type AgentRunnerCollectionActions = components['schemas']['AgentRunnerCollectionActions'];
+export type AgentRunnerListResponse = components['schemas']['AgentRunnerListResponse'];
+export type CreateAgentRunnerRequest = components['schemas']['CreateAgentRunnerRequest'];
+export type UpdateAgentRunnerRequest = components['schemas']['UpdateAgentRunnerRequest'];
+export type AgentRunnerKeyListResponse = components['schemas']['AgentRunnerKeyListResponse'];
+export type AgentRunnerTestConnectionRequest = components['schemas']['AgentRunnerTestConnectionRequest'];
+export type AgentRunnerTestConnectionResponse = components['schemas']['AgentRunnerTestConnectionResponse'];
+export type AgentRunnerTestConnectionCleanup = components['schemas']['AgentRunnerTestConnectionCleanup'];
+export type AgentRunnerKeyExpiryCleanup = components['schemas']['AgentRunnerKeyExpiryCleanup'];
+export type AgentRunnerTestTaskRunRequest = components['schemas']['AgentRunnerTestTaskRunRequest'];
+export type AgentRunnerTestTaskRunAcceptedResponse = components['schemas']['AgentRunnerTestTaskRunAcceptedResponse'];
+export type AgentRunnerTestTaskRunUnavailableResponse = components['schemas']['AgentRunnerTestTaskRunUnavailableResponse'];
 
 export type AgentDiagnostics = components['schemas']['AgentRunnerDiagnostics'] & {
   last_error?: string;

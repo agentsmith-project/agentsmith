@@ -63,58 +63,57 @@ Do not use this contract to rename machine-readable API fields, OpenAPI tags, ba
 10. `Agent Runners`
 - Developer/governance surface for task execution capability.
 - Canonical route: `.../agent-runners`
-- It configures task execution capability and is not a user execution entrypoint.
+- It shows the deployment default managed runner as read-only status and manages Developer runners.
+- Managed runner configuration is deployment/system-side, not a frontend/project setting.
+- It is not a user execution entrypoint.
 - It must not expose Chat/Notebook type selectors, external/internal choices, docker/compose/k8s runtime choices, or an ordinary runner picker.
-- The canonical layout order is Project default status, System managed section, then Developer runners section.
+- The canonical layout order is deployment default managed runner status, then Developer runners.
 
 11. `Agent Runner`
-- Project-scoped execution-capability record shown on Agent Runners.
-- Public kinds are System managed and Developer runner.
-- Ordinary Agent task runs use Project default.
-- Agent task dispatch is backend-owned and resolves the eligible default Agent Runner; in this milestone, that user-facing path is Project default and must be System managed.
-- Expert run-start UI uses the `Execution environment` label.
+- Task execution capability shown on Agent Runners.
+- Public kinds are managed runner and Developer runner.
+- Ordinary Agent task creation binds the deployment default managed runner.
+- Authorized expert task creation may bind a Developer runner.
+- Agent task dispatch is backend-owned and resolves the eligible default Agent Runner for the ordinary path; later runs use the task's immutable bound runner.
 - Ordinary task users should not have to think about this object when creating or running work.
 - Public records expose stable `kind`, source, and actions.
 
-12. `Execution environment`
-- Run-scoped expert selector label for Agent task run start.
+12. `Runner binding`
+- Expert task-creation selector for choosing the runner bound to an Agent task.
 - It is not a normal runner picker and is not shown to ordinary task users.
-- It appears only when a backend selection snapshot exposes visible `select_for_task` affordance for the run.
-- The selector includes `Project default` plus backend-visible selectable or disabled environments with reason codes.
+- It appears only when backend binding options expose visible binding affordance.
+- The selector includes the deployment default managed runner plus backend-visible Developer runners with reason codes.
 - It must not be sourced from the full Agent Runner list and must not expose secrets or full diagnostics.
-- Selector visibility comes from backend snapshot rows and affordances, not from frontend checks against Agent Runner read permission.
+- Selector visibility comes from backend binding-options rows and affordances, not from frontend checks against Agent Runner read permission.
 
 13. `UI audience`
 - Presentation context derived from backend affordances and safe response shape.
-- Current audience labels include Ordinary task user, Execution expert, Runner maintainer, and Diagnostics viewer.
+- Current audience labels include Ordinary task user, Expert task creator, Runner maintainer, and Diagnostics viewer.
 - These labels are not role names and must not be used for authorization.
 
-14. `Project default`
-- Project-level default execution environment used by ordinary Agent task runs.
-- In this milestone, Project default can only be a System managed runner.
-- Developer runners cannot become Project default.
+14. `Deployment default managed runner`
+- Deployment-level default Agent task runner used when task creation omits `bound_runner_id`.
+- There is exactly one in the current milestone.
+- It is configured outside the frontend and available across workspaces/projects.
+- Developer runners cannot become the deployment default managed runner.
 
-15. `System managed`
+15. `Managed runner`
 - Platform-managed execution environment for Agent tasks.
-- It is the only kind eligible for Project default in this milestone.
-- It is read-only in public project UI except for backend-allowed Project default actions.
-- Public project APIs cannot create System managed runners or issue/revoke connection keys for them.
+- In this milestone, the managed runner is the deployment default managed runner.
+- It is read-only in public project UI.
+- Public project APIs cannot create, edit, delete, set default for, or issue/revoke connection keys for managed runners.
 
-16. `Managed runner`
-- Engineering/deployment term for managed Agent task execution.
-- Product UI should prefer `System managed` for the Agent Runners section/kind label in this milestone.
-- This term remains available for deployment truth, evidence, and provider naming where existing gates require it.
-
-17. `Developer runner`
+16. `Developer runner`
 - Developer-mode testing object for connecting a local runner and validating capability with Test connection and a runner test task.
 - It may appear in Agent Runners only when development/local capability is enabled by backend affordance.
-- It is not a formal deployment runtime, cannot become Project default, and cannot be used as managed release proof.
+- It can be explicitly bound to a task at creation by authorized expert users.
+- It is not a formal deployment runtime, cannot become the deployment default managed runner, and cannot be used as managed release proof.
 
-18. `Developer mode`
+17. `Developer mode`
 - Local runner debugging/testing entrypoint.
 - It is not a formal deployment runtime, not a product configuration mode, and not a replacement for managed runner execution.
 
-19. `Endpoints`
+18. `Endpoints`
 - Governed model capability configuration for a project.
 - Scope: provider/model/policy/secret binding.
 
@@ -172,8 +171,8 @@ Do not use this contract to rename machine-readable API fields, OpenAPI tags, ba
 - Agent task-scoped terminal execution session.
 - Scope: many `Terminal sessions` may exist under one task.
 - They share the same task workspace and task-scoped home; they are not isolated sandboxes.
-- Session creation resolves an execution environment once and persists `resolved_runner_id`; reconnect/input/resize/close reuse the session runner.
-- A terminal can belong to an active run/test run or be a standalone task terminal created from Project default.
+- Session creation uses the task's bound runner and persists `resolved_runner_id`; reconnect/input/resize/close reuse the session runner.
+- A terminal can belong to an active run/test run or be a standalone task terminal created from the task's bound runner.
 - Product-facing terminal UX must describe session lifecycle truth, not treat terminal as a generic floating panel.
 
 ## 2. Removed or restricted product-facing terms

@@ -213,6 +213,22 @@ describe('matchProjectsRoute', () => {
       agentId: 'ag_1',
       keyId: 'key_1',
     });
+    expect(
+      matchProjectsRoute('/api/v1/workspaces/ws_default/projects/proj_1/agent-runners/ag_1/test-connection'),
+    ).toEqual({
+      kind: 'agentTestConnection',
+      workspaceId: 'ws_default',
+      projectId: 'proj_1',
+      agentId: 'ag_1',
+    });
+    expect(
+      matchProjectsRoute('/api/v1/workspaces/ws_default/projects/proj_1/agent-runners/ag_1/test-task-runs'),
+    ).toEqual({
+      kind: 'agentTestTaskRuns',
+      workspaceId: 'ws_default',
+      projectId: 'proj_1',
+      agentId: 'ag_1',
+    });
 
     expect(matchProjectsRoute('/api/v1/workspaces/ws_default/projects/proj_1/agents')).toBeNull();
     expect(matchProjectsRoute('/api/v1/workspaces/ws_default/projects/proj_1/agents/ag_1')).toBeNull();
@@ -628,6 +644,18 @@ describe('matchProjectsRoute', () => {
       projectId: 'proj_1',
       taskId: 'task_1',
     });
+
+    expect(
+      matchProjectsRoute('/api/v1/workspaces/ws_default/projects/proj_1/tasks/runner-binding-options'),
+    ).toEqual({
+      kind: 'taskRunnerBindingOptions',
+      workspaceId: 'ws_default',
+      projectId: 'proj_1',
+    });
+
+    expect(
+      matchProjectsRoute('/api/v1/workspaces/ws_default/projects/proj_1/tasks/task_1/run-selection-snapshot?selected_agent_runner_id=ag_1'),
+    ).toBeNull();
 
     expect(
       matchProjectsRoute('/api/v1/workspaces/ws_default/projects/proj_1/tasks/task_1/messages'),

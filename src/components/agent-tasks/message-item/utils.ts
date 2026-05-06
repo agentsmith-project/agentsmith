@@ -46,6 +46,78 @@ function isVisibleExecutionStep(
   return !isReasoningStep(step);
 }
 
+function isRawishTraceEvent(evt: TaskTraceEvent): boolean {
+  return (
+    evt.name === "codex.command" ||
+    evt.name === "codex.tool" ||
+    evt.category === "debug" ||
+    evt.category === "error" ||
+    evt.status === "error" ||
+    /raw|diagnostic|permission|reason_code|secret|token/i.test(evt.name)
+  );
+}
+
+function isSafeBasename(value: string): boolean {
+  if (value === "." || value === "..") return false;
+  if (value.includes("/") || value.includes("\\")) return false;
+  return /^[A-Za-z0-9][A-Za-z0-9._ -]{0,127}$/.test(value);
+}
+
+function readSafeArtifactFilename(details?: Record<string, unknown>): string | null {
+  const filename =
+    typeof details?.filename === "string" ? details.filename.trim() : "";
+  return filename && isSafeBasename(filename) ? filename : null;
+}
+
+function containsUnsafeTraceText(value: string): boolean {
+  return /token|secret|required_permissions|reason_code|raw event|raw diagnostics|diagnostic_entrypoint|authorization|api[_-]?key|\/internal\//i.test(value);
+}
+
+function readSafeTraceSummary(evt: TaskTraceEvent): string | null {
+  const summary = evt.summary.trim();
+  return summary && !containsUnsafeTraceText(summary) ? summary : null;
+}
+
+function genericTraceDetail(evt: TaskTraceEvent): string {
+  if (evt.category === "error" || evt.status === "error") return "process_stage_failed";
+  if (evt.category === "tool") return "process_stage_exploring";
+  if (evt.category === "artifact") return "process_stage_workspace_diagnostics";
+  if (evt.category === "debug") return "process_stage_preparing";
+  return "process_stage_preparing";
+}
+
+function formatCommandTraceDetail(evt: TaskTraceEvent): string {
+  if (evt.status === "error") return `Command failed #${evt.seq}`;
+  if (evt.status === "success" || evt.phase === "end")
+    return `Command completed #${evt.seq}`;
+  return `Running command #${evt.seq}`;
+}
+
+function formatToolTraceDetail(evt: TaskTraceEvent): string {
+  if (evt.status === "error") return `Tool failed #${evt.seq}`;
+  if (evt.status === "success" || evt.phase === "end")
+    return `Tool completed #${evt.seq}`;
+  return `Using tool #${evt.seq}`;
+}
+
+export function formatDisplaySafeTraceDetail(evt: TaskTraceEvent): string {
+  if (evt.name === "codex.command") return formatCommandTraceDetail(evt);
+  if (evt.name === "codex.tool") return formatToolTraceDetail(evt);
+  if (evt.name === "runner.artifact") {
+    return readSafeArtifactFilename(evt.details) ?? "process_stage_runner_output";
+  }
+  if (evt.name === "workspace.files_changed") {
+    return summarizeFileChanges(evt.details) ?? "process_stage_workspace_diagnostics";
+  }
+  if (evt.name === "codex.output") return "process_writing_final_answer";
+  if (evt.category === "error" || evt.status === "error") return "process_stage_failed";
+  if (evt.category === "debug") return "process_stage_preparing";
+  if (evt.category === "tool") return isRawishTraceEvent(evt) ? "process_stage_exploring" : (readSafeTraceSummary(evt) ?? "process_stage_exploring");
+  if (evt.category === "artifact") return readSafeTraceSummary(evt) ?? "process_stage_workspace_diagnostics";
+  if (isRawishTraceEvent(evt)) return "process_stage_preparing";
+  return readSafeTraceSummary(evt) ?? genericTraceDetail(evt);
+}
+
 export function getTransportTraceMeta(
   evt: TaskTraceEvent,
 ): { kind: TransportTraceKind; phase: TransportTracePhase } | null {
@@ -292,7 +364,10 @@ export function summarizeTraceEvents(
       : {}),
     stepCount: Math.max(1, stepEvents.length || sorted.length),
     currentStep:
-      runLifecycleEvent?.summary ?? sorted[sorted.length - 1]?.summary,
+      (runLifecycleEvent ? formatDisplaySafeTraceDetail(runLifecycleEvent) : undefined) ??
+      (sorted[sorted.length - 1]
+        ? formatDisplaySafeTraceDetail(sorted[sorted.length - 1]!)
+        : undefined),
     ...(typeof durationMs === "number" ? { durationMs } : {}),
   };
 }
@@ -398,19 +473,7 @@ export function formatDuration(ms?: number): string {
 }
 
 export function formatTraceEventTitle(evt: TaskTraceEvent): string {
-  if (
-    evt.name === "codex.command" &&
-    typeof evt.details?.command === "string" &&
-    evt.details.command
-  )
-    return evt.details.command;
-  if (
-    evt.name === "codex.tool" &&
-    typeof evt.details?.tool_name === "string" &&
-    evt.details.tool_name
-  )
-    return `tool: ${evt.details.tool_name}`;
-  return evt.summary || evt.name;
+  return formatDisplaySafeTraceDetail(evt);
 }
 
 function getLifecyclePhaseTitle(phase: unknown): string {
@@ -430,11 +493,15 @@ function getLifecyclePhaseTitle(phase: unknown): string {
 function summarizeFileChanges(
   details?: Record<string, unknown>,
 ): string | null {
-  const added = Array.isArray(details?.added) ? details.added.length : 0;
-  const modified = Array.isArray(details?.modified)
-    ? details.modified.length
-    : 0;
-  const deleted = Array.isArray(details?.deleted) ? details.deleted.length : 0;
+  const count = (items: unknown, countValue: unknown) => {
+    if (Array.isArray(items)) return items.length;
+    return typeof countValue === "number" && Number.isFinite(countValue)
+      ? Math.max(0, Math.trunc(countValue))
+      : 0;
+  };
+  const added = count(details?.added, details?.added_count);
+  const modified = count(details?.modified, details?.modified_count);
+  const deleted = count(details?.deleted, details?.deleted_count);
   if (added || modified || deleted) {
     return `${added} added · ${modified} modified · ${deleted} deleted`;
   }
@@ -448,15 +515,10 @@ function mapTraceStep(step: TraceStep): RenderableExecutionStep | null {
     return null;
 
   if (step.name === "codex.command") {
-    const command =
-      typeof latestEvent.details?.command === "string" &&
-      latestEvent.details.command.trim().length > 0
-        ? latestEvent.details.command.trim()
-        : formatTraceEventTitle(latestEvent);
     return {
       key: step.key,
       title: "process_stage_running_command",
-      detail: normalizeStepDetail(command),
+      detail: formatTraceEventTitle(latestEvent),
       status: step.status,
       at: latestEvent.at,
       traceNames: step.events.map((event) => event.name),
@@ -464,15 +526,10 @@ function mapTraceStep(step: TraceStep): RenderableExecutionStep | null {
   }
 
   if (step.name === "codex.tool") {
-    const toolName =
-      typeof latestEvent.details?.tool_name === "string" &&
-      latestEvent.details.tool_name.trim().length > 0
-        ? latestEvent.details.tool_name.trim()
-        : latestEvent.summary;
     return {
       key: step.key,
       title: "process_stage_using_tool",
-      detail: normalizeStepDetail(toolName),
+      detail: formatTraceEventTitle(latestEvent),
       status: step.status,
       at: latestEvent.at,
       traceNames: step.events.map((event) => event.name),
@@ -484,7 +541,8 @@ function mapTraceStep(step: TraceStep): RenderableExecutionStep | null {
       key: step.key,
       title: "process_stage_workspace_diagnostics",
       detail: normalizeStepDetail(
-        summarizeFileChanges(latestEvent.details) ?? latestEvent.summary,
+        summarizeFileChanges(latestEvent.details) ??
+          "process_stage_workspace_diagnostics",
       ),
       status: step.status,
       at: latestEvent.at,
@@ -493,15 +551,10 @@ function mapTraceStep(step: TraceStep): RenderableExecutionStep | null {
   }
 
   if (step.name === "runner.artifact") {
-    const filename =
-      typeof latestEvent.details?.filename === "string" &&
-      latestEvent.details.filename.trim().length > 0
-        ? latestEvent.details.filename.trim()
-        : latestEvent.summary;
     return {
       key: step.key,
       title: "process_stage_runner_output",
-      detail: normalizeStepDetail(filename),
+      detail: formatTraceEventTitle(latestEvent),
       status: step.status,
       at: latestEvent.at,
       traceNames: step.events.map((event) => event.name),
@@ -513,7 +566,7 @@ function mapTraceStep(step: TraceStep): RenderableExecutionStep | null {
       key: step.key,
       title: "process_stage_preparing_response",
       detail:
-        normalizeStepDetail(latestEvent.summary) ||
+        readSafeTraceSummary(latestEvent) ||
         "process_writing_final_answer",
       status: step.status,
       at: latestEvent.at,
@@ -525,7 +578,7 @@ function mapTraceStep(step: TraceStep): RenderableExecutionStep | null {
     return {
       key: step.key,
       title: "process_stage_failed",
-      detail: normalizeStepDetail(latestEvent.summary),
+      detail: formatDisplaySafeTraceDetail(latestEvent),
       status: "error",
       at: latestEvent.at,
       traceNames: step.events.map((event) => event.name),
@@ -536,7 +589,7 @@ function mapTraceStep(step: TraceStep): RenderableExecutionStep | null {
     return {
       key: step.key,
       title: "process_stage_workspace_diagnostics",
-      detail: normalizeStepDetail(latestEvent.summary),
+      detail: formatDisplaySafeTraceDetail(latestEvent),
       status: step.status,
       at: latestEvent.at,
       traceNames: step.events.map((event) => event.name),
@@ -547,7 +600,7 @@ function mapTraceStep(step: TraceStep): RenderableExecutionStep | null {
     return {
       key: step.key,
       title: "process_stage_exploring",
-      detail: normalizeStepDetail(latestEvent.summary),
+      detail: formatDisplaySafeTraceDetail(latestEvent),
       status: step.status,
       at: latestEvent.at,
       traceNames: step.events.map((event) => event.name),
@@ -557,7 +610,7 @@ function mapTraceStep(step: TraceStep): RenderableExecutionStep | null {
   return {
     key: step.key,
     title: "process_stage_preparing",
-    detail: latestEvent.summary,
+    detail: formatDisplaySafeTraceDetail(latestEvent),
     status: step.status,
     at: latestEvent.at,
     traceNames: step.events.map((event) => event.name),
@@ -684,7 +737,7 @@ export function buildRenderableExecution(args: {
       steps.push({
         key: `${lifecycleEvent.id}:lifecycle`,
         title: getLifecyclePhaseTitle(lifecycleEvent.details?.run_phase),
-        detail: normalizeStepDetail(lifecycleEvent.summary),
+        detail: formatDisplaySafeTraceDetail(lifecycleEvent),
         status: "running",
         at: lifecycleEvent.at,
         traceNames: [lifecycleEvent.name],

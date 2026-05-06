@@ -7,10 +7,14 @@
 import type {
   AgentDiagnostics,
   AgentRunner,
+  AgentRunnerListResponse,
   AgentRunnerServiceKey,
+  AgentRunnerTestConnectionRequest,
+  AgentRunnerTestConnectionResponse,
+  AgentRunnerTestTaskRunAcceptedResponse,
+  AgentRunnerTestTaskRunRequest,
   CreateAgentRunnerKeyResponse,
   PaginationParams,
-  PaginatedResponse,
 } from '../types';
 import type { ApiClient } from '../client';
 import type { components } from '../types.generated';
@@ -28,7 +32,7 @@ export class AgentRunnerAPI {
   /**
    * List Agent Runners in a project
    */
-  async list(workspaceId: string, projectId: string, params?: PaginationParams): Promise<PaginatedResponse<AgentRunner>> {
+  async list(workspaceId: string, projectId: string, params?: PaginationParams): Promise<AgentRunnerListResponse> {
     const searchParams = new URLSearchParams();
     if (params?.page) searchParams.set('page', params.page.toString());
     if (params?.page_size) searchParams.set('page_size', params.page_size.toString());
@@ -36,7 +40,7 @@ export class AgentRunnerAPI {
     if (params?.sort_order) searchParams.set('sort_order', params.sort_order);
 
     const query = searchParams.toString();
-    return this.client.get<PaginatedResponse<AgentRunner>>(
+    return this.client.get<AgentRunnerListResponse>(
       `${agentRunnersPath(workspaceId, projectId)}${query ? `?${query}` : ''}`
     );
   }
@@ -69,6 +73,30 @@ export class AgentRunnerAPI {
   ): Promise<{ ws_url: string; agent_runner_id: string; protocol_version: string; heartbeat_interval_sec: number }> {
     return this.client.get(
       `${agentRunnersPath(workspaceId, projectId)}/${runnerId}/connection-info`,
+    );
+  }
+
+  async testConnection(
+    workspaceId: string,
+    projectId: string,
+    runnerId: string,
+    data: AgentRunnerTestConnectionRequest = {},
+  ): Promise<AgentRunnerTestConnectionResponse> {
+    return this.client.post<AgentRunnerTestConnectionResponse>(
+      `${agentRunnersPath(workspaceId, projectId)}/${runnerId}/test-connection`,
+      data,
+    );
+  }
+
+  async createTestTaskRun(
+    workspaceId: string,
+    projectId: string,
+    runnerId: string,
+    data: AgentRunnerTestTaskRunRequest = {},
+  ): Promise<AgentRunnerTestTaskRunAcceptedResponse> {
+    return this.client.post<AgentRunnerTestTaskRunAcceptedResponse>(
+      `${agentRunnersPath(workspaceId, projectId)}/${runnerId}/test-task-runs`,
+      data,
     );
   }
 

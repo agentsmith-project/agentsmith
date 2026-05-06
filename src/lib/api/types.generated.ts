@@ -448,6 +448,48 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/workspaces/{workspaceId}/projects/{projectId}/agent-runners/{agentRunnerId}/test-connection": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                agentRunnerId: components["parameters"]["agentRunnerId"];
+                projectId: components["parameters"]["projectId"];
+                workspaceId: components["parameters"]["workspaceId"];
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Test Developer runner connection freshness */
+        post: operations["testAgentRunnerConnection"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/workspaces/{workspaceId}/projects/{projectId}/agent-runners/{agentRunnerId}/test-task-runs": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                agentRunnerId: components["parameters"]["agentRunnerId"];
+                projectId: components["parameters"]["projectId"];
+                workspaceId: components["parameters"]["workspaceId"];
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Start a dedicated Developer runner test task run */
+        post: operations["createAgentRunnerTestTaskRun"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/workspaces/{workspaceId}/projects/{projectId}/alert-notifications": {
         parameters: {
             query?: never;
@@ -1971,7 +2013,7 @@ export interface paths {
         put?: never;
         /**
          * Create an agent task
-         * @description Creates an agent task without requiring runner selection fields. Task runs resolve the project default managed agent runner at execution time.
+         * @description Creates an agent task and binds its runner at creation time. Omitting bound_runner_id uses the default managed runner.
          */
         post: operations["createTask"];
         delete?: never;
@@ -2286,6 +2328,29 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/workspaces/{workspaceId}/projects/{projectId}/tasks/runner-binding-options": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                projectId: string;
+                workspaceId: string;
+            };
+            cookie?: never;
+        };
+        /**
+         * Get display-safe task runner binding options
+         * @description Returns display-safe task runner binding options for task creation. Final authorization, readiness, endpoint, and capability checks are recomputed on CreateTask.
+         */
+        get: operations["getTaskRunnerBindingOptions"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/workspaces/{workspaceId}/projects/{projectId}/usage": {
         parameters: {
             query?: never;
@@ -2394,8 +2459,9 @@ export interface paths {
 export type webhooks = Record<string, never>;
 export interface components {
     schemas: {
-        /** @description Public Agent Runner resource. Legacy fields `mode`, `runner_runtime`, `interaction_kind`, and external/internal runner selectors are not accepted in request payloads. */
+        /** @description Public Agent Runner resource. Public lifecycle mutations are Developer-runner only; System managed runners are read-only in project APIs. */
         AgentRunner: {
+            actions: components["schemas"]["AgentRunnerActions"];
             capabilities: components["schemas"]["AgentRunnerCapabilities"];
             /** Format: date-time */
             created_at: string;
@@ -2405,11 +2471,39 @@ export interface components {
             diagnostics: components["schemas"]["AgentRunnerDiagnostics"];
             id: string;
             is_default: boolean;
+            kind: components["schemas"]["AgentRunnerKind"];
             name: string;
             project_id: string;
+            /** @description Display metadata only. Backend action affordances remain the source of truth for actions. */
+            read_only: boolean;
+            source: components["schemas"]["AgentRunnerSource"];
             status: components["schemas"]["AgentRunnerStatus"];
             /** Format: date-time */
             updated_at: string;
+        };
+        AgentRunnerActionAffordance: {
+            allowed: boolean;
+            danger_level: components["schemas"]["AgentRunnerActionDangerLevel"];
+            operation: components["schemas"]["AgentRunnerActionOperation"];
+            reason_code?: string;
+            required_permissions: string[];
+            visible: boolean;
+        };
+        /** @enum {string} */
+        AgentRunnerActionDangerLevel: "none" | "medium" | "high";
+        /** @enum {string} */
+        AgentRunnerActionOperation: "set_project_default" | "bind_to_task" | "run_test_task" | "edit" | "disable" | "delete" | "issue_connection_key" | "revoke_connection_key" | "test_connection" | "view_diagnostics" | "create_developer_runner";
+        AgentRunnerActions: {
+            bind_to_task: components["schemas"]["AgentRunnerActionAffordance"];
+            delete: components["schemas"]["AgentRunnerActionAffordance"];
+            disable: components["schemas"]["AgentRunnerActionAffordance"];
+            edit: components["schemas"]["AgentRunnerActionAffordance"];
+            issue_connection_key: components["schemas"]["AgentRunnerActionAffordance"];
+            revoke_connection_key: components["schemas"]["AgentRunnerActionAffordance"];
+            run_test_task: components["schemas"]["AgentRunnerActionAffordance"];
+            set_project_default: components["schemas"]["AgentRunnerActionAffordance"];
+            test_connection: components["schemas"]["AgentRunnerActionAffordance"];
+            view_diagnostics: components["schemas"]["AgentRunnerActionAffordance"];
         };
         AgentRunnerCapabilities: {
             accepted_mime_types?: string[];
@@ -2425,6 +2519,26 @@ export interface components {
         } & {
             [key: string]: unknown;
         };
+        AgentRunnerCollectionActions: {
+            create_developer_runner: components["schemas"]["AgentRunnerActionAffordance"];
+        };
+        AgentRunnerConnectionError: {
+            /** @enum {string} */
+            code: "agent_runner_disconnected" | "agent_runner_stale";
+            message: string;
+        };
+        AgentRunnerConnectionFreshness: {
+            active_connection_count: number;
+            /** Format: date-time */
+            connected_at?: string;
+            /** Format: date-time */
+            last_pong_at?: string;
+            /** Format: date-time */
+            last_seen_at?: string;
+            state: components["schemas"]["AgentRunnerConnectionFreshnessState"];
+        };
+        /** @enum {string} */
+        AgentRunnerConnectionFreshnessState: "fresh" | "missing" | "stale";
         AgentRunnerDiagnostics: {
             /** @enum {string} */
             presence?: "online" | "offline" | "managed";
@@ -2434,13 +2548,37 @@ export interface components {
         AgentRunnerKey: {
             agent_runner_id: string;
             /** Format: date-time */
-            created_at?: string;
+            created_at: string;
+            /** Format: date-time */
+            expires_at?: string;
             id: string;
             key_prefix: string;
+            /** Format: date-time */
+            last_used_at?: string;
             /** @enum {string} */
-            status: "active" | "revoked";
+            status: "active" | "revoked" | "expired";
         };
+        AgentRunnerKeyExpiryCleanup: {
+            agent_runner_id: string;
+            /** @enum {string} */
+            cleanup_result: "marked_expired";
+            disconnected: boolean;
+            /** Format: date-time */
+            expires_at?: string;
+            key_id: string;
+            /** @description Redacted connection key prefix only; raw keys and hashes are never public. */
+            key_prefix: string;
+            project_id: string;
+            workspace_id: string;
+        };
+        AgentRunnerKeyListResponse: {
+            items: components["schemas"]["AgentRunnerKey"][];
+            total: number;
+        };
+        /** @enum {string} */
+        AgentRunnerKind: "system_managed" | "developer";
         AgentRunnerListResponse: {
+            actions: components["schemas"]["AgentRunnerCollectionActions"];
             has_more?: boolean;
             items: components["schemas"]["AgentRunner"][];
             page: number;
@@ -2449,12 +2587,58 @@ export interface components {
         };
         AgentRunnerResolutionError: {
             /** @enum {string} */
-            error_code: "agent_runner_unavailable" | "agent_runner_model_unconfigured" | "agent_runner_capability_mismatch" | "agent_runner_default_conflict" | "agent_runner_selection_required" | "agent_runner_selection_ambiguous";
+            error_code: "agent_runner_unavailable" | "agent_runner_model_unconfigured" | "agent_runner_capability_mismatch" | "agent_runner_default_conflict";
             /** @enum {string} */
-            message: "agent_runner_unavailable" | "agent_runner_model_unconfigured" | "agent_runner_capability_mismatch" | "agent_runner_default_conflict" | "agent_runner_selection_required" | "agent_runner_selection_ambiguous";
+            message: "agent_runner_unavailable" | "agent_runner_model_unconfigured" | "agent_runner_capability_mismatch" | "agent_runner_default_conflict";
         };
         /** @enum {string} */
+        AgentRunnerSource: "system" | "developer";
+        /** @enum {string} */
         AgentRunnerStatus: "draft" | "connected" | "ready" | "degraded" | "offline";
+        AgentRunnerTestConnectionCleanup: {
+            key_expiry?: components["schemas"]["AgentRunnerKeyExpiryCleanup"];
+        };
+        AgentRunnerTestConnectionRequest: {
+            /** @description Bounded caller wait budget for the backend connection probe. */
+            timeout_ms?: number;
+        };
+        AgentRunnerTestConnectionResponse: {
+            agent_runner_id: string;
+            capabilities: components["schemas"]["AgentRunnerCapabilities"];
+            /** Format: date-time */
+            checked_at: string;
+            cleanup?: components["schemas"]["AgentRunnerTestConnectionCleanup"];
+            errors: components["schemas"]["AgentRunnerConnectionError"][];
+            freshness: components["schemas"]["AgentRunnerConnectionFreshness"];
+            status: components["schemas"]["AgentRunnerTestConnectionStatus"];
+            timeout_ms: number;
+        };
+        /** @enum {string} */
+        AgentRunnerTestConnectionStatus: "connected" | "disconnected" | "stale";
+        AgentRunnerTestTaskRunAcceptedResponse: {
+            resolved_runner_id: string;
+            run_id: string;
+            /** @enum {boolean} */
+            runner_test: true;
+            /** @enum {string} */
+            status: "accepted";
+            task_id: string;
+        };
+        AgentRunnerTestTaskRunRequest: {
+            /** @description Optional display intent for a future runner test task dispatch. */
+            intent?: string;
+        };
+        /** @enum {string} */
+        AgentRunnerTestTaskRunUnavailableErrorCode: "agent_runner_disconnected" | "agent_runner_stale" | "agent_runner_capability_mismatch" | "agent_runner_test_task_unavailable";
+        AgentRunnerTestTaskRunUnavailableResponse: {
+            error_code: components["schemas"]["AgentRunnerTestTaskRunUnavailableErrorCode"];
+            message: string;
+            resolved_runner_id: string;
+            /** @enum {boolean} */
+            runner_test: true;
+            /** @enum {string} */
+            status: "not_started";
+        };
         /** @description Alert behavior settings */
         AlertBehavior: {
             /** @description Minimum time between alerts */
@@ -2604,7 +2788,7 @@ export interface components {
              * @description Machine-readable error code
              * @enum {string}
              */
-            error_code: "UNAUTHORIZED" | "PERMISSION_DENIED" | "RESOURCE_NOT_FOUND" | "RESOURCE_ALREADY_EXISTS" | "RESOURCE_CONFLICT" | "VALIDATION_ERROR" | "FORBIDDEN" | "RATE_LIMIT_EXCEEDED" | "SPENDING_LIMIT_EXCEEDED" | "AGENT_OFFLINE" | "unsupported_field" | "agent_runner_unavailable" | "agent_runner_model_unconfigured" | "agent_runner_capability_mismatch" | "agent_runner_default_conflict" | "agent_runner_selection_required" | "agent_runner_selection_ambiguous" | "INTERNAL_ERROR";
+            error_code: "UNAUTHORIZED" | "PERMISSION_DENIED" | "RESOURCE_NOT_FOUND" | "RESOURCE_ALREADY_EXISTS" | "RESOURCE_CONFLICT" | "VALIDATION_ERROR" | "FORBIDDEN" | "RATE_LIMIT_EXCEEDED" | "SPENDING_LIMIT_EXCEEDED" | "AGENT_OFFLINE" | "unsupported_field" | "agent_runner_unavailable" | "agent_runner_model_unconfigured" | "agent_runner_capability_mismatch" | "agent_runner_default_conflict" | "INTERNAL_ERROR";
             /** @description Human-readable error message */
             message: string;
             /** @description Unique identifier for the request (for debugging) */
@@ -2808,19 +2992,23 @@ export interface components {
         };
         CreateAgentRunnerKeyResponse: {
             agent_runner_id: string;
+            /** Format: date-time */
+            created_at: string;
+            /** Format: date-time */
+            expires_at: string;
             id: string;
             /** @description Displayed only once */
-            key?: string;
+            key: string;
             key_prefix: string;
+            /** @enum {string} */
+            status: "active";
         };
+        /** @description Creates a Developer runner. System managed runners and default/endpoint/status/capability/diagnostic fields are not accepted by public create. */
         CreateAgentRunnerRequest: {
-            capabilities?: components["schemas"]["AgentRunnerCapabilities"];
-            default_endpoint_id?: string;
             description?: string;
-            diagnostics?: components["schemas"]["AgentRunnerDiagnostics"];
-            is_default?: boolean;
+            /** @enum {string} */
+            kind?: "developer";
             name: string;
-            status?: components["schemas"]["AgentRunnerStatus"];
         };
         CreateChatMessageRequest: {
             content: string | unknown[];
@@ -2883,10 +3071,11 @@ export interface components {
             visibility?: "public" | "private";
         };
         CreateTaskRequest: {
+            bound_runner_id?: string;
             /** @deprecated */
             initial_inputs?: components["schemas"]["TaskInputRefInput"][];
             input_refs?: components["schemas"]["TaskInputRefInput"][];
-            /** @description Initial user prompt. The task runner is resolved when a run starts. */
+            /** @description Initial user prompt. */
             prompt?: string;
             title: string;
             workspace_file_library_id?: string;
@@ -3002,6 +3191,17 @@ export interface components {
         };
         /** @enum {string} */
         HardTeardownDebtStatus: "pending" | "requested" | "failed";
+        InvalidBindingTargetError: {
+            details?: {
+                [key: string]: unknown;
+            };
+            /** @enum {string} */
+            error_code: "invalid_binding_target";
+            /** @enum {string} */
+            field: "bound_runner_id";
+            /** @enum {string} */
+            message: "invalid_binding_target";
+        };
         LimitCheckRequest: {
             /** @description Estimated tokens/bytes for the operation */
             estimated_cost?: number;
@@ -3316,6 +3516,11 @@ export interface components {
             active_run_started_at?: string;
             agent_presence?: components["schemas"]["TaskAgentPresence"];
             attached_inputs: components["schemas"]["TaskInputRef"][];
+            /** Format: date-time */
+            bound_at?: string;
+            bound_by_user_id?: string;
+            bound_runner_id?: string;
+            bound_runner_kind?: components["schemas"]["TaskRunnerBindingKind"];
             can_escalate?: boolean;
             /** Format: date-time */
             created_at: string;
@@ -3330,6 +3535,14 @@ export interface components {
             project_id: string;
             prompt?: string;
             run_state?: components["schemas"]["TaskRunState"];
+            runner_binding_source?: components["schemas"]["TaskRunnerBindingSource"];
+            /** @enum {boolean} */
+            runner_test?: true;
+            /**
+             * @description Present when the task was created by the dedicated Developer runner test-task endpoint.
+             * @enum {string}
+             */
+            source?: "runner_test";
             stats?: components["schemas"]["TaskStats"];
             /** @enum {string} */
             status: "active" | "archived";
@@ -3353,6 +3566,13 @@ export interface components {
             /** @enum {string} */
             kind: "user_intent" | "runner_output";
             run_id?: string;
+            /** @enum {boolean} */
+            runner_test?: true;
+            /**
+             * @description Present when this activity item belongs to a dedicated Developer runner test task.
+             * @enum {string}
+             */
+            source?: "runner_test";
             task_id: string;
         };
         /** @enum {string} */
@@ -3412,6 +3632,47 @@ export interface components {
         } & {
             [key: string]: unknown;
         };
+        TaskRunnerBindingAction: {
+            allowed: boolean;
+            /** @enum {string} */
+            danger_level: "none";
+            /** @enum {string} */
+            operation: "bind_to_task";
+            reason_code?: components["schemas"]["TaskRunnerBindingReasonCode"];
+            required_permissions: string[];
+            visible: boolean;
+        };
+        /** @enum {string} */
+        TaskRunnerBindingKind: "managed" | "developer";
+        TaskRunnerBindingOption: {
+            actions: {
+                bind_to_task: components["schemas"]["TaskRunnerBindingAction"];
+            };
+            agent_runner_id?: string;
+            bound_runner_kind: components["schemas"]["TaskRunnerBindingKind"];
+            capability: components["schemas"]["TaskRunnerBindingSummary"];
+            disabled_reason_code?: components["schemas"]["TaskRunnerBindingReasonCode"];
+            freshness?: components["schemas"]["TaskRunnerBindingSummary"];
+            label: string;
+            option_id: string;
+            readiness: components["schemas"]["TaskRunnerBindingSummary"];
+            runner_binding_source: components["schemas"]["TaskRunnerBindingSource"];
+        };
+        TaskRunnerBindingOptionsResponse: {
+            /** Format: date-time */
+            generated_at: string;
+            options: components["schemas"]["TaskRunnerBindingOption"][];
+        };
+        /** @enum {string} */
+        TaskRunnerBindingReasonCode: "agent_runner_unavailable" | "agent_runner_model_unconfigured" | "agent_runner_capability_mismatch" | "agent_runner_default_conflict" | "permission_denied" | "agent_runner_disconnected" | "agent_runner_stale";
+        /** @enum {string} */
+        TaskRunnerBindingSource: "default_managed" | "explicit";
+        TaskRunnerBindingSummary: {
+            reason_code?: components["schemas"]["TaskRunnerBindingReasonCode"];
+            state: string;
+            /** @description Display-safe status key or short summary. It never contains raw diagnostics or provider configuration. */
+            summary: string;
+        };
         /** @enum {string} */
         TaskRunState: "running" | "cancelling" | "terminating" | "finalizing" | "idle";
         TaskRunSummary: {
@@ -3420,6 +3681,13 @@ export interface components {
             id: string;
             /** @description Resolved agent runner id used for this run. */
             runner_id: string;
+            /** @enum {boolean} */
+            runner_test?: true;
+            /**
+             * @description Present when this run belongs to a dedicated Developer runner test task.
+             * @enum {string}
+             */
+            source?: "runner_test";
             /** Format: date-time */
             started_at?: string;
             /** @enum {string} */
@@ -3495,17 +3763,14 @@ export interface components {
         UnsupportedFieldError: {
             /** @enum {string} */
             error_code: "unsupported_field";
-            fields: ("mode" | "runner_runtime" | "interaction_kind" | "type" | "execution_preferences" | "execution_preferences_json" | "agent_id" | "agent_name" | "runner_id")[];
+            fields: string[];
             /** @enum {string} */
             message: "unsupported_field";
         };
+        /** @description Updates Developer runner display metadata only. */
         UpdateAgentRunnerRequest: {
-            capabilities?: components["schemas"]["AgentRunnerCapabilities"];
-            default_endpoint_id?: string;
             description?: string;
-            is_default?: boolean;
             name?: string;
-            status?: components["schemas"]["AgentRunnerStatus"];
         };
         UpdateChatSessionRequest: {
             endpoint_id?: string;
@@ -4861,7 +5126,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["AgentRunnerKey"][];
+                    "application/json": components["schemas"]["AgentRunnerKeyListResponse"];
                 };
             };
         };
@@ -4910,6 +5175,96 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content?: never;
+            };
+        };
+    };
+    testAgentRunnerConnection: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                agentRunnerId: components["parameters"]["agentRunnerId"];
+                projectId: components["parameters"]["projectId"];
+                workspaceId: components["parameters"]["workspaceId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: {
+            content: {
+                "application/json": components["schemas"]["AgentRunnerTestConnectionRequest"];
+            };
+        };
+        responses: {
+            /** @description Display-safe Developer runner connection status */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AgentRunnerTestConnectionResponse"];
+                };
+            };
+            /** @description Unsupported test connection request field */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["UnsupportedFieldError"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            422: components["responses"]["BadRequest"];
+        };
+    };
+    createAgentRunnerTestTaskRun: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                agentRunnerId: components["parameters"]["agentRunnerId"];
+                projectId: components["parameters"]["projectId"];
+                workspaceId: components["parameters"]["workspaceId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: {
+            content: {
+                "application/json": components["schemas"]["AgentRunnerTestTaskRunRequest"];
+            };
+        };
+        responses: {
+            /** @description Runner test task accepted */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AgentRunnerTestTaskRunAcceptedResponse"];
+                };
+            };
+            /** @description Unsupported test task request field */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["UnsupportedFieldError"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            /** @description Runner test task failed closed before dispatch */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AgentRunnerTestTaskRunUnavailableResponse"];
+                };
             };
         };
     };
@@ -8176,13 +8531,13 @@ export interface operations {
             };
             401: components["responses"]["Unauthorized"];
             403: components["responses"]["Forbidden"];
-            /** @description Workspace or file library conflict */
+            /** @description Workspace or file library conflict, or runner binding failure */
             409: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["ApiError"];
+                    "application/json": components["schemas"]["ApiError"] | components["schemas"]["AgentRunnerResolutionError"];
                 };
             };
             /** @description Validation error */
@@ -8191,7 +8546,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["ApiError"];
+                    "application/json": components["schemas"]["ApiError"] | components["schemas"]["InvalidBindingTargetError"];
                 };
             };
         };
@@ -8649,6 +9004,31 @@ export interface operations {
                         workspace_binding_mode: "file_library";
                         workspace_dir_name: string;
                     };
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+        };
+    };
+    getTaskRunnerBindingOptions: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                projectId: string;
+                workspaceId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Display-safe task runner binding options */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TaskRunnerBindingOptionsResponse"];
                 };
             };
             401: components["responses"]["Unauthorized"];

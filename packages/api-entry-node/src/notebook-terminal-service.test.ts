@@ -160,6 +160,7 @@ async function seedSessionForServiceReload(status: 'pending' | 'active' | 'disco
     projectId: 'proj_1',
     taskId: 'task_1',
     agentId: 'agent_1',
+    resolvedRunnerId: 'agent_1',
     runnerSessionId: 'task_1',
     userId: 'user_1',
     cols: 80,
@@ -223,6 +224,7 @@ describe('NotebookTerminalService', () => {
       projectId: 'proj_1',
       taskId: 'task_1',
       agentId: 'agent_1',
+      resolvedRunnerId: 'agent_1',
       runnerSessionId: 'task_1',
       userId: 'user_1',
       cols: 120,
@@ -249,6 +251,92 @@ describe('NotebookTerminalService', () => {
     expect(ticket?.payload.terminal_session_id).toBe(created.sessionId);
   });
 
+  it('persists the resolved runner id and dispatches reconnect with the persisted runner', async () => {
+    const cache = new InMemoryCache();
+    const runtimeEvents = createControlledRuntimeStream<TerminalRuntimeEvent>();
+    const writeInput = vi.fn();
+    const resize = vi.fn();
+    const dispatchTerminalSession = vi.fn(async () => ({
+      writeInput,
+      resize,
+      close: vi.fn(),
+      stream: runtimeEvents.stream,
+    }));
+    const service = new NotebookTerminalService(cache, {
+      dispatchTerminalSession,
+    } as never);
+
+    const created = await service.createSession({
+      workspaceId: 'ws_default',
+      projectId: 'proj_1',
+      taskId: 'task_1',
+      agentId: 'legacy_agent_field',
+      resolvedRunnerId: 'runner_creation_time',
+      runnerSessionId: 'task_1',
+      userId: 'user_1',
+      cols: 120,
+      rows: 32,
+    });
+
+    await expect(service.getSession(created.sessionId)).resolves.toMatchObject({
+      id: created.sessionId,
+      agentId: 'legacy_agent_field',
+      resolvedRunnerId: 'runner_creation_time',
+    });
+
+    const session = await service.getSession(created.sessionId);
+    const ws = new FakeWebSocket();
+    await (service as unknown as {
+      bindBrowserSocket: (browserSocket: FakeWebSocket, session: NonNullable<typeof session>) => Promise<void>;
+    }).bindBrowserSocket(ws, session!);
+    emitReconnect(ws, created.sessionId);
+
+    await waitForAssertion(() => {
+      expect(dispatchTerminalSession).toHaveBeenCalledWith(expect.objectContaining({
+        agentId: 'runner_creation_time',
+        sessionId: 'task_1',
+        terminalSessionId: created.sessionId,
+      }));
+    });
+    await runtimeEvents.push({
+      type: 'started',
+      terminal_session_id: created.sessionId,
+      cols: 120,
+      rows: 32,
+    });
+    await waitForAssertion(() => {
+      expect(sentPayloads(ws)).toContainEqual(expect.objectContaining({
+        type: 'terminal.state',
+        state: 'ready',
+        input_enabled: true,
+      }));
+    });
+
+    emitBrowserMessage(ws, { type: 'terminal.stdin', data: 'pwd\n' });
+    emitBrowserMessage(ws, { type: 'terminal.resize', cols: 132, rows: 40 });
+    expect(writeInput).toHaveBeenCalledWith('pwd\n');
+    expect(resize).toHaveBeenCalledWith(132, 40);
+    expect(dispatchTerminalSession).toHaveBeenCalledTimes(1);
+  });
+
+  it('fails closed instead of using agentId when resolvedRunnerId is missing', async () => {
+    const cache = new InMemoryCache();
+    const service = new NotebookTerminalService(cache, {
+      dispatchTerminalSession: vi.fn(),
+    } as never);
+
+    await expect(service.createSession({
+      workspaceId: 'ws_default',
+      projectId: 'proj_1',
+      taskId: 'task_1',
+      agentId: 'legacy_agent_field',
+      runnerSessionId: 'task_1',
+      userId: 'user_1',
+      cols: 80,
+      rows: 24,
+    } as never)).rejects.toThrow('agent_runner_not_resolved');
+  });
+
   it('rejects terminal websocket upgrades that use the legacy session_id query alias', async () => {
     const cache = new InMemoryCache();
     const service = new NotebookTerminalService(cache, {
@@ -260,6 +348,7 @@ describe('NotebookTerminalService', () => {
       projectId: 'proj_1',
       taskId: 'task_1',
       agentId: 'agent_1',
+      resolvedRunnerId: 'agent_1',
       runnerSessionId: 'task_1',
       userId: 'user_1',
       cols: 120,
@@ -297,6 +386,7 @@ describe('NotebookTerminalService', () => {
       projectId: 'proj_1',
       taskId: 'task_1',
       agentId: 'agent_1',
+      resolvedRunnerId: 'agent_1',
       runnerSessionId: 'task_1',
       userId: 'user_1',
       cols: 120,
@@ -335,6 +425,7 @@ describe('NotebookTerminalService', () => {
       projectId: 'proj_1',
       taskId: 'task_1',
       agentId: 'agent_1',
+      resolvedRunnerId: 'agent_1',
       runnerSessionId: 'task_1',
       userId: 'user_1',
       cols: 80,
@@ -392,6 +483,7 @@ describe('NotebookTerminalService', () => {
       projectId: 'proj_1',
       taskId: 'task_1',
       agentId: 'agent_1',
+      resolvedRunnerId: 'agent_1',
       runnerSessionId: 'task_1',
       userId: 'user_1',
       cols: 80,
@@ -443,6 +535,7 @@ describe('NotebookTerminalService', () => {
       projectId: 'proj_1',
       taskId: 'task_1',
       agentId: 'agent_1',
+      resolvedRunnerId: 'agent_1',
       runnerSessionId: 'task_1',
       userId: 'user_1',
       cols: 80,
@@ -493,6 +586,7 @@ describe('NotebookTerminalService', () => {
       projectId: 'proj_1',
       taskId: 'task_1',
       agentId: 'agent_1',
+      resolvedRunnerId: 'agent_1',
       runnerSessionId: 'task_1',
       userId: 'user_1',
       cols: 80,
@@ -529,6 +623,7 @@ describe('NotebookTerminalService', () => {
       projectId: 'proj_1',
       taskId: 'task_1',
       agentId: 'agent_1',
+      resolvedRunnerId: 'agent_1',
       runnerSessionId: 'task_1',
       userId: 'user_1',
       cols: 80,
@@ -580,6 +675,7 @@ describe('NotebookTerminalService', () => {
       projectId: 'proj_1',
       taskId: 'task_1',
       agentId: 'agent_1',
+      resolvedRunnerId: 'agent_1',
       runnerSessionId: 'task_1',
       userId: 'user_1',
       cols: 80,
@@ -656,6 +752,7 @@ describe('NotebookTerminalService', () => {
       projectId: 'proj_1',
       taskId: 'task_1',
       agentId: 'agent_1',
+      resolvedRunnerId: 'agent_1',
       runnerSessionId: 'task_1',
       userId: 'user_1',
       cols: 80,
@@ -717,6 +814,7 @@ describe('NotebookTerminalService', () => {
       projectId: 'proj_1',
       taskId: 'task_1',
       agentId: 'agent_1',
+      resolvedRunnerId: 'agent_1',
       runnerSessionId: 'task_1',
       userId: 'user_1',
       cols: 80,
@@ -774,6 +872,7 @@ describe('NotebookTerminalService', () => {
       projectId: 'proj_1',
       taskId: 'task_1',
       agentId: 'agent_1',
+      resolvedRunnerId: 'agent_1',
       runnerSessionId: 'task_1',
       userId: 'user_1',
       cols: 80,
@@ -835,6 +934,7 @@ describe('NotebookTerminalService', () => {
       projectId: 'proj_1',
       taskId: 'task_1',
       agentId: 'agent_1',
+      resolvedRunnerId: 'agent_1',
       runnerSessionId: 'task_1',
       userId: 'user_1',
       cols: 80,
@@ -892,6 +992,7 @@ describe('NotebookTerminalService', () => {
       projectId: 'proj_1',
       taskId: 'task_1',
       agentId: 'agent_1',
+      resolvedRunnerId: 'agent_1',
       runnerSessionId: 'task_1',
       userId: 'user_1',
       cols: 80,
@@ -978,6 +1079,7 @@ describe('NotebookTerminalService', () => {
       projectId: 'proj_1',
       taskId: 'task_1',
       agentId: 'agent_1',
+      resolvedRunnerId: 'agent_1',
       runnerSessionId: 'task_1',
       userId: 'user_1',
       cols: 80,
@@ -1049,6 +1151,7 @@ describe('NotebookTerminalService', () => {
       projectId: 'proj_1',
       taskId: 'task_1',
       agentId: 'agent_1',
+      resolvedRunnerId: 'agent_1',
       runnerSessionId: 'task_1',
       userId: 'user_1',
       cols: 80,
@@ -1097,7 +1200,9 @@ describe('NotebookTerminalService', () => {
       taskId: 'task_1',
       userId: 'user_1',
       terminalSessionId: created.sessionId,
-      requiredPermission: 'project:agent_task:terminal',
+      resolvedRunnerId: 'agent_1',
+      runnerSessionId: 'task_1',
+      requiredPermissions: ['project:agent_task:use', 'project:agent_task:terminal'],
     });
   });
 
@@ -1124,6 +1229,7 @@ describe('NotebookTerminalService', () => {
       projectId: 'proj_1',
       taskId: 'task_1',
       agentId: 'agent_1',
+      resolvedRunnerId: 'agent_1',
       runnerSessionId: 'task_1',
       userId: 'user_1',
       cols: 80,
@@ -1191,6 +1297,7 @@ describe('NotebookTerminalService', () => {
       projectId: 'proj_1',
       taskId: 'task_1',
       agentId: 'agent_1',
+      resolvedRunnerId: 'agent_1',
       runnerSessionId: 'task_1',
       userId: 'user_1',
       cols: 80,
@@ -1235,6 +1342,73 @@ describe('NotebookTerminalService', () => {
     expect(ws.closeCalls).toContainEqual({ code: 1008, reason: 'terminal_permission_revoked' });
   });
 
+  it('revalidates terminal close with the persisted resolved runner id before closing runtime', async () => {
+    const cache = new InMemoryCache();
+    let terminalUseAllowed = true;
+    const authorizeTerminalUse = vi.fn(async () => terminalUseAllowed);
+    const runtimeEvents = createControlledRuntimeStream<TerminalRuntimeEvent>();
+    const runtimeClose = vi.fn();
+    const service = new NotebookTerminalService(cache, {
+      dispatchTerminalSession: vi.fn(async () => ({
+        writeInput: vi.fn(),
+        resize: vi.fn(),
+        close: runtimeClose,
+        stream: runtimeEvents.stream,
+      })),
+    } as never, {
+      authorizeTerminalUse,
+    } as never);
+
+    const created = await service.createSession({
+      workspaceId: 'ws_default',
+      projectId: 'proj_1',
+      taskId: 'task_1',
+      agentId: 'legacy_agent_field',
+      resolvedRunnerId: 'developer_runner_bound_at_create',
+      runnerSessionId: 'task_1',
+      userId: 'user_1',
+      cols: 80,
+      rows: 24,
+    });
+
+    const session = await service.getSession(created.sessionId);
+    const ws = new FakeWebSocket();
+    await (service as unknown as {
+      bindBrowserSocket: (browserSocket: FakeWebSocket, session: NonNullable<typeof session>) => Promise<void>;
+    }).bindBrowserSocket(ws, session!);
+    emitReconnect(ws, created.sessionId);
+    await runtimeEvents.push({
+      type: 'started',
+      terminal_session_id: created.sessionId,
+      cols: 80,
+      rows: 24,
+    });
+
+    terminalUseAllowed = false;
+    runtimeClose.mockClear();
+    emitBrowserMessage(ws, { type: 'terminal.close' });
+
+    await waitForAssertion(() => {
+      expect(sentPayloads(ws)).toContainEqual({
+        type: 'terminal.error',
+        terminal_session_id: created.sessionId,
+        error_code: 'terminal_permission_revoked',
+        error_message: 'terminal_permission_revoked',
+      });
+    });
+    expect(runtimeClose).not.toHaveBeenCalled();
+    expect(authorizeTerminalUse).toHaveBeenLastCalledWith({
+      workspaceId: 'ws_default',
+      projectId: 'proj_1',
+      taskId: 'task_1',
+      userId: 'user_1',
+      terminalSessionId: created.sessionId,
+      resolvedRunnerId: 'developer_runner_bound_at_create',
+      runnerSessionId: 'task_1',
+      requiredPermissions: ['project:agent_task:use', 'project:agent_task:terminal'],
+    });
+  });
+
   it('ignores a stale reconnect whose async permission check resolves after a newer browser bind', async () => {
     const cache = new InMemoryCache();
     const pendingAuthorizations: Array<ReturnType<typeof createDeferred<boolean>>> = [];
@@ -1259,6 +1433,7 @@ describe('NotebookTerminalService', () => {
       projectId: 'proj_1',
       taskId: 'task_1',
       agentId: 'agent_1',
+      resolvedRunnerId: 'agent_1',
       runnerSessionId: 'task_1',
       userId: 'user_1',
       cols: 80,
@@ -1355,6 +1530,7 @@ describe('NotebookTerminalService', () => {
       projectId: 'proj_1',
       taskId: 'task_1',
       agentId: 'agent_1',
+      resolvedRunnerId: 'agent_1',
       runnerSessionId: 'task_1',
       userId: 'user_1',
       cols: 80,
@@ -1438,6 +1614,7 @@ describe('NotebookTerminalService', () => {
         projectId: 'proj_1',
         taskId: 'task_1',
         agentId: 'agent_1',
+        resolvedRunnerId: 'agent_1',
         runnerSessionId: 'task_1',
         userId: 'user_1',
         cols: 80,
@@ -1528,6 +1705,7 @@ describe('NotebookTerminalService', () => {
       projectId: 'proj_1',
       taskId: 'task_1',
       agentId: 'agent_1',
+      resolvedRunnerId: 'agent_1',
       runnerSessionId: 'task_1',
       userId: 'user_1',
       cols: 80,
@@ -1593,6 +1771,7 @@ describe('NotebookTerminalService', () => {
       projectId: 'proj_1',
       taskId: 'task_1',
       agentId: 'agent_1',
+      resolvedRunnerId: 'agent_1',
       runnerSessionId: 'task_1',
       userId: 'user_1',
       cols: 80,
@@ -1661,6 +1840,7 @@ describe('NotebookTerminalService', () => {
       projectId: 'proj_1',
       taskId: 'task_1',
       agentId: 'agent_1',
+      resolvedRunnerId: 'agent_1',
       runnerSessionId: 'task_1',
       userId: 'user_1',
       cols: 80,
@@ -1743,6 +1923,7 @@ describe('NotebookTerminalService', () => {
         projectId: 'proj_1',
         taskId: 'task_1',
         agentId: 'agent_1',
+        resolvedRunnerId: 'agent_1',
         runnerSessionId: 'task_1',
         userId: 'user_1',
         cols: 80,
@@ -1842,6 +2023,7 @@ describe('NotebookTerminalService', () => {
       projectId: 'proj_1',
       taskId: 'task_1',
       agentId: 'agent_1',
+      resolvedRunnerId: 'agent_1',
       runnerSessionId: 'task_1',
       userId: 'user_1',
       cols: 80,
@@ -1885,6 +2067,7 @@ describe('NotebookTerminalService', () => {
       projectId: 'proj_1',
       taskId: 'task_1',
       agentId: 'agent_1',
+      resolvedRunnerId: 'agent_1',
       runnerSessionId: 'task_1',
       userId: 'user_1',
       cols: 90,
@@ -1939,6 +2122,7 @@ describe('NotebookTerminalService', () => {
       projectId: 'proj_1',
       taskId: 'task_1',
       agentId: 'agent_1',
+      resolvedRunnerId: 'agent_1',
       runnerSessionId: 'task_1',
       userId: 'user_1',
       cols: 80,
@@ -1980,6 +2164,7 @@ describe('NotebookTerminalService', () => {
       projectId: 'proj_1',
       taskId: 'task_1',
       agentId: 'agent_1',
+      resolvedRunnerId: 'agent_1',
       runnerSessionId: 'task_1',
       userId: 'user_1',
       cols: 80,
@@ -2074,6 +2259,7 @@ describe('NotebookTerminalService', () => {
       projectId: 'proj_1',
       taskId: 'task_1',
       agentId: 'agent_1',
+      resolvedRunnerId: 'agent_1',
       runnerSessionId: 'task_1',
       userId: 'user_1',
       cols: 80,
@@ -2157,6 +2343,7 @@ describe('NotebookTerminalService', () => {
         projectId: 'proj_1',
         taskId: 'task_1',
         agentId: 'agent_1',
+        resolvedRunnerId: 'agent_1',
         runnerSessionId: 'task_1',
         userId: 'user_1',
         cols: 80,
@@ -2226,6 +2413,7 @@ describe('NotebookTerminalService', () => {
         projectId: 'proj_1',
         taskId: 'task_1',
         agentId: 'agent_1',
+        resolvedRunnerId: 'agent_1',
         runnerSessionId: 'task_1',
         userId: 'user_1',
         cols: 80,
@@ -2292,6 +2480,7 @@ describe('NotebookTerminalService', () => {
         projectId: 'proj_1',
         taskId: 'task_1',
         agentId: 'agent_1',
+        resolvedRunnerId: 'agent_1',
         runnerSessionId: 'task_1',
         userId: 'user_1',
         cols: 80,
@@ -2372,6 +2561,7 @@ describe('NotebookTerminalService', () => {
         projectId: 'proj_1',
         taskId: 'task_1',
         agentId: 'agent_1',
+        resolvedRunnerId: 'agent_1',
         runnerSessionId: 'task_1',
         userId: 'user_1',
         cols: 80,
@@ -2435,6 +2625,7 @@ describe('NotebookTerminalService', () => {
         projectId: 'proj_1',
         taskId: 'task_1',
         agentId: 'agent_1',
+        resolvedRunnerId: 'agent_1',
         runnerSessionId: 'task_1',
         userId: 'user_1',
         cols: 80,
@@ -2509,6 +2700,7 @@ describe('NotebookTerminalService', () => {
       projectId: 'proj_1',
       taskId: 'task_1',
       agentId: 'agent_1',
+      resolvedRunnerId: 'agent_1',
       runnerSessionId: 'task_1',
       userId: 'user_1',
       cols: 80,
@@ -2600,6 +2792,7 @@ describe('NotebookTerminalService', () => {
       projectId: 'proj_1',
       taskId: 'task_1',
       agentId: 'agent_1',
+      resolvedRunnerId: 'agent_1',
       runnerSessionId: 'task_1',
       userId: 'user_1',
       cols: 80,
@@ -2690,6 +2883,7 @@ describe('NotebookTerminalService', () => {
       projectId: 'proj_1',
       taskId: 'task_1',
       agentId: 'agent_1',
+      resolvedRunnerId: 'agent_1',
       runnerSessionId: 'task_1',
       userId: 'user_1',
       cols: 80,
@@ -2767,6 +2961,7 @@ describe('NotebookTerminalService', () => {
       projectId: 'proj_1',
       taskId: 'task_1',
       agentId: 'agent_1',
+      resolvedRunnerId: 'agent_1',
       runnerSessionId: 'task_1',
       userId: 'user_1',
       cols: 80,
@@ -2820,6 +3015,7 @@ describe('NotebookTerminalService', () => {
         projectId: 'proj_1',
         taskId: 'task_1',
         agentId: 'agent_1',
+        resolvedRunnerId: 'agent_1',
         runnerSessionId: 'task_1',
         userId: 'user_1',
         cols: 80,
@@ -2865,6 +3061,7 @@ describe('NotebookTerminalService', () => {
       projectId: 'proj_1',
       taskId: 'task_1',
       agentId: 'agent_1',
+      resolvedRunnerId: 'agent_1',
       runnerSessionId: 'task_1',
       userId: 'user_1',
       cols: 80,
@@ -2911,6 +3108,7 @@ describe('NotebookTerminalService', () => {
       projectId: 'proj_1',
       taskId: 'task_1',
       agentId: 'agent_1',
+      resolvedRunnerId: 'agent_1',
       runnerSessionId: 'task_1',
       userId: 'user_1',
       cols: 80,
@@ -2921,6 +3119,7 @@ describe('NotebookTerminalService', () => {
       projectId: 'proj_1',
       taskId: 'task_1',
       agentId: 'agent_1',
+      resolvedRunnerId: 'agent_1',
       runnerSessionId: 'task_1',
       userId: 'user_1',
       cols: 100,
@@ -2976,6 +3175,7 @@ describe('NotebookTerminalService', () => {
         projectId: 'proj_1',
         taskId: 'task_1',
         agentId: 'agent_1',
+        resolvedRunnerId: 'agent_1',
         runnerSessionId: 'task_1',
         userId: 'user_1',
         cols: 80,
@@ -2989,6 +3189,7 @@ describe('NotebookTerminalService', () => {
         projectId: 'proj_1',
         taskId: 'task_1',
         agentId: 'agent_1',
+        resolvedRunnerId: 'agent_1',
         runnerSessionId: 'task_1',
         userId: 'user_1',
         cols: 80,
@@ -3009,6 +3210,7 @@ describe('NotebookTerminalService', () => {
         projectId: 'proj_1',
         taskId: 'task_1',
         agentId: 'agent_1',
+        resolvedRunnerId: 'agent_1',
         runnerSessionId: 'task_1',
         userId: 'user_1',
         cols: 80,
@@ -3030,6 +3232,7 @@ describe('NotebookTerminalService', () => {
         projectId: 'proj_1',
         taskId: 'task_1',
         agentId: 'agent_1',
+        resolvedRunnerId: 'agent_1',
         runnerSessionId: 'task_1',
         userId: 'user_1',
         cols: 100,
@@ -3065,6 +3268,7 @@ describe('NotebookTerminalService', () => {
       projectId: 'proj_1',
       taskId: 'task_1',
       agentId: 'agent_1',
+      resolvedRunnerId: 'agent_1',
       runnerSessionId: 'task_1',
       userId: 'user_1',
       cols: 80,
@@ -3111,6 +3315,7 @@ describe('NotebookTerminalService', () => {
       projectId: 'proj_1',
       taskId: 'task_1',
       agentId: 'agent_1',
+      resolvedRunnerId: 'agent_1',
       runnerSessionId: 'task_1',
       userId: 'user_1',
       cols: 80,
@@ -3144,6 +3349,7 @@ describe('NotebookTerminalService', () => {
       projectId: 'proj_1',
       taskId: 'task_1',
       agentId: 'agent_1',
+      resolvedRunnerId: 'agent_1',
       runnerSessionId: 'task_1',
       userId: 'user_1',
       cols: 80,
@@ -3195,6 +3401,7 @@ describe('NotebookTerminalService', () => {
         projectId: 'proj_1',
         taskId: 'task_1',
         agentId: 'agent_1',
+        resolvedRunnerId: 'agent_1',
         runnerSessionId: 'task_1',
         userId: 'user_1',
         cols: 80,
@@ -3289,6 +3496,7 @@ describe('NotebookTerminalService', () => {
       projectId: 'proj_1',
       taskId: 'task_1',
       agentId: 'agent_1',
+      resolvedRunnerId: 'agent_1',
       runnerSessionId: 'task_1',
       userId: 'user_1',
       cols: 80,
@@ -3299,6 +3507,7 @@ describe('NotebookTerminalService', () => {
       projectId: 'proj_1',
       taskId: 'task_1',
       agentId: 'agent_1',
+      resolvedRunnerId: 'agent_1',
       runnerSessionId: 'task_1',
       userId: 'user_1',
       cols: 100,
@@ -3335,6 +3544,7 @@ describe('NotebookTerminalService', () => {
         projectId: 'proj_1',
         taskId: 'task_1',
         agentId: 'agent_1',
+        resolvedRunnerId: 'agent_1',
         runnerSessionId: 'task_1',
         userId: 'user_1',
         cols: 80 + index,
@@ -3353,6 +3563,7 @@ describe('NotebookTerminalService', () => {
         projectId: 'proj_1',
         taskId: 'task_1',
         agentId: 'agent_1',
+        resolvedRunnerId: 'agent_1',
         runnerSessionId: 'task_1',
         userId: 'user_1',
         cols: 120,
@@ -3398,6 +3609,7 @@ describe('NotebookTerminalService', () => {
         projectId: 'proj_1',
         taskId: 'task_1',
         agentId: 'agent_1',
+        resolvedRunnerId: 'agent_1',
         runnerSessionId: 'task_1',
         userId: 'user_1',
         cols: 80,
@@ -3420,6 +3632,7 @@ describe('NotebookTerminalService', () => {
         projectId: 'proj_1',
         taskId: 'task_1',
         agentId: 'agent_1',
+        resolvedRunnerId: 'agent_1',
         runnerSessionId: 'task_1',
         userId: 'user_1',
         cols: 100,
@@ -3458,6 +3671,7 @@ describe('NotebookTerminalService', () => {
       projectId: 'proj_1',
       taskId: 'task_1',
       agentId: 'agent_1',
+      resolvedRunnerId: 'agent_1',
       runnerSessionId: 'task_1',
       userId: 'user_1',
       cols: 80,
@@ -3619,6 +3833,7 @@ describe('NotebookTerminalService', () => {
       projectId: 'proj_1',
       taskId: 'task_1',
       agentId: 'agent_1',
+      resolvedRunnerId: 'agent_1',
       runnerSessionId: 'task_1',
       userId: 'user_1',
       cols: 80,
@@ -3673,6 +3888,7 @@ describe('NotebookTerminalService', () => {
       projectId: 'proj_1',
       taskId: 'task_presence',
       agentId: 'agent_1',
+      resolvedRunnerId: 'agent_1',
       runnerSessionId: 'task_presence',
       userId: 'user_1',
       cols: 80,
@@ -3716,6 +3932,7 @@ describe('NotebookTerminalService', () => {
       projectId: 'proj_1',
       taskId: 'task_1',
       agentId: 'agent_1',
+      resolvedRunnerId: 'agent_1',
       runnerSessionId: 'task_1',
       userId: 'user_1',
       cols: 80,

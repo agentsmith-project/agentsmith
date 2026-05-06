@@ -58,6 +58,8 @@ const {
   latestUseTaskActivityArgsRef,
   mockUseTaskRefetch,
   mockUseTaskActivityRefetch,
+  mockCreateTaskMutateAsync,
+  mockCreateTaskIsPending,
   mockTaskApiCancelRun,
   mockTaskApiListTerminalSessions,
   mockTaskApiCloseTerminalSession,
@@ -91,6 +93,8 @@ const {
   latestUseTaskActivityArgsRef: { current: null as any },
   mockUseTaskRefetch: vi.fn(),
   mockUseTaskActivityRefetch: vi.fn(),
+  mockCreateTaskMutateAsync: vi.fn(),
+  mockCreateTaskIsPending: { value: false },
   mockTaskApiCancelRun: vi.fn(),
   mockTaskApiListTerminalSessions: vi.fn(),
   mockTaskApiCloseTerminalSession: vi.fn(),
@@ -150,6 +154,7 @@ vi.mock('next-intl', () => ({
       'agent_tasks.conversation.send_conflict_title': 'Task run still in progress',
       'agent_tasks.conversation.send_conflict_description': 'The previous turn has not finished yet. Wait for it to complete before sending.',
       'agent_tasks.conversation.agent_offline_send_blocked': 'Agent is offline. Start/reconnect the external agent execution channel before sending.',
+      'agent_tasks.conversation.pending_enqueued': 'Queued for sending. It will be sent after the current run finishes.',
       'agent_tasks.task.terminal_agent_run_blocked': 'End the terminal session before starting a new agent run.',
       'agent_tasks.task.terminal_input_blocked_placeholder': 'End terminal sessions before starting a new agent run.',
       'agent_tasks.task.terminal_workspace': 'Terminal Workspace',
@@ -185,6 +190,14 @@ vi.mock('next-intl', () => ({
       'agent_tasks.task.terminal_recovery_show': 'Reopen Terminal Workspace',
       'agent_tasks.task.terminal_hidden_active_title': 'Terminal session still active',
       'agent_tasks.task.terminal_hidden_failed_title': 'Terminal needs recovery',
+      'agent_tasks.task.runner_binding_managed': 'Managed execution',
+      'agent_tasks.task.runner_binding_managed_source': 'Deployment-managed execution',
+      'agent_tasks.task.runner_binding_developer': 'Developer runner',
+      'agent_tasks.task.runner_binding_explicit': 'Explicit binding',
+      'agent_tasks.task.runner_binding_runner_id': 'Runner ID',
+      'agent_tasks.task.runner_binding_issue_title': 'This task is bound to a Developer runner that is not available right now',
+      'agent_tasks.task.runner_binding_issue_description': 'This task keeps using its original Developer runner. Create a new task with managed execution to keep working.',
+      'agent_tasks.task.runner_binding_issue_action': 'Create new task with managed execution',
       'agent_tasks.conversation.run_cancel_requested': 'Cancel requested. Waiting for the agent to stop the current run.',
       'agent_tasks.conversation.run_cancelling_title': 'Stop requested',
       'agent_tasks.conversation.run_cancelling_description': 'Waiting for the agent to stop the current run.',
@@ -253,6 +266,10 @@ vi.mock('@/lib/hooks/use-task', () => ({
     mutateAsync: mockSendMessageMutateAsync,
     isPending: mockSendMessageIsPending.value,
   }),
+  useCreateTask: () => ({
+    mutateAsync: mockCreateTaskMutateAsync,
+    isPending: mockCreateTaskIsPending.value,
+  }),
   useUpdateTask: () => ({
     mutateAsync: vi.fn().mockResolvedValue({}),
     isPending: false,
@@ -295,6 +312,8 @@ vi.mock('../TaskHeader', () => ({
       task,
       onDeleted,
       onCreateNew,
+      onCreateBoundRunnerRecoveryTask,
+      boundRunnerRecoveryActionLabel,
       onLeave,
       canCreateTerminalSession,
       deleteBlockedReason,
@@ -314,6 +333,14 @@ vi.mock('../TaskHeader', () => ({
       <button onClick={onLeave}>Leave</button>
       <button onClick={onDeleted}>Delete</button>
       <button onClick={onCreateNew}>New</button>
+      {boundRunnerRecoveryActionLabel ? (
+        <button
+          data-testid="task-header-bound-runner-recovery"
+          onClick={onCreateBoundRunnerRecoveryTask}
+        >
+          {boundRunnerRecoveryActionLabel}
+        </button>
+      ) : null}
     </div>
     );
   },
@@ -412,6 +439,16 @@ vi.mock('../ArtifactImageViewer', () => ({
 }));
 
 vi.mock('../TaskCreateDialog', () => ({
+  deriveDefaultTaskWorkspaceName: (title: string) => {
+    const normalizedTitle = title.trim().replace(/\s+/g, ' ');
+    if (!normalizedTitle) {
+      return '';
+    }
+    if (/\bworkspace$/i.test(normalizedTitle)) {
+      return normalizedTitle;
+    }
+    return `${normalizedTitle} workspace`;
+  },
   TaskCreateDialog: ({ open, onOpenChange, onSuccess }: any) => (
     <dialog open={open}>
       <button onClick={() => onSuccess('new-task-id')}>Create Task</button>
@@ -490,6 +527,9 @@ describe('TaskPage', () => {
     vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(() => {});
     mockTaskApiListTraces.mockReset();
     mockTaskApiListTraces.mockResolvedValue({ items: [], total: 0, has_more: false, next_after_id: null });
+    mockCreateTaskMutateAsync.mockReset();
+    mockCreateTaskMutateAsync.mockResolvedValue({ id: 'recovered-task-id' });
+    mockCreateTaskIsPending.value = false;
     mockTaskApiCancelRun.mockReset();
     mockTaskApiCancelRun.mockResolvedValue({
       status: 'cancelling',
@@ -666,7 +706,7 @@ describe('TaskPage', () => {
         }),
       ).toEqual({
         kind: 'output',
-        summary: 'reports/result.md',
+        summary: 'Generated output',
       });
 
       const recentActions = collectRecentRunActions({
@@ -678,7 +718,7 @@ describe('TaskPage', () => {
       expect(recentActions).toEqual([
         expect.objectContaining({
           kind: 'output',
-          summary: 'reports/result.md',
+          summary: 'Generated output',
           traceName: 'runner.artifact',
         }),
         expect.objectContaining({
@@ -688,6 +728,46 @@ describe('TaskPage', () => {
         }),
       ]);
       expect(recentActions.map((item) => item.kind)).not.toContain('artifact');
+    });
+
+    it('keeps latest run activity free of raw command details and raw summaries', () => {
+      const action = deriveRunAction({
+        event: {
+          ...baseTrace,
+          id: 'trace-malicious-command',
+          seq: 3,
+          at: '2026-03-06T04:00:03.000Z',
+          category: 'tool',
+          name: 'codex.command',
+          summary:
+            'raw event TOKEN=abc secret required_permissions reason_code raw diagnostics /internal/diagnostic_entrypoint',
+          details: {
+            command: 'TOKEN=abc secret /internal/diagnostic_entrypoint',
+            tool_name: 'diagnostic_entrypoint',
+            required_permissions: ['project:agent_runner:read'],
+            reason_code: 'agent_runner_unavailable',
+            diagnostics: 'raw diagnostics',
+          },
+        } as TaskTraceEvent,
+        fallbackSummary: 'Working',
+      });
+
+      expect(action).toEqual({
+        kind: 'command',
+        summary: 'Running command',
+      });
+      for (const denied of [
+        'TOKEN=abc',
+        'secret',
+        'required_permissions',
+        'reason_code',
+        'raw event',
+        'raw diagnostics',
+        '/internal/',
+        'diagnostic_entrypoint',
+      ]) {
+        expect(action.summary).not.toContain(denied);
+      }
     });
   });
 
@@ -3825,6 +3905,50 @@ describe('TaskPage', () => {
       expect(screen.getByTestId('task-header')).toBeInTheDocument();
     });
 
+    it('forces the SSE debug panel off in production even when the runtime flag is enabled', async () => {
+      const previousRuntimeConfig = window.__MBOS_PUBLIC_RUNTIME_CONFIG__;
+      vi.stubEnv('NODE_ENV', 'production');
+      window.__MBOS_PUBLIC_RUNTIME_CONFIG__ = {
+        apiBase: '',
+        keycloakUrl: '',
+        keycloakRealm: '',
+        keycloakClientId: '',
+        desktopDownloadUrlMacos: '',
+        desktopDownloadUrlWindows: '',
+        desktopDownloadUrlLinux: '',
+        useMsw: false,
+        mswStrictReady: false,
+        sseTicketEnabled: false,
+        sseTicketPercentage: 0,
+        sseAllowJwtFallback: false,
+        trustedImageDomains: [],
+        bypassAuth: false,
+        agentTaskSseDebugPanel: true,
+        docFixtures: false,
+      };
+
+      try {
+        await renderComponentReady();
+
+        await act(async () => {
+          latestTaskSseOptionsRef.current?.onDebug?.({
+            at: '2026-05-05T10:00:00.000Z',
+            phase: 'error',
+            summary: 'raw EventSource error detail',
+          });
+        });
+
+        expect(screen.queryByTestId('agent-tasks__sse-debug-panel')).not.toBeInTheDocument();
+      } finally {
+        vi.unstubAllEnvs();
+        if (previousRuntimeConfig) {
+          window.__MBOS_PUBLIC_RUNTIME_CONFIG__ = previousRuntimeConfig;
+        } else {
+          delete window.__MBOS_PUBLIC_RUNTIME_CONFIG__;
+        }
+      }
+    });
+
     it('clears stale local realtime failure after reconcile succeeds without an SSE reconnect', async () => {
       const user = userEvent.setup();
       mockTaskHookState.task = {
@@ -4139,6 +4263,185 @@ describe('TaskPage', () => {
           value: originalCrypto,
         });
       }
+    });
+
+    it('does not expose run-scoped execution settings or sendBlockReason on the conversation surface', async () => {
+      await renderComponentReady();
+
+      expect(latestConversationPanelPropsRef.current.executionSettings).toBeUndefined();
+      expect(latestConversationPanelPropsRef.current.sendBlockReason).toBeUndefined();
+    });
+
+    it('sends task runs without the legacy selection field', async () => {
+      await renderComponentReady();
+
+      await act(async () => {
+        await latestConversationPanelPropsRef.current.onSendMessage('Use task bound runner');
+      });
+
+      expect(mockSendMessageMutateAsync).toHaveBeenCalledWith({
+        workspaceId: mockWorkspaceId,
+        projectId: mockProjectId,
+        taskId: mockTaskId,
+        data: {
+          intent: 'Use task bound runner',
+        },
+      });
+    });
+
+    it('queues follow-up sends while a task run is already active instead of blocking on runner switching', async () => {
+      mockTaskHookState.task = { ...mockTask, run_state: 'running' };
+
+      await renderComponentReady();
+
+      await act(async () => {
+        await latestConversationPanelPropsRef.current.onSendMessage('Queue behind current run');
+      });
+
+      expect(mockSendMessageMutateAsync).not.toHaveBeenCalled();
+      expect(latestConversationPanelPropsRef.current.pendingQueue).toHaveLength(1);
+      expect(mockToastInfo).toHaveBeenCalledWith(
+        'Queued for sending. It will be sent after the current run finishes.',
+      );
+    });
+
+    it('shows Developer-runner recovery affordances when the bound runner is unavailable and task creation is allowed', async () => {
+      mockTaskHookState.task = {
+        ...mockTask,
+        bound_runner_id: 'runner-dev',
+        bound_runner_kind: 'developer',
+        runner_binding_source: 'explicit',
+        agent_presence: 'offline',
+      };
+      mockTaskHookState.messages = [];
+
+      await renderComponentReady();
+
+      expect(latestTaskHeaderPropsRef.current.boundRunnerRecoveryActionLabel).toBe(
+        'Create new task with managed execution',
+      );
+      expect(latestConversationPanelPropsRef.current.blockedState).toMatchObject({
+        title: 'This task is bound to a Developer runner that is not available right now',
+        description:
+          'This task keeps using its original Developer runner. Create a new task with managed execution to keep working.',
+      });
+    });
+
+    it('creates a new managed-bound task from reusable inputs and prompt only from the Developer-runner recovery action', async () => {
+      mockTaskHookState.task = {
+        ...mockTask,
+        title: 'Recover me',
+        prompt: 'Reuse this original task instruction only.',
+        attached_inputs: [
+          {
+            id: 'input-library',
+            kind: 'library_object',
+            library_id: 'lib-1',
+            key: 'docs/source.md',
+            name: 'source.md',
+            content_type: 'text/markdown',
+            size_bytes: 128,
+          },
+          {
+            id: 'input-url',
+            kind: 'url',
+            url: 'https://example.com/reference',
+            name: 'Reference',
+            imported_library_id: 'lib-imported',
+            imported_key: 'imports/reference.html',
+            content_type: 'text/html',
+            size_bytes: 4096,
+          },
+          {
+            id: 'input-artifact',
+            kind: 'artifact',
+            task_id: 'task-previous',
+            artifact_id: 'artifact-previous',
+            task_relative_path: 'artifacts/previous.txt',
+            name: 'previous.txt',
+            content_type: 'text/plain',
+            size_bytes: 256,
+          },
+        ],
+        bound_runner_id: 'runner-dev',
+        bound_runner_kind: 'developer',
+        runner_binding_source: 'explicit',
+        bound_at: '2026-05-06T09:00:00.000Z',
+        bound_by_user_id: 'user-dev',
+        active_run: {
+          id: 'run-active',
+          status: 'running',
+          runner_id: 'runner-dev',
+          started_at: '2026-05-06T09:05:00.000Z',
+        },
+        active_run_started_at: '2026-05-06T09:05:00.000Z',
+        agent_presence: 'offline',
+      } as unknown as Task;
+      mockTaskHookState.messages = [];
+
+      await renderComponentReady();
+
+      await act(async () => {
+        await latestTaskHeaderPropsRef.current.onCreateBoundRunnerRecoveryTask();
+      });
+
+      await waitFor(() => {
+        expect(mockCreateTaskMutateAsync).toHaveBeenCalledWith({
+          workspaceId: mockWorkspaceId,
+          projectId: mockProjectId,
+          data: expect.objectContaining({
+            title: 'Recover me',
+            prompt: 'Reuse this original task instruction only.',
+            workspace_mode: 'create_new',
+            workspace_name: 'Recover me workspace',
+            initial_inputs: [
+              {
+                kind: 'library_object',
+                library_id: 'lib-1',
+                key: 'docs/source.md',
+                name: 'source.md',
+                content_type: 'text/markdown',
+                size_bytes: 128,
+              },
+              {
+                kind: 'url',
+                url: 'https://example.com/reference',
+                name: 'Reference',
+                imported_library_id: 'lib-imported',
+                imported_key: 'imports/reference.html',
+                content_type: 'text/html',
+                size_bytes: 4096,
+              },
+            ],
+          }),
+        });
+      });
+      const recoveryPayload = mockCreateTaskMutateAsync.mock.calls[0][0].data;
+      for (const deniedField of [
+        'bound_runner_id',
+        'bound_runner_kind',
+        'runner_binding_source',
+        'bound_at',
+        'bound_by_user_id',
+        'active_run',
+        'active_run_started_at',
+        'terminal_session_id',
+        'session_id',
+        'artifacts',
+        'runtime_metadata',
+      ]) {
+        expect(recoveryPayload).not.toHaveProperty(deniedField);
+      }
+      expect(recoveryPayload.initial_inputs).not.toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({
+            kind: 'artifact',
+          }),
+        ]),
+      );
+      expect(mockPush).toHaveBeenCalledWith(
+        `/en-US/workspaces/${mockWorkspaceId}/projects/${mockProjectId}/agent-tasks/recovered-task-id`,
+      );
     });
 
     it('keeps busy state during non-terminal step success and clears on run terminal', async () => {

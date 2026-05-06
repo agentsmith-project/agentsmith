@@ -2,29 +2,36 @@
 
 import { Activity, CalendarClock, ChevronRight, Clock3, FileText, MessageSquare } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
+import { isRunnerTestSource, RunnerTestBadge } from '../RunnerTestBadge';
 import { formatTaskDateTime, formatTaskRelativeTime } from './utils';
-import type { TaskRunState } from '@/lib/types/task';
+import type { Task, TaskRunState } from '@/lib/types/task';
 
 function getTaskRunStateLabelKey(runState: TaskRunState | undefined) {
   if (!runState || runState === 'idle') return null;
   return `run_${runState}`;
 }
 
+type TaskCardTask = Pick<
+  Task,
+  | 'id'
+  | 'title'
+  | 'source'
+  | 'runner_test'
+  | 'run_state'
+  | 'active_run'
+  | 'last_activity_at'
+  | 'created_at'
+  | 'attached_inputs'
+> & {
+  stats?: Pick<
+    NonNullable<Task['stats']>,
+    'user_turn_count' | 'artifact_count' | 'attached_input_count'
+  >;
+};
+
 export function TaskCard(args: {
   t: (key: string, values?: Record<string, string | number>) => string;
-  task: {
-    id: string;
-    title: string;
-    run_state?: TaskRunState;
-    last_activity_at: string;
-    created_at: string;
-    attached_inputs: Array<unknown>;
-    stats?: {
-      user_turn_count: number;
-      artifact_count: number;
-      attached_input_count: number;
-    };
-  };
+  task: TaskCardTask;
   onClick: () => void;
 }) {
   const { t, task, onClick } = args;
@@ -33,6 +40,7 @@ export function TaskCard(args: {
   const createdAtLabel = formatTaskDateTime(task.created_at);
   const taskCardSurfaceTestId = `agent-tasks__task-card--${task.id}`;
   const taskRunStateLabelKey = getTaskRunStateLabelKey(task.run_state);
+  const isRunnerTest = isRunnerTestSource(task) || isRunnerTestSource(task.active_run);
 
   return (
     <div data-testid={taskCardSurfaceTestId}>
@@ -51,6 +59,12 @@ export function TaskCard(args: {
                 <Badge variant="secondary" className="text-[11px]">
                   {t(taskRunStateLabelKey)}
                 </Badge>
+              ) : null}
+              {isRunnerTest ? (
+                <RunnerTestBadge
+                  label={t('runner_test_badge')}
+                  title={t('runner_test_source_value')}
+                />
               ) : null}
             </div>
             <div className="text-xs text-tertiary flex flex-wrap items-center gap-x-3 gap-y-1">

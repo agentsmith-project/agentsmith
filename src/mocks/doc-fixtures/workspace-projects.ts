@@ -3,6 +3,7 @@ import type { Member, JoinRequest } from '../fixtures/members';
 import type { FileLibrary } from '@/lib/api/types';
 import { PROJECT_BUILT_IN_TEMPLATE_PERMISSIONS } from '@/lib/constants/permissions';
 import { PROJECT_BUILT_IN_GROUP_IDS, PROJECT_BUILT_IN_TEMPLATE_IDS } from '@/lib/governance/member-groups';
+import { agentRunnerActions } from '../fixtures/agent-runners';
 
 export const docWorkspaceFixtures = [
   {
@@ -206,6 +207,9 @@ export const docAgentRunnerFixtures: AgentRunner[] = [
     project_id: 'proj_001',
     name: '运营审计助手',
     description: '通过托管 Runner 执行审计分析、Agent 任务调度和知识问答。',
+    kind: 'system_managed',
+    source: 'system',
+    read_only: true,
     is_default: true,
     default_endpoint_id: 'ep_deepseek_chat',
     status: 'ready',
@@ -219,8 +223,33 @@ export const docAgentRunnerFixtures: AgentRunner[] = [
       presence: 'managed',
       queue_depth: 2,
     },
+    actions: agentRunnerActions('system_managed'),
     created_at: '2026-03-02T09:00:00Z',
     updated_at: '2026-03-17T08:45:00Z',
+  },
+  {
+    id: 'agent_dev_001',
+    project_id: 'proj_001',
+    name: '本地开发 Runner',
+    description: '用于开发者本地连接、Test connection 与 runner test task 检查。',
+    kind: 'developer',
+    source: 'developer',
+    read_only: false,
+    is_default: false,
+    status: 'connected',
+    capabilities: {
+      task_execution: true,
+      terminal: true,
+      artifacts: true,
+      file_inputs: true,
+    },
+    diagnostics: {
+      presence: 'online',
+      last_pong_at: '2026-03-17T08:44:00Z',
+    },
+    actions: agentRunnerActions('developer'),
+    created_at: '2026-03-17T08:00:00Z',
+    updated_at: '2026-03-17T08:44:00Z',
   },
 ];
 

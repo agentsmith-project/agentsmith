@@ -183,7 +183,7 @@ describe('mapTaskMessagesForExecution', () => {
     });
   });
 
-  it('uses active_run.runner_id for runner presence even when legacy task fields disagree', async () => {
+  it('uses active_run.resolved_runner_id for runner presence even when legacy task fields disagree', async () => {
     const deps = createDefaultNodeApiDeps();
     deps.agentResourceService.getAgent = vi.fn(async (_workspaceId, _projectId, agentId) => {
       if (agentId !== 'runner_active_truth') {
@@ -195,6 +195,7 @@ describe('mapTaskMessagesForExecution', () => {
         project_id: 'proj_1',
         name: 'Active truth runner',
         mode: 'external',
+        runner_provider: 'developer',
         presence: 'online',
         status: 'enabled',
         interaction_kind: 'notebook',
@@ -219,6 +220,7 @@ describe('mapTaskMessagesForExecution', () => {
       taskId: task.id,
       runId: 'run_realtime_runner_truth',
       runnerId: 'runner_active_truth',
+      resolvedRunnerId: 'runner_active_truth',
       startedAt: now,
     }))).resolves.toBe(true);
 
@@ -236,5 +238,41 @@ describe('mapTaskMessagesForExecution', () => {
     });
     expect(realtime).not.toHaveProperty('agent_id');
     expect(realtime).not.toHaveProperty('agent_name');
+  });
+
+  it('does not render unresolved runner_id fallback as active runner evidence', async () => {
+    const deps = createDefaultNodeApiDeps();
+    deps.agentResourceService.getAgent = vi.fn(async () => {
+      throw new Error('unresolved runner_id fallback must not be used as runner evidence');
+    });
+    const now = '2026-03-18T12:00:00.000Z';
+    const task: TaskRecord = {
+      id: 'task_realtime_runner_unresolved',
+      workspace_id: 'ws_default',
+      project_id: 'proj_1',
+      owner_user_id: 'user_1',
+      title: 'Realtime unresolved runner task',
+      status: 'active',
+      attached_inputs: [],
+      created_at: now,
+      updated_at: now,
+      last_activity_at: now,
+    };
+    await expect(acquireNotebookTaskRunLease(deps.cache, buildNotebookTaskRunState({
+      taskId: task.id,
+      runId: 'run_realtime_runner_unresolved',
+      runnerId: 'runner_legacy_fallback',
+      startedAt: now,
+    }))).resolves.toBe(true);
+
+    const realtime = await buildTaskRealtimeView(deps, task.workspace_id, task.project_id, task);
+
+    expect(deps.agentResourceService.getAgent).not.toHaveBeenCalled();
+    expect(realtime).toMatchObject({
+      id: task.id,
+      run_state: 'running',
+    });
+    expect(realtime).not.toHaveProperty('agent_presence');
+    expect(realtime).not.toHaveProperty('active_run');
   });
 });

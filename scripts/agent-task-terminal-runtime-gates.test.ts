@@ -139,12 +139,18 @@ describe('Agent Task terminal runtime gates', () => {
       'utf-8',
     );
 
-    expect(initResources).toContain('/agent-runners');
-    expect(initResources).toContain('default_endpoint_id:process.argv[2]');
-    expect(initResources).toContain('is_default:true');
+    expect(initResources).toContain('agent-runner-seed-managed-runner.ts');
+    expect(initResources).toContain('PROJECT_ID="${PROJECT_ID}"');
+    expect(initResources).toContain('ENDPOINT_ID="${ENDPOINT_ID}"');
     expect(initResources).toContain('state_set_string agent_runner.id');
+    expect(initResources).toContain('state_set_string agent_runner.default_endpoint_id "${AGENT_RUNNER_DEFAULT_ENDPOINT_ID}"');
+    expect(initResources).toContain('AGENT_RUNNER_DEFAULT_ENDPOINT_ID=${AGENT_RUNNER_DEFAULT_ENDPOINT_ID}');
     expect(initResources).toContain('AGENT_RUNNER_ID=${AGENT_RUNNER_ID}');
+    expect(initResources).not.toContain('agent_runner.key');
+    expect(initResources).not.toContain('managed runner key written');
     expect(initResources).not.toContain('/agents');
+    expect(initResources).not.toContain('-X POST "${PROJECT_BASE}/agent-runners"');
+    expect(initResources).not.toContain('/agent-runners/${AGENT_RUNNER_ID}/keys');
     expect(initResources).not.toContain('mode:"managed"');
     expect(initResources).not.toContain('runner_runtime');
     expect(initResources).not.toContain('execution_preferences');
@@ -178,15 +184,17 @@ describe('Agent Task terminal runtime gates', () => {
     );
   });
 
-  it('forwards resolved Agent Runner websocket credentials from agent-task-runner-from-state into the real runner launch', async () => {
+  it('resolves managed runner launch credentials from seeded runner state instead of a deprecated key file', async () => {
     const makefile = await readFile(
       path.resolve(process.cwd(), 'Makefile'),
       'utf-8',
     );
 
     expect(makefile).toContain('agent-task-runner-from-state:');
+    expect(makefile).toContain('scripts/agent-runner-resolve-managed-runner-env.ts');
     expect(makefile).toContain('j?.agent_runner?.ws_url');
-    expect(makefile).toContain('j?.agent_runner?.key');
+    expect(makefile).not.toContain('j?.agent_runner?.key');
+    expect(makefile).not.toContain('.agent_runner.key');
     expect(makefile).toContain('WS_URL="$${AGENT_WS_URL');
     expect(makefile).toContain('AGENT_KEY_VALUE="$${AGENT_KEY');
     expect(makefile).toContain(

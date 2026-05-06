@@ -2,7 +2,10 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { InMemoryCache, InMemoryJsonDocStore } from '@mbos/adapters-private';
 import { upsertProjectResourcePolicy } from './project-resource-policy-store.js';
 import { listAuditEvents } from './audit-usage-store.js';
-import { runNotebookTaskWithExecutionAgent } from './notebook-execution-orchestrator.js';
+import {
+  resolveExecutionApiBase,
+  runNotebookTaskWithExecutionAgent,
+} from './notebook-execution-orchestrator.js';
 import { InternalWorkloadCoordinator } from './internal-workload-coordinator.js';
 import type { NodeApiDeps } from './node-api-deps.js';
 import {
@@ -30,6 +33,28 @@ describe('notebook-execution-orchestrator governance preflight', () => {
 
   afterEach(() => {
     vi.clearAllMocks();
+  });
+
+  it('does not fall back to browser-host localhost for managed execution API base', () => {
+    const previousInternalApiBase = process.env.INTERNAL_API_BASE_URL;
+    const previousExecutionHttpBase = process.env.AGENT_EXECUTION_HTTP_BASE_URL;
+    const previousExecutionWsBase = process.env.AGENT_EXECUTION_WS_BASE_URL;
+    delete process.env.INTERNAL_API_BASE_URL;
+    delete process.env.AGENT_EXECUTION_HTTP_BASE_URL;
+    delete process.env.AGENT_EXECUTION_WS_BASE_URL;
+
+    try {
+      expect(() => resolveExecutionApiBase('http://localhost:20000', {
+        runner_provider: 'managed',
+      })).toThrowError('managed_runner_internal_api_base_not_configured');
+    } finally {
+      if (previousInternalApiBase === undefined) delete process.env.INTERNAL_API_BASE_URL;
+      else process.env.INTERNAL_API_BASE_URL = previousInternalApiBase;
+      if (previousExecutionHttpBase === undefined) delete process.env.AGENT_EXECUTION_HTTP_BASE_URL;
+      else process.env.AGENT_EXECUTION_HTTP_BASE_URL = previousExecutionHttpBase;
+      if (previousExecutionWsBase === undefined) delete process.env.AGENT_EXECUTION_WS_BASE_URL;
+      else process.env.AGENT_EXECUTION_WS_BASE_URL = previousExecutionWsBase;
+    }
   });
 
   it('emits RESOURCE_POLICY_DENIED and does not dispatch execution when endpoint access is denied', async () => {
@@ -1844,6 +1869,8 @@ describe('notebook-execution-orchestrator governance preflight', () => {
   });
 
   it('registers and releases an internal notebook workload holder around the active run', async () => {
+    const previousExecutionHttpBase = process.env.AGENT_EXECUTION_HTTP_BASE_URL;
+    process.env.AGENT_EXECUTION_HTTP_BASE_URL = 'http://10.88.0.1:20000/api/v1';
     const streamGate = createDeferred<void>();
     const releasePod = vi.fn(async () => undefined);
     const internalWorkloadCoordinator = new InternalWorkloadCoordinator({
@@ -1963,25 +1990,30 @@ describe('notebook-execution-orchestrator governance preflight', () => {
       }),
     });
 
-    await vi.waitFor(() => {
-      expect(dispatchStreamingRequest).toHaveBeenCalledTimes(1);
-      expect(internalWorkloadCoordinator.readSnapshotForTests()).toEqual([
-        {
-          workspaceId: 'ws_internal_hold',
-          projectId: 'proj_internal_hold',
-          workloadId: 'task-internal-hold',
-          holders: ['notebook_run:run_internal_hold'],
-          hardTeardownRequested: false,
-        },
-      ]);
-    });
+    try {
+      await vi.waitFor(() => {
+        expect(dispatchStreamingRequest).toHaveBeenCalledTimes(1);
+        expect(internalWorkloadCoordinator.readSnapshotForTests()).toEqual([
+          {
+            workspaceId: 'ws_internal_hold',
+            projectId: 'proj_internal_hold',
+            workloadId: 'task-internal-hold',
+            holders: ['notebook_run:run_internal_hold'],
+            hardTeardownRequested: false,
+          },
+        ]);
+      });
 
-    streamGate.resolve();
-    await runPromise;
+      streamGate.resolve();
+      await runPromise;
 
-    expect(internalWorkloadCoordinator.readSnapshotForTests()).toEqual([]);
-    expect(releasePod).not.toHaveBeenCalled();
-    await internalWorkloadCoordinator.shutdown();
+      expect(internalWorkloadCoordinator.readSnapshotForTests()).toEqual([]);
+      expect(releasePod).not.toHaveBeenCalled();
+    } finally {
+      if (previousExecutionHttpBase === undefined) delete process.env.AGENT_EXECUTION_HTTP_BASE_URL;
+      else process.env.AGENT_EXECUTION_HTTP_BASE_URL = previousExecutionHttpBase;
+      await internalWorkloadCoordinator.shutdown();
+    }
   });
 
   it('passes startup abort to internal ensureAgentReady and persists cancelled terminal truth before dispatch', async () => {

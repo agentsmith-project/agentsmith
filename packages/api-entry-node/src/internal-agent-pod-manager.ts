@@ -46,6 +46,7 @@ interface AgentExecutionLike {
 }
 
 export interface InternalAgentPodManager {
+  checkReady(signal?: AbortSignal): Promise<void>;
   ensureAgentReady(input: {
     workspaceId: string;
     projectId: string;
@@ -248,6 +249,10 @@ export class InternalAgentPodManagerImpl implements InternalAgentPodManager {
     this.onlinePollIntervalMs = Math.max(100, options?.onlinePollIntervalMs ?? 500);
     this.sessionReadinessTimeoutMs = Math.max(1, options?.sessionReadinessTimeoutMs ?? 75_000);
     this.sleep = options?.sleep ?? defaultSleep;
+  }
+
+  async checkReady(signal?: AbortSignal): Promise<void> {
+    await this.runAbortableSandboxRpc((rpcSignal) => this.sandboxClient.checkReady(rpcSignal), signal);
   }
 
   async ensureAgentReady(input: {

@@ -40,6 +40,9 @@ export interface ConversationPanelProps {
     audit: string;
     usage: string;
   };
+  diagnosticsLinksAffordance?: {
+    auditUsage: boolean;
+  };
   sandboxStarting?: boolean;
   inputPlaceholder?: string;
   blockedState?: {
@@ -79,6 +82,7 @@ export function ConversationPanel({
   disabled = false,
   sending = false,
   diagnosticsLinks,
+  diagnosticsLinksAffordance,
   sandboxStarting = false,
   inputPlaceholder,
   blockedState = null,
@@ -113,6 +117,10 @@ export function ConversationPanel({
     connectionStatus != null &&
     connectionStatus !== 'connected' &&
     !activeRunOwnsTransientConnectionStatus;
+  const visibleDiagnosticsLinks =
+    diagnosticsLinksAffordance?.auditUsage === true
+      ? diagnosticsLinks
+      : undefined;
 
   const handleSend = () => {
     if (inputValue.trim().length === 0) return;
@@ -159,12 +167,12 @@ export function ConversationPanel({
                   <div className="text-tertiary">{t('sandbox_starting_description')}</div>
                 ) : null}
               </div>
-              {showConnectionNotice && diagnosticsLinks ? (
+              {showConnectionNotice && visibleDiagnosticsLinks ? (
                 <div className="mt-1.5 flex flex-wrap gap-2 text-[11px]">
-                  <Link href={diagnosticsLinks.audit} data-testid="agent-tasks__sse-status-open-audit" className="text-secondary hover:text-primary hover:underline">
+                  <Link href={visibleDiagnosticsLinks.audit} data-testid="agent-tasks__sse-status-open-audit" className="text-secondary hover:text-primary hover:underline">
                     {t('open_audit')}
                   </Link>
-                  <Link href={diagnosticsLinks.usage} data-testid="agent-tasks__sse-status-open-usage" className="text-secondary hover:text-primary hover:underline">
+                  <Link href={visibleDiagnosticsLinks.usage} data-testid="agent-tasks__sse-status-open-usage" className="text-secondary hover:text-primary hover:underline">
                     {t('open_usage')}
                   </Link>
                 </div>
@@ -201,15 +209,15 @@ export function ConversationPanel({
               <div className="text-sm font-medium text-foreground">{t('empty')}</div>
               <div className="mt-2 text-sm text-secondary">{t('empty_description')}</div>
               <div className="mt-4 flex flex-wrap gap-2">
-                {diagnosticsLinks ? (
+                {visibleDiagnosticsLinks ? (
                   <>
                     <Button asChild variant="outline" size="sm" className="h-8">
-                      <Link href={diagnosticsLinks.audit} data-testid="agent-tasks__conversation-empty-open-audit">
+                      <Link href={visibleDiagnosticsLinks.audit} data-testid="agent-tasks__conversation-empty-open-audit">
                         {t('open_audit')}
                       </Link>
                     </Button>
                     <Button asChild variant="outline" size="sm" className="h-8">
-                      <Link href={diagnosticsLinks.usage} data-testid="agent-tasks__conversation-empty-open-usage">
+                      <Link href={visibleDiagnosticsLinks.usage} data-testid="agent-tasks__conversation-empty-open-usage">
                         {t('open_usage')}
                       </Link>
                     </Button>

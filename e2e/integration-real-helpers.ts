@@ -23,11 +23,39 @@ import {
   summarizeAgentTaskPod,
   summarizeAgentTaskTraces,
 } from "./agent-task-execution-outcome";
+import * as managedRunnerSeedModule from "../scripts/agent-runner-seed-managed-runner-core";
+import type {
+  DefaultManagedRunnerSeedInput,
+  DefaultManagedRunnerSeedResult,
+} from "../scripts/agent-runner-seed-managed-runner-core";
 import {
   ensureWorkspaceProjectCreatorAccess,
   readStoredAuthToken,
 } from "./integration-workspace-access";
 import { buildWorkspaceLoginLandingHref } from "@mbos/contracts/src/auth-handoff-paths";
+
+type ManagedRunnerSeedFn = (
+  input: DefaultManagedRunnerSeedInput,
+) => Promise<DefaultManagedRunnerSeedResult>;
+
+type ManagedRunnerSeedModuleShape = {
+  upsertDeploymentDefaultManagedRunner?: ManagedRunnerSeedFn;
+  default?: {
+    upsertDeploymentDefaultManagedRunner?: ManagedRunnerSeedFn;
+  };
+};
+
+const resolvedManagedRunnerSeedModule =
+  managedRunnerSeedModule as unknown as ManagedRunnerSeedModuleShape;
+const upsertDeploymentDefaultManagedRunner =
+  resolvedManagedRunnerSeedModule.upsertDeploymentDefaultManagedRunner
+  ?? resolvedManagedRunnerSeedModule.default?.upsertDeploymentDefaultManagedRunner;
+function getUpsertDeploymentDefaultManagedRunner(): ManagedRunnerSeedFn {
+  if (!upsertDeploymentDefaultManagedRunner) {
+    throw new Error("managed_runner_seed_module_unavailable");
+  }
+  return upsertDeploymentDefaultManagedRunner;
+}
 
 export const LOCALE = process.env.INTEGRATION_LOCALE ?? "en-US";
 export const API_BASE =
@@ -1737,12 +1765,283 @@ type AgentRunnerCapabilitiesInput = Record<string, unknown> & {
 type ManagedAgentRunnerApiPayload = {
   id?: string;
   name?: string;
+  kind?: string;
   status?: string;
+  runner_status?: string;
   is_default?: boolean;
   default_endpoint_id?: string;
+  project_id?: string;
   capabilities?: Record<string, unknown>;
   diagnostics?: Record<string, unknown>;
 };
+
+type RunnerIdSource = {
+  runnerId: string;
+  runnerName: string;
+  status: string;
+  isDefault: boolean;
+  defaultEndpointId: string | null;
+  capabilities: Record<string, unknown>;
+  diagnostics: Record<string, unknown>;
+};
+
+function parseSimpleEnvFile(raw: string): Record<string, string> {
+  return raw
+    .split(/\r?\n/)
+    .reduce<Record<string, string>>((result, line) => {
+      const trimmed = line.trim();
+      if (!trimmed || trimmed.startsWith("#")) return result;
+      const equalsAt = trimmed.indexOf("=");
+      if (equalsAt < 0) return result;
+      const key = trimmed.slice(0, equalsAt).trim();
+      const value = trimmed.slice(equalsAt + 1).trim();
+      if (key) result[key] = value;
+      return result;
+    }, {});
+}
+
+function unquoteSimpleEnvValue(value: string): string {
+  const trimmed = value.trim();
+  if (
+    trimmed.length >= 2
+    && ((trimmed.startsWith('"') && trimmed.endsWith('"'))
+      || (trimmed.startsWith("'") && trimmed.endsWith("'"))
+    )
+  ) {
+    const inner = trimmed.slice(1, -1);
+    return trimmed.startsWith('"')
+      ? inner
+        .replaceAll('\\"', '"')
+        .replaceAll("\\\\", "\\")
+      : inner.replaceAll("\\'", "'").replaceAll("\\\\", "\\");
+  }
+  return trimmed;
+}
+
+function readNestedString(state: unknown, path: readonly string[]): string | undefined {
+  let value: unknown = state;
+  for (const segment of path) {
+    if (!segment || typeof value !== 'object' || value === null) {
+      return undefined;
+    }
+    value = (value as Record<string, unknown>)[segment];
+  }
+  return typeof value === 'string' ? value : undefined;
+}
+
+function readSimpleEnvValue(raw: string, key: string): string | null {
+  const entries = parseSimpleEnvFile(raw);
+  const value = entries[key];
+  if (!value) return null;
+  const unquoted = unquoteSimpleEnvValue(value);
+  return unquoted || null;
+}
+
+function dedupeStable(values: string[]): string[] {
+  const seen = new Set<string>();
+  const deduped: string[] = [];
+  for (const value of values) {
+    const normalized = value.trim();
+    if (!normalized) continue;
+    if (seen.has(normalized)) continue;
+    seen.add(normalized);
+    deduped.push(normalized);
+  }
+  return deduped;
+}
+
+async function pickBackendRealRuntimeRootFromInternalSandboxStateFile(): Promise<string | null> {
+  const internalSandboxStateFile = firstNonEmptyScalarEnvValue(process.env, [
+    "INTERNAL_SANDBOX_REAL_STATE_FILE",
+  ]);
+  if (!internalSandboxStateFile) return null;
+
+  const raw = await readFile(internalSandboxStateFile, "utf8").catch(() => null);
+  if (!raw) return null;
+
+  const rootDir = readSimpleEnvValue(raw, "ROOT_DIR");
+  if (!rootDir) return null;
+  return path.resolve(rootDir, "artifacts", "backend-real", "current");
+}
+
+function pickFirstBackendRealStatePath(): string[] {
+  const candidates: string[] = [];
+  const backendRealStateFile = firstNonEmptyScalarEnvValue(process.env, [
+    "BACKEND_REAL_STATE_FILE",
+    "BACKEND_REAL_STATE",
+  ]);
+  if (backendRealStateFile) {
+    candidates.push(backendRealStateFile);
+  }
+  const backendRealStateDir = firstNonEmptyScalarEnvValue(process.env, [
+    "BACKEND_REAL_STATE_DIR",
+  ]);
+  if (backendRealStateDir) {
+    candidates.push(path.resolve(backendRealStateDir, 'state.json'));
+  }
+
+  const internalSandboxStateFile = firstNonEmptyScalarEnvValue(process.env, [
+    "INTERNAL_SANDBOX_REAL_STATE_FILE",
+  ]);
+  if (internalSandboxStateFile) {
+    const internalBase = path.resolve(internalSandboxStateFile);
+    candidates.push(path.resolve(path.dirname(internalBase), '..', '..', 'state.json'));
+  }
+
+  candidates.push(
+    path.resolve(process.cwd(), 'artifacts', 'backend-real', 'current', 'state.json'),
+  );
+  return dedupeStable(candidates);
+}
+
+function pickFirstBackendRealSummaryPath(): string[] {
+  const candidates: string[] = [];
+  const backendRealSummaryFile = firstNonEmptyScalarEnvValue(process.env, [
+    "BACKEND_REAL_SUMMARY_FILE",
+  ]);
+  if (backendRealSummaryFile) {
+    candidates.push(backendRealSummaryFile);
+  }
+  const backendRealStateDir = firstNonEmptyScalarEnvValue(process.env, [
+    "BACKEND_REAL_STATE_DIR",
+  ]);
+  if (backendRealStateDir) {
+    candidates.push(path.resolve(backendRealStateDir, 'summary.env'));
+  }
+
+  candidates.push(
+    path.resolve(process.cwd(), 'artifacts', 'backend-real', 'current', 'summary.env'),
+  );
+  return dedupeStable(candidates);
+}
+
+function normalizeManagedRunnerResult(
+  payload: ManagedAgentRunnerApiPayload,
+  fallbackName: string,
+  fallbackEndpointId: string | null,
+  fallbackStatus?: string,
+): RunnerIdSource {
+  return {
+    runnerId: payload.id ?? "",
+    runnerName: payload.name?.trim() || fallbackName || "Managed Runner",
+    status: payload.runner_status?.trim()
+      || payload.status?.trim()
+      || fallbackStatus
+      || "ready",
+    isDefault: payload.is_default === true || payload.kind === "system_managed",
+    defaultEndpointId: payload.default_endpoint_id?.trim() || fallbackEndpointId,
+    capabilities: payload.capabilities ?? {},
+    diagnostics: payload.diagnostics ?? {},
+  };
+}
+
+async function readBackendRealManagedRunnerIdFromState(): Promise<string | null> {
+  const directRunnerId = firstNonEmptyScalarEnvValue(process.env, ["AGENT_RUNNER_ID"]);
+  if (directRunnerId) return directRunnerId;
+
+  const internalBackendRealRuntimeRoot = await pickBackendRealRuntimeRootFromInternalSandboxStateFile();
+  const summaryPaths = dedupeStable([
+    ...pickFirstBackendRealSummaryPath(),
+    ...(internalBackendRealRuntimeRoot
+      ? [path.resolve(internalBackendRealRuntimeRoot, "summary.env")]
+      : []),
+  ]);
+
+  for (const summaryFile of summaryPaths) {
+    const summaryRaw = await readFile(summaryFile, "utf8").catch(() => "");
+    if (!summaryRaw) continue;
+    const summaryRunnerId = readSimpleEnvValue(summaryRaw, "AGENT_RUNNER_ID")
+      || readSimpleEnvValue(summaryRaw, "SYSTEM_SIDE_MANAGED_RUNNER_ID")
+      || readSimpleEnvValue(summaryRaw, "DEPLOYMENT_MANAGED_RUNNER_ID")
+      || readSimpleEnvValue(summaryRaw, "SYSTEM_DEFAULT_MANAGED_RUNNER_ID");
+    if (summaryRunnerId) return summaryRunnerId;
+  }
+
+  const statePaths = dedupeStable([
+    ...pickFirstBackendRealStatePath(),
+    ...(internalBackendRealRuntimeRoot
+      ? [path.resolve(internalBackendRealRuntimeRoot, "state.json")]
+      : []),
+  ]);
+
+  for (const stateFile of statePaths) {
+    const stateRaw = await readFile(stateFile, "utf8").catch(() => "");
+    if (!stateRaw) continue;
+
+    let state: unknown;
+    try {
+      state = JSON.parse(stateRaw);
+    } catch {
+      continue;
+    }
+
+    const stateRunnerId = readNestedString(state, ["agent_runner", "id"])
+      || readNestedString(state, ["project", "agent_runner_id"])
+      || readNestedString(state, ["agent_runner_id"])
+      || readNestedString(state, ["system", "agent_runner", "id"])
+      || readNestedString(state, ["system", "agent_runner_id"])
+      || readNestedString(state, ["system", "deployment", "agent_runner", "id"])
+      || readNestedString(state, ["system", "deployment", "agent_runner_id"])
+      || readNestedString(state, ["deployment", "agent_runner", "id"])
+      || readNestedString(state, ["deployment", "agent_runner_id"])
+      || readNestedString(state, ["deployment", "system", "agent_runner", "id"])
+      || readNestedString(state, ["deployment", "system", "agent_runner_id"])
+      || readNestedString(state, ["system", "managed_runner", "id"])
+      || readNestedString(state, ["deployment", "managed_runner", "id"])
+      || readNestedString(state, ["system", "managed", "agent_runner_id"]);
+    if (stateRunnerId) {
+      const trimmedRunnerId = stateRunnerId.trim();
+      if (trimmedRunnerId) return trimmedRunnerId;
+    }
+  }
+  return null;
+}
+
+async function readManagedAgentRunnerById(args: {
+  page: Page;
+  workspaceId: string;
+  projectId: string;
+  runnerId: string;
+}): Promise<ManagedAgentRunnerApiPayload | null> {
+  const token = await readStoredAuthToken(args.page);
+  const response = await args.page.request.get(
+    `${API_BASE}/api/v1/workspaces/${args.workspaceId}/projects/${args.projectId}/agent-runners/${args.runnerId}`,
+    {
+      headers: {
+        Authorization: `Bearer ${token}`,
+      },
+    },
+  );
+  if (!response.ok()) {
+    return null;
+  }
+  const payload = (await response
+    .json()
+    .catch(() => null)) as ManagedAgentRunnerApiPayload | null;
+  if (!payload?.id) return null;
+  if (
+    payload.project_id
+    && payload.project_id.trim() !== args.projectId
+  ) {
+    return null;
+  }
+  return payload;
+}
+
+function readMongoConfigurationFromEnv(): {
+  mongoUrl: string;
+  mongoDbName: string;
+} {
+  const mongoUrl = firstNonEmptyScalarEnvValue(process.env, ["MONGO_URL"])?.trim() ?? "";
+  if (!mongoUrl) {
+    throw new Error("backend_real_mongo_url_missing");
+  }
+
+  const mongoDbName = firstNonEmptyScalarEnvValue(process.env, ["MONGO_DB_NAME"])?.trim()
+    || "mbos";
+
+  return { mongoUrl, mongoDbName };
+}
 
 export async function createManagedAgentRunnerViaApi(
   page: Page,
@@ -1765,69 +2064,62 @@ export async function createManagedAgentRunnerViaApi(
   capabilities: Record<string, unknown>;
   diagnostics: Record<string, unknown>;
 }> {
-  const token = await readStoredAuthToken(page);
   const runnerName = args.title.trim();
   if (!runnerName) {
     throw new Error("managed_agent_runner_name_required");
   }
-  const createRunnerRes = await page.request.post(
-    `${API_BASE}/api/v1/workspaces/${args.workspaceId}/projects/${args.projectId}/agent-runners`,
-    {
-      headers: {
-        Authorization: `Bearer ${token}`,
-        "Content-Type": "application/json",
-      },
-      data: {
-        name: runnerName,
-        is_default: args.isDefault ?? true,
-        status: args.status ?? "ready",
-        default_endpoint_id: args.endpointId,
-        capabilities: args.capabilities ?? {
-          streaming_completion: true,
-          multimodal_completion: false,
-          terminal: true,
-          artifacts: true,
-          file_inputs: true,
-          url_inputs: true,
-          task_execution: true,
-          accepted_mime_types: [
-            "image/png",
-            "image/jpeg",
-            "image/webp",
-            "text/plain",
-            "application/pdf",
-          ],
-          max_file_count: 8,
-          max_total_bytes: 62_914_560,
-        },
-        diagnostics: args.diagnostics ?? {
-          target: "agent_task_runner",
-          managed_by: "backend_real_integration",
-        },
-      },
-    },
-  );
-  if (!createRunnerRes.ok()) {
-    const body = await createRunnerRes.text().catch(() => "");
-    throw new Error(
-      `create_managed_agent_runner_failed:${createRunnerRes.status()}:${body}`,
+
+  const fallbackEndpointId = args.endpointId.trim() || null;
+  const seededRunnerId = await readBackendRealManagedRunnerIdFromState();
+  const seededRunner = seededRunnerId
+    ? await readManagedAgentRunnerById({
+      page,
+      workspaceId: args.workspaceId,
+      projectId: args.projectId,
+      runnerId: seededRunnerId,
+    })
+    : null;
+  if (seededRunner) {
+    const resolved = normalizeManagedRunnerResult(
+      seededRunner,
+      runnerName,
+      fallbackEndpointId,
+      args.status,
     );
+    return {
+      runnerId: resolved.runnerId,
+      runnerName: resolved.runnerName,
+      status: resolved.status,
+      isDefault: resolved.isDefault,
+      defaultEndpointId: resolved.defaultEndpointId,
+      capabilities: resolved.capabilities,
+      diagnostics: resolved.diagnostics,
+    };
   }
-  const payload = (await createRunnerRes
-    .json()
-    .catch(() => null)) as ManagedAgentRunnerApiPayload | null;
-  const runnerId = payload?.id?.trim();
-  if (!runnerId) {
-    throw new Error("managed_agent_runner_id_not_found");
-  }
+
+  const { mongoUrl, mongoDbName } = readMongoConfigurationFromEnv();
+  const seededDefault = await getUpsertDeploymentDefaultManagedRunner()({
+    workspaceId: args.workspaceId,
+    projectId: args.projectId,
+    endpointId: fallbackEndpointId || "",
+    runnerName,
+    mongoUrl,
+    mongoDbName,
+    status: "enabled",
+    runnerStatus: args.status || "ready",
+    isDefault: args.isDefault ?? true,
+    capabilities: args.capabilities,
+    diagnostics: args.diagnostics,
+  });
+
   return {
-    runnerId,
-    runnerName: payload?.name?.trim() || runnerName,
-    status: payload?.status?.trim() || args.status || "ready",
-    isDefault: payload?.is_default === true,
-    defaultEndpointId: payload?.default_endpoint_id?.trim() || null,
-    capabilities: payload?.capabilities ?? {},
-    diagnostics: payload?.diagnostics ?? {},
+    runnerId: seededDefault.runnerId,
+    runnerName: seededDefault.runnerName || runnerName,
+    status: seededDefault.status || "ready",
+    isDefault: seededDefault.isDefault,
+    defaultEndpointId: seededDefault.defaultEndpointId || fallbackEndpointId,
+    capabilities: seededDefault.capabilities,
+    diagnostics: seededDefault.diagnostics,
   };
 }
 
@@ -1882,47 +2174,15 @@ export async function createInternalAgentTaskRunnerViaApi(
     maxLifetimeSec?: number;
   },
 ): Promise<{ runnerId: string; runnerName: string }> {
-  const token = await readStoredAuthToken(page);
-  const runnerName = `${args.title}-${Date.now()}`;
-  const createRunnerRes = await page.request.post(
-    `${API_BASE}/api/v1/workspaces/${args.workspaceId}/projects/${args.projectId}/agent-runners`,
-    {
-      headers: {
-        Authorization: `Bearer ${token}`,
-        "Content-Type": "application/json",
-      },
-      data: {
-        name: runnerName,
-        is_default: true,
-        status: "ready",
-        default_endpoint_id: args.endpointId,
-        config: {
-          image: args.image?.trim() || INTERNAL_AGENT_IMAGE,
-          endpoint_id: args.endpointId,
-          cpu_request: "500m",
-          cpu_limit: "2",
-          memory_request: "512Mi",
-          memory_limit: "4Gi",
-          idle_timeout_sec: args.idleTimeoutSec ?? 300,
-          max_lifetime_sec: args.maxLifetimeSec ?? 3600,
-        },
-        capabilities: {
-          streaming_completion: true,
-          terminal: true,
-          artifacts: true,
-          file_inputs: true,
-          url_inputs: true,
-          task_execution: true,
-        },
-      },
-    },
-  );
-  expect(createRunnerRes.ok()).toBeTruthy();
-  const createdRunner = (await createRunnerRes.json()) as { id: string };
-  expect(createdRunner.id).toBeTruthy();
+  const runner = await createManagedAgentRunnerViaApi(page, {
+    workspaceId: args.workspaceId,
+    projectId: args.projectId,
+    endpointId: args.endpointId,
+    title: args.title,
+  });
   return {
-    runnerId: createdRunner.id,
-    runnerName,
+    runnerId: runner.runnerId,
+    runnerName: runner.runnerName,
   };
 }
 

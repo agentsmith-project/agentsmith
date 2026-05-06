@@ -111,7 +111,9 @@ export function useCanAccessAgentTasks(): boolean {
 }
 
 export function useCanUseAgentTaskTerminal(): boolean {
-  return useHasPermission('project:agent_task:terminal');
+  const canUseAgentTask = useHasPermission('project:agent_task:use');
+  const canUseTerminal = useHasPermission('project:agent_task:terminal');
+  return canUseAgentTask && canUseTerminal;
 }
 
 export function useAgentRunnerPageCapabilities() {

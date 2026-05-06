@@ -11,6 +11,7 @@ import { Button } from "@/components/ui/button";
 import { Markdown } from "@/components/chat/Markdown";
 import { formatElapsed } from "@/components/agent-tasks/conversation-panel/utils";
 import type { ActiveRunView } from "@/components/agent-tasks/task-page/run-activity";
+import { isRunnerTestSource, RunnerTestBadge } from "./RunnerTestBadge";
 import {
   buildRenderableExecution,
   decodeCodexEventText,
@@ -157,6 +158,13 @@ export function MessageItem({
   const executionDetailsRegionId = `agent-task-message-${messageDomId}-execution-details`;
   const executionHistoryRegionId = `agent-task-message-${messageDomId}-execution-history`;
   const isActiveRun = !isUser && activeRunView?.messageId === message.id;
+  const isRunnerTest = isRunnerTestSource(message);
+  const runnerTestBadge = isRunnerTest ? (
+    <RunnerTestBadge
+      label={tAgentTaskConversation("runner_test_badge")}
+      title={tAgentTaskConversation("runner_test_source_value")}
+    />
+  ) : null;
 
   const rawDisplayContent = streamingContent ?? message.content;
   const displayContent = isUser
@@ -327,6 +335,7 @@ export function MessageItem({
             <Markdown content={displayContent} />
           </div>
           <div className="mt-2 flex items-center justify-end gap-2">
+            {runnerTestBadge}
             <span className="text-[11px] text-tertiary">
               {formatTime(message.created_at)}
             </span>
@@ -404,7 +413,9 @@ export function MessageItem({
                   data-testid="agent-tasks__message-process-error"
                 >
                   <div className="font-medium text-red-200">
-                    {traceError.message}
+                    {tAgentTaskConversation(
+                      "process_details_unavailable_description",
+                    )}
                   </div>
                 </div>
               ) : null}
@@ -587,6 +598,7 @@ export function MessageItem({
                 />
                 {tAgentTaskConversation(activeFooterStatusKey)}
               </span>
+              {runnerTestBadge}
               <span
                 className="shrink-0 whitespace-nowrap text-tertiary"
                 data-testid="agent-tasks__message-active-run-elapsed"
@@ -670,6 +682,7 @@ export function MessageItem({
                 }),
               )}
             </span>
+            {runnerTestBadge}
             {renderableExecution.summary.durationMs != null ? (
               <span
                 className="text-tertiary"

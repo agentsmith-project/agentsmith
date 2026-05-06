@@ -121,41 +121,39 @@ state_set_string endpoint.model "${PRESET_ENDPOINT_MODEL}"
 echo "[init] endpoint_id=${ENDPOINT_ID}"
 
 echo "[init] creating managed agent-task runner..."
-agent_runner_resp="$(api_curl -X POST "${PROJECT_BASE}/agent-runners" \
-  -H "Authorization: Bearer ${TOKEN}" \
-  -H 'Content-Type: application/json' \
-  -d "$(node -e 'console.log(JSON.stringify({name:process.argv[1], status:"ready", is_default:true, default_endpoint_id:process.argv[2], description:"Managed Agent task runner baseline", diagnostics:{presence:"managed"}, capabilities:{streaming_completion:true,multimodal_completion:false,terminal:true,artifacts:true,task_execution:true}}))' \
-      "${AGENT_RUNNER_NAME}" "${ENDPOINT_ID}")")"
-AGENT_RUNNER_ID="$(printf '%s' "${agent_runner_resp}" | json_get id)"
+seed_resp="$(
+  WORKSPACE_ID="${WORKSPACE_ID}" \
+  PROJECT_ID="${PROJECT_ID}" \
+  ENDPOINT_ID="${ENDPOINT_ID}" \
+  AGENT_RUNNER_NAME="${AGENT_RUNNER_NAME}" \
+  API_BASE="${API_BASE}" \
+  AGENT_EXECUTION_WS_BASE_URL="${AGENT_EXECUTION_WS_BASE_URL:-${API_BASE/http:/ws:}}" \
+  MONGO_URL="${MONGO_URL}" \
+  MONGO_DB_NAME="${MONGO_DB_NAME}" \
+  npx tsx scripts/agent-runner-seed-managed-runner.ts
+)"
+AGENT_RUNNER_ID="$(printf '%s' "${seed_resp}" | json_get agent_runner_id)"
+AGENT_RUNNER_DEFAULT_ENDPOINT_ID="$(printf '%s' "${seed_resp}" | json_get default_endpoint_id)"
+WS_URL="$(printf '%s' "${seed_resp}" | json_get ws_url)"
 state_set_string agent_runner.id "${AGENT_RUNNER_ID}"
 state_set_string agent_runner.name "${AGENT_RUNNER_NAME}"
-state_set_string agent_runner.default_endpoint_id "${ENDPOINT_ID}"
+state_set_string agent_runner.default_endpoint_id "${AGENT_RUNNER_DEFAULT_ENDPOINT_ID}"
 state_set_string agent_runner.managed true
-echo "[init] agent_runner_id=${AGENT_RUNNER_ID}"
-
-echo "[init] creating agent runner key..."
-agent_key_resp="$(api_curl -X POST "${PROJECT_BASE}/agent-runners/${AGENT_RUNNER_ID}/keys" \
-  -H "Authorization: Bearer ${TOKEN}" \
-  -H 'Content-Type: application/json' \
-  -d '{}')"
-AGENT_KEY="$(printf '%s' "${agent_key_resp}" | json_get key)"
-state_set_string agent_runner.key "${AGENT_KEY}"
-echo "[init] agent runner key written to $(backend_real_state_file)"
-
-echo "[init] fetching connection info..."
-conn_resp="$(api_curl "${PROJECT_BASE}/agent-runners/${AGENT_RUNNER_ID}/connection-info" \
-  -H "Authorization: Bearer ${TOKEN}")"
-WS_URL="$(printf '%s' "${conn_resp}" | json_get ws_url)"
 state_set_string agent_runner.ws_url "${WS_URL}"
+echo "[init] agent_runner_id=${AGENT_RUNNER_ID}"
+echo "[init] managed runner state written to $(backend_real_state_file)"
 echo "[init] ws_url=${WS_URL}"
 
-cat > "$(backend_real_summary_file)" <<EOF
+state_write_summary
+
+cat >> "$(backend_real_summary_file)" <<EOF
 API_BASE=${API_BASE}
 WORKSPACE_ID=${WORKSPACE_ID}
 PROJECT_ID=${PROJECT_ID}
 CREDENTIAL_ID=${CRED_ID}
 ENDPOINT_ID=${ENDPOINT_ID}
 AGENT_RUNNER_ID=${AGENT_RUNNER_ID}
+AGENT_RUNNER_DEFAULT_ENDPOINT_ID=${AGENT_RUNNER_DEFAULT_ENDPOINT_ID}
 WS_URL=${WS_URL}
 PRESET_ANTHROPIC_ENDPOINT_BASE_URL=${PRESET_ANTHROPIC_ENDPOINT_BASE_URL}
 PRESET_ENDPOINT_MODEL=${PRESET_ENDPOINT_MODEL}
@@ -163,8 +161,6 @@ PRESET_ANTHROPIC_ENDPOINT_PROTOCOL=${PRESET_ANTHROPIC_ENDPOINT_PROTOCOL}
 MODEL_MAX_CONTEXT_TOKENS=${MODEL_MAX_CONTEXT_TOKENS}
 MODEL_MAX_OUTPUT_TOKENS=${MODEL_MAX_OUTPUT_TOKENS}
 EOF
-
-state_write_summary
 
 echo
 echo "[init] done. Files written:"

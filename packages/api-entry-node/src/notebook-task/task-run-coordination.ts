@@ -58,6 +58,8 @@ export interface NotebookTaskRunState {
   task_id: string;
   run_id: string;
   runner_id?: string;
+  resolved_runner_id?: string;
+  runner_test?: true;
   owner_instance_id: string;
   phase: NotebookTaskRunPhase;
   started_at: string;
@@ -411,6 +413,8 @@ export function buildNotebookTaskRunState(input: {
   phase?: NotebookTaskRunPhase;
   startedAt: string;
   runnerId?: string;
+  resolvedRunnerId?: string;
+  runnerTest?: true;
   heartbeatAt?: string;
   requestId?: string;
   dispatchedAt?: string;
@@ -421,6 +425,8 @@ export function buildNotebookTaskRunState(input: {
     task_id: input.taskId,
     run_id: input.runId,
     ...(input.runnerId ? { runner_id: input.runnerId } : {}),
+    ...(input.resolvedRunnerId ? { resolved_runner_id: input.resolvedRunnerId } : {}),
+    ...(input.runnerTest ? { runner_test: true } : {}),
     owner_instance_id: input.ownerInstanceId?.trim() || NOTEBOOK_RUN_OWNER_INSTANCE_ID,
     phase: input.phase ?? 'running',
     started_at: input.startedAt,

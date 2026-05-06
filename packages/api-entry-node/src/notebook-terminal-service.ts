@@ -83,6 +83,7 @@ type RegisteredTerminalSession = {
   projectId: string;
   taskId: string;
   agentId: string;
+  resolvedRunnerId: string;
   runnerSessionId: string;
   userId: string;
   cols: number;
@@ -179,7 +180,9 @@ export type NotebookTerminalAuthorizationInput = {
   taskId: string;
   userId: string;
   terminalSessionId: string;
-  requiredPermission: 'project:agent_task:terminal';
+  resolvedRunnerId: string;
+  runnerSessionId: string;
+  requiredPermissions: readonly ['project:agent_task:use', 'project:agent_task:terminal'];
 };
 
 export type NotebookTerminalAuthorizationHook = (
@@ -356,7 +359,9 @@ export class NotebookTerminalService {
       taskId: session.taskId,
       userId: session.userId,
       terminalSessionId: session.id,
-      requiredPermission: 'project:agent_task:terminal',
+      resolvedRunnerId: session.resolvedRunnerId,
+      runnerSessionId: session.runnerSessionId,
+      requiredPermissions: ['project:agent_task:use', 'project:agent_task:terminal'],
     };
   }
 
@@ -552,6 +557,7 @@ export class NotebookTerminalService {
       projectId: session.projectId,
       taskId: session.taskId,
       agentId: session.agentId,
+      resolvedRunnerId: session.resolvedRunnerId,
       runnerSessionId: session.runnerSessionId,
       userId: session.userId,
       cols: session.cols,
@@ -665,6 +671,11 @@ export class NotebookTerminalService {
       await this.reconcilePersistedSessionAfterServiceReload(persisted);
     }
     return null;
+  }
+
+  private readSessionResolvedRunnerId(session: RegisteredTerminalSession): string | null {
+    const resolvedRunnerId = session.resolvedRunnerId?.trim();
+    return resolvedRunnerId || null;
   }
 
   private clearStartupTimer(session: RegisteredTerminalSession): void {
@@ -1007,11 +1018,15 @@ export class NotebookTerminalService {
         if (!this.sessions.has(session.id) || session.status === 'closed' || session.status === 'failed') {
           throw new Error('terminal_dispatch_abandoned');
         }
+        const resolvedRunnerId = this.readSessionResolvedRunnerId(session);
+        if (!resolvedRunnerId) {
+          throw new Error('terminal_runner_unavailable');
+        }
         return this.agentExecutionService.dispatchTerminalSession({
           workspaceId: session.workspaceId,
           projectId: session.projectId,
           sessionId: session.runnerSessionId,
-          agentId: session.agentId,
+          agentId: resolvedRunnerId,
           terminalSessionId: session.id,
           payload: {
             cols: session.cols,
@@ -1118,6 +1133,7 @@ export class NotebookTerminalService {
     projectId: string;
     taskId: string;
     agentId: string;
+    resolvedRunnerId?: string;
     runnerSessionId: string;
     userId: string;
     cols: number;
@@ -1133,6 +1149,10 @@ export class NotebookTerminalService {
     if (await this.countTaskSessions(input) >= this.maxSessionsPerTask) {
       throw new Error('task_terminal_session_limit_reached');
     }
+    const resolvedRunnerId = input.resolvedRunnerId?.trim() ?? '';
+    if (!resolvedRunnerId) {
+      throw new Error('agent_runner_not_resolved');
+    }
     const sessionId = `term_${randomUUID().replace(/-/g, '')}`;
     const now = new Date().toISOString();
     this.sessions.set(sessionId, {
@@ -1141,6 +1161,7 @@ export class NotebookTerminalService {
       projectId: input.projectId,
       taskId: input.taskId,
       agentId: input.agentId,
+      resolvedRunnerId,
       runnerSessionId: input.runnerSessionId,
       userId: input.userId,
       cols: Math.max(20, input.cols),
@@ -1186,6 +1207,7 @@ export class NotebookTerminalService {
   } | null> {
     const session = await this.resolveLiveBindableSession(sessionId);
     if (!session) return null;
+    if (!this.readSessionResolvedRunnerId(session)) return null;
     if (!await Promise.resolve(this.isTerminalUseAuthorized(session))) return null;
     const issued = await issueInternalTicket(this.cache, {
       purpose: 'terminal_ws_access',
@@ -1296,6 +1318,9 @@ export class NotebookTerminalService {
     if (!this.matchesSessionScope(session, input)) {
       return false;
     }
+    if (!await Promise.resolve(this.isTerminalUseAuthorized(session))) {
+      return false;
+    }
     if (session.disconnectTimer) {
       clearTimeout(session.disconnectTimer);
       session.disconnectTimer = undefined;
@@ -1316,12 +1341,13 @@ export class NotebookTerminalService {
           }) => Promise<unknown>;
         }
       ).closeTerminalSession;
-      if (typeof closeTerminalSession === 'function') {
+      const resolvedRunnerId = this.readSessionResolvedRunnerId(session);
+      if (typeof closeTerminalSession === 'function' && resolvedRunnerId) {
         await closeTerminalSession.call(this.agentExecutionService, {
           workspaceId: session.workspaceId,
           projectId: session.projectId,
           sessionId: session.runnerSessionId,
-          agentId: session.agentId,
+          agentId: resolvedRunnerId,
           terminalSessionId: session.id,
           ...(session.executionContext ? { executionContext: session.executionContext } : {}),
         }).catch(() => undefined);
@@ -1406,7 +1432,7 @@ export class NotebookTerminalService {
     debugTerminal('bind_browser_socket', {
       terminal_session_id: session.id,
       task_id: session.taskId,
-      agent_runner_id: session.agentId,
+      agent_runner_id: this.readSessionResolvedRunnerId(session) ?? session.agentId,
       runner_session_id: session.runnerSessionId,
     });
     const bindVersion = this.nextBindVersion(session);
@@ -1637,7 +1663,7 @@ export class NotebookTerminalService {
       debugTerminal('dispatch_failed', {
         terminal_session_id: session.id,
         task_id: session.taskId,
-        agent_runner_id: session.agentId,
+        agent_runner_id: this.readSessionResolvedRunnerId(session) ?? session.agentId,
         runner_session_id: session.runnerSessionId,
         error: message,
       });
@@ -1741,6 +1767,20 @@ export class NotebookTerminalService {
     }
 
     if (type === 'terminal.close') {
+      const closeAuthorized = this.ensureTerminalUseAuthorized(session, ws);
+      if (this.isPromiseLike(closeAuthorized)) {
+        if (!await closeAuthorized) {
+          return;
+        }
+        if (!this.isCurrentBrowserBind(session, ws, bindVersion)) {
+          return;
+        }
+      } else if (!closeAuthorized) {
+        return;
+      }
+      if (!this.isCurrentBrowserBind(session, ws, bindVersion)) {
+        return;
+      }
       if (session.runtime) {
         session.runtime.close();
       } else {

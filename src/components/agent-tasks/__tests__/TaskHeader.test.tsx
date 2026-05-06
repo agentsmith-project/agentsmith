@@ -57,10 +57,18 @@ vi.mock('next-intl', () => ({
       'new': 'New',
       'workspace_file_library_label': 'Workspace',
       'workspace_file_library_unknown': 'No Workspace Library',
+      'runner_binding_managed': 'Managed execution',
+      'runner_binding_managed_source': 'Deployment-managed execution',
+      'runner_binding_developer': 'Developer runner',
+      'runner_binding_explicit': 'Explicit binding',
+      'runner_binding_runner_id': 'Runner ID',
+      'runner_binding_issue_action': 'Create new task with managed execution',
       'terminal_open': 'Open Terminal Workspace',
       'terminal_end_all': 'End All Sessions',
       'terminal_mode_conversation': 'Conversation',
       'terminal_mode_terminal': 'Terminal',
+      'runner_test_badge': 'runner_test',
+      'runner_test_source_value': 'Developer runner test',
     };
     const template = translations[key] || key;
     if (!values) return template;
@@ -85,6 +93,9 @@ describe('TaskHeader', () => {
     },
     workspace_file_library_id: 'flib-1',
     workspace_file_library_name: 'Project Workspace',
+    bound_runner_id: 'managed-default',
+    bound_runner_kind: 'managed',
+    runner_binding_source: 'default_managed',
     status: 'active',
     attached_inputs: [],
     created_at: '2024-01-01T00:00:00Z',
@@ -134,6 +145,58 @@ describe('TaskHeader', () => {
       renderComponent();
 
       expect(screen.getByTestId('agent-task__task-header-workspace-library')).toHaveTextContent('Workspace: Project Workspace');
+    });
+
+    it('shows managed execution metadata without project-level configuration or system-managed wording', () => {
+      renderComponent();
+
+      expect(screen.getByTestId('agent-task__task-header-runner-binding')).toHaveTextContent(
+        'Managed execution',
+      );
+      expect(screen.getByTestId('agent-task__task-header-runner-binding')).toHaveTextContent(
+        'Deployment-managed execution',
+      );
+      expect(screen.getByTestId('agent-task__task-header-runner-binding')).not.toHaveTextContent(
+        /Configured for this project|Project default|System managed|sandbox/i,
+      );
+    });
+
+    it('shows explicit developer runner binding metadata when the task is bound to a Developer runner', () => {
+      renderComponent({
+        ...mockTask,
+        bound_runner_id: 'runner-dev-1',
+        bound_runner_kind: 'developer',
+        runner_binding_source: 'explicit',
+      } as Task);
+
+      expect(screen.getByTestId('agent-task__task-header-runner-binding')).toHaveTextContent(
+        'Developer runner',
+      );
+      expect(screen.getByTestId('agent-task__task-header-runner-binding')).toHaveTextContent(
+        'Explicit binding',
+      );
+      expect(screen.getByTestId('agent-task__task-header-runner-binding')).toHaveTextContent(
+        'Runner ID: runner-dev-1',
+      );
+    });
+
+    it('surfaces runner_test tasks in the task header', () => {
+      renderComponent({
+        ...mockTask,
+        source: 'runner_test',
+        runner_test: true,
+        active_run: {
+          id: 'run-runner-test',
+          status: 'running',
+          runner_id: 'runner-1',
+          source: 'runner_test',
+          runner_test: true,
+        },
+      } as Task);
+
+      const badge = screen.getByTestId('agent-tasks__runner-test-badge');
+      expect(badge).toHaveTextContent('runner_test');
+      expect(badge).toHaveAttribute('title', 'Developer runner test');
     });
 
     it('keeps the header task-focused when no backend run is active yet', () => {
@@ -192,6 +255,27 @@ describe('TaskHeader', () => {
       });
 
       expect(screen.queryByTestId('agent-task__task-header-terminal-create')).not.toBeInTheDocument();
+    });
+
+    it('renders a managed-runner recovery action for unavailable Developer-bound tasks', async () => {
+      const user = userEvent.setup();
+      const onCreateBoundRunnerRecoveryTask = vi.fn();
+
+      renderComponent(
+        {
+          ...mockTask,
+          bound_runner_id: 'runner-dev-1',
+          bound_runner_kind: 'developer',
+          runner_binding_source: 'explicit',
+        } as Task,
+        {
+          onCreateBoundRunnerRecoveryTask,
+          boundRunnerRecoveryActionLabel: 'Create new task with managed execution',
+        },
+      );
+
+      await user.click(screen.getByTestId('agent-task__task-header-bound-runner-recovery'));
+      expect(onCreateBoundRunnerRecoveryTask).toHaveBeenCalledTimes(1);
     });
 
     it('renders terminal mode switch and summary once tabs exist', () => {

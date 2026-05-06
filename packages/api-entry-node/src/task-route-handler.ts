@@ -16,6 +16,10 @@ import {
   removeTaskTraceEventsFromMemory,
 } from './notebook-trace-store.js';
 import {
+  projectNotebookTaskSsePayloadForDisplay,
+  projectTaskTraceEventForDisplay,
+} from './notebook-task-trace-projection.js';
+import {
   activateNotebookTaskEventSubscription,
   clearNotebookTaskEventState,
   emitNotebookTaskEvent,
@@ -25,7 +29,11 @@ import {
   writeNotebookTaskSseEvent,
 } from './notebook-task-sse-broker.js';
 import { resolveNotebookTaskInputDetails, type NotebookTaskInputRefRecord as SharedNotebookTaskInputRefRecord } from './notebook-input-refs.js';
-import { resolveExecutionApiBase, runNotebookTaskWithExecutionAgent } from './notebook-execution-orchestrator.js';
+import {
+  resolveExecutionApiBase,
+  resolveManagedExecutionApiBase,
+  runNotebookTaskWithExecutionAgent,
+} from './notebook-execution-orchestrator.js';
 import {
   resolveConfiguredPublicApiBase,
   resolveRequiredConfiguredPublicApiBase,
@@ -33,6 +41,10 @@ import {
 import { buildNotebookTaskInputs, type NotebookTaskInputRefRecord } from './notebook-input-refs.js';
 import { writeProjectAuditEvent } from './audit-usage-recorders.js';
 import { enforceEndpointGovernancePreflight } from './governance-endpoint-preflight.js';
+import {
+  evaluateProjectPermissions,
+  evaluateResourcePolicyAuthorization,
+} from './project-authz-engine.js';
 import type { ProjectsRoute } from './projects-route-match.js';
 import { sanitizeWorkloadId } from './internal-agent-pod-manager.js';
 import {
@@ -158,11 +170,12 @@ const NOTEBOOK_RUN_OWNER_STALE_AFTER_MS = (NOTEBOOK_RUN_LEASE_HEARTBEAT_MS * 2) 
 
 type AgentRunnerResolutionErrorCode =
   | 'agent_runner_unavailable'
+  | 'agent_runner_forbidden'
+  | 'agent_runner_runtime_unavailable'
   | 'agent_runner_model_unconfigured'
   | 'agent_runner_capability_mismatch'
   | 'agent_runner_default_conflict'
-  | 'agent_runner_selection_required'
-  | 'agent_runner_selection_ambiguous';
+  | 'invalid_binding_target';
 
 type AgentRunnerResolutionResult =
   | {
@@ -174,6 +187,44 @@ type AgentRunnerResolutionResult =
       ok: false;
       code: AgentRunnerResolutionErrorCode;
       metadata?: Record<string, unknown>;
+    };
+
+type TaskRunnerBindingKind = 'managed' | 'developer';
+type TaskRunnerBindingSource = 'default_managed' | 'explicit';
+
+type TaskRunnerBindingResult = Extract<AgentRunnerResolutionResult, { ok: true }> & {
+  bindingSource: TaskRunnerBindingSource;
+  bindingKind: TaskRunnerBindingKind;
+};
+
+type TerminalRunnerResolutionErrorCode =
+  | AgentRunnerResolutionErrorCode
+  | 'agent_runner_not_resolved'
+  | 'terminal_runner_unavailable';
+
+type TerminalRunnerResolutionIntent =
+  | {
+      kind: 'active_run';
+      runId: string;
+      runnerId: string;
+    }
+  | {
+      kind: 'task_bound';
+      runnerId: string;
+    };
+
+type TerminalRunnerResolutionResult =
+  | {
+      ok: true;
+      runner: AgentRecord;
+      intent: TerminalRunnerResolutionIntent;
+      auditResolution: AgentRunnerResolutionResult | null;
+    }
+  | {
+      ok: false;
+      code: TerminalRunnerResolutionErrorCode;
+      intent: TerminalRunnerResolutionIntent;
+      auditResolution: AgentRunnerResolutionResult | null;
     };
 
 type InternalTaskWorkloadIdentity = {
@@ -190,8 +241,27 @@ type ManagedTerminalRuntimeDispatchContext = {
   };
 };
 
-const UNSUPPORTED_ACTIVE_TASK_SELECTOR_FIELDS = ['agent_id', 'agent_name', 'runner_id'] as const;
-const UNSUPPORTED_PUBLIC_TASK_RUN_FIELDS = ['role', 'content', ...UNSUPPORTED_ACTIVE_TASK_SELECTOR_FIELDS] as const;
+const UNSUPPORTED_TASK_BINDING_FIELDS = [
+  'agent_id',
+  'agent_name',
+  'runner_id',
+  'runner_selection',
+  'agent_runner_id',
+  'is_default',
+  'default_endpoint_id',
+  'config',
+  'capabilities',
+  'runner_provider',
+] as const;
+const UNSUPPORTED_ACTIVE_TASK_BINDING_FIELDS = [
+  ...UNSUPPORTED_TASK_BINDING_FIELDS,
+  'bound_runner_id',
+] as const;
+const UNSUPPORTED_PUBLIC_TASK_RUN_FIELDS = [
+  'role',
+  'content',
+  ...UNSUPPORTED_ACTIVE_TASK_BINDING_FIELDS,
+] as const;
 
 type TaskActivityItem = {
   id: string;
@@ -201,6 +271,52 @@ type TaskActivityItem = {
   content: string;
   created_at: string;
   run_id?: string;
+  source?: 'runner_test';
+  runner_test?: true;
+};
+
+type TaskRunnerBindingReasonCode =
+  | AgentRunnerResolutionErrorCode
+  | 'permission_denied'
+  | 'agent_runner_disconnected'
+  | 'agent_runner_stale';
+
+type TaskRunnerBindingSummary = {
+  state: string;
+  summary: string;
+  reason_code?: TaskRunnerBindingReasonCode;
+};
+
+type TaskRunnerBindingAction = {
+  operation: 'bind_to_task';
+  visible: boolean;
+  allowed: boolean;
+  reason_code?: TaskRunnerBindingReasonCode;
+  required_permissions: string[];
+  danger_level: 'none';
+};
+
+type TaskRunnerBindingOption = {
+  option_id: string;
+  label: string;
+  bound_runner_kind: TaskRunnerBindingKind;
+  runner_binding_source: TaskRunnerBindingSource;
+  agent_runner_id?: string;
+  readiness: TaskRunnerBindingSummary;
+  capability: TaskRunnerBindingSummary;
+  freshness?: TaskRunnerBindingSummary;
+  disabled_reason_code?: TaskRunnerBindingReasonCode;
+  actions: {
+    bind_to_task: TaskRunnerBindingAction;
+  };
+};
+
+type TaskRunnerBindingRowValidation = {
+  allowed: boolean;
+  reasonCode?: TaskRunnerBindingReasonCode;
+  readiness: TaskRunnerBindingSummary;
+  capability: TaskRunnerBindingSummary;
+  freshness?: TaskRunnerBindingSummary;
 };
 
 function collectUnsupportedFields(
@@ -210,7 +326,27 @@ function collectUnsupportedFields(
   return fields.filter((field) => Object.prototype.hasOwnProperty.call(body, field));
 }
 
-function mapTaskMessageRecordToActivityItem(message: TaskMessageRecord): TaskActivityItem {
+function runnerTestSourceMarker(input?: {
+  task?: Pick<TaskRecord, 'source' | 'runner_test'> | null;
+  run?: Pick<NotebookTaskRunState, 'runner_test'> | null;
+}): Pick<TaskActivityItem, 'source' | 'runner_test'> {
+  if (
+    input?.task?.source === 'runner_test' ||
+    input?.task?.runner_test === true ||
+    input?.run?.runner_test === true
+  ) {
+    return { source: 'runner_test', runner_test: true };
+  }
+  return {};
+}
+
+function mapTaskMessageRecordToActivityItem(
+  message: TaskMessageRecord,
+  context?: {
+    task?: Pick<TaskRecord, 'source' | 'runner_test'> | null;
+    run?: Pick<NotebookTaskRunState, 'runner_test'> | null;
+  },
+): TaskActivityItem {
   return {
     id: message.id,
     task_id: message.task_id,
@@ -219,13 +355,14 @@ function mapTaskMessageRecordToActivityItem(message: TaskMessageRecord): TaskAct
     content: message.content,
     created_at: message.created_at,
     ...(message.turn_id ? { run_id: message.turn_id } : {}),
+    ...runnerTestSourceMarker(context),
   };
 }
 
-function emitNotebookTaskActivityEvent(taskId: string, message: TaskMessageRecord): void {
-  emitNotebookTaskEvent(taskId, {
+function emitNotebookTaskActivityEvent(task: TaskRecord, message: TaskMessageRecord): void {
+  emitNotebookTaskEvent(task.id, {
     type: 'activity_item',
-    data: mapTaskMessageRecordToActivityItem(message),
+    data: mapTaskMessageRecordToActivityItem(message, { task }),
   });
 }
 
@@ -238,6 +375,24 @@ function readAgentRunnerStatus(agent: AgentRecord): 'draft' | 'connected' | 'rea
 
 function readRunnerDefaultEndpointId(agent: AgentRecord): string {
   return agent.default_endpoint_id?.trim() ?? '';
+}
+
+function readRunnerExecutionPreferenceEndpointId(agent: AgentRecord): string {
+  const preferences = agent.execution_preferences_json;
+  const namespaces = ['agent_task', 'task', 'notebook'];
+  for (const namespace of namespaces) {
+    const value = preferences?.[namespace];
+    if (!value || typeof value !== 'object' || Array.isArray(value)) continue;
+    const endpointId = (value as Record<string, unknown>).endpoint_id;
+    if (typeof endpointId === 'string' && endpointId.trim()) {
+      return endpointId.trim();
+    }
+  }
+  return '';
+}
+
+function readRunnerTaskEndpointId(agent: AgentRecord): string {
+  return readRunnerExecutionPreferenceEndpointId(agent) || readRunnerDefaultEndpointId(agent);
 }
 
 function runnerSupportsTaskRun(
@@ -268,7 +423,351 @@ function runnerSupportsTaskRun(
   return true;
 }
 
-async function resolveProjectAgentRunnerForTaskRun(args: {
+function buildTaskRunnerBindingSummary(
+  state: string,
+  reasonCode?: TaskRunnerBindingReasonCode,
+): TaskRunnerBindingSummary {
+  return {
+    state,
+    summary: state,
+    ...(reasonCode ? { reason_code: reasonCode } : {}),
+  };
+}
+
+function buildTaskRunnerBindingAction(input: {
+  allowed: boolean;
+  requiredPermissions: string[];
+  reasonCode?: TaskRunnerBindingReasonCode;
+}): TaskRunnerBindingAction {
+  return {
+    operation: 'bind_to_task',
+    visible: true,
+    allowed: input.allowed,
+    ...(input.reasonCode ? { reason_code: input.reasonCode } : {}),
+    required_permissions: input.requiredPermissions,
+    danger_level: 'none',
+  };
+}
+
+async function actorHasProjectPermissions(args: {
+  deps: NodeApiDeps;
+  workspaceId: string;
+  projectId: string;
+  actorUserId: string;
+  requiredPermissions: string[];
+}): Promise<boolean> {
+  if (args.requiredPermissions.length === 0) return true;
+  try {
+    const project = await args.deps.getProjectUseCase.execute({
+      workspaceId: args.workspaceId,
+      projectId: args.projectId,
+    });
+    const evaluation = await evaluateProjectPermissions({
+      docStore: args.deps.docStore,
+      workspaceId: args.workspaceId,
+      projectId: args.projectId,
+      projectOwnerId: project.owner_id,
+      projectGovernance: project.governance_json,
+      actorUserId: args.actorUserId,
+      requiredPermissions: args.requiredPermissions,
+    });
+    return evaluation.decisions.every((decision) => decision.granted);
+  } catch {
+    return false;
+  }
+}
+
+async function canSeeAgentRunnerBindingRow(args: {
+  deps: NodeApiDeps;
+  workspaceId: string;
+  projectId: string;
+  user: AuthenticatedUser;
+  runner: AgentRecord;
+  requiredPermissions: string[];
+}): Promise<boolean> {
+  if (!(await actorHasProjectPermissions({
+    deps: args.deps,
+    workspaceId: args.workspaceId,
+    projectId: args.projectId,
+    actorUserId: args.user.id,
+    requiredPermissions: args.requiredPermissions,
+  }))) {
+    return false;
+  }
+
+  const policyDecision = await evaluateResourcePolicyAuthorization({
+    docStore: args.deps.docStore,
+    workspaceId: args.workspaceId,
+    projectId: args.projectId,
+    resourceType: 'agent',
+    resourceId: args.runner.id,
+    subjectType: 'user',
+    subjectId: args.user.id,
+  });
+  return policyDecision.allowed;
+}
+
+async function actorHasAgentRunnerManageAuthority(args: {
+  deps: NodeApiDeps;
+  workspaceId: string;
+  projectId: string;
+  actorUserId: string;
+}): Promise<boolean> {
+  return actorHasProjectPermissions({
+    deps: args.deps,
+    workspaceId: args.workspaceId,
+    projectId: args.projectId,
+    actorUserId: args.actorUserId,
+    requiredPermissions: ['project:agent_runner:manage'],
+  });
+}
+
+function resolveDeveloperRunnerFreshness(
+  deps: NodeApiDeps,
+  runner: AgentRecord,
+): TaskRunnerBindingSummary {
+  const fresh = runner.presence === 'online'
+    || readAgentRunnerStatus(runner) === 'ready'
+    || deps.agentExecutionService.getAgentOnlineState(runner.id);
+  if (fresh) {
+    return buildTaskRunnerBindingSummary('fresh');
+  }
+  return buildTaskRunnerBindingSummary(
+    runner.last_seen_at?.trim() ? 'stale' : 'missing',
+    runner.last_seen_at?.trim() ? 'agent_runner_stale' : 'agent_runner_disconnected',
+  );
+}
+
+function buildRunnerBindingValidationSummaries(
+  reasonCode?: TaskRunnerBindingReasonCode,
+  freshness?: TaskRunnerBindingSummary,
+): Pick<TaskRunnerBindingRowValidation, 'readiness' | 'capability' | 'freshness'> {
+  const readiness = (
+    reasonCode === 'agent_runner_unavailable'
+    || reasonCode === 'agent_runner_model_unconfigured'
+    || reasonCode === 'agent_runner_default_conflict'
+    || reasonCode === 'agent_runner_runtime_unavailable'
+    || reasonCode === 'invalid_binding_target'
+    || reasonCode === 'agent_runner_disconnected'
+    || reasonCode === 'agent_runner_stale'
+  )
+    ? buildTaskRunnerBindingSummary('unavailable', reasonCode)
+    : reasonCode === 'permission_denied'
+      || reasonCode === 'agent_runner_forbidden'
+      ? buildTaskRunnerBindingSummary('unknown', reasonCode)
+      : buildTaskRunnerBindingSummary('ready');
+  const capability = reasonCode === 'agent_runner_capability_mismatch'
+    || reasonCode === 'invalid_binding_target'
+    ? buildTaskRunnerBindingSummary('incompatible', reasonCode)
+    : reasonCode === 'permission_denied' || reasonCode === 'agent_runner_forbidden'
+      ? buildTaskRunnerBindingSummary('unknown', reasonCode)
+      : buildTaskRunnerBindingSummary('compatible');
+  return {
+    readiness,
+    capability,
+    ...(freshness ? { freshness } : {}),
+  };
+}
+
+async function validateAgentRunnerForBindingOption(args: {
+  deps: NodeApiDeps;
+  workspaceId: string;
+  projectId: string;
+  task: TaskRecord;
+  user: AuthenticatedUser;
+  runner: AgentRecord;
+  requestedInputs: ReturnType<typeof readTaskInputRefs>;
+  requestId?: string | null;
+  requiredPermissions: string[];
+}): Promise<TaskRunnerBindingRowValidation> {
+  if (!(await canSeeAgentRunnerBindingRow({
+    deps: args.deps,
+    workspaceId: args.workspaceId,
+    projectId: args.projectId,
+    user: args.user,
+    runner: args.runner,
+    requiredPermissions: args.requiredPermissions,
+  }))) {
+    return {
+      allowed: false,
+      reasonCode: 'permission_denied',
+      ...buildRunnerBindingValidationSummaries('permission_denied'),
+    };
+  }
+
+  const developerRunner = isDeveloperAgentRunner(args.runner);
+  const freshness = developerRunner
+    ? resolveDeveloperRunnerFreshness(args.deps, args.runner)
+    : buildTaskRunnerBindingSummary('managed');
+  const freshnessReason = developerRunner ? freshness.reason_code : undefined;
+  if (freshnessReason) {
+    return {
+      allowed: false,
+      reasonCode: freshnessReason,
+      ...buildRunnerBindingValidationSummaries(freshnessReason, freshness),
+    };
+  }
+
+  if (args.runner.status !== 'enabled' || readAgentRunnerStatus(args.runner) !== 'ready') {
+    return {
+      allowed: false,
+      reasonCode: 'agent_runner_unavailable',
+      ...buildRunnerBindingValidationSummaries('agent_runner_unavailable', freshness),
+    };
+  }
+
+  const endpointId = readRunnerTaskEndpointId(args.runner);
+  if (!endpointId) {
+    return {
+      allowed: false,
+      reasonCode: 'agent_runner_model_unconfigured',
+      ...buildRunnerBindingValidationSummaries('agent_runner_model_unconfigured', freshness),
+    };
+  }
+  const endpoint = await args.deps.endpointResourceService.getEndpoint(args.workspaceId, args.projectId, endpointId);
+  if (!endpoint || endpoint.status !== 'active' || !endpoint.model?.trim()) {
+    return {
+      allowed: false,
+      reasonCode: 'agent_runner_model_unconfigured',
+      ...buildRunnerBindingValidationSummaries('agent_runner_model_unconfigured', freshness),
+    };
+  }
+  const preflight = await enforceEndpointGovernancePreflight({
+    deps: args.deps,
+    workspaceId: args.workspaceId,
+    projectId: args.projectId,
+    endpoint,
+    userId: args.user.id,
+    requestId: args.requestId,
+    source: 'agent_runner_binding_options',
+    contextMetadata: {
+      task_id: args.task.id,
+      runner_id: args.runner.id,
+    },
+    recordAccessDeniedEvidence: false,
+  });
+  if (!preflight.allowed) {
+    return {
+      allowed: false,
+      reasonCode: 'agent_runner_model_unconfigured',
+      ...buildRunnerBindingValidationSummaries('agent_runner_model_unconfigured', freshness),
+    };
+  }
+  if (!runnerSupportsTaskRun(args.runner, args.task, args.requestedInputs)) {
+    return {
+      allowed: false,
+      reasonCode: 'agent_runner_capability_mismatch',
+      ...buildRunnerBindingValidationSummaries('agent_runner_capability_mismatch', freshness),
+    };
+  }
+
+  return {
+    allowed: true,
+    ...buildRunnerBindingValidationSummaries(undefined, freshness),
+  };
+}
+
+function buildTaskRunnerBindingKind(runner: AgentRecord): TaskRunnerBindingKind {
+  return isDeveloperAgentRunner(runner) ? 'developer' : 'managed';
+}
+
+function buildRunnerBindingProbeTask(args: {
+  workspaceId: string;
+  projectId: string;
+  userId: string;
+}): TaskRecord {
+  const generatedAt = nowIso();
+  return {
+    id: 'task_runner_binding_options_probe',
+    workspace_id: args.workspaceId,
+    project_id: args.projectId,
+    owner_user_id: args.userId,
+    title: 'Runner binding options probe',
+    status: 'active',
+    attached_inputs: [],
+    created_at: generatedAt,
+    updated_at: generatedAt,
+    last_activity_at: generatedAt,
+  };
+}
+
+async function validateResolvedAgentRunnerForTask(args: {
+  deps: NodeApiDeps;
+  workspaceId: string;
+  projectId: string;
+  task: TaskRecord;
+  user: AuthenticatedUser;
+  runner: AgentRecord;
+  requestedInputs: ReturnType<typeof readTaskInputRefs>;
+  requestId?: string | null;
+  needsTerminal?: boolean;
+  source: 'agent_runner_binding' | 'agent_runner_task_run' | 'agent_runner_terminal';
+}): Promise<AgentRunnerResolutionResult> {
+  if (args.runner.status !== 'enabled' || readAgentRunnerStatus(args.runner) !== 'ready') {
+    return {
+      ok: false,
+      code: 'agent_runner_unavailable',
+      metadata: { runner_id: args.runner.id, reason: 'runner_not_ready' },
+    };
+  }
+
+  const endpointId = readRunnerTaskEndpointId(args.runner);
+  if (!endpointId) {
+    return {
+      ok: false,
+      code: 'agent_runner_model_unconfigured',
+      metadata: { runner_id: args.runner.id },
+    };
+  }
+  const endpoint = await args.deps.endpointResourceService.getEndpoint(args.workspaceId, args.projectId, endpointId);
+  if (!endpoint || endpoint.status !== 'active' || !endpoint.model?.trim()) {
+    return {
+      ok: false,
+      code: 'agent_runner_model_unconfigured',
+      metadata: { runner_id: args.runner.id, endpoint_id: endpointId },
+    };
+  }
+  const preflight = await enforceEndpointGovernancePreflight({
+    deps: args.deps,
+    workspaceId: args.workspaceId,
+    projectId: args.projectId,
+    endpoint,
+    userId: args.user.id,
+    requestId: args.requestId,
+    source: args.source,
+    contextMetadata: {
+      task_id: args.task.id,
+      runner_id: args.runner.id,
+    },
+    recordAccessDeniedEvidence: false,
+  });
+  if (!preflight.allowed) {
+    return {
+      ok: false,
+      code: 'agent_runner_model_unconfigured',
+      metadata: {
+        runner_id: args.runner.id,
+        endpoint_id: endpoint.id,
+        reason: 'endpoint_preflight_denied',
+      },
+    };
+  }
+  if (!runnerSupportsTaskRun(
+    args.runner,
+    args.task,
+    args.requestedInputs,
+    { needsTerminal: args.needsTerminal },
+  )) {
+    return {
+      ok: false,
+      code: 'agent_runner_capability_mismatch',
+      metadata: { runner_id: args.runner.id },
+    };
+  }
+  return { ok: true, runner: args.runner, endpoint };
+}
+
+async function resolveDefaultManagedAgentRunnerForTask(args: {
   deps: NodeApiDeps;
   workspaceId: string;
   projectId: string;
@@ -277,69 +776,351 @@ async function resolveProjectAgentRunnerForTaskRun(args: {
   requestedInputs: ReturnType<typeof readTaskInputRefs>;
   requestId?: string | null;
   needsTerminal?: boolean;
+  source: 'agent_runner_binding' | 'agent_runner_task_run' | 'agent_runner_terminal';
 }): Promise<AgentRunnerResolutionResult> {
-  const allRunners = (await args.deps.agentResourceService.listAgents(args.workspaceId, args.projectId))
-    .filter((agent) => agent.status === 'enabled');
-  const defaultRunners = allRunners.filter((agent) => agent.is_default === true);
-  if (defaultRunners.length > 1) {
-    return {
-      ok: false,
-      code: 'agent_runner_default_conflict',
-      metadata: { runner_ids: defaultRunners.map((item) => item.id) },
-    };
-  }
-
-  const readyRunners = allRunners.filter((agent) => readAgentRunnerStatus(agent) === 'ready');
-  if (readyRunners.length === 0) {
-    return { ok: false, code: 'agent_runner_unavailable' };
-  }
-
-  const endpointCandidates: Array<{ runner: AgentRecord; endpoint: EndpointRecord }> = [];
-  for (const runner of readyRunners) {
-    const endpointId = readRunnerDefaultEndpointId(runner);
-    if (!endpointId) continue;
-    const endpoint = await args.deps.endpointResourceService.getEndpoint(args.workspaceId, args.projectId, endpointId);
-    if (!endpoint || endpoint.status !== 'active' || !endpoint.model?.trim()) continue;
-    const preflight = await enforceEndpointGovernancePreflight({
-      deps: args.deps,
-      workspaceId: args.workspaceId,
-      projectId: args.projectId,
-      endpoint,
-      userId: args.user.id,
-      requestId: args.requestId,
-      source: 'agent_runner_resolution',
-      contextMetadata: {
-        task_id: args.task.id,
-        runner_id: runner.id,
-      },
-      recordAccessDeniedEvidence: false,
+  const projectedRunner = await args.deps.agentResourceService.getDeploymentDefaultManagedAgentRunner(
+    args.workspaceId,
+    args.projectId,
+  );
+  if (projectedRunner) {
+    if (!isManagedAgentRunner(projectedRunner)) {
+      return {
+        ok: false,
+        code: 'agent_runner_unavailable',
+        metadata: { runner_id: projectedRunner.id, reason: 'deployment_default_projection_not_managed' },
+      };
+    }
+    return validateResolvedAgentRunnerForTask({
+      ...args,
+      runner: projectedRunner,
     });
-    if (!preflight.allowed) continue;
-    endpointCandidates.push({ runner, endpoint });
-  }
-  if (endpointCandidates.length === 0) {
-    return { ok: false, code: 'agent_runner_model_unconfigured' };
-  }
-
-  const capabilityCandidates = endpointCandidates.filter(({ runner }) => runnerSupportsTaskRun(
-    runner,
-    args.task,
-    args.requestedInputs,
-    { needsTerminal: args.needsTerminal },
-  ));
-  if (capabilityCandidates.length === 0) {
-    return { ok: false, code: 'agent_runner_capability_mismatch' };
-  }
-
-  const defaultCandidate = capabilityCandidates.find(({ runner }) => runner.is_default === true);
-  if (defaultCandidate) {
-    return { ok: true, ...defaultCandidate };
   }
   return {
     ok: false,
-    code: 'agent_runner_selection_required',
-    metadata: { runner_ids: capabilityCandidates.map(({ runner }) => runner.id) },
+    code: 'agent_runner_unavailable',
+    metadata: { reason: 'deployment_default_projection_missing' },
   };
+}
+
+async function resolveExplicitDeveloperAgentRunnerForTask(args: {
+  deps: NodeApiDeps;
+  workspaceId: string;
+  projectId: string;
+  task: TaskRecord;
+  user: AuthenticatedUser;
+  requestedInputs: ReturnType<typeof readTaskInputRefs>;
+  boundRunnerId: string;
+  requestId?: string | null;
+  needsTerminal?: boolean;
+  source: 'agent_runner_binding' | 'agent_runner_task_run' | 'agent_runner_terminal';
+}): Promise<AgentRunnerResolutionResult> {
+  const runner = await args.deps.agentResourceService.getAgent(
+    args.workspaceId,
+    args.projectId,
+    args.boundRunnerId,
+  );
+  if (runner && isManagedAgentRunner(runner)) {
+    return {
+      ok: false,
+      code: 'invalid_binding_target',
+      metadata: { runner_id: args.boundRunnerId, reason: 'explicit_managed_runner_not_bindable' },
+    };
+  }
+  if (!runner || runner.status !== 'enabled' || !isDeveloperAgentRunner(runner)) {
+    return {
+      ok: false,
+      code: 'agent_runner_unavailable',
+      metadata: { runner_id: args.boundRunnerId, reason: 'runner_not_found_disabled_or_not_developer' },
+    };
+  }
+  if (!(await canUseExplicitAgentRunnerForTaskRun({
+    deps: args.deps,
+    workspaceId: args.workspaceId,
+    projectId: args.projectId,
+    user: args.user,
+    runner,
+  }))) {
+    return {
+      ok: false,
+      code: 'agent_runner_forbidden',
+      metadata: { runner_id: runner.id, reason: 'binding_authority_denied' },
+    };
+  }
+  return validateResolvedAgentRunnerForTask({
+    ...args,
+    runner,
+  });
+}
+
+async function bindAgentRunnerForTask(args: {
+  deps: NodeApiDeps;
+  workspaceId: string;
+  projectId: string;
+  task: TaskRecord;
+  user: AuthenticatedUser;
+  requestedInputs: ReturnType<typeof readTaskInputRefs>;
+  boundRunnerId?: string | null;
+  requestId?: string | null;
+}): Promise<TaskRunnerBindingResult | Extract<AgentRunnerResolutionResult, { ok: false }>> {
+  const explicitRunnerId = args.boundRunnerId?.trim() ?? '';
+  const resolution = explicitRunnerId
+    ? await resolveExplicitDeveloperAgentRunnerForTask({
+      ...args,
+      boundRunnerId: explicitRunnerId,
+      source: 'agent_runner_binding',
+    })
+    : await resolveDefaultManagedAgentRunnerForTask({
+      ...args,
+      source: 'agent_runner_binding',
+    });
+  if (!resolution.ok) {
+    return resolution;
+  }
+  return {
+    ...resolution,
+    bindingSource: explicitRunnerId ? 'explicit' : 'default_managed',
+    bindingKind: buildTaskRunnerBindingKind(resolution.runner),
+  };
+}
+
+async function resolveTaskBoundAgentRunnerForTaskRun(args: {
+  deps: NodeApiDeps;
+  workspaceId: string;
+  projectId: string;
+  task: TaskRecord;
+  user: AuthenticatedUser;
+  requestedInputs: ReturnType<typeof readTaskInputRefs>;
+  requestId?: string | null;
+  needsTerminal?: boolean;
+  source: 'agent_runner_task_run' | 'agent_runner_terminal';
+}): Promise<AgentRunnerResolutionResult> {
+  const runnerId = args.task.bound_runner_id?.trim() ?? '';
+  if (!runnerId) {
+    return {
+      ok: false,
+      code: 'agent_runner_unavailable',
+      metadata: { reason: 'task_runner_not_bound' },
+    };
+  }
+  const runner = await args.deps.agentResourceService.getAgent(args.workspaceId, args.projectId, runnerId);
+  if (!runner || runner.status !== 'enabled') {
+    return {
+      ok: false,
+      code: 'agent_runner_unavailable',
+      metadata: { runner_id: runnerId, reason: 'bound_runner_not_found_or_disabled' },
+    };
+  }
+  if (isDeveloperAgentRunner(runner) && !(await canUseExplicitAgentRunnerForTaskRun({
+    deps: args.deps,
+    workspaceId: args.workspaceId,
+    projectId: args.projectId,
+    user: args.user,
+    runner,
+  }))) {
+    return {
+      ok: false,
+      code: 'agent_runner_forbidden',
+      metadata: { runner_id: runner.id, reason: 'bound_runner_authority_denied' },
+    };
+  }
+  return validateResolvedAgentRunnerForTask({
+    ...args,
+    runner,
+  });
+}
+
+async function buildDefaultRunnerBindingOption(args: {
+  deps: NodeApiDeps;
+  workspaceId: string;
+  projectId: string;
+  task: TaskRecord;
+  user: AuthenticatedUser;
+  requestId?: string | null;
+}): Promise<TaskRunnerBindingOption> {
+  const resolution = await resolveDefaultManagedAgentRunnerForTask({
+    deps: args.deps,
+    workspaceId: args.workspaceId,
+    projectId: args.projectId,
+    task: args.task,
+    user: args.user,
+    requestedInputs: [],
+    requestId: args.requestId,
+    source: 'agent_runner_binding',
+  });
+  const reasonCode: TaskRunnerBindingReasonCode | undefined = resolution.ok
+    ? undefined
+    : resolution.code;
+  return {
+    option_id: 'default_managed',
+    label: 'Default managed runner',
+    bound_runner_kind: 'managed',
+    runner_binding_source: 'default_managed',
+    ...buildRunnerBindingValidationSummaries(reasonCode),
+    ...(reasonCode ? { disabled_reason_code: reasonCode } : {}),
+    actions: {
+      bind_to_task: buildTaskRunnerBindingAction({
+        allowed: resolution.ok,
+        requiredPermissions: ['project:agent_task:use'],
+        reasonCode,
+      }),
+    },
+  };
+}
+
+async function buildAgentRunnerBindingOption(args: {
+  deps: NodeApiDeps;
+  workspaceId: string;
+  projectId: string;
+  task: TaskRecord;
+  user: AuthenticatedUser;
+  runner: AgentRecord;
+  requestId?: string | null;
+}): Promise<TaskRunnerBindingOption | null> {
+  if (!isDeveloperAgentRunner(args.runner)) {
+    return null;
+  }
+  const requiredPermissions = ['project:agent_task:use', 'project:agent_runner:manage'];
+  const visible = await canSeeAgentRunnerBindingRow({
+    deps: args.deps,
+    workspaceId: args.workspaceId,
+    projectId: args.projectId,
+    user: args.user,
+    runner: args.runner,
+    requiredPermissions,
+  });
+  if (!visible) {
+    return null;
+  }
+  const validation = await validateAgentRunnerForBindingOption({
+    deps: args.deps,
+    workspaceId: args.workspaceId,
+    projectId: args.projectId,
+    task: args.task,
+    user: args.user,
+    runner: args.runner,
+    requestedInputs: [],
+    requestId: args.requestId,
+    requiredPermissions,
+  });
+  return {
+    option_id: args.runner.id,
+    agent_runner_id: args.runner.id,
+    label: args.runner.name,
+    bound_runner_kind: 'developer',
+    runner_binding_source: 'explicit',
+    readiness: validation.readiness,
+    capability: validation.capability,
+    ...(validation.freshness ? { freshness: validation.freshness } : {}),
+    ...(validation.reasonCode ? { disabled_reason_code: validation.reasonCode } : {}),
+    actions: {
+      bind_to_task: buildTaskRunnerBindingAction({
+        allowed: validation.allowed,
+        requiredPermissions,
+        reasonCode: validation.reasonCode,
+      }),
+    },
+  };
+}
+
+async function buildTaskRunnerBindingOptions(args: {
+  deps: NodeApiDeps;
+  workspaceId: string;
+  projectId: string;
+  user: AuthenticatedUser;
+  requestId?: string | null;
+}): Promise<{
+  options: TaskRunnerBindingOption[];
+  generated_at: string;
+}> {
+  const probeTask = buildRunnerBindingProbeTask({
+    workspaceId: args.workspaceId,
+    projectId: args.projectId,
+    userId: args.user.id,
+  });
+  const defaultOption = await buildDefaultRunnerBindingOption({
+    deps: args.deps,
+    workspaceId: args.workspaceId,
+    projectId: args.projectId,
+    task: probeTask,
+    user: args.user,
+    requestId: args.requestId,
+  });
+  const canManageRunners = await actorHasAgentRunnerManageAuthority({
+    deps: args.deps,
+    workspaceId: args.workspaceId,
+    projectId: args.projectId,
+    actorUserId: args.user.id,
+  });
+  if (!canManageRunners) {
+    return {
+      options: [defaultOption],
+      generated_at: nowIso(),
+    };
+  }
+  const runners = await args.deps.agentResourceService.listAgents(args.workspaceId, args.projectId);
+  const runnerOptions = await Promise.all(runners.map((runner) => buildAgentRunnerBindingOption({
+    deps: args.deps,
+    workspaceId: args.workspaceId,
+    projectId: args.projectId,
+    task: probeTask,
+    user: args.user,
+    runner,
+    requestId: args.requestId,
+  })));
+  return {
+    options: [
+      defaultOption,
+      ...runnerOptions.filter((option): option is TaskRunnerBindingOption => option !== null),
+    ],
+    generated_at: nowIso(),
+  };
+}
+
+async function canUseExplicitAgentRunnerForTaskRun(args: {
+  deps: NodeApiDeps;
+  workspaceId: string;
+  projectId: string;
+  user: AuthenticatedUser;
+  runner: AgentRecord;
+}): Promise<boolean> {
+  const policyDecision = await evaluateResourcePolicyAuthorization({
+    docStore: args.deps.docStore,
+    workspaceId: args.workspaceId,
+    projectId: args.projectId,
+    resourceType: 'agent',
+    resourceId: args.runner.id,
+    subjectType: 'user',
+    subjectId: args.user.id,
+  });
+  if (!policyDecision.allowed) {
+    return false;
+  }
+
+  if (isManagedAgentRunner(args.runner) && args.runner.is_default === true) {
+    return true;
+  }
+
+  const runnerPermission = isDeveloperAgentRunner(args.runner)
+    ? 'project:agent_runner:manage'
+    : 'project:agent_runner:read';
+  try {
+    const project = await args.deps.getProjectUseCase.execute({
+      workspaceId: args.workspaceId,
+      projectId: args.projectId,
+    });
+    const evaluation = await evaluateProjectPermissions({
+      docStore: args.deps.docStore,
+      workspaceId: args.workspaceId,
+      projectId: args.projectId,
+      projectOwnerId: project.owner_id,
+      projectGovernance: project.governance_json,
+      actorUserId: args.user.id,
+      requiredPermissions: ['project:agent_task:use', runnerPermission],
+    });
+    return evaluation.decisions.every((decision) => decision.granted);
+  } catch {
+    return false;
+  }
 }
 
 async function writeAgentRunnerResolutionAudit(args: {
@@ -372,6 +1153,106 @@ async function writeAgentRunnerResolutionAudit(args: {
         ...(args.result.metadata ?? {}),
       },
   });
+}
+
+function readActiveRunResolvedRunnerId(
+  state: Pick<NotebookTaskRunState, 'resolved_runner_id' | 'runner_id'> | null | undefined,
+): string {
+  return state?.resolved_runner_id?.trim() ?? '';
+}
+
+async function resolveTerminalSessionRunner(args: {
+  deps: NodeApiDeps;
+  workspaceId: string;
+  projectId: string;
+  task: TaskRecord;
+  user: AuthenticatedUser;
+  requestId?: string | null;
+}): Promise<TerminalRunnerResolutionResult> {
+  const activeRun = await getNotebookTaskRunState(args.deps.cache, args.task.id);
+  if (activeRun) {
+    const runnerId = readActiveRunResolvedRunnerId(activeRun);
+    const intent: TerminalRunnerResolutionIntent = {
+      kind: 'active_run',
+      runId: activeRun.run_id,
+      runnerId,
+    };
+    if (!runnerId) {
+      return {
+        ok: false,
+        code: 'agent_runner_not_resolved',
+        intent,
+        auditResolution: null,
+      };
+    }
+    const runner = await args.deps.agentResourceService.getAgent(
+      args.workspaceId,
+      args.projectId,
+      runnerId,
+    );
+    if (
+      !runner
+      || runner.status !== 'enabled'
+      || !runnerSupportsTaskRun(runner, args.task, [], { needsTerminal: true })
+    ) {
+      return {
+        ok: false,
+        code: 'terminal_runner_unavailable',
+        intent,
+        auditResolution: null,
+      };
+    }
+    if (isDeveloperAgentRunner(runner) && !(await canUseExplicitAgentRunnerForTaskRun({
+      deps: args.deps,
+      workspaceId: args.workspaceId,
+      projectId: args.projectId,
+      user: args.user,
+      runner,
+    }))) {
+      return {
+        ok: false,
+        code: 'agent_runner_forbidden',
+        intent,
+        auditResolution: null,
+      };
+    }
+    return {
+      ok: true,
+      runner,
+      intent,
+      auditResolution: null,
+    };
+  }
+
+  const auditResolution = await resolveTaskBoundAgentRunnerForTaskRun({
+    deps: args.deps,
+    workspaceId: args.workspaceId,
+    projectId: args.projectId,
+    task: args.task,
+    user: args.user,
+    requestedInputs: [],
+    requestId: args.requestId,
+    needsTerminal: true,
+    source: 'agent_runner_terminal',
+  });
+  const intent: TerminalRunnerResolutionIntent = {
+    kind: 'task_bound',
+    runnerId: args.task.bound_runner_id?.trim() ?? '',
+  };
+  if (!auditResolution.ok) {
+    return {
+      ok: false,
+      code: auditResolution.code,
+      intent,
+      auditResolution,
+    };
+  }
+  return {
+    ok: true,
+    runner: auditResolution.runner,
+    intent,
+    auditResolution,
+  };
 }
 
 function parseNotebookRunStopMode(raw: unknown): NotebookTaskRunStopMode | null {
@@ -504,7 +1385,7 @@ async function writeNotebookTaskSseSnapshot(args: {
     for (const message of getTaskMessages(args.taskId)) {
       writeNotebookTaskSseEvent(args.res, {
         type: 'activity_item',
-        data: mapTaskMessageRecordToActivityItem(message),
+        data: mapTaskMessageRecordToActivityItem(message, { task: currentTask }),
       });
     }
   }
@@ -516,7 +1397,10 @@ async function writeNotebookTaskSseSnapshot(args: {
   }
   if (args.includeTraces) {
     for (const traceEvent of await loadTaskTraceEvents(args.deps, args.workspaceId, args.taskId)) {
-      writeNotebookTaskSseEvent(args.res, { type: 'trace_event', data: traceEvent });
+      writeNotebookTaskSseEvent(args.res, {
+        type: 'trace_event',
+        data: projectTaskTraceEventForDisplay(traceEvent),
+      });
     }
   }
 }
@@ -596,10 +1480,17 @@ export function mapRunnerSessionAuthorityToTaskRouteError(
   return authority === 'remote_owned_not_local_dispatchable' ? 'task_runner_remote_owned' : null;
 }
 
+function readTerminalSessionResolvedRunnerId(
+  session: { resolvedRunnerId?: string },
+): string {
+  return session.resolvedRunnerId?.trim() ?? '';
+}
+
 function serializeTerminalSessionResponse(input: {
   session: {
     id: string;
     agentId: string;
+    resolvedRunnerId?: string;
     runnerSessionId: string;
     status: 'pending' | 'active' | 'disconnected' | 'closed' | 'failed';
     cols: number;
@@ -622,12 +1513,13 @@ function serializeTerminalSessionResponse(input: {
   last_activity_at: string;
   ended_at: string | null;
   close_reason: string | null;
-  exit_code: number | null;
-  ws_url: string | null;
-} {
+    exit_code: number | null;
+    ws_url: string | null;
+  } {
+  const resolvedRunnerId = readTerminalSessionResolvedRunnerId(input.session);
   return {
     terminal_session_id: input.session.id,
-    runner_id: input.session.agentId,
+    runner_id: resolvedRunnerId,
     runner_session_id: input.session.runnerSessionId,
     status: input.session.status,
     cols: input.session.cols,
@@ -1140,6 +2032,58 @@ async function ensureTaskRunnerSessionDispatchable(args: {
   return true;
 }
 
+async function preflightManagedRunnerRuntimeForTask(args: {
+  deps: NodeApiDeps;
+  task: TaskRecord;
+  runner: AgentRecord;
+  requiresWorkloadCoordinator?: boolean;
+}): Promise<Extract<AgentRunnerResolutionResult, { ok: false }> | null> {
+  if (!isManagedAgentRunner(args.runner)) {
+    return null;
+  }
+  const fail = (reason: string, extra?: Record<string, unknown>): Extract<AgentRunnerResolutionResult, { ok: false }> => ({
+    ok: false,
+    code: 'agent_runner_runtime_unavailable',
+    metadata: {
+      runner_id: args.runner.id,
+      reason,
+      ...(extra ?? {}),
+    },
+  });
+
+  if (!resolveManagedExecutionApiBase()) {
+    return fail('internal_api_base_not_configured');
+  }
+  if (!args.deps.internalAgentPodManager) {
+    return fail('sandbox_manager_not_configured');
+  }
+  if (!args.deps.internalAgentWorkspaceBindingManager && !args.deps.internalAgentWorkspaceProvisioner) {
+    return fail('workspace_binding_manager_not_configured');
+  }
+  if (args.requiresWorkloadCoordinator && !resolveInternalWorkloadCoordinator(args.deps)) {
+    return fail('internal_workload_coordinator_not_configured');
+  }
+  if (!args.task.workspace_file_library_id?.trim()) {
+    return fail('workspace_file_library_id_required');
+  }
+  const checkReady = (args.deps.internalAgentPodManager as {
+    checkReady?: () => Promise<void>;
+  }).checkReady;
+  if (typeof checkReady === 'function') {
+    try {
+      await checkReady.call(args.deps.internalAgentPodManager);
+    } catch (error) {
+      const code = error && typeof error === 'object' && 'code' in error
+        ? (error as { code?: unknown }).code
+        : undefined;
+      return fail('sandbox_unavailable', {
+        sandbox_error_code: typeof code === 'string' ? code : 'AGENT_SANDBOX_UNAVAILABLE',
+      });
+    }
+  }
+  return null;
+}
+
 export async function handleTaskRoute(args: TaskRouteHandlerArgs): Promise<boolean> {
   const { route, method, req, res, deps, user, internalTicket, json, readBody } = args;
   ensureInternalTerminalLifecycleIntegration(deps);
@@ -1181,7 +2125,8 @@ export async function handleTaskRoute(args: TaskRouteHandlerArgs): Promise<boole
   if (route.kind === 'tasks' && method === 'POST') {
     await loadProjectTasks(deps, route.workspaceId, route.projectId);
     const body = asObject(await readBody(req));
-    const unsupportedFields = collectUnsupportedFields(body, UNSUPPORTED_ACTIVE_TASK_SELECTOR_FIELDS);
+    const requestId = typeof req.headers['x-request-id'] === 'string' ? req.headers['x-request-id'] : null;
+    const unsupportedFields = collectUnsupportedFields(body, UNSUPPORTED_TASK_BINDING_FIELDS);
     if (unsupportedFields.length > 0) {
       json(res, 400, {
         error_code: 'unsupported_field',
@@ -1284,6 +2229,44 @@ export async function handleTaskRoute(args: TaskRouteHandlerArgs): Promise<boole
       updated_at: createdAt,
       last_activity_at: createdAt,
     };
+    const binding = await bindAgentRunnerForTask({
+      deps,
+      workspaceId: route.workspaceId,
+      projectId: route.projectId,
+      task,
+      user,
+      requestedInputs: initialInputs,
+      boundRunnerId: typeof body.bound_runner_id === 'string' ? body.bound_runner_id : null,
+      requestId,
+    });
+    if (!binding.ok) {
+      await writeProjectAuditEvent(deps, {
+        workspaceId: route.workspaceId,
+        projectId: route.projectId,
+        actor: { type: 'user', id: user.id },
+        action: 'agent_runner.binding.failed',
+        result: 'error',
+        requestId,
+        resourceType: 'notebook_task',
+        resourceId: task.id,
+        errorCode: binding.code,
+        errorMessage: binding.code,
+        metadata: {
+          failure_code: binding.code,
+          ...(binding.metadata ?? {}),
+        },
+      });
+      json(res, 409, {
+        error_code: binding.code,
+        message: binding.code,
+      });
+      return true;
+    }
+    task.bound_runner_id = binding.runner.id;
+    task.bound_runner_kind = binding.bindingKind;
+    task.runner_binding_source = binding.bindingSource;
+    task.bound_at = createdAt;
+    task.bound_by_user_id = user.id;
     getTasks(route.workspaceId, route.projectId).unshift(task);
     await deps.docStore.upsert<TaskRecord>(notebookTasksCollection(route.workspaceId), task.id, task);
     await writeProjectAuditEvent(deps, {
@@ -1293,10 +2276,13 @@ export async function handleTaskRoute(args: TaskRouteHandlerArgs): Promise<boole
       action: 'notebook.task.created',
       resourceType: 'notebook_task',
       resourceId: task.id,
-      requestId: typeof req.headers['x-request-id'] === 'string' ? req.headers['x-request-id'] : null,
+      requestId,
       metadata: {
         workspace_file_library_id: task.workspace_file_library_id,
         initial_input_count: task.attached_inputs.length,
+        bound_runner_id: task.bound_runner_id,
+        bound_runner_kind: task.bound_runner_kind,
+        runner_binding_source: task.runner_binding_source,
       },
     });
     json(res, 201, await buildTaskRealtimeView(deps, route.workspaceId, route.projectId, task));
@@ -1329,25 +2315,38 @@ export async function handleTaskRoute(args: TaskRouteHandlerArgs): Promise<boole
       json(res, 409, { error_code: 'RESOURCE_CONFLICT', message: 'task_run_hard_teardown_pending' });
       return true;
     }
-    if (await hasBlockingTaskRunForTerminal(deps.cache, task.id)) {
-      json(res, 409, { error_code: 'RESOURCE_CONFLICT', message: 'task_run_in_progress' });
-      return true;
-    }
     const body = asObject(await readBody(req));
     const cols = typeof body.cols === 'number' && Number.isFinite(body.cols) ? Math.floor(body.cols) : 120;
     const rows = typeof body.rows === 'number' && Number.isFinite(body.rows) ? Math.floor(body.rows) : 30;
     const shell = typeof body.shell === 'string' ? body.shell.trim() : '';
-    const resolution = await resolveProjectAgentRunnerForTaskRun({
+    const terminalRunnerResolution = await resolveTerminalSessionRunner({
       deps,
       workspaceId: route.workspaceId,
       projectId: route.projectId,
       task,
       user,
-      requestedInputs: [],
       requestId: typeof req.headers['x-request-id'] === 'string' ? req.headers['x-request-id'] : null,
-      needsTerminal: true,
     });
-    if (!resolution.ok) {
+    if (!terminalRunnerResolution.ok) {
+      if (terminalRunnerResolution.auditResolution) {
+        await writeAgentRunnerResolutionAudit({
+          deps,
+          workspaceId: route.workspaceId,
+          projectId: route.projectId,
+          user,
+          taskId: route.taskId,
+          requestId: typeof req.headers['x-request-id'] === 'string' ? req.headers['x-request-id'] : null,
+          result: terminalRunnerResolution.auditResolution,
+        });
+      }
+      json(res, 409, {
+        error_code: terminalRunnerResolution.code,
+        message: terminalRunnerResolution.code,
+      });
+      return true;
+    }
+    const agent = terminalRunnerResolution.runner;
+    if (terminalRunnerResolution.auditResolution) {
       await writeAgentRunnerResolutionAudit({
         deps,
         workspaceId: route.workspaceId,
@@ -1355,31 +2354,24 @@ export async function handleTaskRoute(args: TaskRouteHandlerArgs): Promise<boole
         user,
         taskId: route.taskId,
         requestId: typeof req.headers['x-request-id'] === 'string' ? req.headers['x-request-id'] : null,
-        result: resolution,
+        result: terminalRunnerResolution.auditResolution,
       });
-      json(res, 409, {
-        error_code: resolution.code,
-        message: resolution.code,
-      });
-      return true;
     }
-    const agent = resolution.runner;
-    await writeAgentRunnerResolutionAudit({
-      deps,
-      workspaceId: route.workspaceId,
-      projectId: route.projectId,
-      user,
-      taskId: route.taskId,
-      requestId: typeof req.headers['x-request-id'] === 'string' ? req.headers['x-request-id'] : null,
-      result: resolution,
-    });
     if (!agent || agent.status !== 'enabled') {
       json(res, 409, { error_code: 'RESOURCE_CONFLICT', message: 'task_agent_not_available' });
       return true;
     }
     if (isManagedAgentRunner(agent)) {
-      if (!deps.internalAgentPodManager || !deps.internalAgentWorkspaceBindingManager || !task.workspace_file_library_id) {
-        json(res, 409, { error_code: 'RESOURCE_CONFLICT', message: 'task_terminal_internal_runtime_unavailable' });
+      const runtimePreflight = await preflightManagedRunnerRuntimeForTask({
+        deps,
+        task,
+        runner: agent,
+      });
+      if (runtimePreflight) {
+        json(res, 409, {
+          error_code: runtimePreflight.code,
+          message: runtimePreflight.code,
+        });
         return true;
       }
     } else if (!(await ensureTaskRunnerSessionDispatchable({
@@ -1406,6 +2398,7 @@ export async function handleTaskRoute(args: TaskRouteHandlerArgs): Promise<boole
         projectId: task.project_id,
         taskId: task.id,
         agentId: agent.id,
+        resolvedRunnerId: agent.id,
         runnerSessionId: task.id,
         userId: user.id,
         cols,
@@ -1426,6 +2419,10 @@ export async function handleTaskRoute(args: TaskRouteHandlerArgs): Promise<boole
       const message = error instanceof Error ? error.message : 'task_terminal_session_create_failed';
       if (message === 'task_terminal_session_limit_reached') {
         json(res, 409, { error_code: 'RESOURCE_CONFLICT', message });
+        return true;
+      }
+      if (message === 'agent_runner_not_resolved' || message === 'terminal_runner_unavailable') {
+        json(res, 409, { error_code: message, message });
         return true;
       }
       throw error;
@@ -1471,6 +2468,10 @@ export async function handleTaskRoute(args: TaskRouteHandlerArgs): Promise<boole
       taskId: route.taskId,
       userId: user.id,
     });
+    if (sessions.some((session) => !readTerminalSessionResolvedRunnerId(session))) {
+      json(res, 409, { error_code: 'terminal_runner_unavailable', message: 'terminal_runner_unavailable' });
+      return true;
+    }
     const items = await Promise.all(sessions.map(async (session) => {
       const reconnectIssued = (
         session.status === 'pending'
@@ -1502,6 +2503,10 @@ export async function handleTaskRoute(args: TaskRouteHandlerArgs): Promise<boole
       json(res, 404, { error_code: 'RESOURCE_NOT_FOUND', message: 'task_terminal_session_not_found' });
       return true;
     }
+    if (!readTerminalSessionResolvedRunnerId(session)) {
+      json(res, 409, { error_code: 'terminal_runner_unavailable', message: 'terminal_runner_unavailable' });
+      return true;
+    }
     const reconnectIssued = (session.status === 'pending' || session.status === 'active' || session.status === 'disconnected')
       ? await deps.notebookTerminalService.issueReconnectTicket(session.id)
       : null;
@@ -1518,6 +2523,21 @@ export async function handleTaskRoute(args: TaskRouteHandlerArgs): Promise<boole
     const task = findTaskForOwner(route.workspaceId, route.projectId, route.taskId, user.id);
     if (!task) {
       json(res, 404, { error_code: 'RESOURCE_NOT_FOUND', message: 'task_not_found' });
+      return true;
+    }
+    const existingSession = await deps.notebookTerminalService.getSessionWithinScope({
+      workspaceId: route.workspaceId,
+      projectId: route.projectId,
+      taskId: route.taskId,
+      userId: user.id,
+      sessionId: route.terminalSessionId,
+    });
+    if (!existingSession) {
+      json(res, 404, { error_code: 'RESOURCE_NOT_FOUND', message: 'task_terminal_session_not_found' });
+      return true;
+    }
+    if (!readTerminalSessionResolvedRunnerId(existingSession)) {
+      json(res, 409, { error_code: 'terminal_runner_unavailable', message: 'terminal_runner_unavailable' });
       return true;
     }
     const deleted = await deps.notebookTerminalService.deleteSession({
@@ -1629,7 +2649,7 @@ export async function handleTaskRoute(args: TaskRouteHandlerArgs): Promise<boole
       return true;
     }
     const body = asObject(await readBody(req));
-    const unsupportedFields = collectUnsupportedFields(body, UNSUPPORTED_ACTIVE_TASK_SELECTOR_FIELDS);
+    const unsupportedFields = collectUnsupportedFields(body, UNSUPPORTED_ACTIVE_TASK_BINDING_FIELDS);
     if (unsupportedFields.length > 0) {
       json(res, 400, {
         error_code: 'unsupported_field',
@@ -1640,7 +2660,12 @@ export async function handleTaskRoute(args: TaskRouteHandlerArgs): Promise<boole
     }
     const previousStatus = task.status;
     const sharedActive = await getNotebookTaskRunState(deps.cache, route.taskId);
-    if (previousStatus === 'active' && body.status === 'archived' && sharedActive && !sharedActive.runner_id?.trim()) {
+    if (
+      previousStatus === 'active'
+      && body.status === 'archived'
+      && sharedActive
+      && !readActiveRunResolvedRunnerId(sharedActive)
+    ) {
       json(res, 409, buildTaskRunnerEvidenceMissingResponse({
         taskId: route.taskId,
         runId: sharedActive.run_id,
@@ -1658,14 +2683,14 @@ export async function handleTaskRoute(args: TaskRouteHandlerArgs): Promise<boole
     if (
       previousStatus === 'active'
       && task.status === 'archived'
-      && sharedActive?.runner_id?.trim()
+      && readActiveRunResolvedRunnerId(sharedActive)
     ) {
       await maybeReleaseInternalAgentWorkload(deps, {
         workspaceId: route.workspaceId,
         projectId: route.projectId,
         taskId: task.id,
         userId: task.owner_user_id,
-        agentId: sharedActive.runner_id.trim(),
+        agentId: readActiveRunResolvedRunnerId(sharedActive),
       }, {
         force: true,
       });
@@ -1863,7 +2888,21 @@ export async function handleTaskRoute(args: TaskRouteHandlerArgs): Promise<boole
       return true;
     }
     await loadTaskMessages(deps, route.taskId);
-    json(res, 200, getTaskMessages(route.taskId).map(mapTaskMessageRecordToActivityItem));
+    json(res, 200, getTaskMessages(route.taskId).map((message) =>
+      mapTaskMessageRecordToActivityItem(message, { task }),
+    ));
+    return true;
+  }
+
+  if (route.kind === 'taskRunnerBindingOptions' && method === 'GET') {
+    res.setHeader('Cache-Control', 'no-store');
+    json(res, 200, await buildTaskRunnerBindingOptions({
+      deps,
+      workspaceId: route.workspaceId,
+      projectId: route.projectId,
+      user,
+      requestId: typeof req.headers['x-request-id'] === 'string' ? req.headers['x-request-id'] : null,
+    }));
     return true;
   }
 
@@ -1901,6 +2940,7 @@ export async function handleTaskRoute(args: TaskRouteHandlerArgs): Promise<boole
     const total = traces.length;
     const hasMore = total > pageSize;
     const items = hasMore ? traces.slice(total - pageSize) : traces;
+    const projectedItems = items.map(projectTaskTraceEventForDisplay);
     const nextAfterId = hasMore && items.length > 0 ? items[0]!.id : null;
     const latencyMs = Date.now() - traceQueryStart;
     observeNotebookTraceQueryLatency(queryScope, latencyMs);
@@ -1919,7 +2959,7 @@ export async function handleTaskRoute(args: TaskRouteHandlerArgs): Promise<boole
         latency_ms: latencyMs,
       });
     }
-    json(res, 200, { items, total, has_more: hasMore, next_after_id: nextAfterId });
+    json(res, 200, { items: projectedItems, total, has_more: hasMore, next_after_id: nextAfterId });
     return true;
   }
 
@@ -2041,7 +3081,7 @@ export async function handleTaskRoute(args: TaskRouteHandlerArgs): Promise<boole
         return true;
       }
       const requestedInputs = readTaskInputRefs(body.input_refs);
-      const resolution = await resolveProjectAgentRunnerForTaskRun({
+      const resolution = await resolveTaskBoundAgentRunnerForTaskRun({
         deps,
         workspaceId: route.workspaceId,
         projectId: route.projectId,
@@ -2049,6 +3089,7 @@ export async function handleTaskRoute(args: TaskRouteHandlerArgs): Promise<boole
         user,
         requestedInputs,
         requestId: typeof req.headers['x-request-id'] === 'string' ? req.headers['x-request-id'] : null,
+        source: 'agent_runner_task_run',
       });
       if (!resolution.ok) {
         await writeAgentRunnerResolutionAudit({
@@ -2063,6 +3104,28 @@ export async function handleTaskRoute(args: TaskRouteHandlerArgs): Promise<boole
         json(res, 409, {
           error_code: resolution.code,
           message: resolution.code,
+        });
+        return true;
+      }
+      const runtimePreflight = await preflightManagedRunnerRuntimeForTask({
+        deps,
+        task,
+        runner: resolution.runner,
+        requiresWorkloadCoordinator: true,
+      });
+      if (runtimePreflight) {
+        await writeAgentRunnerResolutionAudit({
+          deps,
+          workspaceId: route.workspaceId,
+          projectId: route.projectId,
+          user,
+          taskId: route.taskId,
+          requestId: typeof req.headers['x-request-id'] === 'string' ? req.headers['x-request-id'] : null,
+          result: runtimePreflight,
+        });
+        json(res, 409, {
+          error_code: runtimePreflight.code,
+          message: runtimePreflight.code,
         });
         return true;
       }
@@ -2085,6 +3148,7 @@ export async function handleTaskRoute(args: TaskRouteHandlerArgs): Promise<boole
         taskId: route.taskId,
         runId,
         runnerId: resolution.runner.id,
+        resolvedRunnerId: resolution.runner.id,
         startedAt,
         ownerInstanceId: getNotebookRunOwnerInstanceId(),
       });
@@ -2350,22 +3414,22 @@ export async function handleTaskRoute(args: TaskRouteHandlerArgs): Promise<boole
           await finalizeAcquiredRun({ clearSharedControl: shouldClearSharedControl });
         });
 
-        emitNotebookTaskActivityEvent(route.taskId, message);
-        emitNotebookTaskActivityEvent(route.taskId, assistantMessage);
+        emitNotebookTaskActivityEvent(task, message);
+        emitNotebookTaskActivityEvent(task, assistantMessage);
         emitNotebookTaskEvent(route.taskId, {
           type: 'task_update',
           data: await buildTaskRealtimeView(deps, route.workspaceId, route.projectId, task),
         });
-        json(res, 200, mapTaskMessageRecordToActivityItem(assistantMessage));
+        json(res, 200, mapTaskMessageRecordToActivityItem(assistantMessage, { task }));
         return true;
       }
 
-      emitNotebookTaskActivityEvent(route.taskId, message);
+      emitNotebookTaskActivityEvent(task, message);
       emitNotebookTaskEvent(route.taskId, {
         type: 'task_update',
         data: await buildTaskRealtimeView(deps, route.workspaceId, route.projectId, task),
       });
-      json(res, 200, mapTaskMessageRecordToActivityItem(message));
+      json(res, 200, mapTaskMessageRecordToActivityItem(message, { task }));
       return true;
     } catch (error) {
       if (!runLaunchCommitted) {
@@ -2420,7 +3484,7 @@ export async function handleTaskRoute(args: TaskRouteHandlerArgs): Promise<boole
       json(res, 409, { error_code: 'TASK_RUN_FINALIZING', message: 'task_run_finalizing' });
       return true;
     }
-    const activeRunnerId = sharedActive?.runner_id?.trim() || hardTeardownDebt?.runner_id?.trim() || '';
+    const activeRunnerId = readActiveRunResolvedRunnerId(sharedActive) || hardTeardownDebt?.runner_id?.trim() || '';
     if ((sharedActive || hasTerminalHardTeardownDebt) && !activeRunnerId) {
       json(res, 409, buildTaskRunnerEvidenceMissingResponse({
         taskId: route.taskId,
@@ -2709,7 +3773,10 @@ export async function handleTaskRoute(args: TaskRouteHandlerArgs): Promise<boole
     if (typeof res.flushHeaders === 'function') {
       res.flushHeaders();
     }
-    subscribeNotebookTaskEvents(route.taskId, res, { buffered: true });
+    subscribeNotebookTaskEvents(route.taskId, res, {
+      buffered: true,
+      projectPayload: projectNotebookTaskSsePayloadForDisplay,
+    });
     const timer = setInterval(() => {
       res.write('event: ping\n');
       res.write(`data: ${JSON.stringify({ type: 'ping' })}\n\n`);
@@ -2720,7 +3787,9 @@ export async function handleTaskRoute(args: TaskRouteHandlerArgs): Promise<boole
     });
     try {
       if (lastEventId) {
-        const replay = replayBufferedNotebookTaskEvents(res, route.taskId, lastEventId);
+        const replay = replayBufferedNotebookTaskEvents(res, route.taskId, lastEventId, {
+          projectPayload: projectNotebookTaskSsePayloadForDisplay,
+        });
         if (replay.status === 'missing') {
           await writeNotebookTaskSseSnapshot({
             deps,

@@ -14,7 +14,7 @@ export function getConnectionBannerCopy(args: {
   connectionErrorCode?: string | null;
   connectionErrorMessage?: string | null;
 }) {
-  const { t, connectionStatus, connectionErrorCode, connectionErrorMessage } = args;
+  const { t, connectionStatus, connectionErrorCode } = args;
   const connectionFailureKind = connectionStatus
     ? classifyAgentTaskRealtimeFailure(connectionStatus, connectionErrorCode)
     : null;
@@ -58,17 +58,17 @@ export function getConnectionBannerCopy(args: {
             : connectionFailureKind === 'ticket_rate_limited'
               ? t('realtime_status_ticket_rate_limited_description')
               : connectionFailureKind === 'stream_unavailable'
-                ? connectionErrorMessage || t('realtime_status_stream_unavailable_description')
+                ? t('realtime_status_stream_unavailable_description')
                 : connectionFailureKind === 'stream_interrupted'
-                  ? connectionErrorMessage || t('realtime_status_stream_interrupted_description')
+                  ? t('realtime_status_stream_interrupted_description')
                   : connectionFailureKind === 'stream_recovery_exhausted'
-                    ? connectionErrorMessage || t('realtime_status_stream_recovery_exhausted_description')
+                    ? t('realtime_status_stream_recovery_exhausted_description')
                     : connectionFailureKind === 'ticket_network'
                       ? t('realtime_status_ticket_network_description')
                       : connectionFailureKind === 'reconcile_failed'
-                        ? connectionErrorMessage || t('realtime_status_reconcile_failed_description')
+                        ? t('realtime_status_reconcile_failed_description')
                         : connectionFailureKind === 'error'
-                          ? connectionErrorMessage || t('realtime_status_error_description')
+                          ? t('realtime_status_error_description')
                           : null;
 
   return {

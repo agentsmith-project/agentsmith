@@ -37,6 +37,8 @@ type NotebookTaskRecord = {
   project_id: string;
   owner_user_id: string;
   title: string;
+  source?: 'runner_test';
+  runner_test?: true;
   workspace_file_library_id?: string;
   workspace_file_library_name?: string;
   status: 'active' | 'archived';
@@ -108,7 +110,16 @@ function readDefaultEndpointId(agent: Pick<AgentRecord, 'default_endpoint_id'>):
   return agent.default_endpoint_id?.trim() ?? '';
 }
 
-function mapNotebookTaskMessageRecordToActivityItem(message: NotebookTaskMessageRecord): TaskActivityItem {
+function runnerTestSourceMarker(task: Pick<NotebookTaskRecord, 'source' | 'runner_test'>): Pick<TaskActivityItem, 'source' | 'runner_test'> {
+  return task.source === 'runner_test' || task.runner_test === true
+    ? { source: 'runner_test', runner_test: true }
+    : {};
+}
+
+function mapNotebookTaskMessageRecordToActivityItem(
+  message: NotebookTaskMessageRecord,
+  task: Pick<NotebookTaskRecord, 'source' | 'runner_test'>,
+): TaskActivityItem {
   return {
     id: message.id,
     task_id: message.task_id,
@@ -117,6 +128,7 @@ function mapNotebookTaskMessageRecordToActivityItem(message: NotebookTaskMessage
     content: message.content,
     created_at: message.created_at,
     ...(message.turn_id ? { run_id: message.turn_id } : {}),
+    ...runnerTestSourceMarker(task),
   };
 }
 
@@ -175,6 +187,8 @@ type TaskActivityItem = {
   content: string;
   created_at: string;
   run_id?: string;
+  source?: 'runner_test';
+  runner_test?: true;
 };
 
 type NotebookTaskArtifactRecord = {
@@ -270,20 +284,30 @@ export function resolveExecutionApiBase(
   agent: Pick<AgentRecord, 'runner_provider'>,
 ): string {
   if (usesInternalApiBaseForTaskRunner(agent)) {
-    const explicitInternalBase = ensureExecutionApiBase(process.env.AGENT_EXECUTION_HTTP_BASE_URL);
-    if (explicitInternalBase) {
-      return explicitInternalBase;
-    }
-    const derivedInternalBase = deriveHttpBaseFromWebSocketBase(process.env.AGENT_EXECUTION_WS_BASE_URL);
-    if (derivedInternalBase) {
-      return ensureExecutionApiBase(derivedInternalBase) ?? derivedInternalBase;
-    }
-    const internalBase = ensureExecutionApiBase(process.env.INTERNAL_API_BASE_URL);
+    const internalBase = resolveManagedExecutionApiBase();
     if (internalBase) return internalBase;
+    throw Object.assign(new Error('managed_runner_internal_api_base_not_configured'), {
+      code: 'AGENT_RUNTIME_UNAVAILABLE',
+      reason: 'internal_api_base_not_configured',
+    });
   }
   const developerBase = ensureExecutionApiBase(process.env.AGENT_RUNNER_DEVELOPER_EXECUTION_HTTP_BASE_URL);
   if (developerBase) return developerBase;
   return ensureExecutionApiBase(publicBaseUrl) ?? publicBaseUrl;
+}
+
+export function resolveManagedExecutionApiBase(): string | null {
+  const explicitInternalBase = ensureExecutionApiBase(process.env.AGENT_EXECUTION_HTTP_BASE_URL);
+  if (explicitInternalBase) {
+    return explicitInternalBase;
+  }
+  const derivedInternalBase = deriveHttpBaseFromWebSocketBase(process.env.AGENT_EXECUTION_WS_BASE_URL);
+  if (derivedInternalBase) {
+    return ensureExecutionApiBase(derivedInternalBase) ?? derivedInternalBase;
+  }
+  const internalBase = ensureExecutionApiBase(process.env.INTERNAL_API_BASE_URL);
+  if (internalBase) return internalBase;
+  return null;
 }
 
 function requireNotebookModelContextWindow(contextWindow: number | undefined): number {
@@ -594,7 +618,7 @@ export async function runNotebookTaskWithExecutionAgent(input: {
         ? (agent.execution_preferences_json as Record<string, unknown>)
         : {};
     const taskPreferences = resolveAgentTaskExecutionPreferences(executionPreferences);
-    const endpointId = readDefaultEndpointId(agent) || taskPreferences.endpointId;
+    const endpointId = taskPreferences.endpointId || readDefaultEndpointId(agent);
     endpointIdForLog = endpointId || null;
     if (!endpointId) {
       throw Object.assign(new Error('task_agent_endpoint_not_configured'), {
@@ -853,7 +877,7 @@ export async function runNotebookTaskWithExecutionAgent(input: {
         });
         emitTaskEvent(taskId, {
           type: 'activity_item',
-          data: mapNotebookTaskMessageRecordToActivityItem(assistantMessage),
+          data: mapNotebookTaskMessageRecordToActivityItem(assistantMessage, task),
         });
         continue;
       }
@@ -906,11 +930,14 @@ export async function runNotebookTaskWithExecutionAgent(input: {
     const codeCandidate = error instanceof Error
       ? (error as Error & { code?: unknown }).code
       : undefined;
-    const code = typeof codeCandidate === 'string'
+    const rawCode = typeof codeCandidate === 'string'
       ? codeCandidate
       : message === 'agent_offline'
         ? 'AGENT_OFFLINE'
       : 'AGENT_UPSTREAM_ERROR';
+    const code = rawCode === 'AGENT_SANDBOX_NOT_CONFIGURED'
+      ? 'AGENT_RUNTIME_UNAVAILABLE'
+      : rawCode;
     terminalErrorCode = code;
     debugLog('execution_dispatch_exception', {
       task_id: task.id,
@@ -1068,7 +1095,7 @@ export async function runNotebookTaskWithExecutionAgent(input: {
     if (persistedFinalState) {
       emitTaskEvent(taskId, {
         type: 'activity_item',
-        data: mapNotebookTaskMessageRecordToActivityItem(assistantMessage),
+        data: mapNotebookTaskMessageRecordToActivityItem(assistantMessage, task),
       });
       emitTaskEvent(taskId, { type: 'task_update', data: task });
     }

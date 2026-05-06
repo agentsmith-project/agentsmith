@@ -23,6 +23,10 @@ describe('local-manual start-api', () => {
     expect(script).toContain("local_manual_write_tracked_service_process_state api");
     expect(script).toContain("printf '%s\\n' \"${PORT_API}\" > \"${API_PORT_FILE}\"");
     expect(script).toContain("MBOS_UNIVERSAL_PROXY_ADMIN_TOKEN='${MBOS_UNIVERSAL_PROXY_ADMIN_TOKEN:-}'");
+    expect(script).toContain("AGENT_EXECUTION_HTTP_BASE_URL='${AGENT_EXECUTION_HTTP_BASE_URL:-}'");
+    expect(script).toContain("AGENT_EXECUTION_WS_BASE_URL='${AGENT_EXECUTION_WS_BASE_URL:-}'");
+    expect(script).not.toContain("AGENT_EXECUTION_HTTP_BASE_URL='${AGENT_EXECUTION_HTTP_BASE_URL:-http://localhost:${PORT_API}}'");
+    expect(script).not.toContain("AGENT_EXECUTION_WS_BASE_URL='${AGENT_EXECUTION_WS_BASE_URL:-ws://localhost:${PORT_API}}'");
   });
 
   it('writes api process-state after capture_listener_pid establishes the listener pid', () => {
@@ -104,6 +108,10 @@ write_ready_file() {
 
     execFileSync('bash', [path.join(scriptsDir, 'start-api.sh')], {
       cwd: tempRoot,
+      env: {
+        ...process.env,
+        AGENT_EXECUTION_HTTP_BASE_URL: 'http://172.19.0.1:20000',
+      },
       stdio: 'pipe',
     });
 
@@ -112,5 +120,15 @@ write_ready_file() {
     expect(readFileSync(processStateFile, 'utf8')).toBe('api|4200|start-api|20000\n');
     expect(readFileSync(path.join(runtimeRoot, 'api.ready'), 'utf8')).toBe('ready\n');
     expect(readFileSync(launchCommandFile, 'utf8')).toContain("MBOS_UNIVERSAL_PROXY_ADMIN_TOKEN='proxy-admin-token'");
+    expect(readFileSync(launchCommandFile, 'utf8')).toContain(
+      "AGENT_EXECUTION_HTTP_BASE_URL='http://172.19.0.1:20000'",
+    );
+  });
+
+  it('passes the kind gateway HTTP base when local internal runtime restarts the API', () => {
+    const script = readFileSync(path.join(process.cwd(), 'scripts/local-manual/internal-common.sh'), 'utf8');
+
+    expect(script).toContain('AGENT_EXECUTION_HTTP_BASE_URL="http://${kind_gateway}:${PORT_API}"');
+    expect(script).toContain('AGENT_EXECUTION_WS_BASE_URL="ws://${kind_gateway}:${PORT_API}"');
   });
 });

@@ -5,9 +5,12 @@ interface BufferedTaskSseEvent {
   payload: unknown;
 }
 
+type TaskSsePayloadProjector = (payload: unknown) => unknown;
+
 interface NotebookTaskSseClient {
   buffered: boolean;
   pending: BufferedTaskSseEvent[];
+  projectPayload?: TaskSsePayloadProjector;
   res: http.ServerResponse;
 }
 
@@ -39,6 +42,13 @@ export function writeNotebookTaskSseEvent(res: http.ServerResponse, payload: unk
   res.write(`data: ${JSON.stringify(payload)}\n\n`);
 }
 
+function projectNotebookTaskSsePayload(
+  payload: unknown,
+  projectPayload: TaskSsePayloadProjector | undefined,
+): unknown {
+  return projectPayload ? projectPayload(payload) : payload;
+}
+
 function getTaskEventClients(taskId: string): Map<http.ServerResponse, NotebookTaskSseClient> {
   let existing = TASK_EVENT_CLIENTS.get(taskId);
   if (!existing) {
@@ -66,7 +76,11 @@ export function emitNotebookTaskEvent(taskId: string, payload: unknown): void {
       continue;
     }
     try {
-      writeNotebookTaskSseEvent(res, payload, sseEventId);
+      writeNotebookTaskSseEvent(
+        res,
+        projectNotebookTaskSsePayload(payload, client.projectPayload),
+        sseEventId,
+      );
     } catch {
       clients.delete(res);
     }
@@ -86,6 +100,9 @@ export function replayBufferedNotebookTaskEvents(
   res: http.ServerResponse,
   taskId: string,
   lastEventId: string | null,
+  options?: {
+    projectPayload?: TaskSsePayloadProjector;
+  },
 ): {
   status: 'skipped' | 'missing' | 'replayed';
   replayed_count: number;
@@ -112,7 +129,11 @@ export function replayBufferedNotebookTaskEvents(
   }
   const replayItems = history.slice(idx + 1);
   for (const item of replayItems) {
-    writeNotebookTaskSseEvent(res, item.payload, item.id);
+    writeNotebookTaskSseEvent(
+      res,
+      projectNotebookTaskSsePayload(item.payload, options?.projectPayload),
+      item.id,
+    );
   }
   return {
     status: 'replayed',
@@ -125,6 +146,7 @@ export function subscribeNotebookTaskEvents(
   res: http.ServerResponse,
   options?: {
     buffered?: boolean;
+    projectPayload?: TaskSsePayloadProjector;
   },
 ): void {
   const clients = getTaskEventClients(taskId);
@@ -132,6 +154,7 @@ export function subscribeNotebookTaskEvents(
     res,
     buffered: options?.buffered === true,
     pending: [],
+    ...(options?.projectPayload ? { projectPayload: options.projectPayload } : {}),
   });
 }
 
@@ -152,7 +175,11 @@ export function activateNotebookTaskEventSubscription(taskId: string, res: http.
   }
   const pending = client.pending.splice(0, client.pending.length);
   for (const item of pending) {
-    writeNotebookTaskSseEvent(res, item.payload, item.id);
+    writeNotebookTaskSseEvent(
+      res,
+      projectNotebookTaskSsePayload(item.payload, client.projectPayload),
+      item.id,
+    );
   }
 }
 

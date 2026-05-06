@@ -81,6 +81,8 @@ describe('createNodeApiDepsFromEnv optional sandbox integration', () => {
       ...baseEnv,
       SANDBOX_MANAGER_URL: 'http://sandbox-manager:8080',
       SANDBOX_SERVICE_KEY: 'svc-key',
+      AGENT_EXECUTION_HTTP_BASE_URL: 'http://10.88.0.1:20000',
+      AGENT_EXECUTION_WS_BASE_URL: 'ws://10.88.0.1:20000',
     });
 
     try {
@@ -90,6 +92,23 @@ describe('createNodeApiDepsFromEnv optional sandbox integration', () => {
       expect(deps.internalAgentWorkspaceProvisioner).toBeDefined();
       await new Promise((resolve) => setTimeout(resolve, 1500));
       expect(fetchSpy).toHaveBeenCalled();
+    } finally {
+      await shutdownSafe(lifecycle);
+    }
+  });
+
+  it('does not wire a managed pod manager with sandbox env when the internal API base is missing', async () => {
+    const { deps, lifecycle } = createNodeApiDepsFromEnv({
+      ...baseEnv,
+      SANDBOX_MANAGER_URL: 'http://sandbox-manager:8080',
+      SANDBOX_SERVICE_KEY: 'svc-key',
+    });
+
+    try {
+      expect(deps.internalAgentPodManager).toBeUndefined();
+      expect(deps.internalWorkloadCoordinator).toBeUndefined();
+      expect(deps.internalAgentWorkspaceBindingManager).toBeDefined();
+      expect(deps.internalAgentWorkspaceProvisioner).toBeDefined();
     } finally {
       await shutdownSafe(lifecycle);
     }
@@ -107,6 +126,8 @@ describe('createNodeApiDepsFromEnv optional sandbox integration', () => {
       ...baseEnv,
       SANDBOX_MANAGER_URL: 'http://sandbox-manager:8080',
       SANDBOX_SERVICE_KEY: 'svc-key',
+      AGENT_EXECUTION_HTTP_BASE_URL: 'http://10.88.0.1:20000',
+      AGENT_EXECUTION_WS_BASE_URL: 'ws://10.88.0.1:20000',
     });
     const rawTaskId = 'TASK_ABC.123###';
     const expectedWorkloadId = sanitizeWorkloadId(rawTaskId);
@@ -119,6 +140,7 @@ describe('createNodeApiDepsFromEnv optional sandbox integration', () => {
         projectId: 'proj_1',
         taskId: rawTaskId,
         agentId: 'agent_1',
+        resolvedRunnerId: 'agent_1',
         runnerSessionId: rawTaskId,
         userId: 'user_1',
         cols: 80,

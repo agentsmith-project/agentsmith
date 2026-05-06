@@ -153,6 +153,10 @@ export const queryKeys = {
       ['task-traces', workspaceId, projectId, taskId, params] as const,
     artifacts: (workspaceId: string, projectId: string, taskId: string) =>
       ['task-artifacts', workspaceId, projectId, taskId] as const,
+    runnerBindingOptions: (
+      workspaceId: string,
+      projectId: string,
+    ) => ['task-runner-binding-options', workspaceId, projectId] as const,
   },
 
   /** Agent runners */

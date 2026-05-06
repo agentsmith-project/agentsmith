@@ -102,8 +102,15 @@ export interface Task {
   project_id: string;
   owner_user_id: string;
   title: string;
+  source?: 'runner_test';
+  runner_test?: true;
   workspace_file_library_id?: string;
   workspace_file_library_name?: string;
+  bound_runner_id?: string;
+  bound_runner_kind?: TaskRunnerBindingKind;
+  runner_binding_source?: TaskRunnerBindingSource;
+  bound_at?: string; // ISO 8601
+  bound_by_user_id?: string;
   status: TaskStatus;
   attached_inputs: TaskInputRef[]; // Attached task input references
   created_at: string; // ISO 8601
@@ -116,6 +123,8 @@ export interface Task {
     id: string;
     status: 'queued' | 'running' | 'stopping' | 'succeeded' | 'failed' | 'canceled';
     runner_id: string;
+    source?: 'runner_test';
+    runner_test?: true;
     started_at?: string;
     finished_at?: string;
   };
@@ -139,6 +148,8 @@ export interface TaskActivityItem {
   content: string;
   created_at: string; // ISO 8601
   run_id?: string; // Associated run ID (if any)
+  source?: 'runner_test';
+  runner_test?: true;
 }
 
 export type ArtifactType = 'text' | 'image' | 'file' | 'other';
@@ -185,6 +196,7 @@ export interface TaskTraceListResponse {
 
 export interface CreateTaskRequest {
   title: string;
+  bound_runner_id?: string;
   workspace_file_library_id?: string;
   workspace_mode?: 'create_new';
   workspace_name?: string;
@@ -198,6 +210,54 @@ export interface CreateTaskRequest {
 export interface UpdateTaskRequest {
   title?: string;
   status?: TaskStatus;
+}
+
+export type TaskRunnerBindingKind = 'managed' | 'developer';
+
+export type TaskRunnerBindingSource = 'default_managed' | 'explicit';
+
+export type TaskRunnerBindingReasonCode =
+  | 'agent_runner_unavailable'
+  | 'agent_runner_model_unconfigured'
+  | 'agent_runner_capability_mismatch'
+  | 'agent_runner_default_conflict'
+  | 'permission_denied'
+  | 'agent_runner_disconnected'
+  | 'agent_runner_stale';
+
+export interface TaskRunnerBindingSummary {
+  state: string;
+  summary: string;
+  reason_code?: TaskRunnerBindingReasonCode;
+}
+
+export interface TaskRunnerBindingAction {
+  operation: 'bind_to_task';
+  visible: boolean;
+  allowed: boolean;
+  reason_code?: TaskRunnerBindingReasonCode;
+  required_permissions: string[];
+  danger_level: 'none';
+}
+
+export interface TaskRunnerBindingOption {
+  option_id: string;
+  label: string;
+  bound_runner_kind: TaskRunnerBindingKind;
+  runner_binding_source: TaskRunnerBindingSource;
+  agent_runner_id?: string;
+  readiness: TaskRunnerBindingSummary;
+  capability: TaskRunnerBindingSummary;
+  freshness?: TaskRunnerBindingSummary;
+  disabled_reason_code?: TaskRunnerBindingReasonCode;
+  actions: {
+    bind_to_task: TaskRunnerBindingAction;
+  };
+}
+
+export interface TaskRunnerBindingOptionsResponse {
+  options: TaskRunnerBindingOption[];
+  generated_at: string;
 }
 
 export interface StartTaskRunRequest {

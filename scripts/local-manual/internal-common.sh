@@ -385,7 +385,8 @@ restart_api_with_mode() {
   if [[ "${internal_flag}" == "1" ]]; then
     local kind_gateway
     kind_gateway="$(resolve_kind_gateway_ip)"
-    AGENT_EXECUTION_WS_BASE_URL="ws://${kind_gateway}:${PORT_API}" \
+    AGENT_EXECUTION_HTTP_BASE_URL="http://${kind_gateway}:${PORT_API}" \
+      AGENT_EXECUTION_WS_BASE_URL="ws://${kind_gateway}:${PORT_API}" \
       LOCAL_MANUAL_ENABLE_INTERNAL="${internal_flag}" \
       bash "${ROOT_DIR}/scripts/local-manual/start-api.sh"
     return

@@ -8,6 +8,7 @@ import {
   storeTaskTerminalPanelSessionIdForScope,
 } from "./TaskTerminalPanel";
 import {
+  useCreateTask,
   useTask,
   useTaskActivity,
   useTaskArtifacts,
@@ -25,8 +26,11 @@ import {
 } from "@/lib/types/task";
 import type {
   Artifact,
+  CreateTaskRequest,
+  StartTaskRunRequest,
   Task,
   TaskActivityItem,
+  TaskInputRef,
   TaskRunState,
   TaskTraceEvent,
 } from "@/lib/types/task";
@@ -52,6 +56,7 @@ import { useTaskTraceState } from "@/components/agent-tasks/task-page/useTaskTra
 import { useTaskInputActions } from "@/components/agent-tasks/task-page/useTaskInputActions";
 import { getPublicRuntimeConfig } from "@/lib/public-runtime-config";
 import { makeClientId } from "@/lib/chat/ids";
+import { deriveDefaultTaskWorkspaceName } from "./TaskCreateDialog";
 import type {
   TerminalCloseReconcileResult,
   TerminalStatus,
@@ -95,6 +100,12 @@ type ListedTerminalSession = Awaited<
 type TerminalWorkspaceHydrationState = "pending" | "ready" | "unavailable";
 
 type TaskTranslationFn = ReturnType<typeof useTranslations>;
+type RecoveryCreateTaskRequest = CreateTaskRequest & {
+  prompt?: string;
+};
+type TaskWithPrompt = Task & {
+  prompt?: unknown;
+};
 
 export const NOTEBOOK_CANCEL_ESCALATION_PROMPT_DELAY_MS = 30_000;
 
@@ -166,6 +177,53 @@ function getAuthoritativeRunInputPlaceholder(
     return tConversation("input_placeholder_finalizing");
   }
   return null;
+}
+
+function hasDeveloperBoundRunnerIssue(task: Task | null | undefined) {
+  return task?.bound_runner_kind === "developer" && task.agent_presence !== "online";
+}
+
+function getRecoveryTaskPrompt(task: Task): string | undefined {
+  const prompt = (task as TaskWithPrompt).prompt;
+  return typeof prompt === "string" && prompt.trim().length > 0
+    ? prompt.trim()
+    : undefined;
+}
+
+function toReusableInitialInput(
+  input: TaskInputRef,
+): NonNullable<CreateTaskRequest["initial_inputs"]>[number] | null {
+  if (input.kind === "library_object") {
+    return {
+      kind: "library_object",
+      library_id: input.library_id,
+      key: input.key,
+      ...(input.name ? { name: input.name } : {}),
+      ...(input.content_type ? { content_type: input.content_type } : {}),
+      ...(typeof input.size_bytes === "number" ? { size_bytes: input.size_bytes } : {}),
+    };
+  }
+  if (input.kind === "url") {
+    return {
+      kind: "url",
+      url: input.url,
+      ...(input.name ? { name: input.name } : {}),
+      ...(input.imported_library_id ? { imported_library_id: input.imported_library_id } : {}),
+      ...(input.imported_key ? { imported_key: input.imported_key } : {}),
+      ...(input.content_type ? { content_type: input.content_type } : {}),
+      ...(typeof input.size_bytes === "number" ? { size_bytes: input.size_bytes } : {}),
+    };
+  }
+  return null;
+}
+
+function getReusableRecoveryInitialInputs(
+  task: Task,
+): NonNullable<CreateTaskRequest["initial_inputs"]> {
+  return task.attached_inputs.flatMap((input) => {
+    const reusableInput = toReusableInitialInput(input);
+    return reusableInput ? [reusableInput] : [];
+  });
 }
 
 function mapListedTerminalSessionStatusToTabStatus(
@@ -621,6 +679,7 @@ export function TaskPage({
   const [runtimeReconciliationActive, setRuntimeReconciliationActive] =
     React.useState(false);
   const sendMessage = useStartTaskRun();
+  const createTask = useCreateTask();
   const updateTask = useUpdateTask();
   const { data: task, isLoading: taskLoading, refetch: refetchTask } = useTask(
     workspaceId,
@@ -1062,7 +1121,12 @@ export function TaskPage({
         queryClient.setQueryData(taskDetailKey, updatedTask);
       },
       onTraceEvent: (traceEvent) => {
-        setLastRunActionSummary(traceEvent.summary || traceEvent.name);
+        setLastRunActionSummary(
+          deriveRunAction({
+            event: traceEvent,
+            fallbackSummary: traceEvent.name,
+          }).summary,
+        );
         mergeTraceEvents([traceEvent]);
         if (effectiveRunState !== "idle") {
           setActiveRunTraceMessageId(traceEvent.message_id);
@@ -1144,6 +1208,11 @@ export function TaskPage({
     setPendingMessages((prev) => [...prev, createPendingMessage(normalized)]);
   }, []);
 
+  const buildStartRunRequest = React.useCallback(
+    (content: string): StartTaskRunRequest => ({ intent: content }),
+    [],
+  );
+
   const sendMessageNow = React.useCallback(
     async (content: string, source: "direct" | "queue") => {
       try {
@@ -1173,9 +1242,7 @@ export function TaskPage({
           workspaceId,
           projectId,
           taskId,
-          data: {
-            intent: content,
-          },
+          data: buildStartRunRequest(content),
         });
 
         // If response indicates streaming, set up streaming state
@@ -1272,6 +1339,7 @@ export function TaskPage({
       }
     },
     [
+      buildStartRunRequest,
       enqueuePendingMessage,
       handleError,
       messagesKey,
@@ -1470,11 +1538,47 @@ export function TaskPage({
     setCreateDialogOpen(true);
   };
 
-  const handleTaskCreated = (newTaskId: string) => {
+  const handleTaskCreated = React.useCallback((newTaskId: string) => {
     router.push(
       `/${locale}/workspaces/${workspaceId}/projects/${projectId}/agent-tasks/${newTaskId}`,
     );
-  };
+  }, [locale, projectId, router, workspaceId]);
+
+  const handleCreateBoundRunnerRecoveryTask = React.useCallback(async () => {
+    if (!task || !canCreateTask) return;
+    try {
+      const reusableInitialInputs = getReusableRecoveryInitialInputs(task);
+      const prompt = getRecoveryTaskPrompt(task);
+      const data: RecoveryCreateTaskRequest = {
+        title: task.title,
+        workspace_mode: "create_new",
+        workspace_name: deriveDefaultTaskWorkspaceName(task.title),
+        ...(prompt ? { prompt } : {}),
+        ...(reusableInitialInputs.length > 0
+          ? { initial_inputs: reusableInitialInputs }
+          : {}),
+      };
+      const newTask = await createTask.mutateAsync({
+        workspaceId,
+        projectId,
+        data,
+      });
+      handleTaskCreated(newTask.id);
+    } catch (error) {
+      handleError(error, {
+        logContext: "TaskPage.createBoundRunnerRecoveryTask",
+        showToast: true,
+      });
+    }
+  }, [
+    createTask,
+    handleError,
+    handleTaskCreated,
+    canCreateTask,
+    projectId,
+    task,
+    workspaceId,
+  ]);
 
   const handleTaskDeleted = () => {
     router.push(
@@ -1702,6 +1806,11 @@ export function TaskPage({
   const terminalWorkspaceActionLabel = terminalHasRecovery
     ? tTask("terminal_recovery_show")
     : tTask("terminal_workspace_open");
+  const developerBoundRunnerIssue =
+    canCreateTask && hasDeveloperBoundRunnerIssue(task);
+  const boundRunnerRecoveryActionLabel = developerBoundRunnerIssue
+    ? tTask("runner_binding_issue_action")
+    : null;
   const isConversationInputDisabled =
     isDisabled ||
     !canUpdateTask ||
@@ -2750,7 +2859,7 @@ export function TaskPage({
           tone: "critical" as const,
         }
       : effectiveViewMode === "conversation" && hasTerminalSessions
-      ? {
+        ? {
             title: terminalSessionSummaryLabel,
             description: terminalHiddenStateDescription,
             actionLabel: terminalWorkspaceActionLabel,
@@ -2758,7 +2867,16 @@ export function TaskPage({
             onAction: () => handleOpenTerminalWorkspace(terminalHasRecovery),
             tone: terminalHasRecovery ? ("critical" as const) : ("default" as const),
           }
-        : null;
+        : effectiveViewMode === "conversation" && developerBoundRunnerIssue
+          ? {
+              title: tTask("runner_binding_issue_title"),
+              description: tTask("runner_binding_issue_description"),
+              actionLabel: boundRunnerRecoveryActionLabel ?? undefined,
+              actionTestId: "agent-tasks__conversation-blocked-action",
+              onAction: handleCreateBoundRunnerRecoveryTask,
+              tone: "critical" as const,
+            }
+          : null;
   const showConversationBlockedEmptyState =
     effectiveViewMode === "conversation" &&
     conversationBlockedState !== null &&
@@ -2875,6 +2993,11 @@ export function TaskPage({
         terminalHasRecovery={terminalHasRecovery}
         terminalRecoveryCount={terminalRecoveryCount}
         terminalDisabledReason={terminalDisabledReason}
+        boundRunnerRecoveryActionLabel={boundRunnerRecoveryActionLabel}
+        onCreateBoundRunnerRecoveryTask={
+          developerBoundRunnerIssue ? handleCreateBoundRunnerRecoveryTask : undefined
+        }
+        boundRunnerRecoveryPending={developerBoundRunnerIssue && createTask.isPending}
         onSetViewMode={handleSetViewMode}
         onCreateTerminalSession={
           !hasTerminalSessions &&

@@ -38,7 +38,8 @@ async function setupExecutionService(options?: {
   interactionKind?: 'chat' | 'notebook' | null;
   executionServiceOptions?: ConstructorParameters<typeof AgentExecutionService>[1];
 }) {
-  const agentResourceService = new AgentResourceService(new InMemoryJsonDocStore());
+  const docStore = new InMemoryJsonDocStore();
+  const agentResourceService = new AgentResourceService(docStore);
   const executionService = new AgentExecutionService(agentResourceService, options?.executionServiceOptions);
   const server = http.createServer((_req, res) => {
     res.statusCode = 404;
@@ -92,6 +93,7 @@ async function setupExecutionService(options?: {
   });
 
   return {
+    docStore,
     agentResourceService,
     executionService,
     agent,
@@ -190,6 +192,12 @@ function captureUnhandledRejections(): {
       process.off('unhandledRejection', handler);
     },
   };
+}
+
+function expectIsoDateTime(value: unknown): asserts value is string {
+  expect(typeof value).toBe('string');
+  expect(value).toMatch(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/);
+  expect(Number.isNaN(Date.parse(value))).toBe(false);
 }
 
 interface ExecutionRacePause {
@@ -1400,6 +1408,49 @@ describe('AgentExecutionService', () => {
     });
   });
 
+  it('emits terminal protocol error with canonical session id when output payload is invalid', async () => {
+    const { executionService, agent, ws } = await setupExecutionService({ interactionKind: 'notebook' });
+    const terminal = await executionService.dispatchTerminalSession({
+      workspaceId: 'ws_default',
+      projectId: 'proj_1',
+      sessionId: 'task_invalid_terminal_output',
+      agentId: agent.id,
+      terminalSessionId: 'term_invalid_output_payload',
+      payload: {
+        cols: 80,
+        rows: 24,
+        executionContext: {
+          interaction_kind: 'notebook',
+          runner_session_scope: 'agent_presence',
+        },
+      },
+    });
+    const terminalEvents = terminal.stream[Symbol.asyncIterator]();
+
+    ws.send(JSON.stringify({
+      type: 'agent.terminal.output',
+      terminal_session_id: 'term_invalid_output_payload',
+      payload: {
+        terminal_session_id: 'term_invalid_output_payload',
+        chunk: 42,
+      },
+    }));
+
+    await expect(terminalEvents.next()).resolves.toEqual({
+      done: false,
+      value: {
+        type: 'error',
+        terminal_session_id: 'term_invalid_output_payload',
+        error_code: 'AGENT_PROTOCOL_ERROR',
+        error_message: 'agent_terminal_output_invalid',
+      },
+    });
+    await expect(terminalEvents.next()).resolves.toEqual({
+      done: true,
+      value: undefined,
+    });
+  });
+
   it('buffers notebook terminal stdin until the runner emits first output', async () => {
     const { executionService, agent, ws } = await setupExecutionService({ interactionKind: 'notebook' });
     const stdinFrames: Array<Record<string, unknown>> = [];
@@ -1689,6 +1740,125 @@ describe('AgentExecutionService', () => {
     await expect(reader.getAgent('ws_default', 'proj_1', agent.id)).resolves.toEqual(expect.objectContaining({
       presence: 'online',
     }));
+  });
+
+  it.each([
+    ['rotated', 'agent_key_rotated'],
+    ['revoked', 'agent_key_revoked'],
+  ] as const)('disconnects the current runner socket when its active key is %s', async (_name, closeReason) => {
+    const { agentResourceService, executionService, agent, keyPair, ws } = await setupExecutionService({
+      executionServiceOptions: {
+        heartbeatIntervalMs: 10_000,
+        heartbeatMaxMisses: 100,
+      },
+    });
+    await waitForConnectionInfo(
+      agentResourceService,
+      agent.id,
+      (connection) => connection?.auth_key_id === keyPair.record.id,
+    );
+    const closed = new Promise<{ code: number; reason: string }>((resolve) => {
+      ws.once('close', (code, reason) => {
+        resolve({ code, reason: reason.toString('utf-8') });
+      });
+    });
+
+    if (closeReason === 'agent_key_rotated') {
+      await agentResourceService.createAgentKey('ws_default', 'proj_1', agent.id);
+    } else {
+      await agentResourceService.revokeAgentKey('ws_default', 'proj_1', agent.id, keyPair.record.id);
+    }
+    expect(executionService.disconnectAgentRunner(agent.id, closeReason)).toBe(1);
+
+    await expect(closed).resolves.toEqual({
+      code: 4003,
+      reason: closeReason,
+    });
+    expect(executionService.getAgentOnlineState(agent.id)).toBe(false);
+    await expect(agentResourceService.getConnectionInfo(agent.id)).resolves.toBeNull();
+  });
+
+  it('requires dispatch authority to have a current connection backed by an active key', async () => {
+    const { docStore, executionService, agent, keyPair, ws } = await setupExecutionService({
+      interactionKind: 'chat',
+      executionServiceOptions: {
+        heartbeatIntervalMs: 10_000,
+        heartbeatMaxMisses: 100,
+      },
+    });
+    const requestFrames: Array<Record<string, unknown>> = [];
+    ws.on('message', (raw) => {
+      const message = JSON.parse(raw.toString('utf-8')) as Record<string, unknown>;
+      if (message.type === 'server.request.start') {
+        requestFrames.push(message);
+      }
+    });
+    const storedKey = await docStore.get<Record<string, unknown>>(
+      resolveWorkspaceScopedCollection('agent_service_keys', 'ws_default'),
+      keyPair.record.id,
+    );
+    await docStore.upsert(resolveWorkspaceScopedCollection('agent_service_keys', 'ws_default'), keyPair.record.id, {
+      ...storedKey,
+      status: 'revoked',
+    });
+    const closed = new Promise<{ code: number; reason: string }>((resolve) => {
+      ws.once('close', (code, reason) => {
+        resolve({ code, reason: reason.toString('utf-8') });
+      });
+    });
+
+    await expect(executionService.dispatchStreamingRequest({
+      workspaceId: 'ws_default',
+      projectId: 'proj_1',
+      sessionId: 'chat_revoked_key',
+      agentId: agent.id,
+      model: 'external-test',
+      messages: [{ role: 'user', content: 'must not dispatch' }],
+      executionContext: {
+        interaction_kind: 'chat',
+      },
+    })).rejects.toThrow('agent_offline');
+
+    expect(requestFrames).toEqual([]);
+    await expect(closed).resolves.toEqual({
+      code: 4001,
+      reason: 'agent_stale_connection',
+    });
+  });
+
+  it('invalidates an existing runner socket on heartbeat when its authenticated key expires', async () => {
+    const { docStore, agentResourceService, executionService, agent, keyPair, ws } = await setupExecutionService({
+      executionServiceOptions: {
+        heartbeatIntervalMs: 25,
+        heartbeatMaxMisses: 100,
+      },
+    });
+    await waitForConnectionInfo(
+      agentResourceService,
+      agent.id,
+      (connection) => connection?.auth_key_id === keyPair.record.id,
+    );
+    const storedKey = await docStore.get<Record<string, unknown>>(
+      resolveWorkspaceScopedCollection('agent_service_keys', 'ws_default'),
+      keyPair.record.id,
+    );
+    await docStore.upsert(resolveWorkspaceScopedCollection('agent_service_keys', 'ws_default'), keyPair.record.id, {
+      ...storedKey,
+      expires_at: '2000-01-01T00:00:00.000Z',
+      status: 'active',
+    });
+    const closed = new Promise<{ code: number; reason: string }>((resolve) => {
+      ws.once('close', (code, reason) => {
+        resolve({ code, reason: reason.toString('utf-8') });
+      });
+    });
+
+    await expect(closed).resolves.toEqual({
+      code: 4001,
+      reason: 'agent_stale_connection',
+    });
+    expect(executionService.getAgentOnlineState(agent.id)).toBe(false);
+    await expect(agentResourceService.getConnectionInfo(agent.id)).resolves.toBeNull();
   });
 
   it('does not let a delayed old websocket release erase a newer websocket from another API instance', async () => {
@@ -2841,6 +3011,61 @@ describe('AgentExecutionService', () => {
       finish_reason: 'stop',
       usage_tokens: 1,
     });
+  });
+
+  it('uses a server ISO timestamp instead of runner-controlled trace event at', async () => {
+    const { executionService, agent, ws } = await setupExecutionService();
+    const maliciousAt = 'TOKEN=abc /internal/raw diagnostics';
+    ws.on('message', (raw) => {
+      const msg = JSON.parse(raw.toString('utf-8')) as { type?: string; request_id?: string };
+      if (msg.type !== 'server.request.start' || !msg.request_id) return;
+      ws.send(JSON.stringify({
+        type: 'agent.response.event',
+        request_id: msg.request_id,
+        payload: {
+          sequence: 1,
+          at: maliciousAt,
+          category: 'progress',
+          phase: 'start',
+          status: 'running',
+          name: 'codex.exec',
+          summary: 'Starting Codex execution',
+        },
+      }));
+      ws.send(JSON.stringify({
+        type: 'agent.response.done',
+        request_id: msg.request_id,
+        payload: { finish_reason: 'stop', usage_tokens: 1 },
+      }));
+    });
+
+    const dispatched = await executionService.dispatchStreamingRequest({
+      workspaceId: 'ws_default',
+      projectId: 'proj_1',
+      sessionId: 'sess_trace_malicious_at',
+      agentId: agent.id,
+      model: 'external-test',
+      messages: [{ role: 'user', content: 'hello' }],
+    });
+
+    const iterator = dispatched.stream[Symbol.asyncIterator]();
+    const eventItem = await iterator.next();
+    expect(eventItem.done).toBe(false);
+    expect(eventItem.value).toMatchObject({
+      type: 'event',
+      event: {
+        sequence: 1,
+        category: 'progress',
+        phase: 'start',
+        status: 'running',
+        name: 'codex.exec',
+      },
+    });
+    const eventAt = eventItem.value.event?.at;
+    expect(eventAt).not.toBe(maliciousAt);
+    expect(String(eventAt)).not.toContain('TOKEN=abc');
+    expect(String(eventAt)).not.toContain('/internal/raw diagnostics');
+    expectIsoDateTime(eventAt);
   });
 
   it('forwards agent artifacts to the request stream', async () => {

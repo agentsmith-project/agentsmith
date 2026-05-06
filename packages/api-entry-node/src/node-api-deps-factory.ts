@@ -57,11 +57,36 @@ import { UniversalProxyService } from './universal-proxy-service.js';
 import { NotebookTerminalService } from './notebook-terminal-service.js';
 import { InternalWorkloadCoordinator } from './internal-workload-coordinator.js';
 import { INTERNAL_AGENT_KEEPALIVE_INTERVAL_SECONDS } from '@mbos/contracts';
-import { evaluateProjectPermissions } from './project-authz-engine.js';
+import {
+  evaluateProjectPermissions,
+  evaluateResourcePolicyAuthorization,
+} from './project-authz-engine.js';
+import { isDeveloperAgentRunner } from './agent-runner-profile.js';
+
+function deriveWebSocketBaseFromHttpBase(value: string | undefined | null): string {
+  const trimmed = value?.trim();
+  if (!trimmed) return '';
+  try {
+    const parsed = new URL(trimmed);
+    if (parsed.protocol === 'http:') {
+      parsed.protocol = 'ws:';
+    } else if (parsed.protocol === 'https:') {
+      parsed.protocol = 'wss:';
+    } else if (parsed.protocol !== 'ws:' && parsed.protocol !== 'wss:') {
+      return '';
+    }
+    parsed.pathname = '';
+    parsed.search = '';
+    parsed.hash = '';
+    return parsed.toString().replace(/\/+$/, '');
+  } catch {
+    return '';
+  }
+}
 
 function configureNotebookTerminalAuthorization(deps: Pick<
   NodeApiDeps,
-  'docStore' | 'getProjectUseCase' | 'notebookTerminalService'
+  'docStore' | 'getProjectUseCase' | 'notebookTerminalService' | 'agentResourceService'
 >): void {
   deps.notebookTerminalService.configureAuthorizationHooks({
     authorizeTerminalUse: async (input) => {
@@ -77,9 +102,48 @@ function configureNotebookTerminalAuthorization(deps: Pick<
           projectOwnerId: project.owner_id,
           projectGovernance: project.governance_json,
           actorUserId: input.userId,
-          requiredPermissions: [input.requiredPermission],
+          requiredPermissions: input.requiredPermissions,
         });
-        return evaluation.decisions.every((decision) => decision.granted);
+        if (!evaluation.decisions.every((decision) => decision.granted)) {
+          return false;
+        }
+        const runnerId = input.resolvedRunnerId.trim();
+        if (!runnerId) {
+          return false;
+        }
+        const runner = await deps.agentResourceService.getAgent(
+          input.workspaceId,
+          input.projectId,
+          runnerId,
+        );
+        if (!runner || runner.status !== 'enabled') {
+          return false;
+        }
+        if (!isDeveloperAgentRunner(runner)) {
+          return true;
+        }
+        const policyDecision = await evaluateResourcePolicyAuthorization({
+          docStore: deps.docStore,
+          workspaceId: input.workspaceId,
+          projectId: input.projectId,
+          resourceType: 'agent',
+          resourceId: runner.id,
+          subjectType: 'user',
+          subjectId: input.userId,
+        });
+        if (!policyDecision.allowed) {
+          return false;
+        }
+        const runnerEvaluation = await evaluateProjectPermissions({
+          docStore: deps.docStore,
+          workspaceId: input.workspaceId,
+          projectId: input.projectId,
+          projectOwnerId: project.owner_id,
+          projectGovernance: project.governance_json,
+          actorUserId: input.userId,
+          requiredPermissions: ['project:agent_task:use', 'project:agent_task:terminal', 'project:agent_runner:manage'],
+        });
+        return runnerEvaluation.decisions.every((decision) => decision.granted);
       } catch {
         return false;
       }
@@ -204,7 +268,9 @@ export function createNodeApiDepsFromEnv(env: NodeJS.ProcessEnv): {
   );
   const sandboxUrl = env.SANDBOX_MANAGER_URL?.trim() || '';
   const sandboxServiceKey = env.SANDBOX_SERVICE_KEY?.trim() || '';
-  const internalAgentWsBaseUrl = env.AGENT_EXECUTION_WS_BASE_URL?.trim() || '';
+  const internalAgentWsBaseUrl = env.AGENT_EXECUTION_WS_BASE_URL?.trim()
+    || deriveWebSocketBaseFromHttpBase(env.AGENT_EXECUTION_HTTP_BASE_URL)
+    || deriveWebSocketBaseFromHttpBase(env.INTERNAL_API_BASE_URL);
   const internalAgentMetadataHostOverride = env.INTERNAL_AGENT_JUICEFS_META_HOST_OVERRIDE?.trim() || '';
   const internalAgentMetadataPortOverride = env.INTERNAL_AGENT_JUICEFS_META_PORT_OVERRIDE?.trim() || '';
   const internalMountBucketEndpoint =
@@ -269,11 +335,11 @@ export function createNodeApiDepsFromEnv(env: NodeJS.ProcessEnv): {
         },
       )
     : undefined;
-  const internalAgentPodManager = sandboxClient
+  const internalAgentPodManager = sandboxClient && internalAgentWsBaseUrl
     ? new InternalAgentPodManagerImpl(
         sandboxClient,
         agentExecutionService,
-        (internalAgentWsBaseUrl || `ws://localhost:${env.PORT ?? '20000'}`).replace(/\/+$/, ''),
+        internalAgentWsBaseUrl.replace(/\/+$/, ''),
         {
           startupTimeoutMs: Number(env.INTERNAL_AGENT_STARTUP_TIMEOUT_MS ?? '300000'),
         },

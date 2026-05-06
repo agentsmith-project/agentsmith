@@ -33,9 +33,13 @@ vi.mock('next-intl', () => ({
         create_success_title: 'API Key Created',
         create_success_hint: 'Copy this key now. You will not be able to see it again.',
         create_success_prefix_only: 'The API only returned the key prefix. Use it to identify this key in the list.',
+        create_connection_key_success_title: 'Connection key created',
+        create_connection_key_success_hint: 'Save this connection key now. It is shown only once.',
+        create_connection_key_success_prefix_only: 'Only the connection key prefix was returned.',
       },
       common: {
-        confirm: 'Done',
+        confirm: 'Confirm',
+        done: 'Done',
         copied: 'Copied!',
         copy_failed: 'Failed to copy',
         copy: 'Copy',
@@ -125,10 +129,18 @@ describe('KeyCreatedDialog', () => {
       expect(copyButton).toBeInTheDocument();
     });
 
-    it('shows confirm/done button', () => {
+    it('shows confirm button for user keys', () => {
       render(<KeyCreatedDialog {...defaultProps} />);
 
-      expect(screen.getByRole('button', { name: /done/i })).toBeInTheDocument();
+      expect(screen.getByRole('button', { name: /confirm/i })).toBeInTheDocument();
+    });
+
+    it('uses connection-key copy for project runner keys', () => {
+      render(<KeyCreatedDialog {...defaultProps} scope="project" />);
+
+      expect(screen.getByText('Connection key created')).toBeInTheDocument();
+      expect(screen.getByText('Save this connection key now. It is shown only once.')).toBeInTheDocument();
+      expect(screen.queryByText('API Key Created')).not.toBeInTheDocument();
     });
   });
 
@@ -313,7 +325,7 @@ describe('KeyCreatedDialog', () => {
 
       render(<KeyCreatedDialog {...defaultProps} onOpenChange={onOpenChange} />);
 
-      await user.click(screen.getByRole('button', { name: /done/i }));
+      await user.click(screen.getByRole('button', { name: /confirm/i }));
 
       expect(onOpenChange).toHaveBeenCalledWith(false);
     });
@@ -330,7 +342,7 @@ describe('KeyCreatedDialog', () => {
       });
 
       // Close the dialog
-      await user.click(screen.getByRole('button', { name: /done/i }));
+      await user.click(screen.getByRole('button', { name: /confirm/i }));
 
       // State should be reset (we can verify by opening again)
       // This is implicit in the implementation - state is reset on close
@@ -382,7 +394,9 @@ describe('KeyCreatedDialog', () => {
     it('renders with project scope', () => {
       render(<KeyCreatedDialog {...defaultProps} scope="project" />);
 
-      expect(screen.getByText('API Key Created')).toBeInTheDocument();
+      expect(screen.getByText('Connection key created')).toBeInTheDocument();
+      expect(screen.getByRole('button', { name: /done/i })).toBeInTheDocument();
+      expect(screen.queryByRole('button', { name: /confirm/i })).not.toBeInTheDocument();
     });
   });
 
@@ -502,7 +516,7 @@ describe('KeyCreatedDialog', () => {
       });
 
       // Close dialog
-      await user.click(screen.getByRole('button', { name: /done/i }));
+      await user.click(screen.getByRole('button', { name: /confirm/i }));
 
       expect(onOpenChange).toHaveBeenCalledWith(false);
     });
@@ -513,7 +527,7 @@ describe('KeyCreatedDialog', () => {
       render(<KeyCreatedDialog {...defaultProps} onOpenChange={onOpenChange} />);
 
       // Close without copying
-      await user.click(screen.getByRole('button', { name: /done/i }));
+      await user.click(screen.getByRole('button', { name: /confirm/i }));
 
       expect(onOpenChange).toHaveBeenCalledWith(false);
       expect(navigator.clipboard.writeText).not.toHaveBeenCalled();

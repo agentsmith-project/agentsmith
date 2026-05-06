@@ -7,8 +7,15 @@ export interface TaskRecord {
   owner_user_id: string;
   title: string;
   prompt?: string;
+  source?: 'runner_test';
+  runner_test?: true;
   workspace_file_library_id?: string;
   workspace_file_library_name?: string;
+  bound_runner_id?: string;
+  bound_runner_kind?: 'managed' | 'developer';
+  runner_binding_source?: 'default_managed' | 'explicit';
+  bound_at?: string;
+  bound_by_user_id?: string;
   status: 'active' | 'archived';
   attached_inputs: TaskInputRefRecord[];
   created_at: string;
@@ -19,12 +26,18 @@ export interface TaskRecord {
 type PersistedTaskRecordWithUnsupportedLegacyFields = TaskRecord & {
   agent_id?: unknown;
   agent_name?: unknown;
+  runner_id?: unknown;
+  runner_selection?: unknown;
+  agent_runner_id?: unknown;
 };
 
 export function sanitizeTaskRecordForActiveModel(input: TaskRecord): TaskRecord {
   const {
     agent_id: _unsupportedLegacyAgentId,
     agent_name: _unsupportedLegacyAgentName,
+    runner_id: _unsupportedLegacyRunnerId,
+    runner_selection: _unsupportedLegacyRunnerSelection,
+    agent_runner_id: _unsupportedLegacyAgentRunnerId,
     ...activeRecord
   } = input as PersistedTaskRecordWithUnsupportedLegacyFields;
   return activeRecord;
@@ -38,6 +51,8 @@ export interface TaskListItem extends TaskRecord {
     id: string;
     status: 'queued' | 'running' | 'stopping' | 'succeeded' | 'failed' | 'canceled';
     runner_id: string;
+    source?: 'runner_test';
+    runner_test?: true;
     started_at?: string;
     finished_at?: string;
   };

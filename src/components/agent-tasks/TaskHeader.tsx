@@ -25,6 +25,7 @@ import {
   TooltipTrigger,
 } from '@/components/ui/tooltip';
 import { getTerminalSessionSummaryLabel } from './terminal-session-summary';
+import { isRunnerTestSource, RunnerTestBadge } from './RunnerTestBadge';
 
 export interface TaskHeaderProps {
   task: Task;
@@ -43,6 +44,9 @@ export interface TaskHeaderProps {
   onSetViewMode?: (mode: 'conversation' | 'terminal') => void;
   onCreateTerminalSession?: () => void;
   onCreateNew?: () => void;
+  boundRunnerRecoveryActionLabel?: string | null;
+  onCreateBoundRunnerRecoveryTask?: () => void;
+  boundRunnerRecoveryPending?: boolean;
   onEdit?: () => void;
   onDeleted?: () => void;
   onLeave?: () => void;
@@ -65,6 +69,9 @@ export function TaskHeader({
   onSetViewMode,
   onCreateTerminalSession,
   onCreateNew,
+  boundRunnerRecoveryActionLabel = null,
+  onCreateBoundRunnerRecoveryTask,
+  boundRunnerRecoveryPending = false,
   onEdit,
   onDeleted,
   onLeave,
@@ -114,10 +121,15 @@ export function TaskHeader({
     ? terminalRecoveryCount > 0
     : terminalHasRecovery;
   const shouldShowOpenTerminalAction = !!onCreateTerminalSession && !hasTerminalTabs;
+  const shouldShowBoundRunnerRecoveryAction =
+    !!boundRunnerRecoveryActionLabel && !!onCreateBoundRunnerRecoveryTask;
   const effectiveDeleteBlockedReason =
     deleteBlockedReason
     ?? (terminalSessionCount > 0 ? t('delete_blocked_terminal_sessions') : null);
   const canOpenDeleteDialog = canDeleteTask && !effectiveDeleteBlockedReason;
+  const isRunnerTest = isRunnerTestSource(task) || isRunnerTestSource(task.active_run);
+  const showManagedRunnerBinding = task.bound_runner_kind === 'managed';
+  const showDeveloperRunnerBinding = task.bound_runner_kind === 'developer';
 
   return (
     <div
@@ -153,6 +165,37 @@ export function TaskHeader({
             <Badge variant="outline" className="text-[11px]" data-testid="agent-task__task-header-workspace-library">
               {t('workspace_file_library_label')}: {workspaceFileLibraryName}
             </Badge>
+            {showManagedRunnerBinding || showDeveloperRunnerBinding ? (
+              <div
+                className="flex flex-wrap items-center gap-2"
+                data-testid="agent-task__task-header-runner-binding"
+              >
+                <Badge
+                  variant={showDeveloperRunnerBinding ? 'secondary' : 'outline'}
+                  className="text-[11px]"
+                >
+                  {showDeveloperRunnerBinding
+                    ? t('runner_binding_developer')
+                    : t('runner_binding_managed')}
+                </Badge>
+                <Badge variant="outline" className="text-[11px] text-tertiary">
+                  {showDeveloperRunnerBinding
+                    ? t('runner_binding_explicit')
+                    : t('runner_binding_managed_source')}
+                </Badge>
+                {showDeveloperRunnerBinding && task.bound_runner_id ? (
+                  <Badge variant="outline" className="font-mono text-[11px]">
+                    {t('runner_binding_runner_id')}: {task.bound_runner_id}
+                  </Badge>
+                ) : null}
+              </div>
+            ) : null}
+            {isRunnerTest ? (
+              <RunnerTestBadge
+                label={t('runner_test_badge')}
+                title={t('runner_test_source_value')}
+              />
+            ) : null}
             {onSetViewMode && hasTerminalTabs ? (
               <div className="inline-flex items-center rounded-lg border border-subtle bg-background/80 p-1">
                 <Button
@@ -198,6 +241,18 @@ export function TaskHeader({
           <div className="flex items-center" data-testid="agent-task__task-header-accessory">
             {headerAccessory}
           </div>
+        ) : null}
+        {shouldShowBoundRunnerRecoveryAction ? (
+          <Button
+            variant="outline"
+            size="sm"
+            className="h-8 px-2.5 text-xs"
+            onClick={onCreateBoundRunnerRecoveryTask}
+            disabled={boundRunnerRecoveryPending}
+            data-testid="agent-task__task-header-bound-runner-recovery"
+          >
+            {boundRunnerRecoveryActionLabel}
+          </Button>
         ) : null}
         {shouldShowOpenTerminalAction ? (
           <Button

@@ -1,5 +1,5 @@
 import http, { type Server } from 'node:http';
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { WebSocket } from 'ws';
 import { AGENT_TASK_RUNNER_SPEC } from '@mbos/agent-runner';
 import { createDefaultNodeApiDeps } from '../index.js';
@@ -21,6 +21,7 @@ import {
   saveProjectGroup,
   saveProjectPermissionTemplate,
   upsertProjectMembershipRecord,
+  upsertProjectMemberPermissionState,
 } from '../project-member-governance-persistence.js';
 import type {
   ProjectGroupRecord,
@@ -35,6 +36,7 @@ import {
 
 const upstreamServers: Server[] = [];
 const sockets: WebSocket[] = [];
+let previousManagedExecutionHttpBase: string | undefined;
 
 function createDeferred<T>() {
   let resolve!: (value: T | PromiseLike<T>) => void;
@@ -93,6 +95,38 @@ function taskRunInit(
   };
 }
 
+function createExecutionTicketGate(
+  deps: ReturnType<typeof createDefaultNodeApiDeps>,
+): {
+  gateReached: Promise<void>;
+  releaseGate: () => void;
+} {
+  const originalSet = deps.cache.set.bind(deps.cache);
+  const gateReached = createDeferred<void>();
+  let releaseGate: (() => void) | null = null;
+  const gate = new Promise<void>((resolve) => {
+    releaseGate = resolve;
+  });
+  let gateArmed = false;
+  deps.cache.set = async (key, value, ttlSeconds) => {
+    if (!gateArmed && key.startsWith('internal:ticket:exec_')) {
+      gateArmed = true;
+      gateReached.resolve();
+      await gate;
+    }
+    return originalSet(key, value, ttlSeconds);
+  };
+  return {
+    gateReached: gateReached.promise,
+    releaseGate: () => releaseGate?.(),
+  };
+}
+
+beforeEach(() => {
+  previousManagedExecutionHttpBase = process.env.AGENT_EXECUTION_HTTP_BASE_URL;
+  process.env.AGENT_EXECUTION_HTTP_BASE_URL = 'http://127.0.0.1:20000/api/v1';
+});
+
 afterEach(async () => {
   for (const socket of sockets) {
     try {
@@ -113,6 +147,8 @@ afterEach(async () => {
     ),
   );
   upstreamServers.length = 0;
+  if (previousManagedExecutionHttpBase === undefined) delete process.env.AGENT_EXECUTION_HTTP_BASE_URL;
+  else process.env.AGENT_EXECUTION_HTTP_BASE_URL = previousManagedExecutionHttpBase;
 });
 
 async function startUpstreamServer(): Promise<{
@@ -227,6 +263,21 @@ function configureManagedTaskRunnerRuntimeDeps(
   } as never;
 }
 
+async function grantDeveloperRunnerProjectPermissions(
+  deps: ReturnType<typeof createDefaultNodeApiDeps>,
+  projectId: string,
+  userId = 'user_test',
+): Promise<void> {
+  await upsertProjectMemberPermissionState(deps.docStore, 'ws_default', projectId, userId, {
+    mode: 'custom',
+    template: null,
+    permissions: [
+      'project:agent_task:use',
+      'project:agent_runner:manage',
+    ],
+  });
+}
+
 async function createDefaultManagedTaskRunner(
   deps: ReturnType<typeof createDefaultNodeApiDeps>,
   name: string,
@@ -262,14 +313,13 @@ async function createDefaultManagedTaskRunner(
       cache_write_discount_ratio: 0,
     },
   });
-  const runner = await deps.agentResourceService.createAgent(workspaceId, projectId, {
+  const runner = await deps.agentResourceService.upsertDeploymentDefaultManagedAgentRunner(workspaceId, projectId, {
     name,
     runner_provider: 'managed',
     status: 'enabled',
     presence: 'managed',
     runner_status: 'ready',
-    is_default: true,
-    default_endpoint_id: endpoint.id,
+    endpointId: endpoint.id,
     owner_id: 'user_test',
     visibility: 'private',
     capabilities: {
@@ -289,8 +339,54 @@ async function createDefaultManagedTaskRunner(
       },
     },
   });
-  await deps.agentResourceService.clearDefaultAgentRunnersExcept(workspaceId, projectId, runner.id);
   return { runnerId: runner.id, endpointId: endpoint.id };
+}
+
+async function ensureDefaultManagedTaskRunner(
+  deps: ReturnType<typeof createDefaultNodeApiDeps>,
+  name: string,
+  options?: {
+    workspaceId?: string;
+    projectId?: string;
+    endpointBaseUrl?: string;
+  },
+): Promise<{ runnerId: string; endpointId: string }> {
+  const workspaceId = options?.workspaceId ?? 'ws_default';
+  const projectId = options?.projectId ?? 'proj_1';
+  const existing = (await deps.agentResourceService.listAgents(workspaceId, projectId)).find((item) =>
+    item.runner_provider === 'managed'
+    && item.status === 'enabled'
+    && item.is_default === true
+    && item.runner_status === 'ready'
+    && typeof item.default_endpoint_id === 'string'
+    && item.default_endpoint_id.trim().length > 0,
+  );
+  if (existing) {
+    return {
+      runnerId: existing.id,
+      endpointId: existing.default_endpoint_id.trim(),
+    };
+  }
+  return createDefaultManagedTaskRunner(deps, name, options);
+}
+
+async function createNotebookTaskProject(
+  deps: ReturnType<typeof createDefaultNodeApiDeps>,
+  workspaceId: string,
+  projectId: string | undefined,
+  name: string,
+): Promise<string> {
+  if (projectId) return projectId;
+  const project = await deps.createProjectUseCase.execute({
+    workspaceId,
+    actorId: 'user_test',
+    input: {
+      name,
+      visibility: 'private',
+      join_policy: 'approval_required',
+    },
+  });
+  return project.id;
 }
 
 async function createDeveloperTaskRunner(
@@ -303,6 +399,15 @@ async function createDeveloperTaskRunner(
 ): Promise<{ runnerId: string; endpointId: string }> {
   const workspaceId = options?.workspaceId ?? 'ws_default';
   const projectId = options?.projectId ?? 'proj_1';
+  await upsertProjectMembershipRecord(deps.docStore, workspaceId, projectId, {
+    project_id: projectId,
+    user_id: 'user_test',
+    user_email: 'test@example.com',
+    user_name: 'Test User',
+    status: 'active',
+    joined_at: new Date().toISOString(),
+  });
+  await grantDeveloperRunnerProjectPermissions(deps, projectId);
   const credential = await deps.endpointResourceService.createCredential(workspaceId, projectId, {
     name: `${name}-credential`,
     value: 'sk-test',
@@ -360,7 +465,7 @@ async function createExternalNotebookExecutionAgent(
     endpointBaseUrl?: string;
   },
 ): Promise<{ agentId: string; endpointId: string }> {
-  const created = await createDefaultManagedTaskRunner(deps, name, options);
+  const created = await createDeveloperTaskRunner(deps, name, options);
   return {
     agentId: created.runnerId,
     endpointId: created.endpointId,
@@ -368,19 +473,36 @@ async function createExternalNotebookExecutionAgent(
 }
 
 async function createNotebookTaskForAgent(
+  deps: ReturnType<typeof createDefaultNodeApiDeps>,
   baseUrl: string,
   input: {
     title: string;
     agentId: string;
+    boundRunnerId?: string;
     workspaceFileLibraryId: string;
     workspaceId?: string;
     projectId?: string;
     authToken?: string;
   },
-): Promise<{ id: string }> {
+): Promise<{ id: string; projectId: string }> {
   const workspaceId = input.workspaceId ?? 'ws_default';
-  const projectId = input.projectId ?? 'proj_1';
+  const projectId = await createNotebookTaskProject(
+    deps,
+    workspaceId,
+    input.projectId ?? (input.boundRunnerId ? undefined : 'proj_1'),
+    `${input.title} Project`,
+  );
   const authToken = input.authToken ?? 'test-token';
+  await ensureDefaultManagedTaskRunner(deps, `${input.title}-default-runner`, {
+    workspaceId,
+    projectId,
+  });
+  const workspaceFileLibraryId = input.boundRunnerId && !input.projectId
+    ? (await createFileLibrary(baseUrl, `${input.title} Workspace`, {
+        workspaceId,
+        projectId,
+      })).id
+    : input.workspaceFileLibraryId;
   const createTaskRes = await apiFetchWithToken(
     baseUrl,
     `/api/v1/workspaces/${workspaceId}/projects/${projectId}/tasks`,
@@ -390,12 +512,53 @@ async function createNotebookTaskForAgent(
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         title: input.title,
-        workspace_file_library_id: input.workspaceFileLibraryId,
+        workspace_file_library_id: workspaceFileLibraryId,
+        ...(input.boundRunnerId ? { bound_runner_id: input.boundRunnerId } : {}),
       }),
     },
   );
-  expect(createTaskRes.status).toBe(201);
-  return await createTaskRes.json() as { id: string };
+  expect(createTaskRes.status, await createTaskRes.clone().text()).toBe(201);
+  return await createTaskRes.json() as { id: string; projectId: string };
+}
+
+async function createDedicatedExternalNotebookTaskForAgent(
+  deps: ReturnType<typeof createDefaultNodeApiDeps>,
+  baseUrl: string,
+  taskTitle: string,
+  options?: {
+    workspaceId?: string;
+    authToken?: string;
+  },
+): Promise<{ taskId: string; agentId: string; projectId: string }> {
+  const workspaceId = options?.workspaceId ?? 'ws_default';
+  const projectId = await createNotebookTaskProject(
+    deps,
+    workspaceId,
+    undefined,
+    `${taskTitle} Project`,
+  );
+  const workspaceLibrary = await createFileLibrary(baseUrl, `${taskTitle} Workspace`, {
+    workspaceId,
+    projectId,
+  });
+  const { agentId } = await createExternalNotebookExecutionAgent(deps, `${taskTitle}-agent`, {
+    workspaceId,
+    projectId,
+  });
+  const task = await createNotebookTaskForAgent(deps, baseUrl, {
+    title: taskTitle,
+    agentId,
+    boundRunnerId: agentId,
+    workspaceFileLibraryId: workspaceLibrary.id,
+    workspaceId,
+    projectId,
+    authToken: options?.authToken,
+  });
+  return {
+    taskId: task.id,
+    agentId,
+    projectId,
+  };
 }
 
 async function createActiveExternalTaskForTerminal(
@@ -405,18 +568,27 @@ async function createActiveExternalTaskForTerminal(
   options?: {
     workspaceId?: string;
     projectId?: string;
+    useDedicatedProject?: boolean;
     authToken?: string;
     agentOwnerId?: string;
     createNewWorkspace?: boolean;
   },
-): Promise<{ taskId: string; agentId: string }> {
+): Promise<{ taskId: string; agentId: string; projectId: string }> {
   const workspaceId = options?.workspaceId ?? 'ws_default';
-  const projectId = options?.projectId ?? 'proj_1';
+  const projectId = options?.projectId ?? (
+    options?.useDedicatedProject
+      ? await createNotebookTaskProject(deps, workspaceId, undefined, `${taskTitle} Project`)
+      : 'proj_1'
+  );
   const authToken = options?.authToken ?? 'test-token';
   const agentOwnerId = options?.agentOwnerId ?? 'user_test';
   const createNewWorkspace = options?.createNewWorkspace ?? false;
 
-  const { runnerId } = await createDefaultManagedTaskRunner(deps, `${taskTitle}-runner`, {
+  await ensureDefaultManagedTaskRunner(deps, `${taskTitle}-default-runner`, {
+    workspaceId,
+    projectId,
+  });
+  const { runnerId } = await createDeveloperTaskRunner(deps, `${taskTitle}-runner`, {
     workspaceId,
     projectId,
   });
@@ -429,9 +601,9 @@ async function createActiveExternalTaskForTerminal(
   const workspaceLibrary = createNewWorkspace
     ? null
     : await createFileLibrary(baseUrl, `${taskTitle} Workspace`, {
-      workspaceId,
-      projectId,
-    });
+        workspaceId,
+        projectId,
+      });
   const createTaskRes = await apiFetchWithToken(
     baseUrl,
     `/api/v1/workspaces/${workspaceId}/projects/${projectId}/tasks`,
@@ -449,12 +621,13 @@ async function createActiveExternalTaskForTerminal(
           : {
             workspace_file_library_id: workspaceLibrary?.id,
           }),
+        bound_runner_id: runnerId,
       }),
     },
   );
-  expect(createTaskRes.status).toBe(201);
+  expect(createTaskRes.status, await createTaskRes.clone().text()).toBe(201);
   const task = await createTaskRes.json() as { id: string };
-  return { taskId: task.id, agentId: runnerId };
+  return { taskId: task.id, agentId: runnerId, projectId };
 }
 
 async function createActiveInternalTaskForTerminal(
@@ -465,7 +638,7 @@ async function createActiveInternalTaskForTerminal(
   const { runnerId } = await createDefaultManagedTaskRunner(deps, `${taskTitle}-runner`);
 
   const workspaceLibrary = await createFileLibrary(baseUrl, `${taskTitle} Workspace`);
-  const task = await createNotebookTaskForAgent(baseUrl, {
+  const task = await createNotebookTaskForAgent(deps, baseUrl, {
     title: taskTitle,
     agentId: runnerId,
     workspaceFileLibraryId: workspaceLibrary.id,
@@ -476,6 +649,7 @@ async function createActiveInternalTaskForTerminal(
 describe('api-entry-node notebook task routes', () => {
   it('isolates notebook tasks by owner for both external and internal agents', async () => {
     const { baseUrl, deps } = await startServer();
+    await createDefaultManagedTaskRunner(deps, 'owner-isolation-default-runner');
     const internalWorkspaceLibrary = await createFileLibrary(baseUrl, 'Internal Isolation Workspace');
     const externalWorkspaceLibrary = await createFileLibrary(baseUrl, 'External Isolation Workspace');
 
@@ -564,7 +738,8 @@ describe('api-entry-node notebook task routes', () => {
   });
 
   it('auto-initializes a workspace when creating an agent task without an explicit workspace file library', async () => {
-    const { baseUrl } = await startServer();
+    const { baseUrl, deps } = await startServer();
+    await createDefaultManagedTaskRunner(deps, 'auto-workspace-default-runner');
     const createTaskRes = await apiFetch(
       baseUrl,
       '/api/v1/workspaces/ws_default/projects/proj_1/tasks',
@@ -585,7 +760,8 @@ describe('api-entry-node notebook task routes', () => {
   });
 
   it('auto-initializes a workspace file library when create-new mode is requested', async () => {
-    const { baseUrl } = await startServer();
+    const { baseUrl, deps } = await startServer();
+    await createDefaultManagedTaskRunner(deps, 'auto-create-new-default-runner');
 
     const createTaskRes = await apiFetch(
       baseUrl,
@@ -606,10 +782,11 @@ describe('api-entry-node notebook task routes', () => {
     expect(createdTask.workspace_file_library_name).toBe('Auto Workspace');
   });
 
-  it.each(['agent_id', 'agent_name', 'runner_id'])(
+  it.each(['agent_id', 'agent_name', 'runner_id', 'runner_selection'])(
     'rejects legacy selector field %s on task create',
     async (field) => {
-      const { baseUrl } = await startServer();
+      const { baseUrl, deps } = await startServer();
+      await createDefaultManagedTaskRunner(deps, `legacy-selector-default-${field}`);
       const createTaskRes = await apiFetch(
         baseUrl,
         '/api/v1/workspaces/ws_default/projects/proj_1/tasks',
@@ -632,10 +809,11 @@ describe('api-entry-node notebook task routes', () => {
     },
   );
 
-  it.each(['agent_id', 'agent_name', 'runner_id'])(
+  it.each(['role', 'content', 'agent_id', 'agent_name', 'runner_id'])(
     'rejects legacy selector field %s on task run payload',
     async (field) => {
-      const { baseUrl } = await startServer();
+      const { baseUrl, deps } = await startServer();
+      await ensureDefaultManagedTaskRunner(deps, `legacy-selector-run-payload-default-${field}`);
       const createTaskRes = await apiFetch(
         baseUrl,
         '/api/v1/workspaces/ws_default/projects/proj_1/tasks',
@@ -667,7 +845,7 @@ describe('api-entry-node notebook task routes', () => {
     },
   );
 
-  it('fails task run dispatch when no ready default Agent Runner exists', async () => {
+  it('fails task create when no ready default Agent Runner exists', async () => {
     const { baseUrl } = await startServer();
     const createTaskRes = await apiFetch(
       baseUrl,
@@ -680,21 +858,14 @@ describe('api-entry-node notebook task routes', () => {
         }),
       },
     );
-    expect(createTaskRes.status).toBe(201);
-    const task = await createTaskRes.json() as { id: string };
-    const runRes = await apiFetch(
-      baseUrl,
-      taskRunsPath('ws_default', 'proj_1', task.id),
-      taskRunInit('run without runner'),
-    );
-    expect(runRes.status).toBe(409);
-    await expect(runRes.json()).resolves.toMatchObject({
+    expect(createTaskRes.status).toBe(409);
+    await expect(createTaskRes.json()).resolves.toMatchObject({
       error_code: 'agent_runner_unavailable',
       message: 'agent_runner_unavailable',
     });
   });
 
-  it('fails task run dispatch when an eligible Agent Runner exists without a default selection', async () => {
+  it('fails task create when an eligible Agent Runner exists but no default is configured', async () => {
     const { baseUrl, deps } = await startServer();
     const endpoint = await deps.endpointResourceService.createEndpoint('ws_default', 'proj_1', {
       name: 'non-default-runner-endpoint',
@@ -742,42 +913,50 @@ describe('api-entry-node notebook task routes', () => {
         }),
       },
     );
-    expect(createTaskRes.status).toBe(201);
-    const task = await createTaskRes.json() as { id: string };
-
-    const runRes = await apiFetch(
-      baseUrl,
-      taskRunsPath('ws_default', 'proj_1', task.id),
-      taskRunInit('run without default'),
-    );
-    expect(runRes.status).toBe(409);
-    await expect(runRes.json()).resolves.toMatchObject({
-      error_code: 'agent_runner_selection_required',
-      message: 'agent_runner_selection_required',
+    expect(createTaskRes.status).toBe(409);
+    await expect(createTaskRes.json()).resolves.toMatchObject({
+      error_code: 'agent_runner_unavailable',
+      message: 'agent_runner_unavailable',
     });
   });
 
-  it('fails task run dispatch when multiple ready default Agent Runners exist', async () => {
+  it('ignores legacy project default conflicts when no deployment default projection exists', async () => {
     const { baseUrl, deps } = await startServer();
-    const { endpointId } = await createDefaultManagedTaskRunner(deps, 'conflicting-default-runner-a');
-    await deps.agentResourceService.createAgent('ws_default', 'proj_1', {
-      name: 'conflicting-default-runner-b',
-      runner_provider: 'managed',
-      status: 'enabled',
-      presence: 'managed',
-      runner_status: 'ready',
-      is_default: true,
-      default_endpoint_id: endpointId,
-      owner_id: 'user_test',
-      visibility: 'private',
-      capabilities: {
-        task_execution: true,
-        terminal: true,
-        artifacts: true,
-        streaming_completion: true,
-        multimodal_completion: false,
+    const credential = await deps.endpointResourceService.createCredential('ws_default', 'proj_1', {
+      name: 'legacy-conflicting-default-runners-credential',
+      value: 'sk-test',
+    });
+    const endpoint = await deps.endpointResourceService.createEndpoint('ws_default', 'proj_1', {
+      name: 'legacy-conflicting-default-runners-endpoint',
+      model: 'gpt-5-codex',
+      type: 'custom',
+      mode: 'openai',
+      base_url: 'https://example.com/v1',
+      credential_ref: credential.id,
+      model_profile: {
+        max_context_tokens: 204800,
       },
     });
+    for (const name of ['conflicting-default-runner-a', 'conflicting-default-runner-b']) {
+      await deps.agentResourceService.createAgent('ws_default', 'proj_1', {
+        name,
+        runner_provider: 'managed',
+        status: 'enabled',
+        presence: 'managed',
+        runner_status: 'ready',
+        is_default: true,
+        default_endpoint_id: endpoint.id,
+        owner_id: 'user_test',
+        visibility: 'private',
+        capabilities: {
+          task_execution: true,
+          terminal: true,
+          artifacts: true,
+          streaming_completion: true,
+          multimodal_completion: false,
+        },
+      });
+    }
     const createTaskRes = await apiFetch(
       baseUrl,
       '/api/v1/workspaces/ws_default/projects/proj_1/tasks',
@@ -789,22 +968,14 @@ describe('api-entry-node notebook task routes', () => {
         }),
       },
     );
-    expect(createTaskRes.status).toBe(201);
-    const task = await createTaskRes.json() as { id: string };
-
-    const runRes = await apiFetch(
-      baseUrl,
-      taskRunsPath('ws_default', 'proj_1', task.id),
-      taskRunInit('run with conflicting defaults'),
-    );
-    expect(runRes.status).toBe(409);
-    await expect(runRes.json()).resolves.toMatchObject({
-      error_code: 'agent_runner_default_conflict',
-      message: 'agent_runner_default_conflict',
+    expect(createTaskRes.status).toBe(409);
+    await expect(createTaskRes.json()).resolves.toMatchObject({
+      error_code: 'agent_runner_unavailable',
+      message: 'agent_runner_unavailable',
     });
   });
 
-  it('fails task run dispatch when the default Agent Runner lacks required task capabilities', async () => {
+  it('fails task create when the default Agent Runner lacks required task capabilities', async () => {
     const { baseUrl, deps } = await startServer();
     const credential = await deps.endpointResourceService.createCredential('ws_default', 'proj_1', {
       name: 'capability-mismatch-runner-credential',
@@ -829,14 +1000,13 @@ describe('api-entry-node notebook task routes', () => {
         cache_write_discount_ratio: 0,
       },
     });
-    await deps.agentResourceService.createAgent('ws_default', 'proj_1', {
+    await deps.agentResourceService.upsertDeploymentDefaultManagedAgentRunner('ws_default', 'proj_1', {
       name: 'capability-mismatch-runner',
       runner_provider: 'managed',
       status: 'enabled',
       presence: 'managed',
       runner_status: 'ready',
-      is_default: true,
-      default_endpoint_id: endpoint.id,
+      endpointId: endpoint.id,
       owner_id: 'user_test',
       visibility: 'private',
       capabilities: {
@@ -858,23 +1028,16 @@ describe('api-entry-node notebook task routes', () => {
         }),
       },
     );
-    expect(createTaskRes.status).toBe(201);
-    const task = await createTaskRes.json() as { id: string };
-
-    const runRes = await apiFetch(
-      baseUrl,
-      taskRunsPath('ws_default', 'proj_1', task.id),
-      taskRunInit('run with missing artifact capability'),
-    );
-    expect(runRes.status).toBe(409);
-    await expect(runRes.json()).resolves.toMatchObject({
+    expect(createTaskRes.status).toBe(409);
+    await expect(createTaskRes.json()).resolves.toMatchObject({
       error_code: 'agent_runner_capability_mismatch',
       message: 'agent_runner_capability_mismatch',
     });
   });
 
   it('returns task-bound workspace access for notebook task file libraries', async () => {
-    const { baseUrl } = await startServer();
+    const { baseUrl, deps } = await startServer();
+    await createDefaultManagedTaskRunner(deps, 'workspace-access-default-runner');
     const workspaceLibrary = await createFileLibrary(baseUrl, 'Workspace Access Library');
 
     const createTaskRes = await apiFetch(
@@ -915,6 +1078,7 @@ describe('api-entry-node notebook task routes', () => {
 
   it('allows scoped execution tickets for task workspace access and rejects mismatched scope', async () => {
     const { baseUrl, deps } = await startServer();
+    await createDefaultManagedTaskRunner(deps, 'workspace-access-ticket-default-runner');
     const agent = await deps.agentResourceService.createAgent('ws_default', 'proj_1', {
       name: 'internal-notebook-agent',
       runner_provider: 'managed',
@@ -1001,7 +1165,8 @@ describe('api-entry-node notebook task routes', () => {
   });
 
   it('returns task-bound workspace access for create_new notebook workspaces owned by the task creator', async () => {
-    const { baseUrl } = await startServer();
+    const { baseUrl, deps } = await startServer();
+    await createDefaultManagedTaskRunner(deps, 'create-new-workspace-default-runner');
 
     const createTaskRes = await apiFetch(
       baseUrl,
@@ -1038,7 +1203,8 @@ describe('api-entry-node notebook task routes', () => {
   });
 
   it('creates distinct workspace filesystems for different users even when create_new notebook task names match', async () => {
-    const { baseUrl } = await startServer();
+    const { baseUrl, deps } = await startServer();
+    await createDefaultManagedTaskRunner(deps, 'collision-probe-default-runner');
 
     const createTaskBody = JSON.stringify({
       title: 'Collision Probe',
@@ -1123,7 +1289,8 @@ describe('api-entry-node notebook task routes', () => {
     const previousExternalExecutionBase = process.env.AGENT_RUNNER_DEVELOPER_EXECUTION_HTTP_BASE_URL;
     process.env.AGENT_RUNNER_DEVELOPER_EXECUTION_HTTP_BASE_URL = 'http://172.18.0.1:20000';
     try {
-      const { baseUrl } = await startServer();
+      const { baseUrl, deps } = await startServer();
+      await createDefaultManagedTaskRunner(deps, 'developer-runner-workspace-access-default-runner');
       const workspaceLibrary = await createFileLibrary(baseUrl, 'Developer Runner Workspace Access Library');
 
       const createTaskRes = await apiFetch(
@@ -1162,7 +1329,8 @@ describe('api-entry-node notebook task routes', () => {
   });
 
   it('rejects creating a second active task against an occupied workspace file library', async () => {
-    const { baseUrl } = await startServer();
+    const { baseUrl, deps } = await startServer();
+    await createDefaultManagedTaskRunner(deps, 'occupied-workspace-default-runner');
     const workspaceLibrary = await createFileLibrary(baseUrl, 'Occupied Workspace');
 
     const firstTaskRes = await apiFetch(
@@ -1201,6 +1369,7 @@ describe('api-entry-node notebook task routes', () => {
   it('keeps task workspace access available after api restart', async () => {
     const deps = createDefaultNodeApiDeps();
     const firstServer = await startServerWithDeps(deps);
+    await createDefaultManagedTaskRunner(deps, 'restart-workspace-default-runner');
     const workspaceLibrary = await createFileLibrary(firstServer.baseUrl, 'Restart Task Workspace');
 
     const createTaskRes = await apiFetch(
@@ -1263,6 +1432,7 @@ describe('api-entry-node notebook task routes', () => {
       taskId: task.id,
       runId: 'run_restart_shared',
       runnerId,
+      resolvedRunnerId: runnerId,
       startedAt: activeStartedAt,
     });
     await expect(acquireNotebookTaskRunLease(deps.cache, active)).resolves.toBe(true);
@@ -1336,7 +1506,7 @@ describe('api-entry-node notebook task routes', () => {
     const workspaceLibrary = await createFileLibrary(baseUrl, 'Stale Internal Run Coordination Workspace');
     const { runnerId } = await createDefaultManagedTaskRunner(deps, 'stale-internal-run-agent');
 
-    const task = await createNotebookTaskForAgent(baseUrl, {
+    const task = await createNotebookTaskForAgent(deps, baseUrl, {
       title: 'Stale internal run control task',
       agentId: runnerId,
       workspaceFileLibraryId: workspaceLibrary.id,
@@ -1346,6 +1516,7 @@ describe('api-entry-node notebook task routes', () => {
       taskId: task.id,
       runId: 'run_internal_stale_owner',
       runnerId,
+      resolvedRunnerId: runnerId,
       startedAt: '2026-03-18T08:00:00.000Z',
       heartbeatAt: '2026-03-18T08:00:00.000Z',
       ownerInstanceId: 'api-stale-owner',
@@ -1420,19 +1591,18 @@ describe('api-entry-node notebook task routes', () => {
   it('rejects unsupported external terminate without mutating shared run truth', async () => {
     const deps = createDefaultNodeApiDeps();
     const { baseUrl } = await startServerWithDeps(deps);
-    const workspaceLibrary = await createFileLibrary(baseUrl, 'External Terminate Unavailable Workspace');
-    const { runnerId: agentId } = await createDeveloperTaskRunner(deps, 'developer-terminate-unavailable-runner');
-    const task = await createNotebookTaskForAgent(baseUrl, {
-      title: 'External terminate unavailable task',
-      agentId,
-      workspaceFileLibraryId: workspaceLibrary.id,
-    });
+    const { taskId, agentId, projectId } = await createDedicatedExternalNotebookTaskForAgent(
+      deps,
+      baseUrl,
+      'External terminate unavailable task',
+    );
 
     const now = new Date().toISOString();
     await expect(acquireNotebookTaskRunLease(deps.cache, buildNotebookTaskRunState({
-      taskId: task.id,
+      taskId,
       runId: 'run_external_terminate_unavailable',
       runnerId: agentId,
+      resolvedRunnerId: agentId,
       requestId: 'req_external_terminate_unavailable',
       startedAt: now,
       heartbeatAt: now,
@@ -1440,7 +1610,7 @@ describe('api-entry-node notebook task routes', () => {
 
     const terminateRes = await apiFetchWithToken(
       baseUrl,
-      `/api/v1/workspaces/ws_default/projects/proj_1/tasks/${task.id}/cancel`,
+      `/api/v1/workspaces/ws_default/projects/${projectId}/tasks/${taskId}/cancel`,
       'test-token',
       {
         method: 'POST',
@@ -1452,13 +1622,13 @@ describe('api-entry-node notebook task routes', () => {
     await expect(terminateRes.json()).resolves.toMatchObject({
       error_code: 'STOP_ESCALATION_UNAVAILABLE',
       message: 'stop_escalation_unavailable',
-      task_id: task.id,
+      task_id: taskId,
       run_id: 'run_external_terminate_unavailable',
       request_id: 'req_external_terminate_unavailable',
       can_escalate: false,
       escalation_reason: 'unsupported_runner',
     });
-    const runStateAfterTerminate = await getNotebookTaskRunState(deps.cache, task.id);
+    const runStateAfterTerminate = await getNotebookTaskRunState(deps.cache, taskId);
     expect(runStateAfterTerminate).toMatchObject({
       run_id: 'run_external_terminate_unavailable',
       phase: 'running',
@@ -1467,14 +1637,14 @@ describe('api-entry-node notebook task routes', () => {
 
     const listRes = await apiFetchWithToken(
       baseUrl,
-      '/api/v1/workspaces/ws_default/projects/proj_1/tasks',
+      `/api/v1/workspaces/ws_default/projects/${projectId}/tasks`,
       'test-token',
     );
     expect(listRes.status).toBe(200);
     await expect(listRes.json()).resolves.toMatchObject({
       items: expect.arrayContaining([
         expect.objectContaining({
-          id: task.id,
+          id: taskId,
           run_state: 'running',
         }),
       ]),
@@ -1484,18 +1654,17 @@ describe('api-entry-node notebook task routes', () => {
   it('rejects stale external run ownership instead of returning happy cancelling', async () => {
     const deps = createDefaultNodeApiDeps();
     const { baseUrl } = await startServerWithDeps(deps);
-    const workspaceLibrary = await createFileLibrary(baseUrl, 'Stale External Run Coordination Workspace');
-    const { runnerId: agentId } = await createDeveloperTaskRunner(deps, 'stale-developer-runner');
-    const task = await createNotebookTaskForAgent(baseUrl, {
-      title: 'Stale external run control task',
-      agentId,
-      workspaceFileLibraryId: workspaceLibrary.id,
-    });
+    const { taskId, agentId, projectId } = await createDedicatedExternalNotebookTaskForAgent(
+      deps,
+      baseUrl,
+      'Stale external run control task',
+    );
 
     await expect(acquireNotebookTaskRunLease(deps.cache, buildNotebookTaskRunState({
-      taskId: task.id,
+      taskId,
       runId: 'run_external_stale_owner',
       runnerId: agentId,
+      resolvedRunnerId: agentId,
       startedAt: '2026-03-18T09:00:00.000Z',
       heartbeatAt: '2026-03-18T09:00:00.000Z',
       ownerInstanceId: 'api-stale-owner',
@@ -1503,7 +1672,7 @@ describe('api-entry-node notebook task routes', () => {
 
     const cancelRes = await apiFetchWithToken(
       baseUrl,
-      `/api/v1/workspaces/ws_default/projects/proj_1/tasks/${task.id}/cancel`,
+      `/api/v1/workspaces/ws_default/projects/${projectId}/tasks/${taskId}/cancel`,
       'test-token',
       { method: 'POST' },
     );
@@ -1515,14 +1684,14 @@ describe('api-entry-node notebook task routes', () => {
 
     const listRes = await apiFetchWithToken(
       baseUrl,
-      '/api/v1/workspaces/ws_default/projects/proj_1/tasks',
+      `/api/v1/workspaces/ws_default/projects/${projectId}/tasks`,
       'test-token',
     );
     expect(listRes.status).toBe(200);
     await expect(listRes.json()).resolves.toMatchObject({
       items: expect.arrayContaining([
         expect.objectContaining({
-          id: task.id,
+          id: taskId,
           run_state: 'running',
         }),
       ]),
@@ -1532,6 +1701,7 @@ describe('api-entry-node notebook task routes', () => {
   it('rejects starting a second notebook run when a shared active run already exists', async () => {
     const deps = createDefaultNodeApiDeps();
     const { baseUrl } = await startServerWithDeps(deps);
+    await createDefaultManagedTaskRunner(deps, 'shared-conflict-default-runner');
     const workspaceLibrary = await createFileLibrary(baseUrl, 'Shared Conflict Library');
 
     const createTaskRes = await apiFetch(
@@ -1552,6 +1722,7 @@ describe('api-entry-node notebook task routes', () => {
     await expect(acquireNotebookTaskRunLease(deps.cache, buildNotebookTaskRunState({
       taskId: task.id,
       runId: 'run_conflict_shared',
+      resolvedRunnerId: 'runner_conflict_shared',
       startedAt: new Date().toISOString(),
     }))).resolves.toBe(true);
 
@@ -1596,27 +1767,25 @@ describe('api-entry-node notebook task routes', () => {
     try {
       const { baseUrl } = await startServerWithDeps(deps);
       process.env.PUBLIC_API_BASE_URL = `${baseUrl}/api/v1`;
-      const workspaceLibrary = await createFileLibrary(baseUrl, 'Pre-dispatch Cleanup Workspace');
-      const { agentId } = await createExternalNotebookExecutionAgent(deps, 'pre-dispatch-cleanup-agent');
-      const task = await createNotebookTaskForAgent(baseUrl, {
-        title: 'Pre-dispatch cleanup task',
-        agentId,
-        workspaceFileLibraryId: workspaceLibrary.id,
-      });
+      const { taskId, projectId } = await createDedicatedExternalNotebookTaskForAgent(
+        deps,
+        baseUrl,
+        'Pre-dispatch cleanup task',
+      );
 
       const postMessageRes = await apiFetchWithToken(
         baseUrl,
-        taskRunsPath('ws_default', 'proj_1', task.id),
+        taskRunsPath('ws_default', projectId, taskId),
         'test-token',
         taskRunInit('run with failing assistant persist'),
       );
       expect(postMessageRes.status).toBeGreaterThanOrEqual(400);
       expect(dispatchCalled).toBe(false);
-      await expect(getNotebookTaskRunState(deps.cache, task.id)).resolves.toBeNull();
+      await expect(getNotebookTaskRunState(deps.cache, taskId)).resolves.toBeNull();
 
       const cancelRes = await apiFetchWithToken(
         baseUrl,
-        `/api/v1/workspaces/ws_default/projects/proj_1/tasks/${task.id}/cancel`,
+        `/api/v1/workspaces/ws_default/projects/${projectId}/tasks/${taskId}/cancel`,
         'test-token',
         { method: 'POST' },
       );
@@ -1634,22 +1803,7 @@ describe('api-entry-node notebook task routes', () => {
   it('honors shared cancel requests before dispatch starts and never opens the execution stream', async () => {
     const previousPublicApiBase = process.env.PUBLIC_API_BASE_URL;
     const deps = createDefaultNodeApiDeps();
-    let releaseEnsureGate: (() => void) | null = null;
-    const ensureGate = new Promise<void>((resolve) => {
-      releaseEnsureGate = resolve;
-    });
-    let ensureObserved: (() => void) | null = null;
-    const ensureStarted = new Promise<void>((resolve) => {
-      ensureObserved = resolve;
-    });
-    deps.internalAgentPodManager = {
-      ensureAgentReady: vi.fn(async () => {
-        ensureObserved?.();
-        await ensureGate;
-      }),
-      keepalive: vi.fn(async () => undefined),
-      releasePod: vi.fn(async () => undefined),
-    } as never;
+    const executionTicketGate = createExecutionTicketGate(deps);
     let dispatchCalls = 0;
     deps.agentExecutionService.dispatchStreamingRequest = async () => {
       dispatchCalls += 1;
@@ -1665,51 +1819,49 @@ describe('api-entry-node notebook task routes', () => {
     try {
       const { baseUrl } = await startServerWithDeps(deps);
       process.env.PUBLIC_API_BASE_URL = `${baseUrl}/api/v1`;
-      const workspaceLibrary = await createFileLibrary(baseUrl, 'Cancel Before Dispatch Workspace');
-      const { agentId } = await createExternalNotebookExecutionAgent(deps, 'cancel-before-dispatch-agent');
-      const task = await createNotebookTaskForAgent(baseUrl, {
-        title: 'Cancel before dispatch task',
-        agentId,
-        workspaceFileLibraryId: workspaceLibrary.id,
-      });
+      const { taskId, projectId } = await createDedicatedExternalNotebookTaskForAgent(
+        deps,
+        baseUrl,
+        'Cancel before dispatch task',
+      );
 
       const postMessageRes = await apiFetchWithToken(
         baseUrl,
-        taskRunsPath('ws_default', 'proj_1', task.id),
+        taskRunsPath('ws_default', projectId, taskId),
         'test-token',
         taskRunInit('cancel before dispatch starts'),
       );
       expect(postMessageRes.status).toBe(200);
-      await ensureStarted;
+      await executionTicketGate.gateReached;
 
       const cancelRes = await apiFetchWithToken(
         baseUrl,
-        `/api/v1/workspaces/ws_default/projects/proj_1/tasks/${task.id}/cancel`,
+        `/api/v1/workspaces/ws_default/projects/${projectId}/tasks/${taskId}/cancel`,
         'test-token',
         { method: 'POST' },
       );
       expect(cancelRes.status).toBe(202);
       await expect(cancelRes.json()).resolves.toMatchObject({
         status: 'cancelling',
-        task_id: task.id,
+        task_id: taskId,
       });
 
-      releaseEnsureGate?.();
+      executionTicketGate.releaseGate();
 
       for (let attempt = 0; attempt < 40; attempt += 1) {
-        if ((await getNotebookTaskRunState(deps.cache, task.id)) === null) {
+        if ((await getNotebookTaskRunState(deps.cache, taskId)) === null) {
           break;
         }
         await new Promise((resolve) => setTimeout(resolve, 25));
       }
       expect(dispatchCalls).toBe(0);
-      await expect(getNotebookTaskRunState(deps.cache, task.id)).resolves.toBeNull();
+      await expect(getNotebookTaskRunState(deps.cache, taskId)).resolves.toBeNull();
 
       let tracesBody: { items: Array<{ name?: string; status?: string }> } | null = null;
       for (let attempt = 0; attempt < 40; attempt += 1) {
         const tracesRes = await apiFetchWithToken(
           baseUrl,
-          `/api/v1/workspaces/ws_default/projects/proj_1/tasks/${task.id}/traces`,
+          `/api/v1/workspaces/ws_default/projects/${projectId}/tasks/${taskId}/traces`,
           'test-token',
         );
         expect(tracesRes.status).toBe(200);
@@ -1729,22 +1881,7 @@ describe('api-entry-node notebook task routes', () => {
   it('treats shared cancel markers as authoritative before dispatch even without a local cancel handle', async () => {
     const previousPublicApiBase = process.env.PUBLIC_API_BASE_URL;
     const deps = createDefaultNodeApiDeps();
-    let releaseEnsureGate: (() => void) | null = null;
-    const ensureGate = new Promise<void>((resolve) => {
-      releaseEnsureGate = resolve;
-    });
-    let ensureObserved: (() => void) | null = null;
-    const ensureStarted = new Promise<void>((resolve) => {
-      ensureObserved = resolve;
-    });
-    deps.internalAgentPodManager = {
-      ensureAgentReady: vi.fn(async () => {
-        ensureObserved?.();
-        await ensureGate;
-      }),
-      keepalive: vi.fn(async () => undefined),
-      releasePod: vi.fn(async () => undefined),
-    } as never;
+    const executionTicketGate = createExecutionTicketGate(deps);
     let dispatchCalls = 0;
     deps.agentExecutionService.dispatchStreamingRequest = async () => {
       dispatchCalls += 1;
@@ -1760,27 +1897,25 @@ describe('api-entry-node notebook task routes', () => {
     try {
       const { baseUrl } = await startServerWithDeps(deps);
       process.env.PUBLIC_API_BASE_URL = `${baseUrl}/api/v1`;
-      const workspaceLibrary = await createFileLibrary(baseUrl, 'Shared Marker Before Dispatch Workspace');
-      const { agentId } = await createExternalNotebookExecutionAgent(deps, 'shared-marker-before-dispatch-agent');
-      const task = await createNotebookTaskForAgent(baseUrl, {
-        title: 'Shared marker before dispatch task',
-        agentId,
-        workspaceFileLibraryId: workspaceLibrary.id,
-      });
+      const { taskId, projectId } = await createDedicatedExternalNotebookTaskForAgent(
+        deps,
+        baseUrl,
+        'Shared marker before dispatch task',
+      );
 
       const postMessageRes = await apiFetchWithToken(
         baseUrl,
-        taskRunsPath('ws_default', 'proj_1', task.id),
+        taskRunsPath('ws_default', projectId, taskId),
         'test-token',
         taskRunInit('shared marker should cancel pre-dispatch'),
       );
       expect(postMessageRes.status).toBe(200);
-      await ensureStarted;
+      await executionTicketGate.gateReached;
 
-      const activeRun = await getNotebookTaskRunState(deps.cache, task.id);
+      const activeRun = await getNotebookTaskRunState(deps.cache, taskId);
       expect(activeRun?.run_id).toBeTruthy();
       await requestNotebookTaskRunStop(deps.cache, {
-        taskId: task.id,
+        taskId,
         runId: activeRun?.run_id ?? 'missing_run_id',
         mode: 'cancel',
         requestedAt: new Date().toISOString(),
@@ -1788,7 +1923,7 @@ describe('api-entry-node notebook task routes', () => {
         delivery: 'shared_owner',
       });
       await expect(getNotebookTaskRunStopRequestForRun(deps.cache, {
-        taskId: task.id,
+        taskId,
         runId: activeRun?.run_id ?? 'missing_run_id',
       })).resolves.toMatchObject({
         mode: 'cancel',
@@ -1796,23 +1931,23 @@ describe('api-entry-node notebook task routes', () => {
         delivery: 'shared_owner',
       });
 
-      releaseEnsureGate?.();
+      executionTicketGate.releaseGate();
 
       for (let attempt = 0; attempt < 40; attempt += 1) {
-        if ((await getNotebookTaskRunState(deps.cache, task.id)) === null) {
+        if ((await getNotebookTaskRunState(deps.cache, taskId)) === null) {
           break;
         }
         await new Promise((resolve) => setTimeout(resolve, 25));
       }
 
       expect(dispatchCalls).toBe(0);
-      await expect(getNotebookTaskRunState(deps.cache, task.id)).resolves.toBeNull();
+      await expect(getNotebookTaskRunState(deps.cache, taskId)).resolves.toBeNull();
 
       let tracesBody: { items: Array<{ name?: string; status?: string }> } | null = null;
       for (let attempt = 0; attempt < 40; attempt += 1) {
         const tracesRes = await apiFetchWithToken(
           baseUrl,
-          `/api/v1/workspaces/ws_default/projects/proj_1/tasks/${task.id}/traces`,
+          `/api/v1/workspaces/ws_default/projects/${projectId}/tasks/${taskId}/traces`,
           'test-token',
         );
         expect(tracesRes.status).toBe(200);
@@ -1927,7 +2062,7 @@ describe('api-entry-node notebook task routes', () => {
       const { baseUrl } = await startServerWithDeps(deps);
       process.env.PUBLIC_API_BASE_URL = `${baseUrl}/api/v1`;
       const workspaceLibrary = await createFileLibrary(baseUrl, 'Internal Pre-dispatch Recovery Workspace');
-      const task = await createNotebookTaskForAgent(baseUrl, {
+      const task = await createNotebookTaskForAgent(deps, baseUrl, {
         title: 'Internal pre-dispatch recovery task',
         agentId: runnerId,
         workspaceFileLibraryId: workspaceLibrary.id,
@@ -2029,17 +2164,15 @@ describe('api-entry-node notebook task routes', () => {
     try {
       const { baseUrl } = await startServerWithDeps(deps);
       process.env.PUBLIC_API_BASE_URL = `${baseUrl}/api/v1`;
-      const workspaceLibrary = await createFileLibrary(baseUrl, 'Slow Audit Coordination Workspace');
-      const { agentId } = await createExternalNotebookExecutionAgent(deps, 'slow-audit-coordination-agent');
-      const task = await createNotebookTaskForAgent(baseUrl, {
-        title: 'Slow audit coordination task',
-        agentId,
-        workspaceFileLibraryId: workspaceLibrary.id,
-      });
+      const { taskId, projectId } = await createDedicatedExternalNotebookTaskForAgent(
+        deps,
+        baseUrl,
+        'Slow audit coordination task',
+      );
 
       const postMessageRes = await apiFetchWithToken(
         baseUrl,
-        taskRunsPath('ws_default', 'proj_1', task.id),
+        taskRunsPath('ws_default', projectId, taskId),
         'test-token',
         taskRunInit('finish quickly but hold audit'),
       );
@@ -2048,18 +2181,18 @@ describe('api-entry-node notebook task routes', () => {
 
       const taskRes = await apiFetchWithToken(
         baseUrl,
-        `/api/v1/workspaces/ws_default/projects/proj_1/tasks/${task.id}`,
+        `/api/v1/workspaces/ws_default/projects/${projectId}/tasks/${taskId}`,
         'test-token',
       );
       expect(taskRes.status).toBe(200);
       await expect(taskRes.json()).resolves.toMatchObject({
-        id: task.id,
+        id: taskId,
         run_state: 'idle',
       });
 
       const cancelRes = await apiFetchWithToken(
         baseUrl,
-        `/api/v1/workspaces/ws_default/projects/proj_1/tasks/${task.id}/cancel`,
+        `/api/v1/workspaces/ws_default/projects/${projectId}/tasks/${taskId}/cancel`,
         'test-token',
         { method: 'POST' },
       );
@@ -2100,17 +2233,15 @@ describe('api-entry-node notebook task routes', () => {
     try {
       const { baseUrl } = await startServerWithDeps(deps);
       process.env.PUBLIC_API_BASE_URL = `${baseUrl}/api/v1`;
-      const workspaceLibrary = await createFileLibrary(baseUrl, 'Delete Busy Workspace');
-      const { agentId } = await createExternalNotebookExecutionAgent(deps, 'delete-busy-agent');
-      const task = await createNotebookTaskForAgent(baseUrl, {
-        title: 'Delete busy task',
-        agentId,
-        workspaceFileLibraryId: workspaceLibrary.id,
-      });
+      const { taskId, projectId } = await createDedicatedExternalNotebookTaskForAgent(
+        deps,
+        baseUrl,
+        'Delete busy task',
+      );
 
       const postMessageRes = await apiFetchWithToken(
         baseUrl,
-        taskRunsPath('ws_default', 'proj_1', task.id),
+        taskRunsPath('ws_default', projectId, taskId),
         'test-token',
         taskRunInit('keep this run open'),
       );
@@ -2119,7 +2250,7 @@ describe('api-entry-node notebook task routes', () => {
 
       const deleteRes = await apiFetchWithToken(
         baseUrl,
-        `/api/v1/workspaces/ws_default/projects/proj_1/tasks/${task.id}`,
+        `/api/v1/workspaces/ws_default/projects/${projectId}/tasks/${taskId}`,
         'test-token',
         { method: 'DELETE' },
       );
@@ -2129,24 +2260,13 @@ describe('api-entry-node notebook task routes', () => {
         message: 'task_run_in_progress',
       });
 
-      const taskRes = await apiFetchWithToken(
-        baseUrl,
-        `/api/v1/workspaces/ws_default/projects/proj_1/tasks/${task.id}`,
-        'test-token',
-      );
-      expect(taskRes.status).toBe(200);
-      await expect(taskRes.json()).resolves.toMatchObject({
-        id: task.id,
-        run_state: 'running',
-      });
-
       releaseRun();
       for (let attempt = 0; attempt < 20; attempt += 1) {
-        const activeRun = await getNotebookTaskRunState(deps.cache, task.id);
+        const activeRun = await getNotebookTaskRunState(deps.cache, taskId);
         if (!activeRun) break;
         await new Promise((resolve) => setTimeout(resolve, 10));
       }
-      await expect(getNotebookTaskRunState(deps.cache, task.id)).resolves.toBeNull();
+      await expect(getNotebookTaskRunState(deps.cache, taskId)).resolves.toBeNull();
     } finally {
       if (previousPublicApiBase === undefined) delete process.env.PUBLIC_API_BASE_URL;
       else process.env.PUBLIC_API_BASE_URL = previousPublicApiBase;
@@ -2172,92 +2292,27 @@ describe('api-entry-node notebook task routes', () => {
       const projectId = project.id;
       const workspaceLibrary = await createFileLibrary(baseUrl, 'Notebook Workspace', { projectId });
 
-    const createCredentialRes = await apiFetch(
-      baseUrl,
-      `/api/v1/workspaces/ws_default/projects/${projectId}/credentials`,
-      {
-        method: 'POST',
-        headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({
-          name: 'task-runner-key',
-          type: 'api_key',
-          value: 'sk-task',
-        }),
-      },
-    );
-    expect(createCredentialRes.status).toBe(201);
-    const credential = (await createCredentialRes.json()) as { id: string };
-
-    const createEndpointRes = await apiFetch(
-      baseUrl,
-      `/api/v1/workspaces/ws_default/projects/${projectId}/endpoints`,
-      {
-        method: 'POST',
-        headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({
-          name: 'task-endpoint',
-          model: 'gpt-5-codex',
-          type: 'custom',
-          mode: 'openai',
-          base_url: upstream.baseUrl,
-          model_profile: {
-            max_context_tokens: 204800,
-            max_output_tokens: 128000,
-            supports_file: false,
-            supports_tool_call: true,
-            supports_reasoning: false,
-            price_input_per_1m: 0,
-            price_output_per_1m: 0,
-            cache_read_discount_ratio: 0,
-            cache_write_discount_ratio: 0,
-          },
-          credential_ref: credential.id,
-        }),
-      },
-    );
-    expect(createEndpointRes.status).toBe(201);
-    const endpoint = (await createEndpointRes.json()) as { id: string };
-
-    const createAgentRes = await apiFetch(
-      baseUrl,
-      `/api/v1/workspaces/ws_default/projects/${projectId}/agent-runners`,
-      {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          name: 'task-runner',
-          is_default: true,
-          status: 'ready',
-          default_endpoint_id: endpoint.id,
-          capabilities: {
-            task_execution: true,
-            terminal: true,
-            artifacts: true,
-            streaming_completion: true,
-            multimodal_completion: false,
-          },
-        }),
-      },
-    );
-    expect(createAgentRes.status).toBe(201);
-    const agent = (await createAgentRes.json()) as { id: string };
+      const { runnerId: agentId, endpointId } = await createDeveloperTaskRunner(deps, 'task-runner', {
+      workspaceId: 'ws_default',
+      projectId,
+    });
 
     const keyRes = await apiFetch(
       baseUrl,
-      `/api/v1/workspaces/ws_default/projects/${projectId}/agent-runners/${agent.id}/keys`,
+      `/api/v1/workspaces/ws_default/projects/${projectId}/agent-runners/${agentId}/keys`,
       { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' },
     );
     expect(keyRes.status).toBe(201);
     const keyPayload = (await keyRes.json()) as { agent_runner_id: string; key: string };
-    expect(keyPayload.agent_runner_id).toBe(agent.id);
+    expect(keyPayload.agent_runner_id).toBe(agentId);
 
     const connInfoRes = await apiFetch(
       baseUrl,
-      `/api/v1/workspaces/ws_default/projects/${projectId}/agent-runners/${agent.id}/connection-info`,
+      `/api/v1/workspaces/ws_default/projects/${projectId}/agent-runners/${agentId}/connection-info`,
     );
     expect(connInfoRes.status).toBe(200);
     const connInfo = (await connInfoRes.json()) as { agent_runner_id: string; ws_url: string };
-    expect(connInfo.agent_runner_id).toBe(agent.id);
+    expect(connInfo.agent_runner_id).toBe(agentId);
     const agentScopedWs = new WebSocket(
       connInfo.ws_url.replace('ws://localhost:20000', baseUrl.replace('http://', 'ws://')),
       {
@@ -2446,6 +2501,7 @@ describe('api-entry-node notebook task routes', () => {
         body: JSON.stringify({
           title: 'Notebook task',
           workspace_file_library_id: workspaceLibrary.id,
+          bound_runner_id: agentId,
         }),
       },
     );
@@ -2496,7 +2552,7 @@ describe('api-entry-node notebook task routes', () => {
       id: task.id,
       run_state: 'running',
       active_run: expect.objectContaining({
-        runner_id: agent.id,
+        runner_id: agentId,
       }),
     });
     const resolutionAuditRows = await deps.docStore.list<{
@@ -2509,8 +2565,8 @@ describe('api-entry-node notebook task routes', () => {
         action: 'agent_runner.resolution.succeeded',
         resource_id: task.id,
         metadata_json: expect.objectContaining({
-          runner_id: agent.id,
-          endpoint_id: endpoint.id,
+          runner_id: agentId,
+          endpoint_id: endpointId,
         }),
       }),
     ]));
@@ -2529,14 +2585,14 @@ describe('api-entry-node notebook task routes', () => {
     expect(execution.legacyUserBearerToken).toBe('');
     expect(execution.apiBase).toBe(`${baseUrl}/api/v1`);
     expect(execution).not.toHaveProperty('interactionKind');
-    expect(execution.workspaceBindingMode).toBe('pre_mounted');
-    expect(execution.workspacePath).toBe(`/workspace/${task.id}`);
+    expect(execution.workspaceBindingMode).toBe('file_library');
+    expect(execution.workspacePath).toBeNull();
     expect(execution.workspaceFileLibraryId).toBe(workspaceLibrary.id);
     expect(execution.workspaceFileLibraryName).toBe(workspaceLibrary.name);
     expect(execution.workspaceDirName).toBe(workspaceLibrary.filesystem_name);
     expect(execution.taskInputsCount).toBe(0);
     expect(normalizeApiBasePath(execution.helloProxyBase)).toBe(
-      `${baseUrl}/api/v1/workspaces/ws_default/projects/${projectId}/endpoints/${endpoint.id}/proxy/openai`,
+      `${baseUrl}/api/v1/workspaces/ws_default/projects/${projectId}/endpoints/${endpointId}/proxy/openai`,
     );
     expect(execution.endpointProxyBase).toBeNull();
 
@@ -2646,79 +2702,14 @@ describe('api-entry-node notebook task routes', () => {
     const projectId = project.id;
     const workspaceLibrary = await createFileLibrary(baseUrl, 'Offline Execution Workspace', { projectId });
 
-    const createCredentialRes = await apiFetch(
-      baseUrl,
-      `/api/v1/workspaces/ws_default/projects/${projectId}/credentials`,
-      {
-        method: 'POST',
-        headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({
-          name: 'task-runner-key-offline',
-          type: 'api_key',
-          value: 'sk-task-offline',
-        }),
-      },
-    );
-    expect(createCredentialRes.status).toBe(201);
-    const credential = (await createCredentialRes.json()) as { id: string };
-
-    const createEndpointRes = await apiFetch(
-      baseUrl,
-      `/api/v1/workspaces/ws_default/projects/${projectId}/endpoints`,
-      {
-        method: 'POST',
-        headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({
-          name: 'task-endpoint-offline',
-          model: 'gpt-5-codex',
-          type: 'custom',
-          mode: 'openai',
-          base_url: 'https://example.com/v1',
-          model_profile: {
-            max_context_tokens: 204800,
-            max_output_tokens: 128000,
-            supports_file: false,
-            supports_tool_call: true,
-            supports_reasoning: false,
-            price_input_per_1m: 0,
-            price_output_per_1m: 0,
-            cache_read_discount_ratio: 0,
-            cache_write_discount_ratio: 0,
-          },
-          credential_ref: credential.id,
-        }),
-      },
-    );
-    expect(createEndpointRes.status).toBe(201);
-    const endpoint = (await createEndpointRes.json()) as { id: string };
-
-    const createAgentRes = await apiFetch(
-      baseUrl,
-      `/api/v1/workspaces/ws_default/projects/${projectId}/agent-runners`,
-      {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          name: 'task-runner-offline',
-          is_default: true,
-          status: 'ready',
-          default_endpoint_id: endpoint.id,
-          capabilities: {
-            task_execution: true,
-            terminal: true,
-            artifacts: true,
-            streaming_completion: true,
-            multimodal_completion: false,
-          },
-        }),
-      },
-    );
-    expect(createAgentRes.status).toBe(201);
-    const agent = (await createAgentRes.json()) as { id: string };
+      const { runnerId: agentId } = await createDeveloperTaskRunner(deps, 'task-runner-offline', {
+      workspaceId: 'ws_default',
+      projectId,
+    });
 
     const keyRes = await apiFetch(
       baseUrl,
-      `/api/v1/workspaces/ws_default/projects/${projectId}/agent-runners/${agent.id}/keys`,
+      `/api/v1/workspaces/ws_default/projects/${projectId}/agent-runners/${agentId}/keys`,
       {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -2727,14 +2718,14 @@ describe('api-entry-node notebook task routes', () => {
     );
     expect(keyRes.status).toBe(201);
     const keyPayload = (await keyRes.json()) as { agent_runner_id: string; key: string };
-    expect(keyPayload.agent_runner_id).toBe(agent.id);
+    expect(keyPayload.agent_runner_id).toBe(agentId);
     const connInfoRes = await apiFetch(
       baseUrl,
-      `/api/v1/workspaces/ws_default/projects/${projectId}/agent-runners/${agent.id}/connection-info`,
+      `/api/v1/workspaces/ws_default/projects/${projectId}/agent-runners/${agentId}/connection-info`,
     );
     expect(connInfoRes.status).toBe(200);
     const connInfo = (await connInfoRes.json()) as { agent_runner_id: string; ws_url: string };
-    expect(connInfo.agent_runner_id).toBe(agent.id);
+    expect(connInfo.agent_runner_id).toBe(agentId);
     const wsUrl = connInfo.ws_url.replace('ws://localhost:20000', baseUrl.replace('http://', 'ws://'));
     const ws = new WebSocket(wsUrl, {
       headers: { Authorization: `Bearer ${keyPayload.key}` },
@@ -2764,6 +2755,7 @@ describe('api-entry-node notebook task routes', () => {
         body: JSON.stringify({
           title: 'Notebook task offline execution',
           workspace_file_library_id: workspaceLibrary.id,
+          bound_runner_id: agentId,
         }),
       },
     );
@@ -2794,9 +2786,7 @@ describe('api-entry-node notebook task routes', () => {
     expect(tracesBody).not.toBeNull();
     const terminalTrace = tracesBody!.items.find((item) => item.name === 'execution.terminal');
     expect(terminalTrace?.status).toBe('error');
-    expect(terminalTrace?.summary).toContain('AGENT_OFFLINE');
-    expect((terminalTrace?.details as { synthesized?: boolean } | undefined)?.synthesized).toBe(true);
-
+    expect(terminalTrace?.summary).toContain('Execution failed');
     const taskAfterRunRes = await apiFetch(
       baseUrl,
       `/api/v1/workspaces/ws_default/projects/${projectId}/tasks/${task.id}`,
@@ -2850,7 +2840,8 @@ describe('api-entry-node notebook task routes', () => {
   });
 
   it('records task trace query metrics for message-scoped requests', async () => {
-    const { baseUrl } = await startServer();
+    const { baseUrl, deps } = await startServer();
+    await createDefaultManagedTaskRunner(deps, 'trace-metrics-default-runner');
     const workspaceLibrary = await createFileLibrary(baseUrl, 'Trace Metrics Workspace');
 
     const createTaskRes = await apiFetch(
@@ -2949,7 +2940,7 @@ describe('api-entry-node notebook task routes', () => {
     expect(capturedExecutionContext?.workspace_file_library_id).toBe(workspaceLibrary.id);
     expect(capturedExecutionContext?.workspace_dir_name).toBe(workspaceLibrary.filesystem_name);
     expect(capturedExecutionContext).not.toHaveProperty('interaction_kind');
-    expect(capturedExecutionContext?.api_base).toBe(`${baseUrl}/api/v1`);
+    expect(capturedExecutionContext?.api_base).toBe('http://127.0.0.1:20000/api/v1');
     expect(capturedExecutionContext?.credential_files).toBeUndefined();
     } finally {
       if (previousPublicApiBase === undefined) delete process.env.PUBLIC_API_BASE_URL;
@@ -3053,7 +3044,7 @@ describe('api-entry-node notebook task routes', () => {
     expect(capturedExecutionContext?.workspace_file_library_id).toBe(workspaceLibrary.id);
     expect(capturedExecutionContext?.workspace_dir_name).toBe(workspaceLibrary.filesystem_name);
     expect(capturedExecutionContext).not.toHaveProperty('interaction_kind');
-    expect(capturedExecutionContext?.api_base).toBe(`${baseUrl}/api/v1`);
+    expect(capturedExecutionContext?.api_base).toBe('http://127.0.0.1:20000/api/v1');
     } finally {
       if (previousPublicApiBase === undefined) delete process.env.PUBLIC_API_BASE_URL;
       else process.env.PUBLIC_API_BASE_URL = previousPublicApiBase;
@@ -3068,11 +3059,16 @@ describe('api-entry-node notebook task routes', () => {
     try {
       const { baseUrl } = await startServerWithDeps(deps);
       process.env.PUBLIC_API_BASE_URL = baseUrl;
-      const { taskId } = await createActiveExternalTaskForTerminal(deps, baseUrl, 'List and delete terminals');
+      const { taskId, projectId } = await createActiveExternalTaskForTerminal(
+        deps,
+        baseUrl,
+        'List and delete terminals',
+        { useDedicatedProject: true },
+      );
 
     const firstRes = await apiFetchWithToken(
       baseUrl,
-      `/api/v1/workspaces/ws_default/projects/proj_1/tasks/${taskId}/terminal/sessions`,
+      `/api/v1/workspaces/ws_default/projects/${projectId}/tasks/${taskId}/terminal/sessions`,
       'test-token',
       {
         method: 'POST',
@@ -3087,7 +3083,7 @@ describe('api-entry-node notebook task routes', () => {
 
     const secondRes = await apiFetchWithToken(
       baseUrl,
-      `/api/v1/workspaces/ws_default/projects/proj_1/tasks/${taskId}/terminal/sessions`,
+      `/api/v1/workspaces/ws_default/projects/${projectId}/tasks/${taskId}/terminal/sessions`,
       'test-token',
       {
         method: 'POST',
@@ -3102,7 +3098,7 @@ describe('api-entry-node notebook task routes', () => {
 
     const listBeforeDelete = await apiFetchWithToken(
       baseUrl,
-      `/api/v1/workspaces/ws_default/projects/proj_1/tasks/${taskId}/terminal/sessions`,
+      `/api/v1/workspaces/ws_default/projects/${projectId}/tasks/${taskId}/terminal/sessions`,
       'test-token',
     );
     expect(listBeforeDelete.status).toBe(200);
@@ -3119,7 +3115,7 @@ describe('api-entry-node notebook task routes', () => {
 
     const deleteFirst = await apiFetchWithToken(
       baseUrl,
-      `/api/v1/workspaces/ws_default/projects/proj_1/tasks/${taskId}/terminal/sessions/${first.terminal_session_id}`,
+      `/api/v1/workspaces/ws_default/projects/${projectId}/tasks/${taskId}/terminal/sessions/${first.terminal_session_id}`,
       'test-token',
       { method: 'DELETE' },
     );
@@ -3127,7 +3123,7 @@ describe('api-entry-node notebook task routes', () => {
 
     const listAfterDelete = await apiFetchWithToken(
       baseUrl,
-      `/api/v1/workspaces/ws_default/projects/proj_1/tasks/${taskId}/terminal/sessions`,
+      `/api/v1/workspaces/ws_default/projects/${projectId}/tasks/${taskId}/terminal/sessions`,
       'test-token',
     );
     expect(listAfterDelete.status).toBe(200);
@@ -3140,7 +3136,7 @@ describe('api-entry-node notebook task routes', () => {
 
       const deletedLookup = await apiFetchWithToken(
         baseUrl,
-        `/api/v1/workspaces/ws_default/projects/proj_1/tasks/${taskId}/terminal/sessions/${first.terminal_session_id}`,
+        `/api/v1/workspaces/ws_default/projects/${projectId}/tasks/${taskId}/terminal/sessions/${first.terminal_session_id}`,
         'test-token',
       );
       expect(deletedLookup.status).toBe(404);
@@ -3292,6 +3288,80 @@ describe('api-entry-node notebook task routes', () => {
         project.id,
         {
           ...downgradedTemplate,
+          description: 'Allows terminal access without Agent task work.',
+          permissions: ['project:endpoint:use', 'project:agent_task:terminal'],
+          updated_at: new Date().toISOString(),
+        },
+      );
+
+      await upsertProjectMemberPermissionState(
+        deps.docStore,
+        'ws_default',
+        project.id,
+        'user_test',
+        {
+          mode: 'custom',
+          template: null,
+          permissions: ['project:agent_runner:manage'],
+        },
+      );
+
+      const createWithTerminalOnly = await apiFetchWithToken(
+        baseUrl,
+        `/api/v1/workspaces/ws_default/projects/${project.id}/tasks/${taskId}/terminal/sessions`,
+        'test-token',
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ cols: 90, rows: 30 }),
+        },
+      );
+      expect(createWithTerminalOnly.status).toBe(403);
+      await expect(createWithTerminalOnly.json()).resolves.toMatchObject({
+        error_code: 'FORBIDDEN',
+        missing_permissions: ['project:agent_task:use'],
+      });
+
+      const listWithTerminalOnly = await apiFetchWithToken(
+        baseUrl,
+        `/api/v1/workspaces/ws_default/projects/${project.id}/tasks/${taskId}/terminal/sessions`,
+        'test-token',
+      );
+      expect(listWithTerminalOnly.status).toBe(403);
+      await expect(listWithTerminalOnly.json()).resolves.toMatchObject({
+        error_code: 'FORBIDDEN',
+        missing_permissions: ['project:agent_task:use'],
+      });
+
+      const getWithTerminalOnly = await apiFetchWithToken(
+        baseUrl,
+        `/api/v1/workspaces/ws_default/projects/${project.id}/tasks/${taskId}/terminal/sessions/${createdTerminal.terminal_session_id}`,
+        'test-token',
+      );
+      expect(getWithTerminalOnly.status).toBe(403);
+      await expect(getWithTerminalOnly.json()).resolves.toMatchObject({
+        error_code: 'FORBIDDEN',
+        missing_permissions: ['project:agent_task:use'],
+      });
+
+      const deleteWithTerminalOnly = await apiFetchWithToken(
+        baseUrl,
+        `/api/v1/workspaces/ws_default/projects/${project.id}/tasks/${taskId}/terminal/sessions/${createdTerminal.terminal_session_id}`,
+        'test-token',
+        { method: 'DELETE' },
+      );
+      expect(deleteWithTerminalOnly.status).toBe(403);
+      await expect(deleteWithTerminalOnly.json()).resolves.toMatchObject({
+        error_code: 'FORBIDDEN',
+        missing_permissions: ['project:agent_task:use'],
+      });
+
+      await saveProjectPermissionTemplate(
+        deps.docStore,
+        'ws_default',
+        project.id,
+        {
+          ...downgradedTemplate,
           description: 'Allows Agent task work and terminal session access after cleanup.',
           permissions: ['project:endpoint:use', 'project:agent_task:use', 'project:agent_task:terminal'],
           updated_at: new Date().toISOString(),
@@ -3330,11 +3400,16 @@ describe('api-entry-node notebook task routes', () => {
     try {
       const { baseUrl } = await startServerWithDeps(deps);
       process.env.PUBLIC_API_BASE_URL = baseUrl;
-      const { taskId } = await createActiveExternalTaskForTerminal(deps, baseUrl, 'Terminal blocks notebook run');
+      const { taskId, projectId } = await createActiveExternalTaskForTerminal(
+        deps,
+        baseUrl,
+        'Terminal blocks notebook run',
+        { useDedicatedProject: true },
+      );
 
       const createTerminalRes = await apiFetchWithToken(
         baseUrl,
-        `/api/v1/workspaces/ws_default/projects/proj_1/tasks/${taskId}/terminal/sessions`,
+        `/api/v1/workspaces/ws_default/projects/${projectId}/tasks/${taskId}/terminal/sessions`,
         'test-token',
         {
           method: 'POST',
@@ -3346,7 +3421,7 @@ describe('api-entry-node notebook task routes', () => {
 
       const sendMessageRes = await apiFetchWithToken(
         baseUrl,
-        taskRunsPath('ws_default', 'proj_1', taskId),
+        taskRunsPath('ws_default', projectId, taskId),
         'test-token',
         taskRunInit('Please continue this notebook task.'),
       );
@@ -3358,7 +3433,7 @@ describe('api-entry-node notebook task routes', () => {
 
       const listActivityRes = await apiFetchWithToken(
         baseUrl,
-        taskActivityPath('ws_default', 'proj_1', taskId),
+        taskActivityPath('ws_default', projectId, taskId),
         'test-token',
       );
       expect(listActivityRes.status).toBe(200);
@@ -3377,11 +3452,16 @@ describe('api-entry-node notebook task routes', () => {
     try {
       const { baseUrl } = await startServerWithDeps(deps);
       process.env.PUBLIC_API_BASE_URL = baseUrl;
-      const { taskId } = await createActiveExternalTaskForTerminal(deps, baseUrl, 'Delete after ending terminals');
+      const { taskId, projectId } = await createActiveExternalTaskForTerminal(
+        deps,
+        baseUrl,
+        'Delete after ending terminals',
+        { useDedicatedProject: true },
+      );
 
       const createTerminalRes = await apiFetchWithToken(
         baseUrl,
-        `/api/v1/workspaces/ws_default/projects/proj_1/tasks/${taskId}/terminal/sessions`,
+        `/api/v1/workspaces/ws_default/projects/${projectId}/tasks/${taskId}/terminal/sessions`,
         'test-token',
         {
           method: 'POST',
@@ -3395,7 +3475,7 @@ describe('api-entry-node notebook task routes', () => {
 
       const deleteTaskWhileTerminalActive = await apiFetchWithToken(
         baseUrl,
-        `/api/v1/workspaces/ws_default/projects/proj_1/tasks/${taskId}`,
+        `/api/v1/workspaces/ws_default/projects/${projectId}/tasks/${taskId}`,
         'test-token',
         { method: 'DELETE' },
       );
@@ -3407,7 +3487,7 @@ describe('api-entry-node notebook task routes', () => {
 
       const listStillAvailable = await apiFetchWithToken(
         baseUrl,
-        `/api/v1/workspaces/ws_default/projects/proj_1/tasks/${taskId}/terminal/sessions`,
+        `/api/v1/workspaces/ws_default/projects/${projectId}/tasks/${taskId}/terminal/sessions`,
         'test-token',
       );
       expect(listStillAvailable.status).toBe(200);
@@ -3422,7 +3502,7 @@ describe('api-entry-node notebook task routes', () => {
 
       const deleteTerminal = await apiFetchWithToken(
         baseUrl,
-        `/api/v1/workspaces/ws_default/projects/proj_1/tasks/${taskId}/terminal/sessions/${createdTerminal.terminal_session_id}`,
+        `/api/v1/workspaces/ws_default/projects/${projectId}/tasks/${taskId}/terminal/sessions/${createdTerminal.terminal_session_id}`,
         'test-token',
         { method: 'DELETE' },
       );
@@ -3430,7 +3510,7 @@ describe('api-entry-node notebook task routes', () => {
 
       const deleteTaskAfterTerminalEnds = await apiFetchWithToken(
         baseUrl,
-        `/api/v1/workspaces/ws_default/projects/proj_1/tasks/${taskId}`,
+        `/api/v1/workspaces/ws_default/projects/${projectId}/tasks/${taskId}`,
         'test-token',
         { method: 'DELETE' },
       );
@@ -3450,13 +3530,18 @@ describe('api-entry-node notebook task routes', () => {
     try {
       const { baseUrl } = await startServerWithDeps(deps);
       process.env.PUBLIC_API_BASE_URL = baseUrl;
-      const { taskId } = await createActiveExternalTaskForTerminal(deps, baseUrl, 'Last terminal session releases task');
+      const { taskId, projectId } = await createActiveExternalTaskForTerminal(
+        deps,
+        baseUrl,
+        'Last terminal session releases task',
+        { useDedicatedProject: true },
+      );
 
       const createdSessionIds: string[] = [];
       for (let index = 0; index < 2; index += 1) {
         const createTerminalRes = await apiFetchWithToken(
           baseUrl,
-          `/api/v1/workspaces/ws_default/projects/proj_1/tasks/${taskId}/terminal/sessions`,
+          `/api/v1/workspaces/ws_default/projects/${projectId}/tasks/${taskId}/terminal/sessions`,
           'test-token',
           {
             method: 'POST',
@@ -3472,7 +3557,7 @@ describe('api-entry-node notebook task routes', () => {
 
       const deleteFirst = await apiFetchWithToken(
         baseUrl,
-        `/api/v1/workspaces/ws_default/projects/proj_1/tasks/${taskId}/terminal/sessions/${createdSessionIds[0]}`,
+        `/api/v1/workspaces/ws_default/projects/${projectId}/tasks/${taskId}/terminal/sessions/${createdSessionIds[0]}`,
         'test-token',
         { method: 'DELETE' },
       );
@@ -3480,7 +3565,7 @@ describe('api-entry-node notebook task routes', () => {
 
       const blockedRun = await apiFetchWithToken(
         baseUrl,
-        taskRunsPath('ws_default', 'proj_1', taskId),
+        taskRunsPath('ws_default', projectId, taskId),
         'test-token',
         taskRunInit('Can the notebook continue now?'),
       );
@@ -3492,7 +3577,7 @@ describe('api-entry-node notebook task routes', () => {
 
       const blockedDelete = await apiFetchWithToken(
         baseUrl,
-        `/api/v1/workspaces/ws_default/projects/proj_1/tasks/${taskId}`,
+        `/api/v1/workspaces/ws_default/projects/${projectId}/tasks/${taskId}`,
         'test-token',
         { method: 'DELETE' },
       );
@@ -3504,7 +3589,7 @@ describe('api-entry-node notebook task routes', () => {
 
       const deleteSecond = await apiFetchWithToken(
         baseUrl,
-        `/api/v1/workspaces/ws_default/projects/proj_1/tasks/${taskId}/terminal/sessions/${createdSessionIds[1]}`,
+        `/api/v1/workspaces/ws_default/projects/${projectId}/tasks/${taskId}/terminal/sessions/${createdSessionIds[1]}`,
         'test-token',
         { method: 'DELETE' },
       );
@@ -3512,7 +3597,7 @@ describe('api-entry-node notebook task routes', () => {
 
       const deleteTaskAfterLastSessionEnds = await apiFetchWithToken(
         baseUrl,
-        `/api/v1/workspaces/ws_default/projects/proj_1/tasks/${taskId}`,
+        `/api/v1/workspaces/ws_default/projects/${projectId}/tasks/${taskId}`,
         'test-token',
         { method: 'DELETE' },
       );
@@ -3647,12 +3732,17 @@ describe('api-entry-node notebook task routes', () => {
     try {
       const { baseUrl } = await startServerWithDeps(deps);
       process.env.PUBLIC_API_BASE_URL = baseUrl;
-      const { taskId } = await createActiveExternalTaskForTerminal(deps, baseUrl, 'Terminal session cap');
+      const { taskId, projectId } = await createActiveExternalTaskForTerminal(
+        deps,
+        baseUrl,
+        'Terminal session cap',
+        { useDedicatedProject: true },
+      );
 
     for (let index = 0; index < 3; index += 1) {
       const createRes = await apiFetchWithToken(
         baseUrl,
-        `/api/v1/workspaces/ws_default/projects/proj_1/tasks/${taskId}/terminal/sessions`,
+        `/api/v1/workspaces/ws_default/projects/${projectId}/tasks/${taskId}/terminal/sessions`,
         'test-token',
         {
           method: 'POST',
@@ -3665,7 +3755,7 @@ describe('api-entry-node notebook task routes', () => {
 
       const overflow = await apiFetchWithToken(
         baseUrl,
-        `/api/v1/workspaces/ws_default/projects/proj_1/tasks/${taskId}/terminal/sessions`,
+        `/api/v1/workspaces/ws_default/projects/${projectId}/tasks/${taskId}/terminal/sessions`,
         'test-token',
         {
           method: 'POST',
@@ -3692,15 +3782,16 @@ describe('api-entry-node notebook task routes', () => {
     try {
       const { baseUrl } = await startServerWithDeps(deps);
       process.env.PUBLIC_API_BASE_URL = baseUrl;
-      const { taskId } = await createActiveExternalTaskForTerminal(
+      const { taskId, projectId } = await createActiveExternalTaskForTerminal(
         deps,
         baseUrl,
         'Terminal no-store truth',
+        { useDedicatedProject: true },
       );
 
       const createRes = await apiFetchWithToken(
         baseUrl,
-        `/api/v1/workspaces/ws_default/projects/proj_1/tasks/${taskId}/terminal/sessions`,
+        `/api/v1/workspaces/ws_default/projects/${projectId}/tasks/${taskId}/terminal/sessions`,
         'test-token',
         {
           method: 'POST',
@@ -3714,7 +3805,7 @@ describe('api-entry-node notebook task routes', () => {
 
       const listRes = await apiFetchWithToken(
         baseUrl,
-        `/api/v1/workspaces/ws_default/projects/proj_1/tasks/${taskId}/terminal/sessions`,
+        `/api/v1/workspaces/ws_default/projects/${projectId}/tasks/${taskId}/terminal/sessions`,
         'test-token',
       );
       expect(listRes.status).toBe(200);
@@ -3722,7 +3813,7 @@ describe('api-entry-node notebook task routes', () => {
 
       const sessionRes = await apiFetchWithToken(
         baseUrl,
-        `/api/v1/workspaces/ws_default/projects/proj_1/tasks/${taskId}/terminal/sessions/${created.terminal_session_id}`,
+        `/api/v1/workspaces/ws_default/projects/${projectId}/tasks/${taskId}/terminal/sessions/${created.terminal_session_id}`,
         'test-token',
       );
       expect(sessionRes.status).toBe(200);
@@ -3741,13 +3832,18 @@ describe('api-entry-node notebook task routes', () => {
     const firstServer = await startServerWithDeps(deps);
     try {
       process.env.PUBLIC_API_BASE_URL = firstServer.baseUrl;
-      const { taskId } = await createActiveExternalTaskForTerminal(deps, firstServer.baseUrl, 'Terminal identity survives reload');
+      const { taskId, projectId } = await createActiveExternalTaskForTerminal(
+        deps,
+        firstServer.baseUrl,
+        'Terminal identity survives reload',
+        { useDedicatedProject: true },
+      );
 
       const createdIds: string[] = [];
       for (let index = 0; index < 3; index += 1) {
         const createRes = await apiFetchWithToken(
           firstServer.baseUrl,
-          `/api/v1/workspaces/ws_default/projects/proj_1/tasks/${taskId}/terminal/sessions`,
+          `/api/v1/workspaces/ws_default/projects/${projectId}/tasks/${taskId}/terminal/sessions`,
           'test-token',
           {
             method: 'POST',
@@ -3774,7 +3870,7 @@ describe('api-entry-node notebook task routes', () => {
 
       const listAfterReload = await apiFetchWithToken(
         secondServer.baseUrl,
-        `/api/v1/workspaces/ws_default/projects/proj_1/tasks/${taskId}/terminal/sessions`,
+        `/api/v1/workspaces/ws_default/projects/${projectId}/tasks/${taskId}/terminal/sessions`,
         'test-token',
       );
       expect(listAfterReload.status).toBe(200);
@@ -3790,7 +3886,7 @@ describe('api-entry-node notebook task routes', () => {
 
       const replacement = await apiFetchWithToken(
         secondServer.baseUrl,
-        `/api/v1/workspaces/ws_default/projects/proj_1/tasks/${taskId}/terminal/sessions`,
+        `/api/v1/workspaces/ws_default/projects/${projectId}/tasks/${taskId}/terminal/sessions`,
         'test-token',
         {
           method: 'POST',
@@ -3805,7 +3901,7 @@ describe('api-entry-node notebook task routes', () => {
 
       const listAfterReplacement = await apiFetchWithToken(
         secondServer.baseUrl,
-        `/api/v1/workspaces/ws_default/projects/proj_1/tasks/${taskId}/terminal/sessions`,
+        `/api/v1/workspaces/ws_default/projects/${projectId}/tasks/${taskId}/terminal/sessions`,
         'test-token',
       );
       expect(listAfterReplacement.status).toBe(200);
@@ -3960,16 +4056,18 @@ describe('api-entry-node notebook task routes', () => {
         deps,
         firstServer.baseUrl,
         'Scoped terminal owner task',
+        { useDedicatedProject: true },
       );
       const otherTask = await createActiveExternalTaskForTerminal(
         deps,
         firstServer.baseUrl,
         'Scoped terminal other task',
+        { useDedicatedProject: true },
       );
 
       const createRes = await apiFetchWithToken(
         firstServer.baseUrl,
-        `/api/v1/workspaces/ws_default/projects/proj_1/tasks/${ownerTask.taskId}/terminal/sessions`,
+        `/api/v1/workspaces/ws_default/projects/${ownerTask.projectId}/tasks/${ownerTask.taskId}/terminal/sessions`,
         'test-token',
         {
           method: 'POST',
@@ -3993,7 +4091,7 @@ describe('api-entry-node notebook task routes', () => {
       process.env.PUBLIC_API_BASE_URL = secondServer.baseUrl;
 
       const sessionCacheKey = `notebook_terminal_session:${created.terminal_session_id}`;
-      const wrongTaskPath = `/api/v1/workspaces/ws_default/projects/proj_1/tasks/${otherTask.taskId}/terminal/sessions/${created.terminal_session_id}`;
+      const wrongTaskPath = `/api/v1/workspaces/ws_default/projects/${otherTask.projectId}/tasks/${otherTask.taskId}/terminal/sessions/${created.terminal_session_id}`;
 
       const wrongTaskGet = await apiFetchWithToken(
         secondServer.baseUrl,
@@ -4018,7 +4116,7 @@ describe('api-entry-node notebook task routes', () => {
 
       const correctTaskGet = await apiFetchWithToken(
         secondServer.baseUrl,
-        `/api/v1/workspaces/ws_default/projects/proj_1/tasks/${ownerTask.taskId}/terminal/sessions/${created.terminal_session_id}`,
+        `/api/v1/workspaces/ws_default/projects/${ownerTask.projectId}/tasks/${ownerTask.taskId}/terminal/sessions/${created.terminal_session_id}`,
         'test-token',
       );
       expect(correctTaskGet.status).toBe(200);

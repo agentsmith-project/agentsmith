@@ -11,6 +11,8 @@ export function isAgentRoute(route: { kind: string }): boolean {
     || route.kind === 'agentDiagnostics'
     || route.kind === 'agentExecutionConfig'
     || route.kind === 'agentConnectionInfo'
+    || route.kind === 'agentTestConnection'
+    || route.kind === 'agentTestTaskRuns'
     || route.kind === 'agentKeys'
     || route.kind === 'agentKeyItem';
 }
@@ -23,6 +25,7 @@ export function isTaskRoute(route: { kind: string }): boolean {
     || route.kind === 'taskInputItem'
     || route.kind === 'taskMessages'
     || route.kind === 'taskActivity'
+    || route.kind === 'taskRunnerBindingOptions'
     || route.kind === 'taskRuns'
     || route.kind === 'taskCancelRun'
     || route.kind === 'taskTraces'

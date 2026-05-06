@@ -89,6 +89,11 @@ export class APIError extends Error {
    * Get user-friendly error message
    */
   getUserMessage(): string {
+    const safeTaskSurfaceMessage =
+      resolveAgentTaskSafeErrorMessage({ rawMessage: this.errorCode, audience: 'task' })
+      ?? resolveAgentTaskSafeErrorMessage({ rawMessage: this.message, audience: 'task' });
+    if (safeTaskSurfaceMessage) return safeTaskSurfaceMessage;
+
     // Special error codes with custom messages
     const customMessages: Record<string, string> = {
       NETWORK_ERROR: 'Network connection failed. Please check your internet connection.',
@@ -118,8 +123,80 @@ export function resolveErrorMessageByCode(
   return overrides[errorCode] ?? fallback;
 }
 
-interface ErrorTranslator {
+export interface ErrorTranslator {
   (key: string, values?: Record<string, string | number>): string;
+}
+
+export type AgentTaskErrorAudience = 'task' | 'terminal';
+
+const AGENT_TASK_SAFE_ERROR_CODES = [
+  'agent_runner_unavailable',
+  'agent_runner_forbidden',
+  'agent_runner_runtime_unavailable',
+  'agent_runner_model_unconfigured',
+  'agent_runner_capability_mismatch',
+  'agent_runner_default_conflict',
+  'agent_runner_not_resolved',
+  'agent_runner_disconnected',
+  'agent_runner_stale',
+  'invalid_binding_target',
+  'terminal_runner_unavailable',
+  'terminal_runner_not_resolved',
+  'task_terminal_runner_unavailable',
+  'task_terminal_runner_not_resolved',
+] as const;
+
+const AGENT_TASK_SAFE_ERROR_CODE_SET = new Set<string>(AGENT_TASK_SAFE_ERROR_CODES);
+
+const TASK_SAFE_COPY_DEFAULTS: Record<AgentTaskErrorAudience, string> = {
+  task: 'Task execution is not ready yet.',
+  terminal: 'Terminal session is not ready. Try reopening it later.',
+};
+
+const TASK_SAFE_COPY_KEYS: Record<AgentTaskErrorAudience, string[]> = {
+  task: ['agentTaskResolution.description'],
+  terminal: ['terminal_error_session_not_ready'],
+};
+
+const AGENT_TASK_UNSAFE_ERROR_TERMS = [
+  'runner',
+  'system managed',
+  'endpoint',
+  'model configuration',
+  'connection key',
+  'required_permissions',
+  'reason_code',
+  'diagnostics',
+  'diagnostic id',
+  'diagnostic entrypoint',
+  'raw event',
+  'raw diagnostics',
+  'internal path',
+  'internal_path',
+] as const;
+
+function normalizeErrorToken(value: string): string {
+  return value.trim().toLowerCase().replace(/[\s-]+/g, '_');
+}
+
+export function findAgentTaskSafeErrorCode(value: string | null | undefined): string | null {
+  if (!value) return null;
+  const normalized = normalizeErrorToken(value);
+  if (AGENT_TASK_SAFE_ERROR_CODE_SET.has(normalized)) {
+    return normalized;
+  }
+  for (const code of AGENT_TASK_SAFE_ERROR_CODES) {
+    if (normalized.includes(code)) {
+      return code;
+    }
+  }
+  return null;
+}
+
+export function containsAgentTaskUnsafeErrorTerm(value: string | null | undefined): boolean {
+  if (!value) return false;
+  const normalized = value.toLowerCase();
+  return AGENT_TASK_UNSAFE_ERROR_TERMS.some((term) => normalized.includes(term));
 }
 
 function pickTranslated(
@@ -135,6 +212,26 @@ function pickTranslated(
   return fallback;
 }
 
+export function resolveAgentTaskSafeErrorMessage(args: {
+  rawMessage: string | null | undefined;
+  audience?: AgentTaskErrorAudience;
+  t?: ErrorTranslator;
+}): string | null {
+  if (!findAgentTaskSafeErrorCode(args.rawMessage)) return null;
+  const audience = args.audience ?? 'task';
+  const fallback = TASK_SAFE_COPY_DEFAULTS[audience];
+  if (!args.t) return fallback;
+  return pickTranslated(args.t, TASK_SAFE_COPY_KEYS[audience], fallback);
+}
+
+function pickErrorDetailString(
+  details: Record<string, unknown> | undefined,
+  key: string,
+): string | null {
+  const value = details?.[key];
+  return typeof value === 'string' ? value : null;
+}
+
 export function resolveApiErrorPresentation(args: {
   error: APIError;
   t: ErrorTranslator;
@@ -145,6 +242,31 @@ export function resolveApiErrorPresentation(args: {
   const unknownTitle = pickTranslated(t, ['unknown.title'], 'Error');
   const unknownDescription = pickTranslated(t, ['unknown.description'], 'An unexpected error occurred.');
   const defaultDescription = error.message || fallbackMessage || unknownDescription;
+  const safeTaskSurfaceDescription =
+    resolveAgentTaskSafeErrorMessage({ rawMessage: error.errorCode, audience: 'task', t })
+    ?? resolveAgentTaskSafeErrorMessage({ rawMessage: error.message, audience: 'task', t })
+    ?? resolveAgentTaskSafeErrorMessage({
+      rawMessage: pickErrorDetailString(error.details, 'reason_code'),
+      audience: 'task',
+      t,
+    })
+    ?? resolveAgentTaskSafeErrorMessage({
+      rawMessage: pickErrorDetailString(error.details, 'failure_code'),
+      audience: 'task',
+      t,
+    })
+    ?? resolveAgentTaskSafeErrorMessage({
+      rawMessage: pickErrorDetailString(error.details, 'error_code'),
+      audience: 'task',
+      t,
+    });
+
+  if (safeTaskSurfaceDescription) {
+    return {
+      title: pickTranslated(t, ['agentTaskResolution.title'], 'Task not ready'),
+      description: safeTaskSurfaceDescription,
+    };
+  }
 
   if (error.errorCode === 'AGENT_OFFLINE') {
     return {

@@ -25,13 +25,23 @@ beforeAll(() => {
   }
 });
 
-// Shared guard for accidental create-time runner option loading.
-let mockRunnerOptionsFn = vi.fn();
+const { mockGetRunnerBindingOptions } = vi.hoisted(() => ({
+  mockGetRunnerBindingOptions: vi.fn(),
+}));
 
 // Mock hooks — use vi.fn() so we can control return value per-test
 vi.mock('@/lib/hooks/use-task', () => ({
   useCreateTask: vi.fn(),
   useTasks: vi.fn(),
+}));
+
+vi.mock('@/lib/api', () => ({
+  getApiClient: vi.fn(() => ({})),
+  TaskAPI: vi.fn().mockImplementation(function TaskAPI() {
+    return {
+      getRunnerBindingOptions: mockGetRunnerBindingOptions,
+    };
+  }),
 }));
 
 vi.mock('@/lib/hooks/use-files', () => ({
@@ -140,7 +150,6 @@ vi.mock('next-intl', () => ({
       'important': 'Important:',
       'create_description': 'Start an Agent task by describing the work and choosing a task workspace.',
       'create_title': 'Task Title',
-      'select_agent': 'Select an Agent',
       'workspace_source_label': 'Task workspace',
       'workspace_source_create_new': 'Initialize a new task workspace automatically',
       'workspace_source_create_new_hint': 'Recommended. We\'ll create a fresh persistent task workspace for this task.',
@@ -154,6 +163,21 @@ vi.mock('next-intl', () => ({
       'workspace_file_library_empty': 'No idle workspaces are available in this project right now.',
       'task_start_notice': 'Start the task after creation by sending the first instruction.',
       'history_immutable_notice': 'Task history cannot be modified',
+      'advanced_settings': 'Advanced settings',
+      'advanced_settings_description': 'Leave this off to use the deployment-managed runner for this task.',
+      'use_developer_runner': 'Choose a Developer runner for this task',
+      'developer_runner_label': 'Developer runner',
+      'developer_runner_placeholder': 'Select a Developer runner',
+      'developer_runner_loading': 'Loading Developer runners...',
+      'developer_runner_empty': 'No Developer runners you can use are available for this task.',
+      'developer_runner_hint': 'When turned on, choose one available Developer runner for this task. Otherwise it uses the deployment-managed runner.',
+      'developer_runner_override_unavailable_hint': 'The visible Developer runners are not ready to use for this task.',
+      'developer_runner_selected_unavailable': 'The selected Developer runner is not available for this task right now.',
+      'developer_runner_reason_stale': 'Check the connection again before using it.',
+      'developer_runner_reason_unavailable': 'It is not connected right now.',
+      'developer_runner_reason_forbidden': 'You do not have permission to use it.',
+      'developer_runner_reason_capability': 'It cannot run this type of task.',
+      'developer_runner_reason_default': 'It is not available for this task right now.',
       'cancel': 'Cancel',
       'empty': 'No agents available',
     };
@@ -237,9 +261,46 @@ describe('TaskCreateDialog', () => {
       },
     });
     vi.clearAllMocks();
-
-    // Reset shared mocks to defaults
-    mockRunnerOptionsFn = vi.fn();
+    mockGetRunnerBindingOptions.mockResolvedValue({
+      options: [
+        {
+          option_id: 'default_managed',
+          label: 'Default managed runner',
+          bound_runner_kind: 'managed',
+          runner_binding_source: 'default_managed',
+          readiness: { state: 'ready', summary: 'Ready' },
+          capability: { state: 'ready', summary: 'Ready' },
+          actions: {
+            bind_to_task: {
+              operation: 'bind_to_task',
+              visible: true,
+              allowed: true,
+              required_permissions: ['project:agent_task:use'],
+              danger_level: 'none',
+            },
+          },
+        },
+        {
+          option_id: 'runner-dev',
+          label: 'Developer runner',
+          agent_runner_id: 'runner-dev',
+          bound_runner_kind: 'developer',
+          runner_binding_source: 'explicit',
+          readiness: { state: 'ready', summary: 'Connected' },
+          capability: { state: 'ready', summary: 'Can run this task' },
+          actions: {
+            bind_to_task: {
+              operation: 'bind_to_task',
+              visible: true,
+              allowed: true,
+              required_permissions: ['project:agent_task:use', 'project:agent_runner:manage'],
+              danger_level: 'none',
+            },
+          },
+        },
+      ],
+      generated_at: '2026-05-06T10:00:00.000Z',
+    });
 
     mockMutateAsync.mockResolvedValue({ id: 'new-task-id' });
 
@@ -419,11 +480,11 @@ describe('TaskCreateDialog', () => {
   });
 
   describe('Task Execution', () => {
-    it('does not fetch runner or agent options when dialog is open', async () => {
+    it('does not fetch runner binding options until advanced settings are opened', async () => {
       renderComponent();
 
       expect(screen.getByRole('dialog')).toBeInTheDocument();
-      expect(mockRunnerOptionsFn).not.toHaveBeenCalled();
+      expect(mockGetRunnerBindingOptions).not.toHaveBeenCalled();
     });
   });
 
@@ -473,6 +534,264 @@ describe('TaskCreateDialog', () => {
       await user.click(screen.getAllByRole('radio')[1]!);
       await user.type(screen.getByRole('textbox', { name: /Task Title/i }), 'Test Task');
       expect(screen.getByRole('button', { name: 'Create' })).toBeDisabled();
+    });
+  });
+
+  describe('Advanced Developer Runner Binding', () => {
+    it('does not show developer runner choice in the ordinary path', () => {
+      renderComponent();
+
+      expect(screen.queryByText('Choose a Developer runner for this task')).not.toBeInTheDocument();
+      expect(screen.queryByRole('combobox', { name: /Developer runner/i })).not.toBeInTheDocument();
+    });
+
+    it('shows the developer runner binding affordance under advanced settings', async () => {
+      const user = userEvent.setup();
+      renderComponent();
+
+      await user.click(screen.getByRole('button', { name: 'Advanced settings' }));
+
+      await waitFor(() => {
+        expect(mockGetRunnerBindingOptions).toHaveBeenCalledWith(
+          mockWorkspaceId,
+          mockProjectId,
+        );
+      });
+      expect(screen.getByText('Choose a Developer runner for this task')).toBeInTheDocument();
+
+      await user.click(screen.getByRole('checkbox', { name: /Choose a Developer runner for this task/ }));
+
+      expect(screen.getByTestId('task-create__bound-runner')).toBeInTheDocument();
+    });
+
+    it('submits bound_runner_id when an authorized Developer runner is selected', async () => {
+      const user = userEvent.setup();
+      renderComponent();
+
+      await user.type(screen.getByRole('textbox', { name: /Task Title/i }), 'Developer Task');
+      await user.click(screen.getByRole('button', { name: 'Advanced settings' }));
+      await waitFor(() => {
+        expect(screen.getByRole('checkbox', { name: /Choose a Developer runner for this task/ })).toBeEnabled();
+      });
+      await user.click(screen.getByRole('checkbox', { name: /Choose a Developer runner for this task/ }));
+      await waitFor(() => {
+        expect(mockGetRunnerBindingOptions).toHaveBeenCalled();
+      });
+      await selectRadixOption(user, screen.getByTestId('task-create__bound-runner'), 'Developer runner');
+
+      submitTaskCreateForm();
+
+      await waitFor(() => {
+        expect(mockMutateAsync).toHaveBeenCalledWith({
+          workspaceId: mockWorkspaceId,
+          projectId: mockProjectId,
+          data: {
+            title: 'Developer Task',
+            bound_runner_id: 'runner-dev',
+            workspace_mode: 'create_new',
+            workspace_name: 'Developer Task workspace',
+          },
+        });
+      });
+    });
+
+    it('does not leak Developer runner names when the actor has no authorized Developer binding options', async () => {
+      const user = userEvent.setup();
+      mockGetRunnerBindingOptions.mockResolvedValueOnce({
+        options: [
+          {
+            option_id: 'default_managed',
+            label: 'Default managed runner',
+            bound_runner_kind: 'managed',
+            runner_binding_source: 'default_managed',
+            readiness: { state: 'ready', summary: 'Ready' },
+            capability: { state: 'ready', summary: 'Ready' },
+            actions: {
+              bind_to_task: {
+                operation: 'bind_to_task',
+                visible: true,
+                allowed: true,
+                required_permissions: ['project:agent_task:use'],
+                danger_level: 'none',
+              },
+            },
+          },
+        ],
+        generated_at: '2026-05-06T10:00:00.000Z',
+      });
+      renderComponent();
+
+      await user.click(screen.getByRole('button', { name: 'Advanced settings' }));
+
+      await waitFor(() => {
+        expect(mockGetRunnerBindingOptions).toHaveBeenCalled();
+      });
+
+      expect(screen.getByText('No Developer runners you can use are available for this task.')).toBeInTheDocument();
+      expect(screen.queryByRole('checkbox', { name: /Choose a Developer runner for this task/ })).not.toBeInTheDocument();
+      expect(screen.queryByText('Developer runner')).not.toBeInTheDocument();
+      expect(screen.queryByTestId('task-create__bound-runner')).not.toBeInTheDocument();
+    });
+
+    it('disables Developer runner selection and explains visible Developer runners that cannot be used', async () => {
+      const user = userEvent.setup();
+      mockGetRunnerBindingOptions.mockResolvedValueOnce({
+        options: [
+          {
+            option_id: 'runner-stale',
+            label: 'Stale Developer runner',
+            agent_runner_id: 'runner-stale',
+            bound_runner_kind: 'developer',
+            runner_binding_source: 'explicit',
+            readiness: { state: 'stale', summary: 'Stale' },
+            capability: { state: 'ready', summary: 'Can run this task' },
+            disabled_reason_code: 'agent_runner_stale',
+            actions: {
+              bind_to_task: {
+                operation: 'bind_to_task',
+                visible: true,
+                allowed: true,
+                required_permissions: ['project:agent_task:use', 'project:agent_runner:manage'],
+                danger_level: 'none',
+              },
+            },
+          },
+          {
+            option_id: 'runner-offline',
+            label: 'Offline Developer runner',
+            agent_runner_id: 'runner-offline',
+            bound_runner_kind: 'developer',
+            runner_binding_source: 'explicit',
+            readiness: { state: 'missing', summary: 'Missing' },
+            capability: { state: 'ready', summary: 'Can run this task' },
+            disabled_reason_code: 'agent_runner_disconnected',
+            actions: {
+              bind_to_task: {
+                operation: 'bind_to_task',
+                visible: true,
+                allowed: true,
+                required_permissions: ['project:agent_task:use', 'project:agent_runner:manage'],
+                danger_level: 'none',
+              },
+            },
+          },
+          {
+            option_id: 'runner-denied',
+            label: 'Denied Developer runner',
+            agent_runner_id: 'runner-denied',
+            bound_runner_kind: 'developer',
+            runner_binding_source: 'explicit',
+            readiness: { state: 'ready', summary: 'Connected' },
+            capability: { state: 'ready', summary: 'Can run this task' },
+            actions: {
+              bind_to_task: {
+                operation: 'bind_to_task',
+                visible: true,
+                allowed: false,
+                reason_code: 'permission_denied',
+                required_permissions: ['project:agent_task:use', 'project:agent_runner:manage'],
+                danger_level: 'none',
+              },
+            },
+          },
+        ],
+        generated_at: '2026-05-06T10:00:00.000Z',
+      });
+
+      renderComponent();
+      await user.click(screen.getByRole('button', { name: 'Advanced settings' }));
+
+      await waitFor(() => {
+        expect(screen.getByRole('checkbox', { name: /Choose a Developer runner for this task/ })).toBeDisabled();
+      });
+
+      expect(screen.getByText('The visible Developer runners are not ready to use for this task.')).toBeInTheDocument();
+      expect(screen.getByText('Stale Developer runner')).toBeInTheDocument();
+      expect(screen.getByText('Check the connection again before using it.')).toBeInTheDocument();
+      expect(screen.getByText('Offline Developer runner')).toBeInTheDocument();
+      expect(screen.getByText('It is not connected right now.')).toBeInTheDocument();
+      expect(screen.getByText('Denied Developer runner')).toBeInTheDocument();
+      expect(screen.getByText('You do not have permission to use it.')).toBeInTheDocument();
+      expect(screen.queryByTestId('task-create__bound-runner')).not.toBeInTheDocument();
+    });
+
+    it('clears a selected Developer runner and blocks submit when refreshed options mark it stale', async () => {
+      const user = userEvent.setup();
+      mockGetRunnerBindingOptions
+        .mockResolvedValueOnce({
+          options: [
+            {
+              option_id: 'runner-dev',
+              label: 'Developer runner',
+              agent_runner_id: 'runner-dev',
+              bound_runner_kind: 'developer',
+              runner_binding_source: 'explicit',
+              readiness: { state: 'ready', summary: 'Connected' },
+              capability: { state: 'ready', summary: 'Can run this task' },
+              actions: {
+                bind_to_task: {
+                  operation: 'bind_to_task',
+                  visible: true,
+                  allowed: true,
+                  required_permissions: ['project:agent_task:use', 'project:agent_runner:manage'],
+                  danger_level: 'none',
+                },
+              },
+            },
+          ],
+          generated_at: '2026-05-06T10:00:00.000Z',
+        })
+        .mockResolvedValueOnce({
+          options: [
+            {
+              option_id: 'runner-dev',
+              label: 'Developer runner',
+              agent_runner_id: 'runner-dev',
+              bound_runner_kind: 'developer',
+              runner_binding_source: 'explicit',
+              readiness: { state: 'stale', summary: 'Stale' },
+              capability: { state: 'ready', summary: 'Can run this task' },
+              disabled_reason_code: 'agent_runner_stale',
+              actions: {
+                bind_to_task: {
+                  operation: 'bind_to_task',
+                  visible: true,
+                  allowed: true,
+                  required_permissions: ['project:agent_task:use', 'project:agent_runner:manage'],
+                  danger_level: 'none',
+                },
+              },
+            },
+          ],
+          generated_at: '2026-05-06T10:01:00.000Z',
+        });
+
+      renderComponent();
+
+      await user.type(screen.getByRole('textbox', { name: /Task Title/i }), 'Developer Task');
+      await user.click(screen.getByRole('button', { name: 'Advanced settings' }));
+      await waitFor(() => {
+        expect(screen.getByRole('checkbox', { name: /Choose a Developer runner for this task/ })).toBeEnabled();
+      });
+      await user.click(screen.getByRole('checkbox', { name: /Choose a Developer runner for this task/ }));
+      await waitFor(() => {
+        expect(mockGetRunnerBindingOptions).toHaveBeenCalledTimes(1);
+      });
+      await selectRadixOption(user, screen.getByTestId('task-create__bound-runner'), 'Developer runner');
+      expect(screen.getByRole('button', { name: 'Create' })).toBeEnabled();
+
+      await queryClient.invalidateQueries();
+
+      await waitFor(() => {
+        expect(mockGetRunnerBindingOptions).toHaveBeenCalledTimes(2);
+        expect(screen.getByTestId('task-create__bound-runner')).not.toHaveTextContent('Select a Developer runner');
+      });
+
+      expect(screen.getByText('The selected Developer runner is not available for this task right now.')).toBeInTheDocument();
+      expect(screen.getAllByText('Check the connection again before using it.').length).toBeGreaterThan(0);
+      expect(screen.getByRole('button', { name: 'Create' })).toBeDisabled();
+      submitTaskCreateForm();
+      expect(mockMutateAsync).not.toHaveBeenCalled();
     });
   });
 

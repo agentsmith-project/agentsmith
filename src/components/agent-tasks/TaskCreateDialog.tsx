@@ -1,5 +1,6 @@
 'use client';
 import * as React from 'react';
+import { useQuery } from '@tanstack/react-query';
 import { useTranslations } from 'next-intl';
 import {
   Dialog,
@@ -11,9 +12,11 @@ import {
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Loader2 } from 'lucide-react';
+import { TaskAPI, getApiClient } from '@/lib/api';
 import { useCreateTask, useTasks } from '@/lib/hooks/use-task';
 import { useFileLibraries } from '@/lib/hooks/use-files';
-import type { CreateTaskRequest } from '@/lib/types/task';
+import { queryKeys } from '@/lib/query-keys';
+import type { CreateTaskRequest, TaskRunnerBindingOption } from '@/lib/types/task';
 import { ImportantNotice } from '@/components/agent-tasks/task-create-dialog/ImportantNotice';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 export interface TaskCreateDialogProps {
@@ -35,6 +38,52 @@ export function deriveDefaultTaskWorkspaceName(title: string) {
   return `${normalizedTitle} workspace`;
 }
 
+function isTaskRunnerBindingOptionSelectable(option: TaskRunnerBindingOption) {
+  return option.actions.bind_to_task.allowed && !option.disabled_reason_code;
+}
+
+const DEVELOPER_RUNNER_REASON_KEY_BY_CODE: Record<string, string> = {
+  agent_runner_stale: 'developer_runner_reason_stale',
+  agent_runner_disconnected: 'developer_runner_reason_unavailable',
+  agent_runner_unavailable: 'developer_runner_reason_unavailable',
+  agent_runner_runtime_unavailable: 'developer_runner_reason_unavailable',
+  agent_runner_model_unconfigured: 'developer_runner_reason_unavailable',
+  agent_runner_default_conflict: 'developer_runner_reason_unavailable',
+  agent_runner_forbidden: 'developer_runner_reason_forbidden',
+  permission_denied: 'developer_runner_reason_forbidden',
+  invalid_binding_target: 'developer_runner_reason_capability',
+  agent_runner_capability_mismatch: 'developer_runner_reason_capability',
+};
+
+function getDeveloperRunnerReasonKey(option: TaskRunnerBindingOption): string {
+  const reasonCode = option.disabled_reason_code
+    ?? option.actions.bind_to_task.reason_code
+    ?? option.readiness.reason_code
+    ?? option.freshness?.reason_code
+    ?? option.capability.reason_code;
+
+  if (reasonCode && DEVELOPER_RUNNER_REASON_KEY_BY_CODE[reasonCode]) {
+    return DEVELOPER_RUNNER_REASON_KEY_BY_CODE[reasonCode];
+  }
+  if (!option.actions.bind_to_task.allowed) {
+    return 'developer_runner_reason_forbidden';
+  }
+  if (option.freshness?.state === 'stale' || option.readiness.state === 'stale') {
+    return 'developer_runner_reason_stale';
+  }
+  if (
+    option.freshness?.state === 'missing'
+    || option.readiness.state === 'missing'
+    || option.readiness.state === 'unavailable'
+  ) {
+    return 'developer_runner_reason_unavailable';
+  }
+  if (option.capability.state === 'incompatible') {
+    return 'developer_runner_reason_capability';
+  }
+  return 'developer_runner_reason_default';
+}
+
 export function TaskCreateDialog({
   open,
   onOpenChange,
@@ -48,7 +97,11 @@ export function TaskCreateDialog({
   const [workspaceMode, setWorkspaceMode] = React.useState<'create_new' | 'use_existing'>('create_new');
   const [workspaceName, setWorkspaceName] = React.useState('');
   const [workspaceFileLibraryId, setWorkspaceFileLibraryId] = React.useState<string>('');
+  const [advancedOpen, setAdvancedOpen] = React.useState(false);
+  const [useDeveloperRunner, setUseDeveloperRunner] = React.useState(false);
+  const [boundRunnerId, setBoundRunnerId] = React.useState('');
   const createTask = useCreateTask();
+  const taskApi = React.useMemo(() => new TaskAPI(getApiClient()), []);
 
   const { data: fileLibrariesData, isLoading: fileLibrariesLoading } = useFileLibraries(workspaceId, projectId);
   const fileLibraries = React.useMemo(
@@ -65,6 +118,31 @@ export function TaskCreateDialog({
     () => fileLibraries.filter((library) => !occupiedLibraryIds.has(library.id)),
     [fileLibraries, occupiedLibraryIds],
   );
+  const runnerBindingOptionsQuery = useQuery({
+    queryKey: queryKeys.tasks.runnerBindingOptions(workspaceId, projectId),
+    queryFn: () => taskApi.getRunnerBindingOptions(workspaceId, projectId),
+    enabled: open && advancedOpen && !!workspaceId && !!projectId,
+    staleTime: 10_000,
+    retry: false,
+  });
+  const developerRunnerOptions = React.useMemo(
+    () => (runnerBindingOptionsQuery.data?.options ?? []).filter((option) => (
+      option.bound_runner_kind === 'developer'
+      && option.actions.bind_to_task.visible
+      && typeof option.agent_runner_id === 'string'
+      && option.agent_runner_id.length > 0
+    )),
+    [runnerBindingOptionsQuery.data?.options],
+  );
+  const selectedDeveloperRunnerOption = React.useMemo(
+    () => developerRunnerOptions.find((option) => option.agent_runner_id === boundRunnerId),
+    [boundRunnerId, developerRunnerOptions],
+  );
+  const selectedDeveloperRunnerIsSelectable =
+    !!selectedDeveloperRunnerOption &&
+    isTaskRunnerBindingOptionSelectable(selectedDeveloperRunnerOption);
+  const hasDeveloperRunnerOptions = developerRunnerOptions.length > 0;
+  const hasSelectableDeveloperRunnerOption = developerRunnerOptions.some(isTaskRunnerBindingOptionSelectable);
   const defaultWorkspaceName = deriveDefaultTaskWorkspaceName(title);
 
   // Reset form when dialog opens
@@ -74,6 +152,9 @@ export function TaskCreateDialog({
       setWorkspaceMode('create_new');
       setWorkspaceName('');
       setWorkspaceFileLibraryId('');
+      setAdvancedOpen(false);
+      setUseDeveloperRunner(false);
+      setBoundRunnerId('');
     }
   }, [open]);
 
@@ -84,6 +165,20 @@ export function TaskCreateDialog({
     }
   }, [fileLibraries, workspaceFileLibraryId]);
 
+  React.useEffect(() => {
+    if (useDeveloperRunner) return;
+    if (boundRunnerId) {
+      setBoundRunnerId('');
+    }
+  }, [boundRunnerId, useDeveloperRunner]);
+
+  React.useEffect(() => {
+    if (!boundRunnerId) return;
+    if (!runnerBindingOptionsQuery.data) return;
+    if (selectedDeveloperRunnerOption) return;
+    setBoundRunnerId('');
+  }, [boundRunnerId, runnerBindingOptionsQuery.data, selectedDeveloperRunnerOption]);
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
 
@@ -93,9 +188,13 @@ export function TaskCreateDialog({
     if (workspaceMode === 'use_existing' && !workspaceFileLibraryId) {
       return;
     }
+    if (useDeveloperRunner && !selectedDeveloperRunnerIsSelectable) {
+      return;
+    }
 
     const data: CreateTaskRequest = {
       title: title.trim(),
+      ...(useDeveloperRunner && selectedDeveloperRunnerIsSelectable ? { bound_runner_id: boundRunnerId } : {}),
       ...(workspaceMode === 'create_new'
         ? {
             workspace_mode: 'create_new' as const,
@@ -123,6 +222,7 @@ export function TaskCreateDialog({
 
   const canSubmit = title.trim().length > 0
     && (workspaceMode === 'create_new' || workspaceFileLibraryId.length > 0)
+    && (!useDeveloperRunner || selectedDeveloperRunnerIsSelectable)
     && !createTask.isPending;
 
   return (
@@ -229,6 +329,114 @@ export function TaskCreateDialog({
                 </div>
               ) : null}
             </div>
+          </div>
+
+          <div className="space-y-2">
+            <Button
+              type="button"
+              variant="ghost"
+              size="sm"
+              className="h-8 px-0 text-sm font-medium text-foreground hover:bg-transparent"
+              onClick={() => setAdvancedOpen((current) => !current)}
+            >
+              {t('advanced_settings')}
+            </Button>
+            {advancedOpen ? (
+              <div className="space-y-3 rounded-lg border border-subtle bg-surface/20 p-3">
+                <p className="text-xs text-tertiary">{t('advanced_settings_description')}</p>
+                {runnerBindingOptionsQuery.isLoading ? (
+                  <div className="flex items-center gap-2 py-1 text-sm text-tertiary">
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                    <span>{t('developer_runner_loading')}</span>
+                  </div>
+                ) : runnerBindingOptionsQuery.isError ? (
+                  <p className="text-sm text-tertiary">{t('developer_runner_empty')}</p>
+                ) : !hasDeveloperRunnerOptions ? (
+                  <p className="text-sm text-tertiary">{t('developer_runner_empty')}</p>
+                ) : (
+                  <>
+                    <label className="flex items-start gap-3 rounded-lg border border-subtle bg-background/70 px-3 py-3">
+                      <input
+                        type="checkbox"
+                        aria-label={t('use_developer_runner')}
+                        aria-describedby="task-developer-runner-hint"
+                        checked={useDeveloperRunner}
+                        onChange={(event) => setUseDeveloperRunner(event.target.checked)}
+                        disabled={createTask.isPending || !hasSelectableDeveloperRunnerOption}
+                      />
+                      <div className="space-y-1">
+                        <div className="text-sm font-medium text-foreground">{t('use_developer_runner')}</div>
+                        <p id="task-developer-runner-hint" className="text-xs text-tertiary">
+                          {hasSelectableDeveloperRunnerOption
+                            ? t('developer_runner_hint')
+                            : t('developer_runner_override_unavailable_hint')}
+                        </p>
+                      </div>
+                    </label>
+
+                    {!hasSelectableDeveloperRunnerOption && !useDeveloperRunner ? (
+                      <div
+                        className="space-y-2 rounded-lg border border-dashed border-subtle bg-background/70 p-3"
+                        data-testid="task-create__developer-runner-unavailable-options"
+                      >
+                        {developerRunnerOptions.map((option) => (
+                          <div key={option.option_id} className="space-y-0.5">
+                            <p className="text-sm font-medium text-foreground">{option.label}</p>
+                            <p className="text-xs text-tertiary">{t(getDeveloperRunnerReasonKey(option))}</p>
+                          </div>
+                        ))}
+                      </div>
+                    ) : null}
+                  </>
+                )}
+                {useDeveloperRunner && hasDeveloperRunnerOptions ? (
+                  <div className="space-y-2 rounded-lg border border-dashed border-subtle bg-background/70 p-3">
+                    <div className="space-y-2">
+                      <label htmlFor="task-bound-runner" className="text-sm font-medium text-foreground">
+                        {t('developer_runner_label')}
+                      </label>
+                      <Select
+                        value={boundRunnerId}
+                        onValueChange={setBoundRunnerId}
+                        disabled={createTask.isPending || !hasSelectableDeveloperRunnerOption}
+                      >
+                        <SelectTrigger id="task-bound-runner" data-testid="task-create__bound-runner">
+                          <SelectValue placeholder={t('developer_runner_placeholder')} />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {developerRunnerOptions.map((option) => {
+                            const selectable = isTaskRunnerBindingOptionSelectable(option);
+                            const reasonKey = selectable ? null : getDeveloperRunnerReasonKey(option);
+                            return (
+                              <SelectItem
+                                key={option.option_id}
+                                value={option.agent_runner_id!}
+                                disabled={!selectable}
+                              >
+                                <span className="flex flex-col items-start gap-0.5 text-left">
+                                  <span>{option.label}</span>
+                                  {reasonKey ? (
+                                    <span className="text-xs text-tertiary">{t(reasonKey)}</span>
+                                  ) : null}
+                                </span>
+                              </SelectItem>
+                            );
+                          })}
+                        </SelectContent>
+                      </Select>
+                      {selectedDeveloperRunnerOption && !selectedDeveloperRunnerIsSelectable ? (
+                        <div className="rounded-md border border-subtle bg-surface/70 px-3 py-2">
+                          <p className="text-sm font-medium text-foreground">{t('developer_runner_selected_unavailable')}</p>
+                          <p className="text-xs text-tertiary">
+                            {t(getDeveloperRunnerReasonKey(selectedDeveloperRunnerOption))}
+                          </p>
+                        </div>
+                      ) : null}
+                    </div>
+                  </div>
+                ) : null}
+              </div>
+            ) : null}
           </div>
 
           <ImportantNotice t={t} />

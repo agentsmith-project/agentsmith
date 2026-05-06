@@ -11,6 +11,7 @@ import type {
   CreateTaskRequest,
   UpdateTaskRequest,
   StartTaskRunRequest,
+  TaskRunnerBindingOptionsResponse,
   TaskListParams,
   TaskListResponse,
   TaskTraceListResponse,
@@ -189,6 +190,15 @@ export class TaskAPI {
     );
   }
 
+  async getRunnerBindingOptions(
+    workspaceId: string,
+    projectId: string,
+  ): Promise<TaskRunnerBindingOptionsResponse> {
+    return this.client.get<TaskRunnerBindingOptionsResponse>(
+      `/workspaces/${workspaceId}/projects/${projectId}/tasks/runner-binding-options`,
+    );
+  }
+
   /**
    * Cancel the currently running agent turn in this task.
    */
@@ -335,6 +345,7 @@ export type {
   CreateTaskRequest,
   UpdateTaskRequest,
   StartTaskRunRequest,
+  TaskRunnerBindingOptionsResponse,
   TaskListParams,
   TaskListResponse,
   TaskTraceEvent,

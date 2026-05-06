@@ -5,7 +5,7 @@ import { URL } from 'node:url';
 import { WebSocketServer, type RawData, type WebSocket } from 'ws';
 import type { AgentResourceService } from './agent-resource-service.js';
 import { resolveConfiguredPublicApiBase } from './agent-execution-api-base.js';
-import { AGENT_CONNECTION_TTL_MS } from './agent-presence-store.js';
+import { AGENT_CONNECTION_TTL_MS, type AgentConnectionAuthKind } from './agent-presence-store.js';
 import { resolveExecutionApiBase } from './notebook-execution-orchestrator.js';
 import type { AgentRecord } from './resource-models.js';
 
@@ -108,6 +108,9 @@ interface AgentSocketState {
   sessionId?: string;
   workspaceId: string;
   projectId: string;
+  authKind: AgentConnectionAuthKind;
+  authKeyId?: string;
+  authKeyExpiresAt?: string;
   connectedAt: string;
   resourceProxyBaseUrl?: string;
   pendingByRequestId: Map<string, PendingStream>;
@@ -207,6 +210,10 @@ function debugExecution(message: string): void {
   process.stdout.write(`[agent-execution] ${message}\n`);
 }
 
+function nowIso(): string {
+  return new Date().toISOString();
+}
+
 function isPlainRecord(input: unknown): input is Record<string, unknown> {
   return typeof input === 'object' && input !== null && !Array.isArray(input);
 }
@@ -214,12 +221,10 @@ function isPlainRecord(input: unknown): input is Record<string, unknown> {
 function parseTraceEventPayload(input: unknown): AgentExecutionTraceEventPayload | null {
   if (!isPlainRecord(input)) return null;
   const sequence = input.sequence;
-  const at = input.at;
   const category = input.category;
   const name = input.name;
   const summary = input.summary;
   if (typeof sequence !== 'number' || !Number.isFinite(sequence)) return null;
-  if (typeof at !== 'string' || at.trim().length === 0) return null;
   if (
     category !== 'lifecycle'
     && category !== 'progress'
@@ -249,7 +254,7 @@ function parseTraceEventPayload(input: unknown): AgentExecutionTraceEventPayload
 
   return {
     sequence,
-    at,
+    at: nowIso(),
     category,
     ...(phase ? { phase } : {}),
     ...(status ? { status } : {}),
@@ -509,6 +514,7 @@ export class AgentExecutionService {
       this.wsServer.handleUpgrade(req, socket, head, (ws) => {
         const now = new Date().toISOString();
         const connectionId = randomUUID();
+        const authKind: AgentConnectionAuthKind = keyRecord.expires_at ? 'service_key' : 'managed_private_key';
         const socketState: AgentSocketState = {
           ws,
           socketKey,
@@ -518,6 +524,9 @@ export class AgentExecutionService {
           ...(sessionId ? { sessionId } : {}),
           workspaceId: keyRecord.workspace_id,
           projectId: keyRecord.project_id,
+          authKind,
+          authKeyId: keyRecord.id,
+          ...(keyRecord.expires_at ? { authKeyExpiresAt: keyRecord.expires_at } : {}),
           connectedAt: now,
           ...(resourceProxyBaseUrl ? { resourceProxyBaseUrl } : {}),
           pendingByRequestId: new Map(),
@@ -806,6 +815,11 @@ export class AgentExecutionService {
         protocolVersion: '1.0',
         connectedAt: previousSocket.connectedAt,
         lastPongAt: previousSocket.lastPongAt,
+        authenticatedKey: {
+          kind: previousSocket.authKind,
+          ...(previousSocket.authKeyId ? { keyId: previousSocket.authKeyId } : {}),
+          ...(previousSocket.authKeyExpiresAt ? { expiresAt: previousSocket.authKeyExpiresAt } : {}),
+        },
       });
       args.socket.presenceRegistered = false;
       previousSocket.presenceRegistered = true;
@@ -871,7 +885,7 @@ export class AgentExecutionService {
     sessionId: string,
     scope: DispatchScope,
   ) {
-    return this.agentResourceService.getSessionConnectionInfo(agentId, sessionId, {
+    return this.agentResourceService.getAuthorizedSessionConnectionInfo(agentId, sessionId, {
       allowAgentFallback: scope === 'agent_fallback',
     });
   }
@@ -1080,6 +1094,11 @@ export class AgentExecutionService {
         protocolVersion: '1.0',
         connectedAt: args.socket.connectedAt,
         lastPongAt: args.socket.lastPongAt,
+        authenticatedKey: {
+          kind: args.socket.authKind,
+          ...(args.socket.authKeyId ? { keyId: args.socket.authKeyId } : {}),
+          ...(args.socket.authKeyExpiresAt ? { expiresAt: args.socket.authKeyExpiresAt } : {}),
+        },
       });
       args.socket.presenceRegistered = true;
     } catch (error) {
@@ -1598,7 +1617,7 @@ export class AgentExecutionService {
     }
 
     if (socket.presenceRegistered) {
-      const authoritative = await this.agentResourceService.getSessionConnectionInfo(
+      const authoritative = await this.agentResourceService.getAuthorizedSessionConnectionInfo(
         socket.agentId,
         socket.sessionId,
         socket.sessionId ? { allowAgentFallback: false } : undefined,
@@ -1778,14 +1797,12 @@ export class AgentExecutionService {
         debugExecution(`terminal_output agent_id=${socket.agentId} runner_session=${socket.sessionId ?? ''} terminal_session=${terminalSessionId}`);
         this.markTerminalEvent(socket, terminalSessionId, pendingTerminal);
         if (typeof payload.payload?.chunk !== 'string') {
-          socket.terminalBySessionId.delete(terminalSessionId);
-          this.clearTerminalTimers(pendingTerminal);
-          pendingTerminal.push({
-            type: 'error',
-            error_code: 'AGENT_PROTOCOL_ERROR',
-            error_message: 'agent_terminal_output_invalid',
-          });
-          pendingTerminal.close();
+          this.failPendingTerminal(
+            socket,
+            terminalSessionId,
+            'AGENT_PROTOCOL_ERROR',
+            'agent_terminal_output_invalid',
+          );
           return;
         }
         pendingTerminal.push({
@@ -1969,12 +1986,32 @@ export class AgentExecutionService {
     return this.isSocketDispatchable(this.socketsByKey.get(key));
   }
 
+  disconnectAgentRunner(
+    agentId: string,
+    reason: 'agent_key_rotated' | 'agent_key_revoked' | 'agent_key_expired' = 'agent_key_revoked',
+  ): number {
+    let disconnected = 0;
+    for (const socket of [...this.socketsByWebSocket.values()]) {
+      if (socket.agentId !== agentId || socket.lifecyclePhase === 'closed' || socket.lifecyclePhase === 'closing') {
+        continue;
+      }
+      disconnected += 1;
+      this.releaseSocketState(socket, {
+        errorCode: reason.toUpperCase(),
+        errorMessage: reason,
+        closeCode: 4003,
+        closeReason: reason,
+      });
+    }
+    return disconnected;
+  }
+
   async getAgentSessionDispatchAuthority(
     agentId: string,
     sessionId: string,
   ): Promise<RunnerSessionDispatchAuthority> {
     const socket = this.socketsByKey.get(buildSocketKey(agentId, sessionId));
-    const connection = await this.agentResourceService.getSessionConnectionInfo(agentId, sessionId, {
+    const connection = await this.agentResourceService.getAuthorizedSessionConnectionInfo(agentId, sessionId, {
       allowAgentFallback: false,
     });
     if (

@@ -71,6 +71,21 @@
 - `.../ux-traces/<lane>/<suite>/<story-id>/<run-id>/events.jsonl`
 - `.../ux-traces/<lane>/<suite>/<story-id>/<run-id>/review.md`
 
+### Agent Runner lifecycle focused evidence
+- Command: `npm run test:agent-runners:lifecycle:evidence`
+- Root: `artifacts/backend-real/runs/<run-id>/agent-runner-lifecycle/`
+- Required files:
+  - `manifest.json`
+  - `agent_runner.default_managed.read_only.json`
+  - `agent_runner.developer.key_lifecycle.json`
+  - `agent_runner.developer.test_connection.json`
+  - `agent_runner.developer.test_task.json`
+
+说明：
+- 这是 local focused evidence producer，只声明 manifest/report contract。
+- `backend_real_executed:false` 表示它不证明真实 deployment default managed runner 解析、Developer runner 连接、Test connection 或 test task 全链路。
+- `agent_runner.developer.*` 只表示开发测试证据，不能作为 managed release proof。
+
 ## 5. 应该看哪一份
 
 ### 日常开发排查

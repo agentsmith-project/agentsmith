@@ -16,6 +16,9 @@ export interface AgentConnectionState {
   agent_id: string;
   workspace_id: string;
   project_id: string;
+  auth_kind: AgentConnectionAuthKind;
+  auth_key_id?: string;
+  auth_key_expires_at?: string;
   connected_at: string;
   last_pong_at?: string;
   expires_at: string;
@@ -25,6 +28,14 @@ export interface AgentConnectionState {
   remote_ip?: string;
   protocol_version?: string;
   active_connection_count?: number;
+}
+
+export type AgentConnectionAuthKind = 'service_key' | 'managed_private_key' | 'legacy';
+
+export interface AgentConnectionAuthenticatedKey {
+  kind: AgentConnectionAuthKind;
+  keyId?: string;
+  expiresAt?: string;
 }
 
 interface AgentPresenceRecord {
@@ -58,6 +69,7 @@ export interface RegisterAgentConnectionInput {
   protocolVersion?: string;
   connectedAt?: string;
   lastPongAt?: string;
+  authenticatedKey?: AgentConnectionAuthenticatedKey;
 }
 
 export interface RefreshAgentConnectionInput {
@@ -119,6 +131,13 @@ function readString(input: Record<string, unknown>, key: string): string | undef
   return typeof value === 'string' && value.trim().length > 0 ? value : undefined;
 }
 
+function normalizeAuthKind(value: string | undefined): AgentConnectionAuthKind {
+  if (value === 'service_key' || value === 'managed_private_key' || value === 'legacy') {
+    return value;
+  }
+  return 'legacy';
+}
+
 function normalizeConnection(input: unknown): AgentConnectionState | null {
   if (typeof input !== 'object' || input === null || Array.isArray(input)) return null;
   const raw = input as Record<string, unknown>;
@@ -139,6 +158,7 @@ function normalizeConnection(input: unknown): AgentConnectionState | null {
     agent_id: agentId,
     workspace_id: workspaceId,
     project_id: projectId,
+    auth_kind: normalizeAuthKind(readString(raw, 'auth_kind')),
     connected_at: connectedAt,
     expires_at: expiresAt,
   };
@@ -150,11 +170,15 @@ function normalizeConnection(input: unknown): AgentConnectionState | null {
   const remoteIp = readString(raw, 'remote_ip');
   const protocolVersion = readString(raw, 'protocol_version');
   const lastPongAt = readString(raw, 'last_pong_at');
+  const authKeyId = readString(raw, 'auth_key_id');
+  const authKeyExpiresAt = readString(raw, 'auth_key_expires_at');
   if (apiInstanceId) connection.api_instance_id = apiInstanceId;
   if (sessionId) connection.session_id = sessionId;
   if (remoteIp) connection.remote_ip = remoteIp;
   if (protocolVersion) connection.protocol_version = protocolVersion;
   if (lastPongAt) connection.last_pong_at = lastPongAt;
+  if (authKeyId) connection.auth_key_id = authKeyId;
+  if (authKeyExpiresAt) connection.auth_key_expires_at = authKeyExpiresAt;
   return connection;
 }
 
@@ -171,6 +195,7 @@ function normalizeRecord(agentId: string, raw: unknown): AgentPresenceRecord | n
       agent_id: agentId,
       workspace_id: '',
       project_id: '',
+      auth_kind: 'legacy',
       connected_at: connectedAt,
       expires_at: legacyExpiry.iso,
       expires_at_epoch_ms: legacyExpiry.epochMs,
@@ -310,6 +335,9 @@ class CacheBackedAgentPresenceStore implements AgentPresenceStore {
         agent_id: input.agentId,
         workspace_id: input.workspaceId,
         project_id: input.projectId,
+        auth_kind: input.authenticatedKey?.kind ?? 'legacy',
+        ...(input.authenticatedKey?.keyId ? { auth_key_id: input.authenticatedKey.keyId } : {}),
+        ...(input.authenticatedKey?.expiresAt ? { auth_key_expires_at: input.authenticatedKey.expiresAt } : {}),
         connected_at: connectedAt,
         last_pong_at: lastPongAt,
         expires_at: expiry.iso,

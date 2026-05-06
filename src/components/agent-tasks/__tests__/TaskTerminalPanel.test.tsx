@@ -70,6 +70,7 @@ vi.mock('next-intl', () => ({
       terminal_error_agent_unavailable: "This task's execution environment is not available right now.",
       terminal_error_invalid_shell: "This task couldn't start a terminal in the current environment.",
       terminal_error_connection_failed: 'The terminal connection could not be opened. Please retry.',
+      terminal_error_session_not_ready: 'Terminal session is not ready. Try reopening it later.',
       terminal_error_taken_over: 'This terminal was opened in another browser tab. Reopen it here if you want to continue.',
       terminal_recovery_hint: 'End this terminal session, then reopen it from the task header when you are ready to retry.',
       terminal_max_sessions_reached: 'You can run up to 3 terminal sessions in one task.',
@@ -260,6 +261,42 @@ describe('TaskTerminalPanel', () => {
       expect(onOpenChange).toHaveBeenCalledWith(false);
     });
     expect(onStatusChange).toHaveBeenCalledWith('failed');
+  });
+
+  it('maps terminal runner resolution failures without exposing raw codes', async () => {
+    const createTerminalSession = vi
+      .fn()
+      .mockRejectedValue(new Error('terminal_runner_unavailable'));
+
+    render(
+      <TaskTerminalPanel
+        open
+        workspaceId="ws_default"
+        projectId="proj_1"
+        taskId="task_terminal_resolution"
+        taskTitle="terminal-resolution"
+        taskApi={{ createTerminalSession, getTerminalSession: vi.fn() } as never}
+        onOpenChange={vi.fn()}
+      />,
+    );
+
+    await waitFor(() => {
+      expect(screen.getByTestId('agent-tasks__task-terminal')).toHaveTextContent('Failed');
+      expect(screen.getByTestId('agent-tasks__task-terminal')).toHaveTextContent(
+        'Terminal session is not ready. Try reopening it later.',
+      );
+    });
+
+    const renderedCopy = screen.getByTestId('agent-tasks__task-terminal').textContent ?? '';
+    expect(renderedCopy).not.toContain('terminal_runner_unavailable');
+    expect(renderedCopy).not.toMatch(/runner/i);
+    expect(renderedCopy).not.toMatch(/endpoint/i);
+    expect(renderedCopy).not.toMatch(/model configuration/i);
+    expect(renderedCopy).not.toMatch(/reason_code/i);
+    expect(renderedCopy).not.toMatch(/diagnostics/i);
+    expect(mockToastError).toHaveBeenCalledWith(
+      'Terminal session is not ready. Try reopening it later.',
+    );
   });
 
   it('reconciles pre-session limit rejections through the parent instead of leaving a failed phantom tab', async () => {

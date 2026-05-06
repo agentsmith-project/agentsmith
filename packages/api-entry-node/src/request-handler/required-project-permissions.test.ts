@@ -25,6 +25,17 @@ describe('requiredProjectPermissions', () => {
     expect(
       requiredProjectPermissions(
         {
+          kind: 'taskRunnerBindingOptions',
+          workspaceId: 'ws_default',
+          projectId: 'proj_1',
+        } as never,
+        'GET',
+      ),
+    ).toEqual(['project:agent_task:use']);
+
+    expect(
+      requiredProjectPermissions(
+        {
           kind: 'taskItem',
           workspaceId: 'ws_default',
           projectId: 'proj_1',
@@ -35,7 +46,7 @@ describe('requiredProjectPermissions', () => {
     ).toEqual(['project:agent_task:use']);
   });
 
-  it('requires Agent task terminal permission for creating new terminal sessions', () => {
+  it('requires Agent task use and terminal permissions for creating new terminal sessions', () => {
     expect(
       requiredProjectPermissions(
         {
@@ -46,10 +57,10 @@ describe('requiredProjectPermissions', () => {
         },
         'POST',
       ),
-    ).toEqual(['project:agent_task:terminal']);
+    ).toEqual(['project:agent_task:use', 'project:agent_task:terminal']);
   });
 
-  it('requires Agent task terminal permission for terminal routes that can issue interactive websocket tickets', () => {
+  it('requires Agent task use and terminal permissions for terminal routes that can issue interactive websocket tickets', () => {
     expect(
       requiredProjectPermissions(
         {
@@ -61,7 +72,7 @@ describe('requiredProjectPermissions', () => {
         },
         'GET',
       ),
-    ).toEqual(['project:agent_task:terminal']);
+    ).toEqual(['project:agent_task:use', 'project:agent_task:terminal']);
 
     expect(
       requiredProjectPermissions(
@@ -73,10 +84,10 @@ describe('requiredProjectPermissions', () => {
         },
         'GET',
       ),
-    ).toEqual(['project:agent_task:terminal']);
+    ).toEqual(['project:agent_task:use', 'project:agent_task:terminal']);
   });
 
-  it('keeps terminal session delete behind Agent task terminal permission', () => {
+  it('keeps terminal session delete behind Agent task use and terminal permissions', () => {
     expect(
       requiredProjectPermissions(
         {
@@ -88,7 +99,7 @@ describe('requiredProjectPermissions', () => {
         },
         'DELETE',
       ),
-    ).toEqual(['project:agent_task:terminal']);
+    ).toEqual(['project:agent_task:use', 'project:agent_task:terminal']);
   });
 
   it('requires Agent Runner read/manage permissions without legacy agent tokens', () => {
@@ -126,6 +137,20 @@ describe('requiredProjectPermissions', () => {
         'POST',
       ),
     ).toEqual(['project:agent_runner:manage']);
+
+    expect(
+      requiredProjectPermissions(
+        { kind: 'agentTestConnection', workspaceId: 'ws_default', projectId: 'proj_1', agentId: 'ag_1' } as never,
+        'POST',
+      ),
+    ).toEqual(['project:agent_runner:manage']);
+
+    expect(
+      requiredProjectPermissions(
+        { kind: 'agentTestTaskRuns', workspaceId: 'ws_default', projectId: 'proj_1', agentId: 'ag_1' } as never,
+        'POST',
+      ),
+    ).toEqual(['project:agent_task:use', 'project:agent_runner:manage']);
   });
 
   it('requires project:files:update for file-library writes and project:endpoint:use for reads', () => {

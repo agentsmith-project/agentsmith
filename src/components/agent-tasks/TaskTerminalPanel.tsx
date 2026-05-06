@@ -5,6 +5,10 @@ import { Terminal } from '@xterm/xterm';
 import { FitAddon } from '@xterm/addon-fit';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
+import {
+  containsAgentTaskUnsafeErrorTerm,
+  resolveAgentTaskSafeErrorMessage,
+} from '@/lib/api/errors';
 import { TaskAPI } from '@/lib/api/endpoints/tasks';
 import type {
   TaskTerminalServerEvent,
@@ -214,6 +218,14 @@ function getClosableSessionIdFromResolution(
 }
 
 function describeTerminalError(t: ReturnType<typeof useTranslations>, reason: string): string {
+  const safeTaskSurfaceMessage = resolveAgentTaskSafeErrorMessage({
+    rawMessage: reason,
+    audience: 'terminal',
+    t,
+  });
+  if (safeTaskSurfaceMessage) {
+    return safeTaskSurfaceMessage;
+  }
   if (reason.includes('task_runner_offline')) {
     return t('terminal_error_runner_offline');
   }
@@ -231,6 +243,9 @@ function describeTerminalError(t: ReturnType<typeof useTranslations>, reason: st
   }
   if (reason.includes('task_terminal_session_limit_reached')) {
     return t('terminal_max_sessions_reached');
+  }
+  if (containsAgentTaskUnsafeErrorTerm(reason)) {
+    return t('terminal_error_connection_failed');
   }
   return reason;
 }

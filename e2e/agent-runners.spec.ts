@@ -11,7 +11,7 @@ import type { Locator } from '@playwright/test';
 import { test, expect, goToProject } from './fixtures/test-base';
 
 function runnerRows(table: Locator) {
-  return table.locator('[data-testid="agent-runners__table__row"]');
+  return table.locator('[data-testid$="__row"]');
 }
 
 async function openCreateRunnerDialog(authedPage: import('@playwright/test').Page) {
@@ -27,13 +27,14 @@ test.describe('Agent Runners Page', () => {
     await goToProject(authedPage, 'agent-runners');
   });
 
-  test('table renders with runner rows', async ({ authedPage }) => {
-    const table = authedPage.getByTestId('agent-runners__table');
-    await expect(table).toBeVisible({ timeout: 10000 });
+  test('sections render with deployment-managed and Developer runner rows', async ({ authedPage }) => {
+    const systemTable = authedPage.getByTestId('agent-runners__system-managed-table');
+    const developerTable = authedPage.getByTestId('agent-runners__table');
+    await expect(systemTable).toBeVisible({ timeout: 10000 });
+    await expect(developerTable).toBeVisible({ timeout: 10000 });
 
-    const rows = runnerRows(table);
-    await expect(rows.first()).toBeVisible({ timeout: 10000 });
-    expect(await rows.count()).toBeGreaterThanOrEqual(2);
+    await expect(runnerRows(systemTable).first()).toBeVisible({ timeout: 10000 });
+    await expect(runnerRows(developerTable).first()).toBeVisible({ timeout: 10000 });
   });
 
   test('displays runner names from mock data', async ({ authedPage }) => {
@@ -43,33 +44,34 @@ test.describe('Agent Runners Page', () => {
     await expect(authedPage.getByText('Research Runner')).toBeVisible();
   });
 
-  test('shows runner header actions without legacy cross-links', async ({ authedPage }) => {
-    await expect(authedPage.getByTestId('agent-runners__open-endpoints')).toHaveAttribute(
-      'href',
-      /\/endpoints$/,
-    );
+  test('shows current runner management surface without legacy cross-links', async ({ authedPage }) => {
+    await expect(authedPage.getByTestId('agent-runners__system-managed-section')).toBeVisible();
+    await expect(authedPage.getByTestId('agent-runners__developer-section')).toBeVisible();
+    await expect(authedPage.getByTestId('agent-runners__create-btn')).toContainText(/create developer runner/i);
     await expect(authedPage.getByTestId('agent-runners__open-chat')).toHaveCount(0);
     await expect(authedPage.getByTestId('agent-runners__open-notebook')).toHaveCount(0);
     await expect(authedPage.getByTestId('agent-runners__open-agent-tasks')).toHaveCount(0);
   });
 
-  test('opens diagnostics panel when runner query context is present', async ({ authedPage }) => {
+  test('opens inline details when runner query context is present', async ({ authedPage }) => {
     await authedPage.goto(
       '/en-US/workspaces/ws_default/projects/proj_001/agent-runners?runner=ag_1',
       { waitUntil: 'domcontentloaded' },
     );
-    const detailsCard = authedPage.getByTestId('agent-runners__details-card');
-    await expect(detailsCard).toBeVisible({ timeout: 10000 });
-    await expect(detailsCard).toContainText('Support Runner');
-    await expect(detailsCard.getByText(/runner details/i)).toBeVisible();
+    const inlineDetails = authedPage.getByTestId('agent-runners__managed-inline-details--ag_1');
+    await expect(inlineDetails).toBeVisible({ timeout: 10000 });
+    await expect(inlineDetails).toContainText('Support Runner');
+    await expect(inlineDetails).toContainText(/deployment-managed runner/i);
+    await expect(inlineDetails).not.toContainText(/raw error|default endpoint|kubernetes/i);
   });
 
-  test('create dialog opens with runner configuration fields only', async ({ authedPage }) => {
+  test('create dialog opens with Developer runner display fields only', async ({ authedPage }) => {
     const dialog = await openCreateRunnerDialog(authedPage);
 
-    await expect(dialog.getByText(/create agent runner/i)).toBeVisible();
-    await expect(dialog.getByText(/default endpoint/i)).toBeVisible();
-    await expect(dialog.getByText('Capabilities', { exact: true })).toBeVisible();
+    await expect(dialog.getByText(/create developer runner/i)).toBeVisible();
+    await expect(dialog.getByText('Name', { exact: true })).toBeVisible();
+    await expect(dialog.getByText('Description', { exact: true })).toBeVisible();
+    await expect(dialog).not.toContainText(/default endpoint|capabilities/i);
     await expect(dialog).not.toContainText(/interaction kind|chat agent|notebook agent|external|internal|docker|compose/i);
   });
 
@@ -84,13 +86,16 @@ test.describe('Agent Runners Page', () => {
     await expect(authedPage.getByTestId('agent-runners__edit-dialog')).toBeVisible();
   });
 
-  test('enable or disable readiness action is present on each manageable row', async ({ authedPage }) => {
+  test('Developer row exposes lifecycle actions without readiness toggles', async ({ authedPage }) => {
     const table = authedPage.getByTestId('agent-runners__table');
     await expect(table).toBeVisible({ timeout: 10000 });
 
     const firstRow = runnerRows(table).first();
     await expect(firstRow).toBeVisible();
-    await expect(firstRow.getByRole('button', { name: /enable|disable/i })).toBeVisible();
+    await expect(firstRow.getByRole('button', { name: /connection/i })).toBeVisible();
+    await expect(firstRow.getByRole('button', { name: /edit/i })).toBeVisible();
+    await expect(firstRow.getByRole('button', { name: /delete/i })).toBeVisible();
+    await expect(firstRow.getByRole('button', { name: /enable|disable/i })).toHaveCount(0);
   });
 
   test('table shows readiness and capabilities without legacy workload or runtime columns', async ({ authedPage }) => {
@@ -141,26 +146,6 @@ test.describe('Agent Runners Page', () => {
     await expect(dialog.getByRole('button', { name: /^create$/i })).toBeDisabled();
   });
 
-  test('toggle runner readiness via enable or disable button', async ({ authedPage }) => {
-    const table = authedPage.getByTestId('agent-runners__table');
-    await expect(table).toBeVisible({ timeout: 10000 });
-
-    const firstRow = runnerRows(table).first();
-    await expect(firstRow).toBeVisible();
-    const toggleBtn = firstRow.getByRole('button', { name: /enable|disable/i });
-
-    const requestPromise = authedPage.waitForRequest((req) => {
-      return (
-        req.method() === 'PATCH' &&
-        /\/api\/v1\/workspaces\/.*\/projects\/.*\/agent-runners\/.+/.test(req.url())
-      );
-    });
-    await toggleBtn.click();
-    await requestPromise;
-
-    await expect(firstRow).toBeVisible();
-  });
-
   test('connection keys flow opens create key dialog result', async ({ authedPage }) => {
     const table = authedPage.getByTestId('agent-runners__table');
     await expect(table).toBeVisible({ timeout: 10000 });
@@ -180,9 +165,10 @@ test.describe('Agent Runners Page', () => {
         /\/api\/v1\/workspaces\/.*\/projects\/.*\/agent-runners\/.*\/keys$/.test(req.url())
       );
     });
-    await sheet.getByRole('button', { name: /create api key|create/i }).click();
+    await sheet.getByRole('button', { name: /issue connection key/i }).click();
     await createKeyRequestPromise;
 
     await expect(authedPage.getByTestId('api-keys__key-created-dialog')).toBeVisible({ timeout: 10000 });
+    await expect(authedPage.getByTestId('api-keys__key-created-dialog')).toContainText(/connection key created/i);
   });
 });

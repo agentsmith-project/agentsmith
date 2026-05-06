@@ -1,10 +1,18 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { APIRequestContext } from '@playwright/test';
 import { createServer, type Server } from 'node:http';
-import { mkdtemp, readFile, writeFile } from 'node:fs/promises';
+import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { WebSocketServer, type WebSocket as ServerWebSocket } from 'ws';
+const upsertManagedRunner = vi.hoisted(() => vi.fn());
+
+vi.mock('../scripts/agent-runner-seed-managed-runner-core', () => ({
+  upsertDeploymentDefaultManagedRunner: upsertManagedRunner,
+  default: {
+    upsertDeploymentDefaultManagedRunner: upsertManagedRunner,
+  },
+}));
 import {
   API_BASE,
   bindAgentTaskExecutionSocketToTask,
@@ -111,6 +119,7 @@ function parseClientFrame(raw: Buffer): Record<string, unknown> {
 }
 
 afterEach(async () => {
+  vi.clearAllMocks();
   const servers = terminalTestServers.splice(0);
   await Promise.all(servers.map((server) => server.close()));
 });
@@ -1021,57 +1030,156 @@ describe('integration-real-helpers', () => {
   });
 
   it('creates a managed Agent Runner without legacy runner selectors or chat session side effects', async () => {
-    const post = vi.fn().mockImplementation(async (url: string, options?: { data?: Record<string, unknown> }) => {
-      if (url.endsWith('/agent-runners')) {
-        return okResponse({
-          id: 'ag_runner_1',
-          name: options?.data?.name,
-          status: options?.data?.status,
-          is_default: options?.data?.is_default,
-          default_endpoint_id: options?.data?.default_endpoint_id,
-          capabilities: options?.data?.capabilities,
-          diagnostics: { presence: 'managed' },
-        });
-      }
-      throw new Error(`unexpected_post:${url}:${JSON.stringify(options?.data ?? null)}`);
-    });
-    const page = {
-      evaluate: vi.fn().mockResolvedValue(JSON.stringify({ state: { token: 'mock_token' } })),
-      request: { post },
-    } as unknown as Parameters<typeof createManagedAgentRunnerViaApi>[0];
-
-    const runner = await createManagedAgentRunnerViaApi(page, {
-      workspaceId: 'ws_default',
-      projectId: 'proj_1',
-      endpointId: 'ep_task',
-      title: 'agent-task-runner',
-    });
-
-    expect(runner).toMatchObject({
+    const previousMongoUrl = process.env.MONGO_URL;
+    const previousMongoDbName = process.env.MONGO_DB_NAME;
+    process.env.MONGO_URL = 'mongodb://mbos:mbos_dev_password@localhost:17017/admin';
+    process.env.MONGO_DB_NAME = 'mbos';
+    upsertManagedRunner.mockResolvedValue({
       runnerId: 'ag_runner_1',
       runnerName: 'agent-task-runner',
       status: 'ready',
       isDefault: true,
       defaultEndpointId: 'ep_task',
+      capabilities: {},
+      diagnostics: { presence: 'managed' },
+      wsUrl: 'ws://127.0.0.1:20000/agent-runner/ws',
     });
-    expect(post).toHaveBeenCalledTimes(1);
-    expect(post).toHaveBeenCalledWith(
-      expect.stringContaining('/api/v1/workspaces/ws_default/projects/proj_1/agent-runners'),
-      expect.objectContaining({
-        data: expect.objectContaining({
-          name: 'agent-task-runner',
-          status: 'ready',
+    const page = {
+      evaluate: vi.fn().mockResolvedValue(JSON.stringify({ state: { token: 'mock_token' } })),
+      request: {
+        get: vi.fn().mockResolvedValue({ ok: () => false }),
+      },
+    } as unknown as Parameters<typeof createManagedAgentRunnerViaApi>[0];
+
+    try {
+      const runner = await createManagedAgentRunnerViaApi(page, {
+        workspaceId: 'ws_default',
+        projectId: 'proj_1',
+        endpointId: 'ep_task',
+        title: 'agent-task-runner',
+      });
+
+      expect(runner).toMatchObject({
+        runnerId: 'ag_runner_1',
+        runnerName: 'agent-task-runner',
+        status: 'ready',
+        isDefault: true,
+        defaultEndpointId: 'ep_task',
+      });
+      expect(upsertManagedRunner).toHaveBeenCalledTimes(1);
+      expect(upsertManagedRunner).toHaveBeenCalledWith(expect.objectContaining({
+        workspaceId: 'ws_default',
+        projectId: 'proj_1',
+        endpointId: 'ep_task',
+        runnerName: 'agent-task-runner',
+        isDefault: true,
+      }));
+    } finally {
+      if (previousMongoUrl === undefined) {
+        delete process.env.MONGO_URL;
+      } else {
+        process.env.MONGO_URL = previousMongoUrl;
+      }
+      if (previousMongoDbName === undefined) {
+        delete process.env.MONGO_DB_NAME;
+      } else {
+        process.env.MONGO_DB_NAME = previousMongoDbName;
+      }
+    }
+  });
+
+  it('reuses managed runner summary/state source before falling back to seed upsert', async () => {
+    const tempRoot = await mkdtemp(path.join(tmpdir(), 'managed-runner-helper-state-'));
+    const stateFile = path.join(tempRoot, 'state.json');
+    const summaryFile = path.join(tempRoot, 'summary.env');
+    const previousStateFile = process.env.BACKEND_REAL_STATE_FILE;
+    const previousSummaryFile = process.env.BACKEND_REAL_SUMMARY_FILE;
+    const previousRunnerId = process.env.AGENT_RUNNER_ID;
+    const previousMongoUrl = process.env.MONGO_URL;
+
+    await writeFile(summaryFile, [
+      'AGENT_RUNNER_ID=ag_summary_managed',
+      'WS_URL=ws://127.0.0.1:20000/api/v1/agent-execution/ws?agent_runner_id=ag_summary_managed',
+      '',
+    ].join('\n'));
+    await writeFile(stateFile, JSON.stringify({
+      agent_runner: {
+        id: 'ag_state_managed',
+        ws_url: 'ws://127.0.0.1:20000/api/v1/agent-execution/ws?agent_runner_id=ag_state_managed',
+      },
+    }, null, 2));
+    process.env.BACKEND_REAL_STATE_FILE = stateFile;
+    process.env.BACKEND_REAL_SUMMARY_FILE = summaryFile;
+    delete process.env.AGENT_RUNNER_ID;
+    delete process.env.MONGO_URL;
+
+    const get = vi.fn().mockImplementation(async (url: string) => {
+      if (url.endsWith('/agent-runners/ag_summary_managed')) {
+        return okResponse({
+          id: 'ag_summary_managed',
+          project_id: 'proj_1',
+          name: 'Summary managed runner',
+          kind: 'system_managed',
+          runner_provider: 'managed',
+          runner_status: 'ready',
+          status: 'enabled',
           is_default: true,
-          default_endpoint_id: 'ep_task',
-        }),
-      }),
-    );
-    const payload = post.mock.calls[0]?.[1]?.data as Record<string, unknown>;
-    expect(payload).not.toHaveProperty('mode');
-    expect(payload).not.toHaveProperty('runner_runtime');
-    expect(payload).not.toHaveProperty('interaction_kind');
-    expect(payload).not.toHaveProperty('execution_preferences');
-    expect(payload).not.toHaveProperty('external_agent_id');
+          default_endpoint_id: 'ep_summary',
+          capabilities: { terminal: true },
+          diagnostics: { source: 'summary' },
+        });
+      }
+      throw new Error(`unexpected_get:${url}`);
+    });
+    const page = {
+      evaluate: vi.fn().mockResolvedValue(JSON.stringify({ state: { token: 'mock_token' } })),
+      request: { get },
+    } as unknown as Parameters<typeof createManagedAgentRunnerViaApi>[0];
+
+    try {
+      await expect(createManagedAgentRunnerViaApi(page, {
+        workspaceId: 'ws_default',
+        projectId: 'proj_1',
+        endpointId: 'ep_fallback',
+        title: 'Requested managed runner',
+      })).resolves.toMatchObject({
+        runnerId: 'ag_summary_managed',
+        runnerName: 'Summary managed runner',
+        status: 'ready',
+        isDefault: true,
+        defaultEndpointId: 'ep_summary',
+        capabilities: { terminal: true },
+        diagnostics: { source: 'summary' },
+      });
+
+      expect(get).toHaveBeenCalledWith(
+        expect.stringContaining('/agent-runners/ag_summary_managed'),
+        expect.any(Object),
+      );
+      expect(upsertManagedRunner).not.toHaveBeenCalled();
+    } finally {
+      if (previousStateFile === undefined) {
+        delete process.env.BACKEND_REAL_STATE_FILE;
+      } else {
+        process.env.BACKEND_REAL_STATE_FILE = previousStateFile;
+      }
+      if (previousSummaryFile === undefined) {
+        delete process.env.BACKEND_REAL_SUMMARY_FILE;
+      } else {
+        process.env.BACKEND_REAL_SUMMARY_FILE = previousSummaryFile;
+      }
+      if (previousRunnerId === undefined) {
+        delete process.env.AGENT_RUNNER_ID;
+      } else {
+        process.env.AGENT_RUNNER_ID = previousRunnerId;
+      }
+      if (previousMongoUrl === undefined) {
+        delete process.env.MONGO_URL;
+      } else {
+        process.env.MONGO_URL = previousMongoUrl;
+      }
+      await rm(tempRoot, { recursive: true, force: true });
+    }
   });
 
   it('creates Agent Tasks without binding agent_id at task creation time', async () => {
@@ -1292,18 +1400,21 @@ describe('integration-real-helpers', () => {
   });
 
   it('creates Agent Task runner bundles without external mode, legacy selectors, or chat session side effects', async () => {
+    const previousMongoUrl = process.env.MONGO_URL;
+    const previousMongoDbName = process.env.MONGO_DB_NAME;
+    process.env.MONGO_URL = 'mongodb://mbos:mbos_dev_password@localhost:17017/admin';
+    process.env.MONGO_DB_NAME = 'mbos';
+    upsertManagedRunner.mockResolvedValue({
+      runnerId: 'runner_1',
+      runnerName: 'agent-task-runner',
+      status: 'ready',
+      isDefault: true,
+      defaultEndpointId: 'ep_task',
+      capabilities: {},
+      diagnostics: { presence: 'managed' },
+      wsUrl: 'ws://127.0.0.1:20000/agent-runner/ws',
+    });
     const post = vi.fn().mockImplementation(async (url: string, options?: { data?: Record<string, unknown> }) => {
-      if (url.endsWith('/agent-runners')) {
-        return okResponse({
-          id: 'runner_1',
-          name: options?.data?.name,
-          status: options?.data?.status,
-          is_default: options?.data?.is_default,
-          default_endpoint_id: options?.data?.default_endpoint_id,
-          capabilities: options?.data?.capabilities,
-          diagnostics: options?.data?.diagnostics,
-        });
-      }
       if (url.endsWith('/tasks')) {
         return okResponse({
           id: 'task_1',
@@ -1316,54 +1427,59 @@ describe('integration-real-helpers', () => {
     const page = {
       evaluate: vi.fn().mockResolvedValue(JSON.stringify({ state: { token: 'mock_token' } })),
       request: {
+        get: vi.fn().mockResolvedValue({ ok: () => false }),
         post,
       },
     } as unknown as Parameters<typeof createAgentTaskRunnerBundleViaApi>[0];
 
-    const bundle = await createAgentTaskRunnerBundleViaApi(page, {
-      workspaceId: 'ws_default',
-      projectId: 'proj_1',
-      endpointId: 'ep_task',
-      runnerTitle: 'agent-task-runner',
-      taskTitle: 'agent-task',
-      workspaceName: 'Agent Task Workspace',
-    });
+    try {
+      const bundle = await createAgentTaskRunnerBundleViaApi(page, {
+        workspaceId: 'ws_default',
+        projectId: 'proj_1',
+        endpointId: 'ep_task',
+        runnerTitle: 'agent-task-runner',
+        taskTitle: 'agent-task',
+        workspaceName: 'Agent Task Workspace',
+      });
 
-    expect(bundle).toMatchObject({
-      runnerId: 'runner_1',
-      runnerName: 'agent-task-runner',
-      taskId: 'task_1',
-    });
-    expect(post).toHaveBeenCalledTimes(2);
-    expect(post).toHaveBeenCalledWith(
-      expect.stringContaining('/api/v1/workspaces/ws_default/projects/proj_1/agent-runners'),
-      expect.objectContaining({
-        data: expect.objectContaining({
-          name: 'agent-task-runner',
-          is_default: true,
-          default_endpoint_id: 'ep_task',
-          status: 'ready',
+      expect(bundle).toMatchObject({
+        runnerId: 'runner_1',
+        runnerName: 'agent-task-runner',
+        taskId: 'task_1',
+      });
+      expect(upsertManagedRunner).toHaveBeenCalledTimes(1);
+      expect(upsertManagedRunner).toHaveBeenCalledWith(expect.objectContaining({
+        workspaceId: 'ws_default',
+        projectId: 'proj_1',
+        endpointId: 'ep_task',
+        runnerName: 'agent-task-runner',
+        isDefault: true,
+      }));
+      expect(post).toHaveBeenCalledTimes(1);
+      expect(post).toHaveBeenCalledWith(
+        expect.stringContaining('/api/v1/workspaces/ws_default/projects/proj_1/tasks'),
+        expect.objectContaining({
+          data: expect.objectContaining({
+            title: 'agent-task',
+            workspace_name: 'Agent Task Workspace',
+          }),
         }),
-      }),
-    );
-    expect(post).toHaveBeenCalledWith(
-      expect.stringContaining('/api/v1/workspaces/ws_default/projects/proj_1/tasks'),
-      expect.objectContaining({
-        data: expect.objectContaining({
-          title: 'agent-task',
-          workspace_name: 'Agent Task Workspace',
-        }),
-      }),
-    );
-    const runnerPayload = post.mock.calls[0]?.[1]?.data as Record<string, unknown>;
-    const taskPayload = post.mock.calls[1]?.[1]?.data as Record<string, unknown>;
-    expect(runnerPayload).not.toHaveProperty('mode');
-    expect(runnerPayload).not.toHaveProperty('runner_runtime');
-    expect(runnerPayload).not.toHaveProperty('interaction_kind');
-    expect(runnerPayload).not.toHaveProperty('execution_preferences');
-    expect(runnerPayload).not.toHaveProperty('external_agent_id');
-    expect(taskPayload).not.toHaveProperty('agent_id');
-    expect(taskPayload).not.toHaveProperty('runner_id');
-    expect(taskPayload).not.toHaveProperty('agent_name');
+      );
+      const taskPayload = post.mock.calls[0]?.[1]?.data as Record<string, unknown>;
+      expect(taskPayload).not.toHaveProperty('agent_id');
+      expect(taskPayload).not.toHaveProperty('runner_id');
+      expect(taskPayload).not.toHaveProperty('agent_name');
+    } finally {
+      if (previousMongoUrl === undefined) {
+        delete process.env.MONGO_URL;
+      } else {
+        process.env.MONGO_URL = previousMongoUrl;
+      }
+      if (previousMongoDbName === undefined) {
+        delete process.env.MONGO_DB_NAME;
+      } else {
+        process.env.MONGO_DB_NAME = previousMongoDbName;
+      }
+    }
   });
 });

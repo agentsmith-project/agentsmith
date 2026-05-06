@@ -791,10 +791,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "type": "array",
-                  "items": {
-                    "$ref": "#/components/schemas/AgentRunnerKey"
-                  }
+                  "$ref": "#/components/schemas/AgentRunnerKeyListResponse"
                 }
               }
             }
@@ -843,6 +840,141 @@
         "responses": {
           "204": {
             "description": "Deleted"
+          }
+        }
+      }
+    },
+    "/api/v1/workspaces/{workspaceId}/projects/{projectId}/agent-runners/{agentRunnerId}/test-connection": {
+      "parameters": [
+        {
+          "$ref": "#/components/parameters/workspaceId"
+        },
+        {
+          "$ref": "#/components/parameters/projectId"
+        },
+        {
+          "$ref": "#/components/parameters/agentRunnerId"
+        }
+      ],
+      "post": {
+        "tags": [
+          "Agent Runners"
+        ],
+        "operationId": "testAgentRunnerConnection",
+        "summary": "Test Developer runner connection freshness",
+        "requestBody": {
+          "required": false,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AgentRunnerTestConnectionRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Display-safe Developer runner connection status",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AgentRunnerTestConnectionResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Unsupported test connection request field",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UnsupportedFieldError"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "422": {
+            "$ref": "#/components/responses/BadRequest"
+          }
+        }
+      }
+    },
+    "/api/v1/workspaces/{workspaceId}/projects/{projectId}/agent-runners/{agentRunnerId}/test-task-runs": {
+      "parameters": [
+        {
+          "$ref": "#/components/parameters/workspaceId"
+        },
+        {
+          "$ref": "#/components/parameters/projectId"
+        },
+        {
+          "$ref": "#/components/parameters/agentRunnerId"
+        }
+      ],
+      "post": {
+        "tags": [
+          "Agent Runners"
+        ],
+        "operationId": "createAgentRunnerTestTaskRun",
+        "summary": "Start a dedicated Developer runner test task run",
+        "requestBody": {
+          "required": false,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AgentRunnerTestTaskRunRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "202": {
+            "description": "Runner test task accepted",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AgentRunnerTestTaskRunAcceptedResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Unsupported test task request field",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UnsupportedFieldError"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "409": {
+            "description": "Runner test task failed closed before dispatch",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AgentRunnerTestTaskRunUnavailableResponse"
+                }
+              }
+            }
           }
         }
       }
@@ -3790,7 +3922,7 @@
         ],
         "operationId": "createTask",
         "summary": "Create an agent task",
-        "description": "Creates an agent task without requiring runner selection fields. Task runs resolve the project default managed agent runner at execution time.",
+        "description": "Creates an agent task and binds its runner at creation time. Omitting bound_runner_id uses the default managed runner.",
         "requestBody": {
           "required": true,
           "content": {
@@ -3829,11 +3961,18 @@
             "$ref": "#/components/responses/Forbidden"
           },
           "409": {
-            "description": "Workspace or file library conflict",
+            "description": "Workspace or file library conflict, or runner binding failure",
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ApiError"
+                  "oneOf": [
+                    {
+                      "$ref": "#/components/schemas/ApiError"
+                    },
+                    {
+                      "$ref": "#/components/schemas/AgentRunnerResolutionError"
+                    }
+                  ]
                 }
               }
             }
@@ -3843,7 +3982,14 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ApiError"
+                  "oneOf": [
+                    {
+                      "$ref": "#/components/schemas/ApiError"
+                    },
+                    {
+                      "$ref": "#/components/schemas/InvalidBindingTargetError"
+                    }
+                  ]
                 }
               }
             }
@@ -3896,6 +4042,52 @@
                   "items": {
                     "$ref": "#/components/schemas/TaskActivityItem"
                   }
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          }
+        }
+      }
+    },
+    "/api/v1/workspaces/{workspaceId}/projects/{projectId}/tasks/runner-binding-options": {
+      "parameters": [
+        {
+          "name": "workspaceId",
+          "in": "path",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        },
+        {
+          "name": "projectId",
+          "in": "path",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        }
+      ],
+      "get": {
+        "tags": [
+          "Agent Tasks"
+        ],
+        "operationId": "getTaskRunnerBindingOptions",
+        "summary": "Get display-safe task runner binding options",
+        "description": "Returns display-safe task runner binding options for task creation. Final authorization, readiness, endpoint, and capability checks are recomputed on CreateTask.",
+        "responses": {
+          "200": {
+            "description": "Display-safe task runner binding options",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TaskRunnerBindingOptionsResponse"
                 }
               }
             }
@@ -8888,6 +9080,19 @@
             "type": "string",
             "description": "Resolved agent runner id used for this run."
           },
+          "source": {
+            "type": "string",
+            "enum": [
+              "runner_test"
+            ],
+            "description": "Present when this run belongs to a dedicated Developer runner test task."
+          },
+          "runner_test": {
+            "type": "boolean",
+            "enum": [
+              true
+            ]
+          },
           "started_at": {
             "type": "string",
             "format": "date-time"
@@ -8970,7 +9175,11 @@
           },
           "prompt": {
             "type": "string",
-            "description": "Initial user prompt. The task runner is resolved when a run starts."
+            "description": "Initial user prompt."
+          },
+          "bound_runner_id": {
+            "type": "string",
+            "minLength": 1
           },
           "input_refs": {
             "type": "array",
@@ -8997,6 +9206,166 @@
           },
           "workspace_file_library_id": {
             "type": "string"
+          }
+        }
+      },
+      "TaskRunnerBindingKind": {
+        "type": "string",
+        "enum": [
+          "managed",
+          "developer"
+        ]
+      },
+      "TaskRunnerBindingSource": {
+        "type": "string",
+        "enum": [
+          "default_managed",
+          "explicit"
+        ]
+      },
+      "TaskRunnerBindingReasonCode": {
+        "type": "string",
+        "enum": [
+          "agent_runner_unavailable",
+          "agent_runner_model_unconfigured",
+          "agent_runner_capability_mismatch",
+          "agent_runner_default_conflict",
+          "permission_denied",
+          "agent_runner_disconnected",
+          "agent_runner_stale"
+        ]
+      },
+      "TaskRunnerBindingSummary": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "state",
+          "summary"
+        ],
+        "properties": {
+          "state": {
+            "type": "string"
+          },
+          "summary": {
+            "type": "string",
+            "description": "Display-safe status key or short summary. It never contains raw diagnostics or provider configuration."
+          },
+          "reason_code": {
+            "$ref": "#/components/schemas/TaskRunnerBindingReasonCode"
+          }
+        }
+      },
+      "TaskRunnerBindingAction": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "operation",
+          "visible",
+          "allowed",
+          "required_permissions",
+          "danger_level"
+        ],
+        "properties": {
+          "operation": {
+            "type": "string",
+            "enum": [
+              "bind_to_task"
+            ]
+          },
+          "visible": {
+            "type": "boolean"
+          },
+          "allowed": {
+            "type": "boolean"
+          },
+          "reason_code": {
+            "$ref": "#/components/schemas/TaskRunnerBindingReasonCode"
+          },
+          "required_permissions": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "danger_level": {
+            "type": "string",
+            "enum": [
+              "none"
+            ]
+          }
+        }
+      },
+      "TaskRunnerBindingOption": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "option_id",
+          "label",
+          "bound_runner_kind",
+          "runner_binding_source",
+          "readiness",
+          "capability",
+          "actions"
+        ],
+        "properties": {
+          "option_id": {
+            "type": "string"
+          },
+          "label": {
+            "type": "string"
+          },
+          "bound_runner_kind": {
+            "$ref": "#/components/schemas/TaskRunnerBindingKind"
+          },
+          "runner_binding_source": {
+            "$ref": "#/components/schemas/TaskRunnerBindingSource"
+          },
+          "agent_runner_id": {
+            "type": "string"
+          },
+          "readiness": {
+            "$ref": "#/components/schemas/TaskRunnerBindingSummary"
+          },
+          "capability": {
+            "$ref": "#/components/schemas/TaskRunnerBindingSummary"
+          },
+          "freshness": {
+            "$ref": "#/components/schemas/TaskRunnerBindingSummary"
+          },
+          "disabled_reason_code": {
+            "$ref": "#/components/schemas/TaskRunnerBindingReasonCode"
+          },
+          "actions": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "bind_to_task"
+            ],
+            "properties": {
+              "bind_to_task": {
+                "$ref": "#/components/schemas/TaskRunnerBindingAction"
+              }
+            }
+          }
+        }
+      },
+      "TaskRunnerBindingOptionsResponse": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "options",
+          "generated_at"
+        ],
+        "properties": {
+          "options": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/TaskRunnerBindingOption"
+            }
+          },
+          "generated_at": {
+            "type": "string",
+            "format": "date-time"
           }
         }
       },
@@ -9061,6 +9430,19 @@
           },
           "run_id": {
             "type": "string"
+          },
+          "source": {
+            "type": "string",
+            "enum": [
+              "runner_test"
+            ],
+            "description": "Present when this activity item belongs to a dedicated Developer runner test task."
+          },
+          "runner_test": {
+            "type": "boolean",
+            "enum": [
+              true
+            ]
           }
         }
       },
@@ -9099,10 +9481,39 @@
           "prompt": {
             "type": "string"
           },
+          "source": {
+            "type": "string",
+            "enum": [
+              "runner_test"
+            ],
+            "description": "Present when the task was created by the dedicated Developer runner test-task endpoint."
+          },
+          "runner_test": {
+            "type": "boolean",
+            "enum": [
+              true
+            ]
+          },
           "workspace_file_library_id": {
             "type": "string"
           },
           "workspace_file_library_name": {
+            "type": "string"
+          },
+          "bound_runner_id": {
+            "type": "string"
+          },
+          "bound_runner_kind": {
+            "$ref": "#/components/schemas/TaskRunnerBindingKind"
+          },
+          "runner_binding_source": {
+            "$ref": "#/components/schemas/TaskRunnerBindingSource"
+          },
+          "bound_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "bound_by_user_id": {
             "type": "string"
           },
           "status": {
@@ -9718,6 +10129,138 @@
           "offline"
         ]
       },
+      "AgentRunnerKind": {
+        "type": "string",
+        "enum": [
+          "system_managed",
+          "developer"
+        ]
+      },
+      "AgentRunnerSource": {
+        "type": "string",
+        "enum": [
+          "system",
+          "developer"
+        ]
+      },
+      "AgentRunnerActionOperation": {
+        "type": "string",
+        "enum": [
+          "set_project_default",
+          "bind_to_task",
+          "run_test_task",
+          "edit",
+          "disable",
+          "delete",
+          "issue_connection_key",
+          "revoke_connection_key",
+          "test_connection",
+          "view_diagnostics",
+          "create_developer_runner"
+        ]
+      },
+      "AgentRunnerActionDangerLevel": {
+        "type": "string",
+        "enum": [
+          "none",
+          "medium",
+          "high"
+        ]
+      },
+      "AgentRunnerActionAffordance": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "operation",
+          "visible",
+          "allowed",
+          "required_permissions",
+          "danger_level"
+        ],
+        "properties": {
+          "operation": {
+            "$ref": "#/components/schemas/AgentRunnerActionOperation"
+          },
+          "visible": {
+            "type": "boolean"
+          },
+          "allowed": {
+            "type": "boolean"
+          },
+          "reason_code": {
+            "type": "string"
+          },
+          "required_permissions": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "danger_level": {
+            "$ref": "#/components/schemas/AgentRunnerActionDangerLevel"
+          }
+        }
+      },
+      "AgentRunnerActions": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "set_project_default",
+          "bind_to_task",
+          "run_test_task",
+          "edit",
+          "disable",
+          "delete",
+          "issue_connection_key",
+          "revoke_connection_key",
+          "test_connection",
+          "view_diagnostics"
+        ],
+        "properties": {
+          "set_project_default": {
+            "$ref": "#/components/schemas/AgentRunnerActionAffordance"
+          },
+          "bind_to_task": {
+            "$ref": "#/components/schemas/AgentRunnerActionAffordance"
+          },
+          "run_test_task": {
+            "$ref": "#/components/schemas/AgentRunnerActionAffordance"
+          },
+          "edit": {
+            "$ref": "#/components/schemas/AgentRunnerActionAffordance"
+          },
+          "disable": {
+            "$ref": "#/components/schemas/AgentRunnerActionAffordance"
+          },
+          "delete": {
+            "$ref": "#/components/schemas/AgentRunnerActionAffordance"
+          },
+          "issue_connection_key": {
+            "$ref": "#/components/schemas/AgentRunnerActionAffordance"
+          },
+          "revoke_connection_key": {
+            "$ref": "#/components/schemas/AgentRunnerActionAffordance"
+          },
+          "test_connection": {
+            "$ref": "#/components/schemas/AgentRunnerActionAffordance"
+          },
+          "view_diagnostics": {
+            "$ref": "#/components/schemas/AgentRunnerActionAffordance"
+          }
+        }
+      },
+      "AgentRunnerCollectionActions": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "create_developer_runner"
+        ],
+        "properties": {
+          "create_developer_runner": {
+            "$ref": "#/components/schemas/AgentRunnerActionAffordance"
+          }
+        }
+      },
       "AgentRunnerCapabilities": {
         "type": "object",
         "additionalProperties": true,
@@ -9775,15 +10318,19 @@
       },
       "AgentRunner": {
         "type": "object",
-        "description": "Public Agent Runner resource. Legacy fields `mode`, `runner_runtime`, `interaction_kind`, and external/internal runner selectors are not accepted in request payloads.",
+        "description": "Public Agent Runner resource. Public lifecycle mutations are Developer-runner only; System managed runners are read-only in project APIs.",
         "required": [
           "id",
           "project_id",
           "name",
+          "kind",
+          "source",
+          "read_only",
           "is_default",
           "status",
           "capabilities",
           "diagnostics",
+          "actions",
           "created_at",
           "updated_at"
         ],
@@ -9799,6 +10346,16 @@
           },
           "description": {
             "type": "string"
+          },
+          "kind": {
+            "$ref": "#/components/schemas/AgentRunnerKind"
+          },
+          "source": {
+            "$ref": "#/components/schemas/AgentRunnerSource"
+          },
+          "read_only": {
+            "type": "boolean",
+            "description": "Display metadata only. Backend action affordances remain the source of truth for actions."
           },
           "is_default": {
             "type": "boolean"
@@ -9816,6 +10373,9 @@
           "diagnostics": {
             "$ref": "#/components/schemas/AgentRunnerDiagnostics"
           },
+          "actions": {
+            "$ref": "#/components/schemas/AgentRunnerActions"
+          },
           "created_at": {
             "type": "string",
             "format": "date-time"
@@ -9832,7 +10392,8 @@
           "items",
           "total",
           "page",
-          "page_size"
+          "page_size",
+          "actions"
         ],
         "properties": {
           "items": {
@@ -9855,12 +10416,16 @@
           },
           "has_more": {
             "type": "boolean"
+          },
+          "actions": {
+            "$ref": "#/components/schemas/AgentRunnerCollectionActions"
           }
         }
       },
       "CreateAgentRunnerRequest": {
         "type": "object",
         "additionalProperties": false,
+        "description": "Creates a Developer runner. System managed runners and default/endpoint/status/capability/diagnostic fields are not accepted by public create.",
         "required": [
           "name"
         ],
@@ -9871,54 +10436,36 @@
           "description": {
             "type": "string"
           },
-          "is_default": {
-            "type": "boolean"
-          },
-          "status": {
-            "$ref": "#/components/schemas/AgentRunnerStatus"
-          },
-          "default_endpoint_id": {
-            "type": "string"
-          },
-          "capabilities": {
-            "$ref": "#/components/schemas/AgentRunnerCapabilities"
-          },
-          "diagnostics": {
-            "$ref": "#/components/schemas/AgentRunnerDiagnostics"
+          "kind": {
+            "type": "string",
+            "enum": [
+              "developer"
+            ]
           }
         }
       },
       "UpdateAgentRunnerRequest": {
         "type": "object",
         "additionalProperties": false,
+        "description": "Updates Developer runner display metadata only.",
         "properties": {
           "name": {
             "type": "string"
           },
           "description": {
             "type": "string"
-          },
-          "is_default": {
-            "type": "boolean"
-          },
-          "status": {
-            "$ref": "#/components/schemas/AgentRunnerStatus"
-          },
-          "default_endpoint_id": {
-            "type": "string"
-          },
-          "capabilities": {
-            "$ref": "#/components/schemas/AgentRunnerCapabilities"
           }
         }
       },
       "AgentRunnerKey": {
         "type": "object",
+        "additionalProperties": false,
         "required": [
           "id",
           "agent_runner_id",
           "key_prefix",
-          "status"
+          "status",
+          "created_at"
         ],
         "properties": {
           "id": {
@@ -9934,21 +10481,55 @@
             "type": "string",
             "enum": [
               "active",
-              "revoked"
+              "revoked",
+              "expired"
             ]
           },
           "created_at": {
             "type": "string",
             "format": "date-time"
+          },
+          "expires_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "last_used_at": {
+            "type": "string",
+            "format": "date-time"
+          }
+        }
+      },
+      "AgentRunnerKeyListResponse": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "items",
+          "total"
+        ],
+        "properties": {
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/AgentRunnerKey"
+            }
+          },
+          "total": {
+            "type": "integer",
+            "minimum": 0
           }
         }
       },
       "CreateAgentRunnerKeyResponse": {
         "type": "object",
+        "additionalProperties": false,
         "required": [
           "id",
           "agent_runner_id",
-          "key_prefix"
+          "key_prefix",
+          "status",
+          "created_at",
+          "expires_at",
+          "key"
         ],
         "properties": {
           "id": {
@@ -9960,9 +10541,283 @@
           "key_prefix": {
             "type": "string"
           },
+          "status": {
+            "type": "string",
+            "enum": [
+              "active"
+            ]
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "expires_at": {
+            "type": "string",
+            "format": "date-time"
+          },
           "key": {
             "type": "string",
             "description": "Displayed only once"
+          }
+        }
+      },
+      "AgentRunnerTestConnectionRequest": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "timeout_ms": {
+            "type": "integer",
+            "minimum": 100,
+            "maximum": 10000,
+            "description": "Bounded caller wait budget for the backend connection probe."
+          }
+        }
+      },
+      "AgentRunnerTestConnectionStatus": {
+        "type": "string",
+        "enum": [
+          "connected",
+          "disconnected",
+          "stale"
+        ]
+      },
+      "AgentRunnerConnectionFreshnessState": {
+        "type": "string",
+        "enum": [
+          "fresh",
+          "missing",
+          "stale"
+        ]
+      },
+      "AgentRunnerConnectionFreshness": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "state",
+          "active_connection_count"
+        ],
+        "properties": {
+          "state": {
+            "$ref": "#/components/schemas/AgentRunnerConnectionFreshnessState"
+          },
+          "active_connection_count": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "connected_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "last_pong_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "last_seen_at": {
+            "type": "string",
+            "format": "date-time"
+          }
+        }
+      },
+      "AgentRunnerConnectionError": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "code",
+          "message"
+        ],
+        "properties": {
+          "code": {
+            "type": "string",
+            "enum": [
+              "agent_runner_disconnected",
+              "agent_runner_stale"
+            ]
+          },
+          "message": {
+            "type": "string"
+          }
+        }
+      },
+      "AgentRunnerKeyExpiryCleanup": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "workspace_id",
+          "project_id",
+          "agent_runner_id",
+          "key_id",
+          "key_prefix",
+          "cleanup_result",
+          "disconnected"
+        ],
+        "properties": {
+          "workspace_id": {
+            "type": "string"
+          },
+          "project_id": {
+            "type": "string"
+          },
+          "agent_runner_id": {
+            "type": "string"
+          },
+          "key_id": {
+            "type": "string"
+          },
+          "key_prefix": {
+            "type": "string",
+            "description": "Redacted connection key prefix only; raw keys and hashes are never public."
+          },
+          "expires_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "cleanup_result": {
+            "type": "string",
+            "enum": [
+              "marked_expired"
+            ]
+          },
+          "disconnected": {
+            "type": "boolean"
+          }
+        }
+      },
+      "AgentRunnerTestConnectionCleanup": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "key_expiry": {
+            "$ref": "#/components/schemas/AgentRunnerKeyExpiryCleanup"
+          }
+        }
+      },
+      "AgentRunnerTestConnectionResponse": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "agent_runner_id",
+          "status",
+          "checked_at",
+          "timeout_ms",
+          "freshness",
+          "capabilities",
+          "errors"
+        ],
+        "properties": {
+          "agent_runner_id": {
+            "type": "string"
+          },
+          "status": {
+            "$ref": "#/components/schemas/AgentRunnerTestConnectionStatus"
+          },
+          "checked_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "timeout_ms": {
+            "type": "integer"
+          },
+          "freshness": {
+            "$ref": "#/components/schemas/AgentRunnerConnectionFreshness"
+          },
+          "capabilities": {
+            "$ref": "#/components/schemas/AgentRunnerCapabilities"
+          },
+          "errors": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/AgentRunnerConnectionError"
+            }
+          },
+          "cleanup": {
+            "$ref": "#/components/schemas/AgentRunnerTestConnectionCleanup"
+          }
+        }
+      },
+      "AgentRunnerTestTaskRunRequest": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "intent": {
+            "type": "string",
+            "description": "Optional display intent for a future runner test task dispatch."
+          }
+        }
+      },
+      "AgentRunnerTestTaskRunAcceptedResponse": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "runner_test",
+          "status",
+          "task_id",
+          "run_id",
+          "resolved_runner_id"
+        ],
+        "properties": {
+          "runner_test": {
+            "type": "boolean",
+            "enum": [
+              true
+            ]
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "accepted"
+            ]
+          },
+          "task_id": {
+            "type": "string"
+          },
+          "run_id": {
+            "type": "string"
+          },
+          "resolved_runner_id": {
+            "type": "string"
+          }
+        }
+      },
+      "AgentRunnerTestTaskRunUnavailableErrorCode": {
+        "type": "string",
+        "enum": [
+          "agent_runner_disconnected",
+          "agent_runner_stale",
+          "agent_runner_capability_mismatch",
+          "agent_runner_test_task_unavailable"
+        ]
+      },
+      "AgentRunnerTestTaskRunUnavailableResponse": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "error_code",
+          "message",
+          "runner_test",
+          "status",
+          "resolved_runner_id"
+        ],
+        "properties": {
+          "error_code": {
+            "$ref": "#/components/schemas/AgentRunnerTestTaskRunUnavailableErrorCode"
+          },
+          "message": {
+            "type": "string"
+          },
+          "runner_test": {
+            "type": "boolean",
+            "enum": [
+              true
+            ]
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "not_started"
+            ]
+          },
+          "resolved_runner_id": {
+            "type": "string"
           }
         }
       },
@@ -10615,8 +11470,6 @@
               "agent_runner_model_unconfigured",
               "agent_runner_capability_mismatch",
               "agent_runner_default_conflict",
-              "agent_runner_selection_required",
-              "agent_runner_selection_ambiguous",
               "INTERNAL_ERROR"
             ]
           },
@@ -10664,19 +11517,41 @@
           "fields": {
             "type": "array",
             "items": {
-              "type": "string",
-              "enum": [
-                "mode",
-                "runner_runtime",
-                "interaction_kind",
-                "type",
-                "execution_preferences",
-                "execution_preferences_json",
-                "agent_id",
-                "agent_name",
-                "runner_id"
-              ]
+              "type": "string"
             }
+          }
+        }
+      },
+      "InvalidBindingTargetError": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "error_code",
+          "message",
+          "field"
+        ],
+        "properties": {
+          "error_code": {
+            "type": "string",
+            "enum": [
+              "invalid_binding_target"
+            ]
+          },
+          "message": {
+            "type": "string",
+            "enum": [
+              "invalid_binding_target"
+            ]
+          },
+          "field": {
+            "type": "string",
+            "enum": [
+              "bound_runner_id"
+            ]
+          },
+          "details": {
+            "type": "object",
+            "additionalProperties": true
           }
         }
       },
@@ -10694,9 +11569,7 @@
               "agent_runner_unavailable",
               "agent_runner_model_unconfigured",
               "agent_runner_capability_mismatch",
-              "agent_runner_default_conflict",
-              "agent_runner_selection_required",
-              "agent_runner_selection_ambiguous"
+              "agent_runner_default_conflict"
             ]
           },
           "message": {
@@ -10705,9 +11578,7 @@
               "agent_runner_unavailable",
               "agent_runner_model_unconfigured",
               "agent_runner_capability_mismatch",
-              "agent_runner_default_conflict",
-              "agent_runner_selection_required",
-              "agent_runner_selection_ambiguous"
+              "agent_runner_default_conflict"
             ]
           }
         }

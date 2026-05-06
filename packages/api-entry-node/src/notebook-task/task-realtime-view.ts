@@ -172,7 +172,7 @@ export async function buildTaskRealtimeView(
     getNotebookTaskRunState(deps.cache, task.id),
     getNotebookTaskRunHardTeardownDebt(deps.cache, task.id),
   ]);
-  const activeRunnerId = activeRun?.runner_id?.trim() ?? '';
+  const activeRunnerId = activeRun?.resolved_runner_id?.trim() ?? '';
   const agent = activeRunnerId
     ? await deps.agentResourceService.getAgent(workspaceId, projectId, activeRunnerId)
     : null;
@@ -195,6 +195,7 @@ export async function buildTaskRealtimeView(
           id: activeRun.run_id,
           status: mapNotebookRunPhaseToActiveRunStatus(activeRun),
           runner_id: activeRunnerId,
+          ...(activeRun.runner_test === true ? { source: 'runner_test' as const, runner_test: true as const } : {}),
           ...(activeRun.started_at ? { started_at: activeRun.started_at } : {}),
         },
       }

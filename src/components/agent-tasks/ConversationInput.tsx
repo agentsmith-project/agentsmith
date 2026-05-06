@@ -1,7 +1,7 @@
 'use client';
 import * as React from 'react';
 import { useTranslations } from 'next-intl';
-import { Send, Loader2 } from 'lucide-react';
+import { Loader2, Send } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
 
@@ -141,8 +141,8 @@ export function ConversationInput({
             </div>
           </div>
         ) : null}
-        <div className="mt-2 text-[11px] text-tertiary">
-          {t('hotkey_compose')}
+        <div className="mt-2 flex items-center justify-between gap-2 text-[11px] text-tertiary">
+          <span>{t('hotkey_compose')}</span>
         </div>
       </div>
     </div>

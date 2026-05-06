@@ -5,6 +5,7 @@ import {
   upsertPersistedSystemWorkspace,
 } from '../../../src/lib/system-admin/workspace-registry/persistence.js';
 import { AgentResourceService } from './agent-resource-service.js';
+import { listAuditEvents } from './audit-usage-store.js';
 import { resolveWorkspaceScopedCollection } from './workspace-tenant-collections.js';
 
 describe('AgentResourceService', () => {
@@ -35,6 +36,111 @@ describe('AgentResourceService', () => {
     expect(created.capabilities?.streaming_completion).toBe(true);
     expect(created.capabilities?.multimodal_completion).toBe(false);
     expect(created.capabilities?.accepted_mime_types).toContain('image/png');
+  });
+
+  it('does not allow Developer runners to become Project default through service create or update', async () => {
+    const service = new AgentResourceService(new InMemoryJsonDocStore());
+    const created = await service.createAgent('ws_default', 'proj_1', {
+      name: 'Developer default attempt',
+      runner_provider: 'developer',
+      is_default: true,
+    });
+
+    expect(created.runner_provider).toBe('developer');
+    expect(created.is_default).toBe(false);
+
+    const updated = await service.updateAgent('ws_default', 'proj_1', created.id, {
+      is_default: true,
+    });
+
+    expect(updated?.runner_provider).toBe('developer');
+    expect(updated?.is_default).toBe(false);
+    await expect(service.getAgent('ws_default', 'proj_1', created.id)).resolves.toEqual(
+      expect.objectContaining({
+        runner_provider: 'developer',
+        is_default: false,
+      }),
+    );
+  });
+
+  it('keeps System managed runners eligible for Project default through service create', async () => {
+    const service = new AgentResourceService(new InMemoryJsonDocStore());
+    const created = await service.createAgent('ws_default', 'proj_1', {
+      name: 'System managed default',
+      runner_provider: 'managed',
+      is_default: true,
+    });
+
+    expect(created.runner_provider).toBe('managed');
+    expect(created.is_default).toBe(true);
+  });
+
+  it('projects deployment default managed runner endpointId into the API-visible default endpoint field', async () => {
+    const docStore = new InMemoryJsonDocStore();
+    const service = new AgentResourceService(docStore);
+
+    const created = await service.upsertDeploymentDefaultManagedAgentRunner('ws_default', 'proj_1', {
+      name: 'Default managed runner',
+      endpointId: ' ep_managed_default ',
+      is_default: true,
+    });
+
+    expect(created.default_endpoint_id).toBe('ep_managed_default');
+    expect(created.execution_preferences_json).toMatchObject({
+      agent_task: { endpoint_id: 'ep_managed_default' },
+      task: { endpoint_id: 'ep_managed_default' },
+      notebook: { endpoint_id: 'ep_managed_default' },
+    });
+
+    const listed = await service.listAgents('ws_default', 'proj_1');
+    expect(listed).toEqual([
+      expect.objectContaining({
+        id: created.id,
+        runner_provider: 'managed',
+        is_default: true,
+        default_endpoint_id: 'ep_managed_default',
+      }),
+    ]);
+
+    const stored = await docStore.get<Record<string, unknown>>(
+      resolveWorkspaceScopedCollection('agents', 'ws_default'),
+      created.id,
+    );
+    expect(stored).toMatchObject({
+      id: created.id,
+      default_endpoint_id: 'ep_managed_default',
+    });
+  });
+
+  it('keeps distinct runners when wall-clock and Math.random buckets collide', async () => {
+    vi.useFakeTimers();
+    const randomSpy = vi.spyOn(Math, 'random').mockReturnValue(0.1234);
+    try {
+      vi.setSystemTime(new Date('2026-05-05T00:00:00.000Z'));
+      const service = new AgentResourceService(new InMemoryJsonDocStore());
+
+      const defaultRunner = await service.createAgent('ws_default', 'proj_1', {
+        name: 'Default runner',
+        runner_provider: 'managed',
+        is_default: true,
+      });
+      const hiddenRunner = await service.createAgent('ws_default', 'proj_1', {
+        name: 'Hidden runner',
+        runner_provider: 'managed',
+        is_default: false,
+      });
+
+      expect(hiddenRunner.id).not.toBe(defaultRunner.id);
+      await expect(service.listAgents('ws_default', 'proj_1')).resolves.toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({ id: defaultRunner.id, is_default: true }),
+          expect.objectContaining({ id: hiddenRunner.id, is_default: false }),
+        ]),
+      );
+    } finally {
+      randomSpy.mockRestore();
+      vi.useRealTimers();
+    }
   });
 
   it('does not invent an interaction kind when callers omit it', async () => {
@@ -147,6 +253,218 @@ describe('AgentResourceService', () => {
 
     const verifyAfterRevoke = await service.verifyAgentKey(agent.id, key);
     expect(verifyAfterRevoke).toBeNull();
+  });
+
+  it('rotates Developer runner service keys with one active key and metadata-only storage', async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date('2026-05-05T00:00:00.000Z'));
+    try {
+      const docStore = new InMemoryJsonDocStore();
+      const service = new AgentResourceService(docStore);
+      const agent = await service.createAgent('ws_default', 'proj_1', {
+        name: 'key-rotation-test',
+        runner_provider: 'developer',
+      });
+
+      const first = await service.createAgentKey('ws_default', 'proj_1', agent.id);
+      vi.setSystemTime(new Date('2026-05-05T00:00:01.000Z'));
+      const second = await service.createAgentKey('ws_default', 'proj_1', agent.id);
+
+      const keys = await service.listAgentKeys('ws_default', 'proj_1', agent.id);
+      expect(keys.filter((item) => item.status === 'active')).toHaveLength(1);
+      expect(keys.find((item) => item.id === first.record.id)).toMatchObject({
+        id: first.record.id,
+        status: 'revoked',
+      });
+      expect(keys.find((item) => item.id === second.record.id)).toMatchObject({
+        id: second.record.id,
+        status: 'active',
+        expires_at: '2026-05-12T00:00:01.000Z',
+      });
+      expect(JSON.stringify(keys)).not.toContain(first.key);
+      expect(JSON.stringify(keys)).not.toContain(second.key);
+
+      const storedSecond = await docStore.get<Record<string, unknown>>(
+        resolveWorkspaceScopedCollection('agent_service_keys', 'ws_default'),
+        second.record.id,
+      );
+      expect(storedSecond).toMatchObject({
+        key_prefix: second.key.slice(0, 12),
+        status: 'active',
+      });
+      expect(storedSecond).not.toHaveProperty('key');
+      expect(storedSecond?.key_hash).not.toBe(second.key);
+      await expect(service.verifyAgentKey(agent.id, first.key)).resolves.toBeNull();
+      await expect(service.verifyAgentKey(agent.id, second.key)).resolves.toEqual(
+        expect.objectContaining({ id: second.record.id }),
+      );
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('expires Developer runner service keys after seven days', async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date('2026-05-05T00:00:00.000Z'));
+    try {
+      const service = new AgentResourceService(new InMemoryJsonDocStore());
+      const agent = await service.createAgent('ws_default', 'proj_1', {
+        name: 'key-expiry-test',
+        runner_provider: 'developer',
+      });
+      const created = await service.createAgentKey('ws_default', 'proj_1', agent.id);
+
+      vi.setSystemTime(new Date('2026-05-12T00:00:01.000Z'));
+
+      await expect(service.verifyAgentKey(agent.id, created.key)).resolves.toBeNull();
+      await expect(service.listAgentKeys('ws_default', 'proj_1', agent.id)).resolves.toContainEqual(
+        expect.objectContaining({
+          id: created.record.id,
+          status: 'expired',
+          expires_at: '2026-05-12T00:00:00.000Z',
+        }),
+      );
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('stores authenticated key metadata on registered presence connections', async () => {
+    const service = new AgentResourceService(new InMemoryJsonDocStore(), new InMemoryCache());
+    const agent = await service.createAgent('ws_default', 'proj_1', {
+      name: 'key-auth-presence-agent',
+      runner_provider: 'developer',
+    });
+    const keyPair = await service.createAgentKey('ws_default', 'proj_1', agent.id);
+
+    await service.registerAgentConnection({
+      agentId: agent.id,
+      workspaceId: 'ws_default',
+      projectId: 'proj_1',
+      connectionId: 'conn_key_auth',
+      socketKey: agent.id,
+      apiInstanceId: 'api_a',
+      protocolVersion: '1.0',
+      lastPongAt: '2026-05-05T00:00:00.000Z',
+      authenticatedKey: {
+        kind: 'service_key',
+        keyId: keyPair.record.id,
+        expiresAt: keyPair.record.expires_at,
+      },
+    });
+
+    await expect(service.getConnectionInfo(agent.id)).resolves.toEqual(expect.objectContaining({
+      connection_id: 'conn_key_auth',
+      auth_kind: 'service_key',
+      auth_key_id: keyPair.record.id,
+      auth_key_expires_at: keyPair.record.expires_at,
+    }));
+    await expect(service.isAgentConnectionCurrent(agent.id, 'conn_key_auth')).resolves.toBe(true);
+  });
+
+  it('invalidates test-connection presence when the authenticated service key has expired', async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date('2026-05-05T00:00:00.000Z'));
+    try {
+      const docStore = new InMemoryJsonDocStore();
+      const service = new AgentResourceService(docStore, new InMemoryCache());
+      const agent = await service.createAgent('ws_default', 'proj_1', {
+        name: 'key-expired-presence-agent',
+        runner_provider: 'developer',
+      });
+      const keyPair = await service.createAgentKey('ws_default', 'proj_1', agent.id);
+      const expiredKeyRecord = {
+        ...keyPair.record,
+        expires_at: '2026-05-05T00:00:00.000Z',
+      };
+      await docStore.upsert(
+        resolveWorkspaceScopedCollection('agent_service_keys', 'ws_default'),
+        keyPair.record.id,
+        expiredKeyRecord,
+      );
+      await service.registerAgentConnection({
+        agentId: agent.id,
+        workspaceId: 'ws_default',
+        projectId: 'proj_1',
+        connectionId: 'conn_key_expires',
+        socketKey: agent.id,
+        apiInstanceId: 'api_a',
+        protocolVersion: '1.0',
+        lastPongAt: '2026-05-05T00:00:00.000Z',
+        authenticatedKey: {
+          kind: 'service_key',
+          keyId: keyPair.record.id,
+          expiresAt: expiredKeyRecord.expires_at,
+        },
+      });
+
+      vi.setSystemTime(new Date('2026-05-05T00:00:01.000Z'));
+
+      const result = await service.testAgentConnection('ws_default', 'proj_1', agent.id, { timeoutMs: 750 });
+
+      expect(result).toEqual(expect.objectContaining({
+        agent_runner_id: agent.id,
+        status: 'stale',
+        freshness: expect.objectContaining({
+          state: 'stale',
+          active_connection_count: 0,
+        }),
+        cleanup: {
+          key_expiry: {
+            workspace_id: 'ws_default',
+            project_id: 'proj_1',
+            agent_runner_id: agent.id,
+            key_id: keyPair.record.id,
+            key_prefix: keyPair.record.key_prefix,
+            expires_at: '2026-05-05T00:00:00.000Z',
+            cleanup_result: 'marked_expired',
+            disconnected: true,
+          },
+        },
+      }));
+      await expect(service.getConnectionInfo(agent.id)).resolves.toBeNull();
+      await expect(service.isAgentConnectionCurrent(agent.id, 'conn_key_expires')).resolves.toBe(false);
+      await expect(service.listAgentKeys('ws_default', 'proj_1', agent.id)).resolves.toContainEqual(
+        expect.objectContaining({
+          id: keyPair.record.id,
+          status: 'expired',
+        }),
+      );
+      const auditEvents = await listAuditEvents(docStore, {
+        workspaceId: 'ws_default',
+        projectId: 'proj_1',
+        action: 'agent_runner.connection_key.expired',
+        startTime: '1970-01-01T00:00:00.000Z',
+        endTime: '2999-12-31T23:59:59.999Z',
+        page: 1,
+        pageSize: 10,
+        sortOrder: 'asc',
+      });
+      expect(auditEvents.items).toHaveLength(1);
+      expect(auditEvents.items[0]).toMatchObject({
+        actor_type: 'agent',
+        actor_id: agent.id,
+        action: 'agent_runner.connection_key.expired',
+        resource_type: 'agent_runner',
+        resource_id: agent.id,
+        result: 'ok',
+        metadata_json: {
+          workspace_id: 'ws_default',
+          project_id: 'proj_1',
+          agent_runner_id: agent.id,
+          key_id: keyPair.record.id,
+          key_prefix: keyPair.record.key_prefix,
+          expires_at: '2026-05-05T00:00:00.000Z',
+          cleanup_result: 'marked_expired',
+          disconnected: true,
+        },
+      });
+      const auditPayload = JSON.stringify(auditEvents.items);
+      expect(auditPayload).not.toContain(keyPair.key);
+      expect(auditPayload).not.toContain('key_hash');
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it('deletes related keys and clears connection state on deleteAgent', async () => {

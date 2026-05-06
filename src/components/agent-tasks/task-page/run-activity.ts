@@ -36,65 +36,93 @@ type DeriveRunActionArgs = {
   fallbackSummary: string;
 };
 
+function countTraceItems(items: unknown, countValue: unknown): number {
+  if (Array.isArray(items)) return items.length;
+  return typeof countValue === 'number' && Number.isFinite(countValue)
+    ? Math.max(0, Math.trunc(countValue))
+    : 0;
+}
+
+function isSafeBasename(value: string): boolean {
+  if (value === '.' || value === '..') return false;
+  if (value.includes('/') || value.includes('\\')) return false;
+  return /^[A-Za-z0-9][A-Za-z0-9._ -]{0,127}$/.test(value);
+}
+
+function readSafeArtifactFilename(details?: Record<string, unknown>): string {
+  const filename = typeof details?.filename === 'string' ? details.filename.trim() : '';
+  return filename && isSafeBasename(filename) ? filename : '';
+}
+
+function containsUnsafeTraceText(value: string): boolean {
+  return /token|secret|required_permissions|reason_code|raw event|raw diagnostics|diagnostic_entrypoint|authorization|api[_-]?key|\/internal\//i.test(value);
+}
+
+function readSafeTraceSummary(event: TaskTraceEvent, fallbackSummary: string): string {
+  const summary = event.summary.trim();
+  if (summary && !containsUnsafeTraceText(summary)) return summary;
+  return containsUnsafeTraceText(fallbackSummary) ? 'Working' : fallbackSummary;
+}
+
 export function deriveRunAction({ event, fallbackSummary }: DeriveRunActionArgs): RunAction {
   if (!event) {
     return {
       kind: 'system',
-      summary: fallbackSummary,
+      summary: containsUnsafeTraceText(fallbackSummary) ? 'Working' : fallbackSummary,
     };
   }
   if (event.name === 'codex.command') {
-    const command = typeof event.details?.command === 'string' ? event.details.command.trim() : '';
     return {
       kind: 'command',
-      summary: command || event.summary || fallbackSummary,
+      summary: 'Running command',
     };
   }
   if (event.name === 'codex.tool') {
-    const toolName = typeof event.details?.tool_name === 'string' ? event.details.tool_name.trim() : '';
     return {
       kind: 'tool',
-      summary: toolName || event.summary || fallbackSummary,
+      summary: 'Using tool',
     };
   }
   if (event.name === 'workspace.files_changed') {
-    const added = Array.isArray(event.details?.added) ? event.details.added.length : 0;
-    const modified = Array.isArray(event.details?.modified) ? event.details.modified.length : 0;
-    const deleted = Array.isArray(event.details?.deleted) ? event.details.deleted.length : 0;
-    const summary = added || modified || deleted ? `${added} added · ${modified} modified · ${deleted} deleted` : (event.summary || fallbackSummary);
+    const added = countTraceItems(event.details?.added, event.details?.added_count);
+    const modified = countTraceItems(event.details?.modified, event.details?.modified_count);
+    const deleted = countTraceItems(event.details?.deleted, event.details?.deleted_count);
+    const summary = added || modified || deleted
+      ? `${added} added · ${modified} modified · ${deleted} deleted`
+      : readSafeTraceSummary(event, fallbackSummary);
     return {
       kind: 'system',
       summary,
     };
   }
   if (event.name === 'runner.artifact') {
-    const filename = typeof event.details?.filename === 'string' ? event.details.filename.trim() : '';
+    const filename = readSafeArtifactFilename(event.details);
     return {
       kind: 'output',
-      summary: filename || event.summary || fallbackSummary,
+      summary: filename || 'Generated output',
     };
   }
   if (event.name === 'run.lifecycle') {
     return {
       kind: 'lifecycle',
-      summary: event.summary || fallbackSummary,
+      summary: 'Run updated',
     };
   }
   if (event.category === 'error' || event.status === 'error') {
     return {
       kind: 'error',
-      summary: event.summary || fallbackSummary,
+      summary: 'Step failed',
     };
   }
   if (event.name === 'codex.output' || event.category === 'progress') {
     return {
       kind: 'output',
-      summary: event.summary || fallbackSummary,
+      summary: readSafeTraceSummary(event, fallbackSummary),
     };
   }
   return {
     kind: 'system',
-    summary: event.summary || fallbackSummary,
+    summary: readSafeTraceSummary(event, fallbackSummary),
   };
 }
 

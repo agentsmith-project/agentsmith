@@ -23,9 +23,8 @@ describe('local-manual start-api', () => {
     expect(script).toContain("local_manual_write_tracked_service_process_state api");
     expect(script).toContain("printf '%s\\n' \"${PORT_API}\" > \"${API_PORT_FILE}\"");
     expect(script).toContain("MBOS_UNIVERSAL_PROXY_ADMIN_TOKEN='${MBOS_UNIVERSAL_PROXY_ADMIN_TOKEN:-}'");
-    expect(script).toContain("AGENT_EXECUTION_HTTP_BASE_URL='${AGENT_EXECUTION_HTTP_BASE_URL:-}'");
+    expect(script).toContain("AGENT_EXECUTION_HTTP_BASE_URL='${AGENT_EXECUTION_HTTP_BASE_URL:-http://localhost:${PORT_API}}'");
     expect(script).toContain("AGENT_EXECUTION_WS_BASE_URL='${AGENT_EXECUTION_WS_BASE_URL:-}'");
-    expect(script).not.toContain("AGENT_EXECUTION_HTTP_BASE_URL='${AGENT_EXECUTION_HTTP_BASE_URL:-http://localhost:${PORT_API}}'");
     expect(script).not.toContain("AGENT_EXECUTION_WS_BASE_URL='${AGENT_EXECUTION_WS_BASE_URL:-ws://localhost:${PORT_API}}'");
   });
 

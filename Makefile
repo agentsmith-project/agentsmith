@@ -633,6 +633,7 @@ local-real-up:
 	$(MAKE) substrate-up
 	$(MAKE) substrate-reseed
 	$(MAKE) local-manual-up
+	$(MAKE) local-manual-internal-up
 
 local-real-status:
 	npx tsx scripts/governance/local-real-status.ts
@@ -644,6 +645,7 @@ local-real-down:
 
 local-real-reset:
 	$(MAKE) local-manual-reset
+	$(MAKE) local-manual-internal-up
 
 local-manual-internal-up:
 	./scripts/local-manual-internal-up.sh

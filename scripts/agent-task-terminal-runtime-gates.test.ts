@@ -208,6 +208,21 @@ describe('Agent Task terminal runtime gates', () => {
     );
   });
 
+  it('keeps local-real hand testing aligned with the default managed runner runtime', async () => {
+    const makefile = await readFile(
+      path.resolve(process.cwd(), 'Makefile'),
+      'utf-8',
+    );
+    const startApi = await readFile(
+      path.resolve(process.cwd(), 'scripts/local-manual/start-api.sh'),
+      'utf-8',
+    );
+
+    expect(makefile).toMatch(/local-real-up:[\s\S]*\$\(MAKE\) local-manual-up[\s\S]*\$\(MAKE\) local-manual-internal-up/);
+    expect(makefile).toMatch(/local-real-reset:[\s\S]*\$\(MAKE\) local-manual-reset[\s\S]*\$\(MAKE\) local-manual-internal-up/);
+    expect(startApi).toContain("AGENT_EXECUTION_HTTP_BASE_URL='${AGENT_EXECUTION_HTTP_BASE_URL:-http://localhost:${PORT_API}}'");
+  });
+
   it('keeps the UX gate focused on reload/re-entry hydration and same-task recovery so backend session truth survives interruptions', async () => {
     const uxSpec = await readFile(
       path.resolve(process.cwd(), 'e2e/integration-agent-task-terminal-ux.spec.ts'),

@@ -4,6 +4,7 @@ This directory holds engineering-side guidance that supports implementation and 
 
 Current guidance and closure records:
 - [Current Engineering Governance Model](../current-engineering-governance-model.md) - current engineering governance truth; keep aligned with machine-readable manifests/contracts
+- [Agent Task Model Setting Milestone Plan v1](./agent-task-execution-model-settings-milestone-plan-v1.md) - `handoff_plan_ready`; product/contract plan for choosing which Endpoint/default model Agent tasks use without moving model configuration into Agent Runners
 - [Engineering Governance Developer Flow Optimization v2](./governance-developer-flow-optimization-v2.md) - `first_scope_closed_2026-04-29`; closure baseline, remaining items are backlog/reference, not current marching orders
 - [前端技术栈与国际化策略-v1](./前端技术栈与国际化策略-v1.md)
 

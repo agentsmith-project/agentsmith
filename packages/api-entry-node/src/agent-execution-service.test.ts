@@ -362,7 +362,7 @@ describe('AgentExecutionService', () => {
     expect(executionService.getAgentSessionOnlineState(agent.id, 'task_legacy_query')).toBe(false);
   });
 
-  it('includes static resource proxy base in server.hello when agent endpoint is configured', async () => {
+  it('does not include a static resource proxy base in server.hello when agent endpoint is configured', async () => {
     process.env.PUBLIC_API_BASE_URL = 'http://trusted.example/api/v1';
     const { helloFramePromise } = await setupExecutionService({
       endpointId: 'ep_hello',
@@ -377,13 +377,10 @@ describe('AgentExecutionService', () => {
     };
     expect(payload.protocol_version).toBe('1.0');
     expect(payload.heartbeat_interval_sec).toBe(15);
-    expect(payload.resource_proxy?.base_url).toBe(
-      'http://trusted.example'
-      + `/api/v1/workspaces/ws_default/projects/proj_1/endpoints/ep_hello/proxy/openai`,
-    );
+    expect(payload.resource_proxy).toBeUndefined();
   });
 
-  it('includes static resource proxy base in server.hello for chat agents using trusted configured api base', async () => {
+  it('does not include a static resource proxy base in server.hello for chat agents', async () => {
     process.env.PUBLIC_API_BASE_URL = 'http://trusted.example/api/v1';
     const { helloFramePromise } = await setupExecutionService({
       endpointId: 'ep_chat_hello',
@@ -393,13 +390,10 @@ describe('AgentExecutionService', () => {
     const payload = (hello.payload ?? {}) as {
       resource_proxy?: { base_url?: string };
     };
-    expect(payload.resource_proxy?.base_url).toBe(
-      'http://trusted.example'
-      + '/api/v1/workspaces/ws_default/projects/proj_1/endpoints/ep_chat_hello/proxy/openai',
-    );
+    expect(payload.resource_proxy).toBeUndefined();
   });
 
-  it('does not trust forwarded host headers when building server.hello resource proxy base', async () => {
+  it('does not build a server.hello resource proxy base from forwarded host headers', async () => {
     process.env.PUBLIC_API_BASE_URL = 'http://trusted.example/api/v1';
     const agentResourceService = new AgentResourceService(new InMemoryJsonDocStore());
     const executionService = new AgentExecutionService(agentResourceService);
@@ -443,9 +437,7 @@ describe('AgentExecutionService', () => {
       });
     });
     const payload = (hello.payload ?? {}) as { resource_proxy?: { base_url?: string } };
-    expect(payload.resource_proxy?.base_url).toBe(
-      'http://trusted.example/api/v1/workspaces/ws_default/projects/proj_1/endpoints/ep_secure/proxy/openai',
-    );
+    expect(payload.resource_proxy).toBeUndefined();
   });
 
   it('stores agent.ready runtime metadata separately without mutating execution preferences', async () => {
@@ -1238,6 +1230,55 @@ describe('AgentExecutionService', () => {
       request_id: dispatched.requestId,
     });
     expect(frame).not.toHaveProperty('session_id');
+  });
+
+  it('forwards request-scoped resource proxy and model snapshot in execution context unchanged', async () => {
+    const { executionService, agent, ws } = await setupExecutionService({ interactionKind: 'notebook' });
+    const startFrame = new Promise<Record<string, unknown>>((resolve) => {
+      ws.on('message', (raw) => {
+        const message = JSON.parse(raw.toString('utf-8')) as Record<string, unknown>;
+        if (message.type === 'server.request.start') {
+          resolve(message);
+        }
+      });
+    });
+
+    const executionContext = {
+      task_id: 'task_request_scoped_proxy',
+      runner_session_scope: 'agent_presence',
+      endpoint_id: 'ep_fresh',
+      model: 'gpt-fresh',
+      wire_api: 'openai_responses',
+      agent_task_model: {
+        endpoint_id: 'ep_fresh',
+        resolved_model: 'gpt-fresh',
+        upstream_protocol: 'openai_responses',
+        setting_revision: 'set_fresh',
+        resolved_at: '2026-05-07T00:00:00.000Z',
+      },
+      resource_proxy: {
+        base_url: 'http://trusted.example/api/v1/workspaces/ws_default/projects/proj_1/endpoints/ep_fresh/proxy/openai',
+      },
+    };
+
+    const dispatched = await executionService.dispatchStreamingRequest({
+      workspaceId: 'ws_default',
+      projectId: 'proj_1',
+      sessionId: 'task_request_scoped_proxy',
+      agentId: agent.id,
+      model: 'gpt-fresh',
+      messages: [{ role: 'user', content: 'request scoped proxy' }],
+      executionContext,
+    });
+
+    expect(dispatched.requestId).toEqual(expect.any(String));
+    await expect(startFrame).resolves.toMatchObject({
+      type: 'server.request.start',
+      runner_session_id: 'task_request_scoped_proxy',
+      payload: {
+        execution_context: executionContext,
+      },
+    });
   });
 
   it('allows notebook terminal dispatch through an agent-level socket when agent presence scope is declared', async () => {

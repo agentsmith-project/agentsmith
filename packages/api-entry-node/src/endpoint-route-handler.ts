@@ -5,6 +5,8 @@ import type { EndpointBulkImportPayload, EndpointRecord } from './resource-model
 import { writeProjectAuditEvent, writeProjectUsageFact } from './audit-usage-recorders.js';
 import { createDownstreamAbortController } from './downstream-abort.js';
 import { enforceEndpointGovernancePreflight } from './governance-endpoint-preflight.js';
+import { AgentTaskModelSettingService } from './agent-task-model-setting-service.js';
+import { evaluateProjectPermissions } from './project-authz-engine.js';
 import {
   isCapabilitySupportedByProtocol,
   resolveEndpointTaskRoute,
@@ -50,6 +52,32 @@ function hasValidModelProfile(value: unknown): boolean {
     return false;
   }
   return (profile.max_output_tokens as number) <= (profile.max_context_tokens as number);
+}
+
+async function actorCanUpdateProjectGovernance(args: {
+  deps: NodeApiDeps;
+  workspaceId: string;
+  projectId: string;
+  actorUserId: string;
+}): Promise<boolean> {
+  try {
+    const project = await args.deps.getProjectUseCase.execute({
+      workspaceId: args.workspaceId,
+      projectId: args.projectId,
+    });
+    const evaluation = await evaluateProjectPermissions({
+      docStore: args.deps.docStore,
+      workspaceId: args.workspaceId,
+      projectId: args.projectId,
+      projectOwnerId: project.owner_id,
+      projectGovernance: project.governance_json,
+      actorUserId: args.actorUserId,
+      requiredPermissions: ['project:governance:update'],
+    });
+    return evaluation.decisions.every((decision) => decision.granted);
+  } catch {
+    return false;
+  }
 }
 
 interface EndpointHandlerArgs {
@@ -560,11 +588,45 @@ export async function handleEndpointRoute(args: EndpointHandlerArgs): Promise<bo
   }
 
   if (route.kind === 'endpoints' && method === 'GET' && route.workspaceId && route.projectId) {
+    const workspaceId = route.workspaceId;
+    const projectId = route.projectId;
     const items = await deps.endpointResourceService.listEndpoints(
-      route.workspaceId,
-      route.projectId,
+      workspaceId,
+      projectId,
     );
-    json(res, 200, { items });
+    const canUpdateGovernance = await actorCanUpdateProjectGovernance({
+      deps,
+      workspaceId,
+      projectId,
+      actorUserId: user.id,
+    });
+    const modelSettingService = new AgentTaskModelSettingService(deps);
+    const setting = await modelSettingService.getSetting(workspaceId, projectId);
+    const shapedItems = await Promise.all(items.map(async (item) => {
+      const useForAgentTasks = canUpdateGovernance
+        ? await modelSettingService.computeUseForAgentTasksAction({
+          workspaceId,
+          projectId,
+          endpoint: item,
+          actorUserId: user.id,
+          visible: true,
+        })
+        : {
+          operation: 'use_for_agent_tasks' as const,
+          visible: false,
+          allowed: false,
+          required_permissions: ['project:governance:update'] as ['project:governance:update'],
+          danger_level: 'none' as const,
+        };
+      return {
+        ...item,
+        agent_task_model_selected: setting?.endpoint_id === item.id,
+        actions: {
+          use_for_agent_tasks: useForAgentTasks,
+        },
+      };
+    }));
+    json(res, 200, { items: shapedItems });
     return true;
   }
 

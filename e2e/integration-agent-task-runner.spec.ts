@@ -81,7 +81,6 @@ async function prepareAgentTaskProject(
 
   expect(runner.status).toBe('ready');
   expect(runner.isDefault).toBe(true);
-  expect(runner.defaultEndpointId).toBe(endpointId);
 
   return {
     projectId,

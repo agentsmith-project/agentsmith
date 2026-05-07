@@ -46,6 +46,30 @@ describe('requiredProjectPermissions', () => {
     ).toEqual(['project:agent_task:use']);
   });
 
+  it('lets Agent task model setting GET be shaped by the handler and gates PATCH by governance update', () => {
+    expect(
+      requiredProjectPermissions(
+        {
+          kind: 'agentTaskModelSetting',
+          workspaceId: 'ws_default',
+          projectId: 'proj_1',
+        } as never,
+        'GET',
+      ),
+    ).toEqual([]);
+
+    expect(
+      requiredProjectPermissions(
+        {
+          kind: 'agentTaskModelSetting',
+          workspaceId: 'ws_default',
+          projectId: 'proj_1',
+        } as never,
+        'PATCH',
+      ),
+    ).toEqual(['project:governance:update']);
+  });
+
   it('requires Agent task use and terminal permissions for creating new terminal sessions', () => {
     expect(
       requiredProjectPermissions(

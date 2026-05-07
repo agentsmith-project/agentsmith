@@ -1716,6 +1716,90 @@ export async function createEndpointViaApi(
   return endpointId!;
 }
 
+type AgentTaskModelSettingApiPayload = {
+  readiness?: {
+    state?: string;
+  };
+  setting?: {
+    endpoint_id?: string;
+    default_model?: string;
+    default_model_id?: string;
+    setting_revision?: string;
+  };
+};
+
+export async function ensureAgentTaskModelSettingViaApi(
+  page: Page,
+  args: {
+    workspaceId: string;
+    projectId: string;
+    endpointId: string;
+  },
+): Promise<{
+  endpointId: string;
+  defaultModel: string | null;
+  settingRevision: string;
+  updated: boolean;
+}> {
+  const endpointId = args.endpointId.trim();
+  if (!endpointId) {
+    throw new Error("agent_task_model_setting_endpoint_id_required");
+  }
+  const token = await readStoredAuthToken(page);
+  const url = `${API_BASE}/api/v1/workspaces/${args.workspaceId}/projects/${args.projectId}/agent-task-model-setting`;
+  const currentResponse = await page.request.get(url, {
+    headers: { Authorization: `Bearer ${token}` },
+  });
+  if (!currentResponse.ok()) {
+    const body = await currentResponse.text().catch(() => "");
+    throw new Error(`read_agent_task_model_setting_failed:${currentResponse.status()}:${body}`);
+  }
+
+  const current = (await currentResponse.json().catch(() => null)) as AgentTaskModelSettingApiPayload | null;
+  const currentSetting = current?.setting;
+  const currentEndpointId = currentSetting?.endpoint_id?.trim() || "";
+  const currentRevision = currentSetting?.setting_revision?.trim() || null;
+  if (currentEndpointId === endpointId && current?.readiness?.state === "ready" && currentRevision) {
+    return {
+      endpointId,
+      defaultModel: currentSetting?.default_model?.trim()
+        || currentSetting?.default_model_id?.trim()
+        || null,
+      settingRevision: currentRevision,
+      updated: false,
+    };
+  }
+
+  const patchResponse = await page.request.patch(url, {
+    headers: {
+      Authorization: `Bearer ${token}`,
+      "Content-Type": "application/json",
+    },
+    data: {
+      endpoint_id: endpointId,
+      expected_setting_revision: currentRevision,
+    },
+  });
+  if (!patchResponse.ok()) {
+    const body = await patchResponse.text().catch(() => "");
+    throw new Error(`patch_agent_task_model_setting_failed:${patchResponse.status()}:${body}`);
+  }
+  const patched = (await patchResponse.json().catch(() => null)) as AgentTaskModelSettingApiPayload | null;
+  const patchedSetting = patched?.setting;
+  const patchedRevision = patchedSetting?.setting_revision?.trim();
+  if (!patchedRevision) {
+    throw new Error("patch_agent_task_model_setting_missing_revision");
+  }
+  return {
+    endpointId: patchedSetting?.endpoint_id?.trim() || endpointId,
+    defaultModel: patchedSetting?.default_model?.trim()
+      || patchedSetting?.default_model_id?.trim()
+      || null,
+    settingRevision: patchedRevision,
+    updated: true,
+  };
+}
+
 export async function createAgentTaskRunnerBundleViaApi(
   page: Page,
   args: {
@@ -1918,7 +2002,7 @@ function pickFirstBackendRealSummaryPath(): string[] {
 function normalizeManagedRunnerResult(
   payload: ManagedAgentRunnerApiPayload,
   fallbackName: string,
-  fallbackEndpointId: string | null,
+  _fallbackEndpointId: string | null,
   fallbackStatus?: string,
 ): RunnerIdSource {
   return {
@@ -1929,7 +2013,7 @@ function normalizeManagedRunnerResult(
       || fallbackStatus
       || "ready",
     isDefault: payload.is_default === true || payload.kind === "system_managed",
-    defaultEndpointId: payload.default_endpoint_id?.trim() || fallbackEndpointId,
+    defaultEndpointId: payload.default_endpoint_id?.trim() || null,
     capabilities: payload.capabilities ?? {},
     diagnostics: payload.diagnostics ?? {},
   };
@@ -2070,6 +2154,9 @@ export async function createManagedAgentRunnerViaApi(
   }
 
   const fallbackEndpointId = args.endpointId.trim() || null;
+  if (!fallbackEndpointId) {
+    throw new Error("managed_agent_runner_endpoint_id_required_for_model_setting");
+  }
   const seededRunnerId = await readBackendRealManagedRunnerIdFromState();
   const seededRunner = seededRunnerId
     ? await readManagedAgentRunnerById({
@@ -2086,6 +2173,11 @@ export async function createManagedAgentRunnerViaApi(
       fallbackEndpointId,
       args.status,
     );
+    await ensureAgentTaskModelSettingViaApi(page, {
+      workspaceId: args.workspaceId,
+      projectId: args.projectId,
+      endpointId: fallbackEndpointId,
+    });
     return {
       runnerId: resolved.runnerId,
       runnerName: resolved.runnerName,
@@ -2111,13 +2203,18 @@ export async function createManagedAgentRunnerViaApi(
     capabilities: args.capabilities,
     diagnostics: args.diagnostics,
   });
+  await ensureAgentTaskModelSettingViaApi(page, {
+    workspaceId: args.workspaceId,
+    projectId: args.projectId,
+    endpointId: fallbackEndpointId,
+  });
 
   return {
     runnerId: seededDefault.runnerId,
     runnerName: seededDefault.runnerName || runnerName,
     status: seededDefault.status || "ready",
     isDefault: seededDefault.isDefault,
-    defaultEndpointId: seededDefault.defaultEndpointId || fallbackEndpointId,
+    defaultEndpointId: seededDefault.defaultEndpointId,
     capabilities: seededDefault.capabilities,
     diagnostics: seededDefault.diagnostics,
   };

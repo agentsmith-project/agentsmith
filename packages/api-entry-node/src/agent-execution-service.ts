@@ -4,10 +4,7 @@ import { randomUUID } from 'node:crypto';
 import { URL } from 'node:url';
 import { WebSocketServer, type RawData, type WebSocket } from 'ws';
 import type { AgentResourceService } from './agent-resource-service.js';
-import { resolveConfiguredPublicApiBase } from './agent-execution-api-base.js';
 import { AGENT_CONNECTION_TTL_MS, type AgentConnectionAuthKind } from './agent-presence-store.js';
-import { resolveExecutionApiBase } from './notebook-execution-orchestrator.js';
-import type { AgentRecord } from './resource-models.js';
 
 export type RunnerSessionDispatchAuthority =
   | 'local_dispatchable'
@@ -112,7 +109,6 @@ interface AgentSocketState {
   authKeyId?: string;
   authKeyExpiresAt?: string;
   connectedAt: string;
-  resourceProxyBaseUrl?: string;
   pendingByRequestId: Map<string, PendingStream>;
   terminalBySessionId: Map<string, PendingTerminal>;
   heartbeatTimer?: NodeJS.Timeout;
@@ -313,12 +309,6 @@ function readNonEmptyString(input: unknown): string | null {
   return trimmed ? trimmed : null;
 }
 
-function readRunnerExecutionEndpointId(
-  agent: Pick<AgentRecord, 'default_endpoint_id'>,
-): string | null {
-  return readNonEmptyString(agent.default_endpoint_id);
-}
-
 function resolveStreamingDispatchScope(executionContext?: Record<string, unknown>): DispatchScope {
   return executionContext?.runner_session_scope === 'agent_presence'
     ? 'session_preferred_agent_fallback'
@@ -429,13 +419,6 @@ export class AgentExecutionService {
           payload: {
             protocol_version: '1.0',
             heartbeat_interval_sec: this.options.heartbeatIntervalMs / 1000,
-            ...(socketState.resourceProxyBaseUrl
-              ? {
-                resource_proxy: {
-                  base_url: socketState.resourceProxyBaseUrl,
-                },
-              }
-              : {}),
           },
         }),
       );
@@ -497,16 +480,6 @@ export class AgentExecutionService {
         return;
       }
       debugExecution(`accept agent_id=${agentId} ws=${keyRecord.workspace_id} proj=${keyRecord.project_id}`);
-      const executionEndpointId = readRunnerExecutionEndpointId(agent);
-      const configuredApiBase = executionEndpointId ? resolveConfiguredPublicApiBase() : null;
-      const executionApiBase = executionEndpointId && configuredApiBase
-        ? resolveExecutionApiBase(configuredApiBase, agent)
-        : null;
-      const resourceProxyBaseUrl = executionEndpointId && executionApiBase
-        ? `${executionApiBase}/workspaces/${encodeURIComponent(keyRecord.workspace_id)}`
-          + `/projects/${encodeURIComponent(keyRecord.project_id)}`
-          + `/endpoints/${encodeURIComponent(executionEndpointId)}/proxy/openai`
-        : undefined;
 
       const socketKey = buildSocketKey(agentId, sessionId);
       const existing = this.socketsByKey.get(socketKey);
@@ -528,7 +501,6 @@ export class AgentExecutionService {
           authKeyId: keyRecord.id,
           ...(keyRecord.expires_at ? { authKeyExpiresAt: keyRecord.expires_at } : {}),
           connectedAt: now,
-          ...(resourceProxyBaseUrl ? { resourceProxyBaseUrl } : {}),
           pendingByRequestId: new Map(),
           terminalBySessionId: new Map(),
           lastPongAt: now,

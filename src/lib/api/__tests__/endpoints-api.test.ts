@@ -1,6 +1,7 @@
 import { describe, it, expect, vi } from 'vitest';
 import type { ApiClient } from '@/lib/api/client';
 import { EndpointAPI } from '@/lib/api/endpoints/endpoints';
+import { queryKeys } from '@/lib/query-keys';
 
 describe('EndpointAPI', () => {
   it('imports endpoint bundle payload', async () => {
@@ -93,5 +94,87 @@ describe('EndpointAPI', () => {
       '/workspaces/ws_1/projects/proj_1/endpoints/ep_1/videos/generations/job_1/cancel',
       {},
     );
+  });
+
+  it('reads and updates the narrow Agent task model setting resource', async () => {
+    const mockGet = vi.fn().mockResolvedValue({
+      readiness: {
+        state: 'ready',
+        display_summary: 'Agent tasks are ready to run.',
+      },
+      setting: {
+        workspace_id: 'ws_1',
+        project_id: 'proj_1',
+        endpoint_id: 'ep_1',
+        endpoint_display_name: 'OpenAI production',
+        default_model: 'gpt-5.5',
+        setting_revision: 'set_7',
+        updated_at: '2026-05-07T00:00:00.000Z',
+        updated_by_user_id: 'user_1',
+      },
+      actions: {
+        update: {
+          operation: 'update',
+          visible: true,
+          allowed: true,
+          required_permissions: ['project:governance:update'],
+          danger_level: 'none',
+        },
+      },
+    });
+    const mockPatch = vi.fn().mockResolvedValue({
+      readiness: {
+        state: 'ready',
+        display_summary: 'Agent tasks are ready to run.',
+      },
+    });
+    const client: ApiClient = {
+      setToken: () => undefined,
+      getToken: () => null,
+      clearToken: () => undefined,
+      get: mockGet,
+      getBlob: vi.fn(),
+      postMultipart: vi.fn(),
+      post: vi.fn(),
+      put: vi.fn(),
+      patch: mockPatch,
+      delete: vi.fn(),
+      connectSSE: () => Promise.resolve(new EventSource('http://localhost')),
+    };
+    const api = new EndpointAPI(client);
+
+    await api.getAgentTaskModelSetting('ws_1', 'proj_1');
+    await api.updateAgentTaskModelSetting('ws_1', 'proj_1', {
+      endpoint_id: 'ep_2',
+      expected_setting_revision: 'set_7',
+    });
+    await api.updateAgentTaskModelSetting('ws_1', 'proj_1', {
+      endpoint_id: 'ep_1',
+      expected_setting_revision: null,
+    });
+
+    expect(mockGet).toHaveBeenCalledWith(
+      '/workspaces/ws_1/projects/proj_1/agent-task-model-setting',
+    );
+    expect(mockPatch).toHaveBeenCalledWith(
+      '/workspaces/ws_1/projects/proj_1/agent-task-model-setting',
+      {
+        endpoint_id: 'ep_2',
+        expected_setting_revision: 'set_7',
+      },
+    );
+    expect(mockPatch).toHaveBeenLastCalledWith(
+      '/workspaces/ws_1/projects/proj_1/agent-task-model-setting',
+      {
+        endpoint_id: 'ep_1',
+        expected_setting_revision: null,
+      },
+    );
+    expect(queryKeys.endpoints.agentTaskModelSetting('ws_1', 'proj_1')).toEqual([
+      'endpoints',
+      'agent-task-model-setting',
+      'ws_1',
+      'proj_1',
+    ]);
   });
 });

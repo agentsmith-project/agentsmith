@@ -10,6 +10,7 @@ import { getNotebookTaskRunState } from './notebook-task/task-run-coordination.j
 import { notebookTaskMessagesCollection, notebookTasksCollection } from './notebook-task/task-store.js';
 import { listAuditEvents } from './audit-usage-store.js';
 import { resolveWorkspaceScopedCollection } from './workspace-tenant-collections.js';
+import { AgentTaskModelSettingService } from './agent-task-model-setting-service.js';
 
 function createDeferred<T>() {
   let resolve!: (value: T | PromiseLike<T>) => void;
@@ -101,11 +102,16 @@ describe('handleAgentRoute Agent Runner target contract', () => {
     projectId: string,
     name = 'runner-test endpoint',
   ) {
+    const credential = await deps.endpointResourceService.createCredential('ws_default', projectId, {
+      name: `${name}-key`,
+      value: 'sk-runner-test',
+    });
     return deps.endpointResourceService.createEndpoint('ws_default', projectId, {
       name,
       model: 'gpt-5-codex',
       type: 'custom',
       base_url: 'https://example.com/v1',
+      credential_ref: credential.id,
       status: 'active',
       upstream_protocol: 'openai_responses',
       model_profile: {
@@ -119,6 +125,20 @@ describe('handleAgentRoute Agent Runner target contract', () => {
         cache_read_discount_ratio: 0,
         cache_write_discount_ratio: 0,
       },
+    });
+  }
+
+  async function seedAgentTaskModelSetting(
+    deps: ReturnType<typeof createDefaultNodeApiDeps>,
+    projectId: string,
+    endpointId: string,
+  ): Promise<void> {
+    await new AgentTaskModelSettingService(deps).patchSetting({
+      workspaceId: 'ws_default',
+      projectId,
+      endpointId,
+      expectedSettingRevision: null,
+      actorUserId: 'user_test',
     });
   }
 
@@ -1326,6 +1346,7 @@ describe('handleAgentRoute Agent Runner target contract', () => {
         default_endpoint_id: defaultEndpoint.id,
         capabilities: { task_execution: true, artifacts: true },
       });
+      await seedAgentTaskModelSetting(deps, projectId, defaultEndpoint.id);
       const { runner } = await createConnectedDeveloperRunner(deps, projectId);
       const streamGate = createDeferred<void>();
       deps.agentExecutionService.dispatchStreamingRequest = vi.fn(async () => ({
@@ -1721,7 +1742,8 @@ describe('handleAgentRoute Agent Runner target contract', () => {
       'project:agent_task:use',
     ]);
     try {
-      const { runner } = await createConnectedDeveloperRunner(deps, projectId);
+      const { endpoint, runner } = await createConnectedDeveloperRunner(deps, projectId);
+      await seedAgentTaskModelSetting(deps, projectId, endpoint.id);
       deps.agentExecutionService.dispatchStreamingRequest = vi.fn(async () => ({
         requestId: 'req_runner_test_redacted',
         cancel: vi.fn(),

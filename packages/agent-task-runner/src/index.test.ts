@@ -381,14 +381,18 @@ describe('agent-task-runner entry lifecycle', () => {
     }
   }
 
-  function serverHello(): Buffer {
+  function serverHello(resourceProxyBase: string | null = null): Buffer {
     return Buffer.from(JSON.stringify({
       type: 'server.hello',
       timestamp: new Date().toISOString(),
       payload: {
-        resource_proxy: {
-          base_url: 'http://127.0.0.1:20000/api/v1',
-        },
+        ...(resourceProxyBase
+          ? {
+            resource_proxy: {
+              base_url: resourceProxyBase,
+            },
+          }
+          : {}),
       },
     }));
   }
@@ -396,7 +400,9 @@ describe('agent-task-runner entry lifecycle', () => {
   function serverRequestStart(
     requestId: string,
     executionContextOverrides: Record<string, unknown> = {},
+    options: { includeResourceProxy?: boolean } = {},
   ): Buffer {
+    const includeResourceProxy = options.includeResourceProxy !== false;
     return Buffer.from(JSON.stringify({
       type: 'server.request.start',
       request_id: requestId,
@@ -413,6 +419,13 @@ describe('agent-task-runner entry lifecycle', () => {
           username: 'alice',
           api_base: 'http://127.0.0.1:20000/api/v1',
           execution_ticket: 'ticket_1',
+          ...(includeResourceProxy
+            ? {
+              resource_proxy: {
+                base_url: 'http://127.0.0.1:20000/api/v1/workspaces/ws_1/projects/proj_1/endpoints/ep_request/proxy/openai',
+              },
+            }
+            : {}),
           ...executionContextOverrides,
         },
       },
@@ -453,6 +466,83 @@ describe('agent-task-runner entry lifecycle', () => {
     });
     return child;
   }
+
+  it('uses request-scoped resource proxy when server.hello has no proxy', async () => {
+    await import('./index.js');
+    const socket = websocketInstances.at(-1);
+    if (!socket) {
+      throw new Error('websocket_instance_missing');
+    }
+
+    socket.emit('open');
+    const child = createCodexChild();
+    spawnMock.mockReturnValueOnce(child);
+    socket.emit('message', serverHello(null));
+    socket.emit('message', serverRequestStart('req_request_proxy_no_hello', {
+      resource_proxy: {
+        base_url: 'http://fresh.example/api/v1/workspaces/ws_1/projects/proj_1/endpoints/ep_fresh/proxy/openai',
+      },
+    }));
+
+    await vi.waitFor(() => {
+      expect(buildTaskCodexConfigMock).toHaveBeenCalledWith(expect.objectContaining({
+        endpointProxyBase: 'http://fresh.example/api/v1/workspaces/ws_1/projects/proj_1/endpoints/ep_fresh/proxy/openai',
+      }));
+      expect(buildCodexExecArgsMock).toHaveBeenCalledWith(expect.objectContaining({
+        endpointProxyBase: 'http://fresh.example/api/v1/workspaces/ws_1/projects/proj_1/endpoints/ep_fresh/proxy/openai',
+      }));
+    });
+    closeCodexChild(child, 0);
+  });
+
+  it('prefers fresh request resource proxy over stale server.hello proxy', async () => {
+    await import('./index.js');
+    const socket = websocketInstances.at(-1);
+    if (!socket) {
+      throw new Error('websocket_instance_missing');
+    }
+
+    socket.emit('open');
+    const child = createCodexChild();
+    spawnMock.mockReturnValueOnce(child);
+    socket.emit('message', serverHello('http://stale.example/api/v1/workspaces/ws_1/projects/proj_1/endpoints/ep_stale/proxy/openai'));
+    socket.emit('message', serverRequestStart('req_request_proxy_over_stale_hello', {
+      resource_proxy: {
+        base_url: 'http://fresh.example/api/v1/workspaces/ws_1/projects/proj_1/endpoints/ep_fresh/proxy/openai',
+      },
+    }));
+
+    await vi.waitFor(() => {
+      expect(buildTaskCodexConfigMock).toHaveBeenCalledWith(expect.objectContaining({
+        endpointProxyBase: 'http://fresh.example/api/v1/workspaces/ws_1/projects/proj_1/endpoints/ep_fresh/proxy/openai',
+      }));
+    });
+    closeCodexChild(child, 0);
+  });
+
+  it('fails fast when request resource proxy is missing even if server.hello has a stale proxy', async () => {
+    await import('./index.js');
+    const socket = websocketInstances.at(-1);
+    if (!socket) {
+      throw new Error('websocket_instance_missing');
+    }
+
+    socket.emit('open');
+    socket.emit('message', serverHello('http://stale.example/api/v1/workspaces/ws_1/projects/proj_1/endpoints/ep_stale/proxy/openai'));
+    socket.emit('message', serverRequestStart('req_missing_request_proxy', {}, { includeResourceProxy: false }));
+
+    await vi.waitFor(() => {
+      const frames = readSentFrames(socket);
+      expect(frames.some((frame) => (
+        frame.type === 'agent.response.error'
+        && frame.request_id === 'req_missing_request_proxy'
+        && typeof frame.payload === 'object'
+        && frame.payload !== null
+        && (frame.payload as { error_message?: unknown }).error_message === 'resource_proxy_base_missing'
+      ))).toBe(true);
+    });
+    expect(spawnMock).not.toHaveBeenCalled();
+  });
 
   async function waitForCodexStdoutListener(child: MockCodexChild): Promise<void> {
     await vi.waitFor(() => {

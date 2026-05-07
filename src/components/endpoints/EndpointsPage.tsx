@@ -12,6 +12,7 @@ import { useTranslations } from 'next-intl';
 import { useMutation } from '@tanstack/react-query';
 import { APIError, resolveApiErrorPresentation } from '@/lib/api/errors';
 import type { Endpoint } from '@/lib/api/types';
+import { useAgentTaskModelSetting } from '@/lib/agent-task-model-setting';
 import { PageLayout } from '@/components/layout/PageLayout';
 import { PageHeader } from '@/components/layout/PageHeader';
 import { PageState } from '@/components/layout/PageState';
@@ -27,6 +28,7 @@ import { EndpointsContent } from '@/components/endpoints/endpoints-page/Endpoint
 import { EndpointsDialogs } from '@/components/endpoints/endpoints-page/EndpointsDialogs';
 import { EndpointsHeaderActions } from '@/components/endpoints/endpoints-page/EndpointsHeaderActions';
 import { EndpointsToolbar } from '@/components/endpoints/endpoints-page/EndpointsToolbar';
+import { AgentTaskModelSummary } from '@/components/endpoints/endpoints-page/AgentTaskModelSummary';
 import {
   buildEndpointsBasePath,
   buildEndpointsExportPayload,
@@ -46,6 +48,7 @@ export function EndpointsPageView({ params }: EndpointsPageProps) {
   const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
   const [endpointToDelete, setEndpointToDelete] = useState<Endpoint | null>(null);
   const [importDialogOpen, setImportDialogOpen] = useState(false);
+  const [setupNextStepRequested, setSetupNextStepRequested] = useState(false);
   const [importPayloadText, setImportPayloadText] = useState(
     '{\n  "completion": {\n    "model": "deepseek-chat",\n    "api_base": "https://api.deepseek.com",\n    "api_key": "YOUR_API_KEY"\n  }\n}',
   );
@@ -62,6 +65,11 @@ export function EndpointsPageView({ params }: EndpointsPageProps) {
     projectId,
     canReadEndpoints,
   });
+  const agentTaskModelSetting = useAgentTaskModelSetting({
+    workspaceId,
+    projectId,
+    enabled: canReadEndpoints,
+  });
   const activeCount = endpoints.filter((endpoint) => endpoint.status === 'active').length;
   const disabledCount = endpoints.filter((endpoint) => endpoint.status === 'disabled').length;
 
@@ -71,6 +79,8 @@ export function EndpointsPageView({ params }: EndpointsPageProps) {
     onImportSuccess: () => {
       toast.success(t('import_success'));
       setImportDialogOpen(false);
+      setSetupNextStepRequested(true);
+      void agentTaskModelSetting.settingQuery.refetch();
     },
     onImportError: (error) => {
       const message = error instanceof APIError
@@ -151,6 +161,42 @@ export function EndpointsPageView({ params }: EndpointsPageProps) {
     importBulkMutation.mutate(parsed as EndpointBulkImportPayload);
   };
 
+  const handleEndpointSurfaceRefresh = () => {
+    invalidateEndpoints();
+    setSetupNextStepRequested(true);
+    void agentTaskModelSetting.settingQuery.refetch();
+  };
+
+  const handleUseForAgentTasks = (endpoint: Endpoint) => {
+    const action = endpoint.actions?.use_for_agent_tasks;
+    if (action?.visible !== true || action.allowed !== true) return;
+    agentTaskModelSetting.updateSettingMutation.mutate(
+      {
+        endpointId: endpoint.id,
+        expectedSettingRevision: agentTaskModelSetting.settingQuery.data?.setting?.setting_revision ?? null,
+      },
+      {
+        onSuccess: () => {
+          toast.success(t('agent_task_model.update_success'));
+          setSetupNextStepRequested(false);
+        },
+        onError: (error: unknown) => {
+          const message = error instanceof APIError
+            ? (() => {
+                const resolved = resolveApiErrorPresentation({
+                  error,
+                  t: tErrors,
+                  fallbackMessage: t('agent_task_model.update_failed'),
+                });
+                return `${resolved.title}: ${resolved.description}`;
+              })()
+            : t('agent_task_model.update_failed');
+          toast.error(message);
+        },
+      },
+    );
+  };
+
   const endpointColumns = useEndpointsTableColumns({
     t,
     deleteEndpointMutation,
@@ -161,6 +207,8 @@ export function EndpointsPageView({ params }: EndpointsPageProps) {
       setEditDialogOpen(true);
     },
     onDeleteRequest: handleDeleteRequest,
+    onUseForAgentTasks: handleUseForAgentTasks,
+    useForAgentTasksPending: agentTaskModelSetting.updateSettingMutation.isPending,
   });
 
   const table = useReactTable({
@@ -231,6 +279,17 @@ export function EndpointsPageView({ params }: EndpointsPageProps) {
         )}
       >
         <div className="w-full space-y-4">
+          <AgentTaskModelSummary
+            settingResponse={agentTaskModelSetting.settingQuery.data}
+            isLoading={agentTaskModelSetting.settingQuery.isLoading}
+            showSetupNextStep={
+              setupNextStepRequested
+              && agentTaskModelSetting.settingQuery.data?.actions?.update?.visible === true
+              && endpoints.some((endpoint) => endpoint.actions?.use_for_agent_tasks?.visible === true)
+              && agentTaskModelSetting.settingQuery.data?.readiness.state !== 'ready'
+            }
+            t={t}
+          />
           <EndpointsContent
             canManageEndpoints={canManageEndpoints}
             endpoints={endpoints}
@@ -260,7 +319,7 @@ export function EndpointsPageView({ params }: EndpointsPageProps) {
           onImport={handleImport}
           onImportDialogOpenChange={setImportDialogOpen}
           onImportPayloadTextChange={setImportPayloadText}
-          onInvalidateEndpoints={invalidateEndpoints}
+          onInvalidateEndpoints={handleEndpointSurfaceRefresh}
           onResetDeleteTarget={() => {
             setDeleteConfirmOpen(false);
             setEndpointToDelete(null);

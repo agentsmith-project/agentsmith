@@ -113,6 +113,7 @@ vi.mock('next-intl', () => ({
         test_connection_result_connected: 'Connection check passed',
         test_connection_result_disconnected: 'Connection unavailable',
         run_test_task_unavailable: 'Runner test task is not available yet.',
+        run_test_task_model_setup_blocked: 'Project model setup blocks test tasks.',
         run_test_task_result_accepted: 'Runner test task accepted',
         runner_test_badge: 'runner_test',
         runner_test_source_label: 'Source',
@@ -378,6 +379,32 @@ describe('AgentRunnerKeysDialog', () => {
       expect(screen.getByText(/connection check passed/i)).toBeInTheDocument();
       expect(screen.queryByText(/connection passed/i)).not.toBeInTheDocument();
       expect(screen.getByRole('button', { name: /run test task/i })).toBeEnabled();
+    });
+
+    it('shows model-setting blockers for Developer test tasks without turning them into connection failures', async () => {
+      render(
+        <AgentRunnerKeysDialog
+          {...defaultProps}
+          actions={runnerActions({
+            run_test_task: action('run_test_task', true, false, 'agent_task_model_setting_missing'),
+          })}
+        />,
+        { wrapper: createWrapper() },
+      );
+
+      await waitFor(() => {
+        expect(screen.getByRole('button', { name: /test connection/i })).toBeEnabled();
+      });
+
+      await user.click(screen.getByRole('button', { name: /test connection/i }));
+
+      await waitFor(() => {
+        expect(screen.getByText(/connection check passed/i)).toBeInTheDocument();
+      });
+      expect(screen.getByRole('button', { name: /run test task/i })).toBeDisabled();
+      expect(screen.getByText('Project model setup blocks test tasks.')).toBeInTheDocument();
+      expect(screen.queryByText(/connection check failed/i)).not.toBeInTheDocument();
+      expect(screen.getByTestId('agent-runners__sheet-state')).not.toHaveAttribute('data-state', 'test_connection_failed');
     });
 
     it('shows accepted runner_test task evidence as safe labeled UI instead of a raw status string', async () => {

@@ -49,6 +49,12 @@ const mockList = vi.fn().mockResolvedValue(listResponse());
 const mockUpdate = vi.fn().mockResolvedValue({});
 const mockDelete = vi.fn().mockResolvedValue({});
 const mockDiagnostics = vi.fn().mockResolvedValue(null);
+const mockGetAgentTaskModelSetting = vi.fn().mockResolvedValue({
+  readiness: {
+    state: 'ready',
+    display_summary: 'Agent tasks are ready to run.',
+  },
+});
 const mockCreateDialog = vi.fn((props: { open?: boolean }) => (
   props.open ? <div data-testid="agent-runners__create-dialog" /> : null
 ));
@@ -62,6 +68,11 @@ vi.mock('@/lib/api', () => ({
       update: mockUpdate,
       delete: mockDelete,
       getDiagnostics: mockDiagnostics,
+    };
+  }),
+  EndpointAPI: vi.fn().mockImplementation(function () {
+    return {
+      getAgentTaskModelSetting: mockGetAgentTaskModelSetting,
     };
   }),
 }));
@@ -82,6 +93,9 @@ vi.mock('next-intl', () => ({
       'agent_runners.source_label': 'Source',
       'agent_runners.readiness': 'Readiness',
       'agent_runners.detail_close': 'Close details',
+      'agent_runners.project_model_setup_title': 'Project model setup',
+      'agent_runners.project_model_setup_ready': 'Ready for Agent tasks',
+      'agent_runners.project_model_setup_blocked': 'Agent task model setup blocks task execution',
     };
     const scopedKey = namespace ? `${namespace}.${key}` : key;
     const template = translations[scopedKey] ?? key;
@@ -418,6 +432,72 @@ describe('AgentRunnersPage', () => {
     expect(defaultStatus).toHaveTextContent('default_status_ready');
     expect(defaultStatus).not.toHaveTextContent('default_status_no_runner');
     expect(defaultStatus).not.toHaveTextContent('default_status_issue_not_configured');
+  });
+
+  it('shows project model setup readiness separately from runner connection readiness', async () => {
+    mockUseSearchParams.mockReturnValue(mockReadonlySearchParams());
+    mockUseAgentRunnerPageCapabilities.mockReturnValue({
+      canRead: true,
+      canCreate: true,
+      canUpdate: true,
+      canDelete: true,
+      canRunDiagnostics: true,
+      canManage: true,
+    });
+    mockGetAgentTaskModelSetting.mockResolvedValueOnce({
+      readiness: {
+        state: 'blocked',
+        display_summary: 'Agent tasks are blocked by model setup.',
+        reason_code: 'agent_task_model_setting_missing',
+      },
+      actions: {
+        update: {
+          operation: 'update',
+          visible: true,
+          allowed: true,
+          required_permissions: ['project:governance:update'],
+          danger_level: 'none',
+        },
+      },
+    });
+    mockList.mockResolvedValueOnce(listResponse([
+        buildRunner({
+          id: 'sys_model_ready_connection',
+          name: 'Connected Managed Runner',
+          kind: 'system_managed',
+          source: 'system',
+          read_only: true,
+          is_default: true,
+          status: 'ready',
+          diagnostics: { presence: 'managed' },
+          actions: runnerActions({
+            view_diagnostics: action('view_diagnostics', true, true),
+          }),
+        }),
+      ]));
+
+    render(
+      <AgentRunnersPage
+        params={Promise.resolve({
+          workspace: 'ws_1',
+          project: 'proj_1',
+          locale: 'en',
+        })}
+      />,
+      { wrapper: createWrapper() }
+    );
+
+    const defaultStatus = await screen.findByTestId('agent-runners__project-default-status');
+    await waitFor(() => {
+      expect(defaultStatus).toHaveTextContent('Connected Managed Runner');
+      expect(defaultStatus).toHaveTextContent('default_status_ready');
+    });
+
+    const modelSetup = await screen.findByTestId('agent-runners__project-model-setup-status');
+    expect(modelSetup).toHaveTextContent('Project model setup');
+    expect(modelSetup).toHaveTextContent('Agent tasks are blocked by model setup.');
+    expect(modelSetup).toHaveTextContent('Agent task model setup blocks task execution');
+    expect(defaultStatus).not.toHaveTextContent('Agent tasks are blocked by model setup.');
   });
 
   it('expands runner details inline on row click without rendering a bottom details card', async () => {

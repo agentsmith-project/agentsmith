@@ -74,6 +74,10 @@ json_get() {
   node -e 'let s="";process.stdin.on("data",d=>s+=d);process.stdin.on("end",()=>{const j=JSON.parse(s); let v=j; for(const p of process.argv[1].split(".")){ if(!p) continue; v=v?.[p]; } if(v==null){ process.exit(2);} process.stdout.write(String(v)); })' "$1"
 }
 
+json_get_optional() {
+  node -e 'let s="";process.stdin.on("data",d=>s+=d);process.stdin.on("end",()=>{const j=JSON.parse(s); let v=j; for(const p of process.argv[1].split(".")){ if(!p) continue; v=v?.[p]; } if(v==null){ process.exit(0);} process.stdout.write(String(v)); })' "$1"
+}
+
 api_curl() {
   curl -sS "$@"
 }
@@ -133,14 +137,21 @@ seed_resp="$(
   npx tsx scripts/agent-runner-seed-managed-runner.ts
 )"
 AGENT_RUNNER_ID="$(printf '%s' "${seed_resp}" | json_get agent_runner_id)"
-AGENT_RUNNER_DEFAULT_ENDPOINT_ID="$(printf '%s' "${seed_resp}" | json_get default_endpoint_id)"
+AGENT_RUNNER_DEFAULT_ENDPOINT_ID="$(printf '%s' "${seed_resp}" | json_get_optional default_endpoint_id)"
+AGENT_TASK_MODEL_SETTING_ENDPOINT_ID="$(printf '%s' "${seed_resp}" | json_get agent_task_model_setting.endpoint_id)"
+AGENT_TASK_MODEL_SETTING_DEFAULT_MODEL="$(printf '%s' "${seed_resp}" | json_get agent_task_model_setting.default_model_id)"
+AGENT_TASK_MODEL_SETTING_REVISION="$(printf '%s' "${seed_resp}" | json_get agent_task_model_setting.setting_revision)"
 WS_URL="$(printf '%s' "${seed_resp}" | json_get ws_url)"
 state_set_string agent_runner.id "${AGENT_RUNNER_ID}"
 state_set_string agent_runner.name "${AGENT_RUNNER_NAME}"
 state_set_string agent_runner.default_endpoint_id "${AGENT_RUNNER_DEFAULT_ENDPOINT_ID}"
 state_set_string agent_runner.managed true
 state_set_string agent_runner.ws_url "${WS_URL}"
+state_set_string agent_task_model_setting.endpoint_id "${AGENT_TASK_MODEL_SETTING_ENDPOINT_ID}"
+state_set_string agent_task_model_setting.default_model "${AGENT_TASK_MODEL_SETTING_DEFAULT_MODEL}"
+state_set_string agent_task_model_setting.revision "${AGENT_TASK_MODEL_SETTING_REVISION}"
 echo "[init] agent_runner_id=${AGENT_RUNNER_ID}"
+echo "[init] agent_task_model_setting_endpoint_id=${AGENT_TASK_MODEL_SETTING_ENDPOINT_ID}"
 echo "[init] managed runner state written to $(backend_real_state_file)"
 echo "[init] ws_url=${WS_URL}"
 
@@ -154,6 +165,9 @@ CREDENTIAL_ID=${CRED_ID}
 ENDPOINT_ID=${ENDPOINT_ID}
 AGENT_RUNNER_ID=${AGENT_RUNNER_ID}
 AGENT_RUNNER_DEFAULT_ENDPOINT_ID=${AGENT_RUNNER_DEFAULT_ENDPOINT_ID}
+AGENT_TASK_MODEL_SETTING_ENDPOINT_ID=${AGENT_TASK_MODEL_SETTING_ENDPOINT_ID}
+AGENT_TASK_MODEL_SETTING_DEFAULT_MODEL=${AGENT_TASK_MODEL_SETTING_DEFAULT_MODEL}
+AGENT_TASK_MODEL_SETTING_REVISION=${AGENT_TASK_MODEL_SETTING_REVISION}
 WS_URL=${WS_URL}
 PRESET_ANTHROPIC_ENDPOINT_BASE_URL=${PRESET_ANTHROPIC_ENDPOINT_BASE_URL}
 PRESET_ENDPOINT_MODEL=${PRESET_ENDPOINT_MODEL}

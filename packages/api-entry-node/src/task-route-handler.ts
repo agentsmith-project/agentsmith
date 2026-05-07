@@ -3,7 +3,15 @@ import { assertTaskExecutionContext } from '@mbos/agent-runner';
 import type { AuthenticatedUser } from './auth.js';
 import type { RunnerSessionDispatchAuthority } from './agent-execution-service.js';
 import type { NodeApiDeps } from './node-api-deps.js';
-import type { AgentRecord, EndpointRecord } from './resource-models.js';
+import type { AgentRecord } from './resource-models.js';
+import {
+  AgentTaskModelResolutionError,
+  AgentTaskModelSettingService,
+  type AgentTaskModelResolutionErrorCode,
+  type AgentTaskModelResolvedTarget,
+  type AgentTaskModelSnapshot,
+  resolveAgentTaskModelTarget,
+} from './agent-task-model-setting-service.js';
 import { buildAttachmentContentDisposition } from './http-utils.js';
 import {
   observeNotebookTraceQueryLatency,
@@ -40,7 +48,6 @@ import {
 } from './agent-execution-api-base.js';
 import { buildNotebookTaskInputs, type NotebookTaskInputRefRecord } from './notebook-input-refs.js';
 import { writeProjectAuditEvent } from './audit-usage-recorders.js';
-import { enforceEndpointGovernancePreflight } from './governance-endpoint-preflight.js';
 import {
   evaluateProjectPermissions,
   evaluateResourcePolicyAuthorization,
@@ -181,7 +188,6 @@ type AgentRunnerResolutionResult =
   | {
       ok: true;
       runner: AgentRecord;
-      endpoint: EndpointRecord;
     }
   | {
       ok: false;
@@ -199,6 +205,7 @@ type TaskRunnerBindingResult = Extract<AgentRunnerResolutionResult, { ok: true }
 
 type TerminalRunnerResolutionErrorCode =
   | AgentRunnerResolutionErrorCode
+  | AgentTaskModelResolutionErrorCode
   | 'agent_runner_not_resolved'
   | 'terminal_runner_unavailable';
 
@@ -217,6 +224,8 @@ type TerminalRunnerResolutionResult =
   | {
       ok: true;
       runner: AgentRecord;
+      agentTaskModelTarget?: AgentTaskModelResolvedTarget;
+      agentTaskModelSnapshot?: AgentTaskModelSnapshot;
       intent: TerminalRunnerResolutionIntent;
       auditResolution: AgentRunnerResolutionResult | null;
     }
@@ -371,28 +380,6 @@ function readAgentRunnerStatus(agent: AgentRecord): 'draft' | 'connected' | 'rea
   if (agent.status !== 'enabled') return 'offline';
   if (agent.presence === 'managed' || agent.presence === 'online') return 'ready';
   return 'offline';
-}
-
-function readRunnerDefaultEndpointId(agent: AgentRecord): string {
-  return agent.default_endpoint_id?.trim() ?? '';
-}
-
-function readRunnerExecutionPreferenceEndpointId(agent: AgentRecord): string {
-  const preferences = agent.execution_preferences_json;
-  const namespaces = ['agent_task', 'task', 'notebook'];
-  for (const namespace of namespaces) {
-    const value = preferences?.[namespace];
-    if (!value || typeof value !== 'object' || Array.isArray(value)) continue;
-    const endpointId = (value as Record<string, unknown>).endpoint_id;
-    if (typeof endpointId === 'string' && endpointId.trim()) {
-      return endpointId.trim();
-    }
-  }
-  return '';
-}
-
-function readRunnerTaskEndpointId(agent: AgentRecord): string {
-  return readRunnerExecutionPreferenceEndpointId(agent) || readRunnerDefaultEndpointId(agent);
 }
 
 function runnerSupportsTaskRun(
@@ -616,43 +603,6 @@ async function validateAgentRunnerForBindingOption(args: {
     };
   }
 
-  const endpointId = readRunnerTaskEndpointId(args.runner);
-  if (!endpointId) {
-    return {
-      allowed: false,
-      reasonCode: 'agent_runner_model_unconfigured',
-      ...buildRunnerBindingValidationSummaries('agent_runner_model_unconfigured', freshness),
-    };
-  }
-  const endpoint = await args.deps.endpointResourceService.getEndpoint(args.workspaceId, args.projectId, endpointId);
-  if (!endpoint || endpoint.status !== 'active' || !endpoint.model?.trim()) {
-    return {
-      allowed: false,
-      reasonCode: 'agent_runner_model_unconfigured',
-      ...buildRunnerBindingValidationSummaries('agent_runner_model_unconfigured', freshness),
-    };
-  }
-  const preflight = await enforceEndpointGovernancePreflight({
-    deps: args.deps,
-    workspaceId: args.workspaceId,
-    projectId: args.projectId,
-    endpoint,
-    userId: args.user.id,
-    requestId: args.requestId,
-    source: 'agent_runner_binding_options',
-    contextMetadata: {
-      task_id: args.task.id,
-      runner_id: args.runner.id,
-    },
-    recordAccessDeniedEvidence: false,
-  });
-  if (!preflight.allowed) {
-    return {
-      allowed: false,
-      reasonCode: 'agent_runner_model_unconfigured',
-      ...buildRunnerBindingValidationSummaries('agent_runner_model_unconfigured', freshness),
-    };
-  }
   if (!runnerSupportsTaskRun(args.runner, args.task, args.requestedInputs)) {
     return {
       allowed: false,
@@ -711,47 +661,6 @@ async function validateResolvedAgentRunnerForTask(args: {
     };
   }
 
-  const endpointId = readRunnerTaskEndpointId(args.runner);
-  if (!endpointId) {
-    return {
-      ok: false,
-      code: 'agent_runner_model_unconfigured',
-      metadata: { runner_id: args.runner.id },
-    };
-  }
-  const endpoint = await args.deps.endpointResourceService.getEndpoint(args.workspaceId, args.projectId, endpointId);
-  if (!endpoint || endpoint.status !== 'active' || !endpoint.model?.trim()) {
-    return {
-      ok: false,
-      code: 'agent_runner_model_unconfigured',
-      metadata: { runner_id: args.runner.id, endpoint_id: endpointId },
-    };
-  }
-  const preflight = await enforceEndpointGovernancePreflight({
-    deps: args.deps,
-    workspaceId: args.workspaceId,
-    projectId: args.projectId,
-    endpoint,
-    userId: args.user.id,
-    requestId: args.requestId,
-    source: args.source,
-    contextMetadata: {
-      task_id: args.task.id,
-      runner_id: args.runner.id,
-    },
-    recordAccessDeniedEvidence: false,
-  });
-  if (!preflight.allowed) {
-    return {
-      ok: false,
-      code: 'agent_runner_model_unconfigured',
-      metadata: {
-        runner_id: args.runner.id,
-        endpoint_id: endpoint.id,
-        reason: 'endpoint_preflight_denied',
-      },
-    };
-  }
   if (!runnerSupportsTaskRun(
     args.runner,
     args.task,
@@ -764,7 +673,7 @@ async function validateResolvedAgentRunnerForTask(args: {
       metadata: { runner_id: args.runner.id },
     };
   }
-  return { ok: true, runner: args.runner, endpoint };
+  return { ok: true, runner: args.runner };
 }
 
 async function resolveDefaultManagedAgentRunnerForTask(args: {
@@ -1146,7 +1055,6 @@ async function writeAgentRunnerResolutionAudit(args: {
     metadata: args.result.ok
       ? {
         runner_id: args.result.runner.id,
-        endpoint_id: args.result.endpoint.id,
       }
       : {
         failure_code: args.result.code,
@@ -1216,9 +1124,41 @@ async function resolveTerminalSessionRunner(args: {
         auditResolution: null,
       };
     }
+    let agentTaskModelTarget: AgentTaskModelResolvedTarget | undefined;
+    let agentTaskModelSnapshot = activeRun.agent_task_model;
+    if (!agentTaskModelSnapshot) {
+      try {
+        agentTaskModelTarget = await resolveAgentTaskModelTarget({
+          deps: args.deps,
+          workspaceId: args.workspaceId,
+          projectId: args.projectId,
+          actorUserId: args.user.id,
+          requestId: args.requestId,
+          source: 'agent_task_terminal_recovery',
+          contextMetadata: {
+            task_id: args.task.id,
+            run_id: activeRun.run_id,
+            runner_id: runner.id,
+          },
+        });
+        agentTaskModelSnapshot = agentTaskModelTarget.snapshot;
+      } catch (error) {
+        if (error instanceof AgentTaskModelResolutionError) {
+          return {
+            ok: false,
+            code: error.code,
+            intent,
+            auditResolution: null,
+          };
+        }
+        throw error;
+      }
+    }
     return {
       ok: true,
       runner,
+      ...(agentTaskModelTarget ? { agentTaskModelTarget } : {}),
+      ...(agentTaskModelSnapshot ? { agentTaskModelSnapshot } : {}),
       intent,
       auditResolution: null,
     };
@@ -1247,12 +1187,38 @@ async function resolveTerminalSessionRunner(args: {
       auditResolution,
     };
   }
-  return {
-    ok: true,
-    runner: auditResolution.runner,
-    intent,
-    auditResolution,
-  };
+  try {
+    const agentTaskModelTarget = await resolveAgentTaskModelTarget({
+      deps: args.deps,
+      workspaceId: args.workspaceId,
+      projectId: args.projectId,
+      actorUserId: args.user.id,
+      requestId: args.requestId,
+      source: 'agent_task_terminal_start',
+      contextMetadata: {
+        task_id: args.task.id,
+        runner_id: auditResolution.runner.id,
+      },
+    });
+    return {
+      ok: true,
+      runner: auditResolution.runner,
+      agentTaskModelTarget,
+      agentTaskModelSnapshot: agentTaskModelTarget.snapshot,
+      intent,
+      auditResolution,
+    };
+  } catch (error) {
+    if (error instanceof AgentTaskModelResolutionError) {
+      return {
+        ok: false,
+        code: error.code,
+        intent,
+        auditResolution,
+      };
+    }
+    throw error;
+  }
 }
 
 function parseNotebookRunStopMode(raw: unknown): NotebookTaskRunStopMode | null {
@@ -1538,6 +1504,7 @@ async function buildTaskTerminalExecutionContext(args: {
   task: TaskRecord;
   user: AuthenticatedUser;
   agent: AgentRecord;
+  agentTaskModelSnapshot?: AgentTaskModelSnapshot;
   publicBaseUrl: string;
 }): Promise<Record<string, unknown>> {
   const taskInputs = await buildNotebookTaskInputs({
@@ -1562,7 +1529,7 @@ async function buildTaskTerminalExecutionContext(args: {
     workspaceId: args.task.workspace_id,
     projectId: args.task.project_id,
       payload: {
-        endpoint_id: 'terminal',
+        endpoint_id: args.agentTaskModelSnapshot?.endpoint_id ?? 'terminal',
         task_id: args.task.id,
         runner_session_id: args.task.id,
         agent_runner_id: args.agent.id,
@@ -1577,6 +1544,14 @@ async function buildTaskTerminalExecutionContext(args: {
     task_id: args.task.id,
     runner_id: args.agent.id,
     username: buildTerminalUsername(args.user),
+    ...(args.agentTaskModelSnapshot
+      ? {
+        endpoint_id: args.agentTaskModelSnapshot.endpoint_id,
+        model: args.agentTaskModelSnapshot.resolved_model,
+        wire_api: args.agentTaskModelSnapshot.upstream_protocol,
+        agent_task_model: args.agentTaskModelSnapshot,
+      }
+      : {}),
     api_base: resolveExecutionApiBase(args.publicBaseUrl, args.agent),
     execution_ticket: executionTicket.ticket,
     runner_session_scope: usesAgentPresenceScopedTaskRunner(args.agent)
@@ -2262,6 +2237,22 @@ export async function handleTaskRoute(args: TaskRouteHandlerArgs): Promise<boole
       });
       return true;
     }
+    const modelReadiness = await new AgentTaskModelSettingService(deps).getReadiness({
+      workspaceId: route.workspaceId,
+      projectId: route.projectId,
+      actorUserId: user.id,
+    });
+    if (modelReadiness.state !== 'ready') {
+      json(res, 409, {
+        error_code: modelReadiness.reason_code ?? 'agent_task_model_setting_missing',
+        message: modelReadiness.reason_code ?? 'agent_task_model_setting_missing',
+        readiness: {
+          state: modelReadiness.state,
+          display_summary: modelReadiness.display_summary,
+        },
+      });
+      return true;
+    }
     task.bound_runner_id = binding.runner.id;
     task.bound_runner_kind = binding.bindingKind;
     task.runner_binding_source = binding.bindingSource;
@@ -2389,6 +2380,7 @@ export async function handleTaskRoute(args: TaskRouteHandlerArgs): Promise<boole
       task,
       user,
       agent,
+      agentTaskModelSnapshot: terminalRunnerResolution.agentTaskModelSnapshot,
       publicBaseUrl: resolveRequiredConfiguredPublicApiBase(),
     });
     let created: Awaited<ReturnType<typeof deps.notebookTerminalService.createSession>>;
@@ -2993,6 +2985,7 @@ export async function handleTaskRoute(args: TaskRouteHandlerArgs): Promise<boole
     const role = 'user' as const;
     let runId: string | null = null;
     let resolvedRunner: Extract<AgentRunnerResolutionResult, { ok: true }> | null = null;
+    let agentTaskModelTarget: AgentTaskModelResolvedTarget | null = null;
     let sharedRunState: NotebookTaskRunState | null = null;
     let runLaunchCommitted = false;
     let localRunTrackingReleased = false;
@@ -3144,11 +3137,36 @@ export async function handleTaskRoute(args: TaskRouteHandlerArgs): Promise<boole
       }
       runId = buildId('run');
       const startedAt = nowIso();
+      try {
+        agentTaskModelTarget = await resolveAgentTaskModelTarget({
+          deps,
+          workspaceId: route.workspaceId,
+          projectId: route.projectId,
+          actorUserId: user.id,
+          requestId: typeof req.headers['x-request-id'] === 'string' ? req.headers['x-request-id'] : null,
+          source: 'agent_task_run_start',
+          contextMetadata: {
+            task_id: route.taskId,
+            run_id: runId,
+            runner_id: resolution.runner.id,
+          },
+        });
+      } catch (error) {
+        if (error instanceof AgentTaskModelResolutionError) {
+          json(res, error.statusCode, {
+            error_code: error.code,
+            message: error.code,
+          });
+          return true;
+        }
+        throw error;
+      }
       sharedRunState = buildNotebookTaskRunState({
         taskId: route.taskId,
         runId,
         runnerId: resolution.runner.id,
         resolvedRunnerId: resolution.runner.id,
+        agentTaskModel: agentTaskModelTarget.snapshot,
         startedAt,
         ownerInstanceId: getNotebookRunOwnerInstanceId(),
       });
@@ -3287,6 +3305,7 @@ export async function handleTaskRoute(args: TaskRouteHandlerArgs): Promise<boole
           task,
           assistantMessage,
           agentId: resolvedRunner.runner.id,
+          agentTaskModelTarget: agentTaskModelTarget ?? undefined,
           user,
           publicBaseUrl: resolveRequiredConfiguredPublicApiBase(),
           buildRunId: () => runId ?? buildId('run'),

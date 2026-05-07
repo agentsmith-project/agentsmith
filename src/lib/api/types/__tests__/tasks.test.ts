@@ -13,19 +13,59 @@ import type {
 
 type ForbiddenCreateTaskSelectors = Extract<
   keyof CreateTaskRequest,
-  'runner_selection' | 'runner_id' | 'agent_id' | 'agent_name' | 'is_default' | 'default_endpoint_id'
+  | 'runner_selection'
+  | 'runner_id'
+  | 'agent_id'
+  | 'agent_name'
+  | 'is_default'
+  | 'endpoint_id'
+  | 'model'
+  | 'default_endpoint_id'
+  | 'execution_preference'
+  | 'execution_preferences'
 >;
 type ForbiddenGeneratedCreateTaskSelectors = Extract<
   keyof components['schemas']['CreateTaskRequest'],
-  'runner_selection' | 'runner_id' | 'agent_id' | 'agent_name' | 'is_default' | 'default_endpoint_id'
+  | 'runner_selection'
+  | 'runner_id'
+  | 'agent_id'
+  | 'agent_name'
+  | 'is_default'
+  | 'endpoint_id'
+  | 'model'
+  | 'default_endpoint_id'
+  | 'execution_preference'
+  | 'execution_preferences'
 >;
 type ForbiddenStartTaskRunRunnerFields = Extract<
   keyof StartTaskRunRequest,
-  'runner_selection' | 'bound_runner_id' | 'runner_id' | 'agent_runner_id' | 'agent_id' | 'agent_name' | 'is_default' | 'default_endpoint_id'
+  | 'runner_selection'
+  | 'bound_runner_id'
+  | 'runner_id'
+  | 'agent_runner_id'
+  | 'agent_id'
+  | 'agent_name'
+  | 'is_default'
+  | 'endpoint_id'
+  | 'model'
+  | 'default_endpoint_id'
+  | 'execution_preference'
+  | 'execution_preferences'
 >;
 type ForbiddenGeneratedStartTaskRunRunnerFields = Extract<
   keyof components['schemas']['StartTaskRunRequest'],
-  'runner_selection' | 'bound_runner_id' | 'runner_id' | 'agent_runner_id' | 'agent_id' | 'agent_name' | 'is_default' | 'default_endpoint_id'
+  | 'runner_selection'
+  | 'bound_runner_id'
+  | 'runner_id'
+  | 'agent_runner_id'
+  | 'agent_id'
+  | 'agent_name'
+  | 'is_default'
+  | 'endpoint_id'
+  | 'model'
+  | 'default_endpoint_id'
+  | 'execution_preference'
+  | 'execution_preferences'
 >;
 type ForbiddenBindingOptionSecrets = Extract<
   keyof TaskRunnerBindingOptionsResponse['options'][number],
@@ -113,6 +153,18 @@ describe('Agent Task bound runner contracts', () => {
     expect(
       jsonSource.components?.schemas?.StartTaskRunRequest?.properties,
     ).not.toHaveProperty('runner_selection');
+    expect(
+      jsonSource.components?.schemas?.CreateTaskRequest?.properties,
+    ).not.toHaveProperty('endpoint_id');
+    expect(
+      jsonSource.components?.schemas?.CreateTaskRequest?.properties,
+    ).not.toHaveProperty('model');
+    expect(
+      jsonSource.components?.schemas?.StartTaskRunRequest?.properties,
+    ).not.toHaveProperty('endpoint_id');
+    expect(
+      jsonSource.components?.schemas?.StartTaskRunRequest?.properties,
+    ).not.toHaveProperty('model');
   });
 
   it('types invalid explicit task binding targets as validation errors', () => {

@@ -181,4 +181,31 @@ describe('Agent execution contract sync', () => {
 
     expect(wireApiSchema?.enum).toEqual([...EXPECTED_AGENT_WIRE_APIS]);
   });
+
+  it('keeps resource proxy request-scoped and out of server.hello', async () => {
+    const asyncApiPath = await resolveAsyncApiSpecPath();
+    const raw = await fs.readFile(asyncApiPath, 'utf-8');
+    const asyncApi = JSON.parse(raw) as Record<string, unknown>;
+
+    const helloEnvelope = readMessagePayloadSchema(asyncApi, 'serverHello');
+    const helloResourceProxy = readNestedPropertySchema(helloEnvelope, ['payload', 'resource_proxy']);
+    const startEnvelope = readMessagePayloadSchema(asyncApi, 'serverRequestStart');
+    const requestResourceProxyBaseUrl = readNestedPropertySchema(
+      startEnvelope,
+      ['payload', 'execution_context', 'resource_proxy', 'base_url'],
+    );
+    const requestAgentTaskModel = readNestedPropertySchema(
+      startEnvelope,
+      ['payload', 'execution_context', 'agent_task_model'],
+    );
+    const requestAgentTaskModelProtocol = readNestedPropertySchema(
+      startEnvelope,
+      ['payload', 'execution_context', 'agent_task_model', 'upstream_protocol'],
+    );
+
+    expect(helloResourceProxy).toBeNull();
+    expect(requestResourceProxyBaseUrl?.type).toBe('string');
+    expect(requestAgentTaskModel?.additionalProperties).toBe(false);
+    expect(requestAgentTaskModelProtocol?.enum).toEqual([...EXPECTED_AGENT_WIRE_APIS]);
+  });
 });

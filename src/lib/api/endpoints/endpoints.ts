@@ -12,6 +12,7 @@ import type {
   EndpointUpstreamProtocol,
   EndpointModelProfile,
   EndpointProviderFamily,
+  AgentTaskModelSettingResponse,
   PaginationParams,
   PaginatedResponse,
 } from '../types';
@@ -77,6 +78,11 @@ export interface EndpointBulkImportRequest {
   video_generation?: EndpointBulkImportItem;
 }
 
+export interface UpdateAgentTaskModelSettingPayload {
+  endpoint_id: string;
+  expected_setting_revision: string | null;
+}
+
 export class EndpointAPI {
   constructor(private client: ApiClient) {}
 
@@ -122,6 +128,26 @@ export class EndpointAPI {
    */
   async delete(workspaceId: string, projectId: string, endpointId: string): Promise<void> {
     return this.client.delete<void>(`/workspaces/${workspaceId}/projects/${projectId}/endpoints/${endpointId}`);
+  }
+
+  async getAgentTaskModelSetting(
+    workspaceId: string,
+    projectId: string,
+  ): Promise<AgentTaskModelSettingResponse> {
+    return this.client.get<AgentTaskModelSettingResponse>(
+      `/workspaces/${workspaceId}/projects/${projectId}/agent-task-model-setting`,
+    );
+  }
+
+  async updateAgentTaskModelSetting(
+    workspaceId: string,
+    projectId: string,
+    payload: UpdateAgentTaskModelSettingPayload,
+  ): Promise<AgentTaskModelSettingResponse> {
+    return this.client.patch<AgentTaskModelSettingResponse>(
+      `/workspaces/${workspaceId}/projects/${projectId}/agent-task-model-setting`,
+      payload,
+    );
   }
 
   /**

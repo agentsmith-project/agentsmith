@@ -789,7 +789,7 @@ async function createVisualAgentTaskTerminalSession(
       [taskId]: {
         mode: 'ready',
         items: [{
-          id: 'mock_terminal_visual_001',
+          terminal_session_id: 'mock_terminal_visual_001',
           status: options.status ?? 'active',
           cols: options.cols ?? 120,
           rows: options.rows ?? 30,
@@ -809,7 +809,7 @@ async function installVisualAgentTaskHarness(
   page: Page,
   options: {
     taskPatchesByTaskId?: Record<string, Record<string, unknown>>;
-    messagesByTaskId?: Record<string, Array<Record<string, unknown>>>;
+    activityByTaskId?: Record<string, Array<Record<string, unknown>>>;
     tracesByTaskId?: Record<string, Array<Record<string, unknown>>>;
     terminalSessionsByTaskId?: Record<
       string,
@@ -823,7 +823,7 @@ async function installVisualAgentTaskHarness(
       __agsVisualAgentTaskHarnessInstalled?: boolean;
       __agsVisualAgentTaskHarnessConfig?: {
         taskPatchesByTaskId?: Record<string, Record<string, unknown>>;
-        messagesByTaskId?: Record<string, Array<Record<string, unknown>>>;
+        activityByTaskId?: Record<string, Array<Record<string, unknown>>>;
         tracesByTaskId?: Record<string, Array<Record<string, unknown>>>;
         terminalSessionsByTaskId?: Record<
           string,
@@ -841,9 +841,9 @@ async function installVisualAgentTaskHarness(
         ...(previousConfig.taskPatchesByTaskId ?? {}),
         ...(config.taskPatchesByTaskId ?? {}),
       },
-      messagesByTaskId: {
-        ...(previousConfig.messagesByTaskId ?? {}),
-        ...(config.messagesByTaskId ?? {}),
+      activityByTaskId: {
+        ...(previousConfig.activityByTaskId ?? {}),
+        ...(config.activityByTaskId ?? {}),
       },
       tracesByTaskId: {
         ...(previousConfig.tracesByTaskId ?? {}),
@@ -893,12 +893,12 @@ async function installVisualAgentTaskHarness(
         }
       }
 
-      const taskMessagesMatch = url.pathname.match(/\/api\/v1\/workspaces\/[^/]+\/projects\/[^/]+\/tasks\/([^/]+)\/messages$/);
-      if (method === 'GET' && taskMessagesMatch) {
-        const taskId = decodeURIComponent(taskMessagesMatch[1]);
-        const hasOverride = Object.prototype.hasOwnProperty.call(activeConfig.messagesByTaskId ?? {}, taskId);
+      const taskActivityMatch = url.pathname.match(/\/api\/v1\/workspaces\/[^/]+\/projects\/[^/]+\/tasks\/([^/]+)\/activity$/);
+      if (method === 'GET' && taskActivityMatch) {
+        const taskId = decodeURIComponent(taskActivityMatch[1]);
+        const hasOverride = Object.prototype.hasOwnProperty.call(activeConfig.activityByTaskId ?? {}, taskId);
         if (hasOverride) {
-          return new Response(JSON.stringify(activeConfig.messagesByTaskId?.[taskId] ?? []), {
+          return new Response(JSON.stringify(activeConfig.activityByTaskId?.[taskId] ?? []), {
             status: 200,
             headers: {
               'content-type': 'application/json',
@@ -974,14 +974,14 @@ async function installVisualAgentTaskHarness(
   }, options);
 }
 
-async function installVisualAgentTaskMessagesOverride(
+async function installVisualAgentTaskActivityOverride(
   page: Page,
   route: string,
   items: Array<Record<string, unknown>>,
 ) {
   const { taskId } = extractAgentTaskRouteParts(route);
   await installVisualAgentTaskHarness(page, {
-    messagesByTaskId: {
+    activityByTaskId: {
       [taskId]: items,
     },
   });
@@ -989,18 +989,20 @@ async function installVisualAgentTaskMessagesOverride(
 
 async function seedVisualAgentTaskConversationHistory(page: Page, route: string) {
   const { taskId } = extractAgentTaskRouteParts(route);
-  await installVisualAgentTaskMessagesOverride(page, route, [
+  await installVisualAgentTaskActivityOverride(page, route, [
     {
       id: 'msg_visual_agent_task_user_001',
       task_id: taskId,
-      role: 'user',
+      kind: 'user_intent',
+      actor: 'user',
       content: 'Review the existing task progress before retrying.',
       created_at: '2026-04-12T09:12:00.000Z',
     },
     {
       id: 'msg_visual_agent_task_agent_001',
       task_id: taskId,
-      role: 'agent',
+      kind: 'runner_output',
+      actor: 'runner',
       content: 'The task already has prior context on this surface.',
       created_at: '2026-04-12T09:12:05.000Z',
     },
@@ -1063,21 +1065,24 @@ async function seedVisualAgentTaskLongActionRunState(page: Page, route: string) 
         active_run_started_at: startedAt,
       },
     },
-    messagesByTaskId: {
+    activityByTaskId: {
       [taskId]: [
         {
           id: userMessageId,
           task_id: taskId,
-          role: 'user',
+          kind: 'user_intent',
+          actor: 'user',
           content: 'Run the agent task recovery probe with the full diagnostic context.',
           created_at: startedAt,
         },
         {
           id: agentMessageId,
           task_id: taskId,
-          role: 'agent',
+          kind: 'runner_output',
+          actor: 'runner',
           content: '',
           created_at: new Date(Date.now() - 60_000).toISOString(),
+          run_id: runId,
         },
       ],
     },
@@ -1106,13 +1111,13 @@ async function seedVisualAgentTaskLongActionRunState(page: Page, route: string) 
           run_id: runId,
           seq: 2_000_002,
           at: new Date(Date.now() - 55_000).toISOString(),
-          category: 'tool',
+          category: 'progress',
           phase: 'start',
           status: 'running',
-          name: 'codex.command',
-          summary: 'Running agent task recovery probe',
+          name: 'codex.output',
+          summary: VISUAL_AGENT_TASK_LONG_LATEST_ACTION,
           details: {
-            command: VISUAL_AGENT_TASK_LONG_LATEST_ACTION,
+            visual_case: 'long_latest_action',
           },
         },
       ],
@@ -1746,6 +1751,9 @@ const VISUAL_SCENE_SETUP_REGISTRY: Partial<Record<string, VisualScenarioSetup>> 
     afterNavigate: async ({ page }) => {
       await page.getByTestId('agent-tasks__create-task-btn').click();
       await expect(page.getByRole('dialog')).toBeVisible();
+      await expect(page.getByText('Checking Agent task model setup...')).toHaveCount(0, { timeout: 15_000 });
+      await expect(page.getByTestId('task-create__model-readiness-blocked')).toHaveCount(0);
+      await expect(page.getByText('Agent task model setup required')).toHaveCount(0);
     },
   },
   'agent-task-detail': {
@@ -1778,6 +1786,9 @@ const VISUAL_SCENE_SETUP_REGISTRY: Partial<Record<string, VisualScenarioSetup>> 
       await expect(page.getByTestId('agent-tasks__create-task-btn')).toBeVisible();
       await page.getByTestId('agent-tasks__create-task-btn').click();
       await expect(page.getByRole('dialog')).toBeVisible();
+      await expect(page.getByText('Checking Agent task model setup...')).toHaveCount(0, { timeout: 15_000 });
+      await expect(page.getByTestId('task-create__model-readiness-blocked')).toHaveCount(0);
+      await expect(page.getByText('Agent task model setup required')).toHaveCount(0);
     },
   },
   'agent-task-lifecycle-detail': {
@@ -1805,9 +1816,10 @@ const VISUAL_SCENE_SETUP_REGISTRY: Partial<Record<string, VisualScenarioSetup>> 
     afterNavigate: async ({ page }) => {
       await waitForAgentTaskTerminalTruthReady(page);
       await expect(page.getByTestId('agent-tasks__task-terminal-status-strip')).toBeVisible();
-      await expect(page.getByTestId('agent-tasks__task-terminal-status-strip')).toContainText('terminal session');
+      await expect(page.getByTestId('agent-tasks__task-terminal-status-strip')).toContainText('1 terminal session');
       await expect(page.getByTestId('agent-tasks__task-terminal-status-action')).toHaveText('Reopen Terminal Workspace');
       await expect(page.getByTestId('agent-tasks__task-terminal-status-end-all')).toBeVisible();
+      await expect(page.getByText('The task already has prior context on this surface.')).toBeVisible();
       await expect(page.getByTestId('agent-tasks__conversation-blocked-state')).toHaveCount(0);
       await expect(agentTaskConversationTextarea(page)).toHaveAttribute(
         'placeholder',
@@ -1923,20 +1935,23 @@ const VISUAL_SCENE_SETUP_REGISTRY: Partial<Record<string, VisualScenarioSetup>> 
     beforeNavigate: async ({ page, scenario }) => {
       const { taskId } = extractAgentTaskRouteParts(scenario.route);
       await seedVisualAgentTaskRunState(page, scenario.route, 'idle');
-      await installVisualAgentTaskMessagesOverride(page, scenario.route, [
+      await installVisualAgentTaskActivityOverride(page, scenario.route, [
         {
           id: 'msg_visual_provider_user',
           task_id: taskId,
-          role: 'user',
+          kind: 'user_intent',
+          actor: 'user',
           content: 'Retry the same provider task once the upstream recovers.',
           created_at: '2026-04-12T09:14:00.000Z',
         },
         {
           id: 'msg_visual_provider_error',
           task_id: taskId,
-          role: 'agent',
+          kind: 'runner_output',
+          actor: 'runner',
           content: 'Provider returned an upstream error. Review the latest provider details, then retry from this same task when ready.',
           created_at: '2026-04-12T09:14:06.000Z',
+          run_id: 'run_visual_provider_error_001',
         },
       ]);
       await installVisualAgentTaskTraceOverride(page, scenario.route, [

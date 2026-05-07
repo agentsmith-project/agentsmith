@@ -3,7 +3,7 @@
  */
 
 import { describe, it, expect, vi, beforeAll, beforeEach } from 'vitest';
-import { render, screen, fireEvent, waitFor } from '@testing-library/react';
+import { render, screen, fireEvent, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { TaskCreateDialog } from '../TaskCreateDialog';
@@ -25,8 +25,9 @@ beforeAll(() => {
   }
 });
 
-const { mockGetRunnerBindingOptions } = vi.hoisted(() => ({
+const { mockGetRunnerBindingOptions, mockGetAgentTaskModelSetting } = vi.hoisted(() => ({
   mockGetRunnerBindingOptions: vi.fn(),
+  mockGetAgentTaskModelSetting: vi.fn(),
 }));
 
 // Mock hooks — use vi.fn() so we can control return value per-test
@@ -40,6 +41,11 @@ vi.mock('@/lib/api', () => ({
   TaskAPI: vi.fn().mockImplementation(function TaskAPI() {
     return {
       getRunnerBindingOptions: mockGetRunnerBindingOptions,
+    };
+  }),
+  EndpointAPI: vi.fn().mockImplementation(function EndpointAPI() {
+    return {
+      getAgentTaskModelSetting: mockGetAgentTaskModelSetting,
     };
   }),
 }));
@@ -143,6 +149,7 @@ vi.mock('@/components/ui/select', async () => {
 
 // Mock next-intl with translation map
 vi.mock('next-intl', () => ({
+  useLocale: () => 'en-US',
   useTranslations: () => (key: string) => {
     const translations: Record<string, string> = {
       'create': 'Create',
@@ -178,6 +185,10 @@ vi.mock('next-intl', () => ({
       'developer_runner_reason_forbidden': 'You do not have permission to use it.',
       'developer_runner_reason_capability': 'It cannot run this type of task.',
       'developer_runner_reason_default': 'It is not available for this task right now.',
+      'model_readiness_loading': 'Checking Agent task model setup...',
+      'model_readiness_blocked_title': 'Agent task model setup required',
+      'model_readiness_open_endpoints': 'Open Endpoints',
+      'model_readiness_contact_admin': 'Contact a project admin to choose an Endpoint for Agent tasks.',
       'cancel': 'Cancel',
       'empty': 'No agents available',
     };
@@ -300,6 +311,21 @@ describe('TaskCreateDialog', () => {
         },
       ],
       generated_at: '2026-05-06T10:00:00.000Z',
+    });
+    mockGetAgentTaskModelSetting.mockResolvedValue({
+      readiness: {
+        state: 'ready',
+        display_summary: 'Agent tasks are ready to run.',
+      },
+      actions: {
+        update: {
+          operation: 'update',
+          visible: true,
+          allowed: true,
+          required_permissions: ['project:governance:update'],
+          danger_level: 'none',
+        },
+      },
     });
 
     mockMutateAsync.mockResolvedValue({ id: 'new-task-id' });
@@ -486,6 +512,56 @@ describe('TaskCreateDialog', () => {
       expect(screen.getByRole('dialog')).toBeInTheDocument();
       expect(mockGetRunnerBindingOptions).not.toHaveBeenCalled();
     });
+
+    it('blocks task creation with display-safe readiness and an Endpoints link for governance viewers', async () => {
+      const user = userEvent.setup();
+      mockGetAgentTaskModelSetting.mockResolvedValueOnce({
+        readiness: {
+          state: 'blocked',
+          display_summary: 'Agent tasks are blocked by model setup.',
+          reason_code: 'agent_task_model_setting_missing',
+        },
+        actions: {
+          update: {
+            operation: 'update',
+            visible: true,
+            allowed: true,
+            required_permissions: ['project:governance:update'],
+            danger_level: 'none',
+          },
+        },
+      });
+      renderComponent();
+
+      const blockedState = await screen.findByTestId('task-create__model-readiness-blocked');
+      expect(blockedState).toHaveTextContent('Agent task model setup required');
+      expect(blockedState).toHaveTextContent('Agent tasks are blocked by model setup.');
+      const endpointsLink = within(blockedState).getByRole('link', { name: 'Open Endpoints' });
+      expect(endpointsLink).toHaveAttribute(
+        'href',
+        '/en-US/workspaces/workspace-1/projects/project-1/endpoints',
+      );
+
+      await user.type(screen.getByRole('textbox', { name: /Task Title/i }), 'Blocked Task');
+      expect(screen.getByRole('button', { name: 'Create' })).toBeDisabled();
+      submitTaskCreateForm();
+      expect(mockMutateAsync).not.toHaveBeenCalled();
+    });
+
+    it('blocks task creation with contact-admin copy for task-only viewers', async () => {
+      mockGetAgentTaskModelSetting.mockResolvedValueOnce({
+        readiness: {
+          state: 'not_configured',
+          display_summary: 'Agent task model is not configured.',
+        },
+      });
+      renderComponent();
+
+      const blockedState = await screen.findByTestId('task-create__model-readiness-blocked');
+      expect(blockedState).toHaveTextContent('Agent task model is not configured.');
+      expect(blockedState).toHaveTextContent('Contact a project admin to choose an Endpoint for Agent tasks.');
+      expect(within(blockedState).queryByRole('link', { name: 'Open Endpoints' })).not.toBeInTheDocument();
+    });
   });
 
   describe('Form Actions', () => {
@@ -524,7 +600,9 @@ describe('TaskCreateDialog', () => {
 
       const titleInput = screen.getByRole('textbox', { name: /Task Title/i });
       await user.type(titleInput, 'Test Task');
-      expect(screen.getByRole('button', { name: 'Create' })).toBeEnabled();
+      await waitFor(() => {
+        expect(screen.getByRole('button', { name: 'Create' })).toBeEnabled();
+      });
     });
 
     it('keeps create button disabled in existing-workspace mode until a workspace is selected', async () => {
@@ -593,6 +671,10 @@ describe('TaskCreateDialog', () => {
           },
         });
       });
+      const submitted = mockMutateAsync.mock.calls[0]?.[0]?.data as Record<string, unknown>;
+      expect(submitted).not.toHaveProperty('endpoint_id');
+      expect(submitted).not.toHaveProperty('model');
+      expect(submitted).not.toHaveProperty('default_endpoint_id');
     });
 
     it('does not leak Developer runner names when the actor has no authorized Developer binding options', async () => {

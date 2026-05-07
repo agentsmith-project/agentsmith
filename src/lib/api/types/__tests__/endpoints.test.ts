@@ -5,7 +5,20 @@
  * These tests define the expected behavior of the type system.
  */
 
-import { describe, it, expect } from 'vitest';
+import { readFileSync } from 'node:fs';
+import { resolve } from 'node:path';
+import { describe, it, expect, expectTypeOf } from 'vitest';
+import type { components, operations, paths } from '../../types.generated';
+import type {
+  AgentTaskModelSettingResponse,
+  UpdateAgentTaskModelSettingRequest,
+} from '../agent-task-model-setting';
+import type {
+  Endpoint,
+  EndpointActionAffordance,
+  EndpointActionOperation,
+  EndpointCapabilityType,
+} from '../endpoints-core';
 import type {
   CustomEndpointUpstreamProtocol,
   CustomEndpointConfig,
@@ -20,6 +33,59 @@ import type {
   ValidateEndpointRequest,
   ValidateEndpointResponse,
 } from '../endpoints';
+
+type AgentTaskModelSettingPathParams = NonNullable<
+  paths['/api/v1/workspaces/{workspaceId}/projects/{projectId}/agent-task-model-setting']['parameters']['path']
+>;
+type GetAgentTaskModelSettingPathParams =
+  operations['getAgentTaskModelSetting']['parameters']['path'];
+type UpdateAgentTaskModelSettingPathParams =
+  operations['updateAgentTaskModelSetting']['parameters']['path'];
+type ExpectedProjectPathParams = {
+  projectId: string;
+  workspaceId: string;
+};
+type ForbiddenUpdateAgentTaskModelSettingFields = Extract<
+  keyof UpdateAgentTaskModelSettingRequest,
+  | 'runner_id'
+  | 'bound_runner_id'
+  | 'runner'
+  | 'routing'
+  | 'quota'
+  | 'fallback'
+  | 'upstream'
+  | 'upstream_url'
+  | 'model'
+  | 'default_model'
+  | 'default_model_id'
+  | 'default_endpoint_id'
+  | 'task_run_override'
+  | 'execution_preference'
+  | 'execution_preferences'
+>;
+type ForbiddenGeneratedUpdateAgentTaskModelSettingFields = Extract<
+  keyof components['schemas']['UpdateAgentTaskModelSettingRequest'],
+  | 'runner_id'
+  | 'bound_runner_id'
+  | 'runner'
+  | 'routing'
+  | 'quota'
+  | 'fallback'
+  | 'upstream'
+  | 'upstream_url'
+  | 'model'
+  | 'default_model'
+  | 'default_model_id'
+  | 'default_endpoint_id'
+  | 'task_run_override'
+  | 'execution_preference'
+  | 'execution_preferences'
+>;
+type ForbiddenEndpointCapability = Extract<EndpointCapabilityType, 'agent_task_capable'>;
+type ForbiddenGeneratedEndpointCapability = Extract<
+  components['schemas']['EndpointCapabilityType'],
+  'agent_task_capable'
+>;
 
 describe('CustomEndpointUpstreamProtocol', () => {
   it('should accept openai_chat_completions protocol', () => {
@@ -41,6 +107,144 @@ describe('CustomEndpointUpstreamProtocol', () => {
       'anthropic_messages',
     ];
     expect(protocols).toHaveLength(3);
+  });
+});
+
+describe('Agent task model setting contract', () => {
+  it('adds the narrow permission-shaped project resource without candidate-list APIs', () => {
+    expectTypeOf<AgentTaskModelSettingPathParams>().toEqualTypeOf<ExpectedProjectPathParams>();
+    expectTypeOf<GetAgentTaskModelSettingPathParams>().toEqualTypeOf<ExpectedProjectPathParams>();
+    expectTypeOf<UpdateAgentTaskModelSettingPathParams>().toEqualTypeOf<ExpectedProjectPathParams>();
+
+    expectTypeOf<AgentTaskModelSettingResponse>().toMatchTypeOf<{
+      readiness: {
+        state: 'ready' | 'not_configured' | 'unavailable' | 'permission_denied';
+        display_summary: string;
+      };
+      setting?: {
+        workspace_id: string;
+        project_id: string;
+        endpoint_id: string;
+        endpoint_display_name?: string;
+        default_model_id?: string;
+        default_model?: string;
+        setting_revision: string;
+        updated_at: string;
+        updated_by_user_id: string;
+      };
+      actions?: {
+        update: {
+          operation: 'update';
+          visible: boolean;
+          allowed: boolean;
+          required_permissions: string[];
+          danger_level: 'none';
+        };
+      };
+    }>();
+    expectTypeOf<components['schemas']['AgentTaskModelSettingResponse']>().toMatchTypeOf<AgentTaskModelSettingResponse>();
+
+    const taskOnlyResponse: AgentTaskModelSettingResponse = {
+      readiness: {
+        state: 'ready',
+        display_summary: 'Agent tasks are ready to run.',
+      },
+    };
+    expect(taskOnlyResponse.setting).toBeUndefined();
+    expect(taskOnlyResponse.actions).toBeUndefined();
+
+    const yamlSource = readFileSync(resolve(process.cwd(), 'docs/contracts/specs/openapi.yaml'), 'utf8');
+    expect(yamlSource).toContain('/api/v1/workspaces/{workspaceId}/projects/{projectId}/agent-task-model-setting:');
+    expect(yamlSource).toContain('operationId: getAgentTaskModelSetting');
+    expect(yamlSource).toContain('operationId: updateAgentTaskModelSetting');
+    expect(yamlSource).not.toContain('agent-task-model-candidates');
+    expect(yamlSource).not.toContain('agent-task-model-candidate');
+
+    const jsonSource = JSON.parse(
+      readFileSync(resolve(process.cwd(), 'docs/contracts/specs/openapi.json'), 'utf8'),
+    ) as {
+      paths?: Record<string, Record<string, unknown>>;
+    };
+    const settingPath = jsonSource.paths?.[
+      '/api/v1/workspaces/{workspaceId}/projects/{projectId}/agent-task-model-setting'
+    ];
+    expect(settingPath).toHaveProperty('get');
+    expect(settingPath).toHaveProperty('patch');
+    expect(Object.keys(jsonSource.paths ?? {})).not.toEqual(
+      expect.arrayContaining([
+        expect.stringContaining('agent-task-model-candidates'),
+        expect.stringContaining('agent-task-model-candidate'),
+      ]),
+    );
+  });
+
+  it('keeps PATCH narrow to endpoint_id and expected_setting_revision', () => {
+    expectTypeOf<ForbiddenUpdateAgentTaskModelSettingFields>().toEqualTypeOf<never>();
+    expectTypeOf<ForbiddenGeneratedUpdateAgentTaskModelSettingFields>().toEqualTypeOf<never>();
+    expectTypeOf<UpdateAgentTaskModelSettingRequest>().toEqualTypeOf<{
+      endpoint_id: string;
+      expected_setting_revision: string;
+    }>();
+    expectTypeOf<components['schemas']['UpdateAgentTaskModelSettingRequest']>().toEqualTypeOf<UpdateAgentTaskModelSettingRequest>();
+
+    const jsonSource = JSON.parse(
+      readFileSync(resolve(process.cwd(), 'docs/contracts/specs/openapi.json'), 'utf8'),
+    ) as {
+      components?: {
+        schemas?: Record<string, {
+          additionalProperties?: boolean;
+          properties?: Record<string, unknown>;
+          required?: string[];
+        }>;
+      };
+    };
+    const requestSchema = jsonSource.components?.schemas?.UpdateAgentTaskModelSettingRequest;
+    expect(requestSchema?.additionalProperties).toBe(false);
+    expect(requestSchema?.required).toEqual(['endpoint_id', 'expected_setting_revision']);
+    expect(Object.keys(requestSchema?.properties ?? {}).sort()).toEqual([
+      'endpoint_id',
+      'expected_setting_revision',
+    ]);
+  });
+});
+
+describe('Endpoint row Agent task action contract', () => {
+  it('uses backend-owned actions.use_for_agent_tasks instead of a capability enum', () => {
+    expectTypeOf<ForbiddenEndpointCapability>().toEqualTypeOf<never>();
+    expectTypeOf<ForbiddenGeneratedEndpointCapability>().toEqualTypeOf<never>();
+    expectTypeOf<EndpointCapabilityType>().toEqualTypeOf<
+      | 'chat_completion'
+      | 'multimodal_completion'
+      | 'embedding'
+      | 'rerank'
+      | 'image_generation'
+      | 'video_generation'
+    >();
+    expectTypeOf<components['schemas']['EndpointCapabilityType']>().toEqualTypeOf<EndpointCapabilityType>();
+    expectTypeOf<EndpointActionOperation>().toEqualTypeOf<'use_for_agent_tasks'>();
+    expectTypeOf<EndpointActionAffordance>().toMatchTypeOf<{
+      operation: 'use_for_agent_tasks';
+      visible: boolean;
+      allowed: boolean;
+      required_permissions: string[];
+      danger_level: 'none' | 'medium' | 'high';
+    }>();
+    expectTypeOf<Endpoint>().toMatchTypeOf<{
+      actions?: {
+        use_for_agent_tasks: EndpointActionAffordance;
+      };
+    }>();
+    expectTypeOf<components['schemas']['Endpoint']>().toMatchTypeOf<{
+      actions: {
+        use_for_agent_tasks: components['schemas']['EndpointActionAffordance'];
+      };
+    }>();
+
+    const yamlSource = readFileSync(resolve(process.cwd(), 'docs/contracts/specs/openapi.yaml'), 'utf8');
+    expect(yamlSource).toContain('use_for_agent_tasks:');
+    expect(yamlSource).toContain('EndpointActionAffordance:');
+    expect(yamlSource).toContain('EndpointCapabilityType:');
+    expect(yamlSource).not.toMatch(/EndpointCapabilityType:[\s\S]*agent_task_capable/);
   });
 });
 

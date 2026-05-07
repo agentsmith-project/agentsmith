@@ -48,9 +48,8 @@ import {
 type ServerStartPayload = AgentServerStartPayload;
 
 type ServerHelloPayload = {
-  resource_proxy?: {
-    base_url?: string;
-  };
+  protocol_version?: string;
+  heartbeat_interval_sec?: number;
 };
 
 type AgentMessage = {
@@ -105,7 +104,6 @@ type StandardResponsesTextState = {
   doneSeen: boolean;
 };
 const standardResponsesTextStateByRequestId = new Map<string, StandardResponsesTextState>();
-let connectedResourceProxyBase = '';
 type FilterStats = RunnerFilterStats;
 const filterStatsByRequestId = new Map<string, FilterStats>();
 let runnerShutdownPromise: Promise<void> | null = null;
@@ -264,7 +262,6 @@ function clearRunnerState(): void {
   runningByRequestId.clear();
   runningTerminalBySessionId.clear();
   cancelRequestedByRequestId.clear();
-  connectedResourceProxyBase = '';
   traceSeqByRequestId.clear();
   runStartedAtByRequestId.clear();
   reportedArtifactsByRequestId.clear();
@@ -1115,7 +1112,7 @@ async function runCodexRequest(requestId: string, payload: ServerStartPayload): 
   const prompt = `${buildTaskHeadlessPreamble({
     artifactsDir,
   })}User request:\n${userPrompt}`;
-  const endpointProxyBase = connectedResourceProxyBase;
+  const endpointProxyBase = normalizeProxyBase(executionContext.resource_proxy?.base_url);
   if (!endpointProxyBase) {
     throw new Error('resource_proxy_base_missing');
   }
@@ -1214,7 +1211,7 @@ async function runCodexRequest(requestId: string, payload: ServerStartPayload): 
     wire_api: executionWireApi,
     codex_provider_wire_api: codexProviderWireApi,
     resource_proxy_base: endpointProxyBase,
-    proxy_source: 'server_hello',
+    proxy_source: 'request_execution_context',
     model_context_window: modelContextWindow ?? null,
     model_max_output_tokens: modelMaxOutputTokens ?? null,
     model_auto_compact_token_limit: modelAutoCompactTokenLimit ?? null,
@@ -1666,11 +1663,10 @@ ws.on('message', (raw) => {
 
   if (message.type === 'server.hello') {
     const payload = message.payload as ServerHelloPayload | undefined;
-    const nextProxyBase = normalizeProxyBase(payload?.resource_proxy?.base_url);
-    if (nextProxyBase) {
-      connectedResourceProxyBase = nextProxyBase;
-      debugLog('received server hello resource proxy', { base_url: connectedResourceProxyBase });
-    }
+    debugLog('received server hello', {
+      protocol_version: payload?.protocol_version ?? null,
+      heartbeat_interval_sec: payload?.heartbeat_interval_sec ?? null,
+    });
     return;
   }
 

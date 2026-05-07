@@ -2279,7 +2279,7 @@ describe('api-entry-node notebook task routes', () => {
       const { baseUrl, deps } = await startServer();
       configureManagedTaskRunnerRuntimeDeps(deps);
       process.env.PUBLIC_API_BASE_URL = `${baseUrl}/api/v1`;
-      const upstream = await startUpstreamServer();
+      await startUpstreamServer();
       const project = await deps.createProjectUseCase.execute({
         workspaceId: 'ws_default',
         actorId: 'user_test',

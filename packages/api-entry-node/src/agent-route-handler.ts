@@ -438,7 +438,7 @@ function readAgentTestTimeoutMs(raw: Record<string, unknown>): TimeoutReadResult
 
 function buildRunnerTestTaskUnavailableBody(input: {
   runnerId: string;
-  errorCode: 'agent_runner_disconnected' | 'agent_runner_stale' | 'agent_runner_capability_mismatch' | 'agent_runner_test_task_unavailable';
+  errorCode: string;
   message?: string;
 }) {
   return {

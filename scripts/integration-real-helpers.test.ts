@@ -1044,10 +1044,21 @@ describe('integration-real-helpers', () => {
       diagnostics: { presence: 'managed' },
       wsUrl: 'ws://127.0.0.1:20000/agent-runner/ws',
     });
+    const get = vi.fn().mockResolvedValue(okResponse({
+      readiness: { state: 'not_configured' },
+    }));
+    const patch = vi.fn().mockResolvedValue(okResponse({
+      setting: {
+        endpoint_id: 'ep_task',
+        default_model: 'seed-model',
+        setting_revision: 'set_seed_1',
+      },
+    }));
     const page = {
       evaluate: vi.fn().mockResolvedValue(JSON.stringify({ state: { token: 'mock_token' } })),
       request: {
-        get: vi.fn().mockResolvedValue({ ok: () => false }),
+        get,
+        patch,
       },
     } as unknown as Parameters<typeof createManagedAgentRunnerViaApi>[0];
 
@@ -1074,6 +1085,15 @@ describe('integration-real-helpers', () => {
         runnerName: 'agent-task-runner',
         isDefault: true,
       }));
+      expect(patch).toHaveBeenCalledWith(
+        expect.stringContaining('/api/v1/workspaces/ws_default/projects/proj_1/agent-task-model-setting'),
+        expect.objectContaining({
+          data: {
+            endpoint_id: 'ep_task',
+            expected_setting_revision: null,
+          },
+        }),
+      );
     } finally {
       if (previousMongoUrl === undefined) {
         delete process.env.MONGO_URL;
@@ -1129,11 +1149,23 @@ describe('integration-real-helpers', () => {
           diagnostics: { source: 'summary' },
         });
       }
+      if (url.endsWith('/agent-task-model-setting')) {
+        return okResponse({
+          readiness: { state: 'not_configured' },
+        });
+      }
       throw new Error(`unexpected_get:${url}`);
     });
+    const patch = vi.fn().mockResolvedValue(okResponse({
+      setting: {
+        endpoint_id: 'ep_fallback',
+        default_model: 'seed-model',
+        setting_revision: 'set_summary_1',
+      },
+    }));
     const page = {
       evaluate: vi.fn().mockResolvedValue(JSON.stringify({ state: { token: 'mock_token' } })),
-      request: { get },
+      request: { get, patch },
     } as unknown as Parameters<typeof createManagedAgentRunnerViaApi>[0];
 
     try {
@@ -1155,6 +1187,15 @@ describe('integration-real-helpers', () => {
       expect(get).toHaveBeenCalledWith(
         expect.stringContaining('/agent-runners/ag_summary_managed'),
         expect.any(Object),
+      );
+      expect(patch).toHaveBeenCalledWith(
+        expect.stringContaining('/api/v1/workspaces/ws_default/projects/proj_1/agent-task-model-setting'),
+        expect.objectContaining({
+          data: {
+            endpoint_id: 'ep_fallback',
+            expected_setting_revision: null,
+          },
+        }),
       );
       expect(upsertManagedRunner).not.toHaveBeenCalled();
     } finally {
@@ -1424,10 +1465,21 @@ describe('integration-real-helpers', () => {
       }
       throw new Error(`unexpected_post:${url}:${JSON.stringify(options?.data ?? null)}`);
     });
+    const get = vi.fn().mockResolvedValue(okResponse({
+      readiness: { state: 'not_configured' },
+    }));
+    const patch = vi.fn().mockResolvedValue(okResponse({
+      setting: {
+        endpoint_id: 'ep_task',
+        default_model: 'seed-model',
+        setting_revision: 'set_bundle_1',
+      },
+    }));
     const page = {
       evaluate: vi.fn().mockResolvedValue(JSON.stringify({ state: { token: 'mock_token' } })),
       request: {
-        get: vi.fn().mockResolvedValue({ ok: () => false }),
+        get,
+        patch,
         post,
       },
     } as unknown as Parameters<typeof createAgentTaskRunnerBundleViaApi>[0];
@@ -1455,6 +1507,15 @@ describe('integration-real-helpers', () => {
         runnerName: 'agent-task-runner',
         isDefault: true,
       }));
+      expect(patch).toHaveBeenCalledWith(
+        expect.stringContaining('/api/v1/workspaces/ws_default/projects/proj_1/agent-task-model-setting'),
+        expect.objectContaining({
+          data: {
+            endpoint_id: 'ep_task',
+            expected_setting_revision: null,
+          },
+        }),
+      );
       expect(post).toHaveBeenCalledTimes(1);
       expect(post).toHaveBeenCalledWith(
         expect.stringContaining('/api/v1/workspaces/ws_default/projects/proj_1/tasks'),
@@ -1469,6 +1530,9 @@ describe('integration-real-helpers', () => {
       expect(taskPayload).not.toHaveProperty('agent_id');
       expect(taskPayload).not.toHaveProperty('runner_id');
       expect(taskPayload).not.toHaveProperty('agent_name');
+      expect(taskPayload).not.toHaveProperty('endpoint_id');
+      expect(taskPayload).not.toHaveProperty('default_endpoint_id');
+      expect(taskPayload).not.toHaveProperty('model');
     } finally {
       if (previousMongoUrl === undefined) {
         delete process.env.MONGO_URL;

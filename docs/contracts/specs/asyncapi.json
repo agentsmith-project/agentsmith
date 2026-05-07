@@ -278,15 +278,6 @@
                 },
                 "heartbeat_interval_sec": {
                   "type": "integer"
-                },
-                "resource_proxy": {
-                  "type": "object",
-                  "additionalProperties": false,
-                  "properties": {
-                    "base_url": {
-                      "type": "string"
-                    }
-                  }
                 }
               }
             }
@@ -340,7 +331,7 @@
                 },
                 "execution_context": {
                   "type": "object",
-                  "description": "Public TaskExecutionContext for task runs and terminal startup; terminal contexts use task_id, runner_id, runner_session_scope and must not include legacy top-level session_id, agent_id, or interaction_kind.",
+                  "description": "Public TaskExecutionContext for task runs and terminal startup; request-scoped resource_proxy and agent_task_model snapshot are carried here, while terminal contexts use task_id, runner_id, runner_session_scope and must not include legacy top-level session_id, agent_id, or interaction_kind.",
                   "additionalProperties": false,
                   "properties": {
                     "workspace_id": {
@@ -363,6 +354,57 @@
                     },
                     "endpoint_id": {
                       "type": "string"
+                    },
+                    "agent_task_model": {
+                      "type": "object",
+                      "additionalProperties": false,
+                      "required": [
+                        "endpoint_id",
+                        "resolved_model",
+                        "setting_revision",
+                        "resolved_at"
+                      ],
+                      "properties": {
+                        "endpoint_id": {
+                          "type": "string"
+                        },
+                        "endpoint_display_name": {
+                          "type": "string"
+                        },
+                        "resolved_model": {
+                          "type": "string"
+                        },
+                        "upstream_protocol": {
+                          "type": "string",
+                          "enum": [
+                            "openai_chat_completions",
+                            "openai_responses",
+                            "anthropic_messages"
+                          ]
+                        },
+                        "setting_revision": {
+                          "type": "string"
+                        },
+                        "policy_decision_id": {
+                          "type": "string"
+                        },
+                        "resolved_at": {
+                          "type": "string",
+                          "format": "date-time"
+                        }
+                      }
+                    },
+                    "resource_proxy": {
+                      "type": "object",
+                      "additionalProperties": false,
+                      "required": [
+                        "base_url"
+                      ],
+                      "properties": {
+                        "base_url": {
+                          "type": "string"
+                        }
+                      }
                     },
                     "api_base": {
                       "type": "string"

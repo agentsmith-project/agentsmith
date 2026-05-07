@@ -1,6 +1,6 @@
 # Managed Agent Runner Execution Channel Protocol (WS, v1)
 
-Last updated: 2026-04-15
+Last updated: 2026-05-07
 Owner: Backend + Frontend
 
 ## 1. Scope
@@ -30,8 +30,8 @@ All frames are JSON objects:
 ## 3. Server -> Agent Events
 
 - `server.hello`
-  - payload: `{ "protocol_version": "1.0", "heartbeat_interval_sec": 15, "resource_proxy"?: { "base_url": "https://.../endpoints/{endpointId}/proxy" } }`
-  - `resource_proxy.base_url` is static per runner connection and is derived from the Agent Runner `default_endpoint_id`.
+  - payload: `{ "protocol_version": "1.0", "heartbeat_interval_sec": 15 }`
+  - `server.hello` does not carry Endpoint/model selection or resource proxy data.
 - `server.request.start`
   - payload:
     - `model: string`
@@ -45,10 +45,13 @@ All frames are JSON objects:
       - `runner_id: string`
       - `username: string`
       - `endpoint_id: string`
+      - `agent_task_model: { endpoint_id: string; endpoint_display_name?: string; resolved_model: string; upstream_protocol?: "openai_chat_completions" | "openai_responses" | "anthropic_messages"; setting_revision: string; policy_decision_id?: string; resolved_at: string }`
+      - `resource_proxy: { base_url: string }`
       - `api_base?: string` (for task helper scripts / file download access)
       - `execution_ticket: string`
       - `wire_api: "openai_chat_completions" | "openai_responses" | "anthropic_messages"`
       - `model: string`
+      - `resource_proxy.base_url` is request-scoped and must be used for this run/session instead of any connection-level cache.
       - `runner_session_scope: "agent_presence" | "task_execution"`
       - `task_inputs?: Array<{ kind?: "library_object" | "artifact" | "url"; library_id?: string; key?: string; task_id?: string; artifact_id?: string; url?: string; filename?: string; file_type?: string; file_size?: number }>`
       - `credential_files?: Array<{ relative_path: string; content: string; description?: string }>`
@@ -177,7 +180,7 @@ This section covers the browser-facing terminal websocket issued by Agent task t
 - Replay source is an API-entry in-memory bounded ring. If `after_seq` is older than the ring, replay is `partial` with `gap: true`; if the ring is unavailable or `after_seq` is ahead of the latest known seq, replay is `unavailable`, and future cursors use `error_code: "future_after_seq"` plus `next_seq`.
 - Reconnect must not synthesize a `started` frame. Browser UI should treat replay status as terminal recovery metadata, not terminal bytes.
 - Routes that issue an interactive terminal `ws_url` or ticket require `project:agent_task:terminal` in addition to task access. Reconnect handshakes and each `terminal.stdin` / `terminal.resize` frame re-check current backend permission truth; revoked permission rejects the frame and closes the websocket instead of trusting a cached ticket or open socket.
-- Terminal runner startup uses the same public `TaskExecutionContext` guard as task runs. The terminal `server.request.start.payload.execution_context` canonical subset includes `workspace_id`, `project_id`, `task_id`, `runner_id`, `api_base`, `execution_ticket`, `runner_session_scope`, workspace binding fields, and optional `task_inputs`; it must not include legacy top-level `session_id`, `agent_id`, or `interaction_kind`.
+- Terminal runner startup uses the same public `TaskExecutionContext` guard as task runs. The terminal `server.request.start.payload.execution_context` canonical subset includes `workspace_id`, `project_id`, `task_id`, `runner_id`, `api_base`, `execution_ticket`, `runner_session_scope`, request-scoped `resource_proxy`, the `agent_task_model` snapshot when model access is required, workspace binding fields, and optional `task_inputs`; it must not include legacy top-level `session_id`, `agent_id`, or `interaction_kind`.
 
 ## 8. Agent Task Error Mapping
 

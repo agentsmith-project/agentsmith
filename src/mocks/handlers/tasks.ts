@@ -697,6 +697,8 @@ export const taskHandlers = [
       LEGACY_RUN_SELECTION_FIELD,
       'is_default',
       'default_endpoint_id',
+      'endpoint_id',
+      'model',
       'config',
       'capabilities',
       'runner_provider',
@@ -798,6 +800,8 @@ export const taskHandlers = [
       'agent_runner_id',
       'is_default',
       'default_endpoint_id',
+      'endpoint_id',
+      'model',
       'config',
       'capabilities',
       'runner_provider',
@@ -1117,6 +1121,8 @@ export const taskHandlers = [
       'agent_runner_id',
       'is_default',
       'default_endpoint_id',
+      'endpoint_id',
+      'model',
       'config',
     ]
       .filter((field) => Object.prototype.hasOwnProperty.call(body, field));

@@ -27,11 +27,30 @@ import type { components, operations } from '../../types.generated';
 type LegacyAgentKeys = Extract<keyof AgentRunner, 'mode' | 'interaction_kind'>;
 type ForbiddenCreateAgentRunnerFields = Extract<
   keyof CreateAgentRunnerRequest,
-  'is_default' | 'default_endpoint_id' | 'status' | 'diagnostics' | 'capabilities'
+  | 'is_default'
+  | 'endpoint_id'
+  | 'model'
+  | 'default_endpoint_id'
+  | 'execution_preference'
+  | 'execution_preferences'
+  | 'execution_preferences_json'
+  | 'status'
+  | 'diagnostics'
+  | 'capabilities'
 >;
 type ForbiddenUpdateAgentRunnerFields = Extract<
   keyof UpdateAgentRunnerRequest,
-  'kind' | 'is_default' | 'default_endpoint_id' | 'status' | 'diagnostics' | 'capabilities'
+  | 'kind'
+  | 'is_default'
+  | 'endpoint_id'
+  | 'model'
+  | 'default_endpoint_id'
+  | 'execution_preference'
+  | 'execution_preferences'
+  | 'execution_preferences_json'
+  | 'status'
+  | 'diagnostics'
+  | 'capabilities'
 >;
 type ForbiddenConnectionCleanupFields = Extract<
   keyof AgentRunnerKeyExpiryCleanup,

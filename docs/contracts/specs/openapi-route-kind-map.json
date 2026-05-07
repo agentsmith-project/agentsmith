@@ -55,6 +55,10 @@
     "path": "/api/v1/workspaces/{workspaceId}/projects/{projectId}/authorize",
     "method": "post"
   },
+  "agentTaskModelSetting": {
+    "path": "/api/v1/workspaces/{workspaceId}/projects/{projectId}/agent-task-model-setting",
+    "method": "get"
+  },
   "fileLibraries": {
     "path": "/api/v1/workspaces/{workspaceId}/projects/{projectId}/file-libraries",
     "method": "get"

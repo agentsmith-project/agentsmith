@@ -75,7 +75,10 @@ async function main(): Promise<void> {
       `ENDPOINT_ID=${endpointId}`,
       `AGENT_RUNNER_ID=${seedResult.runnerId}`,
       `AGENT_RUNNER_STATUS=${seedResult.status}`,
-      `AGENT_RUNNER_DEFAULT_ENDPOINT_ID=${seedResult.defaultEndpointId ?? endpointId}`,
+      `AGENT_RUNNER_DEFAULT_ENDPOINT_ID=${seedResult.defaultEndpointId ?? ''}`,
+      `AGENT_TASK_MODEL_SETTING_ENDPOINT_ID=${seedResult.agentTaskModelSetting.endpointId}`,
+      `AGENT_TASK_MODEL_SETTING_DEFAULT_MODEL=${seedResult.agentTaskModelSetting.defaultModelId}`,
+      `AGENT_TASK_MODEL_SETTING_REVISION=${seedResult.agentTaskModelSetting.settingRevision}`,
       `AGENT_RUNNER_WS_URL=${seedResult.wsUrl}`,
       `WS_URL=${seedResult.wsUrl}`,
       `PRESET_ANTHROPIC_ENDPOINT_BASE_URL=${readNestedString(endpoint, 'base_url')}`,
@@ -89,6 +92,12 @@ async function main(): Promise<void> {
     project_id: projectId,
     agent_runner_id: seedResult.runnerId,
     default_endpoint_id: seedResult.defaultEndpointId,
+    agent_task_model_setting: {
+      endpoint_id: seedResult.agentTaskModelSetting.endpointId,
+      default_model_id: seedResult.agentTaskModelSetting.defaultModelId,
+      setting_revision: seedResult.agentTaskModelSetting.settingRevision,
+      updated: seedResult.agentTaskModelSetting.updated,
+    },
     ws_url: seedResult.wsUrl,
   }, null, 2)}\n`);
 }

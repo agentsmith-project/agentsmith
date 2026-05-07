@@ -39,6 +39,54 @@ describe('agent-runner task execution context guards', () => {
     expect(assertTaskExecutionContext(value)).toEqual(value);
   });
 
+  it('accepts request-scoped resource proxy and agent task model snapshots', () => {
+    const value = {
+      task_id: 'task_1',
+      run_id: 'run_1',
+      endpoint_id: 'ep_fresh',
+      model: 'gpt-fresh',
+      wire_api: 'openai_responses',
+      agent_task_model: {
+        endpoint_id: 'ep_fresh',
+        resolved_model: 'gpt-fresh',
+        upstream_protocol: 'openai_responses',
+        setting_revision: 'set_fresh',
+        resolved_at: '2026-05-07T00:00:00.000Z',
+      },
+      resource_proxy: {
+        base_url: 'http://api.local/api/v1/workspaces/ws_1/projects/proj_1/endpoints/ep_fresh/proxy/openai',
+      },
+    };
+
+    expect(isTaskExecutionContext(value)).toBe(true);
+    expect(assertTaskExecutionContext(value)).toEqual(value);
+  });
+
+  it('rejects malformed request-scoped resource proxy and model snapshots', () => {
+    for (const value of [
+      {
+        task_id: 'task_1',
+        resource_proxy: {},
+      },
+      {
+        task_id: 'task_1',
+        resource_proxy: { base_url: '' },
+      },
+      {
+        task_id: 'task_1',
+        agent_task_model: {
+          endpoint_id: 'ep_1',
+          resolved_model: 'gpt-1',
+          upstream_protocol: 'legacy_chat',
+          setting_revision: 'set_1',
+        },
+      },
+    ]) {
+      expect(isTaskExecutionContext(value)).toBe(false);
+      expect(() => assertTaskExecutionContext(value)).toThrowError('task_execution_context_invalid');
+    }
+  });
+
   it('accepts canonical terminal task execution context subsets', () => {
     const value: TaskExecutionContext = {
       workspace_id: 'ws_1',
@@ -213,5 +261,17 @@ describe('agent-runner task execution context guards', () => {
     expect(protocolSource).not.toMatch(/\bNotebookExecutionContext\b/);
     expect(protocolSource).toContain('runner_session_id?: string');
     expect(protocolSource).not.toMatch(/\bsession_id\?:/);
+  });
+
+  it('does not publish resource_proxy on server.hello payloads', () => {
+    const protocolSource = readFileSync(
+      path.join(process.cwd(), 'packages/agent-runner/src/protocol.ts'),
+      'utf8',
+    );
+    const helloPayloadStart = protocolSource.indexOf('export type AgentServerHelloPayload');
+    const nextTypeStart = protocolSource.indexOf('export type AgentEnvelope', helloPayloadStart);
+    const helloPayloadSource = protocolSource.slice(helloPayloadStart, nextTypeStart);
+
+    expect(helloPayloadSource).not.toContain('resource_proxy');
   });
 });

@@ -50,6 +50,11 @@ interface AgentRunnerKeysDialogProps {
   actions: AgentRunnerActions;
 }
 
+function isAgentTaskModelSetupReason(reasonCode: string | undefined): boolean {
+  return typeof reasonCode === 'string'
+    && (reasonCode.startsWith('agent_task_model_') || reasonCode === 'agent_runner_model_unconfigured');
+}
+
 export function AgentRunnerKeysDialog({
   open,
   onOpenChange,
@@ -195,6 +200,9 @@ export function AgentRunnerKeysDialog({
   const canRunTestTask = sheetState.actionStates.runTestTask.visible;
   const testConnectionEnabled = sheetState.actionStates.testConnection.enabled;
   const runTestTaskEnabled = sheetState.actionStates.runTestTask.enabled;
+  const runTestTaskModelSetupBlocked = canRunTestTask
+    && !sheetState.actionStates.runTestTask.allowed
+    && isAgentTaskModelSetupReason(sheetState.actionStates.runTestTask.reasonCode);
 
   const onCopyWsUrl = async () => {
     if (!connectionInfo?.ws_url) return;
@@ -318,6 +326,14 @@ export function AgentRunnerKeysDialog({
                         {testConnectionResult.status === 'connected'
                           ? t('test_connection_result_connected')
                           : t('test_connection_result_disconnected')}
+                      </div>
+                    ) : null}
+                    {runTestTaskModelSetupBlocked ? (
+                      <div
+                        className="mt-3 rounded-md border border-subtle bg-surface px-3 py-2 text-xs text-tertiary"
+                        data-testid="agent-runners__runner-test-task-model-blocker"
+                      >
+                        {t('run_test_task_model_setup_blocked')}
                       </div>
                     ) : null}
                     {testTaskResult ? (

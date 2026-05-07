@@ -490,6 +490,33 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/workspaces/{workspaceId}/projects/{projectId}/agent-task-model-setting": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                projectId: components["parameters"]["projectId"];
+                workspaceId: components["parameters"]["workspaceId"];
+            };
+            cookie?: never;
+        };
+        /**
+         * Get Agent task model setting readiness
+         * @description Returns a permission-shaped project Agent task model setting view. Task-only viewers receive display-safe readiness only; governance viewers may also receive setting details and management actions.
+         */
+        get: operations["getAgentTaskModelSetting"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        /**
+         * Update the project Agent task model setting
+         * @description Updates the project Agent task model setting to use the selected Endpoint default model. The backend recomputes Endpoint row action eligibility and rejects stale revisions.
+         */
+        patch: operations["updateAgentTaskModelSetting"];
+        trace?: never;
+    };
     "/api/v1/workspaces/{workspaceId}/projects/{projectId}/alert-notifications": {
         parameters: {
             query?: never;
@@ -2639,6 +2666,59 @@ export interface components {
             /** @enum {string} */
             status: "not_started";
         };
+        AgentTaskModelSetting: {
+            /** @description Display-safe Endpoint default model label. */
+            default_model?: string;
+            /** @description Present only when the Endpoint contract has a stable default-model record. */
+            default_model_id?: string;
+            endpoint_display_name?: string;
+            endpoint_id: string;
+            project_id: string;
+            setting_revision: string;
+            /** Format: date-time */
+            updated_at: string;
+            updated_by_user_id: string;
+            workspace_id: string;
+        };
+        AgentTaskModelSettingAction: {
+            allowed: boolean;
+            /** @enum {string} */
+            danger_level: "none";
+            /** @enum {string} */
+            operation: "update";
+            reason_code?: components["schemas"]["AgentTaskModelSettingReadinessReasonCode"];
+            required_permissions: string[];
+            visible: boolean;
+        };
+        AgentTaskModelSettingActions: {
+            update: components["schemas"]["AgentTaskModelSettingAction"];
+        };
+        AgentTaskModelSettingConflictError: {
+            details?: {
+                [key: string]: unknown;
+            };
+            /** @enum {string} */
+            error_code: "agent_task_model_setting_conflict";
+            /** @enum {string} */
+            field: "expected_setting_revision";
+            /** @enum {string} */
+            message: "agent_task_model_setting_conflict";
+        };
+        AgentTaskModelSettingReadiness: {
+            /** @description Display-safe readiness summary. It never exposes Endpoint route details, credentials, or raw diagnostics. */
+            display_summary: string;
+            reason_code?: components["schemas"]["AgentTaskModelSettingReadinessReasonCode"];
+            state: components["schemas"]["AgentTaskModelSettingReadinessState"];
+        };
+        /** @enum {string} */
+        AgentTaskModelSettingReadinessReasonCode: "setting_missing" | "endpoint_missing" | "endpoint_disabled" | "default_model_missing" | "unsupported_capability" | "unsupported_protocol" | "credential_unavailable" | "governance_denied" | "resource_policy_denied" | "permission_denied";
+        /** @enum {string} */
+        AgentTaskModelSettingReadinessState: "ready" | "not_configured" | "unavailable" | "permission_denied";
+        AgentTaskModelSettingResponse: {
+            actions?: components["schemas"]["AgentTaskModelSettingActions"];
+            readiness: components["schemas"]["AgentTaskModelSettingReadiness"];
+            setting?: components["schemas"]["AgentTaskModelSetting"];
+        };
         /** @description Alert behavior settings */
         AlertBehavior: {
             /** @description Minimum time between alerts */
@@ -3096,13 +3176,37 @@ export interface components {
             }[];
         };
         Endpoint: {
+            actions: components["schemas"]["EndpointActions"];
             base_url: string;
-            capability: string;
+            capabilities?: components["schemas"]["EndpointCapability"][];
+            capability: components["schemas"]["EndpointCapabilityType"];
             id: string;
             model: string;
             name: string;
             provider: string;
         };
+        EndpointActionAffordance: {
+            allowed: boolean;
+            danger_level: components["schemas"]["EndpointActionDangerLevel"];
+            operation: components["schemas"]["EndpointActionOperation"];
+            reason_code?: components["schemas"]["AgentTaskModelSettingReadinessReasonCode"];
+            required_permissions: string[];
+            visible: boolean;
+        };
+        /** @enum {string} */
+        EndpointActionDangerLevel: "none" | "medium" | "high";
+        /** @enum {string} */
+        EndpointActionOperation: "use_for_agent_tasks";
+        EndpointActions: {
+            use_for_agent_tasks: components["schemas"]["EndpointActionAffordance"];
+        };
+        EndpointCapability: {
+            default_model_id?: string;
+            enabled: boolean;
+            type: components["schemas"]["EndpointCapabilityType"];
+        };
+        /** @enum {string} */
+        EndpointCapabilityType: "chat_completion" | "multimodal_completion" | "embedding" | "rerank" | "image_generation" | "video_generation";
         /** @description Endpoint-level grouped limits for Usage view */
         EndpointLimitSummary: {
             endpoint_id: string;
@@ -3771,6 +3875,10 @@ export interface components {
         UpdateAgentRunnerRequest: {
             description?: string;
             name?: string;
+        };
+        UpdateAgentTaskModelSettingRequest: {
+            endpoint_id: string;
+            expected_setting_revision: string;
         };
         UpdateChatSessionRequest: {
             endpoint_id?: string;
@@ -5264,6 +5372,79 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["AgentRunnerTestTaskRunUnavailableResponse"];
+                };
+            };
+        };
+    };
+    getAgentTaskModelSetting: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                projectId: components["parameters"]["projectId"];
+                workspaceId: components["parameters"]["workspaceId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Agent task model setting readiness */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AgentTaskModelSettingResponse"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+        };
+    };
+    updateAgentTaskModelSetting: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                projectId: components["parameters"]["projectId"];
+                workspaceId: components["parameters"]["workspaceId"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["UpdateAgentTaskModelSettingRequest"];
+            };
+        };
+        responses: {
+            /** @description Agent task model setting updated */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AgentTaskModelSettingResponse"];
+                };
+            };
+            /** @description Unsupported model-setting request field */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["UnsupportedFieldError"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            /** @description Stale Agent task model setting revision */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AgentTaskModelSettingConflictError"];
                 };
             };
         };

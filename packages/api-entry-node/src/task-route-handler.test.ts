@@ -52,6 +52,7 @@ import {
   upsertProjectMembershipRecord,
 } from './project-member-governance-persistence.js';
 import { resolveWorkspaceScopedCollection } from './workspace-tenant-collections.js';
+import { AgentTaskModelSettingService } from './agent-task-model-setting-service.js';
 
 const { createFileLibraryGatewayClientMock } = vi.hoisted(() => ({
   createFileLibraryGatewayClientMock: vi.fn(),
@@ -145,11 +146,16 @@ describe('task-route-handler workspace access', () => {
     deps: ReturnType<typeof createDefaultNodeApiDeps>,
     projectId = 'proj_1',
   ) {
+    const credential = await deps.endpointResourceService.createCredential('ws_default', projectId, {
+      name: `runner-binding-${projectId}-key`,
+      value: 'sk-runner-binding',
+    });
     return deps.endpointResourceService.createEndpoint('ws_default', projectId, {
       name: 'runner binding options endpoint',
       model: 'gpt-5-codex',
       type: 'custom',
       base_url: 'https://example.com/v1',
+      credential_ref: credential.id,
       status: 'active',
       upstream_protocol: 'openai_chat_completions',
       model_profile: {
@@ -163,6 +169,34 @@ describe('task-route-handler workspace access', () => {
         cache_read_discount_ratio: 0,
         cache_write_discount_ratio: 0,
       },
+    });
+  }
+
+  async function seedAgentTaskModelSetting(
+    deps: ReturnType<typeof createDefaultNodeApiDeps>,
+    projectId: string,
+    endpointId: string,
+    actorUserId = 'project_owner_for_permissions_test',
+  ): Promise<void> {
+    const endpoint = await deps.endpointResourceService.getEndpoint('ws_default', projectId, endpointId);
+    const credentialSecret = endpoint?.credential_ref
+      ? await deps.endpointResourceService.getCredentialSecret('ws_default', projectId, endpoint.credential_ref)
+      : null;
+    if (endpoint && !credentialSecret) {
+      const credential = await deps.endpointResourceService.createCredential('ws_default', projectId, {
+        name: `agent-task-model-${projectId}-key`,
+        value: 'sk-agent-task-model',
+      });
+      await deps.endpointResourceService.updateEndpoint('ws_default', projectId, endpointId, {
+        credential_ref: credential.id,
+      });
+    }
+    await new AgentTaskModelSettingService(deps).patchSetting({
+      workspaceId: 'ws_default',
+      projectId,
+      endpointId,
+      expectedSettingRevision: null,
+      actorUserId,
     });
   }
 
@@ -184,6 +218,7 @@ describe('task-route-handler workspace access', () => {
         file_inputs: true,
       },
     } as never);
+    await seedAgentTaskModelSetting(deps, projectId, endpoint.id);
     return { endpoint, runner };
   }
 
@@ -257,6 +292,7 @@ describe('task-route-handler workspace access', () => {
         file_inputs: true,
       },
     } as never);
+    await seedAgentTaskModelSetting(deps, 'proj_1', endpoint.id, 'user_1');
     expect(projection.id).not.toBe(staleProjectDefault.id);
 
     const json = vi.fn();
@@ -586,11 +622,16 @@ describe('task-route-handler workspace access', () => {
           },
         })),
       } as never;
+      const credential = await deps.endpointResourceService.createCredential('ws_default', projectId, {
+        name: 'explicit-runner-key',
+        value: 'sk-explicit-runner',
+      });
       const endpoint = await deps.endpointResourceService.createEndpoint('ws_default', projectId, {
         name: 'explicit runner endpoint',
         model: 'gpt-5-codex',
         type: 'custom',
         base_url: 'https://example.com/v1',
+        credential_ref: credential.id,
         status: 'active',
         upstream_protocol: 'openai_chat_completions',
         model_profile: {
@@ -605,6 +646,7 @@ describe('task-route-handler workspace access', () => {
           cache_write_discount_ratio: 0,
         },
       });
+      await seedAgentTaskModelSetting(deps, projectId, endpoint.id, 'user_1');
       const defaultRunner = await deps.agentResourceService.createAgent('ws_default', projectId, {
         name: 'Default task runner',
         status: 'enabled',
@@ -801,6 +843,7 @@ describe('task-route-handler workspace access', () => {
       permissions: ['project:agent_task:use'],
     });
     const endpoint = await createRunnerBindingEndpoint(deps, project.id);
+    await seedAgentTaskModelSetting(deps, project.id, endpoint.id, 'user_task_only');
     await deps.agentResourceService.createAgent('ws_default', project.id, {
       name: 'Default managed runner',
       status: 'enabled',
@@ -1353,6 +1396,7 @@ describe('task-route-handler workspace access', () => {
         cache_write_discount_ratio: 0,
       },
       });
+      await seedAgentTaskModelSetting(deps, 'proj_1', endpoint.id, 'user_1');
       deps.internalAgentPodManager = {
         ensureAgentReady: vi.fn(async () => undefined),
         keepalive: vi.fn(async () => undefined),
@@ -1429,7 +1473,13 @@ describe('task-route-handler workspace access', () => {
           expect.objectContaining({
             agentId: runner.id,
             executionContext: expect.objectContaining({
-              wire_api: 'openai_responses',
+              endpoint_id: endpoint.id,
+              wire_api: 'openai_chat_completions',
+              agent_task_model: expect.objectContaining({
+                endpoint_id: endpoint.id,
+                resolved_model: 'gpt-5-codex',
+                upstream_protocol: 'openai_chat_completions',
+              }),
             }),
           }),
         );
@@ -1483,6 +1533,7 @@ describe('task-route-handler workspace access', () => {
           cache_write_discount_ratio: 0,
         },
       });
+      await seedAgentTaskModelSetting(deps, 'proj_1', endpoint.id, 'user_1');
       deps.internalAgentPodManager = {
         ensureAgentReady: vi.fn(async () => undefined),
         keepalive: vi.fn(async () => undefined),
@@ -3294,10 +3345,11 @@ describe('task-route-handler workspace access', () => {
         status: 'active',
         credential_ref: 'cred_internal_pre_dispatch',
         upstream_protocol: 'openai_chat_completions',
-        model_profile: {
-          max_context_tokens: 128000,
-        },
+      model_profile: {
+        max_context_tokens: 128000,
+      },
       });
+      await seedAgentTaskModelSetting(deps, 'proj_1', endpoint.id, 'user_1');
       const agent = await deps.agentResourceService.createAgent('ws_default', 'proj_1', {
         name: 'internal-pre-dispatch-agent',
         mode: 'internal',
@@ -3522,10 +3574,11 @@ describe('task-route-handler workspace access', () => {
         status: 'active',
         credential_ref: 'cred_internal_pre_dispatch_persist_failed',
         upstream_protocol: 'openai_chat_completions',
-        model_profile: {
-          max_context_tokens: 128000,
-        },
+      model_profile: {
+        max_context_tokens: 128000,
+      },
       });
+      await seedAgentTaskModelSetting(deps, 'proj_1', endpoint.id, 'user_1');
       const agent = await deps.agentResourceService.createAgent('ws_default', 'proj_1', {
         name: 'internal-pre-dispatch-persist-failed-agent',
         mode: 'internal',
@@ -3701,10 +3754,11 @@ describe('task-route-handler workspace access', () => {
         status: 'active',
         credential_ref: 'cred_internal_late_on_dispatched',
         upstream_protocol: 'openai_chat_completions',
-        model_profile: {
-          max_context_tokens: 128000,
-        },
+      model_profile: {
+        max_context_tokens: 128000,
+      },
       });
+      await seedAgentTaskModelSetting(deps, 'proj_1', endpoint.id, 'user_1');
       const agent = await deps.agentResourceService.createAgent('ws_default', 'proj_1', {
         name: 'internal-late-on-dispatched-agent',
         mode: 'internal',
@@ -5668,6 +5722,7 @@ describe('task-route-handler workspace access', () => {
         status: 'active',
         upstream_protocol: 'openai_responses',
       });
+      await seedAgentTaskModelSetting(deps, 'proj_1', endpoint.id, 'user_1');
       await deps.agentResourceService.createAgent('ws_default', 'proj_1', {
         name: 'Default runner that must not be re-resolved',
         status: 'enabled',
@@ -5752,6 +5807,16 @@ describe('task-route-handler workspace access', () => {
         agentId: activeRunner.id,
         resolvedRunnerId: activeRunner.id,
         runnerSessionId: 'task_active_terminal_inherit',
+        executionContext: expect.objectContaining({
+          endpoint_id: endpoint.id,
+          model: 'gpt-5-codex',
+          wire_api: 'openai_responses',
+          agent_task_model: expect.objectContaining({
+            endpoint_id: endpoint.id,
+            resolved_model: 'gpt-5-codex',
+            upstream_protocol: 'openai_responses',
+          }),
+        }),
       }));
       expect(deps.agentExecutionService.getAgentSessionDispatchAuthority).toHaveBeenCalledWith(
         activeRunner.id,
@@ -5880,6 +5945,7 @@ describe('task-route-handler workspace access', () => {
         status: 'active',
         upstream_protocol: 'openai_responses',
       });
+      await seedAgentTaskModelSetting(deps, 'proj_1', endpoint.id, 'user_1');
       const runner = await deps.agentResourceService.createAgent('ws_default', 'proj_1', {
         name: 'Terminal unresolved recovery default',
         status: 'enabled',
@@ -6044,6 +6110,7 @@ describe('task-route-handler workspace access', () => {
           cache_write_discount_ratio: 0,
         },
       });
+      await seedAgentTaskModelSetting(deps, 'proj_1', endpoint.id, 'user_1');
       const runner = await deps.agentResourceService.upsertDeploymentDefaultManagedAgentRunner('ws_default', 'proj_1', {
         name: 'Default terminal evidence runner',
         status: 'enabled',
@@ -6303,6 +6370,7 @@ describe('task-route-handler workspace access', () => {
         status: 'active',
         upstream_protocol: 'openai_responses',
       });
+      await seedAgentTaskModelSetting(deps, 'proj_1', endpoint.id, 'user_1');
       const runner = await deps.agentResourceService.createAgent('ws_default', 'proj_1', {
         name: 'Terminal context runner',
         status: 'enabled',
@@ -6376,7 +6444,7 @@ describe('task-route-handler workspace access', () => {
       const executionTicket = String(executionContext?.execution_ticket ?? '');
       await expect(resolveInternalTicket(deps.cache, executionTicket, 'agent_execution')).resolves.toMatchObject({
         payload: {
-          endpoint_id: 'terminal',
+          endpoint_id: endpoint.id,
           task_id: 'task_terminal_context',
           runner_session_id: 'task_terminal_context',
           agent_runner_id: runner.id,
@@ -6416,6 +6484,7 @@ describe('task-route-handler workspace access', () => {
         status: 'active',
         upstream_protocol: 'openai_responses',
       });
+      await seedAgentTaskModelSetting(deps, 'proj_1', endpoint.id, 'user_1');
       const runner = await deps.agentResourceService.createAgent('ws_default', 'proj_1', {
         name: 'Terminal async create runner',
         status: 'enabled',
@@ -6666,6 +6735,7 @@ describe('task-route-handler workspace access', () => {
           max_context_tokens: 128000,
         },
       });
+      await seedAgentTaskModelSetting(deps, 'proj_1', endpoint.id, 'user_1');
       const agent = await deps.agentResourceService.createAgent('ws_default', 'proj_1', {
         name: 'internal-terminal-agent',
         mode: 'internal',

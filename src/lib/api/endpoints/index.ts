@@ -31,7 +31,12 @@ export type {
   UpdateEndpointRequest,
   EndpointBulkImportItem,
   EndpointBulkImportRequest,
+  UpdateAgentTaskModelSettingPayload,
 } from './endpoints';
+export type {
+  AgentTaskModelSettingResponse,
+  UpdateAgentTaskModelSettingRequest,
+} from '../types';
 export type { JoinRequest, Member } from './members';
 export type { CreateUserKeyRequest } from './user-keys';
 export type {

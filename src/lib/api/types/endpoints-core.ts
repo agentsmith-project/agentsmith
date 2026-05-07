@@ -34,6 +34,8 @@ export interface Endpoint {
   meta?: Record<string, string>;
   model_profile?: EndpointModelProfile;
   limits?: EndpointLimits;
+  agent_task_model_selected?: boolean;
+  actions?: EndpointActions;
   created_at: string;
   updated_at: string;
 }
@@ -99,6 +101,23 @@ export interface EndpointLimits {
   max_requests_per_day?: number;
   max_tokens_per_day?: number;
   timeout_seconds?: number;
+}
+
+export type EndpointActionOperation = 'use_for_agent_tasks';
+
+export type EndpointActionDangerLevel = 'none' | 'medium' | 'high';
+
+export interface EndpointActionAffordance {
+  operation: EndpointActionOperation;
+  visible: boolean;
+  allowed: boolean;
+  reason_code?: string;
+  required_permissions: string[];
+  danger_level: EndpointActionDangerLevel;
+}
+
+export interface EndpointActions {
+  use_for_agent_tasks: EndpointActionAffordance;
 }
 
 export interface EndpointModelProfile {

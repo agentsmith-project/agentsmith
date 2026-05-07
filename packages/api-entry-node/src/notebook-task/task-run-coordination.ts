@@ -1,4 +1,5 @@
 import type { CachePort } from '@mbos/ports';
+import type { AgentTaskModelSnapshot } from '../agent-task-model-setting-service.js';
 
 const NOTEBOOK_RUN_LEASE_TTL_SECONDS = 300;
 // Keep release ordering truth around well past the active run lease so delayed
@@ -59,6 +60,7 @@ export interface NotebookTaskRunState {
   run_id: string;
   runner_id?: string;
   resolved_runner_id?: string;
+  agent_task_model?: AgentTaskModelSnapshot;
   runner_test?: true;
   owner_instance_id: string;
   phase: NotebookTaskRunPhase;
@@ -414,6 +416,7 @@ export function buildNotebookTaskRunState(input: {
   startedAt: string;
   runnerId?: string;
   resolvedRunnerId?: string;
+  agentTaskModel?: AgentTaskModelSnapshot;
   runnerTest?: true;
   heartbeatAt?: string;
   requestId?: string;
@@ -426,6 +429,7 @@ export function buildNotebookTaskRunState(input: {
     run_id: input.runId,
     ...(input.runnerId ? { runner_id: input.runnerId } : {}),
     ...(input.resolvedRunnerId ? { resolved_runner_id: input.resolvedRunnerId } : {}),
+    ...(input.agentTaskModel ? { agent_task_model: input.agentTaskModel } : {}),
     ...(input.runnerTest ? { runner_test: true } : {}),
     owner_instance_id: input.ownerInstanceId?.trim() || NOTEBOOK_RUN_OWNER_INSTANCE_ID,
     phase: input.phase ?? 'running',

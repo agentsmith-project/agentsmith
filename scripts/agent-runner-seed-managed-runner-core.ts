@@ -2,7 +2,21 @@ import {
   DEFAULT_MONGO_JSON_DOC_STORE_POOL_OPTIONS,
   MongoJsonDocStore,
 } from '../packages/adapters-private/src/json-doc-store';
+import { InMemoryCache } from '../packages/adapters-private/src/cache';
+import type { JsonDocStorePort } from '@mbos/ports';
 import { AgentResourceService } from '../packages/api-entry-node/src/agent-resource-service';
+import { EndpointResourceService } from '../packages/api-entry-node/src/endpoint-resource-service';
+import {
+  AgentTaskModelSettingService,
+  resolveEndpointDefaultAgentTaskModel,
+} from '../packages/api-entry-node/src/agent-task-model-setting-service';
+
+export type DefaultManagedRunnerAgentTaskModelSettingSeedResult = {
+  endpointId: string;
+  defaultModelId: string;
+  settingRevision: string;
+  updated: boolean;
+};
 
 export type DefaultManagedRunnerSeedResult = {
   runnerId: string;
@@ -10,6 +24,7 @@ export type DefaultManagedRunnerSeedResult = {
   status: string;
   isDefault: boolean;
   defaultEndpointId: string | null;
+  agentTaskModelSetting: DefaultManagedRunnerAgentTaskModelSettingSeedResult;
   capabilities: Record<string, unknown>;
   diagnostics: Record<string, unknown>;
   wsUrl: string;
@@ -29,7 +44,62 @@ export type DefaultManagedRunnerSeedInput = {
   description?: string;
   capabilities?: Record<string, unknown>;
   diagnostics?: Record<string, unknown>;
+  actorUserId?: string;
 };
+
+async function ensureProjectAgentTaskModelSetting(input: {
+  docStore: JsonDocStorePort;
+  workspaceId: string;
+  projectId: string;
+  endpointId: string;
+  actorUserId?: string;
+}): Promise<DefaultManagedRunnerAgentTaskModelSettingSeedResult> {
+  const endpointResourceService = new EndpointResourceService(input.docStore);
+  const endpoint = await endpointResourceService.getEndpoint(
+    input.workspaceId,
+    input.projectId,
+    input.endpointId,
+  );
+  if (!endpoint) {
+    throw new Error('agent_task_model_setting_endpoint_not_found');
+  }
+  if (endpoint.workspace_id !== input.workspaceId || endpoint.project_id !== input.projectId) {
+    throw new Error('agent_task_model_setting_endpoint_project_mismatch');
+  }
+
+  const defaultModelId = resolveEndpointDefaultAgentTaskModel(endpoint);
+  const service = new AgentTaskModelSettingService({
+    docStore: input.docStore,
+    cache: new InMemoryCache(),
+    endpointResourceService,
+  });
+  const current = await service.getSetting(input.workspaceId, input.projectId);
+  if (
+    current?.endpoint_id === endpoint.id
+    && (current.default_model_id?.trim() || '') === defaultModelId
+  ) {
+    return {
+      endpointId: current.endpoint_id,
+      defaultModelId,
+      settingRevision: current.setting_revision,
+      updated: false,
+    };
+  }
+
+  const updated = await service.patchSetting({
+    workspaceId: input.workspaceId,
+    projectId: input.projectId,
+    endpointId: endpoint.id,
+    expectedSettingRevision: current?.setting_revision ?? null,
+    actorUserId: input.actorUserId?.trim() || 'system:agent-runner-seed',
+  });
+  return {
+    endpointId: updated.endpoint_id,
+    defaultModelId: updated.default_model_id ?? defaultModelId,
+    settingRevision: updated.setting_revision,
+    updated: true,
+  };
+}
 
 export async function upsertDeploymentDefaultManagedRunner(
   input: DefaultManagedRunnerSeedInput,
@@ -95,9 +165,13 @@ export async function upsertDeploymentDefaultManagedRunner(
     }
 
     const projectedDefaultEndpointId = refreshed.default_endpoint_id?.trim() || '';
-    if (projectedDefaultEndpointId !== endpointId) {
-      throw new Error('managed_runner_default_endpoint_projection_missing');
-    }
+    const agentTaskModelSetting = await ensureProjectAgentTaskModelSetting({
+      docStore: store,
+      workspaceId: input.workspaceId,
+      projectId: input.projectId,
+      endpointId,
+      actorUserId: input.actorUserId,
+    });
 
     const connectionInfo = service.buildConnectionInfo(refreshed);
     return {
@@ -105,7 +179,8 @@ export async function upsertDeploymentDefaultManagedRunner(
       runnerName: refreshed.name,
       status: refreshed.runner_status?.trim() || 'ready',
       isDefault: refreshed.is_default === true,
-      defaultEndpointId: projectedDefaultEndpointId,
+      defaultEndpointId: projectedDefaultEndpointId || null,
+      agentTaskModelSetting,
       capabilities: refreshed.capabilities ?? {},
       diagnostics: refreshed.diagnostics ?? {},
       wsUrl: connectionInfo.ws_url,

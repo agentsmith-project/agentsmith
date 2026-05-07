@@ -1,4 +1,5 @@
 export * from './agent-runners';
+export * from './agent-task-model-setting';
 export * from './audit-usage';
 export * from './chat';
 export * from './common';

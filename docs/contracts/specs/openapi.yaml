@@ -558,6 +558,70 @@ paths:
           $ref: "#/components/responses/Forbidden"
         "404":
           $ref: "#/components/responses/NotFound"
+  /api/v1/workspaces/{workspaceId}/projects/{projectId}/agent-task-model-setting:
+    parameters:
+      - $ref: "#/components/parameters/workspaceId"
+      - $ref: "#/components/parameters/projectId"
+    get:
+      tags:
+        - Agent Tasks
+      operationId: getAgentTaskModelSetting
+      summary: Get Agent task model setting readiness
+      description: >
+        Returns a permission-shaped project Agent task model setting view.
+        Task-only viewers receive display-safe readiness only; governance
+        viewers may also receive setting details and management actions.
+      responses:
+        "200":
+          description: Agent task model setting readiness
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AgentTaskModelSettingResponse"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+    patch:
+      tags:
+        - Agent Tasks
+      operationId: updateAgentTaskModelSetting
+      summary: Update the project Agent task model setting
+      description: >
+        Updates the project Agent task model setting to use the selected
+        Endpoint default model. The backend recomputes Endpoint row action
+        eligibility and rejects stale revisions.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateAgentTaskModelSettingRequest"
+      responses:
+        "200":
+          description: Agent task model setting updated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AgentTaskModelSettingResponse"
+        "400":
+          description: Unsupported model-setting request field
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/UnsupportedFieldError"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          description: Stale Agent task model setting revision
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AgentTaskModelSettingConflictError"
   /api/v1/workspaces/{workspaceId}/projects/{projectId}/endpoints:
     parameters:
       - $ref: "#/components/parameters/workspaceId"
@@ -6900,6 +6964,220 @@ components:
             - not_started
         resolved_runner_id:
           type: string
+    AgentTaskModelSettingReadinessState:
+      type: string
+      enum:
+        - ready
+        - not_configured
+        - unavailable
+        - permission_denied
+    AgentTaskModelSettingReadinessReasonCode:
+      type: string
+      enum:
+        - setting_missing
+        - endpoint_missing
+        - endpoint_disabled
+        - default_model_missing
+        - unsupported_capability
+        - unsupported_protocol
+        - credential_unavailable
+        - governance_denied
+        - resource_policy_denied
+        - permission_denied
+    AgentTaskModelSettingReadiness:
+      type: object
+      additionalProperties: false
+      required:
+        - state
+        - display_summary
+      properties:
+        state:
+          $ref: "#/components/schemas/AgentTaskModelSettingReadinessState"
+        display_summary:
+          type: string
+          description: Display-safe readiness summary. It never exposes Endpoint route details, credentials, or raw diagnostics.
+        reason_code:
+          $ref: "#/components/schemas/AgentTaskModelSettingReadinessReasonCode"
+    AgentTaskModelSetting:
+      type: object
+      additionalProperties: false
+      required:
+        - workspace_id
+        - project_id
+        - endpoint_id
+        - setting_revision
+        - updated_at
+        - updated_by_user_id
+      properties:
+        workspace_id:
+          type: string
+        project_id:
+          type: string
+        endpoint_id:
+          type: string
+        endpoint_display_name:
+          type: string
+        default_model_id:
+          type: string
+          description: Present only when the Endpoint contract has a stable default-model record.
+        default_model:
+          type: string
+          description: Display-safe Endpoint default model label.
+        setting_revision:
+          type: string
+        updated_at:
+          type: string
+          format: date-time
+        updated_by_user_id:
+          type: string
+    AgentTaskModelSettingAction:
+      type: object
+      additionalProperties: false
+      required:
+        - operation
+        - visible
+        - allowed
+        - required_permissions
+        - danger_level
+      properties:
+        operation:
+          type: string
+          enum:
+            - update
+        visible:
+          type: boolean
+        allowed:
+          type: boolean
+        reason_code:
+          $ref: "#/components/schemas/AgentTaskModelSettingReadinessReasonCode"
+        required_permissions:
+          type: array
+          items:
+            type: string
+        danger_level:
+          type: string
+          enum:
+            - none
+    AgentTaskModelSettingActions:
+      type: object
+      additionalProperties: false
+      required:
+        - update
+      properties:
+        update:
+          $ref: "#/components/schemas/AgentTaskModelSettingAction"
+    AgentTaskModelSettingResponse:
+      type: object
+      additionalProperties: false
+      required:
+        - readiness
+      properties:
+        readiness:
+          $ref: "#/components/schemas/AgentTaskModelSettingReadiness"
+        setting:
+          $ref: "#/components/schemas/AgentTaskModelSetting"
+        actions:
+          $ref: "#/components/schemas/AgentTaskModelSettingActions"
+    UpdateAgentTaskModelSettingRequest:
+      type: object
+      additionalProperties: false
+      required:
+        - endpoint_id
+        - expected_setting_revision
+      properties:
+        endpoint_id:
+          type: string
+          minLength: 1
+        expected_setting_revision:
+          type: string
+          minLength: 1
+    AgentTaskModelSettingConflictError:
+      type: object
+      additionalProperties: false
+      required:
+        - error_code
+        - message
+        - field
+      properties:
+        error_code:
+          type: string
+          enum:
+            - agent_task_model_setting_conflict
+        message:
+          type: string
+          enum:
+            - agent_task_model_setting_conflict
+        field:
+          type: string
+          enum:
+            - expected_setting_revision
+        details:
+          type: object
+          additionalProperties: true
+    EndpointCapabilityType:
+      type: string
+      enum:
+        - chat_completion
+        - multimodal_completion
+        - embedding
+        - rerank
+        - image_generation
+        - video_generation
+    EndpointCapability:
+      type: object
+      additionalProperties: false
+      required:
+        - type
+        - enabled
+      properties:
+        type:
+          $ref: "#/components/schemas/EndpointCapabilityType"
+        enabled:
+          type: boolean
+        default_model_id:
+          type: string
+    EndpointActionDangerLevel:
+      type: string
+      enum:
+        - none
+        - medium
+        - high
+    EndpointActionOperation:
+      type: string
+      enum:
+        - use_for_agent_tasks
+    EndpointActionAffordance:
+      type: object
+      additionalProperties: false
+      required:
+        - operation
+        - visible
+        - allowed
+        - required_permissions
+        - danger_level
+      properties:
+        operation:
+          $ref: "#/components/schemas/EndpointActionOperation"
+        visible:
+          type: boolean
+        allowed:
+          type: boolean
+        reason_code:
+          $ref: "#/components/schemas/AgentTaskModelSettingReadinessReasonCode"
+        required_permissions:
+          type: array
+          items:
+            type: string
+        danger_level:
+          $ref: "#/components/schemas/EndpointActionDangerLevel"
+    EndpointActions:
+      type: object
+      additionalProperties: false
+      required:
+        - use_for_agent_tasks
+      properties:
+        use_for_agent_tasks:
+          $ref: "#/components/schemas/EndpointActionAffordance"
     Endpoint:
       type: object
       required:
@@ -6909,19 +7187,26 @@ components:
         - provider
         - base_url
         - model
+        - actions
       properties:
         id:
           type: string
         name:
           type: string
         capability:
-          type: string
+          $ref: "#/components/schemas/EndpointCapabilityType"
         provider:
           type: string
         base_url:
           type: string
         model:
           type: string
+        capabilities:
+          type: array
+          items:
+            $ref: "#/components/schemas/EndpointCapability"
+        actions:
+          $ref: "#/components/schemas/EndpointActions"
     CreateEndpointRequest:
       type: object
       required:

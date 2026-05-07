@@ -15,6 +15,7 @@ export type ProjectsRoute =
   | { kind: 'collection'; workspaceId: string }
   | { kind: 'item'; workspaceId: string; projectId: string }
   | { kind: 'projectAuthorize'; workspaceId: string; projectId: string }
+  | { kind: 'agentTaskModelSetting'; workspaceId: string; projectId: string }
   | { kind: 'fileLibraries'; workspaceId: string; projectId: string }
   | { kind: 'fileLibraryItem'; workspaceId: string; projectId: string; libraryId: string }
   | { kind: 'fileLibraryBackend'; workspaceId: string; projectId: string; libraryId: string }
@@ -246,6 +247,17 @@ export function matchProjectsRoute(url: string): ProjectsRoute | null {
       kind: 'projectAuthorize',
       workspaceId: decodeURIComponent(projectAuthorizeMatched[1]),
       projectId: decodeURIComponent(projectAuthorizeMatched[2]),
+    };
+  }
+
+  const agentTaskModelSettingMatched = pathname.match(
+    /^\/api\/v1\/workspaces\/([^/]+)\/projects\/([^/]+)\/agent-task-model-setting\/?$/,
+  );
+  if (agentTaskModelSettingMatched) {
+    return {
+      kind: 'agentTaskModelSetting',
+      workspaceId: decodeURIComponent(agentTaskModelSettingMatched[1]),
+      projectId: decodeURIComponent(agentTaskModelSettingMatched[2]),
     };
   }
 

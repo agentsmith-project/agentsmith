@@ -41,6 +41,11 @@ import {
   mapTaskMessagesForExecution,
 } from './notebook-task/task-realtime-view.js';
 import { emitNotebookTaskEvent } from './notebook-task-sse-broker.js';
+import {
+  AgentTaskModelResolutionError,
+  type AgentTaskModelResolvedTarget,
+  resolveAgentTaskModelTarget,
+} from './agent-task-model-setting-service.js';
 
 const RUNNER_TEST_DEFAULT_INTENT = 'Run a Developer runner self-check.';
 const RUNNER_TEST_TASK_TITLE = 'Developer runner test task';
@@ -57,7 +62,7 @@ export type RunnerTestTaskRunDispatchResult =
   | { ok: true; accepted: RunnerTestTaskRunAccepted }
   | {
       ok: false;
-      errorCode: 'agent_runner_test_task_unavailable';
+      errorCode: 'agent_runner_test_task_unavailable' | string;
       message: string;
     };
 
@@ -180,6 +185,31 @@ export async function dispatchDeveloperRunnerTestTaskRun(input: {
     };
   }
 
+  let agentTaskModelTarget: AgentTaskModelResolvedTarget;
+  try {
+    agentTaskModelTarget = await resolveAgentTaskModelTarget({
+      deps: input.deps,
+      workspaceId: input.workspaceId,
+      projectId: input.projectId,
+      actorUserId: input.user.id,
+      requestId: input.requestId,
+      source: 'agent_runner_test_task',
+      contextMetadata: {
+        runner_id: input.runner.id,
+        runner_test: true,
+      },
+    });
+  } catch (error) {
+    if (error instanceof AgentTaskModelResolutionError) {
+      return {
+        ok: false,
+        errorCode: error.code,
+        message: error.code,
+      };
+    }
+    throw error;
+  }
+
   const workspaceFileLibrary = await createRunnerTestWorkspace({
     deps: input.deps,
     workspaceId: input.workspaceId,
@@ -244,6 +274,7 @@ export async function dispatchDeveloperRunnerTestTaskRun(input: {
     runId,
     runnerId: input.runner.id,
     resolvedRunnerId: input.runner.id,
+    agentTaskModel: agentTaskModelTarget.snapshot,
     runnerTest: true,
     startedAt,
     ownerInstanceId: getNotebookRunOwnerInstanceId(),
@@ -257,7 +288,6 @@ export async function dispatchDeveloperRunnerTestTaskRun(input: {
     };
   }
 
-  let heartbeatTimer: NodeJS.Timeout | undefined;
   let localRunTrackingReleased = false;
   let sharedRunControlCleared = false;
   const releaseLocalRunTracking = (releaseInput?: { preserveCancelMarker?: boolean }): void => {
@@ -326,7 +356,7 @@ export async function dispatchDeveloperRunnerTestTaskRun(input: {
     },
   });
 
-  heartbeatTimer = setInterval(() => {
+  const heartbeatTimer = setInterval(() => {
     sharedRunState = {
       ...sharedRunState,
       heartbeat_at: nowIso(),
@@ -339,6 +369,7 @@ export async function dispatchDeveloperRunnerTestTaskRun(input: {
     task,
     assistantMessage,
     agentId: input.runner.id,
+    agentTaskModelTarget,
     user: input.user,
     publicBaseUrl,
     buildRunId: () => runId,

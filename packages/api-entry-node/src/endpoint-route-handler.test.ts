@@ -1,9 +1,16 @@
 import { EventEmitter } from 'node:events';
 import type http from 'node:http';
 import { beforeEach, afterEach, describe, expect, it, vi } from 'vitest';
+import { InMemoryCache, InMemoryJsonDocStore } from '@mbos/adapters-private';
 import type { AuthenticatedUser } from './auth.js';
 import type { NodeApiDeps } from './node-api-deps.js';
 import type { EndpointRecord } from './resource-models.js';
+import { EndpointResourceService } from './endpoint-resource-service.js';
+import {
+  upsertProjectMemberPermissionState,
+  upsertProjectMembershipRecord,
+} from './project-member-governance-persistence.js';
+import { AgentTaskModelSettingService } from './agent-task-model-setting-service.js';
 
 const {
   enforceEndpointGovernancePreflightMock,
@@ -408,5 +415,149 @@ describe('handleEndpointRoute downstream abort timing', () => {
       message: 'endpoint_proxy_response_closed',
     });
     expect(proxyJsonRequest).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('handleEndpointRoute Agent task model row actions', () => {
+  async function createEndpointListDeps(permissions: string[]): Promise<NodeApiDeps> {
+    const docStore = new InMemoryJsonDocStore();
+    const deps = {
+      cache: new InMemoryCache(),
+      docStore,
+      endpointResourceService: new EndpointResourceService(docStore),
+      getProjectUseCase: {
+        execute: vi.fn(async () => ({
+          id: 'proj_1',
+          workspace_id: 'ws_default',
+          owner_id: 'owner_1',
+          governance_json: null,
+        })),
+      },
+    } as unknown as NodeApiDeps;
+    await upsertProjectMembershipRecord(docStore, 'ws_default', 'proj_1', {
+      project_id: 'proj_1',
+      user_id: 'user_1',
+      user_email: 'user@example.com',
+      user_name: 'User 1',
+      status: 'active',
+      joined_at: '2026-05-07T00:00:00.000Z',
+    });
+    await upsertProjectMemberPermissionState(docStore, 'ws_default', 'proj_1', 'user_1', {
+      mode: 'custom',
+      template: null,
+      permissions,
+    });
+    return deps;
+  }
+
+  async function createReadyEndpointForList(deps: NodeApiDeps): Promise<EndpointRecord> {
+    const credential = await deps.endpointResourceService.createCredential('ws_default', 'proj_1', {
+      name: 'row-action-key',
+      value: 'sk-row-action',
+    });
+    return deps.endpointResourceService.createEndpoint('ws_default', 'proj_1', {
+      name: 'Ready Agent task endpoint',
+      model: 'gpt-5.5',
+      type: 'custom',
+      base_url: 'https://provider.example/v1',
+      credential_ref: credential.id,
+      status: 'active',
+      upstream_protocol: 'openai_responses',
+      capabilities: [{ type: 'chat_completion', enabled: true, default_model_id: 'gpt-5.5' }],
+      defaults: { chat_model_id: 'gpt-5.5' },
+    });
+  }
+
+  it('returns backend-computed Agent task row actions without adding an endpoint capability enum', async () => {
+    const deps = await createEndpointListDeps(['project:governance:update']);
+    const ready = await createReadyEndpointForList(deps);
+    const missingCredential = await deps.endpointResourceService.createEndpoint('ws_default', 'proj_1', {
+      name: 'Missing credential endpoint',
+      model: 'gpt-5.5',
+      type: 'custom',
+      base_url: 'https://provider.example/v1',
+      status: 'active',
+      upstream_protocol: 'openai_responses',
+    });
+    await new AgentTaskModelSettingService(deps).patchSetting({
+      workspaceId: 'ws_default',
+      projectId: 'proj_1',
+      endpointId: ready.id,
+      expectedSettingRevision: null,
+      actorUserId: 'user_1',
+    });
+    const json = vi.fn();
+
+    await expect(handleEndpointRoute({
+      route: { kind: 'endpoints', workspaceId: 'ws_default', projectId: 'proj_1' } as never,
+      method: 'GET',
+      req: { headers: {}, url: '' } as never,
+      res: {} as never,
+      deps,
+      user,
+      internalTicket: null,
+      json,
+      readBody: vi.fn(),
+      buildUpstreamUrl,
+      proxyJsonRequest: vi.fn(),
+    })).resolves.toBe(true);
+
+    const body = json.mock.calls[0]?.[2] as { items: Array<Record<string, unknown>> };
+    const readyRow = body.items.find((item) => item.id === ready.id);
+    const blockedRow = body.items.find((item) => item.id === missingCredential.id);
+    expect(readyRow).toMatchObject({
+      agent_task_model_selected: true,
+      actions: {
+        use_for_agent_tasks: {
+          operation: 'use_for_agent_tasks',
+          visible: true,
+          allowed: true,
+          required_permissions: ['project:governance:update'],
+        },
+      },
+    });
+    expect(readyRow).not.toHaveProperty('agent_task_capable');
+    expect(blockedRow).toMatchObject({
+      agent_task_model_selected: false,
+      actions: {
+        use_for_agent_tasks: {
+          visible: true,
+          allowed: false,
+          reason_code: 'agent_task_model_credential_missing',
+        },
+      },
+    });
+    expect(blockedRow).not.toHaveProperty('agent_task_capable');
+  });
+
+  it('hides Agent task row actions from callers without project governance update permission', async () => {
+    const deps = await createEndpointListDeps(['project:agent_task:use']);
+    await createReadyEndpointForList(deps);
+    const json = vi.fn();
+
+    await expect(handleEndpointRoute({
+      route: { kind: 'endpoints', workspaceId: 'ws_default', projectId: 'proj_1' } as never,
+      method: 'GET',
+      req: { headers: {}, url: '' } as never,
+      res: {} as never,
+      deps,
+      user,
+      internalTicket: null,
+      json,
+      readBody: vi.fn(),
+      buildUpstreamUrl,
+      proxyJsonRequest: vi.fn(),
+    })).resolves.toBe(true);
+
+    const body = json.mock.calls[0]?.[2] as { items: Array<Record<string, unknown>> };
+    expect(body.items[0]).toMatchObject({
+      actions: {
+        use_for_agent_tasks: {
+          visible: false,
+          allowed: false,
+          required_permissions: ['project:governance:update'],
+        },
+      },
+    });
   });
 });

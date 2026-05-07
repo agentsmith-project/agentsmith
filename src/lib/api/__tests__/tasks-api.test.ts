@@ -78,6 +78,10 @@ describe('TaskAPI public Agent Task activity/run surface', () => {
     const postedBody = vi.mocked(client.post).mock.calls[0]?.[1] as Record<string, unknown>;
     expect(postedBody).not.toHaveProperty('role');
     expect(postedBody).not.toHaveProperty('content');
+    expect(postedBody).not.toHaveProperty('endpoint_id');
+    expect(postedBody).not.toHaveProperty('model');
+    expect(postedBody).not.toHaveProperty('default_endpoint_id');
+    expect(postedBody).not.toHaveProperty('execution_preferences');
   });
 
   it('fetches runner binding options from the dedicated task route', async () => {

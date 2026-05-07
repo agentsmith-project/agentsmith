@@ -23,6 +23,10 @@ export function requiredProjectPermissions(route: ProjectsRoute, method: string)
     return [];
   }
 
+  if (route.kind === 'agentTaskModelSetting') {
+    return method === 'PATCH' ? ['project:governance:update'] : [];
+  }
+
   if (isTaskRoute(route)) {
     if (route.kind === 'taskTerminalSessions' || route.kind === 'taskTerminalSession') {
       return ['project:agent_task:use', 'project:agent_task:terminal'];

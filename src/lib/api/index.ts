@@ -67,6 +67,7 @@ export type {
   UpdateAgentRunnerRequest,
   CreateEndpointRequest,
   UpdateEndpointRequest,
+  UpdateAgentTaskModelSettingPayload,
   JoinRequest,
   Member,
   CreateUserKeyRequest,

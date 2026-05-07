@@ -14,6 +14,7 @@ import {
   getNotebookTaskRunState,
 } from './notebook-task/task-run-coordination.js';
 import { resolveInternalTicket } from './internal-ticket-store.js';
+import { resolveWorkspaceScopedCollection } from './workspace-tenant-collections.js';
 
 function createDeferred<T = void>(): {
   promise: Promise<T>;
@@ -24,6 +25,31 @@ function createDeferred<T = void>(): {
     resolve = nextResolve;
   });
   return { promise, resolve };
+}
+
+async function seedAgentTaskModelSetting(
+  docStore: InMemoryJsonDocStore,
+  input: {
+    workspaceId: string;
+    projectId: string;
+    endpointId: string;
+    defaultModel?: string;
+  },
+): Promise<void> {
+  await docStore.upsert(
+    resolveWorkspaceScopedCollection('agent_task_model_settings', input.workspaceId),
+    `project:${input.projectId}`,
+    {
+      id: `project:${input.projectId}`,
+      workspace_id: input.workspaceId,
+      project_id: input.projectId,
+      endpoint_id: input.endpointId,
+      default_model_id: input.defaultModel ?? 'placeholder-model',
+      setting_revision: `set_${input.endpointId}`,
+      updated_at: '2026-05-07T00:00:00.000Z',
+      updated_by_user_id: 'test_admin',
+    },
+  );
 }
 
 describe('notebook-execution-orchestrator governance preflight', () => {
@@ -62,6 +88,7 @@ describe('notebook-execution-orchestrator governance preflight', () => {
     const workspaceId = 'ws_1';
     const projectId = 'proj_1';
     const endpointId = 'ep_denied';
+    await seedAgentTaskModelSetting(docStore, { workspaceId, projectId, endpointId });
     await upsertProjectResourcePolicy(docStore, workspaceId, projectId, {
       resource_type: 'endpoint',
       resource_id: endpointId,
@@ -109,6 +136,11 @@ describe('notebook-execution-orchestrator governance preflight', () => {
         dispatchStreamingRequest,
       },
     } as unknown as NodeApiDeps;
+    await seedAgentTaskModelSetting(docStore, {
+      workspaceId: 'ws_final_order',
+      projectId: 'proj_final_order',
+      endpointId: 'ep_final_order',
+    });
 
     const task = {
       id: 'task_1',
@@ -168,7 +200,7 @@ describe('notebook-execution-orchestrator governance preflight', () => {
     const errorEvent = emitted.find((item) => item.type === 'error') as
       | { type: 'error'; data: { code?: string } }
       | undefined;
-    expect(errorEvent?.data?.code).toBe('RESOURCE_POLICY_DENIED');
+    expect(errorEvent?.data?.code).toBe('agent_task_model_policy_denied');
     expect(finalized).toBe(true);
 
     const start = new Date(Date.now() - 60_000).toISOString();
@@ -189,7 +221,7 @@ describe('notebook-execution-orchestrator governance preflight', () => {
       page: 1,
       pageSize: 10,
     });
-    expect(audit.items.some((item) => item.error_code === 'RESOURCE_POLICY_DENIED')).toBe(true);
+    expect(audit.items.some((item) => item.error_code === 'agent_task_model_policy_denied')).toBe(true);
   });
 
   it('persists final notebook task truth before finalizing the run and emitting terminal SSE updates', async () => {
@@ -251,6 +283,11 @@ describe('notebook-execution-orchestrator governance preflight', () => {
         })),
       },
     } as unknown as NodeApiDeps;
+    await seedAgentTaskModelSetting(docStore, {
+      workspaceId: 'ws_finalizing_failure',
+      projectId: 'proj_finalizing_failure',
+      endpointId: 'ep_finalizing_failure',
+    });
 
     const task = {
       id: 'task_final_order',
@@ -395,6 +432,11 @@ describe('notebook-execution-orchestrator governance preflight', () => {
         })),
       },
     } as unknown as NodeApiDeps;
+    await seedAgentTaskModelSetting(deps.docStore as InMemoryJsonDocStore, {
+      workspaceId: 'ws_internal',
+      projectId: 'proj_internal',
+      endpointId: 'ep_internal',
+    });
 
     const task = {
       id: 'task_finalizing_failure',
@@ -535,6 +577,11 @@ describe('notebook-execution-orchestrator governance preflight', () => {
         })),
       },
     } as unknown as NodeApiDeps;
+    await seedAgentTaskModelSetting(deps.docStore as InMemoryJsonDocStore, {
+      workspaceId: 'ws_internal',
+      projectId: 'proj_internal',
+      endpointId: 'ep_internal',
+    });
 
     const task = {
       id: 'task_internal',
@@ -705,6 +752,11 @@ describe('notebook-execution-orchestrator governance preflight', () => {
         dispatchStreamingRequest,
       },
     } as unknown as NodeApiDeps;
+    await seedAgentTaskModelSetting(deps.docStore as InMemoryJsonDocStore, {
+      workspaceId: 'ws_external',
+      projectId: 'proj_external',
+      endpointId: 'ep_external_dev_direct',
+    });
 
     const task = {
       id: 'task_external_compose',
@@ -839,6 +891,11 @@ describe('notebook-execution-orchestrator governance preflight', () => {
         dispatchStreamingRequest,
       },
     } as unknown as NodeApiDeps;
+    await seedAgentTaskModelSetting(deps.docStore as InMemoryJsonDocStore, {
+      workspaceId: 'ws_external',
+      projectId: 'proj_external',
+      endpointId: 'ep_anthropic',
+    });
 
     const task = {
       id: 'task_external_dev_direct',
@@ -913,7 +970,7 @@ describe('notebook-execution-orchestrator governance preflight', () => {
     expect(dispatchArg?.executionContext).not.toHaveProperty('user_bearer_token');
   });
 
-  it('uses canonical agent_task wire_api for external task dispatch regardless of endpoint protocol', async () => {
+  it('uses project setting endpoint protocol for external task dispatch regardless of runner preferences', async () => {
     const previousInternalApiBase = process.env.INTERNAL_API_BASE_URL;
     const previousDeveloperApiBase = process.env.AGENT_RUNNER_DEVELOPER_EXECUTION_HTTP_BASE_URL;
     process.env.INTERNAL_API_BASE_URL = 'http://api:20000';
@@ -933,7 +990,7 @@ describe('notebook-execution-orchestrator governance preflight', () => {
           status: 'enabled',
           runner_provider: 'developer',
           mode: 'external',
-          default_endpoint_id: 'ep_anthropic',
+          default_endpoint_id: 'ep_runner_default_stale',
           config: {
             runner_runtime: 'compose_managed',
           },
@@ -970,6 +1027,11 @@ describe('notebook-execution-orchestrator governance preflight', () => {
         dispatchStreamingRequest,
       },
     } as unknown as NodeApiDeps;
+    await seedAgentTaskModelSetting(deps.docStore as InMemoryJsonDocStore, {
+      workspaceId: 'ws_external',
+      projectId: 'proj_external',
+      endpointId: 'ep_anthropic',
+    });
 
     const task = {
       id: 'task_external_responses',
@@ -1035,11 +1097,30 @@ describe('notebook-execution-orchestrator governance preflight', () => {
         executionContext: expect.objectContaining({
           endpoint_id: 'ep_anthropic',
           runner_id: 'agent_external_responses',
-          wire_api: 'openai_responses',
+          wire_api: 'anthropic_messages',
           model: 'placeholder-model',
           api_base: 'http://api:20000/api/v1',
+          agent_task_model: expect.objectContaining({
+            endpoint_id: 'ep_anthropic',
+            resolved_model: 'placeholder-model',
+            upstream_protocol: 'anthropic_messages',
+            setting_revision: 'set_ep_anthropic',
+          }),
+          resource_proxy: {
+            base_url: 'http://api:20000/api/v1/workspaces/ws_external/projects/proj_external/endpoints/ep_anthropic/proxy/openai',
+          },
         }),
       }),
+    );
+    expect(deps.endpointResourceService.getEndpoint).toHaveBeenCalledWith(
+      'ws_external',
+      'proj_external',
+      'ep_anthropic',
+    );
+    expect(deps.endpointResourceService.getEndpoint).not.toHaveBeenCalledWith(
+      'ws_external',
+      'proj_external',
+      'ep_runner_default_stale',
     );
   });
 
@@ -1090,6 +1171,12 @@ describe('notebook-execution-orchestrator governance preflight', () => {
         dispatchStreamingRequest,
       },
     } as unknown as NodeApiDeps;
+    await seedAgentTaskModelSetting(deps.docStore as InMemoryJsonDocStore, {
+      workspaceId: 'ws_native',
+      projectId: 'proj_native',
+      endpointId: 'ep_native_responses',
+      defaultModel: 'gpt-native-responses',
+    });
 
     const task = {
       id: 'task_native_responses',
@@ -1202,6 +1289,12 @@ describe('notebook-execution-orchestrator governance preflight', () => {
         dispatchStreamingRequest,
       },
     } as unknown as NodeApiDeps;
+    await seedAgentTaskModelSetting(deps.docStore as InMemoryJsonDocStore, {
+      workspaceId: 'ws_custom_responses',
+      projectId: 'proj_custom_responses',
+      endpointId: 'ep_custom_responses',
+      defaultModel: 'custom-responses-model',
+    });
 
     const task = {
       id: 'task_custom_responses',
@@ -1313,6 +1406,11 @@ describe('notebook-execution-orchestrator governance preflight', () => {
         })),
       },
     } as unknown as NodeApiDeps;
+    await seedAgentTaskModelSetting(docStore, {
+      workspaceId: 'ws_empty_error',
+      projectId: 'proj_empty_error',
+      endpointId: 'ep_empty_error',
+    });
 
     const task = {
       id: 'task_empty_error',
@@ -1414,6 +1512,11 @@ describe('notebook-execution-orchestrator governance preflight', () => {
         dispatchStreamingRequest,
       },
     } as unknown as NodeApiDeps;
+    await seedAgentTaskModelSetting(deps.docStore as InMemoryJsonDocStore, {
+      workspaceId: 'ws_external',
+      projectId: 'proj_external',
+      endpointId: 'ep_external',
+    });
 
     const task = {
       id: 'task_external',
@@ -1615,6 +1718,11 @@ describe('notebook-execution-orchestrator governance preflight', () => {
         })),
       },
     } as unknown as NodeApiDeps;
+    await seedAgentTaskModelSetting(docStore, {
+      workspaceId: 'ws_trace_sanitize',
+      projectId: 'proj_trace_sanitize',
+      endpointId: 'ep_trace_sanitize',
+    });
 
     const task = {
       id: 'task_trace_sanitize',
@@ -1810,6 +1918,11 @@ describe('notebook-execution-orchestrator governance preflight', () => {
         dispatchStreamingRequest,
       },
     } as unknown as NodeApiDeps;
+    await seedAgentTaskModelSetting(deps.docStore as InMemoryJsonDocStore, {
+      workspaceId: 'ws_invalid',
+      projectId: 'proj_invalid',
+      endpointId: 'ep_invalid',
+    });
 
     const task = {
       id: 'task_invalid',
@@ -1939,6 +2052,11 @@ describe('notebook-execution-orchestrator governance preflight', () => {
         })),
       },
     } as unknown as NodeApiDeps;
+    await seedAgentTaskModelSetting(deps.docStore as InMemoryJsonDocStore, {
+      workspaceId: 'ws_internal_hold',
+      projectId: 'proj_internal_hold',
+      endpointId: 'ep_internal_hold',
+    });
 
     const task = {
       id: 'task_internal_hold',
@@ -2090,6 +2208,11 @@ describe('notebook-execution-orchestrator governance preflight', () => {
         releaseHolder: vi.fn(async () => undefined),
       },
     } as unknown as NodeApiDeps;
+    await seedAgentTaskModelSetting(deps.docStore as InMemoryJsonDocStore, {
+      workspaceId: 'ws_internal_abort',
+      projectId: 'proj_internal_abort',
+      endpointId: 'ep_internal_abort',
+    });
 
     const task = {
       id: 'task_internal_abort',
@@ -2232,6 +2355,11 @@ describe('notebook-execution-orchestrator governance preflight', () => {
         })),
       },
     } as unknown as NodeApiDeps;
+    await seedAgentTaskModelSetting(docStore, {
+      workspaceId: 'ws_late_dispatch_cancelled',
+      projectId: 'proj_late_dispatch_cancelled',
+      endpointId: 'ep_late_dispatch_cancelled',
+    });
 
     const task = {
       id: 'task_late_dispatch_cancelled',

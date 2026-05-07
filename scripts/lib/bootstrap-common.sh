@@ -154,6 +154,36 @@ run_deploy_bootstrap() {
       "$1" "$2" "$3" "${PRESET_ENDPOINT_MODEL}" "${CREDENTIAL_ID}" "${PRESET_ENDPOINT_TIMEOUT_SECONDS}" "${PRESET_ENDPOINT_MAX_CONTEXT_TOKENS}" "${PRESET_ENDPOINT_MAX_OUTPUT_TOKENS}"
   }
 
+  json_path_optional() {
+    node -e 'let s="";process.stdin.on("data",d=>s+=d);process.stdin.on("end",()=>{const j=JSON.parse(s); let v=j; for (const p of process.argv[1].split(".")) { if (!p) continue; v=v?.[p]; } if (v == null) process.exit(0); process.stdout.write(String(v)); })' "$1"
+  }
+
+  ensure_agent_task_model_setting() {
+    local endpoint_id="$1"
+    local setting_resp setting_endpoint_id setting_revision setting_readiness patch_resp patched_revision
+    setting_resp="$(
+      curl -sS "${PROJECT_BASE}/agent-task-model-setting" \
+        -H "Authorization: Bearer ${TOKEN}"
+    )"
+    setting_endpoint_id="$(printf '%s' "${setting_resp}" | json_path_optional setting.endpoint_id)"
+    setting_revision="$(printf '%s' "${setting_resp}" | json_path_optional setting.setting_revision)"
+    setting_readiness="$(printf '%s' "${setting_resp}" | json_path_optional readiness.state)"
+    if [[ "${setting_endpoint_id}" == "${endpoint_id}" && "${setting_readiness}" == "ready" && -n "${setting_revision}" ]]; then
+      return 0
+    fi
+
+    patch_resp="$(
+      curl -sS -X PATCH "${PROJECT_BASE}/agent-task-model-setting" \
+        -H "Authorization: Bearer ${TOKEN}" \
+        -H 'Content-Type: application/json' \
+        -d "$(docker_compose exec -T api node -e 'const revision = process.argv[2] || null; console.log(JSON.stringify({endpoint_id:process.argv[1], expected_setting_revision:revision}))' "${endpoint_id}" "${setting_revision}")"
+    )"
+    patched_revision="$(printf '%s' "${patch_resp}" | json_path_optional setting.setting_revision)"
+    if [[ -z "${patched_revision}" ]]; then
+      die "failed to configure Agent task model setting: ${patch_resp}"
+    fi
+  }
+
   endpoint_list_resp="$(
     curl -sS "${PROJECT_BASE}/endpoints?page=1&page_size=100" \
       -H "Authorization: Bearer ${TOKEN}"
@@ -189,6 +219,8 @@ run_deploy_bootstrap() {
     -H "Authorization: Bearer ${TOKEN}" \
     -H 'Content-Type: application/json' \
     -d "$(endpoint_payload "${PRESET_OPENAI_ENDPOINT_NAME}" "${PRESET_OPENAI_ENDPOINT_PROTOCOL}" "${PRESET_OPENAI_ENDPOINT_BASE_URL}")" >/dev/null
+
+  ensure_agent_task_model_setting "${ANTHROPIC_ENDPOINT_ID}"
 
   runner_list_resp="$(
     curl -sS "${PROJECT_BASE}/agent-runners?page=1&page_size=100" \

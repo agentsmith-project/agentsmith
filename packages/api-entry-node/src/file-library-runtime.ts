@@ -39,6 +39,7 @@ import type {
 
 type GatewayStatus = EnsureFileLibraryGatewayResult['status'] | FileLibraryGatewayHealth['status'];
 type GatewayChildProcess = ChildProcessByStdio<null, Readable, Readable>;
+type CommandEnvOverrides = Readonly<Record<string, string | undefined>>;
 
 type GatewaySession = Omit<EnsureFileLibraryGatewayResult, 'status'> & {
   status: GatewayStatus;
@@ -747,14 +748,19 @@ function buildMcHost(config: FileLibraryRuntimeConfig): string {
   return `${scheme}://${encodeURIComponent(config.minioAdminAccessKey)}:${encodeURIComponent(config.minioAdminSecretKey)}@${config.minioAdminEndPoint}:${config.minioAdminPort}`;
 }
 
-async function execCommand(cmd: string, args: string[], options?: { env?: NodeJS.ProcessEnv }): Promise<void> {
+function buildCommandEnv(envOverrides?: CommandEnvOverrides): NodeJS.ProcessEnv {
+  const env: NodeJS.ProcessEnv = { ...process.env };
+  for (const [key, value] of Object.entries(envOverrides ?? {})) {
+    env[key] = value;
+  }
+  return env;
+}
+
+async function execCommand(cmd: string, args: string[], options?: { env?: CommandEnvOverrides }): Promise<void> {
   await new Promise<void>((resolve, reject) => {
     const child = spawn(cmd, args, {
       stdio: ['ignore', 'pipe', 'pipe'],
-      env: {
-        ...process.env,
-        ...options?.env,
-      },
+      env: buildCommandEnv(options?.env),
     });
     let stdout = '';
     let stderr = '';

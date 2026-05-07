@@ -175,6 +175,8 @@ export const queryKeys = {
     _def: ['endpoints'] as const,
     list: (workspaceId: string, projectId: string) =>
       ['endpoints', workspaceId, projectId] as const,
+    agentTaskModelSetting: (workspaceId: string, projectId: string) =>
+      ['endpoints', 'agent-task-model-setting', workspaceId, projectId] as const,
   },
 
   /** Project pricing */

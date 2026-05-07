@@ -70,6 +70,14 @@ describe('matchProjectsRoute', () => {
 
   it('matches endpoint proxy and import routes', () => {
     expect(
+      matchProjectsRoute('/api/v1/workspaces/ws_default/projects/proj_1/agent-task-model-setting'),
+    ).toEqual({
+      kind: 'agentTaskModelSetting',
+      workspaceId: 'ws_default',
+      projectId: 'proj_1',
+    });
+
+    expect(
       matchProjectsRoute('/api/v1/workspaces/ws_default/projects/proj_1/endpoints/import-bulk'),
     ).toEqual({
       kind: 'endpointImportBulk',

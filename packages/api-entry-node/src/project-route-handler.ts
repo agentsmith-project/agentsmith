@@ -4,6 +4,7 @@ import {
   handleProjectGovernanceRoutes,
   handleWorkspaceRoutes,
 } from './project-route-dispatchers.js';
+import { handleAgentTaskModelSettingRoute } from './agent-task-model-setting-route-handler.js';
 import type {
   ProjectRouteHandlerArgs,
   ProjectRouteContext,
@@ -35,6 +36,28 @@ export async function handleProjectRoute(args: ProjectRouteHandlerArgs): Promise
   }
 
   if (await handleProjectCrudRoutes(context)) {
+    return true;
+  }
+
+  if (
+    route.kind === 'agentTaskModelSetting'
+    && route.workspaceId
+    && route.projectId
+    && await handleAgentTaskModelSettingRoute({
+      route: {
+        kind: 'agentTaskModelSetting',
+        workspaceId: route.workspaceId,
+        projectId: route.projectId,
+      },
+      method: context.method,
+      req: context.req,
+      res: context.res,
+      deps: context.deps,
+      user: context.user,
+      json: context.json,
+      readBody: context.readBody,
+    })
+  ) {
     return true;
   }
 

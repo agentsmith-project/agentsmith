@@ -11,7 +11,6 @@ import { writeProjectAuditEvent, writeProjectUsageFact } from './audit-usage-rec
 import { buildNotebookTaskInputs, type NotebookTaskInputRefRecord } from './notebook-input-refs.js';
 import { buildTaskTraceEvent, storeTaskTraceEvent } from './notebook-trace-store.js';
 import { buildSandboxStartingEvent, sanitizeWorkloadId } from './internal-agent-pod-manager.js';
-import { enforceEndpointGovernancePreflight } from './governance-endpoint-preflight.js';
 import { JsonDocProjectFileLibraryCatalogRepo } from './file-library-persistence.js';
 import {
   isManagedAgentRunner,
@@ -26,6 +25,10 @@ import {
 import { markNotebookTaskRunFinalizing } from './notebook-task/task-run-coordination.js';
 import { deriveEndpointEffectiveModelRuntimeConfig } from './universal-proxy-service.js';
 import type { AgentRecord } from './resource-models.js';
+import {
+  type AgentTaskModelResolvedTarget,
+  resolveAgentTaskModelTarget,
+} from './agent-task-model-setting-service.js';
 export {
   readInternalWorkloadHolderSnapshotForTests,
   resetInternalWorkloadHolderCoordinatorForTests,
@@ -51,64 +54,6 @@ type NotebookTaskRecord = {
   updated_at: string;
   last_activity_at: string;
 };
-
-type AgentTaskWireApi = 'openai_chat_completions' | 'openai_responses' | 'anthropic_messages';
-
-type AgentTaskExecutionPreferences = {
-  endpointId: string;
-  model: string;
-  wireApi: AgentTaskWireApi;
-};
-
-const DEFAULT_AGENT_TASK_WIRE_API: AgentTaskWireApi = 'openai_responses';
-
-function readRecordField(input: Record<string, unknown>, field: string): Record<string, unknown> | null {
-  const value = input[field];
-  return typeof value === 'object' && value !== null && !Array.isArray(value)
-    ? value as Record<string, unknown>
-    : null;
-}
-
-function readTrimmedStringField(input: Record<string, unknown>, field: string): string {
-  const value = input[field];
-  return typeof value === 'string' ? value.trim() : '';
-}
-
-function normalizeAgentTaskWireApi(value: unknown): AgentTaskWireApi {
-  if (typeof value !== 'string') return DEFAULT_AGENT_TASK_WIRE_API;
-  switch (value.trim()) {
-    case 'openai_chat_completions':
-      return 'openai_chat_completions';
-    case 'openai_responses':
-      return 'openai_responses';
-    case 'anthropic_messages':
-      return 'anthropic_messages';
-    case 'chat':
-      return 'openai_chat_completions';
-    case 'responses':
-      return 'openai_responses';
-    default:
-      return DEFAULT_AGENT_TASK_WIRE_API;
-  }
-}
-
-function resolveAgentTaskExecutionPreferences(
-  executionPreferences: Record<string, unknown>,
-): AgentTaskExecutionPreferences {
-  const preferences = readRecordField(executionPreferences, 'agent_task')
-    ?? readRecordField(executionPreferences, 'task')
-    ?? readRecordField(executionPreferences, 'notebook')
-    ?? {};
-  return {
-    endpointId: readTrimmedStringField(preferences, 'endpoint_id'),
-    model: readTrimmedStringField(preferences, 'model'),
-    wireApi: normalizeAgentTaskWireApi(preferences.wire_api),
-  };
-}
-
-function readDefaultEndpointId(agent: Pick<AgentRecord, 'default_endpoint_id'>): string {
-  return agent.default_endpoint_id?.trim() ?? '';
-}
 
 function runnerTestSourceMarker(task: Pick<NotebookTaskRecord, 'source' | 'runner_test'>): Pick<TaskActivityItem, 'source' | 'runner_test'> {
   return task.source === 'runner_test' || task.runner_test === true
@@ -308,6 +253,18 @@ export function resolveManagedExecutionApiBase(): string | null {
   const internalBase = ensureExecutionApiBase(process.env.INTERNAL_API_BASE_URL);
   if (internalBase) return internalBase;
   return null;
+}
+
+function buildRequestScopedResourceProxyBaseUrl(input: {
+  executionApiBase: string;
+  workspaceId: string;
+  projectId: string;
+  endpointId: string;
+}): string {
+  return `${input.executionApiBase.replace(/\/+$/, '')}`
+    + `/workspaces/${encodeURIComponent(input.workspaceId)}`
+    + `/projects/${encodeURIComponent(input.projectId)}`
+    + `/endpoints/${encodeURIComponent(input.endpointId)}/proxy/openai`;
 }
 
 function requireNotebookModelContextWindow(contextWindow: number | undefined): number {
@@ -535,6 +492,7 @@ export async function runNotebookTaskWithExecutionAgent(input: {
   task: NotebookTaskRecord;
   assistantMessage: NotebookTaskMessageRecord;
   agentId: string;
+  agentTaskModelTarget?: AgentTaskModelResolvedTarget;
   user: AuthenticatedUser;
   publicBaseUrl: string;
   buildRunId: () => string;
@@ -566,6 +524,7 @@ export async function runNotebookTaskWithExecutionAgent(input: {
     task,
     assistantMessage,
     agentId,
+    agentTaskModelTarget,
     user,
     publicBaseUrl,
     buildRunId,
@@ -613,29 +572,22 @@ export async function runNotebookTaskWithExecutionAgent(input: {
       throw Object.assign(new Error('agent_not_available'), { code: 'AGENT_OFFLINE' });
     }
 
-    const executionPreferences =
-      typeof agent.execution_preferences_json === 'object' && agent.execution_preferences_json !== null
-        ? (agent.execution_preferences_json as Record<string, unknown>)
-        : {};
-    const taskPreferences = resolveAgentTaskExecutionPreferences(executionPreferences);
-    const endpointId = taskPreferences.endpointId || readDefaultEndpointId(agent);
+    const resolvedTarget = agentTaskModelTarget ?? await resolveAgentTaskModelTarget({
+      deps,
+      workspaceId: task.workspace_id,
+      projectId: task.project_id,
+      actorUserId: user.id,
+      source: 'agent_task_execution_preflight',
+      contextMetadata: {
+        task_id: task.id,
+        run_id: runId,
+        runner_id: agentId,
+      },
+    });
+    const endpointId = resolvedTarget.endpoint.id;
     endpointIdForLog = endpointId || null;
-    if (!endpointId) {
-      throw Object.assign(new Error('task_agent_endpoint_not_configured'), {
-        code: 'TASK_AGENT_ENDPOINT_NOT_CONFIGURED',
-      });
-    }
 
-    const explicitModel = taskPreferences.model;
-    const endpoint = await deps.endpointResourceService.getEndpoint(
-      task.workspace_id,
-      task.project_id,
-      endpointId,
-    );
-    if (!endpoint || endpoint.status !== 'active') {
-      throw Object.assign(new Error('endpoint_not_available'), { code: 'VALIDATION_ERROR' });
-    }
-    const endpointModel = endpoint.model?.trim() ?? '';
+    const endpoint = resolvedTarget.endpoint;
     const effectiveModelConfig = deriveEndpointEffectiveModelRuntimeConfig(endpoint);
     const modelContextWindow = requireNotebookModelContextWindow(effectiveModelConfig.limits?.context_window);
     const maxOutputTokens = effectiveModelConfig.limits?.max_output_tokens;
@@ -645,24 +597,7 @@ export async function runNotebookTaskWithExecutionAgent(input: {
       ...(typeof maxOutputTokens === 'number' ? { max_output_tokens: maxOutputTokens } : {}),
     };
     const modelCatalog = effectiveModelConfig.model_catalog;
-    const preflight = await enforceEndpointGovernancePreflight({
-      deps,
-      workspaceId: task.workspace_id,
-      projectId: task.project_id,
-      endpoint,
-      userId: user.id,
-      source: 'agent_task_execution_preflight',
-      contextMetadata: {
-        task_id: task.id,
-        run_id: runId,
-      },
-    });
-    if (!preflight.allowed) {
-      throw Object.assign(new Error(preflight.responseBody.message), {
-        code: preflight.responseBody.error_code,
-      });
-    }
-    const model = explicitModel || endpointModel || 'gpt-5-codex';
+    const model = resolvedTarget.resolvedModel;
     let internalWorkspacePath: string | undefined;
     if (isManagedAgentRunner(agent)) {
       await throwIfCancellationRequested();
@@ -720,7 +655,7 @@ export async function runNotebookTaskWithExecutionAgent(input: {
       await internalWorkloadCoordinator.acquireHolder(workloadHolder);
       internalWorkloadHolder = workloadHolder;
     }
-    const wireApi = taskPreferences.wireApi;
+    const wireApi = resolvedTarget.upstreamProtocol;
     const userHandle = buildProxyUsername(user);
     const taskInputs = await buildNotebookTaskInputs({
       deps,
@@ -753,6 +688,7 @@ export async function runNotebookTaskWithExecutionAgent(input: {
       maxUses: 500,
     });
     await throwIfCancellationRequested();
+    const executionApiBase = resolveExecutionApiBase(publicBaseUrl, agent);
     const dispatched = await taskOnlyRunnerProvider.dispatchTaskRun({
       deps,
       workspaceId: task.workspace_id,
@@ -769,7 +705,16 @@ export async function runNotebookTaskWithExecutionAgent(input: {
         runner_id: agentId,
         username: userHandle,
         endpoint_id: endpointId,
-        api_base: resolveExecutionApiBase(publicBaseUrl, agent),
+        agent_task_model: resolvedTarget.snapshot,
+        resource_proxy: {
+          base_url: buildRequestScopedResourceProxyBaseUrl({
+            executionApiBase,
+            workspaceId: task.workspace_id,
+            projectId: task.project_id,
+            endpointId,
+          }),
+        },
+        api_base: executionApiBase,
         execution_ticket: issuedExecutionTicket.ticket,
         wire_api: wireApi,
         model,
@@ -821,7 +766,15 @@ export async function runNotebookTaskWithExecutionAgent(input: {
       requestId: dispatched.requestId,
       resourceType: 'notebook_task',
       resourceId: task.id,
-      metadata: { run_id: runId, runner_id: agentId, endpoint_id: endpointId, model, wire_api: wireApi },
+      metadata: {
+        run_id: runId,
+        runner_id: agentId,
+        endpoint_id: endpointId,
+        model,
+        wire_api: wireApi,
+        setting_revision: resolvedTarget.snapshot.setting_revision,
+        policy_decision_id: resolvedTarget.snapshot.policy_decision_id,
+      },
     });
 
     for await (const event of dispatched.stream) {

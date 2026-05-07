@@ -1,7 +1,7 @@
 'use client';
 import * as React from 'react';
 import { useQuery } from '@tanstack/react-query';
-import { useTranslations } from 'next-intl';
+import { useLocale, useTranslations } from 'next-intl';
 import {
   Dialog,
   DialogContent,
@@ -16,6 +16,7 @@ import { TaskAPI, getApiClient } from '@/lib/api';
 import { useCreateTask, useTasks } from '@/lib/hooks/use-task';
 import { useFileLibraries } from '@/lib/hooks/use-files';
 import { queryKeys } from '@/lib/query-keys';
+import { useAgentTaskModelSetting } from '@/lib/agent-task-model-setting';
 import type { CreateTaskRequest, TaskRunnerBindingOption } from '@/lib/types/task';
 import { ImportantNotice } from '@/components/agent-tasks/task-create-dialog/ImportantNotice';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
@@ -93,6 +94,7 @@ export function TaskCreateDialog({
 }: TaskCreateDialogProps) {
   const t = useTranslations('agent_tasks.task');
   const commonT = useTranslations('common');
+  const locale = useLocale();
   const [title, setTitle] = React.useState('');
   const [workspaceMode, setWorkspaceMode] = React.useState<'create_new' | 'use_existing'>('create_new');
   const [workspaceName, setWorkspaceName] = React.useState('');
@@ -102,6 +104,11 @@ export function TaskCreateDialog({
   const [boundRunnerId, setBoundRunnerId] = React.useState('');
   const createTask = useCreateTask();
   const taskApi = React.useMemo(() => new TaskAPI(getApiClient()), []);
+  const modelSetting = useAgentTaskModelSetting({
+    workspaceId,
+    projectId,
+    enabled: open && !!workspaceId && !!projectId,
+  });
 
   const { data: fileLibrariesData, isLoading: fileLibrariesLoading } = useFileLibraries(workspaceId, projectId);
   const fileLibraries = React.useMemo(
@@ -144,6 +151,12 @@ export function TaskCreateDialog({
   const hasDeveloperRunnerOptions = developerRunnerOptions.length > 0;
   const hasSelectableDeveloperRunnerOption = developerRunnerOptions.some(isTaskRunnerBindingOptionSelectable);
   const defaultWorkspaceName = deriveDefaultTaskWorkspaceName(title);
+  const modelReadiness = modelSetting.settingQuery.data?.readiness;
+  const modelReadinessBlocks = !!modelReadiness && modelReadiness.state !== 'ready';
+  const canUpdateModelSetting =
+    modelSetting.settingQuery.data?.actions?.update?.visible === true
+    && modelSetting.settingQuery.data.actions.update.allowed === true;
+  const endpointsHref = `/${locale}/workspaces/${workspaceId}/projects/${projectId}/endpoints`;
 
   // Reset form when dialog opens
   React.useEffect(() => {
@@ -188,6 +201,9 @@ export function TaskCreateDialog({
     if (workspaceMode === 'use_existing' && !workspaceFileLibraryId) {
       return;
     }
+    if (modelReadinessBlocks) {
+      return;
+    }
     if (useDeveloperRunner && !selectedDeveloperRunnerIsSelectable) {
       return;
     }
@@ -222,6 +238,7 @@ export function TaskCreateDialog({
 
   const canSubmit = title.trim().length > 0
     && (workspaceMode === 'create_new' || workspaceFileLibraryId.length > 0)
+    && !modelReadinessBlocks
     && (!useDeveloperRunner || selectedDeveloperRunnerIsSelectable)
     && !createTask.isPending;
 
@@ -236,6 +253,32 @@ export function TaskCreateDialog({
         </DialogHeader>
 
         <form onSubmit={handleSubmit} className="space-y-4">
+          {modelSetting.settingQuery.isLoading ? (
+            <div className="rounded-md border border-subtle bg-surface/70 px-3 py-2 text-sm text-tertiary">
+              {t('model_readiness_loading')}
+            </div>
+          ) : null}
+          {modelReadinessBlocks ? (
+            <div
+              className="rounded-md border border-warning/30 bg-warning/10 px-3 py-3"
+              data-testid="task-create__model-readiness-blocked"
+              data-state={modelReadiness.state}
+            >
+              <div className="text-sm font-medium text-foreground">{t('model_readiness_blocked_title')}</div>
+              <p className="mt-1 text-sm text-secondary">{modelReadiness.display_summary}</p>
+              {canUpdateModelSetting ? (
+                <a
+                  href={endpointsHref}
+                  className="mt-2 inline-flex text-sm font-medium text-accent hover:underline"
+                >
+                  {t('model_readiness_open_endpoints')}
+                </a>
+              ) : (
+                <p className="mt-2 text-xs text-tertiary">{t('model_readiness_contact_admin')}</p>
+              )}
+            </div>
+          ) : null}
+
           <div className="space-y-2">
             <label htmlFor="task-title" className="text-sm font-medium text-foreground">
               {t('create_title')}

@@ -2,7 +2,7 @@
 
 import { useMemo } from 'react';
 import { createColumnHelper } from '@tanstack/react-table';
-import { Pencil, Power, PowerOff, Trash2, Activity, MoreHorizontal } from 'lucide-react';
+import { Bot, Pencil, Power, PowerOff, Trash2, Activity, MoreHorizontal } from 'lucide-react';
 
 import type { Endpoint, EndpointCapabilityType } from '@/lib/api/types';
 
@@ -39,6 +39,8 @@ interface UseEndpointsTableColumnsInput {
   updateEndpointMutation: UpdateEndpointMutationState;
   onEdit: (endpoint: Endpoint) => void;
   onDeleteRequest: (endpoint: Endpoint) => void;
+  onUseForAgentTasks?: (endpoint: Endpoint) => void;
+  useForAgentTasksPending?: boolean;
   onTestConnection?: (endpoint: Endpoint) => void;
 }
 
@@ -124,6 +126,8 @@ export function useEndpointsTableColumns({
   updateEndpointMutation,
   onEdit,
   onDeleteRequest,
+  onUseForAgentTasks,
+  useForAgentTasksPending = false,
   onTestConnection,
 }: UseEndpointsTableColumnsInput) {
   return useMemo(
@@ -147,7 +151,14 @@ export function useEndpointsTableColumns({
         header: t('table.name') || 'Name',
         cell: (info) => (
           <div className="flex flex-col">
-            <span className="text-sm font-medium text-foreground">{info.getValue()}</span>
+            <span className="flex flex-wrap items-center gap-2 text-sm font-medium text-foreground">
+              {info.getValue()}
+              {info.row.original.agent_task_model_selected === true ? (
+                <Badge variant="outline" className="border-accent/30 bg-accent/10 text-accent">
+                  {t('agent_task_model.selected_badge')}
+                </Badge>
+              ) : null}
+            </span>
             {info.row.original.description && (
               <span className="text-xs text-tertiary line-clamp-1 max-w-[200px]">
                 {info.row.original.description}
@@ -261,15 +272,39 @@ export function useEndpointsTableColumns({
         cell: (info) => {
           const endpoint = info.row.original;
           const isActive = endpoint.status === 'active';
+          const useForAgentTasks = endpoint.actions?.use_for_agent_tasks;
+          const isAgentTaskModelSelected = endpoint.agent_task_model_selected === true;
+          const showUseForAgentTasks = useForAgentTasks?.visible === true && !isAgentTaskModelSelected;
+          const canUseForAgentTasks = useForAgentTasks?.allowed === true && !useForAgentTasksPending;
 
-          if (!canManageEndpoints) {
+          if (!canManageEndpoints && !showUseForAgentTasks) {
             return <span className="text-tertiary text-sm">-</span>;
           }
 
           return (
-            <div className="flex items-center justify-end gap-1">
+            <div className="flex items-center justify-end gap-1 whitespace-nowrap">
               {/* Quick action buttons - visible on larger screens */}
-              <div className="hidden md:flex items-center gap-1">
+              <div className="hidden md:flex items-center justify-end gap-1 whitespace-nowrap">
+                {showUseForAgentTasks ? (
+                  <Button
+                    type="button"
+                    variant="action"
+                    size="sm"
+                    onClick={() => {
+                      if (!canUseForAgentTasks) return;
+                      onUseForAgentTasks?.(endpoint);
+                    }}
+                    disabled={!canUseForAgentTasks}
+                    className="h-8 shrink-0 gap-1.5 whitespace-nowrap px-2.5 text-[12px]"
+                    aria-label={t('action_use_for_agent_tasks')}
+                    title={canUseForAgentTasks ? t('action_use_for_agent_tasks') : t('action_disabled_reason')}
+                    data-testid={`endpoints__action-use-for-agent-tasks--${endpoint.id}`}
+                  >
+                    <Bot className="h-3.5 w-3.5 shrink-0" />
+                    <span>{t('action_use_for_agent_tasks')}</span>
+                  </Button>
+                ) : null}
+
                 {/* Test connection button */}
                 {onTestConnection && (
                   <Button
@@ -286,58 +321,62 @@ export function useEndpointsTableColumns({
                   </Button>
                 )}
 
-                {/* Edit button */}
-                <Button
-                  type="button"
-                  variant="ghost"
-                  size="sm"
-                  onClick={() => onEdit(endpoint)}
-                  className="h-8 w-8 p-0 text-icon-default hover:bg-hover"
-                  aria-label={t('action_edit')}
-                  title={t('action_edit')}
-                  data-testid={`endpoints__action-edit--${endpoint.id}`}
-                >
-                  <Pencil className="w-4 h-4" />
-                </Button>
+                {canManageEndpoints ? (
+                  <>
+                    {/* Edit button */}
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="sm"
+                      onClick={() => onEdit(endpoint)}
+                      className="h-8 w-8 p-0 text-icon-default hover:bg-hover"
+                      aria-label={t('action_edit')}
+                      title={t('action_edit')}
+                      data-testid={`endpoints__action-edit--${endpoint.id}`}
+                    >
+                      <Pencil className="w-4 h-4" />
+                    </Button>
 
-                {/* Enable/Disable button */}
-                <Button
-                  type="button"
-                  variant="ghost"
-                  size="sm"
-                  onClick={() =>
-                    updateEndpointMutation.mutate({
-                      endpointId: endpoint.id,
-                      data: { status: isActive ? 'disabled' : 'active' },
-                    })
-                  }
-                  disabled={updateEndpointMutation.isPending}
-                  className="h-8 w-8 p-0 hover:bg-hover"
-                  aria-label={isActive ? t('action_disable') : t('action_enable')}
-                  title={isActive ? t('action_disable') : t('action_enable')}
-                  data-testid={`endpoints__action-toggle--${endpoint.id}`}
-                >
-                  {isActive ? (
-                    <PowerOff className="w-4 h-4 text-warning" />
-                  ) : (
-                    <Power className="w-4 h-4 text-success" />
-                  )}
-                </Button>
+                    {/* Enable/Disable button */}
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="sm"
+                      onClick={() =>
+                        updateEndpointMutation.mutate({
+                          endpointId: endpoint.id,
+                          data: { status: isActive ? 'disabled' : 'active' },
+                        })
+                      }
+                      disabled={updateEndpointMutation.isPending}
+                      className="h-8 w-8 p-0 hover:bg-hover"
+                      aria-label={isActive ? t('action_disable') : t('action_enable')}
+                      title={isActive ? t('action_disable') : t('action_enable')}
+                      data-testid={`endpoints__action-toggle--${endpoint.id}`}
+                    >
+                      {isActive ? (
+                        <PowerOff className="w-4 h-4 text-warning" />
+                      ) : (
+                        <Power className="w-4 h-4 text-success" />
+                      )}
+                    </Button>
 
-                {/* Delete button */}
-                <Button
-                  type="button"
-                  variant="ghost"
-                  size="sm"
-                  onClick={() => onDeleteRequest(endpoint)}
-                  disabled={deleteEndpointMutation.isPending}
-                  className="h-8 w-8 p-0 text-error hover:bg-error/10"
-                  aria-label={t('action_delete')}
-                  title={t('action_delete')}
-                  data-testid={`endpoints__action-delete--${endpoint.id}`}
-                >
-                  <Trash2 className="w-4 h-4" />
-                </Button>
+                    {/* Delete button */}
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="sm"
+                      onClick={() => onDeleteRequest(endpoint)}
+                      disabled={deleteEndpointMutation.isPending}
+                      className="h-8 w-8 p-0 text-error hover:bg-error/10"
+                      aria-label={t('action_delete')}
+                      title={t('action_delete')}
+                      data-testid={`endpoints__action-delete--${endpoint.id}`}
+                    >
+                      <Trash2 className="w-4 h-4" />
+                    </Button>
+                  </>
+                ) : null}
               </div>
 
               {/* Mobile dropdown menu - visible on smaller screens */}
@@ -355,6 +394,19 @@ export function useEndpointsTableColumns({
                     </Button>
                   </DropdownMenuTrigger>
                   <DropdownMenuContent align="end" className="w-48">
+                    {showUseForAgentTasks ? (
+                      <DropdownMenuItem
+                        onClick={() => {
+                          if (!canUseForAgentTasks) return;
+                          onUseForAgentTasks?.(endpoint);
+                        }}
+                        disabled={!canUseForAgentTasks}
+                        data-testid={`endpoints__action-use-for-agent-tasks-mobile--${endpoint.id}`}
+                      >
+                        <Bot className="w-4 h-4 mr-2" />
+                        {t('action_use_for_agent_tasks')}
+                      </DropdownMenuItem>
+                    ) : null}
                     {onTestConnection && (
                       <DropdownMenuItem
                         onClick={() => onTestConnection(endpoint)}
@@ -364,44 +416,48 @@ export function useEndpointsTableColumns({
                         {t('action_test_connection')}
                       </DropdownMenuItem>
                     )}
-                    <DropdownMenuItem
-                      onClick={() => onEdit(endpoint)}
-                      data-testid={`endpoints__action-edit-mobile--${endpoint.id}`}
-                    >
-                      <Pencil className="w-4 h-4 mr-2" />
-                      {t('action_edit')}
-                    </DropdownMenuItem>
-                    <DropdownMenuItem
-                      onClick={() =>
-                        updateEndpointMutation.mutate({
-                          endpointId: endpoint.id,
-                          data: { status: isActive ? 'disabled' : 'active' },
-                        })
-                      }
-                      disabled={updateEndpointMutation.isPending}
-                      data-testid={`endpoints__action-toggle-mobile--${endpoint.id}`}
-                    >
-                      {isActive ? (
-                        <>
-                          <PowerOff className="w-4 h-4 mr-2 text-warning" />
-                          {t('action_disable')}
-                        </>
-                      ) : (
-                        <>
-                          <Power className="w-4 h-4 mr-2 text-success" />
-                          {t('action_enable')}
-                        </>
-                      )}
-                    </DropdownMenuItem>
-                    <DropdownMenuItem
-                      onClick={() => onDeleteRequest(endpoint)}
-                      disabled={deleteEndpointMutation.isPending}
-                      className="text-error focus:text-error"
-                      data-testid={`endpoints__action-delete-mobile--${endpoint.id}`}
-                    >
-                      <Trash2 className="w-4 h-4 mr-2" />
-                      {t('action_delete')}
-                    </DropdownMenuItem>
+                    {canManageEndpoints ? (
+                      <>
+                        <DropdownMenuItem
+                          onClick={() => onEdit(endpoint)}
+                          data-testid={`endpoints__action-edit-mobile--${endpoint.id}`}
+                        >
+                          <Pencil className="w-4 h-4 mr-2" />
+                          {t('action_edit')}
+                        </DropdownMenuItem>
+                        <DropdownMenuItem
+                          onClick={() =>
+                            updateEndpointMutation.mutate({
+                              endpointId: endpoint.id,
+                              data: { status: isActive ? 'disabled' : 'active' },
+                            })
+                          }
+                          disabled={updateEndpointMutation.isPending}
+                          data-testid={`endpoints__action-toggle-mobile--${endpoint.id}`}
+                        >
+                          {isActive ? (
+                            <>
+                              <PowerOff className="w-4 h-4 mr-2 text-warning" />
+                              {t('action_disable')}
+                            </>
+                          ) : (
+                            <>
+                              <Power className="w-4 h-4 mr-2 text-success" />
+                              {t('action_enable')}
+                            </>
+                          )}
+                        </DropdownMenuItem>
+                        <DropdownMenuItem
+                          onClick={() => onDeleteRequest(endpoint)}
+                          disabled={deleteEndpointMutation.isPending}
+                          className="text-error focus:text-error"
+                          data-testid={`endpoints__action-delete-mobile--${endpoint.id}`}
+                        >
+                          <Trash2 className="w-4 h-4 mr-2" />
+                          {t('action_delete')}
+                        </DropdownMenuItem>
+                      </>
+                    ) : null}
                   </DropdownMenuContent>
                 </DropdownMenu>
               </div>
@@ -410,6 +466,16 @@ export function useEndpointsTableColumns({
         },
       }),
     ],
-    [canManageEndpoints, deleteEndpointMutation, onDeleteRequest, onEdit, onTestConnection, t, updateEndpointMutation],
+    [
+      canManageEndpoints,
+      deleteEndpointMutation,
+      onDeleteRequest,
+      onEdit,
+      onTestConnection,
+      onUseForAgentTasks,
+      t,
+      updateEndpointMutation,
+      useForAgentTasksPending,
+    ],
   );
 }

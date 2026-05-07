@@ -144,6 +144,8 @@ describe('Agent Task terminal runtime gates', () => {
     expect(initResources).toContain('ENDPOINT_ID="${ENDPOINT_ID}"');
     expect(initResources).toContain('state_set_string agent_runner.id');
     expect(initResources).toContain('state_set_string agent_runner.default_endpoint_id "${AGENT_RUNNER_DEFAULT_ENDPOINT_ID}"');
+    expect(initResources).toContain('state_set_string agent_task_model_setting.endpoint_id "${AGENT_TASK_MODEL_SETTING_ENDPOINT_ID}"');
+    expect(initResources).toContain('AGENT_TASK_MODEL_SETTING_ENDPOINT_ID=${AGENT_TASK_MODEL_SETTING_ENDPOINT_ID}');
     expect(initResources).toContain('AGENT_RUNNER_DEFAULT_ENDPOINT_ID=${AGENT_RUNNER_DEFAULT_ENDPOINT_ID}');
     expect(initResources).toContain('AGENT_RUNNER_ID=${AGENT_RUNNER_ID}');
     expect(initResources).not.toContain('agent_runner.key');

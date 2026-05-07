@@ -13,6 +13,7 @@ import { useSearchParams } from 'next/navigation';
 import { Plus, RefreshCw } from 'lucide-react';
 import { AgentRunnerAPI, getApiClient } from '@/lib/api';
 import type { AgentDiagnostics } from '@/lib/api/types';
+import { useAgentTaskModelSetting } from '@/lib/agent-task-model-setting';
 import { toast } from '@/components/ui/toast';
 import { PageLoading } from '@/components/ui/loading';
 import { Button } from '@/components/ui/button';
@@ -37,6 +38,7 @@ import {
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog';
 import { AgentRunnerProjectDefaultStatus } from './_components/AgentRunnerProjectDefaultStatus';
+import { AgentTaskModelReadinessStatus } from './_components/AgentTaskModelReadinessStatus';
 import { AgentRunnerSection } from './_components/AgentRunnerSection';
 import { AgentRunnersTable } from './_components/AgentRunnersTable';
 import type { AgentRunnerPageRecord } from './agent-runners-page-types';
@@ -74,6 +76,11 @@ export default function AgentRunnersPage({ params }: AgentRunnersPageProps) {
 
   const runnerAPI = new AgentRunnerAPI(getApiClient());
   const runnerQueryKey = ['agent-runners', workspaceId, projectId] as const;
+  const agentTaskModelSetting = useAgentTaskModelSetting({
+    workspaceId,
+    projectId,
+    enabled: !!workspaceId && !!projectId && capabilities.canRead,
+  });
 
   const {
     data: runnersData,
@@ -238,6 +245,11 @@ export default function AgentRunnersPage({ params }: AgentRunnersPageProps) {
       >
         <div className="flex w-full flex-col gap-6">
           <AgentRunnerProjectDefaultStatus runner={projectDefaultRunner} t={t} />
+          <AgentTaskModelReadinessStatus
+            settingResponse={agentTaskModelSetting.settingQuery.data}
+            isLoading={agentTaskModelSetting.settingQuery.isLoading}
+            t={t}
+          />
 
           {runnersLoading ? (
             <PageLoading />

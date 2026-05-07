@@ -145,8 +145,10 @@ describe('deploy runner lifecycle gates', () => {
     const bootstrapCommon = await readRepoFile('scripts/lib/bootstrap-common.sh');
     const initResources = await readRepoFile('scripts/agent-runner-init-resources.sh');
 
+    expect(bootstrapCommon).toContain('/agent-runners');
+    expect(initResources).toContain('agent-runner-seed-managed-runner.ts');
+
     for (const source of [bootstrapCommon, initResources]) {
-      expect(source).toContain('/agent-runners');
       expect(source).not.toContain('/agents?page');
       expect(source).not.toContain('/agents/${');
       expect(source).not.toContain('mode:"managed"');
@@ -160,6 +162,17 @@ describe('deploy runner lifecycle gates', () => {
     expect(initResources).toContain('state_set_string agent_runner.id');
     expect(initResources).toContain('AGENT_RUNNER_ID=${AGENT_RUNNER_ID}');
     expect(initResources).not.toContain('AGENT_ID=${AGENT_ID}');
+  });
+
+  it('seeds the project Agent task model setting from the Agent task Endpoint before runner use', async () => {
+    const bootstrapCommon = await readRepoFile('scripts/lib/bootstrap-common.sh');
+    const initResources = await readRepoFile('scripts/agent-runner-init-resources.sh');
+
+    expect(bootstrapCommon).toContain('ensure_agent_task_model_setting "${ANTHROPIC_ENDPOINT_ID}"');
+    expect(bootstrapCommon).toContain('${PROJECT_BASE}/agent-task-model-setting');
+    expect(bootstrapCommon).toContain('expected_setting_revision');
+    expect(initResources).toContain('AGENT_TASK_MODEL_SETTING_ENDPOINT_ID');
+    expect(initResources).toContain('state_set_string agent_task_model_setting.endpoint_id');
   });
 
   it('checks preset Agent task file-library readiness without task runner selectors', async () => {

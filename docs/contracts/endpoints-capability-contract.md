@@ -56,6 +56,7 @@ Bulk import supports:
 - `reranker`
 - `image_generation`
 - `video_generation`
+- `endpoints[]` from the Endpoints export payload
 
 Each item:
 
@@ -67,6 +68,14 @@ Each item:
   "mode": "openai"
 }
 ```
+
+Export/import is round-trippable for the same project. Importing an exported
+`endpoints[]` payload creates new Endpoint records with generated IDs and uses
+the route workspace/project as authority. A same-project `credential_ref` is
+reused only when it still resolves in that project; otherwise the imported
+Endpoint is created without that credential binding. Payloads with no importable
+items fail with `422 VALIDATION_ERROR: endpoint_import_empty` instead of
+reporting success.
 
 ## Offline Model Catalog
 

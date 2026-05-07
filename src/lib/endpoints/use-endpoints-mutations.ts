@@ -40,7 +40,13 @@ export function useEndpointsMutations({
   });
 
   const importBulkMutation = useMutation<{ items: Endpoint[] }, unknown, EndpointBulkImportPayload>({
-    mutationFn: (payload) => endpointAPI.importBulk(workspaceId, projectId, payload),
+    mutationFn: async (payload) => {
+      const imported = await endpointAPI.importBulk(workspaceId, projectId, payload);
+      if (!Array.isArray(imported.items) || imported.items.length === 0) {
+        throw new Error('endpoint_import_empty');
+      }
+      return imported;
+    },
     onSuccess: () => {
       invalidateEndpoints();
       onImportSuccess?.();

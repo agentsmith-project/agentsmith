@@ -6,6 +6,7 @@ import type {
   EndpointCapability,
   EndpointCapabilityType,
   EndpointDefaults,
+  EndpointBulkImportExportedEndpoint,
   EndpointBulkImportItem,
   EndpointBulkImportPayload,
   EndpointModelBinding,
@@ -210,6 +211,23 @@ export class EndpointResourceService {
       models: normalizedModels.length > 0 ? normalizedModels : undefined,
       defaults,
     };
+  }
+
+  private importableExportedEndpoints(payload: EndpointBulkImportPayload): EndpointBulkImportExportedEndpoint[] {
+    return Array.isArray(payload.endpoints)
+      ? payload.endpoints.filter((item) => item && typeof item === 'object')
+      : [];
+  }
+
+  private async resolveSameProjectCredentialRef(
+    workspaceId: string,
+    projectId: string,
+    credentialRef: string | undefined,
+  ): Promise<string | undefined> {
+    const trimmed = credentialRef?.trim();
+    if (!trimmed) return undefined;
+    const secret = await this.getCredentialSecret(workspaceId, projectId, trimmed);
+    return secret === null ? undefined : trimmed;
   }
 
   async listCredentials(workspaceId: string, projectId: string): Promise<CredentialRecord[]> {
@@ -460,6 +478,37 @@ export class EndpointResourceService {
     ];
     const created: EndpointRecord[] = [];
 
+    for (const item of this.importableExportedEndpoints(payload)) {
+      const model = item.model?.trim() ?? '';
+      const baseUrl = item.api_base?.trim() || item.base_url?.trim() || '';
+      const name = item.name?.trim() || model;
+      if (!name || !model || !baseUrl) {
+        throw new Error('endpoint_import_record_invalid');
+      }
+      const credentialRef = await this.resolveSameProjectCredentialRef(
+        workspaceId,
+        projectId,
+        item.credential_ref,
+      );
+      const endpoint = await this.createEndpoint(workspaceId, projectId, {
+        name,
+        description: item.description,
+        model,
+        type: item.type === 'custom' ? 'custom' : 'catalog',
+        base_url: baseUrl,
+        credential_ref: credentialRef,
+        status: item.status === 'disabled' ? 'disabled' : 'active',
+        upstream_protocol: item.upstream_protocol,
+        provider_family: item.provider_family,
+        capabilities: item.capabilities,
+        models: item.models,
+        defaults: item.defaults,
+        model_profile: item.model_profile,
+        limits: item.limits,
+      });
+      created.push(endpoint);
+    }
+
     for (const pair of pairs) {
       if (!pair.item) continue;
       const credential = await this.createCredential(workspaceId, projectId, {
@@ -492,6 +541,9 @@ export class EndpointResourceService {
         ],
       });
       created.push(endpoint);
+    }
+    if (created.length === 0) {
+      throw new Error('endpoint_import_empty');
     }
     return { items: created };
   }

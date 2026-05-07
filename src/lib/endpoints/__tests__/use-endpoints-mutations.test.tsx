@@ -5,7 +5,7 @@ import { useEndpointsMutations } from '../use-endpoints-mutations';
 
 const mockDelete = vi.fn().mockResolvedValue(undefined);
 const mockUpdate = vi.fn().mockResolvedValue({});
-const mockImport = vi.fn().mockResolvedValue({ items: [] });
+const mockImport = vi.fn().mockResolvedValue({ items: [{ id: 'ep_imported' }] });
 
 vi.mock('@/lib/api', () => ({
   getApiClient: vi.fn(() => ({})),
@@ -72,6 +72,34 @@ describe('useEndpointsMutations', () => {
     await waitFor(() => {
       expect(onImportError).toHaveBeenCalled();
     });
+  });
+
+  it('treats empty import responses as failed imports', async () => {
+    const onImportSuccess = vi.fn();
+    const onImportError = vi.fn();
+    mockImport.mockResolvedValueOnce({ items: [] });
+
+    const { result } = renderHook(
+      () => useEndpointsMutations({ workspaceId: 'ws_1', projectId: 'prj_1', onImportSuccess, onImportError }),
+      { wrapper: createWrapper() },
+    );
+
+    result.current.importBulkMutation.mutate({
+      endpoints: [
+        {
+          name: 'Clone',
+          model: 'gpt-5.5',
+          api_base: 'https://provider.example/v1',
+          type: 'catalog',
+          upstream_protocol: 'openai_responses',
+        },
+      ],
+    });
+
+    await waitFor(() => {
+      expect(onImportError).toHaveBeenCalledWith(expect.objectContaining({ message: 'endpoint_import_empty' }));
+    });
+    expect(onImportSuccess).not.toHaveBeenCalled();
   });
 
   it('calls update endpoint mutation with scoped ids and payload', async () => {

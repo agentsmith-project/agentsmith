@@ -105,6 +105,104 @@ describe('api-entry-node endpoint capability routes', () => {
     expect(body.items.length).toBe(3);
   });
 
+  it('imports exported endpoint records as new endpoints', async () => {
+    const { baseUrl } = startServer();
+    const credentialRes = await apiFetch(
+      baseUrl,
+      '/api/v1/workspaces/ws_default/projects/proj_1/credentials',
+      {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          name: 'exported-endpoint-key',
+          type: 'api_key',
+          value: 'sk-exported',
+        }),
+      },
+    );
+    expect(credentialRes.status).toBe(201);
+    const credential = (await credentialRes.json()) as { id: string };
+
+    const importRes = await apiFetch(
+      baseUrl,
+      '/api/v1/workspaces/ws_default/projects/proj_1/endpoints/import-bulk',
+      {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          exported_at: '2026-05-07T00:00:00.000Z',
+          workspace_id: 'ws_default',
+          project_id: 'proj_1',
+          endpoints: [
+            {
+              name: 'Imported clone',
+              description: 'round-trip export clone',
+              model: 'gpt-5.5',
+              type: 'catalog',
+              provider_family: 'openai',
+              upstream_protocol: 'openai_responses',
+              capabilities: [{ type: 'chat_completion', enabled: true, default_model_id: 'gpt-5.5' }],
+              models: [{ capability: 'chat_completion', model_id: 'gpt-5.5', display_name: 'GPT 5.5' }],
+              defaults: { chat_model_id: 'gpt-5.5' },
+              api_base: 'https://api.openai.example/v1/responses',
+              status: 'active',
+              credential_ref: credential.id,
+              limits: { timeout_seconds: 45 },
+            },
+          ],
+        }),
+      },
+    );
+    expect(importRes.status).toBe(201);
+    const imported = (await importRes.json()) as {
+      items: Array<{
+        id: string;
+        name: string;
+        base_url: string;
+        credential_ref?: string;
+        defaults?: { chat_model_id?: string };
+      }>;
+    };
+    expect(imported.items).toHaveLength(1);
+    expect(imported.items[0]).toMatchObject({
+      name: 'Imported clone',
+      base_url: 'https://api.openai.example/v1',
+      credential_ref: credential.id,
+      defaults: { chat_model_id: 'gpt-5.5' },
+    });
+
+    const listed = await apiFetch(
+      baseUrl,
+      '/api/v1/workspaces/ws_default/projects/proj_1/endpoints',
+    );
+    expect(listed.status).toBe(200);
+    const body = (await listed.json()) as { items: Array<{ id: string; name: string }> };
+    expect(body.items).toEqual(expect.arrayContaining([
+      expect.objectContaining({ id: imported.items[0].id, name: 'Imported clone' }),
+    ]));
+  });
+
+  it('rejects bulk imports with no importable endpoint entries', async () => {
+    const { baseUrl } = startServer();
+    const importRes = await apiFetch(
+      baseUrl,
+      '/api/v1/workspaces/ws_default/projects/proj_1/endpoints/import-bulk',
+      {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          exported_at: '2026-05-07T00:00:00.000Z',
+          bulk_import_template_examples: {
+            completion: { model: '', api_base: '', api_key: '', mode: 'openai' },
+          },
+        }),
+      },
+    );
+    expect(importRes.status).toBe(422);
+    const body = (await importRes.json()) as { message: string };
+    expect(body.message).toBe('endpoint_import_empty');
+  });
+
   it('supports rerank route with capability model selection', async () => {
     const { baseUrl } = startServer();
     const upstream = startUpstreamServer();

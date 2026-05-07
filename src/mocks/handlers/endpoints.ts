@@ -422,14 +422,67 @@ export const endpointHandlers = [
   http.post(`${API_V1_PATTERN}/workspaces/:ws/projects/:prj/endpoints/import-bulk`, async ({ params, request }) => {
     const body = (await request.json().catch(() => ({}))) as Record<string, unknown>;
     const created: Endpoint[] = [];
+    const now = new Date().toISOString();
+    const projectId = String(params.prj ?? 'proj_001');
+    const exportedEndpoints = Array.isArray(body.endpoints) ? body.endpoints : [];
+    for (const value of exportedEndpoints) {
+      if (!value || typeof value !== 'object' || Array.isArray(value)) continue;
+      const item = value as Record<string, unknown>;
+      const model = typeof item.model === 'string' ? item.model.trim() : '';
+      const apiBase = typeof item.api_base === 'string'
+        ? item.api_base.trim()
+        : typeof item.base_url === 'string'
+          ? item.base_url.trim()
+          : '';
+      const name = typeof item.name === 'string' && item.name.trim() ? item.name.trim() : model;
+      if (!model || !apiBase || !name) {
+        return HttpResponse.json({ error_code: 'VALIDATION_ERROR', message: 'endpoint_import_record_invalid' }, { status: 422 });
+      }
+      const endpoint: Endpoint = {
+        id: `ep_export_${Date.now()}_${created.length}`,
+        project_id: projectId,
+        name,
+        description: typeof item.description === 'string' ? item.description : '',
+        type: item.type === 'custom' ? 'custom' : 'catalog',
+        model,
+        base_url: apiBase.replace(/\/+$/, ''),
+        credential_ref: typeof item.credential_ref === 'string' ? item.credential_ref : 'cred_imported',
+        provider_family:
+          item.provider_family === 'anthropic'
+          || item.provider_family === 'openai'
+          || item.provider_family === 'deepseek'
+          || item.provider_family === 'minimax'
+          || item.provider_family === 'kimi'
+          || item.provider_family === 'google'
+          || item.provider_family === 'glm'
+          || item.provider_family === 'alibaba'
+            ? item.provider_family
+            : 'custom',
+        upstream_protocol:
+          item.upstream_protocol === 'anthropic_messages'
+          || item.upstream_protocol === 'openai_responses'
+            ? item.upstream_protocol
+            : 'openai_chat_completions',
+        status: item.status === 'disabled' ? 'disabled' : 'active',
+        capabilities: Array.isArray(item.capabilities) ? item.capabilities as Endpoint['capabilities'] : undefined,
+        models: Array.isArray(item.models) ? item.models as Endpoint['models'] : undefined,
+        defaults: item.defaults && typeof item.defaults === 'object' && !Array.isArray(item.defaults)
+          ? item.defaults as Endpoint['defaults']
+          : undefined,
+        created_at: now,
+        updated_at: now,
+      };
+      endpoints.push(endpoint);
+      created.push(endpoint);
+    }
     for (const [key, value] of Object.entries(body)) {
+      if (key === 'endpoints' || key === 'bulk_import_template_examples') continue;
       if (!value || typeof value !== 'object') continue;
       const item = value as Record<string, unknown>;
       const model = typeof item.model === 'string' ? item.model : key;
-      const now = new Date().toISOString();
       const endpoint: Endpoint = {
         id: `ep_${key}_${Date.now()}`,
-        project_id: String(params.prj ?? 'proj_001'),
+        project_id: projectId,
         name: model,
         description: '',
         type: 'custom',
@@ -446,6 +499,9 @@ export const endpointHandlers = [
       };
       endpoints.push(endpoint);
       created.push(endpoint);
+    }
+    if (created.length === 0) {
+      return HttpResponse.json({ error_code: 'VALIDATION_ERROR', message: 'endpoint_import_empty' }, { status: 422 });
     }
     return HttpResponse.json({ items: created }, { status: 201 });
   }),

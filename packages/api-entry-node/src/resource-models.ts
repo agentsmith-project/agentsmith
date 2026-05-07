@@ -122,12 +122,31 @@ export interface EndpointBulkImportItem {
   mode?: 'openai';
 }
 
+export interface EndpointBulkImportExportedEndpoint {
+  name?: string;
+  description?: string;
+  model?: string;
+  type?: EndpointRecord['type'];
+  provider_family?: EndpointProviderFamily;
+  upstream_protocol?: EndpointUpstreamProtocol;
+  capabilities?: EndpointCapability[];
+  models?: EndpointModelBinding[];
+  defaults?: EndpointDefaults;
+  api_base?: string;
+  base_url?: string;
+  status?: EndpointRecord['status'];
+  credential_ref?: string;
+  model_profile?: EndpointModelProfile;
+  limits?: EndpointRecord['limits'];
+}
+
 export interface EndpointBulkImportPayload {
   reranker?: EndpointBulkImportItem;
   embedding?: EndpointBulkImportItem;
   completion?: EndpointBulkImportItem;
   image_generation?: EndpointBulkImportItem;
   video_generation?: EndpointBulkImportItem;
+  endpoints?: EndpointBulkImportExportedEndpoint[];
 }
 
 export interface ChatSessionRecord {

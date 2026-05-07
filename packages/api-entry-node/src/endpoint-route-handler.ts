@@ -762,12 +762,27 @@ export async function handleEndpointRoute(args: EndpointHandlerArgs): Promise<bo
 
   if (route.kind === 'endpointImportBulk' && method === 'POST' && route.workspaceId && route.projectId) {
     const raw = (await readBody(req)) as EndpointBulkImportPayload;
-    const imported = await deps.endpointResourceService.importBulk(
-      route.workspaceId,
-      route.projectId,
-      raw,
-    );
-    json(res, 201, imported);
+    try {
+      const imported = await deps.endpointResourceService.importBulk(
+        route.workspaceId,
+        route.projectId,
+        raw,
+      );
+      json(res, 201, imported);
+    } catch (error) {
+      if (
+        error instanceof Error
+        && (
+          error.message === 'endpoint_import_empty'
+          || error.message === 'endpoint_import_record_invalid'
+          || error.message === 'endpoint_model_required'
+        )
+      ) {
+        json(res, 422, { error_code: 'VALIDATION_ERROR', message: error.message });
+        return true;
+      }
+      throw error;
+    }
     return true;
   }
 

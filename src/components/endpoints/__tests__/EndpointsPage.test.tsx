@@ -4,6 +4,7 @@ import userEvent from '@testing-library/user-event';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { describe, expect, it, vi, beforeEach } from 'vitest';
 import type { Endpoint } from '@/lib/api/types';
+import type { AgentTaskModelSettingReadinessReasonCode } from '@/lib/api/types';
 
 const mocks = vi.hoisted(() => ({
   mockListEndpoints: vi.fn(),
@@ -84,11 +85,13 @@ vi.mock('next-intl', () => ({
       'endpoints.agent_task_model.loading': 'Checking setup',
       'endpoints.agent_task_model.ready': 'Ready',
       'endpoints.agent_task_model.needs_setup': 'Needs setup',
+      'endpoints.agent_task_model.unavailable': 'Agent task model readiness is temporarily unavailable.',
       'endpoints.agent_task_model.default_model_label': 'Default model',
       'endpoints.agent_task_model.selected_badge': 'Agent task model',
       'endpoints.agent_task_model.updated_label': 'Updated',
       'endpoints.agent_task_model.setup_next_step_title': 'Set up Agent task model',
       'endpoints.agent_task_model.setup_next_step_description': 'Choose an eligible Endpoint from the list.',
+      'endpoints.agent_task_model.update_failed': 'Failed to update Agent task model',
       'endpoints.table.provider': 'Provider',
       'endpoints.table.name': 'Name',
       'endpoints.table.model': 'Model',
@@ -117,8 +120,9 @@ vi.mock('next-intl', () => ({
 }));
 
 import { EndpointsPageView } from '../EndpointsPage';
+import { toast } from '@/components/ui/toast';
 
-function action(visible: boolean, allowed: boolean, reasonCode?: string) {
+function action(visible: boolean, allowed: boolean, reasonCode?: AgentTaskModelSettingReadinessReasonCode) {
   return {
     operation: 'use_for_agent_tasks' as const,
     visible,
@@ -204,7 +208,7 @@ describe('EndpointsPageView Agent task model setting UX', () => {
           name: 'Locally ready but hidden',
           model: 'gpt-5.5-mini',
           agent_task_model_selected: false,
-          actions: { use_for_agent_tasks: action(false, false, 'permission_denied') },
+          actions: { use_for_agent_tasks: action(false, false, 'agent_task_model_policy_denied') },
         }),
       ],
       total: 3,
@@ -241,6 +245,25 @@ describe('EndpointsPageView Agent task model setting UX', () => {
       readiness: {
         state: 'ready',
         display_summary: 'Agent tasks are ready to run.',
+      },
+      setting: {
+        workspace_id: 'ws_1',
+        project_id: 'proj_1',
+        endpoint_id: 'ep_candidate',
+        endpoint_display_name: 'Anthropic backup',
+        default_model: 'claude-sonnet-4-5',
+        setting_revision: 'set_8',
+        updated_at: '2026-05-07T00:05:00.000Z',
+        updated_by_user_id: 'user_1',
+      },
+      actions: {
+        update: {
+          operation: 'update',
+          visible: true,
+          allowed: true,
+          required_permissions: ['project:governance:update'],
+          danger_level: 'none',
+        },
       },
     });
   });
@@ -287,5 +310,97 @@ describe('EndpointsPageView Agent task model setting UX', () => {
         },
       );
     });
+  });
+
+  it('uses null CAS for first Agent task model configuration without exposing reason enums', async () => {
+    const user = userEvent.setup();
+    mocks.mockGetAgentTaskModelSetting.mockResolvedValueOnce({
+      readiness: {
+        state: 'not_configured',
+        display_summary: 'Agent task model is not configured.',
+        reason_code: 'agent_task_model_setting_missing',
+      },
+      actions: {
+        update: {
+          operation: 'update',
+          visible: true,
+          allowed: true,
+          required_permissions: ['project:governance:update'],
+          danger_level: 'none',
+        },
+      },
+    });
+    mocks.mockListEndpoints.mockResolvedValueOnce({
+      items: [
+        endpoint({
+          id: 'ep_candidate',
+          name: 'Anthropic backup',
+          model: 'claude-sonnet-4-5',
+          provider_family: 'anthropic',
+          upstream_protocol: 'anthropic_messages',
+          agent_task_model_selected: false,
+          actions: { use_for_agent_tasks: action(true, true) },
+        }),
+      ],
+      total: 1,
+      page: 1,
+      page_size: 1,
+      has_more: false,
+    });
+
+    renderPage();
+
+    const summary = await screen.findByTestId('endpoints__agent-task-model-summary');
+    await waitFor(() => {
+      expect(summary).toHaveTextContent('Agent task model is not configured.');
+    });
+    expect(summary).toHaveTextContent('Needs setup');
+    expect(summary).not.toHaveTextContent('agent_task_model_setting_missing');
+
+    await user.click(await screen.findByRole('button', { name: 'Use for Agent tasks' }));
+
+    await waitFor(() => {
+      expect(mocks.mockUpdateAgentTaskModelSetting).toHaveBeenCalledWith(
+        'ws_1',
+        'proj_1',
+        {
+          endpoint_id: 'ep_candidate',
+          expected_setting_revision: null,
+        },
+      );
+    });
+  });
+
+  it('does not send a first-config null CAS when the setting query has not loaded successfully', async () => {
+    const user = userEvent.setup();
+    mocks.mockGetAgentTaskModelSetting.mockRejectedValueOnce(new Error('setting_unavailable'));
+    mocks.mockListEndpoints.mockResolvedValueOnce({
+      items: [
+        endpoint({
+          id: 'ep_candidate',
+          name: 'Anthropic backup',
+          model: 'claude-sonnet-4-5',
+          provider_family: 'anthropic',
+          upstream_protocol: 'anthropic_messages',
+          agent_task_model_selected: false,
+          actions: { use_for_agent_tasks: action(true, true) },
+        }),
+      ],
+      total: 1,
+      page: 1,
+      page_size: 1,
+      has_more: false,
+    });
+
+    renderPage();
+
+    const summary = await screen.findByTestId('endpoints__agent-task-model-summary');
+    await waitFor(() => {
+      expect(summary).toHaveTextContent('Agent task model readiness is temporarily unavailable.');
+    });
+    await user.click(await screen.findByRole('button', { name: 'Use for Agent tasks' }));
+
+    expect(mocks.mockUpdateAgentTaskModelSetting).not.toHaveBeenCalled();
+    expect(toast.error).toHaveBeenCalledWith('Failed to update Agent task model');
   });
 });

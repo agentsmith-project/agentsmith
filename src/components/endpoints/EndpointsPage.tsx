@@ -170,10 +170,17 @@ export function EndpointsPageView({ params }: EndpointsPageProps) {
   const handleUseForAgentTasks = (endpoint: Endpoint) => {
     const action = endpoint.actions?.use_for_agent_tasks;
     if (action?.visible !== true || action.allowed !== true) return;
+    const settingResponse = agentTaskModelSetting.settingQuery.data;
+    const expectedSettingRevision = settingResponse?.setting?.setting_revision
+      ?? (settingResponse?.readiness.state === 'not_configured' ? null : undefined);
+    if (expectedSettingRevision === undefined) {
+      toast.error(t('agent_task_model.update_failed'));
+      return;
+    }
     agentTaskModelSetting.updateSettingMutation.mutate(
       {
         endpointId: endpoint.id,
-        expectedSettingRevision: agentTaskModelSetting.settingQuery.data?.setting?.setting_revision ?? null,
+        expectedSettingRevision,
       },
       {
         onSuccess: () => {

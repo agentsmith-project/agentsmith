@@ -31,7 +31,6 @@ export type {
   UpdateEndpointRequest,
   EndpointBulkImportItem,
   EndpointBulkImportRequest,
-  UpdateAgentTaskModelSettingPayload,
 } from './endpoints';
 export type {
   AgentTaskModelSettingResponse,

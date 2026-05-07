@@ -18,3 +18,7 @@ export type UpdateAgentTaskModelSettingRequest =
   components['schemas']['UpdateAgentTaskModelSettingRequest'];
 export type AgentTaskModelSettingConflictError =
   components['schemas']['AgentTaskModelSettingConflictError'];
+export type AgentTaskModelResolutionError =
+  components['schemas']['AgentTaskModelResolutionError'];
+export type AgentTaskModelSettingValidationError =
+  components['schemas']['AgentTaskModelSettingValidationError'];

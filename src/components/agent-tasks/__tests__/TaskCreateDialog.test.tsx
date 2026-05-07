@@ -519,7 +519,7 @@ describe('TaskCreateDialog', () => {
         readiness: {
           state: 'blocked',
           display_summary: 'Agent tasks are blocked by model setup.',
-          reason_code: 'agent_task_model_setting_missing',
+          reason_code: 'agent_task_model_endpoint_disabled',
         },
         actions: {
           update: {
@@ -536,6 +536,7 @@ describe('TaskCreateDialog', () => {
       const blockedState = await screen.findByTestId('task-create__model-readiness-blocked');
       expect(blockedState).toHaveTextContent('Agent task model setup required');
       expect(blockedState).toHaveTextContent('Agent tasks are blocked by model setup.');
+      expect(blockedState).not.toHaveTextContent('agent_task_model_endpoint_disabled');
       const endpointsLink = within(blockedState).getByRole('link', { name: 'Open Endpoints' });
       expect(endpointsLink).toHaveAttribute(
         'href',
@@ -553,6 +554,7 @@ describe('TaskCreateDialog', () => {
         readiness: {
           state: 'not_configured',
           display_summary: 'Agent task model is not configured.',
+          reason_code: 'agent_task_model_setting_missing',
         },
       });
       renderComponent();
@@ -560,6 +562,7 @@ describe('TaskCreateDialog', () => {
       const blockedState = await screen.findByTestId('task-create__model-readiness-blocked');
       expect(blockedState).toHaveTextContent('Agent task model is not configured.');
       expect(blockedState).toHaveTextContent('Contact a project admin to choose an Endpoint for Agent tasks.');
+      expect(blockedState).not.toHaveTextContent('agent_task_model_setting_missing');
       expect(within(blockedState).queryByRole('link', { name: 'Open Endpoints' })).not.toBeInTheDocument();
     });
   });

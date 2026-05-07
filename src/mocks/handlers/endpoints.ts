@@ -2,10 +2,90 @@ import { http, HttpResponse } from 'msw';
 import p0 from '../fixtures/p0.json';
 import { DOC_FIXTURES_ENABLED } from '../doc-fixtures/mode';
 import { docEndpointFixtures } from '../doc-fixtures/workspace-projects';
-import type { Endpoint } from '@/lib/api/types';
+import type { Endpoint, EndpointCapabilityType, EndpointUpstreamProtocol } from '@/lib/api/types';
 
-const endpoints: Endpoint[] = DOC_FIXTURES_ENABLED ? [...docEndpointFixtures] : [...((p0.endpoints ?? []) as unknown as Endpoint[])];
+type MockAgentTaskModelReasonCode =
+  | 'agent_task_model_setting_missing'
+  | 'agent_task_model_endpoint_not_found'
+  | 'agent_task_model_endpoint_disabled'
+  | 'agent_task_model_default_missing'
+  | 'agent_task_model_capability_mismatch'
+  | 'agent_task_model_protocol_unsupported'
+  | 'agent_task_model_credential_missing'
+  | 'agent_task_model_credential_unavailable'
+  | 'agent_task_model_policy_denied'
+  | 'agent_task_model_rate_limited'
+  | 'agent_task_model_spending_limited';
+
+type MockAgentTaskModelReadiness = {
+  state: 'ready' | 'not_configured' | 'blocked';
+  display_summary: string;
+  reason_code?: MockAgentTaskModelReasonCode;
+};
+
+const AGENT_TASK_MODEL_SUPPORTED_PROTOCOLS = new Set<EndpointUpstreamProtocol>([
+  'openai_chat_completions',
+  'openai_responses',
+  'anthropic_messages',
+]);
+const AGENT_TASK_MODEL_CAPABILITIES = new Set<EndpointCapabilityType>([
+  'chat_completion',
+  'multimodal_completion',
+]);
+
+const agentTaskModelEndpointFixtures: Endpoint[] = [
+  {
+    id: 'ep_agent_task_model_disabled',
+    project_id: 'proj_agent_task_model_blocked',
+    name: 'Disabled Agent task model',
+    description: 'Disabled endpoint used to exercise Agent task model readiness blockers.',
+    model: 'gpt-4o',
+    type: 'custom',
+    base_url: 'https://api.example.com/v1',
+    credential_ref: 'cred_mock',
+    provider_family: 'custom',
+    upstream_protocol: 'openai_chat_completions',
+    status: 'disabled',
+    capabilities: [{ type: 'chat_completion', enabled: true, default_model_id: 'gpt-4o' }],
+    defaults: { chat_model_id: 'gpt-4o' },
+    created_at: '2026-05-07T00:00:00.000Z',
+    updated_at: '2026-05-07T00:00:00.000Z',
+  },
+  {
+    id: 'ep_agent_task_model_no_default',
+    project_id: 'proj_agent_task_model_blocked',
+    name: 'No default Agent task model',
+    description: 'Endpoint used to exercise missing default model affordances.',
+    model: '',
+    type: 'custom',
+    base_url: 'https://api.example.com/v1',
+    credential_ref: 'cred_mock',
+    provider_family: 'custom',
+    upstream_protocol: 'openai_chat_completions',
+    status: 'active',
+    capabilities: [{ type: 'chat_completion', enabled: true }],
+    created_at: '2026-05-07T00:00:00.000Z',
+    updated_at: '2026-05-07T00:00:00.000Z',
+  },
+];
+
+function withMockCredential(endpoint: Endpoint): Endpoint {
+  if (endpoint.credential_ref?.trim()) return endpoint;
+  return { ...endpoint, credential_ref: 'cred_mock' };
+}
+
+const baseEndpoints: Endpoint[] = DOC_FIXTURES_ENABLED
+  ? [...docEndpointFixtures]
+  : [...((p0.endpoints ?? []) as unknown as Endpoint[])];
+const endpoints: Endpoint[] = [
+  ...baseEndpoints.map(withMockCredential),
+  ...agentTaskModelEndpointFixtures,
+];
 const API_V1_PATTERN = '*/api/v1';
+const UPDATE_AGENT_TASK_MODEL_SETTING_ALLOWED_FIELDS = new Set([
+  'endpoint_id',
+  'expected_setting_revision',
+]);
 
 type MockAgentTaskModelSetting = {
   workspace_id: string;
@@ -20,11 +100,23 @@ function settingKey(workspaceId: string, projectId: string) {
   return `${workspaceId}:${projectId}`;
 }
 
+function readObject(input: unknown): Record<string, unknown> {
+  return typeof input === 'object' && input !== null && !Array.isArray(input)
+    ? input as Record<string, unknown>
+    : {};
+}
+
+function collectUnsupportedAgentTaskModelSettingFields(body: Record<string, unknown>): string[] {
+  return Object.keys(body).filter((field) => !UPDATE_AGENT_TASK_MODEL_SETTING_ALLOWED_FIELDS.has(field));
+}
+
+const defaultAgentTaskModelEndpointId = DOC_FIXTURES_ENABLED ? 'endpoint_001' : 'ep_1';
+
 const initialAgentTaskModelSettings: MockAgentTaskModelSetting[] = [
   {
     workspace_id: 'ws_1',
     project_id: 'proj_001',
-    endpoint_id: 'ep_1',
+    endpoint_id: defaultAgentTaskModelEndpointId,
     setting_revision: 'set_mock_1',
     updated_at: '2026-05-07T00:00:00.000Z',
     updated_by_user_id: 'user_1',
@@ -32,8 +124,16 @@ const initialAgentTaskModelSettings: MockAgentTaskModelSetting[] = [
   {
     workspace_id: 'ws_default',
     project_id: 'proj_001',
-    endpoint_id: 'ep_1',
+    endpoint_id: defaultAgentTaskModelEndpointId,
     setting_revision: 'set_mock_visual_default',
+    updated_at: '2026-05-07T00:00:00.000Z',
+    updated_by_user_id: 'user_1',
+  },
+  {
+    workspace_id: 'ws_1',
+    project_id: 'proj_agent_task_model_blocked',
+    endpoint_id: 'ep_agent_task_model_disabled',
+    setting_revision: 'set_mock_blocked',
     updated_at: '2026-05-07T00:00:00.000Z',
     updated_by_user_id: 'user_1',
   },
@@ -62,27 +162,51 @@ function canUseAgentTaskModelSetting(request: Request): boolean {
 
 function resolveDefaultModel(endpoint: Endpoint | undefined): string {
   if (!endpoint) return '';
-  return endpoint.defaults?.chat_model_id
-    ?? endpoint.defaults?.multimodal_model_id
-    ?? endpoint.capabilities?.find((item) => (
+  return endpoint.defaults?.chat_model_id?.trim()
+    || endpoint.defaults?.multimodal_model_id?.trim()
+    || endpoint.capabilities?.find((item) => (
       (item.type === 'chat_completion' || item.type === 'multimodal_completion')
       && item.enabled
       && typeof item.default_model_id === 'string'
       && item.default_model_id.length > 0
-    ))?.default_model_id
-    ?? endpoint.models?.find((item) => item.capability === 'chat_completion')?.model_id
-    ?? endpoint.models?.find((item) => item.capability === 'multimodal_completion')?.model_id
-    ?? endpoint.model
-    ?? '';
+    ))?.default_model_id?.trim()
+    || endpoint.models?.find((item) => item.capability === 'chat_completion')?.model_id?.trim()
+    || endpoint.models?.find((item) => item.capability === 'multimodal_completion')?.model_id?.trim()
+    || endpoint.model?.trim()
+    || '';
+}
+
+function endpointSupportsAgentTaskModel(endpoint: Endpoint): boolean {
+  if (!endpoint.capabilities || endpoint.capabilities.length === 0) {
+    return endpoint.model.trim().length > 0;
+  }
+  return endpoint.capabilities.some((item) => (
+    AGENT_TASK_MODEL_CAPABILITIES.has(item.type)
+    && item.enabled === true
+  ));
+}
+
+function getAgentTaskModelBlockerReason(endpoint: Endpoint | undefined): MockAgentTaskModelReasonCode | undefined {
+  if (!endpoint) return 'agent_task_model_endpoint_not_found';
+  if (endpoint.status !== 'active') return 'agent_task_model_endpoint_disabled';
+  if (!resolveDefaultModel(endpoint)) return 'agent_task_model_default_missing';
+  if (!endpointSupportsAgentTaskModel(endpoint)) return 'agent_task_model_capability_mismatch';
+  if (!AGENT_TASK_MODEL_SUPPORTED_PROTOCOLS.has(endpoint.upstream_protocol)) {
+    return 'agent_task_model_protocol_unsupported';
+  }
+  if (!endpoint.base_url.trim() || !endpoint.credential_ref?.trim()) {
+    return 'agent_task_model_credential_missing';
+  }
+  return undefined;
 }
 
 function buildUseForAgentTasksAction(endpoint: Endpoint, visible: boolean) {
-  const allowed = endpoint.status === 'active' && resolveDefaultModel(endpoint).length > 0;
+  const reasonCode = getAgentTaskModelBlockerReason(endpoint);
   return {
     operation: 'use_for_agent_tasks' as const,
     visible,
-    allowed: visible && allowed,
-    ...(visible && !allowed ? { reason_code: endpoint.status !== 'active' ? 'agent_task_model_endpoint_disabled' : 'agent_task_model_default_missing' } : {}),
+    allowed: visible && !reasonCode,
+    ...(visible && reasonCode ? { reason_code: reasonCode } : {}),
     required_permissions: ['project:governance:update'],
     danger_level: 'none' as const,
   };
@@ -104,16 +228,36 @@ function shapeEndpointForAgentTaskModel(
   };
 }
 
-function readinessForSetting(setting: MockAgentTaskModelSetting | undefined) {
-  return setting
-    ? {
-        state: 'ready',
-        display_summary: 'Agent tasks are ready to run.',
-      }
-    : {
-        state: 'not_configured',
-        display_summary: 'Agent task model is not configured.',
-      };
+function readinessForSetting(
+  setting: MockAgentTaskModelSetting | undefined,
+  endpoint: Endpoint | undefined,
+): MockAgentTaskModelReadiness {
+  if (!setting) {
+    return {
+      state: 'not_configured',
+      display_summary: 'Agent task model is not configured.',
+      reason_code: 'agent_task_model_setting_missing',
+    };
+  }
+  const reasonCode = getAgentTaskModelBlockerReason(endpoint);
+  if (reasonCode) {
+    return {
+      state: 'blocked',
+      display_summary: 'Agent tasks are blocked by model setup.',
+      reason_code: reasonCode,
+    };
+  }
+  return {
+    state: 'ready',
+    display_summary: 'Agent tasks are ready to run.',
+  };
+}
+
+function displaySafeReadiness(readiness: MockAgentTaskModelReadiness) {
+  return {
+    state: readiness.state,
+    display_summary: readiness.display_summary,
+  };
 }
 
 function settingResponse(
@@ -122,11 +266,11 @@ function settingResponse(
   request: Request,
 ) {
   const setting = agentTaskModelSettings.get(settingKey(workspaceId, projectId));
-  const readiness = readinessForSetting(setting);
-  if (!canUpdateAgentTaskModelSetting(request)) {
-    return { readiness };
-  }
   const endpoint = endpoints.find((item) => item.id === setting?.endpoint_id && item.project_id === projectId);
+  const readiness = readinessForSetting(setting, endpoint);
+  if (!canUpdateAgentTaskModelSetting(request)) {
+    return { readiness: displaySafeReadiness(readiness) };
+  }
   return {
     readiness,
     ...(setting && endpoint
@@ -163,7 +307,15 @@ export const endpointHandlers = [
     }
     const workspaceId = String(params.ws ?? '');
     const projectId = String(params.prj ?? '');
-    const body = (await request.json().catch(() => ({}))) as Record<string, unknown>;
+    const body = readObject(await request.json().catch(() => ({})));
+    const unsupportedFields = collectUnsupportedAgentTaskModelSettingFields(body);
+    if (unsupportedFields.length > 0) {
+      return HttpResponse.json({
+        error_code: 'unsupported_field',
+        message: 'unsupported_field',
+        fields: unsupportedFields,
+      }, { status: 400 });
+    }
     const endpointId = typeof body.endpoint_id === 'string' ? body.endpoint_id.trim() : '';
     if (!endpointId) {
       return HttpResponse.json({ error_code: 'VALIDATION_ERROR', message: 'endpoint_id_required', field: 'endpoint_id' }, { status: 422 });
@@ -176,7 +328,7 @@ export const endpointHandlers = [
       }, { status: 422 });
     }
     const expectedRevision = typeof body.expected_setting_revision === 'string'
-      ? body.expected_setting_revision
+      ? body.expected_setting_revision.trim()
       : body.expected_setting_revision === null
         ? null
         : '';

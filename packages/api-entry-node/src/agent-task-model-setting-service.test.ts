@@ -4,6 +4,7 @@ import type { NodeApiDeps } from './node-api-deps.js';
 import { EndpointResourceService } from './endpoint-resource-service.js';
 import { upsertProjectResourcePolicy } from './project-resource-policy-store.js';
 import {
+  AgentTaskModelResolutionError,
   AgentTaskModelSettingService,
   resolveAgentTaskModelTarget,
 } from './agent-task-model-setting-service.js';
@@ -37,6 +38,43 @@ async function createReadyEndpoint(deps: NodeApiDeps, projectId = 'proj_1') {
 }
 
 describe('AgentTaskModelSettingService', () => {
+  it('uses backend runtime readiness states and agent_task_model reason codes', async () => {
+    const deps = buildDeps();
+    const endpoint = await createReadyEndpoint(deps);
+    const service = new AgentTaskModelSettingService(deps);
+
+    await expect(service.getReadiness({
+      workspaceId: 'ws_default',
+      projectId: 'proj_1',
+      actorUserId: 'user_1',
+    })).resolves.toEqual({
+      state: 'not_configured',
+      display_summary: 'Agent task model is not configured.',
+      reason_code: 'agent_task_model_setting_missing',
+    });
+
+    await service.patchSetting({
+      workspaceId: 'ws_default',
+      projectId: 'proj_1',
+      endpointId: endpoint.id,
+      expectedSettingRevision: null,
+      actorUserId: 'admin_1',
+    });
+    await deps.endpointResourceService.updateEndpoint('ws_default', 'proj_1', endpoint.id, {
+      status: 'disabled',
+    });
+
+    await expect(service.getReadiness({
+      workspaceId: 'ws_default',
+      projectId: 'proj_1',
+      actorUserId: 'user_1',
+    })).resolves.toEqual({
+      state: 'blocked',
+      display_summary: 'Agent tasks are blocked by model setup.',
+      reason_code: 'agent_task_model_endpoint_disabled',
+    });
+  });
+
   it('patches the project Agent task model setting with revision conflict protection', async () => {
     const deps = buildDeps();
     const endpoint = await createReadyEndpoint(deps);
@@ -63,6 +101,14 @@ describe('AgentTaskModelSettingService', () => {
     })).rejects.toMatchObject({
       code: 'agent_task_model_setting_conflict',
     });
+  });
+
+  it('maps Agent task model resolution errors to their contract status codes', () => {
+    expect(new AgentTaskModelResolutionError('agent_task_model_endpoint_not_found').statusCode).toBe(404);
+    expect(new AgentTaskModelResolutionError('agent_task_model_endpoint_disabled').statusCode).toBe(409);
+    expect(new AgentTaskModelResolutionError('agent_task_model_policy_denied').statusCode).toBe(403);
+    expect(new AgentTaskModelResolutionError('agent_task_model_rate_limited').statusCode).toBe(429);
+    expect(new AgentTaskModelResolutionError('agent_task_model_spending_limited').statusCode).toBe(429);
   });
 
   it('computes use_for_agent_tasks from endpoint readiness without adding an endpoint capability enum', async () => {

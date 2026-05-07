@@ -87,10 +87,21 @@ export class AgentTaskModelSettingConflictError extends Error {
   }
 }
 
+export type AgentTaskModelResolutionStatusCode = 403 | 404 | 409 | 429;
+
+function statusCodeForAgentTaskModelResolutionError(
+  code: AgentTaskModelResolutionErrorCode,
+): AgentTaskModelResolutionStatusCode {
+  if (code === 'agent_task_model_endpoint_not_found') return 404;
+  if (code === 'agent_task_model_policy_denied') return 403;
+  if (code === 'agent_task_model_rate_limited' || code === 'agent_task_model_spending_limited') return 429;
+  return 409;
+}
+
 export class AgentTaskModelResolutionError extends Error {
   constructor(
     readonly code: AgentTaskModelResolutionErrorCode,
-    readonly statusCode: 403 | 409 | 429 = 409,
+    readonly statusCode: AgentTaskModelResolutionStatusCode = statusCodeForAgentTaskModelResolutionError(code),
   ) {
     super(code);
   }

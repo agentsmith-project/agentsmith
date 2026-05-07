@@ -381,12 +381,12 @@ describe('AgentRunnerKeysDialog', () => {
       expect(screen.getByRole('button', { name: /run test task/i })).toBeEnabled();
     });
 
-    it('shows model-setting blockers for Developer test tasks without turning them into connection failures', async () => {
+    it('recognizes agent_task_model_* blockers for Developer test tasks without turning them into connection failures', async () => {
       render(
         <AgentRunnerKeysDialog
           {...defaultProps}
           actions={runnerActions({
-            run_test_task: action('run_test_task', true, false, 'agent_task_model_setting_missing'),
+            run_test_task: action('run_test_task', true, false, 'agent_task_model_endpoint_disabled'),
           })}
         />,
         { wrapper: createWrapper() },
@@ -403,6 +403,7 @@ describe('AgentRunnerKeysDialog', () => {
       });
       expect(screen.getByRole('button', { name: /run test task/i })).toBeDisabled();
       expect(screen.getByText('Project model setup blocks test tasks.')).toBeInTheDocument();
+      expect(screen.getByTestId('agent-runners__developer-checks')).not.toHaveTextContent('agent_task_model_endpoint_disabled');
       expect(screen.queryByText(/connection check failed/i)).not.toBeInTheDocument();
       expect(screen.getByTestId('agent-runners__sheet-state')).not.toHaveAttribute('data-state', 'test_connection_failed');
     });

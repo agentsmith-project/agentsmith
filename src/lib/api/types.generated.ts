@@ -2666,6 +2666,12 @@ export interface components {
             /** @enum {string} */
             status: "not_started";
         };
+        AgentTaskModelResolutionError: {
+            error_code: components["schemas"]["AgentTaskModelResolutionErrorCode"];
+            message: components["schemas"]["AgentTaskModelResolutionErrorCode"];
+        };
+        /** @enum {string} */
+        AgentTaskModelResolutionErrorCode: "agent_task_model_endpoint_disabled" | "agent_task_model_default_missing" | "agent_task_model_capability_mismatch" | "agent_task_model_protocol_unsupported" | "agent_task_model_credential_missing" | "agent_task_model_credential_unavailable" | "agent_task_model_policy_denied" | "agent_task_model_rate_limited" | "agent_task_model_spending_limited";
         AgentTaskModelSetting: {
             /** @description Display-safe Endpoint default model label. */
             default_model?: string;
@@ -2711,13 +2717,21 @@ export interface components {
             state: components["schemas"]["AgentTaskModelSettingReadinessState"];
         };
         /** @enum {string} */
-        AgentTaskModelSettingReadinessReasonCode: "setting_missing" | "endpoint_missing" | "endpoint_disabled" | "default_model_missing" | "unsupported_capability" | "unsupported_protocol" | "credential_unavailable" | "governance_denied" | "resource_policy_denied" | "permission_denied";
+        AgentTaskModelSettingReadinessReasonCode: "agent_task_model_setting_missing" | "agent_task_model_endpoint_not_found" | "agent_task_model_endpoint_disabled" | "agent_task_model_default_missing" | "agent_task_model_capability_mismatch" | "agent_task_model_protocol_unsupported" | "agent_task_model_credential_missing" | "agent_task_model_credential_unavailable" | "agent_task_model_policy_denied" | "agent_task_model_rate_limited" | "agent_task_model_spending_limited";
         /** @enum {string} */
-        AgentTaskModelSettingReadinessState: "ready" | "not_configured" | "unavailable" | "permission_denied";
+        AgentTaskModelSettingReadinessState: "ready" | "not_configured" | "blocked";
         AgentTaskModelSettingResponse: {
             actions?: components["schemas"]["AgentTaskModelSettingActions"];
             readiness: components["schemas"]["AgentTaskModelSettingReadiness"];
             setting?: components["schemas"]["AgentTaskModelSetting"];
+        };
+        AgentTaskModelSettingValidationError: {
+            /** @enum {string} */
+            error_code: "VALIDATION_ERROR";
+            /** @enum {string} */
+            field: "endpoint_id" | "expected_setting_revision";
+            /** @enum {string} */
+            message: "endpoint_id_required" | "expected_setting_revision_required";
         };
         /** @description Alert behavior settings */
         AlertBehavior: {
@@ -3878,7 +3892,7 @@ export interface components {
         };
         UpdateAgentTaskModelSettingRequest: {
             endpoint_id: string;
-            expected_setting_revision: string;
+            expected_setting_revision: string | null;
         };
         UpdateChatSessionRequest: {
             endpoint_id?: string;
@@ -5436,15 +5450,41 @@ export interface operations {
                 };
             };
             401: components["responses"]["Unauthorized"];
-            403: components["responses"]["Forbidden"];
+            /** @description Forbidden or Agent task model policy blocker */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"] | components["schemas"]["AgentTaskModelResolutionError"];
+                };
+            };
             404: components["responses"]["NotFound"];
-            /** @description Stale Agent task model setting revision */
+            /** @description Stale Agent task model setting revision or setup blocker */
             409: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["AgentTaskModelSettingConflictError"];
+                    "application/json": components["schemas"]["AgentTaskModelSettingConflictError"] | components["schemas"]["AgentTaskModelResolutionError"];
+                };
+            };
+            /** @description Invalid Agent task model setting request */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AgentTaskModelSettingValidationError"];
+                };
+            };
+            /** @description Agent task model policy rate or spend limit */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AgentTaskModelResolutionError"];
                 };
             };
         };

@@ -13,6 +13,7 @@ import type {
   EndpointModelProfile,
   EndpointProviderFamily,
   AgentTaskModelSettingResponse,
+  UpdateAgentTaskModelSettingRequest,
   PaginationParams,
   PaginatedResponse,
 } from '../types';
@@ -78,11 +79,6 @@ export interface EndpointBulkImportRequest {
   video_generation?: EndpointBulkImportItem;
 }
 
-export interface UpdateAgentTaskModelSettingPayload {
-  endpoint_id: string;
-  expected_setting_revision: string | null;
-}
-
 export class EndpointAPI {
   constructor(private client: ApiClient) {}
 
@@ -142,7 +138,7 @@ export class EndpointAPI {
   async updateAgentTaskModelSetting(
     workspaceId: string,
     projectId: string,
-    payload: UpdateAgentTaskModelSettingPayload,
+    payload: UpdateAgentTaskModelSettingRequest,
   ): Promise<AgentTaskModelSettingResponse> {
     return this.client.patch<AgentTaskModelSettingResponse>(
       `/workspaces/${workspaceId}/projects/${projectId}/agent-task-model-setting`,

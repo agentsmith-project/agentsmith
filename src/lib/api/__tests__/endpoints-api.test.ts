@@ -127,6 +127,25 @@ describe('EndpointAPI', () => {
         state: 'ready',
         display_summary: 'Agent tasks are ready to run.',
       },
+      setting: {
+        workspace_id: 'ws_1',
+        project_id: 'proj_1',
+        endpoint_id: 'ep_2',
+        endpoint_display_name: 'Anthropic backup',
+        default_model: 'claude-sonnet-4-5',
+        setting_revision: 'set_8',
+        updated_at: '2026-05-07T00:05:00.000Z',
+        updated_by_user_id: 'user_1',
+      },
+      actions: {
+        update: {
+          operation: 'update',
+          visible: true,
+          allowed: true,
+          required_permissions: ['project:governance:update'],
+          danger_level: 'none',
+        },
+      },
     });
     const client: ApiClient = {
       setToken: () => undefined,
@@ -144,11 +163,11 @@ describe('EndpointAPI', () => {
     const api = new EndpointAPI(client);
 
     await api.getAgentTaskModelSetting('ws_1', 'proj_1');
-    await api.updateAgentTaskModelSetting('ws_1', 'proj_1', {
+    const updated = await api.updateAgentTaskModelSetting('ws_1', 'proj_1', {
       endpoint_id: 'ep_2',
       expected_setting_revision: 'set_7',
     });
-    await api.updateAgentTaskModelSetting('ws_1', 'proj_1', {
+    const firstConfiguration = await api.updateAgentTaskModelSetting('ws_1', 'proj_1', {
       endpoint_id: 'ep_1',
       expected_setting_revision: null,
     });
@@ -170,6 +189,28 @@ describe('EndpointAPI', () => {
         expected_setting_revision: null,
       },
     );
+    expect(updated).toMatchObject({
+      readiness: {
+        state: 'ready',
+        display_summary: 'Agent tasks are ready to run.',
+      },
+      setting: {
+        workspace_id: 'ws_1',
+        project_id: 'proj_1',
+        endpoint_id: 'ep_2',
+        setting_revision: 'set_8',
+      },
+      actions: {
+        update: {
+          operation: 'update',
+          visible: true,
+          allowed: true,
+          required_permissions: ['project:governance:update'],
+          danger_level: 'none',
+        },
+      },
+    });
+    expect(firstConfiguration.readiness.state).toBe('ready');
     expect(queryKeys.endpoints.agentTaskModelSetting('ws_1', 'proj_1')).toEqual([
       'endpoints',
       'agent-task-model-setting',

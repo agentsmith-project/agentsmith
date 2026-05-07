@@ -9,6 +9,7 @@ import {
   upsertProjectMemberPermissionState,
   upsertProjectMembershipRecord,
 } from './project-member-governance-persistence.js';
+import { upsertProjectResourcePolicy } from './project-resource-policy-store.js';
 import { handleAgentTaskModelSettingRoute } from './agent-task-model-setting-route-handler.js';
 
 type MockResponse = EventEmitter & http.ServerResponse & {
@@ -99,6 +100,50 @@ const user: AuthenticatedUser = {
 };
 
 describe('handleAgentTaskModelSettingRoute', () => {
+  it('returns a complete AgentTaskModelSettingResponse after PATCH', async () => {
+    const deps = await buildDeps(['project:agent_task:use', 'project:governance:update']);
+    const endpoint = await createEndpoint(deps);
+    const res = response();
+
+    await handleAgentTaskModelSettingRoute({
+      route: { kind: 'agentTaskModelSetting', workspaceId: 'ws_default', projectId: 'proj_1' },
+      method: 'PATCH',
+      req: request(),
+      res,
+      deps,
+      user,
+      json,
+      readBody: vi.fn(async () => ({ endpoint_id: endpoint.id, expected_setting_revision: null })),
+    });
+
+    expect(res.statusCode).toBe(200);
+    expect(res.body).toMatchObject({
+      readiness: {
+        state: 'ready',
+        display_summary: 'Agent tasks are ready to run.',
+      },
+      setting: {
+        workspace_id: 'ws_default',
+        project_id: 'proj_1',
+        endpoint_id: endpoint.id,
+        endpoint_display_name: 'Production endpoint',
+        default_model: 'gpt-5.5',
+        setting_revision: expect.stringMatching(/^set_/),
+        updated_at: expect.stringMatching(/\d{4}-\d{2}-\d{2}T/),
+        updated_by_user_id: 'user_1',
+      },
+      actions: {
+        update: {
+          operation: 'update',
+          visible: true,
+          allowed: true,
+          required_permissions: ['project:governance:update'],
+          danger_level: 'none',
+        },
+      },
+    });
+  });
+
   it('returns display-safe readiness only for project:agent_task:use viewers', async () => {
     const deps = await buildDeps(['project:agent_task:use', 'project:governance:update']);
     const endpoint = await createEndpoint(deps);
@@ -170,17 +215,52 @@ describe('handleAgentTaskModelSettingRoute', () => {
     expect(res.body).toMatchObject({
       readiness: { state: 'ready' },
       setting: {
+        workspace_id: 'ws_default',
+        project_id: 'proj_1',
         endpoint_id: endpoint.id,
         endpoint_display_name: 'Production endpoint',
         default_model: 'gpt-5.5',
+        setting_revision: expect.stringMatching(/^set_/),
+        updated_at: expect.stringMatching(/\d{4}-\d{2}-\d{2}T/),
+        updated_by_user_id: 'user_1',
       },
       actions: {
         update: {
+          operation: 'update',
           visible: true,
           allowed: true,
           required_permissions: ['project:governance:update'],
+          danger_level: 'none',
         },
       },
+    });
+  });
+
+  it('rejects unsupported PATCH fields before applying the model setting', async () => {
+    const deps = await buildDeps(['project:agent_task:use', 'project:governance:update']);
+    const endpoint = await createEndpoint(deps);
+    const res = response();
+
+    await handleAgentTaskModelSettingRoute({
+      route: { kind: 'agentTaskModelSetting', workspaceId: 'ws_default', projectId: 'proj_1' },
+      method: 'PATCH',
+      req: request(),
+      res,
+      deps,
+      user,
+      json,
+      readBody: vi.fn(async () => ({
+        endpoint_id: endpoint.id,
+        expected_setting_revision: null,
+        default_model: 'gpt-5.5',
+      })),
+    });
+
+    expect(res.statusCode).toBe(400);
+    expect(res.body).toEqual({
+      error_code: 'unsupported_field',
+      message: 'unsupported_field',
+      fields: ['default_model'],
     });
   });
 
@@ -213,6 +293,95 @@ describe('handleAgentTaskModelSettingRoute', () => {
       readBody: vi.fn(async () => ({ endpoint_id: endpoint.id, expected_setting_revision: 'set_stale' })),
     });
     expect(stale.statusCode).toBe(409);
-    expect(stale.body).toMatchObject({ error_code: 'agent_task_model_setting_conflict' });
+    expect(stale.body).toMatchObject({
+      error_code: 'agent_task_model_setting_conflict',
+      message: 'agent_task_model_setting_conflict',
+      field: 'expected_setting_revision',
+    });
+  });
+
+  it('returns the existing NotFound error body for unknown PATCH endpoint ids', async () => {
+    const deps = await buildDeps(['project:agent_task:use', 'project:governance:update']);
+    const res = response();
+
+    await handleAgentTaskModelSettingRoute({
+      route: { kind: 'agentTaskModelSetting', workspaceId: 'ws_default', projectId: 'proj_1' },
+      method: 'PATCH',
+      req: request(),
+      res,
+      deps,
+      user,
+      json,
+      readBody: vi.fn(async () => ({
+        endpoint_id: 'ep_missing',
+        expected_setting_revision: null,
+      })),
+    });
+
+    expect(res.statusCode).toBe(404);
+    expect(res.body).toEqual({
+      error_code: 'RESOURCE_NOT_FOUND',
+      message: 'endpoint_not_found',
+    });
+  });
+
+  it('keeps non-CAS readiness blockers out of the stale conflict schema', async () => {
+    const deps = await buildDeps(['project:agent_task:use', 'project:governance:update']);
+    const endpoint = await createEndpoint(deps);
+    await deps.endpointResourceService.updateEndpoint('ws_default', 'proj_1', endpoint.id, {
+      status: 'disabled',
+    });
+    const disabled = response();
+
+    await handleAgentTaskModelSettingRoute({
+      route: { kind: 'agentTaskModelSetting', workspaceId: 'ws_default', projectId: 'proj_1' },
+      method: 'PATCH',
+      req: request(),
+      res: disabled,
+      deps,
+      user,
+      json,
+      readBody: vi.fn(async () => ({
+        endpoint_id: endpoint.id,
+        expected_setting_revision: null,
+      })),
+    });
+
+    expect(disabled.statusCode).toBe(409);
+    expect(disabled.body).toEqual({
+      error_code: 'agent_task_model_endpoint_disabled',
+      message: 'agent_task_model_endpoint_disabled',
+    });
+
+    await deps.endpointResourceService.updateEndpoint('ws_default', 'proj_1', endpoint.id, {
+      status: 'active',
+    });
+    await upsertProjectResourcePolicy(deps.docStore, 'ws_default', 'proj_1', {
+      resource_type: 'endpoint',
+      resource_id: endpoint.id,
+      access_mode: 'allow_list',
+      allowed_subjects: [],
+    });
+    const policyDenied = response();
+
+    await handleAgentTaskModelSettingRoute({
+      route: { kind: 'agentTaskModelSetting', workspaceId: 'ws_default', projectId: 'proj_1' },
+      method: 'PATCH',
+      req: request(),
+      res: policyDenied,
+      deps,
+      user,
+      json,
+      readBody: vi.fn(async () => ({
+        endpoint_id: endpoint.id,
+        expected_setting_revision: null,
+      })),
+    });
+
+    expect(policyDenied.statusCode).toBe(403);
+    expect(policyDenied.body).toEqual({
+      error_code: 'agent_task_model_policy_denied',
+      message: 'agent_task_model_policy_denied',
+    });
   });
 });

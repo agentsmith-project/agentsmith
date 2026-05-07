@@ -2,13 +2,16 @@ import type http from 'node:http';
 import type { AuthenticatedUser } from './auth.js';
 import type { NodeApiDeps } from './node-api-deps.js';
 import {
+  type AgentTaskModelReadiness,
   AgentTaskModelResolutionError,
+  type AgentTaskModelSettingRecord,
   AgentTaskModelSettingConflictError,
   AgentTaskModelSettingService,
   resolveEndpointDefaultAgentTaskModel,
 } from './agent-task-model-setting-service.js';
 import { writeProjectAuditEvent } from './audit-usage-recorders.js';
 import { evaluateProjectPermissions } from './project-authz-engine.js';
+import type { EndpointRecord } from './resource-models.js';
 
 type AgentTaskModelSettingRoute = {
   kind: 'agentTaskModelSetting';
@@ -27,10 +30,104 @@ type AgentTaskModelSettingRouteArgs = {
   readBody: (req: http.IncomingMessage) => Promise<unknown>;
 };
 
+type AgentTaskModelSettingRouteResponse = {
+  readiness: AgentTaskModelReadiness;
+  setting?: {
+    workspace_id: string;
+    project_id: string;
+    endpoint_id: string;
+    endpoint_display_name?: string;
+    default_model_id?: string;
+    default_model?: string;
+    setting_revision: string;
+    updated_at: string;
+    updated_by_user_id: string;
+  };
+  actions: {
+    update: {
+      operation: 'update';
+      visible: boolean;
+      allowed: boolean;
+      required_permissions: ['project:governance:update'];
+      danger_level: 'none';
+    };
+  };
+};
+
+const UPDATE_AGENT_TASK_MODEL_SETTING_ALLOWED_FIELDS = new Set([
+  'endpoint_id',
+  'expected_setting_revision',
+]);
+
 function readObject(input: unknown): Record<string, unknown> {
   return typeof input === 'object' && input !== null && !Array.isArray(input)
     ? input as Record<string, unknown>
     : {};
+}
+
+function collectUnsupportedFields(body: Record<string, unknown>): string[] {
+  return Object.keys(body).filter((field) => !UPDATE_AGENT_TASK_MODEL_SETTING_ALLOWED_FIELDS.has(field));
+}
+
+function buildUpdateAction(): AgentTaskModelSettingRouteResponse['actions'] {
+  return {
+    update: {
+      operation: 'update',
+      visible: true,
+      allowed: true,
+      required_permissions: ['project:governance:update'],
+      danger_level: 'none',
+    },
+  };
+}
+
+function serializeSetting(
+  setting: AgentTaskModelSettingRecord,
+  endpoint: EndpointRecord | null,
+): NonNullable<AgentTaskModelSettingRouteResponse['setting']> {
+  const defaultModel = endpoint ? resolveEndpointDefaultAgentTaskModel(endpoint) : '';
+  return {
+    workspace_id: setting.workspace_id,
+    project_id: setting.project_id,
+    endpoint_id: setting.endpoint_id,
+    ...(endpoint?.name ? { endpoint_display_name: endpoint.name } : {}),
+    ...(setting.default_model_id ? { default_model_id: setting.default_model_id } : {}),
+    ...(defaultModel ? { default_model: defaultModel } : {}),
+    setting_revision: setting.setting_revision,
+    updated_at: setting.updated_at,
+    updated_by_user_id: setting.updated_by_user_id,
+  };
+}
+
+async function buildGovernanceResponse(args: {
+  deps: NodeApiDeps;
+  service: AgentTaskModelSettingService;
+  workspaceId: string;
+  projectId: string;
+  actorUserId: string;
+  readiness?: AgentTaskModelReadiness;
+  setting?: AgentTaskModelSettingRecord | null;
+}): Promise<AgentTaskModelSettingRouteResponse> {
+  const [readiness, setting] = await Promise.all([
+    args.readiness
+      ? Promise.resolve(args.readiness)
+      : args.service.getReadiness({
+        workspaceId: args.workspaceId,
+        projectId: args.projectId,
+        actorUserId: args.actorUserId,
+      }),
+    args.setting === undefined
+      ? args.service.getSetting(args.workspaceId, args.projectId)
+      : Promise.resolve(args.setting),
+  ]);
+  const endpoint = setting
+    ? await args.deps.endpointResourceService.getEndpoint(args.workspaceId, args.projectId, setting.endpoint_id)
+    : null;
+  return {
+    readiness,
+    ...(setting ? { setting: serializeSetting(setting, endpoint) } : {}),
+    actions: buildUpdateAction(),
+  };
 }
 
 async function actorHasPermission(args: {
@@ -111,37 +208,28 @@ export async function handleAgentTaskModelSettingRoute(args: AgentTaskModelSetti
       return true;
     }
 
-    const setting = await service.getSetting(route.workspaceId, route.projectId);
-    const endpoint = setting
-      ? await deps.endpointResourceService.getEndpoint(route.workspaceId, route.projectId, setting.endpoint_id)
-      : null;
-    json(res, 200, {
+    json(res, 200, await buildGovernanceResponse({
+      deps,
+      service,
+      workspaceId: route.workspaceId,
+      projectId: route.projectId,
+      actorUserId: user.id,
       readiness,
-      ...(setting && endpoint
-        ? {
-          setting: {
-            endpoint_id: setting.endpoint_id,
-            endpoint_display_name: endpoint.name,
-            default_model: resolveEndpointDefaultAgentTaskModel(endpoint),
-            setting_revision: setting.setting_revision,
-            updated_at: setting.updated_at,
-            updated_by_user_id: setting.updated_by_user_id,
-          },
-        }
-        : {}),
-      actions: {
-        update: {
-          visible: true,
-          allowed: true,
-          required_permissions: ['project:governance:update'],
-        },
-      },
-    });
+    }));
     return true;
   }
 
   if (method === 'PATCH') {
     const body = readObject(await readBody(req));
+    const unsupportedFields = collectUnsupportedFields(body);
+    if (unsupportedFields.length > 0) {
+      json(res, 400, {
+        error_code: 'unsupported_field',
+        message: 'unsupported_field',
+        fields: unsupportedFields,
+      });
+      return true;
+    }
     const endpointId = typeof body.endpoint_id === 'string' ? body.endpoint_id.trim() : '';
     if (!endpointId) {
       json(res, 422, {
@@ -172,6 +260,21 @@ export async function handleAgentTaskModelSettingRoute(args: AgentTaskModelSetti
       });
       return true;
     }
+    const canUpdateGovernance = await actorHasPermission({
+      deps,
+      workspaceId: route.workspaceId,
+      projectId: route.projectId,
+      actorUserId: user.id,
+      permission: 'project:governance:update',
+    });
+    if (!canUpdateGovernance) {
+      json(res, 403, {
+        error_code: 'FORBIDDEN',
+        message: 'forbidden',
+        missing_permissions: ['project:governance:update'],
+      });
+      return true;
+    }
     try {
       const before = await service.getSetting(route.workspaceId, route.projectId);
       const updated = await service.patchSetting({
@@ -196,31 +299,32 @@ export async function handleAgentTaskModelSettingRoute(args: AgentTaskModelSetti
           after_setting_revision: updated.setting_revision,
         },
       });
-      const endpoint = await deps.endpointResourceService.getEndpoint(
-        route.workspaceId,
-        route.projectId,
-        updated.endpoint_id,
-      );
-      json(res, 200, {
-        setting: {
-          endpoint_id: updated.endpoint_id,
-          endpoint_display_name: endpoint?.name ?? null,
-          default_model: endpoint ? resolveEndpointDefaultAgentTaskModel(endpoint) : null,
-          setting_revision: updated.setting_revision,
-          updated_at: updated.updated_at,
-          updated_by_user_id: updated.updated_by_user_id,
-        },
-      });
+      json(res, 200, await buildGovernanceResponse({
+        deps,
+        service,
+        workspaceId: route.workspaceId,
+        projectId: route.projectId,
+        actorUserId: user.id,
+        setting: updated,
+      }));
       return true;
     } catch (error) {
       if (error instanceof AgentTaskModelSettingConflictError) {
         json(res, 409, {
           error_code: error.code,
           message: error.code,
+          field: 'expected_setting_revision',
         });
         return true;
       }
       if (error instanceof AgentTaskModelResolutionError) {
+        if (error.code === 'agent_task_model_endpoint_not_found') {
+          json(res, 404, {
+            error_code: 'RESOURCE_NOT_FOUND',
+            message: 'endpoint_not_found',
+          });
+          return true;
+        }
         json(res, error.statusCode, {
           error_code: error.code,
           message: error.code,

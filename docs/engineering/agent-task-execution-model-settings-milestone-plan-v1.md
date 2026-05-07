@@ -122,9 +122,11 @@ Suggested governance-shaped response:
   },
   "actions": {
     "update": {
+      "operation": "update",
       "visible": true,
       "allowed": true,
-      "required_permissions": ["project:governance:update"]
+      "required_permissions": ["project:governance:update"],
+      "danger_level": "none"
     }
   }
 }
@@ -149,7 +151,11 @@ Suggested request:
 }
 ```
 
+For first-time configuration, `expected_setting_revision` is still required and must be `null`; `null` means the caller expects that no project Agent task model setting exists yet.
+
 Reject stale updates with a typed conflict such as `agent_task_model_setting_conflict`.
+
+Readiness uses backend runtime semantics as the contract: `ready`, `not_configured`, or `blocked`, with `agent_task_model_*` reason codes such as `agent_task_model_setting_missing`, `agent_task_model_endpoint_not_found`, `agent_task_model_endpoint_disabled`, `agent_task_model_default_missing`, `agent_task_model_capability_mismatch`, `agent_task_model_protocol_unsupported`, `agent_task_model_credential_missing`, `agent_task_model_credential_unavailable`, `agent_task_model_policy_denied`, `agent_task_model_rate_limited`, and `agent_task_model_spending_limited`.
 
 Do not accept:
 

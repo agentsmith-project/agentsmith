@@ -448,7 +448,7 @@ describe('AgentRunnersPage', () => {
       readiness: {
         state: 'blocked',
         display_summary: 'Agent tasks are blocked by model setup.',
-        reason_code: 'agent_task_model_setting_missing',
+        reason_code: 'agent_task_model_endpoint_disabled',
       },
       actions: {
         update: {
@@ -497,6 +497,7 @@ describe('AgentRunnersPage', () => {
     expect(modelSetup).toHaveTextContent('Project model setup');
     expect(modelSetup).toHaveTextContent('Agent tasks are blocked by model setup.');
     expect(modelSetup).toHaveTextContent('Agent task model setup blocks task execution');
+    expect(modelSetup).not.toHaveTextContent('agent_task_model_endpoint_disabled');
     expect(defaultStatus).not.toHaveTextContent('Agent tasks are blocked by model setup.');
   });
 

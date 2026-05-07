@@ -613,15 +613,35 @@ paths:
         "401":
           $ref: "#/components/responses/Unauthorized"
         "403":
-          $ref: "#/components/responses/Forbidden"
-        "404":
-          $ref: "#/components/responses/NotFound"
-        "409":
-          description: Stale Agent task model setting revision
+          description: Forbidden or Agent task model policy blocker
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/AgentTaskModelSettingConflictError"
+                oneOf:
+                  - $ref: "#/components/schemas/ApiError"
+                  - $ref: "#/components/schemas/AgentTaskModelResolutionError"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          description: Stale Agent task model setting revision or setup blocker
+          content:
+            application/json:
+              schema:
+                oneOf:
+                  - $ref: "#/components/schemas/AgentTaskModelSettingConflictError"
+                  - $ref: "#/components/schemas/AgentTaskModelResolutionError"
+        "422":
+          description: Invalid Agent task model setting request
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AgentTaskModelSettingValidationError"
+        "429":
+          description: Agent task model policy rate or spend limit
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AgentTaskModelResolutionError"
   /api/v1/workspaces/{workspaceId}/projects/{projectId}/endpoints:
     parameters:
       - $ref: "#/components/parameters/workspaceId"
@@ -6969,21 +6989,21 @@ components:
       enum:
         - ready
         - not_configured
-        - unavailable
-        - permission_denied
+        - blocked
     AgentTaskModelSettingReadinessReasonCode:
       type: string
       enum:
-        - setting_missing
-        - endpoint_missing
-        - endpoint_disabled
-        - default_model_missing
-        - unsupported_capability
-        - unsupported_protocol
-        - credential_unavailable
-        - governance_denied
-        - resource_policy_denied
-        - permission_denied
+        - agent_task_model_setting_missing
+        - agent_task_model_endpoint_not_found
+        - agent_task_model_endpoint_disabled
+        - agent_task_model_default_missing
+        - agent_task_model_capability_mismatch
+        - agent_task_model_protocol_unsupported
+        - agent_task_model_credential_missing
+        - agent_task_model_credential_unavailable
+        - agent_task_model_policy_denied
+        - agent_task_model_rate_limited
+        - agent_task_model_spending_limited
     AgentTaskModelSettingReadiness:
       type: object
       additionalProperties: false
@@ -7090,6 +7110,7 @@ components:
           minLength: 1
         expected_setting_revision:
           type: string
+          nullable: true
           minLength: 1
     AgentTaskModelSettingConflictError:
       type: object
@@ -7114,6 +7135,51 @@ components:
         details:
           type: object
           additionalProperties: true
+    AgentTaskModelResolutionError:
+      type: object
+      additionalProperties: false
+      required:
+        - error_code
+        - message
+      properties:
+        error_code:
+          $ref: "#/components/schemas/AgentTaskModelResolutionErrorCode"
+        message:
+          $ref: "#/components/schemas/AgentTaskModelResolutionErrorCode"
+    AgentTaskModelResolutionErrorCode:
+      type: string
+      enum:
+        - agent_task_model_endpoint_disabled
+        - agent_task_model_default_missing
+        - agent_task_model_capability_mismatch
+        - agent_task_model_protocol_unsupported
+        - agent_task_model_credential_missing
+        - agent_task_model_credential_unavailable
+        - agent_task_model_policy_denied
+        - agent_task_model_rate_limited
+        - agent_task_model_spending_limited
+    AgentTaskModelSettingValidationError:
+      type: object
+      additionalProperties: false
+      required:
+        - error_code
+        - message
+        - field
+      properties:
+        error_code:
+          type: string
+          enum:
+            - VALIDATION_ERROR
+        message:
+          type: string
+          enum:
+            - endpoint_id_required
+            - expected_setting_revision_required
+        field:
+          type: string
+          enum:
+            - endpoint_id
+            - expected_setting_revision
     EndpointCapabilityType:
       type: string
       enum:

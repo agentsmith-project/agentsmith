@@ -1,3 +1,5 @@
+import type { AgentTaskModelSettingReadinessReasonCode } from './agent-task-model-setting';
+
 export interface Credential {
   id: string;
   workspace_id: string;
@@ -111,7 +113,7 @@ export interface EndpointActionAffordance {
   operation: EndpointActionOperation;
   visible: boolean;
   allowed: boolean;
-  reason_code?: string;
+  reason_code?: AgentTaskModelSettingReadinessReasonCode;
   required_permissions: string[];
   danger_level: EndpointActionDangerLevel;
 }

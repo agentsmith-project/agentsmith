@@ -10,6 +10,8 @@ import { resolve } from 'node:path';
 import { describe, it, expect, expectTypeOf } from 'vitest';
 import type { components, operations, paths } from '../../types.generated';
 import type {
+  AgentTaskModelSettingReadinessReasonCode,
+  AgentTaskModelSettingReadinessState,
   AgentTaskModelSettingResponse,
   UpdateAgentTaskModelSettingRequest,
 } from '../agent-task-model-setting';
@@ -41,6 +43,13 @@ type GetAgentTaskModelSettingPathParams =
   operations['getAgentTaskModelSetting']['parameters']['path'];
 type UpdateAgentTaskModelSettingPathParams =
   operations['updateAgentTaskModelSetting']['parameters']['path'];
+type UpdateAgentTaskModelSettingResponses =
+  operations['updateAgentTaskModelSetting']['responses'];
+type UpdateAgentTaskModelSettingJsonResponse<
+  Status extends keyof UpdateAgentTaskModelSettingResponses,
+> = UpdateAgentTaskModelSettingResponses[Status] extends {
+  content: { 'application/json': infer Body };
+} ? Body : never;
 type ExpectedProjectPathParams = {
   projectId: string;
   workspaceId: string;
@@ -118,8 +127,9 @@ describe('Agent task model setting contract', () => {
 
     expectTypeOf<AgentTaskModelSettingResponse>().toMatchTypeOf<{
       readiness: {
-        state: 'ready' | 'not_configured' | 'unavailable' | 'permission_denied';
+        state: 'ready' | 'not_configured' | 'blocked';
         display_summary: string;
+        reason_code?: AgentTaskModelSettingReadinessReasonCode;
       };
       setting?: {
         workspace_id: string;
@@ -143,6 +153,22 @@ describe('Agent task model setting contract', () => {
       };
     }>();
     expectTypeOf<components['schemas']['AgentTaskModelSettingResponse']>().toMatchTypeOf<AgentTaskModelSettingResponse>();
+    expectTypeOf<AgentTaskModelSettingReadinessState>().toEqualTypeOf<'ready' | 'not_configured' | 'blocked'>();
+    expectTypeOf<components['schemas']['AgentTaskModelSettingReadinessState']>().toEqualTypeOf<AgentTaskModelSettingReadinessState>();
+    expectTypeOf<AgentTaskModelSettingReadinessReasonCode>().toEqualTypeOf<
+      | 'agent_task_model_setting_missing'
+      | 'agent_task_model_endpoint_not_found'
+      | 'agent_task_model_endpoint_disabled'
+      | 'agent_task_model_default_missing'
+      | 'agent_task_model_capability_mismatch'
+      | 'agent_task_model_protocol_unsupported'
+      | 'agent_task_model_credential_missing'
+      | 'agent_task_model_credential_unavailable'
+      | 'agent_task_model_policy_denied'
+      | 'agent_task_model_rate_limited'
+      | 'agent_task_model_spending_limited'
+    >();
+    expectTypeOf<components['schemas']['AgentTaskModelSettingReadinessReasonCode']>().toEqualTypeOf<AgentTaskModelSettingReadinessReasonCode>();
 
     const taskOnlyResponse: AgentTaskModelSettingResponse = {
       readiness: {
@@ -183,7 +209,7 @@ describe('Agent task model setting contract', () => {
     expectTypeOf<ForbiddenGeneratedUpdateAgentTaskModelSettingFields>().toEqualTypeOf<never>();
     expectTypeOf<UpdateAgentTaskModelSettingRequest>().toEqualTypeOf<{
       endpoint_id: string;
-      expected_setting_revision: string;
+      expected_setting_revision: string | null;
     }>();
     expectTypeOf<components['schemas']['UpdateAgentTaskModelSettingRequest']>().toEqualTypeOf<UpdateAgentTaskModelSettingRequest>();
 
@@ -201,10 +227,47 @@ describe('Agent task model setting contract', () => {
     const requestSchema = jsonSource.components?.schemas?.UpdateAgentTaskModelSettingRequest;
     expect(requestSchema?.additionalProperties).toBe(false);
     expect(requestSchema?.required).toEqual(['endpoint_id', 'expected_setting_revision']);
+    expect(requestSchema?.properties?.expected_setting_revision).toMatchObject({
+      type: 'string',
+      nullable: true,
+    });
     expect(Object.keys(requestSchema?.properties ?? {}).sort()).toEqual([
       'endpoint_id',
       'expected_setting_revision',
     ]);
+  });
+
+  it('documents PATCH validation, conflict, and resolution blocker bodies separately', () => {
+    expectTypeOf<UpdateAgentTaskModelSettingJsonResponse<400>>()
+      .toEqualTypeOf<components['schemas']['UnsupportedFieldError']>();
+    expectTypeOf<UpdateAgentTaskModelSettingJsonResponse<403>>()
+      .toMatchTypeOf<
+        components['schemas']['ApiError']
+        | components['schemas']['AgentTaskModelResolutionError']
+      >();
+    expectTypeOf<UpdateAgentTaskModelSettingJsonResponse<409>>()
+      .toMatchTypeOf<
+        components['schemas']['AgentTaskModelSettingConflictError']
+        | components['schemas']['AgentTaskModelResolutionError']
+      >();
+    expectTypeOf<UpdateAgentTaskModelSettingJsonResponse<422>>()
+      .toEqualTypeOf<components['schemas']['AgentTaskModelSettingValidationError']>();
+    expectTypeOf<UpdateAgentTaskModelSettingJsonResponse<429>>()
+      .toEqualTypeOf<components['schemas']['AgentTaskModelResolutionError']>();
+    expectTypeOf<components['schemas']['AgentTaskModelResolutionError']['error_code']>()
+      .toEqualTypeOf<
+        Exclude<
+          AgentTaskModelSettingReadinessReasonCode,
+          'agent_task_model_setting_missing' | 'agent_task_model_endpoint_not_found'
+        >
+      >();
+
+    const yamlSource = readFileSync(resolve(process.cwd(), 'docs/contracts/specs/openapi.yaml'), 'utf8');
+    expect(yamlSource).toContain('AgentTaskModelResolutionError:');
+    expect(yamlSource).toContain('AgentTaskModelResolutionErrorCode:');
+    expect(yamlSource).toContain('AgentTaskModelSettingValidationError:');
+    expect(yamlSource).toContain('"422":');
+    expect(yamlSource).toContain('"429":');
   });
 });
 
@@ -226,9 +289,12 @@ describe('Endpoint row Agent task action contract', () => {
       operation: 'use_for_agent_tasks';
       visible: boolean;
       allowed: boolean;
+      reason_code?: AgentTaskModelSettingReadinessReasonCode;
       required_permissions: string[];
       danger_level: 'none' | 'medium' | 'high';
     }>();
+    expectTypeOf<EndpointActionAffordance['reason_code']>()
+      .toEqualTypeOf<AgentTaskModelSettingReadinessReasonCode | undefined>();
     expectTypeOf<Endpoint>().toMatchTypeOf<{
       actions?: {
         use_for_agent_tasks: EndpointActionAffordance;

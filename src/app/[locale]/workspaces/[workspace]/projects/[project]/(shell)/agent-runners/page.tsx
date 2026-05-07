@@ -45,6 +45,13 @@ interface AgentRunnersPageProps {
   params: Promise<{ workspace: string; project: string; locale: string }>;
 }
 
+function isDeploymentDefaultManagedRunner(runner: AgentRunnerPageRecord): boolean {
+  if (runner.kind !== 'system_managed') return false;
+  const diagnostics = runner.diagnostics;
+  if (!diagnostics || typeof diagnostics !== 'object') return false;
+  return (diagnostics as Record<string, unknown>).managed_runner_projection === 'deployment_default';
+}
+
 export default function AgentRunnersPage({ params }: AgentRunnersPageProps) {
   const t = useTranslations('agent_runners');
   const tToast = useTranslations('common.toast');
@@ -114,8 +121,8 @@ export default function AgentRunnersPage({ params }: AgentRunnersPageProps) {
   );
   const systemManagedRunners = runners.filter((runner) => runner.kind === 'system_managed');
   const developerRunners = runners.filter((runner) => runner.kind === 'developer');
-  const projectDefaultRunner = systemManagedRunners.find((runner) => runner.is_default)
-    ?? runners.find((runner) => runner.kind === 'system_managed' && runner.is_default);
+  const projectDefaultRunner = systemManagedRunners.find(isDeploymentDefaultManagedRunner)
+    ?? systemManagedRunners.find((runner) => runner.is_default);
   const readyCount = runners.filter((runner) => runner.status === 'ready').length;
   const diagnosticIssueCount = runners.filter((runner) => (
     typeof runner.diagnostics?.last_error === 'string' && runner.diagnostics.last_error.trim().length > 0

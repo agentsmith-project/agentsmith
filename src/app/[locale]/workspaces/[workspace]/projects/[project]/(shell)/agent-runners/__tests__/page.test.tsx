@@ -369,6 +369,57 @@ describe('AgentRunnersPage', () => {
     expect(container).not.toHaveTextContent(/start task/i);
   });
 
+  it('uses the deployment default managed projection for project execution status without requiring legacy is_default', async () => {
+    mockUseSearchParams.mockReturnValue(mockReadonlySearchParams());
+    mockUseAgentRunnerPageCapabilities.mockReturnValue({
+      canRead: true,
+      canCreate: true,
+      canUpdate: true,
+      canDelete: true,
+      canRunDiagnostics: true,
+      canManage: true,
+    });
+    mockList.mockResolvedValueOnce(listResponse([
+        buildRunner({
+          id: 'sys_projection_default',
+          name: 'Deployment Projection Runner',
+          kind: 'system_managed',
+          source: 'system',
+          read_only: true,
+          is_default: false,
+          status: 'ready',
+          default_endpoint_id: 'ep_projection_default',
+          diagnostics: {
+            presence: 'managed',
+            managed_runner_projection: 'deployment_default',
+          },
+          actions: runnerActions({
+            bind_to_task: action('bind_to_task', true, true),
+            view_diagnostics: action('view_diagnostics', true, true),
+          }),
+        }),
+      ]));
+
+    render(
+      <AgentRunnersPage
+        params={Promise.resolve({
+          workspace: 'ws_1',
+          project: 'proj_1',
+          locale: 'en',
+        })}
+      />,
+      { wrapper: createWrapper() }
+    );
+
+    const defaultStatus = await screen.findByTestId('agent-runners__project-default-status');
+    await waitFor(() => {
+      expect(defaultStatus).toHaveTextContent('Deployment Projection Runner');
+    });
+    expect(defaultStatus).toHaveTextContent('default_status_ready');
+    expect(defaultStatus).not.toHaveTextContent('default_status_no_runner');
+    expect(defaultStatus).not.toHaveTextContent('default_status_issue_not_configured');
+  });
+
   it('expands runner details inline on row click without rendering a bottom details card', async () => {
     mockUseSearchParams.mockReturnValue(mockReadonlySearchParams());
     mockUseAgentRunnerPageCapabilities.mockReturnValue({

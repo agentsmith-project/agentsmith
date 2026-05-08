@@ -1072,6 +1072,49 @@ describe('release-full aggregate gate', () => {
     expect(terminalResult.summary).toContain('focused product flow evidence path for files');
   });
 
+  it('fails when product-flow aggregate points to focused evidence outside the campaign root', () => {
+    const campaignRoot = mkdtempSync(join(tmpdir(), 'release-full-product-flow-off-root-'));
+    seedPassedCampaign(campaignRoot);
+
+    const productStep = getCampaignStep('lane-unified-deploy-product-flows');
+    const productCheck = productStep.evidenceChecks.find((check) => check.id === 'unified_deploy_product_flow_evidence');
+    if (!productCheck) {
+      throw new Error('Missing unified deploy product flow evidence check.');
+    }
+    const aggregatePath = join(materializeCampaignPath(campaignRoot, productCheck.path), 'product-flows-fixture.json');
+    const aggregate = JSON.parse(readFileSync(aggregatePath, 'utf8')) as {
+      flow_evidence_paths?: Record<string, string>;
+    };
+    const staleEvidencePath = join(mkdtempSync(join(tmpdir(), 'stale-product-flow-evidence-')), 'files.json');
+    writeJson(staleEvidencePath, {
+      schema_version: 'agentsmith.focused-product-flow.evidence/v1',
+      flow: 'files',
+      status: 'passed',
+      producer: productCheck.expectedProducer,
+      command: 'npm run test:unified-deploy:product-flows',
+      generated_at: '2026-05-07T00:00:00.000Z',
+      duration_ms: 1,
+      checks: {},
+    });
+    aggregate.flow_evidence_paths = {
+      ...(aggregate.flow_evidence_paths ?? {}),
+      files: staleEvidencePath,
+    };
+    writeJson(aggregatePath, aggregate);
+    writeCampaignEvidencePointer(campaignRoot, productStep);
+
+    expect(() => runAggregate(campaignRoot)).toThrow();
+
+    const terminalResult = JSON.parse(
+      readFileSync(resolve(campaignRoot, 'gate-release-full', 'result.json'), 'utf8'),
+    ) as { status: string; failure_class: string; summary: string };
+    expect(terminalResult).toMatchObject({
+      status: 'failed',
+      failure_class: 'contract_drift',
+    });
+    expect(terminalResult.summary).toContain('must stay under');
+  });
+
   it('passes when backend-real UX trace bundles include semantic manifest, events, screenshots, and review evidence', () => {
     const campaignRoot = mkdtempSync(join(tmpdir(), 'release-full-aggregate-trace-semantic-pass-'));
     seedPassedCampaign(campaignRoot);

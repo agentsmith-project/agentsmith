@@ -4,10 +4,11 @@ import {
   mkdirSync,
   readFileSync,
   readdirSync,
+  realpathSync,
   statSync,
   writeFileSync,
 } from 'node:fs';
-import { basename, dirname, join, resolve } from 'node:path';
+import { basename, dirname, isAbsolute, join, relative, resolve } from 'node:path';
 
 import {
   CURRENT_GATE_RESULT_SCHEMA_VERSION,
@@ -1733,6 +1734,11 @@ function validateFocusedProductFlowEvidence(
   return null;
 }
 
+function isPathAtOrUnderRoot(rootPath: string, candidatePath: string): boolean {
+  const relativePath = relative(rootPath, candidatePath);
+  return relativePath === '' || (!relativePath.startsWith('..') && !isAbsolute(relativePath));
+}
+
 function validateFocusedProductFlowEvidencePaths(
   payload: Record<string, unknown>,
   check: CurrentVerificationCampaignEvidenceCheck,
@@ -1743,6 +1749,7 @@ function validateFocusedProductFlowEvidencePaths(
     return unifiedDeployDiagnostic(`${path} must include flow_evidence_paths for focused product flow evidence.`, 'evidence_missing');
   }
 
+  const evidenceRoot = realpathSync(dirname(path));
   for (const flow of expectedFlows) {
     const rawPath = payload.flow_evidence_paths[flow];
     if (typeof rawPath !== 'string' || rawPath.trim().length === 0) {
@@ -1752,7 +1759,14 @@ function validateFocusedProductFlowEvidencePaths(
     if (!existsSync(evidencePath)) {
       return unifiedDeployDiagnostic(`${path} focused product flow evidence file for ${flow} is missing: ${evidencePath}.`, 'evidence_missing');
     }
-    const diagnostic = validateFocusedProductFlowEvidence(evidencePath, flow, check.expectedProducer);
+    const realEvidencePath = realpathSync(evidencePath);
+    if (!isPathAtOrUnderRoot(evidenceRoot, realEvidencePath)) {
+      return unifiedDeployDiagnostic(
+        `${path} focused product flow evidence file for ${flow} must stay under ${evidenceRoot}: ${realEvidencePath}.`,
+        'contract_drift',
+      );
+    }
+    const diagnostic = validateFocusedProductFlowEvidence(realEvidencePath, flow, check.expectedProducer);
     if (diagnostic) {
       return diagnostic;
     }

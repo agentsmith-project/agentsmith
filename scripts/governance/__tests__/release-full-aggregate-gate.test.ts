@@ -6,6 +6,7 @@ import {
   readFileSync,
   rmSync,
   statSync,
+  symlinkSync,
   writeFileSync,
 } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -1113,6 +1114,66 @@ describe('release-full aggregate gate', () => {
       failure_class: 'contract_drift',
     });
     expect(terminalResult.summary).toContain('must stay under');
+  });
+
+  it('does not follow symlinked product-flow evidence directories outside the campaign root', () => {
+    const campaignRoot = mkdtempSync(join(tmpdir(), 'release-full-product-flow-symlink-'));
+    seedPassedCampaign(campaignRoot);
+
+    const productStep = getCampaignStep('lane-unified-deploy-product-flows');
+    const productCheck = productStep.evidenceChecks.find((check) => check.id === 'unified_deploy_product_flow_evidence');
+    if (!productCheck) {
+      throw new Error('Missing unified deploy product flow evidence check.');
+    }
+    const evidenceRoot = materializeCampaignPath(campaignRoot, productCheck.path);
+    const staleRoot = mkdtempSync(join(tmpdir(), 'stale-product-flow-root-'));
+    const flows = productCheck.expectedProductFlows ?? [];
+    for (const flow of flows) {
+      writeJson(join(staleRoot, `product-flow-${flow}.json`), {
+        schema_version: 'agentsmith.focused-product-flow.evidence/v1',
+        flow,
+        status: 'passed',
+        producer: productCheck.expectedProducer,
+        command: 'npm run test:unified-deploy:product-flows',
+        generated_at: '2026-05-07T00:00:00.000Z',
+        duration_ms: 1,
+        checks: {},
+      });
+    }
+    writeJson(join(staleRoot, 'product-flows-fixture.json'), {
+      schema_version: productCheck.expectedSchemaVersion,
+      producer: productCheck.expectedProducer,
+      status: productCheck.expectedStatus,
+      command: 'npm run test:unified-deploy:product-flows',
+      generated_at: '2026-05-07T00:00:00.000Z',
+      flows: flows.map((flow) => ({
+        schema_version: 'agentsmith.focused-product-flow.evidence/v1',
+        flow,
+        status: 'passed',
+        producer: productCheck.expectedProducer,
+        command: 'npm run test:unified-deploy:product-flows',
+      })),
+      flow_evidence_paths: Object.fromEntries(
+        flows.map((flow) => [flow, join(staleRoot, `product-flow-${flow}.json`)]),
+      ),
+      failures: [],
+    });
+
+    rmSync(evidenceRoot, { recursive: true, force: true });
+    mkdirSync(evidenceRoot, { recursive: true });
+    symlinkSync(staleRoot, join(evidenceRoot, 'stale-product-flow-root'), 'dir');
+    writeCampaignEvidencePointer(campaignRoot, productStep);
+
+    expect(() => runAggregate(campaignRoot)).toThrow();
+
+    const terminalResult = JSON.parse(
+      readFileSync(resolve(campaignRoot, 'gate-release-full', 'result.json'), 'utf8'),
+    ) as { status: string; failure_class: string; summary: string };
+    expect(terminalResult).toMatchObject({
+      status: 'failed',
+      failure_class: 'evidence_missing',
+    });
+    expect(terminalResult.summary).toContain('Expected at least 1 JSON evidence file');
   });
 
   it('passes when backend-real UX trace bundles include semantic manifest, events, screenshots, and review evidence', () => {

@@ -1,6 +1,7 @@
 import { createHash } from 'node:crypto';
 import {
   existsSync,
+  lstatSync,
   mkdirSync,
   readFileSync,
   readdirSync,
@@ -196,7 +197,7 @@ function listRecursiveFiles(root: string): readonly string[] {
     return [];
   }
   try {
-    if (!statSync(root).isDirectory()) {
+    if (!lstatSync(root).isDirectory()) {
       return [];
     }
   } catch {
@@ -208,7 +209,7 @@ function listRecursiveFiles(root: string): readonly string[] {
     for (const entry of readDirectoryEntries(dir)) {
       const path = join(dir, entry);
       try {
-        const stats = statSync(path);
+        const stats = lstatSync(path);
         if (stats.isDirectory()) {
           visit(path);
           continue;

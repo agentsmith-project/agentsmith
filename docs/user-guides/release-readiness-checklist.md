@@ -12,12 +12,12 @@
 1. 合约与类型检查通过。
 2. 默认业务链与治理门禁通过。
 3. release-grade backend-real 验证通过。
-4. full visual、machine-readable story evidence 与两条部署排演通过。
+4. full visual、machine-readable story evidence 与 unified deploy 证据通过。
 
 补充判定规则：
 1. 当前面向人的 automated release-grade 执行入口统一是 `npm run release:ready`。
 2. `npm run release:status` 是只读入口，只读取 latest summary / status，不重新聚合 evidence。
-3. `npm run rehearse:demo` 与 `npm run rehearse:cluster` 是必要时给发布人员使用的 clean rehearsal entrypoints。
+3. unified deploy 证据使用 `local-kind`、`existing-cluster` 和 focused product-flow producers；旧 demo/cluster rehearsal 不再是当前部署证明。
 4. `gate:default` does not run the full visual lane，也不能代替 release-grade backend-real 或最终 release verdict。
 5. 对 evidence-owning gates 和 lanes，`command passed` 与 machine-readable evidence completeness 同级；缺少 required review artifacts、`visual_scene_catalog` 或 `ux_trace_bundle`，都不能算通过。
 6. `gate:release:full` is aggregate-only terminal verdict verification；它只验证已有 campaign evidence，不执行 suite，也不是普通人工入口。
@@ -47,11 +47,13 @@ npm run release:ready
 npm run release:status
 ```
 
-必要时单独排演部署路径：
+必要时单独验证部署路径：
 
 ```bash
-npm run rehearse:demo
-npm run rehearse:cluster
+npx tsx scripts/unified-deploy/substrate-lifecycle.ts reset
+npm run test:unified-deploy:local-kind:images
+npm run test:unified-deploy:local-kind
+npm run test:unified-deploy:existing-cluster-smoke -- --site-env=<existing-cluster-site-env> --substrate-truth=infra/deploy/unified/substrate/connection.env --public-base-url=<public-base-url>
 ```
 
 `npm run release:ready` 先运行 `npm run test:release:precheck` 作为非 verdict guard。precheck 失败时会停止并输出 NOT STARTED，表示未进入 campaign、没有 release verdict。precheck 通过后才委托 internal adapter family 编排 required steps，并在 campaign context 内调用 terminal aggregate verdict。
@@ -64,21 +66,21 @@ npm run rehearse:cluster
 | --- | --- | --- |
 | human release entry | `npm run release:ready` | precheck 通过后进入 official campaign，并在结束后生成 summary |
 | status reader | `npm run release:status` | 读取 latest/summary 指针；verdict 必须重新读取 campaign-scoped terminal result，不重新聚合 evidence |
-| rehearsal entry | `npm run rehearse:demo` | 必要时单独运行 demo deployment rehearsal 的 clean human path |
-| rehearsal entry | `npm run rehearse:cluster` | 必要时单独运行 cluster deployment rehearsal 的 clean human path |
+| deploy evidence | `npm run test:unified-deploy:local-kind:images` + `npm run test:unified-deploy:local-kind` | 本机 K8s profile 镜像 handoff、rollout、ingress route smoke |
+| deploy evidence | `npm run test:unified-deploy:existing-cluster-smoke` | existing-cluster profile deploy、rollout、routing smoke |
+| product evidence | focused `npm run test:unified-deploy:product-flows` | 最小产品链：project、files、managed runner task |
 | preflight | internal adapter `gate:fast` | 基础 contract、static、cheap checks 没先坏 |
 | tier verdict | internal adapter `gate:default` | 默认工程门禁通过；它不能代替 full visual |
 | evidence owner | internal adapter `lane:visual` | full visual 与 `visual_scene_catalog` 完整 |
 | evidence owner | internal adapter `gate:release` / `lane:backend-real:release` | release-grade backend-real 与 `ux_trace_bundle` 完整 |
-| evidence owner | internal adapter `lane:demo-rehearsal` | demo deployment rehearsal 证据完整，并从 clean reset 开始 |
-| evidence owner | internal adapter `lane:cluster-rehearsal` | cluster deployment rehearsal 证据完整，并从 clean reset 开始 |
+| evidence owner | unified deploy producers | substrate boundary/lifecycle、render/manifest/address truth、local-kind、existing-cluster、focused product-flow 证据完整 |
 | terminal verdict | internal verifier `gate:release:full` | aggregate-only 复核已有 campaign evidence，不执行任何 suite |
 
 说明：
 1. `gate:default` 只覆盖默认业务链与治理门禁，以及它们自己的 targeted visual。
 2. `lane:visual` 是 full visual 证据 owner，不能被 `gate:default` 代替，并且它承担 `visual_scene_catalog` 证据所有权。
 3. `gate:release` / `lane:backend-real:release` 承担 release-grade `ux_trace_bundle` 证据所有权。
-4. `lane:demo-rehearsal` 与 `lane:cluster-rehearsal` 都必须从各自 scenario-owned local kind world 的 clean reset 开始。
+4. unified deploy 的 `local-kind` 与 `existing-cluster` 是同一部署模型的 profile；route smoke 不能替代 focused product-flow 证据。
 5. 如果某条 focused 测试、targeted lane 或 backend-real 局部命令通过，只能说明对应诊断切片恢复了，不能替代 `npm run release:ready`。
 
 ### 3. CI Green 的含义
@@ -88,7 +90,7 @@ CI green 不是完整 release sign-off：
 1. PR 默认 CI 代表 `gate:fast` 和 `gate:default` 对应的内部 CI surfaces 通过。
 2. `lane:visual` 在 push 或手动 workflow dispatch 时运行，并且在 CI 图里只依赖 `gate:fast`，不需要等待 `gate:default` 才开始。
 3. `lane-backend-real-core` 仍然是手动 dispatch，并且依赖 backend-real secret。
-4. release-grade sign-off 仍然必须看 `npm run release:ready` 产生的 campaign evidence、`lane:visual`、backend-real release、两条 rehearsal lane、terminal aggregate verdict 与 `summary.md`。
+4. release-grade sign-off 仍然必须看 `npm run release:ready` 产生的 campaign evidence、`lane:visual`、backend-real release、unified deploy evidence、terminal aggregate verdict 与 `summary.md`。
 
 ### 4. 手工 Feishu 联调步骤
 
@@ -139,14 +141,14 @@ artifacts/release-runs/<campaign-run-id>
   - `<campaign-root>/gate-release/backend-real-visual/review.md`
   - `<campaign-root>/gate-release/backend-real-visual/ux-traces/<lane>/<suite>/<story-id>/<run-id>/review.md`
   - `<campaign-root>/gate-release/backend-real-visual/ux-traces`
-- demo rehearsal evidence：
-  - `<campaign-root>/lane-demo-rehearsal/native/result.json`
-  - `<campaign-root>/lane-demo-rehearsal/evidence.json`
-  - `<campaign-root>/lane-demo-rehearsal/scenario/reports/<timestamp>.md`
-- cluster rehearsal evidence：
-  - `<campaign-root>/lane-cluster-rehearsal/native/result.json`
-  - `<campaign-root>/lane-cluster-rehearsal/evidence.json`
-  - `<campaign-root>/lane-cluster-rehearsal/scenario/reports/<timestamp>.md`
+- unified deploy evidence：
+  - `artifacts/unified-deploy/*local-kind-images*.json`
+  - `artifacts/unified-deploy/*local-kind-rollout*.json`
+  - `artifacts/unified-deploy/*existing-cluster-smoke*.json`
+  - `artifacts/unified-deploy/*product-flows*.json`
+  - `artifacts/unified-deploy/*render*.json`
+  - `artifacts/unified-deploy/*manifest*.json`
+  - `artifacts/unified-deploy/*api-single-replica*.json`
 
 `gate:release:full` 会按当前 `CURRENT_VERIFICATION_CAMPAIGN_MANIFEST` 的 `evidenceChecks` 重新计算这些证据是否存在，并校验 wrapper/native `result.json` 的 `schema_version`、`gate_id`、`line_kind`、`gate_adapter.npm_script`、`evidence_dir` 和 `failure_class`。旧格式 `evidence.json` 只写 dummy `required_paths`，或者缺少当前 required check id，都不能得到绿色 release verdict。
 
@@ -158,10 +160,8 @@ artifacts/release-runs/<campaign-run-id>
   - `artifacts/backend-real-visual/<run-id>/review.md`
   - `artifacts/backend-real-visual/<run-id>/ux-traces/<lane>/<suite>/<story-id>/<run-id>/review.md`
   - `artifacts/backend-real-visual/<run-id>/ux-traces`
-- standalone demo rehearsal report：
-  - `artifacts/runtime/scenario/demo-rehearsal/reports/<timestamp>.md`
-- standalone cluster rehearsal report：
-  - `artifacts/runtime/scenario/cluster-rehearsal/reports/<timestamp>.md`
+- standalone unified deploy evidence：
+  - `artifacts/unified-deploy/`
 
 ## 当前 Story Evidence 真相
 

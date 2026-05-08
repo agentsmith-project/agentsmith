@@ -2,6 +2,7 @@ import { readFileSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 
 import {
+  CURRENT_RUNTIME_LINE_MANIFEST,
   CURRENT_RUNTIME_SHARED_RULES,
   listCurrentLocalRuntimeLines,
   type CurrentRuntimeLineDefinition,
@@ -39,10 +40,11 @@ function renderRuleList(binding: CurrentRuntimeSharedRuleBinding): string[] {
 
 function renderRuleListZh(binding: CurrentRuntimeSharedRuleBinding): string[] {
   const summaries: Record<string, string> = {
-    'shared-local-substrate': '- 本机共享一套 substrate，`local-manual`、`demo-rehearsal`、`cluster-rehearsal` 都复用它。',
-    'single-active-local-flow': '- 同一时间只建议一条本地工作线处于 active；切换前先停掉或 reset 当前工作线。',
-    'scenario-owned-kind-worlds': '- `demo-rehearsal` 和 `cluster-rehearsal` 都拥有自己的 scenario-owned local kind world 与 local registry，不再共用一个泛化本地集群。',
-    'deploy-vs-rehearsal-boundary': '- rehearsal 线负责在开发机上排演 release 路径；deploy 线负责目标主机上的正式发布。',
+    'local-real-human-entry': '- `local-real` 是开发机上的正式人类入口；`local-manual` 只保留为底层 maintainer adapter。',
+    'serial-local-runtime-switching': '- `local-real` 与 unified deploy substrate 共享默认本地 substrate 端口，在同一开发机上必须串行切换。',
+    'one-agentsmith-deploy': '- 只有一个 AgentSmith deploy 模型；`local-kind` 与 `existing-cluster` 是 profile，不是 demo/cluster 两套产品。',
+    'docker-substrate-k8s-app-boundary': '- Substrates 保持在 app namespace 外部，由 Docker 或运维提供的服务承载；AgentSmith app 工作负载运行在 Kubernetes。',
+    'api-single-replica-current': '- 当前里程碑 `api replicas=1`，直到引入明确的多副本 execution routing 设计。',
   };
 
   return CURRENT_RUNTIME_SHARED_RULES
@@ -60,33 +62,25 @@ function renderLocalFlowList(lines: readonly CurrentRuntimeLineDefinition[]): st
 }
 
 function renderLocalFlowListZh(lines: readonly CurrentRuntimeLineDefinition[]): string[] {
-  return lines.map((line) => {
-    switch (line.id) {
-      case 'local-manual':
-        return '- `local-manual` — 日常开发、真实后端手测、Agent task / Agent Runner 主链手测。';
-      case 'demo-rehearsal':
-        return '- `demo-rehearsal` — demo 发布线的本机排演入口，使用 `agentsmith-demo` / `agentsmith-demo-registry`。';
-      case 'cluster-rehearsal':
-        return '- `cluster-rehearsal` — cluster 发布线的本机排演入口，使用 `agentsmith-cluster` / `agentsmith-cluster-registry`。';
-      default:
-        return `- \`${line.formalName}\` — ${line.primaryUse}`;
-    }
-  });
+  return lines.map((line) => `- \`${line.formalName}\` — ${line.primaryUse}`);
 }
 
-function _renderReadmeRuntimeBlock(): string {
+function renderReadmeRuntimeBlock(): string {
   return [
     'Current runtime-line truth:',
     '- Human guides: [Runtime Lines Matrix](./docs/user-guides/runtime-lines-matrix.md) and [Local Runtime Flows](./docs/user-guides/local-runtime-flows.md)',
     '- Machine-readable source: [`scripts/governance/current-runtime-line-manifest.ts`](./scripts/governance/current-runtime-line-manifest.ts)',
     '',
     'Current local runtime baseline:',
-    ...renderRuleList(),
+    ...renderRuleList('operational_baseline'),
     '',
-    'Current local flows:',
+    'Still-binding runtime contracts:',
+    ...renderRuleList('contract'),
+    '',
+    'Current local developer flow:',
     ...renderLocalFlowList(listCurrentLocalRuntimeLines()),
     '',
-    'Use `Local Runtime Flows` for local commands and switching. Use the deploy runbooks for target-host release steps.',
+    'Use `Local Runtime Flows` for local commands and switching. Use `Unified Deploy Operations` for `local-kind` and `existing-cluster` deploy profile evidence under `artifacts/unified-deploy/`.',
   ].join('\n');
 }
 
@@ -105,7 +99,7 @@ function renderDevelopmentRuntimeBlock(): string {
     '当前本机工作线：',
     ...renderLocalFlowListZh(listCurrentLocalRuntimeLines()),
     '',
-    '本文件只保留开发/排障入口；操作基线不再等同于系统正确性的前提，具体运行线拓扑与 contract 统一看 runtime-line 文档。',
+    '本文件只保留开发/排障入口；部署命令、profile、证据路径统一看 runtime-line 文档与 Unified Deploy Operations。',
   ].join('\n');
 }
 
@@ -122,6 +116,8 @@ function renderGovernanceRuntimeBlock(): string {
     '',
     'Still-binding runtime contracts:',
     ...renderRuleList('contract'),
+    '',
+    'Deploy evidence is produced by unified deploy checks under `artifacts/unified-deploy/`.',
   ].join('\n');
 }
 
@@ -143,17 +139,15 @@ function renderUserGuidesRuntimeBlock(): string {
     '- [Local Runtime Flows](./local-runtime-flows.md)',
     '  - 由 `scripts/governance/current-runtime-line-manifest.ts` 生成；当前本机操作基线与切线手册。',
     '- [Runtime Lines Matrix](./runtime-lines-matrix.md)',
-    '  - 当前 runtime / deploy / rehearsal 线与 mode 边界的总表。',
-    '- [Demo Deploy Operations](./demo-deploy-operations.md)',
-    '  - 目标主机上的 demo 发布线：release root、生命周期命令，以及 `full` 模式下的 local `kind` sandbox 仿真。',
-    '- [Cluster Deploy Operations](./cluster-deploy-operations.md)',
-    '  - 目标主机上的 real-cluster 发布线：registry-backed bundle release、target-host install flow、namespace-only automation model。',
+    '  - 当前 local-real 与统一部署 profile 的总表。',
+    '- [Unified Deploy Operations](./unified-deploy-operations.md)',
+    '  - 当前部署入口：one AgentSmith deploy，`local-kind` / `existing-cluster` profiles，Docker substrate，Kubernetes app。',
   ].join('\n');
 }
 
 function renderLocalRuntimeFlowsBlock(): string {
   return [
-    '运行线职责、mode 边界、shared substrate 方法论以',
+    '运行线职责、部署 profile、substrate 边界以',
     '[Runtime Lines Matrix](./runtime-lines-matrix.md)',
     '为总入口；这份文档只展开本机操作顺序。',
     '',
@@ -163,7 +157,7 @@ function renderLocalRuntimeFlowsBlock(): string {
     '',
     '## 一句话基线',
     '',
-    '先起共享底座，再跑一条工作线；这是一条当前操作基线，不是系统正确性的前提。',
+    '`local-real` 用来开发和手测；unified deploy 用来证明部署。两者在一台开发机上串行切换。',
     '',
     '## 当前操作基线',
     '',
@@ -176,34 +170,58 @@ function renderLocalRuntimeFlowsBlock(): string {
     '## 当前本机工作线',
     '',
     ...renderLocalFlowListZh(listCurrentLocalRuntimeLines()),
+    '',
+    '## 最小本机验证',
+    '',
+    '```bash',
+    'make local-real-reset',
+    "PROMPT='Reply exactly: local real echo ok' POLL_MAX=30 POLL_INTERVAL_SEC=2 SCENARIO_ATTEMPTS=1 make agent-task-smoke-task",
+    '```',
+    '',
+    'Files / file-library 的本机验证使用 local-real API 做 focused producer，不需要启动统一部署。',
+    '',
+    '## 切到统一部署',
+    '',
+    '```bash',
+    'make local-real-down',
+    'npx tsx scripts/unified-deploy/substrate-lifecycle.ts reset',
+    'npm run test:unified-deploy:local-kind:images',
+    'npm run test:unified-deploy:local-kind',
+    'npm run test:unified-deploy:product-flows -- --flow=workspace_project --flow=files --flow=agent_task_managed_runner',
+    '```',
+    '',
+    '统一部署证据统一写到 `artifacts/unified-deploy/`。',
   ].join('\n');
 }
 
 function renderRuntimeLinesMatrixBlock(): string {
-  const rows = [
-    '| 本地真实手测线 | `local-manual` | 日常开发、真实后端手测、Agent task / Agent Runner 手测 | 默认启用 | 仅 owner runbook 通过 `make local-manual-internal-up` 显式开启 | 共享本地 substrate | 当前推荐本机真实手测入口 |',
-    '| demo 本机排演线 | `demo-rehearsal` | 本机排演 demo 发布线 | `DEMO_DEPLOY_MODE=simple` 时 external-only | `DEMO_DEPLOY_MODE=full` 时启用，运行在本地 `kind` | 共享本地 substrate | 使用 scenario-owned `agentsmith-demo` 与 `agentsmith-demo-registry` |',
-    '| demo 正式发布线 | `demo-deploy` | 单机 / demo 环境发布 | `simple` | `full` | 目标主机上的 compose substrate | 目标主机 release 线，不是本机 rehearsal 入口 |',
-    '| cluster 本机排演线 | `cluster-rehearsal` | 本机排演真实集群发布线 | 始终包含 managed agent-task runner | 始终包含 internal k8s 执行面 | 共享本地 substrate | 使用 scenario-owned `agentsmith-cluster` 与 `agentsmith-cluster-registry` |',
-    '| cluster 正式发布线 | `cluster-deploy` | 真实集群发布 | 始终包含 managed agent-task runner | 始终包含 internal k8s 执行面 | 目标主机上的 compose substrate | mode 描述自动化边界，不是 runner 能力差异 |',
-  ];
+  const rows = CURRENT_RUNTIME_LINE_MANIFEST.map((line) =>
+    `| ${line.label} | \`${line.formalName}\` | ${line.primaryUse} | ${line.appRuntime} | ${line.substrate} | ${line.note} |`,
+  );
 
   return [
     '## 当前本机操作基线',
     '',
     ...renderRuleListZh('operational_baseline').map((rule, index) => `${index + 1}. ${rule.slice(2)}`),
     '',
-    '可复制的人类操作入口统一看 [Local Runtime Flows](./local-runtime-flows.md)；本矩阵只说明 topology、mode 边界和运行线归属。',
+    '可复制的人类操作入口统一看 [Local Runtime Flows](./local-runtime-flows.md) 与 [Unified Deploy Operations](./unified-deploy-operations.md)；本矩阵只说明 topology、profile 边界和运行线归属。',
     '',
     '## 持续生效的 runtime contract',
     '',
     ...renderRuleListZh('contract').map((rule, index) => `${index + 1}. ${rule.slice(2)}`),
     '',
+    '旧 demo/cluster split 不再是当前 operating model；不要用旧 rehearsal evidence 代替 unified deploy evidence。',
+    '',
     '## 运行线矩阵',
     '',
-    '| 运行线 | 当前正式命名 | 主要用途 | external 路径 | internal 路径 | substrate | 备注 |',
-    '|-------|-------------|---------|--------------|--------------|----------|------|',
+    '| 运行线 | 当前正式命名 | 主要用途 | App runtime | substrate | 备注 |',
+    '|-------|-------------|---------|-------------|----------|------|',
     ...rows,
+    '',
+    '## 当前证据路径',
+    '',
+    '- local-real / local-manual runtime state: `artifacts/runtime/lines/local-manual/current`',
+    '- unified deploy evidence: `artifacts/unified-deploy/`',
   ].join('\n');
 }
 
@@ -224,6 +242,7 @@ function main(): void {
   const mode: Mode = process.argv.includes('--check') ? 'check' : 'write';
   const mismatches: string[] = [];
   const files = [
+    ['README.md', (content: string) => replaceBlock(content, '<!-- current-runtime-lines:readme:start -->', '<!-- current-runtime-lines:readme:end -->', renderReadmeRuntimeBlock())],
     ['DEVELOPMENT.md', (content: string) => replaceBlock(content, '<!-- current-runtime-lines:development:start -->', '<!-- current-runtime-lines:development:end -->', renderDevelopmentRuntimeBlock())],
     ['docs/current-engineering-governance-model.md', (content: string) => replaceBlock(content, '<!-- current-runtime-lines:governance-model:start -->', '<!-- current-runtime-lines:governance-model:end -->', renderGovernanceRuntimeBlock())],
     ['docs/user-guides/README.md', (content: string) => replaceBlock(content, '<!-- current-runtime-lines:user-guides-index:start -->', '<!-- current-runtime-lines:user-guides-index:end -->', renderUserGuidesRuntimeBlock())],

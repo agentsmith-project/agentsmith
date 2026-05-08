@@ -1596,8 +1596,14 @@ async function runAgentTaskManagedRunnerFlow(args: {
 }): Promise<JsonRecord> {
   const { truth, state, fetchImpl } = args;
   const checks: JsonRecord = {};
-  if (!state.projectId || !state.endpointId) {
-    throw new Error('managed runner flow missing project or endpoint');
+  if (!state.projectId) {
+    throw new Error('managed runner flow missing project');
+  }
+  if (!state.endpointId) {
+    if (!state.provider) {
+      throw new Error('managed runner flow missing endpoint and provider setup');
+    }
+    checks.endpoint_setup = await ensureEndpoint(truth, state, fetchImpl);
   }
   state.managedRunner = await args.seedManagedRunner(truth, state);
   checks.seeded_runner = {

@@ -368,8 +368,9 @@ requireMatch(releaseChecklist, /terminal verdict/i, 'release checklist must labe
 requireMatch(releaseChecklist, /CI green/i, 'release checklist must explain what CI green means');
 requireMatch(releaseChecklist, /npm run release:ready/, 'release checklist must define release:ready as the human-facing full release entrypoint');
 requireMatch(releaseChecklist, /npm run release:status/, 'release checklist must define release:status as the read-only release status entrypoint');
-requireMatch(releaseChecklist, /npm run rehearse:demo/, 'release checklist must expose rehearse:demo as the clean rehearsal entrypoint');
-requireMatch(releaseChecklist, /npm run rehearse:cluster/, 'release checklist must expose rehearse:cluster as the clean rehearsal entrypoint');
+requireMatch(releaseChecklist, /npm run test:unified-deploy:local-kind/, 'release checklist must expose local-kind unified deploy evidence');
+requireMatch(releaseChecklist, /npm run test:unified-deploy:existing-cluster-smoke/, 'release checklist must expose existing-cluster unified deploy smoke evidence');
+requireMatch(releaseChecklist, /focused product-flow/, 'release checklist must explain focused product-flow evidence');
 requireMatch(releaseChecklist, /internal adapter/i, 'release checklist must label old gate/lane/backend-real commands as internal adapters');
 forbidMatch(releaseChecklist, /\bnpm run (?:gate|lane|backend-real):[a-z0-9:_-]+/, 'release checklist must not present internal gate/lane/backend-real adapters as copyable human defaults');
 forbidMatch(releaseChecklist, /\bnpm run release:campaign:full\b/, 'release checklist must not present release:campaign:full as a copyable human default');

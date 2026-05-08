@@ -45,11 +45,10 @@ wait_for_agent_online() {
   fi
   local diagnostics_url="${BASE}/agent-runners/${AGENT_RUNNER_ID}/diagnostics"
   for i in $(seq 1 "${WAIT_AGENT_ONLINE_MAX}"); do
-    local diag_json diag_presence diag_connected_at
+    local diag_json diag_presence
     diag_json="$(curl -sS "${diagnostics_url}" -H "Authorization: Bearer ${TOKEN}" || true)"
     diag_presence="$(printf '%s' "${diag_json}" | json_get presence || true)"
-    diag_connected_at="$(printf '%s' "${diag_json}" | json_get connected_at || true)"
-    if [[ "${diag_presence}" == "managed" || ( "${diag_presence}" == "online" && -n "${diag_connected_at}" ) ]]; then
+    if [[ "${diag_presence}" == "managed" || "${diag_presence}" == "online" ]]; then
       echo "[load] agent runner ready (presence=${diag_presence})"
       return 0
     fi

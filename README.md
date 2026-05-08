@@ -122,8 +122,9 @@ npm run verify
 ```bash
 npm run release:ready
 npm run release:status
-npm run rehearse:demo
-npm run rehearse:cluster
+npm run test:unified-deploy:local-kind:images
+npm run test:unified-deploy:local-kind
+npm run test:unified-deploy:product-flows -- --flow=workspace_project --flow=files --flow=agent_task_managed_runner
 ```
 <!-- current-workflow:readme:end -->
 
@@ -135,17 +136,18 @@ Current runtime-line truth:
 - Machine-readable source: [`scripts/governance/current-runtime-line-manifest.ts`](./scripts/governance/current-runtime-line-manifest.ts)
 
 Current local runtime baseline:
-- One shared local substrate backs local-manual, demo-rehearsal, and cluster-rehearsal on a development host.
-- Only one local flow should be active at a time; switch flows by stopping or resetting the current one first.
-- Demo and cluster rehearsal each own their local kind world and registry identity instead of sharing one generic local cluster.
-- Rehearsal lines validate release paths on a development host; deploy lines operate on target-host release roots.
+- local-real is the supported developer-machine entrypoint; local-manual remains the maintainer adapter behind it.
+- local-real and unified deploy substrate share default local substrate ports, so run them serially on one development host.
 
-Current local flows:
-- `local-manual` — Daily development, real-backend manual validation, and Agent task / Agent Runner checks.
-- `demo-rehearsal` — Local rehearsal of the demo deploy flow on a development host. Uses `agentsmith-demo` / `agentsmith-demo-registry`.
-- `cluster-rehearsal` — Local rehearsal of the real-cluster deployment flow on a development host. Uses `agentsmith-cluster` / `agentsmith-cluster-registry`.
+Still-binding runtime contracts:
+- There is one AgentSmith deploy model; local-kind and existing-cluster are profiles, not separate demo and cluster products.
+- Substrates stay outside the app namespace as Docker or operator-provided services; AgentSmith app workloads run in Kubernetes.
+- api replicas stay at 1 until a dedicated multi-replica execution routing design is introduced.
 
-Use `Local Runtime Flows` for local commands and switching. Use the deploy runbooks for target-host release steps.
+Current local developer flow:
+- `local-manual` — Daily development, real-backend manual validation, and focused Agent task / Files checks through the local-real entrypoint.
+
+Use `Local Runtime Flows` for local commands and switching. Use `Unified Deploy Operations` for `local-kind` and `existing-cluster` deploy profile evidence under `artifacts/unified-deploy/`.
 <!-- current-runtime-lines:readme:end -->
 
 ### No-Sandbox Deployment Baseline
@@ -164,7 +166,7 @@ For daily verification, use the generated workflow entry above: `npm run verify`
 
 Legacy `gate:*`, `lane:*`, `backend-real:*`, and `release:campaign:*` scripts still exist in `package.json` for CI, `release:ready`, and evidence-owner runbooks. They are internal adapters, not a default command directory for ordinary development, testing, or release work.
 
-When a release campaign points to a specific owner, use the named adapter family from the owner runbook or manifest rather than copying commands from this README. Examples of owner identities are `gate:default`, `lane:visual`, `gate:release`, `lane:demo-rehearsal`, `lane:cluster-rehearsal`, and the aggregate-only `gate:release:full`.
+When a release campaign points to a specific owner, use the named adapter family from the owner runbook or manifest rather than copying commands from this README. Examples of owner identities are `gate:default`, `lane:visual`, `gate:release`, unified deploy evidence producers, and the aggregate-only `gate:release:full`.
 
 Optional operator-only Feishu checks when the current release scope includes Feishu:
 

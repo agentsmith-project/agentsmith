@@ -1014,6 +1014,39 @@ describe('unified deploy local-kind live rollout producer', () => {
     ]));
   });
 
+  it('treats an empty successful EndpointSlice check as no live substrate EndpointSlices', async () => {
+    const root = tempDir('local-kind-empty-endpointslice-check-');
+    const evidenceDir = tempDir('local-kind-evidence-');
+    const kubeconfigPath = writeKubeconfig(root);
+    const siteEnvPath = writeLocalKindImageSiteEnv(root);
+    const substrateTruthPath = writeActualSubstrateTruth(root, '172.19.0.1');
+    const calls: CommandCall[] = [];
+    const runner: LocalKindCommandRunner = async (command, args, options = {}) => {
+      calls.push({ command, args, input: options.input ?? '' });
+      if (command === 'kubectl' && args.join(' ').includes('get endpointslices')) {
+        return { exitCode: 0, stdout: '', stderr: '' };
+      }
+
+      return createPassingRunner([])(command, args, options);
+    };
+
+    const result = await runLocalKindRolloutProducer({
+      evidenceDir,
+      env: { KUBECONFIG: kubeconfigPath },
+      homeDir: root,
+      siteEnvPath,
+      substrateTruthPath,
+      runner,
+      probeRunner: passingProbeRunner,
+    });
+    const commandText = calls.map((call) => `${call.command} ${call.args.join(' ')}`).join('\n');
+
+    expect(result.status).toBe('passed');
+    expect(commandText).toContain('get endpointslices');
+    expect(commandText).not.toContain('delete endpointslice');
+    expect(calls.some((call) => call.args.join(' ').includes('apply --dry-run=server') && call.input.includes('name: substrate-mongodb'))).toBe(true);
+  });
+
   it('fails before app dry-run instead of deleting non-owned substrate EndpointSlice addressType drift', async () => {
     const root = tempDir('local-kind-endpointslice-non-owned-');
     const evidenceDir = tempDir('local-kind-evidence-');

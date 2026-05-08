@@ -1631,7 +1631,8 @@ async function reconcileSubstrateEndpointSliceAddressTypes(options: {
 
   let liveItems: Record<string, unknown>[];
   try {
-    liveItems = listItems(parseJsonObject(check.raw.stdout));
+    const liveEndpointSliceList = check.raw.stdout.trim();
+    liveItems = liveEndpointSliceList ? listItems(parseJsonObject(liveEndpointSliceList)) : [];
   } catch (error: unknown) {
     failures.push({
       path: 'substrate-endpointslice:check',

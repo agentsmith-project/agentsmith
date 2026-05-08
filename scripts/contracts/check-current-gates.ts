@@ -356,8 +356,9 @@ forbidMatch(governanceDefaultChecklist, /npm run gate:default/, 'governance chec
 
 requireMatch(releaseChecklist, /npm run release:ready/, 'release checklist must define npm run release:ready as the human-facing full release entrypoint', failures);
 requireMatch(releaseChecklist, /npm run release:status/, 'release checklist must define npm run release:status as the read-only status entrypoint', failures);
-requireMatch(releaseChecklist, /npm run rehearse:demo/, 'release checklist must expose npm run rehearse:demo as the clean demo rehearsal entrypoint', failures);
-requireMatch(releaseChecklist, /npm run rehearse:cluster/, 'release checklist must expose npm run rehearse:cluster as the clean cluster rehearsal entrypoint', failures);
+requireMatch(releaseChecklist, /npm run test:unified-deploy:local-kind/, 'release checklist must expose local-kind unified deploy evidence', failures);
+requireMatch(releaseChecklist, /npm run test:unified-deploy:existing-cluster-smoke/, 'release checklist must expose existing-cluster unified deploy smoke evidence', failures);
+requireMatch(releaseChecklist, /focused product-flow/, 'release checklist must explain focused product-flow evidence', failures);
 requireMatch(releaseChecklist, /precheck[\s\S]*internal adapter/i, 'release checklist must state that release:ready delegates to internal adapters only after precheck passes', failures);
 requireMatch(releaseChecklist, /gate:release:full[\s\S]*aggregate-only/i, 'release checklist must describe gate:release:full as an aggregate-only internal verifier', failures);
 forbidMatch(releaseChecklist, /\bnpm run (?:gate|lane|backend-real):[a-z0-9:_-]+/, 'release checklist must not present internal gate/lane/backend-real adapters as copyable human defaults', failures);
@@ -371,7 +372,7 @@ requireMatch(releaseChecklist, /visual_scene_catalog/, 'release checklist must i
 requireMatch(releaseChecklist, /ux_trace_bundle/, 'release checklist must identify ux_trace_bundle as a required release evidence kind', failures);
 requireMatch(releaseChecklist, /e2e\/visual-baseline-support\.ts/, 'release checklist must identify the visual scene catalog source', failures);
 requireMatch(releaseChecklist, /artifacts\/backend-real-visual\/<run-id>\/ux-traces/, 'release checklist must identify the backend-real ux trace bundle path', failures);
-requireMatch(releaseChecklist, /clean reset/, 'release checklist must explain that rehearsal lanes begin from a clean reset', failures);
+requireMatch(releaseChecklist, /substrate-lifecycle\.ts reset|clean reset/, 'release checklist must explain that unified deploy evidence begins from a clean substrate reset', failures);
 
 for (const relativePath of CURRENT_GATE_DOCUMENT_FILES) {
   requireMatch(read(relativePath), /(gate|visual|backend-real|manifest|current)/, `${relativePath} must remain populated with current gate truth content`, failures);

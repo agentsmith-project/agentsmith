@@ -5,25 +5,12 @@ import path from 'node:path';
 import {
   CURRENT_RUNTIME_LINE_MANIFEST,
   CURRENT_RUNTIME_SHARED_RULES,
-  findCurrentRuntimeLine,
 } from '../governance/current-runtime-line-manifest';
 
 const rootDir = process.cwd();
 
 function read(relativePath: string): string {
   return readFileSync(path.join(rootDir, relativePath), 'utf8');
-}
-
-function parseEnvFile(relativePath: string): Record<string, string> {
-  const entries = read(relativePath)
-    .split('\n')
-    .map((line) => line.trim())
-    .filter((line) => line.length > 0 && !line.startsWith('#'))
-    .map((line) => {
-      const separator = line.indexOf('=');
-      return [line.slice(0, separator), line.slice(separator + 1)] as const;
-    });
-  return Object.fromEntries(entries);
 }
 
 function parseKeyValueOutput(output: string): Record<string, string> {
@@ -33,29 +20,6 @@ function parseKeyValueOutput(output: string): Record<string, string> {
       .split('\n')
       .map((line) => line.split(/=(.+)/, 2) as [string, string]),
   );
-}
-
-function parseUrlPort(rawUrl: string | undefined): number | undefined {
-  if (!rawUrl) {
-    return undefined;
-  }
-
-  try {
-    const url = new URL(rawUrl);
-    if (url.port) {
-      return Number(url.port);
-    }
-    if (url.protocol === 'https:') {
-      return 443;
-    }
-    if (url.protocol === 'http:') {
-      return 80;
-    }
-  } catch {
-    return undefined;
-  }
-
-  return undefined;
 }
 
 function readRuntimeLinePathTruthFromShell(lineId: string): Record<string, string> {
@@ -91,15 +55,11 @@ try {
   failures.push('generated runtime-line docs are out of sync with current-runtime-line-manifest.ts');
 }
 
-const demoRehearsal = findCurrentRuntimeLine('demo-rehearsal');
-const clusterRehearsal = findCurrentRuntimeLine('cluster-rehearsal');
-const demoEnv = parseEnvFile('infra/flows/demo-rehearsal.env');
-const clusterEnv = parseEnvFile('infra/flows/cluster-rehearsal.env');
-const demoDeployOperations = read('docs/user-guides/demo-deploy-operations.md');
-const clusterDeployOperations = read('docs/user-guides/cluster-deploy-operations.md');
 const governanceModel = read('docs/current-engineering-governance-model.md');
 const localRuntimeFlows = read('docs/user-guides/local-runtime-flows.md');
 const runtimeLinesMatrix = read('docs/user-guides/runtime-lines-matrix.md');
+const unifiedDeployOperations = read('docs/user-guides/unified-deploy-operations.md');
+const packageJson = JSON.parse(read('package.json')) as { scripts?: Record<string, string> };
 
 const activeUniversalProxyRuntimeEntrypoints = [
   'scripts/run-integration-e2e-full.sh',
@@ -163,90 +123,94 @@ for (const line of CURRENT_RUNTIME_LINE_MANIFEST) {
   }
 }
 
-if (!demoRehearsal || !clusterRehearsal) {
-  failures.push('current runtime-line manifest must define demo-rehearsal and cluster-rehearsal');
-} else {
-  if (demoEnv.LOCAL_KIND_CLUSTER_NAME !== demoRehearsal.localKindClusterName) {
-    failures.push(`demo rehearsal local kind cluster must stay aligned with ${demoRehearsal.localKindClusterName}`);
+const lineIds = CURRENT_RUNTIME_LINE_MANIFEST.map((line) => line.id);
+for (const expectedLine of ['local-manual', 'unified-deploy-local-kind', 'unified-deploy-existing-cluster']) {
+  if (!lineIds.includes(expectedLine)) {
+    failures.push(`current runtime-line manifest must define ${expectedLine}`);
   }
-  if (demoEnv.LOCAL_KIND_REGISTRY_NAME !== demoRehearsal.localRegistryName) {
-    failures.push(`demo rehearsal local registry must stay aligned with ${demoRehearsal.localRegistryName}`);
-  }
-  if (Number(demoEnv.LOCAL_KIND_REGISTRY_HOST_PORT) !== demoRehearsal.localRegistryHostPort) {
-    failures.push(`demo rehearsal registry host port must stay aligned with ${demoRehearsal.localRegistryHostPort}`);
-  }
-  if (demoRehearsal.localRegistryHostPort !== 5003) {
-    failures.push('demo rehearsal registry host port truth must stay isolated at 5003');
-  }
-  if (Number(demoEnv.DEMO_REHEARSAL_SANDBOX_HOST_PORT) !== demoRehearsal.sandboxHostPort) {
-    failures.push(`demo rehearsal sandbox host port truth must stay aligned with ${demoRehearsal.sandboxHostPort}`);
-  }
-  if (Number(demoEnv.FLOW_SITE_ENV_SANDBOX_HOST_PORT) !== demoRehearsal.sandboxHostPort) {
-    failures.push(`demo rehearsal site.env sandbox host port override must stay aligned with ${demoRehearsal.sandboxHostPort}`);
-  }
-
-  if (clusterEnv.LOCAL_KIND_CLUSTER_NAME !== clusterRehearsal.localKindClusterName) {
-    failures.push(`cluster rehearsal local kind cluster must stay aligned with ${clusterRehearsal.localKindClusterName}`);
-  }
-  if (clusterEnv.LOCAL_KIND_REGISTRY_NAME !== clusterRehearsal.localRegistryName) {
-    failures.push(`cluster rehearsal local registry must stay aligned with ${clusterRehearsal.localRegistryName}`);
-  }
-  if (Number(clusterEnv.LOCAL_KIND_REGISTRY_HOST_PORT) !== clusterRehearsal.localRegistryHostPort) {
-    failures.push(`cluster rehearsal registry host port must stay aligned with ${clusterRehearsal.localRegistryHostPort}`);
-  }
-  if (clusterRehearsal.localRegistryHostPort !== 5002) {
-    failures.push('cluster rehearsal registry host port truth must stay isolated at 5002');
-  }
-  if (clusterEnv.CLUSTER_REHEARSAL_K8S_REGISTRY_HOST !== clusterRehearsal.k8sRegistryHost) {
-    failures.push(`cluster rehearsal in-cluster registry host must stay aligned with ${clusterRehearsal.k8sRegistryHost}`);
-  }
-  if (Number(clusterEnv.CLUSTER_REHEARSAL_SANDBOX_HOST_PORT) !== clusterRehearsal.sandboxHostPort) {
-    failures.push(`cluster rehearsal sandbox host port truth must stay aligned with ${clusterRehearsal.sandboxHostPort}`);
-  }
-  if (Number(clusterEnv.FLOW_SITE_ENV_SANDBOX_HOST_PORT) !== clusterRehearsal.sandboxHostPort) {
-    failures.push(`cluster rehearsal site.env sandbox host port override must stay aligned with ${clusterRehearsal.sandboxHostPort}`);
-  }
-  if (parseUrlPort(clusterEnv.FLOW_SITE_ENV_COMPOSE_INTERNAL_SANDBOX_MANAGER_BASE_URL) !== clusterRehearsal.sandboxHostPort) {
-    failures.push(`cluster rehearsal compose-internal sandbox URL override must stay aligned with ${clusterRehearsal.sandboxHostPort}`);
+}
+for (const retiredLine of ['demo-rehearsal', 'demo-deploy', 'cluster-rehearsal', 'cluster-deploy']) {
+  if (lineIds.includes(retiredLine)) {
+    failures.push(`current runtime-line manifest must not keep retired runtime line ${retiredLine}`);
   }
 }
 
-if (!/Runtime Lines Matrix/.test(demoDeployOperations)) {
-  failures.push('demo deploy operations must point runtime topology readers back to Runtime Lines Matrix');
+const localLine = CURRENT_RUNTIME_LINE_MANIFEST.find((line) => line.id === 'local-manual');
+if (localLine?.surface !== 'local-flow' || !/local-real/.test(localLine.externalPath)) {
+  failures.push('local-manual runtime truth must keep local-real as the supported human entrypoint');
 }
 
-if (!/cluster-rehearsal/.test(clusterDeployOperations) || !/Runtime Lines Matrix/.test(clusterDeployOperations)) {
-  failures.push('cluster deploy operations must keep the cluster-rehearsal boundary and Runtime Lines Matrix reference visible');
+const deployLines = CURRENT_RUNTIME_LINE_MANIFEST.filter((line) => line.surface === 'deploy-profile');
+if (deployLines.length !== 2) {
+  failures.push('current deploy runtime truth must expose exactly local-kind and existing-cluster deploy profiles');
+}
+for (const deployLine of deployLines) {
+  if (deployLine.guidePath !== 'docs/user-guides/unified-deploy-operations.md') {
+    failures.push(`${deployLine.id} must point to Unified Deploy Operations`);
+  }
+  if (deployLine.evidenceRoot !== 'artifacts/unified-deploy/') {
+    failures.push(`${deployLine.id} must use artifacts/unified-deploy/ as evidence root`);
+  }
+}
+
+const requiredUnifiedDeployScripts = [
+  'test:unified-deploy:local-kind:images',
+  'test:unified-deploy:local-kind',
+  'test:unified-deploy:existing-cluster-smoke',
+  'test:unified-deploy:product-flows',
+  'test:unified-deploy:render',
+  'test:unified-deploy:manifest',
+  'test:unified-deploy:api-single-replica',
+] as const;
+for (const scriptName of requiredUnifiedDeployScripts) {
+  if (!packageJson.scripts?.[scriptName]) {
+    failures.push(`package.json must expose unified deploy script ${scriptName}`);
+  }
 }
 
 const ruleBindings = Object.fromEntries(CURRENT_RUNTIME_SHARED_RULES.map((rule) => [rule.id, rule.binding]));
-if (ruleBindings['shared-local-substrate'] !== 'operational_baseline') {
-  failures.push('shared-local-substrate must stay classified as an operational_baseline');
+if (ruleBindings['local-real-human-entry'] !== 'operational_baseline') {
+  failures.push('local-real-human-entry must stay classified as an operational_baseline');
 }
-if (ruleBindings['single-active-local-flow'] !== 'operational_baseline') {
-  failures.push('single-active-local-flow must stay classified as an operational_baseline');
+if (ruleBindings['serial-local-runtime-switching'] !== 'operational_baseline') {
+  failures.push('serial-local-runtime-switching must stay classified as an operational_baseline');
 }
-if (ruleBindings['scenario-owned-kind-worlds'] !== 'contract') {
-  failures.push('scenario-owned-kind-worlds must stay classified as a binding runtime contract');
+if (ruleBindings['one-agentsmith-deploy'] !== 'contract') {
+  failures.push('one-agentsmith-deploy must stay classified as a binding runtime contract');
 }
-if (ruleBindings['deploy-vs-rehearsal-boundary'] !== 'contract') {
-  failures.push('deploy-vs-rehearsal-boundary must stay classified as a binding runtime contract');
+if (ruleBindings['docker-substrate-k8s-app-boundary'] !== 'contract') {
+  failures.push('docker-substrate-k8s-app-boundary must stay classified as a binding runtime contract');
+}
+if (ruleBindings['api-single-replica-current'] !== 'contract') {
+  failures.push('api-single-replica-current must stay classified as a binding runtime contract');
 }
 
 if (!/operational baseline/i.test(governanceModel)) {
   failures.push('current engineering governance model must describe the local runtime rules as an operational baseline');
 }
-if (!/操作基线/.test(localRuntimeFlows)) {
-  failures.push('Local Runtime Flows must describe shared-local-substrate and single-active-local-flow as an operation baseline');
+if (!/操作基线/.test(localRuntimeFlows) || !/local-real/.test(localRuntimeFlows)) {
+  failures.push('Local Runtime Flows must describe local-real as the current developer operation baseline');
 }
 if (!/持续生效的 runtime contract/.test(runtimeLinesMatrix)) {
   failures.push('Runtime Lines Matrix must keep the contract-vs-baseline split visible');
 }
-if (!/artifacts\/runtime\/lines\/<line>\/current/.test(localRuntimeFlows)) {
-  failures.push('Local Runtime Flows must document the shared runtime-line current path pattern');
+if (!/unified deploy/i.test(runtimeLinesMatrix) || !/local-kind/.test(runtimeLinesMatrix) || !/existing-cluster/.test(runtimeLinesMatrix)) {
+  failures.push('Runtime Lines Matrix must document the unified deploy local-kind and existing-cluster profiles');
 }
-if (!/artifacts\/runtime\/lines\/<line>\/current/.test(runtimeLinesMatrix)) {
-  failures.push('Runtime Lines Matrix must document the shared runtime-line current path pattern');
+if (!/artifacts\/unified-deploy\//.test(localRuntimeFlows) || !/artifacts\/unified-deploy\//.test(runtimeLinesMatrix) || !/artifacts\/unified-deploy\//.test(unifiedDeployOperations)) {
+  failures.push('runtime-line docs must document artifacts/unified-deploy/ as the deploy evidence root');
+}
+if (!/serially|串行/.test(localRuntimeFlows) || !/serially|串行/.test(runtimeLinesMatrix)) {
+  failures.push('runtime-line docs must tell operators to switch local-real and unified deploy serially');
+}
+if (!/api replicas?=1|api replicas stay at 1|api replicas fixed at 1/i.test(unifiedDeployOperations + runtimeLinesMatrix)) {
+  failures.push('runtime-line docs must state the current api replicas=1 deployment constraint');
+}
+if (/demo-rehearsal|cluster-rehearsal/.test(localRuntimeFlows)) {
+  failures.push('Local Runtime Flows must not present retired demo/cluster rehearsal lines as current paths');
+}
+if (!/not two products|不是 demo\/cluster 两套产品|old demo\/cluster split is no longer/i.test(runtimeLinesMatrix + unifiedDeployOperations)) {
+  failures.push('runtime-line docs must state that local-kind/existing-cluster are profiles, not old demo/cluster products');
 }
 
 if (failures.length > 0) {

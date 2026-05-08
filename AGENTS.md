@@ -108,7 +108,7 @@ Raw `test:*`, `gate:*`, `lane:*`, `backend-real:*` 和低层 `make *-rehearsal-*
 **执行**: 不让 Playwright 管理服务启动，手动启动后用 `BASE_URL` 运行，清理代理环境变量；UI/visual 变更先跑受影响 visual scenario grep/snapshot，只有视觉系统/整页级改动、最终视觉验收或明确用户/发布要求才跑 full visual catalog
 
 **验证范围控制**:
-- 不要在每个小改动后运行重门禁：`npm run verify -- --goal=real --run`、`npm run release:ready`、full visual catalog、demo/cluster rehearsal 等。
+- 不要在每个小改动后运行重门禁：`npm run verify -- --goal=real --run`、`npm run release:ready`、full visual catalog、full unified deploy rollout/smoke 等。
 - 采用渐进验证：每个 change slice 先跑最小相关的 TDD/unit/contract/focused integration/focused e2e/focused visual 命令，用 `npm run verify` dry-run/plan 或 focused diagnostics 判断范围。
 - 重门禁（`npm run verify -- --goal=pr|real|visual --run` / `npm run release:ready`）放在阶段收口、最终交付、合并/发布/部署前，或改动跨多个模块、权限、合约、运行路径时执行。
 - focused 变绿只是局部证据，不是发布签署；最终 evidence 必须匹配用户请求与改动风险。

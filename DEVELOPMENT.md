@@ -64,8 +64,9 @@ npm run verify
 ```bash
 npm run release:ready
 npm run release:status
-npm run rehearse:demo
-npm run rehearse:cluster
+npm run test:unified-deploy:local-kind:images
+npm run test:unified-deploy:local-kind
+npm run test:unified-deploy:product-flows -- --flow=workspace_project --flow=files --flow=agent_task_managed_runner
 ```
 <!-- current-workflow:development:end -->
 
@@ -128,19 +129,18 @@ Gate adapter fidelity notes:
 - machine-readable source: [`scripts/governance/current-runtime-line-manifest.ts`](./scripts/governance/current-runtime-line-manifest.ts)
 
 当前本机操作基线：
-- 本机共享一套 substrate，`local-manual`、`demo-rehearsal`、`cluster-rehearsal` 都复用它。
-- 同一时间只建议一条本地工作线处于 active；切换前先停掉或 reset 当前工作线。
+- `local-real` 是开发机上的正式人类入口；`local-manual` 只保留为底层 maintainer adapter。
+- `local-real` 与 unified deploy substrate 共享默认本地 substrate 端口，在同一开发机上必须串行切换。
 
 持续生效的 runtime contract：
-- `demo-rehearsal` 和 `cluster-rehearsal` 都拥有自己的 scenario-owned local kind world 与 local registry，不再共用一个泛化本地集群。
-- rehearsal 线负责在开发机上排演 release 路径；deploy 线负责目标主机上的正式发布。
+- 只有一个 AgentSmith deploy 模型；`local-kind` 与 `existing-cluster` 是 profile，不是 demo/cluster 两套产品。
+- Substrates 保持在 app namespace 外部，由 Docker 或运维提供的服务承载；AgentSmith app 工作负载运行在 Kubernetes。
+- 当前里程碑 `api replicas=1`，直到引入明确的多副本 execution routing 设计。
 
 当前本机工作线：
-- `local-manual` — 日常开发、真实后端手测、Agent task / Agent Runner 主链手测。
-- `demo-rehearsal` — demo 发布线的本机排演入口，使用 `agentsmith-demo` / `agentsmith-demo-registry`。
-- `cluster-rehearsal` — cluster 发布线的本机排演入口，使用 `agentsmith-cluster` / `agentsmith-cluster-registry`。
+- `local-manual` — Daily development, real-backend manual validation, and focused Agent task / Files checks through the local-real entrypoint.
 
-本文件只保留开发/排障入口；操作基线不再等同于系统正确性的前提，具体运行线拓扑与 contract 统一看 runtime-line 文档。
+本文件只保留开发/排障入口；部署命令、profile、证据路径统一看 runtime-line 文档与 Unified Deploy Operations。
 <!-- current-runtime-lines:development:end -->
 
 本机真实环境的人类入口统一是 `make local-real-*`；`substrate-*` 与 `local-manual-*` 是底层实现 adapter，只在 maintainer diagnostics 或 owner runbook 明确要求时直接使用。
@@ -162,15 +162,15 @@ npm run marketing:assets:generate
 
 - local-manual: `PRESET_ENDPOINT_*`
 - backend-real runtime: `.env.backend-real` 以 `PRESET_*` 为主；部分包装脚本会派生 `BACKEND_REAL_*` 别名
-- demo deploy: `PRESET_*` 与 deploy-specific 配置并存
+- unified deploy: app/substrate truth lives in `infra/deploy/unified/` and generated evidence under `artifacts/unified-deploy/`
 
 模板入口：
 
 - local-manual: `.env.local-manual.example`
 - backend-real: `.env.backend-real.example`
-- demo deploy: `infra/deploy/demo/env/site.env.example`
+- unified deploy: `infra/deploy/unified/env/site.env.example`
 
-旧 demo 命令和旧供应商命名已经移除；当前入口统一使用 `PRESET_*`。
+旧 demo/cluster deploy 命令不再是 current deployment entrypoint；当前部署说明看 `docs/user-guides/unified-deploy-operations.md`。
 
 ## Quick Start
 

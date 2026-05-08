@@ -15,7 +15,7 @@ Use the entry path selector before choosing a command:
 | --- | --- | --- |
 | `ui_only` | You changed UI copy, layout, client state, or a mock-only interaction. | `npm run dev`, then `npm run verify` for the dry-run plan |
 | `local_manual` | You need the real local API, Notebook, Terminal, runner, files, or backend behavior. | `make local-real-up`, `make local-real-status` |
-| `release_grade` | You are preparing a release, closing a cross-domain refactor, or verifying an incident fix. | `npm run release:ready`, then `npm run release:status`; failed campaigns name internal owner adapters such as `gate:release`, `lane:demo-rehearsal`, or `lane:cluster-rehearsal` |
+| `release_grade` | You are preparing a release, closing a cross-domain refactor, or verifying an incident fix. | `npm run release:ready`, then `npm run release:status`; deploy-specific failures should be narrowed with unified deploy producers |
 
 If you are unsure, start with `ui_only` for frontend-only work, `local_manual` for real runtime behavior, and `release_grade` only when you need a release-level answer.
 
@@ -44,8 +44,10 @@ Do not use a diagnostic success as a release sign-off. If `npm run test:integrat
 | `npm run test:release:precheck` | You are about to enter release-grade verification and want local readiness first. | Treat success as readiness only, not a release verdict. |
 | Internal adapter `lane:mock` | You need a governed mock verification channel but not full visual or backend-real. Stable gate id: `lane-mock`. | Treat it as an owner diagnostic surface, then return to the current human entrypoint or owner runbook. |
 | Internal adapter `gate:release` | A release campaign failed in the backend-real release evidence owner. | Preserve `ux_trace_bundle`, use the owner runbook if rerun is needed, then return to `npm run release:ready`. |
-| Internal adapter `lane:demo-rehearsal` | A release campaign failed in the demo deployment rehearsal evidence owner. | Prefer `npm run rehearse:demo` for the clean human path; owner reruns still follow the owner runbook reset. |
-| Internal adapter `lane:cluster-rehearsal` | A release campaign failed in the cluster deployment rehearsal evidence owner. | Prefer `npm run rehearse:cluster` for the clean human path; owner reruns still follow the owner runbook reset. |
+| `npm run test:unified-deploy:local-kind:images` | Local deploy image handoff or registry digest refs may be broken. | Rerun before `npm run test:unified-deploy:local-kind`; inspect `artifacts/unified-deploy/`. |
+| `npm run test:unified-deploy:local-kind` | Local Kubernetes app rollout or ingress route smoke may be broken. | Fix deploy topology, then rerun focused product flows. |
+| `npm run test:unified-deploy:existing-cluster-smoke` | Existing-cluster profile apply/rollout/routing may be broken. | Treat route smoke as deploy proof only; follow with focused product flows for product behavior. |
+| `npm run test:unified-deploy:product-flows -- --flow=workspace_project --flow=files --flow=agent_task_managed_runner` | You need minimal deployed product proof without a heavy release campaign. | This proves project setup, file library upload/list/download, and managed runner task completion only. |
 | Internal verifier `gate:release:full` | You already have explicit campaign context and only need to understand the terminal aggregate verifier. | This verifier is aggregate-only and does not execute suites; without explicit context, run `npm run release:ready` instead. |
 
 ## 4. Do / Don't

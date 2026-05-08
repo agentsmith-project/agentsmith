@@ -77,12 +77,15 @@ For current runtime-line methodology and release/rehearsal topology, use:
 - Machine-readable source: `scripts/governance/current-runtime-line-manifest.ts`
 
 Current local operational baseline:
-- One shared local substrate backs local-manual, demo-rehearsal, and cluster-rehearsal on a development host.
-- Only one local flow should be active at a time; switch flows by stopping or resetting the current one first.
+- local-real is the supported developer-machine entrypoint; local-manual remains the maintainer adapter behind it.
+- local-real and unified deploy substrate share default local substrate ports, so run them serially on one development host.
 
 Still-binding runtime contracts:
-- Demo and cluster rehearsal each own their local kind world and registry identity instead of sharing one generic local cluster.
-- Rehearsal lines validate release paths on a development host; deploy lines operate on target-host release roots.
+- There is one AgentSmith deploy model; local-kind and existing-cluster are profiles, not separate demo and cluster products.
+- Substrates stay outside the app namespace as Docker or operator-provided services; AgentSmith app workloads run in Kubernetes.
+- api replicas stay at 1 until a dedicated multi-replica execution routing design is introduced.
+
+Deploy evidence is produced by unified deploy checks under `artifacts/unified-deploy/`.
 <!-- current-runtime-lines:governance-model:end -->
 
 ## 1. Allowed top-level terms
@@ -152,8 +155,9 @@ npm run verify
 ```bash
 npm run release:ready
 npm run release:status
-npm run rehearse:demo
-npm run rehearse:cluster
+npm run test:unified-deploy:local-kind:images
+npm run test:unified-deploy:local-kind
+npm run test:unified-deploy:product-flows -- --flow=workspace_project --flow=files --flow=agent_task_managed_runner
 ```
 <!-- current-workflow:governance-model:end -->
 

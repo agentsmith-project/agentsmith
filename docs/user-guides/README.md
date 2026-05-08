@@ -21,11 +21,9 @@
 - [Local Runtime Flows](./local-runtime-flows.md)
   - 由 `scripts/governance/current-runtime-line-manifest.ts` 生成；当前本机操作基线与切线手册。
 - [Runtime Lines Matrix](./runtime-lines-matrix.md)
-  - 当前 runtime / deploy / rehearsal 线与 mode 边界的总表。
-- [Demo Deploy Operations](./demo-deploy-operations.md)
-  - 目标主机上的 demo 发布线：release root、生命周期命令，以及 `full` 模式下的 local `kind` sandbox 仿真。
-- [Cluster Deploy Operations](./cluster-deploy-operations.md)
-  - 目标主机上的 real-cluster 发布线：registry-backed bundle release、target-host install flow、namespace-only automation model。
+  - 当前 local-real 与统一部署 profile 的总表。
+- [Unified Deploy Operations](./unified-deploy-operations.md)
+  - 当前部署入口：one AgentSmith deploy，`local-kind` / `existing-cluster` profiles，Docker substrate，Kubernetes app。
 <!-- current-runtime-lines:user-guides-index:end -->
 
 runtime-line 当前状态目录统一收敛到 `artifacts/runtime/lines/<line>/current`；具体 line 列表与 machine-readable truth 以 `scripts/governance/current-runtime-line-manifest.ts` 为准。
@@ -33,8 +31,13 @@ runtime-line 当前状态目录统一收敛到 `artifacts/runtime/lines/<line>/c
 ### 发布与排演
 - [Release Readiness Checklist](./release-readiness-checklist.md)
   - human release readiness entrypoint: `npm run release:ready`
-- [Cluster Upgrade Operations](./cluster-upgrade-operations.md)
-- [Cluster Admin Runbook](./cluster-admin-runbook.md)
+- [Unified Deploy Operations](./unified-deploy-operations.md)
+  - current deployment entrypoint for `local-kind` and `existing-cluster` profiles
+- Historical current-v1 references only:
+  - [Demo Deploy Operations](./demo-deploy-operations.md)
+  - [Cluster Deploy Operations](./cluster-deploy-operations.md)
+  - [Cluster Upgrade Operations](./cluster-upgrade-operations.md)
+  - [Cluster Admin Runbook](./cluster-admin-runbook.md)
 
 ### 日常排障
 - [Troubleshooting Guide](../troubleshooting-guide-v1.md)

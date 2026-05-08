@@ -29,44 +29,30 @@ describe('current runtime-line governance', () => {
     }
 
     const bindings = Object.fromEntries(CURRENT_RUNTIME_SHARED_RULES.map((rule) => [rule.id, rule.binding]));
-    expect(bindings['shared-local-substrate']).toBe('operational_baseline');
-    expect(bindings['single-active-local-flow']).toBe('operational_baseline');
-    expect(bindings['scenario-owned-kind-worlds']).toBe('contract');
-    expect(bindings['deploy-vs-rehearsal-boundary']).toBe('contract');
+    expect(bindings['local-real-human-entry']).toBe('operational_baseline');
+    expect(bindings['serial-local-runtime-switching']).toBe('operational_baseline');
+    expect(bindings['one-agentsmith-deploy']).toBe('contract');
+    expect(bindings['docker-substrate-k8s-app-boundary']).toBe('contract');
+    expect(bindings['api-single-replica-current']).toBe('contract');
   });
 
-  it('keeps the expected local runtime lines visible', () => {
+  it('keeps local-real as the single developer-machine runtime line', () => {
     expect(listCurrentLocalRuntimeLines().map((line) => line.id)).toEqual([
       'local-manual',
-      'demo-rehearsal',
-      'cluster-rehearsal',
     ]);
+    expect(listCurrentLocalRuntimeLines()[0].externalPath).toMatch(/local-real/);
   });
 
-  it('keeps rehearsal sandbox host-port truth explicit and stable', () => {
-    const sandboxPortsByLine = Object.fromEntries(
-      CURRENT_RUNTIME_LINE_MANIFEST.map((line) => [
-        line.id,
-        (line as { sandboxHostPort?: number }).sandboxHostPort,
-      ]),
-    );
-
-    expect(sandboxPortsByLine['demo-rehearsal']).toBe(29280);
-    expect(sandboxPortsByLine['cluster-rehearsal']).toBe(29080);
-    expect(new Set([sandboxPortsByLine['demo-rehearsal'], sandboxPortsByLine['cluster-rehearsal']]).size).toBe(2);
-  });
-
-  it('keeps rehearsal local registry host-port truth isolated from the shared local registry', () => {
-    const registryPortsByLine = Object.fromEntries(
-      CURRENT_RUNTIME_LINE_MANIFEST.map((line) => [
-        line.id,
-        (line as { localRegistryHostPort?: number }).localRegistryHostPort,
-      ]),
-    );
-
-    expect(registryPortsByLine['demo-rehearsal']).toBe(5003);
-    expect(registryPortsByLine['cluster-rehearsal']).toBe(5002);
-    expect(registryPortsByLine['demo-rehearsal']).not.toBe(5001);
+  it('keeps unified deploy profiles visible without old demo or cluster runtime lines', () => {
+    expect(CURRENT_RUNTIME_LINE_MANIFEST.map((line) => line.id)).toEqual([
+      'local-manual',
+      'unified-deploy-local-kind',
+      'unified-deploy-existing-cluster',
+    ]);
+    expect(CURRENT_RUNTIME_LINE_MANIFEST.filter((line) => line.surface === 'deploy-profile').map((line) => line.id)).toEqual([
+      'unified-deploy-local-kind',
+      'unified-deploy-existing-cluster',
+    ]);
   });
 
   it('keeps runtime-line artifact roots machine-readable and aligned with the shell helper', () => {

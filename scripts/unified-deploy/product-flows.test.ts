@@ -172,6 +172,83 @@ function makeKeycloakConflictReuseFetch(): ProductFlowFetch {
   });
 }
 
+function makeFocusedAgentTaskFetch(observed: { chatRequests: number }): ProductFlowFetch {
+  let libraryReadyReads = 0;
+  return vi.fn(async (input: string | URL | Request, init?: RequestInit) => {
+    const url = String(input);
+    const method = init?.method ?? 'GET';
+    if (url.includes('/chat/completions')) {
+      observed.chatRequests += 1;
+      return responseJson(500, { error: 'chat_flow_should_not_run' });
+    }
+    if (url.endsWith('/api/public/workspaces')) {
+      return responseJson(200, { items: [{ id: 'ws_default' }] });
+    }
+    if (url.endsWith('/projects') && method === 'POST') {
+      return responseJson(201, { id: 'proj_focused', name: 'Focused Product Flow' });
+    }
+    if (url.endsWith('/projects') && method === 'GET') {
+      return responseJson(200, { items: [{ id: 'proj_focused', name: 'Focused Product Flow' }] });
+    }
+    if (url.endsWith('/projects/proj_focused') && method === 'GET') {
+      return responseJson(200, { id: 'proj_focused', name: 'Focused Product Flow' });
+    }
+    if (url.endsWith('/credentials') && method === 'POST') {
+      return responseJson(201, { id: 'cred_focused' });
+    }
+    if (url.endsWith('/endpoints') && method === 'POST') {
+      return responseJson(201, { id: 'ep_focused', model: 'integration-chat-model' });
+    }
+    if (url.endsWith('/file-libraries') && method === 'POST') {
+      return responseJson(201, { id: 'flib_focused' });
+    }
+    if (url.endsWith('/file-libraries/flib_focused') && method === 'GET') {
+      libraryReadyReads += 1;
+      return responseJson(200, { id: 'flib_focused', status: libraryReadyReads > 0 ? 'ready' : 'creating' });
+    }
+    if (url.endsWith('/file-libraries/flib_focused/storage-credential-exchange') && method === 'POST') {
+      return responseJson(200, {});
+    }
+    if (url.endsWith('/file-libraries/flib_focused/folders') && method === 'POST') {
+      return responseText(204, '');
+    }
+    if (url.endsWith('/file-libraries/flib_focused/upload') && method === 'POST') {
+      return responseJson(201, { path: 'docs/guide.txt' });
+    }
+    if (url.includes('/file-libraries/flib_focused/entries') && method === 'GET') {
+      return responseJson(200, { items: [{ name: 'guide.txt', path: 'docs/guide.txt' }] });
+    }
+    if (url.includes('/file-libraries/flib_focused/download') && method === 'GET') {
+      return responseText(200, 'hello from unified deploy product flow\n');
+    }
+    if (url.endsWith('/agent-runners') && method === 'GET') {
+      return responseJson(200, { items: [{ id: 'runner_focused', is_default: true, status: 'ready' }] });
+    }
+    if (url.endsWith('/agent-task-model-setting') && method === 'GET') {
+      return responseJson(200, { setting: { endpoint_id: 'ep_focused' }, readiness: { state: 'ready' } });
+    }
+    if (url.endsWith('/agent-runners/runner_focused/diagnostics') && method === 'GET') {
+      return responseJson(200, { presence: 'managed' });
+    }
+    if (url.endsWith('/agent-runners/runner_focused/execution-config') && method === 'GET') {
+      return responseJson(200, { schema_version: 1 });
+    }
+    if (url.endsWith('/agent-runners/runner_focused/connection-info') && method === 'GET') {
+      return responseJson(403, { error: 'forbidden' });
+    }
+    if (url.endsWith('/tasks') && method === 'POST') {
+      return responseJson(201, { id: 'task_focused' });
+    }
+    if (url.endsWith('/tasks/task_focused/runs') && method === 'POST') {
+      return responseJson(200, { id: 'run_focused' });
+    }
+    if (url.includes('/tasks/task_focused/traces') && method === 'GET') {
+      return responseJson(200, { items: [{ id: 'trace_done', status: 'success', summary: 'Run completed' }] });
+    }
+    return responseJson(404, { error: `unexpected:${method}:${url}` });
+  });
+}
+
 describe('unified deploy product flow producer', () => {
   it('loads product runtime truth from generated site env and Docker substrate truth', () => {
     const truth = buildProductFlowRuntimeTruth({
@@ -359,5 +436,56 @@ describe('unified deploy product flow producer', () => {
 
     expect(result.failures[0]?.message).toContain('/me/profile expected 200');
     expect(result.failures[0]?.message).not.toContain('keycloak_user_conflict_unresolved');
+  });
+
+  it('runs the focused files plus managed runner flow without requiring the chat flow as endpoint setup', async () => {
+    const observed = { chatRequests: 0 };
+    const result = await runUnifiedDeployProductFlowsProducer({
+      siteEnvPath: 'site.env',
+      substrateTruthPath: 'connection.env',
+      evidenceDir: 'evidence',
+      fs: makeFs(),
+      fetch: makeFocusedAgentTaskFetch(observed),
+      flowIds: ['workspace_project', 'files', 'agent_task_managed_runner'],
+      backendBootstrapper: async () => ({}),
+      keycloakBootstrapper: async () => ({
+        users: {
+          devAdmin: { user_id: 'kc-dev-admin', email: 'dev-admin@example.com', name: 'Dev Admin' },
+          integrationUser: { user_id: 'kc-integration-user', email: 'integration-user@example.com', name: 'Integration User' },
+        },
+      }),
+      workspaceBootstrapper: async () => undefined,
+      tokenProvider: async () => 'token-dev-admin',
+      providerStarter: async () => ({
+        baseUrl: 'http://172.19.0.1:39999/v1',
+        getRequestCount: () => observed.chatRequests,
+        close: async () => undefined,
+      }),
+      managedRunnerSeeder: async () => ({
+        runnerId: 'runner_focused',
+        runnerName: 'Focused runner',
+        status: 'ready',
+        isDefault: true,
+        defaultEndpointId: 'ep_focused',
+        agentTaskModelSetting: {
+          endpointId: 'ep_focused',
+          defaultModelId: 'integration-chat-model',
+          settingRevision: 'rev_focused',
+          updated: true,
+        },
+        capabilities: {},
+        diagnostics: {},
+        wsUrl: 'ws://agentsmith.localtest.me:29180/api/v1/agent-execution/ws?agent_runner_id=runner_focused',
+      }),
+      now: () => new Date('2026-05-07T00:00:00.000Z'),
+    });
+
+    expect(result.status).toBe('passed');
+    expect(result.evidence.flows.map((flow) => flow.flow)).toEqual([
+      'workspace_project',
+      'files',
+      'agent_task_managed_runner',
+    ]);
+    expect(observed.chatRequests).toBe(0);
   });
 });

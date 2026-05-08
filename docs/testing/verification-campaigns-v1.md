@@ -113,8 +113,11 @@ verdict 路径的目标是：**给出当前变更是否可接受的正式判断*
 - `make local-real-up` / `make local-real-status` / `make local-real-down` / `make local-real-reset`
 - `npm run release:ready`
 - `npm run release:status`
-- `npm run rehearse:demo`
-- `npm run rehearse:cluster`
+- unified deploy producers for deploy-specific proof:
+  - `npm run test:unified-deploy:local-kind:images`
+  - `npm run test:unified-deploy:local-kind`
+  - `npm run test:unified-deploy:existing-cluster-smoke`
+  - focused `npm run test:unified-deploy:product-flows`
 
 底层 diagnostics / internal identity 仍然看 current manifests 和 owner runbooks，例如 `test:*`、`gate:*`、`lane:*`、`backend-real:*`、`release:campaign:full` 和 `gate:release:full`。这些 identity 可以用于证据所有权、排障归因和 aggregate verification 描述，但不作为 verification campaign guide 的 copyable/default command surface。
 
@@ -176,8 +179,7 @@ verdict 路径的目标是：**给出当前变更是否可接受的正式判断*
 - `lane:visual`
 - `lane:backend-real:core`
 - `lane:backend-real:release`
-- `lane:demo-rehearsal`
-- `lane:cluster-rehearsal`
+- unified deploy producers for substrate, render, rollout, existing-cluster smoke, and focused product-flow evidence
 
 理解方式：
 - internal adapter `lane:visual` 拥有 full visual evidence；release 外 full visual verification 用 `npm run verify -- --goal=visual --run`
@@ -195,15 +197,15 @@ verdict 路径的目标是：**给出当前变更是否可接受的正式判断*
 | human visual entry | `npm run verify -- --goal=visual --run` | release 外 full visual verification |
 | human release entry | `npm run release:ready` | 先执行非 verdict precheck，precheck 通过后进入 official campaign |
 | read-only status | `npm run release:status` | 读取 latest summary / status，不重新聚合 evidence |
-| rehearsal entry | `npm run rehearse:demo` | 必要时单独运行 demo deployment rehearsal 的 clean human path |
-| rehearsal entry | `npm run rehearse:cluster` | 必要时单独运行 cluster deployment rehearsal 的 clean human path |
+| deploy evidence | `npm run test:unified-deploy:local-kind:images` + `npm run test:unified-deploy:local-kind` | local-kind image handoff、K8s rollout、ingress route smoke |
+| deploy evidence | `npm run test:unified-deploy:existing-cluster-smoke` | existing-cluster app apply、rollout、route ownership smoke |
+| product evidence | focused `npm run test:unified-deploy:product-flows` | project、files、managed runner task 最小产品链 |
 | campaign launcher | internal adapter `release:campaign:full` | official campaign launcher，编排所有 required steps 并调用 terminal aggregate verdict |
 | preflight | internal adapter `gate:fast` | 快速确认基础 contract / static / cheap checks 没先坏 |
 | tier verdict | internal adapter `gate:default` | 默认工程层是否可接受 |
 | evidence owner | internal adapter `lane:visual` | full visual 和 `visual_scene_catalog` 证据 |
 | evidence owner | internal adapter `gate:release` / `lane:backend-real:release` | release-grade backend-real 与 `ux_trace_bundle` 证据 |
-| rehearsal evidence owner | internal adapter `lane:demo-rehearsal` | demo release path 排演证据 |
-| rehearsal evidence owner | internal adapter `lane:cluster-rehearsal` | cluster release path 排演证据 |
+| deploy evidence owner | unified deploy producers | substrate/render/address truth/local-kind/existing-cluster/focused product-flow evidence |
 | terminal aggregate verdict | internal verifier `gate:release:full` | aggregate-only 聚合已有 campaign evidence，不执行任何 suite |
 
 `npm run release:ready` 是 release-grade sign-off 的人类入口；release 外 full visual verification 用 `npm run verify -- --goal=visual --run`。internal adapter `release:campaign:full` 必须消费同一组 role 和 evidence truth；不能绕过这些 owner 自己发明 release 判断。`gate:release:full` 如果没有 campaign context，就不应该被新人当作 release 执行入口。

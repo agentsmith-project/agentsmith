@@ -1,4 +1,4 @@
-import { mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
@@ -59,6 +59,26 @@ describe('unified deploy manifest producer', () => {
     } finally {
       process.chdir(originalCwd);
     }
+  });
+
+  it('rejects a symlinked parent segment for explicit release evidence roots outside cwd', () => {
+    const root = mkdtempSync(join(tmpdir(), 'unified-deploy-explicit-release-parent-symlink-'));
+    const outsideRoot = mkdtempSync(join(tmpdir(), 'unified-deploy-explicit-release-outside-'));
+    fixtureRoots.push(root, outsideRoot);
+    symlinkSync(outsideRoot, join(root, 'link'), 'dir');
+
+    const releaseRoot = join(root, 'link', 'release');
+    const evidenceDir = join(releaseRoot, 'lane');
+
+    expect(() => prepareUnifiedDeployEvidenceDir({
+      evidenceDir,
+      defaultRoot: join(root, 'default'),
+      env: {
+        UNIFIED_DEPLOY_RELEASE_ROOT_DIR: releaseRoot,
+      },
+      label: 'test explicit release evidenceDir',
+    })).toThrow(/symlink/i);
+    expect(existsSync(join(outsideRoot, 'release', 'lane'))).toBe(false);
   });
 
   it('requires exactly the two target profiles and the Docker-only substrate members', () => {

@@ -154,7 +154,7 @@ function symlinkInspectionAnchorFor(targetPath: string): string {
   if (isPathAtOrUnderRoot(cwd, absoluteTarget)) {
     return cwd;
   }
-  return absoluteTarget;
+  return path.parse(absoluteTarget).root;
 }
 
 function expectedEvidenceRoot(

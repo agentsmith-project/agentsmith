@@ -984,6 +984,94 @@ describe('release-full aggregate gate', () => {
     expect(terminalResult.summary).toContain('No JSON evidence file declared schema_version');
   });
 
+  it('fails with infra setup failure when unified deploy infrastructure evidence is failed', () => {
+    const campaignRoot = mkdtempSync(join(tmpdir(), 'release-full-unified-deploy-infra-failed-'));
+    seedPassedCampaign(campaignRoot);
+
+    const substrateStep = getCampaignStep('lane-unified-deploy-substrate');
+    const substrateCheck = substrateStep.evidenceChecks.find((check) => check.id === 'unified_deploy_substrate_evidence');
+    if (!substrateCheck) {
+      throw new Error('Missing unified deploy substrate evidence check.');
+    }
+    const evidenceRoot = materializeCampaignPath(campaignRoot, substrateCheck.path);
+    const substratePath = join(evidenceRoot, 'substrate-lifecycle-reset-fixture.json');
+    const substrateEvidence = JSON.parse(readFileSync(substratePath, 'utf8')) as Record<string, unknown>;
+    substrateEvidence.status = 'failed';
+    substrateEvidence.failure_class = 'evidence_missing';
+    substrateEvidence.failures = [{ service: 'postgresql', message: 'reset failed' }];
+    writeJson(substratePath, substrateEvidence);
+    writeCampaignEvidencePointer(campaignRoot, substrateStep);
+
+    expect(() => runAggregate(campaignRoot)).toThrow();
+
+    const terminalResult = JSON.parse(
+      readFileSync(resolve(campaignRoot, 'gate-release-full', 'result.json'), 'utf8'),
+    ) as { status: string; failure_class: string; summary: string };
+    expect(terminalResult).toMatchObject({
+      status: 'failed',
+      failure_class: 'infra_setup_failure',
+    });
+    expect(terminalResult.summary).toContain('status must be passed');
+  });
+
+  it('fails with product regression when unified deploy product-flow evidence is failed', () => {
+    const campaignRoot = mkdtempSync(join(tmpdir(), 'release-full-product-flow-regression-'));
+    seedPassedCampaign(campaignRoot);
+
+    const productStep = getCampaignStep('lane-unified-deploy-product-flows');
+    const productCheck = productStep.evidenceChecks.find((check) => check.id === 'unified_deploy_product_flow_evidence');
+    if (!productCheck) {
+      throw new Error('Missing unified deploy product flow evidence check.');
+    }
+    const aggregatePath = join(materializeCampaignPath(campaignRoot, productCheck.path), 'product-flows-fixture.json');
+    const aggregate = JSON.parse(readFileSync(aggregatePath, 'utf8')) as Record<string, unknown>;
+    aggregate.status = 'failed';
+    aggregate.failure_class = 'product_regression';
+    aggregate.failures = [{ flow: 'workspace_project', message: 'workspace/project flow failed' }];
+    writeJson(aggregatePath, aggregate);
+    writeCampaignEvidencePointer(campaignRoot, productStep);
+
+    expect(() => runAggregate(campaignRoot)).toThrow();
+
+    const terminalResult = JSON.parse(
+      readFileSync(resolve(campaignRoot, 'gate-release-full', 'result.json'), 'utf8'),
+    ) as { status: string; failure_class: string; summary: string };
+    expect(terminalResult).toMatchObject({
+      status: 'failed',
+      failure_class: 'product_regression',
+    });
+    expect(terminalResult.summary).toContain('status must be passed');
+  });
+
+  it('fails when product-flow aggregate is not bound to focused flow evidence files', () => {
+    const campaignRoot = mkdtempSync(join(tmpdir(), 'release-full-product-flow-unbound-'));
+    seedPassedCampaign(campaignRoot);
+
+    const productStep = getCampaignStep('lane-unified-deploy-product-flows');
+    const productCheck = productStep.evidenceChecks.find((check) => check.id === 'unified_deploy_product_flow_evidence');
+    if (!productCheck) {
+      throw new Error('Missing unified deploy product flow evidence check.');
+    }
+    const aggregatePath = join(materializeCampaignPath(campaignRoot, productCheck.path), 'product-flows-fixture.json');
+    const aggregate = JSON.parse(readFileSync(aggregatePath, 'utf8')) as {
+      flow_evidence_paths?: Record<string, string>;
+    };
+    delete aggregate.flow_evidence_paths?.files;
+    writeJson(aggregatePath, aggregate);
+    writeCampaignEvidencePointer(campaignRoot, productStep);
+
+    expect(() => runAggregate(campaignRoot)).toThrow();
+
+    const terminalResult = JSON.parse(
+      readFileSync(resolve(campaignRoot, 'gate-release-full', 'result.json'), 'utf8'),
+    ) as { status: string; failure_class: string; summary: string };
+    expect(terminalResult).toMatchObject({
+      status: 'failed',
+      failure_class: 'evidence_missing',
+    });
+    expect(terminalResult.summary).toContain('focused product flow evidence path for files');
+  });
+
   it('passes when backend-real UX trace bundles include semantic manifest, events, screenshots, and review evidence', () => {
     const campaignRoot = mkdtempSync(join(tmpdir(), 'release-full-aggregate-trace-semantic-pass-'));
     seedPassedCampaign(campaignRoot);

@@ -107,9 +107,6 @@ artifacts/governance-reports/gov-smoke-login-failure-*.html
 artifacts/governance-runs/*.json
 artifacts/governance-incidents/*.json
 
-# Cluster deploy operator-local secrets and kubeconfig
-.infra/cluster-deploy/*
-!.infra/cluster-deploy/.gitkeep
 /infra/vendor/juicefs/
 
 # Local operator env files

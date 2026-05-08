@@ -105,7 +105,7 @@ Status: `current reference`
 
 verdict 路径的目标是：**给出当前变更是否可接受的正式判断**。
 
-当前人类可复制入口只保留 clean surface：
+当前人类可复制 verdict 入口只保留 clean surface：
 - `npm run verify`（dry-run plan）
 - `npm run verify -- --goal=pr --run`
 - `npm run verify -- --goal=real --run`
@@ -113,13 +113,11 @@ verdict 路径的目标是：**给出当前变更是否可接受的正式判断*
 - `make local-real-up` / `make local-real-status` / `make local-real-down` / `make local-real-reset`
 - `npm run release:ready`
 - `npm run release:status`
-- unified deploy producers for deploy-specific proof:
-  - `npm run test:unified-deploy:local-kind:images`
-  - `npm run test:unified-deploy:local-kind`
-  - explicit target-cluster smoke when in scope: `npm run test:unified-deploy:existing-cluster-smoke`
-  - focused `npm run test:unified-deploy:product-flows`
+unified deploy 的 producer 命令是 deploy-specific proof 的 owner
+diagnostics / evidence producer，由 release campaign 编排或在 owner
+排障时显式执行，不作为普通人类 verdict 入口。
 
-底层 diagnostics / internal identity 仍然看 current manifests 和 owner runbooks，例如 `test:*`、`gate:*`、`lane:*`、`backend-real:*`、`release:campaign:full` 和 `gate:release:full`。这些 identity 可以用于证据所有权、排障归因和 aggregate verification 描述，但不作为 verification campaign guide 的 copyable/default command surface。
+底层 diagnostics / internal identity 仍然看 current manifests 和 owner runbooks，例如 `test:*`、`gate:*`、`lane:*`、`backend-real:*`、unified deploy producers、`release:campaign:full` 和 `gate:release:full`。这些 identity 可以用于证据所有权、排障归因和 aggregate verification 描述，但不作为 verification campaign guide 的 copyable/default command surface。
 
 其中：
 - `gate:default` 不是 full visual，也不是 full release
@@ -197,9 +195,9 @@ verdict 路径的目标是：**给出当前变更是否可接受的正式判断*
 | human visual entry | `npm run verify -- --goal=visual --run` | release 外 full visual verification |
 | human release entry | `npm run release:ready` | 先执行非 verdict precheck，precheck 通过后进入 official campaign |
 | read-only status | `npm run release:status` | 读取 latest summary / status，不重新聚合 evidence |
-| deploy evidence | `npm run test:unified-deploy:local-kind:images` + `npm run test:unified-deploy:local-kind` | local-kind image handoff、K8s rollout、ingress route smoke |
-| deploy smoke | `npm run test:unified-deploy:existing-cluster-smoke` | target cluster in scope 时显式执行 existing-cluster app apply、rollout、route ownership smoke |
-| product evidence | focused `npm run test:unified-deploy:product-flows` | project、files、managed runner task 最小产品链 |
+| deploy evidence owner | unified deploy producers | local-kind image handoff、K8s rollout、ingress route smoke |
+| deploy smoke owner | `npm run test:unified-deploy:existing-cluster-smoke` | target cluster in scope 时显式执行 existing-cluster app apply、rollout、route ownership smoke |
+| product evidence owner | focused `npm run test:unified-deploy:product-flows` | project、files、managed runner task 最小产品链 |
 | campaign launcher | internal adapter `release:campaign:full` | official campaign launcher，编排所有 required steps 并调用 terminal aggregate verdict |
 | preflight | internal adapter `gate:fast` | 快速确认基础 contract / static / cheap checks 没先坏 |
 | tier verdict | internal adapter `gate:default` | 默认工程层是否可接受 |

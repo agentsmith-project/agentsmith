@@ -16,22 +16,18 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: Verify AGENTS symlink contract
+      - name: Verify AGENTS instructions contract
         run: |
           set -euo pipefail
-          test -L AGENTS.md
-          target="$(readlink AGENTS.md)"
-          if [[ "${target}" != "CLAUDE.md" ]]; then
-            echo "AGENTS.md must symlink to CLAUDE.md, got: ${target}" >&2
-            exit 1
-          fi
+          test -f AGENTS.md
+          grep -q "# AGENTS.md" AGENTS.md
 
       - name: Verify current workflow contracts
         run: |
           set -euo pipefail
           test -f .env.local-manual.example
           test -f .env.backend-real.example
-          test -f infra/deploy/demo/env/site.env.example
+          test -f infra/deploy/unified/env/site.env.example
 
       - name: Setup Node
         uses: actions/setup-node@v4

@@ -37,7 +37,7 @@
 | Runtime mode | Typical use | workspace binding | Runner process location | Workspace path |
 | --- | --- | --- | --- | --- |
 | Local developer | local-manual, host development | `file_library` | host machine | host task workspace |
-| Managed docker | demo / cluster deploy managed agent-task runner | `file_library` | runner container | `/workspace/<task_id>/` |
+| Managed docker | unified deploy managed agent-task runner | `file_library` | runner container | `/workspace/<task_id>/` |
 | Sandbox k8s | sandbox workload pod | `pre_mounted` | workload container | `/workspace/<task_id>/` |
 
 Local/manual profiles that exercise the deployment default managed runner must prove the runner has a valid internal sandbox/runtime configuration before task execution. If the sandbox is unavailable, task creation or create-and-start should fail with a clear unavailable/configuration state instead of producing `AGENT_SANDBOX_NOT_CONFIGURED` after dispatch. Any sandbox/pod-internal API base must be reachable from inside that environment and must not rely on browser-host `localhost`.

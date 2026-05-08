@@ -175,25 +175,56 @@ function writtenFailureClass(
   return step.defaultFailureClass;
 }
 
+function isNonNoneFailureClass(value: unknown): value is Exclude<CurrentGateResultFailureClass, 'none'> {
+  return value === 'product_regression'
+    || value === 'infra_setup_failure'
+    || value === 'environment_conflict'
+    || value === 'contract_drift'
+    || value === 'evidence_missing';
+}
+
+function evidenceFailureClass(
+  evidence: ReturnType<typeof writeCampaignEvidencePointer> | null,
+): CurrentGateResultFailureClass {
+  if (!evidence) {
+    return 'evidence_missing';
+  }
+
+  const explicitFailure = evidence.required_paths.find((candidate) =>
+    !candidate.exists && isNonNoneFailureClass(candidate.failure_class),
+  )?.failure_class;
+  if (isNonNoneFailureClass(explicitFailure)) {
+    return explicitFailure;
+  }
+
+  if (evidence.native_result && (!evidence.native_result.exists || evidence.native_result.error)) {
+    return 'evidence_missing';
+  }
+
+  return 'evidence_missing';
+}
+
 function writeCompletedStep(
   campaignRoot: string,
   step: CurrentVerificationCampaignStep,
   exitStatus: number,
 ): CampaignStepWriteOutcome {
   let evidenceComplete = true;
+  let evidence: ReturnType<typeof writeCampaignEvidencePointer> | null = null;
   const nativeError = validateNativeResult(campaignRoot, step);
   if (step.evidenceRequired) {
-    const evidence = writeCampaignEvidencePointer(campaignRoot, step);
+    evidence = writeCampaignEvidencePointer(campaignRoot, step);
     evidenceComplete = evidence.required_paths.every((candidate) => candidate.exists)
       && (!evidence.native_result || (evidence.native_result.exists && !evidence.native_result.error));
   }
 
   if (nativeError || !evidenceComplete) {
+    const failureClass = nativeError ? 'contract_drift' : evidenceFailureClass(evidence);
     writeCampaignGateResult({
       step,
       campaignRoot,
       status: 'failed',
-      failureClass: nativeError ? 'contract_drift' : 'evidence_missing',
+      failureClass,
       stage: 'evidence',
       summary: nativeError
         ? `Release campaign step ${step.id} completed but ${nativeError}.`
@@ -201,7 +232,7 @@ function writeCompletedStep(
     });
     return {
       passed: false,
-      failureClass: nativeError ? 'contract_drift' : 'evidence_missing',
+      failureClass,
     };
   }
 

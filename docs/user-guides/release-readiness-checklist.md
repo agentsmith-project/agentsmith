@@ -47,7 +47,7 @@ npm run release:ready
 npm run release:status
 ```
 
-必要时单独验证部署路径：
+部署路径排障或 owner 复核时，可以单独运行 producer：
 
 ```bash
 npx tsx scripts/unified-deploy/substrate-lifecycle.ts reset
@@ -66,9 +66,9 @@ npm run test:unified-deploy:existing-cluster-smoke -- --site-env=<existing-clust
 | --- | --- | --- |
 | human release entry | `npm run release:ready` | precheck 通过后进入 official campaign，并在结束后生成 summary |
 | status reader | `npm run release:status` | 读取 latest/summary 指针；verdict 必须重新读取 campaign-scoped terminal result，不重新聚合 evidence |
-| deploy evidence | `npm run test:unified-deploy:local-kind:images` + `npm run test:unified-deploy:local-kind` | 本机 K8s profile 镜像 handoff、rollout、ingress route smoke |
-| deploy smoke | `npm run test:unified-deploy:existing-cluster-smoke` | 目标集群在 scope 内时显式执行 existing-cluster profile deploy、rollout、routing smoke |
-| product evidence | focused `npm run test:unified-deploy:product-flows` | 最小产品链：project、files、managed runner task |
+| deploy evidence owner | `npm run test:unified-deploy:local-kind:images` + `npm run test:unified-deploy:local-kind` | 本机 K8s profile 镜像 handoff、rollout、ingress route smoke |
+| deploy smoke owner | `npm run test:unified-deploy:existing-cluster-smoke` | 目标集群在 scope 内时显式执行 existing-cluster profile deploy、rollout、routing smoke |
+| product evidence owner | focused `npm run test:unified-deploy:product-flows` | 最小产品链：project、files、managed runner task |
 | preflight | internal adapter `gate:fast` | 基础 contract、static、cheap checks 没先坏 |
 | tier verdict | internal adapter `gate:default` | 默认工程门禁通过；它不能代替 full visual |
 | evidence owner | internal adapter `lane:visual` | full visual 与 `visual_scene_catalog` 完整 |

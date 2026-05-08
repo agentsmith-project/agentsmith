@@ -1624,22 +1624,169 @@ function flowIdsFromAggregate(payload: Record<string, unknown>): Set<string> {
   return ids;
 }
 
+type UnifiedDeployEvidenceDiagnostic = {
+  message: string;
+  failureClass: CurrentGateResultFailureClass;
+};
+
+const FOCUSED_PRODUCT_FLOW_SCHEMA_VERSION = 'agentsmith.focused-product-flow.evidence/v1';
+
+function isCurrentGateResultFailureClass(value: unknown): value is CurrentGateResultFailureClass {
+  return value === 'none'
+    || value === 'product_regression'
+    || value === 'infra_setup_failure'
+    || value === 'environment_conflict'
+    || value === 'contract_drift'
+    || value === 'evidence_missing';
+}
+
+function unifiedDeployDiagnostic(
+  message: string,
+  failureClass: CurrentGateResultFailureClass,
+): UnifiedDeployEvidenceDiagnostic {
+  return { message, failureClass };
+}
+
+function inferredUnifiedDeployFailureClass(
+  check: CurrentVerificationCampaignEvidenceCheck,
+): CurrentGateResultFailureClass {
+  return stringArray(check.expectedProductFlows).length > 0 ? 'product_regression' : 'infra_setup_failure';
+}
+
+function failedPayloadFailureClass(
+  payload: Record<string, unknown>,
+  check: CurrentVerificationCampaignEvidenceCheck,
+): CurrentGateResultFailureClass {
+  if (
+    isCurrentGateResultFailureClass(payload.failure_class)
+    && payload.failure_class !== 'none'
+    && payload.failure_class !== 'evidence_missing'
+  ) {
+    return payload.failure_class;
+  }
+  return inferredUnifiedDeployFailureClass(check);
+}
+
+function productFlowStatusFromAggregate(payload: Record<string, unknown>, expectedFlow: string): string | null {
+  const flows = Array.isArray(payload.flows) ? payload.flows : [];
+  for (const flow of flows) {
+    if (!isRecord(flow) || flow.flow !== expectedFlow) {
+      continue;
+    }
+    return typeof flow.status === 'string' ? flow.status : null;
+  }
+  return null;
+}
+
+function productFlowFailureClassFromAggregate(
+  payload: Record<string, unknown>,
+  expectedFlows: readonly string[],
+): CurrentGateResultFailureClass {
+  for (const flow of expectedFlows) {
+    if (productFlowStatusFromAggregate(payload, flow) === 'failed') {
+      return 'product_regression';
+    }
+  }
+  return 'evidence_missing';
+}
+
+function validateFocusedProductFlowEvidence(
+  evidencePath: string,
+  expectedFlow: string,
+  expectedProducer: string | undefined,
+): UnifiedDeployEvidenceDiagnostic | null {
+  let payload: unknown;
+  try {
+    payload = JSON.parse(readFileSync(evidencePath, 'utf8')) as unknown;
+  } catch (error) {
+    return unifiedDeployDiagnostic(
+      `${evidencePath} focused product flow evidence must be valid JSON: ${error instanceof Error ? error.message : String(error)}.`,
+      'contract_drift',
+    );
+  }
+
+  if (!isRecord(payload)) {
+    return unifiedDeployDiagnostic(`${evidencePath} focused product flow evidence must be a JSON object.`, 'contract_drift');
+  }
+  if (payload.schema_version !== FOCUSED_PRODUCT_FLOW_SCHEMA_VERSION) {
+    return unifiedDeployDiagnostic(
+      `${evidencePath} focused product flow evidence schema_version must be ${FOCUSED_PRODUCT_FLOW_SCHEMA_VERSION}.`,
+      'contract_drift',
+    );
+  }
+  if (payload.flow !== expectedFlow) {
+    return unifiedDeployDiagnostic(`${evidencePath} focused product flow evidence flow must be ${expectedFlow}.`, 'contract_drift');
+  }
+  if (expectedProducer && payload.producer !== expectedProducer) {
+    return unifiedDeployDiagnostic(`${evidencePath} focused product flow evidence producer must be ${expectedProducer}.`, 'contract_drift');
+  }
+  if (typeof payload.command !== 'string' || payload.command.trim().length === 0) {
+    return unifiedDeployDiagnostic(`${evidencePath} focused product flow evidence must include command.`, 'contract_drift');
+  }
+  if (payload.status !== 'passed') {
+    return unifiedDeployDiagnostic(
+      `${evidencePath} focused product flow evidence status must be passed.`,
+      payload.status === 'failed' ? 'product_regression' : 'contract_drift',
+    );
+  }
+
+  return null;
+}
+
+function validateFocusedProductFlowEvidencePaths(
+  payload: Record<string, unknown>,
+  check: CurrentVerificationCampaignEvidenceCheck,
+  path: string,
+  expectedFlows: readonly string[],
+): UnifiedDeployEvidenceDiagnostic | null {
+  if (!isRecord(payload.flow_evidence_paths)) {
+    return unifiedDeployDiagnostic(`${path} must include flow_evidence_paths for focused product flow evidence.`, 'evidence_missing');
+  }
+
+  for (const flow of expectedFlows) {
+    const rawPath = payload.flow_evidence_paths[flow];
+    if (typeof rawPath !== 'string' || rawPath.trim().length === 0) {
+      return unifiedDeployDiagnostic(`${path} must include focused product flow evidence path for ${flow}.`, 'evidence_missing');
+    }
+    const evidencePath = resolve(dirname(path), rawPath);
+    if (!existsSync(evidencePath)) {
+      return unifiedDeployDiagnostic(`${path} focused product flow evidence file for ${flow} is missing: ${evidencePath}.`, 'evidence_missing');
+    }
+    const diagnostic = validateFocusedProductFlowEvidence(evidencePath, flow, check.expectedProducer);
+    if (diagnostic) {
+      return diagnostic;
+    }
+  }
+
+  return null;
+}
+
+function unifiedDeployEvidenceFailureClass(
+  diagnostics: readonly UnifiedDeployEvidenceDiagnostic[],
+): CurrentGateResultFailureClass {
+  return diagnostics.find((diagnostic) => diagnostic.failureClass !== 'evidence_missing')?.failureClass
+    ?? 'evidence_missing';
+}
+
 function validateUnifiedDeployPayload(
   payload: Record<string, unknown>,
   check: CurrentVerificationCampaignEvidenceCheck,
   path: string,
-): string | null {
+): UnifiedDeployEvidenceDiagnostic | null {
   if (check.expectedStatus && payload.status !== check.expectedStatus) {
-    return `${path} status must be ${check.expectedStatus}.`;
+    return unifiedDeployDiagnostic(
+      `${path} status must be ${check.expectedStatus}.`,
+      payload.status === 'failed' ? failedPayloadFailureClass(payload, check) : 'contract_drift',
+    );
   }
   if (check.expectedProducer && payload.producer !== check.expectedProducer) {
-    return `${path} producer must be ${check.expectedProducer}.`;
+    return unifiedDeployDiagnostic(`${path} producer must be ${check.expectedProducer}.`, 'contract_drift');
   }
   if (check.expectedCommand && payload.command !== check.expectedCommand) {
-    return `${path} command must be ${check.expectedCommand}.`;
+    return unifiedDeployDiagnostic(`${path} command must be ${check.expectedCommand}.`, 'contract_drift');
   }
   if (check.expectedProfile && payload.profile !== check.expectedProfile) {
-    return `${path} profile must be ${check.expectedProfile}.`;
+    return unifiedDeployDiagnostic(`${path} profile must be ${check.expectedProfile}.`, 'contract_drift');
   }
 
   const expectedFlows = stringArray(check.expectedProductFlows);
@@ -1647,7 +1794,15 @@ function validateUnifiedDeployPayload(
     const passedFlows = flowIdsFromAggregate(payload);
     const missingFlows = expectedFlows.filter((flow) => !passedFlows.has(flow));
     if (missingFlows.length > 0) {
-      return `${path} must include passed product flow evidence for: ${missingFlows.join(', ')}.`;
+      return unifiedDeployDiagnostic(
+        `${path} must include passed product flow evidence for: ${missingFlows.join(', ')}.`,
+        productFlowFailureClassFromAggregate(payload, missingFlows),
+      );
+    }
+
+    const focusedEvidenceDiagnostic = validateFocusedProductFlowEvidencePaths(payload, check, path, expectedFlows);
+    if (focusedEvidenceDiagnostic) {
+      return focusedEvidenceDiagnostic;
     }
   }
 
@@ -1664,10 +1819,10 @@ function evaluateUnifiedDeployEvidence(
   const matches = listRecursiveFiles(path).filter((candidate) => matchesFileName(candidate, fileName));
   const matchingSchemaPaths: string[] = [];
   const validPaths: string[] = [];
-  const errors: string[] = [];
+  const diagnostics: UnifiedDeployEvidenceDiagnostic[] = [];
 
   if (matches.length < minCount) {
-    errors.push(`Expected at least ${minCount} JSON evidence file(s), found ${matches.length}.`);
+    diagnostics.push(unifiedDeployDiagnostic(`Expected at least ${minCount} JSON evidence file(s), found ${matches.length}.`, 'evidence_missing'));
   }
 
   for (const match of matches) {
@@ -1675,12 +1830,12 @@ function evaluateUnifiedDeployEvidence(
     try {
       payload = JSON.parse(readFileSync(match, 'utf8')) as unknown;
     } catch (error) {
-      errors.push(`${match} must be valid JSON: ${error instanceof Error ? error.message : String(error)}.`);
+      diagnostics.push(unifiedDeployDiagnostic(`${match} must be valid JSON: ${error instanceof Error ? error.message : String(error)}.`, 'contract_drift'));
       continue;
     }
 
     if (!isRecord(payload)) {
-      errors.push(`${match} must be a JSON object.`);
+      diagnostics.push(unifiedDeployDiagnostic(`${match} must be a JSON object.`, 'contract_drift'));
       continue;
     }
 
@@ -1691,7 +1846,7 @@ function evaluateUnifiedDeployEvidence(
     matchingSchemaPaths.push(match);
     const diagnostic = validateUnifiedDeployPayload(payload, check, match);
     if (diagnostic) {
-      errors.push(diagnostic);
+      diagnostics.push(diagnostic);
       continue;
     }
 
@@ -1699,22 +1854,22 @@ function evaluateUnifiedDeployEvidence(
   }
 
   if (check.expectedSchemaVersion && matchingSchemaPaths.length === 0) {
-    errors.push(`No JSON evidence file declared schema_version ${check.expectedSchemaVersion}.`);
+    diagnostics.push(unifiedDeployDiagnostic(`No JSON evidence file declared schema_version ${check.expectedSchemaVersion}.`, 'evidence_missing'));
   }
-  if (validPaths.length === 0 && errors.length === 0) {
-    errors.push('No semantically valid unified deploy evidence file found.');
+  if (validPaths.length === 0 && diagnostics.length === 0) {
+    diagnostics.push(unifiedDeployDiagnostic('No semantically valid unified deploy evidence file found.', 'evidence_missing'));
   }
 
   return [{
     id: check.id,
     path,
     kind: check.kind,
-    exists: errors.length === 0 && validPaths.length > 0,
+    exists: diagnostics.length === 0 && validPaths.length > 0,
     matches: validPaths,
     min_count: minCount,
-    ...(errors.length > 0 ? {
-      error: errors.join(' '),
-      failure_class: 'evidence_missing' as const,
+    ...(diagnostics.length > 0 ? {
+      error: diagnostics.map((diagnostic) => diagnostic.message).join(' '),
+      failure_class: unifiedDeployEvidenceFailureClass(diagnostics),
     } : {}),
   }];
 }

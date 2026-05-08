@@ -64,7 +64,7 @@ npm run contracts:check / contracts:check-openapi / openapi:check-generated
 make local-real-up / local-real-status / local-real-down / local-real-reset
 ```
 
-Raw `test:*`, `gate:*`, `lane:*`, `backend-real:*` 和低层 `make *-rehearsal-*` 命令只作为 progressive validation 里的 focused diagnostics、evidence producer 或 owner runbook adapter；它们不能替代阶段/最终验收，收口时必须按风险回到 `npm run verify -- --goal=... --run` 或 `npm run release:ready`。
+Raw `test:*`, `gate:*`, `lane:*`, `backend-real:*` 和底层 owner adapter 命令只作为 progressive validation 里的 focused diagnostics、evidence producer 或 owner runbook adapter；它们不能替代阶段/最终验收，收口时必须按风险回到 `npm run verify -- --goal=... --run` 或 `npm run release:ready`。
 
 ## 架构要点
 

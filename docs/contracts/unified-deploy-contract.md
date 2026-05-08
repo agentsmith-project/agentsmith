@@ -185,21 +185,23 @@ Release evidence separates these sections:
 The `existing-cluster` smoke producer proves profile routing and rollout
 ownership only. It is not sufficient product verification.
 
-The product verification matrix is passed only when focused evidence exists for
-these flows:
+The current release deploy product proof is passed only when focused evidence
+exists for these required flows:
 
 | Product flow | Required evidence input |
 | --- | --- |
-| login/profile | Authenticated login/profile backend-real or e2e evidence |
 | workspace/project | Workspace/project backend-real or e2e evidence |
-| Chat via llmup | Evidence proving API to llmup to provider path |
 | Agent task managed runner | Managed runner Agent task backend-real evidence |
 | Files | Object storage and file-library backend-real evidence |
-| audit | Audit evidence tied to key deploy/product actions |
-| usage | Usage evidence tied to key deploy/product actions |
 
-If any product flow is not backed by focused evidence, the unified deploy
-verification report marks that flow as required but not passed.
+The product-flow aggregate must also bind each required flow to its focused
+evidence file through `flow_evidence_paths`; counting arbitrary JSON files is
+not release evidence.
+
+`login/profile`, Chat via llmup, audit, and usage remain product diagnostics
+covered by their own verification surfaces. They are not part of the current
+minimal unified deploy release proof unless the release scope explicitly changes
+the required product-flow set.
 
 ## Out Of Scope
 

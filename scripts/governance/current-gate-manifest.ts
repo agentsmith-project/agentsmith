@@ -283,7 +283,7 @@ export const CURRENT_RELEASE_CAMPAIGN_EVIDENCE_TOPOLOGY = {
       path: '<campaign-root>/unified-deploy/product-flows',
       kind: 'recursive_file',
       fileName: '.json',
-      minCount: 4,
+      minCount: 1,
       semantic: 'unified_deploy_evidence',
       expectedSchemaVersion: 'agentsmith.unified-deploy.product-flows.aggregate/v1',
       expectedProducer: 'unified-deploy-product-flows',

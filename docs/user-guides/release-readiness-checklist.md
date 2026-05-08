@@ -17,7 +17,7 @@
 补充判定规则：
 1. 当前面向人的 automated release-grade 执行入口统一是 `npm run release:ready`。
 2. `npm run release:status` 是只读入口，只读取 latest summary / status，不重新聚合 evidence。
-3. unified deploy 证据使用 `local-kind`、`existing-cluster` 和 focused product-flow producers；旧 demo/cluster rehearsal 不再是当前部署证明。
+3. 默认 release campaign 使用 `local-kind` 和 focused product-flow producers 证明统一部署；`existing-cluster` 是需要目标集群时显式执行的 operator smoke。
 4. `gate:default` does not run the full visual lane，也不能代替 release-grade backend-real 或最终 release verdict。
 5. 对 evidence-owning gates 和 lanes，`command passed` 与 machine-readable evidence completeness 同级；缺少 required review artifacts、`visual_scene_catalog` 或 `ux_trace_bundle`，都不能算通过。
 6. `gate:release:full` is aggregate-only terminal verdict verification；它只验证已有 campaign evidence，不执行 suite，也不是普通人工入口。
@@ -67,20 +67,20 @@ npm run test:unified-deploy:existing-cluster-smoke -- --site-env=<existing-clust
 | human release entry | `npm run release:ready` | precheck 通过后进入 official campaign，并在结束后生成 summary |
 | status reader | `npm run release:status` | 读取 latest/summary 指针；verdict 必须重新读取 campaign-scoped terminal result，不重新聚合 evidence |
 | deploy evidence | `npm run test:unified-deploy:local-kind:images` + `npm run test:unified-deploy:local-kind` | 本机 K8s profile 镜像 handoff、rollout、ingress route smoke |
-| deploy evidence | `npm run test:unified-deploy:existing-cluster-smoke` | existing-cluster profile deploy、rollout、routing smoke |
+| deploy smoke | `npm run test:unified-deploy:existing-cluster-smoke` | 目标集群在 scope 内时显式执行 existing-cluster profile deploy、rollout、routing smoke |
 | product evidence | focused `npm run test:unified-deploy:product-flows` | 最小产品链：project、files、managed runner task |
 | preflight | internal adapter `gate:fast` | 基础 contract、static、cheap checks 没先坏 |
 | tier verdict | internal adapter `gate:default` | 默认工程门禁通过；它不能代替 full visual |
 | evidence owner | internal adapter `lane:visual` | full visual 与 `visual_scene_catalog` 完整 |
 | evidence owner | internal adapter `gate:release` / `lane:backend-real:release` | release-grade backend-real 与 `ux_trace_bundle` 完整 |
-| evidence owner | unified deploy producers | substrate boundary/lifecycle、render/manifest/address truth、local-kind、existing-cluster、focused product-flow 证据完整 |
+| evidence owner | unified deploy producers | 默认 campaign 需要 substrate reset、local-kind images、local-kind rollout、focused product-flow 证据完整；existing-cluster smoke 是显式目标集群证据 |
 | terminal verdict | internal verifier `gate:release:full` | aggregate-only 复核已有 campaign evidence，不执行任何 suite |
 
 说明：
 1. `gate:default` 只覆盖默认业务链与治理门禁，以及它们自己的 targeted visual。
 2. `lane:visual` 是 full visual 证据 owner，不能被 `gate:default` 代替，并且它承担 `visual_scene_catalog` 证据所有权。
 3. `gate:release` / `lane:backend-real:release` 承担 release-grade `ux_trace_bundle` 证据所有权。
-4. unified deploy 的 `local-kind` 与 `existing-cluster` 是同一部署模型的 profile；route smoke 不能替代 focused product-flow 证据。
+4. unified deploy 的 `local-kind` 与 `existing-cluster` 是同一部署模型的 profile；默认 release campaign 用 local-kind 做本机发布证明，目标集群验收再显式补 existing-cluster smoke。route smoke 不能替代 focused product-flow 证据。
 5. 如果某条 focused 测试、targeted lane 或 backend-real 局部命令通过，只能说明对应诊断切片恢复了，不能替代 `npm run release:ready`。
 
 ### 3. CI Green 的含义
@@ -142,13 +142,14 @@ artifacts/release-runs/<campaign-run-id>
   - `<campaign-root>/gate-release/backend-real-visual/ux-traces/<lane>/<suite>/<story-id>/<run-id>/review.md`
   - `<campaign-root>/gate-release/backend-real-visual/ux-traces`
 - unified deploy evidence：
-  - `artifacts/unified-deploy/*local-kind-images*.json`
-  - `artifacts/unified-deploy/*local-kind-rollout*.json`
-  - `artifacts/unified-deploy/*existing-cluster-smoke*.json`
-  - `artifacts/unified-deploy/*product-flows*.json`
-  - `artifacts/unified-deploy/*render*.json`
-  - `artifacts/unified-deploy/*manifest*.json`
-  - `artifacts/unified-deploy/*api-single-replica*.json`
+  - `<campaign-root>/lane-unified-deploy-substrate/native/result.json`
+  - `<campaign-root>/lane-unified-deploy-local-kind-images/native/result.json`
+  - `<campaign-root>/lane-unified-deploy-local-kind/native/result.json`
+  - `<campaign-root>/lane-unified-deploy-product-flows/native/result.json`
+  - `<campaign-root>/unified-deploy/substrate/*.json`
+  - `<campaign-root>/unified-deploy/local-kind-images/*.json`
+  - `<campaign-root>/unified-deploy/local-kind/*.json`
+  - `<campaign-root>/unified-deploy/product-flows/*.json`
 
 `gate:release:full` 会按当前 `CURRENT_VERIFICATION_CAMPAIGN_MANIFEST` 的 `evidenceChecks` 重新计算这些证据是否存在，并校验 wrapper/native `result.json` 的 `schema_version`、`gate_id`、`line_kind`、`gate_adapter.npm_script`、`evidence_dir` 和 `failure_class`。旧格式 `evidence.json` 只写 dummy `required_paths`，或者缺少当前 required check id，都不能得到绿色 release verdict。
 
@@ -162,6 +163,7 @@ artifacts/release-runs/<campaign-run-id>
   - `artifacts/backend-real-visual/<run-id>/ux-traces`
 - standalone unified deploy evidence：
   - `artifacts/unified-deploy/`
+  - existing-cluster smoke remains standalone/operator-scoped unless a future campaign explicitly targets an existing cluster
 
 ## 当前 Story Evidence 真相
 

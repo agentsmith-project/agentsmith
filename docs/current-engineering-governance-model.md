@@ -25,7 +25,7 @@ Canonical entrypoint rule:
 
 Plain-language glossary:
 - `e2e`: a testing method. It means walking a complete user flow, usually with Playwright in this repo. It is not a gate or a lane.
-- `lane`: a verification channel. It says which truth path is being used, such as mock, full visual, backend-real, or deployment rehearsal.
+- `lane`: a verification channel. It says which truth path is being used, such as mock, full visual, backend-real, or unified deploy evidence.
 - `gate`: an acceptance point. It gives the formal pass/fail verdict for one engineering tier.
 - `campaign`: a group of verification actions for one goal, such as release-grade verification. It consumes gates and lanes; it is not a second gate truth.
 - `diagnostic`: a focused command or lane used to locate a problem. It helps fix the issue but does not replace the owning gate.
@@ -35,7 +35,7 @@ Workflow role model:
 - `scripts/governance/current-workflow-manifest.ts` classifies command surfaces as `environment_setup`, `diagnostic`, `diagnostic_lane`, `evidence_lane`, `gate_verdict`, `terminal_gate_verdict`, or `release_operation`.
 - `lane:mock` uses stable gate id `lane-mock`, but its workflow role is still diagnostic lane surface. It is useful for mock-channel diagnosis, but it is not release evidence and does not replace `gate:default`.
 - `release:ready` is the human-friendly release readiness launcher. It runs the non-verdict precheck first, then delegates to `release:campaign:full` when precheck passes.
-- `release:campaign:full` remains the campaign launcher behind `release:ready`. It orchestrates required gates, evidence lanes, rehearsal lanes, and the terminal aggregate verdict.
+- `release:campaign:full` remains the campaign launcher behind `release:ready`. It orchestrates required gates, visual/backend-real evidence lanes, unified deploy evidence lanes, and the terminal aggregate verdict.
 - `gate:release:full` is aggregate-only. It should be used only with explicit campaign context, such as `RELEASE_CAMPAIGN_ROOT=<campaign-root>`, and must not be described as a suite launcher or daily release entrypoint.
 - `gate:release:full` recomputes required release evidence from the current verification campaign manifest. It must not trust stale `evidence.json.required_paths` from an older campaign shape.
 
@@ -70,7 +70,7 @@ Verification governance rules:
 - Human-oriented campaign guidance lives in [Verification Campaigns v1](./testing/verification-campaigns-v1.md); if it conflicts with manifests or contracts, machine-readable governance truth wins.
 
 <!-- current-runtime-lines:governance-model:start -->
-For current runtime-line methodology and release/rehearsal topology, use:
+For current runtime-line methodology and unified deploy topology, use:
 
 - [Runtime Lines Matrix](./user-guides/runtime-lines-matrix.md)
 - [Local Runtime Flows](./user-guides/local-runtime-flows.md)
@@ -105,7 +105,7 @@ Current engineering guidance only uses these top-level terms:
 - A full verification path with a distinct source of truth, such as mock, visual, or real backend.
 
 5. `发布`
-- Demo deployment and release-grade verification flow.
+- Unified deploy and release-grade verification flow.
 
 ### Terms that are not current top-level workflow terms
 
@@ -252,5 +252,5 @@ Current delivery governance for AgentSmith companion surfaces:
 - the shared contract changes
 - the shared address truth changes
 - a required joint verification path fails
-4. Repository-local gates must stay local by default. Cross-surface verification belongs in explicit joint rehearsal or release guidance, not in unrelated default gates.
+4. Repository-local gates must stay local by default. Cross-surface verification belongs in explicit unified deploy or release guidance, not in unrelated default gates.
 For gate/lane pairs currently registered in `scripts/governance/current-gate-result-schema.ts`, canonical `result.json` must use `snake_case` only and live at `<evidence_dir>/result.json`; examples remain anchored in `docs/contracts/current-gate-result-schema-contract.md`.

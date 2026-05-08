@@ -175,8 +175,10 @@ describe("current gate result schema", () => {
       { gate_id: "lane-backend-real-core", line_kind: "backend_real" },
       { gate_id: "lane-backend-real-release", line_kind: "release_backend_real" },
       { gate_id: "lane-visual", line_kind: "visual" },
-      { gate_id: "lane-demo-rehearsal", line_kind: "demo_rehearsal" },
-      { gate_id: "lane-cluster-rehearsal", line_kind: "cluster_rehearsal" },
+      { gate_id: "lane-unified-deploy-substrate", line_kind: "unified_deploy_substrate" },
+      { gate_id: "lane-unified-deploy-local-kind-images", line_kind: "unified_deploy_local_kind_images" },
+      { gate_id: "lane-unified-deploy-local-kind", line_kind: "unified_deploy_local_kind" },
+      { gate_id: "lane-unified-deploy-product-flows", line_kind: "unified_deploy_product_flows" },
       { gate_id: "gate-release-full", line_kind: "release_full_verdict" },
     ]);
   });
@@ -194,8 +196,10 @@ describe("current gate result schema", () => {
 
     for (const scriptName of [
       "lane:visual",
-      "lane:demo-rehearsal",
-      "lane:cluster-rehearsal",
+      "lane:unified-deploy:substrate",
+      "lane:unified-deploy:local-kind:images",
+      "lane:unified-deploy:local-kind",
+      "lane:unified-deploy:product-flows",
     ]) {
       expect(packageJson.scripts[scriptName]).toContain("scripts/run-current-gate-result-wrapped.sh");
     }
@@ -516,22 +520,22 @@ describe("current gate result schema", () => {
 
   it("uses the GitHub job name for wrapped writers that do not define a manifest ciJob", () => {
     const payload = runWrappedGateResult({
-      gateId: "lane-demo-rehearsal",
-      lineKind: "demo_rehearsal",
-      npmScript: "lane:demo-rehearsal",
+      gateId: "lane-unified-deploy-substrate",
+      lineKind: "unified_deploy_substrate",
+      npmScript: "lane:unified-deploy:substrate",
       env: {
-        GITHUB_JOB: "demo-rehearsal-ci",
+        GITHUB_JOB: "unified-deploy-substrate-ci",
       },
     });
 
-    expect(payload.gate_adapter.ci_job).toBe("demo-rehearsal-ci");
+    expect(payload.gate_adapter.ci_job).toBe("unified-deploy-substrate-ci");
   });
 
   it("uses a deterministic local job fallback outside CI", () => {
     const payload = runWrappedGateResult({
-      gateId: "lane-demo-rehearsal",
-      lineKind: "demo_rehearsal",
-      npmScript: "lane:demo-rehearsal",
+      gateId: "lane-unified-deploy-substrate",
+      lineKind: "unified_deploy_substrate",
+      npmScript: "lane:unified-deploy:substrate",
     });
 
     expect(payload.gate_adapter.ci_job).toBe("local");
@@ -539,15 +543,15 @@ describe("current gate result schema", () => {
 
   it("uses campaign:<step-id> when a campaign step invokes a native gate writer", () => {
     const payload = runWrappedGateResult({
-      gateId: "lane-demo-rehearsal",
-      lineKind: "demo_rehearsal",
-      npmScript: "lane:demo-rehearsal",
+      gateId: "lane-unified-deploy-substrate",
+      lineKind: "unified_deploy_substrate",
+      npmScript: "lane:unified-deploy:substrate",
       env: {
-        CURRENT_GATE_RESULT_CAMPAIGN_STEP_ID: "lane-demo-rehearsal",
+        CURRENT_GATE_RESULT_CAMPAIGN_STEP_ID: "lane-unified-deploy-substrate",
       },
     });
 
-    expect(payload.gate_adapter.ci_job).toBe("campaign:lane-demo-rehearsal");
+    expect(payload.gate_adapter.ci_job).toBe("campaign:lane-unified-deploy-substrate");
   });
 
   it.each(CURRENT_GATE_RESULT_WRITERS)(

@@ -70,8 +70,10 @@ const UPSTREAM_STEP_IDS = [
   'gate-default',
   'lane-visual',
   'gate-release',
-  'lane-demo-rehearsal',
-  'lane-cluster-rehearsal',
+  'lane-unified-deploy-substrate',
+  'lane-unified-deploy-local-kind-images',
+  'lane-unified-deploy-local-kind',
+  'lane-unified-deploy-product-flows',
 ] as const;
 
 function getReleaseFullCampaign() {
@@ -230,9 +232,15 @@ function createManifestEvidenceForCheck(
   }
 
   if (kind === 'recursive_file') {
-    createFile(
-      join(path, 'aggregate-fixture', check.fileName === '.md' ? 'report.md' : (check.fileName ?? 'review.md')),
-    );
+    const fileCount = Math.max(1, check.minCount ?? 1);
+    for (let index = 0; index < fileCount; index += 1) {
+      const defaultFileName = check.fileName === '.md'
+        ? `report-${index + 1}.md`
+        : check.fileName === '.json'
+          ? `evidence-${index + 1}.json`
+          : (check.fileName ?? `review-${index + 1}.md`);
+      createFile(join(path, 'aggregate-fixture', defaultFileName));
+    }
     return;
   }
 

@@ -508,9 +508,9 @@ describe('clean status entrypoints', () => {
   });
 
   it.each([
-    ['demo-rehearsal', 'demo-rehearsal', 'npm run lane:demo-rehearsal'],
-    ['cluster-rehearsal', 'cluster-rehearsal', 'npm run lane:cluster-rehearsal'],
-  ])('renders %s --status --json as read-only projection without delegating the lane', (line, runtimeLine, laneCommand) => {
+    ['demo-rehearsal', 'npm run lane:demo-rehearsal'],
+    ['cluster-rehearsal', 'npm run lane:cluster-rehearsal'],
+  ])('renders %s --status --json as read-only projection without delegating the lane', (line, laneCommand) => {
     const stdout: string[] = [];
     const delegated: string[][] = [];
     const sentinelProfiles: string[] = [];
@@ -539,7 +539,7 @@ describe('clean status entrypoints', () => {
     expect(projection).toMatchObject({
       schema: 'agentsmith_status_projection/v1',
       goal: line,
-      runtime_line: runtimeLine,
+      runtime_line: null,
       projection_kind: 'read_only',
       commands_executed: false,
       leases_acquired: false,
@@ -582,7 +582,7 @@ describe('clean status entrypoints', () => {
       expect(projection).toMatchObject({
         schema: 'agentsmith_status_projection/v1',
         goal: 'demo-rehearsal',
-        runtime_line: 'demo-rehearsal',
+        runtime_line: null,
         projection_kind: 'read_only',
         aggregate_status_ref: null,
         presentation_status: 'failed',

@@ -137,16 +137,15 @@ describe('release campaign runner lifecycle contract', () => {
         'shared-local-substrate',
         'destructive-lifecycle',
         'fixed-local-ports',
-        'scenario-world',
       ];
       for (const lockId of localHostLocks) {
-        const demo = (requestsByStep.get('lane-demo-rehearsal') ?? []).find((request) => request.lockId === lockId);
-        const cluster = (requestsByStep.get('lane-cluster-rehearsal') ?? []).find((request) => request.lockId === lockId);
-        expect(demo, `demo rehearsal must project ${lockId}`).toBeDefined();
-        expect(cluster, `cluster rehearsal must project ${lockId}`).toBeDefined();
-        expect(demo?.scopeKind).toBe('local_host');
-        expect(cluster?.scopeKind).toBe('local_host');
-        expect(cluster?.scopeKey).toBe(demo?.scopeKey);
+        const substrate = (requestsByStep.get('lane-unified-deploy-substrate') ?? []).find((request) => request.lockId === lockId);
+        const localKind = (requestsByStep.get('lane-unified-deploy-local-kind') ?? []).find((request) => request.lockId === lockId);
+        expect(substrate, `unified deploy substrate must project ${lockId}`).toBeDefined();
+        expect(localKind, `unified deploy local-kind must project ${lockId}`).toBeDefined();
+        expect(substrate?.scopeKind).toBe('local_host');
+        expect(localKind?.scopeKind).toBe('local_host');
+        expect(localKind?.scopeKey).toBe(substrate?.scopeKey);
       }
     } finally {
       rmSync(root, { recursive: true, force: true });
@@ -454,33 +453,33 @@ exit 0
       expect(release.CURRENT_GATE_RESULT_LINE_KIND).toBe('release_backend_real');
       expect(release.CURRENT_GATE_RESULT_EVIDENCE_DIR).toBe(join(root, 'gate-release', 'native'));
 
-      const demo = buildReleaseCampaignCommandEnv({
+      const unifiedDeploySubstrate = buildReleaseCampaignCommandEnv({
         campaignRoot: root,
         runId,
-        step: releaseFullStep('lane-demo-rehearsal'),
+        step: releaseFullStep('lane-unified-deploy-substrate'),
         baseEnv: {},
       });
-      expect(demo.SCENARIO_RUNTIME_ROOT).toBe(join(root, 'scenario-runtime'));
-      expect(demo.DEMO_REHEARSAL_ROOT).toBe(join(root, 'lane-demo-rehearsal', 'scenario'));
-      expect(demo.REHEARSAL_MODE).toBe('release-fidelity');
-      expect(demo.DEMO_REHEARSAL_SKIP_RELEASE_ARCHIVE).toBeUndefined();
-      expect(demo.DEMO_REHEARSAL_SKIP_BUNDLED_IMAGE_LOAD).toBeUndefined();
-      expect(demo.SKIP_RELEASE_ARCHIVE).toBeUndefined();
-      expect(demo.SKIP_BUNDLED_IMAGE_LOAD).toBeUndefined();
+      expect(unifiedDeploySubstrate.UNIFIED_DEPLOY_RELEASE_ROOT_DIR).toBe(join(root, 'unified-deploy'));
+      expect(unifiedDeploySubstrate.UNIFIED_DEPLOY_RELEASE_SITE_ENV).toBe(join(root, 'unified-deploy', 'local-kind-site.env'));
+      expect(unifiedDeploySubstrate.CURRENT_GATE_RESULT_GATE_ID).toBe('lane-unified-deploy-substrate');
+      expect(unifiedDeploySubstrate.CURRENT_GATE_RESULT_NPM_SCRIPT).toBe('lane:unified-deploy:substrate');
+      expect(unifiedDeploySubstrate.CURRENT_GATE_RESULT_LINE_KIND).toBe('unified_deploy_substrate');
+      expect(unifiedDeploySubstrate.CURRENT_GATE_RESULT_EVIDENCE_DIR).toBe(join(root, 'lane-unified-deploy-substrate', 'native'));
+      expect(unifiedDeploySubstrate.SCENARIO_RUNTIME_ROOT).toBeUndefined();
+      expect(unifiedDeploySubstrate.REHEARSAL_MODE).toBeUndefined();
 
-      const cluster = buildReleaseCampaignCommandEnv({
+      const unifiedDeployProductFlows = buildReleaseCampaignCommandEnv({
         campaignRoot: root,
         runId,
-        step: releaseFullStep('lane-cluster-rehearsal'),
+        step: releaseFullStep('lane-unified-deploy-product-flows'),
         baseEnv: {},
       });
-      expect(cluster.SCENARIO_RUNTIME_ROOT).toBe(join(root, 'scenario-runtime'));
-      expect(cluster.CLUSTER_REHEARSAL_ROOT).toBe(join(root, 'lane-cluster-rehearsal', 'scenario'));
-      expect(cluster.REHEARSAL_MODE).toBe('release-fidelity');
-      expect(cluster.CLUSTER_REHEARSAL_SKIP_RELEASE_ARCHIVE).toBeUndefined();
-      expect(cluster.CLUSTER_REHEARSAL_SKIP_BUNDLED_IMAGE_LOAD).toBeUndefined();
-      expect(cluster.SKIP_RELEASE_ARCHIVE).toBeUndefined();
-      expect(cluster.SKIP_BUNDLED_IMAGE_LOAD).toBeUndefined();
+      expect(unifiedDeployProductFlows.UNIFIED_DEPLOY_RELEASE_ROOT_DIR).toBe(join(root, 'unified-deploy'));
+      expect(unifiedDeployProductFlows.UNIFIED_DEPLOY_RELEASE_SITE_ENV).toBe(join(root, 'unified-deploy', 'local-kind-site.env'));
+      expect(unifiedDeployProductFlows.CURRENT_GATE_RESULT_GATE_ID).toBe('lane-unified-deploy-product-flows');
+      expect(unifiedDeployProductFlows.CURRENT_GATE_RESULT_NPM_SCRIPT).toBe('lane:unified-deploy:product-flows');
+      expect(unifiedDeployProductFlows.CURRENT_GATE_RESULT_LINE_KIND).toBe('unified_deploy_product_flows');
+      expect(unifiedDeployProductFlows.CURRENT_GATE_RESULT_EVIDENCE_DIR).toBe(join(root, 'lane-unified-deploy-product-flows', 'native'));
     } finally {
       rmSync(root, { recursive: true, force: true });
     }
@@ -493,14 +492,14 @@ exit 0
     try {
       writeFakeNpm(fakeBin, `#!/usr/bin/env bash
 set -euo pipefail
-printf '%s|gate=%s|script=%s|mock=%s|visual=%s|release_real=%s|scenario=%s\\n' \\
+printf '%s|gate=%s|script=%s|mock=%s|visual=%s|release_real=%s|unified=%s\\n' \\
   "$*" \\
   "\${CURRENT_GATE_RESULT_GATE_ID:-}" \\
   "\${CURRENT_GATE_RESULT_NPM_SCRIPT:-}" \\
   "\${MOCK_RUN_ID:-}" \\
   "\${VISUAL_BASELINE_REVIEW_ROOT:-}" \\
   "\${RELEASE_REAL_RUN_ROOT:-}" \\
-  "\${SCENARIO_RUNTIME_ROOT:-}" >> "${logPath}"
+  "\${UNIFIED_DEPLOY_RELEASE_ROOT_DIR:-}" >> "${logPath}"
 if [[ "$1" == "run" && "$2" == "gate:fast" ]]; then
   exit 0
 fi
@@ -524,7 +523,7 @@ exit 0
         MOCK_RUN_ID: 'stale-mock-run',
         VISUAL_BASELINE_REVIEW_ROOT: '/tmp/stale-visual-review',
         RELEASE_REAL_RUN_ROOT: '/tmp/stale-release-real',
-        SCENARIO_RUNTIME_ROOT: '/tmp/stale-scenario-runtime',
+        UNIFIED_DEPLOY_RELEASE_ROOT_DIR: '/tmp/stale-unified-deploy',
       });
 
       const log = readFileSync(logPath, 'utf8');
@@ -539,8 +538,8 @@ exit 0
       expect(terminalLine).not.toContain('stale-mock-run');
       expect(terminalLine).not.toContain('stale-visual-review');
       expect(terminalLine).not.toContain('stale-release-real');
-      expect(terminalLine).not.toContain('stale-scenario-runtime');
-      expect(terminalLine).toBe('run gate:release:full|gate=|script=|mock=|visual=|release_real=|scenario=');
+      expect(terminalLine).not.toContain('stale-unified-deploy');
+      expect(terminalLine).toBe('run gate:release:full|gate=|script=|mock=|visual=|release_real=|unified=');
     } finally {
       rmSync(root, { recursive: true, force: true });
       rmSync(fakeBin, { recursive: true, force: true });

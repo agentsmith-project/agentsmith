@@ -557,7 +557,7 @@ describe('current status projection', () => {
 
       expect(projection).toMatchObject({
         goal: 'demo-rehearsal',
-        runtime_line: 'demo-rehearsal',
+        runtime_line: null,
         run_id: '20260427T020000Z',
         aggregate_status_ref: null,
         presentation_status: 'passed',

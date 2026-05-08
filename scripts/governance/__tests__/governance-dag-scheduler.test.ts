@@ -125,7 +125,10 @@ describe('governance DAG scheduler', () => {
       ['gate-fast'],
       ['gate-default', 'lane-visual'],
       ['gate-release'],
-      ['lane-demo-rehearsal', 'lane-cluster-rehearsal'],
+      ['lane-unified-deploy-substrate'],
+      ['lane-unified-deploy-local-kind-images'],
+      ['lane-unified-deploy-local-kind'],
+      ['lane-unified-deploy-product-flows'],
       ['gate-release-full'],
     ]);
     expect(topology.terminalJobIds).toEqual(['gate-release-full']);
@@ -136,10 +139,11 @@ describe('governance DAG scheduler', () => {
         { fromJobId: 'gate-fast', toJobId: 'lane-visual' },
         { fromJobId: 'gate-default', toJobId: 'gate-release' },
         { fromJobId: 'lane-visual', toJobId: 'gate-release' },
-        { fromJobId: 'gate-release', toJobId: 'lane-demo-rehearsal' },
-        { fromJobId: 'gate-release', toJobId: 'lane-cluster-rehearsal' },
-        { fromJobId: 'lane-demo-rehearsal', toJobId: 'gate-release-full' },
-        { fromJobId: 'lane-cluster-rehearsal', toJobId: 'gate-release-full' },
+        { fromJobId: 'gate-release', toJobId: 'lane-unified-deploy-substrate' },
+        { fromJobId: 'lane-unified-deploy-substrate', toJobId: 'lane-unified-deploy-local-kind-images' },
+        { fromJobId: 'lane-unified-deploy-local-kind-images', toJobId: 'lane-unified-deploy-local-kind' },
+        { fromJobId: 'lane-unified-deploy-local-kind', toJobId: 'lane-unified-deploy-product-flows' },
+        { fromJobId: 'lane-unified-deploy-product-flows', toJobId: 'gate-release-full' },
       ]),
     );
   });
@@ -220,12 +224,22 @@ describe('governance DAG scheduler', () => {
         failedJobId: 'gate-default',
       },
       {
-        jobId: 'lane-demo-rehearsal',
+        jobId: 'lane-unified-deploy-substrate',
         reasonCode: 'dependency_failed',
         failedJobId: 'gate-default',
       },
       {
-        jobId: 'lane-cluster-rehearsal',
+        jobId: 'lane-unified-deploy-local-kind-images',
+        reasonCode: 'dependency_failed',
+        failedJobId: 'gate-default',
+      },
+      {
+        jobId: 'lane-unified-deploy-local-kind',
+        reasonCode: 'dependency_failed',
+        failedJobId: 'gate-default',
+      },
+      {
+        jobId: 'lane-unified-deploy-product-flows',
         reasonCode: 'dependency_failed',
         failedJobId: 'gate-default',
       },

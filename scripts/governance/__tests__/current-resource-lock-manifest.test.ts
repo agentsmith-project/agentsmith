@@ -113,7 +113,8 @@ describe('current resource lock manifest', () => {
     expect(portLock?.appliesTo.ports).toEqual(
       expect.arrayContaining([
         expect.objectContaining({ kind: 'port', value: 20000 }),
-        expect.objectContaining({ kind: 'family', name: 'scenario-sandbox-host-ports' }),
+        expect.objectContaining({ kind: 'family', name: 'unified-deploy-local-kind-ingress-host-ports' }),
+        expect.objectContaining({ kind: 'family', name: 'unified-deploy-local-registry-host-ports' }),
       ]),
     );
 
@@ -235,7 +236,8 @@ describe('current resource lock manifest', () => {
     expect(portLabels.get(38080)).toContain('proxy');
     expect(portLock?.appliesTo.ports).toEqual(
       expect.arrayContaining([
-        expect.objectContaining({ kind: 'family', name: 'scenario-sandbox-host-ports' }),
+        expect.objectContaining({ kind: 'family', name: 'unified-deploy-local-kind-ingress-host-ports' }),
+        expect.objectContaining({ kind: 'family', name: 'unified-deploy-local-registry-host-ports' }),
       ]),
     );
   });

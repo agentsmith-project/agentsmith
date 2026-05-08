@@ -1370,10 +1370,14 @@ function resolveReleaseCampaignTopologyKey(
       return 'laneVisual';
     case 'gate-release':
       return 'gateRelease';
-    case 'lane-demo-rehearsal':
-      return 'laneDemoRehearsal';
-    case 'lane-cluster-rehearsal':
-      return 'laneClusterRehearsal';
+    case 'lane-unified-deploy-substrate':
+      return 'unifiedDeploySubstrate';
+    case 'lane-unified-deploy-local-kind-images':
+      return 'unifiedDeployLocalKindImages';
+    case 'lane-unified-deploy-local-kind':
+      return 'unifiedDeployLocalKind';
+    case 'lane-unified-deploy-product-flows':
+      return 'unifiedDeployProductFlows';
     default:
       return null;
   }

@@ -247,8 +247,10 @@ function nextActionForFailure(
   const ownerCommandByStep: Record<string, string> = {
     'lane-visual': 'npm run verify:visual',
     'gate-release': 'npm run verify -- --goal=release-real --run',
-    'lane-demo-rehearsal': 'npm run rehearse:demo',
-    'lane-cluster-rehearsal': 'npm run rehearse:cluster',
+    'lane-unified-deploy-substrate': 'npm run lane:unified-deploy:substrate',
+    'lane-unified-deploy-local-kind-images': 'npm run lane:unified-deploy:local-kind:images',
+    'lane-unified-deploy-local-kind': 'npm run lane:unified-deploy:local-kind',
+    'lane-unified-deploy-product-flows': 'npm run lane:unified-deploy:product-flows',
     'gate-fast': 'npm run verify:quick',
     'gate-default': 'npm run verify:default',
   };

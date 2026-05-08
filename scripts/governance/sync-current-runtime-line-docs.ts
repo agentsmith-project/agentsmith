@@ -105,7 +105,7 @@ function renderDevelopmentRuntimeBlock(): string {
 
 function renderGovernanceRuntimeBlock(): string {
   return [
-    'For current runtime-line methodology and release/rehearsal topology, use:',
+    'For current runtime-line methodology and unified deploy topology, use:',
     '',
     '- [Runtime Lines Matrix](./user-guides/runtime-lines-matrix.md)',
     '- [Local Runtime Flows](./user-guides/local-runtime-flows.md)',

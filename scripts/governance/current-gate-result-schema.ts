@@ -76,12 +76,20 @@ export const CURRENT_GATE_RESULT_WRITERS = [
     line_kind: "visual",
   },
   {
-    gate_id: "lane-demo-rehearsal",
-    line_kind: "demo_rehearsal",
+    gate_id: "lane-unified-deploy-substrate",
+    line_kind: "unified_deploy_substrate",
   },
   {
-    gate_id: "lane-cluster-rehearsal",
-    line_kind: "cluster_rehearsal",
+    gate_id: "lane-unified-deploy-local-kind-images",
+    line_kind: "unified_deploy_local_kind_images",
+  },
+  {
+    gate_id: "lane-unified-deploy-local-kind",
+    line_kind: "unified_deploy_local_kind",
+  },
+  {
+    gate_id: "lane-unified-deploy-product-flows",
+    line_kind: "unified_deploy_product_flows",
   },
   {
     gate_id: "gate-release-full",

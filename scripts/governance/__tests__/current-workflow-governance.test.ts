@@ -59,8 +59,9 @@ const HUMAN_ENTRYPOINT_COMMANDS = [
   'npm run verify',
   'npm run release:ready',
   'npm run release:status',
-  'npm run rehearse:demo',
-  'npm run rehearse:cluster',
+  'npm run test:unified-deploy:local-kind:images',
+  'npm run test:unified-deploy:local-kind',
+  'npm run test:unified-deploy:product-flows -- --flow=workspace_project --flow=files --flow=agent_task_managed_runner',
 ] as const;
 
 const QUICK_HUMAN_FORBIDDEN_COMMAND_PATTERNS = [
@@ -430,8 +431,10 @@ describe('current workflow governance', () => {
     expect(internalDiagnosticAdapters).toEqual([
       'lane:mock',
       'gate:release',
-      'lane:demo-rehearsal',
-      'lane:cluster-rehearsal',
+      'lane:unified-deploy:substrate',
+      'lane:unified-deploy:local-kind:images',
+      'lane:unified-deploy:local-kind',
+      'lane:unified-deploy:product-flows',
       'gate:release:full',
     ]);
 
@@ -456,17 +459,27 @@ describe('current workflow governance', () => {
     const releaseCampaign = commands.find((command) => command.npmScript === 'release:campaign:full');
     const fullReleaseGate = commands.find((command) => command.npmScript === 'gate:release:full');
     const releaseGate = commands.find((command) => command.npmScript === 'gate:release');
-    const demoRehearsalLane = commands.find((command) => command.npmScript === 'lane:demo-rehearsal');
-    const clusterRehearsalLane = commands.find((command) => command.npmScript === 'lane:cluster-rehearsal');
-    const demoRehearsal = commands.find((command) => command.npmScript === 'rehearse:demo');
-    const clusterRehearsal = commands.find((command) => command.npmScript === 'rehearse:cluster');
+    const unifiedDeployLanes = [
+      'lane:unified-deploy:substrate',
+      'lane:unified-deploy:local-kind:images',
+      'lane:unified-deploy:local-kind',
+      'lane:unified-deploy:product-flows',
+    ].map((npmScript) => commands.find((command) => command.npmScript === npmScript));
+    const unifiedDeployHumanChecks = [
+      'test:unified-deploy:local-kind:images',
+      'test:unified-deploy:local-kind',
+      'test:unified-deploy:product-flows',
+    ].map((npmScript) => commands.find((command) => command.npmScript === npmScript));
 
     expect(releaseEntry?.startCommands).toContain('npm run release:ready');
     expect(releaseEntry?.startCommands).toContain('npm run release:status');
-    expect(releaseEntry?.startCommands).toContain('npm run rehearse:demo');
-    expect(releaseEntry?.startCommands).toContain('npm run rehearse:cluster');
+    expect(releaseEntry?.startCommands).toContain('npm run test:unified-deploy:local-kind:images');
+    expect(releaseEntry?.startCommands).toContain('npm run test:unified-deploy:local-kind');
+    expect(releaseEntry?.startCommands).toContain('npm run test:unified-deploy:product-flows -- --flow=workspace_project --flow=files --flow=agent_task_managed_runner');
     expect(releaseEntry?.startCommands).not.toContain('npm run release:aggregate -- --campaign-root=<campaign-root>');
     expect(releaseEntry?.startCommands).not.toContain('npm run gate:release:full');
+    expect(releaseEntry?.startCommands).not.toContain('npm run rehearse:demo');
+    expect(releaseEntry?.startCommands).not.toContain('npm run rehearse:cluster');
 
     expect(releaseReady?.workflowRole).toBe('release_operation');
     expect(releaseReady?.recommended).toBe(true);
@@ -482,14 +495,10 @@ describe('current workflow governance', () => {
     expect(fullReleaseGate?.command).toBe('RELEASE_CAMPAIGN_ROOT=<campaign-root> npm run gate:release:full');
     expect(fullReleaseGate?.recommended).not.toBe(true);
     expect(releaseGate?.workflowRole).toBe('gate_verdict');
-    expect(demoRehearsalLane?.workflowRole).toBe('evidence_lane');
-    expect(clusterRehearsalLane?.workflowRole).toBe('evidence_lane');
-    expect(demoRehearsal?.recommended).toBe(true);
-    expect(demoRehearsal?.quickHuman).toBe(true);
-    expect(demoRehearsal?.gateId).toBeUndefined();
-    expect(clusterRehearsal?.recommended).toBe(true);
-    expect(clusterRehearsal?.quickHuman).toBe(true);
-    expect(clusterRehearsal?.gateId).toBeUndefined();
+    expect(unifiedDeployLanes.every((lane) => lane?.workflowRole === 'evidence_lane')).toBe(true);
+    expect(unifiedDeployHumanChecks.every((check) => check?.recommended === true)).toBe(true);
+    expect(unifiedDeployHumanChecks.every((check) => check?.quickHuman === true)).toBe(true);
+    expect(unifiedDeployHumanChecks.every((check) => check?.gateId === undefined)).toBe(true);
   });
 
   it('keeps internal adapters out of generated human workflow blocks', () => {
@@ -667,8 +676,11 @@ describe('current workflow governance', () => {
     expect(combinedDocs).toMatch(/aggregate-only|聚合专用|explicit campaign|显式 campaign/);
     expect(combinedDocs).toMatch(/release:status/);
     expect(combinedDocs).toMatch(/gate:release/);
-    expect(combinedDocs).toMatch(/lane:demo-rehearsal/);
-    expect(combinedDocs).toMatch(/lane:cluster-rehearsal/);
+    expect(combinedDocs).toMatch(/test:unified-deploy:local-kind:images/);
+    expect(combinedDocs).toMatch(/test:unified-deploy:local-kind/);
+    expect(combinedDocs).toMatch(/test:unified-deploy:product-flows/);
+    expect(combinedDocs).not.toMatch(/lane:demo-rehearsal/);
+    expect(combinedDocs).not.toMatch(/lane:cluster-rehearsal/);
 
     expect(workflow).toContain('lane-visual-artifacts');
     expect(workflow).not.toContain('visual-manual-artifacts');

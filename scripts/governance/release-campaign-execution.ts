@@ -93,13 +93,10 @@ const STEP_SPECIFIC_AGGREGATE_ENV_KEYS = [
   'RELEASE_REAL_VISUAL_ARTIFACT_DIR',
   'RELEASE_REAL_RUN_ROOT',
   'RELEASE_REAL_READY_LOG_DIR',
-  'SCENARIO_RUNTIME_ROOT',
-  'DEMO_REHEARSAL_ROOT',
-  'DEMO_REHEARSAL_SKIP_RELEASE_ARCHIVE',
-  'DEMO_REHEARSAL_SKIP_BUNDLED_IMAGE_LOAD',
-  'CLUSTER_REHEARSAL_ROOT',
-  'CLUSTER_REHEARSAL_SKIP_RELEASE_ARCHIVE',
-  'CLUSTER_REHEARSAL_SKIP_BUNDLED_IMAGE_LOAD',
+  'UNIFIED_DEPLOY_RELEASE_ROOT_DIR',
+  'UNIFIED_DEPLOY_RELEASE_SITE_ENV',
+  'UNIFIED_DEPLOY_AGENT_TASK_POLLS',
+  'UNIFIED_DEPLOY_AGENT_TASK_POLL_INTERVAL_MS',
   'LOCAL_RUNTIME_LINE_KIND',
   'LOCAL_RUNTIME_OWNER_TOKEN',
 ] as const;
@@ -112,7 +109,6 @@ const RUNTIME_LEASE_CATEGORIES = new Set<CurrentResourceLockCategory>([
   'substrate',
   'lifecycle',
   'port',
-  'scenario_world',
   'provider_quota',
   'secret_profile',
   'visual_baseline',
@@ -280,16 +276,10 @@ export function buildReleaseCampaignCommandEnv(
     env.CURRENT_GATE_RESULT_LINE_KIND = 'release_backend_real';
   }
 
-  if (input.step.id === 'lane-demo-rehearsal') {
-    env.SCENARIO_RUNTIME_ROOT = join(input.campaignRoot, 'scenario-runtime');
-    env.DEMO_REHEARSAL_ROOT = join(stepDir(input.campaignRoot, input.step), 'scenario');
-    env.REHEARSAL_MODE = 'release-fidelity';
-  }
-
-  if (input.step.id === 'lane-cluster-rehearsal') {
-    env.SCENARIO_RUNTIME_ROOT = join(input.campaignRoot, 'scenario-runtime');
-    env.CLUSTER_REHEARSAL_ROOT = join(stepDir(input.campaignRoot, input.step), 'scenario');
-    env.REHEARSAL_MODE = 'release-fidelity';
+  if (input.step.id.startsWith('lane-unified-deploy-')) {
+    const releaseRoot = join(input.campaignRoot, 'unified-deploy');
+    env.UNIFIED_DEPLOY_RELEASE_ROOT_DIR = releaseRoot;
+    env.UNIFIED_DEPLOY_RELEASE_SITE_ENV = join(releaseRoot, 'local-kind-site.env');
   }
 
   return env;

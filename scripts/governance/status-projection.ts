@@ -744,11 +744,17 @@ function safeCommandForOwner(owner: string | null, goal: CurrentStatusProjection
   if (owner === 'gate-release') {
     return 'npm run verify -- --goal=release-real --run';
   }
-  if (owner === 'lane-demo-rehearsal') {
-    return 'npm run rehearse:demo';
+  if (owner === 'lane-unified-deploy-substrate') {
+    return 'npm run lane:unified-deploy:substrate';
   }
-  if (owner === 'lane-cluster-rehearsal') {
-    return 'npm run rehearse:cluster';
+  if (owner === 'lane-unified-deploy-local-kind-images') {
+    return 'npm run lane:unified-deploy:local-kind:images';
+  }
+  if (owner === 'lane-unified-deploy-local-kind') {
+    return 'npm run lane:unified-deploy:local-kind';
+  }
+  if (owner === 'lane-unified-deploy-product-flows') {
+    return 'npm run lane:unified-deploy:product-flows';
   }
   if (owner === 'gate-fast') {
     return 'npm run verify -- --goal=debug --run';

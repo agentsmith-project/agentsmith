@@ -232,13 +232,15 @@ const laneVisual = findCurrentGateDefinitionById('lane-visual');
 const testVisual = findCurrentGateDefinitionById('visual-lane-command');
 const testBackendRealCore = findCurrentGateDefinitionById('test-backend-real-core');
 const backendRealCore = findCurrentGateDefinitionById('lane-backend-real-core');
-const laneDemoRehearsal = findCurrentGateDefinitionById('lane-demo-rehearsal');
-const laneClusterRehearsal = findCurrentGateDefinitionById('lane-cluster-rehearsal');
+const laneUnifiedDeploySubstrate = findCurrentGateDefinitionById('lane-unified-deploy-substrate');
+const laneUnifiedDeployLocalKindImages = findCurrentGateDefinitionById('lane-unified-deploy-local-kind-images');
+const laneUnifiedDeployLocalKind = findCurrentGateDefinitionById('lane-unified-deploy-local-kind');
+const laneUnifiedDeployProductFlows = findCurrentGateDefinitionById('lane-unified-deploy-product-flows');
 const gateReleaseFull = findCurrentGateDefinitionById('gate-release-full');
 const laneMock = findCurrentGateDefinitionById('lane-mock');
 
-if (!gateDefault || !laneVisual || !testVisual || !testBackendRealCore || !backendRealCore || !laneDemoRehearsal || !laneClusterRehearsal || !gateReleaseFull || !laneMock) {
-  failures.push('current gate manifest is missing required default/visual/backend-real/rehearsal definitions');
+if (!gateDefault || !laneVisual || !testVisual || !testBackendRealCore || !backendRealCore || !laneUnifiedDeploySubstrate || !laneUnifiedDeployLocalKindImages || !laneUnifiedDeployLocalKind || !laneUnifiedDeployProductFlows || !gateReleaseFull || !laneMock) {
+  failures.push('current gate manifest is missing required default/visual/backend-real/unified-deploy definitions');
 }
 
 requireMatch(defaultGateScript, /npm run contracts:check[\s\S]*npm run contracts:check-openapi[\s\S]*npm run openapi:check-generated[\s\S]*npm run lint/, 'default gate must run shared repo preflight and lint before domain gates', failures);
@@ -271,8 +273,8 @@ requireMatch(backendRealFullGate, /npm run test:visual:backend-real:review/, 'ba
 requireMatch(releaseFullAggregateGate, /run-release-full-aggregate\.ts/, 'gate:release:full adapter must be aggregate-only and execute run-release-full-aggregate.ts', failures);
 requireMatch(releaseFullAggregateGate, /run-release-full-aggregate\.ts "\$@"/, 'gate:release:full adapter must pass operator flags through to the terminal aggregate verifier', failures);
 requireMatch(releaseFullCampaign, /run-current-verification-campaign\.ts release-full/, 'release:campaign:full adapter must execute the release-full campaign runner', failures);
-forbidMatch(packageJson.scripts?.['gate:release:full'] ?? '', /npm run gate:release|npm run lane:visual|npm run lane:demo-rehearsal|npm run lane:cluster-rehearsal/, 'gate:release:full package adapter must not rerun release campaign steps', failures);
-for (const scriptName of ['lane:visual', 'lane:demo-rehearsal', 'lane:cluster-rehearsal'] as const) {
+forbidMatch(packageJson.scripts?.['gate:release:full'] ?? '', /npm run gate:release|npm run lane:visual|npm run lane:unified-deploy:[a-z0-9:_-]+/, 'gate:release:full package adapter must not rerun release campaign steps', failures);
+for (const scriptName of ['lane:visual', 'lane:unified-deploy:substrate', 'lane:unified-deploy:local-kind:images', 'lane:unified-deploy:local-kind', 'lane:unified-deploy:product-flows'] as const) {
   requireMatch(
     packageJson.scripts?.[scriptName] ?? '',
     /scripts\/run-current-gate-result-wrapped\.sh/,
@@ -321,8 +323,10 @@ requireMatch(governanceModel, /operator hint/i, 'current engineering governance 
 
 requireMatch(gateContract, /gate:default/, 'current gate manifest contract must define gate:default', failures);
 requireMatch(gateContract, /lane:visual/, 'current gate manifest contract must define lane:visual', failures);
-requireMatch(gateContract, /lane:demo-rehearsal/, 'current gate manifest contract must define lane:demo-rehearsal', failures);
-requireMatch(gateContract, /lane:cluster-rehearsal/, 'current gate manifest contract must define lane:cluster-rehearsal', failures);
+requireMatch(gateContract, /lane:unified-deploy:substrate/, 'current gate manifest contract must define lane:unified-deploy:substrate', failures);
+requireMatch(gateContract, /lane:unified-deploy:local-kind:images/, 'current gate manifest contract must define lane:unified-deploy:local-kind:images', failures);
+requireMatch(gateContract, /lane:unified-deploy:local-kind/, 'current gate manifest contract must define lane:unified-deploy:local-kind', failures);
+requireMatch(gateContract, /lane:unified-deploy:product-flows/, 'current gate manifest contract must define lane:unified-deploy:product-flows', failures);
 requireMatch(gateContract, /gate:release:full/, 'current gate manifest contract must define gate:release:full', failures);
 requireMatch(gateContract, /full visual/, 'current gate manifest contract must explain full visual ownership', failures);
 requireMatch(gateContract, /targeted visual/, 'current gate manifest contract must explain targeted visual ownership', failures);
@@ -334,8 +338,10 @@ requireMatch(gateContract, /lane:backend-real:core/, 'current gate manifest cont
 requireMatch(gateContract, /e2e\/visual-baseline-support\.ts/, 'current gate manifest contract must identify the visual scene catalog source', failures);
 requireMatch(gateContract, /artifacts\/backend-real\/runs\/<run-id>\/ux-traces/, 'current gate manifest contract must identify the default-tier backend-real ux trace bundle root', failures);
 requireMatch(gateContract, /artifacts\/backend-real-visual\/<run-id>\/ux-traces/, 'current gate manifest contract must identify backend-real ux trace bundle roots', failures);
-requireMatch(gateContract, /scenario-owned local clean reset/, 'current gate manifest contract must require clean-reset semantics for rehearsal lanes', failures);
-requireMatch(gateContract, /generated handoff state/, 'current gate manifest contract must describe rehearsal-generated handoff state ownership', failures);
+requireMatch(gateContract, /unified deploy/, 'current gate manifest contract must describe unified deploy release evidence ownership', failures);
+requireMatch(gateContract, /local-kind/, 'current gate manifest contract must describe local-kind deploy evidence ownership', failures);
+requireMatch(gateContract, /focused product-flow/, 'current gate manifest contract must describe focused product-flow evidence ownership', failures);
+requireMatch(gateContract, /artifacts\/unified-deploy/, 'current gate manifest contract must identify unified deploy evidence roots', failures);
 
 requireMatch(workspaceDefaultChecklist, /npm run verify -- --goal=pr --run/, 'workspace/project checklist must point default execution to npm run verify -- --goal=pr --run', failures);
 requireMatch(workspaceDefaultChecklist, /npm run test:default-e2e[\s\S]{0,200}(focused diagnostics|evidence-owner producer)/, 'workspace/project checklist must label test:default-e2e as focused diagnostics, not the default entrypoint', failures);

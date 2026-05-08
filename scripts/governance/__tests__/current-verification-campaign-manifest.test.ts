@@ -17,8 +17,10 @@ describe('current verification campaign manifest', () => {
       'gate-default',
       'lane-visual',
       'gate-release',
-      'lane-demo-rehearsal',
-      'lane-cluster-rehearsal',
+      'lane-unified-deploy-substrate',
+      'lane-unified-deploy-local-kind-images',
+      'lane-unified-deploy-local-kind',
+      'lane-unified-deploy-product-flows',
       'gate-release-full',
     ]);
   });
@@ -71,8 +73,10 @@ describe('current verification campaign manifest', () => {
     expect(evidenceOwners.map((step) => step.id)).toEqual([
       'lane-visual',
       'gate-release',
-      'lane-demo-rehearsal',
-      'lane-cluster-rehearsal',
+      'lane-unified-deploy-substrate',
+      'lane-unified-deploy-local-kind-images',
+      'lane-unified-deploy-local-kind',
+      'lane-unified-deploy-product-flows',
     ]);
 
     for (const step of evidenceOwners) {

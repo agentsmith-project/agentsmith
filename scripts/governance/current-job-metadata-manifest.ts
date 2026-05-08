@@ -1001,7 +1001,7 @@ function validateSensitiveRetryAndCache(
       index,
       id,
       path: `jobs[${index}].retry`,
-      reason: 'backend-real/release/rehearsal jobs must not enable automatic retry.',
+      reason: 'backend-real/release/unified-deploy jobs must not enable automatic retry.',
     });
   }
   if (!RELEASE_SENSITIVE_CACHE_POLICIES.has(entry.cache as CurrentJobMetadataCache)) {
@@ -1009,7 +1009,7 @@ function validateSensitiveRetryAndCache(
       index,
       id,
       path: `jobs[${index}].cache`,
-      reason: 'backend-real/release/rehearsal jobs must not reuse cache across release or provider profiles.',
+      reason: 'backend-real/release/unified-deploy jobs must not reuse cache across release or provider profiles.',
     });
   }
 }

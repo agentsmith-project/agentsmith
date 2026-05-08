@@ -85,15 +85,18 @@ describe('current gate governance', () => {
 
   it('keeps release-full semantics explicit and aggregate-only', () => {
     const releaseFull = CURRENT_GATE_MANIFEST.find((definition) => definition.npmScript === 'gate:release:full');
-    const demoLane = CURRENT_GATE_MANIFEST.find((definition) => definition.npmScript === 'lane:demo-rehearsal');
-    const clusterLane = CURRENT_GATE_MANIFEST.find((definition) => definition.npmScript === 'lane:cluster-rehearsal');
+    const unifiedDeployLanes = [
+      'lane:unified-deploy:substrate',
+      'lane:unified-deploy:local-kind:images',
+      'lane:unified-deploy:local-kind',
+      'lane:unified-deploy:product-flows',
+    ].map((npmScript) => CURRENT_GATE_MANIFEST.find((definition) => definition.npmScript === npmScript));
 
     expect(releaseFull?.requiredFor).toContain('release');
     expect(releaseFull?.command).toBe('bash scripts/release-full-aggregate-gate.sh');
     expect(releaseFull?.command).not.toContain('npm run gate:release');
     expect(releaseFull?.command).not.toContain('npm run lane:visual');
-    expect(demoLane?.requiredFor).toContain('release');
-    expect(clusterLane?.requiredFor).toContain('release');
+    expect(unifiedDeployLanes.every((lane) => lane?.requiredFor.includes('release'))).toBe(true);
   });
 
   it('models lane:mock as a canonical lane object with adapter alias support', () => {

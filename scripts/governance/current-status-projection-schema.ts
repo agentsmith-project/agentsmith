@@ -740,6 +740,14 @@ export function normalizeStatusProjectionRuntimeLine(input: {
   if (input.runtimeLine === 'local-real') {
     return 'local-manual';
   }
+  if (
+    input.goal === 'demo-rehearsal'
+    || input.goal === 'cluster-rehearsal'
+    || input.runtimeLine === 'demo-rehearsal'
+    || input.runtimeLine === 'cluster-rehearsal'
+  ) {
+    return null;
+  }
   return input.runtimeLine ?? null;
 }
 

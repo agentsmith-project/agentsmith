@@ -10,9 +10,16 @@ import {
 } from './protocol.js';
 
 describe('agent-runner task execution context guards', () => {
+  const requiredTaskPaths = {
+    task_home_path: '/home/task_1',
+    workspace_path: '/home/task_1/workspace',
+    artifacts_path: '/home/task_1/workspace/.artifacts',
+  };
+
   it('accepts task execution context with task, run, endpoint, model, and workspace metadata', () => {
     const value: TaskExecutionContext = {
       task_id: 'task_1',
+      ...requiredTaskPaths,
       run_id: 'run_1',
       runner_id: 'runner_1',
       runner_session_scope: 'task_execution',
@@ -42,6 +49,7 @@ describe('agent-runner task execution context guards', () => {
   it('accepts request-scoped resource proxy and agent task model snapshots', () => {
     const value = {
       task_id: 'task_1',
+      ...requiredTaskPaths,
       run_id: 'run_1',
       endpoint_id: 'ep_fresh',
       model: 'gpt-fresh',
@@ -66,14 +74,17 @@ describe('agent-runner task execution context guards', () => {
     for (const value of [
       {
         task_id: 'task_1',
+        ...requiredTaskPaths,
         resource_proxy: {},
       },
       {
         task_id: 'task_1',
+        ...requiredTaskPaths,
         resource_proxy: { base_url: '' },
       },
       {
         task_id: 'task_1',
+        ...requiredTaskPaths,
         agent_task_model: {
           endpoint_id: 'ep_1',
           resolved_model: 'gpt-1',
@@ -92,6 +103,7 @@ describe('agent-runner task execution context guards', () => {
       workspace_id: 'ws_1',
       project_id: 'proj_1',
       task_id: 'task_1',
+      ...requiredTaskPaths,
       runner_id: 'runner_1',
       runner_session_scope: 'task_execution',
       api_base: 'http://localhost:20000/api/v1',
@@ -112,6 +124,52 @@ describe('agent-runner task execution context guards', () => {
     expect(() => assertTaskExecutionContext(value)).toThrowError('task_execution_context_invalid');
   });
 
+  it('requires canonical task home, workspace, and artifact path fields', () => {
+    for (const value of [
+      {
+        task_id: 'task_1',
+        workspace_path: '/home/task_1/workspace',
+        artifacts_path: '/home/task_1/workspace/.artifacts',
+      },
+      {
+        task_id: 'task_1',
+        task_home_path: '/home/task_1',
+        artifacts_path: '/home/task_1/workspace/.artifacts',
+      },
+      {
+        task_id: 'task_1',
+        task_home_path: '/home/task_1',
+        workspace_path: '/home/task_1/workspace',
+      },
+      {
+        task_id: 'task_1',
+        task_home_path: '/home/task_1',
+        workspace_path: '/home/task_1/files',
+        artifacts_path: '/home/task_1/files/.artifacts',
+      },
+      {
+        task_id: 'task_1',
+        task_home_path: '/home/task_1',
+        workspace_path: '/home/task_1/workspace',
+        artifacts_path: '/home/task_1/.artifacts',
+      },
+    ]) {
+      expect(isTaskExecutionContext(value)).toBe(false);
+      expect(() => assertTaskExecutionContext(value)).toThrowError('task_execution_context_invalid');
+    }
+  });
+
+  it('rejects legacy container_workspace_path even when canonical path fields are present', () => {
+    const value = {
+      task_id: 'task_1',
+      ...requiredTaskPaths,
+      container_workspace_path: '/workspace/task_1',
+    };
+
+    expect(isTaskExecutionContext(value)).toBe(false);
+    expect(() => assertTaskExecutionContext(value)).toThrowError('task_execution_context_invalid');
+  });
+
   it('models runner dispatch envelopes with canonical runner_session_id only', () => {
     const envelope: AgentEnvelope = {
       type: 'server.request.start',
@@ -120,6 +178,7 @@ describe('agent-runner task execution context guards', () => {
       payload: {
         execution_context: {
           task_id: 'task_1',
+          ...requiredTaskPaths,
         },
       },
     };
@@ -133,25 +192,31 @@ describe('agent-runner task execution context guards', () => {
       {
         interaction_kind: 'chat',
         task_id: 'task_1',
+        ...requiredTaskPaths,
       },
       {
         interaction_kind: 'notebook',
         task_id: 'task_1',
+        ...requiredTaskPaths,
       },
       {
         task_id: 'task_1',
+        ...requiredTaskPaths,
         chat: true,
       },
       {
         task_id: 'task_1',
+        ...requiredTaskPaths,
         notebook: true,
       },
       {
         task_id: 'task_1',
+        ...requiredTaskPaths,
         workload: 'chat',
       },
       {
         task_id: 'task_1',
+        ...requiredTaskPaths,
         workload: 'notebook',
       },
     ]) {
@@ -164,30 +229,37 @@ describe('agent-runner task execution context guards', () => {
     for (const value of [
       {
         task_id: 'task_1',
+        ...requiredTaskPaths,
         external_agent_id: 'agent_legacy',
       },
       {
         task_id: 'task_1',
+        ...requiredTaskPaths,
         externalAgentId: 'agent_legacy',
       },
       {
         task_id: 'task_1',
+        ...requiredTaskPaths,
         session_id: 'session_legacy',
       },
       {
         task_id: 'task_1',
+        ...requiredTaskPaths,
         transport: 'agent_runner',
       },
       {
         task_id: 'task_1',
+        ...requiredTaskPaths,
         internalAgent: true,
       },
       {
         task_id: 'task_1',
+        ...requiredTaskPaths,
         chat_runner: true,
       },
       {
         task_id: 'task_1',
+        ...requiredTaskPaths,
         notebook_runner: true,
       },
     ]) {
@@ -199,6 +271,7 @@ describe('agent-runner task execution context guards', () => {
   it('rejects unsupported runner session scopes', () => {
     const value = {
       task_id: 'task_1',
+      ...requiredTaskPaths,
       runner_id: 'runner_1',
       runner_session_scope: 'legacy_session',
     };
@@ -217,6 +290,7 @@ describe('agent-runner task execution context guards', () => {
     for (const wireApi of SUPPORTED_AGENT_WIRE_APIS) {
       const value = {
         task_id: 'task_1',
+        ...requiredTaskPaths,
         run_id: 'run_1',
         wire_api: wireApi,
       };
@@ -230,18 +304,22 @@ describe('agent-runner task execution context guards', () => {
     for (const value of [
       {
         task_id: 'task_1',
+        ...requiredTaskPaths,
         wire_api: 'anthropic',
       },
       {
         task_id: 'task_1',
+        ...requiredTaskPaths,
         wire_api: 'chat',
       },
       {
         task_id: 'task_1',
+        ...requiredTaskPaths,
         wire_api: 'responses',
       },
       {
         task_id: 'task_1',
+        ...requiredTaskPaths,
         wire_api: 'notebook',
       },
     ]) {

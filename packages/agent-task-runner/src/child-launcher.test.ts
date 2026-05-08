@@ -46,13 +46,21 @@ describe('child-launcher', () => {
     const result = await prepareLaunchCommand({
       file: 'bash',
       args: ['-i'],
-      cwd: '/workspace/task_1',
-      env: { HOME: '/workspace/task_1' },
+      cwd: '/home/task_1/workspace',
+      env: {
+        HOME: '/home/task_1',
+        TASK_HOME: '/home/task_1',
+        WORKSPACE_PATH: '/home/task_1/workspace',
+      },
     });
     expect(result).toEqual({
       file: 'bash',
       args: ['-i'],
-      env: { HOME: '/workspace/task_1' },
+      env: {
+        HOME: '/home/task_1',
+        TASK_HOME: '/home/task_1',
+        WORKSPACE_PATH: '/home/task_1/workspace',
+      },
     });
   });
 
@@ -61,30 +69,34 @@ describe('child-launcher', () => {
     const result = await prepareLaunchCommand({
       file: 'codex',
       args: ['exec', 'hello'],
-      cwd: '/workspace/task_1',
+      cwd: '/home/task_1/workspace',
       env: {
-        HOME: '/runner-runtime/task_1',
-        PATH: '/runner-runtime/task_1/.local/bin:/runner-runtime/task_1/.cargo/bin:/usr/bin:/bin',
-        PYTHONUSERBASE: '/runner-runtime/task_1/.local',
+        HOME: '/home/task_1',
+        TASK_HOME: '/home/task_1',
+        WORKSPACE_PATH: '/home/task_1/workspace',
+        PATH: '/home/task_1/.local/bin:/home/task_1/.cargo/bin:/usr/bin:/bin',
+        PYTHONUSERBASE: '/home/task_1/.local',
         PIP_USER: '1',
-        npm_config_prefix: '/runner-runtime/task_1/.local',
-        CARGO_HOME: '/runner-runtime/task_1/.cargo',
-        RUSTUP_HOME: '/runner-runtime/task_1/.rustup',
+        npm_config_prefix: '/home/task_1/.local',
+        CARGO_HOME: '/home/task_1/.cargo',
+        RUSTUP_HOME: '/home/task_1/.rustup',
       },
     });
     expect(result.file).toBe('/usr/bin/bwrap');
     expect(result.args).toEqual(expect.arrayContaining([
       '--clearenv',
       '--ro-bind', '/', '/',
-      '--bind', '/workspace/task_1', '/workspace/task_1',
-      '--bind', '/runner-runtime/task_1', '/runner-runtime/task_1',
-      '--chdir', '/workspace/task_1',
-      '--setenv', 'HOME', '/runner-runtime/task_1',
-      '--setenv', 'PYTHONUSERBASE', '/runner-runtime/task_1/.local',
+      '--bind', '/home/task_1/workspace', '/home/task_1/workspace',
+      '--bind', '/home/task_1', '/home/task_1',
+      '--chdir', '/home/task_1/workspace',
+      '--setenv', 'HOME', '/home/task_1',
+      '--setenv', 'TASK_HOME', '/home/task_1',
+      '--setenv', 'WORKSPACE_PATH', '/home/task_1/workspace',
+      '--setenv', 'PYTHONUSERBASE', '/home/task_1/.local',
       '--setenv', 'PIP_USER', '1',
-      '--setenv', 'npm_config_prefix', '/runner-runtime/task_1/.local',
-      '--setenv', 'CARGO_HOME', '/runner-runtime/task_1/.cargo',
-      '--setenv', 'RUSTUP_HOME', '/runner-runtime/task_1/.rustup',
+      '--setenv', 'npm_config_prefix', '/home/task_1/.local',
+      '--setenv', 'CARGO_HOME', '/home/task_1/.cargo',
+      '--setenv', 'RUSTUP_HOME', '/home/task_1/.rustup',
       '--',
       'codex',
       'exec',
@@ -99,14 +111,14 @@ describe('child-launcher', () => {
     const result = await prepareLaunchCommand({
       file: 'bash',
       args: ['-i'],
-      cwd: '/home/alice/ags-workspace/task_1',
-      env: { HOME: '/home/alice/ags-workspace/task_1' },
+      cwd: '/home/task_1/workspace',
+      env: { HOME: '/home/task_1', TASK_HOME: '/home/task_1', WORKSPACE_PATH: '/home/task_1/workspace' },
     });
 
     expect(result).toEqual({
       file: 'bash',
       args: ['-i'],
-      env: { HOME: '/home/alice/ags-workspace/task_1' },
+      env: { HOME: '/home/task_1', TASK_HOME: '/home/task_1', WORKSPACE_PATH: '/home/task_1/workspace' },
     });
   });
 
@@ -117,8 +129,8 @@ describe('child-launcher', () => {
     await expect(prepareLaunchCommand({
       file: 'bash',
       args: ['-i'],
-      cwd: '/workspace/task_1',
-      env: { HOME: '/workspace/task_1' },
+      cwd: '/home/task_1/workspace',
+      env: { HOME: '/home/task_1', TASK_HOME: '/home/task_1', WORKSPACE_PATH: '/home/task_1/workspace' },
     })).rejects.toThrow('bwrap_missing_for_agent_task_runner');
   });
 
@@ -130,8 +142,8 @@ describe('child-launcher', () => {
     await expect(prepareLaunchCommand({
       file: 'bash',
       args: ['-i'],
-      cwd: '/home/alice/ags-workspace/task_1',
-      env: { HOME: '/home/alice/ags-workspace/task_1' },
+      cwd: '/home/task_1/workspace',
+      env: { HOME: '/home/task_1', TASK_HOME: '/home/task_1', WORKSPACE_PATH: '/home/task_1/workspace' },
     })).rejects.toThrow('bwrap_missing_for_agent_task_runner');
   });
 });

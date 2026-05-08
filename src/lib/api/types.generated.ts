@@ -3665,6 +3665,8 @@ export interface components {
             /** @enum {string} */
             status: "active" | "archived";
             stop_mode?: components["schemas"]["StopMode"];
+            /** @description Backend-generated task HOME path segment. Clients must treat it as opaque and must not derive filesystem paths from user input. */
+            task_home_segment: string;
             title: string;
             /** Format: date-time */
             updated_at: string;
@@ -9211,7 +9213,7 @@ export interface operations {
                 };
                 content: {
                     "application/json": {
-                        container_workspace_path?: string | null;
+                        artifacts_path: string;
                         /** Format: date-time */
                         created_at: string;
                         file_library_id: string;
@@ -9220,10 +9222,12 @@ export interface operations {
                         library_root_path: string;
                         metadata_url: string;
                         recommended_mount_path: string;
+                        task_home_path: string;
                         task_id: string;
                         /** @enum {string} */
                         workspace_binding_mode: "file_library";
                         workspace_dir_name: string;
+                        workspace_path: string;
                     };
                 };
             };

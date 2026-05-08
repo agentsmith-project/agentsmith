@@ -24,21 +24,21 @@
 ## 2. Current runtime contract
 
 当前三条运行模式共享这些不变量：
-- `cwd` 始终是 task-scoped 用户文件工作区
-- `HOME` 是 runner-private runtime home，与 `cwd` 分离
+- `TASK_HOME` / `HOME` 始终是 task-bound persistent HOME：managed canonical path 是 `/home/<task_home_segment>`
+- `cwd` 始终是 `$TASK_HOME/workspace`
 - Codex runtime 状态写到 `$HOME/.codex`
 - runner runtime 元数据写到 `$HOME/.mbos`
 - builtin skills 安装到 `$HOME/.agents/skills`
-- 用户可见 deliverables 写到 `cwd/.artifacts/`
+- 用户可见 deliverables 写到 `$TASK_HOME/workspace/.artifacts/`
 - 共享上下文、简单 credentials、managed OAuth credentials 通过 AgentSmith Context Store 暴露，不应假设存在于 workspace 文件树
 
 ### Runtime modes
 
-| Runtime mode | Typical use | workspace binding | Runner process location | Workspace path |
+| Runtime mode | Typical use | workspace binding | Runner process location | Task HOME / workspace |
 | --- | --- | --- | --- | --- |
-| Local developer | local-manual, host development | `file_library` | host machine | host task workspace |
-| Managed docker | unified deploy managed agent-task runner | `file_library` | runner container | `/workspace/<task_id>/` |
-| Sandbox k8s | sandbox workload pod | `pre_mounted` | workload container | `/workspace/<task_id>/` |
+| Local developer | local-manual, host development | `file_library` | host machine | same layout: `$TASK_HOME`, `$TASK_HOME/workspace` |
+| Managed docker | unified deploy managed agent-task runner | `file_library` | runner container | `/home/<task_home_segment>`, `/home/<task_home_segment>/workspace` |
+| Sandbox k8s | sandbox workload pod | `pre_mounted` | workload container | `/home/<task_home_segment>`, `/home/<task_home_segment>/workspace` |
 
 Local/manual profiles that exercise the deployment default managed runner must prove the runner has a valid internal sandbox/runtime configuration before task execution. If the sandbox is unavailable, task creation or create-and-start should fail with a clear unavailable/configuration state instead of producing `AGENT_SANDBOX_NOT_CONFIGURED` after dispatch. Any sandbox/pod-internal API base must be reachable from inside that environment and must not rely on browser-host `localhost`.
 
@@ -104,7 +104,7 @@ npm run release:status
 - backend-real visual review：
   - `artifacts/backend-real-visual/<run-id>/review.md`
 - task-local deliverables：
-  - `<task-workspace>/.artifacts/`
+  - `<task-home>/workspace/.artifacts/`
 
 说明：
 - current runbook 一律写 run-scoped `artifacts/backend-real/runs/<run-id>/...`
@@ -132,7 +132,9 @@ npm run release:status
 - `MBOS_AGENT_BUILTIN_SKILLS_DIR`
 - `MBOS_AGENT_BUILTIN_SKILLS`
 - `MBOS_AGENT_BUILTIN_SKILLS_REQUIRED`
-- `MBOS_AGENT_WORKSPACE_ROOT`
+- `TASK_HOME`
+- `HOME`
+- `WORKSPACE_PATH`
 
 ## 6. Governance and product boundaries
 

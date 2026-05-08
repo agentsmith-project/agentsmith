@@ -80,6 +80,20 @@ vi.mock('node-pty', () => ({
 
 import { prepareTerminalWorkspace, startTerminalProcess } from './terminal-runtime.js';
 
+const TASK_HOME = '/home/task_1';
+const TASK_WORKSPACE = `${TASK_HOME}/workspace`;
+const TASK_ARTIFACTS = `${TASK_WORKSPACE}/.artifacts`;
+
+function terminalExecutionContext(overrides: Record<string, unknown> = {}) {
+  return {
+    task_id: 'task_1',
+    task_home_path: TASK_HOME,
+    workspace_path: TASK_WORKSPACE,
+    artifacts_path: TASK_ARTIFACTS,
+    ...overrides,
+  };
+}
+
 describe('terminal-runtime', () => {
   const originalPath = process.env.PATH;
   const originalHistfile = process.env.HISTFILE;
@@ -96,19 +110,21 @@ describe('terminal-runtime', () => {
     writeFileMock.mockResolvedValue(undefined);
     process.env.PATH = '/usr/bin:/bin';
     prepareTaskWorkspaceMock.mockResolvedValue({
-      cwd: '/workspace',
+      cwd: TASK_WORKSPACE,
       source: 'file_library_mount',
       paths: {
         mode: 'managed_local',
-        visibleRoot: '/workspace',
-        mountRoot: '/workspace',
-        taskRoot: '/workspace',
-        runtimeRoot: '/runner-runtime/task_1',
-        homeDir: '/runner-runtime/task_1',
-        codexDir: '/runner-runtime/task_1/.codex',
-        artifactsDir: '/workspace/.artifacts',
-        mbosDir: '/runner-runtime/task_1/.mbos',
-        skillsDir: '/runner-runtime/task_1/.agents/skills',
+        taskHome: TASK_HOME,
+        visibleRoot: TASK_WORKSPACE,
+        mountRoot: TASK_HOME,
+        taskRoot: TASK_HOME,
+        runtimeRoot: TASK_HOME,
+        homeDir: TASK_HOME,
+        workspaceDir: TASK_WORKSPACE,
+        codexDir: `${TASK_HOME}/.codex`,
+        artifactsDir: TASK_ARTIFACTS,
+        mbosDir: `${TASK_HOME}/.mbos`,
+        skillsDir: `${TASK_HOME}/.agents/skills`,
       },
       release: releaseTaskWorkspaceMock,
     });
@@ -120,9 +136,9 @@ describe('terminal-runtime', () => {
       missing: [],
     });
     seedBuiltinSkillsMock.mockResolvedValue({
-      targetDir: '/runner-runtime/task_1/.agents/skills',
+      targetDir: `${TASK_HOME}/.agents/skills`,
       seeded: ['feishu-docs'],
-      manifestPath: '/runner-runtime/task_1/.mbos/builtin-skills-manifest.json',
+      manifestPath: `${TASK_HOME}/.mbos/builtin-skills-manifest.json`,
     });
     prepareLaunchCommandMock.mockImplementation(async (input: { file: string; args: string[]; env: NodeJS.ProcessEnv }) => ({
       file: input.file,
@@ -174,19 +190,18 @@ describe('terminal-runtime', () => {
 
   it('creates a minimal zshrc in task home for interactive zsh shells', async () => {
     await prepareTerminalWorkspace({
-      executionContext: {
-        task_id: 'task_1',
+      executionContext: terminalExecutionContext({
         run_id: 'run_1',
-      },
+      }),
       shell: '/usr/bin/zsh',
     });
 
     expect(writeFileMock).toHaveBeenCalledWith(
-      '/runner-runtime/task_1/.zshrc',
+      `${TASK_HOME}/.zshrc`,
       '# AgentSmith Terminal Session\n',
       { flag: 'a' },
     );
-    expect(mkdirMock.mock.calls.map((call) => call[0])).toContain('/runner-runtime/task_1/.agents');
+    expect(mkdirMock.mock.calls.map((call) => call[0])).toContain(`${TASK_HOME}/.agents`);
   });
 
   it('retries terminal workspace bootstrap after a retryable task-root write failure', async () => {
@@ -194,7 +209,7 @@ describe('terminal-runtime', () => {
     mkdirMock.mockImplementation(async (target: string) => {
       const seen = mkdirCalls.get(target) ?? 0;
       mkdirCalls.set(target, seen + 1);
-      if (target === '/runner-runtime/task_1/.agents/skills' && seen === 0) {
+      if (target === `${TASK_HOME}/.agents/skills` && seen === 0) {
         const error = new Error('stale mount write') as NodeJS.ErrnoException;
         error.code = 'EIO';
         throw error;
@@ -202,10 +217,9 @@ describe('terminal-runtime', () => {
     });
 
     await prepareTerminalWorkspace({
-      executionContext: {
-        task_id: 'task_1',
+      executionContext: terminalExecutionContext({
         run_id: 'run_1',
-      },
+      }),
       shell: '/usr/bin/bash',
     });
 
@@ -219,10 +233,9 @@ describe('terminal-runtime', () => {
     prepareLaunchCommandMock.mockRejectedValueOnce(new Error('launch command failed'));
 
     await expect(prepareTerminalWorkspace({
-      executionContext: {
-        task_id: 'task_1',
+      executionContext: terminalExecutionContext({
         run_id: 'run_1',
-      },
+      }),
       shell: '/usr/bin/bash',
     })).rejects.toThrowError('launch command failed');
 
@@ -238,10 +251,9 @@ describe('terminal-runtime', () => {
     });
 
     await expect(startTerminalProcess({
-      executionContext: {
-        task_id: 'task_1',
+      executionContext: terminalExecutionContext({
         run_id: 'run_1',
-      },
+      }),
       shell: '/usr/bin/bash',
     })).rejects.toThrowError('pty_spawn_failed');
 
@@ -254,10 +266,9 @@ describe('terminal-runtime', () => {
     }));
 
     await expect(startTerminalProcess({
-      executionContext: {
-        task_id: 'task_1',
+      executionContext: terminalExecutionContext({
         run_id: 'run_1',
-      },
+      }),
       shell: '/definitely/not/a/real/shell',
     })).rejects.toThrowError('invalid_shell');
 
@@ -274,14 +285,13 @@ describe('terminal-runtime', () => {
 
   it('starts a node-pty shell with provided cols and rows', async () => {
     const started = await startTerminalProcess({
-      executionContext: {
-        task_id: 'task_1',
+      executionContext: terminalExecutionContext({
         run_id: 'run_1',
         api_base: 'http://localhost:20000',
         execution_ticket: 'ticket_123',
         workspace_id: 'ws_default',
         project_id: 'proj_1',
-      },
+      }),
       shell: '/usr/bin/bash',
       cols: 140,
       rows: 40,
@@ -291,17 +301,19 @@ describe('terminal-runtime', () => {
       '/usr/bin/bash',
       ['-i'],
       expect.objectContaining({
-        cwd: '/workspace',
+        cwd: TASK_WORKSPACE,
         cols: 140,
         rows: 40,
         name: expect.any(String),
         env: expect.objectContaining({
-          HOME: '/runner-runtime/task_1',
-          PYTHONUSERBASE: '/runner-runtime/task_1/.local',
+          HOME: TASK_HOME,
+          TASK_HOME,
+          WORKSPACE_PATH: TASK_WORKSPACE,
+          PYTHONUSERBASE: `${TASK_HOME}/.local`,
           PIP_USER: '1',
-          npm_config_prefix: '/runner-runtime/task_1/.local',
-          CARGO_HOME: '/runner-runtime/task_1/.cargo',
-          RUSTUP_HOME: '/runner-runtime/task_1/.rustup',
+          npm_config_prefix: `${TASK_HOME}/.local`,
+          CARGO_HOME: `${TASK_HOME}/.cargo`,
+          RUSTUP_HOME: `${TASK_HOME}/.rustup`,
           MBOS_AGENT_API_BASE: 'http://localhost:20000',
           MBOS_AGENT_EXECUTION_TICKET: 'ticket_123',
           MBOS_AGENT_WORKSPACE_ID: 'ws_default',
@@ -311,9 +323,11 @@ describe('terminal-runtime', () => {
       }),
     );
     expect(prepareLaunchCommandMock).toHaveBeenCalledWith(expect.objectContaining({
-      cwd: '/workspace',
+      cwd: TASK_WORKSPACE,
       env: expect.objectContaining({
-        HOME: '/runner-runtime/task_1',
+        HOME: TASK_HOME,
+        TASK_HOME,
+        WORKSPACE_PATH: TASK_WORKSPACE,
       }),
     }));
     started.child.write('echo hi\n');
@@ -333,10 +347,9 @@ describe('terminal-runtime', () => {
     process.env.XDG_DATA_HOME = '/home/percy/.local/share';
 
     await startTerminalProcess({
-      executionContext: {
-        task_id: 'task_1',
+      executionContext: terminalExecutionContext({
         run_id: 'run_1',
-      },
+      }),
       shell: '/usr/bin/zsh',
     });
 
@@ -345,13 +358,15 @@ describe('terminal-runtime', () => {
       ['-i'],
       expect.objectContaining({
         env: expect.objectContaining({
-          HOME: '/runner-runtime/task_1',
-          HISTFILE: '/runner-runtime/task_1/.zsh_history',
-          ZDOTDIR: '/runner-runtime/task_1',
-          XDG_CONFIG_HOME: '/runner-runtime/task_1/.config',
-          XDG_STATE_HOME: '/runner-runtime/task_1/.local/state',
-          XDG_CACHE_HOME: '/runner-runtime/task_1/.cache',
-          XDG_DATA_HOME: '/runner-runtime/task_1/.local/share',
+          HOME: TASK_HOME,
+          TASK_HOME,
+          WORKSPACE_PATH: TASK_WORKSPACE,
+          HISTFILE: `${TASK_HOME}/.zsh_history`,
+          ZDOTDIR: TASK_HOME,
+          XDG_CONFIG_HOME: `${TASK_HOME}/.config`,
+          XDG_STATE_HOME: `${TASK_HOME}/.local/state`,
+          XDG_CACHE_HOME: `${TASK_HOME}/.cache`,
+          XDG_DATA_HOME: `${TASK_HOME}/.local/share`,
         }),
       }),
     );
@@ -374,15 +389,14 @@ describe('terminal-runtime', () => {
     const legacyDiscriminantKey = ['interaction', 'kind'].join('_');
     const legacySessionKey = ['session', 'id'].join('_');
     await expect(startTerminalProcess({
-      executionContext: {
+      executionContext: terminalExecutionContext({
         [legacyDiscriminantKey]: 'legacy',
-        task_id: 'task_1',
         [legacySessionKey]: 'sess_legacy',
         api_base: 'http://localhost:20000',
         execution_ticket: 'ticket_legacy_context',
         workspace_id: 'ws_default',
         project_id: 'proj_1',
-      } as unknown as Parameters<typeof startTerminalProcess>[0]['executionContext'],
+      }) as unknown as Parameters<typeof startTerminalProcess>[0]['executionContext'],
       shell: '/usr/bin/bash',
     })).rejects.toThrowError('task_terminal_execution_context_invalid');
     expect(nodePtySpawnMock).not.toHaveBeenCalled();
@@ -395,10 +409,9 @@ describe('terminal-runtime', () => {
     });
 
     const started = await startTerminalProcess({
-      executionContext: {
-        task_id: 'task_1',
+      executionContext: terminalExecutionContext({
         run_id: 'run_1',
-      },
+      }),
     });
 
     expect(started.child.exitCode).toBeNull();
@@ -409,12 +422,11 @@ describe('terminal-runtime', () => {
 
   it('injects task preamble for task terminals', async () => {
     await prepareTerminalWorkspace({
-      executionContext: {
-        task_id: 'task_1',
+      executionContext: terminalExecutionContext({
         run_id: 'run_1',
         api_base: 'http://localhost:20000',
         execution_ticket: 'ticket_123',
-      },
+      }),
       shell: '/usr/bin/bash',
     });
 
@@ -427,10 +439,9 @@ describe('terminal-runtime', () => {
     }));
 
     await prepareTerminalWorkspace({
-      executionContext: {
-        task_id: 'task_1',
+      executionContext: terminalExecutionContext({
         run_id: 'run_1',
-      },
+      }),
       shell: '/usr/bin/bash',
     });
 
@@ -443,11 +454,10 @@ describe('terminal-runtime', () => {
 
   it('exposes canonical terminal runner id through the runtime environment', async () => {
     await prepareTerminalWorkspace({
-      executionContext: {
-        task_id: 'task_1',
+      executionContext: terminalExecutionContext({
         runner_id: 'runner_terminal_1',
         runner_session_scope: 'task_execution',
-      },
+      }),
       shell: '/usr/bin/bash',
     });
 

@@ -768,7 +768,8 @@ See also:
 
 - Agent task activity shows execution details, recovered issues, final answer, terminal sessions, and artifacts.
 - Trace storage/query/replay uses task routes such as `/tasks/:taskId/traces` and task SSE replay.
-- Artifact collection displays files from the task `.artifacts` directory only.
+- Agent task terminal and run execution share a task-bound persistent HOME; managed paths are `/home/<task_home_segment>` and `/home/<task_home_segment>/workspace`.
+- Artifact collection displays files from `$TASK_HOME/workspace/.artifacts` only.
 - Chat model selection remains Endpoint-backed and does not dispatch Agent Runners.
 
 ### Current Diagnostics
@@ -1007,7 +1008,7 @@ npx tsc --noEmit
 - Agent task inputs use `/tasks/:taskId/inputs` with `InputRef`-style records (`library_object`, `url`, `artifact`).
 - Files default path uses project `file-libraries`; raw uploads land in a deterministic project library (`Project Uploads`) instead of personal upload storage.
 - Agent task artifacts can be attached back into task inputs as first-class `artifact` refs.
-- User-visible generated deliverables are collected from the task `.artifacts` directory.
+- User-visible generated deliverables are collected from the task `$TASK_HOME/workspace/.artifacts` directory.
 - Chat message `inputs` and attachment provenance support first-class `url` refs and project file-library-backed object refs.
 - Shared backend resolver layering is in place:
   - `input-ref-resolver.ts` (ref keys / imported object extraction / dedupe helpers)

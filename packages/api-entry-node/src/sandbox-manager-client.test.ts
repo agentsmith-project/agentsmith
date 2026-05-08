@@ -15,6 +15,13 @@ describe('SandboxManagerClient', () => {
       expect(init?.method).toBe('PUT');
       const headers = init?.headers as Record<string, string>;
       expect(headers['X-Service-Key']).toBe('svc-key');
+      expect(JSON.parse(String(init?.body))).toMatchObject({
+        image: 'runner:latest',
+        workspace_binding_id: 'flib_demo',
+        mount_path: '/home/task_1',
+        sub_path: 'agent-tasks/task_1',
+        working_dir: '/home/task_1/workspace',
+      });
       return new Response(JSON.stringify({ phase: 'Running', pod_name: 'pod-1' }), { status: 201 });
     });
     globalThis.fetch = fetchMock as unknown as typeof fetch;
@@ -23,6 +30,9 @@ describe('SandboxManagerClient', () => {
     const result = await client.createOrEnsurePod('ws_1', 'proj_1', 'workload_1', {
       image: 'runner:latest',
       workspace_binding_id: 'flib_demo',
+      mount_path: '/home/task_1',
+      sub_path: 'agent-tasks/task_1',
+      working_dir: '/home/task_1/workspace',
     });
 
     expect(result.httpStatus).toBe(201);

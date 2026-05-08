@@ -115,7 +115,9 @@ test.describe('@lane-real internal sandbox reclaim', () => {
       projectId,
       taskId: taskId1,
     });
-    expect(workspaceAccess1.container_workspace_path).toBe(`/workspace/${taskId1}`);
+    expect(workspaceAccess1.task_home_path).toMatch(/^\/home\/[a-z0-9][a-z0-9._-]*$/);
+    expect(workspaceAccess1.workspace_path).toBe(`${workspaceAccess1.task_home_path}/workspace`);
+    expect(workspaceAccess1.artifacts_path).toBe(`${workspaceAccess1.workspace_path}/.artifacts`);
     expect(workspaceAccess1.library_root_path).toBe('.');
     const localMount1 = await mountFileLibraryLocally(
       workspaceAccess1.metadata_url,

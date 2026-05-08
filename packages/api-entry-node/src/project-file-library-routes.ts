@@ -625,10 +625,10 @@ export async function handleProjectFileLibraryRoutes(args: {
       workspace_id: workspaceId,
       project_id: projectId,
     });
-    const activeTask = tasks.find((task) => (
-      task.status === 'active' && task.workspace_file_library_id === libraryId
+    const taskUsingLibrary = tasks.find((task) => (
+      task.workspace_file_library_id === libraryId
     ));
-    if (activeTask) {
+    if (taskUsingLibrary) {
       json(res, 409, { error_code: 'RESOURCE_CONFLICT', message: 'file_library_task_in_use' });
       return true;
     }

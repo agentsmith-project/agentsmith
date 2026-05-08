@@ -569,7 +569,11 @@ describe('notebook-execution-orchestrator governance preflight', () => {
         ensureWorkspaceBinding: vi.fn(async () => ({
           workspaceMount: {
             bindingId: 'flib_internal',
-            mountPath: '/workspace/task_internal',
+            mountPath: '/home/task_internal',
+            taskHomePath: '/home/task_internal',
+            workspacePath: '/home/task_internal/workspace',
+            artifactsPath: '/home/task_internal/workspace/.artifacts',
+            subPath: 'agent-tasks/task_internal',
           },
           binding: {
             file_library_id: 'flib_internal',
@@ -590,6 +594,7 @@ describe('notebook-execution-orchestrator governance preflight', () => {
       owner_user_id: 'user_internal',
       title: 'internal task',
       agent_name: 'internal agent',
+      task_home_segment: 'task_internal',
       status: 'active' as const,
       attached_inputs: [],
       created_at: new Date().toISOString(),
@@ -661,7 +666,9 @@ describe('notebook-execution-orchestrator governance preflight', () => {
             apply_patch_tool_type: 'function',
           },
           workspace_binding_mode: 'pre_mounted',
-          workspace_path: '/workspace/task_internal',
+          task_home_path: '/home/task_internal',
+          workspace_path: '/home/task_internal/workspace',
+          artifacts_path: '/home/task_internal/workspace/.artifacts',
           workspace_file_library_id: 'flib_internal',
         }),
       }),
@@ -684,6 +691,7 @@ describe('notebook-execution-orchestrator governance preflight', () => {
     });
     const dispatchArg = dispatchStreamingRequest.mock.calls[0]?.[0] as { executionContext?: Record<string, unknown> } | undefined;
     expect(dispatchArg?.executionContext).not.toHaveProperty('user_bearer_token');
+    expect(dispatchArg?.executionContext).not.toHaveProperty('container_workspace_path');
     const executionTicket = String(dispatchArg?.executionContext?.execution_ticket ?? '');
     await expect(resolveInternalTicket(deps.cache, executionTicket, 'agent_execution')).resolves.toMatchObject({
       payload: {

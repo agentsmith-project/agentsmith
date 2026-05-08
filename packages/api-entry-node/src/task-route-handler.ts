@@ -1,4 +1,5 @@
 import type http from 'node:http';
+import type { Client as MinioClient } from 'minio';
 import { assertTaskExecutionContext } from '@mbos/agent-runner';
 import type { AuthenticatedUser } from './auth.js';
 import type { RunnerSessionDispatchAuthority } from './agent-execution-service.js';
@@ -89,7 +90,10 @@ import {
 import {
   asObject,
   buildId,
+  buildTaskHomePaths,
+  findTaskHomeSegmentConflict,
   readTaskInputRefs,
+  resolveTaskHomeSegment,
   type TaskListItem,
   type TaskMessageRecord,
   type TaskRecord,
@@ -247,6 +251,7 @@ type InternalTaskWorkloadIdentity = {
 type ManagedTerminalRuntimeDispatchContext = {
   managedInternalAgent: {
     workspaceFileLibraryId: string;
+    taskHomeSegment?: string;
   };
 };
 
@@ -1537,6 +1542,7 @@ async function buildTaskTerminalExecutionContext(args: {
     ttlMs: 8 * 60 * 60 * 1000,
     maxUses: 500,
   });
+  const taskHomePaths = buildTaskHomePaths(resolveTaskHomeSegment(args.task));
 
   const executionContext = {
     workspace_id: args.task.workspace_id,
@@ -1558,7 +1564,9 @@ async function buildTaskTerminalExecutionContext(args: {
       ? 'agent_presence'
       : 'task_execution',
     workspace_binding_mode: isManagedAgentRunner(args.agent) ? 'pre_mounted' : 'file_library',
-    workspace_path: isManagedAgentRunner(args.agent) ? `/workspace/${args.task.id}` : undefined,
+    task_home_path: taskHomePaths.taskHomePath,
+    workspace_path: taskHomePaths.workspacePath,
+    artifacts_path: taskHomePaths.artifactsPath,
     workspace_file_library_id: args.task.workspace_file_library_id ?? null,
     workspace_file_library_name: args.task.workspace_file_library_name ?? null,
     workspace_dir_name: workspaceLibrary?.filesystem_name
@@ -1646,6 +1654,10 @@ function readManagedTerminalRuntimeDispatchContext(
   return {
     managedInternalAgent: {
       workspaceFileLibraryId: workspaceFileLibraryId.trim(),
+      ...(typeof (managedInternalAgent as Record<string, unknown>).taskHomeSegment === 'string'
+        && ((managedInternalAgent as Record<string, unknown>).taskHomeSegment as string).trim()
+        ? { taskHomeSegment: ((managedInternalAgent as Record<string, unknown>).taskHomeSegment as string).trim() }
+        : {}),
     },
   };
 }
@@ -1679,6 +1691,11 @@ async function ensureManagedTerminalRuntimeReady(
     projectId: session.projectId,
     fileLibraryId: runtimeDispatchContext.managedInternalAgent.workspaceFileLibraryId,
     taskId: session.taskId,
+    taskHomeSegment: runtimeDispatchContext.managedInternalAgent.taskHomeSegment ?? resolveTaskHomeSegment({
+      id: session.taskId,
+      workspace_id: session.workspaceId,
+      project_id: session.projectId,
+    }),
   });
   await deps.internalAgentPodManager.ensureAgentReady({
     workspaceId: session.workspaceId,
@@ -1746,6 +1763,152 @@ function buildTaskRunnerEvidenceMissingResponse(input: {
     task_id: input.taskId,
     ...(input.runId ? { run_id: input.runId } : {}),
   };
+}
+
+type AgentTaskDeleteBlocker =
+  | {
+      type: 'active_run';
+      run_id: string;
+      phase?: string;
+    }
+  | {
+      type: 'active_terminal';
+    }
+  | {
+      type: 'hard_teardown';
+      run_id: string;
+      status: string;
+    }
+  | {
+      type: 'workspace_holder';
+      holder: string;
+    };
+
+async function collectAgentTaskDeleteBlockers(args: {
+  deps: NodeApiDeps;
+  workspaceId: string;
+  projectId: string;
+  task: TaskRecord;
+  userId: string;
+}): Promise<AgentTaskDeleteBlocker[]> {
+  const blockers: AgentTaskDeleteBlocker[] = [];
+  const activeRun = await getNotebookTaskRunState(args.deps.cache, args.task.id);
+  if (activeRun) {
+    blockers.push({
+      type: 'active_run',
+      run_id: activeRun.run_id,
+      phase: activeRun.phase,
+    });
+  }
+  const hardTeardownDebt = await getNotebookTaskRunHardTeardownDebt(args.deps.cache, args.task.id);
+  if (hardTeardownDebt) {
+    blockers.push({
+      type: 'hard_teardown',
+      run_id: hardTeardownDebt.run_id,
+      status: hardTeardownDebt.status,
+    });
+  }
+  if (await hasBlockingTerminalSessionsForTask({
+    terminalService: args.deps.notebookTerminalService,
+    workspaceId: args.workspaceId,
+    projectId: args.projectId,
+    taskId: args.task.id,
+    userId: args.userId,
+  })) {
+    blockers.push({ type: 'active_terminal' });
+  }
+  const workloadId = sanitizeWorkloadId(args.task.id);
+  const coordinator = resolveInternalWorkloadCoordinator(args.deps);
+  const snapshotReader = coordinator as {
+    readSnapshotForTests?: () => Array<{
+      workspaceId: string;
+      projectId: string;
+      workloadId: string;
+      holders: string[];
+    }>;
+  } | undefined;
+  const holderSnapshots = typeof snapshotReader?.readSnapshotForTests === 'function'
+    ? snapshotReader.readSnapshotForTests().filter((snapshot) => (
+      snapshot.workspaceId === args.workspaceId
+      && snapshot.projectId === args.projectId
+      && snapshot.workloadId === workloadId
+    ))
+    : [];
+  for (const snapshot of holderSnapshots) {
+    for (const holder of snapshot.holders) {
+      blockers.push({
+        type: 'workspace_holder',
+        holder,
+      });
+    }
+  }
+  return blockers;
+}
+
+function isConnectionRefusedLike(error: unknown): boolean {
+  if (!(error instanceof Error)) return false;
+  const maybeNetworkError = error as { code?: unknown; cause?: unknown };
+  if (maybeNetworkError.code === 'ECONNREFUSED') return true;
+  if (error.message.includes('ECONNREFUSED')) return true;
+  return isConnectionRefusedLike(maybeNetworkError.cause);
+}
+
+function canIgnoreTaskHomeCleanupErrorForInMemoryGateway(deps: NodeApiDeps, error: unknown): boolean {
+  const gatewayManagerName = deps.fileLibraryGatewayManager?.constructor?.name;
+  return gatewayManagerName === 'InMemoryFileLibraryGatewayManager' && isConnectionRefusedLike(error);
+}
+
+async function removeTaskHomeSubtree(args: {
+  deps: NodeApiDeps;
+  workspaceId: string;
+  projectId: string;
+  task: TaskRecord;
+}): Promise<void> {
+  const libraryId = args.task.workspace_file_library_id?.trim();
+  if (!libraryId) return;
+  const library = await getProjectFileLibraryRecord({
+    deps: args.deps,
+    workspaceId: args.workspaceId,
+    projectId: args.projectId,
+    libraryId,
+  });
+  if (!library || library.created_by_user_id !== args.task.owner_user_id) return;
+
+  const taskHomePaths = buildTaskHomePaths(resolveTaskHomeSegment(args.task));
+  const prefix = `${taskHomePaths.subPath}/`;
+  try {
+    const client = await createFileLibraryGatewayClient({
+      deps: args.deps,
+      workspaceId: args.workspaceId,
+      projectId: args.projectId,
+      libraryId,
+      filesystemName: library.filesystem_name,
+    });
+    const bucket = fileLibraryBucketName(library.filesystem_name);
+    const keys = new Set<string>([
+      taskHomePaths.subPath,
+      prefix,
+    ]);
+    const listed = client.listObjectsV2(bucket, prefix, true) as AsyncIterable<{ name?: string }>;
+    for await (const item of listed) {
+      if (typeof item.name === 'string' && item.name.startsWith(prefix)) {
+        keys.add(item.name);
+      }
+    }
+    const keysToDelete = [...keys];
+    if (keysToDelete.length === 0) return;
+    const removeObjects = (client as MinioClient & {
+      removeObjects?: (bucketName: string, objectsList: string[]) => Promise<void>;
+    }).removeObjects;
+    if (typeof removeObjects === 'function') {
+      await removeObjects.call(client, bucket, keysToDelete);
+      return;
+    }
+    await Promise.all(keysToDelete.map((key) => client.removeObject(bucket, key).catch(() => undefined)));
+  } catch (error) {
+    if (canIgnoreTaskHomeCleanupErrorForInMemoryGateway(args.deps, error)) return;
+    throw error;
+  }
 }
 
 function buildNotebookHardTeardownDebtStopResponse(input: {
@@ -2196,6 +2359,7 @@ export async function handleTaskRoute(args: TaskRouteHandlerArgs): Promise<boole
       owner_user_id: user.id,
       title,
       ...(prompt ? { prompt } : {}),
+      task_home_segment: '',
       workspace_file_library_id: workspaceFileLibrary.id,
       workspace_file_library_name: workspaceFileLibrary.name,
       status: 'active',
@@ -2204,6 +2368,23 @@ export async function handleTaskRoute(args: TaskRouteHandlerArgs): Promise<boole
       updated_at: createdAt,
       last_activity_at: createdAt,
     };
+    task.task_home_segment = resolveTaskHomeSegment(task);
+    const taskHomeSegmentConflict = findTaskHomeSegmentConflict(
+      getTasks(route.workspaceId, route.projectId),
+      {
+        taskId: task.id,
+        taskHomeSegment: task.task_home_segment,
+      },
+    );
+    if (taskHomeSegmentConflict) {
+      json(res, 409, {
+        error_code: 'AGENT_TASK_HOME_SEGMENT_CONFLICT',
+        message: 'task_home_segment_conflict',
+        task_home_segment: task.task_home_segment,
+        conflicting_task_id: taskHomeSegmentConflict.id,
+      });
+      return true;
+    }
     const binding = await bindAgentRunnerForTask({
       deps,
       workspaceId: route.workspaceId,
@@ -2402,6 +2583,7 @@ export async function handleTaskRoute(args: TaskRouteHandlerArgs): Promise<boole
             runtimeDispatchContext: {
               managedInternalAgent: {
                 workspaceFileLibraryId: task.workspace_file_library_id,
+                taskHomeSegment: resolveTaskHomeSegment(task),
               },
             },
           }
@@ -2616,10 +2798,13 @@ export async function handleTaskRoute(args: TaskRouteHandlerArgs): Promise<boole
       metadataUrl: mountAccess.metadata_url,
       storageBucketUrl: mountAccess.storage_bucket_url,
     });
+    const taskHomePaths = buildTaskHomePaths(resolveTaskHomeSegment(task));
     json(res, 200, {
       task_id: task.id,
       workspace_binding_mode: 'file_library',
-      container_workspace_path: agent && isManagedAgentRunner(agent) ? `/workspace/${task.id}` : null,
+      task_home_path: taskHomePaths.taskHomePath,
+      workspace_path: taskHomePaths.workspacePath,
+      artifacts_path: taskHomePaths.artifactsPath,
       library_root_path: '.',
       workspace_dir_name: workspaceFileLibrary.filesystem_name,
       file_library_id: workspaceFileLibrary.id,
@@ -2699,41 +2884,28 @@ export async function handleTaskRoute(args: TaskRouteHandlerArgs): Promise<boole
       json(res, 404, { error_code: 'RESOURCE_NOT_FOUND', message: 'task_not_found' });
       return true;
     }
-    if (await getNotebookTaskRunState(deps.cache, route.taskId)) {
-      json(res, 409, {
-        error_code: 'RESOURCE_CONFLICT',
-        message: 'task_run_in_progress',
-      });
-      return true;
-    }
-    const hardTeardownDebt = await getNotebookTaskRunHardTeardownDebt(deps.cache, route.taskId);
-    if (hardTeardownDebt) {
-      if (!hardTeardownDebt.runner_id?.trim()) {
-        json(res, 409, buildTaskRunnerEvidenceMissingResponse({
-          taskId: route.taskId,
-          runId: hardTeardownDebt.run_id,
-        }));
-        return true;
-      }
-      json(res, 409, {
-        error_code: 'RESOURCE_CONFLICT',
-        message: 'task_run_hard_teardown_pending',
-      });
-      return true;
-    }
-    if (await hasBlockingTerminalSessionsForTask({
-      terminalService: deps.notebookTerminalService,
+    const task = tasks[index];
+    const blockers = await collectAgentTaskDeleteBlockers({
+      deps,
       workspaceId: route.workspaceId,
       projectId: route.projectId,
-      taskId: route.taskId,
+      task,
       userId: user.id,
-    })) {
+    });
+    if (blockers.length > 0) {
       json(res, 409, {
-        error_code: 'RESOURCE_CONFLICT',
-        message: 'task_terminal_sessions_active',
+        error_code: 'AGENT_TASK_DELETE_BLOCKED',
+        message: 'agent_task_delete_blocked',
+        blockers,
       });
       return true;
     }
+    await removeTaskHomeSubtree({
+      deps,
+      workspaceId: route.workspaceId,
+      projectId: route.projectId,
+      task,
+    });
     tasks.splice(index, 1);
     ACTIVE_RUNS_BY_TASK.delete(route.taskId);
     ACTIVE_RUN_CANCEL_BY_TASK.delete(route.taskId);

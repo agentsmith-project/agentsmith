@@ -24,6 +24,9 @@ export interface SandboxPodCreateBody {
   idle_timeout_sec?: number;
   max_lifetime_sec?: number;
   workspace_binding_id: string;
+  mount_path?: string;
+  sub_path?: string;
+  working_dir?: string;
 }
 
 export interface SandboxWorkspaceBindingBody {

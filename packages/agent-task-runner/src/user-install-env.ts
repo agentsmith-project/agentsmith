@@ -65,6 +65,7 @@ export function buildTaskUserInstallEnv(homeDir: string, baseEnv: NodeJS.Process
   const env = normalizeTaskHomePathEnv(homeDir, {
     ...baseEnv,
     HOME: homeDir,
+    TASK_HOME: homeDir,
     PYTHONUSERBASE: localRoot,
     PIP_USER: '1',
     npm_config_prefix: localRoot,

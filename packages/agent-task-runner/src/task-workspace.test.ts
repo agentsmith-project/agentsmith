@@ -45,10 +45,38 @@ import {
 } from './task-workspace.js';
 import { classifyMountedWorkspaceOwnerAuthority } from './task-workspace-ownership.js';
 
+const TASK_HOME = '/home/task_1';
+const TASK_WORKSPACE = `${TASK_HOME}/workspace`;
+const TASK_ARTIFACTS = `${TASK_WORKSPACE}/.artifacts`;
+
 type PersistedMountRegistry = {
   version?: number;
   sessions?: Array<Record<string, unknown>>;
 };
+
+function taskExecutionContext(overrides: Record<string, unknown> = {}): Record<string, unknown> {
+  return {
+    task_id: 'task_1',
+    task_home_path: TASK_HOME,
+    workspace_path: TASK_WORKSPACE,
+    artifacts_path: TASK_ARTIFACTS,
+    ...overrides,
+  };
+}
+
+function taskExecutionContextForHome(
+  taskId: string,
+  taskHome: string,
+  overrides: Record<string, unknown> = {},
+): Record<string, unknown> {
+  return {
+    task_id: taskId,
+    task_home_path: taskHome,
+    workspace_path: `${taskHome}/workspace`,
+    artifacts_path: `${taskHome}/workspace/.artifacts`,
+    ...overrides,
+  };
+}
 
 function parseRegistryWrite(callIndex?: number): PersistedMountRegistry {
   const call = typeof callIndex === 'number'
@@ -151,7 +179,6 @@ describe('task-workspace', () => {
     vi.stubGlobal('fetch', fetchMock);
     fetchMock.mockReset();
     delete process.env.MBOS_AGENT_WORKSPACE_ROOT;
-    delete process.env.MBOS_AGENT_CODEX_STATE_ROOT;
     delete process.env.MBOS_AGENT_JUICEFS_MOUNT_OPTIONS;
     delete process.env.WORKSPACE_PATH;
     process.env.HOME = '/home/alice';
@@ -189,67 +216,68 @@ describe('task-workspace', () => {
     });
   });
 
-  it('builds developer task mount paths under ~/ags-workspace/<task_id>', () => {
+  it('builds task home mount paths under /home/<segment> for every runner mode', () => {
     expect(buildTaskWorkspaceMountPath({
       mode: 'developer',
       taskId: 'task_1',
-    })).toBe('/home/alice/ags-workspace/task_1');
-  });
-
-  it('builds managed local and managed platform task mount paths under /workspace/<task_id>', () => {
+    })).toBe(TASK_HOME);
     expect(buildTaskWorkspaceMountPath({
       mode: 'managed_local',
       taskId: 'task_1',
-    })).toBe('/workspace/task_1');
+    })).toBe(TASK_HOME);
     expect(buildTaskWorkspaceMountPath({
       mode: 'managed_platform',
       taskId: 'task_1',
-    })).toBe('/workspace/task_1');
+    })).toBe(TASK_HOME);
   });
 
-  it('builds explicit visible, runtime, and artifact roots for a task workspace', () => {
+  it('ignores legacy Codex state root env and builds runtime state under task HOME', () => {
     process.env.MBOS_AGENT_CODEX_STATE_ROOT = '/runner-runtime';
 
-    const paths = buildTaskWorkspacePaths('/workspace/task_1', 'managed_local');
+    const paths = buildTaskWorkspacePaths({
+      mode: 'managed_local',
+      taskHomePath: TASK_HOME,
+      workspacePath: TASK_WORKSPACE,
+      artifactsPath: TASK_ARTIFACTS,
+    });
     expect(paths).toMatchObject({
       mode: 'managed_local',
-      visibleRoot: '/workspace/task_1',
-      mountRoot: '/workspace/task_1',
-      taskRoot: '/workspace/task_1',
-      artifactsDir: '/workspace/task_1/.artifacts',
+      taskHome: TASK_HOME,
+      homeDir: TASK_HOME,
+      workspaceDir: TASK_WORKSPACE,
+      visibleRoot: TASK_WORKSPACE,
+      mountRoot: TASK_HOME,
+      taskRoot: TASK_HOME,
+      runtimeRoot: TASK_HOME,
+      codexDir: `${TASK_HOME}/.codex`,
+      mbosDir: `${TASK_HOME}/.mbos`,
+      skillsDir: `${TASK_HOME}/.agents/skills`,
+      artifactsDir: TASK_ARTIFACTS,
     });
-    expect(paths.runtimeRoot).toMatch(/^\/runner-runtime\/task_1-[a-f0-9]{16}$/);
-    expect(paths.homeDir).toBe(paths.runtimeRoot);
-    expect(paths.codexDir).toBe(`${paths.runtimeRoot}/.codex`);
-    expect(paths.mbosDir).toBe(`${paths.runtimeRoot}/.mbos`);
-    expect(paths.skillsDir).toBe(`${paths.runtimeRoot}/.agents/skills`);
-    expectPathOutside(paths.visibleRoot, paths.homeDir);
-    expectPathOutside(paths.visibleRoot, paths.codexDir);
-    expectPathOutside(paths.visibleRoot, paths.mbosDir);
-    expectPathOutside(paths.visibleRoot, paths.skillsDir);
+    expectPathOutside('/runner-runtime', paths.codexDir);
   });
 
-  it('prefers an explicit workspace path for pre-mounted managed platform runs', () => {
+  it('requires explicit canonical path fields for prepared task paths', () => {
     process.env.MBOS_AGENT_TASK_RUNNER_MODE = 'managed_platform';
     expect(resolveTaskCwd({
-      workspacePath: '/workspace/task_internal',
-      taskId: 'task_internal',
-    })).toEqual({
-      cwd: '/workspace/task_internal',
-      source: 'workspace_path',
-      mode: 'managed_platform',
-    });
-  });
-
-  it('falls back to the mode task mount path when workspace path is missing', () => {
-    process.env.MBOS_AGENT_TASK_RUNNER_MODE = 'managed_local';
-    expect(resolveTaskCwd({
       taskId: 'task_1',
-    })).toEqual({
-      cwd: '/workspace/task_1',
-      source: 'mode_mount_path',
-      mode: 'managed_local',
-    });
+      taskHomePath: TASK_HOME,
+      workspacePath: TASK_WORKSPACE,
+      artifactsPath: TASK_ARTIFACTS,
+    })).toEqual(expect.objectContaining({
+      cwd: TASK_WORKSPACE,
+      source: 'path_fields',
+      mode: 'managed_platform',
+      paths: expect.objectContaining({
+        taskHome: TASK_HOME,
+        workspaceDir: TASK_WORKSPACE,
+        artifactsDir: TASK_ARTIFACTS,
+      }),
+    }));
+
+    expect(() => resolveTaskCwd({
+      taskId: 'task_1',
+    })).toThrow('task_workspace_paths_missing:task_home_path');
   });
 
   it('fetches task-bound workspace access with bearer auth', async () => {
@@ -290,7 +318,6 @@ describe('task-workspace', () => {
   it('mounts managed file-library workspaces directly at the task directory', async () => {
     process.env.MBOS_AGENT_TASK_RUNNER_MODE = 'managed_local';
     process.env.MBOS_AGENT_WORKSPACE_ROOT = '/tmp/runner-root';
-    process.env.MBOS_AGENT_CODEX_STATE_ROOT = '/runner-runtime';
     fetchMock.mockResolvedValue({
       ok: true,
       json: async () => ({
@@ -306,43 +333,40 @@ describe('task-workspace', () => {
     });
 
     const resolved = await prepareTaskWorkspace({
-      executionContext: {
+      executionContext: taskExecutionContext({
         api_base: 'http://localhost:20000',
         workspace_id: 'ws_default',
         project_id: 'proj_1',
-        task_id: 'task_1',
         execution_ticket: 'test-token',
         workspace_binding_mode: 'file_library',
-      },
+      }),
       username: 'alice',
       taskId: 'task_1',
     });
 
-    expect(mkdirMock).toHaveBeenCalledWith('/workspace/task_1', { recursive: true });
+    expect(mkdirMock).toHaveBeenCalledWith(TASK_HOME, { recursive: true });
     expect(spawnMock).toHaveBeenCalledWith(
       'juicefs',
       expect.arrayContaining([
         'mount',
         'postgres://juicefs-meta',
-        '/workspace/task_1',
+        TASK_HOME,
       ]),
       expect.objectContaining({
         stdio: 'ignore',
       }),
     );
-    expect(resolved.cwd).toBe('/workspace/task_1');
+    expect(resolved.cwd).toBe(TASK_WORKSPACE);
     expect(resolved.source).toBe('file_library_mount');
-    expect(resolved.paths.visibleRoot).toBe('/workspace/task_1');
-    expect(resolved.paths.runtimeRoot).toMatch(/^\/runner-runtime\/task_1-[a-f0-9]{16}$/);
-    expect(resolved.paths.homeDir).toBe(resolved.paths.runtimeRoot);
-    expect(resolved.paths.codexDir).toBe(`${resolved.paths.runtimeRoot}/.codex`);
-    expect(resolved.paths.mbosDir).toBe(`${resolved.paths.runtimeRoot}/.mbos`);
-    expect(resolved.paths.skillsDir).toBe(`${resolved.paths.runtimeRoot}/.agents/skills`);
-    expect(resolved.paths.artifactsDir).toBe('/workspace/task_1/.artifacts');
-    expectPathOutside(resolved.cwd, resolved.paths.homeDir);
-    expectPathOutside(resolved.cwd, resolved.paths.codexDir);
-    expectPathOutside(resolved.cwd, resolved.paths.mbosDir);
-    expectPathOutside(resolved.cwd, resolved.paths.skillsDir);
+    expect(resolved.paths.visibleRoot).toBe(TASK_WORKSPACE);
+    expect(resolved.paths.runtimeRoot).toBe(TASK_HOME);
+    expect(resolved.paths.homeDir).toBe(TASK_HOME);
+    expect(resolved.paths.taskHome).toBe(TASK_HOME);
+    expect(resolved.paths.workspaceDir).toBe(TASK_WORKSPACE);
+    expect(resolved.paths.codexDir).toBe(`${TASK_HOME}/.codex`);
+    expect(resolved.paths.mbosDir).toBe(`${TASK_HOME}/.mbos`);
+    expect(resolved.paths.skillsDir).toBe(`${TASK_HOME}/.agents/skills`);
+    expect(resolved.paths.artifactsDir).toBe(TASK_ARTIFACTS);
     expect(typeof resolved.release).toBe('function');
     expect(writeFileMock).toHaveBeenCalledWith(
       '/tmp/runner-root/task-workspace-mount-sessions.json',
@@ -350,10 +374,10 @@ describe('task-workspace', () => {
       'utf8',
     );
     const registry = parseRegistryWrite();
-    const session = findRegistrySession(registry, '/workspace/task_1');
+    const session = findRegistrySession(registry, TASK_HOME);
     expect(registry.version).toBe(4);
     expect(session).toMatchObject({
-      mount_path: '/workspace/task_1',
+      mount_path: TASK_HOME,
       mode: 'managed_local',
       metadata_url: 'postgres://juicefs-meta',
       storage_bucket_url: 'http://localhost:19000/jfs-lib-flib_1',
@@ -405,21 +429,20 @@ describe('task-workspace', () => {
     });
 
     await prepareTaskWorkspace({
-      executionContext: {
+      executionContext: taskExecutionContext({
         api_base: 'http://localhost:20000',
         workspace_id: 'ws_default',
         project_id: 'proj_1',
-        task_id: 'task_1',
         execution_ticket: 'test-token',
         workspace_binding_mode: 'file_library',
-      },
+      }),
       username: 'alice',
       taskId: 'task_1',
     });
 
     const registry = parseRegistryWrite();
     const legacySession = findRegistrySession(registry, '/workspace/task_legacy');
-    const newSession = findRegistrySession(registry, '/workspace/task_1');
+    const newSession = findRegistrySession(registry, TASK_HOME);
 
     expect(registry.sessions).toHaveLength(2);
     expect(legacySession).toMatchObject({
@@ -431,7 +454,7 @@ describe('task-workspace', () => {
       last_release_outcome: 'not_started',
     });
     expect(newSession).toMatchObject({
-      mount_path: '/workspace/task_1',
+      mount_path: TASK_HOME,
       owner_process_pid: process.pid,
       state: 'mounted',
     });
@@ -444,7 +467,7 @@ describe('task-workspace', () => {
       JSON.stringify({
         sessions: [
           {
-            mount_path: '/workspace/task_1',
+            mount_path: TASK_HOME,
             mode: 'managed_local',
             metadata_url: 'postgres://legacy-meta',
             storage_bucket_url: 'http://localhost:19000/jfs-lib-legacy',
@@ -477,7 +500,7 @@ describe('task-workspace', () => {
     });
     const foreignOwnerPid = process.pid + 1000;
 
-    const mountedPaths = new Set<string>(['/workspace/task_1']);
+    const mountedPaths = new Set<string>([TASK_HOME]);
     execFileMock.mockImplementation((file, args, maybeOptions, maybeCallback) => {
       const callback = typeof maybeOptions === 'function' ? maybeOptions : maybeCallback;
       if (file === 'mountpoint') {
@@ -499,17 +522,16 @@ describe('task-workspace', () => {
     });
 
     await expect(prepareTaskWorkspace({
-      executionContext: {
+      executionContext: taskExecutionContext({
         api_base: 'http://localhost:20000',
         workspace_id: 'ws_default',
         project_id: 'proj_1',
-        task_id: 'task_1',
         execution_ticket: 'test-token',
         workspace_binding_mode: 'file_library',
-      },
+      }),
       username: 'alice',
       taskId: 'task_1',
-    })).rejects.toThrow('task_workspace_mount_owned_by_live_runner:/workspace/task_1');
+    })).rejects.toThrow(`task_workspace_mount_owned_by_live_runner:${TASK_HOME}`);
 
     expect(spawnMock).not.toHaveBeenCalled();
     expect(writeFileMock).not.toHaveBeenCalled();
@@ -533,7 +555,7 @@ describe('task-workspace', () => {
     });
     readFileMock.mockResolvedValue('');
 
-    const mountedPaths = new Set<string>(['/workspace/task_1']);
+    const mountedPaths = new Set<string>([TASK_HOME]);
     execFileMock.mockImplementation((file, args, maybeOptions, maybeCallback) => {
       const callback = typeof maybeOptions === 'function' ? maybeOptions : maybeCallback;
       if (file === 'mountpoint') {
@@ -551,17 +573,16 @@ describe('task-workspace', () => {
     });
 
     await expect(prepareTaskWorkspace({
-      executionContext: {
+      executionContext: taskExecutionContext({
         api_base: 'http://localhost:20000',
         workspace_id: 'ws_default',
         project_id: 'proj_1',
-        task_id: 'task_1',
         execution_ticket: 'test-token',
         workspace_binding_mode: 'file_library',
-      },
+      }),
       username: 'alice',
       taskId: 'task_1',
-    })).rejects.toThrow('task_workspace_mount_untracked_live_mount:/workspace/task_1');
+    })).rejects.toThrow(`task_workspace_mount_untracked_live_mount:${TASK_HOME}`);
 
     expect(spawnMock).not.toHaveBeenCalled();
     expect(writeFileMock).not.toHaveBeenCalled();
@@ -574,7 +595,7 @@ describe('task-workspace', () => {
     registryReadError.code = 'EACCES';
     readFileMock.mockRejectedValue(registryReadError);
 
-    const mountedPaths = new Set<string>(['/workspace/task_1']);
+    const mountedPaths = new Set<string>([TASK_HOME]);
     execFileMock.mockImplementation((file, args, maybeOptions, maybeCallback) => {
       const callback = typeof maybeOptions === 'function' ? maybeOptions : maybeCallback;
       if (file === 'mountpoint') {
@@ -591,8 +612,8 @@ describe('task-workspace', () => {
       callback(null);
     });
 
-    await expect(releasePreparedTaskWorkspace('/workspace/task_1')).rejects.toThrow(
-      'task_workspace_release_untracked_live_mount:/workspace/task_1',
+    await expect(releasePreparedTaskWorkspace(TASK_HOME)).rejects.toThrow(
+      `task_workspace_release_untracked_live_mount:${TASK_HOME}`,
     );
 
     expect(spawnMock).not.toHaveBeenCalled();
@@ -619,7 +640,7 @@ describe('task-workspace', () => {
       JSON.stringify({
         sessions: [
           {
-            mount_path: '/workspace/task_1',
+            mount_path: TASK_HOME,
             mode: 'managed_local',
             metadata_url: 'postgres://legacy-meta',
             storage_bucket_url: 'http://localhost:19000/jfs-lib-legacy',
@@ -638,7 +659,7 @@ describe('task-workspace', () => {
       }),
     );
 
-    const mountedPaths = new Set<string>(['/workspace/task_1']);
+    const mountedPaths = new Set<string>([TASK_HOME]);
     execFileMock.mockImplementation((file, args, maybeOptions, maybeCallback) => {
       const callback = typeof maybeOptions === 'function' ? maybeOptions : maybeCallback;
       if (file === 'mountpoint') {
@@ -669,26 +690,25 @@ describe('task-workspace', () => {
     });
 
     const resolved = await prepareTaskWorkspace({
-      executionContext: {
+      executionContext: taskExecutionContext({
         api_base: 'http://localhost:20000',
         workspace_id: 'ws_default',
         project_id: 'proj_1',
-        task_id: 'task_1',
         execution_ticket: 'test-token',
         workspace_binding_mode: 'file_library',
-      },
+      }),
       username: 'alice',
       taskId: 'task_1',
     });
 
     expect(spawnMock).not.toHaveBeenCalled();
-    expect(resolved.cwd).toBe('/workspace/task_1');
+    expect(resolved.cwd).toBe(TASK_WORKSPACE);
     expect(resolved.source).toBe('file_library_mount');
 
     const registry = parseRegistryWrite();
-    const session = findRegistrySession(registry, '/workspace/task_1');
+    const session = findRegistrySession(registry, TASK_HOME);
     expect(session).toMatchObject({
-      mount_path: '/workspace/task_1',
+      mount_path: TASK_HOME,
       refs: 1,
       owner_process_pid: process.pid,
       state: 'mounted',
@@ -720,7 +740,7 @@ describe('task-workspace', () => {
       JSON.stringify({
         sessions: [
           {
-            mount_path: '/workspace/task_1',
+            mount_path: TASK_HOME,
             mode: 'managed_local',
             metadata_url: 'postgres://legacy-meta',
             storage_bucket_url: 'http://localhost:19000/jfs-lib-legacy',
@@ -739,7 +759,7 @@ describe('task-workspace', () => {
       }),
     );
 
-    const mountedPaths = new Set<string>(['/workspace/task_1']);
+    const mountedPaths = new Set<string>([TASK_HOME]);
     execFileMock.mockImplementation((file, args, maybeOptions, maybeCallback) => {
       const callback = typeof maybeOptions === 'function' ? maybeOptions : maybeCallback;
       if (file === 'mountpoint') {
@@ -770,17 +790,16 @@ describe('task-workspace', () => {
     });
 
     await expect(prepareTaskWorkspace({
-      executionContext: {
+      executionContext: taskExecutionContext({
         api_base: 'http://localhost:20000',
         workspace_id: 'ws_default',
         project_id: 'proj_1',
-        task_id: 'task_1',
         execution_ticket: 'test-token',
         workspace_binding_mode: 'file_library',
-      },
+      }),
       username: 'alice',
       taskId: 'task_1',
-    })).rejects.toThrow('task_workspace_mount_truth_mismatch:/workspace/task_1');
+    })).rejects.toThrow(`task_workspace_mount_truth_mismatch:${TASK_HOME}`);
 
     expect(spawnMock).not.toHaveBeenCalled();
     expect(writeFileMock).not.toHaveBeenCalled();
@@ -806,7 +825,7 @@ describe('task-workspace', () => {
       JSON.stringify({
         sessions: [
           {
-            mount_path: '/workspace/task_1',
+            mount_path: TASK_HOME,
             mode: 'managed_local',
             metadata_url: 'postgres://legacy-meta',
             storage_bucket_url: 'http://localhost:19000/jfs-lib-legacy',
@@ -825,7 +844,7 @@ describe('task-workspace', () => {
       }),
     );
 
-    const mountedPaths = new Set<string>(['/workspace/task_1']);
+    const mountedPaths = new Set<string>([TASK_HOME]);
     execFileMock.mockImplementation((file, args, maybeOptions, maybeCallback) => {
       const callback = typeof maybeOptions === 'function' ? maybeOptions : maybeCallback;
       if (file === 'mountpoint') {
@@ -847,17 +866,16 @@ describe('task-workspace', () => {
     });
 
     await expect(prepareTaskWorkspace({
-      executionContext: {
+      executionContext: taskExecutionContext({
         api_base: 'http://localhost:20000',
         workspace_id: 'ws_default',
         project_id: 'proj_1',
-        task_id: 'task_1',
         execution_ticket: 'test-token',
         workspace_binding_mode: 'file_library',
-      },
+      }),
       username: 'alice',
       taskId: 'task_1',
-    })).rejects.toThrow('task_workspace_mount_untracked_live_mount:/workspace/task_1');
+    })).rejects.toThrow(`task_workspace_mount_untracked_live_mount:${TASK_HOME}`);
 
     expect(spawnMock).not.toHaveBeenCalled();
     expect(writeFileMock).not.toHaveBeenCalled();
@@ -883,7 +901,7 @@ describe('task-workspace', () => {
       JSON.stringify({
         sessions: [
           {
-            mount_path: '/workspace/task_1',
+            mount_path: TASK_HOME,
             mode: 'managed_local',
             metadata_url: 'postgres://legacy-meta',
             storage_bucket_url: 'http://localhost:19000/jfs-lib-legacy',
@@ -902,7 +920,7 @@ describe('task-workspace', () => {
       }),
     );
 
-    const mountedPaths = new Set<string>(['/workspace/task_1']);
+    const mountedPaths = new Set<string>([TASK_HOME]);
     execFileMock.mockImplementation((file, args, maybeOptions, maybeCallback) => {
       const callback = typeof maybeOptions === 'function' ? maybeOptions : maybeCallback;
       if (file === 'mountpoint') {
@@ -940,26 +958,25 @@ describe('task-workspace', () => {
     });
 
     const resolved = await prepareTaskWorkspace({
-      executionContext: {
+      executionContext: taskExecutionContext({
         api_base: 'http://localhost:20000',
         workspace_id: 'ws_default',
         project_id: 'proj_1',
-        task_id: 'task_1',
         execution_ticket: 'test-token',
         workspace_binding_mode: 'file_library',
-      },
+      }),
       username: 'alice',
       taskId: 'task_1',
     });
 
     expect(spawnMock).not.toHaveBeenCalled();
-    expect(resolved.cwd).toBe('/workspace/task_1');
+    expect(resolved.cwd).toBe(TASK_WORKSPACE);
     expect(resolved.source).toBe('file_library_mount');
 
     const registry = parseRegistryWrite();
-    const session = findRegistrySession(registry, '/workspace/task_1');
+    const session = findRegistrySession(registry, TASK_HOME);
     expect(session).toMatchObject({
-      mount_path: '/workspace/task_1',
+      mount_path: TASK_HOME,
       refs: 1,
       owner_process_pid: process.pid,
       state: 'mounted',
@@ -974,7 +991,7 @@ describe('task-workspace', () => {
       JSON.stringify({
         sessions: [
           {
-            mount_path: '/workspace/task_1',
+            mount_path: TASK_HOME,
             mode: 'managed_local',
             metadata_url: 'postgres://legacy-meta',
             storage_bucket_url: 'http://localhost:19000/jfs-lib-legacy',
@@ -1006,7 +1023,7 @@ describe('task-workspace', () => {
       }),
     });
 
-    const mountedPaths = new Set<string>(['/workspace/task_1']);
+    const mountedPaths = new Set<string>([TASK_HOME]);
     execFileMock.mockImplementation((file, args, maybeOptions, maybeCallback) => {
       const callback = typeof maybeOptions === 'function' ? maybeOptions : maybeCallback;
       if (file === 'mountpoint') {
@@ -1061,14 +1078,13 @@ describe('task-workspace', () => {
     });
 
     await prepareTaskWorkspace({
-      executionContext: {
+      executionContext: taskExecutionContext({
         api_base: 'http://localhost:20000',
         workspace_id: 'ws_default',
         project_id: 'proj_1',
-        task_id: 'task_1',
         execution_ticket: 'test-token',
         workspace_binding_mode: 'file_library',
-      },
+      }),
       username: 'alice',
       taskId: 'task_1',
     });
@@ -1076,7 +1092,7 @@ describe('task-workspace', () => {
     expect(spawnMock).toHaveBeenNthCalledWith(
       1,
       'juicefs',
-      ['umount', '/workspace/task_1'],
+      ['umount', TASK_HOME],
       expect.objectContaining({
         stdio: 'ignore',
       }),
@@ -1087,7 +1103,7 @@ describe('task-workspace', () => {
       expect.arrayContaining([
         'mount',
         'postgres://juicefs-meta',
-        '/workspace/task_1',
+        TASK_HOME,
       ]),
       expect.objectContaining({
         stdio: 'ignore',
@@ -1095,9 +1111,9 @@ describe('task-workspace', () => {
     );
 
     const registry = parseRegistryWrite();
-    const session = findRegistrySession(registry, '/workspace/task_1');
+    const session = findRegistrySession(registry, TASK_HOME);
     expect(session).toMatchObject({
-      mount_path: '/workspace/task_1',
+      mount_path: TASK_HOME,
       refs: 1,
       owner_process_pid: process.pid,
       state: 'mounted',
@@ -1113,7 +1129,7 @@ describe('task-workspace', () => {
       JSON.stringify({
         sessions: [
           {
-            mount_path: '/workspace/task_1',
+            mount_path: TASK_HOME,
             mode: 'managed_local',
             metadata_url: 'postgres://legacy-meta',
             storage_bucket_url: 'http://localhost:19000/jfs-lib-legacy',
@@ -1145,7 +1161,7 @@ describe('task-workspace', () => {
       }),
     });
 
-    const mountedPaths = new Set<string>(['/workspace/task_1']);
+    const mountedPaths = new Set<string>([TASK_HOME]);
     execFileMock.mockImplementation((file, args, maybeOptions, maybeCallback) => {
       const callback = typeof maybeOptions === 'function' ? maybeOptions : maybeCallback;
       if (file === 'mountpoint') {
@@ -1199,14 +1215,13 @@ describe('task-workspace', () => {
       return child;
     });
     await prepareTaskWorkspace({
-      executionContext: {
+      executionContext: taskExecutionContext({
         api_base: 'http://localhost:20000',
         workspace_id: 'ws_default',
         project_id: 'proj_1',
-        task_id: 'task_1',
         execution_ticket: 'test-token',
         workspace_binding_mode: 'file_library',
-      },
+      }),
       username: 'alice',
       taskId: 'task_1',
     });
@@ -1214,7 +1229,7 @@ describe('task-workspace', () => {
     expect(spawnMock).toHaveBeenNthCalledWith(
       1,
       'juicefs',
-      ['umount', '/workspace/task_1'],
+      ['umount', TASK_HOME],
       expect.objectContaining({
         stdio: 'ignore',
       }),
@@ -1225,7 +1240,7 @@ describe('task-workspace', () => {
       expect.arrayContaining([
         'mount',
         'postgres://juicefs-meta',
-        '/workspace/task_1',
+        TASK_HOME,
       ]),
       expect.objectContaining({
         stdio: 'ignore',
@@ -1233,9 +1248,9 @@ describe('task-workspace', () => {
     );
 
     const registry = parseRegistryWrite();
-    const session = findRegistrySession(registry, '/workspace/task_1');
+    const session = findRegistrySession(registry, TASK_HOME);
     expect(session).toMatchObject({
-      mount_path: '/workspace/task_1',
+      mount_path: TASK_HOME,
       refs: 1,
       owner_process_pid: process.pid,
       state: 'mounted',
@@ -1252,7 +1267,7 @@ describe('task-workspace', () => {
       JSON.stringify({
         sessions: [
           {
-            mount_path: '/workspace/task_1',
+            mount_path: TASK_HOME,
             mode: 'managed_local',
             metadata_url: 'postgres://legacy-meta',
             storage_bucket_url: 'http://localhost:19000/jfs-lib-legacy',
@@ -1284,7 +1299,7 @@ describe('task-workspace', () => {
       }),
     });
 
-    const mountedPaths = new Set<string>(['/workspace/task_1']);
+    const mountedPaths = new Set<string>([TASK_HOME]);
     execFileMock.mockImplementation((file, args, maybeOptions, maybeCallback) => {
       const callback = typeof maybeOptions === 'function' ? maybeOptions : maybeCallback;
       if (file === 'mountpoint') {
@@ -1346,14 +1361,13 @@ describe('task-workspace', () => {
     });
 
     await prepareTaskWorkspace({
-      executionContext: {
+      executionContext: taskExecutionContext({
         api_base: 'http://localhost:20000',
         workspace_id: 'ws_default',
         project_id: 'proj_1',
-        task_id: 'task_1',
         execution_ticket: 'test-token',
         workspace_binding_mode: 'file_library',
-      },
+      }),
       username: 'alice',
       taskId: 'task_1',
     });
@@ -1361,7 +1375,7 @@ describe('task-workspace', () => {
     expect(spawnMock).toHaveBeenNthCalledWith(
       1,
       'juicefs',
-      ['umount', '/workspace/task_1'],
+      ['umount', TASK_HOME],
       expect.objectContaining({
         stdio: 'ignore',
       }),
@@ -1372,7 +1386,7 @@ describe('task-workspace', () => {
       expect.arrayContaining([
         'mount',
         'postgres://juicefs-meta',
-        '/workspace/task_1',
+        TASK_HOME,
       ]),
       expect.objectContaining({
         stdio: 'ignore',
@@ -1397,20 +1411,19 @@ describe('task-workspace', () => {
     });
 
     const initial = await prepareTaskWorkspace({
-      executionContext: {
+      executionContext: taskExecutionContext({
         api_base: 'http://localhost:20000',
         workspace_id: 'ws_default',
         project_id: 'proj_1',
-        task_id: 'task_1',
         execution_ticket: 'test-token',
         workspace_binding_mode: 'file_library',
-      },
+      }),
       username: 'alice',
       taskId: 'task_1',
     });
     expect(spawnMock).toHaveBeenCalledTimes(1);
     expect(initial.lease).toMatchObject({
-      mountPath: '/workspace/task_1',
+      mountPath: TASK_HOME,
       revision: 1,
     });
 
@@ -1418,7 +1431,7 @@ describe('task-workspace', () => {
     mkdirMock.mockImplementation(async (target: string) => {
       const seen = mkdirCalls.get(target) ?? 0;
       mkdirCalls.set(target, seen + 1);
-      if (target === '/workspace/task_1/.artifacts' && seen === 0) {
+      if (target === TASK_ARTIFACTS && seen === 0) {
         const error = new Error('stale mount') as NodeJS.ErrnoException;
         error.code = 'EIO';
         throw error;
@@ -1426,14 +1439,13 @@ describe('task-workspace', () => {
     });
 
     const resolved = await prepareTaskWorkspace({
-      executionContext: {
+      executionContext: taskExecutionContext({
         api_base: 'http://localhost:20000',
         workspace_id: 'ws_default',
         project_id: 'proj_1',
-        task_id: 'task_1',
         execution_ticket: 'test-token',
         workspace_binding_mode: 'file_library',
-      },
+      }),
       username: 'alice',
       taskId: 'task_1',
     });
@@ -1441,7 +1453,7 @@ describe('task-workspace', () => {
     expect(spawnMock).toHaveBeenNthCalledWith(
       2,
       'juicefs',
-      ['umount', '/workspace/task_1'],
+      ['umount', TASK_HOME],
       expect.objectContaining({
         stdio: 'ignore',
       }),
@@ -1452,29 +1464,29 @@ describe('task-workspace', () => {
       expect.arrayContaining([
         'mount',
         'postgres://juicefs-meta',
-        '/workspace/task_1',
+        TASK_HOME,
       ]),
       expect.objectContaining({
         stdio: 'ignore',
       }),
     );
-    expect(resolved.cwd).toBe('/workspace/task_1');
+    expect(resolved.cwd).toBe(TASK_WORKSPACE);
     expect(resolved.source).toBe('file_library_mount');
     expect(resolved.lease).toMatchObject({
-      mountPath: '/workspace/task_1',
+      mountPath: TASK_HOME,
       revision: 2,
     });
     expect(resolved.lease?.leaseId).not.toBe(initial.lease?.leaseId);
 
     await expect(initial.release()).rejects.toThrow(
-      'task_workspace_release_lease_mismatch:/workspace/task_1',
+      `task_workspace_release_lease_mismatch:${TASK_HOME}`,
     );
     expect(spawnMock).toHaveBeenCalledTimes(3);
 
     const registry = parseRegistryWrite();
-    const session = findRegistrySession(registry, '/workspace/task_1');
+    const session = findRegistrySession(registry, TASK_HOME);
     expect(session).toMatchObject({
-      mount_path: '/workspace/task_1',
+      mount_path: TASK_HOME,
       refs: 1,
       state: 'mounted',
       lease_revision: 2,
@@ -1499,14 +1511,13 @@ describe('task-workspace', () => {
     });
 
     const resolved = await prepareTaskWorkspace({
-      executionContext: {
+      executionContext: taskExecutionContext({
         api_base: 'http://localhost:20000',
         workspace_id: 'ws_default',
         project_id: 'proj_1',
-        task_id: 'task_1',
         execution_ticket: 'test-token',
         workspace_binding_mode: 'file_library',
-      },
+      }),
       username: 'alice',
       taskId: 'task_1',
     });
@@ -1516,7 +1527,7 @@ describe('task-workspace', () => {
     expect(spawnMock).toHaveBeenNthCalledWith(
       2,
       'juicefs',
-      ['umount', '/home/alice/ags-workspace/task_1'],
+      ['umount', TASK_HOME],
       expect.objectContaining({
         stdio: 'ignore',
       }),
@@ -1524,10 +1535,10 @@ describe('task-workspace', () => {
     const releasingRegistry = parseRegistryWrite(1);
     const releasingSession = findRegistrySession(
       releasingRegistry,
-      '/home/alice/ags-workspace/task_1',
+      TASK_HOME,
     );
     expect(releasingSession).toMatchObject({
-      mount_path: '/home/alice/ags-workspace/task_1',
+      mount_path: TASK_HOME,
       state: 'releasing',
       last_release_outcome: 'pending',
       owner_process_pid: process.pid,
@@ -1535,7 +1546,7 @@ describe('task-workspace', () => {
     expectIsoTimestamp(releasingSession?.last_release_attempt_at);
 
     const finalRegistry = parseRegistryWrite();
-    expect(findRegistrySession(finalRegistry, '/home/alice/ags-workspace/task_1')).toBeUndefined();
+    expect(findRegistrySession(finalRegistry, TASK_HOME)).toBeUndefined();
   });
 
   it('falls back to helper termination and lazy workspace unmount when a busy mount does not release on normal juicefs umount', async () => {
@@ -1608,7 +1619,7 @@ describe('task-workspace', () => {
         if (command === 'umount' && Array.isArray(args)) {
           events.push(`runner_umount:${args.join(' ')}`);
           if (args[0] === '-l' || args[0] === '-lf') {
-            mountedPaths.delete('/workspace/task_1');
+            mountedPaths.delete(TASK_HOME);
           }
           child.emit('exit', 0);
           return;
@@ -1619,14 +1630,13 @@ describe('task-workspace', () => {
     });
 
     const resolved = await prepareTaskWorkspace({
-        executionContext: {
+        executionContext: taskExecutionContext({
           api_base: 'http://localhost:20000',
           workspace_id: 'ws_default',
           project_id: 'proj_1',
-          task_id: 'task_1',
           execution_ticket: 'test-token',
           workspace_binding_mode: 'file_library',
-        },
+        }),
         username: 'alice',
         taskId: 'task_1',
       });
@@ -1638,7 +1648,7 @@ describe('task-workspace', () => {
       expect(events.findIndex((event) => event === 'helper_exit')).toBeLessThan(events.findIndex((event) => event.startsWith('runner_umount:-l ')));
       expect(spawnMock).toHaveBeenCalledWith(
         'umount',
-        ['-l', '/workspace/task_1'],
+        ['-l', TASK_HOME],
         expect.objectContaining({
           stdio: 'ignore',
         }),
@@ -1662,20 +1672,19 @@ describe('task-workspace', () => {
     });
 
     await prepareTaskWorkspace({
-      executionContext: {
+      executionContext: taskExecutionContext({
         api_base: 'http://localhost:20000',
         workspace_id: 'ws_default',
         project_id: 'proj_1',
-        task_id: 'task_1',
         execution_ticket: 'test-token',
         workspace_binding_mode: 'file_library',
-      },
+      }),
       username: 'alice',
       taskId: 'task_1',
     });
 
-    await expect(releasePreparedTaskWorkspace('/workspace/task_1')).rejects.toThrow(
-      'task_workspace_release_requires_lease:/workspace/task_1',
+    await expect(releasePreparedTaskWorkspace(TASK_HOME)).rejects.toThrow(
+      `task_workspace_release_requires_lease:${TASK_HOME}`,
     );
 
     expect(spawnMock).toHaveBeenCalledTimes(1);
@@ -1698,28 +1707,27 @@ describe('task-workspace', () => {
     });
 
     const resolved = await prepareTaskWorkspace({
-      executionContext: {
+      executionContext: taskExecutionContext({
         api_base: 'http://localhost:20000',
         workspace_id: 'ws_default',
         project_id: 'proj_1',
-        task_id: 'task_1',
         execution_ticket: 'test-token',
         workspace_binding_mode: 'file_library',
-      },
+      }),
       username: 'alice',
       taskId: 'task_1',
     });
 
     expect(resolved.lease).toMatchObject({
-      mountPath: '/workspace/task_1',
+      mountPath: TASK_HOME,
       revision: 1,
     });
-    await releasePreparedTaskWorkspace('/workspace/task_1', resolved.lease!);
+    await releasePreparedTaskWorkspace(TASK_HOME, resolved.lease!);
 
     expect(spawnMock).toHaveBeenNthCalledWith(
       2,
       'juicefs',
-      ['umount', '/workspace/task_1'],
+      ['umount', TASK_HOME],
       expect.objectContaining({
         stdio: 'ignore',
       }),
@@ -1743,14 +1751,13 @@ describe('task-workspace', () => {
     });
 
     const resolved = await prepareTaskWorkspace({
-      executionContext: {
+      executionContext: taskExecutionContext({
         api_base: 'http://localhost:20000',
         workspace_id: 'ws_default',
         project_id: 'proj_1',
-        task_id: 'task_1',
         execution_ticket: 'test-token',
         workspace_binding_mode: 'file_library',
-      },
+      }),
       username: 'alice',
       taskId: 'task_1',
     });
@@ -1760,15 +1767,15 @@ describe('task-workspace', () => {
       leaseId: 'lease-wrong',
     };
 
-    await expect(releasePreparedTaskWorkspace('/workspace/task_1', wrongLease)).rejects.toThrow(
-      'task_workspace_release_lease_mismatch:/workspace/task_1',
+    await expect(releasePreparedTaskWorkspace(TASK_HOME, wrongLease)).rejects.toThrow(
+      `task_workspace_release_lease_mismatch:${TASK_HOME}`,
     );
 
     expect(spawnMock).toHaveBeenCalledTimes(1);
     const registry = parseRegistryWrite();
-    const session = findRegistrySession(registry, '/workspace/task_1');
+    const session = findRegistrySession(registry, TASK_HOME);
     expect(session).toMatchObject({
-      mount_path: '/workspace/task_1',
+      mount_path: TASK_HOME,
       refs: 1,
       state: 'mounted',
       lease_id: resolved.lease?.leaseId,
@@ -1846,24 +1853,23 @@ describe('task-workspace', () => {
     });
 
     const resolved = await prepareTaskWorkspace({
-      executionContext: {
+      executionContext: taskExecutionContext({
         api_base: 'http://localhost:20000',
         workspace_id: 'ws_default',
         project_id: 'proj_1',
-        task_id: 'task_1',
         execution_ticket: 'test-token',
         workspace_binding_mode: 'file_library',
-      },
+      }),
       username: 'alice',
       taskId: 'task_1',
     });
 
-    await expect(resolved.release()).rejects.toThrow('task_workspace_umount_not_ready:/workspace/task_1');
+    await expect(resolved.release()).rejects.toThrow(`task_workspace_umount_not_ready:${TASK_HOME}`);
 
     const failedRegistry = parseRegistryWrite();
-    const failedSession = findRegistrySession(failedRegistry, '/workspace/task_1');
+    const failedSession = findRegistrySession(failedRegistry, TASK_HOME);
     expect(failedSession).toMatchObject({
-      mount_path: '/workspace/task_1',
+      mount_path: TASK_HOME,
       owner_process_pid: process.pid,
       state: 'release_failed',
       last_release_outcome: 'failed',
@@ -1873,70 +1879,62 @@ describe('task-workspace', () => {
     expectIsoTimestamp(failedSession?.last_release_attempt_at);
     expect(Array.isArray(failedSession?.release_attempts)).toBe(true);
     expect((failedSession?.release_attempts as unknown[])).not.toHaveLength(0);
-    expect(String(failedSession?.last_release_error)).toContain('task_workspace_umount_not_ready:/workspace/task_1');
+    expect(String(failedSession?.last_release_error)).toContain(`task_workspace_umount_not_ready:${TASK_HOME}`);
   });
 
   it('uses the explicit managed platform task path for pre-mounted workspaces', async () => {
     process.env.MBOS_AGENT_TASK_RUNNER_MODE = 'managed_platform';
-    process.env.MBOS_AGENT_CODEX_STATE_ROOT = '/runner-runtime';
 
     const resolved = await prepareTaskWorkspace({
-      executionContext: {
+      executionContext: taskExecutionContextForHome('task_internal', '/home/task_internal', {
         workspace_binding_mode: 'pre_mounted',
-        workspace_path: '/workspace/task_internal',
-      },
+      }),
       username: 'alice',
       taskId: 'task_internal',
     });
 
-    expect(resolved.cwd).toBe('/workspace/task_internal');
-    expect(resolved.source).toBe('workspace_path');
-    expect(resolved.paths.visibleRoot).toBe('/workspace/task_internal');
-    expect(resolved.paths.runtimeRoot).toMatch(/^\/runner-runtime\/task_internal-[a-f0-9]{16}$/);
-    expect(resolved.paths.homeDir).toBe(resolved.paths.runtimeRoot);
-    expect(resolved.paths.codexDir).toBe(`${resolved.paths.runtimeRoot}/.codex`);
-    expect(resolved.paths.mbosDir).toBe(`${resolved.paths.runtimeRoot}/.mbos`);
-    expect(resolved.paths.skillsDir).toBe(`${resolved.paths.runtimeRoot}/.agents/skills`);
-    expect(resolved.paths.artifactsDir).toBe('/workspace/task_internal/.artifacts');
-    expectPathOutside(resolved.cwd, resolved.paths.homeDir);
-    expectPathOutside(resolved.cwd, resolved.paths.codexDir);
-    expectPathOutside(resolved.cwd, resolved.paths.mbosDir);
-    expectPathOutside(resolved.cwd, resolved.paths.skillsDir);
+    expect(resolved.cwd).toBe('/home/task_internal/workspace');
+    expect(resolved.source).toBe('path_fields');
+    expect(resolved.paths.visibleRoot).toBe('/home/task_internal/workspace');
+    expect(resolved.paths.runtimeRoot).toBe('/home/task_internal');
+    expect(resolved.paths.homeDir).toBe('/home/task_internal');
+    expect(resolved.paths.taskHome).toBe('/home/task_internal');
+    expect(resolved.paths.workspaceDir).toBe('/home/task_internal/workspace');
+    expect(resolved.paths.codexDir).toBe('/home/task_internal/.codex');
+    expect(resolved.paths.mbosDir).toBe('/home/task_internal/.mbos');
+    expect(resolved.paths.skillsDir).toBe('/home/task_internal/.agents/skills');
+    expect(resolved.paths.artifactsDir).toBe('/home/task_internal/workspace/.artifacts');
   });
 
-  it('isolates runtime roots for pre-mounted workspaces with matching visible basenames', async () => {
+  it('uses task_home_path as the stable runtime root for pre-mounted workspaces', async () => {
     process.env.MBOS_AGENT_TASK_RUNNER_MODE = 'managed_platform';
-    process.env.MBOS_AGENT_CODEX_STATE_ROOT = '/runner-runtime';
 
     const first = await prepareTaskWorkspace({
-      executionContext: {
+      executionContext: taskExecutionContextForHome('task_a', '/home/task_a', {
         workspace_binding_mode: 'pre_mounted',
-        workspace_path: '/workspace/team-a/task_shared',
-      },
+      }),
       username: 'alice',
       taskId: 'task_a',
     });
     const second = await prepareTaskWorkspace({
-      executionContext: {
+      executionContext: taskExecutionContextForHome('task_b', '/home/task_b', {
         workspace_binding_mode: 'pre_mounted',
-        workspace_path: '/workspace/team-b/task_shared',
-      },
+      }),
       username: 'alice',
       taskId: 'task_b',
     });
     const stableFirst = await prepareTaskWorkspace({
-      executionContext: {
+      executionContext: taskExecutionContextForHome('task_a', '/home/task_a', {
         workspace_binding_mode: 'pre_mounted',
-        workspace_path: '/workspace/team-a/task_shared/',
-      },
+      }),
       username: 'alice',
       taskId: 'task_a',
     });
 
-    expect(first.cwd).toBe('/workspace/team-a/task_shared');
-    expect(second.cwd).toBe('/workspace/team-b/task_shared');
-    expect(first.paths.runtimeRoot).toMatch(/^\/runner-runtime\/task_shared-[a-f0-9]{16}$/);
-    expect(second.paths.runtimeRoot).toMatch(/^\/runner-runtime\/task_shared-[a-f0-9]{16}$/);
+    expect(first.cwd).toBe('/home/task_a/workspace');
+    expect(second.cwd).toBe('/home/task_b/workspace');
+    expect(first.paths.runtimeRoot).toBe('/home/task_a');
+    expect(second.paths.runtimeRoot).toBe('/home/task_b');
     expect(first.paths.runtimeRoot).not.toBe(second.paths.runtimeRoot);
     expect(first.paths.homeDir).not.toBe(second.paths.homeDir);
     expect(first.paths.codexDir).not.toBe(second.paths.codexDir);

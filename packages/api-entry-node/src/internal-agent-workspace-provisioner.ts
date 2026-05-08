@@ -4,6 +4,7 @@ import {
   JsonDocProjectFileLibraryMountAccessRepo,
 } from './file-library-persistence.js';
 import { resolveFileLibraryStorageBucketUrlForInternalExecution } from './file-library-runtime.js';
+import { buildTaskHomePaths, buildTaskHomeSegment } from './notebook-task/task-models.js';
 import type { SandboxWorkspaceBindingBody, SandboxWorkspaceBindingResponse } from './sandbox-manager-client.js';
 import { resolveWorkspaceScopedCollection } from './workspace-tenant-collections.js';
 
@@ -29,6 +30,10 @@ export interface InternalAgentWorkspaceBinding {
 export interface InternalAgentWorkspaceMount {
   bindingId: string;
   mountPath: string;
+  taskHomePath: string;
+  workspacePath: string;
+  artifactsPath: string;
+  subPath: string;
   readOnly?: boolean;
 }
 
@@ -38,6 +43,7 @@ export interface InternalAgentWorkspaceProvisioner {
     projectId: string;
     fileLibraryId: string;
     taskId: string;
+    taskHomeSegment?: string;
   }): Promise<{
     workspaceMount: InternalAgentWorkspaceMount;
     binding: InternalAgentWorkspaceBinding;
@@ -129,6 +135,7 @@ export class InternalAgentWorkspaceProvisionerImpl implements InternalAgentWorks
     projectId: string;
     fileLibraryId: string;
     taskId: string;
+    taskHomeSegment?: string;
   }): Promise<{
     workspaceMount: InternalAgentWorkspaceMount;
     binding: InternalAgentWorkspaceBinding;
@@ -170,12 +177,16 @@ export class InternalAgentWorkspaceProvisionerImpl implements InternalAgentWorks
     binding.storage_class_name = this.options.storageClassName?.trim() || binding.storage_class_name || '';
     binding.subdir = this.options.subdir?.trim() || binding.subdir || '';
 
-    const mountPath = `/workspace/${input.taskId}`;
+    const taskHomeSegment = input.taskHomeSegment?.trim() || buildTaskHomeSegment({
+      workspaceId: input.workspaceId,
+      projectId: input.projectId,
+      taskId: input.taskId,
+    });
+    const taskHomePaths = buildTaskHomePaths(taskHomeSegment);
     const remoteBinding = await this.k8sClient.ensureWorkspaceBinding(input.workspaceId, input.projectId, input.fileLibraryId, {
       file_library_id: input.fileLibraryId,
       filesystem_name: library.filesystem_name,
       metadata_url: this.resolveMetadataUrlForInternalMount(mountAccess.metadata_url),
-      mount_path: mountPath,
       ...(() => {
         const resolvedBucketUrl = resolveFileLibraryStorageBucketUrlForInternalExecution(
           mountAccess.storage_bucket_url,
@@ -220,7 +231,11 @@ export class InternalAgentWorkspaceProvisionerImpl implements InternalAgentWorks
     return {
       workspaceMount: {
         bindingId: binding.file_library_id,
-        mountPath,
+        mountPath: taskHomePaths.taskHomePath,
+        taskHomePath: taskHomePaths.taskHomePath,
+        workspacePath: taskHomePaths.workspacePath,
+        artifactsPath: taskHomePaths.artifactsPath,
+        subPath: taskHomePaths.subPath,
       },
       binding,
     };

@@ -100,13 +100,18 @@ async function expectRunnerSafeWorkspaceAccess(page: Page, projectId: string, ta
   const payload = (await response.json()) as {
     metadata_url?: string;
     storage_bucket_url?: string;
-    container_workspace_path?: string | null;
+    task_home_path?: string;
+    workspace_path?: string;
+    artifacts_path?: string;
     library_root_path?: string | null;
   };
   expect(payload.metadata_url).toContain('@postgres:5432/');
   expect(payload.storage_bucket_url).toContain('http://minio:9000/');
+  expect(payload.task_home_path).toMatch(/^\/home\/[a-z0-9][a-z0-9._-]*$/);
+  expect(payload.workspace_path).toBe(`${payload.task_home_path}/workspace`);
+  expect(payload.artifacts_path).toBe(`${payload.workspace_path}/.artifacts`);
   expectRelativeLibraryRootPath(payload.library_root_path);
-  expect(payload.container_workspace_path ?? null).toBeNull();
+  expect(payload).not.toHaveProperty('container_workspace_path');
 }
 
 test.describe('@lane-real integration preset Agent Task file-library execution', () => {

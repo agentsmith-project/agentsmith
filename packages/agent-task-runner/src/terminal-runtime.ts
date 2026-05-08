@@ -187,6 +187,8 @@ export async function prepareTerminalWorkspace(input: {
         ...process.env,
         TERM: process.env.TERM || 'xterm-256color',
         NO_COLOR: '1',
+        TASK_HOME: taskPaths.taskHome,
+        WORKSPACE_PATH: taskPaths.workspaceDir,
         ...buildAgentRuntimeEnv(executionContext),
         MBOS_AGENT_TASK_PREAMBLE: buildTaskHeadlessPreamble({
           artifactsDir: taskPaths.artifactsDir,

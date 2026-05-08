@@ -160,9 +160,10 @@ Raw `test:*`, `gate:*`, `lane:*`, `backend-real:*` 和底层 owner adapter 命�
 
 当你是在 AgentSmith Agent task / terminal runner 的 task workspace 里工作时，必须遵守以下运行时约定：
 
-- `cwd` 是 task 的用户文件工作区；`HOME` 是 runner-private runtime home，二者不再要求相同。
+- `TASK_HOME` / `HOME` 是 task-bound persistent HOME；managed canonical path 为 `/home/<task_home_segment>`。
+- `cwd` 是 `$TASK_HOME/workspace`；用户文件工作区、terminal 和 agent run 共享同一个 task HOME。
 - 动态配置、缓存、安装产物、用户态工具链、认证文件都必须写在当前 `HOME` 下，不能写到 `/etc`、`/usr/local`、`/opt`、`/var/tmp` 等系统级目录。
-- 用户可见的生成型 deliverables/artifacts 必须写到 `cwd/.artifacts`；正常编辑 task 工作区内的源文件/项目文件不属于这条限制。
+- 用户可见的生成型 deliverables/artifacts 必须写到 `$TASK_HOME/workspace/.artifacts`；正常编辑 task 工作区内的源文件/项目文件不属于这条限制。
 - builtin skills 的运行时可见路径是 `~/.agents/skills`。
 - AgentSmith 的成员/任务级上下文、简单 credentials、共享说明通过 `mbos-context` builtin skill 和 AgentSmith Context Store 获取，不应假设它们存在于 workspace 文件树中。
 - Context Store 的正式 scopes 是 `member / task / project / workspace`：`member` 表示当前 workspace 内成员私有上下文，`task` 表示当前成员拥有的任务上下文，`project/workspace` 表示共享上下文。

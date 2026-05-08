@@ -1,6 +1,6 @@
 # Managed Agent Runner Execution Channel Protocol (WS, v1)
 
-Last updated: 2026-05-07
+Last updated: 2026-05-08
 Owner: Backend + Frontend
 
 ## 1. Scope
@@ -53,6 +53,10 @@ All frames are JSON objects:
       - `model: string`
       - `resource_proxy.base_url` is request-scoped and must be used for this run/session instead of any connection-level cache.
       - `runner_session_scope: "agent_presence" | "task_execution"`
+      - `workspace_binding_mode: "file_library" | "pre_mounted"`; this only identifies the workspace source, not a path shape.
+      - `task_home_path: string` (managed canonical value: `/home/<task_home_segment>`)
+      - `workspace_path: string` (managed canonical value: `/home/<task_home_segment>/workspace`)
+      - `artifacts_path: string` (managed canonical value: `/home/<task_home_segment>/workspace/.artifacts`)
       - `task_inputs?: Array<{ kind?: "library_object" | "artifact" | "url"; library_id?: string; key?: string; task_id?: string; artifact_id?: string; url?: string; filename?: string; file_type?: string; file_size?: number }>`
       - `credential_files?: Array<{ relative_path: string; content: string; description?: string }>`
         - Backend provides user third-party credential files per request.
@@ -61,20 +65,20 @@ All frames are JSON objects:
 
         | Item | Agent task runner |
         | --- | --- |
-        | user file workspace (`cwd`) | task workspace mount path |
-        | runner-private runtime home (`HOME`) | runner-private task runtime home |
-        | Codex state | `<runtime_home>/.codex/` |
-        | runner metadata | `<runtime_home>/.mbos/` |
-        | skills | `<runtime_home>/.agents/skills/` |
-        | user-visible artifacts | `<cwd>/.artifacts/` |
+        | task HOME (`TASK_HOME` / `HOME`) | `task_home_path` |
+        | user file workspace (`cwd`) | `workspace_path` |
+        | Codex state | `<task_home_path>/.codex/` |
+        | runner metadata | `<task_home_path>/.mbos/` |
+        | skills | `<task_home_path>/.agents/skills/` |
+        | user-visible artifacts | `artifacts_path` |
         | context / credentials | AgentSmith Context Store member/task/project_member/project/workspace context via capability-aware builtin skill helpers; `mbos-context` remains the generic direct-access skill; managed OAuth credentials are read-only context projections |
 
         Notes:
-        - the task mount point is the real JuiceFS-backed working directory for the current task
-        - `cwd` is the user file workspace; `HOME` is the runner-private runtime home used for Codex config, runner metadata, skills, caches, and user-mode installs
-        - `<runtime_id>` is `${basename(normalized_visible_root)}-${sha256(normalized_visible_root).slice(0,16)}`; `normalized_visible_root` is the path-normalized `cwd` with backslashes converted to `/` and trailing slashes removed except for `/`
-        - the hash makes runtime homes collision-safe when two visible workspace roots share the same basename, for example `/workspace/team-a/task_shared` and `/workspace/team-b/task_shared`
-        - provider-specific workspace/mount differences are backend provider details and are not public wire discriminants
+        - the task HOME subtree is the persistent JuiceFS-backed directory for the current task
+        - `workspace_path` is the default cwd for both agent runs and terminal sessions
+        - user-mode installs, caches, runner metadata, and Codex config live under `task_home_path`
+        - `container_workspace_path` is not a canonical execution context field
+        - provider-specific mount mechanics are backend details; runners consume the explicit path fields
 - `server.request.cancel`
   - payload: `{ "reason": "client_cancelled" }`
 - `server.ping`
@@ -218,9 +222,8 @@ npm run agent:task-runner
   - The token must never be written to Codex config files, workspace files, or CLI argv.
   - Follow-up hardening: replace with short-lived ticket exchange.
 
-- `R3` workspace isolation level:
-  - Runner runtime state is task-scoped under `${MBOS_AGENT_CODEX_STATE_ROOT:-$HOME/.mbos/agent-task-runner}/<runtime_id>` for Codex state, runner metadata, skills, caches, and user-mode installs.
-  - `<runtime_id>` is derived from the visible workspace root, not from the bare `task_id`: `${basename(normalized_visible_root)}-${sha256(normalized_visible_root).slice(0,16)}`.
-  - Real workspace files remain shared at `cwd`; task/file-library behavior and `cwd/.artifacts` deliverables are unchanged.
-  - E2E runner processes set `MBOS_AGENT_CODEX_STATE_ROOT` under the temporary workspace root so runtime state is cleaned with the test workspace.
-  - Ops must enforce periodic cleanup and disk monitoring for long-lived runner hosts.
+- `R3` task HOME isolation:
+  - Runner runtime state is task-scoped under `task_home_path` for Codex state, runner metadata, skills, caches, and user-mode installs.
+  - Real workspace files live under `workspace_path`; user-visible deliverables are collected only from `artifacts_path`.
+  - The backend owns `task_home_segment` generation and cleanup; runners must not derive or sanitize their own HOME segment.
+  - Ops must enforce task HOME cleanup on task delete and periodic disk monitoring for long-lived runner hosts.

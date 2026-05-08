@@ -132,10 +132,24 @@ function requireWorkspaceMount(workspaceMount: InternalAgentWorkspaceMount | und
       code: 'AGENT_SANDBOX_NOT_CONFIGURED',
     });
   }
+  const taskHomePath = typeof workspaceMount?.taskHomePath === 'string' && workspaceMount.taskHomePath.trim()
+    ? workspaceMount.taskHomePath.trim()
+    : mountPath;
+  const workspacePath = typeof workspaceMount?.workspacePath === 'string' && workspaceMount.workspacePath.trim()
+    ? workspaceMount.workspacePath.trim()
+    : mountPath;
+  const artifactsPath = typeof workspaceMount?.artifactsPath === 'string' && workspaceMount.artifactsPath.trim()
+    ? workspaceMount.artifactsPath.trim()
+    : `${workspacePath.replace(/\/+$/, '')}/.artifacts`;
+  const subPath = typeof workspaceMount?.subPath === 'string' ? workspaceMount.subPath.trim() : '';
   return {
     ...workspaceMount,
     bindingId,
     mountPath,
+    taskHomePath,
+    workspacePath,
+    artifactsPath,
+    subPath,
   };
 }
 
@@ -510,7 +524,6 @@ export class InternalAgentPodManagerImpl implements InternalAgentPodManager {
           (rpcSignal) => this.sandboxClient.createOrEnsurePod(workspaceId, projectId, workloadId, {
             image: config.image,
             env: {
-              WORKSPACE_PATH: workspaceMount.mountPath,
               MBOS_AGENT_WS_URL: wsUrl,
               MBOS_AGENT_KEY: config.rawKey,
               MBOS_RUNNER_MODE: 'k8s_internal',
@@ -521,6 +534,9 @@ export class InternalAgentPodManagerImpl implements InternalAgentPodManager {
               MBOS_AGENT_BUILTIN_SKILLS: INTERNAL_AGENT_BUILTIN_SKILLS,
               MBOS_AGENT_BUILTIN_SKILLS_REQUIRED: INTERNAL_AGENT_BUILTIN_SKILLS_REQUIRED,
               ...(config.env ?? {}),
+              TASK_HOME: workspaceMount.taskHomePath,
+              HOME: workspaceMount.taskHomePath,
+              WORKSPACE_PATH: workspaceMount.workspacePath,
               MBOS_AGENT_TASK_RUNNER_MODE: INTERNAL_AGENT_TASK_RUNNER_MODE,
             },
             cpu_request: config.cpuRequest ?? '500m',
@@ -530,6 +546,9 @@ export class InternalAgentPodManagerImpl implements InternalAgentPodManager {
             idle_timeout_sec: idleTimeoutSec,
             max_lifetime_sec: maxLifetimeSec,
             workspace_binding_id: workspaceMount.bindingId,
+            mount_path: workspaceMount.taskHomePath,
+            ...(workspaceMount.subPath ? { sub_path: workspaceMount.subPath } : {}),
+            working_dir: workspaceMount.workspacePath,
           }, rpcSignal),
           signal,
         );

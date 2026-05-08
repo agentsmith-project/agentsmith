@@ -1,4 +1,4 @@
-import { randomUUID } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
 
 export interface TaskRecord {
   id: string;
@@ -7,6 +7,7 @@ export interface TaskRecord {
   owner_user_id: string;
   title: string;
   prompt?: string;
+  task_home_segment: string;
   source?: 'runner_test';
   runner_test?: true;
   workspace_file_library_id?: string;
@@ -125,6 +126,78 @@ export function buildId(prefix: string): string {
   return `${prefix}_${randomUUID().replace(/-/g, '')}`;
 }
 
+const DIRECT_TASK_HOME_SEGMENT_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/;
+const TASK_HOME_HASH_PREFIX = 'taskhash-';
+
+export interface TaskHomePaths {
+  taskHomePath: string;
+  workspacePath: string;
+  artifactsPath: string;
+  subPath: string;
+}
+
+export function buildTaskHomeSegment(input: {
+  workspaceId: string;
+  projectId: string;
+  taskId: string;
+}): string {
+  const taskId = input.taskId.trim();
+  const canUseTaskIdDirectly = DIRECT_TASK_HOME_SEGMENT_PATTERN.test(taskId)
+    && taskId !== '.'
+    && taskId !== '..'
+    && !taskId.startsWith(TASK_HOME_HASH_PREFIX);
+  if (canUseTaskIdDirectly) return taskId;
+  const hash = createHash('sha256')
+    .update(`${input.workspaceId}/${input.projectId}/${input.taskId}`)
+    .digest('hex')
+    .slice(0, 32);
+  return `${TASK_HOME_HASH_PREFIX}${hash}`;
+}
+
+export function resolveTaskHomeSegment(input: {
+  workspace_id: string;
+  project_id: string;
+  id: string;
+  task_home_segment?: string;
+}): string {
+  const persisted = input.task_home_segment?.trim();
+  if (persisted) return persisted;
+  return buildTaskHomeSegment({
+    workspaceId: input.workspace_id,
+    projectId: input.project_id,
+    taskId: input.id,
+  });
+}
+
+export function buildTaskHomePaths(segment: string): TaskHomePaths {
+  const taskHomePath = `/home/${segment}`;
+  const workspacePath = `${taskHomePath}/workspace`;
+  return {
+    taskHomePath,
+    workspacePath,
+    artifactsPath: `${workspacePath}/.artifacts`,
+    subPath: `agent-tasks/${segment}`,
+  };
+}
+
+export function findTaskHomeSegmentConflict(
+  tasks: Array<{
+    id: string;
+    workspace_id: string;
+    project_id: string;
+    task_home_segment?: string;
+  }>,
+  input: {
+    taskId: string;
+    taskHomeSegment: string;
+  },
+): { id: string } | null {
+  return tasks.find((task) => (
+    task.id !== input.taskId
+    && resolveTaskHomeSegment(task) === input.taskHomeSegment
+  )) ?? null;
+}
+
 export function asObject(input: unknown): Record<string, unknown> {
   return typeof input === 'object' && input !== null ? (input as Record<string, unknown>) : {};
 }
@@ -212,6 +285,7 @@ export function normalizeTaskRecord(input: TaskRecord): TaskRecord {
   const activeRecord = sanitizeTaskRecordForActiveModel(input);
   return {
     ...activeRecord,
+    task_home_segment: resolveTaskHomeSegment(activeRecord),
     attached_inputs: attachedInputs,
   };
 }

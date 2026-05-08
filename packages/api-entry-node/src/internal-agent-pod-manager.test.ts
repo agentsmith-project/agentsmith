@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
 import { InternalAgentPodManagerImpl, sanitizeWorkloadId } from './internal-agent-pod-manager.js';
+import type { InternalAgentWorkspaceMount } from './internal-agent-workspace-provisioner.js';
 import type { AgentRecord } from './resource-models.js';
 import {
   INTERNAL_AGENT_IDLE_TIMEOUT_DEFAULT_SECONDS,
@@ -30,6 +31,17 @@ function createDeferred<T = void>(): {
     resolve = nextResolve;
   });
   return { promise, resolve };
+}
+
+function buildWorkspaceMount(): InternalAgentWorkspaceMount {
+  return {
+    bindingId: 'flib_demo',
+    mountPath: '/home/task_1',
+    taskHomePath: '/home/task_1',
+    workspacePath: '/home/task_1/workspace',
+    artifactsPath: '/home/task_1/workspace/.artifacts',
+    subPath: 'agent-tasks/task_1',
+  };
 }
 
 describe('internal-agent-pod-manager', () => {
@@ -79,10 +91,7 @@ describe('internal-agent-pod-manager', () => {
         image: 'runner:v1',
         _internal_raw_key: 'ask_xxx',
       }),
-      workspaceMount: {
-        bindingId: 'flib_demo',
-        mountPath: '/workspace/task_1',
-      },
+      workspaceMount: buildWorkspaceMount(),
     });
 
     expect(createOrEnsurePod).toHaveBeenCalledTimes(1);
@@ -92,7 +101,13 @@ describe('internal-agent-pod-manager', () => {
       'task_1',
       expect.objectContaining({
         workspace_binding_id: 'flib_demo',
+        mount_path: '/home/task_1',
+        sub_path: 'agent-tasks/task_1',
+        working_dir: '/home/task_1/workspace',
         env: expect.objectContaining({
+          TASK_HOME: '/home/task_1',
+          HOME: '/home/task_1',
+          WORKSPACE_PATH: '/home/task_1/workspace',
           MBOS_AGENT_BUILTIN_SKILLS_DIR: '/etc/codex/skills',
           MBOS_AGENT_BUILTIN_SKILLS: 'mbos-context,feishu-docs,jira-ops',
           MBOS_AGENT_BUILTIN_SKILLS_REQUIRED: '1',
@@ -146,10 +161,7 @@ describe('internal-agent-pod-manager', () => {
           MBOS_RUNNER_MODE: 'k8s_internal',
         },
       }),
-      workspaceMount: {
-        bindingId: 'flib_demo',
-        mountPath: '/workspace/task_1',
-      },
+      workspaceMount: buildWorkspaceMount(),
     });
 
     const podBody = createOrEnsurePod.mock.calls[0]?.[3];
@@ -199,10 +211,7 @@ describe('internal-agent-pod-manager', () => {
         image: 'runner:v1',
         _internal_raw_key: 'ask_xxx',
       }),
-      workspaceMount: {
-        bindingId: 'flib_demo',
-        mountPath: '/workspace/task_1',
-      },
+      workspaceMount: buildWorkspaceMount(),
     });
 
     expect(createOrEnsurePod).toHaveBeenCalledWith(
@@ -240,10 +249,7 @@ describe('internal-agent-pod-manager', () => {
         workloadId: 'task_1',
         sessionId: 'task_1',
         agent: buildAgent({ image: 'runner:v1' }),
-        workspaceMount: {
-          bindingId: 'flib_demo',
-          mountPath: '/workspace/task_1',
-        },
+        workspaceMount: buildWorkspaceMount(),
       }),
     ).rejects.toMatchObject({ code: 'AGENT_SANDBOX_NOT_CONFIGURED' });
   });
@@ -269,10 +275,7 @@ describe('internal-agent-pod-manager', () => {
         workloadId: 'task_1',
         sessionId: 'task_1',
         agent: buildAgent({ _internal_raw_key: 'ask_test' }),
-        workspaceMount: {
-          bindingId: 'flib_demo',
-          mountPath: '/workspace/task_1',
-        },
+        workspaceMount: buildWorkspaceMount(),
       }),
     ).rejects.toMatchObject({
       code: 'AGENT_RUNNER_IMAGE_UNCONFIGURED',
@@ -329,10 +332,7 @@ describe('internal-agent-pod-manager', () => {
         workloadId: 'task_1',
         sessionId: 'task_1',
         agent: buildAgent({ image: 'runner:v1', _internal_raw_key: 'ask_test' }),
-        workspaceMount: {
-          bindingId: 'flib_demo',
-          mountPath: '/workspace/task_1',
-        },
+        workspaceMount: buildWorkspaceMount(),
       }),
     ).rejects.toMatchObject({ code: 'AGENT_SANDBOX_UNAVAILABLE' });
   });
@@ -389,10 +389,7 @@ describe('internal-agent-pod-manager', () => {
           image: 'runner:v1',
           _internal_raw_key: 'ask_xxx',
         }),
-        workspaceMount: {
-          bindingId: 'flib_demo',
-          mountPath: '/workspace/task_1',
-        },
+        workspaceMount: buildWorkspaceMount(),
       });
 
       expect(createOrEnsurePod).toHaveBeenCalledWith(
@@ -459,10 +456,7 @@ describe('internal-agent-pod-manager', () => {
         image: 'runner:v1',
         _internal_raw_key: 'ask_xxx',
       }),
-      workspaceMount: {
-        bindingId: 'flib_demo',
-        mountPath: '/workspace/task_1',
-      },
+      workspaceMount: buildWorkspaceMount(),
     });
 
     expect(createOrEnsurePod).toHaveBeenCalledWith(
@@ -519,10 +513,7 @@ describe('internal-agent-pod-manager', () => {
         image: 'runner:v1',
         _internal_raw_key: 'ask_xxx',
       }),
-      workspaceMount: {
-        bindingId: 'flib_demo',
-        mountPath: '/workspace/task_1',
-      },
+      workspaceMount: buildWorkspaceMount(),
     });
 
     expect(deletePod).toHaveBeenCalledWith('ws_1', 'proj_1', 'task_1', undefined);
@@ -586,10 +577,7 @@ describe('internal-agent-pod-manager', () => {
           image: 'runner:v1',
           _internal_raw_key: 'ask_xxx',
         }),
-        workspaceMount: {
-          bindingId: 'flib_demo',
-          mountPath: '/workspace/task_1',
-        },
+        workspaceMount: buildWorkspaceMount(),
       });
 
       expect(deletePod).toHaveBeenCalledTimes(1);
@@ -639,10 +627,7 @@ describe('internal-agent-pod-manager', () => {
           image: 'runner:v1',
           _internal_raw_key: 'ask_xxx',
         }),
-        workspaceMount: {
-          bindingId: 'flib_demo',
-          mountPath: '/workspace/task_1',
-        },
+        workspaceMount: buildWorkspaceMount(),
       }),
     ).rejects.toMatchObject({ code: 'AGENT_SANDBOX_REMOTE_OWNED' });
     expect(createOrEnsurePod).not.toHaveBeenCalled();
@@ -677,10 +662,7 @@ describe('internal-agent-pod-manager', () => {
           image: 'runner:v1',
           _internal_raw_key: 'ask_xxx',
         }),
-        workspaceMount: {
-          bindingId: 'flib_demo',
-          mountPath: '/workspace/task_1',
-        },
+        workspaceMount: buildWorkspaceMount(),
       }),
     ).resolves.toBeUndefined();
     expect(createOrEnsurePod).not.toHaveBeenCalled();
@@ -723,10 +705,7 @@ describe('internal-agent-pod-manager', () => {
         image: 'runner:v1',
         _internal_raw_key: 'ask_xxx',
       }),
-      workspaceMount: {
-        bindingId: 'flib_demo',
-        mountPath: '/workspace/task_1',
-      },
+      workspaceMount: buildWorkspaceMount(),
       signal: controller.signal,
     } as never).catch((error: unknown) => {
       abortedError = error;
@@ -752,10 +731,7 @@ describe('internal-agent-pod-manager', () => {
         image: 'runner:v1',
         _internal_raw_key: 'ask_xxx',
       }),
-      workspaceMount: {
-        bindingId: 'flib_demo',
-        mountPath: '/workspace/task_1',
-      },
+      workspaceMount: buildWorkspaceMount(),
     })).resolves.toBeUndefined();
   });
 
@@ -798,10 +774,7 @@ describe('internal-agent-pod-manager', () => {
         image: 'runner:v1',
         _internal_raw_key: 'ask_xxx',
       }),
-      workspaceMount: {
-        bindingId: 'flib_demo',
-        mountPath: '/workspace/task_1',
-      },
+      workspaceMount: buildWorkspaceMount(),
       signal: controller.signal,
     } as never).catch((error: unknown) => {
       abortedError = error;
@@ -825,10 +798,7 @@ describe('internal-agent-pod-manager', () => {
         image: 'runner:v1',
         _internal_raw_key: 'ask_xxx',
       }),
-      workspaceMount: {
-        bindingId: 'flib_demo',
-        mountPath: '/workspace/task_1',
-      },
+      workspaceMount: buildWorkspaceMount(),
     })).resolves.toBeUndefined();
   });
 
@@ -881,10 +851,7 @@ describe('internal-agent-pod-manager', () => {
         image: 'runner:v1',
         _internal_raw_key: 'ask_xxx',
       }),
-      workspaceMount: {
-        bindingId: 'flib_demo',
-        mountPath: '/workspace/task_1',
-      },
+      workspaceMount: buildWorkspaceMount(),
       signal: controller.signal,
     }).catch((error: unknown) => {
       abortedError = error;
@@ -906,10 +873,7 @@ describe('internal-agent-pod-manager', () => {
         image: 'runner:v1',
         _internal_raw_key: 'ask_xxx',
       }),
-      workspaceMount: {
-        bindingId: 'flib_demo',
-        mountPath: '/workspace/task_1',
-      },
+      workspaceMount: buildWorkspaceMount(),
     })).resolves.toBeUndefined();
   });
 
@@ -962,10 +926,7 @@ describe('internal-agent-pod-manager', () => {
         image: 'runner:v1',
         _internal_raw_key: 'ask_xxx',
       }),
-      workspaceMount: {
-        bindingId: 'flib_demo',
-        mountPath: '/workspace/task_1',
-      },
+      workspaceMount: buildWorkspaceMount(),
       signal: controller.signal,
     }).catch((error: unknown) => {
       abortedError = error;
@@ -987,10 +948,7 @@ describe('internal-agent-pod-manager', () => {
         image: 'runner:v1',
         _internal_raw_key: 'ask_xxx',
       }),
-      workspaceMount: {
-        bindingId: 'flib_demo',
-        mountPath: '/workspace/task_1',
-      },
+      workspaceMount: buildWorkspaceMount(),
     })).resolves.toBeUndefined();
   });
 
@@ -1029,10 +987,7 @@ describe('internal-agent-pod-manager', () => {
         image: 'runner:v1',
         _internal_raw_key: 'ask_xxx',
       }),
-      workspaceMount: {
-        bindingId: 'flib_demo',
-        mountPath: '/workspace/task_1',
-      },
+      workspaceMount: buildWorkspaceMount(),
     });
 
     await vi.waitFor(() => {
@@ -1050,10 +1005,7 @@ describe('internal-agent-pod-manager', () => {
         image: 'runner:v1',
         _internal_raw_key: 'ask_xxx',
       }),
-      workspaceMount: {
-        bindingId: 'flib_demo',
-        mountPath: '/workspace/task_1',
-      },
+      workspaceMount: buildWorkspaceMount(),
       signal: followerAbort.signal,
     } as never).catch((error: unknown) => {
       followerError = error;
@@ -1078,10 +1030,7 @@ describe('internal-agent-pod-manager', () => {
         image: 'runner:v1',
         _internal_raw_key: 'ask_xxx',
       }),
-      workspaceMount: {
-        bindingId: 'flib_demo',
-        mountPath: '/workspace/task_1',
-      },
+      workspaceMount: buildWorkspaceMount(),
     })).resolves.toBeUndefined();
   });
 });

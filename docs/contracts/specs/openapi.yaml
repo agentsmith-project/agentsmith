@@ -2694,6 +2694,9 @@ paths:
                 required:
                   - task_id
                   - workspace_binding_mode
+                  - task_home_path
+                  - workspace_path
+                  - artifacts_path
                   - library_root_path
                   - workspace_dir_name
                   - file_library_id
@@ -2709,9 +2712,12 @@ paths:
                     type: string
                     enum:
                       - file_library
-                  container_workspace_path:
+                  task_home_path:
                     type: string
-                    nullable: true
+                  workspace_path:
+                    type: string
+                  artifacts_path:
+                    type: string
                   library_root_path:
                     type: string
                   workspace_dir_name:
@@ -6029,6 +6035,7 @@ components:
         - project_id
         - owner_user_id
         - title
+        - task_home_segment
         - status
         - lifecycle_status
         - attached_inputs
@@ -6048,6 +6055,9 @@ components:
           type: string
         prompt:
           type: string
+        task_home_segment:
+          type: string
+          description: Backend-generated task HOME path segment. Clients must treat it as opaque and must not derive filesystem paths from user input.
         source:
           type: string
           enum:

@@ -25,6 +25,10 @@ type MockCodexChild = EventEmitter & {
 type TerminalExitEvent = { exitCode: number | null; signal?: string | null };
 type ProcessSignalListener = (signal: NodeJS.Signals) => void;
 
+const TASK_HOME = '/home/task_1';
+const TASK_WORKSPACE = `${TASK_HOME}/workspace`;
+const TASK_ARTIFACTS = `${TASK_WORKSPACE}/.artifacts`;
+
 const {
   assertTaskExecutionContextMock,
   buildCodexExecArgsMock,
@@ -68,6 +72,7 @@ const {
     buildTaskUserInstallEnvMock: vi.fn((homeDir: string, env: NodeJS.ProcessEnv) => ({
       ...env,
       HOME: homeDir,
+      TASK_HOME: homeDir,
     })),
     diffWorkspaceFileSnapshotsMock: vi.fn(() => ({ added: [], modified: [], deleted: [] })),
     ensureCodexSessionStateCompatibleMock: vi.fn(async (): Promise<{
@@ -92,21 +97,23 @@ const {
       args: input.args,
       env: input.env,
     })),
-    prepareTaskWorkspaceAssetsMock: vi.fn(async () => ({ artifactsDir: '/workspace/task_1/.artifacts' })),
+    prepareTaskWorkspaceAssetsMock: vi.fn(async () => ({ artifactsDir: '/home/task_1/workspace/.artifacts' })),
     prepareTaskWorkspaceMock: vi.fn(async () => ({
-      cwd: '/workspace/task_1',
+      cwd: '/home/task_1/workspace',
       source: 'file_library_mount' as const,
       paths: {
         mode: 'managed_local' as const,
-        visibleRoot: '/workspace/task_1',
-        mountRoot: '/workspace/task_1',
-        taskRoot: '/workspace/task_1',
-        runtimeRoot: '/runner-runtime/task_1',
-        homeDir: '/runner-runtime/task_1',
-        codexDir: '/runner-runtime/task_1/.codex',
-        artifactsDir: '/workspace/task_1/.artifacts',
-        mbosDir: '/runner-runtime/task_1/.mbos',
-        skillsDir: '/runner-runtime/task_1/.agents/skills',
+        taskHome: '/home/task_1',
+        visibleRoot: '/home/task_1/workspace',
+        mountRoot: '/home/task_1',
+        taskRoot: '/home/task_1',
+        runtimeRoot: '/home/task_1',
+        homeDir: '/home/task_1',
+        workspaceDir: '/home/task_1/workspace',
+        codexDir: '/home/task_1/.codex',
+        artifactsDir: '/home/task_1/workspace/.artifacts',
+        mbosDir: '/home/task_1/.mbos',
+        skillsDir: '/home/task_1/.agents/skills',
       },
       release: vi.fn(async () => undefined),
     })),
@@ -162,9 +169,9 @@ const {
     scanWorkspaceFilesSnapshotMock: vi.fn(async () => undefined),
     selectLatestInstructionMock: vi.fn(() => 'latest user instruction'),
     seedBuiltinSkillsMock: vi.fn(async () => ({
-      targetDir: '/runner-runtime/task_1/.agents/skills',
+      targetDir: '/home/task_1/.agents/skills',
       seeded: [],
-      manifestPath: '/runner-runtime/task_1/.mbos/builtin-skills-manifest.json',
+      manifestPath: '/home/task_1/.mbos/builtin-skills-manifest.json',
     })),
     sanitizeAgentDeltaChunkMock: vi.fn((chunk: string) => chunk),
     sanitizeStderrChunkMock: vi.fn((chunk: string) => chunk),
@@ -177,7 +184,7 @@ const {
         onData: vi.fn(),
         onExit: vi.fn(),
       },
-      cwd: '/workspace/task_1',
+      cwd: '/home/task_1/workspace',
     })),
     spawnMock: vi.fn(),
     websocketInstances,
@@ -413,6 +420,9 @@ describe('agent-task-runner entry lifecycle', () => {
         ],
         execution_context: {
           task_id: 'task_1',
+          task_home_path: TASK_HOME,
+          workspace_path: TASK_WORKSPACE,
+          artifacts_path: TASK_ARTIFACTS,
           run_id: 'run_1',
           workspace_id: 'ws_1',
           project_id: 'proj_1',
@@ -440,6 +450,9 @@ describe('agent-task-runner entry lifecycle', () => {
       payload: {
         execution_context: {
           task_id: 'task_1',
+          task_home_path: TASK_HOME,
+          workspace_path: TASK_WORKSPACE,
+          artifacts_path: TASK_ARTIFACTS,
           run_id: 'run_1',
           workspace_id: 'ws_1',
           project_id: 'proj_1',
@@ -583,7 +596,7 @@ describe('agent-task-runner entry lifecycle', () => {
     const child = createTerminalChild(exitListeners);
     startTerminalProcessMock.mockResolvedValueOnce({
       child,
-      cwd: '/workspace/task_1',
+      cwd: TASK_WORKSPACE,
     });
     socket.emit('message', serverTerminalStart(terminalSessionId));
     await vi.waitFor(() => {
@@ -1488,6 +1501,9 @@ describe('agent-task-runner entry lifecycle', () => {
         shell: '/definitely/not/a/shell',
         execution_context: {
           task_id: 'task_1',
+          task_home_path: TASK_HOME,
+          workspace_path: TASK_WORKSPACE,
+          artifacts_path: TASK_ARTIFACTS,
           run_id: 'run_1',
           workspace_id: 'ws_1',
           project_id: 'proj_1',
@@ -1598,18 +1614,51 @@ describe('agent-task-runner entry lifecycle', () => {
 
     await vi.waitFor(() => {
       expect(buildCodexExecArgsMock).toHaveBeenCalledWith(expect.objectContaining({
-        cwd: '/workspace/task_1',
+        cwd: TASK_WORKSPACE,
       }));
       expect(prepareLaunchCommandMock).toHaveBeenCalledWith(expect.objectContaining({
-        cwd: '/workspace/task_1',
+        cwd: TASK_WORKSPACE,
         env: expect.objectContaining({
-          HOME: '/runner-runtime/task_1',
+          HOME: TASK_HOME,
+          TASK_HOME,
+          WORKSPACE_PATH: TASK_WORKSPACE,
         }),
       }));
-      expect(scanWorkspaceFilesSnapshotMock).toHaveBeenCalledWith('/workspace/task_1', {
-        runtimeRoot: '/runner-runtime/task_1',
+      expect(scanWorkspaceFilesSnapshotMock).toHaveBeenCalledWith(TASK_WORKSPACE, {
+        runtimeRoot: TASK_HOME,
       });
-      expect(scanArtifactsDirectoryMock).toHaveBeenCalledWith('/workspace/task_1/.artifacts', 'task_1');
+      expect(scanArtifactsDirectoryMock).toHaveBeenCalledWith(TASK_ARTIFACTS, 'task_1');
+    });
+
+    closeCodexChild(child, 0);
+  });
+
+  it('passes the same canonical task paths into agent runs and terminals', async () => {
+    await import('./index.js');
+    const socket = websocketInstances.at(-1);
+    if (!socket) {
+      throw new Error('websocket_instance_missing');
+    }
+
+    socket.emit('open');
+    const child = await startCodexRun(socket, 'req_shared_task_paths');
+    await startTerminalRun(socket, 'terminal_shared_task_paths');
+
+    await vi.waitFor(() => {
+      expect(prepareTaskWorkspaceMock).toHaveBeenCalledWith(expect.objectContaining({
+        executionContext: expect.objectContaining({
+          task_home_path: TASK_HOME,
+          workspace_path: TASK_WORKSPACE,
+          artifacts_path: TASK_ARTIFACTS,
+        }),
+      }));
+      expect(startTerminalProcessMock).toHaveBeenCalledWith(expect.objectContaining({
+        executionContext: expect.objectContaining({
+          task_home_path: TASK_HOME,
+          workspace_path: TASK_WORKSPACE,
+          artifacts_path: TASK_ARTIFACTS,
+        }),
+      }));
     });
 
     closeCodexChild(child, 0);
@@ -1817,7 +1866,7 @@ describe('agent-task-runner entry lifecycle', () => {
 
     await vi.waitFor(() => {
       expect(markCodexSessionStateReusableMock).toHaveBeenCalledWith({
-        codexDir: '/runner-runtime/task_1/.codex',
+        codexDir: `${TASK_HOME}/.codex`,
         taskId: 'task_1',
       });
     });
@@ -2017,6 +2066,9 @@ describe('agent-task-runner entry lifecycle', () => {
         shell: '/definitely/not/a/real/shell',
         execution_context: {
           task_id: 'task_1',
+          task_home_path: TASK_HOME,
+          workspace_path: TASK_WORKSPACE,
+          artifacts_path: TASK_ARTIFACTS,
           run_id: 'run_1',
           workspace_id: 'ws_1',
           project_id: 'proj_1',

@@ -1,8 +1,8 @@
 import { execFile as execFileCallback, spawn, type ChildProcess } from 'node:child_process';
-import { createHash, randomUUID } from 'node:crypto';
+import { randomUUID } from 'node:crypto';
 import { mkdir, readFile, writeFile } from 'node:fs/promises';
-import { homedir, tmpdir } from 'node:os';
-import { basename, dirname, isAbsolute, join, normalize, relative } from 'node:path';
+import { homedir } from 'node:os';
+import { dirname, isAbsolute, join, normalize } from 'node:path';
 import { setTimeout as sleep } from 'node:timers/promises';
 import { promisify } from 'node:util';
 import {
@@ -37,7 +37,9 @@ type FileLibraryWorkspaceExecutionContext = {
   project_id?: string;
   task_id?: string;
   api_base?: string;
+  task_home_path?: string;
   workspace_path?: string;
+  artifacts_path?: string;
   execution_ticket?: string;
   workspace_binding_mode?: 'file_library' | 'pre_mounted';
   workspace_file_library_id?: string | null;
@@ -60,6 +62,8 @@ type TaskWorkspaceAccessPayload = {
 
 export type TaskWorkspacePaths = {
   mode: AgentTaskRunnerMode;
+  taskHome: string;
+  workspaceDir: string;
   visibleRoot: string;
   mountRoot: string;
   taskRoot: string;
@@ -1073,98 +1077,82 @@ export function resolveAgentTaskRunnerMode(): AgentTaskRunnerMode {
   throw new Error(`agent_task_runner_mode_invalid:${raw || 'missing'}`);
 }
 
-function resolveAgentTaskMountRoot(mode: AgentTaskRunnerMode): string {
-  if (mode === 'developer') {
-    return join(process.env.HOME || homedir() || '/tmp', 'ags-workspace');
-  }
-  return '/workspace';
-}
-
 export function buildTaskWorkspaceMountPath(input: {
   mode: AgentTaskRunnerMode;
   taskId: string;
 }): string {
-  return join(
-    resolveAgentTaskMountRoot(input.mode),
-    sanitizePathPart(input.taskId, 'task-workspace'),
-  );
+  return join('/home', sanitizePathPart(input.taskId, 'task-workspace'));
 }
 
-function isPathInsideOrSame(root: string, target: string): boolean {
-  const rel = relative(root, target);
-  return rel === '' || (!rel.startsWith('..') && !isAbsolute(rel));
-}
-
-function resolvePreferredRuntimeStateBase(): string {
-  const configuredRoot = sanitizeWorkspacePath(process.env.MBOS_AGENT_CODEX_STATE_ROOT);
-  const homeRoot = sanitizeWorkspacePath(process.env.HOME) || homedir() || tmpdir();
-  return configuredRoot || join(homeRoot, '.mbos', 'agent-task-runner');
-}
-
-function normalizeVisibleRootForRuntimeIdentity(visibleRoot: string): string {
-  const root = sanitizeWorkspacePath(visibleRoot) || 'task-workspace';
-  const normalizedRoot = normalize(root).replace(/\\/g, '/');
-  if (normalizedRoot === '/') return normalizedRoot;
-  return normalizedRoot.replace(/\/+$/, '') || 'task-workspace';
-}
-
-function buildRuntimeRootPathPart(visibleRoot: string): string {
-  const normalizedVisibleRoot = normalizeVisibleRootForRuntimeIdentity(visibleRoot);
-  const visibleRootName = sanitizePathPart(basename(normalizedVisibleRoot), 'task-workspace');
-  const visibleRootHash = createHash('sha256')
-    .update(normalizedVisibleRoot)
-    .digest('hex')
-    .slice(0, 16);
-  return `${visibleRootName}-${visibleRootHash}`;
-}
-
-function buildRuntimeRoot(visibleRoot: string): string {
-  const taskPathPart = buildRuntimeRootPathPart(visibleRoot);
-  const preferredRoot = join(resolvePreferredRuntimeStateBase(), taskPathPart);
-  if (!isPathInsideOrSame(visibleRoot, preferredRoot)) {
-    return preferredRoot;
+function normalizeTaskWorkspacePath(raw: string | undefined, field: string): string {
+  const value = sanitizeWorkspacePath(raw);
+  if (!value) {
+    throw new Error(`task_workspace_paths_missing:${field}`);
   }
-  const siblingRoot = join(dirname(visibleRoot), '.runner-runtime', taskPathPart);
-  if (!isPathInsideOrSame(visibleRoot, siblingRoot)) {
-    return siblingRoot;
+  if (!isAbsolute(value)) {
+    throw new Error(`task_workspace_paths_not_absolute:${field}`);
   }
-  return join(tmpdir(), 'agentsmith-codex-runner', taskPathPart);
+  if (value.split('/').some((part) => part === '..')) {
+    throw new Error(`task_workspace_paths_traversal:${field}`);
+  }
+  const normalized = normalize(value);
+  if (normalized === '/') return normalized;
+  return normalized.replace(/\/+$/, '');
 }
 
-export function buildTaskWorkspacePaths(visibleRoot: string, mode: AgentTaskRunnerMode): TaskWorkspacePaths {
-  const runtimeRoot = buildRuntimeRoot(visibleRoot);
-  const mbosDir = join(runtimeRoot, '.mbos');
+export function buildTaskWorkspacePaths(input: {
+  mode: AgentTaskRunnerMode;
+  taskHomePath?: string;
+  workspacePath?: string;
+  artifactsPath?: string;
+}): TaskWorkspacePaths {
+  const taskHome = normalizeTaskWorkspacePath(input.taskHomePath, 'task_home_path');
+  const workspaceDir = normalizeTaskWorkspacePath(input.workspacePath, 'workspace_path');
+  const artifactsDir = normalizeTaskWorkspacePath(input.artifactsPath, 'artifacts_path');
+  if (taskHome === '/') {
+    throw new Error('task_workspace_paths_invalid:task_home_path');
+  }
+  if (workspaceDir !== join(taskHome, 'workspace')) {
+    throw new Error('task_workspace_paths_inconsistent:workspace_path');
+  }
+  if (artifactsDir !== join(workspaceDir, '.artifacts')) {
+    throw new Error('task_workspace_paths_inconsistent:artifacts_path');
+  }
+  const mbosDir = join(taskHome, '.mbos');
   return {
-    mode,
-    visibleRoot,
-    mountRoot: visibleRoot,
-    taskRoot: visibleRoot,
-    runtimeRoot,
-    homeDir: runtimeRoot,
-    codexDir: join(runtimeRoot, '.codex'),
-    artifactsDir: join(visibleRoot, '.artifacts'),
+    mode: input.mode,
+    taskHome,
+    workspaceDir,
+    visibleRoot: workspaceDir,
+    mountRoot: taskHome,
+    taskRoot: taskHome,
+    runtimeRoot: taskHome,
+    homeDir: taskHome,
+    codexDir: join(taskHome, '.codex'),
+    artifactsDir,
     mbosDir,
-    skillsDir: join(runtimeRoot, '.agents', 'skills'),
+    skillsDir: join(taskHome, '.agents', 'skills'),
   };
 }
 
 export function resolveTaskCwd(input: {
   taskId: string;
+  taskHomePath?: string;
   workspacePath?: string;
-}): { cwd: string; source: 'workspace_path' | 'mode_mount_path'; mode: AgentTaskRunnerMode } {
+  artifactsPath?: string;
+}): { cwd: string; source: 'path_fields'; mode: AgentTaskRunnerMode; paths: TaskWorkspacePaths } {
   const mode = resolveAgentTaskRunnerMode();
-  const workspacePath = sanitizeWorkspacePath(input.workspacePath);
-  if (workspacePath) {
-    return {
-      cwd: workspacePath,
-      source: 'workspace_path',
-      mode,
-    };
-  }
-  return {
-    cwd: buildTaskWorkspaceMountPath({ mode, taskId: input.taskId }),
-    source: 'mode_mount_path',
+  const paths = buildTaskWorkspacePaths({
     mode,
+    taskHomePath: input.taskHomePath,
+    workspacePath: input.workspacePath,
+    artifactsPath: input.artifactsPath,
+  });
+  return {
+    cwd: paths.workspaceDir,
+    source: 'path_fields',
+    mode,
+    paths,
   };
 }
 
@@ -1314,6 +1302,7 @@ async function mountTaskWorkspace(
 }
 
 async function ensureTaskWorkspaceWritable(paths: TaskWorkspacePaths): Promise<void> {
+  await mkdir(paths.workspaceDir, { recursive: true });
   await mkdir(paths.artifactsDir, { recursive: true });
 }
 
@@ -1770,32 +1759,32 @@ export async function prepareTaskWorkspace(input: {
   taskId: string;
 }): Promise<{
   cwd: string;
-  source: 'workspace_path' | 'mode_mount_path' | 'file_library_mount';
+  source: 'path_fields' | 'file_library_mount';
   paths: TaskWorkspacePaths;
   lease?: TaskWorkspaceLease;
   release: () => Promise<void>;
 }> {
   const mode = resolveAgentTaskRunnerMode();
+  const resolved = resolveTaskCwd({
+    taskHomePath: input.executionContext.task_home_path,
+    workspacePath: input.executionContext.workspace_path,
+    artifactsPath: input.executionContext.artifacts_path,
+    taskId: input.taskId,
+  });
+  const paths = resolved.paths;
 
   if (input.executionContext.workspace_binding_mode === 'pre_mounted') {
-    const resolved = resolveTaskCwd({
-      workspacePath: input.executionContext.workspace_path,
-      taskId: input.taskId,
-    });
     return {
       cwd: resolved.cwd,
       source: resolved.source,
-      paths: buildTaskWorkspacePaths(resolved.cwd, mode),
+      paths,
       release: async () => undefined,
     };
   }
 
   if (input.executionContext.workspace_binding_mode === 'file_library') {
     const workspaceAccess = await fetchTaskWorkspaceAccess(input.executionContext);
-    const mountPath = buildTaskWorkspaceMountPath({
-      mode,
-      taskId: workspaceAccess.task_id || input.taskId,
-    });
+    const mountPath = paths.taskHome;
     let priorLeaseRevisionFloor = 0;
     const maxAttempts = Number.parseInt(process.env.MBOS_AGENT_JUICEFS_MOUNT_RETRY_COUNT ?? '', 10)
       || DEFAULT_MOUNT_RETRY_COUNT;
@@ -1813,10 +1802,9 @@ export async function prepareTaskWorkspace(input: {
           priorLeaseRevisionFloor,
         });
         workspaceLease = acquired.lease;
-        const paths = buildTaskWorkspacePaths(mountPath, mode);
         await ensureTaskWorkspaceWritable(paths);
         return {
-          cwd: mountPath,
+          cwd: paths.workspaceDir,
           source: 'file_library_mount',
           paths,
           lease: workspaceLease,
@@ -1870,14 +1858,10 @@ export async function prepareTaskWorkspace(input: {
     throw new Error(`task_workspace_mount_exhausted:${mountPath}`);
   }
 
-  const resolved = resolveTaskCwd({
-    workspacePath: input.executionContext.workspace_path ?? process.env.WORKSPACE_PATH,
-    taskId: input.taskId,
-  });
   return {
     cwd: resolved.cwd,
     source: resolved.source,
-    paths: buildTaskWorkspacePaths(resolved.cwd, mode),
+    paths,
     release: async () => undefined,
   };
 }

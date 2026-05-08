@@ -10,7 +10,7 @@ This document defines the current internal workspace binding boundary between:
 An internal notebook task does not reason directly about Kubernetes storage primitives.
 
 The orchestration layer asks for a **workspace binding** for a file library, and receives a
-**workspace mount contract** that can be handed to the sandbox pod manager.
+**task HOME mount contract** that can be handed to the sandbox pod manager.
 
 ## Current Types
 
@@ -34,10 +34,15 @@ This record remains infrastructure-facing.
 This is the execution-facing contract:
 
 - `bindingId`
-- `mountPath`
+- `mountPath` / `taskHomePath`: `/home/<task_home_segment>`
+- `workspacePath`: `/home/<task_home_segment>/workspace`
+- `artifactsPath`: `/home/<task_home_segment>/workspace/.artifacts`
+- `subPath`: `agent-tasks/<task_home_segment>`
 - optional `readOnly`
 
 The pod manager consumes this contract and does not need to know the full binding record shape.
+`workspace_binding_mode` remains an execution-source marker (`file_library` or `pre_mounted`);
+it does not define a legacy `/workspace/<task_id>` path.
 
 ## Why this boundary exists
 
@@ -56,5 +61,6 @@ the current implementation follows the platform-owned binding lifecycle instead 
 The target release model is:
 
 - sandbox owns the binding lifecycle
-- orchestration asks for a binding and receives a mount contract
+- orchestration asks for a binding and receives a task HOME mount contract
 - lower layers own the JuiceFS CSI resource lifecycle
+- task delete owns cleanup of the `agent-tasks/<task_home_segment>` subtree; archive keeps it

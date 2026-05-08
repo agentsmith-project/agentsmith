@@ -1250,6 +1250,8 @@ async function runCodexRequest(requestId: string, payload: ServerStartPayload): 
     env: buildTaskUserInstallEnv(taskPaths.homeDir, {
       ...process.env,
       NO_COLOR: '1',
+      TASK_HOME: taskPaths.taskHome,
+      WORKSPACE_PATH: taskPaths.workspaceDir,
       ...buildAgentRuntimeEnv(executionContext),
       ...(executionContext.execution_ticket ? {
         [proxyExecutionTicketHeaderEnvName]: executionContext.execution_ticket,

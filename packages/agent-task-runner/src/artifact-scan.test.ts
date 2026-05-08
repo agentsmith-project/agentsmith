@@ -54,20 +54,34 @@ describe('filterNewArtifactsForRun', () => {
 });
 
 describe('scanArtifactsDirectory', () => {
-  it('scans only the explicit artifact root instead of inferring from cwd', async () => {
+  it('scans only workspace/.artifacts and ignores HOME-level runtime directories', async () => {
     const root = mkdtempSync(join(tmpdir(), 'runner-artifact-scan-'));
     try {
-      const visibleRoot = join(root, 'visible');
-      const explicitArtifactsDir = join(root, 'explicit-artifacts');
-      mkdirSync(join(visibleRoot, '.artifacts'), { recursive: true });
-      mkdirSync(explicitArtifactsDir, { recursive: true });
-      writeFileSync(join(visibleRoot, '.artifacts', 'ignored.txt'), 'from visible cwd');
-      writeFileSync(join(explicitArtifactsDir, 'result.txt'), 'from explicit artifact root');
+      const taskHome = join(root, 'task_home');
+      const workspace = join(taskHome, 'workspace');
+      const artifactsDir = join(workspace, '.artifacts');
+      mkdirSync(artifactsDir, { recursive: true });
+      mkdirSync(join(taskHome, '.artifacts'), { recursive: true });
+      mkdirSync(join(taskHome, '.mbos'), { recursive: true });
+      mkdirSync(join(taskHome, '.codex'), { recursive: true });
+      mkdirSync(join(taskHome, '.agents'), { recursive: true });
+      mkdirSync(join(taskHome, '.local'), { recursive: true });
+      writeFileSync(join(artifactsDir, 'result.txt'), 'from workspace artifacts');
+      writeFileSync(join(taskHome, '.artifacts', 'ignored-home-artifact.txt'), 'from home artifacts');
+      writeFileSync(join(taskHome, '.mbos', 'ignored-runner-state.txt'), 'runner state');
+      writeFileSync(join(taskHome, '.codex', 'ignored-codex-state.txt'), 'codex state');
+      writeFileSync(join(taskHome, '.agents', 'ignored-skill.txt'), 'skill');
+      writeFileSync(join(taskHome, '.local', 'ignored-install.txt'), 'install');
 
-      const artifacts = await scanArtifactsDirectory(explicitArtifactsDir, 'task_1');
+      const artifacts = await scanArtifactsDirectory(artifactsDir, 'task_1');
 
       expect(artifacts.map((artifact) => artifact.task_relative_path)).toEqual(['.artifacts/result.txt']);
-      expect(artifacts[0]?.content).toBe('from explicit artifact root');
+      expect(artifacts[0]?.content).toBe('from workspace artifacts');
+      expect(JSON.stringify(artifacts)).not.toContain('ignored-home-artifact');
+      expect(JSON.stringify(artifacts)).not.toContain('ignored-runner-state');
+      expect(JSON.stringify(artifacts)).not.toContain('ignored-codex-state');
+      expect(JSON.stringify(artifacts)).not.toContain('ignored-skill');
+      expect(JSON.stringify(artifacts)).not.toContain('ignored-install');
     } finally {
       rmSync(root, { recursive: true, force: true });
     }

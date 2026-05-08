@@ -1,3 +1,5 @@
+import { isAbsolute, join, normalize } from 'node:path';
+
 export const SUPPORTED_AGENT_WIRE_APIS = [
   'openai_chat_completions',
   'openai_responses',
@@ -55,7 +57,9 @@ export type TaskExecutionContext = {
   wire_api?: AgentWireApi;
   model?: string;
   username?: string;
-  workspace_path?: string;
+  task_home_path: string;
+  workspace_path: string;
+  artifacts_path: string;
   workspace_binding_mode?: 'file_library' | 'pre_mounted';
   workspace_file_library_id?: string | null;
   workspace_file_library_name?: string | null;
@@ -115,6 +119,7 @@ const TASK_EXECUTION_UNSUPPORTED_FIELDS = new Set([
   'notebook',
   'chat_runner',
   'notebook_runner',
+  'container_workspace_path',
 ]);
 
 function isPlainObject(input: unknown): input is Record<string, unknown> {
@@ -164,6 +169,41 @@ function hasValidAgentTaskModelSnapshot(input: Record<string, unknown>): boolean
       && SUPPORTED_AGENT_WIRE_APIS.includes(upstreamProtocol as AgentWireApi));
 }
 
+function normalizeAbsolutePathForGuard(value: string): string {
+  const normalized = normalize(value.trim());
+  if (normalized === '/') return normalized;
+  return normalized.replace(/\/+$/, '');
+}
+
+function hasPathTraversalSegment(value: string): boolean {
+  return value.split('/').some((part) => part === '..');
+}
+
+function hasValidTaskPathFields(input: Record<string, unknown>): boolean {
+  if (!hasTrimmedStringField(input, 'task_home_path')) return false;
+  if (!hasTrimmedStringField(input, 'workspace_path')) return false;
+  if (!hasTrimmedStringField(input, 'artifacts_path')) return false;
+  const taskHomePath = input.task_home_path as string;
+  const workspacePath = input.workspace_path as string;
+  const artifactsPath = input.artifacts_path as string;
+  if (
+    hasPathTraversalSegment(taskHomePath)
+    || hasPathTraversalSegment(workspacePath)
+    || hasPathTraversalSegment(artifactsPath)
+  ) {
+    return false;
+  }
+  if (!isAbsolute(taskHomePath) || !isAbsolute(workspacePath) || !isAbsolute(artifactsPath)) {
+    return false;
+  }
+  const taskHome = normalizeAbsolutePathForGuard(taskHomePath);
+  const workspace = normalizeAbsolutePathForGuard(workspacePath);
+  const artifacts = normalizeAbsolutePathForGuard(artifactsPath);
+  if (taskHome === '/') return false;
+  return workspace === join(taskHome, 'workspace')
+    && artifacts === join(workspace, '.artifacts');
+}
+
 function hasUnsupportedTaskExecutionField(input: Record<string, unknown>): boolean {
   for (const key of TASK_EXECUTION_UNSUPPORTED_FIELDS) {
     if (hasOwnField(input, key)) return true;
@@ -175,6 +215,7 @@ export function isTaskExecutionContext(input: unknown): input is TaskExecutionCo
   if (!isPlainObject(input)) return false;
   if (hasUnsupportedTaskExecutionField(input)) return false;
   if (!hasTrimmedStringField(input, 'task_id')) return false;
+  if (!hasValidTaskPathFields(input)) return false;
   if (!hasValidWireApi(input)) return false;
   if (!hasValidRunnerSessionScope(input)) return false;
   if (!hasValidResourceProxy(input)) return false;

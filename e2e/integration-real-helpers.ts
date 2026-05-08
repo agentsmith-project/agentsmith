@@ -9,7 +9,6 @@ import {
   writeFile,
 } from "node:fs/promises";
 import http from "node:http";
-import { createHash } from "node:crypto";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { setTimeout as setTimeoutPromise } from "node:timers/promises";
@@ -140,68 +139,6 @@ export type SupportedChatEndpointUpstreamProtocol =
 
 function trimTrailingSlash(value: string): string {
   return value.trim().replace(/\/+$/, "");
-}
-
-function sanitizeRunnerRuntimePathPart(
-  input: string | null | undefined,
-  fallback: string,
-): string {
-  const value = (input ?? "").trim();
-  if (!value) return fallback;
-  return value.replace(/[^a-zA-Z0-9._-]/g, "_").slice(0, 128) || fallback;
-}
-
-export function normalizeVisibleWorkspaceRootForRunnerRuntime(
-  visibleRoot: string,
-): string {
-  const root = visibleRoot.trim() || "task-workspace";
-  const normalizedRoot = path.normalize(root).replace(/\\/g, "/");
-  if (normalizedRoot === "/") return normalizedRoot;
-  return normalizedRoot.replace(/\/+$/, "") || "task-workspace";
-}
-
-export function buildRunnerRuntimeRootPathPart(visibleRoot: string): string {
-  const normalizedVisibleRoot =
-    normalizeVisibleWorkspaceRootForRunnerRuntime(visibleRoot);
-  const visibleRootName = sanitizeRunnerRuntimePathPart(
-    path.basename(normalizedVisibleRoot),
-    "task-workspace",
-  );
-  const visibleRootHash = createHash("sha256")
-    .update(normalizedVisibleRoot)
-    .digest("hex")
-    .slice(0, 16);
-  return `${visibleRootName}-${visibleRootHash}`;
-}
-
-function isPathInsideOrSame(root: string, target: string): boolean {
-  const rel = path.relative(root, target);
-  return rel === "" || (!rel.startsWith("..") && !path.isAbsolute(rel));
-}
-
-export function buildRunnerRuntimeRootForVisibleWorkspace(input: {
-  visibleRoot: string;
-  runtimeStateBase: string;
-  tmpRoot?: string;
-}): string {
-  const runtimeRootPathPart = buildRunnerRuntimeRootPathPart(input.visibleRoot);
-  const preferredRoot = path.join(input.runtimeStateBase, runtimeRootPathPart);
-  if (!isPathInsideOrSame(input.visibleRoot, preferredRoot)) {
-    return preferredRoot;
-  }
-  const siblingRoot = path.join(
-    path.dirname(input.visibleRoot),
-    ".runner-runtime",
-    runtimeRootPathPart,
-  );
-  if (!isPathInsideOrSame(input.visibleRoot, siblingRoot)) {
-    return siblingRoot;
-  }
-  return path.join(
-    input.tmpRoot ?? tmpdir(),
-    "agentsmith-codex-runner",
-    runtimeRootPathPart,
-  );
 }
 
 function firstNonEmptyEnvValue(
@@ -3422,7 +3359,9 @@ export async function requestTaskWorkspaceAccess(args: {
   filesystem_name: string;
   metadata_url: string;
   storage_bucket_url?: string;
-  container_workspace_path?: string | null;
+  task_home_path: string;
+  workspace_path: string;
+  artifacts_path: string;
   library_root_path: string;
   recommended_mount_path?: string;
   created_at?: string;
@@ -3447,7 +3386,9 @@ export async function requestTaskWorkspaceAccess(args: {
     filesystem_name: string;
     metadata_url: string;
     storage_bucket_url?: string;
-    container_workspace_path?: string | null;
+    task_home_path: string;
+    workspace_path: string;
+    artifacts_path: string;
     library_root_path: string;
     recommended_mount_path?: string;
     created_at?: string;
@@ -4076,33 +4017,27 @@ export async function expectInternalTaskRuntimeStateInPod(args: {
   namespace: string;
   podName: string;
   taskId: string;
-  visibleWorkspaceRoot?: string;
+  taskHomePath?: string;
   timeoutMs?: number;
 }): Promise<void> {
-  const visibleWorkspaceRoot =
-    args.visibleWorkspaceRoot ?? `/workspace/${args.taskId}`;
-  const runtimeRootPathPart =
-    buildRunnerRuntimeRootPathPart(visibleWorkspaceRoot);
+  const taskHomePath = args.taskHomePath ?? `/home/${args.taskId}`;
   await expect
     .poll(
       async () => {
         const script = [
-          'runtime_root_path_part="$1"',
-          'visible_root="$2"',
-          'base="${MBOS_AGENT_CODEX_STATE_ROOT:-${HOME:-/tmp}/.mbos/agent-task-runner}"',
-          '[ -n "$base" ] || base="/"',
-          'runtime_root="${base%/}/$runtime_root_path_part"',
-          'case "$runtime_root" in "$visible_root"|"$visible_root"/*) visible_parent="${visible_root%/*}"; [ "$visible_parent" = "$visible_root" ] && visible_parent="/"; runtime_root="${visible_parent%/}/.runner-runtime/$runtime_root_path_part";; esac',
-          'case "$runtime_root" in "$visible_root"|"$visible_root"/*) tmp_root="${TMPDIR:-/tmp}"; runtime_root="${tmp_root%/}/agentsmith-codex-runner/$runtime_root_path_part";; esac',
-          'config="$runtime_root/.codex/config.toml"',
-          'catalog="$runtime_root/.codex/catalog.json"',
-          'manifest="$runtime_root/.mbos/builtin-skills-manifest.json"',
-          'skill="$runtime_root/.agents/skills/feishu-docs/SKILL.md"',
+          'task_home="$1"',
+          'workspace="$task_home/workspace"',
+          'config="$task_home/.codex/config.toml"',
+          'catalog="$task_home/.codex/catalog.json"',
+          'manifest="$task_home/.mbos/builtin-skills-manifest.json"',
+          'skill="$task_home/.agents/skills/feishu-docs/SKILL.md"',
+          'task_home_ready=0; [ -d "$task_home" ] && task_home_ready=1',
+          'workspace_ready=0; [ -d "$workspace" ] && workspace_ready=1',
           'config_ready=0; [ -f "$config" ] && grep -q "model = " "$config" && config_ready=1',
           'catalog_ready=0; [ -f "$catalog" ] && grep -q "\\"models\\"" "$catalog" && catalog_ready=1',
           'manifest_ready=0; [ -f "$manifest" ] && grep -q "\\"feishu-docs\\"" "$manifest" && manifest_ready=1',
           'skill_ready=0; [ -f "$skill" ] && grep -qi "feishu" "$skill" && skill_ready=1',
-          'printf "runtime_root_path_part=%s\\nruntime_root=%s\\nconfig_ready=%s\\ncatalog_ready=%s\\nmanifest_ready=%s\\nskill_ready=%s\\n" "$runtime_root_path_part" "$runtime_root" "$config_ready" "$catalog_ready" "$manifest_ready" "$skill_ready"',
+          'printf "task_home=%s\\ntask_home_ready=%s\\nworkspace_ready=%s\\nconfig_ready=%s\\ncatalog_ready=%s\\nmanifest_ready=%s\\nskill_ready=%s\\n" "$task_home" "$task_home_ready" "$workspace_ready" "$config_ready" "$catalog_ready" "$manifest_ready" "$skill_ready"',
         ].join("\n");
         const result = await spawnAndCapture(
           "kubectl",
@@ -4116,14 +4051,14 @@ export async function expectInternalTaskRuntimeStateInPod(args: {
             "-lc",
             script,
             "sh",
-            runtimeRootPathPart,
-            visibleWorkspaceRoot,
+            taskHomePath,
           ],
           { env: withoutProxyEnv(process.env) },
         );
         const output = result.stdout;
         return {
-          runtimeRootReady: /runtime_root=\/.+/.test(output),
+          taskHomeReady: output.includes("task_home_ready=1"),
+          workspaceReady: output.includes("workspace_ready=1"),
           codexConfigReady: output.includes("config_ready=1"),
           modelCatalogReady: output.includes("catalog_ready=1"),
           skillsManifestReady: output.includes("manifest_ready=1"),
@@ -4133,7 +4068,8 @@ export async function expectInternalTaskRuntimeStateInPod(args: {
       { timeout: args.timeoutMs ?? 120_000, intervals: [1_000, 2_000, 5_000] },
     )
     .toEqual({
-      runtimeRootReady: true,
+      taskHomeReady: true,
+      workspaceReady: true,
       codexConfigReady: true,
       modelCatalogReady: true,
       skillsManifestReady: true,
@@ -4290,7 +4226,6 @@ export type CodexRunnerProcessHandle = {
   proc: ChildProcessWithIgnoredStdin;
   logPath: string;
   workspaceRoot: string;
-  runtimeStateRoot: string;
   resolveTaskWorkspaceRoot: () => Promise<string | null>;
   resolveTaskRuntimePaths: () => Promise<PreparedTaskRuntimePaths | null>;
   stop: () => Promise<void>;
@@ -4321,7 +4256,6 @@ async function startAgentTaskRunnerProcessInternal(
       tmpdir(),
       `agentsmith-agent-task-workspaces-${Date.now()}`,
     );
-    const runtimeStateRoot = path.join(workspaceRoot, "runtime-state");
     const builtinSkillsDir = path.resolve(
       __dirname,
       "../packages/agent-task-runner/builtin-skills",
@@ -4334,8 +4268,8 @@ async function startAgentTaskRunnerProcessInternal(
         MBOS_AGENT_KEY: args.agentKey,
         MBOS_AGENT_CODEX_YOLO: "1",
         MBOS_AGENT_RUNNER_DEBUG: "1",
+        MBOS_AGENT_TASK_RUNNER_MODE: "managed_local",
         MBOS_AGENT_WORKSPACE_ROOT: workspaceRoot,
-        MBOS_AGENT_CODEX_STATE_ROOT: runtimeStateRoot,
         MBOS_AGENT_BUILTIN_SKILLS_DIR: builtinSkillsDir,
         MBOS_AGENT_BUILTIN_SKILLS: "mbos-context,feishu-docs,jira-ops",
         MBOS_AGENT_BUILTIN_SKILLS_REQUIRED: "1",
@@ -4369,7 +4303,6 @@ async function startAgentTaskRunnerProcessInternal(
           proc,
           logPath,
           workspaceRoot,
-          runtimeStateRoot,
           resolveTaskWorkspaceRoot: async () =>
             readPreparedTaskWorkspaceRootFromRunnerLog(logPath),
           resolveTaskRuntimePaths: async () =>
@@ -4401,9 +4334,6 @@ async function startAgentTaskRunnerProcessInternal(
             }
             await cleanupTrackedTaskWorkspaceMounts(workspaceRoot);
             await unmountWorkspaceTree(workspaceRoot);
-            await rm(runtimeStateRoot, { recursive: true, force: true }).catch(
-              () => undefined,
-            );
             await rm(workspaceRoot, { recursive: true, force: true }).catch(
               () => undefined,
             );
@@ -4482,7 +4412,6 @@ export async function reconnectCodexRunnerProcessToTask(args: {
 export type CodexRunnerDockerHandle = {
   containerName: string;
   workspaceRoot: string;
-  runtimeStateRoot: string;
   imageTag: string;
   logPath: string;
   resolveTaskRuntimePaths: () => Promise<PreparedTaskRuntimePaths | null>;
@@ -4568,7 +4497,6 @@ async function startAgentTaskRunnerDockerProcessInternal(
     tmpdir(),
     `agentsmith-agent-task-docker-workspaces-${Date.now()}`,
   );
-  const runtimeStateRoot = path.join(workspaceRoot, "runtime-state");
   await mkdir(workspaceRoot, { recursive: true });
   const containerName = `agentsmith-agent-task-runner-${Date.now()}`;
   const requestedRunnerLogDir =
@@ -4643,11 +4571,11 @@ async function startAgentTaskRunnerDockerProcessInternal(
     "--env",
     "MBOS_AGENT_RUNNER_DEBUG=1",
     "--env",
+    "MBOS_AGENT_TASK_RUNNER_MODE=managed_local",
+    "--env",
     `MBOS_AGENT_JUICEFS_MOUNT_READY_TIMEOUT_MS=${process.env.INTEGRATION_AGENT_TASK_RUNNER_MOUNT_READY_TIMEOUT_MS?.trim() || "120000"}`,
     "--env",
-    "MBOS_AGENT_WORKSPACE_ROOT=/workspace",
-    "--env",
-    "MBOS_AGENT_CODEX_STATE_ROOT=/workspace/runtime-state",
+    "MBOS_AGENT_WORKSPACE_ROOT=/home",
     "--env",
     `MBOS_AGENT_BUILTIN_SKILLS_DIR=${builtinSkillsDir}`,
     "--env",
@@ -4655,7 +4583,7 @@ async function startAgentTaskRunnerDockerProcessInternal(
     "--env",
     `MBOS_AGENT_BUILTIN_SKILLS_REQUIRED=${builtinSkillsRequired}`,
     "--volume",
-    `${workspaceRoot}:/workspace:rshared`,
+    `${workspaceRoot}:/home:rshared`,
   ];
   if (args.codeBin) {
     runArgs.push("--env", `CODEX_BIN=${args.codeBin}`);
@@ -4687,7 +4615,6 @@ async function startAgentTaskRunnerDockerProcessInternal(
       return {
         containerName,
         workspaceRoot,
-        runtimeStateRoot,
         imageTag,
         logPath: runnerLogPath,
         resolveTaskRuntimePaths: async () => {
@@ -4705,7 +4632,7 @@ async function startAgentTaskRunnerDockerProcessInternal(
           if (parsed)
             return rewritePreparedTaskRuntimePathsPrefix(
               parsed,
-              "/workspace",
+              "/home",
               workspaceRoot,
             );
           await preserveRunnerLogs();
@@ -4714,7 +4641,7 @@ async function startAgentTaskRunnerDockerProcessInternal(
           return fromLog
             ? rewritePreparedTaskRuntimePathsPrefix(
                 fromLog,
-                "/workspace",
+                "/home",
                 workspaceRoot,
               )
             : null;
@@ -4723,9 +4650,6 @@ async function startAgentTaskRunnerDockerProcessInternal(
           await preserveRunnerLogs();
           await spawnAndCapture("docker", ["rm", "-f", containerName]);
           await unmountWorkspaceTree(workspaceRoot);
-          await rm(runtimeStateRoot, { recursive: true, force: true }).catch(
-            () => undefined,
-          );
           await rm(workspaceRoot, { recursive: true, force: true }).catch(
             () => undefined,
           );

@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto';
 import { describe, expect, it, vi } from 'vitest';
 import { InMemoryJsonDocStore } from '@mbos/adapters-private';
 import { JsonDocProjectFileLibraryCatalogRepo, JsonDocProjectFileLibraryMountAccessRepo } from './file-library-persistence.js';
@@ -6,6 +7,10 @@ import {
   parseCsiMountOptions,
   sanitizeK8sName,
 } from './internal-agent-workspace-provisioner.js';
+import {
+  buildTaskHomePaths,
+  buildTaskHomeSegment,
+} from './notebook-task/task-models.js';
 
 describe('sanitizeK8sName', () => {
   it('does not leave a trailing dash after truncation', () => {
@@ -25,6 +30,47 @@ describe('parseCsiMountOptions', () => {
       'writeback_cache',
       'buffer-size=1024',
     ]);
+  });
+});
+
+describe('task home segment model', () => {
+  it('uses a legal task id directly as the task HOME segment', () => {
+    expect(buildTaskHomeSegment({
+      workspaceId: 'ws_demo',
+      projectId: 'proj_demo',
+      taskId: 'task_ABC.123-ok',
+    })).toBe('task_ABC.123-ok');
+  });
+
+  it('hashes reserved or invalid task ids without sanitizing them in place', () => {
+    const reserved = createHash('sha256')
+      .update('ws_demo/proj_demo/taskhash-existing')
+      .digest('hex')
+      .slice(0, 32);
+    const invalid = createHash('sha256')
+      .update('ws_demo/proj_demo/task with spaces')
+      .digest('hex')
+      .slice(0, 32);
+
+    expect(buildTaskHomeSegment({
+      workspaceId: 'ws_demo',
+      projectId: 'proj_demo',
+      taskId: 'taskhash-existing',
+    })).toBe(`taskhash-${reserved}`);
+    expect(buildTaskHomeSegment({
+      workspaceId: 'ws_demo',
+      projectId: 'proj_demo',
+      taskId: 'task with spaces',
+    })).toBe(`taskhash-${invalid}`);
+  });
+
+  it('builds the canonical task HOME, workspace, artifact, and PVC subPath fields', () => {
+    expect(buildTaskHomePaths('task_demo')).toEqual({
+      taskHomePath: '/home/task_demo',
+      workspacePath: '/home/task_demo/workspace',
+      artifactsPath: '/home/task_demo/workspace/.artifacts',
+      subPath: 'agent-tasks/task_demo',
+    });
   });
 });
 
@@ -72,7 +118,7 @@ describe('InternalAgentWorkspaceProvisionerImpl', () => {
       pvc_name: 'juicefs-pvc-demo',
       volume_handle: 'juicefs-demo',
       filesystem_name: 'jfs_ws_demo_proj_demo_workspace_library',
-      mount_path: '/workspace/task_demo',
+      mount_path: '/home/task_demo',
       storage_class_name: 'juicefs-static',
       mount_options: ['writeback_cache', 'cache-size=204800'],
       subdir: '/workspaces/ws_demo/flib_demo',
@@ -113,7 +159,6 @@ describe('InternalAgentWorkspaceProvisionerImpl', () => {
         file_library_id: 'flib_demo',
         filesystem_name: 'jfs_ws_demo_proj_demo_workspace_library',
         metadata_url: 'postgres://juicefs:secret@postgres-external.agentsmith-sandbox.svc.cluster.local:5432/juicefs_demo?sslmode=disable',
-        mount_path: '/workspace/task_demo',
         storage_endpoint: 'http://minio-external.agentsmith-sandbox.svc.cluster.local:9000',
         storage_class_name: 'juicefs-static',
         mount_options: ['writeback_cache', 'cache-size=204800'],
@@ -122,9 +167,14 @@ describe('InternalAgentWorkspaceProvisionerImpl', () => {
         mount_image: 'juicedata/mount:ce-v1.3.1',
       }),
     );
+    expect(ensureWorkspaceBinding.mock.calls[0]?.[3]).not.toHaveProperty('mount_path');
     expect(result.workspaceMount).toEqual({
       bindingId: 'flib_demo',
-      mountPath: '/workspace/task_demo',
+      mountPath: '/home/task_demo',
+      taskHomePath: '/home/task_demo',
+      workspacePath: '/home/task_demo/workspace',
+      artifactsPath: '/home/task_demo/workspace/.artifacts',
+      subPath: 'agent-tasks/task_demo',
     });
     expect(result.binding.pvc_name).toBe('juicefs-pvc-demo');
     expect(result.binding.storage_class_name).toBe('juicefs-static');
@@ -173,7 +223,7 @@ describe('InternalAgentWorkspaceProvisionerImpl', () => {
       pvc_name: 'juicefs-pvc-demo',
       volume_handle: 'juicefs-demo',
       filesystem_name: 'jfs_ws_demo_proj_demo_workspace_library',
-      mount_path: '/workspace/task_public',
+      mount_path: '/home/task_public',
     });
 
     const provisioner = new InternalAgentWorkspaceProvisionerImpl(
@@ -202,8 +252,8 @@ describe('InternalAgentWorkspaceProvisionerImpl', () => {
       'flib_public',
       expect.objectContaining({
         metadata_url: 'postgres://juicefs:secret@postgres-external.agentsmith-sandbox.svc.cluster.local:5432/juicefs_demo',
-        mount_path: '/workspace/task_public',
       }),
     );
+    expect(ensureWorkspaceBinding.mock.calls[0]?.[3]).not.toHaveProperty('mount_path');
   });
 });

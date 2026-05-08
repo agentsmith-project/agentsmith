@@ -71,6 +71,16 @@ is_relative_library_root_path() {
   return 0
 }
 
+is_canonical_task_home_paths() {
+  local task_home_path="$1"
+  local workspace_path="$2"
+  local artifacts_path="$3"
+  [[ "${task_home_path}" == /home/* ]] || return 1
+  [[ "${workspace_path}" == "${task_home_path}/workspace" ]] || return 1
+  [[ "${artifacts_path}" == "${workspace_path}/.artifacts" ]] || return 1
+  return 0
+}
+
 ACCESS_TOKEN="$(fetch_token)"
 [[ -n "${ACCESS_TOKEN}" ]] || die "preset agent-task file-library readiness failed: missing token"
 
@@ -121,8 +131,12 @@ while (( $(date +%s) < READY_DEADLINE )); do
       METADATA_URL="$(cat "${BODY_FILE}" | json_extract metadata_url)"
       STORAGE_BUCKET_URL="$(cat "${BODY_FILE}" | json_extract storage_bucket_url)"
       LIBRARY_ROOT_PATH="$(json_body_field 'j.library_root_path' || true)"
-      CONTAINER_WORKSPACE_PATH="$(json_body_field 'j.container_workspace_path ?? ""' || true)"
-      if [[ "${METADATA_URL}" == *"@postgres:5432/"*         && "${STORAGE_BUCKET_URL}" == *"http://minio:9000/"*         && -z "${CONTAINER_WORKSPACE_PATH}" ]]         && is_relative_library_root_path "${LIBRARY_ROOT_PATH}"; then
+      TASK_HOME_PATH="$(json_body_field 'j.task_home_path' || true)"
+      WORKSPACE_PATH="$(json_body_field 'j.workspace_path' || true)"
+      ARTIFACTS_PATH="$(json_body_field 'j.artifacts_path' || true)"
+      if [[ "${METADATA_URL}" == *"@postgres:5432/"* && "${STORAGE_BUCKET_URL}" == *"http://minio:9000/"* ]] \
+        && is_relative_library_root_path "${LIBRARY_ROOT_PATH}" \
+        && is_canonical_task_home_paths "${TASK_HOME_PATH}" "${WORKSPACE_PATH}" "${ARTIFACTS_PATH}"; then
         api_json DELETE "/api/v1/workspaces/${WORKSPACE_ID}/projects/${PROJECT_ID}/tasks/${TASK_ID}" >/dev/null || true
         if [[ -n "${LIBRARY_ID}" ]]; then
           api_json DELETE "/api/v1/workspaces/${WORKSPACE_ID}/projects/${PROJECT_ID}/file-libraries/${LIBRARY_ID}" >/dev/null || true

@@ -53,6 +53,10 @@ import {
 } from './project-member-governance-persistence.js';
 import { resolveWorkspaceScopedCollection } from './workspace-tenant-collections.js';
 import { AgentTaskModelSettingService } from './agent-task-model-setting-service.js';
+import {
+  JsonDocProjectFileLibraryCatalogRepo,
+  JsonDocProjectFileLibraryMountAccessRepo,
+} from './file-library-persistence.js';
 
 const { createFileLibraryGatewayClientMock } = vi.hoisted(() => ({
   createFileLibraryGatewayClientMock: vi.fn(),
@@ -366,6 +370,80 @@ describe('task-route-handler workspace access', () => {
     });
   });
 
+  it('returns task HOME path fields from workspace access without the legacy container workspace path', async () => {
+    const deps = createDefaultNodeApiDeps();
+    const now = new Date().toISOString();
+    await new JsonDocProjectFileLibraryCatalogRepo(deps.docStore).save({
+      id: 'lib_workspace_access_home',
+      workspace_id: 'ws_default',
+      project_id: 'proj_1',
+      name: 'Workspace Access HOME',
+      status: 'ready',
+      filesystem_name: 'flib-workspace-access-home',
+      created_by_user_id: 'user_1',
+      created_at: now,
+      updated_at: now,
+    } as never);
+    await new JsonDocProjectFileLibraryMountAccessRepo(deps.docStore).save('ws_default', 'proj_1', 'lib_workspace_access_home', {
+      filesystem_name: 'flib-workspace-access-home',
+      metadata_url: 'postgres://jfsu_user:secret@localhost:15432/jfs_workspace_access_home?sslmode=disable',
+      storage_bucket_url: 'http://localhost:19000/jfs-workspace-access-home',
+      recommended_mount_path: '~/AgentSmith/Workspace Access HOME',
+      platform_notes: [],
+      recommended_mount_commands: {
+        linux: 'juicefs mount ...',
+        macos: 'juicefs mount ...',
+        windows: 'juicefs mount ...',
+      },
+      created_at: now,
+    });
+    await deps.docStore.upsert(notebookTasksCollection('ws_default'), 'task_workspace_access_home', {
+      id: 'task_workspace_access_home',
+      workspace_id: 'ws_default',
+      project_id: 'proj_1',
+      owner_user_id: 'user_1',
+      title: 'Workspace access HOME task',
+      task_home_segment: 'task_workspace_access_home',
+      workspace_file_library_id: 'lib_workspace_access_home',
+      workspace_file_library_name: 'Workspace Access HOME',
+      status: 'active',
+      attached_inputs: [],
+      created_at: now,
+      updated_at: now,
+      last_activity_at: now,
+    });
+
+    const json = vi.fn();
+    await expect(handleTaskRoute({
+      route: {
+        kind: 'taskWorkspaceAccess',
+        workspaceId: 'ws_default',
+        projectId: 'proj_1',
+        taskId: 'task_workspace_access_home',
+      } as never,
+      method: 'POST',
+      req: { headers: {}, url: '' } as never,
+      res: {} as never,
+      deps,
+      user: { id: 'user_1' } as never,
+      json,
+      readBody: vi.fn(),
+    })).resolves.toBe(true);
+
+    const payload = json.mock.calls[0]?.[2] as Record<string, unknown>;
+    expect(json.mock.calls[0]?.[1]).toBe(200);
+    expect(payload).toMatchObject({
+      task_id: 'task_workspace_access_home',
+      workspace_binding_mode: 'file_library',
+      task_home_path: '/home/task_workspace_access_home',
+      workspace_path: '/home/task_workspace_access_home/workspace',
+      artifacts_path: '/home/task_workspace_access_home/workspace/.artifacts',
+      library_root_path: '.',
+      file_library_id: 'lib_workspace_access_home',
+    });
+    expect(payload).not.toHaveProperty('container_workspace_path');
+  });
+
   it('creates an agent task without requiring agent_id', async () => {
     const deps = createDefaultNodeApiDeps();
     const { runner } = await seedDefaultManagedRunner(deps);
@@ -395,6 +473,7 @@ describe('task-route-handler workspace access', () => {
       title: 'Runnerless task',
       prompt: 'Summarize the release notes',
       lifecycle_status: 'active',
+      task_home_segment: expect.stringMatching(/^task_[a-z0-9]+$/),
       bound_runner_id: runner.id,
       bound_runner_kind: 'managed',
       runner_binding_source: 'default_managed',
@@ -1893,13 +1972,177 @@ describe('task-route-handler workspace access', () => {
     expect(json).toHaveBeenCalledWith(
       expect.anything(),
       409,
-      { error_code: 'RESOURCE_CONFLICT', message: 'task_run_in_progress' },
+      {
+        error_code: 'AGENT_TASK_DELETE_BLOCKED',
+        message: 'agent_task_delete_blocked',
+        blockers: [
+          expect.objectContaining({
+            type: 'active_run',
+            run_id: 'run_delete_busy',
+          }),
+        ],
+      },
     );
     await expect(
       deps.docStore.get(notebookTasksCollection('ws_default'), 'task_delete_busy'),
     ).resolves.toMatchObject({
       id: 'task_delete_busy',
     });
+  });
+
+  it('reports terminal, hard-teardown, and holder blockers without cleaning task HOME', async () => {
+    const deps = createDefaultNodeApiDeps();
+    const now = new Date().toISOString();
+    const taskId = 'task_delete_multi_blocked';
+    await deps.docStore.upsert(notebookTasksCollection('ws_default'), taskId, {
+      id: taskId,
+      workspace_id: 'ws_default',
+      project_id: 'proj_1',
+      owner_user_id: 'user_1',
+      title: 'Multi blocked task',
+      task_home_segment: taskId,
+      workspace_file_library_id: 'lib_multi_blocked',
+      workspace_file_library_name: 'Multi Blocked Workspace',
+      status: 'active' as const,
+      attached_inputs: [],
+      created_at: now,
+      updated_at: now,
+      last_activity_at: now,
+    });
+    await expect(acquireNotebookTaskRunLease(deps.cache, buildNotebookTaskRunState({
+      taskId,
+      runId: 'run_multi_blocked',
+      runnerId: 'agent_multi_blocked',
+      startedAt: now,
+      stop: {
+        mode: 'terminate',
+        requested_at: now,
+        delivery: 'internal_teardown_requested',
+        hard_teardown: {
+          status: 'pending',
+          requested_at: now,
+        },
+      },
+    }))).resolves.toBe(true);
+    deps.notebookTerminalService.hasLiveSessionsForTask = vi.fn(async () => true) as never;
+    const coordinator = new InternalWorkloadCoordinator({
+      keepalive: vi.fn(async () => undefined),
+      releasePod: vi.fn(async () => undefined),
+    });
+    deps.internalWorkloadCoordinator = coordinator;
+    await coordinator.acquireHolder({
+      workspaceId: 'ws_default',
+      projectId: 'proj_1',
+      workloadId: sanitizeWorkloadId(taskId),
+      holderKind: 'terminal_session',
+      holderId: 'term_multi_blocked',
+    });
+
+    try {
+      const json = vi.fn();
+      await expect(handleTaskRoute({
+        route: {
+          kind: 'taskItem',
+          workspaceId: 'ws_default',
+          projectId: 'proj_1',
+          taskId,
+        } as never,
+        method: 'DELETE',
+        req: { headers: {}, url: '' } as never,
+        res: {} as never,
+        deps,
+        user: { id: 'user_1' } as never,
+        json,
+        readBody: vi.fn(),
+      })).resolves.toBe(true);
+
+      const payload = json.mock.calls[0]?.[2] as { blockers?: Array<{ type?: string }> };
+      expect(json.mock.calls[0]?.[1]).toBe(409);
+      expect(payload).toMatchObject({
+        error_code: 'AGENT_TASK_DELETE_BLOCKED',
+        message: 'agent_task_delete_blocked',
+      });
+      expect(payload.blockers).toEqual(expect.arrayContaining([
+        expect.objectContaining({ type: 'active_run', run_id: 'run_multi_blocked' }),
+        expect.objectContaining({ type: 'hard_teardown', run_id: 'run_multi_blocked' }),
+        expect.objectContaining({ type: 'active_terminal' }),
+        expect.objectContaining({ type: 'workspace_holder', holder: 'terminal_session:term_multi_blocked' }),
+      ]));
+      expect(createFileLibraryGatewayClientMock).not.toHaveBeenCalled();
+      await expect(deps.docStore.get(notebookTasksCollection('ws_default'), taskId)).resolves.toMatchObject({
+        id: taskId,
+      });
+    } finally {
+      await coordinator.shutdown();
+    }
+  });
+
+  it('removes the task HOME subtree before deleting unblocked task data', async () => {
+    const deps = createDefaultNodeApiDeps();
+    const now = new Date().toISOString();
+    const taskId = 'task_delete_clean';
+    await new JsonDocProjectFileLibraryCatalogRepo(deps.docStore).save({
+      id: 'lib_delete_clean',
+      workspace_id: 'ws_default',
+      project_id: 'proj_1',
+      name: 'Delete Clean Workspace',
+      status: 'ready',
+      filesystem_name: 'flib-delete-clean',
+      created_by_user_id: 'user_1',
+      created_at: now,
+      updated_at: now,
+    } as never);
+    await deps.docStore.upsert(notebookTasksCollection('ws_default'), taskId, {
+      id: taskId,
+      workspace_id: 'ws_default',
+      project_id: 'proj_1',
+      owner_user_id: 'user_1',
+      title: 'Clean delete task',
+      task_home_segment: taskId,
+      workspace_file_library_id: 'lib_delete_clean',
+      workspace_file_library_name: 'Delete Clean Workspace',
+      status: 'active' as const,
+      attached_inputs: [],
+      created_at: now,
+      updated_at: now,
+      last_activity_at: now,
+    });
+    const removeObjects = vi.fn(async () => undefined);
+    const listObjectsV2 = vi.fn(() => (async function* listTaskHomeObjects() {
+      yield { name: 'agent-tasks/task_delete_clean/workspace/.artifacts/result.txt' };
+      yield { name: 'agent-tasks/task_delete_clean/.codex/config.json' };
+    })());
+    createFileLibraryGatewayClientMock.mockResolvedValue({
+      listObjectsV2,
+      removeObjects,
+    });
+
+    const json = vi.fn();
+    await expect(handleTaskRoute({
+      route: {
+        kind: 'taskItem',
+        workspaceId: 'ws_default',
+        projectId: 'proj_1',
+        taskId,
+      } as never,
+      method: 'DELETE',
+      req: { headers: {}, url: '' } as never,
+      res: {} as never,
+      deps,
+      user: { id: 'user_1' } as never,
+      json,
+      readBody: vi.fn(),
+    })).resolves.toBe(true);
+
+    expect(listObjectsV2).toHaveBeenCalledWith('flib-delete-clean', 'agent-tasks/task_delete_clean/', true);
+    expect(removeObjects).toHaveBeenCalledWith('flib-delete-clean', [
+      'agent-tasks/task_delete_clean',
+      'agent-tasks/task_delete_clean/',
+      'agent-tasks/task_delete_clean/workspace/.artifacts/result.txt',
+      'agent-tasks/task_delete_clean/.codex/config.json',
+    ]);
+    expect(json).toHaveBeenCalledWith(expect.anything(), 200, { success: true });
+    await expect(deps.docStore.get(notebookTasksCollection('ws_default'), taskId)).resolves.toBeNull();
   });
 
   it('fails closed on cancel when shared active run truth has no runner evidence', async () => {
@@ -3331,7 +3574,11 @@ describe('task-route-handler workspace access', () => {
           },
           workspaceMount: {
             bindingId: 'bind_internal_pre_dispatch_cancel',
-            mountPath: `/workspace/${input.taskId}`,
+            mountPath: `/home/${input.taskId}`,
+            taskHomePath: `/home/${input.taskId}`,
+            workspacePath: `/home/${input.taskId}/workspace`,
+            artifactsPath: `/home/${input.taskId}/workspace/.artifacts`,
+            subPath: `agent-tasks/${input.taskId}`,
             fileLibraryId: input.fileLibraryId,
           },
         })),
@@ -3560,7 +3807,11 @@ describe('task-route-handler workspace access', () => {
           },
           workspaceMount: {
             bindingId: 'bind_internal_pre_dispatch_cancel_persist_failed',
-            mountPath: `/workspace/${input.taskId}`,
+            mountPath: `/home/${input.taskId}`,
+            taskHomePath: `/home/${input.taskId}`,
+            workspacePath: `/home/${input.taskId}/workspace`,
+            artifactsPath: `/home/${input.taskId}/workspace/.artifacts`,
+            subPath: `agent-tasks/${input.taskId}`,
             fileLibraryId: input.fileLibraryId,
           },
         })),
@@ -3740,7 +3991,11 @@ describe('task-route-handler workspace access', () => {
           },
           workspaceMount: {
             bindingId: 'bind_internal_late_on_dispatched',
-            mountPath: `/workspace/${input.taskId}`,
+            mountPath: `/home/${input.taskId}`,
+            taskHomePath: `/home/${input.taskId}`,
+            workspacePath: `/home/${input.taskId}/workspace`,
+            artifactsPath: `/home/${input.taskId}/workspace/.artifacts`,
+            subPath: `agent-tasks/${input.taskId}`,
             fileLibraryId: input.fileLibraryId,
           },
         })),
@@ -6080,7 +6335,11 @@ describe('task-route-handler workspace access', () => {
         },
         workspaceMount: {
           bindingId: 'bind_terminal_evidence',
-          mountPath: `/workspace/${input.taskId}`,
+          mountPath: `/home/${input.taskId}`,
+          taskHomePath: `/home/${input.taskId}`,
+          workspacePath: `/home/${input.taskId}/workspace`,
+          artifactsPath: `/home/${input.taskId}/workspace/.artifacts`,
+          subPath: `agent-tasks/${input.taskId}`,
           fileLibraryId: input.fileLibraryId,
         },
       })),
@@ -6355,7 +6614,11 @@ describe('task-route-handler workspace access', () => {
         },
         workspaceMount: {
           bindingId: 'bind_terminal_context',
-          mountPath: `/workspace/${input.taskId}`,
+          mountPath: `/home/${input.taskId}`,
+          taskHomePath: `/home/${input.taskId}`,
+          workspacePath: `/home/${input.taskId}/workspace`,
+          artifactsPath: `/home/${input.taskId}/workspace/.artifacts`,
+          subPath: `agent-tasks/${input.taskId}`,
           fileLibraryId: input.fileLibraryId,
         },
       })),
@@ -6397,6 +6660,7 @@ describe('task-route-handler workspace access', () => {
         runner_binding_source: 'default_managed',
         bound_at: now,
         bound_by_user_id: 'user_1',
+        task_home_segment: 'task_terminal_context',
         workspace_file_library_id: 'lib_terminal_context',
         workspace_file_library_name: 'Terminal Context Workspace',
         status: 'active',
@@ -6437,10 +6701,15 @@ describe('task-route-handler workspace access', () => {
         task_id: 'task_terminal_context',
         runner_id: runner.id,
         runner_session_scope: 'task_execution',
+        task_home_path: '/home/task_terminal_context',
+        workspace_path: '/home/task_terminal_context/workspace',
+        artifacts_path: '/home/task_terminal_context/workspace/.artifacts',
+        workspace_binding_mode: 'pre_mounted',
       });
       expect(executionContext).not.toHaveProperty('session_id');
       expect(executionContext).not.toHaveProperty('agent_id');
       expect(executionContext).not.toHaveProperty('interaction_kind');
+      expect(executionContext).not.toHaveProperty('container_workspace_path');
       const executionTicket = String(executionContext?.execution_ticket ?? '');
       await expect(resolveInternalTicket(deps.cache, executionTicket, 'agent_execution')).resolves.toMatchObject({
         payload: {
@@ -6557,11 +6826,12 @@ describe('task-route-handler workspace access', () => {
       expect(createSession).toHaveBeenCalledWith(expect.objectContaining({
         agentId: runner.id,
         runnerSessionId: 'task_terminal_async_create',
-        runtimeDispatchContext: {
-          managedInternalAgent: {
+        runtimeDispatchContext: expect.objectContaining({
+          managedInternalAgent: expect.objectContaining({
             workspaceFileLibraryId: 'lib_terminal_async_create',
-          },
-        },
+            taskHomeSegment: 'task_terminal_async_create',
+          }),
+        }),
       }));
       const createdSession = json.mock.calls[0]?.[2] as {
         terminal_session_id: string;
@@ -6718,7 +6988,11 @@ describe('task-route-handler workspace access', () => {
           },
           workspaceMount: {
             bindingId: 'bind_terminal_internal',
-            mountPath: `/workspace/${input.taskId}`,
+            mountPath: `/home/${input.taskId}`,
+            taskHomePath: `/home/${input.taskId}`,
+            workspacePath: `/home/${input.taskId}/workspace`,
+            artifactsPath: `/home/${input.taskId}/workspace/.artifacts`,
+            subPath: `agent-tasks/${input.taskId}`,
             fileLibraryId: input.fileLibraryId,
           },
         })),

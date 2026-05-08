@@ -29,6 +29,10 @@ import {
   type AgentTaskModelResolvedTarget,
   resolveAgentTaskModelTarget,
 } from './agent-task-model-setting-service.js';
+import {
+  buildTaskHomePaths,
+  resolveTaskHomeSegment,
+} from './notebook-task/task-models.js';
 export {
   readInternalWorkloadHolderSnapshotForTests,
   resetInternalWorkloadHolderCoordinatorForTests,
@@ -40,6 +44,7 @@ type NotebookTaskRecord = {
   project_id: string;
   owner_user_id: string;
   title: string;
+  task_home_segment?: string;
   source?: 'runner_test';
   runner_test?: true;
   workspace_file_library_id?: string;
@@ -598,7 +603,11 @@ export async function runNotebookTaskWithExecutionAgent(input: {
     };
     const modelCatalog = effectiveModelConfig.model_catalog;
     const model = resolvedTarget.resolvedModel;
-    let internalWorkspacePath: string | undefined;
+    const taskHomeSegment = resolveTaskHomeSegment(task);
+    const defaultTaskHomePaths = buildTaskHomePaths(taskHomeSegment);
+    let executionTaskHomePath = defaultTaskHomePaths.taskHomePath;
+    let executionWorkspacePath = defaultTaskHomePaths.workspacePath;
+    let executionArtifactsPath = defaultTaskHomePaths.artifactsPath;
     if (isManagedAgentRunner(agent)) {
       await throwIfCancellationRequested();
       if (!deps.internalAgentPodManager) {
@@ -625,9 +634,12 @@ export async function runNotebookTaskWithExecutionAgent(input: {
         projectId: task.project_id,
         fileLibraryId: task.workspace_file_library_id,
         taskId: task.id,
+        taskHomeSegment,
       });
       await throwIfCancellationRequested();
-      internalWorkspacePath = workspaceBinding.workspaceMount.mountPath;
+      executionTaskHomePath = workspaceBinding.workspaceMount.taskHomePath ?? defaultTaskHomePaths.taskHomePath;
+      executionWorkspacePath = workspaceBinding.workspaceMount.workspacePath ?? defaultTaskHomePaths.workspacePath;
+      executionArtifactsPath = workspaceBinding.workspaceMount.artifactsPath ?? defaultTaskHomePaths.artifactsPath;
       await deps.internalAgentPodManager.ensureAgentReady({
         workspaceId: task.workspace_id,
         projectId: task.project_id,
@@ -727,7 +739,9 @@ export async function runNotebookTaskWithExecutionAgent(input: {
             ? 'agent_presence'
             : 'task_execution',
         workspace_binding_mode: isManagedAgentRunner(agent) ? 'pre_mounted' : 'file_library',
-        workspace_path: isManagedAgentRunner(agent) ? internalWorkspacePath : undefined,
+        task_home_path: executionTaskHomePath,
+        workspace_path: executionWorkspacePath,
+        artifacts_path: executionArtifactsPath,
         workspace_file_library_id: task.workspace_file_library_id ?? null,
         workspace_file_library_name: task.workspace_file_library_name ?? null,
         workspace_dir_name: workspaceLibrary?.filesystem_name

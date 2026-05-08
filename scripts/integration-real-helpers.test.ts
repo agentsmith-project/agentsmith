@@ -17,8 +17,6 @@ import {
   API_BASE,
   bindAgentTaskExecutionSocketToTask,
   buildCreateProjectRequestBody,
-  buildRunnerRuntimeRootForVisibleWorkspace,
-  buildRunnerRuntimeRootPathPart,
   collectTrackedTaskWorkspaceMounts,
   createAgentTaskRunnerBundleViaApi,
   createAgentTaskViaApi,
@@ -39,7 +37,6 @@ import {
   startMockJiraServer,
   waitForRunnerOutputToken,
 } from '../e2e/integration-real-helpers';
-import { buildTaskWorkspacePaths } from '../packages/agent-task-runner/src/task-workspace.js';
 
 type TerminalTestServer = {
   url: string;
@@ -714,9 +711,9 @@ describe('integration-real-helpers', () => {
       path.join(workspaceRoot, 'task-workspace-mount-sessions.json'),
       JSON.stringify({
         sessions: [
-          { mount_path: '/home/alice/ags-workspace/task_1' },
-          { mount_path: '/home/alice/ags-workspace/task_2' },
-          { mount_path: '/home/alice/ags-workspace/task_1' },
+          { mount_path: '/home/task_1' },
+          { mount_path: '/home/task_2' },
+          { mount_path: '/home/task_1' },
           { mount_path: '' },
         ],
       }),
@@ -724,27 +721,27 @@ describe('integration-real-helpers', () => {
     );
 
     await expect(collectTrackedTaskWorkspaceMounts(workspaceRoot)).resolves.toEqual([
-      '/home/alice/ags-workspace/task_1',
-      '/home/alice/ags-workspace/task_2',
+      '/home/task_1',
+      '/home/task_2',
     ]);
   });
 
   it('extracts the prepared task workspace cwd from Agent task runner debug logs', () => {
     const logText = [
       '[agent-task-runner][debug] received start {"task_id":"task_123"}',
-      '[agent-task-runner][debug] prepared task workspace {"cwd":"/home/alice/ags-workspace/task_123","codex_config":"/home/alice/ags-workspace/task_123/.codex/config.toml"}',
+      '[agent-task-runner][debug] prepared task workspace {"cwd":"/home/task_123/workspace","codex_config":"/home/task_123/.codex/config.toml"}',
     ].join('\n');
 
-    expect(findPreparedTaskWorkspaceRootInRunnerLog(logText)).toBe('/home/alice/ags-workspace/task_123');
+    expect(findPreparedTaskWorkspaceRootInRunnerLog(logText)).toBe('/home/task_123/workspace');
   });
 
   it('prefers the latest prepared task workspace entry when a runner reconnects across tasks', () => {
     const logText = [
-      '[agent-task-runner][debug] prepared task workspace {"cwd":"/home/alice/ags-workspace/task_old"}',
-      '[agent-task-runner][debug] prepared task workspace {"cwd":"/home/alice/ags-workspace/task_new"}',
+      '[agent-task-runner][debug] prepared task workspace {"cwd":"/home/task_old/workspace"}',
+      '[agent-task-runner][debug] prepared task workspace {"cwd":"/home/task_new/workspace"}',
     ].join('\n');
 
-    expect(findPreparedTaskWorkspaceRootInRunnerLog(logText)).toBe('/home/alice/ags-workspace/task_new');
+    expect(findPreparedTaskWorkspaceRootInRunnerLog(logText)).toBe('/home/task_new/workspace');
   });
 
   it('returns null when the runner log has not yet declared a prepared task workspace', () => {
@@ -819,53 +816,18 @@ describe('integration-real-helpers', () => {
     expect(source).toContain('message_id=');
   });
 
-  it('derives internal runner runtime state from the visible workspace identity, not the bare task id', async () => {
+  it('keeps internal runner runtime state under the task HOME path fields', async () => {
     const source = await readFile(path.resolve('e2e/integration-real-helpers.ts'), 'utf8');
+    const legacyCodexStateRootEnv = ['MBOS_AGENT_CODEX', 'STATE_ROOT'].join('_');
+    const legacyRuntimeBuilder = ['buildRunner', 'RuntimeRootPathPart'].join('');
+    const legacyRuntimePathPart = ['runtime', 'root', 'path', 'part'].join('_');
 
-    expect(source).not.toContain('runtime_root="${base%/}/$task_id"');
-    expect(source).toContain('sha256');
-  });
-
-  it('builds collision-safe runner runtime ids from the normalized visible workspace root', () => {
-    const first = buildRunnerRuntimeRootPathPart('/workspace/team-a/task_shared');
-    const second = buildRunnerRuntimeRootPathPart('/workspace/team-b/task_shared');
-
-    expect(first).toMatch(/^task_shared-[a-f0-9]{16}$/);
-    expect(second).toMatch(/^task_shared-[a-f0-9]{16}$/);
-    expect(first).not.toBe(second);
-    expect(buildRunnerRuntimeRootPathPart('/workspace/team-a/task_shared/')).toBe(first);
-    expect(buildRunnerRuntimeRootForVisibleWorkspace({
-      visibleRoot: '/workspace/team-a/task_shared',
-      runtimeStateBase: '/runner-state',
-    })).toBe(`/runner-state/${first}`);
-  });
-
-  it('keeps integration helper runtime path derivation consistent with notebook task-workspace paths', () => {
-    const previousStateRoot = process.env.MBOS_AGENT_CODEX_STATE_ROOT;
-    process.env.MBOS_AGENT_CODEX_STATE_ROOT = '/runner-state';
-    try {
-      for (const visibleRoot of [
-        '/workspace/task_1',
-        '/workspace/team-a/task_shared',
-        '/workspace/team-b/task_shared',
-      ]) {
-        expect(buildRunnerRuntimeRootForVisibleWorkspace({
-          visibleRoot,
-          runtimeStateBase: '/runner-state',
-        })).toBe(buildTaskWorkspacePaths(visibleRoot, 'k8s_internal').runtimeRoot);
-      }
-      process.env.MBOS_AGENT_CODEX_STATE_ROOT = '/workspace/task_1/runtime-state';
-      expect(buildRunnerRuntimeRootForVisibleWorkspace({
-        visibleRoot: '/workspace/task_1',
-        runtimeStateBase: '/workspace/task_1/runtime-state',
-      })).toBe(buildTaskWorkspacePaths('/workspace/task_1', 'k8s_internal').runtimeRoot);
-    } finally {
-      if (previousStateRoot === undefined) {
-        delete process.env.MBOS_AGENT_CODEX_STATE_ROOT;
-      } else {
-        process.env.MBOS_AGENT_CODEX_STATE_ROOT = previousStateRoot;
-      }
-    }
+    expect(source).not.toContain(legacyCodexStateRootEnv);
+    expect(source).not.toContain(legacyRuntimeBuilder);
+    expect(source).not.toContain(legacyRuntimePathPart);
+    expect(source).toContain('task_home="$1"');
+    expect(source).toContain('config="$task_home/.codex/config.toml"');
+    expect(source).toContain('"MBOS_AGENT_WORKSPACE_ROOT=/home"');
   });
 
   it('prefers KEYCLOAK_BASE_URL over every other integration keycloak env source', () => {

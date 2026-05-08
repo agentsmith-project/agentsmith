@@ -71,6 +71,7 @@
     "test:release:precheck": "bash scripts/run-release-local-precheck.sh",
     "test:substrate:smoke": "bash scripts/substrate-smoke.sh",
     "test:unified-deploy:substrate-boundary": "tsx scripts/unified-deploy/check-substrate-boundary.ts",
+    "test:unified-deploy:unit": "node --max-old-space-size=6144 ./node_modules/vitest/vitest.mjs run scripts/unified-deploy/*.test.ts",
     "test:unified-deploy:substrate-lifecycle:unit": "node --max-old-space-size=6144 ./node_modules/vitest/vitest.mjs run scripts/unified-deploy/substrate-lifecycle.test.ts",
     "test:unified-deploy:substrate-lifecycle": "tsx scripts/unified-deploy/substrate-lifecycle.ts status",
     "test:unified-deploy:k8s-dry-run:unit": "node --max-old-space-size=6144 ./node_modules/vitest/vitest.mjs run scripts/unified-deploy/k8s-dry-run.test.ts",

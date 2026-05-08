@@ -387,6 +387,10 @@ function failingSentinelResult() {
   };
 }
 
+function recommendedPlanBlock(output: string): string {
+  return output.split('\n\nNext action:')[0]?.split('Recommended plan:\n')[1] ?? '';
+}
+
 describe('verify human entrypoints', () => {
   it('keeps npm run verify as a dry-run planner by default', () => {
     const root = mkdtempSync(join(tmpdir(), 'agentsmith-verify-dry-run-'));
@@ -411,6 +415,24 @@ describe('verify human entrypoints', () => {
     } finally {
       rmSync(root, { recursive: true, force: true });
     }
+  });
+
+  it('shows lightweight unified deploy unit diagnostics in dry-run human output', () => {
+    const plan = buildVerificationPlan({
+      goal: 'pr',
+      run: false,
+      changedFiles: ['scripts/unified-deploy/check-local-kind-rollout.ts'],
+    });
+    const output = renderVerificationPlan(plan);
+    const recommendedBlock = recommendedPlanBlock(output);
+
+    expect(plan.mode).toBe('dry-run');
+    expect(plan.requiredLevels).toEqual(['V4']);
+    expect(plan.recommendedCommands).toEqual(['npm run test:unified-deploy:unit']);
+    expect(recommendedBlock).toContain('1. npm run test:unified-deploy:unit');
+    expect(recommendedBlock).not.toContain('npm run release:ready');
+    expect(recommendedBlock).not.toContain('npm run verify:visual');
+    expect(output).toContain('Next action: Release or deploy path changed. Use npm run release:ready');
   });
 
   it('exposes friendly verification aliases without replacing existing expert commands', () => {
@@ -2336,11 +2358,11 @@ describe('verify human entrypoints', () => {
     }
   });
 
-  it('does not execute verify aliases for release/deploy V4 impact even when --run is explicit', () => {
+  it('executes only the lightweight unified deploy diagnostic for unified deploy V4 impact', () => {
     const root = mkdtempSync(join(tmpdir(), 'agentsmith-verify-release-run-fake-npm-'));
     const logPath = join(root, 'npm.log');
     try {
-      writeFakeNpm(root, logPath);
+      writeReportAwareFakeNpm(root, logPath);
 
       const result = spawnSync('npx', [
         'tsx',
@@ -2362,10 +2384,12 @@ describe('verify human entrypoints', () => {
 
       expect(result.status).toBe(0);
       expect(result.stdout).toContain('Required levels: V4');
-      expect(result.stdout).toContain('No verify command is safe to run for this V4 plan; use the next action.');
-      expect(result.stdout).toContain('Final verdict: not evaluated (next action required; no verify aliases executed)');
+      expect(recommendedPlanBlock(result.stdout)).toContain('1. npm run test:unified-deploy:unit');
+      expect(recommendedPlanBlock(result.stdout)).not.toContain('npm run release:ready');
+      expect(result.stdout).toContain('Final verdict: delegated to the executed verification commands');
       expect(result.stdout).toContain('npm run release:ready');
       expect(result.stdout).not.toContain('npm run verify:release-real');
+      expect(readFileSync(logPath, 'utf8').trim()).toBe('run test:unified-deploy:unit');
       expect(existsSync(join(root, 'story-acceptance-report.json'))).toBe(true);
       const report = JSON.parse(readFileSync(join(root, 'story-acceptance-report.json'), 'utf8')) as {
         schema: string;
@@ -2375,8 +2399,8 @@ describe('verify human entrypoints', () => {
         not_release_readiness: boolean;
         story_cards: Array<ReportStoryCard & { risk_level: string }>;
       };
-      expect(report.final_verdict).toBe('not_evaluated_next_action_required');
-      expect(report.recommended_commands).toEqual([]);
+      expect(report.final_verdict).toBe('delegated_to_executed_verification_commands');
+      expect(report.recommended_commands).toEqual(['npm run test:unified-deploy:unit']);
       expect(report.story_cards[0]).toMatchObject({
         risk_level: 'R0',
         manual_review_required: true,
@@ -2403,7 +2427,6 @@ describe('verify human entrypoints', () => {
         '- V4: owner=npm run release:ready; status=manual_review_needed; path_template=artifacts/release-runs/<campaign-run-id>/gate-release-full/result.json; additional_path_templates=artifacts/release-runs/<campaign-run-id>',
       );
       expect(markdown).toContain('This report is not release readiness and not a release verdict.');
-      expect(existsSync(logPath)).toBe(false);
     } finally {
       rmSync(root, { recursive: true, force: true });
     }

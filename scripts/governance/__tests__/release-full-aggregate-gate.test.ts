@@ -16,15 +16,24 @@ import { createHash } from 'node:crypto';
 import { describe, expect, it } from 'vitest';
 
 import {
+  CURRENT_RELEASE_CAMPAIGN_EVIDENCE_TOPOLOGY,
+  type CurrentGateEvidenceArtifact,
+} from '../current-gate-manifest';
+import {
   findCurrentVerificationCampaignById,
   type CurrentVerificationCampaignEvidenceCheck,
   type CurrentVerificationCampaignStep,
 } from '../current-verification-campaign-manifest';
 import { CURRENT_GATE_RESULT_SCHEMA_VERSION } from '../current-gate-result-schema';
 import {
+  assertSafeReleaseCampaignRunId,
   evidencePointerPath,
+  evaluateCampaignEvidenceChecks,
   materializeCampaignPath,
   nativeResultPath,
+  prepareReleaseCampaignRootForWrite,
+  resolveExistingCampaignRoot,
+  resolveCampaignRoot,
   resolveCampaignRunId,
   stepDir,
   writeCampaignEvidencePointer,
@@ -76,6 +85,8 @@ const UPSTREAM_STEP_IDS = [
   'lane-unified-deploy-local-kind',
   'lane-unified-deploy-product-flows',
 ] as const;
+
+const REQUIRED_RELEASE_PRODUCT_FLOWS = ['workspace_project', 'files', 'agent_task_managed_runner'] as const;
 
 function getReleaseFullCampaign() {
   const campaign = findCurrentVerificationCampaignById('release-full');
@@ -793,7 +804,7 @@ function writeLegacyDummyEvidencePointer(campaignRoot: string, step: CurrentVeri
             failure_class: 'none',
           }
         : null,
-      required_paths: [{ id: 'legacy_hint', path: evidenceDir, kind: 'path', exists: true }],
+      required_paths: [{ id: 'evidence_hint', path: evidenceDir, kind: 'path', exists: true }],
       generated_at: new Date().toISOString(),
     },
   );
@@ -871,6 +882,133 @@ function runAggregateWithoutExplicitCampaign(options: RunAggregateOptions = {}):
 }
 
 describe('release-full aggregate gate', () => {
+  it('uses current evidence hint ids for evidenceHints fallback records', () => {
+    const campaignRoot = mkdtempSync(join(tmpdir(), 'release-full-evidence-hint-id-'));
+    try {
+      const step: CurrentVerificationCampaignStep = {
+        id: 'current-evidence-hint-step',
+        gateId: 'current-evidence-hint-gate',
+        npmScript: 'test:current-evidence-hint',
+        command: 'npm run test:current-evidence-hint',
+        workflowRole: 'diagnostic',
+        executionMode: 'execute',
+        resultRequired: true,
+        evidenceRequired: true,
+        lineKind: 'diagnostic',
+        defaultFailureClass: 'evidence_missing',
+        dependsOn: [],
+        evidenceHints: ['<campaign-root>/current-evidence-hint/output.json'],
+        evidenceChecks: [],
+      };
+
+      const records = evaluateCampaignEvidenceChecks(campaignRoot, step);
+
+      expect(records).toHaveLength(1);
+      expect(records[0]).toMatchObject({
+        id: 'evidence_hint',
+        path: resolve(campaignRoot, 'current-evidence-hint', 'output.json'),
+        kind: 'path',
+        exists: false,
+      });
+      expect(records[0]?.id).not.toContain('legacy');
+    } finally {
+      rmSync(campaignRoot, { recursive: true, force: true });
+    }
+  });
+
+  it('rejects symlinked campaign step directories before writing evidence or result files', () => {
+    const campaignRoot = mkdtempSync(join(tmpdir(), 'release-full-step-dir-symlink-'));
+    const outsideRoot = mkdtempSync(join(tmpdir(), 'release-full-step-dir-outside-'));
+    const step = getCampaignStep('gate-fast');
+    try {
+      symlinkSync(outsideRoot, stepDir(campaignRoot, step), 'dir');
+
+      expect(() => writeCampaignGateResult({
+        step,
+        campaignRoot,
+        status: 'passed',
+        failureClass: 'none',
+        stage: 'complete',
+        summary: 'must not write through a symlinked step directory',
+      })).toThrow(/symlink/i);
+      expect(existsSync(join(outsideRoot, 'result.json'))).toBe(false);
+
+      expect(() => writeCampaignEvidencePointer(campaignRoot, step)).toThrow(/symlink/i);
+      expect(existsSync(join(outsideRoot, 'evidence.json'))).toBe(false);
+    } finally {
+      rmSync(campaignRoot, { recursive: true, force: true });
+      rmSync(outsideRoot, { recursive: true, force: true });
+    }
+  });
+
+  it('rejects explicit RELEASE_CAMPAIGN_ROOT under a symlinked parent before preparing writes', () => {
+    const apparentRoot = mkdtempSync(join(tmpdir(), 'release-full-explicit-root-parent-symlink-'));
+    const outsideRoot = mkdtempSync(join(tmpdir(), 'release-full-explicit-root-outside-'));
+    const runId = 'explicit-safe-id';
+    const campaignRoot = join(apparentRoot, 'manual-campaigns', runId);
+    try {
+      symlinkSync(outsideRoot, join(apparentRoot, 'manual-campaigns'), 'dir');
+
+      expect(() => prepareReleaseCampaignRootForWrite({
+        campaignRoot,
+        runId,
+        env: {
+          RELEASE_RUNS_ROOT: join(apparentRoot, 'release-runs'),
+        },
+      })).toThrow(/symlink/i);
+      expect(existsSync(join(outsideRoot, runId))).toBe(false);
+    } finally {
+      rmSync(apparentRoot, { recursive: true, force: true });
+      rmSync(outsideRoot, { recursive: true, force: true });
+    }
+  });
+
+  it('pins the current release product-flow proof to the governed required flow list', () => {
+    const productFlowEvidence = CURRENT_RELEASE_CAMPAIGN_EVIDENCE_TOPOLOGY.unifiedDeployProductFlows.find(
+      (artifact): artifact is CurrentGateEvidenceArtifact & { expectedProductFlows: readonly string[] } =>
+        artifact.id === 'unified_deploy_product_flow_evidence'
+        && Array.isArray(artifact.expectedProductFlows),
+    );
+
+    expect(productFlowEvidence?.expectedProductFlows).toEqual(REQUIRED_RELEASE_PRODUCT_FLOWS);
+  });
+
+  it('rejects unsafe release campaign run id shapes', () => {
+    expect(assertSafeReleaseCampaignRunId('release-ready_20260507T010203Z')).toBe(
+      'release-ready_20260507T010203Z',
+    );
+
+    for (const runId of [
+      '',
+      ' ',
+      'release ready',
+      'release-ready ',
+      ' release-ready',
+      'release/ready',
+      'release\\ready',
+      '.',
+      '..',
+      '../release-ready',
+      'release-ready/..',
+    ]) {
+      expect(() => assertSafeReleaseCampaignRunId(runId)).toThrow(/invalid RELEASE_CAMPAIGN_RUN_ID/);
+    }
+  });
+
+  it('rejects an unsafe RELEASE_CAMPAIGN_RUN_ID env value at the campaign root resolver boundary', () => {
+    const originalRunId = process.env.RELEASE_CAMPAIGN_RUN_ID;
+    try {
+      process.env.RELEASE_CAMPAIGN_RUN_ID = ' ';
+      expect(() => resolveCampaignRoot('release-ready')).toThrow(/invalid RELEASE_CAMPAIGN_RUN_ID/);
+    } finally {
+      if (originalRunId === undefined) {
+        delete process.env.RELEASE_CAMPAIGN_RUN_ID;
+      } else {
+        process.env.RELEASE_CAMPAIGN_RUN_ID = originalRunId;
+      }
+    }
+  });
+
   it('records campaign-root evidence topology on generated evidence pointers', () => {
     const campaignRoot = mkdtempSync(join(tmpdir(), 'release-full-evidence-topology-'));
     const visualStep = getCampaignStep('lane-visual');
@@ -1071,6 +1209,37 @@ describe('release-full aggregate gate', () => {
       failure_class: 'evidence_missing',
     });
     expect(terminalResult.summary).toContain('focused product flow evidence path for files');
+  });
+
+  it('fails when product-flow aggregate omits the managed runner required flow', () => {
+    const campaignRoot = mkdtempSync(join(tmpdir(), 'release-full-product-flow-missing-managed-runner-'));
+    seedPassedCampaign(campaignRoot);
+
+    const productStep = getCampaignStep('lane-unified-deploy-product-flows');
+    const productCheck = productStep.evidenceChecks.find((check) => check.id === 'unified_deploy_product_flow_evidence');
+    if (!productCheck) {
+      throw new Error('Missing unified deploy product flow evidence check.');
+    }
+    const aggregatePath = join(materializeCampaignPath(campaignRoot, productCheck.path), 'product-flows-fixture.json');
+    const aggregate = JSON.parse(readFileSync(aggregatePath, 'utf8')) as {
+      flows?: Array<{ flow?: string }>;
+      flow_evidence_paths?: Record<string, string>;
+    };
+    aggregate.flows = aggregate.flows?.filter((flow) => flow.flow !== 'agent_task_managed_runner');
+    delete aggregate.flow_evidence_paths?.agent_task_managed_runner;
+    writeJson(aggregatePath, aggregate);
+    writeCampaignEvidencePointer(campaignRoot, productStep);
+
+    expect(() => runAggregate(campaignRoot)).toThrow();
+
+    const terminalResult = JSON.parse(
+      readFileSync(resolve(campaignRoot, 'gate-release-full', 'result.json'), 'utf8'),
+    ) as { status: string; failure_class: string; summary: string };
+    expect(terminalResult).toMatchObject({
+      status: 'failed',
+      failure_class: 'evidence_missing',
+    });
+    expect(terminalResult.summary).toContain('agent_task_managed_runner');
   });
 
   it('fails when product-flow aggregate points to focused evidence outside the campaign root', () => {
@@ -1310,6 +1479,66 @@ describe('release-full aggregate gate', () => {
 
   it('refuses to consume the latest release run unless the operator opts into diagnostic latest mode', () => {
     expect(() => runAggregateWithoutExplicitCampaign()).toThrow();
+  });
+
+  it('rejects unsafe release campaign run ids before resolving a campaign root', () => {
+    const escapedRoot = resolve('artifacts', 'release-run-escape');
+    try {
+      expect(() => runAggregateWithoutExplicitCampaign({
+        env: {
+          RELEASE_CAMPAIGN_RUN_ID: '../release-run-escape',
+        },
+      })).toThrow(/invalid RELEASE_CAMPAIGN_RUN_ID/);
+      expect(existsSync(escapedRoot)).toBe(false);
+    } finally {
+      rmSync(escapedRoot, { recursive: true, force: true });
+    }
+  });
+
+  it('does not treat symlinked release run entries as latest-mode candidates', () => {
+    const root = mkdtempSync(join(tmpdir(), 'release-full-aggregate-latest-symlink-'));
+    const outsideRoot = mkdtempSync(join(tmpdir(), 'release-full-aggregate-latest-outside-'));
+    const originalCwd = process.cwd();
+    const originalUseLatest = process.env.RELEASE_CAMPAIGN_USE_LATEST;
+    const originalRunId = process.env.RELEASE_CAMPAIGN_RUN_ID;
+    const originalCampaignRoot = process.env.RELEASE_CAMPAIGN_ROOT;
+    const originalRunsRoot = process.env.RELEASE_RUNS_ROOT;
+    try {
+      const releaseRunsRoot = join(root, 'artifacts', 'release-runs');
+      mkdirSync(releaseRunsRoot, { recursive: true });
+      symlinkSync(outsideRoot, join(releaseRunsRoot, 'release-ready-safe-id'), 'dir');
+      process.chdir(root);
+      process.env.RELEASE_CAMPAIGN_USE_LATEST = 'true';
+      delete process.env.RELEASE_CAMPAIGN_RUN_ID;
+      delete process.env.RELEASE_CAMPAIGN_ROOT;
+      delete process.env.RELEASE_RUNS_ROOT;
+
+      expect(() => resolveExistingCampaignRoot()).toThrow(/No release campaign run directory|symlink/i);
+    } finally {
+      process.chdir(originalCwd);
+      if (originalUseLatest === undefined) {
+        delete process.env.RELEASE_CAMPAIGN_USE_LATEST;
+      } else {
+        process.env.RELEASE_CAMPAIGN_USE_LATEST = originalUseLatest;
+      }
+      if (originalRunId === undefined) {
+        delete process.env.RELEASE_CAMPAIGN_RUN_ID;
+      } else {
+        process.env.RELEASE_CAMPAIGN_RUN_ID = originalRunId;
+      }
+      if (originalCampaignRoot === undefined) {
+        delete process.env.RELEASE_CAMPAIGN_ROOT;
+      } else {
+        process.env.RELEASE_CAMPAIGN_ROOT = originalCampaignRoot;
+      }
+      if (originalRunsRoot === undefined) {
+        delete process.env.RELEASE_RUNS_ROOT;
+      } else {
+        process.env.RELEASE_RUNS_ROOT = originalRunsRoot;
+      }
+      rmSync(root, { recursive: true, force: true });
+      rmSync(outsideRoot, { recursive: true, force: true });
+    }
   });
 
   it('fails without rerunning upstream commands when required evidence is missing', () => {
@@ -1812,8 +2041,35 @@ describe('release-full aggregate gate', () => {
     expect(terminalResult).toMatchObject({
       gate_id: 'gate-release-full',
       status: 'failed',
-      failure_class: 'product_regression',
+      failure_class: 'contract_drift',
     });
+    expect(terminalResult.summary).toContain('failed result must use a non-none failure_class');
+  });
+
+  it('rejects a passed upstream step with a non-none failure class as contract drift', () => {
+    const campaignRoot = mkdtempSync(join(tmpdir(), 'release-full-aggregate-passed-step-failure-class-'));
+    seedPassedCampaign(campaignRoot);
+    const gateDefault = getCampaignStep('gate-default');
+    writeCampaignGateResult({
+      step: gateDefault,
+      campaignRoot,
+      status: 'passed',
+      failureClass: 'product_regression',
+      stage: 'complete',
+      summary: 'invalid passed step fixture',
+    });
+
+    expect(() => runAggregate(campaignRoot)).toThrow();
+
+    const terminalResult = JSON.parse(
+      readFileSync(resolve(campaignRoot, 'gate-release-full', 'result.json'), 'utf8'),
+    ) as { status: string; failure_class: string; gate_id: string; summary: string };
+    expect(terminalResult).toMatchObject({
+      gate_id: 'gate-release-full',
+      status: 'failed',
+      failure_class: 'contract_drift',
+    });
+    expect(terminalResult.summary).toContain('passed result must use failure_class none');
   });
 
   it('reports malformed evidence pointers as contract drift instead of crashing', () => {

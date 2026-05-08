@@ -90,22 +90,22 @@ describe('Agent Task terminal runtime gates', () => {
     expect(matrixGate).toContain('internal state missing before retry; rebuilding local-manual internal runtime');
     expect(matrixGate).toContain('scripts/local-manual/down.sh');
     expect(matrixGate).toContain('trap');
-    expect(matrixGate).toContain('local-manual platform missing; starting it before seeding agent-task demo');
+    expect(matrixGate).toContain('local-manual platform missing; starting it before preparing agent-task diagnostics');
     expect(matrixGate).toContain('scripts/local-manual/up.sh');
     expect(matrixGate).not.toContain('local-manual/proxy.ready');
-    expect(matrixGate.indexOf('bash scripts/local-manual/seed-agent-task-demo.sh')).toBeGreaterThanOrEqual(0);
+    expect(matrixGate.indexOf('bash scripts/local-manual/seed-agent-task-diagnostics.sh')).toBeGreaterThanOrEqual(0);
     expect(matrixGate.indexOf('bash scripts/local-manual/start-runner.sh')).toBeGreaterThanOrEqual(0);
     expect(matrixGate.indexOf('scripts/juicefs-orphan-preflight.ts')).toBeLessThan(
-      matrixGate.indexOf('bash scripts/local-manual/seed-agent-task-demo.sh'),
+      matrixGate.indexOf('bash scripts/local-manual/seed-agent-task-diagnostics.sh'),
     );
-    expect(matrixGate.indexOf('bash scripts/local-manual/seed-agent-task-demo.sh')).toBeLessThan(
+    expect(matrixGate.indexOf('bash scripts/local-manual/seed-agent-task-diagnostics.sh')).toBeLessThan(
       matrixGate.indexOf('bash scripts/local-manual/start-runner.sh'),
     );
-    expect(matrixGate.lastIndexOf('bash scripts/local-manual/seed-agent-task-demo.sh')).toBeGreaterThan(
+    expect(matrixGate.lastIndexOf('bash scripts/local-manual/seed-agent-task-diagnostics.sh')).toBeGreaterThan(
       matrixGate.indexOf('bash scripts/local-manual/internal-down.sh >/dev/null'),
     );
     expect(matrixGate).not.toContain('if [[ "${label}" == "external_terminal_smoke" ]]; then');
-    expect(matrixGate).not.toContain("seed-agent-task-demo.sh >/dev/null 2>&1 || true");
+    expect(matrixGate).not.toContain("seed-agent-task-diagnostics.sh >/dev/null 2>&1 || true");
     expect(matrixGate).not.toContain('run_with_retry internal_terminal_smoke env SKIP_INTERNAL_UP=1 bash scripts/agent-task-terminal-internal-real-smoke.sh');
   });
 
@@ -257,8 +257,8 @@ describe('Agent Task terminal runtime gates', () => {
       path.resolve(process.cwd(), 'scripts/local-manual/internal-status.sh'),
       'utf-8',
     );
-    const verifyAgentTaskDemo = await readFile(
-      path.resolve(process.cwd(), 'scripts/local-manual/verify-agent-task-demo.sh'),
+    const verifyAgentTaskDiagnostics = await readFile(
+      path.resolve(process.cwd(), 'scripts/local-manual/verify-agent-task-diagnostics.sh'),
       'utf-8',
     );
     const realSmoke = await readFile(
@@ -283,9 +283,9 @@ describe('Agent Task terminal runtime gates', () => {
     expect(appStatus).not.toContain('RUNNER_READY_FILE');
     expect(internalStatus).toContain('Runner socket:');
     expect(internalStatus).toContain('runner_socket_health_state');
-    expect(verifyAgentTaskDemo).toContain('AGENT_RUNNER_ID="$(state_get agent_runner.id)"');
-    expect(verifyAgentTaskDemo).toContain('WS_URL="$(state_get agent_runner.ws_url)"');
-    expect(verifyAgentTaskDemo).toContain('runner_socket_is_connected');
+    expect(verifyAgentTaskDiagnostics).toContain('AGENT_RUNNER_ID="$(state_get agent_runner.id)"');
+    expect(verifyAgentTaskDiagnostics).toContain('WS_URL="$(state_get agent_runner.ws_url)"');
+    expect(verifyAgentTaskDiagnostics).toContain('runner_socket_is_connected');
     expect(realSmoke).toContain('runner_socket_is_connected');
     expect(realSmoke).toContain('ensure_local_manual_runner_connected');
     expect(realSmoke).toContain('task_runner_offline');
@@ -297,8 +297,8 @@ describe('Agent Task terminal runtime gates', () => {
     expect(internalSmoke).toContain('task_runner_offline');
     expect(internalSmoke).not.toContain('agent_id:');
     expect(internalSmoke).not.toContain('TASK_AGENT_ID');
-    expect(internalCommon).toContain('agent-task demo state missing after internal API restart; reseeding agent-task demo resources');
-    expect(internalCommon).toContain('ensure_agent_task_demo_seeded');
+    expect(internalCommon).toContain('agent-task diagnostic state missing after internal API restart; preparing agent-task diagnostic resources');
+    expect(internalCommon).toContain('ensure_agent_task_diagnostics_ready');
     expect(internalCommon).toContain('restore_local_manual_external_mode()');
     expect(internalUp).toContain('trap');
     expect(internalUp).toContain('bash "${ROOT_DIR}/scripts/local-manual/internal-down.sh" --no-api-restart');

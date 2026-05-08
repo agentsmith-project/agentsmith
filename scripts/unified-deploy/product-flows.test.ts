@@ -1,4 +1,4 @@
-import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdtempSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
@@ -385,6 +385,35 @@ describe('unified deploy product flow producer', () => {
 
     expect(result.status).toBe('failed');
     expect(result.failures[0]?.message).toContain('/me/profile expected 200');
+  });
+
+  it('rejects a symlinked evidenceDir before writing product-flow evidence', async () => {
+    const root = tempDir('unified-product-flows-evidence-');
+    const outsideRoot = tempDir('unified-product-flows-evidence-outside-');
+    const siteEnvPath = join(root, 'site.env');
+    const substrateTruthPath = join(root, 'connection.env');
+    const evidenceDir = join(root, 'evidence');
+    writeFileSync(siteEnvPath, SITE_ENV, 'utf8');
+    writeFileSync(substrateTruthPath, SUBSTRATE_TRUTH, 'utf8');
+    symlinkSync(outsideRoot, evidenceDir, 'dir');
+
+    await expect(runUnifiedDeployProductFlowsProducer({
+      siteEnvPath,
+      substrateTruthPath,
+      evidenceDir,
+      fetch: makeFailingProfileFetch(),
+      flowIds: ['login_profile'],
+      backendBootstrapper: async () => ({}),
+      keycloakBootstrapper: async () => ({
+        users: {
+          devAdmin: { user_id: 'kc-dev-admin', email: 'dev-admin@example.com', name: 'Dev Admin' },
+          integrationUser: { user_id: 'kc-integration-user', email: 'integration-user@example.com', name: 'Integration User' },
+        },
+      }),
+      workspaceBootstrapper: async () => undefined,
+      tokenProvider: async () => 'token-dev-admin',
+      now: () => new Date('2026-05-07T00:00:00.000Z'),
+    })).rejects.toThrow(/evidence.*symlink/i);
   });
 
   it('writes failed evidence when product bootstrap cannot complete', async () => {

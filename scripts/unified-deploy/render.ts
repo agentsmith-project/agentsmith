@@ -14,6 +14,7 @@ import {
   loadUnifiedDeployManifest,
   manifestRequiredEnv,
   manifestTemplatePaths,
+  resolveContainedTemplatePath,
   type UnifiedDeployProfile,
 } from './manifest';
 import {
@@ -313,7 +314,7 @@ async function renderTemplates(templatePaths: readonly string[], templatesRoot: 
   const absoluteTemplatePaths: string[] = [];
 
   for (const templatePath of templatePaths) {
-    const absoluteTemplatePath = path.resolve(templatesRoot, templatePath);
+    const absoluteTemplatePath = resolveContainedTemplatePath(templatesRoot, templatePath);
     absoluteTemplatePaths.push(absoluteTemplatePath);
     const template = await readFile(absoluteTemplatePath, 'utf8');
     renderedDocuments.push(`# Source: ${path.relative(REPO_ROOT, absoluteTemplatePath)}\n${substituteTemplate(template, context, templatePath).trim()}`);
@@ -328,8 +329,8 @@ async function renderTemplates(templatePaths: readonly string[], templatesRoot: 
 export async function renderUnifiedDeployToString(options: RenderUnifiedDeployOptions = {}): Promise<RenderedUnifiedDeploy> {
   const manifestPath = resolvePath(options.manifestPath, DEFAULT_MANIFEST_PATH);
   const templatesRoot = resolvePath(options.templatesRoot, DEFAULT_TEMPLATES_ROOT);
-  assertManifestValid({ manifestPath, rootDir: REPO_ROOT });
-  const manifest = loadUnifiedDeployManifest({ manifestPath, rootDir: REPO_ROOT });
+  assertManifestValid({ manifestPath, rootDir: REPO_ROOT, templatesRoot });
+  const manifest = loadUnifiedDeployManifest({ manifestPath, rootDir: REPO_ROOT, templatesRoot });
   const siteEnvPath = resolvePath(options.siteEnvPath, DEFAULT_SITE_ENV_PATH);
   const substrateTruthPath = resolvePath(options.substrateTruthPath, DEFAULT_SUBSTRATE_TRUTH_PATH);
   const siteEnv = options.siteEnv ?? await readFile(siteEnvPath, 'utf8');

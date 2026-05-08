@@ -824,7 +824,7 @@ const CURRENT_WORKFLOW_RAW_MANIFEST: readonly RawCurrentWorkflowSection[] = [
       },
       {
         command: 'make local-manual-seed-agent-task',
-        description: 'create agent-task demo resources and start the host runner',
+        description: 'create agent-task diagnostic resources and start the host runner',
         canonical: 'make',
         makeTarget: 'local-manual-seed-agent-task',
       },

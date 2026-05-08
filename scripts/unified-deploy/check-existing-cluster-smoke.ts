@@ -1,6 +1,6 @@
 import { spawn } from 'node:child_process';
 import { existsSync } from 'node:fs';
-import { mkdir, readFile, writeFile } from 'node:fs/promises';
+import { readFile, writeFile } from 'node:fs/promises';
 import { homedir } from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -13,6 +13,7 @@ import {
   asRecord,
   loadUnifiedDeployManifest,
   manifestRequiredEnv,
+  prepareUnifiedDeployEvidenceDir,
   type CheckFailure,
 } from './manifest';
 import {
@@ -1294,8 +1295,11 @@ async function writeExistingClusterSmokeEvidence(
   evidence: Omit<ExistingClusterSmokeEvidence, 'status' | 'generated_at' | 'paths'>,
   evidenceDir: string,
 ): Promise<ExistingClusterSmokeEvidence> {
-  const resolvedEvidenceDir = path.resolve(evidenceDir);
-  await mkdir(resolvedEvidenceDir, { recursive: true });
+  const resolvedEvidenceDir = prepareUnifiedDeployEvidenceDir({
+    evidenceDir,
+    defaultRoot: DEFAULT_EVIDENCE_DIR,
+    label: 'existing-cluster smoke evidenceDir',
+  });
 
   const status: ProducerStatus = evidence.failures.length === 0 ? 'passed' : 'failed';
   const basename = `existing-cluster-smoke-${new Date().toISOString().replace(/[:.]/gu, '-')}`;

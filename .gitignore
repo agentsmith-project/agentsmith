@@ -116,6 +116,9 @@ env/
 !infra/deploy/unified/env/
 !infra/deploy/unified/env/site.env.example
 
+# Retired operator-local scratch denylist; not a current entrypoint.
+.infra/cluster-deploy/
+
 # Generated unified deploy offline producer evidence
 artifacts/unified-deploy/
 

@@ -158,7 +158,10 @@ function validateCanonicalGateResult(
     valid = false;
   }
 
-  if (!CURRENT_GATE_RESULT_STATUSES.includes(result.status as never)) {
+  const statusIsCurrent = CURRENT_GATE_RESULT_STATUSES.includes(result.status as never);
+  const failureClassIsCurrent = CURRENT_GATE_RESULT_FAILURE_CLASSES.includes(result.failure_class as never);
+
+  if (!statusIsCurrent) {
     pushContractDrift(
       failures,
       `${label} status is not a current gate result status.`,
@@ -166,12 +169,29 @@ function validateCanonicalGateResult(
     valid = false;
   }
 
-  if (!CURRENT_GATE_RESULT_FAILURE_CLASSES.includes(result.failure_class as never)) {
+  if (!failureClassIsCurrent) {
     pushContractDrift(
       failures,
       `${label} failure_class is not a current gate result failure class.`,
     );
     valid = false;
+  }
+
+  if (statusIsCurrent && failureClassIsCurrent) {
+    if (result.status === 'passed' && result.failure_class !== 'none') {
+      pushContractDrift(
+        failures,
+        `${label} passed result must use failure_class none.`,
+      );
+      valid = false;
+    }
+    if (result.status === 'failed' && result.failure_class === 'none') {
+      pushContractDrift(
+        failures,
+        `${label} failed result must use a non-none failure_class.`,
+      );
+      valid = false;
+    }
   }
 
   if (!isRecord(result.gate_adapter)) {

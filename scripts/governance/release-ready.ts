@@ -6,6 +6,10 @@ import {
   renderReleaseStatus,
 } from './release-summary';
 import {
+  assertSafeReleaseCampaignRunId,
+  prepareDefaultReleaseCampaignRoot,
+} from './release-campaign-io';
+import {
   buildSentinelPreflightEnv,
   renderSentinelPreflightOutput,
   runSentinelPreflightSync,
@@ -76,11 +80,13 @@ function resolveReleaseReadyCampaignContext(env: NodeJS.ProcessEnv): {
   explicitCampaignRoot: boolean;
 } {
   const explicitCampaignRoot = Boolean(env.RELEASE_CAMPAIGN_ROOT?.trim());
-  const runId = env.RELEASE_CAMPAIGN_RUN_ID?.trim() || timestampRunId();
+  const runId = env.RELEASE_CAMPAIGN_RUN_ID !== undefined
+    ? assertSafeReleaseCampaignRunId(env.RELEASE_CAMPAIGN_RUN_ID)
+    : timestampRunId();
   const releaseRunsRoot = resolve(env.RELEASE_RUNS_ROOT?.trim() || join('artifacts', 'release-runs'));
   const campaignRoot = explicitCampaignRoot
     ? resolve(env.RELEASE_CAMPAIGN_ROOT!)
-    : join(releaseRunsRoot, runId);
+    : prepareDefaultReleaseCampaignRoot(runId, { releaseRunsRoot });
 
   return {
     runId,
@@ -129,7 +135,16 @@ export function runReleaseReady(
     return 1;
   }
 
-  const campaignContext = resolveReleaseReadyCampaignContext(env);
+  let campaignContext: ReturnType<typeof resolveReleaseReadyCampaignContext>;
+  try {
+    campaignContext = resolveReleaseReadyCampaignContext(env);
+  } catch (error) {
+    stdout.write(renderNotStarted(error instanceof Error ? error.message : String(error), {
+      next: 'fix the release campaign run id, then run: npm run release:ready',
+      logs: 'no campaign evidence was produced.',
+    }));
+    return 1;
+  }
   const campaignEnv = {
     ...env,
     RELEASE_CAMPAIGN_RUN_ID: campaignContext.runId,

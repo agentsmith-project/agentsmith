@@ -24,6 +24,7 @@ import {
 import {
   REPO_ROOT,
   asRecord,
+  prepareUnifiedDeployEvidenceDir,
   type CheckFailure,
 } from './manifest';
 import {
@@ -166,6 +167,8 @@ type ProductFlowState = {
   flowStartedAt: string;
   requestIds: Record<string, string>;
 };
+
+type ProductFlowEvidenceDirPreparer = () => string;
 
 type ProductFlowEvidence = {
   schema_version: 'agentsmith.focused-product-flow.evidence/v1';
@@ -595,12 +598,16 @@ function buildFlowEvidence(input: {
 async function writeFlowEvidence(args: {
   fs: ProductFlowFs;
   evidenceDir: string;
+  prepareEvidenceDir?: ProductFlowEvidenceDirPreparer;
   evidence: ProductFlowEvidence;
   generatedAt: string;
 }): Promise<string> {
-  await args.fs.mkdir(args.evidenceDir, { recursive: true });
+  const evidenceDir = args.prepareEvidenceDir ? args.prepareEvidenceDir() : args.evidenceDir;
+  if (!args.prepareEvidenceDir) {
+    await args.fs.mkdir(evidenceDir, { recursive: true });
+  }
   const basename = `product-flow-${args.evidence.flow}-${args.generatedAt.replace(/[:.]/gu, '-')}.json`;
-  const target = path.join(args.evidenceDir, basename);
+  const target = path.join(evidenceDir, basename);
   await args.fs.writeFile(target, `${JSON.stringify(args.evidence, null, 2)}\n`);
   return target;
 }
@@ -1928,19 +1935,23 @@ function resolveFlowIds(input: ProductFlowProducerOptions['flowIds']): ProductVe
 async function writeAggregateEvidence(args: {
   fs: ProductFlowFs;
   evidenceDir: string;
+  prepareEvidenceDir?: ProductFlowEvidenceDirPreparer;
   truth: ProductFlowRuntimeTruth;
   flows: ProductFlowEvidence[];
   flowPaths: Partial<Record<ProductVerificationFlowId, string>>;
   generatedAt: string;
 }): Promise<ProductFlowAggregateEvidence> {
-  await args.fs.mkdir(args.evidenceDir, { recursive: true });
+  const evidenceDir = args.prepareEvidenceDir ? args.prepareEvidenceDir() : args.evidenceDir;
+  if (!args.prepareEvidenceDir) {
+    await args.fs.mkdir(evidenceDir, { recursive: true });
+  }
   const failures = args.flows.flatMap((flow) => flow.failure ? [flow.failure] : []);
   const status: ProducerStatus = args.flows.length > 0 && failures.length === 0 && args.flows.every((flow) => flow.status === 'passed')
     ? 'passed'
     : 'failed';
   const basename = `product-flows-${args.generatedAt.replace(/[:.]/gu, '-')}`;
-  const reportPath = path.join(args.evidenceDir, `${basename}.json`);
-  const logPath = path.join(args.evidenceDir, `${basename}.log`);
+  const reportPath = path.join(evidenceDir, `${basename}.json`);
+  const logPath = path.join(evidenceDir, `${basename}.log`);
   const source = sourceForEvidence(args.truth);
   const aggregate: ProductFlowAggregateEvidence = {
     schema_version: 'agentsmith.unified-deploy.product-flows.aggregate/v1',
@@ -1985,7 +1996,15 @@ export async function runUnifiedDeployProductFlowsProducer(
 ): Promise<ProductFlowProducerResult> {
   const fsDriver = options.fs ?? defaultFs();
   const fetchImpl = options.fetch ?? fetch;
-  const evidenceDir = path.resolve(options.evidenceDir ?? DEFAULT_EVIDENCE_DIR);
+  const rawEvidenceDir = options.evidenceDir ?? DEFAULT_EVIDENCE_DIR;
+  const prepareEvidenceDir = options.fs
+    ? undefined
+    : () => prepareUnifiedDeployEvidenceDir({
+      evidenceDir: rawEvidenceDir,
+      defaultRoot: DEFAULT_EVIDENCE_DIR,
+      label: 'product-flow evidenceDir',
+    });
+  const evidenceDir = path.resolve(rawEvidenceDir);
   const now = options.now ?? (() => new Date());
   const truth = await loadTruth(options, fsDriver);
   if (truth.provider.baseUrl) {
@@ -2034,6 +2053,7 @@ export async function runUnifiedDeployProductFlowsProducer(
       flowPaths[evidence.flow] = await writeFlowEvidence({
         fs: fsDriver,
         evidenceDir,
+        prepareEvidenceDir,
         evidence,
         generatedAt: evidence.generated_at,
       });
@@ -2041,6 +2061,7 @@ export async function runUnifiedDeployProductFlowsProducer(
     const aggregate = await writeAggregateEvidence({
       fs: fsDriver,
       evidenceDir,
+      prepareEvidenceDir,
       truth,
       flows: flowEvidence,
       flowPaths,
@@ -2083,6 +2104,7 @@ export async function runUnifiedDeployProductFlowsProducer(
       flowPaths[flow] = await writeFlowEvidence({
         fs: fsDriver,
         evidenceDir,
+        prepareEvidenceDir,
         evidence,
         generatedAt: evidence.generated_at,
       });
@@ -2094,6 +2116,7 @@ export async function runUnifiedDeployProductFlowsProducer(
   const aggregate = await writeAggregateEvidence({
     fs: fsDriver,
     evidenceDir,
+    prepareEvidenceDir,
     truth,
     flows: flowEvidence,
     flowPaths,

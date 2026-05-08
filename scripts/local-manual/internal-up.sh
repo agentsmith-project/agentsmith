@@ -12,7 +12,7 @@ cleanup_on_exit() {
 trap 'cleanup_on_exit $?' EXIT INT TERM
 
 ensure_local_manual_ready
-ensure_agent_task_demo_seeded
+ensure_agent_task_diagnostics_ready
 ensure_kind_cluster
 ensure_internal_runner_image
 ensure_juicefs_csi

@@ -216,7 +216,7 @@ make e2e-int-minimal    # 最小集成测试
 make e2e-int-chat       # chat 集成测试
 make e2e-int-chat-auto  # 自动启动依赖+API+前端后执行 chat 集成测试
 make e2e-int-chat-ux-auto # 自动启动并执行 chat UX 关键集成用例
-make agent-test-runner AGENT_WS_URL='ws://localhost:20000/api/v1/agent-execution/ws?agent_id=ag_xxx' AGENT_KEY='ask_xxx' # 启动外部 agent 测试进程
+make agent-task-runner AGENT_WS_URL='ws://localhost:20000/api/v1/agent-execution/ws?agent_runner_id=runner_xxx' AGENT_KEY='ask_xxx' # 启动外部 Agent task runner 测试进程
 make local-real-up      # 启动真实本地环境
 make local-real-status  # 查看真实本地环境状态
 make local-real-down    # 停掉真实本地环境
@@ -241,7 +241,7 @@ make contracts-check-openapi # 检查 OpenAPI 核心覆盖与破坏性变更
 
 收成一条正式链路。`local-real` 是人类入口名，底层仍映射到已注册的 `local-manual` runtime line。
 
-默认 `local-real` 只保证真实本地平台可用，不自动创建 Agent task demo 或本机 runner 诊断资源。需要这些证据，或需要本机完整验证 sandbox / JuiceFS 时，再按 owner runbook 显式执行底层 diagnostic adapter。
+默认 `local-real` 只保证真实本地平台可用，不自动创建 Agent task 诊断资源或本机 runner 诊断资源。需要这些证据，或需要本机完整验证 sandbox / JuiceFS 时，再按 owner runbook 显式执行底层 diagnostic adapter。
 
 ### First-time setup
 
@@ -290,11 +290,11 @@ PROXY_PORT=39080
 make local-real-up
 ```
 
-这一步只启动平台，不自动创建 Agent task demo 资源。
+这一步只启动平台，不自动创建 Agent task 诊断资源。
 
-### Seed Agent task demo only when owner runbook requires it
+### Prepare Agent task diagnostics only when owner runbook requires it
 
-这一步是底层 owner diagnostic adapter。普通本机真实环境先从 `make local-real-up` 开始；只有需要 Agent task demo 证据时再按 runbook 执行。
+这一步是底层 owner diagnostic adapter。普通本机真实环境先从 `make local-real-up` 开始；只有需要 Agent task 诊断证据时再按 runbook 执行。
 
 ```bash
 make local-manual-seed-agent-task

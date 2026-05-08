@@ -18,7 +18,7 @@ cleanup_on_exit() {
 trap 'cleanup_on_exit $?' EXIT INT TERM
 
 ensure_local_manual_ready
-ensure_agent_task_demo_seeded
+ensure_agent_task_diagnostics_ready
 if [[ "${SKIP_INTERNAL_UP:-0}" != "1" ]]; then
   bash "${ROOT_DIR}/scripts/local-manual/internal-up.sh" >/dev/null
   INTERNAL_RUNTIME_BOOTSTRAPPED=1

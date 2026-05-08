@@ -1,4 +1,4 @@
-import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { basename, dirname, join, resolve } from 'node:path';
 import { spawnSync } from 'node:child_process';
@@ -614,6 +614,130 @@ exit 0
       expect(existsSync(join(root, 'summary.json'))).toBe(false);
     } finally {
       rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it('rejects unsafe release campaign run ids before starting the campaign', () => {
+    const root = mkdtempSync(join(tmpdir(), 'agentsmith-release-ready-unsafe-run-id-'));
+    const stdout: string[] = [];
+    const stderr: string[] = [];
+    const scripts: string[] = [];
+    const sentinelProfiles: string[] = [];
+    try {
+      const exitCode = runReleaseReady([], {
+        stdout: { write: (chunk: string) => stdout.push(chunk) },
+        stderr: { write: (chunk: string) => stderr.push(chunk) },
+        env: {
+          ...process.env,
+          RELEASE_RUNS_ROOT: root,
+          RELEASE_CAMPAIGN_RUN_ID: '../escaped-campaign',
+        },
+        runNpmScript: (script) => {
+          scripts.push(script);
+          return { status: 0, signal: null };
+        },
+        sentinelRunner: (profile) => {
+          sentinelProfiles.push(profile);
+          return passingSentinelResult();
+        },
+      });
+
+      const combinedOutput = `${stdout.join('')}\n${stderr.join('')}`;
+      expect(exitCode).toBe(1);
+      expect(scripts).toEqual(['test:release:precheck']);
+      expect(sentinelProfiles).toEqual(['release-ready']);
+      expect(combinedOutput).toContain('invalid RELEASE_CAMPAIGN_RUN_ID');
+      expect(combinedOutput).toContain('Automated release verdict: NOT STARTED');
+      expect(existsSync(join(root, '..', 'escaped-campaign'))).toBe(false);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it('rejects a symlinked default campaign root before starting the campaign', () => {
+    const root = mkdtempSync(join(tmpdir(), 'agentsmith-release-ready-symlink-root-'));
+    const outsideRoot = mkdtempSync(join(tmpdir(), 'agentsmith-release-ready-outside-root-'));
+    const runId = 'release-ready-safe-id';
+    const stdout: string[] = [];
+    const stderr: string[] = [];
+    const scripts: string[] = [];
+    const sentinelProfiles: string[] = [];
+    try {
+      symlinkSync(outsideRoot, join(root, runId), 'dir');
+
+      const exitCode = runReleaseReady([], {
+        stdout: { write: (chunk: string) => stdout.push(chunk) },
+        stderr: { write: (chunk: string) => stderr.push(chunk) },
+        env: {
+          ...process.env,
+          RELEASE_RUNS_ROOT: root,
+          RELEASE_CAMPAIGN_RUN_ID: runId,
+        },
+        runNpmScript: (script) => {
+          scripts.push(script);
+          return { status: 0, signal: null };
+        },
+        sentinelRunner: (profile) => {
+          sentinelProfiles.push(profile);
+          return passingSentinelResult();
+        },
+      });
+
+      const combinedOutput = `${stdout.join('')}\n${stderr.join('')}`;
+      expect(exitCode).toBe(1);
+      expect(scripts).toEqual(['test:release:precheck']);
+      expect(sentinelProfiles).toEqual(['release-ready']);
+      expect(combinedOutput).toContain('symlink');
+      expect(combinedOutput).toContain('Automated release verdict: NOT STARTED');
+      expect(existsSync(join(outsideRoot, 'gate-release-full', 'result.json'))).toBe(false);
+      expect(existsSync(join(outsideRoot, 'summary.json'))).toBe(false);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+      rmSync(outsideRoot, { recursive: true, force: true });
+    }
+  });
+
+  it('rejects a symlinked parent segment for default release-runs before starting the campaign', () => {
+    const root = mkdtempSync(join(tmpdir(), 'agentsmith-release-ready-parent-symlink-'));
+    const outsideRoot = mkdtempSync(join(tmpdir(), 'agentsmith-release-ready-parent-outside-'));
+    const originalCwd = process.cwd();
+    const runId = 'release-ready-safe-id';
+    const stdout: string[] = [];
+    const stderr: string[] = [];
+    const scripts: string[] = [];
+    const sentinelProfiles: string[] = [];
+    try {
+      symlinkSync(outsideRoot, join(root, 'artifacts'), 'dir');
+      process.chdir(root);
+
+      const exitCode = runReleaseReady([], {
+        stdout: { write: (chunk: string) => stdout.push(chunk) },
+        stderr: { write: (chunk: string) => stderr.push(chunk) },
+        env: {
+          ...process.env,
+          RELEASE_CAMPAIGN_RUN_ID: runId,
+        },
+        cwd: root,
+        runNpmScript: (script) => {
+          scripts.push(script);
+          return { status: 0, signal: null };
+        },
+        sentinelRunner: (profile) => {
+          sentinelProfiles.push(profile);
+          return passingSentinelResult();
+        },
+      });
+
+      const combinedOutput = `${stdout.join('')}\n${stderr.join('')}`;
+      expect(exitCode).toBe(1);
+      expect(scripts).toEqual(['test:release:precheck']);
+      expect(sentinelProfiles).toEqual(['release-ready']);
+      expect(combinedOutput).toContain('symlink');
+      expect(existsSync(join(outsideRoot, 'release-runs', runId))).toBe(false);
+    } finally {
+      process.chdir(originalCwd);
+      rmSync(root, { recursive: true, force: true });
+      rmSync(outsideRoot, { recursive: true, force: true });
     }
   });
 

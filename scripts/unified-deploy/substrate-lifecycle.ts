@@ -9,6 +9,7 @@ import {
   REPO_ROOT,
   asRecord,
   isUnifiedDeployProfile,
+  prepareUnifiedDeployEvidenceDir,
   type CheckFailure,
   type UnifiedDeployProfile,
 } from './manifest';
@@ -1351,10 +1352,15 @@ async function writeLifecycleEvidence(
   context: LifecycleContext,
   evidence: Omit<SubstrateLifecycleEvidence, 'paths'>,
 ): Promise<SubstrateLifecycleEvidence> {
-  await mkdir(context.evidenceDir, { recursive: true });
+  const evidenceDir = prepareUnifiedDeployEvidenceDir({
+    evidenceDir: context.evidenceDir,
+    defaultRoot: DEFAULT_SUBSTRATE_LIFECYCLE_EVIDENCE_DIR,
+    env: context.env,
+    label: 'substrate lifecycle evidenceDir',
+  });
   const basename = lifecycleEvidenceBasename(context.command);
-  const reportPath = path.join(context.evidenceDir, `${basename}.json`);
-  const logPath = path.join(context.evidenceDir, `${basename}.log`);
+  const reportPath = path.join(evidenceDir, `${basename}.json`);
+  const logPath = path.join(evidenceDir, `${basename}.log`);
   const withPaths: SubstrateLifecycleEvidence = {
     ...evidence,
     paths: {

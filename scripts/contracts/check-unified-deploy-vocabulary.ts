@@ -7,12 +7,17 @@ const CHECK_NPM_SCRIPT = 'contracts:check-unified-deploy-vocabulary';
 const CHECK_SCRIPT_COMMAND = 'tsx scripts/contracts/check-unified-deploy-vocabulary.ts';
 
 const ACTIVE_DEPLOY_TRUTH_FILES = [
+  'README.md',
   DEPLOY_CONTRACT_PATH,
   'docs/contracts/README.md',
   'docs/contracts/product-terminology.md',
   'docs/CURRENT_BASELINE.md',
+  'docs/README.md',
+  'docs/current-engineering-governance-model.md',
   'docs/testing/verification-campaigns-v1.md',
   'docs/user-guides/README.md',
+  'docs/user-guides/release-readiness-checklist.md',
+  'docs/user-guides/uxui-review-runbook.md',
   'docs/user-guides/unified-deploy-operations.md',
   'docs/agent-task-runner-runbook.md',
   'docs/engineering/agentsmith-unified-deploy-and-docker-substrate-milestone-plan-v1.md',
@@ -24,9 +29,28 @@ const ACTIVE_DEPLOY_TRUTH_FILES = [
   'package.json',
   'Makefile',
   'scripts/workspace-project-default-gate.sh',
+  'scripts/contracts/check-current-gates.ts',
+  'scripts/contracts/check-current-runtime-lines.ts',
+  'scripts/contracts/check-current-workflows.ts',
+  'scripts/contracts/check-engineering-governance.ts',
+  'scripts/governance/current-gate-manifest.ts',
+  'scripts/governance/current-resource-lock-manifest.ts',
+  'scripts/governance/current-runtime-line-manifest.ts',
   'scripts/governance/current-workflow-manifest.ts',
+  'scripts/governance/current-verification-campaign-manifest.ts',
   'scripts/governance/current-status-projection-schema.ts',
   'scripts/governance/current-governance-observability-manifest.ts',
+  'scripts/governance/release-campaign-execution.ts',
+  'scripts/governance/release-ready.ts',
+  'scripts/governance/release-summary.ts',
+  'scripts/governance/run-current-verification-campaign.ts',
+  'scripts/governance/run-verify.ts',
+  'scripts/governance/verify-impact-selector.ts',
+  'scripts/agent-task-terminal-matrix-real-gate.sh',
+  'scripts/agent-task-terminal-real-smoke.sh',
+  'scripts/local-manual/internal-common.sh',
+  'scripts/local-manual/seed-agent-task-diagnostics.sh',
+  'scripts/local-manual/verify-agent-task-diagnostics.sh',
 ] as const;
 
 const FORBIDDEN_SPLIT_DEPLOY_TERMS = [
@@ -52,11 +76,30 @@ const FORBIDDEN_SPLIT_DEPLOY_TERMS = [
   },
   {
     label: 'removed deploy command family',
-    pattern: /\b(?:demo|cluster)[-_ ]deploy\b|\b(?:DEMO|CLUSTER)_DEPLOY_MODE\b/iu,
+    pattern: /\bdemo[-_ ]deploy\b|(?<!existing[-_ ])\bcluster[-_ ]deploy\b|\b(?:DEMO|CLUSTER)_DEPLOY_MODE\b/iu,
   },
   {
     label: 'removed rehearsal command family',
     pattern: /\b(?:demo|cluster)[-_ ]rehearsal\b|\brehearse:(?:demo|cluster)\b|\blane-(?:demo|cluster)-rehearsal\b/iu,
+  },
+  {
+    label: 'generic demo mental model',
+    pattern: /\bagent[- ]tasks?\s+demo\b|\bapp[- ]shell\s+demo\b|\bdemo\s+(?:seed(?:ing)?|resources?|evidence|state|ready|verify)\b|\bseed-agent-task-demo\.sh\b|\bverify-agent-task-demo\.sh\b/iu,
+  },
+] as const;
+
+const FORBIDDEN_PACKAGE_SCRIPT_KEY_PREFIXES = [
+  {
+    label: 'removed demo package script alias',
+    pattern: /^demo:/iu,
+  },
+  {
+    label: 'removed cluster package script alias',
+    pattern: /^cluster:/iu,
+  },
+  {
+    label: 'removed rehearsal package script alias',
+    pattern: /^rehearse:/iu,
   },
 ] as const;
 
@@ -278,25 +321,66 @@ function lineForIndex(content: string, index: number): number {
   return content.slice(0, Math.max(0, index)).split(/\r?\n/u).length;
 }
 
+function lineTextForIndex(content: string, index: number): string {
+  const start = content.lastIndexOf('\n', Math.max(0, index - 1)) + 1;
+  const end = content.indexOf('\n', index);
+  return content.slice(start, end === -1 ? content.length : end).replace(/\r$/u, '');
+}
+
+function lineForPackageScriptKey(content: string, scriptName: string): number | undefined {
+  const index = content.indexOf(JSON.stringify(scriptName));
+  return index >= 0 ? lineForIndex(content, index) : undefined;
+}
+
+function asGlobalRegExp(pattern: RegExp): RegExp {
+  return new RegExp(
+    pattern.source,
+    pattern.flags.includes('g') ? pattern.flags : `${pattern.flags}g`,
+  );
+}
+
+function isAllowedLegacyDenylistMatch(args: {
+  path: string;
+  forbiddenLabel: string;
+  content: string;
+  index: number;
+}): boolean {
+  if (args.path !== '.gitignore' || args.forbiddenLabel !== 'removed deploy command family') {
+    return false;
+  }
+
+  return lineTextForIndex(args.content, args.index).trim() === '.infra/cluster-deploy/';
+}
+
 function validateNoSplitDeployVocabulary(
   path: string,
   content: string,
   failures: UnifiedDeployVocabularyFailure[],
 ): void {
   for (const forbidden of FORBIDDEN_SPLIT_DEPLOY_TERMS) {
-    const match = forbidden.pattern.exec(content);
-    if (!match) {
-      continue;
-    }
+    const pattern = asGlobalRegExp(forbidden.pattern);
+    for (const match of content.matchAll(pattern)) {
+      const index = match.index ?? 0;
+      if (
+        isAllowedLegacyDenylistMatch({
+          path,
+          forbiddenLabel: forbidden.label,
+          content,
+          index,
+        })
+      ) {
+        continue;
+      }
 
-    const line = lineForIndex(content, match.index);
-    addFailure(
-      failures,
-      path,
-      `current deploy truth must not use ${forbidden.label}; fold the logic into the current V1 deploy model.`,
-      line,
-      match[0],
-    );
+      const line = lineForIndex(content, index);
+      addFailure(
+        failures,
+        path,
+        `current deploy truth must not use ${forbidden.label}; fold the logic into the current deploy model.`,
+        line,
+        match[0],
+      );
+    }
   }
 }
 
@@ -422,6 +506,21 @@ function validatePackageScripts(
       'package.json',
       `contracts:check must include npm run ${CHECK_NPM_SCRIPT}.`,
     );
+  }
+
+  for (const scriptName of Object.keys(scripts)) {
+    for (const forbidden of FORBIDDEN_PACKAGE_SCRIPT_KEY_PREFIXES) {
+      if (!forbidden.pattern.test(scriptName)) {
+        continue;
+      }
+      addFailure(
+        failures,
+        'package.json',
+        `package.json script key ${scriptName} must not use ${forbidden.label}; fold current deploy entrypoints into unified deploy scripts.`,
+        lineForPackageScriptKey(content, scriptName),
+        scriptName,
+      );
+    }
   }
 }
 

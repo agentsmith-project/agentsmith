@@ -9,6 +9,9 @@ import {
   type CurrentGateResultFailureClass,
   type CurrentGateResultStatus,
 } from './current-gate-result-schema';
+import {
+  assertReleaseCampaignRootNotSymlink,
+} from './release-campaign-io';
 
 export type AutomatedReleaseVerdict = 'PASSED' | 'FAILED';
 
@@ -301,6 +304,7 @@ function renderReleaseSummaryMarkdown(summary: ReleaseSummary): string {
 
 export function writeReleaseSummaryForCampaign(options: WriteReleaseSummaryOptions): ReleaseSummary {
   const campaignRoot = resolve(options.campaignRoot);
+  assertReleaseCampaignRootNotSymlink(campaignRoot);
   const terminalPath = terminalResultPath(campaignRoot);
   const terminalResult = readTerminalResult(campaignRoot);
   const status = terminalResult.status as CurrentGateResultStatus;

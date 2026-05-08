@@ -1,4 +1,4 @@
-import { existsSync, readFileSync } from 'node:fs';
+import { existsSync, lstatSync, mkdirSync, readFileSync, realpathSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -40,6 +40,7 @@ export type CheckResult = {
 export type ManifestOptions = {
   rootDir?: string;
   manifestPath?: string;
+  templatesRoot?: string;
 };
 
 export type ManifestTemplateGroup = 'app' | 'local_kind_admin_preflight';
@@ -56,6 +57,201 @@ export function asStringArray(value: unknown): string[] {
 
 export function isUnifiedDeployProfile(value: string): value is UnifiedDeployProfile {
   return TARGET_PROFILES.includes(value as UnifiedDeployProfile);
+}
+
+export function isPathAtOrUnderRoot(rootPath: string, candidatePath: string): boolean {
+  const relativePath = path.relative(path.resolve(rootPath), path.resolve(candidatePath));
+  return relativePath === '' || (!relativePath.startsWith('..') && !path.isAbsolute(relativePath));
+}
+
+export function isSafeRelativePath(candidatePath: string): boolean {
+  if (candidatePath.trim() !== candidatePath || candidatePath.length === 0) {
+    return false;
+  }
+  if (path.isAbsolute(candidatePath) || candidatePath.includes('\\')) {
+    return false;
+  }
+
+  return candidatePath.split('/').every((segment) =>
+    segment.length > 0 && segment !== '.' && segment !== '..',
+  );
+}
+
+export function resolveContainedTemplatePath(templatesRoot: string, templatePath: string): string {
+  if (!isSafeRelativePath(templatePath)) {
+    throw new Error(`template path must be a safe relative template path: ${templatePath}`);
+  }
+
+  const absoluteTemplatesRoot = path.resolve(templatesRoot);
+  const absoluteTemplatePath = path.resolve(absoluteTemplatesRoot, templatePath);
+  let realTemplatesRoot: string;
+  let realTemplatePath: string;
+
+  try {
+    realTemplatesRoot = realpathSync(absoluteTemplatesRoot);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : 'unknown realpath error';
+    throw new Error(`templates root must exist: ${absoluteTemplatesRoot}: ${message}`);
+  }
+
+  try {
+    realTemplatePath = realpathSync(absoluteTemplatePath);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : 'unknown realpath error';
+    throw new Error(`template must exist: ${templatePath}: ${message}`);
+  }
+
+  if (!isPathAtOrUnderRoot(realTemplatesRoot, realTemplatePath)) {
+    throw new Error(`template path must stay under templates root: ${templatePath}`);
+  }
+
+  return absoluteTemplatePath;
+}
+
+type EvidenceDirEnv = Record<string, string | undefined>;
+
+export type PrepareUnifiedDeployEvidenceDirOptions = {
+  evidenceDir: string;
+  defaultRoot: string;
+  env?: EvidenceDirEnv;
+  label?: string;
+};
+
+type EvidenceRootCandidate = {
+  root: string;
+  anchor: string;
+};
+
+function nonEmptyEnvPath(value: string | undefined): string | undefined {
+  const trimmed = value?.trim();
+  return trimmed && trimmed.length > 0 ? trimmed : undefined;
+}
+
+function releaseEvidenceRoots(env: EvidenceDirEnv): EvidenceRootCandidate[] {
+  const roots: EvidenceRootCandidate[] = [];
+  const explicitReleaseRoot = nonEmptyEnvPath(env.UNIFIED_DEPLOY_RELEASE_ROOT_DIR);
+  const campaignRoot = nonEmptyEnvPath(env.RELEASE_CAMPAIGN_ROOT);
+
+  if (explicitReleaseRoot) {
+    const releaseRoot = path.resolve(explicitReleaseRoot);
+    const anchorPath = campaignRoot ? path.resolve(campaignRoot) : releaseRoot;
+    roots.push({ root: releaseRoot, anchor: symlinkInspectionAnchorFor(anchorPath) });
+  }
+  if (campaignRoot) {
+    const releaseRoot = path.resolve(campaignRoot, 'unified-deploy');
+    roots.push({ root: releaseRoot, anchor: symlinkInspectionAnchorFor(path.resolve(campaignRoot)) });
+  }
+
+  return roots;
+}
+
+function symlinkInspectionAnchorFor(targetPath: string): string {
+  const absoluteTarget = path.resolve(targetPath);
+  const cwd = path.resolve(process.cwd());
+  if (isPathAtOrUnderRoot(REPO_ROOT, absoluteTarget)) {
+    return REPO_ROOT;
+  }
+  if (isPathAtOrUnderRoot(cwd, absoluteTarget)) {
+    return cwd;
+  }
+  return absoluteTarget;
+}
+
+function expectedEvidenceRoot(
+  evidenceDir: string,
+  defaultRoot: string,
+  env: EvidenceDirEnv,
+  label: string,
+): EvidenceRootCandidate {
+  const absoluteEvidenceDir = path.resolve(evidenceDir);
+  const releaseRoots = releaseEvidenceRoots(env);
+  const matchingReleaseRoot = releaseRoots.find((candidate) =>
+    isPathAtOrUnderRoot(candidate.root, absoluteEvidenceDir),
+  );
+  if (matchingReleaseRoot) {
+    return matchingReleaseRoot;
+  }
+  if (releaseRoots.length > 0) {
+    throw new Error(`${label} must stay under unified deploy release evidence root: ${absoluteEvidenceDir}`);
+  }
+
+  const absoluteDefaultRoot = path.resolve(defaultRoot);
+  if (isPathAtOrUnderRoot(absoluteDefaultRoot, absoluteEvidenceDir)) {
+    return { root: absoluteDefaultRoot, anchor: symlinkInspectionAnchorFor(absoluteDefaultRoot) };
+  }
+
+  return { root: absoluteEvidenceDir, anchor: absoluteEvidenceDir };
+}
+
+function directoryStatIfExists(targetPath: string, label: string): ReturnType<typeof lstatSync> | null {
+  let stat: ReturnType<typeof lstatSync>;
+  try {
+    stat = lstatSync(targetPath);
+  } catch (error) {
+    if (error instanceof Error && 'code' in error && error.code === 'ENOENT') {
+      return null;
+    }
+    throw error;
+  }
+
+  if (stat.isSymbolicLink()) {
+    throw new Error(`${label} must not be a symlink: ${targetPath}`);
+  }
+  if (!stat.isDirectory()) {
+    throw new Error(`${label} must be a directory: ${targetPath}`);
+  }
+  return stat;
+}
+
+function assertDirectoryIsNotSymlinkIfExists(targetPath: string, label: string): void {
+  directoryStatIfExists(targetPath, label);
+}
+
+function assertEvidencePathHasNoSymlinkSegments(rootPath: string, targetPath: string, label: string): void {
+  const absoluteRoot = path.resolve(rootPath);
+  const absoluteTarget = path.resolve(targetPath);
+  if (!isPathAtOrUnderRoot(absoluteRoot, absoluteTarget)) {
+    throw new Error(`${label} must stay under expected evidence root: ${absoluteTarget}`);
+  }
+
+  assertDirectoryIsNotSymlinkIfExists(absoluteRoot, `${label} root`);
+  const relativePath = path.relative(absoluteRoot, absoluteTarget);
+  if (relativePath === '') {
+    assertDirectoryIsNotSymlinkIfExists(absoluteTarget, label);
+    return;
+  }
+
+  let currentPath = absoluteRoot;
+  for (const segment of relativePath.split(path.sep)) {
+    currentPath = path.join(currentPath, segment);
+    if (!directoryStatIfExists(currentPath, label)) {
+      return;
+    }
+  }
+}
+
+export function prepareUnifiedDeployEvidenceDir(options: PrepareUnifiedDeployEvidenceDirOptions): string {
+  const label = options.label ?? 'unified deploy evidenceDir';
+  const env = options.env ?? process.env;
+  const absoluteEvidenceDir = path.resolve(options.evidenceDir);
+  const expectedRoot = expectedEvidenceRoot(
+    absoluteEvidenceDir,
+    options.defaultRoot,
+    env,
+    label,
+  );
+
+  assertEvidencePathHasNoSymlinkSegments(expectedRoot.anchor, absoluteEvidenceDir, label);
+  mkdirSync(absoluteEvidenceDir, { recursive: true });
+  assertEvidencePathHasNoSymlinkSegments(expectedRoot.anchor, absoluteEvidenceDir, label);
+
+  const realEvidenceRoot = realpathSync(expectedRoot.root);
+  const realEvidenceDir = realpathSync(absoluteEvidenceDir);
+  if (!isPathAtOrUnderRoot(realEvidenceRoot, realEvidenceDir)) {
+    throw new Error(`${label} realpath must stay under expected evidence root: ${absoluteEvidenceDir}`);
+  }
+
+  return absoluteEvidenceDir;
 }
 
 export function resolveManifestPath(options: ManifestOptions = {}): string {
@@ -221,13 +417,17 @@ function checkTemplates(manifest: Record<string, unknown>, options: ManifestOpti
   }
 
   const rootDir = options.rootDir ?? REPO_ROOT;
+  const templatesRoot = options.templatesRoot ?? path.join(rootDir, 'infra', 'deploy', 'unified');
   for (const templatePath of templatePaths) {
-    const absoluteTemplatePath = path.resolve(rootDir, 'infra', 'deploy', 'unified', templatePath);
     if (templatePath.includes('namespace')) {
       addFailure(failures, 'app templates must not include Namespace resources');
     }
-    if (!existsSync(absoluteTemplatePath)) {
-      addFailure(failures, `template must exist: ${templatePath}`);
+    let absoluteTemplatePath: string;
+    try {
+      absoluteTemplatePath = resolveContainedTemplatePath(templatesRoot, templatePath);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'unknown template path error';
+      addFailure(failures, message);
       continue;
     }
     const templateText = readFileSync(absoluteTemplatePath, 'utf8');
@@ -248,9 +448,11 @@ function checkTemplates(manifest: Record<string, unknown>, options: ManifestOpti
   }
 
   for (const templatePath of preflightTemplatePaths) {
-    const absoluteTemplatePath = path.resolve(rootDir, 'infra', 'deploy', 'unified', templatePath);
-    if (!existsSync(absoluteTemplatePath)) {
-      addFailure(failures, `template must exist: ${templatePath}`);
+    try {
+      resolveContainedTemplatePath(templatesRoot, templatePath);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'unknown template path error';
+      addFailure(failures, message);
     }
   }
 }

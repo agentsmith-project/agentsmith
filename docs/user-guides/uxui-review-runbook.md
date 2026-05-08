@@ -78,7 +78,7 @@ make local-real-up
 make local-real-status
 ```
 
-若本次范围触达 Agent tasks / files / runner，仍先保持 clean local-real 环境；需要补 Agent task demo seeding 或 sandbox runner 时，只按 owner diagnostic 执行底层 adapter，不把 `substrate-*` / `local-manual-*` 当建议路径。
+若本次范围触达 Agent tasks / files / runner，仍先保持 clean local-real 环境；需要补 Agent task 诊断证据或 sandbox runner 时，只按 owner diagnostic 执行底层 adapter，不把 `substrate-*` / `local-manual-*` 当建议路径。
 
 如果要生成 standalone 真实后端视觉审查产物，可执行 focused diagnostic：
 
@@ -185,7 +185,7 @@ UX/UI 审查的最小单位不是“一个 `page.tsx` 文件”，而是：
 - redirect page
 - login callback
 - third-party callback
-- preview / app-shell demo
+- preview / app-shell diagnostic route
 
 规则：
 - 这组默认只做 smoke 和路由真相检查

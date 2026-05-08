@@ -9,7 +9,7 @@ import {
   statSync,
   writeFileSync,
 } from 'node:fs';
-import { basename, dirname, isAbsolute, join, relative, resolve } from 'node:path';
+import { basename, dirname, isAbsolute, join, parse, relative, resolve } from 'node:path';
 
 import {
   CURRENT_GATE_RESULT_SCHEMA_VERSION,
@@ -105,19 +105,209 @@ export interface SafeGateResultRead {
   error?: string;
 }
 
+const RELEASE_CAMPAIGN_RUN_ID_PATTERN = /^[A-Za-z0-9][A-Za-z0-9_-]*$/u;
+const DEFAULT_RELEASE_RUNS_ROOT = join('artifacts', 'release-runs');
+
+export function assertSafeReleaseCampaignRunId(
+  value: string | undefined,
+  label = 'RELEASE_CAMPAIGN_RUN_ID',
+): string {
+  if (typeof value !== 'string' || value.length === 0) {
+    throw new Error(`invalid ${label}: must be a non-empty safe basename id.`);
+  }
+  if (
+    value !== value.trim()
+    || /\s/u.test(value)
+    || value === '.'
+    || value === '..'
+    || value.includes('/')
+    || value.includes('\\')
+    || value.includes('..')
+    || !RELEASE_CAMPAIGN_RUN_ID_PATTERN.test(value)
+  ) {
+    throw new Error(
+      `invalid ${label}: must be a safe basename id using only letters, numbers, "-" or "_".`,
+    );
+  }
+  return value;
+}
+
+function releaseCampaignRunIdFromEnv(env: NodeJS.ProcessEnv = process.env): string | null {
+  return env.RELEASE_CAMPAIGN_RUN_ID !== undefined
+    ? assertSafeReleaseCampaignRunId(env.RELEASE_CAMPAIGN_RUN_ID)
+    : null;
+}
+
+export function resolveReleaseRunsRoot(env: NodeJS.ProcessEnv = process.env): string {
+  return resolve(env.RELEASE_RUNS_ROOT?.trim() || DEFAULT_RELEASE_RUNS_ROOT);
+}
+
+function directoryStatIfExists(targetPath: string, label: string): ReturnType<typeof lstatSync> | null {
+  let stat: ReturnType<typeof lstatSync>;
+  try {
+    stat = lstatSync(targetPath);
+  } catch (error) {
+    if (error instanceof Error && 'code' in error && error.code === 'ENOENT') {
+      return null;
+    }
+    throw error;
+  }
+
+  if (stat.isSymbolicLink()) {
+    throw new Error(`${label} must not be a symlink: ${targetPath}`);
+  }
+  if (!stat.isDirectory()) {
+    throw new Error(`${label} must be a directory: ${targetPath}`);
+  }
+  return stat;
+}
+
+function assertDirectoryIsNotSymlinkIfExists(targetPath: string, label: string): void {
+  directoryStatIfExists(targetPath, label);
+}
+
+function symlinkInspectionAnchorFor(targetPath: string): string {
+  const cwd = resolve(process.cwd());
+  const absoluteTarget = resolve(targetPath);
+  return isPathAtOrUnderRoot(cwd, absoluteTarget) ? cwd : parse(absoluteTarget).root;
+}
+
+function assertNoSymlinkSegmentsBetween(anchorPath: string, targetPath: string, label: string): void {
+  const absoluteAnchor = resolve(anchorPath);
+  const absoluteTarget = resolve(targetPath);
+  if (!isPathAtOrUnderRoot(absoluteAnchor, absoluteTarget)) {
+    throw new Error(`${label} must stay under symlink inspection anchor: ${absoluteTarget}`);
+  }
+
+  assertDirectoryIsNotSymlinkIfExists(absoluteAnchor, `${label} anchor`);
+  const relativePath = relative(absoluteAnchor, absoluteTarget);
+  if (relativePath === '') {
+    return;
+  }
+
+  let currentPath = absoluteAnchor;
+  for (const segment of relativePath.split(/[\\/]+/u)) {
+    currentPath = join(currentPath, segment);
+    if (!directoryStatIfExists(currentPath, label)) {
+      return;
+    }
+  }
+}
+
+function assertNoSymlinkSegmentsUnderRoot(rootPath: string, targetPath: string, label: string): void {
+  const absoluteRoot = resolve(rootPath);
+  const absoluteTarget = resolve(targetPath);
+  if (!isPathAtOrUnderRoot(absoluteRoot, absoluteTarget)) {
+    throw new Error(`${label} must stay under release runs root: ${absoluteTarget}`);
+  }
+
+  assertNoSymlinkSegmentsBetween(symlinkInspectionAnchorFor(absoluteRoot), absoluteTarget, label);
+}
+
+function assertNoSymlinkSegmentsToPath(targetPath: string, label: string): void {
+  const absoluteTarget = resolve(targetPath);
+  assertNoSymlinkSegmentsBetween(symlinkInspectionAnchorFor(absoluteTarget), absoluteTarget, label);
+}
+
+function assertRealpathUnderReleaseRunsRoot(releaseRunsRoot: string, campaignRoot: string): void {
+  const realReleaseRunsRoot = realpathSync(releaseRunsRoot);
+  const realCampaignRoot = realpathSync(campaignRoot);
+  if (!isPathAtOrUnderRoot(realReleaseRunsRoot, realCampaignRoot)) {
+    throw new Error(`release campaign root realpath must stay under release runs root: ${campaignRoot}`);
+  }
+}
+
+export function resolveDefaultReleaseCampaignRoot(
+  campaignRunId: string,
+  options: { releaseRunsRoot?: string; env?: NodeJS.ProcessEnv } = {},
+): string {
+  const safeRunId = assertSafeReleaseCampaignRunId(campaignRunId);
+  const releaseRunsRoot = resolve(options.releaseRunsRoot ?? resolveReleaseRunsRoot(options.env));
+  const campaignRoot = join(releaseRunsRoot, safeRunId);
+  assertNoSymlinkSegmentsUnderRoot(releaseRunsRoot, campaignRoot, 'release campaign root');
+  if (existsSync(releaseRunsRoot) && existsSync(campaignRoot)) {
+    assertRealpathUnderReleaseRunsRoot(releaseRunsRoot, campaignRoot);
+  }
+  return campaignRoot;
+}
+
+export function prepareDefaultReleaseCampaignRoot(
+  campaignRunId: string,
+  options: { releaseRunsRoot?: string; env?: NodeJS.ProcessEnv } = {},
+): string {
+  const releaseRunsRoot = resolve(options.releaseRunsRoot ?? resolveReleaseRunsRoot(options.env));
+  const campaignRoot = resolveDefaultReleaseCampaignRoot(campaignRunId, { releaseRunsRoot });
+  assertNoSymlinkSegmentsUnderRoot(releaseRunsRoot, campaignRoot, 'release campaign root');
+  mkdirSync(campaignRoot, { recursive: true });
+  assertNoSymlinkSegmentsUnderRoot(releaseRunsRoot, campaignRoot, 'release campaign root');
+  assertRealpathUnderReleaseRunsRoot(releaseRunsRoot, campaignRoot);
+  return campaignRoot;
+}
+
+export function assertReleaseCampaignRootNotSymlink(
+  campaignRoot: string,
+  label = 'release campaign root',
+): void {
+  assertNoSymlinkSegmentsToPath(campaignRoot, label);
+}
+
+function prepareCampaignChildDirectory(campaignRoot: string, targetDir: string, label: string): string {
+  const absoluteCampaignRoot = resolve(campaignRoot);
+  const absoluteTargetDir = resolve(targetDir);
+  if (!isPathAtOrUnderRoot(absoluteCampaignRoot, absoluteTargetDir)) {
+    throw new Error(`${label} must stay under release campaign root: ${absoluteTargetDir}`);
+  }
+
+  assertNoSymlinkSegmentsBetween(absoluteCampaignRoot, absoluteTargetDir, label);
+  mkdirSync(absoluteTargetDir, { recursive: true });
+  assertNoSymlinkSegmentsBetween(absoluteCampaignRoot, absoluteTargetDir, label);
+
+  const realCampaignRoot = realpathSync(absoluteCampaignRoot);
+  const realTargetDir = realpathSync(absoluteTargetDir);
+  if (!isPathAtOrUnderRoot(realCampaignRoot, realTargetDir)) {
+    throw new Error(`${label} realpath must stay under release campaign root: ${absoluteTargetDir}`);
+  }
+
+  return absoluteTargetDir;
+}
+
+export function prepareReleaseCampaignRootForWrite(input: {
+  campaignRoot: string;
+  runId: string;
+  env?: NodeJS.ProcessEnv;
+}): string {
+  const safeRunId = assertSafeReleaseCampaignRunId(input.runId);
+  const releaseRunsRoot = resolveReleaseRunsRoot(input.env);
+  const defaultCampaignRoot = join(releaseRunsRoot, safeRunId);
+  const campaignRoot = resolve(input.campaignRoot);
+
+  if (campaignRoot === defaultCampaignRoot) {
+    return prepareDefaultReleaseCampaignRoot(safeRunId, { releaseRunsRoot });
+  }
+
+  assertReleaseCampaignRootNotSymlink(campaignRoot);
+  mkdirSync(campaignRoot, { recursive: true });
+  assertReleaseCampaignRootNotSymlink(campaignRoot);
+  return campaignRoot;
+}
+
 export function resolveCampaignRoot(campaignRunId: string): string {
+  releaseCampaignRunIdFromEnv();
   if (process.env.RELEASE_CAMPAIGN_ROOT?.trim()) {
     return resolve(process.env.RELEASE_CAMPAIGN_ROOT);
   }
-  return resolve('artifacts', 'release-runs', campaignRunId);
+  return resolveDefaultReleaseCampaignRoot(campaignRunId);
 }
 
 export function resolveExistingCampaignRoot(): string {
+  const envRunId = releaseCampaignRunIdFromEnv();
   if (process.env.RELEASE_CAMPAIGN_ROOT?.trim()) {
-    return resolve(process.env.RELEASE_CAMPAIGN_ROOT);
+    const campaignRoot = resolve(process.env.RELEASE_CAMPAIGN_ROOT);
+    assertReleaseCampaignRootNotSymlink(campaignRoot);
+    return campaignRoot;
   }
-  if (process.env.RELEASE_CAMPAIGN_RUN_ID?.trim()) {
-    return resolve('artifacts', 'release-runs', process.env.RELEASE_CAMPAIGN_RUN_ID);
+  if (envRunId) {
+    return resolveDefaultReleaseCampaignRoot(envRunId);
   }
   if (process.env.RELEASE_CAMPAIGN_USE_LATEST !== 'true') {
     throw new Error(
@@ -126,30 +316,38 @@ export function resolveExistingCampaignRoot(): string {
     );
   }
 
-  const releaseRunsRoot = resolve('artifacts', 'release-runs');
+  const releaseRunsRoot = resolveReleaseRunsRoot();
+  assertNoSymlinkSegmentsBetween(
+    symlinkInspectionAnchorFor(releaseRunsRoot),
+    releaseRunsRoot,
+    'release runs root',
+  );
   if (!existsSync(releaseRunsRoot)) {
     throw new Error('No release campaign root found. Run npm run release:campaign:full first, or set RELEASE_CAMPAIGN_ROOT.');
   }
+  assertDirectoryIsNotSymlinkIfExists(releaseRunsRoot, 'release runs root');
 
   const candidates = readdirSync(releaseRunsRoot)
     .map((entry) => join(releaseRunsRoot, entry))
     .filter((entry) => {
       try {
-        return statSync(entry).isDirectory();
+        assertSafeReleaseCampaignRunId(basename(entry), 'release campaign run directory');
+        return lstatSync(entry).isDirectory();
       } catch {
         return false;
       }
     })
-    .sort((left, right) => statSync(right).mtimeMs - statSync(left).mtimeMs);
+    .sort((left, right) => lstatSync(right).mtimeMs - lstatSync(left).mtimeMs);
 
   if (!candidates[0]) {
     throw new Error('No release campaign run directory found under artifacts/release-runs.');
   }
-  return candidates[0];
+  return resolveDefaultReleaseCampaignRoot(basename(candidates[0]), { releaseRunsRoot });
 }
 
 export function resolveCampaignRunId(campaignRoot: string): string {
-  return process.env.RELEASE_CAMPAIGN_RUN_ID?.trim() || basename(resolve(campaignRoot));
+  return releaseCampaignRunIdFromEnv()
+    ?? assertSafeReleaseCampaignRunId(basename(resolve(campaignRoot)), 'campaign root basename');
 }
 
 export function stepDir(campaignRoot: string, step: CurrentVerificationCampaignStep): string {
@@ -1965,7 +2163,7 @@ export function evaluateCampaignEvidenceChecks(
   }
 
   return materializeEvidenceHints(campaignRoot, step).map((path) => ({
-    id: 'legacy_hint',
+    id: 'evidence_hint',
     path,
     kind: 'path',
     exists: existsSync(path),
@@ -2034,8 +2232,12 @@ export function writeCampaignEvidencePointer(
   campaignRoot: string,
   step: CurrentVerificationCampaignStep,
 ): ReleaseCampaignEvidencePointer {
-  const dir = stepDir(campaignRoot, step);
-  mkdirSync(dir, { recursive: true });
+  assertReleaseCampaignRootNotSymlink(campaignRoot);
+  const dir = prepareCampaignChildDirectory(
+    campaignRoot,
+    stepDir(campaignRoot, step),
+    'release campaign step evidence directory',
+  );
   const requiredPaths = evaluateCampaignEvidenceChecks(campaignRoot, step)
     .map((record) => buildReleaseCampaignEvidencePathRecord(record));
   const payload: ReleaseCampaignEvidencePointer = {
@@ -2054,8 +2256,12 @@ export function writeCampaignEvidencePointer(
 }
 
 export function writeCampaignGateResult(input: ReleaseCampaignResultInput): void {
-  const dir = stepDir(input.campaignRoot, input.step);
-  mkdirSync(dir, { recursive: true });
+  assertReleaseCampaignRootNotSymlink(input.campaignRoot);
+  const dir = prepareCampaignChildDirectory(
+    input.campaignRoot,
+    stepDir(input.campaignRoot, input.step),
+    'release campaign step result directory',
+  );
   const payload = {
     schema_version: CURRENT_GATE_RESULT_SCHEMA_VERSION,
     gate_id: input.step.gateId,

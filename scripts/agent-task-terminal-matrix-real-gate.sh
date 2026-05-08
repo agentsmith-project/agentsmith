@@ -17,7 +17,7 @@ cleanup_on_exit() {
 trap 'cleanup_on_exit $?' EXIT INT TERM
 
 if ! local_manual_platform_is_ready; then
-  echo "[agent-task-terminal-matrix] local-manual platform missing; starting it before seeding agent-task demo"
+  echo "[agent-task-terminal-matrix] local-manual platform missing; starting it before preparing agent-task diagnostics"
   bash scripts/local-manual/up.sh >/dev/null
 fi
 
@@ -92,10 +92,10 @@ run_with_retry() {
   done
 }
 
-bash scripts/local-manual/seed-agent-task-demo.sh >/dev/null
+bash scripts/local-manual/seed-agent-task-diagnostics.sh >/dev/null
 bash scripts/local-manual/start-runner.sh >/dev/null
 run_with_retry external_terminal_smoke bash scripts/agent-task-terminal-real-smoke.sh
 bash scripts/local-manual/internal-up.sh >/dev/null
 run_with_retry internal_terminal_smoke run_internal_terminal_smoke
 bash scripts/local-manual/internal-down.sh >/dev/null
-bash scripts/local-manual/seed-agent-task-demo.sh >/dev/null
+bash scripts/local-manual/seed-agent-task-diagnostics.sh >/dev/null

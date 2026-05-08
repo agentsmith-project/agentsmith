@@ -152,23 +152,6 @@ const GOVERNED_VERIFY_RUN_COMMAND_BY_ALIAS: Record<string, string> = {
   'npm run verify:release-real': 'npm run verify -- --goal=release-real --run',
 };
 
-const GOVERNED_VERIFY_RUN_COMMAND_PRIORITY = [
-  'npm run verify:release-real',
-  'npm run verify:real',
-  'npm run verify:visual',
-  'npm run verify:default',
-  'npm run verify:quick',
-] as const;
-
-function governedVerifyRunCommand(plan: VerificationPlan): string | null {
-  for (const alias of GOVERNED_VERIFY_RUN_COMMAND_PRIORITY) {
-    if (plan.recommendedCommands.includes(alias)) {
-      return GOVERNED_VERIFY_RUN_COMMAND_BY_ALIAS[alias];
-    }
-  }
-  return null;
-}
-
 function cleanVerifyHumanText(value: string): string {
   return Object.entries(GOVERNED_VERIFY_RUN_COMMAND_BY_ALIAS).reduce(
     (current, [alias, command]) => current.split(alias).join(command),
@@ -176,12 +159,27 @@ function cleanVerifyHumanText(value: string): string {
   );
 }
 
+function renderRecommendedCommand(command: string): string {
+  return GOVERNED_VERIFY_RUN_COMMAND_BY_ALIAS[command] ?? cleanVerifyHumanText(command);
+}
+
+function uniqueRenderedRecommendedCommands(commands: readonly string[]): string[] {
+  const rendered: string[] = [];
+  for (const command of commands) {
+    const displayCommand = renderRecommendedCommand(command);
+    if (!rendered.includes(displayCommand)) {
+      rendered.push(displayCommand);
+    }
+  }
+  return rendered;
+}
+
 function renderRecommendedPlan(plan: VerificationPlan): string[] {
   if (plan.recommendedCommands.length === 0) {
     return ['No verify command is safe to run for this V4 plan; use the next action.'];
   }
-  const command = governedVerifyRunCommand(plan);
-  return command ? [`1. ${command}`] : ['Use the governed verify entrypoint after reviewing this plan.'];
+  return uniqueRenderedRecommendedCommands(plan.recommendedCommands)
+    .map((command, index) => `${index + 1}. ${command}`);
 }
 
 function renderRiskWarnings(plan: VerificationPlan): string {

@@ -4,7 +4,7 @@ import { mkdir, readFile, rm, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-import { REPO_ROOT, asRecord, type CheckFailure } from './manifest';
+import { REPO_ROOT, asRecord, prepareUnifiedDeployEvidenceDir, type CheckFailure } from './manifest';
 import { parseKubernetesDocuments, resourceKind } from './kubernetes';
 import { DEFAULT_SITE_ENV_PATH } from './render';
 
@@ -740,8 +740,11 @@ async function writeImagesEvidence(
   evidence: Omit<LocalKindImagesEvidence, 'status' | 'generated_at' | 'paths'>,
   evidenceDir: string,
 ): Promise<LocalKindImagesEvidence> {
-  const resolvedEvidenceDir = path.resolve(evidenceDir);
-  await mkdir(resolvedEvidenceDir, { recursive: true });
+  const resolvedEvidenceDir = prepareUnifiedDeployEvidenceDir({
+    evidenceDir,
+    defaultRoot: DEFAULT_EVIDENCE_DIR,
+    label: 'local-kind images evidenceDir',
+  });
 
   const status: ProducerStatus = evidence.failures.length === 0 ? 'passed' : 'failed';
   const basename = `local-kind-images-${new Date().toISOString().replace(/[:.]/gu, '-')}`;

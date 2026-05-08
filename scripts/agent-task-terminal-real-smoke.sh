@@ -28,11 +28,11 @@ fi
 
 if [[ -z "$(state_get project.id)" || -z "$(state_get agent_runner.id)" ]]; then
   for attempt in 1 2 3 4; do
-    if bash "${ROOT_DIR}/scripts/local-manual/seed-agent-task-demo.sh" >/dev/null; then
+    if bash "${ROOT_DIR}/scripts/local-manual/seed-agent-task-diagnostics.sh" >/dev/null; then
       break
     fi
     if [[ "${attempt}" == "4" ]]; then
-      echo "[agent-task-terminal-smoke] failed to seed agent-task demo after retries" >&2
+      echo "[agent-task-terminal-smoke] failed to prepare agent-task diagnostics after retries" >&2
       exit 1
     fi
     sleep $((attempt * 2))
@@ -56,7 +56,7 @@ TASK_PROJECT_ID="${TASK_PROJECT_ID:-$(state_get project.id)}"
 API_BASE="${API_BASE:-http://localhost:${PORT_API}}"
 
 if [[ -z "${TASK_PROJECT_ID}" ]]; then
-  echo "[agent-task-terminal-smoke] missing local-manual agent-task demo state" >&2
+  echo "[agent-task-terminal-smoke] missing local-manual agent-task diagnostic state" >&2
   exit 1
 fi
 

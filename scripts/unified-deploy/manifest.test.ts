@@ -1,10 +1,15 @@
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
 import { afterEach, describe, expect, it } from 'vitest';
 
-import { checkUnifiedDeployManifest } from './check-manifest';
+import {
+  checkUnifiedDeployManifest,
+} from './check-manifest';
+import {
+  prepareUnifiedDeployEvidenceDir,
+} from './manifest';
 
 const fixtureRoots: string[] = [];
 
@@ -33,6 +38,27 @@ describe('unified deploy manifest producer', () => {
 
     expect(result.failures).toEqual([]);
     expect(result.ok).toBe(true);
+  });
+
+  it('rejects a symlinked parent segment before preparing default evidence directories', () => {
+    const root = mkdtempSync(join(tmpdir(), 'unified-deploy-evidence-parent-symlink-'));
+    const outsideRoot = mkdtempSync(join(tmpdir(), 'unified-deploy-evidence-parent-outside-'));
+    const originalCwd = process.cwd();
+    fixtureRoots.push(root, outsideRoot);
+    symlinkSync(outsideRoot, join(root, 'artifacts'), 'dir');
+
+    try {
+      process.chdir(root);
+
+      expect(() => prepareUnifiedDeployEvidenceDir({
+        evidenceDir: join(root, 'artifacts', 'unified-deploy'),
+        defaultRoot: join(root, 'artifacts', 'unified-deploy'),
+        env: {},
+        label: 'test evidenceDir',
+      })).toThrow(/symlink/i);
+    } finally {
+      process.chdir(originalCwd);
+    }
   });
 
   it('requires exactly the two target profiles and the Docker-only substrate members', () => {

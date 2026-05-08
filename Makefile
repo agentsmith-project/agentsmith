@@ -564,7 +564,7 @@ local-manual-up:
 	./scripts/local-manual-up.sh
 
 local-manual-seed-agent-task:
-	./scripts/local-manual/seed-agent-task-demo.sh
+	./scripts/local-manual/seed-agent-task-diagnostics.sh
 
 local-manual-down:
 	./scripts/local-manual-down.sh

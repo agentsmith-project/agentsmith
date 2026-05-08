@@ -779,11 +779,29 @@ describe('verify impact selector', () => {
     expect(plan.requiredLevels).toContain('V4');
     expect(plan.affectedSurfaces).toContain('release/deploy');
     expect(plan.nextAction).toContain('npm run release:ready');
+    expect(plan.recommendedCommands).toContain('npm run test:unified-deploy:unit');
     expect(plan.recommendedCommands).not.toContain('npm run verify:release-real');
     expect(plan.recommendedCommands).not.toContain('npm run release:ready');
+    expect(plan.recommendedCommands).not.toContain('npm run verify:visual');
     expect(plan.finalVerdict).toBe('not_evaluated_fail_closed');
     expect(plan.releaseVerdict).toBe(false);
     expect(plan.riskSummary.manualReviewRequired).toBe(true);
+  });
+
+  it('recommends only the lightweight unified deploy unit suite for unified deploy implementation changes', () => {
+    const plan = buildVerificationPlan({
+      changedFiles: [
+        'scripts/unified-deploy/check-local-kind-rollout.ts',
+        'infra/deploy/unified/templates/app/api-deployment.yaml.tpl',
+      ],
+    });
+
+    expect(plan.requiredLevels).toEqual(['V4']);
+    expect(plan.recommendedCommands).toEqual(['npm run test:unified-deploy:unit']);
+    expect(plan.recommendedCommands).not.toContain('npm run release:ready');
+    expect(plan.recommendedCommands).not.toContain('npm run verify:visual');
+    expect(plan.affectedSurfaces).toEqual(['release/deploy']);
+    expect(plan.releaseVerdict).toBe(false);
   });
 
   it('maps governance tooling sources to targeted V0/V1 owner review instead of unmapped triage', () => {
@@ -824,8 +842,6 @@ describe('verify impact selector', () => {
     'scripts/governance/release-campaign-runner.ts',
     'scripts/governance/release-campaign-execution.ts',
     'scripts/governance/release-campaign-io.ts',
-    'scripts/unified-deploy/release-local-kind.sh',
-    'scripts/unified-deploy/release-product-flows.sh',
   ])('keeps governance release path %s on V4 release/deploy operator review', (changedFile) => {
     const plan = buildVerificationPlan({
       changedFiles: [changedFile],
@@ -848,7 +864,6 @@ describe('verify impact selector', () => {
   it.each([
     'scripts/release-full-campaign.sh',
     'scripts/release-full-aggregate-gate.sh',
-    'scripts/unified-deploy/release-product-flows.sh',
   ])('maps root release and deploy script %s to V4 operator review only', (changedFile) => {
     const plan = buildVerificationPlan({
       changedFiles: [changedFile],
@@ -942,7 +957,7 @@ describe('verify impact selector', () => {
 
     expect(plan.requiredLevels).toEqual(['V4']);
     expect(plan.recommendedCommands).not.toContain('npm run verify:release-real');
-    expect(plan.recommendedCommands).toEqual([]);
+    expect(plan.recommendedCommands).toEqual(['npm run test:unified-deploy:unit']);
     expect(plan.nextAction).toContain('npm run release:ready');
   });
 

@@ -1,4 +1,4 @@
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
@@ -177,6 +177,55 @@ llmup_source_image=ghcr.io/agentsmith-project/llm-universal-proxy:v0.2.27@sha256
       }),
     ]));
     expect(calls.some((call) => call.args.includes('build'))).toBe(false);
+  });
+
+  it('rejects a symlinked evidenceDir before writing local-kind image evidence', async () => {
+    const root = tempDir('local-kind-images-evidence-');
+    const outsideRoot = tempDir('local-kind-images-evidence-outside-');
+    const evidenceDir = join(root, 'evidence');
+    symlinkSync(outsideRoot, evidenceDir, 'dir');
+
+    await expect(runLocalKindImagesProducer({
+      evidenceDir,
+      outputSiteEnvPath: join(root, 'local-kind-site.env'),
+      sandboxSourceDir: join(root, 'missing', 'manager-service'),
+      runner: successfulRunner([]),
+    })).rejects.toThrow(/evidence.*symlink/i);
+  });
+
+  it('anchors release evidence at RELEASE_CAMPAIGN_ROOT even when UNIFIED_DEPLOY_RELEASE_ROOT_DIR is set', async () => {
+    const root = tempDir('local-kind-images-campaign-anchor-');
+    const outsideRoot = tempDir('local-kind-images-campaign-outside-');
+    const campaignRoot = join(root, 'release-ready-safe-id');
+    const releaseRoot = join(campaignRoot, 'unified-deploy');
+    const originalCampaignRoot = process.env.RELEASE_CAMPAIGN_ROOT;
+    const originalUnifiedRoot = process.env.UNIFIED_DEPLOY_RELEASE_ROOT_DIR;
+    symlinkSync(outsideRoot, campaignRoot, 'dir');
+
+    try {
+      process.env.RELEASE_CAMPAIGN_ROOT = campaignRoot;
+      process.env.UNIFIED_DEPLOY_RELEASE_ROOT_DIR = releaseRoot;
+
+      await expect(runLocalKindImagesProducer({
+        evidenceDir: join(releaseRoot, 'local-kind-images'),
+        outputSiteEnvPath: join(root, 'local-kind-site.env'),
+        sandboxSourceDir: join(root, 'missing', 'manager-service'),
+        runner: successfulRunner([]),
+      })).rejects.toThrow(/campaign|evidence|symlink/i);
+
+      expect(existsSync(join(outsideRoot, 'unified-deploy'))).toBe(false);
+    } finally {
+      if (originalCampaignRoot === undefined) {
+        delete process.env.RELEASE_CAMPAIGN_ROOT;
+      } else {
+        process.env.RELEASE_CAMPAIGN_ROOT = originalCampaignRoot;
+      }
+      if (originalUnifiedRoot === undefined) {
+        delete process.env.UNIFIED_DEPLOY_RELEASE_ROOT_DIR;
+      } else {
+        process.env.UNIFIED_DEPLOY_RELEASE_ROOT_DIR = originalUnifiedRoot;
+      }
+    }
   });
 
   it('builds app, sandbox, managed runner images, retags locked llmup, and pushes local registry refs in order', async () => {

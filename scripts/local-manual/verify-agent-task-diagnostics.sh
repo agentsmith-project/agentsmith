@@ -27,7 +27,7 @@ AGENT_RUNNER_ID="$(state_get agent_runner.id)"
 WS_URL="$(state_get agent_runner.ws_url)"
 
 if [[ -z "${PROJECT_ID}" || -z "${ENDPOINT_ID}" || -z "${AGENT_RUNNER_ID}" || -z "${WS_URL}" ]]; then
-  err "agent-task demo state is incomplete; run make local-manual-seed-agent-task again"
+  err "agent-task diagnostic state is incomplete; run make local-manual-seed-agent-task again"
   exit 1
 fi
 
@@ -36,4 +36,4 @@ if ! runner_socket_is_connected; then
   exit 1
 fi
 
-info "agent-task demo verify passed"
+info "agent-task diagnostic verify passed"

@@ -37,11 +37,16 @@ type FixtureOptions = {
 };
 
 const ACTIVE_DOC_PATHS = [
+  'README.md',
   'docs/contracts/README.md',
   'docs/contracts/product-terminology.md',
   'docs/CURRENT_BASELINE.md',
+  'docs/README.md',
+  'docs/current-engineering-governance-model.md',
   'docs/testing/verification-campaigns-v1.md',
   'docs/user-guides/README.md',
+  'docs/user-guides/release-readiness-checklist.md',
+  'docs/user-guides/uxui-review-runbook.md',
   'docs/user-guides/unified-deploy-operations.md',
   'docs/agent-task-runner-runbook.md',
   'docs/engineering/agentsmith-unified-deploy-and-docker-substrate-milestone-plan-v1.md',
@@ -52,9 +57,28 @@ const ACTIVE_DOC_PATHS = [
   '.gitignore',
   'Makefile',
   'scripts/workspace-project-default-gate.sh',
+  'scripts/contracts/check-current-gates.ts',
+  'scripts/contracts/check-current-runtime-lines.ts',
+  'scripts/contracts/check-current-workflows.ts',
+  'scripts/contracts/check-engineering-governance.ts',
+  'scripts/governance/current-gate-manifest.ts',
+  'scripts/governance/current-resource-lock-manifest.ts',
+  'scripts/governance/current-runtime-line-manifest.ts',
   'scripts/governance/current-workflow-manifest.ts',
+  'scripts/governance/current-verification-campaign-manifest.ts',
   'scripts/governance/current-status-projection-schema.ts',
   'scripts/governance/current-governance-observability-manifest.ts',
+  'scripts/governance/release-campaign-execution.ts',
+  'scripts/governance/release-ready.ts',
+  'scripts/governance/release-summary.ts',
+  'scripts/governance/run-current-verification-campaign.ts',
+  'scripts/governance/run-verify.ts',
+  'scripts/governance/verify-impact-selector.ts',
+  'scripts/agent-task-terminal-matrix-real-gate.sh',
+  'scripts/agent-task-terminal-real-smoke.sh',
+  'scripts/local-manual/internal-common.sh',
+  'scripts/local-manual/seed-agent-task-diagnostics.sh',
+  'scripts/local-manual/verify-agent-task-diagnostics.sh',
 ] as const;
 
 const fixtureRoots: string[] = [];
@@ -163,6 +187,78 @@ describe('checkUnifiedDeployVocabulary', () => {
     expect(failureText(root)).toContain('current deploy truth must not use');
   });
 
+  it.each([
+    'README.md',
+    'docs/README.md',
+    'docs/user-guides/release-readiness-checklist.md',
+    'scripts/governance/current-gate-manifest.ts',
+    'scripts/governance/current-verification-campaign-manifest.ts',
+    'scripts/governance/release-ready.ts',
+    'scripts/governance/verify-impact-selector.ts',
+  ])('scans current release and governance surface %s for removed deploy vocabulary', (path) => {
+    const root = writeFixtureRoot({
+      activeDocOverrides: {
+        [path]: 'Operators should run demo-deploy before release.',
+      },
+    });
+
+    expect(failureText(root)).toContain(`${path}:`);
+  });
+
+  it('allows only the retired local cluster-deploy scratch denylist in gitignore', () => {
+    const root = writeFixtureRoot({
+      activeDocOverrides: {
+        '.gitignore': '.infra/cluster-deploy/\n',
+      },
+    });
+
+    expect(checkUnifiedDeployVocabulary({ rootDir: root })).toEqual({
+      ok: true,
+      failures: [],
+    });
+  });
+
+  it('rejects the retired cluster-deploy scratch path outside the gitignore denylist', () => {
+    const root = writeFixtureRoot({
+      activeDocOverrides: {
+        'docs/README.md': 'Keep .infra/cluster-deploy/ as an operator path.',
+      },
+    });
+
+    expect(failureText(root)).toContain('current deploy truth must not use removed deploy command family');
+  });
+
+  it('allows current existing-cluster deploy profile wording', () => {
+    const root = writeFixtureRoot({
+      activeDocOverrides: {
+        'scripts/contracts/check-current-runtime-lines.ts': 'current deploy runtime truth must expose exactly local-kind and existing-cluster deploy profiles',
+      },
+    });
+
+    expect(checkUnifiedDeployVocabulary({ rootDir: root })).toEqual({
+      ok: true,
+      failures: [],
+    });
+  });
+
+  it.each([
+    ['DEVELOPMENT.md', 'Agent task demo evidence should be seeded after local-real.'],
+    ['docs/user-guides/uxui-review-runbook.md', 'Use app-shell demo for preview-only routes.'],
+    ['scripts/governance/current-workflow-manifest.ts', 'create agent-task demo resources and start the host runner'],
+    ['Makefile', './scripts/local-manual/seed-agent-task-demo.sh'],
+  ])('rejects active generic demo wording in %s', (path, content) => {
+    const root = writeFixtureRoot({
+      activeDocOverrides: {
+        [path]: content,
+      },
+    });
+
+    const text = failureText(root);
+
+    expect(text).toContain(`${path}:`);
+    expect(text).toContain('generic demo mental model');
+  });
+
   it('reports missing substrate, routing, replica, and execution-gateway decisions', () => {
     const root = writeFixtureRoot({
       deployContract: `# Unified Deploy Contract
@@ -214,5 +310,27 @@ ${forbiddenLine}
 
     expect(text).toContain(CHECK_SCRIPT);
     expect(text).toContain(`npm run ${CHECK_NPM_SCRIPT}`);
+  });
+
+  it.each([
+    'demo:deploy',
+    'cluster:deploy',
+    'rehearse:demo',
+    'rehearse:cluster',
+  ])('rejects removed package script alias %s by script key', (scriptName) => {
+    const root = writeFixtureRoot({
+      packageJson: JSON.stringify({
+        scripts: {
+          [CHECK_NPM_SCRIPT]: CHECK_SCRIPT,
+          'contracts:check': `npm run ${CHECK_NPM_SCRIPT}`,
+          [scriptName]: 'echo legacy alias',
+        },
+      }, null, 2),
+    });
+
+    const text = failureText(root);
+
+    expect(text).toContain('package.json script key');
+    expect(text).toContain(scriptName);
   });
 });

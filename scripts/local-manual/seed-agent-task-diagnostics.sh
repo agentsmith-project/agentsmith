@@ -35,10 +35,10 @@ info "initializing managed agent-task runner resources"
 )
 
 bash "${ROOT_DIR}/scripts/local-manual/start-runner.sh"
-bash "${ROOT_DIR}/scripts/local-manual/verify-agent-task-demo.sh"
+bash "${ROOT_DIR}/scripts/local-manual/verify-agent-task-diagnostics.sh"
 
 PROJECT_ID="$(state_get project.id)"
-info "agent-task demo ready"
+info "agent-task diagnostic resources ready"
 if [[ -n "${PROJECT_ID}" ]]; then
   info "Agent tasks: http://localhost:${PORT_WEB}/${LOCALE}/workspaces/${WORKSPACE_ID}/projects/${PROJECT_ID}/agent-tasks"
 fi

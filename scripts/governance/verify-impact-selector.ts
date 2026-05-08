@@ -211,6 +211,7 @@ const RELEASE_REAL_VERIFY_COMMAND = 'npm run verify:release-real';
 const AGENT_TASK_RUNNER_FAST_COMMAND = 'npm run test:agent-task:runner:fast';
 const AGENT_TASK_RUNNER_BACKEND_REAL_COMMAND = 'npm run test:agent-task:runner:backend-real';
 const AGENT_TASK_INTEGRATION_COMMAND = 'npm run test:e2e:integration:agent-task';
+const UNIFIED_DEPLOY_UNIT_COMMAND = 'npm run test:unified-deploy:unit';
 const GOVERNED_REAL_VERIFY_COMMAND = 'npm run verify -- --goal=real --run';
 const GOVERNED_RELEASE_REAL_VERIFY_COMMAND = 'npm run verify -- --goal=release-real --run';
 const GOVERNED_VERIFY_COMMAND_BY_INTERNAL_ALIAS: Record<string, string> = {
@@ -360,6 +361,15 @@ function isReleaseDeployPath(filePath: string): boolean {
     /^docs\/contracts\/.*deployment/i,
     /^docs\/user-guides\/.*deploy/i,
     /^docs\/user-guides\/.*release/i,
+  ].some((pattern) => pattern.test(filePath));
+}
+
+function isUnifiedDeployPath(filePath: string): boolean {
+  return [
+    /^scripts\/unified-deploy\//,
+    /^infra\/deploy\/unified\//,
+    /^docs\/contracts\/unified-deploy-contract\.md$/,
+    /^docs\/user-guides\/unified-deploy-operations\.md$/,
   ].some((pattern) => pattern.test(filePath));
 }
 
@@ -1255,6 +1265,9 @@ export function buildVerificationPlan(input: BuildVerificationPlanInput = {}): V
         broadImpact: true,
       };
       addLevels(accumulator, levels);
+      if (isUnifiedDeployPath(changedFile)) {
+        accumulator.commands.add(UNIFIED_DEPLOY_UNIT_COMMAND);
+      }
       accumulator.surfaces.add(surface);
       accumulator.broadImpact = true;
       accumulator.manualReviewRequired = true;

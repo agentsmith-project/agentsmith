@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto';
-import { mkdir, readFile, writeFile } from 'node:fs/promises';
+import { readFile, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 
 import {
@@ -7,6 +7,7 @@ import {
   TARGET_PROFILES,
   asRecord,
   loadUnifiedDeployManifest,
+  prepareUnifiedDeployEvidenceDir,
   type CheckFailure,
   type UnifiedDeployProfile,
 } from './manifest';
@@ -257,8 +258,11 @@ function evidenceBasename(producer: UnifiedDeployEvidenceProducer): string {
 }
 
 export async function writeProducerEvidence(options: EvidenceOptions): Promise<UnifiedDeployEvidence> {
-  const evidenceDir = path.resolve(options.evidenceDir ?? DEFAULT_EVIDENCE_DIR);
-  await mkdir(evidenceDir, { recursive: true });
+  const evidenceDir = prepareUnifiedDeployEvidenceDir({
+    evidenceDir: options.evidenceDir ?? DEFAULT_EVIDENCE_DIR,
+    defaultRoot: DEFAULT_EVIDENCE_DIR,
+    label: `unified deploy ${options.producer} evidenceDir`,
+  });
 
   const basename = evidenceBasename(options.producer);
   const reportPath = path.join(evidenceDir, `${basename}.json`);

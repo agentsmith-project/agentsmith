@@ -32,6 +32,7 @@ import {
 } from './release-campaign-runner';
 import {
   nativeResultPath,
+  prepareReleaseCampaignRootForWrite,
   resultPath,
   stepDir,
   tryReadGateResult,
@@ -573,6 +574,11 @@ export function runReleaseCampaignExecution(input: ReleaseCampaignExecutionInput
   const env = input.env ?? process.env;
   const stdio = input.stdio ?? 'inherit';
   const lockManager = input.lockManager ?? new GovernanceLockLeaseManager();
+  const campaignRoot = prepareReleaseCampaignRootForWrite({
+    campaignRoot: input.campaignRoot,
+    runId: input.runId,
+    env,
+  });
   const stepById = new Map(input.campaign.steps.map((step) => [step.id, step]));
   const terminalStep = input.campaign.steps.find((step) => step.executionMode === 'aggregate_only');
   if (!terminalStep) {
@@ -600,18 +606,18 @@ export function runReleaseCampaignExecution(input: ReleaseCampaignExecutionInput
           buildReleaseCampaignRuntimeLeaseRequests({
             campaignId: input.campaign.id,
             runId: input.runId,
-            campaignRoot: input.campaignRoot,
+            campaignRoot,
             step,
           }),
         );
         if (!leaseResult.ok) {
           if (step.executionMode !== 'aggregate_only') {
             if (step.evidenceRequired) {
-              writeCampaignEvidencePointer(input.campaignRoot, step);
+              writeCampaignEvidencePointer(campaignRoot, step);
             }
             writeCampaignGateResult({
               step,
-              campaignRoot: input.campaignRoot,
+              campaignRoot,
               status: 'failed',
               failureClass: leaseResult.failureClass,
               stage: 'execute',
@@ -628,7 +634,7 @@ export function runReleaseCampaignExecution(input: ReleaseCampaignExecutionInput
               npmScript: step.npmScript,
               cwd,
               env: buildReleaseCampaignAggregateEnv({
-                campaignRoot: input.campaignRoot,
+                campaignRoot,
                 runId: input.runId,
                 baseEnv: env,
               }),
@@ -641,7 +647,7 @@ export function runReleaseCampaignExecution(input: ReleaseCampaignExecutionInput
               aggregateResult: aggregate,
             });
             writeTerminalAggregateFallbackResult({
-              campaignRoot: input.campaignRoot,
+              campaignRoot,
               terminalStep: step,
               outcome: terminalState.outcome,
             });
@@ -657,7 +663,7 @@ export function runReleaseCampaignExecution(input: ReleaseCampaignExecutionInput
             npmScript: step.npmScript,
             cwd,
             env: buildReleaseCampaignCommandEnv({
-              campaignRoot: input.campaignRoot,
+              campaignRoot,
               runId: input.runId,
               step,
               baseEnv: env,
@@ -666,7 +672,7 @@ export function runReleaseCampaignExecution(input: ReleaseCampaignExecutionInput
           });
 
           if (result.status === 0) {
-            const outcome = writeCompletedStep(input.campaignRoot, step, 0);
+            const outcome = writeCompletedStep(campaignRoot, step, 0);
             if (!outcome.passed) {
               hadExecutableStepFailure = true;
             }
@@ -680,20 +686,20 @@ export function runReleaseCampaignExecution(input: ReleaseCampaignExecutionInput
           }
 
           if (step.evidenceRequired) {
-            writeCampaignEvidencePointer(input.campaignRoot, step);
+            writeCampaignEvidencePointer(campaignRoot, step);
           }
           writeCampaignGateResult({
             step,
-            campaignRoot: input.campaignRoot,
+            campaignRoot,
             status: 'failed',
-            failureClass: nativeResultFailureClass(input.campaignRoot, step),
+            failureClass: nativeResultFailureClass(campaignRoot, step),
             stage: 'execute',
             summary: `Release campaign step ${step.id} failed with exit code ${String(result.status ?? 'unknown')}.`,
           });
           hadExecutableStepFailure = true;
           return {
             status: 'failed',
-            failureClass: writtenFailureClass(input.campaignRoot, step),
+            failureClass: writtenFailureClass(campaignRoot, step),
             summary: `Release campaign step ${step.id} failed with exit code ${String(result.status ?? 'unknown')}.`,
           };
         } finally {
@@ -708,7 +714,7 @@ export function runReleaseCampaignExecution(input: ReleaseCampaignExecutionInput
         if (step.executionMode === 'aggregate_only') {
           throw new Error('Release campaign terminal aggregate must not be skipped.');
         }
-        writeSkippedStep(input.campaignRoot, step, reason);
+        writeSkippedStep(campaignRoot, step, reason);
         hadExecutableStepFailure = true;
         return {
           status: 'failed',
@@ -726,13 +732,13 @@ export function runReleaseCampaignExecution(input: ReleaseCampaignExecutionInput
 
   if (input.writeSummary ?? true) {
     let latestLeaseIds: readonly string[] = [];
-    const shouldWriteLatest = isDefaultReleaseRunsCampaignRoot(input.campaignRoot);
+    const shouldWriteLatest = isDefaultReleaseRunsCampaignRoot(campaignRoot);
     if (shouldWriteLatest) {
       const latestLease = acquireLeases(lockManager, [
         releaseLatestPointerLeaseRequest({
           campaignId: input.campaign.id,
           runId: input.runId,
-          campaignRoot: input.campaignRoot,
+          campaignRoot,
         }),
       ]);
       if (!latestLease.ok) {
@@ -743,7 +749,7 @@ export function runReleaseCampaignExecution(input: ReleaseCampaignExecutionInput
 
     try {
       writeReleaseSummaryForCampaign({
-        campaignRoot: input.campaignRoot,
+        campaignRoot,
         writeLatest: shouldWriteLatest,
       });
     } catch (error) {

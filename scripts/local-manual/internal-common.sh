@@ -98,10 +98,10 @@ ensure_local_manual_ready() {
   fi
 }
 
-ensure_agent_task_demo_seeded() {
+ensure_agent_task_diagnostics_ready() {
   if ! runner_socket_is_connected || [[ -z "$(state_get project.id)" || -z "$(state_get agent_runner.id)" ]]; then
-    internal_info "seeding agent-task demo resources"
-    LOCAL_MANUAL_ENABLE_INTERNAL=0 bash "${ROOT_DIR}/scripts/local-manual/seed-agent-task-demo.sh"
+    internal_info "preparing agent-task diagnostic resources"
+    LOCAL_MANUAL_ENABLE_INTERNAL=0 bash "${ROOT_DIR}/scripts/local-manual/seed-agent-task-diagnostics.sh"
   fi
 }
 
@@ -402,14 +402,14 @@ ensure_internal_runner_state() {
   endpoint_id="$(state_get endpoint.id)"
   existing_runner="$(state_get agent_runner.id)"
   [[ -n "${token}" && -n "${project_id}" && -n "${endpoint_id}" ]] || {
-    internal_info "agent-task demo state missing after internal API restart; reseeding agent-task demo resources"
-    ensure_agent_task_demo_seeded
+    internal_info "agent-task diagnostic state missing after internal API restart; preparing agent-task diagnostic resources"
+    ensure_agent_task_diagnostics_ready
     token="$(cat "$(backend_real_token_file)" 2>/dev/null || true)"
     project_id="$(state_get project.id)"
     endpoint_id="$(state_get endpoint.id)"
     existing_runner="$(state_get agent_runner.id)"
     [[ -n "${token}" && -n "${project_id}" && -n "${endpoint_id}" ]] || {
-      internal_err "missing agent-task demo state; run make local-manual-seed-agent-task first"
+      internal_err "missing agent-task diagnostic state; run make local-manual-seed-agent-task first"
       exit 1
     }
   }
@@ -424,6 +424,6 @@ ensure_internal_runner_state() {
     fi
   fi
 
-  internal_info "managed agent-task runner state missing after internal API restart; reseeding agent-task demo resources"
-  LOCAL_MANUAL_ENABLE_INTERNAL=0 bash "${ROOT_DIR}/scripts/local-manual/seed-agent-task-demo.sh"
+  internal_info "managed agent-task runner state missing after internal API restart; preparing agent-task diagnostic resources"
+  LOCAL_MANUAL_ENABLE_INTERNAL=0 bash "${ROOT_DIR}/scripts/local-manual/seed-agent-task-diagnostics.sh"
 }

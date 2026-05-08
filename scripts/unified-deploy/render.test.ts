@@ -1,6 +1,6 @@
 import { createHash } from 'node:crypto';
 import { readFile } from 'node:fs/promises';
-import { mkdtempSync, readFileSync, rmSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { spawnSync } from 'node:child_process';
@@ -17,9 +17,46 @@ import {
 } from './render';
 import { checkApiProductionEntrypointScripts, checkRenderedOutput } from './check-render';
 import { fingerprintRenderedManifest, writeProducerEvidence } from './evidence';
+import { DEFAULT_MANIFEST_PATH } from './manifest';
 
 const tempRoots: string[] = [];
 const fixturesDir = join(process.cwd(), 'scripts', 'unified-deploy', '__fixtures__');
+
+function tempDir(prefix: string): string {
+  const root = mkdtempSync(join(tmpdir(), prefix));
+  tempRoots.push(root);
+  return root;
+}
+
+function writeSafePreflightTemplate(templatesRoot: string): void {
+  const preflightDir = join(templatesRoot, 'templates/local-kind-admin-preflight');
+  mkdirSync(preflightDir, { recursive: true });
+  writeFileSync(
+    join(preflightDir, 'safe.yaml.tpl'),
+    [
+      'apiVersion: v1',
+      'kind: ConfigMap',
+      'metadata:',
+      '  name: safe-preflight',
+      '  namespace: {{NAMESPACE}}',
+      '',
+    ].join('\n'),
+  );
+}
+
+function writeManifestWithAppTemplates(root: string, appTemplates: string[]): string {
+  const manifest = JSON.parse(readFileSync(DEFAULT_MANIFEST_PATH, 'utf8')) as {
+    templates: {
+      app: string[];
+      local_kind_admin_preflight: string[];
+    };
+  };
+  manifest.templates.app = appTemplates;
+  manifest.templates.local_kind_admin_preflight = ['templates/local-kind-admin-preflight/safe.yaml.tpl'];
+  const manifestPath = join(root, 'deployment.manifest.json');
+  writeFileSync(manifestPath, `${JSON.stringify(manifest, null, 2)}\n`);
+  return manifestPath;
+}
 
 function parsedDocuments(rendered: string): Record<string, unknown>[] {
   return YAML.parseAllDocuments(rendered)
@@ -294,6 +331,49 @@ describe('unified deploy render producer', () => {
     });
 
     expect(result.status).toBe(0);
+  });
+
+  it('rejects absolute and parent-traversal template paths before rendering', async () => {
+    const root = tempDir('agentsmith-render-template-escape-');
+    const templatesRoot = join(root, 'templates-root');
+    writeSafePreflightTemplate(templatesRoot);
+    const outsideTemplate = join(root, 'outside.yaml.tpl');
+    writeFileSync(
+      outsideTemplate,
+      'apiVersion: v1\nkind: ConfigMap\nmetadata:\n  name: escaped-template\n',
+    );
+
+    const absoluteManifestPath = writeManifestWithAppTemplates(root, [outsideTemplate]);
+    await expect(renderUnifiedDeployToString({
+      manifestPath: absoluteManifestPath,
+      templatesRoot,
+    })).rejects.toThrow(/safe relative template path/i);
+
+    const traversalManifestPath = writeManifestWithAppTemplates(root, ['../outside.yaml.tpl']);
+    await expect(renderUnifiedDeployToString({
+      manifestPath: traversalManifestPath,
+      templatesRoot,
+    })).rejects.toThrow(/safe relative template path/i);
+  });
+
+  it('rejects symlink template paths that escape the templates root', async () => {
+    const root = tempDir('agentsmith-render-template-symlink-');
+    const templatesRoot = join(root, 'templates-root');
+    writeSafePreflightTemplate(templatesRoot);
+    const appTemplateDir = join(templatesRoot, 'templates/app');
+    mkdirSync(appTemplateDir, { recursive: true });
+    const outsideTemplate = join(root, 'outside.yaml.tpl');
+    writeFileSync(
+      outsideTemplate,
+      'apiVersion: v1\nkind: ConfigMap\nmetadata:\n  name: escaped-template\n',
+    );
+    symlinkSync(outsideTemplate, join(appTemplateDir, 'escape.yaml.tpl'));
+
+    const manifestPath = writeManifestWithAppTemplates(root, ['templates/app/escape.yaml.tpl']);
+    await expect(renderUnifiedDeployToString({
+      manifestPath,
+      templatesRoot,
+    })).rejects.toThrow(/template path must stay under templates root/i);
   });
 
   it.each(['local-kind', 'existing-cluster'] as const)(

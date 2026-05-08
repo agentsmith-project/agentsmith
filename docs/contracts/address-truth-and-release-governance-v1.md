@@ -1,5 +1,20 @@
 # 地址真相与发布治理指南 v1
 
+## Current-v1 Boundary
+
+Status: `current_v1_active_truth_until_unified_deploy_switch`
+
+本文仍是 current-v1 地址真相与发布治理的 active truth，直到 scripts、
+manifests、gates、runbooks、release evidence 切换到 unified deploy v2。
+
+target v2 contract 是：
+
+- `docs/contracts/unified-deploy-contract-v2.md`
+
+该 target contract 的状态是 `target_v2_contract` /
+`not_current_runtime_truth`。Slice 0 只增加本 boundary note；不要把本文改写
+成 v2 已上线事实，也不要要求 current-v1 文档移除 demo/cluster 相关当前描述。
+
 ## 目的
 这份文档定义 AgentSmith 在开发、测试、本地完整部署、远端部署中的统一方法。
 

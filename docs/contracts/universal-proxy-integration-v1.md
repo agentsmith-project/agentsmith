@@ -1,5 +1,22 @@
 # Universal Proxy Integration v1
 
+## Current-v1 Boundary
+
+Status: `current_v1_active_truth_until_unified_deploy_switch`
+
+This v1 protocol integration contract remains active until scripts, manifests,
+gates, runbooks, and release evidence switch to the unified deploy v2 model.
+
+The target v2 contract is:
+
+- `docs/contracts/unified-deploy-contract-v2.md`
+
+In target v2, `llmup` deployment ownership moves to the AgentSmith app
+Kubernetes workload. That is deployment ownership only; it does not mean llmup
+source/build ownership moved to AgentSmith. Do not rewrite this v1 body to claim
+current Compose/substrate universal-proxy placement has already been removed.
+Slice 0 only adds this boundary note.
+
 ## Purpose
 
 本文件定义 AgentSmith 与 `llm-universal-proxy` 的 v1 集成边界。

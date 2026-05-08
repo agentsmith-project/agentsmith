@@ -27,11 +27,11 @@ function deriveKeycloakBaseUrl(idpUrl: string): string {
 }
 
 function getKeycloakAdminUsername(): string {
-  return process.env.KEYCLOAK_ADMIN?.trim() || 'admin';
+  return process.env.KEYCLOAK_ADMIN?.trim() ?? '';
 }
 
 function getKeycloakAdminPassword(): string {
-  return process.env.KEYCLOAK_ADMIN_PASSWORD?.trim() || 'admin';
+  return process.env.KEYCLOAK_ADMIN_PASSWORD?.trim() ?? '';
 }
 
 function getKeycloakAdminClientId(): string {
@@ -59,6 +59,14 @@ function toDirectoryUser(user: KeycloakUserRecord): KeycloakDirectoryUser | null
 }
 
 async function getAdminToken(config: KeycloakDirectoryConfig): Promise<string> {
+  const username = getKeycloakAdminUsername();
+  const password = getKeycloakAdminPassword();
+  if (!username || !password) {
+    throw Object.assign(new Error('KEYCLOAK_ADMIN and KEYCLOAK_ADMIN_PASSWORD must be configured for Keycloak directory access'), {
+      code: 'KEYCLOAK_DIRECTORY_UNAVAILABLE',
+    });
+  }
+
   let response: Response;
   try {
     response = await fetch(`${deriveKeycloakBaseUrl(config.url)}/realms/master/protocol/openid-connect/token`, {
@@ -67,8 +75,8 @@ async function getAdminToken(config: KeycloakDirectoryConfig): Promise<string> {
       body: new URLSearchParams({
         grant_type: 'password',
         client_id: getKeycloakAdminClientId(),
-        username: getKeycloakAdminUsername(),
-        password: getKeycloakAdminPassword(),
+        username,
+        password,
       }).toString(),
     });
   } catch (error) {

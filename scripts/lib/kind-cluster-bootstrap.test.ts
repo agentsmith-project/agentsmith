@@ -1,5 +1,5 @@
 import { spawnSync } from 'node:child_process';
-import { mkdtempSync, readFileSync } from 'node:fs';
+import { chmodSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
@@ -203,6 +203,103 @@ EOF_CONFIG
       },
     });
     expect(config.proxies).toBeUndefined();
+  });
+
+  it('merges kind registry hostnames into NO_PROXY idempotently', () => {
+    const helper = path.join(process.cwd(), 'scripts/lib/kind-cluster-bootstrap.sh');
+
+    const output = runBash(`
+      source "${helper}"
+      kind_merge_no_proxy_values_text "localhost,127.0.0.1,10.0.0.0/8,kind-registry" "172.16.0.0/12" "kind-registry" "kind-registry:5000" "localhost"
+    `);
+
+    expect(output).toBe('localhost,127.0.0.1,10.0.0.0/8,kind-registry,172.16.0.0/12,kind-registry:5000');
+  });
+
+  it('adds kind registry hostnames when NO_PROXY already has CIDRs and local domains', () => {
+    const helper = path.join(process.cwd(), 'scripts/lib/kind-cluster-bootstrap.sh');
+
+    const output = runBash(`
+      source "${helper}"
+      kind_merge_no_proxy_values_text "localhost,127.0.0.1,.svc,.cluster.local,10.0.0.0/8,172.16.0.0/12" "kind-registry" "kind-registry:5000" "kind-registry"
+    `);
+
+    expect(output).toBe('localhost,127.0.0.1,.svc,.cluster.local,10.0.0.0/8,172.16.0.0/12,kind-registry,kind-registry:5000');
+  });
+
+  it('resolves the kind registry NO_PROXY target from env when args are omitted', () => {
+    const helper = path.join(process.cwd(), 'scripts/lib/kind-cluster-bootstrap.sh');
+
+    const output = runBash(`
+      source "${helper}"
+      K8S_REGISTRY_HOST="custom-registry:5002"
+      kind_registry_no_proxy_target_text "" ""
+    `);
+
+    expect(output).toBe('custom-registry\n5002');
+  });
+
+  it('configures the kind control-plane systemd manager and containerd with registry NO_PROXY entries', () => {
+    const tempRoot = mkdtempSync(path.join(os.tmpdir(), 'kind-bootstrap-registry-proxy-'));
+    const helper = path.join(process.cwd(), 'scripts/lib/kind-cluster-bootstrap.sh');
+    const fakeBin = path.join(tempRoot, 'bin');
+    const dockerLogPath = path.join(tempRoot, 'docker.log');
+    const dockerPath = path.join(fakeBin, 'docker');
+
+    runBash(`mkdir -p "${fakeBin}"`);
+    writeFileSync(dockerPath, `#!/usr/bin/env bash
+set -euo pipefail
+printf '%s\\n' "$*" >> "${dockerLogPath}"
+if [[ "$1" == "exec" && "$3" == "systemctl" && "$4" == "show-environment" ]]; then
+  printf '%s\\n' "HTTP_PROXY=http://proxy.example:8080" "NO_PROXY=localhost,127.0.0.1" "no_proxy=localhost,127.0.0.1"
+fi
+`, 'utf8');
+    chmodSync(dockerPath, 0o755);
+
+    runBash(`
+      source "${helper}"
+      PATH="${fakeBin}:$PATH"
+      kind_configure_registry_no_proxy_for_containerd "agentsmith-control-plane" "kind-registry" "5000"
+    `);
+
+    const dockerLog = readFileSync(dockerLogPath, 'utf8');
+    expect(dockerLog).toContain('exec agentsmith-control-plane systemctl show-environment');
+    expect(dockerLog).toContain('exec agentsmith-control-plane systemctl set-environment');
+    expect(dockerLog).toContain('NO_PROXY=localhost,127.0.0.1,kind-registry,kind-registry:5000');
+    expect(dockerLog).toContain('no_proxy=localhost,127.0.0.1,kind-registry,kind-registry:5000');
+    expect(dockerLog).toContain('mkdir -p /etc/systemd/system/containerd.service.d');
+    expect(dockerLog).toContain('systemctl daemon-reload');
+    expect(dockerLog).toContain('systemctl restart containerd');
+  });
+
+  it('configures containerd registry NO_PROXY entries from env defaults', () => {
+    const tempRoot = mkdtempSync(path.join(os.tmpdir(), 'kind-bootstrap-registry-env-'));
+    const helper = path.join(process.cwd(), 'scripts/lib/kind-cluster-bootstrap.sh');
+    const fakeBin = path.join(tempRoot, 'bin');
+    const dockerLogPath = path.join(tempRoot, 'docker.log');
+    const dockerPath = path.join(fakeBin, 'docker');
+
+    runBash(`mkdir -p "${fakeBin}"`);
+    writeFileSync(dockerPath, `#!/usr/bin/env bash
+set -euo pipefail
+printf '%s\\n' "$*" >> "${dockerLogPath}"
+if [[ "$1" == "exec" && "$3" == "systemctl" && "$4" == "show-environment" ]]; then
+  printf '%s\\n' "NO_PROXY=localhost,127.0.0.1,10.0.0.0/8" "no_proxy=localhost,127.0.0.1"
+fi
+`, 'utf8');
+    chmodSync(dockerPath, 0o755);
+
+    runBash(`
+      source "${helper}"
+      PATH="${fakeBin}:$PATH"
+      K8S_REGISTRY_HOST="custom-registry:5002"
+      kind_configure_registry_no_proxy_for_containerd "agentsmith-control-plane"
+    `);
+
+    const dockerLog = readFileSync(dockerLogPath, 'utf8');
+    expect(dockerLog).toContain('NO_PROXY=localhost,127.0.0.1,10.0.0.0/8,custom-registry,custom-registry:5002');
+    expect(dockerLog).toContain('no_proxy=localhost,127.0.0.1,10.0.0.0/8,custom-registry,custom-registry:5002');
+    expect(dockerLog).toContain('systemctl restart containerd');
   });
 
   it('prefers an explicit CoreDNS upstream override over a resolver file', () => {

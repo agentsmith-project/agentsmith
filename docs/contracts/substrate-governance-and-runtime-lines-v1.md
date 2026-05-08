@@ -3,6 +3,24 @@
 Status: `authoritative`  
 Last updated: 2026-03-30
 
+## Current-v1 Boundary
+
+Status: `current_v1_active_truth_until_unified_deploy_switch`
+
+This v1 contract remains the active truth for current substrate and runtime
+lines until scripts, manifests, gates, runbooks, and release evidence switch to
+the unified deploy v2 model.
+
+The target v2 contract is:
+
+- `docs/contracts/unified-deploy-contract-v2.md`
+
+That target contract is `target_v2_contract` / `not_current_runtime_truth`.
+Do not rewrite this v1 body to remove current runtime-line concepts,
+`demo deploy`, `cluster deploy`, or current universal-proxy substrate membership
+before the v2 implementation is proven and current-baseline routing changes.
+Slice 0 only adds this boundary note.
+
 This document is the authoritative engineering contract for AgentSmith local runtime lines, deployment rehearsal lines, and substrate lifecycle management.
 
 Current KISS baseline:

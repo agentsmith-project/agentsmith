@@ -1,0 +1,143 @@
+{
+  "schema_version": "agentsmith.unified-deploy.manifest/v1",
+  "deploy_model": "AgentSmith deploy",
+  "profiles": {
+    "local-kind": {
+      "target_semantics": "local rehearsal profile using Docker-only substrate and a local kind namespace"
+    },
+    "existing-cluster": {
+      "target_semantics": "namespaced Kubernetes app deployment consuming the Docker substrate truth schema"
+    }
+  },
+  "substrate": {
+    "implementation": "docker-only",
+    "services": [
+      "postgresql",
+      "mongodb",
+      "redis",
+      "minio",
+      "keycloak"
+    ],
+    "forbidden_services": [
+      "llmup",
+      "universal-proxy"
+    ],
+    "truth_schema": {
+      "version": "agentsmith.docker-substrate.truth/v1",
+      "required_env": [
+        "SUBSTRATE_POSTGRES_HOST",
+        "SUBSTRATE_POSTGRES_PORT",
+        "SUBSTRATE_POSTGRES_DATABASE",
+        "SUBSTRATE_POSTGRES_USER",
+        "SUBSTRATE_POSTGRES_PASSWORD",
+        "SUBSTRATE_MONGODB_HOST",
+        "SUBSTRATE_MONGODB_PORT",
+        "SUBSTRATE_MONGODB_DATABASE",
+        "SUBSTRATE_MONGODB_USER",
+        "SUBSTRATE_MONGODB_PASSWORD",
+        "SUBSTRATE_REDIS_HOST",
+        "SUBSTRATE_REDIS_PORT",
+        "SUBSTRATE_REDIS_PASSWORD",
+        "SUBSTRATE_MINIO_HOST",
+        "SUBSTRATE_MINIO_PORT",
+        "SUBSTRATE_MINIO_ACCESS_KEY",
+        "SUBSTRATE_MINIO_SECRET_KEY",
+        "SUBSTRATE_MINIO_BUCKET",
+        "SUBSTRATE_KEYCLOAK_HOST",
+        "SUBSTRATE_KEYCLOAK_PORT",
+        "SUBSTRATE_KEYCLOAK_PUBLIC_ISSUER",
+        "SUBSTRATE_KEYCLOAK_INTERNAL_BASE_URL",
+        "SUBSTRATE_KEYCLOAK_REALM",
+        "SUBSTRATE_KEYCLOAK_CLIENT_ID",
+        "SUBSTRATE_KEYCLOAK_ADMIN",
+        "SUBSTRATE_KEYCLOAK_ADMIN_PASSWORD"
+      ]
+    }
+  },
+  "app": {
+    "components": {
+      "web": {
+        "workload": "Deployment",
+        "service": "agentsmith-web",
+        "public": true
+      },
+      "api": {
+        "workload": "Deployment",
+        "service": "agentsmith-api",
+        "public": true,
+        "replicas": 1,
+        "operator_replicas_setting": false
+      },
+      "llmup": {
+        "workload": "Deployment",
+        "service": "agentsmith-llmup",
+        "public": false,
+        "internal_only": true
+      },
+      "sandbox-manager": {
+        "workload": "Deployment",
+        "service": "agentsmith-sandbox-manager",
+        "public": false
+      },
+      "managed-runner-support": {
+        "workload": "configuration",
+        "public": false
+      }
+    }
+  },
+  "ingress": {
+    "routes": [
+      {
+        "path": "/api/v1",
+        "service": "api"
+      },
+      {
+        "path": "/api/public",
+        "service": "web"
+      },
+      {
+        "path": "/api/system",
+        "service": "web"
+      },
+      {
+        "path": "/",
+        "service": "web"
+      }
+    ],
+    "internal_only_services": [
+      "llmup"
+    ]
+  },
+  "guards": {
+    "api": {
+      "component": "api",
+      "replicas": 1,
+      "operator_replicas_setting": false
+    },
+    "forbidden_env": [
+      "API_REPLICAS"
+    ],
+    "forbidden_resource_names": [
+      "execution-gateway"
+    ],
+    "forbidden_autoscaler_kinds": [
+      "HorizontalPodAutoscaler",
+      "ScaledObject",
+      "ScaledJob"
+    ]
+  },
+  "templates": {
+    "app": [
+      "templates/app/rbac.yaml.tpl",
+      "templates/app/config.yaml.tpl",
+      "templates/app/substrate-bindings.yaml.tpl",
+      "templates/app/workloads.yaml.tpl",
+      "templates/app/ingress.yaml.tpl"
+    ],
+    "local_kind_admin_preflight": [
+      "templates/local-kind-admin-preflight/namespace.yaml.tpl",
+      "templates/local-kind-admin-preflight/sandbox-manager-pv-rbac.yaml.tpl",
+      "templates/local-kind-admin-preflight/ingress-nginx.yaml.tpl"
+    ]
+  }
+}

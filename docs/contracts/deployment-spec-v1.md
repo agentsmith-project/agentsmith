@@ -1,5 +1,22 @@
 # Demo Deployment Spec v1
 
+## Current-v1 Boundary
+
+Status: `current_v1_active_truth_until_unified_deploy_switch`
+
+This v1 spec remains the active truth for the `demo-deploy` line until scripts,
+manifests, gates, runbooks, and release evidence switch to the unified deploy v2
+model.
+
+The target v2 contract is:
+
+- `docs/contracts/unified-deploy-contract-v2.md`
+
+That target contract is `target_v2_contract` / `not_current_runtime_truth`.
+Do not rewrite this v1 body to remove `demo-deploy`, `simple`, `full`, Compose
+app services, or current bundle behavior before the v2 implementation is proven
+and current-baseline routing changes. Slice 0 only adds this boundary note.
+
 ## Summary
 This document is the single source of truth for the `demo-deploy` line: deployment topology, environment variables, offline bundle contents, bootstrap stages, and deployment verification.
 

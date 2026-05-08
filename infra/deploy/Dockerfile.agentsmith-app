@@ -27,6 +27,8 @@ COPY tsconfig.json ./
 RUN --mount=type=cache,target=/app/.next/cache \
   npx next build --no-lint
 
+RUN npm run api:node:build
+
 FROM ${NODE_RUNTIME_IMAGE} AS runtime
 
 ARG JUICEFS_VERSION=1.3.0

@@ -1,5 +1,23 @@
 # Cluster Deployment Spec v1
 
+## Current-v1 Boundary
+
+Status: `current_v1_active_truth_until_unified_deploy_switch`
+
+This v1 spec remains the active truth for the `cluster-deploy` line until
+scripts, manifests, gates, runbooks, and release evidence switch to the unified
+deploy v2 model.
+
+The target v2 contract is:
+
+- `docs/contracts/unified-deploy-contract-v2.md`
+
+That target contract is `target_v2_contract` / `not_current_runtime_truth`.
+Do not rewrite this v1 body to remove `cluster-deploy`, `semi-auto`,
+`full-auto`, Compose app/data services, sandbox-only Kubernetes scope, or current
+universal-proxy placement before the v2 implementation is proven and
+current-baseline routing changes. Slice 0 only adds this boundary note.
+
 ## Purpose
 
 `cluster-deploy` is the real-environment release line for AgentSmith.

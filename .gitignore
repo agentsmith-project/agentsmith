@@ -116,3 +116,12 @@ artifacts/governance-incidents/*.json
 .env.local-manual
 .env.backend-real
 env/
+!infra/deploy/unified/env/
+!infra/deploy/unified/env/site.env.example
+
+# Generated unified deploy offline producer evidence
+artifacts/unified-deploy/
+
+# Operator-local unified deploy substrate truth
+infra/deploy/unified/substrate/connection.env
+!infra/deploy/unified/substrate/connection.env.example

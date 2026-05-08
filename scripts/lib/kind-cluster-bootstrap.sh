@@ -53,6 +53,141 @@ destination_path.write_text(json.dumps(payload, indent=2) + "\n")
 PY
 }
 
+kind_merge_no_proxy_values_text() {
+  python3 - "$@" <<'PY'
+import re
+import sys
+
+seen = set()
+values = []
+
+for raw in sys.argv[1:]:
+    for token in re.split(r"[\s,]+", raw):
+        value = token.strip()
+        if not value or value in seen:
+            continue
+        seen.add(value)
+        values.append(value)
+
+print(",".join(values))
+PY
+}
+
+kind_systemd_env_value_from_text() {
+  local env_text="${1:-}"
+  local key="$2"
+  python3 - "${env_text}" "${key}" <<'PY'
+import sys
+
+env_text = sys.argv[1]
+key = sys.argv[2]
+
+for line in env_text.splitlines():
+    if line.startswith(f"{key}="):
+        print(line.split("=", 1)[1])
+        break
+PY
+}
+
+kind_registry_no_proxy_target_text() {
+  local registry_host_arg="${1:-}"
+  local registry_port_arg="${2:-}"
+  python3 - \
+    "${registry_host_arg}" \
+    "${registry_port_arg}" \
+    "${KIND_REGISTRY_HOST:-}" \
+    "${KIND_REGISTRY_PORT:-}" \
+    "${K8S_REGISTRY_HOST:-}" \
+    "${LOCAL_KIND_REGISTRY_NAME:-}" \
+    "${LOCAL_KIND_REGISTRY_CONTAINER_PORT:-}" <<'PY'
+import re
+import sys
+
+
+def parse_registry_ref(raw: str):
+    value = raw.strip()
+    if not value:
+        return None, None
+    value = re.sub(r"^[a-zA-Z][a-zA-Z0-9+.-]*://", "", value)
+    value = value.split("/", 1)[0]
+    if value.startswith("["):
+        match = re.fullmatch(r"\[([^\]]+)\](?::([0-9]+))?", value)
+        return (match.group(1), match.group(2)) if match else (value, None)
+    if value.count(":") == 1:
+        host, port = value.rsplit(":", 1)
+        if host and port.isdigit():
+            return host, port
+    return value, None
+
+
+host = None
+embedded_port = None
+for candidate in [
+    sys.argv[1],
+    sys.argv[3],
+    sys.argv[5],
+    sys.argv[6],
+]:
+    candidate_host, candidate_port = parse_registry_ref(candidate)
+    if host is None and candidate_host:
+        host = candidate_host
+    if embedded_port is None and candidate_port:
+        embedded_port = candidate_port
+
+port = (
+    sys.argv[2].strip()
+    or sys.argv[4].strip()
+    or embedded_port
+    or sys.argv[7].strip()
+    or "5000"
+)
+
+print(host or "kind-registry")
+print(port)
+PY
+}
+
+kind_configure_registry_no_proxy_for_containerd() {
+  local control_plane_node="${1:-}"
+  local registry_target registry_host registry_port
+
+  registry_target="$(kind_registry_no_proxy_target_text "${2:-}" "${3:-}")"
+  registry_host="$(printf '%s\n' "${registry_target}" | sed -n '1p')"
+  registry_port="$(printf '%s\n' "${registry_target}" | sed -n '2p')"
+
+  [[ -n "${control_plane_node}" ]] || {
+    echo "[kind-bootstrap] ERROR: missing kind control-plane node name" >&2
+    return 1
+  }
+  [[ -n "${registry_host}" ]] || {
+    echo "[kind-bootstrap] ERROR: missing kind registry host" >&2
+    return 1
+  }
+  [[ -n "${registry_port}" ]] || {
+    echo "[kind-bootstrap] ERROR: missing kind registry port" >&2
+    return 1
+  }
+
+  local manager_env current_no_proxy current_no_proxy_lower merged_no_proxy
+  manager_env="$(docker exec "${control_plane_node}" systemctl show-environment 2>/dev/null || true)"
+  current_no_proxy="$(kind_systemd_env_value_from_text "${manager_env}" "NO_PROXY")"
+  current_no_proxy_lower="$(kind_systemd_env_value_from_text "${manager_env}" "no_proxy")"
+  merged_no_proxy="$(kind_merge_no_proxy_values_text "${current_no_proxy}" "${current_no_proxy_lower}" "${registry_host}" "${registry_host}:${registry_port}")"
+
+  docker exec "${control_plane_node}" mkdir -p /etc/systemd/system/containerd.service.d >/dev/null
+  docker exec "${control_plane_node}" systemctl set-environment "NO_PROXY=${merged_no_proxy}" "no_proxy=${merged_no_proxy}" >/dev/null
+
+  local dropin encoded_dropin
+  dropin="[Service]
+Environment=\"NO_PROXY=${merged_no_proxy}\" \"no_proxy=${merged_no_proxy}\"
+"
+  encoded_dropin="$(printf '%s' "${dropin}" | base64 | tr -d '\n')"
+  docker exec "${control_plane_node}" sh -c "printf '%s' '${encoded_dropin}' | base64 -d > /etc/systemd/system/containerd.service.d/20-kind-registry-no-proxy.conf" >/dev/null
+  docker exec "${control_plane_node}" systemctl daemon-reload >/dev/null
+  docker exec "${control_plane_node}" systemctl restart containerd >/dev/null
+  echo "[kind-bootstrap] reconciled ${control_plane_node} containerd NO_PROXY for ${registry_host}:${registry_port}" >&2
+}
+
 kind_control_plane_manifest_paths() {
   cat <<'EOF_PATHS'
 /etc/kubernetes/manifests/kube-apiserver.yaml

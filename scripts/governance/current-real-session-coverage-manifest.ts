@@ -1752,7 +1752,7 @@ function listCurrentRealSessionNpmScripts(
 
 function isCurrentRealSessionNpmScript(name: string, command: string): boolean {
   if (
-    /^(manual:|agent:|integration:deps|api:node|dev|start|build|cluster:|demo:|rehearse:|release:status|release:ready|release:aggregate|release:campaign)/.test(
+    /^(manual:|agent:|integration:deps|api:node|dev|start|build|release:status|release:ready|release:aggregate|release:campaign)/.test(
       name,
     )
   ) {

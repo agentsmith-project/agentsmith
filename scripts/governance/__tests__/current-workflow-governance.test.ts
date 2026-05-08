@@ -59,9 +59,6 @@ const HUMAN_ENTRYPOINT_COMMANDS = [
   'npm run verify',
   'npm run release:ready',
   'npm run release:status',
-  'npm run test:unified-deploy:local-kind:images',
-  'npm run test:unified-deploy:local-kind',
-  'npm run test:unified-deploy:product-flows -- --flow=workspace_project --flow=files --flow=agent_task_managed_runner',
 ] as const;
 
 const QUICK_HUMAN_FORBIDDEN_COMMAND_PATTERNS = [
@@ -74,8 +71,6 @@ const QUICK_HUMAN_FORBIDDEN_COMMAND_PATTERNS = [
   /\bnpm run release:campaign:full\b/,
   /\bnpm run gate:release:full\b/,
   /\bRELEASE_CAMPAIGN_ROOT\b/,
-  /\bmake demo-rehearsal-[a-z0-9_-]+/,
-  /\bmake cluster-rehearsal-[a-z0-9_-]+/,
   /\bnpm run backend-real:[a-z0-9:_-]+/,
   /\bmake backend-real-[a-z0-9_-]+/,
 ] as const;
@@ -473,13 +468,11 @@ describe('current workflow governance', () => {
 
     expect(releaseEntry?.startCommands).toContain('npm run release:ready');
     expect(releaseEntry?.startCommands).toContain('npm run release:status');
-    expect(releaseEntry?.startCommands).toContain('npm run test:unified-deploy:local-kind:images');
-    expect(releaseEntry?.startCommands).toContain('npm run test:unified-deploy:local-kind');
-    expect(releaseEntry?.startCommands).toContain('npm run test:unified-deploy:product-flows -- --flow=workspace_project --flow=files --flow=agent_task_managed_runner');
+    expect(releaseEntry?.startCommands).not.toContain('npm run test:unified-deploy:local-kind:images');
+    expect(releaseEntry?.startCommands).not.toContain('npm run test:unified-deploy:local-kind');
+    expect(releaseEntry?.startCommands).not.toContain('npm run test:unified-deploy:product-flows -- --flow=workspace_project --flow=files --flow=agent_task_managed_runner');
     expect(releaseEntry?.startCommands).not.toContain('npm run release:aggregate -- --campaign-root=<campaign-root>');
     expect(releaseEntry?.startCommands).not.toContain('npm run gate:release:full');
-    expect(releaseEntry?.startCommands).not.toContain('npm run rehearse:demo');
-    expect(releaseEntry?.startCommands).not.toContain('npm run rehearse:cluster');
 
     expect(releaseReady?.workflowRole).toBe('release_operation');
     expect(releaseReady?.recommended).toBe(true);
@@ -496,8 +489,8 @@ describe('current workflow governance', () => {
     expect(fullReleaseGate?.recommended).not.toBe(true);
     expect(releaseGate?.workflowRole).toBe('gate_verdict');
     expect(unifiedDeployLanes.every((lane) => lane?.workflowRole === 'evidence_lane')).toBe(true);
-    expect(unifiedDeployHumanChecks.every((check) => check?.recommended === true)).toBe(true);
-    expect(unifiedDeployHumanChecks.every((check) => check?.quickHuman === true)).toBe(true);
+    expect(unifiedDeployHumanChecks.every((check) => check?.recommended !== true)).toBe(true);
+    expect(unifiedDeployHumanChecks.every((check) => check?.quickHuman !== true)).toBe(true);
     expect(unifiedDeployHumanChecks.every((check) => check?.gateId === undefined)).toBe(true);
   });
 
@@ -679,8 +672,6 @@ describe('current workflow governance', () => {
     expect(combinedDocs).toMatch(/test:unified-deploy:local-kind:images/);
     expect(combinedDocs).toMatch(/test:unified-deploy:local-kind/);
     expect(combinedDocs).toMatch(/test:unified-deploy:product-flows/);
-    expect(combinedDocs).not.toMatch(/lane:demo-rehearsal/);
-    expect(combinedDocs).not.toMatch(/lane:cluster-rehearsal/);
 
     expect(workflow).toContain('lane-visual-artifacts');
     expect(workflow).not.toContain('visual-manual-artifacts');

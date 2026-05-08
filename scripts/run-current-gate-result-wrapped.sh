@@ -221,11 +221,18 @@ gate_select_wrapped_failure_classification() {
     *image_archive_contract_drift*|*image_archive_manifest*|*layer_diff_id_mismatch*|*layer_blob_digest_mismatch*|*config_digest_mismatch*|*config_blob_digest_mismatch*|*image_identity_mismatch*)
       printf 'contract_drift\n'
       ;;
-    *rehearsal_infra_dependency_unready*|*"Cannot connect to the Docker daemon"*|*"docker daemon"*|*"no space left on device"*)
+    *infra_dependency_unready*|*"Cannot connect to the Docker daemon"*|*"docker daemon"*|*"no space left on device"*)
       printf 'infra_dependency_unready\n'
       ;;
     *)
-      printf 'scenario_assertion_failed\n'
+      case "${CURRENT_GATE_RESULT_LINE_KIND:-}" in
+        unified_deploy_substrate|unified_deploy_local_kind_images|unified_deploy_local_kind)
+          printf 'infra_dependency_unready\n'
+          ;;
+        *)
+          printf 'scenario_assertion_failed\n'
+          ;;
+      esac
       ;;
   esac
 }

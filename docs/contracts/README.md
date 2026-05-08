@@ -1,12 +1,11 @@
 # Contracts Index
 
-本目录保留 current contracts、明确标注的 target contracts、协议说明和 machine-readable specs 的导航入口。
+本目录保留 current contracts、协议说明和 machine-readable specs 的导航入口。
 
 `docs/CURRENT_BASELINE.md` 是唯一的人类 current truth router。本 README 负责
-contract 导航和 current-v1 / target-v2 分区，不能单独把 target contract 提升为
-current runtime truth。
+contract 导航；部署真相以当前 deploy contract 为准。
 
-部分 current contract 文件可能包含明确标注的 backlog/reference 小节。那些小节只用于保留未来设计方向或历史决策上下文，不是当前发布工作顺序，也不是必须执行的 gate 清单。
+部分 current contract 文件可能包含明确标注的 backlog/reference 小节。那些小节只用于保留未来设计方向，不是当前发布工作顺序，也不是必须执行的 gate 清单。
 
 基线入口：
 - [Current Baseline (Whitelist)](../CURRENT_BASELINE.md)
@@ -22,20 +21,14 @@ current runtime truth。
 
 ## Deployment Contract: Current
 
-- `unified-deploy-contract-v2.md`
+- `unified-deploy-contract.md`
 
 状态：`current_deploy_contract`。
 
 该合同定义当前拓扑：one `AgentSmith deploy`、`local-kind` /
 `existing-cluster` profiles、Docker-only substrate、Keycloak substrate、
 app-managed K8s `llmup`、`api replicas=1`、`/api/v1 -> api`、`/api/public`
-和 `/api/system -> web`，且不做 execution-gateway 或 K8s substrate。
-
-旧 `deployment-spec-v1.md`、`cluster-deployment-spec-v1.md`、
-`substrate-governance-and-runtime-lines-v1.md`、
-`address-truth-and-release-governance-v1.md` 和
-`universal-proxy-integration-v1.md` 只保留历史参考价值，不能覆盖 unified
-deploy current truth。
+和 `/api/system -> web`，without execution-gateway or Kubernetes substrate。
 
 ## 核心合同
 
@@ -57,8 +50,7 @@ deploy current truth。
 - `model-catalog-project-pricing-contract.md`
 - `backend-persistent-state-boundary.md`
 - `backend-storage-architecture-matrix.md`
-- `unified-deploy-contract-v2.md`
-- historical deployment references: `deployment-spec-v1.md`, `cluster-deployment-spec-v1.md`, `substrate-governance-and-runtime-lines-v1.md`, `address-truth-and-release-governance-v1.md`, `universal-proxy-integration-v1.md`
+- `unified-deploy-contract.md`
 
 ## 模块合同
 

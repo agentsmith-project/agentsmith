@@ -6,7 +6,7 @@ Last updated: 2026-05-07
 
 This document is the handoff plan for making Agent tasks use a project-selected Endpoint/default model without moving model configuration into Agent Runners.
 
-The file name is historical. The product object in this milestone is the **Agent task model setting**. Do not generalize it into a broad execution settings container.
+The product object in this milestone is the **Agent task model setting**. Do not generalize it into a broad execution settings container.
 
 ## Product Decision
 
@@ -391,7 +391,7 @@ Closure gate:
 - `npm run openapi:check-generated`
 - `npm run verify -- --goal=pr --run`
 
-Do not run release gates, full visual catalog, demo rehearsal, or cluster rehearsal after every small slice. Escalate only at milestone closure or when a slice directly changes that surface.
+Do not run release gates, full visual catalog, or unified deploy gates after every small slice. Escalate only at milestone closure or when a slice directly changes that surface.
 
 ## Acceptance Criteria
 

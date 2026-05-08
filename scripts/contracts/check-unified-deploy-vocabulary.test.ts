@@ -8,84 +8,75 @@ import { checkUnifiedDeployVocabulary } from './check-unified-deploy-vocabulary'
 
 const CHECK_SCRIPT = 'tsx scripts/contracts/check-unified-deploy-vocabulary.ts';
 const CHECK_NPM_SCRIPT = 'contracts:check-unified-deploy-vocabulary';
-const V1_AUTHORITY_CONTRACT_PATHS = [
-  'docs/contracts/deployment-spec-v1.md',
-  'docs/contracts/cluster-deployment-spec-v1.md',
-  'docs/contracts/substrate-governance-and-runtime-lines-v1.md',
-  'docs/contracts/address-truth-and-release-governance-v1.md',
-  'docs/contracts/universal-proxy-integration-v1.md',
-] as const;
 
-const validTargetContract = `# Unified Deploy Contract V2
+const validDeployContract = `# Unified Deploy Contract
 
-contract markers: target_v2_contract, not_current_runtime_truth
+Status: current_deploy_contract
 
-## Target v2 contract
+## Runtime
 
 - Substrate: Docker-only substrate.
 - Identity: Keycloak substrate.
-- llmup app-managed K8s workload is owned by the app layer.
+- llmup is app-managed and deployed as an AgentSmith app Kubernetes workload.
 - api replicas=1.
 - Route /api/v1 to api.
-- Route /api/public and /api/system to web.
+- Route /api/public to web.
+- Route /api/system to web.
 - No execution-gateway.
-
-## Current-v1 legacy migration notes
-
-- current-v1 historical deployment lines: demo-deploy and cluster-deploy.
-- Legacy env names DEMO_DEPLOY_MODE and CLUSTER_DEPLOY_MODE are superseded migration aliases only.
 `;
 
-const validDemoV1Contract = `# Demo Deployment Spec V1
+const cleanActiveDoc = `# Active Doc
 
-Current-v1 boundary note: demo-deploy is current-v1 runtime truth only and is not the target-v2 unified deploy contract.
+AgentSmith deploy uses local-kind and existing-cluster profiles.
 `;
-
-const validClusterV1Contract = `# Cluster Deployment Spec V1
-
-Current-v1 boundary note: cluster-deploy is current-v1 runtime truth only and is not the target-v2 unified deploy contract.
-`;
-
-function validAuthorityV1Contract(path: typeof V1_AUTHORITY_CONTRACT_PATHS[number]): string {
-  return `# ${path}
-
-Current-v1 boundary note: ${path} is current-v1 runtime truth only and is not the target-v2 unified deploy contract.
-`;
-}
 
 type FixtureOptions = {
-  targetContract?: string | null;
-  demoV1Contract?: string | null;
-  clusterV1Contract?: string | null;
-  v1Contracts?: Partial<Record<typeof V1_AUTHORITY_CONTRACT_PATHS[number], string | null>>;
+  deployContract?: string | null;
   packageJson?: string | null;
+  activeDocOverrides?: Record<string, string | null>;
 };
 
+const ACTIVE_DOC_PATHS = [
+  'docs/contracts/README.md',
+  'docs/contracts/product-terminology.md',
+  'docs/CURRENT_BASELINE.md',
+  'docs/user-guides/README.md',
+  'docs/user-guides/unified-deploy-operations.md',
+  'docs/engineering/agentsmith-unified-deploy-and-docker-substrate-milestone-plan-v1.md',
+  'DEVELOPMENT.md',
+  'Makefile',
+  'scripts/governance/current-workflow-manifest.ts',
+  'scripts/governance/current-status-projection-schema.ts',
+  'scripts/governance/current-governance-observability-manifest.ts',
+] as const;
+
 const fixtureRoots: string[] = [];
+
+function writeText(root: string, relativePath: string, content: string): void {
+  mkdirSync(join(root, relativePath, '..'), { recursive: true });
+  writeFileSync(join(root, relativePath), content, 'utf8');
+}
 
 function writeFixtureRoot(options: FixtureOptions = {}): string {
   const root = mkdtempSync(join(tmpdir(), 'unified-deploy-vocabulary-'));
   fixtureRoots.push(root);
-  const contractsDir = join(root, 'docs', 'contracts');
-  mkdirSync(contractsDir, { recursive: true });
 
-  const targetContract = options.targetContract === undefined
-    ? validTargetContract
-    : options.targetContract;
-  const demoV1Contract = options.demoV1Contract === undefined
-    ? validDemoV1Contract
-    : options.demoV1Contract;
-  const clusterV1Contract = options.clusterV1Contract === undefined
-    ? validClusterV1Contract
-    : options.clusterV1Contract;
-  const v1Contracts: Record<typeof V1_AUTHORITY_CONTRACT_PATHS[number], string | null> = {
-    'docs/contracts/deployment-spec-v1.md': demoV1Contract,
-    'docs/contracts/cluster-deployment-spec-v1.md': clusterV1Contract,
-    'docs/contracts/substrate-governance-and-runtime-lines-v1.md': validAuthorityV1Contract('docs/contracts/substrate-governance-and-runtime-lines-v1.md'),
-    'docs/contracts/address-truth-and-release-governance-v1.md': validAuthorityV1Contract('docs/contracts/address-truth-and-release-governance-v1.md'),
-    'docs/contracts/universal-proxy-integration-v1.md': validAuthorityV1Contract('docs/contracts/universal-proxy-integration-v1.md'),
-    ...options.v1Contracts,
-  };
+  const deployContract = options.deployContract === undefined
+    ? validDeployContract
+    : options.deployContract;
+  if (deployContract !== null) {
+    writeText(root, 'docs/contracts/unified-deploy-contract.md', deployContract);
+  }
+
+  for (const path of ACTIVE_DOC_PATHS) {
+    const override = options.activeDocOverrides?.[path];
+    if (override === null) {
+      continue;
+    }
+
+    writeText(root, path, override ?? cleanActiveDoc);
+  }
+
   const packageJson = options.packageJson === undefined
     ? JSON.stringify({
       scripts: {
@@ -94,23 +85,8 @@ function writeFixtureRoot(options: FixtureOptions = {}): string {
       },
     }, null, 2)
     : options.packageJson;
-
-  if (targetContract !== null) {
-    writeFileSync(
-      join(contractsDir, 'unified-deploy-contract-v2.md'),
-      targetContract,
-      'utf8',
-    );
-  }
-  for (const [relativePath, content] of Object.entries(v1Contracts)) {
-    if (content === null) {
-      continue;
-    }
-
-    writeFileSync(join(root, relativePath), content, 'utf8');
-  }
   if (packageJson !== null) {
-    writeFileSync(join(root, 'package.json'), packageJson, 'utf8');
+    writeText(root, 'package.json', packageJson);
   }
 
   return root;
@@ -131,7 +107,7 @@ afterEach(() => {
 });
 
 describe('checkUnifiedDeployVocabulary', () => {
-  it('accepts the target-v2 vocabulary when legacy deployment terms stay in allowed contexts', () => {
+  it('accepts the current unified deploy contract and clean active docs', () => {
     const root = writeFixtureRoot();
 
     expect(checkUnifiedDeployVocabulary({ rootDir: root })).toEqual({
@@ -140,121 +116,96 @@ describe('checkUnifiedDeployVocabulary', () => {
     });
   });
 
-  it('requires the target-v2 contract document and truth markers', () => {
-    const missingRoot = writeFixtureRoot({ targetContract: null });
-    const missingText = failureText(missingRoot);
+  it('requires the current unified deploy contract document and marker', () => {
+    const missingRoot = writeFixtureRoot({ deployContract: null });
 
-    expect(missingText).toContain('unified deploy target-v2 contract must exist');
+    expect(failureText(missingRoot)).toContain('docs/contracts/unified-deploy-contract.md must exist');
 
     const unmarkedRoot = writeFixtureRoot({
-      targetContract: validTargetContract
-        .replace('target_v2_contract, ', '')
-        .replace('not_current_runtime_truth', 'runtime_truth'),
+      deployContract: validDeployContract.replace('current_deploy_contract', 'deploy_contract'),
     });
-    const unmarkedText = failureText(unmarkedRoot);
 
-    expect(unmarkedText).toContain('target_v2_contract');
-    expect(unmarkedText).toContain('not_current_runtime_truth');
+    expect(failureText(unmarkedRoot)).toContain('current_deploy_contract');
   });
 
-  it.each(V1_AUTHORITY_CONTRACT_PATHS)(
-    'requires %s to carry a current-v1 boundary note',
-    (contractPath) => {
-      const root = writeFixtureRoot({
-        v1Contracts: {
-          [contractPath]: `# ${contractPath}\n\nLegacy notes without the boundary marker.\n`,
-        },
-      });
-      const text = failureText(root);
-
-      expect(text).toContain(contractPath);
-      expect(text).toContain('current-v1 boundary note');
-    },
-  );
-
-  it('reports every current-v1 authority contract that is missing the boundary note', () => {
+  it('rejects split deploy wording in current deploy truth files', () => {
     const root = writeFixtureRoot({
-      v1Contracts: Object.fromEntries(
-        V1_AUTHORITY_CONTRACT_PATHS.map((contractPath) => [
-          contractPath,
-          `# ${contractPath}\n\nLegacy notes without the boundary marker.\n`,
-        ]),
-      ),
+      activeDocOverrides: {
+        'docs/contracts/README.md': 'Read docs/contracts/unified-deploy-contract-v2.md as target-v2.',
+      },
     });
+
     const text = failureText(root);
 
-    for (const contractPath of V1_AUTHORITY_CONTRACT_PATHS) {
-      expect(text).toContain(contractPath);
-    }
+    expect(text).toContain('split deploy contract path');
+    expect(text).toContain('split deploy naming');
   });
 
-  it('rejects legacy deployment terms outside the explicit target-v2 allowlist', () => {
+  it.each([
+    ['removed deploy command family', 'Use demo-deploy for local installs.'],
+    ['removed rehearsal command family', 'Run npm run rehearse:demo when release fails.'],
+    ['split current-version wording', 'Keep current-v1 deployment contracts active.'],
+    ['not-current deploy marker', 'Status: not_current_runtime_truth.'],
+  ])('rejects %s in active docs', (_label, content) => {
     const root = writeFixtureRoot({
-      targetContract: `${validTargetContract}
-
-## Target v2 rollout
-
-- Operators choose demo-deploy at install time.
-`,
+      activeDocOverrides: {
+        'docs/user-guides/README.md': content,
+      },
     });
-    const text = failureText(root);
 
-    expect(text).toContain('legacy deployment term');
-    expect(text).toContain('allowed migration/current-v1/legacy/historical/negative/superseded contexts');
+    expect(failureText(root)).toContain('current deploy truth must not use');
   });
 
-  it('rejects demo/cluster as active future product modes even when the line mentions a legacy term', () => {
+  it('reports missing substrate, routing, replica, and execution-gateway decisions', () => {
     const root = writeFixtureRoot({
-      targetContract: `${validTargetContract}
+      deployContract: `# Unified Deploy Contract
 
-## Legacy migration
+Status: current_deploy_contract
 
-- Active future product modes are demo-deploy and cluster-deploy.
-`,
-    });
-    const text = failureText(root);
-
-    expect(text).toContain('must not claim demo-deploy/cluster-deploy are active future product modes');
-  });
-
-  it('reports missing target-v2 substrate, routing, replica, and execution-gateway decisions', () => {
-    const root = writeFixtureRoot({
-      targetContract: `# Unified Deploy Contract V2
-
-target_v2_contract
-not_current_runtime_truth
-
-## Target v2 contract
-
-- This intentionally omits the concrete deployment decisions.
+This intentionally omits the concrete deployment decisions.
 `,
     });
     const text = failureText(root);
 
     expect(text).toContain('Docker-only substrate');
     expect(text).toContain('Keycloak substrate');
-    expect(text).toContain('llmup app-managed K8s workload');
+    expect(text).toContain('llmup app-managed workload');
     expect(text).toContain('api replicas=1');
-    expect(text).toContain('/api/v1 to api');
-    expect(text).toContain('/api/public and /api/system to web');
+    expect(text).toContain('/api/v1 routes to api');
+    expect(text).toContain('/api/public and /api/system route to web');
     expect(text).toContain('no execution-gateway');
   });
 
   it.each([
-    ['Keycloak app pod', '- Keycloak app pod runs inside the unified app workload.'],
-    ['K8s substrate', '- Substrate: K8s substrate.'],
-    ['api replicas > 1', '- api replicas=3 for the unified target.'],
+    ['Keycloak app pod', '- Keycloak app pod runs inside the app workload.'],
+    ['Kubernetes substrate', '- Substrate: Kubernetes substrate.'],
+    ['api replicas > 1', '- api replicas=3 for high availability.'],
     ['execution-gateway', '- Route /api/v1 to execution-gateway.'],
-  ])('rejects a target-v2 claim for %s', (_label, forbiddenLine) => {
+  ])('rejects an active forbidden deploy claim for %s', (_label, forbiddenLine) => {
     const root = writeFixtureRoot({
-      targetContract: `${validTargetContract}
+      deployContract: `${validDeployContract}
 
-## Target v2 prohibited drift
+## Drift
 
 ${forbiddenLine}
 `,
     });
 
-    expect(failureText(root)).toContain('target-v2 must not state');
+    expect(failureText(root)).toContain('current deploy contract must not state');
+  });
+
+  it('requires package wiring for the vocabulary checker', () => {
+    const root = writeFixtureRoot({
+      packageJson: JSON.stringify({
+        scripts: {
+          [CHECK_NPM_SCRIPT]: 'tsx scripts/contracts/other.ts',
+          'contracts:check': 'npm run other',
+        },
+      }),
+    });
+    const text = failureText(root);
+
+    expect(text).toContain(CHECK_SCRIPT);
+    expect(text).toContain(`npm run ${CHECK_NPM_SCRIPT}`);
   });
 });

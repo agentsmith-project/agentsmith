@@ -332,9 +332,6 @@ export const CURRENT_WORKFLOW_ENTRY_PATHS: readonly CurrentWorkflowEntryPath[] =
     startCommands: [
       'npm run release:ready',
       'npm run release:status',
-      'npm run test:unified-deploy:local-kind:images',
-      'npm run test:unified-deploy:local-kind',
-      'npm run test:unified-deploy:product-flows -- --flow=workspace_project --flow=files --flow=agent_task_managed_runner',
     ],
     docs: [
       'docs/testing/verification-campaigns-v1.md',
@@ -360,7 +357,7 @@ export const CURRENT_WORKFLOW_GLOSSARY: readonly CurrentWorkflowGlossaryTerm[] =
   {
     term: 'lane',
     plainLanguage: '一条独立的验证通道。',
-    currentMeaning: 'lane 定义的是在哪条真相路径下验证，例如 mock、full visual、backend-real、部署排演。',
+    currentMeaning: 'lane 定义的是在哪条真相路径下验证，例如 mock、full visual、backend-real、unified deploy evidence。',
     doNotConfuseWith: 'lane 可以运行 e2e，但 lane 本身不是测试技术，也不天然等于最终 verdict。',
   },
   {
@@ -946,18 +943,6 @@ const CURRENT_WORKFLOW_RAW_MANIFEST: readonly RawCurrentWorkflowSection[] = [
         gateId: 'test-backend-real-core',
       },
       {
-        command: 'npm run test:demo-bundle:inputs',
-        description: 'verify release bundle inputs',
-        canonical: 'npm',
-        npmScript: 'test:demo-bundle:inputs',
-      },
-      {
-        command: 'npm run test:demo-rendered-env',
-        description: 'verify rendered deployment env artifacts',
-        canonical: 'npm',
-        npmScript: 'test:demo-rendered-env',
-      },
-      {
         command: 'npm run test:agent-task:backend-real:smoke',
         description: 'run notebook real-backend smoke verification',
         canonical: 'npm',
@@ -1089,31 +1074,25 @@ const CURRENT_WORKFLOW_RAW_MANIFEST: readonly RawCurrentWorkflowSection[] = [
       },
       {
         command: 'npm run test:unified-deploy:local-kind:images',
-        description: 'prepare local-kind deploy images and immutable registry handoff',
+        description: 'owner diagnostic: prepare local-kind deploy images and immutable registry handoff',
         canonical: 'npm',
         npmScript: 'test:unified-deploy:local-kind:images',
-        recommended: true,
-        quickHuman: true,
       },
       {
         command: 'npm run test:unified-deploy:local-kind',
-        description: 'run the current local Kubernetes deploy smoke',
+        description: 'owner diagnostic: run the local-kind Kubernetes deploy smoke',
         canonical: 'npm',
         npmScript: 'test:unified-deploy:local-kind',
-        recommended: true,
-        quickHuman: true,
       },
       {
         command: 'npm run test:unified-deploy:product-flows -- --flow=workspace_project --flow=files --flow=agent_task_managed_runner',
-        description: 'run the focused deployed product proof for project, files, and managed runner task',
+        description: 'owner diagnostic: run the focused deployed product proof for project, files, and managed runner task',
         canonical: 'npm',
         npmScript: 'test:unified-deploy:product-flows',
-        recommended: true,
-        quickHuman: true,
       },
       {
         command: 'npm run test:unified-deploy:existing-cluster-smoke -- --site-env=<existing-cluster-site-env> --substrate-truth=infra/deploy/unified/substrate/connection.env --public-base-url=<public-base-url>',
-        description: 'run the current existing-cluster deploy smoke with explicit profile inputs',
+        description: 'owner diagnostic: run the existing-cluster profile smoke with explicit profile inputs',
         canonical: 'npm',
         npmScript: 'test:unified-deploy:existing-cluster-smoke',
       },

@@ -98,7 +98,7 @@ describe("check-runner-naming contract", () => {
       "e2e/agent-runners.spec.ts",
       "e2e/integration-real-helpers.ts",
       "packages/agent-runner/src/index.ts",
-      "docs/contracts/deployment-spec-v1.md",
+      "docs/contracts/unified-deploy-contract.md",
       "docs/agent-task-runner-runbook.md",
       "package-lock.json",
       "infra/runner/Dockerfile.agent-task-runner",

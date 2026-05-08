@@ -28,16 +28,11 @@
 
 runtime-line 当前状态目录统一收敛到 `artifacts/runtime/lines/<line>/current`；具体 line 列表与 machine-readable truth 以 `scripts/governance/current-runtime-line-manifest.ts` 为准。
 
-### 发布与排演
+### 发布与部署
 - [Release Readiness Checklist](./release-readiness-checklist.md)
   - human release readiness entrypoint: `npm run release:ready`
 - [Unified Deploy Operations](./unified-deploy-operations.md)
   - current deployment entrypoint for `local-kind` and `existing-cluster` profiles
-- Historical current-v1 references only:
-  - [Demo Deploy Operations](./demo-deploy-operations.md)
-  - [Cluster Deploy Operations](./cluster-deploy-operations.md)
-  - [Cluster Upgrade Operations](./cluster-upgrade-operations.md)
-  - [Cluster Admin Runbook](./cluster-admin-runbook.md)
 
 ### 日常排障
 - [Troubleshooting Guide](../troubleshooting-guide-v1.md)

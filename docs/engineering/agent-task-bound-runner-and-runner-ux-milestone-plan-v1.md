@@ -4,9 +4,9 @@ Status: `handoff_plan_ready`
 Owner: Product + Engineering
 Last updated: 2026-05-06
 
-This plan is the current product and engineering source of truth for Agent task runner binding and the Agent Runners UX. It supersedes `docs/engineering/agent-runner-selection-and-developer-runner-milestone-plan-v1.md`.
+This plan is the current product and engineering source of truth for Agent task runner binding and the Agent Runners UX.
 
-AgentSmith is pre-GA. This milestone intentionally removes old run-scoped runner-selection behavior when that behavior adds product or technical complexity.
+AgentSmith is pre-GA. This milestone keeps runner binding at task creation so the product does not carry run-time runner switching complexity.
 
 Implementation note: active OpenAPI/generated types may still represent old implementation details until this milestone is developed. They must be updated before any implementation slice claims contract acceptance.
 
@@ -84,7 +84,7 @@ Avoid exposing implementation terms such as pod, Kubernetes, sandbox, browser-ho
 - No fallback from a missing, forbidden, offline, or unavailable bound runner to another runner.
 - No session conversion between runner implementations.
 - No inactive developer key history in daily UI.
-- No heavy full visual catalog, release gate, or cluster rehearsal after each small implementation slice.
+- No heavy full visual catalog, release gate, or unified deploy gate after each small implementation slice.
 
 ## API And Data Contract
 
@@ -93,7 +93,7 @@ This section is the target contract delta for implementation. OpenAPI, generated
 Slice 0 contract cleanup is a hard gate:
 
 - Active public/action artifacts must remove `/run-selection-snapshot`, `StartTaskRunRequest.runner_selection`, action `select_for_task`, and type tests that prove run-scoped runner selection.
-- The string `select_for_task` may appear only in negative cleanup evidence or archived historical documentation.
+- The string `select_for_task` may appear only in negative cleanup evidence.
 - The first implementation slice must replace old artifacts with `CreateTaskRequest.bound_runner_id`, task bound runner response fields, `StartTaskRunRequest` without runner fields, `runner-binding-options`, and `bind_to_task` affordance naming.
 - No runtime/UI implementation slice may claim acceptance while generated types, MSW fixtures, route-kind maps, or contract tests still prove the old run-scoped model.
 - This plan does not partially edit generated artifacts by hand; generated artifacts are updated through the owning OpenAPI/generation workflow during implementation.
@@ -377,7 +377,7 @@ Backend-real focused smoke ids:
 - `sandbox_api_base_not_browser_localhost_inside_sandbox`
 - `activity_sse_no_internal_code_leakage`
 
-Do not run full visual catalog, `release:ready`, or cluster/demo rehearsal for every slice unless the slice changes those surfaces or the final release request requires them.
+Do not run full visual catalog, `release:ready`, or unified deploy gates for every slice unless the slice changes those surfaces or the final release request requires them.
 
 UI/i18n copy scan:
 
@@ -399,13 +399,12 @@ UI/i18n copy scan:
 - Terminal/session behavior uses task bound runner at creation and persisted terminal `resolved_runner_id` for reconnect/input/resize/close.
 - Ordinary user-facing errors use product availability language and do not expose internal sandbox/runner diagnostics.
 - Required contract, generated client, route-kind map, MSW parity, generated negative tests, and focused backend-real terminal/runner gates pass.
-- Historical docs no longer present run-scoped runner selection as the current target.
+- Current docs present task-bound runner selection as the only target.
 
 ## Documentation Updates Required
 
 The following documents must align with this milestone:
 
-- `docs/engineering/agent-runner-selection-and-developer-runner-milestone-plan-v1.md`: archived-only/tombstone by this document.
 - `docs/engineering/agentsmith-chat-agent-runner-evolution-plan-v1.md`: update target invariants from run-scoped selection to task-bound runner.
 - `docs/contracts/agent-task-frontend-module-map.md`: replace run selection/snapshot language with task creation binding.
 - `docs/contracts/agent-runners-frontend-module-map.md`: clarify managed read-only deployment capability and Developer-only lifecycle management.

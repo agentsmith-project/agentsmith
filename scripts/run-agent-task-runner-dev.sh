@@ -2,7 +2,8 @@
 set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
-SITE_ENV_PATH="${SITE_ENV_PATH:-${ROOT_DIR}/infra/deploy/demo/env/site.env.example}"
+SITE_ENV_PATH="${SITE_ENV_PATH:-${ROOT_DIR}/infra/deploy/unified/env/site.env.example}"
+UNIFIED_DEPLOY_PROFILE="${UNIFIED_DEPLOY_PROFILE:-local-kind}"
 RUNNER_WS_URL="${MBOS_AGENT_WS_URL:-${RUNNER_WS_URL:-}}"
 RUNNER_KEY="${MBOS_AGENT_KEY:-${RUNNER_KEY:-}}"
 
@@ -15,7 +16,7 @@ Usage:
   bash scripts/run-agent-task-runner-dev.sh
 
 This command is the formal dev-direct path for an agent-task runner.
-It validates the same site.env schema used by deploy, renders app env once,
+It validates the same unified deploy site.env schema used by deploy,
 and then starts the local runner source tree without building an image.
 EOF
 }
@@ -48,23 +49,11 @@ cleanup() {
 }
 trap cleanup EXIT
 
-export DEMO_DEPLOY_ROOT="${TMP_ROOT}/deploy-root"
-export RELEASE_ROOT="${TMP_ROOT}/release"
-mkdir -p "${RELEASE_ROOT}/env" "${RELEASE_ROOT}/scripts/demo-deploy" "${RELEASE_ROOT}/scripts/lib"
-
-cp "${ROOT_DIR}/infra/deploy/demo/env/site.env.example" "${RELEASE_ROOT}/env/site.env.example"
-cp "${SITE_ENV_PATH}" "${RELEASE_ROOT}/env/site.env"
-cp "${ROOT_DIR}/scripts/demo-deploy/resolve-runtime-addresses.sh" "${RELEASE_ROOT}/scripts/resolve-runtime-addresses.sh"
-cp "${ROOT_DIR}/scripts/demo-deploy/resolve-runtime-addresses.sh" "${RELEASE_ROOT}/scripts/demo-deploy/resolve-runtime-addresses.sh"
-cp "${ROOT_DIR}/scripts/demo-deploy/render-env.sh" "${RELEASE_ROOT}/scripts/demo-deploy/render-env.sh"
-cp "${ROOT_DIR}/scripts/lib/common.sh" "${RELEASE_ROOT}/scripts/lib/common.sh"
-cp "${ROOT_DIR}/scripts/lib/deploy-common.sh" "${RELEASE_ROOT}/scripts/lib/deploy-common.sh"
-cp "${ROOT_DIR}/scripts/lib/k8s-external-services.sh" "${RELEASE_ROOT}/scripts/lib/k8s-external-services.sh"
-cp "${ROOT_DIR}/scripts/lib/preset-common.sh" "${RELEASE_ROOT}/scripts/lib/preset-common.sh"
-mkdir -p "${RELEASE_ROOT}/infra/runtime"
-cp "${ROOT_DIR}/infra/runtime/presets.env" "${RELEASE_ROOT}/infra/runtime/presets.env"
-
-bash "${RELEASE_ROOT}/scripts/demo-deploy/render-env.sh" >/dev/null
+export DEPLOY_ROOT="${TMP_ROOT}/deploy-root"
+npx tsx "${ROOT_DIR}/scripts/unified-deploy/render.ts" \
+  --profile="${UNIFIED_DEPLOY_PROFILE}" \
+  --site-env="${SITE_ENV_PATH}" \
+  --out="${TMP_ROOT}/unified-deploy-render.yaml" >/dev/null
 
 export MBOS_AGENT_WS_URL="${RUNNER_WS_URL}"
 export MBOS_AGENT_KEY="${RUNNER_KEY}"

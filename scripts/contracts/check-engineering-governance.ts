@@ -39,11 +39,6 @@ const contractsIndex = read('docs/contracts/README.md');
 const gateManifestContract = read('docs/contracts/current-gate-manifest-contract.md');
 const gateResultContract = read('docs/contracts/current-gate-result-schema-contract.md');
 const productTerminology = read('docs/contracts/product-terminology.md');
-const demoDeployReset = read('scripts/demo-deploy/reset.sh');
-const clusterDeployReset = read('scripts/cluster-deploy/reset.sh');
-const clusterRehearsalReset = read('scripts/scenarios/cluster-rehearsal/reset.sh');
-const clusterRehearsalCommon = read('scripts/scenarios/cluster-rehearsal/common.sh');
-const clusterRehearsalUp = read('scripts/scenarios/cluster-rehearsal/up.sh');
 const releaseLocalPrecheck = read('scripts/run-release-local-precheck.sh');
 const playwrightConfig = read('playwright.config.ts');
 const makefile = read('Makefile');
@@ -96,8 +91,6 @@ const QUICK_HUMAN_FORBIDDEN_COMMAND_PATTERNS = [
   /\bnpm run release:campaign:full\b/,
   /\bnpm run gate:release:full\b/,
   /\bRELEASE_CAMPAIGN_ROOT\b/,
-  /\bmake demo-rehearsal-[a-z0-9_-]+/,
-  /\bmake cluster-rehearsal-[a-z0-9_-]+/,
   /\bnpm run backend-real:[a-z0-9:_-]+/,
   /\bmake backend-real-[a-z0-9_-]+/,
 ] as const;
@@ -421,44 +414,6 @@ requireMatch(
   /PUBLIC_API_BASE_URL="\$\{PUBLIC_API_BASE_URL:-\$\{INTEGRATION_API_BASE\}\/api\/v1\}"/,
   'release-local-precheck must pass a trusted PUBLIC_API_BASE_URL when starting the local API for agent websocket/resource proxy flows',
 );
-
-requireMatch(clusterDeployReset, /kubernetes resources were left untouched/, 'cluster-deploy reset must keep its non-destructive target-host semantics',);
-requireMatch(clusterRehearsalReset, /scenario_local_kind_cleanup/, 'cluster-rehearsal reset must destroy its scenario-owned local kind world before delegating to cluster-deploy reset',);
-requireMatch(clusterRehearsalCommon, /CLUSTER_REHEARSAL_GENERATED_DIR="\$\{CLUSTER_REHEARSAL_ROOT\}\/state\/generated"/, 'cluster-rehearsal common must keep its generated-state root under state/generated',);
-requireMatch(clusterRehearsalCommon, /CLUSTER_DEPLOY_SHARED_ADMIN_READY_ENV="\$\{CLUSTER_REHEARSAL_GENERATED_DIR\}\/admin-ready\.env"/, 'cluster-rehearsal common must route the admin-ready marker into generated state',);
-requireMatch(clusterRehearsalCommon, /CLUSTER_DEPLOY_ADMIN_HANDOFF_DIR="\$\{CLUSTER_REHEARSAL_GENERATED_DIR\}\/admin-handoff"/, 'cluster-rehearsal common must route the handoff package into generated state',);
-requireMatch(clusterRehearsalUp, /CLUSTER_DEPLOY_SHARED_ADMIN_READY_ENV/, 'cluster-rehearsal up must operate on the generated admin-ready path',);
-requireMatch(demoDeployReset, /local_kind_world_destroy/, 'demo-deploy reset must reuse the shared local kind world cleanup helper',);
-forbidMatch(demoDeployReset, /kind delete cluster --name agentsmith|grep -qx 'agentsmith'/, 'demo-deploy reset must not hardcode the local kind cluster name',);
-
-const requiredScenarioCommandLockedScripts = [
-  'scripts/scenarios/demo-rehearsal/up.sh',
-  'scripts/scenarios/demo-rehearsal/down.sh',
-  'scripts/scenarios/demo-rehearsal/reset.sh',
-  'scripts/scenarios/demo-rehearsal/bootstrap.sh',
-  'scripts/scenarios/demo-rehearsal/verify.sh',
-  'scripts/scenarios/demo-rehearsal/report.sh',
-  'scripts/scenarios/cluster-rehearsal/up.sh',
-  'scripts/scenarios/cluster-rehearsal/down.sh',
-  'scripts/scenarios/cluster-rehearsal/reset.sh',
-  'scripts/scenarios/cluster-rehearsal/bootstrap.sh',
-  'scripts/scenarios/cluster-rehearsal/verify.sh',
-  'scripts/scenarios/cluster-rehearsal/report.sh',
-] as const;
-
-for (const scriptPath of requiredScenarioCommandLockedScripts) {
-  const script = read(scriptPath);
-  requireMatch(
-    script,
-    /acquire_scenario_command_lock/,
-    `${scriptPath} must acquire a scenario command lock before mutating scenario state`,
-  );
-  requireMatch(
-    script,
-    /arm_scenario_command_lock_cleanup/,
-    `${scriptPath} must arm scenario command lock cleanup`,
-  );
-}
 
 const defaultMockE2EScript = packageJson.scripts?.['test:e2e'];
 if (!defaultMockE2EScript || !/run-mock-lane-session\.sh/.test(defaultMockE2EScript) || !/--preset=default/.test(defaultMockE2EScript)) {

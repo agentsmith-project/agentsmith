@@ -57,39 +57,21 @@ function writeCurrentHydrationShape(root: string): void {
     'PRESET_ENDPOINT_API_KEY=sk-test-current-hydration-value',
     'PRESET_ENDPOINT_MODEL=test-current-hydration-model',
   ]);
-  writeEnv(root, 'infra/flows/demo-rehearsal.env', [
-    'LOCAL_KIND_CLUSTER_NAME=agentsmith-demo',
+  writeEnv(root, 'infra/deploy/unified/substrate/connection.env', [
+    'SUBSTRATE_MONGO_URL=mongodb://localhost:27017/agentsmith',
+    'SUBSTRATE_KEYCLOAK_BASE_URL=http://localhost:18080',
+  ]);
+  writeEnv(root, 'artifacts/unified-deploy/local-kind-site.env', [
+    'LOCAL_KIND_CLUSTER_NAME=agentsmith-local-kind',
     'LOCAL_KIND_REGISTRY_HOST=127.0.0.1',
     'LOCAL_KIND_REGISTRY_HOST_PORT=5003',
+    'DOCKER_AVAILABLE=true',
     'FLOW_SITE_ENV_PUBLIC_WEB_BASE_URL=http://localhost:33001',
     'FLOW_SITE_ENV_PUBLIC_API_BASE_URL=http://localhost:40000',
   ]);
-  writeEnv(root, 'infra/flows/cluster-rehearsal.env', [
-    'LOCAL_KIND_CLUSTER_NAME=agentsmith-cluster',
-    'LOCAL_KIND_REGISTRY_HOST=127.0.0.1',
-    'LOCAL_KIND_REGISTRY_HOST_PORT=5002',
-    'CLUSTER_REHEARSAL_REGISTRY_HOST=localhost:5002',
-    'CLUSTER_REHEARSAL_K8S_REGISTRY_HOST=agentsmith-cluster-registry:5000',
+  writeEnv(root, 'artifacts/unified-deploy/existing-cluster-site.env', [
     'FLOW_SITE_ENV_PUBLIC_WEB_BASE_URL=http://localhost:43001',
     'FLOW_SITE_ENV_PUBLIC_API_BASE_URL=http://localhost:41000/api/v1',
-  ]);
-  writeEnv(root, 'artifacts/runtime/scenario/demo-rehearsal/config/site.env', [
-    'MBOS_UNIVERSAL_PROXY_ADMIN_TOKEN=demo-proxy-admin-token',
-    'PRESET_ENDPOINT_API_KEY=sk-test-demo-rehearsal-value',
-    'PRESET_ENDPOINT_MODEL=test-demo-rehearsal-model',
-  ]);
-  writeEnv(root, 'artifacts/runtime/scenario/cluster-rehearsal/config/site.env', [
-    'MBOS_UNIVERSAL_PROXY_ADMIN_TOKEN=cluster-proxy-admin-token',
-    'PRESET_ENDPOINT_API_KEY=sk-test-cluster-rehearsal-value',
-    'PRESET_ENDPOINT_MODEL=test-cluster-rehearsal-model',
-  ]);
-  writeEnv(root, 'artifacts/runtime/scenario/cluster-rehearsal/config/registry.env', [
-    'REGISTRY_HOST=localhost:5002',
-    'K8S_REGISTRY_HOST=agentsmith-cluster-registry:5000',
-  ]);
-  writeEnv(root, 'env/registry.env', [
-    'REGISTRY_HOST=localhost:5002',
-    'K8S_REGISTRY_HOST=agentsmith-cluster-registry:5000',
   ]);
 }
 
@@ -110,19 +92,18 @@ describe('sentinel preflight', () => {
       'provider_profile_present',
       'secret_profile_present',
     ]],
-    ['demo-rehearsal', [
+    ['unified-deploy-local-kind', [
       'keycloak_redirect_bases_present',
       'provider_profile_present',
       'secret_profile_present',
       'kind_available',
       'registry_available',
+      'docker_available',
     ]],
-    ['cluster-rehearsal', [
+    ['unified-deploy-existing-cluster', [
       'keycloak_redirect_bases_present',
       'provider_profile_present',
       'secret_profile_present',
-      'kind_available',
-      'registry_available',
     ]],
   ] satisfies Array<[SentinelProfile, SentinelProbeName[]]>)(
     'reports the full P0 probe catalog for %s while classifying required probes',
@@ -207,8 +188,7 @@ describe('sentinel preflight', () => {
   });
 
   it.each([
-    'demo-rehearsal',
-    'cluster-rehearsal',
+    'unified-deploy-local-kind',
   ] satisfies SentinelProfile[])(
     'fails %s when KIND_AVAILABLE is explicitly false and no kind identity is present',
     async (profile) => {
@@ -231,8 +211,7 @@ describe('sentinel preflight', () => {
   );
 
   it.each([
-    'demo-rehearsal',
-    'cluster-rehearsal',
+    'unified-deploy-local-kind',
   ] satisfies SentinelProfile[])(
     'fails %s when REGISTRY_AVAILABLE is explicitly false and no registry identity is present',
     async (profile) => {
@@ -242,7 +221,7 @@ describe('sentinel preflight', () => {
           KEYCLOAK_REDIRECT_BASE_URL: 'http://localhost:33001',
           PROVIDER_PROFILE: 'provider-present',
           SECRET_PROFILE: 'secret-present',
-          KIND_CLUSTER_NAME: 'agentsmith-demo',
+          KIND_CLUSTER_NAME: 'agentsmith-local-kind',
           REGISTRY_AVAILABLE: 'false',
         },
       });
@@ -256,13 +235,13 @@ describe('sentinel preflight', () => {
 
   it('treats explicit false availability flags as authoritative even when identity keys are present', async () => {
     const result = await runSentinelPreflight({
-      profile: 'demo-rehearsal',
+      profile: 'unified-deploy-local-kind',
       env: {
         KEYCLOAK_REDIRECT_BASE_URL: 'http://localhost:33001',
         PROVIDER_PROFILE: 'provider-present',
         SECRET_PROFILE: 'secret-present',
         KIND_AVAILABLE: 'false',
-        KIND_CLUSTER_NAME: 'agentsmith-demo',
+        KIND_CLUSTER_NAME: 'agentsmith-local-kind',
         REGISTRY_AVAILABLE: 'false',
         REGISTRY_HOST: 'localhost:5003',
       },
@@ -279,10 +258,10 @@ describe('sentinel preflight', () => {
     'release-ready',
     'verify-real',
     'verify-release-real',
-    'demo-rehearsal',
-    'cluster-rehearsal',
+    'unified-deploy-local-kind',
+    'unified-deploy-existing-cluster',
   ] satisfies SentinelProfile[])(
-    'passes %s with the current hydrated env shape without ticket or docker signals',
+    'passes %s with the current hydrated env shape with the expected per-profile availability signals',
     async (profile) => {
       const root = mkdtempSync(join(tmpdir(), 'agentsmith-sentinel-current-env-'));
       try {
@@ -296,7 +275,7 @@ describe('sentinel preflight', () => {
 
         expect(result.exitCode).toBe(0);
         expect(result.output.presence['probe.ticket_auth_present']).toBe(false);
-        expect(result.output.presence['probe.docker_available']).toBe(false);
+        expect(result.output.presence['probe.docker_available']).toBe(profile === 'unified-deploy-local-kind');
         expect(probePresenceKeys(result.output)).toHaveLength(ORDERED_SENTINEL_PROBES.length);
       } finally {
         rmSync(root, { recursive: true, force: true });
@@ -304,10 +283,10 @@ describe('sentinel preflight', () => {
     },
   );
 
-  it('recognizes rendered rehearsal proxy and internal execution WS aliases as observed probes', async () => {
+  it('recognizes unified deploy proxy and internal execution WS aliases as observed probes', async () => {
     const rawProxyToken = 'scenario-proxy-data-token-raw-value';
     const result = await runSentinelPreflight({
-      profile: 'demo-rehearsal',
+      profile: 'unified-deploy-local-kind',
       env: {
         AGENT_EXECUTION_WS_BASE_URL: 'ws://172.18.0.1:40000',
         MBOS_UNIVERSAL_PROXY_DATA_TOKEN: rawProxyToken,
@@ -315,8 +294,9 @@ describe('sentinel preflight', () => {
         KEYCLOAK_REDIRECT_BASE_URL: 'http://localhost:33001',
         PROVIDER_PROFILE: 'provider-present',
         SECRET_PROFILE: 'secret-present',
-        KIND_CLUSTER_NAME: 'agentsmith-demo',
+        KIND_CLUSTER_NAME: 'agentsmith-local-kind',
         REGISTRY_HOST: 'localhost:5003',
+        DOCKER_AVAILABLE: 'true',
       },
     });
     const rendered = renderSentinelPreflightOutput(result.output);

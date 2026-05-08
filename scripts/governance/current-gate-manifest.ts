@@ -37,6 +37,9 @@ export type CurrentGateEvidenceArtifactKind =
   | 'visual_baseline_automated_passes'
   | 'visual_run_manifest'
   | 'visual_baseline_reviews';
+export type CurrentGateEvidenceArtifactSemantic =
+  | 'unified_deploy_evidence'
+  | 'ux_trace_bundle';
 export type CurrentGateExecutionTarget =
   | {
       kind: 'npm_script';
@@ -60,6 +63,13 @@ export interface CurrentGateEvidenceArtifact {
   fileName?: string;
   minCount?: number;
   expectedMembership?: readonly CurrentGateUxTraceExpectedMembership[];
+  semantic?: CurrentGateEvidenceArtifactSemantic;
+  expectedSchemaVersion?: string;
+  expectedProducer?: string;
+  expectedStatus?: string;
+  expectedCommand?: string;
+  expectedProfile?: string;
+  expectedProductFlows?: readonly string[];
 }
 
 export interface CurrentGateDefinition {
@@ -218,6 +228,11 @@ export const CURRENT_RELEASE_CAMPAIGN_EVIDENCE_TOPOLOGY = {
       kind: 'recursive_file',
       fileName: '.json',
       minCount: 1,
+      semantic: 'unified_deploy_evidence',
+      expectedSchemaVersion: 'agentsmith.unified-deploy.substrate-lifecycle.evidence/v1',
+      expectedStatus: 'passed',
+      expectedCommand: 'reset',
+      expectedProfile: 'local-kind',
     },
   ],
   unifiedDeployLocalKindImages: [
@@ -232,6 +247,10 @@ export const CURRENT_RELEASE_CAMPAIGN_EVIDENCE_TOPOLOGY = {
       kind: 'recursive_file',
       fileName: '.json',
       minCount: 1,
+      semantic: 'unified_deploy_evidence',
+      expectedSchemaVersion: 'agentsmith.unified-deploy.local-kind-images.evidence/v1',
+      expectedProducer: 'local-kind-images',
+      expectedStatus: 'passed',
     },
   ],
   unifiedDeployLocalKind: [
@@ -246,6 +265,11 @@ export const CURRENT_RELEASE_CAMPAIGN_EVIDENCE_TOPOLOGY = {
       kind: 'recursive_file',
       fileName: '.json',
       minCount: 1,
+      semantic: 'unified_deploy_evidence',
+      expectedSchemaVersion: 'agentsmith.unified-deploy.local-kind-rollout.evidence/v1',
+      expectedProducer: 'local-kind-rollout',
+      expectedStatus: 'passed',
+      expectedProfile: 'local-kind',
     },
   ],
   unifiedDeployProductFlows: [
@@ -260,6 +284,11 @@ export const CURRENT_RELEASE_CAMPAIGN_EVIDENCE_TOPOLOGY = {
       kind: 'recursive_file',
       fileName: '.json',
       minCount: 4,
+      semantic: 'unified_deploy_evidence',
+      expectedSchemaVersion: 'agentsmith.unified-deploy.product-flows.aggregate/v1',
+      expectedProducer: 'unified-deploy-product-flows',
+      expectedStatus: 'passed',
+      expectedProductFlows: ['workspace_project', 'files', 'agent_task_managed_runner'],
     },
   ],
 } as const satisfies Record<string, readonly CurrentGateEvidenceArtifact[]>;

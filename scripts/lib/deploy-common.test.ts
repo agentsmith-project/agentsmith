@@ -40,8 +40,6 @@ function writeReleaseEnv(releaseRoot: string, name: string, content: string): vo
 function runBash(script: string, env: NodeJS.ProcessEnv = {}) {
   const baseEnv = { ...process.env };
   for (const key of [
-    'CLUSTER_DEPLOY_ROOT',
-    'DEMO_DEPLOY_ROOT',
     'DEPLOY_ROOT',
     'DEPLOY_ROOT_DEFAULT',
     'RELEASE_ID',
@@ -228,8 +226,8 @@ describe('deploy-common release id truth', () => {
     }
   });
 
-  it('records demo release.id from VERSION truth when deploy state writes RELEASE_ID', () => {
-    const tempRoot = mkdtempSync(path.join(os.tmpdir(), 'deploy-common-demo-state-'));
+  it('records release.id from VERSION truth when deploy state writes RELEASE_ID', () => {
+    const tempRoot = mkdtempSync(path.join(os.tmpdir(), 'deploy-common-state-'));
     try {
       const releaseRoot = stageReleaseRoot(tempRoot, 'release_id=version-state-release\n');
       const result = runBash(
@@ -248,27 +246,6 @@ describe('deploy-common release id truth', () => {
 
       expect(result.status).toBe(0);
       expect(result.stdout.trim()).toBe('version-state-release');
-    } finally {
-      rmSync(tempRoot, { recursive: true, force: true });
-    }
-  });
-
-  it('lets cluster deploy lib inherit RELEASE_ID from VERSION truth', () => {
-    const tempRoot = mkdtempSync(path.join(os.tmpdir(), 'deploy-common-cluster-truth-'));
-    try {
-      const releaseRoot = stageReleaseRoot(tempRoot, 'release_id=cluster-version-release\n');
-      const result = runBash(
-        'source scripts/cluster-deploy/lib.sh\nprintf "%s\\n" "${RELEASE_ID}"',
-        {
-          CLUSTER_DEPLOY_ROOT: path.join(tempRoot, 'cluster-deploy'),
-          HOME: tempRoot,
-          PATH: `${stageToolPath(tempRoot)}:${process.env.PATH ?? ''}`,
-          RELEASE_ROOT: releaseRoot,
-        },
-      );
-
-      expect(result.status).toBe(0);
-      expect(result.stdout.trim()).toBe('cluster-version-release');
     } finally {
       rmSync(tempRoot, { recursive: true, force: true });
     }

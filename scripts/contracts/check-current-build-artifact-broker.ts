@@ -186,17 +186,12 @@ function assertValidationOk(label: string, result: { ok: boolean; failures?: rea
 function main(): void {
   const packageJson = readJson<PackageJson>('package.json');
   const contractsCheck = packageJson.scripts?.['contracts:check'] ?? '';
-  const buildImagesScript = readText('scripts/cluster-deploy/build-images.sh');
-  const clusterBuildBundleScript = readText('scripts/cluster-deploy/build-bundle.sh');
-  const demoBuildBundleScript = readText('scripts/demo-deploy/build-offline-bundle.sh');
   const buildBrokerCli = readText('scripts/governance/build-artifact-broker-cli.ts');
   const buildBroker = readText('scripts/governance/build-artifact-broker.ts');
   const buildBaseImagesLock = readText('infra/deploy/shared/build-base-images.lock');
   const llmupImageLock = readText('infra/deploy/shared/llmup-image.lock');
   const agentsmithAppDockerfile = readText('infra/deploy/Dockerfile.agentsmith-app');
-  const deploymentSpec = readText('docs/contracts/deployment-spec-v1.md');
-  const clusterDeploymentSpec = readText('docs/contracts/cluster-deployment-spec-v1.md');
-  const buildGovernanceDoc = readText('docs/engineering/governance-developer-flow-optimization-v2.md');
+  const deployContract = readText('docs/contracts/unified-deploy-contract.md');
 
   assert(
     packageJson.scripts?.['contracts:check-current-build-artifact-broker']
@@ -219,7 +214,7 @@ function main(): void {
     JSON.stringify(CURRENT_BUILD_ARTIFACT_TARGETS) === JSON.stringify(['app']),
     'current build artifact broker targets must be limited to AgentSmith-owned app.',
   );
-  for (const mode of ['build', 'bundle', 'rehearsal', 'release-fidelity', 'offline-package'] as const) {
+  for (const mode of ['build', 'bundle', 'release-fidelity', 'offline-package'] as const) {
     assert(CURRENT_BUILD_MANIFEST_MODES.includes(mode), `build manifest aggregate mode ${mode} must be supported.`);
   }
   for (const decision of ['built', 'reused', 'skipped'] as const) {
@@ -248,39 +243,9 @@ function main(): void {
     CURRENT_BUILD_SKIP_OPERATIONS.includes('kind_preload'),
     'build skip decisions must support kind_preload audit operations.',
   );
-  assert(
-    buildImagesScript.includes('run_build_artifact_broker_manifest_gate'),
-    'build-images.sh must run the post-build build artifact broker as a manifest gate.',
-  );
-  assert(
-    buildImagesScript.includes('build artifact broker manifest gate failed with exit'),
-    'build-images.sh must fail closed when the post-build broker exits nonzero.',
-  );
-  assert(
-    buildImagesScript.includes('wrote diagnostic report instead of trusted manifest'),
-    'build-images.sh must reject post-build diagnostic reports on the mandatory manifest path.',
-  );
-  assert(
-    buildImagesScript.includes('did not write ${manifest_path}'),
-    'build-images.sh must require build-manifest.json after the post-build broker completes.',
-  );
-  assert(
-    !/broker_exit[^\n;]*-eq 42/u.test(buildImagesScript),
-    'build-images.sh must not special-case release-truth exit 42 on the post-build mandatory path.',
-  );
-  assert(
-    !buildImagesScript.includes('build artifact broker diagnostic warning')
-      && !buildImagesScript.includes('build artifact broker diagnostic skipped'),
-    'build-images.sh must not downgrade post-build broker failures to diagnostics or warnings.',
-  );
   const llmupCouplingScanTargets = [
-    ['scripts/cluster-deploy/build-images.sh', buildImagesScript],
-    ['scripts/cluster-deploy/build-bundle.sh', clusterBuildBundleScript],
-    ['scripts/demo-deploy/build-offline-bundle.sh', demoBuildBundleScript],
     ['scripts/governance/build-artifact-broker-cli.ts', buildBrokerCli],
-    ['docs/contracts/deployment-spec-v1.md', deploymentSpec],
-    ['docs/contracts/cluster-deployment-spec-v1.md', clusterDeploymentSpec],
-    ['docs/engineering/governance-developer-flow-optimization-v2.md', buildGovernanceDoc],
+    ['docs/contracts/unified-deploy-contract.md', deployContract],
   ] as const;
   const deprecatedLlmupBuildCouplings = [
     ['sources', 'llm-universal-proxy'].join('/'),
@@ -327,17 +292,6 @@ function main(): void {
         'llmup image lock source image tag must match llmup_version.',
       );
     }
-  }
-  for (const [targetPath, content] of [
-    ['scripts/cluster-deploy/build-images.sh', buildImagesScript],
-    ['scripts/demo-deploy/build-offline-bundle.sh', demoBuildBundleScript],
-  ] as const) {
-    assert(content.includes('LLMUP_IMAGE_LOCK'), `${targetPath} must resolve llmup defaults from the image lock.`);
-    assert(content.includes('llmup_source_image_digest='), `${targetPath} must write llmup_source_image_digest to VERSION.`);
-    assert(
-      !content.includes('ghcr.io/agentsmith-project/llm-universal-proxy:${LLMUP_VERSION}'),
-      `${targetPath} must not default llmup source image from a mutable tag-only ref.`,
-    );
   }
   assertAgentsmithAppNextBuildCacheMount(agentsmithAppDockerfile);
 
@@ -441,7 +395,7 @@ function main(): void {
     }).release_alias_ref === 'agentsmith-app:release-20260427',
     'release alias refs must add release- only when the release id has no prefix.',
   );
-  for (const mode of ['build', 'bundle', 'rehearsal', 'release-fidelity', 'offline-package'] as const) {
+  for (const mode of ['build', 'bundle', 'release-fidelity', 'offline-package'] as const) {
     assert(
       validateBuildManifestAggregate({ ...aggregate, mode }).ok,
       `build manifest aggregate must accept mode ${mode}.`,

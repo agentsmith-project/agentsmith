@@ -555,7 +555,7 @@ describe('current job metadata manifest', () => {
     expectValidationFailure(cacheDrift, 'cache must mirror release-full step gate-fast');
   });
 
-  it('keeps backend-real, release, and rehearsal jobs out of automatic retry and unsafe cache reuse', () => {
+  it('keeps backend-real, release, and unified deploy jobs out of automatic retry and unsafe cache reuse', () => {
     for (const job of listCurrentJobMetadata()) {
       expect(['none', 'manual_only']).toContain(job.retry);
       expect(['disabled', 'release_campaign_only']).toContain(job.cache);

@@ -14,8 +14,6 @@
 	local-real-up local-real-down local-real-status local-real-reset \
 	local-manual-up local-manual-down local-manual-status local-manual-reset local-manual-seed-agent-task \
 	local-manual-internal-up local-manual-internal-down local-manual-internal-status local-manual-internal-reset local-manual-internal-smoke \
-	demo-rehearsal-up demo-rehearsal-down demo-rehearsal-status demo-rehearsal-reset demo-rehearsal-bootstrap demo-rehearsal-verify demo-rehearsal-report \
-	cluster-rehearsal-up cluster-rehearsal-down cluster-rehearsal-status cluster-rehearsal-reset cluster-rehearsal-bootstrap cluster-rehearsal-verify cluster-rehearsal-report \
 	agent-task-no-sandbox-smoke agent-task-no-sandbox-assert \
 	agent-task-monitor agent-task-load-test agent-task-load-matrix \
 	agent-task-benchmark-baseline agent-task-benchmark-compare agent-task-traces-query-bench \
@@ -96,9 +94,6 @@ help-extended:
 	@echo "Release:"
 	@echo "  npm run release:ready  # run the human-friendly release readiness wrapper"
 	@echo "  npm run release:status  # read the latest release summary in read-only mode"
-	@echo "  npm run test:unified-deploy:local-kind:images  # prepare local-kind deploy images and immutable registry handoff"
-	@echo "  npm run test:unified-deploy:local-kind  # run the current local Kubernetes deploy smoke"
-	@echo "  npm run test:unified-deploy:product-flows -- --flow=workspace_project --flow=files --flow=agent_task_managed_runner  # run the focused deployed product proof for project, files, and managed runner task"
 	@echo ""
 	@echo "Internal adapters:"
 	@echo "  package.json keeps gate/lane/backend-real/release:campaign scripts for CI, release:ready, and evidence owners."
@@ -135,15 +130,6 @@ quick-help:
 	@echo ""
 	@echo "  npm run release:status"
 	@echo "    Read the latest release summary in read-only mode."
-	@echo ""
-	@echo "  npm run test:unified-deploy:local-kind:images"
-	@echo "    Prepare local-kind deploy images and immutable registry handoff."
-	@echo ""
-	@echo "  npm run test:unified-deploy:local-kind"
-	@echo "    Run the current local Kubernetes deploy smoke."
-	@echo ""
-	@echo "  npm run test:unified-deploy:product-flows -- --flow=workspace_project --flow=files --flow=agent_task_managed_runner"
-	@echo "    Run the focused deployed product proof for project, files, and managed runner task."
 	@echo ""
 # current-workflow:quick-help:end
 
@@ -573,49 +559,6 @@ substrate-reseed:
 substrate-status:
 	SUBSTRATE="$${SUBSTRATE:-local-dev}" \
 	bash ./scripts/substrate/status.sh
-
-
-demo-rehearsal-up:
-	./scripts/demo-rehearsal-up.sh
-
-demo-rehearsal-down:
-	./scripts/demo-rehearsal-down.sh
-
-demo-rehearsal-status:
-	./scripts/demo-rehearsal-status.sh
-
-demo-rehearsal-reset:
-	./scripts/demo-rehearsal-reset.sh
-
-demo-rehearsal-bootstrap:
-	./scripts/demo-rehearsal-bootstrap.sh
-
-demo-rehearsal-verify:
-	./scripts/demo-rehearsal-verify.sh
-
-demo-rehearsal-report:
-	./scripts/demo-rehearsal-report.sh
-
-cluster-rehearsal-up:
-	./scripts/cluster-rehearsal-up.sh
-
-cluster-rehearsal-down:
-	./scripts/cluster-rehearsal-down.sh
-
-cluster-rehearsal-status:
-	./scripts/cluster-rehearsal-status.sh
-
-cluster-rehearsal-reset:
-	./scripts/cluster-rehearsal-reset.sh
-
-cluster-rehearsal-bootstrap:
-	./scripts/cluster-rehearsal-bootstrap.sh
-
-cluster-rehearsal-verify:
-	./scripts/cluster-rehearsal-verify.sh
-
-cluster-rehearsal-report:
-	./scripts/cluster-rehearsal-report.sh
 
 local-manual-up:
 	./scripts/local-manual-up.sh

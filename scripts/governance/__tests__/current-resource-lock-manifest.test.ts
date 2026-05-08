@@ -20,7 +20,6 @@ const EXPECTED_LOCK_IDS = [
   'runtime-current-aliases',
   'release-latest-pointer',
   'release-campaign-root-writes',
-  'scenario-world',
   'backend-real-provider-quota',
   'provider-secret-profile',
   'visual-baseline-update',
@@ -134,14 +133,14 @@ describe('current resource lock manifest', () => {
     );
 
     expectValidationFailure(
-      replaceLock('scenario-world', (lock) => ({
+      replaceLock('fixed-local-ports', (lock) => ({
         ...lock,
         appliesTo: {
           ...lock.appliesTo,
           ports: [
             {
               kind: 'family',
-              name: 'scenario-sandbox-host-ports',
+              name: 'unified-deploy-local-kind-ingress-host-ports',
             },
           ],
         },
@@ -150,7 +149,7 @@ describe('current resource lock manifest', () => {
     );
 
     expectValidationFailure(
-      replaceLock('scenario-world', (lock) => ({
+      replaceLock('fixed-local-ports', (lock) => ({
         ...lock,
         appliesTo: {
           ...lock.appliesTo,
@@ -167,7 +166,7 @@ describe('current resource lock manifest', () => {
     );
 
     expectValidationFailure(
-      replaceLock('scenario-world', (lock) => ({
+      replaceLock('fixed-local-ports', (lock) => ({
         ...lock,
         appliesTo: {
           ...lock.appliesTo,
@@ -184,7 +183,7 @@ describe('current resource lock manifest', () => {
     );
 
     expectValidationFailure(
-      replaceLock('scenario-world', (lock) => ({
+      replaceLock('fixed-local-ports', (lock) => ({
         ...lock,
         appliesTo: {
           ...lock.appliesTo,
@@ -202,7 +201,7 @@ describe('current resource lock manifest', () => {
     );
 
     expectValidationFailure(
-      replaceLock('scenario-world', (lock) => ({
+      replaceLock('fixed-local-ports', (lock) => ({
         ...lock,
         appliesTo: {
           ...lock.appliesTo,
@@ -228,7 +227,7 @@ describe('current resource lock manifest', () => {
     expect(portLabels.get(3000)).toContain('Web');
     expect(portLabels.get(3001)).toContain('Web');
     expect(portLabels.get(15432)).toContain('PG');
-    expect(portLabels.get(17017)).toContain('Mongo');
+    expect(portLabels.get(27027)).toContain('Mongo');
     expect(portLabels.get(16379)).toContain('Redis');
     expect(portLabels.get(19000)).toContain('MinIO');
     expect(portLabels.get(19001)).toContain('MinIO');
@@ -274,12 +273,11 @@ describe('current resource lock manifest', () => {
     );
   });
 
-  it('requires mutable alias, campaign root, release pointer, scenario world, and visual baseline locks to declare path patterns', () => {
+  it('requires mutable alias, campaign root, release pointer, and visual baseline locks to declare path patterns', () => {
     for (const id of [
       'runtime-current-aliases',
       'release-latest-pointer',
       'release-campaign-root-writes',
-      'scenario-world',
       'visual-baseline-update',
     ]) {
       const lock = findCurrentResourceLockById(id);
@@ -303,11 +301,11 @@ describe('current resource lock manifest', () => {
     );
 
     expectValidationFailure(
-      replaceLock('scenario-world', (lock) => ({
+      replaceLock('release-campaign-root-writes', (lock) => ({
         ...lock,
         appliesTo: {
           ...lock.appliesTo,
-          paths: ['scripts/scenarios/demo-rehearsal'],
+          paths: ['artifacts/release-runs/latest.json'],
         },
       })),
       'path pattern',
@@ -516,15 +514,15 @@ describe('current resource lock manifest', () => {
     );
 
     expectValidationFailure(
-      replaceLock('scenario-world', (lock) => ({
+      replaceLock('fixed-local-ports', (lock) => ({
         ...lock,
         appliesTo: {
           ...lock.appliesTo,
           ports: [
             {
               kind: 'family',
-              name: 'scenario-sandbox-host-ports',
-              values: [29280, 29080],
+              name: 'unified-deploy-local-kind-ingress-host-ports',
+              values: [29180],
               hostPorts: true,
             },
           ],
@@ -536,7 +534,7 @@ describe('current resource lock manifest', () => {
 
   it('lists and finds current resource locks without mutating the manifest', () => {
     expect(listCurrentResourceLocks()).toBe(CURRENT_RESOURCE_LOCK_MANIFEST);
-    expect(findCurrentResourceLockById('scenario-world')?.id).toBe('scenario-world');
+    expect(findCurrentResourceLockById('release-campaign-root-writes')?.id).toBe('release-campaign-root-writes');
     expect(findCurrentResourceLockById('missing-lock')).toBeUndefined();
   });
 });

@@ -2,47 +2,64 @@ import { existsSync, readFileSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-const TARGET_CONTRACT_PATH = 'docs/contracts/unified-deploy-contract-v2.md';
-const V1_CONTRACT_PATHS = [
-  'docs/contracts/deployment-spec-v1.md',
-  'docs/contracts/cluster-deployment-spec-v1.md',
-  'docs/contracts/substrate-governance-and-runtime-lines-v1.md',
-  'docs/contracts/address-truth-and-release-governance-v1.md',
-  'docs/contracts/universal-proxy-integration-v1.md',
-] as const;
+const DEPLOY_CONTRACT_PATH = 'docs/contracts/unified-deploy-contract.md';
 const CHECK_NPM_SCRIPT = 'contracts:check-unified-deploy-vocabulary';
 const CHECK_SCRIPT_COMMAND = 'tsx scripts/contracts/check-unified-deploy-vocabulary.ts';
 
-const LEGACY_DEPLOYMENT_TERMS = [
-  'demo-deploy',
-  'cluster-deploy',
-  'DEMO_DEPLOY_MODE',
-  'CLUSTER_DEPLOY_MODE',
+const ACTIVE_DEPLOY_TRUTH_FILES = [
+  DEPLOY_CONTRACT_PATH,
+  'docs/contracts/README.md',
+  'docs/contracts/product-terminology.md',
+  'docs/CURRENT_BASELINE.md',
+  'docs/user-guides/README.md',
+  'docs/user-guides/unified-deploy-operations.md',
+  'docs/engineering/agentsmith-unified-deploy-and-docker-substrate-milestone-plan-v1.md',
+  'DEVELOPMENT.md',
+  'package.json',
+  'Makefile',
+  'scripts/governance/current-workflow-manifest.ts',
+  'scripts/governance/current-status-projection-schema.ts',
+  'scripts/governance/current-governance-observability-manifest.ts',
 ] as const;
 
-const LEGACY_CONTEXT_ALLOWLIST = [
-  /\bmigration\b/iu,
-  /\bcurrent[-_ ]?v1\b/iu,
-  /\blegacy\b/iu,
-  /\bhistorical\b|\bhistory\b/iu,
-  /\bnegative\b|\bnon[-_ ]?target\b|\bnot target\b/iu,
-  /\bsuperseded\b|\bretired\b|\bdeprecated\b/iu,
-  /\breplaces?\b|\breplacement\b/iu,
-  /\bboundary\b/iu,
-  /\bprevious\b|\bold\b/iu,
+const FORBIDDEN_SPLIT_DEPLOY_TERMS = [
+  {
+    label: 'split deploy contract path',
+    pattern: /\bunified-deploy-contract-v2\.md\b/iu,
+  },
+  {
+    label: 'split deploy naming',
+    pattern: /\b(?:target[-_ ]?v2|deploy\s+v2|unified deploy contract v2)\b/iu,
+  },
+  {
+    label: 'split current-version wording',
+    pattern: /\bcurrent[-_ ]?v1\b/iu,
+  },
+  {
+    label: 'not-current deploy marker',
+    pattern: /\bnot_current_runtime_truth\b/iu,
+  },
+  {
+    label: 'superseded deploy marker',
+    pattern: /\bsuperseded_by_unified_deploy_v2\b/iu,
+  },
+  {
+    label: 'removed deploy command family',
+    pattern: /\b(?:demo|cluster)[-_ ]deploy\b|\b(?:DEMO|CLUSTER)_DEPLOY_MODE\b/iu,
+  },
+  {
+    label: 'removed rehearsal command family',
+    pattern: /\b(?:demo|cluster)[-_ ]rehearsal\b|\brehearse:(?:demo|cluster)\b|\blane-(?:demo|cluster)-rehearsal\b/iu,
+  },
 ] as const;
 
-const ACTIVE_MODE_WORDS = /\b(active|canonical|supported|future|target[-_ ]?v2|unified|product)\b/iu;
-const MODE_NOUNS = /\bmodes?\b/iu;
-const ACTIVE_MODE_NEGATION = /\b(must not|should not|do not|does not|not active|not an active|not a future|not target|non[-_ ]?target|forbidden|rejects?|negative example|superseded|retired|deprecated|legacy-only|current[-_ ]?v1 only|historical only)\b/iu;
-
-const FORBIDDEN_TARGET_PATTERNS = [
+const FORBIDDEN_CURRENT_DEPLOY_CLAIMS = [
   {
     label: 'Keycloak app pod',
     pattern: /\bKeycloak\b[\s\S]{0,80}\b(?:app|application)\s+pod\b|\b(?:app|application)\s+pod\b[\s\S]{0,80}\bKeycloak\b/iu,
   },
   {
-    label: 'K8s substrate',
+    label: 'Kubernetes substrate',
     pattern: /\b(?:K8s|Kubernetes)\s+substrate\b|\bsubstrate\b\s+(?:implementation\s+)?(?:is|=|:|as|uses|provider\s+is)\s+(?:K8s|Kubernetes)\b/iu,
   },
   {
@@ -55,53 +72,45 @@ const FORBIDDEN_TARGET_PATTERNS = [
   },
 ] as const;
 
-const FORBIDDEN_TARGET_NEGATION = /\b(no|not|without|outside|must not|should not|does not|do not|forbidden|rejects?|removed|superseded|retired|deprecated|negative|non[-_ ]?goals?|historical|legacy|current[-_ ]?v1)\b/iu;
+const NEGATED_CLAIM_WORDS = /\b(no|not|without|must not|should not|does not|do not|forbidden|rejects?|out of scope|does not include|not include|not included|separate architecture plan)\b/iu;
 
-const REQUIRED_TARGET_DECISIONS = [
+const REQUIRED_DEPLOY_DECISIONS = [
   {
     label: 'Docker-only substrate',
     predicate: (blocks: readonly MarkdownBlock[]) =>
-      hasPositiveBlock(blocks, /\bDocker[- ]only substrate\b/iu),
+      hasPositiveBlock(blocks, /\bDocker[- ]only\b[\s\S]{0,40}\bsubstrate\b|\bsubstrate\b[\s\S]{0,40}\bDocker[- ]only\b/iu),
   },
   {
     label: 'Keycloak substrate',
     predicate: (blocks: readonly MarkdownBlock[]) =>
-      hasPositiveBlock(blocks, /\bKeycloak substrate\b|\bKeycloak\b\s+(?:is|as)\s+substrate\b/iu),
+      hasPositiveBlock(blocks, /\bKeycloak\b[\s\S]{0,40}\bsubstrate\b|\bKeycloak is substrate\b/iu),
   },
   {
-    label: 'llmup app-managed K8s workload',
+    label: 'llmup app-managed workload',
     predicate: (blocks: readonly MarkdownBlock[]) =>
-      hasPositiveBlock(blocks, /\bllmup\b[\s\S]{0,80}\bapp[- ]managed K8s workload\b/iu)
-      || hasPositiveBlock(blocks, /\bllmup\b[\s\S]{0,80}\bAgentSmith app Kubernetes workload\b/iu)
-      || hasPositiveBlock(blocks, /\bllmup\b[\s\S]{0,80}\bapp Kubernetes workload\b/iu),
+      hasPositiveBlock(blocks, /\bllmup\b[\s\S]{0,80}\bapp[- ]managed\b/iu)
+      && hasPositiveBlock(blocks, /\bllmup\b[\s\S]{0,120}\bKubernetes workload\b/iu),
   },
   {
     label: 'api replicas=1',
     predicate: (blocks: readonly MarkdownBlock[]) =>
-      hasPositiveBlock(blocks, /\bapi\b[\s\S]{0,80}\breplicas?\b\s*(?:=|:|is|are|must be)\s*1\b/iu),
+      hasPositiveBlock(blocks, /\bapi\b[\s\S]{0,80}\breplicas?\b\s*(?:=|:|is|are|fixed to)\s*1\b/iu),
   },
   {
-    label: '/api/v1 to api',
+    label: '/api/v1 routes to api',
     predicate: (blocks: readonly MarkdownBlock[]) =>
-      hasPositiveBlock(blocks, /\/api\/v1[\s\S]{0,80}\b(?:to|->|routes?\s+to)\b[\s\S]{0,80}\bapi\b/iu),
+      hasPositiveBlock(blocks, /\/api\/v1[\s\S]{0,80}\b(?:to|->|routes?\s+to|route to|route)\b[\s\S]{0,80}\bapi\b/iu),
   },
   {
-    label: '/api/public and /api/system to web',
+    label: '/api/public and /api/system route to web',
     predicate: (blocks: readonly MarkdownBlock[]) =>
-      hasPositiveBlock(blocks, /\/api\/public[\s\S]{0,120}\/api\/system[\s\S]{0,120}\b(?:to|->|routes?\s+to)\b[\s\S]{0,80}\bweb\b/iu)
-      || hasPositiveBlock(blocks, /\/api\/system[\s\S]{0,120}\/api\/public[\s\S]{0,120}\b(?:to|->|routes?\s+to)\b[\s\S]{0,80}\bweb\b/iu)
-      || (
-        hasPositiveBlock(blocks, /\/api\/public[\s\S]{0,80}\b(?:to|->|routes?\s+to)\b[\s\S]{0,80}\bweb\b/iu)
-        && hasPositiveBlock(blocks, /\/api\/system[\s\S]{0,80}\b(?:to|->|routes?\s+to)\b[\s\S]{0,80}\bweb\b/iu)
-      ),
+      hasPositiveBlock(blocks, /\/api\/public[\s\S]{0,80}\b(?:to|->|routes?\s+to|route to|route)\b[\s\S]{0,80}\bweb\b/iu)
+      && hasPositiveBlock(blocks, /\/api\/system[\s\S]{0,80}\b(?:to|->|routes?\s+to|route to|route)\b[\s\S]{0,80}\bweb\b/iu),
   },
   {
     label: 'no execution-gateway',
     predicate: (blocks: readonly MarkdownBlock[]) =>
-      blocks.some((block) =>
-        /\bexecution-gateway\b/iu.test(block.text)
-        && /\b(no|without|must not|should not|does not|do not|not include|not included|removed|superseded|forbidden|rejects?)\b/iu.test(block.text),
-      ),
+      blocks.some((block) => /\bexecution-gateway\b/iu.test(block.text) && NEGATED_CLAIM_WORDS.test(block.text)),
   },
 ] as const;
 
@@ -143,10 +152,6 @@ type PackageJson = {
   scripts?: Record<string, string>;
 };
 
-type ReadResult =
-  | { ok: true; content: string }
-  | { ok: false };
-
 function addFailure(
   failures: UnifiedDeployVocabularyFailure[],
   path: string,
@@ -167,14 +172,21 @@ function readRequiredText(
   relativePath: string,
   failures: UnifiedDeployVocabularyFailure[],
   missingMessage: string,
-): ReadResult {
+): string | null {
   const absolutePath = join(rootDir, relativePath);
   if (!existsSync(absolutePath)) {
     addFailure(failures, relativePath, missingMessage);
-    return { ok: false };
+    return null;
   }
 
-  return { ok: true, content: readFileSync(absolutePath, 'utf8') };
+  return readFileSync(absolutePath, 'utf8');
+}
+
+function normalizeMarkdownText(text: string): string {
+  return text
+    .replace(/[`*_#[\]()]/gu, ' ')
+    .replace(/\s+/gu, ' ')
+    .trim();
 }
 
 function parseMarkdownLines(content: string): MarkdownLine[] {
@@ -224,8 +236,7 @@ function parseMarkdownBlocks(lines: readonly MarkdownLine[]): MarkdownBlock[] {
       continue;
     }
 
-    const headingMatch = line.text.match(/^(#{1,6})\s+/u);
-    if (headingMatch) {
+    if (/^(#{1,6})\s+/u.test(line.text)) {
       flush();
       current = [line];
       flush();
@@ -252,144 +263,76 @@ function parseMarkdownBlocks(lines: readonly MarkdownLine[]): MarkdownBlock[] {
   return blocks;
 }
 
-function normalizeMarkdownText(text: string): string {
-  return text
-    .replace(/[`*_#[\]()]/gu, ' ')
-    .replace(/\s+/gu, ' ')
-    .trim();
-}
-
-function contextTextForBlock(block: MarkdownBlock): string {
-  return `${block.headingPath.join(' > ')}\n${block.text}`;
-}
-
-function includesLegacyTerm(text: string): boolean {
-  return LEGACY_DEPLOYMENT_TERMS.some((term) => text.includes(term));
-}
-
-function isLegacyContextAllowed(block: MarkdownBlock): boolean {
-  return LEGACY_CONTEXT_ALLOWLIST.some((pattern) => pattern.test(contextTextForBlock(block)));
-}
-
 function hasPositiveBlock(blocks: readonly MarkdownBlock[], pattern: RegExp): boolean {
-  return blocks.some((block) =>
-    pattern.test(block.text)
-    && !/\b(no|not|without|must not|should not|does not|do not|forbidden|rejects?|removed|superseded|retired|deprecated)\b/iu.test(block.text),
-  );
+  return blocks.some((block) => pattern.test(block.text) && !NEGATED_CLAIM_WORDS.test(block.text));
 }
 
-function validatesActiveFutureModeClaim(block: MarkdownBlock): boolean {
-  if (!includesLegacyTerm(block.text)) {
-    return false;
+function lineForIndex(content: string, index: number): number {
+  return content.slice(0, Math.max(0, index)).split(/\r?\n/u).length;
+}
+
+function validateNoSplitDeployVocabulary(
+  path: string,
+  content: string,
+  failures: UnifiedDeployVocabularyFailure[],
+): void {
+  for (const forbidden of FORBIDDEN_SPLIT_DEPLOY_TERMS) {
+    const match = forbidden.pattern.exec(content);
+    if (!match) {
+      continue;
+    }
+
+    const line = lineForIndex(content, match.index);
+    addFailure(
+      failures,
+      path,
+      `current deploy truth must not use ${forbidden.label}; fold the logic into the current V1 deploy model.`,
+      line,
+      match[0],
+    );
   }
-
-  const context = contextTextForBlock(block);
-  return ACTIVE_MODE_WORDS.test(context)
-    && MODE_NOUNS.test(context)
-    && !ACTIVE_MODE_NEGATION.test(context);
 }
 
-function shouldIgnoreForbiddenTargetBlock(block: MarkdownBlock): boolean {
-  return FORBIDDEN_TARGET_NEGATION.test(contextTextForBlock(block));
-}
-
-function validateTargetContract(
+function validateDeployContract(
   content: string,
   failures: UnifiedDeployVocabularyFailure[],
 ): void {
   const lines = parseMarkdownLines(content);
   const blocks = parseMarkdownBlocks(lines);
 
-  if (!/\btarget_v2_contract\b/u.test(content)) {
+  if (!/\bcurrent_deploy_contract\b/u.test(content)) {
     addFailure(
       failures,
-      TARGET_CONTRACT_PATH,
-      'unified deploy target-v2 contract must contain target_v2_contract marker.',
-    );
-  }
-  if (!/\bnot_current_runtime_truth\b/u.test(content)) {
-    addFailure(
-      failures,
-      TARGET_CONTRACT_PATH,
-      'unified deploy target-v2 contract must contain not_current_runtime_truth marker.',
+      DEPLOY_CONTRACT_PATH,
+      'unified deploy contract must contain current_deploy_contract marker.',
     );
   }
 
-  for (const decision of REQUIRED_TARGET_DECISIONS) {
+  for (const decision of REQUIRED_DEPLOY_DECISIONS) {
     if (!decision.predicate(blocks)) {
       addFailure(
         failures,
-        TARGET_CONTRACT_PATH,
-        `target-v2 contract must state ${decision.label}.`,
+        DEPLOY_CONTRACT_PATH,
+        `current deploy contract must state ${decision.label}.`,
       );
     }
   }
 
   for (const block of blocks) {
-    for (const term of LEGACY_DEPLOYMENT_TERMS) {
-      if (block.text.includes(term) && !isLegacyContextAllowed(block)) {
-        addFailure(
-          failures,
-          TARGET_CONTRACT_PATH,
-          `legacy deployment term ${term} may appear only in allowed migration/current-v1/legacy/historical/negative/superseded contexts.`,
-          block.startLine,
-          block.text,
-        );
-      }
-    }
-  }
-
-  for (const block of blocks) {
-    if (validatesActiveFutureModeClaim(block)) {
-      addFailure(
-        failures,
-        TARGET_CONTRACT_PATH,
-        'target-v2 contract must not claim demo-deploy/cluster-deploy are active future product modes.',
-        block.startLine,
-        block.text,
-      );
-    }
-
-    if (shouldIgnoreForbiddenTargetBlock(block)) {
+    if (NEGATED_CLAIM_WORDS.test(block.text)) {
       continue;
     }
 
-    for (const forbidden of FORBIDDEN_TARGET_PATTERNS) {
+    for (const forbidden of FORBIDDEN_CURRENT_DEPLOY_CLAIMS) {
       if (forbidden.pattern.test(block.text)) {
         addFailure(
           failures,
-          TARGET_CONTRACT_PATH,
-          `target-v2 must not state ${forbidden.label}.`,
+          DEPLOY_CONTRACT_PATH,
+          `current deploy contract must not state ${forbidden.label}.`,
           block.startLine,
           block.text,
         );
       }
-    }
-  }
-}
-
-function validateV1BoundaryNotes(
-  rootDir: string,
-  failures: UnifiedDeployVocabularyFailure[],
-): void {
-  for (const contractPath of V1_CONTRACT_PATHS) {
-    const result = readRequiredText(
-      rootDir,
-      contractPath,
-      failures,
-      `${contractPath} must exist for the current-v1 boundary check.`,
-    );
-
-    if (!result.ok) {
-      continue;
-    }
-
-    if (!/\bcurrent[-_ ]v1 boundary(?: note)?\b/iu.test(result.content)) {
-      addFailure(
-        failures,
-        contractPath,
-        'v1 deployment contract must include a current-v1 boundary note.',
-      );
     }
   }
 }
@@ -442,18 +385,17 @@ function validatePackageScripts(
   rootDir: string,
   failures: UnifiedDeployVocabularyFailure[],
 ): void {
-  const result = readRequiredText(
+  const content = readRequiredText(
     rootDir,
     'package.json',
     failures,
     'package.json must exist for unified deploy vocabulary checker wiring.',
   );
-
-  if (!result.ok) {
+  if (content === null) {
     return;
   }
 
-  const packageJson = parsePackageJson(result.content, failures);
+  const packageJson = parsePackageJson(content, failures);
   if (packageJson === null) {
     return;
   }
@@ -482,17 +424,18 @@ export function checkUnifiedDeployVocabulary(
   const rootDir = resolve(options.rootDir ?? process.cwd());
   const failures: UnifiedDeployVocabularyFailure[] = [];
 
-  const targetContract = readRequiredText(
-    rootDir,
-    TARGET_CONTRACT_PATH,
-    failures,
-    'unified deploy target-v2 contract must exist at docs/contracts/unified-deploy-contract-v2.md.',
-  );
-  if (targetContract.ok) {
-    validateTargetContract(targetContract.content, failures);
+  for (const path of ACTIVE_DEPLOY_TRUTH_FILES) {
+    const content = readRequiredText(rootDir, path, failures, `${path} must exist.`);
+    if (content === null) {
+      continue;
+    }
+
+    validateNoSplitDeployVocabulary(path, content, failures);
+    if (path === DEPLOY_CONTRACT_PATH) {
+      validateDeployContract(content, failures);
+    }
   }
 
-  validateV1BoundaryNotes(rootDir, failures);
   validatePackageScripts(rootDir, failures);
 
   return {

@@ -1,6 +1,0 @@
-listen: 0.0.0.0:8080
-upstream_timeout_secs: 120
-data_auth:
-  mode: client_provider_key
-upstreams: {}
-model_aliases: {}

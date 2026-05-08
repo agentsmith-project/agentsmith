@@ -81,7 +81,7 @@ Current local operational baseline:
 - local-real and unified deploy substrate share default local substrate ports, so run them serially on one development host.
 
 Still-binding runtime contracts:
-- There is one AgentSmith deploy model; local-kind and existing-cluster are profiles, not separate demo and cluster products.
+- There is one AgentSmith deploy model; local-kind and existing-cluster are profiles, not separate products.
 - Substrates stay outside the app namespace as Docker or operator-provided services; AgentSmith app workloads run in Kubernetes.
 - api replicas stay at 1 until a dedicated multi-replica execution routing design is introduced.
 
@@ -107,9 +107,9 @@ Current engineering guidance only uses these top-level terms:
 5. `发布`
 - Unified deploy and release-grade verification flow.
 
-### Terms that are not current top-level workflow terms
+### Terms That Are Not Current Top-Level Workflow Terms
 
-The following may still appear in file names or legacy script names, but they must not be used as the top-level explanation of the current workflow:
+The following terms are not used as the top-level explanation of the current workflow:
 
 - `mainline`
 - `strict`
@@ -155,9 +155,6 @@ npm run verify
 ```bash
 npm run release:ready
 npm run release:status
-npm run test:unified-deploy:local-kind:images
-npm run test:unified-deploy:local-kind
-npm run test:unified-deploy:product-flows -- --flow=workspace_project --flow=files --flow=agent_task_managed_runner
 ```
 <!-- current-workflow:governance-model:end -->
 
@@ -222,7 +219,7 @@ Current provider-neutral names:
 - `OpenAI-compatible`
 - `Anthropic-compatible`
 
-Historical provider-specific names and descriptions do not belong in current workflow guidance.
+Provider-specific aliases and descriptions do not belong in current workflow guidance.
 
 ## 7. Maintenance rules
 

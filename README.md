@@ -122,9 +122,6 @@ npm run verify
 ```bash
 npm run release:ready
 npm run release:status
-npm run test:unified-deploy:local-kind:images
-npm run test:unified-deploy:local-kind
-npm run test:unified-deploy:product-flows -- --flow=workspace_project --flow=files --flow=agent_task_managed_runner
 ```
 <!-- current-workflow:readme:end -->
 
@@ -140,7 +137,7 @@ Current local runtime baseline:
 - local-real and unified deploy substrate share default local substrate ports, so run them serially on one development host.
 
 Still-binding runtime contracts:
-- There is one AgentSmith deploy model; local-kind and existing-cluster are profiles, not separate demo and cluster products.
+- There is one AgentSmith deploy model; local-kind and existing-cluster are profiles, not separate products.
 - Substrates stay outside the app namespace as Docker or operator-provided services; AgentSmith app workloads run in Kubernetes.
 - api replicas stay at 1 until a dedicated multi-replica execution routing design is introduced.
 
@@ -164,7 +161,7 @@ This validates the required behavior for MVP deployment without sandbox:
 
 For daily verification, use the generated workflow entry above: `npm run verify`. For release readiness, use `npm run release:ready` and `npm run release:status`.
 
-Legacy `gate:*`, `lane:*`, `backend-real:*`, and `release:campaign:*` scripts still exist in `package.json` for CI, `release:ready`, and evidence-owner runbooks. They are internal adapters, not a default command directory for ordinary development, testing, or release work.
+Low-level `gate:*`, `lane:*`, `backend-real:*`, and `release:campaign:*` scripts exist in `package.json` for CI, `release:ready`, and evidence-owner runbooks. They are internal adapters, not a default command directory for ordinary development, testing, or release work.
 
 When a release campaign points to a specific owner, use the named adapter family from the owner runbook or manifest rather than copying commands from this README. Examples of owner identities are `gate:default`, `lane:visual`, `gate:release`, unified deploy evidence producers, and the aggregate-only `gate:release:full`.
 

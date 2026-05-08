@@ -19,13 +19,6 @@ import {
   MINIMAL_LEASE_STATUS_SHADOW_SCHEMA,
   MINIMAL_LEASE_STATUS_SHADOW_VERSION,
 } from '../lease-status-shadow';
-import {
-  CURRENT_REHEARSAL_METADATA_FORBIDDEN_FIELDS,
-  CURRENT_REHEARSAL_METADATA_SCHEMA,
-  CURRENT_REHEARSAL_METADATA_VERSION,
-  buildCurrentRehearsalMetadata,
-  validateCurrentRehearsalMetadata,
-} from '../current-rehearsal-metadata-schema';
 import { buildRedactedDiagnostic, findRedactionLeaks } from '../redaction';
 import { ORDERED_SENTINEL_PROBES } from '../sentinel-preflight';
 import { buildStatusProjection } from '../status-projection';
@@ -62,7 +55,6 @@ describe('current governance observability manifest', () => {
         'scripts/governance/current-status-projection-schema.ts',
         'scripts/governance/status-projection.ts',
         'scripts/governance/release-status.ts',
-        'scripts/governance/rehearsal-entrypoint.ts',
         'scripts/governance/local-real-status.ts',
       ],
       authority: {
@@ -96,21 +88,6 @@ describe('current governance observability manifest', () => {
       schema_version: MINIMAL_LEASE_STATUS_SHADOW_VERSION,
       authority: {
         read_only: true,
-      },
-    });
-    expect(byId('rehearsal_metadata_schema')).toMatchObject({
-      kind: 'read_only_metadata_schema',
-      schema_ref: CURRENT_REHEARSAL_METADATA_SCHEMA,
-      schema_version: CURRENT_REHEARSAL_METADATA_VERSION,
-      implementation_refs: ['scripts/governance/current-rehearsal-metadata-schema.ts'],
-      authority: {
-        read_only: true,
-        diagnostic_audit: false,
-      },
-      safety_boundary: {
-        forbidden_fields: [...CURRENT_REHEARSAL_METADATA_FORBIDDEN_FIELDS],
-        redaction_required: true,
-        raw_secret_output_allowed: false,
       },
     });
     expect(byId('redaction_boundary')).toMatchObject({
@@ -154,40 +131,6 @@ describe('current governance observability manifest', () => {
       });
 
       expect(result.ok, `${field} must be rejected by diagnostics schema`).toBe(false);
-    }
-
-    const rehearsalMetadata = buildCurrentRehearsalMetadata({
-      rehearsalMode: 'fast',
-      resetLevel: 'none',
-      generatedAt: '2026-04-27T12:00:00.000Z',
-      worldIdentity: {
-        runtime_line: 'cluster-rehearsal',
-        world_root: 'artifacts/runtime/scenario/cluster-rehearsal',
-        service_ports: {
-          web: 3000,
-          api: 20000,
-        },
-      },
-      skipInvalidation: {
-        target: 'rollout',
-        operation: 'skip-if-inputs-unchanged',
-        input_digest: `sha256:${'a'.repeat(64)}`,
-        existing_artifact_digest: `sha256:${'b'.repeat(64)}`,
-        skip_reason: 'input_digest_matches',
-        validator: 'current-rehearsal-metadata-schema',
-      },
-    });
-    const rehearsalForbiddenFields = byId('rehearsal_metadata_schema').safety_boundary.forbidden_fields;
-    for (const field of rehearsalForbiddenFields) {
-      const result = validateCurrentRehearsalMetadata({
-        ...rehearsalMetadata,
-        skip_invalidation: {
-          ...rehearsalMetadata.skip_invalidation,
-          [field]: 'forbidden',
-        },
-      });
-
-      expect(result.ok, `${field} must be rejected by rehearsal metadata schema`).toBe(false);
     }
 
     const redacted = buildRedactedDiagnostic({

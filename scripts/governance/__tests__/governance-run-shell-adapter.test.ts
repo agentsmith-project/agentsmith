@@ -434,10 +434,22 @@ describe('governance runner shell adapter', () => {
         },
         {
           level_index: 3,
-          job_ids: ['lane-demo-rehearsal', 'lane-cluster-rehearsal'],
+          job_ids: ['lane-unified-deploy-substrate'],
         },
         {
           level_index: 4,
+          job_ids: ['lane-unified-deploy-local-kind-images'],
+        },
+        {
+          level_index: 5,
+          job_ids: ['lane-unified-deploy-local-kind'],
+        },
+        {
+          level_index: 6,
+          job_ids: ['lane-unified-deploy-product-flows'],
+        },
+        {
+          level_index: 7,
           job_ids: ['gate-release-full'],
         },
       ],
@@ -449,8 +461,10 @@ describe('governance runner shell adapter', () => {
           'gate-default',
           'lane-visual',
           'gate-release',
-          'lane-demo-rehearsal',
-          'lane-cluster-rehearsal',
+          'lane-unified-deploy-substrate',
+          'lane-unified-deploy-local-kind-images',
+          'lane-unified-deploy-local-kind',
+          'lane-unified-deploy-product-flows',
         ],
       },
     });
@@ -471,12 +485,6 @@ describe('governance runner shell adapter', () => {
               job_ids: ['gate-default', 'lane-visual'],
             }),
           ]),
-        }),
-        expect.objectContaining({
-          level_index: 3,
-          candidate_job_ids: ['lane-demo-rehearsal', 'lane-cluster-rehearsal'],
-          runnable_without_lock_conflicts: false,
-          reason: 'blocked_by_current_exclusive_locks',
         }),
       ]),
     );

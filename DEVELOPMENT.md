@@ -64,9 +64,6 @@ npm run verify
 ```bash
 npm run release:ready
 npm run release:status
-npm run test:unified-deploy:local-kind:images
-npm run test:unified-deploy:local-kind
-npm run test:unified-deploy:product-flows -- --flow=workspace_project --flow=files --flow=agent_task_managed_runner
 ```
 <!-- current-workflow:development:end -->
 
@@ -133,7 +130,7 @@ Gate adapter fidelity notes:
 - `local-real` 与 unified deploy substrate 共享默认本地 substrate 端口，在同一开发机上必须串行切换。
 
 持续生效的 runtime contract：
-- 只有一个 AgentSmith deploy 模型；`local-kind` 与 `existing-cluster` 是 profile，不是 demo/cluster 两套产品。
+- 只有一个 AgentSmith deploy 模型；`local-kind` 与 `existing-cluster` 是 profile，不是两套产品。
 - Substrates 保持在 app namespace 外部，由 Docker 或运维提供的服务承载；AgentSmith app 工作负载运行在 Kubernetes。
 - 当前里程碑 `api replicas=1`，直到引入明确的多副本 execution routing 设计。
 
@@ -170,7 +167,7 @@ npm run marketing:assets:generate
 - backend-real: `.env.backend-real.example`
 - unified deploy: `infra/deploy/unified/env/site.env.example`
 
-旧 demo/cluster deploy 命令不再是 current deployment entrypoint；当前部署说明看 `docs/user-guides/unified-deploy-operations.md`。
+当前部署说明看 `docs/user-guides/unified-deploy-operations.md`。
 
 ## Quick Start
 
@@ -359,10 +356,10 @@ cp .env.local-manual.example .env.local-manual
 make local-real-up
 ```
 
-`.env.local.example` is now a legacy frontend-only shortcut for the narrow case
+`.env.local.example` is now a frontend-only shortcut for the narrow case
 where you intentionally run `npm run dev` directly without `local-real`.
 
-If you still need that legacy shortcut, copy `.env.local.example` to `.env.local`
+If you still need that shortcut, copy `.env.local.example` to `.env.local`
 and configure:
 
 ```bash
@@ -559,11 +556,11 @@ npm run release:status
 
 Notes:
 
-1. `npm run release:ready` is the human-friendly automated release path. It runs the non-verdict precheck first, then delegates to internal campaign adapters that orchestrate `gate:fast`, `gate:default`, `lane:visual`, `gate:release`, demo rehearsal, cluster rehearsal, and the terminal aggregate verdict.
+1. `npm run release:ready` is the human-friendly automated release path. It runs the non-verdict precheck first, then delegates to internal campaign adapters that orchestrate `gate:fast`, `gate:default`, `lane:visual`, `gate:release`, unified deploy evidence lanes, and the terminal aggregate verdict.
 2. `gate:release:full` is aggregate-only. Treat it as an internal verifier for an explicit campaign context, not as a copyable release command.
 3. When diagnosing a failed campaign, rerun the owning evidence adapter from the owner runbook or manifest, then return to `npm run release:ready`.
 4. Real-backend Agent task verification requires `PRESET_ENDPOINT_API_KEY` (or a derived `BACKEND_REAL_API_KEY` alias).
-5. Fresh demo rehearsal roots seeded by the release campaign keep `infra/deploy/demo/env/site.env.example` secret-free and derive a missing `PRESET_ENDPOINT_API_KEY` from repo-local runtime presets such as `.env.backend-real`.
+5. Unified deploy evidence roots derive a missing `PRESET_ENDPOINT_API_KEY` from repo-local runtime presets such as `.env.backend-real`.
 
 ## Test & Evidence Directory Contract
 
@@ -588,7 +585,7 @@ Notes:
   - `artifacts/backend-real-visual/`
   - `artifacts/backend-real/runs/<run-id>/...`
   - `artifacts/release-runs/`
-  - `artifacts/release-reports/`（historical/generated report snapshots; current release authority comes from campaign-scoped `artifacts/release-runs/<campaign-run-id>` and `latest.json`）
+  - `artifacts/release-reports/`（generated report snapshots; current release authority comes from campaign-scoped `artifacts/release-runs/<campaign-run-id>` and `latest.json`）
   - `artifacts/release-escalations/`
   - `artifacts/governance-reports/`
 
@@ -964,14 +961,14 @@ vi.mock('next/navigation', () => ({
 #### Token expires during SSE stream
 **Problem**: SSE connection drops after some time
 **Solution**: Token refresh is not automatic. Currently requires page refresh.
-Known limitation: auto-reconnection with token refresh is still runtime/security debt. Treat it as a current limitation to verify against the SSE client contract, not as an active historical work item.
+Known limitation: auto-reconnection with token refresh is still runtime/security debt. Treat it as a current limitation to verify against the SSE client contract, not as a phase label.
 
 ### Build Issues
 
 #### MSW appearing in production bundle
 **Problem**: `grep -r "msw" .next/` finds MSW references
 **Solution**: This is a known issue if MSW is statically imported.
-Expected fix pattern: use dynamic imports or equivalent production-safe boundaries so MSW stays out of production bundles. Verify with the production bundle check rather than relying on a historical phase label.
+Expected fix pattern: use dynamic imports or equivalent production-safe boundaries so MSW stays out of production bundles. Verify with the production bundle check rather than relying on a phase label.
 
 #### Type errors after refactoring
 **Problem**: TypeScript errors after changes

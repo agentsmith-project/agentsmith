@@ -151,19 +151,19 @@ function failingSentinelResult() {
 }
 
 describe('release readiness human entrypoints', () => {
-  it('exposes friendly release and rehearsal aliases while keeping old commands available', () => {
+  it('exposes clean release aliases and unified deploy lanes', () => {
     const scripts = readPackageScripts();
 
     expect(scripts['release:ready']).toContain('scripts/governance/release-ready.ts');
     expect(scripts['release:status']).toContain('scripts/governance/release-status.ts');
     expect(scripts['release:aggregate']).toContain('scripts/governance/run-release-aggregate.ts');
-    expect(scripts['rehearse:demo']).toBe('tsx scripts/governance/rehearsal-entrypoint.ts demo-rehearsal');
-    expect(scripts['rehearse:cluster']).toBe('tsx scripts/governance/rehearsal-entrypoint.ts cluster-rehearsal');
 
     expect(scripts['release:campaign:full']).toBeTruthy();
     expect(scripts['gate:release:full']).toBeTruthy();
-    expect(scripts['lane:demo-rehearsal']).toBeTruthy();
-    expect(scripts['lane:cluster-rehearsal']).toBeTruthy();
+    expect(scripts['lane:unified-deploy:substrate']).toBeTruthy();
+    expect(scripts['lane:unified-deploy:local-kind:images']).toBeTruthy();
+    expect(scripts['lane:unified-deploy:local-kind']).toBeTruthy();
+    expect(scripts['lane:unified-deploy:product-flows']).toBeTruthy();
   });
 
   it('keeps the release readiness checklist centered on clean human entrypoints', () => {
@@ -171,8 +171,6 @@ describe('release readiness human entrypoints', () => {
 
     expect(checklist).toContain('npm run release:ready');
     expect(checklist).toContain('npm run release:status');
-    expect(checklist).toContain('npm run rehearse:demo');
-    expect(checklist).toContain('npm run rehearse:cluster');
     expect(checklist).toContain('internal adapter');
 
     for (const pattern of RELEASE_HUMAN_DOC_FORBIDDEN_COPYABLE_PATTERNS) {

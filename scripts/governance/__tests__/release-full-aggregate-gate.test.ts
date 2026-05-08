@@ -145,6 +145,99 @@ function createDirectory(path: string): void {
   mkdirSync(path, { recursive: true });
 }
 
+function writeUnifiedDeployEvidenceFixture(
+  campaignRoot: string,
+  check: CurrentVerificationCampaignEvidenceCheck,
+): void {
+  const root = materializeCampaignPath(campaignRoot, check.path);
+  const generatedAt = '2026-05-07T00:00:00.000Z';
+
+  if (check.id === 'unified_deploy_substrate_evidence') {
+    writeJson(join(root, 'substrate-lifecycle-reset-fixture.json'), {
+      schema_version: check.expectedSchemaVersion,
+      command: check.expectedCommand,
+      profile: check.expectedProfile,
+      status: check.expectedStatus,
+      generated_at: generatedAt,
+      services: ['postgresql', 'mongodb', 'redis', 'minio', 'keycloak'],
+      failures: [],
+      paths: {
+        report_path: join(root, 'substrate-lifecycle-reset-fixture.json'),
+        log_path: join(root, 'substrate-lifecycle-reset-fixture.log'),
+      },
+    });
+    return;
+  }
+
+  if (check.id === 'unified_deploy_local_kind_images_evidence') {
+    writeJson(join(root, 'local-kind-images-fixture.json'), {
+      schema_version: check.expectedSchemaVersion,
+      producer: check.expectedProducer,
+      status: check.expectedStatus,
+      generated_at: generatedAt,
+      generated_site_env_path: join(campaignRoot, 'unified-deploy', 'local-kind-site.env'),
+      failures: [],
+      paths: {
+        report_path: join(root, 'local-kind-images-fixture.json'),
+        log_path: join(root, 'local-kind-images-fixture.log'),
+      },
+    });
+    return;
+  }
+
+  if (check.id === 'unified_deploy_local_kind_evidence') {
+    writeJson(join(root, 'local-kind-rollout-fixture.json'), {
+      schema_version: check.expectedSchemaVersion,
+      producer: check.expectedProducer,
+      profile: check.expectedProfile,
+      status: check.expectedStatus,
+      generated_at: generatedAt,
+      failures: [],
+      paths: {
+        report_path: join(root, 'local-kind-rollout-fixture.json'),
+        log_path: join(root, 'local-kind-rollout-fixture.log'),
+      },
+    });
+    return;
+  }
+
+  if (check.id === 'unified_deploy_product_flow_evidence') {
+    const flows = check.expectedProductFlows ?? [];
+    const flowEvidence = flows.map((flow) => ({
+      schema_version: 'agentsmith.focused-product-flow.evidence/v1',
+      flow,
+      status: 'passed',
+      producer: check.expectedProducer,
+      command: 'npm run test:unified-deploy:product-flows',
+      generated_at: generatedAt,
+      duration_ms: 1,
+      checks: {},
+    }));
+    for (const flow of flowEvidence) {
+      writeJson(join(root, `product-flow-${flow.flow}-fixture.json`), flow);
+    }
+    writeJson(join(root, 'product-flows-fixture.json'), {
+      schema_version: check.expectedSchemaVersion,
+      producer: check.expectedProducer,
+      status: check.expectedStatus,
+      command: 'npm run test:unified-deploy:product-flows',
+      generated_at: generatedAt,
+      flows: flowEvidence,
+      flow_evidence_paths: Object.fromEntries(
+        flowEvidence.map((flow) => [flow.flow, join(root, `product-flow-${flow.flow}-fixture.json`)]),
+      ),
+      failures: [],
+      paths: {
+        report_path: join(root, 'product-flows-fixture.json'),
+        log_path: join(root, 'product-flows-fixture.log'),
+      },
+    });
+    return;
+  }
+
+  throw new Error(`Unhandled unified deploy evidence fixture: ${check.id}`);
+}
+
 function aggregateFixtureEvidenceKind(check: CurrentVerificationCampaignEvidenceCheck): AggregateFixtureEvidenceKind {
   return (check as { kind: AggregateFixtureEvidenceKind }).kind;
 }
@@ -187,6 +280,10 @@ function createManifestEvidenceForCheck(
 ): void {
   if (check.semantic === 'ux_trace_bundle') {
     writeSemanticUxTraceBundle(campaignRoot);
+    return;
+  }
+  if (check.semantic === 'unified_deploy_evidence') {
+    writeUnifiedDeployEvidenceFixture(campaignRoot, check);
     return;
   }
 
@@ -861,6 +958,32 @@ describe('release-full aggregate gate', () => {
     }
   });
 
+  it('fails when unified deploy evidence is only arbitrary JSON without the producer schema', () => {
+    const campaignRoot = mkdtempSync(join(tmpdir(), 'release-full-unified-deploy-malformed-'));
+    seedPassedCampaign(campaignRoot);
+
+    const substrateStep = getCampaignStep('lane-unified-deploy-substrate');
+    const substrateCheck = substrateStep.evidenceChecks.find((check) => check.id === 'unified_deploy_substrate_evidence');
+    if (!substrateCheck) {
+      throw new Error('Missing unified deploy substrate evidence check.');
+    }
+    const evidenceRoot = materializeCampaignPath(campaignRoot, substrateCheck.path);
+    rmSync(evidenceRoot, { recursive: true, force: true });
+    writeJson(join(evidenceRoot, 'arbitrary.json'), { ok: true });
+    writeCampaignEvidencePointer(campaignRoot, substrateStep);
+
+    expect(() => runAggregate(campaignRoot)).toThrow();
+
+    const terminalResult = JSON.parse(
+      readFileSync(resolve(campaignRoot, 'gate-release-full', 'result.json'), 'utf8'),
+    ) as { status: string; failure_class: string; summary: string };
+    expect(terminalResult).toMatchObject({
+      status: 'failed',
+      failure_class: 'evidence_missing',
+    });
+    expect(terminalResult.summary).toContain('No JSON evidence file declared schema_version');
+  });
+
   it('passes when backend-real UX trace bundles include semantic manifest, events, screenshots, and review evidence', () => {
     const campaignRoot = mkdtempSync(join(tmpdir(), 'release-full-aggregate-trace-semantic-pass-'));
     seedPassedCampaign(campaignRoot);
@@ -1455,7 +1578,7 @@ describe('release-full aggregate gate', () => {
     expect(terminalResult.summary).toContain('missing current evidence check id');
   });
 
-  it('does not accept dummy required paths when manifest-required backend and rehearsal evidence is absent', () => {
+  it('does not accept dummy required paths when manifest-required backend and unified deploy evidence is absent', () => {
     const campaignRoot = mkdtempSync(join(tmpdir(), 'release-full-aggregate-dummy-pointer-'));
     for (const stepId of UPSTREAM_STEP_IDS) {
       seedPassedUpstreamStep(campaignRoot, stepId, {

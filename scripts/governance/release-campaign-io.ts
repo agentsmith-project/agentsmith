@@ -1606,6 +1606,119 @@ function evaluateUxTraceBundles(
   return evaluateUxTraceEvidenceRoot(path, step, check).records;
 }
 
+function stringArray(value: unknown): string[] {
+  return Array.isArray(value) ? value.filter((item): item is string => typeof item === 'string') : [];
+}
+
+function flowIdsFromAggregate(payload: Record<string, unknown>): Set<string> {
+  const flows = Array.isArray(payload.flows) ? payload.flows : [];
+  const ids = new Set<string>();
+  for (const flow of flows) {
+    if (!isRecord(flow)) {
+      continue;
+    }
+    if (typeof flow.flow === 'string' && flow.status === 'passed') {
+      ids.add(flow.flow);
+    }
+  }
+  return ids;
+}
+
+function validateUnifiedDeployPayload(
+  payload: Record<string, unknown>,
+  check: CurrentVerificationCampaignEvidenceCheck,
+  path: string,
+): string | null {
+  if (check.expectedStatus && payload.status !== check.expectedStatus) {
+    return `${path} status must be ${check.expectedStatus}.`;
+  }
+  if (check.expectedProducer && payload.producer !== check.expectedProducer) {
+    return `${path} producer must be ${check.expectedProducer}.`;
+  }
+  if (check.expectedCommand && payload.command !== check.expectedCommand) {
+    return `${path} command must be ${check.expectedCommand}.`;
+  }
+  if (check.expectedProfile && payload.profile !== check.expectedProfile) {
+    return `${path} profile must be ${check.expectedProfile}.`;
+  }
+
+  const expectedFlows = stringArray(check.expectedProductFlows);
+  if (expectedFlows.length > 0) {
+    const passedFlows = flowIdsFromAggregate(payload);
+    const missingFlows = expectedFlows.filter((flow) => !passedFlows.has(flow));
+    if (missingFlows.length > 0) {
+      return `${path} must include passed product flow evidence for: ${missingFlows.join(', ')}.`;
+    }
+  }
+
+  return null;
+}
+
+function evaluateUnifiedDeployEvidence(
+  campaignRoot: string,
+  check: CurrentVerificationCampaignEvidenceCheck,
+): ReleaseCampaignEvidencePointer['required_paths'] {
+  const path = materializeCampaignPath(campaignRoot, check.path);
+  const minCount = check.minCount ?? 1;
+  const fileName = check.fileName ?? '.json';
+  const matches = listRecursiveFiles(path).filter((candidate) => matchesFileName(candidate, fileName));
+  const matchingSchemaPaths: string[] = [];
+  const validPaths: string[] = [];
+  const errors: string[] = [];
+
+  if (matches.length < minCount) {
+    errors.push(`Expected at least ${minCount} JSON evidence file(s), found ${matches.length}.`);
+  }
+
+  for (const match of matches) {
+    let payload: unknown;
+    try {
+      payload = JSON.parse(readFileSync(match, 'utf8')) as unknown;
+    } catch (error) {
+      errors.push(`${match} must be valid JSON: ${error instanceof Error ? error.message : String(error)}.`);
+      continue;
+    }
+
+    if (!isRecord(payload)) {
+      errors.push(`${match} must be a JSON object.`);
+      continue;
+    }
+
+    if (check.expectedSchemaVersion && payload.schema_version !== check.expectedSchemaVersion) {
+      continue;
+    }
+
+    matchingSchemaPaths.push(match);
+    const diagnostic = validateUnifiedDeployPayload(payload, check, match);
+    if (diagnostic) {
+      errors.push(diagnostic);
+      continue;
+    }
+
+    validPaths.push(match);
+  }
+
+  if (check.expectedSchemaVersion && matchingSchemaPaths.length === 0) {
+    errors.push(`No JSON evidence file declared schema_version ${check.expectedSchemaVersion}.`);
+  }
+  if (validPaths.length === 0 && errors.length === 0) {
+    errors.push('No semantically valid unified deploy evidence file found.');
+  }
+
+  return [{
+    id: check.id,
+    path,
+    kind: check.kind,
+    exists: errors.length === 0 && validPaths.length > 0,
+    matches: validPaths,
+    min_count: minCount,
+    ...(errors.length > 0 ? {
+      error: errors.join(' '),
+      failure_class: 'evidence_missing' as const,
+    } : {}),
+  }];
+}
+
 function evaluateEvidenceCheck(
   campaignRoot: string,
   step: CurrentVerificationCampaignStep,
@@ -1613,6 +1726,9 @@ function evaluateEvidenceCheck(
 ): ReleaseCampaignEvidencePointer['required_paths'] {
   if (check.semantic === 'ux_trace_bundle') {
     return evaluateUxTraceBundles(campaignRoot, step, check);
+  }
+  if (check.semantic === 'unified_deploy_evidence') {
+    return evaluateUnifiedDeployEvidence(campaignRoot, check);
   }
 
   const path = materializeCampaignPath(campaignRoot, check.path);

@@ -24,7 +24,7 @@ Machine-readable source:
 
 ## 持续生效的 runtime contract
 
-1. 只有一个 AgentSmith deploy 模型；`local-kind` 与 `existing-cluster` 是 profile，不是 demo/cluster 两套产品。
+1. 只有一个 AgentSmith deploy 模型；`local-kind` 与 `existing-cluster` 是 profile，不是两套产品。
 2. Substrates 保持在 app namespace 外部，由 Docker 或运维提供的服务承载；AgentSmith app 工作负载运行在 Kubernetes。
 3. 当前里程碑 `api replicas=1`，直到引入明确的多副本 execution routing 设计。
 

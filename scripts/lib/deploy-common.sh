@@ -65,7 +65,7 @@ if [[ -n "${INFERRED_RELEASE_ROOT}" ]]; then
   INFERRED_DEPLOY_ROOT="$(infer_deploy_root_from_release_root "${INFERRED_RELEASE_ROOT}" || true)"
 fi
 
-DEPLOY_ROOT="${DEPLOY_ROOT:-${DEMO_DEPLOY_ROOT:-${CLUSTER_DEPLOY_ROOT:-${INFERRED_DEPLOY_ROOT:-${DEPLOY_ROOT_DEFAULT}}}}}"
+DEPLOY_ROOT="${DEPLOY_ROOT:-${INFERRED_DEPLOY_ROOT:-${DEPLOY_ROOT_DEFAULT}}}"
 CURRENT_LINK="${DEPLOY_ROOT}/current"
 EXPLICIT_RELEASE_ID="${RELEASE_ID:-}"
 RELEASE_ID="${EXPLICIT_RELEASE_ID}"
@@ -81,11 +81,7 @@ if [[ -z "${RELEASE_ROOT:-}" ]]; then
 elif [[ -e "${RELEASE_ROOT}" ]]; then
   RELEASE_ROOT="$(cd -P "${RELEASE_ROOT}" && pwd)"
 fi
-if [[ -d "${RELEASE_ROOT}/scripts/lib" ]]; then
-  RELEASE_SCRIPT_DIR="${RELEASE_ROOT}/scripts"
-else
-  RELEASE_SCRIPT_DIR="${RELEASE_ROOT}/scripts/demo-deploy"
-fi
+RELEASE_SCRIPT_DIR="${RELEASE_ROOT}/scripts"
 STATE_DIR="${DEPLOY_ROOT}/state"
 LOG_DIR="${DEPLOY_ROOT}/logs"
 REPORT_DIR="${DEPLOY_ROOT}/reports"

@@ -4,7 +4,7 @@ set -euo pipefail
 ROOT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
 source "${ROOT_DIR}/scripts/lib/kind-cluster-bootstrap.sh"
 CLUSTER_NAME="${1:-${LOCAL_KIND_CLUSTER_NAME:-agentsmith}}"
-CONFIG_PATH="${2:-${LOCAL_KIND_CONFIG_PATH:-${ROOT_DIR}/infra/deploy/demo/kind/config.yaml}}"
+CONFIG_PATH="${2:-${LOCAL_KIND_CONFIG_PATH:-${ROOT_DIR}/infra/deploy/unified/local-kind/config.yaml}}"
 CONTROL_PLANE_NODE="${3:-${LOCAL_KIND_CONTROL_PLANE_NODE_NAME:-${CLUSTER_NAME}-control-plane}}"
 KIND_CONTEXT="kind-${CLUSTER_NAME}"
 LOCAL_KIND_STATE_ROOT="${LOCAL_KIND_STATE_ROOT:-${HOME}/agentsmith/local-kind}"

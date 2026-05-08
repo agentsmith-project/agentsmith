@@ -18,8 +18,6 @@
 7. [Agent Task Runner Runbook](./agent-task-runner-runbook.md)
 8. [Unified Deploy Operations](./user-guides/unified-deploy-operations.md)
 
-Governance v2 closure pointer: [Engineering Governance Developer Flow Optimization v2](./engineering/governance-developer-flow-optimization-v2.md) is `first_scope_closed_2026-04-29`; remaining items are backlog/reference, not current marching orders.
-
 ## 2. 不再属于 current docs 的内容
 
 以下内容一律不再作为 current docs 保留：
@@ -44,7 +42,7 @@ Git 历史足够承担追溯职责；current docs 只保留今天仍需要被阅
 4. [Current Engineering Governance Model](./current-engineering-governance-model.md)
 5. [Testing Docs Index](./testing/README.md)
 
-### 运行、排障、发布、排演
+### 运行、排障、发布、部署
 1. [User Guides Index](./user-guides/README.md)
 2. [Current Engineering Governance Model](./current-engineering-governance-model.md)
 3. [Diagnostic Catalog v1](./testing/diagnostic-catalog-v1.md)
@@ -66,5 +64,5 @@ Git 历史足够承担追溯职责；current docs 只保留今天仍需要被阅
 - 产品对象名、页面 IA、用户可见命名冲突时，以 [Product Terminology Contract](./contracts/product-terminology.md) 为准。
 - UI 风格、视觉语言与实现偏好冲突时，以 [DESIGN.md](../DESIGN.md) 为准；产品对象与 IA 不由 `DESIGN.md` 定义。
 - 工程命令、gate、验证通道、发布流程冲突时，以 [Current Engineering Governance Model](./current-engineering-governance-model.md) 和 machine-readable manifests 为准。
-- 部署模型冲突时，以 [Unified Deploy Contract v2](./contracts/unified-deploy-contract-v2.md) 和 [Unified Deploy Operations](./user-guides/unified-deploy-operations.md) 为准；旧 demo/cluster deploy 文档只保留历史参考价值。
+- 部署模型冲突时，以 [Unified Deploy Contract](./contracts/unified-deploy-contract.md) 和 [Unified Deploy Operations](./user-guides/unified-deploy-operations.md) 为准。
 - release-grade automated verification 的面向人入口是 `npm run release:ready`；precheck 通过后使用其背后的 internal adapter `release:campaign:full`。证据完整性、aggregate-only `gate:release:full` 复核语义和常见误区，参考 [Verification Campaigns v1](./testing/verification-campaigns-v1.md)；若与 contracts 冲突，仍以 contracts 和 manifests 为准。

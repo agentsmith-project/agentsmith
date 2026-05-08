@@ -541,6 +541,32 @@ describe("current gate result schema", () => {
     expect(payload.gate_adapter.ci_job).toBe("local");
   });
 
+  it.each([
+    {
+      gateId: "lane-unified-deploy-substrate",
+      lineKind: "unified_deploy_substrate",
+      npmScript: "lane:unified-deploy:substrate",
+    },
+    {
+      gateId: "lane-unified-deploy-local-kind-images",
+      lineKind: "unified_deploy_local_kind_images",
+      npmScript: "lane:unified-deploy:local-kind:images",
+    },
+    {
+      gateId: "lane-unified-deploy-local-kind",
+      lineKind: "unified_deploy_local_kind",
+      npmScript: "lane:unified-deploy:local-kind",
+    },
+  ])("classifies failed infrastructure deploy lane %s as infra setup failure", (input) => {
+    const payload = runWrappedGateResultExpectFailure({
+      ...input,
+      command: "exit 42",
+    });
+
+    expect(payload.status).toBe("failed");
+    expect(payload.failure_class).toBe("infra_setup_failure");
+  });
+
   it("uses campaign:<step-id> when a campaign step invokes a native gate writer", () => {
     const payload = runWrappedGateResult({
       gateId: "lane-unified-deploy-substrate",

@@ -379,7 +379,6 @@ function resolveLocalKindHost(
 ): string {
   const host = env.SUBSTRATE_LOCAL_KIND_HOST
     ?? env.SUBSTRATE_KIND_GATEWAY_HOST
-    ?? env.CLUSTER_REHEARSAL_KIND_GATEWAY_HOST
     ?? env.KIND_GATEWAY_HOST
     ?? env.SUBSTRATE_HOST
     ?? existingValues.SUBSTRATE_LOCAL_KIND_HOST

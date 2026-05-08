@@ -17,12 +17,11 @@ Do not use this contract to rename machine-readable API fields, OpenAPI tags, ba
 ## Authority relationship
 
 - `docs/CURRENT_BASELINE.md` is the human current-truth router.
-- `docs/contracts/README.md` partitions current-v1 active contracts from
-  target-v2 contracts when both must coexist.
+- `docs/contracts/README.md` partitions current active contracts by
+  product surface and engineering concern.
 - This terminology contract defines product-facing names and IA boundaries.
-  Target deploy terms below are implementation-target vocabulary only until
-  current-baseline routing, user guides, UI/IA, scripts, gates, and evidence
-  switch to unified deploy v2.
+  Deploy vocabulary is current vocabulary and must describe the unified
+  deploy profiles directly.
 
 ## 1. Canonical product-facing terms
 
@@ -185,77 +184,52 @@ Do not use this contract to rename machine-readable API fields, OpenAPI tags, ba
 - A terminal can belong to an active run/test run or be a standalone task terminal created from the task's bound runner.
 - Product-facing terminal UX must describe session lifecycle truth, not treat terminal as a generic floating panel.
 
-## Target deploy terms (target-v2 only)
+## Deploy Terms
 
-These terms belong to `docs/contracts/unified-deploy-contract-v2.md` while that
-file is `target_v2_contract` / `not_current_runtime_truth`. They are not proof
-that a current UI/IA deploy surface has shipped.
+These terms belong to `docs/contracts/unified-deploy-contract.md` and define the
+current deploy vocabulary.
 
 1. `AgentSmith deploy`
-- Target-v2 operator-facing deployment workflow.
-- It is one deploy model with profiles, not separate demo/cluster product lines.
+- Operator-facing deployment workflow.
+- It is one deploy model with profiles, not separate product lines.
 - It is not a current frontend page or sidebar object unless a later UI/IA
   contract explicitly adds one.
 
 2. `Deploy profile`
-- Target-v2 environment preparation profile for the same `AgentSmith deploy`
-  model.
+- Environment preparation profile for the same `AgentSmith deploy` model.
 - Current target profile names are `local-kind` and `existing-cluster`.
 - Profiles do not create separate product capabilities or release lines.
 
 3. `local-kind`
-- Target-v2 local rehearsal profile.
+- Local Kubernetes profile.
 - It uses Docker-only substrate plus local kind for the AgentSmith app
   Kubernetes workload.
-- It replaces `demo-deploy` as a target user-facing deploy profile only after
-  v2 implementation evidence and current-baseline routing switch.
 
 4. `existing-cluster`
-- Target-v2 real Kubernetes profile.
+- Real Kubernetes profile.
 - It deploys the same AgentSmith app topology to an operator-provided namespace.
 - It is not a BYO-substrate product capability and not a second substrate
   provider abstraction.
 
 5. `Substrate module`
-- Target-v2 Docker-only dependency base for PostgreSQL, MongoDB, Redis, MinIO,
-  and Keycloak.
+- Docker-only dependency base for PostgreSQL, MongoDB, Redis, MinIO, and
+  Keycloak.
 - It owns dependency lifecycle, health, destructive reset, dependency readiness
   reseed, and connection truth.
 - It does not own AgentSmith app workloads or product bootstrap.
 
 6. `AgentSmith app`
-- Target-v2 Kubernetes workload set for `web`, `api`, `llmup`,
-  sandbox-manager, managed runner deployment configuration, and required
+- Kubernetes workload set for `web`, `api`, `llmup`, sandbox-manager, managed
+  runner deployment configuration, and required
   Kubernetes resources.
 - It consumes substrate truth and must not invent dependency addresses.
 
 7. `app-managed llmup`
-- Target-v2 deployment ownership term.
+- Deployment ownership term.
 - It means `llmup` is deployed as an AgentSmith app Kubernetes workload and
   called by API through an internal service.
 - It does not mean AgentSmith owns llmup source code, source builds, or
   model-provider feature expansion.
-
-## Legacy deploy term allowlist
-
-The following legacy deploy terms may remain only in current-v1 specs, migration
-mappings, negative checks, cleanup evidence, script names during migration, or
-historical docs while v1 remains active:
-
-- `demo-deploy`
-- `cluster-deploy`
-- `DEMO_DEPLOY_MODE`
-- `CLUSTER_DEPLOY_MODE`
-- `simple`
-- `full`
-- `semi-auto`
-- `full-auto`
-- Compose `api` / `web` app stage
-- Compose `universal-proxy` service
-- `universal-proxy` as deployment placement terminology
-
-They are not target-v2 product-facing names, and they must not be introduced as
-new current UI/IA objects.
 
 ## 2. Removed or restricted product-facing terms
 
@@ -329,5 +303,5 @@ Current enforcement must at least verify:
 3. Chat selection is described as `Model`
 4. `Agent tasks` and `Agent Runners` are the active route/module-map names
 5. `Shared context` remains a visible governance object in the route manifest
-6. active docs, i18n, MSW handlers, route manifests, public/generated contracts, SDK exports, and deployment truth are covered by forbidden legacy naming scans
+6. active docs, i18n, MSW handlers, route manifests, public/generated contracts, SDK exports, and deployment truth are covered by forbidden naming scans
 7. `contracts:check` fails if the current terminology contract drifts

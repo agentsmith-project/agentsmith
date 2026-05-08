@@ -10,8 +10,6 @@ export const CURRENT_STATUS_PROJECTION_VERSION = 1 as const;
 export type CurrentStatusProjectionGoal =
   | 'verify'
   | 'release-ready'
-  | 'demo-rehearsal'
-  | 'cluster-rehearsal'
   | 'local-real'
   | null;
 
@@ -190,8 +188,6 @@ const STATUS_PROJECTION_TOP_LEVEL_FIELDS = new Set<string>([
 const GOALS = new Set<Exclude<CurrentStatusProjectionGoal, null>>([
   'verify',
   'release-ready',
-  'demo-rehearsal',
-  'cluster-rehearsal',
   'local-real',
 ]);
 
@@ -739,14 +735,6 @@ export function normalizeStatusProjectionRuntimeLine(input: {
   }
   if (input.runtimeLine === 'local-real') {
     return 'local-manual';
-  }
-  if (
-    input.goal === 'demo-rehearsal'
-    || input.goal === 'cluster-rehearsal'
-    || input.runtimeLine === 'demo-rehearsal'
-    || input.runtimeLine === 'cluster-rehearsal'
-  ) {
-    return null;
   }
   return input.runtimeLine ?? null;
 }

@@ -271,8 +271,8 @@ function envProfiles(step: CurrentVerificationCampaignStep): readonly string[] {
   if (step.id === 'gate-release' || step.nativeResult?.gateId === 'lane-backend-real-release') {
     profiles.push('backend_real_release');
   }
-  if (step.id.includes('rehearsal')) {
-    profiles.push('scenario_rehearsal');
+  if (step.id.includes('unified-deploy')) {
+    profiles.push('unified_deploy');
   }
   if (step.executionMode === 'aggregate_only') {
     profiles.push('aggregate_verdict');
@@ -296,7 +296,7 @@ function timeoutsForStep(step: CurrentVerificationCampaignStep): CurrentJobMetad
       source: CAMPAIGN_TIMEOUT_SOURCE,
     };
   }
-  if (step.id === 'gate-release' || step.id.includes('rehearsal')) {
+  if (step.id === 'gate-release' || step.id.includes('unified-deploy')) {
     return {
       local_seconds: 3600,
       ci_seconds: 5400,
@@ -1034,7 +1034,8 @@ function isReleaseSensitiveJob(entry: Record<string, unknown>): boolean {
   return joined.includes('backend-real')
     || joined.includes('backend_real')
     || joined.includes('release')
-    || joined.includes('rehearsal')
+    || joined.includes('unified-deploy')
+    || joined.includes('unified_deploy')
     || joined.includes('provider-secret-profile')
     || joined.includes('backend-real-provider-quota');
 }

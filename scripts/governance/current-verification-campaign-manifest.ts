@@ -25,7 +25,9 @@ export type CurrentVerificationCampaignEvidenceCheckKind =
   | 'visual_baseline_automated_passes'
   | 'visual_run_manifest'
   | 'visual_baseline_reviews';
-export type CurrentVerificationCampaignEvidenceSemantic = 'ux_trace_bundle';
+export type CurrentVerificationCampaignEvidenceSemantic =
+  | 'unified_deploy_evidence'
+  | 'ux_trace_bundle';
 
 export interface CurrentVerificationCampaignEvidenceCheck {
   id: string;
@@ -34,6 +36,12 @@ export interface CurrentVerificationCampaignEvidenceCheck {
   fileName?: string;
   minCount?: number;
   semantic?: CurrentVerificationCampaignEvidenceSemantic;
+  expectedSchemaVersion?: string;
+  expectedProducer?: string;
+  expectedStatus?: string;
+  expectedCommand?: string;
+  expectedProfile?: string;
+  expectedProductFlows?: readonly string[];
 }
 
 export interface CurrentVerificationCampaignNativeResult {

@@ -412,7 +412,6 @@ function runtimeLockScopeKind(
     case 'substrate':
     case 'lifecycle':
     case 'port':
-    case 'scenario_world':
       return 'local_host';
     case 'provider_quota':
     case 'secret_profile':
@@ -452,7 +451,6 @@ function runtimeLockScopeKey(
     case 'substrate':
     case 'lifecycle':
     case 'port':
-    case 'scenario_world':
       return `local-host:${lock.id}`;
     case 'provider_quota':
     case 'secret_profile':

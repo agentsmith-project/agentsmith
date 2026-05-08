@@ -1837,7 +1837,7 @@ async function buildSafety(options: {
     addFailure(
       failures,
       'safety:kind-ingress-port',
-      `local-kind ingress requires ${LOCAL_KIND_CONTROL_PLANE_NODE} to expose ${LOCAL_KIND_INGRESS_NODE_PORT}/tcp -> ${LOCAL_KIND_INGRESS_HOST_PORT}; run scripts/ensure-local-kind-cluster.sh with infra/deploy/demo/kind/config.yaml`,
+      `local-kind ingress requires ${LOCAL_KIND_CONTROL_PLANE_NODE} to expose ${LOCAL_KIND_INGRESS_NODE_PORT}/tcp -> ${LOCAL_KIND_INGRESS_HOST_PORT}; run scripts/ensure-local-kind-cluster.sh with infra/deploy/unified/local-kind/config.yaml`,
     );
   }
 

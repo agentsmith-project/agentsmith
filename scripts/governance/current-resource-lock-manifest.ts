@@ -15,7 +15,6 @@ export const CURRENT_RESOURCE_LOCK_IDS = [
   'runtime-current-aliases',
   'release-latest-pointer',
   'release-campaign-root-writes',
-  'scenario-world',
   'backend-real-provider-quota',
   'provider-secret-profile',
   'visual-baseline-update',
@@ -30,7 +29,6 @@ export type CurrentResourceLockCategory =
   | 'mutable_alias'
   | 'release_pointer'
   | 'campaign_root'
-  | 'scenario_world'
   | 'provider_quota'
   | 'secret_profile'
   | 'visual_baseline';
@@ -144,7 +142,6 @@ const RESOURCE_LOCK_CATEGORIES = [
   'mutable_alias',
   'release_pointer',
   'campaign_root',
-  'scenario_world',
   'provider_quota',
   'secret_profile',
   'visual_baseline',
@@ -202,7 +199,6 @@ const PATH_PATTERN_CATEGORIES = new Set<CurrentResourceLockCategory>([
   'mutable_alias',
   'campaign_root',
   'release_pointer',
-  'scenario_world',
   'visual_baseline',
 ]);
 const PROFILE_REUSE_CATEGORIES = new Set<CurrentResourceLockCategory>([
@@ -426,8 +422,8 @@ export const CURRENT_RESOURCE_LOCK_MANIFEST: readonly CurrentResourceLockDefinit
         },
         {
           kind: 'port',
-          value: 17017,
-          label: 'Mongo integration database port',
+          value: 27027,
+          label: 'Mongo unified substrate database port',
         },
         {
           kind: 'port',
@@ -551,44 +547,10 @@ export const CURRENT_RESOURCE_LOCK_MANIFEST: readonly CurrentResourceLockDefinit
       paths: [
         'artifacts/release-runs/<campaign-run-id>/**',
         '<campaign-root>/<campaign-step-id>/**',
+        '<campaign-root>/unified-deploy/**',
       ],
     },
     enforcement: 'modeled_only',
-  },
-  {
-    id: 'scenario-world',
-    category: 'scenario_world',
-    scope: 'local_host',
-    mode: 'exclusive',
-    reason: 'Retired demo and cluster rehearsal adapters still own their historical local worlds when invoked directly; they are not release campaign gates.',
-    owners: {
-      npmScripts: ['rehearse:demo', 'rehearse:cluster'],
-      commandSurfaces: ['retired demo rehearsal world', 'retired cluster rehearsal world'],
-    },
-    appliesTo: {
-      npmScripts: ['rehearse:demo', 'rehearse:cluster'],
-      paths: [
-        'scripts/scenarios/<scenario-id>/**',
-        'artifacts/runtime/scenario/<scenario-id>/**',
-      ],
-      ports: [
-        {
-          kind: 'family',
-          name: 'scenario-sandbox-host-ports',
-          values: [29280, 29080],
-        },
-        {
-          kind: 'family',
-          name: 'scenario-local-registry-host-ports',
-          values: [5002, 5003],
-        },
-      ],
-    },
-    enforcement: 'existing_preflight_cleanup',
-    existingImplementation: [
-      'scripts/scenarios/demo-rehearsal/reset.sh',
-      'scripts/scenarios/cluster-rehearsal/reset.sh',
-    ],
   },
   {
     id: 'backend-real-provider-quota',

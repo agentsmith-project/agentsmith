@@ -214,7 +214,7 @@ export function writeWrappedCommandFinishDiagnostics(input: WrappedCommandFinish
   });
 }
 
-export function writeRehearsalStageStartDiagnostics(input: WrappedCommandStartDiagnosticsInput): void {
+export function writeRunStageStartDiagnostics(input: WrappedCommandStartDiagnosticsInput): void {
   appendCurrentRunStageEvent({
     run_root: input.run_root,
     run_id: input.run_id,
@@ -224,15 +224,15 @@ export function writeRehearsalStageStartDiagnostics(input: WrappedCommandStartDi
     ci_job: input.ci_job,
     stage: input.stage,
     event: 'started',
-    diagnostic_reason_code: 'rehearsal_stage_started',
+    diagnostic_reason_code: 'run_stage_started',
     generated_at: input.started_at,
   });
 }
 
-export function writeRehearsalStageFinishDiagnostics(input: WrappedCommandFinishDiagnosticsInput): void {
+export function writeRunStageFinishDiagnostics(input: WrappedCommandFinishDiagnosticsInput): void {
   const finishedAt = input.finished_at ?? new Date().toISOString();
   const durationMs = resolveDurationMs(input.started_ms, input.finished_ms);
-  const failureReason = input.stage_failure_reason ?? 'rehearsal_stage_exited_nonzero';
+  const failureReason = input.stage_failure_reason ?? 'run_stage_exited_nonzero';
 
   appendCurrentRunStageEvent({
     run_root: input.run_root,
@@ -244,7 +244,7 @@ export function writeRehearsalStageFinishDiagnostics(input: WrappedCommandFinish
     stage: input.stage,
     event: input.event,
     diagnostic_reason_code: input.event === 'finished'
-      ? input.diagnostic_reason_code ?? 'rehearsal_stage_completed'
+      ? input.diagnostic_reason_code ?? 'run_stage_completed'
       : undefined,
     stage_failure_reason: input.event === 'failed'
       ? failureReason
@@ -265,7 +265,7 @@ export function writeRehearsalStageFinishDiagnostics(input: WrappedCommandFinish
         finished_at: finishedAt,
         duration_ms: durationMs,
         diagnostic_reason_code: input.event === 'finished'
-          ? 'rehearsal_stage_duration_observed'
+          ? 'run_stage_duration_observed'
           : undefined,
         stage_failure_reason: input.event === 'failed'
           ? failureReason
@@ -420,21 +420,21 @@ function runCliFromEnv(): void {
     return;
   }
 
-  if (action === 'rehearsal-stage-start') {
-    writeRehearsalStageStartDiagnostics({
+  if (action === 'run-stage-start') {
+    writeRunStageStartDiagnostics({
       ...baseInput,
       started_at: optionalEnv('CURRENT_RUN_DIAGNOSTICS_STARTED_AT'),
     });
     return;
   }
 
-  if (action === 'rehearsal-stage-finish') {
+  if (action === 'run-stage-finish') {
     const event = requireEnv('CURRENT_RUN_DIAGNOSTICS_EVENT');
     if (event !== 'finished' && event !== 'failed') {
       throw new Error('CURRENT_RUN_DIAGNOSTICS_EVENT must be finished or failed');
     }
 
-    writeRehearsalStageFinishDiagnostics({
+    writeRunStageFinishDiagnostics({
       ...baseInput,
       event,
       started_at: optionalEnv('CURRENT_RUN_DIAGNOSTICS_STARTED_AT'),

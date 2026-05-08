@@ -156,7 +156,7 @@ prewarm_internal_kind_cluster() {
 
   info "prewarming local kind cluster for internal agent-task backend-real coverage"
   LOCAL_KIND_CLUSTER_NAME="${INTERNAL_AGENT_KIND_CLUSTER_NAME:-agentsmith}" \
-  LOCAL_KIND_CONFIG_PATH="${ROOT_DIR}/infra/deploy/demo/kind/config.yaml" \
+  LOCAL_KIND_CONFIG_PATH="${ROOT_DIR}/infra/deploy/unified/local-kind/config.yaml" \
   LOCAL_KIND_CONTROL_PLANE_NODE_NAME="${INTERNAL_AGENT_KIND_CLUSTER_NAME:-agentsmith}-control-plane" \
     ensure_local_kind_cluster
 }

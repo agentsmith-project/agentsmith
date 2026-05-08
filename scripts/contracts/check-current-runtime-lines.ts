@@ -129,11 +129,6 @@ for (const expectedLine of ['local-manual', 'unified-deploy-local-kind', 'unifie
     failures.push(`current runtime-line manifest must define ${expectedLine}`);
   }
 }
-for (const retiredLine of ['demo-rehearsal', 'demo-deploy', 'cluster-rehearsal', 'cluster-deploy']) {
-  if (lineIds.includes(retiredLine)) {
-    failures.push(`current runtime-line manifest must not keep retired runtime line ${retiredLine}`);
-  }
-}
 
 const localLine = CURRENT_RUNTIME_LINE_MANIFEST.find((line) => line.id === 'local-manual');
 if (localLine?.surface !== 'local-flow' || !/local-real/.test(localLine.externalPath)) {
@@ -206,11 +201,8 @@ if (!/serially|串行/.test(localRuntimeFlows) || !/serially|串行/.test(runtim
 if (!/api replicas?=1|api replicas stay at 1|api replicas fixed at 1/i.test(unifiedDeployOperations + runtimeLinesMatrix)) {
   failures.push('runtime-line docs must state the current api replicas=1 deployment constraint');
 }
-if (/demo-rehearsal|cluster-rehearsal/.test(localRuntimeFlows)) {
-  failures.push('Local Runtime Flows must not present retired demo/cluster rehearsal lines as current paths');
-}
-if (!/not two products|不是 demo\/cluster 两套产品|old demo\/cluster split is no longer/i.test(runtimeLinesMatrix + unifiedDeployOperations)) {
-  failures.push('runtime-line docs must state that local-kind/existing-cluster are profiles, not old demo/cluster products');
+if (!/not separate products|不是两套产品|not two products/i.test(runtimeLinesMatrix + unifiedDeployOperations)) {
+  failures.push('runtime-line docs must state that local-kind/existing-cluster are profiles, not separate products');
 }
 
 if (failures.length > 0) {

@@ -1,15 +1,12 @@
 # Engineering Docs Index
 
-This directory holds engineering-side guidance that supports implementation and maintenance but does not define product IA, UI style guidance, or historical project process.
+This directory holds engineering-side guidance that supports implementation and maintenance but does not define product IA, UI style guidance, or one-off project process notes.
 
 Current guidance and closure records:
 - [Current Engineering Governance Model](../current-engineering-governance-model.md) - current engineering governance truth; keep aligned with machine-readable manifests/contracts
 - [Agent Task Model Setting Milestone Plan v1](./agent-task-execution-model-settings-milestone-plan-v1.md) - `handoff_plan_ready`; product/contract plan for choosing which Endpoint/default model Agent tasks use without moving model configuration into Agent Runners
-- [Engineering Governance Developer Flow Optimization v2](./governance-developer-flow-optimization-v2.md) - `first_scope_closed_2026-04-29`; closure baseline, remaining items are backlog/reference, not current marching orders
+- [AgentSmith Unified Deploy and Docker Substrate Milestone Plan v1](./agentsmith-unified-deploy-and-docker-substrate-milestone-plan-v1.md) - current deploy implementation plan for local-kind and existing-cluster profiles
 - [前端技术栈与国际化策略-v1](./前端技术栈与国际化策略-v1.md)
-
-Historical / backlog reference:
-- [Engineering Governance Simplification Analysis v1](./governance-simplification-analysis-v1.md) - `historical_superseded_reference`; historical background only, not a current implementation plan after v2 first-scope closure
 
 Decision-required analyses:
 - [Internal Agent Terminal Pod Lifecycle Analysis v1](./internal-agent-terminal-pod-lifecycle-analysis-v1.md) - `decision_required_analysis`; current implementation review and options, not a current implementation plan

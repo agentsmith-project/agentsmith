@@ -65,7 +65,7 @@ export const CURRENT_RUNTIME_SHARED_RULES: readonly CurrentRuntimeSharedRule[] =
   },
   {
     id: 'one-agentsmith-deploy',
-    summary: 'There is one AgentSmith deploy model; local-kind and existing-cluster are profiles, not separate demo and cluster products.',
+    summary: 'There is one AgentSmith deploy model; local-kind and existing-cluster are profiles, not separate products.',
     binding: 'contract',
   },
   {
@@ -102,7 +102,7 @@ export const CURRENT_RUNTIME_LINE_MANIFEST: readonly CurrentRuntimeLineDefinitio
     surface: 'deploy-profile',
     primaryUse: 'Local Kubernetes deploy proof on a developer machine.',
     externalPath: 'npm run test:unified-deploy:local-kind:images then npm run test:unified-deploy:local-kind.',
-    internalPath: 'Same app topology as the deploy model; no separate demo deploy path.',
+    internalPath: 'Same app topology as the deploy model; no separate local install path.',
     substrate: 'Docker substrate registered into Kubernetes Services and EndpointSlices.',
     note: 'Use focused product flows after rollout to prove Files and managed runner behavior.',
     guidePath: 'docs/user-guides/unified-deploy-operations.md',

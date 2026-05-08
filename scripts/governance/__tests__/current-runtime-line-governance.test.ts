@@ -43,7 +43,7 @@ describe('current runtime-line governance', () => {
     expect(listCurrentLocalRuntimeLines()[0].externalPath).toMatch(/local-real/);
   });
 
-  it('keeps unified deploy profiles visible without old demo or cluster runtime lines', () => {
+  it('keeps unified deploy profiles visible as the deploy runtime lines', () => {
     expect(CURRENT_RUNTIME_LINE_MANIFEST.map((line) => line.id)).toEqual([
       'local-manual',
       'unified-deploy-local-kind',

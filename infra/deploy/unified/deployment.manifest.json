@@ -3,7 +3,7 @@
   "deploy_model": "AgentSmith deploy",
   "profiles": {
     "local-kind": {
-      "target_semantics": "local rehearsal profile using Docker-only substrate and a local kind namespace"
+      "target_semantics": "local-kind deploy profile using Docker-only substrate and a local kind namespace"
     },
     "existing-cluster": {
       "target_semantics": "namespaced Kubernetes app deployment consuming the Docker substrate truth schema"

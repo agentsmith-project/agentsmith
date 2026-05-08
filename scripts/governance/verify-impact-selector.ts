@@ -24,7 +24,7 @@ export type ChangedFileImpactRule =
   | 'trace_spec_story_binding'
   | 'runner_context_credential'
   | 'release_real_owner_diagnostic'
-  | 'release_deploy_rehearsal'
+  | 'release_deploy_operations'
   | 'governance_tooling'
   | 'unmapped_source';
 
@@ -195,7 +195,7 @@ const IMPACT_RULE_ORDER: readonly ChangedFileImpactRule[] = [
   'trace_spec_story_binding',
   'runner_context_credential',
   'release_real_owner_diagnostic',
-  'release_deploy_rehearsal',
+  'release_deploy_operations',
   'governance_tooling',
   'unmapped_source',
 ];
@@ -224,7 +224,7 @@ const MANUAL_REVIEW_REASONS = {
   unmappedSource: 'unmapped source',
   changeDetectionFailure: 'change detection failure',
   runnerContextCredentialOwnerReview: 'runner/context/credential owner review',
-  releaseDeployRehearsalOperatorReview: 'release/deploy/rehearsal operator review',
+  releaseDeployOperatorReview: 'release/deploy operator review',
   visualV2NeedsReview: 'visual V2 needs review',
 } as const;
 type StoryManualReviewReason = (typeof MANUAL_REVIEW_REASONS)[keyof typeof MANUAL_REVIEW_REASONS];
@@ -235,7 +235,7 @@ const MANUAL_REVIEW_REASON_ORDER: readonly StoryManualReviewReason[] = [
   MANUAL_REVIEW_REASONS.unmappedSource,
   MANUAL_REVIEW_REASONS.changeDetectionFailure,
   MANUAL_REVIEW_REASONS.runnerContextCredentialOwnerReview,
-  MANUAL_REVIEW_REASONS.releaseDeployRehearsalOperatorReview,
+  MANUAL_REVIEW_REASONS.releaseDeployOperatorReview,
   MANUAL_REVIEW_REASONS.visualV2NeedsReview,
 ];
 
@@ -342,25 +342,18 @@ function isReleaseRealDiagnosticStory(story: VerificationCatalogStory): boolean 
   return story.storyId === 'release-user-story-end-to-end';
 }
 
-function isReleaseDeployOrRehearsalPath(filePath: string): boolean {
+function isReleaseDeployPath(filePath: string): boolean {
   return [
     /^scripts\/release-full-campaign\.sh$/,
     /^scripts\/release-full-aggregate-gate\.sh$/,
-    /^scripts\/cluster-rehearsal-verify\.sh$/,
-    /^scripts\/cluster-deploy\//,
-    /^scripts\/demo-deploy\//,
-    /^scripts\/scenarios\//,
     /^scripts\/governance\/release/,
     /^scripts\/governance\/run-release/,
-    /^scripts\/governance\/rehearsal(?:-|\.|$)/,
-    /^scripts\/governance\/run-rehearsal(?:-|\.|$)/,
     /^scripts\/governance\/release-campaign/,
-    /^scripts\/governance\/current-rehearsal-/,
     /^scripts\/lib\/release-/,
     /^scripts\/lib\/deploy-/,
+    /^scripts\/unified-deploy\//,
     /^scripts\/run-release-local-precheck\.sh$/,
     /^infra\/deploy\//,
-    /^infra\/flows\//,
     /^e2e\/integration-release-user-story/,
     /^e2e\/release-user-story/,
     /^docs\/contracts\/.*release/i,
@@ -371,7 +364,7 @@ function isReleaseDeployOrRehearsalPath(filePath: string): boolean {
 }
 
 function isGovernanceToolingPath(filePath: string): boolean {
-  if (isReleaseDeployOrRehearsalPath(filePath)) {
+  if (isReleaseDeployPath(filePath)) {
     return false;
   }
   return /^scripts\/governance\/.*\.ts$/.test(filePath);
@@ -749,7 +742,7 @@ function riskReasonForCard(
 
   if (riskLevel === 'R0') {
     if (requiredLevels.includes('V4')) {
-      return `${prefix}: V4 release/deploy/rehearsal story card requires operator review; verify report is not release readiness. ${policyReason}`;
+      return `${prefix}: V4 release/deploy story card requires operator review; verify report is not release readiness. ${policyReason}`;
     }
     if (
       releaseRealDiagnosticSelected(context)
@@ -776,8 +769,8 @@ function manualReviewReasonForLevel(
   if (level === 'V2' && manualReviewReasons.has(MANUAL_REVIEW_REASONS.visualV2NeedsReview)) {
     return 'Visual V2 needs review; verify report did not inspect visual evidence.';
   }
-  if (manualReviewReasons.has(MANUAL_REVIEW_REASONS.releaseDeployRehearsalOperatorReview)) {
-    return 'Release/deploy/rehearsal operator review required; verify report did not inspect release evidence.';
+  if (manualReviewReasons.has(MANUAL_REVIEW_REASONS.releaseDeployOperatorReview)) {
+    return 'Release/deploy operator review required; verify report did not inspect release evidence.';
   }
   if (manualReviewReasons.has(MANUAL_REVIEW_REASONS.runnerContextCredentialOwnerReview)) {
     return 'Runner, Context Store, or credential owner review required; verify report did not inspect backend-real evidence.';
@@ -831,7 +824,7 @@ function latestEvidenceForCard(
 ): StoryLatestEvidence {
   let owner = 'verification owner';
   if (requiredLevels.includes('V4')) {
-    owner = 'release/deploy/rehearsal operator';
+    owner = 'release/deploy operator';
   } else if (card.lane === 'backend-real' && requiredLevels.includes('V3')) {
     owner = 'backend-real owner';
   } else if (requiredLevels.includes('V2')) {
@@ -1247,15 +1240,15 @@ export function buildVerificationPlan(input: BuildVerificationPlanInput = {}): V
       });
     }
 
-    if (isReleaseDeployOrRehearsalPath(changedFile)) {
+    if (isReleaseDeployPath(changedFile)) {
       mapped = true;
       const levels: readonly VerificationLevel[] = ['V4'];
       const action = 'Release or deploy path changed. Use npm run release:ready as the next release operation outside this verification report; this report is not a release verdict.';
-      const surface = 'release/deploy/rehearsal';
+      const surface = 'release/deploy';
       const storyIds = stories.map((story) => story.storyId);
       const impactSource: VerificationStoryImpactSource = {
         changedFile,
-        rule: 'release_deploy_rehearsal',
+        rule: 'release_deploy_operations',
         surface,
         action,
         manualReviewRequired: true,
@@ -1265,11 +1258,11 @@ export function buildVerificationPlan(input: BuildVerificationPlanInput = {}): V
       accumulator.surfaces.add(surface);
       accumulator.broadImpact = true;
       accumulator.manualReviewRequired = true;
-      accumulator.reasons.push(`${changedFile} touches release, deploy, or rehearsal operations.`);
+      accumulator.reasons.push(`${changedFile} touches release or deploy operations.`);
       pushUnique(accumulator.nextActions, action);
       recordChangedFileImpact(accumulator, {
         changedFile,
-        rule: 'release_deploy_rehearsal',
+        rule: 'release_deploy_operations',
         surfaces: [surface],
         storyIds,
         action,
@@ -1280,7 +1273,7 @@ export function buildVerificationPlan(input: BuildVerificationPlanInput = {}): V
         levels,
         nextAction: action,
         evidenceStatus: 'missing',
-        manualReviewReasons: [MANUAL_REVIEW_REASONS.releaseDeployRehearsalOperatorReview],
+        manualReviewReasons: [MANUAL_REVIEW_REASONS.releaseDeployOperatorReview],
         impactSource,
       });
     }
@@ -1343,7 +1336,7 @@ export function buildVerificationPlan(input: BuildVerificationPlanInput = {}): V
 
   if (changedFiles.length > 0 && goal !== 'pr' && input.goalExplicit) {
     if (goal === 'release-real' && accumulator.levels.has('V4')) {
-      accumulator.reasons.push('Explicit release-real diagnostic goal was suppressed because V4 release/deploy/rehearsal impact requires release:ready operator review.');
+      accumulator.reasons.push('Explicit release-real diagnostic goal was suppressed because V4 release/deploy impact requires release:ready operator review.');
     } else {
       addGoalDefaults(accumulator, goal);
     }

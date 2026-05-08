@@ -234,7 +234,7 @@ const FLOW_ORDER: ProductVerificationFlowId[] = [
 ];
 const SERVICE_START_PATTERNS = [
   /\bnpm\s+run\s+(?:dev|start|backend-real(?::|$)|test:e2e:.*with-api|test:.*backend-real)/iu,
-  /\b(?:make)\s+(?:local-real-up|local-real-reset|.*rehearsal.*)/iu,
+  /\b(?:make)\s+(?:local-real-up|local-real-reset)/iu,
   /\b(?:next|tsx)\s+.*(?:packages\/api-entry-node\/src\/index|src\/app|server)/iu,
   /\bllmup\b.*\b(?:serve|start|run)\b/iu,
 ] as const;

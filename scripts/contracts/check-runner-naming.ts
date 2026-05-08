@@ -305,7 +305,6 @@ const activeRuntimeSurfaceFiles = uniqueSorted([
   ...activeGovernanceDocFiles,
   ".github/workflows/integration-e2e.yml",
   "README.md",
-  "README-demo-deploy.md",
   ...collectTextFiles("e2e", [".ts", ".tsx", ".md", ".json"]),
   ...collectTextFiles("packages/api-entry-node/src", [".test.ts"]),
   ...collectTextFiles("packages/contracts/src", [".test.ts"]),
@@ -322,21 +321,6 @@ const makefile = readText("Makefile");
 const integrationWorkflow = readText(".github/workflows/integration-e2e.yml");
 const runnerImageCommon = readText("scripts/lib/runner-image-common.sh");
 const buildRunnerImageScript = readText("scripts/build-runner-image.sh");
-const demoCompose = readText("infra/deploy/demo/docker-compose.yml");
-const clusterCompose = readText("infra/deploy/cluster/docker-compose.yml");
-const demoManifest = readText("infra/deploy/demo/deployment.manifest.json");
-const clusterManifest = readText(
-  "infra/deploy/cluster/deployment.manifest.json",
-);
-const demoBundleBuild = readText("scripts/demo-deploy/build-offline-bundle.sh");
-const clusterBuildImages = readText("scripts/cluster-deploy/build-images.sh");
-const clusterBuildBundle = readText("scripts/cluster-deploy/build-bundle.sh");
-const demoDeploy = readText("scripts/demo-deploy/deploy.sh");
-const demoRenderEnv = readText("scripts/demo-deploy/render-env.sh");
-const demoVerify = readText("scripts/demo-deploy/verify.sh");
-const clusterRenderEnv = readText("scripts/cluster-deploy/render-env.sh");
-const clusterVerify = readText("scripts/cluster-deploy/verify.sh");
-const clusterLib = readText("scripts/cluster-deploy/lib.sh");
 const appDeployCommon = readText("scripts/app/deploy-common.sh");
 const deployCommon = readText("scripts/lib/deploy-common.sh");
 const bootstrapCommon = readText("scripts/lib/bootstrap-common.sh");
@@ -369,7 +353,6 @@ const activeTextFiles = [
   "Makefile",
   "package-lock.json",
   "README.md",
-  "README-demo-deploy.md",
   "docs/README.md",
   "docs/CURRENT_BASELINE.md",
   "docs/ci-integration-troubleshooting.md",
@@ -377,25 +360,14 @@ const activeTextFiles = [
   "docs/engineering/agent-task-terminal-recovery-and-message-footer-improvement-plan-v1.md",
   "docs/troubleshooting-guide-v1.md",
   "docs/user-guides/local-runtime-flows.md",
-  "docs/user-guides/demo-deploy-simple-quickstart-zh.md",
-  "docs/user-guides/demo-deploy-operations.md",
-  "docs/user-guides/cluster-deploy-operations.md",
-  "docs/user-guides/cluster-upgrade-operations.md",
   "infra/deploy/Dockerfile.agentsmith-app-base",
   "infra/deploy/Dockerfile.agentsmith-verify-runner-base",
-  "infra/deploy/demo/deployment.manifest.json",
-  "infra/deploy/cluster/deployment.manifest.json",
   "infra/runner/Dockerfile.agent-task-runner",
   "infra/runner/Dockerfile.agent-task-runner-base",
   "scripts/backend-real-bootstrap.sh",
   "scripts/backend-real-run.sh",
   "scripts/build-reliability-smoke.sh",
   "scripts/check-preset-agent-task-file-library.sh",
-  "scripts/cluster-deploy/build-bundle.sh",
-  "scripts/cluster-deploy/check-bundle-inputs.sh",
-  "scripts/demo-deploy/build-offline-bundle.sh",
-  "scripts/demo-deploy/check-bundle-inputs.sh",
-  "scripts/demo-deploy/check-preset-agent-task-file-library.sh",
   "scripts/feishu-real-manual-step.sh",
   "scripts/file-library-real-smoke.sh",
   "scripts/file-library-mount-sync-smoke.sh",
@@ -452,10 +424,6 @@ const activeRunnerWireFiles = [
   "packages/api-entry-node/src/internal-agent-pod-manager.ts",
   "packages/api-entry-node/src/notebook-execution-orchestrator.ts",
   "packages/agent-runner/src/protocol.ts",
-  "scripts/demo-deploy/render-env.sh",
-  "scripts/demo-deploy/verify.sh",
-  "scripts/cluster-deploy/render-env.sh",
-  "scripts/cluster-deploy/verify.sh",
   "scripts/local-manual/start-api.sh",
   "scripts/run-integration-e2e-full.sh",
   "scripts/run-integration-release-user-story.sh",
@@ -493,12 +461,7 @@ const runnerWireForbiddenPatterns = [
   ],
 ] as const;
 
-const runnerWireNegativeProofFiles = [
-  "scripts/demo-deploy/check-rendered-env.sh",
-  "scripts/cluster-deploy/check-rendered-env.sh",
-  "scripts/demo-deploy/verify.test.ts",
-  "scripts/deploy-runner-lifecycle-gates.test.ts",
-] as const;
+const runnerWireNegativeProofFiles: readonly string[] = [];
 
 const activePublicRestContractFiles = [
   "packages/api-entry-node/src/projects-route-match.ts",
@@ -611,9 +574,8 @@ const activeProductContractFiles = [
   "docs/contracts/agent-execution-protocol.md",
   "docs/contracts/backend-storage-architecture-matrix.md",
   "docs/contracts/frontend-resource-policy-governance-v1.md",
+  "docs/contracts/unified-deploy-contract.md",
   "docs/contracts/user-story-contract-v1.md",
-  "docs/contracts/deployment-spec-v1.md",
-  "docs/contracts/cluster-deployment-spec-v1.md",
 ] as const;
 
 const activeProductSurfaceFiles = [
@@ -641,8 +603,7 @@ const activeProductSurfaceFiles = [
   "packages/agent-runner/src/index.ts",
   "packages/agent-runner/src/protocol.ts",
   "packages/agent-runner/src/runner-spec.ts",
-  "infra/deploy/demo/deployment.manifest.json",
-  "infra/deploy/cluster/deployment.manifest.json",
+  "infra/deploy/unified/deployment.manifest.json",
 ] as const;
 
 const backendRealStorySurfaceFiles = [
@@ -1010,10 +971,6 @@ forbidPath(
   "scripts must not keep legacy preset external file-library helper",
 );
 forbidPath(
-  "scripts/demo-deploy/check-preset-external-file-library.sh",
-  "demo deploy must not keep legacy preset external file-library helper",
-);
-forbidPath(
   "e2e/integration-agent-task-external.spec.ts",
   "e2e must not keep Agent Task wrappers around legacy external/notebook specs",
 );
@@ -1024,86 +981,6 @@ requireMatch(
 );
 
 for (const [filePath, content] of [
-  ["infra/deploy/demo/docker-compose.yml", demoCompose],
-  ["infra/deploy/cluster/docker-compose.yml", clusterCompose],
-] as const) {
-  forbidMatch(
-    content,
-    /^\s*external-runner:/m,
-    `${filePath} must not deploy an external-runner service`,
-  );
-  forbidMatch(
-    content,
-    /\bAGENTSMITH_RUNNER_IMAGE\b/,
-    `${filePath} must not use AGENTSMITH_RUNNER_IMAGE`,
-  );
-  forbidMatch(
-    content,
-    /runner-runtime\.env/,
-    `${filePath} must not mount runner-runtime.env`,
-  );
-}
-
-for (const [filePath, content] of [
-  ["infra/deploy/demo/deployment.manifest.json", demoManifest],
-  ["infra/deploy/cluster/deployment.manifest.json", clusterManifest],
-] as const) {
-  forbidMatch(
-    content,
-    /external-runner/,
-    `${filePath} must not list external-runner`,
-  );
-  forbidMatch(
-    content,
-    /PRESET_EXTERNAL_AGENT_NAME/,
-    `${filePath} must not require PRESET_EXTERNAL_AGENT_NAME`,
-  );
-  forbidMatch(
-    content,
-    /PRESET_INTERNAL_AGENT_NAME/,
-    `${filePath} must not require PRESET_INTERNAL_AGENT_NAME`,
-  );
-}
-
-for (const [filePath, content] of [
-  ["scripts/demo-deploy/build-offline-bundle.sh", demoBundleBuild],
-  ["scripts/cluster-deploy/build-images.sh", clusterBuildImages],
-] as const) {
-  requireMatch(
-    content,
-    /agentsmith_agent_task_runner_image=/,
-    `${filePath} VERSION output must include agentsmith_agent_task_runner_image`,
-  );
-  requireMatch(
-    content,
-    /AGENT_TASK_RUNNER_IMAGE/,
-    `${filePath} must build the agent task runner image`,
-  );
-  requireMatch(
-    content,
-    /build_runner_image agent-task/,
-    `${filePath} must build only the agent-task runner image`,
-  );
-  forbidMatch(
-    content,
-    /agentsmith_runner_image=|agentsmith_chat_runner_image=|agentsmith_notebook_runner_image=/,
-    `${filePath} must not write legacy runner VERSION keys`,
-  );
-  forbidMatch(
-    content,
-    /build_runner_image (notebook|chat)\b/,
-    `${filePath} must not build notebook/chat runner images`,
-  );
-}
-
-for (const [filePath, content] of [
-  ["scripts/demo-deploy/deploy.sh", demoDeploy],
-  ["scripts/demo-deploy/render-env.sh", demoRenderEnv],
-  ["scripts/demo-deploy/verify.sh", demoVerify],
-  ["scripts/cluster-deploy/render-env.sh", clusterRenderEnv],
-  ["scripts/cluster-deploy/verify.sh", clusterVerify],
-  ["scripts/cluster-deploy/lib.sh", clusterLib],
-  ["scripts/cluster-deploy/build-bundle.sh", clusterBuildBundle],
   ["scripts/app/deploy-common.sh", appDeployCommon],
   ["scripts/lib/deploy-common.sh", deployCommon],
   ["scripts/lib/bootstrap-common.sh", bootstrapCommon],

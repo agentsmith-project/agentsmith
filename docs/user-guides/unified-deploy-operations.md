@@ -9,8 +9,6 @@ AgentSmith now has one deployment model with two profiles:
 - `local-kind`: runs the same Kubernetes app topology on a developer machine, with Docker substrate services.
 - `existing-cluster`: applies the same app topology to an operator-owned Kubernetes cluster, consuming declared substrate connection truth.
 
-There is no separate demo deploy product path and no separate cluster deploy product path in the current model.
-
 ## Runtime Shape
 
 - AgentSmith app components run in Kubernetes: Web, API, llmup, sandbox-manager, and managed runner workloads.
@@ -119,7 +117,7 @@ kubectl --context kind-agentsmith delete namespace agentsmith-sandbox --ignore-n
 npx tsx scripts/unified-deploy/substrate-lifecycle.ts reset
 ```
 
-If historical file-library PVs remain from local tests, remove only the test JuiceFS PVs in the local kind cluster before rerunning deploy verification.
+If file-library PVs remain from local tests, remove only the test JuiceFS PVs in the local kind cluster before rerunning deploy verification.
 
 ## Evidence
 

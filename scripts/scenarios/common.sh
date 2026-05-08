@@ -62,31 +62,6 @@ load_flow_env() {
   set +a
 }
 
-ensure_rehearsal_mode() {
-  export REHEARSAL_MODE="${REHEARSAL_MODE:-release-fidelity}"
-  case "${REHEARSAL_MODE}" in
-    fast|release-fidelity|offline-package)
-      ;;
-    *)
-      echo "invalid REHEARSAL_MODE=${REHEARSAL_MODE}; expected one of: fast, release-fidelity, offline-package" >&2
-      return 1
-      ;;
-  esac
-}
-
-assert_rehearsal_skip_env_allowed() {
-  ensure_rehearsal_mode
-  [[ "${REHEARSAL_MODE}" != "fast" ]] || return 0
-
-  local key
-  for key in "$@"; do
-    if [[ "${!key:-}" == "1" ]]; then
-      echo "REHEARSAL_MODE=${REHEARSAL_MODE} forbids manual skip env ${key}=1; use REHEARSAL_MODE=fast for local fast paths" >&2
-      return 1
-    fi
-  done
-}
-
 apply_flow_site_env_overrides() {
   local path="$1"
   python3 - <<'PY' "${path}"
@@ -317,19 +292,6 @@ scenario_presence_label_for_probe() {
   fi
 }
 
-render_rehearsal_world_health_snapshot() {
-  local scenario="$1"
-  local scenario_root="$2"
-  shift 2
-
-  env "$@" \
-    node --import tsx "${ROOT_DIR}/scripts/governance/rehearsal-world-health.ts" \
-      "${scenario}" \
-      --root-dir "${ROOT_DIR}" \
-      --scenario-root "${scenario_root}" \
-      --runtime-root "${SCENARIO_RUNTIME_ROOT}"
-}
-
 acquire_scenario_lock() {
   local scenario="$1"
   local scenario_root="${2:-}"
@@ -349,97 +311,6 @@ release_scenario_lock() {
   if [[ "${current}" == "${scenario}" ]]; then
     rm -f "${ACTIVE_SCENARIO_LOCK_FILE}" "${ACTIVE_SCENARIO_STATE_FILE}"
   fi
-}
-
-is_rehearsal_scenario() {
-  local scenario="$1"
-  case "${scenario}" in
-    demo-rehearsal|cluster-rehearsal)
-      return 0
-      ;;
-    *)
-      return 1
-      ;;
-  esac
-}
-
-rehearsal_scenario_root_env_var() {
-  local scenario="$1"
-  case "${scenario}" in
-    demo-rehearsal)
-      printf 'DEMO_REHEARSAL_ROOT\n'
-      ;;
-    cluster-rehearsal)
-      printf 'CLUSTER_REHEARSAL_ROOT\n'
-      ;;
-    *)
-      return 1
-      ;;
-  esac
-}
-
-rehearsal_scenario_reset_script() {
-  local scenario="$1"
-  case "${scenario}" in
-    demo-rehearsal)
-      printf '%s/scripts/scenarios/demo-rehearsal/reset.sh\n' "${ROOT_DIR}"
-      ;;
-    cluster-rehearsal)
-      printf '%s/scripts/scenarios/cluster-rehearsal/reset.sh\n' "${ROOT_DIR}"
-      ;;
-    *)
-      return 1
-      ;;
-  esac
-}
-
-handoff_active_rehearsal_for_reset() {
-  local target="$1"
-  local active
-  active="$(current_active_scenario || true)"
-  [[ -n "${active}" ]] || return 0
-  [[ "${active}" == "${target}" ]] && return 0
-
-  if ! is_rehearsal_scenario "${active}" || ! is_rehearsal_scenario "${target}"; then
-    echo "[scenario] ERROR: active scenario is ${active}; stop it before starting ${target}." >&2
-    return 1
-  fi
-
-  local active_root
-  active_root="$(current_active_scenario_root || true)"
-  if [[ -z "${active_root}" ]]; then
-    echo "[scenario] ERROR: active scenario is ${active}, but its scenario root is unknown; rerun ${active}-reset before starting ${target}." >&2
-    return 1
-  fi
-
-  local reset_script
-  reset_script="$(rehearsal_scenario_reset_script "${active}" || true)"
-  if [[ -z "${reset_script}" || ! -f "${reset_script}" ]]; then
-    echo "[scenario] ERROR: active scenario ${active} cannot hand off to ${target} because its reset script is missing." >&2
-    return 1
-  fi
-
-  local root_env_var
-  root_env_var="$(rehearsal_scenario_root_env_var "${active}" || true)"
-  if [[ -z "${root_env_var}" ]]; then
-    echo "[scenario] ERROR: active scenario ${active} cannot hand off to ${target} because its scenario root binding is missing." >&2
-    return 1
-  fi
-
-  env \
-    -u DEMO_REHEARSAL_ROOT \
-    -u DEMO_REHEARSAL_KUBECONFIG \
-    -u DEMO_DEPLOY_ROOT \
-    -u CLUSTER_REHEARSAL_ROOT \
-    -u CLUSTER_DEPLOY_ROOT \
-    -u CLUSTER_DEPLOY_SHARED_KUBECONFIG \
-    -u CLUSTER_DEPLOY_SHARED_ADMIN_KUBECONFIG \
-    -u CLUSTER_DEPLOY_SHARED_MANAGER_KUBECONFIG \
-    -u CLUSTER_DEPLOY_SHARED_ADMIN_READY_ENV \
-    -u CLUSTER_DEPLOY_ADMIN_HANDOFF_DIR \
-    -u KUBECONFIG \
-    "${root_env_var}=${active_root}" \
-    bash "${reset_script}"
 }
 
 current_scenario_command() {
@@ -622,12 +493,8 @@ scenario_kind_registry_host_port() {
 }
 
 scenario_local_kind_state_root() {
-  if [[ -n "${DEMO_DEPLOY_ROOT:-}" ]]; then
-    printf '%s\n' "${DEMO_DEPLOY_ROOT}/state/local-kind"
-    return 0
-  fi
-  if [[ -n "${CLUSTER_DEPLOY_ROOT:-}" ]]; then
-    printf '%s\n' "${CLUSTER_DEPLOY_ROOT}/state/local-kind"
+  if [[ -n "${DEPLOY_ROOT:-}" ]]; then
+    printf '%s\n' "${DEPLOY_ROOT}/state/local-kind"
     return 0
   fi
   printf '%s\n' "${HOME}/agentsmith/local-kind"
@@ -716,7 +583,7 @@ EOF
 ensure_local_kind_cluster() {
   local cluster_name
   cluster_name="$(scenario_kind_cluster_name)"
-  local config_path="${LOCAL_KIND_CONFIG_PATH:-${ROOT_DIR}/infra/deploy/demo/kind/config.yaml}"
+  local config_path="${LOCAL_KIND_CONFIG_PATH:-${ROOT_DIR}/infra/deploy/unified/local-kind/config.yaml}"
   local state_root
   state_root="$(scenario_local_kind_state_root)"
   local scoped_kubeconfig

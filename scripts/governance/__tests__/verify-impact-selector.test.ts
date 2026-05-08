@@ -513,7 +513,7 @@ describe('verify impact selector', () => {
 
     expect(plan.affectedStories).toContain('release-user-story-end-to-end');
     expect(impact).toMatchObject({
-      matchedRules: ['trace_spec_story_binding', 'release_deploy_rehearsal'],
+      matchedRules: ['trace_spec_story_binding', 'release_deploy_operations'],
       broadImpact: true,
       manualReviewRequired: true,
     });
@@ -522,19 +522,19 @@ describe('verify impact selector', () => {
     expect(plan.riskSummary.broadImpact).toBe(true);
     expect(plan.riskSummary.manualReviewRequired).toBe(true);
     expect(plan.affectedSurfaces).toContain('trace-spec:e2e/integration-release-user-story.spec.ts');
-    expect(plan.affectedSurfaces).toContain('release/deploy/rehearsal');
+    expect(plan.affectedSurfaces).toContain('release/deploy');
     expect(storyCard?.impactSources).toEqual(expect.arrayContaining([
       expect.objectContaining({
         rule: 'trace_spec_story_binding',
         broadImpact: false,
       }),
       expect.objectContaining({
-        rule: 'release_deploy_rehearsal',
+        rule: 'release_deploy_operations',
         broadImpact: true,
         manualReviewRequired: true,
       }),
     ]));
-    expect(storyCard?.manualReviewReasons).toContain('release/deploy/rehearsal operator review');
+    expect(storyCard?.manualReviewReasons).toContain('release/deploy operator review');
   });
 
   it('fails closed to V3 real-backend verification for runner, Context Store, and credential paths', () => {
@@ -771,13 +771,13 @@ describe('verify impact selector', () => {
     ]));
   });
 
-  it('recommends V4 release-ready next action for release and rehearsal paths without making a release verdict', () => {
+  it('recommends V4 release-ready next action for release and deploy paths without making a release verdict', () => {
     const plan = buildVerificationPlan({
-      changedFiles: ['scripts/demo-deploy/deploy.sh'],
+      changedFiles: ['scripts/unified-deploy/release-local-kind.sh'],
     });
 
     expect(plan.requiredLevels).toContain('V4');
-    expect(plan.affectedSurfaces).toContain('release/deploy/rehearsal');
+    expect(plan.affectedSurfaces).toContain('release/deploy');
     expect(plan.nextAction).toContain('npm run release:ready');
     expect(plan.recommendedCommands).not.toContain('npm run verify:release-real');
     expect(plan.recommendedCommands).not.toContain('npm run release:ready');
@@ -822,10 +822,10 @@ describe('verify impact selector', () => {
     'scripts/governance/release-ready.ts',
     'scripts/governance/run-release-aggregate.ts',
     'scripts/governance/release-campaign-runner.ts',
-    'scripts/governance/rehearsal-entrypoint.ts',
-    'scripts/governance/rehearsal-world-health.ts',
-    'scripts/governance/current-rehearsal-metadata-schema.ts',
-    'scripts/governance/current-rehearsal-world-health-schema.ts',
+    'scripts/governance/release-campaign-execution.ts',
+    'scripts/governance/release-campaign-io.ts',
+    'scripts/unified-deploy/release-local-kind.sh',
+    'scripts/unified-deploy/release-product-flows.sh',
   ])('keeps governance release path %s on V4 release/deploy operator review', (changedFile) => {
     const plan = buildVerificationPlan({
       changedFiles: [changedFile],
@@ -833,12 +833,12 @@ describe('verify impact selector', () => {
 
     expect(plan.requiredLevels).toEqual(['V4']);
     expect(plan.recommendedCommands).toEqual([]);
-    expect(plan.affectedSurfaces).toEqual(['release/deploy/rehearsal']);
+    expect(plan.affectedSurfaces).toEqual(['release/deploy']);
     expect(plan.changedFileImpacts).toEqual([
       expect.objectContaining({
         changedFile,
-        matchedRules: ['release_deploy_rehearsal'],
-        affectedSurfaces: ['release/deploy/rehearsal'],
+        matchedRules: ['release_deploy_operations'],
+        affectedSurfaces: ['release/deploy'],
         manualReviewRequired: true,
         broadImpact: true,
       }),
@@ -848,15 +848,15 @@ describe('verify impact selector', () => {
   it.each([
     'scripts/release-full-campaign.sh',
     'scripts/release-full-aggregate-gate.sh',
-    'scripts/cluster-rehearsal-verify.sh',
-  ])('maps root release and rehearsal script %s to V4 operator review only', (changedFile) => {
+    'scripts/unified-deploy/release-product-flows.sh',
+  ])('maps root release and deploy script %s to V4 operator review only', (changedFile) => {
     const plan = buildVerificationPlan({
       changedFiles: [changedFile],
     });
 
     expect(plan.requiredLevels).toEqual(['V4']);
     expect(plan.recommendedCommands).toEqual([]);
-    expect(plan.affectedSurfaces).toEqual(['release/deploy/rehearsal']);
+    expect(plan.affectedSurfaces).toEqual(['release/deploy']);
     expect(plan.affectedSurfaces).not.toContain('unmapped-source');
     expect(plan.nextAction).toContain('npm run release:ready');
     expect(plan.releaseVerdict).toBe(false);
@@ -866,7 +866,7 @@ describe('verify impact selector', () => {
       status: 'manual_review_needed',
       manualReviewRequired: true,
     });
-    expect(plan.storyCards[0]?.manualReviewReasons).toContain('release/deploy/rehearsal operator review');
+    expect(plan.storyCards[0]?.manualReviewReasons).toContain('release/deploy operator review');
   });
 
   it('maps backend-real full gate to the release-real owner diagnostic instead of V4 release closure', () => {
@@ -937,7 +937,7 @@ describe('verify impact selector', () => {
     const plan = buildVerificationPlan({
       goal: 'release-real',
       goalExplicit: true,
-      changedFiles: ['scripts/demo-deploy/deploy.sh'],
+      changedFiles: ['scripts/unified-deploy/release-local-kind.sh'],
     });
 
     expect(plan.requiredLevels).toEqual(['V4']);

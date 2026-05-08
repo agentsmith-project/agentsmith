@@ -2236,6 +2236,7 @@ describe('verify human entrypoints', () => {
       expect(readFileSync(logPath, 'utf8').trim().split('\n')).toEqual([
         'run verify:quick',
         'run verify:default',
+        'run verify:visual',
         'run verify:real',
       ]);
 
@@ -2349,7 +2350,7 @@ describe('verify human entrypoints', () => {
         '--report-root',
         root,
         '--changed-file',
-        'scripts/demo-deploy/deploy.sh',
+        'scripts/unified-deploy/release-local-kind.sh',
       ], {
         cwd: process.cwd(),
         env: {
@@ -2380,7 +2381,7 @@ describe('verify human entrypoints', () => {
         risk_level: 'R0',
         manual_review_required: true,
       });
-      expect(report.story_cards[0]?.manual_review_reasons).toContain('release/deploy/rehearsal operator review');
+      expect(report.story_cards[0]?.manual_review_reasons).toContain('release/deploy operator review');
       expect(report.story_cards[0]?.evidence_cards.find((card) => card.level === 'V4')).toMatchObject({
         state: 'not_inspected_by_verify_report',
         status: 'manual_review_needed',

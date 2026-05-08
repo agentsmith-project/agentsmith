@@ -1,5 +1,5 @@
 import { execFileSync } from 'node:child_process';
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 
@@ -126,9 +126,9 @@ function runWrappedGate(input: {
       'bash',
       [
         'scripts/run-current-gate-result-wrapped.sh',
-        input.gateId ?? 'lane-demo-rehearsal',
-        input.lineKind ?? 'demo_rehearsal',
-        input.npmScript ?? 'lane:demo-rehearsal',
+        input.gateId ?? 'lane-unified-deploy-local-kind',
+        input.lineKind ?? 'unified_deploy_local_kind',
+        input.npmScript ?? 'lane:unified-deploy:local-kind',
         '--',
         'bash',
         '-lc',
@@ -167,7 +167,7 @@ function diagnosticsWriterCommand(input: {
   lineKind?: string;
 }): string {
   return [
-    `CURRENT_RUN_DIAGNOSTICS_ACTION=rehearsal-stage-finish`,
+    `CURRENT_RUN_DIAGNOSTICS_ACTION=run-stage-finish`,
     `CURRENT_RUN_DIAGNOSTICS_RUN_ROOT="$CURRENT_GATE_RESULT_EVIDENCE_DIR"`,
     `CURRENT_RUN_DIAGNOSTICS_RUN_ID="${input.runId ?? '$CURRENT_GATE_RESULT_RUN_ID'}"`,
     `CURRENT_RUN_DIAGNOSTICS_GATE_ID="${input.gateId ?? '$CURRENT_GATE_RESULT_GATE_ID'}"`,
@@ -177,42 +177,6 @@ function diagnosticsWriterCommand(input: {
     `CURRENT_RUN_DIAGNOSTICS_FAILURE_REASON="${input.reason ?? `${input.stage}_failed`}"`,
     `node --import tsx scripts/governance/run-diagnostics-writer.ts`,
   ].join(' ');
-}
-
-function writeStageScript(stageRoot: string, stage: string, body: string): void {
-  writeFileSync(join(stageRoot, `${stage}.sh`), `#!/usr/bin/env bash\nset -euo pipefail\n${body}\n`);
-}
-
-function runRehearsalStageRunner(input: {
-  evidenceDir: string;
-  stageRoot: string;
-  line: 'demo-rehearsal' | 'cluster-rehearsal';
-}): number {
-  let status = 0;
-  try {
-    execFileSync(
-      'bash',
-      ['scripts/governance/run-rehearsal-stages.sh', input.line],
-      {
-        cwd: process.cwd(),
-        env: {
-          ...process.env,
-          CURRENT_REHEARSAL_STAGE_ROOT: input.stageRoot,
-          CURRENT_GATE_RESULT_EVIDENCE_DIR: input.evidenceDir,
-          CURRENT_GATE_RESULT_RUN_ID: `run-diagnostics-${input.line}`,
-          CURRENT_GATE_RESULT_GATE_ID: `lane-${input.line}`,
-          CURRENT_GATE_RESULT_LINE_KIND: input.line.replace('-', '_'),
-          CURRENT_GATE_RESULT_NPM_SCRIPT: `lane:${input.line}`,
-        },
-        stdio: 'pipe',
-      },
-    );
-  } catch (error) {
-    status = typeof (error as { status?: unknown }).status === 'number'
-      ? (error as { status: number }).status
-      : 1;
-  }
-  return status;
 }
 
 describe('current run diagnostics artifacts', () => {
@@ -253,8 +217,8 @@ describe('current run diagnostics artifacts', () => {
     appendCurrentRunStageEvent({
       run_root: runRoot,
       run_id: 'diagnostics-run-001',
-      gate_id: 'lane-demo-rehearsal',
-      line_kind: 'demo_rehearsal',
+      gate_id: 'lane-unified-deploy-local-kind',
+      line_kind: 'unified_deploy_local_kind',
       stage: 'bootstrap',
       event: 'started',
       diagnostic_reason_code: 'stage_started',
@@ -263,8 +227,8 @@ describe('current run diagnostics artifacts', () => {
     appendCurrentRunStageEvent({
       run_root: runRoot,
       run_id: 'diagnostics-run-001',
-      gate_id: 'lane-demo-rehearsal',
-      line_kind: 'demo_rehearsal',
+      gate_id: 'lane-unified-deploy-local-kind',
+      line_kind: 'unified_deploy_local_kind',
       stage: 'bootstrap',
       event: 'failed',
       stage_failure_reason: 'bootstrap_healthcheck_timeout',
@@ -273,8 +237,8 @@ describe('current run diagnostics artifacts', () => {
     writeCurrentRunPerformance({
       run_root: runRoot,
       run_id: 'diagnostics-run-001',
-      gate_id: 'lane-demo-rehearsal',
-      line_kind: 'demo_rehearsal',
+      gate_id: 'lane-unified-deploy-local-kind',
+      line_kind: 'unified_deploy_local_kind',
       stages: [
         {
           stage: 'bootstrap',
@@ -431,10 +395,10 @@ describe('current run diagnostics artifacts', () => {
     expect(success.status).toBe(0);
     expect(success.result).not.toBeNull();
     expect(success.result).toMatchObject({
-      gate_id: 'lane-demo-rehearsal',
+      gate_id: 'lane-unified-deploy-local-kind',
       status: 'passed',
       failure_class: 'none',
-      stage: 'demo_rehearsal',
+      stage: 'unified_deploy_local_kind',
     });
 
     const successStageEvents = readNdjson(join(successRoot, 'stage-events.jsonl'));
@@ -466,9 +430,9 @@ describe('current run diagnostics artifacts', () => {
     expect(failure.status).toBe(7);
     expect(failure.result).not.toBeNull();
     expect(failure.result).toMatchObject({
-      gate_id: 'lane-demo-rehearsal',
+      gate_id: 'lane-unified-deploy-local-kind',
       status: 'failed',
-      failure_class: 'product_regression',
+      failure_class: 'infra_setup_failure',
       stage: 'execute',
     });
 
@@ -494,7 +458,7 @@ describe('current run diagnostics artifacts', () => {
     expect(failure.status).toBe(7);
     expect(failure.result).not.toBeNull();
     expect(failure.result).toMatchObject({
-      gate_id: 'lane-demo-rehearsal',
+      gate_id: 'lane-unified-deploy-local-kind',
       status: 'failed',
       stage: 'verify',
     });
@@ -522,7 +486,7 @@ describe('current run diagnostics artifacts', () => {
     expect(failure.status).toBe(7);
     expect(failure.result).not.toBeNull();
     expect(failure.result).toMatchObject({
-      gate_id: 'lane-demo-rehearsal',
+      gate_id: 'lane-unified-deploy-local-kind',
       status: 'failed',
       stage: 'execute',
     });
@@ -559,7 +523,7 @@ describe('current run diagnostics artifacts', () => {
     expect(failure.status).toBe(7);
     expect(failure.result).not.toBeNull();
     expect(failure.result).toMatchObject({
-      gate_id: 'lane-demo-rehearsal',
+      gate_id: 'lane-unified-deploy-local-kind',
       status: 'failed',
       stage: 'execute',
     });
@@ -590,9 +554,9 @@ describe('current run diagnostics artifacts', () => {
     const evidenceDir = mkdtempSync(join(tmpdir(), 'current-run-diagnostics-wrapper-release-env-guard-'));
     const result = runWrappedGate({
       evidenceDir,
-      gateId: 'lane-demo-rehearsal',
-      lineKind: 'demo_rehearsal',
-      npmScript: 'lane:demo-rehearsal',
+      gateId: 'lane-unified-deploy-local-kind',
+      lineKind: 'unified_deploy_local_kind',
+      npmScript: 'lane:unified-deploy:local-kind',
       command: 'true',
       runId: 'run-diagnostics-wrapper-release-env-guard',
       env: {
@@ -643,15 +607,15 @@ describe('current run diagnostics artifacts', () => {
     writeCurrentRunPerformance({
       run_root: runRoot,
       run_id: 'diagnostics-run-merge',
-      gate_id: 'lane-demo-rehearsal',
-      line_kind: 'demo_rehearsal',
+      gate_id: 'lane-unified-deploy-local-kind',
+      line_kind: 'unified_deploy_local_kind',
       stages: [
         {
           stage: 'reset',
           started_at: '2026-04-27T12:00:00.000Z',
           finished_at: '2026-04-27T12:00:01.000Z',
           duration_ms: 1000,
-          diagnostic_reason_code: 'rehearsal_stage_duration_observed',
+          diagnostic_reason_code: 'run_stage_duration_observed',
         },
       ],
       generated_at: '2026-04-27T12:00:01.000Z',
@@ -659,9 +623,9 @@ describe('current run diagnostics artifacts', () => {
     writeWrappedCommandFinishDiagnostics({
       run_root: runRoot,
       run_id: 'diagnostics-run-merge',
-      gate_id: 'lane-demo-rehearsal',
-      line_kind: 'demo_rehearsal',
-      npm_script: 'lane:demo-rehearsal',
+      gate_id: 'lane-unified-deploy-local-kind',
+      line_kind: 'unified_deploy_local_kind',
+      npm_script: 'lane:unified-deploy:local-kind',
       stage: 'execute',
       event: 'finished',
       started_at: '2026-04-27T12:00:00.000Z',
@@ -722,7 +686,7 @@ describe('current run diagnostics artifacts', () => {
     const rawReason = 'verify failed with Bearer raw-token-value api_key=raw-secret ticket=raw-ticket';
     const result = runCommand('node', ['--import', 'tsx', 'scripts/governance/run-diagnostics-writer.ts'], {
       ...process.env,
-      CURRENT_RUN_DIAGNOSTICS_ACTION: 'rehearsal-stage-finish',
+      CURRENT_RUN_DIAGNOSTICS_ACTION: 'run-stage-finish',
       CURRENT_RUN_DIAGNOSTICS_RUN_ROOT: runRoot,
       CURRENT_RUN_DIAGNOSTICS_RUN_ID: 'diagnostics-redaction-run',
       CURRENT_RUN_DIAGNOSTICS_STAGE: 'verify',
@@ -771,163 +735,14 @@ describe('current run diagnostics artifacts', () => {
     const evidenceDir = mkdtempSync(join(tmpdir(), 'current-run-diagnostics-wrapper-context-'));
     const contextCheck = runWrappedGate({
       evidenceDir,
-      command: `test -n "\${CURRENT_GATE_RESULT_RUN_ID:-}" && test "\${CURRENT_GATE_RESULT_EVIDENCE_DIR:-}" = "${evidenceDir}" && test "\${CURRENT_GATE_RESULT_GATE_ID:-}" = "lane-demo-rehearsal"`,
+      command: `test -n "\${CURRENT_GATE_RESULT_RUN_ID:-}" && test "\${CURRENT_GATE_RESULT_EVIDENCE_DIR:-}" = "${evidenceDir}" && test "\${CURRENT_GATE_RESULT_GATE_ID:-}" = "lane-unified-deploy-local-kind"`,
     });
 
     expect(contextCheck.status).toBe(0);
     expect(contextCheck.result).toMatchObject({
-      gate_id: 'lane-demo-rehearsal',
+      gate_id: 'lane-unified-deploy-local-kind',
       status: 'passed',
     });
   });
 
-  it('records successful rehearsal diagnostics for reset/up/bootstrap/verify/report stages', () => {
-    const evidenceDir = mkdtempSync(join(tmpdir(), 'current-run-diagnostics-rehearsal-success-'));
-    const stageRoot = mkdtempSync(join(tmpdir(), 'current-run-diagnostics-stage-root-'));
-    const orderFile = join(stageRoot, 'order.txt');
-    mkdirSync(stageRoot, { recursive: true });
-    for (const stage of ['reset', 'up', 'bootstrap', 'verify', 'report']) {
-      writeStageScript(stageRoot, stage, `printf '%s\\n' "${stage}" >> "${orderFile}"`);
-    }
-
-    const status = runRehearsalStageRunner({
-      evidenceDir,
-      stageRoot,
-      line: 'demo-rehearsal',
-    });
-
-    expect(status).toBe(0);
-    expect(readFileSync(orderFile, 'utf8').trim().split('\n')).toEqual([
-      'reset',
-      'up',
-      'bootstrap',
-      'verify',
-      'report',
-    ]);
-    const stageEvents = readNdjson(join(evidenceDir, 'stage-events.jsonl'));
-    const performance = readJson(join(evidenceDir, 'performance.json'));
-    expect(stageEvents.map((event) => `${event.stage}:${event.event}`)).toEqual([
-      'reset:started',
-      'reset:finished',
-      'up:started',
-      'up:finished',
-      'bootstrap:started',
-      'bootstrap:finished',
-      'verify:started',
-      'verify:finished',
-      'report:started',
-      'report:finished',
-    ]);
-    expect((performance.stages as JsonRecord[]).map((stage) => stage.stage)).toEqual([
-      'reset',
-      'up',
-      'bootstrap',
-      'verify',
-      'report',
-    ]);
-    expectNoForbiddenFields(stageEvents);
-    expectNoForbiddenFields(performance);
-    for (const event of stageEvents) {
-      expectValidPayload('stage_events', event);
-    }
-    expectValidPayload('performance', performance);
-  });
-
-  it('preserves failing rehearsal stage exit status and does not execute later stages', () => {
-    const evidenceDir = mkdtempSync(join(tmpdir(), 'current-run-diagnostics-rehearsal-failure-'));
-    const stageRoot = mkdtempSync(join(tmpdir(), 'current-run-diagnostics-stage-root-'));
-    const orderFile = join(stageRoot, 'order.txt');
-    mkdirSync(stageRoot, { recursive: true });
-    for (const stage of ['reset', 'up', 'bootstrap']) {
-      writeStageScript(stageRoot, stage, `printf '%s\\n' "${stage}" >> "${orderFile}"`);
-    }
-    writeStageScript(stageRoot, 'verify', `printf '%s\\n' "verify" >> "${orderFile}"\nexit 7`);
-    writeStageScript(stageRoot, 'report', `printf '%s\\n' "report" >> "${orderFile}"`);
-
-    const status = runRehearsalStageRunner({
-      evidenceDir,
-      stageRoot,
-      line: 'cluster-rehearsal',
-    });
-
-    expect(status).toBe(7);
-    expect(readFileSync(orderFile, 'utf8').trim().split('\n')).toEqual([
-      'reset',
-      'up',
-      'bootstrap',
-      'verify',
-    ]);
-    const stageEvents = readNdjson(join(evidenceDir, 'stage-events.jsonl'));
-    const performance = readJson(join(evidenceDir, 'performance.json'));
-    expect(stageEvents.map((event) => `${event.stage}:${event.event}`)).toEqual([
-      'reset:started',
-      'reset:finished',
-      'up:started',
-      'up:finished',
-      'bootstrap:started',
-      'bootstrap:finished',
-      'verify:started',
-      'verify:failed',
-    ]);
-    expect(stageEvents.at(-1)).toMatchObject({
-      stage: 'verify',
-      stage_failure_reason: 'rehearsal_stage_exited_nonzero',
-    });
-    expect((performance.stages as JsonRecord[]).map((stage) => stage.stage)).toEqual([
-      'reset',
-      'up',
-      'bootstrap',
-      'verify',
-    ]);
-    expect((performance.stages as JsonRecord[]).at(-1)).toMatchObject({
-      stage: 'verify',
-      stage_failure_reason: 'rehearsal_stage_exited_nonzero',
-    });
-    expectNoForbiddenFields(stageEvents);
-    expectNoForbiddenFields(performance);
-    for (const event of stageEvents) {
-      expectValidPayload('stage_events', event);
-    }
-    expectValidPayload('performance', performance);
-  });
-
-  it('classifies image archive proof failures as contract drift instead of product regressions', () => {
-    const evidenceDir = mkdtempSync(join(tmpdir(), 'current-run-diagnostics-rehearsal-archive-drift-'));
-    const stageRoot = mkdtempSync(join(tmpdir(), 'current-run-diagnostics-stage-root-'));
-    mkdirSync(stageRoot, { recursive: true });
-    writeStageScript(stageRoot, 'reset', 'printf "%s\\n" reset');
-    writeStageScript(stageRoot, 'up', 'printf "%s\\n" "layer_diff_id_mismatch:0"\nexit 9');
-    for (const stage of ['bootstrap', 'verify', 'report']) {
-      writeStageScript(stageRoot, stage, `printf '%s\\n' "${stage}"`);
-    }
-
-    const wrapped = runWrappedGate({
-      evidenceDir,
-      command: `CURRENT_REHEARSAL_STAGE_ROOT="${stageRoot}" bash scripts/governance/run-rehearsal-stages.sh demo-rehearsal`,
-    });
-
-    expect(wrapped.status).toBe(9);
-    expect(wrapped.result).toMatchObject({
-      status: 'failed',
-      failure_class: 'contract_drift',
-      stage: 'up',
-    });
-    expect(String(wrapped.result?.summary)).toContain('image_archive_contract_drift');
-    const stageEvents = readNdjson(join(evidenceDir, 'stage-events.jsonl'));
-    expect(stageEvents.find((event) => event.stage === 'up' && event.event === 'failed')).toMatchObject({
-      stage: 'up',
-      event: 'failed',
-      stage_failure_reason: 'image_archive_contract_drift',
-    });
-    expect(readFileSync(join(evidenceDir, 'logs', 'up.log'), 'utf8')).toContain('layer_diff_id_mismatch:0');
-  });
-
-  it('does not echo raw unknown rehearsal line arguments', () => {
-    const result = runCommand('bash', ['scripts/governance/run-rehearsal-stages.sh', '--api_key=raw-secret']);
-
-    expect(result.status).toBe(2);
-    expect(result.stderr).toContain('[rehearsal-stages] unknown rehearsal line');
-    expect(result.stderr).not.toContain('--api_key=raw-secret');
-    expect(result.stderr).not.toContain('raw-secret');
-  });
 });

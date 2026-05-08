@@ -37,8 +37,8 @@ export type SentinelProfile =
   | 'release-ready'
   | 'verify-real'
   | 'verify-release-real'
-  | 'demo-rehearsal'
-  | 'cluster-rehearsal';
+  | 'unified-deploy-local-kind'
+  | 'unified-deploy-existing-cluster';
 export type SentinelProbeDisposition = 'required' | 'advisory';
 
 export const DEFAULT_SENTINEL_PROFILE = 'release-ready' as const satisfies SentinelProfile;
@@ -80,7 +80,7 @@ export const SENTINEL_PROFILE_PROBE_MATRIX = {
     registry_available: 'advisory',
     docker_available: 'advisory',
   },
-  'demo-rehearsal': {
+  'unified-deploy-local-kind': {
     internal_execution_ws_base_url_correct: 'advisory',
     proxy_data_token_absent: 'advisory',
     ticket_auth_present: 'advisory',
@@ -90,9 +90,9 @@ export const SENTINEL_PROFILE_PROBE_MATRIX = {
     secret_profile_present: 'required',
     kind_available: 'required',
     registry_available: 'required',
-    docker_available: 'advisory',
+    docker_available: 'required',
   },
-  'cluster-rehearsal': {
+  'unified-deploy-existing-cluster': {
     internal_execution_ws_base_url_correct: 'advisory',
     proxy_data_token_absent: 'advisory',
     ticket_auth_present: 'advisory',
@@ -100,8 +100,8 @@ export const SENTINEL_PROFILE_PROBE_MATRIX = {
     dns_gateway_reachable: 'advisory',
     provider_profile_present: 'required',
     secret_profile_present: 'required',
-    kind_available: 'required',
-    registry_available: 'required',
+    kind_available: 'advisory',
+    registry_available: 'advisory',
     docker_available: 'advisory',
   },
 } as const satisfies Record<SentinelProfile, Record<SentinelProbeName, SentinelProbeDisposition>>;
@@ -116,8 +116,8 @@ export const SENTINEL_PROFILE_PROBES = {
   'release-ready': requiredProbesForProfile('release-ready'),
   'verify-real': requiredProbesForProfile('verify-real'),
   'verify-release-real': requiredProbesForProfile('verify-release-real'),
-  'demo-rehearsal': requiredProbesForProfile('demo-rehearsal'),
-  'cluster-rehearsal': requiredProbesForProfile('cluster-rehearsal'),
+  'unified-deploy-local-kind': requiredProbesForProfile('unified-deploy-local-kind'),
+  'unified-deploy-existing-cluster': requiredProbesForProfile('unified-deploy-existing-cluster'),
 } satisfies Record<SentinelProfile, readonly SentinelProbeName[]>;
 
 export const SENTINEL_PROFILE_ENV_FILES = {
@@ -136,20 +136,17 @@ export const SENTINEL_PROFILE_ENV_FILES = {
     'infra/runtime/backend-real.env',
     '.env.backend-real',
   ],
-  'demo-rehearsal': [
+  'unified-deploy-local-kind': [
     'infra/runtime/presets.env',
     '.env.backend-real',
-    'infra/flows/demo-rehearsal.env',
-    'artifacts/runtime/scenario/demo-rehearsal/config/site.env',
-    'artifacts/runtime/scenario/demo-rehearsal/config/registry.env',
+    'infra/deploy/unified/substrate/connection.env',
+    'artifacts/unified-deploy/local-kind-site.env',
   ],
-  'cluster-rehearsal': [
+  'unified-deploy-existing-cluster': [
     'infra/runtime/presets.env',
     '.env.backend-real',
-    'infra/flows/cluster-rehearsal.env',
-    'artifacts/runtime/scenario/cluster-rehearsal/config/site.env',
-    'artifacts/runtime/scenario/cluster-rehearsal/config/registry.env',
-    'env/registry.env',
+    'infra/deploy/unified/substrate/connection.env',
+    'artifacts/unified-deploy/existing-cluster-site.env',
   ],
 } as const satisfies Record<SentinelProfile, readonly string[]>;
 

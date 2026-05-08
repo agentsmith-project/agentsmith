@@ -11,7 +11,6 @@ export type CurrentBuildSkipDecisionTarget = CurrentBuildArtifactTarget | Curren
 export const CURRENT_BUILD_MANIFEST_MODES = [
   'build',
   'bundle',
-  'rehearsal',
   'release-fidelity',
   'offline-package',
 ] as const;

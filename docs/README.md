@@ -35,8 +35,8 @@
 
 ### Engineering and testing reference
 - [Engineering Docs Index](./engineering/README.md)
-- [Engineering Governance Developer Flow Optimization v2](./engineering/governance-developer-flow-optimization-v2.md)
-  - `first_scope_closed_2026-04-29`; remaining items are backlog/reference, not current marching orders
+- [AgentSmith Unified Deploy and Docker Substrate Milestone Plan v1](./engineering/agentsmith-unified-deploy-and-docker-substrate-milestone-plan-v1.md)
+  - current plan for one deploy model with local-kind and existing-cluster profiles
 - [Testing Docs Index](./testing/README.md)
 - [Diagnostic Catalog v1](./testing/diagnostic-catalog-v1.md)
   - choose `ui_only`, `local_manual`, or `release_grade`
@@ -50,24 +50,20 @@
 ### Methodology reference
 - [Product Engineering Governance Methodology](./design/agentsmith-product-engineering-governance-methodology-v1.md)
 
-## 3. Runtime / deploy / rehearsal quick entry
+## 3. Runtime / Deploy Quick Entry
 
 - [User Guides Index](./user-guides/README.md)
 - [Release Readiness Checklist](./user-guides/release-readiness-checklist.md)
-- [Cluster Upgrade Operations](./user-guides/cluster-upgrade-operations.md)
-- [Cluster Admin Runbook](./user-guides/cluster-admin-runbook.md)
+- [Unified Deploy Operations](./user-guides/unified-deploy-operations.md)
 
 ## 4. Product doc / artifacts helpers
 
 - [File Library Client Mount](./user-guides/file-library-local-mount.md)
 - [Product Doc Artifacts](./user-guides/product-doc-artifacts.md)
 
-## 5. What is not current truth
+## 5. What Is Outside This Index
 
-下面这些内容不再属于 current docs：
-- archive / history / redirect 文档
-- handoff / refactor / migration / retro / todo
-- 一次性 task / phase / completed checklist
+这个入口只导航当前可执行、可验收的产品与工程真相。临时分析、一次性任务记录、已删除入口和过期过程材料不进入这里。
 
 如果判断某份资料是否 still current，回到：
 1. [Current Baseline (Whitelist)](./CURRENT_BASELINE.md)

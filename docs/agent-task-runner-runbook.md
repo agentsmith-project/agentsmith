@@ -25,11 +25,14 @@
 
 当前三条运行模式共享这些不变量：
 - `TASK_HOME` / `HOME` 始终是 task-bound persistent HOME：managed canonical path 是 `/home/<task_home_segment>`
+- Developer runner self-check / runner-test task 也使用绑定 file library 的稳定 `task_home_segment` 和 `binding_generation`；诊断路径不得从临时 task id 派生 HOME。
 - `cwd` 始终是 `$TASK_HOME/workspace`
 - Codex runtime 状态写到 `$HOME/.codex`
 - runner runtime 元数据写到 `$HOME/.mbos`
 - builtin skills 安装到 `$HOME/.agents/skills`
 - 用户可见 deliverables 写到 `$TASK_HOME/workspace/.artifacts/`
+- 可复用工具配置、用户态安装产物和缓存可以写入当前 `HOME`
+- 短期 execution ticket、Project secrets、managed OAuth credentials 不得持久化到 `HOME`、workspace、Codex config 或可复用工具配置；它们只通过请求级环境变量或 AgentSmith Context Store 只读投影暴露
 - 共享上下文、简单 credentials、managed OAuth credentials 通过 AgentSmith Context Store 暴露，不应假设存在于 workspace 文件树
 
 ### Runtime modes

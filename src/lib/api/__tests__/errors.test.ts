@@ -3,6 +3,8 @@ import {
   APIError,
   containsAgentTaskUnsafeErrorTerm,
   findAgentTaskSafeErrorCode,
+  isErrorResponse,
+  parseErrorResponse,
   resolveApiErrorPresentation,
   resolveErrorMessageByCode,
 } from '@/lib/api/errors';
@@ -27,6 +29,43 @@ describe('resolveErrorMessageByCode', () => {
   });
 });
 
+describe('parseErrorResponse', () => {
+  it('parses typed error payloads without request_id', async () => {
+    const response = new Response(JSON.stringify({
+      error_code: 'FILE_LIBRARY_NOT_READY',
+      message: 'file_library_not_ready',
+      details: {
+        file_library_id: 'flib_1',
+      },
+    }), {
+      status: 409,
+      statusText: 'Conflict',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+    });
+
+    const error = await parseErrorResponse(response);
+
+    expect(error).toBeInstanceOf(APIError);
+    expect(error.errorCode).toBe('FILE_LIBRARY_NOT_READY');
+    expect(error.message).toBe('file_library_not_ready');
+    expect(error.requestId).toBeUndefined();
+    expect(error.statusCode).toBe(409);
+    expect(error.details).toEqual({
+      file_library_id: 'flib_1',
+    });
+  });
+
+  it('rejects malformed typed error shapes without falling through type safety', () => {
+    expect(isErrorResponse({
+      error_code: 'FILE_LIBRARY_NOT_READY',
+      message: 'file_library_not_ready',
+      request_id: 123,
+    })).toBe(false);
+  });
+});
+
 describe('resolveApiErrorPresentation', () => {
   const t = (key: string) => {
     const dict: Record<string, string> = {
@@ -34,6 +73,12 @@ describe('resolveApiErrorPresentation', () => {
       'agentProtocol.description': 'The external agent returned an invalid protocol payload.',
       'agentTaskResolution.title': 'Task not ready',
       'agentTaskResolution.description': 'Task execution is not ready yet.',
+      'file_library_deleting.description': 'This library is being deleted. Refresh the library status before trying again.',
+      'file_library_not_ready.description': 'This library is not ready yet. Refresh the library status before trying again.',
+      'file_library_task_in_use.description': 'Delete the bound task before deleting this library.',
+      'workspace_file_library_in_use.description': 'That task workspace is now bound to another task. Select another workspace or create a new one.',
+      'agent_task_delete_blocked.description':
+        'Delete is blocked because this task still has an active run, terminal session, or task workspace in use. Finish those blockers and try again.',
       'rateLimitError.title': 'Too Many Requests',
       'rateLimitError.description': 'Please wait a moment before trying again.',
       'unknown.title': 'Error',
@@ -75,6 +120,25 @@ describe('resolveApiErrorPresentation', () => {
     });
     expect(presentation.title).toBe('Too Many Requests');
     expect(presentation.description).toBe('Please wait a moment before trying again.');
+  });
+
+  it.each([
+    ['FILE_LIBRARY_DELETING', 'file_library_deleting', 'This library is being deleted. Refresh the library status before trying again.'],
+    ['FILE_LIBRARY_NOT_READY', 'file_library_not_ready', 'This library is not ready yet. Refresh the library status before trying again.'],
+    ['FILE_LIBRARY_TASK_IN_USE', 'file_library_task_in_use', 'Delete the bound task before deleting this library.'],
+    ['AGENT_TASK_FILE_LIBRARY_IN_USE', 'workspace_file_library_in_use', 'That task workspace is now bound to another task. Select another workspace or create a new one.'],
+    ['AGENT_TASK_DELETE_BLOCKED', 'agent_task_delete_blocked', 'Delete is blocked because this task still has an active run, terminal session, or task workspace in use. Finish those blockers and try again.'],
+  ])('maps typed conflict %s through i18n instead of rendering %s', (errorCode, rawMessage, expectedDescription) => {
+    const presentation = resolveApiErrorPresentation({
+      error: new APIError(errorCode, rawMessage, 'req-file-conflict', 409, {
+        file_library_id: 'lib_a',
+      }),
+      t,
+    });
+
+    expect(presentation.title).toBe('Conflict');
+    expect(presentation.description).toBe(expectedDescription);
+    expect(presentation.description).not.toBe(rawMessage);
   });
 
   it.each([

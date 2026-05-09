@@ -1476,6 +1476,39 @@
       "title": "Conflict",
       "description": "This action conflicts with existing data."
     },
+    "agent_task_delete_blocked": {
+      "description": "Delete is blocked because this task still has an active run, terminal session, or task workspace in use. Finish those blockers and try again."
+    },
+    "file_library_deleting": {
+      "description": "This library is being deleted. Refresh the library status before trying again."
+    },
+    "file_library_not_ready": {
+      "description": "This library is not ready yet. Refresh the library status before trying again."
+    },
+    "file_library_task_in_use": {
+      "description": "Delete the bound task before deleting this library. Deleting the task releases the workspace binding and keeps the library files."
+    },
+    "workspace_file_library_in_use": {
+      "description": "That task workspace is now bound to another task. Select another workspace or create a new one."
+    },
+    "file_library_not_empty": {
+      "description": "Delete the files in this library before deleting the library."
+    },
+    "file_library_not_found": {
+      "description": "This library is no longer available. Refresh the library list."
+    },
+    "file_library_forbidden": {
+      "description": "You do not have permission to use this library."
+    },
+    "agent_task_workspace_binding_conflict": {
+      "description": "That task workspace changed while you were working. Refresh and try again."
+    },
+    "agent_task_workspace_file_library_required": {
+      "description": "Select an available task workspace before creating the task."
+    },
+    "agent_task_workspace_mode_invalid": {
+      "description": "Choose whether to create a new task workspace or continue an existing one."
+    },
     "agentTaskResolution": {
       "title": "Task not ready",
       "description": "Task execution is not ready yet."
@@ -2612,6 +2645,9 @@
       "library_rename_failed": "Rename library failed",
       "library_delete_failed": "Delete library failed",
       "library_delete_warning": "High risk action: all library files and related indexes will be permanently removed.",
+      "library_delete_bound_description": "\"{name}\" is still bound to an Agent task.",
+      "library_delete_bound_warning": "Delete the bound task before deleting this library. Deleting the task releases the binding and keeps the library files.",
+      "library_delete_bound_blocked": "Delete the bound task before deleting this library.",
       "library_delete_failed_recovery_description": "This library is not healthy enough for Desktop mounts. Delete \"{name}\" if you want to clean up the broken record, then create a new library if you still need it.",
       "library_delete_failed_recovery_warning": "Recovery action: this removes the broken library record. If you still need the library, recreate it after deletion instead of expecting an automatic reinitialize step.",
       "library_status_creating": "Creating",
@@ -2619,6 +2655,12 @@
       "library_status_degraded": "Degraded",
       "library_status_failed": "Failed",
       "library_status_deleting": "Deleting",
+      "library_binding_unbound": "Unbound",
+      "library_binding_bound": "Bound",
+      "library_binding_bound_visible": "Bound to {title} ({status})",
+      "library_binding_bound_redacted": "Bound to a task you cannot view",
+      "library_bound_home_banner": "This library is an Agent task HOME. Files changes affect that task HOME.",
+      "library_bound_home_banner_visible": "This library is the HOME for {title} ({status}). Files changes affect that task HOME.",
       "library_status_reason_degraded": "This library needs attention before you rely on it for local mounts.",
       "library_status_reason_failed": "This library never finished backend initialization. Use Files management to delete or rebuild it before using Desktop mounts.",
       "library_status_reason_failed_mount": "This library is not mountable until its backend initialization is healthy.",
@@ -3297,13 +3339,16 @@
       "workspace_source_create_new": "Initialize a new task workspace automatically",
       "workspace_source_create_new_hint": "Recommended. We'll create a fresh persistent task workspace for this task.",
       "workspace_source_use_existing": "Continue an existing task workspace",
-      "workspace_source_use_existing_hint": "Reuse an existing task workspace to keep working with previous files and agent context.",
+      "workspace_source_use_existing_hint": "Requires Files update access. Reuse an available task workspace to keep working with previous files.",
       "workspace_name_label": "New task workspace name",
       "workspace_name_placeholder": "Enter task workspace name",
       "workspace_name_hint": "Leave blank to generate a task workspace name from the task title.",
       "select_workspace_file_library": "Select Existing Task Workspace",
-      "workspace_file_library_hint": "Only idle task workspaces can be selected. An active task keeps its task workspace until it is archived or deleted.",
+      "workspace_file_library_hint": "Active and archived tasks keep their workspace binding. Deleting a task releases the binding and keeps the library files.",
       "workspace_file_library_empty": "No idle task workspaces are available in this project right now.",
+      "workspace_file_library_bound_visible": "Bound to {title} ({status})",
+      "workspace_file_library_bound_redacted": "Bound to another task",
+      "workspace_file_library_conflict": "That task workspace is now bound to another task. Select another workspace or create a new one.",
       "history_immutable_notice": "Conversation history cannot be modified",
       "advanced_settings": "Advanced settings",
       "advanced_settings_description": "Leave this off to use the deployment-managed runner for this task.",
@@ -3327,7 +3372,7 @@
       "leave": "Leave Task",
       "leave_tooltip": "Return to the Agent tasks list. The task will continue running in the background.",
       "delete": "Delete Task",
-      "delete_confirm_message": "Are you sure you want to delete this task? This action cannot be undone. All messages and artifacts will be permanently deleted.",
+      "delete_confirm_message": "Deleting this task removes task history, conversation, trace, artifact metadata, runner links, and terminal links. The task workspace and files remain in Files and can be selected by a new task after deletion.",
       "delete_cancel": "Cancel",
       "delete_blocked_terminal_sessions": "End all terminal sessions before deleting this task.",
       "delete_blocked_terminal_sessions_pending": "Checking terminal sessions before deleting this task.",

@@ -1,5 +1,4 @@
 import type http from 'node:http';
-import type { Client as MinioClient } from 'minio';
 import { assertTaskExecutionContext } from '@mbos/agent-runner';
 import type { AuthenticatedUser } from './auth.js';
 import type { RunnerSessionDispatchAuthority } from './agent-execution-service.js';
@@ -53,6 +52,7 @@ import {
   evaluateProjectPermissions,
   evaluateResourcePolicyAuthorization,
 } from './project-authz-engine.js';
+import { actorHasProjectPermissions } from './project-permissions.js';
 import type { ProjectsRoute } from './projects-route-match.js';
 import { sanitizeWorkloadId } from './internal-agent-pod-manager.js';
 import {
@@ -60,6 +60,7 @@ import {
   resolveInternalWorkloadCoordinator,
 } from './internal-workload-coordinator.js';
 import {
+  JsonDocProjectFileLibraryBackendRepo,
   JsonDocProjectFileLibraryCatalogRepo,
   JsonDocProjectFileLibraryMountAccessRepo,
 } from './file-library-persistence.js';
@@ -90,7 +91,6 @@ import {
 import {
   asObject,
   buildId,
-  buildTaskHomePaths,
   findTaskHomeSegmentConflict,
   readTaskInputRefs,
   resolveTaskHomeSegment,
@@ -161,6 +161,23 @@ import {
   notebookTaskMessagesCollection,
   notebookTasksCollection,
 } from './notebook-task/task-store.js';
+import {
+  acquireTaskFileLibraryBinding,
+  buildBoundTaskSafeFields,
+  findTaskFileLibraryBinding,
+  hydrateTaskFileLibraryBindingsForProject,
+  JsonDocTaskWorkspaceHolderRepo,
+  releaseTaskFileLibraryBinding,
+  updateTaskFileLibraryBinding,
+  type TaskFileLibraryBinding,
+} from './notebook-task/task-file-library-bindings.js';
+import {
+  isTaskWorkspaceBindingGuardError,
+  resolveTaskWorkspaceBindingGuard,
+  serializeTaskWorkspaceBindingGuardError,
+  toTaskWorkspaceBindingGuardException,
+  type TaskWorkspaceBindingGuardError,
+} from './notebook-task/task-workspace-binding-guard.js';
 
 interface TaskRouteHandlerArgs {
   route: ProjectsRoute;
@@ -213,6 +230,7 @@ function buildRuntimePathUnavailableResponse(error: unknown): Record<string, unk
 const NOTEBOOK_RUN_LEASE_HEARTBEAT_MS = 15_000;
 const NOTEBOOK_RUN_CANCEL_POLL_MS = 1_000;
 const NOTEBOOK_RUN_OWNER_STALE_AFTER_MS = (NOTEBOOK_RUN_LEASE_HEARTBEAT_MS * 2) + 5_000;
+const TASK_WORKSPACE_ACCESS_LEASE_TTL_MS = 5 * 60 * 1000;
 
 type AgentRunnerResolutionErrorCode =
   | 'agent_runner_unavailable'
@@ -476,34 +494,6 @@ function buildTaskRunnerBindingAction(input: {
   };
 }
 
-async function actorHasProjectPermissions(args: {
-  deps: NodeApiDeps;
-  workspaceId: string;
-  projectId: string;
-  actorUserId: string;
-  requiredPermissions: string[];
-}): Promise<boolean> {
-  if (args.requiredPermissions.length === 0) return true;
-  try {
-    const project = await args.deps.getProjectUseCase.execute({
-      workspaceId: args.workspaceId,
-      projectId: args.projectId,
-    });
-    const evaluation = await evaluateProjectPermissions({
-      docStore: args.deps.docStore,
-      workspaceId: args.workspaceId,
-      projectId: args.projectId,
-      projectOwnerId: project.owner_id,
-      projectGovernance: project.governance_json,
-      actorUserId: args.actorUserId,
-      requiredPermissions: args.requiredPermissions,
-    });
-    return evaluation.decisions.every((decision) => decision.granted);
-  } catch {
-    return false;
-  }
-}
-
 async function canSeeAgentRunnerBindingRow(args: {
   deps: NodeApiDeps;
   workspaceId: string;
@@ -667,12 +657,18 @@ function buildRunnerBindingProbeTask(args: {
   userId: string;
 }): TaskRecord {
   const generatedAt = nowIso();
+  const taskId = 'task_runner_binding_options_probe';
   return {
-    id: 'task_runner_binding_options_probe',
+    id: taskId,
     workspace_id: args.workspaceId,
     project_id: args.projectId,
     owner_user_id: args.userId,
     title: 'Runner binding options probe',
+    task_home_segment: resolveTaskHomeSegment({
+      id: taskId,
+      workspace_id: args.workspaceId,
+      project_id: args.projectId,
+    }),
     status: 'active',
     attached_inputs: [],
     created_at: generatedAt,
@@ -1271,12 +1267,19 @@ function parseNotebookRunStopMode(raw: unknown): NotebookTaskRunStopMode | null 
 const registeredInternalTerminalLifecycleServices = new Set<object>();
 const notebookRunHardTeardownInFlight = new Map<string, Promise<void>>();
 
+function isTaskDeletionFenced(task: TaskRecord): boolean {
+  return task.deletion_state === 'deleting' || task.deletion_state === 'deleted';
+}
+
 function listTasksForOwner(
   workspaceId: string,
   projectId: string,
   ownerUserId: string,
 ): TaskRecord[] {
-  return getTasks(workspaceId, projectId).filter((task) => task.owner_user_id === ownerUserId);
+  return getTasks(workspaceId, projectId).filter((task) => (
+    task.owner_user_id === ownerUserId
+    && !isTaskDeletionFenced(task)
+  ));
 }
 
 function findTaskForOwner(
@@ -1286,7 +1289,7 @@ function findTaskForOwner(
   ownerUserId: string,
 ): TaskRecord | undefined {
   const task = findTask(workspaceId, projectId, taskId);
-  if (!task || task.owner_user_id !== ownerUserId) {
+  if (!task || task.owner_user_id !== ownerUserId || isTaskDeletionFenced(task)) {
     return undefined;
   }
   return task;
@@ -1349,6 +1352,32 @@ export function resolveTaskWorkspaceMountAccess(input: {
 function defaultWorkspaceNameFromTaskTitle(title: string): string {
   const trimmed = title.trim();
   return trimmed ? `${trimmed} Workspace` : 'Notebook Workspace';
+}
+
+async function compensateAutoCreatedTaskFileLibrary(args: {
+  deps: NodeApiDeps;
+  workspaceId: string;
+  projectId: string;
+  libraryId?: string | null;
+  filesystemName?: string | null;
+}): Promise<void> {
+  const libraryId = args.libraryId?.trim();
+  if (!libraryId) return;
+  if (args.filesystemName?.trim() && args.deps.fileLibraryOrchestrator) {
+    await args.deps.fileLibraryOrchestrator.deleteLibrary({
+      libraryId,
+      filesystemName: args.filesystemName.trim(),
+    }).catch(() => undefined);
+  }
+  await new JsonDocProjectFileLibraryMountAccessRepo(args.deps.docStore)
+    .delete(args.workspaceId, args.projectId, libraryId)
+    .catch(() => undefined);
+  await new JsonDocProjectFileLibraryBackendRepo(args.deps.docStore)
+    .delete(args.workspaceId, args.projectId, libraryId)
+    .catch(() => undefined);
+  await new JsonDocProjectFileLibraryCatalogRepo(args.deps.docStore)
+    .delete(args.workspaceId, args.projectId, libraryId)
+    .catch(() => undefined);
 }
 
 function sanitizeFileLibraryWorkspaceDirName(fileLibraryName: string | undefined, fileLibraryId: string | undefined): string {
@@ -1662,6 +1691,7 @@ async function buildTaskTerminalExecutionContext(args: {
     task_home_path: taskRuntimePaths.taskHomePath,
     workspace_path: taskRuntimePaths.workspacePath,
     artifacts_path: taskRuntimePaths.artifactsPath,
+    library_root_path: '.',
     workspace_file_library_id: args.task.workspace_file_library_id ?? null,
     workspace_file_library_name: args.task.workspace_file_library_name ?? null,
     workspace_dir_name: workspaceLibrary?.filesystem_name
@@ -1672,14 +1702,152 @@ async function buildTaskTerminalExecutionContext(args: {
   return executionContext;
 }
 
-function findActiveTaskUsingWorkspace(
-  workspaceId: string,
-  projectId: string,
+function buildAgentTaskFileLibraryInUseConflict(input: {
   fileLibraryId: string,
-): TaskRecord | undefined {
-  return getTasks(workspaceId, projectId).find((task) => (
-    task.status === 'active' && task.workspace_file_library_id === fileLibraryId
-  ));
+  binding: TaskFileLibraryBinding,
+  actorUserId: string,
+}): Record<string, unknown> {
+  return {
+    error_code: 'AGENT_TASK_FILE_LIBRARY_IN_USE',
+    message: 'workspace_file_library_in_use',
+    field: 'workspace_file_library_id',
+    file_library_id: input.fileLibraryId,
+    ...buildBoundTaskSafeFields({
+      binding: input.binding,
+      actorUserId: input.actorUserId,
+    }),
+  };
+}
+
+function bindingGenerationToWire(value: number | null | undefined): string | undefined {
+  return typeof value === 'number' && Number.isFinite(value) ? String(value) : undefined;
+}
+
+function serializeAgentTaskDeleteBlockers(blockers: AgentTaskDeleteBlocker[]): string[] {
+  return [...new Set(blockers.map((blocker) => blocker.type))];
+}
+
+function buildWorkspaceAccessHolderFence(input: {
+  task: TaskRecord;
+  fileLibraryId: string;
+  bindingGeneration: number;
+  issuedAt?: string;
+}): {
+  holder_id: string;
+  task_id: string;
+  file_library_id: string;
+  task_home_segment: string;
+  binding_generation: string;
+  lease_epoch: string;
+  holder_kind: 'runner_workspace';
+  issued_at: string;
+  expires_at: string;
+} {
+  const issuedAt = input.issuedAt ?? nowIso();
+  return {
+    holder_id: buildId('holder'),
+    task_id: input.task.id,
+    file_library_id: input.fileLibraryId,
+    task_home_segment: input.task.task_home_segment,
+    binding_generation: String(input.bindingGeneration),
+    lease_epoch: buildId('lease'),
+    holder_kind: 'runner_workspace',
+    issued_at: issuedAt,
+    expires_at: new Date(Date.parse(issuedAt) + TASK_WORKSPACE_ACCESS_LEASE_TTL_MS).toISOString(),
+  };
+}
+
+async function writeTaskFileLibraryBindingAcquireAudit(input: {
+  deps: NodeApiDeps;
+  workspaceId: string;
+  projectId: string;
+  actorUserId: string;
+  fileLibraryId: string;
+  taskId?: string;
+  binding?: TaskFileLibraryBinding;
+  requestId?: string | null;
+  result: 'ok' | 'error';
+  errorCode?: string;
+  errorMessage?: string;
+  reason?: string;
+}): Promise<void> {
+  await writeProjectAuditEvent(input.deps, {
+    workspaceId: input.workspaceId,
+    projectId: input.projectId,
+    actor: { type: 'user', id: input.actorUserId },
+    action: 'agent_task.file_library_binding.acquire',
+    result: input.result,
+    requestId: input.requestId,
+    resourceType: 'project_file_library',
+    resourceId: input.fileLibraryId,
+    errorCode: input.errorCode,
+    errorMessage: input.errorMessage,
+    metadata: {
+      file_library_id: input.fileLibraryId,
+      ...(input.taskId ? { task_id: input.taskId } : {}),
+      ...(input.reason ? { reason: input.reason } : {}),
+      ...(input.binding
+        ? {
+          binding_generation: String(input.binding.bindingGeneration),
+          runtime_writable_affordance: input.binding.runtimeWritableAffordance,
+          ...buildBoundTaskSafeFields({
+            binding: input.binding,
+            actorUserId: input.actorUserId,
+          }),
+        }
+        : {}),
+    },
+  });
+}
+
+async function releaseTaskFileLibraryBindingWithAudit(input: {
+  deps: NodeApiDeps;
+  workspaceId: string;
+  projectId: string;
+  actorUserId: string;
+  fileLibraryId?: string | null;
+  taskId: string;
+  bindingGeneration?: number | null;
+  correlationId: string;
+  requestId?: string | null;
+  reason: string;
+}): Promise<Awaited<ReturnType<typeof releaseTaskFileLibraryBinding>>> {
+  const releaseResult = await releaseTaskFileLibraryBinding({
+    docStore: input.deps.docStore,
+    workspaceId: input.workspaceId,
+    projectId: input.projectId,
+    fileLibraryId: input.fileLibraryId,
+    taskId: input.taskId,
+    bindingGeneration: input.bindingGeneration,
+    correlationId: input.correlationId,
+  });
+  const fileLibraryId = input.fileLibraryId?.trim();
+  if (fileLibraryId) {
+    await writeProjectAuditEvent(input.deps, {
+      workspaceId: input.workspaceId,
+      projectId: input.projectId,
+      actor: { type: 'user', id: input.actorUserId },
+      action: 'agent_task.file_library_binding.release',
+      result: releaseResult.ok ? 'ok' : 'error',
+      requestId: input.requestId,
+      resourceType: 'project_file_library',
+      resourceId: fileLibraryId,
+      errorCode: releaseResult.ok ? undefined : releaseResult.code,
+      errorMessage: releaseResult.ok ? undefined : releaseResult.code,
+      metadata: {
+        file_library_id: fileLibraryId,
+        task_id: input.taskId,
+        reason: input.reason,
+        ...(bindingGenerationToWire(input.bindingGeneration)
+          ? { binding_generation: bindingGenerationToWire(input.bindingGeneration) }
+          : {}),
+        ...(releaseResult.ok
+          ? { released: releaseResult.released }
+          : { current_binding_generation: String(releaseResult.binding.bindingGeneration) }),
+      },
+    });
+  }
+  return releaseResult;
 }
 
 async function maybeReleaseInternalAgentWorkload(
@@ -1763,6 +1931,7 @@ async function ensureManagedTerminalRuntimeReady(
     workspaceId: string;
     projectId: string;
     taskId: string;
+    userId: string;
     agentId: string;
     runnerSessionId: string;
     runtimeDispatchContext?: Record<string, unknown>;
@@ -1780,6 +1949,36 @@ async function ensureManagedTerminalRuntimeReady(
   );
   if (!agent || !isManagedAgentRunner(agent)) {
     throw new Error('task_agent_not_available');
+  }
+  const tasks = await loadProjectTasks(deps, session.workspaceId, session.projectId);
+  const task = tasks.find((item) => item.id === session.taskId && item.owner_user_id === session.userId);
+  if (!task) {
+    throw new Error('task_not_found');
+  }
+  if (task.workspace_file_library_id?.trim() !== runtimeDispatchContext.managedInternalAgent.workspaceFileLibraryId) {
+    throw Object.assign(new Error('agent_task_workspace_binding_conflict'), {
+      code: 'AGENT_TASK_WORKSPACE_BINDING_CONFLICT',
+    });
+  }
+  try {
+    await resolveTaskWorkspaceBindingGuard({
+      deps,
+      task,
+      actorUserId: session.userId,
+      requireMountAccess: false,
+      canUpdateProjectFiles: () => actorHasProjectPermissions({
+        deps,
+        workspaceId: session.workspaceId,
+        projectId: session.projectId,
+        actorUserId: session.userId,
+        requiredPermissions: ['project:files:update'],
+      }),
+    });
+  } catch (error) {
+    if (isTaskWorkspaceBindingGuardError(error)) {
+      throw toTaskWorkspaceBindingGuardException(error);
+    }
+    throw error;
   }
   const workspaceBinding = await deps.internalAgentWorkspaceBindingManager.ensureWorkspaceBinding({
     workspaceId: session.workspaceId,
@@ -1937,73 +2136,99 @@ async function collectAgentTaskDeleteBlockers(args: {
       });
     }
   }
+  const liveWorkspaceHolders = await new JsonDocTaskWorkspaceHolderRepo(args.deps.docStore).listLiveByTask({
+    workspaceId: args.workspaceId,
+    projectId: args.projectId,
+    taskId: args.task.id,
+    bindingGeneration: args.task.file_library_binding_generation,
+  });
+  for (const holder of liveWorkspaceHolders) {
+    blockers.push({
+      type: 'workspace_holder',
+      holder: `${holder.holderKind}:${holder.holderId}`,
+    });
+  }
   return blockers;
 }
 
-function isConnectionRefusedLike(error: unknown): boolean {
-  if (!(error instanceof Error)) return false;
-  const maybeNetworkError = error as { code?: unknown; cause?: unknown };
-  if (maybeNetworkError.code === 'ECONNREFUSED') return true;
-  if (error.message.includes('ECONNREFUSED')) return true;
-  return isConnectionRefusedLike(maybeNetworkError.cause);
-}
-
-function canIgnoreTaskHomeCleanupErrorForInMemoryGateway(deps: NodeApiDeps, error: unknown): boolean {
-  const gatewayManagerName = deps.fileLibraryGatewayManager?.constructor?.name;
-  return gatewayManagerName === 'InMemoryFileLibraryGatewayManager' && isConnectionRefusedLike(error);
-}
-
-async function removeTaskHomeSubtree(args: {
+async function markTaskDeletingFence(input: {
   deps: NodeApiDeps;
   workspaceId: string;
-  projectId: string;
   task: TaskRecord;
-}): Promise<void> {
-  const libraryId = args.task.workspace_file_library_id?.trim();
-  if (!libraryId) return;
-  const library = await getProjectFileLibraryRecord({
-    deps: args.deps,
-    workspaceId: args.workspaceId,
-    projectId: args.projectId,
-    libraryId,
-  });
-  if (!library || library.created_by_user_id !== args.task.owner_user_id) return;
-
-  const taskHomePaths = buildTaskHomePaths(resolveTaskHomeSegment(args.task));
-  const prefix = `${taskHomePaths.subPath}/`;
-  try {
-    const client = await createFileLibraryGatewayClient({
-      deps: args.deps,
-      workspaceId: args.workspaceId,
-      projectId: args.projectId,
-      libraryId,
-      filesystemName: library.filesystem_name,
-    });
-    const bucket = fileLibraryBucketName(library.filesystem_name);
-    const keys = new Set<string>([
-      taskHomePaths.subPath,
-      prefix,
-    ]);
-    const listed = client.listObjectsV2(bucket, prefix, true) as AsyncIterable<{ name?: string }>;
-    for await (const item of listed) {
-      if (typeof item.name === 'string' && item.name.startsWith(prefix)) {
-        keys.add(item.name);
-      }
-    }
-    const keysToDelete = [...keys];
-    if (keysToDelete.length === 0) return;
-    const removeObjects = (client as MinioClient & {
-      removeObjects?: (bucketName: string, objectsList: string[]) => Promise<void>;
-    }).removeObjects;
-    if (typeof removeObjects === 'function') {
-      await removeObjects.call(client, bucket, keysToDelete);
-      return;
-    }
-    await Promise.all(keysToDelete.map((key) => client.removeObject(bucket, key).catch(() => undefined)));
-  } catch (error) {
-    if (canIgnoreTaskHomeCleanupErrorForInMemoryGateway(args.deps, error)) return;
-    throw error;
+  correlationId: string;
+}): Promise<TaskRecord> {
+  if (input.task.deletion_state === 'deleting') {
+    return input.task;
   }
+  const now = nowIso();
+  const result = await input.deps.docStore.updateIfMatch<TaskRecord>(
+    notebookTasksCollection(input.workspaceId),
+    input.task.id,
+    {
+      expected: {
+        workspace_id: input.task.workspace_id,
+        project_id: input.task.project_id,
+        owner_user_id: input.task.owner_user_id,
+        status: input.task.status,
+      },
+      patch: {
+        deletion_state: 'deleting',
+        deleting_started_at: now,
+        delete_correlation_id: input.correlationId,
+        updated_at: now,
+      },
+    },
+  );
+  if (result.ok) {
+    Object.assign(input.task, result.doc);
+    return input.task;
+  }
+  const current = result.current;
+  if (current?.deletion_state === 'deleting') {
+    Object.assign(input.task, current);
+    return input.task;
+  }
+  throw Object.assign(new Error('agent_task_delete_conflict'), {
+    code: 'AGENT_TASK_WORKSPACE_BINDING_CONFLICT',
+  });
+}
+
+async function rollbackTaskDeletingFence(input: {
+  deps: NodeApiDeps;
+  workspaceId: string;
+  task: TaskRecord;
+  correlationId: string;
+}): Promise<void> {
+  const current = await input.deps.docStore.get<TaskRecord>(
+    notebookTasksCollection(input.workspaceId),
+    input.task.id,
+  );
+  if (
+    !current
+    || current.deletion_state !== 'deleting'
+    || current.delete_correlation_id !== input.correlationId
+  ) {
+    return;
+  }
+  const rollback: TaskRecord = {
+    ...current,
+    updated_at: nowIso(),
+  };
+  delete rollback.deletion_state;
+  delete rollback.deleting_started_at;
+  delete rollback.delete_correlation_id;
+  await input.deps.docStore.updateIfMatch<TaskRecord>(
+    notebookTasksCollection(input.workspaceId),
+    input.task.id,
+    {
+      expected: {
+        deletion_state: 'deleting',
+        delete_correlation_id: input.correlationId,
+      },
+      replace: rollback,
+    },
+  );
+  Object.assign(input.task, rollback);
 }
 
 function buildNotebookHardTeardownDebtStopResponse(input: {
@@ -2147,6 +2372,19 @@ export function __resetInternalTerminalWorkloadLifecycleForTests(): void {
   resetInternalWorkloadHolderCoordinatorForTests();
 }
 
+function mapTaskArtifactMetadataPathToWorkspaceObjectKey(relativePath: string): string | null {
+  let normalized: string;
+  try {
+    normalized = normalizeFileLibraryPath(relativePath);
+  } catch {
+    return null;
+  }
+  if (normalized !== '.artifacts' && !normalized.startsWith('.artifacts/')) {
+    return null;
+  }
+  return `workspace/${normalized}`;
+}
+
 async function streamTaskArtifactFromWorkspaceLibrary(args: {
   deps: NodeApiDeps;
   req: http.IncomingMessage;
@@ -2174,7 +2412,7 @@ async function streamTaskArtifactFromWorkspaceLibrary(args: {
   if (!library || library.created_by_user_id !== args.task.owner_user_id) {
     return false;
   }
-  const objectPath = normalizeFileLibraryPath(relativePath);
+  const objectPath = mapTaskArtifactMetadataPathToWorkspaceObjectKey(relativePath);
   if (!objectPath) {
     return false;
   }
@@ -2317,6 +2555,107 @@ async function preflightManagedRunnerRuntimeForTask(args: {
   return null;
 }
 
+function buildTaskWorkspaceBindingGuardHttpResponse(error: TaskWorkspaceBindingGuardError): {
+  statusCode: number;
+  body: Record<string, unknown>;
+} {
+  if (error.errorCode === 'FILE_LIBRARY_NOT_FOUND') {
+    return {
+      statusCode: 404,
+      body: {
+        error_code: 'FILE_LIBRARY_NOT_FOUND',
+        message: 'file_library_not_found',
+        ...(error.metadata.fileLibraryId ? { file_library_id: error.metadata.fileLibraryId } : {}),
+      },
+    };
+  }
+  if (error.errorCode === 'FILE_LIBRARY_WORKSPACE_ACCESS_UNAVAILABLE') {
+    return {
+      statusCode: 404,
+      body: { error_code: 'RESOURCE_NOT_FOUND', message: 'file_library_mount_access_not_found' },
+    };
+  }
+  return {
+    statusCode: error.statusCode,
+    body: serializeTaskWorkspaceBindingGuardError(error),
+  };
+}
+
+async function preflightManagedTaskWorkspaceBindingGuard(args: {
+  deps: NodeApiDeps;
+  task: TaskRecord;
+  runner: AgentRecord;
+  actorUserId: string;
+}): Promise<{
+  ok: true;
+} | {
+  ok: false;
+  statusCode: number;
+  body: Record<string, unknown>;
+}> {
+  if (!isManagedAgentRunner(args.runner)) {
+    return { ok: true };
+  }
+  try {
+    await resolveTaskWorkspaceBindingGuard({
+      deps: args.deps,
+      task: args.task,
+      actorUserId: args.actorUserId,
+      requireMountAccess: false,
+      canUpdateProjectFiles: () => actorHasProjectPermissions({
+        deps: args.deps,
+        workspaceId: args.task.workspace_id,
+        projectId: args.task.project_id,
+        actorUserId: args.actorUserId,
+        requiredPermissions: ['project:files:update'],
+      }),
+    });
+    return { ok: true };
+  } catch (error) {
+    if (!isTaskWorkspaceBindingGuardError(error)) {
+      throw error;
+    }
+    return {
+      ok: false,
+      ...buildTaskWorkspaceBindingGuardHttpResponse(error),
+    };
+  }
+}
+
+function readTaskWorkspaceAccessReleaseRequest(raw: unknown): {
+  ok: true;
+  holderId: string;
+  fileLibraryId: string;
+  bindingGeneration: number;
+  bindingGenerationWire: string;
+  leaseEpoch: string;
+} | {
+  ok: false;
+  field: string;
+} {
+  const body = asObject(raw);
+  const holderId = typeof body.holder_id === 'string' ? body.holder_id.trim() : '';
+  if (!holderId) return { ok: false, field: 'holder_id' };
+  const fileLibraryId = typeof body.file_library_id === 'string' ? body.file_library_id.trim() : '';
+  if (!fileLibraryId) return { ok: false, field: 'file_library_id' };
+  const bindingGenerationWire = typeof body.binding_generation === 'string' ? body.binding_generation.trim() : '';
+  if (!/^\d+$/.test(bindingGenerationWire)) return { ok: false, field: 'binding_generation' };
+  const bindingGeneration = Number(bindingGenerationWire);
+  if (!Number.isSafeInteger(bindingGeneration) || bindingGeneration <= 0) {
+    return { ok: false, field: 'binding_generation' };
+  }
+  const leaseEpoch = typeof body.lease_epoch === 'string' ? body.lease_epoch.trim() : '';
+  if (!leaseEpoch) return { ok: false, field: 'lease_epoch' };
+  return {
+    ok: true,
+    holderId,
+    fileLibraryId,
+    bindingGeneration,
+    bindingGenerationWire,
+    leaseEpoch,
+  };
+}
+
 export async function handleTaskRoute(args: TaskRouteHandlerArgs): Promise<boolean> {
   const { route, method, req, res, deps, user, internalTicket, json, readBody } = args;
   ensureInternalTerminalLifecycleIntegration(deps);
@@ -2356,7 +2695,13 @@ export async function handleTaskRoute(args: TaskRouteHandlerArgs): Promise<boole
   }
 
   if (route.kind === 'tasks' && method === 'POST') {
-    await loadProjectTasks(deps, route.workspaceId, route.projectId);
+    const existingTasks = await loadProjectTasks(deps, route.workspaceId, route.projectId);
+    await hydrateTaskFileLibraryBindingsForProject({
+      docStore: deps.docStore,
+      workspaceId: route.workspaceId,
+      projectId: route.projectId,
+      tasks: existingTasks,
+    });
     const body = asObject(await readBody(req));
     const requestId = typeof req.headers['x-request-id'] === 'string' ? req.headers['x-request-id'] : null;
     const unsupportedFields = collectUnsupportedFields(body, UNSUPPORTED_TASK_BINDING_FIELDS);
@@ -2374,14 +2719,30 @@ export async function handleTaskRoute(args: TaskRouteHandlerArgs): Promise<boole
     const workspaceFileLibraryId = typeof body.workspace_file_library_id === 'string'
       ? body.workspace_file_library_id.trim()
       : '';
-    const effectiveWorkspaceMode = workspaceMode || (workspaceFileLibraryId ? 'use_existing' : 'create_new');
+    const effectiveWorkspaceMode = workspaceMode || 'create_new';
     const requestedWorkspaceName = typeof body.workspace_name === 'string' ? body.workspace_name.trim() : '';
     if (!title) {
       json(res, 422, { error_code: 'VALIDATION_ERROR', message: 'task_title_required' });
       return true;
     }
-    if (effectiveWorkspaceMode !== 'create_new' && !workspaceFileLibraryId) {
-      json(res, 422, { error_code: 'VALIDATION_ERROR', message: 'workspace_file_library_id_required' });
+    if (
+      (workspaceMode !== '' && workspaceMode !== 'create_new' && workspaceMode !== 'use_existing')
+      || (effectiveWorkspaceMode === 'create_new' && workspaceFileLibraryId)
+    ) {
+      json(res, 422, {
+        error_code: 'AGENT_TASK_WORKSPACE_MODE_INVALID',
+        message: 'workspace_mode_invalid',
+        field: 'workspace_mode',
+        workspace_mode: effectiveWorkspaceMode,
+      });
+      return true;
+    }
+    if (effectiveWorkspaceMode === 'use_existing' && !workspaceFileLibraryId) {
+      json(res, 422, {
+        error_code: 'AGENT_TASK_WORKSPACE_FILE_LIBRARY_REQUIRED',
+        message: 'workspace_file_library_id_required',
+        field: 'workspace_file_library_id',
+      });
       return true;
     }
 
@@ -2397,6 +2758,7 @@ export async function handleTaskRoute(args: TaskRouteHandlerArgs): Promise<boole
           userId: user.id,
           name: requestedWorkspaceName || defaultWorkspaceNameFromTaskTitle(title),
           description: `Auto-initialized workspace for notebook task "${title}".`,
+          source: 'agent_task_auto',
         });
       } catch (error) {
         const mapped = mapFileLibraryInfraError(error);
@@ -2410,26 +2772,83 @@ export async function handleTaskRoute(args: TaskRouteHandlerArgs): Promise<boole
       }
     }
     if (!workspaceFileLibrary) {
-      json(res, 404, { error_code: 'RESOURCE_NOT_FOUND', message: 'file_library_not_found' });
+      json(res, 404, {
+        error_code: 'FILE_LIBRARY_NOT_FOUND',
+        message: 'file_library_not_found',
+        file_library_id: workspaceFileLibraryId,
+      });
       return true;
     }
     if (workspaceFileLibrary.created_by_user_id !== user.id) {
-      json(res, 404, { error_code: 'RESOURCE_NOT_FOUND', message: 'file_library_not_found' });
+      json(res, 403, {
+        error_code: 'FILE_LIBRARY_FORBIDDEN',
+        message: 'file_library_forbidden',
+        file_library_id: workspaceFileLibrary.id,
+      });
       return true;
+    }
+    if (
+      effectiveWorkspaceMode === 'use_existing'
+      && !(await actorHasProjectPermissions({
+        deps,
+        workspaceId: route.workspaceId,
+        projectId: route.projectId,
+        actorUserId: user.id,
+        requiredPermissions: ['project:files:update'],
+      }))
+    ) {
+      const projectExists = await deps.getProjectUseCase.execute({
+        workspaceId: route.workspaceId,
+        projectId: route.projectId,
+      }).then(() => true, () => false);
+      if (projectExists) {
+        json(res, 403, {
+          error_code: 'FILE_LIBRARY_FORBIDDEN',
+          message: 'file_library_forbidden',
+          file_library_id: workspaceFileLibrary.id,
+        });
+        return true;
+      }
     }
     if (workspaceFileLibrary.status !== 'ready') {
-      json(res, 409, { error_code: 'RESOURCE_CONFLICT', message: 'file_library_not_ready' });
+      json(res, 409, {
+        error_code: workspaceFileLibrary.status === 'deleting' || workspaceFileLibrary.status === 'deleted'
+          ? 'FILE_LIBRARY_DELETING'
+          : 'FILE_LIBRARY_NOT_READY',
+        message: workspaceFileLibrary.status === 'deleting' || workspaceFileLibrary.status === 'deleted'
+          ? 'file_library_deleting'
+          : 'file_library_not_ready',
+        file_library_id: workspaceFileLibrary.id,
+        file_library_status: workspaceFileLibrary.status,
+      });
       return true;
     }
-    const activeTask = findActiveTaskUsingWorkspace(
-      route.workspaceId,
-      route.projectId,
-      workspaceFileLibrary.id,
-    );
-    if (activeTask) {
+    const existingBinding = await findTaskFileLibraryBinding({
+      docStore: deps.docStore,
+      workspaceId: route.workspaceId,
+      projectId: route.projectId,
+      fileLibraryId: workspaceFileLibrary.id,
+    });
+    if (existingBinding) {
+      await writeTaskFileLibraryBindingAcquireAudit({
+        deps,
+        workspaceId: route.workspaceId,
+        projectId: route.projectId,
+        actorUserId: user.id,
+        fileLibraryId: workspaceFileLibrary.id,
+        binding: existingBinding,
+        requestId,
+        result: 'error',
+        errorCode: 'AGENT_TASK_FILE_LIBRARY_IN_USE',
+        errorMessage: 'workspace_file_library_in_use',
+        reason: 'current_binding_exists',
+      });
       json(res, 409, {
-        error_code: 'RESOURCE_CONFLICT',
-        message: 'workspace_file_library_in_use',
+        ...buildAgentTaskFileLibraryInUseConflict({
+          fileLibraryId: workspaceFileLibrary.id,
+          binding: existingBinding,
+          actorUserId: user.id,
+        }),
       });
       return true;
     }
@@ -2457,13 +2876,17 @@ export async function handleTaskRoute(args: TaskRouteHandlerArgs): Promise<boole
       task_home_segment: '',
       workspace_file_library_id: workspaceFileLibrary.id,
       workspace_file_library_name: workspaceFileLibrary.name,
+      file_library_binding_generation: undefined,
+      runtime_writable_affordance: effectiveWorkspaceMode === 'create_new'
+        ? 'task_internal_home'
+        : 'files_update',
       status: 'active',
       attached_inputs: initialInputs,
       created_at: createdAt,
       updated_at: createdAt,
       last_activity_at: createdAt,
     };
-    task.task_home_segment = resolveTaskHomeSegment(task);
+    task.task_home_segment = workspaceFileLibrary.file_library_home_segment;
     const taskHomeSegmentConflict = findTaskHomeSegmentConflict(
       getTasks(route.workspaceId, route.projectId),
       {
@@ -2480,80 +2903,410 @@ export async function handleTaskRoute(args: TaskRouteHandlerArgs): Promise<boole
       });
       return true;
     }
-    const binding = await bindAgentRunnerForTask({
+    const lifecycleFence = await catalogRepo.acquireReadyLifecycleFence({
+      workspaceId: route.workspaceId,
+      projectId: route.projectId,
+      libraryId: workspaceFileLibrary.id,
+      expectedVersion: workspaceFileLibrary.version,
+      taskId: task.id,
+      correlationId: requestId ?? task.id,
+      now: createdAt,
+    });
+    if (!lifecycleFence.ok) {
+      if (effectiveWorkspaceMode === 'create_new') {
+        await compensateAutoCreatedTaskFileLibrary({
+          deps,
+          workspaceId: route.workspaceId,
+          projectId: route.projectId,
+          libraryId: workspaceFileLibrary.id,
+          filesystemName: workspaceFileLibrary.filesystem_name,
+        });
+      }
+      await writeTaskFileLibraryBindingAcquireAudit({
+        deps,
+        workspaceId: route.workspaceId,
+        projectId: route.projectId,
+        actorUserId: user.id,
+        fileLibraryId: workspaceFileLibrary.id,
+        taskId: task.id,
+        requestId,
+        result: 'error',
+        errorCode: lifecycleFence.code,
+        errorMessage: lifecycleFence.code === 'FILE_LIBRARY_DELETING'
+          ? 'file_library_deleting'
+          : lifecycleFence.code === 'FILE_LIBRARY_NOT_FOUND'
+            ? 'file_library_not_found'
+            : 'file_library_not_ready',
+        reason: 'library_lifecycle_fence_unavailable',
+      });
+      json(res, lifecycleFence.code === 'FILE_LIBRARY_NOT_FOUND' ? 404 : 409, {
+        error_code: lifecycleFence.code,
+        message: lifecycleFence.code === 'FILE_LIBRARY_DELETING'
+          ? 'file_library_deleting'
+          : lifecycleFence.code === 'FILE_LIBRARY_NOT_FOUND'
+            ? 'file_library_not_found'
+            : 'file_library_not_ready',
+        file_library_id: workspaceFileLibrary.id,
+        ...(lifecycleFence.library ? { file_library_status: lifecycleFence.library.status } : {}),
+      });
+      return true;
+    }
+    workspaceFileLibrary = lifecycleFence.fence.library;
+    const taskFileLibraryBinding = await acquireTaskFileLibraryBinding({
+      docStore: deps.docStore,
+      workspaceId: route.workspaceId,
+      projectId: route.projectId,
+      fileLibraryId: workspaceFileLibrary.id,
+      taskId: task.id,
+      taskTitle: task.title,
+      taskStatus: task.status,
+      ownerUserId: task.owner_user_id,
+      runtimeWritableAffordance: task.runtime_writable_affordance ?? 'task_internal_home',
+      correlationId: requestId ?? task.id,
+      now: createdAt,
+    });
+    if (!taskFileLibraryBinding.ok) {
+      await catalogRepo.releaseReadyLifecycleFence({
+        workspaceId: route.workspaceId,
+        projectId: route.projectId,
+        libraryId: workspaceFileLibrary.id,
+        expectedVersion: lifecycleFence.fence.version,
+        token: lifecycleFence.fence.token,
+      });
+      if (effectiveWorkspaceMode === 'create_new') {
+        await compensateAutoCreatedTaskFileLibrary({
+          deps,
+          workspaceId: route.workspaceId,
+          projectId: route.projectId,
+          libraryId: workspaceFileLibrary.id,
+          filesystemName: workspaceFileLibrary.filesystem_name,
+        });
+      }
+      await writeTaskFileLibraryBindingAcquireAudit({
+        deps,
+        workspaceId: route.workspaceId,
+        projectId: route.projectId,
+        actorUserId: user.id,
+        fileLibraryId: workspaceFileLibrary.id,
+        binding: taskFileLibraryBinding.binding,
+        requestId,
+        result: 'error',
+        errorCode: 'AGENT_TASK_FILE_LIBRARY_IN_USE',
+        errorMessage: 'workspace_file_library_in_use',
+        reason: 'durable_binding_exists',
+      });
+      json(res, 409, buildAgentTaskFileLibraryInUseConflict({
+        fileLibraryId: workspaceFileLibrary.id,
+        binding: taskFileLibraryBinding.binding,
+        actorUserId: user.id,
+      }));
+      return true;
+    }
+    const acquiredGeneration = taskFileLibraryBinding.binding.bindingGeneration;
+    const lifecycleFenceVerified = await catalogRepo.verifyReadyLifecycleFence({
+      workspaceId: route.workspaceId,
+      projectId: route.projectId,
+      libraryId: workspaceFileLibrary.id,
+      expectedVersion: lifecycleFence.fence.version,
+      token: lifecycleFence.fence.token,
+    });
+    const verifiedCurrentBinding = await findTaskFileLibraryBinding({
+      docStore: deps.docStore,
+      workspaceId: route.workspaceId,
+      projectId: route.projectId,
+      fileLibraryId: workspaceFileLibrary.id,
+    });
+    const currentBindingStillOwned = verifiedCurrentBinding?.taskId === task.id
+      && verifiedCurrentBinding.bindingGeneration === acquiredGeneration;
+    if (!lifecycleFenceVerified.ok || !currentBindingStillOwned) {
+      await releaseTaskFileLibraryBindingWithAudit({
+        deps,
+        workspaceId: route.workspaceId,
+        projectId: route.projectId,
+        actorUserId: user.id,
+        fileLibraryId: workspaceFileLibrary.id,
+        taskId: task.id,
+        bindingGeneration: acquiredGeneration,
+        correlationId: requestId ?? task.id,
+        requestId,
+        reason: !lifecycleFenceVerified.ok ? 'library_lifecycle_fence_changed_after_acquire' : 'binding_changed_after_acquire',
+      });
+      await catalogRepo.releaseReadyLifecycleFence({
+        workspaceId: route.workspaceId,
+        projectId: route.projectId,
+        libraryId: workspaceFileLibrary.id,
+        expectedVersion: lifecycleFence.fence.version,
+        token: lifecycleFence.fence.token,
+      });
+      if (effectiveWorkspaceMode === 'create_new') {
+        await compensateAutoCreatedTaskFileLibrary({
+          deps,
+          workspaceId: route.workspaceId,
+          projectId: route.projectId,
+          libraryId: workspaceFileLibrary.id,
+          filesystemName: workspaceFileLibrary.filesystem_name,
+        });
+      }
+      await writeTaskFileLibraryBindingAcquireAudit({
+        deps,
+        workspaceId: route.workspaceId,
+        projectId: route.projectId,
+        actorUserId: user.id,
+        fileLibraryId: workspaceFileLibrary.id,
+        taskId: task.id,
+        requestId,
+        result: 'error',
+        errorCode: lifecycleFenceVerified.ok
+          ? 'AGENT_TASK_WORKSPACE_BINDING_CONFLICT'
+          : lifecycleFenceVerified.code === 'FILE_LIBRARY_DELETING'
+          ? 'FILE_LIBRARY_DELETING'
+          : lifecycleFenceVerified.code === 'FILE_LIBRARY_NOT_FOUND'
+            ? 'FILE_LIBRARY_NOT_FOUND'
+            : 'FILE_LIBRARY_NOT_READY',
+        errorMessage: lifecycleFenceVerified.ok
+          ? 'agent_task_workspace_binding_conflict'
+          : lifecycleFenceVerified.code === 'FILE_LIBRARY_DELETING'
+          ? 'file_library_deleting'
+          : lifecycleFenceVerified.code === 'FILE_LIBRARY_NOT_FOUND'
+            ? 'file_library_not_found'
+            : 'file_library_not_ready',
+        reason: !lifecycleFenceVerified.ok ? 'library_lifecycle_fence_changed_after_acquire' : 'binding_changed_after_acquire',
+      });
+      if (!lifecycleFenceVerified.ok && lifecycleFenceVerified.code === 'FILE_LIBRARY_NOT_FOUND') {
+        json(res, 404, {
+          error_code: 'FILE_LIBRARY_NOT_FOUND',
+          message: 'file_library_not_found',
+          file_library_id: workspaceFileLibrary.id,
+        });
+      } else if (!lifecycleFenceVerified.ok && lifecycleFenceVerified.code === 'FILE_LIBRARY_DELETING') {
+        json(res, 409, {
+          error_code: 'FILE_LIBRARY_DELETING',
+          message: 'file_library_deleting',
+          file_library_id: workspaceFileLibrary.id,
+          file_library_status: lifecycleFenceVerified.library?.status ?? 'deleting',
+        });
+      } else if (!currentBindingStillOwned) {
+        json(res, 409, {
+          error_code: 'AGENT_TASK_WORKSPACE_BINDING_CONFLICT',
+          message: 'agent_task_workspace_binding_conflict',
+          task_id: task.id,
+          file_library_id: workspaceFileLibrary.id,
+          ...(bindingGenerationToWire(verifiedCurrentBinding?.bindingGeneration)
+            ? { binding_generation: bindingGenerationToWire(verifiedCurrentBinding?.bindingGeneration) }
+            : {}),
+        });
+      } else {
+        json(res, 409, {
+          error_code: 'FILE_LIBRARY_NOT_READY',
+          message: 'file_library_not_ready',
+          file_library_id: workspaceFileLibrary.id,
+          file_library_status: lifecycleFenceVerified.library?.status ?? workspaceFileLibrary.status,
+        });
+      }
+      return true;
+    }
+    const releasedLifecycleFence = await catalogRepo.releaseReadyLifecycleFence({
+      workspaceId: route.workspaceId,
+      projectId: route.projectId,
+      libraryId: workspaceFileLibrary.id,
+      expectedVersion: lifecycleFence.fence.version,
+      token: lifecycleFence.fence.token,
+    });
+    if (!releasedLifecycleFence.ok) {
+      await releaseTaskFileLibraryBindingWithAudit({
+        deps,
+        workspaceId: route.workspaceId,
+        projectId: route.projectId,
+        actorUserId: user.id,
+        fileLibraryId: workspaceFileLibrary.id,
+        taskId: task.id,
+        bindingGeneration: acquiredGeneration,
+        correlationId: requestId ?? task.id,
+        requestId,
+        reason: 'library_lifecycle_fence_release_failed',
+      });
+      if (effectiveWorkspaceMode === 'create_new') {
+        await compensateAutoCreatedTaskFileLibrary({
+          deps,
+          workspaceId: route.workspaceId,
+          projectId: route.projectId,
+          libraryId: workspaceFileLibrary.id,
+          filesystemName: workspaceFileLibrary.filesystem_name,
+        });
+      }
+      json(res, releasedLifecycleFence.code === 'FILE_LIBRARY_NOT_FOUND' ? 404 : 409, {
+        error_code: releasedLifecycleFence.code,
+        message: releasedLifecycleFence.code === 'FILE_LIBRARY_DELETING'
+          ? 'file_library_deleting'
+          : releasedLifecycleFence.code === 'FILE_LIBRARY_NOT_FOUND'
+            ? 'file_library_not_found'
+            : 'file_library_not_ready',
+        file_library_id: workspaceFileLibrary.id,
+        ...(releasedLifecycleFence.library ? { file_library_status: releasedLifecycleFence.library.status } : {}),
+      });
+      return true;
+    }
+    workspaceFileLibrary = releasedLifecycleFence.library;
+    await writeTaskFileLibraryBindingAcquireAudit({
       deps,
       workspaceId: route.workspaceId,
       projectId: route.projectId,
-      task,
-      user,
-      requestedInputs: initialInputs,
-      boundRunnerId: typeof body.bound_runner_id === 'string' ? body.bound_runner_id : null,
+      actorUserId: user.id,
+      fileLibraryId: workspaceFileLibrary.id,
+      taskId: task.id,
+      binding: taskFileLibraryBinding.binding,
       requestId,
+      result: 'ok',
     });
-    if (!binding.ok) {
+    task.file_library_binding_generation = taskFileLibraryBinding.binding.bindingGeneration;
+
+    let taskPersisted = false;
+    try {
+      const binding = await bindAgentRunnerForTask({
+        deps,
+        workspaceId: route.workspaceId,
+        projectId: route.projectId,
+        task,
+        user,
+        requestedInputs: initialInputs,
+        boundRunnerId: typeof body.bound_runner_id === 'string' ? body.bound_runner_id : null,
+        requestId,
+      });
+      if (!binding.ok) {
+        await releaseTaskFileLibraryBindingWithAudit({
+          deps,
+          workspaceId: route.workspaceId,
+          projectId: route.projectId,
+          actorUserId: user.id,
+          fileLibraryId: task.workspace_file_library_id,
+          taskId: task.id,
+          bindingGeneration: task.file_library_binding_generation,
+          correlationId: requestId ?? task.id,
+          requestId,
+          reason: 'agent_runner_binding_failed',
+        });
+        if (effectiveWorkspaceMode === 'create_new') {
+          await compensateAutoCreatedTaskFileLibrary({
+            deps,
+            workspaceId: route.workspaceId,
+            projectId: route.projectId,
+            libraryId: task.workspace_file_library_id,
+            filesystemName: workspaceFileLibrary.filesystem_name,
+          });
+        }
+        await writeProjectAuditEvent(deps, {
+          workspaceId: route.workspaceId,
+          projectId: route.projectId,
+          actor: { type: 'user', id: user.id },
+          action: 'agent_runner.binding.failed',
+          result: 'error',
+          requestId,
+          resourceType: 'notebook_task',
+          resourceId: task.id,
+          errorCode: binding.code,
+          errorMessage: binding.code,
+          metadata: {
+            failure_code: binding.code,
+            workspace_file_library_id: task.workspace_file_library_id,
+            ...(binding.metadata ?? {}),
+          },
+        });
+        json(res, 409, {
+          error_code: binding.code,
+          message: binding.code,
+        });
+        return true;
+      }
+      const modelReadiness = await new AgentTaskModelSettingService(deps).getReadiness({
+        workspaceId: route.workspaceId,
+        projectId: route.projectId,
+        actorUserId: user.id,
+      });
+      if (modelReadiness.state !== 'ready') {
+        await releaseTaskFileLibraryBindingWithAudit({
+          deps,
+          workspaceId: route.workspaceId,
+          projectId: route.projectId,
+          actorUserId: user.id,
+          fileLibraryId: task.workspace_file_library_id,
+          taskId: task.id,
+          bindingGeneration: task.file_library_binding_generation,
+          correlationId: requestId ?? task.id,
+          requestId,
+          reason: 'agent_task_model_not_ready',
+        });
+        if (effectiveWorkspaceMode === 'create_new') {
+          await compensateAutoCreatedTaskFileLibrary({
+            deps,
+            workspaceId: route.workspaceId,
+            projectId: route.projectId,
+            libraryId: task.workspace_file_library_id,
+            filesystemName: workspaceFileLibrary.filesystem_name,
+          });
+        }
+        json(res, 409, {
+          error_code: modelReadiness.reason_code ?? 'agent_task_model_setting_missing',
+          message: modelReadiness.reason_code ?? 'agent_task_model_setting_missing',
+          readiness: {
+            state: modelReadiness.state,
+            display_summary: modelReadiness.display_summary,
+          },
+        });
+        return true;
+      }
+      task.bound_runner_id = binding.runner.id;
+      task.bound_runner_kind = binding.bindingKind;
+      task.runner_binding_source = binding.bindingSource;
+      task.bound_at = createdAt;
+      task.bound_by_user_id = user.id;
+      await deps.docStore.upsert<TaskRecord>(notebookTasksCollection(route.workspaceId), task.id, task);
+      taskPersisted = true;
+      getTasks(route.workspaceId, route.projectId).unshift(task);
       await writeProjectAuditEvent(deps, {
         workspaceId: route.workspaceId,
         projectId: route.projectId,
         actor: { type: 'user', id: user.id },
-        action: 'agent_runner.binding.failed',
-        result: 'error',
-        requestId,
+        action: 'notebook.task.created',
         resourceType: 'notebook_task',
         resourceId: task.id,
-        errorCode: binding.code,
-        errorMessage: binding.code,
+        requestId,
         metadata: {
-          failure_code: binding.code,
-          ...(binding.metadata ?? {}),
+          workspace_file_library_id: task.workspace_file_library_id,
+          task_home_binding_status: 'bound',
+          initial_input_count: task.attached_inputs.length,
+          bound_runner_id: task.bound_runner_id,
+          bound_runner_kind: task.bound_runner_kind,
+          runner_binding_source: task.runner_binding_source,
         },
       });
-      json(res, 409, {
-        error_code: binding.code,
-        message: binding.code,
-      });
+      json(res, 201, await buildTaskRealtimeView(deps, route.workspaceId, route.projectId, task));
       return true;
+    } catch (error) {
+      if (!taskPersisted) {
+        await releaseTaskFileLibraryBindingWithAudit({
+          deps,
+          workspaceId: route.workspaceId,
+          projectId: route.projectId,
+          actorUserId: user.id,
+          fileLibraryId: task.workspace_file_library_id,
+          taskId: task.id,
+          bindingGeneration: task.file_library_binding_generation,
+          correlationId: requestId ?? task.id,
+          requestId,
+          reason: 'task_create_exception',
+        });
+        if (effectiveWorkspaceMode === 'create_new') {
+          await compensateAutoCreatedTaskFileLibrary({
+            deps,
+            workspaceId: route.workspaceId,
+            projectId: route.projectId,
+            libraryId: task.workspace_file_library_id,
+            filesystemName: workspaceFileLibrary.filesystem_name,
+          });
+        }
+      }
+      throw error;
     }
-    const modelReadiness = await new AgentTaskModelSettingService(deps).getReadiness({
-      workspaceId: route.workspaceId,
-      projectId: route.projectId,
-      actorUserId: user.id,
-    });
-    if (modelReadiness.state !== 'ready') {
-      json(res, 409, {
-        error_code: modelReadiness.reason_code ?? 'agent_task_model_setting_missing',
-        message: modelReadiness.reason_code ?? 'agent_task_model_setting_missing',
-        readiness: {
-          state: modelReadiness.state,
-          display_summary: modelReadiness.display_summary,
-        },
-      });
-      return true;
-    }
-    task.bound_runner_id = binding.runner.id;
-    task.bound_runner_kind = binding.bindingKind;
-    task.runner_binding_source = binding.bindingSource;
-    task.bound_at = createdAt;
-    task.bound_by_user_id = user.id;
-    getTasks(route.workspaceId, route.projectId).unshift(task);
-    await deps.docStore.upsert<TaskRecord>(notebookTasksCollection(route.workspaceId), task.id, task);
-    await writeProjectAuditEvent(deps, {
-      workspaceId: route.workspaceId,
-      projectId: route.projectId,
-      actor: { type: 'user', id: user.id },
-      action: 'notebook.task.created',
-      resourceType: 'notebook_task',
-      resourceId: task.id,
-      requestId,
-      metadata: {
-        workspace_file_library_id: task.workspace_file_library_id,
-        initial_input_count: task.attached_inputs.length,
-        bound_runner_id: task.bound_runner_id,
-        bound_runner_kind: task.bound_runner_kind,
-        runner_binding_source: task.runner_binding_source,
-      },
-    });
-    json(res, 201, await buildTaskRealtimeView(deps, route.workspaceId, route.projectId, task));
-    return true;
   }
 
   if (route.kind === 'taskItem' && method === 'GET') {
@@ -2639,6 +3392,16 @@ export async function handleTaskRoute(args: TaskRouteHandlerArgs): Promise<boole
           error_code: runtimePreflight.code,
           message: runtimePreflight.code,
         });
+        return true;
+      }
+      const workspaceGuard = await preflightManagedTaskWorkspaceBindingGuard({
+        deps,
+        task,
+        runner: agent,
+        actorUserId: user.id,
+      });
+      if (!workspaceGuard.ok) {
+        json(res, workspaceGuard.statusCode, workspaceGuard.body);
         return true;
       }
     } else if (!(await ensureTaskRunnerSessionDispatchable({
@@ -2855,6 +3618,89 @@ export async function handleTaskRoute(args: TaskRouteHandlerArgs): Promise<boole
     return true;
   }
 
+  if (route.kind === 'taskWorkspaceAccessRelease' && method === 'POST') {
+    if (!isAgentExecutionTicket(internalTicket)) {
+      json(res, 403, {
+        error_code: 'INTERNAL_TICKET_REQUIRED',
+        message: 'internal_ticket_required',
+      });
+      return true;
+    }
+    const projectTasks = await loadProjectTasks(deps, route.workspaceId, route.projectId);
+    await hydrateTaskFileLibraryBindingsForProject({
+      docStore: deps.docStore,
+      workspaceId: route.workspaceId,
+      projectId: route.projectId,
+      tasks: projectTasks,
+    });
+    const task = findTaskForOwner(route.workspaceId, route.projectId, route.taskId, internalTicket.user_id);
+    if (!task) {
+      json(res, 404, { error_code: 'RESOURCE_NOT_FOUND', message: 'task_not_found' });
+      return true;
+    }
+    const payload = internalTicket.payload;
+    if (
+      internalTicket.workspace_id !== route.workspaceId
+      || internalTicket.project_id !== route.projectId
+      || payload.task_id !== route.taskId
+      || internalTicket.user_id !== task.owner_user_id
+    ) {
+      json(res, 403, {
+        error_code: 'INTERNAL_TICKET_SCOPE_MISMATCH',
+        message: 'internal_ticket_scope_mismatch',
+      });
+      return true;
+    }
+    const parsed = readTaskWorkspaceAccessReleaseRequest(await readBody(req));
+    if (!parsed.ok) {
+      json(res, 400, {
+        error_code: 'VALIDATION_ERROR',
+        message: 'invalid_workspace_access_release_request',
+        field: parsed.field,
+      });
+      return true;
+    }
+    const taskFileLibraryId = task.workspace_file_library_id?.trim() ?? '';
+    if (parsed.fileLibraryId !== taskFileLibraryId) {
+      json(res, 409, {
+        error_code: 'AGENT_TASK_WORKSPACE_BINDING_CONFLICT',
+        message: 'agent_task_workspace_binding_conflict',
+        task_id: task.id,
+        file_library_id: parsed.fileLibraryId,
+        holder_id: parsed.holderId,
+        binding_generation: parsed.bindingGenerationWire,
+        lease_epoch: parsed.leaseEpoch,
+      });
+      return true;
+    }
+    const holderRelease = await new JsonDocTaskWorkspaceHolderRepo(deps.docStore).release({
+      workspaceId: route.workspaceId,
+      projectId: route.projectId,
+      taskId: task.id,
+      fileLibraryId: parsed.fileLibraryId,
+      holderId: parsed.holderId,
+      bindingGeneration: parsed.bindingGeneration,
+      leaseEpoch: parsed.leaseEpoch,
+      releasedAt: nowIso(),
+    });
+    if (!holderRelease.ok) {
+      json(res, 409, {
+        error_code: holderRelease.code,
+        message: 'agent_task_workspace_binding_conflict',
+        task_id: task.id,
+        file_library_id: holderRelease.holder?.fileLibraryId ?? parsed.fileLibraryId,
+        holder_id: parsed.holderId,
+        binding_generation: parsed.bindingGenerationWire,
+        lease_epoch: parsed.leaseEpoch,
+      });
+      return true;
+    }
+    json(res, 200, {
+      released: holderRelease.released,
+    });
+    return true;
+  }
+
   if (route.kind === 'taskWorkspaceAccess' && method === 'POST') {
     if (internalTicket && !isAgentExecutionTicket(internalTicket)) {
       json(res, 403, {
@@ -2863,7 +3709,13 @@ export async function handleTaskRoute(args: TaskRouteHandlerArgs): Promise<boole
       });
       return true;
     }
-    await loadProjectTasks(deps, route.workspaceId, route.projectId);
+    const projectTasks = await loadProjectTasks(deps, route.workspaceId, route.projectId);
+    await hydrateTaskFileLibraryBindingsForProject({
+      docStore: deps.docStore,
+      workspaceId: route.workspaceId,
+      projectId: route.projectId,
+      tasks: projectTasks,
+    });
     const effectiveUserId = isAgentExecutionTicket(internalTicket) ? internalTicket.user_id : user.id;
     const task = findTaskForOwner(route.workspaceId, route.projectId, route.taskId, effectiveUserId);
     if (!task) {
@@ -2885,24 +3737,40 @@ export async function handleTaskRoute(args: TaskRouteHandlerArgs): Promise<boole
         return true;
       }
     }
-    if (!task.workspace_file_library_id) {
-      json(res, 409, { error_code: 'TASK_WORKSPACE_NOT_BOUND', message: 'task_workspace_file_library_not_configured' });
+    let guardedWorkspace: Awaited<ReturnType<typeof resolveTaskWorkspaceBindingGuard>>;
+    try {
+      guardedWorkspace = await resolveTaskWorkspaceBindingGuard({
+        deps,
+        task,
+        actorUserId: effectiveUserId,
+        requireMountAccess: true,
+        canUpdateProjectFiles: () => actorHasProjectPermissions({
+          deps,
+          workspaceId: route.workspaceId,
+          projectId: route.projectId,
+          actorUserId: effectiveUserId,
+          requiredPermissions: ['project:files:update'],
+        }),
+      });
+    } catch (error) {
+      if (!isTaskWorkspaceBindingGuardError(error)) {
+        throw error;
+      }
+      const payload = serializeTaskWorkspaceBindingGuardError(error);
+      if (error.errorCode === 'FILE_LIBRARY_NOT_FOUND') {
+        json(res, 404, { error_code: 'RESOURCE_NOT_FOUND', message: 'file_library_not_found' });
+        return true;
+      }
+      if (error.errorCode === 'FILE_LIBRARY_WORKSPACE_ACCESS_UNAVAILABLE') {
+        json(res, 404, { error_code: 'RESOURCE_NOT_FOUND', message: 'file_library_mount_access_not_found' });
+        return true;
+      }
+      json(res, error.statusCode, payload);
       return true;
     }
-    const workspaceFileLibrary = await catalogRepo.getById(
-      route.workspaceId,
-      route.projectId,
-      task.workspace_file_library_id,
-    );
-    if (!workspaceFileLibrary || workspaceFileLibrary.created_by_user_id !== effectiveUserId) {
-      json(res, 404, { error_code: 'RESOURCE_NOT_FOUND', message: 'file_library_not_found' });
-      return true;
-    }
-    const mountAccess = await mountAccessRepo.getById(
-      route.workspaceId,
-      route.projectId,
-      task.workspace_file_library_id,
-    );
+    const workspaceFileLibrary = guardedWorkspace.library;
+    const currentBinding = guardedWorkspace.binding;
+    const mountAccess = guardedWorkspace.mountAccess;
     if (!mountAccess) {
       json(res, 404, { error_code: 'RESOURCE_NOT_FOUND', message: 'file_library_mount_access_not_found' });
       return true;
@@ -2946,6 +3814,42 @@ export async function handleTaskRoute(args: TaskRouteHandlerArgs): Promise<boole
       }
       throw error;
     }
+    const holderFence = buildWorkspaceAccessHolderFence({
+      task,
+      fileLibraryId: workspaceFileLibrary.id,
+      bindingGeneration: currentBinding.bindingGeneration,
+    });
+    const holderAcquire = await new JsonDocTaskWorkspaceHolderRepo(deps.docStore).acquire({
+      workspaceId: route.workspaceId,
+      projectId: route.projectId,
+      taskId: task.id,
+      fileLibraryId: workspaceFileLibrary.id,
+      taskHomeSegment: taskRuntimePaths.taskHomeSegment,
+      bindingGeneration: currentBinding.bindingGeneration,
+      holderId: holderFence.holder_id,
+      holderKind: holderFence.holder_kind,
+      leaseEpoch: holderFence.lease_epoch,
+      issuedAt: holderFence.issued_at,
+      expiresAt: holderFence.expires_at,
+    });
+    if (!holderAcquire.ok) {
+      json(res, 409, {
+        error_code: holderAcquire.code,
+        message: 'agent_task_workspace_binding_conflict',
+        task_id: task.id,
+        file_library_id: workspaceFileLibrary.id,
+        holder_id: holderFence.holder_id,
+        binding_generation: String(currentBinding.bindingGeneration),
+        lease_epoch: holderFence.lease_epoch,
+      });
+      return true;
+    }
+    const {
+      task_id: _holderTaskId,
+      file_library_id: _holderFileLibraryId,
+      task_home_segment: _holderTaskHomeSegment,
+      ...holderFenceResponse
+    } = holderFence;
     json(res, 200, {
       task_id: task.id,
       workspace_binding_mode: 'file_library',
@@ -2963,12 +3867,19 @@ export async function handleTaskRoute(args: TaskRouteHandlerArgs): Promise<boole
       storage_bucket_url: executionMountAccess.storageBucketUrl,
       recommended_mount_path: mountAccess.recommended_mount_path,
       created_at: mountAccess.created_at,
+      ...holderFenceResponse,
     });
     return true;
   }
 
   if (route.kind === 'taskItem' && method === 'PATCH') {
-    await loadProjectTasks(deps, route.workspaceId, route.projectId);
+    const projectTasks = await loadProjectTasks(deps, route.workspaceId, route.projectId);
+    await hydrateTaskFileLibraryBindingsForProject({
+      docStore: deps.docStore,
+      workspaceId: route.workspaceId,
+      projectId: route.projectId,
+      tasks: projectTasks,
+    });
     const task = findTaskForOwner(route.workspaceId, route.projectId, route.taskId, user.id);
     if (!task) {
       json(res, 404, { error_code: 'RESOURCE_NOT_FOUND', message: 'task_not_found' });
@@ -3006,6 +3917,10 @@ export async function handleTaskRoute(args: TaskRouteHandlerArgs): Promise<boole
     }
     task.updated_at = nowIso();
     await deps.docStore.upsert<TaskRecord>(notebookTasksCollection(route.workspaceId), task.id, task);
+    await updateTaskFileLibraryBinding({
+      docStore: deps.docStore,
+      task,
+    });
     if (
       previousStatus === 'active'
       && task.status === 'archived'
@@ -3026,14 +3941,20 @@ export async function handleTaskRoute(args: TaskRouteHandlerArgs): Promise<boole
   }
 
   if (route.kind === 'taskItem' && method === 'DELETE') {
-    await loadProjectTasks(deps, route.workspaceId, route.projectId);
-    const tasks = getTasks(route.workspaceId, route.projectId);
+    const tasks = await loadProjectTasks(deps, route.workspaceId, route.projectId);
+    await hydrateTaskFileLibraryBindingsForProject({
+      docStore: deps.docStore,
+      workspaceId: route.workspaceId,
+      projectId: route.projectId,
+      tasks,
+    });
     const index = tasks.findIndex((item) => item.id === route.taskId && item.owner_user_id === user.id);
     if (index < 0) {
       json(res, 404, { error_code: 'RESOURCE_NOT_FOUND', message: 'task_not_found' });
       return true;
     }
     const task = tasks[index];
+    const deleteCorrelationId = typeof req.headers['x-request-id'] === 'string' ? req.headers['x-request-id'] : task.id;
     const blockers = await collectAgentTaskDeleteBlockers({
       deps,
       workspaceId: route.workspaceId,
@@ -3042,19 +3963,80 @@ export async function handleTaskRoute(args: TaskRouteHandlerArgs): Promise<boole
       userId: user.id,
     });
     if (blockers.length > 0) {
+      await writeProjectAuditEvent(deps, {
+        workspaceId: route.workspaceId,
+        projectId: route.projectId,
+        actor: { type: 'user', id: user.id },
+        action: 'notebook.task.delete.blocked',
+        result: 'error',
+        resourceType: 'notebook_task',
+        resourceId: task.id,
+        errorCode: 'AGENT_TASK_DELETE_BLOCKED',
+        errorMessage: 'agent_task_delete_blocked',
+        metadata: {
+          workspace_file_library_id: task.workspace_file_library_id,
+          blocker_count: blockers.length,
+          blocker_types: blockers.map((blocker) => blocker.type),
+        },
+      });
       json(res, 409, {
         error_code: 'AGENT_TASK_DELETE_BLOCKED',
         message: 'agent_task_delete_blocked',
-        blockers,
+        task_id: task.id,
+        blockers: serializeAgentTaskDeleteBlockers(blockers),
       });
       return true;
     }
-    await removeTaskHomeSubtree({
+    try {
+      tasks[index] = await markTaskDeletingFence({
+        deps,
+        workspaceId: route.workspaceId,
+        task,
+        correlationId: deleteCorrelationId,
+      });
+    } catch (error) {
+      const code = error instanceof Error && typeof (error as Error & { code?: unknown }).code === 'string'
+        ? (error as Error & { code: string }).code
+        : 'AGENT_TASK_WORKSPACE_BINDING_CONFLICT';
+      json(res, 409, {
+        error_code: code,
+        message: 'agent_task_workspace_binding_conflict',
+        task_id: task.id,
+        file_library_id: task.workspace_file_library_id,
+      });
+      return true;
+    }
+    const releaseResult = await releaseTaskFileLibraryBindingWithAudit({
       deps,
       workspaceId: route.workspaceId,
       projectId: route.projectId,
-      task,
+      actorUserId: user.id,
+      fileLibraryId: task.workspace_file_library_id,
+      taskId: task.id,
+      bindingGeneration: task.file_library_binding_generation,
+      correlationId: deleteCorrelationId,
+      requestId: typeof req.headers['x-request-id'] === 'string' ? req.headers['x-request-id'] : null,
+      reason: 'task_delete',
     });
+    if (!releaseResult.ok) {
+      await rollbackTaskDeletingFence({
+        deps,
+        workspaceId: route.workspaceId,
+        task,
+        correlationId: deleteCorrelationId,
+      });
+      json(res, 409, {
+        error_code: releaseResult.code,
+        message: 'agent_task_workspace_binding_conflict',
+        task_id: task.id,
+        file_library_id: task.workspace_file_library_id,
+        binding_generation: String(releaseResult.binding.bindingGeneration),
+      });
+      return true;
+    }
+    await deleteTaskMessages(deps, route.taskId);
+    await deleteTaskArtifacts(deps, route.taskId);
+    await deleteTaskTraceEvents(deps, route.workspaceId, route.taskId);
     tasks.splice(index, 1);
     ACTIVE_RUNS_BY_TASK.delete(route.taskId);
     ACTIVE_RUN_CANCEL_BY_TASK.delete(route.taskId);
@@ -3065,9 +4047,18 @@ export async function handleTaskRoute(args: TaskRouteHandlerArgs): Promise<boole
     ARTIFACTS_BY_TASK.delete(route.taskId);
     removeTaskTraceEventsFromMemory(route.taskId);
     await deps.docStore.delete(notebookTasksCollection(route.workspaceId), route.taskId);
-    await deleteTaskMessages(deps, route.taskId);
-    await deleteTaskArtifacts(deps, route.taskId);
-    await deleteTaskTraceEvents(deps, route.workspaceId, route.taskId);
+    await writeProjectAuditEvent(deps, {
+      workspaceId: route.workspaceId,
+      projectId: route.projectId,
+      actor: { type: 'user', id: user.id },
+      action: 'notebook.task.deleted',
+      resourceType: 'notebook_task',
+      resourceId: task.id,
+      metadata: {
+        workspace_file_library_id: task.workspace_file_library_id,
+        task_home_binding_status: task.workspace_file_library_id ? 'released' : 'unbound',
+      },
+    });
     json(res, 200, { success: true });
     return true;
   }
@@ -3441,6 +4432,16 @@ export async function handleTaskRoute(args: TaskRouteHandlerArgs): Promise<boole
           error_code: runtimePreflight.code,
           message: runtimePreflight.code,
         });
+        return true;
+      }
+      const workspaceGuard = await preflightManagedTaskWorkspaceBindingGuard({
+        deps,
+        task,
+        runner: resolution.runner,
+        actorUserId: user.id,
+      });
+      if (!workspaceGuard.ok) {
+        json(res, workspaceGuard.statusCode, workspaceGuard.body);
         return true;
       }
       resolvedRunner = resolution;

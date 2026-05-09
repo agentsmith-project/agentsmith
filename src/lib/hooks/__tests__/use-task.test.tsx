@@ -10,19 +10,34 @@ const mockListActivity = vi.hoisted(() => vi.fn());
 const mockStartRun = vi.hoisted(() => vi.fn());
 const mockToast = vi.hoisted(() => ({
   success: vi.fn(),
+  error: vi.fn(),
 }));
 
 vi.mock('next-intl', () => ({
-  useTranslations: () => (key: string) => key,
+  useTranslations: (namespace?: string) => (key: string) => {
+    const fullKey = namespace ? `${namespace}.${key}` : key;
+    const translations: Record<string, string> = {
+      'errors.conflict.title': 'Conflict',
+      'errors.agent_task_delete_blocked.description':
+        'Delete is blocked because this task still has an active run, terminal session, or task workspace in use. Finish those blockers and try again.',
+      'errors.agent_task_workspace_binding_conflict.description':
+        'That task workspace changed while you were working. Refresh and try again.',
+    };
+    return translations[fullKey] ?? key;
+  },
 }));
 
 vi.mock('@/components/ui/toast', () => ({
   toast: mockToast,
 }));
 
-vi.mock('@/lib/api/errors', () => ({
-  handleErrorForToast: vi.fn(),
-}));
+vi.mock('@/lib/api/errors', async () => {
+  const actual = await vi.importActual<typeof import('@/lib/api/errors')>('@/lib/api/errors');
+  return {
+    ...actual,
+    handleErrorForToast: vi.fn(),
+  };
+});
 
 vi.mock('@/lib/api', () => ({
   getApiClient: vi.fn(() => ({})),
@@ -36,6 +51,7 @@ vi.mock('@/lib/api', () => ({
 }));
 
 import { useCreateTask, useDeleteTask, useStartTaskRun, useTaskActivity, useUpdateTask } from '../use-task';
+import { APIError, handleErrorForToast } from '@/lib/api/errors';
 import { queryKeys } from '@/lib/query-keys';
 
 describe('task mutation cache invalidation', () => {
@@ -45,6 +61,7 @@ describe('task mutation cache invalidation', () => {
     sort_by: 'last_activity_at',
     sort_order: 'desc',
   });
+  const fileLibrariesKey = queryKeys.fileLibraries.list(workspaceId, projectId);
 
   let queryClient: QueryClient;
 
@@ -58,6 +75,7 @@ describe('task mutation cache invalidation', () => {
       },
     });
     queryClient.setQueryData(sortedListKey, { items: [{ id: 'task-1' }] });
+    queryClient.setQueryData(fileLibrariesKey, { items: [{ id: 'lib_a' }] });
     mockCreate.mockResolvedValue({ id: 'task-new' });
     mockUpdate.mockResolvedValue({ id: 'task-1' });
     mockDelete.mockResolvedValue({ success: true });
@@ -111,9 +129,10 @@ describe('task mutation cache invalidation', () => {
       title: 'New task',
     });
     expect(queryClient.getQueryCache().find({ queryKey: sortedListKey })?.isStale()).toBe(true);
+    expect(queryClient.getQueryCache().find({ queryKey: fileLibrariesKey })?.isStale()).toBe(true);
   });
 
-  it('marks sorted task list queries stale after update', async () => {
+  it('marks task and file library queries stale after update or archive', async () => {
     const { result } = renderHook(() => useUpdateTask(), {
       wrapper: createWrapper(),
     });
@@ -130,9 +149,10 @@ describe('task mutation cache invalidation', () => {
     });
 
     expect(queryClient.getQueryCache().find({ queryKey: sortedListKey })?.isStale()).toBe(true);
+    expect(queryClient.getQueryCache().find({ queryKey: fileLibrariesKey })?.isStale()).toBe(true);
   });
 
-  it('marks sorted task list queries stale after delete', async () => {
+  it('marks task and file library queries stale after delete releases a task workspace binding', async () => {
     const { result } = renderHook(() => useDeleteTask(), {
       wrapper: createWrapper(),
     });
@@ -146,6 +166,119 @@ describe('task mutation cache invalidation', () => {
     });
 
     expect(queryClient.getQueryCache().find({ queryKey: sortedListKey })?.isStale()).toBe(true);
+    expect(queryClient.getQueryCache().find({ queryKey: fileLibrariesKey })?.isStale()).toBe(true);
+  });
+
+  it('shows an i18n toast instead of silently swallowing backend delete blockers', async () => {
+    mockDelete.mockRejectedValueOnce(new APIError(
+      'AGENT_TASK_DELETE_BLOCKED',
+      'agent_task_delete_blocked',
+      'req-delete-blocked',
+      409,
+      { task_id: 'task-1', blockers: ['active_run'] },
+    ));
+
+    const { result } = renderHook(() => useDeleteTask(), {
+      wrapper: createWrapper(),
+    });
+
+    await expect(result.current.mutateAsync({
+      workspaceId,
+      projectId,
+      taskId: 'task-1',
+    })).rejects.toBeInstanceOf(APIError);
+
+    expect(queryClient.getQueryCache().find({ queryKey: sortedListKey })?.isStale()).toBe(true);
+    expect(queryClient.getQueryCache().find({ queryKey: fileLibrariesKey })?.isStale()).toBe(true);
+    expect(mockToast.error).toHaveBeenCalledWith(
+      'Conflict: Delete is blocked because this task still has an active run, terminal session, or task workspace in use. Finish those blockers and try again.',
+    );
+    expect(handleErrorForToast).not.toHaveBeenCalled();
+  });
+
+  it('routes backend delete blockers to the caller when the screen owns inline error copy', async () => {
+    mockDelete.mockRejectedValueOnce(new APIError(
+      'AGENT_TASK_DELETE_BLOCKED',
+      'agent_task_delete_blocked',
+      'req-delete-blocked',
+      409,
+      { task_id: 'task-1', blockers: ['terminal_session'] },
+    ));
+    const onDeleteBlocked = vi.fn();
+
+    const { result } = renderHook(() => useDeleteTask({ onDeleteBlocked }), {
+      wrapper: createWrapper(),
+    });
+
+    await expect(result.current.mutateAsync({
+      workspaceId,
+      projectId,
+      taskId: 'task-1',
+    })).rejects.toBeInstanceOf(APIError);
+
+    expect(onDeleteBlocked).toHaveBeenCalledWith(
+      'Delete is blocked because this task still has an active run, terminal session, or task workspace in use. Finish those blockers and try again.',
+      expect.any(APIError),
+    );
+    expect(mockToast.error).not.toHaveBeenCalled();
+    expect(handleErrorForToast).not.toHaveBeenCalled();
+  });
+
+  it('routes workspace binding conflicts through the delete blocked inline path', async () => {
+    mockDelete.mockRejectedValueOnce(new APIError(
+      'AGENT_TASK_WORKSPACE_BINDING_CONFLICT',
+      'agent_task_workspace_binding_conflict',
+      'req-binding-conflict',
+      409,
+      { task_id: 'task-1', file_library_id: 'lib_a' },
+    ));
+    const onDeleteBlocked = vi.fn();
+
+    const { result } = renderHook(() => useDeleteTask({ onDeleteBlocked }), {
+      wrapper: createWrapper(),
+    });
+
+    await expect(result.current.mutateAsync({
+      workspaceId,
+      projectId,
+      taskId: 'task-1',
+    })).rejects.toBeInstanceOf(APIError);
+
+    expect(queryClient.getQueryCache().find({ queryKey: sortedListKey })?.isStale()).toBe(true);
+    expect(queryClient.getQueryCache().find({ queryKey: fileLibrariesKey })?.isStale()).toBe(true);
+    expect(onDeleteBlocked).toHaveBeenCalledWith(
+      'That task workspace changed while you were working. Refresh and try again.',
+      expect.any(APIError),
+    );
+    expect(mockToast.error).not.toHaveBeenCalled();
+    expect(handleErrorForToast).not.toHaveBeenCalled();
+  });
+
+  it('marks task and file library queries stale after binding-related create conflicts', async () => {
+    mockCreate.mockRejectedValueOnce(new APIError(
+      'AGENT_TASK_FILE_LIBRARY_IN_USE',
+      'workspace_file_library_in_use',
+      undefined,
+      409,
+      { file_library_id: 'lib_a', field: 'workspace_file_library_id' },
+    ));
+
+    const { result } = renderHook(() => useCreateTask(), {
+      wrapper: createWrapper(),
+    });
+
+    await expect(result.current.mutateAsync({
+      workspaceId,
+      projectId,
+      data: {
+        title: 'Reuse busy workspace',
+        workspace_mode: 'use_existing',
+        workspace_file_library_id: 'lib_a',
+      },
+    })).rejects.toBeInstanceOf(APIError);
+
+    expect(queryClient.getQueryCache().find({ queryKey: sortedListKey })?.isStale()).toBe(true);
+    expect(queryClient.getQueryCache().find({ queryKey: fileLibrariesKey })?.isStale()).toBe(true);
   });
 
   it('queries task activity instead of public task messages', async () => {

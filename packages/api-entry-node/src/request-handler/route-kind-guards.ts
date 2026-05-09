@@ -21,6 +21,7 @@ export function isTaskRoute(route: { kind: string }): boolean {
   return route.kind === 'tasks'
     || route.kind === 'taskItem'
     || route.kind === 'taskWorkspaceAccess'
+    || route.kind === 'taskWorkspaceAccessRelease'
     || route.kind === 'taskInputs'
     || route.kind === 'taskInputItem'
     || route.kind === 'taskMessages'

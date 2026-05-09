@@ -80,8 +80,12 @@ export function TaskHeader({
   const params = useParams();
   const locale = (params?.locale as string) || 'en-US';
   const t = useTranslations('agent_tasks.task');
-  const deleteTask = useDeleteTask();
   const [deleteDialogOpen, setDeleteDialogOpen] = React.useState(false);
+  const [deleteBlockedError, setDeleteBlockedError] = React.useState<string | null>(null);
+  const handleDeleteBlocked = React.useCallback((message: string) => {
+    setDeleteBlockedError(message);
+  }, []);
+  const deleteTask = useDeleteTask({ onDeleteBlocked: handleDeleteBlocked });
 
   const handleLeave = () => {
     if (onLeave) {
@@ -94,6 +98,7 @@ export function TaskHeader({
   const handleDelete = async () => {
     if (!canDeleteTask) return;
     try {
+      setDeleteBlockedError(null);
       await deleteTask.mutateAsync({
         workspaceId,
         projectId,
@@ -105,6 +110,13 @@ export function TaskHeader({
       }
     } catch {
       // Error is handled by the hook
+    }
+  };
+
+  const handleDeleteDialogOpenChange = (open: boolean) => {
+    setDeleteDialogOpen(open);
+    if (!open) {
+      setDeleteBlockedError(null);
     }
   };
 
@@ -276,7 +288,7 @@ export function TaskHeader({
         )}
         {canDeleteTask ? (
           canOpenDeleteDialog ? (
-            <AlertDialog open={deleteDialogOpen} onOpenChange={setDeleteDialogOpen}>
+            <AlertDialog open={deleteDialogOpen} onOpenChange={handleDeleteDialogOpenChange}>
               <AlertDialogTrigger asChild>
                 <Button variant="outline" size="sm" className="h-8 px-2.5 text-xs text-error hover:text-error">
                   <Trash2 className="h-4 w-4 mr-2" />
@@ -290,6 +302,15 @@ export function TaskHeader({
                     {t('delete_confirm_message')}
                   </AlertDialogDescription>
                 </AlertDialogHeader>
+                {deleteBlockedError ? (
+                  <div
+                    className="rounded-md border border-warning/30 bg-warning/10 px-3 py-2 text-sm text-secondary"
+                    role="alert"
+                    data-testid="agent-task__delete-blocked-error"
+                  >
+                    {deleteBlockedError}
+                  </div>
+                ) : null}
                 <AlertDialogFooter>
                   <AlertDialogCancel>{t('delete_cancel')}</AlertDialogCancel>
                   <AlertDialogAction

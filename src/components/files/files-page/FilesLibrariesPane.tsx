@@ -19,6 +19,10 @@ type FilesLibrariesPaneProps = {
   onDeleteLibrary: (library: FileLibrary) => void;
 };
 
+function isTaskHomeBound(library: FileLibrary) {
+  return library.task_home_binding_status === 'bound';
+}
+
 export function FilesLibrariesPane({
   t,
   canManage,
@@ -69,11 +73,25 @@ export function FilesLibrariesPane({
             {libraries.map((library) => {
               const active = library.id === selectedLibraryId;
               const isMountable = library.status === 'ready';
+              const taskHomeBound = isTaskHomeBound(library);
               const statusToneClass = library.status === 'failed'
                 ? 'border-error/25 bg-error/10 text-error'
                 : library.status === 'degraded'
                   ? 'border-warning/25 bg-warning/10 text-warning'
                   : 'border-subtle bg-white/5 text-secondary';
+              const bindingToneClass = taskHomeBound
+                ? 'border-warning/25 bg-warning/10 text-warning'
+                : 'border-subtle bg-white/5 text-secondary';
+              const bindingDetail = taskHomeBound
+                ? (
+                    library.bound_task_visible && library.bound_task_title
+                      ? t('file_manager.library_binding_bound_visible', {
+                          title: library.bound_task_title,
+                          status: library.bound_task_status ?? 'unknown',
+                        })
+                      : t('file_manager.library_binding_bound_redacted')
+                  )
+                : null;
               const statusReason = library.status === 'failed'
                 ? t('file_manager.library_status_reason_failed')
                 : library.status === 'degraded'
@@ -113,8 +131,35 @@ export function FilesLibrariesPane({
                         >
                           {t(`file_manager.library_status_${library.status}`)}
                         </span>
+                        <span
+                          className={cn(
+                            'rounded-full border px-2 py-0.5 text-[10px] font-medium uppercase tracking-[0.08em]',
+                            bindingToneClass,
+                          )}
+                          data-testid={`files__library-binding--${library.id}`}
+                        >
+                          {taskHomeBound
+                            ? t('file_manager.library_binding_bound')
+                            : t('file_manager.library_binding_unbound')}
+                        </span>
                       </div>
                       {library.bucket ? <div className="truncate text-[11px] text-tertiary">{library.bucket}</div> : null}
+                      {bindingDetail ? (
+                        <div
+                          className="mt-1 text-[11px] text-tertiary"
+                          data-testid={`files__library-binding-detail--${library.id}`}
+                        >
+                          {bindingDetail}
+                        </div>
+                      ) : null}
+                      {taskHomeBound ? (
+                        <div
+                          className="mt-1 text-[11px] text-tertiary"
+                          data-testid={`files__library-delete-blocked--${library.id}`}
+                        >
+                          {t('file_manager.library_delete_bound_blocked')}
+                        </div>
+                      ) : null}
                       {statusReason ? (
                         <div
                           className="mt-1 text-[11px] text-tertiary"
@@ -187,13 +232,18 @@ export function FilesLibrariesPane({
                                     event.stopPropagation();
                                     onDeleteLibrary(library);
                                   }}
+                                  disabled={taskHomeBound}
                                   aria-label={t('file_manager.library_delete')}
                                   data-testid={`files__library-delete-inline--${library.id}`}
                                 >
                                   <Trash2 className="h-3.5 w-3.5" />
                                 </Button>
                               </TooltipTrigger>
-                              <TooltipContent>{t('file_manager.library_delete')}</TooltipContent>
+                              <TooltipContent>
+                                {taskHomeBound
+                                  ? t('file_manager.library_delete_bound_blocked')
+                                  : t('file_manager.library_delete')}
+                              </TooltipContent>
                             </Tooltip>
                           </>
                         )}

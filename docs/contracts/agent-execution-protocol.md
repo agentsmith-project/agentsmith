@@ -54,13 +54,13 @@ All frames are JSON objects:
       - `resource_proxy.base_url` is request-scoped and must be used for this run/session instead of any connection-level cache.
       - `runner_session_scope: "agent_presence" | "task_execution"`
       - `workspace_binding_mode: "file_library" | "pre_mounted"`; this only identifies the workspace source, not a path shape.
+      - `runtime_profile: "managed" | "developer"`
+      - `task_home_segment: string`
       - `task_home_path: string` (managed canonical value: `/home/<task_home_segment>`)
       - `workspace_path: string` (managed canonical value: `/home/<task_home_segment>/workspace`)
       - `artifacts_path: string` (managed canonical value: `/home/<task_home_segment>/workspace/.artifacts`)
       - `task_inputs?: Array<{ kind?: "library_object" | "artifact" | "url"; library_id?: string; key?: string; task_id?: string; artifact_id?: string; url?: string; filename?: string; file_type?: string; file_size?: number }>`
-      - `credential_files?: Array<{ relative_path: string; content: string; description?: string }>`
-        - Backend provides user third-party credential files per request.
-        - Runner writes these files under workspace-relative paths before executing the turn.
+      - Short-lived execution tickets, Project secrets, and managed OAuth credentials must stay in request-scoped environment/context projections. Runners must not persist them to `HOME`, `workspace_path`, Codex config, or reusable tool config.
       - runner path model (implementation contract):
 
         | Item | Agent task runner |
@@ -74,9 +74,10 @@ All frames are JSON objects:
         | context / credentials | AgentSmith Context Store member/task/project_member/project/workspace context via capability-aware builtin skill helpers; `mbos-context` remains the generic direct-access skill; managed OAuth credentials are read-only context projections |
 
         Notes:
-        - the task HOME subtree is the persistent JuiceFS-backed directory for the current task
+        - `task_home_path` is the root of the bound file library while the task binding exists
         - `workspace_path` is the default cwd for both agent runs and terminal sessions
-        - user-mode installs, caches, runner metadata, and Codex config live under `task_home_path`
+        - reusable tool configuration, user-mode installs, caches, runner metadata, and Codex config may live under `task_home_path`
+        - deleting a task releases the file-library binding; it does not delete or clean the file library HOME
         - `container_workspace_path` is not a canonical execution context field
         - provider-specific mount mechanics are backend details; runners consume the explicit path fields
 - `server.request.cancel`
@@ -331,5 +332,5 @@ npm run agent:task-runner
 - `R3` task HOME isolation:
   - Runner runtime state is task-scoped under `task_home_path` for Codex state, runner metadata, skills, caches, and user-mode installs.
   - Real workspace files live under `workspace_path`; user-visible deliverables are collected only from `artifacts_path`.
-  - The backend owns `task_home_segment` generation and cleanup; runners must not derive or sanitize their own HOME segment.
-  - Ops must enforce task HOME cleanup on task delete and periodic disk monitoring for long-lived runner hosts.
+  - The backend owns `task_home_segment` generation and binding release; runners must not derive or sanitize their own HOME segment.
+  - Task delete releases the file-library binding and preserves the file library contents. Ops should rely on file-library lifecycle controls and periodic storage monitoring rather than task deletion to remove storage.

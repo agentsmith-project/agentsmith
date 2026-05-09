@@ -19,11 +19,27 @@ const DEFAULT_MOUNT_RETRY_DELAY_MS = 750;
 const MAX_RELEASE_ATTEMPTS_HISTORY = 5;
 
 export type AgentTaskRunnerMode = 'developer' | 'managed_local' | 'managed_platform';
+export type TaskRuntimeProfile = 'managed' | 'developer';
+export type TaskWorkspaceBindingMode = 'file_library' | 'pre_mounted';
+export type TaskWorkspaceHolderKind = 'runner_workspace' | 'terminal_session' | 'notebook_run';
 export type TaskWorkspaceLease = {
   mountPath: string;
   leaseId: string;
   revision: number;
+  holderId: string;
+  taskId: string;
+  fileLibraryId: string;
+  taskHomeSegment: string;
+  bindingGeneration: string;
+  leaseEpoch: string;
+  holderKind: TaskWorkspaceHolderKind;
+  issuedAt: string;
+  expiresAt: string;
 };
+type TaskWorkspaceAccessReleaseFence = Pick<
+  TaskWorkspaceLease,
+  'holderId' | 'fileLibraryId' | 'bindingGeneration' | 'leaseEpoch'
+>;
 type MountRegistryState = 'mounted' | 'releasing' | 'release_failed' | 'released';
 type MountReleaseOutcome = 'not_started' | 'pending' | 'released' | 'failed';
 type PersistedMountReleaseAttempt = {
@@ -40,8 +56,11 @@ type FileLibraryWorkspaceExecutionContext = {
   task_home_path?: string;
   workspace_path?: string;
   artifacts_path?: string;
+  library_root_path?: string;
   execution_ticket?: string;
-  workspace_binding_mode?: 'file_library' | 'pre_mounted';
+  workspace_binding_mode?: TaskWorkspaceBindingMode;
+  runtime_profile?: TaskRuntimeProfile;
+  task_home_segment?: string;
   workspace_file_library_id?: string | null;
   workspace_file_library_name?: string | null;
   workspace_dir_name?: string | null;
@@ -50,9 +69,12 @@ type FileLibraryWorkspaceExecutionContext = {
 type TaskWorkspaceAccessPayload = {
   task_id: string;
   workspace_binding_mode: 'file_library';
+  runtime_profile: TaskRuntimeProfile;
+  task_home_segment: string;
   task_home_path?: unknown;
   workspace_path?: unknown;
   artifacts_path?: unknown;
+  library_root_path?: unknown;
   workspace_dir_name: string;
   file_library_id: string;
   file_library_name: string;
@@ -61,13 +83,22 @@ type TaskWorkspaceAccessPayload = {
   storage_bucket_url?: string;
   recommended_mount_path?: string;
   created_at?: string;
+  holder_id?: unknown;
+  holder_kind?: unknown;
+  binding_generation?: unknown;
+  lease_epoch?: unknown;
+  issued_at?: unknown;
+  expires_at?: unknown;
 };
 
 export type TaskWorkspacePaths = {
   mode: AgentTaskRunnerMode;
+  runtimeProfile: TaskRuntimeProfile;
+  taskHomeSegment: string;
   taskHome: string;
   workspaceDir: string;
   visibleRoot: string;
+  libraryRoot: '.';
   mountRoot: string;
   taskRoot: string;
   runtimeRoot: string;
@@ -81,6 +112,7 @@ export type TaskWorkspacePaths = {
 type MountedWorkspaceSession = {
   mountPath: string;
   mode: AgentTaskRunnerMode;
+  filesystemName: string;
   metadataUrl: string;
   storageBucketUrl?: string;
   logPath: string;
@@ -91,6 +123,15 @@ type MountedWorkspaceSession = {
   runnerInstanceId: string | null;
   leaseId: string | null;
   leaseRevision: number;
+  holderId: string | null;
+  taskId: string | null;
+  fileLibraryId: string | null;
+  taskHomeSegment: string | null;
+  bindingGeneration: string | null;
+  leaseEpoch: string | null;
+  holderKind: TaskWorkspaceHolderKind | null;
+  issuedAt: string | null;
+  expiresAt: string | null;
   createdAt: string | null;
   mountedAt: string | null;
   lastRefChangeAt: string | null;
@@ -103,9 +144,23 @@ type MountedWorkspaceSession = {
   state: MountRegistryState;
 };
 
+type MountedWorkspaceSessionWithLeaseEvidence = MountedWorkspaceSession & {
+  leaseId: string;
+  holderId: string;
+  taskId: string;
+  fileLibraryId: string;
+  taskHomeSegment: string;
+  bindingGeneration: string;
+  leaseEpoch: string;
+  holderKind: TaskWorkspaceHolderKind;
+  issuedAt: string;
+  expiresAt: string;
+};
+
 type PersistedMountedWorkspaceSession = {
   mount_path: string;
   mode: AgentTaskRunnerMode;
+  filesystem_name: string;
   metadata_url: string;
   storage_bucket_url?: string;
   log_path: string;
@@ -114,6 +169,15 @@ type PersistedMountedWorkspaceSession = {
   owner_runner_instance_id: string | null;
   lease_id: string | null;
   lease_revision: number;
+  holder_id: string | null;
+  task_id: string | null;
+  file_library_id: string | null;
+  task_home_segment: string | null;
+  binding_generation: string | null;
+  lease_epoch: string | null;
+  holder_kind: TaskWorkspaceHolderKind | null;
+  issued_at: string | null;
+  expires_at: string | null;
   created_at: string | null;
   mounted_at: string | null;
   last_ref_change_at: string | null;
@@ -130,7 +194,7 @@ const mountedWorkspaceByMountPath = new Map<string, MountedWorkspaceSession>();
 const releasedMountedWorkspaceByMountPath = new Set<string>();
 const RETRYABLE_TASK_WORKSPACE_WRITE_FAILURE_CODES = new Set(['EIO', 'ESTALE', 'ENOTCONN']);
 const TASK_WORKSPACE_MOUNT_SESSIONS_FILE = 'task-workspace-mount-sessions.json';
-const TASK_WORKSPACE_MOUNT_SESSIONS_VERSION = 4;
+const TASK_WORKSPACE_MOUNT_SESSIONS_VERSION = 5;
 const DEFAULT_MOUNT_RELEASE_TIMEOUT_MS = 10_000;
 const DEFAULT_MOUNT_CHILD_EXIT_TIMEOUT_MS = 5_000;
 let cleanupHooksRegistered = false;
@@ -167,6 +231,17 @@ function normalizeOptionalString(value: unknown): string | null {
   return typeof value === 'string' && value.trim() ? value.trim() : null;
 }
 
+function normalizeOptionalHolderKind(value: unknown): TaskWorkspaceHolderKind | null {
+  switch (value) {
+    case 'runner_workspace':
+    case 'terminal_session':
+    case 'notebook_run':
+      return value;
+    default:
+      return null;
+  }
+}
+
 function normalizeMountRegistryState(value: unknown): MountRegistryState {
   switch (value) {
     case 'mounted':
@@ -191,9 +266,26 @@ function normalizeMountReleaseOutcome(value: unknown): MountReleaseOutcome {
   }
 }
 
+function redactTaskWorkspaceDebugValue(key: string, value: unknown): unknown {
+  const normalizedKey = key.toLowerCase();
+  if (
+    normalizedKey.includes('metadata_url')
+    || normalizedKey.includes('storage_bucket_url')
+    || normalizedKey.includes('credential')
+    || normalizedKey.includes('token')
+  ) {
+    return '[redacted]';
+  }
+  return value;
+}
+
 function debugTaskWorkspace(message: string, extra?: Record<string, unknown>): void {
   if (process.env.MBOS_AGENT_RUNNER_DEBUG !== '1') return;
-  const payload = extra ? ` ${JSON.stringify(extra)}` : '';
+  const payload = extra
+    ? ` ${JSON.stringify(Object.fromEntries(
+      Object.entries(extra).map(([key, value]) => [key, redactTaskWorkspaceDebugValue(key, value)]),
+    ))}`
+    : '';
   process.stdout.write(`[agent-task-runner][task-workspace] ${message}${payload}\n`);
 }
 
@@ -231,10 +323,55 @@ function sanitizeWorkspacePath(raw: string | undefined): string {
   return (raw ?? '').trim();
 }
 
+const TASK_HOME_SEGMENT_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/;
+
 function sanitizePathPart(input: string | null | undefined, fallback: string): string {
   const value = (input ?? '').trim();
   if (!value) return fallback;
   return value.replace(/[^a-zA-Z0-9._-]/g, '_').slice(0, 128) || fallback;
+}
+
+function normalizeRequiredString(value: unknown, errorCode: string): string {
+  if (typeof value !== 'string' || value.trim().length === 0) {
+    throw new Error(errorCode);
+  }
+  return value.trim();
+}
+
+function normalizeTaskHomeSegment(value: unknown, errorCode: string): string {
+  const segment = normalizeRequiredString(value, errorCode);
+  if (
+    !TASK_HOME_SEGMENT_PATTERN.test(segment)
+    || segment === '.'
+    || segment === '..'
+    || segment.split(/[\\/]+/).some((part) => part === '..')
+    || normalize(segment) !== segment
+  ) {
+    throw new Error(errorCode);
+  }
+  return segment;
+}
+
+function normalizeWorkspaceBindingMode(value: unknown, errorCode: string): TaskWorkspaceBindingMode {
+  if (value === 'file_library' || value === 'pre_mounted') return value;
+  throw new Error(errorCode);
+}
+
+function normalizeRuntimeProfile(value: unknown, errorCode: string): TaskRuntimeProfile {
+  if (value === 'managed' || value === 'developer') return value;
+  throw new Error(errorCode);
+}
+
+function normalizeHolderKind(value: unknown, errorCode: string): TaskWorkspaceHolderKind {
+  const holderKind = normalizeOptionalHolderKind(value);
+  if (!holderKind) throw new Error(errorCode);
+  return holderKind;
+}
+
+function assertIsoTimestamp(value: string, errorCode: string): void {
+  if (Number.isNaN(Date.parse(value))) {
+    throw new Error(errorCode);
+  }
 }
 
 function parseJuicefsMountOptions(raw: string | undefined): string[] {
@@ -533,7 +670,9 @@ function resolveTaskWorkspaceSessionRegistryPath(): string {
   if (workspaceRoot) {
     return join(workspaceRoot, TASK_WORKSPACE_MOUNT_SESSIONS_FILE);
   }
-  return join(process.env.HOME || homedir() || '/tmp', '.mbos', TASK_WORKSPACE_MOUNT_SESSIONS_FILE);
+  const privateStateRoot = sanitizeWorkspacePath(process.env.MBOS_AGENT_PRIVATE_STATE_ROOT)
+    || join('/tmp', 'agentsmith-task-runner', sanitizePathPart(RUNNER_INSTANCE_ID, 'runner'));
+  return join(privateStateRoot, TASK_WORKSPACE_MOUNT_SESSIONS_FILE);
 }
 
 function buildPersistedReleaseAttempts(raw: unknown): PersistedMountReleaseAttempt[] {
@@ -567,14 +706,24 @@ function buildRegistrySessionSnapshot(session: MountedWorkspaceSession): Persist
   return {
     mount_path: session.mountPath,
     mode: session.mode,
-    metadata_url: session.metadataUrl,
-    storage_bucket_url: session.storageBucketUrl,
+    filesystem_name: session.filesystemName,
+    metadata_url: '[redacted]',
+    storage_bucket_url: session.storageBucketUrl ? '[redacted]' : undefined,
     log_path: session.logPath,
     refs: session.refs,
     owner_process_pid: session.ownerProcessPid,
     owner_runner_instance_id: session.runnerInstanceId,
     lease_id: session.leaseId,
     lease_revision: session.leaseRevision,
+    holder_id: session.holderId,
+    task_id: session.taskId,
+    file_library_id: session.fileLibraryId,
+    task_home_segment: session.taskHomeSegment,
+    binding_generation: session.bindingGeneration,
+    lease_epoch: session.leaseEpoch,
+    holder_kind: session.holderKind,
+    issued_at: session.issuedAt,
+    expires_at: session.expiresAt,
     created_at: session.createdAt,
     mounted_at: session.mountedAt,
     last_ref_change_at: session.lastRefChangeAt,
@@ -603,6 +752,10 @@ function buildRegistrySessionFromPersisted(
   return {
     mount_path: mountPath,
     mode,
+    filesystem_name: normalizeOptionalString(
+      (raw as { filesystem_name?: unknown; filesystemName?: unknown }).filesystem_name
+      ?? (raw as { filesystemName?: unknown }).filesystemName,
+    ) ?? '',
     metadata_url: normalizeOptionalString(
       (raw as { metadata_url?: unknown; metadataUrl?: unknown }).metadata_url
       ?? (raw as { metadataUrl?: unknown }).metadataUrl,
@@ -637,6 +790,42 @@ function buildRegistrySessionFromPersisted(
       (raw as { lease_revision?: unknown; leaseRevision?: unknown }).lease_revision
       ?? (raw as { leaseRevision?: unknown }).leaseRevision,
     ) ?? 0,
+    holder_id: normalizeOptionalString(
+      (raw as { holder_id?: unknown; holderId?: unknown }).holder_id
+      ?? (raw as { holderId?: unknown }).holderId,
+    ),
+    task_id: normalizeOptionalString(
+      (raw as { task_id?: unknown; taskId?: unknown }).task_id
+      ?? (raw as { taskId?: unknown }).taskId,
+    ),
+    file_library_id: normalizeOptionalString(
+      (raw as { file_library_id?: unknown; fileLibraryId?: unknown }).file_library_id
+      ?? (raw as { fileLibraryId?: unknown }).fileLibraryId,
+    ),
+    task_home_segment: normalizeOptionalString(
+      (raw as { task_home_segment?: unknown; taskHomeSegment?: unknown }).task_home_segment
+      ?? (raw as { taskHomeSegment?: unknown }).taskHomeSegment,
+    ),
+    binding_generation: normalizeOptionalString(
+      (raw as { binding_generation?: unknown; bindingGeneration?: unknown }).binding_generation
+      ?? (raw as { bindingGeneration?: unknown }).bindingGeneration,
+    ),
+    lease_epoch: normalizeOptionalString(
+      (raw as { lease_epoch?: unknown; leaseEpoch?: unknown }).lease_epoch
+      ?? (raw as { leaseEpoch?: unknown }).leaseEpoch,
+    ),
+    holder_kind: normalizeOptionalHolderKind(
+      (raw as { holder_kind?: unknown; holderKind?: unknown }).holder_kind
+      ?? (raw as { holderKind?: unknown }).holderKind,
+    ),
+    issued_at: normalizeOptionalString(
+      (raw as { issued_at?: unknown; issuedAt?: unknown }).issued_at
+      ?? (raw as { issuedAt?: unknown }).issuedAt,
+    ),
+    expires_at: normalizeOptionalString(
+      (raw as { expires_at?: unknown; expiresAt?: unknown }).expires_at
+      ?? (raw as { expiresAt?: unknown }).expiresAt,
+    ),
     created_at: normalizeOptionalString(
       (raw as { created_at?: unknown; createdAt?: unknown }).created_at
       ?? (raw as { createdAt?: unknown }).createdAt,
@@ -713,6 +902,7 @@ function hydrateMountedWorkspaceSession(
   return {
     mountPath: session.mount_path,
     mode: session.mode,
+    filesystemName: session.filesystem_name,
     metadataUrl: session.metadata_url,
     storageBucketUrl: session.storage_bucket_url,
     logPath: session.log_path,
@@ -723,6 +913,15 @@ function hydrateMountedWorkspaceSession(
     runnerInstanceId: session.owner_runner_instance_id,
     leaseId: session.lease_id,
     leaseRevision: session.lease_revision,
+    holderId: session.holder_id,
+    taskId: session.task_id,
+    fileLibraryId: session.file_library_id,
+    taskHomeSegment: session.task_home_segment,
+    bindingGeneration: session.binding_generation,
+    leaseEpoch: session.lease_epoch,
+    holderKind: session.holder_kind,
+    issuedAt: session.issued_at,
+    expiresAt: session.expires_at,
     createdAt: session.created_at,
     mountedAt: session.mounted_at,
     lastRefChangeAt: session.last_ref_change_at,
@@ -742,10 +941,31 @@ function hasMountedWorkspaceOwnerEvidence(session: MountedWorkspaceSession): boo
     && session.runnerInstanceId.length > 0;
 }
 
-function hasMountedWorkspaceLeaseEvidence(session: MountedWorkspaceSession): boolean {
+function hasMountedWorkspaceLeaseEvidence(
+  session: MountedWorkspaceSession,
+): session is MountedWorkspaceSessionWithLeaseEvidence {
   return typeof session.leaseId === 'string'
     && session.leaseId.length > 0
-    && session.leaseRevision > 0;
+    && session.leaseRevision > 0
+    && typeof session.holderId === 'string'
+    && session.holderId.length > 0
+    && typeof session.taskId === 'string'
+    && session.taskId.length > 0
+    && typeof session.fileLibraryId === 'string'
+    && session.fileLibraryId.length > 0
+    && typeof session.taskHomeSegment === 'string'
+    && session.taskHomeSegment.length > 0
+    && typeof session.bindingGeneration === 'string'
+    && session.bindingGeneration.length > 0
+    && typeof session.leaseEpoch === 'string'
+    && session.leaseEpoch.length > 0
+    && (session.holderKind === 'runner_workspace'
+      || session.holderKind === 'terminal_session'
+      || session.holderKind === 'notebook_run')
+    && typeof session.issuedAt === 'string'
+    && session.issuedAt.length > 0
+    && typeof session.expiresAt === 'string'
+    && session.expiresAt.length > 0;
 }
 
 function hasTrackedMountedWorkspaceEvidence(session: MountedWorkspaceSession): boolean {
@@ -879,13 +1099,32 @@ function isMountedWorkspaceSessionOwnedByAnotherRunner(session: MountedWorkspace
 
 function ensureMountedWorkspaceLease(
   session: MountedWorkspaceSession,
+  holder: TaskWorkspaceHolderFence & TaskWorkspaceIdentity,
   previousRevision?: number,
 ): TaskWorkspaceLease {
+  session.holderId = holder.holderId;
+  session.taskId = holder.taskId;
+  session.fileLibraryId = holder.fileLibraryId;
+  session.taskHomeSegment = holder.taskHomeSegment;
+  session.bindingGeneration = holder.bindingGeneration;
+  session.leaseEpoch = holder.leaseEpoch;
+  session.holderKind = holder.holderKind;
+  session.issuedAt = holder.issuedAt;
+  session.expiresAt = holder.expiresAt;
   if (session.leaseId && session.leaseRevision > 0) {
     return {
       mountPath: session.mountPath,
       leaseId: session.leaseId,
       revision: session.leaseRevision,
+      holderId: holder.holderId,
+      taskId: holder.taskId,
+      fileLibraryId: holder.fileLibraryId,
+      taskHomeSegment: holder.taskHomeSegment,
+      bindingGeneration: holder.bindingGeneration,
+      leaseEpoch: holder.leaseEpoch,
+      holderKind: holder.holderKind,
+      issuedAt: holder.issuedAt,
+      expiresAt: holder.expiresAt,
     };
   }
   session.leaseId = randomUUID();
@@ -894,32 +1133,69 @@ function ensureMountedWorkspaceLease(
     mountPath: session.mountPath,
     leaseId: session.leaseId,
     revision: session.leaseRevision,
+    holderId: holder.holderId,
+    taskId: holder.taskId,
+    fileLibraryId: holder.fileLibraryId,
+    taskHomeSegment: holder.taskHomeSegment,
+    bindingGeneration: holder.bindingGeneration,
+    leaseEpoch: holder.leaseEpoch,
+    holderKind: holder.holderKind,
+    issuedAt: holder.issuedAt,
+    expiresAt: holder.expiresAt,
   };
 }
 
 function getMountedWorkspaceLease(
   session: MountedWorkspaceSession,
 ): TaskWorkspaceLease | null {
-  if (!session.leaseId || session.leaseRevision <= 0) {
+  if (!session.leaseId || session.leaseRevision <= 0 || !hasMountedWorkspaceLeaseEvidence(session)) {
     return null;
   }
   return {
     mountPath: session.mountPath,
     leaseId: session.leaseId,
     revision: session.leaseRevision,
+    holderId: session.holderId,
+    taskId: session.taskId,
+    fileLibraryId: session.fileLibraryId,
+    taskHomeSegment: session.taskHomeSegment,
+    bindingGeneration: session.bindingGeneration,
+    leaseEpoch: session.leaseEpoch,
+    holderKind: session.holderKind,
+    issuedAt: session.issuedAt,
+    expiresAt: session.expiresAt,
   };
 }
 
 function rotateMountedWorkspaceLease(
   session: MountedWorkspaceSession,
+  holder: TaskWorkspaceHolderFence & TaskWorkspaceIdentity,
   previousRevision?: number,
 ): TaskWorkspaceLease {
   session.leaseId = randomUUID();
   session.leaseRevision = Math.max(previousRevision ?? session.leaseRevision, 0) + 1;
+  session.holderId = holder.holderId;
+  session.taskId = holder.taskId;
+  session.fileLibraryId = holder.fileLibraryId;
+  session.taskHomeSegment = holder.taskHomeSegment;
+  session.bindingGeneration = holder.bindingGeneration;
+  session.leaseEpoch = holder.leaseEpoch;
+  session.holderKind = holder.holderKind;
+  session.issuedAt = holder.issuedAt;
+  session.expiresAt = holder.expiresAt;
   return {
     mountPath: session.mountPath,
     leaseId: session.leaseId,
     revision: session.leaseRevision,
+    holderId: holder.holderId,
+    taskId: holder.taskId,
+    fileLibraryId: holder.fileLibraryId,
+    taskHomeSegment: holder.taskHomeSegment,
+    bindingGeneration: holder.bindingGeneration,
+    leaseEpoch: holder.leaseEpoch,
+    holderKind: holder.holderKind,
+    issuedAt: holder.issuedAt,
+    expiresAt: holder.expiresAt,
   };
 }
 
@@ -929,11 +1205,34 @@ function doesTaskWorkspaceLeaseMatchSession(
 ): boolean {
   return lease.mountPath === session.mountPath
     && lease.leaseId === session.leaseId
-    && lease.revision === session.leaseRevision;
+    && lease.revision === session.leaseRevision
+    && lease.holderId === session.holderId
+    && lease.taskId === session.taskId
+    && lease.fileLibraryId === session.fileLibraryId
+    && lease.taskHomeSegment === session.taskHomeSegment
+    && lease.bindingGeneration === session.bindingGeneration
+    && lease.leaseEpoch === session.leaseEpoch
+    && lease.holderKind === session.holderKind;
+}
+
+function isStaleFencedWorkspaceLease(
+  session: MountedWorkspaceSession,
+  lease: TaskWorkspaceLease,
+): boolean {
+  return lease.mountPath === session.mountPath
+    && (
+      lease.taskId !== session.taskId
+      || lease.fileLibraryId !== session.fileLibraryId
+      || lease.taskHomeSegment !== session.taskHomeSegment
+      || lease.bindingGeneration !== session.bindingGeneration
+      || lease.leaseEpoch !== session.leaseEpoch
+      || lease.holderKind !== session.holderKind
+    );
 }
 
 function markMountedSessionAcquired(
   session: MountedWorkspaceSession,
+  holder: TaskWorkspaceHolderFence & TaskWorkspaceIdentity,
   options?: {
     resetReleaseState?: boolean;
     preserveCreatedAt?: boolean;
@@ -943,7 +1242,7 @@ function markMountedSessionAcquired(
   const timestamp = nowIsoString();
   session.ownerProcessPid = process.pid;
   session.runnerInstanceId = RUNNER_INSTANCE_ID;
-  ensureMountedWorkspaceLease(session);
+  ensureMountedWorkspaceLease(session, holder);
   session.state = 'mounted';
   session.refs += 1;
   session.updatedAt = timestamp;
@@ -961,6 +1260,7 @@ function markMountedSessionAcquired(
 function buildMountedWorkspaceSession(input: {
   mountPath: string;
   mode: AgentTaskRunnerMode;
+  filesystemName: string;
   metadataUrl: string;
   storageBucketUrl?: string;
   logPath: string;
@@ -980,6 +1280,7 @@ function buildMountedWorkspaceSession(input: {
   return {
     mountPath: input.mountPath,
     mode: input.mode,
+    filesystemName: input.filesystemName,
     metadataUrl: input.metadataUrl,
     storageBucketUrl: input.storageBucketUrl,
     logPath: input.logPath,
@@ -990,6 +1291,15 @@ function buildMountedWorkspaceSession(input: {
     runnerInstanceId: RUNNER_INSTANCE_ID,
     leaseId: input.leaseId ?? null,
     leaseRevision: input.leaseRevision ?? 0,
+    holderId: null,
+    taskId: null,
+    fileLibraryId: null,
+    taskHomeSegment: null,
+    bindingGeneration: null,
+    leaseEpoch: null,
+    holderKind: null,
+    issuedAt: null,
+    expiresAt: null,
     createdAt: input.createdAt ?? null,
     mountedAt: input.mountedAt ?? null,
     lastRefChangeAt: null,
@@ -1080,13 +1390,6 @@ export function resolveAgentTaskRunnerMode(): AgentTaskRunnerMode {
   throw new Error(`agent_task_runner_mode_invalid:${raw || 'missing'}`);
 }
 
-export function buildTaskWorkspaceMountPath(input: {
-  mode: AgentTaskRunnerMode;
-  taskId: string;
-}): string {
-  return join('/home', sanitizePathPart(input.taskId, 'task-workspace'));
-}
-
 function normalizeTaskWorkspacePath(raw: string | undefined, field: string): string {
   const value = sanitizeWorkspacePath(raw);
   if (!value) {
@@ -1103,17 +1406,138 @@ function normalizeTaskWorkspacePath(raw: string | undefined, field: string): str
   return normalized.replace(/\/+$/, '');
 }
 
+function normalizeTaskLibraryRootPath(raw: string | undefined, field: string): '.' {
+  const value = sanitizeWorkspacePath(raw ?? '.');
+  if (value !== '.') {
+    throw new Error(`task_workspace_paths_inconsistent:${field}`);
+  }
+  return '.';
+}
+
+type TaskWorkspaceIdentity = {
+  taskId: string;
+  fileLibraryId: string;
+  workspaceBindingMode: TaskWorkspaceBindingMode;
+  runtimeProfile: TaskRuntimeProfile;
+  taskHomeSegment: string;
+};
+
+type TaskWorkspaceHolderFence = {
+  holderId: string;
+  holderKind: TaskWorkspaceHolderKind;
+  bindingGeneration: string;
+  leaseEpoch: string;
+  issuedAt: string;
+  expiresAt: string;
+};
+
+function buildTaskWorkspaceIdentity(
+  executionContext: FileLibraryWorkspaceExecutionContext,
+  expectedTaskId: string,
+): TaskWorkspaceIdentity {
+  const taskId = normalizeRequiredString(
+    executionContext.task_id,
+    'task_workspace_identity_missing:task_id',
+  );
+  if (taskId !== expectedTaskId) {
+    throw new Error('task_workspace_identity_mismatch:task_id');
+  }
+  const fileLibraryId = normalizeRequiredString(
+    executionContext.workspace_file_library_id,
+    'task_workspace_identity_missing:workspace_file_library_id',
+  );
+  const workspaceBindingMode = normalizeWorkspaceBindingMode(
+    executionContext.workspace_binding_mode,
+    'task_workspace_identity_invalid:workspace_binding_mode',
+  );
+  const runtimeProfile = normalizeRuntimeProfile(
+    executionContext.runtime_profile,
+    'task_workspace_identity_invalid:runtime_profile',
+  );
+  const taskHomeSegment = normalizeTaskHomeSegment(
+    executionContext.task_home_segment,
+    'task_workspace_identity_invalid:task_home_segment',
+  );
+  const libraryRootPath = normalizeRequiredString(
+    executionContext.library_root_path,
+    'task_workspace_identity_missing:library_root_path',
+  );
+  if (libraryRootPath !== '.') {
+    throw new Error('task_workspace_identity_invalid:library_root_path');
+  }
+  return {
+    taskId,
+    fileLibraryId,
+    workspaceBindingMode,
+    runtimeProfile,
+    taskHomeSegment,
+  };
+}
+
+function normalizeWorkspaceAccessHolderFence(
+  workspaceAccess: TaskWorkspaceAccessPayload,
+): TaskWorkspaceHolderFence {
+  const readFenceField = (wireField: string): string => (
+    normalizeRequiredString(
+      workspaceAccess[wireField as keyof TaskWorkspaceAccessPayload],
+      `task_workspace_access_holder_field_missing:${wireField}`,
+    )
+  );
+  const holderId = readFenceField('holder_id');
+  const holderKind = normalizeHolderKind(
+    workspaceAccess.holder_kind,
+    'task_workspace_access_holder_field_invalid:holder_kind',
+  );
+  const bindingGeneration = readFenceField('binding_generation');
+  const leaseEpoch = readFenceField('lease_epoch');
+  const issuedAt = readFenceField('issued_at');
+  const expiresAt = readFenceField('expires_at');
+  assertIsoTimestamp(issuedAt, 'task_workspace_access_holder_field_invalid:issued_at');
+  assertIsoTimestamp(expiresAt, 'task_workspace_access_holder_field_invalid:expires_at');
+  return {
+    holderId,
+    holderKind,
+    bindingGeneration,
+    leaseEpoch,
+    issuedAt,
+    expiresAt,
+  };
+}
+
 export function buildTaskWorkspacePaths(input: {
   mode: AgentTaskRunnerMode;
+  runtimeProfile?: TaskRuntimeProfile;
+  taskHomeSegment?: string;
   taskHomePath?: string;
   workspacePath?: string;
   artifactsPath?: string;
+  libraryRootPath?: string;
 }): TaskWorkspacePaths {
   const taskHome = normalizeTaskWorkspacePath(input.taskHomePath, 'task_home_path');
   const workspaceDir = normalizeTaskWorkspacePath(input.workspacePath, 'workspace_path');
   const artifactsDir = normalizeTaskWorkspacePath(input.artifactsPath, 'artifacts_path');
+  const libraryRoot = normalizeTaskLibraryRootPath(input.libraryRootPath, 'library_root_path');
+  const runtimeProfile = input.runtimeProfile ?? (input.mode === 'developer' ? 'developer' : 'managed');
+  const taskHomeSegment = input.taskHomeSegment
+    ? normalizeTaskHomeSegment(input.taskHomeSegment, 'task_workspace_paths_invalid:task_home_segment')
+    : taskHome.split('/').filter(Boolean).at(-1) ?? '';
+  if (!taskHomeSegment) {
+    throw new Error('task_workspace_paths_invalid:task_home_segment');
+  }
+  if (input.mode === 'developer' && runtimeProfile !== 'developer') {
+    throw new Error('task_workspace_paths_runtime_profile_mismatch');
+  }
+  if (input.mode !== 'developer' && runtimeProfile !== 'managed') {
+    throw new Error('task_workspace_paths_runtime_profile_mismatch');
+  }
   if (taskHome === '/') {
     throw new Error('task_workspace_paths_invalid:task_home_path');
+  }
+  if (!taskHome.endsWith(`/${taskHomeSegment}`)) {
+    throw new Error('task_workspace_paths_inconsistent:task_home_segment');
+  }
+  if (runtimeProfile === 'managed' && taskHome !== join('/home', taskHomeSegment)) {
+    throw new Error('task_workspace_paths_inconsistent:runtime_profile');
   }
   if (workspaceDir !== join(taskHome, 'workspace')) {
     throw new Error('task_workspace_paths_inconsistent:workspace_path');
@@ -1124,9 +1548,12 @@ export function buildTaskWorkspacePaths(input: {
   const mbosDir = join(taskHome, '.mbos');
   return {
     mode: input.mode,
+    runtimeProfile,
+    taskHomeSegment,
     taskHome,
     workspaceDir,
     visibleRoot: workspaceDir,
+    libraryRoot,
     mountRoot: taskHome,
     taskRoot: taskHome,
     runtimeRoot: taskHome,
@@ -1140,8 +1567,43 @@ export function buildTaskWorkspacePaths(input: {
 
 function assertWorkspaceAccessPathEchoMatches(input: {
   workspaceAccess: TaskWorkspaceAccessPayload;
+  identity: TaskWorkspaceIdentity;
   paths: TaskWorkspacePaths;
-}): void {
+}): TaskWorkspaceHolderFence {
+  const identityChecks = [
+    {
+      field: 'task_id',
+      raw: input.workspaceAccess.task_id,
+      expected: input.identity.taskId,
+    },
+    {
+      field: 'file_library_id',
+      raw: input.workspaceAccess.file_library_id,
+      expected: input.identity.fileLibraryId,
+    },
+    {
+      field: 'workspace_binding_mode',
+      raw: input.workspaceAccess.workspace_binding_mode,
+      expected: input.identity.workspaceBindingMode,
+    },
+    {
+      field: 'runtime_profile',
+      raw: input.workspaceAccess.runtime_profile,
+      expected: input.identity.runtimeProfile,
+    },
+    {
+      field: 'task_home_segment',
+      raw: input.workspaceAccess.task_home_segment,
+      expected: input.identity.taskHomeSegment,
+    },
+  ] as const;
+
+  for (const check of identityChecks) {
+    if (check.raw !== check.expected) {
+      throw new Error(`task_workspace_access_identity_mismatch:${check.field}`);
+    }
+  }
+
   const checks = [
     {
       field: 'task_home_path',
@@ -1162,7 +1624,7 @@ function assertWorkspaceAccessPathEchoMatches(input: {
 
   for (const check of checks) {
     if (check.raw === undefined) {
-      continue;
+      throw new Error(`task_workspace_access_path_missing:${check.field}`);
     }
     if (typeof check.raw !== 'string') {
       throw new Error(`task_workspace_access_path_invalid:${check.field}`);
@@ -1172,20 +1634,38 @@ function assertWorkspaceAccessPathEchoMatches(input: {
       throw new Error(`task_workspace_access_path_mismatch:${check.field}`);
     }
   }
+
+  if (input.workspaceAccess.library_root_path === undefined) {
+    throw new Error('task_workspace_access_path_missing:library_root_path');
+  }
+  if (typeof input.workspaceAccess.library_root_path !== 'string') {
+    throw new Error('task_workspace_access_library_root_path_invalid');
+  }
+  const echoedLibraryRoot = input.workspaceAccess.library_root_path.trim();
+  if (echoedLibraryRoot !== input.paths.libraryRoot) {
+    throw new Error('task_workspace_access_library_root_path_invalid');
+  }
+  return normalizeWorkspaceAccessHolderFence(input.workspaceAccess);
 }
 
 export function resolveTaskCwd(input: {
   taskId: string;
+  runtimeProfile?: TaskRuntimeProfile;
+  taskHomeSegment?: string;
   taskHomePath?: string;
   workspacePath?: string;
   artifactsPath?: string;
+  libraryRootPath?: string;
 }): { cwd: string; source: 'path_fields'; mode: AgentTaskRunnerMode; paths: TaskWorkspacePaths } {
   const mode = resolveAgentTaskRunnerMode();
   const paths = buildTaskWorkspacePaths({
     mode,
+    runtimeProfile: input.runtimeProfile,
+    taskHomeSegment: input.taskHomeSegment,
     taskHomePath: input.taskHomePath,
     workspacePath: input.workspacePath,
     artifactsPath: input.artifactsPath,
+    libraryRootPath: input.libraryRootPath,
   });
   return {
     cwd: paths.workspaceDir,
@@ -1242,10 +1722,55 @@ export async function fetchTaskWorkspaceAccess(
   return payload;
 }
 
+export async function releaseTaskWorkspaceAccess(
+  executionContext: FileLibraryWorkspaceExecutionContext,
+  lease: TaskWorkspaceAccessReleaseFence | TaskWorkspaceLease,
+): Promise<void> {
+  const apiBase = sanitizeWorkspacePath(executionContext.api_base)?.replace(/\/+$/, '');
+  const workspaceId = sanitizePathPart(executionContext.workspace_id, '');
+  const projectId = sanitizePathPart(executionContext.project_id, '');
+  const taskId = sanitizePathPart(executionContext.task_id, '');
+  const executionTicket = (executionContext.execution_ticket ?? '').trim();
+  if (!apiBase || !workspaceId || !projectId || !taskId || !executionTicket) {
+    throw new Error('task_workspace_access_release_context_missing');
+  }
+
+  const response = await fetch(
+    `${apiBase}/workspaces/${encodeURIComponent(workspaceId)}`
+      + `/projects/${encodeURIComponent(projectId)}`
+      + `/tasks/${encodeURIComponent(taskId)}/workspace-access/release`,
+    {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${executionTicket}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        holder_id: lease.holderId,
+        file_library_id: lease.fileLibraryId,
+        binding_generation: lease.bindingGeneration,
+        lease_epoch: lease.leaseEpoch,
+      }),
+    },
+  );
+  if (!response.ok) {
+    debugTaskWorkspace('release_workspace_access_failed', {
+      status: response.status,
+      task_id: taskId,
+      holder_id: lease.holderId,
+      binding_generation: lease.bindingGeneration,
+      lease_epoch: lease.leaseEpoch,
+    });
+    throw new Error(`task_workspace_access_release_failed:${response.status}`);
+  }
+}
+
 async function mountTaskWorkspace(
   mode: AgentTaskRunnerMode,
+  filesystemName: string,
   metadataUrl: string,
   mountPath: string,
+  holder: TaskWorkspaceHolderFence & TaskWorkspaceIdentity,
   storageBucketUrl?: string,
 ): Promise<MountedWorkspaceSession> {
   await mkdir(mountPath, { recursive: true });
@@ -1265,11 +1790,12 @@ async function mountTaskWorkspace(
     const session = buildMountedWorkspaceSession({
       mountPath,
       mode,
+      filesystemName,
       metadataUrl,
       storageBucketUrl,
       logPath,
     });
-    markMountedSessionAcquired(session, {
+    markMountedSessionAcquired(session, holder, {
       preserveCreatedAt: false,
       preserveMountedAt: false,
     });
@@ -1320,13 +1846,14 @@ async function mountTaskWorkspace(
   const session = buildMountedWorkspaceSession({
     mountPath,
     mode,
+    filesystemName,
     metadataUrl,
     storageBucketUrl,
     logPath,
   });
   session.child = child;
   session.childExited = false;
-  markMountedSessionAcquired(session, {
+  markMountedSessionAcquired(session, holder, {
     preserveCreatedAt: false,
     preserveMountedAt: false,
   });
@@ -1539,6 +2066,17 @@ async function releaseMountedWorkspaceSession(
   }
   if (!leaseMatches && !allowForeignStaleRelease) {
     if (options?.lease) {
+      if (isStaleFencedWorkspaceLease(session, options.lease)) {
+        debugTaskWorkspace('release_stale_holder_noop', {
+          mount_path: mountPath,
+          holder_id: options.lease.holderId,
+          task_id: options.lease.taskId,
+          file_library_id: options.lease.fileLibraryId,
+          binding_generation: options.lease.bindingGeneration,
+          lease_epoch: options.lease.leaseEpoch,
+        });
+        return;
+      }
       throw new Error(`task_workspace_release_lease_mismatch:${mountPath}`);
     }
     throw new Error(`task_workspace_release_requires_lease:${mountPath}`);
@@ -1612,6 +2150,7 @@ async function acquireMountedWorkspaceSession(input: {
   filesystemName: string;
   metadataUrl: string;
   mountPath: string;
+  holder: TaskWorkspaceHolderFence & TaskWorkspaceIdentity;
   storageBucketUrl?: string;
   priorLeaseRevisionFloor?: number;
 }): Promise<{ session: MountedWorkspaceSession; lease: TaskWorkspaceLease }> {
@@ -1659,13 +2198,14 @@ async function acquireMountedWorkspaceSession(input: {
           throw new Error(`task_workspace_mount_untracked_live_mount:${input.mountPath}`);
         }
         existing.mode = input.mode;
+        existing.filesystemName = input.filesystemName;
         existing.metadataUrl = input.metadataUrl;
         existing.storageBucketUrl = input.storageBucketUrl;
-        markMountedSessionAcquired(existing);
+        markMountedSessionAcquired(existing, input.holder);
         await persistMountedWorkspaceSessions();
         return {
           session: existing,
-          lease: ensureMountedWorkspaceLease(existing),
+          lease: ensureMountedWorkspaceLease(existing, input.holder),
         };
       }
       if (ownerAuthority?.kind === 'ownerless_reclaimable') {
@@ -1673,6 +2213,7 @@ async function acquireMountedWorkspaceSession(input: {
           throw new Error(`task_workspace_mount_untracked_live_mount:${input.mountPath}`);
         }
         existing.mode = input.mode;
+        existing.filesystemName = input.filesystemName;
         existing.metadataUrl = input.metadataUrl;
         existing.storageBucketUrl = input.storageBucketUrl;
         existing.refs = 0;
@@ -1680,11 +2221,11 @@ async function acquireMountedWorkspaceSession(input: {
         existing.runnerInstanceId = null;
         existing.leaseId = null;
         existing.leaseRevision = 0;
-        markMountedSessionAcquired(existing);
+        markMountedSessionAcquired(existing, input.holder);
         await persistMountedWorkspaceSessions();
         return {
           session: existing,
-          lease: ensureMountedWorkspaceLease(existing),
+          lease: ensureMountedWorkspaceLease(existing, input.holder),
         };
       }
       if (ownerAuthority?.kind !== 'stale_owner') {
@@ -1693,13 +2234,14 @@ async function acquireMountedWorkspaceSession(input: {
     }
     if (existing.state === 'mounted' && mountReady && !ownedByAnotherRunner) {
       existing.mode = input.mode;
+      existing.filesystemName = input.filesystemName;
       existing.metadataUrl = input.metadataUrl;
       existing.storageBucketUrl = input.storageBucketUrl;
-      markMountedSessionAcquired(existing);
+      markMountedSessionAcquired(existing, input.holder);
       await persistMountedWorkspaceSessions();
       return {
         session: existing,
-        lease: ensureMountedWorkspaceLease(existing),
+        lease: ensureMountedWorkspaceLease(existing, input.holder),
       };
     }
     if (existing.state === 'mounted' && mountReady && ownedByAnotherRunner) {
@@ -1729,7 +2271,7 @@ async function acquireMountedWorkspaceSession(input: {
         releaseAttempts: [...existing.releaseAttempts],
       };
       const sessionLease = !ownedByAnotherRunner && hasTrackedMountedWorkspaceEvidence(existing)
-        ? ensureMountedWorkspaceLease(existing)
+        ? ensureMountedWorkspaceLease(existing, input.holder)
         : undefined;
       await releaseMountedWorkspaceSession(input.mountPath, {
         force: true,
@@ -1750,8 +2292,10 @@ async function acquireMountedWorkspaceSession(input: {
 
   const session = await mountTaskWorkspace(
     input.mode,
+    input.filesystemName,
     input.metadataUrl,
     input.mountPath,
+    input.holder,
     input.storageBucketUrl,
   );
   const priorLeaseRevision = Math.max(
@@ -1759,9 +2303,9 @@ async function acquireMountedWorkspaceSession(input: {
     input.priorLeaseRevisionFloor ?? 0,
   );
   const lease = priorLeaseRevision > 0
-    ? rotateMountedWorkspaceLease(session, priorLeaseRevision)
-    : ensureMountedWorkspaceLease(session);
-  markMountedSessionAcquired(session, {
+    ? rotateMountedWorkspaceLease(session, input.holder, priorLeaseRevision)
+    : ensureMountedWorkspaceLease(session, input.holder);
+  markMountedSessionAcquired(session, input.holder, {
     preserveCreatedAt: session.createdAt !== null,
     preserveMountedAt: session.mountedAt !== null,
   });
@@ -1780,7 +2324,7 @@ export async function releaseAllPreparedTaskWorkspaces(): Promise<void> {
         force: true,
         lease: isMountedWorkspaceSessionOwnedByAnotherRunner(session)
           ? undefined
-          : getMountedWorkspaceLease(session) ?? ensureMountedWorkspaceLease(session),
+          : getMountedWorkspaceLease(session) ?? undefined,
         allowForeignStaleRelease: isMountedWorkspaceSessionOwnedByAnotherRunner(session),
       });
     } catch (error) {
@@ -1804,15 +2348,19 @@ export async function prepareTaskWorkspace(input: {
   release: () => Promise<void>;
 }> {
   const mode = resolveAgentTaskRunnerMode();
+  const identity = buildTaskWorkspaceIdentity(input.executionContext, input.taskId);
   const resolved = resolveTaskCwd({
     taskHomePath: input.executionContext.task_home_path,
     workspacePath: input.executionContext.workspace_path,
     artifactsPath: input.executionContext.artifacts_path,
+    libraryRootPath: input.executionContext.library_root_path,
+    runtimeProfile: identity.runtimeProfile,
+    taskHomeSegment: identity.taskHomeSegment,
     taskId: input.taskId,
   });
   const paths = resolved.paths;
 
-  if (input.executionContext.workspace_binding_mode === 'pre_mounted') {
+  if (identity.workspaceBindingMode === 'pre_mounted') {
     return {
       cwd: resolved.cwd,
       source: resolved.source,
@@ -1821,9 +2369,34 @@ export async function prepareTaskWorkspace(input: {
     };
   }
 
-  if (input.executionContext.workspace_binding_mode === 'file_library') {
+  if (identity.workspaceBindingMode === 'file_library') {
     const workspaceAccess = await fetchTaskWorkspaceAccess(input.executionContext);
-    assertWorkspaceAccessPathEchoMatches({ workspaceAccess, paths });
+    let workspaceAccessReleased = false;
+    const releaseWorkspaceAccessOnce = async (fence: TaskWorkspaceHolderFence): Promise<void> => {
+      if (workspaceAccessReleased) return;
+      workspaceAccessReleased = true;
+      await releaseTaskWorkspaceAccess(input.executionContext, {
+        holderId: fence.holderId,
+        fileLibraryId: identity.fileLibraryId,
+        bindingGeneration: fence.bindingGeneration,
+        leaseEpoch: fence.leaseEpoch,
+      });
+    };
+    let holderFence: TaskWorkspaceHolderFence;
+    try {
+      holderFence = assertWorkspaceAccessPathEchoMatches({ workspaceAccess, identity, paths });
+    } catch (error) {
+      try {
+        const releaseFence = normalizeWorkspaceAccessHolderFence(workspaceAccess);
+        await releaseWorkspaceAccessOnce(releaseFence);
+      } catch (releaseError) {
+        debugTaskWorkspace('release_workspace_access_after_prepare_validation_failed', {
+          task_id: identity.taskId,
+          message: releaseError instanceof Error ? releaseError.message : String(releaseError),
+        });
+      }
+      throw error;
+    }
     const mountPath = paths.taskHome;
     let priorLeaseRevisionFloor = 0;
     const maxAttempts = Number.parseInt(process.env.MBOS_AGENT_JUICEFS_MOUNT_RETRY_COUNT ?? '', 10)
@@ -1838,6 +2411,10 @@ export async function prepareTaskWorkspace(input: {
           filesystemName: workspaceAccess.filesystem_name,
           metadataUrl: workspaceAccess.metadata_url,
           mountPath,
+          holder: {
+            ...identity,
+            ...holderFence,
+          },
           storageBucketUrl: workspaceAccess.storage_bucket_url,
           priorLeaseRevisionFloor,
         });
@@ -1852,6 +2429,10 @@ export async function prepareTaskWorkspace(input: {
             await releaseMountedWorkspaceSession(mountPath, {
               lease: workspaceLease ?? undefined,
             });
+            if (workspaceLease && !workspaceAccessReleased) {
+              workspaceAccessReleased = true;
+              await releaseTaskWorkspaceAccess(input.executionContext, workspaceLease);
+            }
           },
         };
       } catch (error) {
@@ -1874,7 +2455,7 @@ export async function prepareTaskWorkspace(input: {
             currentSession?.leaseRevision ?? 0,
           );
           const currentLease = currentSession && !isMountedWorkspaceSessionOwnedByAnotherRunner(currentSession)
-            ? getMountedWorkspaceLease(currentSession) ?? ensureMountedWorkspaceLease(currentSession)
+            ? getMountedWorkspaceLease(currentSession) ?? undefined
             : undefined;
           await releaseMountedWorkspaceSession(mountPath, {
             force: true,
@@ -1890,6 +2471,15 @@ export async function prepareTaskWorkspace(input: {
           });
         }
         if (attempt >= maxAttempts || (!retryableMountFailure && !retryableWriteFailure)) {
+          await releaseWorkspaceAccessOnce(holderFence).catch((releaseError) => {
+            debugTaskWorkspace('release_workspace_access_after_prepare_failure_failed', {
+              task_id: identity.taskId,
+              holder_id: holderFence.holderId,
+              binding_generation: holderFence.bindingGeneration,
+              lease_epoch: holderFence.leaseEpoch,
+              message: releaseError instanceof Error ? releaseError.message : String(releaseError),
+            });
+          });
           throw error;
         }
         await sleep(retryDelayMs);
@@ -1931,7 +2521,7 @@ export async function evictPreparedTaskWorkspace(mountPath: string): Promise<voi
     force: true,
     lease: isMountedWorkspaceSessionOwnedByAnotherRunner(session)
       ? undefined
-      : getMountedWorkspaceLease(session) ?? ensureMountedWorkspaceLease(session),
+      : getMountedWorkspaceLease(session) ?? undefined,
     allowForeignStaleRelease: isMountedWorkspaceSessionOwnedByAnotherRunner(session),
   });
 }

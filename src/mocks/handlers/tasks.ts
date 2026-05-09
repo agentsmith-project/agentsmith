@@ -23,6 +23,13 @@ import { memberProjectMembershipFixtures } from '../fixtures/members';
 import { readMockAuthActorFromRequest } from '../utils/mock-auth-token';
 import { DOC_FIXTURES_ENABLED } from '../doc-fixtures/mode';
 import {
+  bindMockFileLibraryTaskHome,
+  ensureMockFileLibraryForTask,
+  getMockFileLibrary,
+  getMockFileLibraryTaskHomeBinding,
+  releaseMockFileLibraryTaskHome,
+} from './files';
+import {
   docTaskFixtures,
   docTaskActivityFixtures,
   docArtifactFixtures,
@@ -45,6 +52,23 @@ let nextMockSseTicketOrdinal = 1;
 type TaskAgentPresence = Exclude<Task['agent_presence'], undefined>;
 const TASK_AGENT_PRESENCE_VALUES = ['online', 'offline', 'managed', 'unknown'] as const satisfies readonly TaskAgentPresence[];
 
+function syncMockTaskFileLibraryBinding(task: Task) {
+  if (!task.workspace_file_library_id) return;
+  bindMockFileLibraryTaskHome({
+    workspaceId: task.workspace_id,
+    projectId: task.project_id,
+    libraryId: task.workspace_file_library_id,
+    taskId: task.id,
+    taskTitle: task.title,
+    taskStatus: task.status,
+    visible: true,
+  });
+}
+
+for (const task of tasks) {
+  syncMockTaskFileLibraryBinding(task);
+}
+
 function isTaskAgentPresence(value: string): value is TaskAgentPresence {
   return (TASK_AGENT_PRESENCE_VALUES as readonly string[]).includes(value);
 }
@@ -58,6 +82,56 @@ function normalizeTaskAgentPresence(input: unknown): TaskAgentPresence {
   }
   return 'managed';
 }
+
+function agentTaskWorkspaceModeInvalidResponse(workspaceMode: string) {
+  return HttpResponse.json({
+    error_code: 'AGENT_TASK_WORKSPACE_MODE_INVALID',
+    message: 'agent_task_workspace_mode_invalid',
+    field: 'workspace_mode',
+    workspace_mode: workspaceMode,
+  }, { status: 422 });
+}
+
+function agentTaskWorkspaceFileLibraryRequiredResponse() {
+  return HttpResponse.json({
+    error_code: 'AGENT_TASK_WORKSPACE_FILE_LIBRARY_REQUIRED',
+    message: 'agent_task_workspace_file_library_required',
+    field: 'workspace_file_library_id',
+  }, { status: 422 });
+}
+
+function fileLibraryNotFoundResponse(fileLibraryId: string) {
+  return HttpResponse.json({
+    error_code: 'FILE_LIBRARY_NOT_FOUND',
+    message: 'file_library_not_found',
+    file_library_id: fileLibraryId,
+  }, { status: 404 });
+}
+
+function fileLibraryStatusConflictResponse(fileLibraryId: string, fileLibraryStatus: string) {
+  if (fileLibraryStatus === 'deleting') {
+    return HttpResponse.json({
+      error_code: 'FILE_LIBRARY_DELETING',
+      message: 'file_library_deleting',
+      file_library_id: fileLibraryId,
+      file_library_status: fileLibraryStatus,
+    }, { status: 409 });
+  }
+  return HttpResponse.json({
+    error_code: 'FILE_LIBRARY_NOT_READY',
+    message: 'file_library_not_ready',
+    file_library_id: fileLibraryId,
+    file_library_status: fileLibraryStatus,
+  }, { status: 409 });
+}
+
+const RUNNER_TEST_PROMPT = [
+  'AgentSmith Developer runner self-check.',
+  '',
+  'Do not inspect files, do not run shell commands, and do not use tools.',
+  'Reply with exactly this text and nothing else:',
+  'AGENTSMITH_RUNNER_TEST_OK',
+].join('\n');
 
 export function createMockRunnerTestTaskRunEvidence(input: {
   workspaceId: string;
@@ -109,13 +183,22 @@ export function createMockRunnerTestTaskRunEvidence(input: {
     },
   };
   tasks.unshift(task);
+  ensureMockFileLibraryForTask({
+    workspaceId: input.workspaceId,
+    projectId: input.projectId,
+    libraryId: task.workspace_file_library_id ?? `lib_${input.taskId}`,
+    name: task.workspace_file_library_name ?? 'Developer Runner Test Workspace',
+    createdByUserId: task.owner_user_id,
+    now,
+  });
+  syncMockTaskFileLibraryBinding(task);
   taskActivities.push(
     {
       id: `msg_${input.taskId}_user`,
       task_id: input.taskId,
       kind: 'user_intent',
       actor: 'user',
-      content: input.intent?.trim() || 'developer_runner_connection_check',
+      content: RUNNER_TEST_PROMPT,
       created_at: now,
       source: 'runner_test',
       runner_test: true,
@@ -711,17 +794,52 @@ export const taskHandlers = [
         { status: 400 },
       );
     }
-    const workspaceMode = typeof body?.workspace_mode === 'string' ? body.workspace_mode.trim() : '';
+    const rawWorkspaceMode = typeof body?.workspace_mode === 'string' ? body.workspace_mode.trim() : undefined;
+    const workspaceMode = rawWorkspaceMode ?? 'create_new';
     const workspaceFileLibraryId = typeof body?.workspace_file_library_id === 'string'
       ? body.workspace_file_library_id.trim()
       : '';
-    if (workspaceMode !== 'create_new' && workspaceFileLibraryId.length === 0) {
-      return HttpResponse.json({ error_code: 'VALIDATION_ERROR', message: 'workspace_file_library_id_required' }, { status: 422 });
+    if (workspaceMode !== 'create_new' && workspaceMode !== 'use_existing') {
+      return agentTaskWorkspaceModeInvalidResponse(workspaceMode);
     }
-    if (workspaceFileLibraryId.length > 0) {
-      const occupied = tasks.find((task) => task.status === 'active' && task.workspace_file_library_id === workspaceFileLibraryId);
-      if (occupied) {
-        return HttpResponse.json({ error_code: 'RESOURCE_CONFLICT', message: 'workspace_file_library_in_use' }, { status: 409 });
+    if (workspaceMode === 'create_new' && workspaceFileLibraryId.length > 0) {
+      return agentTaskWorkspaceModeInvalidResponse('create_new');
+    }
+    if (workspaceMode === 'use_existing' && workspaceFileLibraryId.length === 0) {
+      return agentTaskWorkspaceFileLibraryRequiredResponse();
+    }
+    if (workspaceMode === 'use_existing') {
+      const fileLibrary = getMockFileLibrary({
+        workspaceId: String(params.ws ?? ''),
+        projectId: String(params.prj ?? ''),
+        libraryId: workspaceFileLibraryId,
+      });
+      if (!fileLibrary) {
+        return fileLibraryNotFoundResponse(workspaceFileLibraryId);
+      }
+      if (fileLibrary.status !== 'ready') {
+        return fileLibraryStatusConflictResponse(fileLibrary.id, fileLibrary.status);
+      }
+      const binding = getMockFileLibraryTaskHomeBinding({
+        workspaceId: String(params.ws ?? ''),
+        projectId: String(params.prj ?? ''),
+        libraryId: workspaceFileLibraryId,
+      });
+      if (binding) {
+        return HttpResponse.json({
+          error_code: 'AGENT_TASK_FILE_LIBRARY_IN_USE',
+          message: 'workspace_file_library_in_use',
+          field: 'workspace_file_library_id',
+          file_library_id: workspaceFileLibraryId,
+          bound_task_visible: binding.visible,
+          ...(binding.visible
+            ? {
+                bound_task_id: binding.taskId,
+                bound_task_title: binding.taskTitle,
+                bound_task_status: binding.taskStatus,
+              }
+            : {}),
+        }, { status: 409 });
       }
     }
     const projectId = String(params.prj ?? '');
@@ -753,6 +871,29 @@ export const taskHandlers = [
       ? body.workspace_name.trim()
       : `${body?.title ?? 'New Task'} Workspace`;
     const boundRunnerKind: TaskRunnerBindingKind = boundRunner.kind === 'developer' ? 'developer' : 'managed';
+    const taskWorkspaceFileLibraryId = workspaceMode === 'create_new'
+      ? `flib_${Math.random().toString(36).slice(2, 10)}`
+      : workspaceFileLibraryId;
+    const selectedTaskWorkspaceFileLibrary = workspaceMode === 'use_existing'
+      ? getMockFileLibrary({
+          workspaceId: String(params.ws ?? ''),
+          projectId: String(params.prj ?? ''),
+          libraryId: workspaceFileLibraryId,
+        })
+      : null;
+    const taskWorkspaceFileLibraryName = workspaceMode === 'create_new'
+      ? generatedWorkspaceName
+      : body?.workspace_file_library_name ?? selectedTaskWorkspaceFileLibrary?.name ?? 'Project Uploads';
+    if (workspaceMode === 'create_new') {
+      ensureMockFileLibraryForTask({
+        workspaceId: String(params.ws ?? ''),
+        projectId: String(params.prj ?? ''),
+        libraryId: taskWorkspaceFileLibraryId,
+        name: taskWorkspaceFileLibraryName,
+        createdByUserId: readMockAuthActorFromRequest(request).userId,
+        now,
+      });
+    }
     const newTask = {
       id: `task_${Math.random().toString(36).slice(2, 8)}`,
       workspace_id: params.ws as string,
@@ -764,12 +905,8 @@ export const taskHandlers = [
     runner_binding_source: (body?.bound_runner_id ? 'explicit' : 'default_managed') as TaskRunnerBindingSource,
       bound_at: now,
       bound_by_user_id: readMockAuthActorFromRequest(request).userId,
-      workspace_file_library_id: workspaceMode === 'create_new'
-        ? `flib_${Math.random().toString(36).slice(2, 10)}`
-        : workspaceFileLibraryId,
-      workspace_file_library_name: workspaceMode === 'create_new'
-        ? generatedWorkspaceName
-        : body?.workspace_file_library_name ?? 'Project Uploads',
+      workspace_file_library_id: taskWorkspaceFileLibraryId,
+      workspace_file_library_name: taskWorkspaceFileLibraryName,
       status: body?.status ?? 'active',
       attached_inputs: Array.isArray(body?.inputs) ? body.inputs.map((item: any, idx: number) => ({
         id: item?.id ?? `in_${idx}_${Math.random().toString(36).slice(2, 7)}`,
@@ -782,7 +919,8 @@ export const taskHandlers = [
       run_state: body?.run_state ?? 'idle',
     };
     tasks.unshift(newTask);
-    return HttpResponse.json(newTask);
+    syncMockTaskFileLibraryBinding(newTask);
+    return HttpResponse.json(newTask, { status: 201 });
   }),
   http.patch(`${API_V1_PATTERN}/workspaces/:ws/projects/:prj/tasks/:id`, async ({ request, params }) => {
     const taskId = params.id as string;
@@ -818,6 +956,7 @@ export const taskHandlers = [
     }
     if (body.status === 'active' || body.status === 'archived') {
       task.status = body.status;
+      syncMockTaskFileLibraryBinding(task);
     }
     task.updated_at = new Date().toISOString();
     return HttpResponse.json(task);
@@ -826,6 +965,26 @@ export const taskHandlers = [
     const taskId = params.id as string;
     const index = tasks.findIndex((r) => r.id === taskId);
     if (index >= 0) {
+      const task = tasks[index];
+      const hasLiveRun = task.run_state && task.run_state !== 'idle';
+      const hasActiveRun = task.active_run?.status === 'queued' || task.active_run?.status === 'running' || task.active_run?.status === 'stopping';
+      if (hasLiveRun || hasActiveRun) {
+        return HttpResponse.json({
+          error_code: 'AGENT_TASK_DELETE_BLOCKED',
+          message: 'agent_task_delete_blocked',
+          task_id: task.id,
+          blockers: ['active_run'],
+          retry_after_seconds: 5,
+        }, { status: 409 });
+      }
+      if (task.workspace_file_library_id) {
+        releaseMockFileLibraryTaskHome({
+          workspaceId: task.workspace_id,
+          projectId: task.project_id,
+          libraryId: task.workspace_file_library_id,
+          taskId: task.id,
+        });
+      }
       tasks.splice(index, 1);
     }
     return HttpResponse.json({ ok: true });

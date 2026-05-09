@@ -188,7 +188,47 @@
             "$ref": "#/components/responses/Unauthorized"
           },
           "403": {
-            "$ref": "#/components/responses/Forbidden"
+            "description": "FILE_LIBRARY_FORBIDDEN or insufficient task permission",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "oneOf": [
+                    {
+                      "$ref": "#/components/schemas/FileLibraryForbiddenError"
+                    },
+                    {
+                      "$ref": "#/components/schemas/ApiError"
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "409": {
+            "description": "FILE_LIBRARY_DELETING, FILE_LIBRARY_NOT_READY, or AGENT_TASK_WORKSPACE_BINDING_CONFLICT",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "oneOf": [
+                    {
+                      "$ref": "#/components/schemas/FileLibraryDeletingError"
+                    },
+                    {
+                      "$ref": "#/components/schemas/FileLibraryNotReadyError"
+                    },
+                    {
+                      "$ref": "#/components/schemas/AgentTaskWorkspaceBindingConflictError"
+                    },
+                    {
+                      "$ref": "#/components/schemas/ApiError"
+                    }
+                  ]
+                }
+              }
+            }
           }
         }
       }
@@ -1938,6 +1978,22 @@
                 }
               }
             }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "description": "FILE_LIBRARY_NOT_FOUND",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FileLibraryNotFoundError"
+                }
+              }
+            }
           }
         }
       },
@@ -1966,6 +2022,59 @@
                 }
               }
             }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "description": "FILE_LIBRARY_FORBIDDEN",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "oneOf": [
+                    {
+                      "$ref": "#/components/schemas/FileLibraryForbiddenError"
+                    },
+                    {
+                      "$ref": "#/components/schemas/ApiError"
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "FILE_LIBRARY_NOT_FOUND",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FileLibraryNotFoundError"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "FILE_LIBRARY_DELETING, FILE_LIBRARY_TASK_IN_USE, FILE_LIBRARY_NOT_READY, or stale status conflict",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "oneOf": [
+                    {
+                      "$ref": "#/components/schemas/FileLibraryDeletingError"
+                    },
+                    {
+                      "$ref": "#/components/schemas/FileLibraryTaskInUseError"
+                    },
+                    {
+                      "$ref": "#/components/schemas/FileLibraryNotReadyError"
+                    },
+                    {
+                      "$ref": "#/components/schemas/ApiError"
+                    }
+                  ]
+                }
+              }
+            }
           }
         }
       },
@@ -1977,6 +2086,62 @@
         "responses": {
           "204": {
             "description": "Deleted"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "description": "FILE_LIBRARY_FORBIDDEN",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "oneOf": [
+                    {
+                      "$ref": "#/components/schemas/FileLibraryForbiddenError"
+                    },
+                    {
+                      "$ref": "#/components/schemas/ApiError"
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "FILE_LIBRARY_NOT_FOUND",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FileLibraryNotFoundError"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "FILE_LIBRARY_TASK_IN_USE, FILE_LIBRARY_NOT_EMPTY, FILE_LIBRARY_DELETING, FILE_LIBRARY_NOT_READY, or stale status conflict",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "oneOf": [
+                    {
+                      "$ref": "#/components/schemas/FileLibraryTaskInUseError"
+                    },
+                    {
+                      "$ref": "#/components/schemas/FileLibraryNotEmptyError"
+                    },
+                    {
+                      "$ref": "#/components/schemas/FileLibraryDeletingError"
+                    },
+                    {
+                      "$ref": "#/components/schemas/FileLibraryNotReadyError"
+                    },
+                    {
+                      "$ref": "#/components/schemas/ApiError"
+                    }
+                  ]
+                }
+              }
+            }
           }
         }
       }
@@ -2036,6 +2201,56 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/StorageCredentialExchangeResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "description": "FILE_LIBRARY_FORBIDDEN",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "oneOf": [
+                    {
+                      "$ref": "#/components/schemas/FileLibraryForbiddenError"
+                    },
+                    {
+                      "$ref": "#/components/schemas/ApiError"
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "FILE_LIBRARY_NOT_FOUND",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FileLibraryNotFoundError"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "FILE_LIBRARY_DELETING or FILE_LIBRARY_NOT_READY",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "oneOf": [
+                    {
+                      "$ref": "#/components/schemas/FileLibraryDeletingError"
+                    },
+                    {
+                      "$ref": "#/components/schemas/FileLibraryNotReadyError"
+                    },
+                    {
+                      "$ref": "#/components/schemas/ApiError"
+                    }
+                  ]
                 }
               }
             }
@@ -2104,6 +2319,56 @@
         "responses": {
           "204": {
             "description": "Folder created"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "description": "FILE_LIBRARY_FORBIDDEN",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "oneOf": [
+                    {
+                      "$ref": "#/components/schemas/FileLibraryForbiddenError"
+                    },
+                    {
+                      "$ref": "#/components/schemas/ApiError"
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "FILE_LIBRARY_NOT_FOUND",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FileLibraryNotFoundError"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "FILE_LIBRARY_DELETING, FILE_LIBRARY_NOT_READY, or stale status conflict",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "oneOf": [
+                    {
+                      "$ref": "#/components/schemas/FileLibraryDeletingError"
+                    },
+                    {
+                      "$ref": "#/components/schemas/FileLibraryNotReadyError"
+                    },
+                    {
+                      "$ref": "#/components/schemas/ApiError"
+                    }
+                  ]
+                }
+              }
+            }
           }
         }
       }
@@ -2145,6 +2410,56 @@
                 }
               }
             }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "description": "FILE_LIBRARY_FORBIDDEN",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "oneOf": [
+                    {
+                      "$ref": "#/components/schemas/FileLibraryForbiddenError"
+                    },
+                    {
+                      "$ref": "#/components/schemas/ApiError"
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "FILE_LIBRARY_NOT_FOUND",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FileLibraryNotFoundError"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "FILE_LIBRARY_DELETING, FILE_LIBRARY_NOT_READY, or stale status conflict",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "oneOf": [
+                    {
+                      "$ref": "#/components/schemas/FileLibraryDeletingError"
+                    },
+                    {
+                      "$ref": "#/components/schemas/FileLibraryNotReadyError"
+                    },
+                    {
+                      "$ref": "#/components/schemas/ApiError"
+                    }
+                  ]
+                }
+              }
+            }
           }
         }
       }
@@ -2179,6 +2494,56 @@
         "responses": {
           "204": {
             "description": "Move completed"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "description": "FILE_LIBRARY_FORBIDDEN",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "oneOf": [
+                    {
+                      "$ref": "#/components/schemas/FileLibraryForbiddenError"
+                    },
+                    {
+                      "$ref": "#/components/schemas/ApiError"
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "FILE_LIBRARY_NOT_FOUND",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FileLibraryNotFoundError"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "FILE_LIBRARY_DELETING, FILE_LIBRARY_NOT_READY, or stale status conflict",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "oneOf": [
+                    {
+                      "$ref": "#/components/schemas/FileLibraryDeletingError"
+                    },
+                    {
+                      "$ref": "#/components/schemas/FileLibraryNotReadyError"
+                    },
+                    {
+                      "$ref": "#/components/schemas/ApiError"
+                    }
+                  ]
+                }
+              }
+            }
           }
         }
       }
@@ -2232,6 +2597,56 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/FileLibraryEntry"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "description": "FILE_LIBRARY_FORBIDDEN",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "oneOf": [
+                    {
+                      "$ref": "#/components/schemas/FileLibraryForbiddenError"
+                    },
+                    {
+                      "$ref": "#/components/schemas/ApiError"
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "FILE_LIBRARY_NOT_FOUND",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FileLibraryNotFoundError"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "FILE_LIBRARY_DELETING, FILE_LIBRARY_NOT_READY, or stale status conflict",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "oneOf": [
+                    {
+                      "$ref": "#/components/schemas/FileLibraryDeletingError"
+                    },
+                    {
+                      "$ref": "#/components/schemas/FileLibraryNotReadyError"
+                    },
+                    {
+                      "$ref": "#/components/schemas/ApiError"
+                    }
+                  ]
                 }
               }
             }
@@ -2341,6 +2756,56 @@
                 }
               }
             }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "description": "FILE_LIBRARY_FORBIDDEN",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "oneOf": [
+                    {
+                      "$ref": "#/components/schemas/FileLibraryForbiddenError"
+                    },
+                    {
+                      "$ref": "#/components/schemas/ApiError"
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "FILE_LIBRARY_NOT_FOUND",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FileLibraryNotFoundError"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "FILE_LIBRARY_DELETING, FILE_LIBRARY_NOT_READY, or stale status conflict",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "oneOf": [
+                    {
+                      "$ref": "#/components/schemas/FileLibraryDeletingError"
+                    },
+                    {
+                      "$ref": "#/components/schemas/FileLibraryNotReadyError"
+                    },
+                    {
+                      "$ref": "#/components/schemas/ApiError"
+                    }
+                  ]
+                }
+              }
+            }
           }
         }
       }
@@ -2381,6 +2846,26 @@
           },
           "404": {
             "$ref": "#/components/responses/NotFound"
+          },
+          "409": {
+            "description": "FILE_LIBRARY_DELETING or FILE_LIBRARY_NOT_READY",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "oneOf": [
+                    {
+                      "$ref": "#/components/schemas/FileLibraryDeletingError"
+                    },
+                    {
+                      "$ref": "#/components/schemas/FileLibraryNotReadyError"
+                    },
+                    {
+                      "$ref": "#/components/schemas/ApiError"
+                    }
+                  ]
+                }
+              }
+            }
           }
         }
       }
@@ -4094,14 +4579,50 @@
             "$ref": "#/components/responses/Unauthorized"
           },
           "403": {
-            "$ref": "#/components/responses/Forbidden"
-          },
-          "409": {
-            "description": "Workspace or file library conflict, or runner binding failure",
+            "description": "FILE_LIBRARY_FORBIDDEN or insufficient task permission",
             "content": {
               "application/json": {
                 "schema": {
                   "oneOf": [
+                    {
+                      "$ref": "#/components/schemas/FileLibraryForbiddenError"
+                    },
+                    {
+                      "$ref": "#/components/schemas/ApiError"
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "FILE_LIBRARY_NOT_FOUND when use_existing references a missing or cross-project library",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FileLibraryNotFoundError"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "FILE_LIBRARY_DELETING, FILE_LIBRARY_NOT_READY, AGENT_TASK_FILE_LIBRARY_IN_USE, AGENT_TASK_WORKSPACE_BINDING_CONFLICT, or runner binding failure",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "oneOf": [
+                    {
+                      "$ref": "#/components/schemas/FileLibraryDeletingError"
+                    },
+                    {
+                      "$ref": "#/components/schemas/FileLibraryNotReadyError"
+                    },
+                    {
+                      "$ref": "#/components/schemas/AgentTaskFileLibraryInUseError"
+                    },
+                    {
+                      "$ref": "#/components/schemas/AgentTaskWorkspaceBindingConflictError"
+                    },
                     {
                       "$ref": "#/components/schemas/ApiError"
                     },
@@ -4114,11 +4635,17 @@
             }
           },
           "422": {
-            "description": "Validation error",
+            "description": "AGENT_TASK_WORKSPACE_MODE_INVALID, AGENT_TASK_WORKSPACE_FILE_LIBRARY_REQUIRED, or runner binding validation error",
             "content": {
               "application/json": {
                 "schema": {
                   "oneOf": [
+                    {
+                      "$ref": "#/components/schemas/AgentTaskWorkspaceModeInvalidError"
+                    },
+                    {
+                      "$ref": "#/components/schemas/AgentTaskWorkspaceFileLibraryRequiredError"
+                    },
                     {
                       "$ref": "#/components/schemas/ApiError"
                     },
@@ -4156,6 +4683,127 @@
           },
           "403": {
             "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          }
+        }
+      },
+      "patch": {
+        "tags": [
+          "Agent Tasks"
+        ],
+        "operationId": "updateTask",
+        "summary": "Update an agent task",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdateTaskRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Updated task",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Task"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Unsupported immutable runner or HOME binding field",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UnsupportedFieldError"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "409": {
+            "description": "AGENT_TASK_WORKSPACE_BINDING_CONFLICT or task state conflict",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "oneOf": [
+                    {
+                      "$ref": "#/components/schemas/AgentTaskWorkspaceBindingConflictError"
+                    },
+                    {
+                      "$ref": "#/components/schemas/ApiError"
+                    }
+                  ]
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "Agent Tasks"
+        ],
+        "operationId": "deleteTask",
+        "summary": "Delete an agent task and release its task HOME binding",
+        "description": "Deletes task metadata/history and releases the file-library HOME binding. The file library and files are retained.",
+        "responses": {
+          "200": {
+            "description": "Task deleted",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true
+                }
+              }
+            }
+          },
+          "204": {
+            "description": "Task deleted with no response body"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "409": {
+            "description": "AGENT_TASK_DELETE_BLOCKED or AGENT_TASK_WORKSPACE_BINDING_CONFLICT",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "oneOf": [
+                    {
+                      "$ref": "#/components/schemas/AgentTaskDeleteBlockedError"
+                    },
+                    {
+                      "$ref": "#/components/schemas/AgentTaskWorkspaceBindingConflictError"
+                    },
+                    {
+                      "$ref": "#/components/schemas/ApiError"
+                    }
+                  ]
+                }
+              }
+            }
           }
         }
       }
@@ -4460,6 +5108,8 @@
                   "required": [
                     "task_id",
                     "workspace_binding_mode",
+                    "runtime_profile",
+                    "task_home_segment",
                     "task_home_path",
                     "workspace_path",
                     "artifacts_path",
@@ -4481,6 +5131,16 @@
                       "enum": [
                         "file_library"
                       ]
+                    },
+                    "runtime_profile": {
+                      "type": "string",
+                      "enum": [
+                        "managed",
+                        "developer"
+                      ]
+                    },
+                    "task_home_segment": {
+                      "type": "string"
                     },
                     "task_home_path": {
                       "type": "string"
@@ -4509,6 +5169,9 @@
                     "metadata_url": {
                       "type": "string"
                     },
+                    "storage_bucket_url": {
+                      "type": "string"
+                    },
                     "recommended_mount_path": {
                       "type": "string"
                     },
@@ -4525,7 +5188,130 @@
             "$ref": "#/components/responses/Unauthorized"
           },
           "403": {
+            "description": "FILE_LIBRARY_FORBIDDEN or insufficient task permission",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "oneOf": [
+                    {
+                      "$ref": "#/components/schemas/FileLibraryForbiddenError"
+                    },
+                    {
+                      "$ref": "#/components/schemas/ApiError"
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "409": {
+            "description": "FILE_LIBRARY_DELETING, FILE_LIBRARY_NOT_READY, or AGENT_TASK_WORKSPACE_BINDING_CONFLICT",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "oneOf": [
+                    {
+                      "$ref": "#/components/schemas/FileLibraryDeletingError"
+                    },
+                    {
+                      "$ref": "#/components/schemas/FileLibraryNotReadyError"
+                    },
+                    {
+                      "$ref": "#/components/schemas/AgentTaskWorkspaceBindingConflictError"
+                    },
+                    {
+                      "$ref": "#/components/schemas/ApiError"
+                    }
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/workspaces/{workspaceId}/projects/{projectId}/tasks/{taskId}/workspace-access/release": {
+      "post": {
+        "tags": [
+          "Agent Tasks"
+        ],
+        "operationId": "releaseTaskWorkspaceAccess",
+        "description": "Internal runner callback that releases a task workspace holder fence after the local mount/session has been released.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "holder_id",
+                  "file_library_id",
+                  "binding_generation",
+                  "lease_epoch"
+                ],
+                "properties": {
+                  "holder_id": {
+                    "type": "string"
+                  },
+                  "file_library_id": {
+                    "type": "string"
+                  },
+                  "binding_generation": {
+                    "type": "string"
+                  },
+                  "lease_epoch": {
+                    "type": "string"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Holder release accepted",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": [
+                    "released"
+                  ],
+                  "properties": {
+                    "released": {
+                      "type": "boolean"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
             "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "409": {
+            "description": "Holder fence mismatch",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AgentTaskWorkspaceBindingConflictError"
+                }
+              }
+            }
           }
         }
       }
@@ -4621,7 +5407,27 @@
             "$ref": "#/components/responses/NotFound"
           },
           "409": {
-            "$ref": "#/components/responses/Conflict"
+            "description": "FILE_LIBRARY_DELETING, FILE_LIBRARY_NOT_READY, or AGENT_TASK_WORKSPACE_BINDING_CONFLICT",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "oneOf": [
+                    {
+                      "$ref": "#/components/schemas/FileLibraryDeletingError"
+                    },
+                    {
+                      "$ref": "#/components/schemas/FileLibraryNotReadyError"
+                    },
+                    {
+                      "$ref": "#/components/schemas/AgentTaskWorkspaceBindingConflictError"
+                    },
+                    {
+                      "$ref": "#/components/schemas/ApiError"
+                    }
+                  ]
+                }
+              }
+            }
           }
         }
       }
@@ -9187,6 +9993,22 @@
           }
         }
       },
+      "UpdateTaskRequest": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "title": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "active",
+              "archived"
+            ]
+          }
+        }
+      },
       "TaskRunnerBindingKind": {
         "type": "string",
         "enum": [
@@ -11435,6 +12257,8 @@
           "project_id",
           "name",
           "status",
+          "task_home_binding_status",
+          "bound_task_visible",
           "filesystem_name",
           "created_by_user_id",
           "created_at",
@@ -11465,6 +12289,34 @@
               "failed",
               "deleting"
             ]
+          },
+          "task_home_binding_status": {
+            "type": "string",
+            "enum": [
+              "unbound",
+              "bound"
+            ],
+            "description": "Authoritative UI signal for whether this file library is exclusively bound as an Agent task HOME."
+          },
+          "bound_task_id": {
+            "type": "string",
+            "description": "Present only when the actor may view the bound task summary."
+          },
+          "bound_task_title": {
+            "type": "string",
+            "description": "Present only when the actor may view the bound task summary."
+          },
+          "bound_task_status": {
+            "type": "string",
+            "enum": [
+              "active",
+              "archived"
+            ],
+            "description": "Present only when the actor may view the bound task summary."
+          },
+          "bound_task_visible": {
+            "type": "boolean",
+            "description": "Whether bound task summary fields are safe to display to the current actor."
           },
           "filesystem_name": {
             "type": "string"
@@ -11980,6 +12832,7 @@
       },
       "ApiError": {
         "type": "object",
+        "additionalProperties": false,
         "required": [
           "error_code",
           "message"
@@ -12000,10 +12853,6 @@
               "SPENDING_LIMIT_EXCEEDED",
               "AGENT_OFFLINE",
               "unsupported_field",
-              "agent_runner_unavailable",
-              "agent_runner_model_unconfigured",
-              "agent_runner_capability_mismatch",
-              "agent_runner_default_conflict",
               "INTERNAL_ERROR"
             ]
           },
@@ -12024,6 +12873,442 @@
             "type": "string",
             "format": "date-time",
             "description": "When the error occurred"
+          }
+        }
+      },
+      "AgentTaskWorkspaceModeInvalidError": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "error_code",
+          "message",
+          "field"
+        ],
+        "properties": {
+          "error_code": {
+            "type": "string",
+            "enum": [
+              "AGENT_TASK_WORKSPACE_MODE_INVALID"
+            ]
+          },
+          "message": {
+            "type": "string",
+            "enum": [
+              "agent_task_workspace_mode_invalid"
+            ]
+          },
+          "field": {
+            "type": "string",
+            "enum": [
+              "workspace_mode"
+            ]
+          },
+          "workspace_mode": {
+            "type": "string"
+          },
+          "request_id": {
+            "type": "string"
+          }
+        }
+      },
+      "AgentTaskWorkspaceFileLibraryRequiredError": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "error_code",
+          "message",
+          "field"
+        ],
+        "properties": {
+          "error_code": {
+            "type": "string",
+            "enum": [
+              "AGENT_TASK_WORKSPACE_FILE_LIBRARY_REQUIRED"
+            ]
+          },
+          "message": {
+            "type": "string",
+            "enum": [
+              "agent_task_workspace_file_library_required"
+            ]
+          },
+          "field": {
+            "type": "string",
+            "enum": [
+              "workspace_file_library_id"
+            ]
+          },
+          "request_id": {
+            "type": "string"
+          }
+        }
+      },
+      "FileLibraryNotFoundError": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "error_code",
+          "message"
+        ],
+        "properties": {
+          "error_code": {
+            "type": "string",
+            "enum": [
+              "FILE_LIBRARY_NOT_FOUND"
+            ]
+          },
+          "message": {
+            "type": "string",
+            "enum": [
+              "file_library_not_found"
+            ]
+          },
+          "file_library_id": {
+            "type": "string"
+          },
+          "request_id": {
+            "type": "string"
+          }
+        }
+      },
+      "FileLibraryForbiddenError": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "error_code",
+          "message"
+        ],
+        "properties": {
+          "error_code": {
+            "type": "string",
+            "enum": [
+              "FILE_LIBRARY_FORBIDDEN"
+            ]
+          },
+          "message": {
+            "type": "string",
+            "enum": [
+              "file_library_forbidden"
+            ]
+          },
+          "file_library_id": {
+            "type": "string"
+          },
+          "request_id": {
+            "type": "string"
+          }
+        }
+      },
+      "FileLibraryNotReadyError": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "error_code",
+          "message",
+          "file_library_id",
+          "file_library_status"
+        ],
+        "properties": {
+          "error_code": {
+            "type": "string",
+            "enum": [
+              "FILE_LIBRARY_NOT_READY"
+            ]
+          },
+          "message": {
+            "type": "string",
+            "enum": [
+              "file_library_not_ready"
+            ]
+          },
+          "file_library_id": {
+            "type": "string"
+          },
+          "file_library_status": {
+            "type": "string"
+          },
+          "request_id": {
+            "type": "string"
+          }
+        }
+      },
+      "FileLibraryDeletingError": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "error_code",
+          "message",
+          "file_library_id",
+          "file_library_status"
+        ],
+        "properties": {
+          "error_code": {
+            "type": "string",
+            "enum": [
+              "FILE_LIBRARY_DELETING"
+            ]
+          },
+          "message": {
+            "type": "string",
+            "enum": [
+              "file_library_deleting"
+            ]
+          },
+          "file_library_id": {
+            "type": "string"
+          },
+          "file_library_status": {
+            "type": "string"
+          },
+          "request_id": {
+            "type": "string"
+          }
+        }
+      },
+      "BoundTaskSafeFields": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "bound_task_visible"
+        ],
+        "properties": {
+          "bound_task_visible": {
+            "type": "boolean",
+            "description": "Whether bound task summary fields are safe to display to the current actor."
+          },
+          "bound_task_id": {
+            "type": "string",
+            "description": "Present only when bound_task_visible is true."
+          },
+          "bound_task_title": {
+            "type": "string",
+            "description": "Present only when bound_task_visible is true."
+          },
+          "bound_task_status": {
+            "type": "string",
+            "enum": [
+              "active",
+              "archived"
+            ],
+            "description": "Present only when bound_task_visible is true."
+          }
+        }
+      },
+      "AgentTaskFileLibraryInUseError": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "error_code",
+          "message",
+          "field",
+          "file_library_id",
+          "bound_task_visible"
+        ],
+        "properties": {
+          "error_code": {
+            "type": "string",
+            "enum": [
+              "AGENT_TASK_FILE_LIBRARY_IN_USE"
+            ]
+          },
+          "message": {
+            "type": "string",
+            "enum": [
+              "workspace_file_library_in_use"
+            ]
+          },
+          "field": {
+            "type": "string",
+            "enum": [
+              "workspace_file_library_id"
+            ]
+          },
+          "file_library_id": {
+            "type": "string"
+          },
+          "bound_task_visible": {
+            "type": "boolean",
+            "description": "Whether bound task summary fields are safe to display to the current actor."
+          },
+          "bound_task_id": {
+            "type": "string",
+            "description": "Present only when bound_task_visible is true."
+          },
+          "bound_task_title": {
+            "type": "string",
+            "description": "Present only when bound_task_visible is true."
+          },
+          "bound_task_status": {
+            "type": "string",
+            "enum": [
+              "active",
+              "archived"
+            ],
+            "description": "Present only when bound_task_visible is true."
+          },
+          "request_id": {
+            "type": "string"
+          }
+        }
+      },
+      "FileLibraryTaskInUseError": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "error_code",
+          "message",
+          "file_library_id",
+          "bound_task_visible"
+        ],
+        "properties": {
+          "error_code": {
+            "type": "string",
+            "enum": [
+              "FILE_LIBRARY_TASK_IN_USE"
+            ]
+          },
+          "message": {
+            "type": "string",
+            "enum": [
+              "file_library_task_in_use"
+            ]
+          },
+          "file_library_id": {
+            "type": "string"
+          },
+          "bound_task_visible": {
+            "type": "boolean",
+            "description": "Whether bound task summary fields are safe to display to the current actor."
+          },
+          "bound_task_id": {
+            "type": "string",
+            "description": "Present only when bound_task_visible is true."
+          },
+          "bound_task_title": {
+            "type": "string",
+            "description": "Present only when bound_task_visible is true."
+          },
+          "bound_task_status": {
+            "type": "string",
+            "enum": [
+              "active",
+              "archived"
+            ],
+            "description": "Present only when bound_task_visible is true."
+          },
+          "request_id": {
+            "type": "string"
+          }
+        }
+      },
+      "FileLibraryNotEmptyError": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "error_code",
+          "message",
+          "file_library_id"
+        ],
+        "properties": {
+          "error_code": {
+            "type": "string",
+            "enum": [
+              "FILE_LIBRARY_NOT_EMPTY"
+            ]
+          },
+          "message": {
+            "type": "string",
+            "enum": [
+              "file_library_not_empty"
+            ]
+          },
+          "file_library_id": {
+            "type": "string"
+          },
+          "request_id": {
+            "type": "string"
+          }
+        }
+      },
+      "AgentTaskDeleteBlockedError": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "error_code",
+          "message",
+          "task_id",
+          "blockers"
+        ],
+        "properties": {
+          "error_code": {
+            "type": "string",
+            "enum": [
+              "AGENT_TASK_DELETE_BLOCKED"
+            ]
+          },
+          "message": {
+            "type": "string",
+            "enum": [
+              "agent_task_delete_blocked"
+            ]
+          },
+          "task_id": {
+            "type": "string"
+          },
+          "blockers": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "retry_after_seconds": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "request_id": {
+            "type": "string"
+          }
+        }
+      },
+      "AgentTaskWorkspaceBindingConflictError": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "error_code",
+          "message",
+          "task_id",
+          "file_library_id"
+        ],
+        "properties": {
+          "error_code": {
+            "type": "string",
+            "enum": [
+              "AGENT_TASK_WORKSPACE_BINDING_CONFLICT"
+            ]
+          },
+          "message": {
+            "type": "string",
+            "enum": [
+              "agent_task_workspace_binding_conflict"
+            ]
+          },
+          "task_id": {
+            "type": "string"
+          },
+          "file_library_id": {
+            "type": "string"
+          },
+          "holder_id": {
+            "type": "string"
+          },
+          "binding_generation": {
+            "type": "string"
+          },
+          "lease_epoch": {
+            "type": "string"
+          },
+          "request_id": {
+            "type": "string"
           }
         }
       },

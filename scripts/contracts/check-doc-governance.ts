@@ -131,6 +131,9 @@ const HISTORICAL_LIFECYCLE_MARKERS = [
   'redirect',
 ] as const;
 
+const CURRENT_INDEX_LIFECYCLE_ENTRY_REGEX =
+  /\b(handoff_plan_ready|handoff|refactor|migration|retro|todo|phase|archive|redirect)\b/i;
+
 function toRel(filePath: string): string {
   return path.relative(ROOT, filePath).replaceAll(path.sep, '/');
 }
@@ -304,6 +307,56 @@ function checkIndexExpectations(): Violation[] {
   return violations;
 }
 
+export function findEngineeringIndexCurrentSectionViolations(
+  content: string,
+  file = 'docs/engineering/README.md',
+): Violation[] {
+  const violations: Violation[] = [];
+  const lines = content.split('\n');
+  const startIndex = lines.findIndex((line) => /^Current .+:$/.test(line.trim()));
+  if (startIndex === -1) {
+    return violations;
+  }
+
+  const nextSectionIndex = lines.findIndex((line, index) => (
+    index > startIndex
+    && line.trim().endsWith(':')
+    && !line.trim().startsWith('-')
+  ));
+  const endIndex = nextSectionIndex === -1 ? lines.length : nextSectionIndex;
+
+  for (let i = startIndex + 1; i < endIndex; i += 1) {
+    const line = lines[i].trim();
+    if (!line.startsWith('-')) {
+      continue;
+    }
+    if (!CURRENT_INDEX_LIFECYCLE_ENTRY_REGEX.test(line)) {
+      continue;
+    }
+    violations.push({
+      file,
+      line: i + 1,
+      rule: 'historical-doc-current-index-entry',
+      detail:
+        'Engineering current docs index must not list handoff/refactor/migration/retro/todo/phase/archive/redirect material as a current entrypoint.',
+    });
+  }
+
+  return violations;
+}
+
+function checkEngineeringIndexCurrentSection(): Violation[] {
+  const file = 'docs/engineering/README.md';
+  const absPath = path.join(ROOT, file);
+  if (!fs.existsSync(absPath)) {
+    return [];
+  }
+  return findEngineeringIndexCurrentSectionViolations(
+    fs.readFileSync(absPath, 'utf8'),
+    file,
+  );
+}
+
 function main(): void {
   const files = SCAN_ROOTS.flatMap((target) => collectMarkdownFiles(target)).sort();
   const violations: Violation[] = [];
@@ -316,6 +369,7 @@ function main(): void {
   }
 
   violations.push(...checkIndexExpectations());
+  violations.push(...checkEngineeringIndexCurrentSection());
 
   if (violations.length > 0) {
     console.error('[docs-governance] check failed.');

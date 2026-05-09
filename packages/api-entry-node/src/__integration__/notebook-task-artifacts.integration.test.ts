@@ -2,10 +2,37 @@ import { afterEach, describe, expect, it } from "vitest";
 import { WebSocket } from "ws";
 import { NOTEBOOK_RUNNER_SPEC } from "@mbos/agent-runner";
 import { apiFetch, startServer } from "./test-support.js";
+import { AgentTaskModelSettingService } from "../agent-task-model-setting-service.js";
+import {
+  upsertProjectMembershipRecord,
+  upsertProjectMemberPermissionState,
+} from "../project-member-governance-persistence.js";
 
 const sockets: WebSocket[] = [];
 const RUNNER_DISPATCH_TIMEOUT_MS = 1_500;
 const NO_DISPATCH_SETTLE_MS = 300;
+
+function ensureProjectUseCaseFallback(
+  deps: ReturnType<typeof startServer>["deps"],
+): void {
+  const originalGetProject = deps.getProjectUseCase.execute.bind(deps.getProjectUseCase);
+  deps.getProjectUseCase.execute = async (input: { workspaceId: string; projectId: string }) => {
+    try {
+      return await originalGetProject(input);
+    } catch {
+      if (input.workspaceId !== "ws_default" || input.projectId !== "proj_1") {
+        throw new Error("project_not_found");
+      }
+      return {
+        id: "proj_1",
+        workspace_id: "ws_default",
+        name: "proj_1",
+        owner_id: "user_test",
+        governance_json: null,
+      } as never;
+    }
+  };
+}
 
 afterEach(() => {
   for (const socket of sockets) {
@@ -80,6 +107,7 @@ async function createNotebookArtifactFixture(
   runnerWsUrl: string;
 }> {
   const workspaceLibrary = await createFileLibrary(baseUrl, workspaceName);
+  ensureProjectUseCaseFallback(deps);
 
   const credentialRes = await apiFetch(
     baseUrl,
@@ -126,6 +154,30 @@ async function createNotebookArtifactFixture(
   );
   expect(endpointRes.status).toBe(201);
   const endpoint = (await endpointRes.json()) as { id: string };
+  await new AgentTaskModelSettingService(deps).patchSetting({
+    workspaceId: "ws_default",
+    projectId: "proj_1",
+    endpointId: endpoint.id,
+    expectedSettingRevision: null,
+    actorUserId: "user_test",
+  });
+  await upsertProjectMembershipRecord(deps.docStore, "ws_default", "proj_1", {
+    project_id: "proj_1",
+    user_id: "user_test",
+    user_email: "test@example.com",
+    user_name: "Test User",
+    status: "active",
+    joined_at: new Date().toISOString(),
+  });
+  await upsertProjectMemberPermissionState(deps.docStore, "ws_default", "proj_1", "user_test", {
+    mode: "custom",
+    template: null,
+    permissions: [
+      "project:agent_task:use",
+      "project:agent_runner:manage",
+      "project:files:update",
+    ],
+  });
 
   const agent = await deps.agentResourceService.createAgent("ws_default", "proj_1", {
     name: "NotebookAgent",
@@ -172,11 +224,13 @@ async function createNotebookTask(input: {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         title: input.title,
+        bound_runner_id: input.agentId,
+        workspace_mode: "use_existing",
         workspace_file_library_id: input.workspaceFileLibraryId,
       }),
     },
   );
-  expect(createTaskRes.status).toBe(201);
+  expect(createTaskRes.status, await createTaskRes.clone().text()).toBe(201);
   return (await createTaskRes.json()) as { id: string };
 }
 

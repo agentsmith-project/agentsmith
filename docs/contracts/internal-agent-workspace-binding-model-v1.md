@@ -37,7 +37,7 @@ This is the execution-facing contract:
 - `mountPath` / `taskHomePath`: `/home/<task_home_segment>`
 - `workspacePath`: `/home/<task_home_segment>/workspace`
 - `artifactsPath`: `/home/<task_home_segment>/workspace/.artifacts`
-- `subPath`: `agent-tasks/<task_home_segment>`
+- no task-specific storage subdirectory; the mounted root is the bound file library root
 - optional `readOnly`
 
 The pod manager consumes this contract and does not need to know the full binding record shape.
@@ -63,4 +63,5 @@ The target release model is:
 - sandbox owns the binding lifecycle
 - orchestration asks for a binding and receives a task HOME mount contract
 - lower layers own the JuiceFS CSI resource lifecycle
-- task delete owns cleanup of the `agent-tasks/<task_home_segment>` subtree; archive keeps it
+- task delete releases the task-to-file-library binding; archive keeps the binding
+- file library content is retained until the file library lifecycle deletes it

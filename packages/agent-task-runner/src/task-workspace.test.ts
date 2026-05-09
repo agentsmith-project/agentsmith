@@ -32,12 +32,12 @@ vi.mock('node:fs/promises', () => ({
 }));
 
 import {
-  buildTaskWorkspaceMountPath,
   buildTaskWorkspacePaths,
   clearPreparedTaskWorkspaces,
   releasePreparedTaskWorkspace,
   fetchTaskWorkspaceAccess,
   prepareTaskWorkspace,
+  releaseTaskWorkspaceAccess,
   resolveAgentTaskRunnerMode,
   resolveTaskCwd,
   shouldRetryTaskWorkspaceMount,
@@ -48,6 +48,15 @@ import { classifyMountedWorkspaceOwnerAuthority } from './task-workspace-ownersh
 const TASK_HOME = '/home/task_1';
 const TASK_WORKSPACE = `${TASK_HOME}/workspace`;
 const TASK_ARTIFACTS = `${TASK_WORKSPACE}/.artifacts`;
+const LIBRARY_ROOT_PATH = '.';
+const TASK_FILE_LIBRARY_ID = 'flib_1';
+const TASK_HOME_SEGMENT = 'task_1';
+const WORKSPACE_BINDING_MODE = 'file_library';
+const HOLDER_ID = 'holder_task_1';
+const BINDING_GENERATION = 'binding_gen_1';
+const LEASE_EPOCH = 'lease_epoch_1';
+const ISSUED_AT = '2026-05-09T00:00:00.000Z';
+const EXPIRES_AT = '2026-05-09T00:15:00.000Z';
 
 type PersistedMountRegistry = {
   version?: number;
@@ -57,9 +66,14 @@ type PersistedMountRegistry = {
 function taskExecutionContext(overrides: Record<string, unknown> = {}): Record<string, unknown> {
   return {
     task_id: 'task_1',
+    workspace_file_library_id: TASK_FILE_LIBRARY_ID,
+    workspace_binding_mode: WORKSPACE_BINDING_MODE,
+    runtime_profile: process.env.MBOS_AGENT_TASK_RUNNER_MODE === 'developer' ? 'developer' : 'managed',
+    task_home_segment: TASK_HOME_SEGMENT,
     task_home_path: TASK_HOME,
     workspace_path: TASK_WORKSPACE,
     artifacts_path: TASK_ARTIFACTS,
+    library_root_path: LIBRARY_ROOT_PATH,
     ...overrides,
   };
 }
@@ -71,9 +85,35 @@ function taskExecutionContextForHome(
 ): Record<string, unknown> {
   return {
     task_id: taskId,
+    workspace_file_library_id: TASK_FILE_LIBRARY_ID,
+    workspace_binding_mode: WORKSPACE_BINDING_MODE,
+    runtime_profile: process.env.MBOS_AGENT_TASK_RUNNER_MODE === 'developer' ? 'developer' : 'managed',
+    task_home_segment: taskId,
     task_home_path: taskHome,
     workspace_path: `${taskHome}/workspace`,
     artifacts_path: `${taskHome}/workspace/.artifacts`,
+    library_root_path: LIBRARY_ROOT_PATH,
+    ...overrides,
+  };
+}
+
+function workspaceAccessEcho(overrides: Record<string, unknown> = {}): Record<string, unknown> {
+  return {
+    task_id: 'task_1',
+    file_library_id: TASK_FILE_LIBRARY_ID,
+    workspace_binding_mode: WORKSPACE_BINDING_MODE,
+    runtime_profile: process.env.MBOS_AGENT_TASK_RUNNER_MODE === 'developer' ? 'developer' : 'managed',
+    task_home_segment: TASK_HOME_SEGMENT,
+    task_home_path: TASK_HOME,
+    workspace_path: TASK_WORKSPACE,
+    artifacts_path: TASK_ARTIFACTS,
+    library_root_path: LIBRARY_ROOT_PATH,
+    holder_id: HOLDER_ID,
+    holder_kind: 'runner_workspace',
+    binding_generation: BINDING_GENERATION,
+    lease_epoch: LEASE_EPOCH,
+    issued_at: ISSUED_AT,
+    expires_at: EXPIRES_AT,
     ...overrides,
   };
 }
@@ -180,6 +220,8 @@ describe('task-workspace', () => {
     fetchMock.mockReset();
     delete process.env.MBOS_AGENT_WORKSPACE_ROOT;
     delete process.env.MBOS_AGENT_JUICEFS_MOUNT_OPTIONS;
+    delete process.env.MBOS_AGENT_JUICEFS_MOUNT_RETRY_COUNT;
+    delete process.env.MBOS_AGENT_JUICEFS_MOUNT_RETRY_DELAY_MS;
     delete process.env.WORKSPACE_PATH;
     process.env.HOME = '/home/alice';
     process.env.MBOS_AGENT_TASK_RUNNER_MODE = 'developer';
@@ -216,21 +258,6 @@ describe('task-workspace', () => {
     });
   });
 
-  it('builds task home mount paths under /home/<segment> for every runner mode', () => {
-    expect(buildTaskWorkspaceMountPath({
-      mode: 'developer',
-      taskId: 'task_1',
-    })).toBe(TASK_HOME);
-    expect(buildTaskWorkspaceMountPath({
-      mode: 'managed_local',
-      taskId: 'task_1',
-    })).toBe(TASK_HOME);
-    expect(buildTaskWorkspaceMountPath({
-      mode: 'managed_platform',
-      taskId: 'task_1',
-    })).toBe(TASK_HOME);
-  });
-
   it('ignores legacy Codex state root env and builds runtime state under task HOME', () => {
     process.env.MBOS_AGENT_CODEX_STATE_ROOT = '/runner-runtime';
 
@@ -246,6 +273,7 @@ describe('task-workspace', () => {
       homeDir: TASK_HOME,
       workspaceDir: TASK_WORKSPACE,
       visibleRoot: TASK_WORKSPACE,
+      libraryRoot: LIBRARY_ROOT_PATH,
       mountRoot: TASK_HOME,
       taskRoot: TASK_HOME,
       runtimeRoot: TASK_HOME,
@@ -272,6 +300,7 @@ describe('task-workspace', () => {
         taskHome: TASK_HOME,
         workspaceDir: TASK_WORKSPACE,
         artifactsDir: TASK_ARTIFACTS,
+        libraryRoot: LIBRARY_ROOT_PATH,
       }),
     }));
 
@@ -304,6 +333,7 @@ describe('task-workspace', () => {
       json: async () => ({
         task_id: 'task_1',
         workspace_binding_mode: 'file_library',
+        ...workspaceAccessEcho(),
         workspace_dir_name: 'market-analysis-q1',
         file_library_id: 'flib_1',
         file_library_name: 'Project Workspace',
@@ -333,6 +363,51 @@ describe('task-workspace', () => {
     expect(response.file_library_id).toBe('flib_1');
   });
 
+  it('releases task-bound workspace access with the holder fence', async () => {
+    fetchMock.mockResolvedValue({
+      ok: true,
+      status: 200,
+    });
+
+    await releaseTaskWorkspaceAccess({
+      api_base: 'http://localhost:20000/api/v1/',
+      workspace_id: 'ws_default',
+      project_id: 'proj_1',
+      task_id: 'task_1',
+      execution_ticket: 'test-token',
+    }, {
+      mountPath: TASK_HOME,
+      leaseId: 'lease_local_1',
+      revision: 1,
+      holderId: HOLDER_ID,
+      taskId: 'task_1',
+      fileLibraryId: TASK_FILE_LIBRARY_ID,
+      taskHomeSegment: TASK_HOME_SEGMENT,
+      bindingGeneration: '1778300000000001',
+      leaseEpoch: LEASE_EPOCH,
+      holderKind: 'runner_workspace',
+      issuedAt: ISSUED_AT,
+      expiresAt: EXPIRES_AT,
+    });
+
+    expect(fetchMock).toHaveBeenCalledWith(
+      'http://localhost:20000/api/v1/workspaces/ws_default/projects/proj_1/tasks/task_1/workspace-access/release',
+      expect.objectContaining({
+        method: 'POST',
+        headers: expect.objectContaining({
+          Authorization: 'Bearer test-token',
+          'Content-Type': 'application/json',
+        }),
+        body: JSON.stringify({
+          holder_id: HOLDER_ID,
+          file_library_id: TASK_FILE_LIBRARY_ID,
+          binding_generation: '1778300000000001',
+          lease_epoch: LEASE_EPOCH,
+        }),
+      }),
+    );
+  });
+
   it('mounts managed file-library workspaces directly at the task directory', async () => {
     process.env.MBOS_AGENT_TASK_RUNNER_MODE = 'managed_local';
     process.env.MBOS_AGENT_WORKSPACE_ROOT = '/tmp/runner-root';
@@ -341,6 +416,7 @@ describe('task-workspace', () => {
       json: async () => ({
         task_id: 'task_1',
         workspace_binding_mode: 'file_library',
+        ...workspaceAccessEcho(),
         workspace_dir_name: 'ignored-in-v2',
         file_library_id: 'flib_1',
         file_library_name: 'Project Workspace',
@@ -393,18 +469,30 @@ describe('task-workspace', () => {
     );
     const registry = parseRegistryWrite();
     const session = findRegistrySession(registry, TASK_HOME);
-    expect(registry.version).toBe(4);
+    expect(registry.version).toBe(5);
     expect(session).toMatchObject({
       mount_path: TASK_HOME,
       mode: 'managed_local',
-      metadata_url: 'postgres://juicefs-meta',
-      storage_bucket_url: 'http://localhost:19000/jfs-lib-flib_1',
+      filesystem_name: 'flib-market-analysis-q1',
+      metadata_url: '[redacted]',
+      storage_bucket_url: '[redacted]',
       refs: 1,
       owner_process_pid: process.pid,
       state: 'mounted',
       last_release_outcome: 'not_started',
       lease_revision: 1,
+      holder_id: HOLDER_ID,
+      task_id: 'task_1',
+      file_library_id: TASK_FILE_LIBRARY_ID,
+      task_home_segment: TASK_HOME_SEGMENT,
+      binding_generation: BINDING_GENERATION,
+      lease_epoch: LEASE_EPOCH,
+      holder_kind: 'runner_workspace',
+      issued_at: ISSUED_AT,
+      expires_at: EXPIRES_AT,
     });
+    expect(JSON.stringify(session)).not.toContain('postgres://juicefs-meta');
+    expect(JSON.stringify(session)).not.toContain('jfs-lib-flib_1');
     expect(typeof session?.owner_runner_instance_id).toBe('string');
     expect(String(session?.owner_runner_instance_id)).not.toHaveLength(0);
     expect(typeof session?.lease_id).toBe('string');
@@ -423,6 +511,7 @@ describe('task-workspace', () => {
       json: async () => ({
         task_id: 'task_1',
         workspace_binding_mode: 'file_library',
+        ...workspaceAccessEcho(),
         task_home_path: '/tmp/runner-root/task_1',
         workspace_path: '/tmp/runner-root/task_1/workspace',
         artifacts_path: '/tmp/runner-root/task_1/workspace/.artifacts',
@@ -451,6 +540,287 @@ describe('task-workspace', () => {
     expect(writeFileMock).not.toHaveBeenCalled();
   });
 
+  it('fails typed when workspace-access echo omits a required path field', async () => {
+    process.env.MBOS_AGENT_TASK_RUNNER_MODE = 'developer';
+    fetchMock.mockResolvedValue({
+      ok: true,
+      json: async () => ({
+        task_id: 'task_1',
+        workspace_binding_mode: 'file_library',
+        runtime_profile: 'developer',
+        task_home_segment: TASK_HOME_SEGMENT,
+        workspace_path: TASK_WORKSPACE,
+        artifacts_path: TASK_ARTIFACTS,
+        library_root_path: LIBRARY_ROOT_PATH,
+        workspace_dir_name: 'ignored-in-v2',
+        file_library_id: 'flib_1',
+        file_library_name: 'Project Workspace',
+        filesystem_name: 'flib-market-analysis-q1',
+        metadata_url: 'postgres://juicefs-meta',
+      }),
+    });
+
+    await expect(prepareTaskWorkspace({
+      executionContext: taskExecutionContext({
+        api_base: 'http://localhost:20000',
+        workspace_id: 'ws_default',
+        project_id: 'proj_1',
+        execution_ticket: 'test-token',
+        workspace_binding_mode: 'file_library',
+      }),
+      username: 'alice',
+      taskId: 'task_1',
+    })).rejects.toThrow('task_workspace_access_path_missing:task_home_path');
+
+    expect(spawnMock).not.toHaveBeenCalled();
+  });
+
+  it('fails typed when workspace-access library root is not the file library root', async () => {
+    process.env.MBOS_AGENT_TASK_RUNNER_MODE = 'developer';
+    fetchMock.mockResolvedValue({
+      ok: true,
+      json: async () => ({
+        task_id: 'task_1',
+        workspace_binding_mode: 'file_library',
+        ...workspaceAccessEcho({ library_root_path: 'agent-tasks/task_1' }),
+        workspace_dir_name: 'ignored-in-v2',
+        file_library_id: 'flib_1',
+        file_library_name: 'Project Workspace',
+        filesystem_name: 'flib-market-analysis-q1',
+        metadata_url: 'postgres://juicefs-meta',
+      }),
+    });
+
+    await expect(prepareTaskWorkspace({
+      executionContext: taskExecutionContext({
+        api_base: 'http://localhost:20000',
+        workspace_id: 'ws_default',
+        project_id: 'proj_1',
+        execution_ticket: 'test-token',
+        workspace_binding_mode: 'file_library',
+      }),
+      username: 'alice',
+      taskId: 'task_1',
+    })).rejects.toThrow('task_workspace_access_library_root_path_invalid');
+
+    expect(spawnMock).not.toHaveBeenCalled();
+  });
+
+  it('fails typed when workspace-access identity echo disagrees with execution context', async () => {
+    process.env.MBOS_AGENT_TASK_RUNNER_MODE = 'managed_local';
+
+    for (const [field, override] of [
+      ['task_id', { task_id: 'task_other' }],
+      ['file_library_id', { file_library_id: 'flib_other' }],
+      ['workspace_binding_mode', { workspace_binding_mode: 'pre_mounted' }],
+      ['runtime_profile', { runtime_profile: 'developer' }],
+      ['task_home_segment', { task_home_segment: 'task_other' }],
+    ] as const) {
+      fetchMock.mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({
+          ...workspaceAccessEcho(override),
+          workspace_dir_name: 'ignored-in-v2',
+          file_library_name: 'Project Workspace',
+          filesystem_name: 'flib-market-analysis-q1',
+          metadata_url: 'postgres://juicefs-meta',
+        }),
+      });
+
+      await expect(prepareTaskWorkspace({
+        executionContext: taskExecutionContext({
+          api_base: 'http://localhost:20000',
+          workspace_id: 'ws_default',
+          project_id: 'proj_1',
+          execution_ticket: 'test-token',
+          workspace_binding_mode: 'file_library',
+        }),
+        username: 'alice',
+        taskId: 'task_1',
+      })).rejects.toThrow(`task_workspace_access_identity_mismatch:${field}`);
+    }
+
+    expect(spawnMock).not.toHaveBeenCalled();
+  });
+
+  it('fails typed when workspace-access holder fence fields are missing', async () => {
+    process.env.MBOS_AGENT_TASK_RUNNER_MODE = 'managed_local';
+    fetchMock.mockResolvedValue({
+      ok: true,
+      json: async () => {
+        const payload = {
+          ...workspaceAccessEcho(),
+          workspace_dir_name: 'ignored-in-v2',
+          file_library_id: 'flib_1',
+          file_library_name: 'Project Workspace',
+          filesystem_name: 'flib-market-analysis-q1',
+          metadata_url: 'postgres://juicefs-meta',
+        };
+        delete (payload as { binding_generation?: unknown }).binding_generation;
+        return payload;
+      },
+    });
+
+    await expect(prepareTaskWorkspace({
+      executionContext: taskExecutionContext({
+        api_base: 'http://localhost:20000',
+        workspace_id: 'ws_default',
+        project_id: 'proj_1',
+        execution_ticket: 'test-token',
+        workspace_binding_mode: 'file_library',
+      }),
+      username: 'alice',
+      taskId: 'task_1',
+    })).rejects.toThrow('task_workspace_access_holder_field_missing:binding_generation');
+
+    expect(spawnMock).not.toHaveBeenCalled();
+  });
+
+  it('releases backend workspace access when mount fails before local lease creation', async () => {
+    process.env.MBOS_AGENT_TASK_RUNNER_MODE = 'managed_local';
+    process.env.MBOS_AGENT_WORKSPACE_ROOT = '/tmp/runner-root';
+    process.env.MBOS_AGENT_JUICEFS_MOUNT_RETRY_COUNT = '1';
+    const bindingGeneration = '1778300000000001';
+    fetchMock
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({
+          task_id: 'task_1',
+          workspace_binding_mode: 'file_library',
+          ...workspaceAccessEcho({ binding_generation: bindingGeneration }),
+          workspace_dir_name: 'ignored-in-v2',
+          file_library_id: 'flib_1',
+          file_library_name: 'Project Workspace',
+          filesystem_name: 'flib-market-analysis-q1',
+          metadata_url: 'postgres://juicefs-meta',
+          storage_bucket_url: 'http://localhost:19000/jfs-lib-flib_1',
+        }),
+      })
+      .mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+      });
+    spawnMock.mockImplementationOnce(() => {
+      const child = new EventEmitter() as EventEmitter & {
+        exitCode: number | null;
+        unref: () => void;
+        kill: () => void;
+      };
+      child.exitCode = null;
+      child.unref = vi.fn();
+      child.kill = vi.fn();
+      queueMicrotask(() => {
+        child.emit('error', new Error('mount spawn failed'));
+      });
+      return child;
+    });
+
+    await expect(prepareTaskWorkspace({
+      executionContext: taskExecutionContext({
+        api_base: 'http://localhost:20000/api/v1/',
+        workspace_id: 'ws_default',
+        project_id: 'proj_1',
+        execution_ticket: 'test-token',
+        workspace_binding_mode: 'file_library',
+      }),
+      username: 'alice',
+      taskId: 'task_1',
+    })).rejects.toThrow('mount spawn failed');
+
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    expect(fetchMock).toHaveBeenLastCalledWith(
+      'http://localhost:20000/api/v1/workspaces/ws_default/projects/proj_1/tasks/task_1/workspace-access/release',
+      expect.objectContaining({
+        method: 'POST',
+        body: JSON.stringify({
+          holder_id: HOLDER_ID,
+          file_library_id: TASK_FILE_LIBRARY_ID,
+          binding_generation: bindingGeneration,
+          lease_epoch: LEASE_EPOCH,
+        }),
+      }),
+    );
+    expect(writeFileMock).not.toHaveBeenCalled();
+  });
+
+  it('releases backend workspace access when writable check fails after local lease creation', async () => {
+    process.env.MBOS_AGENT_TASK_RUNNER_MODE = 'managed_local';
+    process.env.MBOS_AGENT_WORKSPACE_ROOT = '/tmp/runner-root';
+    process.env.MBOS_AGENT_JUICEFS_MOUNT_RETRY_COUNT = '1';
+    fetchMock
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({
+          task_id: 'task_1',
+          workspace_binding_mode: 'file_library',
+          ...workspaceAccessEcho(),
+          workspace_dir_name: 'ignored-in-v2',
+          file_library_id: 'flib_1',
+          file_library_name: 'Project Workspace',
+          filesystem_name: 'flib-market-analysis-q1',
+          metadata_url: 'postgres://juicefs-meta',
+          storage_bucket_url: 'http://localhost:19000/jfs-lib-flib_1',
+        }),
+      })
+      .mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+      });
+    mkdirMock.mockImplementation(async (target: string) => {
+      if (target === TASK_ARTIFACTS) {
+        const error = new Error('stale mount') as NodeJS.ErrnoException;
+        error.code = 'EIO';
+        throw error;
+      }
+    });
+
+    await expect(prepareTaskWorkspace({
+      executionContext: taskExecutionContext({
+        api_base: 'http://localhost:20000/api/v1/',
+        workspace_id: 'ws_default',
+        project_id: 'proj_1',
+        execution_ticket: 'test-token',
+        workspace_binding_mode: 'file_library',
+      }),
+      username: 'alice',
+      taskId: 'task_1',
+    })).rejects.toThrow('stale mount');
+
+    expect(spawnMock).toHaveBeenNthCalledWith(
+      1,
+      'juicefs',
+      expect.arrayContaining([
+        'mount',
+        'postgres://juicefs-meta',
+        TASK_HOME,
+      ]),
+      expect.objectContaining({
+        stdio: 'ignore',
+      }),
+    );
+    expect(spawnMock).toHaveBeenNthCalledWith(
+      2,
+      'juicefs',
+      ['umount', TASK_HOME],
+      expect.objectContaining({
+        stdio: 'ignore',
+      }),
+    );
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    expect(fetchMock).toHaveBeenLastCalledWith(
+      'http://localhost:20000/api/v1/workspaces/ws_default/projects/proj_1/tasks/task_1/workspace-access/release',
+      expect.objectContaining({
+        method: 'POST',
+        body: JSON.stringify({
+          holder_id: HOLDER_ID,
+          file_library_id: TASK_FILE_LIBRARY_ID,
+          binding_generation: BINDING_GENERATION,
+          lease_epoch: LEASE_EPOCH,
+        }),
+      }),
+    );
+  });
+
   it('upgrades legacy registry entries while preserving other tracked mounts', async () => {
     process.env.MBOS_AGENT_TASK_RUNNER_MODE = 'managed_local';
     process.env.MBOS_AGENT_WORKSPACE_ROOT = '/tmp/runner-root';
@@ -473,6 +843,7 @@ describe('task-workspace', () => {
       json: async () => ({
         task_id: 'task_1',
         workspace_binding_mode: 'file_library',
+        ...workspaceAccessEcho(),
         workspace_dir_name: 'ignored-in-v2',
         file_library_id: 'flib_1',
         file_library_name: 'Project Workspace',
@@ -544,6 +915,7 @@ describe('task-workspace', () => {
       json: async () => ({
         task_id: 'task_1',
         workspace_binding_mode: 'file_library',
+        ...workspaceAccessEcho(),
         workspace_dir_name: 'ignored-in-v2',
         file_library_id: 'flib_1',
         file_library_name: 'Project Workspace',
@@ -599,6 +971,7 @@ describe('task-workspace', () => {
       json: async () => ({
         task_id: 'task_1',
         workspace_binding_mode: 'file_library',
+        ...workspaceAccessEcho(),
         workspace_dir_name: 'ignored-in-v2',
         file_library_id: 'flib_1',
         file_library_name: 'Project Workspace',
@@ -682,6 +1055,7 @@ describe('task-workspace', () => {
       json: async () => ({
         task_id: 'task_1',
         workspace_binding_mode: 'file_library',
+        ...workspaceAccessEcho(),
         workspace_dir_name: 'ignored-in-v2',
         file_library_id: 'flib_1',
         file_library_name: 'Project Workspace',
@@ -782,6 +1156,7 @@ describe('task-workspace', () => {
       json: async () => ({
         task_id: 'task_1',
         workspace_binding_mode: 'file_library',
+        ...workspaceAccessEcho(),
         workspace_dir_name: 'ignored-in-v2',
         file_library_id: 'flib_1',
         file_library_name: 'Project Workspace',
@@ -867,6 +1242,7 @@ describe('task-workspace', () => {
       json: async () => ({
         task_id: 'task_1',
         workspace_binding_mode: 'file_library',
+        ...workspaceAccessEcho(),
         workspace_dir_name: 'ignored-in-v2',
         file_library_id: 'flib_1',
         file_library_name: 'Project Workspace',
@@ -943,6 +1319,7 @@ describe('task-workspace', () => {
       json: async () => ({
         task_id: 'task_1',
         workspace_binding_mode: 'file_library',
+        ...workspaceAccessEcho(),
         workspace_dir_name: 'ignored-in-v2',
         file_library_id: 'flib_1',
         file_library_name: 'Project Workspace',
@@ -1068,6 +1445,7 @@ describe('task-workspace', () => {
       json: async () => ({
         task_id: 'task_1',
         workspace_binding_mode: 'file_library',
+        ...workspaceAccessEcho(),
         workspace_dir_name: 'ignored-in-v2',
         file_library_id: 'flib_1',
         file_library_name: 'Project Workspace',
@@ -1206,6 +1584,7 @@ describe('task-workspace', () => {
       json: async () => ({
         task_id: 'task_1',
         workspace_binding_mode: 'file_library',
+        ...workspaceAccessEcho(),
         workspace_dir_name: 'ignored-in-v2',
         file_library_id: 'flib_1',
         file_library_name: 'Project Workspace',
@@ -1344,6 +1723,7 @@ describe('task-workspace', () => {
       json: async () => ({
         task_id: 'task_1',
         workspace_binding_mode: 'file_library',
+        ...workspaceAccessEcho(),
         workspace_dir_name: 'ignored-in-v2',
         file_library_id: 'flib_1',
         file_library_name: 'Project Workspace',
@@ -1455,6 +1835,7 @@ describe('task-workspace', () => {
       json: async () => ({
         task_id: 'task_1',
         workspace_binding_mode: 'file_library',
+        ...workspaceAccessEcho(),
         workspace_dir_name: 'ignored-in-v2',
         file_library_id: 'flib_1',
         file_library_name: 'Project Workspace',
@@ -1555,6 +1936,7 @@ describe('task-workspace', () => {
       json: async () => ({
         task_id: 'task_1',
         workspace_binding_mode: 'file_library',
+        ...workspaceAccessEcho(),
         workspace_dir_name: 'ignored-in-v2',
         file_library_id: 'flib_1',
         file_library_name: 'Project Workspace',
@@ -1601,6 +1983,19 @@ describe('task-workspace', () => {
 
     const finalRegistry = parseRegistryWrite();
     expect(findRegistrySession(finalRegistry, TASK_HOME)).toBeUndefined();
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    expect(fetchMock).toHaveBeenCalledWith(
+      'http://localhost:20000/workspaces/ws_default/projects/proj_1/tasks/task_1/workspace-access/release',
+      expect.objectContaining({
+        method: 'POST',
+        body: JSON.stringify({
+          holder_id: HOLDER_ID,
+          file_library_id: TASK_FILE_LIBRARY_ID,
+          binding_generation: BINDING_GENERATION,
+          lease_epoch: LEASE_EPOCH,
+        }),
+      }),
+    );
   });
 
   it('falls back to helper termination and lazy workspace unmount when a busy mount does not release on normal juicefs umount', async () => {
@@ -1611,6 +2006,7 @@ describe('task-workspace', () => {
       json: async () => ({
         task_id: 'task_1',
         workspace_binding_mode: 'file_library',
+        ...workspaceAccessEcho(),
         workspace_dir_name: 'ignored-in-v2',
         file_library_id: 'flib_1',
         file_library_name: 'Project Workspace',
@@ -1684,29 +2080,29 @@ describe('task-workspace', () => {
     });
 
     const resolved = await prepareTaskWorkspace({
-        executionContext: taskExecutionContext({
-          api_base: 'http://localhost:20000',
-          workspace_id: 'ws_default',
-          project_id: 'proj_1',
-          execution_ticket: 'test-token',
-          workspace_binding_mode: 'file_library',
-        }),
-        username: 'alice',
-        taskId: 'task_1',
-      });
+      executionContext: taskExecutionContext({
+        api_base: 'http://localhost:20000',
+        workspace_id: 'ws_default',
+        project_id: 'proj_1',
+        execution_ticket: 'test-token',
+        workspace_binding_mode: 'file_library',
+      }),
+      username: 'alice',
+      taskId: 'task_1',
+    });
 
-      await resolved.release();
+    await resolved.release();
 
-      expect(events).toContain('helper_kill:SIGTERM');
-      expect(events).toContain('helper_exit');
-      expect(events.findIndex((event) => event === 'helper_exit')).toBeLessThan(events.findIndex((event) => event.startsWith('runner_umount:-l ')));
-      expect(spawnMock).toHaveBeenCalledWith(
-        'umount',
-        ['-l', TASK_HOME],
-        expect.objectContaining({
-          stdio: 'ignore',
-        }),
-      );
+    expect(events).toContain('helper_kill:SIGTERM');
+    expect(events).toContain('helper_exit');
+    expect(events.findIndex((event) => event === 'helper_exit')).toBeLessThan(events.findIndex((event) => event.startsWith('runner_umount:-l ')));
+    expect(spawnMock).toHaveBeenCalledWith(
+      'umount',
+      ['-l', TASK_HOME],
+      expect.objectContaining({
+        stdio: 'ignore',
+      }),
+    );
   });
 
   it('rejects releasing a tracked workspace by mount path without the owning lease', async () => {
@@ -1716,6 +2112,7 @@ describe('task-workspace', () => {
       json: async () => ({
         task_id: 'task_1',
         workspace_binding_mode: 'file_library',
+        ...workspaceAccessEcho(),
         workspace_dir_name: 'ignored-in-v2',
         file_library_id: 'flib_1',
         file_library_name: 'Project Workspace',
@@ -1751,6 +2148,7 @@ describe('task-workspace', () => {
       json: async () => ({
         task_id: 'task_1',
         workspace_binding_mode: 'file_library',
+        ...workspaceAccessEcho(),
         workspace_dir_name: 'ignored-in-v2',
         file_library_id: 'flib_1',
         file_library_name: 'Project Workspace',
@@ -1795,6 +2193,7 @@ describe('task-workspace', () => {
       json: async () => ({
         task_id: 'task_1',
         workspace_binding_mode: 'file_library',
+        ...workspaceAccessEcho(),
         workspace_dir_name: 'ignored-in-v2',
         file_library_id: 'flib_1',
         file_library_name: 'Project Workspace',
@@ -1837,6 +2236,55 @@ describe('task-workspace', () => {
     });
   });
 
+  it('treats an old binding generation release as a no-op for the current holder', async () => {
+    process.env.MBOS_AGENT_TASK_RUNNER_MODE = 'managed_local';
+    fetchMock.mockResolvedValue({
+      ok: true,
+      json: async () => ({
+        task_id: 'task_1',
+        workspace_binding_mode: 'file_library',
+        ...workspaceAccessEcho(),
+        workspace_dir_name: 'ignored-in-v2',
+        file_library_id: 'flib_1',
+        file_library_name: 'Project Workspace',
+        filesystem_name: 'flib-market-analysis-q1',
+        metadata_url: 'postgres://juicefs-meta',
+        storage_bucket_url: 'http://localhost:19000/jfs-lib-flib_1',
+      }),
+    });
+
+    const resolved = await prepareTaskWorkspace({
+      executionContext: taskExecutionContext({
+        api_base: 'http://localhost:20000',
+        workspace_id: 'ws_default',
+        project_id: 'proj_1',
+        execution_ticket: 'test-token',
+        workspace_binding_mode: 'file_library',
+      }),
+      username: 'alice',
+      taskId: 'task_1',
+    });
+
+    const staleLease = {
+      ...resolved.lease!,
+      bindingGeneration: 'binding_gen_old',
+      leaseEpoch: 'lease_epoch_old',
+    };
+
+    await expect(releasePreparedTaskWorkspace(TASK_HOME, staleLease)).resolves.toBeUndefined();
+
+    expect(spawnMock).toHaveBeenCalledTimes(1);
+    const registry = parseRegistryWrite();
+    const session = findRegistrySession(registry, TASK_HOME);
+    expect(session).toMatchObject({
+      mount_path: TASK_HOME,
+      refs: 1,
+      state: 'mounted',
+      binding_generation: BINDING_GENERATION,
+      lease_epoch: LEASE_EPOCH,
+    });
+  });
+
   it('keeps release failure evidence in the registry when unmount cannot be completed', async () => {
     process.env.MBOS_AGENT_TASK_RUNNER_MODE = 'managed_local';
     process.env.MBOS_AGENT_WORKSPACE_ROOT = '/tmp/runner-root';
@@ -1846,6 +2294,7 @@ describe('task-workspace', () => {
       json: async () => ({
         task_id: 'task_1',
         workspace_binding_mode: 'file_library',
+        ...workspaceAccessEcho(),
         workspace_dir_name: 'ignored-in-v2',
         file_library_id: 'flib_1',
         file_library_name: 'Project Workspace',

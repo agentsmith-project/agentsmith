@@ -25,7 +25,6 @@ export interface SandboxPodCreateBody {
   max_lifetime_sec?: number;
   workspace_binding_id: string;
   mount_path?: string;
-  sub_path?: string;
   working_dir?: string;
 }
 

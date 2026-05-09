@@ -8,6 +8,7 @@ vi.mock("../../../e2e/integration-workspace-access", () => ({
 
 import {
   API_BASE,
+  createAgentTaskViaApi,
   createManagedAgentRunnerViaApi,
 } from "../../../e2e/integration-real-helpers";
 
@@ -48,6 +49,22 @@ function createManagedAgentRunnerPageStub(): {
   };
 }
 
+function createAgentTaskPageStub(payload: unknown = { id: "task_agent_123" }): {
+  page: Page;
+  post: ReturnType<typeof vi.fn>;
+} {
+  const post = vi.fn().mockResolvedValue(createJsonResponse(payload));
+
+  return {
+    page: {
+      request: {
+        post,
+      },
+    } as unknown as Page,
+    post,
+  };
+}
+
 describe("createManagedAgentRunnerViaApi", () => {
   it("creates a managed Agent Runner through the canonical agent-runners API", async () => {
     const { page, post } = createManagedAgentRunnerPageStub();
@@ -80,5 +97,59 @@ describe("createManagedAgentRunnerViaApi", () => {
     expect(requestOptions?.data).not.toHaveProperty("external_agent_id");
     expect(runner.runnerId).toBe("runner_agent_task_123");
     expect(runner.runnerName).toBe("agent-task-runner");
+  });
+});
+
+describe("createAgentTaskViaApi", () => {
+  it("requests automatic workspace creation without a file library id", async () => {
+    const { page, post } = createAgentTaskPageStub();
+
+    const taskId = await createAgentTaskViaApi({
+      page,
+      workspaceId: "ws_default",
+      projectId: "proj_default",
+      title: " Fixture Task ",
+    });
+
+    expect(post).toHaveBeenCalledWith(
+      `${API_BASE}/api/v1/workspaces/ws_default/projects/proj_default/tasks`,
+      expect.objectContaining({
+        headers: {
+          Authorization: "Bearer fixture-token",
+          "Content-Type": "application/json",
+        },
+        data: {
+          title: "Fixture Task",
+          workspace_mode: "create_new",
+        },
+      }),
+    );
+    const [, requestOptions] = post.mock.calls[0] ?? [];
+    expect(requestOptions?.data).not.toHaveProperty("workspace_file_library_id");
+    expect(taskId).toBe("task_agent_123");
+  });
+
+  it("requests an existing ready unbound file library with use_existing mode", async () => {
+    const { page, post } = createAgentTaskPageStub();
+
+    const taskId = await createAgentTaskViaApi({
+      page,
+      workspaceId: "ws_default",
+      projectId: "proj_default",
+      title: "Existing Workspace Task",
+      fileLibraryId: " lib_existing ",
+    });
+
+    expect(post).toHaveBeenCalledWith(
+      `${API_BASE}/api/v1/workspaces/ws_default/projects/proj_default/tasks`,
+      expect.objectContaining({
+        data: {
+          title: "Existing Workspace Task",
+          workspace_mode: "use_existing",
+          workspace_file_library_id: "lib_existing",
+        },
+      }),
+    );
+    expect(taskId).toBe("task_agent_123");
   });
 });

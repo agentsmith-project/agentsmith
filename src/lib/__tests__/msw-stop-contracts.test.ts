@@ -2,9 +2,10 @@ import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest';
 import { setupServer } from 'msw/node';
 import { chatHandlers } from '@/mocks/handlers/chat';
 import { taskHandlers } from '@/mocks/handlers/tasks';
+import { fileHandlers } from '@/mocks/handlers/files';
 import { createMockAuthToken } from '@/mocks/utils/mock-auth-token';
 
-const server = setupServer(...chatHandlers, ...taskHandlers);
+const server = setupServer(...chatHandlers, ...taskHandlers, ...fileHandlers);
 
 type JsonObject = Record<string, unknown>;
 
@@ -26,7 +27,7 @@ async function createRunningTask(title: string) {
     workspace_mode: 'create_new',
     run_state: 'running',
   });
-  expect(response.status).toBe(200);
+  expect(response.status).toBe(201);
   const payload = await response.json() as { id?: string };
   expect(payload.id).toBeTruthy();
   return payload.id ?? '';
@@ -37,7 +38,29 @@ async function createIdleTask(title: string) {
     title,
     workspace_mode: 'create_new',
   });
-  expect(response.status).toBe(200);
+  expect(response.status).toBe(201);
+  const payload = await response.json() as { id?: string };
+  expect(payload.id).toBeTruthy();
+  return payload.id ?? '';
+}
+
+async function createFileLibrary(name: string) {
+  const response = await postJson('/api/v1/workspaces/ws_default/projects/proj_001/file-libraries', {
+    name,
+  });
+  expect(response.status).toBe(201);
+  const payload = await response.json() as { id?: string; name?: string };
+  expect(payload.id).toBeTruthy();
+  return payload as { id: string; name: string };
+}
+
+async function createTaskUsingFileLibrary(title: string, libraryId: string) {
+  const response = await postJson('/api/v1/workspaces/ws_default/projects/proj_001/tasks', {
+    title,
+    workspace_mode: 'use_existing',
+    workspace_file_library_id: libraryId,
+  });
+  expect(response.status).toBe(201);
   const payload = await response.json() as { id?: string };
   expect(payload.id).toBeTruthy();
   return payload.id ?? '';
@@ -117,6 +140,207 @@ describe('msw stop/cancel contracts', () => {
       error_code: 'unsupported_field',
       message: 'unsupported_field',
       fields: ['runner_selection'],
+    });
+  });
+
+  it('serves file-library task HOME binding fields on list and get responses', async () => {
+    const listResponse = await fetch(
+      'http://localhost/api/v1/workspaces/ws_default/projects/proj_001/file-libraries',
+    );
+    expect(listResponse.status).toBe(200);
+    const listPayload = await listResponse.json() as { items?: Array<Record<string, unknown>> };
+    const firstLibrary = listPayload.items?.[0];
+    expect(firstLibrary).toMatchObject({
+      task_home_binding_status: 'unbound',
+      bound_task_visible: false,
+    });
+
+    const getResponse = await fetch(
+      `http://localhost/api/v1/workspaces/ws_default/projects/proj_001/file-libraries/${firstLibrary?.id}`,
+    );
+    expect(getResponse.status).toBe(200);
+    await expect(getResponse.json()).resolves.toMatchObject({
+      task_home_binding_status: 'unbound',
+      bound_task_visible: false,
+    });
+  });
+
+  it('enforces the CreateTask workspace_mode request matrix with typed errors', async () => {
+    const implicitCreateWithId = await postJson('/api/v1/workspaces/ws_default/projects/proj_001/tasks', {
+      title: 'MSW invalid implicit create_new',
+      workspace_file_library_id: 'lib_shared_default',
+    });
+    expect(implicitCreateWithId.status).toBe(422);
+    await expect(implicitCreateWithId.json()).resolves.toMatchObject({
+      error_code: 'AGENT_TASK_WORKSPACE_MODE_INVALID',
+      message: 'agent_task_workspace_mode_invalid',
+      field: 'workspace_mode',
+      workspace_mode: 'create_new',
+    });
+
+    const missingExistingId = await postJson('/api/v1/workspaces/ws_default/projects/proj_001/tasks', {
+      title: 'MSW missing existing id',
+      workspace_mode: 'use_existing',
+    });
+    expect(missingExistingId.status).toBe(422);
+    await expect(missingExistingId.json()).resolves.toMatchObject({
+      error_code: 'AGENT_TASK_WORKSPACE_FILE_LIBRARY_REQUIRED',
+      message: 'agent_task_workspace_file_library_required',
+      field: 'workspace_file_library_id',
+    });
+
+    const invalidMode = await postJson('/api/v1/workspaces/ws_default/projects/proj_001/tasks', {
+      title: 'MSW bad mode',
+      workspace_mode: 'reuse_any',
+      workspace_file_library_id: 'lib_shared_default',
+    });
+    expect(invalidMode.status).toBe(422);
+    await expect(invalidMode.json()).resolves.toMatchObject({
+      error_code: 'AGENT_TASK_WORKSPACE_MODE_INVALID',
+      message: 'agent_task_workspace_mode_invalid',
+      field: 'workspace_mode',
+      workspace_mode: 'reuse_any',
+    });
+  });
+
+  it('rejects reusing active and archived bound file libraries and releases the binding on task delete', async () => {
+    const library = await createFileLibrary(`MSW binding conflict ${Date.now()}`);
+    const taskId = await createTaskUsingFileLibrary(`MSW binds library ${Date.now()}`, library.id);
+
+    const archive = await fetch(
+      `http://localhost/api/v1/workspaces/ws_default/projects/proj_001/tasks/${taskId}`,
+      {
+        method: 'PATCH',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ status: 'archived' }),
+      },
+    );
+    expect(archive.status).toBe(200);
+
+    const conflict = await postJson('/api/v1/workspaces/ws_default/projects/proj_001/tasks', {
+      title: 'MSW should reject archived binding reuse',
+      workspace_mode: 'use_existing',
+      workspace_file_library_id: library.id,
+    });
+    expect(conflict.status).toBe(409);
+    await expect(conflict.json()).resolves.toMatchObject({
+      error_code: 'AGENT_TASK_FILE_LIBRARY_IN_USE',
+      message: 'workspace_file_library_in_use',
+      field: 'workspace_file_library_id',
+      file_library_id: library.id,
+      bound_task_id: taskId,
+    });
+
+    const deleted = await fetch(
+      `http://localhost/api/v1/workspaces/ws_default/projects/proj_001/tasks/${taskId}`,
+      { method: 'DELETE' },
+    );
+    expect(deleted.status).toBe(200);
+
+    const reused = await postJson('/api/v1/workspaces/ws_default/projects/proj_001/tasks', {
+      title: 'MSW can reuse deleted task workspace',
+      workspace_mode: 'use_existing',
+      workspace_file_library_id: library.id,
+    });
+    expect(reused.status).toBe(201);
+  });
+
+  it('serves redacted occupied file-library fixtures without leaking hidden task fields', async () => {
+    const response = await fetch(
+      'http://localhost/api/v1/workspaces/ws_default/projects/proj_001/file-libraries/lib_msw_redacted_bound',
+    );
+    expect(response.status).toBe(200);
+
+    const payload = await response.json() as Record<string, unknown>;
+    expect(payload).toMatchObject({
+      id: 'lib_msw_redacted_bound',
+      task_home_binding_status: 'bound',
+      bound_task_visible: false,
+    });
+    expect(payload).not.toHaveProperty('bound_task_id');
+    expect(payload).not.toHaveProperty('bound_task_title');
+    expect(payload).not.toHaveProperty('bound_task_status');
+  });
+
+  it('rejects deleting a bound file library before the non-empty rule is evaluated', async () => {
+    const library = await createFileLibrary(`MSW delete bound library ${Date.now()}`);
+    const taskId = await createTaskUsingFileLibrary(`MSW delete blocker ${Date.now()}`, library.id);
+
+    const response = await fetch(
+      `http://localhost/api/v1/workspaces/ws_default/projects/proj_001/file-libraries/${library.id}`,
+      { method: 'DELETE' },
+    );
+
+    expect(response.status).toBe(409);
+    await expect(response.json()).resolves.toMatchObject({
+      error_code: 'FILE_LIBRARY_TASK_IN_USE',
+      message: 'file_library_task_in_use',
+      file_library_id: library.id,
+      bound_task_visible: true,
+      bound_task_id: taskId,
+    });
+  });
+
+  it('returns typed file-library deleting and not-empty conflicts before destructive changes', async () => {
+    const deletingResponse = await fetch(
+      'http://localhost/api/v1/workspaces/ws_default/projects/proj_001/file-libraries/lib_msw_deleting',
+      { method: 'DELETE' },
+    );
+    expect(deletingResponse.status).toBe(409);
+    await expect(deletingResponse.json()).resolves.toMatchObject({
+      error_code: 'FILE_LIBRARY_DELETING',
+      message: 'file_library_deleting',
+      file_library_id: 'lib_msw_deleting',
+      file_library_status: 'deleting',
+    });
+
+    const nonEmptyResponse = await fetch(
+      'http://localhost/api/v1/workspaces/ws_default/projects/proj_001/file-libraries/lib_msw_nonempty',
+      { method: 'DELETE' },
+    );
+    expect(nonEmptyResponse.status).toBe(409);
+    await expect(nonEmptyResponse.json()).resolves.toMatchObject({
+      error_code: 'FILE_LIBRARY_NOT_EMPTY',
+      message: 'file_library_not_empty',
+      file_library_id: 'lib_msw_nonempty',
+    });
+  });
+
+  it('rejects file writes and mount credential exchange for deleting libraries with typed errors', async () => {
+    const folderResponse = await postJson(
+      '/api/v1/workspaces/ws_default/projects/proj_001/file-libraries/lib_msw_deleting/folders',
+      { path: 'docs/' },
+    );
+    expect(folderResponse.status).toBe(409);
+    await expect(folderResponse.json()).resolves.toMatchObject({
+      error_code: 'FILE_LIBRARY_DELETING',
+      message: 'file_library_deleting',
+      file_library_id: 'lib_msw_deleting',
+      file_library_status: 'deleting',
+    });
+
+    const mountResponse = await postJson(
+      '/api/v1/workspaces/ws_default/projects/proj_001/file-libraries/lib_msw_deleting/storage-credential-exchange',
+      {},
+    );
+    expect(mountResponse.status).toBe(409);
+    await expect(mountResponse.json()).resolves.toMatchObject({
+      error_code: 'FILE_LIBRARY_DELETING',
+      message: 'file_library_deleting',
+      file_library_id: 'lib_msw_deleting',
+      file_library_status: 'deleting',
+    });
+
+    const desktopMountResponse = await postJson(
+      '/api/v1/workspaces/ws_default/projects/proj_001/file-libraries/lib_msw_deleting/desktop-mount-access',
+      {},
+    );
+    expect(desktopMountResponse.status).toBe(409);
+    await expect(desktopMountResponse.json()).resolves.toMatchObject({
+      error_code: 'FILE_LIBRARY_DELETING',
+      message: 'file_library_deleting',
+      file_library_id: 'lib_msw_deleting',
+      file_library_status: 'deleting',
     });
   });
 

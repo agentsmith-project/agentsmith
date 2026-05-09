@@ -13,10 +13,12 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Loader2 } from 'lucide-react';
 import { TaskAPI, getApiClient } from '@/lib/api';
-import { useCreateTask, useTasks } from '@/lib/hooks/use-task';
+import { APIError, resolveApiErrorPresentation } from '@/lib/api/errors';
+import { useCreateTask } from '@/lib/hooks/use-task';
 import { useFileLibraries } from '@/lib/hooks/use-files';
 import { queryKeys } from '@/lib/query-keys';
 import { useAgentTaskModelSetting } from '@/lib/agent-task-model-setting';
+import type { FileLibrary } from '@/lib/api/types';
 import type { CreateTaskRequest, TaskRunnerBindingOption } from '@/lib/types/task';
 import { ImportantNotice } from '@/components/agent-tasks/task-create-dialog/ImportantNotice';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
@@ -41,6 +43,27 @@ export function deriveDefaultTaskWorkspaceName(title: string) {
 
 function isTaskRunnerBindingOptionSelectable(option: TaskRunnerBindingOption) {
   return option.actions.bind_to_task.allowed && !option.disabled_reason_code;
+}
+
+function isFileLibraryTaskHomeBound(library: FileLibrary) {
+  return library.task_home_binding_status === 'bound';
+}
+
+function isFileLibrarySelectableForTask(library: FileLibrary) {
+  return library.status === 'ready' && !isFileLibraryTaskHomeBound(library);
+}
+
+const TASK_CREATE_FILE_LIBRARY_TYPED_ERROR_CODES = new Set([
+  'AGENT_TASK_FILE_LIBRARY_IN_USE',
+  'AGENT_TASK_WORKSPACE_BINDING_CONFLICT',
+  'FILE_LIBRARY_DELETING',
+  'FILE_LIBRARY_NOT_READY',
+  'FILE_LIBRARY_NOT_FOUND',
+  'FILE_LIBRARY_FORBIDDEN',
+]);
+
+function isTaskCreateFileLibraryTypedError(error: unknown): error is APIError {
+  return error instanceof APIError && TASK_CREATE_FILE_LIBRARY_TYPED_ERROR_CODES.has(error.errorCode);
 }
 
 const DEVELOPER_RUNNER_REASON_KEY_BY_CODE: Record<string, string> = {
@@ -94,11 +117,13 @@ export function TaskCreateDialog({
 }: TaskCreateDialogProps) {
   const t = useTranslations('agent_tasks.task');
   const commonT = useTranslations('common');
+  const errorT = useTranslations('errors');
   const locale = useLocale();
   const [title, setTitle] = React.useState('');
   const [workspaceMode, setWorkspaceMode] = React.useState<'create_new' | 'use_existing'>('create_new');
   const [workspaceName, setWorkspaceName] = React.useState('');
   const [workspaceFileLibraryId, setWorkspaceFileLibraryId] = React.useState<string>('');
+  const [workspaceFileLibraryConflict, setWorkspaceFileLibraryConflict] = React.useState<string | null>(null);
   const [advancedOpen, setAdvancedOpen] = React.useState(false);
   const [useDeveloperRunner, setUseDeveloperRunner] = React.useState(false);
   const [boundRunnerId, setBoundRunnerId] = React.useState('');
@@ -110,21 +135,22 @@ export function TaskCreateDialog({
     enabled: open && !!workspaceId && !!projectId,
   });
 
-  const { data: fileLibrariesData, isLoading: fileLibrariesLoading } = useFileLibraries(workspaceId, projectId);
+  const {
+    data: fileLibrariesData,
+    isLoading: fileLibrariesLoading,
+    refetch: refetchFileLibraries,
+  } = useFileLibraries(workspaceId, projectId);
   const fileLibraries = React.useMemo(
-    () => (fileLibrariesData?.items || []).filter((library) => library.status === 'ready'),
+    () => (fileLibrariesData?.items || []).filter(isFileLibrarySelectableForTask),
     [fileLibrariesData?.items],
   );
-  const { data: tasksData } = useTasks(workspaceId, projectId, { page: 1, page_size: 200 });
-  const occupiedLibraryIds = React.useMemo(() => new Set(
-    (tasksData?.items || [])
-      .filter((task) => task.status === 'active' && typeof task.workspace_file_library_id === 'string')
-      .map((task) => task.workspace_file_library_id as string),
-  ), [tasksData?.items]);
-  const availableFileLibraries = React.useMemo(
-    () => fileLibraries.filter((library) => !occupiedLibraryIds.has(library.id)),
-    [fileLibraries, occupiedLibraryIds],
+  const selectedFileLibrary = React.useMemo(
+    () => fileLibraries.find((library) => library.id === workspaceFileLibraryId) ?? null,
+    [fileLibraries, workspaceFileLibraryId],
   );
+  const selectedFileLibrarySelectable = selectedFileLibrary
+    ? isFileLibrarySelectableForTask(selectedFileLibrary)
+    : false;
   const runnerBindingOptionsQuery = useQuery({
     queryKey: queryKeys.tasks.runnerBindingOptions(workspaceId, projectId),
     queryFn: () => taskApi.getRunnerBindingOptions(workspaceId, projectId),
@@ -165,6 +191,7 @@ export function TaskCreateDialog({
       setWorkspaceMode('create_new');
       setWorkspaceName('');
       setWorkspaceFileLibraryId('');
+      setWorkspaceFileLibraryConflict(null);
       setAdvancedOpen(false);
       setUseDeveloperRunner(false);
       setBoundRunnerId('');
@@ -173,10 +200,10 @@ export function TaskCreateDialog({
 
   React.useEffect(() => {
     if (!workspaceFileLibraryId) return;
-    if (!fileLibraries.some((library) => library.id === workspaceFileLibraryId)) {
+    if (!selectedFileLibrary || !isFileLibrarySelectableForTask(selectedFileLibrary)) {
       setWorkspaceFileLibraryId('');
     }
-  }, [fileLibraries, workspaceFileLibraryId]);
+  }, [selectedFileLibrary, workspaceFileLibraryId]);
 
   React.useEffect(() => {
     if (useDeveloperRunner) return;
@@ -201,6 +228,9 @@ export function TaskCreateDialog({
     if (workspaceMode === 'use_existing' && !workspaceFileLibraryId) {
       return;
     }
+    if (workspaceMode === 'use_existing' && !selectedFileLibrarySelectable) {
+      return;
+    }
     if (modelReadinessBlocks) {
       return;
     }
@@ -217,11 +247,13 @@ export function TaskCreateDialog({
             workspace_name: workspaceName.trim() || defaultWorkspaceName,
           }
         : {
+            workspace_mode: 'use_existing' as const,
             workspace_file_library_id: workspaceFileLibraryId,
           }),
     };
 
     try {
+      setWorkspaceFileLibraryConflict(null);
       const task = await createTask.mutateAsync({
         workspaceId,
         projectId,
@@ -231,13 +263,24 @@ export function TaskCreateDialog({
       if (onSuccess) {
         onSuccess(task.id);
       }
-    } catch {
+    } catch (error) {
+      if (isTaskCreateFileLibraryTypedError(error)) {
+        const resolved = resolveApiErrorPresentation({
+          error,
+          t: errorT,
+          fallbackMessage: t('workspace_file_library_conflict'),
+        });
+        setWorkspaceFileLibraryConflict(resolved.description);
+        setWorkspaceFileLibraryId('');
+        await refetchFileLibraries();
+        return;
+      }
       // Error is handled by the hook
     }
   };
 
   const canSubmit = title.trim().length > 0
-    && (workspaceMode === 'create_new' || workspaceFileLibraryId.length > 0)
+    && (workspaceMode === 'create_new' || (workspaceFileLibraryId.length > 0 && selectedFileLibrarySelectable))
     && !modelReadinessBlocks
     && (!useDeveloperRunner || selectedDeveloperRunnerIsSelectable)
     && !createTask.isPending;
@@ -346,7 +389,10 @@ export function TaskCreateDialog({
                   </label>
                   <Select
                     value={workspaceFileLibraryId}
-                    onValueChange={setWorkspaceFileLibraryId}
+                    onValueChange={(value) => {
+                      setWorkspaceFileLibraryConflict(null);
+                      setWorkspaceFileLibraryId(value);
+                    }}
                     disabled={createTask.isPending || fileLibrariesLoading}
                   >
                     <SelectTrigger id="task-workspace-file-library" data-testid="task-create__file-library">
@@ -357,10 +403,10 @@ export function TaskCreateDialog({
                         <div className="flex items-center justify-center py-4">
                           <Loader2 className="h-4 w-4 animate-spin text-tertiary" />
                         </div>
-                      ) : availableFileLibraries.length === 0 ? (
+                      ) : fileLibraries.length === 0 ? (
                         <div className="py-4 text-center text-sm text-tertiary">{t('workspace_file_library_empty')}</div>
                       ) : (
-                        availableFileLibraries.map((library) => (
+                        fileLibraries.map((library) => (
                           <SelectItem key={library.id} value={library.id}>
                             {library.name}
                           </SelectItem>
@@ -368,6 +414,15 @@ export function TaskCreateDialog({
                       )}
                     </SelectContent>
                   </Select>
+                  {workspaceFileLibraryConflict ? (
+                    <div
+                      className="rounded-md border border-warning/30 bg-warning/10 px-3 py-2 text-sm text-secondary"
+                      role="alert"
+                      data-testid="task-create__file-library-conflict"
+                    >
+                      {workspaceFileLibraryConflict}
+                    </div>
+                  ) : null}
                   <p className="text-xs text-tertiary">{t('workspace_file_library_hint')}</p>
                 </div>
               ) : null}

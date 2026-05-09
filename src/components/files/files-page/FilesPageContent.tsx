@@ -61,6 +61,7 @@ interface FilesPageContentProps {
   selectedIds: React.ComponentProps<typeof FilesBrowserPane>['selectedIds'];
   selectedLibraryId: string | null;
   selectedLibraryStatus: React.ComponentProps<typeof FilesBrowserPane>['selectedLibraryStatus'];
+  selectedLibraryTaskHomeBinding: React.ComponentProps<typeof FilesBrowserPane>['selectedLibraryTaskHomeBinding'];
   selectedObjectsCount: React.ComponentProps<typeof FilesBrowserPane>['selectedObjectsCount'];
   selectionMode: React.ComponentProps<typeof FilesBrowserPane>['selectionMode'];
   setSearchInput: React.ComponentProps<typeof FilesBrowserPane>['setSearchInput'];
@@ -125,6 +126,7 @@ export function FilesPageContent({
   selectedIds,
   selectedLibraryId,
   selectedLibraryStatus,
+  selectedLibraryTaskHomeBinding,
   selectedObjectsCount,
   selectionMode,
   setSearchInput,
@@ -212,6 +214,7 @@ export function FilesPageContent({
               setSearchInput={setSearchInput}
               selectedLibraryId={selectedLibraryId}
               selectedLibraryStatus={selectedLibraryStatus}
+              selectedLibraryTaskHomeBinding={selectedLibraryTaskHomeBinding}
               filteredItems={filteredItems}
               selectedIds={selectedIds}
               selectionMode={selectionMode}

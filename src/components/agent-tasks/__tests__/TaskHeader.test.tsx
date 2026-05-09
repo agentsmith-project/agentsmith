@@ -3,17 +3,17 @@
  */
 
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render, screen } from '@testing-library/react';
+import { render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { TaskHeader } from '../TaskHeader';
 import type { Task } from '@/lib/types/task';
 
+const mockDeleteMutateAsync = vi.hoisted(() => vi.fn());
+const mockUseDeleteTask = vi.hoisted(() => vi.fn());
+
 // Mock the hooks
 vi.mock('@/lib/hooks/use-task', () => ({
-  useDeleteTask: () => ({
-    mutateAsync: vi.fn().mockResolvedValue({}),
-    isPending: false,
-  }),
+  useDeleteTask: mockUseDeleteTask,
 }));
 
 const mockPush = vi.fn();
@@ -48,7 +48,7 @@ vi.mock('next-intl', () => ({
     const translations: Record<string, string> = {
       'leave': 'Leave',
       'delete': 'Delete',
-      'delete_confirm_message': 'Are you sure you want to delete this task?',
+      'delete_confirm_message': 'Deleting this task removes task history, conversation, trace, artifact metadata, runner links, and terminal links. The task workspace and files remain in Files and can be selected by a new task after deletion.',
       'delete_cancel': 'Cancel',
       'delete_blocked_terminal_sessions': 'End all terminal sessions before deleting this task.',
       'delete_blocked_terminal_sessions_pending': 'Checking terminal sessions before deleting this task.',
@@ -110,6 +110,11 @@ describe('TaskHeader', () => {
 
   beforeEach(() => {
     vi.clearAllMocks();
+    mockDeleteMutateAsync.mockResolvedValue({});
+    mockUseDeleteTask.mockImplementation(() => ({
+      mutateAsync: mockDeleteMutateAsync,
+      isPending: false,
+    }));
   });
 
   const renderComponent = (task: Task = mockTask, props = {}) => {
@@ -430,7 +435,7 @@ describe('TaskHeader', () => {
       const deleteButton = screen.getByText('Delete');
       await user.click(deleteButton);
 
-      expect(screen.getByText('Are you sure you want to delete this task?')).toBeInTheDocument();
+      expect(screen.getByText(/The task workspace and files remain in Files/)).toBeInTheDocument();
     });
 
     it('disables delete while terminal sessions are still active', async () => {
@@ -444,7 +449,7 @@ describe('TaskHeader', () => {
       expect(deleteButton).toHaveAttribute('title', 'End all terminal sessions before deleting this task.');
 
       await user.click(deleteButton);
-      expect(screen.queryByText('Are you sure you want to delete this task?')).not.toBeInTheDocument();
+      expect(screen.queryByText(/The task workspace and files remain in Files/)).not.toBeInTheDocument();
     });
 
     it('closes dialog when cancel is clicked', async () => {
@@ -458,34 +463,54 @@ describe('TaskHeader', () => {
       await user.click(cancelButton);
 
       // Dialog should be closed
-      expect(screen.queryByText('Are you sure you want to delete this task?')).not.toBeInTheDocument();
+      expect(screen.queryByText(/The task workspace and files remain in Files/)).not.toBeInTheDocument();
+    });
+
+    it('keeps the dialog open and shows inline i18n copy when backend rejects delete blockers', async () => {
+      const user = userEvent.setup();
+      mockUseDeleteTask.mockImplementation((options?: {
+        onDeleteBlocked?: (message: string, error: unknown) => void;
+      }) => ({
+        mutateAsync: vi.fn(async () => {
+          options?.onDeleteBlocked?.(
+            'Delete is blocked because this task still has an active run, terminal session, or task workspace in use. Finish those blockers and try again.',
+            new Error('AGENT_TASK_DELETE_BLOCKED'),
+          );
+          throw new Error('AGENT_TASK_DELETE_BLOCKED');
+        }),
+        isPending: false,
+      }));
+
+      renderComponent();
+
+      await user.click(screen.getByText('Delete'));
+      const dialog = screen.getByRole('alertdialog');
+      await user.click(within(dialog).getByRole('button', { name: 'Delete' }));
+
+      expect(screen.getByTestId('agent-task__delete-blocked-error')).toHaveTextContent(
+        'Delete is blocked because this task still has an active run, terminal session, or task workspace in use. Finish those blockers and try again.',
+      );
+      expect(screen.getByRole('alertdialog')).toBeInTheDocument();
+      expect(mockOnDeleted).not.toHaveBeenCalled();
     });
 
     it('calls onDeleted after successful delete', async () => {
       const user = userEvent.setup();
-      const mockDelete = vi.fn().mockResolvedValue({});
-
-      vi.doMock('@/lib/hooks/use-task', () => ({
-        useDeleteTask: () => ({
-          mutateAsync: mockDelete,
-          isPending: false,
-        }),
-      }));
 
       renderComponent();
 
       const deleteButton = screen.getByText('Delete');
       await user.click(deleteButton);
 
-      const confirmButton = screen.getAllByText('Delete').find(
-        btn => btn.getAttribute('variant') === 'destructive'
-      );
-      if (confirmButton) {
-        await user.click(confirmButton);
-      }
+      const dialog = screen.getByRole('alertdialog');
+      await user.click(within(dialog).getByRole('button', { name: 'Delete' }));
 
-      // Note: The actual delete call happens in the mock hook
-      // In a real test, we'd need to wait for the mutation
+      expect(mockDeleteMutateAsync).toHaveBeenCalledWith({
+        workspaceId: mockWorkspaceId,
+        projectId: mockProjectId,
+        taskId: mockTask.id,
+      });
+      expect(mockOnDeleted).toHaveBeenCalledTimes(1);
     });
   });
 

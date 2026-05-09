@@ -14,6 +14,7 @@ import {
 import type { TaskRecord } from '../notebook-task/task-models.js';
 import { getTasks } from '../notebook-task/task-runtime-state.js';
 import { notebookTaskMessagesCollection, notebookTasksCollection } from '../notebook-task/task-store.js';
+import { __resetTaskFileLibraryBindingsForTests } from '../notebook-task/task-file-library-bindings.js';
 import { issueInternalTicket } from '../internal-ticket-store.js';
 import { sanitizeWorkloadId } from '../internal-agent-pod-manager.js';
 import { NotebookTerminalService } from '../notebook-terminal-service.js';
@@ -77,6 +78,11 @@ type TerminalSessionResponseForTest = {
   ws_url?: string | null;
 };
 
+const notebookTaskProjectFallbacksByDeps = new WeakMap<
+  ReturnType<typeof createDefaultNodeApiDeps>,
+  Map<string, string>
+>();
+
 function taskActivityPath(workspaceId: string, projectId: string, taskId: string): string {
   return `/api/v1/workspaces/${workspaceId}/projects/${projectId}/tasks/${taskId}/activity`;
 }
@@ -130,6 +136,7 @@ function createExecutionTicketGate(
 }
 
 beforeEach(() => {
+  __resetTaskFileLibraryBindingsForTests();
   previousManagedExecutionHttpBase = process.env.AGENT_EXECUTION_HTTP_BASE_URL;
   process.env.AGENT_EXECUTION_HTTP_BASE_URL = 'http://127.0.0.1:20000/api/v1';
 });
@@ -285,8 +292,74 @@ async function grantDeveloperRunnerProjectPermissions(
     permissions: [
       'project:agent_task:use',
       'project:agent_runner:manage',
+      'project:files:update',
     ],
   });
+}
+
+async function ensureNotebookTaskProjectAccess(
+  deps: ReturnType<typeof createDefaultNodeApiDeps>,
+  workspaceId: string,
+  projectId: string,
+  userId = 'user_test',
+): Promise<void> {
+  const projectKey = `${workspaceId}/${projectId}`;
+  let projectExists = true;
+  try {
+    await deps.getProjectUseCase.execute({ workspaceId, projectId });
+  } catch {
+    projectExists = false;
+  }
+
+  if (!projectExists) {
+    let fallbacks = notebookTaskProjectFallbacksByDeps.get(deps);
+    if (!fallbacks) {
+      fallbacks = new Map<string, string>();
+      notebookTaskProjectFallbacksByDeps.set(deps, fallbacks);
+      const originalExecute = deps.getProjectUseCase.execute.bind(deps.getProjectUseCase);
+      deps.getProjectUseCase.execute = (async (input: { workspaceId: string; projectId: string }) => {
+        const fallbackKey = `${input.workspaceId}/${input.projectId}`;
+        const fallbackOwnerId = fallbacks?.get(fallbackKey);
+        if (fallbackOwnerId) {
+          return {
+            id: input.projectId,
+            workspace_id: input.workspaceId,
+            name: input.projectId,
+            visibility: 'private',
+            owner_id: fallbackOwnerId,
+            status: 'active',
+            governance_json: null,
+            created_at: new Date().toISOString(),
+            updated_at: new Date().toISOString(),
+          } as never;
+        }
+        return originalExecute(input);
+      }) as never;
+    }
+    fallbacks.set(projectKey, userId);
+
+    const fallbackUserIds = userId === 'user_test' ? ['user_test', 'user_owner'] : [userId];
+    for (const fallbackUserId of fallbackUserIds) {
+      await upsertProjectMembershipRecord(deps.docStore, workspaceId, projectId, {
+        project_id: projectId,
+        user_id: fallbackUserId,
+        user_email: `${fallbackUserId}@example.com`,
+        user_name: fallbackUserId,
+        status: 'active',
+        joined_at: new Date().toISOString(),
+      });
+      await upsertProjectMemberPermissionState(deps.docStore, workspaceId, projectId, fallbackUserId, {
+        mode: 'custom',
+        template: null,
+        permissions: [
+          'project:agent_task:use',
+          'project:agent_task:terminal',
+          'project:agent_runner:manage',
+          'project:files:update',
+        ],
+      });
+    }
+  }
 }
 
 async function createDefaultManagedTaskRunner(
@@ -300,6 +373,7 @@ async function createDefaultManagedTaskRunner(
 ): Promise<{ runnerId: string; endpointId: string }> {
   const workspaceId = options?.workspaceId ?? 'ws_default';
   const projectId = options?.projectId ?? 'proj_1';
+  await ensureNotebookTaskProjectAccess(deps, workspaceId, projectId);
   configureManagedTaskRunnerRuntimeDeps(deps);
   const credential = await deps.endpointResourceService.createCredential(workspaceId, projectId, {
     name: `${name}-credential`,
@@ -541,7 +615,12 @@ async function createNotebookTaskForAgent(
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         title: input.title,
-        workspace_file_library_id: workspaceFileLibraryId,
+        ...(workspaceFileLibraryId
+          ? {
+            workspace_mode: 'use_existing',
+            workspace_file_library_id: workspaceFileLibraryId,
+          }
+          : {}),
         ...(input.boundRunnerId ? { bound_runner_id: input.boundRunnerId } : {}),
       }),
     },
@@ -648,6 +727,7 @@ async function createActiveExternalTaskForTerminal(
             workspace_name: `${taskTitle} Workspace`,
           }
           : {
+            workspace_mode: 'use_existing',
             workspace_file_library_id: workspaceLibrary?.id,
           }),
         bound_runner_id: runnerId,
@@ -691,6 +771,7 @@ describe('api-entry-node notebook task routes', () => {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           title: 'Internal owner task',
+          workspace_mode: 'use_existing',
           workspace_file_library_id: internalWorkspaceLibrary.id,
         }),
       },
@@ -1066,36 +1147,45 @@ describe('api-entry-node notebook task routes', () => {
 
   it('returns task-bound workspace access for notebook task file libraries', async () => {
     const { baseUrl, deps } = await startServer();
-    await createDefaultManagedTaskRunner(deps, 'workspace-access-default-runner');
-    const workspaceLibrary = await createFileLibrary(baseUrl, 'Workspace Access Library');
+    const project = await deps.createProjectUseCase.execute({
+      workspaceId: 'ws_default',
+      actorId: 'user_test',
+      input: {
+        name: 'Workspace Access Project',
+        visibility: 'private',
+      },
+    });
+    await createDefaultManagedTaskRunner(deps, 'workspace-access-default-runner', { projectId: project.id });
+    const workspaceLibrary = await createFileLibrary(baseUrl, 'Workspace Access Library', { projectId: project.id });
 
     const createTaskRes = await apiFetch(
       baseUrl,
-      '/api/v1/workspaces/ws_default/projects/proj_1/tasks',
+      `/api/v1/workspaces/ws_default/projects/${project.id}/tasks`,
       {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           title: 'Workspace Access Task',
+          workspace_mode: 'use_existing',
           workspace_file_library_id: workspaceLibrary.id,
         }),
       },
     );
     expect(createTaskRes.status, await createTaskRes.clone().text()).toBe(201);
-    const task = (await createTaskRes.json()) as { id: string };
+    const task = (await createTaskRes.json()) as { id: string; task_home_segment: string };
 
     const workspaceAccessRes = await apiFetch(
       baseUrl,
-      `/api/v1/workspaces/ws_default/projects/proj_1/tasks/${task.id}/workspace-access`,
+      `/api/v1/workspaces/ws_default/projects/${project.id}/tasks/${task.id}/workspace-access`,
       { method: 'POST' },
     );
     expect(workspaceAccessRes.status).toBe(200);
     await expect(workspaceAccessRes.json()).resolves.toMatchObject({
       task_id: task.id,
       workspace_binding_mode: 'file_library',
-      task_home_path: `/home/${task.id}`,
-      workspace_path: `/home/${task.id}/workspace`,
-      artifacts_path: `/home/${task.id}/workspace/.artifacts`,
+      task_home_path: `/home/${task.task_home_segment}`,
+      workspace_path: `/home/${task.task_home_segment}/workspace`,
+      artifacts_path: `/home/${task.task_home_segment}/workspace/.artifacts`,
       library_root_path: '.',
       workspace_dir_name: workspaceLibrary.filesystem_name,
       file_library_id: workspaceLibrary.id,
@@ -1103,6 +1193,12 @@ describe('api-entry-node notebook task routes', () => {
       filesystem_name: expect.any(String),
       metadata_url: expect.stringContaining('sslmode=disable'),
       recommended_mount_path: expect.any(String),
+      holder_id: expect.any(String),
+      holder_kind: 'runner_workspace',
+      binding_generation: expect.any(String),
+      lease_epoch: expect.any(String),
+      issued_at: expect.any(String),
+      expires_at: expect.any(String),
       created_at: expect.any(String),
     });
   });
@@ -1142,7 +1238,7 @@ describe('api-entry-node notebook task routes', () => {
       },
     );
     expect(createTaskRes.status, await createTaskRes.clone().text()).toBe(201);
-    const task = (await createTaskRes.json()) as { id: string; workspace_file_library_id: string };
+    const task = (await createTaskRes.json()) as { id: string; task_home_segment: string; workspace_file_library_id: string };
     expect(task.workspace_file_library_id).toBeTruthy();
 
     const goodTicket = await issueInternalTicket(deps.cache, {
@@ -1225,12 +1321,16 @@ describe('api-entry-node notebook task routes', () => {
     await expect(workspaceAccessRes.json()).resolves.toMatchObject({
       task_id: task.id,
       workspace_binding_mode: 'file_library',
-      task_home_path: `/home/${task.id}`,
-      workspace_path: `/home/${task.id}/workspace`,
-      artifacts_path: `/home/${task.id}/workspace/.artifacts`,
+      task_home_path: `/home/${task.task_home_segment}`,
+      workspace_path: `/home/${task.task_home_segment}/workspace`,
+      artifacts_path: `/home/${task.task_home_segment}/workspace/.artifacts`,
       library_root_path: '.',
       file_library_id: task.workspace_file_library_id,
       metadata_url: expect.any(String),
+      holder_id: expect.any(String),
+      holder_kind: 'runner_workspace',
+      binding_generation: expect.any(String),
+      lease_epoch: expect.any(String),
       created_at: expect.any(String),
     });
   });
@@ -1323,34 +1423,54 @@ describe('api-entry-node notebook task routes', () => {
     process.env.AGENT_RUNNER_DEVELOPER_EXECUTION_HTTP_BASE_URL = 'http://172.18.0.1:20000';
     try {
       const { baseUrl, deps } = await startServer();
-      await createDefaultManagedTaskRunner(deps, 'developer-runner-workspace-access-default-runner');
-      const workspaceLibrary = await createFileLibrary(baseUrl, 'Developer Runner Workspace Access Library');
+      const project = await deps.createProjectUseCase.execute({
+        workspaceId: 'ws_default',
+        actorId: 'user_test',
+        input: {
+          name: 'Developer Runner Workspace Access Project',
+          visibility: 'private',
+        },
+      });
+      const { runnerId } = await createDeveloperTaskRunner(deps, 'developer-runner-workspace-access-runner', {
+        projectId: project.id,
+      });
+      const workspaceLibrary = await createFileLibrary(baseUrl, 'Developer Runner Workspace Access Library', {
+        projectId: project.id,
+      });
 
       const createTaskRes = await apiFetch(
         baseUrl,
-        '/api/v1/workspaces/ws_default/projects/proj_1/tasks',
+        `/api/v1/workspaces/ws_default/projects/${project.id}/tasks`,
         {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
             title: 'Developer Runner Workspace Access Task',
+            workspace_mode: 'use_existing',
             workspace_file_library_id: workspaceLibrary.id,
+            bound_runner_id: runnerId,
           }),
         },
       );
-      expect(createTaskRes.status).toBe(201);
+      expect(createTaskRes.status, await createTaskRes.clone().text()).toBe(201);
       const task = (await createTaskRes.json()) as { id: string };
 
       const workspaceAccessRes = await apiFetch(
         baseUrl,
-        `/api/v1/workspaces/ws_default/projects/proj_1/tasks/${task.id}/workspace-access`,
+        `/api/v1/workspaces/ws_default/projects/${project.id}/tasks/${task.id}/workspace-access`,
         { method: 'POST' },
       );
-      expect(workspaceAccessRes.status).toBe(200);
+      expect(workspaceAccessRes.status, await workspaceAccessRes.clone().text()).toBe(200);
       await expect(workspaceAccessRes.json()).resolves.toMatchObject({
         task_id: task.id,
-        metadata_url: expect.stringMatching(/@(localhost|172\.18\.0\.1):15432\//),
-        storage_bucket_url: expect.stringMatching(/http:\/\/(localhost|172\.18\.0\.1):19000\//),
+        runtime_profile: 'developer',
+        file_library_id: workspaceLibrary.id,
+        metadata_url: expect.stringMatching(/@172\.18\.0\.1:15432\//),
+        storage_bucket_url: expect.stringMatching(/http:\/\/172\.18\.0\.1:19000\//),
+        holder_id: expect.any(String),
+        holder_kind: 'runner_workspace',
+        binding_generation: expect.any(String),
+        lease_epoch: expect.any(String),
       });
     } finally {
       if (previousExternalExecutionBase === undefined) {
@@ -1374,11 +1494,13 @@ describe('api-entry-node notebook task routes', () => {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           title: 'First Task',
+          workspace_mode: 'use_existing',
           workspace_file_library_id: workspaceLibrary.id,
         }),
       },
     );
     expect(firstTaskRes.status).toBe(201);
+    const firstTask = (await firstTaskRes.json()) as { id: string };
 
     const secondTaskRes = await apiFetch(
       baseUrl,
@@ -1388,37 +1510,50 @@ describe('api-entry-node notebook task routes', () => {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           title: 'Second Task',
+          workspace_mode: 'use_existing',
           workspace_file_library_id: workspaceLibrary.id,
         }),
       },
     );
     expect(secondTaskRes.status).toBe(409);
     await expect(secondTaskRes.json()).resolves.toMatchObject({
-      error_code: 'RESOURCE_CONFLICT',
+      error_code: 'AGENT_TASK_FILE_LIBRARY_IN_USE',
       message: 'workspace_file_library_in_use',
+      field: 'workspace_file_library_id',
+      file_library_id: workspaceLibrary.id,
+      bound_task_id: firstTask.id,
     });
   });
 
   it('keeps task workspace access available after api restart', async () => {
     const deps = createDefaultNodeApiDeps();
     const firstServer = await startServerWithDeps(deps);
-    await createDefaultManagedTaskRunner(deps, 'restart-workspace-default-runner');
-    const workspaceLibrary = await createFileLibrary(firstServer.baseUrl, 'Restart Task Workspace');
+    const project = await deps.createProjectUseCase.execute({
+      workspaceId: 'ws_default',
+      actorId: 'user_test',
+      input: {
+        name: 'Restart Workspace Access Project',
+        visibility: 'private',
+      },
+    });
+    await createDefaultManagedTaskRunner(deps, 'restart-workspace-default-runner', { projectId: project.id });
+    const workspaceLibrary = await createFileLibrary(firstServer.baseUrl, 'Restart Task Workspace', { projectId: project.id });
 
     const createTaskRes = await apiFetch(
       firstServer.baseUrl,
-      '/api/v1/workspaces/ws_default/projects/proj_1/tasks',
+      `/api/v1/workspaces/ws_default/projects/${project.id}/tasks`,
       {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           title: 'Restart Workspace Access Task',
+          workspace_mode: 'use_existing',
           workspace_file_library_id: workspaceLibrary.id,
         }),
       },
     );
     expect(createTaskRes.status).toBe(201);
-    const task = (await createTaskRes.json()) as { id: string };
+    const task = (await createTaskRes.json()) as { id: string; task_home_segment: string };
 
     firstServer.server.closeAllConnections?.();
     firstServer.server.closeIdleConnections?.();
@@ -1427,7 +1562,7 @@ describe('api-entry-node notebook task routes', () => {
     const secondServer = await startServerWithDeps(deps);
     const workspaceAccessRes = await apiFetch(
       secondServer.baseUrl,
-      `/api/v1/workspaces/ws_default/projects/proj_1/tasks/${task.id}/workspace-access`,
+      `/api/v1/workspaces/ws_default/projects/${project.id}/tasks/${task.id}/workspace-access`,
       { method: 'POST' },
     );
     expect(workspaceAccessRes.status).toBe(200);
@@ -1453,6 +1588,7 @@ describe('api-entry-node notebook task routes', () => {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           title: 'Restart Run Coordination Task',
+          workspace_mode: 'use_existing',
           workspace_file_library_id: workspaceLibrary.id,
         }),
       },
@@ -1745,6 +1881,7 @@ describe('api-entry-node notebook task routes', () => {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           title: 'Shared Conflict Task',
+          workspace_mode: 'use_existing',
           workspace_file_library_id: workspaceLibrary.id,
         }),
       },
@@ -2001,6 +2138,19 @@ describe('api-entry-node notebook task routes', () => {
   it('dispatches a second internal run after terminate aborts a pre-dispatch startup lock from the first run', async () => {
     const previousPublicApiBase = process.env.PUBLIC_API_BASE_URL;
     const deps = createDefaultNodeApiDeps();
+    const originalGetProject = deps.getProjectUseCase.execute.bind(deps.getProjectUseCase);
+    deps.getProjectUseCase.execute = vi.fn(async (input: { workspaceId: string; projectId: string }) => {
+      if (input.workspaceId === 'ws_default' && input.projectId === 'proj_1') {
+        return {
+          id: 'proj_1',
+          workspace_id: 'ws_default',
+          name: 'Default notebook integration project',
+          owner_id: 'user_test',
+          governance_json: null,
+        } as never;
+      }
+      return originalGetProject(input);
+    }) as never;
     const firstStartupObserved = createDeferred<void>();
     const activeEnsureLocks = new Map<string, Promise<void>>();
     let firstStartupSignal: AbortSignal | undefined;
@@ -2295,9 +2445,8 @@ describe('api-entry-node notebook task routes', () => {
       await expect(deleteRes.json()).resolves.toMatchObject({
         error_code: 'AGENT_TASK_DELETE_BLOCKED',
         message: 'agent_task_delete_blocked',
-        blockers: [
-          expect.objectContaining({ type: 'active_run' }),
-        ],
+        task_id: taskId,
+        blockers: ['active_run'],
       });
 
       releaseRun();
@@ -2387,6 +2536,7 @@ describe('api-entry-node notebook task routes', () => {
       apiBase: string;
       executionTicket: string;
       workspaceBindingMode: string | null;
+      runtimeProfile: string | null;
       taskHomePath: string | null;
       workspacePath: string | null;
       artifactsPath: string | null;
@@ -2404,6 +2554,7 @@ describe('api-entry-node notebook task routes', () => {
       apiBase: string;
       executionTicket: string;
       workspaceBindingMode: string | null;
+      runtimeProfile: string | null;
       taskHomePath: string | null;
       workspacePath: string | null;
       artifactsPath: string | null;
@@ -2442,6 +2593,7 @@ describe('api-entry-node notebook task routes', () => {
                 base_url?: string;
               };
               workspace_binding_mode?: string;
+              runtime_profile?: string;
               task_home_path?: string;
               workspace_path?: string;
               artifacts_path?: string;
@@ -2468,6 +2620,9 @@ describe('api-entry-node notebook task routes', () => {
           legacyUserBearerToken: msg.payload?.execution_context?.user_bearer_token ?? '',
           workspaceBindingMode: typeof msg.payload?.execution_context?.workspace_binding_mode === 'string'
             ? msg.payload.execution_context.workspace_binding_mode
+            : null,
+          runtimeProfile: typeof msg.payload?.execution_context?.runtime_profile === 'string'
+            ? msg.payload.execution_context.runtime_profile
             : null,
           taskHomePath: typeof msg.payload?.execution_context?.task_home_path === 'string'
             ? msg.payload.execution_context.task_home_path
@@ -2557,6 +2712,7 @@ describe('api-entry-node notebook task routes', () => {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           title: 'Notebook task',
+          workspace_mode: 'use_existing',
           workspace_file_library_id: workspaceLibrary.id,
           bound_runner_id: agentId,
         }),
@@ -2650,9 +2806,16 @@ describe('api-entry-node notebook task routes', () => {
     expect(execution.apiBase).toBe(`${baseUrl}/api/v1`);
     expect(execution).not.toHaveProperty('interactionKind');
     expect(execution.workspaceBindingMode).toBe('file_library');
-    expect(execution.taskHomePath).toBe(`/home/${task.id}`);
-    expect(execution.workspacePath).toBe(`/home/${task.id}/workspace`);
-    expect(execution.artifactsPath).toBe(`/home/${task.id}/workspace/.artifacts`);
+    expect(execution.runtimeProfile).toBe('developer');
+    expect(execution.taskHomePath).toBeTruthy();
+    const developerTaskHomePath = execution.taskHomePath;
+    if (!developerTaskHomePath) {
+      throw new Error('developer_task_home_path_missing');
+    }
+    expect(developerTaskHomePath.endsWith(`/${task.task_home_segment}`)).toBe(true);
+    expect(developerTaskHomePath).not.toBe(`/home/${task.id}`);
+    expect(execution.workspacePath).toBe(`${developerTaskHomePath}/workspace`);
+    expect(execution.artifactsPath).toBe(`${developerTaskHomePath}/workspace/.artifacts`);
     expect(execution.workspaceFileLibraryId).toBe(workspaceLibrary.id);
     expect(execution.workspaceFileLibraryName).toBe(workspaceLibrary.name);
     expect(execution.workspaceDirName).toBe(workspaceLibrary.filesystem_name);
@@ -2820,6 +2983,7 @@ describe('api-entry-node notebook task routes', () => {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           title: 'Notebook task offline execution',
+          workspace_mode: 'use_existing',
           workspace_file_library_id: workspaceLibrary.id,
           bound_runner_id: agentId,
         }),
@@ -2918,6 +3082,7 @@ describe('api-entry-node notebook task routes', () => {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           title: 'Trace metrics task',
+          workspace_mode: 'use_existing',
           workspace_file_library_id: workspaceLibrary.id,
         }),
       },
@@ -2972,12 +3137,13 @@ describe('api-entry-node notebook task routes', () => {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           title: 'External terminal task',
+          workspace_mode: 'use_existing',
           workspace_file_library_id: workspaceLibrary.id,
         }),
       },
     );
     expect(createTaskRes.status).toBe(201);
-    const task = await createTaskRes.json() as { id: string };
+    const task = await createTaskRes.json() as { id: string; task_home_segment: string };
 
     const createTerminalRes = await apiFetchWithToken(
       baseUrl,
@@ -2994,7 +3160,7 @@ describe('api-entry-node notebook task routes', () => {
         body: JSON.stringify({ cols: 120, rows: 40, shell: '/bin/zsh' }),
       },
     );
-    expect(createTerminalRes.status).toBe(201);
+    expect(createTerminalRes.status, await createTerminalRes.clone().text()).toBe(201);
     const createTerminalPayload = await createTerminalRes.json() as { ws_url?: string };
     expect(createTerminalPayload.ws_url).toBe(
       `${baseUrl.replace('http://', 'ws://')}/api/v1/workspaces/ws_default/projects/proj_1/tasks/task_external_terminal/terminal/ws?terminal_session_id=term_external_capture&ticket=term_ticket`,
@@ -3002,9 +3168,9 @@ describe('api-entry-node notebook task routes', () => {
     expect(capturedExecutionContext).toBeTruthy();
     expect(capturedExecutionContext?.task_id).toBe(task.id);
     expect(capturedExecutionContext?.workspace_binding_mode).toBe('pre_mounted');
-    expect(capturedExecutionContext?.task_home_path).toBe(`/home/${task.id}`);
-    expect(capturedExecutionContext?.workspace_path).toBe(`/home/${task.id}/workspace`);
-    expect(capturedExecutionContext?.artifacts_path).toBe(`/home/${task.id}/workspace/.artifacts`);
+    expect(capturedExecutionContext?.task_home_path).toBe(`/home/${task.task_home_segment}`);
+    expect(capturedExecutionContext?.workspace_path).toBe(`/home/${task.task_home_segment}/workspace`);
+    expect(capturedExecutionContext?.artifacts_path).toBe(`/home/${task.task_home_segment}/workspace/.artifacts`);
     expect(capturedExecutionContext?.workspace_file_library_id).toBe(workspaceLibrary.id);
     expect(capturedExecutionContext?.workspace_dir_name).toBe(workspaceLibrary.filesystem_name);
     expect(capturedExecutionContext).not.toHaveProperty('interaction_kind');
@@ -3077,12 +3243,13 @@ describe('api-entry-node notebook task routes', () => {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           title: 'Internal terminal task',
+          workspace_mode: 'use_existing',
           workspace_file_library_id: workspaceLibrary.id,
         }),
       },
     );
     expect(createTaskRes.status).toBe(201);
-    const task = await createTaskRes.json() as { id: string };
+    const task = await createTaskRes.json() as { id: string; task_home_segment: string };
 
     const createTerminalRes = await apiFetchWithToken(
       baseUrl,
@@ -3099,7 +3266,7 @@ describe('api-entry-node notebook task routes', () => {
         body: JSON.stringify({ cols: 100, rows: 30 }),
       },
     );
-    expect(createTerminalRes.status).toBe(201);
+    expect(createTerminalRes.status, await createTerminalRes.clone().text()).toBe(201);
     const createTerminalPayload = await createTerminalRes.json() as { ws_url?: string };
     expect(createTerminalPayload.ws_url).toBe(
       `${baseUrl.replace('http://', 'ws://')}/api/v1/workspaces/ws_default/projects/proj_1/tasks/task_internal_terminal/terminal/ws?terminal_session_id=term_internal_capture&ticket=term_ticket`,
@@ -3107,15 +3274,15 @@ describe('api-entry-node notebook task routes', () => {
     expect(capturedRuntimeDispatchContext).toEqual({
       managedInternalAgent: {
         workspaceFileLibraryId: workspaceLibrary.id,
-        taskHomeSegment: task.id,
+        taskHomeSegment: task.task_home_segment,
       },
     });
     expect(capturedExecutionContext).toBeTruthy();
     expect(capturedExecutionContext?.task_id).toBe(task.id);
     expect(capturedExecutionContext?.workspace_binding_mode).toBe('pre_mounted');
-    expect(capturedExecutionContext?.task_home_path).toBe(`/home/${task.id}`);
-    expect(capturedExecutionContext?.workspace_path).toBe(`/home/${task.id}/workspace`);
-    expect(capturedExecutionContext?.artifacts_path).toBe(`/home/${task.id}/workspace/.artifacts`);
+    expect(capturedExecutionContext?.task_home_path).toBe(`/home/${task.task_home_segment}`);
+    expect(capturedExecutionContext?.workspace_path).toBe(`/home/${task.task_home_segment}/workspace`);
+    expect(capturedExecutionContext?.artifacts_path).toBe(`/home/${task.task_home_segment}/workspace/.artifacts`);
     expect(capturedExecutionContext?.workspace_file_library_id).toBe(workspaceLibrary.id);
     expect(capturedExecutionContext?.workspace_dir_name).toBe(workspaceLibrary.filesystem_name);
     expect(capturedExecutionContext).not.toHaveProperty('interaction_kind');
@@ -3266,7 +3433,7 @@ describe('api-entry-node notebook task routes', () => {
           body: JSON.stringify({ cols: 80, rows: 24 }),
         },
       );
-      expect(createTerminalRes.status).toBe(201);
+      expect(createTerminalRes.status, await createTerminalRes.clone().text()).toBe(201);
       const createdTerminal = await createTerminalRes.json() as TerminalSessionResponseForTest;
       expect(createdTerminal).not.toHaveProperty('session_id');
 
@@ -3558,9 +3725,8 @@ describe('api-entry-node notebook task routes', () => {
       await expect(deleteTaskWhileTerminalActive.json()).resolves.toMatchObject({
         error_code: 'AGENT_TASK_DELETE_BLOCKED',
         message: 'agent_task_delete_blocked',
-        blockers: [
-          expect.objectContaining({ type: 'active_terminal' }),
-        ],
+        task_id: taskId,
+        blockers: ['active_terminal'],
       });
 
       const listStillAvailable = await apiFetchWithToken(
@@ -3663,9 +3829,8 @@ describe('api-entry-node notebook task routes', () => {
       await expect(blockedDelete.json()).resolves.toMatchObject({
         error_code: 'AGENT_TASK_DELETE_BLOCKED',
         message: 'agent_task_delete_blocked',
-        blockers: [
-          expect.objectContaining({ type: 'active_terminal' }),
-        ],
+        task_id: taskId,
+        blockers: ['active_terminal'],
       });
 
       const deleteSecond = await apiFetchWithToken(

@@ -17,10 +17,68 @@ import {
   storeTaskTraceEvent,
 } from "../notebook-trace-store.js";
 import { apiFetch, startServer } from "./test-support.js";
+import { AgentTaskModelSettingService } from "../agent-task-model-setting-service.js";
+import {
+  upsertProjectMembershipRecord,
+  upsertProjectMemberPermissionState,
+} from "../project-member-governance-persistence.js";
 
 const sockets: WebSocket[] = [];
 const RUNNER_DISPATCH_TIMEOUT_MS = 1_500;
 const NO_DISPATCH_SETTLE_MS = 300;
+
+function ensureProjectUseCaseFallback(
+  deps: ReturnType<typeof startServer>["deps"],
+): void {
+  const originalGetProject = deps.getProjectUseCase.execute.bind(deps.getProjectUseCase);
+  deps.getProjectUseCase.execute = async (input: { workspaceId: string; projectId: string }) => {
+    try {
+      return await originalGetProject(input);
+    } catch {
+      if (input.workspaceId !== "ws_default" || input.projectId !== "proj_1") {
+        throw new Error("project_not_found");
+      }
+      return {
+        id: "proj_1",
+        workspace_id: "ws_default",
+        name: "proj_1",
+        owner_id: "user_test",
+        governance_json: null,
+      } as never;
+    }
+  };
+}
+
+async function seedNotebookTaskCreateReadiness(
+  deps: ReturnType<typeof startServer>["deps"],
+  endpointId: string,
+): Promise<void> {
+  ensureProjectUseCaseFallback(deps);
+  await new AgentTaskModelSettingService(deps).patchSetting({
+    workspaceId: "ws_default",
+    projectId: "proj_1",
+    endpointId,
+    expectedSettingRevision: null,
+    actorUserId: "user_test",
+  });
+  await upsertProjectMembershipRecord(deps.docStore, "ws_default", "proj_1", {
+    project_id: "proj_1",
+    user_id: "user_test",
+    user_email: "test@example.com",
+    user_name: "Test User",
+    status: "active",
+    joined_at: new Date().toISOString(),
+  });
+  await upsertProjectMemberPermissionState(deps.docStore, "ws_default", "proj_1", "user_test", {
+    mode: "custom",
+    template: null,
+    permissions: [
+      "project:agent_task:use",
+      "project:agent_runner:manage",
+      "project:files:update",
+    ],
+  });
+}
 
 type ParsedDefaultSseBlock = {
   id: string | null;
@@ -258,6 +316,7 @@ describe("api-entry-node notebook task event routes", () => {
       );
       expect(createEndpoint.status).toBe(201);
       const endpoint = (await createEndpoint.json()) as { id: string };
+      await seedNotebookTaskCreateReadiness(deps, endpoint.id);
 
       const agent = await deps.agentResourceService.createAgent("ws_default", "proj_1", {
         name: "External notebook agent",
@@ -310,11 +369,13 @@ describe("api-entry-node notebook task event routes", () => {
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
             title: "Task SSE replay",
+            bound_runner_id: agent.id,
+            workspace_mode: "use_existing",
             workspace_file_library_id: workspaceLibrary.id,
           }),
         },
       );
-      expect(createTaskRes.status).toBe(201);
+      expect(createTaskRes.status, await createTaskRes.clone().text()).toBe(201);
       const task = (await createTaskRes.json()) as { id: string };
 
       const taskScopedRunner = await openReadyNotebookRunnerSocket({
@@ -395,7 +456,7 @@ describe("api-entry-node notebook task event routes", () => {
       expect(
         replayBlocks.some((item) => item.payload?.type === "trace_event"),
       ).toBe(true);
-      expect(replayText).toContain("Halfway");
+      expect(replayText).toContain("Running command");
       expect(
         replayBlocks.some((item) => item.payload?.type === "task_update"),
       ).toBe(true);
@@ -410,13 +471,38 @@ describe("api-entry-node notebook task event routes", () => {
 
   it("falls back to persisted authoritative notebook task truth when SSE replay history is missing", async () => {
     const { baseUrl, deps } = startServer();
+    const credential = await deps.endpointResourceService.createCredential("ws_default", "proj_1", {
+      name: "persisted-fallback-key",
+      value: "sk-placeholder-test",
+    });
+    const endpoint = await deps.endpointResourceService.createEndpoint("ws_default", "proj_1", {
+      name: "persisted fallback endpoint",
+      model: "placeholder-model",
+      type: "custom",
+      base_url: "https://example.com/v1",
+      credential_ref: credential.id,
+      status: "active",
+      upstream_protocol: "openai_chat_completions",
+      model_profile: {
+        max_context_tokens: 204800,
+        max_output_tokens: 128000,
+        supports_file: false,
+        supports_tool_call: true,
+        supports_reasoning: false,
+        price_input_per_1m: 0,
+        price_output_per_1m: 0,
+        cache_read_discount_ratio: 0,
+        cache_write_discount_ratio: 0,
+      },
+    });
+    await seedNotebookTaskCreateReadiness(deps, endpoint.id);
     const agent = await deps.agentResourceService.createAgent("ws_default", "proj_1", {
       name: "Persisted fallback notebook agent",
       runner_provider: "developer",
       status: "enabled",
       presence: "online",
       is_default: true,
-      default_endpoint_id: "ep_unused",
+      default_endpoint_id: endpoint.id,
       owner_id: "user_test",
       visibility: "private",
       capabilities: {
@@ -452,11 +538,13 @@ describe("api-entry-node notebook task event routes", () => {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           title: "Persisted fallback task",
+          bound_runner_id: agent.id,
+          workspace_mode: "use_existing",
           workspace_file_library_id: workspaceLibrary.id,
         }),
       },
     );
-    expect(createTaskRes.status).toBe(201);
+    expect(createTaskRes.status, await createTaskRes.clone().text()).toBe(201);
     const task = (await createTaskRes.json()) as { id: string };
 
     const createdAt = new Date().toISOString();
@@ -560,7 +648,7 @@ describe("api-entry-node notebook task event routes", () => {
           item.payload?.type === "trace_event" &&
           item.payload?.data &&
           (item.payload.data as { summary?: string }).summary ===
-            "Persisted trace event",
+            "Running command",
       ),
     ).toBe(true);
   });

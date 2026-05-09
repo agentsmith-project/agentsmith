@@ -107,8 +107,6 @@ describe('agent runner MSW public contract parity', () => {
     }).then((res) => res.status)).resolves.toBe(404);
     await expect(fetch(`${wrongProjectRunnerUrl}/test-task-runs`, {
       method: 'POST',
-      headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ intent: 'developer_runner_connection_check' }),
     }).then((res) => res.status)).resolves.toBe(404);
     await expect(fetch(wrongProjectRunnerUrl, { method: 'DELETE' }).then((res) => res.status)).resolves.toBe(404);
   });
@@ -395,8 +393,6 @@ describe('agent runner MSW public contract parity', () => {
   it('covers Developer test task accepted and unavailable paths', async () => {
     const accepted = await fetch(`${baseUrl}/ag_2/test-task-runs`, {
       method: 'POST',
-      headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ intent: 'developer_runner_connection_check' }),
     });
     const acceptedBody = await accepted.json();
 
@@ -459,8 +455,6 @@ describe('agent runner MSW public contract parity', () => {
 
     const unavailable = await fetch(`${baseUrl}/${unavailableRunner.id}/test-task-runs`, {
       method: 'POST',
-      headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ intent: 'developer_runner_connection_check' }),
     });
     const unavailableBody = await unavailable.json();
 
@@ -484,7 +478,6 @@ describe('agent runner MSW public contract parity', () => {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify({
-        intent: 'developer_runner_connection_check',
         [field]: field === 'runner_selection'
           ? { mode: 'explicit', agent_runner_id: 'ag_2' }
           : 'ordinary-launcher-field',
@@ -514,8 +507,6 @@ describe('agent runner MSW public contract parity', () => {
 
     const testTask = await fetch(`${baseUrl}/${systemRunner.id}/test-task-runs`, {
       method: 'POST',
-      headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ intent: 'developer_runner_connection_check' }),
     });
     expect(testTask.status).toBe(403);
   });

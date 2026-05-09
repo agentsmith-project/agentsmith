@@ -1506,9 +1506,10 @@ describe('handleAgentRoute Agent Runner target contract', () => {
         { task_id: body.task_id },
       );
       expect(messages).toEqual(expect.arrayContaining([
-        expect.objectContaining({ role: 'user', content: expect.stringContaining('Run a safe self-check') }),
+        expect.objectContaining({ role: 'user', content: expect.stringContaining('AGENTSMITH_RUNNER_TEST_OK') }),
         expect.objectContaining({ role: 'agent', turn_id: body.run_id }),
       ]));
+      expect(JSON.stringify(messages)).not.toContain('sk-should-not-leak');
 
       streamGate.resolve();
       await vi.waitFor(async () => {

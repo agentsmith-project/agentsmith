@@ -12,12 +12,18 @@ export interface TaskRecord {
   runner_test?: true;
   workspace_file_library_id?: string;
   workspace_file_library_name?: string;
+  file_library_binding_generation?: number;
+  runtime_writable_affordance?: 'task_internal_home' | 'files_update';
   bound_runner_id?: string;
   bound_runner_kind?: 'managed' | 'developer';
   runner_binding_source?: 'default_managed' | 'explicit';
   bound_at?: string;
   bound_by_user_id?: string;
   status: 'active' | 'archived';
+  deletion_state?: 'deleting' | 'deleted';
+  deleting_started_at?: string;
+  deleted_at?: string;
+  delete_correlation_id?: string;
   attached_inputs: TaskInputRefRecord[];
   created_at: string;
   updated_at: string;
@@ -32,19 +38,28 @@ type PersistedTaskRecordWithUnsupportedLegacyFields = TaskRecord & {
   agent_runner_id?: unknown;
 };
 
-export function sanitizeTaskRecordForActiveModel(input: TaskRecord): TaskRecord {
+export type PublicTaskRecord = Omit<
+  TaskRecord,
+  'deletion_state' | 'deleting_started_at' | 'deleted_at' | 'delete_correlation_id'
+>;
+
+export function sanitizeTaskRecordForActiveModel(input: TaskRecord): PublicTaskRecord {
   const {
     agent_id: _unsupportedLegacyAgentId,
     agent_name: _unsupportedLegacyAgentName,
     runner_id: _unsupportedLegacyRunnerId,
     runner_selection: _unsupportedLegacyRunnerSelection,
     agent_runner_id: _unsupportedLegacyAgentRunnerId,
+    deletion_state: _internalDeletionState,
+    deleting_started_at: _internalDeletingStartedAt,
+    deleted_at: _internalDeletedAt,
+    delete_correlation_id: _internalDeleteCorrelationId,
     ...activeRecord
   } = input as PersistedTaskRecordWithUnsupportedLegacyFields;
   return activeRecord;
 }
 
-export interface TaskListItem extends TaskRecord {
+export interface TaskListItem extends PublicTaskRecord {
   agent_presence?: 'online' | 'offline' | 'managed' | 'unknown';
   run_state?: 'running' | 'cancelling' | 'terminating' | 'finalizing' | 'idle';
   lifecycle_status?: 'active' | 'archived';
@@ -133,7 +148,7 @@ export interface TaskHomePaths {
   taskHomePath: string;
   workspacePath: string;
   artifactsPath: string;
-  subPath: string;
+  libraryRootPath: '.';
 }
 
 export function buildTaskHomeSegment(input: {
@@ -176,7 +191,7 @@ export function buildTaskHomePaths(segment: string): TaskHomePaths {
     taskHomePath,
     workspacePath,
     artifactsPath: `${workspacePath}/.artifacts`,
-    subPath: `agent-tasks/${segment}`,
+    libraryRootPath: '.',
   };
 }
 

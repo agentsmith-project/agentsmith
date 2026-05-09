@@ -30,6 +30,12 @@ import {
   resolveAgentTaskModelTarget,
 } from './agent-task-model-setting-service.js';
 import { resolveTaskRuntimeHomePathsForRunner } from './notebook-task/task-runtime-paths.js';
+import {
+  isTaskWorkspaceBindingGuardError,
+  resolveTaskWorkspaceBindingGuard,
+  toTaskWorkspaceBindingGuardException,
+} from './notebook-task/task-workspace-binding-guard.js';
+import { actorHasProjectPermissions } from './project-permissions.js';
 export {
   readInternalWorkloadHolderSnapshotForTests,
   resetInternalWorkloadHolderCoordinatorForTests,
@@ -41,12 +47,18 @@ type NotebookTaskRecord = {
   project_id: string;
   owner_user_id: string;
   title: string;
-  task_home_segment?: string;
+  task_home_segment: string;
   source?: 'runner_test';
   runner_test?: true;
   workspace_file_library_id?: string;
   workspace_file_library_name?: string;
+  file_library_binding_generation?: number;
+  runtime_writable_affordance?: 'task_internal_home' | 'files_update';
   status: 'active' | 'archived';
+  deletion_state?: 'deleting' | 'deleted';
+  deleting_started_at?: string;
+  deleted_at?: string;
+  delete_correlation_id?: string;
   attached_inputs: Array<
     | { id: string; kind: 'library_object'; library_id: string; key: string; name?: string; content_type?: string; size_bytes?: number }
     | { id: string; kind: 'artifact'; task_id: string; artifact_id: string; task_relative_path?: string; name?: string; content_type?: string; size_bytes?: number }
@@ -605,6 +617,12 @@ export async function runNotebookTaskWithExecutionAgent(input: {
       runnerProvider: agent.runner_provider,
     });
     const taskHomeSegment = taskRuntimePaths.taskHomeSegment;
+    const workspaceFileLibraryId = task.workspace_file_library_id?.trim();
+    if (!workspaceFileLibraryId) {
+      throw Object.assign(new Error('workspace_file_library_id_required'), {
+        code: 'WORKSPACE_FILE_LIBRARY_ID_REQUIRED',
+      });
+    }
     if (isManagedAgentRunner(agent)) {
       await throwIfCancellationRequested();
       if (!deps.internalAgentPodManager) {
@@ -616,20 +634,35 @@ export async function runNotebookTaskWithExecutionAgent(input: {
           code: 'AGENT_SANDBOX_NOT_CONFIGURED',
         });
       }
-      if (!task.workspace_file_library_id) {
-        throw Object.assign(new Error('workspace_file_library_id_required'), {
-          code: 'WORKSPACE_FILE_LIBRARY_ID_REQUIRED',
-        });
-      }
       emitTaskEvent(taskId, {
         type: 'trace_event',
         data: buildSandboxStartingEvent(),
       });
       const workloadId = sanitizeWorkloadId(task.id);
+      try {
+        await resolveTaskWorkspaceBindingGuard({
+          deps,
+          task,
+          actorUserId: user.id,
+          requireMountAccess: false,
+          canUpdateProjectFiles: () => actorHasProjectPermissions({
+            deps,
+            workspaceId: task.workspace_id,
+            projectId: task.project_id,
+            actorUserId: user.id,
+            requiredPermissions: ['project:files:update'],
+          }),
+        });
+      } catch (error) {
+        if (isTaskWorkspaceBindingGuardError(error)) {
+          throw toTaskWorkspaceBindingGuardException(error);
+        }
+        throw error;
+      }
       const workspaceBinding = await workspaceBindingManager.ensureWorkspaceBinding({
         workspaceId: task.workspace_id,
         projectId: task.project_id,
-        fileLibraryId: task.workspace_file_library_id,
+        fileLibraryId: workspaceFileLibraryId,
         taskId: task.id,
         taskHomeSegment,
       });
@@ -671,11 +704,11 @@ export async function runNotebookTaskWithExecutionAgent(input: {
       attachedInputs: task.attached_inputs as NotebookTaskInputRefRecord[],
       debugLog,
     });
-    const workspaceLibrary = task.workspace_file_library_id
+    const workspaceLibrary = workspaceFileLibraryId
       ? await new JsonDocProjectFileLibraryCatalogRepo(deps.docStore).getById(
         task.workspace_id,
         task.project_id,
-        task.workspace_file_library_id,
+        workspaceFileLibraryId,
       )
       : null;
     const issuedExecutionTicket = await issueInternalTicket(deps.cache, {
@@ -738,10 +771,11 @@ export async function runNotebookTaskWithExecutionAgent(input: {
         task_home_path: taskRuntimePaths.taskHomePath,
         workspace_path: taskRuntimePaths.workspacePath,
         artifacts_path: taskRuntimePaths.artifactsPath,
-        workspace_file_library_id: task.workspace_file_library_id ?? null,
+        library_root_path: taskRuntimePaths.libraryRootPath,
+        workspace_file_library_id: workspaceFileLibraryId,
         workspace_file_library_name: task.workspace_file_library_name ?? null,
         workspace_dir_name: workspaceLibrary?.filesystem_name
-          ?? sanitizeFileLibraryWorkspaceDirName(task.workspace_file_library_name, task.workspace_file_library_id),
+          ?? sanitizeFileLibraryWorkspaceDirName(task.workspace_file_library_name, workspaceFileLibraryId),
         task_inputs: taskInputs,
       },
     });

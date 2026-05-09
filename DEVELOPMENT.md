@@ -769,6 +769,9 @@ See also:
 - Agent task activity shows execution details, recovered issues, final answer, terminal sessions, and artifacts.
 - Trace storage/query/replay uses task routes such as `/tasks/:taskId/traces` and task SSE replay.
 - Agent task terminal and run execution share a task-bound persistent HOME; managed paths are `/home/<task_home_segment>` and `/home/<task_home_segment>/workspace`.
+- Deleting a task releases its file-library binding and keeps the file library contents. Archive keeps the binding.
+- `FileLibrary.task_home_binding_status` is the frontend's authoritative binding truth; do not infer binding from task list responses.
+- Reusable tool configuration, user-mode installs, and caches may live under `HOME`; short-lived execution tickets, Project secrets, and managed OAuth credentials must not be persisted to `HOME`, workspace files, Codex config, or reusable tool config.
 - Artifact collection displays files from `$TASK_HOME/workspace/.artifacts` only.
 - Chat model selection remains Endpoint-backed and does not dispatch Agent Runners.
 

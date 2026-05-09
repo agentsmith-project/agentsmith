@@ -1,6 +1,8 @@
 import type { PaginationParams, PaginatedResponse } from './common';
 
 export type FileLibraryStatus = 'creating' | 'ready' | 'degraded' | 'failed' | 'deleting';
+export type FileLibraryTaskHomeBindingStatus = 'unbound' | 'bound';
+export type FileLibraryBoundTaskStatus = 'active' | 'archived';
 
 export type FileLibraryGatewayStatus =
   | 'not_started'
@@ -21,6 +23,11 @@ export interface FileLibrary {
   bucket?: string;
   object_prefix?: string;
   status: FileLibraryStatus;
+  task_home_binding_status: FileLibraryTaskHomeBindingStatus;
+  bound_task_id?: string;
+  bound_task_title?: string;
+  bound_task_status?: FileLibraryBoundTaskStatus;
+  bound_task_visible: boolean;
   filesystem_name: string;
   created_by_user_id: string;
   created_at: string;

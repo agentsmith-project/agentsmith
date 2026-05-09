@@ -1476,6 +1476,39 @@
       "title": "冲突",
       "description": "此操作与现有数据冲突。"
     },
+    "agent_task_delete_blocked": {
+      "description": "当前任务仍有运行中的执行、终端会话，或任务工作区正在被占用，因此不能删除。请先处理这些阻塞项后重试。"
+    },
+    "file_library_deleting": {
+      "description": "该文件库正在删除中。请刷新文件库状态后重试。"
+    },
+    "file_library_not_ready": {
+      "description": "该文件库尚未就绪。请刷新文件库状态后重试。"
+    },
+    "file_library_task_in_use": {
+      "description": "请先删除绑定的任务，再删除此文件库。删除任务只会释放工作区绑定，文件库中的文件会保留。"
+    },
+    "workspace_file_library_in_use": {
+      "description": "该任务工作区现在已绑定到另一个任务。请选择其他工作区或创建新的工作区。"
+    },
+    "file_library_not_empty": {
+      "description": "请先删除此文件库中的文件，再删除文件库。"
+    },
+    "file_library_not_found": {
+      "description": "该文件库已不可用。请刷新文件库列表。"
+    },
+    "file_library_forbidden": {
+      "description": "你没有权限使用此文件库。"
+    },
+    "agent_task_workspace_binding_conflict": {
+      "description": "该任务工作区在操作期间发生了变化。请刷新后重试。"
+    },
+    "agent_task_workspace_file_library_required": {
+      "description": "创建任务前请选择一个可用的任务工作区。"
+    },
+    "agent_task_workspace_mode_invalid": {
+      "description": "请选择创建新的任务工作区，或继续使用已有任务工作区。"
+    },
     "agentTaskResolution": {
       "title": "任务暂未就绪",
       "description": "任务执行暂未就绪。"
@@ -2612,6 +2645,9 @@
       "library_rename_failed": "重命名文件库失败",
       "library_delete_failed": "删除文件库失败",
       "library_delete_warning": "高风险操作：文件库文件及相关索引会被永久删除。",
+      "library_delete_bound_description": "“{name}”仍绑定到一个 Agent 任务。",
+      "library_delete_bound_warning": "请先删除绑定任务，再删除此文件库。删除任务只会释放绑定，文件库文件仍会保留。",
+      "library_delete_bound_blocked": "请先删除绑定任务，再删除此文件库。",
       "library_delete_failed_recovery_description": "这个文件库当前不适合继续用于 Desktop 挂载。如果你要清理这个坏记录，请删除“{name}”；如果后续仍要使用，请删除后重新创建新的文件库。",
       "library_delete_failed_recovery_warning": "治理动作：这里删除的是异常文件库记录。如果后续仍需使用，请在删除后重新创建，不提供自动重新初始化。",
       "library_status_creating": "创建中",
@@ -2619,6 +2655,12 @@
       "library_status_degraded": "降级",
       "library_status_failed": "失败",
       "library_status_deleting": "删除中",
+      "library_binding_unbound": "未绑定",
+      "library_binding_bound": "已绑定",
+      "library_binding_bound_visible": "绑定到 {title}（{status}）",
+      "library_binding_bound_redacted": "已绑定到你不可见的任务",
+      "library_bound_home_banner": "这个文件库正在作为 Agent task 的 HOME 使用，Files 中的改动会影响该 task HOME 内容。",
+      "library_bound_home_banner_visible": "这个文件库正在作为 {title}（{status}）的 HOME 使用，Files 中的改动会影响该 task HOME 内容。",
       "library_status_reason_degraded": "这个文件库当前需要先治理，再建议用于本地挂载。",
       "library_status_reason_failed": "这个文件库没有完成后端基础初始化。请先在 Files 管理侧删除或重建，再用于 Desktop 挂载。",
       "library_status_reason_failed_mount": "这个文件库在后端基础初始化恢复前不可用于挂载。",
@@ -3297,13 +3339,16 @@
       "workspace_source_create_new": "自动初始化新的任务工作区",
       "workspace_source_create_new_hint": "推荐。系统会为当前任务创建一个新的持久化任务工作区。",
       "workspace_source_use_existing": "继续已有任务工作区",
-      "workspace_source_use_existing_hint": "继续使用一个已有任务工作区，以便复用之前的文件和智能体上下文。",
+      "workspace_source_use_existing_hint": "需要 Files 更新权限。选择一个可用的任务工作区，继续使用之前的文件。",
       "workspace_name_label": "新任务工作区名称",
       "workspace_name_placeholder": "输入任务工作区名称",
       "workspace_name_hint": "留空时会根据任务标题自动生成任务工作区名称。",
       "select_workspace_file_library": "选择已有任务工作区",
-      "workspace_file_library_hint": "只有空闲任务工作区可以继续使用。活跃任务会一直占用自己的任务工作区，直到任务归档或删除。",
+      "workspace_file_library_hint": "活跃和已归档任务都会保留自己的工作区绑定。删除任务只会释放绑定，文件库中的文件会保留。",
       "workspace_file_library_empty": "当前项目暂无空闲任务工作区可继续使用。",
+      "workspace_file_library_bound_visible": "绑定到 {title}（{status}）",
+      "workspace_file_library_bound_redacted": "已绑定到另一个任务",
+      "workspace_file_library_conflict": "该任务工作区现在已绑定到另一个任务。请选择其他工作区或创建新的工作区。",
       "history_immutable_notice": "对话历史不可修改",
       "advanced_settings": "高级设置",
       "advanced_settings_description": "保持关闭时，任务会使用部署托管的 runner（deployment-managed runner）。",
@@ -3327,7 +3372,7 @@
       "leave": "离开任务",
       "leave_tooltip": "返回 Agent Tasks 列表。任务会继续在后台运行。",
       "delete": "删除任务",
-      "delete_confirm_message": "确定要删除此任务吗？此操作不可撤销。所有消息和生成物将被永久删除。",
+      "delete_confirm_message": "删除任务会删除任务历史、对话、trace、artifact 元数据、runner 和终端关联。任务工作区和文件会保留在 Files 中；删除完成后，新任务可以显式选择这个任务工作区。",
       "delete_cancel": "取消",
       "delete_blocked_terminal_sessions": "请先结束所有终端会话，再删除此任务。",
       "delete_blocked_terminal_sessions_pending": "正在检查终端会话，请稍后再删除此任务。",

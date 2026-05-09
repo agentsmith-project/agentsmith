@@ -17,6 +17,10 @@ import { Loader2 } from 'lucide-react';
 interface LibraryDeleteTarget {
   name: string;
   status?: 'creating' | 'ready' | 'degraded' | 'failed' | 'deleting';
+  task_home_binding_status?: 'unbound' | 'bound';
+  bound_task_visible?: boolean;
+  bound_task_title?: string;
+  bound_task_status?: 'active' | 'archived';
 }
 
 interface LibraryDialogsProps {
@@ -25,11 +29,13 @@ interface LibraryDialogsProps {
   libraryCreateError: string | null;
   libraryCreateOpen: boolean;
   libraryDeleteConfirm: string;
+  libraryDeleteError: string | null;
   libraryDeleteOpen: boolean;
   libraryDeleteTarget: LibraryDeleteTarget | null;
   libraryDescription: string;
   libraryName: string;
   libraryRenameDescription: string;
+  libraryRenameError: string | null;
   libraryRenameName: string;
   libraryRenameOpen: boolean;
   libraryRenameTarget: unknown;
@@ -56,11 +62,13 @@ export function LibraryDialogs({
   libraryCreateError,
   libraryCreateOpen,
   libraryDeleteConfirm,
+  libraryDeleteError,
   libraryDeleteOpen,
   libraryDeleteTarget,
   libraryDescription,
   libraryName,
   libraryRenameDescription,
+  libraryRenameError,
   libraryRenameName,
   libraryRenameOpen,
   libraryRenameTarget,
@@ -81,6 +89,7 @@ export function LibraryDialogs({
   onSetLibraryRenameOpen,
 }: LibraryDialogsProps) {
   const isFailedLibraryDelete = libraryDeleteTarget?.status === 'failed' || libraryDeleteTarget?.status === 'degraded';
+  const isBoundLibraryDelete = libraryDeleteTarget?.task_home_binding_status === 'bound';
   const handleCreateDialogOpenChange = (open: boolean) => {
     if (!open && createLibraryPending) return;
     onSetLibraryCreateOpen(open);
@@ -179,6 +188,15 @@ export function LibraryDialogs({
                 data-testid="files__library-rename__description"
               />
             </div>
+            {libraryRenameError ? (
+              <div
+                className="rounded-md border border-warning/30 bg-warning/10 px-3 py-2 text-sm text-warning"
+                role="alert"
+                data-testid="files__library-rename__error"
+              >
+                {libraryRenameError}
+              </div>
+            ) : null}
           </div>
           <DialogFooter>
             <Button type="button" variant="outline" onClick={onCloseRenameLibraryDialog}>
@@ -203,7 +221,9 @@ export function LibraryDialogs({
             <DialogDescription>
               {libraryDeleteTarget
                 ? (
-                    isFailedLibraryDelete
+                    isBoundLibraryDelete
+                      ? t('file_manager.library_delete_bound_description', { name: libraryDeleteTarget.name })
+                      : isFailedLibraryDelete
                       ? t('file_manager.library_delete_failed_recovery_description', { name: libraryDeleteTarget.name })
                       : t('file_manager.library_delete_confirm', { name: libraryDeleteTarget.name })
                   )
@@ -214,15 +234,28 @@ export function LibraryDialogs({
             {libraryDeleteTarget ? (
               <div
                 className={
-                  isFailedLibraryDelete
+                  isBoundLibraryDelete
+                    ? 'rounded-md border border-warning/30 bg-warning/10 px-3 py-2 text-xs text-warning'
+                    : isFailedLibraryDelete
                     ? 'rounded-md border border-warning/30 bg-warning/10 px-3 py-2 text-xs text-warning'
                     : 'rounded-md border border-error/30 bg-error/10 px-3 py-2 text-xs text-error'
                 }
                 data-testid="files__library-delete__warning"
               >
-                {isFailedLibraryDelete
+                {isBoundLibraryDelete
+                  ? t('file_manager.library_delete_bound_warning')
+                  : isFailedLibraryDelete
                   ? t('file_manager.library_delete_failed_recovery_warning')
                   : t('file_manager.library_delete_warning')}
+              </div>
+            ) : null}
+            {libraryDeleteError ? (
+              <div
+                className="rounded-md border border-warning/30 bg-warning/10 px-3 py-2 text-sm text-warning"
+                role="alert"
+                data-testid="files__library-delete__error"
+              >
+                {libraryDeleteError}
               </div>
             ) : null}
             <div className="space-y-1.5">
@@ -247,6 +280,7 @@ export function LibraryDialogs({
               disabled={
                 !libraryDeleteTarget
                 || libraryDeleteConfirm !== libraryDeleteTarget.name
+                || isBoundLibraryDelete
                 || deleteLibraryPending
               }
               data-testid="files__library-delete__submit"

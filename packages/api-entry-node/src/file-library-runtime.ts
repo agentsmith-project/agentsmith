@@ -776,8 +776,12 @@ async function execCommand(cmd: string, args: string[], options?: { env?: Comman
         resolve();
         return;
       }
-      const message = stderr.trim() || stdout.trim() || `${cmd}_failed`;
-      reject(new Error(message));
+      reject(Object.assign(new Error('file_library_cli_command_failed'), {
+        exitCode: code,
+        command: cmd,
+        stdoutBytes: Buffer.byteLength(stdout),
+        stderrBytes: Buffer.byteLength(stderr),
+      }));
     });
   });
 }

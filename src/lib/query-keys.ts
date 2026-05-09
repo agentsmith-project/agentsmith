@@ -125,6 +125,8 @@ export const queryKeys = {
     _def: ['file-libraries'] as const,
     list: (workspaceId: string, projectId: string) =>
       ['file-libraries', workspaceId, projectId] as const,
+    detail: (workspaceId: string, projectId: string, libraryId: string) =>
+      ['file-library', workspaceId, projectId, libraryId] as const,
   },
 
   /** File objects (MinIO-like browser) */

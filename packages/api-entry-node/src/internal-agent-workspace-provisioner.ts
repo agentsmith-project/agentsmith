@@ -33,7 +33,7 @@ export interface InternalAgentWorkspaceMount {
   taskHomePath: string;
   workspacePath: string;
   artifactsPath: string;
-  subPath: string;
+  libraryRootPath: '.';
   readOnly?: boolean;
 }
 
@@ -235,7 +235,7 @@ export class InternalAgentWorkspaceProvisionerImpl implements InternalAgentWorks
         taskHomePath: taskHomePaths.taskHomePath,
         workspacePath: taskHomePaths.workspacePath,
         artifactsPath: taskHomePaths.artifactsPath,
-        subPath: taskHomePaths.subPath,
+        libraryRootPath: taskHomePaths.libraryRootPath,
       },
       binding,
     };

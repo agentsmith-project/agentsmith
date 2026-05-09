@@ -201,6 +201,7 @@ export async function prepareTerminalWorkspace(input: {
         NO_COLOR: '1',
         TASK_HOME: taskPaths.taskHome,
         WORKSPACE_PATH: taskPaths.workspaceDir,
+        ARTIFACTS_PATH: taskPaths.artifactsDir,
         ...buildAgentRuntimeEnv(executionContext),
         MBOS_AGENT_TASK_PREAMBLE: buildTaskHeadlessPreamble({
           artifactsDir: taskPaths.artifactsDir,

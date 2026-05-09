@@ -14,15 +14,17 @@ interface ObjectOperationDialogsProps {
   batchResultOpen: boolean;
   batchResultType: 'delete' | 'download';
   batchRetryPending: boolean;
+  deleteInlineError: string | null;
   deleteConfirmOpen: boolean;
   selectedCount: number;
   t: (key: string, values?: Record<string, string>) => string;
   uploadConflictFileName: string;
   uploadConflictOpen: boolean;
   onCloseBatchResult: () => void;
+  onClearDeleteInlineError: () => void;
   onDismissUploadConflict: () => void;
   onHandleBatchResultOpenChange: (open: boolean) => void;
-  onHandleDelete: () => Promise<void>;
+  onHandleDelete: () => Promise<boolean>;
   onHandleRetryBatchFailures: () => Promise<void>;
   onHandleUploadConflictOpenChange: (open: boolean) => void;
   onResolveUploadConflictOverwrite: () => void;
@@ -35,12 +37,14 @@ export function ObjectOperationDialogs({
   batchResultOpen,
   batchResultType,
   batchRetryPending,
+  deleteInlineError,
   deleteConfirmOpen,
   selectedCount,
   t,
   uploadConflictFileName,
   uploadConflictOpen,
   onCloseBatchResult,
+  onClearDeleteInlineError,
   onDismissUploadConflict,
   onHandleBatchResultOpenChange,
   onHandleDelete,
@@ -79,7 +83,13 @@ export function ObjectOperationDialogs({
         </DialogContent>
       </Dialog>
 
-      <Dialog open={deleteConfirmOpen} onOpenChange={onSetDeleteConfirmOpen}>
+      <Dialog
+        open={deleteConfirmOpen}
+        onOpenChange={(open) => {
+          if (!open) onClearDeleteInlineError();
+          onSetDeleteConfirmOpen(open);
+        }}
+      >
         <DialogContent className="sm:max-w-[480px]" data-testid="files__dialog__delete">
           <DialogHeader>
             <DialogTitle>{t('file_manager.delete')}</DialogTitle>
@@ -87,16 +97,35 @@ export function ObjectOperationDialogs({
           <div className="text-sm text-tertiary">
             {t('file_manager.delete_confirm', { count: String(selectedCount) })}
           </div>
+          {deleteInlineError ? (
+            <div
+              className="rounded-md border border-warning/30 bg-warning/10 px-3 py-2 text-sm text-warning"
+              role="alert"
+              data-testid="files__delete__error"
+            >
+              {deleteInlineError}
+            </div>
+          ) : null}
           <DialogFooter>
-            <Button type="button" variant="outline" onClick={() => onSetDeleteConfirmOpen(false)}>
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => {
+                onClearDeleteInlineError();
+                onSetDeleteConfirmOpen(false);
+              }}
+            >
               {t('file_manager.cancel')}
             </Button>
             <Button
               type="button"
               variant="destructive"
               onClick={() => {
-                onSetDeleteConfirmOpen(false);
-                void onHandleDelete();
+                void onHandleDelete().then((success) => {
+                  if (success) {
+                    onSetDeleteConfirmOpen(false);
+                  }
+                });
               }}
               disabled={selectedCount === 0}
             >
@@ -128,6 +157,15 @@ export function ObjectOperationDialogs({
                 ))}
               </div>
             </div>
+            {deleteInlineError ? (
+              <div
+                className="rounded-md border border-warning/30 bg-warning/10 px-3 py-2 text-sm text-warning"
+                role="alert"
+                data-testid="files__batch-result__error"
+              >
+                {deleteInlineError}
+              </div>
+            ) : null}
           </div>
           <DialogFooter>
             <Button type="button" variant="outline" onClick={onCloseBatchResult}>

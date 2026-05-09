@@ -2359,22 +2359,35 @@ export type AgentTaskApiRecord = {
   [key: string]: unknown;
 };
 
-export async function createAgentTaskViaApi(args: {
+type CreateAgentTaskViaApiBaseArgs = {
   page: Page;
   workspaceId: string;
   projectId: string;
   title: string;
-  fileLibraryId?: string;
-  workspaceMode?: "create_new";
   workspaceName?: string;
   initialInputs?: Array<Record<string, unknown>>;
-}): Promise<string> {
+};
+
+type CreateAgentTaskViaApiArgs =
+  | (CreateAgentTaskViaApiBaseArgs & {
+      fileLibraryId: string;
+      workspaceMode?: "use_existing";
+    })
+  | (CreateAgentTaskViaApiBaseArgs & {
+      fileLibraryId?: undefined;
+      workspaceMode?: "create_new";
+    });
+
+export async function createAgentTaskViaApi(args: CreateAgentTaskViaApiArgs): Promise<string> {
   const token = await readStoredAuthToken(args.page);
   const title = args.title.trim();
   if (!title) {
     throw new Error("agent_task_title_required");
   }
   const fileLibraryId = args.fileLibraryId?.trim();
+  if (args.fileLibraryId !== undefined && !fileLibraryId) {
+    throw new Error("agent_task_workspace_file_library_id_required");
+  }
   const response = await args.page.request.post(
     `${API_BASE}/api/v1/workspaces/${args.workspaceId}/projects/${args.projectId}/tasks`,
     {
@@ -2385,7 +2398,10 @@ export async function createAgentTaskViaApi(args: {
       data: {
         title,
         ...(fileLibraryId
-          ? { workspace_file_library_id: fileLibraryId }
+          ? {
+              workspace_mode: "use_existing" as const,
+              workspace_file_library_id: fileLibraryId,
+            }
           : { workspace_mode: args.workspaceMode ?? "create_new" }),
         ...(args.workspaceName?.trim()
           ? { workspace_name: args.workspaceName.trim() }

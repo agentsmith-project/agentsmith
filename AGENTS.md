@@ -162,12 +162,13 @@ Raw `test:*`, `gate:*`, `lane:*`, `backend-real:*` 和底层 owner adapter 命�
 
 - `TASK_HOME` / `HOME` 是 task-bound persistent HOME；managed canonical path 为 `/home/<task_home_segment>`。
 - `cwd` 是 `$TASK_HOME/workspace`；用户文件工作区、terminal 和 agent run 共享同一个 task HOME。
-- 动态配置、缓存、安装产物、用户态工具链、认证文件都必须写在当前 `HOME` 下，不能写到 `/etc`、`/usr/local`、`/opt`、`/var/tmp` 等系统级目录。
+- 可复用工具配置、缓存、安装产物、用户态工具链必须写在当前 `HOME` 下，不能写到 `/etc`、`/usr/local`、`/opt`、`/var/tmp` 等系统级目录。
+- 短期 execution ticket、Project secrets、managed OAuth credentials 不得持久化到 `HOME`、workspace、Codex config 或可复用工具配置；只通过请求级环境变量或 AgentSmith Context Store 只读投影使用。
 - 用户可见的生成型 deliverables/artifacts 必须写到 `$TASK_HOME/workspace/.artifacts`；正常编辑 task 工作区内的源文件/项目文件不属于这条限制。
 - builtin skills 的运行时可见路径是 `~/.agents/skills`。
 - AgentSmith 的成员/任务级上下文、简单 credentials、共享说明通过 `mbos-context` builtin skill 和 AgentSmith Context Store 获取，不应假设它们存在于 workspace 文件树中。
 - Context Store 的正式 scopes 是 `member / task / project / workspace`：`member` 表示当前 workspace 内成员私有上下文，`task` 表示当前成员拥有的任务上下文，`project/workspace` 表示共享上下文。
-- 复杂 OAuth 凭据（例如 Feishu）通过只读 context 视图暴露，例如 `managed_credentials.feishu`；不要尝试在 workspace 中查找或持久化这类凭据文件。
+- 复杂 OAuth 凭据（例如 Feishu）通过只读 context 视图暴露，例如 `managed_credentials.feishu`；不要尝试在 workspace 或 HOME 中查找或持久化这类凭据文件。
 - skill runtime 的正式主链覆盖 Agent task / terminal 执行路径；如果改动影响 skill env、ticket scope 或 Context Store 路由，必须把对应 `test:skills:*` gate 一起更新或回归验证。
 - Codex 运行时状态位于 `$HOME/.codex`；runner 自己的 task 元数据位于 `$HOME/.mbos`；builtin skills 位于 `$HOME/.agents/skills`。
 - 如果需要安装 Python / Node / Rust 环境或库，只能使用 user 模式并安装到 home 下：

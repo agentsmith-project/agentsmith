@@ -9,7 +9,60 @@ import { useTranslations } from 'next-intl';
 import { getApiClient, FilesAPI } from '@/lib/api';
 import { queryKeys } from '@/lib/query-keys';
 import { toast } from '@/components/ui/toast';
-import { handleErrorForToast } from '@/lib/api/errors';
+import { APIError, handleErrorForToast } from '@/lib/api/errors';
+
+const FILE_LIBRARY_CONFLICT_ERROR_CODES = new Set([
+  'FILE_LIBRARY_TASK_IN_USE',
+  'FILE_LIBRARY_DELETING',
+  'FILE_LIBRARY_NOT_EMPTY',
+  'FILE_LIBRARY_NOT_READY',
+  'AGENT_TASK_FILE_LIBRARY_IN_USE',
+]);
+
+function readFileLibraryIdFromError(error: unknown) {
+  if (!(error instanceof APIError)) return null;
+  const value = error.details?.file_library_id;
+  return typeof value === 'string' && value.trim().length > 0 ? value : null;
+}
+
+function fileLibraryQueryMatches(
+  queryKey: readonly unknown[],
+  workspaceId: string,
+  projectId: string,
+  libraryId?: string | null,
+) {
+  const scopedKey = queryKey[0] === 'v2' ? queryKey.slice(1) : queryKey;
+  if (
+    scopedKey[0] === 'file-libraries'
+    && scopedKey[1] === workspaceId
+    && scopedKey[2] === projectId
+  ) {
+    return true;
+  }
+  if (
+    scopedKey[0] === 'file-library'
+    && scopedKey[1] === workspaceId
+    && scopedKey[2] === projectId
+  ) {
+    return !libraryId || scopedKey[3] === libraryId;
+  }
+  return false;
+}
+
+function invalidateFileLibraryCaches(
+  queryClient: ReturnType<typeof useQueryClient>,
+  workspaceId: string,
+  projectId: string,
+  libraryId?: string | null,
+) {
+  return queryClient.invalidateQueries({
+    predicate: (query) => fileLibraryQueryMatches(query.queryKey, workspaceId, projectId, libraryId),
+  });
+}
+
+function isFileLibraryConflictError(error: unknown) {
+  return error instanceof APIError && FILE_LIBRARY_CONFLICT_ERROR_CODES.has(error.errorCode);
+}
 
 export function useFileLibraries(
   workspaceId: string,
@@ -48,10 +101,8 @@ export function useCreateFileLibrary() {
         description,
         visibility: 'shared',
       }),
-    onSuccess: (_, variables) => {
-      queryClient.invalidateQueries({
-        queryKey: queryKeys.fileLibraries.list(variables.workspaceId, variables.projectId),
-      });
+    onSuccess: async (_, variables) => {
+      await invalidateFileLibraryCaches(queryClient, variables.workspaceId, variables.projectId);
       toast.success(t('create_success'));
     },
     onError: (error: unknown) => {
@@ -83,13 +134,20 @@ export function useUpdateFileLibrary() {
         name,
         description,
       }),
-    onSuccess: (_, variables) => {
-      queryClient.invalidateQueries({
-        queryKey: queryKeys.fileLibraries.list(variables.workspaceId, variables.projectId),
-      });
+    onSuccess: async (_, variables) => {
+      await invalidateFileLibraryCaches(queryClient, variables.workspaceId, variables.projectId, variables.libraryId);
       toast.success(t('update_success'));
     },
-    onError: (error: unknown) => {
+    onError: (error: unknown, variables) => {
+      if (isFileLibraryConflictError(error)) {
+        void invalidateFileLibraryCaches(
+          queryClient,
+          variables.workspaceId,
+          variables.projectId,
+          readFileLibraryIdFromError(error) ?? variables.libraryId,
+        );
+        return;
+      }
       handleErrorForToast(error, 'useUpdateFileLibrary');
     },
   });
@@ -110,13 +168,20 @@ export function useDeleteFileLibrary() {
       projectId: string;
       libraryId: string;
     }) => filesAPI.deleteLibrary(workspaceId, projectId, libraryId),
-    onSuccess: (_, variables) => {
-      queryClient.invalidateQueries({
-        queryKey: queryKeys.fileLibraries.list(variables.workspaceId, variables.projectId),
-      });
+    onSuccess: async (_, variables) => {
+      await invalidateFileLibraryCaches(queryClient, variables.workspaceId, variables.projectId, variables.libraryId);
       toast.success(t('delete_success'));
     },
-    onError: (error: unknown) => {
+    onError: (error: unknown, variables) => {
+      if (isFileLibraryConflictError(error)) {
+        void invalidateFileLibraryCaches(
+          queryClient,
+          variables.workspaceId,
+          variables.projectId,
+          readFileLibraryIdFromError(error) ?? variables.libraryId,
+        );
+        return;
+      }
       handleErrorForToast(error, 'useDeleteFileLibrary');
     },
   });

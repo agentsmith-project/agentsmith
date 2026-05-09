@@ -102,11 +102,47 @@ export interface AgentPresenceStorePort {
   clearAgent(agentId: string): Promise<void>;
 }
 
+export type JsonDocCasValue = string | number | boolean | null;
+export type JsonDocCasCondition = Record<string, JsonDocCasValue>;
+
+export type JsonDocConditionalCreateResult<T> =
+  | { ok: true }
+  | { ok: false; reason: 'exists'; current: T };
+
+export type JsonDocConditionalUpdateResult<T> =
+  | { ok: true; doc: T }
+  | { ok: false; reason: 'not_found' | 'condition_failed'; current: T | null };
+
+export type JsonDocConditionalDeleteResult<T> =
+  | { ok: true; deleted: boolean }
+  | { ok: false; reason: 'not_found' | 'condition_failed'; current: T | null };
+
 export interface JsonDocStorePort {
   get<T>(collection: string, id: string): Promise<T | null>;
   upsert<T>(collection: string, id: string, doc: T): Promise<void>;
   list<T>(collection: string, filter?: Record<string, string>): Promise<T[]>;
   delete(collection: string, id: string): Promise<void>;
+  createIfAbsent<T>(
+    collection: string,
+    id: string,
+    doc: T,
+  ): Promise<JsonDocConditionalCreateResult<T>>;
+  updateIfMatch<T>(
+    collection: string,
+    id: string,
+    operation: {
+      expected: JsonDocCasCondition;
+      patch?: Partial<T>;
+      replace?: T;
+    },
+  ): Promise<JsonDocConditionalUpdateResult<T>>;
+  deleteIfMatch<T>(
+    collection: string,
+    id: string,
+    operation: {
+      expected: JsonDocCasCondition;
+    },
+  ): Promise<JsonDocConditionalDeleteResult<T>>;
 }
 
 export interface ObjectStorePutObjectStreamOptions {

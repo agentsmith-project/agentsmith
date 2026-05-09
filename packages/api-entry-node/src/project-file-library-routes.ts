@@ -39,11 +39,39 @@ import { resolveFileLibraryStorageBucketUrlForClientMount } from './file-library
 import {
   createAndProvisionProjectFileLibrary,
   mapFileLibraryInfraError,
+  safeFileLibraryInfraErrorMessage,
 } from './project-file-library-service.js';
-import type { FileLibraryDesktopMountAccess, FileLibraryMountAccess } from './file-library-model.js';
+import type {
+  FileLibraryDesktopMountAccess,
+  FileLibraryMountAccess,
+  FileLibraryRecord,
+} from './file-library-model.js';
 import { notebookTasksCollection } from './notebook-task/task-store.js';
+import type { TaskRecord } from './notebook-task/task-models.js';
+import {
+  buildBoundTaskSafeFields,
+  buildFileLibraryTaskHomeBindingFields,
+  findTaskFileLibraryBinding,
+  hydrateTaskFileLibraryBindingsForProject,
+  type TaskFileLibraryBinding,
+} from './notebook-task/task-file-library-bindings.js';
+import { writeProjectAuditEvent } from './audit-usage-recorders.js';
 
 type JsonResponder = (res: http.ServerResponse, statusCode: number, body: unknown) => void;
+type ProjectFileLibraryRouteKind =
+  | 'fileLibraries'
+  | 'fileLibraryItem'
+  | 'fileLibraryBackend'
+  | 'fileLibraryStorageCredentialExchange'
+  | 'fileLibraryDesktopMountAccess'
+  | 'fileLibraryEntries'
+  | 'fileLibraryFolders'
+  | 'fileLibraryDelete'
+  | 'fileLibraryMove'
+  | 'fileLibraryUpload'
+  | 'fileLibraryDownload'
+  | 'fileLibraryMeta'
+  | 'fileLibraryShareLink';
 
 type GatewayObjectItem = {
   key: string;
@@ -166,6 +194,43 @@ async function assertFileLibraryEmpty(args: {
   }
 }
 
+async function hydrateFileLibraryTaskBindings(args: {
+  deps: NodeApiDeps;
+  workspaceId: string;
+  projectId: string;
+}): Promise<void> {
+  const tasks = await args.deps.docStore.list<TaskRecord>(notebookTasksCollection(args.workspaceId), {
+    workspace_id: args.workspaceId,
+    project_id: args.projectId,
+  });
+  await hydrateTaskFileLibraryBindingsForProject({
+    docStore: args.deps.docStore,
+    workspaceId: args.workspaceId,
+    projectId: args.projectId,
+    tasks,
+  });
+}
+
+function withTaskHomeBindingFields(input: {
+  library: FileLibraryRecord;
+  binding: TaskFileLibraryBinding | null;
+  actorUserId: string;
+}): FileLibraryRecord & ReturnType<typeof buildFileLibraryTaskHomeBindingFields> {
+  return {
+    ...input.library,
+    ...buildFileLibraryTaskHomeBindingFields({
+      binding: input.binding,
+      actorUserId: input.actorUserId,
+    }),
+  };
+}
+
+function safeOptionalFileLibraryInfraError(message: string | undefined): string | undefined {
+  return typeof message === 'string' && message.trim()
+    ? safeFileLibraryInfraErrorMessage(message)
+    : undefined;
+}
+
 async function copyObject(
   client: MinioClient,
   bucket: string,
@@ -232,6 +297,43 @@ async function deleteMany(
 
 function isOwnedFileLibrary(library: { created_by_user_id?: string }, ownerUserId: string): boolean {
   return typeof library.created_by_user_id === 'string' && library.created_by_user_id === ownerUserId;
+}
+
+function isDeletingFileLibraryStatus(status: FileLibraryRecord['status']): boolean {
+  return status === 'deleting' || status === 'deleted';
+}
+
+function buildFileLibraryDeletingResponse(library: FileLibraryRecord): Record<string, unknown> {
+  return {
+    error_code: 'FILE_LIBRARY_DELETING',
+    message: 'file_library_deleting',
+    file_library_id: library.id,
+    file_library_status: library.status,
+  };
+}
+
+function buildFileLibraryNotReadyResponse(library: FileLibraryRecord): Record<string, unknown> {
+  if (isDeletingFileLibraryStatus(library.status)) {
+    return buildFileLibraryDeletingResponse(library);
+  }
+  return {
+    error_code: 'FILE_LIBRARY_NOT_READY',
+    message: 'file_library_not_ready',
+    file_library_id: library.id,
+    file_library_status: library.status,
+  };
+}
+
+function isFileLibraryWriteRoute(routeKind: ProjectFileLibraryRouteKind, method: string): boolean {
+  if (routeKind === 'fileLibraryItem' && method === 'PATCH') return true;
+  if (routeKind === 'fileLibraryFolders' && method === 'POST') return true;
+  if (routeKind === 'fileLibraryDelete' && method === 'POST') return true;
+  if (routeKind === 'fileLibraryMove' && method === 'POST') return true;
+  if (routeKind === 'fileLibraryUpload' && method === 'POST') return true;
+  if (routeKind === 'fileLibraryShareLink' && method === 'POST') return true;
+  if (routeKind === 'fileLibraryStorageCredentialExchange' && method === 'POST') return true;
+  if (routeKind === 'fileLibraryDesktopMountAccess' && method === 'POST') return true;
+  return false;
 }
 
 function firstHeaderValue(input: string | string[] | undefined): string | null {
@@ -508,20 +610,7 @@ function toDesktopMountAccess(
 }
 
 export async function handleProjectFileLibraryRoutes(args: {
-  routeKind:
-    | 'fileLibraries'
-    | 'fileLibraryItem'
-    | 'fileLibraryBackend'
-    | 'fileLibraryStorageCredentialExchange'
-    | 'fileLibraryDesktopMountAccess'
-    | 'fileLibraryEntries'
-    | 'fileLibraryFolders'
-    | 'fileLibraryDelete'
-    | 'fileLibraryMove'
-    | 'fileLibraryUpload'
-    | 'fileLibraryDownload'
-    | 'fileLibraryMeta'
-    | 'fileLibraryShareLink';
+  routeKind: ProjectFileLibraryRouteKind;
   method: string;
   workspaceId: string;
   projectId: string;
@@ -551,7 +640,21 @@ export async function handleProjectFileLibraryRoutes(args: {
   const mountAccessRepo = new JsonDocProjectFileLibraryMountAccessRepo(deps.docStore);
 
   if (routeKind === 'fileLibraries' && method === 'GET') {
-    json(res, 200, { items: await catalogRepo.listByProjectForOwner(workspaceId, projectId, user.id) });
+    await hydrateFileLibraryTaskBindings({ deps, workspaceId, projectId });
+    const libraries = await catalogRepo.listByProjectForOwner(workspaceId, projectId, user.id);
+    const items = await Promise.all(libraries.map(async (item) => withTaskHomeBindingFields({
+      library: item,
+      binding: await findTaskFileLibraryBinding({
+        docStore: deps.docStore,
+        workspaceId,
+        projectId,
+        fileLibraryId: item.id,
+      }),
+      actorUserId: user.id,
+    })));
+    json(res, 200, {
+      items,
+    });
     return true;
   }
 
@@ -574,7 +677,11 @@ export async function handleProjectFileLibraryRoutes(args: {
         name: parsed.data.name,
         description: parsed.data.description,
       });
-      json(res, 201, updated);
+      json(res, 201, withTaskHomeBindingFields({
+        library: updated,
+        binding: null,
+        actorUserId: user.id,
+      }));
     } catch (error) {
       const mapped = mapFileLibraryInfraError(error);
       json(res, mapped.statusCode, {
@@ -596,9 +703,26 @@ export async function handleProjectFileLibraryRoutes(args: {
     json(res, 404, { error_code: 'RESOURCE_NOT_FOUND', message: 'file_library_not_found' });
     return true;
   }
+  if (
+    isFileLibraryWriteRoute(routeKind, method)
+    && library.status !== 'ready'
+  ) {
+    json(res, 409, buildFileLibraryNotReadyResponse(library));
+    return true;
+  }
 
   if (routeKind === 'fileLibraryItem' && method === 'GET') {
-    json(res, 200, library);
+    await hydrateFileLibraryTaskBindings({ deps, workspaceId, projectId });
+    json(res, 200, withTaskHomeBindingFields({
+      library,
+      binding: await findTaskFileLibraryBinding({
+        docStore: deps.docStore,
+        workspaceId,
+        projectId,
+        fileLibraryId: libraryId,
+      }),
+      actorUserId: user.id,
+    }));
     return true;
   }
 
@@ -609,7 +733,21 @@ export async function handleProjectFileLibraryRoutes(args: {
       return true;
     }
     const updated = await catalogRepo.update(workspaceId, projectId, libraryId, parsed.data);
-    json(res, 200, updated);
+    if (!updated) {
+      json(res, 404, { error_code: 'RESOURCE_NOT_FOUND', message: 'file_library_not_found' });
+      return true;
+    }
+    await hydrateFileLibraryTaskBindings({ deps, workspaceId, projectId });
+    json(res, 200, withTaskHomeBindingFields({
+      library: updated,
+      binding: await findTaskFileLibraryBinding({
+        docStore: deps.docStore,
+        workspaceId,
+        projectId,
+        fileLibraryId: libraryId,
+      }),
+      actorUserId: user.id,
+    }));
     return true;
   }
 
@@ -618,21 +756,128 @@ export async function handleProjectFileLibraryRoutes(args: {
       json(res, 503, { error_code: 'SERVICE_UNAVAILABLE', message: 'file_library_backend_unavailable' });
       return true;
     }
-    const tasks = await deps.docStore.list<{
-      status?: string;
-      workspace_file_library_id?: string;
-    }>(notebookTasksCollection(workspaceId), {
-      workspace_id: workspaceId,
-      project_id: projectId,
-    });
-    const taskUsingLibrary = tasks.find((task) => (
-      task.workspace_file_library_id === libraryId
-    ));
-    if (taskUsingLibrary) {
-      json(res, 409, { error_code: 'RESOURCE_CONFLICT', message: 'file_library_task_in_use' });
+    const requestId = typeof req.headers?.['x-request-id'] === 'string'
+      ? req.headers['x-request-id']
+      : `delete_${libraryId}_${Date.now()}`;
+    if (library.status === 'deleted') {
+      json(res, 409, buildFileLibraryDeletingResponse(library));
       return true;
     }
-    await catalogRepo.update(workspaceId, projectId, libraryId, { status: 'deleting' });
+    await hydrateFileLibraryTaskBindings({ deps, workspaceId, projectId });
+    const taskUsingLibrary = await findTaskFileLibraryBinding({
+      docStore: deps.docStore,
+      workspaceId,
+      projectId,
+      fileLibraryId: libraryId,
+    });
+    if (taskUsingLibrary) {
+      const boundTaskFields = buildBoundTaskSafeFields({
+        binding: taskUsingLibrary,
+        actorUserId: user.id,
+      });
+      await writeProjectAuditEvent(deps, {
+        workspaceId,
+        projectId,
+        actor: { type: 'user', id: user.id },
+        action: 'project.file_library.delete.blocked',
+        result: 'error',
+        requestId: typeof req.headers?.['x-request-id'] === 'string' ? req.headers['x-request-id'] : null,
+        resourceType: 'project_file_library',
+        resourceId: libraryId,
+        errorCode: 'FILE_LIBRARY_TASK_IN_USE',
+        errorMessage: 'file_library_task_in_use',
+        metadata: {
+          file_library_id: libraryId,
+          ...boundTaskFields,
+        },
+      });
+      json(res, 409, {
+        error_code: 'FILE_LIBRARY_TASK_IN_USE',
+        message: 'file_library_task_in_use',
+        file_library_id: libraryId,
+        ...boundTaskFields,
+      });
+      return true;
+    }
+    const canFastDeleteFailedLibraryBeforeTransition = library.status === 'failed';
+    const isRepairingDeletingLibrary = library.status === 'deleting';
+    if (!canFastDeleteFailedLibraryBeforeTransition && !isRepairingDeletingLibrary && library.status !== 'ready') {
+      json(res, 409, {
+        error_code: 'FILE_LIBRARY_NOT_READY',
+        message: 'file_library_not_ready',
+        file_library_id: libraryId,
+        file_library_status: library.status,
+      });
+      return true;
+    }
+    const transition = canFastDeleteFailedLibraryBeforeTransition
+      || isRepairingDeletingLibrary
+      ? null
+      : await catalogRepo.transitionReadyToDeleting({
+          workspaceId,
+          projectId,
+          libraryId,
+          expectedVersion: library.version,
+          correlationId: requestId,
+        });
+    if (transition && !transition.ok) {
+      json(res, transition.code === 'FILE_LIBRARY_NOT_FOUND' ? 404 : 409, {
+        error_code: transition.code,
+        message: transition.code === 'FILE_LIBRARY_DELETING'
+          ? 'file_library_deleting'
+          : transition.code === 'FILE_LIBRARY_NOT_READY'
+            ? 'file_library_not_ready'
+            : 'file_library_not_found',
+        file_library_id: libraryId,
+        ...(transition.library ? { file_library_status: transition.library.status } : {}),
+      });
+      return true;
+    }
+    const deletingLibrary = transition?.library ?? library;
+    const bindingAfterTransition = await findTaskFileLibraryBinding({
+      docStore: deps.docStore,
+      workspaceId,
+      projectId,
+      fileLibraryId: libraryId,
+    });
+    if (!canFastDeleteFailedLibraryBeforeTransition && bindingAfterTransition) {
+      const boundTaskFields = buildBoundTaskSafeFields({
+        binding: bindingAfterTransition,
+        actorUserId: user.id,
+      });
+      if (!isRepairingDeletingLibrary) {
+        await catalogRepo.rollbackDeletingToReady({
+          workspaceId,
+          projectId,
+          libraryId,
+          expectedVersion: deletingLibrary.version,
+          correlationId: requestId,
+        });
+      }
+      await writeProjectAuditEvent(deps, {
+        workspaceId,
+        projectId,
+        actor: { type: 'user', id: user.id },
+        action: 'project.file_library.delete.blocked',
+        result: 'error',
+        requestId,
+        resourceType: 'project_file_library',
+        resourceId: libraryId,
+        errorCode: 'FILE_LIBRARY_TASK_IN_USE',
+        errorMessage: 'file_library_task_in_use',
+        metadata: {
+          file_library_id: libraryId,
+          ...boundTaskFields,
+        },
+      });
+      json(res, 409, {
+        error_code: 'FILE_LIBRARY_TASK_IN_USE',
+        message: 'file_library_task_in_use',
+        file_library_id: libraryId,
+        ...boundTaskFields,
+      });
+      return true;
+    }
     try {
       const backend = await backendRepo.getInternal(workspaceId, projectId, libraryId);
       const mountAccess = await mountAccessRepo.getById(workspaceId, projectId, libraryId);
@@ -665,16 +910,43 @@ export async function handleProjectFileLibraryRoutes(args: {
       res.statusCode = 204;
       res.end();
     } catch (error) {
-      await catalogRepo.update(workspaceId, projectId, libraryId, { status: 'degraded' });
       const mapped = mapFileLibraryInfraError(error);
       if (mapped.errorCode === 'FILE_LIBRARY_NOT_EMPTY') {
-        await catalogRepo.update(workspaceId, projectId, libraryId, { status: 'ready' });
+        await catalogRepo.rollbackDeletingToReady({
+          workspaceId,
+          projectId,
+          libraryId,
+          expectedVersion: deletingLibrary.version,
+          correlationId: requestId,
+        });
+        await writeProjectAuditEvent(deps, {
+          workspaceId,
+          projectId,
+          actor: { type: 'user', id: user.id },
+          action: 'project.file_library.delete.rollback',
+          result: 'ok',
+          requestId,
+          resourceType: 'project_file_library',
+          resourceId: libraryId,
+          metadata: {
+            file_library_id: libraryId,
+            from_status: 'deleting',
+            to_status: 'ready',
+            reason: 'not_empty_or_compensation',
+          },
+        });
+      } else if (!canFastDeleteFailedLibraryBeforeTransition) {
+        await catalogRepo.update(workspaceId, projectId, libraryId, {
+          status: 'degraded',
+          delete_correlation_id: requestId,
+        });
       }
       json(res, mapped.statusCode, {
         error_code: mapped.errorCode === 'FILE_LIBRARY_OPERATION_FAILED'
           ? 'FILE_LIBRARY_DELETE_FAILED'
           : mapped.errorCode,
         message: mapped.message,
+        ...(mapped.errorCode === 'FILE_LIBRARY_NOT_EMPTY' ? { file_library_id: libraryId } : {}),
       });
     }
     return true;
@@ -691,11 +963,14 @@ export async function handleProjectFileLibraryRoutes(args: {
       json(res, 200, {
         ...backend,
         gateway_status: health.status === 'failed' ? 'failed' : health.status,
-        last_error: health.lastError ?? backend.last_error,
+        last_error: safeOptionalFileLibraryInfraError(health.lastError ?? backend.last_error),
       });
       return true;
     }
-    json(res, 200, backend);
+    json(res, 200, {
+      ...backend,
+      last_error: safeOptionalFileLibraryInfraError(backend.last_error),
+    });
     return true;
   }
 

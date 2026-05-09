@@ -431,9 +431,7 @@ describe('AgentRunnerKeysDialog', () => {
       await user.click(screen.getByRole('button', { name: /run test task/i }));
 
       await waitFor(() => {
-        expect(mockCreateTestTaskRun).toHaveBeenCalledWith('ws_test', 'proj_001', 'agent_001', {
-          intent: 'developer_runner_connection_check',
-        });
+        expect(mockCreateTestTaskRun).toHaveBeenCalledWith('ws_test', 'proj_001', 'agent_001');
       });
       const result = screen.getByTestId('agent-runners__runner-test-task-result');
       expect(result).toHaveTextContent(/runner_test/i);

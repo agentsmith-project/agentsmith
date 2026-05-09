@@ -1,5 +1,5 @@
 import { describe, expect, expectTypeOf, it } from 'vitest';
-import { normalizeTaskRecord, type TaskRecord } from './task-models.js';
+import { buildTaskHomePaths, normalizeTaskRecord, sanitizeTaskRecordForActiveModel, type TaskRecord } from './task-models.js';
 
 function buildTaskRecord(overrides: Partial<TaskRecord> = {}): TaskRecord {
   const now = '2026-03-18T12:00:00.000Z';
@@ -35,5 +35,29 @@ describe('TaskRecord active model', () => {
 
     expect(normalized).not.toHaveProperty('agent_id');
     expect(normalized).not.toHaveProperty('agent_name');
+  });
+
+  it('keeps internal deletion tombstones out of public task projections', () => {
+    const publicTask = sanitizeTaskRecordForActiveModel({
+      ...buildTaskRecord(),
+      deletion_state: 'deleting',
+      deleting_started_at: '2026-05-09T12:00:00.000Z',
+      delete_correlation_id: 'req_delete',
+    });
+
+    expect(publicTask).not.toHaveProperty('deletion_state');
+    expect(publicTask).not.toHaveProperty('deleting_started_at');
+    expect(publicTask).not.toHaveProperty('delete_correlation_id');
+  });
+});
+
+describe('task HOME path model', () => {
+  it('uses the file library root as task HOME and exposes libraryRootPath as the root marker', () => {
+    expect(buildTaskHomePaths('task_demo')).toEqual({
+      taskHomePath: '/home/task_demo',
+      workspacePath: '/home/task_demo/workspace',
+      artifactsPath: '/home/task_demo/workspace/.artifacts',
+      libraryRootPath: '.',
+    });
   });
 });

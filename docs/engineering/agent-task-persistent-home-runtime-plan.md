@@ -1,295 +1,668 @@
-# Agent Task Persistent HOME Runtime Plan
+# Agent Task File Library HOME Runtime Implementation Plan
 
-更新时间：2026-05-08 PDT
-状态：`handoff_plan_ready`
-适用范围：Agent task terminal、Agent task agent 执行环境、task-bound persistent HOME、runner HOME/cwd/artifacts 路径语义
+更新时间：2026-05-09
+状态：`current_implementation_plan`
+适用范围：Agent task 创建/删除、Files 文件库绑定、managed runner、Developer runner、terminal、agent run、task HOME/cwd/artifacts 路径语义
 
 ## 0. 文档状态
 
-本文是下一步开发计划，用于把 Agent task terminal 和 agent 的文件系统运行语义收敛到同一个 task-bound persistent HOME。它不是当前实现真相，也不替代现有 contracts、OpenAPI、runner 协议或代码。
+本文是当前工程实施计划，不是开放分析。本文的决策目标是：
 
-进入实现时，必须同步更新当前 truth docs、contracts、测试与实现代码。开发完成后，正式 contract 和 runbook 接管运行时真相；本文只保留为对应开发工作的计划记录，不再作为运行依据。
+> 文件库就是 Agent task 的持久 HOME 根目录。terminal 与 agent 使用同一个 HOME。同一个文件库不能同时绑定为多个未删除 task 的 HOME；未删除包括 active 和 archived。只有 Delete task 释放绑定，Archive 不释放。
 
-### 0.1 最新 findings 输入
+实现时必须同步更新 contracts、OpenAPI/generated types、MSW、runner schema、Files/Agent task UI、runbook 和 backend-real evidence。实现完成后，以 contract/runbook/代码为当前运行时真相；本文作为当前开发计划记录关键工程约束。
 
-当前实现仍有这些旧真相，实施时必须清理：
+本文不引入文件级权限、文件级锁、文件级策略，也不把 binding 暴露成用户需要理解的新产品对象。
 
-- `docs/contracts/agent-execution-protocol.md` 和 `docs/agent-task-runner-runbook.md` 仍描述 `HOME` 是 runner-private runtime home，且与 `cwd` 分离。
-- API / OpenAPI 仍暴露 `container_workspace_path`，并在 managed task 中注入 `/workspace/${task.id}`。
-- `packages/agent-task-runner` 仍使用 `/workspace/<task_id>`、runtimeRoot hash 和 `MBOS_AGENT_CODEX_STATE_ROOT` 来派生 HOME。
-- sandbox workload 仍把 PVC mount path 和 container workingDir 绑定成同一路径。
-- 当前任务删除路径未拥有 task HOME subtree 清理责任。
+## 1. 决策总表
 
-本文的 handoff 目标是让这些差异在实现中归零，而不是为旧路径保留长期兼容。
-
-## 1. 产品目标
-
-用户模型：
-
-> 一个 Agent task 有一个持久 HOME。terminal 和 agent 都在这个 HOME 下工作，默认进入同一个 workspace。Pod 只是临时运行容器，回收后可以用同一个 HOME 继续。
-
-工程模型：
-
-> pre-GA 只使用任务绑定的 file-library-backed PVC。每个 task 在该 PVC 内拥有独立 subtree：`agent-tasks/<task_home_segment>`。managed Pod 内把该 subtree 挂载为 `TASK_HOME=/home/<task_home_segment>`，设置 `HOME=$TASK_HOME`，默认 `cwd=$TASK_HOME/workspace`，artifacts 只来自 `$TASK_HOME/workspace/.artifacts`。
-
-需要删除的旧心智：
-
-- `cwd` 和 `HOME` 分离。
-- runner-private runtime home 位于 workspace 外部。
-- `/workspace/<task_id>` 作为 managed 产品路径。
-- runtime root hash contract。
-- `/home/node` 作为 task home 或用户可见路径。
-- `container_workspace_path` 作为 current contract 字段。
-
-## 2. 不可变决策
-
-| 决策 | 结果 |
+| 决策面 | 结论 |
 | --- | --- |
-| terminal 和 agent 是否共享 HOME | 是，同一个 Agent task 内必须共享 |
-| Pod 是否是持久对象 | 否，Pod 可随时回收 |
-| 持久对象是什么 | task-bound persistent HOME |
-| 底层存储 | pre-GA 只使用任务绑定的 file-library-backed PVC |
-| 是否引入 per-task PV/PVC | 否；未来需要时另起计划，不作为本计划分支 |
-| PVC 内 task subtree | `agent-tasks/<task_home_segment>` |
-| managed `TASK_HOME` | `/home/<task_home_segment>` |
-| `HOME` | `$TASK_HOME` |
-| 默认 `cwd` | `$TASK_HOME/workspace` |
-| artifacts 扫描目录 | `$TASK_HOME/workspace/.artifacts` only |
-| artifact wire path | 继续使用 `.artifacts/...` workspace-relative path |
-| 是否创建 task Linux account | 否，`task_home_segment` 不是 Linux user |
-| canonical HOME env | `TASK_HOME`；不新增 `MBOS_AGENT_TASK_HOME` 作为正式 contract |
-| 是否持久化 terminal process/screen/PTY | 否 |
-| 是否改变多 API routing | 否 |
-| `workspace_binding_mode` 是否继续存在 | 可以继续存在为执行来源标记，但不得再表达旧 `/workspace/<task_id>` workspace-only path 语义 |
+| 文件库与 HOME | 文件库根目录就是 task HOME 根目录 |
+| terminal 与 agent | 同一 task 内共用同一个 `TASK_HOME` / `HOME`，默认 `cwd=$HOME/workspace` |
+| 文件库独占 | 同一个文件库最多绑定一个未删除 task；active 和 archived 都占用 |
+| Archive | 只改变 task 状态，不释放文件库绑定 |
+| Delete task | 删除 task 元数据/对话/trace/artifact metadata，释放绑定，保留文件库和文件内容 |
+| 文件库复用 | 新 task 必须显式选择已释放的文件库；只复用文件内容，不继承旧 task 历史、runner binding 或 terminal |
+| 文件库删除 | 被未删除 task 绑定时禁止删除；释放绑定后仍受 Files 非空删除规则约束 |
+| managed / Developer runner | 目录语义一致，只是本地呈现路径不同 |
+| `task_home_segment` 身份 | 文件库稳定的 HOME segment，不是 task 稳定 segment，不由 task id 派生 |
+| Binding 真相 | 后端 durable truth，使用 DB/JsonDocStore 持久条件写入或唯一约束保障 |
+| In-memory Map | 只能作为 cache/test helper，不能作为绑定真相 |
+| Legacy | pre-GA 不保留旧路径兼容心智；需要时清理开发数据或写一次性修复脚本 |
 
-## 3. 路径与 Wire Contract
+## 2. 对象与路径模型
 
-### 3.1 路径合同
+### 2.1 产品对象
 
 ```text
-/home/<task_home_segment>/                 # TASK_HOME / HOME
+Project
+  FileLibrary flib_a
+    root == task HOME root while bound
+    file_library_home_segment = flib_a_stable_segment
+
+AgentTask task_1
+  workspace_file_library_id = flib_a
+  task_home_segment = flib_a_stable_segment
+```
+
+不变量：
+
+- `workspace_file_library_id` 是 task 的文件系统根绑定。
+- 文件库绑定在 task 创建时确定，task 生命周期内不可变。
+- task 删除后，绑定释放；文件库记录、backend mapping、mount access、gateway runtime 和文件内容保留。
+- 新 task 选择这个文件库时，会看到同一文件库根目录下已有文件。
+- 新 task 不继承被删除 task 的 messages、trace、artifact metadata、runner binding、terminal session、PTY 或 replay。
+
+### 2.2 HOME segment 身份
+
+`task_home_segment` 的 wire 字段名继续保留，但语义必须改成 file-library-stable HOME segment。后端必须在文件库记录上持久化 `file_library_home_segment` 或等价字段，并由它填充 wire `task_home_segment`：
+
+- segment 在文件库创建时生成并持久化。
+- task 创建时把该 segment 写入 task record / execution context，作为运行时快照和审计字段。
+- 复用同一个文件库创建新 task 时，segment 不变，因此 managed canonical path 仍是同一个 `/home/<task_home_segment>`。
+- segment 不得由 task id、task title、runner id 或 Kubernetes workload name 派生。
+- Kubernetes name、pod name、PVC/mount object name 可以使用独立算法，但不得回流为 runtime truth。
+- segment 必须走统一校验：只允许安全路径段，拒绝空值、`.`、`..`、slash、backslash、traversal、控制字符、替换式 sanitize 和截断式 sanitize。
+
+这个选择是为了符合“复用同一 HOME”的用户心智。若 segment 随 task 变化，复用同一文件库时绝对路径会变化，terminal、agent、生成文档和调试证据都会暗示这是一个新 HOME；这与本计划目标冲突。
+
+### 2.3 路径合同
+
+Managed runner：
+
+```text
+/home/<task_home_segment>/                 # TASK_HOME / HOME，文件库根目录
 /home/<task_home_segment>/workspace/       # cwd / WORKSPACE_PATH
 /home/<task_home_segment>/workspace/.artifacts/
 /home/<task_home_segment>/.codex/
 /home/<task_home_segment>/.mbos/
-/home/<task_home_segment>/.agents/
+/home/<task_home_segment>/.agents/skills/
 /home/<task_home_segment>/.cache/
 /home/<task_home_segment>/.config/
 /home/<task_home_segment>/.local/
-/home/<task_home_segment>/.cargo/
-/home/<task_home_segment>/.rustup/
+```
+
+Developer runner：
+
+```text
+<developer_task_home_path>/                 # TASK_HOME / HOME，文件库根目录
+<developer_task_home_path>/workspace/       # cwd / WORKSPACE_PATH
+<developer_task_home_path>/workspace/.artifacts/
+<developer_task_home_path>/.codex/
+<developer_task_home_path>/.mbos/
+<developer_task_home_path>/.agents/skills/
 ```
 
 规则：
 
-- shared file library 根目录不能直接作为 `$HOME`。
-- task HOME 必须是 file-library-backed PVC 下的 task 专属 subtree。
-- Codex state、runner metadata、skills/cache、用户态安装和配置都写入 `$HOME` 下的稳定子目录。
-- 用户可见生成产物只从 `$TASK_HOME/workspace/.artifacts` 扫描。
+- managed 和 Developer runner 的 `task_home_path` 都代表文件库根目录的本地呈现路径。
+- `workspace_path` 必须等于 `${task_home_path}/workspace`。
+- `artifacts_path` 必须等于 `${workspace_path}/.artifacts`。
+- `workspace_binding_mode=file_library | pre_mounted` 只表示 runner 如何获得文件库根目录，不改变目录语义。
+- runner 只能消费后端下发的 path fields；不得根据文件库 id、task id 或 runner 类型自行拼路径。
+- Files 打开的文件库根目录就是 `$HOME` 根目录；不要虚拟成 `$HOME/workspace`，也不要展示 `agent-tasks/<task>` 这类实现目录。
 
-### 3.2 Runner / API 路径字段
+## 3. Durable Binding Truth
 
-| 字段 | 值 | 说明 |
+### 3.1 后端真相
+
+绑定独占必须由后端 durable truth 保证。推荐新增或收敛一个当前绑定集合：
+
+```text
+agent_task_file_library_bindings
+  key: <workspace_id>/<project_id>/<file_library_id>
+  workspace_id
+  project_id
+  file_library_id
+  task_id
+  binding_generation
+  owner_user_id
+  runtime_writable_affordance: task_internal_home | files_update
+  binding_state: bound | releasing
+  acquired_at
+  updated_at
+  correlation_id
+```
+
+约束：
+
+- 同一 `workspace_id/project_id/file_library_id` 只能有一个 current binding document。
+- active 和 archived task 都对应 `binding_state=bound`，都占用文件库。
+- released 历史不留在 current binding truth 中；释放历史写 audit，或写单独 history collection。
+- 从 task 表派生占用状态可以作为读模型，但不能作为并发控制的唯一依据。
+- 每次 acquire 必须分配新的 `binding_generation`。同一文件库复用时 `task_home_segment` 不变，因此 generation 是 runtime holder / lease / release 的 ABA fence。
+- `runtime_writable_affordance` 是后端私有授权快照：`create_new` 来自 task 内部 HOME 创建授权，`use_existing` 来自 Files 写能力和 resource policy / owner 边界。它不是新 permission point。
+- 进程内 Map、hydrated fixture、MSW fixture 只能是 cache/test helper。服务重启、多实例并发后仍必须保持独占。
+
+DB 实现必须使用唯一约束或事务内 conditional insert。JsonDocStore 实现必须提供持久 compare-and-create / compare-and-delete，条件写失败返回 typed conflict。禁止只用本进程锁或前端过滤完成独占。
+
+### 3.2 操作语义
+
+`acquireBinding`：
+
+- 在同一 truth 边界检查文件库属于当前 workspace/project、状态为 `ready`、没有 current binding。
+- 写入新的 `binding_generation` 和已校验的 `runtime_writable_affordance`，供后续 workspace-access、terminal、runner holder 发放时复校验。
+- 条件创建 binding document，失败返回 `AGENT_TASK_FILE_LIBRARY_IN_USE` 或对应文件库状态错误。
+- 必须写 audit，成功和冲突都要有 correlation id。
+
+`releaseBinding`：
+
+- 只允许 task DELETE 流程释放。
+- 条件删除或标记 releasing 的前提是 binding 的 `task_id` 与 `binding_generation` 等于被删除 task 当前快照。
+- release 前必须重新确认 active run、terminal、live holder、live lease 已清除，或这些 holder / lease 已被 `binding_generation` / `lease_epoch` fence 判定为 stale。
+- 操作必须幂等：binding 已不存在且 task 已 deleted 时视为完成。
+- Archive/PATCH/cancel run/terminal close 不释放 binding。
+
+`repairBinding`：
+
+- 如果 binding 指向不存在、deleted、或长期 stuck `deleting` 的 task，repair 只有在 blocker truth 证明无 active run、terminal、live holder、live lease，或所有遗留 holder / lease 都被 generation / epoch fence 判定 stale 后，才可以释放并写 audit。
+- 如果 task 仍是 active/archived，repair 必须保留 binding。
+- stale lease、失效 holder、已消失 pod 走 TTL/repair，不得成为永久删除阻断；无法确认 stale 时不得释放 binding，必须返回 blocked / retryable repair evidence。
+
+## 4. CreateTask Contract
+
+### 4.1 参数矩阵
+
+`workspace_mode` 缺省为 `create_new`。`workspace_file_library_id` 只在 `use_existing` 下合法。
+
+| `workspace_mode` | `workspace_file_library_id` | 结果 |
 | --- | --- | --- |
-| `task_home_path` | `/home/<task_home_segment>` | runner/sandbox 内部执行路径；managed canonical TASK_HOME |
-| `workspace_path` | `/home/<task_home_segment>/workspace` | runner cwd；terminal 默认目录 |
-| `artifacts_path` | `/home/<task_home_segment>/workspace/.artifacts` | runner 本地 artifact 扫描目录 |
-| `workspace_binding_mode` | `file_library` / `pre_mounted` | 只表示执行来源；不再决定 HOME/cwd 路径形态 |
-| `container_workspace_path` | removed | 不再作为 canonical contract 或 generated type 字段 |
+| omitted / `create_new` | omitted | 创建新文件库并绑定 |
+| omitted / `create_new` | present | `422 AGENT_TASK_WORKSPACE_MODE_INVALID` |
+| `use_existing` | present | 绑定已有 ready、未占用、且 actor 具备 runtime writable affordance 的文件库 |
+| `use_existing` | omitted | `422 AGENT_TASK_WORKSPACE_FILE_LIBRARY_REQUIRED` |
+| other | any | `422 AGENT_TASK_WORKSPACE_MODE_INVALID` |
 
-所有 Agent task execution context 都必须下发 `task_home_path`、`workspace_path`、`artifacts_path`。`workspace_binding_mode=pre_mounted` 的新语义是：backend/sandbox 已把 task HOME subtree 挂载好，runner 直接使用下发的路径字段；它不再表示 `/workspace/<task_id>`，也不允许只下发单一 workspace path。`workspace_binding_mode=file_library` 的新语义是：runner/developer runtime 使用本地可访问路径，但仍必须保持同构布局：`HOME=$TASK_HOME`、`cwd=$TASK_HOME/workspace`、artifacts=`$TASK_HOME/workspace/.artifacts`。
+创建时还必须拒绝：
 
-`recommended_mount_path` 只用于 file-library 本地挂载指南，不参与 Agent task runtime path contract。
+- 文件库不存在或不在当前 workspace/project：`404 FILE_LIBRARY_NOT_FOUND`。
+- actor 无权把该文件库交给 task runtime 写入：`403 FILE_LIBRARY_FORBIDDEN`。`use_existing` 下只具备 Files read/use 不够，必须有 `project:files:update` 加 resource policy / owner 边界通过。
+- 文件库不是 `ready`：`409 FILE_LIBRARY_NOT_READY`。
+- 文件库为 `deleting/deleted`：`409 FILE_LIBRARY_DELETING`。
+- 文件库已被未删除 task 绑定：`409 AGENT_TASK_FILE_LIBRARY_IN_USE`。
 
-### 3.3 Sandbox workload contract
+### 4.2 原子流程
 
-Sandbox create/ensure workload 必须支持 mount path、subPath、workingDir 分离：
+CreateTask 的可见成功条件是：task record、file library、binding 三者全部提交完成。不得留下半创建可见 task。
+
+推荐事务流程：
+
+1. 校验 token、URL params、task payload、runner binding authority。
+2. `create_new` 时用 `project:agent_task:use` 创建自动文件库，持久化 `file_library_home_segment`，source 标记为 `agent_task_auto`，并记录 task 内部 HOME 的 runtime writable affordance。
+3. `use_existing` 时校验文件库 `ready`、project 边界、`project:files:update`、resource policy 和 owner 边界；Files read/use 只能浏览，不能把文件库交给 task runtime 写入。
+4. 在同一事务内 conditional acquire binding。
+5. 持久化 task record，写入 `workspace_file_library_id`、`workspace_file_library_name`、`task_home_segment`、runner binding fields。
+6. 提交 audit `agent_task.file_library_binding.acquire` 和 `agent_task.create`。
+7. 返回 task，并触发前端刷新 file library list/detail query。
+
+如果当前 store 不支持跨集合事务，必须实现 idempotent saga：
+
+1. 创建不可见 `creating` task draft 或仅持有 request correlation，不进入普通 task list。
+2. `create_new` 自动文件库创建失败时直接返回错误，不创建 task。
+3. binding acquire 失败时删除 task draft；若是自动创建文件库，执行补偿删除或标记 `deleting` 等待 repair。
+4. task persist 失败时释放 binding；若是自动创建文件库且无用户写入，补偿删除文件库记录和 backend mapping。
+5. compensation 失败必须写 audit，并由 repair job 收敛；普通用户不能看到半创建 task。
+
+`create_new` 自动文件库命名需要可解释且低心智，例如默认从 task title 生成，并在 Files 中显示来源为 Agent task 自动创建。实现不需要把 binding 变成用户可管理的新对象。自动文件库作为 Agent task 创建的内部 HOME 资源存在；之后用户通过 Files UI 编辑该文件库时仍必须走 `project:files:update` 和 Files resource policy。
+
+## 5. Task DELETE Contract
+
+### 5.1 Delete blockers
+
+Delete task 只在 live blockers 存在时返回 `409 AGENT_TASK_DELETE_BLOCKED`：
+
+- active agent run。
+- active terminal session 或 terminal close/hard-teardown debt。
+- live Developer workspace holder。
+- live runner workspace lease 或 managed mount holder。
+
+stale/releasable lease 不作为永久阻断：
+
+- 过期 lease、找不到 owner 的 holder、已消失 pod、已超过 TTL 的 releasing 状态应先走 repair，并用 holder `task_id` + `binding_generation` + `lease_epoch` 证明它们属于旧 generation 或已不可写。
+- repair 成功后继续 delete。
+- repair 无法确认安全时才返回 blocked，并带 `retry_after_seconds` 或 safe blocker reason。
+
+Delete 不自动停止活跃进程，不做部分用户不可理解的清理。
+
+### 5.2 提交顺序
+
+目标是避免两类坏状态：task 已删除但 binding zombie；binding 已释放但 task 仍作为普通 task 可见。
+
+推荐事务流程：
+
+1. 读取 task、binding、file library，校验 task 属于当前 workspace/project。
+2. 先收集 live blockers；若存在，task 状态不进入 `deleting`，返回 `AGENT_TASK_DELETE_BLOCKED`。
+3. 设置 task deletion state 为 `deleting`，从普通 task list 中隐藏或显示为不可操作删除中状态。
+4. 删除 messages、trace、artifact records、runtime coordination、runner binding metadata、terminal metadata。
+5. 同一事务内写 task tombstone/deleted state，并 conditional release binding；release predicate 必须再次确认无 live blockers，或 holder / lease 已被 generation / epoch fence 判定 stale。
+6. 提交 audit `agent_task.delete`、`agent_task.file_library_binding.release`。
+7. 不删除文件库记录，不删除文件库内容，不调用 file library delete。
+
+如果只能 saga：
+
+- 先把 task durable 标记为 `deleting`，确保不再作为普通可运行 task 出现。
+- binding 在 task 已是 `deleting/deleted` 后才能释放，且 release 前仍必须执行 blocker truth guard。
+- release 失败时保留 binding 并由 repair 重试，避免文件库过早复用。
+- release 成功但 metadata cleanup 未完成时，task 必须保持 hidden/tombstoned；repair 继续删除 metadata。
+
+Task DELETE 删除：
+
+- task record 或 tombstone 之外的普通 task 可见数据。
+- messages、trace、artifact metadata、terminal metadata、runner binding metadata。
+
+Task DELETE 保留：
+
+- 文件库记录、backend mapping、mount access、gateway runtime。
+- 文件库中所有文件，包括 `workspace/.artifacts` 实际文件、`.codex`、`.mbos`、`.agents`、`.cache`、`.config`、`.local`。
+
+## 6. File Library Delete 与写操作 Race
+
+文件库删除必须在后端同一 truth 边界完成 `ready -> deleting` 与 `no current binding` 检查。DB 必须使用事务；JsonDocStore 必须提供 conditional transition / CAS：
 
 ```text
-mount_path  = /home/<task_home_segment>
-sub_path    = agent-tasks/<task_home_segment>
-working_dir = /home/<task_home_segment>/workspace
+file_library.status == ready
+file_library.version == expected_version
+no current binding for workspace/project/file_library
+  -> status = deleting, version = version + 1, delete_correlation_id = correlation_id
 ```
 
-环境变量：
+- 如果存在 current binding，返回 `409 FILE_LIBRARY_TASK_IN_USE`。
+- 如果文件库状态不是 `ready`，返回对应 typed error。
+- 如果 expected version/status 不匹配，返回当前状态对应的 typed conflict，不得继续删除。
+- 如果状态已是 `deleting/deleted`，CreateTask、workspace-access、local mount credential exchange 和所有写操作都必须拒绝。
+- 非空检查仍保留在 Files delete 规则中。无 task binding 但非空时返回 `409 FILE_LIBRARY_NOT_EMPTY`，并必须把文件库从本次 `deleting` transition 回滚/transition 回 `ready`，写入新 version、correlation id 和 audit；不能让文件库 stuck 在 `deleting`。
 
-```text
-TASK_HOME=/home/<task_home_segment>
-HOME=/home/<task_home_segment>
-WORKSPACE_PATH=/home/<task_home_segment>/workspace
-```
+Delete backend mapping / storage 的实际删除只能在 `deleting` transition 成功且非空检查通过后执行。若后续步骤失败，repair 必须按 `delete_correlation_id` 收敛到 `ready` 或 `deleted` 的明确终态，并写 audit；普通写入口在终态前继续 fail closed。
 
-Sandbox 必须继续校验绝对路径、allowed prefixes、path traversal 和 UID/GID/fsGroup 可写性。
+CreateTask 和所有写入口只接受 `ready`，且必须校验读取到的 status/version 仍匹配当前写事务或 CAS 条件。只在前端看到 ready 不构成授权。
 
-## 4. `task_home_segment`
+进入 `deleting` 后必须拒绝这些写操作：
 
-`task_home_segment` 是后端在 task 创建时生成并持久化的路径段。它不是 Linux 用户名，不允许前端或用户手工拼接。
+- upload、move、rename、delete object、create folder、share-link mutation。
+- local mount credential exchange / mount instructions that create new writable access。
+- `POST /tasks/{taskId}/workspace-access` 或任何会为 runner 建立新 holder 的请求。
+- CreateTask `use_existing` 和自动绑定流程。
 
-生成规则：
+浏览和下载可以按现有 Files 规则返回只读状态或 typed conflict，但不能发放新的写凭据。UI 需要在 409 race 后 refetch file library list/detail，并显示 i18n inline error。
 
-- 若 `task.id` 满足 `^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$`，不等于 `.` / `..`，且不以保留前缀 `taskhash-` 开头，则直接使用 `task.id`。
-- 否则使用 `taskhash-` + `sha256(workspace_id + "/" + project_id + "/" + task_id).slice(0, 32)`。
-- 禁止替换式 sanitize 和截断式 sanitize。
-- 生成后必须写入 task record，Pod 重建、terminal、agent run、cleanup 均读取同一个持久字段。
-- 如果发现 segment 冲突，返回 typed provisioning error；不得复用已有 HOME。
+## 7. 权限边界
 
-Kubernetes workload id 继续使用单独算法，不复用 `task_home_segment` 作为 workload identity。
+不新增 permission point，复用现有 token 和后端 row-level/resource checks。
 
-## 5. 生命周期与 Cleanup
+| 操作 | 权限/边界 |
+| --- | --- |
+| CreateTask `create_new` | `project:agent_task:use`；自动创建文件库作为 task create 的内部 HOME 资源，写 source/audit，不授予通用 Files UI 写能力 |
+| CreateTask `use_existing` | `project:agent_task:use` + 后端 writable affordance；具体复用现有 `project:files:update` + project/resource policy/owner 边界，不新增 permission point，不得跨 project |
+| Explicit Developer runner binding | 继续要求 `project:agent_task:use` + `project:agent_runner:manage` + backend binding affordance |
+| Delete task release binding | `project:agent_task:use`；这是 task lifecycle，不要求 `project:files:update`，且不删除文件 |
+| File library delete | `project:files:update` + no current task binding + empty library rule |
+| Files browse/download bound HOME | `project:endpoint:use`；bound 不禁止浏览 |
+| Files edit/upload/move bound HOME | `project:files:update`；bound 不禁止编辑，但 deleting 状态禁止写 |
+| Workspace-access writable holder/ticket | `project:agent_task:use` + current task binding + `runtime_writable_affordance` 复校验；`use_existing` 必须重新通过 `project:files:update` + resource policy/owner 边界 |
+| Terminal writable access | `project:agent_task:use` + `project:agent_task:terminal` + current task binding + writable affordance 复校验；Developer-bound task 继续叠加 runner manage/affordance |
+| Mount credential exchange / writable mount instructions | current task binding + file library `ready` + writable affordance + generation/epoch fence；不得只凭旧 holder 或 taskHome 发放 |
 
-| 对象 | 生命周期 | 是否持久 | Owner |
+后端仍是唯一授权真相。前端禁用态只用于 UX，不得替代后端校验。Terminal、workspace-access、runner holder 和 mount credential exchange 在发放任何可写 holder/ticket 前，都必须重新读取 task binding、file library status/version 和 writable affordance；否则会绕过 Files 写权限。
+
+## 8. Contract、错误码与审计
+
+### 8.1 OpenAPI / generated / MSW
+
+必须同步：
+
+- `docs/contracts/specs/openapi.yaml` 和 generated types。
+- backend route schemas / zod validators。
+- MSW handlers、fixtures、parity tests。
+- `docs/contracts/agent-execution-protocol.md`。
+- `docs/contracts/internal-agent-workspace-binding-model-v1.md`。
+- `docs/contracts/files-frontend-module-map.md`。
+- `docs/agent-task-runner-runbook.md`。
+
+### 8.2 Typed errors
+
+| Error code | HTTP | 场景 | Safe fields | i18n key |
+| --- | --- | --- | --- | --- |
+| `AGENT_TASK_WORKSPACE_MODE_INVALID` | 422 | workspace mode 非法或 `create_new` 同时传 `workspace_file_library_id` | `field`, `workspace_mode` | `errors.agent_task_workspace_mode_invalid` |
+| `AGENT_TASK_WORKSPACE_FILE_LIBRARY_REQUIRED` | 422 | `use_existing` 未传文件库 id | `field` | `errors.agent_task_workspace_file_library_required` |
+| `FILE_LIBRARY_NOT_FOUND` | 404 | 文件库不存在或不属于当前 workspace/project | `file_library_id` | `errors.file_library_not_found` |
+| `FILE_LIBRARY_FORBIDDEN` | 403 | actor 无权使用该文件库 | `file_library_id` | `errors.file_library_forbidden` |
+| `FILE_LIBRARY_NOT_READY` | 409 | 文件库状态不是 ready | `file_library_id`, `file_library_status` | `errors.file_library_not_ready` |
+| `FILE_LIBRARY_DELETING` | 409 | 文件库 deleting/deleted 或删除中拒绝写/绑定 | `file_library_id`, `file_library_status` | `errors.file_library_deleting` |
+| `AGENT_TASK_FILE_LIBRARY_IN_USE` | 409 | CreateTask 绑定已占用文件库 | `field`, `file_library_id`, `bound_task_visible`, optional `bound_task_id`, optional `bound_task_title`, optional `bound_task_status` | `errors.agent_task_file_library_in_use` |
+| `FILE_LIBRARY_TASK_IN_USE` | 409 | 删除文件库时仍被 task 占用 | `file_library_id`, `bound_task_visible`, optional `bound_task_id`, optional `bound_task_title`, optional `bound_task_status` | `errors.file_library_task_in_use` |
+| `FILE_LIBRARY_NOT_EMPTY` | 409 | 文件库释放绑定后仍非空 | `file_library_id` | `errors.file_library_not_empty` |
+| `AGENT_TASK_DELETE_BLOCKED` | 409 | Delete task 遇到 live blockers | `task_id`, `blockers`, optional `retry_after_seconds` | `errors.agent_task_delete_blocked` |
+| `AGENT_TASK_WORKSPACE_BINDING_CONFLICT` | 409 | workspace-access、terminal、mount credential exchange、holder adopt/release 发现 task/binding/holder generation 不匹配 | `task_id`, `file_library_id`, optional `holder_id`, optional `binding_generation`, optional `lease_epoch` | `errors.agent_task_workspace_binding_conflict` |
+
+`bound_task_id/title/status` 只能在 actor 可见该 task 摘要时返回。不可见时仍返回 occupied 状态，但不泄露 task title、owner、prompt、runner、内部路径或 trace。
+
+Route x error mapping 必须在 OpenAPI、handlers、MSW parity 和 frontend error handling 中一致：
+
+| Route / route family | Deleting mapping | Bound mapping | Conflict / version mapping |
 | --- | --- | --- | --- |
-| Pod | 可随时回收 | 否 | sandbox |
-| task HOME subtree | 随 task lifecycle | 是 | AgentSmith task lifecycle |
-| terminal process | 随 terminal session / Pod | 否 | terminal runtime |
-| agent process/run | 随 run | 否 | runner runtime |
-| artifacts | 随 task HOME / file library | 是 | artifact collector 只读收集 |
+| CreateTask `POST /tasks` | selected file library `deleting/deleted` -> `409 FILE_LIBRARY_DELETING` | selected file library has current binding -> `409 AGENT_TASK_FILE_LIBRARY_IN_USE` | invalid mode/id -> `422 AGENT_TASK_WORKSPACE_MODE_INVALID` or `AGENT_TASK_WORKSPACE_FILE_LIBRARY_REQUIRED`; stale ready/version -> `409 FILE_LIBRARY_NOT_READY` with current status/version |
+| Task DELETE `DELETE /tasks/{taskId}` | task already `deleting` is idempotent only if same task/binding generation; otherwise conflict | live run/terminal/holder/lease -> `409 AGENT_TASK_DELETE_BLOCKED` | stale holder release/adopt or binding generation mismatch -> `409 AGENT_TASK_WORKSPACE_BINDING_CONFLICT`; no release without blocker truth guard |
+| File library DELETE | existing `deleting/deleted` -> `409 FILE_LIBRARY_DELETING` | current task binding -> `409 FILE_LIBRARY_TASK_IN_USE` | expected version/status mismatch -> typed status conflict; non-empty after transition -> `409 FILE_LIBRARY_NOT_EMPTY` and transition back to `ready` |
+| Files write routes: upload/move/rename/delete object/create folder/share-link mutation | file library `deleting/deleted` -> `409 FILE_LIBRARY_DELETING` | bound HOME is writable only with `project:files:update`; bound alone is not a conflict | stale status/version -> typed status conflict; no permission -> `403 FILE_LIBRARY_FORBIDDEN` |
+| Workspace-access `POST /tasks/{taskId}/workspace-access` | bound file library not `ready` -> `409 FILE_LIBRARY_DELETING` or `FILE_LIBRARY_NOT_READY` | current binding must match task; missing/mismatched binding -> `409 AGENT_TASK_WORKSPACE_BINDING_CONFLICT` | writable holder denied when writable affordance fails -> `403 FILE_LIBRARY_FORBIDDEN`; stale generation -> `409 AGENT_TASK_WORKSPACE_BINDING_CONFLICT` |
+| Mount credential exchange / writable mount instructions | file library not `ready` -> `409 FILE_LIBRARY_DELETING` or `FILE_LIBRARY_NOT_READY` | requires current task binding and writable affordance; bound to another task -> `409 AGENT_TASK_WORKSPACE_BINDING_CONFLICT` | holder_id/task_id/generation/epoch mismatch -> `409 AGENT_TASK_WORKSPACE_BINDING_CONFLICT` |
+| Metadata PATCH for file library/task workspace metadata | deleting file library -> `409 FILE_LIBRARY_DELETING`; deleting task workspace binding metadata -> `409 AGENT_TASK_WORKSPACE_BINDING_CONFLICT` | display metadata patch may proceed with update permission; changing HOME identity/backend mapping while bound -> `409 FILE_LIBRARY_TASK_IN_USE` | expected version/status mismatch -> typed status conflict with safe current status/version |
 
-Cleanup 规则：
+### 8.3 审计事件
 
-- Archive 保留 task HOME。
-- Delete task 在无 active run / active terminal 后删除 `agent-tasks/<task_home_segment>` subtree。
-- Delete task 如果存在 active run、active terminal、terminal hard-teardown debt 或未完成 workspace holder，必须返回 typed conflict `AGENT_TASK_DELETE_BLOCKED`，并在响应中列出 blocker 类型；不得自动停止运行中的进程，也不得做部分 cleanup。
-- Pod 删除、Pod 回收、sandbox idle cleanup 只释放进程和 Pod，不删除 task HOME。
-- File library 删除必须阻止任何未删除 task 使用中的 library，不只检查 active task。
-- local-real、backend-real、staging/手测 reset 必须清理 task HOME subtree。
-- 对旧 runner-private HOME 布局不做静默双读或自动迁移；无法明确处理时返回 typed error，要求清理或重建。
+| Event | Result | Metadata |
+| --- | --- | --- |
+| `agent_task.create` | success/error | `task_id`, `file_library_id`, `workspace_mode`, `actor_id`, `correlation_id` |
+| `agent_task.file_library_binding.acquire` | success/error | `task_id`, `file_library_id`, `workspace_mode`, `actor_id`, `correlation_id` |
+| `agent_task.file_library_binding.conflict` | error | `file_library_id`, redacted `bound_task_*`, `reason_code`, `correlation_id` |
+| `agent_task.delete` | success/error | `task_id`, `file_library_id`, `actor_id`, `deleted_metadata_kinds`, `correlation_id` |
+| `agent_task.file_library_binding.release` | success/error | `task_id`, `file_library_id`, `release_reason=task_delete`, `correlation_id` |
+| `agent_task.delete.blocked` | error | `task_id`, `blocker_types`, redacted holder ids, `correlation_id` |
+| `agent_task.file_library_binding.repair` | success/error | `file_library_id`, optional `task_id`, `repair_reason`, `correlation_id` |
+| `agent_task.create.compensation` | success/error | `workspace_mode`, optional `task_id`, optional `file_library_id`, `failed_step`, `correlation_id` |
+| `agent_task.delete.compensation` | success/error | `task_id`, `file_library_id`, `failed_step`, `correlation_id` |
+| `project.file_library.delete.blocked` | error | `file_library_id`, redacted `bound_task_*`, `correlation_id` |
+| `project.file_library.delete.rollback` | success/error | `file_library_id`, `from_status=deleting`, `to_status=ready`, `version`, `reason=not_empty_or_compensation`, `correlation_id` |
 
-本计划只持久文件系统状态，不承诺 terminal screen、PTY、前台命令、tmux 或跨 API durable routing。
+审计和 debug 日志不得包含 Project secrets、OAuth token、storage credentials、metadata_url、mount credential payload、raw trace 或 host-private absolute paths。request id / correlation id 必须贯穿 CreateTask、binding acquire、DELETE、release、repair 和 compensation。
 
-## 6. 实施任务
+实现 evidence 必须包含 audit snapshots 和 redaction assertions：`agent_task.create`、`agent_task.delete` 成功事件可查；repair、compensation、file-library rollback 有 success/error 审计；冲突和 blocked 审计只含 redacted holder/task 摘要，不泄露 secrets、credential payload、metadata_url、raw trace 或 host-private absolute paths。
 
-### 6.1 Contracts / OpenAPI
+## 9. Frontend / UX
 
-- 更新 `docs/contracts/agent-execution-protocol.md`、OpenAPI、generated types 和 async/ws supplement。
-- 删除 canonical `container_workspace_path`。
-- 增加或统一 `task_home_path`、`workspace_path`、`artifacts_path`。
-- 更新 `docs/contracts/internal-agent-workspace-binding-model-v1.md`，明确 binding 交付的是 task HOME path contract，不是单一 workspace mount path。
+Files 只展示两个主状态：
 
-### 6.2 API Execution Context
+- 可用：ready 且没有 current task binding。
+- 已被 task 占用：ready 但存在 current task binding，包括 archived task。
 
-- Task 创建时生成并持久化 `task_home_segment`。
-- `internal-agent-workspace-provisioner.ts` 返回 `task_home_path`、`workspace_path`、`artifacts_path` 和 PVC `sub_path=agent-tasks/<task_home_segment>`。
-- `internal-agent-pod-manager.ts` 传递 `TASK_HOME`、`HOME`、`WORKSPACE_PATH`，并传递 sandbox `mount_path`、`sub_path`、`working_dir`。
-- `notebook-execution-orchestrator.ts` 和 `task-route-handler.ts` 只向 runner 下发新 path fields。
-- Task DELETE / reset 增加 task HOME subtree cleanup owner 逻辑；DELETE blockers 使用 `AGENT_TASK_DELETE_BLOCKED` typed conflict 收口。
-- File library DELETE 拦截所有未删除 task。
+FileLibrary DTO 必须由后端提供安全占用字段：
 
-### 6.3 Sandbox Manager
+- `task_home_binding_status: unbound | bound`
+- `bound_task_visible`
+- `bound_task_id`，仅 `bound_task_visible=true` 时返回
+- `bound_task_title`，仅 `bound_task_visible=true` 时返回
+- `bound_task_status`，仅 `bound_task_visible=true` 时返回
 
-- workload API/spec 支持 `mount_path`、`sub_path`、`working_dir` 分离。
-- Pod spec 将 file-library-backed PVC 的 task subPath 挂载到 `/home/<task_home_segment>`。
-- Container `workingDir` 设置为 `/home/<task_home_segment>/workspace`。
-- 更新 manager config allowed prefixes，允许 `/home/<task_home_segment>`，继续拒绝相对路径和 traversal。
-- 更新 sandbox docs、Go unit/e2e pod spec tests。
+不要承诺“可复用状态”作为第三种状态；task 删除释放后，文件库自然回到“可用”。如果 bound task 对 actor 可见，可以在详情里说明 active/archived 占用；不可见时只显示安全占用文案。
 
-### 6.4 Runner Runtime
+Agent task 创建：
 
-- 重写 `packages/agent-task-runner/src/task-workspace.ts` path builder。
-- 删除 `/workspace/<task_id>` managed 产品路径。
-- 删除 runtimeRoot hash HOME；`runtimeRoot` 若保留，只能等于 task HOME 或作为内部别名。
-- `MBOS_AGENT_CODEX_STATE_ROOT` 不再作为正式 task HOME 来源。
-- `TaskWorkspacePaths` 表达 `taskHome` / `homeDir` / `workspaceDir` / `artifactsDir`。
-- Agent run 和 terminal 共同消费同一套 path builder。
-- 更新生成的 task `AGENTS.md` / `RUNNER_RUNTIME.md`，删除 HOME/cwd 分离规则。
+- 默认选择创建新文件库。
+- 使用已有文件库时，只展示后端 DTO 标记为可用的文件库。
+- 提交遇到 `AGENT_TASK_FILE_LIBRARY_IN_USE` 时刷新 fileLibraries query，并提示用户选择其他文件库或创建新文件库。
+- 自动创建文件库需要显示可理解的名称和来源，例如“由 Agent task 自动创建”。
 
-### 6.5 Artifacts / UI / Docs
+Task 删除确认：
 
-- Artifact collector 只扫 `$TASK_HOME/workspace/.artifacts`。
-- `$HOME/.codex`、`$HOME/.mbos`、`$HOME/.agents`、`$HOME/.local` 不进入 artifacts。
-- UI/i18n 不承诺跨 task 复用 Codex state、runner metadata、skills/cache 或用户安装包。
-- 同步 `AGENTS.md`、`docs/agent-task-runner-runbook.md`、`DEVELOPMENT.md`、product terminology、user guides。
+- 明确会删除 task 历史、对话、trace、artifact metadata 和 runner/terminal 关联。
+- 明确文件库和文件内容保留，可在 Files 中继续使用，也可被新 task 显式选择。
+- 不暗示会清空 HOME。
 
-## 7. TDD / Verification
+Files bound banner：
 
-首轮 red/green：
+- 告诉用户“这个文件库正在作为某个 Agent task 的 HOME 使用，Files 中的改动会影响该 task 的 HOME 内容。”
+- 不把 task 绑定解释成禁止浏览、禁止挂载或禁止编辑；是否可写仍由 Files 权限和文件库状态决定。
+- 删除文件库按钮在 bound 时禁用或失败为 typed conflict。
+
+Artifacts：
+
+- Delete task 后，`workspace/.artifacts` 中的实际文件仍在 Files 中。
+- 旧 task 的 artifact metadata 不继承到新 task。
+- 新 task 需要使用旧 artifact 文件时，通过 Files 或 input 重新选择。
+
+Cache 行为：
+
+- task create/update/archive/delete 成功后刷新 task queries 和 fileLibraries list/detail queries。
+- `AGENT_TASK_FILE_LIBRARY_IN_USE`、`FILE_LIBRARY_TASK_IN_USE`、`FILE_LIBRARY_DELETING`、`FILE_LIBRARY_NOT_EMPTY` 后刷新相关 file library query，处理并发 race。
+- Files delete 409 race 使用 inline/i18n 错误，不只 toast 后静默失败。
+- MSW parity 必须覆盖 status code、required fields、unique occupied/archived fixtures、redacted invisible-bound-task fixtures。
+
+## 10. Runtime Fail Closed
+
+`TaskExecutionContext`、terminal execution context、`POST /tasks/{taskId}/workspace-access` 必须强校验并 fail closed。
+
+必填身份字段：
+
+- `task_id`
+- `workspace_file_library_id` in `TaskExecutionContext`
+- `file_library_id` in workspace-access responses
+- `workspace_binding_mode`
+- `runtime_profile`
+- `task_home_segment`
+
+必填路径字段：
+
+- `task_home_path`
+- `workspace_path`
+- `artifacts_path`
+- `library_root_path`
+
+校验规则：
+
+- `workspace_binding_mode` 只能是 contract 中允许的值。
+- `runtime_profile` 必须与 managed / Developer 路径解析一致。
+- `library_root_path` 必须是 `.`，表示文件库根就是 HOME。
+- `workspace_path` 必须在 `task_home_path` 下，且尾部为 `/workspace`。
+- `artifacts_path` 必须等于 `${workspace_path}/.artifacts`。
+- `task_home_segment` 必须通过统一 path segment validator。
+- workspace-access echo 必须逐字段比对 `task_id`、`workspace_file_library_id` / `file_library_id`、`workspace_binding_mode`、`runtime_profile`、`task_home_segment`、`task_home_path`、`workspace_path`、`artifacts_path`、`library_root_path`。
+- managed pod-manager 必须校验 mountPath/taskHome/workspace/artifacts/env/workingDir 一致，拒绝空路径、相对路径、traversal 和错误 prefix。
+- URL id 必须 encode；Kubernetes name derivation 只能作为 infra name，不能作为 runtime path truth。
+
+Runner path 目标：
+
+- `mountRoot` / `taskRoot` / `runtimeRoot` / `homeDir` 都等于 `taskHome`。
+- `cwd` 始终是 `workspaceDir`。
+- `artifactsDir` 始终是 `workspaceDir/.artifacts`。
+- `file_library` 模式把文件库根目录 mount 到 `taskHome`。
+- `pre_mounted` 模式直接使用已挂载的 `taskHome`。
+- mount registry、lease、release 不得只以 `taskHome` 为 key；同一文件库复用时 `taskHome` 不变，会产生 ABA release 风险。
+- 每个 workspace-access、terminal、runner holder 必须携带 `holder_id`、`task_id`、`file_library_id`、`task_home_segment`、`binding_generation`、`lease_epoch`、`holder_kind`、`issued_at`、`expires_at`。
+- release/adopt/repair 的条件键是 `holder_id + task_id + binding_generation + lease_epoch`，`taskHome` 只能作为 path 校验字段。旧 task 的迟到 release、stale terminal close 或 stale runner cleanup 如果 generation/epoch 不匹配，只能 no-op 并写 debug/audit evidence，不能释放新 task holder/mount。
+- workspace-access、terminal、managed runner 和 Developer runner 都必须在 holder 发放、续租、adopt、release、repair 时校验 generation / epoch fence。
+
+## 11. Credentials Boundary
+
+- execution ticket、Project secrets、managed OAuth credentials、storage mount credentials、metadata_url、临时授权材料不得写入 task HOME、workspace、artifacts、Codex config 或可复用工具配置。
+- runner 可以把可复用工具配置、缓存、安装产物写入 HOME，但不能把短期授权票据作为 HOME 状态的一部分。
+- runner-private mount registry 必须有 redaction、TTL 和 path isolation；debug dump 不得泄露 credential payload 或 metadata_url。
+- 生成的 task docs、`AGENTS.md`、`RUNNER_RUNTIME.md` 不能暗示 auth material 位于 HOME 下。
+- 如果上游工具必须生成临时凭据文件，必须落在受控短生命周期位置，并在 run/terminal session 结束时清理；不得进入文件库复用语义。
+
+## 12. Artifact 双层语义
+
+artifact 有两个不同路径语义，不能混用：
+
+- metadata `task_relative_path` 是 workspace-relative：`.artifacts/<name>`。
+- file-library object key 是 root-relative：`workspace/.artifacts/<name>`。
+
+要求：
+
+- collector 只扫描 `$TASK_HOME/workspace/.artifacts`。
+- 不扫描 `$TASK_HOME/.artifacts`、`$TASK_HOME/.codex`、`$TASK_HOME/.mbos`、`$TASK_HOME/.agents`。
+- artifact 下载 fallback 使用 file-library object key `workspace/.artifacts/...`。
+- 不再使用 `agent-tasks/<task>/workspace/.artifacts/...`。
+
+## 13. 实施同步清单
+
+需要清理的旧心智：
+
+- 文件库只是 task HOME 的底层 PVC，task HOME 位于文件库内 task 子目录。
+- `task_home_segment` 是 task id 或文件库内目录名。
+- task 删除会删除 HOME 内容。
+- 文件库可作为多个 task 的共享运行 HOME。
+- managed runner 和 Developer runner 有不同根目录语义。
+- `workspace_binding_mode` 决定路径形态。
+- binding 是前端过滤或进程内 Map。
+
+需要同步的文件族：
+
+- Contracts：agent execution protocol、internal workspace binding model、Files module map、OpenAPI。
+- Backend：task create/delete、file library routes、binding repository、audit、repair job。
+- Runner：agent-runner protocol、agent-task-runner workspace builder、terminal runtime、pod manager path guard。
+- Frontend：TaskCreateDialog、Task delete dialog、Files library list/detail/banner、i18n。
+- MSW：tasks/files handlers、fixtures、parity tests。
+- Docs：runbook、DEVELOPMENT、AGENTS、相关 user guide。
+
+pre-GA 数据处理：
+
+- 不做长期双读或双 HOME 根运行。
+- 本地开发/测试数据可以 reset。
+- 如果必须保留已有开发数据，只允许 pre-GA 一次性自愈迁移/repair：读取缺失 `file_library_home_segment` 的旧文件库配置记录时派生并保存稳定 segment，留下 repair evidence；这是发布前数据修复，不是长期 silent compatibility。
+
+## 14. 测试与验收
+
+### 14.1 Focused tests
+
+首轮 unit/component/MSW：
 
 ```bash
 npm run test:run -- \
-  packages/agent-task-runner/src/task-workspace.test.ts \
-  packages/agent-task-runner/src/artifact-scan.test.ts \
-  packages/agent-task-runner/src/user-install-env.test.ts \
-  packages/agent-task-runner/src/terminal-runtime.test.ts \
-  packages/agent-task-runner/src/index.test.ts \
-  packages/agent-task-runner/src/task-assets.test.ts \
-  packages/agent-task-runner/src/child-launcher.test.ts \
-  packages/agent-runner/src/protocol.test.ts \
+  packages/api-entry-node/src/notebook-task/task-models.test.ts \
+  packages/api-entry-node/src/notebook-task/task-runtime-paths.test.ts \
+  packages/api-entry-node/src/notebook-task/task-file-library-bindings.test.ts \
+  packages/api-entry-node/src/task-route-handler.test.ts \
+  packages/api-entry-node/src/project-file-library-routes.test.ts \
   packages/api-entry-node/src/internal-agent-workspace-provisioner.test.ts \
   packages/api-entry-node/src/internal-agent-pod-manager.test.ts \
-  packages/api-entry-node/src/sandbox-manager-client.test.ts \
-  packages/api-entry-node/src/notebook-execution-orchestrator.test.ts \
-  packages/api-entry-node/src/task-route-handler.test.ts
+  packages/agent-runner/src/protocol.test.ts \
+  packages/agent-task-runner/src/task-workspace.test.ts \
+  packages/agent-task-runner/src/terminal-runtime.test.ts \
+  src/components/agent-tasks/__tests__/TaskCreateDialog.test.tsx \
+  src/components/files/__tests__/FilesPage.test.tsx \
+  src/lib/__tests__/msw-stop-contracts.test.ts
 ```
 
-Sandbox 侧：
-
-```bash
-cd ../mbos-sandbox-v1
-make test-unit
-```
-
-如果改动 sandbox manager API/spec、request validation、Pod spec builder 或 PVC mount/subPath/workingDir 逻辑，再跑：
-
-```bash
-cd ../mbos-sandbox-v1
-make test-integration
-```
-
-Focused gates：
+Contract / generated：
 
 ```bash
 npm run contracts:check-openapi
 npm run openapi:check-generated
-npm run test:skills:fast
+```
+
+Runner / skill focused diagnostics：
+
+```bash
 npm run test:agent-task:runner:fast
+npm run test:skills:fast
+```
+
+Conditionally required focused backend-real diagnostics：
+
+```bash
+npm run test:agent-task:runner:backend-real
+npm run test:skills:backend-real
+```
+
+Use these when the change touches real managed runner behavior, runner ticket scope, Context Store / skill env, workspace binding, holder generation, mount credential exchange, or backend-real ownership. If the change touches internal sandbox or workspace binding, also run:
+
+```bash
 npm run test:internal:backend-real:agent-task-workspace
 ```
+
+If the change touches terminal execution context, terminal holder release/adopt, or terminal path/env echo, also run the terminal backend-real matrix:
+
+```bash
+npm run test:agent-task:backend-real:terminal:matrix
+```
+
+Files backend-real diagnostics when file library delete/browse/mount behavior changes：
+
+```bash
+npm run test:files:backend-real:smoke
+npm run test:files:backend-real:sync
+```
+
+### 14.2 Required scenarios
+
+- `workspace_mode` matrix validation, including omitted mode plus id as invalid.
+- `create_new` creates file-library-stable segment and binds it.
+- `use_existing` reuses the same segment after old task delete, and cannot bind an existing library without `project:files:update` + resource policy / owner writable affordance.
+- `create_new` can create the internal HOME file library with `project:agent_task:use`; later Files UI writes still require Files update permission.
+- workspace-access, terminal, runner holder and mount credential exchange refuse writable holder/ticket when task binding, file library status/version, writable affordance, or generation/epoch check fails.
+- Concurrent CreateTask against one file library across two requests rejects exactly one with `AGENT_TASK_FILE_LIBRARY_IN_USE`.
+- Multi-instance or service restart evidence proves binding truth is durable, not in-memory.
+- Archive keeps binding; Delete releases binding after live blockers clear.
+- Delete with active run/terminal/live lease returns `AGENT_TASK_DELETE_BLOCKED`.
+- Stale lease/holder is repaired or TTL-released only after generation/epoch fence proves it stale, not permanent blocker.
+- Repair never releases binding or clears stuck deleting/deleting task while active run/terminal/live holder/live lease still exists.
+- Delete failure/retry does not leave zombie binding or visible task with released binding.
+- Old holder release from a prior task generation cannot release a new task holder/mount for the same `taskHome`.
+- File library delete race proves ready->deleting and no-binding guard are atomic, including expected version/status CAS.
+- File library delete non-empty path returns `FILE_LIBRARY_NOT_EMPTY`, transitions back to `ready` with new version/correlation/audit, and never remains stuck `deleting`.
+- CreateTask rejects deleting/deleted/non-ready/cross-project/forbidden libraries.
+- Files upload/move/folder/local mount/workspace-access write operations reject deleting libraries.
+- Route x error matrix covers CreateTask, Task DELETE, File library DELETE, Files write routes, workspace-access, mount credential exchange and metadata PATCH deleting/bound/conflict mappings.
+- Files list/detail shows only available/occupied primary state; archived occupied is discoverable when visible.
+- Redacted occupied library does not leak task title/owner/id.
+- Audit evidence covers `agent_task.create`, `agent_task.delete`, binding acquire/release/conflict, repair, compensation, file-library rollback and redaction assertions.
+- Task delete confirm copy and Files bound banner render i18n strings.
+- Cache invalidation refreshes fileLibraries after task create/update/archive/delete and typed conflicts.
+- MSW parity covers status code, required fields, unique occupied fixtures, redaction fixtures.
+- Managed and Developer runner echo `HOME`, `TASK_HOME`, `pwd`, `WORKSPACE_PATH`, `ARTIFACTS_PATH` consistently.
+- Negative echo/mode/profile/path tests fail closed.
+- Credentials, metadata_url and mount secrets do not appear under HOME or debug output.
+- Artifact metadata path is `.artifacts/...`; file-library object key is `workspace/.artifacts/...`.
+
+### 14.3 阶段收口
+
+遵守渐进验证。focused 变绿只是局部证据，不是发布签署。
 
 阶段收口：
 
 ```bash
-make local-real-status
 npm run verify -- --goal=pr --run
 ```
 
-涉及真实 managed Pod recycle、local-kind sandbox 或发布路径时升级：
+如果改动覆盖真实 managed runner、local-kind sandbox、Developer runner mount/release、Context Store/skill env 或 backend-real ownership，再升级：
 
 ```bash
-cd ../mbos-sandbox-v1
-make test-e2e
-cd ../agentsmith
 npm run verify -- --goal=real --run
 npm run release:ready
 npm run release:status
 ```
 
-负向检查：
-
-```bash
-rg -n "/home/node|/workspace/<task_id>|container_workspace_path|runner-private runtime home|runtime root hash|MBOS_AGENT_CODEX_STATE_ROOT" docs packages src scripts infra
-```
-
-负向检查允许匹配本计划中“旧心智待删除”的说明；实现完成后的 truth docs、代码、generated types、UI/i18n 和测试 snapshot 不得把这些内容写成当前真相。
-
-## 8. Acceptance
+## 15. 验收标准
 
 功能验收：
 
-- Managed task 的 terminal 和 agent 中 `HOME` 都是 `/home/<task_home_segment>`。
-- Managed task 的 terminal 和 agent 默认 `pwd` 都是 `/home/<task_home_segment>/workspace`。
-- Managed task 的 execution context 无论使用 `file_library` 还是 `pre_mounted`，都包含 `task_home_path`、`workspace_path`、`artifacts_path`，且不包含 canonical `container_workspace_path`。
-- Pod 回收并重建后，`$HOME/.codex`、`$HOME/.mbos`、`$HOME/.agents`、`$HOME/.local`、`$HOME/workspace` 仍存在。
-- 写入 `$HOME/workspace/.artifacts/a.txt` 会被收集；写入 `$HOME/.artifacts/b.txt`、`$HOME/.mbos/x`、`$HOME/.codex/y` 不会被收集。
-- Developer runner 可以使用本地绝对路径，但必须保持同构布局：`HOME=$TASK_HOME`、`cwd=$TASK_HOME/workspace`、artifacts=`$TASK_HOME/workspace/.artifacts`。
-- Task DELETE 删除 task HOME subtree；Archive 不删除。
-- Task DELETE 遇到 active blocker 时返回 `AGENT_TASK_DELETE_BLOCKED`，不自动停止进程，不做部分 cleanup。
-- File library DELETE 阻止仍有关联未删除 task 的 library。
+- 每个未删除 task 最多绑定一个文件库；每个文件库最多绑定一个未删除 task。
+- Archive 不释放文件库；Delete 成功释放文件库。
+- Delete task 保留文件库和文件内容。
+- 复用保留文件库创建新 task 后，managed runner 和 Developer runner 都把同一文件库根目录作为 `TASK_HOME` / `HOME`。
+- 复用同一文件库时 `task_home_segment` 不变。
+- `pwd` 始终是 `$TASK_HOME/workspace`。
+- Files 中打开文件库根目录时看到的是 `$TASK_HOME` 根目录内容。
+- 文件库删除被未删除 task 绑定阻止；释放绑定后仍受非空删除规则约束。
+- task 删除后，旧 task messages、trace、artifact metadata、runner binding、terminal 不会出现在新 task 中。
+- execution ticket、Project secrets、managed credentials、OAuth token、storage credentials 和 metadata_url 不落到文件库 HOME。
 
 工程验收：
 
-- OpenAPI/generated types 不再包含 canonical `container_workspace_path`。
-- `task_home_segment` 有单测覆盖正常 id、reserved prefix、非法字符、hash fallback、冲突 typed error。
-- Sandbox Go tests 覆盖 mount path / subPath / workingDir 分离；涉及 manager API/spec 或真实 Pod recycle 时补充 integration/e2e evidence。
-- Runner 生成的 task `AGENTS.md` / `RUNNER_RUNTIME.md` 不再描述 HOME/cwd 分离。
-- `docs/contracts/agent-execution-protocol.md`、`docs/agent-task-runner-runbook.md`、`AGENTS.md`、`DEVELOPMENT.md` 已同步。
-- focused tests、sandbox tests、contract/openapi checks、matching `verify` goal 均通过并保留 evidence。
+- Binding 独占有 DB/JsonDocStore durable conditional evidence，覆盖并发、多实例或重启。
+- File library delete 有 status/version + no-binding conditional transition evidence，覆盖非空 rollback 回 `ready`。
+- OpenAPI/generated types、MSW、backend handlers、frontend types、runner schemas 一致。
+- `TaskExecutionContext` 和 workspace-access 缺任何必填身份/路径字段都会 fail closed。
+- writable workspace-access、terminal 和 mount credential exchange 都有 task binding + writable affordance + generation/epoch 复校验证据。
+- `InternalAgentWorkspaceMount` 不再以 task-specific `subPath` 表达 task HOME。
+- `buildTaskHomePaths` 不再生成文件库内 task 子目录作为 storage partition。
+- `removeTaskHomeSubtree` 或同等逻辑不参与 task DELETE。
+- File library list/detail contract 暴露安全 occupied 状态，前端不从 task list 推断绑定。
+- route x error matrix 覆盖 CreateTask、Task DELETE、File library DELETE、Files write、workspace-access、mount credential exchange 和 metadata PATCH。
+- audit 覆盖 `agent_task.create`、`agent_task.delete`、acquire/conflict/release/delete-blocked/repair/compensation/file-library rollback，且完成 redaction。
+- focused tests 与匹配风险的 verification goal 保留 evidence。
+
+## 16. 风险与控制
+
+| 风险 | 影响 | 控制 |
+| --- | --- | --- |
+| 用户复用文件库时继承 `.codex` / `.mbos` / cache 状态 | 新 task 可能受保留运行时状态影响 | 创建 UI 与 Files 状态明确复用会保留文件内容；需要干净环境时创建新文件库 |
+| 并发 CreateTask 绕过前端过滤 | 同一文件库被两个 task 绑定 | durable binding 条件写/唯一约束；并发和重启 evidence |
+| Delete task 部分失败 | zombie binding 或旧 task 可见 | `deleting` state、idempotent release、repair job、audit correlation |
+| 文件库 deleting race | 删除中仍被绑定或写入 | ready->deleting 与 no-binding 原子 guard；所有写入口拒绝 deleting |
+| 非空文件库删除后 stuck deleting | 用户无法继续使用文件库 | 非空检查失败必须 transition 回 ready，带 version/correlation/audit；repair 只收敛明确终态 |
+| 同一文件库复用时旧 release 迟到 | 新 task holder/mount 被旧 task cleanup 释放 | holder_id + task_id + binding_generation + lease_epoch fencing；release/adopt/repair 不以 taskHome 单独定位 |
+| Artifact 文件保留但 metadata 删除 | 用户误以为新 task 自动继承 artifact | 双层路径语义和 UI 文案明确 metadata 不继承 |
+| Developer runner 本地 holder 未释放 | 文件库看似可复用但本地 mount 仍占用 | live holder blocker + stale repair/TTL；release 只释放 holder 不删文件 |
+| 凭据落入 HOME | 复用文件库泄露授权材料 | credentials boundary tests、debug redaction、短生命周期临时目录 |

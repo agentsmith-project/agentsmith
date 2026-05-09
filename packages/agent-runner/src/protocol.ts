@@ -41,6 +41,21 @@ export type AgentExecutionResourceProxy = {
 };
 
 export type AgentTaskInput = Record<string, unknown>;
+export type TaskWorkspaceBindingMode = 'file_library' | 'pre_mounted';
+export type TaskRuntimeProfile = 'managed' | 'developer';
+export type TaskWorkspaceHolderKind = 'runner_workspace' | 'terminal_session' | 'notebook_run';
+
+export type TaskWorkspaceHolderFence = {
+  holder_id: string;
+  task_id: string;
+  file_library_id: string;
+  task_home_segment: string;
+  binding_generation: string;
+  lease_epoch: string;
+  holder_kind: TaskWorkspaceHolderKind;
+  issued_at: string;
+  expires_at: string;
+};
 
 export type TaskExecutionContext = {
   api_base?: string;
@@ -57,11 +72,14 @@ export type TaskExecutionContext = {
   wire_api?: AgentWireApi;
   model?: string;
   username?: string;
+  workspace_file_library_id: string;
+  workspace_binding_mode: TaskWorkspaceBindingMode;
+  runtime_profile: TaskRuntimeProfile;
+  task_home_segment: string;
   task_home_path: string;
   workspace_path: string;
   artifacts_path: string;
-  workspace_binding_mode?: 'file_library' | 'pre_mounted';
-  workspace_file_library_id?: string | null;
+  library_root_path: '.';
   workspace_file_library_name?: string | null;
   workspace_dir_name?: string | null;
   task_inputs?: AgentTaskInput[];
@@ -175,17 +193,46 @@ function normalizeAbsolutePathForGuard(value: string): string {
   return normalized.replace(/\/+$/, '');
 }
 
+const TASK_HOME_SEGMENT_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/;
+
 function hasPathTraversalSegment(value: string): boolean {
-  return value.split('/').some((part) => part === '..');
+  return value.split(/[\\/]+/).some((part) => part === '..');
+}
+
+function hasControlCharacter(value: string): boolean {
+  return /[\0-\x1F\x7F]/.test(value);
+}
+
+function hasValidTaskHomeSegment(value: unknown): value is string {
+  if (typeof value !== 'string') return false;
+  const segment = value.trim();
+  return TASK_HOME_SEGMENT_PATTERN.test(segment)
+    && segment !== '.'
+    && segment !== '..'
+    && !hasPathTraversalSegment(segment)
+    && !hasControlCharacter(segment)
+    && normalize(segment) === segment;
+}
+
+function hasValidWorkspaceIdentityFields(input: Record<string, unknown>): boolean {
+  if (!hasTrimmedStringField(input, 'workspace_file_library_id')) return false;
+  if (!hasValidTaskHomeSegment(input.task_home_segment)) return false;
+  const mode = input.workspace_binding_mode;
+  if (mode !== 'file_library' && mode !== 'pre_mounted') return false;
+  const runtimeProfile = input.runtime_profile;
+  if (runtimeProfile !== 'managed' && runtimeProfile !== 'developer') return false;
+  return true;
 }
 
 function hasValidTaskPathFields(input: Record<string, unknown>): boolean {
   if (!hasTrimmedStringField(input, 'task_home_path')) return false;
   if (!hasTrimmedStringField(input, 'workspace_path')) return false;
   if (!hasTrimmedStringField(input, 'artifacts_path')) return false;
+  if (!hasTrimmedStringField(input, 'library_root_path')) return false;
   const taskHomePath = input.task_home_path as string;
   const workspacePath = input.workspace_path as string;
   const artifactsPath = input.artifacts_path as string;
+  const libraryRootPath = input.library_root_path as string;
   if (
     hasPathTraversalSegment(taskHomePath)
     || hasPathTraversalSegment(workspacePath)
@@ -200,6 +247,14 @@ function hasValidTaskPathFields(input: Record<string, unknown>): boolean {
   const workspace = normalizeAbsolutePathForGuard(workspacePath);
   const artifacts = normalizeAbsolutePathForGuard(artifactsPath);
   if (taskHome === '/') return false;
+  if (libraryRootPath.trim() !== '.') return false;
+  const taskHomeSegment = typeof input.task_home_segment === 'string'
+    ? input.task_home_segment.trim()
+    : '';
+  const runtimeProfile = input.runtime_profile;
+  if (!taskHomeSegment) return false;
+  if (!taskHome.endsWith(`/${taskHomeSegment}`)) return false;
+  if (runtimeProfile === 'managed' && taskHome !== join('/home', taskHomeSegment)) return false;
   return workspace === join(taskHome, 'workspace')
     && artifacts === join(workspace, '.artifacts');
 }
@@ -215,6 +270,7 @@ export function isTaskExecutionContext(input: unknown): input is TaskExecutionCo
   if (!isPlainObject(input)) return false;
   if (hasUnsupportedTaskExecutionField(input)) return false;
   if (!hasTrimmedStringField(input, 'task_id')) return false;
+  if (!hasValidWorkspaceIdentityFields(input)) return false;
   if (!hasValidTaskPathFields(input)) return false;
   if (!hasValidWireApi(input)) return false;
   if (!hasValidRunnerSessionScope(input)) return false;

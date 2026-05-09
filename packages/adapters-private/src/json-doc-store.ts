@@ -1,4 +1,10 @@
-import type { JsonDocStorePort } from '@mbos/ports';
+import type {
+  JsonDocCasCondition,
+  JsonDocConditionalCreateResult,
+  JsonDocConditionalDeleteResult,
+  JsonDocConditionalUpdateResult,
+  JsonDocStorePort,
+} from '@mbos/ports';
 import { MongoClient, type MongoClientOptions } from 'mongodb';
 
 export type MongoJsonDocStorePoolContract = Pick<
@@ -77,6 +83,103 @@ export class MongoJsonDocStore implements JsonDocStorePort {
     await col.deleteOne({ _id: id });
   }
 
+  async createIfAbsent<T>(
+    collection: string,
+    id: string,
+    doc: T,
+  ): Promise<JsonDocConditionalCreateResult<T>> {
+    const col = await this.collection(collection);
+    try {
+      await col.insertOne({
+        _id: id,
+        ...(doc as Record<string, unknown>),
+      });
+      return { ok: true };
+    } catch (error) {
+      if (!isMongoDuplicateKeyError(error)) {
+        throw error;
+      }
+      const current = await this.get<T>(collection, id);
+      if (!current) {
+        throw error;
+      }
+      return {
+        ok: false,
+        reason: 'exists',
+        current,
+      };
+    }
+  }
+
+  async updateIfMatch<T>(
+    collection: string,
+    id: string,
+    operation: {
+      expected: JsonDocCasCondition;
+      patch?: Partial<T>;
+      replace?: T;
+    },
+  ): Promise<JsonDocConditionalUpdateResult<T>> {
+    const col = await this.collection(collection);
+    const filter = buildMongoConditionalFilter(id, operation.expected);
+    const nextPatch = operation.replace
+      ? operation.replace as Record<string, unknown>
+      : operation.patch as Record<string, unknown> | undefined;
+    if (!nextPatch) {
+      const current = await this.get<T>(collection, id);
+      if (!current) {
+        return { ok: false, reason: 'not_found', current: null };
+      }
+      if (!matchesCondition(current as Record<string, unknown>, operation.expected)) {
+        return { ok: false, reason: 'condition_failed', current };
+      }
+      return { ok: true, doc: current };
+    }
+
+    const result = operation.replace
+      ? await col.replaceOne(filter, {
+          _id: id,
+          ...nextPatch,
+        })
+      : await col.updateOne(filter, {
+          $set: nextPatch,
+        });
+    if (result.matchedCount > 0) {
+      const updated = await this.get<T>(collection, id);
+      if (!updated) {
+        return { ok: false, reason: 'not_found', current: null };
+      }
+      return { ok: true, doc: updated };
+    }
+
+    const current = await this.get<T>(collection, id);
+    return {
+      ok: false,
+      reason: current ? 'condition_failed' : 'not_found',
+      current,
+    };
+  }
+
+  async deleteIfMatch<T>(
+    collection: string,
+    id: string,
+    operation: {
+      expected: JsonDocCasCondition;
+    },
+  ): Promise<JsonDocConditionalDeleteResult<T>> {
+    const col = await this.collection(collection);
+    const result = await col.deleteOne(buildMongoConditionalFilter(id, operation.expected));
+    if (result.deletedCount > 0) {
+      return { ok: true, deleted: true };
+    }
+    const current = await this.get<T>(collection, id);
+    return {
+      ok: false,
+      reason: current ? 'condition_failed' : 'not_found',
+      current,
+    };
+  }
+
   async close(): Promise<void> {
     await this.client.close();
   }
@@ -112,4 +215,108 @@ export class InMemoryJsonDocStore implements JsonDocStorePort {
   async delete(collection: string, id: string): Promise<void> {
     this.collection(collection).delete(id);
   }
+
+  async createIfAbsent<T>(
+    collection: string,
+    id: string,
+    doc: T,
+  ): Promise<JsonDocConditionalCreateResult<T>> {
+    const col = this.collection(collection);
+    const existing = col.get(id);
+    if (existing) {
+      return {
+        ok: false,
+        reason: 'exists',
+        current: existing as T,
+      };
+    }
+    col.set(id, doc as Record<string, unknown>);
+    return { ok: true };
+  }
+
+  async updateIfMatch<T>(
+    collection: string,
+    id: string,
+    operation: {
+      expected: JsonDocCasCondition;
+      patch?: Partial<T>;
+      replace?: T;
+    },
+  ): Promise<JsonDocConditionalUpdateResult<T>> {
+    const col = this.collection(collection);
+    const existing = col.get(id);
+    if (!existing) {
+      return { ok: false, reason: 'not_found', current: null };
+    }
+    if (!matchesCondition(existing, operation.expected)) {
+      return {
+        ok: false,
+        reason: 'condition_failed',
+        current: existing as T,
+      };
+    }
+    const next = operation.replace
+      ? operation.replace as Record<string, unknown>
+      : {
+          ...existing,
+          ...(operation.patch as Record<string, unknown> | undefined),
+        };
+    col.set(id, next);
+    return {
+      ok: true,
+      doc: next as T,
+    };
+  }
+
+  async deleteIfMatch<T>(
+    collection: string,
+    id: string,
+    operation: {
+      expected: JsonDocCasCondition;
+    },
+  ): Promise<JsonDocConditionalDeleteResult<T>> {
+    const col = this.collection(collection);
+    const existing = col.get(id);
+    if (!existing) {
+      return { ok: false, reason: 'not_found', current: null };
+    }
+    if (!matchesCondition(existing, operation.expected)) {
+      return {
+        ok: false,
+        reason: 'condition_failed',
+        current: existing as T,
+      };
+    }
+    col.delete(id);
+    return { ok: true, deleted: true };
+  }
+}
+
+function isMongoDuplicateKeyError(error: unknown): boolean {
+  return (
+    typeof error === 'object'
+    && error !== null
+    && 'code' in error
+    && (error as { code?: unknown }).code === 11000
+  );
+}
+
+function buildMongoConditionalFilter(
+  id: string,
+  expected: JsonDocCasCondition,
+): Record<string, unknown> {
+  return {
+    _id: id,
+    ...expected,
+  };
+}
+
+function matchesCondition(
+  doc: Record<string, unknown>,
+  expected: JsonDocCasCondition,
+): boolean {
+  return Object.entries(expected).every(([key, expectedValue]) => (
+    Object.prototype.hasOwnProperty.call(doc, key)
+    && doc[key] === expectedValue
+  ));
 }

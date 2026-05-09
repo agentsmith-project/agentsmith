@@ -13,6 +13,7 @@ import {
   buildNotebookTaskRunState,
   getNotebookTaskRunState,
 } from './notebook-task/task-run-coordination.js';
+import { JsonDocTaskFileLibraryBindingRepo } from './notebook-task/task-file-library-bindings.js';
 import { resolveInternalTicket } from './internal-ticket-store.js';
 import { resolveWorkspaceScopedCollection } from './workspace-tenant-collections.js';
 
@@ -50,6 +51,33 @@ async function seedAgentTaskModelSetting(
       updated_by_user_id: 'test_admin',
     },
   );
+}
+
+async function seedReadyTaskWorkspaceLibrary(
+  docStore: InMemoryJsonDocStore,
+  input: {
+    workspaceId: string;
+    projectId: string;
+    libraryId: string;
+    ownerUserId: string;
+    name?: string;
+  },
+): Promise<void> {
+  const now = new Date().toISOString();
+  await docStore.upsert('project_file_libraries', input.libraryId, {
+    id: input.libraryId,
+    workspace_id: input.workspaceId,
+    project_id: input.projectId,
+    name: input.name ?? input.libraryId,
+    status: 'ready',
+    version: 1,
+    filesystem_name: input.libraryId.replace(/_/g, '-'),
+    file_library_home_segment: `flibhome_${input.libraryId.replace(/[^a-zA-Z0-9]/g, '').slice(0, 32)}`,
+    source: 'manual',
+    created_by_user_id: input.ownerUserId,
+    created_at: now,
+    updated_at: now,
+  });
 }
 
 describe('notebook-execution-orchestrator governance preflight', () => {
@@ -437,6 +465,13 @@ describe('notebook-execution-orchestrator governance preflight', () => {
       projectId: 'proj_internal',
       endpointId: 'ep_internal',
     });
+    await seedReadyTaskWorkspaceLibrary(deps.docStore as InMemoryJsonDocStore, {
+      workspaceId: 'ws_internal',
+      projectId: 'proj_internal',
+      libraryId: 'flib_internal',
+      ownerUserId: 'user_internal',
+      name: 'Internal Workspace',
+    });
 
     const task = {
       id: 'task_finalizing_failure',
@@ -586,6 +621,13 @@ describe('notebook-execution-orchestrator governance preflight', () => {
       projectId: 'proj_internal',
       endpointId: 'ep_internal',
     });
+    await seedReadyTaskWorkspaceLibrary(deps.docStore as InMemoryJsonDocStore, {
+      workspaceId: 'ws_internal',
+      projectId: 'proj_internal',
+      libraryId: 'flib_internal',
+      ownerUserId: 'user_internal',
+      name: 'Internal Workspace',
+    });
 
     const task = {
       id: 'task_internal',
@@ -666,9 +708,12 @@ describe('notebook-execution-orchestrator governance preflight', () => {
             apply_patch_tool_type: 'function',
           },
           workspace_binding_mode: 'pre_mounted',
+          runtime_profile: 'managed',
+          task_home_segment: 'task_internal',
           task_home_path: '/home/task_internal',
           workspace_path: '/home/task_internal/workspace',
           artifacts_path: '/home/task_internal/workspace/.artifacts',
+          library_root_path: '.',
           workspace_file_library_id: 'flib_internal',
         }),
       }),
@@ -837,6 +882,9 @@ describe('notebook-execution-orchestrator governance preflight', () => {
           },
           runner_session_scope: 'agent_presence',
           workspace_binding_mode: 'file_library',
+          runtime_profile: 'developer',
+          task_home_segment: 'task_external_compose',
+          library_root_path: '.',
           workspace_file_library_id: 'flib_external',
         }),
       }),
@@ -979,6 +1027,7 @@ describe('notebook-execution-orchestrator governance preflight', () => {
           task_home_path: '/tmp/agentsmith-dev-workspaces/task_external_dev_direct',
           workspace_path: '/tmp/agentsmith-dev-workspaces/task_external_dev_direct/workspace',
           artifacts_path: '/tmp/agentsmith-dev-workspaces/task_external_dev_direct/workspace/.artifacts',
+          library_root_path: '.',
           workspace_file_library_id: 'flib_external',
         }),
       }),
@@ -1326,6 +1375,8 @@ describe('notebook-execution-orchestrator governance preflight', () => {
       updated_at: new Date().toISOString(),
       last_activity_at: new Date().toISOString(),
       agent_id: 'agent_custom_responses',
+      workspace_file_library_id: 'flib_custom_responses',
+      workspace_file_library_name: 'Custom Responses Workspace',
     };
     const assistantMessage = {
       id: 'msg_custom_responses',
@@ -1442,6 +1493,8 @@ describe('notebook-execution-orchestrator governance preflight', () => {
       updated_at: new Date().toISOString(),
       last_activity_at: new Date().toISOString(),
       agent_id: 'agent_empty_error',
+      workspace_file_library_id: 'flib_empty_error',
+      workspace_file_library_name: 'Empty Error Workspace',
     };
     const assistantMessage = {
       id: 'msg_empty_error',
@@ -1548,6 +1601,8 @@ describe('notebook-execution-orchestrator governance preflight', () => {
       updated_at: new Date().toISOString(),
       last_activity_at: new Date().toISOString(),
       agent_id: 'agent_external',
+      workspace_file_library_id: 'flib_external',
+      workspace_file_library_name: 'External Workspace',
     };
     const assistantMessage = {
       id: 'msg_external',
@@ -1754,6 +1809,8 @@ describe('notebook-execution-orchestrator governance preflight', () => {
       updated_at: new Date().toISOString(),
       last_activity_at: new Date().toISOString(),
       agent_id: 'agent_trace_sanitize',
+      workspace_file_library_id: 'flib_trace_sanitize',
+      workspace_file_library_name: 'Trace Sanitize Workspace',
     };
     const assistantMessage = {
       id: 'msg_trace_sanitize',
@@ -2074,6 +2131,13 @@ describe('notebook-execution-orchestrator governance preflight', () => {
       projectId: 'proj_internal_hold',
       endpointId: 'ep_internal_hold',
     });
+    await seedReadyTaskWorkspaceLibrary(deps.docStore as InMemoryJsonDocStore, {
+      workspaceId: 'ws_internal_hold',
+      projectId: 'proj_internal_hold',
+      libraryId: 'flib_internal_hold',
+      ownerUserId: 'user_internal_hold',
+      name: 'Internal Hold Workspace',
+    });
 
     const task = {
       id: 'task_internal_hold',
@@ -2133,7 +2197,7 @@ describe('notebook-execution-orchestrator governance preflight', () => {
             workspaceId: 'ws_internal_hold',
             projectId: 'proj_internal_hold',
             workloadId: 'task-internal-hold',
-            holders: ['notebook_run:run_internal_hold'],
+            holders: ['notebook_run:run_internal_hold@run_internal_hold'],
             hardTeardownRequested: false,
           },
         ]);
@@ -2149,6 +2213,169 @@ describe('notebook-execution-orchestrator governance preflight', () => {
       else process.env.AGENT_EXECUTION_HTTP_BASE_URL = previousExecutionHttpBase;
       await internalWorkloadCoordinator.shutdown();
     }
+  });
+
+  it('refuses managed workspace binding when the task file library is not ready', async () => {
+    const previousExecutionHttpBase = process.env.AGENT_EXECUTION_HTTP_BASE_URL;
+    process.env.AGENT_EXECUTION_HTTP_BASE_URL = 'http://10.88.0.1:20000/api/v1';
+    const ensureWorkspaceBinding = vi.fn(async () => ({
+      workspaceMount: {
+        bindingId: 'flib_internal_deleting',
+        mountPath: '/home/task_internal_deleting',
+      },
+      binding: {
+        file_library_id: 'flib_internal_deleting',
+      },
+    }));
+    const dispatchStreamingRequest = vi.fn(async () => ({
+      requestId: 'req_must_not_dispatch',
+      cancel: () => undefined,
+      stream: (async function* stream() {})(),
+    }));
+    const deps = {
+      cache: new InMemoryCache(),
+      docStore: new InMemoryJsonDocStore(),
+      agentResourceService: {
+        getAgent: vi.fn(async () => ({
+          id: 'agent_internal_deleting',
+          status: 'enabled',
+          mode: 'internal',
+          execution_preferences_json: {
+            notebook: {
+              endpoint_id: 'ep_internal_deleting',
+            },
+          },
+        })),
+      },
+      endpointResourceService: {
+        getEndpoint: vi.fn(async () => ({
+          id: 'ep_internal_deleting',
+          workspace_id: 'ws_internal_deleting',
+          project_id: 'proj_internal_deleting',
+          status: 'active',
+          model: 'placeholder-model',
+          credential_ref: 'cred_internal_deleting',
+          name: 'endpoint-internal-deleting',
+          type: 'custom',
+          upstream_protocol: 'openai_chat_completions',
+          base_url: 'https://example.com',
+          model_profile: {
+            max_context_tokens: 256000,
+          },
+          created_at: new Date().toISOString(),
+          updated_at: new Date().toISOString(),
+        })),
+      },
+      agentExecutionService: {
+        dispatchStreamingRequest,
+      },
+      internalAgentPodManager: {
+        ensureAgentReady: vi.fn(async () => undefined),
+      },
+      internalAgentWorkspaceBindingManager: {
+        ensureWorkspaceBinding,
+      },
+      internalWorkloadCoordinator: {
+        acquireHolder: vi.fn(async () => undefined),
+        releaseHolder: vi.fn(async () => undefined),
+      },
+    } as unknown as NodeApiDeps;
+    await seedAgentTaskModelSetting(deps.docStore as InMemoryJsonDocStore, {
+      workspaceId: 'ws_internal_deleting',
+      projectId: 'proj_internal_deleting',
+      endpointId: 'ep_internal_deleting',
+    });
+    const now = new Date().toISOString();
+    await deps.docStore.upsert('project_file_libraries', 'flib_internal_deleting', {
+      id: 'flib_internal_deleting',
+      workspace_id: 'ws_internal_deleting',
+      project_id: 'proj_internal_deleting',
+      name: 'Internal Deleting Workspace',
+      status: 'deleting',
+      version: 2,
+      filesystem_name: 'flib-internal-deleting',
+      file_library_home_segment: 'flibhome_internal_deleting',
+      source: 'manual',
+      created_by_user_id: 'user_internal_deleting',
+      created_at: now,
+      updated_at: now,
+    });
+    const acquired = await new JsonDocTaskFileLibraryBindingRepo(deps.docStore).acquire({
+      workspaceId: 'ws_internal_deleting',
+      projectId: 'proj_internal_deleting',
+      fileLibraryId: 'flib_internal_deleting',
+      taskId: 'task_internal_deleting',
+      taskTitle: 'internal deleting task',
+      taskStatus: 'active',
+      ownerUserId: 'user_internal_deleting',
+      runtimeWritableAffordance: 'task_internal_home',
+      correlationId: 'req_internal_deleting_binding',
+      now,
+    });
+    if (!acquired.ok) throw new Error('expected binding acquire to succeed');
+    const task = {
+      id: 'task_internal_deleting',
+      workspace_id: 'ws_internal_deleting',
+      project_id: 'proj_internal_deleting',
+      owner_user_id: 'user_internal_deleting',
+      title: 'internal deleting task',
+      task_home_segment: 'task_internal_deleting',
+      status: 'active' as const,
+      attached_inputs: [],
+      created_at: now,
+      updated_at: now,
+      last_activity_at: now,
+      agent_id: 'agent_internal_deleting',
+      workspace_file_library_id: 'flib_internal_deleting',
+      workspace_file_library_name: 'Internal Deleting Workspace',
+      file_library_binding_generation: acquired.binding.bindingGeneration,
+      runtime_writable_affordance: 'task_internal_home' as const,
+    };
+    const assistantMessage = {
+      id: 'msg_internal_deleting',
+      task_id: task.id,
+      role: 'agent' as const,
+      content: '',
+      created_at: now,
+    };
+    const emitted: Array<{ type: string; data: { code?: string } }> = [];
+
+    try {
+      await runNotebookTaskWithExecutionAgent({
+        deps,
+        task,
+        assistantMessage,
+        agentId: 'agent_internal_deleting',
+        user: { id: 'user_internal_deleting', name: 'Internal Deleting User', email: 'internal-deleting@example.com' },
+        publicBaseUrl: 'http://localhost:20072',
+        buildRunId: () => 'run_internal_deleting',
+        buildProxyUsername: () => 'internal_deleting_user',
+        mapTaskMessagesForExecution: () => [],
+        updateTaskActivity: () => undefined,
+        emitTaskEvent: (_taskId, payload) => {
+          emitted.push(payload as { type: string; data: { code?: string } });
+        },
+        onFinalize: () => undefined,
+        debugLog: () => undefined,
+        taskCollections: {
+          tasks: 'project_tasks',
+          messages: 'project_task_messages',
+        },
+        createTaskArtifact: async () => ({
+          id: 'artifact_internal_deleting',
+          task_id: task.id,
+          type: 'file',
+          created_at: now,
+        }),
+      });
+    } finally {
+      if (previousExecutionHttpBase === undefined) delete process.env.AGENT_EXECUTION_HTTP_BASE_URL;
+      else process.env.AGENT_EXECUTION_HTTP_BASE_URL = previousExecutionHttpBase;
+    }
+
+    expect(ensureWorkspaceBinding).not.toHaveBeenCalled();
+    expect(dispatchStreamingRequest).not.toHaveBeenCalled();
+    expect(emitted.find((item) => item.type === 'error')?.data.code).toBe('FILE_LIBRARY_DELETING');
   });
 
   it('passes startup abort to internal ensureAgentReady and persists cancelled terminal truth before dispatch', async () => {
@@ -2229,6 +2456,13 @@ describe('notebook-execution-orchestrator governance preflight', () => {
       workspaceId: 'ws_internal_abort',
       projectId: 'proj_internal_abort',
       endpointId: 'ep_internal_abort',
+    });
+    await seedReadyTaskWorkspaceLibrary(deps.docStore as InMemoryJsonDocStore, {
+      workspaceId: 'ws_internal_abort',
+      projectId: 'proj_internal_abort',
+      libraryId: 'flib_internal_abort',
+      ownerUserId: 'user_internal_abort',
+      name: 'Internal Abort Workspace',
     });
 
     const task = {
@@ -2391,6 +2625,8 @@ describe('notebook-execution-orchestrator governance preflight', () => {
       updated_at: new Date().toISOString(),
       last_activity_at: new Date().toISOString(),
       agent_id: 'agent_late_dispatch_cancelled',
+      workspace_file_library_id: 'flib_late_dispatch_cancelled',
+      workspace_file_library_name: 'Late Dispatch Cancelled Workspace',
     };
     const assistantMessage = {
       id: 'msg_late_dispatch_cancelled',

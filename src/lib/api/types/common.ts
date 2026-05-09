@@ -16,6 +16,6 @@ export interface PaginatedResponse<T> {
 export interface ErrorResponse {
   error_code: string;
   message: string;
-  request_id: string;
+  request_id?: string;
   details?: Record<string, unknown>;
 }

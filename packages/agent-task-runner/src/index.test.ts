@@ -41,6 +41,9 @@ type MockWebSocket = EventEmitter & {
 const TASK_HOME = '/home/task_1';
 const TASK_WORKSPACE = `${TASK_HOME}/workspace`;
 const TASK_ARTIFACTS = `${TASK_WORKSPACE}/.artifacts`;
+const LIBRARY_ROOT_PATH = '.';
+const TASK_FILE_LIBRARY_ID = 'flib_1';
+const TASK_HOME_SEGMENT = 'task_1';
 
 const {
   assertTaskExecutionContextMock,
@@ -58,6 +61,7 @@ const {
   prepareLaunchCommandMock,
   prepareTaskWorkspaceAssetsMock,
   prepareTaskWorkspaceMock,
+  releaseTaskWorkspaceMock,
   releaseAllPreparedTaskWorkspacesMock,
   resolveBuiltinSkillsConfigMock,
   resolveCodexTerminalOutcomeMock,
@@ -94,6 +98,7 @@ const {
     CLOSING: 2,
     CLOSED: 3,
   });
+  const releaseTaskWorkspaceMock = vi.fn(async () => undefined);
   return {
     assertTaskExecutionContextMock: vi.fn((value: unknown) => value),
     buildCodexExecArgsMock: vi.fn(() => ['--exec']),
@@ -136,6 +141,7 @@ const {
         mode: 'managed_local' as const,
         taskHome: '/home/task_1',
         visibleRoot: '/home/task_1/workspace',
+        libraryRoot: LIBRARY_ROOT_PATH,
         mountRoot: '/home/task_1',
         taskRoot: '/home/task_1',
         runtimeRoot: '/home/task_1',
@@ -146,8 +152,9 @@ const {
         mbosDir: '/home/task_1/.mbos',
         skillsDir: '/home/task_1/.agents/skills',
       },
-      release: vi.fn(async () => undefined),
+      release: releaseTaskWorkspaceMock,
     })),
+    releaseTaskWorkspaceMock,
     releaseAllPreparedTaskWorkspacesMock: vi.fn(async () => undefined),
     resolveBuiltinSkillsConfigMock: vi.fn(() => ({
       sourceDir: '/seed-skills',
@@ -517,9 +524,14 @@ describe('agent-task-runner entry lifecycle', () => {
         ],
         execution_context: {
           task_id: 'task_1',
+          workspace_file_library_id: TASK_FILE_LIBRARY_ID,
+          workspace_binding_mode: 'file_library',
+          runtime_profile: 'managed',
+          task_home_segment: TASK_HOME_SEGMENT,
           task_home_path: TASK_HOME,
           workspace_path: TASK_WORKSPACE,
           artifacts_path: TASK_ARTIFACTS,
+          library_root_path: LIBRARY_ROOT_PATH,
           run_id: 'run_1',
           workspace_id: 'ws_1',
           project_id: 'proj_1',
@@ -559,9 +571,14 @@ describe('agent-task-runner entry lifecycle', () => {
         ...(options.rows !== undefined ? { rows: options.rows } : {}),
         execution_context: {
           task_id: 'task_1',
+          workspace_file_library_id: TASK_FILE_LIBRARY_ID,
+          workspace_binding_mode: 'file_library',
+          runtime_profile: 'managed',
+          task_home_segment: TASK_HOME_SEGMENT,
           task_home_path: TASK_HOME,
           workspace_path: TASK_WORKSPACE,
           artifacts_path: TASK_ARTIFACTS,
+          library_root_path: LIBRARY_ROOT_PATH,
           run_id: 'run_1',
           workspace_id: 'ws_1',
           project_id: 'proj_1',
@@ -728,9 +745,43 @@ describe('agent-task-runner entry lifecycle', () => {
     expect(spawnMock).not.toHaveBeenCalled();
   });
 
+  it('releases the prepared task workspace when request setup fails before codex child spawn', async () => {
+    prepareTaskWorkspaceAssetsMock.mockRejectedValueOnce(new Error('asset_prepare_failed'));
+
+    await import('./index.js');
+    const socket = websocketInstances.at(-1);
+    if (!socket) {
+      throw new Error('websocket_instance_missing');
+    }
+
+    socket.emit('open');
+    socket.emit('message', serverHello());
+    socket.emit('message', serverRequestStart('req_setup_failure_release'));
+
+    await vi.waitFor(() => {
+      const frames = readSentFrames(socket);
+      expect(frames.some((frame) => (
+        frame.type === 'agent.response.error'
+        && frame.request_id === 'req_setup_failure_release'
+        && typeof frame.payload === 'object'
+        && frame.payload !== null
+        && (frame.payload as { error_message?: unknown }).error_message === 'asset_prepare_failed'
+      ))).toBe(true);
+    });
+    expect(spawnMock).not.toHaveBeenCalled();
+    expect(releaseTaskWorkspaceMock).toHaveBeenCalledTimes(1);
+  });
+
   async function waitForCodexStdoutListener(child: MockCodexChild): Promise<void> {
     await vi.waitFor(() => {
       expect(child.stdout.listenerCount('data')).toBeGreaterThan(0);
+    });
+  }
+
+  async function waitForCodexLifecycleListeners(child: MockCodexChild): Promise<void> {
+    await vi.waitFor(() => {
+      expect(child.listenerCount('error')).toBeGreaterThan(0);
+      expect(child.listenerCount('close')).toBeGreaterThan(0);
     });
   }
 
@@ -1763,9 +1814,14 @@ describe('agent-task-runner entry lifecycle', () => {
         shell: '/definitely/not/a/shell',
         execution_context: {
           task_id: 'task_1',
+          workspace_file_library_id: TASK_FILE_LIBRARY_ID,
+          workspace_binding_mode: 'file_library',
+          runtime_profile: 'managed',
+          task_home_segment: TASK_HOME_SEGMENT,
           task_home_path: TASK_HOME,
           workspace_path: TASK_WORKSPACE,
           artifacts_path: TASK_ARTIFACTS,
+          library_root_path: LIBRARY_ROOT_PATH,
           run_id: 'run_1',
           workspace_id: 'ws_1',
           project_id: 'proj_1',
@@ -1884,6 +1940,7 @@ describe('agent-task-runner entry lifecycle', () => {
           HOME: TASK_HOME,
           TASK_HOME,
           WORKSPACE_PATH: TASK_WORKSPACE,
+          ARTIFACTS_PATH: TASK_ARTIFACTS,
         }),
       }));
       expect(scanWorkspaceFilesSnapshotMock).toHaveBeenCalledWith(TASK_WORKSPACE, {
@@ -1912,6 +1969,7 @@ describe('agent-task-runner entry lifecycle', () => {
           task_home_path: TASK_HOME,
           workspace_path: TASK_WORKSPACE,
           artifacts_path: TASK_ARTIFACTS,
+          library_root_path: LIBRARY_ROOT_PATH,
         }),
       }));
       expect(startTerminalProcessMock).toHaveBeenCalledWith(expect.objectContaining({
@@ -1919,6 +1977,7 @@ describe('agent-task-runner entry lifecycle', () => {
           task_home_path: TASK_HOME,
           workspace_path: TASK_WORKSPACE,
           artifacts_path: TASK_ARTIFACTS,
+          library_root_path: LIBRARY_ROOT_PATH,
         }),
       }));
     });
@@ -2157,6 +2216,48 @@ describe('agent-task-runner entry lifecycle', () => {
       expect(frames.some((frame) => frame.type === 'agent.response.error')).toBe(true);
     });
     expect(markCodexSessionStateReusableMock).not.toHaveBeenCalled();
+  });
+
+  it('releases the prepared task workspace exactly once when codex emits error and close', async () => {
+    await import('./index.js');
+    const socket = websocketInstances.at(-1);
+    if (!socket) {
+      throw new Error('websocket_instance_missing');
+    }
+
+    socket.emit('open');
+    const child = await startCodexRun(socket, 'req_error_then_close_release');
+    await waitForCodexLifecycleListeners(child);
+
+    child.emit('error', new Error('spawn transport failed'));
+    closeCodexChild(child, 1);
+
+    await vi.waitFor(() => {
+      expect(releaseTaskWorkspaceMock).toHaveBeenCalledTimes(1);
+    });
+  });
+
+  it('releases the prepared task workspace after a cancelled codex run closes', async () => {
+    await import('./index.js');
+    const socket = websocketInstances.at(-1);
+    if (!socket) {
+      throw new Error('websocket_instance_missing');
+    }
+
+    socket.emit('open');
+    const child = await startCodexRun(socket, 'req_cancelled_release');
+    await waitForCodexLifecycleListeners(child);
+
+    socket.emit('message', Buffer.from(JSON.stringify({
+      type: 'server.request.cancel',
+      request_id: 'req_cancelled_release',
+    })));
+    expect(child.kill).toHaveBeenCalledWith('SIGTERM');
+    closeCodexChild(child, null, 'SIGTERM');
+
+    await vi.waitFor(() => {
+      expect(releaseTaskWorkspaceMock).toHaveBeenCalledTimes(1);
+    });
   });
 
   it('keeps terminal PTY and active registry on websocket close transport lost while terminating task run child', async () => {
@@ -2824,9 +2925,14 @@ describe('agent-task-runner entry lifecycle', () => {
         shell: '/definitely/not/a/real/shell',
         execution_context: {
           task_id: 'task_1',
+          workspace_file_library_id: TASK_FILE_LIBRARY_ID,
+          workspace_binding_mode: 'file_library',
+          runtime_profile: 'managed',
+          task_home_segment: TASK_HOME_SEGMENT,
           task_home_path: TASK_HOME,
           workspace_path: TASK_WORKSPACE,
           artifacts_path: TASK_ARTIFACTS,
+          library_root_path: LIBRARY_ROOT_PATH,
           run_id: 'run_1',
           workspace_id: 'ws_1',
           project_id: 'proj_1',

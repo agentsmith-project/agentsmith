@@ -60,8 +60,8 @@ function buildWorkloadKey(input: Pick<InternalWorkloadHolderRef, 'workspaceId' |
   return `${input.workspaceId}/${input.projectId}/${input.workloadId}`;
 }
 
-function buildHolderKey(input: Pick<InternalWorkloadHolderRef, 'holderKind' | 'holderId'>): string {
-  return `${input.holderKind}:${input.holderId}`;
+function buildHolderKey(input: Pick<InternalWorkloadHolderRef, 'holderKind' | 'holderId' | 'epoch'>): string {
+  return `${input.holderKind}:${input.holderId}${input.epoch ? `@${input.epoch}` : ''}`;
 }
 
 function createHardTeardownWaiter(): HardTeardownWaiter {

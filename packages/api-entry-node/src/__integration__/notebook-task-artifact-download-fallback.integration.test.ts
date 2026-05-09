@@ -3,6 +3,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { apiFetch, apiFetchWithToken, startServer } from './test-support.js';
 import { notebookTaskArtifactsCollection, notebookTasksCollection } from '../notebook-task/task-store.js';
 import { getTasks } from '../notebook-task/task-runtime-state.js';
+import { __resetTaskFileLibraryBindingsForTests } from '../notebook-task/task-file-library-bindings.js';
 
 const { createFileLibraryGatewayClientMock } = vi.hoisted(() => ({
   createFileLibraryGatewayClientMock: vi.fn(),
@@ -18,6 +19,7 @@ vi.mock('../file-library-gateway-client.js', async () => {
 
 afterEach(() => {
   createFileLibraryGatewayClientMock.mockReset();
+  __resetTaskFileLibraryBindingsForTests();
 });
 
 async function createFileLibrary(baseUrl: string, name = 'Artifact Fallback Workspace'): Promise<{ id: string; name: string }> {

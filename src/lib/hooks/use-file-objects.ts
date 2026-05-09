@@ -7,6 +7,7 @@
 import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 
 import { getApiClient, FilesAPI } from '@/lib/api';
+import { APIError } from '@/lib/api/errors';
 import { queryKeys } from '@/lib/query-keys';
 import type { FileObjectsListParams } from '@/lib/api/types';
 
@@ -16,6 +17,58 @@ type FileObjectsQueryOptions = {
   refetchIntervalInBackground?: boolean;
   refetchOnWindowFocus?: boolean;
 };
+
+const FILE_WRITE_CONFLICT_ERROR_CODES = new Set([
+  'FILE_LIBRARY_DELETING',
+  'FILE_LIBRARY_NOT_READY',
+  'FILE_LIBRARY_NOT_EMPTY',
+  'FILE_LIBRARY_TASK_IN_USE',
+  'FILE_LIBRARY_FORBIDDEN',
+]);
+
+function isFileWriteConflictError(error: unknown) {
+  return error instanceof APIError && FILE_WRITE_CONFLICT_ERROR_CODES.has(error.errorCode);
+}
+
+function fileLibraryQueryMatches(
+  queryKey: readonly unknown[],
+  workspaceId: string,
+  projectId: string,
+  libraryId?: string | null,
+) {
+  const scopedKey = queryKey[0] === 'v2' ? queryKey.slice(1) : queryKey;
+  if (
+    scopedKey[0] === 'file-libraries'
+    && scopedKey[1] === workspaceId
+    && scopedKey[2] === projectId
+  ) {
+    return true;
+  }
+  if (
+    scopedKey[0] === 'file-library'
+    && scopedKey[1] === workspaceId
+    && scopedKey[2] === projectId
+  ) {
+    return !libraryId || scopedKey[3] === libraryId;
+  }
+  return false;
+}
+
+function invalidateWriteConflictCachesInBackground(
+  queryClient: ReturnType<typeof useQueryClient>,
+  workspaceId: string,
+  projectId: string,
+  libraryId?: string | null,
+) {
+  void Promise.allSettled([
+    queryClient.invalidateQueries({
+      queryKey: queryKeys.fileObjects._def,
+    }),
+    queryClient.invalidateQueries({
+      predicate: (query) => fileLibraryQueryMatches(query.queryKey, workspaceId, projectId, libraryId),
+    }),
+  ]);
+}
 
 function invalidateFileObjectCachesInBackground(
   queryClient: ReturnType<typeof useQueryClient>,
@@ -179,6 +232,11 @@ export function useCreateFileFolder() {
     onSuccess: (_, vars) => {
       invalidateFileObjectCachesInBackground(queryClient, vars.workspaceId, vars.projectId);
     },
+    onError: (error, vars) => {
+      if (isFileWriteConflictError(error)) {
+        invalidateWriteConflictCachesInBackground(queryClient, vars.workspaceId, vars.projectId, vars.libraryId);
+      }
+    },
   });
 }
 
@@ -216,6 +274,11 @@ export function useUploadFileObject() {
         vars.prefix,
       );
     },
+    onError: (error, vars) => {
+      if (isFileWriteConflictError(error)) {
+        invalidateWriteConflictCachesInBackground(queryClient, vars.workspaceId, vars.projectId, vars.libraryId);
+      }
+    },
   });
 }
 
@@ -228,6 +291,11 @@ export function useDeleteFileObjects() {
       filesAPI.deleteObjects(vars.workspaceId, vars.projectId, vars.libraryId, vars.keys),
     onSuccess: (_, vars) => {
       invalidateFileObjectCachesInBackground(queryClient, vars.workspaceId, vars.projectId);
+    },
+    onError: (error, vars) => {
+      if (isFileWriteConflictError(error)) {
+        invalidateWriteConflictCachesInBackground(queryClient, vars.workspaceId, vars.projectId, vars.libraryId);
+      }
     },
   });
 }
@@ -247,6 +315,11 @@ export function useMoveFileObject() {
     }) => filesAPI.moveObject(vars.workspaceId, vars.projectId, vars.libraryId, vars),
     onSuccess: () => {
       invalidateFileObjectsOnlyInBackground(queryClient);
+    },
+    onError: (error, vars) => {
+      if (isFileWriteConflictError(error)) {
+        invalidateWriteConflictCachesInBackground(queryClient, vars.workspaceId, vars.projectId, vars.libraryId);
+      }
     },
   });
 }

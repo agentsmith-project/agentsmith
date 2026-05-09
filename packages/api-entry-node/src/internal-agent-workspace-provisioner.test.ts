@@ -8,7 +8,6 @@ import {
   sanitizeK8sName,
 } from './internal-agent-workspace-provisioner.js';
 import {
-  buildTaskHomePaths,
   buildTaskHomeSegment,
 } from './notebook-task/task-models.js';
 
@@ -64,14 +63,6 @@ describe('task home segment model', () => {
     })).toBe(`taskhash-${invalid}`);
   });
 
-  it('builds the canonical task HOME, workspace, artifact, and PVC subPath fields', () => {
-    expect(buildTaskHomePaths('task_demo')).toEqual({
-      taskHomePath: '/home/task_demo',
-      workspacePath: '/home/task_demo/workspace',
-      artifactsPath: '/home/task_demo/workspace/.artifacts',
-      subPath: 'agent-tasks/task_demo',
-    });
-  });
 });
 
 describe('InternalAgentWorkspaceProvisionerImpl', () => {
@@ -174,7 +165,7 @@ describe('InternalAgentWorkspaceProvisionerImpl', () => {
       taskHomePath: '/home/task_demo',
       workspacePath: '/home/task_demo/workspace',
       artifactsPath: '/home/task_demo/workspace/.artifacts',
-      subPath: 'agent-tasks/task_demo',
+      libraryRootPath: '.',
     });
     expect(result.binding.pvc_name).toBe('juicefs-pvc-demo');
     expect(result.binding.storage_class_name).toBe('juicefs-static');

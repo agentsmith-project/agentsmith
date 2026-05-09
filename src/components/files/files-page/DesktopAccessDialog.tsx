@@ -24,7 +24,9 @@ type DesktopPlatform = 'linux' | 'macos' | 'windows';
 interface DesktopAccessDialogProps {
   exchangePending: boolean;
   desktopMountAccess: FileLibraryDesktopMountAccess | null;
+  desktopMountAccessError: string | null;
   manualMountAccess: FileLibraryClientMountAccess | null;
+  manualMountAccessError: string | null;
   manualMountAccessPending: boolean;
   open: boolean;
   revealMetadataUrl: boolean;
@@ -91,7 +93,9 @@ function buildDesktopDownloadOptions(t: DesktopAccessDialogProps['t']): DesktopD
 export function DesktopAccessDialog({
   exchangePending,
   desktopMountAccess,
+  desktopMountAccessError,
   manualMountAccess,
+  manualMountAccessError,
   manualMountAccessPending,
   open,
   revealMetadataUrl,
@@ -111,11 +115,11 @@ export function DesktopAccessDialog({
   }, [open]);
 
   React.useEffect(() => {
-    if (!open || !showManualDebug || manualMountAccess || manualMountAccessPending) {
+    if (!open || !showManualDebug || manualMountAccess || manualMountAccessPending || manualMountAccessError) {
       return;
     }
     onLoadManualMountAccess();
-  }, [manualMountAccess, manualMountAccessPending, onLoadManualMountAccess, open, showManualDebug]);
+  }, [manualMountAccess, manualMountAccessError, manualMountAccessPending, onLoadManualMountAccess, open, showManualDebug]);
 
   const copyText = React.useCallback(async (value: string, successMessage: string, errorMessage: string) => {
     try {
@@ -140,6 +144,16 @@ export function DesktopAccessDialog({
           </DialogTitle>
           <DialogDescription>{t('file_manager.desktop_access_description')}</DialogDescription>
         </DialogHeader>
+
+        {desktopMountAccessError ? (
+          <div
+            className="rounded-md border border-warning/30 bg-warning/10 px-3 py-2 text-sm text-warning"
+            role="alert"
+            data-testid="files__desktop-mount__error"
+          >
+            {desktopMountAccessError}
+          </div>
+        ) : null}
 
         {exchangePending ? (
           <div className="py-6 text-sm text-secondary">{t('file_manager.desktop_access_loading')}</div>
@@ -259,7 +273,15 @@ export function DesktopAccessDialog({
 
               {showManualDebug ? (
                 <div className="mt-4 border-t border-subtle pt-4" data-testid="files__desktop-setup__debug-panel">
-                  {manualMountAccessPending ? (
+                  {manualMountAccessError ? (
+                    <div
+                      className="rounded-md border border-warning/30 bg-warning/10 px-3 py-2 text-sm text-warning"
+                      role="alert"
+                      data-testid="files__library-mount__error"
+                    >
+                      {manualMountAccessError}
+                    </div>
+                  ) : manualMountAccessPending ? (
                     <div className="py-3 text-sm text-secondary">{t('file_manager.mount_access_loading')}</div>
                   ) : (
                     <ManualMountAccessContent
@@ -273,6 +295,8 @@ export function DesktopAccessDialog({
               ) : null}
             </div>
           </div>
+        ) : desktopMountAccessError ? (
+          null
         ) : (
           <div className="py-6 text-sm text-secondary">{t('file_manager.desktop_access_empty')}</div>
         )}

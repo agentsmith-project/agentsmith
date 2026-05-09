@@ -49,6 +49,11 @@ Applies to:
 - switching libraries in the current session restores in-session file browser state.
 - refresh or leaving the module resets browser-local state.
 - file library runtime state (`creating`, `ready`, `degraded`, `failed`, `deleting`) is backend-owned truth.
+- file library task HOME binding state is backend-owned truth on the `FileLibrary` DTO:
+  - `task_home_binding_status: unbound | bound`
+  - `bound_task_visible` controls whether task summary fields may be shown
+  - `bound_task_id`, `bound_task_title`, and `bound_task_status` must only be rendered when `bound_task_visible` is true
+- Files must not infer task HOME binding from the task list.
 
 ## 4. UX Contract
 
@@ -61,6 +66,7 @@ Applies to:
   - `Esc` exits multi-select
 - Batch action row must not cause layout jump.
 - The module must expose a clear mount panel for Linux/macOS/Windows local mount commands.
+- Bound libraries must be labeled in the library list. Deleting a bound library is blocked until the bound task is deleted; redacted bound tasks must not leak title/id/status.
 
 ## 5. Backend Contract Linkage
 

@@ -1,7 +1,13 @@
 import { mkdir, open, readFile, rename, unlink, writeFile } from 'node:fs/promises';
 import { dirname } from 'node:path';
 import { InMemoryJsonDocStore, MongoJsonDocStore } from '@mbos/adapters-private';
-import type { JsonDocStorePort } from '@mbos/ports';
+import type {
+  JsonDocCasCondition,
+  JsonDocConditionalCreateResult,
+  JsonDocConditionalDeleteResult,
+  JsonDocConditionalUpdateResult,
+  JsonDocStorePort,
+} from '@mbos/ports';
 import type { SystemWorkspaceRecord } from './types';
 
 const SYSTEM_WORKSPACE_COLLECTION = 'system_workspaces';
@@ -10,6 +16,16 @@ let sharedDocStore: JsonDocStorePort | null = null;
 type StoredSystemWorkspaceRecord = SystemWorkspaceRecord;
 type ClosableJsonDocStore = JsonDocStorePort & { close?: () => Promise<void> };
 type StoredCollections = Record<string, Record<string, unknown>>;
+
+function matchesJsonDocCondition(
+  record: Record<string, unknown>,
+  expected: JsonDocCasCondition,
+): boolean {
+  return Object.entries(expected).every(([key, value]) => (
+    Object.prototype.hasOwnProperty.call(record, key)
+    && record[key] === value
+  ));
+}
 
 class FileJsonDocStore implements JsonDocStorePort {
   private writeQueue: Promise<void> = Promise.resolve();
@@ -119,6 +135,137 @@ class FileJsonDocStore implements JsonDocStorePort {
         await releaseLock();
       }
     });
+  }
+
+  async createIfAbsent<T>(
+    collection: string,
+    id: string,
+    record: T,
+  ): Promise<JsonDocConditionalCreateResult<T>> {
+    let result: JsonDocConditionalCreateResult<T> | null = null;
+    await this.scheduleWrite(async () => {
+      const releaseLock = await this.acquireWriteLock();
+      try {
+        const collections = await this.readCollections();
+        const existing = collections[collection]?.[id];
+        if (existing) {
+          result = {
+            ok: false,
+            reason: 'exists',
+            current: existing as T,
+          };
+          return;
+        }
+        const nextCollection = {
+          ...(collections[collection] ?? {}),
+          [id]: record as unknown,
+        };
+        await this.writeCollections({
+          ...collections,
+          [collection]: nextCollection,
+        });
+        result = { ok: true };
+      } finally {
+        await releaseLock();
+      }
+    });
+    if (!result) {
+      throw new Error('json_doc_conditional_create_failed');
+    }
+    return result;
+  }
+
+  async updateIfMatch<T>(
+    collection: string,
+    id: string,
+    operation: {
+      expected: JsonDocCasCondition;
+      patch?: Partial<T>;
+      replace?: T;
+    },
+  ): Promise<JsonDocConditionalUpdateResult<T>> {
+    let result: JsonDocConditionalUpdateResult<T> | null = null;
+    await this.scheduleWrite(async () => {
+      const releaseLock = await this.acquireWriteLock();
+      try {
+        const collections = await this.readCollections();
+        const existing = collections[collection]?.[id];
+        if (!existing) {
+          result = { ok: false, reason: 'not_found', current: null };
+          return;
+        }
+        if (!matchesJsonDocCondition(existing as Record<string, unknown>, operation.expected)) {
+          result = {
+            ok: false,
+            reason: 'condition_failed',
+            current: existing as T,
+          };
+          return;
+        }
+        const next = operation.replace
+          ? operation.replace as Record<string, unknown>
+          : {
+              ...(existing as Record<string, unknown>),
+              ...(operation.patch as Record<string, unknown> | undefined),
+            };
+        await this.writeCollections({
+          ...collections,
+          [collection]: {
+            ...(collections[collection] ?? {}),
+            [id]: next,
+          },
+        });
+        result = { ok: true, doc: next as T };
+      } finally {
+        await releaseLock();
+      }
+    });
+    if (!result) {
+      throw new Error('json_doc_conditional_update_failed');
+    }
+    return result;
+  }
+
+  async deleteIfMatch<T>(
+    collection: string,
+    id: string,
+    operation: {
+      expected: JsonDocCasCondition;
+    },
+  ): Promise<JsonDocConditionalDeleteResult<T>> {
+    let result: JsonDocConditionalDeleteResult<T> | null = null;
+    await this.scheduleWrite(async () => {
+      const releaseLock = await this.acquireWriteLock();
+      try {
+        const collections = await this.readCollections();
+        const existing = collections[collection]?.[id];
+        if (!existing) {
+          result = { ok: false, reason: 'not_found', current: null };
+          return;
+        }
+        if (!matchesJsonDocCondition(existing as Record<string, unknown>, operation.expected)) {
+          result = {
+            ok: false,
+            reason: 'condition_failed',
+            current: existing as T,
+          };
+          return;
+        }
+        const nextCollection = { ...(collections[collection] ?? {}) };
+        delete nextCollection[id];
+        await this.writeCollections({
+          ...collections,
+          [collection]: nextCollection,
+        });
+        result = { ok: true, deleted: true };
+      } finally {
+        await releaseLock();
+      }
+    });
+    if (!result) {
+      throw new Error('json_doc_conditional_delete_failed');
+    }
+    return result;
   }
 
   async close(): Promise<void> {

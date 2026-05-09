@@ -150,7 +150,7 @@ vi.mock('@/components/ui/select', async () => {
 // Mock next-intl with translation map
 vi.mock('next-intl', () => ({
   useLocale: () => 'en-US',
-  useTranslations: () => (key: string) => {
+  useTranslations: () => (key: string, values?: Record<string, string>) => {
     const translations: Record<string, string> = {
       'create': 'Create',
       'new': 'New',
@@ -161,13 +161,18 @@ vi.mock('next-intl', () => ({
       'workspace_source_create_new': 'Initialize a new task workspace automatically',
       'workspace_source_create_new_hint': 'Recommended. We\'ll create a fresh persistent task workspace for this task.',
       'workspace_source_use_existing': 'Continue an existing task workspace',
-      'workspace_source_use_existing_hint': 'Use an existing task workspace file library to keep working with previous files and agent context.',
+      'workspace_source_use_existing_hint': 'Requires Files update access. Reuse an available task workspace to keep working with previous files.',
       'workspace_name_label': 'New task workspace name',
       'workspace_name_placeholder': 'Enter task workspace name',
       'workspace_name_hint': 'Leave blank to generate a task workspace name from the task title.',
       'select_workspace_file_library': 'Select Existing Task Workspace',
-      'workspace_file_library_hint': 'Only idle workspaces can be selected.',
+      'workspace_file_library_hint': 'Active and archived tasks keep their workspace binding. Deleting a task releases the binding and keeps the library files.',
       'workspace_file_library_empty': 'No idle workspaces are available in this project right now.',
+      'workspace_file_library_bound_visible': `Bound to ${values?.title ?? 'task'} (${values?.status ?? 'unknown'})`,
+      'workspace_file_library_bound_redacted': 'Bound to another task',
+      'workspace_file_library_conflict': 'That task workspace is now bound to another task. Select another workspace or create a new one.',
+      'file_library_deleting.description': 'This library is being deleted. Refresh the library status before trying again.',
+      'file_library_not_ready.description': 'This library is not ready yet. Refresh the library status before trying again.',
       'task_start_notice': 'Start the task after creation by sending the first instruction.',
       'history_immutable_notice': 'Task history cannot be modified',
       'advanced_settings': 'Advanced settings',
@@ -198,6 +203,7 @@ vi.mock('next-intl', () => ({
 
 import { useCreateTask, useTasks } from '@/lib/hooks/use-task';
 import { useFileLibraries } from '@/lib/hooks/use-files';
+import { APIError } from '@/lib/api/errors';
 
 const mockFileLibraries = [
   {
@@ -210,6 +216,8 @@ const mockFileLibraries = [
     created_by_user_id: 'user-1',
     created_at: '2024-01-01T00:00:00Z',
     updated_at: '2024-01-01T00:00:00Z',
+    task_home_binding_status: 'unbound' as const,
+    bound_task_visible: false,
   },
   {
     id: 'flib-occupied',
@@ -221,6 +229,11 @@ const mockFileLibraries = [
     created_by_user_id: 'user-1',
     created_at: '2024-01-01T00:00:00Z',
     updated_at: '2024-01-01T00:00:00Z',
+    task_home_binding_status: 'bound' as const,
+    bound_task_id: 'task-active-1',
+    bound_task_title: 'Active Task',
+    bound_task_status: 'active' as const,
+    bound_task_visible: true,
   },
 ];
 
@@ -262,6 +275,7 @@ describe('TaskCreateDialog', () => {
   const mockOnSuccess = vi.fn();
   const mockOnOpenChange = vi.fn();
   const mockMutateAsync = vi.fn().mockResolvedValue({ id: 'new-task-id' });
+  const mockFileLibrariesRefetch = vi.fn().mockResolvedValue({ data: { items: mockFileLibraries } });
 
   beforeEach(() => {
     queryClient = new QueryClient({
@@ -272,6 +286,7 @@ describe('TaskCreateDialog', () => {
       },
     });
     vi.clearAllMocks();
+    mockFileLibrariesRefetch.mockResolvedValue({ data: { items: mockFileLibraries } });
     mockGetRunnerBindingOptions.mockResolvedValue({
       options: [
         {
@@ -337,6 +352,7 @@ describe('TaskCreateDialog', () => {
     vi.mocked(useFileLibraries).mockReturnValue({
       data: { items: mockFileLibraries },
       isLoading: false,
+      refetch: mockFileLibrariesRefetch,
     } as any);
     vi.mocked(useTasks).mockReturnValue({
       data: { items: mockTasks, total: mockTasks.length, page: 1, page_size: 200, has_more: false },
@@ -962,10 +978,183 @@ describe('TaskCreateDialog', () => {
           projectId: mockProjectId,
           data: {
             title: 'Continue Task',
+            workspace_mode: 'use_existing',
             workspace_file_library_id: 'flib-1',
           },
         });
       });
+    });
+
+    it('uses file library binding status instead of task-list occupancy when selecting an existing workspace', async () => {
+      const user = userEvent.setup();
+      vi.mocked(useTasks).mockReturnValue({
+        data: {
+          items: [{ ...mockTasks[0], workspace_file_library_id: 'flib-1' }],
+          total: 1,
+          page: 1,
+          page_size: 200,
+          has_more: false,
+        },
+        isLoading: false,
+      } as any);
+
+      renderComponent();
+
+      await user.type(screen.getByRole('textbox', { name: /Task Title/i }), 'Continue From DTO');
+      await user.click(screen.getAllByRole('radio')[1]!);
+
+      const projectUploadsOption = await screen.findByRole('option', { name: 'Project Uploads' });
+      expect(projectUploadsOption).toBeEnabled();
+      expect(screen.queryByRole('option', { name: /Occupied Workspace/ })).not.toBeInTheDocument();
+
+      await user.click(projectUploadsOption);
+      submitTaskCreateForm();
+
+      await waitFor(() => {
+        expect(mockMutateAsync).toHaveBeenCalledWith({
+          workspaceId: mockWorkspaceId,
+          projectId: mockProjectId,
+          data: {
+            title: 'Continue From DTO',
+            workspace_mode: 'use_existing',
+            workspace_file_library_id: 'flib-1',
+          },
+        });
+      });
+    });
+
+    it('shows an empty existing-workspace state when every ready library is already occupied', async () => {
+      const user = userEvent.setup();
+      vi.mocked(useFileLibraries).mockReturnValue({
+        data: {
+          items: [mockFileLibraries[1]],
+        },
+        isLoading: false,
+        refetch: mockFileLibrariesRefetch,
+      } as any);
+
+      renderComponent();
+
+      await user.type(screen.getByRole('textbox', { name: /Task Title/i }), 'All Occupied');
+      await user.click(screen.getAllByRole('radio')[1]!);
+      fireEvent.click(screen.getByTestId('task-create__file-library'));
+
+      expect(await screen.findByText('No idle workspaces are available in this project right now.')).toBeInTheDocument();
+      expect(screen.queryByRole('option', { name: /Occupied Workspace/ })).not.toBeInTheDocument();
+      expect(screen.getByRole('button', { name: 'Create' })).toBeDisabled();
+    });
+
+    it('clears a selected existing workspace when a refreshed file-library DTO marks it bound', async () => {
+      const user = userEvent.setup();
+      const { rerender } = renderComponent();
+
+      await user.type(screen.getByRole('textbox', { name: /Task Title/i }), 'Refetch Binding');
+      await user.click(screen.getAllByRole('radio')[1]!);
+      await selectRadixOption(user, screen.getByTestId('task-create__file-library'), 'Project Uploads');
+      expect(screen.getByRole('button', { name: 'Create' })).toBeEnabled();
+
+      vi.mocked(useFileLibraries).mockReturnValue({
+        data: {
+          items: [
+            {
+              ...mockFileLibraries[0],
+              task_home_binding_status: 'bound' as const,
+              bound_task_id: 'task-after-refetch',
+              bound_task_title: 'Refetched Task',
+              bound_task_status: 'active' as const,
+              bound_task_visible: true,
+            },
+          ],
+        },
+        isLoading: false,
+        refetch: mockFileLibrariesRefetch,
+      } as any);
+
+      rerender(
+        <TaskCreateDialog
+          open={true}
+          onOpenChange={mockOnOpenChange}
+          workspaceId={mockWorkspaceId}
+          projectId={mockProjectId}
+          onSuccess={mockOnSuccess}
+        />
+      );
+
+      await waitFor(() => {
+        expect(screen.getByTestId('task-create__file-library')).toHaveTextContent('Select Existing Task Workspace');
+        expect(screen.getByRole('button', { name: 'Create' })).toBeDisabled();
+      });
+      submitTaskCreateForm();
+      expect(mockMutateAsync).not.toHaveBeenCalled();
+    });
+
+    it('keeps the dialog open, refreshes libraries, and explains typed file-library conflicts', async () => {
+      const user = userEvent.setup();
+      mockMutateAsync.mockRejectedValueOnce(new APIError(
+        'AGENT_TASK_FILE_LIBRARY_IN_USE',
+        'workspace_file_library_in_use',
+        undefined,
+        409,
+        { field: 'workspace_file_library_id', file_library_id: 'flib-1' },
+      ));
+
+      renderComponent();
+
+      await user.type(screen.getByRole('textbox', { name: /Task Title/i }), 'Conflict Task');
+      await user.click(screen.getAllByRole('radio')[1]!);
+      await selectRadixOption(user, screen.getByTestId('task-create__file-library'), 'Project Uploads');
+      submitTaskCreateForm();
+
+      await waitFor(() => {
+        expect(mockFileLibrariesRefetch).toHaveBeenCalled();
+      });
+      expect(mockOnOpenChange).not.toHaveBeenCalledWith(false);
+      expect(screen.getByRole('alert')).toHaveTextContent(
+        'That task workspace is now bound to another task. Select another workspace or create a new one.',
+      );
+    });
+
+    it.each([
+      [
+        'FILE_LIBRARY_DELETING',
+        'file_library_deleting',
+        'deleting',
+        'This library is being deleted. Refresh the library status before trying again.',
+      ],
+      [
+        'FILE_LIBRARY_NOT_READY',
+        'file_library_not_ready',
+        'creating',
+        'This library is not ready yet. Refresh the library status before trying again.',
+      ],
+    ])('keeps the dialog open and explains typed create race %s inline', async (
+      errorCode,
+      message,
+      libraryStatus,
+      expectedMessage,
+    ) => {
+      const user = userEvent.setup();
+      mockMutateAsync.mockRejectedValueOnce(new APIError(
+        errorCode,
+        message,
+        undefined,
+        409,
+        { file_library_id: 'flib-1', file_library_status: libraryStatus },
+      ));
+
+      renderComponent();
+
+      await user.type(screen.getByRole('textbox', { name: /Task Title/i }), 'Race Task');
+      await user.click(screen.getAllByRole('radio')[1]!);
+      await selectRadixOption(user, screen.getByTestId('task-create__file-library'), 'Project Uploads');
+      submitTaskCreateForm();
+
+      await waitFor(() => {
+        expect(mockFileLibrariesRefetch).toHaveBeenCalled();
+      });
+      expect(mockOnOpenChange).not.toHaveBeenCalledWith(false);
+      expect(screen.getByTestId('task-create__file-library-conflict')).toHaveTextContent(expectedMessage);
+      expect(screen.getByTestId('task-create__file-library')).toHaveTextContent('Select Existing Task Workspace');
     });
 
     it('trims whitespace from title', async () => {

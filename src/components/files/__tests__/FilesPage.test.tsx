@@ -11,6 +11,7 @@ import { useInfiniteQuery } from '@tanstack/react-query';
 import { act, fireEvent, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import type { FileObjectsListItem, FileObjectsListResponse } from '@/lib/api/types';
+import { APIError } from '@/lib/api/errors';
 
 import { FilesPage } from '../FilesPage';
 import {
@@ -32,7 +33,7 @@ vi.mock('@/components/ui/toast', () => ({
 }));
 
 vi.mock('next-intl', () => ({
-  useTranslations: (namespace: string) => (key: string) => {
+  useTranslations: (namespace: string) => (key: string, values?: Record<string, string>) => {
     const translations: Record<string, Record<string, string>> = {
       files: {
         title: 'Files',
@@ -50,14 +51,23 @@ vi.mock('next-intl', () => ({
         'file_manager.no_libraries': 'No libraries yet',
         'file_manager.library_create': 'Create library',
         'file_manager.library_create_description': 'Create a shared file library for this project.',
+        'file_manager.library_status_ready': 'Ready',
         'file_manager.library_status_failed': 'Failed',
         'file_manager.library_status_reason_failed': 'Library provisioning failed.',
+        'file_manager.library_binding_unbound': 'Unbound',
+        'file_manager.library_binding_bound': 'Bound',
+        'file_manager.library_binding_bound_visible': `Bound to ${values?.title ?? 'task'} (${values?.status ?? 'unknown'})`,
+        'file_manager.library_binding_bound_redacted': 'Bound to a task you cannot view',
+        'file_manager.library_bound_home_banner': 'This library is an Agent task HOME. Files changes affect that task HOME.',
+        'file_manager.library_bound_home_banner_visible': `This library is the HOME for ${values?.title ?? 'task'} (${values?.status ?? 'unknown'}). Files changes affect that task HOME.`,
+        'file_manager.library_delete_bound_blocked': 'Delete the bound task before deleting this library.',
       },
       errors: {
         validation_error: 'Validation error',
         permission_denied_title: 'Permission denied',
         permission_denied_hint: 'Permission denied hint',
         badRequest: 'Bad request',
+        'file_library_deleting.description': 'This library is being deleted. Refresh the library status before trying again.',
       },
       common: {},
     };
@@ -69,12 +79,18 @@ const {
   mockUseFileObjectsInfinite,
   mockUseFileObjects,
   mockUploadFileObjectMutateAsync,
+  mockDeleteFileObjectsMutateAsync,
   mockFilesApiListObjects,
+  mockDesktopMountAccessMutateAsync,
+  mockStorageCredentialExchangeMutateAsync,
 } = vi.hoisted(() => ({
   mockUseFileObjectsInfinite: vi.fn(),
   mockUseFileObjects: vi.fn(),
   mockUploadFileObjectMutateAsync: vi.fn(),
+  mockDeleteFileObjectsMutateAsync: vi.fn(),
   mockFilesApiListObjects: vi.fn(),
+  mockDesktopMountAccessMutateAsync: vi.fn(),
+  mockStorageCredentialExchangeMutateAsync: vi.fn(),
 }));
 
 let mockLibraries = [createFileLibrary()];
@@ -109,39 +125,11 @@ vi.mock('@/lib/stores/authStore', () => ({
 
 vi.mock('@/lib/hooks/use-file-libraries-v2', () => ({
   useFileLibraryDesktopMountAccess: () => ({
-    mutateAsync: vi.fn().mockResolvedValue({
-      desktop_mount_access: {
-        filesystem_name: 'flib-ws-default-proj-001-shared-docs',
-        metadata_url: 'postgres://user:password@files.example.com:5432/jfs_lib_1',
-        storage_bucket_url: 'https://files.example.com:19000/jfs-lib-1',
-        deployment_base_url: 'https://mbos.imotion.ai:3001',
-        default_mount_roots: {
-          linux: '~/AgentSmith',
-          macos: '~/AgentSmith',
-          windows: '%USERPROFILE%\\AgentSmith',
-        },
-        windows_requires_drive_letter: true,
-        created_at: '2026-03-16T08:00:00.000Z',
-      },
-    }),
+    mutateAsync: mockDesktopMountAccessMutateAsync,
     isPending: false,
   }),
   useFileLibraryStorageCredentialExchange: () => ({
-    mutateAsync: vi.fn().mockResolvedValue({
-      client_mount_access: {
-        filesystem_name: 'flib-ws-default-proj-001-shared-docs',
-        metadata_url: 'postgres://user:password@files.example.com:5432/jfs_lib_1',
-        storage_bucket_url: 'https://files.example.com:19000/jfs-lib-1',
-        recommended_mount_path: '~/JuiceFS/shared-docs',
-        platform_notes: ['Install JuiceFS before mounting.'],
-        recommended_mount_commands: {
-          linux: 'juicefs mount postgres://user:password@files.example.com:5432/jfs_lib_1 ~/JuiceFS/shared-docs --bucket https://files.example.com:19000/jfs-lib-1',
-          macos: 'juicefs mount postgres://user:password@files.example.com:5432/jfs_lib_1 ~/JuiceFS/shared-docs --bucket https://files.example.com:19000/jfs-lib-1',
-          windows: 'juicefs mount postgres://user:password@files.example.com:5432/jfs_lib_1 X: --bucket https://files.example.com:19000/jfs-lib-1',
-        },
-        created_at: '2026-03-16T08:00:00.000Z',
-      },
-    }),
+    mutateAsync: mockStorageCredentialExchangeMutateAsync,
     isPending: false,
   }),
 }));
@@ -163,7 +151,7 @@ vi.mock('@/lib/hooks/use-file-objects', () => ({
   useFileObjects: (...args: unknown[]) => mockUseFileObjects(...args),
   useCreateFileFolder: () => ({ mutateAsync: vi.fn(), isPending: false }),
   useUploadFileObject: () => ({ mutateAsync: mockUploadFileObjectMutateAsync, isPending: false }),
-  useDeleteFileObjects: () => ({ mutateAsync: vi.fn(), isPending: false }),
+  useDeleteFileObjects: () => ({ mutateAsync: mockDeleteFileObjectsMutateAsync, isPending: false }),
   useMoveFileObject: () => ({ mutateAsync: vi.fn(), isPending: false }),
 }));
 
@@ -271,12 +259,48 @@ describe('FilesPage (object browser)', () => {
     mockUseFileObjectsInfinite.mockReset();
     mockUseFileObjects.mockReset();
     mockUploadFileObjectMutateAsync.mockReset();
+    mockDeleteFileObjectsMutateAsync.mockReset();
     mockFilesApiListObjects.mockReset();
+    mockDesktopMountAccessMutateAsync.mockReset();
+    mockStorageCredentialExchangeMutateAsync.mockReset();
     mockToast.success.mockReset();
     mockToast.error.mockReset();
+    mockDesktopMountAccessMutateAsync.mockResolvedValue({
+      desktop_mount_access: {
+        filesystem_name: 'flib-ws-default-proj-001-shared-docs',
+        metadata_url: 'postgres://user:password@files.example.com:5432/jfs_lib_1',
+        storage_bucket_url: 'https://files.example.com:19000/jfs-lib-1',
+        deployment_base_url: 'https://mbos.imotion.ai:3001',
+        default_mount_roots: {
+          linux: '~/AgentSmith',
+          macos: '~/AgentSmith',
+          windows: '%USERPROFILE%\\AgentSmith',
+        },
+        windows_requires_drive_letter: true,
+        created_at: '2026-03-16T08:00:00.000Z',
+      },
+    });
+    mockStorageCredentialExchangeMutateAsync.mockResolvedValue({
+      client_mount_access: {
+        filesystem_name: 'flib-ws-default-proj-001-shared-docs',
+        metadata_url: 'postgres://user:password@files.example.com:5432/jfs_lib_1',
+        storage_bucket_url: 'https://files.example.com:19000/jfs-lib-1',
+        recommended_mount_path: '~/JuiceFS/shared-docs',
+        platform_notes: ['Install JuiceFS before mounting.'],
+        recommended_mount_commands: {
+          linux: 'juicefs mount postgres://user:password@files.example.com:5432/jfs_lib_1 ~/JuiceFS/shared-docs --bucket https://files.example.com:19000/jfs-lib-1',
+          macos: 'juicefs mount postgres://user:password@files.example.com:5432/jfs_lib_1 ~/JuiceFS/shared-docs --bucket https://files.example.com:19000/jfs-lib-1',
+          windows: 'juicefs mount postgres://user:password@files.example.com:5432/jfs_lib_1 X: --bucket https://files.example.com:19000/jfs-lib-1',
+        },
+        created_at: '2026-03-16T08:00:00.000Z',
+      },
+    });
     mockUploadFileObjectMutateAsync.mockResolvedValue({
       key: 'README.txt',
       name: 'README.txt',
+    });
+    mockDeleteFileObjectsMutateAsync.mockResolvedValue({
+      results: [{ key: 'README.txt', status: 'deleted' }],
     });
     mockFilesApiListObjects.mockResolvedValue(createListingResult());
     mockLibraries = [createFileLibrary()];
@@ -369,6 +393,94 @@ describe('FilesPage (object browser)', () => {
     expect(screen.getByTestId('files__new-folder')).toBeDisabled();
     expect(screen.getByTestId('files__upload')).toBeDisabled();
     expect(screen.getByTestId('files__refresh')).toBeDisabled();
+  });
+
+  it('shows task HOME binding state without leaking redacted task metadata', async () => {
+    mockLibraries = [
+      createFileLibrary({
+        id: 'lib_unbound',
+        name: 'Reusable Workspace',
+        task_home_binding_status: 'unbound',
+        bound_task_visible: false,
+      }),
+      createFileLibrary({
+        id: 'lib_bound_visible',
+        name: 'Bound Workspace',
+        task_home_binding_status: 'bound',
+        bound_task_id: 'task_visible',
+        bound_task_title: 'Visible Task',
+        bound_task_status: 'archived',
+        bound_task_visible: true,
+      }),
+      createFileLibrary({
+        id: 'lib_bound_redacted',
+        name: 'Private Bound Workspace',
+        task_home_binding_status: 'bound',
+        bound_task_title: 'Secret Task',
+        bound_task_status: 'active',
+        bound_task_visible: false,
+      }),
+    ];
+
+    renderWithQueryClient(<FilesPage workspaceId="ws_default" projectId="proj_001" />);
+
+    expect(await screen.findByTestId('files__library-binding--lib_unbound')).toHaveTextContent('Unbound');
+    expect(screen.getByTestId('files__library-binding--lib_bound_visible')).toHaveTextContent('Bound');
+    expect(screen.getByTestId('files__library-binding-detail--lib_bound_visible')).toHaveTextContent(
+      'Bound to Visible Task (archived)',
+    );
+    expect(screen.getByTestId('files__library-binding--lib_bound_redacted')).toHaveTextContent('Bound');
+    expect(screen.getByTestId('files__library-binding-detail--lib_bound_redacted')).toHaveTextContent(
+      'Bound to a task you cannot view',
+    );
+    expect(screen.queryByText('Secret Task')).not.toBeInTheDocument();
+  });
+
+  it('disables library deletion up front while a task binding exists', async () => {
+    mockLibraries = [
+      createFileLibrary({
+        id: 'lib_bound_visible',
+        name: 'Bound Workspace',
+        task_home_binding_status: 'bound',
+        bound_task_id: 'task_visible',
+        bound_task_title: 'Visible Task',
+        bound_task_status: 'active',
+        bound_task_visible: true,
+      }),
+    ];
+
+    renderWithQueryClient(<FilesPage workspaceId="ws_default" projectId="proj_001" />);
+
+    expect(await screen.findByTestId('files__library-delete-inline--lib_bound_visible')).toBeDisabled();
+    expect(screen.getByTestId('files__library-binding-detail--lib_bound_visible')).toHaveTextContent(
+      'Bound to Visible Task (active)',
+    );
+    expect(screen.getByTestId('files__library-delete-blocked--lib_bound_visible')).toHaveTextContent(
+      'Delete the bound task before deleting this library.',
+    );
+  });
+
+  it('shows a selected bound library banner without disabling browsing or editing actions', async () => {
+    mockLibraries = [
+      createFileLibrary({
+        id: 'lib_bound_visible',
+        name: 'Bound Workspace',
+        task_home_binding_status: 'bound',
+        bound_task_id: 'task_visible',
+        bound_task_title: 'Visible Task',
+        bound_task_status: 'active',
+        bound_task_visible: true,
+      }),
+    ];
+
+    renderWithQueryClient(<FilesPage workspaceId="ws_default" projectId="proj_001" />);
+
+    expect(await screen.findByTestId('files__bound-home-banner')).toHaveTextContent(
+      'This library is the HOME for Visible Task (active). Files changes affect that task HOME.',
+    );
+    expect(screen.getByTestId('files__objects-table')).toBeInTheDocument();
+    expect(screen.getByTestId('files__new-folder')).toBeEnabled();
+    expect(screen.getByTestId('files__upload')).toBeEnabled();
   });
 
   it('shows a canonical no-library surface instead of folder-empty actions when no library exists', async () => {
@@ -473,6 +585,32 @@ describe('FilesPage (object browser)', () => {
     expect(screen.getByTestId('files__selection-summary')).toBeInTheDocument();
     await user.keyboard('{Escape}');
     expect(screen.getByTestId('files__selection-shortcuts')).toBeInTheDocument();
+  });
+
+  it('keeps object delete race conflicts inline in the confirm dialog', async () => {
+    mockDeleteFileObjectsMutateAsync.mockRejectedValueOnce(new APIError(
+      'FILE_LIBRARY_DELETING',
+      'file_library_deleting',
+      undefined,
+      409,
+      { file_library_id: 'lib_1', file_library_status: 'deleting' },
+    ));
+    renderWithQueryClient(<FilesPage workspaceId="ws_default" projectId="proj_001" />);
+    const user = userEvent.setup();
+
+    const table = await screen.findByTestId('files__objects-table');
+    const row = within(table).getAllByTestId('files__object-row').find((el) => el.textContent?.includes('README.txt'));
+    expect(row).toBeDefined();
+    await user.click(within(row as HTMLElement).getByRole('button', { name: /README\.txt/i }));
+    await user.click(screen.getByTestId('files__delete'));
+    const dialog = await screen.findByTestId('files__dialog__delete');
+    await user.click(within(dialog).getByRole('button', { name: 'file_manager.delete' }));
+
+    expect(await screen.findByTestId('files__delete__error')).toHaveTextContent(
+      'This library is being deleted. Refresh the library status before trying again.',
+    );
+    expect(screen.getByTestId('files__dialog__delete')).toBeInTheDocument();
+    expect(mockToast.error).not.toHaveBeenCalledWith(expect.stringContaining('file_library_deleting'));
   });
 
   it('shows dropzone overlay on drag enter', async () => {
@@ -1988,6 +2126,27 @@ describe('FilesPage (object browser)', () => {
     expect(screen.queryByTestId('files__library-mount__filesystem-name')).not.toBeInTheDocument();
   });
 
+  it('keeps typed desktop mount conflicts inline in the desktop access dialog', async () => {
+    mockDesktopMountAccessMutateAsync.mockRejectedValueOnce(new APIError(
+      'FILE_LIBRARY_DELETING',
+      'file_library_deleting',
+      undefined,
+      409,
+      { file_library_id: 'lib_1', file_library_status: 'deleting' },
+    ));
+    renderWithQueryClient(<FilesPage workspaceId="ws_default" projectId="proj_001" />);
+    const user = userEvent.setup();
+
+    await user.click(await screen.findByTestId('files__library-desktop-access--lib_1'));
+
+    const dialog = await screen.findByTestId('files__dialog__desktop-mount-access');
+    expect(dialog).toBeInTheDocument();
+    expect(await screen.findByTestId('files__desktop-mount__error')).toHaveTextContent(
+      'This library is being deleted. Refresh the library status before trying again.',
+    );
+    expect(mockToast.error).not.toHaveBeenCalled();
+  });
+
   it('keeps manual mount details inside the desktop dialog debug section', async () => {
     renderWithQueryClient(<FilesPage workspaceId="ws_default" projectId="proj_001" />);
     const user = userEvent.setup();
@@ -2002,6 +2161,27 @@ describe('FilesPage (object browser)', () => {
     expect(screen.getByTestId('files__library-mount__command-macos')).toHaveValue(
       'juicefs mount postgres://user:password@files.example.com:5432/jfs_lib_1 ~/JuiceFS/shared-docs --bucket https://files.example.com:19000/jfs-lib-1',
     );
+  });
+
+  it('keeps typed manual mount credential conflicts inline in the debug panel', async () => {
+    mockStorageCredentialExchangeMutateAsync.mockRejectedValueOnce(new APIError(
+      'FILE_LIBRARY_DELETING',
+      'file_library_deleting',
+      undefined,
+      409,
+      { file_library_id: 'lib_1', file_library_status: 'deleting' },
+    ));
+    renderWithQueryClient(<FilesPage workspaceId="ws_default" projectId="proj_001" />);
+    const user = userEvent.setup();
+
+    await user.click(await screen.findByTestId('files__library-desktop-access--lib_1'));
+    await user.click(await screen.findByTestId('files__desktop-setup__debug-toggle'));
+
+    expect(await screen.findByTestId('files__desktop-setup__debug-panel')).toBeInTheDocument();
+    expect(await screen.findByTestId('files__library-mount__error')).toHaveTextContent(
+      'This library is being deleted. Refresh the library status before trying again.',
+    );
+    expect(mockToast.error).not.toHaveBeenCalled();
   });
 
   it('switches mount command tabs and shows the active platform command', async () => {

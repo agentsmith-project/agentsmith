@@ -59,6 +59,156 @@ export const ErrorResponseSchema = z.object({
   request_id: z.string().optional(),
 });
 
+export const FileLibraryBoundTaskStatusSchema = z.enum(['active', 'archived']);
+export const FileLibraryTaskHomeBindingStatusSchema = z.enum(['unbound', 'bound']);
+
+type BoundTaskSafeFields = {
+  bound_task_visible?: boolean;
+  bound_task_id?: string;
+  bound_task_title?: string;
+  bound_task_status?: z.infer<typeof FileLibraryBoundTaskStatusSchema>;
+};
+
+function validateBoundTaskSafeFields(
+  value: BoundTaskSafeFields,
+  ctx: z.RefinementCtx,
+): void {
+  const hasSummary =
+    value.bound_task_id !== undefined ||
+    value.bound_task_title !== undefined ||
+    value.bound_task_status !== undefined;
+
+  if (value.bound_task_visible === false && hasSummary) {
+    ctx.addIssue({
+      code: 'custom',
+      message: 'bound_task_summary_must_be_redacted',
+      path: ['bound_task_visible'],
+    });
+    return;
+  }
+
+  if (value.bound_task_visible === true) {
+    for (const field of ['bound_task_id', 'bound_task_title', 'bound_task_status'] as const) {
+      if (value[field] === undefined) {
+        ctx.addIssue({
+          code: 'custom',
+          message: 'bound_task_summary_required_when_visible',
+          path: [field],
+        });
+      }
+    }
+  }
+}
+
+export const AgentTaskWorkspaceModeInvalidErrorSchema = z.object({
+  error_code: z.literal('AGENT_TASK_WORKSPACE_MODE_INVALID'),
+  message: z.literal('agent_task_workspace_mode_invalid'),
+  field: z.literal('workspace_mode'),
+  workspace_mode: z.string().optional(),
+  request_id: z.string().optional(),
+}).strict();
+
+export const AgentTaskWorkspaceFileLibraryRequiredErrorSchema = z.object({
+  error_code: z.literal('AGENT_TASK_WORKSPACE_FILE_LIBRARY_REQUIRED'),
+  message: z.literal('agent_task_workspace_file_library_required'),
+  field: z.literal('workspace_file_library_id'),
+  request_id: z.string().optional(),
+}).strict();
+
+export const FileLibraryNotFoundErrorSchema = z.object({
+  error_code: z.literal('FILE_LIBRARY_NOT_FOUND'),
+  message: z.literal('file_library_not_found'),
+  file_library_id: z.string().min(1).optional(),
+  request_id: z.string().optional(),
+}).strict();
+
+export const FileLibraryForbiddenErrorSchema = z.object({
+  error_code: z.literal('FILE_LIBRARY_FORBIDDEN'),
+  message: z.literal('file_library_forbidden'),
+  file_library_id: z.string().min(1).optional(),
+  request_id: z.string().optional(),
+}).strict();
+
+export const FileLibraryNotReadyErrorSchema = z.object({
+  error_code: z.literal('FILE_LIBRARY_NOT_READY'),
+  message: z.literal('file_library_not_ready'),
+  file_library_id: z.string().min(1),
+  file_library_status: z.string().min(1),
+  request_id: z.string().optional(),
+}).strict();
+
+export const FileLibraryDeletingErrorSchema = z.object({
+  error_code: z.literal('FILE_LIBRARY_DELETING'),
+  message: z.literal('file_library_deleting'),
+  file_library_id: z.string().min(1),
+  file_library_status: z.string().min(1),
+  request_id: z.string().optional(),
+}).strict();
+
+export const AgentTaskFileLibraryInUseErrorSchema = z.object({
+  error_code: z.literal('AGENT_TASK_FILE_LIBRARY_IN_USE'),
+  message: z.literal('workspace_file_library_in_use'),
+  field: z.literal('workspace_file_library_id'),
+  file_library_id: z.string().min(1),
+  bound_task_visible: z.boolean(),
+  bound_task_id: z.string().min(1).optional(),
+  bound_task_title: z.string().min(1).optional(),
+  bound_task_status: FileLibraryBoundTaskStatusSchema.optional(),
+  request_id: z.string().optional(),
+}).strict().superRefine(validateBoundTaskSafeFields);
+
+export const FileLibraryTaskInUseErrorSchema = z.object({
+  error_code: z.literal('FILE_LIBRARY_TASK_IN_USE'),
+  message: z.literal('file_library_task_in_use'),
+  file_library_id: z.string().min(1),
+  bound_task_visible: z.boolean(),
+  bound_task_id: z.string().min(1).optional(),
+  bound_task_title: z.string().min(1).optional(),
+  bound_task_status: FileLibraryBoundTaskStatusSchema.optional(),
+  request_id: z.string().optional(),
+}).strict().superRefine(validateBoundTaskSafeFields);
+
+export const FileLibraryNotEmptyErrorSchema = z.object({
+  error_code: z.literal('FILE_LIBRARY_NOT_EMPTY'),
+  message: z.literal('file_library_not_empty'),
+  file_library_id: z.string().min(1),
+  request_id: z.string().optional(),
+}).strict();
+
+export const AgentTaskDeleteBlockedErrorSchema = z.object({
+  error_code: z.literal('AGENT_TASK_DELETE_BLOCKED'),
+  message: z.literal('agent_task_delete_blocked'),
+  task_id: z.string().min(1),
+  blockers: z.array(z.string().min(1)).min(1),
+  retry_after_seconds: z.number().int().positive().optional(),
+  request_id: z.string().optional(),
+}).strict();
+
+export const AgentTaskWorkspaceBindingConflictErrorSchema = z.object({
+  error_code: z.literal('AGENT_TASK_WORKSPACE_BINDING_CONFLICT'),
+  message: z.literal('agent_task_workspace_binding_conflict'),
+  task_id: z.string().min(1),
+  file_library_id: z.string().min(1),
+  holder_id: z.string().min(1).optional(),
+  binding_generation: z.string().min(1).optional(),
+  lease_epoch: z.string().min(1).optional(),
+  request_id: z.string().optional(),
+}).strict();
+
+export const AgentTaskFileLibraryErrorSchema = z.union([
+  AgentTaskWorkspaceModeInvalidErrorSchema,
+  AgentTaskWorkspaceFileLibraryRequiredErrorSchema,
+  FileLibraryNotFoundErrorSchema,
+  FileLibraryForbiddenErrorSchema,
+  FileLibraryNotReadyErrorSchema,
+  FileLibraryDeletingErrorSchema,
+  AgentTaskFileLibraryInUseErrorSchema,
+  FileLibraryTaskInUseErrorSchema,
+  FileLibraryNotEmptyErrorSchema,
+  AgentTaskDeleteBlockedErrorSchema,
+  AgentTaskWorkspaceBindingConflictErrorSchema,
+]);
+
 export const FileLibraryCatalogSchema = z.object({
   id: z.string().min(1),
   workspace_id: z.string().min(1),
@@ -216,10 +366,24 @@ export const FileLibrarySchema = z.object({
   name: z.string().min(1),
   description: z.string().optional(),
   status: FileLibraryStatusSchema,
+  task_home_binding_status: FileLibraryTaskHomeBindingStatusSchema,
+  bound_task_id: z.string().min(1).optional(),
+  bound_task_title: z.string().min(1).optional(),
+  bound_task_status: FileLibraryBoundTaskStatusSchema.optional(),
+  bound_task_visible: z.boolean(),
   filesystem_name: z.string().min(1),
   created_by_user_id: z.string().min(1),
   created_at: z.string().datetime(),
   updated_at: z.string().datetime(),
+}).superRefine((value, ctx) => {
+  validateBoundTaskSafeFields(value, ctx);
+  if (value.task_home_binding_status === 'unbound' && value.bound_task_visible) {
+    ctx.addIssue({
+      code: 'custom',
+      message: 'unbound_library_cannot_expose_bound_task',
+      path: ['bound_task_visible'],
+    });
+  }
 });
 
 export const ListFileLibrariesResponseSchema = z.object({
@@ -236,6 +400,39 @@ export const UpdateFileLibraryRequestSchema = z.object({
   description: z.string().max(1000).optional(),
 }).refine((value) => Object.keys(value).length > 0, {
   message: 'at_least_one_field_required',
+});
+
+export const TaskInputRefInputSchema = z.object({
+  kind: z.enum(['library_object', 'artifact', 'url']),
+}).passthrough();
+
+export const TaskWorkspaceModeSchema = z.enum(['create_new', 'use_existing']);
+
+export const CreateTaskRequestSchema = z.object({
+  title: z.string().min(1).max(255),
+  prompt: z.string().optional(),
+  bound_runner_id: z.string().min(1).optional(),
+  input_refs: z.array(TaskInputRefInputSchema).optional(),
+  initial_inputs: z.array(TaskInputRefInputSchema).optional(),
+  workspace_mode: TaskWorkspaceModeSchema.optional(),
+  workspace_name: z.string().min(1).max(255).optional(),
+  workspace_file_library_id: z.string().min(1).optional(),
+}).strict().superRefine((value, ctx) => {
+  const workspaceMode = value.workspace_mode ?? 'create_new';
+  if (workspaceMode === 'create_new' && value.workspace_file_library_id) {
+    ctx.addIssue({
+      code: 'custom',
+      message: 'agent_task_workspace_mode_invalid',
+      path: ['workspace_mode'],
+    });
+  }
+  if (workspaceMode === 'use_existing' && !value.workspace_file_library_id) {
+    ctx.addIssue({
+      code: 'custom',
+      message: 'agent_task_workspace_file_library_required',
+      path: ['workspace_file_library_id'],
+    });
+  }
 });
 
 export const FileLibraryGatewayStatusSchema = z.enum([
@@ -420,6 +617,18 @@ export type CreateProjectRequest = z.infer<typeof CreateProjectRequestSchema>;
 export type UpdateProjectRequest = z.infer<typeof UpdateProjectRequestSchema>;
 export type ListProjectsResponse = z.infer<typeof ListProjectsResponseSchema>;
 export type ErrorResponse = z.infer<typeof ErrorResponseSchema>;
+export type AgentTaskWorkspaceModeInvalidError = z.infer<typeof AgentTaskWorkspaceModeInvalidErrorSchema>;
+export type AgentTaskWorkspaceFileLibraryRequiredError = z.infer<typeof AgentTaskWorkspaceFileLibraryRequiredErrorSchema>;
+export type FileLibraryNotFoundError = z.infer<typeof FileLibraryNotFoundErrorSchema>;
+export type FileLibraryForbiddenError = z.infer<typeof FileLibraryForbiddenErrorSchema>;
+export type FileLibraryNotReadyError = z.infer<typeof FileLibraryNotReadyErrorSchema>;
+export type FileLibraryDeletingError = z.infer<typeof FileLibraryDeletingErrorSchema>;
+export type AgentTaskFileLibraryInUseError = z.infer<typeof AgentTaskFileLibraryInUseErrorSchema>;
+export type FileLibraryTaskInUseError = z.infer<typeof FileLibraryTaskInUseErrorSchema>;
+export type FileLibraryNotEmptyError = z.infer<typeof FileLibraryNotEmptyErrorSchema>;
+export type AgentTaskDeleteBlockedError = z.infer<typeof AgentTaskDeleteBlockedErrorSchema>;
+export type AgentTaskWorkspaceBindingConflictError = z.infer<typeof AgentTaskWorkspaceBindingConflictErrorSchema>;
+export type AgentTaskFileLibraryError = z.infer<typeof AgentTaskFileLibraryErrorSchema>;
 export type FileLibraryCatalogDTO = z.infer<typeof FileLibraryCatalogSchema>;
 export type ListFileLibraryCatalogsResponse = z.infer<typeof ListFileLibraryCatalogsResponseSchema>;
 export type CreateFileLibraryCatalogRequest = z.infer<typeof CreateFileLibraryCatalogRequestSchema>;
@@ -439,6 +648,8 @@ export type FileLibraryDTO = z.infer<typeof FileLibrarySchema>;
 export type ListFileLibrariesResponse = z.infer<typeof ListFileLibrariesResponseSchema>;
 export type CreateFileLibraryRequest = z.infer<typeof CreateFileLibraryRequestSchema>;
 export type UpdateFileLibraryRequest = z.infer<typeof UpdateFileLibraryRequestSchema>;
+export type TaskInputRefInput = z.infer<typeof TaskInputRefInputSchema>;
+export type CreateTaskRequest = z.infer<typeof CreateTaskRequestSchema>;
 export type FileLibraryBackendDTO = z.infer<typeof FileLibraryBackendSchema>;
 export type ListFileLibraryEntriesQuery = z.infer<typeof ListFileLibraryEntriesQuerySchema>;
 export type ListFileLibraryEntriesResponse = z.infer<typeof ListFileLibraryEntriesResponseSchema>;

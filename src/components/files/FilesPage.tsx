@@ -14,7 +14,6 @@ import { useQueryClient } from '@tanstack/react-query';
 import { useTranslations } from 'next-intl';
 
 import { PageLayout } from '@/components/layout/PageLayout';
-import { toast } from '@/components/ui/toast';
 import { DesktopAccessDialog } from '@/components/files/files-page/DesktopAccessDialog';
 import { FilesPageContent } from '@/components/files/files-page/FilesPageContent';
 import { LibraryDialogs } from '@/components/files/files-page/LibraryDialogs';
@@ -55,6 +54,7 @@ import {
   type FileUploadTargetContext,
   type UploadedFileObjectIdentity,
 } from '@/components/files/hooks/use-file-upload-manager';
+import { getOperationErrorDetail } from '@/components/files/hooks/error-utils';
 import { useFileBatchOperations } from '@/components/files/hooks/use-file-batch-operations';
 import { useFileLibraryManager } from '@/components/files/hooks/use-file-library-manager';
 import { useFileFolderMoveManager } from '@/components/files/hooks/use-file-folder-move-manager';
@@ -435,7 +435,9 @@ export function FilesPage({ workspaceId, projectId, locale: _locale = 'en-US' }:
   const [desktopAccessOpen, setDesktopAccessOpen] = React.useState(false);
   const [desktopAccessTarget, setDesktopAccessTarget] = React.useState<FileLibrary | null>(null);
   const [desktopMountAccess, setDesktopMountAccess] = React.useState<FileLibraryDesktopMountAccess | null>(null);
+  const [desktopMountAccessError, setDesktopMountAccessError] = React.useState<string | null>(null);
   const [libraryMountAccess, setLibraryMountAccess] = React.useState<FileLibraryClientMountAccess | null>(null);
+  const [libraryMountAccessError, setLibraryMountAccessError] = React.useState<string | null>(null);
   const [revealMetadataUrl, setRevealMetadataUrl] = React.useState(false);
 
   const crumbs = React.useMemo(() => buildCrumbs(prefix), [prefix]);
@@ -820,7 +822,9 @@ export function FilesPage({ workspaceId, projectId, locale: _locale = 'en-US' }:
     batchResultOpen,
     batchResultType,
     batchRetryPending,
+    clearDeleteInlineError,
     closeBatchResult,
+    deleteInlineError,
     handleDelete,
     handleBatchResultOpenChange,
     handleDownload,
@@ -847,11 +851,13 @@ export function FilesPage({ workspaceId, projectId, locale: _locale = 'en-US' }:
     libraryCreateError,
     libraryCreateOpen,
     libraryDeleteConfirm,
+    libraryDeleteError,
     libraryDeleteOpen,
     libraryDeleteTarget,
     libraryDescription,
     libraryName,
     libraryRenameDescription,
+    libraryRenameError,
     libraryRenameName,
     libraryRenameOpen,
     libraryRenameTarget,
@@ -941,6 +947,7 @@ export function FilesPage({ workspaceId, projectId, locale: _locale = 'en-US' }:
   const openMountAccessDialog = React.useCallback(async (library: FileLibrary) => {
     setRevealMetadataUrl(false);
     setLibraryMountAccess(null);
+    setLibraryMountAccessError(null);
     try {
       const result = await exchangeStorageCredentials.mutateAsync({
         workspaceId,
@@ -949,16 +956,18 @@ export function FilesPage({ workspaceId, projectId, locale: _locale = 'en-US' }:
       });
       setLibraryMountAccess(result.client_mount_access);
     } catch (error) {
-      const message = error instanceof Error ? error.message : t('file_manager.mount_access_failed');
-      toast.error(`${t('file_manager.mount_access_failed')}: ${message}`);
+      const message = getOperationErrorDetail(error, tErrors, t('file_manager.mount_access_failed'));
+      setLibraryMountAccessError(message);
     }
-  }, [exchangeStorageCredentials, projectId, t, workspaceId]);
+  }, [exchangeStorageCredentials, projectId, t, tErrors, workspaceId]);
 
   const openDesktopAccessDialog = React.useCallback(async (library: FileLibrary) => {
     setDesktopAccessTarget(library);
     setDesktopAccessOpen(true);
     setDesktopMountAccess(null);
+    setDesktopMountAccessError(null);
     setLibraryMountAccess(null);
+    setLibraryMountAccessError(null);
     setRevealMetadataUrl(false);
     try {
       const result = await exchangeDesktopMountAccess.mutateAsync({
@@ -968,10 +977,10 @@ export function FilesPage({ workspaceId, projectId, locale: _locale = 'en-US' }:
       });
       setDesktopMountAccess(result.desktop_mount_access);
     } catch (error) {
-      const message = error instanceof Error ? error.message : t('file_manager.desktop_access_failed');
-      toast.error(`${t('file_manager.desktop_access_failed')}: ${message}`);
+      const message = getOperationErrorDetail(error, tErrors, t('file_manager.desktop_access_failed'));
+      setDesktopMountAccessError(message);
     }
-  }, [exchangeDesktopMountAccess, projectId, t, workspaceId]);
+  }, [exchangeDesktopMountAccess, projectId, t, tErrors, workspaceId]);
 
   return (
     <PageLayout
@@ -996,7 +1005,10 @@ export function FilesPage({ workspaceId, projectId, locale: _locale = 'en-US' }:
         fileInputRef={fileInputRef}
         filteredItems={filteredItems}
         handleCancelUpload={handleCancelUpload}
-        handleDelete={() => setDeleteConfirmOpen(true)}
+        handleDelete={() => {
+          clearDeleteInlineError();
+          setDeleteConfirmOpen(true);
+        }}
         handleDownload={handleDownload}
         handleDrop={handleDrop}
         handleDropEnter={handleDropEnter}
@@ -1049,6 +1061,14 @@ export function FilesPage({ workspaceId, projectId, locale: _locale = 'en-US' }:
         selectedIds={selectedIds}
         selectedLibraryId={selectedLibraryId}
         selectedLibraryStatus={selectedLibrary?.status ?? null}
+        selectedLibraryTaskHomeBinding={selectedLibrary
+          ? {
+              task_home_binding_status: selectedLibrary.task_home_binding_status,
+              bound_task_visible: selectedLibrary.bound_task_visible,
+              bound_task_title: selectedLibrary.bound_task_title,
+              bound_task_status: selectedLibrary.bound_task_status,
+            }
+          : null}
         selectedObjectsCount={selectedObjects.length}
         selectionMode={selectionMode}
         setSearchInput={setSearchInput}
@@ -1068,7 +1088,9 @@ export function FilesPage({ workspaceId, projectId, locale: _locale = 'en-US' }:
       <DesktopAccessDialog
         exchangePending={exchangeDesktopMountAccess.isPending}
         desktopMountAccess={desktopMountAccess}
+        desktopMountAccessError={desktopMountAccessError}
         manualMountAccess={libraryMountAccess}
+        manualMountAccessError={libraryMountAccessError}
         manualMountAccessPending={exchangeStorageCredentials.isPending}
         open={desktopAccessOpen}
         revealMetadataUrl={revealMetadataUrl}
@@ -1078,7 +1100,13 @@ export function FilesPage({ workspaceId, projectId, locale: _locale = 'en-US' }:
           if (!desktopAccessTarget) return;
           void openMountAccessDialog(desktopAccessTarget);
         }}
-        onOpenChange={setDesktopAccessOpen}
+        onOpenChange={(nextOpen) => {
+          setDesktopAccessOpen(nextOpen);
+          if (!nextOpen) {
+            setDesktopMountAccessError(null);
+            setLibraryMountAccessError(null);
+          }
+        }}
         onToggleRevealMetadataUrl={() => setRevealMetadataUrl((value) => !value)}
       />
 
@@ -1088,11 +1116,13 @@ export function FilesPage({ workspaceId, projectId, locale: _locale = 'en-US' }:
         libraryCreateError={libraryCreateError}
         libraryCreateOpen={libraryCreateOpen}
         libraryDeleteConfirm={libraryDeleteConfirm}
+        libraryDeleteError={libraryDeleteError}
         libraryDeleteOpen={libraryDeleteOpen}
         libraryDeleteTarget={libraryDeleteTarget}
         libraryDescription={libraryDescription}
         libraryName={libraryName}
         libraryRenameDescription={libraryRenameDescription}
+        libraryRenameError={libraryRenameError}
         libraryRenameName={libraryRenameName}
         libraryRenameOpen={libraryRenameOpen}
         libraryRenameTarget={libraryRenameTarget}
@@ -1150,12 +1180,14 @@ export function FilesPage({ workspaceId, projectId, locale: _locale = 'en-US' }:
         batchResultOpen={batchResultOpen}
         batchResultType={batchResultType}
         batchRetryPending={batchRetryPending}
+        deleteInlineError={deleteInlineError}
         deleteConfirmOpen={deleteConfirmOpen}
         selectedCount={selected.length}
         t={t}
         uploadConflictFileName={uploadConflictFileName}
         uploadConflictOpen={uploadConflictOpen}
         onCloseBatchResult={closeBatchResult}
+        onClearDeleteInlineError={clearDeleteInlineError}
         onDismissUploadConflict={dismissUploadConflict}
         onHandleBatchResultOpenChange={handleBatchResultOpenChange}
         onHandleDelete={handleDelete}

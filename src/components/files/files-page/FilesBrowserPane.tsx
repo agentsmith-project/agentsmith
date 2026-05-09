@@ -7,7 +7,7 @@ import { Progress } from '@/components/ui/progress';
 import { cn } from '@/lib/utils';
 import { FileItemIcon } from '@/components/files/FileItemIcon';
 import { formatBytes } from '@/lib/utils/formatters';
-import type { FileObjectsListItem } from '@/lib/api/types';
+import type { FileLibrary, FileObjectsListItem } from '@/lib/api/types';
 import type { FileSortBy, FileSortOrder } from '@/lib/hooks/use-files-url-state';
 import type { FileSelectionMode, SelectedRowId } from './utils';
 import { rowId } from './utils';
@@ -20,6 +20,10 @@ type FilesBrowserPaneProps = {
   setSearchInput: (value: string) => void;
   selectedLibraryId: string | null;
   selectedLibraryStatus: 'creating' | 'ready' | 'degraded' | 'failed' | 'deleting' | null;
+  selectedLibraryTaskHomeBinding: Pick<
+    FileLibrary,
+    'task_home_binding_status' | 'bound_task_visible' | 'bound_task_title' | 'bound_task_status'
+  > | null;
   filteredItems: FileObjectsListItem[];
   selectedIds: SelectedRowId[];
   selectionMode: FileSelectionMode;
@@ -91,6 +95,7 @@ export function FilesBrowserPane(props: FilesBrowserPaneProps) {
     setSearchInput,
     selectedLibraryId,
     selectedLibraryStatus,
+    selectedLibraryTaskHomeBinding,
     filteredItems,
     selectedIds,
     selectionMode,
@@ -135,6 +140,17 @@ export function FilesBrowserPane(props: FilesBrowserPaneProps) {
   const isMultiMode = selectionMode === 'multi';
   const selectedLibraryUnavailable = selectedLibraryStatus !== null && selectedLibraryStatus !== 'ready';
   const libraryActionsDisabled = !selectedLibraryId || selectedLibraryUnavailable;
+  const selectedLibraryBound = selectedLibraryTaskHomeBinding?.task_home_binding_status === 'bound';
+  const boundLibraryBanner = selectedLibraryBound
+    ? (
+        selectedLibraryTaskHomeBinding.bound_task_visible && selectedLibraryTaskHomeBinding.bound_task_title
+          ? t('file_manager.library_bound_home_banner_visible', {
+              title: selectedLibraryTaskHomeBinding.bound_task_title,
+              status: selectedLibraryTaskHomeBinding.bound_task_status ?? 'unknown',
+            })
+          : t('file_manager.library_bound_home_banner')
+      )
+    : null;
 
   return (
     <div
@@ -220,6 +236,14 @@ export function FilesBrowserPane(props: FilesBrowserPaneProps) {
 
       <div className="flex-1 min-h-0">
         <div className="w-full h-full text-sm flex flex-col" data-testid="files__objects-table">
+          {boundLibraryBanner ? (
+            <div
+              className="border-b border-warning/25 bg-warning/10 px-3.5 py-2 text-xs text-warning"
+              data-testid="files__bound-home-banner"
+            >
+              {boundLibraryBanner}
+            </div>
+          ) : null}
           <div className="flex min-h-0 items-center justify-between gap-2 border-b border-subtle px-3.5 py-1.5" data-testid="files__selection-summary">
             {isMultiMode ? (
               <div className="flex items-center gap-2 min-w-0 text-[11px] text-primary">

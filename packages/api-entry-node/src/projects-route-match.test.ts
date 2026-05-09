@@ -611,6 +611,17 @@ describe('matchProjectsRoute', () => {
     });
   });
 
+  it('matches notebook task workspace access release route', () => {
+    expect(
+      matchProjectsRoute('/api/v1/workspaces/ws_default/projects/proj_1/tasks/task_1/workspace-access/release'),
+    ).toEqual({
+      kind: 'taskWorkspaceAccessRelease',
+      workspaceId: 'ws_default',
+      projectId: 'proj_1',
+      taskId: 'task_1',
+    });
+  });
+
   it('matches notebook task terminal session collection route', () => {
     expect(
       matchProjectsRoute('/api/v1/workspaces/ws_default/projects/proj_1/tasks/task_1/terminal/sessions'),

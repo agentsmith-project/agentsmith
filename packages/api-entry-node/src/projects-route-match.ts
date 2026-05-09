@@ -32,6 +32,7 @@ export type ProjectsRoute =
   | { kind: 'tasks'; workspaceId: string; projectId: string }
   | { kind: 'taskItem'; workspaceId: string; projectId: string; taskId: string }
   | { kind: 'taskWorkspaceAccess'; workspaceId: string; projectId: string; taskId: string }
+  | { kind: 'taskWorkspaceAccessRelease'; workspaceId: string; projectId: string; taskId: string }
   | { kind: 'taskInputs'; workspaceId: string; projectId: string; taskId: string }
   | {
     kind: 'taskInputItem';
@@ -786,6 +787,18 @@ export function matchProjectsRoute(url: string): ProjectsRoute | null {
       workspaceId: decodeURIComponent(taskWorkspaceAccessMatched[1]),
       projectId: decodeURIComponent(taskWorkspaceAccessMatched[2]),
       taskId: decodeURIComponent(taskWorkspaceAccessMatched[3]),
+    };
+  }
+
+  const taskWorkspaceAccessReleaseMatched = pathname.match(
+    /^\/api\/v1\/workspaces\/([^/]+)\/projects\/([^/]+)\/tasks\/([^/]+)\/workspace-access\/release\/?$/,
+  );
+  if (taskWorkspaceAccessReleaseMatched) {
+    return {
+      kind: 'taskWorkspaceAccessRelease',
+      workspaceId: decodeURIComponent(taskWorkspaceAccessReleaseMatched[1]),
+      projectId: decodeURIComponent(taskWorkspaceAccessReleaseMatched[2]),
+      taskId: decodeURIComponent(taskWorkspaceAccessReleaseMatched[3]),
     };
   }
 

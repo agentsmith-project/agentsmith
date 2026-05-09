@@ -33,6 +33,8 @@ describe('prepareTaskWorkspaceAssets', () => {
       expect(runtimeContract).not.toContain('HOME == cwd');
       expect(runtimeContract).not.toContain('runner-private runtime home');
       expect(runtimeContract).not.toContain('separate from `cwd`');
+      expect(runtimeContract).not.toContain('auth material');
+      expect(runtimeContract).not.toContain('mutable auth');
       expect(runtimeContract).toContain('persistent task HOME');
       expect(() => readFileSync(join(workspace, '.mbos', 'task-inputs.json'), 'utf8')).toThrow();
     } finally {
@@ -46,7 +48,7 @@ describe('prepareTaskWorkspaceAssets', () => {
     const workspace = join(taskHome, 'workspace');
     try {
       const paths = buildTaskWorkspacePaths({
-        mode: 'managed_platform',
+        mode: 'developer',
         taskHomePath: taskHome,
         workspacePath: workspace,
         artifactsPath: join(workspace, '.artifacts'),
@@ -63,6 +65,8 @@ describe('prepareTaskWorkspaceAssets', () => {
       expect(agents).not.toContain('HOME` is the same directory as the current workspace root');
       expect(agents).not.toContain('runner-private runtime home');
       expect(agents).not.toContain('outside `cwd`');
+      expect(agents).not.toContain('auth material');
+      expect(agents).not.toContain('mutable auth');
       expect(agents).toContain('The current working directory is `$HOME/workspace`');
       expect(agents).toContain('capability-aware builtin skills');
       expect(agents).toContain('member/task context');
@@ -70,6 +74,8 @@ describe('prepareTaskWorkspaceAssets', () => {
       expect(runtime).not.toContain('HOME == cwd');
       expect(runtime).not.toContain('runner-private runtime home');
       expect(runtime).not.toContain('separate from `cwd`');
+      expect(runtime).not.toContain('auth material');
+      expect(runtime).not.toContain('mutable auth');
       expect(runtime).toContain('persistent task HOME');
       expect(runtime).toContain('project_member');
       expect(runtime).toContain('machine-readable capability contracts');

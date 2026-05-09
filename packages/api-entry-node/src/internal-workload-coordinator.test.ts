@@ -278,6 +278,56 @@ describe('InternalWorkloadCoordinator', () => {
     await coordinator.shutdown();
   });
 
+  it('does not let an old epoch release clear a current holder for the same holder id', async () => {
+    const keepalive = vi.fn(async () => undefined);
+    const releasePod = vi.fn(async () => undefined);
+    const coordinator = new InternalWorkloadCoordinator(
+      {
+        keepalive,
+        releasePod,
+      } as never,
+      {
+        keepaliveIntervalMs: 1_000,
+      },
+    );
+
+    const workload = {
+      workspaceId: 'ws_default',
+      projectId: 'proj_1',
+      workloadId: 'task_aba',
+      holderKind: 'notebook_run' as const,
+      holderId: 'run_reused',
+    };
+    const oldHolder = {
+      ...workload,
+      epoch: 'binding_gen_old:lease_epoch_old',
+    };
+    const currentHolder = {
+      ...workload,
+      epoch: 'binding_gen_current:lease_epoch_current',
+    };
+
+    await coordinator.acquireHolder(oldHolder);
+    await coordinator.releaseHolder(oldHolder);
+    await coordinator.acquireHolder(currentHolder);
+    await coordinator.releaseHolder(oldHolder);
+
+    expect(coordinator.readSnapshotForTests()).toEqual([
+      {
+        workspaceId: 'ws_default',
+        projectId: 'proj_1',
+        workloadId: 'task_aba',
+        holders: ['notebook_run:run_reused@binding_gen_current:lease_epoch_current'],
+        hardTeardownRequested: false,
+      },
+    ]);
+    expect(releasePod).not.toHaveBeenCalled();
+
+    await coordinator.releaseHolder(currentHolder);
+    expect(coordinator.readSnapshotForTests()).toEqual([]);
+    await coordinator.shutdown();
+  });
+
   it('propagates immediate hard teardown releasePod failures and retries on the next request', async () => {
     const keepalive = vi.fn(async () => undefined);
     const releasePod = vi.fn()

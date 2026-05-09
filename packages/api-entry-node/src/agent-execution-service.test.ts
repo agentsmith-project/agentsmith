@@ -3070,26 +3070,17 @@ describe('AgentExecutionService', () => {
       `${docsPrefix}docs/engineering/agent-task-terminal-runtime-recovery-guidance.md`,
       'utf-8',
     );
-    const handoff = readFileSync(
-      `${docsPrefix}docs/engineering/agent-task-terminal-close-recovery-handoff.md`,
-      'utf-8',
+    expect(guidance).not.toContain(
+      '`status=not_found`: set `close_state=acked`, final `failed + terminal_process_lost`',
     );
-    for (const source of [guidance, handoff]) {
-      expect(source).not.toContain(
-        '`status=not_found`: set `close_state=acked`, final `failed + terminal_process_lost`',
-      );
-      expect(source).not.toContain(
-        '`agent.terminal.close_ack status=not_found` finalizes `failed + terminal_process_lost`',
-      );
-    }
+    expect(guidance).not.toContain(
+      '`agent.terminal.close_ack status=not_found` finalizes `failed + terminal_process_lost`',
+    );
     expect(guidance).toContain(
       '`status=not_found`: set `close_state=acked`, final `closed`, keep `failure_kind=null`, set `close_result=not_found`',
     );
     expect(guidance).toContain('close-path `not_found -> closed`');
     expect(guidance).toContain('recovery/adopt `not_found -> terminal_process_lost`');
-    expect(handoff).toContain(
-      '| `not_found` | `closed + close_state=acked + failure_kind=null + close_result=not_found` |',
-    );
   });
 
   it('consumes runner shutdown as terminal processes terminated for pending terminals', async () => {

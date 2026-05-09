@@ -165,7 +165,7 @@ export function AgentRunnerKeysDialog({
       if (!actionVisible('run_test_task') || !actionAllowed('run_test_task')) {
         throw new Error('Agent Runner test task action is not allowed');
       }
-      return api.createTestTaskRun(workspaceId, projectId, runnerId, { intent: 'developer_runner_connection_check' });
+      return api.createTestTaskRun(workspaceId, projectId, runnerId);
     },
     onMutate: () => {
       setTestTaskResult(null);

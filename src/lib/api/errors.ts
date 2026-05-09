@@ -158,6 +158,26 @@ const TASK_SAFE_COPY_KEYS: Record<AgentTaskErrorAudience, string[]> = {
   terminal: ['terminal_error_session_not_ready'],
 };
 
+const FILE_LIBRARY_TYPED_ERROR_KEYS: Record<string, string[]> = {
+  AGENT_TASK_FILE_LIBRARY_IN_USE: [
+    'workspace_file_library_in_use.description',
+    'file_library_task_in_use.description',
+  ],
+  FILE_LIBRARY_TASK_IN_USE: ['file_library_task_in_use.description'],
+  FILE_LIBRARY_DELETING: ['file_library_deleting.description'],
+  FILE_LIBRARY_NOT_READY: ['file_library_not_ready.description'],
+  FILE_LIBRARY_NOT_FOUND: ['file_library_not_found.description'],
+  FILE_LIBRARY_FORBIDDEN: ['file_library_forbidden.description'],
+  FILE_LIBRARY_NOT_EMPTY: ['file_library_not_empty.description'],
+  AGENT_TASK_WORKSPACE_BINDING_CONFLICT: ['agent_task_workspace_binding_conflict.description'],
+  AGENT_TASK_WORKSPACE_FILE_LIBRARY_REQUIRED: ['agent_task_workspace_file_library_required.description'],
+  AGENT_TASK_WORKSPACE_MODE_INVALID: ['agent_task_workspace_mode_invalid.description'],
+};
+
+const AGENT_TASK_TYPED_ERROR_KEYS: Record<string, string[]> = {
+  AGENT_TASK_DELETE_BLOCKED: ['agent_task_delete_blocked.description'],
+};
+
 const AGENT_TASK_UNSAFE_ERROR_TERMS = [
   'runner',
   'system managed',
@@ -210,6 +230,18 @@ function pickTranslated(
     if (value && value !== key) return value;
   }
   return fallback;
+}
+
+function resolveTypedConflictErrorMessage(args: {
+  error: APIError;
+  t: ErrorTranslator;
+  fallback: string;
+}): string | null {
+  const keys =
+    AGENT_TASK_TYPED_ERROR_KEYS[args.error.errorCode]
+    ?? FILE_LIBRARY_TYPED_ERROR_KEYS[args.error.errorCode];
+  if (!keys) return null;
+  return pickTranslated(args.t, keys, args.fallback);
 }
 
 export function resolveAgentTaskSafeErrorMessage(args: {
@@ -265,6 +297,18 @@ export function resolveApiErrorPresentation(args: {
     return {
       title: pickTranslated(t, ['agentTaskResolution.title'], 'Task not ready'),
       description: safeTaskSurfaceDescription,
+    };
+  }
+
+  const typedConflictDescription = resolveTypedConflictErrorMessage({
+    error,
+    t,
+    fallback: fallbackMessage || unknownDescription,
+  });
+  if (typedConflictDescription) {
+    return {
+      title: pickTranslated(t, ['conflict.title'], 'Conflict'),
+      description: typedConflictDescription,
     };
   }
 
@@ -393,13 +437,15 @@ export async function parseErrorResponse(response: Response): Promise<APIError> 
  * Check if object is an ErrorResponse
  */
 export function isErrorResponse(obj: unknown): obj is ErrorResponse {
-  return (
-    typeof obj === 'object' &&
-    obj !== null &&
-    'error_code' in obj &&
-    'message' in obj &&
-    'request_id' in obj
-  );
+  if (!isObjectRecord(obj)) return false;
+  return typeof obj.error_code === 'string'
+    && typeof obj.message === 'string'
+    && (obj.request_id === undefined || typeof obj.request_id === 'string')
+    && (obj.details === undefined || isObjectRecord(obj.details));
+}
+
+function isObjectRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
 
 /**

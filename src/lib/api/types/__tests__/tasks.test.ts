@@ -82,6 +82,11 @@ type ExpectedRunnerBindingOptionsPathParams = {
 };
 type CreateTaskValidationError =
   operations['createTask']['responses'][422]['content']['application/json'];
+type ExpectedCreateTaskValidationError =
+  | components['schemas']['AgentTaskWorkspaceModeInvalidError']
+  | components['schemas']['AgentTaskWorkspaceFileLibraryRequiredError']
+  | components['schemas']['ApiError']
+  | components['schemas']['InvalidBindingTargetError'];
 
 describe('Agent Task bound runner contracts', () => {
   it('keeps runner binding task-scoped in local and generated task types', () => {
@@ -167,7 +172,20 @@ describe('Agent Task bound runner contracts', () => {
     ).not.toHaveProperty('model');
   });
 
-  it('types invalid explicit task binding targets as validation errors', () => {
+  it('types task creation validation errors with explicit field contracts', () => {
+    expectTypeOf<components['schemas']['AgentTaskWorkspaceModeInvalidError']>().toEqualTypeOf<{
+      error_code: 'AGENT_TASK_WORKSPACE_MODE_INVALID';
+      message: 'agent_task_workspace_mode_invalid';
+      field: 'workspace_mode';
+      request_id?: string;
+      workspace_mode?: string;
+    }>();
+    expectTypeOf<components['schemas']['AgentTaskWorkspaceFileLibraryRequiredError']>().toEqualTypeOf<{
+      error_code: 'AGENT_TASK_WORKSPACE_FILE_LIBRARY_REQUIRED';
+      message: 'agent_task_workspace_file_library_required';
+      field: 'workspace_file_library_id';
+      request_id?: string;
+    }>();
     expectTypeOf<components['schemas']['InvalidBindingTargetError']>().toEqualTypeOf<{
       error_code: 'invalid_binding_target';
       message: 'invalid_binding_target';
@@ -176,9 +194,7 @@ describe('Agent Task bound runner contracts', () => {
         [key: string]: unknown;
       };
     }>();
-    expectTypeOf<CreateTaskValidationError>().toEqualTypeOf<
-      components['schemas']['ApiError'] | components['schemas']['InvalidBindingTargetError']
-    >();
+    expectTypeOf<CreateTaskValidationError>().toEqualTypeOf<ExpectedCreateTaskValidationError>();
 
     const jsonSource = JSON.parse(
       readFileSync(resolve(process.cwd(), 'docs/contracts/specs/openapi.json'), 'utf8'),
@@ -193,6 +209,19 @@ describe('Agent Task bound runner contracts', () => {
       error_code: { type: 'string', enum: ['invalid_binding_target'] },
       message: { type: 'string', enum: ['invalid_binding_target'] },
       field: { type: 'string', enum: ['bound_runner_id'] },
+    });
+    expect(jsonSource.components?.schemas?.AgentTaskWorkspaceModeInvalidError?.properties).toMatchObject({
+      error_code: { type: 'string', enum: ['AGENT_TASK_WORKSPACE_MODE_INVALID'] },
+      message: { type: 'string', enum: ['agent_task_workspace_mode_invalid'] },
+      field: { type: 'string', enum: ['workspace_mode'] },
+      workspace_mode: { type: 'string' },
+    });
+    expect(
+      jsonSource.components?.schemas?.AgentTaskWorkspaceFileLibraryRequiredError?.properties,
+    ).toMatchObject({
+      error_code: { type: 'string', enum: ['AGENT_TASK_WORKSPACE_FILE_LIBRARY_REQUIRED'] },
+      message: { type: 'string', enum: ['agent_task_workspace_file_library_required'] },
+      field: { type: 'string', enum: ['workspace_file_library_id'] },
     });
   });
 

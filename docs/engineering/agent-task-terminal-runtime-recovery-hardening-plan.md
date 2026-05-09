@@ -11,7 +11,7 @@
 - 用户进入 Agent task terminal 后，切换页面或刷新回来，terminal 显示需要恢复、`failed` 或 `agent_disconnected`，但没有回到同一个 terminal process。
 - backend-real / terminal UX 验证暴露 Developer runner 在本机普通进程中使用 `/home/task_*` 创建 task HOME，触发 `EACCES`。
 
-最新 managed/internal terminal close 卡在 `closing/delivered` 的下一步开发入口见 [`Agent Task Terminal Close and Recovery Handoff`](./agent-task-terminal-close-recovery-handoff.md)。该文档收敛 close ack、真实 terminal process tree 终止、`waitForClosed()` 测试心智修正和 managed/Developer 两条 close evidence；本文保留 broad recovery hardening 大图。
+Terminal close/recovery 的当前实现语义以 [`Agent Task Terminal Runtime Recovery Engineering Guidance`](./agent-task-terminal-runtime-recovery-guidance.md) 为准；本文保留 broad recovery hardening 大图。
 
 本文不是当前实现真相，也不替代 OpenAPI、generated types、runner protocol、代码或 runbook。进入实现后，必须同步更新 contracts、API/runner/frontend 代码、测试和 current truth docs；实现完成后，以 contracts、runbook 和代码作为运行依据，本文只保留为对应工作的计划记录。
 

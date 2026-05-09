@@ -1,6 +1,8 @@
+import { readFileSync } from 'node:fs';
+import { resolve } from 'node:path';
 import { describe, expect, it } from 'vitest';
 
-import { isHistoricalDoc } from './check-doc-governance';
+import { findEngineeringIndexCurrentSectionViolations, isHistoricalDoc } from './check-doc-governance';
 
 describe('check-doc-governance historical document detection', () => {
   it('allows active Agent task product docs in titles and paths', () => {
@@ -53,5 +55,49 @@ describe('check-doc-governance historical document detection', () => {
         '# Product Terminology Contract\n\nPre-GA target contracts do not keep legacy runtime/API compatibility.',
       ),
     ).toBe(false);
+  });
+
+  it('states file-library HOME segment repair as one-time pre-GA repair, not a long-term bridge', () => {
+    const plan = readFileSync(
+      resolve(process.cwd(), 'docs/engineering/agent-task-persistent-home-runtime-plan.md'),
+      'utf8',
+    );
+
+    expect(plan).toContain('pre-GA 一次性自愈迁移/repair');
+    expect(plan).toContain('不是长期 silent compatibility');
+    expect(plan).not.toContain('不做长期 legacy dual-read');
+    expect(plan).not.toContain('不得静默兼容两个 HOME 根');
+  });
+
+  it('flags handoff/refactor/migration entries in the engineering current index section', () => {
+    const violations = findEngineeringIndexCurrentSectionViolations(
+      [
+        '# Engineering Docs Index',
+        '',
+        'Current guidance and implementation plans:',
+        '- [Current Engineering Governance Model](../current-engineering-governance-model.md)',
+        '- [Agent Task Handoff Plan](./agent-task-handoff-plan.md) - `handoff_plan_ready`; next implementation handoff',
+        '',
+        'Decision-required analyses:',
+        '- [Internal Agent Terminal Pod Lifecycle Analysis v1](./internal-agent-terminal-pod-lifecycle-analysis-v1.md)',
+      ].join('\n'),
+    );
+
+    expect(violations).toEqual([
+      expect.objectContaining({
+        file: 'docs/engineering/README.md',
+        line: 5,
+        rule: 'historical-doc-current-index-entry',
+      }),
+    ]);
+  });
+
+  it('keeps the engineering current index free of handoff/refactor/migration entries', () => {
+    const index = readFileSync(
+      resolve(process.cwd(), 'docs/engineering/README.md'),
+      'utf8',
+    );
+
+    expect(findEngineeringIndexCurrentSectionViolations(index)).toEqual([]);
   });
 });

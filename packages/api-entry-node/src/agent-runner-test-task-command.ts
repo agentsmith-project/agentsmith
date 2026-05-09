@@ -1,7 +1,9 @@
 import type { AuthenticatedUser } from './auth.js';
 import type { NodeApiDeps } from './node-api-deps.js';
 import type { AgentRecord } from './resource-models.js';
+import type { FileLibraryRecord } from './file-library-model.js';
 import { createAndProvisionProjectFileLibrary, mapFileLibraryInfraError } from './project-file-library-service.js';
+import { JsonDocProjectFileLibraryCatalogRepo } from './file-library-persistence.js';
 import { writeProjectAuditEvent } from './audit-usage-recorders.js';
 import { runNotebookTaskWithExecutionAgent } from './notebook-execution-orchestrator.js';
 import { resolveRequiredConfiguredPublicApiBase } from './agent-execution-api-base.js';
@@ -27,6 +29,10 @@ import {
   notebookTasksCollection,
 } from './notebook-task/task-store.js';
 import {
+  acquireTaskFileLibraryBinding,
+  releaseTaskFileLibraryBinding,
+} from './notebook-task/task-file-library-bindings.js';
+import {
   ACTIVE_RUNS_BY_TASK,
   ACTIVE_RUN_CANCEL_BY_TASK,
   ACTIVE_RUN_CANCEL_REQUESTED_BY_TASK,
@@ -47,10 +53,17 @@ import {
   resolveAgentTaskModelTarget,
 } from './agent-task-model-setting-service.js';
 
-const RUNNER_TEST_DEFAULT_INTENT = 'Run a Developer runner self-check.';
+const RUNNER_TEST_PROMPT = [
+  'AgentSmith Developer runner self-check.',
+  '',
+  'Do not inspect files, do not run shell commands, and do not use tools.',
+  'Reply with exactly this text and nothing else:',
+  'AGENTSMITH_RUNNER_TEST_OK',
+].join('\n');
 const RUNNER_TEST_TASK_TITLE = 'Developer runner test task';
 const RUNNER_TEST_TASK_WORKSPACE_NAME = 'Developer Runner Test Workspace';
 const NOTEBOOK_RUN_LEASE_HEARTBEAT_MS = 15_000;
+const RUNNER_TEST_RUN_LEASE_TTL_SECONDS = 5 * 60;
 
 export type RunnerTestTaskRunAccepted = {
   taskId: string;
@@ -72,9 +85,86 @@ function debugRunnerTestTask(message: string, extra?: Record<string, unknown>): 
   process.stdout.write(`[runner-test-task] ${message}${suffix}\n`);
 }
 
-function normalizeRunnerTestIntent(intent: string | undefined): string {
-  const trimmed = intent?.trim();
-  return trimmed || RUNNER_TEST_DEFAULT_INTENT;
+function runnerTestRunLockKey(workspaceId: string, projectId: string, runnerId: string): string {
+  return `agent:runner-test:${workspaceId}:${projectId}:${runnerId}:run`;
+}
+
+function buildRunnerTestPrompt(_intent: string | undefined): string {
+  return RUNNER_TEST_PROMPT;
+}
+
+function parseRunnerTestRunLease(raw: string | null): Record<string, unknown> {
+  if (!raw) return {};
+  try {
+    return asObject(JSON.parse(raw));
+  } catch {
+    return {};
+  }
+}
+
+async function acquireRunnerTestRunLease(input: {
+  deps: NodeApiDeps;
+  workspaceId: string;
+  projectId: string;
+  runnerId: string;
+  taskId: string;
+  runId: string;
+  startedAt: string;
+}): Promise<boolean> {
+  const key = runnerTestRunLockKey(input.workspaceId, input.projectId, input.runnerId);
+  const value = JSON.stringify({
+    task_id: input.taskId,
+    run_id: input.runId,
+    runner_id: input.runnerId,
+    started_at: input.startedAt,
+  });
+  if (typeof input.deps.cache.compareAndSet === 'function') {
+    return input.deps.cache.compareAndSet(key, null, value, RUNNER_TEST_RUN_LEASE_TTL_SECONDS);
+  }
+  if (await input.deps.cache.get(key)) return false;
+  await input.deps.cache.set(key, value, RUNNER_TEST_RUN_LEASE_TTL_SECONDS);
+  return true;
+}
+
+async function refreshRunnerTestRunLease(input: {
+  deps: NodeApiDeps;
+  workspaceId: string;
+  projectId: string;
+  runnerId: string;
+  runId: string;
+  heartbeatAt: string;
+}): Promise<void> {
+  const key = runnerTestRunLockKey(input.workspaceId, input.projectId, input.runnerId);
+  const raw = await input.deps.cache.get(key);
+  const current = parseRunnerTestRunLease(raw);
+  if (current.run_id !== input.runId) return;
+  await input.deps.cache.set(
+    key,
+    JSON.stringify({
+      ...current,
+      heartbeat_at: input.heartbeatAt,
+    }),
+    RUNNER_TEST_RUN_LEASE_TTL_SECONDS,
+  );
+}
+
+async function releaseRunnerTestRunLease(input: {
+  deps: NodeApiDeps;
+  workspaceId: string;
+  projectId: string;
+  runnerId: string;
+  runId: string;
+}): Promise<void> {
+  const key = runnerTestRunLockKey(input.workspaceId, input.projectId, input.runnerId);
+  const raw = await input.deps.cache.get(key);
+  if (!raw) return;
+  const current = parseRunnerTestRunLease(raw);
+  if (current.run_id !== input.runId) return;
+  if (typeof input.deps.cache.compareAndSet === 'function') {
+    await input.deps.cache.compareAndSet(key, raw, null);
+    return;
+  }
+  await input.deps.cache.del(key);
 }
 
 function mapTaskMessageRecordToActivityItem(message: TaskMessageRecord): {
@@ -140,10 +230,7 @@ async function createRunnerTestWorkspace(input: {
   workspaceId: string;
   projectId: string;
   userId: string;
-}): Promise<{
-  id: string;
-  name: string;
-} | null> {
+}): Promise<FileLibraryRecord | null> {
   try {
     return await createAndProvisionProjectFileLibrary({
       deps: input.deps,
@@ -210,32 +297,91 @@ export async function dispatchDeveloperRunnerTestTaskRun(input: {
     throw error;
   }
 
-  const workspaceFileLibrary = await createRunnerTestWorkspace({
+  const taskId = buildId('task');
+  const runId = buildId('run');
+  const startedAt = nowIso();
+  const runnerTestLeaseAcquired = await acquireRunnerTestRunLease({
+    deps: input.deps,
+    workspaceId: input.workspaceId,
+    projectId: input.projectId,
+    runnerId: input.runner.id,
+    taskId,
+    runId,
+    startedAt,
+  });
+  if (!runnerTestLeaseAcquired) {
+    return {
+      ok: false,
+      errorCode: 'agent_runner_test_task_unavailable',
+      message: 'runner_test_task_run_conflict',
+    };
+  }
+  let runnerTestLeaseReleased = false;
+  const releaseRunnerTestLease = async (): Promise<void> => {
+    if (runnerTestLeaseReleased) return;
+    runnerTestLeaseReleased = true;
+    await releaseRunnerTestRunLease({
+      deps: input.deps,
+      workspaceId: input.workspaceId,
+      projectId: input.projectId,
+      runnerId: input.runner.id,
+      runId,
+    });
+  };
+
+  let workspaceFileLibrary = await createRunnerTestWorkspace({
     deps: input.deps,
     workspaceId: input.workspaceId,
     projectId: input.projectId,
     userId: input.user.id,
   });
   if (!workspaceFileLibrary) {
+    await releaseRunnerTestLease();
     return {
       ok: false,
       errorCode: 'agent_runner_test_task_unavailable',
       message: 'runner_test_task_workspace_unavailable',
     };
   }
+  const catalogRepo = new JsonDocProjectFileLibraryCatalogRepo(input.deps.docStore);
 
   const createdAt = nowIso();
+  const runnerTestPrompt = buildRunnerTestPrompt(input.intent);
+  const lifecycleFence = await catalogRepo.acquireReadyLifecycleFence({
+    workspaceId: input.workspaceId,
+    projectId: input.projectId,
+    libraryId: workspaceFileLibrary.id,
+    expectedVersion: workspaceFileLibrary.version,
+    taskId,
+    correlationId: input.requestId ?? taskId,
+    now: createdAt,
+  });
+  if (!lifecycleFence.ok) {
+    await releaseRunnerTestLease();
+    return {
+      ok: false,
+      errorCode: lifecycleFence.code,
+      message: lifecycleFence.code === 'FILE_LIBRARY_DELETING'
+        ? 'file_library_deleting'
+        : lifecycleFence.code === 'FILE_LIBRARY_NOT_FOUND'
+          ? 'file_library_not_found'
+          : 'file_library_not_ready',
+    };
+  }
+  workspaceFileLibrary = lifecycleFence.fence.library;
   const task: TaskRecord = {
-    id: buildId('task'),
+    id: taskId,
     workspace_id: input.workspaceId,
     project_id: input.projectId,
     owner_user_id: input.user.id,
     title: RUNNER_TEST_TASK_TITLE,
-    prompt: normalizeRunnerTestIntent(input.intent),
+    prompt: runnerTestPrompt,
+    task_home_segment: workspaceFileLibrary.file_library_home_segment,
     source: 'runner_test',
     runner_test: true,
     workspace_file_library_id: workspaceFileLibrary.id,
     workspace_file_library_name: workspaceFileLibrary.name,
+    runtime_writable_affordance: 'task_internal_home',
     bound_runner_id: input.runner.id,
     bound_runner_kind: 'developer',
     runner_binding_source: 'explicit',
@@ -247,6 +393,99 @@ export async function dispatchDeveloperRunnerTestTaskRun(input: {
     updated_at: createdAt,
     last_activity_at: createdAt,
   };
+  const taskFileLibraryBinding = await acquireTaskFileLibraryBinding({
+    docStore: input.deps.docStore,
+    workspaceId: input.workspaceId,
+    projectId: input.projectId,
+    fileLibraryId: workspaceFileLibrary.id,
+    taskId: task.id,
+    taskTitle: task.title,
+    taskStatus: task.status,
+    ownerUserId: task.owner_user_id,
+    runtimeWritableAffordance: 'task_internal_home',
+    correlationId: input.requestId ?? task.id,
+    now: createdAt,
+  });
+  if (!taskFileLibraryBinding.ok) {
+    await catalogRepo.releaseReadyLifecycleFence({
+      workspaceId: input.workspaceId,
+      projectId: input.projectId,
+      libraryId: workspaceFileLibrary.id,
+      expectedVersion: lifecycleFence.fence.version,
+      token: lifecycleFence.fence.token,
+    });
+    await releaseRunnerTestLease();
+    return {
+      ok: false,
+      errorCode: 'AGENT_TASK_FILE_LIBRARY_IN_USE',
+      message: 'workspace_file_library_in_use',
+    };
+  }
+  const lifecycleFenceVerified = await catalogRepo.verifyReadyLifecycleFence({
+    workspaceId: input.workspaceId,
+    projectId: input.projectId,
+    libraryId: workspaceFileLibrary.id,
+    expectedVersion: lifecycleFence.fence.version,
+    token: lifecycleFence.fence.token,
+  });
+  if (!lifecycleFenceVerified.ok) {
+    await releaseTaskFileLibraryBinding({
+      docStore: input.deps.docStore,
+      workspaceId: input.workspaceId,
+      projectId: input.projectId,
+      fileLibraryId: workspaceFileLibrary.id,
+      taskId: task.id,
+      bindingGeneration: taskFileLibraryBinding.binding.bindingGeneration,
+      correlationId: input.requestId ?? task.id,
+    });
+    await catalogRepo.releaseReadyLifecycleFence({
+      workspaceId: input.workspaceId,
+      projectId: input.projectId,
+      libraryId: workspaceFileLibrary.id,
+      expectedVersion: lifecycleFence.fence.version,
+      token: lifecycleFence.fence.token,
+    });
+    await releaseRunnerTestLease();
+    return {
+      ok: false,
+      errorCode: lifecycleFenceVerified.code,
+      message: lifecycleFenceVerified.code === 'FILE_LIBRARY_DELETING'
+        ? 'file_library_deleting'
+        : lifecycleFenceVerified.code === 'FILE_LIBRARY_NOT_FOUND'
+          ? 'file_library_not_found'
+          : 'file_library_not_ready',
+    };
+  }
+  const releasedLifecycleFence = await catalogRepo.releaseReadyLifecycleFence({
+    workspaceId: input.workspaceId,
+    projectId: input.projectId,
+    libraryId: workspaceFileLibrary.id,
+    expectedVersion: lifecycleFence.fence.version,
+    token: lifecycleFence.fence.token,
+  });
+  if (!releasedLifecycleFence.ok) {
+    await releaseTaskFileLibraryBinding({
+      docStore: input.deps.docStore,
+      workspaceId: input.workspaceId,
+      projectId: input.projectId,
+      fileLibraryId: workspaceFileLibrary.id,
+      taskId: task.id,
+      bindingGeneration: taskFileLibraryBinding.binding.bindingGeneration,
+      correlationId: input.requestId ?? task.id,
+    });
+    await releaseRunnerTestLease();
+    return {
+      ok: false,
+      errorCode: releasedLifecycleFence.code,
+      message: releasedLifecycleFence.code === 'FILE_LIBRARY_DELETING'
+        ? 'file_library_deleting'
+        : releasedLifecycleFence.code === 'FILE_LIBRARY_NOT_FOUND'
+          ? 'file_library_not_found'
+          : 'file_library_not_ready',
+    };
+  }
+  workspaceFileLibrary = releasedLifecycleFence.library;
+  task.file_library_binding_generation = taskFileLibraryBinding.binding.bindingGeneration;
   getTasks(input.workspaceId, input.projectId).unshift(task);
   await input.deps.docStore.upsert<TaskRecord>(notebookTasksCollection(input.workspaceId), task.id, task);
   await writeProjectAuditEvent(input.deps, {
@@ -267,8 +506,6 @@ export async function dispatchDeveloperRunnerTestTaskRun(input: {
     },
   });
 
-  const runId = buildId('run');
-  const startedAt = nowIso();
   let sharedRunState = buildNotebookTaskRunState({
     taskId: task.id,
     runId,
@@ -281,6 +518,7 @@ export async function dispatchDeveloperRunnerTestTaskRun(input: {
   });
   const acquired = await acquireNotebookTaskRunLease(input.deps.cache, sharedRunState);
   if (!acquired) {
+    await releaseRunnerTestLease();
     return {
       ok: false,
       errorCode: 'agent_runner_test_task_unavailable',
@@ -298,6 +536,7 @@ export async function dispatchDeveloperRunnerTestTaskRun(input: {
   };
   const finalizeAcquiredRun = async (finalizeInput?: { clearSharedControl?: boolean }): Promise<void> => {
     releaseLocalRunTracking();
+    await releaseRunnerTestLease();
     if (!finalizeInput?.clearSharedControl || sharedRunControlCleared) {
       return;
     }
@@ -312,7 +551,7 @@ export async function dispatchDeveloperRunnerTestTaskRun(input: {
     id: buildId('msg'),
     task_id: task.id,
     role: 'user',
-    content: normalizeRunnerTestIntent(input.intent),
+    content: runnerTestPrompt,
     created_at: nowIso(),
   };
   const assistantMessage: TaskMessageRecord = {
@@ -357,11 +596,20 @@ export async function dispatchDeveloperRunnerTestTaskRun(input: {
   });
 
   const heartbeatTimer = setInterval(() => {
+    const heartbeatAt = nowIso();
     sharedRunState = {
       ...sharedRunState,
-      heartbeat_at: nowIso(),
+      heartbeat_at: heartbeatAt,
     };
     void refreshNotebookTaskRunLease(input.deps.cache, sharedRunState).catch(() => undefined);
+    void refreshRunnerTestRunLease({
+      deps: input.deps,
+      workspaceId: input.workspaceId,
+      projectId: input.projectId,
+      runnerId: input.runner.id,
+      runId,
+      heartbeatAt,
+    }).catch(() => undefined);
   }, NOTEBOOK_RUN_LEASE_HEARTBEAT_MS);
 
   const runPromise = runNotebookTaskWithExecutionAgent({

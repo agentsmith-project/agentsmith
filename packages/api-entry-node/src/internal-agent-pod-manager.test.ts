@@ -40,7 +40,7 @@ function buildWorkspaceMount(): InternalAgentWorkspaceMount {
     taskHomePath: '/home/task_1',
     workspacePath: '/home/task_1/workspace',
     artifactsPath: '/home/task_1/workspace/.artifacts',
-    subPath: 'agent-tasks/task_1',
+    libraryRootPath: '.',
   };
 }
 
@@ -102,12 +102,12 @@ describe('internal-agent-pod-manager', () => {
       expect.objectContaining({
         workspace_binding_id: 'flib_demo',
         mount_path: '/home/task_1',
-        sub_path: 'agent-tasks/task_1',
         working_dir: '/home/task_1/workspace',
         env: expect.objectContaining({
           TASK_HOME: '/home/task_1',
           HOME: '/home/task_1',
           WORKSPACE_PATH: '/home/task_1/workspace',
+          ARTIFACTS_PATH: '/home/task_1/workspace/.artifacts',
           MBOS_AGENT_BUILTIN_SKILLS_DIR: '/etc/codex/skills',
           MBOS_AGENT_BUILTIN_SKILLS: 'mbos-context,feishu-docs,jira-ops',
           MBOS_AGENT_BUILTIN_SKILLS_REQUIRED: '1',
@@ -115,7 +115,104 @@ describe('internal-agent-pod-manager', () => {
       }),
       undefined,
     );
+    expect(createOrEnsurePod.mock.calls[0]?.[3]).not.toHaveProperty('sub_path');
     expect(onlineStateStore.getAgentSessionOnlineState).toHaveBeenCalledWith('ag_1', 'task_1');
+  });
+
+  it('fails fast when the workspace mount library root is not the file library root', async () => {
+    const manager = new InternalAgentPodManagerImpl(
+      {
+        checkReady: vi.fn().mockResolvedValue(undefined),
+        getPodStatus: vi.fn().mockResolvedValue({ phase: 'offline' }),
+        createOrEnsurePod: vi.fn(),
+        deletePod: vi.fn(),
+        keepalive: vi.fn(),
+        exec: vi.fn(),
+      },
+      { getAgentOnlineState: vi.fn().mockReturnValue(false) },
+      'ws://api:20000',
+    );
+
+    await expect(
+      manager.ensureAgentReady({
+        workspaceId: 'ws_1',
+        projectId: 'proj_1',
+        workloadId: 'task_1',
+        sessionId: 'task_1',
+        agent: buildAgent({ image: 'runner:v1', _internal_raw_key: 'ask_test' }),
+        workspaceMount: {
+          ...buildWorkspaceMount(),
+          libraryRootPath: 'agent-tasks/task_1' as never,
+        },
+      }),
+    ).rejects.toMatchObject({
+      code: 'AGENT_SANDBOX_NOT_CONFIGURED',
+      message: 'workspace_library_root_path_invalid',
+    });
+  });
+
+  it('fails fast when workspace paths are outside the task HOME contract', async () => {
+    const manager = new InternalAgentPodManagerImpl(
+      {
+        checkReady: vi.fn().mockResolvedValue(undefined),
+        getPodStatus: vi.fn().mockResolvedValue({ phase: 'offline' }),
+        createOrEnsurePod: vi.fn(),
+        deletePod: vi.fn(),
+        keepalive: vi.fn(),
+        exec: vi.fn(),
+      },
+      { getAgentOnlineState: vi.fn().mockReturnValue(false) },
+      'ws://api:20000',
+    );
+
+    await expect(
+      manager.ensureAgentReady({
+        workspaceId: 'ws_1',
+        projectId: 'proj_1',
+        workloadId: 'task_1',
+        sessionId: 'task_1',
+        agent: buildAgent({ image: 'runner:v1', _internal_raw_key: 'ask_test' }),
+        workspaceMount: {
+          ...buildWorkspaceMount(),
+          workspacePath: '/home/other/workspace',
+        },
+      }),
+    ).rejects.toMatchObject({
+      code: 'AGENT_SANDBOX_NOT_CONFIGURED',
+      message: 'workspace_path_invalid',
+    });
+  });
+
+  it('fails fast when workspace mount paths are relative or contain traversal', async () => {
+    const manager = new InternalAgentPodManagerImpl(
+      {
+        checkReady: vi.fn().mockResolvedValue(undefined),
+        getPodStatus: vi.fn().mockResolvedValue({ phase: 'offline' }),
+        createOrEnsurePod: vi.fn(),
+        deletePod: vi.fn(),
+        keepalive: vi.fn(),
+        exec: vi.fn(),
+      },
+      { getAgentOnlineState: vi.fn().mockReturnValue(false) },
+      'ws://api:20000',
+    );
+
+    await expect(
+      manager.ensureAgentReady({
+        workspaceId: 'ws_1',
+        projectId: 'proj_1',
+        workloadId: 'task_1',
+        sessionId: 'task_1',
+        agent: buildAgent({ image: 'runner:v1', _internal_raw_key: 'ask_test' }),
+        workspaceMount: {
+          ...buildWorkspaceMount(),
+          taskHomePath: '../task_1',
+        },
+      }),
+    ).rejects.toMatchObject({
+      code: 'AGENT_SANDBOX_NOT_CONFIGURED',
+      message: 'workspace_task_home_path_invalid',
+    });
   });
 
   it('pins k8s managed runner pods to the canonical managed_platform runner mode env', async () => {

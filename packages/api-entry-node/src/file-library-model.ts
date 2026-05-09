@@ -3,7 +3,8 @@ export type FileLibraryStatus =
   | 'ready'
   | 'degraded'
   | 'failed'
-  | 'deleting';
+  | 'deleting'
+  | 'deleted';
 
 export type FileLibraryGatewayStatus =
   | 'not_started'
@@ -20,7 +21,11 @@ export interface FileLibraryRecord {
   name: string;
   description?: string;
   status: FileLibraryStatus;
+  version: number;
   filesystem_name: string;
+  file_library_home_segment: string;
+  source: 'manual' | 'agent_task_auto';
+  delete_correlation_id?: string;
   created_by_user_id: string;
   created_at: string;
   updated_at: string;

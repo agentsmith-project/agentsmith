@@ -118,7 +118,7 @@ function resolveDeveloperTaskHomePaths(input: {
     taskHomePath,
     workspacePath,
     artifactsPath,
-    subPath: `agent-tasks/${input.taskHomeSegment}`,
+    libraryRootPath: '.',
   };
 }
 

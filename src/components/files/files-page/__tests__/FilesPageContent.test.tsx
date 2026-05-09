@@ -77,6 +77,10 @@ function buildProps(overrides: Partial<FilesPageContentProps> = {}): FilesPageCo
     selectedIds: [],
     selectedLibraryId: defaultLibrary.id,
     selectedLibraryStatus: 'ready',
+    selectedLibraryTaskHomeBinding: {
+      task_home_binding_status: 'unbound',
+      bound_task_visible: false,
+    },
     selectedObjectsCount: 0,
     selectionMode: 'multi',
     setSearchInput: vi.fn(),

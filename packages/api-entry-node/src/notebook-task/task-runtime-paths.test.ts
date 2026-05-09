@@ -19,7 +19,7 @@ describe('task runtime path resolver', () => {
       taskHomePath: '/home/task_managed',
       workspacePath: '/home/task_managed/workspace',
       artifactsPath: '/home/task_managed/workspace/.artifacts',
-      subPath: 'agent-tasks/task_managed',
+      libraryRootPath: '.',
     });
   });
 
@@ -38,7 +38,7 @@ describe('task runtime path resolver', () => {
       taskHomePath: '/tmp/agentsmith-dev-workspaces/task_developer',
       workspacePath: '/tmp/agentsmith-dev-workspaces/task_developer/workspace',
       artifactsPath: '/tmp/agentsmith-dev-workspaces/task_developer/workspace/.artifacts',
-      subPath: 'agent-tasks/task_developer',
+      libraryRootPath: '.',
     });
   });
 
@@ -54,6 +54,7 @@ describe('task runtime path resolver', () => {
       taskHomePath: '/home/developer/ags-workspace/task_default_root',
       workspacePath: '/home/developer/ags-workspace/task_default_root/workspace',
       artifactsPath: '/home/developer/ags-workspace/task_default_root/workspace/.artifacts',
+      libraryRootPath: '.',
     });
   });
 

@@ -3,7 +3,9 @@ import { createDefaultNodeApiDeps } from './index.js';
 import { dispatchDeveloperRunnerTestTaskRun } from './agent-runner-test-task-command.js';
 import { AgentTaskModelSettingService } from './agent-task-model-setting-service.js';
 import { getNotebookTaskRunState } from './notebook-task/task-run-coordination.js';
-import { notebookTasksCollection } from './notebook-task/task-store.js';
+import { notebookTaskMessagesCollection, notebookTasksCollection } from './notebook-task/task-store.js';
+import { JsonDocProjectFileLibraryCatalogRepo } from './file-library-persistence.js';
+import { JsonDocTaskFileLibraryBindingRepo } from './notebook-task/task-file-library-bindings.js';
 
 function createDeferred<T = void>(): {
   promise: Promise<T>;
@@ -204,11 +206,176 @@ describe('dispatchDeveloperRunnerTestTaskRun', () => {
           upstream_protocol: 'anthropic_messages',
         }),
       });
+      const storedTask = await deps.docStore.get<Record<string, unknown>>(
+        notebookTasksCollection('ws_default'),
+        result.accepted.taskId,
+      );
+      expect(storedTask).toMatchObject({
+        source: 'runner_test',
+        runner_test: true,
+        workspace_file_library_id: expect.stringMatching(/^flib_/),
+        task_home_segment: expect.stringMatching(/^flibhome_/),
+        file_library_binding_generation: expect.any(Number),
+        runtime_writable_affordance: 'task_internal_home',
+      });
+      const fileLibraryId = String(storedTask?.workspace_file_library_id);
+      await expect(new JsonDocProjectFileLibraryCatalogRepo(deps.docStore).getById(
+        'ws_default',
+        'proj_1',
+        fileLibraryId,
+      )).resolves.toMatchObject({
+        id: fileLibraryId,
+        file_library_home_segment: storedTask?.task_home_segment,
+      });
+      await expect(new JsonDocTaskFileLibraryBindingRepo(deps.docStore).find({
+        workspaceId: 'ws_default',
+        projectId: 'proj_1',
+        fileLibraryId,
+      })).resolves.toMatchObject({
+        taskId: result.accepted.taskId,
+        bindingGeneration: storedTask?.file_library_binding_generation,
+        runtimeWritableAffordance: 'task_internal_home',
+        bindingState: 'bound',
+      });
 
       streamGate.resolve();
       await vi.waitFor(async () => {
         expect(await getNotebookTaskRunState(deps.cache, result.accepted.taskId)).toBeNull();
       });
+    } finally {
+      if (previousPublicApiBase === undefined) delete process.env.PUBLIC_API_BASE_URL;
+      else process.env.PUBLIC_API_BASE_URL = previousPublicApiBase;
+    }
+  });
+
+  it('uses a canonical self-check prompt instead of forwarding diagnostic intent tokens to the runner', async () => {
+    const previousPublicApiBase = process.env.PUBLIC_API_BASE_URL;
+    process.env.PUBLIC_API_BASE_URL = 'http://localhost:20000';
+    const deps = createDefaultNodeApiDeps();
+    try {
+      const endpoint = await createReadyEndpoint(deps, {
+        name: 'project setting endpoint',
+        model: 'project-setting-model',
+        upstreamProtocol: 'anthropic_messages',
+      });
+      await seedAgentTaskModelSetting(deps, endpoint.id);
+      const runner = await deps.agentResourceService.createAgent('ws_default', 'proj_1', {
+        name: 'Developer runner self-check prompt',
+        runner_provider: 'developer',
+        status: 'enabled',
+        presence: 'online',
+        runner_status: 'ready',
+        capabilities: { task_execution: true, artifacts: true },
+      });
+      deps.agentExecutionService.dispatchStreamingRequest = vi.fn(async () => ({
+        requestId: 'req_runner_test_prompt',
+        cancel: vi.fn(),
+        stream: (async function* stream() {
+          yield { type: 'done', finish_reason: 'stop', usage_tokens: 1 } as const;
+        })(),
+      })) as never;
+
+      const result = await dispatchDeveloperRunnerTestTaskRun({
+        deps,
+        workspaceId: 'ws_default',
+        projectId: 'proj_1',
+        user: { id: 'user_test', email: 'user_test@example.com', name: 'Test User' },
+        runner,
+        intent: 'developer_runner_connection_check',
+        requestId: 'req_prompt',
+      });
+
+      expect(result).toMatchObject({ ok: true });
+      await vi.waitFor(() => {
+        expect(deps.agentExecutionService.dispatchStreamingRequest).toHaveBeenCalledWith(
+          expect.objectContaining({
+            messages: [
+              expect.objectContaining({
+                role: 'user',
+                content: expect.stringContaining('AGENTSMITH_RUNNER_TEST_OK'),
+              }),
+            ],
+          }),
+        );
+      });
+      const taskId = result.ok ? result.accepted.taskId : '';
+      const messages = await deps.docStore.list<Record<string, unknown>>(
+        notebookTaskMessagesCollection('ws_default'),
+        { task_id: taskId },
+      );
+      expect(JSON.stringify(messages)).toContain('AGENTSMITH_RUNNER_TEST_OK');
+      expect(JSON.stringify(messages)).not.toContain('developer_runner_connection_check');
+    } finally {
+      if (previousPublicApiBase === undefined) delete process.env.PUBLIC_API_BASE_URL;
+      else process.env.PUBLIC_API_BASE_URL = previousPublicApiBase;
+    }
+  });
+
+  it('rejects a second self-check for the same Developer runner while one is already running', async () => {
+    const previousPublicApiBase = process.env.PUBLIC_API_BASE_URL;
+    process.env.PUBLIC_API_BASE_URL = 'http://localhost:20000';
+    const deps = createDefaultNodeApiDeps();
+    try {
+      const endpoint = await createReadyEndpoint(deps, {
+        name: 'project setting endpoint',
+        model: 'project-setting-model',
+        upstreamProtocol: 'anthropic_messages',
+      });
+      await seedAgentTaskModelSetting(deps, endpoint.id);
+      const runner = await deps.agentResourceService.createAgent('ws_default', 'proj_1', {
+        name: 'Developer runner single self-check',
+        runner_provider: 'developer',
+        status: 'enabled',
+        presence: 'online',
+        runner_status: 'ready',
+        capabilities: { task_execution: true, artifacts: true },
+      });
+      const streamGate = createDeferred<void>();
+      deps.agentExecutionService.dispatchStreamingRequest = vi.fn(async () => ({
+        requestId: 'req_runner_test_singleflight',
+        cancel: vi.fn(),
+        stream: (async function* stream() {
+          await streamGate.promise;
+          yield { type: 'done', finish_reason: 'stop', usage_tokens: 1 } as const;
+        })(),
+      })) as never;
+
+      const first = await dispatchDeveloperRunnerTestTaskRun({
+        deps,
+        workspaceId: 'ws_default',
+        projectId: 'proj_1',
+        user: { id: 'user_test', email: 'user_test@example.com', name: 'Test User' },
+        runner,
+        intent: 'Run first self-check',
+        requestId: 'req_first',
+      });
+      expect(first).toMatchObject({ ok: true });
+
+      const second = await dispatchDeveloperRunnerTestTaskRun({
+        deps,
+        workspaceId: 'ws_default',
+        projectId: 'proj_1',
+        user: { id: 'user_test', email: 'user_test@example.com', name: 'Test User' },
+        runner,
+        intent: 'Run second self-check',
+        requestId: 'req_second',
+      });
+      expect(second).toEqual({
+        ok: false,
+        errorCode: 'agent_runner_test_task_unavailable',
+        message: 'runner_test_task_run_conflict',
+      });
+
+      await expect(deps.docStore.list(notebookTasksCollection('ws_default'), {
+        source: 'runner_test',
+      })).resolves.toHaveLength(1);
+
+      streamGate.resolve();
+      if (first.ok) {
+        await vi.waitFor(async () => {
+          expect(await getNotebookTaskRunState(deps.cache, first.accepted.taskId)).toBeNull();
+        });
+      }
     } finally {
       if (previousPublicApiBase === undefined) delete process.env.PUBLIC_API_BASE_URL;
       else process.env.PUBLIC_API_BASE_URL = previousPublicApiBase;

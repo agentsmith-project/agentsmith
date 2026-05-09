@@ -14,7 +14,7 @@ import {
 } from '@tanstack/react-query';
 import { useTranslations } from 'next-intl';
 import { getApiClient, TaskAPI } from '@/lib/api';
-import { handleErrorForToast } from '@/lib/api/errors';
+import { APIError, handleErrorForToast, resolveApiErrorPresentation } from '@/lib/api/errors';
 import { queryKeys } from '@/lib/query-keys';
 import type {
   Task,
@@ -26,6 +26,84 @@ import type {
   TaskAttachedInputDetail,
 } from '@/lib/types/task';
 import { toast } from '@/components/ui/toast';
+
+const TASK_BINDING_RELATED_ERROR_CODES = new Set([
+  'AGENT_TASK_FILE_LIBRARY_IN_USE',
+  'AGENT_TASK_WORKSPACE_BINDING_CONFLICT',
+  'FILE_LIBRARY_DELETING',
+  'FILE_LIBRARY_NOT_READY',
+  'FILE_LIBRARY_NOT_FOUND',
+  'FILE_LIBRARY_FORBIDDEN',
+]);
+
+const TASK_DELETE_BLOCKED_ERROR_CODES = new Set([
+  'AGENT_TASK_DELETE_BLOCKED',
+  'AGENT_TASK_WORKSPACE_BINDING_CONFLICT',
+]);
+
+export interface UseDeleteTaskOptions {
+  onDeleteBlocked?: (message: string, error: APIError) => void;
+}
+
+function isApiErrorWithCode(error: unknown, codes: ReadonlySet<string>): error is APIError {
+  return error instanceof APIError && codes.has(error.errorCode);
+}
+
+function readErrorFileLibraryId(error: unknown) {
+  if (!(error instanceof APIError)) return null;
+  const value = error.details?.file_library_id;
+  return typeof value === 'string' && value.trim().length > 0 ? value : null;
+}
+
+function fileLibraryQueryMatches(
+  queryKey: readonly unknown[],
+  workspaceId: string,
+  projectId: string,
+  libraryId?: string | null,
+) {
+  const scopedKey = queryKey[0] === 'v2' ? queryKey.slice(1) : queryKey;
+  if (
+    scopedKey[0] === 'file-libraries'
+    && scopedKey[1] === workspaceId
+    && scopedKey[2] === projectId
+  ) {
+    return true;
+  }
+  if (
+    scopedKey[0] === 'file-library'
+    && scopedKey[1] === workspaceId
+    && scopedKey[2] === projectId
+  ) {
+    return !libraryId || scopedKey[3] === libraryId;
+  }
+  return false;
+}
+
+async function invalidateTaskBindingCaches(
+  queryClient: ReturnType<typeof useQueryClient>,
+  workspaceId: string,
+  projectId: string,
+  options?: { taskId?: string; libraryId?: string | null },
+) {
+  await Promise.all([
+    queryClient.invalidateQueries({
+      queryKey: queryKeys.tasks.scope(workspaceId, projectId),
+    }),
+    options?.taskId
+      ? queryClient.invalidateQueries({
+          queryKey: queryKeys.tasks.detail(workspaceId, projectId, options.taskId),
+        })
+      : Promise.resolve(),
+    queryClient.invalidateQueries({
+      predicate: (query) => fileLibraryQueryMatches(
+        query.queryKey,
+        workspaceId,
+        projectId,
+        options?.libraryId,
+      ),
+    }),
+  ]);
+}
 
 /**
  * Hook to query tasks list
@@ -105,13 +183,20 @@ export function useCreateTask() {
       projectId: string;
       data: CreateTaskRequest;
     }) => taskAPI.create(workspaceId, projectId, data),
-    onSuccess: async (_, variables) => {
-      await queryClient.invalidateQueries({
-        queryKey: queryKeys.tasks.scope(variables.workspaceId, variables.projectId),
+    onSuccess: async (task, variables) => {
+      await invalidateTaskBindingCaches(queryClient, variables.workspaceId, variables.projectId, {
+        taskId: task.id,
+        libraryId: task.workspace_file_library_id ?? null,
       });
       toast.success(t('create_success'));
     },
-    onError: (error: unknown) => {
+    onError: (error: unknown, variables) => {
+      if (isApiErrorWithCode(error, TASK_BINDING_RELATED_ERROR_CODES)) {
+        void invalidateTaskBindingCaches(queryClient, variables.workspaceId, variables.projectId, {
+          libraryId: readErrorFileLibraryId(error),
+        });
+        return;
+      }
       handleErrorForToast(error, 'useCreateTask');
     },
   });
@@ -137,16 +222,21 @@ export function useUpdateTask() {
       taskId: string;
       data: UpdateTaskRequest;
     }) => taskAPI.update(workspaceId, projectId, taskId, data),
-    onSuccess: async (_, variables) => {
-      await queryClient.invalidateQueries({
-        queryKey: queryKeys.tasks.detail(variables.workspaceId, variables.projectId, variables.taskId),
-      });
-      await queryClient.invalidateQueries({
-        queryKey: queryKeys.tasks.scope(variables.workspaceId, variables.projectId),
+    onSuccess: async (task, variables) => {
+      await invalidateTaskBindingCaches(queryClient, variables.workspaceId, variables.projectId, {
+        taskId: variables.taskId,
+        libraryId: task.workspace_file_library_id ?? null,
       });
       toast.success(t('update_success'));
     },
-    onError: (error: unknown) => {
+    onError: (error: unknown, variables) => {
+      if (isApiErrorWithCode(error, TASK_BINDING_RELATED_ERROR_CODES)) {
+        void invalidateTaskBindingCaches(queryClient, variables.workspaceId, variables.projectId, {
+          taskId: variables.taskId,
+          libraryId: readErrorFileLibraryId(error),
+        });
+        return;
+      }
       handleErrorForToast(error, 'useUpdateTask');
     },
   });
@@ -155,10 +245,11 @@ export function useUpdateTask() {
 /**
  * Hook to delete a task
  */
-export function useDeleteTask() {
+export function useDeleteTask(options?: UseDeleteTaskOptions) {
   const queryClient = useQueryClient();
   const taskAPI = new TaskAPI(getApiClient());
   const t = useTranslations('common.toast');
+  const errorT = useTranslations('errors');
 
   return useMutation({
     mutationFn: ({
@@ -171,12 +262,36 @@ export function useDeleteTask() {
       taskId: string;
     }) => taskAPI.delete(workspaceId, projectId, taskId),
     onSuccess: async (_, variables) => {
-      await queryClient.invalidateQueries({
-        queryKey: queryKeys.tasks.scope(variables.workspaceId, variables.projectId),
+      await invalidateTaskBindingCaches(queryClient, variables.workspaceId, variables.projectId, {
+        taskId: variables.taskId,
       });
       toast.success(t('delete_success'));
     },
-    onError: (error: unknown) => {
+    onError: (error: unknown, variables) => {
+      if (isApiErrorWithCode(error, TASK_DELETE_BLOCKED_ERROR_CODES)) {
+        void invalidateTaskBindingCaches(queryClient, variables.workspaceId, variables.projectId, {
+          taskId: variables.taskId,
+          libraryId: readErrorFileLibraryId(error),
+        });
+        const presentation = resolveApiErrorPresentation({
+          error,
+          t: errorT,
+          fallbackMessage: errorT('agent_task_delete_blocked.description'),
+        });
+        if (options?.onDeleteBlocked) {
+          options.onDeleteBlocked(presentation.description, error);
+        } else {
+          toast.error(`${presentation.title}: ${presentation.description}`);
+        }
+        return;
+      }
+      if (isApiErrorWithCode(error, TASK_BINDING_RELATED_ERROR_CODES)) {
+        void invalidateTaskBindingCaches(queryClient, variables.workspaceId, variables.projectId, {
+          taskId: variables.taskId,
+          libraryId: readErrorFileLibraryId(error),
+        });
+        return;
+      }
       handleErrorForToast(error, 'useDeleteTask');
     },
   });

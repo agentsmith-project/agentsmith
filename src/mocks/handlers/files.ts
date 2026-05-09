@@ -5,9 +5,123 @@ import { docFileLibraries } from '../doc-fixtures/workspace-projects';
 import { docObjectDbByLibraryId } from '../doc-fixtures/files';
 import { VISUAL_TEST_REFERENCE_NOW_ISO } from '@/lib/mock-time';
 
+const API_V1_PATTERN = '*/api/v1';
+
 type ObjectRow =
   | { kind: 'prefix'; prefix: string; name: string }
   | { kind: 'object'; key: string; name: string; size_bytes: number; content_type: string; etag?: string; last_modified: string; content?: string };
+
+type MockTaskHomeBinding = {
+  workspaceId: string;
+  projectId: string;
+  libraryId: string;
+  taskId: string;
+  taskTitle: string;
+  taskStatus: 'active' | 'archived';
+  visible: boolean;
+};
+
+const taskHomeBindingsByLibrary = new Map<string, MockTaskHomeBinding>();
+
+function bindingKey(input: { workspaceId: string; projectId: string; libraryId: string }) {
+  return `${input.workspaceId}:${input.projectId}:${input.libraryId}`;
+}
+
+export function bindMockFileLibraryTaskHome(input: MockTaskHomeBinding) {
+  taskHomeBindingsByLibrary.set(bindingKey(input), input);
+}
+
+export function releaseMockFileLibraryTaskHome(input: { workspaceId: string; projectId: string; libraryId: string; taskId?: string }) {
+  const key = bindingKey(input);
+  const existing = taskHomeBindingsByLibrary.get(key);
+  if (!existing) return;
+  if (input.taskId && existing.taskId !== input.taskId) return;
+  taskHomeBindingsByLibrary.delete(key);
+}
+
+export function getMockFileLibraryTaskHomeBinding(input: {
+  workspaceId: string;
+  projectId: string;
+  libraryId: string;
+}) {
+  return taskHomeBindingsByLibrary.get(bindingKey(input)) ?? null;
+}
+
+export function getMockFileLibrary(input: {
+  workspaceId: string;
+  projectId: string;
+  libraryId: string;
+}) {
+  return sourceLibraries.find((library) =>
+    library.workspace_id === input.workspaceId
+    && library.project_id === input.projectId
+    && library.id === input.libraryId,
+  ) ?? null;
+}
+
+function withTaskHomeBinding(library: FileLibrary): FileLibrary {
+  const binding = getMockFileLibraryTaskHomeBinding({
+    workspaceId: library.workspace_id,
+    projectId: library.project_id,
+    libraryId: library.id,
+  });
+  if (!binding) {
+    const base = { ...library };
+    delete base.bound_task_id;
+    delete base.bound_task_title;
+    delete base.bound_task_status;
+    return {
+      ...base,
+      task_home_binding_status: 'unbound',
+      bound_task_visible: false,
+    };
+  }
+  return {
+    ...library,
+    task_home_binding_status: 'bound',
+    bound_task_visible: binding.visible,
+    ...(binding.visible
+      ? {
+          bound_task_id: binding.taskId,
+          bound_task_title: binding.taskTitle,
+          bound_task_status: binding.taskStatus,
+        }
+      : {}),
+  };
+}
+
+export function ensureMockFileLibraryForTask(input: {
+  workspaceId: string;
+  projectId: string;
+  libraryId: string;
+  name: string;
+  createdByUserId: string;
+  now: string;
+}) {
+  const existing = sourceLibraries.find((library) => library.id === input.libraryId);
+  if (existing) return withTaskHomeBinding(existing);
+  const slug = input.name.toLowerCase().replace(/[^a-z0-9-]+/g, '-').replace(/^-+|-+$/g, '') || input.libraryId;
+  const created: FileLibrary = {
+    id: input.libraryId,
+    workspace_id: input.workspaceId,
+    project_id: input.projectId,
+    name: input.name,
+    description: '',
+    visibility: 'shared',
+    provider: 'juicefs',
+    bucket: `jfs-lib-${input.libraryId}`,
+    status: 'ready',
+    task_home_binding_status: 'unbound',
+    bound_task_visible: false,
+    filesystem_name: `flib-${slug}`.slice(0, 63),
+    created_by_user_id: input.createdByUserId,
+    created_at: input.now,
+    updated_at: input.now,
+  };
+  sourceLibraries.push(created);
+  objectDbByLibraryId[input.libraryId] = objectDbByLibraryId[input.libraryId] ?? [];
+  return withTaskHomeBinding(created);
+}
 
 const sourceLibraries: FileLibrary[] = DOC_FIXTURES_ENABLED ? [...docFileLibraries] : [
   {
@@ -20,6 +134,8 @@ const sourceLibraries: FileLibrary[] = DOC_FIXTURES_ENABLED ? [...docFileLibrari
     provider: 's3' as const,
     bucket: 'mbos-proj-001-shared-docs',
     status: 'ready' as const,
+    task_home_binding_status: 'unbound' as const,
+    bound_task_visible: false,
     filesystem_name: 'flib-ws-default-proj-001-shared-docs',
     created_by_user_id: 'user_001',
     created_at: new Date('2026-02-01T00:00:00Z').toISOString(),
@@ -35,6 +151,8 @@ const sourceLibraries: FileLibrary[] = DOC_FIXTURES_ENABLED ? [...docFileLibrari
     provider: 's3' as const,
     bucket: 'mbos-proj-001-policy-rules',
     status: 'ready' as const,
+    task_home_binding_status: 'unbound' as const,
+    bound_task_visible: false,
     filesystem_name: 'flib-ws-default-proj-001-policy-rules',
     created_by_user_id: 'user_001',
     created_at: new Date('2026-02-02T00:00:00Z').toISOString(),
@@ -50,6 +168,8 @@ const sourceLibraries: FileLibrary[] = DOC_FIXTURES_ENABLED ? [...docFileLibrari
     provider: 's3' as const,
     bucket: 'mbos-proj-001-product-specs',
     status: 'ready' as const,
+    task_home_binding_status: 'unbound' as const,
+    bound_task_visible: false,
     filesystem_name: 'flib-ws-default-proj-001-product-specs',
     created_by_user_id: 'user_001',
     created_at: new Date('2026-02-03T00:00:00Z').toISOString(),
@@ -65,6 +185,8 @@ const sourceLibraries: FileLibrary[] = DOC_FIXTURES_ENABLED ? [...docFileLibrari
     provider: 's3' as const,
     bucket: 'mbos-proj-001-large-bench',
     status: 'ready' as const,
+    task_home_binding_status: 'unbound' as const,
+    bound_task_visible: false,
     filesystem_name: 'flib-ws-default-proj-001-large-bench',
     created_by_user_id: 'user_001',
     created_at: new Date('2026-02-04T00:00:00Z').toISOString(),
@@ -117,6 +239,148 @@ const objectDbByLibraryId: Record<string, ObjectRow[]> = DOC_FIXTURES_ENABLED
     };
   }),
 };
+
+function buildFixtureLibrary(input: {
+  id: string;
+  name: string;
+  status?: FileLibrary['status'];
+}): FileLibrary {
+  return {
+    id: input.id,
+    workspace_id: 'ws_default',
+    project_id: 'proj_001',
+    name: input.name,
+    description: '',
+    visibility: 'shared',
+    provider: 'juicefs',
+    bucket: `jfs-${input.id}`,
+    status: input.status ?? 'ready',
+    task_home_binding_status: 'unbound',
+    bound_task_visible: false,
+    filesystem_name: `flib-${input.id}`,
+    created_by_user_id: 'user_001',
+    created_at: new Date('2026-02-05T00:00:00Z').toISOString(),
+    updated_at: new Date('2026-02-05T00:00:00Z').toISOString(),
+  };
+}
+
+function ensureSourceLibraryFixture(library: FileLibrary, objects: ObjectRow[] = []) {
+  if (!sourceLibraries.some((item) => item.id === library.id)) {
+    sourceLibraries.push(library);
+  }
+  objectDbByLibraryId[library.id] = objectDbByLibraryId[library.id] ?? objects;
+}
+
+ensureSourceLibraryFixture(buildFixtureLibrary({
+  id: 'lib_msw_deleting',
+  name: 'Deleting Workspace',
+  status: 'deleting',
+}));
+ensureSourceLibraryFixture(buildFixtureLibrary({
+  id: 'lib_msw_active_bound',
+  name: 'Active Bound Workspace',
+}));
+ensureSourceLibraryFixture(buildFixtureLibrary({
+  id: 'lib_msw_archived_bound',
+  name: 'Archived Bound Workspace',
+}));
+ensureSourceLibraryFixture(buildFixtureLibrary({
+  id: 'lib_msw_redacted_bound',
+  name: 'Redacted Bound Workspace',
+}));
+ensureSourceLibraryFixture(buildFixtureLibrary({
+  id: 'lib_msw_nonempty',
+  name: 'Non-empty Workspace',
+}), [
+  {
+    kind: 'object',
+    key: 'README.txt',
+    name: 'README.txt',
+    size_bytes: 42,
+    content_type: 'text/plain',
+    etag: '"msw-nonempty"',
+    last_modified: nowIso(),
+    content: 'non-empty',
+  },
+]);
+
+bindMockFileLibraryTaskHome({
+  workspaceId: 'ws_default',
+  projectId: 'proj_001',
+  libraryId: 'lib_msw_active_bound',
+  taskId: 'task_msw_active_bound',
+  taskTitle: 'Visible active task',
+  taskStatus: 'active',
+  visible: true,
+});
+bindMockFileLibraryTaskHome({
+  workspaceId: 'ws_default',
+  projectId: 'proj_001',
+  libraryId: 'lib_msw_archived_bound',
+  taskId: 'task_msw_archived_bound',
+  taskTitle: 'Visible archived task',
+  taskStatus: 'archived',
+  visible: true,
+});
+bindMockFileLibraryTaskHome({
+  workspaceId: 'ws_default',
+  projectId: 'proj_001',
+  libraryId: 'lib_msw_redacted_bound',
+  taskId: 'task_msw_hidden_bound',
+  taskTitle: 'Hidden task title',
+  taskStatus: 'active',
+  visible: false,
+});
+
+function fileLibraryNotFoundResponse(libraryId: string) {
+  return HttpResponse.json({
+    error_code: 'FILE_LIBRARY_NOT_FOUND',
+    message: 'file_library_not_found',
+    file_library_id: libraryId,
+  }, { status: 404 });
+}
+
+function fileLibraryStatusConflictResponse(library: FileLibrary) {
+  if (library.status === 'deleting') {
+    return HttpResponse.json({
+      error_code: 'FILE_LIBRARY_DELETING',
+      message: 'file_library_deleting',
+      file_library_id: library.id,
+      file_library_status: library.status,
+    }, { status: 409 });
+  }
+  return HttpResponse.json({
+    error_code: 'FILE_LIBRARY_NOT_READY',
+    message: 'file_library_not_ready',
+    file_library_id: library.id,
+    file_library_status: library.status,
+  }, { status: 409 });
+}
+
+function getRouteFileLibrary(params: { ws?: unknown; prj?: unknown; id?: unknown }) {
+  return getMockFileLibrary({
+    workspaceId: String(params.ws ?? ''),
+    projectId: String(params.prj ?? ''),
+    libraryId: String(params.id ?? ''),
+  });
+}
+
+function rejectUnavailableFileLibraryWrite(params: { ws?: unknown; prj?: unknown; id?: unknown }) {
+  const library = getRouteFileLibrary(params);
+  if (!library) {
+    return {
+      library: null,
+      response: fileLibraryNotFoundResponse(String(params.id ?? '')),
+    };
+  }
+  if (library.status !== 'ready') {
+    return {
+      library,
+      response: fileLibraryStatusConflictResponse(library),
+    };
+  }
+  return { library, response: null };
+}
 
 function normalizePrefix(prefix: string | null): string {
   if (!prefix) return '';
@@ -222,16 +486,16 @@ function listObjects(
 }
 
 export const fileHandlers = [
-  http.get('/api/v1/workspaces/:ws/projects/:prj/file-libraries', ({ params }) => {
+  http.get(`${API_V1_PATTERN}/workspaces/:ws/projects/:prj/file-libraries`, ({ params }) => {
     const projectId = String(params.prj ?? '');
     const workspaceId = String(params.ws ?? '');
     return HttpResponse.json({
       items: sourceLibraries.filter(
         (item) => item.project_id === projectId && item.workspace_id === workspaceId,
-      ),
+      ).map(withTaskHomeBinding),
     });
   }),
-  http.post('/api/v1/workspaces/:ws/projects/:prj/file-libraries', async ({ params, request }) => {
+  http.post(`${API_V1_PATTERN}/workspaces/:ws/projects/:prj/file-libraries`, async ({ params, request }) => {
     const body = (await request.json().catch(() => ({}))) as {
       name?: string;
       description?: string;
@@ -255,6 +519,8 @@ export const fileHandlers = [
       provider: 'juicefs' as const,
       bucket: `jfs-lib-${id}`,
       status: 'ready' as const,
+      task_home_binding_status: 'unbound' as const,
+      bound_task_visible: false,
       filesystem_name: `flib-${slug}`.slice(0, 63),
       created_by_user_id: 'user_001',
       created_at: now,
@@ -262,45 +528,84 @@ export const fileHandlers = [
     };
     sourceLibraries.push(created);
     objectDbByLibraryId[id] = [];
-    return HttpResponse.json(created, { status: 201 });
+    return HttpResponse.json(withTaskHomeBinding(created), { status: 201 });
   }),
-  http.get('/api/v1/workspaces/:ws/projects/:prj/file-libraries/:id', ({ params }) => {
-    const library = sourceLibraries.find((item) => item.id === params.id);
+  http.get(`${API_V1_PATTERN}/workspaces/:ws/projects/:prj/file-libraries/:id`, ({ params }) => {
+    const library = getRouteFileLibrary(params);
     if (!library) {
-      return HttpResponse.json({ error_code: 'RESOURCE_NOT_FOUND', message: 'file_library_not_found' }, { status: 404 });
+      return fileLibraryNotFoundResponse(String(params.id ?? ''));
     }
-    return HttpResponse.json(library);
+    return HttpResponse.json(withTaskHomeBinding(library));
   }),
-  http.patch('/api/v1/workspaces/:ws/projects/:prj/file-libraries/:id', async ({ params, request }) => {
+  http.patch(`${API_V1_PATTERN}/workspaces/:ws/projects/:prj/file-libraries/:id`, async ({ params, request }) => {
     const body = (await request.json().catch(() => ({}))) as { name?: string; description?: string };
-    const index = sourceLibraries.findIndex((item) => item.id === params.id);
+    const index = sourceLibraries.findIndex((item) =>
+      item.workspace_id === String(params.ws ?? '')
+      && item.project_id === String(params.prj ?? '')
+      && item.id === params.id,
+    );
     if (index === -1) {
-      return HttpResponse.json({ error_code: 'RESOURCE_NOT_FOUND', message: 'file_library_not_found' }, { status: 404 });
+      return fileLibraryNotFoundResponse(String(params.id ?? ''));
+    }
+    if (sourceLibraries[index].status === 'deleting') {
+      return fileLibraryStatusConflictResponse(sourceLibraries[index]);
     }
     sourceLibraries[index] = {
       ...sourceLibraries[index],
       ...body,
       updated_at: nowIso(),
     };
-    return HttpResponse.json(sourceLibraries[index]);
+    return HttpResponse.json(withTaskHomeBinding(sourceLibraries[index]));
   }),
-  http.delete('/api/v1/workspaces/:ws/projects/:prj/file-libraries/:id', ({ params }) => {
-    const index = sourceLibraries.findIndex((item) => item.id === params.id);
+  http.delete(`${API_V1_PATTERN}/workspaces/:ws/projects/:prj/file-libraries/:id`, ({ params }) => {
+    const index = sourceLibraries.findIndex((item) =>
+      item.workspace_id === String(params.ws ?? '')
+      && item.project_id === String(params.prj ?? '')
+      && item.id === params.id,
+    );
     if (index === -1) {
-      return HttpResponse.json({ error_code: 'RESOURCE_NOT_FOUND', message: 'file_library_not_found' }, { status: 404 });
+      return fileLibraryNotFoundResponse(String(params.id ?? ''));
+    }
+    const library = sourceLibraries[index];
+    if (library.status !== 'ready') {
+      return fileLibraryStatusConflictResponse(library);
+    }
+    const binding = getMockFileLibraryTaskHomeBinding({
+      workspaceId: String(params.ws ?? ''),
+      projectId: String(params.prj ?? ''),
+      libraryId: String(params.id ?? ''),
+    });
+    if (binding) {
+      return HttpResponse.json({
+        error_code: 'FILE_LIBRARY_TASK_IN_USE',
+        message: 'file_library_task_in_use',
+        file_library_id: binding.libraryId,
+        bound_task_visible: binding.visible,
+        ...(binding.visible
+          ? {
+              bound_task_id: binding.taskId,
+              bound_task_title: binding.taskTitle,
+              bound_task_status: binding.taskStatus,
+            }
+          : {}),
+      }, { status: 409 });
     }
     const hasObjects = (objectDbByLibraryId[String(params.id ?? '')] ?? []).some((row) => row.kind === 'object' && !row.key.endsWith('/'));
     if (hasObjects) {
-      return HttpResponse.json({ error_code: 'RESOURCE_CONFLICT', message: 'file_library_not_empty' }, { status: 409 });
+      return HttpResponse.json({
+        error_code: 'FILE_LIBRARY_NOT_EMPTY',
+        message: 'file_library_not_empty',
+        file_library_id: String(params.id ?? ''),
+      }, { status: 409 });
     }
     sourceLibraries.splice(index, 1);
     delete objectDbByLibraryId[String(params.id ?? '')];
     return HttpResponse.json(null, { status: 204 });
   }),
-  http.get('/api/v1/workspaces/:ws/projects/:prj/file-libraries/:id/backend', ({ params }) => {
-    const library = sourceLibraries.find((item) => item.id === params.id);
+  http.get(`${API_V1_PATTERN}/workspaces/:ws/projects/:prj/file-libraries/:id/backend`, ({ params }) => {
+    const library = getRouteFileLibrary(params);
     if (!library) {
-      return HttpResponse.json({ error_code: 'RESOURCE_NOT_FOUND', message: 'file_library_backend_not_found' }, { status: 404 });
+      return fileLibraryNotFoundResponse(String(params.id ?? ''));
     }
     return HttpResponse.json({
       library_id: library.id,
@@ -320,10 +625,11 @@ export const fileHandlers = [
       },
     });
   }),
-  http.post('/api/v1/workspaces/:ws/projects/:prj/file-libraries/:id/storage-credential-exchange', ({ params }) => {
-    const library = sourceLibraries.find((item) => item.id === params.id);
+  http.post(`${API_V1_PATTERN}/workspaces/:ws/projects/:prj/file-libraries/:id/storage-credential-exchange`, ({ params }) => {
+    const { library, response } = rejectUnavailableFileLibraryWrite(params);
+    if (response) return response;
     if (!library) {
-      return HttpResponse.json({ error_code: 'RESOURCE_NOT_FOUND', message: 'file_library_mount_access_not_found' }, { status: 404 });
+      return fileLibraryNotFoundResponse(String(params.id ?? ''));
     }
     return HttpResponse.json({
       client_mount_access: {
@@ -345,10 +651,11 @@ export const fileHandlers = [
       },
     });
   }),
-  http.post('/api/v1/workspaces/:ws/projects/:prj/file-libraries/:id/desktop-mount-access', ({ params, request }) => {
-    const library = sourceLibraries.find((item) => item.id === params.id);
+  http.post(`${API_V1_PATTERN}/workspaces/:ws/projects/:prj/file-libraries/:id/desktop-mount-access`, ({ params, request }) => {
+    const { library, response } = rejectUnavailableFileLibraryWrite(params);
+    if (response) return response;
     if (!library) {
-      return HttpResponse.json({ error_code: 'RESOURCE_NOT_FOUND', message: 'file_library_mount_access_not_found' }, { status: 404 });
+      return fileLibraryNotFoundResponse(String(params.id ?? ''));
     }
     const url = new URL(request.url);
     return HttpResponse.json({
@@ -367,7 +674,11 @@ export const fileHandlers = [
       },
     });
   }),
-  http.get('/api/v1/workspaces/:ws/projects/:prj/file-libraries/:id/entries', ({ params, request }) => {
+  http.get(`${API_V1_PATTERN}/workspaces/:ws/projects/:prj/file-libraries/:id/entries`, ({ params, request }) => {
+    const library = getRouteFileLibrary(params);
+    if (!library) {
+      return fileLibraryNotFoundResponse(String(params.id ?? ''));
+    }
     const libraryId = String(params.id ?? '');
     const url = new URL(request.url);
     const path = normalizePrefix(url.searchParams.get('path'));
@@ -389,7 +700,9 @@ export const fileHandlers = [
       next_continuation_token: nextToken,
     });
   }),
-  http.post('/api/v1/workspaces/:ws/projects/:prj/file-libraries/:id/folders', async ({ params, request }) => {
+  http.post(`${API_V1_PATTERN}/workspaces/:ws/projects/:prj/file-libraries/:id/folders`, async ({ params, request }) => {
+    const availability = rejectUnavailableFileLibraryWrite(params);
+    if (availability.response) return availability.response;
     const libraryId = String(params.id ?? '');
     const body = (await request.json().catch(() => ({}))) as { path?: string };
     const prefix = normalizePrefix(body.path ?? '');
@@ -409,7 +722,9 @@ export const fileHandlers = [
     }
     return HttpResponse.json(null, { status: 204 });
   }),
-  http.post('/api/v1/workspaces/:ws/projects/:prj/file-libraries/:id/delete', async ({ params, request }) => {
+  http.post(`${API_V1_PATTERN}/workspaces/:ws/projects/:prj/file-libraries/:id/delete`, async ({ params, request }) => {
+    const availability = rejectUnavailableFileLibraryWrite(params);
+    if (availability.response) return availability.response;
     const libraryId = String(params.id ?? '');
     const body = (await request.json().catch(() => ({}))) as { paths?: string[] };
     const paths = (body.paths ?? []).filter(Boolean);
@@ -428,7 +743,9 @@ export const fileHandlers = [
     });
     return HttpResponse.json({ results });
   }),
-  http.post('/api/v1/workspaces/:ws/projects/:prj/file-libraries/:id/move', async ({ params, request }) => {
+  http.post(`${API_V1_PATTERN}/workspaces/:ws/projects/:prj/file-libraries/:id/move`, async ({ params, request }) => {
+    const availability = rejectUnavailableFileLibraryWrite(params);
+    if (availability.response) return availability.response;
     const libraryId = String(params.id ?? '');
     const body = (await request.json().catch(() => ({}))) as { from_path?: string; to_path?: string; overwrite?: boolean };
     const fromPath = String(body.from_path ?? '');
@@ -450,7 +767,11 @@ export const fileHandlers = [
     db.push({ ...src, key: toPath, name: basename(toPath), last_modified: nowIso() });
     return HttpResponse.json(null, { status: 204 });
   }),
-  http.get('/api/v1/workspaces/:ws/projects/:prj/file-libraries/:id/meta', ({ params, request }) => {
+  http.get(`${API_V1_PATTERN}/workspaces/:ws/projects/:prj/file-libraries/:id/meta`, ({ params, request }) => {
+    const library = getRouteFileLibrary(params);
+    if (!library) {
+      return fileLibraryNotFoundResponse(String(params.id ?? ''));
+    }
     const libraryId = String(params.id ?? '');
     const url = new URL(request.url);
     const path = url.searchParams.get('path') ?? '';
@@ -466,7 +787,9 @@ export const fileHandlers = [
       user_metadata: {},
     });
   }),
-  http.post('/api/v1/workspaces/:ws/projects/:prj/file-libraries/:id/share-link', async ({ params, request }) => {
+  http.post(`${API_V1_PATTERN}/workspaces/:ws/projects/:prj/file-libraries/:id/share-link`, async ({ params, request }) => {
+    const availability = rejectUnavailableFileLibraryWrite(params);
+    if (availability.response) return availability.response;
     const libraryId = String(params.id ?? '');
     const body = (await request.json().catch(() => ({}))) as { path?: string; expires_in_seconds?: number };
     const path = String(body.path ?? '').trim();
@@ -487,7 +810,9 @@ export const fileHandlers = [
       expires_at: expiresAt,
     });
   }),
-  http.post('/api/v1/workspaces/:ws/projects/:prj/file-libraries/:id/upload', async ({ params, request }) => {
+  http.post(`${API_V1_PATTERN}/workspaces/:ws/projects/:prj/file-libraries/:id/upload`, async ({ params, request }) => {
+    const availability = rejectUnavailableFileLibraryWrite(params);
+    if (availability.response) return availability.response;
     const libraryId = String(params.id ?? '');
     const form = await request.formData();
     const file = form.get('file');
@@ -529,7 +854,11 @@ export const fileHandlers = [
       modified_at: row.last_modified,
     }, { status: 201 });
   }),
-  http.get('/api/v1/workspaces/:ws/projects/:prj/file-libraries/:id/download', ({ params, request }) => {
+  http.get(`${API_V1_PATTERN}/workspaces/:ws/projects/:prj/file-libraries/:id/download`, ({ params, request }) => {
+    const library = getRouteFileLibrary(params);
+    if (!library) {
+      return fileLibraryNotFoundResponse(String(params.id ?? ''));
+    }
     const libraryId = String(params.id ?? '');
     const url = new URL(request.url);
     const path = url.searchParams.get('path') ?? '';

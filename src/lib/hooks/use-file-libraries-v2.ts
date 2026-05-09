@@ -9,8 +9,62 @@ import type {
   UpdateFileLibraryRequest,
 } from '@/lib/api/types';
 import { queryKeys } from '@/lib/query-keys';
-import { handleErrorForToast } from '@/lib/api/errors';
+import { APIError, handleErrorForToast } from '@/lib/api/errors';
 import { toast } from '@/components/ui/toast';
+
+const FILE_LIBRARY_TYPED_CONFLICT_CODES = new Set([
+  'FILE_LIBRARY_DELETING',
+  'FILE_LIBRARY_NOT_READY',
+  'FILE_LIBRARY_FORBIDDEN',
+  'FILE_LIBRARY_NOT_FOUND',
+  'FILE_LIBRARY_TASK_IN_USE',
+  'FILE_LIBRARY_NOT_EMPTY',
+]);
+
+function readFileLibraryIdFromError(error: unknown) {
+  if (!(error instanceof APIError)) return null;
+  const value = error.details?.file_library_id;
+  return typeof value === 'string' && value.trim().length > 0 ? value : null;
+}
+
+function isFileLibraryMountAccessConflict(error: unknown) {
+  return error instanceof APIError && FILE_LIBRARY_TYPED_CONFLICT_CODES.has(error.errorCode);
+}
+
+function fileLibraryQueryMatches(
+  queryKey: readonly unknown[],
+  workspaceId: string,
+  projectId: string,
+  libraryId?: string | null,
+) {
+  const scopedKey = queryKey[0] === 'v2' ? queryKey.slice(1) : queryKey;
+  if (
+    scopedKey[0] === 'file-libraries'
+    && scopedKey[1] === workspaceId
+    && scopedKey[2] === projectId
+  ) {
+    return true;
+  }
+  if (
+    scopedKey[0] === 'file-library'
+    && scopedKey[1] === workspaceId
+    && scopedKey[2] === projectId
+  ) {
+    return !libraryId || scopedKey[3] === libraryId;
+  }
+  return false;
+}
+
+function invalidateFileLibraryCachesInBackground(
+  queryClient: ReturnType<typeof useQueryClient>,
+  workspaceId: string,
+  projectId: string,
+  libraryId?: string | null,
+) {
+  void queryClient.invalidateQueries({
+    predicate: (query) => fileLibraryQueryMatches(query.queryKey, workspaceId, projectId, libraryId),
+  });
+}
 
 export function useV2FileLibraries(workspaceId: string, projectId: string) {
   const api = new FileLibrariesAPI(getApiClient());
@@ -73,7 +127,16 @@ export function useUpdateV2FileLibrary() {
       });
       toast.success(t('update_success'));
     },
-    onError: (error: unknown) => {
+    onError: (error: unknown, variables) => {
+      if (isFileLibraryMountAccessConflict(error)) {
+        invalidateFileLibraryCachesInBackground(
+          queryClient,
+          variables.workspaceId,
+          variables.projectId,
+          readFileLibraryIdFromError(error) ?? variables.libraryId,
+        );
+        return;
+      }
       handleErrorForToast(error, 'useUpdateV2FileLibrary');
     },
   });
@@ -100,7 +163,16 @@ export function useDeleteV2FileLibrary() {
       });
       toast.success(t('delete_success'));
     },
-    onError: (error: unknown) => {
+    onError: (error: unknown, variables) => {
+      if (isFileLibraryMountAccessConflict(error)) {
+        invalidateFileLibraryCachesInBackground(
+          queryClient,
+          variables.workspaceId,
+          variables.projectId,
+          readFileLibraryIdFromError(error) ?? variables.libraryId,
+        );
+        return;
+      }
       handleErrorForToast(error, 'useDeleteV2FileLibrary');
     },
   });
@@ -145,7 +217,16 @@ export function useMoveV2FileLibraryEntry() {
       });
       toast.success(t('update_success'));
     },
-    onError: (error: unknown) => {
+    onError: (error: unknown, variables) => {
+      if (isFileLibraryMountAccessConflict(error)) {
+        invalidateFileLibraryCachesInBackground(
+          queryClient,
+          variables.workspaceId,
+          variables.projectId,
+          readFileLibraryIdFromError(error) ?? variables.libraryId,
+        );
+        return;
+      }
       handleErrorForToast(error, 'useMoveV2FileLibraryEntry');
     },
   });
@@ -153,6 +234,7 @@ export function useMoveV2FileLibraryEntry() {
 
 export function useFileLibraryStorageCredentialExchange() {
   const api = new FileLibrariesAPI(getApiClient());
+  const queryClient = useQueryClient();
 
   return useMutation({
     mutationFn: ({
@@ -164,7 +246,16 @@ export function useFileLibraryStorageCredentialExchange() {
       projectId: string;
       libraryId: string;
     }) => api.exchangeStorageCredentials(workspaceId, projectId, libraryId),
-    onError: (error: unknown) => {
+    onError: (error: unknown, variables) => {
+      if (isFileLibraryMountAccessConflict(error)) {
+        invalidateFileLibraryCachesInBackground(
+          queryClient,
+          variables.workspaceId,
+          variables.projectId,
+          readFileLibraryIdFromError(error) ?? variables.libraryId,
+        );
+        return;
+      }
       handleErrorForToast(error, 'useFileLibraryStorageCredentialExchange');
     },
   });
@@ -172,6 +263,7 @@ export function useFileLibraryStorageCredentialExchange() {
 
 export function useFileLibraryDesktopMountAccess() {
   const api = new FileLibrariesAPI(getApiClient());
+  const queryClient = useQueryClient();
 
   return useMutation({
     mutationFn: ({
@@ -183,7 +275,16 @@ export function useFileLibraryDesktopMountAccess() {
       projectId: string;
       libraryId: string;
     }) => api.exchangeDesktopMountAccess(workspaceId, projectId, libraryId),
-    onError: (error: unknown) => {
+    onError: (error: unknown, variables) => {
+      if (isFileLibraryMountAccessConflict(error)) {
+        invalidateFileLibraryCachesInBackground(
+          queryClient,
+          variables.workspaceId,
+          variables.projectId,
+          readFileLibraryIdFromError(error) ?? variables.libraryId,
+        );
+        return;
+      }
       handleErrorForToast(error, 'useFileLibraryDesktopMountAccess');
     },
   });

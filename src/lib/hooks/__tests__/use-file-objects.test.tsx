@@ -8,6 +8,7 @@ const {
   mockListObjects,
   mockMoveObject,
   mockUploadObject,
+  mockDeleteObjects,
 } = vi.hoisted(() => ({
   mockCreateFolder: vi.fn().mockResolvedValue(undefined),
   mockListObjects: vi.fn().mockResolvedValue({
@@ -24,6 +25,7 @@ const {
     content_type: 'text/plain',
     last_modified: '2026-03-16T08:00:00.000Z',
   }),
+  mockDeleteObjects: vi.fn().mockResolvedValue({ results: [] }),
 }));
 
 vi.mock('@/lib/api', () => ({
@@ -31,6 +33,7 @@ vi.mock('@/lib/api', () => ({
   FilesAPI: vi.fn().mockImplementation(function () {
     return {
       createFolder: mockCreateFolder,
+      deleteObjects: mockDeleteObjects,
       listObjects: mockListObjects,
       moveObject: mockMoveObject,
       uploadObject: mockUploadObject,
@@ -52,17 +55,25 @@ vi.mock('@/lib/query-keys', () => ({
     },
     fileLibraries: {
       list: vi.fn((workspaceId: string, projectId: string) => ['file-libraries', workspaceId, projectId]),
+      detail: vi.fn((workspaceId: string, projectId: string, libraryId: string) => [
+        'file-library',
+        workspaceId,
+        projectId,
+        libraryId,
+      ]),
     },
   },
 }));
 
 import {
   useCreateFileFolder,
+  useDeleteFileObjects,
   useFileObjects,
   useFileObjectsInfinite,
   useMoveFileObject,
   useUploadFileObject,
 } from '../use-file-objects';
+import { APIError } from '@/lib/api/errors';
 
 function createDeferred<T>() {
   let resolve!: (value: T | PromiseLike<T>) => void;
@@ -240,6 +251,81 @@ describe('useFileObjects mutations', () => {
       predicate: expect.any(Function),
       refetchType: 'active',
     }));
+  });
+
+  it('refreshes object and file-library caches after typed file write conflicts', async () => {
+    const { queryClient, Wrapper } = createQueryClientWrapper();
+    const listKey = ['file-libraries', 'ws_default', 'proj_001'];
+    const detailKey = ['file-library', 'ws_default', 'proj_001', 'lib_a'];
+    queryClient.setQueryData(listKey, { items: [{ id: 'lib_a', status: 'ready' }] });
+    queryClient.setQueryData(detailKey, { id: 'lib_a', status: 'ready' });
+    const invalidateSpy = vi.spyOn(queryClient, 'invalidateQueries');
+    mockUploadObject.mockRejectedValueOnce(new APIError(
+      'FILE_LIBRARY_DELETING',
+      'file_library_deleting',
+      undefined,
+      409,
+      { file_library_id: 'lib_a', file_library_status: 'deleting' },
+    ));
+
+    const { result } = renderHook(() => ({
+      upload: useUploadFileObject(),
+      move: useMoveFileObject(),
+      deleteObjects: useDeleteFileObjects(),
+      createFolder: useCreateFileFolder(),
+    }), {
+      wrapper: Wrapper,
+    });
+
+    await expect(result.current.upload.mutateAsync({
+      workspaceId: 'ws_default',
+      projectId: 'proj_001',
+      libraryId: 'lib_a',
+      file: new File(['hello'], 'uploaded.txt', { type: 'text/plain' }),
+      prefix: 'docs/',
+    })).rejects.toBeInstanceOf(APIError);
+
+    await waitFor(() => {
+      expect(queryClient.getQueryCache().find({ queryKey: listKey })?.isStale()).toBe(true);
+      expect(queryClient.getQueryCache().find({ queryKey: detailKey })?.isStale()).toBe(true);
+      expect(invalidateSpy).toHaveBeenCalledWith(expect.objectContaining({
+        queryKey: ['file-objects'],
+      }));
+    });
+  });
+
+  it('refreshes object and file-library caches after typed object delete conflicts', async () => {
+    const { queryClient, Wrapper } = createQueryClientWrapper();
+    const objectKey = ['file-objects', 'ws_default', 'proj_001', 'lib_a', { prefix: '', delimiter: '/' }];
+    const listKey = ['file-libraries', 'ws_default', 'proj_001'];
+    const detailKey = ['file-library', 'ws_default', 'proj_001', 'lib_a'];
+    queryClient.setQueryData(objectKey, { items: [{ key: 'README.txt' }] });
+    queryClient.setQueryData(listKey, { items: [{ id: 'lib_a', status: 'ready' }] });
+    queryClient.setQueryData(detailKey, { id: 'lib_a', status: 'ready' });
+    mockDeleteObjects.mockRejectedValueOnce(new APIError(
+      'FILE_LIBRARY_DELETING',
+      'file_library_deleting',
+      undefined,
+      409,
+      { file_library_id: 'lib_a', file_library_status: 'deleting' },
+    ));
+
+    const { result } = renderHook(() => useDeleteFileObjects(), {
+      wrapper: Wrapper,
+    });
+
+    await expect(result.current.mutateAsync({
+      workspaceId: 'ws_default',
+      projectId: 'proj_001',
+      libraryId: 'lib_a',
+      keys: ['README.txt'],
+    })).rejects.toBeInstanceOf(APIError);
+
+    await waitFor(() => {
+      expect(queryClient.getQueryCache().find({ queryKey: objectKey })?.isStale()).toBe(true);
+      expect(queryClient.getQueryCache().find({ queryKey: listKey })?.isStale()).toBe(true);
+      expect(queryClient.getQueryCache().find({ queryKey: detailKey })?.isStale()).toBe(true);
+    });
   });
 });
 

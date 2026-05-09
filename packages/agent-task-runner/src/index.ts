@@ -408,6 +408,25 @@ function debugLog(message: string, extra?: Record<string, unknown>): void {
   process.stdout.write(`[agent-task-runner][debug] ${message}${payload}\n`);
 }
 
+function createPreparedTaskWorkspaceReleaseOnce(
+  requestId: string,
+  release: () => Promise<void>,
+): () => Promise<void> {
+  let releasePromise: Promise<void> | null = null;
+  return () => {
+    if (releasePromise) {
+      return releasePromise;
+    }
+    releasePromise = release().catch((error) => {
+      debugLog('prepared task workspace release failed', {
+        request_id: requestId,
+        error: error instanceof Error ? error.message : String(error),
+      });
+    });
+    return releasePromise;
+  };
+}
+
 function writeRunnerLifecycleState(state: RunnerLifecycleState, reason: string): void {
   process.stdout.write(`[agent-task-runner] runner_state=${state} reason=${reason}\n`);
 }
@@ -1726,12 +1745,17 @@ async function runCodexRequest(requestId: string, payload: ServerStartPayload): 
   const executionContext = assertTaskExecutionContext(payload.execution_context);
   const taskId = sanitizePathPart(executionContext.task_id, `task_${requestId.slice(0, 8)}`);
   const username = sanitizePathPart(executionContext.username, 'unknown_user');
+  let releasePreparedTaskWorkspace: (() => Promise<void>) | null = null;
+  let releaseHandledByCodexLifecycle = false;
+  try {
   debugLog('preparing task workspace', { request_id: requestId, task_id: taskId });
   const cwdResult = await prepareTaskWorkspace({
     executionContext,
     username,
     taskId,
   });
+  releasePreparedTaskWorkspace = createPreparedTaskWorkspaceReleaseOnce(requestId, cwdResult.release);
+  const releasePreparedTaskWorkspaceOnce = releasePreparedTaskWorkspace;
   const cwd = cwdResult.cwd;
   const taskPaths = cwdResult.paths;
   await Promise.all([
@@ -1912,6 +1936,7 @@ async function runCodexRequest(requestId: string, payload: ServerStartPayload): 
       NO_COLOR: '1',
       TASK_HOME: taskPaths.taskHome,
       WORKSPACE_PATH: taskPaths.workspaceDir,
+      ARTIFACTS_PATH: taskPaths.artifactsDir,
       ...buildAgentRuntimeEnv(executionContext),
       ...(executionContext.execution_ticket ? {
         [proxyExecutionTicketHeaderEnvName]: executionContext.execution_ticket,
@@ -2024,6 +2049,7 @@ async function runCodexRequest(requestId: string, payload: ServerStartPayload): 
       const stats = filterStatsByRequestId.get(requestId);
       if (stats) debugLog('filter stats', { request_id: requestId, ...stats });
     }
+    void releasePreparedTaskWorkspaceOnce();
     clearRequestRuntimeState(requestId);
   });
 
@@ -2055,6 +2081,7 @@ async function runCodexRequest(requestId: string, payload: ServerStartPayload): 
     runningByRequestId.delete(requestId);
     cancelRequestedByRequestId.delete(requestId);
     void (async () => {
+      try {
       if (workspaceBeforeSnapshot) {
         try {
           const workspaceAfterSnapshot = await scanWorkspaceFilesSnapshot(cwd, {
@@ -2264,6 +2291,9 @@ async function runCodexRequest(requestId: string, payload: ServerStartPayload): 
         error_message: terminalOutcome.errorMessage ?? `codex_exit_code_${String(code ?? 'unknown')}`,
       });
       clearRequestRuntimeState(requestId);
+      } finally {
+        await releasePreparedTaskWorkspaceOnce();
+      }
     })().catch((error) => {
       sendTraceEvent(requestId, {
         category: 'warning',
@@ -2281,6 +2311,12 @@ async function runCodexRequest(requestId: string, payload: ServerStartPayload): 
       clearRequestRuntimeState(requestId);
     });
   });
+  releaseHandledByCodexLifecycle = true;
+  } finally {
+    if (!releaseHandledByCodexLifecycle && releasePreparedTaskWorkspace) {
+      await releasePreparedTaskWorkspace();
+    }
+  }
 }
 
 function decodeRawMessage(raw: RawData): string {

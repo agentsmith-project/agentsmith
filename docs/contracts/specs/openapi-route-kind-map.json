@@ -399,6 +399,10 @@
     "path": "/api/v1/workspaces/{workspaceId}/projects/{projectId}/tasks/{taskId}/workspace-access",
     "method": "post"
   },
+  "taskWorkspaceAccessRelease": {
+    "path": "/api/v1/workspaces/{workspaceId}/projects/{projectId}/tasks/{taskId}/workspace-access/release",
+    "method": "post"
+  },
   "taskTerminalSessions": {
     "path": "/api/v1/workspaces/{workspaceId}/projects/{projectId}/tasks/{taskId}/terminal/sessions",
     "method": "post"

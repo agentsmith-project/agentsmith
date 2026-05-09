@@ -79,6 +79,7 @@ function isAgentExecutionRouteAllowed(
     && (
       (route.kind === 'endpointProxy' && method === 'POST')
       || (route.kind === 'taskWorkspaceAccess' && method === 'POST')
+      || (route.kind === 'taskWorkspaceAccessRelease' && method === 'POST')
     )
   )
     || pathname === '/api/v1/context'

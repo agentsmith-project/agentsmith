@@ -11,10 +11,15 @@ import {
 
 describe('agent-runner task execution context guards', () => {
   const requiredTaskPaths = {
+    workspace_file_library_id: 'flib_1',
+    workspace_binding_mode: 'file_library',
+    runtime_profile: 'managed',
+    task_home_segment: 'task_1',
     task_home_path: '/home/task_1',
     workspace_path: '/home/task_1/workspace',
     artifacts_path: '/home/task_1/workspace/.artifacts',
-  };
+    library_root_path: '.',
+  } as const;
 
   it('accepts task execution context with task, run, endpoint, model, and workspace metadata', () => {
     const value: TaskExecutionContext = {
@@ -124,34 +129,139 @@ describe('agent-runner task execution context guards', () => {
     expect(() => assertTaskExecutionContext(value)).toThrowError('task_execution_context_invalid');
   });
 
-  it('requires canonical task home, workspace, and artifact path fields', () => {
+  it('requires canonical workspace identity fields', () => {
     for (const value of [
       {
         task_id: 'task_1',
+        ...requiredTaskPaths,
+        workspace_file_library_id: undefined,
+      },
+      {
+        task_id: 'task_1',
+        ...requiredTaskPaths,
+        workspace_binding_mode: undefined,
+      },
+      {
+        task_id: 'task_1',
+        ...requiredTaskPaths,
+        runtime_profile: undefined,
+      },
+      {
+        task_id: 'task_1',
+        ...requiredTaskPaths,
+        task_home_segment: undefined,
+      },
+      {
+        task_id: 'task_1',
+        ...requiredTaskPaths,
+        workspace_file_library_id: '',
+      },
+      {
+        task_id: 'task_1',
+        ...requiredTaskPaths,
+        workspace_binding_mode: 'legacy_mount',
+      },
+      {
+        task_id: 'task_1',
+        ...requiredTaskPaths,
+        runtime_profile: 'desktop',
+      },
+      {
+        task_id: 'task_1',
+        ...requiredTaskPaths,
+        task_home_segment: '../task_1',
+      },
+    ]) {
+      expect(isTaskExecutionContext(value)).toBe(false);
+      expect(() => assertTaskExecutionContext(value)).toThrowError('task_execution_context_invalid');
+    }
+  });
+
+  it('requires canonical task home, workspace, artifact, and library root path fields', () => {
+    for (const value of [
+      {
+        task_id: 'task_1',
+        workspace_file_library_id: 'flib_1',
+        workspace_binding_mode: 'file_library',
+        runtime_profile: 'managed',
+        task_home_segment: 'task_1',
+        workspace_path: '/home/task_1/workspace',
+        artifacts_path: '/home/task_1/workspace/.artifacts',
+        library_root_path: '.',
+      },
+      {
+        task_id: 'task_1',
+        workspace_file_library_id: 'flib_1',
+        workspace_binding_mode: 'file_library',
+        runtime_profile: 'managed',
+        task_home_segment: 'task_1',
+        task_home_path: '/home/task_1',
+        artifacts_path: '/home/task_1/workspace/.artifacts',
+        library_root_path: '.',
+      },
+      {
+        task_id: 'task_1',
+        workspace_file_library_id: 'flib_1',
+        workspace_binding_mode: 'file_library',
+        runtime_profile: 'managed',
+        task_home_segment: 'task_1',
+        task_home_path: '/home/task_1',
+        workspace_path: '/home/task_1/workspace',
+        library_root_path: '.',
+      },
+      {
+        task_id: 'task_1',
+        workspace_file_library_id: 'flib_1',
+        workspace_binding_mode: 'file_library',
+        runtime_profile: 'managed',
+        task_home_segment: 'task_1',
+        task_home_path: '/home/task_1',
         workspace_path: '/home/task_1/workspace',
         artifacts_path: '/home/task_1/workspace/.artifacts',
       },
       {
         task_id: 'task_1',
-        task_home_path: '/home/task_1',
-        artifacts_path: '/home/task_1/workspace/.artifacts',
-      },
-      {
-        task_id: 'task_1',
+        workspace_file_library_id: 'flib_1',
+        workspace_binding_mode: 'file_library',
+        runtime_profile: 'managed',
+        task_home_segment: 'task_1',
         task_home_path: '/home/task_1',
         workspace_path: '/home/task_1/workspace',
+        artifacts_path: '/home/task_1/workspace/.artifacts',
+        library_root_path: 'agent-tasks/task_1',
       },
       {
         task_id: 'task_1',
+        workspace_file_library_id: 'flib_1',
+        workspace_binding_mode: 'file_library',
+        runtime_profile: 'managed',
+        task_home_segment: 'task_1',
         task_home_path: '/home/task_1',
         workspace_path: '/home/task_1/files',
         artifacts_path: '/home/task_1/files/.artifacts',
+        library_root_path: '.',
       },
       {
         task_id: 'task_1',
+        workspace_file_library_id: 'flib_1',
+        workspace_binding_mode: 'file_library',
+        runtime_profile: 'managed',
+        task_home_segment: 'task_1',
         task_home_path: '/home/task_1',
         workspace_path: '/home/task_1/workspace',
         artifacts_path: '/home/task_1/.artifacts',
+        library_root_path: '.',
+      },
+      {
+        task_id: 'task_1',
+        workspace_file_library_id: 'flib_1',
+        workspace_binding_mode: 'file_library',
+        runtime_profile: 'managed',
+        task_home_segment: 'task_1',
+        task_home_path: '/home/task_2',
+        workspace_path: '/home/task_2/workspace',
+        artifacts_path: '/home/task_2/workspace/.artifacts',
+        library_root_path: '.',
       },
     ]) {
       expect(isTaskExecutionContext(value)).toBe(false);

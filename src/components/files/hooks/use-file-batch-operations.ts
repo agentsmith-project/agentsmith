@@ -58,9 +58,11 @@ export function useFileBatchOperations({
   const [batchResultType, setBatchResultType] = React.useState<BatchResultType>('delete');
   const [batchFailedKeys, setBatchFailedKeys] = React.useState<string[]>([]);
   const [batchRetryPending, setBatchRetryPending] = React.useState(false);
+  const [deleteInlineError, setDeleteInlineError] = React.useState<string | null>(null);
 
   const handleDelete = React.useCallback(async () => {
-    if (!selectedLibraryId || selected.length === 0) return;
+    if (!selectedLibraryId || selected.length === 0) return false;
+    setDeleteInlineError(null);
     const keys = selected.map((s) => (s.kind === 'object' ? s.key : s.prefix));
     try {
       const result = await deleteObjects({ workspaceId, projectId, libraryId: selectedLibraryId, keys });
@@ -73,13 +75,15 @@ export function useFileBatchOperations({
         setBatchFailedKeys(failedKeys);
         setBatchResultOpen(true);
         toast.error(t('file_manager.delete_partial_failed', { failed: String(failedKeys.length) }));
-        return;
+        return false;
       }
       clearSelection();
       toast.success(t('file_manager.deleted'));
+      return true;
     } catch (err) {
       const msg = getOperationErrorDetail(err, tErrors, t('file_manager.delete_failed'));
-      toast.error(`${t('file_manager.delete_failed')}: ${msg}`);
+      setDeleteInlineError(msg);
+      return false;
     }
   }, [clearSelection, deleteObjects, onDeletePartialFailure, projectId, selected, selectedLibraryId, t, tErrors, workspaceId]);
 
@@ -110,6 +114,7 @@ export function useFileBatchOperations({
   const handleRetryBatchFailures = React.useCallback(async () => {
     if (!selectedLibraryId || batchFailedKeys.length === 0) return;
     setBatchRetryPending(true);
+    setDeleteInlineError(null);
     try {
       if (batchResultType === 'delete') {
         const result = await deleteObjects({
@@ -147,6 +152,11 @@ export function useFileBatchOperations({
       setBatchResultOpen(false);
       setBatchFailedKeys([]);
       toast.success(t('file_manager.retry_success'));
+    } catch (err) {
+      const fallback = batchResultType === 'delete'
+        ? t('file_manager.delete_failed')
+        : t('file_manager.download_failed');
+      setDeleteInlineError(getOperationErrorDetail(err, tErrors, fallback));
     } finally {
       setBatchRetryPending(false);
     }
@@ -158,6 +168,7 @@ export function useFileBatchOperations({
     projectId,
     selectedLibraryId,
     t,
+    tErrors,
     workspaceId,
   ]);
 
@@ -165,6 +176,7 @@ export function useFileBatchOperations({
     setBatchResultOpen(false);
     setBatchFailedKeys([]);
     setBatchRetryPending(false);
+    setDeleteInlineError(null);
   }, []);
 
   const handleBatchResultOpenChange = React.useCallback((open: boolean) => {
@@ -172,7 +184,12 @@ export function useFileBatchOperations({
     if (!open) {
       setBatchFailedKeys([]);
       setBatchRetryPending(false);
+      setDeleteInlineError(null);
     }
+  }, []);
+
+  const clearDeleteInlineError = React.useCallback(() => {
+    setDeleteInlineError(null);
   }, []);
 
   return {
@@ -180,7 +197,9 @@ export function useFileBatchOperations({
     batchResultOpen,
     batchResultType,
     batchRetryPending,
+    clearDeleteInlineError,
     closeBatchResult,
+    deleteInlineError,
     handleDelete,
     handleBatchResultOpenChange,
     handleDownload,

@@ -2060,10 +2060,15 @@ export interface paths {
         get: operations["getTask"];
         put?: never;
         post?: never;
-        delete?: never;
+        /**
+         * Delete an agent task and release its task HOME binding
+         * @description Deletes task metadata/history and releases the file-library HOME binding. The file library and files are retained.
+         */
+        delete: operations["deleteTask"];
         options?: never;
         head?: never;
-        patch?: never;
+        /** Update an agent task */
+        patch: operations["updateTask"];
         trace?: never;
     };
     "/api/v1/workspaces/{workspaceId}/projects/{projectId}/tasks/{taskId}/activity": {
@@ -2349,6 +2354,23 @@ export interface paths {
         get?: never;
         put?: never;
         post: operations["getTaskWorkspaceAccess"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/workspaces/{workspaceId}/projects/{projectId}/tasks/{taskId}/workspace-access/release": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** @description Internal runner callback that releases a task workspace holder fence after the local mount/session has been released. */
+        post: operations["releaseTaskWorkspaceAccess"];
         delete?: never;
         options?: never;
         head?: never;
@@ -2666,6 +2688,37 @@ export interface components {
             /** @enum {string} */
             status: "not_started";
         };
+        AgentTaskDeleteBlockedError: {
+            blockers: string[];
+            /** @enum {string} */
+            error_code: "AGENT_TASK_DELETE_BLOCKED";
+            /** @enum {string} */
+            message: "agent_task_delete_blocked";
+            request_id?: string;
+            retry_after_seconds?: number;
+            task_id: string;
+        };
+        AgentTaskFileLibraryInUseError: {
+            /** @description Present only when bound_task_visible is true. */
+            bound_task_id?: string;
+            /**
+             * @description Present only when bound_task_visible is true.
+             * @enum {string}
+             */
+            bound_task_status?: "active" | "archived";
+            /** @description Present only when bound_task_visible is true. */
+            bound_task_title?: string;
+            /** @description Whether bound task summary fields are safe to display to the current actor. */
+            bound_task_visible: boolean;
+            /** @enum {string} */
+            error_code: "AGENT_TASK_FILE_LIBRARY_IN_USE";
+            /** @enum {string} */
+            field: "workspace_file_library_id";
+            file_library_id: string;
+            /** @enum {string} */
+            message: "workspace_file_library_in_use";
+            request_id?: string;
+        };
         AgentTaskModelResolutionError: {
             error_code: components["schemas"]["AgentTaskModelResolutionErrorCode"];
             message: components["schemas"]["AgentTaskModelResolutionErrorCode"];
@@ -2732,6 +2785,37 @@ export interface components {
             field: "endpoint_id" | "expected_setting_revision";
             /** @enum {string} */
             message: "endpoint_id_required" | "expected_setting_revision_required";
+        };
+        AgentTaskWorkspaceBindingConflictError: {
+            binding_generation?: string;
+            /** @enum {string} */
+            error_code: "AGENT_TASK_WORKSPACE_BINDING_CONFLICT";
+            file_library_id: string;
+            holder_id?: string;
+            lease_epoch?: string;
+            /** @enum {string} */
+            message: "agent_task_workspace_binding_conflict";
+            request_id?: string;
+            task_id: string;
+        };
+        AgentTaskWorkspaceFileLibraryRequiredError: {
+            /** @enum {string} */
+            error_code: "AGENT_TASK_WORKSPACE_FILE_LIBRARY_REQUIRED";
+            /** @enum {string} */
+            field: "workspace_file_library_id";
+            /** @enum {string} */
+            message: "agent_task_workspace_file_library_required";
+            request_id?: string;
+        };
+        AgentTaskWorkspaceModeInvalidError: {
+            /** @enum {string} */
+            error_code: "AGENT_TASK_WORKSPACE_MODE_INVALID";
+            /** @enum {string} */
+            field: "workspace_mode";
+            /** @enum {string} */
+            message: "agent_task_workspace_mode_invalid";
+            request_id?: string;
+            workspace_mode?: string;
         };
         /** @description Alert behavior settings */
         AlertBehavior: {
@@ -2882,7 +2966,7 @@ export interface components {
              * @description Machine-readable error code
              * @enum {string}
              */
-            error_code: "UNAUTHORIZED" | "PERMISSION_DENIED" | "RESOURCE_NOT_FOUND" | "RESOURCE_ALREADY_EXISTS" | "RESOURCE_CONFLICT" | "VALIDATION_ERROR" | "FORBIDDEN" | "RATE_LIMIT_EXCEEDED" | "SPENDING_LIMIT_EXCEEDED" | "AGENT_OFFLINE" | "unsupported_field" | "agent_runner_unavailable" | "agent_runner_model_unconfigured" | "agent_runner_capability_mismatch" | "agent_runner_default_conflict" | "INTERNAL_ERROR";
+            error_code: "UNAUTHORIZED" | "PERMISSION_DENIED" | "RESOURCE_NOT_FOUND" | "RESOURCE_ALREADY_EXISTS" | "RESOURCE_CONFLICT" | "VALIDATION_ERROR" | "FORBIDDEN" | "RATE_LIMIT_EXCEEDED" | "SPENDING_LIMIT_EXCEEDED" | "AGENT_OFFLINE" | "unsupported_field" | "INTERNAL_ERROR";
             /** @description Human-readable error message */
             message: string;
             /** @description Unique identifier for the request (for debugging) */
@@ -3006,6 +3090,19 @@ export interface components {
                 resource_id?: string;
                 resource_type?: string;
             };
+        };
+        BoundTaskSafeFields: {
+            /** @description Present only when bound_task_visible is true. */
+            bound_task_id?: string;
+            /**
+             * @description Present only when bound_task_visible is true.
+             * @enum {string}
+             */
+            bound_task_status?: "active" | "archived";
+            /** @description Present only when bound_task_visible is true. */
+            bound_task_title?: string;
+            /** @description Whether bound task summary fields are safe to display to the current actor. */
+            bound_task_visible: boolean;
         };
         ChatAttachment: {
             content_type?: string;
@@ -3228,6 +3325,17 @@ export interface components {
             limits: components["schemas"]["LimitRuleSnapshot"][];
         };
         FileLibrary: {
+            /** @description Present only when the actor may view the bound task summary. */
+            bound_task_id?: string;
+            /**
+             * @description Present only when the actor may view the bound task summary.
+             * @enum {string}
+             */
+            bound_task_status?: "active" | "archived";
+            /** @description Present only when the actor may view the bound task summary. */
+            bound_task_title?: string;
+            /** @description Whether bound task summary fields are safe to display to the current actor. */
+            bound_task_visible: boolean;
             /** Format: date-time */
             created_at: string;
             created_by_user_id: string;
@@ -3238,6 +3346,11 @@ export interface components {
             project_id: string;
             /** @enum {string} */
             status: "creating" | "ready" | "degraded" | "failed" | "deleting";
+            /**
+             * @description Authoritative UI signal for whether this file library is exclusively bound as an Agent task HOME.
+             * @enum {string}
+             */
+            task_home_binding_status: "unbound" | "bound";
             /** Format: date-time */
             updated_at: string;
             workspace_id: string;
@@ -3267,6 +3380,15 @@ export interface components {
             };
             /** @enum {string} */
             provisioning_status: "creating" | "ready" | "degraded" | "failed" | "deleting";
+        };
+        FileLibraryDeletingError: {
+            /** @enum {string} */
+            error_code: "FILE_LIBRARY_DELETING";
+            file_library_id: string;
+            file_library_status: string;
+            /** @enum {string} */
+            message: "file_library_deleting";
+            request_id?: string;
         };
         FileLibraryDesktopMountAccess: {
             default_mount_roots: {
@@ -3301,11 +3423,63 @@ export interface components {
             path: string;
             size_bytes: number;
         };
+        FileLibraryForbiddenError: {
+            /** @enum {string} */
+            error_code: "FILE_LIBRARY_FORBIDDEN";
+            file_library_id?: string;
+            /** @enum {string} */
+            message: "file_library_forbidden";
+            request_id?: string;
+        };
+        FileLibraryNotEmptyError: {
+            /** @enum {string} */
+            error_code: "FILE_LIBRARY_NOT_EMPTY";
+            file_library_id: string;
+            /** @enum {string} */
+            message: "file_library_not_empty";
+            request_id?: string;
+        };
+        FileLibraryNotFoundError: {
+            /** @enum {string} */
+            error_code: "FILE_LIBRARY_NOT_FOUND";
+            file_library_id?: string;
+            /** @enum {string} */
+            message: "file_library_not_found";
+            request_id?: string;
+        };
+        FileLibraryNotReadyError: {
+            /** @enum {string} */
+            error_code: "FILE_LIBRARY_NOT_READY";
+            file_library_id: string;
+            file_library_status: string;
+            /** @enum {string} */
+            message: "file_library_not_ready";
+            request_id?: string;
+        };
         FileLibraryObject: {
             content_type?: string;
             key: string;
             name: string;
             size_bytes?: number;
+        };
+        FileLibraryTaskInUseError: {
+            /** @description Present only when bound_task_visible is true. */
+            bound_task_id?: string;
+            /**
+             * @description Present only when bound_task_visible is true.
+             * @enum {string}
+             */
+            bound_task_status?: "active" | "archived";
+            /** @description Present only when bound_task_visible is true. */
+            bound_task_title?: string;
+            /** @description Whether bound task summary fields are safe to display to the current actor. */
+            bound_task_visible: boolean;
+            /** @enum {string} */
+            error_code: "FILE_LIBRARY_TASK_IN_USE";
+            file_library_id: string;
+            /** @enum {string} */
+            message: "file_library_task_in_use";
+            request_id?: string;
         };
         /** @enum {string} */
         HardTeardownDebtStatus: "pending" | "requested" | "failed";
@@ -3966,6 +4140,11 @@ export interface components {
             status?: "active" | "archived" | "deleted";
             /** @enum {string} */
             visibility?: "public" | "private";
+        };
+        UpdateTaskRequest: {
+            /** @enum {string} */
+            status?: "active" | "archived";
+            title?: string;
         };
         UsageDataPoint: {
             bytes_in?: number;
@@ -4952,7 +5131,25 @@ export interface operations {
                 };
             };
             401: components["responses"]["Unauthorized"];
-            403: components["responses"]["Forbidden"];
+            /** @description FILE_LIBRARY_FORBIDDEN or insufficient task permission */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["FileLibraryForbiddenError"] | components["schemas"]["ApiError"];
+                };
+            };
+            404: components["responses"]["NotFound"];
+            /** @description FILE_LIBRARY_DELETING, FILE_LIBRARY_NOT_READY, or AGENT_TASK_WORKSPACE_BINDING_CONFLICT */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["FileLibraryDeletingError"] | components["schemas"]["FileLibraryNotReadyError"] | components["schemas"]["AgentTaskWorkspaceBindingConflictError"] | components["schemas"]["ApiError"];
+                };
+            };
         };
     };
     get_item: {
@@ -7122,6 +7319,17 @@ export interface operations {
                     "application/json": components["schemas"]["FileLibrary"];
                 };
             };
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            /** @description FILE_LIBRARY_NOT_FOUND */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["FileLibraryNotFoundError"];
+                };
+            };
         };
     };
     deleteFileLibraryV2: {
@@ -7143,6 +7351,34 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content?: never;
+            };
+            401: components["responses"]["Unauthorized"];
+            /** @description FILE_LIBRARY_FORBIDDEN */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["FileLibraryForbiddenError"] | components["schemas"]["ApiError"];
+                };
+            };
+            /** @description FILE_LIBRARY_NOT_FOUND */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["FileLibraryNotFoundError"];
+                };
+            };
+            /** @description FILE_LIBRARY_TASK_IN_USE, FILE_LIBRARY_NOT_EMPTY, FILE_LIBRARY_DELETING, FILE_LIBRARY_NOT_READY, or stale status conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["FileLibraryTaskInUseError"] | components["schemas"]["FileLibraryNotEmptyError"] | components["schemas"]["FileLibraryDeletingError"] | components["schemas"]["FileLibraryNotReadyError"] | components["schemas"]["ApiError"];
+                };
             };
         };
     };
@@ -7170,6 +7406,34 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["FileLibrary"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            /** @description FILE_LIBRARY_FORBIDDEN */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["FileLibraryForbiddenError"] | components["schemas"]["ApiError"];
+                };
+            };
+            /** @description FILE_LIBRARY_NOT_FOUND */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["FileLibraryNotFoundError"];
+                };
+            };
+            /** @description FILE_LIBRARY_DELETING, FILE_LIBRARY_TASK_IN_USE, FILE_LIBRARY_NOT_READY, or stale status conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["FileLibraryDeletingError"] | components["schemas"]["FileLibraryTaskInUseError"] | components["schemas"]["FileLibraryNotReadyError"] | components["schemas"]["ApiError"];
                 };
             };
         };
@@ -7224,6 +7488,34 @@ export interface operations {
                     "application/json": components["schemas"]["DeleteFileLibraryEntriesResponse"];
                 };
             };
+            401: components["responses"]["Unauthorized"];
+            /** @description FILE_LIBRARY_FORBIDDEN */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["FileLibraryForbiddenError"] | components["schemas"]["ApiError"];
+                };
+            };
+            /** @description FILE_LIBRARY_NOT_FOUND */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["FileLibraryNotFoundError"];
+                };
+            };
+            /** @description FILE_LIBRARY_DELETING, FILE_LIBRARY_NOT_READY, or stale status conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["FileLibraryDeletingError"] | components["schemas"]["FileLibraryNotReadyError"] | components["schemas"]["ApiError"];
+                };
+            };
         };
     };
     createFileLibraryDesktopMountAccess: {
@@ -7251,6 +7543,15 @@ export interface operations {
             401: components["responses"]["Unauthorized"];
             403: components["responses"]["Forbidden"];
             404: components["responses"]["NotFound"];
+            /** @description FILE_LIBRARY_DELETING or FILE_LIBRARY_NOT_READY */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["FileLibraryDeletingError"] | components["schemas"]["FileLibraryNotReadyError"] | components["schemas"]["ApiError"];
+                };
+            };
         };
     };
     downloadFileLibraryEntry: {
@@ -7325,6 +7626,34 @@ export interface operations {
                 };
                 content?: never;
             };
+            401: components["responses"]["Unauthorized"];
+            /** @description FILE_LIBRARY_FORBIDDEN */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["FileLibraryForbiddenError"] | components["schemas"]["ApiError"];
+                };
+            };
+            /** @description FILE_LIBRARY_NOT_FOUND */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["FileLibraryNotFoundError"];
+                };
+            };
+            /** @description FILE_LIBRARY_DELETING, FILE_LIBRARY_NOT_READY, or stale status conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["FileLibraryDeletingError"] | components["schemas"]["FileLibraryNotReadyError"] | components["schemas"]["ApiError"];
+                };
+            };
         };
     };
     getFileLibraryEntryMeta: {
@@ -7377,6 +7706,34 @@ export interface operations {
                 };
                 content?: never;
             };
+            401: components["responses"]["Unauthorized"];
+            /** @description FILE_LIBRARY_FORBIDDEN */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["FileLibraryForbiddenError"] | components["schemas"]["ApiError"];
+                };
+            };
+            /** @description FILE_LIBRARY_NOT_FOUND */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["FileLibraryNotFoundError"];
+                };
+            };
+            /** @description FILE_LIBRARY_DELETING, FILE_LIBRARY_NOT_READY, or stale status conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["FileLibraryDeletingError"] | components["schemas"]["FileLibraryNotReadyError"] | components["schemas"]["ApiError"];
+                };
+            };
         };
     };
     createFileLibraryShareLink: {
@@ -7407,6 +7764,34 @@ export interface operations {
                     };
                 };
             };
+            401: components["responses"]["Unauthorized"];
+            /** @description FILE_LIBRARY_FORBIDDEN */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["FileLibraryForbiddenError"] | components["schemas"]["ApiError"];
+                };
+            };
+            /** @description FILE_LIBRARY_NOT_FOUND */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["FileLibraryNotFoundError"];
+                };
+            };
+            /** @description FILE_LIBRARY_DELETING, FILE_LIBRARY_NOT_READY, or stale status conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["FileLibraryDeletingError"] | components["schemas"]["FileLibraryNotReadyError"] | components["schemas"]["ApiError"];
+                };
+            };
         };
     };
     exchangeFileLibraryStorageCredentials: {
@@ -7429,6 +7814,34 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["StorageCredentialExchangeResponse"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            /** @description FILE_LIBRARY_FORBIDDEN */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["FileLibraryForbiddenError"] | components["schemas"]["ApiError"];
+                };
+            };
+            /** @description FILE_LIBRARY_NOT_FOUND */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["FileLibraryNotFoundError"];
+                };
+            };
+            /** @description FILE_LIBRARY_DELETING or FILE_LIBRARY_NOT_READY */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["FileLibraryDeletingError"] | components["schemas"]["FileLibraryNotReadyError"] | components["schemas"]["ApiError"];
                 };
             };
         };
@@ -7462,6 +7875,34 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["FileLibraryEntry"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            /** @description FILE_LIBRARY_FORBIDDEN */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["FileLibraryForbiddenError"] | components["schemas"]["ApiError"];
+                };
+            };
+            /** @description FILE_LIBRARY_NOT_FOUND */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["FileLibraryNotFoundError"];
+                };
+            };
+            /** @description FILE_LIBRARY_DELETING, FILE_LIBRARY_NOT_READY, or stale status conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["FileLibraryDeletingError"] | components["schemas"]["FileLibraryNotReadyError"] | components["schemas"]["ApiError"];
                 };
             };
         };
@@ -8795,23 +9236,40 @@ export interface operations {
                 };
             };
             401: components["responses"]["Unauthorized"];
-            403: components["responses"]["Forbidden"];
-            /** @description Workspace or file library conflict, or runner binding failure */
+            /** @description FILE_LIBRARY_FORBIDDEN or insufficient task permission */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["FileLibraryForbiddenError"] | components["schemas"]["ApiError"];
+                };
+            };
+            /** @description FILE_LIBRARY_NOT_FOUND when use_existing references a missing or cross-project library */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["FileLibraryNotFoundError"];
+                };
+            };
+            /** @description FILE_LIBRARY_DELETING, FILE_LIBRARY_NOT_READY, AGENT_TASK_FILE_LIBRARY_IN_USE, AGENT_TASK_WORKSPACE_BINDING_CONFLICT, or runner binding failure */
             409: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["ApiError"] | components["schemas"]["AgentRunnerResolutionError"];
+                    "application/json": components["schemas"]["FileLibraryDeletingError"] | components["schemas"]["FileLibraryNotReadyError"] | components["schemas"]["AgentTaskFileLibraryInUseError"] | components["schemas"]["AgentTaskWorkspaceBindingConflictError"] | components["schemas"]["ApiError"] | components["schemas"]["AgentRunnerResolutionError"];
                 };
             };
-            /** @description Validation error */
+            /** @description AGENT_TASK_WORKSPACE_MODE_INVALID, AGENT_TASK_WORKSPACE_FILE_LIBRARY_REQUIRED, or runner binding validation error */
             422: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["ApiError"] | components["schemas"]["InvalidBindingTargetError"];
+                    "application/json": components["schemas"]["AgentTaskWorkspaceModeInvalidError"] | components["schemas"]["AgentTaskWorkspaceFileLibraryRequiredError"] | components["schemas"]["ApiError"] | components["schemas"]["InvalidBindingTargetError"];
                 };
             };
         };
@@ -8836,6 +9294,93 @@ export interface operations {
             };
             401: components["responses"]["Unauthorized"];
             403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+        };
+    };
+    deleteTask: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Task deleted */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Task deleted with no response body */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            /** @description AGENT_TASK_DELETE_BLOCKED or AGENT_TASK_WORKSPACE_BINDING_CONFLICT */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AgentTaskDeleteBlockedError"] | components["schemas"]["AgentTaskWorkspaceBindingConflictError"] | components["schemas"]["ApiError"];
+                };
+            };
+        };
+    };
+    updateTask: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["UpdateTaskRequest"];
+            };
+        };
+        responses: {
+            /** @description Updated task */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Task"];
+                };
+            };
+            /** @description Unsupported immutable runner or HOME binding field */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["UnsupportedFieldError"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            /** @description AGENT_TASK_WORKSPACE_BINDING_CONFLICT or task state conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AgentTaskWorkspaceBindingConflictError"] | components["schemas"]["ApiError"];
+                };
+            };
         };
     };
     listTaskActivity: {
@@ -9145,7 +9690,15 @@ export interface operations {
             401: components["responses"]["Unauthorized"];
             403: components["responses"]["Forbidden"];
             404: components["responses"]["NotFound"];
-            409: components["responses"]["Conflict"];
+            /** @description FILE_LIBRARY_DELETING, FILE_LIBRARY_NOT_READY, or AGENT_TASK_WORKSPACE_BINDING_CONFLICT */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["FileLibraryDeletingError"] | components["schemas"]["FileLibraryNotReadyError"] | components["schemas"]["AgentTaskWorkspaceBindingConflictError"] | components["schemas"]["ApiError"];
+                };
+            };
         };
     };
     getTaskTerminalSession: {
@@ -9217,7 +9770,11 @@ export interface operations {
                         library_root_path: string;
                         metadata_url: string;
                         recommended_mount_path: string;
+                        /** @enum {string} */
+                        runtime_profile: "managed" | "developer";
+                        storage_bucket_url?: string;
                         task_home_path: string;
+                        task_home_segment: string;
                         task_id: string;
                         /** @enum {string} */
                         workspace_binding_mode: "file_library";
@@ -9227,7 +9784,69 @@ export interface operations {
                 };
             };
             401: components["responses"]["Unauthorized"];
+            /** @description FILE_LIBRARY_FORBIDDEN or insufficient task permission */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["FileLibraryForbiddenError"] | components["schemas"]["ApiError"];
+                };
+            };
+            404: components["responses"]["NotFound"];
+            /** @description FILE_LIBRARY_DELETING, FILE_LIBRARY_NOT_READY, or AGENT_TASK_WORKSPACE_BINDING_CONFLICT */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["FileLibraryDeletingError"] | components["schemas"]["FileLibraryNotReadyError"] | components["schemas"]["AgentTaskWorkspaceBindingConflictError"] | components["schemas"]["ApiError"];
+                };
+            };
+        };
+    };
+    releaseTaskWorkspaceAccess: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    binding_generation: string;
+                    file_library_id: string;
+                    holder_id: string;
+                    lease_epoch: string;
+                };
+            };
+        };
+        responses: {
+            /** @description Holder release accepted */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        released: boolean;
+                    };
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
             403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            /** @description Holder fence mismatch */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AgentTaskWorkspaceBindingConflictError"];
+                };
+            };
         };
     };
     getTaskRunnerBindingOptions: {

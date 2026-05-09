@@ -97,6 +97,7 @@ import {
   prepareTerminalWorkspace,
   startTerminalProcess,
   terminateTerminalProcessTree,
+  type TerminalExecutionContext,
   type TerminalPidMetadata,
   type TerminalProcess,
 } from './terminal-runtime.js';
@@ -104,14 +105,22 @@ import {
 const TASK_HOME = '/home/task_1';
 const TASK_WORKSPACE = `${TASK_HOME}/workspace`;
 const TASK_ARTIFACTS = `${TASK_WORKSPACE}/.artifacts`;
+const LIBRARY_ROOT_PATH = '.' as const;
 
-function terminalExecutionContext(overrides: Record<string, unknown> = {}) {
+function terminalExecutionContext(
+  overrides: Partial<TerminalExecutionContext> & Record<string, unknown> = {},
+): TerminalExecutionContext {
   return {
+    ...overrides,
     task_id: 'task_1',
+    workspace_file_library_id: 'flib_1',
+    workspace_binding_mode: 'file_library',
+    runtime_profile: 'managed',
+    task_home_segment: 'task_1',
     task_home_path: TASK_HOME,
     workspace_path: TASK_WORKSPACE,
     artifacts_path: TASK_ARTIFACTS,
-    ...overrides,
+    library_root_path: LIBRARY_ROOT_PATH,
   };
 }
 
@@ -186,6 +195,7 @@ describe('terminal-runtime', () => {
         mode: 'managed_local',
         taskHome: TASK_HOME,
         visibleRoot: TASK_WORKSPACE,
+        libraryRoot: LIBRARY_ROOT_PATH,
         mountRoot: TASK_HOME,
         taskRoot: TASK_HOME,
         runtimeRoot: TASK_HOME,
@@ -380,6 +390,7 @@ describe('terminal-runtime', () => {
           HOME: TASK_HOME,
           TASK_HOME,
           WORKSPACE_PATH: TASK_WORKSPACE,
+          ARTIFACTS_PATH: TASK_ARTIFACTS,
           PYTHONUSERBASE: `${TASK_HOME}/.local`,
           PIP_USER: '1',
           npm_config_prefix: `${TASK_HOME}/.local`,
@@ -399,6 +410,7 @@ describe('terminal-runtime', () => {
         HOME: TASK_HOME,
         TASK_HOME,
         WORKSPACE_PATH: TASK_WORKSPACE,
+        ARTIFACTS_PATH: TASK_ARTIFACTS,
       }),
     }));
     started.child.write('echo hi\n');

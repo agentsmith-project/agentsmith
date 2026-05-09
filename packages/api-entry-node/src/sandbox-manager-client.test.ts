@@ -19,7 +19,6 @@ describe('SandboxManagerClient', () => {
         image: 'runner:latest',
         workspace_binding_id: 'flib_demo',
         mount_path: '/home/task_1',
-        sub_path: 'agent-tasks/task_1',
         working_dir: '/home/task_1/workspace',
       });
       return new Response(JSON.stringify({ phase: 'Running', pod_name: 'pod-1' }), { status: 201 });
@@ -31,7 +30,6 @@ describe('SandboxManagerClient', () => {
       image: 'runner:latest',
       workspace_binding_id: 'flib_demo',
       mount_path: '/home/task_1',
-      sub_path: 'agent-tasks/task_1',
       working_dir: '/home/task_1/workspace',
     });
 

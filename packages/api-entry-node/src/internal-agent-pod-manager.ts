@@ -1,4 +1,5 @@
 import type { AgentRecord } from './resource-models.js';
+import { isAbsolute, join, normalize } from 'node:path';
 import { isManagedAgentRunner } from './agent-runner-profile.js';
 import type { ExecResponse, PodStatusResponse, SandboxPodCreateBody } from './sandbox-manager-client.js';
 import type { RunnerSessionDispatchAuthority } from './agent-execution-service.js';
@@ -137,19 +138,62 @@ function requireWorkspaceMount(workspaceMount: InternalAgentWorkspaceMount | und
     : mountPath;
   const workspacePath = typeof workspaceMount?.workspacePath === 'string' && workspaceMount.workspacePath.trim()
     ? workspaceMount.workspacePath.trim()
-    : mountPath;
+    : `${taskHomePath.replace(/\/+$/, '')}/workspace`;
   const artifactsPath = typeof workspaceMount?.artifactsPath === 'string' && workspaceMount.artifactsPath.trim()
     ? workspaceMount.artifactsPath.trim()
     : `${workspacePath.replace(/\/+$/, '')}/.artifacts`;
-  const subPath = typeof workspaceMount?.subPath === 'string' ? workspaceMount.subPath.trim() : '';
+  const libraryRootPath = typeof workspaceMount?.libraryRootPath === 'string' ? workspaceMount.libraryRootPath.trim() : '';
+  if (!libraryRootPath) {
+    throw Object.assign(new Error('workspace_library_root_path_required'), {
+      code: 'AGENT_SANDBOX_NOT_CONFIGURED',
+    });
+  }
+  if (libraryRootPath !== '.') {
+    throw Object.assign(new Error('workspace_library_root_path_invalid'), {
+      code: 'AGENT_SANDBOX_NOT_CONFIGURED',
+    });
+  }
+  const normalizeAbsoluteWorkspacePath = (value: string, field: string): string => {
+    if (!value || !isAbsolute(value) || value.includes('\0') || value.split(/[\\/]+/).some((part) => part === '..')) {
+      throw Object.assign(new Error(`${field}_invalid`), {
+        code: 'AGENT_SANDBOX_NOT_CONFIGURED',
+      });
+    }
+    const normalized = normalize(value).replace(/\/+$/, '');
+    if (!normalized || normalized === '/' || !isAbsolute(normalized)) {
+      throw Object.assign(new Error(`${field}_invalid`), {
+        code: 'AGENT_SANDBOX_NOT_CONFIGURED',
+      });
+    }
+    return normalized;
+  };
+  const normalizedMountPath = normalizeAbsoluteWorkspacePath(mountPath, 'workspace_mount_path');
+  const normalizedTaskHomePath = normalizeAbsoluteWorkspacePath(taskHomePath, 'workspace_task_home_path');
+  const normalizedWorkspacePath = normalizeAbsoluteWorkspacePath(workspacePath, 'workspace_path');
+  const normalizedArtifactsPath = normalizeAbsoluteWorkspacePath(artifactsPath, 'workspace_artifacts_path');
+  if (normalizedMountPath !== normalizedTaskHomePath) {
+    throw Object.assign(new Error('workspace_mount_path_invalid'), {
+      code: 'AGENT_SANDBOX_NOT_CONFIGURED',
+    });
+  }
+  if (normalizedWorkspacePath !== join(normalizedTaskHomePath, 'workspace')) {
+    throw Object.assign(new Error('workspace_path_invalid'), {
+      code: 'AGENT_SANDBOX_NOT_CONFIGURED',
+    });
+  }
+  if (normalizedArtifactsPath !== join(normalizedWorkspacePath, '.artifacts')) {
+    throw Object.assign(new Error('workspace_artifacts_path_invalid'), {
+      code: 'AGENT_SANDBOX_NOT_CONFIGURED',
+    });
+  }
   return {
     ...workspaceMount,
     bindingId,
-    mountPath,
-    taskHomePath,
-    workspacePath,
-    artifactsPath,
-    subPath,
+    mountPath: normalizedMountPath,
+    taskHomePath: normalizedTaskHomePath,
+    workspacePath: normalizedWorkspacePath,
+    artifactsPath: normalizedArtifactsPath,
+    libraryRootPath: '.',
   };
 }
 
@@ -537,6 +581,7 @@ export class InternalAgentPodManagerImpl implements InternalAgentPodManager {
               TASK_HOME: workspaceMount.taskHomePath,
               HOME: workspaceMount.taskHomePath,
               WORKSPACE_PATH: workspaceMount.workspacePath,
+              ARTIFACTS_PATH: workspaceMount.artifactsPath,
               MBOS_AGENT_TASK_RUNNER_MODE: INTERNAL_AGENT_TASK_RUNNER_MODE,
             },
             cpu_request: config.cpuRequest ?? '500m',
@@ -547,7 +592,6 @@ export class InternalAgentPodManagerImpl implements InternalAgentPodManager {
             max_lifetime_sec: maxLifetimeSec,
             workspace_binding_id: workspaceMount.bindingId,
             mount_path: workspaceMount.taskHomePath,
-            ...(workspaceMount.subPath ? { sub_path: workspaceMount.subPath } : {}),
             working_dir: workspaceMount.workspacePath,
           }, rpcSignal),
           signal,

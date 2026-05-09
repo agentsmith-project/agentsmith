@@ -13,7 +13,8 @@ export function mapFileLibraryInfraError(error: unknown): {
   errorCode: string;
   message: string;
 } {
-  const message = error instanceof Error ? error.message : 'file_library_operation_failed';
+  const rawMessage = error instanceof Error ? error.message : 'file_library_operation_failed';
+  const message = safeFileLibraryInfraErrorMessage(rawMessage);
   if (message === 'file_library_juicefs_cli_missing') {
     return { statusCode: 503, errorCode: 'SERVICE_UNAVAILABLE', message };
   }
@@ -36,6 +37,19 @@ export function mapFileLibraryInfraError(error: unknown): {
   };
 }
 
+export function safeFileLibraryInfraErrorMessage(message: string): string {
+  if (
+    message === 'file_library_juicefs_cli_missing'
+    || message === 'file_library_mc_cli_missing'
+    || message === 'file_library_backend_unavailable'
+    || message === 'file_library_not_empty'
+    || message.startsWith('file_library_env_missing_')
+  ) {
+    return message;
+  }
+  return 'file_library_operation_failed';
+}
+
 export function buildFilesystemName(
   workspaceId: string,
   projectId: string,
@@ -56,6 +70,7 @@ export async function createAndProvisionProjectFileLibrary(input: {
   userId: string;
   name: string;
   description?: string;
+  source?: 'manual' | 'agent_task_auto';
 }) {
   if (!input.deps.fileLibraryOrchestrator) {
     throw new Error('file_library_backend_unavailable');
@@ -75,6 +90,7 @@ export async function createAndProvisionProjectFileLibrary(input: {
     description: input.description,
     filesystemName,
     createdByUserId: input.userId,
+    source: input.source ?? 'manual',
   });
   await catalogRepo.save(created);
 
@@ -121,7 +137,11 @@ export async function createAndProvisionProjectFileLibrary(input: {
       },
       created_at: new Date().toISOString(),
     });
-    return await catalogRepo.update(input.workspaceId, input.projectId, created.id, { status: 'ready' });
+    const updated = await catalogRepo.update(input.workspaceId, input.projectId, created.id, { status: 'ready' });
+    if (!updated) {
+      throw new Error('file_library_operation_failed');
+    }
+    return updated;
   } catch (error) {
     try {
       await catalogRepo.delete(input.workspaceId, input.projectId, created.id);

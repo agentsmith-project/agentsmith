@@ -186,21 +186,127 @@ This section covers the browser-facing terminal websocket issued by Agent task t
 - Routes that issue an interactive terminal `ws_url` or ticket require `project:agent_task:terminal` in addition to task access. Reconnect handshakes and each `terminal.stdin` / `terminal.resize` frame re-check current backend permission truth; revoked permission rejects the frame and closes the websocket instead of trusting a cached ticket or open socket.
 - Terminal runner startup uses the same public `TaskExecutionContext` guard as task runs. The terminal `server.request.start.payload.execution_context` canonical subset includes `workspace_id`, `project_id`, `task_id`, `runner_id`, `api_base`, `execution_ticket`, `runner_session_scope`, request-scoped `resource_proxy`, the `agent_task_model` snapshot when model access is required, workspace binding fields, and optional `task_inputs`; it must not include legacy top-level `session_id`, `agent_id`, or `interaction_kind`.
 
-## 8. Agent Task Error Mapping
+## 8. Terminal Recovery And Adopt
+
+Terminal sessions are backend-owned lifecycle records. Browser disconnect is not terminal failure; runner transport loss enters recovery first.
+
+- Terminal session `status` may be `pending | active | disconnected | recovering | closing | closed | failed`.
+- `lifecycle_status`, `runner_connection_status`, `browser_connection_status`, `input_enabled`, `recoverable`, `recovery_deadline_at`, `failure_kind`, `close_state`, `close_deadline_at`, `replay_status`, `replay_gap`, and `latest_seq` are API truth fields on terminal session list/get/create responses.
+- API reload of a persisted live terminal session must return `recovering + runner_connection_status=transport_lost + input_enabled=false` with a bounded `recovery_deadline_at`; it must not finalize the session as `failed` merely because API memory was lost.
+- `pending | active | disconnected | recovering | closing` are live task blockers. `closed | failed` release the blocker.
+- While recovering, browser reconnect is allowed and returns `terminal.state { state: "recovering", input_enabled: false }` followed by replay frames. API must not dispatch a second `server.terminal.start` for that `terminal_session_id`.
+- While recovering or closing, API must not forward `terminal.stdin` or `terminal.resize`; clients that still send them receive `terminal.error / terminal_input_disabled`.
+
+Runner reconnect uses `agent.ready.payload.active_terminals`:
+
+```json
+{
+  "runner_instance_id": "uuid",
+  "connection_epoch": 7,
+  "active_terminals": [
+    {
+      "terminal_session_id": "term_xxx",
+      "runner_session_id": "task_xxx",
+      "generation": 1,
+      "cols": 120,
+      "rows": 30,
+      "cwd": "/home/task_xxx/workspace"
+    }
+  ]
+}
+```
+
+- `active_terminals` must be an array with at most 64 descriptors; non-array or over-limit payloads fail the whole `agent.ready` frame with `agent_ready_validation_failed`.
+- Invalid descriptors are discarded independently and do not block valid descriptors in the same ready frame.
+- API serializes runner detach handling before consuming `active_terminals` from a newer socket for the same runner authority.
+- For a matching recovering session, API sends `server.terminal.adopt`; it must not send `server.terminal.start`.
+
+`server.terminal.adopt`:
+
+```json
+{
+  "type": "server.terminal.adopt",
+  "request_id": "adopt_xxx",
+  "runner_session_id": "task_xxx",
+  "terminal_session_id": "term_xxx",
+  "timestamp": "ISO-8601",
+  "payload": {
+    "adopt_attempt_id": "adopt_xxx",
+    "connection_epoch": 7,
+    "generation": 1,
+    "cols": 120,
+    "rows": 30
+  }
+}
+```
+
+Runner replies with `agent.terminal.adopted`, `agent.terminal.not_found`, `agent.terminal.exited`, or `agent.terminal.error`. Adopt success restores `active + attached + input_enabled=true`; `not_found` maps to `failed + terminal_process_lost`; timeout maps to `failed + runner_recovery_timeout`.
+
+Close is tombstone based:
+
+- User/API close of a live/recovering terminal writes `closing + close_state=requested`, sends `server.terminal.close` with the current close fence, and keeps the task blocked. Browser `terminal.close` uses the same tombstone path as REST DELETE; browser websocket disconnect alone never closes the runner terminal.
+- Delivery changes `close_state=delivered`.
+- Only matching `agent.terminal.close_ack` may finalize the close tombstone as `closed + close_state=acked`; ordinary `agent.terminal.exited` is not a substitute for close ack.
+- API persists and validates the delivered `request_id`, `close_attempt_id`, `generation`, and `connection_epoch`. Stale socket authority, stale request id, stale attempt id, stale generation, or stale connection epoch are ignored.
+- `agent.terminal.close_ack.payload.status="closed"` finalizes as closed. `status="not_found"` also finalizes as user-visible closed and records internal diagnostic `terminal_process_missing_on_close`. `status="error"` keeps the session `closing + close_state=delivered`, records the diagnostic, and waits for runner-ready redelivery or deadline expiry.
+- Close deadline expiry maps to `failed + terminal_process_lost + close_state=expired + close_reason=close_tombstone_timeout`.
+- Runner ready with `active_terminals: []` still invokes the recovery coordinator so missing closing tombstones can be redelivered or expired.
+
+`server.terminal.close`:
+
+```json
+{
+  "type": "server.terminal.close",
+  "request_id": "close_req_xxx",
+  "runner_session_id": "task_xxx",
+  "terminal_session_id": "term_xxx",
+  "timestamp": "ISO-8601",
+  "payload": {
+    "close_attempt_id": "close_xxx",
+    "generation": 3,
+    "connection_epoch": 12,
+    "reason": "user_requested"
+  }
+}
+```
+
+`agent.terminal.close_ack`:
+
+```json
+{
+  "type": "agent.terminal.close_ack",
+  "request_id": "close_req_xxx",
+  "runner_session_id": "task_xxx",
+  "terminal_session_id": "term_xxx",
+  "timestamp": "ISO-8601",
+  "payload": {
+    "terminal_session_id": "term_xxx",
+    "runner_session_id": "task_xxx",
+    "close_attempt_id": "close_xxx",
+    "generation": 3,
+    "connection_epoch": 12,
+    "status": "closed",
+    "diagnostic_code": null,
+    "remaining_pid_count": 0
+  }
+}
+```
+
+## 9. Agent Task Error Mapping
 
 Agent task runs return explicit API error codes for runner bootstrap and protocol failures:
 
 - `AGENT_OFFLINE`: no active execution WS connection for the selected runner
 - `AGENT_PROTOCOL_ERROR`: invalid execution frame format/content
 - `AGENT_UPSTREAM_ERROR`: runner reported upstream error
-## 9. Related REST APIs
+## 10. Related REST APIs
 
 - `GET /api/v1/workspaces/{ws}/projects/{project}/agent-runners/{agentRunnerId}/connection-info`
 - `GET/POST /api/v1/workspaces/{ws}/projects/{project}/agent-runners/{agentRunnerId}/keys`
 - `DELETE /api/v1/workspaces/{ws}/projects/{project}/agent-runners/{agentRunnerId}/keys/{keyId}`
 - `GET /api/v1/workspaces/{ws}/projects/{project}/agent-runners/{agentRunnerId}/execution-config`
 
-## 10. Echo Example
+## 11. Echo Example
 
 Reference implementation:
 
@@ -214,7 +320,7 @@ MBOS_AGENT_KEY='ask_xxx' \
 npm run agent:task-runner
 ```
 
-## 11. Risk Register
+## 12. Risk Register
 
 - `R1` user token forwarding to runner:
   - MBOS forwards user bearer token in execution context for project proxy auth/audit.

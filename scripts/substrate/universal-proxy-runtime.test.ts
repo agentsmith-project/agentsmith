@@ -147,6 +147,7 @@ exit 0
 	set -euo pipefail
 	url="\${!#}"
 	status="000"
+	external_proxy_base_url="\${FAKE_REACHABLE_PROXY_BASE_URL:-}"
 	has_admin_bearer=0
 	previous=""
 	for arg in "$@"; do
@@ -160,7 +161,9 @@ exit 0
 	    status="200"
 	    ;;
 	  */admin/state)
-	    if [[ -f "${dockerRunMarker}" && "\${has_admin_bearer}" == "1" ]]; then
+	    if [[ -n "\${external_proxy_base_url}" && "\${url}" == "\${external_proxy_base_url%/}/admin/state" && "\${has_admin_bearer}" == "1" ]]; then
+	      status="200"
+	    elif [[ -f "${dockerRunMarker}" && "\${has_admin_bearer}" == "1" ]]; then
 	      status="200"
 	    elif [[ -f "${dockerRunMarker}" ]]; then
 	      status="403"
@@ -564,6 +567,77 @@ runtime_label=${container.runtimeLabel}
     const connectionEnv = readFileSync(fixture.connectionEnv, 'utf8');
     expect(connectionEnv).toContain('MBOS_UNIVERSAL_PROXY_BASE_URL=http://127.0.0.1:38080');
     expect(connectionEnv).toMatch(/^MBOS_UNIVERSAL_PROXY_ADMIN_TOKEN=.+$/m);
+  }, 10000);
+
+  it('does not treat inherited local-dev proxy env as an explicit external proxy for compose startup', () => {
+    const tempRoot = createIsolatedRepoRoot('substrate-compose-stale-proxy-env');
+    const fixture = prepareSubstrateFixture(tempRoot);
+
+    mkdirSync(path.dirname(fixture.connectionEnv), { recursive: true });
+    writeFileSync(
+      fixture.connectionEnv,
+      `KEYCLOAK_BASE_URL=http://localhost:18080
+KEYCLOAK_REALM=mbos
+KEYCLOAK_CLIENT_ID=agentsmith
+KEYCLOAK_ISSUER_URL=http://localhost:18080/realms/mbos
+MBOS_UNIVERSAL_PROXY_BASE_URL=http://127.0.0.1:38080
+MBOS_UNIVERSAL_PROXY_ADMIN_TOKEN=stale-admin-token
+`,
+      'utf8',
+    );
+
+    const result = spawnSync('bash', [fixture.upScript], {
+      cwd: tempRoot,
+      env: {
+        ...process.env,
+        PATH: `${fixture.binDir}:${process.env.PATH ?? ''}`,
+        MBOS_UNIVERSAL_PROXY_ADMIN_TOKEN: 'stale-admin-token',
+        MBOS_UNIVERSAL_PROXY_BASE_URL: 'http://127.0.0.1:38080',
+        UNIVERSAL_PROXY_RUNTIME_WAIT_TIMEOUT_SECONDS: '1',
+      },
+      encoding: 'utf8',
+      stdio: 'pipe',
+    });
+
+    expect(result.status).toBe(0);
+    expect(result.stderr).not.toContain('explicit MBOS_UNIVERSAL_PROXY_BASE_URL is not reachable');
+    const dockerLog = readFileSync(fixture.dockerLog, 'utf8');
+    const lockedImage = readLockedLlmupImage();
+    expect(dockerLog).toContain(`docker pull ${lockedImage}`);
+    expect(dockerLog).toContain('docker run');
+    const connectionEnv = readFileSync(fixture.connectionEnv, 'utf8');
+    expect(connectionEnv).toContain('MBOS_UNIVERSAL_PROXY_BASE_URL=http://127.0.0.1:38080');
+    expect(connectionEnv).not.toContain('MBOS_UNIVERSAL_PROXY_ADMIN_TOKEN=stale-admin-token');
+    expect(connectionEnv).toMatch(/^MBOS_UNIVERSAL_PROXY_ADMIN_TOKEN=.+$/m);
+  }, 10000);
+
+  it('keeps explicit external proxy env for compose startup without starting a managed container', () => {
+    const tempRoot = createIsolatedRepoRoot('substrate-compose-explicit-external-proxy');
+    const fixture = prepareSubstrateFixture(tempRoot);
+    const explicitProxyBaseUrl = 'http://external-proxy.local:39080';
+
+    const result = spawnSync('bash', [fixture.upScript], {
+      cwd: tempRoot,
+      env: {
+        ...process.env,
+        FAKE_REACHABLE_PROXY_BASE_URL: explicitProxyBaseUrl,
+        PATH: `${fixture.binDir}:${process.env.PATH ?? ''}`,
+        MBOS_UNIVERSAL_PROXY_ADMIN_TOKEN: 'explicit-admin-token',
+        MBOS_UNIVERSAL_PROXY_BASE_URL: explicitProxyBaseUrl,
+        UNIVERSAL_PROXY_RUNTIME_WAIT_TIMEOUT_SECONDS: '1',
+      },
+      encoding: 'utf8',
+      stdio: 'pipe',
+    });
+
+    expect(result.status).toBe(0);
+    const dockerLog = readFileSync(fixture.dockerLog, 'utf8');
+    expect(dockerLog).toContain('docker compose');
+    expect(dockerLog).not.toContain('docker pull');
+    expect(dockerLog).not.toContain('docker run');
+    const connectionEnv = readFileSync(fixture.connectionEnv, 'utf8');
+    expect(connectionEnv).toContain(`MBOS_UNIVERSAL_PROXY_BASE_URL=${explicitProxyBaseUrl}`);
+    expect(connectionEnv).toContain('MBOS_UNIVERSAL_PROXY_ADMIN_TOKEN=explicit-admin-token');
   }, 10000);
 
   it('writes an explicit empty admin token field before the runtime helper exposes one', () => {

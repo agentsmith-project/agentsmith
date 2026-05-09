@@ -25,6 +25,7 @@ PROJECT_NAME="${PROJECT_NAME:-Codex Agent Regression}"
 AGENT_RUNNER_NAME="${AGENT_RUNNER_NAME:-codex-agent-task-runner-$(date +%s)}"
 ENDPOINT_NAME="${ENDPOINT_NAME:-demo-endpoint-$(date +%s)}"
 CREDENTIAL_NAME="${CREDENTIAL_NAME:-demo-key-$(date +%s)}"
+AGENT_RUNNER_SEED_MODE="${AGENT_RUNNER_SEED_MODE:-developer_runner}"
 
 PRESET_ENDPOINT_MODEL="${PRESET_ENDPOINT_MODEL:-}"
 PRESET_ENDPOINT_API_KEY="${PRESET_ENDPOINT_API_KEY:-}"
@@ -124,35 +125,63 @@ state_set_string endpoint.base_url "${PRESET_ANTHROPIC_ENDPOINT_BASE_URL}"
 state_set_string endpoint.model "${PRESET_ENDPOINT_MODEL}"
 echo "[init] endpoint_id=${ENDPOINT_ID}"
 
-echo "[init] creating managed agent-task runner..."
-seed_resp="$(
-  WORKSPACE_ID="${WORKSPACE_ID}" \
-  PROJECT_ID="${PROJECT_ID}" \
-  ENDPOINT_ID="${ENDPOINT_ID}" \
-  AGENT_RUNNER_NAME="${AGENT_RUNNER_NAME}" \
-  API_BASE="${API_BASE}" \
-  AGENT_EXECUTION_WS_BASE_URL="${AGENT_EXECUTION_WS_BASE_URL:-${API_BASE/http:/ws:}}" \
-  MONGO_URL="${MONGO_URL}" \
-  MONGO_DB_NAME="${MONGO_DB_NAME}" \
-  npx tsx scripts/agent-runner-seed-managed-runner.ts
-)"
+case "${AGENT_RUNNER_SEED_MODE}" in
+  developer_runner|developer|external)
+    echo "[init] creating developer agent-task runner..."
+    seed_resp="$(
+      WORKSPACE_ID="${WORKSPACE_ID}" \
+      PROJECT_ID="${PROJECT_ID}" \
+      ENDPOINT_ID="${ENDPOINT_ID}" \
+      AGENT_RUNNER_NAME="${AGENT_RUNNER_NAME}" \
+      API_BASE="${API_BASE}" \
+      PUBLIC_API_BASE_URL="${PUBLIC_API_BASE_URL:-${API_BASE}}" \
+      MONGO_URL="${MONGO_URL}" \
+      MONGO_DB_NAME="${MONGO_DB_NAME}" \
+      npx tsx scripts/agent-runner-seed-developer-runner.ts
+    )"
+    AGENT_RUNNER_PROVIDER="developer"
+    AGENT_RUNNER_MANAGED="false"
+    ;;
+  managed_agent_task|managed|internal)
+    echo "[init] creating managed agent-task runner..."
+    seed_resp="$(
+      WORKSPACE_ID="${WORKSPACE_ID}" \
+      PROJECT_ID="${PROJECT_ID}" \
+      ENDPOINT_ID="${ENDPOINT_ID}" \
+      AGENT_RUNNER_NAME="${AGENT_RUNNER_NAME}" \
+      API_BASE="${API_BASE}" \
+      AGENT_EXECUTION_WS_BASE_URL="${AGENT_EXECUTION_WS_BASE_URL:-${API_BASE/http:/ws:}}" \
+      MONGO_URL="${MONGO_URL}" \
+      MONGO_DB_NAME="${MONGO_DB_NAME}" \
+      npx tsx scripts/agent-runner-seed-managed-runner.ts
+    )"
+    AGENT_RUNNER_PROVIDER="managed"
+    AGENT_RUNNER_MANAGED="true"
+    ;;
+  *)
+    echo "[init] unsupported AGENT_RUNNER_SEED_MODE=${AGENT_RUNNER_SEED_MODE}" >&2
+    exit 1
+    ;;
+esac
 AGENT_RUNNER_ID="$(printf '%s' "${seed_resp}" | json_get agent_runner_id)"
 AGENT_RUNNER_DEFAULT_ENDPOINT_ID="$(printf '%s' "${seed_resp}" | json_get_optional default_endpoint_id)"
 AGENT_TASK_MODEL_SETTING_ENDPOINT_ID="$(printf '%s' "${seed_resp}" | json_get agent_task_model_setting.endpoint_id)"
 AGENT_TASK_MODEL_SETTING_DEFAULT_MODEL="$(printf '%s' "${seed_resp}" | json_get agent_task_model_setting.default_model_id)"
 AGENT_TASK_MODEL_SETTING_REVISION="$(printf '%s' "${seed_resp}" | json_get agent_task_model_setting.setting_revision)"
 WS_URL="$(printf '%s' "${seed_resp}" | json_get ws_url)"
+AGENT_RUNNER_KEY="$(printf '%s' "${seed_resp}" | json_get_optional agent_key)"
 state_set_string agent_runner.id "${AGENT_RUNNER_ID}"
 state_set_string agent_runner.name "${AGENT_RUNNER_NAME}"
+state_set_string agent_runner.runner_provider "${AGENT_RUNNER_PROVIDER}"
+state_set_string agent_runner.managed "${AGENT_RUNNER_MANAGED}"
 state_set_string agent_runner.default_endpoint_id "${AGENT_RUNNER_DEFAULT_ENDPOINT_ID}"
-state_set_string agent_runner.managed true
 state_set_string agent_runner.ws_url "${WS_URL}"
 state_set_string agent_task_model_setting.endpoint_id "${AGENT_TASK_MODEL_SETTING_ENDPOINT_ID}"
 state_set_string agent_task_model_setting.default_model "${AGENT_TASK_MODEL_SETTING_DEFAULT_MODEL}"
 state_set_string agent_task_model_setting.revision "${AGENT_TASK_MODEL_SETTING_REVISION}"
 echo "[init] agent_runner_id=${AGENT_RUNNER_ID}"
 echo "[init] agent_task_model_setting_endpoint_id=${AGENT_TASK_MODEL_SETTING_ENDPOINT_ID}"
-echo "[init] managed runner state written to $(backend_real_state_file)"
+echo "[init] ${AGENT_RUNNER_PROVIDER} runner state written to $(backend_real_state_file)"
 echo "[init] ws_url=${WS_URL}"
 
 state_write_summary
@@ -164,7 +193,9 @@ PROJECT_ID=${PROJECT_ID}
 CREDENTIAL_ID=${CRED_ID}
 ENDPOINT_ID=${ENDPOINT_ID}
 AGENT_RUNNER_ID=${AGENT_RUNNER_ID}
+AGENT_RUNNER_PROVIDER=${AGENT_RUNNER_PROVIDER}
 AGENT_RUNNER_DEFAULT_ENDPOINT_ID=${AGENT_RUNNER_DEFAULT_ENDPOINT_ID}
+AGENT_RUNNER_KEY=${AGENT_RUNNER_KEY}
 AGENT_TASK_MODEL_SETTING_ENDPOINT_ID=${AGENT_TASK_MODEL_SETTING_ENDPOINT_ID}
 AGENT_TASK_MODEL_SETTING_DEFAULT_MODEL=${AGENT_TASK_MODEL_SETTING_DEFAULT_MODEL}
 AGENT_TASK_MODEL_SETTING_REVISION=${AGENT_TASK_MODEL_SETTING_REVISION}

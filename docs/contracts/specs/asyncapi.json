@@ -55,6 +55,21 @@
         },
         "agentResponseArtifact": {
           "$ref": "#/components/messages/agentResponseArtifact"
+        },
+        "serverTerminalAdopt": {
+          "$ref": "#/components/messages/serverTerminalAdopt"
+        },
+        "serverTerminalClose": {
+          "$ref": "#/components/messages/serverTerminalClose"
+        },
+        "agentTerminalAdopted": {
+          "$ref": "#/components/messages/agentTerminalAdopted"
+        },
+        "agentTerminalNotFound": {
+          "$ref": "#/components/messages/agentTerminalNotFound"
+        },
+        "agentTerminalCloseAck": {
+          "$ref": "#/components/messages/agentTerminalCloseAck"
         }
       }
     }
@@ -77,6 +92,12 @@
         },
         {
           "$ref": "#/channels/agentRuntime/messages/serverPing"
+        },
+        {
+          "$ref": "#/channels/agentRuntime/messages/serverTerminalAdopt"
+        },
+        {
+          "$ref": "#/channels/agentRuntime/messages/serverTerminalClose"
         }
       ]
     },
@@ -106,6 +127,15 @@
         },
         {
           "$ref": "#/channels/agentRuntime/messages/agentResponseArtifact"
+        },
+        {
+          "$ref": "#/channels/agentRuntime/messages/agentTerminalAdopted"
+        },
+        {
+          "$ref": "#/channels/agentRuntime/messages/agentTerminalNotFound"
+        },
+        {
+          "$ref": "#/channels/agentRuntime/messages/agentTerminalCloseAck"
         }
       ]
     }
@@ -244,6 +274,39 @@
           "thumbnail_url": {
             "type": "string",
             "description": "Thumbnail URL or inline data URL for image artifacts."
+          }
+        }
+      },
+      "RunnerActiveTerminalDescriptor": {
+        "type": "object",
+        "required": [
+          "terminal_session_id",
+          "runner_session_id",
+          "generation",
+          "cols",
+          "rows"
+        ],
+        "properties": {
+          "terminal_session_id": {
+            "type": "string"
+          },
+          "runner_session_id": {
+            "type": "string"
+          },
+          "generation": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "cols": {
+            "type": "integer",
+            "minimum": 20
+          },
+          "rows": {
+            "type": "integer",
+            "minimum": 5
+          },
+          "cwd": {
+            "type": "string"
           }
         }
       }
@@ -609,6 +672,132 @@
           }
         }
       },
+      "serverTerminalAdopt": {
+        "name": "server.terminal.adopt",
+        "payload": {
+          "type": "object",
+          "required": [
+            "type",
+            "request_id",
+            "runner_session_id",
+            "terminal_session_id",
+            "timestamp",
+            "payload"
+          ],
+          "properties": {
+            "type": {
+              "const": "server.terminal.adopt"
+            },
+            "request_id": {
+              "type": "string"
+            },
+            "runner_session_id": {
+              "type": "string"
+            },
+            "terminal_session_id": {
+              "type": "string"
+            },
+            "timestamp": {
+              "type": "string",
+              "format": "date-time"
+            },
+            "payload": {
+              "type": "object",
+              "required": [
+                "adopt_attempt_id",
+                "connection_epoch",
+                "generation",
+                "cols",
+                "rows"
+              ],
+              "properties": {
+                "adopt_attempt_id": {
+                  "type": "string"
+                },
+                "connection_epoch": {
+                  "type": "integer",
+                  "minimum": 1
+                },
+                "generation": {
+                  "type": "integer",
+                  "minimum": 1
+                },
+                "cols": {
+                  "type": "integer",
+                  "minimum": 20
+                },
+                "rows": {
+                  "type": "integer",
+                  "minimum": 5
+                }
+              }
+            }
+          }
+        }
+      },
+      "serverTerminalClose": {
+        "name": "server.terminal.close",
+        "payload": {
+          "type": "object",
+          "required": [
+            "type",
+            "request_id",
+            "runner_session_id",
+            "terminal_session_id",
+            "timestamp",
+            "payload"
+          ],
+          "properties": {
+            "type": {
+              "const": "server.terminal.close"
+            },
+            "request_id": {
+              "type": "string"
+            },
+            "runner_session_id": {
+              "type": "string"
+            },
+            "terminal_session_id": {
+              "type": "string"
+            },
+            "timestamp": {
+              "type": "string",
+              "format": "date-time"
+            },
+            "payload": {
+              "type": "object",
+              "required": [
+                "close_attempt_id",
+                "generation",
+                "connection_epoch",
+                "reason"
+              ],
+              "properties": {
+                "close_attempt_id": {
+                  "type": "string"
+                },
+                "generation": {
+                  "type": "integer",
+                  "minimum": 1
+                },
+                "connection_epoch": {
+                  "type": "integer",
+                  "minimum": 1
+                },
+                "reason": {
+                  "type": "string",
+                  "enum": [
+                    "user_requested",
+                    "permission_revoked",
+                    "garbage_collect",
+                    "shutdown"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      },
       "agentReady": {
         "name": "agent.ready",
         "payload": {
@@ -628,7 +817,23 @@
             },
             "payload": {
               "type": "object",
-              "additionalProperties": true
+              "additionalProperties": true,
+              "properties": {
+                "runner_instance_id": {
+                  "type": "string"
+                },
+                "connection_epoch": {
+                  "type": "integer",
+                  "minimum": 1
+                },
+                "active_terminals": {
+                  "type": "array",
+                  "maxItems": 64,
+                  "items": {
+                    "$ref": "#/components/schemas/RunnerActiveTerminalDescriptor"
+                  }
+                }
+              }
             }
           }
         }
@@ -652,6 +857,181 @@
             },
             "payload": {
               "type": "object"
+            }
+          }
+        }
+      },
+      "agentTerminalAdopted": {
+        "name": "agent.terminal.adopted",
+        "payload": {
+          "type": "object",
+          "required": [
+            "type",
+            "request_id",
+            "terminal_session_id",
+            "payload"
+          ],
+          "properties": {
+            "type": {
+              "const": "agent.terminal.adopted"
+            },
+            "request_id": {
+              "type": "string"
+            },
+            "terminal_session_id": {
+              "type": "string"
+            },
+            "payload": {
+              "type": "object",
+              "required": [
+                "terminal_session_id",
+                "runner_session_id",
+                "adopt_attempt_id",
+                "connection_epoch",
+                "generation"
+              ],
+              "properties": {
+                "terminal_session_id": {
+                  "type": "string"
+                },
+                "runner_session_id": {
+                  "type": "string"
+                },
+                "adopt_attempt_id": {
+                  "type": "string"
+                },
+                "connection_epoch": {
+                  "type": "integer",
+                  "minimum": 1
+                },
+                "generation": {
+                  "type": "integer",
+                  "minimum": 1
+                },
+                "cols": {
+                  "type": "integer",
+                  "minimum": 20
+                },
+                "rows": {
+                  "type": "integer",
+                  "minimum": 5
+                }
+              }
+            }
+          }
+        }
+      },
+      "agentTerminalNotFound": {
+        "name": "agent.terminal.not_found",
+        "payload": {
+          "type": "object",
+          "required": [
+            "type",
+            "terminal_session_id",
+            "payload"
+          ],
+          "properties": {
+            "type": {
+              "const": "agent.terminal.not_found"
+            },
+            "terminal_session_id": {
+              "type": "string"
+            },
+            "payload": {
+              "type": "object",
+              "required": [
+                "terminal_session_id",
+                "runner_session_id",
+                "adopt_attempt_id"
+              ],
+              "properties": {
+                "terminal_session_id": {
+                  "type": "string"
+                },
+                "runner_session_id": {
+                  "type": "string"
+                },
+                "adopt_attempt_id": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        }
+      },
+      "agentTerminalCloseAck": {
+        "name": "agent.terminal.close_ack",
+        "payload": {
+          "type": "object",
+          "required": [
+            "type",
+            "request_id",
+            "runner_session_id",
+            "terminal_session_id",
+            "timestamp",
+            "payload"
+          ],
+          "properties": {
+            "type": {
+              "const": "agent.terminal.close_ack"
+            },
+            "request_id": {
+              "type": "string"
+            },
+            "runner_session_id": {
+              "type": "string"
+            },
+            "terminal_session_id": {
+              "type": "string"
+            },
+            "timestamp": {
+              "type": "string",
+              "format": "date-time"
+            },
+            "payload": {
+              "type": "object",
+              "required": [
+                "terminal_session_id",
+                "runner_session_id",
+                "close_attempt_id",
+                "generation",
+                "connection_epoch",
+                "status"
+              ],
+              "properties": {
+                "terminal_session_id": {
+                  "type": "string"
+                },
+                "runner_session_id": {
+                  "type": "string"
+                },
+                "close_attempt_id": {
+                  "type": "string"
+                },
+                "generation": {
+                  "type": "integer",
+                  "minimum": 1
+                },
+                "connection_epoch": {
+                  "type": "integer",
+                  "minimum": 1
+                },
+                "status": {
+                  "type": "string",
+                  "enum": [
+                    "closed",
+                    "not_found",
+                    "error"
+                  ]
+                },
+                "diagnostic_code": {
+                  "type": "string"
+                },
+                "remaining_pid_count": {
+                  "type": "integer",
+                  "minimum": 0
+                }
+              }
             }
           }
         }

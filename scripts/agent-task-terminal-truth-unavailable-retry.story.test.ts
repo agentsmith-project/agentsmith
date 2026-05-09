@@ -36,7 +36,7 @@ describe('Agent Task terminal truth-unavailable retry story', () => {
       'unlock-task-after-terminal-truth-recovers',
     ]);
     expect(story.steps.find((step) => step.stepId === 'return-to-task-while-terminal-truth-is-unavailable')?.target).toBe(
-      'agent-task__task-header',
+      'agent-tasks__task-terminal-truth-unavailable',
     );
     expect(
       story.steps.find((step) => step.stepId === 'keep-run-and-delete-fail-closed-while-terminal-truth-is-missing')

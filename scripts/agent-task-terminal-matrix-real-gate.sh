@@ -5,6 +5,8 @@ ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "${ROOT_DIR}"
 source "${ROOT_DIR}/scripts/local-manual/common.sh"
 
+AGENT_TASK_TERMINAL_MATRIX_FINAL_MODE="${AGENT_TASK_TERMINAL_MATRIX_FINAL_MODE:-developer_runner}"
+
 echo "[agent-task-terminal-matrix] validating multi-session terminal runtime truth"
 "${ROOT_DIR}/node_modules/.bin/tsx" "${ROOT_DIR}/scripts/juicefs-orphan-preflight.ts" --apply --context "agent-task-terminal-matrix"
 
@@ -56,7 +58,8 @@ const state = (() => {
 const ready = Boolean(
   hasToken
     && typeof state?.project?.id === 'string' && state.project.id
-    && typeof state?.agent_runner?.id === 'string' && state.agent_runner.id,
+    && typeof state?.agent_runner?.id === 'string' && state.agent_runner.id
+    && state?.agent_runner?.runner_provider === 'managed',
 );
 process.stdout.write(ready ? 'ready' : 'missing');
 NODE
@@ -92,10 +95,29 @@ run_with_retry() {
   done
 }
 
-bash scripts/local-manual/seed-agent-task-diagnostics.sh >/dev/null
+finish_matrix_in_final_posture() {
+  case "${AGENT_TASK_TERMINAL_MATRIX_FINAL_MODE}" in
+    developer_runner|developer|external)
+      echo "[agent-task-terminal-matrix] restoring developer terminal runtime posture"
+      bash scripts/local-manual/internal-down.sh >/dev/null
+      AGENT_RUNNER_SEED_MODE=developer_runner bash scripts/local-manual/seed-agent-task-diagnostics.sh >/dev/null
+      ;;
+    managed_agent_task|managed|internal)
+      echo "[agent-task-terminal-matrix] keeping managed terminal runtime posture for downstream UX recovery gate"
+      if ! internal_runtime_ready_for_retry; then
+        AGENT_RUNNER_SEED_MODE=managed_agent_task bash scripts/local-manual/internal-up.sh >/dev/null
+      fi
+      ;;
+    *)
+      echo "[agent-task-terminal-matrix] unsupported AGENT_TASK_TERMINAL_MATRIX_FINAL_MODE=${AGENT_TASK_TERMINAL_MATRIX_FINAL_MODE}" >&2
+      return 1
+      ;;
+  esac
+}
+
+AGENT_RUNNER_SEED_MODE=developer_runner bash scripts/local-manual/seed-agent-task-diagnostics.sh >/dev/null
 bash scripts/local-manual/start-runner.sh >/dev/null
 run_with_retry external_terminal_smoke bash scripts/agent-task-terminal-real-smoke.sh
 bash scripts/local-manual/internal-up.sh >/dev/null
 run_with_retry internal_terminal_smoke run_internal_terminal_smoke
-bash scripts/local-manual/internal-down.sh >/dev/null
-bash scripts/local-manual/seed-agent-task-diagnostics.sh >/dev/null
+finish_matrix_in_final_posture

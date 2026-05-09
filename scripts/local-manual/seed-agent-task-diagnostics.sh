@@ -4,6 +4,7 @@ set -euo pipefail
 source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/common.sh"
 init_local_manual_env
 require_preset_endpoint_env
+AGENT_RUNNER_SEED_MODE="${AGENT_RUNNER_SEED_MODE:-developer_runner}"
 
 if ! local_manual_platform_is_ready; then
   err "local-manual platform is not ready; run make local-manual-up first"
@@ -20,9 +21,10 @@ info "refreshing dev-admin token"
   make agent-runner-refresh-token
 )
 
-info "initializing managed agent-task runner resources"
+info "initializing ${AGENT_RUNNER_SEED_MODE} agent-task runner resources"
 (
   cd "${ROOT_DIR}" && \
+  AGENT_RUNNER_SEED_MODE="${AGENT_RUNNER_SEED_MODE}" \
   API_BASE="http://localhost:${PORT_API}" \
   WORKSPACE_ID="${WORKSPACE_ID}" \
   PRESET_ENDPOINT_API_KEY="${PRESET_ENDPOINT_API_KEY}" \

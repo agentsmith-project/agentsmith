@@ -3830,6 +3830,48 @@ export interface components {
             /** @enum {string} */
             reason?: "hard_teardown_pending";
         };
+        TaskTerminalSession: {
+            /** @enum {string} */
+            browser_connection_status: "attached" | "browser_disconnected" | "none";
+            /** Format: date-time */
+            close_deadline_at: string | null;
+            close_reason: string | null;
+            /** @enum {string|null} */
+            close_result: "closed" | "not_found" | null;
+            /** @enum {string} */
+            close_state: "none" | "requested" | "delivered" | "acked" | "expired";
+            cols: number;
+            /** Format: date-time */
+            created_at: string;
+            /** Format: date-time */
+            ended_at: string | null;
+            exit_code: number | null;
+            /** @enum {string|null} */
+            failure_kind: "process_start_failed" | "process_exited_unexpectedly" | "protocol_error" | "permission_revoked" | "runner_recovery_timeout" | "terminal_process_lost" | "runner_process_exited" | "terminal_runtime_session_mismatch" | null;
+            input_enabled: boolean;
+            /** Format: date-time */
+            last_activity_at: string;
+            latest_seq: number;
+            /** @enum {string} */
+            lifecycle_status: "pending" | "starting" | "active" | "recovering" | "closing" | "closed" | "failed";
+            recoverable: boolean;
+            /** Format: date-time */
+            recovery_deadline_at: string | null;
+            replay_gap: boolean;
+            /** @enum {string} */
+            replay_status: "complete" | "partial" | "unavailable";
+            rows: number;
+            /** @enum {string} */
+            runner_connection_status: "dispatching" | "attached" | "transport_lost" | "adopting" | "missing" | "closed";
+            /** @description Resolved Agent Runner id used by this terminal session. */
+            runner_id: string;
+            /** @description Internal runner session id used by this terminal session. */
+            runner_session_id: string;
+            /** @enum {string} */
+            status: "pending" | "active" | "disconnected" | "recovering" | "closing" | "closed" | "failed";
+            terminal_session_id: string;
+            ws_url: string | null;
+        };
         TaskTraceEvent: {
             /** Format: date-time */
             at: string;
@@ -9064,26 +9106,7 @@ export interface operations {
                 };
                 content: {
                     "application/json": {
-                        items: {
-                            close_reason: string | null;
-                            cols: number;
-                            /** Format: date-time */
-                            created_at: string;
-                            /** Format: date-time */
-                            ended_at: string | null;
-                            exit_code: number | null;
-                            /** Format: date-time */
-                            last_activity_at: string;
-                            rows: number;
-                            /** @description Resolved Agent Runner id used by this terminal session. */
-                            runner_id: string;
-                            /** @description Internal runner session id used by this terminal session. */
-                            runner_session_id?: string;
-                            /** @enum {string} */
-                            status: "pending" | "active" | "disconnected" | "closed" | "failed";
-                            terminal_session_id: string;
-                            ws_url: string | null;
-                        }[];
+                        items: components["schemas"]["TaskTerminalSession"][];
                         total: number;
                     };
                 };
@@ -9116,16 +9139,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": {
-                        /** @description Resolved Agent Runner id used by this terminal session. */
-                        runner_id: string;
-                        /** @description Internal runner session id used by this terminal session. */
-                        runner_session_id?: string;
-                        /** @enum {string} */
-                        status: "pending" | "active" | "disconnected" | "closed" | "failed";
-                        terminal_session_id: string;
-                        ws_url: string;
-                    };
+                    "application/json": components["schemas"]["TaskTerminalSession"];
                 };
             };
             401: components["responses"]["Unauthorized"];
@@ -9149,26 +9163,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": {
-                        close_reason: string | null;
-                        cols: number;
-                        /** Format: date-time */
-                        created_at: string;
-                        /** Format: date-time */
-                        ended_at: string | null;
-                        exit_code: number | null;
-                        /** Format: date-time */
-                        last_activity_at: string;
-                        rows: number;
-                        /** @description Resolved Agent Runner id used by this terminal session. */
-                        runner_id: string;
-                        /** @description Internal runner session id used by this terminal session. */
-                        runner_session_id?: string;
-                        /** @enum {string} */
-                        status: "pending" | "active" | "disconnected" | "closed" | "failed";
-                        terminal_session_id: string;
-                        ws_url: string | null;
-                    };
+                    "application/json": components["schemas"]["TaskTerminalSession"];
                 };
             };
             401: components["responses"]["Unauthorized"];

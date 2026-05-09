@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { APIRequestContext } from '@playwright/test';
 import { createServer, type Server } from 'node:http';
-import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
+import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { WebSocketServer, type WebSocket as ServerWebSocket } from 'ws';
@@ -35,6 +35,7 @@ import {
   startAgentTaskRunViaApi,
   startMockFeishuMcpServer,
   startMockJiraServer,
+  waitForTerminalSessionFinalTruthViaApi,
   waitForRunnerOutputToken,
 } from '../e2e/integration-real-helpers';
 
@@ -304,6 +305,157 @@ describe('integration-real-helpers', () => {
         timeoutMs: 50,
       })).rejects.toThrow();
     });
+
+    it('polls terminal close final truth from session get and list instead of browser socket state', async () => {
+      let sessionReadCount = 0;
+      const get = vi.fn().mockImplementation(async (url: string) => {
+        if (url.endsWith('/terminal/sessions')) {
+          return okResponse({
+            total: 1,
+            items: [
+              terminalSessionRecord({
+                terminal_session_id: 'term_canonical',
+                status: 'closing',
+                close_state: 'delivered',
+                close_deadline_at: '2026-05-05T00:01:00.000Z',
+              }),
+            ],
+          });
+        }
+        if (url.endsWith('/terminal/sessions/term_canonical')) {
+          sessionReadCount += 1;
+          return okResponse(terminalSessionRecord({
+            status: sessionReadCount === 1 ? 'closing' : 'closed',
+            close_state: sessionReadCount === 1 ? 'delivered' : 'closed',
+            close_attempt_id: 'close_attempt_1',
+            close_ack_status: sessionReadCount === 1 ? null : 'closed',
+          }));
+        }
+        throw new Error(`unexpected_get:${url}`);
+      });
+      const page = {
+        evaluate: vi.fn().mockResolvedValue(JSON.stringify({ state: { token: 'mock_token' } })),
+        request: { get },
+        waitForTimeout: vi.fn().mockResolvedValue(undefined),
+      } as unknown as Parameters<typeof waitForTerminalSessionFinalTruthViaApi>[0]['page'];
+
+      await expect(waitForTerminalSessionFinalTruthViaApi({
+        page,
+        workspaceId: 'ws_default',
+        projectId: 'proj_1',
+        taskId: 'task_1',
+        sessionId: 'term_canonical',
+        timeoutMs: 1_000,
+        pollIntervalMs: 1,
+      })).resolves.toMatchObject({
+        sessionId: 'term_canonical',
+        outcome: 'closed',
+        closeState: 'closed',
+        closeAttemptId: 'close_attempt_1',
+        closeAckStatus: 'closed',
+      });
+      expect(page.waitForTimeout).toHaveBeenCalled();
+    });
+
+    it('uses terminal_session_id, not legacy id, when deciding whether a closed session is still listed', async () => {
+      const get = vi.fn().mockImplementation(async (url: string) => {
+        if (url.endsWith('/terminal/sessions')) {
+          return okResponse({
+            total: 1,
+            items: [
+              terminalSessionRecord({
+                terminal_session_id: 'term_different',
+                id: 'term_canonical',
+                session_id: 'term_canonical',
+                status: 'active',
+              }),
+            ],
+          });
+        }
+        if (url.endsWith('/terminal/sessions/term_canonical')) {
+          return {
+            ok: () => false,
+            status: () => 404,
+            json: async () => ({ message: 'not found' }),
+            text: async () => JSON.stringify({ message: 'not found' }),
+          };
+        }
+        throw new Error(`unexpected_get:${url}`);
+      });
+      const page = {
+        evaluate: vi.fn().mockResolvedValue(JSON.stringify({ state: { token: 'mock_token' } })),
+        request: { get },
+        waitForTimeout: vi.fn(),
+      } as unknown as Parameters<typeof waitForTerminalSessionFinalTruthViaApi>[0]['page'];
+
+      await expect(waitForTerminalSessionFinalTruthViaApi({
+        page,
+        workspaceId: 'ws_default',
+        projectId: 'proj_1',
+        taskId: 'task_1',
+        sessionId: 'term_canonical',
+        timeoutMs: 50,
+      })).resolves.toMatchObject({
+        sessionId: 'term_canonical',
+        outcome: 'closed',
+        listedSession: null,
+        getStatus: 404,
+      });
+      expect(page.waitForTimeout).not.toHaveBeenCalled();
+    });
+
+    it('includes close ack and diagnostic fields when terminal close truth does not converge', async () => {
+      const get = vi.fn().mockImplementation(async (url: string) => {
+        if (url.endsWith('/terminal/sessions')) {
+          return okResponse({
+            total: 1,
+            items: [
+              terminalSessionRecord({
+                terminal_session_id: 'term_canonical',
+                status: 'closing',
+                close_state: 'delivered',
+                close_deadline_at: '2026-05-05T00:01:00.000Z',
+                close_attempt_id: 'close_attempt_timeout',
+                close_ack_status: 'error',
+                close_diagnostic_code: 'process_tree_still_alive',
+                close_diagnostic: { remaining_pid_count: 1 },
+                diagnostics: { close: 'runner_ack_error' },
+              }),
+            ],
+          });
+        }
+        if (url.endsWith('/terminal/sessions/term_canonical')) {
+          return okResponse(terminalSessionRecord({
+            status: 'closing',
+            close_state: 'delivered',
+            close_deadline_at: '2026-05-05T00:01:00.000Z',
+            close_attempt_id: 'close_attempt_timeout',
+            close_ack_status: 'error',
+            close_diagnostic_code: 'process_tree_still_alive',
+            close_diagnostic: { remaining_pid_count: 1 },
+            diagnostics: { close: 'runner_ack_error' },
+          }));
+        }
+        throw new Error(`unexpected_get:${url}`);
+      });
+      const page = {
+        evaluate: vi.fn().mockResolvedValue(JSON.stringify({ state: { token: 'mock_token' } })),
+        request: { get },
+        waitForTimeout: vi.fn().mockResolvedValue(undefined),
+      } as unknown as Parameters<typeof waitForTerminalSessionFinalTruthViaApi>[0]['page'];
+
+      await expect(waitForTerminalSessionFinalTruthViaApi({
+        page,
+        workspaceId: 'ws_default',
+        projectId: 'proj_1',
+        taskId: 'task_1',
+        sessionId: 'term_canonical',
+        timeoutMs: 1,
+        pollIntervalMs: 1,
+      })).rejects.toThrow(
+        /terminal_session_close_truth_timeout:[\s\S]*close_state[\s\S]*close_deadline_at[\s\S]*close_attempt_id[\s\S]*close_ack_status[\s\S]*close_diagnostic_code[\s\S]*close_diagnostic[\s\S]*diagnostics/,
+      );
+    });
   });
 
   describe('terminal websocket command helper', () => {
@@ -367,10 +519,10 @@ describe('integration-real-helpers', () => {
       expect(clientFrames[0]).toMatchObject({
         type: 'terminal.reconnect',
         terminal_session_id: 'term_1',
-        view: 'agent_task.task_terminal',
         cols: 120,
         rows: 40,
       });
+      expect(clientFrames[0]).not.toHaveProperty('view');
     });
 
     it('does not send resize/stdin until terminal input is enabled', async () => {
@@ -432,6 +584,64 @@ describe('integration-real-helpers', () => {
 
       await expect(preReadyFrames).resolves.toEqual(['terminal.reconnect']);
       await expect(commandPromise).resolves.toContain('STATE_READY_DONE');
+      expect(clientFrames.map((frame) => frame.type)).toEqual([
+        'terminal.reconnect',
+        'terminal.resize',
+        'terminal.stdin',
+      ]);
+    });
+
+    it('treats terminal.state recovering as live wait and still waits for input_enabled=true', async () => {
+      const clientFrames: Record<string, unknown>[] = [];
+      let resolvePreReadyFrames: (types: unknown[]) => void = () => undefined;
+      const preReadyFrames = new Promise<unknown[]>((resolve) => {
+        resolvePreReadyFrames = resolve;
+      });
+      const server = await startTerminalWsTestServer((socket) => {
+        socket.on('message', (raw) => {
+          const frame = parseClientFrame(raw as Buffer);
+          clientFrames.push(frame);
+          if (frame.type === 'terminal.reconnect') {
+            socket.send(JSON.stringify({
+              type: 'terminal.state',
+              terminal_session_id: 'term_recovering',
+              state: 'recovering',
+              status: 'recovering',
+              input_enabled: false,
+            }));
+            setTimeout(() => {
+              resolvePreReadyFrames(clientFrames.map((seenFrame) => seenFrame.type));
+              socket.send(JSON.stringify({
+                type: 'terminal.state',
+                terminal_session_id: 'term_recovering',
+                state: 'ready',
+                status: 'active',
+                input_enabled: true,
+              }));
+            }, 25);
+            return;
+          }
+          if (frame.type === 'terminal.stdin') {
+            socket.send(JSON.stringify({
+              type: 'terminal.output',
+              terminal_session_id: 'term_recovering',
+              seq: 1,
+              chunk: 'RECOVERED_DONE\n',
+            }));
+          }
+        });
+      });
+
+      const commandPromise = runTerminalCommandViaWs({
+        wsUrl: server.url,
+        terminalSessionId: 'term_recovering',
+        command: 'printf RECOVERED_DONE',
+        waitFor: ['RECOVERED_DONE'],
+        timeoutMs: 2_000,
+      });
+
+      await expect(preReadyFrames).resolves.toEqual(['terminal.reconnect']);
+      await expect(commandPromise).resolves.toContain('RECOVERED_DONE');
       expect(clientFrames.map((frame) => frame.type)).toEqual([
         'terminal.reconnect',
         'terminal.resize',
@@ -1180,6 +1390,267 @@ describe('integration-real-helpers', () => {
         delete process.env.MONGO_URL;
       } else {
         process.env.MONGO_URL = previousMongoUrl;
+      }
+      await rm(tempRoot, { recursive: true, force: true });
+    }
+  });
+
+  it('does not reuse developer runner state as the managed Agent Runner seed', async () => {
+    const tempRoot = await mkdtemp(path.join(tmpdir(), 'developer-runner-helper-state-'));
+    const stateFile = path.join(tempRoot, 'state.json');
+    const summaryFile = path.join(tempRoot, 'summary.env');
+    const ambientCurrentRoot = path.join(tempRoot, 'artifacts', 'backend-real', 'current');
+    const previousStateFile = process.env.BACKEND_REAL_STATE_FILE;
+    const previousSummaryFile = process.env.BACKEND_REAL_SUMMARY_FILE;
+    const previousRunnerId = process.env.AGENT_RUNNER_ID;
+    const previousRunnerProvider = process.env.AGENT_RUNNER_PROVIDER;
+    const previousMongoUrl = process.env.MONGO_URL;
+    const previousMongoDbName = process.env.MONGO_DB_NAME;
+    const cwdSpy = vi.spyOn(process, 'cwd').mockReturnValue(tempRoot);
+
+    await writeFile(summaryFile, [
+      'AGENT_RUNNER_ID=ag_developer_summary',
+      'AGENT_RUNNER_PROVIDER=developer',
+      'WS_URL=ws://127.0.0.1:20000/api/v1/agent-execution/ws?agent_runner_id=ag_developer_summary',
+      '',
+    ].join('\n'));
+    await writeFile(stateFile, JSON.stringify({
+      agent_runner: {
+        id: 'ag_developer_state',
+        runner_provider: 'developer',
+        managed: false,
+        ws_url: 'ws://127.0.0.1:20000/api/v1/agent-execution/ws?agent_runner_id=ag_developer_state',
+      },
+    }, null, 2));
+    await mkdir(ambientCurrentRoot, { recursive: true });
+    await writeFile(path.join(ambientCurrentRoot, 'summary.env'), [
+      'AGENT_RUNNER_ID=ag_ambient_managed_should_not_be_used',
+      'AGENT_RUNNER_PROVIDER=managed',
+      '',
+    ].join('\n'));
+    await writeFile(path.join(ambientCurrentRoot, 'state.json'), JSON.stringify({
+      agent_runner: {
+        id: 'ag_ambient_state_should_not_be_used',
+        runner_provider: 'managed',
+      },
+    }, null, 2));
+    process.env.BACKEND_REAL_STATE_FILE = stateFile;
+    process.env.BACKEND_REAL_SUMMARY_FILE = summaryFile;
+    process.env.MONGO_URL = 'mongodb://mbos:mbos_dev_password@localhost:17017/admin';
+    process.env.MONGO_DB_NAME = 'mbos';
+    delete process.env.AGENT_RUNNER_ID;
+    delete process.env.AGENT_RUNNER_PROVIDER;
+
+    upsertManagedRunner.mockResolvedValue({
+      runnerId: 'ag_managed_created',
+      runnerName: 'Requested managed runner',
+      status: 'ready',
+      isDefault: true,
+      defaultEndpointId: 'ep_fallback',
+      capabilities: { terminal: true },
+      diagnostics: { source: 'managed-upsert' },
+      wsUrl: 'ws://127.0.0.1:20000/api/v1/agent-execution/ws?agent_runner_id=ag_managed_created',
+    });
+
+    const get = vi.fn().mockImplementation(async (url: string) => {
+      if (url.endsWith('/agent-runners/ag_developer_summary') || url.endsWith('/agent-runners/ag_developer_state')) {
+        throw new Error(`developer_runner_state_should_not_be_read_as_managed:${url}`);
+      }
+      if (
+        url.endsWith('/agent-runners/ag_ambient_managed_should_not_be_used')
+        || url.endsWith('/agent-runners/ag_ambient_state_should_not_be_used')
+      ) {
+        throw new Error(`ambient_current_should_not_be_read_when_explicit_state_is_set:${url}`);
+      }
+      if (url.endsWith('/agent-task-model-setting')) {
+        return okResponse({
+          readiness: { state: 'not_configured' },
+        });
+      }
+      throw new Error(`unexpected_get:${url}`);
+    });
+    const patch = vi.fn().mockResolvedValue(okResponse({
+      setting: {
+        endpoint_id: 'ep_fallback',
+        default_model: 'seed-model',
+        setting_revision: 'set_provider_aware_1',
+      },
+    }));
+    const page = {
+      evaluate: vi.fn().mockResolvedValue(JSON.stringify({ state: { token: 'mock_token' } })),
+      request: { get, patch },
+    } as unknown as Parameters<typeof createManagedAgentRunnerViaApi>[0];
+
+    try {
+      await expect(createManagedAgentRunnerViaApi(page, {
+        workspaceId: 'ws_default',
+        projectId: 'proj_1',
+        endpointId: 'ep_fallback',
+        title: 'Requested managed runner',
+      })).resolves.toMatchObject({
+        runnerId: 'ag_managed_created',
+        runnerName: 'Requested managed runner',
+        status: 'ready',
+        isDefault: true,
+        defaultEndpointId: 'ep_fallback',
+      });
+
+      expect(upsertManagedRunner).toHaveBeenCalledTimes(1);
+      expect(get).not.toHaveBeenCalledWith(
+        expect.stringContaining('/agent-runners/ag_developer_summary'),
+        expect.any(Object),
+      );
+      expect(get).not.toHaveBeenCalledWith(
+        expect.stringContaining('/agent-runners/ag_developer_state'),
+        expect.any(Object),
+      );
+    } finally {
+      if (previousStateFile === undefined) {
+        delete process.env.BACKEND_REAL_STATE_FILE;
+      } else {
+        process.env.BACKEND_REAL_STATE_FILE = previousStateFile;
+      }
+      if (previousSummaryFile === undefined) {
+        delete process.env.BACKEND_REAL_SUMMARY_FILE;
+      } else {
+        process.env.BACKEND_REAL_SUMMARY_FILE = previousSummaryFile;
+      }
+      if (previousRunnerId === undefined) {
+        delete process.env.AGENT_RUNNER_ID;
+      } else {
+        process.env.AGENT_RUNNER_ID = previousRunnerId;
+      }
+      if (previousRunnerProvider === undefined) {
+        delete process.env.AGENT_RUNNER_PROVIDER;
+      } else {
+        process.env.AGENT_RUNNER_PROVIDER = previousRunnerProvider;
+      }
+      if (previousMongoUrl === undefined) {
+        delete process.env.MONGO_URL;
+      } else {
+        process.env.MONGO_URL = previousMongoUrl;
+      }
+      if (previousMongoDbName === undefined) {
+        delete process.env.MONGO_DB_NAME;
+      } else {
+        process.env.MONGO_DB_NAME = previousMongoDbName;
+      }
+      cwdSpy.mockRestore();
+      await rm(tempRoot, { recursive: true, force: true });
+    }
+  });
+
+  it('falls back to managed upsert when a legacy seeded runner id resolves to a Developer runner payload', async () => {
+    const tempRoot = await mkdtemp(path.join(tmpdir(), 'legacy-developer-runner-helper-state-'));
+    const summaryFile = path.join(tempRoot, 'summary.env');
+    const previousSummaryFile = process.env.BACKEND_REAL_SUMMARY_FILE;
+    const previousRunnerId = process.env.AGENT_RUNNER_ID;
+    const previousRunnerProvider = process.env.AGENT_RUNNER_PROVIDER;
+    const previousMongoUrl = process.env.MONGO_URL;
+    const previousMongoDbName = process.env.MONGO_DB_NAME;
+
+    await writeFile(summaryFile, [
+      'AGENT_RUNNER_ID=ag_legacy_developer',
+      'WS_URL=ws://127.0.0.1:20000/api/v1/agent-execution/ws?agent_runner_id=ag_legacy_developer',
+      '',
+    ].join('\n'));
+    process.env.BACKEND_REAL_SUMMARY_FILE = summaryFile;
+    process.env.MONGO_URL = 'mongodb://mbos:mbos_dev_password@localhost:17017/admin';
+    process.env.MONGO_DB_NAME = 'mbos';
+    delete process.env.AGENT_RUNNER_ID;
+    delete process.env.AGENT_RUNNER_PROVIDER;
+
+    upsertManagedRunner.mockResolvedValue({
+      runnerId: 'ag_managed_from_legacy_payload',
+      runnerName: 'Payload-aware managed runner',
+      status: 'ready',
+      isDefault: true,
+      defaultEndpointId: 'ep_fallback',
+      capabilities: { terminal: true },
+      diagnostics: { source: 'payload-aware-upsert' },
+      wsUrl: 'ws://127.0.0.1:20000/api/v1/agent-execution/ws?agent_runner_id=ag_managed_from_legacy_payload',
+    });
+
+    const get = vi.fn().mockImplementation(async (url: string) => {
+      if (url.endsWith('/agent-runners/ag_legacy_developer')) {
+        return okResponse({
+          id: 'ag_legacy_developer',
+          project_id: 'proj_1',
+          name: 'Legacy Developer runner',
+          kind: 'developer',
+          runner_provider: 'developer',
+          managed: false,
+          runner_status: 'ready',
+          status: 'enabled',
+          is_default: true,
+          default_endpoint_id: 'ep_developer',
+          capabilities: { terminal: true },
+          diagnostics: { source: 'developer' },
+        });
+      }
+      if (url.endsWith('/agent-task-model-setting')) {
+        return okResponse({
+          readiness: { state: 'not_configured' },
+        });
+      }
+      throw new Error(`unexpected_get:${url}`);
+    });
+    const patch = vi.fn().mockResolvedValue(okResponse({
+      setting: {
+        endpoint_id: 'ep_fallback',
+        default_model: 'seed-model',
+        setting_revision: 'set_payload_provider_aware_1',
+      },
+    }));
+    const page = {
+      evaluate: vi.fn().mockResolvedValue(JSON.stringify({ state: { token: 'mock_token' } })),
+      request: { get, patch },
+    } as unknown as Parameters<typeof createManagedAgentRunnerViaApi>[0];
+
+    try {
+      await expect(createManagedAgentRunnerViaApi(page, {
+        workspaceId: 'ws_default',
+        projectId: 'proj_1',
+        endpointId: 'ep_fallback',
+        title: 'Payload-aware managed runner',
+      })).resolves.toMatchObject({
+        runnerId: 'ag_managed_from_legacy_payload',
+        runnerName: 'Payload-aware managed runner',
+        status: 'ready',
+        isDefault: true,
+        defaultEndpointId: 'ep_fallback',
+      });
+
+      expect(get).toHaveBeenCalledWith(
+        expect.stringContaining('/agent-runners/ag_legacy_developer'),
+        expect.any(Object),
+      );
+      expect(upsertManagedRunner).toHaveBeenCalledTimes(1);
+    } finally {
+      if (previousSummaryFile === undefined) {
+        delete process.env.BACKEND_REAL_SUMMARY_FILE;
+      } else {
+        process.env.BACKEND_REAL_SUMMARY_FILE = previousSummaryFile;
+      }
+      if (previousRunnerId === undefined) {
+        delete process.env.AGENT_RUNNER_ID;
+      } else {
+        process.env.AGENT_RUNNER_ID = previousRunnerId;
+      }
+      if (previousRunnerProvider === undefined) {
+        delete process.env.AGENT_RUNNER_PROVIDER;
+      } else {
+        process.env.AGENT_RUNNER_PROVIDER = previousRunnerProvider;
+      }
+      if (previousMongoUrl === undefined) {
+        delete process.env.MONGO_URL;
+      } else {
+        process.env.MONGO_URL = previousMongoUrl;
+      }
+      if (previousMongoDbName === undefined) {
+        delete process.env.MONGO_DB_NAME;
+      } else {
+        process.env.MONGO_DB_NAME = previousMongoDbName;
       }
       await rm(tempRoot, { recursive: true, force: true });
     }

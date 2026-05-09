@@ -280,6 +280,24 @@ describe('task-workspace', () => {
     })).toThrow('task_workspace_paths_missing:task_home_path');
   });
 
+  it('does not translate API execution paths into the developer workspace root', async () => {
+    process.env.MBOS_AGENT_TASK_RUNNER_MODE = 'developer';
+    process.env.MBOS_AGENT_WORKSPACE_ROOT = '/home/alice/ags-workspace';
+
+    const resolved = await prepareTaskWorkspace({
+      executionContext: taskExecutionContextForHome('task_api_truth', '/home/task_api_truth', {
+        workspace_binding_mode: 'pre_mounted',
+      }),
+      username: 'alice',
+      taskId: 'task_api_truth',
+    });
+
+    expect(resolved.cwd).toBe('/home/task_api_truth/workspace');
+    expect(resolved.paths.taskHome).toBe('/home/task_api_truth');
+    expect(resolved.paths.workspaceDir).toBe('/home/task_api_truth/workspace');
+    expect(resolved.paths.taskHome).not.toBe('/home/alice/ags-workspace/task_api_truth');
+  });
+
   it('fetches task-bound workspace access with bearer auth', async () => {
     fetchMock.mockResolvedValue({
       ok: true,
@@ -395,6 +413,42 @@ describe('task-workspace', () => {
     expectIsoTimestamp(session?.mounted_at);
     expectIsoTimestamp(session?.updated_at);
     expectIsoTimestamp(session?.last_ref_change_at);
+  });
+
+  it('fails typed when workspace-access echo paths disagree with the execution context', async () => {
+    process.env.MBOS_AGENT_TASK_RUNNER_MODE = 'developer';
+    process.env.MBOS_AGENT_WORKSPACE_ROOT = '/tmp/runner-root';
+    fetchMock.mockResolvedValue({
+      ok: true,
+      json: async () => ({
+        task_id: 'task_1',
+        workspace_binding_mode: 'file_library',
+        task_home_path: '/tmp/runner-root/task_1',
+        workspace_path: '/tmp/runner-root/task_1/workspace',
+        artifacts_path: '/tmp/runner-root/task_1/workspace/.artifacts',
+        workspace_dir_name: 'ignored-in-v2',
+        file_library_id: 'flib_1',
+        file_library_name: 'Project Workspace',
+        filesystem_name: 'flib-market-analysis-q1',
+        metadata_url: 'postgres://juicefs-meta',
+        storage_bucket_url: 'http://localhost:19000/jfs-lib-flib_1',
+      }),
+    });
+
+    await expect(prepareTaskWorkspace({
+      executionContext: taskExecutionContext({
+        api_base: 'http://localhost:20000',
+        workspace_id: 'ws_default',
+        project_id: 'proj_1',
+        execution_ticket: 'test-token',
+        workspace_binding_mode: 'file_library',
+      }),
+      username: 'alice',
+      taskId: 'task_1',
+    })).rejects.toThrow('task_workspace_access_path_mismatch:task_home_path');
+
+    expect(spawnMock).not.toHaveBeenCalled();
+    expect(writeFileMock).not.toHaveBeenCalled();
   });
 
   it('upgrades legacy registry entries while preserving other tracked mounts', async () => {

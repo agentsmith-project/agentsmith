@@ -1,8 +1,19 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-const { accessMock, mkdirMock, writeFileMock, prepareTaskWorkspaceMock, prepareTaskWorkspaceAssetsMock, releaseTaskWorkspaceMock } = vi.hoisted(() => ({
+const {
+  accessMock,
+  mkdirMock,
+  readFileMock,
+  readdirMock,
+  writeFileMock,
+  prepareTaskWorkspaceMock,
+  prepareTaskWorkspaceAssetsMock,
+  releaseTaskWorkspaceMock,
+} = vi.hoisted(() => ({
   accessMock: vi.fn(),
   mkdirMock: vi.fn(),
+  readFileMock: vi.fn(),
+  readdirMock: vi.fn(),
   writeFileMock: vi.fn(),
   prepareTaskWorkspaceMock: vi.fn(),
   prepareTaskWorkspaceAssetsMock: vi.fn(),
@@ -37,10 +48,14 @@ const {
 vi.mock('node:fs/promises', () => ({
   access: accessMock,
   mkdir: mkdirMock,
+  readFile: readFileMock,
+  readdir: readdirMock,
   writeFile: writeFileMock,
   default: {
     access: accessMock,
     mkdir: mkdirMock,
+    readFile: readFileMock,
+    readdir: readdirMock,
     writeFile: writeFileMock,
   },
 }));
@@ -78,7 +93,13 @@ vi.mock('node-pty', () => ({
   spawn: nodePtySpawnMock,
 }));
 
-import { prepareTerminalWorkspace, startTerminalProcess } from './terminal-runtime.js';
+import {
+  prepareTerminalWorkspace,
+  startTerminalProcess,
+  terminateTerminalProcessTree,
+  type TerminalPidMetadata,
+  type TerminalProcess,
+} from './terminal-runtime.js';
 
 const TASK_HOME = '/home/task_1';
 const TASK_WORKSPACE = `${TASK_HOME}/workspace`;
@@ -91,6 +112,51 @@ function terminalExecutionContext(overrides: Record<string, unknown> = {}) {
     workspace_path: TASK_WORKSPACE,
     artifacts_path: TASK_ARTIFACTS,
     ...overrides,
+  };
+}
+
+function linuxStat(pid: number, ppid: number, pgrp: number, sid: number, comm = 'bash'): string {
+  return `${pid} (${comm}) S ${ppid} ${pgrp} ${sid} 34816 0 0 0 0 0 0 0 0 20 0 1 0 1 0 0\n`;
+}
+
+function createFakeTerminalProcess(
+  pidMetadata: TerminalPidMetadata,
+): {
+  child: TerminalProcess;
+  emitExit: (exitCode: number | null, signal?: NodeJS.Signals | null) => void;
+  setExitCode: (exitCode: number | null) => void;
+  killMock: ReturnType<typeof vi.fn>;
+} {
+  let exitCode: number | null = null;
+  const exitListeners: Array<(event: { exitCode: number | null; signal?: string | number | null }) => void> = [];
+  const killMock = vi.fn();
+  const child: TerminalProcess = {
+    get exitCode() {
+      return exitCode;
+    },
+    get pidMetadata() {
+      return pidMetadata;
+    },
+    write: vi.fn(),
+    resize: vi.fn(),
+    kill: killMock,
+    onData: vi.fn(),
+    onExit: vi.fn((listener: (event: { exitCode: number | null; signal?: string | number | null }) => void) => {
+      exitListeners.push(listener);
+    }),
+  };
+  return {
+    child,
+    emitExit(exitCodeValue: number | null, signal: NodeJS.Signals | null = null) {
+      exitCode = exitCodeValue;
+      for (const listener of exitListeners) {
+        listener({ exitCode: exitCodeValue, signal });
+      }
+    },
+    setExitCode(exitCodeValue: number | null) {
+      exitCode = exitCodeValue;
+    },
+    killMock,
   };
 }
 
@@ -107,6 +173,10 @@ describe('terminal-runtime', () => {
     vi.clearAllMocks();
     accessMock.mockResolvedValue(undefined);
     mkdirMock.mockResolvedValue(undefined);
+    readFileMock.mockRejectedValue(Object.assign(new Error('proc stat missing'), {
+      code: 'ENOENT',
+    }));
+    readdirMock.mockResolvedValue([]);
     writeFileMock.mockResolvedValue(undefined);
     process.env.PATH = '/usr/bin:/bin';
     prepareTaskWorkspaceMock.mockResolvedValue({
@@ -155,6 +225,7 @@ describe('terminal-runtime', () => {
   });
 
   afterEach(() => {
+    vi.useRealTimers();
     process.env.PATH = originalPath;
     if (originalHistfile === undefined) {
       delete process.env.HISTFILE;
@@ -336,6 +407,214 @@ describe('terminal-runtime', () => {
     expect(nodePtyWriteMock).toHaveBeenCalledWith('echo hi\n');
     expect(nodePtyResizeMock).toHaveBeenCalledWith(120, 30);
     expect(nodePtyKillMock).toHaveBeenCalledWith('SIGTERM');
+  });
+
+  it('exposes terminal pid metadata from the spawned pty process', async () => {
+    nodePtySpawnMock.mockReturnValueOnce({
+      pid: 4242,
+      write: nodePtyWriteMock,
+      resize: nodePtyResizeMock,
+      kill: nodePtyKillMock,
+      onData: nodePtyOnDataMock,
+      onExit: nodePtyOnExitMock,
+    });
+    readFileMock.mockImplementation(async (pathLike: string) => {
+      if (pathLike === '/proc/4242/stat') {
+        return linuxStat(4242, 1, 4242, 4242, 'bash');
+      }
+      throw Object.assign(new Error('missing proc stat'), { code: 'ENOENT' });
+    });
+
+    const started = await startTerminalProcess({
+      executionContext: terminalExecutionContext({
+        run_id: 'run_1',
+      }),
+      shell: '/usr/bin/bash',
+    });
+
+    expect(started.child.pidMetadata).toEqual({
+      ptyPid: 4242,
+      rootPid: 4242,
+      pgid: 4242,
+      sid: 4242,
+      platform: process.platform,
+      diagnostics: [],
+    });
+  });
+
+  it('hard-kills a terminal process tree only after graceful close grace expires', async () => {
+    vi.useFakeTimers();
+    const alivePids = new Set([1001, 1002]);
+    const fake = createFakeTerminalProcess({
+      ptyPid: 1001,
+      rootPid: 1001,
+      pgid: 1001,
+      sid: 1001,
+      platform: 'linux',
+      diagnostics: [],
+    });
+    fake.killMock.mockImplementation((signal?: NodeJS.Signals) => {
+      if (signal !== 'SIGKILL') return;
+      alivePids.clear();
+      fake.emitExit(137, 'SIGKILL');
+    });
+    readFileMock.mockImplementation(async (pathLike: string) => {
+      if (pathLike === `/proc/${process.pid}/stat`) return linuxStat(process.pid, 1, 9000, 9000, 'node');
+      if (pathLike === '/proc/1001/stat' && alivePids.has(1001)) return linuxStat(1001, 1, 1001, 1001, 'bash');
+      if (pathLike === '/proc/1002/stat' && alivePids.has(1002)) return linuxStat(1002, 1001, 1001, 1001, 'sleep');
+      throw Object.assign(new Error('missing proc stat'), { code: 'ENOENT' });
+    });
+    readdirMock.mockImplementation(async (pathLike: string) => {
+      if (pathLike !== '/proc') return [];
+      return [String(process.pid), ...Array.from(alivePids).map(String)];
+    });
+    const processKillSpy = vi.spyOn(process, 'kill').mockImplementation(((pid: number, signal?: string | number) => {
+      if (signal === 0) {
+        return true;
+      }
+      if (signal === 'SIGKILL' && (pid === -1001 || pid === 1001 || pid === 1002)) {
+        alivePids.clear();
+        fake.emitExit(137, 'SIGKILL');
+      }
+      return true;
+    }) as typeof process.kill);
+    try {
+      let resolved = false;
+      const resultPromise = terminateTerminalProcessTree(fake.child, {
+        graceMs: 1_000,
+        hardKillGraceMs: 1_000,
+        pollIntervalMs: 10,
+      }).then((result) => {
+        resolved = true;
+        return result;
+      });
+
+      for (let index = 0; index < 10 && !fake.killMock.mock.calls.some(([signal]) => signal === 'SIGTERM'); index += 1) {
+        await Promise.resolve();
+      }
+      expect(fake.killMock).toHaveBeenCalledWith('SIGTERM');
+      expect(fake.killMock).not.toHaveBeenCalledWith('SIGKILL');
+      expect(resolved).toBe(false);
+
+      await vi.advanceTimersByTimeAsync(999);
+      expect(fake.killMock).not.toHaveBeenCalledWith('SIGKILL');
+      expect(resolved).toBe(false);
+
+      await vi.advanceTimersByTimeAsync(1);
+      const result = await resultPromise;
+
+      expect(result.outcome).toBe('terminated');
+      expect(result.remainingPids).toEqual([]);
+      expect(result.terminatedPids).toContain(1002);
+      expect(result.signalSequence).toEqual(expect.arrayContaining([
+        'pty:SIGTERM',
+        'pty:SIGKILL',
+      ]));
+      expect(processKillSpy).not.toHaveBeenCalledWith(-9000, expect.anything());
+    } finally {
+      processKillSpy.mockRestore();
+    }
+  });
+
+  it('returns remaining pid diagnostic evidence when terminal descendants survive hard kill', async () => {
+    vi.useFakeTimers();
+    const fake = createFakeTerminalProcess({
+      ptyPid: 1101,
+      rootPid: 1101,
+      pgid: 1101,
+      sid: 1101,
+      platform: 'linux',
+      diagnostics: [],
+    });
+    readFileMock.mockImplementation(async (pathLike: string) => {
+      if (pathLike === `/proc/${process.pid}/stat`) return linuxStat(process.pid, 1, 9100, 9100, 'node');
+      if (pathLike === '/proc/1101/stat') return linuxStat(1101, 1, 1101, 1101, 'bash');
+      if (pathLike === '/proc/1102/stat') return linuxStat(1102, 1101, 1101, 1101, 'sleep');
+      throw Object.assign(new Error('missing proc stat'), { code: 'ENOENT' });
+    });
+    readdirMock.mockImplementation(async (pathLike: string) => (
+      pathLike === '/proc' ? [String(process.pid), '1101', '1102'] : []
+    ));
+    const processKillSpy = vi.spyOn(process, 'kill').mockImplementation((() => true) as typeof process.kill);
+    try {
+      const resultPromise = terminateTerminalProcessTree(fake.child, {
+        graceMs: 10,
+        hardKillGraceMs: 10,
+        pollIntervalMs: 1,
+      });
+      await vi.advanceTimersByTimeAsync(50);
+      const result = await resultPromise;
+
+      expect(result.outcome).toBe('failed');
+      expect(result.diagnosticCode).toBe('terminal_process_tree_remaining');
+      expect(result.remainingPids).toEqual([1101, 1102]);
+      expect(result.signalSequence).toEqual(expect.arrayContaining([
+        'pty:SIGTERM',
+        'pty:SIGKILL',
+      ]));
+    } finally {
+      processKillSpy.mockRestore();
+    }
+  });
+
+  it('returns not_found when the fenced terminal root pid is already gone', async () => {
+    const fake = createFakeTerminalProcess({
+      ptyPid: 1201,
+      rootPid: 1201,
+      pgid: 1201,
+      sid: 1201,
+      platform: 'linux',
+      diagnostics: [],
+    });
+    readFileMock.mockImplementation(async () => {
+      throw Object.assign(new Error('missing proc stat'), { code: 'ENOENT' });
+    });
+
+    const result = await terminateTerminalProcessTree(fake.child, {
+      graceMs: 10,
+      hardKillGraceMs: 10,
+      pollIntervalMs: 1,
+    });
+
+    expect(result.outcome).toBe('not_found');
+    expect(result.diagnosticCode).toBe('terminal_root_pid_not_found');
+    expect(result.remainingPids).toEqual([]);
+    expect(result.signalSequence).toEqual([]);
+    expect(fake.killMock).not.toHaveBeenCalled();
+  });
+
+  it('returns unsupported_platform as an error on non-linux developer runners', async () => {
+    const originalPlatform = Object.getOwnPropertyDescriptor(process, 'platform');
+    Object.defineProperty(process, 'platform', {
+      configurable: true,
+      value: 'darwin',
+    });
+    try {
+      const fake = createFakeTerminalProcess({
+        ptyPid: 1301,
+        rootPid: 1301,
+        pgid: 1301,
+        sid: 1301,
+        platform: 'darwin',
+        diagnostics: [],
+      });
+
+      const result = await terminateTerminalProcessTree(fake.child, {
+        graceMs: 10,
+        hardKillGraceMs: 10,
+        pollIntervalMs: 1,
+      });
+
+      expect(result.outcome).toBe('failed');
+      expect(result.diagnosticCode).toBe('unsupported_platform');
+      expect(result.remainingPids).toEqual([1301]);
+      expect(result.signalSequence).toEqual([]);
+      expect(fake.killMock).not.toHaveBeenCalled();
+    } finally {
+      if (originalPlatform) {
+        Object.defineProperty(process, 'platform', originalPlatform);
+      }
+    }
   });
 
   it('re-homes leaked shell history and xdg paths before starting interactive terminals', async () => {

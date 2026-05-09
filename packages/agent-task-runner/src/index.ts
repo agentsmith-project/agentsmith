@@ -2,7 +2,8 @@ import { mkdir, writeFile } from 'node:fs/promises';
 import { spawn, type ChildProcessByStdio } from 'node:child_process';
 import type { Readable } from 'node:stream';
 import { join } from 'node:path';
-import { WebSocket } from 'ws';
+import { randomUUID } from 'node:crypto';
+import { WebSocket, type RawData } from 'ws';
 import {
   buildCodexExecArgs,
   buildTaskCodexConfig,
@@ -33,7 +34,13 @@ import {
   markCodexSessionStateReusable,
 } from './session-state.js';
 import { resolveCodexTerminalOutcome } from './terminal-outcome.js';
-import { startTerminalProcess, type TerminalExecutionContext, type TerminalProcess } from './terminal-runtime.js';
+import {
+  startTerminalProcess,
+  terminateTerminalProcessTree,
+  type TerminalExecutionContext,
+  type TerminalProcess,
+  type TerminalProcessTreeTerminationResult,
+} from './terminal-runtime.js';
 import { prepareLaunchCommand } from './child-launcher.js';
 import { buildAgentRuntimeEnv } from './agent-runtime-env.js';
 import { buildTaskUserInstallEnv } from './user-install-env.js';
@@ -55,8 +62,9 @@ type ServerHelloPayload = {
 type AgentMessage = {
   type?: string;
   request_id?: string;
+  runner_session_id?: string;
   terminal_session_id?: string;
-  payload?: ServerStartPayload | ServerHelloPayload;
+  payload?: unknown;
 };
 
 const wsUrl = process.env.MBOS_AGENT_WS_URL;
@@ -71,6 +79,18 @@ const cancelKillDelayMs = (() => {
   return 8_000;
 })();
 const runnerInstanceId = (process.env.MBOS_AGENT_RUNNER_INSTANCE_ID ?? '').trim();
+const resolvedRunnerInstanceId = runnerInstanceId || `runner_${randomUUID().replace(/-/g, '')}`;
+const fallbackRunnerSessionId = (
+  process.env.MBOS_AGENT_RUNNER_SESSION_ID
+  ?? runnerInstanceId
+  ?? 'runner_session_default'
+).trim() || 'runner_session_default';
+const reconnectBaseDelayMs = readPositiveIntegerEnv('MBOS_AGENT_RECONNECT_BASE_MS', 500);
+const reconnectMaxDelayMs = Math.max(
+  reconnectBaseDelayMs,
+  readPositiveIntegerEnv('MBOS_AGENT_RECONNECT_MAX_MS', 15_000),
+);
+const terminalCloseGraceMs = readPositiveIntegerEnv('NOTEBOOK_TERMINAL_CLOSE_GRACE_MS', cancelKillDelayMs);
 
 if (runnerInstanceId) {
   installAgentTaskRunnerProcessIdentity(runnerInstanceId);
@@ -83,14 +103,11 @@ if (!wsUrl || !key) {
   process.exit(1);
 }
 
-const ws = new WebSocket(wsUrl, {
-  headers: { Authorization: `Bearer ${key}` },
-});
-
 type RunningProcess = ChildProcessByStdio<null, Readable, Readable>;
 const runningByRequestId = new Map<string, RunningProcess>();
 const runningTerminalBySessionId = new Map<string, TerminalProcess>();
 const cancelRequestedByRequestId = new Set<string>();
+const suppressFramesByRequestId = new Set<string>();
 const traceSeqByRequestId = new Map<string, number>();
 const runStartedAtByRequestId = new Map<string, number>();
 const reportedArtifactsByRequestId = new Map<string, Set<string>>();
@@ -108,9 +125,52 @@ type FilterStats = RunnerFilterStats;
 const filterStatsByRequestId = new Map<string, FilterStats>();
 let runnerShutdownPromise: Promise<void> | null = null;
 let runnerIsShuttingDown = false;
+let activeWs: WebSocket | null = null;
+let reconnectTimer: ReturnType<typeof setTimeout> | null = null;
+let reconnectAttempt = 0;
+let lastConnectionEpoch = 0;
+const connectionEpochBySocket = new WeakMap<WebSocket, number>();
 
-type ShutdownReason = 'websocket_close' | 'sigint' | 'sigterm';
-type RunnerLifecycleState = 'connected' | 'shutting_down' | 'disconnected';
+type ShutdownReason = 'sigint' | 'sigterm' | 'operator_shutdown' | 'runner_process_exit';
+type RunnerLifecycleState = 'connected' | 'reconnecting' | 'shutting_down' | 'disconnected';
+type TerminalCloseAttempt = {
+  requestId: string;
+  closeAttemptId: string;
+  connectionEpoch: number | null;
+  generation: number | null;
+  runnerSessionId: string | null;
+  reason: string;
+};
+type ValidTerminalCloseAttempt = TerminalCloseAttempt & {
+  connectionEpoch: number;
+  generation: number;
+  runnerSessionId: string;
+};
+type TerminalExitEvidence = {
+  terminalSessionId: string;
+  runnerSessionId: string;
+  generation: number;
+  cols: number;
+  rows: number;
+  cwd: string;
+  exitCode: number | null;
+  signal: string | number | null;
+};
+type ActiveTerminalEntry = {
+  terminalSessionId: string;
+  runnerSessionId: string;
+  generation: number;
+  cols: number;
+  rows: number;
+  cwd: string;
+  connectionEpoch: number | null;
+  child: TerminalProcess;
+  closeAttempt: TerminalCloseAttempt | null;
+  closePromise: Promise<void> | null;
+  attachedToTransport: boolean;
+};
+const activeTerminalBySessionId = new Map<string, ActiveTerminalEntry>();
+const exitedTerminalBySessionId = new Map<string, TerminalExitEvidence>();
 
 function getFilterStats(requestId: string): FilterStats {
   const existing = filterStatsByRequestId.get(requestId);
@@ -140,37 +200,135 @@ function positiveInteger(input: unknown): number | undefined {
   return Math.floor(input);
 }
 
-function canSendRunnerFrame(): boolean {
-  if (runnerIsShuttingDown) return false;
-  const readyState = (ws as { readyState?: number }).readyState;
+function readPositiveIntegerEnv(name: string, fallback: number): number {
+  const value = Number.parseInt(process.env[name] ?? '', 10);
+  if (Number.isFinite(value) && value > 0) return Math.floor(value);
+  return fallback;
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+function readStringFieldFromRecord(record: Record<string, unknown>, field: string): string | undefined {
+  const value = record[field];
+  return typeof value === 'string' && value.trim() ? value.trim() : undefined;
+}
+
+function readPositiveIntegerField(record: Record<string, unknown>, field: string): number | undefined {
+  return positiveInteger(record[field]);
+}
+
+function readIntegerField(record: Record<string, unknown>, field: string): number | null {
+  const value = record[field];
+  if (typeof value !== 'number' || !Number.isFinite(value) || !Number.isInteger(value)) {
+    return null;
+  }
+  return value;
+}
+
+function resolveRunnerSessionId(
+  message: Pick<AgentMessage, 'runner_session_id'>,
+  payload: Record<string, unknown>,
+): string {
+  return (
+    (typeof message.runner_session_id === 'string' && message.runner_session_id.trim()
+      ? message.runner_session_id.trim()
+      : undefined)
+    ?? readStringFieldFromRecord(payload, 'runner_session_id')
+    ?? fallbackRunnerSessionId
+  );
+}
+
+function readRunnerSessionIdWithoutFallback(
+  message: Pick<AgentMessage, 'runner_session_id'>,
+  payload: Record<string, unknown>,
+): string | null {
+  const fromMessage = typeof message.runner_session_id === 'string' && message.runner_session_id.trim()
+    ? message.runner_session_id.trim()
+    : null;
+  if (fromMessage) return fromMessage;
+  return readStringFieldFromRecord(payload, 'runner_session_id') ?? null;
+}
+
+function canSendOnSocket(socket: WebSocket | null): socket is WebSocket {
+  if (!socket) return false;
+  const readyState = (socket as { readyState?: number }).readyState;
   return readyState === undefined || readyState === WebSocket.OPEN;
 }
 
-function sendFrame(type: string, requestId: string, payload: Record<string, unknown>) {
-  if (!canSendRunnerFrame()) return;
-  ws.send(
-    JSON.stringify({
-      type,
-      request_id: requestId,
-      timestamp: new Date().toISOString(),
-      payload,
-    }),
-  );
+function canSendRunnerFrame(): boolean {
+  if (runnerIsShuttingDown) return false;
+  return canSendOnSocket(activeWs);
 }
 
-function sendTerminalFrame(type: string, terminalSessionId: string, payload: Record<string, unknown>) {
-  if (!canSendRunnerFrame()) return;
-  ws.send(
-    JSON.stringify({
-      type,
+function sendRawFrameOnSocket(socket: WebSocket | null, frame: Record<string, unknown>): boolean {
+  if (!canSendOnSocket(socket)) return false;
+  socket.send(JSON.stringify(frame));
+  return true;
+}
+
+function sendRawFrameBestEffort(socket: WebSocket | null, frame: Record<string, unknown>): boolean {
+  if (!socket) return false;
+  try {
+    socket.send(JSON.stringify(frame));
+    return true;
+  } catch (error) {
+    debugLog('best-effort websocket send failed', {
+      error: error instanceof Error ? error.message : String(error),
+    });
+    return false;
+  }
+}
+
+function sendRawFrame(frame: Record<string, unknown>): boolean {
+  if (!canSendRunnerFrame()) return false;
+  return sendRawFrameOnSocket(activeWs, frame);
+}
+
+function assignConnectionEpoch(socket: WebSocket): number {
+  lastConnectionEpoch += 1;
+  connectionEpochBySocket.set(socket, lastConnectionEpoch);
+  return lastConnectionEpoch;
+}
+
+function readConnectionEpoch(socket: WebSocket): number {
+  const existing = connectionEpochBySocket.get(socket);
+  if (existing !== undefined) return existing;
+  return assignConnectionEpoch(socket);
+}
+
+function sendFrame(type: string, requestId: string, payload: Record<string, unknown>) {
+  if (suppressFramesByRequestId.has(requestId)) return;
+  sendRawFrame({
+    type,
+    request_id: requestId,
+    timestamp: new Date().toISOString(),
+    payload,
+  });
+}
+
+function sendTerminalFrame(
+  type: string,
+  terminalSessionId: string,
+  payload: Record<string, unknown>,
+  options: {
+    requestId?: string;
+    runnerSessionId?: string;
+  } = {},
+) {
+  sendRawFrame({
+    type,
+    ...(options.requestId ? { request_id: options.requestId } : {}),
+    ...(options.runnerSessionId ? { runner_session_id: options.runnerSessionId } : {}),
+    terminal_session_id: terminalSessionId,
+    timestamp: new Date().toISOString(),
+    payload: {
       terminal_session_id: terminalSessionId,
-      timestamp: new Date().toISOString(),
-      payload: {
-        terminal_session_id: terminalSessionId,
-        ...payload,
-      },
-    }),
-  );
+      ...(options.runnerSessionId ? { runner_session_id: options.runnerSessionId } : {}),
+      ...payload,
+    },
+  });
 }
 
 function nextTraceSequence(requestId: string): number {
@@ -255,13 +413,14 @@ function writeRunnerLifecycleState(state: RunnerLifecycleState, reason: string):
 }
 
 function shutdownExitCode(reason: ShutdownReason): number {
-  return reason === 'websocket_close' ? 1 : 0;
+  return reason === 'runner_process_exit' ? 1 : 0;
 }
 
 function clearRunnerState(): void {
   runningByRequestId.clear();
   runningTerminalBySessionId.clear();
   cancelRequestedByRequestId.clear();
+  suppressFramesByRequestId.clear();
   traceSeqByRequestId.clear();
   runStartedAtByRequestId.clear();
   reportedArtifactsByRequestId.clear();
@@ -271,11 +430,14 @@ function clearRunnerState(): void {
   finalAgentMessageCandidateByRequestId.clear();
   standardResponsesTextStateByRequestId.clear();
   filterStatsByRequestId.clear();
+  activeTerminalBySessionId.clear();
+  exitedTerminalBySessionId.clear();
 }
 
 function clearRequestRuntimeState(requestId: string): void {
   runningByRequestId.delete(requestId);
   cancelRequestedByRequestId.delete(requestId);
+  suppressFramesByRequestId.delete(requestId);
   traceSeqByRequestId.delete(requestId);
   runStartedAtByRequestId.delete(requestId);
   filterStatsByRequestId.delete(requestId);
@@ -300,18 +462,6 @@ function waitForCodexProcessClose(child: RunningProcess): Promise<void> {
     };
     child.once('close', finish);
     child.once('exit', finish);
-  });
-}
-
-function waitForTerminalProcessExit(child: TerminalProcess): Promise<void> {
-  if (child.exitCode !== null) return Promise.resolve();
-  return new Promise((resolve) => {
-    let resolved = false;
-    child.onExit(() => {
-      if (resolved) return;
-      resolved = true;
-      resolve();
-    });
   });
 }
 
@@ -347,17 +497,19 @@ async function terminateCodexProcess(requestId: string, child: RunningProcess): 
 
 async function terminateTerminalProcess(terminalSessionId: string, child: TerminalProcess): Promise<void> {
   if (child.exitCode !== null) return;
-  const closed = waitForTerminalProcessExit(child);
-  child.kill('SIGTERM');
-  if (await waitWithTimeout(closed, cancelKillDelayMs)) return;
-  if (child.exitCode === null) {
-    debugLog('terminal process did not exit before shutdown grace; sending SIGKILL', {
+  const result = await terminateTerminalProcessTree(child, {
+    terminalSessionId,
+    graceMs: terminalCloseGraceMs,
+    hardKillGraceMs: terminalCloseGraceMs,
+    reason: 'shutdown',
+  });
+  if (result.outcome !== 'terminated') {
+    debugLog('terminal process tree termination incomplete during shutdown', {
       terminal_session_id: terminalSessionId,
+      outcome: result.outcome,
+      diagnostic_code: result.diagnosticCode,
+      remaining_pid_count: result.remainingPids.length,
     });
-    child.kill('SIGKILL');
-  }
-  if (!(await waitWithTimeout(closed, cancelKillDelayMs))) {
-    debugLog('terminal process did not report exit after SIGKILL', { terminal_session_id: terminalSessionId });
   }
 }
 
@@ -371,18 +523,78 @@ async function terminateActiveRunnerProcesses(): Promise<void> {
   await Promise.all([...codexProcesses, ...terminalProcesses]);
 }
 
-function closeWebSocketForShutdown(reason: ShutdownReason): void {
-  if (reason === 'websocket_close') return;
+async function terminateActiveCodexProcessesForTransportLost(): Promise<void> {
+  const codexProcesses = Array.from(runningByRequestId.entries()).map(([requestId, child]) => {
+    suppressFramesByRequestId.add(requestId);
+    return terminateCodexProcess(requestId, child);
+  });
+  await Promise.all(codexProcesses);
+}
+
+function clearReconnectTimer(): void {
+  if (!reconnectTimer) return;
+  clearTimeout(reconnectTimer);
+  reconnectTimer = null;
+}
+
+function nextReconnectDelayMs(): number {
+  const exponentialDelay = reconnectBaseDelayMs * (2 ** Math.min(reconnectAttempt, 6));
+  const cappedDelay = Math.min(reconnectMaxDelayMs, exponentialDelay);
+  const jitter = Math.floor(cappedDelay * 0.2 * Math.random());
+  reconnectAttempt += 1;
+  return Math.min(reconnectMaxDelayMs, cappedDelay + jitter);
+}
+
+function scheduleReconnect(reason: string): void {
+  if (runnerIsShuttingDown || reconnectTimer) return;
+  const delayMs = nextReconnectDelayMs();
+  debugLog('scheduling websocket reconnect', { reason, delay_ms: delayMs, attempt: reconnectAttempt });
+  reconnectTimer = setTimeout(() => {
+    reconnectTimer = null;
+    connectWebSocket();
+  }, delayMs);
+  if (typeof reconnectTimer.unref === 'function') {
+    reconnectTimer.unref();
+  }
+}
+
+function handleTransportLost(reason: 'websocket_close'): void {
+  writeRunnerLifecycleState('reconnecting', reason);
+  for (const entry of activeTerminalBySessionId.values()) {
+    entry.attachedToTransport = false;
+  }
+  void terminateActiveCodexProcessesForTransportLost().catch((error) => {
+    debugLog('transport lost codex termination failed', {
+      error: error instanceof Error ? error.message : String(error),
+    });
+  });
+  scheduleReconnect(reason);
+}
+
+function closeWebSocketForShutdown(socket: WebSocket | null): void {
+  if (socket === activeWs) {
+    activeWs = null;
+  }
   try {
-    if (typeof ws.close === 'function') {
-      ws.close();
+    if (socket && typeof socket.close === 'function') {
+      socket.close();
     }
   } catch (error) {
     debugLog('websocket close during shutdown failed', {
-      reason,
       error: error instanceof Error ? error.message : String(error),
     });
   }
+}
+
+function sendShutdownFrame(reason: ShutdownReason, socket: WebSocket | null): void {
+  sendRawFrameBestEffort(socket, {
+    type: 'agent.shutdown',
+    timestamp: new Date().toISOString(),
+    payload: {
+      reason,
+      terminal_processes_terminated: true,
+    },
+  });
 }
 
 async function shutdownRunner(reason: ShutdownReason): Promise<void> {
@@ -390,11 +602,14 @@ async function shutdownRunner(reason: ShutdownReason): Promise<void> {
     return runnerShutdownPromise;
   }
   runnerIsShuttingDown = true;
+  clearReconnectTimer();
+  const shutdownSocket = activeWs;
   runnerShutdownPromise = (async () => {
     writeRunnerLifecycleState('shutting_down', reason);
     process.stdout.write(`[agent-task-runner] shutting down (${reason})\n`);
-    closeWebSocketForShutdown(reason);
     await terminateActiveRunnerProcesses();
+    sendShutdownFrame(reason, shutdownSocket);
+    closeWebSocketForShutdown(shutdownSocket);
     try {
       await releaseAllPreparedTaskWorkspaces();
     } catch (error) {
@@ -411,67 +626,512 @@ async function shutdownRunner(reason: ShutdownReason): Promise<void> {
   return runnerShutdownPromise;
 }
 
-function closeTerminalSession(terminalSessionId: string, signal: NodeJS.Signals = 'SIGTERM'): void {
-  const child = runningTerminalBySessionId.get(terminalSessionId);
-  if (!child || child.exitCode !== null) return;
-  child.kill(signal);
-  if (signal === 'SIGTERM') {
-    setTimeout(() => {
-      const existing = runningTerminalBySessionId.get(terminalSessionId);
-      if (existing && existing.exitCode === null) {
-        existing.kill('SIGKILL');
-      }
-    }, cancelKillDelayMs);
+function sendTerminalCloseAck(
+  terminalSessionId: string,
+  attempt: TerminalCloseAttempt,
+  status: 'closed' | 'not_found' | 'error',
+  details: {
+    exitCode?: number | null;
+    signal?: string | number | null;
+    errorCode?: string | null;
+    diagnosticCode?: string | null;
+    message?: string | null;
+    remainingPidCount?: number;
+    remainingPids?: number[];
+    pidMetadata?: TerminalProcess['pidMetadata'] | null;
+    terminationResult?: TerminalProcessTreeTerminationResult | null;
+  } = {},
+): void {
+  const terminationResult = details.terminationResult ?? null;
+  const remainingPids = terminationResult?.remainingPids ?? details.remainingPids ?? [];
+  const remainingPidCount = terminationResult?.remainingPids.length ?? details.remainingPidCount ?? remainingPids.length;
+  const diagnosticCode = details.diagnosticCode ?? terminationResult?.diagnosticCode ?? details.errorCode ?? null;
+  debugLog('terminal close ack send', {
+    terminal_session_id: terminalSessionId,
+    runner_session_id: attempt.runnerSessionId,
+    request_id: attempt.requestId,
+    close_attempt_id: attempt.closeAttemptId,
+    generation: attempt.generation,
+    connection_epoch: attempt.connectionEpoch,
+    status,
+    remaining_pid_count: remainingPidCount,
+    diagnostic_code: diagnosticCode,
+  });
+  sendTerminalFrame('agent.terminal.close_ack', terminalSessionId, {
+    close_attempt_id: attempt.closeAttemptId,
+    connection_epoch: attempt.connectionEpoch,
+    generation: attempt.generation,
+    runner_session_id: attempt.runnerSessionId,
+    status,
+    exit_code: details.exitCode ?? null,
+    signal: details.signal ?? null,
+    error_code: details.errorCode ?? null,
+    diagnostic_code: diagnosticCode,
+    message: details.message ?? null,
+    remaining_pid_count: remainingPidCount,
+    remaining_pids: remainingPids.slice(0, 20),
+    root_pid: terminationResult?.rootPid ?? details.pidMetadata?.rootPid ?? null,
+    pty_pid: terminationResult?.ptyPid ?? details.pidMetadata?.ptyPid ?? null,
+    pgid: terminationResult?.pgid ?? details.pidMetadata?.pgid ?? null,
+    sid: terminationResult?.sid ?? details.pidMetadata?.sid ?? null,
+    signal_sequence: terminationResult?.signalSequence ?? [],
+    duration_ms: terminationResult?.durationMs ?? null,
+    diagnostics: terminationResult?.diagnostics ?? [],
+  }, {
+    requestId: attempt.requestId,
+    runnerSessionId: attempt.runnerSessionId ?? undefined,
+  });
+}
+
+function remainingPidEvidenceForTerminal(child: TerminalProcess | undefined): {
+  remainingPidCount: number;
+  remainingPids: number[];
+  pidMetadata: TerminalProcess['pidMetadata'] | null;
+} {
+  if (!child || child.exitCode !== null) {
+    return {
+      remainingPidCount: 0,
+      remainingPids: [],
+      pidMetadata: child?.pidMetadata ?? null,
+    };
   }
+  const rootPid = positiveInteger(child.pidMetadata.rootPid) ?? positiveInteger(child.pidMetadata.ptyPid);
+  return {
+    remainingPidCount: 1,
+    remainingPids: rootPid === undefined ? [] : [rootPid],
+    pidMetadata: child.pidMetadata,
+  };
+}
+
+async function closeTerminalSession(
+  terminalSessionId: string,
+  closeAttempt: ValidTerminalCloseAttempt | null = null,
+): Promise<void> {
+  const entry = activeTerminalBySessionId.get(terminalSessionId);
+  const child = entry?.child ?? runningTerminalBySessionId.get(terminalSessionId);
+  if (!child || child.exitCode !== null) {
+    if (closeAttempt) {
+      sendTerminalCloseAck(terminalSessionId, closeAttempt, 'not_found');
+    }
+    return;
+  }
+  if (!closeAttempt) {
+    await terminateTerminalProcess(terminalSessionId, child);
+    return;
+  }
+  if (entry && closeAttempt) {
+    entry.closeAttempt = closeAttempt;
+    if (entry.closePromise) {
+      return entry.closePromise;
+    }
+  }
+  const closePromise = (async () => {
+    let result: TerminalProcessTreeTerminationResult;
+    try {
+      result = await terminateTerminalProcessTree(child, {
+        terminalSessionId,
+        runnerSessionId: closeAttempt.runnerSessionId,
+        generation: closeAttempt.generation,
+        reason: closeAttempt.reason,
+        graceMs: terminalCloseGraceMs,
+        hardKillGraceMs: terminalCloseGraceMs,
+      });
+    } catch (error) {
+      sendTerminalCloseAck(terminalSessionId, closeAttempt, 'error', {
+        errorCode: 'AGENT_TERMINAL_CLOSE_FAILED',
+        diagnosticCode: 'terminal_process_tree_termination_exception',
+        message: error instanceof Error ? error.message : 'terminal_close_failed',
+      });
+      return;
+    }
+    if (result.outcome === 'terminated') {
+      sendTerminalCloseAck(terminalSessionId, closeAttempt, 'closed', {
+        exitCode: child.exitCode,
+        signal: null,
+        terminationResult: result,
+      });
+      return;
+    }
+    if (result.outcome === 'not_found') {
+      sendTerminalCloseAck(terminalSessionId, closeAttempt, 'not_found', {
+        terminationResult: result,
+      });
+      return;
+    }
+    sendTerminalCloseAck(terminalSessionId, closeAttempt, 'error', {
+      errorCode: 'AGENT_TERMINAL_CLOSE_FAILED',
+      diagnosticCode: result.diagnosticCode ?? 'terminal_process_tree_remaining',
+      message: result.diagnosticCode ?? 'terminal_close_failed',
+      terminationResult: result,
+    });
+  })().finally(() => {
+    if (entry) {
+      entry.closePromise = null;
+    }
+  });
+  if (entry) {
+    entry.closePromise = closePromise;
+  }
+  await closePromise;
 }
 
 async function runTerminalSession(terminalSessionId: string, payload: {
   cols?: number;
   rows?: number;
   shell?: string;
+  generation?: number;
+  runner_session_id?: string;
   execution_context?: TerminalExecutionContext;
-}): Promise<void> {
+}, metadata: {
+  runnerSessionId?: string;
+} = {}): Promise<void> {
   debugLog('terminal start requested', {
     terminal_session_id: terminalSessionId,
     has_execution_context: !!payload.execution_context,
     shell: payload.shell ?? null,
   });
   const executionContext = (payload.execution_context ?? {}) as TerminalExecutionContext;
+  const cols = positiveInteger(payload.cols) ?? 120;
+  const rows = positiveInteger(payload.rows) ?? 30;
+  const generation = positiveInteger(payload.generation) ?? 1;
+  const runnerSessionId = (metadata.runnerSessionId ?? payload.runner_session_id ?? fallbackRunnerSessionId).trim()
+    || fallbackRunnerSessionId;
+  const connectionEpoch = activeWs ? readConnectionEpoch(activeWs) : null;
   const started = await startTerminalProcess({
     executionContext,
     shell: payload.shell,
-    cols: payload.cols,
-    rows: payload.rows,
+    cols,
+    rows,
   });
   const child = started.child;
   runningTerminalBySessionId.set(terminalSessionId, child);
+  exitedTerminalBySessionId.delete(terminalSessionId);
+  const entry: ActiveTerminalEntry = {
+    terminalSessionId,
+    runnerSessionId,
+    generation,
+    cols,
+    rows,
+    cwd: started.cwd,
+    connectionEpoch,
+    child,
+    closeAttempt: null,
+    closePromise: null,
+    attachedToTransport: true,
+  };
+  activeTerminalBySessionId.set(terminalSessionId, entry);
   debugLog('terminal started', {
     terminal_session_id: terminalSessionId,
     cwd: started.cwd,
   });
   sendTerminalFrame('agent.terminal.started', terminalSessionId, {
-    cols: payload.cols ?? 120,
-    rows: payload.rows ?? 30,
+    runner_session_id: runnerSessionId,
+    generation,
+    connection_epoch: connectionEpoch,
+    cols,
+    rows,
     cwd: started.cwd,
+  }, {
+    runnerSessionId,
   });
 
   child.onData((chunk) => {
+    if (!entry.attachedToTransport) return;
     sendTerminalFrame('agent.terminal.output', terminalSessionId, {
       chunk,
     });
   });
   child.onExit(({ exitCode, signal }) => {
     runningTerminalBySessionId.delete(terminalSessionId);
+    activeTerminalBySessionId.delete(terminalSessionId);
+    const exitEvidence: TerminalExitEvidence = {
+      terminalSessionId,
+      runnerSessionId: entry.runnerSessionId,
+      generation: entry.generation,
+      cols: entry.cols,
+      rows: entry.rows,
+      cwd: entry.cwd,
+      exitCode,
+      signal: signal ?? null,
+    };
+    exitedTerminalBySessionId.set(terminalSessionId, exitEvidence);
     debugLog('terminal exited', {
       terminal_session_id: terminalSessionId,
       exit_code: exitCode,
       signal: signal ?? null,
     });
-    sendTerminalFrame('agent.terminal.exited', terminalSessionId, {
-      exit_code: exitCode,
-      signal: signal ?? null,
-    });
+    if (entry.attachedToTransport || entry.closeAttempt) {
+      sendTerminalFrame('agent.terminal.exited', terminalSessionId, {
+        runner_session_id: entry.runnerSessionId,
+        generation: entry.generation,
+        exit_code: exitCode,
+        signal: signal ?? null,
+      }, {
+        runnerSessionId: entry.runnerSessionId,
+      });
+    }
   });
+}
+
+function listActiveTerminalDescriptors(connectionEpoch: number | null = null): Array<Record<string, unknown>> {
+  return Array.from(activeTerminalBySessionId.values())
+    .filter((entry) => entry.child.exitCode === null)
+    .map((entry) => ({
+      terminal_session_id: entry.terminalSessionId,
+      runner_session_id: entry.runnerSessionId,
+      generation: entry.generation,
+      connection_epoch: connectionEpoch ?? entry.connectionEpoch,
+      cols: entry.cols,
+      rows: entry.rows,
+      cwd: entry.cwd,
+    }));
+}
+
+function readAdoptOrCloseAttempt(
+  message: AgentMessage,
+  payload: Record<string, unknown>,
+  attemptField: 'adopt_attempt_id' | 'close_attempt_id',
+): {
+  requestId: string;
+  attemptId: string;
+  connectionEpoch: number | null;
+  generation: number | null;
+  runnerSessionId: string;
+} {
+  const requestId = (
+    typeof message.request_id === 'string' && message.request_id.trim()
+      ? message.request_id.trim()
+      : undefined
+  ) ?? readStringFieldFromRecord(payload, attemptField) ?? `${attemptField}_${Date.now()}`;
+  return {
+    requestId,
+    attemptId: readStringFieldFromRecord(payload, attemptField) ?? requestId,
+    connectionEpoch: readPositiveIntegerField(payload, 'connection_epoch') ?? null,
+    generation: readPositiveIntegerField(payload, 'generation') ?? null,
+    runnerSessionId: resolveRunnerSessionId(message, payload),
+  };
+}
+
+function readTerminalCloseAttempt(
+  message: AgentMessage,
+  payload: Record<string, unknown>,
+): {
+  attempt: TerminalCloseAttempt;
+  diagnosticCode: string | null;
+} {
+  const requestId = (
+    typeof message.request_id === 'string' && message.request_id.trim()
+      ? message.request_id.trim()
+      : undefined
+  ) ?? readStringFieldFromRecord(payload, 'close_attempt_id') ?? `close_attempt_id_${Date.now()}`;
+  const hasGeneration = Object.prototype.hasOwnProperty.call(payload, 'generation');
+  const hasConnectionEpoch = Object.prototype.hasOwnProperty.call(payload, 'connection_epoch');
+  const generation = hasGeneration ? readIntegerField(payload, 'generation') : null;
+  const connectionEpoch = hasConnectionEpoch ? readIntegerField(payload, 'connection_epoch') : null;
+  const runnerSessionId = readRunnerSessionIdWithoutFallback(message, payload);
+  let diagnosticCode: string | null = null;
+  if (!runnerSessionId || !hasGeneration || !hasConnectionEpoch || generation === null || connectionEpoch === null) {
+    diagnosticCode = 'missing_runtime_identity';
+  } else if (generation <= 0) {
+    diagnosticCode = 'non_positive_generation';
+  } else if (connectionEpoch <= 0) {
+    diagnosticCode = 'non_positive_connection_epoch';
+  }
+  return {
+    attempt: {
+      requestId,
+      closeAttemptId: readStringFieldFromRecord(payload, 'close_attempt_id') ?? requestId,
+      connectionEpoch,
+      generation,
+      runnerSessionId,
+      reason: readStringFieldFromRecord(payload, 'reason') ?? 'user_requested',
+    },
+    diagnosticCode,
+  };
+}
+
+function isValidTerminalCloseAttempt(attempt: TerminalCloseAttempt): attempt is ValidTerminalCloseAttempt {
+  return typeof attempt.runnerSessionId === 'string'
+    && attempt.runnerSessionId.trim().length > 0
+    && typeof attempt.generation === 'number'
+    && Number.isInteger(attempt.generation)
+    && attempt.generation > 0
+    && typeof attempt.connectionEpoch === 'number'
+    && Number.isInteger(attempt.connectionEpoch)
+    && attempt.connectionEpoch > 0;
+}
+
+function sendTerminalAdopted(
+  terminalSessionId: string,
+  entry: ActiveTerminalEntry,
+  request: {
+    requestId: string;
+    attemptId: string;
+    connectionEpoch: number | null;
+  },
+): void {
+  sendTerminalFrame('agent.terminal.adopted', terminalSessionId, {
+    adopt_attempt_id: request.attemptId,
+    connection_epoch: request.connectionEpoch,
+    runner_session_id: entry.runnerSessionId,
+    generation: entry.generation,
+    cols: entry.cols,
+    rows: entry.rows,
+    cwd: entry.cwd,
+  }, {
+    requestId: request.requestId,
+    runnerSessionId: entry.runnerSessionId,
+  });
+}
+
+function sendTerminalAdoptNotFound(
+  terminalSessionId: string,
+  request: {
+    requestId: string;
+    attemptId: string;
+    connectionEpoch: number | null;
+    generation: number | null;
+    runnerSessionId: string;
+  },
+): void {
+  sendTerminalFrame('agent.terminal.not_found', terminalSessionId, {
+    adopt_attempt_id: request.attemptId,
+    connection_epoch: request.connectionEpoch,
+    runner_session_id: request.runnerSessionId,
+    generation: request.generation,
+  }, {
+    requestId: request.requestId,
+    runnerSessionId: request.runnerSessionId,
+  });
+}
+
+function sendTerminalAdoptExited(
+  terminalSessionId: string,
+  evidence: TerminalExitEvidence,
+  request: {
+    requestId: string;
+    attemptId: string;
+    connectionEpoch: number | null;
+  },
+): void {
+  sendTerminalFrame('agent.terminal.exited', terminalSessionId, {
+    adopt_attempt_id: request.attemptId,
+    connection_epoch: request.connectionEpoch,
+    runner_session_id: evidence.runnerSessionId,
+    generation: evidence.generation,
+    cols: evidence.cols,
+    rows: evidence.rows,
+    cwd: evidence.cwd,
+    exit_code: evidence.exitCode,
+    signal: evidence.signal,
+  }, {
+    requestId: request.requestId,
+    runnerSessionId: evidence.runnerSessionId,
+  });
+}
+
+function sendTerminalAdoptError(
+  terminalSessionId: string,
+  request: {
+    requestId: string;
+    attemptId: string;
+    connectionEpoch: number | null;
+    runnerSessionId: string;
+    generation: number | null;
+  },
+  errorCode: string,
+  errorMessage: string,
+): void {
+  sendTerminalFrame('agent.terminal.error', terminalSessionId, {
+    adopt_attempt_id: request.attemptId,
+    connection_epoch: request.connectionEpoch,
+    runner_session_id: request.runnerSessionId,
+    generation: request.generation,
+    error_code: errorCode,
+    error_message: errorMessage,
+  }, {
+    requestId: request.requestId,
+    runnerSessionId: request.runnerSessionId,
+  });
+}
+
+function handleTerminalAdopt(message: AgentMessage): void {
+  if (!message.terminal_session_id) return;
+  const payload = isRecord(message.payload) ? message.payload : {};
+  const request = readAdoptOrCloseAttempt(message, payload, 'adopt_attempt_id');
+  const entry = activeTerminalBySessionId.get(message.terminal_session_id);
+  if (!entry || entry.child.exitCode !== null) {
+    const exitEvidence = exitedTerminalBySessionId.get(message.terminal_session_id);
+    if (exitEvidence) {
+      sendTerminalAdoptExited(message.terminal_session_id, exitEvidence, request);
+      return;
+    }
+    sendTerminalAdoptNotFound(message.terminal_session_id, request);
+    return;
+  }
+
+  if (
+    entry.runnerSessionId !== request.runnerSessionId
+    || request.generation == null
+    || entry.generation !== request.generation
+  ) {
+    sendTerminalAdoptError(
+      message.terminal_session_id,
+      request,
+      'AGENT_TERMINAL_ADOPT_STALE',
+      'terminal_adopt_stale',
+    );
+    return;
+  }
+
+  if (entry.closeAttempt) {
+    sendTerminalAdoptError(
+      message.terminal_session_id,
+      request,
+      'AGENT_TERMINAL_CLOSING',
+      'terminal_close_in_progress',
+    );
+    return;
+  }
+
+  const cols = readPositiveIntegerField(payload, 'cols');
+  const rows = readPositiveIntegerField(payload, 'rows');
+  if (cols !== undefined && rows !== undefined) {
+    entry.child.resize(cols, rows);
+    entry.cols = cols;
+    entry.rows = rows;
+  }
+  entry.attachedToTransport = true;
+  sendTerminalAdopted(message.terminal_session_id, entry, request);
+}
+
+async function handleTerminalClose(message: AgentMessage): Promise<void> {
+  if (!message.terminal_session_id) return;
+  const payload = isRecord(message.payload) ? message.payload : {};
+  const { attempt: closeAttempt, diagnosticCode } = readTerminalCloseAttempt(message, payload);
+  const entry = activeTerminalBySessionId.get(message.terminal_session_id);
+  const child = entry?.child ?? runningTerminalBySessionId.get(message.terminal_session_id);
+  if (diagnosticCode || !isValidTerminalCloseAttempt(closeAttempt)) {
+    sendTerminalCloseAck(message.terminal_session_id, closeAttempt, 'error', {
+      errorCode: 'AGENT_TERMINAL_CLOSE_INVALID_FENCE',
+      diagnosticCode: diagnosticCode ?? 'missing_runtime_identity',
+      message: diagnosticCode ?? 'missing_runtime_identity',
+      ...remainingPidEvidenceForTerminal(child),
+    });
+    return;
+  }
+  if (
+    entry
+    && entry.child.exitCode === null
+    && (entry.runnerSessionId !== closeAttempt.runnerSessionId || entry.generation !== closeAttempt.generation)
+  ) {
+    sendTerminalCloseAck(message.terminal_session_id, closeAttempt, 'error', {
+      errorCode: 'AGENT_TERMINAL_CLOSE_STALE',
+      message: 'terminal_close_stale',
+    });
+    return;
+  }
+  await closeTerminalSession(message.terminal_session_id, closeAttempt);
 }
 
 function maybeEmitDeltaChunk(requestId: string, chunk: string): number {
@@ -1623,33 +2283,41 @@ async function runCodexRequest(requestId: string, payload: ServerStartPayload): 
   });
 }
 
-ws.on('open', () => {
-  writeRunnerLifecycleState('connected', 'websocket_open');
-  process.stdout.write('[agent-task-runner] connected\n');
-  debugLog('websocket open', { ws_url: wsUrl });
-  ws.send(
-    JSON.stringify({
-      type: 'agent.ready',
-      timestamp: new Date().toISOString(),
-      payload: {
-        runner_spec: AGENT_TASK_RUNNER_SPEC,
-        capabilities: {
-          streaming_completion: true,
-          multimodal_completion: false,
-        },
-        request_details: {
-          executor: 'codex_cli',
-          codex_provider_wire_api: 'responses',
-        },
-      },
-    }),
-  );
-});
+function decodeRawMessage(raw: RawData): string {
+  if (typeof raw === 'string') return raw;
+  if (Buffer.isBuffer(raw)) return raw.toString('utf-8');
+  if (Array.isArray(raw)) return Buffer.concat(raw).toString('utf-8');
+  return Buffer.from(raw).toString('utf-8');
+}
 
-ws.on('message', (raw) => {
+function sendReadyFrame(socket: WebSocket): void {
+  const connectionEpoch = readConnectionEpoch(socket);
+  sendRawFrameOnSocket(socket, {
+    type: 'agent.ready',
+    timestamp: new Date().toISOString(),
+    payload: {
+      runner_instance_id: resolvedRunnerInstanceId,
+      connection_epoch: connectionEpoch,
+      runner_spec: AGENT_TASK_RUNNER_SPEC,
+      capabilities: {
+        streaming_completion: true,
+        multimodal_completion: false,
+        terminal_adopt: 'v1',
+      },
+      active_terminals: listActiveTerminalDescriptors(connectionEpoch),
+      request_details: {
+        executor: 'codex_cli',
+        codex_provider_wire_api: 'responses',
+      },
+    },
+  });
+}
+
+function handleServerMessage(socket: WebSocket, raw: RawData): void {
+  if (socket !== activeWs) return;
   let message: AgentMessage;
   try {
-    message = JSON.parse(raw.toString('utf-8')) as AgentMessage;
+    message = JSON.parse(decodeRawMessage(raw)) as AgentMessage;
   } catch {
     return;
   }
@@ -1673,13 +2341,11 @@ ws.on('message', (raw) => {
   }
 
   if (message.type === 'server.ping') {
-    ws.send(
-      JSON.stringify({
-        type: 'agent.pong',
-        timestamp: new Date().toISOString(),
-        payload: {},
-      }),
-    );
+    sendRawFrameOnSocket(socket, {
+      type: 'agent.pong',
+      timestamp: new Date().toISOString(),
+      payload: {},
+    });
     return;
   }
 
@@ -1726,13 +2392,28 @@ ws.on('message', (raw) => {
       const rows = typeof payload?.rows === 'number' && Number.isFinite(payload.rows) ? Math.max(1, Math.floor(payload.rows)) : null;
       if (cols !== null && rows !== null) {
         child.resize(cols, rows);
+        const entry = activeTerminalBySessionId.get(message.terminal_session_id);
+        if (entry) {
+          entry.cols = cols;
+          entry.rows = rows;
+        }
       }
     }
     return;
   }
 
   if (message.type === 'server.terminal.close' && message.terminal_session_id) {
-    closeTerminalSession(message.terminal_session_id);
+    void handleTerminalClose(message).catch((error) => {
+      debugLog('terminal close handler failed', {
+        terminal_session_id: message.terminal_session_id ?? null,
+        error: error instanceof Error ? error.message : String(error),
+      });
+    });
+    return;
+  }
+
+  if (message.type === 'server.terminal.adopt' && message.terminal_session_id) {
+    handleTerminalAdopt(message);
     return;
   }
 
@@ -1744,14 +2425,19 @@ ws.on('message', (raw) => {
       });
       return;
     }
-    const terminalPayload = message.payload as {
+    const rawPayload = isRecord(message.payload) ? message.payload : {};
+    const runnerSessionId = resolveRunnerSessionId(message, rawPayload);
+    const terminalPayload = rawPayload as {
       cols?: number;
       rows?: number;
       shell?: string;
+      generation?: number;
+      runner_session_id?: string;
       execution_context?: TerminalExecutionContext;
-    } | undefined;
-    void runTerminalSession(message.terminal_session_id, terminalPayload ?? {}).catch((error) => {
+    };
+    void runTerminalSession(message.terminal_session_id, terminalPayload, { runnerSessionId }).catch((error) => {
       runningTerminalBySessionId.delete(message.terminal_session_id!);
+      activeTerminalBySessionId.delete(message.terminal_session_id!);
       sendTerminalFrame('agent.terminal.error', message.terminal_session_id!, {
         error_code: 'AGENT_UPSTREAM_ERROR',
         error_message: error instanceof Error ? error.message : 'terminal_start_failed',
@@ -1810,15 +2496,42 @@ ws.on('message', (raw) => {
     });
     clearRequestRuntimeState(message.request_id!);
   });
-});
+}
 
-ws.on('close', () => {
-  void shutdownRunner('websocket_close');
-});
+function connectWebSocket(): void {
+  if (runnerIsShuttingDown) return;
+  const socket = new WebSocket(wsUrl!, {
+    headers: { Authorization: `Bearer ${key}` },
+  });
+  activeWs = socket;
 
-ws.on('error', (error) => {
-  process.stderr.write(`[agent-task-runner] error: ${error instanceof Error ? error.message : 'unknown'}\n`);
-});
+  socket.on('open', () => {
+    if (socket !== activeWs) return;
+    assignConnectionEpoch(socket);
+    reconnectAttempt = 0;
+    writeRunnerLifecycleState('connected', 'websocket_open');
+    process.stdout.write('[agent-task-runner] connected\n');
+    debugLog('websocket open', { ws_url: wsUrl });
+    sendReadyFrame(socket);
+  });
+
+  socket.on('message', (raw) => {
+    handleServerMessage(socket, raw);
+  });
+
+  socket.on('close', () => {
+    if (socket !== activeWs) return;
+    activeWs = null;
+    if (runnerIsShuttingDown) return;
+    handleTransportLost('websocket_close');
+  });
+
+  socket.on('error', (error) => {
+    process.stderr.write(`[agent-task-runner] error: ${error instanceof Error ? error.message : 'unknown'}\n`);
+  });
+}
+
+connectWebSocket();
 
 process.once('SIGINT', () => {
   void shutdownRunner('sigint');

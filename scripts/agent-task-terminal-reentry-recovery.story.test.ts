@@ -37,6 +37,8 @@ describe('Agent Task terminal re-entry recovery story', () => {
       'keep-create-run-and-delete-fail-closed-until-terminal-truth-recovers',
       'reopen-terminal-workspace-and-reconnect-existing-session',
       'confirm-reconnected-terminal-is-still-usable',
+      'reload-agent-task-terminal-workspace',
+      're-enter-agent-task-terminal-workspace',
       'surface-broken-terminal-session-inside-same-task',
       'clear-broken-session-and-keep-task-owned',
       'start-fresh-terminal-session-after-recovery',
@@ -53,6 +55,12 @@ describe('Agent Task terminal re-entry recovery story', () => {
       'agent-tasks__task-terminal-status-strip',
     );
     expect(story.steps.find((step) => step.stepId === 'clear-broken-session-and-keep-task-owned')?.target).toBe(
+      'agent-tasks__task-terminal-workspace',
+    );
+    expect(story.steps.find((step) => step.stepId === 'reload-agent-task-terminal-workspace')?.target).toBe(
+      'agent-tasks__task-terminal-workspace',
+    );
+    expect(story.steps.find((step) => step.stepId === 're-enter-agent-task-terminal-workspace')?.target).toBe(
       'agent-tasks__task-terminal-workspace',
     );
     expect(story.steps.find((step) => step.stepId === 'surface-broken-terminal-session-inside-same-task')?.action).toContain(

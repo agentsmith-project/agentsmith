@@ -29,10 +29,7 @@ import {
   type AgentTaskModelResolvedTarget,
   resolveAgentTaskModelTarget,
 } from './agent-task-model-setting-service.js';
-import {
-  buildTaskHomePaths,
-  resolveTaskHomeSegment,
-} from './notebook-task/task-models.js';
+import { resolveTaskRuntimeHomePathsForRunner } from './notebook-task/task-runtime-paths.js';
 export {
   readInternalWorkloadHolderSnapshotForTests,
   resetInternalWorkloadHolderCoordinatorForTests,
@@ -603,11 +600,11 @@ export async function runNotebookTaskWithExecutionAgent(input: {
     };
     const modelCatalog = effectiveModelConfig.model_catalog;
     const model = resolvedTarget.resolvedModel;
-    const taskHomeSegment = resolveTaskHomeSegment(task);
-    const defaultTaskHomePaths = buildTaskHomePaths(taskHomeSegment);
-    let executionTaskHomePath = defaultTaskHomePaths.taskHomePath;
-    let executionWorkspacePath = defaultTaskHomePaths.workspacePath;
-    let executionArtifactsPath = defaultTaskHomePaths.artifactsPath;
+    const taskRuntimePaths = resolveTaskRuntimeHomePathsForRunner({
+      task,
+      runnerProvider: agent.runner_provider,
+    });
+    const taskHomeSegment = taskRuntimePaths.taskHomeSegment;
     if (isManagedAgentRunner(agent)) {
       await throwIfCancellationRequested();
       if (!deps.internalAgentPodManager) {
@@ -637,9 +634,6 @@ export async function runNotebookTaskWithExecutionAgent(input: {
         taskHomeSegment,
       });
       await throwIfCancellationRequested();
-      executionTaskHomePath = workspaceBinding.workspaceMount.taskHomePath ?? defaultTaskHomePaths.taskHomePath;
-      executionWorkspacePath = workspaceBinding.workspaceMount.workspacePath ?? defaultTaskHomePaths.workspacePath;
-      executionArtifactsPath = workspaceBinding.workspaceMount.artifactsPath ?? defaultTaskHomePaths.artifactsPath;
       await deps.internalAgentPodManager.ensureAgentReady({
         workspaceId: task.workspace_id,
         projectId: task.project_id,
@@ -739,9 +733,11 @@ export async function runNotebookTaskWithExecutionAgent(input: {
             ? 'agent_presence'
             : 'task_execution',
         workspace_binding_mode: isManagedAgentRunner(agent) ? 'pre_mounted' : 'file_library',
-        task_home_path: executionTaskHomePath,
-        workspace_path: executionWorkspacePath,
-        artifacts_path: executionArtifactsPath,
+        runtime_profile: taskRuntimePaths.runtimeProfile,
+        task_home_segment: taskRuntimePaths.taskHomeSegment,
+        task_home_path: taskRuntimePaths.taskHomePath,
+        workspace_path: taskRuntimePaths.workspacePath,
+        artifacts_path: taskRuntimePaths.artifactsPath,
         workspace_file_library_id: task.workspace_file_library_id ?? null,
         workspace_file_library_name: task.workspace_file_library_name ?? null,
         workspace_dir_name: workspaceLibrary?.filesystem_name

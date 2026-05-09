@@ -13,6 +13,7 @@ const BUILTIN_SKILLS_LOCK_DIRNAME = '.builtin-skills-seed.lock';
 const SHARED_RUNTIME_DIRNAME = '.mbos-runtime';
 const BUILTIN_SKILLS_LOCK_WAIT_TIMEOUT_MS = 5_000;
 const BUILTIN_SKILLS_LOCK_WAIT_INTERVAL_MS = 25;
+const BUILTIN_SKILLS_LOCK_ACQUIRE_RETRY_ATTEMPTS = 5;
 
 type BuiltinSkillManifest = {
   version: 2;
@@ -74,19 +75,47 @@ function manifestMatchesSeedRequest(
   return true;
 }
 
-async function acquireBuiltinSkillsLock(lockDir: string): Promise<boolean> {
-  try {
-    await mkdir(lockDir);
-    return true;
-  } catch (error) {
-    const errorCode = error instanceof Error && 'code' in error
-      ? (error as NodeJS.ErrnoException).code
-      : undefined;
-    if (errorCode === 'EEXIST') {
-      return false;
-    }
-    throw error;
+function getErrorCode(error: unknown): string | undefined {
+  if (error instanceof Error && 'code' in error) {
+    const code = (error as NodeJS.ErrnoException).code;
+    return typeof code === 'string' ? code : undefined;
   }
+  return undefined;
+}
+
+async function sleep(ms: number): Promise<void> {
+  await new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+async function acquireBuiltinSkillsLock(lockDir: string): Promise<boolean> {
+  const lockParentDir = dirname(lockDir);
+  for (let attempt = 0; attempt < BUILTIN_SKILLS_LOCK_ACQUIRE_RETRY_ATTEMPTS; attempt += 1) {
+    try {
+      await mkdir(lockParentDir, { recursive: true });
+    } catch (error) {
+      const errorCode = getErrorCode(error);
+      if (errorCode !== 'ENOENT' || attempt === BUILTIN_SKILLS_LOCK_ACQUIRE_RETRY_ATTEMPTS - 1) {
+        throw error;
+      }
+      await sleep(BUILTIN_SKILLS_LOCK_WAIT_INTERVAL_MS * (attempt + 1));
+      continue;
+    }
+
+    try {
+      await mkdir(lockDir);
+      return true;
+    } catch (error) {
+      const errorCode = getErrorCode(error);
+      if (errorCode === 'EEXIST') {
+        return false;
+      }
+      if (errorCode !== 'ENOENT' || attempt === BUILTIN_SKILLS_LOCK_ACQUIRE_RETRY_ATTEMPTS - 1) {
+        throw error;
+      }
+      await sleep(BUILTIN_SKILLS_LOCK_WAIT_INTERVAL_MS * (attempt + 1));
+    }
+  }
+  throw new Error('builtin_skills_lock_acquire_retry_exhausted');
 }
 
 async function waitForBuiltinSkillsSeed(
@@ -102,7 +131,7 @@ async function waitForBuiltinSkillsSeed(
     if (!fs.existsSync(lockDir)) {
       return;
     }
-    await new Promise((resolve) => setTimeout(resolve, BUILTIN_SKILLS_LOCK_WAIT_INTERVAL_MS));
+    await sleep(BUILTIN_SKILLS_LOCK_WAIT_INTERVAL_MS);
   }
   throw new Error('builtin_skills_seed_wait_timeout');
 }

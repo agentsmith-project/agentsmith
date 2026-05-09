@@ -98,6 +98,11 @@ import {
   type TaskMessageRecord,
   type TaskRecord,
 } from './notebook-task/task-models.js';
+import {
+  isTaskRuntimePathResolutionError,
+  resolveTaskRuntimeHomePathsForRunner,
+  type TaskRuntimePathResolutionError,
+} from './notebook-task/task-runtime-paths.js';
 import { createAndProvisionProjectFileLibrary, mapFileLibraryInfraError } from './project-file-library-service.js';
 import { isAgentExecutionTicket, issueInternalTicket, type ResolvedInternalTicket } from './internal-ticket-store.js';
 import {
@@ -173,6 +178,36 @@ function debugNotebookExecution(message: string, extra?: Record<string, unknown>
   if (process.env.DEBUG_NOTEBOOK_EXECUTION !== '1') return;
   const suffix = extra ? ` ${JSON.stringify(extra)}` : '';
   process.stdout.write(`[notebook-execution] ${message}${suffix}\n`);
+}
+
+function buildRuntimePathUnavailableResponse(error: unknown): Record<string, unknown> {
+  if (!isTaskRuntimePathResolutionError(error)) {
+    return {
+      error_code: 'runtime_path_unavailable',
+      message: 'runtime_path_unavailable',
+    };
+  }
+  const typedError = error as TaskRuntimePathResolutionError & {
+    reason?: unknown;
+    metadata?: unknown;
+  };
+  const metadata = (
+    typeof typedError.metadata === 'object'
+    && typedError.metadata !== null
+    && !Array.isArray(typedError.metadata)
+  )
+    ? typedError.metadata as Record<string, unknown>
+    : {};
+  return {
+    error_code: typedError.code,
+    message: typedError.message,
+    reason: typeof typedError.reason === 'string' ? typedError.reason : 'runtime_path_unavailable',
+    ...(
+      Object.keys(metadata).length > 0
+        ? { metadata }
+        : {}
+    ),
+  };
 }
 
 const NOTEBOOK_RUN_LEASE_HEARTBEAT_MS = 15_000;
@@ -1457,13 +1492,29 @@ function readTerminalSessionResolvedRunnerId(
   return session.resolvedRunnerId?.trim() ?? '';
 }
 
+function serializeTerminalCloseResult(input: unknown): 'closed' | 'not_found' | null {
+  return input === 'closed' || input === 'not_found' ? input : null;
+}
+
 function serializeTerminalSessionResponse(input: {
   session: {
     id: string;
     agentId: string;
     resolvedRunnerId?: string;
     runnerSessionId: string;
-    status: 'pending' | 'active' | 'disconnected' | 'closed' | 'failed';
+    status: 'pending' | 'active' | 'disconnected' | 'recovering' | 'closing' | 'closed' | 'failed';
+    lifecycleStatus?: 'pending' | 'starting' | 'active' | 'recovering' | 'closing' | 'closed' | 'failed';
+    runnerConnectionStatus?: 'dispatching' | 'attached' | 'transport_lost' | 'adopting' | 'missing' | 'closed';
+    browserConnectionStatus?: 'attached' | 'browser_disconnected' | 'none';
+    inputEnabled?: boolean;
+    recoverable?: boolean;
+    recoveryDeadlineAt?: string;
+    failureKind?: string | null;
+    closeState?: 'none' | 'requested' | 'delivered' | 'acked' | 'expired';
+    closeResult?: string | null;
+    closeDeadlineAt?: string;
+    nextOutputSeq?: number;
+    outputReplayRing?: Array<{ seq: number }>;
     cols: number;
     rows: number;
     createdAt: string;
@@ -1477,7 +1528,20 @@ function serializeTerminalSessionResponse(input: {
   terminal_session_id: string;
   runner_id: string;
   runner_session_id: string;
-  status: 'pending' | 'active' | 'disconnected' | 'closed' | 'failed';
+  status: 'pending' | 'active' | 'disconnected' | 'recovering' | 'closing' | 'closed' | 'failed';
+  lifecycle_status: 'pending' | 'starting' | 'active' | 'recovering' | 'closing' | 'closed' | 'failed';
+  runner_connection_status: 'dispatching' | 'attached' | 'transport_lost' | 'adopting' | 'missing' | 'closed';
+  browser_connection_status: 'attached' | 'browser_disconnected' | 'none';
+  input_enabled: boolean;
+  recoverable: boolean;
+  recovery_deadline_at: string | null;
+  failure_kind: string | null;
+  close_state: 'none' | 'requested' | 'delivered' | 'acked' | 'expired';
+  close_result: 'closed' | 'not_found' | null;
+  close_deadline_at: string | null;
+  replay_status: 'complete' | 'partial' | 'unavailable';
+  replay_gap: boolean;
+  latest_seq: number;
   cols: number;
   rows: number;
   created_at: string;
@@ -1488,11 +1552,37 @@ function serializeTerminalSessionResponse(input: {
     ws_url: string | null;
   } {
   const resolvedRunnerId = readTerminalSessionResolvedRunnerId(input.session);
+  const latestSeq = Math.max(0, (input.session.nextOutputSeq ?? 1) - 1);
+  const replayRing = input.session.outputReplayRing ?? [];
+  const replayGap = latestSeq > 0 && (replayRing.length === 0 || (replayRing[0]?.seq ?? 1) > 1);
+  const replayStatus = latestSeq === 0 || !replayGap
+    ? 'complete'
+    : replayRing.length > 0
+      ? 'partial'
+      : 'unavailable';
+  const lifecycleStatus = input.session.lifecycleStatus ?? (
+    input.session.status === 'disconnected' ? 'active' : input.session.status
+  );
   return {
     terminal_session_id: input.session.id,
     runner_id: resolvedRunnerId,
     runner_session_id: input.session.runnerSessionId,
     status: input.session.status,
+    lifecycle_status: lifecycleStatus,
+    runner_connection_status: input.session.runnerConnectionStatus ?? (
+      input.session.status === 'failed' ? 'missing' : input.session.status === 'closed' ? 'closed' : 'dispatching'
+    ),
+    browser_connection_status: input.session.browserConnectionStatus ?? 'none',
+    input_enabled: input.session.inputEnabled ?? false,
+    recoverable: input.session.recoverable ?? input.session.status === 'recovering',
+    recovery_deadline_at: input.session.recoveryDeadlineAt ?? null,
+    failure_kind: input.session.failureKind ?? null,
+    close_state: input.session.closeState ?? 'none',
+    close_result: serializeTerminalCloseResult(input.session.closeResult),
+    close_deadline_at: input.session.closeDeadlineAt ?? null,
+    replay_status: replayStatus,
+    replay_gap: replayGap,
+    latest_seq: latestSeq,
     cols: input.session.cols,
     rows: input.session.rows,
     created_at: input.session.createdAt,
@@ -1542,7 +1632,10 @@ async function buildTaskTerminalExecutionContext(args: {
     ttlMs: 8 * 60 * 60 * 1000,
     maxUses: 500,
   });
-  const taskHomePaths = buildTaskHomePaths(resolveTaskHomeSegment(args.task));
+  const taskRuntimePaths = resolveTaskRuntimeHomePathsForRunner({
+    task: args.task,
+    runnerProvider: args.agent.runner_provider,
+  });
 
   const executionContext = {
     workspace_id: args.task.workspace_id,
@@ -1564,9 +1657,11 @@ async function buildTaskTerminalExecutionContext(args: {
       ? 'agent_presence'
       : 'task_execution',
     workspace_binding_mode: isManagedAgentRunner(args.agent) ? 'pre_mounted' : 'file_library',
-    task_home_path: taskHomePaths.taskHomePath,
-    workspace_path: taskHomePaths.workspacePath,
-    artifacts_path: taskHomePaths.artifactsPath,
+    runtime_profile: taskRuntimePaths.runtimeProfile,
+    task_home_segment: taskRuntimePaths.taskHomeSegment,
+    task_home_path: taskRuntimePaths.taskHomePath,
+    workspace_path: taskRuntimePaths.workspacePath,
+    artifacts_path: taskRuntimePaths.artifactsPath,
     workspace_file_library_id: args.task.workspace_file_library_id ?? null,
     workspace_file_library_name: args.task.workspace_file_library_name ?? null,
     workspace_dir_name: workspaceLibrary?.filesystem_name
@@ -2556,14 +2651,23 @@ export async function handleTaskRoute(args: TaskRouteHandlerArgs): Promise<boole
       return true;
     }
 
-    const executionContext = await buildTaskTerminalExecutionContext({
-      deps,
-      task,
-      user,
-      agent,
-      agentTaskModelSnapshot: terminalRunnerResolution.agentTaskModelSnapshot,
-      publicBaseUrl: resolveRequiredConfiguredPublicApiBase(),
-    });
+    let executionContext: Record<string, unknown>;
+    try {
+      executionContext = await buildTaskTerminalExecutionContext({
+        deps,
+        task,
+        user,
+        agent,
+        agentTaskModelSnapshot: terminalRunnerResolution.agentTaskModelSnapshot,
+        publicBaseUrl: resolveRequiredConfiguredPublicApiBase(),
+      });
+    } catch (error) {
+      if (isTaskRuntimePathResolutionError(error)) {
+        json(res, 409, buildRuntimePathUnavailableResponse(error));
+        return true;
+      }
+      throw error;
+    }
     let created: Awaited<ReturnType<typeof deps.notebookTerminalService.createSession>>;
     try {
       created = await deps.notebookTerminalService.createSession({
@@ -2619,13 +2723,28 @@ export async function handleTaskRoute(args: TaskRouteHandlerArgs): Promise<boole
         ...(shell ? { shell } : {}),
       },
     });
-    json(res, 201, {
-      terminal_session_id: created.sessionId,
-      runner_id: agent.id,
-      runner_session_id: task.id,
-      status: 'pending',
-      ws_url: `${resolveTerminalWebSocketBaseUrl(req)}${created.wsPath}`,
-    });
+    const createdSession = await deps.notebookTerminalService.getSession(created.sessionId);
+    json(res, 201, serializeTerminalSessionResponse({
+      session: createdSession ?? {
+        id: created.sessionId,
+        agentId: agent.id,
+        resolvedRunnerId: agent.id,
+        runnerSessionId: task.id,
+        status: 'pending',
+        lifecycleStatus: 'pending',
+        runnerConnectionStatus: 'dispatching',
+        browserConnectionStatus: 'none',
+        inputEnabled: false,
+        recoverable: false,
+        failureKind: null,
+        closeState: 'none',
+        cols,
+        rows,
+        createdAt: new Date().toISOString(),
+        lastActivityAt: new Date().toISOString(),
+      },
+      wsUrl: `${resolveTerminalWebSocketBaseUrl(req)}${created.wsPath}`,
+    }));
     return true;
   }
 
@@ -2651,6 +2770,7 @@ export async function handleTaskRoute(args: TaskRouteHandlerArgs): Promise<boole
         session.status === 'pending'
         || session.status === 'active'
         || session.status === 'disconnected'
+        || session.status === 'recovering'
       ) ? await deps.notebookTerminalService.issueReconnectTicket(session.id) : null;
       return serializeTerminalSessionResponse({
         session,
@@ -2681,7 +2801,12 @@ export async function handleTaskRoute(args: TaskRouteHandlerArgs): Promise<boole
       json(res, 409, { error_code: 'terminal_runner_unavailable', message: 'terminal_runner_unavailable' });
       return true;
     }
-    const reconnectIssued = (session.status === 'pending' || session.status === 'active' || session.status === 'disconnected')
+    const reconnectIssued = (
+      session.status === 'pending'
+      || session.status === 'active'
+      || session.status === 'disconnected'
+      || session.status === 'recovering'
+    )
       ? await deps.notebookTerminalService.issueReconnectTicket(session.id)
       : null;
     res.setHeader('Cache-Control', 'no-store');
@@ -2793,18 +2918,42 @@ export async function handleTaskRoute(args: TaskRouteHandlerArgs): Promise<boole
         ticketAgentRunnerId,
       )
       : null;
+    const boundAgentForPath = !agent && task.bound_runner_id?.trim()
+      ? await deps.agentResourceService.getAgent(
+        route.workspaceId,
+        route.projectId,
+        task.bound_runner_id.trim(),
+      )
+      : null;
+    const runtimePathAgent = agent ?? boundAgentForPath;
     const executionMountAccess = resolveTaskWorkspaceMountAccess({
-      runnerProvider: agent?.runner_provider ?? null,
+      runnerProvider: runtimePathAgent?.runner_provider ?? null,
       metadataUrl: mountAccess.metadata_url,
       storageBucketUrl: mountAccess.storage_bucket_url,
     });
-    const taskHomePaths = buildTaskHomePaths(resolveTaskHomeSegment(task));
+    let taskRuntimePaths: ReturnType<typeof resolveTaskRuntimeHomePathsForRunner>;
+    try {
+      taskRuntimePaths = resolveTaskRuntimeHomePathsForRunner({
+        task,
+        runnerProvider: runtimePathAgent?.runner_provider
+          ?? task.bound_runner_kind
+          ?? null,
+      });
+    } catch (error) {
+      if (isTaskRuntimePathResolutionError(error)) {
+        json(res, 409, buildRuntimePathUnavailableResponse(error));
+        return true;
+      }
+      throw error;
+    }
     json(res, 200, {
       task_id: task.id,
       workspace_binding_mode: 'file_library',
-      task_home_path: taskHomePaths.taskHomePath,
-      workspace_path: taskHomePaths.workspacePath,
-      artifacts_path: taskHomePaths.artifactsPath,
+      runtime_profile: taskRuntimePaths.runtimeProfile,
+      task_home_segment: taskRuntimePaths.taskHomeSegment,
+      task_home_path: taskRuntimePaths.taskHomePath,
+      workspace_path: taskRuntimePaths.workspacePath,
+      artifacts_path: taskRuntimePaths.artifactsPath,
       library_root_path: '.',
       workspace_dir_name: workspaceFileLibrary.filesystem_name,
       file_library_id: workspaceFileLibrary.id,

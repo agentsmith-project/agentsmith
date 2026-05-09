@@ -1787,6 +1787,9 @@ type ManagedAgentRunnerApiPayload = {
   id?: string;
   name?: string;
   kind?: string;
+  runner_provider?: string;
+  provider?: string;
+  managed?: boolean | string;
   status?: string;
   runner_status?: string;
   is_default?: boolean;
@@ -1850,12 +1853,53 @@ function readNestedString(state: unknown, path: readonly string[]): string | und
   return typeof value === 'string' ? value : undefined;
 }
 
+function readNestedBooleanOrString(
+  state: unknown,
+  path: readonly string[],
+): boolean | string | undefined {
+  let value: unknown = state;
+  for (const segment of path) {
+    if (!segment || typeof value !== 'object' || value === null) {
+      return undefined;
+    }
+    value = (value as Record<string, unknown>)[segment];
+  }
+  return typeof value === 'boolean' || typeof value === 'string'
+    ? value
+    : undefined;
+}
+
 function readSimpleEnvValue(raw: string, key: string): string | null {
   const entries = parseSimpleEnvFile(raw);
   const value = entries[key];
   if (!value) return null;
   const unquoted = unquoteSimpleEnvValue(value);
   return unquoted || null;
+}
+
+function normalizeRunnerProvider(value: string | null | undefined): string | null {
+  const normalized = value?.trim().toLowerCase();
+  return normalized || null;
+}
+
+function isExplicitNonManagedRunnerProvider(value: string | null | undefined): boolean {
+  const provider = normalizeRunnerProvider(value);
+  return provider === "developer" || provider === "developer_runner" || provider === "external";
+}
+
+function isExplicitManagedRunnerProvider(value: string | null | undefined): boolean {
+  const provider = normalizeRunnerProvider(value);
+  return provider === "managed" || provider === "managed_agent_task" || provider === "internal";
+}
+
+function isExplicitFalse(value: boolean | string | undefined): boolean {
+  if (value === false) return true;
+  return typeof value === "string" && value.trim().toLowerCase() === "false";
+}
+
+function isExplicitTrue(value: boolean | string | undefined): boolean {
+  if (value === true) return true;
+  return typeof value === "string" && value.trim().toLowerCase() === "true";
 }
 
 function dedupeStable(values: string[]): string[] {
@@ -1869,6 +1913,15 @@ function dedupeStable(values: string[]): string[] {
     deduped.push(normalized);
   }
   return deduped;
+}
+
+function hasExplicitBackendRealRuntimeSource(): boolean {
+  return Boolean(firstNonEmptyScalarEnvValue(process.env, [
+    "BACKEND_REAL_STATE_FILE",
+    "BACKEND_REAL_STATE",
+    "BACKEND_REAL_SUMMARY_FILE",
+    "BACKEND_REAL_STATE_DIR",
+  ]));
 }
 
 async function pickBackendRealRuntimeRootFromInternalSandboxStateFile(): Promise<string | null> {
@@ -1885,7 +1938,10 @@ async function pickBackendRealRuntimeRootFromInternalSandboxStateFile(): Promise
   return path.resolve(rootDir, "artifacts", "backend-real", "current");
 }
 
-function pickFirstBackendRealStatePath(): string[] {
+function pickFirstBackendRealStatePath(options: {
+  includeAmbientDefault: boolean;
+  includeInternalSandboxStateFile: boolean;
+}): string[] {
   const candidates: string[] = [];
   const backendRealStateFile = firstNonEmptyScalarEnvValue(process.env, [
     "BACKEND_REAL_STATE_FILE",
@@ -1901,21 +1957,27 @@ function pickFirstBackendRealStatePath(): string[] {
     candidates.push(path.resolve(backendRealStateDir, 'state.json'));
   }
 
-  const internalSandboxStateFile = firstNonEmptyScalarEnvValue(process.env, [
-    "INTERNAL_SANDBOX_REAL_STATE_FILE",
-  ]);
-  if (internalSandboxStateFile) {
-    const internalBase = path.resolve(internalSandboxStateFile);
-    candidates.push(path.resolve(path.dirname(internalBase), '..', '..', 'state.json'));
+  if (options.includeInternalSandboxStateFile) {
+    const internalSandboxStateFile = firstNonEmptyScalarEnvValue(process.env, [
+      "INTERNAL_SANDBOX_REAL_STATE_FILE",
+    ]);
+    if (internalSandboxStateFile) {
+      const internalBase = path.resolve(internalSandboxStateFile);
+      candidates.push(path.resolve(path.dirname(internalBase), '..', '..', 'state.json'));
+    }
   }
 
-  candidates.push(
-    path.resolve(process.cwd(), 'artifacts', 'backend-real', 'current', 'state.json'),
-  );
+  if (options.includeAmbientDefault) {
+    candidates.push(
+      path.resolve(process.cwd(), 'artifacts', 'backend-real', 'current', 'state.json'),
+    );
+  }
   return dedupeStable(candidates);
 }
 
-function pickFirstBackendRealSummaryPath(): string[] {
+function pickFirstBackendRealSummaryPath(options: {
+  includeAmbientDefault: boolean;
+}): string[] {
   const candidates: string[] = [];
   const backendRealSummaryFile = firstNonEmptyScalarEnvValue(process.env, [
     "BACKEND_REAL_SUMMARY_FILE",
@@ -1930,9 +1992,11 @@ function pickFirstBackendRealSummaryPath(): string[] {
     candidates.push(path.resolve(backendRealStateDir, 'summary.env'));
   }
 
-  candidates.push(
-    path.resolve(process.cwd(), 'artifacts', 'backend-real', 'current', 'summary.env'),
-  );
+  if (options.includeAmbientDefault) {
+    candidates.push(
+      path.resolve(process.cwd(), 'artifacts', 'backend-real', 'current', 'summary.env'),
+    );
+  }
   return dedupeStable(candidates);
 }
 
@@ -1956,13 +2020,75 @@ function normalizeManagedRunnerResult(
   };
 }
 
+function readProviderAwareSummaryManagedRunnerId(summaryRaw: string): string | null {
+  const summaryRunnerProvider = readSimpleEnvValue(summaryRaw, "AGENT_RUNNER_PROVIDER");
+  const genericRunnerId = readSimpleEnvValue(summaryRaw, "AGENT_RUNNER_ID");
+  if (genericRunnerId && !isExplicitNonManagedRunnerProvider(summaryRunnerProvider)) {
+    return genericRunnerId;
+  }
+  return readSimpleEnvValue(summaryRaw, "SYSTEM_SIDE_MANAGED_RUNNER_ID")
+    || readSimpleEnvValue(summaryRaw, "DEPLOYMENT_MANAGED_RUNNER_ID")
+    || readSimpleEnvValue(summaryRaw, "SYSTEM_DEFAULT_MANAGED_RUNNER_ID");
+}
+
+function readProviderAwareStateManagedRunnerId(state: unknown): string | null {
+  const agentRunnerProvider =
+    readNestedString(state, ["agent_runner", "runner_provider"])
+    || readNestedString(state, ["agent_runner", "provider"]);
+  const agentRunnerManaged = readNestedBooleanOrString(state, ["agent_runner", "managed"]);
+  const genericRunnerId =
+    readNestedString(state, ["agent_runner", "id"])
+    || readNestedString(state, ["project", "agent_runner_id"])
+    || readNestedString(state, ["agent_runner_id"])
+    || readNestedString(state, ["system", "agent_runner", "id"])
+    || readNestedString(state, ["system", "agent_runner_id"])
+    || readNestedString(state, ["system", "deployment", "agent_runner", "id"])
+    || readNestedString(state, ["system", "deployment", "agent_runner_id"])
+    || readNestedString(state, ["deployment", "agent_runner", "id"])
+    || readNestedString(state, ["deployment", "agent_runner_id"])
+    || readNestedString(state, ["deployment", "system", "agent_runner", "id"])
+    || readNestedString(state, ["deployment", "system", "agent_runner_id"]);
+  if (genericRunnerId) {
+    if (isExplicitManagedRunnerProvider(agentRunnerProvider)) return genericRunnerId;
+    if (
+      !isExplicitNonManagedRunnerProvider(agentRunnerProvider)
+      && !isExplicitFalse(agentRunnerManaged)
+    ) {
+      return genericRunnerId;
+    }
+  }
+  return readNestedString(state, ["system", "managed_runner", "id"])
+    || readNestedString(state, ["deployment", "managed_runner", "id"])
+    || readNestedString(state, ["system", "managed", "agent_runner_id"])
+    || null;
+}
+
+function isReusableManagedAgentRunnerPayload(payload: ManagedAgentRunnerApiPayload): boolean {
+  const provider = payload.runner_provider ?? payload.provider ?? null;
+  if (isExplicitNonManagedRunnerProvider(provider)) return false;
+  if (isExplicitManagedRunnerProvider(provider)) return true;
+  if (isExplicitFalse(payload.managed)) return false;
+  if (isExplicitTrue(payload.managed)) return true;
+  const kind = normalizeRunnerProvider(payload.kind);
+  if (kind === "developer" || kind === "developer_runner") return false;
+  if (kind === "system_managed" || kind === "managed_agent_task") return true;
+  return true;
+}
+
 async function readBackendRealManagedRunnerIdFromState(): Promise<string | null> {
   const directRunnerId = firstNonEmptyScalarEnvValue(process.env, ["AGENT_RUNNER_ID"]);
-  if (directRunnerId) return directRunnerId;
+  const directRunnerProvider = firstNonEmptyScalarEnvValue(process.env, ["AGENT_RUNNER_PROVIDER"]);
+  if (directRunnerId && !isExplicitNonManagedRunnerProvider(directRunnerProvider)) {
+    return directRunnerId;
+  }
 
-  const internalBackendRealRuntimeRoot = await pickBackendRealRuntimeRootFromInternalSandboxStateFile();
+  const hasExplicitRuntimeSource = hasExplicitBackendRealRuntimeSource();
+  const internalBackendRealRuntimeRoot = hasExplicitRuntimeSource
+    ? null
+    : await pickBackendRealRuntimeRootFromInternalSandboxStateFile();
+  const includeAmbientDefault = !hasExplicitRuntimeSource && !internalBackendRealRuntimeRoot;
   const summaryPaths = dedupeStable([
-    ...pickFirstBackendRealSummaryPath(),
+    ...pickFirstBackendRealSummaryPath({ includeAmbientDefault }),
     ...(internalBackendRealRuntimeRoot
       ? [path.resolve(internalBackendRealRuntimeRoot, "summary.env")]
       : []),
@@ -1971,15 +2097,15 @@ async function readBackendRealManagedRunnerIdFromState(): Promise<string | null>
   for (const summaryFile of summaryPaths) {
     const summaryRaw = await readFile(summaryFile, "utf8").catch(() => "");
     if (!summaryRaw) continue;
-    const summaryRunnerId = readSimpleEnvValue(summaryRaw, "AGENT_RUNNER_ID")
-      || readSimpleEnvValue(summaryRaw, "SYSTEM_SIDE_MANAGED_RUNNER_ID")
-      || readSimpleEnvValue(summaryRaw, "DEPLOYMENT_MANAGED_RUNNER_ID")
-      || readSimpleEnvValue(summaryRaw, "SYSTEM_DEFAULT_MANAGED_RUNNER_ID");
+    const summaryRunnerId = readProviderAwareSummaryManagedRunnerId(summaryRaw);
     if (summaryRunnerId) return summaryRunnerId;
   }
 
   const statePaths = dedupeStable([
-    ...pickFirstBackendRealStatePath(),
+    ...pickFirstBackendRealStatePath({
+      includeAmbientDefault,
+      includeInternalSandboxStateFile: !hasExplicitRuntimeSource,
+    }),
     ...(internalBackendRealRuntimeRoot
       ? [path.resolve(internalBackendRealRuntimeRoot, "state.json")]
       : []),
@@ -1996,20 +2122,7 @@ async function readBackendRealManagedRunnerIdFromState(): Promise<string | null>
       continue;
     }
 
-    const stateRunnerId = readNestedString(state, ["agent_runner", "id"])
-      || readNestedString(state, ["project", "agent_runner_id"])
-      || readNestedString(state, ["agent_runner_id"])
-      || readNestedString(state, ["system", "agent_runner", "id"])
-      || readNestedString(state, ["system", "agent_runner_id"])
-      || readNestedString(state, ["system", "deployment", "agent_runner", "id"])
-      || readNestedString(state, ["system", "deployment", "agent_runner_id"])
-      || readNestedString(state, ["deployment", "agent_runner", "id"])
-      || readNestedString(state, ["deployment", "agent_runner_id"])
-      || readNestedString(state, ["deployment", "system", "agent_runner", "id"])
-      || readNestedString(state, ["deployment", "system", "agent_runner_id"])
-      || readNestedString(state, ["system", "managed_runner", "id"])
-      || readNestedString(state, ["deployment", "managed_runner", "id"])
-      || readNestedString(state, ["system", "managed", "agent_runner_id"]);
+    const stateRunnerId = readProviderAwareStateManagedRunnerId(state);
     if (stateRunnerId) {
       const trimmedRunnerId = stateRunnerId.trim();
       if (trimmedRunnerId) return trimmedRunnerId;
@@ -2040,6 +2153,9 @@ async function readManagedAgentRunnerById(args: {
     .json()
     .catch(() => null)) as ManagedAgentRunnerApiPayload | null;
   if (!payload?.id) return null;
+  if (!isReusableManagedAgentRunnerPayload(payload)) {
+    return null;
+  }
   if (
     payload.project_id
     && payload.project_id.trim() !== args.projectId
@@ -2349,6 +2465,15 @@ export type TerminalSessionApiRecord = {
   status: string;
   ws_url: string | null;
   close_reason: string | null;
+  close_state?: string | null;
+  close_deadline_at?: string | null;
+  close_attempt_id?: string | null;
+  close_request_id?: string | null;
+  close_ack_status?: string | null;
+  close_diagnostic_code?: string | null;
+  close_diagnostic?: unknown;
+  diagnostic_code?: string | null;
+  diagnostics?: unknown;
   created_at: string;
   last_activity_at: string;
   ended_at: string | null;
@@ -2580,6 +2705,308 @@ export async function readTerminalSessionViaApi(args: {
   return (await response.json()) as TerminalSessionApiRecord;
 }
 
+export type TerminalSessionFinalTruthOutcome = "closed" | "failed";
+
+export type TerminalSessionCloseTruth = {
+  sessionId: string;
+  outcome: TerminalSessionFinalTruthOutcome | null;
+  session: TerminalSessionApiRecord | null;
+  listedSession: TerminalSessionApiRecord | null;
+  listTotal: number | null;
+  getStatus: number | null;
+  closeState: string | null;
+  closeDeadlineAt: string | null;
+  closeAttemptId: string | null;
+  closeRequestId: string | null;
+  closeAckStatus: string | null;
+  closeDiagnosticCode: string | null;
+  closeDiagnostic: unknown;
+  diagnosticCode: string | null;
+  diagnostics: unknown;
+  lastError: string | null;
+};
+
+type TerminalSessionJsonResponse = {
+  ok: boolean;
+  status: number;
+  payload: unknown;
+  text: string;
+  error: string | null;
+};
+
+function asRecord(value: unknown): Record<string, unknown> | null {
+  return value && typeof value === "object" && !Array.isArray(value)
+    ? (value as Record<string, unknown>)
+    : null;
+}
+
+function readOptionalStringField(
+  record: Record<string, unknown> | null,
+  key: string,
+): string | null {
+  const value = record?.[key];
+  return typeof value === "string" && value.trim() ? value.trim() : null;
+}
+
+function readNestedOptionalStringField(
+  record: Record<string, unknown> | null,
+  key: string,
+  nestedKey: string,
+): string | null {
+  return readOptionalStringField(asRecord(record?.[key]), nestedKey);
+}
+
+function readFirstPresentField(
+  record: Record<string, unknown> | null,
+  keys: string[],
+): unknown {
+  if (!record) return null;
+  for (const key of keys) {
+    if (Object.prototype.hasOwnProperty.call(record, key)) {
+      return record[key];
+    }
+  }
+  return null;
+}
+
+function readCanonicalListedTerminalSessionId(value: unknown): string | null {
+  return readOptionalStringField(asRecord(value), "terminal_session_id");
+}
+
+async function readTerminalSessionJsonResponse(
+  response: Awaited<ReturnType<Page["request"]["get"]>>,
+): Promise<TerminalSessionJsonResponse> {
+  const text = await response.text().catch(() => "");
+  let payload: unknown = null;
+  let error: string | null = null;
+  if (text.trim()) {
+    try {
+      payload = JSON.parse(text) as unknown;
+    } catch (parseError) {
+      error = parseError instanceof Error ? parseError.message : String(parseError);
+    }
+  }
+  return {
+    ok: response.ok(),
+    status: response.status(),
+    payload,
+    text,
+    error,
+  };
+}
+
+function resolveTerminalSessionCloseOutcome(
+  truth: Pick<
+    TerminalSessionCloseTruth,
+    "session" | "listedSession" | "getStatus" | "listTotal"
+  >,
+): TerminalSessionFinalTruthOutcome | null {
+  const records = [truth.session, truth.listedSession]
+    .map((record) => asRecord(record))
+    .filter((record): record is Record<string, unknown> => record !== null);
+  const statuses = records
+    .map((record) => readOptionalStringField(record, "status")?.toLowerCase())
+    .filter((value): value is string => Boolean(value));
+  const closeStates = records
+    .map((record) =>
+      readOptionalStringField(record, "close_state")?.toLowerCase(),
+    )
+    .filter((value): value is string => Boolean(value));
+
+  if (statuses.includes("closed") || closeStates.includes("closed")) {
+    return "closed";
+  }
+  if (
+    statuses.includes("failed") ||
+    closeStates.includes("failed") ||
+    closeStates.includes("expired") ||
+    closeStates.includes("deadline_expired")
+  ) {
+    return "failed";
+  }
+  if (
+    truth.getStatus === 404 &&
+    truth.listTotal !== null &&
+    truth.listedSession === null
+  ) {
+    return "closed";
+  }
+  return null;
+}
+
+function buildTerminalSessionCloseTruth(args: {
+  sessionId: string;
+  session: TerminalSessionApiRecord | null;
+  listedSession: TerminalSessionApiRecord | null;
+  listTotal: number | null;
+  getStatus: number | null;
+  lastError: string | null;
+}): TerminalSessionCloseTruth {
+  const source =
+    asRecord(args.session) ?? asRecord(args.listedSession);
+  const closeAckStatus =
+    readOptionalStringField(source, "close_ack_status") ??
+    readNestedOptionalStringField(source, "close_ack", "status") ??
+    readNestedOptionalStringField(source, "ack", "status");
+  const closeDiagnosticCode =
+    readOptionalStringField(source, "close_diagnostic_code") ??
+    readOptionalStringField(source, "diagnostic_code") ??
+    readNestedOptionalStringField(source, "close_ack", "diagnostic_code") ??
+    readNestedOptionalStringField(source, "ack", "diagnostic_code");
+  const closeDiagnostic = readFirstPresentField(source, [
+    "close_diagnostic",
+    "close_ack_diagnostic",
+    "diagnostic",
+  ]);
+  const truth: TerminalSessionCloseTruth = {
+    sessionId: args.sessionId,
+    outcome: null,
+    session: args.session,
+    listedSession: args.listedSession,
+    listTotal: args.listTotal,
+    getStatus: args.getStatus,
+    closeState: readOptionalStringField(source, "close_state"),
+    closeDeadlineAt: readOptionalStringField(source, "close_deadline_at"),
+    closeAttemptId: readOptionalStringField(source, "close_attempt_id"),
+    closeRequestId: readOptionalStringField(source, "close_request_id"),
+    closeAckStatus,
+    closeDiagnosticCode,
+    closeDiagnostic,
+    diagnosticCode: readOptionalStringField(source, "diagnostic_code"),
+    diagnostics: readFirstPresentField(source, ["diagnostics"]),
+    lastError: args.lastError,
+  };
+  truth.outcome = resolveTerminalSessionCloseOutcome(truth);
+  return truth;
+}
+
+function summarizeTerminalSessionCloseTruth(
+  truth: TerminalSessionCloseTruth | null,
+): Record<string, unknown> {
+  if (!truth) {
+    return { last_session_truth: null };
+  }
+  return {
+    session_id: truth.sessionId,
+    outcome: truth.outcome,
+    list_total: truth.listTotal,
+    get_status: truth.getStatus,
+    close_state: truth.closeState,
+    close_deadline_at: truth.closeDeadlineAt,
+    close_attempt_id: truth.closeAttemptId,
+    close_request_id: truth.closeRequestId,
+    close_ack_status: truth.closeAckStatus,
+    close_diagnostic_code: truth.closeDiagnosticCode,
+    close_diagnostic: truth.closeDiagnostic,
+    diagnostic_code: truth.diagnosticCode,
+    diagnostics: truth.diagnostics,
+    last_error: truth.lastError,
+    listed_session: truth.listedSession,
+    session: truth.session,
+  };
+}
+
+export async function readTerminalSessionCloseTruthViaApi(args: {
+  page: Page;
+  workspaceId: string;
+  projectId: string;
+  taskId: string;
+  sessionId: string;
+}): Promise<TerminalSessionCloseTruth> {
+  const token = await readStoredAuthToken(args.page);
+  const sessionBaseUrl =
+    `${API_BASE}/api/v1/workspaces/${args.workspaceId}` +
+    `/projects/${args.projectId}` +
+    `/tasks/${args.taskId}` +
+    "/terminal/sessions";
+  const headers = {
+    Authorization: `Bearer ${token}`,
+  };
+  const [listResult, getResult] = await Promise.allSettled([
+    args.page.request
+      .get(sessionBaseUrl, { headers })
+      .then(readTerminalSessionJsonResponse),
+    args.page.request
+      .get(`${sessionBaseUrl}/${args.sessionId}`, { headers })
+      .then(readTerminalSessionJsonResponse),
+  ]);
+
+  const listSnapshot =
+    listResult.status === "fulfilled" ? listResult.value : null;
+  const getSnapshot =
+    getResult.status === "fulfilled" ? getResult.value : null;
+  const listPayload = asRecord(listSnapshot?.payload);
+  const listItems = Array.isArray(listPayload?.items)
+    ? listPayload.items
+    : [];
+  const listedSession = listItems.find(
+    (item) => readCanonicalListedTerminalSessionId(item) === args.sessionId,
+  ) as TerminalSessionApiRecord | undefined;
+  const sessionRecord =
+    getSnapshot?.ok && asRecord(getSnapshot.payload)
+      ? (getSnapshot.payload as TerminalSessionApiRecord)
+      : null;
+  const listTotalValue = listPayload?.total;
+  const listTotal =
+    typeof listTotalValue === "number" && Number.isFinite(listTotalValue)
+      ? listTotalValue
+      : listSnapshot?.ok
+        ? listItems.length
+        : null;
+  const lastError = [
+    listResult.status === "rejected" ? `list:${String(listResult.reason)}` : null,
+    getResult.status === "rejected" ? `get:${String(getResult.reason)}` : null,
+    listSnapshot?.error ? `list_parse:${listSnapshot.error}` : null,
+    getSnapshot?.error ? `get_parse:${getSnapshot.error}` : null,
+  ]
+    .filter((value): value is string => Boolean(value))
+    .join(";") || null;
+
+  return buildTerminalSessionCloseTruth({
+    sessionId: args.sessionId,
+    session: sessionRecord,
+    listedSession: listedSession ?? null,
+    listTotal,
+    getStatus: getSnapshot?.status ?? null,
+    lastError,
+  });
+}
+
+export async function waitForTerminalSessionFinalTruthViaApi(args: {
+  page: Page;
+  workspaceId: string;
+  projectId: string;
+  taskId: string;
+  sessionId: string;
+  timeoutMs?: number;
+  pollIntervalMs?: number;
+}): Promise<TerminalSessionCloseTruth & { outcome: TerminalSessionFinalTruthOutcome }> {
+  const timeoutMs = Math.max(0, args.timeoutMs ?? 60_000);
+  const pollIntervalMs = Math.max(1, args.pollIntervalMs ?? 500);
+  const deadline = Date.now() + timeoutMs;
+  let latestTruth: TerminalSessionCloseTruth | null = null;
+
+  while (true) {
+    latestTruth = await readTerminalSessionCloseTruthViaApi(args);
+    if (latestTruth.outcome) {
+      return latestTruth as TerminalSessionCloseTruth & {
+        outcome: TerminalSessionFinalTruthOutcome;
+      };
+    }
+    if (Date.now() >= deadline) {
+      break;
+    }
+    await args.page.waitForTimeout(Math.min(pollIntervalMs, Math.max(1, deadline - Date.now())));
+  }
+
+  throw new Error(
+    `terminal_session_close_truth_timeout:${args.sessionId}:` +
+      JSON.stringify({
+        last_session_truth: summarizeTerminalSessionCloseTruth(latestTruth),
+      }),
+  );
+}
+
 export async function expectTerminalSessionRunnerEvidenceViaApi(args: {
   page: Page;
   workspaceId: string;
@@ -2792,7 +3219,6 @@ export async function runTerminalCommandViaWs(args: {
       const reconnectPayload: Record<string, unknown> = {
         type: "terminal.reconnect",
         terminal_session_id: args.terminalSessionId,
-        view: "agent_task.task_terminal",
         cols,
         rows,
       };

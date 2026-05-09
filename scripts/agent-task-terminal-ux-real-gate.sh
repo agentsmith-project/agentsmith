@@ -14,12 +14,22 @@ cleanup_on_exit() {
 }
 trap 'cleanup_on_exit $?' EXIT INT TERM
 
-export BASE_URL="${BASE_URL:-http://localhost:3101}"
-export INTEGRATION_API_BASE="${INTEGRATION_API_BASE:-http://localhost:21000}"
 export INTEGRATION_LOCALE="${INTEGRATION_LOCALE:-en-US}"
 export INTEGRATION_PRESEEDED_SYSTEM_WORKSPACES="${INTEGRATION_PRESEEDED_SYSTEM_WORKSPACES:-true}"
 
-bash "${ROOT_DIR}/scripts/agent-task-terminal-matrix-real-gate.sh"
+AGENT_TASK_TERMINAL_MATRIX_FINAL_MODE=managed_agent_task bash "${ROOT_DIR}/scripts/agent-task-terminal-matrix-real-gate.sh"
+
+init_local_manual_env
+
+if [[ -z "${MONGO_URL:-}" ]]; then
+  echo "[agent-task-terminal-ux] backend_real_mongo_url_missing: MONGO_URL is required after local-manual env initialization" >&2
+  exit 1
+fi
+
+export MONGO_URL
+export MONGO_DB_NAME="${MONGO_DB_NAME:-mbos}"
+export BASE_URL="${BASE_URL:-http://localhost:${PORT_WEB}}"
+export INTEGRATION_API_BASE="${INTEGRATION_API_BASE:-http://localhost:${PORT_API}}"
 
 cd "${ROOT_DIR}"
 npx playwright test --config playwright.config.integration.ts e2e/integration-agent-task-terminal-ux.spec.ts --project=chromium --workers=1

@@ -161,6 +161,20 @@ require_var() {
   fi
 }
 
+resolve_local_manual_developer_workspace_root() {
+  local raw_root="${MBOS_AGENT_TASK_DEVELOPER_WORKSPACE_ROOT:-}"
+  if [[ -z "${raw_root}" ]]; then
+    raw_root="${MBOS_AGENT_WORKSPACE_ROOT:-}"
+  fi
+  if [[ -z "${raw_root}" ]]; then
+    raw_root="${HOME:-}/ags-workspace"
+  fi
+  if [[ -z "${raw_root}" || "${raw_root}" == "/ags-workspace" ]]; then
+    raw_root="${ROOT_DIR}/.local-manual/ags-workspace"
+  fi
+  realpath -m "${raw_root}"
+}
+
 local_manual_port_from_url() {
   local raw_url="$1"
   local authority port
@@ -225,6 +239,10 @@ init_local_manual_env() {
   LOCAL_MANUAL_ALLOW_UNTRACKED_PROCESS_RESCUE="${LOCAL_MANUAL_ALLOW_UNTRACKED_PROCESS_RESCUE:-0}"
   LOCALE="${LOCALE:-zh-CN}"
   WORKSPACE_ID="${WORKSPACE_ID:-ws_default}"
+  MBOS_AGENT_TASK_DEVELOPER_WORKSPACE_ROOT="$(resolve_local_manual_developer_workspace_root)"
+  MBOS_AGENT_WORKSPACE_ROOT="${MBOS_AGENT_TASK_DEVELOPER_WORKSPACE_ROOT}"
+  export MBOS_AGENT_TASK_DEVELOPER_WORKSPACE_ROOT
+  export MBOS_AGENT_WORKSPACE_ROOT
 
   load_local_manual_substrate_env
 

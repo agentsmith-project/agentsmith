@@ -67,6 +67,61 @@ wait_runner_connected() {
   done
 }
 
+wait_runner_api_runtime_ready() {
+  local timeout="${1:-60}"
+  local start token project_id runner_id status payload ready
+  token="$(cat "$(backend_real_token_file)" 2>/dev/null || true)"
+  project_id="$(state_get project.id)"
+  runner_id="$(state_get agent_runner.id)"
+  if [[ -z "${token}" || -z "${project_id}" || -z "${runner_id}" ]]; then
+    err "runner API runtime readiness cannot be checked without token/project/runner state"
+    return 1
+  fi
+
+  start="$(date +%s)"
+  while true; do
+    payload="$(
+      curl -sS \
+        -H "Authorization: Bearer ${token}" \
+        "http://localhost:${PORT_API}/api/v1/workspaces/${WORKSPACE_ID}/projects/${project_id}/agent-runners/${runner_id}/diagnostics" \
+        -w '\n%{http_code}' || true
+    )"
+    status="$(printf '%s\n' "${payload}" | tail -n 1)"
+    if [[ "${status}" == "200" ]]; then
+      ready="$(
+        printf '%s\n' "${payload}" | sed '$d' | node -e '
+let raw = "";
+process.stdin.on("data", (chunk) => {
+  raw += chunk;
+});
+process.stdin.on("end", () => {
+  try {
+    const payload = JSON.parse(raw);
+    const readyAt = payload && payload.runtime_metadata && payload.runtime_metadata.ready_at;
+    if (typeof readyAt === "string" && readyAt.trim()) {
+      process.stdout.write("ready");
+    }
+  } catch {
+    // keep polling
+  }
+});
+' 2>/dev/null || true
+      )"
+      if [[ "${ready}" == "ready" ]]; then
+        info "runner API runtime ready"
+        return 0
+      fi
+    fi
+    if (( "$(date +%s)" - start > timeout )); then
+      err "runner API runtime did not become ready in time"
+      printf '%s\n' "${payload}" >&2 || true
+      tail -n 120 "${RUNNER_LOG}" || true
+      return 1
+    fi
+    sleep 1
+  done
+}
+
 info "ensuring a single local agent-task runner instance"
 # common.sh delegates tracked runner ownership checks to owner-janitor.ts.
 if ! stop_local_manual_runner_owner_aware replace_runner; then
@@ -92,6 +147,9 @@ fi
 runner_pid="$("${runner_start_fn}" runner "0" "${RUNNER_LOG}" bash -lc "
   cd '${ROOT_DIR}' && \
   export MBOS_AGENT_RUNNER_DEBUG='${MBOS_AGENT_RUNNER_DEBUG:-1}' \
+    MBOS_AGENT_TASK_RUNNER_MODE='developer' \
+    MBOS_AGENT_TASK_DEVELOPER_WORKSPACE_ROOT='${MBOS_AGENT_TASK_DEVELOPER_WORKSPACE_ROOT}' \
+    MBOS_AGENT_WORKSPACE_ROOT='${MBOS_AGENT_TASK_DEVELOPER_WORKSPACE_ROOT}' \
     MBOS_AGENT_TASK_TIMEOUT_SEC='${MBOS_AGENT_TASK_TIMEOUT_SEC:-120}' \
     MBOS_AGENT_CODEX_YOLO='${MBOS_AGENT_CODEX_YOLO:-1}' && \
   exec make agent-task-runner-from-state
@@ -103,5 +161,6 @@ local_manual_write_runner_owner_state "${RUNNER_OWNER_STATE_FILE}" "${runner_pid
 RUNNER_LAUNCH_STARTED=1
 start_runner_health_monitor
 wait_runner_connected 60
+wait_runner_api_runtime_ready 60
 write_ready_file "${RUNNER_READY_FILE}"
 trap - EXIT

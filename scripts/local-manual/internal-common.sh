@@ -99,9 +99,11 @@ ensure_local_manual_ready() {
 }
 
 ensure_agent_task_diagnostics_ready() {
-  if ! runner_socket_is_connected || [[ -z "$(state_get project.id)" || -z "$(state_get agent_runner.id)" ]]; then
+  local current_runner_provider
+  current_runner_provider="$(state_get agent_runner.runner_provider)"
+  if ! runner_socket_is_connected || [[ -z "$(state_get project.id)" || -z "$(state_get agent_runner.id)" || "${current_runner_provider}" != "managed" ]]; then
     internal_info "preparing agent-task diagnostic resources"
-    LOCAL_MANUAL_ENABLE_INTERNAL=0 bash "${ROOT_DIR}/scripts/local-manual/seed-agent-task-diagnostics.sh"
+    AGENT_RUNNER_SEED_MODE=managed_agent_task LOCAL_MANUAL_ENABLE_INTERNAL=0 bash "${ROOT_DIR}/scripts/local-manual/seed-agent-task-diagnostics.sh"
   fi
 }
 
@@ -396,11 +398,12 @@ restart_api_with_mode() {
 
 ensure_internal_runner_state() {
   ensure_internal_common_runtime_env
-  local token project_id endpoint_id existing_runner
+  local token project_id endpoint_id existing_runner current_runner_provider
   token="$(cat "$(backend_real_token_file)" 2>/dev/null || true)"
   project_id="$(state_get project.id)"
   endpoint_id="$(state_get endpoint.id)"
   existing_runner="$(state_get agent_runner.id)"
+  current_runner_provider="$(state_get agent_runner.runner_provider)"
   [[ -n "${token}" && -n "${project_id}" && -n "${endpoint_id}" ]] || {
     internal_info "agent-task diagnostic state missing after internal API restart; preparing agent-task diagnostic resources"
     ensure_agent_task_diagnostics_ready
@@ -414,7 +417,7 @@ ensure_internal_runner_state() {
     }
   }
 
-  if [[ -n "${existing_runner}" ]]; then
+  if [[ -n "${existing_runner}" && "${current_runner_provider}" == "managed" ]]; then
     local status
     status="$(curl -sS -o /dev/null -w '%{http_code}' \
       "http://localhost:${PORT_API}/api/v1/workspaces/${WORKSPACE_ID}/projects/${project_id}/agent-runners/${existing_runner}" \
@@ -425,5 +428,5 @@ ensure_internal_runner_state() {
   fi
 
   internal_info "managed agent-task runner state missing after internal API restart; preparing agent-task diagnostic resources"
-  LOCAL_MANUAL_ENABLE_INTERNAL=0 bash "${ROOT_DIR}/scripts/local-manual/seed-agent-task-diagnostics.sh"
+  AGENT_RUNNER_SEED_MODE=managed_agent_task LOCAL_MANUAL_ENABLE_INTERNAL=0 bash "${ROOT_DIR}/scripts/local-manual/seed-agent-task-diagnostics.sh"
 }

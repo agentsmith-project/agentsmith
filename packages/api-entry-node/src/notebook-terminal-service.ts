@@ -8,7 +8,12 @@ import {
   issueInternalTicket,
   resolveInternalTicket,
 } from './internal-ticket-store.js';
-import type { AgentExecutionService } from './agent-execution-service.js';
+import type {
+  AdoptTerminalSessionInput,
+  AgentExecutionService,
+  RunnerActiveTerminalDescriptor,
+  RunnerDetachedReason,
+} from './agent-execution-service.js';
 
 function debugTerminal(message: string, extra?: Record<string, unknown>): void {
   if (process.env.DEBUG_NOTEBOOK_TERMINAL !== '1') return;
@@ -24,12 +29,13 @@ const DEFAULT_TERMINAL_STARTUP_TIMEOUT_FLOOR_MS = 15_000;
 const DEFAULT_TERMINAL_REENTRY_OVERHEAD_MS = 20_000;
 const DEFAULT_TERMINAL_RECONNECT_GRACE_FLOOR_MS = 90_000;
 const MAX_TERMINAL_RECONNECT_GRACE_MS = 2 * 60_000;
-const TERMINAL_SERVICE_RELOAD_CLOSE_REASON = 'terminal_connection_failed_service_reload';
+const DEFAULT_TERMINAL_RECOVERY_TIMEOUT_MS = 120_000;
+const DEFAULT_TERMINAL_RECOVERY_TIMEOUT_MAX_MS = 300_000;
+const DEFAULT_TERMINAL_CLOSE_TIMEOUT_MS = 30_000;
 const DEFAULT_TERMINAL_REPLAY_MAX_CHUNKS = 500;
 const DEFAULT_TERMINAL_REPLAY_MAX_BYTES = 256 * 1024;
 const DEFAULT_TERMINAL_REPLAY_TTL_MS = 10 * 60_000;
 const MAX_QUEUED_BROWSER_EVENTS = 1_000;
-const AGENT_TASK_TERMINAL_RECONNECT_VIEW = 'agent_task.task_terminal';
 
 function parsePositiveIntegerEnv(name: string): number | null {
   const raw = process.env[name]?.trim();
@@ -77,6 +83,36 @@ function resolveDefaultTerminalReconnectGraceMs(): number {
   );
 }
 
+function clampBoundedTimeoutMs(value: number | undefined, fallback: number, max: number): number {
+  const normalized = typeof value === 'number' && Number.isFinite(value) && value > 0
+    ? Math.floor(value)
+    : fallback;
+  return Math.min(max, Math.max(5_000, normalized));
+}
+
+function readPositiveInteger(input: unknown): number | null {
+  return typeof input === 'number' && Number.isSafeInteger(input) && input > 0 ? input : null;
+}
+
+function readPublicCloseResult(input: unknown): TerminalCloseResult | undefined {
+  return input === 'closed' || input === 'not_found' ? input : undefined;
+}
+
+function resolveTerminalRecoveryTimeoutMs(explicit?: number): number {
+  const envMax = parsePositiveIntegerEnv('NOTEBOOK_TERMINAL_RECOVERY_TIMEOUT_MAX_MS')
+    ?? DEFAULT_TERMINAL_RECOVERY_TIMEOUT_MAX_MS;
+  const max = Math.max(5_000, envMax);
+  const envTimeout = parsePositiveIntegerEnv('NOTEBOOK_TERMINAL_RECOVERY_TIMEOUT_MS')
+    ?? DEFAULT_TERMINAL_RECOVERY_TIMEOUT_MS;
+  return clampBoundedTimeoutMs(explicit ?? envTimeout, DEFAULT_TERMINAL_RECOVERY_TIMEOUT_MS, max);
+}
+
+function resolveTerminalCloseTimeoutMs(explicit?: number): number {
+  const envTimeout = parsePositiveIntegerEnv('NOTEBOOK_TERMINAL_CLOSE_TIMEOUT_MS')
+    ?? DEFAULT_TERMINAL_CLOSE_TIMEOUT_MS;
+  return clampBoundedTimeoutMs(explicit ?? envTimeout, DEFAULT_TERMINAL_CLOSE_TIMEOUT_MS, DEFAULT_TERMINAL_RECOVERY_TIMEOUT_MAX_MS);
+}
+
 type RegisteredTerminalSession = {
   id: string;
   workspaceId: string;
@@ -91,7 +127,26 @@ type RegisteredTerminalSession = {
   shell?: string;
   executionContext?: Record<string, unknown>;
   runtimeDispatchContext?: Record<string, unknown>;
-  status: 'pending' | 'active' | 'disconnected' | 'closed' | 'failed';
+  status: TerminalSessionStatus;
+  lifecycleStatus: TerminalLifecycleStatus;
+  runnerConnectionStatus: TerminalRunnerConnectionStatus;
+  browserConnectionStatus: TerminalBrowserConnectionStatus;
+  inputEnabled: boolean;
+  recoverable: boolean;
+  recoveryDeadlineAt?: string;
+  failureKind: TerminalFailureKind | null;
+  closeState: TerminalCloseState;
+  closeDeadlineAt?: string;
+  closeAttemptId?: string;
+  closeRequestId?: string;
+  closeGeneration?: number;
+  closeConnectionEpoch?: number;
+  closeResult?: TerminalCloseResult;
+  closeDiagnosticCode?: string;
+  closeRemainingPidCount?: number;
+  terminalGeneration?: number;
+  terminalConnectionEpoch?: number;
+  closeReason?: string;
   browserSocket?: WebSocket;
   runtime?: TerminalRuntime;
   runtimeReady?: boolean;
@@ -104,7 +159,6 @@ type RegisteredTerminalSession = {
   createdAt: string;
   lastActivityAt: string;
   endedAt?: string;
-  closeReason?: string;
   exitCode?: number | null;
   browserHandshakeComplete?: boolean;
   browserReplayInProgress?: boolean;
@@ -115,8 +169,11 @@ type RegisteredTerminalSession = {
 };
 
 type TerminalRuntimeEvent = {
-  type: 'started' | 'output' | 'exited' | 'error';
+  type: 'started' | 'output' | 'exited' | 'error' | 'detached';
   terminal_session_id: string;
+  runner_session_id?: string;
+  generation?: number;
+  connection_epoch?: number;
   cols?: number;
   rows?: number;
   chunk?: string;
@@ -124,7 +181,24 @@ type TerminalRuntimeEvent = {
   signal?: string | null;
   error_code?: string;
   error_message?: string;
+  reason?: string;
 };
+
+type TerminalSessionStatus = 'pending' | 'active' | 'disconnected' | 'recovering' | 'closing' | 'closed' | 'failed';
+type TerminalLifecycleStatus = 'pending' | 'starting' | 'active' | 'recovering' | 'closing' | 'closed' | 'failed';
+type TerminalRunnerConnectionStatus = 'dispatching' | 'attached' | 'transport_lost' | 'adopting' | 'missing' | 'closed';
+type TerminalBrowserConnectionStatus = 'attached' | 'browser_disconnected' | 'none';
+type TerminalCloseState = 'none' | 'requested' | 'delivered' | 'acked' | 'expired';
+type TerminalCloseResult = 'closed' | 'not_found';
+type TerminalFailureKind =
+  | 'process_start_failed'
+  | 'process_exited_unexpectedly'
+  | 'protocol_error'
+  | 'permission_revoked'
+  | 'runner_recovery_timeout'
+  | 'terminal_process_lost'
+  | 'runner_process_exited'
+  | 'terminal_runtime_session_mismatch';
 
 type TerminalBrowserPayload = Record<string, unknown> & {
   type: string;
@@ -203,6 +277,8 @@ export class NotebookTerminalService {
   private readonly maxSessionsPerTask = 3;
   private readonly sessionTtlSeconds = 24 * 60 * 60;
   private readonly startupTimeoutMs: number;
+  private readonly recoveryTimeoutMs: number;
+  private readonly closeTimeoutMs: number;
   private readonly replayMaxChunks: number;
   private readonly replayMaxBytes: number;
   private readonly replayTtlMs: number;
@@ -213,6 +289,8 @@ export class NotebookTerminalService {
     options?: {
       startupTimeoutMs?: number;
       reconnectGraceMs?: number;
+      recoveryTimeoutMs?: number;
+      closeTimeoutMs?: number;
       replayMaxChunks?: number;
       replayMaxBytes?: number;
       replayTtlMs?: number;
@@ -221,6 +299,8 @@ export class NotebookTerminalService {
   ) {
     this.wsServer = new WebSocketServer({ noServer: true });
     this.startupTimeoutMs = Math.max(25, options?.startupTimeoutMs ?? resolveDefaultTerminalStartupTimeoutMs());
+    this.recoveryTimeoutMs = resolveTerminalRecoveryTimeoutMs(options?.recoveryTimeoutMs);
+    this.closeTimeoutMs = resolveTerminalCloseTimeoutMs(options?.closeTimeoutMs);
     this.reconnectGraceMs = Math.min(
       MAX_TERMINAL_RECONNECT_GRACE_MS,
       Math.max(25, options?.reconnectGraceMs ?? resolveDefaultTerminalReconnectGraceMs()),
@@ -241,6 +321,18 @@ export class NotebookTerminalService {
       this.configuredAuthorizationHooks = {
         authorizeTerminalUse: options.authorizeTerminalUse,
       };
+    }
+    const registerCoordinator = (
+      this.agentExecutionService as Partial<AgentExecutionService> & {
+        registerTerminalRecoveryCoordinator?: AgentExecutionService['registerTerminalRecoveryCoordinator'];
+      }
+    ).registerTerminalRecoveryCoordinator;
+    if (typeof registerCoordinator === 'function') {
+      registerCoordinator.call(this.agentExecutionService, {
+        handleRunnerDetached: (event) => this.handleRunnerDetached(event),
+        handleRunnerReady: (event) => this.handleRunnerReadyForTerminalRecovery(event),
+        handleTerminalCloseAck: (event) => this.handleTerminalCloseAck(event),
+      });
     }
   }
 
@@ -344,10 +436,11 @@ export class NotebookTerminalService {
   }
 
   private isTerminalInputEnabled(session: RegisteredTerminalSession): boolean {
-    return Boolean(session.runtime)
+    return session.inputEnabled === true
       && session.runtimeReady === true
-      && session.status !== 'closed'
-      && session.status !== 'failed';
+      && session.status === 'active'
+      && session.lifecycleStatus === 'active'
+      && Boolean(session.runtime);
   }
 
   private buildTerminalAuthorizationInput(
@@ -423,12 +516,16 @@ export class NotebookTerminalService {
     socket: WebSocket | undefined,
   ): boolean | Promise<boolean> {
     if (!this.isTerminalInputEnabled(session)) {
-      this.sendTerminalErrorAndClose(
-        socket,
-        session.id,
-        'terminal_not_ready',
-        'terminal_not_ready',
-      );
+      const isDisabledLifecycle = session.lifecycleStatus === 'recovering' || session.lifecycleStatus === 'closing';
+      this.sendToBrowserSocket(socket, {
+        type: 'terminal.error',
+        terminal_session_id: session.id,
+        error_code: isDisabledLifecycle ? 'terminal_input_disabled' : 'terminal_not_ready',
+        error_message: isDisabledLifecycle ? 'terminal_input_disabled' : 'terminal_not_ready',
+      });
+      if (!isDisabledLifecycle) {
+        this.closeBrowserSocket(socket, 1008, 'terminal_not_ready');
+      }
       return false;
     }
     return this.ensureTerminalUseAuthorized(session, socket);
@@ -479,33 +576,240 @@ export class NotebookTerminalService {
     return `notebook_terminal_task_sessions:${input.workspaceId}:${input.projectId}:${input.taskId}:${input.userId}`;
   }
 
+  private recoveryIndexCacheKey(): string {
+    return 'notebook_terminal_recovery_index';
+  }
+
+  private closingIndexCacheKey(): string {
+    return 'notebook_terminal_closing_index';
+  }
+
+  private async readSessionIndex(key: string): Promise<string[]> {
+    const raw = await this.cache.get(key);
+    if (!raw) return [];
+    try {
+      const parsed = JSON.parse(raw) as unknown;
+      if (!Array.isArray(parsed)) return [];
+      return parsed.filter((value): value is string => typeof value === 'string' && value.length > 0);
+    } catch {
+      return [];
+    }
+  }
+
+  private async writeSessionIndex(key: string, sessionIds: string[]): Promise<void> {
+    const uniqueIds = [...new Set(sessionIds)];
+    if (uniqueIds.length === 0) {
+      await this.cache.del(key);
+      return;
+    }
+    await this.cache.set(key, JSON.stringify(uniqueIds), this.sessionTtlSeconds);
+  }
+
+  private async addSessionToIndex(key: string, sessionId: string): Promise<void> {
+    const ids = await this.readSessionIndex(key);
+    if (ids.includes(sessionId)) return;
+    ids.push(sessionId);
+    await this.writeSessionIndex(key, ids);
+  }
+
+  private async removeSessionFromIndex(key: string, sessionId: string): Promise<void> {
+    const ids = await this.readSessionIndex(key);
+    if (!ids.includes(sessionId)) return;
+    await this.writeSessionIndex(key, ids.filter((id) => id !== sessionId));
+  }
+
+  private async updateLifecycleIndexes(session: RegisteredTerminalSession): Promise<void> {
+    if (session.lifecycleStatus === 'recovering') {
+      await this.addSessionToIndex(this.recoveryIndexCacheKey(), session.id);
+    } else {
+      await this.removeSessionFromIndex(this.recoveryIndexCacheKey(), session.id);
+    }
+    if (session.lifecycleStatus === 'closing') {
+      await this.addSessionToIndex(this.closingIndexCacheKey(), session.id);
+    } else {
+      await this.removeSessionFromIndex(this.closingIndexCacheKey(), session.id);
+    }
+  }
+
+  private normalizeSession(session: RegisteredTerminalSession): RegisteredTerminalSession {
+    const status = session.status;
+    const lifecycleStatus = session.lifecycleStatus ?? (
+      status === 'pending'
+        ? 'pending'
+        : status === 'active' || status === 'disconnected'
+          ? 'active'
+          : status
+    );
+    const runnerConnectionStatus = session.runnerConnectionStatus ?? (
+      status === 'closed'
+        ? 'closed'
+        : status === 'failed'
+          ? 'missing'
+          : 'dispatching'
+    );
+    const browserConnectionStatus = session.browserConnectionStatus ?? (
+      status === 'active'
+        ? 'attached'
+        : status === 'disconnected'
+          ? 'browser_disconnected'
+          : 'none'
+    );
+    const inputEnabled = session.inputEnabled ?? (
+      Boolean(session.runtime) && session.runtimeReady === true && status === 'active'
+    );
+    const terminalGeneration = readPositiveInteger(session.terminalGeneration);
+    const terminalConnectionEpoch = readPositiveInteger(session.terminalConnectionEpoch);
+    return {
+      ...session,
+      lifecycleStatus,
+      runnerConnectionStatus,
+      browserConnectionStatus,
+      inputEnabled,
+      recoverable: session.recoverable ?? lifecycleStatus === 'recovering',
+      failureKind: session.failureKind ?? null,
+      closeState: session.closeState ?? 'none',
+      closeResult: readPublicCloseResult(session.closeResult),
+      ...(terminalGeneration !== null
+        ? { terminalGeneration }
+        : { terminalGeneration: undefined }),
+      ...(terminalConnectionEpoch !== null
+        ? { terminalConnectionEpoch }
+        : { terminalConnectionEpoch: undefined }),
+    };
+  }
+
+  private setBrowserConnectionStatus(session: RegisteredTerminalSession): void {
+    if (session.browserSocket && session.browserHandshakeComplete) {
+      session.browserConnectionStatus = 'attached';
+      return;
+    }
+    if (session.status === 'disconnected') {
+      session.browserConnectionStatus = 'browser_disconnected';
+      return;
+    }
+    session.browserConnectionStatus = 'none';
+  }
+
+  private setInputEnabled(session: RegisteredTerminalSession, enabled: boolean): void {
+    session.inputEnabled = enabled
+      && Boolean(session.runtime)
+      && session.runtimeReady === true
+      && session.lifecycleStatus === 'active'
+      && session.status === 'active';
+  }
+
   private isVisibleTaskSessionStatus(status: RegisteredTerminalSession['status']): boolean {
-    return status === 'pending' || status === 'active' || status === 'disconnected' || status === 'failed';
+    return status === 'pending'
+      || status === 'active'
+      || status === 'disconnected'
+      || status === 'recovering'
+      || status === 'closing'
+      || status === 'failed';
   }
 
   private isLiveTaskSessionStatus(status: RegisteredTerminalSession['status']): boolean {
-    return status === 'pending' || status === 'active' || status === 'disconnected';
+    return status === 'pending'
+      || status === 'active'
+      || status === 'disconnected'
+      || status === 'recovering'
+      || status === 'closing';
   }
 
   private isLiveBindableSessionStatus(status: RegisteredTerminalSession['status']): boolean {
-    return status === 'pending' || status === 'active' || status === 'disconnected';
+    return status === 'pending' || status === 'active' || status === 'disconnected' || status === 'recovering';
+  }
+
+  private async applyTerminalDeadlineExpiry(
+    session: RegisteredTerminalSession,
+  ): Promise<RegisteredTerminalSession> {
+    const normalized = this.normalizeSession(session);
+    Object.assign(session, normalized);
+    const nowMs = Date.now();
+    if (
+      normalized.lifecycleStatus === 'recovering'
+      && normalized.recoveryDeadlineAt
+      && Date.parse(normalized.recoveryDeadlineAt) <= nowMs
+    ) {
+      session.status = 'failed';
+      session.lifecycleStatus = 'failed';
+      session.runnerConnectionStatus = 'missing';
+      session.inputEnabled = false;
+      session.recoverable = false;
+      session.failureKind = 'runner_recovery_timeout';
+      session.closeReason = 'runner_recovery_timeout';
+      session.endedAt = new Date(nowMs).toISOString();
+      session.lastActivityAt = session.endedAt;
+      session.runtime = undefined;
+      session.runtimeReady = false;
+      session.runtimeDispatchPromise = undefined;
+      session.streamBound = false;
+      await this.persistSession(session);
+      void this.notifySessionClosed(session);
+      return session;
+    }
+    if (
+      normalized.lifecycleStatus === 'closing'
+      && normalized.closeDeadlineAt
+      && Date.parse(normalized.closeDeadlineAt) <= nowMs
+    ) {
+      session.status = 'failed';
+      session.lifecycleStatus = 'failed';
+      session.runnerConnectionStatus = 'missing';
+      session.inputEnabled = false;
+      session.recoverable = false;
+      session.closeState = 'expired';
+      session.closeResult = undefined;
+      session.closeDiagnosticCode = session.closeDiagnosticCode ?? 'close_tombstone_timeout';
+      session.failureKind = 'terminal_process_lost';
+      session.closeReason = 'close_tombstone_timeout';
+      session.endedAt = new Date(nowMs).toISOString();
+      session.lastActivityAt = session.endedAt;
+      session.runtime = undefined;
+      session.runtimeReady = false;
+      session.runtimeDispatchPromise = undefined;
+      session.streamBound = false;
+      await this.persistSession(session);
+      void this.notifySessionClosed(session);
+      return session;
+    }
+    return session;
   }
 
   private async reconcilePersistedSessionAfterServiceReload(
     session: RegisteredTerminalSession,
   ): Promise<RegisteredTerminalSession> {
-    if (!this.isLiveBindableSessionStatus(session.status)) {
-      return session;
+    const normalized = this.normalizeSession(session);
+    if (normalized.status === 'closing' || normalized.lifecycleStatus === 'closing') {
+      await this.persistSession(normalized);
+      return this.applyTerminalDeadlineExpiry(normalized);
+    }
+    if (normalized.status === 'recovering' || normalized.lifecycleStatus === 'recovering') {
+      await this.persistSession(normalized);
+      return this.applyTerminalDeadlineExpiry(normalized);
+    }
+    if (!this.isLiveBindableSessionStatus(normalized.status)) {
+      return this.applyTerminalDeadlineExpiry(normalized);
     }
 
-    const endedAt = new Date().toISOString();
+    const now = new Date().toISOString();
+    const deadlineAt = normalized.recoveryDeadlineAt
+      && Date.parse(normalized.recoveryDeadlineAt) > Date.now()
+      ? normalized.recoveryDeadlineAt
+      : new Date(Date.now() + this.recoveryTimeoutMs).toISOString();
     const reconciled: RegisteredTerminalSession = {
-      ...session,
-      status: 'failed',
-      lastActivityAt: endedAt,
-      endedAt,
-      closeReason: TERMINAL_SERVICE_RELOAD_CLOSE_REASON,
-      exitCode: session.exitCode ?? null,
+      ...normalized,
+      status: 'recovering',
+      lifecycleStatus: 'recovering',
+      runnerConnectionStatus: 'transport_lost',
+      browserConnectionStatus: 'none',
+      inputEnabled: false,
+      recoverable: true,
+      recoveryDeadlineAt: deadlineAt,
+      failureKind: null,
+      closeState: normalized.closeState ?? 'none',
+      closeReason: 'runner_transport_lost',
+      lastActivityAt: now,
+      exitCode: normalized.exitCode ?? null,
       browserSocket: undefined,
       runtime: undefined,
       runtimeReady: false,
@@ -517,17 +821,22 @@ export class NotebookTerminalService {
       bindVersion: undefined,
     };
     await this.persistSession(reconciled);
-    void this.notifySessionClosed(reconciled);
-    return reconciled;
+    return this.applyTerminalDeadlineExpiry(reconciled);
   }
 
   private async loadResolvedPersistedSession(sessionId: string): Promise<RegisteredTerminalSession | null> {
     const persisted = await this.loadPersistedSession(sessionId);
     if (!persisted) return null;
-    if (this.isLiveBindableSessionStatus(persisted.status)) {
+    if (
+      persisted.status === 'closing'
+      || persisted.lifecycleStatus === 'closing'
+      || persisted.status === 'recovering'
+      || persisted.lifecycleStatus === 'recovering'
+      || this.isLiveBindableSessionStatus(persisted.status)
+    ) {
       return this.reconcilePersistedSessionAfterServiceReload(persisted);
     }
-    return persisted;
+    return this.applyTerminalDeadlineExpiry(persisted);
   }
 
   private async countTaskSessions(input: {
@@ -551,28 +860,55 @@ export class NotebookTerminalService {
   }
 
   private async persistSession(session: RegisteredTerminalSession): Promise<void> {
+    const normalized = this.normalizeSession(session);
+    Object.assign(session, normalized);
     const payload: PersistedTerminalSession = {
-      id: session.id,
-      workspaceId: session.workspaceId,
-      projectId: session.projectId,
-      taskId: session.taskId,
-      agentId: session.agentId,
-      resolvedRunnerId: session.resolvedRunnerId,
-      runnerSessionId: session.runnerSessionId,
-      userId: session.userId,
-      cols: session.cols,
-      rows: session.rows,
-      ...(session.shell ? { shell: session.shell } : {}),
-      ...(session.executionContext ? { executionContext: session.executionContext } : {}),
-      ...(session.runtimeDispatchContext ? { runtimeDispatchContext: session.runtimeDispatchContext } : {}),
-      status: session.status,
-      createdAt: session.createdAt,
-      lastActivityAt: session.lastActivityAt,
-      ...(session.endedAt ? { endedAt: session.endedAt } : {}),
-      ...(session.closeReason ? { closeReason: session.closeReason } : {}),
-      ...(session.exitCode !== undefined ? { exitCode: session.exitCode } : {}),
+      id: normalized.id,
+      workspaceId: normalized.workspaceId,
+      projectId: normalized.projectId,
+      taskId: normalized.taskId,
+      agentId: normalized.agentId,
+      resolvedRunnerId: normalized.resolvedRunnerId,
+      runnerSessionId: normalized.runnerSessionId,
+      userId: normalized.userId,
+      cols: normalized.cols,
+      rows: normalized.rows,
+      ...(normalized.shell ? { shell: normalized.shell } : {}),
+      ...(normalized.executionContext ? { executionContext: normalized.executionContext } : {}),
+      ...(normalized.runtimeDispatchContext ? { runtimeDispatchContext: normalized.runtimeDispatchContext } : {}),
+      status: normalized.status,
+      lifecycleStatus: normalized.lifecycleStatus,
+      runnerConnectionStatus: normalized.runnerConnectionStatus,
+      browserConnectionStatus: normalized.browserConnectionStatus,
+      inputEnabled: normalized.inputEnabled,
+      recoverable: normalized.recoverable,
+      ...(normalized.recoveryDeadlineAt ? { recoveryDeadlineAt: normalized.recoveryDeadlineAt } : {}),
+      failureKind: normalized.failureKind,
+      closeState: normalized.closeState,
+      ...(normalized.closeDeadlineAt ? { closeDeadlineAt: normalized.closeDeadlineAt } : {}),
+      ...(normalized.closeAttemptId ? { closeAttemptId: normalized.closeAttemptId } : {}),
+      ...(normalized.closeRequestId ? { closeRequestId: normalized.closeRequestId } : {}),
+      ...(typeof normalized.closeGeneration === 'number' ? { closeGeneration: normalized.closeGeneration } : {}),
+      ...(typeof normalized.closeConnectionEpoch === 'number'
+        ? { closeConnectionEpoch: normalized.closeConnectionEpoch }
+        : {}),
+      ...(normalized.closeResult ? { closeResult: normalized.closeResult } : {}),
+      ...(normalized.closeDiagnosticCode ? { closeDiagnosticCode: normalized.closeDiagnosticCode } : {}),
+      ...(typeof normalized.closeRemainingPidCount === 'number'
+        ? { closeRemainingPidCount: normalized.closeRemainingPidCount }
+        : {}),
+      ...(typeof normalized.terminalGeneration === 'number' ? { terminalGeneration: normalized.terminalGeneration } : {}),
+      ...(typeof normalized.terminalConnectionEpoch === 'number'
+        ? { terminalConnectionEpoch: normalized.terminalConnectionEpoch }
+        : {}),
+      createdAt: normalized.createdAt,
+      lastActivityAt: normalized.lastActivityAt,
+      ...(normalized.endedAt ? { endedAt: normalized.endedAt } : {}),
+      ...(normalized.closeReason ? { closeReason: normalized.closeReason } : {}),
+      ...(normalized.exitCode !== undefined ? { exitCode: normalized.exitCode } : {}),
     };
-    await this.cache.set(this.sessionCacheKey(session.id), JSON.stringify(payload), this.sessionTtlSeconds);
+    await this.cache.set(this.sessionCacheKey(normalized.id), JSON.stringify(payload), this.sessionTtlSeconds);
+    await this.updateLifecycleIndexes(normalized);
   }
 
   private async readTaskSessionIds(input: {
@@ -630,7 +966,7 @@ export class NotebookTerminalService {
     const raw = await this.cache.get(this.sessionCacheKey(sessionId));
     if (!raw) return null;
     try {
-      return JSON.parse(raw) as RegisteredTerminalSession;
+      return this.normalizeSession(JSON.parse(raw) as RegisteredTerminalSession);
     } catch {
       return null;
     }
@@ -663,12 +999,14 @@ export class NotebookTerminalService {
   private async resolveLiveBindableSession(sessionId: string): Promise<RegisteredTerminalSession | null> {
     const live = this.sessions.get(sessionId);
     if (live) {
-      return this.isLiveBindableSessionStatus(live.status) ? live : null;
+      const resolved = await this.applyTerminalDeadlineExpiry(live);
+      return this.isLiveBindableSessionStatus(resolved.status) ? resolved : null;
     }
 
     const persisted = await this.loadPersistedSession(sessionId);
     if (persisted && this.isLiveBindableSessionStatus(persisted.status)) {
-      await this.reconcilePersistedSessionAfterServiceReload(persisted);
+      const reconciled = await this.reconcilePersistedSessionAfterServiceReload(persisted);
+      return this.isLiveBindableSessionStatus(reconciled.status) ? reconciled : null;
     }
     return null;
   }
@@ -907,6 +1245,63 @@ export class NotebookTerminalService {
     });
   }
 
+  private async enterRecovering(
+    session: RegisteredTerminalSession,
+    reason: RunnerDetachedReason | 'server_shutdown',
+    terminalProcessesTerminated?: boolean,
+  ): Promise<void> {
+    const now = new Date().toISOString();
+    this.clearStartupTimer(session);
+    if (terminalProcessesTerminated || reason === 'server_shutdown') {
+      session.status = 'failed';
+      session.lifecycleStatus = 'failed';
+      session.runnerConnectionStatus = 'closed';
+      session.inputEnabled = false;
+      session.recoverable = false;
+      session.failureKind = 'runner_process_exited';
+      session.closeReason = 'runner_process_exited';
+      session.endedAt = now;
+      session.lastActivityAt = now;
+      await this.persistSession(session);
+      void this.notifySessionClosed(session);
+      this.queueOrSendBrowserPayload(session, {
+        type: 'terminal.error',
+        terminal_session_id: session.id,
+        error_code: 'runner_process_exited',
+        error_message: 'runner_process_exited',
+      });
+      return;
+    }
+
+    const existingDeadlineMs = session.recoveryDeadlineAt ? Date.parse(session.recoveryDeadlineAt) : NaN;
+    const deadlineAt = Number.isFinite(existingDeadlineMs) && existingDeadlineMs > Date.now()
+      ? session.recoveryDeadlineAt
+      : new Date(Date.now() + this.recoveryTimeoutMs).toISOString();
+    session.status = 'recovering';
+    session.lifecycleStatus = 'recovering';
+    session.runnerConnectionStatus = 'transport_lost';
+    this.setBrowserConnectionStatus(session);
+    session.inputEnabled = false;
+    session.runtimeReady = false;
+    session.runtime = undefined;
+    session.runtimeDispatchPromise = undefined;
+    session.streamBound = false;
+    session.recoverable = true;
+    session.recoveryDeadlineAt = deadlineAt;
+    session.failureKind = null;
+    session.closeReason = 'runner_transport_lost';
+    session.lastActivityAt = now;
+    await this.persistSession(session);
+    this.queueOrSendBrowserPayload(session, {
+      type: 'terminal.state',
+      terminal_session_id: session.id,
+      state: 'recovering',
+      status: 'recovering',
+      input_enabled: false,
+      recovery_deadline_at: deadlineAt,
+    });
+  }
+
   private clearDisconnectTimer(session: RegisteredTerminalSession): void {
     if (!session.disconnectTimer) return;
     clearTimeout(session.disconnectTimer);
@@ -933,31 +1328,82 @@ export class NotebookTerminalService {
         });
         if (event.type === 'started') {
           this.clearStartupTimer(session);
-          session.runtimeReady = true;
-          if (this.isOpenSocket(session.browserSocket) && session.browserHandshakeComplete) {
-            session.status = 'active';
+          const eventRunnerSessionId = event.runner_session_id?.trim() ?? '';
+          const eventGeneration = readPositiveInteger(event.generation);
+          const eventConnectionEpoch = readPositiveInteger(event.connection_epoch);
+          if (
+            eventRunnerSessionId
+            && eventRunnerSessionId === session.runnerSessionId
+            && eventGeneration !== null
+            && eventConnectionEpoch !== null
+          ) {
+            session.terminalGeneration = eventGeneration;
+            session.terminalConnectionEpoch = eventConnectionEpoch;
+          } else {
+            debugTerminal('runtime_started_identity_missing', {
+              terminal_session_id: session.id,
+              has_runner_session_id: Boolean(eventRunnerSessionId),
+              generation: event.generation,
+              connection_epoch: event.connection_epoch,
+            });
+          }
+          if (session.lifecycleStatus !== 'closing') {
+            session.runtimeReady = true;
+            if (session.status !== 'disconnected' || (this.isOpenSocket(session.browserSocket) && session.browserHandshakeComplete)) {
+              session.status = 'active';
+            }
+            session.lifecycleStatus = 'active';
+            session.runnerConnectionStatus = 'attached';
+            session.recoverable = false;
+            session.recoveryDeadlineAt = undefined;
+            this.setInputEnabled(session, true);
           }
         }
         if (event.type === 'output') {
           this.clearStartupTimer(session);
-          session.runtimeReady = true;
-          if (this.isOpenSocket(session.browserSocket) && session.browserHandshakeComplete) {
-            session.status = 'active';
+          if (session.lifecycleStatus !== 'closing') {
+            session.runtimeReady = true;
+            if (session.status !== 'disconnected' || (this.isOpenSocket(session.browserSocket) && session.browserHandshakeComplete)) {
+              session.status = 'active';
+            }
+            session.lifecycleStatus = 'active';
+            session.runnerConnectionStatus = 'attached';
+            session.recoverable = false;
+            session.recoveryDeadlineAt = undefined;
+            this.setInputEnabled(session, true);
           }
+        }
+        if (event.type === 'detached') {
+          await this.enterRecovering(session, event.reason === 'server_shutdown' ? 'server_shutdown' : 'agent_disconnected');
+          continue;
         }
         if (event.type === 'exited' || event.type === 'error') {
           this.clearStartupTimer(session);
-          session.status = event.type === 'exited' ? 'closed' : 'failed';
           session.exitCode = typeof event.exit_code === 'number' ? event.exit_code : null;
-          session.closeReason = event.type === 'exited'
-            ? 'process_exited'
-            : (event.error_message?.trim() || 'runtime_error');
+          session.recoverable = false;
+          session.inputEnabled = false;
           session.runtimeReady = false;
+          if (session.lifecycleStatus !== 'closing') {
+            session.status = event.type === 'exited' ? 'closed' : 'failed';
+            session.lifecycleStatus = event.type === 'exited' ? 'closed' : 'failed';
+            session.runnerConnectionStatus = event.type === 'exited' ? 'closed' : 'missing';
+            session.closeReason = event.type === 'exited'
+              ? 'process_exited'
+              : (event.error_message?.trim() || 'runtime_error');
+            session.failureKind = event.type === 'error'
+              ? event.error_message === 'terminal_process_lost'
+                ? 'terminal_process_lost'
+                : event.error_message === 'runner_recovery_timeout'
+                  ? 'runner_recovery_timeout'
+                  : 'process_exited_unexpectedly'
+              : null;
+          }
         }
+        this.setBrowserConnectionStatus(session);
         session.lastActivityAt = new Date().toISOString();
         await this.persistSession(session);
         const inputBecameEnabled = !inputWasEnabled && this.isTerminalInputEnabled(session);
-        if (inputBecameEnabled || event.type === 'started') {
+        if ((inputBecameEnabled || event.type === 'started') && session.lifecycleStatus !== 'closing') {
           this.queueOrSendBrowserPayload(session, {
             type: 'terminal.state',
             terminal_session_id: session.id,
@@ -968,9 +1414,9 @@ export class NotebookTerminalService {
             ...(typeof event.rows === 'number' ? { rows: event.rows } : {}),
           });
         }
-        if (event.type === 'output') {
+        if (event.type === 'output' && session.lifecycleStatus !== 'closing') {
           this.queueOrSendBrowserPayload(session, this.recordTerminalOutput(session, event));
-        } else if (event.type === 'exited') {
+        } else if (event.type === 'exited' && session.lifecycleStatus !== 'closing') {
           this.queueOrSendBrowserPayload(session, {
             type: 'terminal.state',
             terminal_session_id: session.id,
@@ -980,7 +1426,7 @@ export class NotebookTerminalService {
             exit_code: typeof event.exit_code === 'number' ? event.exit_code : null,
             signal: event.signal ?? null,
           });
-        } else if (event.type === 'error') {
+        } else if (event.type === 'error' && session.lifecycleStatus !== 'closing') {
           this.queueOrSendBrowserPayload(session, {
             type: 'terminal.error',
             terminal_session_id: session.id,
@@ -990,6 +1436,9 @@ export class NotebookTerminalService {
         } else {
           // `started` is represented by the terminal.state ready frame above.
         }
+      }
+      if (session.lifecycleStatus === 'recovering' || session.lifecycleStatus === 'closing') {
+        return;
       }
       this.closeBrowserSocket(session.browserSocket, 1000, 'terminal_complete');
       this.finishSession(
@@ -1002,6 +1451,9 @@ export class NotebookTerminalService {
       debugTerminal('runtime_stream_failed', {
         terminal_session_id: session.id,
       });
+      if (session.lifecycleStatus === 'recovering' || session.lifecycleStatus === 'closing') {
+        return;
+      }
       this.closeBrowserSocket(session.browserSocket, 1011, 'terminal_stream_failed');
       this.finishSession(session.id, 'failed', 'terminal_stream_failed');
     });
@@ -1079,16 +1531,26 @@ export class NotebookTerminalService {
       return;
     }
     if (!session.runtime) {
-      this.finishSession(
-        session.id,
-        options.terminalStatus,
-        options.unestablishedTerminalCloseReason ?? options.terminalCloseReason,
-      );
+      this.clearDisconnectTimer(session);
+      session.status = session.status === 'closing' || session.status === 'recovering' ? session.status : 'pending';
+      session.lifecycleStatus = session.lifecycleStatus === 'closing' || session.lifecycleStatus === 'recovering'
+        ? session.lifecycleStatus
+        : 'pending';
+      session.runnerConnectionStatus = session.runnerConnectionStatus ?? 'dispatching';
+      session.browserConnectionStatus = 'none';
+      session.inputEnabled = false;
+      session.closeReason = options.closeReason;
+      session.lastActivityAt = new Date().toISOString();
+      void this.persistSession(session);
       return;
     }
     this.clearDisconnectTimer(session);
     const disconnectVersion = this.bumpDisconnectVersion(session);
     session.status = 'disconnected';
+    session.lifecycleStatus = 'active';
+    session.runnerConnectionStatus = 'attached';
+    session.browserConnectionStatus = 'browser_disconnected';
+    session.inputEnabled = false;
     session.lastActivityAt = new Date().toISOString();
     session.closeReason = options.closeReason;
     void this.persistSession(session);
@@ -1103,8 +1565,11 @@ export class NotebookTerminalService {
       ) {
         return;
       }
-      session.runtime?.close();
-      this.finishSession(session.id, options.terminalStatus, options.terminalCloseReason);
+      session.disconnectTimer = undefined;
+      session.browserConnectionStatus = 'browser_disconnected';
+      session.inputEnabled = false;
+      session.lastActivityAt = new Date().toISOString();
+      void this.persistSession(session);
     }, this.reconnectGraceMs);
   }
 
@@ -1170,6 +1635,13 @@ export class NotebookTerminalService {
       ...(input.executionContext ? { executionContext: input.executionContext } : {}),
       ...(input.runtimeDispatchContext ? { runtimeDispatchContext: input.runtimeDispatchContext } : {}),
       status: 'pending',
+      lifecycleStatus: 'pending',
+      runnerConnectionStatus: 'dispatching',
+      browserConnectionStatus: 'none',
+      inputEnabled: false,
+      recoverable: false,
+      failureKind: null,
+      closeState: 'none',
       createdAt: now,
       lastActivityAt: now,
     });
@@ -1233,7 +1705,7 @@ export class NotebookTerminalService {
 
   async getSession(sessionId: string): Promise<RegisteredTerminalSession | null> {
     const live = this.sessions.get(sessionId);
-    if (live) return live;
+    if (live) return this.applyTerminalDeadlineExpiry(live);
     return this.loadResolvedPersistedSession(sessionId);
   }
 
@@ -1298,6 +1770,383 @@ export class NotebookTerminalService {
     return sessions;
   }
 
+  async handleRunnerDetached(event: {
+    workspaceId: string;
+    projectId: string;
+    agentId: string;
+    runnerSessionId: string | null;
+    connectionId: string;
+    reason: RunnerDetachedReason;
+    terminalSessionIds: string[];
+    terminalProcessesTerminated?: boolean;
+  }): Promise<void> {
+    for (const terminalSessionId of event.terminalSessionIds) {
+      const session = await this.getSession(terminalSessionId);
+      if (
+        !session
+        || session.workspaceId !== event.workspaceId
+        || session.projectId !== event.projectId
+        || this.readSessionResolvedRunnerId(session) !== event.agentId
+        || (event.runnerSessionId && session.runnerSessionId !== event.runnerSessionId)
+        || session.status === 'closed'
+        || session.status === 'failed'
+        || session.status === 'closing'
+      ) {
+        continue;
+      }
+      await this.enterRecovering(session, event.reason, event.terminalProcessesTerminated);
+    }
+  }
+
+  async handleRunnerReadyForTerminalRecovery(event: {
+    workspaceId: string;
+    projectId: string;
+    agentId: string;
+    runnerSessionId: string | null;
+    runnerInstanceId: string | null;
+    connectionId: string;
+    connectionEpoch: number;
+    activeTerminals: RunnerActiveTerminalDescriptor[];
+  }): Promise<void> {
+    const activeTerminalIds = new Set(event.activeTerminals.map((descriptor) => descriptor.terminal_session_id));
+    for (const descriptor of event.activeTerminals) {
+      await this.handleActiveTerminalDescriptor(event, descriptor);
+    }
+    await this.redeliverMissingClosingTombstones(event, activeTerminalIds);
+  }
+
+  private async redeliverMissingClosingTombstones(
+    event: {
+      workspaceId: string;
+      projectId: string;
+      agentId: string;
+      runnerSessionId: string | null;
+    },
+    activeTerminalIds: Set<string>,
+  ): Promise<void> {
+    const closingSessionIds = await this.readSessionIndex(this.closingIndexCacheKey());
+    for (const terminalSessionId of closingSessionIds) {
+      if (activeTerminalIds.has(terminalSessionId)) {
+        continue;
+      }
+      const session = await this.getSession(terminalSessionId);
+      if (
+        !session
+        || session.workspaceId !== event.workspaceId
+        || session.projectId !== event.projectId
+        || this.readSessionResolvedRunnerId(session) !== event.agentId
+        || (event.runnerSessionId && session.runnerSessionId !== event.runnerSessionId)
+        || session.lifecycleStatus !== 'closing'
+      ) {
+        continue;
+      }
+      await this.deliverCloseTombstone(session);
+    }
+  }
+
+  private async handleActiveTerminalDescriptor(
+    event: {
+      workspaceId: string;
+      projectId: string;
+      agentId: string;
+      runnerSessionId: string | null;
+      connectionEpoch: number;
+    },
+    descriptor: RunnerActiveTerminalDescriptor,
+  ): Promise<void> {
+    const session = await this.getSession(descriptor.terminal_session_id);
+    if (
+      !session
+      || session.workspaceId !== event.workspaceId
+      || session.projectId !== event.projectId
+      || this.readSessionResolvedRunnerId(session) !== event.agentId
+      || session.runnerSessionId !== descriptor.runner_session_id
+    ) {
+      return;
+    }
+    if (session.lifecycleStatus === 'closing') {
+      session.terminalGeneration = descriptor.generation;
+      session.terminalConnectionEpoch = event.connectionEpoch;
+      await this.persistSession(session);
+      await this.deliverCloseTombstone(session);
+      return;
+    }
+    const refreshed = await this.applyTerminalDeadlineExpiry(session);
+    if (refreshed.lifecycleStatus !== 'recovering' || refreshed.status !== 'recovering') {
+      return;
+    }
+
+    const adoptAttemptId = `adopt_${randomUUID().replace(/-/g, '')}`;
+    refreshed.runnerConnectionStatus = 'adopting';
+    refreshed.inputEnabled = false;
+    refreshed.cols = descriptor.cols;
+    refreshed.rows = descriptor.rows;
+    refreshed.terminalGeneration = descriptor.generation;
+    refreshed.terminalConnectionEpoch = event.connectionEpoch;
+    refreshed.lastActivityAt = new Date().toISOString();
+    await this.persistSession(refreshed);
+
+    const adoptTerminalSession = (
+      this.agentExecutionService as Partial<AgentExecutionService> & {
+        adoptTerminalSession?: (input: AdoptTerminalSessionInput) => Promise<TerminalRuntime>;
+      }
+    ).adoptTerminalSession;
+    if (typeof adoptTerminalSession !== 'function') {
+      this.finishSession(refreshed.id, 'failed', 'runner_recovery_timeout');
+      return;
+    }
+
+    try {
+      const runtime = await adoptTerminalSession.call(this.agentExecutionService, {
+        workspaceId: refreshed.workspaceId,
+        projectId: refreshed.projectId,
+        sessionId: refreshed.runnerSessionId,
+        agentId: event.agentId,
+        terminalSessionId: refreshed.id,
+        adoptAttemptId,
+        connectionEpoch: event.connectionEpoch,
+        generation: descriptor.generation,
+        cols: descriptor.cols,
+        rows: descriptor.rows,
+        ...(refreshed.executionContext ? { executionContext: refreshed.executionContext } : {}),
+      });
+      if (refreshed.lifecycleStatus !== 'recovering' || refreshed.status !== 'recovering') {
+        runtime.close();
+        return;
+      }
+      refreshed.runtime = runtime;
+      refreshed.runtimeReady = false;
+      refreshed.streamBound = false;
+      this.bindRuntimeStream(refreshed);
+      await this.persistSession(refreshed);
+    } catch {
+      this.finishSession(refreshed.id, 'failed', 'runner_recovery_timeout');
+    }
+  }
+
+  async handleTerminalCloseAck(event: {
+    workspaceId: string;
+    projectId: string;
+    agentId: string;
+    runnerSessionId: string;
+    terminalSessionId: string;
+    requestId: string;
+    closeAttemptId: string;
+    generation: number;
+    connectionEpoch: number;
+    status: 'closed' | 'not_found' | 'error';
+    diagnosticCode?: string;
+    remainingPidCount?: number;
+  }): Promise<void> {
+    const session = await this.getSession(event.terminalSessionId);
+    const receivedFence = {
+      workspace_id: event.workspaceId,
+      project_id: event.projectId,
+      agent_id: event.agentId,
+      runner_session_id: event.runnerSessionId,
+      terminal_session_id: event.terminalSessionId,
+      request_id: event.requestId,
+      close_attempt_id: event.closeAttemptId,
+      generation: event.generation,
+      connection_epoch: event.connectionEpoch,
+      status: event.status,
+    };
+    const expectedFence = session
+      ? {
+        workspace_id: session.workspaceId,
+        project_id: session.projectId,
+        agent_id: this.readSessionResolvedRunnerId(session),
+        runner_session_id: session.runnerSessionId,
+        terminal_session_id: session.id,
+        request_id: session.closeRequestId,
+        close_attempt_id: session.closeAttemptId,
+        generation: session.closeGeneration,
+        connection_epoch: session.closeConnectionEpoch,
+        lifecycle_status: session.lifecycleStatus,
+      }
+      : null;
+    const rejectReason = !session
+      ? 'session_not_found'
+      : session.workspaceId !== event.workspaceId
+        ? 'workspace_mismatch'
+        : session.projectId !== event.projectId
+          ? 'project_mismatch'
+          : this.readSessionResolvedRunnerId(session) !== event.agentId
+            ? 'agent_mismatch'
+            : session.runnerSessionId !== event.runnerSessionId
+              ? 'runner_session_mismatch'
+              : session.closeRequestId !== event.requestId
+                ? 'request_mismatch'
+                : session.closeAttemptId !== event.closeAttemptId
+                  ? 'attempt_mismatch'
+                  : session.closeGeneration !== event.generation
+                    ? 'generation_mismatch'
+                    : session.closeConnectionEpoch !== event.connectionEpoch
+                      ? 'connection_epoch_mismatch'
+                      : session.lifecycleStatus !== 'closing'
+                        ? 'not_closing'
+                        : null;
+    if (
+      !session
+      || session.workspaceId !== event.workspaceId
+      || session.projectId !== event.projectId
+      || this.readSessionResolvedRunnerId(session) !== event.agentId
+      || session.runnerSessionId !== event.runnerSessionId
+      || session.closeRequestId !== event.requestId
+      || session.closeAttemptId !== event.closeAttemptId
+      || session.closeGeneration !== event.generation
+      || session.closeConnectionEpoch !== event.connectionEpoch
+      || session.lifecycleStatus !== 'closing'
+    ) {
+      debugTerminal('close_ack_rejected', {
+        terminal_session_id: event.terminalSessionId,
+        reason: rejectReason,
+        received: receivedFence,
+        expected: expectedFence,
+      });
+      return;
+    }
+    if (readPositiveInteger(event.generation) === null || readPositiveInteger(event.connectionEpoch) === null) {
+      debugTerminal('close_ack_rejected', {
+        terminal_session_id: event.terminalSessionId,
+        reason: 'invalid_positive_identity',
+        received: receivedFence,
+        expected: expectedFence,
+      });
+      return;
+    }
+    if (event.status === 'closed' || event.status === 'not_found') {
+      session.closeState = 'acked';
+      session.closeResult = event.status;
+      session.closeDiagnosticCode = event.status === 'not_found'
+        ? 'terminal_process_missing_on_close'
+        : event.diagnosticCode;
+      if (typeof event.remainingPidCount === 'number') {
+        session.closeRemainingPidCount = event.remainingPidCount;
+      }
+      session.failureKind = null;
+      this.finishSession(session.id, 'closed', session.closeReason ?? 'ended_by_user', 0);
+      session.closeState = 'acked';
+      session.closeResult = event.status;
+      session.closeDiagnosticCode = event.status === 'not_found'
+        ? 'terminal_process_missing_on_close'
+        : event.diagnosticCode;
+      if (typeof event.remainingPidCount === 'number') {
+        session.closeRemainingPidCount = event.remainingPidCount;
+      }
+      session.failureKind = null;
+      await this.persistSession(session);
+      await this.forgetTaskSession(session);
+      return;
+    }
+    session.closeState = 'delivered';
+    session.closeResult = undefined;
+    session.closeDiagnosticCode = event.diagnosticCode ?? 'terminal_close_error';
+    if (typeof event.remainingPidCount === 'number') {
+      session.closeRemainingPidCount = event.remainingPidCount;
+    }
+    session.lastActivityAt = new Date().toISOString();
+    await this.persistSession(session);
+  }
+
+  private async deliverCloseTombstone(session: RegisteredTerminalSession): Promise<void> {
+    const closeTerminalSession = (
+      this.agentExecutionService as Partial<AgentExecutionService> & {
+        closeTerminalSession?: (request: {
+          workspaceId: string;
+          projectId: string;
+          sessionId: string;
+          agentId: string;
+          terminalSessionId: string;
+          executionContext?: Record<string, unknown>;
+          closeRequestId?: string;
+          closeAttemptId: string;
+          generation: number;
+          connectionEpoch: number;
+          reason?: 'user_requested' | 'permission_revoked' | 'garbage_collect' | 'shutdown';
+        }) => Promise<unknown>;
+      }
+    ).closeTerminalSession;
+    const resolvedRunnerId = this.readSessionResolvedRunnerId(session);
+    if (typeof closeTerminalSession !== 'function' || !resolvedRunnerId) {
+      return;
+    }
+    const closeAttemptId = session.closeAttemptId ?? `close_${randomUUID().replace(/-/g, '')}`;
+    session.closeAttemptId = closeAttemptId;
+    const closeRequestId = `close_req_${randomUUID().replace(/-/g, '')}`;
+    const generation = readPositiveInteger(session.terminalGeneration) ?? readPositiveInteger(session.closeGeneration);
+    const connectionEpoch = readPositiveInteger(session.terminalConnectionEpoch)
+      ?? readPositiveInteger(session.closeConnectionEpoch);
+    if (generation === null || connectionEpoch === null) {
+      session.closeDiagnosticCode = session.closeDiagnosticCode ?? 'terminal_close_identity_missing';
+      session.lastActivityAt = new Date().toISOString();
+      debugTerminal('close_tombstone_not_delivered', {
+        terminal_session_id: session.id,
+        reason: 'terminal_close_identity_missing',
+        generation: session.terminalGeneration ?? session.closeGeneration,
+        connection_epoch: session.terminalConnectionEpoch ?? session.closeConnectionEpoch,
+      });
+      await this.persistSession(session);
+      return;
+    }
+    const result = await closeTerminalSession.call(this.agentExecutionService, {
+      workspaceId: session.workspaceId,
+      projectId: session.projectId,
+      sessionId: session.runnerSessionId,
+      agentId: resolvedRunnerId,
+      terminalSessionId: session.id,
+      ...(session.executionContext ? { executionContext: session.executionContext } : {}),
+      closeRequestId,
+      closeAttemptId,
+      generation,
+      connectionEpoch,
+      reason: 'user_requested',
+    }).catch(() => 'agent_offline');
+    if (result === 'signaled' && session.lifecycleStatus === 'closing') {
+      session.closeState = 'delivered';
+      session.closeRequestId = closeRequestId;
+      session.closeGeneration = generation;
+      session.closeConnectionEpoch = connectionEpoch;
+      session.lastActivityAt = new Date().toISOString();
+      await this.persistSession(session);
+    } else if (result === 'invalid_terminal_identity' && session.lifecycleStatus === 'closing') {
+      session.closeDiagnosticCode = session.closeDiagnosticCode ?? 'terminal_close_identity_missing';
+      session.lastActivityAt = new Date().toISOString();
+      await this.persistSession(session);
+    }
+  }
+
+  private async beginCloseTombstone(session: RegisteredTerminalSession): Promise<boolean> {
+    if (session.status === 'closed' || session.status === 'failed') {
+      return false;
+    }
+    const wasClosing = session.lifecycleStatus === 'closing' || session.status === 'closing';
+    this.clearDisconnectTimer(session);
+    this.clearStartupTimer(session);
+    session.status = 'closing';
+    session.lifecycleStatus = 'closing';
+    session.inputEnabled = false;
+    session.recoverable = false;
+    session.closeState = wasClosing && session.closeState !== 'none' ? session.closeState : 'requested';
+    if (!wasClosing) {
+      session.closeReason = 'ended_by_user';
+    }
+    session.closeAttemptId = session.closeAttemptId ?? `close_${randomUUID().replace(/-/g, '')}`;
+    session.closeDeadlineAt = session.closeDeadlineAt ?? new Date(Date.now() + this.closeTimeoutMs).toISOString();
+    session.browserConnectionStatus = 'none';
+    session.runtimeReady = false;
+    session.lastActivityAt = new Date().toISOString();
+    const browserSocket = session.browserSocket;
+    session.browserSocket = undefined;
+    session.browserHandshakeComplete = false;
+    session.browserReplayInProgress = false;
+    session.queuedBrowserEvents = [];
+    this.closeBrowserSocket(browserSocket, 1000, 'terminal_closed_by_user');
+    await this.persistSession(session);
+    await this.deliverCloseTombstone(session);
+    return true;
+  }
+
   async deleteSession(input: {
     workspaceId: string;
     projectId: string;
@@ -1326,32 +2175,20 @@ export class NotebookTerminalService {
       session.disconnectTimer = undefined;
     }
     this.clearStartupTimer(session);
-    if (liveSession) {
-      session.runtime?.close();
-    } else if (session.closeReason === TERMINAL_SERVICE_RELOAD_CLOSE_REASON) {
-      const closeTerminalSession = (
-        this.agentExecutionService as Partial<AgentExecutionService> & {
-          closeTerminalSession?: (request: {
-            workspaceId: string;
-            projectId: string;
-            sessionId: string;
-            agentId: string;
-            terminalSessionId: string;
-            executionContext?: Record<string, unknown>;
-          }) => Promise<unknown>;
-        }
-      ).closeTerminalSession;
-      const resolvedRunnerId = this.readSessionResolvedRunnerId(session);
-      if (typeof closeTerminalSession === 'function' && resolvedRunnerId) {
-        await closeTerminalSession.call(this.agentExecutionService, {
-          workspaceId: session.workspaceId,
-          projectId: session.projectId,
-          sessionId: session.runnerSessionId,
-          agentId: resolvedRunnerId,
-          terminalSessionId: session.id,
-          ...(session.executionContext ? { executionContext: session.executionContext } : {}),
-        }).catch(() => undefined);
+    if (
+      session.runtime
+      || session.status === 'active'
+      || session.status === 'disconnected'
+      || session.status === 'recovering'
+      || session.status === 'closing'
+    ) {
+      if (liveSession && !this.sessions.has(session.id)) {
+        this.sessions.set(session.id, session);
       }
+      if (!liveSession && !this.sessions.has(session.id)) {
+        this.sessions.set(session.id, session);
+      }
+      return this.beginCloseTombstone(session);
     }
     this.closeBrowserSocket(session.browserSocket, 1000, 'terminal_closed_by_user');
     if (liveSession && this.sessions.has(session.id)) {
@@ -1441,9 +2278,18 @@ export class NotebookTerminalService {
     session.browserHandshakeComplete = false;
     session.browserReplayInProgress = false;
     session.queuedBrowserEvents = [];
-    if (!session.runtime && session.status !== 'closed' && session.status !== 'failed') {
+    if (
+      !session.runtime
+      && session.status !== 'recovering'
+      && session.status !== 'closing'
+      && session.status !== 'closed'
+      && session.status !== 'failed'
+    ) {
       session.status = 'pending';
+      session.lifecycleStatus = 'pending';
+      session.runnerConnectionStatus = 'dispatching';
     }
+    session.browserConnectionStatus = 'none';
     session.lastActivityAt = new Date().toISOString();
 
     ws.on('message', (raw) => {
@@ -1569,9 +2415,7 @@ export class NotebookTerminalService {
     const terminalSessionId = typeof payload.terminal_session_id === 'string'
       ? payload.terminal_session_id.trim()
       : '';
-    const view = typeof payload.view === 'string' ? payload.view.trim() : '';
-    const hasUnsupportedView = Object.prototype.hasOwnProperty.call(payload, 'view')
-      && view !== AGENT_TASK_TERMINAL_RECONNECT_VIEW;
+    const hasUnsupportedView = Object.prototype.hasOwnProperty.call(payload, 'view');
     const cols = this.parsePositiveDimension(payload.cols, 20);
     const rows = this.parsePositiveDimension(payload.rows, 5);
     const afterSeq = this.parseAfterSeq(payload.after_seq);
@@ -1617,19 +2461,56 @@ export class NotebookTerminalService {
     session.cols = cols;
     session.rows = rows;
     session.lastActivityAt = new Date().toISOString();
-    if (session.runtime) {
-      if (this.isTerminalInputEnabled(session)) {
+    if (session.lifecycleStatus === 'recovering' || session.status === 'recovering') {
+      session.status = 'recovering';
+      session.lifecycleStatus = 'recovering';
+      session.runnerConnectionStatus = session.runnerConnectionStatus === 'adopting' ? 'adopting' : 'transport_lost';
+      session.browserConnectionStatus = 'attached';
+      session.inputEnabled = false;
+    } else if (session.lifecycleStatus === 'closing' || session.status === 'closing') {
+      session.status = 'closing';
+      session.lifecycleStatus = 'closing';
+      session.browserConnectionStatus = 'attached';
+      session.inputEnabled = false;
+    } else if (session.runtime) {
+      if (session.runtimeReady === true) {
         session.status = 'active';
+        session.lifecycleStatus = 'active';
+        session.runnerConnectionStatus = 'attached';
+        session.browserConnectionStatus = 'attached';
+        session.inputEnabled = true;
         this.clearStartupTimer(session);
         session.runtime.resize(cols, rows);
       }
     } else if (session.status !== 'closed' && session.status !== 'failed') {
       session.status = 'pending';
+      session.lifecycleStatus = 'pending';
+      session.runnerConnectionStatus = 'dispatching';
+      session.browserConnectionStatus = 'attached';
+      session.inputEnabled = false;
     }
     await this.persistSession(session);
 
     const browserBindStillCurrent = this.isCurrentBrowserBind(session, ws, bindVersion);
     if (browserBindStillCurrent) {
+      if (session.lifecycleStatus === 'recovering') {
+        this.sendToBrowserSocket(ws, {
+          type: 'terminal.state',
+          terminal_session_id: session.id,
+          state: 'recovering',
+          status: 'recovering',
+          input_enabled: false,
+          ...(session.recoveryDeadlineAt ? { recovery_deadline_at: session.recoveryDeadlineAt } : {}),
+        });
+      } else if (session.lifecycleStatus === 'closing') {
+        this.sendToBrowserSocket(ws, {
+          type: 'terminal.state',
+          terminal_session_id: session.id,
+          state: 'closing',
+          status: 'closing',
+          input_enabled: false,
+        });
+      }
       const replay = this.buildReplayPlan(session, afterSeq);
       this.sendReplay(session, ws, replay);
       session.browserReplayInProgress = false;
@@ -1639,7 +2520,13 @@ export class NotebookTerminalService {
       session.queuedBrowserEvents = [];
     }
 
-    if (session.runtime || session.status === 'closed' || session.status === 'failed') {
+    if (
+      session.runtime
+      || session.status === 'recovering'
+      || session.status === 'closing'
+      || session.status === 'closed'
+      || session.status === 'failed'
+    ) {
       return;
     }
 
@@ -1781,11 +2668,7 @@ export class NotebookTerminalService {
       if (!this.isCurrentBrowserBind(session, ws, bindVersion)) {
         return;
       }
-      if (session.runtime) {
-        session.runtime.close();
-      } else {
-        this.finishSession(session.id, 'closed', 'ended_by_user');
-      }
+      await this.beginCloseTombstone(session);
     }
   }
 
@@ -1800,11 +2683,26 @@ export class NotebookTerminalService {
     this.clearDisconnectTimer(session);
     this.clearStartupTimer(session);
     session.status = status;
+    session.lifecycleStatus = status;
+    session.runnerConnectionStatus = status === 'closed' ? 'closed' : 'missing';
+    session.browserConnectionStatus = 'none';
+    session.inputEnabled = false;
+    session.recoverable = false;
     const endedAt = new Date().toISOString();
     session.lastActivityAt = endedAt;
     session.endedAt = endedAt;
     if (closeReason?.trim()) session.closeReason = closeReason.trim();
     if (exitCode !== undefined) session.exitCode = exitCode;
+    if (status === 'failed' && !session.failureKind) {
+      session.failureKind = closeReason === 'terminal_runtime_session_mismatch'
+        ? 'terminal_runtime_session_mismatch'
+        : closeReason === 'terminal_start_timeout'
+          ? 'process_start_failed'
+          : 'process_exited_unexpectedly';
+    }
+    if (status === 'closed') {
+      session.failureKind = null;
+    }
     session.browserSocket = undefined;
     session.browserHandshakeComplete = false;
     session.browserReplayInProgress = false;

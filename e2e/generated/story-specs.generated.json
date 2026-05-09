@@ -222,9 +222,9 @@
     "entryRoute": "/en-US/workspaces/{workspaceId}/projects/{projectId}/agent-tasks/{taskId}",
     "goal": "项目成员重新进入一个被 terminal work 打断的 Agent Task 时，产品必须先 fail-closed 保护任务真相：如果 terminal 仍需恢复或状态已经坏掉，就不能假装 task 已经释放，也不能放行新的创建、run 或删除；用户应该能在同一 task 内重新连接 backend 仍持有的 session id，识别哪一条 terminal 现在需要恢复，结束那条问题 session，并立即开出新的 terminal 继续工作。",
     "sourceRef": "e2e/stories/backend-real/agent-task-terminal-reentry-recovery.story.md#agent-task-terminal-reentry-recovery",
-    "sourceFingerprint": "ac36d212966cb9aa240fcd94e2fdef9fd032f946b0950138358cda0700e9efab",
-    "storyFingerprint": "b496d36a9fe01315ef27243a11d0e0f1d12fab8ae5d4d6e450e81b53b8b0d544",
-    "stepMapFingerprint": "7c0c2d2756818a9a203397a9546059d3fad081aa698b9ee6f068707cbfc0b1b7",
+    "sourceFingerprint": "b5b0f778ca73f3f6e06facc2b23148c65b8f1f8b90f17d8ef8640bad8aeec6ab",
+    "storyFingerprint": "fcb6c96635458a855e09c9dc01366c35076f0af943e32c71b56c7b4a0f933755",
+    "stepMapFingerprint": "400b93f0073027bb27000e0eb35909ccca0a8efadc418a941d828c50bc5f2311",
     "sceneIds": [
       "agent-task"
     ],
@@ -235,6 +235,8 @@
       "keep-create-run-and-delete-fail-closed-until-terminal-truth-recovers",
       "reopen-terminal-workspace-and-reconnect-existing-session",
       "confirm-reconnected-terminal-is-still-usable",
+      "reload-agent-task-terminal-workspace",
+      "re-enter-agent-task-terminal-workspace",
       "surface-broken-terminal-session-inside-same-task",
       "clear-broken-session-and-keep-task-owned",
       "start-fresh-terminal-session-after-recovery",
@@ -247,6 +249,8 @@
       "keep-create-run-and-delete-fail-closed-until-terminal-truth-recovers",
       "reopen-terminal-workspace-and-reconnect-existing-session",
       "confirm-reconnected-terminal-is-still-usable",
+      "reload-agent-task-terminal-workspace",
+      "re-enter-agent-task-terminal-workspace",
       "surface-broken-terminal-session-inside-same-task",
       "clear-broken-session-and-keep-task-owned",
       "start-fresh-terminal-session-after-recovery",
@@ -281,9 +285,9 @@
     "entryRoute": "/en-US/workspaces/{workspaceId}/projects/{projectId}/agent-tasks/{taskId}",
     "goal": "当项目成员重新进入 Agent Task 时，如果 terminal 真相暂时不可用，产品必须先 fail-closed：Conversation、运行和删除都继续锁定，直到用户在当前 task 里明确重试 terminal 状态检查，并在 backend terminal truth 恢复后立刻同步解锁。",
     "sourceRef": "e2e/stories/backend-real/agent-task-terminal-truth-unavailable-retry.story.md#agent-task-terminal-truth-unavailable-retry",
-    "sourceFingerprint": "ea3a096dd5bbba24945b34354824be2beb27b5bdc340809d5f72fc98cd89466f",
-    "storyFingerprint": "0f8a7ff1169a12a1fdfa8f4a85aa15cca7b212e4e454a30452c1bb2162fd3cd5",
-    "stepMapFingerprint": "880565358b7f6ad824cb872511f267950cb8c2d85e034f2d27a9050504b74ae1",
+    "sourceFingerprint": "e77473a171f3f92f62b16b3813f2ff49d1fbf2e27bda5de7a33851df5b8ecb4b",
+    "storyFingerprint": "2d04de5e33f7ed5d752492071f05720c62c579b0285631ee612003f166da37fb",
+    "stepMapFingerprint": "4cfee7b4c2f1efcb9a8ec98d5b7ff18d6debfe01130f3defa87050186e388fda",
     "sceneIds": [
       "agent-task"
     ],
@@ -328,9 +332,9 @@
     "entryRoute": "/en-US/workspaces/{workspaceId}/projects/{projectId}/agent-tasks/{taskId}",
     "goal": "项目成员回到已有 Agent Task 继续工作时，应该先从 Conversation 进入 Terminal workspace，在同一 task 下面创建多个 terminal sessions 并在 tabs 间切换；当 live terminal 仍存在时，任务删除必须继续被阻止，第四个 terminal 也不能以假 tab 的方式出现；即使刷新或重新进入 task 页，界面也必须按 backend list 和同一批 session id 恢复这些 live sessions 与任务仍被占用的真相；关闭一个 session 不能影响其他 session，直到最后一个 session 结束后才真正释放任务并恢复 agent 输入。",
     "sourceRef": "e2e/stories/backend-real/agent-task-terminal-workspace-multi-session.story.md#agent-task-terminal-workspace-multi-session",
-    "sourceFingerprint": "ddc275cb36a6ce964e3639a7eb43d7aabafca9850fe7fef6ed630e5e9dd33a8e",
-    "storyFingerprint": "a31a45438ff010a3dbfbc31b427da8298223c105350461b0b8f4c882a14613db",
-    "stepMapFingerprint": "05929f305939b27a850505950fcd28b726dd4a82daf84ed809ad95cd94cbedcf",
+    "sourceFingerprint": "4b385b85cf1c874af26a2e988290ae4c7a544e85ab3e372f890eca7b92f96c46",
+    "storyFingerprint": "c31476fa1ac85802c4ab24caa1c703d626c25bbc8aafecebd2af65e60af4dc65",
+    "stepMapFingerprint": "3c1e16be1c55554c5e55ccd0e459cdf7b68af0a973ae16249329f566c9550349",
     "sceneIds": [
       "agent-task"
     ],

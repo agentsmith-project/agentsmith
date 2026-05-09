@@ -200,6 +200,30 @@ function expectIsoDateTime(value: unknown): asserts value is string {
   expect(Number.isNaN(Date.parse(value))).toBe(false);
 }
 
+async function waitForAssertion(assertion: () => Promise<void> | void, attempts = 50): Promise<void> {
+  let lastError: unknown;
+  for (let attempt = 0; attempt < attempts; attempt += 1) {
+    try {
+      await assertion();
+      return;
+    } catch (error) {
+      lastError = error;
+      await new Promise((resolve) => setTimeout(resolve, 20));
+    }
+  }
+  throw lastError;
+}
+
+function createDeferred<T = void>() {
+  let resolve!: (value: T | PromiseLike<T>) => void;
+  let reject!: (reason?: unknown) => void;
+  const promise = new Promise<T>((resolvePromise, rejectPromise) => {
+    resolve = resolvePromise;
+    reject = rejectPromise;
+  });
+  return { promise, resolve, reject };
+}
+
 interface ExecutionRacePause {
   entered: Promise<void>;
   resume: () => void;
@@ -495,6 +519,101 @@ describe('AgentExecutionService', () => {
         }),
       }),
     );
+  });
+
+  it('rejects agent.ready when active_terminals is not an array', async () => {
+    const { executionService, ws } = await setupExecutionService({ interactionKind: 'notebook' });
+    const handleRunnerReady = vi.fn();
+    (executionService as unknown as {
+      registerTerminalRecoveryCoordinator: (coordinator: {
+        handleRunnerDetached?: () => void;
+        handleRunnerReady?: typeof handleRunnerReady;
+      }) => void;
+    }).registerTerminalRecoveryCoordinator({ handleRunnerReady });
+    const closed = new Promise<{ code: number; reason: string }>((resolve) => {
+      ws.on('close', (code, reason) => {
+        resolve({ code, reason: reason.toString('utf-8') });
+      });
+    });
+
+    ws.send(JSON.stringify({
+      type: 'agent.ready',
+      payload: {
+        active_terminals: { terminal_session_id: 'term_invalid' },
+      },
+    }));
+
+    await expect(closed).resolves.toEqual({
+      code: 1011,
+      reason: 'agent_ready_validation_failed',
+    });
+    expect(handleRunnerReady).not.toHaveBeenCalled();
+  });
+
+  it('discards invalid active terminal descriptors without dropping valid descriptors', async () => {
+    const { executionService, ws } = await setupExecutionService({ interactionKind: 'notebook' });
+    const handleRunnerReady = vi.fn();
+    (executionService as unknown as {
+      registerTerminalRecoveryCoordinator: (coordinator: {
+        handleRunnerDetached?: () => void;
+        handleRunnerReady?: typeof handleRunnerReady;
+      }) => void;
+    }).registerTerminalRecoveryCoordinator({ handleRunnerReady });
+
+    ws.send(JSON.stringify({
+      type: 'agent.ready',
+      payload: {
+        runner_instance_id: 'runner_instance_1',
+        connection_epoch: 7,
+        active_terminals: [
+          { terminal_session_id: '', runner_session_id: 'task_1', generation: 1, cols: 80, rows: 24 },
+          { terminal_session_id: 'term_valid', runner_session_id: 'task_1', generation: 2, cols: 120, rows: 32 },
+        ],
+      },
+    }));
+
+    await waitForAssertion(() => {
+      expect(handleRunnerReady).toHaveBeenCalledTimes(1);
+    });
+    expect(handleRunnerReady.mock.calls[0]?.[0]).toMatchObject({
+      activeTerminals: [
+        {
+          terminal_session_id: 'term_valid',
+          runner_session_id: 'task_1',
+          generation: 2,
+          cols: 120,
+          rows: 32,
+        },
+      ],
+    });
+  });
+
+  it('routes runner ready with empty active terminals to the terminal recovery coordinator', async () => {
+    const { executionService, ws } = await setupExecutionService({ interactionKind: 'notebook' });
+    const handleRunnerReady = vi.fn();
+    (executionService as unknown as {
+      registerTerminalRecoveryCoordinator: (coordinator: {
+        handleRunnerReady?: typeof handleRunnerReady;
+      }) => void;
+    }).registerTerminalRecoveryCoordinator({ handleRunnerReady });
+
+    ws.send(JSON.stringify({
+      type: 'agent.ready',
+      payload: {
+        runner_instance_id: 'runner_instance_empty',
+        connection_epoch: 8,
+        active_terminals: [],
+      },
+    }));
+
+    await waitForAssertion(() => {
+      expect(handleRunnerReady).toHaveBeenCalledTimes(1);
+    });
+    expect(handleRunnerReady.mock.calls[0]?.[0]).toMatchObject({
+      runnerInstanceId: 'runner_instance_empty',
+      connectionEpoch: 8,
+      activeTerminals: [],
+    });
   });
 
   it('accepts runner_spec metadata without mutating execution preferences or matching interaction kind', async () => {
@@ -1281,6 +1400,46 @@ describe('AgentExecutionService', () => {
     });
   });
 
+  it('rejects active terminal recovery ready frames without top-level runner identity and epoch', async () => {
+    const { executionService, ws } = await setupExecutionService({ interactionKind: 'notebook' });
+    const handleRunnerReady = vi.fn();
+    (executionService as unknown as {
+      registerTerminalRecoveryCoordinator: (coordinator: {
+        handleRunnerDetached?: () => void;
+        handleRunnerReady?: typeof handleRunnerReady;
+      }) => void;
+    }).registerTerminalRecoveryCoordinator({ handleRunnerReady });
+    const closed = new Promise<{ code: number; reason: string }>((resolve) => {
+      ws.on('close', (code, reason) => {
+        resolve({ code, reason: reason.toString('utf-8') });
+      });
+    });
+
+    ws.send(JSON.stringify({
+      type: 'agent.ready',
+      payload: {
+        active_terminals: [
+          {
+            terminal_session_id: 'term_missing_epoch',
+            runner_session_id: 'task_missing_epoch',
+            generation: 1,
+            cols: 80,
+            rows: 24,
+          },
+        ],
+      },
+    }));
+
+    await expect(Promise.race([
+      closed,
+      new Promise<'timeout'>((resolve) => setTimeout(() => resolve('timeout'), 150)),
+    ])).resolves.toEqual({
+      code: 1011,
+      reason: 'agent_ready_validation_failed',
+    });
+    expect(handleRunnerReady).not.toHaveBeenCalled();
+  });
+
   it('allows notebook terminal dispatch through an agent-level socket when agent presence scope is declared', async () => {
     const { executionService, agent, ws } = await setupExecutionService({ interactionKind: 'notebook' });
     const terminalStart = new Promise<Record<string, unknown>>((resolve) => {
@@ -1353,6 +1512,29 @@ describe('AgentExecutionService', () => {
     });
     const terminalEvents = terminal.stream[Symbol.asyncIterator]();
     ws.send(JSON.stringify({
+      type: 'agent.terminal.started',
+      runner_session_id: 'task_dev_direct_presence_control',
+      terminal_session_id: 'term_dev_direct_presence_control',
+      payload: {
+        terminal_session_id: 'term_dev_direct_presence_control',
+        runner_session_id: 'task_dev_direct_presence_control',
+        generation: 3,
+        connection_epoch: 7,
+        cols: 80,
+        rows: 24,
+      },
+    }));
+    await expect(terminalEvents.next()).resolves.toMatchObject({
+      done: false,
+      value: expect.objectContaining({
+        type: 'started',
+        terminal_session_id: 'term_dev_direct_presence_control',
+        runner_session_id: 'task_dev_direct_presence_control',
+        generation: 3,
+        connection_epoch: 7,
+      }),
+    });
+    ws.send(JSON.stringify({
       type: 'agent.terminal.output',
       terminal_session_id: 'term_dev_direct_presence_control',
       payload: {
@@ -1387,14 +1569,346 @@ describe('AgentExecutionService', () => {
       }),
       expect.objectContaining({
         type: 'server.terminal.close',
+        request_id: expect.stringMatching(/^close_req_/),
         runner_session_id: 'task_dev_direct_presence_control',
         terminal_session_id: 'term_dev_direct_presence_control',
-        payload: {},
+        payload: expect.objectContaining({
+          close_attempt_id: expect.stringMatching(/^close_/),
+          generation: 3,
+          connection_epoch: 7,
+          reason: 'shutdown',
+        }),
       }),
     ]);
     for (const frame of controlFrames) {
       expect(frame).not.toHaveProperty('session_id');
     }
+  });
+
+  it('emits detached for terminal streams but keeps task run streams fatal during runner transport recovery', async () => {
+    const { executionService, agent, ws } = await setupExecutionService({ interactionKind: 'notebook' });
+    const executionContext = {
+      interaction_kind: 'notebook',
+      runner_session_scope: 'agent_presence',
+    };
+
+    const run = await executionService.dispatchStreamingRequest({
+      workspaceId: 'ws_default',
+      projectId: 'proj_1',
+      sessionId: 'task_transport_lost',
+      agentId: agent.id,
+      model: 'external-test',
+      messages: [{ role: 'user', content: 'start run' }],
+      executionContext,
+    });
+    const terminal = await executionService.dispatchTerminalSession({
+      workspaceId: 'ws_default',
+      projectId: 'proj_1',
+      sessionId: 'task_transport_lost',
+      agentId: agent.id,
+      terminalSessionId: 'term_transport_lost',
+      payload: {
+        cols: 80,
+        rows: 24,
+        executionContext,
+      },
+    });
+
+    const runEvents = run.stream[Symbol.asyncIterator]();
+    const terminalEvents = terminal.stream[Symbol.asyncIterator]();
+    const runNext = runEvents.next();
+    const terminalNext = terminalEvents.next();
+    ws.close();
+
+    await expect(runNext).resolves.toMatchObject({
+      done: false,
+      value: {
+        type: 'error',
+        error_code: 'AGENT_DISCONNECTED',
+        error_message: 'agent_disconnected',
+      },
+    });
+    await expect(terminalNext).resolves.toMatchObject({
+      done: false,
+      value: {
+        type: 'detached',
+        terminal_session_id: 'term_transport_lost',
+        reason: 'agent_disconnected',
+      },
+    });
+  });
+
+  it('serializes runner transport recovery before consuming active terminals from a newer ready frame', async () => {
+    const { executionService, agent, keyPair, wsBase, agentResourceService } = await setupExecutionService({
+      interactionKind: 'notebook',
+    });
+    const first = await openAgentWebSocket({
+      wsBase,
+      agentId: agent.id,
+      key: keyPair.key,
+      sessionId: 'task_recovery_order',
+    });
+    await waitForSessionConnectionInfo(agentResourceService, agent.id, 'task_recovery_order', (connection) => (
+      connection?.session_id === 'task_recovery_order'
+    ));
+    await executionService.dispatchTerminalSession({
+      workspaceId: 'ws_default',
+      projectId: 'proj_1',
+      sessionId: 'task_recovery_order',
+      agentId: agent.id,
+      terminalSessionId: 'term_recovery_order',
+      payload: {
+        cols: 80,
+        rows: 24,
+      },
+    });
+
+    const detachEntered = createDeferred();
+    const detachRelease = createDeferred();
+    const handleRunnerDetached = vi.fn(async () => {
+      detachEntered.resolve();
+      await detachRelease.promise;
+    });
+    const handleRunnerReady = vi.fn();
+    (executionService as unknown as {
+      registerTerminalRecoveryCoordinator: (coordinator: {
+        handleRunnerDetached?: typeof handleRunnerDetached;
+        handleRunnerReady?: typeof handleRunnerReady;
+      }) => void;
+    }).registerTerminalRecoveryCoordinator({ handleRunnerDetached, handleRunnerReady });
+
+    first.close();
+    await detachEntered.promise;
+
+    const second = await openAgentWebSocket({
+      wsBase,
+      agentId: agent.id,
+      key: keyPair.key,
+      sessionId: 'task_recovery_order',
+    });
+    second.send(JSON.stringify({
+      type: 'agent.ready',
+      payload: {
+        runner_instance_id: 'runner_instance_order',
+        connection_epoch: 8,
+        active_terminals: [
+          {
+            terminal_session_id: 'term_recovery_order',
+            runner_session_id: 'task_recovery_order',
+            generation: 1,
+            cols: 100,
+            rows: 30,
+          },
+        ],
+      },
+    }));
+
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    expect(handleRunnerReady).not.toHaveBeenCalled();
+
+    detachRelease.resolve();
+    await waitForAssertion(() => {
+      expect(handleRunnerReady).toHaveBeenCalledTimes(1);
+    });
+    expect(handleRunnerReady.mock.calls[0]?.[0]).toMatchObject({
+      activeTerminals: [
+        {
+          terminal_session_id: 'term_recovery_order',
+          runner_session_id: 'task_recovery_order',
+        },
+      ],
+    });
+  });
+
+  it('sends terminal adopt as server.terminal.adopt without sending a second terminal start', async () => {
+    const { executionService, agent, keyPair, wsBase } = await setupExecutionService({ interactionKind: 'notebook' });
+    const ws = await openAgentWebSocket({
+      wsBase,
+      agentId: agent.id,
+      key: keyPair.key,
+      sessionId: 'task_adopt',
+    });
+    const terminalFrames: Array<Record<string, unknown>> = [];
+    ws.on('message', (raw) => {
+      const message = JSON.parse(raw.toString('utf-8')) as Record<string, unknown>;
+      if (typeof message.type === 'string' && message.type.startsWith('server.terminal.')) {
+        terminalFrames.push(message);
+      }
+    });
+
+    const adopted = await (executionService as unknown as {
+      adoptTerminalSession: (input: {
+        workspaceId: string;
+        projectId: string;
+        sessionId: string;
+        agentId: string;
+        terminalSessionId: string;
+        adoptAttemptId: string;
+        connectionEpoch: number;
+        generation: number;
+        cols: number;
+        rows: number;
+      }) => Promise<{
+        stream: AsyncIterable<{ type: string; terminal_session_id: string }>;
+        writeInput: (data: string) => void;
+        resize: (cols: number, rows: number) => void;
+        close: () => void;
+      }>;
+    }).adoptTerminalSession({
+      workspaceId: 'ws_default',
+      projectId: 'proj_1',
+      sessionId: 'task_adopt',
+      agentId: agent.id,
+      terminalSessionId: 'term_adopt',
+      adoptAttemptId: 'adopt_test_1',
+      connectionEpoch: 7,
+      generation: 1,
+      cols: 120,
+      rows: 32,
+    });
+
+    await waitForAssertion(() => {
+      expect(terminalFrames).toContainEqual(expect.objectContaining({
+        type: 'server.terminal.adopt',
+        request_id: 'adopt_test_1',
+        runner_session_id: 'task_adopt',
+        terminal_session_id: 'term_adopt',
+        payload: expect.objectContaining({
+          adopt_attempt_id: 'adopt_test_1',
+          connection_epoch: 7,
+          generation: 1,
+          cols: 120,
+          rows: 32,
+        }),
+      }));
+    });
+    expect(terminalFrames.some((frame) => frame.type === 'server.terminal.start')).toBe(false);
+
+    const iterator = adopted.stream[Symbol.asyncIterator]();
+    ws.send(JSON.stringify({
+      type: 'agent.terminal.adopted',
+      request_id: 'adopt_test_1',
+      terminal_session_id: 'term_adopt',
+      payload: {
+        terminal_session_id: 'term_adopt',
+        runner_session_id: 'task_adopt',
+        adopt_attempt_id: 'adopt_test_1',
+        connection_epoch: 7,
+        generation: 1,
+        cols: 120,
+        rows: 32,
+      },
+    }));
+
+    await expect(iterator.next()).resolves.toMatchObject({
+      done: false,
+      value: {
+        type: 'started',
+        terminal_session_id: 'term_adopt',
+        cols: 120,
+        rows: 32,
+      },
+    });
+
+    adopted.close();
+    await waitForAssertion(() => {
+      expect(terminalFrames).toContainEqual(expect.objectContaining({
+        type: 'server.terminal.close',
+        runner_session_id: 'task_adopt',
+        terminal_session_id: 'term_adopt',
+        payload: expect.objectContaining({
+          generation: 1,
+          connection_epoch: 7,
+          reason: 'shutdown',
+        }),
+      }));
+    });
+  });
+
+  it('fences terminal adopt acknowledgement by attempt, connection epoch, and generation', async () => {
+    const { executionService, agent, keyPair, wsBase } = await setupExecutionService({ interactionKind: 'notebook' });
+    const ws = await openAgentWebSocket({
+      wsBase,
+      agentId: agent.id,
+      key: keyPair.key,
+      sessionId: 'task_adopt_fence',
+    });
+
+    const adopted = await (executionService as unknown as {
+      adoptTerminalSession: (input: {
+        workspaceId: string;
+        projectId: string;
+        sessionId: string;
+        agentId: string;
+        terminalSessionId: string;
+        adoptAttemptId: string;
+        connectionEpoch: number;
+        generation: number;
+        cols: number;
+        rows: number;
+      }) => Promise<{
+        stream: AsyncIterable<{ type: string; terminal_session_id: string }>;
+        writeInput: (data: string) => void;
+        resize: (cols: number, rows: number) => void;
+        close: () => void;
+      }>;
+    }).adoptTerminalSession({
+      workspaceId: 'ws_default',
+      projectId: 'proj_1',
+      sessionId: 'task_adopt_fence',
+      agentId: agent.id,
+      terminalSessionId: 'term_adopt_fence',
+      adoptAttemptId: 'adopt_fence_1',
+      connectionEpoch: 9,
+      generation: 2,
+      cols: 100,
+      rows: 30,
+    });
+
+    const iterator = adopted.stream[Symbol.asyncIterator]();
+    const nextEvent = iterator.next();
+    const sendAdopted = (override: Partial<{
+      request_id: string;
+      adopt_attempt_id: string;
+      connection_epoch: number;
+      generation: number;
+    }>) => {
+      const adoptAttemptId = override.adopt_attempt_id ?? 'adopt_fence_1';
+      ws.send(JSON.stringify({
+        type: 'agent.terminal.adopted',
+        request_id: override.request_id ?? adoptAttemptId,
+        terminal_session_id: 'term_adopt_fence',
+        payload: {
+          terminal_session_id: 'term_adopt_fence',
+          runner_session_id: 'task_adopt_fence',
+          adopt_attempt_id: adoptAttemptId,
+          connection_epoch: override.connection_epoch ?? 9,
+          generation: override.generation ?? 2,
+          cols: 100,
+          rows: 30,
+        },
+      }));
+    };
+
+    sendAdopted({ request_id: 'adopt_fence_stale' });
+    sendAdopted({ request_id: 'adopt_fence_1', adopt_attempt_id: 'adopt_fence_stale' });
+    sendAdopted({ connection_epoch: 8 });
+    sendAdopted({ generation: 1 });
+    await expect(Promise.race([
+      nextEvent.then(() => 'event'),
+      new Promise<'timeout'>((resolve) => setTimeout(() => resolve('timeout'), 50)),
+    ])).resolves.toBe('timeout');
+
+    sendAdopted({});
+    await expect(nextEvent).resolves.toMatchObject({
+      done: false,
+      value: {
+        type: 'started',
+        terminal_session_id: 'term_adopt_fence',
+        cols: 100,
+        rows: 30,
+      },
+    });
   });
 
   it('does not accept payload-only terminal_session_id as a terminal event selector', async () => {
@@ -1529,9 +2043,13 @@ describe('AgentExecutionService', () => {
     const terminalEvents = terminal.stream[Symbol.asyncIterator]();
     ws.send(JSON.stringify({
       type: 'agent.terminal.started',
+      runner_session_id: 'task_dev_direct_presence_buffered_input',
       terminal_session_id: 'term_dev_direct_presence_buffered_input',
       payload: {
         terminal_session_id: 'term_dev_direct_presence_buffered_input',
+        runner_session_id: 'task_dev_direct_presence_buffered_input',
+        generation: 5,
+        connection_epoch: 11,
       },
     }));
     await expect(terminalEvents.next()).resolves.toMatchObject({
@@ -1539,6 +2057,9 @@ describe('AgentExecutionService', () => {
       value: expect.objectContaining({
         type: 'started',
         terminal_session_id: 'term_dev_direct_presence_buffered_input',
+        runner_session_id: 'task_dev_direct_presence_buffered_input',
+        generation: 5,
+        connection_epoch: 11,
       }),
     });
     await new Promise((resolve) => setTimeout(resolve, 50));
@@ -2116,12 +2637,504 @@ describe('AgentExecutionService', () => {
       sessionId: 'task_1',
       agentId: agent.id,
       terminalSessionId: 'term_persisted',
+      closeRequestId: 'close_req_persisted_1',
+      closeAttemptId: 'close_attempt_persisted_1',
+      generation: 3,
+      connectionEpoch: 9,
     })).resolves.toBe('signaled');
 
     await expect(closeFrame).resolves.toMatchObject({
       type: 'server.terminal.close',
+      request_id: 'close_req_persisted_1',
       runner_session_id: 'task_1',
       terminal_session_id: 'term_persisted',
+      payload: {
+        close_attempt_id: 'close_attempt_persisted_1',
+        generation: 3,
+        connection_epoch: 9,
+        reason: 'user_requested',
+      },
+    });
+  });
+
+  it('routes close tombstone explicit terminal close ack to the recovery coordinator', async () => {
+    const { executionService, agent, keyPair, wsBase } = await setupExecutionService({ interactionKind: 'notebook' });
+    const ws = await openAgentWebSocket({
+      wsBase,
+      agentId: agent.id,
+      key: keyPair.key,
+      sessionId: 'task_close_ack',
+    });
+    const handleTerminalCloseAck = vi.fn();
+    (executionService as unknown as {
+      registerTerminalRecoveryCoordinator: (coordinator: {
+        handleRunnerDetached?: () => void;
+        handleRunnerReady?: () => void;
+        handleTerminalCloseAck?: typeof handleTerminalCloseAck;
+      }) => void;
+    }).registerTerminalRecoveryCoordinator({ handleTerminalCloseAck });
+    const closeFrame = new Promise<Record<string, unknown>>((resolve) => {
+      ws.on('message', (raw) => {
+        const message = JSON.parse(raw.toString('utf-8')) as Record<string, unknown>;
+        if (message.type === 'server.terminal.close') {
+          resolve(message);
+        }
+      });
+    });
+
+    await expect((executionService as unknown as {
+      closeTerminalSession: (input: {
+        workspaceId: string;
+        projectId: string;
+        sessionId: string;
+        agentId: string;
+        terminalSessionId: string;
+        closeRequestId: string;
+        closeAttemptId: string;
+        generation: number;
+        connectionEpoch: number;
+      }) => Promise<string>;
+    }).closeTerminalSession({
+      workspaceId: 'ws_default',
+      projectId: 'proj_1',
+      sessionId: 'task_close_ack',
+      agentId: agent.id,
+      terminalSessionId: 'term_close_ack',
+      closeRequestId: 'close_req_test_1',
+      closeAttemptId: 'close_test_1',
+      generation: 4,
+      connectionEpoch: 11,
+    })).resolves.toBe('signaled');
+
+    await expect(closeFrame).resolves.toMatchObject({
+      type: 'server.terminal.close',
+      request_id: 'close_req_test_1',
+      runner_session_id: 'task_close_ack',
+      terminal_session_id: 'term_close_ack',
+      payload: {
+        close_attempt_id: 'close_test_1',
+        generation: 4,
+        connection_epoch: 11,
+      },
+    });
+
+    ws.send(JSON.stringify({
+      type: 'agent.terminal.close_ack',
+      request_id: 'close_req_test_1',
+      runner_session_id: 'task_close_ack',
+      terminal_session_id: 'term_close_ack',
+      timestamp: '2026-05-08T12:00:00.000Z',
+      payload: {
+        terminal_session_id: 'term_close_ack',
+        runner_session_id: 'task_close_ack',
+        close_attempt_id: 'close_test_1',
+        generation: 4,
+        connection_epoch: 11,
+        status: 'closed',
+      },
+    }));
+
+    await waitForAssertion(() => {
+      expect(handleTerminalCloseAck).toHaveBeenCalledWith(expect.objectContaining({
+        workspaceId: 'ws_default',
+        projectId: 'proj_1',
+        agentId: agent.id,
+        runnerSessionId: 'task_close_ack',
+        terminalSessionId: 'term_close_ack',
+        requestId: 'close_req_test_1',
+        closeAttemptId: 'close_test_1',
+        generation: 4,
+        connectionEpoch: 11,
+        status: 'closed',
+      }));
+    });
+  });
+
+  it('releases pending terminal resources when close ack reports not_found', async () => {
+    const { executionService, agent, keyPair, wsBase } = await setupExecutionService({
+      interactionKind: 'notebook',
+      executionServiceOptions: {
+        terminalFirstEventTimeoutMs: 10_000,
+        terminalIdleTimeoutMs: 10_000,
+        terminalMaxRuntimeMs: 10_000,
+      },
+    });
+    const ws = await openAgentWebSocket({
+      wsBase,
+      agentId: agent.id,
+      key: keyPair.key,
+      sessionId: 'task_close_ack_not_found_pending',
+    });
+    const startFrame = new Promise<Record<string, unknown>>((resolve) => {
+      ws.on('message', (raw) => {
+        const message = JSON.parse(raw.toString('utf-8')) as Record<string, unknown>;
+        if (message.type === 'server.terminal.start') {
+          resolve(message);
+        }
+      });
+    });
+
+    const terminal = await executionService.dispatchTerminalSession({
+      workspaceId: 'ws_default',
+      projectId: 'proj_1',
+      sessionId: 'task_close_ack_not_found_pending',
+      agentId: agent.id,
+      terminalSessionId: 'term_close_ack_not_found_pending',
+      payload: {
+        cols: 80,
+        rows: 24,
+      },
+    });
+    await expect(startFrame).resolves.toMatchObject({
+      type: 'server.terminal.start',
+      runner_session_id: 'task_close_ack_not_found_pending',
+      terminal_session_id: 'term_close_ack_not_found_pending',
+    });
+    const socketState = (executionService as unknown as {
+      socketsByKey: Map<string, { terminalBySessionId: Map<string, unknown> }>;
+    }).socketsByKey.get(`${agent.id}::task_close_ack_not_found_pending`);
+    expect(socketState?.terminalBySessionId.has('term_close_ack_not_found_pending')).toBe(true);
+
+    const terminalEvents = terminal.stream[Symbol.asyncIterator]();
+    ws.send(JSON.stringify({
+      type: 'agent.terminal.close_ack',
+      request_id: 'close_req_not_found_pending',
+      runner_session_id: 'task_close_ack_not_found_pending',
+      terminal_session_id: 'term_close_ack_not_found_pending',
+      timestamp: '2026-05-08T12:00:00.000Z',
+      payload: {
+        terminal_session_id: 'term_close_ack_not_found_pending',
+        runner_session_id: 'task_close_ack_not_found_pending',
+        close_attempt_id: 'close_not_found_pending',
+        generation: 4,
+        connection_epoch: 11,
+        status: 'not_found',
+      },
+    }));
+
+    await expect(terminalEvents.next()).resolves.toMatchObject({
+      done: false,
+      value: {
+        type: 'exited',
+        terminal_session_id: 'term_close_ack_not_found_pending',
+        exit_code: 0,
+        signal: null,
+      },
+    });
+    await expect(terminalEvents.next()).resolves.toEqual({
+      done: true,
+      value: undefined,
+    });
+    expect(socketState?.terminalBySessionId.size).toBe(0);
+  });
+
+  it('releases terminal stream on final close ack while coordinator persistence is still pending', async () => {
+    const { executionService, agent, keyPair, wsBase } = await setupExecutionService({
+      interactionKind: 'notebook',
+      executionServiceOptions: {
+        terminalFirstEventTimeoutMs: 10_000,
+        terminalIdleTimeoutMs: 10_000,
+        terminalMaxRuntimeMs: 10_000,
+      },
+    });
+    const ws = await openAgentWebSocket({
+      wsBase,
+      agentId: agent.id,
+      key: keyPair.key,
+      sessionId: 'task_close_ack_async_persist',
+    });
+    const coordinatorPersisted = createDeferred<void>();
+    const handleTerminalCloseAck = vi.fn(async () => {
+      await coordinatorPersisted.promise;
+    });
+    (executionService as unknown as {
+      registerTerminalRecoveryCoordinator: (coordinator: {
+        handleTerminalCloseAck?: typeof handleTerminalCloseAck;
+      }) => void;
+    }).registerTerminalRecoveryCoordinator({ handleTerminalCloseAck });
+
+    const terminal = await executionService.dispatchTerminalSession({
+      workspaceId: 'ws_default',
+      projectId: 'proj_1',
+      sessionId: 'task_close_ack_async_persist',
+      agentId: agent.id,
+      terminalSessionId: 'term_close_ack_async_persist',
+      payload: {
+        cols: 80,
+        rows: 24,
+      },
+    });
+    const socketState = (executionService as unknown as {
+      socketsByKey: Map<string, { terminalBySessionId: Map<string, unknown> }>;
+    }).socketsByKey.get(`${agent.id}::task_close_ack_async_persist`);
+    expect(socketState?.terminalBySessionId.has('term_close_ack_async_persist')).toBe(true);
+
+    const terminalEvents = terminal.stream[Symbol.asyncIterator]();
+    ws.send(JSON.stringify({
+      type: 'agent.terminal.close_ack',
+      request_id: 'close_req_async_persist',
+      runner_session_id: 'task_close_ack_async_persist',
+      terminal_session_id: 'term_close_ack_async_persist',
+      timestamp: '2026-05-08T12:00:00.000Z',
+      payload: {
+        terminal_session_id: 'term_close_ack_async_persist',
+        runner_session_id: 'task_close_ack_async_persist',
+        close_attempt_id: 'close_async_persist',
+        generation: 4,
+        connection_epoch: 11,
+        status: 'closed',
+      },
+    }));
+
+    await expect(terminalEvents.next()).resolves.toMatchObject({
+      done: false,
+      value: {
+        type: 'exited',
+        terminal_session_id: 'term_close_ack_async_persist',
+        exit_code: 0,
+        signal: null,
+      },
+    });
+    await expect(terminalEvents.next()).resolves.toEqual({
+      done: true,
+      value: undefined,
+    });
+    expect(socketState?.terminalBySessionId.size).toBe(0);
+    await waitForAssertion(() => {
+      expect(handleTerminalCloseAck).toHaveBeenCalledWith(expect.objectContaining({
+        runnerSessionId: 'task_close_ack_async_persist',
+        terminalSessionId: 'term_close_ack_async_persist',
+        requestId: 'close_req_async_persist',
+        closeAttemptId: 'close_async_persist',
+        status: 'closed',
+      }));
+    });
+
+    coordinatorPersisted.resolve();
+    await waitForAssertion(() => {
+      expect(handleTerminalCloseAck).toHaveBeenCalledTimes(1);
+    });
+  });
+
+  it('requires close ack fencing fields before routing to the recovery coordinator', async () => {
+    const { executionService, agent, keyPair, wsBase } = await setupExecutionService({ interactionKind: 'notebook' });
+    const ws = await openAgentWebSocket({
+      wsBase,
+      agentId: agent.id,
+      key: keyPair.key,
+      sessionId: 'task_close_ack_fence',
+    });
+    const handleTerminalCloseAck = vi.fn();
+    (executionService as unknown as {
+      registerTerminalRecoveryCoordinator: (coordinator: {
+        handleTerminalCloseAck?: typeof handleTerminalCloseAck;
+      }) => void;
+    }).registerTerminalRecoveryCoordinator({ handleTerminalCloseAck });
+
+    const sendAck = (override: Record<string, unknown>) => {
+      const ackPayload: Record<string, unknown> = {
+        terminal_session_id: 'term_close_ack_fence',
+        runner_session_id: override.payload_runner_session_id ?? 'task_close_ack_fence',
+        close_attempt_id: override.close_attempt_id ?? 'close_fence',
+        generation: override.generation ?? 2,
+        connection_epoch: override.connection_epoch ?? 7,
+        status: override.status ?? 'closed',
+      };
+      if (override.omit_generation === true) delete ackPayload.generation;
+      if (override.omit_connection_epoch === true) delete ackPayload.connection_epoch;
+      ws.send(JSON.stringify({
+        type: 'agent.terminal.close_ack',
+        request_id: override.request_id ?? 'close_req_fence',
+        runner_session_id: override.runner_session_id ?? 'task_close_ack_fence',
+        terminal_session_id: 'term_close_ack_fence',
+        timestamp: '2026-05-08T12:00:00.000Z',
+        payload: ackPayload,
+      }));
+    };
+
+    sendAck({ request_id: '' });
+    sendAck({ payload_runner_session_id: 'task_other' });
+    sendAck({ generation: 0 });
+    sendAck({ connection_epoch: 0 });
+    sendAck({ omit_generation: true });
+    sendAck({ omit_connection_epoch: true });
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    expect(handleTerminalCloseAck).not.toHaveBeenCalled();
+
+    sendAck({});
+    await waitForAssertion(() => {
+      expect(handleTerminalCloseAck).toHaveBeenCalledTimes(1);
+    });
+    expect(handleTerminalCloseAck.mock.calls[0]?.[0]).toMatchObject({
+      requestId: 'close_req_fence',
+      closeAttemptId: 'close_fence',
+      generation: 2,
+      connectionEpoch: 7,
+      status: 'closed',
+    });
+  });
+
+  it('rejects close ack from a stale socket authority', async () => {
+    const originalDebug = process.env.DEBUG_AGENT_EXECUTION;
+    process.env.DEBUG_AGENT_EXECUTION = '1';
+    const stdoutWrite = vi.spyOn(process.stdout, 'write').mockImplementation(() => true);
+    try {
+      const { executionService, agentResourceService, agent, keyPair, wsBase } = await setupExecutionService({
+        interactionKind: 'notebook',
+      });
+      const ws = await openAgentWebSocket({
+        wsBase,
+        agentId: agent.id,
+        key: keyPair.key,
+        sessionId: 'task_close_ack_stale',
+      });
+      const connection = await waitForSessionConnectionInfo(
+        agentResourceService,
+        agent.id,
+        'task_close_ack_stale',
+        (candidate) => candidate?.session_id === 'task_close_ack_stale',
+      );
+      const handleTerminalCloseAck = vi.fn();
+      (executionService as unknown as {
+        registerTerminalRecoveryCoordinator: (coordinator: {
+          handleTerminalCloseAck?: typeof handleTerminalCloseAck;
+        }) => void;
+      }).registerTerminalRecoveryCoordinator({ handleTerminalCloseAck });
+      const closeFrame = new Promise<Record<string, unknown>>((resolve) => {
+        ws.on('message', (raw) => {
+          const message = JSON.parse(raw.toString('utf-8')) as Record<string, unknown>;
+          if (message.type === 'server.terminal.close') {
+            resolve(message);
+          }
+        });
+      });
+
+      await expect(executionService.closeTerminalSession({
+        workspaceId: 'ws_default',
+        projectId: 'proj_1',
+        sessionId: 'task_close_ack_stale',
+        agentId: agent.id,
+        terminalSessionId: 'term_close_ack_stale',
+        closeRequestId: 'close_req_stale_socket',
+        closeAttemptId: 'close_stale_socket',
+        generation: 1,
+        connectionEpoch: 6,
+      })).resolves.toBe('signaled');
+      await expect(closeFrame).resolves.toMatchObject({ request_id: 'close_req_stale_socket' });
+
+      await agentResourceService.releaseAgentConnection({
+        workspaceId: 'ws_default',
+        projectId: 'proj_1',
+        agentId: agent.id,
+        connectionId: connection!.connection_id,
+      });
+      ws.send(JSON.stringify({
+        type: 'agent.terminal.close_ack',
+        request_id: 'close_req_stale_socket',
+        runner_session_id: 'task_close_ack_stale',
+        terminal_session_id: 'term_close_ack_stale',
+        timestamp: '2026-05-08T12:00:00.000Z',
+        payload: {
+          terminal_session_id: 'term_close_ack_stale',
+          runner_session_id: 'task_close_ack_stale',
+          close_attempt_id: 'close_stale_socket',
+          generation: 1,
+          connection_epoch: 6,
+          status: 'closed',
+        },
+      }));
+
+      await waitForAssertion(() => {
+        const debugOutput = stdoutWrite.mock.calls.map((call) => String(call[0])).join('');
+        expect(debugOutput).toContain('terminal_close_ack_rejected reason=stale_socket_authority');
+        expect(debugOutput).toContain('"received"');
+        expect(debugOutput).toContain('"expected"');
+        expect(debugOutput).toContain('"request_id":"close_req_stale_socket"');
+        expect(debugOutput).toContain('"close_attempt_id":"close_stale_socket"');
+        expect(debugOutput).toContain('"connection_id"');
+      });
+      expect(handleTerminalCloseAck).not.toHaveBeenCalled();
+    } finally {
+      stdoutWrite.mockRestore();
+      if (originalDebug === undefined) {
+        delete process.env.DEBUG_AGENT_EXECUTION;
+      } else {
+        process.env.DEBUG_AGENT_EXECUTION = originalDebug;
+      }
+    }
+  });
+
+  it('keeps close-path not_found documentation aligned with closed user-visible semantics', () => {
+    const docsPrefix = process.cwd().endsWith('/packages/api-entry-node') ? '../../' : '';
+    const guidance = readFileSync(
+      `${docsPrefix}docs/engineering/agent-task-terminal-runtime-recovery-guidance.md`,
+      'utf-8',
+    );
+    const handoff = readFileSync(
+      `${docsPrefix}docs/engineering/agent-task-terminal-close-recovery-handoff.md`,
+      'utf-8',
+    );
+    for (const source of [guidance, handoff]) {
+      expect(source).not.toContain(
+        '`status=not_found`: set `close_state=acked`, final `failed + terminal_process_lost`',
+      );
+      expect(source).not.toContain(
+        '`agent.terminal.close_ack status=not_found` finalizes `failed + terminal_process_lost`',
+      );
+    }
+    expect(guidance).toContain(
+      '`status=not_found`: set `close_state=acked`, final `closed`, keep `failure_kind=null`, set `close_result=not_found`',
+    );
+    expect(guidance).toContain('close-path `not_found -> closed`');
+    expect(guidance).toContain('recovery/adopt `not_found -> terminal_process_lost`');
+    expect(handoff).toContain(
+      '| `not_found` | `closed + close_state=acked + failure_kind=null + close_result=not_found` |',
+    );
+  });
+
+  it('consumes runner shutdown as terminal processes terminated for pending terminals', async () => {
+    const { executionService, agent, keyPair, wsBase } = await setupExecutionService({ interactionKind: 'notebook' });
+    const ws = await openAgentWebSocket({
+      wsBase,
+      agentId: agent.id,
+      key: keyPair.key,
+      sessionId: 'task_runner_shutdown',
+    });
+    const handleRunnerDetached = vi.fn();
+    (executionService as unknown as {
+      registerTerminalRecoveryCoordinator: (coordinator: {
+        handleRunnerDetached?: typeof handleRunnerDetached;
+        handleRunnerReady?: () => void;
+      }) => void;
+    }).registerTerminalRecoveryCoordinator({ handleRunnerDetached });
+
+    await executionService.dispatchTerminalSession({
+      workspaceId: 'ws_default',
+      projectId: 'proj_1',
+      sessionId: 'task_runner_shutdown',
+      agentId: agent.id,
+      terminalSessionId: 'term_runner_shutdown',
+      payload: {
+        cols: 80,
+        rows: 24,
+      },
+    });
+
+    ws.send(JSON.stringify({
+      type: 'agent.shutdown',
+      timestamp: new Date().toISOString(),
+      payload: {
+        reason: 'operator_shutdown',
+        terminal_processes_terminated: true,
+      },
+    }));
+
+    await waitForAssertion(() => {
+      expect(handleRunnerDetached).toHaveBeenCalledWith(expect.objectContaining({
+        runnerSessionId: 'task_runner_shutdown',
+        terminalSessionIds: ['term_runner_shutdown'],
+        terminalProcessesTerminated: true,
+      }));
     });
   });
 
@@ -2142,6 +3155,10 @@ describe('AgentExecutionService', () => {
       sessionId: 'task_presence_persisted_close',
       agentId: agent.id,
       terminalSessionId: 'term_presence_persisted_close',
+      closeRequestId: 'close_req_presence_1',
+      closeAttemptId: 'close_presence_1',
+      generation: 6,
+      connectionEpoch: 12,
       executionContext: {
         interaction_kind: 'notebook',
         runner_session_scope: 'agent_presence',
@@ -2151,10 +3168,53 @@ describe('AgentExecutionService', () => {
     const frame = await closeFrame;
     expect(frame).toMatchObject({
       type: 'server.terminal.close',
+      request_id: 'close_req_presence_1',
       runner_session_id: 'task_presence_persisted_close',
       terminal_session_id: 'term_presence_persisted_close',
+      payload: {
+        close_attempt_id: 'close_presence_1',
+        generation: 6,
+        connection_epoch: 12,
+      },
     });
     expect(frame).not.toHaveProperty('session_id');
+  });
+
+  it('does not send terminal close frames with missing or non-positive fences', async () => {
+    const { executionService, agent, ws } = await setupExecutionService({ interactionKind: 'notebook' });
+    const closeFrames: Array<Record<string, unknown>> = [];
+    ws.on('message', (raw) => {
+      const message = JSON.parse(raw.toString('utf-8')) as Record<string, unknown>;
+      if (message.type === 'server.terminal.close') {
+        closeFrames.push(message);
+      }
+    });
+
+    await expect(executionService.closeTerminalSession({
+      workspaceId: 'ws_default',
+      projectId: 'proj_1',
+      sessionId: 'task_invalid_fence_close',
+      agentId: agent.id,
+      terminalSessionId: 'term_invalid_fence_close',
+      closeRequestId: 'close_req_invalid_fence',
+      closeAttemptId: 'close_invalid_fence',
+      generation: 0,
+      connectionEpoch: 1,
+    })).resolves.toBe('invalid_terminal_identity');
+    await expect(executionService.closeTerminalSession({
+      workspaceId: 'ws_default',
+      projectId: 'proj_1',
+      sessionId: 'task_invalid_fence_close',
+      agentId: agent.id,
+      terminalSessionId: 'term_invalid_fence_close',
+      closeRequestId: 'close_req_invalid_epoch',
+      closeAttemptId: 'close_invalid_epoch',
+      generation: 1,
+      connectionEpoch: 0,
+    })).resolves.toBe('invalid_terminal_identity');
+
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    expect(closeFrames).toEqual([]);
   });
 
   it('stops stale terminal handles from sending stdin, resize, or close frames after remote takeover', async () => {

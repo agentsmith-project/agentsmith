@@ -78,6 +78,34 @@ universal_proxy_runtime_base_url() {
   printf '%s\n' "${UNIVERSAL_PROXY_RUNTIME_BASE_URL:-http://127.0.0.1:${port}}"
 }
 
+universal_proxy_runtime_trim() {
+  local value="$1"
+  value="${value#"${value%%[![:space:]]*}"}"
+  value="${value%"${value##*[![:space:]]}"}"
+  printf '%s\n' "${value}"
+}
+
+universal_proxy_runtime_normalize_url() {
+  local url
+  url="$(universal_proxy_runtime_trim "$1")"
+  [[ -n "${url}" ]] || return 1
+  printf '%s\n' "${url%/}"
+}
+
+universal_proxy_runtime_url_matches_any() {
+  local url="$1"
+  local candidate_urls="$2"
+  local normalized_url candidate normalized_candidate
+  normalized_url="$(universal_proxy_runtime_normalize_url "${url}")" || return 1
+  for candidate in ${candidate_urls}; do
+    normalized_candidate="$(universal_proxy_runtime_normalize_url "${candidate}")" || continue
+    if [[ "${normalized_url}" == "${normalized_candidate}" ]]; then
+      return 0
+    fi
+  done
+  return 1
+}
+
 universal_proxy_runtime_container_name() {
   local port
   port="$(universal_proxy_runtime_port)"
@@ -531,9 +559,17 @@ universal_proxy_runtime_start_managed_container() {
 }
 
 universal_proxy_runtime_ensure() {
-  local explicit_url explicit_admin_token explicit_probe_status candidate default_urls image_ref force_managed
+  local explicit_url explicit_admin_token explicit_probe_status candidate default_urls image_ref force_managed managed_base_urls
 
   explicit_url="${MBOS_UNIVERSAL_PROXY_BASE_URL:-}"
+  managed_base_urls="${UNIVERSAL_PROXY_RUNTIME_MANAGED_BASE_URLS:-}"
+  if [[ -n "${explicit_url}" && -n "${managed_base_urls}" ]] && universal_proxy_runtime_url_matches_any "${explicit_url}" "${managed_base_urls}"; then
+    universal_proxy_runtime_info "treating MBOS_UNIVERSAL_PROXY_BASE_URL=${explicit_url%/} as a managed runtime URL, not an explicit external proxy"
+    explicit_url=""
+    unset MBOS_UNIVERSAL_PROXY_BASE_URL
+    unset MBOS_UNIVERSAL_PROXY_ADMIN_TOKEN
+  fi
+
   force_managed="${UNIVERSAL_PROXY_RUNTIME_FORCE_MANAGED:-0}"
   if universal_proxy_runtime_truthy "${force_managed}"; then
     if [[ -n "${explicit_url}" ]]; then

@@ -1,5 +1,5 @@
 import { execFileSync } from 'node:child_process';
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
@@ -76,5 +76,16 @@ MBOS_UNIVERSAL_PROXY_ADMIN_TOKEN=saved-admin-token
 
     expect(output).toContain('base=http://127.0.0.1:38080');
     expect(output).toContain('port=38080');
+  });
+
+  it('does not hand connection.env proxy variables to substrate bootstrap as explicit external env', () => {
+    const script = readFileSync(path.join(repoRoot, 'scripts/local-manual/up.sh'), 'utf8');
+
+    expect(script.indexOf('local_manual_capture_substrate_proxy_env')).toBeLessThan(script.indexOf('init_local_manual_env'));
+    expect(script).toContain('unset MBOS_UNIVERSAL_PROXY_BASE_URL');
+    expect(script).toContain('unset MBOS_UNIVERSAL_PROXY_ADMIN_TOKEN');
+    expect(script).toContain('local_manual_run_substrate_script up');
+    expect(script).toContain('local_manual_run_substrate_script reseed');
+    expect(script).not.toContain('SUBSTRATE_ENV_FILE="${ENV_FILE}" SUBSTRATE="${SUBSTRATE}" bash "${ROOT_DIR}/scripts/substrate/up.sh"');
   });
 });

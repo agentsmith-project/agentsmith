@@ -52,20 +52,35 @@ vi.mock('next-intl', () => ({
       terminal_preparing_run_busy: 'Waiting for the current task run to finish before opening the terminal...',
       terminal_status_idle: 'Idle',
       terminal_status_preparing: 'Preparing',
+      terminal_status_disconnected: 'Disconnected',
       terminal_status_recovering: 'Recovering',
       terminal_status_connecting: 'Connecting',
       terminal_status_active: 'Active',
+      terminal_status_closing: 'Closing',
       terminal_status_closed: 'Closed',
       terminal_status_failed: 'Failed',
       terminal_replay_partial: 'Some earlier terminal output is no longer available.',
       terminal_replay_gap: 'Some terminal output may be missing. Reconnecting to recover a continuous stream.',
       terminal_attach_unavailable: 'This terminal session cannot be attached right now.',
       terminal_close: 'End Session',
+      terminal_reconnect: 'Reconnect',
+      terminal_refresh_status: 'Refresh status',
       terminal_error_hint: `Terminal unavailable: ${values?.reason ?? ''}`,
       terminal_banner: `Terminal ready for ${values?.title ?? 'task'}`,
       terminal_closed: 'Terminal closed',
       terminal_failed: `Terminal failed: ${values?.reason ?? ''}`,
       terminal_reconnecting: 'Reconnecting to the previous terminal session...',
+      terminal_browser_disconnected: 'The terminal connection is disconnected. The current terminal is still running.',
+      terminal_runtime_recovering: 'Recovering terminal session',
+      terminal_runtime_recovering_body: 'The system is trying to recover the same terminal session and process. Input is disabled until recovery finishes, times out, or you end the session.',
+      terminal_runtime_closing: 'Ending terminal session',
+      terminal_runtime_closing_body: 'The system is confirming that the terminal process has ended.',
+      terminal_recovery_waiting: 'Waiting for automatic recovery',
+      terminal_process_lost: 'The terminal process was lost and cannot be reconnected.',
+      terminal_close_tombstone_timeout: 'The terminal close timed out; the system could not confirm that the terminal ended.',
+      terminal_runner_recovery_timeout: 'Terminal recovery timed out.',
+      terminal_runner_process_exited: 'The execution environment exited, so the original terminal cannot be recovered.',
+      terminal_unrecoverable_generic: 'The terminal stopped and the original session cannot be reconnected.',
       terminal_error_runner_offline: 'The task environment is still getting ready. Retry in a moment.',
       terminal_error_agent_unavailable: "This task's execution environment is not available right now.",
       terminal_error_invalid_shell: "This task couldn't start a terminal in the current environment.",
@@ -398,6 +413,140 @@ describe('TaskTerminalPanel', () => {
     expect(onStatusChange).toHaveBeenCalledWith('failed');
   });
 
+  it('treats websocket onerror as recoverable transport interruption instead of terminal failure', async () => {
+    const createTerminalSession = vi.fn().mockResolvedValue({
+      terminal_session_id: 'term_transport_error',
+      status: 'pending',
+      ws_url: 'ws://example.test/terminal-transport-error',
+    });
+    const getTerminalSession = vi.fn().mockResolvedValue({
+      terminal_session_id: 'term_transport_error',
+      status: 'disconnected',
+      cols: 80,
+      rows: 24,
+      created_at: '2026-05-08T00:00:00Z',
+      last_activity_at: '2026-05-08T00:00:02Z',
+      input_enabled: true,
+      ws_url: 'ws://example.test/terminal-transport-error-restored',
+    });
+    const onStatusChange = vi.fn();
+
+    render(
+      <TaskTerminalPanel
+        open
+        workspaceId="ws_default"
+        projectId="proj_1"
+        taskId="task_transport_error"
+        taskTitle="terminal-transport-error"
+        taskApi={{ createTerminalSession, getTerminalSession } as never}
+        onOpenChange={vi.fn()}
+        onStatusChange={onStatusChange}
+      />,
+    );
+
+    await waitFor(() => expect(MockWebSocket.instances).toHaveLength(1));
+    const firstSocket = MockWebSocket.instances[0];
+    act(() => {
+      firstSocket?.open();
+      firstSocket?.onmessage?.({
+        data: JSON.stringify({
+          type: 'terminal.state',
+          terminal_session_id: 'term_transport_error',
+          state: 'ready',
+          input_enabled: true,
+        }),
+      });
+    });
+
+    await waitFor(() => expect(onStatusChange).toHaveBeenCalledWith('active'));
+
+    act(() => {
+      firstSocket?.onerror?.();
+    });
+
+    const panel = screen.getByTestId('agent-tasks__task-terminal');
+    expect(panel).toHaveTextContent('Disconnected');
+    expect(panel).toHaveTextContent('The terminal connection is disconnected');
+    expect(panel).not.toHaveTextContent('Failed');
+    expect(panel).not.toHaveTextContent('Terminal unavailable');
+    expect(onStatusChange).not.toHaveBeenCalledWith('failed');
+
+    act(() => {
+      firstSocket?.onclose?.({ reason: '' });
+    });
+
+    await waitFor(() => {
+      expect(getTerminalSession).toHaveBeenCalledWith(
+        'ws_default',
+        'proj_1',
+        'task_transport_error',
+        'term_transport_error',
+      );
+      expect(MockWebSocket.instances).toHaveLength(2);
+    });
+    expect(MockWebSocket.instances[1]?.url).toBe(
+      'ws://example.test/terminal-transport-error-restored',
+    );
+    expect(createTerminalSession).toHaveBeenCalledTimes(1);
+  });
+
+  it('keeps backend unavailable terminal state as final failure after a transport interruption', async () => {
+    const createTerminalSession = vi.fn().mockResolvedValue({
+      terminal_session_id: 'term_backend_unavailable',
+      status: 'pending',
+      ws_url: 'ws://example.test/terminal-backend-unavailable',
+    });
+    const getTerminalSession = vi.fn();
+    const onStatusChange = vi.fn();
+
+    render(
+      <TaskTerminalPanel
+        open
+        workspaceId="ws_default"
+        projectId="proj_1"
+        taskId="task_backend_unavailable"
+        taskTitle="terminal-backend-unavailable"
+        taskApi={{ createTerminalSession, getTerminalSession } as never}
+        onOpenChange={vi.fn()}
+        onStatusChange={onStatusChange}
+      />,
+    );
+
+    await waitFor(() => expect(MockWebSocket.instances).toHaveLength(1));
+    const socket = MockWebSocket.instances[0];
+    act(() => {
+      socket?.open();
+      socket?.onmessage?.({
+        data: JSON.stringify({
+          type: 'terminal.state',
+          terminal_session_id: 'term_backend_unavailable',
+          state: 'ready',
+          input_enabled: true,
+        }),
+      });
+      socket?.onerror?.();
+      socket?.onmessage?.({
+        data: JSON.stringify({
+          type: 'terminal.state',
+          terminal_session_id: 'term_backend_unavailable',
+          state: 'unavailable',
+          failure_kind: 'terminal_process_lost',
+        }),
+      });
+      socket?.onclose?.({ reason: '' });
+    });
+
+    const panel = screen.getByTestId('agent-tasks__task-terminal');
+    expect(panel).toHaveTextContent('Failed');
+    expect(panel).toHaveTextContent(
+      'The terminal process was lost and cannot be reconnected.',
+    );
+    expect(panel).not.toHaveTextContent('Disconnected');
+    expect(getTerminalSession).not.toHaveBeenCalled();
+    expect(MockWebSocket.instances).toHaveLength(1);
+    expect(onStatusChange).toHaveBeenCalledWith('failed');
+  });
+
   it('sends terminal.reconnect on websocket open and gates stdin and resize until input is enabled', async () => {
     const createTerminalSession = vi.fn().mockResolvedValue({
       terminal_session_id: 'term_handshake',
@@ -430,11 +579,11 @@ describe('TaskTerminalPanel', () => {
       expect.objectContaining({
         type: 'terminal.reconnect',
         terminal_session_id: 'term_handshake',
-        view: 'agent_task.task_terminal',
         cols: 80,
         rows: 24,
       }),
     ]);
+    expect(sentBeforeHandshake?.[0]).not.toHaveProperty('view');
 
     act(() => {
       terminalDataHandlers[0]?.('echo gated\n');
@@ -695,6 +844,323 @@ describe('TaskTerminalPanel', () => {
     expect(terminalWritelnMock).not.toHaveBeenCalledWith(expect.stringContaining('Connecting'));
     expect(terminalWritelnMock).not.toHaveBeenCalledWith(expect.stringContaining('Terminal ready'));
     expect(screen.getByTestId('agent-tasks__task-terminal')).not.toHaveTextContent('Terminal ready');
+  });
+
+  it('shows browser-only disconnected as a reconnectable terminal connection without runtime recovery copy', async () => {
+    window.sessionStorage.setItem(
+      'agentsmith-terminal-session:ws_default:proj_1:task_browser_disconnected',
+      'term_browser_disconnected',
+    );
+    const getTerminalSession = vi.fn().mockResolvedValue({
+      terminal_session_id: 'term_browser_disconnected',
+      status: 'disconnected',
+      cols: 80,
+      rows: 24,
+      created_at: '2026-05-08T00:00:00Z',
+      last_activity_at: '2026-05-08T00:00:01Z',
+      input_enabled: true,
+      ws_url: 'ws://example.test/terminal-browser-disconnected',
+    });
+
+    render(
+      <TaskTerminalPanel
+        open
+        workspaceId="ws_default"
+        projectId="proj_1"
+        taskId="task_browser_disconnected"
+        taskTitle="terminal-browser-disconnected"
+        taskApi={{ createTerminalSession: vi.fn(), getTerminalSession } as never}
+        onOpenChange={vi.fn()}
+      />,
+    );
+
+    await waitFor(() => expect(MockWebSocket.instances).toHaveLength(1));
+    const panel = screen.getByTestId('agent-tasks__task-terminal');
+    expect(panel).toHaveTextContent('Disconnected');
+    expect(panel).toHaveTextContent('The terminal connection is disconnected');
+    expect(screen.getByRole('button', { name: 'Reconnect' })).toBeInTheDocument();
+    expect(panel).not.toHaveTextContent('Recovering terminal session');
+  });
+
+  it('shows runtime recovering as automatic recovery and keeps stdin/resize disabled until input_enabled is true', async () => {
+    window.sessionStorage.setItem(
+      'agentsmith-terminal-session:ws_default:proj_1:task_runtime_recovering',
+      'term_runtime_recovering',
+    );
+    const getTerminalSession = vi.fn().mockResolvedValue({
+      terminal_session_id: 'term_runtime_recovering',
+      status: 'recovering',
+      lifecycle_status: 'recovering',
+      runner_connection_status: 'transport_lost',
+      input_enabled: false,
+      recoverable: true,
+      recovery_deadline_at: '2026-05-08T00:02:00Z',
+      cols: 80,
+      rows: 24,
+      created_at: '2026-05-08T00:00:00Z',
+      last_activity_at: '2026-05-08T00:00:01Z',
+      ws_url: 'ws://example.test/terminal-runtime-recovering',
+    });
+
+    render(
+      <TaskTerminalPanel
+        open
+        workspaceId="ws_default"
+        projectId="proj_1"
+        taskId="task_runtime_recovering"
+        taskTitle="terminal-runtime-recovering"
+        taskApi={{ createTerminalSession: vi.fn(), getTerminalSession } as never}
+        onOpenChange={vi.fn()}
+      />,
+    );
+
+    await waitFor(() => expect(MockWebSocket.instances).toHaveLength(1));
+    const socket = MockWebSocket.instances[0];
+    expect(screen.getByTestId('agent-tasks__task-terminal')).toHaveTextContent('Recovering terminal session');
+    expect(screen.getByTestId('agent-tasks__task-terminal')).toHaveTextContent('Waiting for automatic recovery');
+    expect(screen.queryByRole('button', { name: 'Reconnect' })).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Refresh status' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'End Session' })).toBeInTheDocument();
+
+    act(() => {
+      socket?.open();
+      socket?.onmessage?.({
+        data: JSON.stringify({
+          type: 'terminal.state',
+          terminal_session_id: 'term_runtime_recovering',
+          state: 'recovering',
+          status: 'recovering',
+          input_enabled: false,
+        }),
+      });
+      terminalDataHandlers[0]?.('echo blocked\n');
+      window.dispatchEvent(new Event('resize'));
+    });
+
+    expect(
+      socket?.send.mock.calls.map(([raw]) => JSON.parse(String(raw))).map((message) => message.type),
+    ).toEqual(['terminal.reconnect']);
+    expect(terminalWritelnMock).not.toHaveBeenCalledWith(expect.stringContaining('Recovering terminal session'));
+
+    act(() => {
+      socket?.onmessage?.({
+        data: JSON.stringify({
+          type: 'terminal.state',
+          terminal_session_id: 'term_runtime_recovering',
+          state: 'ready',
+          status: 'active',
+          input_enabled: true,
+        }),
+      });
+      terminalDataHandlers[0]?.('echo live\n');
+    });
+
+    await waitFor(() => {
+      expect(
+        socket?.send.mock.calls.map(([raw]) => JSON.parse(String(raw))).map((message) => message.type),
+      ).toContain('terminal.stdin');
+    });
+  });
+
+  it('does not render recovering with ws_url null as a generic failed terminal', async () => {
+    window.sessionStorage.setItem(
+      'agentsmith-terminal-session:ws_default:proj_1:task_recovering_without_ws',
+      'term_recovering_without_ws',
+    );
+    const getTerminalSession = vi.fn().mockResolvedValue({
+      terminal_session_id: 'term_recovering_without_ws',
+      status: 'recovering',
+      lifecycle_status: 'recovering',
+      input_enabled: false,
+      recoverable: true,
+      cols: 80,
+      rows: 24,
+      created_at: '2026-05-08T00:00:00Z',
+      last_activity_at: '2026-05-08T00:00:01Z',
+      ws_url: null,
+    });
+
+    render(
+      <TaskTerminalPanel
+        open
+        workspaceId="ws_default"
+        projectId="proj_1"
+        taskId="task_recovering_without_ws"
+        taskTitle="terminal-recovering-without-ws"
+        taskApi={{ createTerminalSession: vi.fn(), getTerminalSession } as never}
+        onOpenChange={vi.fn()}
+      />,
+    );
+
+    await waitFor(() => expect(getTerminalSession).toHaveBeenCalled());
+    const panel = screen.getByTestId('agent-tasks__task-terminal');
+    expect(panel).toHaveTextContent('Recovering terminal session');
+    expect(panel).not.toHaveTextContent('Terminal unavailable');
+    expect(panel).not.toHaveTextContent('Failed');
+    expect(MockWebSocket.instances).toHaveLength(0);
+  });
+
+  it('shows closing as ending the terminal session without reconnect or recovery copy', async () => {
+    window.sessionStorage.setItem(
+      'agentsmith-terminal-session:ws_default:proj_1:task_closing',
+      'term_closing',
+    );
+    const getTerminalSession = vi.fn().mockResolvedValue({
+      terminal_session_id: 'term_closing',
+      status: 'closing',
+      lifecycle_status: 'closing',
+      close_state: 'requested',
+      input_enabled: false,
+      recoverable: false,
+      cols: 80,
+      rows: 24,
+      created_at: '2026-05-08T00:00:00Z',
+      last_activity_at: '2026-05-08T00:00:01Z',
+      ws_url: null,
+    });
+
+    render(
+      <TaskTerminalPanel
+        open
+        workspaceId="ws_default"
+        projectId="proj_1"
+        taskId="task_closing"
+        taskTitle="terminal-closing"
+        taskApi={{ createTerminalSession: vi.fn(), getTerminalSession } as never}
+        onOpenChange={vi.fn()}
+      />,
+    );
+
+    await waitFor(() => expect(getTerminalSession).toHaveBeenCalled());
+    const panel = screen.getByTestId('agent-tasks__task-terminal');
+    expect(panel).toHaveTextContent('Closing');
+    expect(panel).toHaveTextContent('Ending terminal session');
+    expect(panel).not.toHaveTextContent('Recovering terminal session');
+    expect(panel).not.toHaveTextContent('Terminal unavailable');
+    expect(screen.queryByRole('button', { name: 'Reconnect' })).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Refresh status' })).toBeInTheDocument();
+    expect(MockWebSocket.instances).toHaveLength(0);
+    expect(terminalWritelnMock).not.toHaveBeenCalledWith(expect.stringContaining('Ending terminal session'));
+  });
+
+  it.each([
+    ['terminal_process_lost', 'The terminal process was lost and cannot be reconnected.'],
+    ['runner_recovery_timeout', 'Terminal recovery timed out.'],
+    ['runner_process_exited', 'The execution environment exited, so the original terminal cannot be recovered.'],
+  ])('uses typed failure copy for %s without exposing raw close reasons', async (failureKind, expectedCopy) => {
+    const taskId = `task_failed_${failureKind}`;
+    window.sessionStorage.setItem(
+      `agentsmith-terminal-session:ws_default:proj_1:${taskId}`,
+      `term_failed_${failureKind}`,
+    );
+    const getTerminalSession = vi.fn().mockResolvedValue({
+      terminal_session_id: `term_failed_${failureKind}`,
+      status: 'failed',
+      lifecycle_status: 'failed',
+      failure_kind: failureKind,
+      close_reason: 'agent_disconnected',
+      cols: 80,
+      rows: 24,
+      created_at: '2026-05-08T00:00:00Z',
+      last_activity_at: '2026-05-08T00:00:01Z',
+      ws_url: null,
+    });
+
+    render(
+      <TaskTerminalPanel
+        open
+        workspaceId="ws_default"
+        projectId="proj_1"
+        taskId={taskId}
+        taskTitle="terminal-failed"
+        taskApi={{ createTerminalSession: vi.fn(), getTerminalSession } as never}
+        onOpenChange={vi.fn()}
+      />,
+    );
+
+    await waitFor(() => {
+      const panel = screen.getByTestId('agent-tasks__task-terminal');
+      expect(panel).toHaveTextContent(expectedCopy);
+      expect(panel).not.toHaveTextContent('agent_disconnected');
+    });
+  });
+
+  it('uses close timeout copy for terminal_process_lost caused by close tombstone expiry', async () => {
+    window.sessionStorage.setItem(
+      'agentsmith-terminal-session:ws_default:proj_1:task_failed_close_timeout',
+      'term_failed_close_timeout',
+    );
+    const getTerminalSession = vi.fn().mockResolvedValue({
+      terminal_session_id: 'term_failed_close_timeout',
+      status: 'failed',
+      lifecycle_status: 'failed',
+      failure_kind: 'terminal_process_lost',
+      close_reason: 'close_tombstone_timeout',
+      close_state: 'expired',
+      cols: 80,
+      rows: 24,
+      created_at: '2026-05-08T00:00:00Z',
+      last_activity_at: '2026-05-08T00:00:01Z',
+      ws_url: null,
+    });
+
+    render(
+      <TaskTerminalPanel
+        open
+        workspaceId="ws_default"
+        projectId="proj_1"
+        taskId="task_failed_close_timeout"
+        taskTitle="terminal-failed-close-timeout"
+        taskApi={{ createTerminalSession: vi.fn(), getTerminalSession } as never}
+        onOpenChange={vi.fn()}
+      />,
+    );
+
+    await waitFor(() => {
+      const panel = screen.getByTestId('agent-tasks__task-terminal');
+      expect(panel).toHaveTextContent(
+        'The terminal close timed out; the system could not confirm that the terminal ended.',
+      );
+      expect(panel).not.toHaveTextContent('The terminal process was lost and cannot be reconnected.');
+      expect(panel).not.toHaveTextContent('close_tombstone_timeout');
+    });
+  });
+
+  it('does not expose a bare agent_disconnected close reason for failed sessions', async () => {
+    window.sessionStorage.setItem(
+      'agentsmith-terminal-session:ws_default:proj_1:task_failed_agent_disconnected',
+      'term_failed_agent_disconnected',
+    );
+    const getTerminalSession = vi.fn().mockResolvedValue({
+      terminal_session_id: 'term_failed_agent_disconnected',
+      status: 'failed',
+      lifecycle_status: 'failed',
+      failure_kind: null,
+      close_reason: 'agent_disconnected',
+      cols: 80,
+      rows: 24,
+      created_at: '2026-05-08T00:00:00Z',
+      last_activity_at: '2026-05-08T00:00:01Z',
+      ws_url: null,
+    });
+
+    render(
+      <TaskTerminalPanel
+        open
+        workspaceId="ws_default"
+        projectId="proj_1"
+        taskId="task_failed_agent_disconnected"
+        taskTitle="terminal-failed-agent-disconnected"
+        taskApi={{ createTerminalSession: vi.fn(), getTerminalSession } as never}
+        onOpenChange={vi.fn()}
+      />,
+    );
+
+    await waitFor(() => {
+      const panel = screen.getByTestId('agent-tasks__task-terminal');
+      expect(panel).toHaveTextContent('The terminal stopped and the original session cannot be reconnected.');
+      expect(panel).not.toHaveTextContent('agent_disconnected');
+    });
   });
 
   it('decodes split multibyte UTF-8 base64 terminal output with session decoder state', async () => {
@@ -1187,6 +1653,69 @@ describe('TaskTerminalPanel', () => {
     );
   });
 
+  it('treats local protocol degradation as browser reconnect copy instead of backend runtime recovery', async () => {
+    const createTerminalSession = vi.fn().mockResolvedValue({
+      terminal_session_id: 'term_protocol_degraded',
+      status: 'pending',
+      ws_url: 'ws://example.test/terminal-protocol-degraded',
+    });
+    const getTerminalSession = vi.fn().mockResolvedValue({
+      terminal_session_id: 'term_protocol_degraded',
+      status: 'disconnected',
+      cols: 80,
+      rows: 24,
+      created_at: '2026-05-08T00:00:00Z',
+      last_activity_at: '2026-05-08T00:00:02Z',
+      ws_url: 'ws://example.test/terminal-protocol-degraded-reconnect',
+    });
+
+    render(
+      <TaskTerminalPanel
+        open
+        workspaceId="ws_default"
+        projectId="proj_1"
+        taskId="task_protocol_degraded"
+        taskTitle="terminal-protocol-degraded"
+        taskApi={{ createTerminalSession, getTerminalSession } as never}
+        onOpenChange={vi.fn()}
+      />,
+    );
+
+    await waitFor(() => expect(MockWebSocket.instances).toHaveLength(1));
+    const socket = MockWebSocket.instances[0];
+    act(() => {
+      socket?.open();
+      socket?.onmessage?.({
+        data: JSON.stringify({
+          type: 'terminal.replay_start',
+          terminal_session_id: 'term_protocol_degraded',
+        }),
+      });
+      socket?.onmessage?.({
+        data: JSON.stringify({
+          type: 'terminal.output',
+          terminal_session_id: 'term_protocol_degraded',
+          seq: 2,
+          encoding: 'utf8',
+          data: 'late output',
+        }),
+      });
+    });
+
+    await waitFor(() => {
+      const panel = screen.getByTestId('agent-tasks__task-terminal');
+      expect(panel).toHaveTextContent(
+        'Some terminal output may be missing. Reconnecting to recover a continuous stream.',
+      );
+      expect(panel).not.toHaveTextContent('Recovering terminal session');
+      expect(panel).not.toHaveTextContent(
+        'The system is trying to recover the same terminal process.',
+      );
+      expect(panel).not.toHaveTextContent('Waiting for automatic recovery');
+    });
+    expect(screen.queryByRole('button', { name: 'End Session' })).not.toBeInTheDocument();
+  });
+
   it('continues live output after unavailable replay by aligning to the server continuation seq', async () => {
     const createTerminalSession = vi.fn().mockResolvedValue({
       terminal_session_id: 'term_unavailable',
@@ -1301,7 +1830,7 @@ describe('TaskTerminalPanel', () => {
     ).toBeNull();
   });
 
-  it('reconnects to a stored terminal session before creating a new one and surfaces recovery state instead of preparing', async () => {
+  it('reconnects to a stored browser-disconnected terminal session before creating a new one', async () => {
     window.sessionStorage.setItem(
       'agentsmith-terminal-session:ws_default:proj_1:task_3',
       'term_existing',
@@ -1332,13 +1861,14 @@ describe('TaskTerminalPanel', () => {
     await waitFor(() => expect(getTerminalSession).toHaveBeenCalledWith('ws_default', 'proj_1', 'task_3', 'term_existing'));
     await waitFor(() => expect(MockWebSocket.instances).toHaveLength(1));
     expect(createTerminalSession).not.toHaveBeenCalled();
-    expect(screen.getByTestId('agent-tasks__task-terminal')).toHaveTextContent('Recovering');
+    expect(screen.getByTestId('agent-tasks__task-terminal')).toHaveTextContent('Disconnected');
     expect(screen.getByTestId('agent-tasks__task-terminal')).toHaveTextContent(
-      'Reconnecting to the previous terminal session...',
+      'The terminal connection is disconnected',
     );
+    expect(screen.getByRole('button', { name: 'Reconnect' })).toBeInTheDocument();
     expect(screen.getByTestId('agent-tasks__task-terminal')).not.toHaveTextContent('Connecting');
     expect(screen.getByTestId('agent-tasks__task-terminal')).not.toHaveTextContent('Preparing');
-    expect(terminalWritelnMock).not.toHaveBeenCalledWith('Reconnecting to the previous terminal session...');
+    expect(terminalWritelnMock).not.toHaveBeenCalledWith(expect.stringContaining('terminal connection is disconnected'));
   });
 
   it('retries the same stored session after an unexpected reconnect-time websocket close instead of getting stuck closed', async () => {
@@ -1404,7 +1934,7 @@ describe('TaskTerminalPanel', () => {
     await waitFor(() => {
       expect(getTerminalSession).toHaveBeenCalledTimes(2);
       expect(MockWebSocket.instances).toHaveLength(2);
-      expect(screen.getByTestId('agent-tasks__task-terminal')).toHaveTextContent('Recovering');
+      expect(screen.getByTestId('agent-tasks__task-terminal')).toHaveTextContent('Disconnected');
       expect(screen.getByTestId('agent-tasks__task-terminal')).not.toHaveTextContent('Closed');
     });
 
@@ -1936,7 +2466,7 @@ describe('TaskTerminalPanel', () => {
         'term_hidden_transport_recovery',
       );
       expect(MockWebSocket.instances).toHaveLength(2);
-      expect(screen.getByTestId('agent-tasks__task-terminal')).toHaveTextContent('Recovering');
+      expect(screen.getByTestId('agent-tasks__task-terminal')).toHaveTextContent('Disconnected');
     });
     expect(MockWebSocket.instances[1]?.url).toBe(
       'ws://example.test/terminal-hidden-transport-recovery-restored',
@@ -2282,7 +2812,7 @@ describe('TaskTerminalPanel', () => {
       });
       expect(createTerminalSession).not.toHaveBeenCalled();
       expect(MockWebSocket.instances).toHaveLength(0);
-      expect(screen.getByTestId('agent-tasks__task-terminal')).toHaveTextContent('Recovering');
+      expect(screen.getByTestId('agent-tasks__task-terminal')).toHaveTextContent('Disconnected');
       expect(scheduledReconnect).toBeTypeOf('function');
 
       await act(async () => {
@@ -2707,6 +3237,81 @@ describe('TaskTerminalPanel', () => {
         'agentsmith-terminal-session:ws_default:proj_1:task_active_rest_close',
       ),
     ).toBeNull();
+  });
+
+  it('restores a retained close to the backend closing state instead of generic runtime recovery', async () => {
+    const createTerminalSession = vi.fn().mockResolvedValue({
+      terminal_session_id: 'term_retained_closing',
+      status: 'pending',
+      ws_url: 'ws://example.test/terminal-retained-closing',
+    });
+    const closeTerminalSession = vi.fn().mockResolvedValue(undefined);
+    const onOpenChange = vi.fn();
+    const onSessionCloseReconcile = vi.fn().mockResolvedValue({
+      status: 'retained',
+      retainedStatus: 'closing',
+    });
+    const taskApi = {
+      createTerminalSession,
+      getTerminalSession: vi.fn(),
+      closeTerminalSession,
+    } as never;
+    const { rerender } = render(
+      <TaskTerminalPanel
+        open
+        workspaceId="ws_default"
+        projectId="proj_1"
+        taskId="task_retained_closing"
+        taskTitle="terminal-retained-closing"
+        taskApi={taskApi}
+        onOpenChange={onOpenChange}
+        onSessionCloseReconcile={onSessionCloseReconcile}
+        closeRequestToken={0}
+      />,
+    );
+
+    await waitFor(() => expect(MockWebSocket.instances).toHaveLength(1));
+    const socket = MockWebSocket.instances[0];
+    act(() => {
+      socket?.open();
+      socket?.onmessage?.({
+        data: JSON.stringify({ type: 'terminal.state', state: 'ready', input_enabled: true }),
+      });
+    });
+
+    rerender(
+      <TaskTerminalPanel
+        open
+        workspaceId="ws_default"
+        projectId="proj_1"
+        taskId="task_retained_closing"
+        taskTitle="terminal-retained-closing"
+        taskApi={taskApi}
+        onOpenChange={onOpenChange}
+        onSessionCloseReconcile={onSessionCloseReconcile}
+        closeRequestToken={1}
+      />,
+    );
+
+    await waitFor(() => {
+      expect(closeTerminalSession).toHaveBeenCalledWith(
+        'ws_default',
+        'proj_1',
+        'task_retained_closing',
+        'term_retained_closing',
+      );
+      const panel = screen.getByTestId('agent-tasks__task-terminal');
+      expect(panel).toHaveTextContent('Closing');
+      expect(panel).toHaveTextContent('Ending terminal session');
+      expect(panel).toHaveTextContent(
+        'The system is confirming that the terminal process has ended.',
+      );
+      expect(panel).not.toHaveTextContent('Recovering terminal session');
+      expect(panel).not.toHaveTextContent('Waiting for automatic recovery');
+    });
+    expect(screen.getByRole('button', { name: 'Refresh status' })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'End Session' })).not.toBeInTheDocument();
+    expect(onOpenChange).not.toHaveBeenCalledWith(false);
   });
 
   it('closes the backend session when closeRequestToken lands during a pending stored-session resolution that is still awaiting reconnect', async () => {

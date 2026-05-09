@@ -20,7 +20,12 @@ import {
   deriveRunAction,
 } from '../task-page/run-activity';
 import { ApiError } from '@/lib/api/client';
-import type { Task, TaskTraceEvent } from '@/lib/types/task';
+import type {
+  Task,
+  TaskTerminalLifecycleStatus,
+  TaskTerminalSessionStatusValue,
+  TaskTraceEvent,
+} from '@/lib/types/task';
 import {
   mockArtifacts,
   mockMessages,
@@ -171,9 +176,11 @@ vi.mock('next-intl', () => ({
       'agent_tasks.task.terminal_max_sessions_reached': 'You can run up to 3 terminal sessions in one task.',
       'agent_tasks.task.terminal_status_idle': 'Idle',
       'agent_tasks.task.terminal_status_preparing': 'Preparing',
+      'agent_tasks.task.terminal_status_disconnected': 'Disconnected',
       'agent_tasks.task.terminal_status_recovering': 'Recovering',
       'agent_tasks.task.terminal_status_connecting': 'Connecting',
       'agent_tasks.task.terminal_status_active': 'Active',
+      'agent_tasks.task.terminal_status_closing': 'Closing',
       'agent_tasks.task.terminal_status_closed': 'Closed',
       'agent_tasks.task.terminal_status_failed': 'Failed',
       'agent_tasks.task.delete_blocked_terminal_sessions': 'End all terminal sessions before deleting this task.',
@@ -638,6 +645,33 @@ describe('TaskPage', () => {
       expect(source).not.toContain('"run_started_at"');
       expect(source).not.toContain('"current_run_started_at"');
     });
+
+    it('keeps terminal session status and lifecycle status aligned to the OpenAPI boundary', () => {
+      const pendingStatus: TaskTerminalSessionStatusValue = 'pending';
+      const disconnectedStatus: TaskTerminalSessionStatusValue = 'disconnected';
+      const startingLifecycle: TaskTerminalLifecycleStatus = 'starting';
+      const typesSource = readFileSync('src/lib/types/task.ts', 'utf8');
+      const statusDefinition =
+        typesSource.match(/export type TaskTerminalSessionStatusValue =([\s\S]*?);/)?.[1] ??
+        '';
+      const lifecycleDefinition =
+        typesSource.match(/export type TaskTerminalLifecycleStatus =([\s\S]*?);/)?.[1] ??
+        '';
+
+      // @ts-expect-error starting is a lifecycle_status, not a session status.
+      const startingStatus: TaskTerminalSessionStatusValue = 'starting';
+      // @ts-expect-error disconnected is a session/browser state, not a lifecycle_status.
+      const disconnectedLifecycle: TaskTerminalLifecycleStatus = 'disconnected';
+
+      expect(statusDefinition).not.toContain("'starting'");
+      expect(lifecycleDefinition).toContain("'starting'");
+      expect(lifecycleDefinition).not.toContain("'disconnected'");
+      expect(pendingStatus).toBe('pending');
+      expect(disconnectedStatus).toBe('disconnected');
+      expect(startingLifecycle).toBe('starting');
+      expect(startingStatus).toBe('starting');
+      expect(disconnectedLifecycle).toBe('disconnected');
+    });
   });
 
   describe('Run Activity Classification', () => {
@@ -861,10 +895,12 @@ describe('TaskPage', () => {
 
   describe('Task Rendering', () => {
     it('preserves stronger local live terminal tab states across transient backend pending or disconnected truth, while still converging explicit backend terminal truth', () => {
-      expect(mergeTerminalTabStatus('failed', 'disconnected')).toBe('recovering');
-      expect(mergeTerminalTabStatus('closed', 'disconnected')).toBe('recovering');
+      expect(mergeTerminalTabStatus('failed', 'disconnected')).toBe('disconnected');
+      expect(mergeTerminalTabStatus('closed', 'disconnected')).toBe('disconnected');
       expect(mergeTerminalTabStatus('connecting', 'disconnected')).toBe('connecting');
       expect(mergeTerminalTabStatus('active', 'disconnected')).toBe('active');
+      expect(mergeTerminalTabStatus('closed', 'recovering')).toBe('recovering');
+      expect(mergeTerminalTabStatus('closed', 'closing')).toBe('closing');
       expect(mergeTerminalTabStatus('connecting', 'pending')).toBe('connecting');
       expect(mergeTerminalTabStatus('active', 'pending')).toBe('active');
       expect(mergeTerminalTabStatus('failed', 'pending')).toBe('preparing');
@@ -964,7 +1000,7 @@ describe('TaskPage', () => {
           [
             {
               terminal_session_id: 'backend-session-1',
-              status: 'disconnected',
+              status: 'recovering',
               cols: 120,
               rows: 30,
               last_activity_at: '2026-04-13T01:00:00.000Z',
@@ -972,7 +1008,7 @@ describe('TaskPage', () => {
             },
             {
               terminal_session_id: 'backend-session-3',
-              status: 'failed',
+              status: 'recovering',
               cols: 120,
               rows: 30,
               last_activity_at: '2026-04-13T01:00:01.000Z',
@@ -989,7 +1025,7 @@ describe('TaskPage', () => {
           [
             {
               terminal_session_id: 'backend-session-1',
-              status: 'disconnected',
+              status: 'recovering',
               cols: 120,
               rows: 30,
               last_activity_at: '2026-04-13T01:00:00.000Z',
@@ -997,7 +1033,7 @@ describe('TaskPage', () => {
             },
             {
               terminal_session_id: 'backend-session-3',
-              status: 'failed',
+              status: 'recovering',
               cols: 120,
               rows: 30,
               last_activity_at: '2026-04-13T01:00:01.000Z',
@@ -2007,7 +2043,7 @@ describe('TaskPage', () => {
       });
     });
 
-    it('treats a reloaded disconnected terminal session as recovering rather than preparing', async () => {
+    it('treats a reloaded browser-disconnected terminal session as disconnected rather than runtime recovering', async () => {
       window.sessionStorage.setItem(
         `agentsmith-terminal-workspace:${mockWorkspaceId}:${mockProjectId}:${mockTaskId}`,
         JSON.stringify({
@@ -2041,12 +2077,91 @@ describe('TaskPage', () => {
           mockTaskId,
         );
         expect(screen.getByTestId('task-terminal-panel-active')).toBeInTheDocument();
-        expect(screen.getByTestId('agent-tasks__task-terminal-tab-terminal-session-2')).toHaveTextContent('Recovering');
+        expect(screen.getByTestId('agent-tasks__task-terminal-tab-terminal-session-2')).toHaveTextContent('Disconnected');
+        expect(screen.getByTestId('agent-tasks__task-terminal-tab-terminal-session-2')).not.toHaveTextContent('Recovering');
         expect(screen.getByTestId('agent-tasks__task-terminal-tab-terminal-session-2')).not.toHaveTextContent('Connecting');
         expect(screen.getByTestId('agent-tasks__task-terminal-tab-terminal-session-2')).not.toHaveTextContent('Preparing');
         expect(latestTaskHeaderPropsRef.current.viewMode).toBe('terminal');
         expect(latestTaskHeaderPropsRef.current.terminalSessionCount).toBe(2);
       });
+    });
+
+    it('hydrates recovering and closing terminal sessions as distinct tab states', async () => {
+      window.sessionStorage.setItem(
+        `agentsmith-terminal-workspace:${mockWorkspaceId}:${mockProjectId}:${mockTaskId}`,
+        JSON.stringify({
+          preferredViewMode: 'terminal',
+          preferredActiveSessionId: 'backend-session-recovering',
+          artifactsDrawerOpen: false,
+        }),
+      );
+      mockTaskApiListTerminalSessions.mockResolvedValueOnce({
+        total: 3,
+        items: [
+          {
+            terminal_session_id: 'backend-session-disconnected',
+            status: 'disconnected',
+            created_at: '2026-05-08T01:00:00.000Z',
+          },
+          {
+            terminal_session_id: 'backend-session-recovering',
+            status: 'recovering',
+            lifecycle_status: 'recovering',
+            input_enabled: false,
+            created_at: '2026-05-08T01:00:01.000Z',
+          },
+          {
+            terminal_session_id: 'backend-session-closing',
+            status: 'closing',
+            lifecycle_status: 'closing',
+            input_enabled: false,
+            created_at: '2026-05-08T01:00:02.000Z',
+          },
+        ],
+      });
+
+      renderComponent();
+
+      await waitFor(() => {
+        expect(screen.getByTestId('agent-tasks__task-terminal-tab-terminal-session-1')).toHaveTextContent('Disconnected');
+        expect(screen.getByTestId('agent-tasks__task-terminal-tab-terminal-session-2')).toHaveTextContent('Recovering');
+        expect(screen.getByTestId('agent-tasks__task-terminal-tab-terminal-session-3')).toHaveTextContent('Closing');
+        expect(screen.getByTestId('agent-tasks__task-terminal-workspace')).toHaveAttribute(
+          'data-active-terminal-tab-id',
+          'terminal-session-2',
+        );
+        expect(latestTaskHeaderPropsRef.current.terminalRecoveryCount).toBe(1);
+      });
+    });
+
+    it('does not treat failed backend terminal sessions as task occupancy or recovery blockers', async () => {
+      mockTaskHookState.messages = [];
+      mockTaskApiListTerminalSessions.mockResolvedValueOnce({
+        total: 1,
+        items: [
+          {
+            terminal_session_id: 'backend-session-failed',
+            status: 'failed',
+            lifecycle_status: 'failed',
+            created_at: '2026-05-08T01:00:00.000Z',
+          },
+        ],
+      });
+
+      renderComponent();
+
+      await waitFor(() => {
+        expect(latestTaskHeaderPropsRef.current.terminalTruthState).toBe('ready');
+        expect(latestTaskHeaderPropsRef.current.terminalSessionCount).toBe(0);
+        expect(latestTaskHeaderPropsRef.current.terminalRecoveryCount).toBe(0);
+        expect(latestTaskHeaderPropsRef.current.terminalHasRecovery).toBe(false);
+        expect(latestTaskHeaderPropsRef.current.deleteBlockedReason).toBeNull();
+        expect(latestTaskHeaderPropsRef.current.canCreateTerminalSession).toBe(true);
+        expect(latestConversationPanelPropsRef.current.disabled).toBe(false);
+        expect(latestConversationPanelPropsRef.current.inputPlaceholder).toBeUndefined();
+      });
+      expect(screen.queryByTestId('agent-tasks__task-terminal-status-strip')).not.toBeInTheDocument();
+      expect(screen.queryByTestId('conversation-blocked-state')).not.toBeInTheDocument();
     });
 
     it('keeps terminal bootstrap blocked until backend terminal truth returns on reload', async () => {
@@ -3088,7 +3203,7 @@ describe('TaskPage', () => {
       });
     });
 
-    it('switches the blocker action to recovery guidance when a hidden terminal session has failed', async () => {
+    it('switches the blocker action to recovery guidance when a hidden terminal session is recovering', async () => {
       mockTaskHookState.messages = [];
       await renderComponentAndWaitForTerminalHydration();
 
@@ -3099,7 +3214,7 @@ describe('TaskPage', () => {
         expect(latestTaskHeaderPropsRef.current.viewMode).toBe('terminal');
       });
       await act(async () => {
-        latestTaskTerminalPanelPropsRef.current.onStatusChange('failed');
+        latestTaskTerminalPanelPropsRef.current.onStatusChange('recovering');
       });
       await act(async () => {
         latestTaskHeaderPropsRef.current.onSetViewMode('conversation');
@@ -3128,7 +3243,7 @@ describe('TaskPage', () => {
       expect(screen.getAllByRole('button', { name: 'Reopen Terminal Workspace' })).toHaveLength(1);
     });
 
-    it('uses mixed occupancy copy when disconnected and active sessions coexist in the hidden blocker', async () => {
+    it('uses mixed occupancy copy when recovering and active sessions coexist in the hidden blocker', async () => {
       mockTaskHookState.messages = [];
       mockTaskApiListTerminalSessions.mockResolvedValueOnce({
         total: 2,
@@ -3140,7 +3255,7 @@ describe('TaskPage', () => {
           },
           {
             terminal_session_id: 'backend-session-2',
-            status: 'disconnected',
+            status: 'recovering',
             created_at: '2026-04-13T01:00:01.000Z',
           },
         ],
@@ -3190,7 +3305,7 @@ describe('TaskPage', () => {
             },
             {
               terminal_session_id: 'backend-session-2',
-              status: 'failed',
+              status: 'recovering',
               created_at: '2026-04-13T01:00:01.000Z',
             },
           ],
@@ -3466,7 +3581,7 @@ describe('TaskPage', () => {
         );
       });
 
-      let reconcileResult: string | null = null;
+      let reconcileResult: unknown = null;
       await act(async () => {
         reconcileResult = await latestTaskTerminalPanelPropsRef.current.onSessionCloseReconcile(
           'backend-session-1',
@@ -3474,7 +3589,10 @@ describe('TaskPage', () => {
       });
 
       await waitFor(() => {
-        expect(reconcileResult).toBe('retained');
+        expect(reconcileResult).toEqual({
+          status: 'retained',
+          retainedStatus: 'active',
+        });
         expect(mockTaskApiListTerminalSessions).toHaveBeenCalledTimes(2);
         expect(screen.getByTestId('agent-tasks__task-terminal-tab-terminal-session-1')).toBeInTheDocument();
         expect(screen.getByTestId('agent-tasks__task-terminal-workspace')).toHaveAttribute(
@@ -3485,6 +3603,76 @@ describe('TaskPage', () => {
         expect(latestTaskHeaderPropsRef.current.deleteBlockedReason).toBe(
           'End all terminal sessions before deleting this task.',
         );
+      });
+    });
+
+    it('returns retained close reconciliation with the concrete backend closing status', async () => {
+      mockTaskHookState.messages = [];
+      window.sessionStorage.setItem(
+        `agentsmith-terminal-workspace:${mockWorkspaceId}:${mockProjectId}:${mockTaskId}`,
+        JSON.stringify({
+          preferredViewMode: 'terminal',
+          preferredActiveSessionId: 'backend-session-1',
+          artifactsDrawerOpen: true,
+        }),
+      );
+      mockTaskApiListTerminalSessions
+        .mockResolvedValueOnce({
+          total: 1,
+          items: [
+            {
+              terminal_session_id: 'backend-session-1',
+              status: 'active',
+              created_at: '2026-04-13T01:00:00.000Z',
+            },
+          ],
+        })
+        .mockResolvedValueOnce({
+          total: 1,
+          items: [
+            {
+              terminal_session_id: 'backend-session-1',
+              status: 'closing',
+              lifecycle_status: 'closing',
+              close_state: 'requested',
+              created_at: '2026-04-13T01:00:00.000Z',
+            },
+          ],
+        });
+
+      renderComponent();
+
+      await waitFor(() => {
+        expect(screen.getByTestId('agent-tasks__task-terminal-workspace')).toHaveAttribute(
+          'data-active-terminal-tab-id',
+          'terminal-session-1',
+        );
+        expect(latestTaskTerminalPanelPropsRef.current.sessionStorageScope).toBe(
+          'terminal-session-1',
+        );
+      });
+
+      let reconcileResult: unknown = null;
+      await act(async () => {
+        reconcileResult = await latestTaskTerminalPanelPropsRef.current.onSessionCloseReconcile(
+          'backend-session-1',
+        );
+      });
+
+      await waitFor(() => {
+        expect(reconcileResult).toEqual({
+          status: 'retained',
+          retainedStatus: 'closing',
+        });
+        expect(mockTaskApiListTerminalSessions).toHaveBeenCalledTimes(2);
+        expect(screen.getByTestId('agent-tasks__task-terminal-tab-terminal-session-1')).toHaveTextContent(
+          'Closing',
+        );
+        expect(screen.getByTestId('agent-tasks__task-terminal-tab-terminal-session-1')).not.toHaveTextContent(
+          'Recovering',
+        );
+        expect(latestTaskHeaderPropsRef.current.terminalSessionCount).toBe(1);
+        expect(latestTaskHeaderPropsRef.current.terminalRecoveryCount).toBe(0);
       });
     });
 
@@ -3521,7 +3709,7 @@ describe('TaskPage', () => {
         expect(latestTaskHeaderPropsRef.current.terminalSessionCount).toBe(1);
       });
 
-      let reconcileResult: string | null = null;
+      let reconcileResult: unknown = null;
       await act(async () => {
         reconcileResult = await latestTaskTerminalPanelPropsRef.current.onSessionCloseReconcile(
           'backend-session-1',
@@ -3529,7 +3717,7 @@ describe('TaskPage', () => {
       });
 
       await waitFor(() => {
-        expect(reconcileResult).toBe('unavailable');
+        expect(reconcileResult).toEqual({ status: 'unavailable' });
         expect(mockTaskApiListTerminalSessions).toHaveBeenCalledTimes(2);
         expect(screen.getByTestId('agent-tasks__task-terminal-tab-terminal-session-1')).toBeInTheDocument();
         expect(latestTaskHeaderPropsRef.current.terminalSessionCount).toBe(1);
@@ -3569,7 +3757,7 @@ describe('TaskPage', () => {
           },
           {
             terminal_session_id: 'backend-session-2',
-            status: 'disconnected',
+            status: 'recovering',
             created_at: '2026-04-13T01:00:01.000Z',
           },
         ],
@@ -3622,7 +3810,7 @@ describe('TaskPage', () => {
           },
           {
             terminal_session_id: 'backend-session-2',
-            status: 'disconnected',
+            status: 'recovering',
             created_at: '2026-04-13T01:00:01.000Z',
           },
         ],
@@ -3675,12 +3863,12 @@ describe('TaskPage', () => {
         items: [
           {
             terminal_session_id: 'backend-session-1',
-            status: 'disconnected',
+            status: 'recovering',
             created_at: '2026-04-13T01:00:00.000Z',
           },
           {
             terminal_session_id: 'backend-session-2',
-            status: 'failed',
+            status: 'recovering',
             created_at: '2026-04-13T01:00:01.000Z',
           },
           {

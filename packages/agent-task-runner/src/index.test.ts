@@ -3,6 +3,14 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 type MockTerminalChild = {
   exitCode: number | null;
+  pidMetadata: {
+    ptyPid: number | null;
+    rootPid: number | null;
+    pgid: number | null;
+    sid: number | null;
+    platform: NodeJS.Platform;
+    diagnostics: string[];
+  };
   write: ReturnType<typeof vi.fn>;
   resize: ReturnType<typeof vi.fn>;
   kill: ReturnType<typeof vi.fn>;
@@ -24,6 +32,11 @@ type MockCodexChild = EventEmitter & {
 
 type TerminalExitEvent = { exitCode: number | null; signal?: string | null };
 type ProcessSignalListener = (signal: NodeJS.Signals) => void;
+type MockWebSocket = EventEmitter & {
+  send: ReturnType<typeof vi.fn>;
+  close: ReturnType<typeof vi.fn>;
+  readyState?: number;
+};
 
 const TASK_HOME = '/home/task_1';
 const TASK_WORKSPACE = `${TASK_HOME}/workspace`;
@@ -57,12 +70,30 @@ const {
   sanitizeAgentDeltaChunkMock,
   sanitizeStderrChunkMock,
   startTerminalProcessMock,
+  terminateTerminalProcessTreeMock,
   spawnMock,
   websocketInstances,
   WebSocketMock,
   writeFileMock,
 } = vi.hoisted(() => {
-  const websocketInstances: Array<EventEmitter & { send: ReturnType<typeof vi.fn> }> = [];
+  const websocketInstances: MockWebSocket[] = [];
+  const WebSocketMock = vi.fn(function WebSocketMock(this: unknown) {
+    const socket = new EventEmitter() as MockWebSocket;
+    socket.readyState = 1;
+    socket.send = vi.fn();
+    socket.close = vi.fn(() => {
+      socket.readyState = 3;
+      socket.emit('close');
+    });
+    websocketInstances.push(socket);
+    return socket;
+  });
+  Object.assign(WebSocketMock, {
+    CONNECTING: 0,
+    OPEN: 1,
+    CLOSING: 2,
+    CLOSED: 3,
+  });
   return {
     assertTaskExecutionContextMock: vi.fn((value: unknown) => value),
     buildCodexExecArgsMock: vi.fn(() => ['--exec']),
@@ -178,6 +209,14 @@ const {
     startTerminalProcessMock: vi.fn(async (): Promise<MockTerminalProcessResult> => ({
       child: {
         exitCode: null as number | null,
+        pidMetadata: {
+          ptyPid: 12_001,
+          rootPid: 12_001,
+          pgid: 12_001,
+          sid: 12_001,
+          platform: 'linux' as NodeJS.Platform,
+          diagnostics: [],
+        },
         write: vi.fn(),
         resize: vi.fn(),
         kill: vi.fn(),
@@ -186,14 +225,10 @@ const {
       },
       cwd: '/home/task_1/workspace',
     })),
+    terminateTerminalProcessTreeMock: vi.fn(),
     spawnMock: vi.fn(),
     websocketInstances,
-    WebSocketMock: vi.fn(function WebSocketMock(this: unknown) {
-      const socket = new EventEmitter() as EventEmitter & { send: ReturnType<typeof vi.fn> };
-      socket.send = vi.fn();
-      websocketInstances.push(socket);
-      return socket;
-    }),
+    WebSocketMock,
     writeFileMock: vi.fn(async () => undefined),
   };
 });
@@ -292,6 +327,7 @@ vi.mock('./terminal-outcome.js', () => ({
 
 vi.mock('./terminal-runtime.js', () => ({
   startTerminalProcess: startTerminalProcessMock,
+  terminateTerminalProcessTree: terminateTerminalProcessTreeMock,
 }));
 
 vi.mock('./user-install-env.js', () => ({
@@ -317,6 +353,53 @@ describe('agent-task-runner entry lifecycle', () => {
     process.env.MBOS_AGENT_KEY = 'ask_test';
     process.env.MBOS_AGENT_RUNNER_DEBUG = '0';
     resolveRunnerSuccessPolicyMock.mockImplementation(() => ({ ok: true as const }));
+    terminateTerminalProcessTreeMock.mockImplementation(async (
+      child: MockTerminalChild,
+      options: { graceMs?: number; hardKillGraceMs?: number } = {},
+    ) => {
+      const signalSequence: string[] = [];
+      let exitObserved = child.exitCode !== null;
+      const killTerminal = child.kill as unknown as (signal: NodeJS.Signals) => void;
+      const onTerminalExit = child.onExit as unknown as (listener: (event: TerminalExitEvent) => void) => void;
+      const waitForExit = () => {
+        if (child.exitCode !== null) return Promise.resolve(true);
+        return new Promise<boolean>((resolve) => {
+          let timeout: ReturnType<typeof setTimeout> | null = null;
+          const finish = () => {
+            if (timeout) clearTimeout(timeout);
+            exitObserved = true;
+            resolve(true);
+          };
+          onTerminalExit(finish);
+          timeout = setTimeout(() => resolve(false), options.graceMs ?? 8_000);
+        });
+      };
+      killTerminal('SIGTERM');
+      signalSequence.push('pty:SIGTERM');
+      if (!(await waitForExit()) && child.exitCode === null) {
+        killTerminal('SIGKILL');
+        signalSequence.push('pty:SIGKILL');
+      }
+      if (!exitObserved && child.exitCode === null) {
+        await new Promise((resolve) => {
+          setTimeout(resolve, options.hardKillGraceMs ?? options.graceMs ?? 8_000);
+        });
+      }
+      const outcome = !exitObserved && child.exitCode === null ? 'failed' : 'terminated';
+      return {
+        outcome,
+        rootPid: child.pidMetadata.rootPid,
+        ptyPid: child.pidMetadata.ptyPid,
+        pgid: child.pidMetadata.pgid,
+        sid: child.pidMetadata.sid,
+        terminatedPids: outcome === 'terminated' && child.pidMetadata.rootPid !== null ? [child.pidMetadata.rootPid] : [],
+        remainingPids: outcome === 'failed' && child.pidMetadata.rootPid !== null ? [child.pidMetadata.rootPid] : [],
+        signalSequence,
+        durationMs: 1,
+        diagnosticCode: outcome === 'failed' ? 'terminal_process_tree_remaining' : null,
+        diagnostics: [],
+      };
+    });
     exitSpy = vi.spyOn(process, 'exit').mockImplementation(((() => undefined) as never));
   });
 
@@ -337,6 +420,11 @@ describe('agent-task-runner entry lifecycle', () => {
     delete process.env.MBOS_AGENT_KEY;
     delete process.env.MBOS_AGENT_RUNNER_DEBUG;
     delete process.env.MBOS_AGENT_CANCEL_KILL_DELAY_MS;
+    delete process.env.MBOS_AGENT_RECONNECT_BASE_MS;
+    delete process.env.MBOS_AGENT_RECONNECT_MAX_MS;
+    delete process.env.MBOS_AGENT_RUNNER_INSTANCE_ID;
+    delete process.env.MBOS_AGENT_RUNNER_SESSION_ID;
+    delete process.env.NOTEBOOK_TERMINAL_CLOSE_GRACE_MS;
   });
 
   function createCodexChild(): MockCodexChild {
@@ -359,8 +447,17 @@ describe('agent-task-runner entry lifecycle', () => {
   }
 
   function createTerminalChild(exitListeners: Array<(event: TerminalExitEvent) => void> = []): MockTerminalChild {
+    const terminalPid = 12_000 + startTerminalProcessMock.mock.calls.length + 1;
     const child: MockTerminalChild = {
       exitCode: null,
+      pidMetadata: {
+        ptyPid: terminalPid,
+        rootPid: terminalPid,
+        pgid: terminalPid,
+        sid: terminalPid,
+        platform: 'linux',
+        diagnostics: [],
+      },
       write: vi.fn(),
       resize: vi.fn(),
       kill: vi.fn((signal?: NodeJS.Signals) => {
@@ -442,12 +539,24 @@ describe('agent-task-runner entry lifecycle', () => {
     }));
   }
 
-  function serverTerminalStart(terminalSessionId: string): Buffer {
+  function serverTerminalStart(
+    terminalSessionId: string,
+    options: {
+      runnerSessionId?: string;
+      generation?: number;
+      cols?: number;
+      rows?: number;
+    } = {},
+  ): Buffer {
     return Buffer.from(JSON.stringify({
       type: 'server.terminal.start',
+      ...(options.runnerSessionId ? { runner_session_id: options.runnerSessionId } : {}),
       terminal_session_id: terminalSessionId,
       timestamp: new Date().toISOString(),
       payload: {
+        ...(options.generation !== undefined ? { generation: options.generation } : {}),
+        ...(options.cols !== undefined ? { cols: options.cols } : {}),
+        ...(options.rows !== undefined ? { rows: options.rows } : {}),
         execution_context: {
           task_id: 'task_1',
           task_home_path: TASK_HOME,
@@ -460,6 +569,68 @@ describe('agent-task-runner entry lifecycle', () => {
           api_base: 'http://127.0.0.1:20000/api/v1',
           execution_ticket: 'ticket_1',
         },
+      },
+    }));
+  }
+
+  function serverTerminalAdopt(
+    terminalSessionId: string,
+    options: {
+      requestId?: string;
+      runnerSessionId?: string;
+      adoptAttemptId?: string;
+      connectionEpoch?: number;
+      generation?: number;
+      cols?: number;
+      rows?: number;
+    } = {},
+  ): Buffer {
+    const requestId = options.requestId ?? 'adopt_1';
+    return Buffer.from(JSON.stringify({
+      type: 'server.terminal.adopt',
+      request_id: requestId,
+      runner_session_id: options.runnerSessionId ?? 'runner_session_1',
+      terminal_session_id: terminalSessionId,
+      timestamp: new Date().toISOString(),
+      payload: {
+        adopt_attempt_id: options.adoptAttemptId ?? requestId,
+        connection_epoch: options.connectionEpoch ?? 7,
+        generation: options.generation ?? 1,
+        cols: options.cols ?? 120,
+        rows: options.rows ?? 30,
+      },
+    }));
+  }
+
+  function serverTerminalClose(
+    terminalSessionId: string,
+    options: {
+      requestId?: string;
+      runnerSessionId?: string;
+      closeAttemptId?: string;
+      connectionEpoch?: number;
+      generation?: number;
+      reason?: string;
+      includeConnectionEpoch?: boolean;
+      includeGeneration?: boolean;
+      includeRunnerSessionId?: boolean;
+    } = {},
+  ): Buffer {
+    const requestId = options.requestId ?? 'close_1';
+    const includeRunnerSessionId = options.includeRunnerSessionId !== false;
+    const includeConnectionEpoch = options.includeConnectionEpoch !== false;
+    const includeGeneration = options.includeGeneration !== false;
+    return Buffer.from(JSON.stringify({
+      type: 'server.terminal.close',
+      request_id: requestId,
+      ...(includeRunnerSessionId ? { runner_session_id: options.runnerSessionId ?? 'runner_session_1' } : {}),
+      terminal_session_id: terminalSessionId,
+      timestamp: new Date().toISOString(),
+      payload: {
+        close_attempt_id: options.closeAttemptId ?? requestId,
+        ...(includeConnectionEpoch ? { connection_epoch: options.connectionEpoch ?? 7 } : {}),
+        ...(includeGeneration ? { generation: options.generation ?? 1 } : {}),
+        reason: options.reason ?? 'user_requested',
       },
     }));
   }
@@ -589,8 +760,14 @@ describe('agent-task-runner entry lifecycle', () => {
   }
 
   async function startTerminalRun(
-    socket: EventEmitter & { send: ReturnType<typeof vi.fn> },
+    socket: MockWebSocket,
     terminalSessionId = 'terminal_1',
+    options: {
+      runnerSessionId?: string;
+      generation?: number;
+      cols?: number;
+      rows?: number;
+    } = {},
   ): Promise<{ child: MockTerminalChild; exitListeners: Array<(event: TerminalExitEvent) => void> }> {
     const exitListeners: Array<(event: TerminalExitEvent) => void> = [];
     const child = createTerminalChild(exitListeners);
@@ -598,12 +775,97 @@ describe('agent-task-runner entry lifecycle', () => {
       child,
       cwd: TASK_WORKSPACE,
     });
-    socket.emit('message', serverTerminalStart(terminalSessionId));
+    socket.emit('message', serverTerminalStart(terminalSessionId, options));
     await vi.waitFor(() => {
       expect(startTerminalProcessMock).toHaveBeenCalled();
     });
     return { child, exitListeners };
   }
+
+  it('advertises stable runner instance and monotonically increasing connection epoch on every ready frame', async () => {
+    vi.useFakeTimers();
+    process.env.MBOS_AGENT_RECONNECT_BASE_MS = '10';
+    process.env.MBOS_AGENT_RECONNECT_MAX_MS = '10';
+    process.env.MBOS_AGENT_RUNNER_INSTANCE_ID = 'runner_instance_protocol';
+    process.env.MBOS_AGENT_RUNNER_SESSION_ID = 'runner_session_protocol';
+
+    await import('./index.js');
+    const firstSocket = websocketInstances.at(-1);
+    if (!firstSocket) {
+      throw new Error('websocket_instance_missing');
+    }
+
+    firstSocket.emit('open');
+    const firstReady = readSentFrames(firstSocket).find((frame) => frame.type === 'agent.ready');
+    expect(firstReady).toMatchObject({
+      payload: expect.objectContaining({
+        runner_instance_id: 'runner_instance_protocol',
+        connection_epoch: 1,
+      }),
+    });
+
+    const terminal = await startTerminalRun(firstSocket, 'terminal_epoch_ready', {
+      runnerSessionId: 'runner_session_protocol',
+      generation: 2,
+      cols: 90,
+      rows: 25,
+    });
+    await vi.waitFor(() => {
+      expect(readSentFrames(firstSocket)).toContainEqual(expect.objectContaining({
+        type: 'agent.terminal.started',
+        terminal_session_id: 'terminal_epoch_ready',
+        payload: expect.objectContaining({
+          runner_session_id: 'runner_session_protocol',
+          generation: 2,
+          connection_epoch: 1,
+        }),
+      }));
+    });
+    firstSocket.emit('close');
+    expect(terminal.child.kill).not.toHaveBeenCalled();
+
+    await vi.advanceTimersByTimeAsync(10);
+    const secondSocket = websocketInstances.at(-1);
+    expect(secondSocket).toBeDefined();
+    expect(secondSocket).not.toBe(firstSocket);
+    secondSocket?.emit('open');
+
+    const secondReady = readSentFrames(secondSocket!).find((frame) => frame.type === 'agent.ready');
+    expect(secondReady).toMatchObject({
+      payload: expect.objectContaining({
+        runner_instance_id: 'runner_instance_protocol',
+        connection_epoch: 2,
+        active_terminals: [
+          expect.objectContaining({
+            terminal_session_id: 'terminal_epoch_ready',
+            runner_session_id: 'runner_session_protocol',
+            generation: 2,
+            connection_epoch: 2,
+          }),
+        ],
+      }),
+    });
+
+    secondSocket?.emit('message', serverTerminalAdopt('terminal_epoch_ready', {
+      requestId: 'adopt_epoch_ready',
+      runnerSessionId: 'runner_session_protocol',
+      adoptAttemptId: 'adopt_epoch_ready',
+      connectionEpoch: 2,
+      generation: 2,
+    }));
+
+    await vi.waitFor(() => {
+      expect(readSentFrames(secondSocket!)).toContainEqual(expect.objectContaining({
+        type: 'agent.terminal.adopted',
+        request_id: 'adopt_epoch_ready',
+        terminal_session_id: 'terminal_epoch_ready',
+        payload: expect.objectContaining({
+          connection_epoch: 2,
+          generation: 2,
+        }),
+      }));
+    });
+  });
 
   it('streams phase-less standard Responses output_text deltas as visible agent output', async () => {
     const requestId = 'req_standard_output_text_delta';
@@ -1897,7 +2159,11 @@ describe('agent-task-runner entry lifecycle', () => {
     expect(markCodexSessionStateReusableMock).not.toHaveBeenCalled();
   });
 
-  it('waits for running children to exit before releasing tracked workspaces and exiting on websocket close', async () => {
+  it('keeps terminal PTY and active registry on websocket close transport lost while terminating task run child', async () => {
+    vi.useFakeTimers();
+    process.env.MBOS_AGENT_RECONNECT_BASE_MS = '10';
+    process.env.MBOS_AGENT_RECONNECT_MAX_MS = '10';
+
     await import('./index.js');
     const socket = websocketInstances.at(-1);
     if (!socket) {
@@ -1907,34 +2173,57 @@ describe('agent-task-runner entry lifecycle', () => {
     socket.emit('open');
     expect(socket.send).toHaveBeenCalledWith(expect.stringContaining('"type":"agent.ready"'));
 
-    const codexChild = await startCodexRun(socket);
-    const terminal = await startTerminalRun(socket);
+    const codexChild = await startCodexRun(socket, 'req_transport_lost');
+    const terminal = await startTerminalRun(socket, 'terminal_transport_lost', {
+      runnerSessionId: 'runner_session_1',
+      generation: 3,
+      cols: 100,
+      rows: 25,
+    });
 
     socket.emit('close');
 
     await vi.waitFor(() => {
       expect(codexChild.kill).toHaveBeenCalledWith('SIGTERM');
     });
-    await vi.waitFor(() => {
-      expect(terminal.child.kill).toHaveBeenCalledWith('SIGTERM');
-    });
-
-    await Promise.resolve();
+    expect(terminal.child.kill).not.toHaveBeenCalled();
     expect(releaseAllPreparedTaskWorkspacesMock).not.toHaveBeenCalled();
     expect(exitSpy).not.toHaveBeenCalled();
 
-    const sendCountAfterShutdownStarted = socket.send.mock.calls.length;
-    closeCodexChild(codexChild, null, 'SIGTERM');
-    closeTerminalChild(terminal.child, terminal.exitListeners, null, 'SIGTERM');
+    await vi.advanceTimersByTimeAsync(10);
+    const reconnectSocket = websocketInstances.at(-1);
+    expect(reconnectSocket).toBeDefined();
+    expect(reconnectSocket).not.toBe(socket);
+    reconnectSocket?.emit('open');
 
     await vi.waitFor(() => {
-      expect(releaseAllPreparedTaskWorkspacesMock).toHaveBeenCalledTimes(1);
-      expect(exitSpy).toHaveBeenCalledWith(1);
+      const readyFrame = readSentFrames(reconnectSocket!).find((frame) => frame.type === 'agent.ready');
+      expect(readyFrame).toEqual(expect.objectContaining({
+        payload: expect.objectContaining({
+          capabilities: expect.objectContaining({
+            terminal_adopt: 'v1',
+          }),
+          active_terminals: [
+            expect.objectContaining({
+              terminal_session_id: 'terminal_transport_lost',
+              runner_session_id: 'runner_session_1',
+              generation: 3,
+              cols: 100,
+              rows: 25,
+              cwd: TASK_WORKSPACE,
+            }),
+          ],
+        }),
+      }));
     });
-    expect(socket.send).toHaveBeenCalledTimes(sendCountAfterShutdownStarted);
+
+    closeCodexChild(codexChild, null, 'SIGTERM');
   });
 
-  it('emits stable lifecycle state logs before websocket ready, shutdown cleanup, and final exit', async () => {
+  it('emits stable lifecycle state logs for websocket close transport lost without process shutdown', async () => {
+    vi.useFakeTimers();
+    process.env.MBOS_AGENT_RECONNECT_BASE_MS = '10';
+    process.env.MBOS_AGENT_RECONNECT_MAX_MS = '10';
     const stdoutWriteSpy = vi.spyOn(process.stdout, 'write');
     try {
       await import('./index.js');
@@ -1946,25 +2235,22 @@ describe('agent-task-runner entry lifecycle', () => {
       socket.emit('open');
       socket.emit('close');
 
-      await vi.waitFor(() => {
-        expect(releaseAllPreparedTaskWorkspacesMock).toHaveBeenCalledTimes(1);
-        expect(exitSpy).toHaveBeenCalledWith(1);
-      });
+      expect(releaseAllPreparedTaskWorkspacesMock).not.toHaveBeenCalled();
+      expect(exitSpy).not.toHaveBeenCalled();
 
       const output = stdoutWriteSpy.mock.calls.map(([chunk]) => String(chunk)).join('');
       const connectedIndex = output.indexOf('runner_state=connected reason=websocket_open');
-      const shuttingDownIndex = output.indexOf('runner_state=shutting_down reason=websocket_close');
-      const disconnectedIndex = output.indexOf('runner_state=disconnected reason=websocket_close');
+      const reconnectingIndex = output.indexOf('runner_state=reconnecting reason=websocket_close');
 
       expect(connectedIndex).toBeGreaterThanOrEqual(0);
-      expect(shuttingDownIndex).toBeGreaterThan(connectedIndex);
-      expect(disconnectedIndex).toBeGreaterThan(shuttingDownIndex);
+      expect(reconnectingIndex).toBeGreaterThan(connectedIndex);
+      expect(output).not.toContain('runner_state=shutting_down reason=websocket_close');
     } finally {
       stdoutWriteSpy.mockRestore();
     }
   });
 
-  it('sends SIGKILL to running children after shutdown grace expires', async () => {
+  it('sends SIGKILL to running children after process shutdown grace expires', async () => {
     vi.useFakeTimers();
     process.env.MBOS_AGENT_CANCEL_KILL_DELAY_MS = '1000';
     await import('./index.js');
@@ -1977,7 +2263,7 @@ describe('agent-task-runner entry lifecycle', () => {
     const codexChild = await startCodexRun(socket);
     const terminal = await startTerminalRun(socket);
 
-    socket.emit('close');
+    process.emit('SIGTERM');
     expect(codexChild.kill).toHaveBeenCalledWith('SIGTERM');
     expect(terminal.child.kill).toHaveBeenCalledWith('SIGTERM');
     expect(codexChild.kill).not.toHaveBeenCalledWith('SIGKILL');
@@ -1992,7 +2278,7 @@ describe('agent-task-runner entry lifecycle', () => {
     await vi.runOnlyPendingTimersAsync();
   });
 
-  it('rejects new codex and terminal work while shutdown is in progress', async () => {
+  it('rejects new codex and terminal work while process shutdown is in progress', async () => {
     await import('./index.js');
     const socket = websocketInstances.at(-1);
     if (!socket) {
@@ -2003,7 +2289,7 @@ describe('agent-task-runner entry lifecycle', () => {
     const codexChild = await startCodexRun(socket, 'req_before_shutdown');
     const terminal = await startTerminalRun(socket, 'terminal_before_shutdown');
 
-    socket.emit('close');
+    process.emit('SIGTERM');
     await vi.waitFor(() => {
       expect(codexChild.kill).toHaveBeenCalledWith('SIGTERM');
       expect(terminal.child.kill).toHaveBeenCalledWith('SIGTERM');
@@ -2015,9 +2301,16 @@ describe('agent-task-runner entry lifecycle', () => {
 
     expect(spawnMock).toHaveBeenCalledTimes(1);
     expect(startTerminalProcessMock).toHaveBeenCalledTimes(1);
+
+    closeCodexChild(codexChild, null, 'SIGTERM');
+    closeTerminalChild(terminal.child, terminal.exitListeners, null, 'SIGTERM');
+    await vi.waitFor(() => {
+      expect(releaseAllPreparedTaskWorkspacesMock).toHaveBeenCalledTimes(1);
+      expect(exitSpy).toHaveBeenCalledWith(0);
+    });
   });
 
-  it('uses the same idempotent shutdown path for process signals and websocket close', async () => {
+  it('kills terminal PTY and sends shutdown frame on process shutdown', async () => {
     await import('./index.js');
     const socket = websocketInstances.at(-1);
     if (!socket) {
@@ -2046,6 +2339,471 @@ describe('agent-task-runner entry lifecycle', () => {
       expect(exitSpy).toHaveBeenCalledTimes(1);
       expect(exitSpy).toHaveBeenCalledWith(0);
     });
+    expect(readSentFrames(socket)).toContainEqual(expect.objectContaining({
+      type: 'agent.shutdown',
+      payload: expect.objectContaining({
+        reason: 'sigterm',
+        terminal_processes_terminated: true,
+      }),
+    }));
+    expect(socket.close).toHaveBeenCalled();
+  });
+
+  it('handles terminal adopt idempotently and rejects stale fencing without rebinding', async () => {
+    await import('./index.js');
+    const socket = websocketInstances.at(-1);
+    if (!socket) {
+      throw new Error('websocket_instance_missing');
+    }
+
+    socket.emit('open');
+    const terminal = await startTerminalRun(socket, 'terminal_adopt', {
+      runnerSessionId: 'runner_session_1',
+      generation: 2,
+      cols: 100,
+      rows: 25,
+    });
+    const terminalStartsAfterInitialStart = startTerminalProcessMock.mock.calls.length;
+
+    socket.emit('message', serverTerminalAdopt('terminal_adopt', {
+      requestId: 'adopt_current',
+      runnerSessionId: 'runner_session_1',
+      adoptAttemptId: 'adopt_current',
+      connectionEpoch: 7,
+      generation: 2,
+      cols: 132,
+      rows: 43,
+    }));
+
+    await vi.waitFor(() => {
+      expect(readSentFrames(socket)).toContainEqual(expect.objectContaining({
+        type: 'agent.terminal.adopted',
+        request_id: 'adopt_current',
+        terminal_session_id: 'terminal_adopt',
+        runner_session_id: 'runner_session_1',
+        payload: expect.objectContaining({
+          adopt_attempt_id: 'adopt_current',
+          connection_epoch: 7,
+          generation: 2,
+          runner_session_id: 'runner_session_1',
+          terminal_session_id: 'terminal_adopt',
+        }),
+      }));
+    });
+    expect(startTerminalProcessMock).toHaveBeenCalledTimes(terminalStartsAfterInitialStart);
+    expect(terminal.child.resize).toHaveBeenCalledWith(132, 43);
+
+    socket.emit('message', serverTerminalAdopt('terminal_adopt', {
+      requestId: 'adopt_duplicate',
+      runnerSessionId: 'runner_session_1',
+      adoptAttemptId: 'adopt_duplicate',
+      connectionEpoch: 8,
+      generation: 2,
+      cols: 132,
+      rows: 43,
+    }));
+
+    await vi.waitFor(() => {
+      expect(readSentFrames(socket)).toContainEqual(expect.objectContaining({
+        type: 'agent.terminal.adopted',
+        request_id: 'adopt_duplicate',
+        terminal_session_id: 'terminal_adopt',
+      }));
+    });
+    expect(startTerminalProcessMock).toHaveBeenCalledTimes(terminalStartsAfterInitialStart);
+
+    socket.emit('message', serverTerminalAdopt('terminal_adopt', {
+      requestId: 'adopt_stale',
+      runnerSessionId: 'runner_session_1',
+      adoptAttemptId: 'adopt_stale',
+      connectionEpoch: 9,
+      generation: 999,
+      cols: 12,
+      rows: 5,
+    }));
+
+    await vi.waitFor(() => {
+      expect(readSentFrames(socket)).toContainEqual(expect.objectContaining({
+        type: 'agent.terminal.error',
+        request_id: 'adopt_stale',
+        terminal_session_id: 'terminal_adopt',
+        payload: expect.objectContaining({
+          error_code: 'AGENT_TERMINAL_ADOPT_STALE',
+        }),
+      }));
+    });
+    expect(startTerminalProcessMock).toHaveBeenCalledTimes(terminalStartsAfterInitialStart);
+    expect(terminal.child.resize).not.toHaveBeenCalledWith(12, 5);
+  });
+
+  it('returns terminal adopt not_found or exited without starting a replacement shell', async () => {
+    await import('./index.js');
+    const socket = websocketInstances.at(-1);
+    if (!socket) {
+      throw new Error('websocket_instance_missing');
+    }
+
+    socket.emit('open');
+    const terminal = await startTerminalRun(socket, 'terminal_exited_for_adopt', {
+      runnerSessionId: 'runner_session_1',
+      generation: 1,
+    });
+    const terminalStartsAfterInitialStart = startTerminalProcessMock.mock.calls.length;
+    closeTerminalChild(terminal.child, terminal.exitListeners, 0, null);
+
+    socket.emit('message', serverTerminalAdopt('terminal_missing_for_adopt', {
+      requestId: 'adopt_missing',
+      runnerSessionId: 'runner_session_1',
+    }));
+    socket.emit('message', serverTerminalAdopt('terminal_exited_for_adopt', {
+      requestId: 'adopt_exited',
+      runnerSessionId: 'runner_session_1',
+      generation: 1,
+    }));
+
+    await vi.waitFor(() => {
+      const sentFrames = readSentFrames(socket);
+      expect(sentFrames).toContainEqual(expect.objectContaining({
+        type: 'agent.terminal.not_found',
+        request_id: 'adopt_missing',
+        terminal_session_id: 'terminal_missing_for_adopt',
+      }));
+      expect(sentFrames).toContainEqual(expect.objectContaining({
+        type: 'agent.terminal.exited',
+        request_id: 'adopt_exited',
+        terminal_session_id: 'terminal_exited_for_adopt',
+      }));
+    });
+    expect(startTerminalProcessMock).toHaveBeenCalledTimes(terminalStartsAfterInitialStart);
+  });
+
+  it('sends terminal close_ack for server terminal close and keeps terminal exited as separate evidence', async () => {
+    await import('./index.js');
+    const socket = websocketInstances.at(-1);
+    if (!socket) {
+      throw new Error('websocket_instance_missing');
+    }
+
+    socket.emit('open');
+    const terminal = await startTerminalRun(socket, 'terminal_close_ack', {
+      runnerSessionId: 'runner_session_1',
+      generation: 4,
+    });
+
+    socket.emit('message', serverTerminalClose('terminal_close_ack', {
+      requestId: 'close_terminal',
+      runnerSessionId: 'runner_session_1',
+      closeAttemptId: 'close_terminal',
+      connectionEpoch: 11,
+      generation: 4,
+      reason: 'user_requested',
+    }));
+
+    expect(terminal.child.kill).toHaveBeenCalledWith('SIGTERM');
+    expect(readSentFrames(socket).some((frame) => frame.type === 'agent.terminal.close_ack')).toBe(false);
+
+    closeTerminalChild(terminal.child, terminal.exitListeners, 0, null);
+
+    await vi.waitFor(() => {
+      const sentFrames = readSentFrames(socket);
+      expect(sentFrames).toContainEqual(expect.objectContaining({
+        type: 'agent.terminal.exited',
+        terminal_session_id: 'terminal_close_ack',
+        payload: expect.objectContaining({
+          exit_code: 0,
+        }),
+      }));
+      expect(sentFrames).toContainEqual(expect.objectContaining({
+        type: 'agent.terminal.close_ack',
+        request_id: 'close_terminal',
+        terminal_session_id: 'terminal_close_ack',
+        runner_session_id: 'runner_session_1',
+        payload: expect.objectContaining({
+          close_attempt_id: 'close_terminal',
+          connection_epoch: 11,
+          generation: 4,
+          status: 'closed',
+          terminal_session_id: 'terminal_close_ack',
+          runner_session_id: 'runner_session_1',
+          exit_code: 0,
+          signal: null,
+        }),
+      }));
+    });
+  });
+
+  it.each([
+    {
+      name: 'zero generation',
+      closeOptions: { generation: 0 },
+      diagnosticCode: 'non_positive_generation',
+      expectedGeneration: 0,
+      expectedConnectionEpoch: 11,
+    },
+    {
+      name: 'missing generation',
+      closeOptions: { includeGeneration: false },
+      diagnosticCode: 'missing_runtime_identity',
+      expectedGeneration: null,
+      expectedConnectionEpoch: 11,
+    },
+    {
+      name: 'zero connection epoch',
+      closeOptions: { connectionEpoch: 0 },
+      diagnosticCode: 'non_positive_connection_epoch',
+      expectedGeneration: 6,
+      expectedConnectionEpoch: 0,
+    },
+    {
+      name: 'missing connection epoch',
+      closeOptions: { includeConnectionEpoch: false },
+      diagnosticCode: 'missing_runtime_identity',
+      expectedGeneration: 6,
+      expectedConnectionEpoch: null,
+    },
+    {
+      name: 'missing runner session',
+      closeOptions: { includeRunnerSessionId: false },
+      diagnosticCode: 'missing_runtime_identity',
+      expectedGeneration: 6,
+      expectedConnectionEpoch: 11,
+    },
+  ])('rejects terminal close with $name without fabricating a matching fence', async ({
+    closeOptions,
+    diagnosticCode,
+    expectedConnectionEpoch,
+    expectedGeneration,
+  }) => {
+    await import('./index.js');
+    const socket = websocketInstances.at(-1);
+    if (!socket) {
+      throw new Error('websocket_instance_missing');
+    }
+
+    socket.emit('open');
+    const terminal = await startTerminalRun(socket, 'terminal_invalid_close_fence', {
+      runnerSessionId: 'runner_session_1',
+      generation: 6,
+    });
+
+    socket.emit('message', serverTerminalClose('terminal_invalid_close_fence', {
+      requestId: `close_invalid_${diagnosticCode}`,
+      runnerSessionId: 'runner_session_1',
+      closeAttemptId: `close_invalid_${diagnosticCode}`,
+      connectionEpoch: 11,
+      generation: 6,
+      ...closeOptions,
+    }));
+
+    await vi.waitFor(() => {
+      expect(readSentFrames(socket)).toContainEqual(expect.objectContaining({
+        type: 'agent.terminal.close_ack',
+        request_id: `close_invalid_${diagnosticCode}`,
+        terminal_session_id: 'terminal_invalid_close_fence',
+        payload: expect.objectContaining({
+          status: 'error',
+          diagnostic_code: diagnosticCode,
+          generation: expectedGeneration,
+          connection_epoch: expectedConnectionEpoch,
+          remaining_pid_count: 1,
+        }),
+      }));
+    });
+    expect(terminal.child.kill).not.toHaveBeenCalled();
+    expect(terminateTerminalProcessTreeMock).not.toHaveBeenCalled();
+  });
+
+  it('logs correlatable observability fields before sending terminal close_ack', async () => {
+    process.env.MBOS_AGENT_RUNNER_DEBUG = '1';
+    const stdoutWriteSpy = vi.spyOn(process.stdout, 'write');
+    try {
+      await import('./index.js');
+      const socket = websocketInstances.at(-1);
+      if (!socket) {
+        throw new Error('websocket_instance_missing');
+      }
+
+      socket.emit('open');
+      const terminal = await startTerminalRun(socket, 'terminal_close_observability', {
+        runnerSessionId: 'runner_session_1',
+        generation: 7,
+      });
+      socket.emit('message', serverTerminalClose('terminal_close_observability', {
+        requestId: 'close_observability',
+        runnerSessionId: 'runner_session_1',
+        closeAttemptId: 'close_observability',
+        connectionEpoch: 15,
+        generation: 7,
+      }));
+      closeTerminalChild(terminal.child, terminal.exitListeners, 0, null);
+
+      await vi.waitFor(() => {
+        const output = stdoutWriteSpy.mock.calls.map(([chunk]) => String(chunk)).join('');
+        expect(output).toContain('terminal close ack send');
+        expect(output).toContain('"terminal_session_id":"terminal_close_observability"');
+        expect(output).toContain('"runner_session_id":"runner_session_1"');
+        expect(output).toContain('"request_id":"close_observability"');
+        expect(output).toContain('"close_attempt_id":"close_observability"');
+        expect(output).toContain('"generation":7');
+        expect(output).toContain('"connection_epoch":15');
+        expect(output).toContain('"status":"closed"');
+        expect(output).toContain('"remaining_pid_count":0');
+        expect(output).toContain('"diagnostic_code":null');
+      });
+    } finally {
+      stdoutWriteSpy.mockRestore();
+    }
+  });
+
+  it('maps process tree not_found to close_ack not_found with diagnostic evidence', async () => {
+    terminateTerminalProcessTreeMock.mockResolvedValueOnce({
+      outcome: 'not_found',
+      rootPid: 12_345,
+      ptyPid: 12_345,
+      pgid: 12_345,
+      sid: 12_345,
+      terminatedPids: [],
+      remainingPids: [],
+      signalSequence: [],
+      durationMs: 3,
+      diagnosticCode: 'terminal_root_pid_not_found',
+      diagnostics: ['terminal_root_pid_not_found'],
+    });
+
+    await import('./index.js');
+    const socket = websocketInstances.at(-1);
+    if (!socket) {
+      throw new Error('websocket_instance_missing');
+    }
+
+    socket.emit('open');
+    await startTerminalRun(socket, 'terminal_close_not_found', {
+      runnerSessionId: 'runner_session_1',
+      generation: 8,
+    });
+
+    socket.emit('message', serverTerminalClose('terminal_close_not_found', {
+      requestId: 'close_not_found',
+      runnerSessionId: 'runner_session_1',
+      closeAttemptId: 'close_not_found',
+      connectionEpoch: 16,
+      generation: 8,
+    }));
+
+    await vi.waitFor(() => {
+      expect(readSentFrames(socket)).toContainEqual(expect.objectContaining({
+        type: 'agent.terminal.close_ack',
+        request_id: 'close_not_found',
+        terminal_session_id: 'terminal_close_not_found',
+        payload: expect.objectContaining({
+          status: 'not_found',
+          diagnostic_code: 'terminal_root_pid_not_found',
+          remaining_pid_count: 0,
+        }),
+      }));
+    });
+  });
+
+  it('sends terminal close_ack error with diagnostic evidence when process tree termination fails', async () => {
+    terminateTerminalProcessTreeMock.mockResolvedValueOnce({
+      outcome: 'failed',
+      rootPid: 12_345,
+      ptyPid: 12_345,
+      pgid: 12_345,
+      sid: 12_345,
+      terminatedPids: [],
+      remainingPids: [12_345, 12_346],
+      signalSequence: ['pty:SIGTERM', 'pty:SIGKILL'],
+      durationMs: 2_000,
+      diagnosticCode: 'terminal_process_tree_remaining',
+      diagnostics: ['descendant_still_alive'],
+    });
+
+    await import('./index.js');
+    const socket = websocketInstances.at(-1);
+    if (!socket) {
+      throw new Error('websocket_instance_missing');
+    }
+
+    socket.emit('open');
+    await startTerminalRun(socket, 'terminal_close_failure', {
+      runnerSessionId: 'runner_session_1',
+      generation: 5,
+    });
+
+    socket.emit('message', serverTerminalClose('terminal_close_failure', {
+      requestId: 'close_failure',
+      runnerSessionId: 'runner_session_1',
+      closeAttemptId: 'close_failure',
+      connectionEpoch: 12,
+      generation: 5,
+    }));
+
+    await vi.waitFor(() => {
+      expect(readSentFrames(socket)).toContainEqual(expect.objectContaining({
+        type: 'agent.terminal.close_ack',
+        request_id: 'close_failure',
+        terminal_session_id: 'terminal_close_failure',
+        payload: expect.objectContaining({
+          status: 'error',
+          diagnostic_code: 'terminal_process_tree_remaining',
+          remaining_pid_count: 2,
+          remaining_pids: [12_345, 12_346],
+        }),
+      }));
+    });
+  });
+
+  it('closes only the requested terminal process tree without touching another terminal or task run', async () => {
+    await import('./index.js');
+    const socket = websocketInstances.at(-1);
+    if (!socket) {
+      throw new Error('websocket_instance_missing');
+    }
+
+    socket.emit('open');
+    const codexChild = await startCodexRun(socket, 'req_close_isolation');
+    const terminalA = await startTerminalRun(socket, 'terminal_close_a', {
+      runnerSessionId: 'runner_session_1',
+      generation: 1,
+    });
+    const terminalB = await startTerminalRun(socket, 'terminal_close_b', {
+      runnerSessionId: 'runner_session_1',
+      generation: 1,
+    });
+
+    socket.emit('message', serverTerminalClose('terminal_close_a', {
+      requestId: 'close_a',
+      runnerSessionId: 'runner_session_1',
+      closeAttemptId: 'close_a',
+      connectionEpoch: 13,
+      generation: 1,
+    }));
+
+    expect(terminalA.child.kill).toHaveBeenCalledWith('SIGTERM');
+    expect(terminalB.child.kill).not.toHaveBeenCalled();
+    expect(codexChild.kill).not.toHaveBeenCalled();
+
+    closeTerminalChild(terminalA.child, terminalA.exitListeners, 0, null);
+
+    await vi.waitFor(() => {
+      const sentFrames = readSentFrames(socket);
+      expect(sentFrames).toContainEqual(expect.objectContaining({
+        type: 'agent.terminal.close_ack',
+        request_id: 'close_a',
+        terminal_session_id: 'terminal_close_a',
+        payload: expect.objectContaining({
+          status: 'closed',
+        }),
+      }));
+      expect(sentFrames.some((frame) => (
+        frame.type === 'agent.terminal.close_ack'
+        && frame.terminal_session_id === 'terminal_close_b'
+      ))).toBe(false);
+    });
+
+    closeCodexChild(codexChild, 0);
+    closeTerminalChild(terminalB.child, terminalB.exitListeners, 0, null);
   });
 
   it('emits a terminal error frame immediately when terminal startup rejects', async () => {

@@ -51,6 +51,9 @@ describe('Agent Task terminal workspace multi-session story', () => {
     expect(story.steps.find((step) => step.stepId === 'create-second-terminal-session')?.target).toBe(
       'agent-tasks__task-terminal-create',
     );
+    expect(story.steps.find((step) => step.stepId === 'open-terminal-workspace')?.target).toBe(
+      'agent-tasks__task-terminal-workspace',
+    );
     expect(story.steps.find((step) => step.stepId === 'create-third-terminal-session')?.target).toBe(
       'agent-tasks__task-terminal-create',
     );

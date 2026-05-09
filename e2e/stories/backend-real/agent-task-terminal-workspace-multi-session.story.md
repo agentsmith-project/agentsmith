@@ -41,6 +41,7 @@
       "stableMarkers": [
         "agent-task__task-header",
         "agent-task__task-header-mode-terminal",
+        "agent-tasks__conversation-blocked-state",
         "agent-tasks__task-terminal-workspace",
         "agent-tasks__task-terminal-status-strip"
       ]
@@ -51,10 +52,10 @@
       "stepId": "return-to-agent-task",
       "sceneId": "agent-task",
       "intent": "Return to the existing Agent Task that still needs follow-up work.",
-      "action": "Return to Agent Task",
-      "target": "agent-task__task-header",
-      "expectedFeedback": "用户回到已有 Agent Task，并且仍然处在可继续工作的主工作面。",
-      "note": "multi-session terminal 的故事仍然要从真实任务面开始，而不是从技术状态页开始。",
+      "action": "Return to Agent Task with a live terminal session",
+      "target": "agent-tasks__conversation-blocked-state",
+      "expectedFeedback": "用户回到已有 Agent Task 时，Conversation 主工作面明确显示 1 条 terminal session 仍在占用任务，并提供打开 Terminal workspace 的入口。",
+      "note": "multi-session terminal 的故事从真实任务面开始，同时必须先讲清 live terminal blocker。",
       "evidence": [
         "trace"
       ]
@@ -64,7 +65,7 @@
       "sceneId": "agent-task",
       "intent": "Open the terminal workspace from the task header when the user needs to work directly in the task environment.",
       "action": "Open terminal workspace",
-      "target": "agent-task__task-header-terminal-create",
+      "target": "agent-tasks__task-terminal-workspace",
       "expectedFeedback": "用户能够从 Agent Task 直接进入 Terminal workspace，而不是离开任务另找工具。",
       "note": "terminal 是 task 内的工作模式，不是脱离 task 的旁路工具。",
       "evidence": [

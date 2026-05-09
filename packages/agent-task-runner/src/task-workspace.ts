@@ -50,6 +50,9 @@ type FileLibraryWorkspaceExecutionContext = {
 type TaskWorkspaceAccessPayload = {
   task_id: string;
   workspace_binding_mode: 'file_library';
+  task_home_path?: unknown;
+  workspace_path?: unknown;
+  artifacts_path?: unknown;
   workspace_dir_name: string;
   file_library_id: string;
   file_library_name: string;
@@ -1135,6 +1138,42 @@ export function buildTaskWorkspacePaths(input: {
   };
 }
 
+function assertWorkspaceAccessPathEchoMatches(input: {
+  workspaceAccess: TaskWorkspaceAccessPayload;
+  paths: TaskWorkspacePaths;
+}): void {
+  const checks = [
+    {
+      field: 'task_home_path',
+      raw: input.workspaceAccess.task_home_path,
+      expected: input.paths.taskHome,
+    },
+    {
+      field: 'workspace_path',
+      raw: input.workspaceAccess.workspace_path,
+      expected: input.paths.workspaceDir,
+    },
+    {
+      field: 'artifacts_path',
+      raw: input.workspaceAccess.artifacts_path,
+      expected: input.paths.artifactsDir,
+    },
+  ] as const;
+
+  for (const check of checks) {
+    if (check.raw === undefined) {
+      continue;
+    }
+    if (typeof check.raw !== 'string') {
+      throw new Error(`task_workspace_access_path_invalid:${check.field}`);
+    }
+    const echoed = normalizeTaskWorkspacePath(check.raw, `workspace_access.${check.field}`);
+    if (echoed !== check.expected) {
+      throw new Error(`task_workspace_access_path_mismatch:${check.field}`);
+    }
+  }
+}
+
 export function resolveTaskCwd(input: {
   taskId: string;
   taskHomePath?: string;
@@ -1784,6 +1823,7 @@ export async function prepareTaskWorkspace(input: {
 
   if (input.executionContext.workspace_binding_mode === 'file_library') {
     const workspaceAccess = await fetchTaskWorkspaceAccess(input.executionContext);
+    assertWorkspaceAccessPathEchoMatches({ workspaceAccess, paths });
     const mountPath = paths.taskHome;
     let priorLeaseRevisionFloor = 0;
     const maxAttempts = Number.parseInt(process.env.MBOS_AGENT_JUICEFS_MOUNT_RETRY_COUNT ?? '', 10)

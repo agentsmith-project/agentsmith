@@ -848,8 +848,10 @@ describe('notebook-execution-orchestrator governance preflight', () => {
   it('uses agent-presence scope for configless dev-direct external notebook agents', async () => {
     const previousInternalApiBase = process.env.INTERNAL_API_BASE_URL;
     const previousExternalApiBase = process.env.AGENT_RUNNER_DEVELOPER_EXECUTION_HTTP_BASE_URL;
+    const previousDeveloperWorkspaceRoot = process.env.MBOS_AGENT_TASK_DEVELOPER_WORKSPACE_ROOT;
     process.env.INTERNAL_API_BASE_URL = 'http://api:20000';
     process.env.AGENT_RUNNER_DEVELOPER_EXECUTION_HTTP_BASE_URL = 'http://localhost:21000';
+    process.env.MBOS_AGENT_TASK_DEVELOPER_WORKSPACE_ROOT = '/tmp/agentsmith-dev-workspaces';
 
     const dispatchStreamingRequest = vi.fn(async () => ({
       requestId: 'req_external_dev_direct',
@@ -960,6 +962,8 @@ describe('notebook-execution-orchestrator governance preflight', () => {
       else process.env.INTERNAL_API_BASE_URL = previousInternalApiBase;
       if (previousExternalApiBase === undefined) delete process.env.AGENT_RUNNER_DEVELOPER_EXECUTION_HTTP_BASE_URL;
       else process.env.AGENT_RUNNER_DEVELOPER_EXECUTION_HTTP_BASE_URL = previousExternalApiBase;
+      if (previousDeveloperWorkspaceRoot === undefined) delete process.env.MBOS_AGENT_TASK_DEVELOPER_WORKSPACE_ROOT;
+      else process.env.MBOS_AGENT_TASK_DEVELOPER_WORKSPACE_ROOT = previousDeveloperWorkspaceRoot;
     }
 
     expect(dispatchStreamingRequest).toHaveBeenCalledWith(
@@ -970,6 +974,11 @@ describe('notebook-execution-orchestrator governance preflight', () => {
           runner_id: 'agent_external_dev_direct',
           runner_session_scope: 'agent_presence',
           workspace_binding_mode: 'file_library',
+          runtime_profile: 'developer',
+          task_home_segment: 'task_external_dev_direct',
+          task_home_path: '/tmp/agentsmith-dev-workspaces/task_external_dev_direct',
+          workspace_path: '/tmp/agentsmith-dev-workspaces/task_external_dev_direct/workspace',
+          artifacts_path: '/tmp/agentsmith-dev-workspaces/task_external_dev_direct/workspace/.artifacts',
           workspace_file_library_id: 'flib_external',
         }),
       }),

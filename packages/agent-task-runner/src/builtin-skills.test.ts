@@ -1,5 +1,6 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { existsSync, mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import * as fsPromises from 'node:fs/promises';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { inspectBuiltinSkills, resolveBuiltinSkillsConfig, seedBuiltinSkills } from './builtin-skills.js';
@@ -298,6 +299,73 @@ describe('builtin-skills', () => {
         'RUNTIME = True',
       );
     } finally {
+      rmSync(sourceRoot, { recursive: true, force: true });
+      rmSync(targetRoot, { recursive: true, force: true });
+      rmSync(manifestRoot, { recursive: true, force: true });
+    }
+  });
+
+  it('retries when the builtin-skill lock parent is briefly unavailable', async () => {
+    const sourceRoot = mkdtempSync(join(tmpdir(), 'runner-skills-src-'));
+    const targetRoot = mkdtempSync(join(tmpdir(), 'runner-skills-target-'));
+    const manifestRoot = mkdtempSync(join(tmpdir(), 'runner-skills-manifest-'));
+    const lockDir = join(manifestRoot, '.builtin-skills-seed.lock');
+    let lockEnoentFailures = 0;
+    const lockMkdirOptions: unknown[] = [];
+
+    vi.resetModules();
+    vi.doMock('node:fs/promises', () => {
+      type Mkdir = typeof fsPromises.mkdir;
+      const mkdirMock: Mkdir = (async (
+        path: Parameters<Mkdir>[0],
+        options?: Parameters<Mkdir>[1],
+      ) => {
+        if (String(path) === lockDir) {
+          lockMkdirOptions.push(options);
+          if (lockEnoentFailures === 0) {
+            lockEnoentFailures += 1;
+            const error = new Error('transient manifest parent not visible') as NodeJS.ErrnoException;
+            error.code = 'ENOENT';
+            throw error;
+          }
+        }
+        return fsPromises.mkdir(path, options);
+      }) as Mkdir;
+      const mocked = {
+        ...fsPromises,
+        mkdir: mkdirMock,
+      };
+      return {
+        ...mocked,
+        default: mocked,
+      };
+    });
+
+    try {
+      mkdirSync(join(sourceRoot, 'feishu-docs', 'scripts'), { recursive: true });
+      writeFileSync(join(sourceRoot, 'feishu-docs', 'SKILL.md'), 'feishu');
+      writeFileSync(
+        join(sourceRoot, 'feishu-docs', 'capabilities.json'),
+        JSON.stringify({ version: 1, skill_name: 'feishu-docs', dependencies: [] }),
+      );
+      writeFileSync(join(sourceRoot, 'feishu-docs', 'scripts', 'feishu_mcp.py'), 'print("feishu")\n');
+
+      const { seedBuiltinSkills: seedBuiltinSkillsWithMockedFs } = await import('./builtin-skills.js');
+      const result = await seedBuiltinSkillsWithMockedFs({
+        sourceDir: sourceRoot,
+        skills: ['feishu-docs'],
+        targetDir: targetRoot,
+        manifestDir: manifestRoot,
+      });
+
+      expect(result.seeded).toEqual(['feishu-docs']);
+      expect(readFileSync(join(targetRoot, 'feishu-docs', 'SKILL.md'), 'utf8')).toBe('feishu');
+      expect(lockEnoentFailures).toBe(1);
+      expect(lockMkdirOptions).toEqual([undefined, undefined]);
+      expect(existsSync(lockDir)).toBe(false);
+    } finally {
+      vi.doUnmock('node:fs/promises');
+      vi.resetModules();
       rmSync(sourceRoot, { recursive: true, force: true });
       rmSync(targetRoot, { recursive: true, force: true });
       rmSync(manifestRoot, { recursive: true, force: true });

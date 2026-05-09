@@ -35,8 +35,11 @@ export interface AgentStreamEvent {
 }
 
 export interface AgentTerminalEvent {
-  type: 'started' | 'output' | 'exited' | 'error';
+  type: 'started' | 'output' | 'exited' | 'error' | 'detached';
   terminal_session_id: string;
+  runner_session_id?: string;
+  generation?: number;
+  connection_epoch?: number;
   cols?: number;
   rows?: number;
   chunk?: string;
@@ -44,7 +47,79 @@ export interface AgentTerminalEvent {
   signal?: string | null;
   error_code?: string;
   error_message?: string;
+  reason?: RunnerDetachedReason;
 }
+
+export type RunnerDetachedReason =
+  | 'agent_disconnected'
+  | 'heartbeat_lost'
+  | 'agent_stale_connection'
+  | 'server_shutdown';
+
+export type RunnerActiveTerminalDescriptor = {
+  terminal_session_id: string;
+  runner_session_id: string;
+  generation: number;
+  cols: number;
+  rows: number;
+  cwd?: string;
+};
+
+type RunnerReadyRecoveryMetadata = {
+  runnerInstanceId: string;
+  connectionEpoch: number;
+};
+
+export type TerminalRecoveryCoordinator = {
+  handleRunnerDetached?: (event: {
+    workspaceId: string;
+    projectId: string;
+    agentId: string;
+    runnerSessionId: string | null;
+    connectionId: string;
+    reason: RunnerDetachedReason;
+    terminalSessionIds: string[];
+    terminalProcessesTerminated?: boolean;
+  }) => Promise<void> | void;
+  handleRunnerReady?: (event: {
+    workspaceId: string;
+    projectId: string;
+    agentId: string;
+    runnerSessionId: string | null;
+    runnerInstanceId: string | null;
+    connectionId: string;
+    connectionEpoch: number;
+    activeTerminals: RunnerActiveTerminalDescriptor[];
+  }) => Promise<void> | void;
+  handleTerminalCloseAck?: (event: {
+    workspaceId: string;
+    projectId: string;
+    agentId: string;
+    runnerSessionId: string;
+    terminalSessionId: string;
+    requestId: string;
+    closeAttemptId: string;
+    generation: number;
+    connectionEpoch: number;
+    status: 'closed' | 'not_found' | 'error';
+    diagnosticCode?: string;
+    remainingPidCount?: number;
+  }) => Promise<void> | void;
+};
+
+export type AdoptTerminalSessionInput = {
+  workspaceId: string;
+  projectId: string;
+  sessionId: string;
+  agentId: string;
+  terminalSessionId: string;
+  adoptAttemptId: string;
+  connectionEpoch: number;
+  generation: number;
+  cols: number;
+  rows: number;
+  executionContext?: Record<string, unknown>;
+};
 
 export interface AgentExecutionTraceEventPayload {
   sequence: number;
@@ -88,8 +163,12 @@ interface PendingTerminal {
   fail: (error: Error) => void;
   runnerSessionId: string;
   controlScope: DispatchScope;
+  lifecycle: 'start' | 'adopt';
   readyForInput?: boolean;
   pendingInput?: string;
+  adoptAttemptId?: string;
+  connectionEpoch?: number;
+  generation?: number;
   firstEventTimer?: NodeJS.Timeout;
   idleTimer?: NodeJS.Timeout;
   maxRuntimeTimer?: NodeJS.Timeout;
@@ -115,6 +194,7 @@ interface AgentSocketState {
   lastPingAt?: string;
   lastPongAt: string;
   missedPongs: number;
+  connectionEpoch?: number;
   lifecyclePhase: AgentSocketLifecyclePhase;
   presenceRegistered: boolean;
   releasePromise?: Promise<void>;
@@ -309,6 +389,24 @@ function readNonEmptyString(input: unknown): string | null {
   return trimmed ? trimmed : null;
 }
 
+function readNonNegativeInteger(input: unknown): number | null {
+  if (typeof input !== 'number' || !Number.isSafeInteger(input) || input < 0) {
+    return null;
+  }
+  return input;
+}
+
+function readPositiveInteger(input: unknown, minimum: number): number | null {
+  if (typeof input !== 'number' || !Number.isSafeInteger(input) || input < minimum) {
+    return null;
+  }
+  return input;
+}
+
+function isPositiveSafeInteger(input: unknown): input is number {
+  return typeof input === 'number' && Number.isSafeInteger(input) && input > 0;
+}
+
 function resolveStreamingDispatchScope(executionContext?: Record<string, unknown>): DispatchScope {
   return executionContext?.runner_session_scope === 'agent_presence'
     ? 'session_preferred_agent_fallback'
@@ -395,8 +493,10 @@ export class AgentExecutionService {
   private readonly socketsByKey = new Map<string, AgentSocketState>();
   private readonly socketsByWebSocket = new Map<WebSocket, AgentSocketState>();
   private readonly backgroundTasks = new Set<Promise<unknown>>();
+  private readonly runnerDetachChainsBySocketKey = new Map<string, Promise<void>>();
   private readonly apiInstanceId = randomUUID();
   private readonly options: ResolvedAgentExecutionServiceOptions;
+  private terminalRecoveryCoordinator: TerminalRecoveryCoordinator = {};
   private shuttingDown = false;
 
   constructor(
@@ -427,6 +527,10 @@ export class AgentExecutionService {
       ws.on('close', () => this.handleSocketClose(ws));
       ws.on('error', () => this.handleSocketClose(ws));
     });
+  }
+
+  registerTerminalRecoveryCoordinator(coordinator: TerminalRecoveryCoordinator): void {
+    this.terminalRecoveryCoordinator = coordinator;
   }
 
   handleUpgrade(req: http.IncomingMessage, socket: Duplex, head: Buffer): void {
@@ -972,6 +1076,7 @@ export class AgentExecutionService {
     scope: DispatchScope;
     terminalSessionId: string;
     type: 'server.terminal.stdin' | 'server.terminal.resize' | 'server.terminal.close';
+    requestId?: string;
     payload: Record<string, unknown>;
   }): void {
     const task = this.resolveDispatchSocket({
@@ -987,6 +1092,7 @@ export class AgentExecutionService {
       }
       const sent = this.trySendSocketFrame(input.socket, {
         type: input.type,
+        ...(input.requestId ? { request_id: input.requestId } : {}),
         runner_session_id: input.sessionId,
         terminal_session_id: input.terminalSessionId,
         timestamp: new Date().toISOString(),
@@ -1202,6 +1308,7 @@ export class AgentExecutionService {
       closeReason: string;
       skipCloseFrame?: boolean;
       skipPresenceUpdate?: boolean;
+      terminalProcessesTerminated?: boolean;
     },
   ): void {
     if (socket.lifecyclePhase === 'closed' || socket.lifecyclePhase === 'closing') return;
@@ -1218,17 +1325,24 @@ export class AgentExecutionService {
       });
       pending.close();
     }
+    const detachedTerminalSessionIds: string[] = [];
+    const detachReason = this.mapReleaseReasonToTerminalDetach(options);
     for (const [terminalSessionId, pending] of socket.terminalBySessionId.entries()) {
       socket.terminalBySessionId.delete(terminalSessionId);
       this.clearTerminalTimers(pending);
+      detachedTerminalSessionIds.push(terminalSessionId);
       pending.push({
-        type: 'error',
+        type: 'detached',
         terminal_session_id: terminalSessionId,
-        error_code: options.errorCode,
-        error_message: options.errorMessage,
+        reason: detachReason,
       });
       pending.close();
     }
+    this.enqueueRunnerDetachedCallback(socket, {
+      reason: detachReason,
+      terminalSessionIds: detachedTerminalSessionIds,
+      terminalProcessesTerminated: options.terminalProcessesTerminated ?? detachReason === 'server_shutdown',
+    });
     if (this.socketsByKey.get(socket.socketKey) === socket) {
       this.socketsByKey.delete(socket.socketKey);
     }
@@ -1293,6 +1407,68 @@ export class AgentExecutionService {
       return false;
     }
     return this.trySendSocketFrame(authoritative, input.frame, 'agent_dispatch_send_failed');
+  }
+
+  private mapReleaseReasonToTerminalDetach(options: {
+    errorMessage: string;
+    closeReason: string;
+  }): RunnerDetachedReason {
+    if (options.closeReason === 'server_shutdown' || options.errorMessage === 'agent_service_shutdown') {
+      return 'server_shutdown';
+    }
+    if (
+      options.closeReason === 'agent_stale_connection'
+      || options.errorMessage === 'agent_stale_connection'
+      || options.errorMessage === 'agent_connection_authority_failed'
+    ) {
+      return 'agent_stale_connection';
+    }
+    if (options.errorMessage === 'agent_heartbeat_timeout') {
+      return 'heartbeat_lost';
+    }
+    return 'agent_disconnected';
+  }
+
+  private enqueueRunnerDetachedCallback(
+    socket: AgentSocketState,
+    event: {
+      reason: RunnerDetachedReason;
+      terminalSessionIds: string[];
+      terminalProcessesTerminated?: boolean;
+    },
+  ): void {
+    const handleRunnerDetached = this.terminalRecoveryCoordinator.handleRunnerDetached;
+    if (!handleRunnerDetached || event.terminalSessionIds.length === 0) {
+      return;
+    }
+    const previous = this.runnerDetachChainsBySocketKey.get(socket.socketKey) ?? Promise.resolve();
+    const task = previous
+      .catch(() => undefined)
+      .then(() => handleRunnerDetached({
+        workspaceId: socket.workspaceId,
+        projectId: socket.projectId,
+        agentId: socket.agentId,
+        runnerSessionId: socket.sessionId ?? null,
+        connectionId: socket.connectionId,
+        reason: event.reason,
+        terminalSessionIds: event.terminalSessionIds,
+        ...(event.terminalProcessesTerminated !== undefined
+          ? { terminalProcessesTerminated: event.terminalProcessesTerminated }
+          : {}),
+      }))
+      .then(() => undefined);
+    const tracked = this.trackBackgroundTask(task.finally(() => {
+      if (this.runnerDetachChainsBySocketKey.get(socket.socketKey) === tracked) {
+        this.runnerDetachChainsBySocketKey.delete(socket.socketKey);
+      }
+    }));
+    this.runnerDetachChainsBySocketKey.set(socket.socketKey, tracked);
+  }
+
+  private async waitForRunnerDetachedCallbacks(socket: AgentSocketState): Promise<void> {
+    const pending = this.runnerDetachChainsBySocketKey.get(socket.socketKey);
+    if (!pending) return;
+    await pending.catch(() => undefined);
   }
 
   async dispatchStreamingRequest(input: {
@@ -1451,6 +1627,7 @@ export class AgentExecutionService {
       fail: queue.fail,
       runnerSessionId: input.sessionId,
       controlScope: dispatchScope,
+      lifecycle: 'start',
     };
     socket.terminalBySessionId.set(input.terminalSessionId, pending);
     this.armTerminalTimeouts(socket, input.terminalSessionId, pending);
@@ -1506,13 +1683,138 @@ export class AgentExecutionService {
         });
       },
       close: () => {
+        if (!isPositiveSafeInteger(pending.generation) || !isPositiveSafeInteger(pending.connectionEpoch)) {
+          debugExecution(
+            `terminal_close_rejected reason=missing_positive_identity terminal_session=${input.terminalSessionId}`,
+          );
+          return;
+        }
+        const closeAttemptId = `close_${randomUUID().replace(/-/g, '')}`;
         this.queueTerminalControlFrame({
           socket,
           sessionId: input.sessionId,
           scope: dispatchScope,
           terminalSessionId: input.terminalSessionId,
           type: 'server.terminal.close',
-          payload: {},
+          requestId: `close_req_${randomUUID().replace(/-/g, '')}`,
+          payload: {
+            close_attempt_id: closeAttemptId,
+            generation: pending.generation,
+            connection_epoch: pending.connectionEpoch,
+            reason: 'shutdown',
+          },
+        });
+      },
+    };
+  }
+
+  async adoptTerminalSession(input: AdoptTerminalSessionInput): Promise<{
+    stream: AsyncIterable<AgentTerminalEvent>;
+    writeInput: (data: string) => void;
+    resize: (cols: number, rows: number) => void;
+    close: () => void;
+  }> {
+    if (this.shuttingDown) {
+      throw new Error('agent_execution_service_shutdown');
+    }
+    const dispatchScope = input.executionContext
+      ? resolveStreamingDispatchScope(input.executionContext)
+      : 'session_strict';
+    const socket = await this.resolveDispatchSocket({
+      agentId: input.agentId,
+      sessionId: input.sessionId,
+      scope: dispatchScope,
+    });
+    if (!socket) {
+      throw new Error('agent_offline');
+    }
+    if (socket.workspaceId !== input.workspaceId || socket.projectId !== input.projectId) {
+      throw new Error('agent_workspace_mismatch');
+    }
+    if (socket.terminalBySessionId.has(input.terminalSessionId)) {
+      throw new Error('terminal_session_already_exists');
+    }
+
+    const queue = createAsyncQueue<AgentTerminalEvent>();
+    const pending: PendingTerminal = {
+      push: queue.push,
+      close: queue.close,
+      fail: queue.fail,
+      runnerSessionId: input.sessionId,
+      controlScope: dispatchScope,
+      lifecycle: 'adopt',
+      adoptAttemptId: input.adoptAttemptId,
+      connectionEpoch: input.connectionEpoch,
+      generation: input.generation,
+    };
+    socket.terminalBySessionId.set(input.terminalSessionId, pending);
+    this.armTerminalTimeouts(socket, input.terminalSessionId, pending);
+
+    const sent = await this.sendDispatchFrameWithAuthorityFence({
+      socket,
+      sessionId: input.sessionId,
+      scope: dispatchScope,
+      frame: {
+        type: 'server.terminal.adopt',
+        request_id: input.adoptAttemptId,
+        runner_session_id: input.sessionId,
+        terminal_session_id: input.terminalSessionId,
+        timestamp: new Date().toISOString(),
+        payload: {
+          adopt_attempt_id: input.adoptAttemptId,
+          connection_epoch: input.connectionEpoch,
+          generation: input.generation,
+          cols: input.cols,
+          rows: input.rows,
+        },
+      },
+    });
+    if (!sent) {
+      this.failPendingTerminal(socket, input.terminalSessionId, 'AGENT_OFFLINE', 'agent_offline');
+      throw new Error('agent_offline');
+    }
+
+    return {
+      stream: queue.iterable,
+      writeInput: (data: string) => {
+        this.queueTerminalInputFrame({
+          socket,
+          pendingTerminal: pending,
+          terminalSessionId: input.terminalSessionId,
+          data,
+        });
+      },
+      resize: (cols: number, rows: number) => {
+        this.queueTerminalControlFrame({
+          socket,
+          sessionId: input.sessionId,
+          scope: dispatchScope,
+          terminalSessionId: input.terminalSessionId,
+          type: 'server.terminal.resize',
+          payload: { cols, rows },
+        });
+      },
+      close: () => {
+        if (!isPositiveSafeInteger(pending.generation) || !isPositiveSafeInteger(pending.connectionEpoch)) {
+          debugExecution(
+            `terminal_close_rejected reason=missing_positive_identity terminal_session=${input.terminalSessionId}`,
+          );
+          return;
+        }
+        const closeAttemptId = `close_${randomUUID().replace(/-/g, '')}`;
+        this.queueTerminalControlFrame({
+          socket,
+          sessionId: input.sessionId,
+          scope: dispatchScope,
+          terminalSessionId: input.terminalSessionId,
+          type: 'server.terminal.close',
+          requestId: `close_req_${randomUUID().replace(/-/g, '')}`,
+          payload: {
+            close_attempt_id: closeAttemptId,
+            generation: pending.generation,
+            connection_epoch: pending.connectionEpoch,
+            reason: 'shutdown',
+          },
         });
       },
     };
@@ -1525,7 +1827,18 @@ export class AgentExecutionService {
     agentId: string;
     terminalSessionId: string;
     executionContext?: Record<string, unknown>;
-  }): Promise<'signaled' | 'agent_offline' | 'agent_workspace_mismatch'> {
+    closeRequestId?: string;
+    closeAttemptId: string;
+    generation: number;
+    connectionEpoch: number;
+    reason?: 'user_requested' | 'permission_revoked' | 'garbage_collect' | 'shutdown';
+  }): Promise<'signaled' | 'agent_offline' | 'agent_workspace_mismatch' | 'invalid_terminal_identity'> {
+    if (!isPositiveSafeInteger(input.generation) || !isPositiveSafeInteger(input.connectionEpoch)) {
+      debugExecution(
+        `terminal_close_rejected reason=invalid_positive_identity terminal_session=${input.terminalSessionId}`,
+      );
+      return 'invalid_terminal_identity';
+    }
     const dispatchScope = input.executionContext
       ? resolveStreamingDispatchScope(input.executionContext)
       : 'session_strict';
@@ -1541,16 +1854,23 @@ export class AgentExecutionService {
       return 'agent_workspace_mismatch';
     }
 
+    const closeRequestId = input.closeRequestId ?? `close_req_${randomUUID().replace(/-/g, '')}`;
     const sent = await this.sendDispatchFrameWithAuthorityFence({
       socket,
       sessionId: input.sessionId,
       scope: dispatchScope,
       frame: {
         type: 'server.terminal.close',
+        request_id: closeRequestId,
         runner_session_id: input.sessionId,
         terminal_session_id: input.terminalSessionId,
         timestamp: new Date().toISOString(),
-        payload: {},
+        payload: {
+          close_attempt_id: input.closeAttemptId,
+          generation: input.generation,
+          connection_epoch: input.connectionEpoch,
+          reason: input.reason ?? 'user_requested',
+        },
       },
     });
     if (!sent) {
@@ -1643,9 +1963,22 @@ export class AgentExecutionService {
       }
 
       const incoming = isPlainObject(payload) ? payload : {};
+      const activeTerminals = this.parseActiveTerminalDescriptors(incoming.active_terminals);
+      const recoveryMetadata = this.parseRunnerReadyRecoveryMetadata(
+        incoming,
+        Object.prototype.hasOwnProperty.call(incoming, 'active_terminals'),
+      );
+      const connectionEpoch = readPositiveInteger(incoming.connection_epoch, 1);
+      if (connectionEpoch !== null) {
+        socket.connectionEpoch = connectionEpoch;
+      }
       const metadata = Object.fromEntries(
         Object.entries(incoming).filter(([key]) => key !== 'runner_spec'),
       );
+      if (!(await this.recheckReadyAuthority(socket))) {
+        return;
+      }
+      await this.waitForRunnerDetachedCallbacks(socket);
       if (!(await this.recheckReadyAuthority(socket))) {
         return;
       }
@@ -1662,6 +1995,18 @@ export class AgentExecutionService {
           },
         },
       );
+      if (recoveryMetadata && this.terminalRecoveryCoordinator.handleRunnerReady) {
+        await this.terminalRecoveryCoordinator.handleRunnerReady({
+          workspaceId: socket.workspaceId,
+          projectId: socket.projectId,
+          agentId: socket.agentId,
+          runnerSessionId: socket.sessionId ?? null,
+          runnerInstanceId: recoveryMetadata.runnerInstanceId,
+          connectionId: socket.connectionId,
+          connectionEpoch: recoveryMetadata.connectionEpoch,
+          activeTerminals,
+        });
+      }
     } catch (error) {
       debugExecution(
         `agent.ready validation failed agent_id=${socket.agentId} connection_id=${socket.connectionId} error=${error instanceof Error ? error.message : String(error)}`,
@@ -1673,6 +2018,60 @@ export class AgentExecutionService {
         closeReason: 'agent_ready_validation_failed',
       });
     }
+  }
+
+  private parseRunnerReadyRecoveryMetadata(
+    incoming: Record<string, unknown>,
+    hasActiveTerminalsField: boolean,
+  ): RunnerReadyRecoveryMetadata | null {
+    if (!hasActiveTerminalsField) {
+      return null;
+    }
+    const runnerInstanceId = readNonEmptyString(incoming.runner_instance_id);
+    const connectionEpoch = readPositiveInteger(incoming.connection_epoch, 1);
+    if (!runnerInstanceId || connectionEpoch === null) {
+      throw new Error('active_terminal_recovery_identity_missing');
+    }
+    return {
+      runnerInstanceId,
+      connectionEpoch,
+    };
+  }
+
+  private parseActiveTerminalDescriptors(input: unknown): RunnerActiveTerminalDescriptor[] {
+    if (input === undefined) return [];
+    if (!Array.isArray(input)) {
+      throw new Error('active_terminals_invalid');
+    }
+    if (input.length > 64) {
+      throw new Error('active_terminals_too_many');
+    }
+    const descriptors: RunnerActiveTerminalDescriptor[] = [];
+    for (const item of input) {
+      if (!isPlainObject(item)) {
+        debugExecution('agent_ready_active_terminal_descriptor_invalid reason=not_object');
+        continue;
+      }
+      const terminalSessionId = readNonEmptyString(item.terminal_session_id);
+      const runnerSessionId = readNonEmptyString(item.runner_session_id);
+      const generation = readPositiveInteger(item.generation, 1);
+      const cols = readPositiveInteger(item.cols, 20);
+      const rows = readPositiveInteger(item.rows, 5);
+      if (!terminalSessionId || !runnerSessionId || generation === null || cols === null || rows === null) {
+        debugExecution('agent_ready_active_terminal_descriptor_invalid reason=fields');
+        continue;
+      }
+      const cwd = readNonEmptyString(item.cwd);
+      descriptors.push({
+        terminal_session_id: terminalSessionId,
+        runner_session_id: runnerSessionId,
+        generation,
+        cols,
+        rows,
+        ...(cwd ? { cwd } : {}),
+      });
+    }
+    return descriptors;
   }
 
   private handleSocketClose(ws: WebSocket): void {
@@ -1723,6 +2122,17 @@ export class AgentExecutionService {
       return;
     }
 
+    if (payload.type === 'agent.shutdown') {
+      this.releaseSocketState(socket, {
+        errorCode: 'AGENT_SHUTDOWN',
+        errorMessage: 'agent_shutdown',
+        closeCode: 1000,
+        closeReason: 'agent_shutdown',
+        terminalProcessesTerminated: payload.payload?.terminal_processes_terminated === true,
+      });
+      return;
+    }
+
     const isTerminalMessage = typeof payload.type === 'string' && payload.type.startsWith('agent.terminal.');
     const legacyTerminalSessionId = isTerminalMessage
       ? readNonEmptyString((payload as { session_id?: unknown }).session_id)
@@ -1740,25 +2150,225 @@ export class AgentExecutionService {
 
     const terminalSessionId = readNonEmptyString((payload as { terminal_session_id?: unknown }).terminal_session_id);
     if (terminalSessionId) {
-      const pendingTerminal = socket.terminalBySessionId.get(terminalSessionId);
-      if (!pendingTerminal) return;
       const payloadTerminalSessionId = readNonEmptyString(payload.payload?.terminal_session_id);
+      const pendingTerminal = socket.terminalBySessionId.get(terminalSessionId);
       if (payloadTerminalSessionId && payloadTerminalSessionId !== terminalSessionId) {
-        this.failPendingTerminal(
-          socket,
-          terminalSessionId,
-          'AGENT_PROTOCOL_ERROR',
-          'agent_terminal_session_mismatch',
+        if (pendingTerminal) {
+          this.failPendingTerminal(
+            socket,
+            terminalSessionId,
+            'AGENT_PROTOCOL_ERROR',
+            'agent_terminal_session_mismatch',
+          );
+        }
+        return;
+      }
+
+      if (payload.type === 'agent.terminal.close_ack') {
+        const requestId = readNonEmptyString(payload.request_id);
+        const topLevelRunnerSessionId = readNonEmptyString(
+          (payload as { runner_session_id?: unknown }).runner_session_id,
         );
+        const payloadRunnerSessionId = readNonEmptyString(payload.payload?.runner_session_id);
+        const runnerSessionId = topLevelRunnerSessionId ?? '';
+        const closeAttemptId = readNonEmptyString(payload.payload?.close_attempt_id);
+        const generation = readPositiveInteger(payload.payload?.generation, 1);
+        const connectionEpoch = readPositiveInteger(payload.payload?.connection_epoch, 1);
+        const status = payload.payload?.status;
+        const receivedFence = {
+          request_id: requestId,
+          runner_session_id: runnerSessionId || null,
+          payload_runner_session_id: payloadRunnerSessionId,
+          terminal_session_id: terminalSessionId,
+          payload_terminal_session_id: payloadTerminalSessionId,
+          close_attempt_id: closeAttemptId,
+          generation,
+          connection_epoch: connectionEpoch,
+          status: typeof status === 'string' ? status : null,
+          connection_id: socket.connectionId,
+          socket_key: socket.socketKey,
+          lifecycle_phase: socket.lifecyclePhase,
+        };
+        if (
+          !requestId
+          || !runnerSessionId
+          || payloadRunnerSessionId !== runnerSessionId
+          || !closeAttemptId
+          || generation === null
+          || connectionEpoch === null
+          || (status !== 'closed' && status !== 'not_found' && status !== 'error')
+        ) {
+          const rejectReason = !requestId
+            ? 'missing_request_id'
+            : !runnerSessionId
+              ? 'missing_runner_session_id'
+              : payloadRunnerSessionId !== runnerSessionId
+                ? 'runner_session_mismatch'
+                : !closeAttemptId
+                  ? 'missing_close_attempt_id'
+                  : generation === null
+                    ? 'invalid_generation'
+                    : connectionEpoch === null
+                      ? 'invalid_connection_epoch'
+                      : 'invalid_status';
+          debugExecution(
+            `terminal_close_ack_rejected reason=${rejectReason} terminal_session=${terminalSessionId}`
+            + ` diagnostic=${JSON.stringify({
+              received: receivedFence,
+              expected: {
+                request_id: 'non_empty_string',
+                runner_session_id: (runnerSessionId || socket.sessionId) ?? null,
+                payload_runner_session_id: runnerSessionId || null,
+                terminal_session_id: terminalSessionId,
+                payload_terminal_session_id: terminalSessionId,
+                close_attempt_id: 'non_empty_string',
+                generation: 'positive_integer',
+                connection_epoch: 'positive_integer',
+                status: ['closed', 'not_found', 'error'],
+                lifecycle_phase: 'active',
+              },
+            })}`,
+          );
+          return;
+        }
+        if (this.terminalRecoveryCoordinator.handleTerminalCloseAck) {
+          const handleTerminalCloseAck = this.terminalRecoveryCoordinator.handleTerminalCloseAck;
+          const diagnosticCode = readNonEmptyString(payload.payload?.diagnostic_code);
+          const remainingPidCount = readNonNegativeInteger(payload.payload?.remaining_pid_count);
+          void this.trackBackgroundTask(Promise.resolve().then(async () => {
+            if (!(await this.recheckReadyAuthority(socket))) {
+              debugExecution(
+                `terminal_close_ack_rejected reason=stale_socket_authority terminal_session=${terminalSessionId}`
+                + ` diagnostic=${JSON.stringify({
+                  received: receivedFence,
+                  expected: {
+                    authoritative_socket: true,
+                    agent_id: socket.agentId,
+                    runner_session_id: socket.sessionId ?? runnerSessionId,
+                    connection_id: socket.connectionId,
+                    socket_key: socket.socketKey,
+                    lifecycle_phase: 'active',
+                  },
+                })}`,
+              );
+              return;
+            }
+            await handleTerminalCloseAck({
+              workspaceId: socket.workspaceId,
+              projectId: socket.projectId,
+              agentId: socket.agentId,
+              runnerSessionId,
+              terminalSessionId,
+              requestId,
+              closeAttemptId,
+              generation,
+              connectionEpoch,
+              status,
+              ...(diagnosticCode ? { diagnosticCode } : {}),
+              ...(remainingPidCount !== null ? { remainingPidCount } : {}),
+            });
+          }).then(() => undefined));
+        }
+        if (pendingTerminal && (status === 'closed' || status === 'not_found')) {
+          socket.terminalBySessionId.delete(terminalSessionId);
+          this.clearTerminalTimers(pendingTerminal);
+          pendingTerminal.push({
+            type: 'exited',
+            terminal_session_id: terminalSessionId,
+            exit_code: 0,
+            signal: null,
+          });
+          pendingTerminal.close();
+        }
+        return;
+      }
+
+      if (!pendingTerminal) return;
+
+      if (payload.type === 'agent.terminal.adopted') {
+        if (
+          pendingTerminal.lifecycle !== 'adopt'
+          || readNonEmptyString(payload.request_id) !== pendingTerminal.adoptAttemptId
+          || readNonEmptyString(payload.payload?.adopt_attempt_id) !== pendingTerminal.adoptAttemptId
+          || readNonEmptyString(payload.payload?.runner_session_id) !== pendingTerminal.runnerSessionId
+          || readPositiveInteger(payload.payload?.connection_epoch, 1) !== pendingTerminal.connectionEpoch
+          || readPositiveInteger(payload.payload?.generation, 1) !== pendingTerminal.generation
+        ) {
+          return;
+        }
+        this.markTerminalEvent(socket, terminalSessionId, pendingTerminal);
+        pendingTerminal.readyForInput = true;
+        pendingTerminal.push({
+          type: 'started',
+          terminal_session_id: terminalSessionId,
+          runner_session_id: pendingTerminal.runnerSessionId,
+          generation: pendingTerminal.generation,
+          connection_epoch: pendingTerminal.connectionEpoch,
+          cols: typeof payload.payload?.cols === 'number' ? payload.payload.cols : undefined,
+          rows: typeof payload.payload?.rows === 'number' ? payload.payload.rows : undefined,
+        });
+        this.flushBufferedTerminalInput(socket, terminalSessionId, pendingTerminal);
+        return;
+      }
+
+      if (payload.type === 'agent.terminal.not_found') {
+        socket.terminalBySessionId.delete(terminalSessionId);
+        this.clearTerminalTimers(pendingTerminal);
+        pendingTerminal.push({
+          type: 'error',
+          terminal_session_id: terminalSessionId,
+          error_code: 'TERMINAL_PROCESS_LOST',
+          error_message: 'terminal_process_lost',
+        });
+        pendingTerminal.close();
         return;
       }
 
       if (payload.type === 'agent.terminal.started') {
         debugExecution(`terminal_started agent_id=${socket.agentId} runner_session=${socket.sessionId ?? ''} terminal_session=${terminalSessionId}`);
+        const topLevelRunnerSessionId = readNonEmptyString(
+          (payload as { runner_session_id?: unknown }).runner_session_id,
+        );
+        const payloadRunnerSessionId = readNonEmptyString(payload.payload?.runner_session_id);
+        const runnerSessionId = topLevelRunnerSessionId ?? payloadRunnerSessionId;
+        const generation = readPositiveInteger(payload.payload?.generation, 1);
+        const connectionEpoch = readPositiveInteger(payload.payload?.connection_epoch, 1) ?? socket.connectionEpoch ?? null;
+        if (
+          !runnerSessionId
+          || runnerSessionId !== pendingTerminal.runnerSessionId
+          || (payloadRunnerSessionId !== null && payloadRunnerSessionId !== runnerSessionId)
+          || generation === null
+          || connectionEpoch === null
+        ) {
+          const rejectReason = !runnerSessionId
+            ? 'missing_runner_session_id'
+            : runnerSessionId !== pendingTerminal.runnerSessionId
+              ? 'runner_session_mismatch'
+              : payloadRunnerSessionId !== null && payloadRunnerSessionId !== runnerSessionId
+                ? 'payload_runner_session_mismatch'
+                : generation === null
+                  ? 'invalid_generation'
+                  : 'invalid_connection_epoch';
+          debugExecution(
+            `terminal_started_rejected reason=${rejectReason} terminal_session=${terminalSessionId}`,
+          );
+          this.failPendingTerminal(
+            socket,
+            terminalSessionId,
+            'AGENT_PROTOCOL_ERROR',
+            `agent_terminal_started_${rejectReason}`,
+          );
+          return;
+        }
+        pendingTerminal.generation = generation;
+        pendingTerminal.connectionEpoch = connectionEpoch;
         this.markTerminalEvent(socket, terminalSessionId, pendingTerminal);
         pendingTerminal.push({
           type: 'started',
           terminal_session_id: terminalSessionId,
+          runner_session_id: runnerSessionId,
+          generation,
+          connection_epoch: connectionEpoch,
           cols: typeof payload.payload?.cols === 'number' ? payload.payload.cols : undefined,
           rows: typeof payload.payload?.rows === 'number' ? payload.payload.rows : undefined,
         });

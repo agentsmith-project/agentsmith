@@ -1,4 +1,4 @@
-export { TASK_TERMINAL_RECONNECT_VIEW } from '@/lib/types/task';
+import type { TaskTerminalFailureKind } from '@/lib/types/task';
 
 export type TaskTerminalOutputEncoding = 'utf8' | 'base64';
 
@@ -87,6 +87,30 @@ export function readTerminalInputEnabled(message: unknown): boolean | null {
   if (typeof message !== 'object' || message === null) return null;
   const value = (message as Record<string, unknown>).input_enabled;
   return typeof value === 'boolean' ? value : null;
+}
+
+export function readTerminalFailureKind(message: unknown): TaskTerminalFailureKind | null {
+  if (typeof message !== 'object' || message === null) return null;
+  const value = (message as Record<string, unknown>).failure_kind;
+  if (
+    value === 'process_start_failed' ||
+    value === 'process_exited_unexpectedly' ||
+    value === 'protocol_error' ||
+    value === 'permission_revoked' ||
+    value === 'runner_recovery_timeout' ||
+    value === 'terminal_process_lost' ||
+    value === 'runner_process_exited' ||
+    value === 'terminal_runtime_session_mismatch'
+  ) {
+    return value;
+  }
+  return null;
+}
+
+export function readTerminalCloseReason(message: unknown): string | null {
+  if (typeof message !== 'object' || message === null) return null;
+  const value = (message as Record<string, unknown>).close_reason;
+  return typeof value === 'string' && value.length > 0 ? value : null;
 }
 
 export function terminalEventBelongsToSession(

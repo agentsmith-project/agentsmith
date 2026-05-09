@@ -46,7 +46,7 @@ import {
   storeTaskTraceEvent,
   type TaskTraceEventRecord,
 } from './notebook-trace-store.js';
-import { resolveInternalTicket } from './internal-ticket-store.js';
+import { issueInternalTicket, resolveInternalTicket } from './internal-ticket-store.js';
 import {
   upsertProjectMemberPermissionState,
   upsertProjectMembershipRecord,
@@ -442,6 +442,121 @@ describe('task-route-handler workspace access', () => {
       file_library_id: 'lib_workspace_access_home',
     });
     expect(payload).not.toHaveProperty('container_workspace_path');
+  });
+
+  it('returns developer runtime task HOME paths from workspace access using execution-ticket runner profile', async () => {
+    const previousDeveloperWorkspaceRoot = process.env.MBOS_AGENT_TASK_DEVELOPER_WORKSPACE_ROOT;
+    process.env.MBOS_AGENT_TASK_DEVELOPER_WORKSPACE_ROOT = '/tmp/agentsmith-route-dev-workspaces';
+    const deps = createDefaultNodeApiDeps();
+    const now = new Date().toISOString();
+    const developerRunner = await deps.agentResourceService.createAgent('ws_default', 'proj_1', {
+      name: 'Workspace access developer runner',
+      runner_provider: 'developer',
+      status: 'enabled',
+      presence: 'online',
+      runner_status: 'ready',
+      capabilities: {
+        task_execution: true,
+        terminal: true,
+        artifacts: true,
+        file_inputs: true,
+      },
+    } as never);
+
+    try {
+      await deps.docStore.upsert('project_file_libraries', 'lib_workspace_access_developer_home', {
+        id: 'lib_workspace_access_developer_home',
+        workspace_id: 'ws_default',
+        project_id: 'proj_1',
+        name: 'Workspace Access Developer HOME',
+        status: 'ready',
+        filesystem_name: 'flib-workspace-access-developer-home',
+        created_by_user_id: 'user_1',
+        created_at: now,
+        updated_at: now,
+      });
+      await new JsonDocProjectFileLibraryMountAccessRepo(deps.docStore).save('ws_default', 'proj_1', 'lib_workspace_access_developer_home', {
+        filesystem_name: 'flib-workspace-access-developer-home',
+        metadata_url: 'postgres://jfsu_user:secret@localhost:15432/jfs_workspace_access_developer_home?sslmode=disable',
+        storage_bucket_url: 'http://localhost:19000/jfs-workspace-access-developer-home',
+        recommended_mount_path: '~/AgentSmith/Workspace Access Developer HOME',
+        platform_notes: [],
+        recommended_mount_commands: {
+          linux: 'juicefs mount ...',
+          macos: 'juicefs mount ...',
+          windows: 'juicefs mount ...',
+        },
+        created_at: now,
+      });
+      await deps.docStore.upsert(notebookTasksCollection('ws_default'), 'task_workspace_access_developer_home', {
+        id: 'task_workspace_access_developer_home',
+        workspace_id: 'ws_default',
+        project_id: 'proj_1',
+        owner_user_id: 'user_1',
+        title: 'Workspace access developer HOME task',
+        bound_runner_id: developerRunner.id,
+        bound_runner_kind: 'developer',
+        runner_binding_source: 'explicit',
+        task_home_segment: 'task_workspace_access_developer_home',
+        workspace_file_library_id: 'lib_workspace_access_developer_home',
+        workspace_file_library_name: 'Workspace Access Developer HOME',
+        status: 'active',
+        attached_inputs: [],
+        created_at: now,
+        updated_at: now,
+        last_activity_at: now,
+      });
+      const issuedTicket = await issueInternalTicket(deps.cache, {
+        purpose: 'agent_execution',
+        userId: 'user_1',
+        workspaceId: 'ws_default',
+        projectId: 'proj_1',
+        payload: {
+          endpoint_id: 'ep_workspace_access_developer',
+          task_id: 'task_workspace_access_developer_home',
+          runner_session_id: 'task_workspace_access_developer_home',
+          agent_runner_id: developerRunner.id,
+        },
+        maxUses: 2,
+      });
+      const internalTicket = await resolveInternalTicket(deps.cache, issuedTicket.ticket, 'agent_execution');
+
+      const json = vi.fn();
+      await expect(handleTaskRoute({
+        route: {
+          kind: 'taskWorkspaceAccess',
+          workspaceId: 'ws_default',
+          projectId: 'proj_1',
+          taskId: 'task_workspace_access_developer_home',
+        } as never,
+        method: 'POST',
+        req: { headers: {}, url: '' } as never,
+        res: {} as never,
+        deps,
+        user: { id: 'user_1' } as never,
+        internalTicket,
+        json,
+        readBody: vi.fn(),
+      })).resolves.toBe(true);
+
+      const payload = json.mock.calls[0]?.[2] as Record<string, unknown>;
+      expect(json.mock.calls[0]?.[1]).toBe(200);
+      expect(payload).toMatchObject({
+        task_id: 'task_workspace_access_developer_home',
+        workspace_binding_mode: 'file_library',
+        runtime_profile: 'developer',
+        task_home_segment: 'task_workspace_access_developer_home',
+        task_home_path: '/tmp/agentsmith-route-dev-workspaces/task_workspace_access_developer_home',
+        workspace_path: '/tmp/agentsmith-route-dev-workspaces/task_workspace_access_developer_home/workspace',
+        artifacts_path: '/tmp/agentsmith-route-dev-workspaces/task_workspace_access_developer_home/workspace/.artifacts',
+        library_root_path: '.',
+        file_library_id: 'lib_workspace_access_developer_home',
+      });
+      expect(payload).not.toHaveProperty('container_workspace_path');
+    } finally {
+      if (previousDeveloperWorkspaceRoot === undefined) delete process.env.MBOS_AGENT_TASK_DEVELOPER_WORKSPACE_ROOT;
+      else process.env.MBOS_AGENT_TASK_DEVELOPER_WORKSPACE_ROOT = previousDeveloperWorkspaceRoot;
+    }
   });
 
   it('creates an agent task without requiring agent_id', async () => {
@@ -6725,6 +6840,110 @@ describe('task-route-handler workspace access', () => {
     }
   });
 
+  it('passes developer runtime task HOME paths to terminal session creation', async () => {
+    const previousPublicApiBase = process.env.PUBLIC_API_BASE_URL;
+    const previousDeveloperWorkspaceRoot = process.env.MBOS_AGENT_TASK_DEVELOPER_WORKSPACE_ROOT;
+    process.env.PUBLIC_API_BASE_URL = 'http://127.0.0.1:20000/api/v1';
+    process.env.MBOS_AGENT_TASK_DEVELOPER_WORKSPACE_ROOT = '/tmp/agentsmith-terminal-dev-workspaces';
+    const deps = createDefaultNodeApiDeps();
+    deps.agentExecutionService.getAgentSessionDispatchAuthority = vi.fn(async () => 'local_dispatchable') as never;
+
+    try {
+      const endpoint = await deps.endpointResourceService.createEndpoint('ws_default', 'proj_1', {
+        name: 'terminal developer context endpoint',
+        model: 'gpt-5-codex',
+        type: 'custom',
+        base_url: 'https://example.com/v1',
+        status: 'active',
+        upstream_protocol: 'openai_responses',
+      });
+      await seedAgentTaskModelSetting(deps, 'proj_1', endpoint.id, 'user_1');
+      await grantProjectPermissionsForUser(deps, 'user_1', [
+        'project:agent_task:use',
+        'project:agent_runner:manage',
+      ]);
+      const runner = await deps.agentResourceService.createAgent('ws_default', 'proj_1', {
+        name: 'Terminal developer context runner',
+        runner_provider: 'developer',
+        status: 'enabled',
+        presence: 'online',
+        runner_status: 'ready',
+        default_endpoint_id: endpoint.id,
+        capabilities: {
+          task_execution: true,
+          terminal: true,
+          artifacts: true,
+          file_inputs: true,
+        },
+      } as never);
+
+      const now = new Date().toISOString();
+      await deps.docStore.upsert(notebookTasksCollection('ws_default'), 'task_terminal_developer_context', {
+        id: 'task_terminal_developer_context',
+        workspace_id: 'ws_default',
+        project_id: 'proj_1',
+        owner_user_id: 'user_1',
+        title: 'Terminal developer context task',
+        bound_runner_id: runner.id,
+        bound_runner_kind: 'developer',
+        runner_binding_source: 'explicit',
+        bound_at: now,
+        bound_by_user_id: 'user_1',
+        task_home_segment: 'task_terminal_developer_context',
+        status: 'active',
+        attached_inputs: [],
+        created_at: now,
+        updated_at: now,
+        last_activity_at: now,
+      });
+      const createSession = vi.spyOn(deps.notebookTerminalService, 'createSession');
+
+      const json = vi.fn();
+      await expect(handleTaskRoute({
+        route: {
+          kind: 'taskTerminalSessions',
+          workspaceId: 'ws_default',
+          projectId: 'proj_1',
+          taskId: 'task_terminal_developer_context',
+        } as never,
+        method: 'POST',
+        req: {
+          headers: {},
+          url: '/api/v1/workspaces/ws_default/projects/proj_1/tasks/task_terminal_developer_context/terminal/sessions',
+        } as never,
+        res: { setHeader: vi.fn() } as never,
+        deps,
+        user: { id: 'user_1', email: 'user_1@example.com' } as never,
+        json,
+        readBody: vi.fn(async () => ({ cols: 96, rows: 28 })),
+      })).resolves.toBe(true);
+
+      expect(json.mock.calls[0]?.[1]).toBe(201);
+      expect(createSession).toHaveBeenCalledTimes(1);
+      const executionContext = createSession.mock.calls[0]?.[0].executionContext;
+      expect(() => assertTaskExecutionContext(executionContext)).not.toThrow();
+      expect(executionContext).toMatchObject({
+        workspace_id: 'ws_default',
+        project_id: 'proj_1',
+        task_id: 'task_terminal_developer_context',
+        runner_id: runner.id,
+        runner_session_scope: 'agent_presence',
+        runtime_profile: 'developer',
+        task_home_segment: 'task_terminal_developer_context',
+        task_home_path: '/tmp/agentsmith-terminal-dev-workspaces/task_terminal_developer_context',
+        workspace_path: '/tmp/agentsmith-terminal-dev-workspaces/task_terminal_developer_context/workspace',
+        artifacts_path: '/tmp/agentsmith-terminal-dev-workspaces/task_terminal_developer_context/workspace/.artifacts',
+        workspace_binding_mode: 'file_library',
+      });
+      expect(executionContext).not.toHaveProperty('container_workspace_path');
+    } finally {
+      if (previousPublicApiBase === undefined) delete process.env.PUBLIC_API_BASE_URL;
+      else process.env.PUBLIC_API_BASE_URL = previousPublicApiBase;
+      if (previousDeveloperWorkspaceRoot === undefined) delete process.env.MBOS_AGENT_TASK_DEVELOPER_WORKSPACE_ROOT;
+      else process.env.MBOS_AGENT_TASK_DEVELOPER_WORKSPACE_ROOT = previousDeveloperWorkspaceRoot;
+    }
+  });
+
   it('creates managed terminal sessions without synchronously waiting for internal pod readiness', async () => {
     const previousPublicApiBase = process.env.PUBLIC_API_BASE_URL;
     process.env.PUBLIC_API_BASE_URL = 'http://127.0.0.1:20000/api/v1';
@@ -6848,6 +7067,80 @@ describe('task-route-handler workspace access', () => {
       if (previousPublicApiBase === undefined) delete process.env.PUBLIC_API_BASE_URL;
       else process.env.PUBLIC_API_BASE_URL = previousPublicApiBase;
     }
+  });
+
+  it('serializes terminal close_result as a public field without diagnostic details', async () => {
+    const deps = createDefaultNodeApiDeps();
+    const session = {
+      id: 'term_public_close_result',
+      agentId: 'agent_1',
+      resolvedRunnerId: 'agent_1',
+      runnerSessionId: 'task_public_close_result',
+      status: 'closed',
+      lifecycleStatus: 'closed',
+      runnerConnectionStatus: 'closed',
+      browserConnectionStatus: 'none',
+      inputEnabled: false,
+      recoverable: false,
+      failureKind: null,
+      closeState: 'acked',
+      closeResult: 'not_found',
+      closeDiagnosticCode: 'terminal_process_missing_on_close',
+      closeDeadlineAt: '2026-05-08T12:01:00.000Z',
+      cols: 80,
+      rows: 24,
+      createdAt: '2026-05-08T12:00:00.000Z',
+      lastActivityAt: '2026-05-08T12:00:05.000Z',
+      endedAt: '2026-05-08T12:00:05.000Z',
+      closeReason: 'ended_by_user',
+      exitCode: 0,
+    };
+    deps.notebookTerminalService.getSessionWithinScope = vi.fn(async () => session as never);
+    deps.notebookTerminalService.issueReconnectTicket = vi.fn();
+
+    const json = vi.fn();
+    const res = { setHeader: vi.fn() };
+    await expect(handleTaskRoute({
+      route: {
+        kind: 'taskTerminalSession',
+        workspaceId: 'ws_default',
+        projectId: 'proj_1',
+        taskId: 'task_public_close_result',
+        terminalSessionId: 'term_public_close_result',
+      } as never,
+      method: 'GET',
+      req: { headers: {}, url: '' } as never,
+      res: res as never,
+      deps,
+      user: { id: 'user_1', email: 'user_1@example.com' } as never,
+      json,
+      readBody: vi.fn(),
+    })).resolves.toBe(true);
+
+    const body = json.mock.calls[0]?.[2] as Record<string, unknown>;
+    expect(body.close_result).toBe('not_found');
+    expect(body).not.toHaveProperty('closeDiagnosticCode');
+    expect(body).not.toHaveProperty('close_diagnostic_code');
+
+    session.closeResult = 'timeout';
+    const jsonForTimeout = vi.fn();
+    await expect(handleTaskRoute({
+      route: {
+        kind: 'taskTerminalSession',
+        workspaceId: 'ws_default',
+        projectId: 'proj_1',
+        taskId: 'task_public_close_result',
+        terminalSessionId: 'term_public_close_result',
+      } as never,
+      method: 'GET',
+      req: { headers: {}, url: '' } as never,
+      res: { setHeader: vi.fn() } as never,
+      deps,
+      user: { id: 'user_1', email: 'user_1@example.com' } as never,
+      json: jsonForTimeout,
+      readBody: vi.fn(),
+    })).resolves.toBe(true);
+    expect((jsonForTimeout.mock.calls[0]?.[2] as Record<string, unknown>).close_result).toBeNull();
   });
 
   it('fails managed terminal session creation before visible session truth when internal API base is missing', async () => {

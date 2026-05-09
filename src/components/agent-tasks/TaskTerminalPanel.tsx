@@ -11,6 +11,7 @@ import {
 } from '@/lib/api/errors';
 import { TaskAPI } from '@/lib/api/endpoints/tasks';
 import type {
+  TaskTerminalFailureKind,
   TaskTerminalServerEvent,
   TaskTerminalSessionCreateResponse,
   TaskTerminalSessionStatus,
@@ -18,9 +19,10 @@ import type {
 import { toast } from '@/components/ui/toast';
 import { useTranslations } from 'next-intl';
 import {
-  TASK_TERMINAL_RECONNECT_VIEW,
   decodeTerminalOutputPayload,
   isEditableFocusOwner,
+  readTerminalCloseReason,
+  readTerminalFailureKind,
   readTerminalInputEnabled,
   readTerminalOutputPayloadIdentity,
   readTerminalProtocolNumber,
@@ -32,14 +34,29 @@ import {
 export type TerminalStatus =
   | 'idle'
   | 'preparing'
+  | 'disconnected'
   | 'recovering'
   | 'connecting'
   | 'active'
+  | 'closing'
   | 'closed'
   | 'failed';
 
-export type TerminalCloseReconcileResult = 'closed' | 'retained' | 'unavailable';
+export type TerminalRetainedCloseStatus = Exclude<
+  TerminalStatus,
+  'idle' | 'connecting' | 'closed'
+>;
 
+export type TerminalCloseReconcileResult =
+  | { status: 'closed' }
+  | { status: 'retained'; retainedStatus: TerminalRetainedCloseStatus }
+  | { status: 'unavailable' };
+
+type TerminalSessionPanelStatus = Exclude<TerminalStatus, 'idle' | 'connecting'>;
+type AwaitingTerminalSessionPanelStatus = Exclude<
+  TerminalSessionPanelStatus,
+  'active' | 'closed' | 'failed'
+>;
 type TerminalProgressReason = 'runner_offline' | 'run_in_progress' | null;
 
 export function getTaskTerminalSessionStorageKey(
@@ -55,6 +72,8 @@ export function getTaskTerminalSessionStorageKey(
 type TerminalSessionHandle = {
   sessionId: string;
   wsUrl: string;
+  initialStatus: TerminalSessionPanelStatus;
+  inputEnabled: boolean | null;
 };
 
 type TerminalSessionResolution =
@@ -65,11 +84,17 @@ type TerminalSessionResolution =
   | {
       kind: 'awaiting-reconnect';
       sessionId: string;
+      status: AwaitingTerminalSessionPanelStatus;
+    }
+  | {
+      kind: 'closing';
+      sessionId: string;
     }
   | {
       kind: 'failed';
       sessionId: string;
       reason: string | null;
+      failureKind: TaskTerminalFailureKind | null;
     }
   | {
       kind: 'closed';
@@ -178,6 +203,35 @@ function readTerminalSessionId(
   return null;
 }
 
+function mapTerminalSessionStatusToPanelStatus(
+  status: TaskTerminalSessionStatus['status'] | TaskTerminalSessionCreateResponse['status'],
+): TerminalSessionPanelStatus {
+  if (status === 'pending') return 'preparing';
+  if (status === 'disconnected') return 'disconnected';
+  if (status === 'recovering') return 'recovering';
+  if (status === 'closing') return 'closing';
+  if (status === 'closed') return 'closed';
+  if (status === 'failed') return 'failed';
+  return 'active';
+}
+
+function mapAwaitingTerminalSessionStatusToPanelStatus(
+  status: TaskTerminalSessionStatus['status'],
+): AwaitingTerminalSessionPanelStatus {
+  const panelStatus = mapTerminalSessionStatusToPanelStatus(status);
+  if (panelStatus === 'active') return 'disconnected';
+  if (panelStatus === 'closed' || panelStatus === 'failed') {
+    return 'recovering';
+  }
+  return panelStatus;
+}
+
+function mapRetainedCloseStatusToPanelStatus(
+  status: TerminalRetainedCloseStatus,
+): TerminalStatus {
+  return status === 'active' ? 'disconnected' : status;
+}
+
 function normalizeCreatedTerminalSession(
   session: TaskTerminalSessionCreateResponse,
 ): TerminalSessionHandle {
@@ -189,6 +243,8 @@ function normalizeCreatedTerminalSession(
   return {
     sessionId,
     wsUrl,
+    initialStatus: mapTerminalSessionStatusToPanelStatus(session.status),
+    inputEnabled: session.input_enabled ?? null,
   };
 }
 
@@ -201,6 +257,8 @@ function normalizeExistingTerminalSession(
   return {
     sessionId: session.terminal_session_id,
     wsUrl: session.ws_url,
+    initialStatus: mapTerminalSessionStatusToPanelStatus(session.status),
+    inputEnabled: session.input_enabled ?? null,
   };
 }
 
@@ -211,6 +269,7 @@ function getClosableSessionIdFromResolution(
     case 'connectable':
       return resolution.handle.sessionId;
     case 'awaiting-reconnect':
+    case 'closing':
     case 'failed':
     case 'closed':
       return resolution.sessionId;
@@ -241,6 +300,9 @@ function describeTerminalError(t: ReturnType<typeof useTranslations>, reason: st
   if (reason.includes('terminal_connection_failed')) {
     return t('terminal_error_connection_failed');
   }
+  if (reason.includes('agent_disconnected')) {
+    return t('terminal_unrecoverable_generic');
+  }
   if (reason.includes('task_terminal_session_limit_reached')) {
     return t('terminal_max_sessions_reached');
   }
@@ -248,6 +310,35 @@ function describeTerminalError(t: ReturnType<typeof useTranslations>, reason: st
     return t('terminal_error_connection_failed');
   }
   return reason;
+}
+
+function describeTerminalFailureKind(
+  t: ReturnType<typeof useTranslations>,
+  failureKind: TaskTerminalFailureKind | null,
+  closeReason?: string | null,
+): string {
+  if (closeReason === 'close_tombstone_timeout') {
+    return t('terminal_close_tombstone_timeout');
+  }
+  switch (failureKind) {
+    case 'terminal_process_lost':
+      return t('terminal_process_lost');
+    case 'runner_recovery_timeout':
+      return t('terminal_runner_recovery_timeout');
+    case 'runner_process_exited':
+      return t('terminal_runner_process_exited');
+    case 'process_start_failed':
+      return t('terminal_error_invalid_shell');
+    case 'process_exited_unexpectedly':
+      return t('terminal_process_exited_unexpectedly');
+    case 'protocol_error':
+    case 'terminal_runtime_session_mismatch':
+      return t('terminal_protocol_error');
+    case 'permission_revoked':
+      return t('terminal_permission_revoked');
+    case null:
+      return t('terminal_unrecoverable_generic');
+  }
 }
 
 export interface TaskTerminalPanelProps {
@@ -306,8 +397,10 @@ export function TaskTerminalPanel({
   const [status, setStatus] = React.useState<TerminalStatus>('idle');
   const [errorMessage, setErrorMessage] = React.useState<string | null>(null);
   const [degradationMessage, setDegradationMessage] = React.useState<string | null>(null);
+  const [backendRuntimeRecoveryActive, setBackendRuntimeRecoveryActive] = React.useState(false);
   const [progressReason, setProgressReason] = React.useState<TerminalProgressReason>(null);
   const statusRef = React.useRef<TerminalStatus>('idle');
+  const backendRuntimeRecoveryActiveRef = React.useRef(false);
   const explicitCloseRequestedRef = React.useRef(false);
   const reconnectingRef = React.useRef(false);
   const fitFrameRef = React.useRef<number | null>(null);
@@ -368,6 +461,10 @@ export function TaskTerminalPanel({
       onStatusChangeRef.current?.(nextStatus);
     }
     setStatus(nextStatus);
+  }, []);
+  const updateBackendRuntimeRecoveryActive = React.useCallback((active: boolean) => {
+    backendRuntimeRecoveryActiveRef.current = active;
+    setBackendRuntimeRecoveryActive(active);
   }, []);
 
   React.useEffect(() => {
@@ -437,10 +534,11 @@ export function TaskTerminalPanel({
     terminalOutputDecodersBySessionRef.current.clear();
     setErrorMessage(null);
     setDegradationMessage(null);
+    updateBackendRuntimeRecoveryActive(false);
     setProgressReason(null);
     invalidateSessionHandle({ clearStored: true });
     updateStatus('closed');
-  }, [invalidateSessionHandle, updateStatus]);
+  }, [invalidateSessionHandle, updateBackendRuntimeRecoveryActive, updateStatus]);
 
   const markAuthoritativeCloseFailed = React.useCallback((error: unknown, sessionId: string | null) => {
     authoritativeCloseInFlightRef.current = false;
@@ -457,14 +555,18 @@ export function TaskTerminalPanel({
     updateStatus('failed');
     setErrorMessage(friendlyReason);
     setDegradationMessage(null);
+    updateBackendRuntimeRecoveryActive(false);
     setProgressReason(null);
     toast.error(friendlyReason);
-  }, [invalidateSessionHandle, storeSessionId, updateStatus]);
+  }, [invalidateSessionHandle, storeSessionId, updateBackendRuntimeRecoveryActive, updateStatus]);
 
   const restoreSessionAfterUnconfirmedClose = React.useCallback(
     (
       sessionId: string | null,
-      result: Exclude<TerminalCloseReconcileResult, 'closed'>,
+      result: Extract<
+        TerminalCloseReconcileResult,
+        { status: 'retained' | 'unavailable' }
+      >,
     ) => {
       authoritativeCloseInFlightRef.current = false;
       explicitCloseRequestedRef.current = false;
@@ -479,15 +581,27 @@ export function TaskTerminalPanel({
       }
       setProgressReason(null);
       setDegradationMessage(null);
-      if (result === 'retained') {
+      if (result.status === 'retained') {
+        const retainedStatus = mapRetainedCloseStatusToPanelStatus(
+          result.retainedStatus,
+        );
         setErrorMessage(null);
-        updateStatus('recovering');
-        setConnectionRetryToken((current) => current + 1);
+        updateBackendRuntimeRecoveryActive(retainedStatus === 'recovering');
+        updateStatus(retainedStatus);
+        if (retainedStatus !== 'closing' && retainedStatus !== 'failed') {
+          setConnectionRetryToken((current) => current + 1);
+        }
         return;
       }
+      updateBackendRuntimeRecoveryActive(false);
       updateStatus(statusRef.current === 'failed' ? 'failed' : 'recovering');
     },
-    [invalidateSessionHandle, storeSessionId, updateStatus],
+    [
+      invalidateSessionHandle,
+      storeSessionId,
+      updateBackendRuntimeRecoveryActive,
+      updateStatus,
+    ],
   );
 
   const reconcileClosedSession = React.useCallback(
@@ -499,7 +613,7 @@ export function TaskTerminalPanel({
         return;
       }
       const result = await reconcile(sessionId);
-      if (result === 'retained' || result === 'unavailable') {
+      if (result.status === 'retained' || result.status === 'unavailable') {
         restoreSessionAfterUnconfirmedClose(sessionId, result);
         return;
       }
@@ -524,11 +638,13 @@ export function TaskTerminalPanel({
           updateStatus('preparing');
           setErrorMessage(null);
           setDegradationMessage(null);
+          updateBackendRuntimeRecoveryActive(false);
         } else if (message.includes('task_run_in_progress')) {
           setProgressReason('run_in_progress');
           updateStatus('preparing');
           setErrorMessage(null);
           setDegradationMessage(null);
+          updateBackendRuntimeRecoveryActive(false);
         } else {
           throw error;
         }
@@ -536,7 +652,14 @@ export function TaskTerminalPanel({
       }
     }
     throw lastError instanceof Error ? lastError : new Error('task_runner_offline');
-  }, [projectId, taskApi, taskId, updateStatus, workspaceId]);
+  }, [
+    projectId,
+    taskApi,
+    taskId,
+    updateBackendRuntimeRecoveryActive,
+    updateStatus,
+    workspaceId,
+  ]);
 
   const resolveSession = React.useCallback(async (): Promise<TerminalSessionResolution> => {
     if (sessionResolutionPromiseRef.current) {
@@ -567,6 +690,7 @@ export function TaskTerminalPanel({
             session.status === 'pending'
             || session.status === 'active'
             || session.status === 'disconnected'
+            || session.status === 'recovering'
           ) {
             const sessionId = readTerminalSessionId(session) ?? storedSessionId;
             if (!sessionId) {
@@ -577,6 +701,7 @@ export function TaskTerminalPanel({
               return {
                 kind: 'awaiting-reconnect',
                 sessionId,
+                status: mapAwaitingTerminalSessionStatusToPanelStatus(session.status),
               };
             }
             const normalizedSession = normalizeExistingTerminalSession(session);
@@ -587,11 +712,18 @@ export function TaskTerminalPanel({
               handle: normalizedSession,
             };
           }
+          if (session.status === 'closing') {
+            return {
+              kind: 'closing',
+              sessionId: storedSessionId,
+            };
+          }
           if (session.status === 'failed') {
             return {
               kind: 'failed',
               sessionId: storedSessionId,
               reason: session.close_reason ?? null,
+              failureKind: session.failure_kind ?? null,
             };
           }
           if (session.status === 'closed') {
@@ -800,11 +932,17 @@ export function TaskTerminalPanel({
     pendingTransportReconnectRef.current = false;
     reconnectingRef.current = false;
     updateStatus('active');
+    updateBackendRuntimeRecoveryActive(false);
     setErrorMessage(null);
     setProgressReason(null);
     sendTerminalResize(socket);
     focusTerminalIfRequested();
-  }, [focusTerminalIfRequested, sendTerminalResize, updateStatus]);
+  }, [
+    focusTerminalIfRequested,
+    sendTerminalResize,
+    updateBackendRuntimeRecoveryActive,
+    updateStatus,
+  ]);
 
   const alignUnavailableReplayContinuation = React.useCallback((
     sessionId: string,
@@ -849,12 +987,13 @@ export function TaskTerminalPanel({
     setDegradationMessage(message);
     pendingTransportReconnectRef.current = true;
     handshakeReadyRef.current = false;
-    updateStatus('recovering');
+    updateBackendRuntimeRecoveryActive(false);
+    updateStatus('disconnected');
     const socket = socketRef.current;
     if (socket && socket.readyState === WebSocket.OPEN) {
       socket.close();
     }
-  }, [updateStatus]);
+  }, [updateBackendRuntimeRecoveryActive, updateStatus]);
 
   const shouldAcceptSequencedTerminalOutput = React.useCallback((
     sessionId: string,
@@ -871,6 +1010,7 @@ export function TaskTerminalPanel({
       if (previousPayloadIdentity !== undefined && previousPayloadIdentity !== payloadIdentity) {
         setErrorMessage(translationRef.current('terminal_error_connection_failed'));
         setDegradationMessage(null);
+        updateBackendRuntimeRecoveryActive(false);
         updateStatus('failed');
       }
       return false;
@@ -885,6 +1025,7 @@ export function TaskTerminalPanel({
   }, [
     getAppliedPayloadsForSession,
     markProtocolDegraded,
+    updateBackendRuntimeRecoveryActive,
     updateStatus,
   ]);
 
@@ -918,6 +1059,7 @@ export function TaskTerminalPanel({
     let recoveryRetryTimer: number | null = null;
     updateStatus('preparing');
     setErrorMessage(null);
+    updateBackendRuntimeRecoveryActive(false);
     setProgressReason(null);
     explicitCloseRequestedRef.current = false;
     pendingResolutionCloseRef.current = false;
@@ -930,12 +1072,30 @@ export function TaskTerminalPanel({
       if (resolution.kind === 'failed') {
         invalidateSessionHandle();
         updateStatus('failed');
-        const friendlyReason = describeTerminalError(
-          translationRef.current,
-          resolution.reason ?? 'terminal_connection_failed',
+        const friendlyReason =
+          resolution.failureKind || resolution.reason === 'close_tombstone_timeout'
+          ? describeTerminalFailureKind(
+            translationRef.current,
+            resolution.failureKind,
+            resolution.reason,
+          )
+          : describeTerminalError(
+            translationRef.current,
+            resolution.reason ?? 'terminal_connection_failed',
         );
         setErrorMessage(friendlyReason);
         setDegradationMessage(null);
+        updateBackendRuntimeRecoveryActive(false);
+        setProgressReason(null);
+        return;
+      }
+      if (resolution.kind === 'closing') {
+        invalidateSessionHandle();
+        storeSessionId(resolution.sessionId);
+        updateStatus('closing');
+        setErrorMessage(null);
+        setDegradationMessage(null);
+        updateBackendRuntimeRecoveryActive(false);
         setProgressReason(null);
         return;
       }
@@ -946,20 +1106,27 @@ export function TaskTerminalPanel({
       }
       if (resolution.kind === 'awaiting-reconnect') {
         invalidateSessionHandle();
-        updateStatus('recovering');
+        storeSessionId(resolution.sessionId);
+        updateStatus(resolution.status);
         setErrorMessage(null);
+        updateBackendRuntimeRecoveryActive(resolution.status === 'recovering');
         setProgressReason(null);
-        recoveryRetryTimer = window.setTimeout(() => {
-          if (cancelled || unmountingRef.current) return;
-          if (!visibleRef.current) return;
-          if (!readStoredSessionId()) return;
-          setConnectionRetryToken((current) => current + 1);
-        }, TERMINAL_RECOVERY_RETRY_DELAY_MS);
+        if (resolution.status !== 'closing') {
+          recoveryRetryTimer = window.setTimeout(() => {
+            if (cancelled || unmountingRef.current) return;
+            if (!visibleRef.current) return;
+            if (!readStoredSessionId()) return;
+            setConnectionRetryToken((current) => current + 1);
+          }, TERMINAL_RECOVERY_RETRY_DELAY_MS);
+        }
         return;
       }
       const session = resolution.handle;
-      updateStatus(reconnectingRef.current ? 'recovering' : 'preparing');
+      updateStatus(reconnectingRef.current ? session.initialStatus : 'preparing');
       setErrorMessage(null);
+      updateBackendRuntimeRecoveryActive(
+        reconnectingRef.current && session.initialStatus === 'recovering',
+      );
       setProgressReason(null);
       handshakeReadyRef.current = false;
       const socket = new WebSocket(session.wsUrl);
@@ -994,7 +1161,11 @@ export function TaskTerminalPanel({
 
       socket.onopen = () => {
         if (cancelled || !isCurrentSocket()) return;
-        updateStatus('connecting');
+        updateStatus(
+          statusRef.current === 'recovering' || statusRef.current === 'disconnected'
+            ? statusRef.current
+            : 'connecting',
+        );
         setErrorMessage(null);
         setProgressReason(null);
         pendingTransportReconnectRef.current = false;
@@ -1007,7 +1178,6 @@ export function TaskTerminalPanel({
         socket.send(JSON.stringify({
           type: 'terminal.reconnect',
           terminal_session_id: session.sessionId,
-          view: TASK_TERMINAL_RECONNECT_VIEW,
           cols: terminalRef.current?.cols ?? 120,
           rows: terminalRef.current?.rows ?? 30,
           ...(afterSeq > 0
@@ -1082,9 +1252,28 @@ export function TaskTerminalPanel({
         if (message.type === 'terminal.state') {
           const state = readTerminalStateValue(message);
           const inputEnabled = readTerminalInputEnabled(message);
+          if (state === 'recovering') {
+            handshakeReadyRef.current = false;
+            setErrorMessage(null);
+            setProgressReason(null);
+            updateBackendRuntimeRecoveryActive(true);
+            updateStatus('recovering');
+            return;
+          }
+          if (state === 'closing') {
+            pendingTransportReconnectRef.current = false;
+            handshakeReadyRef.current = false;
+            setErrorMessage(null);
+            setProgressReason(null);
+            updateBackendRuntimeRecoveryActive(false);
+            updateStatus('closing');
+            return;
+          }
           if (state === 'ready' || state === 'active' || state === 'connected') {
             if (inputEnabled === false) {
               handshakeReadyRef.current = false;
+              updateBackendRuntimeRecoveryActive(true);
+              updateStatus('recovering');
               return;
             }
             setDegradationMessage(null);
@@ -1093,6 +1282,7 @@ export function TaskTerminalPanel({
           }
           if (state === 'partial' || state === 'connected_partial_replay') {
             setDegradationMessage(translationRef.current('terminal_replay_partial'));
+            updateBackendRuntimeRecoveryActive(false);
             if (inputEnabled === true) {
               markTerminalHandshakeReady(socket);
             } else {
@@ -1102,6 +1292,7 @@ export function TaskTerminalPanel({
           }
           if (state === 'starting' || state === 'pending' || state === 'waiting') {
             handshakeReadyRef.current = false;
+            updateBackendRuntimeRecoveryActive(false);
             updateStatus(reconnectingRef.current ? 'recovering' : 'connecting');
             return;
           }
@@ -1110,10 +1301,20 @@ export function TaskTerminalPanel({
             return;
           }
           if (state === 'failed' || state === 'unavailable' || state === 'attach_unavailable') {
+            pendingTransportReconnectRef.current = false;
             invalidateSessionHandle();
             updateStatus('failed');
+            updateBackendRuntimeRecoveryActive(false);
+            const failureKind = readTerminalFailureKind(message);
+            const closeReason = readTerminalCloseReason(message);
             setErrorMessage(
-              state === 'attach_unavailable'
+              failureKind || closeReason === 'close_tombstone_timeout'
+                ? describeTerminalFailureKind(
+                  translationRef.current,
+                  failureKind,
+                  closeReason,
+                )
+                : state === 'attach_unavailable'
                 ? translationRef.current('terminal_attach_unavailable')
                 : translationRef.current('terminal_error_connection_failed'),
             );
@@ -1125,8 +1326,18 @@ export function TaskTerminalPanel({
           pendingTransportReconnectRef.current = false;
           invalidateSessionHandle();
           updateStatus('failed');
+          updateBackendRuntimeRecoveryActive(false);
+          const failureKind = readTerminalFailureKind(message);
+          const closeReason = readTerminalCloseReason(message);
           const reason = message.error_message ?? message.reason ?? 'terminal_connection_failed';
-          const friendlyReason = describeTerminalError(translationRef.current, reason);
+          const friendlyReason =
+            failureKind || closeReason === 'close_tombstone_timeout'
+            ? describeTerminalFailureKind(
+              translationRef.current,
+              failureKind,
+              closeReason,
+            )
+            : describeTerminalError(translationRef.current, reason);
           setErrorMessage(friendlyReason);
           setDegradationMessage(null);
           setProgressReason(null);
@@ -1135,10 +1346,23 @@ export function TaskTerminalPanel({
       };
       socket.onerror = () => {
         if (cancelled || !isCurrentSocket()) return;
+        if (
+          statusRef.current === 'failed'
+          || statusRef.current === 'closed'
+          || statusRef.current === 'closing'
+          || explicitCloseRequestedRef.current
+          || authoritativeCloseInFlightRef.current
+        ) {
+          return;
+        }
         pendingTransportReconnectRef.current = true;
-        updateStatus('failed');
-        setErrorMessage(translationRef.current('terminal_error_connection_failed'));
-        setDegradationMessage(null);
+        handshakeReadyRef.current = false;
+        updateStatus(
+          backendRuntimeRecoveryActiveRef.current || statusRef.current === 'recovering'
+            ? 'recovering'
+            : 'disconnected',
+        );
+        setErrorMessage(null);
         setProgressReason(null);
       };
       socket.onclose = (event) => {
@@ -1159,6 +1383,7 @@ export function TaskTerminalPanel({
           pendingTransportReconnectRef.current = false;
           invalidateSessionHandle();
           updateStatus('failed');
+          updateBackendRuntimeRecoveryActive(false);
           setErrorMessage(translationRef.current('terminal_error_taken_over'));
           setDegradationMessage(null);
           return;
@@ -1169,7 +1394,9 @@ export function TaskTerminalPanel({
         const shouldRetryStoredSession =
           hasStoredSession
           && pendingTransportReconnectRef.current
-          && statusRef.current === 'failed';
+          && statusRef.current !== 'closed'
+          && statusRef.current !== 'closing'
+          && statusRef.current !== 'failed';
         if (
           visibleRef.current
           && hasStoredSession
@@ -1182,7 +1409,9 @@ export function TaskTerminalPanel({
           pendingTransportReconnectRef.current = false;
           setErrorMessage(null);
           setProgressReason(null);
-          updateStatus('recovering');
+          updateStatus(
+            backendRuntimeRecoveryActiveRef.current ? 'recovering' : 'disconnected',
+          );
           setConnectionRetryToken((current) => current + 1);
           return;
         }
@@ -1191,11 +1420,14 @@ export function TaskTerminalPanel({
           pendingTransportReconnectRef.current = false;
           setErrorMessage(null);
           setProgressReason(null);
-          updateStatus('recovering');
+          updateStatus(
+            backendRuntimeRecoveryActiveRef.current ? 'recovering' : 'disconnected',
+          );
           return;
         }
         pendingTransportReconnectRef.current = false;
         invalidateSessionHandle();
+        updateBackendRuntimeRecoveryActive(false);
         updateStatus(statusRef.current === 'failed' ? 'failed' : 'closed');
       };
     }).catch((error) => {
@@ -1215,6 +1447,7 @@ export function TaskTerminalPanel({
       updateStatus('failed');
       setErrorMessage(friendlyReason);
       setDegradationMessage(null);
+      updateBackendRuntimeRecoveryActive(false);
       setProgressReason(null);
       invalidateSessionHandle({ clearStored: true });
       toast.error(friendlyReason);
@@ -1240,7 +1473,6 @@ export function TaskTerminalPanel({
     invalidateSessionHandle,
     isTerminalContainerLaidOut,
     markTerminalHandshakeReady,
-    updateStatus,
     open,
     readStoredSessionId,
     releaseSocketResources,
@@ -1249,6 +1481,8 @@ export function TaskTerminalPanel({
     sendTerminalResize,
     sessionStorageKey,
     shouldAcceptSequencedTerminalOutput,
+    updateBackendRuntimeRecoveryActive,
+    updateStatus,
   ]);
 
   React.useEffect(() => {
@@ -1257,6 +1491,7 @@ export function TaskTerminalPanel({
     if (!readStoredSessionId()) return;
     if (
       statusRef.current !== 'closed'
+      && statusRef.current !== 'disconnected'
       && statusRef.current !== 'recovering'
       && !(statusRef.current === 'failed' && pendingTransportReconnectRef.current)
     ) {
@@ -1266,7 +1501,11 @@ export function TaskTerminalPanel({
     pendingTransportReconnectRef.current = false;
     setErrorMessage(null);
     setProgressReason(null);
-    updateStatus('recovering');
+    updateStatus(
+      backendRuntimeRecoveryActiveRef.current && statusRef.current === 'recovering'
+        ? 'recovering'
+        : 'disconnected',
+    );
     setConnectionRetryToken((current) => current + 1);
   }, [hasInteractiveMount, open, readStoredSessionId, updateStatus, visible]);
 
@@ -1329,6 +1568,16 @@ export function TaskTerminalPanel({
     workspaceId,
   ]);
 
+  const handleRetryTerminalConnection = React.useCallback(() => {
+    pendingTransportReconnectRef.current = false;
+    reconnectingRef.current = true;
+    setErrorMessage(null);
+    setProgressReason(null);
+    cleanupSocket();
+    invalidateSessionHandle();
+    setConnectionRetryToken((current) => current + 1);
+  }, [cleanupSocket, invalidateSessionHandle]);
+
   React.useEffect(() => {
     if (!open) {
       closeRequestTokenRef.current = closeRequestToken;
@@ -1358,19 +1607,36 @@ export function TaskTerminalPanel({
       ? 'rounded-b-md border-t-0'
       : 'rounded-md',
   ].join(' ');
-  const terminalStatusMessage =
-    degradationMessage ??
-    (status === 'recovering'
-      ? t('terminal_reconnecting')
-      : status === 'preparing'
-        ? (
-          progressReason === 'run_in_progress'
-            ? t('terminal_preparing_run_busy')
-            : t('terminal_preparing_environment')
-        )
-        : status === 'connecting'
-          ? t('terminal_connecting')
-          : null);
+  let terminalStatusMessage: string | null = degradationMessage;
+  if (!terminalStatusMessage) {
+    if (status === 'disconnected') {
+      terminalStatusMessage = t('terminal_browser_disconnected');
+    } else if (status === 'recovering' && backendRuntimeRecoveryActive) {
+      terminalStatusMessage = t('terminal_runtime_recovering');
+    } else if (status === 'recovering') {
+      terminalStatusMessage = t('terminal_browser_disconnected');
+    } else if (status === 'closing') {
+      terminalStatusMessage = t('terminal_runtime_closing');
+    } else if (status === 'preparing') {
+      terminalStatusMessage = progressReason === 'run_in_progress'
+        ? t('terminal_preparing_run_busy')
+        : t('terminal_preparing_environment');
+    } else if (status === 'connecting') {
+      terminalStatusMessage = t('terminal_connecting');
+    }
+  }
+  const terminalStateBody =
+    !errorMessage && status === 'recovering' && backendRuntimeRecoveryActive
+      ? t('terminal_runtime_recovering_body')
+      : !errorMessage && status === 'closing'
+        ? t('terminal_runtime_closing_body')
+        : null;
+  const showReconnectAction =
+    !errorMessage && (status === 'disconnected' || (status === 'recovering' && !backendRuntimeRecoveryActive));
+  const showRefreshAction =
+    !errorMessage && (status === 'closing' || (status === 'recovering' && backendRuntimeRecoveryActive));
+  const showDangerEndAction =
+    !errorMessage && status === 'recovering' && backendRuntimeRecoveryActive;
 
   return (
     <div
@@ -1385,9 +1651,9 @@ export function TaskTerminalPanel({
           aria-live="polite"
         >
           <Badge variant={
-            status === 'failed' || status === 'recovering'
+            status === 'failed'
               ? 'destructive'
-              : status === 'preparing'
+              : status === 'preparing' || status === 'recovering' || status === 'closing'
                 ? 'secondary'
                 : 'outline'
           }>
@@ -1398,6 +1664,57 @@ export function TaskTerminalPanel({
               {terminalStatusMessage}
             </div>
           ) : null}
+        </div>
+      ) : null}
+      {(terminalStateBody || showReconnectAction || showRefreshAction || showDangerEndAction) ? (
+        <div
+          className="border-x border-b border-subtle bg-surface/55 px-4 py-3 text-xs text-secondary"
+          aria-live="polite"
+        >
+          <div className="flex items-start justify-between gap-3">
+            <div className="min-w-0">
+              {terminalStateBody ? (
+                <div>{terminalStateBody}</div>
+              ) : null}
+              {status === 'recovering' && backendRuntimeRecoveryActive ? (
+                <div className="mt-1 text-[11px] text-tertiary">
+                  {t('terminal_recovery_waiting')}
+                </div>
+              ) : null}
+            </div>
+            <div className="flex shrink-0 items-center gap-2">
+              {showReconnectAction ? (
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="h-7 px-2.5 text-[11px]"
+                  onClick={handleRetryTerminalConnection}
+                >
+                  {t('terminal_reconnect')}
+                </Button>
+              ) : null}
+              {showRefreshAction ? (
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="h-7 px-2.5 text-[11px]"
+                  onClick={handleRetryTerminalConnection}
+                >
+                  {t('terminal_refresh_status')}
+                </Button>
+              ) : null}
+              {showDangerEndAction ? (
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="h-7 border-error/30 px-2.5 text-[11px] text-error hover:bg-error/5 hover:text-error"
+                  onClick={handleEndSession}
+                >
+                  {t('terminal_close')}
+                </Button>
+              ) : null}
+            </div>
+          </div>
         </div>
       ) : null}
       {errorMessage ? (

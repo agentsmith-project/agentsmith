@@ -30,9 +30,14 @@ TOKEN="$(cat "$(backend_real_token_file)")"
 PROJECT_ID="${TASK_PROJECT_ID:-$(state_get project.id)}"
 API_BASE="${API_BASE:-http://localhost:${PORT_API}}"
 TASK_WS_ID="${TASK_WS_ID:-${WORKSPACE_ID}}"
+TASK_AGENT_RUNNER_PROVIDER="${TASK_AGENT_RUNNER_PROVIDER:-$(state_get agent_runner.runner_provider)}"
 
 if [[ -z "${TOKEN}" || -z "${PROJECT_ID}" ]]; then
   echo "[agent-task-terminal-internal-smoke] missing local-manual internal state" >&2
+  exit 1
+fi
+if [[ "${TASK_AGENT_RUNNER_PROVIDER}" != "managed" ]]; then
+  echo "[agent-task-terminal-internal-smoke] expected managed runner diagnostic state for internal smoke (provider=${TASK_AGENT_RUNNER_PROVIDER:-missing})" >&2
   exit 1
 fi
 
@@ -116,7 +121,7 @@ if [[ -z "${POD_NAME:-}" ]]; then
   exit 1
 fi
 
-export TOKEN API_BASE TASK_WS_ID TASK_PROJECT_ID="${PROJECT_ID}" TASK_ID
+export TOKEN API_BASE TASK_WS_ID TASK_PROJECT_ID="${PROJECT_ID}" TASK_ID POD_NAME K8S_NAMESPACE
 
 node <<'NODE'
 const { execFileSync } = require('node:child_process');
@@ -130,6 +135,8 @@ const workspaceId = process.env.TASK_WS_ID;
 const projectId = process.env.TASK_PROJECT_ID;
 const taskId = process.env.TASK_ID;
 const rootDir = process.env.ROOT_DIR || process.cwd();
+const terminalCols = 80;
+const terminalRows = 24;
 const cleanupMarker =
   process.env.INTERNAL_RUNTIME_CLEANUP_MARKER ||
   path.join(rootDir, 'artifacts/runtime/lines/local-manual/current/local-manual-internal-runtime.cleanup');
@@ -149,6 +156,262 @@ function restartInternalRuntime() {
   fs.writeFileSync(cleanupMarker, '1\n', 'utf8');
 }
 
+const podName = process.env.POD_NAME || '';
+const k8sNamespace = process.env.K8S_NAMESPACE || 'default';
+
+function makeCloseMarker(label) {
+  const normalizedLabel = String(label || 'session').replace(/[^a-zA-Z0-9_]/g, '_');
+  return `AGENTSMITH_TERMINAL_CLOSE_${normalizedLabel}_${process.pid}_${Date.now()}_${Math.random().toString(36).slice(2)}`;
+}
+
+function buildMarkerForegroundCommand(marker) {
+  return `bash -lc 'echo ${marker}_STARTED; exec -a ${marker} sleep 120'`;
+}
+
+function parseProcessTable(output) {
+  return String(output || '')
+    .split('\n')
+    .map((line) => {
+      const match = line.trim().match(/^(\d+)\s+(\d+)\s+(.*)$/);
+      if (!match) return null;
+      return {
+        pid: Number(match[1]),
+        ppid: Number(match[2]),
+        command: match[3],
+      };
+    })
+    .filter((entry) => entry && Number.isFinite(entry.pid) && entry.pid > 0);
+}
+
+function isWorkloadGoneKubectlExecError(stderr) {
+  const text = String(stderr || '');
+  return [
+    /\bpod\b.*\bnot found\b/i,
+    /\bpods?\b.*\bnot found\b/i,
+    /\bcontainer\b.*\bnot found\b/i,
+    /\btask\b.*\bnot found\b/i,
+    /\bcontainer\b.*\bnot running\b/i,
+    /\bcontainer\b.*\bis not running\b/i,
+  ].some((pattern) => pattern.test(text));
+}
+
+function readExecErrorStream(error, key, outputIndex) {
+  const value = error?.[key] ?? (Array.isArray(error?.output) ? error.output[outputIndex] : null);
+  if (Buffer.isBuffer(value)) return value.toString('utf8');
+  return typeof value === 'string' ? value : '';
+}
+
+function markerProbeDiagnostics(probe) {
+  return {
+    label: probe?.label ?? null,
+    marker: probe?.marker ?? null,
+    probe_classification: probe?.classification ?? null,
+    pod_name: probe?.pod_name || podName,
+    namespace: probe?.namespace || k8sNamespace,
+    process_count: probe?.process_count ?? null,
+    processes: probe?.processes ?? [],
+    stderr: probe?.stderr ?? '',
+    stdout: probe?.stdout ?? '',
+    error: probe?.error ?? '',
+    status: probe?.status ?? null,
+  };
+}
+
+function probeMarkerProcesses(marker, label) {
+  if (!podName) {
+    fail('marker_process_pod_name_missing', { label, marker, pod_name: podName });
+  }
+  try {
+    const output = execFileSync('kubectl', [
+      'exec',
+      '-n',
+      k8sNamespace,
+      podName,
+      '--',
+      'ps',
+      '-eo',
+      'pid=,ppid=,args=',
+    ], {
+      cwd: rootDir,
+      env: process.env,
+      encoding: 'utf8',
+      stdio: 'pipe',
+    });
+    const processes = parseProcessTable(output).filter((entry) => entry.command.includes(marker));
+    if (processes.length > 0) {
+      return {
+        classification: 'present',
+        label,
+        marker,
+        pod_name: podName,
+        namespace: k8sNamespace,
+        process_count: processes.length,
+        processes,
+      };
+    }
+    return {
+      classification: 'absent',
+      label,
+      marker,
+      pod_name: podName,
+      namespace: k8sNamespace,
+      process_count: 0,
+      processes,
+    };
+  } catch (error) {
+    const stderr = readExecErrorStream(error, 'stderr', 2);
+    const stdout = readExecErrorStream(error, 'stdout', 1);
+    const message = error instanceof Error ? error.message : String(error);
+    const combinedErrorText = [stderr, stdout, message].filter(Boolean).join('\n');
+    if (isWorkloadGoneKubectlExecError(combinedErrorText)) {
+      return {
+        classification: 'workload_gone',
+        label,
+        marker,
+        pod_name: podName,
+        namespace: k8sNamespace,
+        process_count: null,
+        processes: [],
+        stderr,
+        stdout,
+        error: message,
+        status: typeof error?.status === 'number' ? error.status : null,
+      };
+    }
+    return {
+      classification: 'exec_error',
+      label,
+      marker,
+      pod_name: podName,
+      namespace: k8sNamespace,
+      process_count: null,
+      processes: [],
+      stderr,
+      stdout,
+      error: message,
+      status: typeof error?.status === 'number' ? error.status : null,
+    };
+  }
+}
+
+function findMarkerProcesses(marker) {
+  const probe = probeMarkerProcesses(marker, 'find-marker-processes');
+  if (probe.classification === 'present' || probe.classification === 'absent') {
+    return probe.processes;
+  }
+  fail('marker_process_probe_unexpected_classification', markerProbeDiagnostics(probe));
+}
+
+async function waitForMarkerProcessPresent(marker, label, timeoutMs = 30_000) {
+  const startedAt = Date.now();
+  let lastProbe = null;
+  while (Date.now() - startedAt < timeoutMs) {
+    lastProbe = probeMarkerProcesses(marker, label);
+    if (lastProbe.classification === 'present') return lastProbe;
+    if (lastProbe.classification === 'workload_gone') {
+      fail('marker_process_workload_gone_before_observed', markerProbeDiagnostics(lastProbe));
+    }
+    await new Promise((resolve) => setTimeout(resolve, 250));
+  }
+  fail('marker_process_not_observed', {
+    label,
+    marker,
+    probe_classification: lastProbe?.classification ?? null,
+    pod_name: podName,
+    last_probe: markerProbeDiagnostics(lastProbe),
+  });
+}
+
+function normalizeMarkerGoneContext(labelOrContext, contextOrTimeoutMs, timeoutMs) {
+  let context = {};
+  let resolvedTimeoutMs = typeof timeoutMs === 'number' ? timeoutMs : 60_000;
+  if (labelOrContext && typeof labelOrContext === 'object') {
+    context = { ...labelOrContext };
+    if (typeof contextOrTimeoutMs === 'number') {
+      resolvedTimeoutMs = contextOrTimeoutMs;
+    }
+  } else {
+    context = contextOrTimeoutMs && typeof contextOrTimeoutMs === 'object'
+      ? { ...contextOrTimeoutMs }
+      : {};
+    context.label = String(labelOrContext || context.label || 'session');
+    if (typeof contextOrTimeoutMs === 'number') {
+      resolvedTimeoutMs = contextOrTimeoutMs;
+    }
+  }
+  if (!context.label) context.label = 'session';
+  return { context, timeoutMs: resolvedTimeoutMs };
+}
+
+function isTerminalSessionFinalTruth(truth) {
+  const status = String(truth?.status || '').toLowerCase();
+  const closeState = String(truth?.close_state || '').toLowerCase();
+  if (status === 'closed') {
+    return 'closed';
+  }
+  if (status === 'failed' || closeState === 'expired') {
+    return 'failed';
+  }
+  if (truth?.get_status === 404 && truth?.list_total !== null && !truth?.listed_session) {
+    return 'closed';
+  }
+  return '';
+}
+
+async function waitForMarkerProcessGone(marker, labelOrContext, contextOrTimeoutMs = {}, timeoutMs = 60_000) {
+  const normalized = normalizeMarkerGoneContext(labelOrContext, contextOrTimeoutMs, timeoutMs);
+  const context = normalized.context;
+  const label = context.label;
+  const expectedRemainingSessions = context.expectedRemainingSessions;
+  const finalTruth = context.finalTruth;
+  const startedAt = Date.now();
+  let lastProbe = null;
+  while (Date.now() - startedAt < normalized.timeoutMs) {
+    lastProbe = probeMarkerProcesses(marker, label);
+    if (lastProbe.classification === 'absent') return lastProbe;
+    if (lastProbe.classification === 'workload_gone') {
+      const finalTruthOutcome = finalTruth?.outcome || isTerminalSessionFinalTruth(finalTruth);
+      if (expectedRemainingSessions === 0 && finalTruthOutcome) {
+        console.log(
+          `[agent-task-terminal-internal-smoke] marker probe ${label} workload_gone`,
+          JSON.stringify(markerProbeDiagnostics(lastProbe)),
+        );
+        return { ...lastProbe, final_truth_outcome: finalTruthOutcome };
+      }
+      if (typeof expectedRemainingSessions === 'number' && expectedRemainingSessions > 0) {
+        fail('workload_gone_with_live_terminal_session', {
+          ...markerProbeDiagnostics(lastProbe),
+          expected_remaining_sessions: expectedRemainingSessions,
+          live_terminal_session_id: context.liveTerminalSessionId ?? null,
+          final_truth_outcome: finalTruthOutcome || null,
+        });
+      }
+      fail('workload_gone_without_final_session_truth', {
+        ...markerProbeDiagnostics(lastProbe),
+        expected_remaining_sessions: expectedRemainingSessions ?? null,
+        final_truth_outcome: finalTruthOutcome || null,
+      });
+    }
+    await new Promise((resolve) => setTimeout(resolve, 500));
+  }
+  if (lastProbe?.classification === 'exec_error') {
+    fail('marker_process_exec_error_after_close', {
+      label,
+      marker,
+      probe_classification: lastProbe.classification,
+      pod_name: podName,
+      last_probe: markerProbeDiagnostics(lastProbe),
+    });
+  }
+  fail('marker_process_still_running_after_close', {
+    label,
+    marker,
+    probe_classification: lastProbe?.classification ?? null,
+    pod_name: podName,
+    last_probe: markerProbeDiagnostics(lastProbe),
+  });
+}
+
 (async () => {
   const createUrl =
     `${apiBase}/api/v1/workspaces/${encodeURIComponent(workspaceId)}` +
@@ -158,7 +421,14 @@ function restartInternalRuntime() {
   async function requestJson(url, init = {}) {
     const response = await fetch(url, init);
     const text = await response.text();
-    const payload = text ? JSON.parse(text) : null;
+    let payload = null;
+    if (text) {
+      try {
+        payload = JSON.parse(text);
+      } catch {
+        payload = { raw: text };
+      }
+    }
     return { response, payload, text };
   }
 
@@ -170,7 +440,7 @@ function restartInternalRuntime() {
           Authorization: `Bearer ${token}`,
           'content-type': 'application/json',
         },
-        body: JSON.stringify({ cols: 80, rows: 24 }),
+        body: JSON.stringify({ cols: terminalCols, rows: terminalRows }),
       });
       if (response.ok) {
         return payload;
@@ -215,6 +485,134 @@ function restartInternalRuntime() {
     return payload;
   }
 
+  async function readSessionListForTruth() {
+    const { response, payload, text } = await requestJson(createUrl, {
+      method: 'GET',
+      headers: {
+        Authorization: `Bearer ${token}`,
+      },
+    });
+    return {
+      ok: response.ok,
+      status: response.status,
+      payload,
+      text,
+    };
+  }
+
+  async function readSessionById(sessionId) {
+    const { response, payload, text } = await requestJson(`${createUrl}/${encodeURIComponent(sessionId)}`, {
+      method: 'GET',
+      headers: {
+        Authorization: `Bearer ${token}`,
+      },
+    });
+    return {
+      ok: response.ok,
+      status: response.status,
+      payload,
+      text,
+    };
+  }
+
+  function readListedTerminalSessionId(item) {
+    if (!item || typeof item !== 'object') return '';
+    if (typeof item.terminal_session_id === 'string' && item.terminal_session_id.trim()) {
+      return item.terminal_session_id.trim();
+    }
+    return typeof item.id === 'string' ? item.id.trim() : '';
+  }
+
+  function readCanonicalListedTerminalSessionId(item) {
+    if (!item || typeof item !== 'object') return '';
+    return typeof item.terminal_session_id === 'string' ? item.terminal_session_id.trim() : '';
+  }
+
+  function readStringField(source, key) {
+    if (!source || typeof source !== 'object') return '';
+    return typeof source[key] === 'string' ? source[key].trim() : '';
+  }
+
+  function summarizeCloseTruth(sessionId, listed, readResult, listResult, lastError = null) {
+    const session = readResult?.ok && readResult.payload && typeof readResult.payload === 'object'
+      ? readResult.payload
+      : null;
+    const listPayload = listResult?.ok && listResult.payload && typeof listResult.payload === 'object'
+      ? listResult.payload
+      : null;
+    const diagnosticSource = session || listed || null;
+    return {
+      session_id: sessionId,
+      list_total: typeof listPayload?.total === 'number' ? listPayload.total : null,
+      list_status: listResult?.status ?? null,
+      get_status: readResult?.status ?? null,
+      status: readStringField(diagnosticSource, 'status'),
+      close_state: readStringField(diagnosticSource, 'close_state'),
+      close_result: readStringField(diagnosticSource, 'close_result'),
+      close_deadline_at: readStringField(diagnosticSource, 'close_deadline_at'),
+      close_attempt_id: readStringField(diagnosticSource, 'close_attempt_id'),
+      close_request_id: readStringField(diagnosticSource, 'close_request_id'),
+      failure_kind: readStringField(diagnosticSource, 'failure_kind'),
+      close_reason: readStringField(diagnosticSource, 'close_reason'),
+      listed_session: listed,
+      session,
+      last_error: lastError,
+    };
+  }
+
+  async function readTerminalSessionTruth(sessionId) {
+    let listResult = null;
+    let readResult = null;
+    let lastError = null;
+    try {
+      listResult = await readSessionListForTruth();
+      if (!listResult.ok) {
+        lastError = `list_status:${listResult.status}:${listResult.text}`;
+      }
+    } catch (error) {
+      lastError = `list:${error instanceof Error ? error.message : String(error)}`;
+    }
+    try {
+      readResult = await readSessionById(sessionId);
+    } catch (error) {
+      lastError = [lastError, `get:${error instanceof Error ? error.message : String(error)}`]
+        .filter(Boolean)
+        .join(';');
+    }
+    const listPayload = listResult?.ok && listResult.payload && typeof listResult.payload === 'object'
+      ? listResult.payload
+      : null;
+    const listed = Array.isArray(listPayload?.items)
+      ? listPayload.items.find((item) => readCanonicalListedTerminalSessionId(item) === sessionId) || null
+      : null;
+    return summarizeCloseTruth(sessionId, listed, readResult, listResult, lastError);
+  }
+
+  async function waitForSessionFinalTruth(sessionId, label) {
+    const timeoutMs = 60_000;
+    const startedAt = Date.now();
+    let lastTruth = null;
+    while (Date.now() - startedAt < timeoutMs) {
+      lastTruth = await readTerminalSessionTruth(sessionId);
+      const outcome = isTerminalSessionFinalTruth(lastTruth);
+      if (outcome) {
+        return { ...lastTruth, outcome };
+      }
+      await new Promise((resolve) => setTimeout(resolve, 500));
+    }
+    fail('terminal_session_close_truth_timeout', {
+      label,
+      session_id: sessionId,
+      last_session_truth: lastTruth,
+      close_state: lastTruth?.close_state ?? null,
+      close_result: lastTruth?.close_result ?? null,
+      close_deadline_at: lastTruth?.close_deadline_at ?? null,
+      close_attempt_id: lastTruth?.close_attempt_id ?? null,
+      failure_kind: lastTruth?.failure_kind ?? null,
+      close_reason: lastTruth?.close_reason ?? null,
+    });
+  }
+
   async function deleteSession(sessionId) {
     const { response, text } = await requestJson(`${createUrl}/${encodeURIComponent(sessionId)}`, {
       method: 'DELETE',
@@ -227,9 +625,72 @@ function restartInternalRuntime() {
     }
   }
 
+  function readTerminalState(message) {
+    if (!message || typeof message !== 'object') return '';
+    if (typeof message.state === 'string' && message.state.trim()) return message.state.trim();
+    return typeof message.status === 'string' ? message.status.trim() : '';
+  }
+
+  function isTerminalReadyHandshake(message) {
+    if (!message || typeof message !== 'object') return false;
+    if (message.type === 'terminal.replay_end') {
+      return message.input_enabled === true;
+    }
+    if (message.type === 'terminal.state') {
+      const terminalState = readTerminalState(message);
+      return (terminalState === 'ready' || terminalState === 'active' || terminalState === 'connected') && message.input_enabled === true;
+    }
+    return false;
+  }
+
+  function isTerminalWaitingHandshake(message) {
+    if (!message || typeof message !== 'object') return false;
+    if (message.type === 'terminal.state') {
+      const terminalState = readTerminalState(message);
+      return terminalState === 'recovering' || terminalState === 'starting' || terminalState === 'pending' || terminalState === 'waiting';
+    }
+    return false;
+  }
+
+  function isTerminalFailureHandshake(message) {
+    if (!message || typeof message !== 'object') return false;
+    if (message.type === 'terminal.error' || message.type === 'error') return true;
+    if (message.type === 'terminal.state') {
+      const terminalState = readTerminalState(message);
+      return terminalState === 'failed' || terminalState === 'unavailable' || terminalState === 'attach_unavailable';
+    }
+    return false;
+  }
+
+  function readTerminalOutput(message) {
+    if (!message || typeof message !== 'object') return '';
+    if (message.type === 'terminal.output' || message.type === 'output') {
+      if (typeof message.chunk === 'string') return message.chunk;
+      if (typeof message.data !== 'string') return '';
+      if (message.encoding === 'base64') {
+        return Buffer.from(message.data, 'base64').toString('utf8');
+      }
+      return message.data;
+    }
+    return '';
+  }
+
+  function isTerminalClosedMessage(message) {
+    if (!message || typeof message !== 'object') return false;
+    if (message.type === 'exited' || message.type === 'closed') return true;
+    if (message.type !== 'terminal.state') return false;
+    const terminalState = readTerminalState(message);
+    return terminalState === 'closed' || terminalState === 'session_ended';
+  }
+
   async function openSession({ label }) {
     const created = await createSession();
-    console.log(`[agent-task-terminal-internal-smoke] created ${label}`, created.session_id);
+    const terminalSessionId =
+      typeof created.terminal_session_id === 'string' ? created.terminal_session_id.trim() : '';
+    if (!terminalSessionId) {
+      fail('create_session_missing_terminal_session_id', created);
+    }
+    console.log(`[agent-task-terminal-internal-smoke] created ${label}`, terminalSessionId);
 
     return await new Promise((resolve, reject) => {
       const ws = new WebSocket(
@@ -237,8 +698,10 @@ function restartInternalRuntime() {
       );
       const state = {
         label,
-        sessionId: created.session_id,
-        sawStarted: false,
+        sessionId: terminalSessionId,
+        sawReady: false,
+        inputEnabled: false,
+        lastHandshake: null,
         sawWizard: false,
         closed: false,
         exitCode: null,
@@ -248,40 +711,70 @@ function restartInternalRuntime() {
       const closed = new Promise((resolveClosed) => {
         closedResolver = resolveClosed;
       });
+      let resolved = false;
       const deadline = setTimeout(() => {
         try { ws.close(); } catch {}
         reject(new Error(`timeout:${label}`));
       }, 30000);
 
+      function resolveReady(handshakeType) {
+        if (resolved) return;
+        resolved = true;
+        state.sawReady = true;
+        state.lastHandshake = handshakeType;
+        clearTimeout(deadline);
+        resolve({
+          sessionId: terminalSessionId,
+          ws,
+          state,
+          send(data) {
+            ws.send(JSON.stringify({ type: 'terminal.stdin', data }));
+          },
+          async waitForOutput(fragment, timeoutMs = 30_000) {
+            const startedAt = Date.now();
+            while (Date.now() - startedAt < timeoutMs) {
+              if (state.output.includes(fragment)) return;
+              await new Promise((resume) => setTimeout(resume, 100));
+            }
+            throw new Error(`output_timeout:${label}:${fragment}`);
+          },
+          async waitForBrowserSocketClosed(timeoutMs = 10_000) {
+            const timeout = new Promise((_, rejectTimeout) => {
+              setTimeout(() => rejectTimeout(new Error(`browser_socket_close_timeout:${label}`)), timeoutMs);
+            });
+            await Promise.race([closed, timeout]);
+          },
+        });
+      }
+
+      ws.on('open', () => {
+        ws.send(JSON.stringify({
+          type: 'terminal.reconnect',
+          terminal_session_id: terminalSessionId,
+          cols: terminalCols,
+          rows: terminalRows,
+        }));
+      });
+
       ws.on('message', (buffer) => {
         const message = JSON.parse(String(buffer));
-        if (message.type === 'started') {
-          state.sawStarted = true;
+        if (isTerminalReadyHandshake(message)) {
+          state.inputEnabled = true;
+          resolveReady(message.type);
+          return;
+        }
+        if (isTerminalWaitingHandshake(message)) {
+          state.inputEnabled = false;
+          state.lastHandshake = message.type;
+          return;
+        }
+        if (isTerminalFailureHandshake(message)) {
           clearTimeout(deadline);
-          resolve({
-            sessionId: created.session_id,
-            ws,
-            state,
-            send(data) {
-              ws.send(JSON.stringify({ type: 'terminal.stdin', data }));
-            },
-            async waitForOutput(fragment, timeoutMs = 30_000) {
-              const startedAt = Date.now();
-              while (Date.now() - startedAt < timeoutMs) {
-                if (state.output.includes(fragment)) return;
-                await new Promise((resume) => setTimeout(resume, 100));
-              }
-              throw new Error(`output_timeout:${label}:${fragment}`);
-            },
-            async waitForClosed(timeoutMs = 30_000) {
-              const timeout = new Promise((_, rejectTimeout) => {
-                setTimeout(() => rejectTimeout(new Error(`close_timeout:${label}`)), timeoutMs);
-              });
-              await Promise.race([closed, timeout]);
-            },
-          });
-        } else if (message.type === 'output') {
-          const chunk = typeof message.chunk === 'string' ? message.chunk : '';
+          reject(new Error(`terminal_error:${label}:${JSON.stringify(message)}`));
+          return;
+        }
+        const chunk = readTerminalOutput(message);
+        if (chunk) {
           state.output += chunk;
           process.stdout.write(chunk);
           if (
@@ -290,10 +783,9 @@ function restartInternalRuntime() {
           ) {
             state.sawWizard = true;
           }
-        } else if (message.type === 'error') {
-          clearTimeout(deadline);
-          reject(new Error(`terminal_error:${label}:${JSON.stringify(message)}`));
-        } else if (message.type === 'exited' || message.type === 'closed') {
+          return;
+        }
+        if (isTerminalClosedMessage(message)) {
           state.closed = true;
           state.exitCode = message.exit_code ?? null;
           if (closedResolver) closedResolver();
@@ -313,8 +805,16 @@ function restartInternalRuntime() {
   }
 
   const first = await openSession({ label: 'session-one' });
-  first.send('pwd\nexport NOTEBOOK_SESSION_VAR=terminal_session_value\necho SESSION_VAR=$NOTEBOOK_SESSION_VAR\nsleep 120\n');
+  const firstMarker = makeCloseMarker('session-one');
+  first.send(
+    'pwd\n' +
+    'export NOTEBOOK_SESSION_VAR=terminal_session_value\n' +
+    'echo SESSION_VAR=$NOTEBOOK_SESSION_VAR\n' +
+    `${buildMarkerForegroundCommand(firstMarker)}\n`,
+  );
   await first.waitForOutput('SESSION_VAR=terminal_session_value');
+  await first.waitForOutput(`${firstMarker}_STARTED`);
+  await waitForMarkerProcessPresent(firstMarker, 'session-one');
   if (!first.state.output.includes('/workspace')) {
     fail('session_one_workspace_missing', first.state.output);
   }
@@ -330,37 +830,66 @@ function restartInternalRuntime() {
   }
 
   const listedTogether = await listSessions();
-  const listedIds = new Set((listedTogether?.items ?? []).map((item) => item.id));
+  const listedIds = new Set((listedTogether?.items ?? []).map(readListedTerminalSessionId));
   if (listedTogether?.total !== 2 || !listedIds.has(first.sessionId) || !listedIds.has(second.sessionId)) {
     fail('expected_two_sessions_listed', listedTogether);
   }
 
   await deleteSession(first.sessionId);
-  await first.waitForClosed();
+  const firstBrowserSocketClosed = await first.waitForBrowserSocketClosed().then(() => true, () => false);
+  const firstCloseTruth = await waitForSessionFinalTruth(first.sessionId, 'session-one');
   const remainingAfterFirstClose = await listSessions();
+  const remainingSessionId = readListedTerminalSessionId(remainingAfterFirstClose?.items?.[0]);
   if (
     remainingAfterFirstClose?.total !== 1
-    || remainingAfterFirstClose.items?.[0]?.id !== second.sessionId
+    || remainingSessionId !== second.sessionId
   ) {
     fail('remaining_after_first_close', remainingAfterFirstClose);
   }
+  const firstGoneProbe = await waitForMarkerProcessGone(firstMarker, {
+    label: 'session-one',
+    expectedRemainingSessions: remainingAfterFirstClose?.total,
+    liveTerminalSessionId: second.sessionId,
+    finalTruth: firstCloseTruth,
+  });
 
   second.send('echo SESSION_TWO_STILL_ACTIVE\n');
   await second.waitForOutput('SESSION_TWO_STILL_ACTIVE');
 
+  const secondMarker = makeCloseMarker('session-two');
+  second.send(`${buildMarkerForegroundCommand(secondMarker)}\n`);
+  await second.waitForOutput(`${secondMarker}_STARTED`);
+  await waitForMarkerProcessPresent(secondMarker, 'session-two');
+
   await deleteSession(second.sessionId);
-  await second.waitForClosed();
+  const secondBrowserSocketClosed = await second.waitForBrowserSocketClosed().then(() => true, () => false);
+  const secondCloseTruth = await waitForSessionFinalTruth(second.sessionId, 'session-two');
   const remainingAfterLastClose = await listSessions();
   if (remainingAfterLastClose?.total !== 0) {
     fail('remaining_after_last_close', remainingAfterLastClose);
   }
+  const secondGoneProbe = await waitForMarkerProcessGone(secondMarker, {
+    label: 'session-two',
+    expectedRemainingSessions: remainingAfterLastClose?.total,
+    finalTruth: secondCloseTruth,
+  });
 
   console.log('\n[agent-task-terminal-internal-smoke] task released after last terminal session');
   console.log('\n[agent-task-terminal-internal-smoke] success', JSON.stringify({
     first_session_id: first.sessionId,
     second_session_id: second.sessionId,
+    first_close_outcome: firstCloseTruth.outcome,
+    second_close_outcome: secondCloseTruth.outcome,
+    browser_socket_closed: {
+      session_one: firstBrowserSocketClosed,
+      session_two: secondBrowserSocketClosed,
+    },
     remaining_after_first_close: remainingAfterFirstClose.total,
     remaining_after_last_close: remainingAfterLastClose.total,
+    marker_probe: {
+      session_one: markerProbeDiagnostics(firstGoneProbe),
+      session_two: markerProbeDiagnostics(secondGoneProbe),
+    },
   }));
   process.exit(0);
 })();

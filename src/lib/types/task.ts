@@ -292,19 +292,98 @@ export interface CreateTaskTerminalSessionRequest {
   shell?: string;
 }
 
+export type TaskTerminalSessionStatusValue =
+  | 'pending'
+  | 'active'
+  | 'disconnected'
+  | 'recovering'
+  | 'closing'
+  | 'closed'
+  | 'failed';
+
+export type TaskTerminalLifecycleStatus =
+  | 'pending'
+  | 'starting'
+  | 'active'
+  | 'recovering'
+  | 'closing'
+  | 'closed'
+  | 'failed';
+
+export type TaskTerminalRunnerConnectionStatus =
+  | 'dispatching'
+  | 'attached'
+  | 'transport_lost'
+  | 'adopting'
+  | 'missing'
+  | 'closed';
+
+export type TaskTerminalBrowserConnectionStatus =
+  | 'attached'
+  | 'browser_disconnected'
+  | 'none';
+
+export type TaskTerminalFailureKind =
+  | 'process_start_failed'
+  | 'process_exited_unexpectedly'
+  | 'protocol_error'
+  | 'permission_revoked'
+  | 'runner_recovery_timeout'
+  | 'terminal_process_lost'
+  | 'runner_process_exited'
+  | 'terminal_runtime_session_mismatch';
+
+export type TaskTerminalCloseState =
+  | 'none'
+  | 'requested'
+  | 'delivered'
+  | 'acked'
+  | 'expired';
+
+export type TaskTerminalCloseResult = 'closed' | 'not_found';
+
+export type TaskTerminalReplayStatus = 'complete' | 'partial' | 'unavailable';
+
 export interface TaskTerminalSessionCreateResponse {
   terminal_session_id: string;
   runner_id?: string;
   runner_session_id?: string;
-  status: 'pending' | 'active' | 'disconnected' | 'closed' | 'failed';
-  ws_url: string;
+  status: TaskTerminalSessionStatusValue;
+  lifecycle_status?: TaskTerminalLifecycleStatus;
+  runner_connection_status?: TaskTerminalRunnerConnectionStatus;
+  browser_connection_status?: TaskTerminalBrowserConnectionStatus;
+  input_enabled?: boolean;
+  recoverable?: boolean;
+  recovery_deadline_at?: string | null;
+  failure_kind?: TaskTerminalFailureKind | null;
+  close_state?: TaskTerminalCloseState | null;
+  close_result?: TaskTerminalCloseResult | null;
+  close_reason?: string | null;
+  close_deadline_at?: string | null;
+  replay_status?: TaskTerminalReplayStatus | null;
+  replay_gap?: boolean | null;
+  latest_seq?: number | null;
+  ws_url: string | null;
 }
 
 export interface TaskTerminalSessionStatus {
   terminal_session_id: string;
   runner_id?: string;
   runner_session_id?: string;
-  status: 'pending' | 'active' | 'disconnected' | 'closed' | 'failed';
+  status: TaskTerminalSessionStatusValue;
+  lifecycle_status?: TaskTerminalLifecycleStatus;
+  runner_connection_status?: TaskTerminalRunnerConnectionStatus;
+  browser_connection_status?: TaskTerminalBrowserConnectionStatus;
+  input_enabled?: boolean;
+  recoverable?: boolean;
+  recovery_deadline_at?: string | null;
+  failure_kind?: TaskTerminalFailureKind | null;
+  close_state?: TaskTerminalCloseState | null;
+  close_result?: TaskTerminalCloseResult | null;
+  close_deadline_at?: string | null;
+  replay_status?: TaskTerminalReplayStatus | null;
+  replay_gap?: boolean | null;
+  latest_seq?: number | null;
   cols: number;
   rows: number;
   created_at: string;
@@ -315,9 +394,6 @@ export interface TaskTerminalSessionStatus {
   ws_url?: string | null;
 }
 
-export const TASK_TERMINAL_RECONNECT_VIEW = 'agent_task.task_terminal' as const;
-export type TaskTerminalReconnectView = typeof TASK_TERMINAL_RECONNECT_VIEW;
-
 export type TaskTerminalServerEvent =
   | {
       type: 'terminal.replay_start';
@@ -327,7 +403,8 @@ export type TaskTerminalServerEvent =
       next_seq?: number | null;
       after_seq?: number | null;
       gap?: boolean;
-      status?: 'complete' | 'partial' | 'unavailable' | string;
+      status?: TaskTerminalReplayStatus | string;
+      replay_status?: TaskTerminalReplayStatus | string;
     }
   | {
       type: 'terminal.output';
@@ -343,7 +420,8 @@ export type TaskTerminalServerEvent =
       latest_seq?: number | null;
       next_seq?: number | null;
       gap?: boolean;
-      status?: 'complete' | 'partial' | 'unavailable' | string;
+      status?: TaskTerminalReplayStatus | string;
+      replay_status?: TaskTerminalReplayStatus | string;
       input_enabled?: boolean;
     }
   | {
@@ -353,6 +431,10 @@ export type TaskTerminalServerEvent =
       status?: string;
       input_enabled?: boolean;
       reason?: string | null;
+      close_reason?: string | null;
+      failure_kind?: TaskTerminalFailureKind | null;
+      replay_status?: TaskTerminalReplayStatus | string;
+      recovery_deadline_at?: string | null;
     }
   | {
       type: 'terminal.error';
@@ -360,4 +442,6 @@ export type TaskTerminalServerEvent =
       error_code?: string;
       error_message?: string;
       reason?: string | null;
+      close_reason?: string | null;
+      failure_kind?: TaskTerminalFailureKind | null;
     };

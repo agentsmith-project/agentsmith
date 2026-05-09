@@ -124,6 +124,11 @@ async function main(): Promise<void> {
     readSimpleEnvValue(summary, 'AGENT_RUNNER_ID'),
     readNestedString(state, ['agent_runner', 'id']),
   );
+  const developerRunnerKey = firstNonEmpty(
+    process.env.AGENT_KEY,
+    readSimpleEnvValue(summary, 'AGENT_RUNNER_KEY'),
+    readSimpleEnvValue(summary, 'AGENT_KEY'),
+  );
   const stateWsUrl = firstNonEmpty(
     process.env.AGENT_WS_URL,
     readSimpleEnvValue(summary, 'AGENT_RUNNER_WS_URL'),
@@ -149,6 +154,16 @@ async function main(): Promise<void> {
     const runner = await service.getAgent(workspaceId, projectId, runnerId);
     if (!runner) {
       throw new Error('managed_runner_not_found');
+    }
+    if (runner.runner_provider === 'developer') {
+      const wsUrl = stateWsUrl || service.buildConnectionInfo(runner).ws_url;
+      process.stdout.write([
+        `AGENT_RUNNER_ID=${assertEnvSafe(runner.id, 'agent_runner_id')}`,
+        `AGENT_WS_URL=${assertEnvSafe(wsUrl, 'agent_ws_url')}`,
+        `AGENT_KEY=${assertEnvSafe(developerRunnerKey, 'agent_key')}`,
+        '',
+      ].join('\n'));
+      return;
     }
     if (runner.runner_provider !== 'managed') {
       throw new Error('managed_runner_expected');

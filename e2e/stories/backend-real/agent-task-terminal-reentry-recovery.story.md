@@ -120,6 +120,30 @@
       ]
     },
     {
+      "stepId": "reload-agent-task-terminal-workspace",
+      "sceneId": "agent-task",
+      "intent": "Reload the Agent Task route and recover the same backend terminal session in the task workspace.",
+      "action": "Reload the Agent Task route",
+      "target": "agent-tasks__task-terminal-workspace",
+      "expectedFeedback": "浏览器刷新后，Terminal workspace 按 backend 持有的同一条 session id 恢复，而不是静默创建第二条 session。",
+      "note": "刷新恢复验证的是同一条 session 的连续性。",
+      "evidence": [
+        "trace"
+      ]
+    },
+    {
+      "stepId": "re-enter-agent-task-terminal-workspace",
+      "sceneId": "agent-task",
+      "intent": "Navigate away and re-enter the Agent Task terminal workspace without creating a duplicate session.",
+      "action": "Navigate away and re-enter the Agent Task terminal workspace",
+      "target": "agent-tasks__task-terminal-workspace",
+      "expectedFeedback": "用户离开 task 列表再回到当前 task 时，Terminal workspace 仍连接 backend 原 session，而不是多出一条替身 session。",
+      "note": "切页重入恢复的是同一 task 里的既有 terminal truth。",
+      "evidence": [
+        "trace"
+      ]
+    },
+    {
       "stepId": "surface-broken-terminal-session-inside-same-task",
       "sceneId": "agent-task",
       "intent": "Understand which terminal session now needs recovery while staying in the same task context.",

@@ -16,16 +16,28 @@ import { prepareLaunchCommand } from './child-launcher.js';
 import { inspectBuiltinSkills, resolveBuiltinSkillsConfig, seedBuiltinSkills } from './builtin-skills.js';
 import { buildTaskUserInstallEnv } from './user-install-env.js';
 import { assertTaskExecutionContext, type TaskExecutionContext } from '@mbos/agent-runner';
+import {
+  inspectTerminalPidMetadata,
+  type TerminalPidMetadata,
+} from './terminal-process-tree.js';
+
+export {
+  terminateTerminalProcessTree,
+  type TerminalPidMetadata,
+  type TerminalProcessTreeTerminationOptions,
+  type TerminalProcessTreeTerminationResult,
+} from './terminal-process-tree.js';
 
 export type TerminalExecutionContext = TaskExecutionContext;
 
 export type TerminalProcess = {
   readonly exitCode: number | null;
+  readonly pidMetadata: TerminalPidMetadata;
   write(data: string): void;
   resize(cols: number, rows: number): void;
-  kill(signal?: string): void;
+  kill(signal?: NodeJS.Signals): void;
   onData(listener: (chunk: string) => void): void;
-  onExit(listener: (event: { exitCode: number; signal?: number }) => void): void;
+  onExit(listener: (event: { exitCode: number | null; signal?: string | number | null }) => void): void;
 };
 
 function debugTerminalRuntime(message: string, extra?: Record<string, unknown>): void {
@@ -264,9 +276,6 @@ export async function startTerminalProcess(input: {
     await prepared.release();
     throw error;
   }
-  debugTerminalRuntime('spawn_pty_ready', {
-    cwd: prepared.cwd,
-  });
 
   let exitCode: number | null = null;
   let releasePromise: Promise<void> | null = null;
@@ -286,11 +295,23 @@ export async function startTerminalProcess(input: {
     exitCode = event.exitCode;
     void releasePreparedWorkspace();
   });
+  const ptyPid = (child as { pid?: unknown }).pid;
+  const pidMetadata = await inspectTerminalPidMetadata(ptyPid);
+  debugTerminalRuntime('spawn_pty_ready', {
+    cwd: prepared.cwd,
+    pty_pid: pidMetadata.ptyPid,
+    pgid: pidMetadata.pgid,
+    sid: pidMetadata.sid,
+    diagnostics: pidMetadata.diagnostics,
+  });
 
   return {
     child: {
       get exitCode() {
         return exitCode;
+      },
+      get pidMetadata() {
+        return pidMetadata;
       },
       write(data: string) {
         child.write(data);

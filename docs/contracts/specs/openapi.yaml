@@ -2761,59 +2761,7 @@ paths:
                   items:
                     type: array
                     items:
-                      type: object
-                      required:
-                        - terminal_session_id
-                        - status
-                        - cols
-                        - rows
-                        - created_at
-                        - last_activity_at
-                        - ended_at
-                        - close_reason
-                        - exit_code
-                        - ws_url
-                        - runner_id
-                      properties:
-                        terminal_session_id:
-                          type: string
-                        runner_id:
-                          type: string
-                          description: Resolved Agent Runner id used by this terminal session.
-                        runner_session_id:
-                          type: string
-                          description: Internal runner session id used by this terminal session.
-                        status:
-                          type: string
-                          enum:
-                            - pending
-                            - active
-                            - disconnected
-                            - closed
-                            - failed
-                        cols:
-                          type: integer
-                        rows:
-                          type: integer
-                        created_at:
-                          type: string
-                          format: date-time
-                        last_activity_at:
-                          type: string
-                          format: date-time
-                        ended_at:
-                          type: string
-                          format: date-time
-                          nullable: true
-                        close_reason:
-                          type: string
-                          nullable: true
-                        exit_code:
-                          type: integer
-                          nullable: true
-                        ws_url:
-                          type: string
-                          nullable: true
+                      $ref: "#/components/schemas/TaskTerminalSession"
         "401":
           $ref: "#/components/responses/Unauthorized"
         "403":
@@ -2843,31 +2791,7 @@ paths:
           content:
             application/json:
               schema:
-                type: object
-                required:
-                  - terminal_session_id
-                  - runner_id
-                  - status
-                  - ws_url
-                properties:
-                  terminal_session_id:
-                    type: string
-                  runner_id:
-                    type: string
-                    description: Resolved Agent Runner id used by this terminal session.
-                  runner_session_id:
-                    type: string
-                    description: Internal runner session id used by this terminal session.
-                  status:
-                    type: string
-                    enum:
-                      - pending
-                      - active
-                      - disconnected
-                      - closed
-                      - failed
-                  ws_url:
-                    type: string
+                $ref: "#/components/schemas/TaskTerminalSession"
         "401":
           $ref: "#/components/responses/Unauthorized"
         "403":
@@ -2887,59 +2811,7 @@ paths:
           content:
             application/json:
               schema:
-                type: object
-                required:
-                  - terminal_session_id
-                  - status
-                  - cols
-                  - rows
-                  - created_at
-                  - last_activity_at
-                  - ended_at
-                  - close_reason
-                  - exit_code
-                  - ws_url
-                  - runner_id
-                properties:
-                  terminal_session_id:
-                    type: string
-                  runner_id:
-                    type: string
-                    description: Resolved Agent Runner id used by this terminal session.
-                  runner_session_id:
-                    type: string
-                    description: Internal runner session id used by this terminal session.
-                  status:
-                    type: string
-                    enum:
-                      - pending
-                      - active
-                      - disconnected
-                      - closed
-                      - failed
-                  cols:
-                    type: integer
-                  rows:
-                    type: integer
-                  created_at:
-                    type: string
-                    format: date-time
-                  last_activity_at:
-                    type: string
-                    format: date-time
-                  ended_at:
-                    type: string
-                    format: date-time
-                    nullable: true
-                  close_reason:
-                    type: string
-                    nullable: true
-                  exit_code:
-                    type: integer
-                    nullable: true
-                  ws_url:
-                    type: string
-                    nullable: true
+                $ref: "#/components/schemas/TaskTerminalSession"
         "401":
           $ref: "#/components/responses/Unauthorized"
         "403":
@@ -6026,6 +5898,150 @@ components:
           type: boolean
           enum:
             - true
+    TaskTerminalSession:
+      type: object
+      required:
+        - terminal_session_id
+        - runner_id
+        - runner_session_id
+        - status
+        - lifecycle_status
+        - runner_connection_status
+        - browser_connection_status
+        - input_enabled
+        - recoverable
+        - recovery_deadline_at
+        - failure_kind
+        - close_state
+        - close_result
+        - close_reason
+        - close_deadline_at
+        - replay_status
+        - replay_gap
+        - latest_seq
+        - cols
+        - rows
+        - created_at
+        - last_activity_at
+        - ended_at
+        - exit_code
+        - ws_url
+      properties:
+        terminal_session_id:
+          type: string
+        runner_id:
+          type: string
+          description: Resolved Agent Runner id used by this terminal session.
+        runner_session_id:
+          type: string
+          description: Internal runner session id used by this terminal session.
+        status:
+          type: string
+          enum:
+            - pending
+            - active
+            - disconnected
+            - recovering
+            - closing
+            - closed
+            - failed
+        lifecycle_status:
+          type: string
+          enum:
+            - pending
+            - starting
+            - active
+            - recovering
+            - closing
+            - closed
+            - failed
+        runner_connection_status:
+          type: string
+          enum:
+            - dispatching
+            - attached
+            - transport_lost
+            - adopting
+            - missing
+            - closed
+        browser_connection_status:
+          type: string
+          enum:
+            - attached
+            - browser_disconnected
+            - none
+        input_enabled:
+          type: boolean
+        recoverable:
+          type: boolean
+        recovery_deadline_at:
+          type: string
+          format: date-time
+          nullable: true
+        failure_kind:
+          type: string
+          nullable: true
+          enum:
+            - process_start_failed
+            - process_exited_unexpectedly
+            - protocol_error
+            - permission_revoked
+            - runner_recovery_timeout
+            - terminal_process_lost
+            - runner_process_exited
+            - terminal_runtime_session_mismatch
+        close_state:
+          type: string
+          enum:
+            - none
+            - requested
+            - delivered
+            - acked
+            - expired
+        close_result:
+          type: string
+          nullable: true
+          enum:
+            - closed
+            - not_found
+        close_reason:
+          type: string
+          nullable: true
+        close_deadline_at:
+          type: string
+          format: date-time
+          nullable: true
+        replay_status:
+          type: string
+          enum:
+            - complete
+            - partial
+            - unavailable
+        replay_gap:
+          type: boolean
+        latest_seq:
+          type: integer
+          minimum: 0
+        cols:
+          type: integer
+        rows:
+          type: integer
+        created_at:
+          type: string
+          format: date-time
+        last_activity_at:
+          type: string
+          format: date-time
+        ended_at:
+          type: string
+          format: date-time
+          nullable: true
+        exit_code:
+          type: integer
+          nullable: true
+        ws_url:
+          type: string
+          nullable: true
     Task:
       type: object
       additionalProperties: true

@@ -59,6 +59,7 @@ import { makeClientId } from "@/lib/chat/ids";
 import { deriveDefaultTaskWorkspaceName } from "./TaskCreateDialog";
 import type {
   TerminalCloseReconcileResult,
+  TerminalRetainedCloseStatus,
   TerminalStatus,
 } from "./TaskTerminalPanel";
 import { Badge } from "@/components/ui/badge";
@@ -227,10 +228,18 @@ function getReusableRecoveryInitialInputs(
 }
 
 function mapListedTerminalSessionStatusToTabStatus(
+  status: Exclude<ListedTerminalSession["status"], "closed" | "failed">,
+): TerminalRetainedCloseStatus;
+function mapListedTerminalSessionStatusToTabStatus(
+  status: ListedTerminalSession["status"],
+): TerminalStatus;
+function mapListedTerminalSessionStatusToTabStatus(
   status: ListedTerminalSession["status"],
 ): TerminalStatus {
   if (status === "pending") return "preparing";
-  if (status === "disconnected") return "recovering";
+  if (status === "disconnected") return "disconnected";
+  if (status === "recovering") return "recovering";
+  if (status === "closing") return "closing";
   if (status === "failed") return "failed";
   if (status === "closed") return "closed";
   return "active";
@@ -249,11 +258,21 @@ function getTerminalSessionIdentityForTab(tab: TerminalWorkspaceTab): string {
 function isListedTerminalSessionRecovering(
   status: ListedTerminalSession["status"],
 ): boolean {
-  return status === "failed" || status === "disconnected";
+  return status === "recovering";
 }
 
 function isTerminalTabRecovering(status: TerminalStatus): boolean {
-  return status === "failed" || status === "recovering";
+  return status === "recovering";
+}
+
+function isListedTerminalSessionLiveBlocking(
+  status: ListedTerminalSession["status"],
+): status is Exclude<ListedTerminalSession["status"], "closed" | "failed"> {
+  return status !== "closed" && status !== "failed";
+}
+
+function isTerminalTabLiveBlocking(status: TerminalStatus): boolean {
+  return status !== "closed" && status !== "failed";
 }
 
 function getTerminalSessionOccupancySnapshot({
@@ -268,14 +287,14 @@ function getTerminalSessionOccupancySnapshot({
   const entries = new Map<string, { recovering: boolean }>();
   if (terminalTruthResolved) {
     for (const session of terminalTruthSessions ?? []) {
-      if (session.status === "closed") continue;
+      if (!isListedTerminalSessionLiveBlocking(session.status)) continue;
       entries.set(getTerminalSessionIdentityForSessionId(session.terminal_session_id), {
         recovering: isListedTerminalSessionRecovering(session.status),
       });
     }
   }
   for (const tab of terminalTabs) {
-    if (tab.status === "closed") continue;
+    if (!isTerminalTabLiveBlocking(tab.status)) continue;
     const identity = getTerminalSessionIdentityForTab(tab);
     const existing = entries.get(identity);
     entries.set(identity, {
@@ -296,7 +315,13 @@ export function mergeTerminalTabStatus(
   nextStatus: ListedTerminalSession["status"],
 ): TerminalStatus {
   const mappedNextStatus = mapListedTerminalSessionStatusToTabStatus(nextStatus);
-  if (nextStatus === "failed" || nextStatus === "closed" || nextStatus === "active") {
+  if (
+    nextStatus === "failed" ||
+    nextStatus === "closed" ||
+    nextStatus === "active" ||
+    nextStatus === "recovering" ||
+    nextStatus === "closing"
+  ) {
     return mappedNextStatus;
   }
   const localStatusIsStrongerLiveTruth =
@@ -508,13 +533,13 @@ function getReconcileRefetchError(result: PromiseSettledResult<unknown>) {
 }
 
 function isTerminalRecoveryTab(tab: TerminalWorkspaceTab) {
-  return tab.status === "failed" || tab.status === "recovering";
+  return tab.status === "recovering";
 }
 
 function isListedTerminalSessionRecoveryStatus(
   status: ListedTerminalSession["status"],
 ) {
-  return status === "failed" || status === "disconnected";
+  return status === "recovering";
 }
 
 export function getPreferredRecoveryTerminalTabId(
@@ -1954,7 +1979,13 @@ export function TaskPage({
       },
     ) => {
       const liveSessions = sessions
-        .filter((session) => session.status !== "closed")
+        .filter(
+          (
+            session,
+          ): session is ListedTerminalSession & {
+            status: Exclude<ListedTerminalSession["status"], "closed" | "failed">;
+          } => isListedTerminalSessionLiveBlocking(session.status),
+        )
         .sort((left, right) => left.created_at.localeCompare(right.created_at));
       setTerminalTruthSessions(liveSessions);
       const currentTabs = terminalTabsRef.current;
@@ -2382,25 +2413,34 @@ export function TaskPage({
       try {
         const listedSessions = await syncTerminalWorkspaceFromBackend();
         if (!listedSessions) {
-          return "unavailable";
+          return { status: "unavailable" };
         }
         const liveSessions = listedSessions.items.filter(
-          (session) => session.status !== "closed",
+          (
+            session,
+          ): session is ListedTerminalSession & {
+            status: Exclude<ListedTerminalSession["status"], "closed" | "failed">;
+          } => isListedTerminalSessionLiveBlocking(session.status),
         );
-        if (
-          sessionId &&
-          liveSessions.some((session) => session.terminal_session_id === sessionId)
-        ) {
-          return "retained";
+        const retainedSession = sessionId
+          ? liveSessions.find((session) => session.terminal_session_id === sessionId)
+          : undefined;
+        if (retainedSession) {
+          return {
+            status: "retained",
+            retainedStatus: mapListedTerminalSessionStatusToTabStatus(
+              retainedSession.status,
+            ),
+          };
         }
-        return "closed";
+        return { status: "closed" };
       } catch (error) {
         hydratedTerminalTaskScopeRef.current = taskScopeKey;
         setTerminalWorkspaceHydrationState("unavailable");
         handleError(error, {
           logContext,
         });
-        return "unavailable";
+        return { status: "unavailable" };
       }
     },
     [
@@ -2643,7 +2683,7 @@ export function TaskPage({
           sessionId,
           "TaskPage.closeTerminalTab.hydrate",
         );
-        if (shouldRefocusAfterClose && reconcileResult !== "unavailable") {
+        if (shouldRefocusAfterClose && reconcileResult.status !== "unavailable") {
           requestTerminalTabFocus(activeTerminalTabIdRef.current);
         }
       } catch (error) {

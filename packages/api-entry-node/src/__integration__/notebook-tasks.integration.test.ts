@@ -67,6 +67,12 @@ type TerminalSessionResponseForTest = {
   terminal_session_id: string;
   runner_session_id?: string;
   status?: string;
+  lifecycle_status?: string;
+  runner_connection_status?: string;
+  input_enabled?: boolean;
+  recoverable?: boolean;
+  recovery_deadline_at?: string | null;
+  failure_kind?: string | null;
   close_reason?: string | null;
   ws_url?: string | null;
 };
@@ -3770,7 +3776,6 @@ describe('api-entry-node notebook task routes', () => {
       browserSocket.send(JSON.stringify({
         type: 'terminal.reconnect',
         terminal_session_id: created.terminal_session_id,
-        view: 'agent_task.task_terminal',
         cols: 80,
         rows: 24,
         after_seq: null,
@@ -3899,7 +3904,7 @@ describe('api-entry-node notebook task routes', () => {
     }
   });
 
-  it('reconciles terminal session truth to failed after api terminal-service reload and releases live quota', async () => {
+  it('reconciles terminal session truth to recovering after api terminal-service reload and keeps live quota', async () => {
     const previousPublicApiBase = process.env.PUBLIC_API_BASE_URL;
     const deps = createDefaultNodeApiDeps();
     deps.agentExecutionService.getAgentSessionOnlineState = () => true;
@@ -3953,10 +3958,28 @@ describe('api-entry-node notebook task routes', () => {
         total: 3,
         items: createdIds.map((id) => expect.objectContaining({
           terminal_session_id: id,
-          status: 'failed',
-          close_reason: 'terminal_connection_failed_service_reload',
-          ws_url: null,
+          status: 'recovering',
+          lifecycle_status: 'recovering',
+          runner_connection_status: 'transport_lost',
+          input_enabled: false,
+          recoverable: true,
+          recovery_deadline_at: expect.any(String),
+          failure_kind: null,
+          close_reason: 'runner_transport_lost',
+          ws_url: expect.stringContaining(`terminal_session_id=${id}`),
         })),
+      });
+
+      const runWhileRecovering = await apiFetchWithToken(
+        secondServer.baseUrl,
+        taskRunsPath('ws_default', projectId, taskId),
+        'test-token',
+        taskRunInit('Please continue this notebook task while terminals recover.'),
+      );
+      expect(runWhileRecovering.status).toBe(409);
+      await expect(runWhileRecovering.json()).resolves.toMatchObject({
+        error_code: 'RESOURCE_CONFLICT',
+        message: 'task_terminal_sessions_active',
       });
 
       const replacement = await apiFetchWithToken(
@@ -3969,31 +3992,10 @@ describe('api-entry-node notebook task routes', () => {
           body: JSON.stringify({ cols: 120, rows: 40 }),
         },
       );
-      expect(replacement.status).toBe(201);
-      const replacementBody = await replacement.json() as TerminalSessionResponseForTest;
-      expect(replacementBody.terminal_session_id).toMatch(/^term_/);
-      expect(replacementBody).not.toHaveProperty('session_id');
-
-      const listAfterReplacement = await apiFetchWithToken(
-        secondServer.baseUrl,
-        `/api/v1/workspaces/ws_default/projects/${projectId}/tasks/${taskId}/terminal/sessions`,
-        'test-token',
-      );
-      expect(listAfterReplacement.status).toBe(200);
-      await expect(listAfterReplacement.json()).resolves.toMatchObject({
-        total: 4,
-        items: [
-          ...createdIds.map((id) => expect.objectContaining({
-            terminal_session_id: id,
-            status: 'failed',
-            close_reason: 'terminal_connection_failed_service_reload',
-            ws_url: null,
-          })),
-          expect.objectContaining({
-            terminal_session_id: replacementBody.terminal_session_id,
-            status: 'pending',
-          }),
-        ],
+      expect(replacement.status).toBe(409);
+      await expect(replacement.json()).resolves.toMatchObject({
+        error_code: 'RESOURCE_CONFLICT',
+        message: 'task_terminal_session_limit_reached',
       });
 
       secondServer.server.closeAllConnections?.();
@@ -4010,7 +4012,7 @@ describe('api-entry-node notebook task routes', () => {
     }
   });
 
-  it('releases the internal task workload when api reload reconciles a persisted live terminal session to failed truth', async () => {
+  it('keeps the internal task workload while api reload reconciles a persisted live terminal session to recovering truth', async () => {
     const previousPublicApiBase = process.env.PUBLIC_API_BASE_URL;
     const deps = createDefaultNodeApiDeps();
     const releasePod = vi.fn(async () => undefined);
@@ -4092,18 +4094,20 @@ describe('api-entry-node notebook task routes', () => {
         total: 1,
         items: [
           expect.objectContaining({
-            status: 'failed',
-            close_reason: 'terminal_connection_failed_service_reload',
-            ws_url: null,
+            status: 'recovering',
+            lifecycle_status: 'recovering',
+            runner_connection_status: 'transport_lost',
+            input_enabled: false,
+            recoverable: true,
+            recovery_deadline_at: expect.any(String),
+            close_reason: 'runner_transport_lost',
+            ws_url: expect.stringContaining('terminal_session_id='),
           }),
         ],
       });
 
-      for (let attempt = 0; attempt < 20; attempt += 1) {
-        if (releasePod.mock.calls.length > 0) break;
-        await new Promise((resolve) => setTimeout(resolve, 10));
-      }
-      expect(releasePod).toHaveBeenCalledWith(
+      await new Promise((resolve) => setTimeout(resolve, 25));
+      expect(releasePod).not.toHaveBeenCalledWith(
         'ws_default',
         'proj_1',
         sanitizeWorkloadId(taskId),
@@ -4201,9 +4205,11 @@ describe('api-entry-node notebook task routes', () => {
       expect(correctTaskGet.status).toBe(200);
       await expect(correctTaskGet.json()).resolves.toMatchObject({
         terminal_session_id: created.terminal_session_id,
-        status: 'failed',
-        close_reason: 'terminal_connection_failed_service_reload',
-        ws_url: null,
+        status: 'recovering',
+        lifecycle_status: 'recovering',
+        runner_connection_status: 'transport_lost',
+        close_reason: 'runner_transport_lost',
+        ws_url: expect.stringContaining(`terminal_session_id=${created.terminal_session_id}`),
       });
 
       secondServer.server.closeAllConnections?.();
@@ -4306,7 +4312,6 @@ describe('api-entry-node notebook task routes', () => {
       browserSocket.send(JSON.stringify({
         type: 'terminal.reconnect',
         terminal_session_id: created.terminal_session_id,
-        view: 'agent_task.task_terminal',
         cols: 80,
         rows: 24,
         after_seq: null,

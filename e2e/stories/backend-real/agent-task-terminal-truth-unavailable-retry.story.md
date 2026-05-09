@@ -52,7 +52,7 @@
       "sceneId": "agent-task",
       "intent": "Return to the Agent Task while backend terminal truth cannot be confirmed yet.",
       "action": "Return to the task while terminal session truth is temporarily unavailable",
-      "target": "agent-task__task-header",
+      "target": "agent-tasks__task-terminal-truth-unavailable",
       "expectedFeedback": "用户重新进入任务时，先看到 terminal 真相暂时不可用，而不是误以为任务已经空闲。",
       "note": "terminal truth 不可用时，产品必须先 fail-closed。",
       "evidence": [

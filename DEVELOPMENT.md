@@ -326,7 +326,7 @@ make local-manual-internal-status
 1. 本地 `kind-agentsmith`
 2. `agentsmith-sandbox` namespace
 3. JuiceFS CSI
-4. local sandbox manager / cleaner
+4. local sandbox manager
 5. sandbox workload
 
 结束后如果想回到默认 external-only 模式：

@@ -47,6 +47,20 @@ export interface FileLibraryStorageOperationResult {
   operationStatus: FileLibraryStorageOperationStatus;
 }
 
+export class FileLibraryStorageOperationPendingError extends Error {
+  readonly operationId: string | null;
+  readonly operationStatus: Extract<FileLibraryStorageOperationStatus, 'pending'> = 'pending';
+
+  constructor(input: {
+    message: string;
+    operationId: string | null;
+  }) {
+    super(input.message);
+    this.name = 'FileLibraryStorageOperationPendingError';
+    this.operationId = input.operationId;
+  }
+}
+
 export interface FileLibraryOperationProjection {
   operation_id: string;
   operation_state: string;
@@ -505,6 +519,11 @@ function readTemplateId(operation: AfscpOperationEnvelope | AfscpOperationRecord
     ?? readOperationResourceId(operation, 'repo_template');
 }
 
+function isRepoDeleteOperation(operation: AfscpOperationEnvelope | AfscpOperationRecord): boolean {
+  const operationType = readOperationProjectionString(operation, 'operation_type')?.toLowerCase();
+  return !operationType || operationType === 'repo_delete' || operationType === 'delete_repo';
+}
+
 function readSavePointCreatedAt(operation: AfscpOperationEnvelope | AfscpOperationRecord): string | undefined {
   return readOperationString(operation, 'created_at') ?? undefined;
 }
@@ -903,7 +922,7 @@ function parseWebdavEntries(xml: string, basePath: string): FileLibraryEntry[] {
     if (path === basePath) {
       continue;
     }
-    const isDirectory = /<[^>]*:?collection\s*\/?>/i.test(block);
+    const isDirectory = /<[^>]*:?collection(?:\s[^>]*)?\/?>/i.test(block);
     if (isDirectory) {
       const directoryPath = path.endsWith('/') ? path : `${path}/`;
       entries.push({
@@ -1282,13 +1301,24 @@ export class AfscpFileLibraryStorageAdapter implements FileLibraryStoragePort {
     signal?: AbortSignal;
   }): Promise<void> {
     const mapping = await this.requireStoredMapping(input);
+    if (mapping.operation_status === 'pending' && mapping.operation_id) {
+      const reconciled = await this.reconcilePendingRepoDeleteOperation({
+        input,
+        mapping,
+        operationId: mapping.operation_id,
+      });
+      if (reconciled) {
+        return;
+      }
+    }
+
     let operation: AfscpOperationEnvelope;
     try {
       operation = await this.client.deleteRepo({
         namespaceId: mapping.namespace_id,
         repoId: mapping.repo_id,
         correlationId: resolveCorrelationId(input.requestId, 'file-library-delete-repo'),
-        idempotencyKey: safeIdempotencyKey(['file-library', input.libraryId, 'delete-repo', input.requestId ?? 'request']),
+        idempotencyKey: safeIdempotencyKey(['file-library', input.libraryId, 'delete-repo']),
         actor: { type: 'user', id: input.actorUserId },
         reason: input.reason ?? 'file_library_delete',
         signal: input.signal,
@@ -1360,7 +1390,13 @@ export class AfscpFileLibraryStorageAdapter implements FileLibraryStoragePort {
         ? readOperationErrorCode(finalOperation, 'file_library_repo_delete_failed')
         : null,
     });
-    throw new Error(status === 'pending' ? 'file_library_repo_delete_pending' : 'file_library_repo_delete_failed');
+    if (status === 'pending') {
+      throw new FileLibraryStorageOperationPendingError({
+        message: 'file_library_repo_delete_pending',
+        operationId,
+      });
+    }
+    throw new Error('file_library_repo_delete_failed');
   }
 
   async assertEmpty(input: FileLibraryStorageLibraryInput & { requestId?: string; signal?: AbortSignal }): Promise<void> {
@@ -2008,6 +2044,65 @@ export class AfscpFileLibraryStorageAdapter implements FileLibraryStoragePort {
       ensureOk(response, 'file_library_meta_failed');
       return responseMeta(objectPath, response);
     });
+  }
+
+  private async reconcilePendingRepoDeleteOperation(input: {
+    input: FileLibraryStorageLibraryInput & {
+      requestId?: string;
+      signal?: AbortSignal;
+    };
+    mapping: ProjectFileLibraryAfscpMapping;
+    operationId: string;
+  }): Promise<boolean> {
+    let finalOperation: AfscpOperationRecord;
+    try {
+      finalOperation = await this.client.pollOperation({
+        operationId: input.operationId,
+        correlationId: resolveCorrelationId(input.input.requestId, 'file-library-delete-repo-reconcile'),
+        signal: input.input.signal,
+      });
+    } catch {
+      await this.mappingRepo.updateOperation({
+        ...input.input,
+        operationId: input.operationId,
+        operationStatus: 'failed',
+        lastErrorCode: 'file_library_repo_delete_failed',
+      });
+      throw new Error('file_library_repo_delete_failed');
+    }
+
+    if (!isRepoDeleteOperation(finalOperation)) {
+      return false;
+    }
+
+    const operationId = readOperationId(finalOperation) ?? input.operationId;
+    await this.ensureOperationOwnership({
+      workspaceId: input.input.workspaceId,
+      projectId: input.input.projectId,
+      namespaceId: input.mapping.namespace_id,
+      operationId,
+    });
+    const status = normalizeOperationStatus(finalOperation.operation_state);
+    if (status === 'succeeded') {
+      await this.mappingRepo.delete(input.input.workspaceId, input.input.projectId, input.input.libraryId);
+      return true;
+    }
+
+    await this.mappingRepo.updateOperation({
+      ...input.input,
+      operationId,
+      operationStatus: status,
+      lastErrorCode: status === 'failed'
+        ? readOperationErrorCode(finalOperation, 'file_library_repo_delete_failed')
+        : null,
+    });
+    if (status === 'pending') {
+      throw new FileLibraryStorageOperationPendingError({
+        message: 'file_library_repo_delete_pending',
+        operationId,
+      });
+    }
+    throw new Error('file_library_repo_delete_failed');
   }
 
   private async requireStoredMapping(input: FileLibraryStorageLibraryInput): Promise<ProjectFileLibraryAfscpMapping> {

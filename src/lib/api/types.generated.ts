@@ -3393,6 +3393,14 @@ export interface components {
             workspace_mode?: "create_new" | "use_existing" | "use_template";
             workspace_name?: string;
         };
+        DeleteFileLibraryAcceptedResponse: {
+            file_library_id: string;
+            /** @enum {string} */
+            file_library_status: "deleting";
+            operation_id: string | null;
+            /** @enum {string} */
+            operation_status: "pending";
+        };
         DeleteFileLibraryEntriesRequest: {
             paths: string[];
         };
@@ -7561,6 +7569,15 @@ export interface operations {
         };
         requestBody?: never;
         responses: {
+            /** @description Repo delete accepted; poll operation projection and retry DELETE to complete catalog cleanup */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DeleteFileLibraryAcceptedResponse"];
+                };
+            };
             /** @description Deleted */
             204: {
                 headers: {

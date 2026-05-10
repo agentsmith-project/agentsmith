@@ -50,6 +50,10 @@ export function normalizeAfscpValidatedValue(
   return trimmed;
 }
 
+export function sanitizeAfscpNamespaceId(value: string | null | undefined): string | undefined {
+  return normalizeAfscpValidatedValue('namespace_id', value);
+}
+
 export function normalizeAfscpActorType(value: unknown): AfscpActorType | undefined {
   if (typeof value !== 'string' || !ACTOR_TYPE_SET.has(value)) {
     return undefined;

@@ -5,6 +5,7 @@ import {
   JsonDocProjectFileLibraryCatalogRepo,
   type TaskFileTemplateRecord,
 } from './file-library-persistence.js';
+import type { ProjectStoragePreflightResult } from './project-storage-bootstrap-service.js';
 
 export function mapFileLibraryInfraError(error: unknown): {
   statusCode: number;
@@ -70,6 +71,31 @@ export class FileLibraryProjectStorageNotReadyError extends Error {
   }
 }
 
+type ReadyProjectStoragePreflightResult = Extract<ProjectStoragePreflightResult, { status: 'ready' }>;
+
+async function ensureReadyProjectStorageForFileLibrary(input: {
+  deps: NodeApiDeps;
+  workspaceId: string;
+  projectId: string;
+  userId: string;
+  requestId?: string | null;
+}): Promise<ReadyProjectStoragePreflightResult> {
+  const projectStorage = await input.deps.projectStorageBootstrapService.ensureProjectStorageReady({
+    workspaceId: input.workspaceId,
+    projectId: input.projectId,
+    actorUserId: input.userId,
+    ...(input.requestId ? { requestId: input.requestId } : {}),
+  });
+  if (projectStorage.status !== 'ready') {
+    throw new FileLibraryProjectStorageNotReadyError({
+      status: projectStorage.status,
+      stage: projectStorage.stage,
+      lastErrorCode: projectStorage.lastErrorCode,
+    });
+  }
+  return projectStorage;
+}
+
 export async function createAndProvisionProjectFileLibrary(input: {
   deps: NodeApiDeps;
   workspaceId: string;
@@ -77,13 +103,14 @@ export async function createAndProvisionProjectFileLibrary(input: {
   userId: string;
   name: string;
   description?: string;
+  requestId?: string | null;
 }) {
   if (!input.deps.fileLibraryStorageAdapter?.enabled) {
     throw new Error('file_library_backend_unavailable');
   }
 
+  const projectStorage = await ensureReadyProjectStorageForFileLibrary(input);
   const catalogRepo = new JsonDocProjectFileLibraryCatalogRepo(input.deps.docStore);
-
   const libraryId = `flib_${randomUUID().replace(/-/g, '').slice(0, 12)}`;
   const created = buildFileLibraryRecord({
     id: libraryId,
@@ -96,18 +123,6 @@ export async function createAndProvisionProjectFileLibrary(input: {
   await catalogRepo.save(created);
 
   try {
-    const projectStorage = await input.deps.projectStorageBootstrapService.ensureProjectStorageReady({
-      workspaceId: input.workspaceId,
-      projectId: input.projectId,
-      actorUserId: input.userId,
-    });
-    if (projectStorage.status !== 'ready') {
-      throw new FileLibraryProjectStorageNotReadyError({
-        status: projectStorage.status,
-        stage: projectStorage.stage,
-        lastErrorCode: projectStorage.lastErrorCode,
-      });
-    }
     await input.deps.fileLibraryStorageAdapter.createRepoForLibrary({
       workspaceId: input.workspaceId,
       projectId: input.projectId,
@@ -115,6 +130,7 @@ export async function createAndProvisionProjectFileLibrary(input: {
       namespaceId: projectStorage.namespaceId,
       projectStorageGeneration: projectStorage.generation,
       actorUserId: input.userId,
+      ...(input.requestId ? { requestId: input.requestId } : {}),
     });
     const updated = await catalogRepo.update(input.workspaceId, input.projectId, created.id, { status: 'ready' });
     if (!updated) {
@@ -141,6 +157,7 @@ export async function createAndCloneTaskFileTemplateLibrary(input: {
     throw new Error('file_library_backend_unavailable');
   }
 
+  const projectStorage = await ensureReadyProjectStorageForFileLibrary(input);
   const catalogRepo = new JsonDocProjectFileLibraryCatalogRepo(input.deps.docStore);
   const libraryId = `flib_${randomUUID().replace(/-/g, '').slice(0, 12)}`;
   const created = buildFileLibraryRecord({
@@ -154,18 +171,6 @@ export async function createAndCloneTaskFileTemplateLibrary(input: {
   await catalogRepo.save(created);
 
   try {
-    const projectStorage = await input.deps.projectStorageBootstrapService.ensureProjectStorageReady({
-      workspaceId: input.workspaceId,
-      projectId: input.projectId,
-      actorUserId: input.userId,
-    });
-    if (projectStorage.status !== 'ready') {
-      throw new FileLibraryProjectStorageNotReadyError({
-        status: projectStorage.status,
-        stage: projectStorage.stage,
-        lastErrorCode: projectStorage.lastErrorCode,
-      });
-    }
     await input.deps.fileLibraryStorageAdapter.cloneTemplateToLibrary({
       workspaceId: input.workspaceId,
       projectId: input.projectId,

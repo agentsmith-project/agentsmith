@@ -12,12 +12,14 @@ cleanup_on_exit() {
 trap 'cleanup_on_exit $?' EXIT INT TERM
 
 ensure_local_manual_ready
-ensure_agent_task_diagnostics_ready
+ensure_internal_runner_state_before_api_restart
 ensure_kind_cluster
 ensure_internal_runner_image
 ensure_afscp_storage_csi
 ensure_internal_external_dependency_services
 INTERNAL_RUNTIME_STARTED=1
+resolve_afscp_jvs_binary
+ensure_afscp_local_runtime
 start_internal_runtime
 restart_api_with_mode 1
 ensure_internal_runner_state

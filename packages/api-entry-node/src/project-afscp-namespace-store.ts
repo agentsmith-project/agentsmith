@@ -1,6 +1,7 @@
 import { createHash } from 'node:crypto';
 import type { JsonDocStorePort } from '@mbos/ports';
 import type { AfscpResourceKind } from './afscp-error-mapper.js';
+import { sanitizeAfscpNamespaceId } from './afscp-validation.js';
 
 export type ProjectAfscpNamespaceStatus = 'pending' | 'ready' | 'blocked' | 'deleting' | 'tombstoned';
 export type ProjectAfscpNamespaceStage =
@@ -158,9 +159,16 @@ export function deriveProjectAfscpNamespaceId(input: ProjectAfscpNamespaceKey): 
     .update(input.workspaceId)
     .update('\0')
     .update(input.projectId)
-    .digest('base64url')
+    .digest('hex')
     .slice(0, 40);
   return `ns_${digest}`;
+}
+
+function canRegenerateProjectNamespaceMapping(existing: ProjectAfscpNamespaceMapping): boolean {
+  return !sanitizeAfscpNamespaceId(existing.namespace_id)
+    && (existing.status === 'pending' || existing.status === 'blocked')
+    && !existing.namespace_upsert_operation_id
+    && !existing.volume_binding_operation_id;
 }
 
 export function isProjectAfscpOwnedResourceKind(kind: AfscpResourceKind): kind is ProjectAfscpOwnedResourceKind {
@@ -185,6 +193,26 @@ export class ProjectAfscpNamespaceStore {
       id,
     );
     if (existing) {
+      if (canRegenerateProjectNamespaceMapping(existing)) {
+        const namespaceId = deriveProjectAfscpNamespaceId(input);
+        if (namespaceId !== existing.namespace_id && sanitizeAfscpNamespaceId(namespaceId)) {
+          const next: ProjectAfscpNamespaceMapping = {
+            ...existing,
+            namespace_id: namespaceId,
+            status: 'pending',
+            stage: 'namespace_upsert',
+            generation: existing.generation + 1,
+            next_action: 'retry_now',
+            retryable: false,
+            namespace_upsert_operation_id: null,
+            volume_binding_operation_id: null,
+            last_error_code: null,
+            updated_at: this.nowIso(),
+          };
+          await this.docStore.upsert(PROJECT_AFSCP_NAMESPACE_COLLECTION, id, next);
+          return next;
+        }
+      }
       return existing;
     }
 

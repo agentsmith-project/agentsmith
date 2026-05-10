@@ -11,9 +11,11 @@ function setupStartRunnerFixture() {
   const scriptsDir = path.join(tempRoot, 'scripts/local-manual');
   const runtimeRoot = path.join(tempRoot, 'artifacts/runtime/lines/local-manual/current');
   const fakeBin = path.join(tempRoot, 'bin');
+  const tokenFile = path.join(runtimeRoot, 'token.txt');
   mkdirSync(scriptsDir, { recursive: true });
   mkdirSync(runtimeRoot, { recursive: true });
   mkdirSync(fakeBin, { recursive: true });
+  writeFileSync(tokenFile, 'start-runner-test-token\n', 'utf8');
 
   cpSync(
     path.join(process.cwd(), 'scripts/local-manual/start-runner.sh'),
@@ -27,6 +29,8 @@ set -euo pipefail
 
 ROOT_DIR="${tempRoot}"
 LOCAL_MANUAL_ROOT="${runtimeRoot}"
+PORT_API="20000"
+WORKSPACE_ID="ws_start_runner_test"
 RUNNER_PID_FILE="${runtimeRoot}/runner.pid"
 RUNNER_READY_FILE="${runtimeRoot}/runner.ready"
 RUNNER_LOG="${runtimeRoot}/runner.log"
@@ -38,6 +42,22 @@ info() { :; }
 err() { echo "$*" >&2; }
 init_local_manual_env() {
   mkdir -p "${runtimeRoot}"
+}
+backend_real_token_file() {
+  printf '%s\\n' "${tokenFile}"
+}
+state_get() {
+  case "$1" in
+    project.id)
+      printf 'project_start_runner_test\\n'
+      ;;
+    agent_runner.id)
+      printf 'runner_start_runner_test\\n'
+      ;;
+    *)
+      printf '\\n'
+      ;;
+  esac
 }
 stop_local_manual_runner_owner_aware() {
   printf 'owner-aware:%s\\n' "\${1:-default}" >> "${tempRoot}/events.log"
@@ -136,6 +156,14 @@ if [[ "\${START_RUNNER_FAST_TIMEOUT:-0}" == "1" && "\${1:-}" == "+%s" ]]; then
   exit 0
 fi
 exec /bin/date "$@"
+`,
+    { mode: 0o755 },
+  );
+  writeFileSync(
+    path.join(fakeBin, 'curl'),
+    `#!/usr/bin/env bash
+set -euo pipefail
+printf '{"runtime_metadata":{"ready_at":"2026-01-01T00:00:00.000Z"}}\\n200'
 `,
     { mode: 0o755 },
   );

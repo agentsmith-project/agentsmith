@@ -619,12 +619,60 @@ describe('AFSCP File Library storage adapter', () => {
       requestId: 'req_delete_pending',
       reason: 'file_library_delete',
     })).rejects.toThrow('file_library_repo_delete_pending');
+    await expect(adapter.deleteRepoForLibrary({
+      workspaceId: 'ws_default',
+      projectId: 'proj_1',
+      libraryId: 'flib_123',
+      actorUserId: 'user_1',
+      requestId: 'req_delete_pending_probe',
+      reason: 'file_library_delete',
+    })).rejects.toMatchObject({
+      name: 'FileLibraryStorageOperationPendingError',
+      operationId: 'op_repo_delete_pending',
+    });
 
     await expect(mappingRepo.getByLibraryId('ws_default', 'proj_1', 'flib_123')).resolves.toMatchObject({
       operation_id: 'op_repo_delete_pending',
       operation_status: 'pending',
       repo_id: 'repo_flib_123',
     });
+  });
+
+  it('reconciles a stored pending repo delete operation before issuing another delete mutation', async () => {
+    const client = createProductClient({
+      deleteRepo: vi.fn(async () => {
+        throw new Error('delete should not be called while pending operation can be reconciled');
+      }),
+      pollOperation: vi.fn(async () => ({
+        ...succeededRepoOperation,
+        operation_id: 'op_repo_delete_pending',
+        operation_type: 'repo_delete',
+        operation_state: 'succeeded',
+      })),
+    });
+    const { mappingRepo, adapter } = await createMappedAdapter({ client });
+    await mappingRepo.updateOperation({
+      workspaceId: 'ws_default',
+      projectId: 'proj_1',
+      libraryId: 'flib_123',
+      operationId: 'op_repo_delete_pending',
+      operationStatus: 'pending',
+    });
+
+    await expect(adapter.deleteRepoForLibrary({
+      workspaceId: 'ws_default',
+      projectId: 'proj_1',
+      libraryId: 'flib_123',
+      actorUserId: 'user_1',
+      requestId: 'req_delete_reconcile',
+      reason: 'file_library_delete',
+    })).resolves.toBeUndefined();
+
+    expect(client.deleteRepo).not.toHaveBeenCalled();
+    expect(client.pollOperation).toHaveBeenCalledWith(expect.objectContaining({
+      operationId: 'op_repo_delete_pending',
+    }));
+    await expect(mappingRepo.getByLibraryId('ws_default', 'proj_1', 'flib_123')).resolves.toBeNull();
   });
 
   it('uses one-time WebDAV export credentials internally for file writes and revokes them without persisting secrets', async () => {
@@ -697,6 +745,48 @@ describe('AFSCP File Library storage adapter', () => {
     const serializedDocs = JSON.stringify(await docStore.list('project_file_library_afscp_mappings'));
     expect(serializedDocs).not.toContain('one-time-webdav-secret');
     expect(serializedDocs).not.toContain('https://files.example.test');
+  });
+
+  it('classifies WebDAV collection entries with namespace attributes as directories', async () => {
+    const xml = [
+      '<?xml version="1.0" encoding="UTF-8"?>',
+      '<D:multistatus xmlns:D="DAV:">',
+      '<D:response>',
+      '<D:href>/</D:href>',
+      '<D:propstat><D:prop><D:resourcetype><D:collection xmlns:D="DAV:"/></D:resourcetype></D:prop></D:propstat>',
+      '</D:response>',
+      '<D:response>',
+      '<D:href>/docs/</D:href>',
+      '<D:propstat><D:prop><D:resourcetype><D:collection xmlns:D="DAV:"/></D:resourcetype><D:displayname>docs</D:displayname></D:prop></D:propstat>',
+      '</D:response>',
+      '</D:multistatus>',
+    ].join('');
+    const fetchMock = vi.fn(async () => new Response(xml, {
+      status: 207,
+      headers: { 'Content-Type': 'application/xml' },
+    })) as unknown as typeof fetch;
+    const { adapter } = await createMappedAdapter({ fetchFn: fetchMock });
+
+    await expect(adapter.listEntries({
+      workspaceId: 'ws_default',
+      projectId: 'proj_1',
+      libraryId: 'flib_123',
+      path: '',
+      pageSize: 20,
+      sortBy: 'name',
+      sortOrder: 'asc',
+      requestId: 'req_list',
+    })).resolves.toMatchObject({
+      path: '',
+      items: [
+        {
+          kind: 'directory',
+          path: 'docs/',
+          name: 'docs',
+        },
+      ],
+      nextContinuationToken: null,
+    });
   });
 
   it('releases WebDAV export credentials only after a download stream finishes', async () => {

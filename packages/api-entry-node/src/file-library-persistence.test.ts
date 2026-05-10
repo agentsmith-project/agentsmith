@@ -39,6 +39,39 @@ describe('file-library-persistence catalog schema', () => {
     );
   });
 
+  it('accepts Mongo-normalized null optional fields as absent catalog fields', async () => {
+    const docStore = new InMemoryJsonDocStore();
+    await docStore.upsert('project_file_libraries', 'flib_mongo_null_optional', {
+      id: 'flib_mongo_null_optional',
+      workspace_id: 'ws_default',
+      project_id: 'proj_1',
+      name: 'Mongo null optional',
+      description: null,
+      status: 'creating',
+      version: 1,
+      file_library_home_segment: 'flibhome_mongo_null_optional',
+      source: 'agent_task_files',
+      delete_correlation_id: null,
+      created_by_user_id: 'user_1',
+      created_at: '2026-05-09T00:00:00.000Z',
+      updated_at: '2026-05-09T00:00:00.000Z',
+    });
+
+    const repo = new JsonDocProjectFileLibraryCatalogRepo(docStore);
+
+    await expect(repo.getById('ws_default', 'proj_1', 'flib_mongo_null_optional')).resolves.toMatchObject({
+      id: 'flib_mongo_null_optional',
+      status: 'creating',
+    });
+    await expect(repo.update('ws_default', 'proj_1', 'flib_mongo_null_optional', {
+      status: 'ready',
+    })).resolves.toMatchObject({
+      id: 'flib_mongo_null_optional',
+      status: 'ready',
+      version: 2,
+    });
+  });
+
   it.each([
     {
       caseName: 'missing file_library_home_segment',

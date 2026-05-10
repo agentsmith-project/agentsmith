@@ -9,19 +9,8 @@ source "${STATE_FILE}"
 
 COMMAND="${1:-status}"
 MANAGER_PID_FILE="${INTERNAL_REAL_DIR}/sandbox-manager.pid"
-CLEANER_PID_FILE="${INTERNAL_REAL_DIR}/sandbox-cleaner.pid"
-CLEANER_BIN="${INTERNAL_REAL_DIR}/sandbox-cleaner"
 
 info() { echo "[internal-sandbox-control] $*"; }
-
-launch_detached() {
-  if command -v setsid >/dev/null 2>&1; then
-    setsid "$@" </dev/null &
-  else
-    nohup "$@" </dev/null >/dev/null 2>&1 &
-  fi
-  echo $!
-}
 
 launch_detached_shell() {
   local log_file="$1"
@@ -35,18 +24,6 @@ launch_detached_shell() {
   fi
   pid="$!"
   printf '%s\n' "${pid}"
-}
-
-resolve_kubeconfig() {
-  if [[ -n "${KUBECONFIG:-}" ]]; then
-    printf '%s\n' "${KUBECONFIG}"
-    return 0
-  fi
-  if [[ -f "${HOME}/.kube/config" ]]; then
-    printf '%s\n' "${HOME}/.kube/config"
-    return 0
-  fi
-  printf '\n'
 }
 
 read_pid() {
@@ -116,17 +93,6 @@ stop_pid() {
   rm -f "${file}"
 }
 
-ensure_cleaner_bin() {
-  if [[ -x "${CLEANER_BIN}" ]]; then
-    return 0
-  fi
-  (
-    cd "${SANDBOX_ROOT}/manager-service" && \
-      env -u http_proxy -u https_proxy -u all_proxy -u HTTP_PROXY -u HTTPS_PROXY -u ALL_PROXY -u no_proxy -u NO_PROXY \
-      go build -o "${CLEANER_BIN}" ./cmd/cleaner
-  )
-}
-
 start_manager() {
   local pid
   local afscp_internal_base_url afscp_orchestrator_token afscp_caller_service afscp_actor_type afscp_actor_id
@@ -144,7 +110,7 @@ start_manager() {
   fi
   afscp_internal_base_url="${AFSCP_INTERNAL_BASE_URL:-${AFSCP_BASE_URL:-}}"
   afscp_orchestrator_token="${AFSCP_ORCHESTRATOR_TOKEN:-${AFSCP_ORCHESTRATOR_SERVICE_TOKEN:-}}"
-  afscp_caller_service="${AFSCP_CALLER_SERVICE:-${AFSCP_ORCHESTRATOR_CALLER_SERVICE:-agentsmith-sandbox-manager}}"
+  afscp_caller_service="${AFSCP_ORCHESTRATOR_CALLER_SERVICE:-${AFSCP_CALLER_SERVICE:-agentsmith-sandbox-manager}}"
   afscp_actor_type="${AFSCP_ACTOR_TYPE:-${AFSCP_ORCHESTRATOR_ACTOR_TYPE:-system}}"
   afscp_actor_id="${AFSCP_ACTOR_ID:-${AFSCP_ORCHESTRATOR_ACTOR_ID:-${afscp_caller_service}}}"
   [[ -n "${afscp_internal_base_url}" ]] || { echo "[internal-sandbox-control] missing AFSCP_INTERNAL_BASE_URL for sandbox manager" >&2; exit 1; }
@@ -189,83 +155,24 @@ start_manager() {
   exit 1
 }
 
-run_cleaner_once() {
-  local cleaner_args
-  local kubeconfig_path
-  ensure_cleaner_bin
-  cleaner_args=(
-    "--namespace=${K8S_NAMESPACE}"
-    "--dry-run=false"
-    "--log-level=info"
-  )
-  kubeconfig_path="$(resolve_kubeconfig)"
-  if [[ -n "${kubeconfig_path}" ]]; then
-    cleaner_args+=("--kubeconfig=${kubeconfig_path}")
-  fi
-  env -u http_proxy -u https_proxy -u all_proxy -u HTTP_PROXY -u HTTPS_PROXY -u ALL_PROXY -u no_proxy -u NO_PROXY \
-    "${CLEANER_BIN}" \
-    "${cleaner_args[@]}" >>"${CLEANER_LOG}" 2>&1
-}
-
-start_cleaner() {
-  local pid
-  local cleaner_args
-  local kubeconfig_path
-  pid="$(read_pid "${CLEANER_PID_FILE}")"
-  if pid_alive "${pid}"; then
-    info "cleaner loop already running pid=${pid}"
-    return 0
-  fi
-  ensure_cleaner_bin
-  cleaner_args=(
-    "--namespace=${K8S_NAMESPACE}"
-    "--dry-run=false"
-    "--log-level=info"
-  )
-  kubeconfig_path="$(resolve_kubeconfig)"
-  if [[ -n "${kubeconfig_path}" ]]; then
-    cleaner_args+=("--kubeconfig=${kubeconfig_path}")
-  fi
-  local cleaner_command
-  cleaner_command="$(printf "%q " env -u http_proxy -u https_proxy -u all_proxy -u HTTP_PROXY -u HTTPS_PROXY -u ALL_PROXY -u no_proxy -u NO_PROXY "${CLEANER_BIN}" "${cleaner_args[@]}")"
-  launch_detached_shell "${CLEANER_LOG}" "
-    while true; do
-      ${cleaner_command} || true
-      sleep '${CLEANER_INTERVAL_SECONDS}'
-    done
-  " > "${CLEANER_PID_FILE}"
-  info "started cleaner loop"
-}
-
 stop_manager() {
   stop_pid "${MANAGER_PID_FILE}"
   kill_port_listeners
 }
 
-stop_cleaner() {
-  stop_pid "${CLEANER_PID_FILE}"
-}
-
 status() {
-  local manager_pid cleaner_pid
+  local manager_pid
   manager_pid="$(read_pid "${MANAGER_PID_FILE}")"
-  cleaner_pid="$(read_pid "${CLEANER_PID_FILE}")"
   echo "manager_pid=${manager_pid:-}"
   echo "manager_alive=$(pid_alive "${manager_pid}" && echo 1 || echo 0)"
   echo "manager_listener_pids=$(tr '\n' ',' <<< \"$(port_pids "${SANDBOX_PORT}")\" | sed 's/,$//')"
   echo "manager_ready=$(port_ready && echo 1 || echo 0)"
-  echo "cleaner_pid=${cleaner_pid:-}"
-  echo "cleaner_alive=$(pid_alive "${cleaner_pid}" && echo 1 || echo 0)"
 }
 
 case "${COMMAND}" in
   start-manager) start_manager ;;
   stop-manager) stop_manager ;;
   restart-manager) stop_manager; start_manager ;;
-  start-cleaner) start_cleaner ;;
-  stop-cleaner) stop_cleaner ;;
-  restart-cleaner) stop_cleaner; start_cleaner ;;
-  run-cleaner-once) run_cleaner_once ;;
   status) status ;;
   *)
     echo "[internal-sandbox-control] unknown command: ${COMMAND}" >&2

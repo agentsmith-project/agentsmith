@@ -12,6 +12,7 @@ if [[ -f "${INTERNAL_SANDBOX_STATE_FILE}" ]]; then
 fi
 echo "Internal mode: ${INTERNAL_MODE_STATUS}"
 echo "Sandbox manager URL: ${INTERNAL_SANDBOX_MANAGER_URL_VALUE}"
+echo "AFSCP API: $(afscp_api_status)"
 if [[ -f "${INTERNAL_SANDBOX_STATE_FILE}" ]]; then
   INTERNAL_SANDBOX_REAL_STATE_FILE="${INTERNAL_SANDBOX_STATE_FILE}" bash "${CONTROL_SCRIPT}" status || true
 else
@@ -19,8 +20,6 @@ else
   echo "manager_alive=0"
   echo "manager_listener_pids="
   echo "manager_ready=0"
-  echo "cleaner_pid="
-  echo "cleaner_alive=0"
 fi
 echo "Runner socket: $(runner_socket_health_state)"
 echo "Namespace: ${K8S_NAMESPACE}"

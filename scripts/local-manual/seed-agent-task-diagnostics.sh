@@ -5,6 +5,7 @@ source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/common.sh"
 init_local_manual_env
 require_preset_endpoint_env
 AGENT_RUNNER_SEED_MODE="${AGENT_RUNNER_SEED_MODE:-developer_runner}"
+LOCAL_MANUAL_AGENT_TASK_DIAGNOSTICS_START_RUNNER="${LOCAL_MANUAL_AGENT_TASK_DIAGNOSTICS_START_RUNNER:-1}"
 
 if ! local_manual_platform_is_ready; then
   err "local-manual platform is not ready; run make local-manual-up first"
@@ -36,11 +37,17 @@ info "initializing ${AGENT_RUNNER_SEED_MODE} agent-task runner resources"
   make agent-runner-init-resources
 )
 
-bash "${ROOT_DIR}/scripts/local-manual/start-runner.sh"
-bash "${ROOT_DIR}/scripts/local-manual/verify-agent-task-diagnostics.sh"
+if [[ "${LOCAL_MANUAL_AGENT_TASK_DIAGNOSTICS_START_RUNNER}" == "1" ]]; then
+  bash "${ROOT_DIR}/scripts/local-manual/start-runner.sh"
+  bash "${ROOT_DIR}/scripts/local-manual/verify-agent-task-diagnostics.sh"
+fi
 
 PROJECT_ID="$(state_get project.id)"
-info "agent-task diagnostic resources ready"
+if [[ "${LOCAL_MANUAL_AGENT_TASK_DIAGNOSTICS_START_RUNNER}" == "1" ]]; then
+  info "agent-task diagnostic resources ready"
+else
+  info "agent-task diagnostic state ready"
+fi
 if [[ -n "${PROJECT_ID}" ]]; then
   info "Agent tasks: http://localhost:${PORT_WEB}/${LOCALE}/workspaces/${WORKSPACE_ID}/projects/${PROJECT_ID}/agent-tasks"
 fi

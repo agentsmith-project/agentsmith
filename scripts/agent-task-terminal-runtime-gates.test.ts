@@ -572,9 +572,10 @@ describe('Agent Task terminal runtime gates', () => {
     }
     expect(matrixGate).toContain('AGENT_RUNNER_SEED_MODE=developer_runner bash scripts/local-manual/seed-agent-task-diagnostics.sh');
     expect(matrixGate).toContain('AGENT_RUNNER_SEED_MODE=developer_runner bash scripts/local-manual/seed-agent-task-diagnostics.sh >/dev/null');
+    expect(internalCommon).toContain('managed_agent_task_runner_state_is_present');
     expect(internalCommon).toContain('current_runner_provider="$(state_get agent_runner.runner_provider)"');
     expect(internalCommon).toContain('AGENT_RUNNER_SEED_MODE=managed_agent_task');
-    expect(internalCommon).toContain('current_runner_provider}" != "managed"');
+    expect(internalCommon).toContain('current_runner_provider}" == "managed"');
   });
 
   it('rebuilds the local-manual world without the retired stale JuiceFS preflight', async () => {
@@ -907,7 +908,7 @@ describe('Agent Task terminal runtime gates', () => {
     expect(internalSmoke).toContain('task_runner_offline');
     expect(internalSmoke).not.toContain('agent_id:');
     expect(internalSmoke).not.toContain('TASK_AGENT_ID');
-    expect(internalCommon).toContain('agent-task diagnostic state missing after internal API restart; preparing agent-task diagnostic resources');
+    expect(internalCommon).toContain('agent-task diagnostic state missing after internal API restart; preparing managed agent-task diagnostic state');
     expect(internalCommon).toContain('ensure_agent_task_diagnostics_ready');
     expect(internalCommon).toContain('restore_local_manual_external_mode()');
     expect(internalUp).toContain('trap');

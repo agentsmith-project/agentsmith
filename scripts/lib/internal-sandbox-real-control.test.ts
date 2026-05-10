@@ -1,4 +1,4 @@
-import { execFileSync } from 'node:child_process';
+import { execFileSync, spawnSync } from 'node:child_process';
 import {
   mkdirSync,
   mkdtempSync,
@@ -110,8 +110,6 @@ SANDBOX_PORT="28081"
 SANDBOX_SERVICE_KEY_VALUE="sandbox-service-key"
 K8S_NAMESPACE="agentsmith"
 SANDBOX_LOG="${path.join(internalDir, 'sandbox-manager.log')}"
-CLEANER_LOG="${path.join(internalDir, 'sandbox-cleaner.log')}"
-CLEANER_INTERVAL_SECONDS="5"
 AFSCP_STORAGE_CSI_DRIVER="csi.juicefs.com"
 AFSCP_STORAGE_CAPACITY="1Pi"
 AFSCP_STORAGE_CLASS_NAME="juicefs-sc"
@@ -180,11 +178,11 @@ describe('internal sandbox real control', () => {
     expect(capturedEnv.CONFIG_PATH).toMatch(/sandbox-manager\.yaml$/u);
   });
 
-  it('prefers the sandbox-manager env contract over legacy AgentSmith AFSCP state aliases', () => {
+  it('prefers canonical sandbox-manager base URL and token env over legacy state aliases', () => {
     const capturedEnv = runStartManagerAndCaptureEnv(`
 AFSCP_INTERNAL_BASE_URL="http://formal-afscp.internal:28090"
 AFSCP_ORCHESTRATOR_TOKEN="formal-orchestrator-token"
-AFSCP_CALLER_SERVICE="formal-sandbox-manager"
+AFSCP_ORCHESTRATOR_CALLER_SERVICE="formal-sandbox-manager"
 AFSCP_ACTOR_TYPE="service"
 AFSCP_ACTOR_ID="formal-sandbox-actor"
 `);
@@ -194,5 +192,64 @@ AFSCP_ACTOR_ID="formal-sandbox-actor"
     expect(capturedEnv.AFSCP_CALLER_SERVICE).toBe('formal-sandbox-manager');
     expect(capturedEnv.AFSCP_ACTOR_TYPE).toBe('service');
     expect(capturedEnv.AFSCP_ACTOR_ID).toBe('formal-sandbox-actor');
+  });
+
+  it('keeps the orchestrator caller when a product caller alias is also present', () => {
+    const capturedEnv = runStartManagerAndCaptureEnv(`
+AFSCP_CALLER_SERVICE="agentsmith-api"
+AFSCP_ORCHESTRATOR_CALLER_SERVICE="agentsmith-sandbox-manager"
+AFSCP_ORCHESTRATOR_SERVICE_TOKEN="state-orchestrator-token"
+`);
+
+    expect(capturedEnv.AFSCP_ORCHESTRATOR_TOKEN).toBe('state-orchestrator-token');
+    expect(capturedEnv.AFSCP_CALLER_SERVICE).toBe('agentsmith-sandbox-manager');
+  });
+
+  it('exposes only sandbox manager runtime commands', () => {
+    const source = readFileSync('scripts/lib/internal-sandbox-real-control.sh', 'utf8');
+
+    expect(source).toContain('start-manager) start_manager ;;');
+    expect(source).toContain('stop-manager) stop_manager ;;');
+    expect(source).not.toContain('./cmd/cleaner');
+    expect(source).not.toContain('sandbox-cleaner');
+    expect(source).not.toContain('start-cleaner');
+    expect(source).not.toContain('stop-cleaner');
+    expect(source).not.toContain('run-cleaner-once');
+    expect(source).not.toContain('cleaner_pid=');
+  });
+
+  it('rejects the removed cleaner command instead of building a legacy cleaner binary', () => {
+    const repoRoot = process.cwd();
+    const tempRoot = mkdtempSync(path.join(os.tmpdir(), 'internal-sandbox-control-no-cleaner-'));
+    tempRoots.push(tempRoot);
+
+    const stateFile = path.join(tempRoot, 'sandbox-control.env');
+    const internalDir = path.join(tempRoot, 'internal');
+    mkdirSync(internalDir, { recursive: true });
+    writeFileSync(
+      stateFile,
+      `ROOT_DIR="${tempRoot}"
+SANDBOX_ROOT="${tempRoot}/sandbox"
+INTERNAL_REAL_DIR="${internalDir}"
+SANDBOX_PORT="28081"
+SANDBOX_SERVICE_KEY_VALUE="sandbox-service-key"
+SANDBOX_LOG="${path.join(internalDir, 'sandbox-manager.log')}"
+`,
+      'utf8',
+    );
+
+    const result = spawnSync('bash', [path.join(repoRoot, 'scripts/lib/internal-sandbox-real-control.sh'), 'start-cleaner'], {
+      cwd: repoRoot,
+      env: {
+        ...process.env,
+        INTERNAL_SANDBOX_REAL_STATE_FILE: stateFile,
+      },
+      encoding: 'utf8',
+      stdio: 'pipe',
+    });
+
+    expect(result.status).not.toBe(0);
+    expect(result.stderr).toContain('unknown command: start-cleaner');
+    expect(result.stderr).not.toContain('cmd/cleaner');
   });
 });

@@ -97,7 +97,18 @@ describe('ProjectStorageBootstrapService', () => {
       binding: expect.objectContaining({
         namespace_id: namespaceId,
         default_volume_id: 'vol_default',
-        allowed_callers: [{ caller_service: 'agentsmith-api', roles: ['repo_admin'] }],
+        allowed_callers: [{
+          caller_service: 'agentsmith-api',
+          roles: [
+            'repo_admin',
+            'repo_lifecycle_admin',
+            'restore_admin',
+            'template_admin',
+            'export_admin',
+            'mount_admin',
+            'operation_inspector',
+          ],
+        }],
         status: 'active',
       }),
       signal: undefined,

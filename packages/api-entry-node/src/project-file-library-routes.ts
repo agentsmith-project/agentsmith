@@ -41,6 +41,9 @@ import type {
   FileLibraryRecord,
 } from './file-library-model.js';
 import {
+  FileLibraryStorageOperationPendingError,
+} from './file-library-afscp-storage.js';
+import {
   readProjectPermissionContext,
   readRequestId,
 } from './project-route-handler-utils.js';
@@ -216,6 +219,10 @@ function readErrorMessage(error: unknown): string {
   return error instanceof Error ? error.message : '';
 }
 
+function readOptionalRequestId(req: http.IncomingMessage): string | undefined {
+  return req.headers ? readRequestId(req) : undefined;
+}
+
 function publicFileOperationMessage(error: unknown, fallback: string): string {
   const message = readErrorMessage(error);
   if (PUBLIC_FILE_OPERATION_MESSAGES.has(message)) {
@@ -256,6 +263,29 @@ function mapDeleteRepoRouteError(error: unknown): {
       ? 'FILE_LIBRARY_DELETE_FAILED'
       : mapped.errorCode,
     message: mapped.message,
+  };
+}
+
+function isDeleteRepoPendingError(error: unknown): boolean {
+  return error instanceof FileLibraryStorageOperationPendingError
+    || readErrorMessage(error) === 'file_library_repo_delete_pending';
+}
+
+function readDeleteRepoPendingOperationId(error: unknown): string | null {
+  return error instanceof FileLibraryStorageOperationPendingError
+    ? error.operationId
+    : null;
+}
+
+function buildFileLibraryDeleteAcceptedResponse(input: {
+  libraryId: string;
+  operationId: string | null;
+}): Record<string, unknown> {
+  return {
+    file_library_id: input.libraryId,
+    file_library_status: 'deleting',
+    operation_id: input.operationId,
+    operation_status: 'pending',
   };
 }
 
@@ -406,6 +436,7 @@ export async function handleProjectFileLibraryRoutes(args: {
         userId: user.id,
         name: parsed.data.name,
         description: parsed.data.description,
+        requestId: readOptionalRequestId(req),
       });
       json(res, 201, presentFileLibraryWithTaskHomeBinding({
         library: updated,
@@ -775,6 +806,17 @@ export async function handleProjectFileLibraryRoutes(args: {
       res.statusCode = 204;
       res.end();
     } catch (error) {
+      if (isDeleteRepoPendingError(error)) {
+        await catalogRepo.update(workspaceId, projectId, libraryId, {
+          status: 'deleting',
+          delete_correlation_id: requestId,
+        });
+        json(res, 202, buildFileLibraryDeleteAcceptedResponse({
+          libraryId,
+          operationId: readDeleteRepoPendingOperationId(error),
+        }));
+        return true;
+      }
       const mapped = mapDeleteRepoRouteError(error);
       if (mapped.errorCode === 'FILE_LIBRARY_NOT_EMPTY') {
         await catalogRepo.rollbackDeletingToReady({

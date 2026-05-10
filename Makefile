@@ -586,6 +586,7 @@ local-real-status:
 	npx tsx scripts/governance/local-real-status.ts
 	$(MAKE) substrate-status
 	$(MAKE) local-manual-status
+	$(MAKE) local-manual-internal-status
 
 local-real-down:
 	$(MAKE) local-manual-down

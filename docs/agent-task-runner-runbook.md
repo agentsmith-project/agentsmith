@@ -53,7 +53,7 @@ Slice 5 blocked 时必须 fail closed：
 | Runtime mode | Typical use | Storage access posture | Runner process location | Task HOME / workspace |
 | --- | --- | --- | --- | --- |
 | Developer runner | connection/existence diagnostics while Slice 5 is blocked | no task HOME/file access; fail closed for execution self-check | host machine | none while blocked; must not create local `file_library` HOME |
-| Managed docker | unified deploy managed agent-task runner | AFSCP workload mount binding | runner container | `/home/<task_home_segment>`, `/home/<task_home_segment>/workspace` |
+| Managed runner | unified deploy managed agent-task runner | AFSCP workload mount binding | Kubernetes runner container | `/home/<task_home_segment>`, `/home/<task_home_segment>/workspace` |
 | Sandbox k8s | sandbox workload pod | orchestrator-provided mounted repo payload | workload container | `/home/<task_home_segment>`, `/home/<task_home_segment>/workspace` |
 
 Local/manual profiles that exercise the deployment default managed runner must prove the runner has a valid internal sandbox/runtime configuration before task execution. If the sandbox is unavailable, task creation or create-and-start should fail with a clear unavailable/configuration state instead of producing `AGENT_SANDBOX_NOT_CONFIGURED` after dispatch. Any sandbox/pod-internal API base must be reachable from inside that environment and must not rely on browser-host `localhost`.

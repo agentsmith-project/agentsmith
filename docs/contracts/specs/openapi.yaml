@@ -1260,6 +1260,12 @@ paths:
       responses:
         "204":
           description: Deleted
+        "202":
+          description: Repo delete accepted; poll operation projection and retry DELETE to complete catalog cleanup
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DeleteFileLibraryAcceptedResponse"
         "401":
           $ref: "#/components/responses/Unauthorized"
         "403":
@@ -8500,6 +8506,27 @@ components:
                 type: string
               message:
                 type: string
+    DeleteFileLibraryAcceptedResponse:
+      type: object
+      required:
+        - file_library_id
+        - file_library_status
+        - operation_id
+        - operation_status
+      properties:
+        file_library_id:
+          type: string
+        file_library_status:
+          type: string
+          enum:
+            - deleting
+        operation_id:
+          type: string
+          nullable: true
+        operation_status:
+          type: string
+          enum:
+            - pending
     MoveFileLibraryEntryRequest:
       type: object
       required:

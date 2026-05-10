@@ -46,9 +46,7 @@ INTERNAL_REAL_DIR="${INTERNAL_REAL_DIR:-$(backend_real_tmp_file internal)}"
 INTERNAL_REAL_DIR="$(realpath -m "${INTERNAL_REAL_DIR}")"
 INTERNAL_SANDBOX_STATE_FILE="${INTERNAL_SANDBOX_STATE_FILE:-${INTERNAL_REAL_DIR}/sandbox-control.env}"
 INTERNAL_SANDBOX_MANAGER_LOG="${INTERNAL_SANDBOX_MANAGER_LOG:-${INTERNAL_REAL_DIR}/sandbox-manager.log}"
-INTERNAL_SANDBOX_CLEANER_LOG="${INTERNAL_SANDBOX_CLEANER_LOG:-${INTERNAL_REAL_DIR}/sandbox-cleaner.log}"
 INTERNAL_SANDBOX_MANAGER_CONFIG="${INTERNAL_SANDBOX_MANAGER_CONFIG:-${INTERNAL_REAL_DIR}/sandbox-manager.yaml}"
-INTERNAL_SANDBOX_CLEANER_INTERVAL_SECONDS="${INTERNAL_SANDBOX_CLEANER_INTERVAL_SECONDS:-15}"
 INTERNAL_SANDBOX_MANAGER_URL_VALUE="${SANDBOX_MANAGER_URL:-http://127.0.0.1:28080}"
 INTERNAL_SANDBOX_PORT="${INTERNAL_SANDBOX_MANAGER_URL_VALUE##*:}"
 INTERNAL_SANDBOX_PORT="${INTERNAL_SANDBOX_PORT%%/*}"
@@ -75,6 +73,45 @@ AFSCP_STORAGE_CSI_NAMESPACE="${AFSCP_STORAGE_CSI_NAMESPACE:-kube-system}"
 KIND_CONFIG_PATH="${LOCAL_KIND_CONFIG_PATH:-${ROOT_DIR}/infra/deploy/unified/local-kind/config.yaml}"
 EXTERNAL_DEPS_MANIFEST="${INTERNAL_REAL_DIR}/external-dependencies.yaml"
 CONTROL_SCRIPT="${ROOT_DIR}/scripts/lib/internal-sandbox-real-control.sh"
+AFSCP_ROOT="${AFSCP_ROOT:-$(realpath -m "${ROOT_DIR}/../agentsmith-fs-control-plane")}"
+AFSCP_BASE_URL="${AFSCP_BASE_URL:-http://127.0.0.1:28090}"
+AFSCP_API_PORT="${AFSCP_API_PORT:-$(local_manual_port_from_url "${AFSCP_BASE_URL}" 2>/dev/null || printf '28090')}"
+AFSCP_API_LISTEN_ADDR="${AFSCP_API_LISTEN_ADDR:-127.0.0.1:${AFSCP_API_PORT}}"
+AFSCP_EXPORT_GATEWAY_BASE_URL="${AFSCP_EXPORT_GATEWAY_BASE_URL:-http://127.0.0.1:28091}"
+AFSCP_EXPORT_GATEWAY_PORT="${AFSCP_EXPORT_GATEWAY_PORT:-$(local_manual_port_from_url "${AFSCP_EXPORT_GATEWAY_BASE_URL}" 2>/dev/null || printf '28091')}"
+AFSCP_EXPORT_GATEWAY_LISTEN_ADDR="${AFSCP_EXPORT_GATEWAY_LISTEN_ADDR:-127.0.0.1:${AFSCP_EXPORT_GATEWAY_PORT}}"
+AFSCP_DEFAULT_VOLUME_ID="${AFSCP_DEFAULT_VOLUME_ID:-vol_local_manual}"
+AFSCP_LOCAL_RUNTIME_WORKLOAD_MOUNT_SECRET_NAME="${AFSCP_LOCAL_RUNTIME_WORKLOAD_MOUNT_SECRET_NAME:-afscp-local-runtime}"
+AFSCP_CALLER_SERVICE="${AFSCP_CALLER_SERVICE:-agentsmith-api}"
+AFSCP_BOOTSTRAP_CALLER_SERVICE="${AFSCP_BOOTSTRAP_CALLER_SERVICE:-agentsmith-bootstrap}"
+AFSCP_ORCHESTRATOR_CALLER_SERVICE="${AFSCP_ORCHESTRATOR_CALLER_SERVICE:-agentsmith-sandbox-manager}"
+AFSCP_SERVICE_TOKEN="${AFSCP_SERVICE_TOKEN:-agentsmith-local-afscp-product-token}"
+AFSCP_BOOTSTRAP_SERVICE_TOKEN="${AFSCP_BOOTSTRAP_SERVICE_TOKEN:-agentsmith-local-afscp-bootstrap-token}"
+AFSCP_ORCHESTRATOR_SERVICE_TOKEN="${AFSCP_ORCHESTRATOR_SERVICE_TOKEN:-agentsmith-local-afscp-orchestrator-token}"
+AFSCP_VOLUME_ROOT="${AFSCP_VOLUME_ROOT:-${INTERNAL_REAL_DIR}/afscp-volume-root}"
+AFSCP_JVS_CWD="${AFSCP_JVS_CWD:-${INTERNAL_REAL_DIR}/afscp-jvs-cwd}"
+AFSCP_JVS_RELEASE_BINARY_NAME="${AFSCP_JVS_RELEASE_BINARY_NAME:-jvs-linux-amd64}"
+AFSCP_JVS_RELEASE_CACHE_DIR="${AFSCP_JVS_RELEASE_CACHE_DIR:-${INTERNAL_REAL_DIR}/jvs-release}"
+AFSCP_JVS_RELEASE_BINARY_CACHE_PATH="${AFSCP_JVS_RELEASE_BINARY_CACHE_PATH:-${AFSCP_JVS_RELEASE_CACHE_DIR}/${AFSCP_JVS_RELEASE_BINARY_NAME}}"
+AFSCP_JVS_RELEASE_SHA256SUMS_CACHE_PATH="${AFSCP_JVS_RELEASE_SHA256SUMS_CACHE_PATH:-${AFSCP_JVS_RELEASE_CACHE_DIR}/SHA256SUMS}"
+AFSCP_JVS_RELEASE_VERSION="${AFSCP_JVS_RELEASE_VERSION:-v0.4.8}"
+AFSCP_JVS_RELEASE_BASE_URL="${AFSCP_JVS_RELEASE_BASE_URL:-https://github.com/agentsmith-project/jvs/releases/download/${AFSCP_JVS_RELEASE_VERSION}}"
+AFSCP_JVS_BINARY_PATH="${AFSCP_JVS_BINARY_PATH:-}"
+AFSCP_JVS_BINARY_SHA256="${AFSCP_JVS_BINARY_SHA256:-}"
+AFSCP_JVS_SHA256SUMS_PATH="${AFSCP_JVS_SHA256SUMS_PATH:-}"
+AFSCP_JVS_RELEASE_URL="${AFSCP_JVS_RELEASE_URL:-${AFSCP_JVS_RELEASE_BASE_URL}/${AFSCP_JVS_RELEASE_BINARY_NAME}}"
+AFSCP_JVS_SHA256SUMS_URL="${AFSCP_JVS_SHA256SUMS_URL:-${AFSCP_JVS_RELEASE_BASE_URL}/SHA256SUMS}"
+AFSCP_LOCAL_RUNTIME_ENV_FILE="${AFSCP_LOCAL_RUNTIME_ENV_FILE:-${INTERNAL_REAL_DIR}/afscp-local-runtime.env}"
+AFSCP_API_PID_FILE="${AFSCP_API_PID_FILE:-${INTERNAL_REAL_DIR}/afscp-api.pid}"
+AFSCP_API_LOG="${AFSCP_API_LOG:-${INTERNAL_REAL_DIR}/afscp-api.log}"
+AFSCP_API_READY_FILE="${AFSCP_API_READY_FILE:-${INTERNAL_REAL_DIR}/afscp-api.ready}"
+AFSCP_WORKER_PID_FILE="${AFSCP_WORKER_PID_FILE:-${INTERNAL_REAL_DIR}/afscp-worker.pid}"
+AFSCP_WORKER_LOG="${AFSCP_WORKER_LOG:-${INTERNAL_REAL_DIR}/afscp-worker.log}"
+AFSCP_WORKER_READY_FILE="${AFSCP_WORKER_READY_FILE:-${INTERNAL_REAL_DIR}/afscp-worker.ready}"
+AFSCP_EXPORT_GATEWAY_PID_FILE="${AFSCP_EXPORT_GATEWAY_PID_FILE:-${INTERNAL_REAL_DIR}/afscp-export-gateway.pid}"
+AFSCP_EXPORT_GATEWAY_LOG="${AFSCP_EXPORT_GATEWAY_LOG:-${INTERNAL_REAL_DIR}/afscp-export-gateway.log}"
+AFSCP_EXPORT_GATEWAY_READY_FILE="${AFSCP_EXPORT_GATEWAY_READY_FILE:-${INTERNAL_REAL_DIR}/afscp-export-gateway.ready}"
+AFSCP_WORKER_INTERVAL_SECONDS="${AFSCP_WORKER_INTERVAL_SECONDS:-2}"
 
 mkdir -p "${INTERNAL_REAL_DIR}"
 
@@ -99,11 +136,51 @@ ensure_local_manual_ready() {
 }
 
 ensure_agent_task_diagnostics_ready() {
-  local current_runner_provider
+  ensure_agent_task_diagnostics_state_ready
+  ensure_local_manual_runner_connected
+}
+
+stop_local_manual_runner_for_internal_api_restart() {
+  if ! stop_local_manual_runner_owner_aware internal_api_restart; then
+    internal_err "runner ownership is unverified; refusing to continue internal API restart"
+    exit 1
+  fi
+}
+
+ensure_internal_runner_state_before_api_restart() {
+  ensure_internal_common_runtime_env
+  stop_local_manual_runner_for_internal_api_restart
+  ensure_agent_task_diagnostics_state_ready
+  stop_local_manual_runner_for_internal_api_restart
+}
+
+managed_agent_task_runner_state_is_present() {
+  local token project_id endpoint_id existing_runner current_runner_provider status
+  token="$(cat "$(backend_real_token_file)" 2>/dev/null || true)"
+  project_id="$(state_get project.id)"
+  endpoint_id="$(state_get endpoint.id)"
+  existing_runner="$(state_get agent_runner.id)"
   current_runner_provider="$(state_get agent_runner.runner_provider)"
-  if ! runner_socket_is_connected || [[ -z "$(state_get project.id)" || -z "$(state_get agent_runner.id)" || "${current_runner_provider}" != "managed" ]]; then
-    internal_info "preparing agent-task diagnostic resources"
-    AGENT_RUNNER_SEED_MODE=managed_agent_task LOCAL_MANUAL_ENABLE_INTERNAL=0 bash "${ROOT_DIR}/scripts/local-manual/seed-agent-task-diagnostics.sh"
+  [[ -n "${token}" && -n "${project_id}" && -n "${endpoint_id}" && -n "${existing_runner}" && "${current_runner_provider}" == "managed" ]] || return 1
+
+  status="$(curl -sS -o /dev/null -w '%{http_code}' \
+    "http://localhost:${PORT_API}/api/v1/workspaces/${WORKSPACE_ID}/projects/${project_id}/agent-runners/${existing_runner}" \
+    -H "Authorization: Bearer ${token}" || true)"
+  [[ "${status}" == "200" ]]
+}
+
+seed_managed_agent_task_diagnostics_state() {
+  AGENT_RUNNER_SEED_MODE=managed_agent_task \
+    LOCAL_MANUAL_AGENT_TASK_DIAGNOSTICS_START_RUNNER=0 \
+    LOCAL_MANUAL_ENABLE_INTERNAL=0 \
+    bash "${ROOT_DIR}/scripts/local-manual/seed-agent-task-diagnostics.sh"
+}
+
+ensure_agent_task_diagnostics_state_ready() {
+  ensure_internal_common_runtime_env
+  if ! managed_agent_task_runner_state_is_present; then
+    internal_info "preparing managed agent-task diagnostic state"
+    seed_managed_agent_task_diagnostics_state
   fi
 }
 
@@ -218,6 +295,745 @@ ensure_internal_external_dependency_services() {
     "${kind_gateway}" \
     "${SUBSTRATE_MINIO_API_PORT}"
   kubectl apply -f "${EXTERNAL_DEPS_MANIFEST}" >/dev/null
+}
+
+afscp_jvs_normalize_sha256() {
+  local value="$1"
+  printf '%s\n' "${value,,}"
+}
+
+afscp_jvs_valid_sha256() {
+  local value="$1"
+  [[ "${value}" =~ ^[0-9a-f]{64}$ ]]
+}
+
+afscp_jvs_sha256_from_sums() {
+  local sums_path="$1"
+  local binary_name="$2"
+  [[ -f "${sums_path}" ]] || return 1
+  awk -v name="${binary_name}" '
+    /^[[:space:]]*#/ || NF < 2 { next }
+    {
+      hash = tolower($1)
+      file = $2
+      sub(/^\*/, "", file)
+      base = file
+      sub(/^.*\//, "", base)
+      if (length(hash) == 64 && hash ~ /^[[:xdigit:]]+$/ && (file == name || base == name)) {
+        print hash
+        found = 1
+        exit
+      }
+    }
+    END { if (!found) exit 1 }
+  ' "${sums_path}"
+}
+
+afscp_file_sha256() {
+  local path="$1"
+  if command -v sha256sum >/dev/null 2>&1; then
+    sha256sum "${path}" | awk '{print tolower($1)}'
+    return 0
+  fi
+  if command -v shasum >/dev/null 2>&1; then
+    shasum -a 256 "${path}" | awk '{print tolower($1)}'
+    return 0
+  fi
+  internal_err "sha256sum or shasum is required to verify the JVS release artifact"
+  return 1
+}
+
+afscp_verify_jvs_binary_sha256() {
+  local binary_path="$1"
+  local expected_sha
+  expected_sha="$(afscp_jvs_normalize_sha256 "$2")"
+  local source_label="$3"
+  if [[ ! -f "${binary_path}" ]]; then
+    internal_err "missing JVS release artifact for ${source_label}: ${binary_path}"
+    return 1
+  fi
+  if ! afscp_jvs_valid_sha256 "${expected_sha}"; then
+    internal_err "JVS SHA-256 from ${source_label} is malformed; local-real fails closed"
+    return 1
+  fi
+  local actual_sha
+  actual_sha="$(afscp_file_sha256 "${binary_path}")" || return 1
+  if [[ "${actual_sha}" != "${expected_sha}" ]]; then
+    internal_err "JVS binary SHA-256 mismatch for ${binary_path}; expected ${expected_sha}, got ${actual_sha}"
+    return 1
+  fi
+}
+
+afscp_use_jvs_release_artifact() {
+  local binary_path="$1"
+  local sums_path="$2"
+  local binary_name="${3:-$(basename "${binary_path}")}"
+  local expected_sha
+  expected_sha="$(afscp_jvs_sha256_from_sums "${sums_path}" "${binary_name}")" || {
+    internal_err "could not resolve ${binary_name} SHA-256 from ${sums_path}"
+    return 1
+  }
+  afscp_verify_jvs_binary_sha256 "${binary_path}" "${expected_sha}" "${sums_path}" || return 1
+  AFSCP_JVS_BINARY_PATH="$(realpath -m "${binary_path}")"
+  AFSCP_JVS_BINARY_SHA256="${expected_sha}"
+  chmod 0755 "${AFSCP_JVS_BINARY_PATH}" >/dev/null 2>&1 || true
+}
+
+afscp_download_jvs_release_file() {
+  local url="$1"
+  local output_path="$2"
+  if command -v curl >/dev/null 2>&1; then
+    curl -fsSL --retry 2 --connect-timeout 10 -o "${output_path}" "${url}"
+    return $?
+  fi
+  if command -v wget >/dev/null 2>&1; then
+    wget -q -O "${output_path}" "${url}"
+    return $?
+  fi
+  internal_err "curl or wget is required to download configured JVS release artifacts"
+  return 1
+}
+
+prepare_afscp_jvs_release_artifact() {
+  local cache_binary="${AFSCP_JVS_RELEASE_BINARY_CACHE_PATH}"
+  local cache_sums="${AFSCP_JVS_RELEASE_SHA256SUMS_CACHE_PATH}"
+
+  if [[ -f "${cache_binary}" && -f "${cache_sums}" ]]; then
+    afscp_use_jvs_release_artifact "${cache_binary}" "${cache_sums}" "${AFSCP_JVS_RELEASE_BINARY_NAME}"
+    return $?
+  fi
+
+  if [[ -n "${AFSCP_JVS_SHA256SUMS_PATH}" ]]; then
+    local explicit_sums
+    explicit_sums="$(realpath -m "${AFSCP_JVS_SHA256SUMS_PATH}")"
+    if [[ ! -f "${explicit_sums}" ]]; then
+      internal_err "configured AFSCP_JVS_SHA256SUMS_PATH does not exist: ${explicit_sums}"
+      return 1
+    fi
+    if [[ -f "${cache_binary}" ]]; then
+      afscp_use_jvs_release_artifact "${cache_binary}" "${explicit_sums}" "${AFSCP_JVS_RELEASE_BINARY_NAME}"
+      return $?
+    fi
+    local explicit_binary
+    explicit_binary="$(realpath -m "$(dirname "${explicit_sums}")/${AFSCP_JVS_RELEASE_BINARY_NAME}")"
+    if [[ -f "${explicit_binary}" ]]; then
+      afscp_use_jvs_release_artifact "${explicit_binary}" "${explicit_sums}" "${AFSCP_JVS_RELEASE_BINARY_NAME}"
+      return $?
+    fi
+  fi
+
+  if [[ -n "${AFSCP_JVS_RELEASE_URL}" || -n "${AFSCP_JVS_SHA256SUMS_URL}" ]]; then
+    if [[ -z "${AFSCP_JVS_RELEASE_URL}" || -z "${AFSCP_JVS_SHA256SUMS_URL}" ]]; then
+      internal_err "set both AFSCP_JVS_RELEASE_URL and AFSCP_JVS_SHA256SUMS_URL to download a verified JVS release artifact"
+      return 1
+    fi
+    mkdir -p "${AFSCP_JVS_RELEASE_CACHE_DIR}" "$(dirname "${cache_binary}")" "$(dirname "${cache_sums}")"
+    local tmp_binary tmp_sums expected_sha
+    tmp_binary="$(mktemp "${AFSCP_JVS_RELEASE_CACHE_DIR}/${AFSCP_JVS_RELEASE_BINARY_NAME}.download.XXXXXX")"
+    tmp_sums="$(mktemp "${AFSCP_JVS_RELEASE_CACHE_DIR}/SHA256SUMS.download.XXXXXX")"
+    if ! afscp_download_jvs_release_file "${AFSCP_JVS_RELEASE_URL}" "${tmp_binary}"; then
+      rm -f "${tmp_binary}" "${tmp_sums}"
+      internal_err "failed to download JVS release artifact from AFSCP_JVS_RELEASE_URL; local-real fails closed"
+      return 1
+    fi
+    if ! afscp_download_jvs_release_file "${AFSCP_JVS_SHA256SUMS_URL}" "${tmp_sums}"; then
+      rm -f "${tmp_binary}" "${tmp_sums}"
+      internal_err "failed to download JVS SHA256SUMS from AFSCP_JVS_SHA256SUMS_URL; local-real fails closed"
+      return 1
+    fi
+    expected_sha="$(afscp_jvs_sha256_from_sums "${tmp_sums}" "${AFSCP_JVS_RELEASE_BINARY_NAME}")" || {
+      rm -f "${tmp_binary}" "${tmp_sums}"
+      internal_err "downloaded SHA256SUMS does not contain ${AFSCP_JVS_RELEASE_BINARY_NAME}"
+      return 1
+    }
+    afscp_verify_jvs_binary_sha256 "${tmp_binary}" "${expected_sha}" "${AFSCP_JVS_SHA256SUMS_URL}" || {
+      rm -f "${tmp_binary}" "${tmp_sums}"
+      return 1
+    }
+    mv "${tmp_binary}" "${cache_binary}"
+    mv "${tmp_sums}" "${cache_sums}"
+    chmod 0755 "${cache_binary}" >/dev/null 2>&1 || true
+    AFSCP_JVS_BINARY_PATH="$(realpath -m "${cache_binary}")"
+    AFSCP_JVS_BINARY_SHA256="${expected_sha}"
+    return 0
+  fi
+
+  internal_err "missing verified JVS release artifact for the AFSCP local-real dependency"
+  internal_err "place ${AFSCP_JVS_RELEASE_BINARY_NAME} at ${cache_binary} with ${cache_sums}, or set AFSCP_JVS_RELEASE_URL and AFSCP_JVS_SHA256SUMS_URL"
+  internal_err "explicit local paths require AFSCP_JVS_BINARY_PATH plus AFSCP_JVS_BINARY_SHA256 or AFSCP_JVS_SHA256SUMS_PATH; sibling mutable builds are not used by default"
+  return 1
+}
+
+resolve_afscp_jvs_binary() {
+  [[ "${AFSCP_JVS_ENABLED:-true}" == "true" ]] || return 0
+
+  if [[ -n "${AFSCP_JVS_BINARY_PATH}" || -n "${AFSCP_JVS_BINARY_SHA256}" ]]; then
+    if [[ -z "${AFSCP_JVS_BINARY_PATH}" ]]; then
+      internal_err "AFSCP_JVS_BINARY_SHA256 was set without AFSCP_JVS_BINARY_PATH"
+      return 1
+    fi
+    local explicit_binary explicit_sha
+    explicit_binary="$(realpath -m "${AFSCP_JVS_BINARY_PATH}")"
+    explicit_sha="${AFSCP_JVS_BINARY_SHA256}"
+    if [[ -z "${explicit_sha}" ]]; then
+      if [[ -z "${AFSCP_JVS_SHA256SUMS_PATH}" ]]; then
+        internal_err "explicit AFSCP_JVS_BINARY_PATH requires AFSCP_JVS_BINARY_SHA256 or AFSCP_JVS_SHA256SUMS_PATH"
+        return 1
+      fi
+      explicit_sha="$(afscp_jvs_sha256_from_sums "${AFSCP_JVS_SHA256SUMS_PATH}" "$(basename "${explicit_binary}")")" || {
+        internal_err "could not resolve $(basename "${explicit_binary}") SHA-256 from ${AFSCP_JVS_SHA256SUMS_PATH}"
+        return 1
+      }
+    fi
+    explicit_sha="$(afscp_jvs_normalize_sha256 "${explicit_sha}")"
+    afscp_verify_jvs_binary_sha256 "${explicit_binary}" "${explicit_sha}" "explicit AFSCP_JVS_BINARY_PATH" || return 1
+    AFSCP_JVS_BINARY_PATH="${explicit_binary}"
+    AFSCP_JVS_BINARY_SHA256="${explicit_sha}"
+    return 0
+  fi
+
+  prepare_afscp_jvs_release_artifact
+}
+
+afscp_runtime_export_line() {
+  local key="$1"
+  printf 'export %s=%q\n' "${key}" "${!key}"
+}
+
+afscp_default_local_runtime_postgres_dsn() {
+  printf 'postgresql://%s:%s@localhost:%s/%s?sslmode=disable' \
+    "${SUBSTRATE_DB_USER}" \
+    "${SUBSTRATE_DB_PASSWORD}" \
+    "${SUBSTRATE_POSTGRES_PORT}" \
+    "${SUBSTRATE_DB_NAME}"
+}
+
+afscp_substrate_postgres_host_dsn() {
+  printf 'postgresql://%s:%s@localhost:%s/%s' \
+    "${SUBSTRATE_DB_USER}" \
+    "${SUBSTRATE_DB_PASSWORD}" \
+    "${SUBSTRATE_POSTGRES_PORT}" \
+    "${SUBSTRATE_DB_NAME}"
+}
+
+afscp_resolve_local_runtime_postgres_dsn() {
+  local substrate_host_dsn
+  substrate_host_dsn="$(afscp_substrate_postgres_host_dsn)"
+  # The substrate connection env may provide the host-side Postgres DSN without
+  # sslmode; AFSCP local-real clients need explicit non-SSL unless overridden.
+  if [[ -n "${DATABASE_URL:-}" && "${DATABASE_URL}" != "${substrate_host_dsn}" ]]; then
+    printf '%s' "${DATABASE_URL}"
+    return 0
+  fi
+  afscp_default_local_runtime_postgres_dsn
+}
+
+afscp_resolve_webdav_export_public_base_url() {
+  local base prefix trim_prefix
+  base="${1%/}"
+  prefix="${2:-/e/}"
+  trim_prefix="${prefix#/}"
+  trim_prefix="${trim_prefix%/}"
+  if [[ -n "${trim_prefix}" && "${base}" == */"${trim_prefix}" ]]; then
+    printf '%s' "${base%/${trim_prefix}}"
+    return 0
+  fi
+  printf '%s' "${base}"
+}
+
+prepare_afscp_local_runtime_env() {
+  ensure_internal_common_runtime_env
+  mkdir -p "${AFSCP_VOLUME_ROOT}" "${AFSCP_JVS_CWD}"
+
+  local afscp_local_postgres_dsn
+  afscp_local_postgres_dsn="$(afscp_resolve_local_runtime_postgres_dsn)"
+  AFSCP_ENVIRONMENT="${AFSCP_ENVIRONMENT:-local-real}"
+  AFSCP_SERVICE_NAME="${AFSCP_SERVICE_NAME:-afscp-local-real}"
+  AFSCP_LISTEN_ADDR="${AFSCP_LISTEN_ADDR:-${AFSCP_API_LISTEN_ADDR}}"
+  AFSCP_READINESS_PROFILE="${AFSCP_READINESS_PROFILE:-runtime}"
+  AFSCP_DATABASE_URL="${AFSCP_DATABASE_URL:-${afscp_local_postgres_dsn}}"
+  AFSCP_POSTGRES_DSN="${AFSCP_POSTGRES_DSN:-${AFSCP_DATABASE_URL}}"
+  AFSCP_API_MODE="${AFSCP_API_MODE:-internal}"
+  AFSCP_API_POSTGRES_DSN="${AFSCP_API_POSTGRES_DSN:-${AFSCP_POSTGRES_DSN}}"
+  AFSCP_API_SERVICE_TOKENS="${AFSCP_API_SERVICE_TOKENS:-${AFSCP_CALLER_SERVICE}=${AFSCP_SERVICE_TOKEN},${AFSCP_BOOTSTRAP_CALLER_SERVICE}=${AFSCP_BOOTSTRAP_SERVICE_TOKEN},${AFSCP_ORCHESTRATOR_CALLER_SERVICE}=${AFSCP_ORCHESTRATOR_SERVICE_TOKEN}}"
+  AFSCP_API_DEPLOYMENT_GLOBAL_ALLOWED_CALLERS="${AFSCP_API_DEPLOYMENT_GLOBAL_ALLOWED_CALLERS:-${AFSCP_CALLER_SERVICE}:product:operation_inspector,${AFSCP_BOOTSTRAP_CALLER_SERVICE}:admin:volume_admin|operation_inspector|operator_admin}"
+  AFSCP_API_DEPLOYMENT_NAMESPACE_ALLOWED_CALLERS="${AFSCP_API_DEPLOYMENT_NAMESPACE_ALLOWED_CALLERS:-${AFSCP_BOOTSTRAP_CALLER_SERVICE}:admin:namespace_admin,${AFSCP_CALLER_SERVICE}:product:namespace_admin|repo_admin|repo_lifecycle_admin|restore_admin|template_admin|export_admin|mount_admin|operation_inspector,${AFSCP_ORCHESTRATOR_CALLER_SERVICE}:orchestrator:orchestrator_mount}"
+  AFSCP_VOLUME_ROOTS="${AFSCP_VOLUME_ROOTS:-${AFSCP_DEFAULT_VOLUME_ID}=${AFSCP_VOLUME_ROOT}}"
+  AFSCP_API_VOLUME_ROOTS="${AFSCP_API_VOLUME_ROOTS:-${AFSCP_VOLUME_ROOTS}}"
+  AFSCP_API_WORKLOAD_MOUNT_SECRET_REFS="${AFSCP_API_WORKLOAD_MOUNT_SECRET_REFS:-${AFSCP_DEFAULT_VOLUME_ID}=${K8S_NAMESPACE}/${AFSCP_LOCAL_RUNTIME_WORKLOAD_MOUNT_SECRET_NAME}}"
+  AFSCP_EXPORT_GATEWAY_PREFIX="${AFSCP_EXPORT_GATEWAY_PREFIX:-/e/}"
+  AFSCP_API_WEBDAV_EXPORT_PUBLIC_BASE_URL="${AFSCP_API_WEBDAV_EXPORT_PUBLIC_BASE_URL:-$(afscp_resolve_webdav_export_public_base_url "${AFSCP_EXPORT_GATEWAY_BASE_URL}" "${AFSCP_EXPORT_GATEWAY_PREFIX}")}"
+
+  AFSCP_STORAGE_ENABLED="${AFSCP_STORAGE_ENABLED:-true}"
+  AFSCP_STORAGE_READY="${AFSCP_STORAGE_READY:-true}"
+  AFSCP_JVS_ENABLED="${AFSCP_JVS_ENABLED:-true}"
+  AFSCP_JVS_READY="${AFSCP_JVS_READY:-true}"
+  resolve_afscp_jvs_binary
+  AFSCP_WEBDAV_ENABLED="${AFSCP_WEBDAV_ENABLED:-true}"
+  AFSCP_WEBDAV_READY="${AFSCP_WEBDAV_READY:-true}"
+  AFSCP_MOUNT_ENABLED="${AFSCP_MOUNT_ENABLED:-true}"
+  AFSCP_MOUNT_READY="${AFSCP_MOUNT_READY:-true}"
+  AFSCP_REPO_TEMPLATE_ENABLED="${AFSCP_REPO_TEMPLATE_ENABLED:-false}"
+  AFSCP_REPO_TEMPLATE_READY="${AFSCP_REPO_TEMPLATE_READY:-false}"
+  AFSCP_REPO_PURGE_ENABLED="${AFSCP_REPO_PURGE_ENABLED:-false}"
+  AFSCP_REPO_PURGE_READY="${AFSCP_REPO_PURGE_READY:-false}"
+
+  AFSCP_WORKER_OPERATION_RECOVERY_ENABLED="${AFSCP_WORKER_OPERATION_RECOVERY_ENABLED:-true}"
+  AFSCP_WORKER_OWNER="${AFSCP_WORKER_OWNER:-agentsmith-local-real-afscp-worker}"
+  AFSCP_OPERATION_RECOVERY_LIMIT="${AFSCP_OPERATION_RECOVERY_LIMIT:-10}"
+  AFSCP_EXPORT_SESSION_RECONCILE_ENABLED="${AFSCP_EXPORT_SESSION_RECONCILE_ENABLED:-true}"
+  AFSCP_EXPORT_SESSION_RECONCILE_POSTGRES_DSN="${AFSCP_EXPORT_SESSION_RECONCILE_POSTGRES_DSN:-${AFSCP_POSTGRES_DSN}}"
+  AFSCP_EXPORT_SESSION_RECONCILE_OWNER="${AFSCP_EXPORT_SESSION_RECONCILE_OWNER:-${AFSCP_WORKER_OWNER}}"
+  AFSCP_EXPORT_SESSION_RECONCILE_LIMIT="${AFSCP_EXPORT_SESSION_RECONCILE_LIMIT:-${AFSCP_OPERATION_RECOVERY_LIMIT}}"
+  AFSCP_WORKER_RUN_ONCE_TIMEOUT="${AFSCP_WORKER_RUN_ONCE_TIMEOUT:-30s}"
+  AFSCP_REPO_CREATE_RECOVERY_ENABLED="${AFSCP_REPO_CREATE_RECOVERY_ENABLED:-true}"
+  AFSCP_REPO_LIFECYCLE_RECOVERY_ENABLED="${AFSCP_REPO_LIFECYCLE_RECOVERY_ENABLED:-true}"
+  AFSCP_REPO_PURGE_RECOVERY_ENABLED="${AFSCP_REPO_PURGE_RECOVERY_ENABLED:-false}"
+  AFSCP_SAVE_POINT_RECOVERY_ENABLED="${AFSCP_SAVE_POINT_RECOVERY_ENABLED:-true}"
+  AFSCP_TEMPLATE_CREATE_RECOVERY_ENABLED="${AFSCP_TEMPLATE_CREATE_RECOVERY_ENABLED:-false}"
+  AFSCP_TEMPLATE_CLONE_RECOVERY_ENABLED="${AFSCP_TEMPLATE_CLONE_RECOVERY_ENABLED:-false}"
+  AFSCP_RESTORE_PREVIEW_RECOVERY_ENABLED="${AFSCP_RESTORE_PREVIEW_RECOVERY_ENABLED:-false}"
+  AFSCP_RESTORE_PREVIEW_DISCARD_RECOVERY_ENABLED="${AFSCP_RESTORE_PREVIEW_DISCARD_RECOVERY_ENABLED:-false}"
+  AFSCP_RESTORE_RUN_RECOVERY_ENABLED="${AFSCP_RESTORE_RUN_RECOVERY_ENABLED:-false}"
+
+  AFSCP_EXPORT_GATEWAY_POSTGRES_DSN="${AFSCP_EXPORT_GATEWAY_POSTGRES_DSN:-${AFSCP_POSTGRES_DSN}}"
+  AFSCP_EXPORT_GATEWAY_VOLUME_ROOTS="${AFSCP_EXPORT_GATEWAY_VOLUME_ROOTS:-${AFSCP_VOLUME_ROOTS}}"
+}
+
+write_afscp_local_runtime_env() {
+  prepare_afscp_local_runtime_env
+  {
+    printf '# Generated by AgentSmith local-real; AFSCP/JVS is a local development/test dependency, not the business deployment path.\n'
+    local key
+    for key in \
+      AFSCP_ENVIRONMENT \
+      AFSCP_SERVICE_NAME \
+      AFSCP_LISTEN_ADDR \
+      AFSCP_READINESS_PROFILE \
+      AFSCP_DATABASE_URL \
+      AFSCP_POSTGRES_DSN \
+      AFSCP_API_MODE \
+      AFSCP_API_POSTGRES_DSN \
+      AFSCP_API_SERVICE_TOKENS \
+      AFSCP_API_DEPLOYMENT_GLOBAL_ALLOWED_CALLERS \
+      AFSCP_API_DEPLOYMENT_NAMESPACE_ALLOWED_CALLERS \
+      AFSCP_API_VOLUME_ROOTS \
+      AFSCP_API_WORKLOAD_MOUNT_SECRET_REFS \
+      AFSCP_API_WEBDAV_EXPORT_PUBLIC_BASE_URL \
+      AFSCP_STORAGE_ENABLED \
+      AFSCP_STORAGE_READY \
+      AFSCP_JVS_ENABLED \
+      AFSCP_JVS_READY \
+      AFSCP_WEBDAV_ENABLED \
+      AFSCP_WEBDAV_READY \
+      AFSCP_MOUNT_ENABLED \
+      AFSCP_MOUNT_READY \
+      AFSCP_REPO_TEMPLATE_ENABLED \
+      AFSCP_REPO_TEMPLATE_READY \
+      AFSCP_REPO_PURGE_ENABLED \
+      AFSCP_REPO_PURGE_READY \
+      AFSCP_WORKER_OPERATION_RECOVERY_ENABLED \
+      AFSCP_WORKER_OWNER \
+      AFSCP_OPERATION_RECOVERY_LIMIT \
+      AFSCP_EXPORT_SESSION_RECONCILE_ENABLED \
+      AFSCP_EXPORT_SESSION_RECONCILE_POSTGRES_DSN \
+      AFSCP_EXPORT_SESSION_RECONCILE_OWNER \
+      AFSCP_EXPORT_SESSION_RECONCILE_LIMIT \
+      AFSCP_WORKER_RUN_ONCE_TIMEOUT \
+      AFSCP_REPO_CREATE_RECOVERY_ENABLED \
+      AFSCP_REPO_LIFECYCLE_RECOVERY_ENABLED \
+      AFSCP_REPO_PURGE_RECOVERY_ENABLED \
+      AFSCP_SAVE_POINT_RECOVERY_ENABLED \
+      AFSCP_TEMPLATE_CREATE_RECOVERY_ENABLED \
+      AFSCP_TEMPLATE_CLONE_RECOVERY_ENABLED \
+      AFSCP_RESTORE_PREVIEW_RECOVERY_ENABLED \
+      AFSCP_RESTORE_PREVIEW_DISCARD_RECOVERY_ENABLED \
+      AFSCP_RESTORE_RUN_RECOVERY_ENABLED \
+      AFSCP_JVS_BINARY_PATH \
+      AFSCP_JVS_BINARY_SHA256 \
+      AFSCP_JVS_CWD \
+      AFSCP_VOLUME_ROOTS \
+      AFSCP_EXPORT_GATEWAY_LISTEN_ADDR \
+      AFSCP_EXPORT_GATEWAY_POSTGRES_DSN \
+      AFSCP_EXPORT_GATEWAY_PREFIX \
+      AFSCP_EXPORT_GATEWAY_VOLUME_ROOTS; do
+      afscp_runtime_export_line "${key}"
+    done
+  } > "${AFSCP_LOCAL_RUNTIME_ENV_FILE}"
+  chmod 0600 "${AFSCP_LOCAL_RUNTIME_ENV_FILE}"
+}
+
+afscp_trim() {
+  printf '%s' "$1" | sed -E 's/^[[:space:]]+//; s/[[:space:]]+$//'
+}
+
+afscp_default_local_runtime_juicefs_metaurl() {
+  printf 'postgres://%s:%s@%s:5432/%s?sslmode=disable' \
+    "${SUBSTRATE_DB_USER}" \
+    "${SUBSTRATE_DB_PASSWORD}" \
+    "$(k8s_external_postgres_fqdn "${K8S_NAMESPACE}")" \
+    "${SUBSTRATE_DB_NAME}"
+}
+
+afscp_default_local_runtime_juicefs_bucket() {
+  printf 'http://%s:9000/%s' \
+    "$(k8s_external_minio_fqdn "${K8S_NAMESPACE}")" \
+    "${MINIO_BUCKET}"
+}
+
+afscp_create_local_workload_mount_secret() {
+  local secret_namespace="$1"
+  local secret_name="$2"
+  local metaurl bucket
+  metaurl="${AFSCP_LOCAL_RUNTIME_JUICEFS_METAURL:-$(afscp_default_local_runtime_juicefs_metaurl)}"
+  bucket="${AFSCP_LOCAL_RUNTIME_JUICEFS_BUCKET:-$(afscp_default_local_runtime_juicefs_bucket)}"
+
+  local secret_args=(
+    create secret generic "${secret_name}"
+    -n "${secret_namespace}"
+    --dry-run=client
+    -o yaml
+    "--from-literal=name=${AFSCP_LOCAL_RUNTIME_JUICEFS_NAME:-${AFSCP_DEFAULT_VOLUME_ID}}"
+    "--from-literal=metaurl=${metaurl}"
+    "--from-literal=storage=${AFSCP_LOCAL_RUNTIME_JUICEFS_STORAGE:-minio}"
+    "--from-literal=bucket=${bucket}"
+    "--from-literal=access-key=${MINIO_ACCESS_KEY}"
+    "--from-literal=secret-key=${MINIO_SECRET_KEY}"
+  )
+  if [[ -n "${AFSCP_LOCAL_RUNTIME_JUICEFS_FORMAT_OPTIONS:-}" ]]; then
+    secret_args+=("--from-literal=format-options=${AFSCP_LOCAL_RUNTIME_JUICEFS_FORMAT_OPTIONS}")
+  fi
+
+  kubectl "${secret_args[@]}" | kubectl apply -f - >/dev/null
+  kubectl label secret "${secret_name}" -n "${secret_namespace}" app.kubernetes.io/managed-by=agentsmith --overwrite >/dev/null 2>&1 || true
+}
+
+afscp_validate_workload_mount_secret_ref() {
+  local secret_namespace="$1"
+  local secret_name="$2"
+  local secret_json missing_keys
+  if ! secret_json="$(kubectl get secret "${secret_name}" -n "${secret_namespace}" -o json 2>/dev/null)"; then
+    internal_err "AFSCP workload mount SecretRef is not present; local-real fails closed"
+    return 1
+  fi
+  missing_keys="$(
+    AFSCP_WORKLOAD_MOUNT_SECRET_JSON="${secret_json}" node <<'NODE'
+const required = ['name', 'metaurl', 'storage', 'bucket', 'access-key', 'secret-key'];
+try {
+  const secret = JSON.parse(process.env.AFSCP_WORKLOAD_MOUNT_SECRET_JSON ?? '{}');
+  const data = secret && typeof secret === 'object' && secret.data && typeof secret.data === 'object'
+    ? secret.data
+    : {};
+  const missing = required.filter((key) => typeof data[key] !== 'string' || data[key].length === 0);
+  if (missing.length > 0) {
+    process.stdout.write(missing.join(','));
+    process.exit(1);
+  }
+} catch {
+  process.stdout.write('invalid-json');
+  process.exit(1);
+}
+NODE
+  )" || {
+    internal_err "AFSCP workload mount SecretRef is missing required JuiceFS CSI keys (${missing_keys:-unknown}); local-real fails closed"
+    return 1
+  }
+}
+
+ensure_afscp_local_runtime_workload_mount_secret_refs() {
+  prepare_afscp_local_runtime_env
+  local raw_refs="${AFSCP_API_WORKLOAD_MOUNT_SECRET_REFS:-}"
+  if [[ -z "$(afscp_trim "${raw_refs}")" ]]; then
+    internal_err "AFSCP_API_WORKLOAD_MOUNT_SECRET_REFS is required for local-real workload mounts"
+    return 1
+  fi
+
+  local ref_pair configured=0
+  local -a ref_pairs
+  IFS=',' read -r -a ref_pairs <<< "${raw_refs}"
+  for ref_pair in "${ref_pairs[@]}"; do
+    local pair volume_id secret_ref secret_namespace secret_name
+    pair="$(afscp_trim "${ref_pair}")"
+    [[ -n "${pair}" ]] || continue
+    if [[ "${pair}" != *=* ]]; then
+      internal_err "AFSCP_API_WORKLOAD_MOUNT_SECRET_REFS must use volume_id=namespace/name pairs"
+      return 1
+    fi
+    volume_id="$(afscp_trim "${pair%%=*}")"
+    secret_ref="$(afscp_trim "${pair#*=}")"
+    secret_namespace="$(afscp_trim "${secret_ref%%/*}")"
+    secret_name="$(afscp_trim "${secret_ref#*/}")"
+    if [[ -z "${volume_id}" || "${secret_ref}" != */* || -z "${secret_namespace}" || -z "${secret_name}" || "${secret_name}" == */* ]]; then
+      internal_err "AFSCP_API_WORKLOAD_MOUNT_SECRET_REFS must use volume_id=namespace/name pairs"
+      return 1
+    fi
+
+    configured=1
+    if [[ "${secret_namespace}" == "${K8S_NAMESPACE}" && "${secret_name}" == "${AFSCP_LOCAL_RUNTIME_WORKLOAD_MOUNT_SECRET_NAME}" ]]; then
+      internal_info "reconciling local AFSCP workload mount SecretRef for ${volume_id}"
+      afscp_create_local_workload_mount_secret "${secret_namespace}" "${secret_name}"
+    else
+      internal_info "validating configured AFSCP workload mount SecretRef for ${volume_id}"
+    fi
+    afscp_validate_workload_mount_secret_ref "${secret_namespace}" "${secret_name}" || return 1
+  done
+
+  if [[ "${configured}" != "1" ]]; then
+    internal_err "AFSCP_API_WORKLOAD_MOUNT_SECRET_REFS did not contain any usable SecretRef"
+    return 1
+  fi
+}
+
+ensure_afscp_local_runtime_prerequisites() {
+  if [[ ! -f "${AFSCP_ROOT}/cmd/afscp-api/main.go" ]]; then
+    internal_err "missing AFSCP sibling repo at ${AFSCP_ROOT}; set AFSCP_ROOT to a checkout with cmd/afscp-api"
+    exit 1
+  fi
+  if [[ ! -f "${AFSCP_ROOT}/cmd/afscp-worker/main.go" ]]; then
+    internal_err "AFSCP checkout at ${AFSCP_ROOT} has no cmd/afscp-worker entrypoint"
+    exit 1
+  fi
+  if [[ ! -f "${AFSCP_ROOT}/cmd/afscp-export-gateway/main.go" ]]; then
+    internal_err "AFSCP checkout at ${AFSCP_ROOT} has no cmd/afscp-export-gateway entrypoint"
+    exit 1
+  fi
+  if ! command -v go >/dev/null 2>&1; then
+    internal_err "go is required to run the AFSCP local-real dependency"
+    exit 1
+  fi
+  if [[ "${AFSCP_JVS_ENABLED}" == "true" ]]; then
+    afscp_verify_jvs_binary_sha256 "${AFSCP_JVS_BINARY_PATH}" "${AFSCP_JVS_BINARY_SHA256}" "resolved AFSCP_JVS_BINARY_PATH" || exit 1
+  fi
+}
+
+apply_afscp_postgres_migrations() {
+  prepare_afscp_local_runtime_env
+  local migration
+  internal_info "applying AFSCP local-real PostgreSQL migrations"
+  for migration in "${AFSCP_ROOT}"/migrations/*.sql; do
+    [[ -f "${migration}" ]] || continue
+    if command -v psql >/dev/null 2>&1; then
+      PGPASSWORD="${SUBSTRATE_DB_PASSWORD}" psql "${AFSCP_POSTGRES_DSN}" -v ON_ERROR_STOP=1 -f "${migration}" >/dev/null
+    else
+      docker exec -i mbos-postgres psql -v ON_ERROR_STOP=1 -U "${SUBSTRATE_DB_USER}" -d "${SUBSTRATE_DB_NAME}" < "${migration}" >/dev/null
+    fi
+  done
+}
+
+afscp_runtime_shell_prefix() {
+  printf 'cd %q && set -a && source %q && set +a' "${AFSCP_ROOT}" "${AFSCP_LOCAL_RUNTIME_ENV_FILE}"
+}
+
+afscp_stop_pid_file() {
+  local pid_file="$1"
+  local label="$2"
+  local pid
+  [[ -f "${pid_file}" ]] || return 0
+  pid="$(cat "${pid_file}" 2>/dev/null || true)"
+  rm -f "${pid_file}"
+  [[ -n "${pid}" ]] || return 0
+  if kill -0 "${pid}" >/dev/null 2>&1; then
+    internal_info "stopping ${label} pid=${pid}"
+    local_manual_stop_reclaimable_launcher_pid "${pid}"
+  fi
+}
+
+afscp_wait_for_gateway_listener() {
+  local timeout="${1:-90}"
+  local started
+  started="$(date +%s)"
+  while true; do
+    if lsof -tiTCP:"${AFSCP_EXPORT_GATEWAY_PORT}" -sTCP:LISTEN >/dev/null 2>&1; then
+      write_ready_file "${AFSCP_EXPORT_GATEWAY_READY_FILE}"
+      return 0
+    fi
+    if (( "$(date +%s)" - started > timeout )); then
+      internal_err "AFSCP export gateway listener not ready on port ${AFSCP_EXPORT_GATEWAY_PORT}"
+      return 1
+    fi
+    sleep 1
+  done
+}
+
+afscp_run_worker_once() {
+  prepare_afscp_local_runtime_env
+  ( cd "${AFSCP_ROOT}" && set -a && source "${AFSCP_LOCAL_RUNTIME_ENV_FILE}" && set +a && go run ./cmd/afscp-worker --run-once )
+}
+
+start_afscp_export_gateway() {
+  write_afscp_local_runtime_env
+  afscp_stop_pid_file "${AFSCP_EXPORT_GATEWAY_PID_FILE}" "AFSCP export gateway"
+  rm -f "${AFSCP_EXPORT_GATEWAY_READY_FILE}"
+  wait_port_free "${AFSCP_EXPORT_GATEWAY_PORT}" "AFSCP export gateway"
+  internal_info "starting AFSCP export gateway at ${AFSCP_EXPORT_GATEWAY_LISTEN_ADDR}"
+  launch_detached "${AFSCP_EXPORT_GATEWAY_PID_FILE}" "${AFSCP_EXPORT_GATEWAY_LOG}" "$(afscp_runtime_shell_prefix) && exec go run ./cmd/afscp-export-gateway --serve"
+  afscp_wait_for_gateway_listener 120
+  capture_listener_pid "${AFSCP_EXPORT_GATEWAY_PORT}" "${AFSCP_EXPORT_GATEWAY_PID_FILE}" "AFSCP export gateway"
+}
+
+start_afscp_api() {
+  write_afscp_local_runtime_env
+  afscp_stop_pid_file "${AFSCP_API_PID_FILE}" "AFSCP API"
+  rm -f "${AFSCP_API_READY_FILE}"
+  wait_port_free "${AFSCP_API_PORT}" "AFSCP API"
+  internal_info "starting AFSCP internal API at ${AFSCP_BASE_URL}"
+  launch_detached "${AFSCP_API_PID_FILE}" "${AFSCP_API_LOG}" "$(afscp_runtime_shell_prefix) && exec go run ./cmd/afscp-api --serve"
+  wait_http "${AFSCP_BASE_URL%/}/readyz" "AFSCP API" 120
+  capture_listener_pid "${AFSCP_API_PORT}" "${AFSCP_API_PID_FILE}" "AFSCP API"
+  write_ready_file "${AFSCP_API_READY_FILE}"
+}
+
+start_afscp_worker_loop() {
+  write_afscp_local_runtime_env
+  afscp_stop_pid_file "${AFSCP_WORKER_PID_FILE}" "AFSCP worker"
+  rm -f "${AFSCP_WORKER_READY_FILE}"
+  internal_info "starting AFSCP worker loop"
+  launch_detached "${AFSCP_WORKER_PID_FILE}" "${AFSCP_WORKER_LOG}" "$(afscp_runtime_shell_prefix) && while true; do go run ./cmd/afscp-worker --run-once; sleep ${AFSCP_WORKER_INTERVAL_SECONDS}; done"
+  sleep 1
+  if [[ -f "${AFSCP_WORKER_PID_FILE}" ]]; then
+    local pid
+    pid="$(cat "${AFSCP_WORKER_PID_FILE}" 2>/dev/null || true)"
+    if [[ -n "${pid}" ]] && kill -0 "${pid}" >/dev/null 2>&1; then
+      write_ready_file "${AFSCP_WORKER_READY_FILE}"
+      return 0
+    fi
+  fi
+  internal_err "AFSCP worker loop failed to start; see ${AFSCP_WORKER_LOG}"
+  exit 1
+}
+
+afscp_operation_state_from_file() {
+  node - <<'NODE' "$1"
+const fs = require('node:fs');
+const file = process.argv[2];
+try {
+  const payload = JSON.parse(fs.readFileSync(file, 'utf8'));
+  process.stdout.write(String(payload.operation_state ?? ''));
+} catch {
+  process.exit(1);
+}
+NODE
+}
+
+afscp_operation_id_from_file() {
+  node - <<'NODE' "$1"
+const fs = require('node:fs');
+const file = process.argv[2];
+try {
+  const payload = JSON.parse(fs.readFileSync(file, 'utf8'));
+  const id = payload.operation_id;
+  if (typeof id === 'string' && id.length > 0) {
+    process.stdout.write(id);
+    process.exit(0);
+  }
+} catch {}
+process.exit(1);
+NODE
+}
+
+afscp_get_operation_state() {
+  local operation_id="$1"
+  local response_file="${INTERNAL_REAL_DIR}/afscp-operation-${operation_id}.json"
+  local status
+  status="$(curl -sS -o "${response_file}" -w '%{http_code}' \
+    -H "Authorization: Bearer ${AFSCP_BOOTSTRAP_SERVICE_TOKEN}" \
+    -H "X-AFSCP-Caller-Service: ${AFSCP_BOOTSTRAP_CALLER_SERVICE}" \
+    -H "X-Correlation-Id: agentsmith-local-afscp-operation" \
+    "${AFSCP_BASE_URL%/}/internal/v1/operations/${operation_id}" || true)"
+  if [[ "${status}" != "200" ]]; then
+    printf 'unknown\n'
+    return 0
+  fi
+  afscp_operation_state_from_file "${response_file}" || printf 'unknown\n'
+}
+
+afscp_wait_operation_succeeded() {
+  local operation_id="$1"
+  local state
+  for _ in $(seq 1 60); do
+    afscp_run_worker_once >> "${AFSCP_WORKER_LOG}" 2>&1 || true
+    state="$(afscp_get_operation_state "${operation_id}")"
+    case "${state}" in
+      succeeded|success|completed|ready)
+        return 0
+        ;;
+      failed|failure|error|errored|cancelled|canceled)
+        internal_err "AFSCP operation ${operation_id} failed with state=${state}"
+        return 1
+        ;;
+    esac
+    sleep 1
+  done
+  internal_err "timed out waiting for AFSCP operation ${operation_id}"
+  return 1
+}
+
+ensure_afscp_default_volume() {
+  prepare_afscp_local_runtime_env
+  local health_status response_file operation_id status
+  response_file="${INTERNAL_REAL_DIR}/afscp-default-volume-bootstrap.json"
+  health_status="$(curl -sS -o "${response_file}" -w '%{http_code}' \
+    -H "Authorization: Bearer ${AFSCP_BOOTSTRAP_SERVICE_TOKEN}" \
+    -H "X-AFSCP-Caller-Service: ${AFSCP_BOOTSTRAP_CALLER_SERVICE}" \
+    -H "X-Correlation-Id: agentsmith-local-afscp-volume-health" \
+    "${AFSCP_BASE_URL%/}/internal/v1/volumes/${AFSCP_DEFAULT_VOLUME_ID}/health" || true)"
+  if [[ "${health_status}" == "200" ]]; then
+    return 0
+  fi
+
+  internal_info "bootstrapping AFSCP default volume ${AFSCP_DEFAULT_VOLUME_ID}"
+  status="$(curl -sS -o "${response_file}" -w '%{http_code}' \
+    -X POST \
+    -H "Authorization: Bearer ${AFSCP_BOOTSTRAP_SERVICE_TOKEN}" \
+    -H "X-AFSCP-Caller-Service: ${AFSCP_BOOTSTRAP_CALLER_SERVICE}" \
+    -H "X-Correlation-Id: agentsmith-local-afscp-volume-bootstrap" \
+    -H "Idempotency-Key: agentsmith-local-afscp-volume-${AFSCP_DEFAULT_VOLUME_ID}" \
+    -H "X-AFSCP-Actor-Type: system" \
+    -H "X-AFSCP-Actor-Id: agentsmith-local-real" \
+    -H "Content-Type: application/json" \
+    --data-binary @- \
+    "${AFSCP_BASE_URL%/}/internal/v1/volumes/${AFSCP_DEFAULT_VOLUME_ID}:ensure" <<JSON
+{"volume_id":"${AFSCP_DEFAULT_VOLUME_ID}","backend":"juicefs","isolation_class":"shared","status":"active","capabilities":{"webdav_export":true,"workload_mount":true,"jvs_external_control_root":true,"directory_quota":false,"csi_driver":"${CSI_DRIVER}","storage_class":"${STORAGE_CLASS_NAME}","permission_model":"local-real"}}
+JSON
+  )"
+  if [[ "${status}" != "200" ]]; then
+    internal_err "failed to create AFSCP default volume operation: http ${status}"
+    cat "${response_file}" >&2 || true
+    exit 1
+  fi
+  operation_id="$(afscp_operation_id_from_file "${response_file}")"
+  afscp_wait_operation_succeeded "${operation_id}"
+}
+
+ensure_afscp_local_runtime() {
+  prepare_afscp_local_runtime_env
+  ensure_afscp_local_runtime_prerequisites
+  ensure_afscp_local_runtime_workload_mount_secret_refs
+  write_afscp_local_runtime_env
+  apply_afscp_postgres_migrations
+  internal_info "validating AFSCP worker config"
+  afscp_run_worker_once >> "${AFSCP_WORKER_LOG}" 2>&1
+  start_afscp_export_gateway
+  start_afscp_api
+  start_afscp_worker_loop
+  ensure_afscp_default_volume
+}
+
+afscp_api_status() {
+  local code
+  code="$(curl -sS -o /dev/null -w '%{http_code}' --max-time 2 "${AFSCP_BASE_URL%/}/readyz" 2>/dev/null || true)"
+  case "${code}" in
+    200) printf 'ready (%s)\n' "${AFSCP_BASE_URL}" ;;
+    000|"") printf 'unreachable (%s)\n' "${AFSCP_BASE_URL}" ;;
+    *) printf 'not_ready http=%s (%s)\n' "${code}" "${AFSCP_BASE_URL}" ;;
+  esac
+}
+
+stop_afscp_local_runtime() {
+  afscp_stop_pid_file "${AFSCP_WORKER_PID_FILE}" "AFSCP worker"
+  afscp_stop_pid_file "${AFSCP_API_PID_FILE}" "AFSCP API"
+  afscp_stop_pid_file "${AFSCP_EXPORT_GATEWAY_PID_FILE}" "AFSCP export gateway"
+  rm -f "${AFSCP_WORKER_READY_FILE}" "${AFSCP_API_READY_FILE}" "${AFSCP_EXPORT_GATEWAY_READY_FILE}"
 }
 
 write_internal_sandbox_config() {
@@ -338,8 +1154,6 @@ SANDBOX_PORT="${INTERNAL_SANDBOX_PORT}"
 SANDBOX_SERVICE_KEY_VALUE="${SANDBOX_SERVICE_KEY_VALUE}"
 K8S_NAMESPACE="${K8S_NAMESPACE}"
 SANDBOX_LOG="${INTERNAL_SANDBOX_MANAGER_LOG}"
-CLEANER_LOG="${INTERNAL_SANDBOX_CLEANER_LOG}"
-CLEANER_INTERVAL_SECONDS="${INTERNAL_SANDBOX_CLEANER_INTERVAL_SECONDS}"
 AFSCP_STORAGE_CSI_DRIVER="${CSI_DRIVER}"
 AFSCP_STORAGE_CAPACITY="${STORAGE_CAPACITY}"
 AFSCP_STORAGE_CLASS_NAME="${STORAGE_CLASS_NAME}"
@@ -348,10 +1162,15 @@ AFSCP_STORAGE_CSI_SUBDIR="${SUBDIR}"
 AFSCP_STORAGE_CSI_MOUNT_SERVICE_ACCOUNT="${MOUNT_SERVICE_ACCOUNT}"
 AFSCP_STORAGE_CSI_MOUNT_IMAGE="${MOUNT_IMAGE_OVERRIDE}"
 AFSCP_BASE_URL="${AFSCP_BASE_URL:-http://127.0.0.1:28090}"
+AFSCP_INTERNAL_BASE_URL="${AFSCP_BASE_URL:-http://127.0.0.1:28090}"
 AFSCP_ORCHESTRATOR_CALLER_SERVICE="${AFSCP_ORCHESTRATOR_CALLER_SERVICE:-agentsmith-sandbox-manager}"
 AFSCP_ORCHESTRATOR_SERVICE_TOKEN="${AFSCP_ORCHESTRATOR_SERVICE_TOKEN:-agentsmith-local-afscp-orchestrator-token}"
+AFSCP_ORCHESTRATOR_TOKEN="${AFSCP_ORCHESTRATOR_SERVICE_TOKEN:-agentsmith-local-afscp-orchestrator-token}"
+AFSCP_CALLER_SERVICE="${AFSCP_ORCHESTRATOR_CALLER_SERVICE:-agentsmith-sandbox-manager}"
 AFSCP_ORCHESTRATOR_ACTOR_TYPE="${AFSCP_ORCHESTRATOR_ACTOR_TYPE:-system}"
 AFSCP_ORCHESTRATOR_ACTOR_ID="${AFSCP_ORCHESTRATOR_ACTOR_ID:-${AFSCP_ORCHESTRATOR_CALLER_SERVICE:-agentsmith-sandbox-manager}}"
+AFSCP_ACTOR_TYPE="${AFSCP_ORCHESTRATOR_ACTOR_TYPE:-system}"
+AFSCP_ACTOR_ID="${AFSCP_ORCHESTRATOR_ACTOR_ID:-${AFSCP_ORCHESTRATOR_CALLER_SERVICE:-agentsmith-sandbox-manager}}"
 AFSCP_SUBSTRATE_OBJECT_STORAGE_ENDPOINT_VALUE="${AFSCP_SUBSTRATE_OBJECT_STORAGE_ENDPOINT:-}"
 MINIO_ACCESS_KEY="${MINIO_ACCESS_KEY:-mbos}"
 MINIO_SECRET_KEY="${MINIO_SECRET_KEY:-mbos_dev_password}"
@@ -360,11 +1179,17 @@ KUBECONFIG="${KUBECONFIG:-}"
 EOF
 }
 
-stop_internal_runtime() {
+stop_internal_sandbox_runtime() {
   if [[ -f "${INTERNAL_SANDBOX_STATE_FILE}" ]]; then
-    INTERNAL_SANDBOX_REAL_STATE_FILE="${INTERNAL_SANDBOX_STATE_FILE}" bash "${CONTROL_SCRIPT}" stop-cleaner >/dev/null 2>&1 || true
     INTERNAL_SANDBOX_REAL_STATE_FILE="${INTERNAL_SANDBOX_STATE_FILE}" bash "${CONTROL_SCRIPT}" stop-manager >/dev/null 2>&1 || true
   fi
+  kubectl delete pod -n "${K8S_NAMESPACE}" -l app=managed-workload --ignore-not-found --wait=true >/dev/null 2>&1 || true
+  kubectl delete pod -n "${K8S_NAMESPACE}" -l app=sandbox --ignore-not-found --wait=true >/dev/null 2>&1 || true
+}
+
+stop_internal_runtime() {
+  stop_internal_sandbox_runtime
+  stop_afscp_local_runtime
 }
 
 restore_local_manual_external_mode() {
@@ -377,11 +1202,8 @@ start_internal_runtime() {
   ensure_internal_common_runtime_env
   write_internal_sandbox_config
   write_internal_state_env
-  stop_internal_runtime
-  kubectl delete pod -n "${K8S_NAMESPACE}" -l app=managed-workload --ignore-not-found --wait=true >/dev/null 2>&1 || true
-  kubectl delete pod -n "${K8S_NAMESPACE}" -l app=sandbox --ignore-not-found --wait=true >/dev/null 2>&1 || true
+  stop_internal_sandbox_runtime
   INTERNAL_SANDBOX_REAL_STATE_FILE="${INTERNAL_SANDBOX_STATE_FILE}" bash "${CONTROL_SCRIPT}" start-manager
-  INTERNAL_SANDBOX_REAL_STATE_FILE="${INTERNAL_SANDBOX_STATE_FILE}" bash "${CONTROL_SCRIPT}" start-cleaner
 }
 
 restart_api_with_mode() {
@@ -403,35 +1225,13 @@ restart_api_with_mode() {
 
 ensure_internal_runner_state() {
   ensure_internal_common_runtime_env
-  local token project_id endpoint_id existing_runner current_runner_provider
-  token="$(cat "$(backend_real_token_file)" 2>/dev/null || true)"
-  project_id="$(state_get project.id)"
-  endpoint_id="$(state_get endpoint.id)"
-  existing_runner="$(state_get agent_runner.id)"
-  current_runner_provider="$(state_get agent_runner.runner_provider)"
-  [[ -n "${token}" && -n "${project_id}" && -n "${endpoint_id}" ]] || {
-    internal_info "agent-task diagnostic state missing after internal API restart; preparing agent-task diagnostic resources"
-    ensure_agent_task_diagnostics_ready
-    token="$(cat "$(backend_real_token_file)" 2>/dev/null || true)"
-    project_id="$(state_get project.id)"
-    endpoint_id="$(state_get endpoint.id)"
-    existing_runner="$(state_get agent_runner.id)"
-    [[ -n "${token}" && -n "${project_id}" && -n "${endpoint_id}" ]] || {
-      internal_err "missing agent-task diagnostic state; run make local-manual-seed-agent-task first"
+  if ! managed_agent_task_runner_state_is_present; then
+    internal_info "agent-task diagnostic state missing after internal API restart; preparing managed agent-task diagnostic state"
+    seed_managed_agent_task_diagnostics_state
+    if ! managed_agent_task_runner_state_is_present; then
+      internal_err "missing managed agent-task diagnostic state; run make local-manual-seed-agent-task first"
       exit 1
-    }
-  }
-
-  if [[ -n "${existing_runner}" && "${current_runner_provider}" == "managed" ]]; then
-    local status
-    status="$(curl -sS -o /dev/null -w '%{http_code}' \
-      "http://localhost:${PORT_API}/api/v1/workspaces/${WORKSPACE_ID}/projects/${project_id}/agent-runners/${existing_runner}" \
-      -H "Authorization: Bearer ${token}" || true)"
-    if [[ "${status}" == "200" ]]; then
-      return 0
     fi
   fi
-
-  internal_info "managed agent-task runner state missing after internal API restart; preparing agent-task diagnostic resources"
-  AGENT_RUNNER_SEED_MODE=managed_agent_task LOCAL_MANUAL_ENABLE_INTERNAL=0 bash "${ROOT_DIR}/scripts/local-manual/seed-agent-task-diagnostics.sh"
+  ensure_local_manual_runner_connected
 }

@@ -266,12 +266,17 @@ NODE
 
 state_write_summary() {
   ensure_backend_real_state
-  local file
+  local file api_base
   file="$(backend_real_summary_file)"
+  api_base="${API_BASE:-${RUNTIME_HOST_API_BASE_URL:-}}"
+  if [[ -z "${api_base}" && -n "${PORT_API:-}" ]]; then
+    api_base="http://127.0.0.1:${PORT_API}/api/v1"
+  fi
   {
     printf 'STATE_DIR=%s\n' "$(backend_real_state_root)"
     printf 'STATE_FILE=%s\n' "$(backend_real_state_file)"
     printf 'TOKEN_FILE=%s\n' "$(backend_real_token_file)"
+    [[ -n "${api_base}" ]] && printf 'API_BASE=%s\n' "${api_base}"
     printf 'WORKSPACE_ID=%s\n' "$(state_get workspace.id)"
     printf 'PROJECT_ID=%s\n' "$(state_get project.id)"
     printf 'ANTHROPIC_ENDPOINT_ID=%s\n' "$(state_get endpoint.anthropic_id)"

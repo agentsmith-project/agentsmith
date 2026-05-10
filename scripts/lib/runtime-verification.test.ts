@@ -1,5 +1,5 @@
 import { spawnSync } from 'node:child_process';
-import { existsSync, mkdtempSync, readFileSync, rmSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 
@@ -26,6 +26,103 @@ function runRuntimeVerificationProbe(tempRoot: string, probeScript: string) {
     stderr: result.stderr ?? '',
   };
 }
+
+describe('backend-real API base resolver', () => {
+  it('reads summary.env API_BASE and normalizes the /api/v1 suffix for smoke scripts', () => {
+    const tempRoot = mkdtempSync(path.join(os.tmpdir(), 'runtime-verification-api-base-summary-'));
+    const summaryDir = path.join(tempRoot, 'backend-real', 'current');
+
+    try {
+      mkdirSync(summaryDir, { recursive: true });
+      writeFileSync(path.join(summaryDir, 'summary.env'), 'API_BASE="http://127.0.0.1:21000/api/v1"\n', 'utf8');
+
+      const result = runRuntimeVerificationProbe(
+        tempRoot,
+        `
+          set -euo pipefail
+          source "${repoRoot}/scripts/lib/runtime-verification.sh"
+          unset API_BASE RUNTIME_HOST_API_BASE_URL API_PORT INTEGRATION_API_PORT
+          export BACKEND_REAL_STATE_DIR="${summaryDir}"
+          resolve_backend_real_api_base_for_smoke
+          printf 'API_BASE=%s\\n' "$API_BASE"
+          printf 'RUNTIME_HOST_API_BASE_URL=%s\\n' "$RUNTIME_HOST_API_BASE_URL"
+        `,
+      );
+
+      expect(result.status).toBe(0);
+      expect(result.stderr).toBe('');
+      expect(result.stdout).toContain('API_BASE=http://127.0.0.1:21000\n');
+      expect(result.stdout).toContain('RUNTIME_HOST_API_BASE_URL=http://127.0.0.1:21000\n');
+    } finally {
+      rmSync(tempRoot, { recursive: true, force: true });
+    }
+  });
+
+  it('falls back to the local-manual api.port file before the old 20000 default', () => {
+    const tempRoot = mkdtempSync(path.join(os.tmpdir(), 'runtime-verification-api-base-local-manual-'));
+    const runtimeLinesRoot = path.join(tempRoot, 'runtime-lines');
+    const apiPortDir = path.join(runtimeLinesRoot, 'local-manual', 'current');
+
+    try {
+      mkdirSync(apiPortDir, { recursive: true });
+      writeFileSync(path.join(apiPortDir, 'api.port'), '23045\n', 'utf8');
+
+      const result = runRuntimeVerificationProbe(
+        tempRoot,
+        `
+          set -euo pipefail
+          source "${repoRoot}/scripts/lib/runtime-verification.sh"
+          unset API_BASE RUNTIME_HOST_API_BASE_URL API_PORT INTEGRATION_API_PORT BACKEND_REAL_SUMMARY_FILE
+          export BACKEND_REAL_STATE_DIR="${path.join(tempRoot, 'missing-backend-real', 'current')}"
+          export RUNTIME_LINES_ROOT="${runtimeLinesRoot}"
+          resolve_backend_real_api_base_for_smoke
+          printf 'API_BASE=%s\\n' "$API_BASE"
+          printf 'API_PORT=%s\\n' "$API_PORT"
+        `,
+      );
+
+      expect(result.status).toBe(0);
+      expect(result.stderr).toBe('');
+      expect(result.stdout).toContain('API_BASE=http://127.0.0.1:23045\n');
+      expect(result.stdout).toContain('API_PORT=23045\n');
+    } finally {
+      rmSync(tempRoot, { recursive: true, force: true });
+    }
+  });
+
+  it('keeps an explicit API_BASE ahead of summary and local-manual fallbacks', () => {
+    const tempRoot = mkdtempSync(path.join(os.tmpdir(), 'runtime-verification-api-base-explicit-'));
+    const summaryDir = path.join(tempRoot, 'backend-real', 'current');
+    const runtimeLinesRoot = path.join(tempRoot, 'runtime-lines');
+    const apiPortDir = path.join(runtimeLinesRoot, 'local-manual', 'current');
+
+    try {
+      mkdirSync(summaryDir, { recursive: true });
+      mkdirSync(apiPortDir, { recursive: true });
+      writeFileSync(path.join(summaryDir, 'summary.env'), 'API_BASE=http://127.0.0.1:21000/api/v1\n', 'utf8');
+      writeFileSync(path.join(apiPortDir, 'api.port'), '23045\n', 'utf8');
+
+      const result = runRuntimeVerificationProbe(
+        tempRoot,
+        `
+          set -euo pipefail
+          source "${repoRoot}/scripts/lib/runtime-verification.sh"
+          export BACKEND_REAL_STATE_DIR="${summaryDir}"
+          export RUNTIME_LINES_ROOT="${runtimeLinesRoot}"
+          export API_BASE="http://explicit.example.test:3999/api/v1"
+          resolve_backend_real_api_base_for_smoke
+          printf 'API_BASE=%s\\n' "$API_BASE"
+        `,
+      );
+
+      expect(result.status).toBe(0);
+      expect(result.stderr).toBe('');
+      expect(result.stdout).toBe('API_BASE=http://explicit.example.test:3999\n');
+    } finally {
+      rmSync(tempRoot, { recursive: true, force: true });
+    }
+  });
+});
 
 describe('runtime verification universal proxy admin gate', () => {
   it('fails closed without probing admin state when the admin token is empty', () => {

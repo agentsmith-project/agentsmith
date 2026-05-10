@@ -26,6 +26,87 @@ resolve_loopback_runtime_addresses() {
     RUNTIME_HOST_KEYCLOAK_BASE_URL
 }
 
+normalize_api_root_base() {
+  local value="${1:-}"
+  value="$(printf '%s' "${value}" | sed -E 's/^[[:space:]]+//; s/[[:space:]]+$//')"
+  value="${value%/}"
+  if [[ "${value}" == */api/v1 ]]; then
+    value="${value%/api/v1}"
+  fi
+  printf '%s\n' "${value}"
+}
+
+runtime_verification_env_value() {
+  local file="$1"
+  local key="$2"
+  local line value
+  [[ -f "${file}" ]] || return 1
+  line="$(grep -E "^[[:space:]]*${key}=" "${file}" | tail -n1 || true)"
+  [[ -n "${line}" ]] || return 1
+  value="${line#*=}"
+  value="$(printf '%s' "${value}" | sed -E 's/^[[:space:]]+//; s/[[:space:]]+$//')"
+  value="${value%\"}"
+  value="${value#\"}"
+  value="${value%\'}"
+  value="${value#\'}"
+  [[ -n "${value}" ]] || return 1
+  printf '%s\n' "${value}"
+}
+
+backend_real_summary_env_file_for_verification() {
+  if [[ -n "${BACKEND_REAL_SUMMARY_FILE:-}" ]]; then
+    printf '%s\n' "${BACKEND_REAL_SUMMARY_FILE}"
+    return 0
+  fi
+  if [[ -n "${BACKEND_REAL_STATE_DIR:-}" ]]; then
+    printf '%s\n' "${BACKEND_REAL_STATE_DIR%/}/summary.env"
+    return 0
+  fi
+  printf '%s\n' "${RUNTIME_VERIFICATION_ROOT}/artifacts/backend-real/current/summary.env"
+}
+
+local_manual_api_port_file_for_verification() {
+  if [[ -n "${LOCAL_MANUAL_API_PORT_FILE:-}" ]]; then
+    printf '%s\n' "${LOCAL_MANUAL_API_PORT_FILE}"
+    return 0
+  fi
+  printf '%s\n' "${RUNTIME_LINES_ROOT:-${RUNTIME_VERIFICATION_ROOT}/artifacts/runtime/lines}/local-manual/current/api.port"
+}
+
+resolve_backend_real_api_base_for_smoke() {
+  local resolved="${API_BASE:-}"
+  local summary_file api_port_file api_port
+
+  if [[ -z "${resolved}" ]]; then
+    summary_file="$(backend_real_summary_env_file_for_verification)"
+    resolved="$(runtime_verification_env_value "${summary_file}" API_BASE || true)"
+    if [[ -z "${resolved}" ]]; then
+      resolved="$(runtime_verification_env_value "${summary_file}" RUNTIME_HOST_API_BASE_URL || true)"
+    fi
+  fi
+
+  if [[ -z "${resolved}" ]]; then
+    api_port_file="$(local_manual_api_port_file_for_verification)"
+    if [[ -f "${api_port_file}" ]]; then
+      api_port="$(head -n1 "${api_port_file}" | tr -d '[:space:]' || true)"
+      if [[ "${api_port}" =~ ^[0-9]+$ ]]; then
+        resolved="http://127.0.0.1:${api_port}"
+        API_PORT="${API_PORT:-${api_port}}"
+        export API_PORT
+      fi
+    fi
+  fi
+
+  if [[ -z "${resolved}" ]]; then
+    api_port="${INTEGRATION_API_PORT:-${API_PORT:-20000}}"
+    resolved="http://127.0.0.1:${api_port}"
+  fi
+
+  API_BASE="$(normalize_api_root_base "${resolved}")"
+  RUNTIME_HOST_API_BASE_URL="${API_BASE}"
+  export API_BASE RUNTIME_HOST_API_BASE_URL
+}
+
 clear_runtime_stack_env() {
   unset \
     RUNTIME_PUBLIC_WEB_BASE_URL \

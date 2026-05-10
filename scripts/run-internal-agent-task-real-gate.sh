@@ -82,14 +82,9 @@ CONFIG_PATH="${INTERNAL_SANDBOX_MANAGER_CONFIG:-${INTERNAL_REAL_DIR}/sandbox-man
 CONFIG_PATH="$(realpath -m "${CONFIG_PATH}")"
 CONTROL_SCRIPT="${ROOT_DIR}/scripts/lib/internal-sandbox-real-control.sh"
 STATE_FILE="${INTERNAL_REAL_DIR}/sandbox-control.env"
-CLEANER_LOG="${INTERNAL_SANDBOX_CLEANER_LOG:-${INTERNAL_REAL_DIR}/sandbox-cleaner.log}"
-CLEANER_LOG="$(realpath -m "${CLEANER_LOG}")"
-CLEANER_LOG_DIR="$(dirname "${CLEANER_LOG}")"
-mkdir -p "${CLEANER_LOG_DIR}"
 SANDBOX_LOG="$(realpath -m "${SANDBOX_LOG}")"
 SANDBOX_LOG_DIR="$(dirname "${SANDBOX_LOG}")"
 mkdir -p "${SANDBOX_LOG_DIR}"
-CLEANER_INTERVAL_SECONDS="${INTERNAL_SANDBOX_CLEANER_INTERVAL_SECONDS:-15}"
 INTERNAL_VISUAL_ARTIFACT_DIR="${INTERNAL_REAL_VISUAL_ARTIFACT_DIR:-${ROOT_DIR}/artifacts/backend-real-visual/internal-$(date +%Y%m%d-%H%M%S)}"
 KEEP_FAILED_ENV="${INTERNAL_REAL_KEEP_FAILED_ENV:-0}"
 GATE_STATUS=0
@@ -134,18 +129,15 @@ cleanup() {
       # shellcheck disable=SC1090
       source "${CURRENT_SANDBOX_STATE_FILE}"
       info "sandbox_log=${SANDBOX_LOG}"
-      info "cleaner_log=${CLEANER_LOG}"
       info "state_file=${CURRENT_SANDBOX_STATE_FILE}"
     else
       info "sandbox_log=${SANDBOX_LOG}"
-      info "cleaner_log=${CLEANER_LOG}"
       info "state_file=${STATE_FILE}"
     fi
     info "visual_artifacts=${INTERNAL_VISUAL_ARTIFACT_DIR}"
     return 0
   fi
   if [[ -n "${CURRENT_SANDBOX_STATE_FILE}" ]]; then
-    INTERNAL_SANDBOX_REAL_STATE_FILE="${CURRENT_SANDBOX_STATE_FILE}" bash "${CONTROL_SCRIPT}" stop-cleaner >/dev/null 2>&1 || true
     INTERNAL_SANDBOX_REAL_STATE_FILE="${CURRENT_SANDBOX_STATE_FILE}" bash "${CONTROL_SCRIPT}" stop-manager >/dev/null 2>&1 || true
   fi
 }
@@ -226,7 +218,7 @@ run_internal_spec_grep() {
 
   spec_slug="$(basename "${spec}" .spec.ts)-${spec_api_port}"
   cleanup_gate_ports "${spec_api_port}" "${spec_web_port}" "${spec}"
-  spec_state_file="$(prepare_internal_backend_real_spec_runtime "${spec_slug}" "with-cleaner")"
+  spec_state_file="$(prepare_internal_backend_real_spec_runtime "${spec_slug}")"
   gate_record_preflight_check "${INTERNAL_REAL_DIR}" "${spec_slug}_sandbox_manager" "passed" "port ${SANDBOX_PORT}"
   if [[ -n "${label}" ]]; then
     info "running ${spec} --grep ${label}"
@@ -242,7 +234,6 @@ run_internal_spec_grep() {
     gate_record_failure "${INTERNAL_REAL_DIR}" "scenario_assertion_failed" "${spec_slug}" "${spec} failed with status ${spec_status}"
   fi
   if [[ "${KEEP_FAILED_ENV}" != "1" || "${spec_status}" -eq 0 ]]; then
-    INTERNAL_SANDBOX_REAL_STATE_FILE="${spec_state_file}" bash "${CONTROL_SCRIPT}" stop-cleaner >/dev/null 2>&1 || true
     INTERNAL_SANDBOX_REAL_STATE_FILE="${spec_state_file}" bash "${CONTROL_SCRIPT}" stop-manager >/dev/null 2>&1 || true
   fi
   return "${spec_status}"
@@ -290,7 +281,7 @@ if [[ "${GATE_MODE}" == "skills-runtime" ]]; then
   exit 0
 fi
 
-WORKSPACE_STATE_FILE="$(prepare_internal_backend_real_spec_runtime "integration-internal-agent-task-workspace" "with-cleaner")"
+WORKSPACE_STATE_FILE="$(prepare_internal_backend_real_spec_runtime "integration-internal-agent-task-workspace")"
 gate_record_preflight_check "${INTERNAL_REAL_DIR}" "workspace_spec_sandbox_manager" "passed" "port ${SANDBOX_PORT}"
 run_internal_spec e2e/integration-agent-task-runner.spec.ts "${API_PORT}" "${WEB_PORT}" "${WORKSPACE_STATE_FILE}" --grep "reads task context through mbos-context in a real Agent Task run resolved by the default Agent Runner"
 WORKSPACE_STATUS=$?
@@ -301,10 +292,9 @@ else
   gate_record_failure "${INTERNAL_REAL_DIR}" "scenario_assertion_failed" "workspace_spec" "integration-agent-task-runner failed with status ${WORKSPACE_STATUS}"
 fi
 if [[ "${WORKSPACE_STATUS}" -eq 0 ]]; then
-  INTERNAL_SANDBOX_REAL_STATE_FILE="${WORKSPACE_STATE_FILE}" bash "${CONTROL_SCRIPT}" stop-cleaner >/dev/null 2>&1 || true
   INTERNAL_SANDBOX_REAL_STATE_FILE="${WORKSPACE_STATE_FILE}" bash "${CONTROL_SCRIPT}" stop-manager >/dev/null 2>&1 || true
 
-  RECLAIM_STATE_FILE="$(prepare_internal_backend_real_spec_runtime "integration-internal-sandbox-reclaim" "with-cleaner")"
+  RECLAIM_STATE_FILE="$(prepare_internal_backend_real_spec_runtime "integration-internal-sandbox-reclaim")"
   gate_record_preflight_check "${INTERNAL_REAL_DIR}" "reclaim_spec_sandbox_manager" "passed" "port ${SANDBOX_PORT}"
   run_internal_spec e2e/integration-internal-sandbox-reclaim.spec.ts "$((API_PORT + 1))" "$((WEB_PORT + 1))" "${RECLAIM_STATE_FILE}"
   RECLAIM_STATUS=$?
@@ -313,10 +303,8 @@ if [[ "${WORKSPACE_STATUS}" -eq 0 ]]; then
   else
     gate_record_failure "${INTERNAL_REAL_DIR}" "scenario_assertion_failed" "reclaim_spec" "integration-internal-sandbox-reclaim failed with status ${RECLAIM_STATUS}"
   fi
-  INTERNAL_SANDBOX_REAL_STATE_FILE="${RECLAIM_STATE_FILE}" bash "${CONTROL_SCRIPT}" stop-cleaner >/dev/null 2>&1 || true
   INTERNAL_SANDBOX_REAL_STATE_FILE="${RECLAIM_STATE_FILE}" bash "${CONTROL_SCRIPT}" stop-manager >/dev/null 2>&1 || true
 elif [[ "${KEEP_FAILED_ENV}" != "1" ]]; then
-  INTERNAL_SANDBOX_REAL_STATE_FILE="${WORKSPACE_STATE_FILE}" bash "${CONTROL_SCRIPT}" stop-cleaner >/dev/null 2>&1 || true
   INTERNAL_SANDBOX_REAL_STATE_FILE="${WORKSPACE_STATE_FILE}" bash "${CONTROL_SCRIPT}" stop-manager >/dev/null 2>&1 || true
 fi
 set -e

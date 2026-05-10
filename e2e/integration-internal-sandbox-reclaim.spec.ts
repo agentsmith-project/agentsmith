@@ -8,10 +8,10 @@ import {
   createInternalAgentTaskRunnerViaApi,
   createAgentTaskViaApi,
   createProjectInWorkspace,
+  deleteInternalWorkloadViaManager,
   KEYCLOAK_DEV_ADMIN_PASSWORD,
   KEYCLOAK_DEV_ADMIN_USERNAME,
   keycloakLoginToWorkspace,
-  patchWorkloadPodExpiry,
   runInternalSandboxControl,
   sanitizeWorkloadId,
   requestTaskWorkspaceAccess,
@@ -55,7 +55,7 @@ function buildAgentTaskIntent(token: string, fileName: string): string {
 }
 
 test.describe('@lane-real internal sandbox reclaim', () => {
-  test('reclaims idle workload pods, preserves unexpired pods across manager restart, and cleans expired pods after restart', async ({ page }) => {
+  test('reclaims idle workload pods, preserves unexpired pods across manager restart, and releases pods through manager after restart', async ({ page }) => {
     test.setTimeout(1_200_000);
     const { namespace } = requireReclaimEnv();
     const apiKey = requireApiKey();
@@ -154,7 +154,6 @@ test.describe('@lane-real internal sandbox reclaim', () => {
 
     const workloadId2 = sanitizeWorkloadId(taskId2);
     const workloadPod2 = await waitForWorkloadPodIdentity({ namespace, workloadId: workloadId2, timeoutMs: 120_000 });
-    await runInternalSandboxControl('stop-cleaner');
     await runInternalSandboxControl('stop-manager');
     await runInternalSandboxControl('start-manager');
 
@@ -165,20 +164,19 @@ test.describe('@lane-real internal sandbox reclaim', () => {
     });
     expect(workloadPod2AfterRestart).toEqual(workloadPod2);
 
-    await runInternalSandboxControl('run-cleaner-once');
-    const workloadPod2AfterCleaner = await waitForWorkloadPodIdentity({
+    await page.waitForTimeout(15_000);
+    const workloadPod2AfterManagerSettled = await waitForWorkloadPodIdentity({
       namespace,
       workloadId: workloadId2,
       timeoutMs: 10_000,
     });
-    expect(workloadPod2AfterCleaner).toEqual(workloadPod2);
+    expect(workloadPod2AfterManagerSettled).toEqual(workloadPod2);
 
-    await patchWorkloadPodExpiry({
-      namespace,
+    await deleteInternalWorkloadViaManager({
+      workspaceId: 'ws_default',
+      projectId,
       workloadId: workloadId2,
-      expiresAt: new Date(Date.now() - 60_000).toISOString(),
     });
-    await runInternalSandboxControl('run-cleaner-once');
     await waitForWorkloadPodDeleted({ namespace, workloadId: workloadId2, timeoutMs: 120_000 });
 
     expect(true).toBe(true);

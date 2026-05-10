@@ -129,7 +129,7 @@ AgentSmith 当前只采用一条治理主线：
 补充发布验证原则：
 - 对真实发布最脆弱的检查点，必须更早在开发 gate 和本地预检中做一遍
 - 最终 deploy verify 不做轻量化，继续完整兜底真实部署环境问题
-- external runner 的开发直跑、手动 docker、compose 托管，以及 internal k8s 执行，必须共享同一业务代码与同一地址真相方法
+- 本地开发直跑（web/api/runner host processes）与 Kubernetes managed runner 执行必须共享同一业务代码与同一地址真相；Docker/compose 只用于 substrate/dev dependency、local-kind 镜像 handoff 或底层镜像制品，不作为业务运行部署路径
 
 验收标准：
 

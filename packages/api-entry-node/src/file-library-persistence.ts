@@ -114,7 +114,7 @@ function requireStringField(raw: Record<string, unknown>, key: string): string {
 
 function optionalStringField(raw: Record<string, unknown>, key: string): string | undefined {
   const value = raw[key];
-  if (value === undefined) {
+  if (value === undefined || value === null) {
     return undefined;
   }
   if (typeof value !== 'string') {

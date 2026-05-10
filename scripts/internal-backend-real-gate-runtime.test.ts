@@ -33,7 +33,6 @@ function renderSandboxState(env: Record<string, string>): string {
           SANDBOX_PORT="28080"
           SANDBOX_SERVICE_KEY_VALUE="sandbox-service-key"
           K8S_NAMESPACE="agentsmith-sandbox"
-          CLEANER_INTERVAL_SECONDS="15"
           CSI_DRIVER="csi.juicefs.com"
           STORAGE_CAPACITY="1Pi"
           STORAGE_CLASS_NAME=""
@@ -46,7 +45,7 @@ function renderSandboxState(env: Record<string, string>): string {
           MINIO_SECRET_KEY="minio-sk"
           MINIO_BUCKET="mbos-dev"
           mkdir -p "$INTERNAL_REAL_DIR"
-          internal_real_gate_write_sandbox_state_file "$STATE_FILE" "$CONFIG_PATH" "$TEMP_ROOT/sandbox-manager.log" "$TEMP_ROOT/sandbox-cleaner.log"
+          internal_real_gate_write_sandbox_state_file "$STATE_FILE" "$CONFIG_PATH" "$TEMP_ROOT/sandbox-manager.log"
           cat "$STATE_FILE"
         `,
       ],
@@ -72,6 +71,8 @@ describe('internal backend-real gate runtime contract', () => {
   it('keeps the Agent Task gate aligned on shared internal sandbox bootstrap', () => {
     const helper = read('scripts/lib/internal-backend-real-gate.sh');
     const agentTaskGate = read('scripts/run-internal-agent-task-real-gate.sh');
+    const reclaimSpec = read('e2e/integration-internal-sandbox-reclaim.spec.ts');
+    const developmentGuide = read('DEVELOPMENT.md');
 
     expect(agentTaskGate).toContain('source "${ROOT_DIR}/scripts/lib/internal-backend-real-gate.sh"');
 
@@ -91,6 +92,10 @@ describe('internal backend-real gate runtime contract', () => {
     expect(helper).not.toContain('INTEGRATION_CLIENT_JUICEFS_META_HOST_OVERRIDE_VALUE');
     expect(helper).toContain('render_k8s_external_dependency_services \\');
     expect(helper).toContain('INTERNAL_SANDBOX_REAL_STATE_FILE="${spec_state_file}" bash "${CONTROL_SCRIPT}" start-manager 1>&2');
+    expect(helper).not.toContain('start-cleaner');
+    expect(helper).not.toContain('stop-cleaner');
+    expect(helper).not.toContain('with-cleaner');
+    expect(helper).not.toContain('sandbox-cleaner');
     expect(helper).toContain('rebuild_runner_base_image="${INTEGRATION_INTERNAL_AGENT_REBUILD_BASE_IMAGE:-1}"');
     expect(helper).toContain(
       'build_runner_image "${RUNNER_KIND}" "${RUNNER_BASE_IMAGE}" "${RUNNER_IMAGE}" "${DOCKER_BUILD_PROXY_VALUE}" "${rebuild_runner_base_image}" "1"',
@@ -100,6 +105,11 @@ describe('internal backend-real gate runtime contract', () => {
     );
 
     expect(agentTaskGate).toContain('SANDBOX_MANAGER_URL="${SANDBOX_MANAGER_URL_VALUE}" \\');
+    expect(agentTaskGate).not.toContain('start-cleaner');
+    expect(agentTaskGate).not.toContain('stop-cleaner');
+    expect(agentTaskGate).not.toContain('with-cleaner');
+    expect(agentTaskGate).not.toContain('cleaner_log');
+    expect(agentTaskGate).not.toContain('sandbox-cleaner');
     expect(agentTaskGate).toContain('SANDBOX_SERVICE_KEY="${SANDBOX_SERVICE_KEY_VALUE}" \\');
     expect(agentTaskGate).toContain('INTERNAL_AGENT_K8S_NAMESPACE="${K8S_NAMESPACE}" \\');
     expect(agentTaskGate).toContain('AFSCP_STORAGE_CSI_DRIVER="${CSI_DRIVER}" \\');
@@ -113,6 +123,13 @@ describe('internal backend-real gate runtime contract', () => {
       'INTEGRATION_INTERNAL_AGENT_REBUILD_BASE_IMAGE="${INTEGRATION_INTERNAL_AGENT_REBUILD_BASE_IMAGE:-1}" \\',
     );
     expect(agentTaskGate).toContain('INTEGRATION_INTERNAL_AGENT_REBUILD_IMAGE=0 \\');
+
+    expect(reclaimSpec).toContain('deleteInternalWorkloadViaManager');
+    expect(reclaimSpec).not.toContain('start-cleaner');
+    expect(reclaimSpec).not.toContain('stop-cleaner');
+    expect(reclaimSpec).not.toContain('run-cleaner-once');
+    expect(developmentGuide).toContain('local sandbox manager');
+    expect(developmentGuide).not.toContain('local sandbox manager / cleaner');
   });
 
   it('writes AFSCP manager env values into isolated sandbox state instead of relying on YAML config', () => {
@@ -132,6 +149,8 @@ describe('internal backend-real gate runtime contract', () => {
     expect(state).toContain('AFSCP_CALLER_SERVICE="formal-sandbox-manager"');
     expect(state).toContain('AFSCP_ACTOR_TYPE="service"');
     expect(state).toContain('AFSCP_ACTOR_ID="formal-sandbox-actor"');
+    expect(state).not.toContain('CLEANER_');
+    expect(state).not.toContain('sandbox-cleaner');
     expect(helper).not.toMatch(/^afscp:\s*$/mu);
   });
 

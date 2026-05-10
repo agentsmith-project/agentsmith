@@ -1,16 +1,57 @@
+import { createHash } from 'node:crypto';
 import { InMemoryJsonDocStore } from '@mbos/adapters-private';
 import { describe, expect, it } from 'vitest';
+import { sanitizeAfscpNamespaceId } from './afscp-validation.js';
 import {
+  deriveProjectAfscpNamespaceId,
+  PROJECT_AFSCP_NAMESPACE_COLLECTION,
+  type ProjectAfscpNamespaceMapping,
   ProjectAfscpResourceOwnershipConflictError,
   ProjectAfscpNamespaceStore,
   ProjectAfscpResourceOwnershipStore,
 } from './project-afscp-namespace-store.js';
 
+const AFSCP_NAMESPACE_ID_PATTERN = /^ns_[A-Za-z0-9][A-Za-z0-9_-]{1,127}$/;
+
 function createStore(now = '2026-05-09T00:00:00.000Z'): ProjectAfscpNamespaceStore {
   return new ProjectAfscpNamespaceStore(new InMemoryJsonDocStore(), () => now);
 }
 
+function deriveLegacyBase64urlNamespaceId(input: { workspaceId: string; projectId: string }): string {
+  const digest = createHash('sha256')
+    .update(input.workspaceId)
+    .update('\0')
+    .update(input.projectId)
+    .digest('base64url')
+    .slice(0, 40);
+  return `ns_${digest}`;
+}
+
 describe('ProjectAfscpNamespaceStore', () => {
+  it('derives namespace ids that always satisfy AFSCP namespace validation', () => {
+    const workspaceIds = ['ws_alpha', 'ws_default', 'ws-prod-001', '工作区-alpha'];
+    const projectIds = ['proj_75', 'proj_15', 'proj_file_library', 'project.storage:2026', '项目-files'];
+    const generations = [1, 2, 3, 7, 42];
+    const cases = workspaceIds.flatMap((workspaceId) => projectIds.flatMap((projectId) => (
+      generations.map((generation) => ({ workspaceId, projectId, generation }))
+    )));
+    const legacyHyphen = { workspaceId: 'ws_alpha', projectId: 'proj_75' };
+    const legacyUnderscore = { workspaceId: 'ws_alpha', projectId: 'proj_15' };
+
+    expect(deriveLegacyBase64urlNamespaceId(legacyHyphen)).toMatch(/^ns_-/);
+    expect(sanitizeAfscpNamespaceId(deriveLegacyBase64urlNamespaceId(legacyHyphen))).toBeUndefined();
+    expect(deriveLegacyBase64urlNamespaceId(legacyUnderscore)).toMatch(/^ns__/);
+    expect(sanitizeAfscpNamespaceId(deriveLegacyBase64urlNamespaceId(legacyUnderscore))).toBeUndefined();
+
+    for (const input of cases) {
+      const namespaceId = deriveProjectAfscpNamespaceId(input);
+      expect(namespaceId, `${input.workspaceId}/${input.projectId}/${input.generation}`).toMatch(AFSCP_NAMESPACE_ID_PATTERN);
+      expect(sanitizeAfscpNamespaceId(namespaceId)).toBe(namespaceId);
+      expect(namespaceId).not.toContain(input.workspaceId);
+      expect(namespaceId).not.toContain(input.projectId);
+    }
+  });
+
   it('keeps namespace ids stable across repeated ensure calls and project rename-irrelevant inputs', async () => {
     const store = createStore();
 
@@ -23,13 +64,84 @@ describe('ProjectAfscpNamespaceStore', () => {
       projectId: 'proj_same',
     });
 
-    expect(first.namespace_id).toMatch(/^ns_[A-Za-z0-9_-]{20,}$/);
+    expect(first.namespace_id).toMatch(AFSCP_NAMESPACE_ID_PATTERN);
+    expect(sanitizeAfscpNamespaceId(first.namespace_id)).toBe(first.namespace_id);
     expect(second.namespace_id).toBe(first.namespace_id);
     expect(second.workspace_id).toBe('ws_alpha');
     expect(second.project_id).toBe('proj_same');
     expect(second.status).toBe('pending');
     expect(second.namespace_id).not.toContain('ws_alpha');
     expect(second.namespace_id).not.toContain('proj_same');
+  });
+
+  it('regenerates a blocked invalid namespace mapping when no upstream operation was created', async () => {
+    const docStore = new InMemoryJsonDocStore();
+    const store = new ProjectAfscpNamespaceStore(docStore, () => '2026-05-09T01:00:00.000Z');
+    const key = { workspaceId: 'ws_alpha', projectId: 'proj_75' };
+    const blocked: ProjectAfscpNamespaceMapping = {
+      id: 'ws_alpha:proj_75',
+      workspace_id: key.workspaceId,
+      project_id: key.projectId,
+      namespace_id: deriveLegacyBase64urlNamespaceId(key),
+      status: 'blocked',
+      stage: 'namespace_upsert',
+      generation: 1,
+      next_action: 'admin_repair',
+      retryable: false,
+      namespace_upsert_operation_id: null,
+      volume_binding_operation_id: null,
+      last_error_code: 'afscp_error',
+      created_at: '2026-05-09T00:00:00.000Z',
+      updated_at: '2026-05-09T00:00:00.000Z',
+    };
+    expect(blocked.namespace_id).toMatch(/^ns_-/);
+    await docStore.upsert(PROJECT_AFSCP_NAMESPACE_COLLECTION, blocked.id, blocked);
+
+    const repaired = await store.ensureProjectNamespace(key);
+
+    expect(repaired).toMatchObject({
+      id: blocked.id,
+      workspace_id: key.workspaceId,
+      project_id: key.projectId,
+      status: 'pending',
+      stage: 'namespace_upsert',
+      generation: 2,
+      next_action: 'retry_now',
+      retryable: false,
+      namespace_upsert_operation_id: null,
+      volume_binding_operation_id: null,
+      last_error_code: null,
+      created_at: blocked.created_at,
+      updated_at: '2026-05-09T01:00:00.000Z',
+    });
+    expect(repaired.namespace_id).toBe(deriveProjectAfscpNamespaceId(key));
+    expect(repaired.namespace_id).toMatch(AFSCP_NAMESPACE_ID_PATTERN);
+    expect(sanitizeAfscpNamespaceId(repaired.namespace_id)).toBe(repaired.namespace_id);
+  });
+
+  it('keeps invalid blocked namespace mappings blocked once an upstream operation is recorded', async () => {
+    const docStore = new InMemoryJsonDocStore();
+    const store = new ProjectAfscpNamespaceStore(docStore, () => '2026-05-09T01:00:00.000Z');
+    const key = { workspaceId: 'ws_alpha', projectId: 'proj_75' };
+    const blocked: ProjectAfscpNamespaceMapping = {
+      id: 'ws_alpha:proj_75',
+      workspace_id: key.workspaceId,
+      project_id: key.projectId,
+      namespace_id: deriveLegacyBase64urlNamespaceId(key),
+      status: 'blocked',
+      stage: 'namespace_upsert',
+      generation: 1,
+      next_action: 'admin_repair',
+      retryable: false,
+      namespace_upsert_operation_id: 'op_namespace_recorded',
+      volume_binding_operation_id: null,
+      last_error_code: 'conflict',
+      created_at: '2026-05-09T00:00:00.000Z',
+      updated_at: '2026-05-09T00:00:00.000Z',
+    };
+    await docStore.upsert(PROJECT_AFSCP_NAMESPACE_COLLECTION, blocked.id, blocked);
+
+    await expect(store.ensureProjectNamespace(key)).resolves.toEqual(blocked);
   });
 
   it('keeps project storage generation stable while tracking next action, status, operation ids, and last error code', async () => {

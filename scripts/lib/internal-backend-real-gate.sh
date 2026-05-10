@@ -257,7 +257,6 @@ internal_real_gate_write_sandbox_state_file() {
   local state_file="$1"
   local config_path="$2"
   local sandbox_log="$3"
-  local cleaner_log="$4"
   local afscp_internal_base_url afscp_orchestrator_token afscp_caller_service afscp_actor_type afscp_actor_id
 
   afscp_internal_base_url="${AFSCP_INTERNAL_BASE_URL:-${AFSCP_BASE_URL:-http://127.0.0.1:28090}}"
@@ -275,8 +274,6 @@ SANDBOX_PORT="${SANDBOX_PORT}"
 SANDBOX_SERVICE_KEY_VALUE="${SANDBOX_SERVICE_KEY_VALUE}"
 K8S_NAMESPACE="${K8S_NAMESPACE}"
 SANDBOX_LOG="${sandbox_log}"
-CLEANER_LOG="${cleaner_log}"
-CLEANER_INTERVAL_SECONDS="${CLEANER_INTERVAL_SECONDS}"
 AFSCP_STORAGE_CSI_DRIVER="${CSI_DRIVER}"
 AFSCP_STORAGE_CAPACITY="${STORAGE_CAPACITY}"
 AFSCP_STORAGE_CLASS_NAME="${STORAGE_CLASS_NAME}"
@@ -305,7 +302,6 @@ EOF
 internal_real_gate_stop_runtime() {
   local state_file="$1"
 
-  INTERNAL_SANDBOX_REAL_STATE_FILE="${state_file}" bash "${CONTROL_SCRIPT}" stop-cleaner >/dev/null 2>&1 || true
   INTERNAL_SANDBOX_REAL_STATE_FILE="${state_file}" bash "${CONTROL_SCRIPT}" stop-manager >/dev/null 2>&1 || true
 }
 
@@ -383,30 +379,23 @@ prepare_internal_backend_real_gate_runtime() {
 
 prepare_internal_backend_real_spec_runtime() {
   local spec_slug="$1"
-  local cleaner_mode="$2"
   local spec_runtime_dir
   local spec_state_file
   local spec_config_path
   local spec_sandbox_log
-  local spec_cleaner_log
 
   spec_runtime_dir="${INTERNAL_REAL_DIR}/${spec_slug}"
   mkdir -p "${spec_runtime_dir}"
   spec_state_file="${spec_runtime_dir}/sandbox-control.env"
   spec_config_path="${spec_runtime_dir}/sandbox-manager.yaml"
   spec_sandbox_log="${spec_runtime_dir}/sandbox-manager.log"
-  spec_cleaner_log="${spec_runtime_dir}/sandbox-cleaner.log"
 
   cp "${CONFIG_PATH}" "${spec_config_path}"
-  internal_real_gate_write_sandbox_state_file "${spec_state_file}" "${spec_config_path}" "${spec_sandbox_log}" "${spec_cleaner_log}"
+  internal_real_gate_write_sandbox_state_file "${spec_state_file}" "${spec_config_path}" "${spec_sandbox_log}"
   internal_real_gate_reset_runtime "${spec_state_file}"
 
   echo "[internal-real-gate] starting isolated sandbox manager for ${spec_slug} on :${SANDBOX_PORT}" >&2
   INTERNAL_SANDBOX_REAL_STATE_FILE="${spec_state_file}" bash "${CONTROL_SCRIPT}" start-manager 1>&2
-  if [[ "${cleaner_mode}" == "with-cleaner" ]]; then
-    echo "[internal-real-gate] starting isolated sandbox cleaner for ${spec_slug}" >&2
-    INTERNAL_SANDBOX_REAL_STATE_FILE="${spec_state_file}" bash "${CONTROL_SCRIPT}" start-cleaner 1>&2
-  fi
   CURRENT_SANDBOX_STATE_FILE="${spec_state_file}"
   printf '%s\n' "${spec_state_file}"
 }

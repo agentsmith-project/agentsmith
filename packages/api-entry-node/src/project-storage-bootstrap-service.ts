@@ -118,6 +118,16 @@ function buildIdempotencyKey(namespaceId: string, operation: 'namespace-upsert' 
   return `project-storage-bootstrap:${namespaceId}:${operation}`;
 }
 
+const DEFAULT_PROJECT_AFSCP_PRODUCT_CALLER_ROLES = [
+  'repo_admin',
+  'repo_lifecycle_admin',
+  'restore_admin',
+  'template_admin',
+  'export_admin',
+  'mount_admin',
+  'operation_inspector',
+] as const;
+
 function buildDefaultVolumeBinding(input: {
   namespaceId: string;
   defaultVolumeId: string;
@@ -127,7 +137,7 @@ function buildDefaultVolumeBinding(input: {
     namespace_id: input.namespaceId,
     default_volume_id: input.defaultVolumeId,
     allowed_callers: [
-      { caller_service: input.productCallerService, roles: ['repo_admin'] },
+      { caller_service: input.productCallerService, roles: [...DEFAULT_PROJECT_AFSCP_PRODUCT_CALLER_ROLES] },
     ],
     quota_bytes_default: 0,
     export_policy: {

@@ -486,7 +486,7 @@ describe('project-file-library-routes', () => {
     });
   });
 
-  it('maps pending project storage to a typed response and leaves only sanitized catalog state', async () => {
+  it('maps pending project storage to a typed response without creating a half-provisioned library', async () => {
     const deps = createDeps({
       projectStorage: {
         status: 'pending',
@@ -521,12 +521,7 @@ describe('project-file-library-routes', () => {
       },
     );
     expect(deps.fileLibraryStorageAdapter.createRepoForLibrary).not.toHaveBeenCalled();
-    await expect(deps.docStore.list('project_file_libraries')).resolves.toEqual([
-      expect.objectContaining({
-        name: 'Storage Pending',
-        status: 'failed',
-      }),
-    ]);
+    await expect(deps.docStore.list('project_file_libraries')).resolves.toEqual([]);
     expect(JSON.stringify(await deps.docStore.list('project_file_libraries'))).not.toContain('metadata_url');
   });
 
@@ -799,6 +794,94 @@ describe('project-file-library-routes', () => {
     await expect(emptyDeps.docStore.get('project_file_libraries', String(emptyCreated.id))).resolves.toBeNull();
   });
 
+  it('returns accepted and keeps deleting status while AFSCP repo delete remains pending', async () => {
+    const storageAdapter = createStorageAdapter({
+      deleteRepoForLibrary: vi.fn(async () => {
+        throw new Error('file_library_repo_delete_pending');
+      }),
+    });
+    const deps = createDeps({ storageAdapter });
+    await seedLibrary(deps, 'ready');
+    const json = vi.fn();
+
+    await expect(handleProjectFileLibraryRoutes({
+      routeKind: 'fileLibraryItem',
+      method: 'DELETE',
+      workspaceId: 'ws_default',
+      projectId: 'proj_1',
+      libraryId: 'flib_ready',
+      req: { headers: { 'x-request-id': 'req_delete_pending' } } as never,
+      res: createMockResponse(),
+      deps,
+      user: OWNER_USER,
+      json,
+      readBody: vi.fn(),
+    })).resolves.toBe(true);
+
+    expect(storageAdapter.deleteRepoForLibrary).toHaveBeenCalledWith(expect.objectContaining({
+      libraryId: 'flib_ready',
+      actorUserId: 'user_1',
+      reason: 'file_library_delete',
+    }));
+    expect(json).toHaveBeenCalledWith(
+      expect.anything(),
+      202,
+      expect.objectContaining({
+        file_library_id: 'flib_ready',
+        file_library_status: 'deleting',
+        operation_id: null,
+        operation_status: 'pending',
+      }),
+    );
+    await expect(deps.docStore.get('project_file_libraries', 'flib_ready')).resolves.toMatchObject({
+      status: 'deleting',
+      delete_correlation_id: 'req_delete_pending',
+    });
+  });
+
+  it('retries deleting libraries until AFSCP repo cleanup reaches terminal success', async () => {
+    const deleteRepoForLibrary = vi.fn()
+      .mockRejectedValueOnce(new Error('file_library_repo_delete_pending'))
+      .mockResolvedValueOnce(undefined);
+    const storageAdapter = createStorageAdapter({ deleteRepoForLibrary });
+    const deps = createDeps({ storageAdapter });
+    await seedLibrary(deps, 'ready');
+    const firstJson = vi.fn();
+
+    await expect(handleProjectFileLibraryRoutes({
+      routeKind: 'fileLibraryItem',
+      method: 'DELETE',
+      workspaceId: 'ws_default',
+      projectId: 'proj_1',
+      libraryId: 'flib_ready',
+      req: { headers: { 'x-request-id': 'req_delete_pending' } } as never,
+      res: createMockResponse(),
+      deps,
+      user: OWNER_USER,
+      json: firstJson,
+      readBody: vi.fn(),
+    })).resolves.toBe(true);
+
+    const secondRes = createMockResponse();
+    await expect(handleProjectFileLibraryRoutes({
+      routeKind: 'fileLibraryItem',
+      method: 'DELETE',
+      workspaceId: 'ws_default',
+      projectId: 'proj_1',
+      libraryId: 'flib_ready',
+      req: { headers: { 'x-request-id': 'req_delete_reconcile' } } as never,
+      res: secondRes,
+      deps,
+      user: OWNER_USER,
+      json: vi.fn(),
+      readBody: vi.fn(),
+    })).resolves.toBe(true);
+
+    expect(deleteRepoForLibrary).toHaveBeenCalledTimes(2);
+    expect(secondRes.statusCode).toBe(204);
+    await expect(deps.docStore.get('project_file_libraries', 'flib_ready')).resolves.toBeNull();
+  });
+
   it('does not fast-delete failed libraries before AFSCP repo cleanup reaches terminal success', async () => {
     const storageAdapter = createStorageAdapter({
       deleteRepoForLibrary: vi.fn(async () => {
@@ -830,14 +913,15 @@ describe('project-file-library-routes', () => {
     }));
     expect(json).toHaveBeenCalledWith(
       expect.anything(),
-      409,
+      202,
       expect.objectContaining({
-        error_code: 'FILE_LIBRARY_OPERATION_PENDING',
-        message: 'file_library_repo_delete_pending',
+        file_library_id: 'flib_failed',
+        file_library_status: 'deleting',
+        operation_status: 'pending',
       }),
     );
     await expect(deps.docStore.get('project_file_libraries', 'flib_failed')).resolves.toMatchObject({
-      status: 'failed',
+      status: 'deleting',
     });
   });
 

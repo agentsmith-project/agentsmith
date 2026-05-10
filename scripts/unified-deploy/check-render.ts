@@ -689,6 +689,13 @@ function checkSandboxManagerContract(documents: readonly Record<string, unknown>
       addFailure(failures, `ConfigMap/${SANDBOX_MANAGER_CONFIG_MAP}`, `sandbox-manager config must include ${expected}`);
     }
   }
+  if (/^afscp:\s*$/mu.test(managerConfig)) {
+    addFailure(
+      failures,
+      `ConfigMap/${SANDBOX_MANAGER_CONFIG_MAP}`,
+      'sandbox-manager config must not render inert afscp YAML; AFSCP truth source is the container env contract',
+    );
+  }
   for (const forbiddenKey of ['SANDBOX_SERVICE_KEY', 'JUICEFS_STORAGE_ACCESS_KEY', 'JUICEFS_STORAGE_SECRET_KEY', 'MINIO_SECRET_KEY']) {
     if (Object.prototype.hasOwnProperty.call(configData, forbiddenKey)) {
       addFailure(failures, `ConfigMap/${SANDBOX_MANAGER_CONFIG_MAP}`, `${forbiddenKey} must not be rendered in sandbox-manager ConfigMap`);
@@ -725,6 +732,57 @@ function checkSandboxManagerContract(documents: readonly Record<string, unknown>
     namespace,
     'sandbox-manager K8S_NAMESPACE must match the unified render namespace',
   );
+  addMissingEnvValueFailure(
+    failures,
+    container,
+    'AFSCP_INTERNAL_BASE_URL',
+    typeof appConfigData.AFSCP_BASE_URL === 'string' ? appConfigData.AFSCP_BASE_URL : '',
+    'sandbox-manager AFSCP internal base URL must use the manager env contract',
+  );
+  addMissingSecretEnvFailure(
+    failures,
+    container,
+    'AFSCP_ORCHESTRATOR_TOKEN',
+    'agentsmith-app-secrets',
+    'AFSCP_ORCHESTRATOR_SERVICE_TOKEN',
+    'sandbox-manager AFSCP orchestrator token must come from agentsmith-app-secrets/AFSCP_ORCHESTRATOR_SERVICE_TOKEN',
+  );
+  addMissingEnvValueFailure(
+    failures,
+    container,
+    'AFSCP_CALLER_SERVICE',
+    'agentsmith-sandbox-manager',
+    'sandbox-manager AFSCP caller service must use the manager env contract',
+  );
+  addMissingEnvValueFailure(
+    failures,
+    container,
+    'AFSCP_ACTOR_TYPE',
+    'system',
+    'sandbox-manager AFSCP actor type must use the manager env contract',
+  );
+  addMissingEnvValueFailure(
+    failures,
+    container,
+    'AFSCP_ACTOR_ID',
+    'agentsmith-sandbox-manager',
+    'sandbox-manager AFSCP actor id must use the manager env contract',
+  );
+  for (const deprecatedEnvName of [
+    'AFSCP_BASE_URL',
+    'AFSCP_ORCHESTRATOR_CALLER_SERVICE',
+    'AFSCP_ORCHESTRATOR_ACTOR_TYPE',
+    'AFSCP_ORCHESTRATOR_ACTOR_ID',
+    'AFSCP_ORCHESTRATOR_SERVICE_TOKEN',
+  ]) {
+    if (Object.prototype.hasOwnProperty.call(containerEnvEntry(container, deprecatedEnvName), 'name')) {
+      addFailure(
+        failures,
+        'Deployment/agentsmith-sandbox-manager',
+        `sandbox-manager must not use deprecated AFSCP env ${deprecatedEnvName}`,
+      );
+    }
+  }
   addMissingSecretEnvFailure(
     failures,
     container,

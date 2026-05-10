@@ -124,13 +124,6 @@ data:
     sandbox:
       defaults:
         namespace: {{NAMESPACE}}
-    afscp:
-      baseUrl: "{{AFSCP_BASE_URL}}"
-      callerService: agentsmith-sandbox-manager
-      actor:
-        type: system
-        id: agentsmith-sandbox-manager
-      tokenEnv: AFSCP_ORCHESTRATOR_SERVICE_TOKEN
     rateLimit:
       requestsPerMinute: 60
 ---

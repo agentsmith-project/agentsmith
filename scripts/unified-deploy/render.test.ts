@@ -634,6 +634,9 @@ describe('unified deploy render producer', () => {
     expect(managerConfig).toContain('headerName: X-Service-Key');
     expect(managerConfig).toContain('requestTimeout: 15s');
     expect(managerConfig).toContain('namespace: agentsmith');
+    expect(managerConfig).not.toMatch(/^afscp:\s*$/mu);
+    expect(managerConfig).not.toContain(appConfigData.AFSCP_BASE_URL);
+    expect(managerConfig).not.toContain('tokenEnv:');
     expect(configData.SANDBOX_SERVICE_KEY).toBeUndefined();
     expect(configData.JUICEFS_STORAGE_SECRET_KEY).toBeUndefined();
     expect(appConfigData.MINIO_SECRET_KEY).toBeUndefined();
@@ -656,6 +659,34 @@ describe('unified deploy render producer', () => {
       name: 'K8S_NAMESPACE',
       value: 'agentsmith',
     });
+    expect(containerEnvEntry(documents, 'agentsmith-sandbox-manager', 'sandbox-manager', 'AFSCP_INTERNAL_BASE_URL')).toEqual({
+      name: 'AFSCP_INTERNAL_BASE_URL',
+      value: appConfigData.AFSCP_BASE_URL,
+    });
+    expect(containerEnvEntry(documents, 'agentsmith-sandbox-manager', 'sandbox-manager', 'AFSCP_ORCHESTRATOR_TOKEN')).toEqual({
+      name: 'AFSCP_ORCHESTRATOR_TOKEN',
+      valueFrom: {
+        secretKeyRef: {
+          name: 'agentsmith-app-secrets',
+          key: 'AFSCP_ORCHESTRATOR_SERVICE_TOKEN',
+        },
+      },
+    });
+    expect(containerEnvEntry(documents, 'agentsmith-sandbox-manager', 'sandbox-manager', 'AFSCP_CALLER_SERVICE')).toEqual({
+      name: 'AFSCP_CALLER_SERVICE',
+      value: 'agentsmith-sandbox-manager',
+    });
+    expect(containerEnvEntry(documents, 'agentsmith-sandbox-manager', 'sandbox-manager', 'AFSCP_ACTOR_TYPE')).toEqual({
+      name: 'AFSCP_ACTOR_TYPE',
+      value: 'system',
+    });
+    expect(containerEnvEntry(documents, 'agentsmith-sandbox-manager', 'sandbox-manager', 'AFSCP_ACTOR_ID')).toEqual({
+      name: 'AFSCP_ACTOR_ID',
+      value: 'agentsmith-sandbox-manager',
+    });
+    expect(containerEnvEntry(documents, 'agentsmith-sandbox-manager', 'sandbox-manager', 'AFSCP_BASE_URL')).toEqual({});
+    expect(containerEnvEntry(documents, 'agentsmith-sandbox-manager', 'sandbox-manager', 'AFSCP_ORCHESTRATOR_SERVICE_TOKEN')).toEqual({});
+    expect(containerEnvEntry(documents, 'agentsmith-sandbox-manager', 'sandbox-manager', 'AFSCP_ORCHESTRATOR_CALLER_SERVICE')).toEqual({});
     expect(containerEnvEntry(documents, 'agentsmith-sandbox-manager', 'sandbox-manager', 'JUICEFS_STORAGE_ENDPOINT')).toEqual({
       name: 'JUICEFS_STORAGE_ENDPOINT',
       value: 'http://substrate-minio.agentsmith.svc.cluster.local:9000',

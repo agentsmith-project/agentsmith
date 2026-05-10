@@ -78,6 +78,7 @@ MINIO_BUCKET="artifacts"
 	FILE_LIBRARY_CLIENT_POSTGRES_PORT="15432"
 	MBOS_UNIVERSAL_PROXY_BASE_URL="http://localhost:38080"
 	MBOS_UNIVERSAL_PROXY_ADMIN_TOKEN="proxy-admin-token"
+MBOS_AGENT_TASK_DEVELOPER_WORKSPACE_ROOT="${runtimeRoot}/agent-task-workspaces"
 
 	init_local_manual_env() {
 	  mkdir -p "${runtimeRoot}"

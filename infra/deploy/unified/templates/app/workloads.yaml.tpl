@@ -267,19 +267,31 @@ spec:
                   key: SANDBOX_SERVICE_KEY
             - name: K8S_NAMESPACE
               value: "{{NAMESPACE}}"
-            - name: AFSCP_BASE_URL
+            - name: JUICEFS_STORAGE_ENDPOINT
+              value: "{{AFSCP_SUBSTRATE_OBJECT_STORAGE_ENDPOINT}}"
+            - name: JUICEFS_STORAGE_ACCESS_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: agentsmith-app-secrets
+                  key: MINIO_ACCESS_KEY
+            - name: JUICEFS_STORAGE_SECRET_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: agentsmith-app-secrets
+                  key: MINIO_SECRET_KEY
+            - name: AFSCP_INTERNAL_BASE_URL
               value: "{{AFSCP_BASE_URL}}"
-            - name: AFSCP_ORCHESTRATOR_CALLER_SERVICE
-              value: agentsmith-sandbox-manager
-            - name: AFSCP_ORCHESTRATOR_ACTOR_TYPE
-              value: system
-            - name: AFSCP_ORCHESTRATOR_ACTOR_ID
-              value: agentsmith-sandbox-manager
-            - name: AFSCP_ORCHESTRATOR_SERVICE_TOKEN
+            - name: AFSCP_ORCHESTRATOR_TOKEN
               valueFrom:
                 secretKeyRef:
                   name: agentsmith-app-secrets
                   key: AFSCP_ORCHESTRATOR_SERVICE_TOKEN
+            - name: AFSCP_CALLER_SERVICE
+              value: agentsmith-sandbox-manager
+            - name: AFSCP_ACTOR_TYPE
+              value: system
+            - name: AFSCP_ACTOR_ID
+              value: agentsmith-sandbox-manager
           volumeMounts:
             - name: config
               mountPath: /etc/sandbox-manager/manager-config.yaml

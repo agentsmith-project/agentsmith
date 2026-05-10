@@ -322,14 +322,6 @@ files:
     bin: tar
     rejectSymlinks: true
 
-afscp:
-  baseUrl: ${AFSCP_BASE_URL:-http://127.0.0.1:28090}
-  callerService: ${AFSCP_ORCHESTRATOR_CALLER_SERVICE:-agentsmith-sandbox-manager}
-  serviceToken: ${AFSCP_ORCHESTRATOR_SERVICE_TOKEN:-agentsmith-local-afscp-orchestrator-token}
-  actor:
-    type: system
-    id: ${AFSCP_ORCHESTRATOR_CALLER_SERVICE:-agentsmith-sandbox-manager}
-
 buffer:
   capacity: 10000
 EOF
@@ -358,6 +350,8 @@ AFSCP_STORAGE_CSI_MOUNT_IMAGE="${MOUNT_IMAGE_OVERRIDE}"
 AFSCP_BASE_URL="${AFSCP_BASE_URL:-http://127.0.0.1:28090}"
 AFSCP_ORCHESTRATOR_CALLER_SERVICE="${AFSCP_ORCHESTRATOR_CALLER_SERVICE:-agentsmith-sandbox-manager}"
 AFSCP_ORCHESTRATOR_SERVICE_TOKEN="${AFSCP_ORCHESTRATOR_SERVICE_TOKEN:-agentsmith-local-afscp-orchestrator-token}"
+AFSCP_ORCHESTRATOR_ACTOR_TYPE="${AFSCP_ORCHESTRATOR_ACTOR_TYPE:-system}"
+AFSCP_ORCHESTRATOR_ACTOR_ID="${AFSCP_ORCHESTRATOR_ACTOR_ID:-${AFSCP_ORCHESTRATOR_CALLER_SERVICE:-agentsmith-sandbox-manager}}"
 AFSCP_SUBSTRATE_OBJECT_STORAGE_ENDPOINT_VALUE="${AFSCP_SUBSTRATE_OBJECT_STORAGE_ENDPOINT:-}"
 MINIO_ACCESS_KEY="${MINIO_ACCESS_KEY:-mbos}"
 MINIO_SECRET_KEY="${MINIO_SECRET_KEY:-mbos_dev_password}"

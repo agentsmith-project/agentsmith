@@ -129,6 +129,7 @@ ensure_cleaner_bin() {
 
 start_manager() {
   local pid
+  local afscp_internal_base_url afscp_orchestrator_token afscp_caller_service afscp_actor_type afscp_actor_id
   pid="$(read_pid "${MANAGER_PID_FILE}")"
   if pid_alive "${pid}" && port_ready; then
     info "manager already running pid=${pid}"
@@ -141,11 +142,23 @@ start_manager() {
   if [[ -n "$(port_pids "${SANDBOX_PORT}")" ]]; then
     kill_port_listeners
   fi
+  afscp_internal_base_url="${AFSCP_INTERNAL_BASE_URL:-${AFSCP_BASE_URL:-}}"
+  afscp_orchestrator_token="${AFSCP_ORCHESTRATOR_TOKEN:-${AFSCP_ORCHESTRATOR_SERVICE_TOKEN:-}}"
+  afscp_caller_service="${AFSCP_CALLER_SERVICE:-${AFSCP_ORCHESTRATOR_CALLER_SERVICE:-agentsmith-sandbox-manager}}"
+  afscp_actor_type="${AFSCP_ACTOR_TYPE:-${AFSCP_ORCHESTRATOR_ACTOR_TYPE:-system}}"
+  afscp_actor_id="${AFSCP_ACTOR_ID:-${AFSCP_ORCHESTRATOR_ACTOR_ID:-${afscp_caller_service}}}"
+  [[ -n "${afscp_internal_base_url}" ]] || { echo "[internal-sandbox-control] missing AFSCP_INTERNAL_BASE_URL for sandbox manager" >&2; exit 1; }
+  [[ -n "${afscp_orchestrator_token}" ]] || { echo "[internal-sandbox-control] missing AFSCP_ORCHESTRATOR_TOKEN for sandbox manager" >&2; exit 1; }
   launch_detached_shell "${SANDBOX_LOG}" "
     cd '${SANDBOX_ROOT}/manager-service' && \
     env -u http_proxy -u https_proxy -u all_proxy -u HTTP_PROXY -u HTTPS_PROXY -u ALL_PROXY -u no_proxy -u NO_PROXY \
       CONFIG_PATH='${CONFIG_PATH}' \
       SERVICE_KEYS='${SANDBOX_SERVICE_KEY_VALUE}' \
+      AFSCP_INTERNAL_BASE_URL='${afscp_internal_base_url}' \
+      AFSCP_ORCHESTRATOR_TOKEN='${afscp_orchestrator_token}' \
+      AFSCP_CALLER_SERVICE='${afscp_caller_service}' \
+      AFSCP_ACTOR_TYPE='${afscp_actor_type}' \
+      AFSCP_ACTOR_ID='${afscp_actor_id}' \
       JUICEFS_CSI_DRIVER='${AFSCP_STORAGE_CSI_DRIVER:-csi.juicefs.com}' \
       JUICEFS_STORAGE_CAPACITY='${AFSCP_STORAGE_CAPACITY:-1Pi}' \
       JUICEFS_STORAGE_CLASS_NAME='${AFSCP_STORAGE_CLASS_NAME:-}' \

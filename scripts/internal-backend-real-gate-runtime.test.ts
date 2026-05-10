@@ -1,9 +1,71 @@
-import { readFileSync } from 'node:fs';
+import { execFileSync } from 'node:child_process';
+import {
+  mkdtempSync,
+  readFileSync,
+  rmSync,
+} from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
 
 import { describe, expect, it } from 'vitest';
 
 function read(relativePath: string): string {
   return readFileSync(relativePath, 'utf8');
+}
+
+function renderSandboxState(env: Record<string, string>): string {
+  const repoRoot = process.cwd();
+  const tempRoot = mkdtempSync(path.join(os.tmpdir(), 'internal-backend-real-gate-'));
+  const stateFile = path.join(tempRoot, 'sandbox-control.env');
+
+  try {
+    return execFileSync(
+      'bash',
+      [
+        '-lc',
+        `
+          set -euo pipefail
+          source "$REPO_ROOT/scripts/lib/internal-backend-real-gate.sh"
+          ROOT_DIR="$REPO_ROOT"
+          SANDBOX_ROOT="$TEMP_ROOT/sandbox"
+          INTERNAL_REAL_DIR="$TEMP_ROOT/internal"
+          CONFIG_PATH="$TEMP_ROOT/sandbox-manager.yaml"
+          SANDBOX_PORT="28080"
+          SANDBOX_SERVICE_KEY_VALUE="sandbox-service-key"
+          K8S_NAMESPACE="agentsmith-sandbox"
+          CLEANER_INTERVAL_SECONDS="15"
+          CSI_DRIVER="csi.juicefs.com"
+          STORAGE_CAPACITY="1Pi"
+          STORAGE_CLASS_NAME=""
+          MOUNT_OPTIONS=""
+          SUBDIR=""
+          MOUNT_SERVICE_ACCOUNT=""
+          MOUNT_IMAGE_OVERRIDE=""
+          AFSCP_SUBSTRATE_OBJECT_STORAGE_ENDPOINT_VALUE="http://minio.internal:9000"
+          MINIO_ACCESS_KEY="minio-ak"
+          MINIO_SECRET_KEY="minio-sk"
+          MINIO_BUCKET="mbos-dev"
+          mkdir -p "$INTERNAL_REAL_DIR"
+          internal_real_gate_write_sandbox_state_file "$STATE_FILE" "$CONFIG_PATH" "$TEMP_ROOT/sandbox-manager.log" "$TEMP_ROOT/sandbox-cleaner.log"
+          cat "$STATE_FILE"
+        `,
+      ],
+      {
+        cwd: repoRoot,
+        env: {
+          ...process.env,
+          ...env,
+          REPO_ROOT: repoRoot,
+          TEMP_ROOT: tempRoot,
+          STATE_FILE: stateFile,
+        },
+        encoding: 'utf8',
+        stdio: 'pipe',
+      },
+    );
+  } finally {
+    rmSync(tempRoot, { recursive: true, force: true });
+  }
 }
 
 describe('internal backend-real gate runtime contract', () => {
@@ -49,6 +111,26 @@ describe('internal backend-real gate runtime contract', () => {
       'INTEGRATION_INTERNAL_AGENT_REBUILD_BASE_IMAGE="${INTEGRATION_INTERNAL_AGENT_REBUILD_BASE_IMAGE:-1}" \\',
     );
     expect(agentTaskGate).toContain('INTEGRATION_INTERNAL_AGENT_REBUILD_IMAGE=0 \\');
+  });
+
+  it('writes AFSCP manager env values into isolated sandbox state instead of relying on YAML config', () => {
+    const helper = read('scripts/lib/internal-backend-real-gate.sh');
+    const state = renderSandboxState({
+      AFSCP_INTERNAL_BASE_URL: 'http://formal-afscp.internal:28090',
+      AFSCP_ORCHESTRATOR_TOKEN: 'formal-orchestrator-token',
+      AFSCP_CALLER_SERVICE: 'formal-sandbox-manager',
+      AFSCP_ACTOR_TYPE: 'service',
+      AFSCP_ACTOR_ID: 'formal-sandbox-actor',
+      AFSCP_BASE_URL: 'http://legacy-afscp.internal:28090',
+      AFSCP_ORCHESTRATOR_SERVICE_TOKEN: 'legacy-orchestrator-token',
+    });
+
+    expect(state).toContain('AFSCP_INTERNAL_BASE_URL="http://formal-afscp.internal:28090"');
+    expect(state).toContain('AFSCP_ORCHESTRATOR_TOKEN="formal-orchestrator-token"');
+    expect(state).toContain('AFSCP_CALLER_SERVICE="formal-sandbox-manager"');
+    expect(state).toContain('AFSCP_ACTOR_TYPE="service"');
+    expect(state).toContain('AFSCP_ACTOR_ID="formal-sandbox-actor"');
+    expect(helper).not.toMatch(/^afscp:\s*$/mu);
   });
 
   it('fails direct managed Agent Task run-integration usage before Playwright when sandbox env is missing', () => {

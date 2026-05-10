@@ -1,51 +1,49 @@
 import type http from 'node:http';
 import Busboy from 'busboy';
 import {
-  CreateFileLibraryShareLinkRequestSchema,
+  CancelFileLibraryRestoreRequestSchema,
+  CreateFileLibraryRestorePreviewRequestSchema,
+  CreateFileLibrarySavePointRequestSchema,
   CreateFileLibraryRequestSchema,
   CreateFileLibraryFolderRequestSchema,
+  CreateTaskFileTemplateRequestSchema,
   DeleteFileLibraryEntriesRequestSchema,
   FileLibraryDownloadQuerySchema,
   ListFileLibraryEntriesQuerySchema,
   MoveFileLibraryEntryRequestSchema,
+  RunFileLibraryRestoreRequestSchema,
   UpdateFileLibraryRequestSchema,
 } from '@mbos/contracts';
-import type { Client as MinioClient } from 'minio';
 import type { AuthenticatedUser } from './auth.js';
 import type { NodeApiDeps } from './node-api-deps.js';
 import {
-  JsonDocProjectFileLibraryBackendRepo,
+  buildAfscpTemplateId,
   JsonDocProjectFileLibraryCatalogRepo,
-  JsonDocProjectFileLibraryMountAccessRepo,
+  JsonDocFileLibraryRestorePreviewRepo,
+  JsonDocFileLibrarySavePointMappingRepo,
+  JsonDocProjectTaskFileTemplateRepo,
+  generateFileLibraryRestoreRunId,
+  generateTaskFileTemplateId,
+  type FileLibrarySavePointPublicRecord,
 } from './file-library-persistence.js';
 import {
-  createFileLibraryGatewayClient,
-  fileLibraryBucketName,
-  guessFileLibraryContentType,
-  normalizeFileLibraryPath,
-} from './file-library-gateway-client.js';
-import {
-  awaitAbortableOperation,
-  bindAbortSignal,
-  createAbortError,
   createHttpOperationEnvelope,
-  openGatewayObjectDownload,
   parseMultipartUploadAndExecute,
-  pipeGatewayDownloadToHttpResponse,
-  putGatewayObjectStream,
+  pipeObjectDownloadToHttpResponse,
 } from './object-stream-bridge.js';
 import { buildAttachmentContentDisposition } from './http-utils.js';
-import { resolveFileLibraryStorageBucketUrlForClientMount } from './file-library-runtime.js';
+import { guessFileLibraryContentType } from './file-library-content-type.js';
 import {
   createAndProvisionProjectFileLibrary,
   mapFileLibraryInfraError,
-  safeFileLibraryInfraErrorMessage,
 } from './project-file-library-service.js';
 import type {
-  FileLibraryDesktopMountAccess,
-  FileLibraryMountAccess,
   FileLibraryRecord,
 } from './file-library-model.js';
+import {
+  readProjectPermissionContext,
+  readRequestId,
+} from './project-route-handler-utils.js';
 import { notebookTasksCollection } from './notebook-task/task-store.js';
 import type { TaskRecord } from './notebook-task/task-models.js';
 import {
@@ -58,12 +56,12 @@ import {
 import { writeProjectAuditEvent } from './audit-usage-recorders.js';
 
 type JsonResponder = (res: http.ServerResponse, statusCode: number, body: unknown) => void;
+const TASK_FILE_TEMPLATE_USE_PERMISSION = 'project:agent_task:use';
+const TASK_FILE_TEMPLATE_MANAGE_PERMISSION = 'project:files:update';
+
 type ProjectFileLibraryRouteKind =
   | 'fileLibraries'
   | 'fileLibraryItem'
-  | 'fileLibraryBackend'
-  | 'fileLibraryStorageCredentialExchange'
-  | 'fileLibraryDesktopMountAccess'
   | 'fileLibraryEntries'
   | 'fileLibraryFolders'
   | 'fileLibraryDelete'
@@ -71,18 +69,27 @@ type ProjectFileLibraryRouteKind =
   | 'fileLibraryUpload'
   | 'fileLibraryDownload'
   | 'fileLibraryMeta'
-  | 'fileLibraryShareLink';
+  | 'fileLibrarySavePoints'
+  | 'fileLibraryRestorePreview'
+  | 'fileLibraryRestoreRun'
+  | 'fileLibraryRestoreCancel'
+  | 'fileLibraryOperation'
+  | 'taskFileTemplates'
+  | 'taskFileTemplateItem'
+  | 'taskFileTemplatePublish'
+  | 'taskFileTemplateUnpublish';
 
-type GatewayObjectItem = {
-  key: string;
-  sizeBytes: number;
-  etag?: string;
-  lastModified: string;
-};
-
-const FILE_LIBRARY_FOLDER_CREATE_MAX_ATTEMPTS = 3;
-const FILE_LIBRARY_FOLDER_VISIBILITY_MAX_POLLS = 5;
-const FILE_LIBRARY_FOLDER_RETRY_DELAY_MS = 150;
+function normalizeFileLibraryPath(input?: string | null): string {
+  const value = (input ?? '').trim().replace(/^\/+/, '').replace(/\/{2,}/g, '/');
+  if (!value) return '';
+  const segments = value.split('/').filter(Boolean);
+  for (const segment of segments) {
+    if (segment === '.' || segment === '..') {
+      throw new Error('invalid_file_library_path');
+    }
+  }
+  return segments.join('/');
+}
 
 function ensureDirectoryPath(input: string): string {
   const normalized = normalizeFileLibraryPath(input);
@@ -90,108 +97,6 @@ function ensureDirectoryPath(input: string): string {
     throw new Error('invalid_file_library_directory_path');
   }
   return normalized.endsWith('/') ? normalized : `${normalized}/`;
-}
-
-async function listGatewayObjects(
-  client: MinioClient,
-  bucket: string,
-  options: {
-    prefix: string;
-    pageSize: number;
-    continuationToken?: string;
-    signal?: AbortSignal;
-  },
-): Promise<{
-  path: string;
-  objects: GatewayObjectItem[];
-  commonPrefixes: string[];
-  nextContinuationToken: string | null;
-}> {
-  const stream = client.listObjectsV2(
-    bucket,
-    options.prefix,
-    false,
-    options.continuationToken ?? undefined,
-  );
-  const objects: GatewayObjectItem[] = [];
-  const commonPrefixes: string[] = [];
-  let lastKey: string | null = null;
-  let truncated = false;
-  let removeAbortListener: () => void = () => {};
-  const destroyStream = (reason?: unknown) => {
-    const destroy = (stream as unknown as { destroy?: (error?: Error) => void }).destroy;
-    if (typeof destroy === 'function') {
-      destroy.call(stream, createAbortError(reason, 'file_library_gateway_list_aborted'));
-    }
-  };
-  removeAbortListener = bindAbortSignal(options.signal, destroyStream);
-  try {
-    for await (const item of stream as unknown as AsyncIterable<{
-      name?: string;
-      prefix?: string;
-      size?: number;
-      etag?: string;
-      lastModified?: Date;
-    }>) {
-      if (options.signal?.aborted) {
-        throw createAbortError(options.signal.reason, 'file_library_gateway_list_aborted');
-      }
-      if (typeof item.prefix === 'string') {
-        commonPrefixes.push(item.prefix);
-        lastKey = item.prefix;
-      } else if (typeof item.name === 'string') {
-        objects.push({
-          key: item.name,
-          sizeBytes: item.size ?? 0,
-          etag: item.etag,
-          lastModified: item.lastModified?.toISOString?.() ?? new Date().toISOString(),
-        });
-        lastKey = item.name;
-      }
-      if (objects.length + commonPrefixes.length >= options.pageSize) {
-        truncated = true;
-        destroyStream('file_library_gateway_list_truncated');
-        break;
-      }
-    }
-  } catch (error) {
-    if (options.signal?.aborted) {
-      throw createAbortError(options.signal.reason, 'file_library_gateway_list_aborted');
-    }
-    if (!truncated) {
-      throw error;
-    }
-    // stream may throw after destroy; treat as normal truncation
-  } finally {
-    removeAbortListener();
-  }
-  if (options.signal?.aborted) {
-    throw createAbortError(options.signal.reason, 'file_library_gateway_list_aborted');
-  }
-  return {
-    path: options.prefix,
-    objects,
-    commonPrefixes,
-    nextContinuationToken: truncated ? lastKey : null,
-  };
-}
-
-async function assertFileLibraryEmpty(args: {
-  deps: NodeApiDeps;
-  workspaceId: string;
-  projectId: string;
-  libraryId: string;
-  filesystemName: string;
-}): Promise<void> {
-  const client = await createFileLibraryGatewayClient(args);
-  const bucket = fileLibraryBucketName(args.filesystemName);
-  const listed = await listGatewayObjects(client, bucket, {
-    prefix: '',
-    pageSize: 1,
-  });
-  if (listed.commonPrefixes.length > 0 || listed.objects.length > 0) {
-    throw new Error('file_library_not_empty');
-  }
 }
 
 async function hydrateFileLibraryTaskBindings(args: {
@@ -225,78 +130,12 @@ function withTaskHomeBindingFields(input: {
   };
 }
 
-function safeOptionalFileLibraryInfraError(message: string | undefined): string | undefined {
-  return typeof message === 'string' && message.trim()
-    ? safeFileLibraryInfraErrorMessage(message)
-    : undefined;
-}
-
-async function copyObject(
-  client: MinioClient,
-  bucket: string,
-  fromKey: string,
-  toKey: string,
-  overwrite = false,
-  signal?: AbortSignal,
-  abortMessage = 'file_library_move_aborted',
-): Promise<void> {
-  if (!overwrite) {
-    try {
-      await awaitAbortableOperation(
-        client.statObject(bucket, toKey),
-        {
-          signal,
-          abortMessage,
-        },
-      );
-      throw new Error('destination_exists');
-    } catch (error) {
-      if (error instanceof Error && error.message === 'destination_exists') {
-        throw error;
-      }
-    }
-  }
-  await awaitAbortableOperation(
-    client.copyObject(bucket, toKey, `/${bucket}/${fromKey}`),
-    {
-      signal,
-      abortMessage,
-    },
-  );
-}
-
-async function deleteMany(
-  client: MinioClient,
-  bucket: string,
-  keys: string[],
-  signal?: AbortSignal,
-  abortMessage = 'file_library_move_aborted',
-): Promise<void> {
-  if (keys.length === 0) return;
-  if (typeof (client as unknown as { removeObjects?: unknown }).removeObjects === 'function') {
-    await awaitAbortableOperation(
-      (client as unknown as { removeObjects: (bucketName: string, keysToDelete: string[]) => Promise<void> })
-        .removeObjects(bucket, keys),
-      {
-        signal,
-        abortMessage,
-      },
-    );
-    return;
-  }
-  for (const key of keys) {
-    await awaitAbortableOperation(
-      client.removeObject(bucket, key),
-      {
-        signal,
-        abortMessage,
-      },
-    );
-  }
-}
-
-function isOwnedFileLibrary(library: { created_by_user_id?: string }, ownerUserId: string): boolean {
-  return typeof library.created_by_user_id === 'string' && library.created_by_user_id === ownerUserId;
+function presentFileLibraryWithTaskHomeBinding(input: {
+  library: FileLibraryRecord;
+  binding: TaskFileLibraryBinding | null;
+  actorUserId: string;
+}): FileLibraryRecord & ReturnType<typeof buildFileLibraryTaskHomeBindingFields> {
+  return withTaskHomeBindingFields(input);
 }
 
 function isDeletingFileLibraryStatus(status: FileLibraryRecord['status']): boolean {
@@ -330,283 +169,141 @@ function isFileLibraryWriteRoute(routeKind: ProjectFileLibraryRouteKind, method:
   if (routeKind === 'fileLibraryDelete' && method === 'POST') return true;
   if (routeKind === 'fileLibraryMove' && method === 'POST') return true;
   if (routeKind === 'fileLibraryUpload' && method === 'POST') return true;
-  if (routeKind === 'fileLibraryShareLink' && method === 'POST') return true;
-  if (routeKind === 'fileLibraryStorageCredentialExchange' && method === 'POST') return true;
-  if (routeKind === 'fileLibraryDesktopMountAccess' && method === 'POST') return true;
+  if (routeKind === 'fileLibrarySavePoints' && method === 'POST') return true;
+  if (routeKind === 'fileLibraryRestorePreview' && method === 'POST') return true;
+  if (routeKind === 'fileLibraryRestoreRun' && method === 'POST') return true;
+  if (routeKind === 'fileLibraryRestoreCancel' && method === 'POST') return true;
   return false;
 }
 
-function firstHeaderValue(input: string | string[] | undefined): string | null {
-  if (!input) return null;
-  const raw = Array.isArray(input) ? input[0] : input;
-  const first = raw.split(',')[0]?.trim();
-  return first && first.length > 0 ? first : null;
+const PUBLIC_FILE_OPERATION_MESSAGES = new Set([
+  'destination_exists',
+  'file_library_backend_unavailable',
+  'file_library_delete_failed',
+  'file_library_destination_exists',
+  'file_library_download_not_found',
+  'file_library_folder_create_failed',
+  'file_library_list_failed',
+  'file_library_meta_not_found',
+  'file_library_move_failed',
+  'file_library_object_not_found',
+  'file_library_project_storage_generation_mismatch',
+  'file_library_project_storage_not_ready',
+  'file_library_save_point_create_failed',
+  'file_library_save_point_list_failed',
+  'file_library_restore_preview_failed',
+  'file_library_restore_preview_pending',
+  'file_library_restore_run_failed',
+  'file_library_restore_run_pending',
+  'file_library_restore_discard_failed',
+  'file_library_restore_discard_pending',
+  'file_library_restore_preview_stale',
+  'file_library_active_writer_blocked',
+  'file_library_namespace_project_mismatch',
+  'file_library_template_clone_not_allowed',
+  'file_library_capability_denied',
+  'file_library_storage_admin_action_required',
+  'file_library_template_create_failed',
+  'file_library_template_create_pending',
+  'file_library_template_clone_failed',
+  'file_library_template_clone_pending',
+  'file_library_upload_failed',
+  'invalid_file_library_directory_path',
+  'invalid_file_library_path',
+]);
+
+function readErrorMessage(error: unknown): string {
+  return error instanceof Error ? error.message : '';
 }
 
-function folderParentPath(folderPath: string): string {
-  const trimmedPath = folderPath.endsWith('/') ? folderPath.slice(0, -1) : folderPath;
-  const lastSlash = trimmedPath.lastIndexOf('/');
-  if (lastSlash < 0) {
-    return '';
+function publicFileOperationMessage(error: unknown, fallback: string): string {
+  const message = readErrorMessage(error);
+  if (PUBLIC_FILE_OPERATION_MESSAGES.has(message)) {
+    return message;
   }
-  return `${trimmedPath.slice(0, lastSlash + 1)}`;
+  for (const publicMessage of PUBLIC_FILE_OPERATION_MESSAGES) {
+    if (message.startsWith(`${publicMessage} `)) {
+      return publicMessage;
+    }
+  }
+  return fallback;
 }
 
-function isRetriableFolderCreateError(error: unknown): boolean {
-  const code = typeof error === 'object' && error !== null && 'code' in error && typeof (error as { code?: unknown }).code === 'string'
-    ? (error as { code: string }).code
-    : '';
-  const message = error instanceof Error ? error.message.toLowerCase() : '';
-  if (code === 'NoSuchBucket' || code === 'ECONNREFUSED' || code === 'ECONNRESET' || code === 'ETIMEDOUT') {
-    return true;
-  }
-  return message.includes('no such bucket')
-    || message.includes('specified bucket does not exist')
-    || message.includes('socket hang up')
-    || message.includes('connection reset')
-    || message.includes('econnrefused')
-    || message.includes('econnreset')
-    || message.includes('etimedout')
-    || message.includes('timed out')
-    || message.includes('file_library_folder_not_visible');
-}
-
-async function waitForAbortableDelay(
-  ms: number,
-  signal: AbortSignal | undefined,
-  abortMessage: string,
-): Promise<void> {
-  if (signal?.aborted) {
-    throw createAbortError(signal.reason, abortMessage);
-  }
-  if (ms <= 0) {
-    return;
-  }
-  if (!signal) {
-    await new Promise<void>((resolve) => {
-      setTimeout(resolve, ms);
-    });
-    return;
-  }
-
-  await new Promise<void>((resolve, reject) => {
-    const timeoutHandle = setTimeout(() => {
-      signal.removeEventListener('abort', onAbort);
-      resolve();
-    }, ms);
-
-    const onAbort = () => {
-      clearTimeout(timeoutHandle);
-      signal.removeEventListener('abort', onAbort);
-      reject(createAbortError(signal.reason, abortMessage));
+function mapDeleteRepoRouteError(error: unknown): {
+  statusCode: number;
+  errorCode: string;
+  message: string;
+} {
+  const message = readErrorMessage(error);
+  if (message === 'file_library_repo_delete_pending') {
+    return {
+      statusCode: 409,
+      errorCode: 'FILE_LIBRARY_OPERATION_PENDING',
+      message,
     };
-
-    signal.addEventListener('abort', onAbort, { once: true });
-  });
-}
-
-async function waitForFolderVisibility(args: {
-  client: MinioClient;
-  bucket: string;
-  folderPath: string;
-  signal?: AbortSignal;
-}): Promise<void> {
-  const parentPath = folderParentPath(args.folderPath);
-  for (let attempt = 0; attempt < FILE_LIBRARY_FOLDER_VISIBILITY_MAX_POLLS; attempt += 1) {
-    const listed = await listGatewayObjects(args.client, args.bucket, {
-      prefix: parentPath,
-      pageSize: 1000,
-      signal: args.signal,
-    });
-    const isVisible = listed.commonPrefixes.includes(args.folderPath)
-      || listed.objects.some((item) => item.key === args.folderPath);
-    if (isVisible) {
-      return;
-    }
-    if (attempt < FILE_LIBRARY_FOLDER_VISIBILITY_MAX_POLLS - 1) {
-      await waitForAbortableDelay(
-        FILE_LIBRARY_FOLDER_RETRY_DELAY_MS,
-        args.signal,
-        'file_library_folder_create_aborted',
-      );
-    }
   }
-  throw new Error('file_library_folder_not_visible');
-}
-
-async function createFolderAndWaitForVisibility(args: {
-  deps: NodeApiDeps;
-  workspaceId: string;
-  projectId: string;
-  libraryId: string;
-  filesystemName: string;
-  folderPath: string;
-  signal?: AbortSignal;
-}): Promise<void> {
-  const bucket = fileLibraryBucketName(args.filesystemName);
-
-  for (let attempt = 0; attempt < FILE_LIBRARY_FOLDER_CREATE_MAX_ATTEMPTS; attempt += 1) {
-    try {
-      const client = await awaitAbortableOperation(
-        createFileLibraryGatewayClient({
-          deps: args.deps,
-          workspaceId: args.workspaceId,
-          projectId: args.projectId,
-          libraryId: args.libraryId,
-          filesystemName: args.filesystemName,
-          signal: args.signal,
-        }),
-        {
-          signal: args.signal,
-          abortMessage: 'file_library_folder_create_aborted',
-        },
-      );
-      await awaitAbortableOperation(
-        client.putObject(bucket, args.folderPath, Buffer.alloc(0), 0, {
-          'Content-Type': 'application/x-directory',
-        }),
-        {
-          signal: args.signal,
-          abortMessage: 'file_library_folder_create_aborted',
-        },
-      );
-      await waitForFolderVisibility({
-        client,
-        bucket,
-        folderPath: args.folderPath,
-        signal: args.signal,
-      });
-      return;
-    } catch (error) {
-      const canRetry = isRetriableFolderCreateError(error) && attempt < FILE_LIBRARY_FOLDER_CREATE_MAX_ATTEMPTS - 1;
-      if (!canRetry) {
-        throw error;
-      }
-      await waitForAbortableDelay(
-        FILE_LIBRARY_FOLDER_RETRY_DELAY_MS * (attempt + 1),
-        args.signal,
-        'file_library_folder_create_aborted',
-      );
-    }
+  if (message === 'file_library_repo_delete_failed') {
+    return {
+      statusCode: 502,
+      errorCode: 'FILE_LIBRARY_DELETE_FAILED',
+      message: 'file_library_operation_failed',
+    };
   }
-}
-
-function normalizeBaseUrl(value: string): string {
-  return value.trim().replace(/\/+$/, '');
-}
-
-function inferRequestOrigin(req: http.IncomingMessage): string {
-  const publicWebBaseUrl = process.env.PUBLIC_WEB_BASE_URL?.trim();
-  if (publicWebBaseUrl) {
-    return normalizeBaseUrl(publicWebBaseUrl);
-  }
-
-  const origin = firstHeaderValue(req.headers.origin);
-  if (origin) {
-    return normalizeBaseUrl(origin);
-  }
-
-  const referer = firstHeaderValue(req.headers.referer);
-  if (referer) {
-    try {
-      const parsed = new URL(referer);
-      return normalizeBaseUrl(parsed.origin);
-    } catch {
-      // fall through to host-based inference
-    }
-  }
-
-  const host = firstHeaderValue(req.headers['x-forwarded-host']) ?? firstHeaderValue(req.headers.host) ?? 'localhost';
-  const proto = firstHeaderValue(req.headers['x-forwarded-proto'])
-    ?? (((req.socket as { encrypted?: boolean }).encrypted ?? false) ? 'https' : 'http');
-  return normalizeBaseUrl(`${proto}://${host}`);
-}
-
-function normalizeDesktopMetadataUrl(metadataUrl: string): string {
-  try {
-    const parsed = new URL(metadataUrl);
-    const host = process.env.FILE_LIBRARY_CLIENT_POSTGRES_HOST?.trim();
-    const port = process.env.FILE_LIBRARY_CLIENT_POSTGRES_PORT?.trim();
-    if (host) {
-      parsed.hostname = host;
-    }
-    if (port) {
-      parsed.port = port;
-    }
-    return parsed.toString();
-  } catch {
-    return metadataUrl;
-  }
-}
-
-function normalizeClientStorageBucketUrl(storageBucketUrl?: string): string | undefined {
-  return resolveFileLibraryStorageBucketUrlForClientMount(storageBucketUrl);
-}
-
-function rewriteMountCommandUrls(
-  command: string,
-  originalMetadataUrl: string,
-  normalizedMetadataUrl: string,
-  originalStorageBucketUrl?: string,
-  normalizedStorageBucketUrl?: string,
-): string {
-  let updated = command.replaceAll(originalMetadataUrl, normalizedMetadataUrl);
-  if (originalStorageBucketUrl && normalizedStorageBucketUrl) {
-    updated = updated.replaceAll(originalStorageBucketUrl, normalizedStorageBucketUrl);
-  }
-  return updated;
-}
-
-function toClientMountAccess(access: FileLibraryMountAccess): FileLibraryMountAccess {
-  const normalizedMetadataUrl = normalizeDesktopMetadataUrl(access.metadata_url);
-  const normalizedStorageBucketUrl = normalizeClientStorageBucketUrl(access.storage_bucket_url);
+  const mapped = mapFileLibraryInfraError(error);
   return {
-    ...access,
-    metadata_url: normalizedMetadataUrl,
-    storage_bucket_url: normalizedStorageBucketUrl,
-    recommended_mount_commands: {
-      linux: rewriteMountCommandUrls(
-        access.recommended_mount_commands.linux,
-        access.metadata_url,
-        normalizedMetadataUrl,
-        access.storage_bucket_url,
-        normalizedStorageBucketUrl,
-      ),
-      macos: rewriteMountCommandUrls(
-        access.recommended_mount_commands.macos,
-        access.metadata_url,
-        normalizedMetadataUrl,
-        access.storage_bucket_url,
-        normalizedStorageBucketUrl,
-      ),
-      windows: rewriteMountCommandUrls(
-        access.recommended_mount_commands.windows,
-        access.metadata_url,
-        normalizedMetadataUrl,
-        access.storage_bucket_url,
-        normalizedStorageBucketUrl,
-      ),
-    },
+    statusCode: mapped.statusCode,
+    errorCode: mapped.errorCode === 'FILE_LIBRARY_OPERATION_FAILED'
+      ? 'FILE_LIBRARY_DELETE_FAILED'
+      : mapped.errorCode,
+    message: mapped.message,
   };
 }
 
-function toDesktopMountAccess(
-  req: http.IncomingMessage,
-  access: FileLibraryMountAccess,
-): FileLibraryDesktopMountAccess {
-  return {
-    filesystem_name: access.filesystem_name,
-    metadata_url: normalizeDesktopMetadataUrl(access.metadata_url),
-    storage_bucket_url: normalizeClientStorageBucketUrl(access.storage_bucket_url),
-    deployment_base_url: inferRequestOrigin(req),
-    default_mount_roots: {
-      linux: '~/AgentSmith',
-      macos: '~/AgentSmith',
-      windows: '%USERPROFILE%\\AgentSmith',
-    },
-    windows_requires_drive_letter: true,
-    created_at: access.created_at,
-  };
+function mapFileLibraryControlRouteError(error: unknown, fallbackErrorCode: string, fallbackMessage: string): {
+  statusCode: number;
+  errorCode: string;
+  message: string;
+} {
+  const message = publicFileOperationMessage(error, fallbackMessage);
+  if (message.endsWith('_pending')) {
+    return { statusCode: 409, errorCode: 'FILE_LIBRARY_OPERATION_PENDING', message };
+  }
+  if (message === 'file_library_restore_preview_stale') {
+    return { statusCode: 409, errorCode: 'FILE_LIBRARY_RESTORE_PREVIEW_STALE', message };
+  }
+  if (message === 'file_library_active_writer_blocked') {
+    return { statusCode: 409, errorCode: 'FILE_LIBRARY_ACTIVE_WRITER_BLOCKED', message };
+  }
+  if (message === 'file_library_namespace_project_mismatch') {
+    return { statusCode: 409, errorCode: 'FILE_LIBRARY_NAMESPACE_PROJECT_MISMATCH', message };
+  }
+  if (message === 'file_library_template_clone_not_allowed') {
+    return { statusCode: 403, errorCode: 'FILE_LIBRARY_TEMPLATE_CLONE_NOT_ALLOWED', message };
+  }
+  if (message === 'file_library_capability_denied') {
+    return { statusCode: 403, errorCode: 'FILE_LIBRARY_CAPABILITY_DENIED', message };
+  }
+  if (message === 'file_library_storage_admin_action_required') {
+    return { statusCode: 503, errorCode: 'FILE_LIBRARY_STORAGE_ADMIN_ACTION_REQUIRED', message };
+  }
+  if (message === 'file_library_backend_unavailable') {
+    return { statusCode: 503, errorCode: 'SERVICE_UNAVAILABLE', message };
+  }
+  if (
+    message === 'file_library_afscp_mapping_not_found'
+    || message === 'file_library_afscp_mapping_not_ready'
+    || message === 'file_library_project_storage_not_ready'
+    || message === 'file_library_project_storage_generation_mismatch'
+  ) {
+    return { statusCode: 409, errorCode: 'FILE_LIBRARY_STORAGE_NOT_READY', message };
+  }
+  return { statusCode: 502, errorCode: fallbackErrorCode, message };
+}
+
+function operationStatusToRestorePreviewStatus(status: 'pending' | 'succeeded' | 'failed') {
+  if (status === 'succeeded') return 'ready' as const;
+  if (status === 'failed') return 'failed' as const;
+  return 'previewing' as const;
 }
 
 export async function handleProjectFileLibraryRoutes(args: {
@@ -615,6 +312,8 @@ export async function handleProjectFileLibraryRoutes(args: {
   workspaceId: string;
   projectId: string;
   libraryId?: string;
+  operationId?: string;
+  taskFileTemplateId?: string;
   req: http.IncomingMessage;
   res: http.ServerResponse;
   deps: NodeApiDeps;
@@ -628,6 +327,8 @@ export async function handleProjectFileLibraryRoutes(args: {
     workspaceId,
     projectId,
     libraryId,
+    operationId,
+    taskFileTemplateId,
     deps,
     user,
     req,
@@ -636,13 +337,42 @@ export async function handleProjectFileLibraryRoutes(args: {
     readBody,
   } = args;
   const catalogRepo = new JsonDocProjectFileLibraryCatalogRepo(deps.docStore);
-  const backendRepo = new JsonDocProjectFileLibraryBackendRepo(deps.docStore);
-  const mountAccessRepo = new JsonDocProjectFileLibraryMountAccessRepo(deps.docStore);
+
+  if (routeKind === 'fileLibraryOperation' && method === 'GET') {
+    if (!operationId) {
+      json(res, 404, { error_code: 'RESOURCE_NOT_FOUND', message: 'not_found' });
+      return true;
+    }
+    if (!deps.fileLibraryStorageAdapter?.enabled) {
+      json(res, 503, { error_code: 'SERVICE_UNAVAILABLE', message: 'file_library_backend_unavailable' });
+      return true;
+    }
+    try {
+      const projection = await deps.fileLibraryStorageAdapter.getOperationProjection({
+        workspaceId,
+        projectId,
+        operationId,
+        requestId: readRequestId(req) ?? undefined,
+      });
+      json(res, 200, projection);
+    } catch (error) {
+      const message = readErrorMessage(error);
+      if (message === 'file_library_operation_not_found') {
+        json(res, 404, { error_code: 'RESOURCE_NOT_FOUND', message: 'not_found' });
+        return true;
+      }
+      json(res, 502, {
+        error_code: 'FILE_LIBRARY_OPERATION_PROJECTION_FAILED',
+        message: 'file_library_operation_projection_failed',
+      });
+    }
+    return true;
+  }
 
   if (routeKind === 'fileLibraries' && method === 'GET') {
     await hydrateFileLibraryTaskBindings({ deps, workspaceId, projectId });
-    const libraries = await catalogRepo.listByProjectForOwner(workspaceId, projectId, user.id);
-    const items = await Promise.all(libraries.map(async (item) => withTaskHomeBindingFields({
+    const libraries = await catalogRepo.listByProject(workspaceId, projectId);
+    const items = await Promise.all(libraries.map(async (item) => presentFileLibraryWithTaskHomeBinding({
       library: item,
       binding: await findTaskFileLibraryBinding({
         docStore: deps.docStore,
@@ -664,7 +394,7 @@ export async function handleProjectFileLibraryRoutes(args: {
       json(res, 400, { error_code: 'VALIDATION_ERROR', message: 'invalid_file_library_create_request' });
       return true;
     }
-    if (!deps.fileLibraryOrchestrator) {
+    if (!deps.fileLibraryStorageAdapter?.enabled) {
       json(res, 503, { error_code: 'SERVICE_UNAVAILABLE', message: 'file_library_backend_unavailable' });
       return true;
     }
@@ -677,7 +407,7 @@ export async function handleProjectFileLibraryRoutes(args: {
         name: parsed.data.name,
         description: parsed.data.description,
       });
-      json(res, 201, withTaskHomeBindingFields({
+      json(res, 201, presentFileLibraryWithTaskHomeBinding({
         library: updated,
         binding: null,
         actorUserId: user.id,
@@ -694,12 +424,155 @@ export async function handleProjectFileLibraryRoutes(args: {
     return true;
   }
 
+  if (routeKind === 'taskFileTemplates' && method === 'GET') {
+    const templateRepo = new JsonDocProjectTaskFileTemplateRepo(deps.docStore);
+    const permissionContext = await readProjectPermissionContext({
+      deps,
+      workspaceId,
+      projectId,
+      actorUserId: user.id,
+    });
+    const permissions = new Set(permissionContext?.permissions ?? []);
+    const canManageTemplates = permissions.has(TASK_FILE_TEMPLATE_MANAGE_PERMISSION);
+    const canUseTemplates = permissions.has(TASK_FILE_TEMPLATE_USE_PERMISSION);
+    if (!canManageTemplates && !canUseTemplates) {
+      json(res, 403, {
+        error_code: 'FORBIDDEN',
+        message: 'forbidden',
+        missing_permissions: [TASK_FILE_TEMPLATE_USE_PERMISSION, TASK_FILE_TEMPLATE_MANAGE_PERMISSION],
+      });
+      return true;
+    }
+    const templates = await templateRepo.listByProject(workspaceId, projectId);
+    const visibleTemplates = canManageTemplates
+      ? templates
+      : templates.filter((template) => template.status === 'published');
+    json(res, 200, {
+      items: visibleTemplates.map((template) => templateRepo.toPublic(template)),
+    });
+    return true;
+  }
+
+  if (routeKind === 'taskFileTemplates' && method === 'POST') {
+    const parsed = CreateTaskFileTemplateRequestSchema.safeParse(await readBody(req));
+    if (!parsed.success) {
+      json(res, 400, { error_code: 'VALIDATION_ERROR', message: 'invalid_task_file_template_create_request' });
+      return true;
+    }
+    if (!deps.fileLibraryStorageAdapter?.enabled) {
+      json(res, 503, { error_code: 'SERVICE_UNAVAILABLE', message: 'file_library_backend_unavailable' });
+      return true;
+    }
+    const sourceLibrary = await catalogRepo.getById(workspaceId, projectId, parsed.data.source_library_id);
+    if (!sourceLibrary) {
+      json(res, 404, { error_code: 'FILE_LIBRARY_NOT_FOUND', message: 'file_library_not_found' });
+      return true;
+    }
+    if (sourceLibrary.status !== 'ready') {
+      json(res, 409, buildFileLibraryNotReadyResponse(sourceLibrary));
+      return true;
+    }
+    const templateRepo = new JsonDocProjectTaskFileTemplateRepo(deps.docStore);
+    const savePointRepo = new JsonDocFileLibrarySavePointMappingRepo(deps.docStore);
+    const templateId = generateTaskFileTemplateId();
+    const afscpTemplateId = buildAfscpTemplateId(templateId);
+    try {
+      const result = await deps.fileLibraryStorageAdapter.createTemplateFromLibrary({
+        workspaceId,
+        projectId,
+        libraryId: sourceLibrary.id,
+        templateId: afscpTemplateId,
+        actorUserId: user.id,
+        requestId: typeof req.headers?.['x-request-id'] === 'string' ? req.headers['x-request-id'] : undefined,
+      });
+      const sourceSavePoint = result.sourceSavePointId
+        ? await savePointRepo.upsertFromAfscp({
+            workspaceId,
+            projectId,
+            libraryId: sourceLibrary.id,
+            afscpSavePointId: result.sourceSavePointId,
+            message: `Template source: ${parsed.data.name}`,
+            purpose: 'task_template_source',
+          })
+        : null;
+      const template = await templateRepo.create({
+        id: templateId,
+        workspaceId,
+        projectId,
+        name: parsed.data.name,
+        description: parsed.data.description,
+        sourceLibraryId: sourceLibrary.id,
+        sourceSavePointId: sourceSavePoint?.id,
+        sourceAfscpSavePointId: result.sourceSavePointId ?? undefined,
+        createdByUserId: user.id,
+        afscpTemplateId: result.templateId,
+        afscpCreateOperationId: result.operationId ?? undefined,
+      });
+      json(res, 201, templateRepo.toPublic(template));
+    } catch (error) {
+      const mapped = mapFileLibraryControlRouteError(
+        error,
+        'TASK_FILE_TEMPLATE_CREATE_FAILED',
+        'file_library_template_create_failed',
+      );
+      json(res, mapped.statusCode, { error_code: mapped.errorCode, message: mapped.message });
+    }
+    return true;
+  }
+
+  if (routeKind === 'taskFileTemplatePublish' && method === 'POST') {
+    if (!taskFileTemplateId) return false;
+    const templateRepo = new JsonDocProjectTaskFileTemplateRepo(deps.docStore);
+    const updated = await templateRepo.updateStatus({
+      workspaceId,
+      projectId,
+      taskFileTemplateId,
+      status: 'published',
+    });
+    if (!updated) {
+      json(res, 404, { error_code: 'TASK_FILE_TEMPLATE_NOT_FOUND', message: 'task_file_template_not_found' });
+      return true;
+    }
+    json(res, 200, templateRepo.toPublic(updated));
+    return true;
+  }
+
+  if (routeKind === 'taskFileTemplateUnpublish' && method === 'POST') {
+    if (!taskFileTemplateId) return false;
+    const templateRepo = new JsonDocProjectTaskFileTemplateRepo(deps.docStore);
+    const updated = await templateRepo.updateStatus({
+      workspaceId,
+      projectId,
+      taskFileTemplateId,
+      status: 'unpublished',
+    });
+    if (!updated) {
+      json(res, 404, { error_code: 'TASK_FILE_TEMPLATE_NOT_FOUND', message: 'task_file_template_not_found' });
+      return true;
+    }
+    json(res, 200, templateRepo.toPublic(updated));
+    return true;
+  }
+
+  if (routeKind === 'taskFileTemplateItem' && method === 'DELETE') {
+    if (!taskFileTemplateId) return false;
+    const templateRepo = new JsonDocProjectTaskFileTemplateRepo(deps.docStore);
+    const deleted = await templateRepo.delete(workspaceId, projectId, taskFileTemplateId);
+    if (!deleted) {
+      json(res, 404, { error_code: 'TASK_FILE_TEMPLATE_NOT_FOUND', message: 'task_file_template_not_found' });
+      return true;
+    }
+    res.statusCode = 204;
+    res.end();
+    return true;
+  }
+
   if (!libraryId) {
     return false;
   }
 
   const library = await catalogRepo.getById(workspaceId, projectId, libraryId);
-  if (!library || !isOwnedFileLibrary(library, user.id)) {
+  if (!library) {
     json(res, 404, { error_code: 'RESOURCE_NOT_FOUND', message: 'file_library_not_found' });
     return true;
   }
@@ -713,7 +586,7 @@ export async function handleProjectFileLibraryRoutes(args: {
 
   if (routeKind === 'fileLibraryItem' && method === 'GET') {
     await hydrateFileLibraryTaskBindings({ deps, workspaceId, projectId });
-    json(res, 200, withTaskHomeBindingFields({
+    json(res, 200, presentFileLibraryWithTaskHomeBinding({
       library,
       binding: await findTaskFileLibraryBinding({
         docStore: deps.docStore,
@@ -738,7 +611,7 @@ export async function handleProjectFileLibraryRoutes(args: {
       return true;
     }
     await hydrateFileLibraryTaskBindings({ deps, workspaceId, projectId });
-    json(res, 200, withTaskHomeBindingFields({
+    json(res, 200, presentFileLibraryWithTaskHomeBinding({
       library: updated,
       binding: await findTaskFileLibraryBinding({
         docStore: deps.docStore,
@@ -752,7 +625,7 @@ export async function handleProjectFileLibraryRoutes(args: {
   }
 
   if (routeKind === 'fileLibraryItem' && method === 'DELETE') {
-    if (!deps.fileLibraryOrchestrator) {
+    if (!deps.fileLibraryStorageAdapter?.enabled) {
       json(res, 503, { error_code: 'SERVICE_UNAVAILABLE', message: 'file_library_backend_unavailable' });
       return true;
     }
@@ -799,9 +672,9 @@ export async function handleProjectFileLibraryRoutes(args: {
       });
       return true;
     }
-    const canFastDeleteFailedLibraryBeforeTransition = library.status === 'failed';
+    const isFailedLibraryCleanup = library.status === 'failed';
     const isRepairingDeletingLibrary = library.status === 'deleting';
-    if (!canFastDeleteFailedLibraryBeforeTransition && !isRepairingDeletingLibrary && library.status !== 'ready') {
+    if (!isFailedLibraryCleanup && !isRepairingDeletingLibrary && library.status !== 'ready') {
       json(res, 409, {
         error_code: 'FILE_LIBRARY_NOT_READY',
         message: 'file_library_not_ready',
@@ -810,7 +683,7 @@ export async function handleProjectFileLibraryRoutes(args: {
       });
       return true;
     }
-    const transition = canFastDeleteFailedLibraryBeforeTransition
+    const transition = isFailedLibraryCleanup
       || isRepairingDeletingLibrary
       ? null
       : await catalogRepo.transitionReadyToDeleting({
@@ -840,7 +713,7 @@ export async function handleProjectFileLibraryRoutes(args: {
       projectId,
       fileLibraryId: libraryId,
     });
-    if (!canFastDeleteFailedLibraryBeforeTransition && bindingAfterTransition) {
+    if (!isFailedLibraryCleanup && bindingAfterTransition) {
       const boundTaskFields = buildBoundTaskSafeFields({
         binding: bindingAfterTransition,
         actorUserId: user.id,
@@ -879,38 +752,30 @@ export async function handleProjectFileLibraryRoutes(args: {
       return true;
     }
     try {
-      const backend = await backendRepo.getInternal(workspaceId, projectId, libraryId);
-      const mountAccess = await mountAccessRepo.getById(workspaceId, projectId, libraryId);
-      const canFastDeleteFailedLibrary = library.status === 'failed' && !backend && !mountAccess;
-      if (canFastDeleteFailedLibrary) {
-        await catalogRepo.delete(workspaceId, projectId, libraryId);
-        res.statusCode = 204;
-        res.end();
-        return true;
+      if (!isFailedLibraryCleanup) {
+        await deps.fileLibraryStorageAdapter.assertEmpty({
+          workspaceId,
+          projectId,
+          libraryId,
+        });
       }
-      await assertFileLibraryEmpty({
-        deps,
+      await deps.fileLibraryStorageAdapter.deleteRepoForLibrary({
         workspaceId,
         projectId,
         libraryId,
-        filesystemName: library.filesystem_name,
+        actorUserId: user.id,
+        requestId,
+        reason: 'file_library_delete',
       });
-      await deps.fileLibraryOrchestrator.deleteLibrary({
-        libraryId,
-        filesystemName: library.filesystem_name,
-      });
-      await deps.fileLibraryGatewayManager?.stopGateway(libraryId);
       await (deps.internalAgentWorkspaceBindingManager ?? deps.internalAgentWorkspaceProvisioner)?.deleteWorkspaceBinding({
         workspaceId,
         fileLibraryId: libraryId,
       });
-      await mountAccessRepo.delete(workspaceId, projectId, libraryId);
-      await backendRepo.delete(workspaceId, projectId, libraryId);
       await catalogRepo.delete(workspaceId, projectId, libraryId);
       res.statusCode = 204;
       res.end();
     } catch (error) {
-      const mapped = mapFileLibraryInfraError(error);
+      const mapped = mapDeleteRepoRouteError(error);
       if (mapped.errorCode === 'FILE_LIBRARY_NOT_EMPTY') {
         await catalogRepo.rollbackDeletingToReady({
           workspaceId,
@@ -935,16 +800,14 @@ export async function handleProjectFileLibraryRoutes(args: {
             reason: 'not_empty_or_compensation',
           },
         });
-      } else if (!canFastDeleteFailedLibraryBeforeTransition) {
+      } else if (!isFailedLibraryCleanup) {
         await catalogRepo.update(workspaceId, projectId, libraryId, {
           status: 'degraded',
           delete_correlation_id: requestId,
         });
       }
       json(res, mapped.statusCode, {
-        error_code: mapped.errorCode === 'FILE_LIBRARY_OPERATION_FAILED'
-          ? 'FILE_LIBRARY_DELETE_FAILED'
-          : mapped.errorCode,
+        error_code: mapped.errorCode,
         message: mapped.message,
         ...(mapped.errorCode === 'FILE_LIBRARY_NOT_EMPTY' ? { file_library_id: libraryId } : {}),
       });
@@ -952,25 +815,259 @@ export async function handleProjectFileLibraryRoutes(args: {
     return true;
   }
 
-  if (routeKind === 'fileLibraryBackend' && method === 'GET') {
-    const backend = await backendRepo.getPublic(workspaceId, projectId, libraryId);
-    if (!backend) {
-      json(res, 404, { error_code: 'RESOURCE_NOT_FOUND', message: 'file_library_backend_not_found' });
+  if (routeKind === 'fileLibrarySavePoints' && method === 'GET') {
+    if (!deps.fileLibraryStorageAdapter?.enabled) {
+      json(res, 503, { error_code: 'SERVICE_UNAVAILABLE', message: 'file_library_backend_unavailable' });
       return true;
     }
-    if (deps.fileLibraryGatewayManager) {
-      const health = await deps.fileLibraryGatewayManager.getHealth(libraryId);
-      json(res, 200, {
-        ...backend,
-        gateway_status: health.status === 'failed' ? 'failed' : health.status,
-        last_error: safeOptionalFileLibraryInfraError(health.lastError ?? backend.last_error),
+    const savePointRepo = new JsonDocFileLibrarySavePointMappingRepo(deps.docStore);
+    try {
+      const rawSavePoints = await deps.fileLibraryStorageAdapter.listSavePoints({
+        workspaceId,
+        projectId,
+        libraryId,
+        requestId: typeof req.headers?.['x-request-id'] === 'string' ? req.headers['x-request-id'] : undefined,
+      });
+      const items: FileLibrarySavePointPublicRecord[] = [];
+      for (const rawSavePoint of rawSavePoints) {
+        const mapped = await savePointRepo.upsertFromAfscp({
+          workspaceId,
+          projectId,
+          libraryId,
+          afscpSavePointId: rawSavePoint.savePointId,
+          message: rawSavePoint.message,
+          createdAt: rawSavePoint.createdAt,
+        });
+        if (mapped.purpose !== 'task_template_source') {
+          items.push(savePointRepo.toPublic(mapped));
+        }
+      }
+      json(res, 200, { items });
+    } catch (error) {
+      const mapped = mapFileLibraryControlRouteError(
+        error,
+        'FILE_LIBRARY_SAVE_POINT_LIST_FAILED',
+        'file_library_save_point_list_failed',
+      );
+      json(res, mapped.statusCode, { error_code: mapped.errorCode, message: mapped.message });
+    }
+    return true;
+  }
+
+  if (routeKind === 'fileLibrarySavePoints' && method === 'POST') {
+    const parsed = CreateFileLibrarySavePointRequestSchema.safeParse(await readBody(req));
+    if (!parsed.success) {
+      json(res, 400, { error_code: 'VALIDATION_ERROR', message: 'invalid_file_library_save_point_request' });
+      return true;
+    }
+    if (!deps.fileLibraryStorageAdapter?.enabled) {
+      json(res, 503, { error_code: 'SERVICE_UNAVAILABLE', message: 'file_library_backend_unavailable' });
+      return true;
+    }
+    const savePointRepo = new JsonDocFileLibrarySavePointMappingRepo(deps.docStore);
+    try {
+      const message = parsed.data.message ?? 'Manual save point';
+      const result = await deps.fileLibraryStorageAdapter.createSavePoint({
+        workspaceId,
+        projectId,
+        libraryId,
+        message,
+        actorUserId: user.id,
+        requestId: typeof req.headers?.['x-request-id'] === 'string' ? req.headers['x-request-id'] : undefined,
+      });
+      if (!result.savePointId) {
+        json(res, 502, {
+          error_code: 'FILE_LIBRARY_SAVE_POINT_CREATE_FAILED',
+          message: 'file_library_save_point_create_failed',
+        });
+        return true;
+      }
+      const savePoint = await savePointRepo.upsertFromAfscp({
+        workspaceId,
+        projectId,
+        libraryId,
+        afscpSavePointId: result.savePointId,
+        message,
+        createdAt: result.createdAt,
+        purpose: 'user',
+      });
+      json(res, 201, savePointRepo.toPublic(savePoint));
+    } catch (error) {
+      const mapped = mapFileLibraryControlRouteError(
+        error,
+        'FILE_LIBRARY_SAVE_POINT_CREATE_FAILED',
+        'file_library_save_point_create_failed',
+      );
+      json(res, mapped.statusCode, { error_code: mapped.errorCode, message: mapped.message });
+    }
+    return true;
+  }
+
+  if (routeKind === 'fileLibraryRestorePreview' && method === 'POST') {
+    const parsed = CreateFileLibraryRestorePreviewRequestSchema.safeParse(await readBody(req));
+    if (!parsed.success) {
+      json(res, 400, { error_code: 'VALIDATION_ERROR', message: 'invalid_file_library_restore_preview_request' });
+      return true;
+    }
+    if (!deps.fileLibraryStorageAdapter?.enabled) {
+      json(res, 503, { error_code: 'SERVICE_UNAVAILABLE', message: 'file_library_backend_unavailable' });
+      return true;
+    }
+    const savePointRepo = new JsonDocFileLibrarySavePointMappingRepo(deps.docStore);
+    const restoreRepo = new JsonDocFileLibraryRestorePreviewRepo(deps.docStore);
+    const savePoint = await savePointRepo.getById(workspaceId, projectId, libraryId, parsed.data.save_point_id);
+    if (!savePoint) {
+      json(res, 404, {
+        error_code: 'FILE_LIBRARY_SAVE_POINT_NOT_FOUND',
+        message: 'file_library_save_point_not_found',
       });
       return true;
     }
-    json(res, 200, {
-      ...backend,
-      last_error: safeOptionalFileLibraryInfraError(backend.last_error),
-    });
+    try {
+      const result = await deps.fileLibraryStorageAdapter.createRestorePreview({
+        workspaceId,
+        projectId,
+        libraryId,
+        savePointId: savePoint.afscp_save_point_id,
+        actorUserId: user.id,
+        requestId: typeof req.headers?.['x-request-id'] === 'string' ? req.headers['x-request-id'] : undefined,
+      });
+      if (!result.operationId) {
+        json(res, 502, {
+          error_code: 'FILE_LIBRARY_RESTORE_PREVIEW_FAILED',
+          message: 'file_library_restore_preview_failed',
+        });
+        return true;
+      }
+      const preview = await restoreRepo.create({
+        workspaceId,
+        projectId,
+        libraryId,
+        afscpPreviewOperationId: result.operationId,
+        sourceSavePointId: savePoint.id,
+        sourceAfscpSavePointId: savePoint.afscp_save_point_id,
+        status: operationStatusToRestorePreviewStatus(result.operationStatus),
+        restorePlanId: result.restorePlanId ?? undefined,
+        summary: result.summary,
+        blockers: result.blockers,
+        stale: result.stale,
+      });
+      json(res, 201, restoreRepo.toPublic(preview));
+    } catch (error) {
+      const mapped = mapFileLibraryControlRouteError(
+        error,
+        'FILE_LIBRARY_RESTORE_PREVIEW_FAILED',
+        'file_library_restore_preview_failed',
+      );
+      json(res, mapped.statusCode, { error_code: mapped.errorCode, message: mapped.message });
+    }
+    return true;
+  }
+
+  if (routeKind === 'fileLibraryRestoreRun' && method === 'POST') {
+    const parsed = RunFileLibraryRestoreRequestSchema.safeParse(await readBody(req));
+    if (!parsed.success) {
+      json(res, 400, { error_code: 'VALIDATION_ERROR', message: 'invalid_file_library_restore_run_request' });
+      return true;
+    }
+    if (!deps.fileLibraryStorageAdapter?.enabled) {
+      json(res, 503, { error_code: 'SERVICE_UNAVAILABLE', message: 'file_library_backend_unavailable' });
+      return true;
+    }
+    const restoreRepo = new JsonDocFileLibraryRestorePreviewRepo(deps.docStore);
+    const preview = await restoreRepo.getById(workspaceId, projectId, libraryId, parsed.data.restore_preview_id);
+    if (!preview) {
+      json(res, 404, {
+        error_code: 'FILE_LIBRARY_RESTORE_PREVIEW_NOT_FOUND',
+        message: 'file_library_restore_preview_not_found',
+      });
+      return true;
+    }
+    try {
+      const result = await deps.fileLibraryStorageAdapter.runRestorePreview({
+        workspaceId,
+        projectId,
+        libraryId,
+        previewOperationId: preview.afscp_preview_operation_id,
+        actorUserId: user.id,
+        requestId: typeof req.headers?.['x-request-id'] === 'string' ? req.headers['x-request-id'] : undefined,
+      });
+      await restoreRepo.updateStatus({
+        workspaceId,
+        projectId,
+        libraryId,
+        restorePreviewId: preview.id,
+        status: result.operationStatus === 'succeeded' ? 'restored' : 'restoring',
+        restorePlanId: result.restorePlanId ?? undefined,
+        summary: result.summary,
+        blockers: result.blockers,
+        stale: result.stale,
+      });
+      const now = new Date().toISOString();
+      json(res, 200, {
+        id: generateFileLibraryRestoreRunId(),
+        file_library_id: libraryId,
+        restore_preview_id: preview.id,
+        status: result.operationStatus,
+        created_at: now,
+        updated_at: now,
+      });
+    } catch (error) {
+      const mapped = mapFileLibraryControlRouteError(
+        error,
+        'FILE_LIBRARY_RESTORE_RUN_FAILED',
+        'file_library_restore_run_failed',
+      );
+      json(res, mapped.statusCode, { error_code: mapped.errorCode, message: mapped.message });
+    }
+    return true;
+  }
+
+  if (routeKind === 'fileLibraryRestoreCancel' && method === 'POST') {
+    const parsed = CancelFileLibraryRestoreRequestSchema.safeParse(await readBody(req));
+    if (!parsed.success) {
+      json(res, 400, { error_code: 'VALIDATION_ERROR', message: 'invalid_file_library_restore_cancel_request' });
+      return true;
+    }
+    if (!deps.fileLibraryStorageAdapter?.enabled) {
+      json(res, 503, { error_code: 'SERVICE_UNAVAILABLE', message: 'file_library_backend_unavailable' });
+      return true;
+    }
+    const restoreRepo = new JsonDocFileLibraryRestorePreviewRepo(deps.docStore);
+    const preview = await restoreRepo.getById(workspaceId, projectId, libraryId, parsed.data.restore_preview_id);
+    if (!preview) {
+      json(res, 404, {
+        error_code: 'FILE_LIBRARY_RESTORE_PREVIEW_NOT_FOUND',
+        message: 'file_library_restore_preview_not_found',
+      });
+      return true;
+    }
+    try {
+      const result = await deps.fileLibraryStorageAdapter.discardRestorePreview({
+        workspaceId,
+        projectId,
+        libraryId,
+        previewOperationId: preview.afscp_preview_operation_id,
+        actorUserId: user.id,
+        requestId: typeof req.headers?.['x-request-id'] === 'string' ? req.headers['x-request-id'] : undefined,
+      });
+      const updated = await restoreRepo.updateStatus({
+        workspaceId,
+        projectId,
+        libraryId,
+        restorePreviewId: preview.id,
+        status: result.operationStatus === 'succeeded' ? 'canceled' : 'canceling',
+        restorePlanId: result.restorePlanId ?? undefined,
+      });
+      json(res, 200, restoreRepo.toPublic(updated ?? preview));
+    } catch (error) {
+      const mapped = mapFileLibraryControlRouteError(
+        error,
+        'FILE_LIBRARY_RESTORE_CANCEL_FAILED',
+        'file_library_restore_discard_failed',
+      );
+      json(res, mapped.statusCode, { error_code: mapped.errorCode, message: mapped.message });
+    }
     return true;
   }
 
@@ -981,63 +1078,33 @@ export async function handleProjectFileLibraryRoutes(args: {
       json(res, 400, { error_code: 'VALIDATION_ERROR', message: 'invalid_file_library_entries_query' });
       return true;
     }
-    const path = parsed.data.path ? ensureDirectoryPath(parsed.data.path) : '';
-    const pageSize = parsed.data.page_size ?? 200;
-    const client = await createFileLibraryGatewayClient({
-      deps,
-      workspaceId,
-      projectId,
-      libraryId,
-      filesystemName: library.filesystem_name,
-    });
-    const bucket = fileLibraryBucketName(library.filesystem_name);
-    const listed = await listGatewayObjects(client, bucket, {
-      prefix: path,
-      pageSize,
-      continuationToken: parsed.data.continuation_token,
-    });
-    let items = [
-      ...listed.commonPrefixes.map((prefix) => ({
-        kind: 'directory' as const,
-        path: prefix,
-        name: prefix.slice(path.length).replace(/\/$/, ''),
-      })),
-      ...listed.objects
-        .filter((item) => item.key !== path)
-        .map((item) => ({
-          kind: 'file' as const,
-          path: item.key,
-          name: item.key.slice(path.length),
-          size_bytes: item.sizeBytes,
-          content_type: guessFileLibraryContentType(item.key),
-          modified_at: item.lastModified,
-          etag: item.etag,
-        })),
-    ];
-    if (parsed.data.search) {
-      const needle = parsed.data.search.toLowerCase();
-      items = items.filter((item) => item.name.toLowerCase().includes(needle));
+    if (!deps.fileLibraryStorageAdapter?.enabled) {
+      json(res, 503, { error_code: 'SERVICE_UNAVAILABLE', message: 'file_library_backend_unavailable' });
+      return true;
     }
-    const direction = parsed.data.sort_order === 'desc' ? -1 : 1;
-    const sortBy = parsed.data.sort_by;
-    items.sort((a, b) => {
-      if (sortBy === 'size_bytes') {
-        const av = a.kind === 'file' ? a.size_bytes : -1;
-        const bv = b.kind === 'file' ? b.size_bytes : -1;
-        return (av - bv) * direction;
-      }
-      if (sortBy === 'modified_at') {
-        const av = a.kind === 'file' ? Date.parse(a.modified_at) : 0;
-        const bv = b.kind === 'file' ? Date.parse(b.modified_at) : 0;
-        return (av - bv) * direction;
-      }
-      return a.name.localeCompare(b.name) * direction;
-    });
-    json(res, 200, {
-      path,
-      items,
-      next_continuation_token: listed.nextContinuationToken,
-    });
+    try {
+      const listed = await deps.fileLibraryStorageAdapter.listEntries({
+        workspaceId,
+        projectId,
+        libraryId,
+        path: parsed.data.path ? ensureDirectoryPath(parsed.data.path) : '',
+        pageSize: parsed.data.page_size ?? 200,
+        continuationToken: parsed.data.continuation_token,
+        search: parsed.data.search,
+        sortBy: parsed.data.sort_by ?? 'name',
+        sortOrder: parsed.data.sort_order ?? 'asc',
+      });
+      json(res, 200, {
+        path: listed.path,
+        items: listed.items,
+        next_continuation_token: listed.nextContinuationToken,
+      });
+    } catch (error) {
+      json(res, 502, {
+        error_code: 'FILE_LIBRARY_LIST_FAILED',
+        message: publicFileOperationMessage(error, 'file_library_list_failed'),
+      });
+    }
     return true;
   }
 
@@ -1051,13 +1118,16 @@ export async function handleProjectFileLibraryRoutes(args: {
         return true;
       }
       const folderPath = ensureDirectoryPath(parsed.data.path);
-      await createFolderAndWaitForVisibility({
-        deps,
+      if (!deps.fileLibraryStorageAdapter?.enabled) {
+        json(res, 503, { error_code: 'SERVICE_UNAVAILABLE', message: 'file_library_backend_unavailable' });
+        return true;
+      }
+      await deps.fileLibraryStorageAdapter.createFolder({
         workspaceId,
         projectId,
         libraryId,
-        filesystemName: library.filesystem_name,
         folderPath,
+        actorUserId: user.id,
         signal: operation.signal,
       });
       if (operation.signal.aborted) {
@@ -1070,7 +1140,11 @@ export async function handleProjectFileLibraryRoutes(args: {
       if (operation.signal.aborted || (error instanceof Error && error.name === 'AbortError')) {
         return true;
       }
-      throw error;
+      json(res, 400, {
+        error_code: 'FILE_LIBRARY_FOLDER_CREATE_FAILED',
+        message: publicFileOperationMessage(error, 'file_library_folder_create_failed'),
+      });
+      return true;
     } finally {
       operation.cleanup();
     }
@@ -1082,43 +1156,25 @@ export async function handleProjectFileLibraryRoutes(args: {
       json(res, 400, { error_code: 'VALIDATION_ERROR', message: 'invalid_file_library_delete_request' });
       return true;
     }
-    const client = await createFileLibraryGatewayClient({
-      deps,
-      workspaceId,
-      projectId,
-      libraryId,
-      filesystemName: library.filesystem_name,
-    });
-    const bucket = fileLibraryBucketName(library.filesystem_name);
-    const results: Array<{ path: string; status: 'deleted' | 'not_found' | 'error'; error_code?: string; message?: string }> = [];
-    for (const rawPath of parsed.data.paths) {
-      const normalized = normalizeFileLibraryPath(rawPath);
-      try {
-        const dirPath = rawPath.endsWith('/') ? ensureDirectoryPath(rawPath) : normalized;
-        if (rawPath.endsWith('/')) {
-          const listed = await listGatewayObjects(client, bucket, {
-            prefix: dirPath,
-            pageSize: 1000,
-          });
-          const keys = [
-            ...listed.commonPrefixes,
-            ...listed.objects.map((item) => item.key),
-          ].filter((key) => key !== dirPath);
-          await deleteMany(client, bucket, [dirPath, ...keys]);
-        } else {
-          await client.removeObject(bucket, dirPath);
-        }
-        results.push({ path: rawPath, status: 'deleted' });
-      } catch (error) {
-        results.push({
-          path: rawPath,
-          status: 'error',
-          error_code: 'file_library_delete_failed',
-          message: error instanceof Error ? error.message : 'file_library_delete_failed',
-        });
-      }
+    if (!deps.fileLibraryStorageAdapter?.enabled) {
+      json(res, 503, { error_code: 'SERVICE_UNAVAILABLE', message: 'file_library_backend_unavailable' });
+      return true;
     }
-    json(res, 200, { results });
+    try {
+      const results = await deps.fileLibraryStorageAdapter.deletePaths({
+        workspaceId,
+        projectId,
+        libraryId,
+        paths: parsed.data.paths,
+        actorUserId: user.id,
+      });
+      json(res, 200, { results });
+    } catch (error) {
+      json(res, 502, {
+        error_code: 'FILE_LIBRARY_DELETE_FAILED',
+        message: publicFileOperationMessage(error, 'file_library_delete_failed'),
+      });
+    }
     return true;
   }
 
@@ -1131,55 +1187,20 @@ export async function handleProjectFileLibraryRoutes(args: {
         json(res, 400, { error_code: 'VALIDATION_ERROR', message: 'invalid_file_library_move_request' });
         return true;
       }
-      const client = await awaitAbortableOperation(
-        createFileLibraryGatewayClient({
-          deps,
-          workspaceId,
-          projectId,
-          libraryId,
-          filesystemName: library.filesystem_name,
-          signal: operation.signal,
-        }),
-        {
-          signal: operation.signal,
-          abortMessage: 'file_library_move_aborted',
-        },
-      );
-      const bucket = fileLibraryBucketName(library.filesystem_name);
-      const overwrite = parsed.data.overwrite ?? false;
-      if (parsed.data.from_path.endsWith('/')) {
-        const fromPath = ensureDirectoryPath(parsed.data.from_path);
-        const toPath = ensureDirectoryPath(parsed.data.to_path);
-        const listed = await listGatewayObjects(client, bucket, {
-          prefix: fromPath,
-          pageSize: 1000,
-          signal: operation.signal,
-        });
-        await awaitAbortableOperation(
-          client.putObject(bucket, toPath, Buffer.alloc(0), 0, { 'Content-Type': 'application/x-directory' }),
-          {
-            signal: operation.signal,
-            abortMessage: 'file_library_move_aborted',
-          },
-        );
-        for (const item of listed.objects) {
-          const target = `${toPath}${item.key.slice(fromPath.length)}`;
-          await copyObject(client, bucket, item.key, target, overwrite, operation.signal);
-        }
-        const keysToDelete = [fromPath, ...listed.objects.map((item) => item.key)];
-        await deleteMany(client, bucket, keysToDelete, operation.signal);
-      } else {
-        const fromPath = normalizeFileLibraryPath(parsed.data.from_path);
-        const toPath = normalizeFileLibraryPath(parsed.data.to_path);
-        await copyObject(client, bucket, fromPath, toPath, overwrite, operation.signal);
-        await awaitAbortableOperation(
-          client.removeObject(bucket, fromPath),
-          {
-            signal: operation.signal,
-            abortMessage: 'file_library_move_aborted',
-          },
-        );
+      if (!deps.fileLibraryStorageAdapter?.enabled) {
+        json(res, 503, { error_code: 'SERVICE_UNAVAILABLE', message: 'file_library_backend_unavailable' });
+        return true;
       }
+      await deps.fileLibraryStorageAdapter.moveEntry({
+        workspaceId,
+        projectId,
+        libraryId,
+        fromPath: parsed.data.from_path,
+        toPath: parsed.data.to_path,
+        overwrite: parsed.data.overwrite ?? false,
+        actorUserId: user.id,
+        signal: operation.signal,
+      });
       if (operation.signal.aborted) {
         return true;
       }
@@ -1190,7 +1211,12 @@ export async function handleProjectFileLibraryRoutes(args: {
       if (operation?.signal.aborted || (error instanceof Error && error.name === 'AbortError')) {
         return true;
       }
-      throw error;
+      const message = publicFileOperationMessage(error, 'file_library_move_failed');
+      json(res, message === 'file_library_destination_exists' ? 409 : 400, {
+        error_code: message === 'file_library_destination_exists' ? 'destination_exists' : 'FILE_LIBRARY_MOVE_FAILED',
+        message: message === 'file_library_destination_exists' ? 'destination_exists' : message,
+      });
+      return true;
     } finally {
       operation.cleanup();
     }
@@ -1208,62 +1234,27 @@ export async function handleProjectFileLibraryRoutes(args: {
 
     const operation = createHttpOperationEnvelope({ req, res });
     try {
+      const storageAdapter = deps.fileLibraryStorageAdapter;
+      if (!storageAdapter?.enabled) {
+        json(res, 503, { error_code: 'SERVICE_UNAVAILABLE', message: 'file_library_backend_unavailable' });
+        return true;
+      }
       const uploaded = await parseMultipartUploadAndExecute(
         req,
         async ({ fileName, fileStream, contentType: uploadedContentType, prefix, overwrite, signal }) => {
           const normalizedPrefix = prefix ? ensureDirectoryPath(prefix) : '';
           const objectPath = normalizeFileLibraryPath(`${normalizedPrefix}${fileName}`);
-          const client = await awaitAbortableOperation(
-            createFileLibraryGatewayClient({
-              deps,
-              workspaceId,
-              projectId,
-              libraryId,
-              filesystemName: library.filesystem_name,
-              signal,
-            }),
-            {
-              signal,
-              abortMessage: 'file_library_upload_aborted',
-            },
-          );
-          const bucket = fileLibraryBucketName(library.filesystem_name);
-          if (!(overwrite ?? false)) {
-            try {
-              await awaitAbortableOperation(
-                client.statObject(bucket, objectPath),
-                {
-                  signal,
-                  abortMessage: 'file_library_upload_aborted',
-                },
-              );
-              throw new Error('file_library_destination_exists');
-            } catch (error) {
-              if (error instanceof Error && error.message === 'file_library_destination_exists') {
-                throw error;
-              }
-            }
-          }
-          await putGatewayObjectStream(client, bucket, objectPath, fileStream, {
+          return storageAdapter.uploadObject({
+            workspaceId,
+            projectId,
+            libraryId,
+            actorUserId: user.id,
+            objectPath,
+            body: fileStream,
             contentType: uploadedContentType || guessFileLibraryContentType(objectPath) || 'application/octet-stream',
+            overwrite: overwrite ?? false,
             signal,
           });
-          const stat = await awaitAbortableOperation(
-            client.statObject(bucket, objectPath),
-            {
-              signal,
-              abortMessage: 'file_library_upload_aborted',
-            },
-          );
-          return {
-            kind: 'file' as const,
-            path: objectPath,
-            name: fileName,
-            size_bytes: stat.size,
-            content_type: stat.metaData?.['content-type'] ?? uploadedContentType ?? guessFileLibraryContentType(objectPath),
-            modified_at: stat.lastModified.toISOString(),
-            etag: stat.etag,
-          };
         },
         (headers) =>
           Busboy({
@@ -1283,11 +1274,11 @@ export async function handleProjectFileLibraryRoutes(args: {
       if (operation.signal.aborted) {
         return true;
       }
-      const message = error instanceof Error ? error.message : 'file_library_upload_failed';
+      const message = publicFileOperationMessage(error, 'file_library_upload_failed');
       const isDestinationConflict = message === 'file_library_destination_exists';
       json(res, isDestinationConflict ? 409 : 400, {
         error_code: isDestinationConflict ? 'destination_exists' : 'FILE_LIBRARY_UPLOAD_FAILED',
-        message: isDestinationConflict ? 'destination_exists' : message,
+        message: isDestinationConflict ? 'destination_exists' : 'file_library_upload_failed',
       });
     } finally {
       operation.cleanup();
@@ -1305,29 +1296,15 @@ export async function handleProjectFileLibraryRoutes(args: {
     const operation = createHttpOperationEnvelope({ req, res });
     try {
       const objectPath = normalizeFileLibraryPath(parsed.data.path);
-      const client = await awaitAbortableOperation(
-        createFileLibraryGatewayClient({
-          deps,
-          workspaceId,
-          projectId,
-          libraryId,
-          filesystemName: library.filesystem_name,
-          signal: operation.signal,
-        }),
-        {
-          signal: operation.signal,
-          abortMessage: 'file_library_download_aborted',
-        },
-      );
-      const bucket = fileLibraryBucketName(library.filesystem_name);
-      const stat = await awaitAbortableOperation(
-        client.statObject(bucket, objectPath),
-        {
-          signal: operation.signal,
-          abortMessage: 'file_library_download_aborted',
-        },
-      );
-      const download = await openGatewayObjectDownload(client, bucket, objectPath, {
+      if (!deps.fileLibraryStorageAdapter?.enabled) {
+        json(res, 503, { error_code: 'SERVICE_UNAVAILABLE', message: 'file_library_backend_unavailable' });
+        return true;
+      }
+      const { meta, download } = await deps.fileLibraryStorageAdapter.downloadObject({
+        workspaceId,
+        projectId,
+        libraryId,
+        objectPath,
         signal: operation.signal,
       });
       if (operation.signal.aborted) {
@@ -1336,10 +1313,10 @@ export async function handleProjectFileLibraryRoutes(args: {
       }
       const fileName = objectPath.split('/').at(-1) || 'download.bin';
       res.statusCode = 200;
-      res.setHeader('Content-Type', stat.metaData?.['content-type'] ?? guessFileLibraryContentType(objectPath) ?? 'application/octet-stream');
-      res.setHeader('Content-Length', String(stat.size));
+      res.setHeader('Content-Type', meta.content_type);
+      res.setHeader('Content-Length', String(meta.size_bytes));
       res.setHeader('Content-Disposition', buildAttachmentContentDisposition(fileName));
-      pipeGatewayDownloadToHttpResponse({
+      pipeObjectDownloadToHttpResponse({
         req,
         res,
         download,
@@ -1351,7 +1328,9 @@ export async function handleProjectFileLibraryRoutes(args: {
       }
       json(res, 404, {
         error_code: 'RESOURCE_NOT_FOUND',
-        message: error instanceof Error ? error.message : 'file_library_download_not_found',
+        message: publicFileOperationMessage(error, 'file_library_download_not_found') === 'file_library_object_not_found'
+          ? 'file_library_object_not_found'
+          : 'file_library_download_not_found',
       });
     } finally {
       operation.cleanup();
@@ -1370,105 +1349,34 @@ export async function handleProjectFileLibraryRoutes(args: {
     try {
       operation = createHttpOperationEnvelope({ req, res });
       const objectPath = normalizeFileLibraryPath(path);
-      const client = await awaitAbortableOperation(
-        createFileLibraryGatewayClient({
-          deps,
-          workspaceId,
-          projectId,
-          libraryId,
-          filesystemName: library.filesystem_name,
-          signal: operation.signal,
-        }),
-        {
-          signal: operation.signal,
-          abortMessage: 'file_library_meta_aborted',
-        },
-      );
-      const stat = await awaitAbortableOperation(
-        client.statObject(fileLibraryBucketName(library.filesystem_name), objectPath),
-        {
-          signal: operation.signal,
-          abortMessage: 'file_library_meta_aborted',
-        },
-      );
+      if (!deps.fileLibraryStorageAdapter?.enabled) {
+        json(res, 503, { error_code: 'SERVICE_UNAVAILABLE', message: 'file_library_backend_unavailable' });
+        return true;
+      }
+      const meta = await deps.fileLibraryStorageAdapter.getObjectMeta({
+        workspaceId,
+        projectId,
+        libraryId,
+        objectPath,
+        signal: operation.signal,
+      });
       if (operation.signal.aborted) {
         return true;
       }
-      json(res, 200, {
-        key: objectPath,
-        size_bytes: stat.size,
-        content_type: stat.metaData?.['content-type'] ?? guessFileLibraryContentType(objectPath) ?? 'application/octet-stream',
-        etag: stat.etag,
-        last_modified: stat.lastModified.toISOString(),
-        user_metadata: stat.metaData,
-      });
+      json(res, 200, meta);
     } catch (error) {
       if (operation?.signal.aborted || (error instanceof Error && error.name === 'AbortError')) {
         return true;
       }
       json(res, 404, {
         error_code: 'RESOURCE_NOT_FOUND',
-        message: error instanceof Error ? error.message : 'file_library_meta_not_found',
+        message: publicFileOperationMessage(error, 'file_library_meta_not_found') === 'file_library_object_not_found'
+          ? 'file_library_object_not_found'
+          : 'file_library_meta_not_found',
       });
     } finally {
       operation?.cleanup();
     }
-    return true;
-  }
-
-  if (routeKind === 'fileLibraryShareLink' && method === 'POST') {
-    const parsed = CreateFileLibraryShareLinkRequestSchema.safeParse(await readBody(req));
-    if (!parsed.success) {
-      json(res, 400, { error_code: 'VALIDATION_ERROR', message: 'invalid_file_library_share_link_request' });
-      return true;
-    }
-    try {
-      const objectPath = normalizeFileLibraryPath(parsed.data.path);
-      const client = await createFileLibraryGatewayClient({
-        deps,
-        workspaceId,
-        projectId,
-        libraryId,
-        filesystemName: library.filesystem_name,
-      });
-      const bucket = fileLibraryBucketName(library.filesystem_name);
-      const expirySeconds = parsed.data.expires_in_seconds ?? 60 * 60;
-      const url = await client.presignedGetObject(bucket, objectPath, expirySeconds);
-      json(res, 200, {
-        key: objectPath,
-        url,
-        expires_at: new Date(Date.now() + expirySeconds * 1000).toISOString(),
-      });
-    } catch (error) {
-      json(res, 404, {
-        error_code: 'RESOURCE_NOT_FOUND',
-        message: error instanceof Error ? error.message : 'file_library_share_link_not_found',
-      });
-    }
-    return true;
-  }
-
-  if (routeKind === 'fileLibraryStorageCredentialExchange' && method === 'POST') {
-    const access = await mountAccessRepo.getById(workspaceId, projectId, libraryId);
-    if (!access) {
-      json(res, 404, { error_code: 'RESOURCE_NOT_FOUND', message: 'file_library_mount_access_not_found' });
-      return true;
-    }
-    json(res, 200, {
-      client_mount_access: toClientMountAccess(access),
-    });
-    return true;
-  }
-
-  if (routeKind === 'fileLibraryDesktopMountAccess' && method === 'POST') {
-    const access = await mountAccessRepo.getById(workspaceId, projectId, libraryId);
-    if (!access) {
-      json(res, 404, { error_code: 'RESOURCE_NOT_FOUND', message: 'file_library_mount_access_not_found' });
-      return true;
-    }
-    json(res, 200, {
-      desktop_mount_access: toDesktopMountAccess(req, access),
-    });
     return true;
   }
 

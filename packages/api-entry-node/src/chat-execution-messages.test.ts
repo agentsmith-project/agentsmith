@@ -135,6 +135,66 @@ describe('buildChatExecutionMessages', () => {
     });
   });
 
+  it('downloads the current file-library image ref through the supplied active storage downloader', async () => {
+    const currentAttachment = buildAttachment({
+      id: 'att_file_library_image',
+      content_base64: undefined,
+      file_library_id: 'lib_images',
+      source_object_key: 'chat/session/image.png',
+    });
+    const downloadFileLibraryObject = vi.fn(async () => ({
+      body: new ReadableStream<Uint8Array>({
+        start(controller) {
+          controller.enqueue(new TextEncoder().encode('image-bytes'));
+          controller.close();
+        },
+      }),
+      metadata_url: 'postgres://root:secret@storage/juicefs',
+      filesystem_name: 'raw-storage-name',
+    }));
+
+    const result = await buildChatExecutionMessages({
+      downloadFileLibraryObject,
+      route: { workspaceId: 'ws_1', projectId: 'proj_1', sessionId: 'session_1' },
+      currentUserMessageId: 'msg_current',
+      attachmentById: new Map([[currentAttachment.id, currentAttachment]]),
+      messages: [
+        {
+          id: 'msg_current',
+          role: 'user',
+          content: 'inspect this image',
+          attachment_snapshots: [
+            {
+              id: currentAttachment.id,
+              file_name: currentAttachment.file_name,
+              file_type: currentAttachment.file_type,
+              file_size: currentAttachment.file_size,
+            },
+          ],
+        },
+      ],
+    });
+
+    expect(downloadFileLibraryObject).toHaveBeenCalledWith({
+      workspaceId: 'ws_1',
+      projectId: 'proj_1',
+      libraryId: 'lib_images',
+      key: 'chat/session/image.png',
+    });
+    expect(result.missingCurrentImageDataUrl).toBe(false);
+    expect(result.messages[0]).toEqual({
+      role: 'user',
+      content: [
+        { type: 'text', text: 'inspect this image' },
+        {
+          type: 'image_url',
+          image_url: { url: `data:image/png;base64,${Buffer.from('image-bytes').toString('base64')}` },
+        },
+      ],
+    });
+    expect(JSON.stringify(result.messages)).not.toMatch(/metadata_url|filesystem_name|storage_bucket_url|recommended_mount|juicefs/i);
+  });
+
   it('keeps only the stable ancestor chain for the requested branch leaf', async () => {
     const result = await buildChatExecutionMessages({
       downloadFileLibraryObject: vi.fn(),

@@ -32,11 +32,6 @@ import {
 } from './task-route-handler.js';
 import { issueSSETicket } from './sse-ticket-store.js';
 import { isAgentExecutionTicket } from './internal-ticket-store.js';
-import {
-  exchangeDesktopAuthRequest,
-  getDesktopAuthRequest,
-  startDesktopAuthRequest,
-} from './desktop-auth-store.js';
 import { buildUpstreamUrl } from './request-handler/build-upstream-url.js';
 import { handleInternalRoutes } from './request-handler/internal-routes.js';
 import { handleJoinInviteInspectRoute, handleJoinInviteActionRoute } from './project-invite-routes.js';
@@ -130,74 +125,6 @@ export async function handleRequest(
   }
 
   try {
-    if (requestUrl.pathname === '/api/v1/desktop/auth/start' && method === 'POST') {
-      const body = (await readBody(req)) as { deployment_base_url?: string } | null;
-      const deploymentBaseUrl = body?.deployment_base_url?.trim().replace(/\/+$/, '') ?? '';
-      if (!/^https?:\/\/[^/]+/i.test(deploymentBaseUrl)) {
-        json(res, 400, {
-          error_code: 'VALIDATION_ERROR',
-          message: 'desktop_auth_invalid_deployment_base_url',
-        });
-        return;
-      }
-      const started = await startDesktopAuthRequest(deps.cache, {
-        deploymentBaseUrl,
-      });
-      json(res, 201, {
-        request_id: started.request_id,
-        browser_start_url: `${deploymentBaseUrl}/en-US/desktop/auth/request?desktop_auth_request_id=${encodeURIComponent(started.request_id)}`,
-        poll_url: `/api/v1/desktop/auth/requests/${encodeURIComponent(started.request_id)}`,
-        poll_interval_ms: 1500,
-        expires_at: started.expires_at,
-      });
-      return;
-    }
-    const desktopAuthRequestMatch = requestUrl.pathname.match(/^\/api\/v1\/desktop\/auth\/requests\/([^/]+)$/);
-    if (desktopAuthRequestMatch && method === 'GET') {
-      const requestId = decodeURIComponent(desktopAuthRequestMatch[1] ?? '');
-      const snapshot = await getDesktopAuthRequest(deps.cache, requestId);
-      if (!snapshot) {
-        json(res, 404, {
-          error_code: 'NOT_FOUND',
-          message: 'desktop_auth_request_not_found',
-        });
-        return;
-      }
-      json(res, 200, snapshot);
-      return;
-    }
-    if (requestUrl.pathname === '/api/v1/desktop/auth/exchange' && method === 'POST') {
-      const body = (await readBody(req)) as {
-        request_id?: string;
-        exchange_ticket?: string;
-      } | null;
-      const requestId = body?.request_id?.trim() ?? '';
-      const exchangeTicket = body?.exchange_ticket?.trim() ?? '';
-      if (!requestId || !exchangeTicket) {
-        json(res, 400, {
-          error_code: 'VALIDATION_ERROR',
-          message: 'desktop_auth_exchange_invalid_request',
-        });
-        return;
-      }
-      const exchanged = await exchangeDesktopAuthRequest(deps.cache, {
-        requestId,
-        exchangeTicket,
-      });
-      if (!exchanged) {
-        json(res, 401, {
-          error_code: 'UNAUTHORIZED',
-          message: 'desktop_auth_exchange_failed',
-        });
-        return;
-      }
-      json(res, 200, {
-        access_token: exchanged.accessToken,
-        signed_in_user: exchanged.signedInUser,
-      });
-      return;
-    }
-
     const route = matchProjectsRoute(req.url ?? '');
     const agentExecutionRouteAllowed = isAgentExecutionRouteAllowed(route, method, requestUrl.pathname);
     const executionTicketToken = agentExecutionRouteAllowed
@@ -245,7 +172,6 @@ export async function handleRequest(
       method,
       requestUrl,
       user,
-      cache: deps.cache,
       docStore: deps.docStore,
       governanceIncidentsDir: deps.governanceIncidentsDir,
     })) {

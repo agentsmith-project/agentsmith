@@ -243,7 +243,7 @@ src/
 - [Verification Campaigns v1](./docs/testing/verification-campaigns-v1.md) — release-grade automated verification、evidence、story、visual 与 verdict 的执行说明
 - [User Guides Index](./docs/user-guides/README.md) — 用户手册总入口（MVP-first）
 - [Personal Connections & Workspace Integrations](./docs/user-guides/third-party-accounts-feishu.md) — 用户级个人连接、workspace integrations 与 Feishu 连接说明
-- [File Library Client Mount](./docs/user-guides/file-library-local-mount.md) — 本地挂载 project file library 与双向同步校验
+- [File Library Access Model](./docs/user-guides/file-library-access-model.md) — Files Web/API 与 task HOME 展示模型
 - [Product Doc Artifacts](./docs/user-guides/product-doc-artifacts.md) — 生成产品说明截图与配套 Markdown 产物
 - [Marketing Assets](./marketing/README.md) — 刷新 marketing 截图资产
 - [Product Engineering Governance Methodology](./docs/design/agentsmith-product-engineering-governance-methodology-v1.md) — 产品设计、工程交付与治理方法论基线

@@ -1,5 +1,6 @@
 import type http from 'node:http';
 import { EventEmitter } from 'node:events';
+import { Readable } from 'node:stream';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { InMemoryCache, InMemoryJsonDocStore } from '@mbos/adapters-private';
 import type { NodeApiDeps } from './node-api-deps.js';
@@ -242,11 +243,6 @@ function createEndpointStreamDeps(args?: {
       ensureEndpointNamespace,
       forwardRequest,
     },
-    downloadFileLibraryObjectUseCase: {
-      execute: vi.fn(async () => {
-        throw new Error('should_not_download_attachments_in_external_stream_tests');
-      }),
-    },
   } as unknown as NodeApiDeps;
 
   return {
@@ -385,6 +381,93 @@ describe('selectLatestCanonicalBranchLeaf', () => {
       delete process.env.PUBLIC_API_BASE_URL;
     } else {
       process.env.PUBLIC_API_BASE_URL = previousPublicApiBase;
+    }
+  });
+
+  it('uses the active AFSCP storage adapter for file-library image downloads passed to execution message compilation', async () => {
+    const previousPublicApiBase = process.env.PUBLIC_API_BASE_URL;
+    process.env.PUBLIC_API_BASE_URL = 'http://localhost:20000';
+    const downloadObject = vi.fn(async (input: {
+      workspaceId: string;
+      projectId: string;
+      libraryId: string;
+      objectPath: string;
+    }) => ({
+      meta: {
+        key: input.objectPath,
+        content_type: 'image/png',
+        size_bytes: 7,
+        last_modified: '2026-01-01T00:00:00.000Z',
+        user_metadata: {
+          metadata_url: 'postgres://root:secret@storage/juicefs',
+          filesystem_name: 'raw-storage-name',
+        },
+      },
+      download: {
+        stream: Readable.from([Buffer.from('pngdata')]),
+        cancel: vi.fn(async () => undefined),
+      },
+    }));
+    const { deps } = createEndpointStreamDeps();
+    deps.fileLibraryStorageAdapter = {
+      enabled: true,
+      downloadObject,
+    } as never;
+
+    try {
+      await expect(handleChatStreamRoute({
+        route: {
+          kind: 'chatMessagesStream',
+          workspaceId: 'ws_external_stream',
+          projectId: 'proj_external_stream',
+          sessionId: 'session_external_stream',
+        },
+        method: 'POST',
+        req: { headers: {} } as http.IncomingMessage,
+        res: createResponse(),
+        deps,
+        user: { id: 'user_external_stream', name: 'External Stream User', email: 'external-stream@example.com' },
+        json: vi.fn(),
+        readBody: async () => ({
+          input: { role: 'user', content: 'describe image' },
+        }),
+        sseWrite: vi.fn(),
+      })).resolves.toBe(true);
+
+      const compileArgs = buildChatExecutionMessagesMock.mock.calls.at(-1)?.[0];
+      expect(compileArgs).toBeTruthy();
+      const downloaded = await compileArgs.downloadFileLibraryObject({
+        workspaceId: 'ws_external_stream',
+        projectId: 'proj_external_stream',
+        libraryId: 'lib_images',
+        key: 'chat/session/image.png',
+      });
+      const reader = downloaded.body.getReader();
+      const chunks: Uint8Array[] = [];
+      try {
+        while (true) {
+          const next = await reader.read();
+          if (next.done) break;
+          chunks.push(next.value);
+        }
+      } finally {
+        reader.releaseLock();
+      }
+
+      expect(Buffer.concat(chunks.map((chunk) => Buffer.from(chunk))).toString('utf8')).toBe('pngdata');
+      expect(downloadObject).toHaveBeenCalledWith({
+        workspaceId: 'ws_external_stream',
+        projectId: 'proj_external_stream',
+        libraryId: 'lib_images',
+        objectPath: 'chat/session/image.png',
+      });
+      expect(JSON.stringify(downloaded)).not.toMatch(/metadata_url|filesystem_name|storage_bucket_url|recommended_mount|juicefs/i);
+    } finally {
+      if (previousPublicApiBase === undefined) {
+        delete process.env.PUBLIC_API_BASE_URL;
+      } else {
+        process.env.PUBLIC_API_BASE_URL = previousPublicApiBase;
+      }
     }
   });
 });
@@ -911,11 +994,6 @@ describe('handleChatStreamRoute session state ordering', () => {
         getCredentialSecret: vi.fn(async () => 'secret'),
       },
       universalProxyService,
-      downloadFileLibraryObjectUseCase: {
-        execute: vi.fn(async () => {
-          throw new Error('should_not_download_attachments_in_direct_stop_test');
-        }),
-      },
     } as unknown as NodeApiDeps;
     const req = { headers: {} } as http.IncomingMessage;
     const res = createResponse();

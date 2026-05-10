@@ -126,7 +126,6 @@ function insertTemporaryDegradedLibrary(base: ReadyLibraryFixture, runtime: File
         name,
         description: runtime.degradedLibraryDescription,
         status: 'degraded',
-        filesystem_name: `release_ux_${id}`,
         created_by_user_id: base.createdByUserId,
         created_at: now,
         updated_at: now,
@@ -185,7 +184,7 @@ test.describe('@lane-real files management UX walkthrough', () => {
     deleteTemporaryLibrary(degradedLibrary.id);
   });
 
-  test('shows ready and degraded file libraries with operator-friendly recovery UX', async ({ page }, testInfo) => {
+  test('shows ready and degraded file libraries with operator-friendly Web Files recovery UX', async ({ page }, testInfo) => {
     test.setTimeout(180_000);
     const trace = await createUxTraceBundleWriter({
       outputRoot: process.env.UX_TRACE_OUTPUT_ROOT,
@@ -222,33 +221,14 @@ test.describe('@lane-real files management UX walkthrough', () => {
       await readyCard.click();
 
       await expect(page.getByTestId(`files__library-status--${readyLibrary.libraryId}`)).toContainText('Ready');
-      await expect(page.getByTestId(`files__library-desktop-access--${readyLibrary.libraryId}`)).toBeEnabled();
+      await expect(page.getByTestId(`files__library-desktop-access--${readyLibrary.libraryId}`)).toHaveCount(0);
       await expect(page.getByTestId(`files__library-manual-mount-access--${readyLibrary.libraryId}`)).toHaveCount(0);
+      await expect(page.getByTestId('files__dialog__desktop-mount-access')).toHaveCount(0);
       await expect(page.getByTestId('files__library-unavailable-empty-state')).toHaveCount(0);
       await expect(page.locator('body')).not.toContainText('files.file_manager.loading');
       await page.screenshot({ path: testInfo.outputPath('files-ready-overview.png'), fullPage: true });
       await captureTrace('open-files-library');
-
-      await page.getByTestId(`files__library-desktop-access--${readyLibrary.libraryId}`).click();
-      const desktopDialog = page.getByTestId('files__dialog__desktop-mount-access');
-      await expect(desktopDialog).toBeVisible();
-      await expect(desktopDialog).toContainText('AgentSmith Desktop');
-      await expect(page.getByTestId('files__desktop-setup__download')).toBeVisible();
-      await expect(page.getByTestId('files__desktop-mount__deployment-url')).toHaveValue(/https?:\/\/.+/);
-      await expect(page.getByTestId('files__desktop-setup__debug-panel')).toHaveCount(0);
-      await page.screenshot({ path: testInfo.outputPath('files-ready-desktop-dialog.png'), fullPage: true });
-
-      await page.getByTestId('files__desktop-setup__platform-windows').click();
-      await expect(page.getByTestId('files__desktop-setup__platform-windows')).toHaveAttribute('data-state', 'active');
-      await page.screenshot({ path: testInfo.outputPath('files-ready-desktop-dialog-windows.png'), fullPage: true });
-
-      await page.getByTestId('files__desktop-setup__debug-toggle').click();
-      await expect(page.getByTestId('files__desktop-setup__debug-panel')).toBeVisible();
-      await expect(page.getByTestId('files__library-mount__filesystem-name')).toBeVisible();
-      await page.screenshot({ path: testInfo.outputPath('files-ready-desktop-dialog-debug.png'), fullPage: true });
-      await captureTrace('review-desktop-access');
-      await page.keyboard.press('Escape');
-      await expect(desktopDialog).toHaveCount(0);
+      await captureTrace('review-web-files-access');
 
       const degradedCard = page.getByTestId(`files__library-item--${degradedLibrary.id}`);
       await expect(degradedCard).toBeVisible({ timeout: 30_000 });
@@ -256,13 +236,13 @@ test.describe('@lane-real files management UX walkthrough', () => {
 
       await expect(page.getByTestId(`files__library-status--${degradedLibrary.id}`)).toContainText('Degraded');
       await expect(page.getByTestId(`files__library-status-reason--${degradedLibrary.id}`)).toContainText(
-        'This library needs attention before you rely on it for local mounts.',
+        'This library needs attention before you rely on it for file work.',
       );
-      await expect(page.getByTestId(`files__library-desktop-access--${degradedLibrary.id}`)).toBeDisabled();
+      await expect(page.getByTestId(`files__library-desktop-access--${degradedLibrary.id}`)).toHaveCount(0);
       await expect(page.getByTestId(`files__library-manual-mount-access--${degradedLibrary.id}`)).toHaveCount(0);
       await expect(page.getByTestId('files__library-unavailable-empty-state')).toBeVisible();
       await expect(page.getByTestId('files__library-unavailable-empty-state')).toContainText(
-        'This library is not ready for browsing or local mounts.',
+        'This library is not ready for browsing.',
       );
       await expect(page.getByTestId('files__library-unavailable-empty-state')).toContainText(
         'delete the broken record and create a new one',

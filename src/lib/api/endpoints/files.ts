@@ -5,12 +5,22 @@
  */
 
 import type {
+  CancelFileLibraryRestoreRequest,
+  CreateFileLibraryRestorePreviewRequest,
+  CreateFileLibrarySavePointRequest,
+  CreateTaskFileTemplateRequest,
   FileLibrary,
+  FileLibraryRestorePreview,
+  FileLibraryRestoreRun,
   FileObjectsListParams,
   FileObjectsListResponse,
   FileObjectMeta,
-  FileObjectShareLink,
   FileObjectItem,
+  FileLibrarySavePoint,
+  ListFileLibrarySavePointsResponse,
+  ListTaskFileTemplatesResponse,
+  RunFileLibraryRestoreRequest,
+  TaskFileTemplate,
 } from '../types';
 import type { ApiClient, ApiRequestOptions } from '../client';
 
@@ -52,6 +62,116 @@ export class FilesAPI {
   async deleteLibrary(workspaceId: string, projectId: string, libraryId: string): Promise<void> {
     return this.client.delete<void>(
       `/workspaces/${workspaceId}/projects/${projectId}/file-libraries/${libraryId}`,
+    );
+  }
+
+  async listSavePoints(
+    workspaceId: string,
+    projectId: string,
+    libraryId: string,
+  ): Promise<ListFileLibrarySavePointsResponse> {
+    return this.client.get<ListFileLibrarySavePointsResponse>(
+      `/workspaces/${workspaceId}/projects/${projectId}/file-libraries/${libraryId}/save-points`,
+    );
+  }
+
+  async createSavePoint(
+    workspaceId: string,
+    projectId: string,
+    libraryId: string,
+    payload: CreateFileLibrarySavePointRequest,
+  ): Promise<FileLibrarySavePoint> {
+    return this.client.post<FileLibrarySavePoint>(
+      `/workspaces/${workspaceId}/projects/${projectId}/file-libraries/${libraryId}/save-points`,
+      payload,
+    );
+  }
+
+  async createRestorePreview(
+    workspaceId: string,
+    projectId: string,
+    libraryId: string,
+    payload: CreateFileLibraryRestorePreviewRequest,
+  ): Promise<FileLibraryRestorePreview> {
+    return this.client.post<FileLibraryRestorePreview>(
+      `/workspaces/${workspaceId}/projects/${projectId}/file-libraries/${libraryId}/restore-preview`,
+      payload,
+    );
+  }
+
+  async runRestore(
+    workspaceId: string,
+    projectId: string,
+    libraryId: string,
+    payload: RunFileLibraryRestoreRequest,
+  ): Promise<FileLibraryRestoreRun> {
+    return this.client.post<FileLibraryRestoreRun>(
+      `/workspaces/${workspaceId}/projects/${projectId}/file-libraries/${libraryId}/restore-run`,
+      payload,
+    );
+  }
+
+  async cancelRestore(
+    workspaceId: string,
+    projectId: string,
+    libraryId: string,
+    payload: CancelFileLibraryRestoreRequest,
+  ): Promise<FileLibraryRestorePreview> {
+    return this.client.post<FileLibraryRestorePreview>(
+      `/workspaces/${workspaceId}/projects/${projectId}/file-libraries/${libraryId}/restore-cancel`,
+      payload,
+    );
+  }
+
+  async listTaskFileTemplates(
+    workspaceId: string,
+    projectId: string,
+  ): Promise<ListTaskFileTemplatesResponse> {
+    return this.client.get<ListTaskFileTemplatesResponse>(
+      `/workspaces/${workspaceId}/projects/${projectId}/task-file-templates`,
+    );
+  }
+
+  async createTaskFileTemplate(
+    workspaceId: string,
+    projectId: string,
+    payload: CreateTaskFileTemplateRequest,
+  ): Promise<TaskFileTemplate> {
+    return this.client.post<TaskFileTemplate>(
+      `/workspaces/${workspaceId}/projects/${projectId}/task-file-templates`,
+      payload,
+    );
+  }
+
+  async publishTaskFileTemplate(
+    workspaceId: string,
+    projectId: string,
+    templateId: string,
+  ): Promise<TaskFileTemplate> {
+    return this.client.post<TaskFileTemplate>(
+      `/workspaces/${workspaceId}/projects/${projectId}/task-file-templates/${templateId}/publish`,
+      undefined,
+    );
+  }
+
+  async unpublishTaskFileTemplate(
+    workspaceId: string,
+    projectId: string,
+    templateId: string,
+  ): Promise<TaskFileTemplate> {
+    return this.client.post<TaskFileTemplate>(
+      `/workspaces/${workspaceId}/projects/${projectId}/task-file-templates/${templateId}/unpublish`,
+      undefined,
+    );
+  }
+
+  async deleteTaskFileTemplate(
+    workspaceId: string,
+    projectId: string,
+    templateId: string,
+  ): Promise<void> {
+    return this.client.delete<void>(
+      `/workspaces/${workspaceId}/projects/${projectId}/task-file-templates/${templateId}`,
     );
   }
 
@@ -144,7 +264,7 @@ export class FilesAPI {
     const formData = new FormData();
     if (prefix) formData.append('prefix', prefix);
     if (overwrite) formData.append('overwrite', 'true');
-    formData.append('file', file);
+    formData.append('file', file, file.name);
 
     const parsed = await this.client.postMultipart<{
       kind: 'file';
@@ -234,18 +354,4 @@ export class FilesAPI {
     );
   }
 
-  async createObjectShareLink(
-    workspaceId: string,
-    projectId: string,
-    libraryId: string,
-    payload: { key: string; expires_in_seconds?: number },
-  ): Promise<FileObjectShareLink> {
-    return this.client.post<FileObjectShareLink>(
-      `/workspaces/${workspaceId}/projects/${projectId}/file-libraries/${libraryId}/share-link`,
-      {
-        path: payload.key,
-        expires_in_seconds: payload.expires_in_seconds,
-      },
-    );
-  }
 }

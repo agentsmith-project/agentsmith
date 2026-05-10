@@ -34,4 +34,18 @@ describe('queryKeys scope contracts', () => {
       'proj_001',
     ]);
   });
+
+  it('scopes file-library recovery and task-file-template caches by project and library', () => {
+    expect(queryKeys.fileLibraries.savePoints('ws_default', 'proj_001', 'lib_1')).toEqual([
+      'file-library-save-points',
+      'ws_default',
+      'proj_001',
+      'lib_1',
+    ]);
+    expect(queryKeys.taskFileTemplates.list('ws_default', 'proj_001')).toEqual([
+      'task-file-templates',
+      'ws_default',
+      'proj_001',
+    ]);
+  });
 });

@@ -246,15 +246,6 @@
       ]
     },
     {
-      "sceneId": "dialog-files-mount-access",
-      "route": "/en-US/workspaces/ws_default/projects/proj_001/files?library_id=lib_shared_default",
-      "recipeFamily": "overlay_dialog",
-      "authLane": "authed",
-      "stableMarkers": [
-        "files__dialog__desktop-mount-access"
-      ]
-    },
-    {
       "sceneId": "dialog-files-library-create",
       "route": "/en-US/workspaces/ws_default/projects/proj_001/files?library_id=lib_shared_default",
       "recipeFamily": "overlay_dialog",
@@ -679,21 +670,6 @@
             "src/components/files/files-page/FilesPageContent.tsx"
           ],
           "capture": "full_page",
-          "authLane": "authed",
-          "themes": [
-            "default"
-          ]
-        },
-        {
-          "sceneId": "dialog-files-mount-access",
-          "scenarioId": "dialog-files-mount-access",
-          "scenario": "Desktop mount access dialog.",
-          "group": "overlay_drawers",
-          "codeRefs": [
-            "e2e/visual.spec.ts",
-            "src/components/files/files-page/FilesPageContent.tsx"
-          ],
-          "capture": "viewport",
           "authLane": "authed",
           "themes": [
             "default"

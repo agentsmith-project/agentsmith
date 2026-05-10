@@ -61,7 +61,20 @@ export const ErrorResponseSchema = z.object({
 
 export const FileLibraryBoundTaskStatusSchema = z.enum(['active', 'archived']);
 export const FileLibraryTaskHomeBindingStatusSchema = z.enum(['unbound', 'bound']);
-
+export const FileLibrarySourceSchema = z.literal('agent_task_files');
+export const FileLibraryStorageStatusSchema = z.enum([
+  'initializing',
+  'available',
+  'degraded',
+  'unavailable',
+  'admin_action_required',
+]);
+export const FileLibraryStorageNextActionSchema = z.enum([
+  'wait',
+  'retry',
+  'contact_admin',
+  'contact_support',
+]).nullable();
 type BoundTaskSafeFields = {
   bound_task_visible?: boolean;
   bound_task_id?: string;
@@ -112,6 +125,27 @@ export const AgentTaskWorkspaceFileLibraryRequiredErrorSchema = z.object({
   error_code: z.literal('AGENT_TASK_WORKSPACE_FILE_LIBRARY_REQUIRED'),
   message: z.literal('agent_task_workspace_file_library_required'),
   field: z.literal('workspace_file_library_id'),
+  request_id: z.string().optional(),
+}).strict();
+
+export const AgentTaskFileTemplateRequiredErrorSchema = z.object({
+  error_code: z.literal('AGENT_TASK_FILE_TEMPLATE_REQUIRED'),
+  message: z.literal('agent_task_file_template_required'),
+  field: z.literal('task_file_template_id'),
+  request_id: z.string().optional(),
+}).strict();
+
+export const TaskFileTemplateNotFoundErrorSchema = z.object({
+  error_code: z.literal('TASK_FILE_TEMPLATE_NOT_FOUND'),
+  message: z.literal('task_file_template_not_found'),
+  task_file_template_id: z.string().min(1).optional(),
+  request_id: z.string().optional(),
+}).strict();
+
+export const TaskFileTemplateUnpublishedErrorSchema = z.object({
+  error_code: z.literal('TASK_FILE_TEMPLATE_UNPUBLISHED'),
+  message: z.literal('task_file_template_unpublished'),
+  task_file_template_id: z.string().min(1),
   request_id: z.string().optional(),
 }).strict();
 
@@ -198,6 +232,9 @@ export const AgentTaskWorkspaceBindingConflictErrorSchema = z.object({
 export const AgentTaskFileLibraryErrorSchema = z.union([
   AgentTaskWorkspaceModeInvalidErrorSchema,
   AgentTaskWorkspaceFileLibraryRequiredErrorSchema,
+  AgentTaskFileTemplateRequiredErrorSchema,
+  TaskFileTemplateNotFoundErrorSchema,
+  TaskFileTemplateUnpublishedErrorSchema,
   FileLibraryNotFoundErrorSchema,
   FileLibraryForbiddenErrorSchema,
   FileLibraryNotReadyErrorSchema,
@@ -216,15 +253,15 @@ export const FileLibraryCatalogSchema = z.object({
   name: z.string().min(1),
   description: z.string().optional(),
   visibility: z.literal('shared'),
-  provider: z.literal('s3').optional(),
-  bucket: z.string().min(1).optional(),
-  object_prefix: z.string().min(1).optional(),
-  doc_namespace: z.string().min(1).optional(),
-  vector_namespace: z.string().min(1).optional(),
+  source: FileLibrarySourceSchema,
+  file_library_home_segment: z.string().min(1),
+  storage_status: FileLibraryStorageStatusSchema.optional(),
+  storage_next_action: FileLibraryStorageNextActionSchema.optional(),
+  status_reason: z.string().min(1).optional(),
   created_by_user_id: z.string().min(1),
   created_at: z.string().datetime(),
   updated_at: z.string().datetime(),
-});
+}).strict();
 
 export const ListFileLibraryCatalogsResponseSchema = z.object({
   items: z.array(FileLibraryCatalogSchema),
@@ -245,112 +282,6 @@ export const UpdateFileLibraryCatalogRequestSchema = z
     message: 'at_least_one_field_required',
   });
 
-export const FileLibraryObjectListPrefixItemSchema = z.object({
-  kind: z.literal('prefix'),
-  prefix: z.string().min(1),
-  name: z.string().min(1),
-});
-
-export const FileLibraryObjectListObjectItemSchema = z.object({
-  kind: z.literal('object'),
-  key: z.string().min(1),
-  name: z.string().min(1),
-  size_bytes: z.number().int().nonnegative(),
-  content_type: z.string().min(1),
-  etag: z.string().optional(),
-  last_modified: z.string().datetime(),
-});
-
-export const FileLibraryObjectListItemSchema = z.union([
-  FileLibraryObjectListPrefixItemSchema,
-  FileLibraryObjectListObjectItemSchema,
-]);
-
-export const ListFileLibraryObjectsResponseSchema = z.object({
-  prefix: z.string(),
-  items: z.array(FileLibraryObjectListItemSchema),
-  next_continuation_token: z.string().nullable(),
-});
-
-export const ListFileLibraryObjectsQuerySchema = z.object({
-  prefix: z.string().optional(),
-  delimiter: z.literal('/').default('/'),
-  page_size: z
-    .coerce
-    .number()
-    .int()
-    .min(1)
-    .max(1000)
-    .optional(),
-  continuation_token: z.string().optional(),
-  search: z.string().trim().min(1).max(256).optional(),
-  sort_by: z.enum(['name', 'size_bytes', 'last_modified']).default('name'),
-  sort_order: z.enum(['asc', 'desc']).default('asc'),
-});
-
-export const CreateFileLibraryObjectFolderRequestSchema = z.object({
-  prefix: z.string().min(1),
-});
-
-export const UploadFileLibraryObjectResponseSchema = z.object({
-  key: z.string().min(1),
-  size_bytes: z.number().int().nonnegative(),
-  content_type: z.string().min(1),
-  etag: z.string().optional(),
-  last_modified: z.string().datetime(),
-});
-
-export const DeleteFileLibraryObjectsRequestSchema = z.object({
-  keys: z.array(z.string().min(1)).min(1),
-});
-
-export const DeleteFileLibraryObjectsResponseSchema = z.object({
-  results: z.array(
-    z.object({
-      key: z.string().min(1),
-      status: z.enum(['deleted', 'not_found', 'error']),
-      error_code: z.string().optional(),
-      message: z.string().optional(),
-    }),
-  ),
-});
-
-export const MoveFileLibraryObjectRequestSchema = z.object({
-  from_key: z.string().min(1),
-  to_key: z.string().min(1),
-  overwrite: z.boolean().optional(),
-});
-
-export const FileLibraryObjectMetaResponseSchema = z.object({
-  key: z.string().min(1),
-  size_bytes: z.number().int().nonnegative(),
-  content_type: z.string().min(1),
-  etag: z.string().optional(),
-  last_modified: z.string().datetime(),
-  user_metadata: z.record(z.string(), z.string()).optional(),
-});
-
-export const FileLibraryObjectDownloadQuerySchema = z.object({
-  key: z.string().min(1),
-});
-
-export const FileLibraryObjectShareLinkCreateRequestSchema = z.object({
-  key: z.string().min(1),
-  expires_in_seconds: z
-    .number()
-    .int()
-    .min(60)
-    .max(604800)
-    .optional(),
-});
-
-export const FileLibraryObjectShareLinkResponseSchema = z.object({
-  key: z.string().min(1),
-  url: z.string().url(),
-  expires_at: z.string().datetime(),
-  expires_in_seconds: z.number().int().min(60).max(604800),
-});
-
 export const FileLibraryStatusSchema = z.enum([
   'creating',
   'ready',
@@ -365,17 +296,22 @@ export const FileLibrarySchema = z.object({
   project_id: z.string().min(1),
   name: z.string().min(1),
   description: z.string().optional(),
+  visibility: z.literal('shared').optional(),
+  source: FileLibrarySourceSchema,
+  file_library_home_segment: z.string().min(1),
   status: FileLibraryStatusSchema,
+  storage_status: FileLibraryStorageStatusSchema.optional(),
+  storage_next_action: FileLibraryStorageNextActionSchema.optional(),
+  status_reason: z.string().min(1).optional(),
   task_home_binding_status: FileLibraryTaskHomeBindingStatusSchema,
   bound_task_id: z.string().min(1).optional(),
   bound_task_title: z.string().min(1).optional(),
   bound_task_status: FileLibraryBoundTaskStatusSchema.optional(),
   bound_task_visible: z.boolean(),
-  filesystem_name: z.string().min(1),
   created_by_user_id: z.string().min(1),
   created_at: z.string().datetime(),
   updated_at: z.string().datetime(),
-}).superRefine((value, ctx) => {
+}).strict().superRefine((value, ctx) => {
   validateBoundTaskSafeFields(value, ctx);
   if (value.task_home_binding_status === 'unbound' && value.bound_task_visible) {
     ctx.addIssue({
@@ -402,11 +338,120 @@ export const UpdateFileLibraryRequestSchema = z.object({
   message: 'at_least_one_field_required',
 });
 
+export const FileLibrarySavePointSchema = z.object({
+  id: z.string().min(1),
+  file_library_id: z.string().min(1),
+  message: z.string().min(1).optional(),
+  created_at: z.string().datetime(),
+}).strict();
+
+export const ListFileLibrarySavePointsResponseSchema = z.object({
+  items: z.array(FileLibrarySavePointSchema),
+}).strict();
+
+export const CreateFileLibrarySavePointRequestSchema = z.object({
+  message: z.string().trim().min(1).max(500).optional(),
+}).strict();
+
+export const FileLibraryRestorePreviewStatusSchema = z.enum([
+  'previewing',
+  'ready',
+  'failed',
+  'canceling',
+  'canceled',
+  'restoring',
+  'restored',
+]);
+
+export const FileLibraryRestorePreviewChangeSummarySchema = z.object({
+  count: z.number().int().nonnegative(),
+  samples: z.array(z.string().min(1)).default([]),
+}).strict();
+
+export const FileLibraryRestorePreviewSummarySchema = z.object({
+  added: FileLibraryRestorePreviewChangeSummarySchema,
+  changed: FileLibraryRestorePreviewChangeSummarySchema,
+  removed: FileLibraryRestorePreviewChangeSummarySchema,
+  destructive: z.boolean(),
+}).strict();
+
+export const FileLibraryRestorePreviewBlockerCodeSchema = z.enum([
+  'active_writer_sessions',
+  'stale_writer_session_uncertain',
+  'restore_preview_stale',
+  'restore_plan_requires_recovery',
+]);
+
+export const FileLibraryRestorePreviewBlockerSchema = z.object({
+  code: FileLibraryRestorePreviewBlockerCodeSchema,
+  message: z.string().min(1).optional(),
+}).strict();
+
+export const FileLibraryRestorePreviewSchema = z.object({
+  id: z.string().min(1),
+  file_library_id: z.string().min(1),
+  source_save_point_id: z.string().min(1),
+  status: FileLibraryRestorePreviewStatusSchema,
+  message: z.string().min(1).optional(),
+  summary: FileLibraryRestorePreviewSummarySchema.optional(),
+  blockers: z.array(FileLibraryRestorePreviewBlockerSchema).optional(),
+  stale: z.boolean().optional(),
+  created_at: z.string().datetime(),
+  updated_at: z.string().datetime(),
+}).strict();
+
+export const CreateFileLibraryRestorePreviewRequestSchema = z.object({
+  save_point_id: z.string().min(1),
+}).strict();
+
+export const RunFileLibraryRestoreRequestSchema = z.object({
+  restore_preview_id: z.string().min(1),
+}).strict();
+
+export const CancelFileLibraryRestoreRequestSchema = z.object({
+  restore_preview_id: z.string().min(1),
+}).strict();
+
+export const FileLibraryRestoreRunSchema = z.object({
+  id: z.string().min(1),
+  file_library_id: z.string().min(1),
+  restore_preview_id: z.string().min(1),
+  status: z.enum(['pending', 'succeeded', 'failed']),
+  created_at: z.string().datetime(),
+  updated_at: z.string().datetime(),
+}).strict();
+
+export const TaskFileTemplateStatusSchema = z.enum(['unpublished', 'published', 'failed']);
+
+export const TaskFileTemplateSchema = z.object({
+  id: z.string().min(1),
+  workspace_id: z.string().min(1),
+  project_id: z.string().min(1),
+  name: z.string().min(1),
+  description: z.string().optional(),
+  status: TaskFileTemplateStatusSchema,
+  source_library_id: z.string().min(1),
+  source_save_point_id: z.string().min(1).optional(),
+  created_by_user_id: z.string().min(1),
+  created_at: z.string().datetime(),
+  updated_at: z.string().datetime(),
+}).strict();
+
+export const ListTaskFileTemplatesResponseSchema = z.object({
+  items: z.array(TaskFileTemplateSchema),
+}).strict();
+
+export const CreateTaskFileTemplateRequestSchema = z.object({
+  name: z.string().min(1).max(255),
+  description: z.string().max(1000).optional(),
+  source_library_id: z.string().min(1),
+}).strict();
+
 export const TaskInputRefInputSchema = z.object({
   kind: z.enum(['library_object', 'artifact', 'url']),
 }).passthrough();
 
-export const TaskWorkspaceModeSchema = z.enum(['create_new', 'use_existing']);
+export const TaskWorkspaceModeSchema = z.enum(['create_new', 'use_existing', 'use_template']);
 
 export const CreateTaskRequestSchema = z.object({
   title: z.string().min(1).max(255),
@@ -417,9 +462,10 @@ export const CreateTaskRequestSchema = z.object({
   workspace_mode: TaskWorkspaceModeSchema.optional(),
   workspace_name: z.string().min(1).max(255).optional(),
   workspace_file_library_id: z.string().min(1).optional(),
+  task_file_template_id: z.string().min(1).optional(),
 }).strict().superRefine((value, ctx) => {
   const workspaceMode = value.workspace_mode ?? 'create_new';
-  if (workspaceMode === 'create_new' && value.workspace_file_library_id) {
+  if (workspaceMode === 'create_new' && (value.workspace_file_library_id || value.task_file_template_id)) {
     ctx.addIssue({
       code: 'custom',
       message: 'agent_task_workspace_mode_invalid',
@@ -433,39 +479,27 @@ export const CreateTaskRequestSchema = z.object({
       path: ['workspace_file_library_id'],
     });
   }
-});
-
-export const FileLibraryGatewayStatusSchema = z.enum([
-  'not_started',
-  'starting',
-  'ready',
-  'degraded',
-  'failed',
-  'stopped',
-]);
-
-export const FileLibraryBackendSchema = z.object({
-  library_id: z.string().min(1),
-  filesystem_name: z.string().min(1),
-  provisioning_status: FileLibraryStatusSchema,
-  gateway_status: FileLibraryGatewayStatusSchema,
-  postgres: z.object({
-    host: z.string().min(1),
-    port: z.number().int().positive(),
-    database: z.string().min(1),
-    username: z.string().min(1),
-  }),
-  minio: z.object({
-    endpoint: z.string().min(1),
-    bucket: z.string().min(1),
-    region: z.string().min(1).optional(),
-  }),
-  gateway: z.object({
-    loopback_url: z.string().url().optional(),
-    port: z.number().int().positive().optional(),
-    last_started_at: z.string().datetime().optional(),
-  }).optional(),
-  last_error: z.string().optional(),
+  if (workspaceMode === 'use_existing' && value.task_file_template_id) {
+    ctx.addIssue({
+      code: 'custom',
+      message: 'agent_task_workspace_mode_invalid',
+      path: ['workspace_mode'],
+    });
+  }
+  if (workspaceMode === 'use_template' && !value.task_file_template_id) {
+    ctx.addIssue({
+      code: 'custom',
+      message: 'agent_task_file_template_required',
+      path: ['task_file_template_id'],
+    });
+  }
+  if (workspaceMode === 'use_template' && value.workspace_file_library_id) {
+    ctx.addIssue({
+      code: 'custom',
+      message: 'agent_task_workspace_mode_invalid',
+      path: ['workspace_mode'],
+    });
+  }
 });
 
 export const FileLibraryEntrySchema = z.union([
@@ -526,29 +560,6 @@ export const MoveFileLibraryEntryRequestSchema = z.object({
 
 export const FileLibraryDownloadQuerySchema = z.object({
   path: z.string().min(1),
-});
-
-export const CreateFileLibraryShareLinkRequestSchema = z.object({
-  path: z.string().min(1),
-  expires_in_seconds: z.number().int().positive().max(60 * 60 * 24 * 7).optional(),
-});
-
-export const FileLibraryClientMountAccessSchema = z.object({
-  filesystem_name: z.string().min(1),
-  metadata_url: z.string().min(1),
-  storage_bucket_url: z.string().min(1).optional(),
-  recommended_mount_path: z.string().min(1),
-  platform_notes: z.array(z.string().min(1)).default([]),
-  recommended_mount_commands: z.object({
-    linux: z.string().min(1),
-    macos: z.string().min(1),
-    windows: z.string().min(1),
-  }),
-  created_at: z.string().datetime(),
-});
-
-export const StorageCredentialExchangeResponseSchema = z.object({
-  client_mount_access: FileLibraryClientMountAccessSchema,
 });
 
 export const WorkspaceFoundationInitializationRequestSchema = z.object({
@@ -619,6 +630,9 @@ export type ListProjectsResponse = z.infer<typeof ListProjectsResponseSchema>;
 export type ErrorResponse = z.infer<typeof ErrorResponseSchema>;
 export type AgentTaskWorkspaceModeInvalidError = z.infer<typeof AgentTaskWorkspaceModeInvalidErrorSchema>;
 export type AgentTaskWorkspaceFileLibraryRequiredError = z.infer<typeof AgentTaskWorkspaceFileLibraryRequiredErrorSchema>;
+export type AgentTaskFileTemplateRequiredError = z.infer<typeof AgentTaskFileTemplateRequiredErrorSchema>;
+export type TaskFileTemplateNotFoundError = z.infer<typeof TaskFileTemplateNotFoundErrorSchema>;
+export type TaskFileTemplateUnpublishedError = z.infer<typeof TaskFileTemplateUnpublishedErrorSchema>;
 export type FileLibraryNotFoundError = z.infer<typeof FileLibraryNotFoundErrorSchema>;
 export type FileLibraryForbiddenError = z.infer<typeof FileLibraryForbiddenErrorSchema>;
 export type FileLibraryNotReadyError = z.infer<typeof FileLibraryNotReadyErrorSchema>;
@@ -633,24 +647,32 @@ export type FileLibraryCatalogDTO = z.infer<typeof FileLibraryCatalogSchema>;
 export type ListFileLibraryCatalogsResponse = z.infer<typeof ListFileLibraryCatalogsResponseSchema>;
 export type CreateFileLibraryCatalogRequest = z.infer<typeof CreateFileLibraryCatalogRequestSchema>;
 export type UpdateFileLibraryCatalogRequest = z.infer<typeof UpdateFileLibraryCatalogRequestSchema>;
-export type ListFileLibraryObjectsResponse = z.infer<typeof ListFileLibraryObjectsResponseSchema>;
-export type ListFileLibraryObjectsQuery = z.infer<typeof ListFileLibraryObjectsQuerySchema>;
-export type CreateFileLibraryObjectFolderRequest = z.infer<typeof CreateFileLibraryObjectFolderRequestSchema>;
-export type UploadFileLibraryObjectResponse = z.infer<typeof UploadFileLibraryObjectResponseSchema>;
-export type DeleteFileLibraryObjectsRequest = z.infer<typeof DeleteFileLibraryObjectsRequestSchema>;
-export type DeleteFileLibraryObjectsResponse = z.infer<typeof DeleteFileLibraryObjectsResponseSchema>;
-export type MoveFileLibraryObjectRequest = z.infer<typeof MoveFileLibraryObjectRequestSchema>;
-export type FileLibraryObjectMetaResponse = z.infer<typeof FileLibraryObjectMetaResponseSchema>;
-export type FileLibraryObjectDownloadQuery = z.infer<typeof FileLibraryObjectDownloadQuerySchema>;
-export type FileLibraryObjectShareLinkCreateRequest = z.infer<typeof FileLibraryObjectShareLinkCreateRequestSchema>;
-export type FileLibraryObjectShareLinkResponse = z.infer<typeof FileLibraryObjectShareLinkResponseSchema>;
 export type FileLibraryDTO = z.infer<typeof FileLibrarySchema>;
+export type FileLibrarySource = z.infer<typeof FileLibrarySourceSchema>;
+export type FileLibraryStorageStatus = z.infer<typeof FileLibraryStorageStatusSchema>;
+export type FileLibraryStorageNextAction = z.infer<typeof FileLibraryStorageNextActionSchema>;
 export type ListFileLibrariesResponse = z.infer<typeof ListFileLibrariesResponseSchema>;
 export type CreateFileLibraryRequest = z.infer<typeof CreateFileLibraryRequestSchema>;
 export type UpdateFileLibraryRequest = z.infer<typeof UpdateFileLibraryRequestSchema>;
+export type FileLibrarySavePointDTO = z.infer<typeof FileLibrarySavePointSchema>;
+export type ListFileLibrarySavePointsResponse = z.infer<typeof ListFileLibrarySavePointsResponseSchema>;
+export type CreateFileLibrarySavePointRequest = z.infer<typeof CreateFileLibrarySavePointRequestSchema>;
+export type FileLibraryRestorePreviewStatus = z.infer<typeof FileLibraryRestorePreviewStatusSchema>;
+export type FileLibraryRestorePreviewChangeSummary = z.infer<typeof FileLibraryRestorePreviewChangeSummarySchema>;
+export type FileLibraryRestorePreviewSummary = z.infer<typeof FileLibraryRestorePreviewSummarySchema>;
+export type FileLibraryRestorePreviewBlockerCode = z.infer<typeof FileLibraryRestorePreviewBlockerCodeSchema>;
+export type FileLibraryRestorePreviewBlocker = z.infer<typeof FileLibraryRestorePreviewBlockerSchema>;
+export type FileLibraryRestorePreviewDTO = z.infer<typeof FileLibraryRestorePreviewSchema>;
+export type CreateFileLibraryRestorePreviewRequest = z.infer<typeof CreateFileLibraryRestorePreviewRequestSchema>;
+export type RunFileLibraryRestoreRequest = z.infer<typeof RunFileLibraryRestoreRequestSchema>;
+export type CancelFileLibraryRestoreRequest = z.infer<typeof CancelFileLibraryRestoreRequestSchema>;
+export type FileLibraryRestoreRunDTO = z.infer<typeof FileLibraryRestoreRunSchema>;
+export type TaskFileTemplateStatus = z.infer<typeof TaskFileTemplateStatusSchema>;
+export type TaskFileTemplateDTO = z.infer<typeof TaskFileTemplateSchema>;
+export type ListTaskFileTemplatesResponse = z.infer<typeof ListTaskFileTemplatesResponseSchema>;
+export type CreateTaskFileTemplateRequest = z.infer<typeof CreateTaskFileTemplateRequestSchema>;
 export type TaskInputRefInput = z.infer<typeof TaskInputRefInputSchema>;
 export type CreateTaskRequest = z.infer<typeof CreateTaskRequestSchema>;
-export type FileLibraryBackendDTO = z.infer<typeof FileLibraryBackendSchema>;
 export type ListFileLibraryEntriesQuery = z.infer<typeof ListFileLibraryEntriesQuerySchema>;
 export type ListFileLibraryEntriesResponse = z.infer<typeof ListFileLibraryEntriesResponseSchema>;
 export type CreateFileLibraryFolderRequest = z.infer<typeof CreateFileLibraryFolderRequestSchema>;
@@ -658,8 +680,5 @@ export type DeleteFileLibraryEntriesRequest = z.infer<typeof DeleteFileLibraryEn
 export type DeleteFileLibraryEntriesResponse = z.infer<typeof DeleteFileLibraryEntriesResponseSchema>;
 export type MoveFileLibraryEntryRequest = z.infer<typeof MoveFileLibraryEntryRequestSchema>;
 export type FileLibraryDownloadQuery = z.infer<typeof FileLibraryDownloadQuerySchema>;
-export type CreateFileLibraryShareLinkRequest = z.infer<typeof CreateFileLibraryShareLinkRequestSchema>;
-export type FileLibraryClientMountAccess = z.infer<typeof FileLibraryClientMountAccessSchema>;
-export type StorageCredentialExchangeResponse = z.infer<typeof StorageCredentialExchangeResponseSchema>;
 export type WorkspaceFoundationInitializationRequest = z.infer<typeof WorkspaceFoundationInitializationRequestSchema>;
 export type WorkspaceFoundationInitializationResult = z.infer<typeof WorkspaceFoundationInitializationResultSchema>;

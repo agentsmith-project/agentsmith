@@ -36,10 +36,10 @@
       "dependencyId": "managed-agent-task-runner",
       "kind": "service",
       "required": true,
-      "note": "Agent Task work is validated through the managed runner path, not a legacy compatibility selector."
+      "note": "Agent Task work is validated through the managed runner path, with no extra selector for users to resolve."
     }
   ],
-  "narrative": "从成员视角看，AI 工作连续性的关键不是兼容旧多路径矩阵，而是 Chat 与 Agent Task 各自只有一个清晰心智：Chat 面向 endpoint/model，Agent Task 面向托管 Agent Runner。两个入口都继续同一个项目上下文和治理真相，不把协议或 runner 差异暴露成用户要选择的产品路径。",
+  "narrative": "从成员视角看，AI 工作连续性的关键是 Chat 与 Agent Task 各自只有一个清晰心智：Chat 面向 endpoint/model，Agent Task 面向托管 Agent Runner。两个入口都继续同一个项目上下文和治理真相，不把协议或 runner 差异暴露成用户要选择的产品路径。",
   "scenes": [
     {
       "sceneId": "project-chat",

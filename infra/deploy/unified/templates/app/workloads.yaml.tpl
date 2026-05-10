@@ -267,28 +267,19 @@ spec:
                   key: SANDBOX_SERVICE_KEY
             - name: K8S_NAMESPACE
               value: "{{NAMESPACE}}"
-            - name: JUICEFS_CSI_DRIVER
-              value: csi.juicefs.com
-            - name: JUICEFS_STORAGE_CAPACITY
-              value: 1Pi
-            - name: JUICEFS_STORAGE_CLASS_NAME
-              value: ""
-            - name: JUICEFS_MOUNT_OPTIONS
-              value: ""
-            - name: JUICEFS_MOUNT_IMAGE
-              value: juicedata/mount:ce-v1.3.1
-            - name: JUICEFS_STORAGE_ENDPOINT
-              value: "{{JUICEFS_BUCKET_ENDPOINT_FOR_INTERNAL_MOUNT}}"
-            - name: JUICEFS_STORAGE_ACCESS_KEY
+            - name: AFSCP_BASE_URL
+              value: "{{AFSCP_BASE_URL}}"
+            - name: AFSCP_ORCHESTRATOR_CALLER_SERVICE
+              value: agentsmith-sandbox-manager
+            - name: AFSCP_ORCHESTRATOR_ACTOR_TYPE
+              value: system
+            - name: AFSCP_ORCHESTRATOR_ACTOR_ID
+              value: agentsmith-sandbox-manager
+            - name: AFSCP_ORCHESTRATOR_SERVICE_TOKEN
               valueFrom:
                 secretKeyRef:
                   name: agentsmith-app-secrets
-                  key: MINIO_ACCESS_KEY
-            - name: JUICEFS_STORAGE_SECRET_KEY
-              valueFrom:
-                secretKeyRef:
-                  name: agentsmith-app-secrets
-                  key: MINIO_SECRET_KEY
+                  key: AFSCP_ORCHESTRATOR_SERVICE_TOKEN
           volumeMounts:
             - name: config
               mountPath: /etc/sandbox-manager/manager-config.yaml

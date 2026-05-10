@@ -1,9 +1,6 @@
 import type { NodeApiDeps } from '../node-api-deps.js';
-import type { FileLibraryMountAccess, FileLibraryRecord } from '../file-library-model.js';
-import {
-  JsonDocProjectFileLibraryCatalogRepo,
-  JsonDocProjectFileLibraryMountAccessRepo,
-} from '../file-library-persistence.js';
+import type { FileLibraryRecord } from '../file-library-model.js';
+import { JsonDocProjectFileLibraryCatalogRepo } from '../file-library-persistence.js';
 import type { TaskRecord } from './task-models.js';
 import {
   findTaskFileLibraryBinding,
@@ -17,8 +14,7 @@ export type TaskWorkspaceBindingGuardErrorCode =
   | 'FILE_LIBRARY_DELETING'
   | 'FILE_LIBRARY_NOT_READY'
   | 'AGENT_TASK_WORKSPACE_BINDING_CONFLICT'
-  | 'FILE_LIBRARY_FORBIDDEN'
-  | 'FILE_LIBRARY_WORKSPACE_ACCESS_UNAVAILABLE';
+  | 'FILE_LIBRARY_FORBIDDEN';
 
 export class TaskWorkspaceBindingGuardError extends Error {
   constructor(
@@ -41,7 +37,6 @@ export type TaskWorkspaceBindingGuardResult = {
   task: TaskRecord;
   library: FileLibraryRecord;
   binding: TaskFileLibraryBinding;
-  mountAccess?: FileLibraryMountAccess;
 };
 
 export function isTaskWorkspaceBindingGuardError(error: unknown): error is TaskWorkspaceBindingGuardError {
@@ -77,7 +72,6 @@ export async function resolveTaskWorkspaceBindingGuard(args: {
   deps: NodeApiDeps;
   task: TaskRecord;
   actorUserId: string;
-  requireMountAccess?: boolean;
   canUpdateProjectFiles?: () => Promise<boolean>;
 }): Promise<TaskWorkspaceBindingGuardResult> {
   const fileLibraryId = args.task.workspace_file_library_id?.trim();
@@ -176,30 +170,9 @@ export async function resolveTaskWorkspaceBindingGuard(args: {
     );
   }
 
-  if (!args.requireMountAccess) {
-    return {
-      task: args.task,
-      library,
-      binding: currentBinding,
-    };
-  }
-  const mountAccess = await new JsonDocProjectFileLibraryMountAccessRepo(args.deps.docStore).getById(
-    args.task.workspace_id,
-    args.task.project_id,
-    fileLibraryId,
-  );
-  if (!mountAccess) {
-    throw new TaskWorkspaceBindingGuardError(
-      404,
-      'FILE_LIBRARY_WORKSPACE_ACCESS_UNAVAILABLE',
-      'file_library_mount_access_not_found',
-      { taskId: args.task.id, fileLibraryId },
-    );
-  }
   return {
     task: args.task,
     library,
     binding: currentBinding,
-    mountAccess,
   };
 }

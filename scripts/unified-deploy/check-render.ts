@@ -697,6 +697,16 @@ function checkSandboxManagerContract(documents: readonly Record<string, unknown>
       addFailure(failures, 'ConfigMap/agentsmith-app-config', `${forbiddenKey} must not be rendered in agentsmith-app-config`);
     }
   }
+  for (const forbiddenKey of [
+    'INTERNAL_AGENT_JUICEFS_META_HOST_OVERRIDE',
+    'INTERNAL_AGENT_JUICEFS_META_PORT_OVERRIDE',
+    'JUICEFS_BUCKET_ENDPOINT_FOR_INTERNAL_MOUNT',
+    'FILE_LIBRARY_GATEWAY_ROOT_PASSWORD_SEED',
+  ]) {
+    if (Object.prototype.hasOwnProperty.call(appConfigData, forbiddenKey)) {
+      addFailure(failures, 'ConfigMap/agentsmith-app-config', `${forbiddenKey} must not be rendered in agentsmith-app-config`);
+    }
+  }
 
   if (podSpec.serviceAccountName !== SANDBOX_MANAGER_SERVICE_ACCOUNT) {
     addFailure(failures, 'Deployment/agentsmith-sandbox-manager', 'sandbox-manager must use its dedicated ServiceAccount');

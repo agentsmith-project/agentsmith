@@ -1,8 +1,33 @@
-import { describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { createDefaultNodeApiDeps } from '../index.js';
+import { AfscpClientError } from '../afscp-error-mapper.js';
+import {
+  ProjectAfscpNamespaceStore,
+  ProjectAfscpResourceOwnershipStore,
+} from '../project-afscp-namespace-store.js';
 import { setProjectAdminGroupMembersPersisted } from '../project-member-governance-persistence.js';
+import {
+  ProjectStorageBootstrapService,
+  type ProjectStorageBootstrapAfscpClient,
+  type ProjectStorageBootstrapServicePort,
+} from '../project-storage-bootstrap-service.js';
 import { seedPersistedSystemWorkspacesForTest } from '../../../../src/lib/system-admin/workspace-registry/persistence.js';
 import { apiFetch, apiFetchWithToken, startServer, startServerWithDeps } from './test-support.js';
+
+const originalKeycloakAdmin = process.env.KEYCLOAK_ADMIN;
+const originalKeycloakAdminPassword = process.env.KEYCLOAK_ADMIN_PASSWORD;
+
+beforeEach(() => {
+  process.env.KEYCLOAK_ADMIN = 'agentsmith-admin';
+  process.env.KEYCLOAK_ADMIN_PASSWORD = 'admin-secret';
+});
+
+afterEach(() => {
+  if (originalKeycloakAdmin === undefined) delete process.env.KEYCLOAK_ADMIN;
+  else process.env.KEYCLOAK_ADMIN = originalKeycloakAdmin;
+  if (originalKeycloakAdminPassword === undefined) delete process.env.KEYCLOAK_ADMIN_PASSWORD;
+  else process.env.KEYCLOAK_ADMIN_PASSWORD = originalKeycloakAdminPassword;
+});
 
 function workspaceRecord(args: {
   id: string;
@@ -436,6 +461,182 @@ describe('api-entry-node project routes integration', () => {
 
     const getAfterDelete = await apiFetch(baseUrl, `/api/v1/workspaces/ws_default/projects/${created.id}`);
     expect(getAfterDelete.status).toBe(404);
+  });
+
+  it('invokes project storage bootstrap after project create without changing the response shape', async () => {
+    const deps = createDefaultNodeApiDeps();
+    const bootstrapProjectStorage = vi.fn<ProjectStorageBootstrapServicePort['bootstrapProjectStorage']>(
+      async () => undefined,
+    );
+    deps.projectStorageBootstrapService = {
+      enabled: true,
+      bootstrapProjectStorage,
+      reconcileProjectStorage: vi.fn(),
+      ensureProjectStorageReady: vi.fn(),
+    };
+    const { baseUrl } = startServerWithDeps(deps);
+
+    const createRes = await apiFetch(baseUrl, '/api/v1/workspaces/ws_default/projects', {
+      method: 'POST',
+      headers: {
+        'content-type': 'application/json',
+        'x-request-id': 'req-project-bootstrap',
+      },
+      body: JSON.stringify({
+        name: 'Storage Bootstrapped Project',
+        visibility: 'private',
+        join_policy: 'approval_required',
+      }),
+    });
+
+    expect(createRes.status).toBe(201);
+    const created = (await createRes.json()) as Record<string, unknown>;
+    expect(Object.keys(created).sort()).toEqual([
+      'created_at',
+      'id',
+      'join_policy',
+      'name',
+      'owner_id',
+      'status',
+      'updated_at',
+      'visibility',
+      'workspace_id',
+    ]);
+    expect(created.name).toBe('Storage Bootstrapped Project');
+    expect(bootstrapProjectStorage).toHaveBeenCalledWith({
+      workspaceId: 'ws_default',
+      projectId: created.id,
+      actorUserId: 'user_test',
+      requestId: 'req-project-bootstrap',
+    });
+  });
+
+  it('keeps project create response stable and non-leaking when bootstrap hits an unexpected internal error', async () => {
+    const deps = createDefaultNodeApiDeps();
+    const namespaceStore = new ProjectAfscpNamespaceStore(deps.docStore);
+    const resourceOwnershipStore = new ProjectAfscpResourceOwnershipStore(deps.docStore);
+    const upsertNamespace = vi.fn<ProjectStorageBootstrapAfscpClient['upsertNamespace']>(
+      async () => {
+        throw new Error('bootstrap_programmer_error token=svc-secret-token /internal/v1/namespaces/ns_secret');
+      },
+    );
+    deps.projectAfscpNamespaceStore = namespaceStore;
+    deps.projectStorageBootstrapService = new ProjectStorageBootstrapService({
+      namespaceStore,
+      resourceOwnershipStore,
+      client: {
+        upsertNamespace,
+        putNamespaceVolumeBinding: vi.fn(),
+        getOperation: vi.fn(),
+      },
+      defaultVolumeId: 'vol_default',
+      productCallerService: 'agentsmith-api',
+      correlationIdFactory: () => 'corr-generated',
+    });
+    const { baseUrl } = startServerWithDeps(deps);
+
+    const createRes = await apiFetch(baseUrl, '/api/v1/workspaces/ws_default/projects', {
+      method: 'POST',
+      headers: {
+        'content-type': 'application/json',
+        'x-request-id': 'req-project-bootstrap-failed',
+      },
+      body: JSON.stringify({
+        name: 'Storage Failure Project',
+        visibility: 'private',
+        join_policy: 'approval_required',
+      }),
+    });
+
+    expect(createRes.status).toBe(201);
+    const body = (await createRes.json()) as { id: string; name: string };
+    expect(body.name).toBe('Storage Failure Project');
+    expect(JSON.stringify(body)).not.toContain('svc-secret-token');
+    expect(JSON.stringify(body)).not.toContain('/internal/v1');
+    await expect(namespaceStore.getProjectNamespace({
+      workspaceId: 'ws_default',
+      projectId: body.id,
+    })).resolves.toMatchObject({
+      status: 'blocked',
+      stage: 'namespace_upsert',
+      next_action: 'admin_repair',
+      retryable: false,
+      namespace_upsert_operation_id: null,
+      volume_binding_operation_id: null,
+      last_error_code: 'project_storage_bootstrap_failed',
+    });
+  });
+
+  it('keeps project create response stable when project storage bootstrap records an AFSCP failure internally', async () => {
+    const deps = createDefaultNodeApiDeps();
+    const namespaceStore = new ProjectAfscpNamespaceStore(deps.docStore);
+    const resourceOwnershipStore = new ProjectAfscpResourceOwnershipStore(deps.docStore);
+    const upsertNamespace = vi.fn<ProjectStorageBootstrapAfscpClient['upsertNamespace']>(
+      async () => {
+        throw new AfscpClientError({
+          status: 503,
+          code: 'unavailable',
+          message: 'unavailable',
+          retryable: true,
+          correlation_id: 'req-project-bootstrap-afscp-failed',
+          operation_id: 'op_namespace_failed',
+        });
+      },
+    );
+    const putNamespaceVolumeBinding = vi.fn<ProjectStorageBootstrapAfscpClient['putNamespaceVolumeBinding']>();
+    deps.projectAfscpNamespaceStore = namespaceStore;
+    deps.projectStorageBootstrapService = new ProjectStorageBootstrapService({
+      namespaceStore,
+      resourceOwnershipStore,
+      client: {
+        upsertNamespace,
+        putNamespaceVolumeBinding,
+        getOperation: vi.fn(),
+      },
+      defaultVolumeId: 'vol_default',
+      productCallerService: 'agentsmith-api',
+      correlationIdFactory: () => 'corr-generated',
+    });
+    const { baseUrl } = startServerWithDeps(deps);
+
+    const createRes = await apiFetch(baseUrl, '/api/v1/workspaces/ws_default/projects', {
+      method: 'POST',
+      headers: {
+        'content-type': 'application/json',
+        'x-request-id': 'req-project-bootstrap-afscp-failed',
+      },
+      body: JSON.stringify({
+        name: 'Storage Failure Project',
+        visibility: 'private',
+        join_policy: 'approval_required',
+      }),
+    });
+
+    expect(createRes.status).toBe(201);
+    const body = (await createRes.json()) as { id: string; name: string };
+    expect(body.name).toBe('Storage Failure Project');
+    expect(JSON.stringify(body)).not.toContain('svc-secret-token');
+    expect(JSON.stringify(body)).not.toContain('/internal/v1');
+    expect(upsertNamespace).toHaveBeenCalledWith(expect.objectContaining({
+      actor: { type: 'user', id: 'user_test' },
+      correlationId: 'req-project-bootstrap-afscp-failed',
+    }));
+    expect(putNamespaceVolumeBinding).not.toHaveBeenCalled();
+    await expect(namespaceStore.getProjectNamespace({
+      workspaceId: 'ws_default',
+      projectId: body.id,
+    })).resolves.toMatchObject({
+      status: 'pending',
+      stage: 'namespace_upsert',
+      next_action: 'retry_now',
+      retryable: true,
+      namespace_upsert_operation_id: 'op_namespace_failed',
+      volume_binding_operation_id: null,
+      last_error_code: 'unavailable',
+    });
+
+    const getRes = await apiFetch(baseUrl, `/api/v1/workspaces/ws_default/projects/${body.id}`);
+    expect(getRes.status).toBe(200);
   });
 
   it('returns admin permissions for configured project admins', async () => {

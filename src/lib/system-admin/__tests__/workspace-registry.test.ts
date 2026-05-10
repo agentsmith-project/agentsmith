@@ -16,6 +16,10 @@ import {
   resetSystemWorkspaceRegistryPersistenceForTest,
   seedPersistedSystemWorkspacesForTest,
 } from '../workspace-registry/persistence';
+import {
+  type WorkspaceStorageLifecycleInput,
+  setWorkspaceStorageLifecycleRunnerForTest,
+} from '../workspace-storage-lifecycle';
 
 const keycloakDirectoryModule = vi.hoisted(() => ({
   verifyKeycloakLoginIdentityProvider: vi.fn(async () => ({
@@ -40,15 +44,19 @@ vi.mock('../keycloak-user-directory', () => keycloakDirectoryModule);
 
 describe('system workspace registry', () => {
   const originalEnv = { ...process.env };
+  let workspaceStorageLifecycleRunner: ReturnType<typeof vi.fn<(input: WorkspaceStorageLifecycleInput) => Promise<void>>>;
 
   beforeEach(() => {
     process.env = { ...originalEnv };
     const dir = mkdtempSync(join(tmpdir(), 'agentsmith-system-ws-'));
     process.env.SYSTEM_WORKSPACE_PROVISIONING_PATH = join(dir, 'provisioning');
     resetSystemWorkspaceRegistryPersistenceForTest();
+    workspaceStorageLifecycleRunner = vi.fn(async () => undefined);
+    setWorkspaceStorageLifecycleRunnerForTest(async (input) => workspaceStorageLifecycleRunner(input));
   });
 
   afterEach(() => {
+    setWorkspaceStorageLifecycleRunnerForTest(null);
     resetSystemWorkspaceRegistryPersistenceForTest();
     process.env = originalEnv;
   });
@@ -202,6 +210,10 @@ describe('system workspace registry', () => {
 
     const disabled = await disableSystemWorkspace('platform_ops');
     expect(disabled.provisioning_status).toBe('disabled');
+    expect(workspaceStorageLifecycleRunner).toHaveBeenCalledWith({
+      workspaceId: 'platform_ops',
+      reason: 'workspace_disable',
+    });
     await expect(getPublicSystemWorkspace('platform_ops')).resolves.toBeNull();
   });
 
@@ -221,9 +233,21 @@ describe('system workspace registry', () => {
     await expect(deleteSystemWorkspace('delete_guard_workspace')).rejects.toMatchObject({
       code: 'WORKSPACE_DISABLE_REQUIRED_BEFORE_DELETE',
     });
+    expect(workspaceStorageLifecycleRunner).not.toHaveBeenCalledWith({
+      workspaceId: 'delete_guard_workspace',
+      reason: 'workspace_delete',
+    });
 
     await disableSystemWorkspace('delete_guard_workspace');
     await expect(deleteSystemWorkspace('delete_guard_workspace')).resolves.toBeUndefined();
+    expect(workspaceStorageLifecycleRunner).toHaveBeenCalledWith({
+      workspaceId: 'delete_guard_workspace',
+      reason: 'workspace_disable',
+    });
+    expect(workspaceStorageLifecycleRunner).toHaveBeenCalledWith({
+      workspaceId: 'delete_guard_workspace',
+      reason: 'workspace_delete',
+    });
   });
 
   it('allows saving workspace admin by pending email when directory search is unavailable', async () => {

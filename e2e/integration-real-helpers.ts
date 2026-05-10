@@ -4,7 +4,6 @@ import {
   mkdir,
   mkdtemp,
   readFile,
-  readdir,
   rm,
   writeFile,
 } from "node:fs/promises";
@@ -125,7 +124,6 @@ export const SYSTEM_ADMIN_USERNAME =
   process.env.SYSTEM_ADMIN_USERNAME ?? "mbos-admin";
 export const SYSTEM_ADMIN_PASSWORD =
   process.env.SYSTEM_ADMIN_PASSWORD ?? "mbos-admin";
-const TASK_WORKSPACE_MOUNT_SESSIONS_FILE = "task-workspace-mount-sessions.json";
 const DEFAULT_TERMINAL_SESSION_CREATE_TIMEOUT_MS = 300_000;
 type ChildProcessWithIgnoredStdin = ChildProcessByStdio<
   null,
@@ -341,64 +339,6 @@ async function killProcessTree(
   }
 }
 
-async function unmountWorkspaceTree(root: string): Promise<void> {
-  let entries: string[] = [];
-  try {
-    entries = await readdir(root);
-  } catch {
-    return;
-  }
-  for (const entry of entries) {
-    const mountPath = path.join(root, entry);
-    await new Promise<void>((resolve) => {
-      const proc = spawn("juicefs", ["umount", mountPath], { stdio: "ignore" });
-      proc.once("error", () => resolve());
-      proc.once("exit", () => resolve());
-      setTimeout(() => resolve(), 5_000);
-    });
-  }
-}
-
-async function unmountSingleWorkspace(mountPath: string): Promise<void> {
-  await new Promise<void>((resolve) => {
-    const proc = spawn("juicefs", ["umount", mountPath], { stdio: "ignore" });
-    proc.once("error", () => resolve());
-    proc.once("exit", () => resolve());
-    setTimeout(() => resolve(), 5_000);
-  });
-}
-
-export async function collectTrackedTaskWorkspaceMounts(
-  workspaceRoot: string,
-): Promise<string[]> {
-  try {
-    const registryPath = path.join(
-      workspaceRoot,
-      TASK_WORKSPACE_MOUNT_SESSIONS_FILE,
-    );
-    const content = await readFile(registryPath, "utf8");
-    const parsed = JSON.parse(content) as {
-      sessions?: Array<{ mount_path?: unknown }>;
-    };
-    const seen = new Set<string>();
-    const mounts: string[] = [];
-    for (const session of Array.isArray(parsed.sessions)
-      ? parsed.sessions
-      : []) {
-      const mountPath =
-        typeof session?.mount_path === "string"
-          ? session.mount_path.trim()
-          : "";
-      if (!mountPath || seen.has(mountPath)) continue;
-      seen.add(mountPath);
-      mounts.push(mountPath);
-    }
-    return mounts;
-  } catch {
-    return [];
-  }
-}
-
 const PREPARED_TASK_WORKSPACE_LOG_PREFIX =
   "[agent-task-runner][debug] prepared task workspace ";
 
@@ -567,15 +507,6 @@ function rewritePreparedTaskRuntimePathsPrefix(
     skillsDir: rewritePathPrefix(paths.skillsDir, fromPrefix, toPrefix),
     artifactsDir: rewritePathPrefix(paths.artifactsDir, fromPrefix, toPrefix),
   };
-}
-
-async function cleanupTrackedTaskWorkspaceMounts(
-  workspaceRoot: string,
-): Promise<void> {
-  const mountPaths = await collectTrackedTaskWorkspaceMounts(workspaceRoot);
-  for (const mountPath of mountPaths) {
-    await unmountSingleWorkspace(mountPath);
-  }
 }
 
 async function spawnAndCapture(
@@ -3794,19 +3725,32 @@ export async function requestTaskWorkspaceAccess(args: {
   taskId: string;
 }): Promise<{
   task_id: string;
-  workspace_binding_mode: string;
-  workspace_dir_name: string;
   file_library_id: string;
   file_library_name: string;
-  filesystem_name: string;
-  metadata_url: string;
-  storage_bucket_url?: string;
-  task_home_path: string;
-  workspace_path: string;
-  artifacts_path: string;
-  library_root_path: string;
-  recommended_mount_path?: string;
-  created_at?: string;
+  runtime_profile: "managed" | "developer";
+  task_home_binding: {
+    binding_id: string;
+    provider: "afscp";
+    mode: "pre_mounted";
+    task_id: string;
+    file_library_id: string;
+    task_home_segment: string;
+    generation: string;
+    holder: {
+      holder_id: string;
+      holder_kind: "runner_workspace" | "terminal_session" | "notebook_run";
+      binding_generation: string;
+      lease_epoch: string;
+      issued_at: string;
+      expires_at: string;
+    };
+    paths: {
+      task_home_path: string;
+      workspace_path: string;
+      artifacts_path: string;
+      library_root_path: ".";
+    };
+  };
 }> {
   const authToken = await readStoredAuthToken(args.page);
   const response = await args.page.request.post(
@@ -3819,22 +3763,12 @@ export async function requestTaskWorkspaceAccess(args: {
       `task_workspace_access_failed:${response.status()}:${body}`,
     );
   }
-  return (await response.json()) as {
-    task_id: string;
-    workspace_binding_mode: string;
-    workspace_dir_name: string;
-    file_library_id: string;
-    file_library_name: string;
-    filesystem_name: string;
-    metadata_url: string;
-    storage_bucket_url?: string;
-    task_home_path: string;
-    workspace_path: string;
-    artifacts_path: string;
-    library_root_path: string;
-    recommended_mount_path?: string;
-    created_at?: string;
-  };
+  const payload = await response.json();
+  const serialized = JSON.stringify(payload);
+  if (/metadata_url|storage_bucket_url|recommended_mount|filesystem_name|juicefs\s+mount/i.test(serialized)) {
+    throw new Error("task_workspace_access_raw_storage_material");
+  }
+  return payload as Awaited<ReturnType<typeof requestTaskWorkspaceAccess>>;
 }
 
 export function resolveWorkspaceLibraryRootPath(input: {
@@ -4064,7 +3998,7 @@ export async function waitForAgentTaskExecutionOutcome(args: {
   );
 }
 
-async function readJuicefsCsiStatus(namespace: string): Promise<{
+async function readAfscpStorageCsiStatus(namespace: string): Promise<{
   desired: number;
   available: number;
   controllerReady: number;
@@ -4113,7 +4047,7 @@ async function readJuicefsCsiStatus(namespace: string): Promise<{
   ]);
 
   if (daemonSet.code !== 0 || controller.code !== 0 || pods.code !== 0) {
-    throw new Error("juicefs_csi_status_unavailable");
+    throw new Error("afscp_storage_csi_status_unavailable");
   }
 
   const daemonSetJson = JSON.parse(daemonSet.stdout || "{}") as {
@@ -4158,10 +4092,9 @@ async function readJuicefsCsiStatus(namespace: string): Promise<{
   };
 }
 
-async function detectJuicefsCsiNamespace(): Promise<string> {
+async function detectAfscpStorageCsiNamespace(): Promise<string> {
   const configuredNamespace =
-    process.env.JUICEFS_CSI_NAMESPACE?.trim() ||
-    process.env.INTERNAL_AGENT_JUICEFS_CSI_NAMESPACE?.trim();
+    process.env.AFSCP_STORAGE_CSI_NAMESPACE?.trim();
   if (configuredNamespace) {
     return configuredNamespace;
   }
@@ -4203,13 +4136,13 @@ async function detectJuicefsCsiNamespace(): Promise<string> {
   return preferredNamespace;
 }
 
-export async function waitForJuicefsCsiReady(args?: {
+export async function waitForAfscpStorageCsiReady(args?: {
   namespace?: string;
   timeoutMs?: number;
   stableWindowMs?: number;
 }): Promise<void> {
   const namespace =
-    args?.namespace?.trim() || (await detectJuicefsCsiNamespace());
+    args?.namespace?.trim() || (await detectAfscpStorageCsiNamespace());
   const timeoutMs = args?.timeoutMs ?? 180_000;
   const stableWindowMs = args?.stableWindowMs ?? 15_000;
   const startedAt = Date.now();
@@ -4218,7 +4151,7 @@ export async function waitForJuicefsCsiReady(args?: {
 
   while (Date.now() - startedAt < timeoutMs) {
     try {
-      const status = await readJuicefsCsiStatus(namespace);
+      const status = await readAfscpStorageCsiStatus(namespace);
       const ready =
         status.desired > 0 &&
         status.available >= status.desired &&
@@ -4245,9 +4178,9 @@ export async function waitForJuicefsCsiReady(args?: {
     await new Promise((resolve) => setTimeout(resolve, 2_000));
   }
 
-  const status = await readJuicefsCsiStatus(namespace).catch(() => null);
+  const status = await readAfscpStorageCsiStatus(namespace).catch(() => null);
   throw new Error(
-    `juicefs_csi_not_ready:${namespace}:${status ? `desired=${status.desired}:available=${status.available}:controller_ready=${status.controllerReady}:restarts=${status.restartCountSum}:node_pods_ready=${status.nodePodsReady}` : "status_unavailable"}`,
+    `afscp_storage_csi_not_ready:${namespace}:${status ? `desired=${status.desired}:available=${status.available}:controller_ready=${status.controllerReady}:restarts=${status.restartCountSum}:node_pods_ready=${status.nodePodsReady}` : "status_unavailable"}`,
   );
 }
 
@@ -4774,8 +4707,6 @@ async function startAgentTaskRunnerProcessInternal(
                 });
               });
             }
-            await cleanupTrackedTaskWorkspaceMounts(workspaceRoot);
-            await unmountWorkspaceTree(workspaceRoot);
             await rm(workspaceRoot, { recursive: true, force: true }).catch(
               () => undefined,
             );
@@ -5015,7 +4946,7 @@ async function startAgentTaskRunnerDockerProcessInternal(
     "--env",
     "MBOS_AGENT_TASK_RUNNER_MODE=managed_local",
     "--env",
-    `MBOS_AGENT_JUICEFS_MOUNT_READY_TIMEOUT_MS=${process.env.INTEGRATION_AGENT_TASK_RUNNER_MOUNT_READY_TIMEOUT_MS?.trim() || "120000"}`,
+    `MBOS_AGENT_WORKSPACE_READY_TIMEOUT_MS=${process.env.INTEGRATION_AGENT_TASK_RUNNER_WORKSPACE_READY_TIMEOUT_MS?.trim() || "120000"}`,
     "--env",
     "MBOS_AGENT_WORKSPACE_ROOT=/home",
     "--env",
@@ -5091,7 +5022,6 @@ async function startAgentTaskRunnerDockerProcessInternal(
         stop: async () => {
           await preserveRunnerLogs();
           await spawnAndCapture("docker", ["rm", "-f", containerName]);
-          await unmountWorkspaceTree(workspaceRoot);
           await rm(workspaceRoot, { recursive: true, force: true }).catch(
             () => undefined,
           );
@@ -5113,7 +5043,6 @@ async function startAgentTaskRunnerDockerProcessInternal(
         containerName,
       ]);
       await spawnAndCapture("docker", ["rm", "-f", containerName]);
-      await unmountWorkspaceTree(workspaceRoot);
       await rm(workspaceRoot, { recursive: true, force: true }).catch(
         () => undefined,
       );
@@ -5173,115 +5102,8 @@ export async function reconnectCodexRunnerDockerProcessToTask(args: {
   });
 }
 
-export async function mountFileLibraryLocally(
-  metadataUrl: string,
-  storageBucketUrl?: string,
-  options?: {
-    metadataHostOverride?: string;
-    metadataPortOverride?: string;
-    storageEndpointOverride?: string;
-  },
-): Promise<{
-  mountPath: string;
-  stop: () => Promise<void>;
-}> {
-  const resolvedMetadataUrl = rewriteLocalClientMetadataUrl(
-    metadataUrl,
-    options,
-  );
-  const resolvedStorageBucketUrl = rewriteLocalClientStorageBucketUrl(
-    storageBucketUrl,
-    options,
-  );
-  const mountPath = await mkdtemp(
-    path.join(tmpdir(), "agentsmith-real-file-library-"),
-  );
-  const mountArgs = [
-    "mount",
-    resolvedMetadataUrl,
-    mountPath,
-    "-d",
-    "--check-storage",
-    "--attr-cache",
-    "0",
-    "--entry-cache",
-    "0",
-    "--dir-entry-cache",
-    "0",
-  ];
-  if ((resolvedStorageBucketUrl ?? "").trim()) {
-    mountArgs.push("--bucket", resolvedStorageBucketUrl!.trim());
-  }
-  let lastError = "";
-  for (let attempt = 1; attempt <= 3; attempt += 1) {
-    const mountResult = await spawnAndCapture("juicefs", mountArgs, {
-      env: withoutProxyEnv(),
-    });
-    if (mountResult.code === 0) {
-      return {
-        mountPath,
-        stop: async () => {
-          await unmountSingleWorkspace(mountPath);
-          await rm(mountPath, { recursive: true, force: true }).catch(
-            () => undefined,
-          );
-        },
-      };
-    }
-    lastError = mountResult.stderr.slice(-800);
-    await unmountSingleWorkspace(mountPath).catch(() => undefined);
-    if (attempt < 3) {
-      await new Promise((resolve) => setTimeout(resolve, 2_000));
-    }
-  }
-  await rm(mountPath, { recursive: true, force: true }).catch(() => undefined);
-  throw new Error(`local_juicefs_mount_failed:${lastError}`);
-}
-
-function rewriteLocalClientMetadataUrl(
-  metadataUrl: string,
-  options?: {
-    metadataHostOverride?: string;
-    metadataPortOverride?: string;
-  },
-): string {
-  const hostOverride = options?.metadataHostOverride?.trim();
-  const portOverride = options?.metadataPortOverride?.trim();
-  if (!hostOverride && !portOverride) {
-    return metadataUrl;
-  }
-  const rewritten = new URL(metadataUrl);
-  if (hostOverride) {
-    rewritten.hostname = hostOverride;
-  }
-  if (portOverride) {
-    rewritten.port = portOverride;
-  }
-  return rewritten.toString();
-}
-
-function rewriteLocalClientStorageBucketUrl(
-  storageBucketUrl?: string,
-  options?: {
-    storageEndpointOverride?: string;
-  },
-): string | undefined {
-  const rawUrl = storageBucketUrl?.trim();
-  if (!rawUrl) {
-    return storageBucketUrl;
-  }
-  const endpointOverride = options?.storageEndpointOverride?.trim();
-  if (!endpointOverride) {
-    return rawUrl;
-  }
-  const original = new URL(rawUrl);
-  const override = new URL(endpointOverride);
-  original.protocol = override.protocol;
-  original.username = override.username;
-  original.password = override.password;
-  original.hostname = override.hostname;
-  original.port = override.port;
-  return original.toString();
+export async function mountFileLibraryLocally(): Promise<never> {
+  throw new Error("file_library_local_mount_unavailable");
 }
 
 export async function waitForMountedWorkspacePath(
@@ -5381,118 +5203,4 @@ export async function createFileLibraryViaUi(
     throw new Error(`file_library_id_not_found:${name}`);
   }
   return libraryId;
-}
-
-export async function openMountAccessAndRevealMountDetails(
-  page: Page,
-  libraryName: string,
-): Promise<{ metadataUrl: string; storageBucketUrl: string | null }> {
-  const dismissOpenDialog = async () => {
-    for (let attempt = 0; attempt < 3; attempt += 1) {
-      const visibleDialog = page
-        .locator('[role="dialog"]:visible, [role="alertdialog"]:visible')
-        .last();
-      if (!(await visibleDialog.isVisible().catch(() => false))) {
-        return;
-      }
-      await page.keyboard.press("Escape");
-      await page.waitForTimeout(200);
-    }
-  };
-
-  await dismissOpenDialog();
-  const libraryItem = page
-    .locator('[data-testid^="files__library-item--"]')
-    .filter({ hasText: libraryName })
-    .first();
-  await expect(libraryItem).toBeVisible({ timeout: 30_000 });
-  const mountButton = libraryItem
-    .locator('[data-testid^="files__library-desktop-access--"]')
-    .first();
-  await expect(mountButton).toBeVisible({ timeout: 15_000 });
-  await mountButton.click();
-  const dialog = page.getByTestId("files__dialog__desktop-mount-access");
-  await expect(dialog).toBeVisible({ timeout: 30_000 });
-  await dialog.getByRole("button", { name: /reveal|显示|show/i }).click();
-  const metadataInput = dialog.getByTestId(
-    "files__library-mount__metadata-url",
-  );
-  await expect(metadataInput).not.toHaveValue(/••••/);
-  const bucketInput = dialog.getByTestId("files__library-mount__bucket-url");
-  return {
-    metadataUrl: (await metadataInput.inputValue()).trim(),
-    storageBucketUrl: (await bucketInput.inputValue()).trim() || null,
-  };
-}
-
-export async function createTempMountDir(prefix: string): Promise<string> {
-  return mkdtemp(path.join(tmpdir(), prefix));
-}
-
-export async function mountJuiceFs(
-  metadataUrl: string,
-  mountPoint: string,
-  storageBucketUrl?: string,
-): Promise<() => Promise<void>> {
-  await mkdir(mountPoint, { recursive: true });
-  const mountArgs = [
-    "mount",
-    metadataUrl,
-    mountPoint,
-    "-d",
-    "--attr-cache",
-    "0",
-    "--entry-cache",
-    "0",
-    "--dir-entry-cache",
-    "0",
-  ];
-  if ((storageBucketUrl ?? "").trim()) {
-    mountArgs.push("--bucket", storageBucketUrl!.trim());
-  }
-  await new Promise<void>((resolve, reject) => {
-    const proc = spawn("juicefs", mountArgs, {
-      stdio: ["ignore", "pipe", "pipe"],
-      env: withoutProxyEnv(),
-    });
-    let stderr = "";
-    proc.stderr.on("data", (chunk) => {
-      stderr += chunk.toString("utf-8");
-    });
-    proc.once("error", reject);
-    proc.once("exit", (code) => {
-      if (code !== 0) {
-        reject(
-          new Error(
-            `juicefs_mount_failed_${String(code)}:${stderr.slice(-500)}`,
-          ),
-        );
-        return;
-      }
-      resolve();
-    });
-    setTimeout(() => resolve(), 5_000);
-  });
-
-  return async () => {
-    await new Promise<void>((resolve) => {
-      const proc = spawn("juicefs", ["umount", mountPoint], {
-        stdio: "ignore",
-      });
-      proc.once("error", () => resolve());
-      proc.once("exit", () => resolve());
-      setTimeout(() => resolve(), 5_000);
-    });
-    await rm(mountPoint, { recursive: true, force: true });
-  };
-}
-
-export async function writeMountedFile(
-  mountPoint: string,
-  relativePath: string,
-  content: string,
-): Promise<void> {
-  const absolutePath = path.join(mountPoint, relativePath);
-  await mkdir(path.dirname(absolutePath), { recursive: true });
-  await writeFile(absolutePath, content, "utf-8");
 }

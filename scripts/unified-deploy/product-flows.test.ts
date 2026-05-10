@@ -206,9 +206,6 @@ function makeFocusedAgentTaskFetch(observed: { chatRequests: number }): ProductF
       libraryReadyReads += 1;
       return responseJson(200, { id: 'flib_focused', status: libraryReadyReads > 0 ? 'ready' : 'creating' });
     }
-    if (url.endsWith('/file-libraries/flib_focused/storage-credential-exchange') && method === 'POST') {
-      return responseJson(200, {});
-    }
     if (url.endsWith('/file-libraries/flib_focused/folders') && method === 'POST') {
       return responseText(204, '');
     }

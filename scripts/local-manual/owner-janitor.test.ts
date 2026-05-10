@@ -3,13 +3,13 @@ import os from 'node:os';
 import path from 'node:path';
 import { execFileSync } from 'node:child_process';
 import { afterEach, describe, expect, it } from 'vitest';
-import type { ManagedProcessInfo } from '../juicefs-orphan-preflight.js';
 import {
   buildCanonicalLocalManualRunnerPlan,
   buildLocalManualOwnerJanitorPlan,
   deriveInvalidLocalManualRunnerNormalizationCases,
   LOCAL_MANUAL_CANONICAL_RUNNER_NORMALIZATION_ROWS,
   type LocalManualCanonicalRunnerNormalizationRow,
+  type LocalManualOwnerJanitorProcessInfo,
   normalizeLocalManualOwnerJanitorRunnerPlan,
 } from './owner-janitor.js';
 
@@ -18,7 +18,7 @@ const ownerJanitorCli = path.join(repoRoot, 'scripts/local-manual/owner-janitor.
 const tsxBin = path.join(repoRoot, 'node_modules/.bin/tsx');
 const tempRoots: string[] = [];
 
-function buildProcess(overrides: Partial<ManagedProcessInfo> = {}): ManagedProcessInfo {
+function buildProcess(overrides: Partial<LocalManualOwnerJanitorProcessInfo> = {}): LocalManualOwnerJanitorProcessInfo {
   return {
     pid: 7100,
     ppid: 1,
@@ -196,7 +196,6 @@ describe('local-manual owner janitor', () => {
         }),
       ],
       portListenersByPort: new Map(),
-      gatewayStates: [],
       taskMountOwners: new Map(),
     });
 
@@ -240,7 +239,6 @@ describe('local-manual owner janitor', () => {
         }),
       ],
       portListenersByPort: new Map(),
-      gatewayStates: [],
       taskMountOwners: new Map(),
     });
 
@@ -333,7 +331,6 @@ describe('local-manual owner janitor', () => {
       allowUntrackedPortCleanup: false,
       processes: [],
       portListenersByPort: new Map(),
-      gatewayStates: [],
       taskMountOwners: new Map(),
     });
 
@@ -377,7 +374,6 @@ describe('local-manual owner janitor', () => {
         }),
       ],
       portListenersByPort: new Map([[3001, [5100]]]),
-      gatewayStates: [],
       taskMountOwners: new Map(),
     });
 
@@ -401,7 +397,6 @@ describe('local-manual owner janitor', () => {
       allowUntrackedPortCleanup: false,
       processes: [],
       portListenersByPort: new Map(),
-      gatewayStates: [],
       taskMountOwners: new Map(),
     });
 
@@ -425,7 +420,6 @@ describe('local-manual owner janitor', () => {
       allowUntrackedPortCleanup: false,
       processes: [],
       portListenersByPort: new Map(),
-      gatewayStates: [],
       taskMountOwners: new Map([[mountPath, null]]),
       mountedTaskPaths: [mountPath],
     });
@@ -454,7 +448,6 @@ describe('local-manual owner janitor', () => {
         }),
       ],
       portListenersByPort: new Map(),
-      gatewayStates: [],
       taskMountOwners: new Map(),
     });
 

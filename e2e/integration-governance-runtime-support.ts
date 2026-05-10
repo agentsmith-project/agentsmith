@@ -291,11 +291,6 @@ export async function openFileLibraryRoot(args: {
 }) {
   await args.page.goto(`/${LOCALE}/workspaces/${args.workspaceId}/projects/${args.projectId}/files`);
   await expect(args.page.getByTestId('files__workspace-surface')).toBeVisible({ timeout: 30_000 });
-  const mountDialog = args.page.getByTestId('files__dialog__desktop-mount-access');
-  if (await mountDialog.isVisible().catch(() => false)) {
-    await args.page.keyboard.press('Escape');
-    await expect(mountDialog).toBeHidden({ timeout: 10_000 });
-  }
   const libraryItem = args.page.locator('[data-testid^="files__library-item--"]').filter({ hasText: args.libraryName }).first();
   await expect(libraryItem).toBeVisible({ timeout: 30_000 });
   await libraryItem.click();

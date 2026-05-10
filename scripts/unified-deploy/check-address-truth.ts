@@ -11,8 +11,6 @@ import { endpointSliceAddressTypeForHost, renderUnifiedDeployFromFiles } from '.
 import {
   SUBSTRATE_NATIVE_PORTS,
   substrateKeycloakInternalBaseUrl,
-  substrateMinioInternalMountEndpoint,
-  substrateServiceFqdn,
   substrateServiceName,
 } from './substrate-address-roles';
 import {
@@ -306,19 +304,6 @@ function checkConfigAddressTruth(config: Record<string, unknown>, failures: Chec
   requireConfigValue(failures, config, 'INTERNAL_KEYCLOAK_BASE_URL', substrateKeycloakInternalBaseUrl());
   requireConfigValue(failures, config, 'MINIO_ENDPOINT', substrateServiceName('minio'));
   requireConfigValue(failures, config, 'MINIO_PORT', SUBSTRATE_NATIVE_PORTS.minio);
-  requireConfigValue(
-    failures,
-    config,
-    'INTERNAL_AGENT_JUICEFS_META_HOST_OVERRIDE',
-    substrateServiceFqdn('postgresql', namespace),
-  );
-  requireConfigValue(failures, config, 'INTERNAL_AGENT_JUICEFS_META_PORT_OVERRIDE', SUBSTRATE_NATIVE_PORTS.postgresql);
-  requireConfigValue(
-    failures,
-    config,
-    'JUICEFS_BUCKET_ENDPOINT_FOR_INTERNAL_MOUNT',
-    substrateMinioInternalMountEndpoint(namespace),
-  );
 
   const wsBase = stringValue(config, 'AGENT_EXECUTION_WS_BASE_URL');
   if (!isInternalWsOrigin(wsBase)) {

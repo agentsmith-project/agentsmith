@@ -220,8 +220,8 @@ describe('backend-real full gate runtime ownership contract', () => {
     expect(script).toContain('summary_args+=');
     expect(script).toContain('report_paths=(');
     expect(script).toContain('"${RESOURCE_RECOVERY_SMOKE_JSON}"');
-    expect(script).toContain('"${RESOURCE_RECOVERY_MOUNT_SYNC_JSON}"');
-    expect(script).toContain('FILE_LIBRARY_RESOURCE_RECOVERY_PROBE_PATH');
+    expect(script).not.toContain('"${RESOURCE_RECOVERY_MOUNT_SYNC_JSON}"');
+    expect(script).not.toContain('FILE_LIBRARY_RESOURCE_RECOVERY_PROBE_PATH');
     expect(script).toContain('resource-recovery');
     expect(script).toContain('boot-baseline.json');
     expect(script).toContain('baseline.json');
@@ -254,16 +254,13 @@ describe('backend-real full gate runtime ownership contract', () => {
     expect(script).not.toContain('if [[ -f "${report_path}" ]]');
   });
 
-  it('continues through later resource-recovery envelopes after an earlier step fails and writes fallback reports when verify crashes', () => {
+  it('writes fallback reports when the Files API smoke verification crashes', () => {
     const script = readFileSync('scripts/run-file-library-real-gate.sh', 'utf8');
 
     expect(script).toContain('overall_status=0');
     expect(script).toContain('if ! run_resource_recovery_step "file-library-real-smoke"');
-    expect(script).toContain('if ! run_resource_recovery_step "file-library-mount-sync-smoke"');
+    expect(script).not.toContain('if ! run_resource_recovery_step "file-library-mount-sync-smoke"');
     expect(script).toContain('fallback-report');
-    expect(script).not.toMatch(
-      /\nrun_resource_recovery_step "file-library-real-smoke" "\$\{RESOURCE_RECOVERY_SMOKE_JSON\}" "" \\/,
-    );
   });
 
   it('materializes startup evidence and summary even when the api never reaches ready', () => {
@@ -317,48 +314,24 @@ describe('backend-real full gate runtime ownership contract', () => {
     expect(helperBody).not.toContain('--api-pid "${API_PID}"');
   });
 
-  it('runs stale JuiceFS orphan preflight before capturing the file-library boot baseline', () => {
+  it('captures the file-library boot baseline without running the retired orphan preflight', () => {
     const script = readFileSync('scripts/run-file-library-real-gate.sh', 'utf8');
-    const preflightIndex = script.indexOf('scripts/juicefs-orphan-preflight.ts');
     const trapIndex = script.indexOf("trap 'cleanup $?' EXIT");
-    const bootBaselineCaptureIndex = script.indexOf('ensure_boot_resource_recovery_baseline', preflightIndex + 1);
+    const bootBaselineCaptureIndex = script.indexOf('ensure_boot_resource_recovery_baseline', trapIndex + 1);
 
-    expect(script).toContain('scripts/juicefs-orphan-preflight.ts');
-    expect(script).toContain('--apply --context "file-library-real-gate"');
+    expect(script).not.toContain('scripts/juicefs-orphan-preflight.ts');
+    expect(script).not.toContain('--apply --context "file-library-real-gate"');
     expect(script).toContain('ensure_boot_resource_recovery_baseline()');
-    expect(preflightIndex).toBeGreaterThanOrEqual(0);
     expect(trapIndex).toBeGreaterThanOrEqual(0);
     expect(bootBaselineCaptureIndex).toBeGreaterThanOrEqual(0);
-    expect(trapIndex).toBeLessThan(preflightIndex);
-    expect(preflightIndex).toBeLessThan(bootBaselineCaptureIndex);
+    expect(trapIndex).toBeLessThan(bootBaselineCaptureIndex);
   });
 
-  it('materializes startup evidence instead of exiting bare when orphan preflight fails before boot baseline', () => {
+  it('does not keep orphan preflight failure handling in the file-library real gate', () => {
     const script = readFileSync('scripts/run-file-library-real-gate.sh', 'utf8');
-    const preflightBlockStart = script.indexOf(
-      'if ! npx tsx "${ROOT_DIR}/scripts/juicefs-orphan-preflight.ts" --apply --context "file-library-real-gate"; then',
-    );
-    const bootBaselineCaptureIndex = script.indexOf('ensure_boot_resource_recovery_baseline', preflightBlockStart + 1);
-    const preflightFailureBlock = script.slice(preflightBlockStart, bootBaselineCaptureIndex);
-    const materializeIndex = preflightFailureBlock.indexOf(
-      'materialize_pre_ready_failure_evidence "${pre_ready_failure_reason}"',
-    );
-    const exitIndex = preflightFailureBlock.indexOf('exit 1');
 
-    expect(preflightBlockStart).toBeGreaterThanOrEqual(0);
-    expect(bootBaselineCaptureIndex).toBeGreaterThan(preflightBlockStart);
-    expect(preflightFailureBlock).toContain(
-      'pre_ready_failure_reason="juicefs orphan preflight failed before boot baseline"',
-    );
-    expect(preflightFailureBlock).toContain(
-      'materialize_pre_ready_failure_evidence "${pre_ready_failure_reason}"',
-    );
-    expect(preflightFailureBlock).toContain(
-      'File library gate could not materialize startup resource recovery evidence before exiting.',
-    );
-    expect(materializeIndex).toBeGreaterThanOrEqual(0);
-    expect(exitIndex).toBeGreaterThan(materializeIndex);
-    expect(exitIndex).toBeLessThan(bootBaselineCaptureIndex - preflightBlockStart);
+    expect(script).not.toContain('juicefs orphan preflight failed before boot baseline');
+    expect(script).not.toContain('if ! npx tsx "${ROOT_DIR}/scripts/juicefs-orphan-preflight.ts"');
   });
 
   it('fails closed when an authority-tagged api baseline snapshot starts but loses the tracked pid mid-capture', () => {
@@ -373,11 +346,11 @@ describe('backend-real full gate runtime ownership contract', () => {
     expect(script).not.toContain('if npx "${api_snapshot_args[@]}"; then');
   });
 
-  it('fails closed for mount truth probes instead of treating missing commands as not mounted', () => {
-    const smokeScript = readFileSync('scripts/file-library-mount-sync-smoke.sh', 'utf8');
+  it('does not register the retired mount-sync smoke as file-library real-gate evidence', () => {
+    const script = readFileSync('scripts/run-file-library-real-gate.sh', 'utf8');
 
-    expect(smokeScript).toContain('require_cmd findmnt');
-    expect(smokeScript).toContain('require_cmd ps');
+    expect(script).not.toContain('file-library-mount-sync-smoke');
+    expect(script).not.toContain('FILE_LIBRARY_RESOURCE_RECOVERY_PROBE_PATH');
   });
 
   it('uses the backend-real loopback Keycloak default so the file-library gate can refresh tokens against the real stack', () => {
@@ -480,13 +453,13 @@ describe('backend-real full gate runtime ownership contract', () => {
 
     expect(script).toContain('wait_for_startup_quiesce()');
     expect(script).toContain('freeze_startup_ready_baseline_from_quiesce_proof()');
-    expect(script).toContain('STARTUP_STEADY_STATE_HELPER_LABEL_ALLOWANCES=(');
-    expect(script).toContain('"helper:mc|0"');
     expect(script).toContain('startup_quiesce_snapshot_satisfies_steady_state()');
     expect(script).toContain('"${RESOURCE_RECOVERY_BOOT_BASELINE_JSON}"');
     expect(script).toContain('append_startup_steady_state_args startup_args');
-    expect(script).toContain('--steady-state-helper-label');
     expect(script).toContain('--steady-state-api-tcp');
+    expect(script).not.toContain('STARTUP_STEADY_STATE_HELPER_LABEL_ALLOWANCES=(');
+    expect(script).not.toContain('--steady-state-helper-label');
+    expect(script).not.toContain('"helper:mc|0"');
     expect(script).toContain('STARTUP_QUIESCE_TIMEOUT_SECONDS');
     expect(script).toContain('STARTUP_QUIESCE_STABLE_SAMPLES');
     expect(script).toContain('if ! freeze_startup_ready_baseline_from_quiesce_proof; then');
@@ -588,7 +561,8 @@ describe('backend-real full gate runtime ownership contract', () => {
     expect(script).toContain('perform_startup_authenticated_docstore_warmup()');
     expect(script).toContain('node "${ROOT_DIR}/scripts/agent-runner-refresh-token.js" > "${STARTUP_WARMUP_TOKEN_FILE}"');
     expect(script).toContain('Authorization: Bearer $(cat "${STARTUP_WARMUP_TOKEN_FILE}")');
-    expect(script).toContain('"${API_BASE%/}/api/v1/me/desktop/file-libraries"');
+    expect(script).toContain('"${API_BASE%/}/api/v1/workspaces/ws_default/projects/proj_1/file-libraries"');
+    expect(script).not.toContain('"${API_BASE%/}/api/v1/me/desktop/file-libraries"');
     expect(script).toContain('authenticated docStore warmup failed before freezing the ready baseline');
     expect(warmupIndex).toBeGreaterThanOrEqual(0);
     expect(quiesceIndex).toBeGreaterThan(warmupIndex);

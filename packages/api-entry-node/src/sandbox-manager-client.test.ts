@@ -15,12 +15,14 @@ describe('SandboxManagerClient', () => {
       expect(init?.method).toBe('PUT');
       const headers = init?.headers as Record<string, string>;
       expect(headers['X-Service-Key']).toBe('svc-key');
-      expect(JSON.parse(String(init?.body))).toMatchObject({
+      const body = JSON.parse(String(init?.body)) as Record<string, unknown>;
+      expect(body).toMatchObject({
         image: 'runner:latest',
         workspace_binding_id: 'flib_demo',
-        mount_path: '/home/task_1',
-        working_dir: '/home/task_1/workspace',
       });
+      expect(body).not.toHaveProperty('mount_path');
+      expect(body).not.toHaveProperty('sub_path');
+      expect(body).not.toHaveProperty('working_dir');
       return new Response(JSON.stringify({ phase: 'Running', pod_name: 'pod-1' }), { status: 201 });
     });
     globalThis.fetch = fetchMock as unknown as typeof fetch;
@@ -29,8 +31,6 @@ describe('SandboxManagerClient', () => {
     const result = await client.createOrEnsurePod('ws_1', 'proj_1', 'workload_1', {
       image: 'runner:latest',
       workspace_binding_id: 'flib_demo',
-      mount_path: '/home/task_1',
-      working_dir: '/home/task_1/workspace',
     });
 
     expect(result.httpStatus).toBe(201);
@@ -92,37 +92,38 @@ describe('SandboxManagerClient', () => {
 
   it('ensures workspace binding through the binding endpoint', async () => {
     const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
-      expect(String(input)).toBe('http://sandbox:8080/v1/workspaces/ws_1/projects/proj_1/workspace-bindings/flib_demo');
+      expect(String(input)).toBe('http://sandbox:8080/v1/workspaces/ws_1/projects/proj_1/workspace-bindings/wmb_demo');
       expect(init?.method).toBe('PUT');
       const headers = init?.headers as Record<string, string>;
       expect(headers['X-Service-Key']).toBe('svc-key');
+      const body = JSON.parse(String(init?.body)) as Record<string, unknown>;
+      expect(body).toEqual({
+        namespace_id: 'ns_project_1',
+        mount_binding_id: 'wmb_demo',
+      });
+      expect(JSON.stringify(body)).not.toMatch(
+        /destination|task_home_path|workspace_path|artifacts_path|mount_path|working_dir|sub_path|metadata_url|storage_endpoint|storage_bucket_url|filesystem_name|juicefs|secret|access_key/i,
+      );
       return new Response(JSON.stringify({
-        binding_id: 'flib_demo',
+        binding_id: 'wmb_demo',
         workspace_id: 'ws_1',
         project_id: 'proj_1',
-        file_library_id: 'flib_demo',
+        namespace_id: 'ns_project_1',
+        mount_binding_id: 'wmb_demo',
         status: 'ready',
-        namespace: 'sandbox-workloads',
-        secret_name: 'secret',
-        pv_name: 'pv',
-        pvc_name: 'pvc',
-        volume_handle: 'ws_1/proj_1/flib_demo',
-        filesystem_name: 'agentsmith-workspace',
-        mount_path: '/workspace/task_demo',
       }), { status: 201 });
     });
     globalThis.fetch = fetchMock as unknown as typeof fetch;
 
     const client = new SandboxManagerClient('http://sandbox:8080', 'svc-key');
-    const result = await client.ensureWorkspaceBinding('ws_1', 'proj_1', 'flib_demo', {
-      file_library_id: 'flib_demo',
-      filesystem_name: 'agentsmith-workspace',
-      metadata_url: 'postgres://postgres:postgres@db:5432/juicefs?sslmode=disable',
-      mount_path: '/workspace/task_demo',
+    const result = await client.ensureWorkspaceBinding('ws_1', 'proj_1', 'wmb_demo', {
+      namespace_id: 'ns_project_1',
+      mount_binding_id: 'wmb_demo',
     });
 
-    expect(result.binding_id).toBe('flib_demo');
-    expect(result.mount_path).toBe('/workspace/task_demo');
+    expect(result.binding_id).toBe('wmb_demo');
+    expect(result.namespace_id).toBe('ns_project_1');
+    expect(result.mount_binding_id).toBe('wmb_demo');
   });
 
   it('treats delete workspace binding 404 as success', async () => {

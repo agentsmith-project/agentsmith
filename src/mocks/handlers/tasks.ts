@@ -24,6 +24,7 @@ import { readMockAuthActorFromRequest } from '../utils/mock-auth-token';
 import { DOC_FIXTURES_ENABLED } from '../doc-fixtures/mode';
 import {
   bindMockFileLibraryTaskHome,
+  cloneMockTaskFileTemplateIntoLibrary,
   ensureMockFileLibraryForTask,
   getMockFileLibrary,
   getMockFileLibraryTaskHomeBinding,
@@ -97,6 +98,14 @@ function agentTaskWorkspaceFileLibraryRequiredResponse() {
     error_code: 'AGENT_TASK_WORKSPACE_FILE_LIBRARY_REQUIRED',
     message: 'agent_task_workspace_file_library_required',
     field: 'workspace_file_library_id',
+  }, { status: 422 });
+}
+
+function agentTaskFileTemplateRequiredResponse() {
+  return HttpResponse.json({
+    error_code: 'AGENT_TASK_FILE_TEMPLATE_REQUIRED',
+    message: 'agent_task_file_template_required',
+    field: 'task_file_template_id',
   }, { status: 422 });
 }
 
@@ -799,14 +808,33 @@ export const taskHandlers = [
     const workspaceFileLibraryId = typeof body?.workspace_file_library_id === 'string'
       ? body.workspace_file_library_id.trim()
       : '';
-    if (workspaceMode !== 'create_new' && workspaceMode !== 'use_existing') {
+    const taskFileTemplateId = typeof body?.task_file_template_id === 'string'
+      ? body.task_file_template_id.trim()
+      : '';
+    if (
+      workspaceMode !== 'create_new'
+      && workspaceMode !== 'use_existing'
+      && workspaceMode !== 'use_template'
+    ) {
       return agentTaskWorkspaceModeInvalidResponse(workspaceMode);
     }
-    if (workspaceMode === 'create_new' && workspaceFileLibraryId.length > 0) {
+    if (
+      workspaceMode === 'create_new'
+      && (workspaceFileLibraryId.length > 0 || taskFileTemplateId.length > 0)
+    ) {
       return agentTaskWorkspaceModeInvalidResponse('create_new');
+    }
+    if (workspaceMode === 'use_existing' && taskFileTemplateId.length > 0) {
+      return agentTaskWorkspaceModeInvalidResponse('use_existing');
+    }
+    if (workspaceMode === 'use_template' && workspaceFileLibraryId.length > 0) {
+      return agentTaskWorkspaceModeInvalidResponse('use_template');
     }
     if (workspaceMode === 'use_existing' && workspaceFileLibraryId.length === 0) {
       return agentTaskWorkspaceFileLibraryRequiredResponse();
+    }
+    if (workspaceMode === 'use_template' && taskFileTemplateId.length === 0) {
+      return agentTaskFileTemplateRequiredResponse();
     }
     if (workspaceMode === 'use_existing') {
       const fileLibrary = getMockFileLibrary({
@@ -873,7 +901,9 @@ export const taskHandlers = [
     const boundRunnerKind: TaskRunnerBindingKind = boundRunner.kind === 'developer' ? 'developer' : 'managed';
     const taskWorkspaceFileLibraryId = workspaceMode === 'create_new'
       ? `flib_${Math.random().toString(36).slice(2, 10)}`
-      : workspaceFileLibraryId;
+      : workspaceMode === 'use_template'
+        ? `flib_${Math.random().toString(36).slice(2, 10)}`
+        : workspaceFileLibraryId;
     const selectedTaskWorkspaceFileLibrary = workspaceMode === 'use_existing'
       ? getMockFileLibrary({
           workspaceId: String(params.ws ?? ''),
@@ -883,7 +913,9 @@ export const taskHandlers = [
       : null;
     const taskWorkspaceFileLibraryName = workspaceMode === 'create_new'
       ? generatedWorkspaceName
-      : body?.workspace_file_library_name ?? selectedTaskWorkspaceFileLibrary?.name ?? 'Project Uploads';
+      : workspaceMode === 'use_template'
+        ? generatedWorkspaceName
+        : body?.workspace_file_library_name ?? selectedTaskWorkspaceFileLibrary?.name ?? 'Project Uploads';
     if (workspaceMode === 'create_new') {
       ensureMockFileLibraryForTask({
         workspaceId: String(params.ws ?? ''),
@@ -893,6 +925,24 @@ export const taskHandlers = [
         createdByUserId: readMockAuthActorFromRequest(request).userId,
         now,
       });
+    }
+    if (workspaceMode === 'use_template') {
+      const clonedLibrary = cloneMockTaskFileTemplateIntoLibrary({
+        workspaceId: String(params.ws ?? ''),
+        projectId: String(params.prj ?? ''),
+        templateId: taskFileTemplateId,
+        libraryId: taskWorkspaceFileLibraryId,
+        name: taskWorkspaceFileLibraryName,
+        createdByUserId: readMockAuthActorFromRequest(request).userId,
+        now,
+      });
+      if (!clonedLibrary) {
+        return HttpResponse.json({
+          error_code: 'TASK_FILE_TEMPLATE_NOT_FOUND',
+          message: 'task_file_template_not_found',
+          task_file_template_id: taskFileTemplateId,
+        }, { status: 404 });
+      }
     }
     const newTask = {
       id: `task_${Math.random().toString(36).slice(2, 8)}`,

@@ -1,6 +1,6 @@
 # Frontend-Backend Gating Matrix (Page/Operation Level)
 
-Last updated: 2026-05-05
+Last updated: 2026-05-09
 Owner: Frontend
 Audience: Backend auth team, QA, FE
 
@@ -38,12 +38,14 @@ Backend enforces `401/403`; frontend applies route/component gates.
 | projects list | delete project | `project:lifecycle:update` | `DELETE /workspaces/{ws}/projects/{project}` | destructive dialog fails gracefully |
 | chat | access chat page and model completion | `project:endpoint:use` | `/chat/sessions`, `/messages`, `/attachments`, stream routes | page-level permission denied |
 | agent tasks | access task list/detail and create/update/archive/cancel tasks, create tasks with default managed runner binding, start/retry runs using the task's bound runner, and fetch task-creation runner binding options | `project:agent_task:use` | `GET/POST/PATCH/DELETE /tasks*`, `GET /tasks/{id}/events`, task message/run/cancel routes, `GET /tasks/runner-binding-options` | page-level permission denied |
+| agent tasks | create a task from a published task file template | `project:agent_task:use` + backend template consumption affordance | `POST /tasks` with `workspace_mode=use_template`, published task file template list | template picker only lists published task file templates; submit blocked without selection |
 | agent tasks | explicit Developer runner binding during task creation | `project:agent_task:use` + `project:agent_runner:manage` + backend binding affordance | `CreateTask` with `bound_runner_id`, binding-options route | expert selector hidden/disabled by backend binding options/affordance only; submit blocked |
 | agent tasks | start/retry/recover a Developer-runner-bound task | `project:agent_task:use` + `project:agent_runner:manage` + backend bound-runner use affordance | task run/retry/recovery routes | action denied with typed unavailable/forbidden state |
 | agent task terminal | create/open/reconnect/input/resize/close terminal sessions | `project:agent_task:use` + `project:agent_task:terminal` | task terminal ticket/session routes and terminal websocket frames | terminal controls disabled or denied |
 | agent task terminal | create/recover terminal session for a Developer-runner-bound task | `project:agent_task:use` + `project:agent_task:terminal` + `project:agent_runner:manage` + backend bound-runner use affordance | task terminal ticket/session routes and terminal websocket frames | terminal denied with typed unavailable/forbidden state |
-| files | view/use project file libraries | `project:endpoint:use` | `GET /file-libraries*` | page-level permission denied |
-| files | create/update/delete/move/upload/share file or library | `project:files:update` | `POST/PATCH/DELETE /file-libraries*`, `POST /file-libraries/*/(folders|move|upload|share-link)` | mutating controls disabled |
+| files | view/use project file libraries and download files | `project:endpoint:use` | `GET /file-libraries*`, object browse/download routes | page-level permission denied |
+| files | create/update/delete/move/upload file or library | `project:files:update` | `POST/PATCH/DELETE /file-libraries*`, `POST /file-libraries/*/(folders|move|upload)` | mutating controls hidden or disabled |
+| files | manage File states: save point, restore preview/run/cancel, task file template publish/unpublish/delete | `project:files:update` | file-library save point/restore/template routes | File states entry point hidden or disabled |
 | Agent Runners | access Agent Runners route and view public rows/status | `project:agent_runner:read` or `project:agent_runner:manage` | `GET /agent-runners*`, display-safe `GET /agent-runners/{id}/execution-config`, `GET /agent-runners/{id}/connection-info` | page-level permission denied |
 | Agent Runners | view display-safe diagnostics | `project:agent_runner:read` or `project:agent_runner:manage` plus backend `actions.view_diagnostics.allowed` | `GET /agent-runners/{id}/diagnostics` | diagnostics hidden/disabled |
 | Agent Runners | Developer runner create/edit/disable/delete | `project:agent_runner:manage` plus matching backend action affordance | `POST/PATCH/DELETE /agent-runners*` for Developer runner records only | mutating controls disabled |
@@ -74,9 +76,9 @@ Backend enforces `401/403`; frontend applies route/component gates.
 7. `GET /limits/summary` should support endpoint-level limit projection for Usage UI:
    - return `endpoints[].limits[]` with canonical fields: `kind/window/metric/policy_key/used/max/remaining/usage_pct/reset_at`.
    - return `project_summary` with `project_used/project_max/project_remaining/project_usage_pct`.
-8. Files default path now runs on JuiceFS-backed project `file-libraries`.
-   New Files frontend or backend work must target `file-libraries`.
-9. Chat is Endpoint/Model-only. It must not dispatch Agent Runners or accept legacy runner binding fields.
+8. Files default path now runs on AFSCP-backed project `file-libraries`.
+   New Files frontend or backend work must target the project-scoped file-library APIs and keep backend storage details server-side.
+9. Chat is Endpoint/Model-only. It must not dispatch Agent Runners or accept unsupported runner binding fields.
 10. Ordinary Agent task creation binds the deployment default managed runner through backend task creation truth; run/retry/recovery then resolve the task's immutable bound runner.
 11. Expert runner binding is allowed only during CreateTask plus backend binding-options/action affordance. Binding-options fetch requires `project:agent_task:use`; explicit Developer runner binding requires backend row-level `project:agent_runner:manage`. CreateTask must reject old selector fields, and StartTaskRun must reject all runner fields.
 12. Terminal backend gates must be tested on create/open/reconnect/input/resize/close and must require `project:agent_task:use` plus `project:agent_task:terminal`.
@@ -93,7 +95,7 @@ Backend enforces `401/403`; frontend applies route/component gates.
   - Files read/use
   - Usage and Access guide read access
 - `project:agent_task:use`
-  - Agent task list/detail/create/run/update/archive/cancel, default managed runner binding, binding-options fetch, and Developer runner test task when paired with runner-manage/action affordance
+  - Agent task list/detail/create/run/update/archive/cancel, task creation from published task file templates, default managed runner binding, binding-options fetch, and Developer runner test task when paired with runner-manage/action affordance
 - `project:agent_task:terminal`
   - Agent task terminal create/open/reconnect/input/resize/close, always paired with task access
 - `project:agent_runner:read`
@@ -106,7 +108,8 @@ Backend enforces `401/403`; frontend applies route/component gates.
   - resource policy
 - `project:files:update`
   - file and library mutations
-  - file-library move/upload/share-link writes
+  - file-library move/upload writes
+  - save point, restore, and task file template management
 - `project:membership:update`
   - join requests
   - membership state changes

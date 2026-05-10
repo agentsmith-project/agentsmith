@@ -7,24 +7,42 @@ import {
 } from './input-ref-input-resolver.js';
 
 describe('input-ref-input-resolver', () => {
-  it('resolves library object metadata and falls back on lookup failure', async () => {
+  it('resolves library object metadata through the active AFSCP storage adapter and falls back on lookup failure', async () => {
     const deps = {
-      getFileLibraryObjectMetaUseCase: {
-        execute: vi.fn()
-          .mockResolvedValueOnce({ key: 'folder/a.txt', content_type: 'text/plain', size_bytes: 12 })
+      fileLibraryStorageAdapter: {
+        enabled: true,
+        getObjectMeta: vi.fn()
+          .mockResolvedValueOnce({
+            key: 'folder/a.txt',
+            content_type: 'text/plain',
+            size_bytes: 12,
+            last_modified: '2026-01-01T00:00:00.000Z',
+            user_metadata: {
+              metadata_url: 'postgres://root:secret@storage/juicefs',
+              filesystem_name: 'raw-storage-name',
+            },
+          })
           .mockRejectedValueOnce(new Error('boom')),
       },
     };
-    await expect(resolveLibraryObjectInputMeta({
+    const resolved = await resolveLibraryObjectInputMeta({
       deps,
       workspaceId: 'ws',
       projectId: 'prj',
       input: { library_id: 'lib', key: 'folder/a.txt' },
-    })).resolves.toEqual({
+    });
+    expect(resolved).toEqual({
       found_meta: true,
       filename: 'a.txt',
       file_type: 'text/plain',
       file_size: 12,
+    });
+    expect(JSON.stringify(resolved)).not.toMatch(/metadata_url|filesystem_name|storage_bucket_url|recommended_mount|juicefs/i);
+    expect(deps.fileLibraryStorageAdapter.getObjectMeta).toHaveBeenCalledWith({
+      workspaceId: 'ws',
+      projectId: 'prj',
+      libraryId: 'lib',
+      objectPath: 'folder/a.txt',
     });
 
     await expect(resolveLibraryObjectInputMeta({
@@ -38,15 +56,26 @@ describe('input-ref-input-resolver', () => {
       file_type: 'text/csv',
       file_size: 3,
     });
+    expect(deps.fileLibraryStorageAdapter.getObjectMeta).toHaveBeenCalledTimes(2);
   });
 
-  it('resolves url metadata via imported object and falls back to url defaults', async () => {
+  it('resolves url metadata via imported object through active storage and falls back to url defaults', async () => {
     const deps = {
-      getFileLibraryObjectMetaUseCase: {
-        execute: vi.fn().mockResolvedValue({ key: 'chat/s1/url-inputs/example.url.txt', content_type: 'text/plain', size_bytes: 44 }),
+      fileLibraryStorageAdapter: {
+        enabled: true,
+        getObjectMeta: vi.fn().mockResolvedValue({
+          key: 'chat/s1/url-inputs/example.url.txt',
+          content_type: 'text/plain',
+          size_bytes: 44,
+          last_modified: '2026-01-01T00:00:00.000Z',
+          user_metadata: {
+            storage_bucket_url: 's3://raw-bucket',
+            recommended_mount: 'juicefs mount raw',
+          },
+        }),
       },
     };
-    await expect(resolveUrlInputMeta({
+    const resolved = await resolveUrlInputMeta({
       deps,
       workspaceId: 'ws',
       projectId: 'prj',
@@ -55,16 +84,29 @@ describe('input-ref-input-resolver', () => {
         imported_library_id: 'lib',
         imported_key: 'chat/s1/url-inputs/example.url.txt',
       },
-    })).resolves.toEqual({
+    });
+    expect(resolved).toEqual({
       filename: 'example.url.txt',
       file_type: 'text/plain',
       file_size: 44,
       imported_library_id: 'lib',
       imported_key: 'chat/s1/url-inputs/example.url.txt',
     });
+    expect(JSON.stringify(resolved)).not.toMatch(/metadata_url|filesystem_name|storage_bucket_url|recommended_mount|juicefs/i);
+    expect(deps.fileLibraryStorageAdapter.getObjectMeta).toHaveBeenCalledWith({
+      workspaceId: 'ws',
+      projectId: 'prj',
+      libraryId: 'lib',
+      objectPath: 'chat/s1/url-inputs/example.url.txt',
+    });
 
     await expect(resolveUrlInputMeta({
-      deps: { getFileLibraryObjectMetaUseCase: { execute: vi.fn().mockRejectedValue(new Error('nope')) } },
+      deps: {
+        fileLibraryStorageAdapter: {
+          enabled: true,
+          getObjectMeta: vi.fn().mockRejectedValue(new Error('nope')),
+        },
+      },
       workspaceId: 'ws',
       projectId: 'prj',
       input: { url: 'https://x.test' },
@@ -97,8 +139,9 @@ describe('input-ref-input-resolver', () => {
 
   it('provides a unified resolveInputRef entry point', async () => {
     const deps = {
-      getFileLibraryObjectMetaUseCase: {
-        execute: vi.fn().mockResolvedValue({ key: 'k/doc.txt', content_type: 'text/plain', size_bytes: 12 }),
+      fileLibraryStorageAdapter: {
+        enabled: true,
+        getObjectMeta: vi.fn().mockResolvedValue({ key: 'k/doc.txt', content_type: 'text/plain', size_bytes: 12 }),
       },
     };
     const lib = await resolveInputRef({
@@ -127,5 +170,6 @@ describe('input-ref-input-resolver', () => {
     });
     expect(art.kind).toBe('artifact');
     expect(art.meta.filename).toBe('art_1');
+    expect(deps.fileLibraryStorageAdapter.getObjectMeta).toHaveBeenCalledTimes(2);
   });
 });

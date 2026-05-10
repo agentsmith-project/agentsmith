@@ -7,6 +7,11 @@ import type { AgentRecord, AgentRunnerStatus } from './resource-models.js';
 import { isDeveloperAgentRunner, isManagedAgentRunner } from './agent-runner-profile.js';
 import { writeProjectAuditEvent } from './audit-usage-recorders.js';
 import { dispatchDeveloperRunnerTestTaskRun } from './agent-runner-test-task-command.js';
+import {
+  DEVELOPER_RUNNER_TASK_HOME_BINDING_UNAVAILABLE_CODE,
+  DEVELOPER_RUNNER_TASK_HOME_BINDING_UNAVAILABLE_MESSAGE,
+  isDeveloperRunnerTaskHomeBindingAvailable,
+} from './developer-runner-workspace-blocker.js';
 
 type AgentPresence = 'online' | 'offline' | 'managed';
 type AgentRunnerPublicField =
@@ -60,7 +65,7 @@ const AGENT_TASK_USE_PERMISSION = 'project:agent_task:use';
 const AGENT_TEST_CONNECTION_DEFAULT_TIMEOUT_MS = 1000;
 const AGENT_TEST_CONNECTION_MIN_TIMEOUT_MS = 100;
 const AGENT_TEST_CONNECTION_MAX_TIMEOUT_MS = 10_000;
-const RUNNER_TEST_TASK_DISPATCH_SUPPORTED = true;
+const RUNNER_TEST_TASK_DISPATCH_SUPPORTED = isDeveloperRunnerTaskHomeBindingAvailable();
 const AGENT_TEST_CONNECTION_ALLOWED_FIELDS = new Set(['timeout_ms']);
 const AGENT_RUNNER_TEST_TASK_ALLOWED_FIELDS = new Set(['intent']);
 
@@ -176,10 +181,10 @@ function resolveDeveloperActionUnavailableReason(input: {
   dispatchSupported?: boolean;
 }): string | undefined {
   if (!input.canUseAction) return 'permission_denied';
+  if (input.dispatchSupported === false) return DEVELOPER_RUNNER_TASK_HOME_BINDING_UNAVAILABLE_CODE;
   if (!input.connectionOnline) return 'agent_runner_disconnected';
   if (!input.ready) return 'agent_runner_unavailable';
   if (input.taskExecutionCapable === false) return 'agent_runner_capability_mismatch';
-  if (input.dispatchSupported === false) return 'test_task_dispatch_unavailable';
   return undefined;
 }
 
@@ -201,6 +206,7 @@ export function buildAgentRunnerActionAffordances(
   const connectionOnline = !developerRunner || input?.connectionOnline === true || agent.presence === 'online';
   const taskExecutionCapable = agent.capabilities?.task_execution !== false;
   const testTaskDispatchSupported = input?.testTaskDispatchSupported ?? RUNNER_TEST_TASK_DISPATCH_SUPPORTED;
+  const developerTaskHomeBindingAvailable = !developerRunner || isDeveloperRunnerTaskHomeBindingAvailable();
   const systemReadOnlyReason = 'system_managed_read_only';
   const actionUnavailableReason = 'action_not_available';
   const selectRequiredPermissions = developerRunner
@@ -209,6 +215,7 @@ export function buildAgentRunnerActionAffordances(
       ? [AGENT_TASK_USE_PERMISSION]
       : [AGENT_TASK_USE_PERMISSION, AGENT_RUNNER_READ_PERMISSION];
   const selectAllowed = ready
+    && developerTaskHomeBindingAvailable
     && canUseTasks
     && (
       developerRunner
@@ -228,7 +235,13 @@ export function buildAgentRunnerActionAffordances(
       visible: true,
       allowed: selectAllowed,
       reason_code: selectAllowed ? undefined : (
-        ready ? 'permission_denied' : 'agent_runner_unavailable'
+        ready
+          && developerRunner
+          && !developerTaskHomeBindingAvailable
+          && canUseTasks
+          && canManage
+          ? DEVELOPER_RUNNER_TASK_HOME_BINDING_UNAVAILABLE_CODE
+          : ready ? 'permission_denied' : 'agent_runner_unavailable'
       ),
       required_permissions: selectRequiredPermissions,
       danger_level: 'none',
@@ -876,6 +889,27 @@ export async function handleAgentRoute(args: AgentRouteHandlerArgs): Promise<boo
         metadata: { failure_code: 'system_managed_read_only' },
       });
       json(res, 403, { error_code: 'FORBIDDEN', message: 'agent_runner_read_only' });
+      return true;
+    }
+    if (!RUNNER_TEST_TASK_DISPATCH_SUPPORTED) {
+      await writeRunnerTestTaskAudit({
+        deps,
+        workspaceId: route.workspaceId,
+        projectId: route.projectId,
+        actorUserId: user.id,
+        action: 'agent_runner.test_task.failed',
+        runnerId: item.id,
+        requestId,
+        result: 'error',
+        errorCode: DEVELOPER_RUNNER_TASK_HOME_BINDING_UNAVAILABLE_CODE,
+        errorMessage: DEVELOPER_RUNNER_TASK_HOME_BINDING_UNAVAILABLE_MESSAGE,
+        metadata: { failure_code: DEVELOPER_RUNNER_TASK_HOME_BINDING_UNAVAILABLE_MESSAGE },
+      });
+      json(res, 409, buildRunnerTestTaskUnavailableBody({
+        runnerId: item.id,
+        errorCode: DEVELOPER_RUNNER_TASK_HOME_BINDING_UNAVAILABLE_CODE,
+        message: DEVELOPER_RUNNER_TASK_HOME_BINDING_UNAVAILABLE_MESSAGE,
+      }));
       return true;
     }
     if (item.capabilities?.task_execution === false) {

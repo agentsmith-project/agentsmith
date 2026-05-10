@@ -17,7 +17,6 @@ import {
   API_BASE,
   bindAgentTaskExecutionSocketToTask,
   buildCreateProjectRequestBody,
-  collectTrackedTaskWorkspaceMounts,
   createAgentTaskRunnerBundleViaApi,
   createAgentTaskViaApi,
   createExternalConnectionViaApi,
@@ -913,27 +912,6 @@ describe('integration-real-helpers', () => {
     const [, requestOptions] = post.mock.calls[0] ?? [];
     expect(requestOptions?.data).not.toHaveProperty('workspace_id');
     expect(requestOptions?.data).not.toHaveProperty('workspaceId');
-  });
-
-  it('collects tracked host-external task mounts from the runner registry', async () => {
-    const workspaceRoot = await mkdtemp(path.join(tmpdir(), 'integration-helper-runner-'));
-    await writeFile(
-      path.join(workspaceRoot, 'task-workspace-mount-sessions.json'),
-      JSON.stringify({
-        sessions: [
-          { mount_path: '/home/task_1' },
-          { mount_path: '/home/task_2' },
-          { mount_path: '/home/task_1' },
-          { mount_path: '' },
-        ],
-      }),
-      'utf8',
-    );
-
-    await expect(collectTrackedTaskWorkspaceMounts(workspaceRoot)).resolves.toEqual([
-      '/home/task_1',
-      '/home/task_2',
-    ]);
   });
 
   it('extracts the prepared task workspace cwd from Agent task runner debug logs', () => {

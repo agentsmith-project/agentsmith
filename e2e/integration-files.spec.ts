@@ -261,11 +261,6 @@ test.describe('@lane-real files integration flow', () => {
       await expect(movedCheckbox).toBeChecked();
 
       await expect(page.getByTestId('files__details-panel')).toBeVisible({ timeout: 30_000 });
-      await page.getByTestId('files__details-share').click();
-      await expect(page.getByTestId('files__dialog__share-link')).toBeVisible({ timeout: 30_000 });
-      await page.getByTestId('files__share-generate').click();
-      await expect(page.getByTestId('files__share-link-value')).toBeVisible({ timeout: 30_000 });
-      await page.keyboard.press('Escape');
       await movedRow.getByRole('button').click({ modifiers: [multiSelectModifier] });
       await expect(movedCheckbox).toBeChecked();
       const downloadResponsePromise = page.waitForResponse((response) => (

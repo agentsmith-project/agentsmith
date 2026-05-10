@@ -11,7 +11,7 @@
   "kind": "journey",
   "lane": "backend-real",
   "entryRoute": "/en-US/login/workspace",
-  "goal": "成员在日常使用文件库时，既能顺畅进入 ready 文件库和桌面访问入口，也能在 degraded 文件库上看到清晰的恢复动作，而不是自己猜测下一步。",
+  "goal": "成员在日常使用文件库时，既能顺畅进入 ready 文件库的 Web 文件工作面，也能在 degraded 文件库上看到清晰的恢复动作，而不是自己猜测下一步。",
   "gatePolicy": {
     "tier": "default",
     "requiredEvidence": [
@@ -39,7 +39,7 @@
       "degradedLibraryDescription": "Temporary degraded fixture for the AI-native files recovery story."
     }
   },
-  "narrative": "Files 的主故事不是只看列表，而是让成员在 ready 文件库里顺畅开始桌面访问，同时在 degraded 文件库里立刻看到可执行的恢复路径。",
+  "narrative": "Files 的主故事不是只看列表，而是让成员在 ready 文件库里顺畅完成 Web 文件工作，同时在 degraded 文件库里立刻看到可执行的恢复路径。",
   "scenes": [
     {
       "sceneId": "workspace-select",
@@ -54,13 +54,6 @@
       "stableMarkers": [
         "files__workspace-surface",
         "files__library-list"
-      ]
-    },
-    {
-      "sceneId": "desktop-access-dialog",
-      "route": "/en-US/workspaces/{workspaceId}/projects/{projectId}/files",
-      "stableMarkers": [
-        "files__dialog__desktop-mount-access"
       ]
     },
     {
@@ -85,13 +78,13 @@
       ]
     },
     {
-      "stepId": "review-desktop-access",
-      "sceneId": "desktop-access-dialog",
-      "intent": "Review the desktop access guidance for a ready library.",
-      "action": "Review desktop access",
-      "target": "files__dialog__desktop-mount-access",
-      "expectedFeedback": "桌面访问入口、下载引导和调试信息都清晰可见。",
-      "note": "桌面接入是 files 的常用动作，应该在 ready 状态下顺滑可达。",
+      "stepId": "review-web-files-access",
+      "sceneId": "project-files",
+      "intent": "Confirm a ready library stays focused on the Web Files work surface without local connector controls.",
+      "action": "Review Web Files access",
+      "target": "files__workspace-surface",
+      "expectedFeedback": "成员能直接使用 Files 工作面，且页面不展示本地客户端挂载入口或原始连接字段。",
+      "note": "当前产品路径是 Web/API 与 task HOME 展示，不把本地连接器作为 Files 的入口。",
       "evidence": [
         "trace"
       ]

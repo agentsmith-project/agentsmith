@@ -92,7 +92,7 @@ Current split-token status:
 
 Current action split status:
 - Endpoint governance writes: `project:governance:update`
-- File/library create/update/delete/move/upload/share-link: `project:files:update`
+- File/library create/update/delete/move/upload: `project:files:update`
 - Project secret create/rotate/delete: `project:governance:update`
 - Resource policy save: `project:governance:update`
 - Member/template/group management and join request decisions: `project:membership:update`

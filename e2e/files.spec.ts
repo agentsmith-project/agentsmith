@@ -47,31 +47,12 @@ test.describe('Files Page (file library browser)', () => {
     await expect(authedPage.getByTestId('files__object-row').first()).toBeVisible();
   });
 
-  test('opens local mount access dialog for a file library', async ({ authedPage }) => {
-    await authedPage.getByTestId('files__library-desktop-access--lib_shared_default').click();
-
-    const dialog = authedPage.getByTestId('files__dialog__desktop-mount-access');
-    await expect(dialog).toBeVisible();
-    await expect(dialog.getByTestId('files__desktop-mount__deployment-url')).toBeVisible();
-    await expect(dialog.getByTestId('files__desktop-setup__download')).toBeVisible();
-    await expect(dialog.getByTestId('files__desktop-setup__platform-linux')).toBeVisible();
-    await expect(dialog.getByTestId('files__desktop-setup__platform-macos')).toBeVisible();
-    await expect(dialog.getByTestId('files__desktop-setup__platform-windows')).toBeVisible();
-
-    await dialog.getByTestId('files__desktop-setup__debug-toggle').click();
-    await expect(dialog.getByTestId('files__desktop-setup__debug-panel')).toBeVisible();
-    await expect(dialog.getByTestId('files__library-mount__filesystem-name')).toBeVisible();
-    await expect(dialog.getByTestId('files__library-mount__path')).toBeVisible();
-    await expect(dialog.getByTestId('files__library-mount__metadata-url')).toHaveValue('••••••••••••••••••••');
-
-    await dialog.getByRole('button', { name: /reveal|显示/i }).click();
-    await expect(dialog.getByTestId('files__library-mount__metadata-url')).not.toHaveValue(
-      '••••••••••••••••••••',
-    );
-    await expect(dialog.getByTestId('files__library-mount__copy-command')).toBeVisible();
-    await expect(dialog.getByTestId('files__library-mount__tab-linux')).toBeVisible();
-    await expect(dialog.getByTestId('files__library-mount__tab-macos')).toBeVisible();
-    await expect(dialog.getByTestId('files__library-mount__tab-windows')).toBeVisible();
+  test('does not expose local mount or raw storage entry points for file libraries', async ({ authedPage }) => {
+    await expect(authedPage.getByTestId('files__library-item--lib_shared_default')).toBeVisible();
+    await expect(authedPage.getByTestId('files__library-desktop-access--lib_shared_default')).toHaveCount(0);
+    await expect(authedPage.getByTestId('files__dialog__desktop-mount-access')).toHaveCount(0);
+    await expect(authedPage.getByTestId('files__library-mount__metadata-url')).toHaveCount(0);
+    await expect(authedPage.getByText(/juicefs|metadata url|storage credential|mount command/i)).toHaveCount(0);
   });
 
   test('creates and deletes an empty file library', async ({ authedPage }) => {
@@ -395,17 +376,10 @@ test.describe('Files Page (file library browser)', () => {
     await expect(authedPage.getByTestId('files__selection-shortcuts')).toHaveCount(1);
   });
 
-  test('details panel can generate object share links and expand preview', async ({ authedPage }) => {
+  test('details panel can expand preview', async ({ authedPage }) => {
     await locateFile(authedPage, 'README.txt');
     const row = authedPage.getByTestId('files__object-row').filter({ hasText: 'README.txt' }).first();
     await row.getByRole('button').click();
-
-    await authedPage.getByTestId('files__details-share').click();
-    const shareDialog = authedPage.getByTestId('files__dialog__share-link');
-    await expect(shareDialog).toBeVisible();
-    await authedPage.getByTestId('files__share-generate').click();
-    await expect(authedPage.getByTestId('files__share-link-value')).toBeVisible();
-    await authedPage.keyboard.press('Escape');
 
     await authedPage.getByTestId('files__preview-expand').click();
     await expect(authedPage.getByTestId('files__dialog__preview-expand')).toBeVisible();

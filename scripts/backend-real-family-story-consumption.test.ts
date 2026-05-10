@@ -65,7 +65,7 @@ describe('backend-real family story consumption', () => {
 
   it('loads story definitions in the backend-real family specs instead of hard-coding daily-use runtime details inline', async () => {
     const filesCrudSource = await readFile(path.resolve(process.cwd(), 'e2e/integration-files.spec.ts'), 'utf-8');
-    const filesSyncSource = await readFile(path.resolve(process.cwd(), 'e2e/integration-files-mount-sync.spec.ts'), 'utf-8');
+    const filesConnectorAbsenceSource = await readFile(path.resolve(process.cwd(), 'e2e/integration-files-connector-absence.spec.ts'), 'utf-8');
     const apiKeySource = await readFile(path.resolve(process.cwd(), 'e2e/integration-api-key-gateway.spec.ts'), 'utf-8');
     const contextSource = await readFile(path.resolve(process.cwd(), 'e2e/integration-context-store-isolation.spec.ts'), 'utf-8');
     const filesSource = await readFile(path.resolve(process.cwd(), 'e2e/integration-files-management-ux.spec.ts'), 'utf-8');
@@ -81,12 +81,16 @@ describe('backend-real family story consumption', () => {
     expect(filesCrudSource).not.toContain('integration-note-renamed.txt');
     expect(filesCrudSource).not.toContain('integration-note.txt');
 
-    expect(filesSyncSource).toContain("loadStoryDefinitionSync('files-crud-and-sync')");
-    expect(filesSyncSource).toContain('buildTraceStoryBinding');
-    expect(filesSyncSource).toContain('createUxTraceBundleWriter');
-    expect(filesSyncSource).not.toContain('from-local.txt');
-    expect(filesSyncSource).not.toContain('from-web.txt');
-    expect(filesSyncSource).not.toContain('Mount Sync');
+    expect(filesConnectorAbsenceSource).toContain("loadStoryDefinitionSync('files-crud-and-sync')");
+    expect(filesConnectorAbsenceSource).toContain('buildTraceStoryBinding');
+    expect(filesConnectorAbsenceSource).toContain('createUxTraceBundleWriter');
+    expect(filesConnectorAbsenceSource).toContain("suite: 'integration-files-connector-absence'");
+    expect(filesConnectorAbsenceSource).not.toContain('from-local.txt');
+    expect(filesConnectorAbsenceSource).not.toContain('from-web.txt');
+    expect(filesConnectorAbsenceSource).not.toContain('Mount Sync');
+    expect(filesConnectorAbsenceSource).not.toContain('mountJuiceFs');
+    expect(filesConnectorAbsenceSource).not.toContain('writeMountedFile');
+    expect(filesConnectorAbsenceSource).not.toContain('client_mount_access');
 
     expect(apiKeySource).toContain("loadStoryDefinitionSync('api-key-to-endpoint-consumption')");
     expect(apiKeySource).toContain('buildTraceStoryBinding');
@@ -259,8 +263,9 @@ describe('backend-real family story consumption', () => {
     expect(filesRuntime).toBeDefined();
     expect(filesRuntime).not.toHaveProperty('desktopMountUrl');
     expect(filesSource).not.toContain('runtime.desktopMountUrl');
-    expect(filesSource).toContain("files__desktop-mount__deployment-url");
-    expect(filesSource).toMatch(/toHaveValue\(\/https\?:\\\/\\\/\.\+\/\)/);
+    expect(filesSource).toContain("captureTrace('review-web-files-access')");
+    expect(filesSource).not.toContain("files__desktop-mount__deployment-url");
+    expect(filesSource).not.toMatch(/toHaveValue\(\/https\?:\\\/\\\/\.\+\/\)/);
   });
 
   it('keeps files CRUD and workspace settings stories focused on visible user outcomes instead of raw fixture strings', async () => {
@@ -270,7 +275,7 @@ describe('backend-real family story consumption', () => {
       | undefined;
     expect(filesCrudRuntime).toBeDefined();
     expect(filesCrudRuntime?.webCrud).toBeDefined();
-    expect(filesCrudRuntime?.mountSync).toBeDefined();
+    expect(filesCrudRuntime).not.toHaveProperty('mountSync');
 
     const workspaceSettingsStory = loadCommittedStoryDefinitionByIdSync('workspace-settings-save-and-effect');
     const workspaceSettingsRuntime = (workspaceSettingsStory.runtimeData as Record<string, unknown> | undefined)?.workspaceSettingsSaveEffect as

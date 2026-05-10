@@ -54,13 +54,13 @@ describe('usePublicWorkspaces', () => {
     const { result } = renderHook(() => usePublicWorkspaces(), {
       wrapper: createWrapper(),
     });
-    const { result: legacyResult } = renderHook(() => useWorkspaces({ public: true }), {
+    const { result: publicAliasResult } = renderHook(() => useWorkspaces({ public: true }), {
       wrapper: createWrapper(),
     });
 
     expectTypeOf<TimestampKeys>().toEqualTypeOf<never>();
     expectTypeOf(result.current.data).toEqualTypeOf<PublicWorkspaceSummary[] | undefined>();
-    expectTypeOf(legacyResult.current.data).toEqualTypeOf<PublicWorkspaceSummary[] | undefined>();
+    expectTypeOf(publicAliasResult.current.data).toEqualTypeOf<PublicWorkspaceSummary[] | undefined>();
   });
 
   it('normalizes public directory payloads to id and name only', async () => {

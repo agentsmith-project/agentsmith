@@ -6,14 +6,6 @@ export type FileLibraryStatus =
   | 'deleting'
   | 'deleted';
 
-export type FileLibraryGatewayStatus =
-  | 'not_started'
-  | 'starting'
-  | 'ready'
-  | 'degraded'
-  | 'failed'
-  | 'stopped';
-
 export interface FileLibraryRecord {
   id: string;
   workspace_id: string;
@@ -22,65 +14,10 @@ export interface FileLibraryRecord {
   description?: string;
   status: FileLibraryStatus;
   version: number;
-  filesystem_name: string;
   file_library_home_segment: string;
-  source: 'manual' | 'agent_task_auto';
+  source: 'agent_task_files';
   delete_correlation_id?: string;
   created_by_user_id: string;
   created_at: string;
   updated_at: string;
-}
-
-export interface FileLibraryBackendRecord {
-  library_id: string;
-  filesystem_name: string;
-  provisioning_status: FileLibraryStatus;
-  gateway_status: FileLibraryGatewayStatus;
-  postgres: {
-    host: string;
-    port: number;
-    database: string;
-    username: string;
-  };
-  minio: {
-    endpoint: string;
-    bucket: string;
-    region?: string;
-  };
-  gateway?: {
-    loopback_url?: string;
-    port?: number;
-    last_started_at?: string;
-  };
-  last_error?: string;
-}
-
-export interface FileLibraryClientMountAccess {
-  filesystem_name: string;
-  metadata_url: string;
-  storage_bucket_url?: string;
-  recommended_mount_path: string;
-  platform_notes: string[];
-  recommended_mount_commands: {
-    linux: string;
-    macos: string;
-    windows: string;
-  };
-  created_at: string;
-}
-
-export type FileLibraryMountAccess = FileLibraryClientMountAccess;
-
-export interface FileLibraryDesktopMountAccess {
-  filesystem_name: string;
-  metadata_url: string;
-  storage_bucket_url?: string;
-  deployment_base_url: string;
-  default_mount_roots: {
-    linux: string;
-    macos: string;
-    windows: string;
-  };
-  windows_requires_drive_letter: boolean;
-  created_at: string;
 }

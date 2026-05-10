@@ -313,6 +313,14 @@ const activeRuntimeSurfaceFiles = uniqueSorted([
   ),
 ]);
 
+const activeApiEntryRuntimeFiles = collectTextFiles("packages/api-entry-node/src", [
+  ".ts",
+]).filter(
+  (filePath) =>
+    !filePath.endsWith(".test.ts") &&
+    !filePath.includes("/__integration__/"),
+);
+
 const rootPackage = readJson("package.json") as {
   scripts?: Record<string, string>;
 };
@@ -345,6 +353,27 @@ const agentTaskBackendRealSpecFiles = [
   "e2e/integration-agent-task-runner.spec.ts",
   "e2e/integration-agent-task-terminal-ux.spec.ts",
 ] as const;
+const afscpBoundaryActiveFiles = [
+  "scripts/run-internal-agent-task-real-gate.sh",
+  "scripts/lib/internal-backend-real-gate.sh",
+  "scripts/run-integration-e2e-full.sh",
+  "scripts/run-integration-release-user-story.sh",
+  "scripts/run-release-local-precheck.sh",
+  "scripts/local-manual/internal-common.sh",
+  "scripts/local-manual/start-api.sh",
+  "infra/flows/local-manual-internal.env",
+  "packages/api-entry-node/src/node-api-deps-factory.ts",
+  "infra/deploy/unified/templates/app/config.yaml.tpl",
+  "infra/deploy/unified/templates/app/workloads.yaml.tpl",
+] as const;
+const retiredAfscpBoundaryPatterns = [
+  [/INTERNAL_AGENT_JUICEFS/u, "INTERNAL_AGENT_JUICEFS_*"],
+  [/JUICEFS_BUCKET_ENDPOINT/u, "JUICEFS_BUCKET_ENDPOINT_*"],
+  [/FILE_LIBRARY_GATEWAY/u, "FILE_LIBRARY_GATEWAY_*"],
+  [/AGENT_RUNNER_DEVELOPER_JUICEFS/u, "AGENT_RUNNER_DEVELOPER_JUICEFS_*"],
+  [/INTEGRATION_CLIENT_JUICEFS/u, "INTEGRATION_CLIENT_JUICEFS_*"],
+  [/MBOS_AGENT_JUICEFS_MOUNT/u, "MBOS_AGENT_JUICEFS_MOUNT_*"],
+] as const;
 
 const activeTextFiles = [
   ".github/workflows/integration-e2e.yml",
@@ -370,7 +399,6 @@ const activeTextFiles = [
   "scripts/check-preset-agent-task-file-library.sh",
   "scripts/feishu-real-manual-step.sh",
   "scripts/file-library-real-smoke.sh",
-  "scripts/file-library-mount-sync-smoke.sh",
   "scripts/governance-config-audit-effect-smoke.sh",
   "scripts/governance-member-lifecycle-effect-smoke.sh",
   "scripts/governance-member-permission-effect-smoke.sh",
@@ -420,7 +448,6 @@ const activeRunnerWireFiles = [
   "packages/api-entry-node/src/agent-execution-service.ts",
   "packages/api-entry-node/src/agent-resource-service.ts",
   "packages/api-entry-node/src/agent-runner-profile.ts",
-  "packages/api-entry-node/src/file-library-runtime.ts",
   "packages/api-entry-node/src/internal-agent-pod-manager.ts",
   "packages/api-entry-node/src/notebook-execution-orchestrator.ts",
   "packages/agent-runner/src/protocol.ts",
@@ -793,6 +820,20 @@ const activeRuntimeSurfaceForbiddenPatterns = [
   ],
 ] as const;
 
+const retiredDesktopAuthRuntimePatterns = [
+  [
+    /\/api\/v1\/desktop\/auth/u,
+    "retired desktop auth API path",
+    "/api/v1/desktop/auth",
+  ],
+  [
+    /\/api\/v1\/me\/desktop/u,
+    "retired me desktop API path",
+    "/api/v1/me/desktop",
+  ],
+  [/\bdsk_/u, "retired desktop bearer prefix", "dsk_"],
+] as const;
+
 requireScript(
   scripts,
   "agent:task-runner",
@@ -971,9 +1012,91 @@ forbidPath(
   "scripts must not keep legacy preset external file-library helper",
 );
 forbidPath(
+  "scripts/juicefs-orphan-preflight.ts",
+  "scripts must not keep retired file-library JuiceFS orphan preflight",
+);
+forbidPath(
+  "scripts/juicefs-orphan-preflight.test.ts",
+  "scripts must not keep retired file-library JuiceFS orphan preflight tests",
+);
+forbidPath(
+  "scripts/file-library-mount-sync-smoke.sh",
+  "scripts must not keep retired file-library mount-sync smoke gate",
+);
+forbidPath(
+  "docs/contracts/juicefs-file-libraries-architecture.md",
+  "docs/contracts must not reintroduce retired raw JuiceFS file-library architecture",
+);
+forbidPath(
+  "docs/user-guides/file-library-local-mount.md",
+  "docs/user-guides must not reintroduce raw JuiceFS local mount guidance",
+);
+forbidPath(
+  "e2e/integration-files-mount-sync.spec.ts",
+  "e2e must not keep retired file-library mount-sync spec",
+);
+forbidPath(
+  "packages/api-entry-node/src/file-library-gateway-client.ts",
+  "api-entry-node must not keep retired file-library gateway client",
+);
+forbidPath(
+  "packages/api-entry-node/src/file-library-gateway-manager.ts",
+  "api-entry-node must not keep retired file-library gateway manager",
+);
+forbidPath(
+  "packages/api-entry-node/src/file-library-gateway-ownership.ts",
+  "api-entry-node must not keep retired file-library gateway ownership helper",
+);
+forbidPath(
+  "packages/api-entry-node/src/file-library-gateway-ownership.test.ts",
+  "api-entry-node must not keep retired file-library gateway ownership tests",
+);
+forbidPath(
+  "packages/api-entry-node/src/file-library-gateway-paths.ts",
+  "api-entry-node must not keep retired file-library gateway path helper",
+);
+forbidPath(
+  "packages/api-entry-node/src/file-library-orchestrator.ts",
+  "api-entry-node must not keep retired file-library orchestrator",
+);
+forbidPath(
+  "packages/api-entry-node/src/file-library-runtime.ts",
+  "api-entry-node must not keep retired file-library runtime",
+);
+forbidPath(
+  "packages/api-entry-node/src/file-library-runtime.test.ts",
+  "api-entry-node must not keep retired file-library runtime tests",
+);
+forbidPath(
+  "src/components/files/files-page/DesktopAccessDialog.tsx",
+  "Files UI must not keep retired desktop access dialog",
+);
+forbidPath(
+  "src/components/files/files-page/LibraryAccessDialog.tsx",
+  "Files UI must not keep retired library access dialog",
+);
+forbidPath(
+  "src/lib/hooks/use-file-libraries-v2.ts",
+  "frontend hooks must not keep retired file libraries v2 hook",
+);
+forbidPath(
+  "src/lib/hooks/__tests__/use-file-libraries-v2.test.tsx",
+  "frontend hooks must not keep retired file libraries v2 hook tests",
+);
+forbidPath(
   "e2e/integration-agent-task-external.spec.ts",
   "e2e must not keep Agent Task wrappers around legacy external/notebook specs",
 );
+for (const filePath of afscpBoundaryActiveFiles) {
+  const content = readText(filePath);
+  for (const [pattern, label] of retiredAfscpBoundaryPatterns) {
+    forbidMatch(
+      content,
+      pattern,
+      `${filePath} must use AFSCP/substrate naming instead of retired ${label}`,
+    );
+  }
+}
 requireMatch(
   buildRunnerImageScript,
   /usage: scripts\/build-runner-image\.sh <agent-task>/,
@@ -1252,6 +1375,17 @@ for (const filePath of activeRuntimeSurfaceFiles) {
     content,
     activeRuntimeSurfaceForbiddenPatterns,
   );
+}
+
+for (const filePath of activeApiEntryRuntimeFiles) {
+  const content = readText(filePath);
+  for (const [pattern, label, source] of retiredDesktopAuthRuntimePatterns) {
+    forbidMatch(
+      content,
+      pattern,
+      `${filePath} must not expose ${label} (${source})`,
+    );
+  }
 }
 
 for (const filePath of backendRealStorySurfaceFiles) {

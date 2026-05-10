@@ -58,7 +58,7 @@ internal_real_gate_ensure_local_image() {
   docker pull "${image}" >/dev/null
 }
 
-internal_real_gate_wait_for_juicefs_pods() {
+internal_real_gate_wait_for_afscp_storage_csi_pods() {
   local namespace="$1"
   local selector="$2"
   local timeout_seconds="${3:-120}"
@@ -76,44 +76,44 @@ internal_real_gate_wait_for_juicefs_pods() {
   done
 }
 
-internal_real_gate_wait_for_juicefs_ready() {
+internal_real_gate_wait_for_afscp_storage_csi_ready() {
   local namespace="$1"
 
-  internal_real_gate_wait_for_juicefs_pods "${namespace}" 'app=juicefs-csi-controller'
+  internal_real_gate_wait_for_afscp_storage_csi_pods "${namespace}" 'app=juicefs-csi-controller'
   kubectl wait --for=condition=Ready pod -l app=juicefs-csi-controller -n "${namespace}" --timeout=600s >/dev/null
-  internal_real_gate_wait_for_juicefs_pods "${namespace}" 'app=juicefs-csi-node'
+  internal_real_gate_wait_for_afscp_storage_csi_pods "${namespace}" 'app=juicefs-csi-node'
   kubectl wait --for=condition=Ready pod -l app=juicefs-csi-node -n "${namespace}" --timeout=600s >/dev/null
 }
 
-internal_real_gate_ensure_juicefs_csi() {
+internal_real_gate_ensure_afscp_storage_csi() {
   local csi_manifest
 
-  internal_real_gate_info "reconciling JuiceFS CSI driver ${CSI_DRIVER}"
-  csi_manifest="${JUICEFS_CSI_MANIFEST_PATH}"
+  internal_real_gate_info "reconciling AFSCP storage CSI driver ${CSI_DRIVER}"
+  csi_manifest="${AFSCP_STORAGE_CSI_MANIFEST_PATH}"
   if [[ ! -f "${csi_manifest}" ]]; then
-    csi_manifest="$(mktemp "${INTERNAL_REAL_DIR}/juicefs-csi.XXXXXX.yaml")"
+    csi_manifest="$(mktemp "${INTERNAL_REAL_DIR}/afscp-storage-csi.XXXXXX.yaml")"
     curl -fsSL --max-time 30 "https://raw.githubusercontent.com/juicedata/juicefs-csi-driver/master/deploy/k8s.yaml" -o "${csi_manifest}"
   fi
   kubectl apply --validate=false --request-timeout=30s -f "${csi_manifest}" >/dev/null
 
   if [[ "${CONTEXT_NAME}" == kind-* ]]; then
     internal_real_gate_info "loading CSI images into kind node ${KIND_NODE_NAME}"
-    internal_real_gate_ensure_local_image "${JUICEFS_MOUNT_IMAGE}"
-    internal_real_gate_ensure_kind_image "juicedata/juicefs-csi-driver:${JUICEFS_CSI_VERSION}"
-    internal_real_gate_ensure_kind_image "juicedata/csi-dashboard:${JUICEFS_CSI_VERSION}"
-    internal_real_gate_ensure_kind_image "${JUICEFS_MOUNT_IMAGE}"
+    internal_real_gate_ensure_local_image "${AFSCP_STORAGE_CSI_MOUNT_IMAGE}"
+    internal_real_gate_ensure_kind_image "juicedata/juicefs-csi-driver:${AFSCP_STORAGE_CSI_VERSION}"
+    internal_real_gate_ensure_kind_image "juicedata/csi-dashboard:${AFSCP_STORAGE_CSI_VERSION}"
+    internal_real_gate_ensure_kind_image "${AFSCP_STORAGE_CSI_MOUNT_IMAGE}"
     internal_real_gate_ensure_kind_image "registry.k8s.io/sig-storage/csi-provisioner:v3.6.0"
     internal_real_gate_ensure_kind_image "registry.k8s.io/sig-storage/csi-resizer:v1.9.0"
     internal_real_gate_ensure_kind_image "registry.k8s.io/sig-storage/csi-node-driver-registrar:v2.9.0"
     internal_real_gate_ensure_kind_image "registry.k8s.io/sig-storage/livenessprobe:v2.11.0"
 
-    kubectl scale statefulset/juicefs-csi-controller -n "${JUICEFS_CSI_NAMESPACE}" --replicas=1 >/dev/null
-    kubectl delete pod -n "${JUICEFS_CSI_NAMESPACE}" -l app=juicefs-csi-controller >/dev/null 2>&1 || true
-    kubectl delete pod -n "${JUICEFS_CSI_NAMESPACE}" -l app=juicefs-csi-node >/dev/null 2>&1 || true
+    kubectl scale statefulset/juicefs-csi-controller -n "${AFSCP_STORAGE_CSI_NAMESPACE}" --replicas=1 >/dev/null
+    kubectl delete pod -n "${AFSCP_STORAGE_CSI_NAMESPACE}" -l app=juicefs-csi-controller >/dev/null 2>&1 || true
+    kubectl delete pod -n "${AFSCP_STORAGE_CSI_NAMESPACE}" -l app=juicefs-csi-node >/dev/null 2>&1 || true
   fi
 
-  internal_real_gate_info "waiting for JuiceFS CSI readiness"
-  internal_real_gate_wait_for_juicefs_ready "${JUICEFS_CSI_NAMESPACE}"
+  internal_real_gate_info "waiting for AFSCP storage CSI readiness"
+  internal_real_gate_wait_for_afscp_storage_csi_ready "${AFSCP_STORAGE_CSI_NAMESPACE}"
 }
 
 internal_real_gate_resolve_kind_gateway() {
@@ -270,7 +270,14 @@ K8S_NAMESPACE="${K8S_NAMESPACE}"
 SANDBOX_LOG="${sandbox_log}"
 CLEANER_LOG="${cleaner_log}"
 CLEANER_INTERVAL_SECONDS="${CLEANER_INTERVAL_SECONDS}"
-JUICEFS_BUCKET_ENDPOINT_FOR_INTERNAL_MOUNT_VALUE="${JUICEFS_BUCKET_ENDPOINT_FOR_INTERNAL_MOUNT_VALUE}"
+AFSCP_STORAGE_CSI_DRIVER="${CSI_DRIVER}"
+AFSCP_STORAGE_CAPACITY="${STORAGE_CAPACITY}"
+AFSCP_STORAGE_CLASS_NAME="${STORAGE_CLASS_NAME}"
+AFSCP_STORAGE_CSI_MOUNT_OPTIONS="${MOUNT_OPTIONS}"
+AFSCP_STORAGE_CSI_SUBDIR="${SUBDIR}"
+AFSCP_STORAGE_CSI_MOUNT_SERVICE_ACCOUNT="${MOUNT_SERVICE_ACCOUNT}"
+AFSCP_STORAGE_CSI_MOUNT_IMAGE="${MOUNT_IMAGE_OVERRIDE}"
+AFSCP_SUBSTRATE_OBJECT_STORAGE_ENDPOINT_VALUE="${AFSCP_SUBSTRATE_OBJECT_STORAGE_ENDPOINT_VALUE}"
 MINIO_ACCESS_KEY="${MINIO_ACCESS_KEY:-mbos}"
 MINIO_SECRET_KEY="${MINIO_SECRET_KEY:-mbos_dev_password}"
 MINIO_BUCKET="${MINIO_BUCKET:-mbos-dev}"
@@ -337,17 +344,12 @@ prepare_internal_backend_real_gate_runtime() {
     internal_real_gate_ensure_kind_image "${RUNNER_IMAGE}"
   fi
 
-  internal_real_gate_ensure_juicefs_csi
+  internal_real_gate_ensure_afscp_storage_csi
 
   KIND_GATEWAY="$(internal_real_gate_resolve_kind_gateway)"
   SANDBOX_MANAGER_URL_VALUE="${SANDBOX_MANAGER_URL:-http://127.0.0.1:${SANDBOX_PORT}}"
   AGENT_EXECUTION_WS_BASE_URL_VALUE="ws://${KIND_GATEWAY}:${API_PORT}"
-  INTERNAL_AGENT_JUICEFS_META_HOST_OVERRIDE_VALUE="${INTERNAL_AGENT_JUICEFS_META_HOST_OVERRIDE:-$(k8s_external_postgres_fqdn "${K8S_NAMESPACE}")}"
-  INTERNAL_AGENT_JUICEFS_META_PORT_OVERRIDE_VALUE="${INTERNAL_AGENT_JUICEFS_META_PORT_OVERRIDE:-5432}"
-  JUICEFS_BUCKET_ENDPOINT_FOR_INTERNAL_MOUNT_VALUE="${JUICEFS_BUCKET_ENDPOINT_FOR_INTERNAL_MOUNT:-http://$(k8s_external_minio_fqdn "${K8S_NAMESPACE}"):9000}"
-  INTEGRATION_CLIENT_JUICEFS_META_HOST_OVERRIDE_VALUE="${INTEGRATION_CLIENT_JUICEFS_META_HOST_OVERRIDE:-127.0.0.1}"
-  INTEGRATION_CLIENT_JUICEFS_META_PORT_OVERRIDE_VALUE="${INTEGRATION_CLIENT_JUICEFS_META_PORT_OVERRIDE:-${INTEGRATION_POSTGRES_PORT}}"
-  INTEGRATION_CLIENT_JUICEFS_STORAGE_ENDPOINT_OVERRIDE_VALUE="${INTEGRATION_CLIENT_JUICEFS_STORAGE_ENDPOINT_OVERRIDE:-http://127.0.0.1:${INTEGRATION_MINIO_API_PORT}}"
+  AFSCP_SUBSTRATE_OBJECT_STORAGE_ENDPOINT_VALUE="${AFSCP_SUBSTRATE_OBJECT_STORAGE_ENDPOINT:-http://$(k8s_external_minio_fqdn "${K8S_NAMESPACE}"):9000}"
 
   EXTERNAL_DEPS_MANIFEST="${EXTERNAL_DEPS_MANIFEST:-${INTERNAL_REAL_DIR}/external-dependencies.yaml}"
   render_k8s_external_dependency_services \

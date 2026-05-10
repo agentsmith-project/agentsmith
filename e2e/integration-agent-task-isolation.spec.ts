@@ -361,9 +361,12 @@ test.describe('@lane-real Agent Task isolation by user', () => {
       });
 
         expect(ownerWorkspaceAccess.file_library_id).not.toBe(memberWorkspaceAccess.file_library_id);
-        expect(ownerWorkspaceAccess.workspace_dir_name).not.toBe(memberWorkspaceAccess.workspace_dir_name);
-        expect(ownerWorkspaceAccess.metadata_url).not.toBe(memberWorkspaceAccess.metadata_url);
-        expect(ownerWorkspaceAccess.storage_bucket_url).not.toBe(memberWorkspaceAccess.storage_bucket_url);
+        expect(ownerWorkspaceAccess.task_home_binding.binding_id).not.toBe(memberWorkspaceAccess.task_home_binding.binding_id);
+        expect(ownerWorkspaceAccess.task_home_binding.paths.task_home_path).not.toBe(
+          memberWorkspaceAccess.task_home_binding.paths.task_home_path,
+        );
+        expect(JSON.stringify(ownerWorkspaceAccess)).not.toMatch(/metadata_url|storage_bucket_url|recommended_mount|filesystem_name|juicefs/i);
+        expect(JSON.stringify(memberWorkspaceAccess)).not.toMatch(/metadata_url|storage_bucket_url|recommended_mount|filesystem_name|juicefs/i);
 
         const ownerReplyToken = `OWNER_COLLISION_OK_${Date.now()}`;
         const memberReplyToken = `MEMBER_COLLISION_OK_${Date.now()}`;

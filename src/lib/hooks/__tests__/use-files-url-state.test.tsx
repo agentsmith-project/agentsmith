@@ -31,12 +31,11 @@ const libraries: FileLibrary[] = [
     name: 'Library A',
     description: '',
     visibility: 'shared',
-    provider: 's3',
-    bucket: 'bucket',
+    source: 'agent_task_files',
+    file_library_home_segment: 'task-home-lib-a',
     status: 'ready',
     task_home_binding_status: 'unbound',
     bound_task_visible: false,
-    filesystem_name: 'flib_ws_default_proj_001_lib_a',
     created_by_user_id: 'u_001',
     created_at: '2026-02-01T00:00:00Z',
     updated_at: '2026-02-01T00:00:00Z',
@@ -48,12 +47,11 @@ const libraries: FileLibrary[] = [
     name: 'Library B',
     description: '',
     visibility: 'shared',
-    provider: 's3',
-    bucket: 'bucket',
+    source: 'agent_task_files',
+    file_library_home_segment: 'task-home-lib-b',
     status: 'ready',
     task_home_binding_status: 'unbound',
     bound_task_visible: false,
-    filesystem_name: 'flib_ws_default_proj_001_lib_b',
     created_by_user_id: 'u_001',
     created_at: '2026-02-01T00:00:00Z',
     updated_at: '2026-02-01T00:00:00Z',
@@ -98,6 +96,26 @@ describe('useFilesUrlState', () => {
     await waitFor(() => {
       expect(result.current.selectedLibraryId).toBe('lib_a');
     });
+  });
+
+  it('uses the default browse prefix when prefix is absent from the URL', async () => {
+    const { result } = renderHook(() => useFilesUrlState(libraries, { defaultPrefix: 'workspace/' }));
+
+    await waitFor(() => {
+      expect(result.current.selectedLibraryId).toBe('lib_a');
+    });
+    expect(result.current.prefix).toBe('workspace/');
+  });
+
+  it('keeps explicit URL root reachable when a default browse prefix is configured', async () => {
+    mockSearchState.value = 'prefix=%2F';
+
+    const { result } = renderHook(() => useFilesUrlState(libraries, { defaultPrefix: 'workspace/' }));
+
+    await waitFor(() => {
+      expect(result.current.selectedLibraryId).toBe('lib_a');
+    });
+    expect(result.current.prefix).toBe('');
   });
 
   it('preserves an existing library_id while the initial library list is still unresolved', async () => {
@@ -194,6 +212,27 @@ describe('useFilesUrlState', () => {
     await waitFor(() => {
       expect(mockRouter.replace).toHaveBeenCalledWith(
         '/en-US/workspaces/ws_default/projects/proj_001/files?library_id=lib_a&prefix=assets%2F',
+        { scroll: false },
+      );
+    });
+  });
+
+  it('setPrefix writes an explicit root marker so the task-file root stays reachable with a default browse prefix', async () => {
+    mockSearchState.value = 'library_id=lib_a';
+    const { result } = renderHook(() => useFilesUrlState(libraries, { defaultPrefix: 'workspace/' }));
+
+    await waitFor(() => {
+      expect(result.current.selectedLibraryId).toBe('lib_a');
+    });
+    expect(result.current.prefix).toBe('workspace/');
+
+    act(() => {
+      result.current.setPrefix('');
+    });
+
+    await waitFor(() => {
+      expect(mockRouter.replace).toHaveBeenCalledWith(
+        '/en-US/workspaces/ws_default/projects/proj_001/files?library_id=lib_a&prefix=%2F',
         { scroll: false },
       );
     });

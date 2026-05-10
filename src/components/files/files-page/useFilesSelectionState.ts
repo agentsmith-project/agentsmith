@@ -12,6 +12,7 @@ import {
 } from './utils';
 
 export function useFilesSelectionState(args: {
+  defaultPrefix?: string;
   filteredItems: FileObjectsListItem[];
   isFetching: boolean;
   libraries: Array<{ id: string }>;
@@ -26,6 +27,7 @@ export function useFilesSelectionState(args: {
   updateSort: (sortBy: FileSortBy, sortOrder: FileSortOrder) => void;
 }) {
   const {
+    defaultPrefix = '',
     filteredItems,
     isFetching,
     libraries,
@@ -75,7 +77,7 @@ export function useFilesSelectionState(args: {
   const restoreLibraryView = React.useCallback((libraryId: string) => {
     const snapshot = librarySnapshotsRef.current[libraryId];
     if (!snapshot) {
-      setPrefix('');
+      setPrefix(defaultPrefix);
       setSearchImmediately('');
       updateSort('name', 'asc');
       setSelectionMode('single');
@@ -89,7 +91,7 @@ export function useFilesSelectionState(args: {
     setSelectionMode(snapshot.selectionMode);
     setSelectedIds(snapshot.selectedIds);
     setMultiSelectAnchorIndex(null);
-  }, [setPrefix, setSearchImmediately, updateSort]);
+  }, [defaultPrefix, setPrefix, setSearchImmediately, updateSort]);
 
   const selectLibrary = React.useCallback((libraryId: string) => {
     if (selectedLibraryId === libraryId) return;

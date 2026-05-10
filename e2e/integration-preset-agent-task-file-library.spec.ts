@@ -81,7 +81,7 @@ async function createTask(page: Page, projectId: string): Promise<string> {
     }, {
       timeout: 60_000,
       intervals: [1_000, 2_000, 5_000],
-      message: () => `task creation never became ready, last status=${lastStatus}, body=${lastBody}`,
+      message: `task creation never became ready, last status=${lastStatus}, body=${lastBody}`,
     })
     .not.toBeNull();
 
@@ -98,19 +98,25 @@ async function expectRunnerSafeWorkspaceAccess(page: Page, projectId: string, ta
   );
   expect(response.ok()).toBeTruthy();
   const payload = (await response.json()) as {
-    metadata_url?: string;
-    storage_bucket_url?: string;
-    task_home_path?: string;
-    workspace_path?: string;
-    artifacts_path?: string;
-    library_root_path?: string | null;
+    task_home_binding?: {
+      provider?: string;
+      mode?: string;
+      paths?: {
+        task_home_path?: string;
+        workspace_path?: string;
+        artifacts_path?: string;
+        library_root_path?: string | null;
+      };
+    };
   };
-  expect(payload.metadata_url).toContain('@postgres:5432/');
-  expect(payload.storage_bucket_url).toContain('http://minio:9000/');
-  expect(payload.task_home_path).toMatch(/^\/home\/[a-z0-9][a-z0-9._-]*$/);
-  expect(payload.workspace_path).toBe(`${payload.task_home_path}/workspace`);
-  expect(payload.artifacts_path).toBe(`${payload.workspace_path}/.artifacts`);
-  expectRelativeLibraryRootPath(payload.library_root_path);
+  expect(JSON.stringify(payload)).not.toMatch(/metadata_url|storage_bucket_url|recommended_mount|filesystem_name|juicefs/i);
+  expect(payload.task_home_binding?.provider).toBe('afscp');
+  expect(payload.task_home_binding?.mode).toBe('pre_mounted');
+  const paths = payload.task_home_binding?.paths ?? {};
+  expect(paths.task_home_path).toMatch(/^\/home\/[a-z0-9][a-z0-9._-]*$/);
+  expect(paths.workspace_path).toBe(`${paths.task_home_path}/workspace`);
+  expect(paths.artifacts_path).toBe(`${paths.workspace_path}/.artifacts`);
+  expectRelativeLibraryRootPath(paths.library_root_path);
   expect(payload).not.toHaveProperty('container_workspace_path');
 }
 

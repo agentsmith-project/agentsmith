@@ -18,9 +18,6 @@ export type ProjectsRoute =
   | { kind: 'agentTaskModelSetting'; workspaceId: string; projectId: string }
   | { kind: 'fileLibraries'; workspaceId: string; projectId: string }
   | { kind: 'fileLibraryItem'; workspaceId: string; projectId: string; libraryId: string }
-  | { kind: 'fileLibraryBackend'; workspaceId: string; projectId: string; libraryId: string }
-  | { kind: 'fileLibraryStorageCredentialExchange'; workspaceId: string; projectId: string; libraryId: string }
-  | { kind: 'fileLibraryDesktopMountAccess'; workspaceId: string; projectId: string; libraryId: string }
   | { kind: 'fileLibraryEntries'; workspaceId: string; projectId: string; libraryId: string }
   | { kind: 'fileLibraryFolders'; workspaceId: string; projectId: string; libraryId: string }
   | { kind: 'fileLibraryDelete'; workspaceId: string; projectId: string; libraryId: string }
@@ -28,7 +25,15 @@ export type ProjectsRoute =
   | { kind: 'fileLibraryUpload'; workspaceId: string; projectId: string; libraryId: string }
   | { kind: 'fileLibraryDownload'; workspaceId: string; projectId: string; libraryId: string }
   | { kind: 'fileLibraryMeta'; workspaceId: string; projectId: string; libraryId: string }
-  | { kind: 'fileLibraryShareLink'; workspaceId: string; projectId: string; libraryId: string }
+  | { kind: 'fileLibrarySavePoints'; workspaceId: string; projectId: string; libraryId: string }
+  | { kind: 'fileLibraryRestorePreview'; workspaceId: string; projectId: string; libraryId: string }
+  | { kind: 'fileLibraryRestoreRun'; workspaceId: string; projectId: string; libraryId: string }
+  | { kind: 'fileLibraryRestoreCancel'; workspaceId: string; projectId: string; libraryId: string }
+  | { kind: 'fileLibraryOperation'; workspaceId: string; projectId: string; operationId: string }
+  | { kind: 'taskFileTemplates'; workspaceId: string; projectId: string }
+  | { kind: 'taskFileTemplateItem'; workspaceId: string; projectId: string; taskFileTemplateId: string }
+  | { kind: 'taskFileTemplatePublish'; workspaceId: string; projectId: string; taskFileTemplateId: string }
+  | { kind: 'taskFileTemplateUnpublish'; workspaceId: string; projectId: string; taskFileTemplateId: string }
   | { kind: 'tasks'; workspaceId: string; projectId: string }
   | { kind: 'taskItem'; workspaceId: string; projectId: string; taskId: string }
   | { kind: 'taskWorkspaceAccess'; workspaceId: string; projectId: string; taskId: string }
@@ -230,18 +235,6 @@ export function matchProjectsRoute(url: string): ProjectsRoute | null {
     };
   }
 
-  const fileLibraryDesktopMountAccessMatched = pathname.match(
-    /^\/api\/v1\/workspaces\/([^/]+)\/projects\/([^/]+)\/file-libraries\/([^/]+)\/desktop-mount-access\/?$/,
-  );
-  if (fileLibraryDesktopMountAccessMatched) {
-    return {
-      kind: 'fileLibraryDesktopMountAccess',
-      workspaceId: decodeURIComponent(fileLibraryDesktopMountAccessMatched[1]),
-      projectId: decodeURIComponent(fileLibraryDesktopMountAccessMatched[2]),
-      libraryId: decodeURIComponent(fileLibraryDesktopMountAccessMatched[3]),
-    };
-  }
-
   const projectAuthorizeMatched = pathname.match(/^\/api\/v1\/workspaces\/([^/]+)\/projects\/([^/]+)\/authorize\/?$/);
   if (projectAuthorizeMatched) {
     return {
@@ -271,6 +264,113 @@ export function matchProjectsRoute(url: string): ProjectsRoute | null {
     };
   }
 
+  const fileLibraryOperationMatched = pathname.match(
+    /^\/api\/v1\/workspaces\/([^/]+)\/projects\/([^/]+)\/file-library-operations\/([^/]+)\/?$/,
+  );
+  if (fileLibraryOperationMatched) {
+    return {
+      kind: 'fileLibraryOperation',
+      workspaceId: decodeURIComponent(fileLibraryOperationMatched[1]),
+      projectId: decodeURIComponent(fileLibraryOperationMatched[2]),
+      operationId: decodeURIComponent(fileLibraryOperationMatched[3]),
+    };
+  }
+
+  const taskFileTemplatesMatched = pathname.match(
+    /^\/api\/v1\/workspaces\/([^/]+)\/projects\/([^/]+)\/task-file-templates\/?$/,
+  );
+  if (taskFileTemplatesMatched) {
+    return {
+      kind: 'taskFileTemplates',
+      workspaceId: decodeURIComponent(taskFileTemplatesMatched[1]),
+      projectId: decodeURIComponent(taskFileTemplatesMatched[2]),
+    };
+  }
+
+  const taskFileTemplatePublishMatched = pathname.match(
+    /^\/api\/v1\/workspaces\/([^/]+)\/projects\/([^/]+)\/task-file-templates\/([^/]+)\/publish\/?$/,
+  );
+  if (taskFileTemplatePublishMatched) {
+    return {
+      kind: 'taskFileTemplatePublish',
+      workspaceId: decodeURIComponent(taskFileTemplatePublishMatched[1]),
+      projectId: decodeURIComponent(taskFileTemplatePublishMatched[2]),
+      taskFileTemplateId: decodeURIComponent(taskFileTemplatePublishMatched[3]),
+    };
+  }
+
+  const taskFileTemplateUnpublishMatched = pathname.match(
+    /^\/api\/v1\/workspaces\/([^/]+)\/projects\/([^/]+)\/task-file-templates\/([^/]+)\/unpublish\/?$/,
+  );
+  if (taskFileTemplateUnpublishMatched) {
+    return {
+      kind: 'taskFileTemplateUnpublish',
+      workspaceId: decodeURIComponent(taskFileTemplateUnpublishMatched[1]),
+      projectId: decodeURIComponent(taskFileTemplateUnpublishMatched[2]),
+      taskFileTemplateId: decodeURIComponent(taskFileTemplateUnpublishMatched[3]),
+    };
+  }
+
+  const taskFileTemplateItemMatched = pathname.match(
+    /^\/api\/v1\/workspaces\/([^/]+)\/projects\/([^/]+)\/task-file-templates\/([^/]+)\/?$/,
+  );
+  if (taskFileTemplateItemMatched) {
+    return {
+      kind: 'taskFileTemplateItem',
+      workspaceId: decodeURIComponent(taskFileTemplateItemMatched[1]),
+      projectId: decodeURIComponent(taskFileTemplateItemMatched[2]),
+      taskFileTemplateId: decodeURIComponent(taskFileTemplateItemMatched[3]),
+    };
+  }
+
+  const fileLibrarySavePointsMatched = pathname.match(
+    /^\/api\/v1\/workspaces\/([^/]+)\/projects\/([^/]+)\/file-libraries\/([^/]+)\/save-points\/?$/,
+  );
+  if (fileLibrarySavePointsMatched) {
+    return {
+      kind: 'fileLibrarySavePoints',
+      workspaceId: decodeURIComponent(fileLibrarySavePointsMatched[1]),
+      projectId: decodeURIComponent(fileLibrarySavePointsMatched[2]),
+      libraryId: decodeURIComponent(fileLibrarySavePointsMatched[3]),
+    };
+  }
+
+  const fileLibraryRestorePreviewMatched = pathname.match(
+    /^\/api\/v1\/workspaces\/([^/]+)\/projects\/([^/]+)\/file-libraries\/([^/]+)\/restore-preview\/?$/,
+  );
+  if (fileLibraryRestorePreviewMatched) {
+    return {
+      kind: 'fileLibraryRestorePreview',
+      workspaceId: decodeURIComponent(fileLibraryRestorePreviewMatched[1]),
+      projectId: decodeURIComponent(fileLibraryRestorePreviewMatched[2]),
+      libraryId: decodeURIComponent(fileLibraryRestorePreviewMatched[3]),
+    };
+  }
+
+  const fileLibraryRestoreRunMatched = pathname.match(
+    /^\/api\/v1\/workspaces\/([^/]+)\/projects\/([^/]+)\/file-libraries\/([^/]+)\/restore-run\/?$/,
+  );
+  if (fileLibraryRestoreRunMatched) {
+    return {
+      kind: 'fileLibraryRestoreRun',
+      workspaceId: decodeURIComponent(fileLibraryRestoreRunMatched[1]),
+      projectId: decodeURIComponent(fileLibraryRestoreRunMatched[2]),
+      libraryId: decodeURIComponent(fileLibraryRestoreRunMatched[3]),
+    };
+  }
+
+  const fileLibraryRestoreCancelMatched = pathname.match(
+    /^\/api\/v1\/workspaces\/([^/]+)\/projects\/([^/]+)\/file-libraries\/([^/]+)\/restore-cancel\/?$/,
+  );
+  if (fileLibraryRestoreCancelMatched) {
+    return {
+      kind: 'fileLibraryRestoreCancel',
+      workspaceId: decodeURIComponent(fileLibraryRestoreCancelMatched[1]),
+      projectId: decodeURIComponent(fileLibraryRestoreCancelMatched[2]),
+      libraryId: decodeURIComponent(fileLibraryRestoreCancelMatched[3]),
+    };
+  }
+
   const fileLibraryItemMatched = pathname.match(/^\/api\/v1\/workspaces\/([^/]+)\/projects\/([^/]+)\/file-libraries\/([^/]+)\/?$/);
   if (fileLibraryItemMatched) {
     return {
@@ -278,28 +378,6 @@ export function matchProjectsRoute(url: string): ProjectsRoute | null {
       workspaceId: decodeURIComponent(fileLibraryItemMatched[1]),
       projectId: decodeURIComponent(fileLibraryItemMatched[2]),
       libraryId: decodeURIComponent(fileLibraryItemMatched[3]),
-    };
-  }
-
-  const fileLibraryBackendMatched = pathname.match(/^\/api\/v1\/workspaces\/([^/]+)\/projects\/([^/]+)\/file-libraries\/([^/]+)\/backend\/?$/);
-  if (fileLibraryBackendMatched) {
-    return {
-      kind: 'fileLibraryBackend',
-      workspaceId: decodeURIComponent(fileLibraryBackendMatched[1]),
-      projectId: decodeURIComponent(fileLibraryBackendMatched[2]),
-      libraryId: decodeURIComponent(fileLibraryBackendMatched[3]),
-    };
-  }
-
-  const fileLibraryStorageCredentialExchangeMatched = pathname.match(
-    /^\/api\/v1\/workspaces\/([^/]+)\/projects\/([^/]+)\/file-libraries\/([^/]+)\/storage-credential-exchange\/?$/,
-  );
-  if (fileLibraryStorageCredentialExchangeMatched) {
-    return {
-      kind: 'fileLibraryStorageCredentialExchange',
-      workspaceId: decodeURIComponent(fileLibraryStorageCredentialExchangeMatched[1]),
-      projectId: decodeURIComponent(fileLibraryStorageCredentialExchangeMatched[2]),
-      libraryId: decodeURIComponent(fileLibraryStorageCredentialExchangeMatched[3]),
     };
   }
 
@@ -384,18 +462,6 @@ export function matchProjectsRoute(url: string): ProjectsRoute | null {
       workspaceId: decodeURIComponent(fileLibraryMetaMatched[1]),
       projectId: decodeURIComponent(fileLibraryMetaMatched[2]),
       libraryId: decodeURIComponent(fileLibraryMetaMatched[3]),
-    };
-  }
-
-  const fileLibraryShareLinkMatched = pathname.match(
-    /^\/api\/v1\/workspaces\/([^/]+)\/projects\/([^/]+)\/file-libraries\/([^/]+)\/share-link\/?$/,
-  );
-  if (fileLibraryShareLinkMatched) {
-    return {
-      kind: 'fileLibraryShareLink',
-      workspaceId: decodeURIComponent(fileLibraryShareLinkMatched[1]),
-      projectId: decodeURIComponent(fileLibraryShareLinkMatched[2]),
-      libraryId: decodeURIComponent(fileLibraryShareLinkMatched[3]),
     };
   }
 

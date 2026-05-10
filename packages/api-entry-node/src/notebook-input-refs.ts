@@ -2,6 +2,7 @@ import {
   buildResolvedArtifactInput,
   buildResolvedLibraryObjectInput,
   buildResolvedUrlInput,
+  type FileLibraryObjectMetaDeps,
   resolveInputRef,
 } from './input-ref-input-resolver.js';
 
@@ -99,15 +100,7 @@ export type NotebookTaskInputDetail =
       imported_key?: string;
     };
 
-type SourceLookupDeps = {
-  getFileLibraryObjectMetaUseCase: {
-    execute(args: { workspaceId: string; projectId: string; libraryId: string; key: string }): Promise<{
-      key: string;
-      content_type?: string;
-      size_bytes?: number;
-    }>;
-  };
-};
+type SourceLookupDeps = FileLibraryObjectMetaDeps;
 
 type ArtifactLookup = {
   id: string;

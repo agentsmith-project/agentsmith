@@ -1,26 +1,22 @@
-import { Readable } from 'node:stream';
-import { afterEach, describe, expect, it, vi } from 'vitest';
-import { apiFetch, apiFetchWithToken, startServer } from './test-support.js';
+import { afterEach, describe, expect, it } from 'vitest';
+import { apiFetch, apiFetchWithToken, startServer as startBaseServer } from './test-support.js';
 import { notebookTaskArtifactsCollection, notebookTasksCollection } from '../notebook-task/task-store.js';
 import { getTasks } from '../notebook-task/task-runtime-state.js';
 import { __resetTaskFileLibraryBindingsForTests } from '../notebook-task/task-file-library-bindings.js';
-
-const { createFileLibraryGatewayClientMock } = vi.hoisted(() => ({
-  createFileLibraryGatewayClientMock: vi.fn(),
-}));
-
-vi.mock('../file-library-gateway-client.js', async () => {
-  const actual = await vi.importActual<typeof import('../file-library-gateway-client.js')>('../file-library-gateway-client.js');
-  return {
-    ...actual,
-    createFileLibraryGatewayClient: createFileLibraryGatewayClientMock,
-  };
-});
+import {
+  configureAfscpReadyFileLibraryTestDeps,
+  type InMemoryAfscpFileLibraryStorageAdapter,
+} from './afscp-file-library-test-support.js';
 
 afterEach(() => {
-  createFileLibraryGatewayClientMock.mockReset();
   __resetTaskFileLibraryBindingsForTests();
 });
+
+function startServer(): ReturnType<typeof startBaseServer> {
+  const started = startBaseServer();
+  configureAfscpReadyFileLibraryTestDeps(started.deps);
+  return started;
+}
 
 async function createFileLibrary(baseUrl: string, name = 'Artifact Fallback Workspace'): Promise<{ id: string; name: string }> {
   const response = await apiFetch(baseUrl, '/api/v1/workspaces/ws_default/projects/proj_1/file-libraries', {
@@ -36,6 +32,7 @@ describe('api-entry-node notebook task artifact download fallback', () => {
   it('downloads metadata-only artifacts from the backing workspace file library', async () => {
     const { baseUrl, deps } = startServer();
     const workspaceLibrary = await createFileLibrary(baseUrl);
+    const storageAdapter = deps.fileLibraryStorageAdapter as InMemoryAfscpFileLibraryStorageAdapter;
 
     const now = new Date().toISOString();
     await deps.docStore.upsert(notebookTasksCollection('ws_default'), 'task_fallback', {
@@ -64,12 +61,13 @@ describe('api-entry-node notebook task artifact download fallback', () => {
       created_at: now,
     });
 
-    createFileLibraryGatewayClientMock.mockResolvedValue({
-      statObject: vi.fn().mockResolvedValue({
-        size: 12,
-        metaData: { 'content-type': 'text/plain' },
-      }),
-      getObject: vi.fn().mockResolvedValue(Readable.from(Buffer.from('hello world\n', 'utf-8'))),
+    storageAdapter.seedFile({
+      workspaceId: 'ws_default',
+      projectId: 'proj_1',
+      libraryId: workspaceLibrary.id,
+      path: 'workspace/.artifacts/result.txt',
+      body: 'hello world\n',
+      contentType: 'text/plain',
     });
 
     const response = await apiFetch(
@@ -80,7 +78,6 @@ describe('api-entry-node notebook task artifact download fallback', () => {
     expect(response.headers.get('content-type')).toContain('text/plain');
     expect(response.headers.get('content-disposition')).toContain('result.txt');
     await expect(response.text()).resolves.toBe('hello world\n');
-    expect(createFileLibraryGatewayClientMock).toHaveBeenCalledTimes(1);
   });
 
   it('keeps artifact download fallback scoped to each task owner when artifact paths match', async () => {
@@ -98,6 +95,7 @@ describe('api-entry-node notebook task artifact download fallback', () => {
     );
     expect(otherLibraryResponse.status).toBe(201);
     const otherLibrary = (await otherLibraryResponse.json()) as { id: string; name: string };
+    const storageAdapter = deps.fileLibraryStorageAdapter as InMemoryAfscpFileLibraryStorageAdapter;
 
     const now = new Date().toISOString();
     const ownerTask = {
@@ -153,15 +151,21 @@ describe('api-entry-node notebook task artifact download fallback', () => {
       created_at: now,
     });
 
-    createFileLibraryGatewayClientMock.mockImplementation(async (args: { libraryId: string; filesystemName: string }) => {
-      const body = args.libraryId === ownerLibrary.id ? 'owner result\n' : 'other result\n';
-      return {
-        statObject: vi.fn().mockResolvedValue({
-          size: body.length,
-          metaData: { 'content-type': 'text/plain' },
-        }),
-        getObject: vi.fn().mockResolvedValue(Readable.from(Buffer.from(body, 'utf-8'))),
-      };
+    storageAdapter.seedFile({
+      workspaceId: 'ws_default',
+      projectId: 'proj_1',
+      libraryId: ownerLibrary.id,
+      path: 'workspace/.artifacts/result.txt',
+      body: 'owner result\n',
+      contentType: 'text/plain',
+    });
+    storageAdapter.seedFile({
+      workspaceId: 'ws_default',
+      projectId: 'proj_1',
+      libraryId: otherLibrary.id,
+      path: 'workspace/.artifacts/result.txt',
+      body: 'other result\n',
+      contentType: 'text/plain',
     });
 
     const ownerDownload = await apiFetchWithToken(
@@ -186,15 +190,5 @@ describe('api-entry-node notebook task artifact download fallback', () => {
       'test-token',
     );
     expect(crossOwnerDownload.status).toBe(404);
-
-    expect(createFileLibraryGatewayClientMock).toHaveBeenCalledTimes(2);
-    expect(createFileLibraryGatewayClientMock).toHaveBeenNthCalledWith(
-      1,
-      expect.objectContaining({ libraryId: ownerLibrary.id }),
-    );
-    expect(createFileLibraryGatewayClientMock).toHaveBeenNthCalledWith(
-      2,
-      expect.objectContaining({ libraryId: otherLibrary.id }),
-    );
   });
 });

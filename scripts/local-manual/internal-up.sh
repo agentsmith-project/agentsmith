@@ -15,7 +15,7 @@ ensure_local_manual_ready
 ensure_agent_task_diagnostics_ready
 ensure_kind_cluster
 ensure_internal_runner_image
-ensure_juicefs_csi
+ensure_afscp_storage_csi
 ensure_internal_external_dependency_services
 INTERNAL_RUNTIME_STARTED=1
 start_internal_runtime

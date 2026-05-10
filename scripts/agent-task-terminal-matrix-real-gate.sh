@@ -8,7 +8,6 @@ source "${ROOT_DIR}/scripts/local-manual/common.sh"
 AGENT_TASK_TERMINAL_MATRIX_FINAL_MODE="${AGENT_TASK_TERMINAL_MATRIX_FINAL_MODE:-developer_runner}"
 
 echo "[agent-task-terminal-matrix] validating multi-session terminal runtime truth"
-"${ROOT_DIR}/node_modules/.bin/tsx" "${ROOT_DIR}/scripts/juicefs-orphan-preflight.ts" --apply --context "agent-task-terminal-matrix"
 
 cleanup_on_exit() {
   local exit_code="${1:-0}"

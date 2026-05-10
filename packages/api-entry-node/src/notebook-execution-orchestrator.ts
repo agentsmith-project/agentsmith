@@ -11,8 +11,8 @@ import { writeProjectAuditEvent, writeProjectUsageFact } from './audit-usage-rec
 import { buildNotebookTaskInputs, type NotebookTaskInputRefRecord } from './notebook-input-refs.js';
 import { buildTaskTraceEvent, storeTaskTraceEvent } from './notebook-trace-store.js';
 import { buildSandboxStartingEvent, sanitizeWorkloadId } from './internal-agent-pod-manager.js';
-import { JsonDocProjectFileLibraryCatalogRepo } from './file-library-persistence.js';
 import {
+  isDeveloperAgentRunner,
   isManagedAgentRunner,
   usesAgentPresenceScopedTaskRunner,
   usesInternalApiBaseForTaskRunner,
@@ -36,6 +36,11 @@ import {
   toTaskWorkspaceBindingGuardException,
 } from './notebook-task/task-workspace-binding-guard.js';
 import { actorHasProjectPermissions } from './project-permissions.js';
+import {
+  DEVELOPER_RUNNER_TASK_HOME_BINDING_UNAVAILABLE_CODE,
+  DEVELOPER_RUNNER_TASK_HOME_BINDING_UNAVAILABLE_MESSAGE,
+  isDeveloperRunnerTaskHomeBindingAvailable,
+} from './developer-runner-workspace-blocker.js';
 export {
   readInternalWorkloadHolderSnapshotForTests,
   resetInternalWorkloadHolderCoordinatorForTests,
@@ -89,17 +94,6 @@ function mapNotebookTaskMessageRecordToActivityItem(
     ...(message.turn_id ? { run_id: message.turn_id } : {}),
     ...runnerTestSourceMarker(task),
   };
-}
-
-function sanitizeFileLibraryWorkspaceDirName(fileLibraryName: string | undefined, fileLibraryId: string | undefined): string {
-  const slug = (fileLibraryName ?? '')
-    .toLowerCase()
-    .trim()
-    .replace(/[^a-z0-9]+/g, '-')
-    .replace(/^-+|-+$/g, '')
-    .slice(0, 48);
-  if (slug) return slug;
-  return (fileLibraryId ?? '').replace(/[^a-zA-Z0-9._-]/g, '_').slice(0, 48) || 'file-library-workspace';
 }
 
 function buildTerminalAssistantFallbackContent(args: {
@@ -585,6 +579,11 @@ export async function runNotebookTaskWithExecutionAgent(input: {
     if (!agent || agent.status !== 'enabled') {
       throw Object.assign(new Error('agent_not_available'), { code: 'AGENT_OFFLINE' });
     }
+    if (isDeveloperAgentRunner(agent) && !isDeveloperRunnerTaskHomeBindingAvailable()) {
+      throw Object.assign(new Error(DEVELOPER_RUNNER_TASK_HOME_BINDING_UNAVAILABLE_MESSAGE), {
+        code: DEVELOPER_RUNNER_TASK_HOME_BINDING_UNAVAILABLE_CODE,
+      });
+    }
 
     const resolvedTarget = agentTaskModelTarget ?? await resolveAgentTaskModelTarget({
       deps,
@@ -644,7 +643,6 @@ export async function runNotebookTaskWithExecutionAgent(input: {
           deps,
           task,
           actorUserId: user.id,
-          requireMountAccess: false,
           canUpdateProjectFiles: () => actorHasProjectPermissions({
             deps,
             workspaceId: task.workspace_id,
@@ -665,6 +663,9 @@ export async function runNotebookTaskWithExecutionAgent(input: {
         fileLibraryId: workspaceFileLibraryId,
         taskId: task.id,
         taskHomeSegment,
+        actorUserId: user.id,
+        requestId: runId,
+        signal: startupSignal,
       });
       await throwIfCancellationRequested();
       await deps.internalAgentPodManager.ensureAgentReady({
@@ -704,13 +705,6 @@ export async function runNotebookTaskWithExecutionAgent(input: {
       attachedInputs: task.attached_inputs as NotebookTaskInputRefRecord[],
       debugLog,
     });
-    const workspaceLibrary = workspaceFileLibraryId
-      ? await new JsonDocProjectFileLibraryCatalogRepo(deps.docStore).getById(
-        task.workspace_id,
-        task.project_id,
-        workspaceFileLibraryId,
-      )
-      : null;
     const issuedExecutionTicket = await issueInternalTicket(deps.cache, {
       purpose: 'agent_execution',
       userId: user.id,
@@ -774,8 +768,6 @@ export async function runNotebookTaskWithExecutionAgent(input: {
         library_root_path: taskRuntimePaths.libraryRootPath,
         workspace_file_library_id: workspaceFileLibraryId,
         workspace_file_library_name: task.workspace_file_library_name ?? null,
-        workspace_dir_name: workspaceLibrary?.filesystem_name
-          ?? sanitizeFileLibraryWorkspaceDirName(task.workspace_file_library_name, workspaceFileLibraryId),
         task_inputs: taskInputs,
       },
     });

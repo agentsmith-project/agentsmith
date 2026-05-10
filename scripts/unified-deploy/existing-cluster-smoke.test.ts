@@ -256,9 +256,9 @@ describe('unified deploy existing-cluster smoke producer', () => {
       expect(call.input).toContain('REDIS_URL: "redis://:sentinel_redis_secret@substrate-redis:6379/0"');
       expect(call.input).toContain('MINIO_PORT: "9000"');
       expect(call.input).toContain('INTERNAL_KEYCLOAK_BASE_URL: "http://substrate-keycloak:8080"');
-      expect(call.input).toContain('INTERNAL_AGENT_JUICEFS_META_HOST_OVERRIDE: "substrate-postgresql.agentsmith.svc.cluster.local"');
-      expect(call.input).toContain('INTERNAL_AGENT_JUICEFS_META_PORT_OVERRIDE: "5432"');
-      expect(call.input).toContain('JUICEFS_BUCKET_ENDPOINT_FOR_INTERNAL_MOUNT: "http://substrate-minio.agentsmith.svc.cluster.local:9000"');
+      expect(call.input).not.toContain('INTERNAL_AGENT_JUICEFS_META_HOST_OVERRIDE');
+      expect(call.input).not.toContain('INTERNAL_AGENT_JUICEFS_META_PORT_OVERRIDE');
+      expect(call.input).not.toContain('JUICEFS_BUCKET_ENDPOINT_FOR_INTERNAL_MOUNT');
       expect(call.input).toContain('value: "http://substrate-minio.agentsmith.svc.cluster.local:9000"');
       expect(call.input).toMatch(/agentsmith\.mbos\.dev\/checksum-app-config: "sha256:[a-f0-9]{64}"/u);
       expect(call.input).toMatch(/agentsmith\.mbos\.dev\/checksum-app-secrets: "sha256:[a-f0-9]{64}"/u);

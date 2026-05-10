@@ -1,5 +1,11 @@
 import { http, HttpResponse } from 'msw';
-import type { FileLibrary } from '@/lib/api/types';
+import type {
+  FileLibrary,
+  FileLibraryRestorePreview,
+  FileLibraryRestoreRun,
+  FileLibrarySavePoint,
+  TaskFileTemplate,
+} from '@/lib/api/types';
 import { DOC_FIXTURES_ENABLED } from '../doc-fixtures/mode';
 import { docFileLibraries } from '../doc-fixtures/workspace-projects';
 import { docObjectDbByLibraryId } from '../doc-fixtures/files';
@@ -11,6 +17,14 @@ type ObjectRow =
   | { kind: 'prefix'; prefix: string; name: string }
   | { kind: 'object'; key: string; name: string; size_bytes: number; content_type: string; etag?: string; last_modified: string; content?: string };
 
+type MockUploadFile = {
+  name: string;
+  size: number;
+  type?: string;
+  content?: string;
+  text?: () => Promise<string>;
+};
+
 type MockTaskHomeBinding = {
   workspaceId: string;
   projectId: string;
@@ -21,7 +35,25 @@ type MockTaskHomeBinding = {
   visible: boolean;
 };
 
+type MockFileLibrarySavePoint = FileLibrarySavePoint & {
+  workspace_id: string;
+  project_id: string;
+  snapshot: ObjectRow[];
+};
+
+type MockFileLibraryRestorePreview = FileLibraryRestorePreview & {
+  workspace_id: string;
+  project_id: string;
+};
+
+type MockTaskFileTemplate = TaskFileTemplate & {
+  snapshot: ObjectRow[];
+};
+
 const taskHomeBindingsByLibrary = new Map<string, MockTaskHomeBinding>();
+const savePointsById = new Map<string, MockFileLibrarySavePoint>();
+const restorePreviewsById = new Map<string, MockFileLibraryRestorePreview>();
+const taskFileTemplatesById = new Map<string, MockTaskFileTemplate>();
 
 function bindingKey(input: { workspaceId: string; projectId: string; libraryId: string }) {
   return `${input.workspaceId}:${input.projectId}:${input.libraryId}`;
@@ -57,6 +89,10 @@ export function getMockFileLibrary(input: {
     && library.project_id === input.projectId
     && library.id === input.libraryId,
   ) ?? null;
+}
+
+function buildFileLibraryHomeSegment(libraryId: string) {
+  return `task-home-${libraryId.toLowerCase().replace(/[^a-z0-9-]+/g, '-').replace(/^-+|-+$/g, '') || 'library'}`.slice(0, 63);
 }
 
 function withTaskHomeBinding(library: FileLibrary): FileLibrary {
@@ -100,7 +136,6 @@ export function ensureMockFileLibraryForTask(input: {
 }) {
   const existing = sourceLibraries.find((library) => library.id === input.libraryId);
   if (existing) return withTaskHomeBinding(existing);
-  const slug = input.name.toLowerCase().replace(/[^a-z0-9-]+/g, '-').replace(/^-+|-+$/g, '') || input.libraryId;
   const created: FileLibrary = {
     id: input.libraryId,
     workspace_id: input.workspaceId,
@@ -108,12 +143,13 @@ export function ensureMockFileLibraryForTask(input: {
     name: input.name,
     description: '',
     visibility: 'shared',
-    provider: 'juicefs',
-    bucket: `jfs-lib-${input.libraryId}`,
+    source: 'agent_task_files',
+    file_library_home_segment: buildFileLibraryHomeSegment(input.libraryId),
     status: 'ready',
+    storage_status: 'available',
+    storage_next_action: null,
     task_home_binding_status: 'unbound',
     bound_task_visible: false,
-    filesystem_name: `flib-${slug}`.slice(0, 63),
     created_by_user_id: input.createdByUserId,
     created_at: input.now,
     updated_at: input.now,
@@ -131,12 +167,13 @@ const sourceLibraries: FileLibrary[] = DOC_FIXTURES_ENABLED ? [...docFileLibrari
     name: 'Shared Docs',
     description: 'Default shared library',
     visibility: 'shared' as const,
-    provider: 's3' as const,
-    bucket: 'mbos-proj-001-shared-docs',
+    source: 'agent_task_files' as const,
+    file_library_home_segment: 'task-home-shared-default',
     status: 'ready' as const,
+    storage_status: 'available' as const,
+    storage_next_action: null,
     task_home_binding_status: 'unbound' as const,
     bound_task_visible: false,
-    filesystem_name: 'flib-ws-default-proj-001-shared-docs',
     created_by_user_id: 'user_001',
     created_at: new Date('2026-02-01T00:00:00Z').toISOString(),
     updated_at: new Date('2026-02-01T00:00:00Z').toISOString(),
@@ -148,12 +185,13 @@ const sourceLibraries: FileLibrary[] = DOC_FIXTURES_ENABLED ? [...docFileLibrari
     name: 'Policy Rules',
     description: 'Shared policy and governance references',
     visibility: 'shared' as const,
-    provider: 's3' as const,
-    bucket: 'mbos-proj-001-policy-rules',
+    source: 'agent_task_files' as const,
+    file_library_home_segment: 'task-home-policy-rules',
     status: 'ready' as const,
+    storage_status: 'available' as const,
+    storage_next_action: null,
     task_home_binding_status: 'unbound' as const,
     bound_task_visible: false,
-    filesystem_name: 'flib-ws-default-proj-001-policy-rules',
     created_by_user_id: 'user_001',
     created_at: new Date('2026-02-02T00:00:00Z').toISOString(),
     updated_at: new Date('2026-02-02T00:00:00Z').toISOString(),
@@ -165,12 +203,13 @@ const sourceLibraries: FileLibrary[] = DOC_FIXTURES_ENABLED ? [...docFileLibrari
     name: 'Product Specs',
     description: 'Shared product and API specifications',
     visibility: 'shared' as const,
-    provider: 's3' as const,
-    bucket: 'mbos-proj-001-product-specs',
+    source: 'agent_task_files' as const,
+    file_library_home_segment: 'task-home-product-specs',
     status: 'ready' as const,
+    storage_status: 'available' as const,
+    storage_next_action: null,
     task_home_binding_status: 'unbound' as const,
     bound_task_visible: false,
-    filesystem_name: 'flib-ws-default-proj-001-product-specs',
     created_by_user_id: 'user_001',
     created_at: new Date('2026-02-03T00:00:00Z').toISOString(),
     updated_at: new Date('2026-02-03T00:00:00Z').toISOString(),
@@ -182,12 +221,13 @@ const sourceLibraries: FileLibrary[] = DOC_FIXTURES_ENABLED ? [...docFileLibrari
     name: 'Large Bench',
     description: 'Large directory benchmark fixture',
     visibility: 'shared' as const,
-    provider: 's3' as const,
-    bucket: 'mbos-proj-001-large-bench',
+    source: 'agent_task_files' as const,
+    file_library_home_segment: 'task-home-large-bench',
     status: 'ready' as const,
+    storage_status: 'available' as const,
+    storage_next_action: null,
     task_home_binding_status: 'unbound' as const,
     bound_task_visible: false,
-    filesystem_name: 'flib-ws-default-proj-001-large-bench',
     created_by_user_id: 'user_001',
     created_at: new Date('2026-02-04T00:00:00Z').toISOString(),
     updated_at: new Date('2026-02-04T00:00:00Z').toISOString(),
@@ -202,10 +242,10 @@ const failOnceCounters: Record<string, number> = {};
 function shouldFailOnce(kind: 'delete' | 'download', key: string) {
   const marker = kind === 'delete' ? '__fail_once_delete__' : '__fail_once_download__';
   if (!key.includes(marker)) return false;
-  const bucket = `${kind}:${key}`;
-  const count = failOnceCounters[bucket] ?? 0;
+  const counterKey = `${kind}:${key}`;
+  const count = failOnceCounters[counterKey] ?? 0;
   if (count > 0) return false;
-  failOnceCounters[bucket] = count + 1;
+  failOnceCounters[counterKey] = count + 1;
   return true;
 }
 
@@ -240,6 +280,127 @@ const objectDbByLibraryId: Record<string, ObjectRow[]> = DOC_FIXTURES_ENABLED
   }),
 };
 
+function cloneObjectRows(rows: ObjectRow[]): ObjectRow[] {
+  return rows.map((row) => ({ ...row }));
+}
+
+function toPublicSavePoint(savePoint: MockFileLibrarySavePoint): FileLibrarySavePoint {
+  return {
+    id: savePoint.id,
+    file_library_id: savePoint.file_library_id,
+    ...(savePoint.message ? { message: savePoint.message } : {}),
+    created_at: savePoint.created_at,
+  };
+}
+
+function toPublicRestorePreview(preview: MockFileLibraryRestorePreview): FileLibraryRestorePreview {
+  return {
+    id: preview.id,
+    file_library_id: preview.file_library_id,
+    source_save_point_id: preview.source_save_point_id,
+    ...(preview.message ? { message: preview.message } : {}),
+    status: preview.status,
+    created_at: preview.created_at,
+    updated_at: preview.updated_at,
+  };
+}
+
+function toPublicTaskFileTemplate(template: MockTaskFileTemplate): TaskFileTemplate {
+  return {
+    id: template.id,
+    workspace_id: template.workspace_id,
+    project_id: template.project_id,
+    source_library_id: template.source_library_id,
+    ...(template.source_save_point_id ? { source_save_point_id: template.source_save_point_id } : {}),
+    name: template.name,
+    ...(template.description ? { description: template.description } : {}),
+    status: template.status,
+    created_by_user_id: template.created_by_user_id,
+    created_at: template.created_at,
+    updated_at: template.updated_at,
+  };
+}
+
+function createMockFileLibrarySavePoint(input: {
+  workspaceId: string;
+  projectId: string;
+  libraryId: string;
+  message?: string;
+}) {
+  const now = nowIso();
+  const savePoint: MockFileLibrarySavePoint = {
+    id: `sp_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`,
+    workspace_id: input.workspaceId,
+    project_id: input.projectId,
+    file_library_id: input.libraryId,
+    ...(input.message ? { message: input.message } : {}),
+    created_at: now,
+    snapshot: cloneObjectRows(objectDbByLibraryId[input.libraryId] ?? []),
+  };
+  savePointsById.set(savePoint.id, savePoint);
+  return savePoint;
+}
+
+function getMockTaskFileTemplate(input: {
+  workspaceId: string;
+  projectId: string;
+  templateId: string;
+}) {
+  const template = taskFileTemplatesById.get(input.templateId);
+  if (
+    !template
+    || template.workspace_id !== input.workspaceId
+    || template.project_id !== input.projectId
+  ) {
+    return null;
+  }
+  return template;
+}
+
+export function cloneMockTaskFileTemplateIntoLibrary(input: {
+  workspaceId: string;
+  projectId: string;
+  templateId: string;
+  libraryId: string;
+  name: string;
+  createdByUserId: string;
+  now: string;
+}) {
+  const template = getMockTaskFileTemplate({
+    workspaceId: input.workspaceId,
+    projectId: input.projectId,
+    templateId: input.templateId,
+  });
+  if (!template || template.status !== 'published') return null;
+  const library = ensureMockFileLibraryForTask({
+    workspaceId: input.workspaceId,
+    projectId: input.projectId,
+    libraryId: input.libraryId,
+    name: input.name,
+    createdByUserId: input.createdByUserId,
+    now: input.now,
+  });
+  objectDbByLibraryId[input.libraryId] = cloneObjectRows(template.snapshot);
+  return library;
+}
+
+if (!DOC_FIXTURES_ENABLED) {
+  taskFileTemplatesById.set('tmpl_starter_files', {
+    id: 'tmpl_starter_files',
+    workspace_id: 'ws_default',
+    project_id: 'proj_001',
+    source_library_id: 'lib_shared_default',
+    source_save_point_id: 'sp_starter_files_seed',
+    name: 'Starter task files',
+    description: 'Published starter files for new tasks',
+    status: 'published',
+    created_by_user_id: 'user_001',
+    created_at: new Date('2026-02-06T00:00:00Z').toISOString(),
+    updated_at: new Date('2026-02-06T00:00:00Z').toISOString(),
+    snapshot: cloneObjectRows(objectDbByLibraryId.lib_shared_default ?? []),
+  });
+}
+
 function buildFixtureLibrary(input: {
   id: string;
   name: string;
@@ -252,12 +413,13 @@ function buildFixtureLibrary(input: {
     name: input.name,
     description: '',
     visibility: 'shared',
-    provider: 'juicefs',
-    bucket: `jfs-${input.id}`,
+    source: 'agent_task_files',
+    file_library_home_segment: buildFileLibraryHomeSegment(input.id),
     status: input.status ?? 'ready',
+    storage_status: input.status === 'ready' ? 'available' : 'unavailable',
+    storage_next_action: input.status === 'ready' ? null : 'retry',
     task_home_binding_status: 'unbound',
     bound_task_visible: false,
-    filesystem_name: `flib-${input.id}`,
     created_by_user_id: 'user_001',
     created_at: new Date('2026-02-05T00:00:00Z').toISOString(),
     updated_at: new Date('2026-02-05T00:00:00Z').toISOString(),
@@ -394,6 +556,124 @@ function basename(path: string) {
   return idx >= 0 ? trimmed.slice(idx + 1) : trimmed;
 }
 
+function getFormString(form: FormData, name: string) {
+  const value = form.get(name);
+  return typeof value === 'string' ? value : '';
+}
+
+function isUploadFileValue(value: FormDataEntryValue | null): value is MockUploadFile {
+  if (!value || typeof value === 'string') return false;
+  const candidate = value as Partial<MockUploadFile>;
+  return typeof candidate.name === 'string' && typeof candidate.size === 'number';
+}
+
+function parseContentDispositionValue(value: string) {
+  const result: { name?: string; filename?: string } = {};
+  for (const part of value.split(';')) {
+    const [rawKey, ...rawValueParts] = part.trim().split('=');
+    const key = rawKey?.trim().toLowerCase();
+    const rawValue = rawValueParts.join('=').trim();
+    if (!key || !rawValue) continue;
+    const unquoted = rawValue.startsWith('"') && rawValue.endsWith('"')
+      ? rawValue.slice(1, -1)
+      : rawValue;
+    if (key === 'name') result.name = unquoted;
+    if (key === 'filename') result.filename = unquoted;
+  }
+  return result;
+}
+
+function readMultipartHeader(headers: string, headerName: string) {
+  const prefix = `${headerName.toLowerCase()}:`;
+  const line = headers
+    .split(/\r?\n/)
+    .find((item) => item.trim().toLowerCase().startsWith(prefix));
+  if (!line) return '';
+  return line.slice(line.indexOf(':') + 1).trim();
+}
+
+function getMultipartBoundary(contentType: string) {
+  const match = contentType.match(/(?:^|;)\s*boundary=(?:"([^"]+)"|([^;]+))/i);
+  return match?.[1] ?? match?.[2] ?? '';
+}
+
+function splitMultipartPart(part: string) {
+  const trimmedStart = part.startsWith('\r\n')
+    ? part.slice(2)
+    : part.startsWith('\n')
+      ? part.slice(1)
+      : part;
+  const separator = trimmedStart.includes('\r\n\r\n') ? '\r\n\r\n' : '\n\n';
+  const separatorIndex = trimmedStart.indexOf(separator);
+  if (separatorIndex < 0) return null;
+  const headers = trimmedStart.slice(0, separatorIndex);
+  let body = trimmedStart.slice(separatorIndex + separator.length);
+  if (body.endsWith('\r\n')) body = body.slice(0, -2);
+  if (body.endsWith('\n')) body = body.slice(0, -1);
+  return { headers, body };
+}
+
+async function parseMultipartUploadForm(request: Request) {
+  const contentType = request.headers.get('content-type') ?? '';
+  const boundary = getMultipartBoundary(contentType);
+  if (!boundary) {
+    return { file: null, prefix: '', overwrite: false };
+  }
+
+  const rawBody = await request.text().catch(() => '');
+  const delimiter = `--${boundary}`;
+  let file: MockUploadFile | null = null;
+  let prefix = '';
+  let overwrite = false;
+
+  for (const part of rawBody.split(delimiter).slice(1)) {
+    if (part.startsWith('--')) continue;
+    const parsed = splitMultipartPart(part);
+    if (!parsed) continue;
+    const disposition = parseContentDispositionValue(
+      readMultipartHeader(parsed.headers, 'content-disposition'),
+    );
+    if (!disposition.name) continue;
+    if (disposition.filename !== undefined) {
+      const partContentType = readMultipartHeader(parsed.headers, 'content-type') || 'application/octet-stream';
+      file = {
+        name: disposition.filename,
+        type: partContentType,
+        size: new TextEncoder().encode(parsed.body).byteLength,
+        content: partContentType.startsWith('text/') ? parsed.body : undefined,
+      };
+      continue;
+    }
+    if (disposition.name === 'prefix') {
+      prefix = parsed.body;
+    }
+    if (disposition.name === 'overwrite') {
+      overwrite = parsed.body.toLowerCase() === 'true';
+    }
+  }
+
+  return {
+    file,
+    prefix: normalizePrefix(prefix),
+    overwrite,
+  };
+}
+
+async function readUploadForm(request: Request) {
+  const fallbackRequest = request.clone();
+  try {
+    const form = await request.formData();
+    const file = form.get('file');
+    return {
+      file: isUploadFileValue(file) ? file : null,
+      prefix: normalizePrefix(getFormString(form, 'prefix')),
+      overwrite: getFormString(form, 'overwrite').toLowerCase() === 'true',
+    };
+  } catch {
+    return parseMultipartUploadForm(fallbackRequest);
+  }
+}
+
 function toFileLibraryEntries(items: ReturnType<typeof listObjects>) {
   return items.map((item) =>
     item.kind === 'prefix'
@@ -508,7 +788,6 @@ export const fileHandlers = [
     }
     const now = nowIso();
     const id = `flib_${Date.now()}`;
-    const slug = body.name.toLowerCase().replace(/[^a-z0-9-]+/g, '-').replace(/^-+|-+$/g, '') || 'filelib';
     const created = {
       id,
       workspace_id: String(params.ws ?? ''),
@@ -516,12 +795,13 @@ export const fileHandlers = [
       name: body.name,
       description: body.description ?? '',
       visibility: 'shared' as const,
-      provider: 'juicefs' as const,
-      bucket: `jfs-lib-${id}`,
+      source: 'agent_task_files' as const,
+      file_library_home_segment: buildFileLibraryHomeSegment(id),
       status: 'ready' as const,
+      storage_status: 'available' as const,
+      storage_next_action: null,
       task_home_binding_status: 'unbound' as const,
       bound_task_visible: false,
-      filesystem_name: `flib-${slug}`.slice(0, 63),
       created_by_user_id: 'user_001',
       created_at: now,
       updated_at: now,
@@ -536,6 +816,141 @@ export const fileHandlers = [
       return fileLibraryNotFoundResponse(String(params.id ?? ''));
     }
     return HttpResponse.json(withTaskHomeBinding(library));
+  }),
+  http.get(`${API_V1_PATTERN}/workspaces/:ws/projects/:prj/file-libraries/:id/save-points`, ({ params }) => {
+    const library = getRouteFileLibrary(params);
+    if (!library) {
+      return fileLibraryNotFoundResponse(String(params.id ?? ''));
+    }
+    const workspaceId = String(params.ws ?? '');
+    const projectId = String(params.prj ?? '');
+    const libraryId = String(params.id ?? '');
+    const items = Array.from(savePointsById.values())
+      .filter((savePoint) =>
+        savePoint.workspace_id === workspaceId
+        && savePoint.project_id === projectId
+        && savePoint.file_library_id === libraryId,
+      )
+      .sort((a, b) => b.created_at.localeCompare(a.created_at))
+      .map(toPublicSavePoint);
+    return HttpResponse.json({ items });
+  }),
+  http.post(`${API_V1_PATTERN}/workspaces/:ws/projects/:prj/file-libraries/:id/save-points`, async ({ params, request }) => {
+    const availability = rejectUnavailableFileLibraryWrite(params);
+    if (availability.response) return availability.response;
+    const body = (await request.json().catch(() => ({}))) as { message?: string };
+    const savePoint = createMockFileLibrarySavePoint({
+      workspaceId: String(params.ws ?? ''),
+      projectId: String(params.prj ?? ''),
+      libraryId: String(params.id ?? ''),
+      message: typeof body.message === 'string' && body.message.trim().length > 0
+        ? body.message.trim()
+        : undefined,
+    });
+    return HttpResponse.json(toPublicSavePoint(savePoint), { status: 201 });
+  }),
+  http.post(`${API_V1_PATTERN}/workspaces/:ws/projects/:prj/file-libraries/:id/restore-preview`, async ({ params, request }) => {
+    const availability = rejectUnavailableFileLibraryWrite(params);
+    if (availability.response) return availability.response;
+    const body = (await request.json().catch(() => ({}))) as { save_point_id?: string };
+    const savePoint = body.save_point_id ? savePointsById.get(body.save_point_id) : null;
+    const workspaceId = String(params.ws ?? '');
+    const projectId = String(params.prj ?? '');
+    const libraryId = String(params.id ?? '');
+    if (
+      !savePoint
+      || savePoint.workspace_id !== workspaceId
+      || savePoint.project_id !== projectId
+      || savePoint.file_library_id !== libraryId
+    ) {
+      return HttpResponse.json({
+        error_code: 'FILE_LIBRARY_SAVE_POINT_NOT_FOUND',
+        message: 'file_library_save_point_not_found',
+        save_point_id: body.save_point_id,
+      }, { status: 404 });
+    }
+    const now = nowIso();
+    const preview: MockFileLibraryRestorePreview = {
+      id: `rp_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`,
+      workspace_id: workspaceId,
+      project_id: projectId,
+      file_library_id: libraryId,
+      source_save_point_id: savePoint.id,
+      message: savePoint.message,
+      status: 'ready',
+      created_at: now,
+      updated_at: now,
+    };
+    restorePreviewsById.set(preview.id, preview);
+    return HttpResponse.json(toPublicRestorePreview(preview), { status: 201 });
+  }),
+  http.post(`${API_V1_PATTERN}/workspaces/:ws/projects/:prj/file-libraries/:id/restore-run`, async ({ params, request }) => {
+    const availability = rejectUnavailableFileLibraryWrite(params);
+    if (availability.response) return availability.response;
+    const body = (await request.json().catch(() => ({}))) as { restore_preview_id?: string };
+    const preview = body.restore_preview_id ? restorePreviewsById.get(body.restore_preview_id) : null;
+    const workspaceId = String(params.ws ?? '');
+    const projectId = String(params.prj ?? '');
+    const libraryId = String(params.id ?? '');
+    if (
+      !preview
+      || preview.workspace_id !== workspaceId
+      || preview.project_id !== projectId
+      || preview.file_library_id !== libraryId
+    ) {
+      return HttpResponse.json({
+        error_code: 'FILE_LIBRARY_RESTORE_PREVIEW_NOT_FOUND',
+        message: 'file_library_restore_preview_not_found',
+        restore_preview_id: body.restore_preview_id,
+      }, { status: 404 });
+    }
+    const savePoint = savePointsById.get(preview.source_save_point_id);
+    if (!savePoint) {
+      return HttpResponse.json({
+        error_code: 'FILE_LIBRARY_SAVE_POINT_NOT_FOUND',
+        message: 'file_library_save_point_not_found',
+        save_point_id: preview.source_save_point_id,
+      }, { status: 404 });
+    }
+    objectDbByLibraryId[libraryId] = cloneObjectRows(savePoint.snapshot);
+    const now = nowIso();
+    preview.status = 'restored';
+    preview.updated_at = now;
+    const run: FileLibraryRestoreRun = {
+      id: `rr_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`,
+      file_library_id: libraryId,
+      restore_preview_id: preview.id,
+      status: 'succeeded',
+      created_at: now,
+      updated_at: now,
+    };
+    return HttpResponse.json(run);
+  }),
+  http.post(`${API_V1_PATTERN}/workspaces/:ws/projects/:prj/file-libraries/:id/restore-cancel`, async ({ params, request }) => {
+    const library = getRouteFileLibrary(params);
+    if (!library) {
+      return fileLibraryNotFoundResponse(String(params.id ?? ''));
+    }
+    const body = (await request.json().catch(() => ({}))) as { restore_preview_id?: string };
+    const preview = body.restore_preview_id ? restorePreviewsById.get(body.restore_preview_id) : null;
+    const workspaceId = String(params.ws ?? '');
+    const projectId = String(params.prj ?? '');
+    const libraryId = String(params.id ?? '');
+    if (
+      !preview
+      || preview.workspace_id !== workspaceId
+      || preview.project_id !== projectId
+      || preview.file_library_id !== libraryId
+    ) {
+      return HttpResponse.json({
+        error_code: 'FILE_LIBRARY_RESTORE_PREVIEW_NOT_FOUND',
+        message: 'file_library_restore_preview_not_found',
+        restore_preview_id: body.restore_preview_id,
+      }, { status: 404 });
+    }
+    preview.status = 'canceled';
+    preview.updated_at = nowIso();
+    return HttpResponse.json(toPublicRestorePreview(preview));
   }),
   http.patch(`${API_V1_PATTERN}/workspaces/:ws/projects/:prj/file-libraries/:id`, async ({ params, request }) => {
     const body = (await request.json().catch(() => ({}))) as { name?: string; description?: string };
@@ -602,77 +1017,112 @@ export const fileHandlers = [
     delete objectDbByLibraryId[String(params.id ?? '')];
     return HttpResponse.json(null, { status: 204 });
   }),
-  http.get(`${API_V1_PATTERN}/workspaces/:ws/projects/:prj/file-libraries/:id/backend`, ({ params }) => {
-    const library = getRouteFileLibrary(params);
-    if (!library) {
-      return fileLibraryNotFoundResponse(String(params.id ?? ''));
-    }
-    return HttpResponse.json({
-      library_id: library.id,
-      filesystem_name: library.filesystem_name,
-      provisioning_status: library.status,
-      gateway_status: 'ready',
-      postgres: {
-        host: 'localhost',
-        port: 15432,
-        database: `jfs_lib_${library.id}`,
-        username: `jfsu_${library.id}`,
-      },
-      minio: {
-        endpoint: 'http://localhost:19000',
-        bucket: library.bucket,
-        region: 'us-east-1',
-      },
-    });
+  http.get(`${API_V1_PATTERN}/workspaces/:ws/projects/:prj/task-file-templates`, ({ params }) => {
+    const workspaceId = String(params.ws ?? '');
+    const projectId = String(params.prj ?? '');
+    const items = Array.from(taskFileTemplatesById.values())
+      .filter((template) => template.workspace_id === workspaceId && template.project_id === projectId)
+      .sort((a, b) => b.updated_at.localeCompare(a.updated_at))
+      .map(toPublicTaskFileTemplate);
+    return HttpResponse.json({ items });
   }),
-  http.post(`${API_V1_PATTERN}/workspaces/:ws/projects/:prj/file-libraries/:id/storage-credential-exchange`, ({ params }) => {
-    const { library, response } = rejectUnavailableFileLibraryWrite(params);
-    if (response) return response;
-    if (!library) {
-      return fileLibraryNotFoundResponse(String(params.id ?? ''));
+  http.post(`${API_V1_PATTERN}/workspaces/:ws/projects/:prj/task-file-templates`, async ({ params, request }) => {
+    const body = (await request.json().catch(() => ({}))) as {
+      source_library_id?: string;
+      name?: string;
+      description?: string;
+    };
+    const workspaceId = String(params.ws ?? '');
+    const projectId = String(params.prj ?? '');
+    const sourceLibrary = body.source_library_id
+      ? getMockFileLibrary({
+          workspaceId,
+          projectId,
+          libraryId: body.source_library_id,
+        })
+      : null;
+    if (!sourceLibrary) {
+      return fileLibraryNotFoundResponse(body.source_library_id ?? '');
     }
-    return HttpResponse.json({
-      client_mount_access: {
-        filesystem_name: library.filesystem_name,
-        metadata_url: `postgres://jfsu_${library.id}:secret@files.example.com:15432/jfs_lib_${library.id}`,
-        storage_bucket_url: `https://files.example.com:19000/${library.filesystem_name}`,
-        recommended_mount_path: `~/Agentsmith/${library.name}`,
-        platform_notes: [
-          'Linux requires FUSE support.',
-          'macOS requires macFUSE.',
-          'Windows requires JuiceFS-supported filesystem dependencies.',
-        ],
-        recommended_mount_commands: {
-          linux: `juicefs mount 'postgres://jfsu_${library.id}:secret@files.example.com:15432/jfs_lib_${library.id}' '$HOME/Agentsmith/${library.name}' --bucket 'https://files.example.com:19000/${library.filesystem_name}'`,
-          macos: `juicefs mount 'postgres://jfsu_${library.id}:secret@files.example.com:15432/jfs_lib_${library.id}' '$HOME/Agentsmith/${library.name}' --bucket 'https://files.example.com:19000/${library.filesystem_name}'`,
-          windows: `juicefs mount "postgres://jfsu_${library.id}:secret@files.example.com:15432/jfs_lib_${library.id}" X: --bucket "https://files.example.com:19000/${library.filesystem_name}"`,
-        },
-        created_at: nowIso(),
-      },
+    if (sourceLibrary.status !== 'ready') {
+      return fileLibraryStatusConflictResponse(sourceLibrary);
+    }
+    if (!body.name?.trim()) {
+      return HttpResponse.json({
+        error_code: 'VALIDATION_ERROR',
+        message: 'invalid_request',
+      }, { status: 400 });
+    }
+    const savePoint = createMockFileLibrarySavePoint({
+      workspaceId,
+      projectId,
+      libraryId: sourceLibrary.id,
+      message: `Template source: ${body.name.trim()}`,
     });
+    const now = nowIso();
+    const template: MockTaskFileTemplate = {
+      id: `tmpl_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`,
+      workspace_id: workspaceId,
+      project_id: projectId,
+      source_library_id: sourceLibrary.id,
+      source_save_point_id: savePoint.id,
+      name: body.name.trim(),
+      ...(body.description?.trim() ? { description: body.description.trim() } : {}),
+      status: 'unpublished',
+      created_by_user_id: 'user_001',
+      created_at: now,
+      updated_at: now,
+      snapshot: cloneObjectRows(savePoint.snapshot),
+    };
+    taskFileTemplatesById.set(template.id, template);
+    return HttpResponse.json(toPublicTaskFileTemplate(template), { status: 201 });
   }),
-  http.post(`${API_V1_PATTERN}/workspaces/:ws/projects/:prj/file-libraries/:id/desktop-mount-access`, ({ params, request }) => {
-    const { library, response } = rejectUnavailableFileLibraryWrite(params);
-    if (response) return response;
-    if (!library) {
-      return fileLibraryNotFoundResponse(String(params.id ?? ''));
-    }
-    const url = new URL(request.url);
-    return HttpResponse.json({
-      desktop_mount_access: {
-        filesystem_name: library.filesystem_name,
-        metadata_url: `postgres://jfsu_${library.id}:secret@files.example.com:15432/jfs_lib_${library.id}`,
-        storage_bucket_url: `https://files.example.com:19000/${library.filesystem_name}`,
-        deployment_base_url: `${url.protocol}//${url.host}`,
-        default_mount_roots: {
-          linux: '~/AgentSmith',
-          macos: '~/AgentSmith',
-          windows: '%USERPROFILE%\\AgentSmith',
-        },
-        windows_requires_drive_letter: true,
-        created_at: nowIso(),
-      },
+  http.post(`${API_V1_PATTERN}/workspaces/:ws/projects/:prj/task-file-templates/:templateId/publish`, ({ params }) => {
+    const template = getMockTaskFileTemplate({
+      workspaceId: String(params.ws ?? ''),
+      projectId: String(params.prj ?? ''),
+      templateId: String(params.templateId ?? ''),
     });
+    if (!template) {
+      return HttpResponse.json({
+        error_code: 'TASK_FILE_TEMPLATE_NOT_FOUND',
+        message: 'task_file_template_not_found',
+      }, { status: 404 });
+    }
+    template.status = 'published';
+    template.updated_at = nowIso();
+    return HttpResponse.json(toPublicTaskFileTemplate(template));
+  }),
+  http.post(`${API_V1_PATTERN}/workspaces/:ws/projects/:prj/task-file-templates/:templateId/unpublish`, ({ params }) => {
+    const template = getMockTaskFileTemplate({
+      workspaceId: String(params.ws ?? ''),
+      projectId: String(params.prj ?? ''),
+      templateId: String(params.templateId ?? ''),
+    });
+    if (!template) {
+      return HttpResponse.json({
+        error_code: 'TASK_FILE_TEMPLATE_NOT_FOUND',
+        message: 'task_file_template_not_found',
+      }, { status: 404 });
+    }
+    template.status = 'unpublished';
+    template.updated_at = nowIso();
+    return HttpResponse.json(toPublicTaskFileTemplate(template));
+  }),
+  http.delete(`${API_V1_PATTERN}/workspaces/:ws/projects/:prj/task-file-templates/:templateId`, ({ params }) => {
+    const template = getMockTaskFileTemplate({
+      workspaceId: String(params.ws ?? ''),
+      projectId: String(params.prj ?? ''),
+      templateId: String(params.templateId ?? ''),
+    });
+    if (!template) {
+      return HttpResponse.json({
+        error_code: 'TASK_FILE_TEMPLATE_NOT_FOUND',
+        message: 'task_file_template_not_found',
+      }, { status: 404 });
+    }
+    taskFileTemplatesById.delete(template.id);
+    return HttpResponse.json(null, { status: 204 });
   }),
   http.get(`${API_V1_PATTERN}/workspaces/:ws/projects/:prj/file-libraries/:id/entries`, ({ params, request }) => {
     const library = getRouteFileLibrary(params);
@@ -787,38 +1237,12 @@ export const fileHandlers = [
       user_metadata: {},
     });
   }),
-  http.post(`${API_V1_PATTERN}/workspaces/:ws/projects/:prj/file-libraries/:id/share-link`, async ({ params, request }) => {
-    const availability = rejectUnavailableFileLibraryWrite(params);
-    if (availability.response) return availability.response;
-    const libraryId = String(params.id ?? '');
-    const body = (await request.json().catch(() => ({}))) as { path?: string; expires_in_seconds?: number };
-    const path = String(body.path ?? '').trim();
-    const expiresInSeconds = Number(body.expires_in_seconds ?? 900);
-    if (!path) {
-      return HttpResponse.json({ error_code: 'invalid_file_library_share_link_request', message: 'invalid_file_library_share_link_request' }, { status: 400 });
-    }
-    const db = objectDbByLibraryId[libraryId] ?? [];
-    const obj = db.find((r) => r.kind === 'object' && r.key === path) as Extract<ObjectRow, { kind: 'object' }> | undefined;
-    if (!obj) {
-      return HttpResponse.json({ error_code: 'object_not_found', message: 'object_not_found' }, { status: 404 });
-    }
-    const expiresAt = new Date(new Date(nowIso()).getTime() + expiresInSeconds * 1000).toISOString();
-    const url = `https://mock-juicefs.local/${encodeURIComponent(libraryId)}/${encodeURIComponent(path)}?X-Amz-Expires=${expiresInSeconds}&X-Amz-Signature=mock`;
-    return HttpResponse.json({
-      key: path,
-      url,
-      expires_at: expiresAt,
-    });
-  }),
   http.post(`${API_V1_PATTERN}/workspaces/:ws/projects/:prj/file-libraries/:id/upload`, async ({ params, request }) => {
     const availability = rejectUnavailableFileLibraryWrite(params);
     if (availability.response) return availability.response;
     const libraryId = String(params.id ?? '');
-    const form = await request.formData();
-    const file = form.get('file');
-    const prefix = normalizePrefix((form.get('prefix') as string | null) ?? '');
-    const overwrite = ((form.get('overwrite') as string | null) ?? '').toLowerCase() === 'true';
-    if (!(file instanceof File)) {
+    const { file, prefix, overwrite } = await readUploadForm(request);
+    if (!file) {
       return HttpResponse.json({ error_code: 'invalid_request', message: 'file_is_required' }, { status: 400 });
     }
     if (file.name.includes('slow-upload')) {
@@ -831,7 +1255,11 @@ export const fileHandlers = [
       return HttpResponse.json({ error_code: 'destination_exists', message: 'destination_exists' }, { status: 409 });
     }
     const contentType = file.type || 'application/octet-stream';
-    const content = contentType.startsWith('text/') ? await file.text().catch(() => '') : undefined;
+    const content = typeof file.content === 'string'
+      ? file.content
+      : contentType.startsWith('text/') && typeof file.text === 'function'
+        ? await file.text().catch(() => '')
+        : undefined;
     const row: Extract<ObjectRow, { kind: 'object' }> = {
       kind: 'object',
       key: path,

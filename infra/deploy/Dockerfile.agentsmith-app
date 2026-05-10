@@ -31,14 +31,11 @@ RUN npm run api:node:build
 
 FROM ${NODE_RUNTIME_IMAGE} AS runtime
 
-ARG JUICEFS_VERSION=1.3.0
-
 ENV NODE_ENV=production
 ENV NEXT_TELEMETRY_DISABLED=1
 
 WORKDIR /app
 
-COPY infra/vendor/juicefs /tmp/juicefs-dist
 COPY --from=mc-bin /usr/bin/mc /usr/local/bin/mc
 
 RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
@@ -49,20 +46,8 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
     bash \
     ca-certificates \
     curl \
-    fuse3 \
     procps \
-  ; \
-  arch="$(dpkg --print-architecture)"; \
-  case "${arch}" in \
-    amd64) juicefs_arch="amd64" ;; \
-    arm64) juicefs_arch="arm64" ;; \
-    *) echo "unsupported architecture: ${arch}" >&2; exit 1 ;; \
-  esac; \
-  archive="/tmp/juicefs-dist/juicefs-${JUICEFS_VERSION}-linux-${juicefs_arch}.tar.gz"; \
-  test -f "${archive}"; \
-  tar -xzf "${archive}" -C /tmp; \
-  install -m 0755 /tmp/juicefs /usr/local/bin/juicefs; \
-  rm -rf /tmp/juicefs /tmp/juicefs-dist
+  ;
 
 COPY --from=build /app /app
 

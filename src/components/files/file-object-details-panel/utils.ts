@@ -23,12 +23,6 @@ export function extensionOf(filename: string) {
   return filename.slice(idx + 1).toLowerCase();
 }
 
-export function formatExpiry(iso: string) {
-  const ms = Date.parse(iso);
-  if (!Number.isFinite(ms)) return iso;
-  return new Date(ms).toLocaleString();
-}
-
 export function resolvePreviewKind(contentType: string, key: string): PreviewKind {
   if (contentType.startsWith('image/')) return 'image';
   if (contentType === 'application/pdf') return 'pdf';

@@ -25,25 +25,22 @@ INTEGRATION_MINIO_API_PORT="${INTEGRATION_MINIO_API_PORT:-29000}"
 SANDBOX_PORT="${INTERNAL_SANDBOX_MANAGER_PORT:-28080}"
 SANDBOX_SERVICE_KEY_VALUE="${SANDBOX_SERVICE_KEY:-agentsmith-internal-test-key}"
 K8S_NAMESPACE="${INTERNAL_AGENT_K8S_NAMESPACE:-agentsmith-sandbox}"
-CSI_DRIVER="${INTERNAL_AGENT_JUICEFS_CSI_DRIVER:-csi.juicefs.com}"
+CSI_DRIVER="${AFSCP_STORAGE_CSI_DRIVER:-csi.juicefs.com}"
 RUNNER_KIND="${INTEGRATION_INTERNAL_AGENT_RUNNER_KIND:-agent-task}"
 RUNNER_IMAGE="${INTEGRATION_INTERNAL_AGENT_IMAGE:-${INTEGRATION_AGENT_TASK_RUNNER_DOCKER_IMAGE:-$(runner_default_image "${RUNNER_KIND}")}}"
 RUNNER_BASE_IMAGE="${INTEGRATION_INTERNAL_AGENT_BASE_IMAGE:-${INTEGRATION_AGENT_TASK_RUNNER_BASE_DOCKER_IMAGE:-$(runner_default_base_image "${RUNNER_KIND}")}}"
 BUILD_RUNNER_IMAGE="${INTEGRATION_BUILD_INTERNAL_AGENT_IMAGE:-${INTEGRATION_AGENT_TASK_RUNNER_REBUILD_IMAGE:-1}}"
 DOCKER_BUILD_PROXY_VALUE="${INTEGRATION_DOCKER_BUILD_PROXY:-${DOCKER_BUILD_PROXY:-}}"
-WORKSPACE_CAPACITY="${INTERNAL_AGENT_WORKSPACE_CAPACITY:-1Pi}"
-STORAGE_CLASS_NAME="${INTERNAL_AGENT_JUICEFS_STORAGE_CLASS_NAME:-}"
-MOUNT_OPTIONS="${INTERNAL_AGENT_JUICEFS_MOUNT_OPTIONS:-}"
-SUBDIR="${INTERNAL_AGENT_JUICEFS_SUBDIR:-}"
-MOUNT_SERVICE_ACCOUNT="${INTERNAL_AGENT_JUICEFS_MOUNT_SERVICE_ACCOUNT:-}"
-MOUNT_IMAGE_OVERRIDE="${INTERNAL_AGENT_JUICEFS_MOUNT_IMAGE:-}"
-JUICEFS_MOUNT_IMAGE="${INTERNAL_AGENT_JUICEFS_MOUNT_IMAGE:-juicedata/mount:ce-v1.3.1}"
-JUICEFS_CSI_VERSION="${JUICEFS_CSI_VERSION:-v0.31.3}"
-JUICEFS_CSI_MANIFEST_PATH="${JUICEFS_CSI_MANIFEST_PATH:-${ROOT_DIR}/infra/deploy/unified/local-kind/juicefs-csi/upstream-manifest.yaml}"
-JUICEFS_CSI_NAMESPACE="${JUICEFS_CSI_NAMESPACE:-kube-system}"
-AGENT_RUNNER_DEVELOPER_JUICEFS_META_HOST_OVERRIDE_VALUE="${AGENT_RUNNER_DEVELOPER_JUICEFS_META_HOST_OVERRIDE:-127.0.0.1}"
-AGENT_RUNNER_DEVELOPER_JUICEFS_META_PORT_OVERRIDE_VALUE="${AGENT_RUNNER_DEVELOPER_JUICEFS_META_PORT_OVERRIDE:-${INTEGRATION_POSTGRES_PORT}}"
-AGENT_RUNNER_DEVELOPER_JUICEFS_STORAGE_ENDPOINT_OVERRIDE_VALUE="${AGENT_RUNNER_DEVELOPER_JUICEFS_STORAGE_ENDPOINT_OVERRIDE:-http://127.0.0.1:${INTEGRATION_MINIO_API_PORT}}"
+STORAGE_CAPACITY="${AFSCP_STORAGE_CAPACITY:-1Pi}"
+STORAGE_CLASS_NAME="${AFSCP_STORAGE_CLASS_NAME:-}"
+MOUNT_OPTIONS="${AFSCP_STORAGE_CSI_MOUNT_OPTIONS:-}"
+SUBDIR="${AFSCP_STORAGE_CSI_SUBDIR:-}"
+MOUNT_SERVICE_ACCOUNT="${AFSCP_STORAGE_CSI_MOUNT_SERVICE_ACCOUNT:-}"
+MOUNT_IMAGE_OVERRIDE="${AFSCP_STORAGE_CSI_MOUNT_IMAGE:-}"
+AFSCP_STORAGE_CSI_MOUNT_IMAGE="${AFSCP_STORAGE_CSI_MOUNT_IMAGE:-juicedata/mount:ce-v1.3.1}"
+AFSCP_STORAGE_CSI_VERSION="${AFSCP_STORAGE_CSI_VERSION:-v0.31.3}"
+AFSCP_STORAGE_CSI_MANIFEST_PATH="${AFSCP_STORAGE_CSI_MANIFEST_PATH:-${ROOT_DIR}/infra/deploy/unified/local-kind/juicefs-csi/upstream-manifest.yaml}"
+AFSCP_STORAGE_CSI_NAMESPACE="${AFSCP_STORAGE_CSI_NAMESPACE:-kube-system}"
 RESET_FIRST="${RESET_FIRST:-1}"
 
 info() { echo "[integration-release-user-story] $*"; }
@@ -112,7 +109,7 @@ ensure_local_image() {
   docker pull "${image}" >/dev/null
 }
 
-wait_for_juicefs_pods() {
+wait_for_afscp_storage_csi_pods() {
   local namespace="$1"
   local selector="$2"
   local timeout_seconds="${3:-120}"
@@ -129,17 +126,17 @@ wait_for_juicefs_pods() {
   done
 }
 
-wait_for_juicefs_ready() {
+wait_for_afscp_storage_csi_ready() {
   local namespace="$1"
-  wait_for_juicefs_pods "${namespace}" 'app=juicefs-csi-controller'
+  wait_for_afscp_storage_csi_pods "${namespace}" 'app=juicefs-csi-controller'
   kubectl wait --for=condition=Ready pod -l app=juicefs-csi-controller -n "${namespace}" --timeout=600s >/dev/null
-  wait_for_juicefs_pods "${namespace}" 'app=juicefs-csi-node'
+  wait_for_afscp_storage_csi_pods "${namespace}" 'app=juicefs-csi-node'
   kubectl wait --for=condition=Ready pod -l app=juicefs-csi-node -n "${namespace}" --timeout=600s >/dev/null
 }
 
-ensure_juicefs_csi() {
-  info "reconciling JuiceFS CSI driver ${CSI_DRIVER}"
-  local csi_manifest="${JUICEFS_CSI_MANIFEST_PATH}"
+ensure_afscp_storage_csi() {
+  info "reconciling AFSCP storage CSI driver ${CSI_DRIVER}"
+  local csi_manifest="${AFSCP_STORAGE_CSI_MANIFEST_PATH}"
   if [[ ! -f "${csi_manifest}" ]]; then
     csi_manifest="https://raw.githubusercontent.com/juicedata/juicefs-csi-driver/master/deploy/k8s.yaml"
   fi
@@ -147,27 +144,27 @@ ensure_juicefs_csi() {
 
   if [[ "${CONTEXT_NAME}" == kind-* ]]; then
     info "loading images into kind cluster ${KIND_CLUSTER_NAME}"
-    ensure_local_image "${JUICEFS_MOUNT_IMAGE}"
+    ensure_local_image "${AFSCP_STORAGE_CSI_MOUNT_IMAGE}"
     ensure_kind_image "${RUNNER_IMAGE}"
-    ensure_kind_image "juicedata/juicefs-csi-driver:${JUICEFS_CSI_VERSION}"
-    ensure_kind_image "juicedata/csi-dashboard:${JUICEFS_CSI_VERSION}"
-    ensure_kind_image "${JUICEFS_MOUNT_IMAGE}"
+    ensure_kind_image "juicedata/juicefs-csi-driver:${AFSCP_STORAGE_CSI_VERSION}"
+    ensure_kind_image "juicedata/csi-dashboard:${AFSCP_STORAGE_CSI_VERSION}"
+    ensure_kind_image "${AFSCP_STORAGE_CSI_MOUNT_IMAGE}"
     ensure_kind_image "registry.k8s.io/sig-storage/csi-provisioner:v3.6.0"
     ensure_kind_image "registry.k8s.io/sig-storage/csi-resizer:v1.9.0"
     ensure_kind_image "registry.k8s.io/sig-storage/csi-node-driver-registrar:v2.9.0"
     ensure_kind_image "registry.k8s.io/sig-storage/livenessprobe:v2.11.0"
 
-    kubectl scale statefulset/juicefs-csi-controller -n "${JUICEFS_CSI_NAMESPACE}" --replicas=1 >/dev/null || true
-    kubectl delete pod -n "${JUICEFS_CSI_NAMESPACE}" -l app=juicefs-csi-controller >/dev/null 2>&1 || true
-    kubectl delete pod -n "${JUICEFS_CSI_NAMESPACE}" -l app=juicefs-csi-node >/dev/null 2>&1 || true
+    kubectl scale statefulset/juicefs-csi-controller -n "${AFSCP_STORAGE_CSI_NAMESPACE}" --replicas=1 >/dev/null || true
+    kubectl delete pod -n "${AFSCP_STORAGE_CSI_NAMESPACE}" -l app=juicefs-csi-controller >/dev/null 2>&1 || true
+    kubectl delete pod -n "${AFSCP_STORAGE_CSI_NAMESPACE}" -l app=juicefs-csi-node >/dev/null 2>&1 || true
   fi
 
-  wait_for_juicefs_ready "${JUICEFS_CSI_NAMESPACE}"
+  wait_for_afscp_storage_csi_ready "${AFSCP_STORAGE_CSI_NAMESPACE}"
 }
 
 kubectl create namespace "${K8S_NAMESPACE}" --dry-run=client -o yaml | kubectl apply --validate=false -f - >/dev/null
 
-ensure_juicefs_csi
+ensure_afscp_storage_csi
 
 KIND_GATEWAY=""
 if docker network inspect kind >/dev/null 2>&1; then
@@ -186,9 +183,7 @@ if ! is_ipv4_address "${KIND_GATEWAY}"; then
   exit 1
 fi
 AGENT_EXECUTION_WS_BASE_URL_VALUE="ws://${KIND_GATEWAY}:${API_PORT}"
-INTERNAL_AGENT_JUICEFS_META_HOST_OVERRIDE_VALUE="${INTERNAL_AGENT_JUICEFS_META_HOST_OVERRIDE:-$(k8s_external_postgres_fqdn "${K8S_NAMESPACE}")}"
-INTERNAL_AGENT_JUICEFS_META_PORT_OVERRIDE_VALUE="${INTERNAL_AGENT_JUICEFS_META_PORT_OVERRIDE:-5432}"
-JUICEFS_BUCKET_ENDPOINT_FOR_INTERNAL_MOUNT_VALUE="${JUICEFS_BUCKET_ENDPOINT_FOR_INTERNAL_MOUNT:-http://$(k8s_external_minio_fqdn "${K8S_NAMESPACE}"):9000}"
+AFSCP_SUBSTRATE_OBJECT_STORAGE_ENDPOINT_VALUE="${AFSCP_SUBSTRATE_OBJECT_STORAGE_ENDPOINT:-http://$(k8s_external_minio_fqdn "${K8S_NAMESPACE}"):9000}"
 
 EXTERNAL_DEPS_MANIFEST="${INTEGRATION_DIR}/external-dependencies.yaml"
 render_k8s_external_dependency_services \
@@ -293,7 +288,14 @@ info "starting local sandbox manager"
     env -u http_proxy -u https_proxy -u all_proxy -u HTTP_PROXY -u HTTPS_PROXY -u ALL_PROXY -u no_proxy -u NO_PROXY \
     CONFIG_PATH="${CONFIG_PATH}" \
     SERVICE_KEYS="${SANDBOX_SERVICE_KEY_VALUE}" \
-    JUICEFS_STORAGE_ENDPOINT="${JUICEFS_BUCKET_ENDPOINT_FOR_INTERNAL_MOUNT_VALUE}" \
+    JUICEFS_CSI_DRIVER="${CSI_DRIVER}" \
+    JUICEFS_STORAGE_CAPACITY="${STORAGE_CAPACITY}" \
+    JUICEFS_STORAGE_CLASS_NAME="${STORAGE_CLASS_NAME}" \
+    JUICEFS_MOUNT_OPTIONS="${MOUNT_OPTIONS}" \
+    JUICEFS_SUBDIR="${SUBDIR}" \
+    JUICEFS_MOUNT_SERVICE_ACCOUNT="${MOUNT_SERVICE_ACCOUNT}" \
+    JUICEFS_MOUNT_IMAGE="${MOUNT_IMAGE_OVERRIDE}" \
+    JUICEFS_STORAGE_ENDPOINT="${AFSCP_SUBSTRATE_OBJECT_STORAGE_ENDPOINT_VALUE}" \
     JUICEFS_STORAGE_ACCESS_KEY="${MINIO_ACCESS_KEY:-mbos}" \
     JUICEFS_STORAGE_SECRET_KEY="${MINIO_SECRET_KEY:-mbos_dev_password}" \
     STORAGE_ENDPOINT="localhost:${INTEGRATION_MINIO_API_PORT}" \
@@ -328,21 +330,17 @@ info "running full integration release user story"
     SANDBOX_MANAGER_URL="http://127.0.0.1:${SANDBOX_PORT}" \
     SANDBOX_SERVICE_KEY="${SANDBOX_SERVICE_KEY_VALUE}" \
     INTERNAL_AGENT_K8S_NAMESPACE="${K8S_NAMESPACE}" \
-    INTERNAL_AGENT_JUICEFS_CSI_DRIVER="${CSI_DRIVER}" \
-    INTERNAL_AGENT_WORKSPACE_CAPACITY="${WORKSPACE_CAPACITY}" \
-    INTERNAL_AGENT_JUICEFS_STORAGE_CLASS_NAME="${STORAGE_CLASS_NAME}" \
-    INTERNAL_AGENT_JUICEFS_MOUNT_OPTIONS="${MOUNT_OPTIONS}" \
-    INTERNAL_AGENT_JUICEFS_SUBDIR="${SUBDIR}" \
-    INTERNAL_AGENT_JUICEFS_MOUNT_SERVICE_ACCOUNT="${MOUNT_SERVICE_ACCOUNT}" \
-    INTERNAL_AGENT_JUICEFS_MOUNT_IMAGE="${MOUNT_IMAGE_OVERRIDE}" \
-    INTERNAL_AGENT_JUICEFS_META_HOST_OVERRIDE="${INTERNAL_AGENT_JUICEFS_META_HOST_OVERRIDE_VALUE}" \
-    INTERNAL_AGENT_JUICEFS_META_PORT_OVERRIDE="${INTERNAL_AGENT_JUICEFS_META_PORT_OVERRIDE_VALUE}" \
-    JUICEFS_BUCKET_ENDPOINT_FOR_INTERNAL_MOUNT="${JUICEFS_BUCKET_ENDPOINT_FOR_INTERNAL_MOUNT_VALUE}" \
+    AFSCP_STORAGE_CSI_DRIVER="${CSI_DRIVER}" \
+    AFSCP_STORAGE_CAPACITY="${STORAGE_CAPACITY}" \
+    AFSCP_STORAGE_CLASS_NAME="${STORAGE_CLASS_NAME}" \
+    AFSCP_STORAGE_CSI_MOUNT_OPTIONS="${MOUNT_OPTIONS}" \
+    AFSCP_STORAGE_CSI_SUBDIR="${SUBDIR}" \
+    AFSCP_STORAGE_CSI_MOUNT_SERVICE_ACCOUNT="${MOUNT_SERVICE_ACCOUNT}" \
+    AFSCP_STORAGE_CSI_MOUNT_IMAGE="${MOUNT_IMAGE_OVERRIDE}" \
+    AFSCP_STORAGE_CSI_NAMESPACE="${AFSCP_STORAGE_CSI_NAMESPACE}" \
+    AFSCP_SUBSTRATE_OBJECT_STORAGE_ENDPOINT="${AFSCP_SUBSTRATE_OBJECT_STORAGE_ENDPOINT_VALUE}" \
     INTEGRATION_INTERNAL_AGENT_IMAGE="${RUNNER_IMAGE}" \
     AGENT_EXECUTION_WS_BASE_URL="${AGENT_EXECUTION_WS_BASE_URL_VALUE}" \
-    AGENT_RUNNER_DEVELOPER_JUICEFS_META_HOST_OVERRIDE="${AGENT_RUNNER_DEVELOPER_JUICEFS_META_HOST_OVERRIDE_VALUE}" \
-    AGENT_RUNNER_DEVELOPER_JUICEFS_META_PORT_OVERRIDE="${AGENT_RUNNER_DEVELOPER_JUICEFS_META_PORT_OVERRIDE_VALUE}" \
-    AGENT_RUNNER_DEVELOPER_JUICEFS_STORAGE_ENDPOINT_OVERRIDE="${AGENT_RUNNER_DEVELOPER_JUICEFS_STORAGE_ENDPOINT_OVERRIDE_VALUE}" \
     UX_TRACE_OUTPUT_ROOT="${ARTIFACT_DIR}/ux-traces" \
     INTEGRATION_API_PORT="${API_PORT}" \
     INTEGRATION_POSTGRES_PORT="${INTEGRATION_POSTGRES_PORT}" \

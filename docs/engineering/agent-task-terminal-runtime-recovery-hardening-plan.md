@@ -190,7 +190,7 @@ Contract rules：
 
 - API response to runner contains resolved `task_home_path`、`workspace_path`、`artifacts_path` for that runtime profile.
 - Runner path truth source is the task run / terminal create execution context. Runner must consume these execution context paths as authoritative.
-- `workspace-access` only provides mount credentials and workspace access material. It may echo resolved paths for API-side diagnostics and consistency checks, but it must not become a second runner path truth source.
+- `workspace-access` only provides task HOME access material. It may echo resolved paths for API-side diagnostics and consistency checks, but it must not become a second runner path truth source.
 - If `workspace-access` echoes paths, runner validates them against execution context paths and fails typed on mismatch, using `runtime_path_unavailable` or a protocol/configuration error according to the failing layer.
 - Public/user-facing surfaces do not expose internal absolute paths to ordinary users.
 - `task_home_segment` is not a Linux user and is not manually provided by users.
@@ -278,7 +278,7 @@ Task header、task detail、activity/run summary、terminal panel、toast、inli
 
 | Audience | Visible copy / behavior | Hidden details |
 | --- | --- | --- |
-| Ordinary user | "The task workspace is temporarily unavailable. Try again later or contact an administrator." Terminal/task actions stay disabled according to backend affordances. | Absolute host paths, `/home/task_*`, developer root, mount credentials, runner diagnostics |
+| Ordinary user | "The task workspace is temporarily unavailable. Try again later or contact an administrator." Terminal/task actions stay disabled according to backend affordances. | Absolute host paths, `/home/task_*`, developer root, AFSCP access credentials, runner diagnostics |
 | Developer runner owner | Show that the local Developer runner workspace root is not writable or not configured, with the configured root only on Developer runner setup/diagnostic surfaces. Provide the env/config key to fix, not chmod `/home`. | Other users' task paths, credentials, full internal stack traces |
 | System/admin/diagnostic | Show typed error, diagnostic id, runtime profile, runner id, and redacted resolved path context in gated diagnostics/logs. Full path may appear only in protected diagnostic evidence. | Nothing leaks to ordinary task UI |
 
@@ -619,7 +619,7 @@ Path/runtime acceptance:
 - Developer runner terminal warmup 成功创建 `$TASK_HOME/workspace/.artifacts`。
 - API 和 runner 在 local-manual / backend-real 中使用同一个 developer workspace root。
 - Task run execution context、terminal create execution context、`workspace-access` 使用同一个 runtime-aware resolver。
-- Execution context 是 runner path 真相源；`workspace-access` 只提供 mount credentials，并且路径 echo mismatch 会 typed fail。
+- Execution context 是 runner path 真相源；`workspace-access` 只提供 task HOME access material，并且路径 echo mismatch 会 typed fail。
 - Runner 不尝试在 host 上创建 `/home/task_*`。
 - Developer terminal smoke 从 task response/API truth 读取 `task_home_segment`，不按 task id 直接拼路径。
 - Artifacts 只来自 `$TASK_HOME/workspace/.artifacts`。
@@ -662,7 +662,7 @@ Reviewer 需要逐项确认：
 
 - 文档/contract 是否明确区分 managed pod canonical path 和 developer local resolved path。
 - API 是否是 resolved path 真相源，runner 是否没有路径静默翻译。
-- execution context 是否是 runner path 真相源，`workspace-access` 是否只提供 mount credentials / consistency echo。
+- execution context 是否是 runner path 真相源，`workspace-access` 是否只提供 task HOME access material / consistency echo。
 - local-manual API 和 runner 是否共享同一个 developer workspace root。
 - Developer smoke 是否从 API truth 读取 `task_home_segment`，并覆盖 non-direct segment。
 - Browser close、runner transport close、API reload、runner ready/adopt、terminal PTY lifecycle 是否各有单测或 backend-real 证据。

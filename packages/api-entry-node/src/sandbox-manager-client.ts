@@ -24,40 +24,20 @@ export interface SandboxPodCreateBody {
   idle_timeout_sec?: number;
   max_lifetime_sec?: number;
   workspace_binding_id: string;
-  mount_path?: string;
-  working_dir?: string;
 }
 
 export interface SandboxWorkspaceBindingBody {
-  file_library_id: string;
-  filesystem_name: string;
-  metadata_url: string;
-  mount_path?: string;
-  storage_endpoint?: string;
-  storage_capacity?: string;
-  storage_class_name?: string;
-  mount_options?: string[];
-  subdir?: string;
-  mount_service_account?: string;
-  mount_image?: string;
+  namespace_id: string;
+  mount_binding_id: string;
 }
 
 export interface SandboxWorkspaceBindingResponse {
   binding_id: string;
   workspace_id: string;
   project_id: string;
-  file_library_id: string;
+  namespace_id: string;
+  mount_binding_id: string;
   status: string;
-  namespace: string;
-  secret_name: string;
-  pv_name: string;
-  pvc_name: string;
-  volume_handle: string;
-  filesystem_name: string;
-  mount_path: string;
-  storage_class_name?: string;
-  mount_options?: string[];
-  subdir?: string;
   created_at?: string;
   updated_at?: string;
 }

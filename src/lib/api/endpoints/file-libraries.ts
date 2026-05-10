@@ -2,16 +2,13 @@ import { type ApiClient } from '../client';
 import type {
   CreateFileLibraryFolderRequest,
   CreateFileLibraryRequest,
-  DesktopMountAccessExchangeResponse,
   DeleteFileLibraryEntriesRequest,
   DeleteFileLibraryEntriesResponse,
   FileLibraryEntry,
   FileLibrary,
-  FileLibraryBackend,
   FileLibraryEntriesListParams,
   FileLibraryEntriesListResponse,
   MoveFileLibraryEntryRequest,
-  StorageCredentialExchangeResponse,
   UpdateFileLibraryRequest,
 } from '../types';
 
@@ -64,16 +61,6 @@ export class FileLibrariesAPI {
   async delete(workspaceId: string, projectId: string, libraryId: string): Promise<void> {
     await this.client.delete(
       `/workspaces/${workspaceId}/projects/${projectId}/file-libraries/${libraryId}`,
-    );
-  }
-
-  async getBackend(
-    workspaceId: string,
-    projectId: string,
-    libraryId: string,
-  ): Promise<FileLibraryBackend> {
-    return this.client.get<FileLibraryBackend>(
-      `/workspaces/${workspaceId}/projects/${projectId}/file-libraries/${libraryId}/backend`,
     );
   }
 
@@ -172,25 +159,4 @@ export class FileLibrariesAPI {
     );
   }
 
-  async exchangeStorageCredentials(
-    workspaceId: string,
-    projectId: string,
-    libraryId: string,
-  ): Promise<StorageCredentialExchangeResponse> {
-    return this.client.post<StorageCredentialExchangeResponse>(
-      `/workspaces/${workspaceId}/projects/${projectId}/file-libraries/${libraryId}/storage-credential-exchange`,
-      {},
-    );
-  }
-
-  async exchangeDesktopMountAccess(
-    workspaceId: string,
-    projectId: string,
-    libraryId: string,
-  ): Promise<DesktopMountAccessExchangeResponse> {
-    return this.client.post<DesktopMountAccessExchangeResponse>(
-      `/workspaces/${workspaceId}/projects/${projectId}/file-libraries/${libraryId}/desktop-mount-access`,
-      {},
-    );
-  }
 }

@@ -306,37 +306,13 @@ describe('msw stop/cancel contracts', () => {
     });
   });
 
-  it('rejects file writes and mount credential exchange for deleting libraries with typed errors', async () => {
+  it('rejects file writes for deleting libraries with typed errors', async () => {
     const folderResponse = await postJson(
       '/api/v1/workspaces/ws_default/projects/proj_001/file-libraries/lib_msw_deleting/folders',
       { path: 'docs/' },
     );
     expect(folderResponse.status).toBe(409);
     await expect(folderResponse.json()).resolves.toMatchObject({
-      error_code: 'FILE_LIBRARY_DELETING',
-      message: 'file_library_deleting',
-      file_library_id: 'lib_msw_deleting',
-      file_library_status: 'deleting',
-    });
-
-    const mountResponse = await postJson(
-      '/api/v1/workspaces/ws_default/projects/proj_001/file-libraries/lib_msw_deleting/storage-credential-exchange',
-      {},
-    );
-    expect(mountResponse.status).toBe(409);
-    await expect(mountResponse.json()).resolves.toMatchObject({
-      error_code: 'FILE_LIBRARY_DELETING',
-      message: 'file_library_deleting',
-      file_library_id: 'lib_msw_deleting',
-      file_library_status: 'deleting',
-    });
-
-    const desktopMountResponse = await postJson(
-      '/api/v1/workspaces/ws_default/projects/proj_001/file-libraries/lib_msw_deleting/desktop-mount-access',
-      {},
-    );
-    expect(desktopMountResponse.status).toBe(409);
-    await expect(desktopMountResponse.json()).resolves.toMatchObject({
       error_code: 'FILE_LIBRARY_DELETING',
       message: 'file_library_deleting',
       file_library_id: 'lib_msw_deleting',

@@ -115,27 +115,27 @@ describe('visual baseline support', () => {
     }
   });
 
-  it('models desktop-auth-request visual truth as public missing-link recovery, not an authenticated handoff', async () => {
+  it('models workspace-login visual truth as public workspace access, not an authenticated page', async () => {
     const story = await loadStoryDefinition('mock-lane-entry-access');
-    const scene = story.scenes.find((entry) => entry.sceneId === 'desktop-auth-request');
-    const visualScene = story.runtimeData?.visualReview?.scenes.find((entry) => entry.sceneId === 'desktop-auth-request');
+    const scene = story.scenes.find((entry) => entry.sceneId === 'workspace-login');
+    const visualScene = story.runtimeData?.visualReview?.scenes.find((entry) => entry.sceneId === 'workspace-login');
     const grouped = groupVisualBaselineCatalogByScenario();
-    const scenario = grouped.get('desktop-auth-request');
+    const scenario = grouped.get('workspace-login');
 
     expect(scene).toMatchObject({
-      route: '/en-US/desktop/auth/request',
+      route: '/en-US/workspaces/ws_default/login',
       authLane: 'public',
-      stableMarkers: ['desktop-auth-request__title'],
+      stableMarkers: ['public-auth__shell', 'workspace-login__heading', 'workspace-login__keycloak-btn'],
     });
     expect(visualScene).toMatchObject({
-      scenarioId: 'desktop-auth-request',
+      scenarioId: 'workspace-login',
       authLane: 'public',
-      scenario: expect.stringContaining('missing-link'),
+      scenario: expect.stringContaining('Workspace login'),
     });
     expect(scenario).toMatchObject({
-      route: '/en-US/desktop/auth/request',
+      route: '/en-US/workspaces/ws_default/login',
       authLane: 'public',
-      recipeFamily: 'public_auth_split',
+      recipeFamily: 'public_auth_single',
     });
   });
 
@@ -546,7 +546,7 @@ describe('visual baseline support', () => {
 
   it('renders a UX acceptance record with reviewer proof, actual URL, story fingerprint, and screenshot hashes', () => {
     const grouped = groupVisualBaselineCatalogByScenario();
-    const scenario = grouped.get('desktop-auth-complete');
+    const scenario = grouped.get('workspace-login');
     expect(scenario).toBeDefined();
     const evidence = buildVisualBaselineScenarioEvidence(scenario!);
 
@@ -565,24 +565,24 @@ describe('visual baseline support', () => {
         reviewMode: 'ai_native_screenshot_review',
         reviewedAt: '2026-04-12T12:00:00.000Z',
         verdict: 'needs_work',
-        actualUrl: '/en-US/desktop/auth/complete?desktop_auth_request_id=req_visual_001',
+        actualUrl: '/en-US/workspaces/ws_default/login',
         findings: ['Single-column completion flow should align with the public auth shell recipe.'],
         blockingFindings: ['Light and dark screenshots must be reviewed together before acceptance.'],
       },
     });
 
-    expect(markdown).toContain('# desktop-auth-complete');
+    expect(markdown).toContain('# workspace-login');
     expect(markdown).toContain('- schema: visual_baseline_ux_acceptance/v1');
-    expect(markdown).toContain('- scenario_id: desktop-auth-complete');
+    expect(markdown).toContain('- scenario_id: workspace-login');
     expect(markdown).toContain('- recipe_family: public_auth_single');
-    expect(markdown).toContain('- actual_url: /en-US/desktop/auth/complete?desktop_auth_request_id=req_visual_001');
+    expect(markdown).toContain('- actual_url: /en-US/workspaces/ws_default/login');
     expect(markdown).toContain(`- story_fingerprint: ${evidence.storyFingerprint}`);
     expect(markdown).toContain('- reviewer_id: codex-d1-reviewer');
     expect(markdown).toContain('- reviewer_kind: ai_reviewer');
     expect(markdown).toContain('- review_mode: ai_native_screenshot_review');
     expect(markdown).toContain('- verdict: needs_work');
-    expect(markdown).toContain('- accepted_screenshot_hashes: desktop-auth-complete-dark.png=sha256:');
-    expect(markdown).toContain('- accepted_baseline_hashes: desktop-auth-complete-dark.png=sha256:');
+    expect(markdown).toContain('- accepted_screenshot_hashes: workspace-login-dark.png=sha256:');
+    expect(markdown).toContain('- accepted_baseline_hashes: workspace-login-dark.png=sha256:');
     expect(markdown).toContain('- build_run_id: run-20260412-001');
     expect(markdown).toContain('- build_git_sha: abc123');
     expect(markdown).toContain('- build_fingerprint: abc123:mock-lane:visual');
@@ -593,13 +593,13 @@ describe('visual baseline support', () => {
     expect(markdown).toContain('- semantic_contract_fingerprint: sha256:');
     expect(markdown).toContain('- semantic_forbidden_visible_text: Invalid Date, [object Object], undefined');
     expect(markdown).toContain('- semantic_forbidden_visible_text_patterns: <none>');
-    expect(markdown).toContain('- desktop-auth-complete-dark.png [dark]');
-    expect(markdown).toContain('- desktop-auth-complete-light.png [light]');
+    expect(markdown).toContain('- workspace-login-dark.png [dark]');
+    expect(markdown).toContain('- workspace-login-light.png [light]');
     expect(markdown).toContain('Light and dark screenshots must be reviewed together before acceptance.');
   });
 
   it('renders automated visual pass artifacts without UX acceptance verdict or reviewer proof', () => {
-    const scenario = groupVisualBaselineCatalogByScenario().get('desktop-auth-complete');
+    const scenario = groupVisualBaselineCatalogByScenario().get('workspace-login');
     expect(scenario).toBeDefined();
     const evidence = buildVisualBaselineScenarioEvidence(scenario!);
 
@@ -616,7 +616,7 @@ describe('visual baseline support', () => {
         generatedAt: '2026-04-12T12:00:00.000Z',
         automatedVerdict: 'passed',
         semanticVerdict: 'passed',
-        actualUrl: '/en-US/desktop/auth/complete?desktop_auth_request_id=req_visual_001',
+        actualUrl: '/en-US/workspaces/ws_default/login',
         notes: ['Playwright visual lane completed for this scenario.'],
       },
     });
@@ -628,14 +628,14 @@ describe('visual baseline support', () => {
     expect(markdown).toContain('- semantic_forbidden_visible_text: Invalid Date, [object Object], undefined');
     expect(markdown).toContain('- semantic_forbidden_visible_text_patterns: <none>');
     expect(markdown).toContain(`- story_fingerprint: ${evidence.storyFingerprint}`);
-    expect(markdown).toContain('- accepted_screenshot_hashes: desktop-auth-complete-dark.png=sha256:');
-    expect(markdown).toContain('- accepted_baseline_hashes: desktop-auth-complete-dark.png=sha256:');
+    expect(markdown).toContain('- accepted_screenshot_hashes: workspace-login-dark.png=sha256:');
+    expect(markdown).toContain('- accepted_baseline_hashes: workspace-login-dark.png=sha256:');
     expect(markdown).not.toContain('- verdict:');
     expect(markdown).not.toContain('- reviewer_id:');
   });
 
   it('renders automated visual pass artifacts with explicit run-local actual screenshot hashes and build ids', () => {
-    const scenario = groupVisualBaselineCatalogByScenario().get('desktop-auth-complete');
+    const scenario = groupVisualBaselineCatalogByScenario().get('workspace-login');
     expect(scenario).toBeDefined();
     const evidence = buildVisualBaselineScenarioEvidence(scenario!);
 
@@ -652,7 +652,7 @@ describe('visual baseline support', () => {
         generatedAt: '2026-04-12T12:00:00.000Z',
         automatedVerdict: 'passed',
         semanticVerdict: 'passed',
-        actualUrl: '/en-US/desktop/auth/complete?desktop_auth_request_id=req_visual_001',
+        actualUrl: '/en-US/workspaces/ws_default/login',
         notes: ['Playwright visual lane completed for this scenario.'],
       },
     });
@@ -1004,13 +1004,10 @@ describe('visual baseline support', () => {
       'workspace-select__system-link',
     ]);
 
-    expect(resolveVisualBaselineStableMarkers('desktop-auth-request')).toEqual([
-      'desktop-auth-request__title',
-    ]);
-
-    expect(resolveVisualBaselineStableMarkers('desktop-auth-complete')).toEqual([
-      'desktop-auth-complete__title',
-      'desktop-auth-complete__workspace-entry-link',
+    expect(resolveVisualBaselineStableMarkers('workspace-login')).toEqual([
+      'public-auth__shell',
+      'workspace-login__heading',
+      'workspace-login__keycloak-btn',
     ]);
 
     expect(resolveVisualBaselineStableMarkers('system-workspaces-empty')).toEqual([
@@ -1248,7 +1245,7 @@ describe('visual baseline support', () => {
     });
 
     const review = readFileSync(
-      path.join(outputRoot, runId, 'desktop-auth-complete', 'automated-pass.md'),
+      path.join(outputRoot, runId, 'workspace-login', 'automated-pass.md'),
       'utf8',
     );
     expect(review).toContain('- build_run_id: run-20260412-001');
@@ -1271,9 +1268,9 @@ describe('visual baseline support', () => {
       fingerprint: 'fingerprint-001',
       started_at: '2026-04-12T11:59:00.000Z',
     }, null, 2)}\n`);
-    const scenarioId = 'desktop-auth-complete';
-    const screenshotFile = 'desktop-auth-complete-dark.png';
-    const mutatedActual = Buffer.from('run-bound actual screenshot bytes for desktop-auth-complete-dark');
+    const scenarioId = 'workspace-login';
+    const screenshotFile = 'workspace-login-dark.png';
+    const mutatedActual = Buffer.from('run-bound actual screenshot bytes for workspace-login-dark');
     seedRunBoundVisualActualCaptures(buildInfoPath, {
       [path.join(scenarioId, screenshotFile)]: mutatedActual,
     });
@@ -1332,7 +1329,7 @@ describe('visual baseline support', () => {
     const screenshot = scenario?.screenshots.find((entry) => entry.file_name === screenshotFile);
     expect(screenshot).toMatchObject({
       file_name: expect.any(String),
-      actual_relpath: expect.stringMatching(/^captured\/desktop-auth-complete\/.+\.png$/),
+      actual_relpath: expect.stringMatching(/^captured\/workspace-login\/.+\.png$/),
       actual_sha256: expect.stringMatching(/^sha256:[a-f0-9]{64}$/),
       baseline_sha256: expect.stringMatching(/^sha256:[a-f0-9]{64}$/),
     });
@@ -1366,11 +1363,11 @@ describe('visual baseline support', () => {
       fingerprint: 'fingerprint-partial',
       started_at: '2026-04-12T11:59:00.000Z',
     }, null, 2)}\n`);
-    const actualRoot = path.join(path.dirname(buildInfoPath), 'visual-actual-captures', 'desktop-auth-complete');
+    const actualRoot = path.join(path.dirname(buildInfoPath), 'visual-actual-captures', 'workspace-login');
     mkdirSync(actualRoot, { recursive: true });
     writeFileSync(
-      path.join(actualRoot, 'desktop-auth-complete-light.png'),
-      Buffer.from('partial run-bound actual screenshot bytes for desktop-auth-complete-light'),
+      path.join(actualRoot, 'workspace-login-light.png'),
+      Buffer.from('partial run-bound actual screenshot bytes for workspace-login-light'),
     );
 
     execFileSync('npx', ['tsx', 'scripts/governance/write-visual-baseline-reviews.ts'], {
@@ -1397,16 +1394,16 @@ describe('visual baseline support', () => {
 
     expect(manifest.coverage).toMatchObject({
       scope: 'partial_catalog',
-      captured_scenario_ids: ['desktop-auth-complete'],
+      captured_scenario_ids: ['workspace-login'],
     });
     expect(manifest.coverage?.expected_scenario_ids).toEqual(
       [...groupVisualBaselineCatalogByScenario().keys()].sort((left, right) => left.localeCompare(right)),
     );
-    expect(manifest.scenarios?.map((entry) => entry.scenario_id)).toEqual(['desktop-auth-complete']);
+    expect(manifest.scenarios?.map((entry) => entry.scenario_id)).toEqual(['workspace-login']);
     expect(manifest.scenarios?.[0]?.screenshots).toEqual([
-      expect.objectContaining({ file_name: 'desktop-auth-complete-light.png' }),
+      expect.objectContaining({ file_name: 'workspace-login-light.png' }),
     ]);
-    expect(existsSync(path.join(outputRoot, runId, 'desktop-auth-complete', 'automated-pass.md'))).toBe(true);
+    expect(existsSync(path.join(outputRoot, runId, 'workspace-login', 'automated-pass.md'))).toBe(true);
     expect(existsSync(path.join(outputRoot, runId, 'access-guide', 'automated-pass.md'))).toBe(false);
   });
 
@@ -1582,15 +1579,15 @@ describe('visual baseline support', () => {
 
   it('fails fast when the browser lands on a route that differs from the story catalog route', () => {
     expect(() => assertVisualBaselineActualUrlMatchesRoute({
-      scenarioId: 'desktop-auth-complete',
-      expectedRoute: '/en-US/desktop/auth/complete?desktop_auth_request_id=req_visual_001',
-      actualUrl: 'http://localhost:3001/en-US/desktop/auth/request',
-    })).toThrow(/visual route drift.*desktop-auth-complete/);
+      scenarioId: 'workspace-login',
+      expectedRoute: '/en-US/workspaces/ws_default/login',
+      actualUrl: 'http://localhost:3001/en-US/login/workspace',
+    })).toThrow(/visual route drift.*workspace-login/);
 
     expect(() => assertVisualBaselineActualUrlMatchesRoute({
-      scenarioId: 'desktop-auth-complete',
-      expectedRoute: '/en-US/desktop/auth/complete?desktop_auth_request_id=req_visual_001',
-      actualUrl: 'http://localhost:3001/en-US/desktop/auth/complete?desktop_auth_request_id=req_visual_001#ignored',
+      scenarioId: 'workspace-login',
+      expectedRoute: '/en-US/workspaces/ws_default/login',
+      actualUrl: 'http://localhost:3001/en-US/workspaces/ws_default/login#ignored',
     })).not.toThrow();
   });
 

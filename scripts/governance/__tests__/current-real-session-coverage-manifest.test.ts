@@ -193,10 +193,12 @@ describe('current real session coverage manifest', () => {
       expect.objectContaining({ source_kind: 'npm_script', npm_script: 'test:e2e:integration:agent-task:terminal:ux' }),
       expect.objectContaining({ source_kind: 'npm_script', npm_script: 'test:agent-task:backend-real:runner' }),
       expect.objectContaining({ source_kind: 'npm_script', npm_script: 'test:internal:backend-real:agent-task-workspace' }),
-      expect.objectContaining({ source_kind: 'npm_script', npm_script: 'test:files:backend-real:sync' }),
+      expect.objectContaining({ source_kind: 'npm_script', npm_script: 'test:e2e:integration:files:connector-absence' }),
+      expect.objectContaining({ source_kind: 'npm_script', npm_script: 'test:files:backend-real:home-binding' }),
       expect.objectContaining({ source_kind: 'npm_script', npm_script: 'test:api-key-endpoint-access' }),
       expect.objectContaining({ source_kind: 'npm_script', npm_script: 'test:e2e:integration:universal-proxy:model-profile' }),
       expect.objectContaining({ source_kind: 'playwright_spec', spec: 'e2e/integration-release-user-story.spec.ts' }),
+      expect.objectContaining({ source_kind: 'playwright_spec', spec: 'e2e/integration-files-connector-absence.spec.ts' }),
       expect.objectContaining({
         source_kind: 'playwright_grep',
         spec: 'e2e/integration-agent-task-runner.spec.ts',

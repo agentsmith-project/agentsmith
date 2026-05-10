@@ -201,16 +201,51 @@ describe('requiredProjectPermissions', () => {
 
     expect(
       requiredProjectPermissions(
-        { kind: 'fileLibraryStorageCredentialExchange', workspaceId: 'ws_default', projectId: 'proj_1', libraryId: 'lib_1' },
-        'POST',
+        { kind: 'fileLibraryDownload', workspaceId: 'ws_default', projectId: 'proj_1', libraryId: 'lib_1' },
+        'GET',
       ),
     ).toEqual(['project:endpoint:use']);
 
     expect(
       requiredProjectPermissions(
-        { kind: 'fileLibraryDesktopMountAccess', workspaceId: 'ws_default', projectId: 'proj_1', libraryId: 'lib_1' },
-        'POST',
+        { kind: 'fileLibrarySavePoints', workspaceId: 'ws_default', projectId: 'proj_1', libraryId: 'lib_1' } as never,
+        'GET',
       ),
     ).toEqual(['project:endpoint:use']);
+
+    expect(
+      requiredProjectPermissions(
+        { kind: 'fileLibraryRestoreRun', workspaceId: 'ws_default', projectId: 'proj_1', libraryId: 'lib_1' } as never,
+        'POST',
+      ),
+    ).toEqual(['project:files:update']);
+
+    expect(
+      requiredProjectPermissions(
+        { kind: 'taskFileTemplates', workspaceId: 'ws_default', projectId: 'proj_1' } as never,
+        'GET',
+      ),
+    ).toEqual([]);
+
+    expect(
+      requiredProjectPermissions(
+        { kind: 'taskFileTemplatePublish', workspaceId: 'ws_default', projectId: 'proj_1', taskFileTemplateId: 'tftpl_1' } as never,
+        'POST',
+      ),
+    ).toEqual(['project:files:update']);
+  });
+
+  it('gates file-library operation projections by project audit read', () => {
+    expect(
+      requiredProjectPermissions(
+        {
+          kind: 'fileLibraryOperation',
+          workspaceId: 'ws_default',
+          projectId: 'proj_1',
+          operationId: 'op_repo_create',
+        } as never,
+        'GET',
+      ),
+    ).toEqual(['project:audit:read']);
   });
 });

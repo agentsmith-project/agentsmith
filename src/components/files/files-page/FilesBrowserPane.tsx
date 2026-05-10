@@ -1,5 +1,5 @@
 import * as React from 'react';
-import { ArrowDown, ArrowUp, ArrowUpDown, Download, FolderPlus, Pencil, RefreshCw, Search, Trash2, Upload, X } from 'lucide-react';
+import { ArrowDown, ArrowUp, ArrowUpDown, Download, FolderPlus, Pencil, RefreshCw, RotateCcw, Search, Trash2, Upload, X } from 'lucide-react';
 import { Virtuoso } from 'react-virtuoso';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -14,6 +14,7 @@ import { rowId } from './utils';
 
 type FilesBrowserPaneProps = {
   t: (key: string, values?: Record<string, string>) => string;
+  canManage: boolean;
   prefix: string;
   crumbs: Array<{ label: string; prefix: string }>;
   searchInput: string;
@@ -58,6 +59,7 @@ type FilesBrowserPaneProps = {
   onGoUp: () => void;
   onRefresh: () => void;
   onCreateFolder: () => void;
+  onManageFileStates: () => void;
   onUploadClick: () => void;
   onCancelUpload: () => void;
   onRename: () => void;
@@ -89,6 +91,7 @@ function SortIcon({ active, order }: { active: boolean; order: FileSortOrder }) 
 export function FilesBrowserPane(props: FilesBrowserPaneProps) {
   const {
     t,
+    canManage,
     prefix,
     crumbs,
     searchInput,
@@ -117,6 +120,7 @@ export function FilesBrowserPane(props: FilesBrowserPaneProps) {
     onGoUp,
     onRefresh,
     onCreateFolder,
+    onManageFileStates,
     onUploadClick,
     onCancelUpload,
     onRename,
@@ -140,6 +144,7 @@ export function FilesBrowserPane(props: FilesBrowserPaneProps) {
   const isMultiMode = selectionMode === 'multi';
   const selectedLibraryUnavailable = selectedLibraryStatus !== null && selectedLibraryStatus !== 'ready';
   const libraryActionsDisabled = !selectedLibraryId || selectedLibraryUnavailable;
+  const showWriteActions = canManage;
   const selectedLibraryBound = selectedLibraryTaskHomeBinding?.task_home_binding_status === 'bound';
   const boundLibraryBanner = selectedLibraryBound
     ? (
@@ -163,8 +168,13 @@ export function FilesBrowserPane(props: FilesBrowserPaneProps) {
     >
       <div className="flex flex-wrap items-center gap-2 border-b border-subtle px-3.5 py-1.5">
         <div className="min-w-0">
-          <div className="text-[11px] font-semibold uppercase tracking-[0.16em] text-tertiary">{t('file_manager.location')}</div>
+          <div className="text-[11px] font-semibold uppercase text-tertiary">{t('file_manager.location')}</div>
           <div className="mt-0.5 text-sm text-secondary">{selectedLibraryId ? t('file_manager.root') : t('file_manager.no_libraries')}</div>
+          {selectedLibraryId && !prefix ? (
+            <div className="mt-0.5 max-w-[360px] text-[11px] text-tertiary" data-testid="files__root-scope-note">
+              {t('file_manager.root_system_folders_note')}
+            </div>
+          ) : null}
         </div>
         {prefix ? (
           <Button
@@ -223,14 +233,22 @@ export function FilesBrowserPane(props: FilesBrowserPaneProps) {
               <RefreshCw className="h-3.5 w-3.5" />
             </Button>
           </div>
-          <Button type="button" variant="outline" onClick={onCreateFolder} disabled={libraryActionsDisabled} data-testid="files__new-folder">
-            <FolderPlus className="h-4 w-4 mr-2" />
-            {t('file_manager.new_folder')}
-          </Button>
-          <Button type="button" onClick={onUploadClick} disabled={libraryActionsDisabled || uploadInProgress} data-testid="files__upload">
-            <Upload className="h-4 w-4 mr-2" />
-            {t('file_manager.upload')}
-          </Button>
+          {showWriteActions ? (
+            <>
+              <Button type="button" variant="outline" onClick={onCreateFolder} disabled={libraryActionsDisabled} data-testid="files__new-folder">
+                <FolderPlus className="h-4 w-4 mr-2" />
+                {t('file_manager.new_folder')}
+              </Button>
+              <Button type="button" variant="outline" onClick={onManageFileStates} disabled={libraryActionsDisabled} data-testid="files__file-states">
+                <RotateCcw className="h-4 w-4 mr-2" />
+                {t('file_manager.file_states')}
+              </Button>
+              <Button type="button" onClick={onUploadClick} disabled={libraryActionsDisabled || uploadInProgress} data-testid="files__upload">
+                <Upload className="h-4 w-4 mr-2" />
+                {t('file_manager.upload')}
+              </Button>
+            </>
+          ) : null}
         </div>
       </div>
 
@@ -261,7 +279,7 @@ export function FilesBrowserPane(props: FilesBrowserPaneProps) {
             )}
 
             <div className="flex items-center gap-2 shrink-0">
-              {uploadInProgress ? (
+              {showWriteActions && uploadInProgress ? (
                 <div className="flex items-center gap-2 rounded-md bg-surface-high/30 px-2.5 py-1.5 min-w-[260px]" data-testid="files__upload-progress">
                   <div className="min-w-0 flex-1">
                     <div className="text-[11px] text-primary truncate">
@@ -288,37 +306,41 @@ export function FilesBrowserPane(props: FilesBrowserPaneProps) {
                 </div>
               ) : null}
 
-              <Button
-                type="button"
-                variant="outline"
-                size="sm"
-                className="h-7 gap-1.5 px-2.5 text-xs"
-                onClick={onRename}
-                disabled={!selectedLibraryId || selectedCount !== 1}
-                data-testid="files__rename"
-              >
-                <Pencil className="h-3.5 w-3.5 mr-1" />
-                {t('file_manager.rename')}
-              </Button>
-              <Button
-                type="button"
-                variant="outline"
-                size="sm"
-                className="h-7 gap-1.5 px-2.5 text-xs"
-                onClick={onDelete}
-                disabled={!selectedLibraryId || selectedCount === 0}
-                data-testid="files__delete"
-              >
-                <Trash2 className="h-3.5 w-3.5 mr-1" />
-                {t('file_manager.delete')}
-              </Button>
+              {showWriteActions ? (
+                <>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    className="h-7 gap-1.5 px-2.5 text-xs"
+                    onClick={onRename}
+                    disabled={libraryActionsDisabled || selectedCount !== 1}
+                    data-testid="files__rename"
+                  >
+                    <Pencil className="h-3.5 w-3.5 mr-1" />
+                    {t('file_manager.rename')}
+                  </Button>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    className="h-7 gap-1.5 px-2.5 text-xs"
+                    onClick={onDelete}
+                    disabled={libraryActionsDisabled || selectedCount === 0}
+                    data-testid="files__delete"
+                  >
+                    <Trash2 className="h-3.5 w-3.5 mr-1" />
+                    {t('file_manager.delete')}
+                  </Button>
+                </>
+              ) : null}
               <Button
                 type="button"
                 variant="outline"
                 size="sm"
                 className="h-7 gap-1.5 px-2.5 text-xs"
                 onClick={onDownload}
-                disabled={!selectedLibraryId || selectedObjectsCount === 0}
+                disabled={libraryActionsDisabled || selectedObjectsCount === 0}
                 data-testid="files__download"
               >
                 <Download className="h-3.5 w-3.5 mr-1" />
@@ -408,7 +430,9 @@ export function FilesBrowserPane(props: FilesBrowserPaneProps) {
                     <div className="mt-2 text-sm text-tertiary">
                       {searchInput.trim().length > 0
                         ? t('file_manager.search_empty_description')
-                        : t('file_manager.empty_description')}
+                        : showWriteActions
+                          ? t('file_manager.empty_description')
+                          : t('file_manager.empty_read_only_description')}
                     </div>
                   </div>
                   <div className="flex flex-wrap items-center justify-center gap-2">
@@ -424,29 +448,33 @@ export function FilesBrowserPane(props: FilesBrowserPaneProps) {
                         {t('file_manager.search_empty_clear')}
                       </Button>
                     ) : null}
-                    <Button
-                      type="button"
-                      variant="outline"
-                      size="sm"
-                      className="h-8"
-                      onClick={onCreateFolder}
-                      disabled={libraryActionsDisabled}
-                      data-testid="files__empty-new-folder"
-                    >
-                      <FolderPlus className="h-3.5 w-3.5 mr-1" />
-                      {t('file_manager.new_folder')}
-                    </Button>
-                    <Button
-                      type="button"
-                      size="sm"
-                      className="h-8"
-                      onClick={onUploadClick}
-                      disabled={libraryActionsDisabled || uploadInProgress}
-                      data-testid="files__empty-upload"
-                    >
-                      <Upload className="h-3.5 w-3.5 mr-1" />
-                      {t('file_manager.upload')}
-                    </Button>
+                    {showWriteActions ? (
+                      <>
+                        <Button
+                          type="button"
+                          variant="outline"
+                          size="sm"
+                          className="h-8"
+                          onClick={onCreateFolder}
+                          disabled={libraryActionsDisabled}
+                          data-testid="files__empty-new-folder"
+                        >
+                          <FolderPlus className="h-3.5 w-3.5 mr-1" />
+                          {t('file_manager.new_folder')}
+                        </Button>
+                        <Button
+                          type="button"
+                          size="sm"
+                          className="h-8"
+                          onClick={onUploadClick}
+                          disabled={libraryActionsDisabled || uploadInProgress}
+                          data-testid="files__empty-upload"
+                        >
+                          <Upload className="h-3.5 w-3.5 mr-1" />
+                          {t('file_manager.upload')}
+                        </Button>
+                      </>
+                    ) : null}
                   </div>
                 </div>
               </div>

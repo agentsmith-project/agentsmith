@@ -147,14 +147,6 @@ async function stableNavigate(page: Page, path: string) {
   await page.waitForTimeout(500);
 }
 
-async function dismissFilesOverlayIfPresent(page: Page) {
-  const mountDialog = page.getByTestId('files__dialog__desktop-mount-access');
-  if (await mountDialog.isVisible().catch(() => false)) {
-    await page.keyboard.press('Escape').catch(() => {});
-    await expect(mountDialog).toHaveCount(0, { timeout: 5_000 });
-  }
-}
-
 async function loginAsSystemAdmin(page: Page) {
   await stableNavigate(page, '/en-US/system/login');
   await page.getByTestId('system-login__username').fill('mbos-admin');
@@ -497,7 +489,6 @@ async function createThirdPartyVisualConnection(page: Page) {
 }
 
 async function selectReadmeFile(page: Page) {
-  await dismissFilesOverlayIfPresent(page);
   await expect(page.getByTestId('files__workspace-surface')).toBeVisible();
   await expect(page.getByText('Project Surface')).toHaveCount(0);
   await page.waitForTimeout(1500);
@@ -1576,19 +1567,6 @@ const VISUAL_SCENE_SETUP_REGISTRY: Partial<Record<string, VisualScenarioSetup>> 
       await expect(page.getByTestId('credentials__summary-types')).toBeVisible();
     },
   },
-  'desktop-auth-complete': {
-    afterNavigate: async ({ page }) => {
-      await expect(page.getByTestId('public-auth__shell')).toHaveAttribute('data-layout', 'single');
-      await expect(page.getByTestId('desktop-auth-complete__request-meta')).toBeVisible();
-      await expect(page.getByTestId('desktop-auth-complete__workspace-entry-link')).toBeVisible();
-    },
-  },
-  'desktop-auth-request': {
-    afterNavigate: async ({ page }) => {
-      await expect(page.getByTestId('desktop-auth-request__title')).toHaveText('This Desktop handoff link is incomplete');
-      await expect(page.getByTestId('public-auth__shell')).toHaveAttribute('data-layout', 'split');
-    },
-  },
   'dialog-create-agent-runner': {
     afterNavigate: async ({ page }) => {
       await page.getByTestId('agent-runners__create-btn').click();
@@ -1625,7 +1603,6 @@ const VISUAL_SCENE_SETUP_REGISTRY: Partial<Record<string, VisualScenarioSetup>> 
   },
   'dialog-files-library-create': {
     afterNavigate: async ({ page }) => {
-      await dismissFilesOverlayIfPresent(page);
       await expect(page.getByTestId('files__workspace-surface')).toBeVisible();
       await page.waitForTimeout(1200);
       await page.getByTestId('files__library-create').click();
@@ -1635,7 +1612,6 @@ const VISUAL_SCENE_SETUP_REGISTRY: Partial<Record<string, VisualScenarioSetup>> 
   },
   'dialog-files-library-delete': {
     afterNavigate: async ({ page }) => {
-      await dismissFilesOverlayIfPresent(page);
       await expect(page.getByTestId('files__workspace-surface')).toBeVisible();
       await page.waitForTimeout(1200);
       await page
@@ -1643,17 +1619,6 @@ const VISUAL_SCENE_SETUP_REGISTRY: Partial<Record<string, VisualScenarioSetup>> 
         .getByRole('button', { name: /delete/i })
         .click();
       await expect(page.getByTestId('files__dialog__library-delete')).toBeVisible();
-      await page.waitForTimeout(400);
-    },
-  },
-  'dialog-files-mount-access': {
-    afterNavigate: async ({ page }) => {
-      await dismissFilesOverlayIfPresent(page);
-      await expect(page.getByTestId('files__workspace-surface')).toBeVisible();
-      await expect(page.getByText('Project Surface')).toHaveCount(0);
-      await page.waitForTimeout(1500);
-      await page.getByTestId('files__library-desktop-access--lib_shared_default').click();
-      await expect(page.getByTestId('files__dialog__desktop-mount-access')).toBeVisible();
       await page.waitForTimeout(400);
     },
   },
@@ -2609,16 +2574,6 @@ async function runVisualScenario(context: VisualScenarioContext) {
 }
 
 test.describe('Visual Auth Contract', () => {
-  test('desktop-auth-request public missing-link recovery does not trigger auth bootstrap', async ({ page }) => {
-    await requireMockVisualRuntime(page);
-    await resetPublicVisualState(page);
-    await stableNavigate(page, '/en-US/desktop/auth/request');
-
-    await expect(page.getByTestId('desktop-auth-request__title')).toHaveText('This Desktop handoff link is incomplete');
-    await expect(page.getByTestId('public-auth__shell')).toHaveAttribute('data-layout', 'split');
-    await expect(await readMockAuthTokenFromContext(page)).toBeNull();
-  });
-
   test('mock_auth visual bootstrap creates a complete token seed before protected navigation', async ({ page }) => {
     const seed = await ensureVisualMockAuth(page, {
       bootstrapPath: `/en-US/workspaces/${WS_ID}/projects`,

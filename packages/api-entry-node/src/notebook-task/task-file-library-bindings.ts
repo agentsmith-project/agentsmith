@@ -196,7 +196,7 @@ function bindingFromTask(task: HydratableTaskRecord): TaskFileLibraryBinding | n
       : nextBindingGeneration(),
     runtimeWritableAffordance: task.runtime_writable_affordance ?? 'task_internal_home',
     bindingState: 'bound',
-    correlationId: 'legacy_task_binding_hydration',
+    correlationId: 'task_binding_hydration',
   };
 }
 
@@ -642,6 +642,45 @@ export class JsonDocTaskWorkspaceHolderRepo {
         )
       ))
       .map(holderRecordToHolder);
+  }
+
+  async releaseByProject(input: {
+    workspaceId: string;
+    projectId: string;
+    releasedAt: string;
+  }): Promise<number> {
+    const records = await this.docStore.list<TaskWorkspaceHolderRecord>(WORKSPACE_HOLDERS_COLLECTION, {
+      workspace_id: input.workspaceId,
+      project_id: input.projectId,
+      holder_state: 'active',
+    });
+    let released = 0;
+    for (const record of records) {
+      const result = await this.docStore.updateIfMatch<TaskWorkspaceHolderRecord>(
+        WORKSPACE_HOLDERS_COLLECTION,
+        record.id,
+        {
+          expected: {
+            workspace_id: record.workspace_id,
+            project_id: record.project_id,
+            task_id: record.task_id,
+            holder_id: record.holder_id,
+            binding_generation: record.binding_generation,
+            lease_epoch: record.lease_epoch,
+            holder_state: 'active',
+          },
+          patch: {
+            holder_state: 'released',
+            released_at: input.releasedAt,
+            updated_at: input.releasedAt,
+          },
+        },
+      );
+      if (result.ok) {
+        released += 1;
+      }
+    }
+    return released;
   }
 }
 

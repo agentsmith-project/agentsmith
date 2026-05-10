@@ -591,8 +591,6 @@ export class InternalAgentPodManagerImpl implements InternalAgentPodManager {
             idle_timeout_sec: idleTimeoutSec,
             max_lifetime_sec: maxLifetimeSec,
             workspace_binding_id: workspaceMount.bindingId,
-            mount_path: workspaceMount.taskHomePath,
-            working_dir: workspaceMount.workspacePath,
           }, rpcSignal),
           signal,
         );

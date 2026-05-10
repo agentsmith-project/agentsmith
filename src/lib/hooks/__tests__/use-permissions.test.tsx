@@ -674,7 +674,7 @@ describe('use-permissions hooks', () => {
       expect(result.current.canRunDiagnostics).toBe(true);
     });
 
-    it('useAgentRunnerPageCapabilities rejects legacy agent permissions', () => {
+    it('useAgentRunnerPageCapabilities rejects unsupported agent permission names', () => {
       mockUseProject.mockReturnValue({
         data: {
           id: 'proj_001',

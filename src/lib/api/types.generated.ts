@@ -1306,7 +1306,7 @@ export interface paths {
         };
         get: operations["listFileLibraries"];
         put?: never;
-        post: operations["createFileLibraryV2"];
+        post: operations["createFileLibrary"];
         delete?: never;
         options?: never;
         head?: never;
@@ -1327,30 +1327,10 @@ export interface paths {
         get: operations["getFileLibrary"];
         put?: never;
         post?: never;
-        delete: operations["deleteFileLibraryV2"];
+        delete: operations["deleteFileLibrary"];
         options?: never;
         head?: never;
-        patch: operations["updateFileLibraryV2"];
-        trace?: never;
-    };
-    "/api/v1/workspaces/{workspaceId}/projects/{projectId}/file-libraries/{libraryId}/backend": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                libraryId: components["parameters"]["libraryId"];
-                projectId: components["parameters"]["projectId"];
-                workspaceId: components["parameters"]["workspaceId"];
-            };
-            cookie?: never;
-        };
-        get: operations["getFileLibraryBackend"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
+        patch: operations["updateFileLibrary"];
         trace?: never;
     };
     "/api/v1/workspaces/{workspaceId}/projects/{projectId}/file-libraries/{libraryId}/delete": {
@@ -1367,26 +1347,6 @@ export interface paths {
         get?: never;
         put?: never;
         post: operations["deleteFileLibraryEntries"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/v1/workspaces/{workspaceId}/projects/{projectId}/file-libraries/{libraryId}/desktop-mount-access": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                libraryId: components["parameters"]["libraryId"];
-                projectId: components["parameters"]["projectId"];
-                workspaceId: components["parameters"]["workspaceId"];
-            };
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        post: operations["createFileLibraryDesktopMountAccess"];
         delete?: never;
         options?: never;
         head?: never;
@@ -1493,7 +1453,7 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/v1/workspaces/{workspaceId}/projects/{projectId}/file-libraries/{libraryId}/share-link": {
+    "/api/v1/workspaces/{workspaceId}/projects/{projectId}/file-libraries/{libraryId}/restore-cancel": {
         parameters: {
             query?: never;
             header?: never;
@@ -1506,14 +1466,14 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        post: operations["createFileLibraryShareLink"];
+        post: operations["cancelFileLibraryRestore"];
         delete?: never;
         options?: never;
         head?: never;
         patch?: never;
         trace?: never;
     };
-    "/api/v1/workspaces/{workspaceId}/projects/{projectId}/file-libraries/{libraryId}/storage-credential-exchange": {
+    "/api/v1/workspaces/{workspaceId}/projects/{projectId}/file-libraries/{libraryId}/restore-preview": {
         parameters: {
             query?: never;
             header?: never;
@@ -1526,7 +1486,47 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        post: operations["exchangeFileLibraryStorageCredentials"];
+        post: operations["createFileLibraryRestorePreview"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/workspaces/{workspaceId}/projects/{projectId}/file-libraries/{libraryId}/restore-run": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                libraryId: components["parameters"]["libraryId"];
+                projectId: components["parameters"]["projectId"];
+                workspaceId: components["parameters"]["workspaceId"];
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["runFileLibraryRestore"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/workspaces/{workspaceId}/projects/{projectId}/file-libraries/{libraryId}/save-points": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                libraryId: components["parameters"]["libraryId"];
+                projectId: components["parameters"]["projectId"];
+                workspaceId: components["parameters"]["workspaceId"];
+            };
+            cookie?: never;
+        };
+        get: operations["listFileLibrarySavePoints"];
+        put?: never;
+        post: operations["createFileLibrarySavePoint"];
         delete?: never;
         options?: never;
         head?: never;
@@ -1547,6 +1547,26 @@ export interface paths {
         get?: never;
         put?: never;
         post: operations["uploadFileLibraryEntry"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/workspaces/{workspaceId}/projects/{projectId}/file-library-operations/{operationId}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                operationId: string;
+                projectId: components["parameters"]["projectId"];
+                workspaceId: components["parameters"]["workspaceId"];
+            };
+            cookie?: never;
+        };
+        get: operations["getFileLibraryOperationProjection"];
+        put?: never;
+        post?: never;
         delete?: never;
         options?: never;
         head?: never;
@@ -2028,6 +2048,85 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/workspaces/{workspaceId}/projects/{projectId}/task-file-templates": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                projectId: components["parameters"]["projectId"];
+                workspaceId: components["parameters"]["workspaceId"];
+            };
+            cookie?: never;
+        };
+        get: operations["listTaskFileTemplates"];
+        put?: never;
+        post: operations["createTaskFileTemplate"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/workspaces/{workspaceId}/projects/{projectId}/task-file-templates/{taskFileTemplateId}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                projectId: components["parameters"]["projectId"];
+                taskFileTemplateId: components["parameters"]["taskFileTemplateId"];
+                workspaceId: components["parameters"]["workspaceId"];
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        delete: operations["deleteTaskFileTemplate"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/workspaces/{workspaceId}/projects/{projectId}/task-file-templates/{taskFileTemplateId}/publish": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                projectId: components["parameters"]["projectId"];
+                taskFileTemplateId: components["parameters"]["taskFileTemplateId"];
+                workspaceId: components["parameters"]["workspaceId"];
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["publishTaskFileTemplate"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/workspaces/{workspaceId}/projects/{projectId}/task-file-templates/{taskFileTemplateId}/unpublish": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                projectId: components["parameters"]["projectId"];
+                taskFileTemplateId: components["parameters"]["taskFileTemplateId"];
+                workspaceId: components["parameters"]["workspaceId"];
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["unpublishTaskFileTemplate"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/workspaces/{workspaceId}/projects/{projectId}/tasks": {
         parameters: {
             query?: never;
@@ -2369,7 +2468,7 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** @description Internal runner callback that releases a task workspace holder fence after the local mount/session has been released. */
+        /** @description Internal runner callback that releases a task HOME holder fence after the runner/session no longer needs path access. */
         post: operations["releaseTaskWorkspaceAccess"];
         delete?: never;
         options?: never;
@@ -2678,7 +2777,7 @@ export interface components {
             intent?: string;
         };
         /** @enum {string} */
-        AgentRunnerTestTaskRunUnavailableErrorCode: "agent_runner_disconnected" | "agent_runner_stale" | "agent_runner_capability_mismatch" | "agent_runner_test_task_unavailable";
+        AgentRunnerTestTaskRunUnavailableErrorCode: "agent_runner_disconnected" | "agent_runner_stale" | "agent_runner_capability_mismatch" | "agent_runner_test_task_unavailable" | "TASK_HOME_BINDING_UNAVAILABLE_FOR_DEVELOPER_RUNNER";
         AgentRunnerTestTaskRunUnavailableResponse: {
             error_code: components["schemas"]["AgentRunnerTestTaskRunUnavailableErrorCode"];
             message: string;
@@ -2717,6 +2816,15 @@ export interface components {
             file_library_id: string;
             /** @enum {string} */
             message: "workspace_file_library_in_use";
+            request_id?: string;
+        };
+        AgentTaskFileTemplateRequiredError: {
+            /** @enum {string} */
+            error_code: "AGENT_TASK_FILE_TEMPLATE_REQUIRED";
+            /** @enum {string} */
+            field: "task_file_template_id";
+            /** @enum {string} */
+            message: "agent_task_file_template_required";
             request_id?: string;
         };
         AgentTaskModelResolutionError: {
@@ -2966,7 +3074,7 @@ export interface components {
              * @description Machine-readable error code
              * @enum {string}
              */
-            error_code: "UNAUTHORIZED" | "PERMISSION_DENIED" | "RESOURCE_NOT_FOUND" | "RESOURCE_ALREADY_EXISTS" | "RESOURCE_CONFLICT" | "VALIDATION_ERROR" | "FORBIDDEN" | "RATE_LIMIT_EXCEEDED" | "SPENDING_LIMIT_EXCEEDED" | "AGENT_OFFLINE" | "unsupported_field" | "INTERNAL_ERROR";
+            error_code: "UNAUTHORIZED" | "PERMISSION_DENIED" | "RESOURCE_NOT_FOUND" | "RESOURCE_ALREADY_EXISTS" | "RESOURCE_CONFLICT" | "VALIDATION_ERROR" | "FORBIDDEN" | "RATE_LIMIT_EXCEEDED" | "SPENDING_LIMIT_EXCEEDED" | "AGENT_OFFLINE" | "unsupported_field" | "UNSUPPORTED_MEDIA_TYPE" | "SERVICE_UNAVAILABLE" | "PROJECT_STORAGE_PENDING" | "PROJECT_STORAGE_BLOCKED" | "FILE_LIBRARY_PROVISIONING_FAILED" | "FILE_LIBRARY_OPERATION_PENDING" | "FILE_LIBRARY_OPERATION_FAILED" | "FILE_LIBRARY_STORAGE_NOT_READY" | "FILE_LIBRARY_SAVE_POINT_LIST_FAILED" | "FILE_LIBRARY_SAVE_POINT_CREATE_FAILED" | "FILE_LIBRARY_SAVE_POINT_NOT_FOUND" | "FILE_LIBRARY_RESTORE_PREVIEW_FAILED" | "FILE_LIBRARY_RESTORE_PREVIEW_NOT_FOUND" | "FILE_LIBRARY_RESTORE_PREVIEW_STALE" | "FILE_LIBRARY_RESTORE_RUN_FAILED" | "FILE_LIBRARY_RESTORE_CANCEL_FAILED" | "FILE_LIBRARY_ACTIVE_WRITER_BLOCKED" | "FILE_LIBRARY_NAMESPACE_PROJECT_MISMATCH" | "FILE_LIBRARY_TEMPLATE_CLONE_NOT_ALLOWED" | "FILE_LIBRARY_CAPABILITY_DENIED" | "FILE_LIBRARY_STORAGE_ADMIN_ACTION_REQUIRED" | "TASK_FILE_TEMPLATE_CREATE_FAILED" | "FILE_LIBRARY_DELETE_FAILED" | "FILE_LIBRARY_UPLOAD_FAILED" | "FILE_LIBRARY_MOVE_FAILED" | "FILE_LIBRARY_FOLDER_CREATE_FAILED" | "FILE_LIBRARY_LIST_FAILED" | "destination_exists" | "INTERNAL_ERROR";
             /** @description Human-readable error message */
             message: string;
             /** @description Unique identifier for the request (for debugging) */
@@ -3104,6 +3212,9 @@ export interface components {
             /** @description Whether bound task summary fields are safe to display to the current actor. */
             bound_task_visible: boolean;
         };
+        CancelFileLibraryRestoreRequest: {
+            restore_preview_id: string;
+        };
         ChatAttachment: {
             content_type?: string;
             id: string;
@@ -3239,9 +3350,11 @@ export interface components {
             description?: string;
             name: string;
         };
-        CreateFileLibraryShareLinkRequest: {
-            expires_in_seconds?: number;
-            path: string;
+        CreateFileLibraryRestorePreviewRequest: {
+            save_point_id: string;
+        };
+        CreateFileLibrarySavePointRequest: {
+            message?: string;
         };
         CreateProjectInviteRequest: {
             email: string;
@@ -3261,6 +3374,11 @@ export interface components {
             /** @enum {string} */
             visibility?: "public" | "private";
         };
+        CreateTaskFileTemplateRequest: {
+            description?: string;
+            name: string;
+            source_library_id: string;
+        };
         CreateTaskRequest: {
             bound_runner_id?: string;
             /** @deprecated */
@@ -3268,10 +3386,11 @@ export interface components {
             input_refs?: components["schemas"]["TaskInputRefInput"][];
             /** @description Initial user prompt. */
             prompt?: string;
+            task_file_template_id?: string;
             title: string;
             workspace_file_library_id?: string;
             /** @enum {string} */
-            workspace_mode?: "create_new" | "use_existing";
+            workspace_mode?: "create_new" | "use_existing" | "use_template";
             workspace_name?: string;
         };
         DeleteFileLibraryEntriesRequest: {
@@ -3340,12 +3459,30 @@ export interface components {
             created_at: string;
             created_by_user_id: string;
             description?: string;
-            filesystem_name: string;
+            /** @description Opaque backend-generated task HOME path segment. Clients must not derive storage details from it. */
+            file_library_home_segment: string;
             id: string;
             name: string;
             project_id: string;
+            /**
+             * @description Product-facing source. File libraries are project-scoped task files managed by AgentSmith.
+             * @enum {string}
+             */
+            source: "agent_task_files";
             /** @enum {string} */
             status: "creating" | "ready" | "degraded" | "failed" | "deleting";
+            /** @description Display-safe status reason. It must not contain raw backend identifiers or secrets. */
+            status_reason?: string;
+            /**
+             * @description Product-facing next action for storage readiness.
+             * @enum {string|null}
+             */
+            storage_next_action?: "wait" | "retry" | "contact_admin" | "contact_support" | null;
+            /**
+             * @description Product-facing storage readiness. It does not expose namespace, repository, volume, or export details.
+             * @enum {string}
+             */
+            storage_status?: "initializing" | "available" | "degraded" | "unavailable" | "admin_action_required";
             /**
              * @description Authoritative UI signal for whether this file library is exclusively bound as an Agent task HOME.
              * @enum {string}
@@ -3353,33 +3490,9 @@ export interface components {
             task_home_binding_status: "unbound" | "bound";
             /** Format: date-time */
             updated_at: string;
+            /** @enum {string} */
+            visibility?: "shared";
             workspace_id: string;
-        };
-        FileLibraryBackend: {
-            filesystem_name: string;
-            gateway?: {
-                /** Format: date-time */
-                last_started_at?: string;
-                loopback_url?: string;
-                port?: number;
-            };
-            /** @enum {string} */
-            gateway_status: "not_started" | "starting" | "ready" | "degraded" | "failed" | "stopped";
-            last_error?: string;
-            library_id: string;
-            minio: {
-                bucket: string;
-                endpoint: string;
-                region?: string;
-            };
-            postgres: {
-                database: string;
-                host: string;
-                port: number;
-                username: string;
-            };
-            /** @enum {string} */
-            provisioning_status: "creating" | "ready" | "degraded" | "failed" | "deleting";
         };
         FileLibraryDeletingError: {
             /** @enum {string} */
@@ -3389,21 +3502,6 @@ export interface components {
             /** @enum {string} */
             message: "file_library_deleting";
             request_id?: string;
-        };
-        FileLibraryDesktopMountAccess: {
-            default_mount_roots: {
-                linux: string;
-                macos: string;
-                windows: string;
-            };
-            deployment_base_url: string;
-            filesystem_name: string;
-            metadata_url: string;
-            storage_bucket_url?: string;
-            windows_requires_drive_letter: boolean;
-        };
-        FileLibraryDesktopMountAccessResponse: {
-            desktop_mount_access: components["schemas"]["FileLibraryDesktopMountAccess"];
         };
         FileLibraryEntry: {
             /** @enum {string} */
@@ -3456,11 +3554,71 @@ export interface components {
             message: "file_library_not_ready";
             request_id?: string;
         };
-        FileLibraryObject: {
-            content_type?: string;
-            key: string;
-            name: string;
-            size_bytes?: number;
+        FileLibraryOperationProjection: {
+            /** Format: date-time */
+            created_at?: string;
+            error: {
+                code: string;
+                retryable?: boolean;
+            } | null;
+            /** Format: date-time */
+            finished_at?: string;
+            operation_id: string;
+            operation_state: string;
+            operation_type?: string;
+            resource?: {
+                type: string;
+            };
+            /** Format: date-time */
+            started_at?: string;
+            /** Format: date-time */
+            updated_at?: string;
+        };
+        FileLibraryRestorePreview: {
+            blockers?: {
+                /** @enum {string} */
+                code: "active_writer_sessions" | "stale_writer_session_uncertain" | "restore_preview_stale" | "restore_plan_requires_recovery";
+                message?: string;
+            }[];
+            /** Format: date-time */
+            created_at: string;
+            file_library_id: string;
+            id: string;
+            message?: string;
+            source_save_point_id: string;
+            stale?: boolean;
+            /** @enum {string} */
+            status: "previewing" | "ready" | "failed" | "canceling" | "canceled" | "restoring" | "restored";
+            summary?: {
+                added: components["schemas"]["FileLibraryRestorePreviewChangeSummary"];
+                changed: components["schemas"]["FileLibraryRestorePreviewChangeSummary"];
+                destructive: boolean;
+                removed: components["schemas"]["FileLibraryRestorePreviewChangeSummary"];
+            };
+            /** Format: date-time */
+            updated_at: string;
+        };
+        FileLibraryRestorePreviewChangeSummary: {
+            count: number;
+            samples: string[];
+        };
+        FileLibraryRestoreRun: {
+            /** Format: date-time */
+            created_at: string;
+            file_library_id: string;
+            id: string;
+            restore_preview_id: string;
+            /** @enum {string} */
+            status: "pending" | "succeeded" | "failed";
+            /** Format: date-time */
+            updated_at: string;
+        };
+        FileLibrarySavePoint: {
+            /** Format: date-time */
+            created_at: string;
+            file_library_id: string;
+            id: string;
+            message?: string;
         };
         FileLibraryTaskInUseError: {
             /** @description Present only when bound_task_visible is true. */
@@ -3542,6 +3700,12 @@ export interface components {
             items: components["schemas"]["FileLibraryEntry"][];
             next_continuation_token: string | null;
             path: string;
+        };
+        ListFileLibrarySavePointsResponse: {
+            items: components["schemas"]["FileLibrarySavePoint"][];
+        };
+        ListTaskFileTemplatesResponse: {
+            items: components["schemas"]["TaskFileTemplate"][];
         };
         MemberGroupSummary: {
             built_in?: boolean;
@@ -3749,6 +3913,9 @@ export interface components {
             resource_type: string;
             tokens?: number;
         };
+        RunFileLibraryRestoreRequest: {
+            restore_preview_id: string;
+        };
         /** @description Silence notification request */
         SilenceNotificationRequest: {
             /** @description Duration in minutes. If omitted, silence indefinitely. */
@@ -3783,22 +3950,6 @@ export interface components {
         };
         /** @enum {string} */
         StopMode: "cancel" | "terminate";
-        StorageCredentialExchangeResponse: {
-            client_mount_access: {
-                /** Format: date-time */
-                created_at: string;
-                filesystem_name: string;
-                metadata_url: string;
-                platform_notes: string[];
-                recommended_mount_commands: {
-                    linux: string;
-                    macos: string;
-                    windows: string;
-                };
-                recommended_mount_path: string;
-                storage_bucket_url?: string;
-            };
-        };
         Task: {
             active_run?: components["schemas"]["TaskRunSummary"];
             /**
@@ -3903,6 +4054,38 @@ export interface components {
             status?: components["schemas"]["TaskCancelRunStatus"];
             stop_mode?: components["schemas"]["StopMode"];
             task_id: string;
+        };
+        TaskFileTemplate: {
+            /** Format: date-time */
+            created_at: string;
+            created_by_user_id: string;
+            description?: string;
+            id: string;
+            name: string;
+            project_id: string;
+            source_library_id: string;
+            source_save_point_id?: string;
+            /** @enum {string} */
+            status: "unpublished" | "published" | "failed";
+            /** Format: date-time */
+            updated_at: string;
+            workspace_id: string;
+        };
+        TaskFileTemplateNotFoundError: {
+            /** @enum {string} */
+            error_code: "TASK_FILE_TEMPLATE_NOT_FOUND";
+            /** @enum {string} */
+            message: "task_file_template_not_found";
+            request_id?: string;
+            task_file_template_id?: string;
+        };
+        TaskFileTemplateUnpublishedError: {
+            /** @enum {string} */
+            error_code: "TASK_FILE_TEMPLATE_UNPUBLISHED";
+            /** @enum {string} */
+            message: "task_file_template_unpublished";
+            request_id?: string;
+            task_file_template_id: string;
         };
         TaskInputRef: {
             id: string;
@@ -4533,6 +4716,7 @@ export interface components {
         projectId: string;
         sessionId: string;
         streamId: string;
+        taskFileTemplateId: string;
         workspaceId: string;
     };
     requestBodies: never;
@@ -7268,9 +7452,11 @@ export interface operations {
                     "application/json": components["schemas"]["ListFileLibrariesResponse"];
                 };
             };
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
         };
     };
-    createFileLibraryV2: {
+    createFileLibrary: {
         parameters: {
             query?: never;
             header?: never;
@@ -7293,6 +7479,36 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["FileLibrary"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            /** @description Project storage pending or file library operation pending */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description File library provisioning failed */
+            502: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description File library backend unavailable or project storage blocked */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
                 };
             };
         };
@@ -7321,18 +7537,18 @@ export interface operations {
             };
             401: components["responses"]["Unauthorized"];
             403: components["responses"]["Forbidden"];
-            /** @description FILE_LIBRARY_NOT_FOUND */
+            /** @description FILE_LIBRARY_NOT_FOUND or RESOURCE_NOT_FOUND */
             404: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["FileLibraryNotFoundError"];
+                    "application/json": components["schemas"]["FileLibraryNotFoundError"] | components["schemas"]["ApiError"];
                 };
             };
         };
     };
-    deleteFileLibraryV2: {
+    deleteFileLibrary: {
         parameters: {
             query?: never;
             header?: never;
@@ -7362,13 +7578,13 @@ export interface operations {
                     "application/json": components["schemas"]["FileLibraryForbiddenError"] | components["schemas"]["ApiError"];
                 };
             };
-            /** @description FILE_LIBRARY_NOT_FOUND */
+            /** @description FILE_LIBRARY_NOT_FOUND or RESOURCE_NOT_FOUND */
             404: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["FileLibraryNotFoundError"];
+                    "application/json": components["schemas"]["FileLibraryNotFoundError"] | components["schemas"]["ApiError"];
                 };
             };
             /** @description FILE_LIBRARY_TASK_IN_USE, FILE_LIBRARY_NOT_EMPTY, FILE_LIBRARY_DELETING, FILE_LIBRARY_NOT_READY, or stale status conflict */
@@ -7380,9 +7596,27 @@ export interface operations {
                     "application/json": components["schemas"]["FileLibraryTaskInUseError"] | components["schemas"]["FileLibraryNotEmptyError"] | components["schemas"]["FileLibraryDeletingError"] | components["schemas"]["FileLibraryNotReadyError"] | components["schemas"]["ApiError"];
                 };
             };
+            /** @description File library delete failed */
+            502: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description File library backend unavailable */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
         };
     };
-    updateFileLibraryV2: {
+    updateFileLibrary: {
         parameters: {
             query?: never;
             header?: never;
@@ -7408,6 +7642,7 @@ export interface operations {
                     "application/json": components["schemas"]["FileLibrary"];
                 };
             };
+            400: components["responses"]["BadRequest"];
             401: components["responses"]["Unauthorized"];
             /** @description FILE_LIBRARY_FORBIDDEN */
             403: {
@@ -7418,13 +7653,13 @@ export interface operations {
                     "application/json": components["schemas"]["FileLibraryForbiddenError"] | components["schemas"]["ApiError"];
                 };
             };
-            /** @description FILE_LIBRARY_NOT_FOUND */
+            /** @description FILE_LIBRARY_NOT_FOUND or RESOURCE_NOT_FOUND */
             404: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["FileLibraryNotFoundError"];
+                    "application/json": components["schemas"]["FileLibraryNotFoundError"] | components["schemas"]["ApiError"];
                 };
             };
             /** @description FILE_LIBRARY_DELETING, FILE_LIBRARY_TASK_IN_USE, FILE_LIBRARY_NOT_READY, or stale status conflict */
@@ -7434,30 +7669,6 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["FileLibraryDeletingError"] | components["schemas"]["FileLibraryTaskInUseError"] | components["schemas"]["FileLibraryNotReadyError"] | components["schemas"]["ApiError"];
-                };
-            };
-        };
-    };
-    getFileLibraryBackend: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                libraryId: components["parameters"]["libraryId"];
-                projectId: components["parameters"]["projectId"];
-                workspaceId: components["parameters"]["workspaceId"];
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description File library backend summary */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["FileLibraryBackend"];
                 };
             };
         };
@@ -7488,6 +7699,7 @@ export interface operations {
                     "application/json": components["schemas"]["DeleteFileLibraryEntriesResponse"];
                 };
             };
+            400: components["responses"]["BadRequest"];
             401: components["responses"]["Unauthorized"];
             /** @description FILE_LIBRARY_FORBIDDEN */
             403: {
@@ -7498,13 +7710,13 @@ export interface operations {
                     "application/json": components["schemas"]["FileLibraryForbiddenError"] | components["schemas"]["ApiError"];
                 };
             };
-            /** @description FILE_LIBRARY_NOT_FOUND */
+            /** @description FILE_LIBRARY_NOT_FOUND or RESOURCE_NOT_FOUND */
             404: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["FileLibraryNotFoundError"];
+                    "application/json": components["schemas"]["FileLibraryNotFoundError"] | components["schemas"]["ApiError"];
                 };
             };
             /** @description FILE_LIBRARY_DELETING, FILE_LIBRARY_NOT_READY, or stale status conflict */
@@ -7516,40 +7728,22 @@ export interface operations {
                     "application/json": components["schemas"]["FileLibraryDeletingError"] | components["schemas"]["FileLibraryNotReadyError"] | components["schemas"]["ApiError"];
                 };
             };
-        };
-    };
-    createFileLibraryDesktopMountAccess: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                libraryId: components["parameters"]["libraryId"];
-                projectId: components["parameters"]["projectId"];
-                workspaceId: components["parameters"]["workspaceId"];
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Desktop mount access */
-            200: {
+            /** @description File library delete failed */
+            502: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["FileLibraryDesktopMountAccessResponse"];
+                    "application/json": components["schemas"]["ApiError"];
                 };
             };
-            401: components["responses"]["Unauthorized"];
-            403: components["responses"]["Forbidden"];
-            404: components["responses"]["NotFound"];
-            /** @description FILE_LIBRARY_DELETING or FILE_LIBRARY_NOT_READY */
-            409: {
+            /** @description File library backend unavailable */
+            503: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["FileLibraryDeletingError"] | components["schemas"]["FileLibraryNotReadyError"] | components["schemas"]["ApiError"];
+                    "application/json": components["schemas"]["ApiError"];
                 };
             };
         };
@@ -7576,6 +7770,27 @@ export interface operations {
                     "application/octet-stream": string;
                 };
             };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            /** @description File library or object not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description File library backend unavailable */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
         };
     };
     listFileLibraryEntries: {
@@ -7598,6 +7813,36 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ListFileLibraryEntriesResponse"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            /** @description RESOURCE_NOT_FOUND */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description File library list failed */
+            502: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description File library backend unavailable */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
                 };
             };
         };
@@ -7626,6 +7871,7 @@ export interface operations {
                 };
                 content?: never;
             };
+            400: components["responses"]["BadRequest"];
             401: components["responses"]["Unauthorized"];
             /** @description FILE_LIBRARY_FORBIDDEN */
             403: {
@@ -7636,13 +7882,13 @@ export interface operations {
                     "application/json": components["schemas"]["FileLibraryForbiddenError"] | components["schemas"]["ApiError"];
                 };
             };
-            /** @description FILE_LIBRARY_NOT_FOUND */
+            /** @description FILE_LIBRARY_NOT_FOUND or RESOURCE_NOT_FOUND */
             404: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["FileLibraryNotFoundError"];
+                    "application/json": components["schemas"]["FileLibraryNotFoundError"] | components["schemas"]["ApiError"];
                 };
             };
             /** @description FILE_LIBRARY_DELETING, FILE_LIBRARY_NOT_READY, or stale status conflict */
@@ -7652,6 +7898,15 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["FileLibraryDeletingError"] | components["schemas"]["FileLibraryNotReadyError"] | components["schemas"]["ApiError"];
+                };
+            };
+            /** @description File library backend unavailable */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
                 };
             };
         };
@@ -7680,6 +7935,27 @@ export interface operations {
                     };
                 };
             };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            /** @description File library or object metadata not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description File library backend unavailable */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
         };
     };
     moveFileLibraryEntry: {
@@ -7706,6 +7982,7 @@ export interface operations {
                 };
                 content?: never;
             };
+            400: components["responses"]["BadRequest"];
             401: components["responses"]["Unauthorized"];
             /** @description FILE_LIBRARY_FORBIDDEN */
             403: {
@@ -7716,13 +7993,13 @@ export interface operations {
                     "application/json": components["schemas"]["FileLibraryForbiddenError"] | components["schemas"]["ApiError"];
                 };
             };
-            /** @description FILE_LIBRARY_NOT_FOUND */
+            /** @description FILE_LIBRARY_NOT_FOUND or RESOURCE_NOT_FOUND */
             404: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["FileLibraryNotFoundError"];
+                    "application/json": components["schemas"]["FileLibraryNotFoundError"] | components["schemas"]["ApiError"];
                 };
             };
             /** @description FILE_LIBRARY_DELETING, FILE_LIBRARY_NOT_READY, or stale status conflict */
@@ -7734,9 +8011,18 @@ export interface operations {
                     "application/json": components["schemas"]["FileLibraryDeletingError"] | components["schemas"]["FileLibraryNotReadyError"] | components["schemas"]["ApiError"];
                 };
             };
+            /** @description File library backend unavailable */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
         };
     };
-    createFileLibraryShareLink: {
+    cancelFileLibraryRestore: {
         parameters: {
             query?: never;
             header?: never;
@@ -7749,41 +8035,32 @@ export interface operations {
         };
         requestBody: {
             content: {
-                "application/json": components["schemas"]["CreateFileLibraryShareLinkRequest"];
+                "application/json": components["schemas"]["CancelFileLibraryRestoreRequest"];
             };
         };
         responses: {
-            /** @description Share link */
+            /** @description Restore preview canceled */
             200: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": {
-                        [key: string]: unknown;
-                    };
+                    "application/json": components["schemas"]["FileLibraryRestorePreview"];
                 };
             };
+            400: components["responses"]["BadRequest"];
             401: components["responses"]["Unauthorized"];
-            /** @description FILE_LIBRARY_FORBIDDEN */
-            403: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["FileLibraryForbiddenError"] | components["schemas"]["ApiError"];
-                };
-            };
-            /** @description FILE_LIBRARY_NOT_FOUND */
+            403: components["responses"]["Forbidden"];
+            /** @description File library or restore preview not found */
             404: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["FileLibraryNotFoundError"];
+                    "application/json": components["schemas"]["ApiError"];
                 };
             };
-            /** @description FILE_LIBRARY_DELETING, FILE_LIBRARY_NOT_READY, or stale status conflict */
+            /** @description Restore preview stale, writer blocked, or file library not ready */
             409: {
                 headers: {
                     [name: string]: unknown;
@@ -7792,9 +8069,161 @@ export interface operations {
                     "application/json": components["schemas"]["FileLibraryDeletingError"] | components["schemas"]["FileLibraryNotReadyError"] | components["schemas"]["ApiError"];
                 };
             };
+            /** @description Restore cancel failed */
+            502: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description File library backend unavailable */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
         };
     };
-    exchangeFileLibraryStorageCredentials: {
+    createFileLibraryRestorePreview: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                libraryId: components["parameters"]["libraryId"];
+                projectId: components["parameters"]["projectId"];
+                workspaceId: components["parameters"]["workspaceId"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CreateFileLibraryRestorePreviewRequest"];
+            };
+        };
+        responses: {
+            /** @description Restore preview created */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["FileLibraryRestorePreview"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            /** @description File library or save point not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Restore preview stale, writer blocked, or file library not ready */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["FileLibraryDeletingError"] | components["schemas"]["FileLibraryNotReadyError"] | components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Restore preview create failed */
+            502: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description File library backend unavailable */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+        };
+    };
+    runFileLibraryRestore: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                libraryId: components["parameters"]["libraryId"];
+                projectId: components["parameters"]["projectId"];
+                workspaceId: components["parameters"]["workspaceId"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["RunFileLibraryRestoreRequest"];
+            };
+        };
+        responses: {
+            /** @description Restore run result */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["FileLibraryRestoreRun"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            /** @description File library or restore preview not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Restore preview stale, writer blocked, or file library not ready */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["FileLibraryDeletingError"] | components["schemas"]["FileLibraryNotReadyError"] | components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Restore run failed */
+            502: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description File library backend unavailable */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+        };
+    };
+    listFileLibrarySavePoints: {
         parameters: {
             query?: never;
             header?: never;
@@ -7807,41 +8236,118 @@ export interface operations {
         };
         requestBody?: never;
         responses: {
-            /** @description Mount access profile */
+            /** @description File library save points */
             200: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["StorageCredentialExchangeResponse"];
+                    "application/json": components["schemas"]["ListFileLibrarySavePointsResponse"];
                 };
             };
             401: components["responses"]["Unauthorized"];
-            /** @description FILE_LIBRARY_FORBIDDEN */
-            403: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["FileLibraryForbiddenError"] | components["schemas"]["ApiError"];
-                };
-            };
-            /** @description FILE_LIBRARY_NOT_FOUND */
+            403: components["responses"]["Forbidden"];
+            /** @description RESOURCE_NOT_FOUND */
             404: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["FileLibraryNotFoundError"];
+                    "application/json": components["schemas"]["ApiError"];
                 };
             };
-            /** @description FILE_LIBRARY_DELETING or FILE_LIBRARY_NOT_READY */
+            /** @description Storage state is not ready for save point listing */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Save point list failed */
+            502: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description File library backend unavailable */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+        };
+    };
+    createFileLibrarySavePoint: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                libraryId: components["parameters"]["libraryId"];
+                projectId: components["parameters"]["projectId"];
+                workspaceId: components["parameters"]["workspaceId"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CreateFileLibrarySavePointRequest"];
+            };
+        };
+        responses: {
+            /** @description Save point created */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["FileLibrarySavePoint"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            /** @description RESOURCE_NOT_FOUND */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description File library not ready or save point operation pending */
             409: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
                     "application/json": components["schemas"]["FileLibraryDeletingError"] | components["schemas"]["FileLibraryNotReadyError"] | components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Save point create failed */
+            502: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description File library backend unavailable */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
                 };
             };
         };
@@ -7877,6 +8383,7 @@ export interface operations {
                     "application/json": components["schemas"]["FileLibraryEntry"];
                 };
             };
+            400: components["responses"]["BadRequest"];
             401: components["responses"]["Unauthorized"];
             /** @description FILE_LIBRARY_FORBIDDEN */
             403: {
@@ -7887,13 +8394,13 @@ export interface operations {
                     "application/json": components["schemas"]["FileLibraryForbiddenError"] | components["schemas"]["ApiError"];
                 };
             };
-            /** @description FILE_LIBRARY_NOT_FOUND */
+            /** @description FILE_LIBRARY_NOT_FOUND or RESOURCE_NOT_FOUND */
             404: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["FileLibraryNotFoundError"];
+                    "application/json": components["schemas"]["FileLibraryNotFoundError"] | components["schemas"]["ApiError"];
                 };
             };
             /** @description FILE_LIBRARY_DELETING, FILE_LIBRARY_NOT_READY, or stale status conflict */
@@ -7903,6 +8410,77 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["FileLibraryDeletingError"] | components["schemas"]["FileLibraryNotReadyError"] | components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Upload requires multipart/form-data */
+            415: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description File library backend unavailable */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+        };
+    };
+    getFileLibraryOperationProjection: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                operationId: string;
+                projectId: components["parameters"]["projectId"];
+                workspaceId: components["parameters"]["workspaceId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Redacted file library operation projection */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["FileLibraryOperationProjection"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            /** @description Operation is not visible in this project namespace */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Operation projection failed */
+            502: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description File library backend unavailable */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
                 };
             };
         };
@@ -9182,6 +9760,200 @@ export interface operations {
             403: components["responses"]["Forbidden"];
         };
     };
+    listTaskFileTemplates: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                projectId: components["parameters"]["projectId"];
+                workspaceId: components["parameters"]["workspaceId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Project task file templates */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ListTaskFileTemplatesResponse"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+        };
+    };
+    createTaskFileTemplate: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                projectId: components["parameters"]["projectId"];
+                workspaceId: components["parameters"]["workspaceId"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CreateTaskFileTemplateRequest"];
+            };
+        };
+        responses: {
+            /** @description Task file template created */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TaskFileTemplate"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            /** @description Source file library not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["FileLibraryNotFoundError"];
+                };
+            };
+            /** @description Source file library not ready or template operation pending */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["FileLibraryDeletingError"] | components["schemas"]["FileLibraryNotReadyError"] | components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Task file template create failed */
+            502: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description File library backend unavailable */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+        };
+    };
+    deleteTaskFileTemplate: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                projectId: components["parameters"]["projectId"];
+                taskFileTemplateId: components["parameters"]["taskFileTemplateId"];
+                workspaceId: components["parameters"]["workspaceId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Task file template deleted */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            /** @description Task file template not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TaskFileTemplateNotFoundError"];
+                };
+            };
+        };
+    };
+    publishTaskFileTemplate: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                projectId: components["parameters"]["projectId"];
+                taskFileTemplateId: components["parameters"]["taskFileTemplateId"];
+                workspaceId: components["parameters"]["workspaceId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Task file template published */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TaskFileTemplate"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            /** @description Task file template not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TaskFileTemplateNotFoundError"];
+                };
+            };
+        };
+    };
+    unpublishTaskFileTemplate: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                projectId: components["parameters"]["projectId"];
+                taskFileTemplateId: components["parameters"]["taskFileTemplateId"];
+                workspaceId: components["parameters"]["workspaceId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Task file template unpublished */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TaskFileTemplate"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            /** @description Task file template not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TaskFileTemplateNotFoundError"];
+                };
+            };
+        };
+    };
     listTasks: {
         parameters: {
             query?: never;
@@ -9245,22 +10017,22 @@ export interface operations {
                     "application/json": components["schemas"]["FileLibraryForbiddenError"] | components["schemas"]["ApiError"];
                 };
             };
-            /** @description FILE_LIBRARY_NOT_FOUND when use_existing references a missing or cross-project library */
+            /** @description FILE_LIBRARY_NOT_FOUND or TASK_FILE_TEMPLATE_NOT_FOUND */
             404: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["FileLibraryNotFoundError"];
+                    "application/json": components["schemas"]["FileLibraryNotFoundError"] | components["schemas"]["TaskFileTemplateNotFoundError"];
                 };
             };
-            /** @description FILE_LIBRARY_DELETING, FILE_LIBRARY_NOT_READY, AGENT_TASK_FILE_LIBRARY_IN_USE, AGENT_TASK_WORKSPACE_BINDING_CONFLICT, or runner binding failure */
+            /** @description FILE_LIBRARY_DELETING, FILE_LIBRARY_NOT_READY, TASK_FILE_TEMPLATE_UNPUBLISHED, AGENT_TASK_FILE_LIBRARY_IN_USE, AGENT_TASK_WORKSPACE_BINDING_CONFLICT, or runner binding failure */
             409: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["FileLibraryDeletingError"] | components["schemas"]["FileLibraryNotReadyError"] | components["schemas"]["AgentTaskFileLibraryInUseError"] | components["schemas"]["AgentTaskWorkspaceBindingConflictError"] | components["schemas"]["ApiError"] | components["schemas"]["AgentRunnerResolutionError"];
+                    "application/json": components["schemas"]["FileLibraryDeletingError"] | components["schemas"]["FileLibraryNotReadyError"] | components["schemas"]["TaskFileTemplateUnpublishedError"] | components["schemas"]["AgentTaskFileLibraryInUseError"] | components["schemas"]["AgentTaskWorkspaceBindingConflictError"] | components["schemas"]["ApiError"] | components["schemas"]["AgentRunnerResolutionError"];
                 };
             };
             /** @description AGENT_TASK_WORKSPACE_MODE_INVALID, AGENT_TASK_WORKSPACE_FILE_LIBRARY_REQUIRED, or runner binding validation error */
@@ -9269,7 +10041,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["AgentTaskWorkspaceModeInvalidError"] | components["schemas"]["AgentTaskWorkspaceFileLibraryRequiredError"] | components["schemas"]["ApiError"] | components["schemas"]["InvalidBindingTargetError"];
+                    "application/json": components["schemas"]["AgentTaskWorkspaceModeInvalidError"] | components["schemas"]["AgentTaskWorkspaceFileLibraryRequiredError"] | components["schemas"]["AgentTaskFileTemplateRequiredError"] | components["schemas"]["ApiError"] | components["schemas"]["InvalidBindingTargetError"];
                 };
             };
         };
@@ -9761,25 +10533,40 @@ export interface operations {
                 };
                 content: {
                     "application/json": {
-                        artifacts_path: string;
-                        /** Format: date-time */
-                        created_at: string;
                         file_library_id: string;
                         file_library_name: string;
-                        filesystem_name: string;
-                        library_root_path: string;
-                        metadata_url: string;
-                        recommended_mount_path: string;
                         /** @enum {string} */
                         runtime_profile: "managed" | "developer";
-                        storage_bucket_url?: string;
-                        task_home_path: string;
-                        task_home_segment: string;
+                        task_home_binding: {
+                            binding_id: string;
+                            file_library_id: string;
+                            generation: string;
+                            holder: {
+                                binding_generation: string;
+                                /** Format: date-time */
+                                expires_at: string;
+                                holder_id: string;
+                                /** @enum {string} */
+                                holder_kind: "runner_workspace" | "terminal_session" | "notebook_run";
+                                /** Format: date-time */
+                                issued_at: string;
+                                lease_epoch: string;
+                            };
+                            /** @enum {string} */
+                            mode: "pre_mounted";
+                            paths: {
+                                artifacts_path: string;
+                                /** @enum {string} */
+                                library_root_path: ".";
+                                task_home_path: string;
+                                workspace_path: string;
+                            };
+                            /** @enum {string} */
+                            provider: "afscp";
+                            task_home_segment: string;
+                            task_id: string;
+                        };
                         task_id: string;
-                        /** @enum {string} */
-                        workspace_binding_mode: "file_library";
-                        workspace_dir_name: string;
-                        workspace_path: string;
                     };
                 };
             };
@@ -9794,7 +10581,7 @@ export interface operations {
                 };
             };
             404: components["responses"]["NotFound"];
-            /** @description FILE_LIBRARY_DELETING, FILE_LIBRARY_NOT_READY, or AGENT_TASK_WORKSPACE_BINDING_CONFLICT */
+            /** @description FILE_LIBRARY_DELETING, FILE_LIBRARY_NOT_READY, TASK_HOME_BINDING_UNAVAILABLE_FOR_DEVELOPER_RUNNER, or AGENT_TASK_WORKSPACE_BINDING_CONFLICT */
             409: {
                 headers: {
                     [name: string]: unknown;

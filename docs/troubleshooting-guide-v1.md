@@ -39,7 +39,7 @@ make agent-runner-refresh-token
 5. 再进入对应主链：
 - Agent tasks / terminal / runner: [Agent Task Runner Runbook](./agent-task-runner-runbook.md)
 - CI / integration： [CI Integration Troubleshooting](./ci-integration-troubleshooting.md)
-- 文件库本地挂载： [File Library Client Mount](./user-guides/file-library-local-mount.md)
+- 文件库访问模型： [File Library Access Model](./user-guides/file-library-access-model.md)
 
 ## Token Issues
 

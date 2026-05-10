@@ -2,7 +2,7 @@
  * Files Page - Object Browser (MinIO-like)
  *
  * This page intentionally focuses on the file manager UX:
- * libraries (bucket-like) + folders (prefixes) + objects (keys).
+ * libraries + folders (prefixes) + objects (keys).
  *
  * This page focuses on project file libraries and filesystem browsing.
  */
@@ -14,16 +14,13 @@ import { useQueryClient } from '@tanstack/react-query';
 import { useTranslations } from 'next-intl';
 
 import { PageLayout } from '@/components/layout/PageLayout';
-import { DesktopAccessDialog } from '@/components/files/files-page/DesktopAccessDialog';
 import { FilesPageContent } from '@/components/files/files-page/FilesPageContent';
+import { FileLibraryRecoveryDialog } from '@/components/files/file-library-recovery/FileLibraryRecoveryDialog';
 import { LibraryDialogs } from '@/components/files/files-page/LibraryDialogs';
 import { MoveDialogs } from '@/components/files/files-page/MoveDialogs';
 import { ObjectOperationDialogs } from '@/components/files/files-page/ObjectOperationDialogs';
 
 import type {
-  FileLibrary,
-  FileLibraryClientMountAccess,
-  FileLibraryDesktopMountAccess,
   FileObjectsListItem,
   FileObjectsListParams,
   FileObjectsListResponse,
@@ -43,18 +40,18 @@ import {
   useFileObjectsInfinite,
   useUploadFileObject,
 } from '@/lib/hooks/use-file-objects';
-import { FileSortBy, FileSortOrder, useFilesUrlState } from '@/lib/hooks/use-files-url-state';
 import {
-  useFileLibraryDesktopMountAccess,
-  useFileLibraryStorageCredentialExchange,
-} from '@/lib/hooks/use-file-libraries-v2';
+  DEFAULT_FILES_BROWSE_PREFIX,
+  useFilesUrlState,
+  type FileSortBy,
+  type FileSortOrder,
+} from '@/lib/hooks/use-files-url-state';
 import { useProjectLayoutMode } from '@/lib/hooks/use-project-layout-mode';
 import {
   useFileUploadManager,
   type FileUploadTargetContext,
   type UploadedFileObjectIdentity,
 } from '@/components/files/hooks/use-file-upload-manager';
-import { getOperationErrorDetail } from '@/components/files/hooks/error-utils';
 import { useFileBatchOperations } from '@/components/files/hooks/use-file-batch-operations';
 import { useFileLibraryManager } from '@/components/files/hooks/use-file-library-manager';
 import { useFileFolderMoveManager } from '@/components/files/hooks/use-file-folder-move-manager';
@@ -361,7 +358,7 @@ export function FilesPage({ workspaceId, projectId, locale: _locale = 'en-US' }:
     setApiClientAuthReady(false);
   }, [authHydrated, token]);
   const authReady = authHydrated && isAuthenticated && !!token && apiClientAuthReady;
-  const { canManage, canExchangeCredentials } = useFilesPageCapabilities();
+  const { canManage } = useFilesPageCapabilities();
   const { layoutMode } = useProjectLayoutMode();
 
   const { data: librariesData, isLoading: libsLoading } = useFileLibraries(workspaceId, projectId, {
@@ -380,11 +377,12 @@ export function FilesPage({ workspaceId, projectId, locale: _locale = 'en-US' }:
     sortBy,
     sortOrder,
     updateSort,
-  } = useFilesUrlState(libraries, { resetBrowseStateOnMount: true });
+  } = useFilesUrlState(libraries, { defaultPrefix: DEFAULT_FILES_BROWSE_PREFIX });
   const selectedLibrary = React.useMemo(
     () => libraries.find((library) => library.id === selectedLibraryId) ?? null,
     [libraries, selectedLibraryId],
   );
+  const selectedLibraryReady = selectedLibrary?.status === 'ready';
   const workspaceSurface = React.useMemo<FilesWorkspaceSurface>(
     () => (libraries.length === 0 ? 'no_library' : 'browser'),
     [libraries.length],
@@ -403,8 +401,8 @@ export function FilesPage({ workspaceId, projectId, locale: _locale = 'en-US' }:
     [prefix, search, sortBy, sortOrder],
   );
   const uploadTarget = React.useMemo<FileUploadTargetContext | null>(
-    () => (selectedLibraryId ? { libraryId: selectedLibraryId, prefix } : null),
-    [prefix, selectedLibraryId],
+    () => (canManage && selectedLibraryId ? { libraryId: selectedLibraryId, prefix } : null),
+    [canManage, prefix, selectedLibraryId],
   );
   const uploadViewRef = React.useRef({ selectedLibraryId, prefix, search, sortBy, sortOrder, listParams });
   uploadViewRef.current = { selectedLibraryId, prefix, search, sortBy, sortOrder, listParams };
@@ -428,17 +426,8 @@ export function FilesPage({ workspaceId, projectId, locale: _locale = 'en-US' }:
   const uploadObject = useUploadFileObject();
   const deleteObjects = useDeleteFileObjects();
   const moveObject = useMoveFileObject();
-  const exchangeStorageCredentials = useFileLibraryStorageCredentialExchange();
-  const exchangeDesktopMountAccess = useFileLibraryDesktopMountAccess();
 
   const fileInputRef = React.useRef<HTMLInputElement | null>(null);
-  const [desktopAccessOpen, setDesktopAccessOpen] = React.useState(false);
-  const [desktopAccessTarget, setDesktopAccessTarget] = React.useState<FileLibrary | null>(null);
-  const [desktopMountAccess, setDesktopMountAccess] = React.useState<FileLibraryDesktopMountAccess | null>(null);
-  const [desktopMountAccessError, setDesktopMountAccessError] = React.useState<string | null>(null);
-  const [libraryMountAccess, setLibraryMountAccess] = React.useState<FileLibraryClientMountAccess | null>(null);
-  const [libraryMountAccessError, setLibraryMountAccessError] = React.useState<string | null>(null);
-  const [revealMetadataUrl, setRevealMetadataUrl] = React.useState(false);
 
   const crumbs = React.useMemo(() => buildCrumbs(prefix), [prefix]);
   const {
@@ -456,6 +445,7 @@ export function FilesPage({ workspaceId, projectId, locale: _locale = 'en-US' }:
     setSelectedIds,
     toggleAll,
   } = useFilesSelectionState({
+    defaultPrefix: DEFAULT_FILES_BROWSE_PREFIX,
     filteredItems,
     isFetching: objectsQuery.isFetching,
     libraries,
@@ -481,13 +471,31 @@ export function FilesPage({ workspaceId, projectId, locale: _locale = 'en-US' }:
   );
 
   const [deleteConfirmOpen, setDeleteConfirmOpen] = React.useState(false);
+  const [fileStatesOpen, setFileStatesOpen] = React.useState(false);
+  const openFileStates = React.useCallback(() => {
+    if (!canManage || !selectedLibraryReady) return;
+    setFileStatesOpen(true);
+  }, [canManage, selectedLibraryReady]);
+  const handleFileStatesOpenChange = React.useCallback((nextOpen: boolean) => {
+    if (nextOpen && (!canManage || !selectedLibraryReady)) return;
+    setFileStatesOpen(nextOpen);
+  }, [canManage, selectedLibraryReady]);
+
+  React.useEffect(() => {
+    if (fileStatesOpen && (!canManage || !selectedLibraryReady)) {
+      setFileStatesOpen(false);
+    }
+  }, [canManage, fileStatesOpen, selectedLibraryReady]);
 
   const selectedForMove = selected.length === 1 ? selected[0] : null;
   const moveNamePlaceholder = selectedForMove
     ? (selectedForMove.kind === 'object' ? basename(selectedForMove.key) : basename(selectedForMove.prefix))
     : '';
 
-  const handleUploadClick = () => fileInputRef.current?.click();
+  const handleUploadClick = () => {
+    if (!canManage) return;
+    fileInputRef.current?.click();
+  };
   const refreshUploadTargetQueries = React.useCallback(
     async (target: FileUploadTargetContext, options?: UploadListingSyncOptions) => {
       throwIfUploadListingSyncAborted(options?.signal);
@@ -944,44 +952,6 @@ export function FilesPage({ workspaceId, projectId, locale: _locale = 'en-US' }:
     }
   }, [objectsQuery]);
 
-  const openMountAccessDialog = React.useCallback(async (library: FileLibrary) => {
-    setRevealMetadataUrl(false);
-    setLibraryMountAccess(null);
-    setLibraryMountAccessError(null);
-    try {
-      const result = await exchangeStorageCredentials.mutateAsync({
-        workspaceId,
-        projectId,
-        libraryId: library.id,
-      });
-      setLibraryMountAccess(result.client_mount_access);
-    } catch (error) {
-      const message = getOperationErrorDetail(error, tErrors, t('file_manager.mount_access_failed'));
-      setLibraryMountAccessError(message);
-    }
-  }, [exchangeStorageCredentials, projectId, t, tErrors, workspaceId]);
-
-  const openDesktopAccessDialog = React.useCallback(async (library: FileLibrary) => {
-    setDesktopAccessTarget(library);
-    setDesktopAccessOpen(true);
-    setDesktopMountAccess(null);
-    setDesktopMountAccessError(null);
-    setLibraryMountAccess(null);
-    setLibraryMountAccessError(null);
-    setRevealMetadataUrl(false);
-    try {
-      const result = await exchangeDesktopMountAccess.mutateAsync({
-        workspaceId,
-        projectId,
-        libraryId: library.id,
-      });
-      setDesktopMountAccess(result.desktop_mount_access);
-    } catch (error) {
-      const message = getOperationErrorDetail(error, tErrors, t('file_manager.desktop_access_failed'));
-      setDesktopMountAccessError(message);
-    }
-  }, [exchangeDesktopMountAccess, projectId, t, tErrors, workspaceId]);
-
   return (
     <PageLayout
       density="immersive"
@@ -993,6 +963,10 @@ export function FilesPage({ workspaceId, projectId, locale: _locale = 'en-US' }:
         multiple
         className="hidden"
         onChange={(e) => {
+          if (!canManage) {
+            e.currentTarget.value = '';
+            return;
+          }
           void handleFilesPicked(e.target.files);
           e.currentTarget.value = '';
         }}
@@ -1000,12 +974,12 @@ export function FilesPage({ workspaceId, projectId, locale: _locale = 'en-US' }:
       <FilesPageContent
         allSelected={allSelected}
         canManage={canManage}
-        canExchangeCredentials={canExchangeCredentials}
         crumbs={crumbs}
         fileInputRef={fileInputRef}
         filteredItems={filteredItems}
         handleCancelUpload={handleCancelUpload}
         handleDelete={() => {
+          if (!canManage) return;
           clearDeleteInlineError();
           setDeleteConfirmOpen(true);
         }}
@@ -1019,6 +993,7 @@ export function FilesPage({ workspaceId, projectId, locale: _locale = 'en-US' }:
           void objectsQuery.refetch();
         }}
         handleRename={() => {
+          if (!canManage) return;
           if (selected.length !== 1) return;
           const target = selectedForMove;
           if (!target) return;
@@ -1043,11 +1018,14 @@ export function FilesPage({ workspaceId, projectId, locale: _locale = 'en-US' }:
         moveNamePlaceholder={moveNamePlaceholder}
         objectsQuery={objectsQuery}
         onClearSelection={clearSelection}
-        onCreateFolder={() => setCreateFolderOpen(true)}
+        onCreateFolder={() => {
+          if (!canManage) return;
+          setCreateFolderOpen(true);
+        }}
         onCreateLibrary={openCreateLibraryDialog}
-        onOpenDesktopAccess={openDesktopAccessDialog}
         onDeleteLibrary={openDeleteLibraryDialog}
         onGoUp={() => navigateToPrefix(parentPrefixForPrefix(prefix))}
+        onManageFileStates={openFileStates}
         onNavigateToPrefix={navigateToPrefix}
         onRenameLibrary={openRenameLibraryDialog}
         onSelectLibrary={selectLibrary}
@@ -1085,101 +1063,90 @@ export function FilesPage({ workspaceId, projectId, locale: _locale = 'en-US' }:
         workspaceSurface={workspaceSurface}
       />
 
-      <DesktopAccessDialog
-        exchangePending={exchangeDesktopMountAccess.isPending}
-        desktopMountAccess={desktopMountAccess}
-        desktopMountAccessError={desktopMountAccessError}
-        manualMountAccess={libraryMountAccess}
-        manualMountAccessError={libraryMountAccessError}
-        manualMountAccessPending={exchangeStorageCredentials.isPending}
-        open={desktopAccessOpen}
-        revealMetadataUrl={revealMetadataUrl}
-        targetLibrary={desktopAccessTarget}
-        t={t}
-        onLoadManualMountAccess={() => {
-          if (!desktopAccessTarget) return;
-          void openMountAccessDialog(desktopAccessTarget);
-        }}
-        onOpenChange={(nextOpen) => {
-          setDesktopAccessOpen(nextOpen);
-          if (!nextOpen) {
-            setDesktopMountAccessError(null);
-            setLibraryMountAccessError(null);
-          }
-        }}
-        onToggleRevealMetadataUrl={() => setRevealMetadataUrl((value) => !value)}
-      />
+      {canManage ? (
+        <>
+          <FileLibraryRecoveryDialog
+            library={selectedLibraryReady ? selectedLibrary : null}
+            open={fileStatesOpen && selectedLibraryReady}
+            projectId={projectId}
+            t={t}
+            workspaceId={workspaceId}
+            onOpenChange={handleFileStatesOpenChange}
+          />
 
-      <LibraryDialogs
-        createLibraryPending={createLibrary.isPending}
-        deleteLibraryPending={deleteLibrary.isPending}
-        libraryCreateError={libraryCreateError}
-        libraryCreateOpen={libraryCreateOpen}
-        libraryDeleteConfirm={libraryDeleteConfirm}
-        libraryDeleteError={libraryDeleteError}
-        libraryDeleteOpen={libraryDeleteOpen}
-        libraryDeleteTarget={libraryDeleteTarget}
-        libraryDescription={libraryDescription}
-        libraryName={libraryName}
-        libraryRenameDescription={libraryRenameDescription}
-        libraryRenameError={libraryRenameError}
-        libraryRenameName={libraryRenameName}
-        libraryRenameOpen={libraryRenameOpen}
-        libraryRenameTarget={libraryRenameTarget}
-        t={t}
-        updateLibraryPending={updateLibrary.isPending}
-        onCloseDeleteLibraryDialog={closeDeleteLibraryDialog}
-        onCloseRenameLibraryDialog={closeRenameLibraryDialog}
-        onCreateLibrary={handleCreateLibrary}
-        onDeleteLibrary={handleDeleteLibrary}
-        onRenameLibrary={handleRenameLibrary}
-        onSetLibraryCreateOpen={setLibraryCreateOpen}
-        onSetLibraryDeleteConfirm={setLibraryDeleteConfirm}
-        onSetLibraryDeleteOpen={setLibraryDeleteOpen}
-        onSetLibraryDescription={setLibraryDescription}
-        onSetLibraryName={setLibraryName}
-        onSetLibraryRenameDescription={setLibraryRenameDescription}
-        onSetLibraryRenameName={setLibraryRenameName}
-        onSetLibraryRenameOpen={setLibraryRenameOpen}
-      />
+          <LibraryDialogs
+            createLibraryPending={createLibrary.isPending}
+            deleteLibraryPending={deleteLibrary.isPending}
+            libraryCreateError={libraryCreateError}
+            libraryCreateOpen={libraryCreateOpen}
+            libraryDeleteConfirm={libraryDeleteConfirm}
+            libraryDeleteError={libraryDeleteError}
+            libraryDeleteOpen={libraryDeleteOpen}
+            libraryDeleteTarget={libraryDeleteTarget}
+            libraryDescription={libraryDescription}
+            libraryName={libraryName}
+            libraryRenameDescription={libraryRenameDescription}
+            libraryRenameError={libraryRenameError}
+            libraryRenameName={libraryRenameName}
+            libraryRenameOpen={libraryRenameOpen}
+            libraryRenameTarget={libraryRenameTarget}
+            t={t}
+            updateLibraryPending={updateLibrary.isPending}
+            onCloseDeleteLibraryDialog={closeDeleteLibraryDialog}
+            onCloseRenameLibraryDialog={closeRenameLibraryDialog}
+            onCreateLibrary={handleCreateLibrary}
+            onDeleteLibrary={handleDeleteLibrary}
+            onRenameLibrary={handleRenameLibrary}
+            onSetLibraryCreateOpen={setLibraryCreateOpen}
+            onSetLibraryDeleteConfirm={setLibraryDeleteConfirm}
+            onSetLibraryDeleteOpen={setLibraryDeleteOpen}
+            onSetLibraryDescription={setLibraryDescription}
+            onSetLibraryName={setLibraryName}
+            onSetLibraryRenameDescription={setLibraryRenameDescription}
+            onSetLibraryRenameName={setLibraryRenameName}
+            onSetLibraryRenameOpen={setLibraryRenameOpen}
+          />
 
-      <MoveDialogs
-        confirmMoveOverwrite={confirmMoveOverwrite}
-        createFolderOpen={createFolderOpen}
-        destPickerCrumbs={destPickerCrumbs}
-        destPickerItems={destPickerItems}
-        destPickerOpen={destPickerOpen}
-        destPickerPrefix={destPickerPrefix}
-        destPickerQuery={destPickerQuery}
-        folderName={folderName}
-        moveConflictOpen={moveConflictOpen}
-        moveDestPrefix={moveDestPrefix}
-        moveName={moveName}
-        moveNamePlaceholder={moveNamePlaceholder}
-        moveOpen={moveOpen}
-        moveOverwrite={moveOverwrite}
-        normalizeFolderPrefixInput={normalizeFolderPrefixInput}
-        selectedForMove={selectedForMove}
-        selectedLibraryId={selectedLibraryId}
-        t={t}
-        onHandleCreateFolder={handleCreateFolder}
-        onHandleMove={handleMove}
-        onSetCreateFolderOpen={setCreateFolderOpen}
-        onSetDestPickerOpen={setDestPickerOpen}
-        onSetDestPickerPrefix={setDestPickerPrefix}
-        onSetFolderName={setFolderName}
-        onSetMoveConflictOpen={setMoveConflictOpen}
-        onSetMoveDestPrefix={setMoveDestPrefix}
-        onSetMoveName={setMoveName}
-        onSetMoveOpen={setMoveOpen}
-        onSetMoveOverwrite={setMoveOverwrite}
-      />
+          <MoveDialogs
+            confirmMoveOverwrite={confirmMoveOverwrite}
+            createFolderOpen={createFolderOpen}
+            destPickerCrumbs={destPickerCrumbs}
+            destPickerItems={destPickerItems}
+            destPickerOpen={destPickerOpen}
+            destPickerPrefix={destPickerPrefix}
+            destPickerQuery={destPickerQuery}
+            folderName={folderName}
+            moveConflictOpen={moveConflictOpen}
+            moveDestPrefix={moveDestPrefix}
+            moveName={moveName}
+            moveNamePlaceholder={moveNamePlaceholder}
+            moveOpen={moveOpen}
+            moveOverwrite={moveOverwrite}
+            normalizeFolderPrefixInput={normalizeFolderPrefixInput}
+            selectedForMove={selectedForMove}
+            selectedLibraryId={selectedLibraryId}
+            t={t}
+            onHandleCreateFolder={handleCreateFolder}
+            onHandleMove={handleMove}
+            onSetCreateFolderOpen={setCreateFolderOpen}
+            onSetDestPickerOpen={setDestPickerOpen}
+            onSetDestPickerPrefix={setDestPickerPrefix}
+            onSetFolderName={setFolderName}
+            onSetMoveConflictOpen={setMoveConflictOpen}
+            onSetMoveDestPrefix={setMoveDestPrefix}
+            onSetMoveName={setMoveName}
+            onSetMoveOpen={setMoveOpen}
+            onSetMoveOverwrite={setMoveOverwrite}
+          />
+        </>
+      ) : null}
 
       <ObjectOperationDialogs
         batchFailedKeys={batchFailedKeys}
         batchResultOpen={batchResultOpen}
         batchResultType={batchResultType}
         batchRetryPending={batchRetryPending}
+        canManage={canManage}
         deleteInlineError={deleteInlineError}
         deleteConfirmOpen={deleteConfirmOpen}
         selectedCount={selected.length}

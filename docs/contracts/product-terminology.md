@@ -58,7 +58,7 @@ Do not use this contract to rename machine-readable API fields, OpenAPI tags, ba
 7. `Files`
 - Shared project library.
 - Canonical route: `.../files`
-- Scope: libraries, folders, upload/download, rename/move, delete, preview, share-link.
+- Scope: libraries, folders, upload/download, rename/move, delete, preview.
 
 8. `Usage`
 - Read-only usage and cost evidence surface for the current project.

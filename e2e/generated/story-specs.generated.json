@@ -484,15 +484,15 @@
         "dependencyId": "managed-agent-task-runner",
         "kind": "service",
         "required": true,
-        "note": "Agent Task work is validated through the managed runner path, not a legacy compatibility selector."
+        "note": "Agent Task work is validated through the managed runner path, with no extra selector for users to resolve."
       }
     ],
     "lane": "backend-real",
     "entryRoute": "/en-US/workspaces/{workspaceId}/projects/{projectId}/chat",
     "goal": "项目成员在同一个项目里使用 Chat 与 Agent Task 时，Chat 只呈现 endpoint/model 选择，Agent Task 只呈现托管 Agent Runner；用户不需要理解旧兼容多路径，仍然能把同一份项目上下文带着走。",
     "sourceRef": "e2e/stories/backend-real/chat-agent-task-target-model-continuity.story.md#chat-agent-task-target-model-continuity",
-    "sourceFingerprint": "35c2092c819653255721fcad025f1c98e657a59edd636c6ae1d0224b8f2fa23e",
-    "storyFingerprint": "57e0e35ce643fe206dc5a8b507dce0c963b791305832795c85a067e1cb184889",
+    "sourceFingerprint": "8dd5273989b504e4e5f04161ee6be20514142a2163733485c2a70d08b9903f37",
+    "storyFingerprint": "7332f8495a851f18a20c1eb8920c582bc23b2abb3dbf92739bb5bf8ec954fe7c",
     "stepMapFingerprint": "6117b4658e7a164f38e76ca51b3b42c56eef0cd86129decfb5c27c566a01b7ca",
     "sceneIds": [
       "project-chat",
@@ -658,53 +658,6 @@
     "visualStepIds": []
   },
   {
-    "storyId": "desktop-auth-request-complete-and-work",
-    "title": "Desktop auth request, complete, and continue to work",
-    "actor": "workspace member / desktop user",
-    "family": "desktop-auth-request-complete-and-work",
-    "personas": [
-      "workspace member",
-      "desktop user"
-    ],
-    "kind": "journey",
-    "gatePolicy": {
-      "tier": "default",
-      "requiredEvidence": [
-        "trace"
-      ]
-    },
-    "externalDependencies": [],
-    "lane": "backend-real",
-    "entryRoute": "/en-US/desktop/auth/request?desktop_auth_request_id={desktopAuthRequestId}",
-    "goal": "桌面端发起的请求在浏览器里完成后，用户应该能清楚地回到工作区入口并继续开始工作，而不是把 Desktop 交接当成终点。",
-    "sourceRef": "e2e/stories/backend-real/desktop-auth-request-complete-and-work.story.md#desktop-auth-request-complete-and-work",
-    "sourceFingerprint": "eb0a8d7e71fb1b42d0687326a3ff2bfdc9e5e590d70ef08c12a9a692fe368c77",
-    "storyFingerprint": "2cb4586b9a13218e70c894ddbbdb643ed9e1924b89bd500e6c989b5e9f72cc9c",
-    "stepMapFingerprint": "3ef5da8e73ae96e3c4bc6a5208c20a19a1f21ab174e31c4438b8a81136a06862",
-    "sceneIds": [
-      "desktop-auth-request",
-      "desktop-auth-complete",
-      "workspace-selection",
-      "workspace-login",
-      "workspace-entry"
-    ],
-    "stepIds": [
-      "desktop-auth-request",
-      "desktop-auth-complete",
-      "workspace-selection",
-      "workspace-login",
-      "workspace-entry"
-    ],
-    "traceStepIds": [
-      "desktop-auth-request",
-      "desktop-auth-complete",
-      "workspace-selection",
-      "workspace-login",
-      "workspace-entry"
-    ],
-    "visualStepIds": []
-  },
-  {
     "storyId": "files-crud-and-sync",
     "title": "Files CRUD and sync continuity",
     "actor": "project member / project operator",
@@ -720,34 +673,25 @@
         "trace"
       ]
     },
-    "externalDependencies": [
-      {
-        "dependencyId": "juicefs-client",
-        "kind": "service",
-        "required": true,
-        "note": "mount sync validation requires a local JuiceFS client and storage credential exchange."
-      }
-    ],
+    "externalDependencies": [],
     "lane": "backend-real",
     "entryRoute": "/en-US/workspaces/ws_default/projects/{projectId}/files",
-    "goal": "成员在 Files 中管理文件对象后，Web 文件浏览与桌面挂载内容保持一致，不需要自己猜测哪一侧才是真相。",
+    "goal": "成员在 Files 中管理文件对象后，Web 文件浏览、API 响应和 task HOME 展示状态保持同一产品真相，不需要自己猜测哪一侧才可信。",
     "sourceRef": "e2e/stories/backend-real/files-crud-and-sync.story.md#files-crud-and-sync",
-    "sourceFingerprint": "e58a6ebcfb3afefb577c519bc6a870a5c45be0345d7f240a293737f8c9bb2eff",
-    "storyFingerprint": "54e4ee9a6d25a648efed570949070db9c242ae02cec9c026ebcf419e039011b6",
-    "stepMapFingerprint": "2fc0d3db733af0b00462a9858361e3f88b53d1e529b090c4f71d511d9cb884ac",
+    "sourceFingerprint": "dfdf43b9a7757a81104514836143f00b010cfaaddf7ee6927aae5a1c13f5504f",
+    "storyFingerprint": "41e1f27ee7502b3141b9f6b21563df066ba51e89eda7e8deee845e5a56d10bff",
+    "stepMapFingerprint": "335965962ce33d8a89870df04113577f4fb727fb730e2f202a1b94cf6d9eeef0",
     "sceneIds": [
       "project-files",
       "project-files-browser"
     ],
     "stepIds": [
       "open-files-library",
-      "manage-files-from-web",
-      "verify-web-desktop-sync"
+      "manage-files-from-web"
     ],
     "traceStepIds": [
       "open-files-library",
-      "manage-files-from-web",
-      "verify-web-desktop-sync"
+      "manage-files-from-web"
     ],
     "visualStepIds": []
   },
@@ -777,25 +721,24 @@
     ],
     "lane": "backend-real",
     "entryRoute": "/en-US/login/workspace",
-    "goal": "成员在日常使用文件库时，既能顺畅进入 ready 文件库和桌面访问入口，也能在 degraded 文件库上看到清晰的恢复动作，而不是自己猜测下一步。",
+    "goal": "成员在日常使用文件库时，既能顺畅进入 ready 文件库的 Web 文件工作面，也能在 degraded 文件库上看到清晰的恢复动作，而不是自己猜测下一步。",
     "sourceRef": "e2e/stories/backend-real/files-library-access-and-recovery.story.md#files-library-access-and-recovery",
-    "sourceFingerprint": "eac5c48ac0eff80ccf9bbe52ac82b78da834697ad36f1827c7db5ef700f9c2ac",
-    "storyFingerprint": "aafb196c6ca38f6735190f13a3a55b2600be00e51812fa053b2acab91cdbd014",
-    "stepMapFingerprint": "35816e246610d99770a9977e401f118bb83cf598b7b60be926b322313b419d9f",
+    "sourceFingerprint": "19d8cf6c7f9fef2b95231542d1fa997b9f202dacfe51bbbc8a2d4c939ee78147",
+    "storyFingerprint": "475640c1d0b8f7ab6d013956f519cdcc7c073752fb2e743f3ef56a3daac22ec3",
+    "stepMapFingerprint": "4461c6c7da2b6ad92aa3a0c1d18be1b77506d7a40208a6b3ffe351202fa18662",
     "sceneIds": [
       "workspace-select",
       "project-files",
-      "desktop-access-dialog",
       "degraded-delete-dialog"
     ],
     "stepIds": [
       "open-files-library",
-      "review-desktop-access",
+      "review-web-files-access",
       "review-degraded-recovery"
     ],
     "traceStepIds": [
       "open-files-library",
-      "review-desktop-access",
+      "review-web-files-access",
       "review-degraded-recovery"
     ],
     "visualStepIds": []
@@ -1230,18 +1173,16 @@
     "externalDependencies": [],
     "lane": "mock-lane",
     "entryRoute": "/en-US/join",
-    "goal": "用一份 mock-lane story family 统一描述入口、登录和桌面接续的 visual scene 真相。",
+    "goal": "用一份 mock-lane story family 统一描述入口、登录和 workspace 访问 visual scene 真相。",
     "sourceRef": "e2e/stories/mock-lane/mock-lane-entry-access.story.md#mock-lane-entry-access",
-    "sourceFingerprint": "704a3b704e4e29a394292c9b3e524a9be8519561e201f8329481fff4b9229e70",
-    "storyFingerprint": "67ec28ff6f05ba3c5f285cc3a76b202a0f999938d6a7a77412dca49aa5511992",
+    "sourceFingerprint": "21ad01adcecc698843a668df2df22c66043d838d2b4f70b8a1cee6bc8e15e389",
+    "storyFingerprint": "89003aa143680140cabb29169864fca1b36467d487278dc9d86f5e27d3ae24be",
     "stepMapFingerprint": "f7cdac1a4b147dcbd621405867b50a6c177058c8280f5b2584d3db8b5cd1c0f6",
     "sceneIds": [
       "join",
       "system-login",
       "workspace-select",
-      "workspace-login",
-      "desktop-auth-request",
-      "desktop-auth-complete"
+      "workspace-login"
     ],
     "stepIds": [
       "open-system-login",
@@ -1413,8 +1354,8 @@
     "entryRoute": "/en-US/workspaces/ws_default",
     "goal": "统一描述 workspace 与 project 核心工作面的 mock-lane visual scene 真相。",
     "sourceRef": "e2e/stories/mock-lane/mock-lane-workspace-project-core.story.md#mock-lane-workspace-project-core",
-    "sourceFingerprint": "515eb0f6040acae97a7eac70bb4c7e7f51523263d67d4debff0b331a3a9fed10",
-    "storyFingerprint": "df7f86b0810a0d8e6dc6c312c2b9ec713b0fddd5e4b62b5155e68b39a777698e",
+    "sourceFingerprint": "44b9cd39137459cd5c9d0b062d07e1507e7b1ac1fd2c7b6eb45ade47fd60ce76",
+    "storyFingerprint": "1a5fbeec0ac8b0b617f1794858d18728b9a5766c6a0a694d02afbb738e5299db",
     "stepMapFingerprint": "fc217664c231e04f7a2d5f64c6dea4fad526df3315c22b642acc893f36901b93",
     "sceneIds": [
       "workspace-home-project-creator",
@@ -1440,7 +1381,6 @@
       "files-selection-details",
       "dialog-files-create-folder",
       "dialog-files-rename",
-      "dialog-files-mount-access",
       "dialog-files-library-create",
       "dialog-files-library-delete"
     ],
@@ -2130,7 +2070,7 @@
   },
   {
     "storyId": "unicode-filename-round-trip",
-    "title": "Unicode filename round-trip across Files, agent-task artifacts, download, and mount",
+    "title": "Unicode filename round-trip across Files, agent-task artifacts, and download",
     "actor": "project member",
     "family": "unicode-file-continuity",
     "personas": [
@@ -2145,12 +2085,6 @@
     },
     "externalDependencies": [
       {
-        "dependencyId": "juicefs-client",
-        "kind": "service",
-        "required": true,
-        "note": "unicode filename round-trip needs a live client mount so web truth and local path truth can be compared."
-      },
-      {
         "dependencyId": "provider-api-key",
         "kind": "credential",
         "required": true,
@@ -2159,25 +2093,23 @@
     ],
     "lane": "backend-real",
     "entryRoute": "/en-US/workspaces/{workspaceId}/projects/{projectId}/files",
-    "goal": "成员使用非 ASCII 文件名工作时，Files、Agent Task、.artifacts、下载结果和本地挂载都必须保留同一份文件名真相；用户不应该为了避开系统差异，被迫把真实文件重命名成英文占位符。",
+    "goal": "成员使用非 ASCII 文件名工作时，Files、Agent Task、.artifacts 和下载结果都必须保留同一份文件名真相；用户不应该为了避开系统差异，被迫把真实文件重命名成英文占位符。",
     "sourceRef": "e2e/stories/backend-real/unicode-filename-round-trip.story.md#unicode-filename-round-trip",
-    "sourceFingerprint": "a18756e83d6435c3d138476518c215b4b721688ddcd8436cf39c0e0798e9bccc",
-    "storyFingerprint": "1621d4a1117256587f9b66b4bfbd7540a76ee8b5010ce049cff296262da5f424",
-    "stepMapFingerprint": "9b58968e41f6256ee7d0124b4b2587a653b724591a8414c01beab0e19179c95f",
+    "sourceFingerprint": "6a16db0bf4de54298367474926c72f2b2b5ee99c658e47747835f5d687c2905a",
+    "storyFingerprint": "c7a49d4ad4166e351dc7401d96ad228cf1edfa7e009052122b54cdce32ac2e56",
+    "stepMapFingerprint": "515afeead71ce4e4563e28faa71daeae1d7a77832491b82a4b81a9a09cbc9bf5",
     "sceneIds": [
       "project-files",
       "agent-task"
     ],
     "stepIds": [
       "see-the-unicode-file-name-in-files-without-fallback-renaming",
-      "confirm-the-mounted-library-keeps-the-same-unicode-name",
       "use-the-unicode-file-in-agent-task-and-write-a-unicode-artifact",
       "return-to-files-and-see-the-unicode-artifact-unchanged",
       "download-the-unicode-artifact-with-the-same-name"
     ],
     "traceStepIds": [
       "see-the-unicode-file-name-in-files-without-fallback-renaming",
-      "confirm-the-mounted-library-keeps-the-same-unicode-name",
       "use-the-unicode-file-in-agent-task-and-write-a-unicode-artifact",
       "return-to-files-and-see-the-unicode-artifact-unchanged",
       "download-the-unicode-artifact-with-the-same-name"

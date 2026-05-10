@@ -1133,10 +1133,14 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/ListFileLibrariesResponse"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
     post:
       tags:
         - Files
-      operationId: createFileLibraryV2
+      operationId: createFileLibrary
       requestBody:
         required: true
         content:
@@ -1150,6 +1154,30 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/FileLibrary"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "409":
+          description: Project storage pending or file library operation pending
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+        "502":
+          description: File library provisioning failed
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+        "503":
+          description: File library backend unavailable or project storage blocked
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
   /api/v1/workspaces/{workspaceId}/projects/{projectId}/file-libraries/{libraryId}:
     parameters:
       - $ref: "#/components/parameters/workspaceId"
@@ -1171,15 +1199,17 @@ paths:
         "403":
           $ref: "#/components/responses/Forbidden"
         "404":
-          description: FILE_LIBRARY_NOT_FOUND
+          description: FILE_LIBRARY_NOT_FOUND or RESOURCE_NOT_FOUND
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/FileLibraryNotFoundError"
+                oneOf:
+                  - $ref: "#/components/schemas/FileLibraryNotFoundError"
+                  - $ref: "#/components/schemas/ApiError"
     patch:
       tags:
         - Files
-      operationId: updateFileLibraryV2
+      operationId: updateFileLibrary
       requestBody:
         required: true
         content:
@@ -1193,6 +1223,8 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/FileLibrary"
+        "400":
+          $ref: "#/components/responses/BadRequest"
         "401":
           $ref: "#/components/responses/Unauthorized"
         "403":
@@ -1204,11 +1236,13 @@ paths:
                   - $ref: "#/components/schemas/FileLibraryForbiddenError"
                   - $ref: "#/components/schemas/ApiError"
         "404":
-          description: FILE_LIBRARY_NOT_FOUND
+          description: FILE_LIBRARY_NOT_FOUND or RESOURCE_NOT_FOUND
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/FileLibraryNotFoundError"
+                oneOf:
+                  - $ref: "#/components/schemas/FileLibraryNotFoundError"
+                  - $ref: "#/components/schemas/ApiError"
         "409":
           description: FILE_LIBRARY_DELETING, FILE_LIBRARY_TASK_IN_USE, FILE_LIBRARY_NOT_READY, or stale status conflict
           content:
@@ -1222,7 +1256,7 @@ paths:
     delete:
       tags:
         - Files
-      operationId: deleteFileLibraryV2
+      operationId: deleteFileLibrary
       responses:
         "204":
           description: Deleted
@@ -1237,11 +1271,13 @@ paths:
                   - $ref: "#/components/schemas/FileLibraryForbiddenError"
                   - $ref: "#/components/schemas/ApiError"
         "404":
-          description: FILE_LIBRARY_NOT_FOUND
+          description: FILE_LIBRARY_NOT_FOUND or RESOURCE_NOT_FOUND
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/FileLibraryNotFoundError"
+                oneOf:
+                  - $ref: "#/components/schemas/FileLibraryNotFoundError"
+                  - $ref: "#/components/schemas/ApiError"
         "409":
           description: FILE_LIBRARY_TASK_IN_USE, FILE_LIBRARY_NOT_EMPTY, FILE_LIBRARY_DELETING, FILE_LIBRARY_NOT_READY, or stale status conflict
           content:
@@ -1253,63 +1289,18 @@ paths:
                   - $ref: "#/components/schemas/FileLibraryDeletingError"
                   - $ref: "#/components/schemas/FileLibraryNotReadyError"
                   - $ref: "#/components/schemas/ApiError"
-  /api/v1/workspaces/{workspaceId}/projects/{projectId}/file-libraries/{libraryId}/backend:
-    parameters:
-      - $ref: "#/components/parameters/workspaceId"
-      - $ref: "#/components/parameters/projectId"
-      - $ref: "#/components/parameters/libraryId"
-    get:
-      tags:
-        - Files
-      operationId: getFileLibraryBackend
-      responses:
-        "200":
-          description: File library backend summary
+        "502":
+          description: File library delete failed
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/FileLibraryBackend"
-  /api/v1/workspaces/{workspaceId}/projects/{projectId}/file-libraries/{libraryId}/storage-credential-exchange:
-    parameters:
-      - $ref: "#/components/parameters/workspaceId"
-      - $ref: "#/components/parameters/projectId"
-      - $ref: "#/components/parameters/libraryId"
-    post:
-      tags:
-        - Files
-      operationId: exchangeFileLibraryStorageCredentials
-      responses:
-        "200":
-          description: Mount access profile
+                $ref: "#/components/schemas/ApiError"
+        "503":
+          description: File library backend unavailable
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/StorageCredentialExchangeResponse"
-        "401":
-          $ref: "#/components/responses/Unauthorized"
-        "403":
-          description: FILE_LIBRARY_FORBIDDEN
-          content:
-            application/json:
-              schema:
-                oneOf:
-                  - $ref: "#/components/schemas/FileLibraryForbiddenError"
-                  - $ref: "#/components/schemas/ApiError"
-        "404":
-          description: FILE_LIBRARY_NOT_FOUND
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/FileLibraryNotFoundError"
-        "409":
-          description: FILE_LIBRARY_DELETING or FILE_LIBRARY_NOT_READY
-          content:
-            application/json:
-              schema:
-                oneOf:
-                  - $ref: "#/components/schemas/FileLibraryDeletingError"
-                  - $ref: "#/components/schemas/FileLibraryNotReadyError"
-                  - $ref: "#/components/schemas/ApiError"
+                $ref: "#/components/schemas/ApiError"
   /api/v1/workspaces/{workspaceId}/projects/{projectId}/file-libraries/{libraryId}/entries:
     parameters:
       - $ref: "#/components/parameters/workspaceId"
@@ -1326,6 +1317,30 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/ListFileLibraryEntriesResponse"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          description: RESOURCE_NOT_FOUND
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+        "502":
+          description: File library list failed
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+        "503":
+          description: File library backend unavailable
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
   /api/v1/workspaces/{workspaceId}/projects/{projectId}/file-libraries/{libraryId}/folders:
     parameters:
       - $ref: "#/components/parameters/workspaceId"
@@ -1344,6 +1359,8 @@ paths:
       responses:
         "204":
           description: Folder created
+        "400":
+          $ref: "#/components/responses/BadRequest"
         "401":
           $ref: "#/components/responses/Unauthorized"
         "403":
@@ -1355,11 +1372,13 @@ paths:
                   - $ref: "#/components/schemas/FileLibraryForbiddenError"
                   - $ref: "#/components/schemas/ApiError"
         "404":
-          description: FILE_LIBRARY_NOT_FOUND
+          description: FILE_LIBRARY_NOT_FOUND or RESOURCE_NOT_FOUND
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/FileLibraryNotFoundError"
+                oneOf:
+                  - $ref: "#/components/schemas/FileLibraryNotFoundError"
+                  - $ref: "#/components/schemas/ApiError"
         "409":
           description: FILE_LIBRARY_DELETING, FILE_LIBRARY_NOT_READY, or stale status conflict
           content:
@@ -1369,6 +1388,12 @@ paths:
                   - $ref: "#/components/schemas/FileLibraryDeletingError"
                   - $ref: "#/components/schemas/FileLibraryNotReadyError"
                   - $ref: "#/components/schemas/ApiError"
+        "503":
+          description: File library backend unavailable
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
   /api/v1/workspaces/{workspaceId}/projects/{projectId}/file-libraries/{libraryId}/delete:
     parameters:
       - $ref: "#/components/parameters/workspaceId"
@@ -1391,6 +1416,8 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/DeleteFileLibraryEntriesResponse"
+        "400":
+          $ref: "#/components/responses/BadRequest"
         "401":
           $ref: "#/components/responses/Unauthorized"
         "403":
@@ -1402,11 +1429,13 @@ paths:
                   - $ref: "#/components/schemas/FileLibraryForbiddenError"
                   - $ref: "#/components/schemas/ApiError"
         "404":
-          description: FILE_LIBRARY_NOT_FOUND
+          description: FILE_LIBRARY_NOT_FOUND or RESOURCE_NOT_FOUND
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/FileLibraryNotFoundError"
+                oneOf:
+                  - $ref: "#/components/schemas/FileLibraryNotFoundError"
+                  - $ref: "#/components/schemas/ApiError"
         "409":
           description: FILE_LIBRARY_DELETING, FILE_LIBRARY_NOT_READY, or stale status conflict
           content:
@@ -1416,6 +1445,18 @@ paths:
                   - $ref: "#/components/schemas/FileLibraryDeletingError"
                   - $ref: "#/components/schemas/FileLibraryNotReadyError"
                   - $ref: "#/components/schemas/ApiError"
+        "502":
+          description: File library delete failed
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+        "503":
+          description: File library backend unavailable
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
   /api/v1/workspaces/{workspaceId}/projects/{projectId}/file-libraries/{libraryId}/move:
     parameters:
       - $ref: "#/components/parameters/workspaceId"
@@ -1434,6 +1475,8 @@ paths:
       responses:
         "204":
           description: Move completed
+        "400":
+          $ref: "#/components/responses/BadRequest"
         "401":
           $ref: "#/components/responses/Unauthorized"
         "403":
@@ -1445,11 +1488,13 @@ paths:
                   - $ref: "#/components/schemas/FileLibraryForbiddenError"
                   - $ref: "#/components/schemas/ApiError"
         "404":
-          description: FILE_LIBRARY_NOT_FOUND
+          description: FILE_LIBRARY_NOT_FOUND or RESOURCE_NOT_FOUND
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/FileLibraryNotFoundError"
+                oneOf:
+                  - $ref: "#/components/schemas/FileLibraryNotFoundError"
+                  - $ref: "#/components/schemas/ApiError"
         "409":
           description: FILE_LIBRARY_DELETING, FILE_LIBRARY_NOT_READY, or stale status conflict
           content:
@@ -1459,6 +1504,12 @@ paths:
                   - $ref: "#/components/schemas/FileLibraryDeletingError"
                   - $ref: "#/components/schemas/FileLibraryNotReadyError"
                   - $ref: "#/components/schemas/ApiError"
+        "503":
+          description: File library backend unavailable
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
   /api/v1/workspaces/{workspaceId}/projects/{projectId}/file-libraries/{libraryId}/upload:
     parameters:
       - $ref: "#/components/parameters/workspaceId"
@@ -1491,6 +1542,8 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/FileLibraryEntry"
+        "400":
+          $ref: "#/components/responses/BadRequest"
         "401":
           $ref: "#/components/responses/Unauthorized"
         "403":
@@ -1502,11 +1555,13 @@ paths:
                   - $ref: "#/components/schemas/FileLibraryForbiddenError"
                   - $ref: "#/components/schemas/ApiError"
         "404":
-          description: FILE_LIBRARY_NOT_FOUND
+          description: FILE_LIBRARY_NOT_FOUND or RESOURCE_NOT_FOUND
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/FileLibraryNotFoundError"
+                oneOf:
+                  - $ref: "#/components/schemas/FileLibraryNotFoundError"
+                  - $ref: "#/components/schemas/ApiError"
         "409":
           description: FILE_LIBRARY_DELETING, FILE_LIBRARY_NOT_READY, or stale status conflict
           content:
@@ -1516,6 +1571,18 @@ paths:
                   - $ref: "#/components/schemas/FileLibraryDeletingError"
                   - $ref: "#/components/schemas/FileLibraryNotReadyError"
                   - $ref: "#/components/schemas/ApiError"
+        "415":
+          description: Upload requires multipart/form-data
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+        "503":
+          description: File library backend unavailable
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
   /api/v1/workspaces/{workspaceId}/projects/{projectId}/file-libraries/{libraryId}/download:
     parameters:
       - $ref: "#/components/parameters/workspaceId"
@@ -1533,6 +1600,24 @@ paths:
               schema:
                 type: string
                 format: binary
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          description: File library or object not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+        "503":
+          description: File library backend unavailable
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
   /api/v1/workspaces/{workspaceId}/projects/{projectId}/file-libraries/{libraryId}/meta:
     parameters:
       - $ref: "#/components/parameters/workspaceId"
@@ -1550,78 +1635,99 @@ paths:
               schema:
                 type: object
                 additionalProperties: true
-  /api/v1/workspaces/{workspaceId}/projects/{projectId}/file-libraries/{libraryId}/share-link:
-    parameters:
-      - $ref: "#/components/parameters/workspaceId"
-      - $ref: "#/components/parameters/projectId"
-      - $ref: "#/components/parameters/libraryId"
-    post:
-      tags:
-        - Files
-      operationId: createFileLibraryShareLink
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: "#/components/schemas/CreateFileLibraryShareLinkRequest"
-      responses:
-        "200":
-          description: Share link
-          content:
-            application/json:
-              schema:
-                type: object
-                additionalProperties: true
-        "401":
-          $ref: "#/components/responses/Unauthorized"
-        "403":
-          description: FILE_LIBRARY_FORBIDDEN
-          content:
-            application/json:
-              schema:
-                oneOf:
-                  - $ref: "#/components/schemas/FileLibraryForbiddenError"
-                  - $ref: "#/components/schemas/ApiError"
-        "404":
-          description: FILE_LIBRARY_NOT_FOUND
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/FileLibraryNotFoundError"
-        "409":
-          description: FILE_LIBRARY_DELETING, FILE_LIBRARY_NOT_READY, or stale status conflict
-          content:
-            application/json:
-              schema:
-                oneOf:
-                  - $ref: "#/components/schemas/FileLibraryDeletingError"
-                  - $ref: "#/components/schemas/FileLibraryNotReadyError"
-                  - $ref: "#/components/schemas/ApiError"
-  /api/v1/workspaces/{workspaceId}/projects/{projectId}/file-libraries/{libraryId}/desktop-mount-access:
-    parameters:
-      - $ref: "#/components/parameters/workspaceId"
-      - $ref: "#/components/parameters/projectId"
-      - $ref: "#/components/parameters/libraryId"
-    post:
-      tags:
-        - Files
-      operationId: createFileLibraryDesktopMountAccess
-      responses:
-        "200":
-          description: Desktop mount access
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/FileLibraryDesktopMountAccessResponse"
+        "400":
+          $ref: "#/components/responses/BadRequest"
         "401":
           $ref: "#/components/responses/Unauthorized"
         "403":
           $ref: "#/components/responses/Forbidden"
         "404":
-          $ref: "#/components/responses/NotFound"
+          description: File library or object metadata not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+        "503":
+          description: File library backend unavailable
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+  /api/v1/workspaces/{workspaceId}/projects/{projectId}/file-libraries/{libraryId}/save-points:
+    parameters:
+      - $ref: "#/components/parameters/workspaceId"
+      - $ref: "#/components/parameters/projectId"
+      - $ref: "#/components/parameters/libraryId"
+    get:
+      tags:
+        - Files
+      operationId: listFileLibrarySavePoints
+      responses:
+        "200":
+          description: File library save points
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ListFileLibrarySavePointsResponse"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          description: RESOURCE_NOT_FOUND
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
         "409":
-          description: FILE_LIBRARY_DELETING or FILE_LIBRARY_NOT_READY
+          description: Storage state is not ready for save point listing
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+        "502":
+          description: Save point list failed
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+        "503":
+          description: File library backend unavailable
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+    post:
+      tags:
+        - Files
+      operationId: createFileLibrarySavePoint
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateFileLibrarySavePointRequest"
+      responses:
+        "201":
+          description: Save point created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/FileLibrarySavePoint"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          description: RESOURCE_NOT_FOUND
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+        "409":
+          description: File library not ready or save point operation pending
           content:
             application/json:
               schema:
@@ -1629,6 +1735,368 @@ paths:
                   - $ref: "#/components/schemas/FileLibraryDeletingError"
                   - $ref: "#/components/schemas/FileLibraryNotReadyError"
                   - $ref: "#/components/schemas/ApiError"
+        "502":
+          description: Save point create failed
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+        "503":
+          description: File library backend unavailable
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+  /api/v1/workspaces/{workspaceId}/projects/{projectId}/file-libraries/{libraryId}/restore-preview:
+    parameters:
+      - $ref: "#/components/parameters/workspaceId"
+      - $ref: "#/components/parameters/projectId"
+      - $ref: "#/components/parameters/libraryId"
+    post:
+      tags:
+        - Files
+      operationId: createFileLibraryRestorePreview
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateFileLibraryRestorePreviewRequest"
+      responses:
+        "201":
+          description: Restore preview created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/FileLibraryRestorePreview"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          description: File library or save point not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+        "409":
+          description: Restore preview stale, writer blocked, or file library not ready
+          content:
+            application/json:
+              schema:
+                oneOf:
+                  - $ref: "#/components/schemas/FileLibraryDeletingError"
+                  - $ref: "#/components/schemas/FileLibraryNotReadyError"
+                  - $ref: "#/components/schemas/ApiError"
+        "502":
+          description: Restore preview create failed
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+        "503":
+          description: File library backend unavailable
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+  /api/v1/workspaces/{workspaceId}/projects/{projectId}/file-libraries/{libraryId}/restore-run:
+    parameters:
+      - $ref: "#/components/parameters/workspaceId"
+      - $ref: "#/components/parameters/projectId"
+      - $ref: "#/components/parameters/libraryId"
+    post:
+      tags:
+        - Files
+      operationId: runFileLibraryRestore
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/RunFileLibraryRestoreRequest"
+      responses:
+        "200":
+          description: Restore run result
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/FileLibraryRestoreRun"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          description: File library or restore preview not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+        "409":
+          description: Restore preview stale, writer blocked, or file library not ready
+          content:
+            application/json:
+              schema:
+                oneOf:
+                  - $ref: "#/components/schemas/FileLibraryDeletingError"
+                  - $ref: "#/components/schemas/FileLibraryNotReadyError"
+                  - $ref: "#/components/schemas/ApiError"
+        "502":
+          description: Restore run failed
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+        "503":
+          description: File library backend unavailable
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+  /api/v1/workspaces/{workspaceId}/projects/{projectId}/file-libraries/{libraryId}/restore-cancel:
+    parameters:
+      - $ref: "#/components/parameters/workspaceId"
+      - $ref: "#/components/parameters/projectId"
+      - $ref: "#/components/parameters/libraryId"
+    post:
+      tags:
+        - Files
+      operationId: cancelFileLibraryRestore
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CancelFileLibraryRestoreRequest"
+      responses:
+        "200":
+          description: Restore preview canceled
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/FileLibraryRestorePreview"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          description: File library or restore preview not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+        "409":
+          description: Restore preview stale, writer blocked, or file library not ready
+          content:
+            application/json:
+              schema:
+                oneOf:
+                  - $ref: "#/components/schemas/FileLibraryDeletingError"
+                  - $ref: "#/components/schemas/FileLibraryNotReadyError"
+                  - $ref: "#/components/schemas/ApiError"
+        "502":
+          description: Restore cancel failed
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+        "503":
+          description: File library backend unavailable
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+  /api/v1/workspaces/{workspaceId}/projects/{projectId}/file-library-operations/{operationId}:
+    parameters:
+      - $ref: "#/components/parameters/workspaceId"
+      - $ref: "#/components/parameters/projectId"
+      - name: operationId
+        in: path
+        required: true
+        schema:
+          type: string
+    get:
+      tags:
+        - Files
+      operationId: getFileLibraryOperationProjection
+      responses:
+        "200":
+          description: Redacted file library operation projection
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/FileLibraryOperationProjection"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          description: Operation is not visible in this project namespace
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+        "502":
+          description: Operation projection failed
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+        "503":
+          description: File library backend unavailable
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+  /api/v1/workspaces/{workspaceId}/projects/{projectId}/task-file-templates:
+    parameters:
+      - $ref: "#/components/parameters/workspaceId"
+      - $ref: "#/components/parameters/projectId"
+    get:
+      tags:
+        - Files
+      operationId: listTaskFileTemplates
+      responses:
+        "200":
+          description: Project task file templates
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ListTaskFileTemplatesResponse"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+    post:
+      tags:
+        - Files
+      operationId: createTaskFileTemplate
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateTaskFileTemplateRequest"
+      responses:
+        "201":
+          description: Task file template created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TaskFileTemplate"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          description: Source file library not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/FileLibraryNotFoundError"
+        "409":
+          description: Source file library not ready or template operation pending
+          content:
+            application/json:
+              schema:
+                oneOf:
+                  - $ref: "#/components/schemas/FileLibraryDeletingError"
+                  - $ref: "#/components/schemas/FileLibraryNotReadyError"
+                  - $ref: "#/components/schemas/ApiError"
+        "502":
+          description: Task file template create failed
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+        "503":
+          description: File library backend unavailable
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+  /api/v1/workspaces/{workspaceId}/projects/{projectId}/task-file-templates/{taskFileTemplateId}:
+    parameters:
+      - $ref: "#/components/parameters/workspaceId"
+      - $ref: "#/components/parameters/projectId"
+      - $ref: "#/components/parameters/taskFileTemplateId"
+    delete:
+      tags:
+        - Files
+      operationId: deleteTaskFileTemplate
+      responses:
+        "204":
+          description: Task file template deleted
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          description: Task file template not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TaskFileTemplateNotFoundError"
+  /api/v1/workspaces/{workspaceId}/projects/{projectId}/task-file-templates/{taskFileTemplateId}/publish:
+    parameters:
+      - $ref: "#/components/parameters/workspaceId"
+      - $ref: "#/components/parameters/projectId"
+      - $ref: "#/components/parameters/taskFileTemplateId"
+    post:
+      tags:
+        - Files
+      operationId: publishTaskFileTemplate
+      responses:
+        "200":
+          description: Task file template published
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TaskFileTemplate"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          description: Task file template not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TaskFileTemplateNotFoundError"
+  /api/v1/workspaces/{workspaceId}/projects/{projectId}/task-file-templates/{taskFileTemplateId}/unpublish:
+    parameters:
+      - $ref: "#/components/parameters/workspaceId"
+      - $ref: "#/components/parameters/projectId"
+      - $ref: "#/components/parameters/taskFileTemplateId"
+    post:
+      tags:
+        - Files
+      operationId: unpublishTaskFileTemplate
+      responses:
+        "200":
+          description: Task file template unpublished
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TaskFileTemplate"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          description: Task file template not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TaskFileTemplateNotFoundError"
   /api/v1/workspaces/{workspaceId}:
     get:
       tags:
@@ -2713,19 +3181,22 @@ paths:
                   - $ref: "#/components/schemas/FileLibraryForbiddenError"
                   - $ref: "#/components/schemas/ApiError"
         "404":
-          description: FILE_LIBRARY_NOT_FOUND when use_existing references a missing or cross-project library
+          description: FILE_LIBRARY_NOT_FOUND or TASK_FILE_TEMPLATE_NOT_FOUND
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/FileLibraryNotFoundError"
+                oneOf:
+                  - $ref: "#/components/schemas/FileLibraryNotFoundError"
+                  - $ref: "#/components/schemas/TaskFileTemplateNotFoundError"
         "409":
-          description: FILE_LIBRARY_DELETING, FILE_LIBRARY_NOT_READY, AGENT_TASK_FILE_LIBRARY_IN_USE, AGENT_TASK_WORKSPACE_BINDING_CONFLICT, or runner binding failure
+          description: FILE_LIBRARY_DELETING, FILE_LIBRARY_NOT_READY, TASK_FILE_TEMPLATE_UNPUBLISHED, AGENT_TASK_FILE_LIBRARY_IN_USE, AGENT_TASK_WORKSPACE_BINDING_CONFLICT, or runner binding failure
           content:
             application/json:
               schema:
                 oneOf:
                   - $ref: "#/components/schemas/FileLibraryDeletingError"
                   - $ref: "#/components/schemas/FileLibraryNotReadyError"
+                  - $ref: "#/components/schemas/TaskFileTemplateUnpublishedError"
                   - $ref: "#/components/schemas/AgentTaskFileLibraryInUseError"
                   - $ref: "#/components/schemas/AgentTaskWorkspaceBindingConflictError"
                   - $ref: "#/components/schemas/ApiError"
@@ -2738,6 +3209,7 @@ paths:
                 oneOf:
                   - $ref: "#/components/schemas/AgentTaskWorkspaceModeInvalidError"
                   - $ref: "#/components/schemas/AgentTaskWorkspaceFileLibraryRequiredError"
+                  - $ref: "#/components/schemas/AgentTaskFileTemplateRequiredError"
                   - $ref: "#/components/schemas/ApiError"
                   - $ref: "#/components/schemas/InvalidBindingTargetError"
   /api/v1/workspaces/{workspaceId}/projects/{projectId}/tasks/{taskId}:
@@ -3022,59 +3494,99 @@ paths:
                 type: object
                 required:
                   - task_id
-                  - workspace_binding_mode
                   - runtime_profile
-                  - task_home_segment
-                  - task_home_path
-                  - workspace_path
-                  - artifacts_path
-                  - library_root_path
-                  - workspace_dir_name
                   - file_library_id
                   - file_library_name
-                  - filesystem_name
-                  - metadata_url
-                  - recommended_mount_path
-                  - created_at
+                  - task_home_binding
                 properties:
                   task_id:
                     type: string
-                  workspace_binding_mode:
-                    type: string
-                    enum:
-                      - file_library
                   runtime_profile:
                     type: string
                     enum:
                       - managed
                       - developer
-                  task_home_segment:
-                    type: string
-                  task_home_path:
-                    type: string
-                  workspace_path:
-                    type: string
-                  artifacts_path:
-                    type: string
-                  library_root_path:
-                    type: string
-                  workspace_dir_name:
-                    type: string
                   file_library_id:
                     type: string
                   file_library_name:
                     type: string
-                  filesystem_name:
-                    type: string
-                  metadata_url:
-                    type: string
-                  storage_bucket_url:
-                    type: string
-                  recommended_mount_path:
-                    type: string
-                  created_at:
-                    type: string
-                    format: date-time
+                  task_home_binding:
+                    type: object
+                    required:
+                      - binding_id
+                      - provider
+                      - mode
+                      - task_id
+                      - file_library_id
+                      - task_home_segment
+                      - generation
+                      - holder
+                      - paths
+                    properties:
+                      binding_id:
+                        type: string
+                      provider:
+                        type: string
+                        enum:
+                          - afscp
+                      mode:
+                        type: string
+                        enum:
+                          - pre_mounted
+                      task_id:
+                        type: string
+                      file_library_id:
+                        type: string
+                      task_home_segment:
+                        type: string
+                      generation:
+                        type: string
+                      holder:
+                        type: object
+                        required:
+                          - holder_id
+                          - holder_kind
+                          - binding_generation
+                          - lease_epoch
+                          - issued_at
+                          - expires_at
+                        properties:
+                          holder_id:
+                            type: string
+                          holder_kind:
+                            type: string
+                            enum:
+                              - runner_workspace
+                              - terminal_session
+                              - notebook_run
+                          binding_generation:
+                            type: string
+                          lease_epoch:
+                            type: string
+                          issued_at:
+                            type: string
+                            format: date-time
+                          expires_at:
+                            type: string
+                            format: date-time
+                      paths:
+                        type: object
+                        required:
+                          - task_home_path
+                          - workspace_path
+                          - artifacts_path
+                          - library_root_path
+                        properties:
+                          task_home_path:
+                            type: string
+                          workspace_path:
+                            type: string
+                          artifacts_path:
+                            type: string
+                          library_root_path:
+                            type: string
+                            enum:
+                              - "."
         "401":
           $ref: "#/components/responses/Unauthorized"
         "403":
@@ -3088,7 +3600,7 @@ paths:
         "404":
           $ref: "#/components/responses/NotFound"
         "409":
-          description: FILE_LIBRARY_DELETING, FILE_LIBRARY_NOT_READY, or AGENT_TASK_WORKSPACE_BINDING_CONFLICT
+          description: FILE_LIBRARY_DELETING, FILE_LIBRARY_NOT_READY, TASK_HOME_BINDING_UNAVAILABLE_FOR_DEVELOPER_RUNNER, or AGENT_TASK_WORKSPACE_BINDING_CONFLICT
           content:
             application/json:
               schema:
@@ -3102,7 +3614,7 @@ paths:
       tags:
         - Agent Tasks
       operationId: releaseTaskWorkspaceAccess
-      description: Internal runner callback that releases a task workspace holder fence after the local mount/session has been released.
+      description: Internal runner callback that releases a task HOME holder fence after the runner/session no longer needs path access.
       requestBody:
         required: true
         content:
@@ -5739,6 +6251,12 @@ components:
       required: true
       schema:
         type: string
+    taskFileTemplateId:
+      name: taskFileTemplateId
+      in: path
+      required: true
+      schema:
+        type: string
   responses:
     Unauthorized:
       description: Unauthorized - Missing or invalid authentication token
@@ -6145,9 +6663,12 @@ components:
           enum:
             - create_new
             - use_existing
+            - use_template
         workspace_name:
           type: string
         workspace_file_library_id:
+          type: string
+        task_file_template_id:
           type: string
     UpdateTaskRequest:
       type: object
@@ -7417,6 +7938,7 @@ components:
         - agent_runner_stale
         - agent_runner_capability_mismatch
         - agent_runner_test_task_unavailable
+        - TASK_HOME_BINDING_UNAVAILABLE_FOR_DEVELOPER_RUNNER
     AgentRunnerTestTaskRunUnavailableResponse:
       type: object
       additionalProperties: false
@@ -7759,15 +8281,17 @@ components:
         - $ref: "#/components/schemas/CreateEndpointRequest"
     FileLibrary:
       type: object
+      additionalProperties: false
       required:
         - id
         - workspace_id
         - project_id
         - name
+        - source
+        - file_library_home_segment
         - status
         - task_home_binding_status
         - bound_task_visible
-        - filesystem_name
         - created_by_user_id
         - created_at
         - updated_at
@@ -7782,6 +8306,18 @@ components:
           type: string
         description:
           type: string
+        visibility:
+          type: string
+          enum:
+            - shared
+        source:
+          type: string
+          enum:
+            - agent_task_files
+          description: Product-facing source. File libraries are project-scoped task files managed by AgentSmith.
+        file_library_home_segment:
+          type: string
+          description: Opaque backend-generated task HOME path segment. Clients must not derive storage details from it.
         status:
           type: string
           enum:
@@ -7790,6 +8326,27 @@ components:
             - degraded
             - failed
             - deleting
+        storage_status:
+          type: string
+          enum:
+            - initializing
+            - available
+            - degraded
+            - unavailable
+            - admin_action_required
+          description: Product-facing storage readiness. It does not expose namespace, repository, volume, or export details.
+        storage_next_action:
+          type: string
+          nullable: true
+          enum:
+            - wait
+            - retry
+            - contact_admin
+            - contact_support
+          description: Product-facing next action for storage readiness.
+        status_reason:
+          type: string
+          description: Display-safe status reason. It must not contain raw backend identifiers or secrets.
         task_home_binding_status:
           type: string
           enum:
@@ -7811,8 +8368,6 @@ components:
         bound_task_visible:
           type: boolean
           description: Whether bound task summary fields are safe to display to the current actor.
-        filesystem_name:
-          type: string
         created_by_user_id:
           type: string
         created_at:
@@ -7845,77 +8400,6 @@ components:
         name:
           type: string
         description:
-          type: string
-    FileLibraryBackend:
-      type: object
-      required:
-        - library_id
-        - filesystem_name
-        - provisioning_status
-        - gateway_status
-        - postgres
-        - minio
-      properties:
-        library_id:
-          type: string
-        filesystem_name:
-          type: string
-        provisioning_status:
-          type: string
-          enum:
-            - creating
-            - ready
-            - degraded
-            - failed
-            - deleting
-        gateway_status:
-          type: string
-          enum:
-            - not_started
-            - starting
-            - ready
-            - degraded
-            - failed
-            - stopped
-        postgres:
-          type: object
-          required:
-            - host
-            - port
-            - database
-            - username
-          properties:
-            host:
-              type: string
-            port:
-              type: integer
-            database:
-              type: string
-            username:
-              type: string
-        minio:
-          type: object
-          required:
-            - endpoint
-            - bucket
-          properties:
-            endpoint:
-              type: string
-            bucket:
-              type: string
-            region:
-              type: string
-        gateway:
-          type: object
-          properties:
-            loopback_url:
-              type: string
-            port:
-              type: integer
-            last_started_at:
-              type: string
-              format: date-time
-        last_error:
           type: string
     FileLibraryEntry:
       oneOf:
@@ -8028,54 +8512,293 @@ components:
           type: string
         overwrite:
           type: boolean
-    CreateFileLibraryShareLinkRequest:
+    FileLibrarySavePoint:
       type: object
+      additionalProperties: false
       required:
-        - path
+        - id
+        - file_library_id
+        - created_at
       properties:
-        path:
+        id:
           type: string
-        expires_in_seconds:
-          type: integer
-    FileLibraryDesktopMountAccess:
+        file_library_id:
+          type: string
+        message:
+          type: string
+        created_at:
+          type: string
+          format: date-time
+    ListFileLibrarySavePointsResponse:
       type: object
+      additionalProperties: false
       required:
-        - filesystem_name
-        - metadata_url
-        - deployment_base_url
-        - default_mount_roots
-        - windows_requires_drive_letter
+        - items
       properties:
-        filesystem_name:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/FileLibrarySavePoint"
+    CreateFileLibrarySavePointRequest:
+      type: object
+      additionalProperties: false
+      properties:
+        message:
           type: string
-        metadata_url:
+          minLength: 1
+          maxLength: 500
+    FileLibraryOperationProjection:
+      type: object
+      additionalProperties: false
+      required:
+        - operation_id
+        - operation_state
+        - error
+      properties:
+        operation_id:
           type: string
-        storage_bucket_url:
+        operation_state:
           type: string
-        deployment_base_url:
+        operation_type:
           type: string
-        default_mount_roots:
+        resource:
           type: object
+          additionalProperties: false
           required:
-            - linux
-            - macos
-            - windows
+            - type
           properties:
-            linux:
+            type:
               type: string
-            macos:
-              type: string
-            windows:
-              type: string
-        windows_requires_drive_letter:
-          type: boolean
-    FileLibraryDesktopMountAccessResponse:
+        error:
+          nullable: true
+          oneOf:
+            - type: object
+              additionalProperties: false
+              required:
+                - code
+              properties:
+                code:
+                  type: string
+                retryable:
+                  type: boolean
+        created_at:
+          type: string
+          format: date-time
+        started_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+        finished_at:
+          type: string
+          format: date-time
+    FileLibraryRestorePreview:
       type: object
+      additionalProperties: false
       required:
-        - desktop_mount_access
+        - id
+        - file_library_id
+        - source_save_point_id
+        - status
+        - created_at
+        - updated_at
       properties:
-        desktop_mount_access:
-          $ref: "#/components/schemas/FileLibraryDesktopMountAccess"
+        id:
+          type: string
+        file_library_id:
+          type: string
+        source_save_point_id:
+          type: string
+        status:
+          type: string
+          enum:
+            - previewing
+            - ready
+            - failed
+            - canceling
+            - canceled
+            - restoring
+            - restored
+        message:
+          type: string
+        summary:
+          type: object
+          additionalProperties: false
+          required:
+            - added
+            - changed
+            - removed
+            - destructive
+          properties:
+            added:
+              $ref: '#/components/schemas/FileLibraryRestorePreviewChangeSummary'
+            changed:
+              $ref: '#/components/schemas/FileLibraryRestorePreviewChangeSummary'
+            removed:
+              $ref: '#/components/schemas/FileLibraryRestorePreviewChangeSummary'
+            destructive:
+              type: boolean
+        blockers:
+          type: array
+          items:
+            type: object
+            additionalProperties: false
+            required:
+              - code
+            properties:
+              code:
+                type: string
+                enum:
+                  - active_writer_sessions
+                  - stale_writer_session_uncertain
+                  - restore_preview_stale
+                  - restore_plan_requires_recovery
+              message:
+                type: string
+        stale:
+          type: boolean
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+    FileLibraryRestorePreviewChangeSummary:
+      type: object
+      additionalProperties: false
+      required:
+        - count
+        - samples
+      properties:
+        count:
+          type: integer
+          minimum: 0
+        samples:
+          type: array
+          items:
+            type: string
+    CreateFileLibraryRestorePreviewRequest:
+      type: object
+      additionalProperties: false
+      required:
+        - save_point_id
+      properties:
+        save_point_id:
+          type: string
+    RunFileLibraryRestoreRequest:
+      type: object
+      additionalProperties: false
+      required:
+        - restore_preview_id
+      properties:
+        restore_preview_id:
+          type: string
+    CancelFileLibraryRestoreRequest:
+      type: object
+      additionalProperties: false
+      required:
+        - restore_preview_id
+      properties:
+        restore_preview_id:
+          type: string
+    FileLibraryRestoreRun:
+      type: object
+      additionalProperties: false
+      required:
+        - id
+        - file_library_id
+        - restore_preview_id
+        - status
+        - created_at
+        - updated_at
+      properties:
+        id:
+          type: string
+        file_library_id:
+          type: string
+        restore_preview_id:
+          type: string
+        status:
+          type: string
+          enum:
+            - pending
+            - succeeded
+            - failed
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+    TaskFileTemplate:
+      type: object
+      additionalProperties: false
+      required:
+        - id
+        - workspace_id
+        - project_id
+        - name
+        - status
+        - source_library_id
+        - created_by_user_id
+        - created_at
+        - updated_at
+      properties:
+        id:
+          type: string
+        workspace_id:
+          type: string
+        project_id:
+          type: string
+        name:
+          type: string
+        description:
+          type: string
+        status:
+          type: string
+          enum:
+            - unpublished
+            - published
+            - failed
+        source_library_id:
+          type: string
+        source_save_point_id:
+          type: string
+        created_by_user_id:
+          type: string
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+    ListTaskFileTemplatesResponse:
+      type: object
+      additionalProperties: false
+      required:
+        - items
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/TaskFileTemplate"
+    CreateTaskFileTemplateRequest:
+      type: object
+      additionalProperties: false
+      required:
+        - name
+        - source_library_id
+      properties:
+        name:
+          type: string
+          minLength: 1
+          maxLength: 255
+        description:
+          type: string
+          maxLength: 1000
+        source_library_id:
+          type: string
     CreateProjectInviteRequest:
       type: object
       required:
@@ -8099,63 +8822,6 @@ components:
         expires_at:
           type: string
           format: date-time
-    StorageCredentialExchangeResponse:
-      type: object
-      required:
-        - client_mount_access
-      properties:
-        client_mount_access:
-          type: object
-          required:
-            - filesystem_name
-            - metadata_url
-            - recommended_mount_path
-            - platform_notes
-            - recommended_mount_commands
-            - created_at
-          properties:
-            filesystem_name:
-              type: string
-            metadata_url:
-              type: string
-            storage_bucket_url:
-              type: string
-            recommended_mount_path:
-              type: string
-            platform_notes:
-              type: array
-              items:
-                type: string
-            recommended_mount_commands:
-              type: object
-              required:
-                - linux
-                - macos
-                - windows
-              properties:
-                linux:
-                  type: string
-                macos:
-                  type: string
-                windows:
-                  type: string
-            created_at:
-              type: string
-              format: date-time
-    FileLibraryObject:
-      type: object
-      required:
-        - key
-        - name
-      properties:
-        key:
-          type: string
-        name:
-          type: string
-        content_type:
-          type: string
-        size_bytes:
-          type: integer
     ApiError:
       type: object
       additionalProperties: false
@@ -8178,6 +8844,34 @@ components:
             - SPENDING_LIMIT_EXCEEDED
             - AGENT_OFFLINE
             - unsupported_field
+            - UNSUPPORTED_MEDIA_TYPE
+            - SERVICE_UNAVAILABLE
+            - PROJECT_STORAGE_PENDING
+            - PROJECT_STORAGE_BLOCKED
+            - FILE_LIBRARY_PROVISIONING_FAILED
+            - FILE_LIBRARY_OPERATION_PENDING
+            - FILE_LIBRARY_OPERATION_FAILED
+            - FILE_LIBRARY_STORAGE_NOT_READY
+            - FILE_LIBRARY_SAVE_POINT_LIST_FAILED
+            - FILE_LIBRARY_SAVE_POINT_CREATE_FAILED
+            - FILE_LIBRARY_SAVE_POINT_NOT_FOUND
+            - FILE_LIBRARY_RESTORE_PREVIEW_FAILED
+            - FILE_LIBRARY_RESTORE_PREVIEW_NOT_FOUND
+            - FILE_LIBRARY_RESTORE_PREVIEW_STALE
+            - FILE_LIBRARY_RESTORE_RUN_FAILED
+            - FILE_LIBRARY_RESTORE_CANCEL_FAILED
+            - FILE_LIBRARY_ACTIVE_WRITER_BLOCKED
+            - FILE_LIBRARY_NAMESPACE_PROJECT_MISMATCH
+            - FILE_LIBRARY_TEMPLATE_CLONE_NOT_ALLOWED
+            - FILE_LIBRARY_CAPABILITY_DENIED
+            - FILE_LIBRARY_STORAGE_ADMIN_ACTION_REQUIRED
+            - TASK_FILE_TEMPLATE_CREATE_FAILED
+            - FILE_LIBRARY_DELETE_FAILED
+            - FILE_LIBRARY_UPLOAD_FAILED
+            - FILE_LIBRARY_MOVE_FAILED
+            - FILE_LIBRARY_FOLDER_CREATE_FAILED
+            - FILE_LIBRARY_LIST_FAILED
+            - destination_exists
             - INTERNAL_ERROR
         message:
           type: string
@@ -8237,6 +8931,67 @@ components:
           type: string
           enum:
             - workspace_file_library_id
+        request_id:
+          type: string
+    AgentTaskFileTemplateRequiredError:
+      type: object
+      additionalProperties: false
+      required:
+        - error_code
+        - message
+        - field
+      properties:
+        error_code:
+          type: string
+          enum:
+            - AGENT_TASK_FILE_TEMPLATE_REQUIRED
+        message:
+          type: string
+          enum:
+            - agent_task_file_template_required
+        field:
+          type: string
+          enum:
+            - task_file_template_id
+        request_id:
+          type: string
+    TaskFileTemplateNotFoundError:
+      type: object
+      additionalProperties: false
+      required:
+        - error_code
+        - message
+      properties:
+        error_code:
+          type: string
+          enum:
+            - TASK_FILE_TEMPLATE_NOT_FOUND
+        message:
+          type: string
+          enum:
+            - task_file_template_not_found
+        task_file_template_id:
+          type: string
+        request_id:
+          type: string
+    TaskFileTemplateUnpublishedError:
+      type: object
+      additionalProperties: false
+      required:
+        - error_code
+        - message
+        - task_file_template_id
+      properties:
+        error_code:
+          type: string
+          enum:
+            - TASK_FILE_TEMPLATE_UNPUBLISHED
+        message:
+          type: string
+          enum:
+            - task_file_template_unpublished
+        task_file_template_id:
+          type: string
         request_id:
           type: string
     FileLibraryNotFoundError:

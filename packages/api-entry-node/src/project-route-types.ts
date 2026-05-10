@@ -14,6 +14,7 @@ export interface AnyRoute {
   resourceType?: string;
   resourceId?: string;
   libraryId?: string;
+  operationId?: string;
   jobId?: string;
 }
 

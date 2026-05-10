@@ -1,4 +1,3 @@
-import path from 'node:path';
 import { expect, test } from '@playwright/test';
 import {
   BACKEND_REAL_ANTHROPIC_BASE_URL,
@@ -9,7 +8,6 @@ import {
   createInternalAgentTaskRunnerViaApi,
   createAgentTaskViaApi,
   createProjectInWorkspace,
-  mountFileLibraryLocally,
   KEYCLOAK_DEV_ADMIN_PASSWORD,
   KEYCLOAK_DEV_ADMIN_USERNAME,
   keycloakLoginToWorkspace,
@@ -17,10 +15,9 @@ import {
   runInternalSandboxControl,
   sanitizeWorkloadId,
   requestTaskWorkspaceAccess,
-  resolveMountedTaskRoot,
   startAgentTaskRunViaApi,
   waitForAgentTaskExecutionOutcome,
-  waitForJuicefsCsiReady,
+  waitForAfscpStorageCsiReady,
   waitForWorkloadPodDeleted,
   waitForWorkloadPodIdentity,
   waitForWorkloadPodPresent,
@@ -42,12 +39,6 @@ function requireApiKey(): string {
   }
   return value;
 }
-
-const INTERNAL_CLIENT_MOUNT_OVERRIDES = {
-  metadataHostOverride: process.env.INTEGRATION_CLIENT_JUICEFS_META_HOST_OVERRIDE?.trim() || undefined,
-  metadataPortOverride: process.env.INTEGRATION_CLIENT_JUICEFS_META_PORT_OVERRIDE?.trim() || undefined,
-  storageEndpointOverride: process.env.INTEGRATION_CLIENT_JUICEFS_STORAGE_ENDPOINT_OVERRIDE?.trim() || undefined,
-} as const;
 
 function buildAgentTaskIntent(token: string, fileName: string): string {
   return [
@@ -89,7 +80,7 @@ test.describe('@lane-real internal sandbox reclaim', () => {
       maxLifetimeSec: 3600,
     });
 
-    await waitForJuicefsCsiReady({ namespace: process.env.JUICEFS_CSI_NAMESPACE?.trim() || "kube-system" });
+    await waitForAfscpStorageCsiReady({ namespace: process.env.AFSCP_STORAGE_CSI_NAMESPACE?.trim() || "kube-system" });
 
     const taskId1 = await createAgentTaskViaApi({
       page,
@@ -115,43 +106,29 @@ test.describe('@lane-real internal sandbox reclaim', () => {
       projectId,
       taskId: taskId1,
     });
-    expect(workspaceAccess1.task_home_path).toMatch(/^\/home\/[a-z0-9][a-z0-9._-]*$/);
-    expect(workspaceAccess1.workspace_path).toBe(`${workspaceAccess1.task_home_path}/workspace`);
-    expect(workspaceAccess1.artifacts_path).toBe(`${workspaceAccess1.workspace_path}/.artifacts`);
-    expect(workspaceAccess1.library_root_path).toBe('.');
-    const localMount1 = await mountFileLibraryLocally(
-      workspaceAccess1.metadata_url,
-      workspaceAccess1.storage_bucket_url,
-      INTERNAL_CLIENT_MOUNT_OVERRIDES,
-    );
-    try {
-      await waitForAgentTaskExecutionOutcome({
-        page,
-        workspaceId: 'ws_default',
-        projectId,
-        taskId: taskId1,
-        token: token1,
-        runnerOutputActivityId: firstRun.runnerOutputActivityId,
-        runId: firstRun.runId,
-        artifactPath: path.join(resolveMountedTaskRoot(localMount1.mountPath, {
-          libraryRootPath: workspaceAccess1.library_root_path,
-        }),
-          '.artifacts',
-          firstArtifactName,
-        ),
-        namespace,
-        workloadId: workloadId1,
-      });
-    } finally {
-      await localMount1.stop();
-    }
+    expect(workspaceAccess1.task_home_binding.paths.task_home_path).toMatch(/^\/home\/[a-z0-9][a-z0-9._-]*$/);
+    expect(workspaceAccess1.task_home_binding.paths.workspace_path).toBe(`${workspaceAccess1.task_home_binding.paths.task_home_path}/workspace`);
+    expect(workspaceAccess1.task_home_binding.paths.artifacts_path).toBe(`${workspaceAccess1.task_home_binding.paths.workspace_path}/.artifacts`);
+    expect(workspaceAccess1.task_home_binding.paths.library_root_path).toBe('.');
+    expect(JSON.stringify(workspaceAccess1)).not.toMatch(/metadata_url|storage_bucket_url|recommended_mount|filesystem_name|juicefs/i);
+    await waitForAgentTaskExecutionOutcome({
+      page,
+      workspaceId: 'ws_default',
+      projectId,
+      taskId: taskId1,
+      token: token1,
+      runnerOutputActivityId: firstRun.runnerOutputActivityId,
+      runId: firstRun.runId,
+      namespace,
+      workloadId: workloadId1,
+    });
 
     await waitForWorkloadPodPresent({ namespace, workloadId: workloadId1, timeoutMs: 120_000 });
     await page.waitForTimeout(15_000);
     await waitForWorkloadPodPresent({ namespace, workloadId: workloadId1, timeoutMs: 10_000 });
     await waitForWorkloadPodDeleted({ namespace, workloadId: workloadId1, timeoutMs: 330_000 });
 
-    await waitForJuicefsCsiReady({ namespace: process.env.JUICEFS_CSI_NAMESPACE?.trim() || "kube-system" });
+    await waitForAfscpStorageCsiReady({ namespace: process.env.AFSCP_STORAGE_CSI_NAMESPACE?.trim() || "kube-system" });
 
     const restartFileLibraryId = await createFileLibraryViaUi(
       page,

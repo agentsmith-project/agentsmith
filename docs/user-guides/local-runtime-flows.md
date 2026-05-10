@@ -64,7 +64,7 @@ kubectl --context kind-agentsmith get pods -A
 docker ps
 ```
 
-If local test PVs remain after Agent task or file-library work, clean the local kind test namespaces and JuiceFS test PVs before rerunning deploy verification.
+If local test PVs remain after Agent task or file-library work, clean the local kind test namespaces and file-library test PVs before rerunning deploy verification.
 
 ## Remember
 

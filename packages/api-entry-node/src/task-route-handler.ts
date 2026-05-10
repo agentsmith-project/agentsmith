@@ -60,29 +60,15 @@ import {
   resolveInternalWorkloadCoordinator,
 } from './internal-workload-coordinator.js';
 import {
-  JsonDocProjectFileLibraryBackendRepo,
   JsonDocProjectFileLibraryCatalogRepo,
-  JsonDocProjectFileLibraryMountAccessRepo,
+  JsonDocProjectTaskFileTemplateRepo,
 } from './file-library-persistence.js';
-import {
-  createFileLibraryGatewayClient,
-  fileLibraryBucketName,
-  getProjectFileLibraryRecord,
-  guessFileLibraryContentType,
-  normalizeFileLibraryPath,
-} from './file-library-gateway-client.js';
+import { guessFileLibraryContentType } from './file-library-content-type.js';
 import {
   awaitAbortableOperation,
   createHttpOperationEnvelope,
-  openGatewayObjectDownload,
-  pipeGatewayDownloadToHttpResponse,
+  pipeObjectDownloadToHttpResponse,
 } from './object-stream-bridge.js';
-import {
-  resolveFileLibraryMetadataUrlForDeveloperRunnerExecution,
-  resolveFileLibraryMetadataUrlForManagedRunnerExecution,
-  resolveFileLibraryStorageBucketUrlForDeveloperRunnerExecution,
-  resolveFileLibraryStorageBucketUrlForManagedRunnerExecution,
-} from './file-library-runtime.js';
 import {
   isDeveloperAgentRunner,
   isManagedAgentRunner,
@@ -103,7 +89,11 @@ import {
   resolveTaskRuntimeHomePathsForRunner,
   type TaskRuntimePathResolutionError,
 } from './notebook-task/task-runtime-paths.js';
-import { createAndProvisionProjectFileLibrary, mapFileLibraryInfraError } from './project-file-library-service.js';
+import {
+  createAndCloneTaskFileTemplateLibrary,
+  createAndProvisionProjectFileLibrary,
+  mapFileLibraryInfraError,
+} from './project-file-library-service.js';
 import { isAgentExecutionTicket, issueInternalTicket, type ResolvedInternalTicket } from './internal-ticket-store.js';
 import {
   buildNotebookRunStopEscalationUnavailableResponse,
@@ -178,6 +168,11 @@ import {
   toTaskWorkspaceBindingGuardException,
   type TaskWorkspaceBindingGuardError,
 } from './notebook-task/task-workspace-binding-guard.js';
+import {
+  DEVELOPER_RUNNER_TASK_HOME_BINDING_UNAVAILABLE_CODE,
+  DEVELOPER_RUNNER_TASK_HOME_BINDING_UNAVAILABLE_MESSAGE,
+  isDeveloperRunnerTaskHomeBindingAvailable,
+} from './developer-runner-workspace-blocker.js';
 
 interface TaskRouteHandlerArgs {
   route: ProjectsRoute;
@@ -227,6 +222,14 @@ function buildRuntimePathUnavailableResponse(error: unknown): Record<string, unk
   };
 }
 
+function buildDeveloperRunnerTaskHomeBindingUnavailableResponse(): Record<string, unknown> {
+  return {
+    error_code: DEVELOPER_RUNNER_TASK_HOME_BINDING_UNAVAILABLE_CODE,
+    message: DEVELOPER_RUNNER_TASK_HOME_BINDING_UNAVAILABLE_MESSAGE,
+    runtime_profile: 'developer',
+  };
+}
+
 const NOTEBOOK_RUN_LEASE_HEARTBEAT_MS = 15_000;
 const NOTEBOOK_RUN_CANCEL_POLL_MS = 1_000;
 const NOTEBOOK_RUN_OWNER_STALE_AFTER_MS = (NOTEBOOK_RUN_LEASE_HEARTBEAT_MS * 2) + 5_000;
@@ -239,7 +242,8 @@ type AgentRunnerResolutionErrorCode =
   | 'agent_runner_model_unconfigured'
   | 'agent_runner_capability_mismatch'
   | 'agent_runner_default_conflict'
-  | 'invalid_binding_target';
+  | 'invalid_binding_target'
+  | typeof DEVELOPER_RUNNER_TASK_HOME_BINDING_UNAVAILABLE_CODE;
 
 type AgentRunnerResolutionResult =
   | {
@@ -567,6 +571,7 @@ function buildRunnerBindingValidationSummaries(
     || reasonCode === 'invalid_binding_target'
     || reasonCode === 'agent_runner_disconnected'
     || reasonCode === 'agent_runner_stale'
+    || reasonCode === DEVELOPER_RUNNER_TASK_HOME_BINDING_UNAVAILABLE_CODE
   )
     ? buildTaskRunnerBindingSummary('unavailable', reasonCode)
     : reasonCode === 'permission_denied'
@@ -641,6 +646,17 @@ async function validateAgentRunnerForBindingOption(args: {
     };
   }
 
+  if (developerRunner && !isDeveloperRunnerTaskHomeBindingAvailable()) {
+    return {
+      allowed: false,
+      reasonCode: DEVELOPER_RUNNER_TASK_HOME_BINDING_UNAVAILABLE_CODE,
+      ...buildRunnerBindingValidationSummaries(
+        DEVELOPER_RUNNER_TASK_HOME_BINDING_UNAVAILABLE_CODE,
+        freshness,
+      ),
+    };
+  }
+
   return {
     allowed: true,
     ...buildRunnerBindingValidationSummaries(undefined, freshness),
@@ -707,6 +723,17 @@ async function validateResolvedAgentRunnerForTask(args: {
       ok: false,
       code: 'agent_runner_capability_mismatch',
       metadata: { runner_id: args.runner.id },
+    };
+  }
+
+  if (isDeveloperAgentRunner(args.runner) && !isDeveloperRunnerTaskHomeBindingAvailable()) {
+    return {
+      ok: false,
+      code: DEVELOPER_RUNNER_TASK_HOME_BINDING_UNAVAILABLE_CODE,
+      metadata: {
+        runner_id: args.runner.id,
+        runtime_profile: 'developer',
+      },
     };
   }
   return { ok: true, runner: args.runner };
@@ -1323,32 +1350,6 @@ async function ensureOwnedLibraryObjectInputs(args: {
   return true;
 }
 
-export function resolveTaskWorkspaceMountAccess(input: {
-  runnerProvider: 'managed' | 'developer' | null;
-  metadataUrl: string;
-  storageBucketUrl?: string;
-}): {
-  metadataUrl: string;
-  storageBucketUrl?: string;
-} {
-  if (input.runnerProvider === 'developer') {
-    return {
-      metadataUrl: resolveFileLibraryMetadataUrlForDeveloperRunnerExecution(input.metadataUrl),
-      storageBucketUrl: resolveFileLibraryStorageBucketUrlForDeveloperRunnerExecution(input.storageBucketUrl),
-    };
-  }
-  if (input.runnerProvider === 'managed') {
-    return {
-      metadataUrl: resolveFileLibraryMetadataUrlForManagedRunnerExecution(input.metadataUrl),
-      storageBucketUrl: resolveFileLibraryStorageBucketUrlForManagedRunnerExecution(input.storageBucketUrl),
-    };
-  }
-  return {
-    metadataUrl: input.metadataUrl,
-    storageBucketUrl: input.storageBucketUrl,
-  };
-}
-
 function defaultWorkspaceNameFromTaskTitle(title: string): string {
   const trimmed = title.trim();
   return trimmed ? `${trimmed} Workspace` : 'Notebook Workspace';
@@ -1359,42 +1360,53 @@ async function compensateAutoCreatedTaskFileLibrary(args: {
   workspaceId: string;
   projectId: string;
   libraryId?: string | null;
-  filesystemName?: string | null;
+  actorUserId: string;
+  requestId?: string | null;
 }): Promise<void> {
   const libraryId = args.libraryId?.trim();
   if (!libraryId) return;
-  if (args.filesystemName?.trim() && args.deps.fileLibraryOrchestrator) {
-    await args.deps.fileLibraryOrchestrator.deleteLibrary({
+  const catalogRepo = new JsonDocProjectFileLibraryCatalogRepo(args.deps.docStore);
+  if (!args.deps.fileLibraryStorageAdapter?.enabled) {
+    await catalogRepo.update(args.workspaceId, args.projectId, libraryId, {
+      status: 'failed',
+      delete_correlation_id: args.requestId ?? undefined,
+    }).catch(() => undefined);
+    return;
+  }
+  try {
+    await args.deps.fileLibraryStorageAdapter.deleteRepoForLibrary({
+      workspaceId: args.workspaceId,
+      projectId: args.projectId,
       libraryId,
-      filesystemName: args.filesystemName.trim(),
+      actorUserId: args.actorUserId,
+      requestId: args.requestId ?? undefined,
+      reason: 'agent_task_create_compensation',
+    });
+    await catalogRepo.delete(args.workspaceId, args.projectId, libraryId);
+  } catch {
+    await catalogRepo.update(args.workspaceId, args.projectId, libraryId, {
+      status: 'failed',
+      delete_correlation_id: args.requestId ?? undefined,
     }).catch(() => undefined);
   }
-  await new JsonDocProjectFileLibraryMountAccessRepo(args.deps.docStore)
-    .delete(args.workspaceId, args.projectId, libraryId)
-    .catch(() => undefined);
-  await new JsonDocProjectFileLibraryBackendRepo(args.deps.docStore)
-    .delete(args.workspaceId, args.projectId, libraryId)
-    .catch(() => undefined);
-  await new JsonDocProjectFileLibraryCatalogRepo(args.deps.docStore)
-    .delete(args.workspaceId, args.projectId, libraryId)
-    .catch(() => undefined);
-}
-
-function sanitizeFileLibraryWorkspaceDirName(fileLibraryName: string | undefined, fileLibraryId: string | undefined): string {
-  const slug = (fileLibraryName ?? '')
-    .toLowerCase()
-    .trim()
-    .replace(/[^a-z0-9]+/g, '-')
-    .replace(/^-+|-+$/g, '')
-    .slice(0, 48);
-  if (slug) return slug;
-  return (fileLibraryId ?? '').replace(/[^a-zA-Z0-9._-]/g, '_').slice(0, 48) || 'file-library-workspace';
 }
 
 function buildTerminalUsername(user: AuthenticatedUser): string {
   const local = user.email.split('@')[0]?.trim();
   if (local) return local;
   return user.id.trim() || 'unknown_user';
+}
+
+function normalizeStorageObjectPath(input?: string | null): string {
+  const value = (input ?? '').trim().replace(/^\/+/, '').replace(/\/{2,}/g, '/');
+  if (!value) return '';
+  const segments = value.split('/').filter(Boolean);
+  for (const segment of segments) {
+    if (segment === '.' || segment === '..') {
+      throw new Error('invalid_file_library_path');
+    }
+  }
+  return segments.join('/');
 }
 
 async function writeNotebookTaskSseSnapshot(args: {
@@ -1498,7 +1510,7 @@ export function resolveTerminalWebSocketBaseUrl(req: http.IncomingMessage): stri
       return `ws://${parsed.host}`;
     }
   } catch {
-    // fall through to legacy string handling below
+    // Keep deriving the websocket scheme from the configured request base when URL parsing fails.
   }
   if (requestUrl.startsWith('https://')) {
     return `wss://${requestUrl.slice('https://'.length)}`;
@@ -1639,13 +1651,6 @@ async function buildTaskTerminalExecutionContext(args: {
     attachedInputs: args.task.attached_inputs as NotebookTaskInputRefRecord[],
     debugLog: debugNotebookExecution,
   });
-  const workspaceLibrary = args.task.workspace_file_library_id
-    ? await new JsonDocProjectFileLibraryCatalogRepo(args.deps.docStore).getById(
-      args.task.workspace_id,
-      args.task.project_id,
-      args.task.workspace_file_library_id,
-    )
-    : null;
   const executionTicket = await issueInternalTicket(args.deps.cache, {
     purpose: 'agent_execution',
     userId: args.user.id,
@@ -1694,8 +1699,6 @@ async function buildTaskTerminalExecutionContext(args: {
     library_root_path: '.',
     workspace_file_library_id: args.task.workspace_file_library_id ?? null,
     workspace_file_library_name: args.task.workspace_file_library_name ?? null,
-    workspace_dir_name: workspaceLibrary?.filesystem_name
-      ?? sanitizeFileLibraryWorkspaceDirName(args.task.workspace_file_library_name, args.task.workspace_file_library_id),
     task_inputs: taskInputs,
   };
   assertTaskExecutionContext(executionContext);
@@ -1965,7 +1968,6 @@ async function ensureManagedTerminalRuntimeReady(
       deps,
       task,
       actorUserId: session.userId,
-      requireMountAccess: false,
       canUpdateProjectFiles: () => actorHasProjectPermissions({
         deps,
         workspaceId: session.workspaceId,
@@ -1990,6 +1992,8 @@ async function ensureManagedTerminalRuntimeReady(
       workspace_id: session.workspaceId,
       project_id: session.projectId,
     }),
+    actorUserId: session.userId,
+    requestId: session.runnerSessionId,
   });
   await deps.internalAgentPodManager.ensureAgentReady({
     workspaceId: session.workspaceId,
@@ -2375,7 +2379,7 @@ export function __resetInternalTerminalWorkloadLifecycleForTests(): void {
 function mapTaskArtifactMetadataPathToWorkspaceObjectKey(relativePath: string): string | null {
   let normalized: string;
   try {
-    normalized = normalizeFileLibraryPath(relativePath);
+    normalized = normalizeStorageObjectPath(relativePath);
   } catch {
     return null;
   }
@@ -2403,13 +2407,12 @@ async function streamTaskArtifactFromWorkspaceLibrary(args: {
   if (!libraryId || !relativePath) {
     return false;
   }
-  const library = await getProjectFileLibraryRecord({
-    deps: args.deps,
-    workspaceId: args.workspaceId,
-    projectId: args.projectId,
-    libraryId,
-  });
+  const library = await new JsonDocProjectFileLibraryCatalogRepo(args.deps.docStore)
+    .getById(args.workspaceId, args.projectId, libraryId);
   if (!library || library.created_by_user_id !== args.task.owner_user_id) {
+    return false;
+  }
+  if (!args.deps.fileLibraryStorageAdapter?.enabled) {
     return false;
   }
   const objectPath = mapTaskArtifactMetadataPathToWorkspaceObjectKey(relativePath);
@@ -2422,31 +2425,22 @@ async function streamTaskArtifactFromWorkspaceLibrary(args: {
   });
   let handedOffToStream = false;
   try {
-    const client = await awaitAbortableOperation(
-      createFileLibraryGatewayClient({
-        deps: args.deps,
+    const { meta, download } = await awaitAbortableOperation(
+      args.deps.fileLibraryStorageAdapter.downloadObject({
         workspaceId: args.workspaceId,
         projectId: args.projectId,
         libraryId,
-        filesystemName: library.filesystem_name,
+        objectPath,
         signal: operation.signal,
       }),
       {
         signal: operation.signal,
         abortMessage: 'task_artifact_download_aborted',
+        onLateResolve: async (lateResult, reason) => {
+          await lateResult.download.cancel(reason);
+        },
       },
     );
-    const bucket = fileLibraryBucketName(library.filesystem_name);
-    const stat = await awaitAbortableOperation(
-      client.statObject(bucket, objectPath),
-      {
-        signal: operation.signal,
-        abortMessage: 'task_artifact_download_aborted',
-      },
-    );
-    const download = await openGatewayObjectDownload(client, bucket, objectPath, {
-      signal: operation.signal,
-    });
     if (operation.signal.aborted) {
       await download.cancel(operation.signal.reason);
       return true;
@@ -2455,11 +2449,11 @@ async function streamTaskArtifactFromWorkspaceLibrary(args: {
     args.res.statusCode = 200;
     args.res.setHeader(
       'Content-Type',
-      stat.metaData?.['content-type'] ?? args.artifact.mime_type?.trim() ?? guessFileLibraryContentType(objectPath) ?? 'application/octet-stream',
+      meta.content_type ?? args.artifact.mime_type?.trim() ?? guessFileLibraryContentType(objectPath) ?? 'application/octet-stream',
     );
-    args.res.setHeader('Content-Length', String(stat.size));
+    args.res.setHeader('Content-Length', String(meta.size_bytes));
     args.res.setHeader('Content-Disposition', buildAttachmentContentDisposition(filename));
-    pipeGatewayDownloadToHttpResponse({
+    pipeObjectDownloadToHttpResponse({
       req: args.req,
       res: args.res,
       download,
@@ -2569,12 +2563,6 @@ function buildTaskWorkspaceBindingGuardHttpResponse(error: TaskWorkspaceBindingG
       },
     };
   }
-  if (error.errorCode === 'FILE_LIBRARY_WORKSPACE_ACCESS_UNAVAILABLE') {
-    return {
-      statusCode: 404,
-      body: { error_code: 'RESOURCE_NOT_FOUND', message: 'file_library_mount_access_not_found' },
-    };
-  }
   return {
     statusCode: error.statusCode,
     body: serializeTaskWorkspaceBindingGuardError(error),
@@ -2601,7 +2589,6 @@ async function preflightManagedTaskWorkspaceBindingGuard(args: {
       deps: args.deps,
       task: args.task,
       actorUserId: args.actorUserId,
-      requireMountAccess: false,
       canUpdateProjectFiles: () => actorHasProjectPermissions({
         deps: args.deps,
         workspaceId: args.task.workspace_id,
@@ -2660,7 +2647,6 @@ export async function handleTaskRoute(args: TaskRouteHandlerArgs): Promise<boole
   const { route, method, req, res, deps, user, internalTicket, json, readBody } = args;
   ensureInternalTerminalLifecycleIntegration(deps);
   const catalogRepo = new JsonDocProjectFileLibraryCatalogRepo(deps.docStore);
-  const mountAccessRepo = new JsonDocProjectFileLibraryMountAccessRepo(deps.docStore);
 
   if (route.kind === 'tasks' && method === 'GET') {
     await loadProjectTasks(deps, route.workspaceId, route.projectId);
@@ -2719,19 +2705,26 @@ export async function handleTaskRoute(args: TaskRouteHandlerArgs): Promise<boole
     const workspaceFileLibraryId = typeof body.workspace_file_library_id === 'string'
       ? body.workspace_file_library_id.trim()
       : '';
+    const taskFileTemplateId = typeof body.task_file_template_id === 'string'
+      ? body.task_file_template_id.trim()
+      : '';
     const effectiveWorkspaceMode = workspaceMode || 'create_new';
+    const createsNewTaskFileLibrary = effectiveWorkspaceMode === 'create_new'
+      || effectiveWorkspaceMode === 'use_template';
     const requestedWorkspaceName = typeof body.workspace_name === 'string' ? body.workspace_name.trim() : '';
     if (!title) {
       json(res, 422, { error_code: 'VALIDATION_ERROR', message: 'task_title_required' });
       return true;
     }
     if (
-      (workspaceMode !== '' && workspaceMode !== 'create_new' && workspaceMode !== 'use_existing')
-      || (effectiveWorkspaceMode === 'create_new' && workspaceFileLibraryId)
+      (workspaceMode !== '' && workspaceMode !== 'create_new' && workspaceMode !== 'use_existing' && workspaceMode !== 'use_template')
+      || (effectiveWorkspaceMode === 'create_new' && (workspaceFileLibraryId || taskFileTemplateId))
+      || (effectiveWorkspaceMode === 'use_existing' && taskFileTemplateId)
+      || (effectiveWorkspaceMode === 'use_template' && workspaceFileLibraryId)
     ) {
       json(res, 422, {
         error_code: 'AGENT_TASK_WORKSPACE_MODE_INVALID',
-        message: 'workspace_mode_invalid',
+        message: 'agent_task_workspace_mode_invalid',
         field: 'workspace_mode',
         workspace_mode: effectiveWorkspaceMode,
       });
@@ -2740,15 +2733,82 @@ export async function handleTaskRoute(args: TaskRouteHandlerArgs): Promise<boole
     if (effectiveWorkspaceMode === 'use_existing' && !workspaceFileLibraryId) {
       json(res, 422, {
         error_code: 'AGENT_TASK_WORKSPACE_FILE_LIBRARY_REQUIRED',
-        message: 'workspace_file_library_id_required',
+        message: 'agent_task_workspace_file_library_required',
         field: 'workspace_file_library_id',
       });
       return true;
+    }
+    if (effectiveWorkspaceMode === 'use_template' && !taskFileTemplateId) {
+      json(res, 422, {
+        error_code: 'AGENT_TASK_FILE_TEMPLATE_REQUIRED',
+        message: 'agent_task_file_template_required',
+        field: 'task_file_template_id',
+      });
+      return true;
+    }
+
+    const initialInputs = readTaskInputRefs(body.input_refs ?? body.initial_inputs);
+    const requestedBoundRunnerId = typeof body.bound_runner_id === 'string' ? body.bound_runner_id.trim() : '';
+    if (requestedBoundRunnerId) {
+      const probeTask: TaskRecord = {
+        ...buildRunnerBindingProbeTask({
+          workspaceId: route.workspaceId,
+          projectId: route.projectId,
+          userId: user.id,
+        }),
+        attached_inputs: initialInputs,
+      };
+      const explicitRunnerResolution = await resolveExplicitDeveloperAgentRunnerForTask({
+        deps,
+        workspaceId: route.workspaceId,
+        projectId: route.projectId,
+        task: probeTask,
+        user,
+        requestedInputs: initialInputs,
+        boundRunnerId: requestedBoundRunnerId,
+        requestId,
+        source: 'agent_runner_binding',
+      });
+      if (!explicitRunnerResolution.ok) {
+        if (explicitRunnerResolution.code === DEVELOPER_RUNNER_TASK_HOME_BINDING_UNAVAILABLE_CODE) {
+          json(res, 409, buildDeveloperRunnerTaskHomeBindingUnavailableResponse());
+          return true;
+        }
+        json(res, 409, {
+          error_code: explicitRunnerResolution.code,
+          message: explicitRunnerResolution.code,
+        });
+        return true;
+      }
+      if (!isDeveloperRunnerTaskHomeBindingAvailable()) {
+        json(res, 409, buildDeveloperRunnerTaskHomeBindingUnavailableResponse());
+        return true;
+      }
     }
 
     let workspaceFileLibrary = workspaceFileLibraryId
       ? await catalogRepo.getById(route.workspaceId, route.projectId, workspaceFileLibraryId)
       : null;
+    const templateRepo = new JsonDocProjectTaskFileTemplateRepo(deps.docStore);
+    const taskFileTemplate = effectiveWorkspaceMode === 'use_template'
+      ? await templateRepo.getById(route.workspaceId, route.projectId, taskFileTemplateId)
+      : null;
+    if (effectiveWorkspaceMode === 'use_template' && !taskFileTemplate) {
+      json(res, 404, {
+        error_code: 'TASK_FILE_TEMPLATE_NOT_FOUND',
+        message: 'task_file_template_not_found',
+        task_file_template_id: taskFileTemplateId,
+      });
+      return true;
+    }
+    if (effectiveWorkspaceMode === 'use_template' && taskFileTemplate?.status !== 'published') {
+      json(res, 409, {
+        error_code: 'TASK_FILE_TEMPLATE_UNPUBLISHED',
+        message: 'task_file_template_unpublished',
+        task_file_template_id: taskFileTemplateId,
+      });
+      return true;
+    }
     if (effectiveWorkspaceMode === 'create_new') {
       try {
         workspaceFileLibrary = await createAndProvisionProjectFileLibrary({
@@ -2758,7 +2818,29 @@ export async function handleTaskRoute(args: TaskRouteHandlerArgs): Promise<boole
           userId: user.id,
           name: requestedWorkspaceName || defaultWorkspaceNameFromTaskTitle(title),
           description: `Auto-initialized workspace for notebook task "${title}".`,
-          source: 'agent_task_auto',
+        });
+      } catch (error) {
+        const mapped = mapFileLibraryInfraError(error);
+        json(res, mapped.statusCode, {
+          error_code: mapped.errorCode === 'FILE_LIBRARY_OPERATION_FAILED'
+            ? 'FILE_LIBRARY_PROVISIONING_FAILED'
+            : mapped.errorCode,
+          message: mapped.message,
+        });
+        return true;
+      }
+    }
+    if (effectiveWorkspaceMode === 'use_template' && taskFileTemplate) {
+      try {
+        workspaceFileLibrary = await createAndCloneTaskFileTemplateLibrary({
+          deps,
+          workspaceId: route.workspaceId,
+          projectId: route.projectId,
+          userId: user.id,
+          template: taskFileTemplate,
+          name: requestedWorkspaceName || defaultWorkspaceNameFromTaskTitle(title),
+          description: `Auto-initialized workspace for notebook task "${title}" from template "${taskFileTemplate.name}".`,
+          requestId,
         });
       } catch (error) {
         const mapped = mapFileLibraryInfraError(error);
@@ -2854,7 +2936,6 @@ export async function handleTaskRoute(args: TaskRouteHandlerArgs): Promise<boole
     }
 
     const createdAt = nowIso();
-    const initialInputs = readTaskInputRefs(body.input_refs ?? body.initial_inputs);
     if (!(await ensureOwnedLibraryObjectInputs({
       catalogRepo,
       workspaceId: route.workspaceId,
@@ -2877,7 +2958,7 @@ export async function handleTaskRoute(args: TaskRouteHandlerArgs): Promise<boole
       workspace_file_library_id: workspaceFileLibrary.id,
       workspace_file_library_name: workspaceFileLibrary.name,
       file_library_binding_generation: undefined,
-      runtime_writable_affordance: effectiveWorkspaceMode === 'create_new'
+      runtime_writable_affordance: createsNewTaskFileLibrary
         ? 'task_internal_home'
         : 'files_update',
       status: 'active',
@@ -2913,13 +2994,14 @@ export async function handleTaskRoute(args: TaskRouteHandlerArgs): Promise<boole
       now: createdAt,
     });
     if (!lifecycleFence.ok) {
-      if (effectiveWorkspaceMode === 'create_new') {
+      if (createsNewTaskFileLibrary) {
         await compensateAutoCreatedTaskFileLibrary({
           deps,
           workspaceId: route.workspaceId,
           projectId: route.projectId,
           libraryId: workspaceFileLibrary.id,
-          filesystemName: workspaceFileLibrary.filesystem_name,
+          actorUserId: user.id,
+          requestId,
         });
       }
       await writeTaskFileLibraryBindingAcquireAudit({
@@ -2973,13 +3055,14 @@ export async function handleTaskRoute(args: TaskRouteHandlerArgs): Promise<boole
         expectedVersion: lifecycleFence.fence.version,
         token: lifecycleFence.fence.token,
       });
-      if (effectiveWorkspaceMode === 'create_new') {
+      if (createsNewTaskFileLibrary) {
         await compensateAutoCreatedTaskFileLibrary({
           deps,
           workspaceId: route.workspaceId,
           projectId: route.projectId,
           libraryId: workspaceFileLibrary.id,
-          filesystemName: workspaceFileLibrary.filesystem_name,
+          actorUserId: user.id,
+          requestId,
         });
       }
       await writeTaskFileLibraryBindingAcquireAudit({
@@ -3038,13 +3121,14 @@ export async function handleTaskRoute(args: TaskRouteHandlerArgs): Promise<boole
         expectedVersion: lifecycleFence.fence.version,
         token: lifecycleFence.fence.token,
       });
-      if (effectiveWorkspaceMode === 'create_new') {
+      if (createsNewTaskFileLibrary) {
         await compensateAutoCreatedTaskFileLibrary({
           deps,
           workspaceId: route.workspaceId,
           projectId: route.projectId,
           libraryId: workspaceFileLibrary.id,
-          filesystemName: workspaceFileLibrary.filesystem_name,
+          actorUserId: user.id,
+          requestId,
         });
       }
       await writeTaskFileLibraryBindingAcquireAudit({
@@ -3125,13 +3209,14 @@ export async function handleTaskRoute(args: TaskRouteHandlerArgs): Promise<boole
         requestId,
         reason: 'library_lifecycle_fence_release_failed',
       });
-      if (effectiveWorkspaceMode === 'create_new') {
+      if (createsNewTaskFileLibrary) {
         await compensateAutoCreatedTaskFileLibrary({
           deps,
           workspaceId: route.workspaceId,
           projectId: route.projectId,
           libraryId: workspaceFileLibrary.id,
-          filesystemName: workspaceFileLibrary.filesystem_name,
+          actorUserId: user.id,
+          requestId,
         });
       }
       json(res, releasedLifecycleFence.code === 'FILE_LIBRARY_NOT_FOUND' ? 404 : 409, {
@@ -3185,13 +3270,14 @@ export async function handleTaskRoute(args: TaskRouteHandlerArgs): Promise<boole
           requestId,
           reason: 'agent_runner_binding_failed',
         });
-        if (effectiveWorkspaceMode === 'create_new') {
+        if (createsNewTaskFileLibrary) {
           await compensateAutoCreatedTaskFileLibrary({
             deps,
             workspaceId: route.workspaceId,
             projectId: route.projectId,
             libraryId: task.workspace_file_library_id,
-            filesystemName: workspaceFileLibrary.filesystem_name,
+            actorUserId: user.id,
+            requestId,
           });
         }
         await writeProjectAuditEvent(deps, {
@@ -3235,13 +3321,14 @@ export async function handleTaskRoute(args: TaskRouteHandlerArgs): Promise<boole
           requestId,
           reason: 'agent_task_model_not_ready',
         });
-        if (effectiveWorkspaceMode === 'create_new') {
+        if (createsNewTaskFileLibrary) {
           await compensateAutoCreatedTaskFileLibrary({
             deps,
             workspaceId: route.workspaceId,
             projectId: route.projectId,
             libraryId: task.workspace_file_library_id,
-            filesystemName: workspaceFileLibrary.filesystem_name,
+            actorUserId: user.id,
+            requestId,
           });
         }
         json(res, 409, {
@@ -3295,13 +3382,14 @@ export async function handleTaskRoute(args: TaskRouteHandlerArgs): Promise<boole
           requestId,
           reason: 'task_create_exception',
         });
-        if (effectiveWorkspaceMode === 'create_new') {
+        if (createsNewTaskFileLibrary) {
           await compensateAutoCreatedTaskFileLibrary({
             deps,
             workspaceId: route.workspaceId,
             projectId: route.projectId,
             libraryId: task.workspace_file_library_id,
-            filesystemName: workspaceFileLibrary.filesystem_name,
+            actorUserId: user.id,
+            requestId,
           });
         }
       }
@@ -3359,6 +3447,10 @@ export async function handleTaskRoute(args: TaskRouteHandlerArgs): Promise<boole
           result: terminalRunnerResolution.auditResolution,
         });
       }
+      if (terminalRunnerResolution.code === DEVELOPER_RUNNER_TASK_HOME_BINDING_UNAVAILABLE_CODE) {
+        json(res, 409, buildDeveloperRunnerTaskHomeBindingUnavailableResponse());
+        return true;
+      }
       json(res, 409, {
         error_code: terminalRunnerResolution.code,
         message: terminalRunnerResolution.code,
@@ -3381,6 +3473,11 @@ export async function handleTaskRoute(args: TaskRouteHandlerArgs): Promise<boole
       json(res, 409, { error_code: 'RESOURCE_CONFLICT', message: 'task_agent_not_available' });
       return true;
     }
+    if (isDeveloperAgentRunner(agent) && !isDeveloperRunnerTaskHomeBindingAvailable()) {
+      json(res, 409, buildDeveloperRunnerTaskHomeBindingUnavailableResponse());
+      return true;
+    }
+
     if (isManagedAgentRunner(agent)) {
       const runtimePreflight = await preflightManagedRunnerRuntimeForTask({
         deps,
@@ -3743,7 +3840,6 @@ export async function handleTaskRoute(args: TaskRouteHandlerArgs): Promise<boole
         deps,
         task,
         actorUserId: effectiveUserId,
-        requireMountAccess: true,
         canUpdateProjectFiles: () => actorHasProjectPermissions({
           deps,
           workspaceId: route.workspaceId,
@@ -3761,20 +3857,11 @@ export async function handleTaskRoute(args: TaskRouteHandlerArgs): Promise<boole
         json(res, 404, { error_code: 'RESOURCE_NOT_FOUND', message: 'file_library_not_found' });
         return true;
       }
-      if (error.errorCode === 'FILE_LIBRARY_WORKSPACE_ACCESS_UNAVAILABLE') {
-        json(res, 404, { error_code: 'RESOURCE_NOT_FOUND', message: 'file_library_mount_access_not_found' });
-        return true;
-      }
       json(res, error.statusCode, payload);
       return true;
     }
     const workspaceFileLibrary = guardedWorkspace.library;
     const currentBinding = guardedWorkspace.binding;
-    const mountAccess = guardedWorkspace.mountAccess;
-    if (!mountAccess) {
-      json(res, 404, { error_code: 'RESOURCE_NOT_FOUND', message: 'file_library_mount_access_not_found' });
-      return true;
-    }
     const ticketAgentRunnerId = isAgentExecutionTicket(internalTicket)
       && typeof internalTicket.payload.agent_runner_id === 'string'
       ? internalTicket.payload.agent_runner_id.trim()
@@ -3794,18 +3881,22 @@ export async function handleTaskRoute(args: TaskRouteHandlerArgs): Promise<boole
       )
       : null;
     const runtimePathAgent = agent ?? boundAgentForPath;
-    const executionMountAccess = resolveTaskWorkspaceMountAccess({
-      runnerProvider: runtimePathAgent?.runner_provider ?? null,
-      metadataUrl: mountAccess.metadata_url,
-      storageBucketUrl: mountAccess.storage_bucket_url,
-    });
+    const runtimePathRunnerProvider = runtimePathAgent?.runner_provider
+      ?? task.bound_runner_kind
+      ?? null;
+    if (runtimePathRunnerProvider === 'developer' && !isDeveloperRunnerTaskHomeBindingAvailable()) {
+      json(res, 409, {
+        ...buildDeveloperRunnerTaskHomeBindingUnavailableResponse(),
+        task_id: task.id,
+        file_library_id: workspaceFileLibrary.id,
+      });
+      return true;
+    }
     let taskRuntimePaths: ReturnType<typeof resolveTaskRuntimeHomePathsForRunner>;
     try {
       taskRuntimePaths = resolveTaskRuntimeHomePathsForRunner({
         task,
-        runnerProvider: runtimePathAgent?.runner_provider
-          ?? task.bound_runner_kind
-          ?? null,
+        runnerProvider: runtimePathRunnerProvider,
       });
     } catch (error) {
       if (isTaskRuntimePathResolutionError(error)) {
@@ -3844,30 +3935,34 @@ export async function handleTaskRoute(args: TaskRouteHandlerArgs): Promise<boole
       });
       return true;
     }
-    const {
-      task_id: _holderTaskId,
-      file_library_id: _holderFileLibraryId,
-      task_home_segment: _holderTaskHomeSegment,
-      ...holderFenceResponse
-    } = holderFence;
     json(res, 200, {
       task_id: task.id,
-      workspace_binding_mode: 'file_library',
-      runtime_profile: taskRuntimePaths.runtimeProfile,
-      task_home_segment: taskRuntimePaths.taskHomeSegment,
-      task_home_path: taskRuntimePaths.taskHomePath,
-      workspace_path: taskRuntimePaths.workspacePath,
-      artifacts_path: taskRuntimePaths.artifactsPath,
-      library_root_path: '.',
-      workspace_dir_name: workspaceFileLibrary.filesystem_name,
       file_library_id: workspaceFileLibrary.id,
       file_library_name: workspaceFileLibrary.name,
-      filesystem_name: mountAccess.filesystem_name,
-      metadata_url: executionMountAccess.metadataUrl,
-      storage_bucket_url: executionMountAccess.storageBucketUrl,
-      recommended_mount_path: mountAccess.recommended_mount_path,
-      created_at: mountAccess.created_at,
-      ...holderFenceResponse,
+      runtime_profile: taskRuntimePaths.runtimeProfile,
+      task_home_binding: {
+        binding_id: `${workspaceFileLibrary.id}:${currentBinding.bindingGeneration}`,
+        provider: 'afscp',
+        mode: 'pre_mounted',
+        task_id: task.id,
+        file_library_id: workspaceFileLibrary.id,
+        task_home_segment: taskRuntimePaths.taskHomeSegment,
+        generation: String(currentBinding.bindingGeneration),
+        holder: {
+          holder_id: holderFence.holder_id,
+          holder_kind: holderFence.holder_kind,
+          binding_generation: String(currentBinding.bindingGeneration),
+          lease_epoch: holderFence.lease_epoch,
+          issued_at: holderFence.issued_at,
+          expires_at: holderFence.expires_at,
+        },
+        paths: {
+          task_home_path: taskRuntimePaths.taskHomePath,
+          workspace_path: taskRuntimePaths.workspacePath,
+          artifacts_path: taskRuntimePaths.artifactsPath,
+          library_root_path: taskRuntimePaths.libraryRootPath,
+        },
+      },
     });
     return true;
   }

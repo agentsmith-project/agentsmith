@@ -58,7 +58,6 @@ mark_scenario_world_changed
 stop_local_manual_processes
 remove_local_manual_runtime_files
 reset_local_manual_state
-run_juicefs_orphan_preflight "local-manual-up"
 
 local_manual_run_substrate_script up
 local_manual_run_substrate_script reseed

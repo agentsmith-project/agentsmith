@@ -21,9 +21,9 @@ function debugTerminal(message: string, extra?: Record<string, unknown>): void {
   process.stdout.write(`[notebook-terminal] ${message}${payload}\n`);
 }
 
-const DEFAULT_TERMINAL_MOUNT_READY_TIMEOUT_MS = 30_000;
-const DEFAULT_TERMINAL_MOUNT_RETRY_COUNT = 2;
-const DEFAULT_TERMINAL_MOUNT_RETRY_DELAY_MS = 750;
+const DEFAULT_TERMINAL_WORKSPACE_READY_TIMEOUT_MS = 30_000;
+const DEFAULT_TERMINAL_WORKSPACE_RETRY_COUNT = 2;
+const DEFAULT_TERMINAL_WORKSPACE_RETRY_DELAY_MS = 750;
 const DEFAULT_TERMINAL_BOOTSTRAP_OVERHEAD_MS = 10_000;
 const DEFAULT_TERMINAL_STARTUP_TIMEOUT_FLOOR_MS = 15_000;
 const DEFAULT_TERMINAL_REENTRY_OVERHEAD_MS = 20_000;
@@ -49,16 +49,16 @@ function resolveDefaultTerminalStartupTimeoutMs(): number {
   const explicit = parsePositiveIntegerEnv('NOTEBOOK_TERMINAL_STARTUP_TIMEOUT_MS');
   if (explicit) return explicit;
 
-  const mountReadyTimeoutMs = parsePositiveIntegerEnv('MBOS_AGENT_JUICEFS_MOUNT_READY_TIMEOUT_MS')
-    ?? DEFAULT_TERMINAL_MOUNT_READY_TIMEOUT_MS;
-  const mountRetryCount = parsePositiveIntegerEnv('MBOS_AGENT_JUICEFS_MOUNT_RETRY_COUNT')
-    ?? DEFAULT_TERMINAL_MOUNT_RETRY_COUNT;
-  const mountRetryDelayMs = parsePositiveIntegerEnv('MBOS_AGENT_JUICEFS_MOUNT_RETRY_DELAY_MS')
-    ?? DEFAULT_TERMINAL_MOUNT_RETRY_DELAY_MS;
+  const workspaceReadyTimeoutMs = parsePositiveIntegerEnv('MBOS_AGENT_WORKSPACE_READY_TIMEOUT_MS')
+    ?? DEFAULT_TERMINAL_WORKSPACE_READY_TIMEOUT_MS;
+  const workspaceRetryCount = parsePositiveIntegerEnv('MBOS_AGENT_WORKSPACE_READY_RETRY_COUNT')
+    ?? DEFAULT_TERMINAL_WORKSPACE_RETRY_COUNT;
+  const workspaceRetryDelayMs = parsePositiveIntegerEnv('MBOS_AGENT_WORKSPACE_READY_RETRY_DELAY_MS')
+    ?? DEFAULT_TERMINAL_WORKSPACE_RETRY_DELAY_MS;
 
   const coldStartBudgetMs = (
-    mountReadyTimeoutMs * Math.max(1, mountRetryCount)
-    + mountRetryDelayMs * Math.max(0, mountRetryCount - 1)
+    workspaceReadyTimeoutMs * Math.max(1, workspaceRetryCount)
+    + workspaceRetryDelayMs * Math.max(0, workspaceRetryCount - 1)
     + DEFAULT_TERMINAL_BOOTSTRAP_OVERHEAD_MS
   );
   return Math.max(DEFAULT_TERMINAL_STARTUP_TIMEOUT_FLOOR_MS, coldStartBudgetMs);

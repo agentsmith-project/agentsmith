@@ -22,11 +22,6 @@ import { useAuthStore, useAuthStoreHydration } from '@/lib/stores/authStore';
 import { createPkceChallenge, randomBase64Url } from '@/lib/auth/pkce';
 import { resolveKeycloakRealmBase } from '@/lib/auth/keycloak';
 import { getApiClient, MemberAPI } from '@/lib/api';
-import {
-  buildDesktopAuthCompleteHref,
-  buildDesktopAuthRequestHref,
-  completeDesktopAuthRequest,
-} from '@/lib/auth/desktop-auth-request';
 import { getPublicRuntimeConfig } from '@/lib/public-runtime-config';
 import { createMockAuthToken } from '@/mocks/utils/mock-auth-token';
 import {
@@ -63,10 +58,8 @@ export default function WorkspaceLoginPage() {
   const authToken = useAuthStore((state) => state.token);
   const locale = (params?.locale as string) || 'en-US';
   const workspaceId = (params?.workspace as string) || '';
-  const desktopAuthRequestId = searchParams.get('desktop_auth_request_id')?.trim() ?? '';
   const inviteHandoff = readInviteHandoffForWorkspace(workspaceId);
   const projectId = searchParams.get('project_id')?.trim() ?? inviteHandoff?.projectId ?? '';
-  const desktopAuthRequestHref = desktopAuthRequestId ? buildDesktopAuthRequestHref(locale, desktopAuthRequestId) : null;
   const [config, setConfig] = useState<WorkspaceLoginConfig | null>(null);
   const [isLoadingConfig, setIsLoadingConfig] = useState(true);
   const [configError, setConfigError] = useState<string | null>(null);
@@ -86,22 +79,6 @@ export default function WorkspaceLoginPage() {
     handledAuthenticatedContinuationRef.current = true;
 
     const continueAuthenticatedWorkspaceLogin = async () => {
-      if (desktopAuthRequestId) {
-        try {
-          await completeDesktopAuthRequest(desktopAuthRequestId, authToken);
-          clearInviteHandoff();
-          router.replace(buildDesktopAuthCompleteHref(locale, desktopAuthRequestId));
-        } catch (error) {
-          console.error('Desktop auth completion failed after quick login:', error);
-          setIsLoggingIn(false);
-          if (desktopAuthRequestHref) {
-            clearInviteHandoff();
-            router.replace(desktopAuthRequestHref);
-          }
-        }
-        return;
-      }
-
       const pendingInviteToken = readPendingInviteToken();
       if (pendingInviteToken) {
         try {
@@ -125,7 +102,7 @@ export default function WorkspaceLoginPage() {
     };
 
     void continueAuthenticatedWorkspaceLogin();
-  }, [authToken, desktopAuthRequestHref, desktopAuthRequestId, hydrated, isAuthenticated, locale, memberApi, projectId, router, workspaceId]);
+  }, [authToken, hydrated, isAuthenticated, memberApi, projectId, router, workspaceId]);
 
   useEffect(() => {
     let cancelled = false;
@@ -185,7 +162,7 @@ export default function WorkspaceLoginPage() {
       );
     } catch (error) {
       console.error('Workspace login failed:', error);
-      setKeycloakError(error instanceof Error ? error.message : 'desktop_auth_complete_failed');
+      setKeycloakError(error instanceof Error ? error.message : 'keycloak_login_failed');
       setIsLoggingIn(false);
     }
   };
@@ -219,7 +196,6 @@ export default function WorkspaceLoginPage() {
           createdAt: Date.now(),
           workspaceId,
           locale,
-          desktopAuthRequestId: desktopAuthRequestId || undefined,
           projectId: projectId || undefined,
         }),
       );
@@ -268,7 +244,6 @@ export default function WorkspaceLoginPage() {
                       {t('workspace_not_found')}
                     </div>
                     <Link href={buildWorkspaceSelectionHref(locale, {
-                      desktopAuthRequestId: desktopAuthRequestId || null,
                       projectId: projectId || null,
                     })} className="text-sm text-accent underline underline-offset-4">
                       {t('back_to_workspace_select')}
@@ -336,7 +311,6 @@ export default function WorkspaceLoginPage() {
                     <div className="pt-1 text-center">
                       <Link
                         href={buildWorkspaceSelectionHref(locale, {
-                          desktopAuthRequestId: desktopAuthRequestId || null,
                           projectId: projectId || null,
                         })}
                         className="text-xs text-tertiary transition-colors hover:text-secondary"

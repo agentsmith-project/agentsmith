@@ -20,15 +20,16 @@ Audience: 后端、前端、测试、发布负责人
 ### 2.1 文件与工作空间
 
 - file library catalog
-- file library backend mapping
-- file library mount access
+- project AFSCP namespace binding 与 project storage generation
+- task HOME / file library binding 记录，包括 holder、lease state、binding generation、file_library_home_segment
 - notebook task 的 `workspace_file_library_id/name`
 
 要求：
 
-- API 重启后 file library 仍可列出、读取、使用
-- task 的 workspace access 只能读取当前 task 绑定的 file library
-- 若历史 task 绑定的 file library 已丢失，必须显式失败，不自动补建
+- API 重启后 file library catalog、project AFSCP namespace binding 与 task HOME 绑定状态仍可列出、读取、使用
+- 文件操作与 Agent task HOME 绑定必须读取同一套持久化 catalog、project AFSCP namespace binding 和 binding generation 真相
+- task 的 workspace access 只能读取当前 task 绑定的 file library，holder / generation 校验必须来自持久化绑定记录
+- 若 task 绑定记录、file library catalog 或 project AFSCP namespace binding 缺失或不一致，必须显式失败，不自动补建替代资源
 
 ### 2.2 治理与权限
 

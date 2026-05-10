@@ -5,12 +5,10 @@ function isFileLibraryReadRoute(route: ProjectsRoute, method: string): boolean {
   return (
     (route.kind === 'fileLibraries' && method === 'GET')
     || (route.kind === 'fileLibraryItem' && method === 'GET')
-    || (route.kind === 'fileLibraryBackend' && method === 'GET')
     || (route.kind === 'fileLibraryEntries' && method === 'GET')
     || (route.kind === 'fileLibraryDownload' && method === 'GET')
     || (route.kind === 'fileLibraryMeta' && method === 'GET')
-    || route.kind === 'fileLibraryStorageCredentialExchange'
-    || route.kind === 'fileLibraryDesktopMountAccess'
+    || (route.kind === 'fileLibrarySavePoints' && method === 'GET')
   );
 }
 
@@ -35,6 +33,10 @@ export function requiredProjectPermissions(route: ProjectsRoute, method: string)
   }
 
   if (route.kind === 'audit') {
+    return ['project:audit:read'];
+  }
+
+  if (route.kind === 'fileLibraryOperation') {
     return ['project:audit:read'];
   }
 
@@ -74,12 +76,13 @@ export function requiredProjectPermissions(route: ProjectsRoute, method: string)
     return ['project:governance:update'];
   }
 
+  if (route.kind === 'taskFileTemplates' && method === 'GET') {
+    return [];
+  }
+
   if (
     route.kind === 'fileLibraries'
     || route.kind === 'fileLibraryItem'
-    || route.kind === 'fileLibraryBackend'
-    || route.kind === 'fileLibraryStorageCredentialExchange'
-    || route.kind === 'fileLibraryDesktopMountAccess'
     || route.kind === 'fileLibraryEntries'
     || route.kind === 'fileLibraryFolders'
     || route.kind === 'fileLibraryDelete'
@@ -87,7 +90,14 @@ export function requiredProjectPermissions(route: ProjectsRoute, method: string)
     || route.kind === 'fileLibraryUpload'
     || route.kind === 'fileLibraryDownload'
     || route.kind === 'fileLibraryMeta'
-    || route.kind === 'fileLibraryShareLink'
+    || route.kind === 'fileLibrarySavePoints'
+    || route.kind === 'fileLibraryRestorePreview'
+    || route.kind === 'fileLibraryRestoreRun'
+    || route.kind === 'fileLibraryRestoreCancel'
+    || route.kind === 'taskFileTemplates'
+    || route.kind === 'taskFileTemplateItem'
+    || route.kind === 'taskFileTemplatePublish'
+    || route.kind === 'taskFileTemplateUnpublish'
   ) {
     return isFileLibraryReadRoute(route, method) ? ['project:endpoint:use'] : ['project:files:update'];
   }

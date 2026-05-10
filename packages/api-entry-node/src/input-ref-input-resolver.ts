@@ -1,14 +1,10 @@
 import { getImportedLibraryObjectRef } from './input-ref-resolver.js';
+import {
+  getActiveFileLibraryObjectMeta,
+  type ActiveFileLibraryStorageDeps,
+} from './file-library-active-storage.js';
 
-export type FileLibraryObjectMetaDeps = {
-  getFileLibraryObjectMetaUseCase: {
-    execute(args: { workspaceId: string; projectId: string; libraryId: string; key: string }): Promise<{
-      key: string;
-      content_type?: string;
-      size_bytes?: number;
-    }>;
-  };
-};
+export type FileLibraryObjectMetaDeps = ActiveFileLibraryStorageDeps;
 
 export type ArtifactLookupRecord = {
   id: string;
@@ -140,7 +136,7 @@ export async function resolveLibraryObjectInputMeta(args: {
 }> {
   const { deps, workspaceId, projectId, input } = args;
   try {
-    const meta = await deps.getFileLibraryObjectMetaUseCase.execute({
+    const meta = await getActiveFileLibraryObjectMeta(deps, {
       workspaceId,
       projectId,
       libraryId: input.library_id,
@@ -185,7 +181,7 @@ export async function resolveUrlInputMeta(args: {
   const importedObjectRef = getImportedLibraryObjectRef(input);
   if (importedObjectRef) {
     try {
-      const meta = await deps.getFileLibraryObjectMetaUseCase.execute({
+      const meta = await getActiveFileLibraryObjectMeta(deps, {
         workspaceId,
         projectId,
         libraryId: importedObjectRef.library_id,

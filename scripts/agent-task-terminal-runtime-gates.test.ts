@@ -387,7 +387,7 @@ describe('Agent Task terminal runtime gates', () => {
     expect(matrixGate).toContain('AGENT_RUNNER_SEED_MODE=managed_agent_task');
     expect(matrixGate).toContain('source "${ROOT_DIR}/scripts/local-manual/common.sh"');
     expect(matrixGate).toContain('local_manual_platform_is_ready');
-    expect(matrixGate).toContain('scripts/juicefs-orphan-preflight.ts');
+    expect(matrixGate).not.toContain('scripts/juicefs-orphan-preflight.ts');
     expect(matrixGate).toContain('internal_runtime_ready_for_retry()');
     expect(matrixGate).toContain('run_internal_terminal_smoke()');
     expect(matrixGate).toContain('bash scripts/local-manual/internal-down.sh >/dev/null');
@@ -401,9 +401,6 @@ describe('Agent Task terminal runtime gates', () => {
     expect(matrixGate).not.toContain('local-manual/proxy.ready');
     expect(matrixGate.indexOf('bash scripts/local-manual/seed-agent-task-diagnostics.sh')).toBeGreaterThanOrEqual(0);
     expect(matrixGate.indexOf('bash scripts/local-manual/start-runner.sh')).toBeGreaterThanOrEqual(0);
-    expect(matrixGate.indexOf('scripts/juicefs-orphan-preflight.ts')).toBeLessThan(
-      matrixGate.indexOf('bash scripts/local-manual/seed-agent-task-diagnostics.sh'),
-    );
     expect(matrixGate.indexOf('bash scripts/local-manual/seed-agent-task-diagnostics.sh')).toBeLessThan(
       matrixGate.indexOf('bash scripts/local-manual/start-runner.sh'),
     );
@@ -580,7 +577,7 @@ describe('Agent Task terminal runtime gates', () => {
     expect(internalCommon).toContain('current_runner_provider}" != "managed"');
   });
 
-  it('runs stale JuiceFS preflight before rebuilding the local-manual world so developer gates clear only historical leftovers', async () => {
+  it('rebuilds the local-manual world without the retired stale JuiceFS preflight', async () => {
     const localManualUp = await readFile(
       path.resolve(process.cwd(), 'scripts/local-manual/up.sh'),
       'utf-8',
@@ -590,11 +587,11 @@ describe('Agent Task terminal runtime gates', () => {
       'utf-8',
     );
 
-    expect(localManualCommon).toContain('run_juicefs_orphan_preflight()');
+    expect(localManualCommon).not.toContain('run_juicefs_orphan_preflight()');
     expect(localManualCommon).toContain('local_manual_platform_ready_state()');
     expect(localManualCommon).toContain('local_manual_platform_is_ready()');
-    expect(localManualCommon).toContain('LOCAL_MANUAL_SKIP_JUICEFS_ORPHAN_PREFLIGHT');
-    expect(localManualCommon).toContain('scripts/juicefs-orphan-preflight.ts');
+    expect(localManualCommon).not.toContain('LOCAL_MANUAL_SKIP_JUICEFS_ORPHAN_PREFLIGHT');
+    expect(localManualCommon).not.toContain('scripts/juicefs-orphan-preflight.ts');
     expect(localManualCommon).toContain('runner_socket_health_state()');
     expect(localManualCommon).toContain('ensure_local_manual_runner_connected()');
     expect(localManualCommon).toContain('local_manual_runner_health_monitor_once()');
@@ -607,10 +604,7 @@ describe('Agent Task terminal runtime gates', () => {
       'local_manual_capture_substrate_proxy_env',
     );
     const initEnvLine = findRequiredTrimmedLineIndex(localManualUp, 'init_local_manual_env');
-    const preflightLine = findRequiredTrimmedLineIndex(
-      localManualUp,
-      'run_juicefs_orphan_preflight "local-manual-up"',
-    );
+    const resetStateLine = findRequiredTrimmedLineIndex(localManualUp, 'reset_local_manual_state');
     const substrateBootstrapLine = findRequiredTrimmedLineIndex(
       localManualUp,
       'local_manual_run_substrate_script up',
@@ -633,7 +627,8 @@ describe('Agent Task terminal runtime gates', () => {
     );
 
     expect(captureProxyEnvLine).toBeLessThan(initEnvLine);
-    expect(preflightLine).toBeLessThan(substrateBootstrapLine);
+    expect(initEnvLine).toBeLessThan(resetStateLine);
+    expect(resetStateLine).toBeLessThan(substrateBootstrapLine);
     expect(substrateBootstrapLine).toBeLessThan(substrateReseedLine);
     expect(substrateReseedLine).toBeLessThan(loadSubstrateEnvLine);
     expect(captureProxyEnvBody).toContain('LOCAL_MANUAL_SUBSTRATE_PROXY_BASE_URL_WAS_SET=1');

@@ -49,9 +49,9 @@ describe('unified deploy address truth producer', () => {
       expect(rendered.output).toContain('MBOS_UNIVERSAL_PROXY_BASE_URL: "http://agentsmith-llmup:8080"');
       expect(rendered.output).toContain('INTERNAL_KEYCLOAK_BASE_URL: "http://substrate-keycloak:8080"');
       expect(rendered.output).toContain('MINIO_PORT: "9000"');
-      expect(rendered.output).toContain('INTERNAL_AGENT_JUICEFS_META_HOST_OVERRIDE: "substrate-postgresql.agentsmith.svc.cluster.local"');
-      expect(rendered.output).toContain('INTERNAL_AGENT_JUICEFS_META_PORT_OVERRIDE: "5432"');
-      expect(rendered.output).toContain('JUICEFS_BUCKET_ENDPOINT_FOR_INTERNAL_MOUNT: "http://substrate-minio.agentsmith.svc.cluster.local:9000"');
+      expect(rendered.output).not.toContain('INTERNAL_AGENT_JUICEFS_META_HOST_OVERRIDE');
+      expect(rendered.output).not.toContain('INTERNAL_AGENT_JUICEFS_META_PORT_OVERRIDE');
+      expect(rendered.output).not.toContain('JUICEFS_BUCKET_ENDPOINT_FOR_INTERNAL_MOUNT');
       expect(rendered.output).toContain('MBOS_UNIVERSAL_PROXY_ADMIN_TOKEN:');
       expect(rendered.output).toContain('SANDBOX_SERVICE_KEY:');
       expect(rendered.output).not.toContain('@substrate-postgresql:15432/');

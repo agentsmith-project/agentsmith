@@ -81,7 +81,6 @@ export type TaskExecutionContext = {
   artifacts_path: string;
   library_root_path: '.';
   workspace_file_library_name?: string | null;
-  workspace_dir_name?: string | null;
   task_inputs?: AgentTaskInput[];
   model_context_window?: number;
   model_auto_compact_token_limit?: number;
@@ -138,6 +137,7 @@ const TASK_EXECUTION_UNSUPPORTED_FIELDS = new Set([
   'chat_runner',
   'notebook_runner',
   'container_workspace_path',
+  'workspace_dir_name',
 ]);
 
 function isPlainObject(input: unknown): input is Record<string, unknown> {

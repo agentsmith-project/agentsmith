@@ -15,6 +15,7 @@ import {
   listPersistedSystemWorkspaces,
   upsertPersistedSystemWorkspace,
 } from './workspace-registry/persistence';
+import { runWorkspaceStorageLifecycleTeardown } from './workspace-storage-lifecycle';
 export type {
   PublicSystemWorkspaceRecord,
   PublishSystemWorkspaceResult,
@@ -173,6 +174,10 @@ export async function disableSystemWorkspace(id: string): Promise<SystemWorkspac
   if (!existing) {
     throw Object.assign(new Error('workspace_not_found'), { code: 'WORKSPACE_NOT_FOUND' });
   }
+  await runWorkspaceStorageLifecycleTeardown({
+    workspaceId: id,
+    reason: 'workspace_disable',
+  });
   const updated: SystemWorkspaceRecord = {
     ...existing,
     provisioning_status: 'disabled',
@@ -193,6 +198,10 @@ export async function deleteSystemWorkspace(id: string): Promise<void> {
       code: 'WORKSPACE_DISABLE_REQUIRED_BEFORE_DELETE',
     });
   }
+  await runWorkspaceStorageLifecycleTeardown({
+    workspaceId: id,
+    reason: 'workspace_delete',
+  });
   await deletePersistedSystemWorkspace(id);
 }
 

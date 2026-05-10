@@ -16,78 +16,14 @@ export {
 } from './workspace-foundation-initializer.js';
 
 export type { NodeApiDeps } from './node-api-deps.js';
-export { createDefaultNodeApiDeps } from './node-api-deps-factory.js';
+export {
+  createDefaultNodeApiDeps,
+  createNodeApiDepsFromEnv,
+} from './node-api-deps-factory.js';
+export type { ProjectStorageTeardownResult } from './project-storage-lifecycle-service.js';
 
-const DEFAULT_FILE_LIBRARY_GATEWAY_RECONCILE_INTERVAL_MS = 60_000;
 type ClosableDocStore = { close?: () => Promise<void> };
 type NodeApiLifecycle = { shutdown?: () => Promise<void> };
-
-function logGatewayReconcileFailure(error: unknown): void {
-  if (error instanceof Error && error.name === 'AbortError') {
-    return;
-  }
-  const message = error instanceof Error ? error.message : 'unknown_error';
-  if (message === 'file_library_gateway_reconcile_cancelled') {
-    return;
-  }
-  process.stderr.write(`[api-entry-node] file library gateway reconcile failed: ${message}\n`);
-}
-
-function resolveGatewayReconcileIntervalMs(env: NodeJS.ProcessEnv = process.env): number {
-  const parsed = Number.parseInt(env.FILE_LIBRARY_GATEWAY_RECONCILE_INTERVAL_MS ?? '', 10);
-  if (Number.isFinite(parsed) && parsed > 0) {
-    return parsed;
-  }
-  return DEFAULT_FILE_LIBRARY_GATEWAY_RECONCILE_INTERVAL_MS;
-}
-
-function startGatewayReconcileLoop(manager?: {
-  reconcile?: () => Promise<void>;
-}): { stop: () => void; drain: () => Promise<void> } {
-  if (!manager?.reconcile) {
-    return {
-      stop: () => undefined,
-      drain: async () => undefined,
-    };
-  }
-
-  let inFlight: Promise<void> | null = null;
-  let stopped = false;
-  const runReconcile = (): Promise<void> => {
-    if (stopped) {
-      return Promise.resolve();
-    }
-    if (inFlight) {
-      return inFlight;
-    }
-    inFlight = Promise.resolve()
-      .then(() => manager.reconcile?.())
-      .catch((error: unknown) => {
-        logGatewayReconcileFailure(error);
-      })
-      .finally(() => {
-        inFlight = null;
-      });
-    return inFlight;
-  };
-
-  void runReconcile();
-
-  const intervalHandle = setInterval(() => {
-    void runReconcile();
-  }, resolveGatewayReconcileIntervalMs());
-  intervalHandle.unref?.();
-
-  return {
-    stop: () => {
-      stopped = true;
-      clearInterval(intervalHandle);
-    },
-    drain: async () => {
-      await inFlight?.catch(() => undefined);
-    },
-  };
-}
 
 export function createNodeApiServer(
   port = 3010,
@@ -95,8 +31,6 @@ export function createNodeApiServer(
   lifecycle?: NodeApiLifecycle,
   host?: string,
 ): http.Server {
-  const gatewayReconcileLoop = startGatewayReconcileLoop(deps.fileLibraryGatewayManager);
-
   void ensureModelCatalogBootstrap(deps.docStore).catch((error: unknown) => {
     const message = error instanceof Error ? error.message : 'unknown_error';
     process.stderr.write(`[api-entry-node] model catalog bootstrap failed: ${message}\n`);
@@ -128,10 +62,7 @@ export function createNodeApiServer(
     if (shutdownPerformed) return;
     shutdownPerformed = true;
     if (feishuRefreshInterval) clearInterval(feishuRefreshInterval);
-    gatewayReconcileLoop.stop();
     ACTIVE_CHAT_STREAMS.clear();
-    await deps.fileLibraryGatewayManager?.shutdown?.();
-    await gatewayReconcileLoop.drain();
     await deps.notebookTerminalService.shutdown?.();
     await deps.agentExecutionService.shutdown?.();
     await lifecycle?.shutdown?.();

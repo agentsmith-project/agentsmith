@@ -1043,7 +1043,7 @@ describe('release-full aggregate gate', () => {
       existsSync(
         materializeCampaignPath(
           campaignRoot,
-          visualAutomatedPassCheck.path.replaceAll('<visual-scenario-id>', 'desktop-auth-complete'),
+          visualAutomatedPassCheck.path.replaceAll('<visual-scenario-id>', 'workspace-login'),
         ),
       ),
     ).toBe(true);
@@ -1562,7 +1562,7 @@ describe('release-full aggregate gate', () => {
   it('fails with contract drift when an automated visual pass omits current build metadata', () => {
     const campaignRoot = mkdtempSync(join(tmpdir(), 'release-full-aggregate-visual-metadata-'));
     seedPassedCampaign(campaignRoot);
-    const scenario = getVisualScenario('desktop-auth-complete');
+    const scenario = getVisualScenario('workspace-login');
     overwriteVisualAutomatedPassFixture(
       campaignRoot,
       scenario.scenarioId,
@@ -1659,13 +1659,13 @@ describe('release-full aggregate gate', () => {
     expect(terminalResult.summary).toContain('run-manifest.json');
   });
 
-  it('hard fails when lane-visual run-manifest.json drops the query-bearing actual_url', () => {
+  it('hard fails when lane-visual run-manifest.json drifts from the catalog actual_url', () => {
     const campaignRoot = mkdtempSync(join(tmpdir(), 'release-full-aggregate-visual-manifest-query-drift-'));
     seedPassedCampaign(campaignRoot);
     writeVisualRunManifestFixture(campaignRoot, {
       scenarioOverrides: {
-        'desktop-auth-complete': {
-          actual_url: '/en-US/desktop/auth/complete',
+        'workspace-login': {
+          actual_url: '/en-US/login/workspace',
         },
       },
     });
@@ -1686,11 +1686,11 @@ describe('release-full aggregate gate', () => {
     const campaignRoot = mkdtempSync(join(tmpdir(), 'release-full-aggregate-visual-partial-coverage-'));
     seedPassedCampaign(campaignRoot);
     writeVisualRunManifestFixture(campaignRoot, {
-      included_scenario_ids: ['desktop-auth-complete'],
+      included_scenario_ids: ['workspace-login'],
       coverage: {
         scope: 'partial_catalog',
-        expected_scenario_ids: ['access-guide', 'desktop-auth-complete'],
-        captured_scenario_ids: ['desktop-auth-complete'],
+        expected_scenario_ids: ['access-guide', 'workspace-login'],
+        captured_scenario_ids: ['workspace-login'],
       },
     });
 
@@ -1744,7 +1744,7 @@ describe('release-full aggregate gate', () => {
   it('fails when a lane-visual automated pass drifted away from the run-manifest producer snapshot', () => {
     const campaignRoot = mkdtempSync(join(tmpdir(), 'release-full-aggregate-visual-automated-pass-drift-'));
     seedPassedCampaign(campaignRoot);
-    const scenario = getVisualScenario('desktop-auth-complete');
+    const scenario = getVisualScenario('workspace-login');
     overwriteVisualAutomatedPassFixture(
       campaignRoot,
       scenario.scenarioId,
@@ -1772,7 +1772,7 @@ describe('release-full aggregate gate', () => {
   it('ignores standalone visual review.md artifacts while automated release campaign evidence stays producer-owned', () => {
     const campaignRoot = mkdtempSync(join(tmpdir(), 'release-full-aggregate-visual-review-sidecar-'));
     seedPassedCampaign(campaignRoot);
-    const scenario = getVisualScenario('desktop-auth-complete');
+    const scenario = getVisualScenario('workspace-login');
     createFile(
       resolve(
         campaignRoot,
@@ -1804,7 +1804,7 @@ describe('release-full aggregate gate', () => {
   it('passes when automated visual pass stays self-consistent with the producer snapshot even if checkout story fingerprints drift', () => {
     const campaignRoot = mkdtempSync(join(tmpdir(), 'release-full-aggregate-visual-snapshot-owned-pass-'));
     seedPassedCampaign(campaignRoot);
-    const scenario = getVisualScenario('desktop-auth-complete');
+    const scenario = getVisualScenario('workspace-login');
     const customStoryFingerprint = `sha256:${'4'.repeat(64)}`;
     const screenshotFixtures = buildVisualBaselineScenarioEvidence(scenario).screenshots.map((entry, index) => ({
       file_name: entry.fileName,
@@ -1846,7 +1846,7 @@ describe('release-full aggregate gate', () => {
   it('fails with contract drift when automated visual pass build metadata drifts from the run-manifest snapshot', () => {
     const campaignRoot = mkdtempSync(join(tmpdir(), 'release-full-aggregate-visual-build-drift-'));
     seedPassedCampaign(campaignRoot);
-    const scenario = getVisualScenario('desktop-auth-complete');
+    const scenario = getVisualScenario('workspace-login');
     overwriteVisualAutomatedPassFixture(
       campaignRoot,
       scenario.scenarioId,
@@ -1871,7 +1871,7 @@ describe('release-full aggregate gate', () => {
   it('fails with contract drift when automated visual pass hashes drift from committed baselines', () => {
     const campaignRoot = mkdtempSync(join(tmpdir(), 'release-full-aggregate-visual-hash-drift-'));
     seedPassedCampaign(campaignRoot);
-    const scenario = getVisualScenario('desktop-auth-complete');
+    const scenario = getVisualScenario('workspace-login');
     const firstScreenshot = buildVisualBaselineScenarioEvidence(scenario).screenshots[0];
     if (!firstScreenshot) {
       throw new Error('Missing visual screenshot fixture.');
@@ -1907,7 +1907,7 @@ describe('release-full aggregate gate', () => {
   it('fails with contract drift when automated visual pass story fingerprint drifts', () => {
     const campaignRoot = mkdtempSync(join(tmpdir(), 'release-full-aggregate-visual-story-drift-'));
     seedPassedCampaign(campaignRoot);
-    const scenario = getVisualScenario('desktop-auth-complete');
+    const scenario = getVisualScenario('workspace-login');
     overwriteVisualAutomatedPassFixture(
       campaignRoot,
       scenario.scenarioId,
@@ -1932,7 +1932,7 @@ describe('release-full aggregate gate', () => {
   it('fails with product regression when automated visual pass automated_verdict is not passed', () => {
     const campaignRoot = mkdtempSync(join(tmpdir(), 'release-full-aggregate-visual-automated-verdict-'));
     seedPassedCampaign(campaignRoot);
-    const scenario = getVisualScenario('desktop-auth-complete');
+    const scenario = getVisualScenario('workspace-login');
     overwriteVisualAutomatedPassFixture(
       campaignRoot,
       scenario.scenarioId,
@@ -1958,7 +1958,7 @@ describe('release-full aggregate gate', () => {
   it('fails with product regression when automated visual pass semantic_verdict is not passed', () => {
     const campaignRoot = mkdtempSync(join(tmpdir(), 'release-full-aggregate-visual-semantic-verdict-'));
     seedPassedCampaign(campaignRoot);
-    const scenario = getVisualScenario('desktop-auth-complete');
+    const scenario = getVisualScenario('workspace-login');
     overwriteVisualAutomatedPassFixture(
       campaignRoot,
       scenario.scenarioId,

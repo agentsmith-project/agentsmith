@@ -5,8 +5,8 @@
   "actor": "public visitor / system 管理侧 / workspace member",
   "lane": "mock-lane",
   "entryRoute": "/en-US/join",
-  "goal": "用一份 mock-lane story family 统一描述入口、登录和桌面接续的 visual scene 真相。",
-  "narrative": "Entry/access scenes cover the public join flow, system login, workspace selector, workspace login, and desktop handoff surfaces.",
+  "goal": "用一份 mock-lane story family 统一描述入口、登录和 workspace 访问 visual scene 真相。",
+  "narrative": "Entry/access scenes cover the public join flow, system login, workspace selector, and workspace login surfaces.",
   "scenes": [
     {
       "sceneId": "join",
@@ -47,25 +47,6 @@
         "public-auth__shell",
         "workspace-login__heading",
         "workspace-login__keycloak-btn"
-      ]
-    },
-    {
-      "sceneId": "desktop-auth-request",
-      "route": "/en-US/desktop/auth/request",
-      "recipeFamily": "public_auth_split",
-      "authLane": "public",
-      "stableMarkers": [
-        "desktop-auth-request__title"
-      ]
-    },
-    {
-      "sceneId": "desktop-auth-complete",
-      "route": "/en-US/desktop/auth/complete?desktop_auth_request_id=req_visual_001",
-      "recipeFamily": "public_auth_single",
-      "authLane": "public",
-      "stableMarkers": [
-        "desktop-auth-complete__title",
-        "desktop-auth-complete__workspace-entry-link"
       ]
     }
   ],
@@ -154,38 +135,6 @@
           "codeRefs": [
             "e2e/visual.spec.ts",
             "src/app/[locale]/workspaces/[workspace]/login/page.tsx"
-          ],
-          "capture": "full_page",
-          "authLane": "public",
-          "themes": [
-            "light",
-            "dark"
-          ]
-        },
-        {
-          "sceneId": "desktop-auth-request",
-          "scenarioId": "desktop-auth-request",
-          "scenario": "Desktop handoff missing-link recovery page with guidance back to workspace login.",
-          "group": "public_pages",
-          "codeRefs": [
-            "e2e/visual.spec.ts",
-            "src/app/[locale]/desktop/auth/request/page.tsx"
-          ],
-          "capture": "full_page",
-          "authLane": "public",
-          "themes": [
-            "light",
-            "dark"
-          ]
-        },
-        {
-          "sceneId": "desktop-auth-complete",
-          "scenarioId": "desktop-auth-complete",
-          "scenario": "Desktop handoff completion page.",
-          "group": "public_pages",
-          "codeRefs": [
-            "e2e/visual.spec.ts",
-            "src/app/[locale]/desktop/auth/complete/page.tsx"
           ],
           "capture": "full_page",
           "authLane": "public",

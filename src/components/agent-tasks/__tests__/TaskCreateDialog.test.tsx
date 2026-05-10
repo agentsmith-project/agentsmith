@@ -54,6 +54,10 @@ vi.mock('@/lib/hooks/use-files', () => ({
   useFileLibraries: vi.fn(),
 }));
 
+vi.mock('@/lib/hooks/use-task-file-templates', () => ({
+  useTaskFileTemplates: vi.fn(),
+}));
+
 vi.mock('@/components/ui/select', async () => {
   const React = await import('react');
   const SelectContext = React.createContext<{
@@ -162,12 +166,17 @@ vi.mock('next-intl', () => ({
       'workspace_source_create_new_hint': 'Recommended. We\'ll create a fresh persistent task workspace for this task.',
       'workspace_source_use_existing': 'Continue an existing task workspace',
       'workspace_source_use_existing_hint': 'Requires Files update access. Reuse an available task workspace to keep working with previous files.',
+      'workspace_source_use_template': 'Use task file template',
+      'workspace_source_use_template_hint': 'Start from a published task file template in this project.',
       'workspace_name_label': 'New task workspace name',
       'workspace_name_placeholder': 'Enter task workspace name',
       'workspace_name_hint': 'Leave blank to generate a task workspace name from the task title.',
       'select_workspace_file_library': 'Select Existing Task Workspace',
       'workspace_file_library_hint': 'Active and archived tasks keep their workspace binding. Deleting a task releases the binding and keeps the library files.',
       'workspace_file_library_empty': 'No idle workspaces are available in this project right now.',
+      'select_task_file_template': 'Select task file template',
+      'task_file_template_empty': 'No published task file templates are available in this project right now.',
+      'task_file_template_hint': 'Only published task file templates are listed.',
       'workspace_file_library_bound_visible': `Bound to ${values?.title ?? 'task'} (${values?.status ?? 'unknown'})`,
       'workspace_file_library_bound_redacted': 'Bound to another task',
       'workspace_file_library_conflict': 'That task workspace is now bound to another task. Select another workspace or create a new one.',
@@ -176,19 +185,20 @@ vi.mock('next-intl', () => ({
       'task_start_notice': 'Start the task after creation by sending the first instruction.',
       'history_immutable_notice': 'Task history cannot be modified',
       'advanced_settings': 'Advanced settings',
-      'advanced_settings_description': 'Leave this off to use the deployment-managed runner for this task.',
-      'use_developer_runner': 'Choose a Developer runner for this task',
+      'advanced_settings_description': 'Task creation uses the deployment-managed runner unless the backend exposes an allowed runner binding.',
+      'use_developer_runner': 'Developer runner task binding',
       'developer_runner_label': 'Developer runner',
       'developer_runner_placeholder': 'Select a Developer runner',
       'developer_runner_loading': 'Loading Developer runners...',
-      'developer_runner_empty': 'No Developer runners you can use are available for this task.',
-      'developer_runner_hint': 'When turned on, choose one available Developer runner for this task. Otherwise it uses the deployment-managed runner.',
-      'developer_runner_override_unavailable_hint': 'The visible Developer runners are not ready to use for this task.',
-      'developer_runner_selected_unavailable': 'The selected Developer runner is not available for this task right now.',
+      'developer_runner_empty': 'No Developer runner task bindings are available for task creation.',
+      'developer_runner_hint': 'Only backend-allowed Developer runner bindings are submitted. Otherwise tasks use the deployment-managed runner.',
+      'developer_runner_override_unavailable_hint': 'Developer runners are not available for task creation in this release.',
+      'developer_runner_selected_unavailable': 'The selected Developer runner is blocked for task creation right now.',
       'developer_runner_reason_stale': 'Check the connection again before using it.',
       'developer_runner_reason_unavailable': 'It is not connected right now.',
       'developer_runner_reason_forbidden': 'You do not have permission to use it.',
       'developer_runner_reason_capability': 'It cannot run this type of task.',
+      'developer_runner_reason_task_home_binding_unavailable': 'Developer runner task binding is blocked for this release; use the deployment-managed runner.',
       'developer_runner_reason_default': 'It is not available for this task right now.',
       'model_readiness_loading': 'Checking Agent task model setup...',
       'model_readiness_blocked_title': 'Agent task model setup required',
@@ -203,6 +213,7 @@ vi.mock('next-intl', () => ({
 
 import { useCreateTask, useTasks } from '@/lib/hooks/use-task';
 import { useFileLibraries } from '@/lib/hooks/use-files';
+import { useTaskFileTemplates } from '@/lib/hooks/use-task-file-templates';
 import { APIError } from '@/lib/api/errors';
 
 const mockFileLibraries = [
@@ -212,7 +223,6 @@ const mockFileLibraries = [
     project_id: 'project-1',
     name: 'Project Uploads',
     status: 'ready' as const,
-    filesystem_name: 'flib-project-uploads',
     created_by_user_id: 'user-1',
     created_at: '2024-01-01T00:00:00Z',
     updated_at: '2024-01-01T00:00:00Z',
@@ -225,7 +235,6 @@ const mockFileLibraries = [
     project_id: 'project-1',
     name: 'Occupied Workspace',
     status: 'ready' as const,
-    filesystem_name: 'flib-occupied-workspace',
     created_by_user_id: 'user-1',
     created_at: '2024-01-01T00:00:00Z',
     updated_at: '2024-01-01T00:00:00Z',
@@ -251,6 +260,31 @@ const mockTasks = [
     created_at: '2024-01-01T00:00:00Z',
     updated_at: '2024-01-01T00:00:00Z',
     last_activity_at: '2024-01-01T00:00:00Z',
+  },
+];
+
+const mockTaskFileTemplates = [
+  {
+    id: 'tmpl-published',
+    workspace_id: 'workspace-1',
+    project_id: 'project-1',
+    source_library_id: 'flib-1',
+    name: 'Published starter',
+    status: 'published' as const,
+    created_by_user_id: 'user-1',
+    created_at: '2024-01-01T00:00:00Z',
+    updated_at: '2024-01-01T00:00:00Z',
+  },
+  {
+    id: 'tmpl-draft',
+    workspace_id: 'workspace-1',
+    project_id: 'project-1',
+    source_library_id: 'flib-1',
+    name: 'Draft starter',
+    status: 'unpublished' as const,
+    created_by_user_id: 'user-1',
+    created_at: '2024-01-01T00:00:00Z',
+    updated_at: '2024-01-01T00:00:00Z',
   },
 ];
 
@@ -314,11 +348,13 @@ describe('TaskCreateDialog', () => {
           runner_binding_source: 'explicit',
           readiness: { state: 'ready', summary: 'Connected' },
           capability: { state: 'ready', summary: 'Can run this task' },
+          disabled_reason_code: 'TASK_HOME_BINDING_UNAVAILABLE_FOR_DEVELOPER_RUNNER',
           actions: {
             bind_to_task: {
               operation: 'bind_to_task',
               visible: true,
-              allowed: true,
+              allowed: false,
+              reason_code: 'TASK_HOME_BINDING_UNAVAILABLE_FOR_DEVELOPER_RUNNER',
               required_permissions: ['project:agent_task:use', 'project:agent_runner:manage'],
               danger_level: 'none',
             },
@@ -353,6 +389,10 @@ describe('TaskCreateDialog', () => {
       data: { items: mockFileLibraries },
       isLoading: false,
       refetch: mockFileLibrariesRefetch,
+    } as any);
+    vi.mocked(useTaskFileTemplates).mockReturnValue({
+      data: { items: mockTaskFileTemplates },
+      isLoading: false,
     } as any);
     vi.mocked(useTasks).mockReturnValue({
       data: { items: mockTasks, total: mockTasks.length, page: 1, page_size: 200, has_more: false },
@@ -460,7 +500,7 @@ describe('TaskCreateDialog', () => {
       renderComponent();
 
       const workspaceModeRadios = screen.getAllByRole('radio');
-      expect(workspaceModeRadios).toHaveLength(2);
+      expect(workspaceModeRadios).toHaveLength(3);
       expect(workspaceModeRadios[0]).toBeChecked();
     });
 
@@ -638,11 +678,11 @@ describe('TaskCreateDialog', () => {
     it('does not show developer runner choice in the ordinary path', () => {
       renderComponent();
 
-      expect(screen.queryByText('Choose a Developer runner for this task')).not.toBeInTheDocument();
+      expect(screen.queryByText('Developer runner task binding')).not.toBeInTheDocument();
       expect(screen.queryByRole('combobox', { name: /Developer runner/i })).not.toBeInTheDocument();
     });
 
-    it('shows the developer runner binding affordance under advanced settings', async () => {
+    it('shows blocked Developer runner options under advanced settings without exposing a task binding control', async () => {
       const user = userEvent.setup();
       renderComponent();
 
@@ -654,27 +694,24 @@ describe('TaskCreateDialog', () => {
           mockProjectId,
         );
       });
-      expect(screen.getByText('Choose a Developer runner for this task')).toBeInTheDocument();
-
-      await user.click(screen.getByRole('checkbox', { name: /Choose a Developer runner for this task/ }));
-
-      expect(screen.getByTestId('task-create__bound-runner')).toBeInTheDocument();
+      expect(screen.getByText('Developer runners are not available for task creation in this release.')).toBeInTheDocument();
+      expect(screen.getByText('Developer runner')).toBeInTheDocument();
+      expect(screen.getByText('Developer runner task binding is blocked for this release; use the deployment-managed runner.')).toBeInTheDocument();
+      expect(screen.queryByRole('checkbox', { name: /Developer runner task binding/ })).not.toBeInTheDocument();
+      expect(screen.queryByTestId('task-create__bound-runner')).not.toBeInTheDocument();
     });
 
-    it('submits bound_runner_id when an authorized Developer runner is selected', async () => {
+    it('does not submit bound_runner_id for a backend-blocked Developer runner option', async () => {
       const user = userEvent.setup();
       renderComponent();
 
       await user.type(screen.getByRole('textbox', { name: /Task Title/i }), 'Developer Task');
       await user.click(screen.getByRole('button', { name: 'Advanced settings' }));
       await waitFor(() => {
-        expect(screen.getByRole('checkbox', { name: /Choose a Developer runner for this task/ })).toBeEnabled();
-      });
-      await user.click(screen.getByRole('checkbox', { name: /Choose a Developer runner for this task/ }));
-      await waitFor(() => {
         expect(mockGetRunnerBindingOptions).toHaveBeenCalled();
       });
-      await selectRadixOption(user, screen.getByTestId('task-create__bound-runner'), 'Developer runner');
+      expect(screen.queryByRole('checkbox', { name: /Developer runner task binding/ })).not.toBeInTheDocument();
+      expect(screen.queryByTestId('task-create__bound-runner')).not.toBeInTheDocument();
 
       submitTaskCreateForm();
 
@@ -684,7 +721,6 @@ describe('TaskCreateDialog', () => {
           projectId: mockProjectId,
           data: {
             title: 'Developer Task',
-            bound_runner_id: 'runner-dev',
             workspace_mode: 'create_new',
             workspace_name: 'Developer Task workspace',
           },
@@ -728,8 +764,8 @@ describe('TaskCreateDialog', () => {
         expect(mockGetRunnerBindingOptions).toHaveBeenCalled();
       });
 
-      expect(screen.getByText('No Developer runners you can use are available for this task.')).toBeInTheDocument();
-      expect(screen.queryByRole('checkbox', { name: /Choose a Developer runner for this task/ })).not.toBeInTheDocument();
+      expect(screen.getByText('No Developer runner task bindings are available for task creation.')).toBeInTheDocument();
+      expect(screen.queryByRole('checkbox', { name: /Developer runner task binding/ })).not.toBeInTheDocument();
       expect(screen.queryByText('Developer runner')).not.toBeInTheDocument();
       expect(screen.queryByTestId('task-create__bound-runner')).not.toBeInTheDocument();
     });
@@ -803,10 +839,10 @@ describe('TaskCreateDialog', () => {
       await user.click(screen.getByRole('button', { name: 'Advanced settings' }));
 
       await waitFor(() => {
-        expect(screen.getByRole('checkbox', { name: /Choose a Developer runner for this task/ })).toBeDisabled();
+        expect(screen.queryByRole('checkbox', { name: /Developer runner task binding/ })).not.toBeInTheDocument();
       });
 
-      expect(screen.getByText('The visible Developer runners are not ready to use for this task.')).toBeInTheDocument();
+      expect(screen.getByText('Developer runners are not available for task creation in this release.')).toBeInTheDocument();
       expect(screen.getByText('Stale Developer runner')).toBeInTheDocument();
       expect(screen.getByText('Check the connection again before using it.')).toBeInTheDocument();
       expect(screen.getByText('Offline Developer runner')).toBeInTheDocument();
@@ -872,9 +908,9 @@ describe('TaskCreateDialog', () => {
       await user.type(screen.getByRole('textbox', { name: /Task Title/i }), 'Developer Task');
       await user.click(screen.getByRole('button', { name: 'Advanced settings' }));
       await waitFor(() => {
-        expect(screen.getByRole('checkbox', { name: /Choose a Developer runner for this task/ })).toBeEnabled();
+        expect(screen.getByRole('checkbox', { name: /Developer runner task binding/ })).toBeEnabled();
       });
-      await user.click(screen.getByRole('checkbox', { name: /Choose a Developer runner for this task/ }));
+      await user.click(screen.getByRole('checkbox', { name: /Developer runner task binding/ }));
       await waitFor(() => {
         expect(mockGetRunnerBindingOptions).toHaveBeenCalledTimes(1);
       });
@@ -888,7 +924,7 @@ describe('TaskCreateDialog', () => {
         expect(screen.getByTestId('task-create__bound-runner')).not.toHaveTextContent('Select a Developer runner');
       });
 
-      expect(screen.getByText('The selected Developer runner is not available for this task right now.')).toBeInTheDocument();
+      expect(screen.getByText('The selected Developer runner is blocked for task creation right now.')).toBeInTheDocument();
       expect(screen.getAllByText('Check the connection again before using it.').length).toBeGreaterThan(0);
       expect(screen.getByRole('button', { name: 'Create' })).toBeDisabled();
       submitTaskCreateForm();
@@ -983,6 +1019,42 @@ describe('TaskCreateDialog', () => {
           },
         });
       });
+    });
+
+    it('submits use_template mode with a published project template and no existing workspace id', async () => {
+      const user = userEvent.setup();
+      renderComponent();
+
+      await user.type(screen.getByRole('textbox', { name: /Task Title/i }), 'Template Task');
+      await user.click(screen.getAllByRole('radio')[2]!);
+      await selectRadixOption(user, screen.getByTestId('task-create__task-file-template'), 'Published starter');
+      submitTaskCreateForm();
+
+      await waitFor(() => {
+        expect(mockMutateAsync).toHaveBeenCalledWith({
+          workspaceId: mockWorkspaceId,
+          projectId: mockProjectId,
+          data: {
+            title: 'Template Task',
+            workspace_mode: 'use_template',
+            task_file_template_id: 'tmpl-published',
+          },
+        });
+      });
+      const submitted = mockMutateAsync.mock.calls[0]?.[0]?.data as Record<string, unknown>;
+      expect(submitted).not.toHaveProperty('workspace_file_library_id');
+      expect(submitted).not.toHaveProperty('workspace_name');
+    });
+
+    it('lists only published task file templates in use-template mode', async () => {
+      const user = userEvent.setup();
+      renderComponent();
+
+      await user.click(screen.getAllByRole('radio')[2]!);
+      fireEvent.click(screen.getByTestId('task-create__task-file-template'));
+
+      expect(await screen.findByRole('option', { name: 'Published starter' })).toBeInTheDocument();
+      expect(screen.queryByRole('option', { name: 'Draft starter' })).not.toBeInTheDocument();
     });
 
     it('uses file library binding status instead of task-list occupancy when selecting an existing workspace', async () => {

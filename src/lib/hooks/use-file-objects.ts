@@ -36,20 +36,19 @@ function fileLibraryQueryMatches(
   projectId: string,
   libraryId?: string | null,
 ) {
-  const scopedKey = queryKey[0] === 'v2' ? queryKey.slice(1) : queryKey;
   if (
-    scopedKey[0] === 'file-libraries'
-    && scopedKey[1] === workspaceId
-    && scopedKey[2] === projectId
+    queryKey[0] === 'file-libraries'
+    && queryKey[1] === workspaceId
+    && queryKey[2] === projectId
   ) {
     return true;
   }
   if (
-    scopedKey[0] === 'file-library'
-    && scopedKey[1] === workspaceId
-    && scopedKey[2] === projectId
+    queryKey[0] === 'file-library'
+    && queryKey[1] === workspaceId
+    && queryKey[2] === projectId
   ) {
-    return !libraryId || scopedKey[3] === libraryId;
+    return !libraryId || queryKey[3] === libraryId;
   }
   return false;
 }

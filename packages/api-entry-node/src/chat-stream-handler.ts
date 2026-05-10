@@ -31,6 +31,7 @@ import {
   toChatAttachmentSnapshots,
 } from './chat-input-refs.js';
 import type { ResolvedInternalTicket } from './internal-ticket-store.js';
+import { downloadActiveFileLibraryObject } from './file-library-active-storage.js';
 
 interface ChatStreamHandlerArgs {
   route: ChatRoute;
@@ -482,7 +483,7 @@ export async function handleChatStreamRoute(args: ChatStreamHandlerArgs): Promis
   }
 
   const compiledExecutionMessages = await buildChatExecutionMessages({
-    downloadFileLibraryObject: (input) => deps.downloadFileLibraryObjectUseCase.execute(input),
+    downloadFileLibraryObject: (input) => downloadActiveFileLibraryObject(deps, input),
     route,
     messages,
     attachmentById,

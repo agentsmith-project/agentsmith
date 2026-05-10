@@ -3,14 +3,14 @@ import type { PaginationParams, PaginatedResponse } from './common';
 export type FileLibraryStatus = 'creating' | 'ready' | 'degraded' | 'failed' | 'deleting';
 export type FileLibraryTaskHomeBindingStatus = 'unbound' | 'bound';
 export type FileLibraryBoundTaskStatus = 'active' | 'archived';
-
-export type FileLibraryGatewayStatus =
-  | 'not_started'
-  | 'starting'
-  | 'ready'
+export type FileLibrarySource = 'agent_task_files';
+export type FileLibraryStorageStatus =
+  | 'initializing'
+  | 'available'
   | 'degraded'
-  | 'failed'
-  | 'stopped';
+  | 'unavailable'
+  | 'admin_action_required';
+export type FileLibraryStorageNextAction = 'wait' | 'retry' | 'contact_admin' | 'contact_support' | null;
 
 export interface FileLibrary {
   id: string;
@@ -19,43 +19,20 @@ export interface FileLibrary {
   name: string;
   description?: string;
   visibility?: 'shared';
-  provider?: 's3' | 'juicefs';
-  bucket?: string;
-  object_prefix?: string;
+  source: FileLibrarySource;
+  file_library_home_segment: string;
   status: FileLibraryStatus;
+  storage_status?: FileLibraryStorageStatus;
+  storage_next_action?: FileLibraryStorageNextAction;
+  status_reason?: string;
   task_home_binding_status: FileLibraryTaskHomeBindingStatus;
   bound_task_id?: string;
   bound_task_title?: string;
   bound_task_status?: FileLibraryBoundTaskStatus;
   bound_task_visible: boolean;
-  filesystem_name: string;
   created_by_user_id: string;
   created_at: string;
   updated_at: string;
-}
-
-export interface FileLibraryBackend {
-  library_id: string;
-  filesystem_name: string;
-  provisioning_status: FileLibraryStatus;
-  gateway_status: FileLibraryGatewayStatus;
-  postgres: {
-    host: string;
-    port: number;
-    database: string;
-    username: string;
-  };
-  minio: {
-    endpoint: string;
-    bucket: string;
-    region?: string;
-  };
-  gateway?: {
-    loopback_url?: string;
-    port?: number;
-    last_started_at?: string;
-  };
-  last_error?: string;
 }
 
 export type FileLibraryEntry =
@@ -123,40 +100,113 @@ export interface MoveFileLibraryEntryRequest {
   overwrite?: boolean;
 }
 
-export interface FileLibraryClientMountAccess {
-  filesystem_name: string;
-  metadata_url: string;
-  storage_bucket_url?: string;
-  recommended_mount_path: string;
-  platform_notes: string[];
-  recommended_mount_commands: {
-    linux: string;
-    macos: string;
-    windows: string;
-  };
+export type FileLibraryRestorePreviewStatus =
+  | 'previewing'
+  | 'ready'
+  | 'failed'
+  | 'canceling'
+  | 'canceled'
+  | 'restoring'
+  | 'restored';
+
+export type FileLibraryRestoreRunStatus = 'pending' | 'succeeded' | 'failed';
+
+export interface FileLibraryRestorePreviewChangeSummary {
+  count: number;
+  samples: string[];
+}
+
+export interface FileLibraryRestorePreviewSummary {
+  added: FileLibraryRestorePreviewChangeSummary;
+  changed: FileLibraryRestorePreviewChangeSummary;
+  removed: FileLibraryRestorePreviewChangeSummary;
+  destructive: boolean;
+}
+
+export type FileLibraryRestorePreviewBlockerCode =
+  | 'active_writer_sessions'
+  | 'stale_writer_session_uncertain'
+  | 'restore_preview_stale'
+  | 'restore_plan_requires_recovery';
+
+export interface FileLibraryRestorePreviewBlocker {
+  code: FileLibraryRestorePreviewBlockerCode;
+  message?: string;
+}
+
+export interface FileLibrarySavePoint {
+  id: string;
+  file_library_id: string;
+  message?: string;
   created_at: string;
 }
 
-export interface FileLibraryDesktopMountAccess {
-  filesystem_name: string;
-  metadata_url: string;
-  storage_bucket_url?: string;
-  deployment_base_url: string;
-  default_mount_roots: {
-    linux: string;
-    macos: string;
-    windows: string;
-  };
-  windows_requires_drive_letter: boolean;
+export interface ListFileLibrarySavePointsResponse {
+  items: FileLibrarySavePoint[];
+}
+
+export interface CreateFileLibrarySavePointRequest {
+  message?: string;
+}
+
+export interface CreateFileLibraryRestorePreviewRequest {
+  save_point_id: string;
+}
+
+export interface FileLibraryRestorePreview {
+  id: string;
+  file_library_id: string;
+  source_save_point_id: string;
+  message?: string;
+  status: FileLibraryRestorePreviewStatus;
+  summary?: FileLibraryRestorePreviewSummary;
+  blockers?: FileLibraryRestorePreviewBlocker[];
+  stale?: boolean;
   created_at: string;
+  updated_at: string;
 }
 
-export interface StorageCredentialExchangeResponse {
-  client_mount_access: FileLibraryClientMountAccess;
+export interface RunFileLibraryRestoreRequest {
+  restore_preview_id: string;
 }
 
-export interface DesktopMountAccessExchangeResponse {
-  desktop_mount_access: FileLibraryDesktopMountAccess;
+export interface CancelFileLibraryRestoreRequest {
+  restore_preview_id: string;
+}
+
+export interface FileLibraryRestoreRun {
+  id: string;
+  file_library_id: string;
+  restore_preview_id: string;
+  status: FileLibraryRestoreRunStatus;
+  created_at: string;
+  updated_at: string;
+}
+
+export type TaskFileTemplateStatus = 'unpublished' | 'published' | 'failed';
+
+export interface TaskFileTemplate {
+  id: string;
+  workspace_id: string;
+  project_id: string;
+  source_library_id: string;
+  source_save_point_id?: string;
+  name: string;
+  description?: string;
+  status: TaskFileTemplateStatus;
+  created_by_user_id: string;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface ListTaskFileTemplatesResponse {
+  items: TaskFileTemplate[];
+}
+
+export interface CreateTaskFileTemplateRequest {
+  source_library_id: string;
+  name: string;
+  description?: string;
 }
 
 export interface FileItem {
@@ -168,8 +218,7 @@ export interface FileItem {
   filename: string;
   file_type: string;
   file_size: number;
-  object_ref: {
-    bucket: string;
+  object_ref?: {
     key: string;
     etag?: string;
     version?: string;
@@ -244,11 +293,4 @@ export interface FileObjectMeta {
   etag?: string;
   last_modified: string;
   user_metadata?: Record<string, string>;
-}
-
-export interface FileObjectShareLink {
-  key: string;
-  url: string;
-  expires_at: string;
-  expires_in_seconds: number;
 }

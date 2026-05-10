@@ -5,8 +5,10 @@ import type { FileLibrary } from '@/lib/api/types';
 
 export type FileSortBy = 'name' | 'size_bytes' | 'last_modified';
 export type FileSortOrder = 'asc' | 'desc';
+export const DEFAULT_FILES_BROWSE_PREFIX = 'workspace/';
 
 type UseSourcesUrlStateOptions = {
+  defaultPrefix?: string;
   resetBrowseStateOnMount?: boolean;
 };
 
@@ -28,6 +30,28 @@ function normalizeBrowsePrefix(value: string | null): string {
   return withoutLeading.endsWith('/') ? withoutLeading : `${withoutLeading}/`;
 }
 
+function readBrowsePrefix(params: URLSearchParams, defaultPrefix: string): string {
+  if (!params.has('prefix')) return defaultPrefix;
+  return normalizeBrowsePrefix(params.get('prefix'));
+}
+
+function writeBrowsePrefix(params: URLSearchParams, prefix: string, defaultPrefix: string) {
+  const nextPrefix = normalizeBrowsePrefix(prefix);
+  if (nextPrefix === defaultPrefix) {
+    params.delete('prefix');
+    return;
+  }
+  if (!nextPrefix) {
+    if (defaultPrefix) {
+      params.set('prefix', '/');
+    } else {
+      params.delete('prefix');
+    }
+    return;
+  }
+  params.set('prefix', nextPrefix);
+}
+
 function resolveLibrarySelection(
   libraries: FileLibrary[],
   queryLibraryId: string | null,
@@ -44,18 +68,24 @@ function resolveLibrarySelection(
 
 export function useFilesUrlState(
   libraries: FileLibrary[],
-  { resetBrowseStateOnMount = false }: UseSourcesUrlStateOptions = {},
+  { defaultPrefix = '', resetBrowseStateOnMount = false }: UseSourcesUrlStateOptions = {},
 ) {
   const router = useRouter();
   const pathname = usePathname();
   const searchParams = useSearchParams();
   const searchParamsKey = searchParams.toString();
+  const routerRef = useRef(router);
+  const defaultBrowsePrefix = normalizeBrowsePrefix(defaultPrefix);
   const previousLibrariesLengthRef = useRef(libraries.length);
   const previousLibrariesLength = previousLibrariesLengthRef.current;
 
   const librarySelectionInitializedRef = useRef(false);
   const [selectedLibraryId, setSelectedLibraryId] = useState<string | null>(null);
-  const [prefix, setPrefix] = useState(resetBrowseStateOnMount ? '' : normalizeBrowsePrefix(searchParams.get('prefix')));
+  const [prefix, setPrefix] = useState(
+    resetBrowseStateOnMount
+      ? defaultBrowsePrefix
+      : readBrowsePrefix(new URLSearchParams(searchParamsKey), defaultBrowsePrefix),
+  );
   const [searchInput, setSearchInput] = useState(resetBrowseStateOnMount ? '' : (searchParams.get('search') ?? ''));
   const [search, setSearch] = useState(resetBrowseStateOnMount ? '' : (searchParams.get('search')?.trim() ?? ''));
   const [sortBy, setSortBy] = useState<FileSortBy>(
@@ -66,6 +96,10 @@ export function useFilesUrlState(
   );
   const browseResetAppliedRef = useRef(false);
   const ignoreInitialBrowseQueryRef = useRef(resetBrowseStateOnMount);
+
+  useEffect(() => {
+    routerRef.current = router;
+  }, [router]);
 
   useEffect(() => {
     if (libraries.length === 0) {
@@ -105,9 +139,9 @@ export function useFilesUrlState(
       const params = new URLSearchParams(searchParamsKey);
       if (!updater(params)) return;
       const query = params.toString();
-      router.replace(query ? `${pathname}?${query}` : pathname, { scroll: false });
+      routerRef.current.replace(query ? `${pathname}?${query}` : pathname, { scroll: false });
     },
-    [pathname, router, searchParamsKey],
+    [pathname, searchParamsKey],
   );
 
   useEffect(() => {
@@ -140,14 +174,14 @@ export function useFilesUrlState(
     const querySortBy = parseFileSortBy(params.get('sort_by'));
     const querySortOrder = parseFileSortOrder(params.get('sort_order'));
     const querySearch = params.get('search') ?? '';
-    const queryPrefix = normalizeBrowsePrefix(params.get('prefix'));
+    const queryPrefix = readBrowsePrefix(params, defaultBrowsePrefix);
     const trimmedQuerySearch = querySearch.trim();
     setSortBy((prev) => (prev === querySortBy ? prev : querySortBy));
     setSortOrder((prev) => (prev === querySortOrder ? prev : querySortOrder));
     setSearchInput((prev) => (prev === querySearch ? prev : querySearch));
     setSearch((prev) => (prev === trimmedQuerySearch ? prev : trimmedQuerySearch));
     setPrefix((prev) => (prev === queryPrefix ? prev : queryPrefix));
-  }, [replaceQueryParams, resetBrowseStateOnMount, searchParamsKey]);
+  }, [defaultBrowsePrefix, replaceQueryParams, resetBrowseStateOnMount, searchParamsKey]);
 
   useEffect(() => {
     if (resetBrowseStateOnMount) return;
@@ -188,17 +222,13 @@ export function useFilesUrlState(
   useEffect(() => {
     if (resetBrowseStateOnMount) return;
     replaceQueryParams((params) => {
-      const currentPrefix = normalizeBrowsePrefix(params.get('prefix'));
+      const currentPrefix = readBrowsePrefix(params, defaultBrowsePrefix);
       const nextPrefix = normalizeBrowsePrefix(prefix);
       if (currentPrefix === nextPrefix) return false;
-      if (!nextPrefix) {
-        params.delete('prefix');
-      } else {
-        params.set('prefix', nextPrefix);
-      }
+      writeBrowsePrefix(params, nextPrefix, defaultBrowsePrefix);
       return true;
     });
-  }, [prefix, replaceQueryParams, resetBrowseStateOnMount]);
+  }, [defaultBrowsePrefix, prefix, replaceQueryParams, resetBrowseStateOnMount]);
 
   const setSearchImmediately = useCallback((value: string) => {
     setSearchInput(value);

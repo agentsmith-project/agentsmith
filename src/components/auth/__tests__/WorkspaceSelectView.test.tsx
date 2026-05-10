@@ -178,7 +178,7 @@ describe('WorkspaceSelectView', () => {
   });
 
   it('returns to invite selection with project continuation when relogging', () => {
-    mockUseSearchParams.mockReturnValue(new URLSearchParams('desktop_auth_request_id=req_123&project_id=proj_alpha'));
+    mockUseSearchParams.mockReturnValue(new URLSearchParams('project_id=proj_alpha'));
     mockUseWorkspaces.mockReturnValue({
       data: undefined,
       isLoading: false,
@@ -196,7 +196,6 @@ describe('WorkspaceSelectView', () => {
     const url = new URL(href, 'http://localhost');
     expect(url.pathname).toBe('/login/workspace');
     expect(url.searchParams.get('project_id')).toBe('proj_alpha');
-    expect(url.searchParams.get('desktop_auth_request_id')).toBe('req_123');
   });
 
   it('clears deliberate logout intent and login continuation when the workspace selection page mounts', () => {

@@ -51,7 +51,6 @@ vi.mock('@/lib/api', () => ({
     return {
       getObjectMeta: vi.fn(),
       downloadObject: vi.fn(),
-      createObjectShareLink: vi.fn(),
     };
   }),
 }));
@@ -66,10 +65,6 @@ vi.mock('../file-object-details-panel/PreviewSection', () => ({
 
 vi.mock('../file-object-details-panel/PreviewDialog', () => ({
   PreviewDialog: () => null,
-}));
-
-vi.mock('../file-object-details-panel/ShareLinkDialog', () => ({
-  ShareLinkDialog: () => null,
 }));
 
 describe('FileObjectDetailsPanel', () => {

@@ -11,7 +11,8 @@
 ## 1. Scope
 
 这份 runbook 只保留当前 Agent task / terminal runner 的操作与排障真相：
-- local developer / managed docker / sandbox k8s 三条诊断模式
+- managed runner / sandbox k8s 的可执行 task HOME 诊断模式
+- Developer runner 的连接/存在状态诊断，以及 Slice 5 blocked 时的 fail-closed 证据要求
 - task workspace / HOME / CODEX_HOME 的路径合同
 - builtin skills / Context Store / managed credentials 的当前运行时约定
 - 当前推荐验证命令与 evidence 路径
@@ -23,9 +24,11 @@
 
 ## 2. Current runtime contract
 
-当前三条运行模式共享这些不变量：
+Managed runner is the current executable task HOME binding chain.
+
+当前可执行 task HOME 链路共享这些不变量：
 - `TASK_HOME` / `HOME` 始终是 task-bound persistent HOME：managed canonical path 是 `/home/<task_home_segment>`
-- Developer runner self-check / runner-test task 也使用绑定 file library 的稳定 `task_home_segment` 和 `binding_generation`；诊断路径不得从临时 task id 派生 HOME。
+- managed runner 的 HOME 来自 AFSCP workload mount binding 和 orchestrator-only mount plan；诊断路径不得从临时 task id 派生 HOME。
 - `cwd` 始终是 `$TASK_HOME/workspace`
 - Codex runtime 状态写到 `$HOME/.codex`
 - runner runtime 元数据写到 `$HOME/.mbos`
@@ -35,13 +38,23 @@
 - 短期 execution ticket、Project secrets、managed OAuth credentials 不得持久化到 `HOME`、workspace、Codex config 或可复用工具配置；它们只通过请求级环境变量或 AgentSmith Context Store 只读投影暴露
 - 共享上下文、简单 credentials、managed OAuth credentials 通过 AgentSmith Context Store 暴露，不应假设存在于 workspace 文件树
 
+### Developer runner Slice 5 blocker posture
+
+AFSCP export-backed developer connector 安全实现前，Developer runner 不是当前可执行 HOME binding 主链。它只能用于 Developer runner 记录、密钥/连接配置、readiness projection 和 Test connection 这类连接/存在状态诊断。
+
+Slice 5 blocked 时必须 fail closed：
+- Developer runner 不得创建、解析或暴露 local `file_library` HOME。
+- Developer runner runner-test task、task HOME/file access、terminal/recovery execution self-check 都必须拒绝或保持不可用。
+- 关闭 evidence 只需要 upstream blocker/no-workaround evidence：说明 AFSCP v1.0.0 缺少安全 export-backed lease/connector，并证明 AgentSmith 没有加入 raw storage/local path workaround。
+- 不要求 Developer runner backend-real/deploy smoke；如果 Slice 5 后续 unblocked 并实现，才恢复 Developer runner file marker / task execution smoke。
+
 ### Runtime modes
 
-| Runtime mode | Typical use | workspace binding | Runner process location | Task HOME / workspace |
+| Runtime mode | Typical use | Storage access posture | Runner process location | Task HOME / workspace |
 | --- | --- | --- | --- | --- |
-| Local developer | local-manual, host development | `file_library` | host machine | same layout: `$TASK_HOME`, `$TASK_HOME/workspace` |
-| Managed docker | unified deploy managed agent-task runner | `file_library` | runner container | `/home/<task_home_segment>`, `/home/<task_home_segment>/workspace` |
-| Sandbox k8s | sandbox workload pod | `pre_mounted` | workload container | `/home/<task_home_segment>`, `/home/<task_home_segment>/workspace` |
+| Developer runner | connection/existence diagnostics while Slice 5 is blocked | no task HOME/file access; fail closed for execution self-check | host machine | none while blocked; must not create local `file_library` HOME |
+| Managed docker | unified deploy managed agent-task runner | AFSCP workload mount binding | runner container | `/home/<task_home_segment>`, `/home/<task_home_segment>/workspace` |
+| Sandbox k8s | sandbox workload pod | orchestrator-provided mounted repo payload | workload container | `/home/<task_home_segment>`, `/home/<task_home_segment>/workspace` |
 
 Local/manual profiles that exercise the deployment default managed runner must prove the runner has a valid internal sandbox/runtime configuration before task execution. If the sandbox is unavailable, task creation or create-and-start should fail with a clear unavailable/configuration state instead of producing `AGENT_SANDBOX_NOT_CONFIGURED` after dispatch. Any sandbox/pod-internal API base must be reachable from inside that environment and must not rely on browser-host `localhost`.
 
@@ -97,6 +110,7 @@ npm run release:status
 - 再看 focused backend-real diagnostics：`npm run test:agent-task:runner:backend-real`
 - 按需要补 terminal matrix 与 UX owner diagnostics
 - 阶段收口或跨模块变更时再回到 `make local-real-status` 和 `npm run verify -- --goal=real --run`
+- Slice 5 blocked 时，Developer runner HOME/file access/backend-real/deploy smoke 不作为本轮通过条件；记录 fail-closed 与 no-workaround evidence。
 
 ## 4. Current evidence paths
 
@@ -108,6 +122,8 @@ npm run release:status
   - `artifacts/backend-real-visual/<run-id>/review.md`
 - task-local deliverables：
   - `<task-home>/workspace/.artifacts/`
+- Developer runner Slice 5 blocker evidence：
+  - upstream blocker/no-workaround record in the same run-scoped evidence bundle or PR evidence notes; do not attach local path or raw `file_library` smoke as acceptance evidence.
 
 说明：
 - current runbook 一律写 run-scoped `artifacts/backend-real/runs/<run-id>/...`
@@ -120,7 +136,8 @@ npm run release:status
 - The default managed runner is deployment/system-side configuration and is read-only from frontend/project APIs.
 - The current milestone has exactly one deployment default managed runner available across workspaces/projects.
 - Model/endpoint access is resolved through project Endpoint/model governance, not through mutable frontend runner configuration.
-- User task creation may omit `bound_runner_id` to bind the default managed runner, or authorized expert creation may send `bound_runner_id` for a Developer runner.
+- User task creation may omit `bound_runner_id` to bind the default managed runner.
+- `Developer runner` records may be created, configured, and test-connected through the Agent Runners management surface. While Slice 5 is blocked, Developer runner task binding, runner-test task, file access, terminal execution, and recovery execution must fail closed through backend affordances; no local path workaround is allowed.
 - Run, retry, terminal, and recovery actions do not accept runner selection fields; they use the task's immutable bound runner.
 - Public Agent Runners create/update/delete/key APIs manage Developer runners only and must reject managed runner config/default/key mutation fields.
 
@@ -138,6 +155,8 @@ npm run release:status
 - `TASK_HOME`
 - `HOME`
 - `WORKSPACE_PATH`
+
+`TASK_HOME` / `HOME` / `WORKSPACE_PATH` are execution-context env vars for managed/sandbox task execution. Slice 5 blocked Developer runner connection diagnostics must not synthesize them from a host-local file-library path.
 
 ## 6. Governance and product boundaries
 
@@ -193,7 +212,8 @@ npm run test:skills:backend-real
 - default managed runner seed/config 走 system-side/internal path，不走 public Agent Runners create API
 - default managed sandbox 已配置，或 task creation/create-and-start 提前暴露 unavailable/configuration state
 - sandbox/pod 内部 API base 不是 browser-host `localhost`
-- managed runner 和 Developer runner 两条 task/terminal/recovery smoke 都有证据
+- managed runner 的 AFSCP-backed task HOME / terminal / recovery smoke 有证据
+- Developer runner 在 Slice 5 blocked 时只有连接/存在状态证据；task HOME/file access/execution self-check 必须 fail closed，并附 upstream blocker/no-workaround evidence
 
 ## 8. What this runbook no longer contains
 

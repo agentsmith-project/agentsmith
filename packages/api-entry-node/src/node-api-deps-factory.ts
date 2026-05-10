@@ -1,30 +1,17 @@
 import { join } from 'node:path';
+import { Readable } from 'node:stream';
+import type { ReadableStream as WebReadableStream } from 'node:stream/web';
 import {
-  CreateFileLibraryFolderUseCase,
-  CreateFileLibraryObjectShareLinkUseCase,
-  CreateFileLibraryCatalogUseCase,
   CreateProjectUseCase,
-  DeleteFileLibraryObjectsUseCase,
-  DeleteFileLibraryCatalogUseCase,
   DeleteProjectUseCase,
-  DownloadFileLibraryObjectUseCase,
-  GetFileLibraryObjectMetaUseCase,
   GetProjectUseCase,
   ListProjectsUseCase,
-  ListFileLibraryObjectsUseCase,
-  ListFileLibraryCatalogsUseCase,
-  MoveFileLibraryObjectUseCase,
-  UploadFileLibraryObjectUseCase,
-  UpdateFileLibraryCatalogUseCase,
   UpdateProjectUseCase,
 } from '@mbos/application';
 import {
   InMemoryCache,
   InMemoryJsonDocStore,
-  InMemoryObjectStore,
-  JsonDocFileLibraryCatalogRepo,
   DEFAULT_MONGO_JSON_DOC_STORE_POOL_OPTIONS,
-  MinioObjectStore,
   MongoJsonDocStore,
   RedisCache,
   createProjectRepoFactoryResult,
@@ -39,19 +26,9 @@ import { AgentExecutionService } from './agent-execution-service.js';
 import { createAgentPresenceStore } from './agent-presence-store.js';
 import { InternalAgentPodManagerImpl } from './internal-agent-pod-manager.js';
 import { sanitizeWorkloadId } from './internal-agent-pod-manager.js';
-import {
-  InternalAgentWorkspaceProvisionerImpl,
-  parseCsiMountOptions,
-} from './internal-agent-workspace-provisioner.js';
+import { InternalAgentWorkspaceProvisionerImpl } from './internal-agent-workspace-provisioner.js';
 import { SandboxManagerClient } from './sandbox-manager-client.js';
 import type { NodeApiDeps } from './node-api-deps.js';
-import {
-  InMemoryFileLibraryGatewayManager,
-  InMemoryFileLibraryOrchestrator,
-  RealFileLibraryGatewayManager,
-  RealFileLibraryOrchestrator,
-  UnavailableFileLibraryOrchestrator,
-} from './file-library-runtime.js';
 import { writeProjectAuditEvent } from './audit-usage-recorders.js';
 import { UniversalProxyService } from './universal-proxy-service.js';
 import { NotebookTerminalService } from './notebook-terminal-service.js';
@@ -62,6 +39,29 @@ import {
   evaluateResourcePolicyAuthorization,
 } from './project-authz-engine.js';
 import { isDeveloperAgentRunner } from './agent-runner-profile.js';
+import { parseAfscpConfig } from './afscp-config.js';
+import { AfscpBootstrapClient, AfscpClient, AfscpProductClient } from './afscp-client.js';
+import {
+  ProjectAfscpNamespaceStore,
+  ProjectAfscpResourceOwnershipStore,
+} from './project-afscp-namespace-store.js';
+import {
+  ProjectStorageBootstrapService,
+  type ProjectStorageBootstrapServicePort,
+  type ProjectStoragePreflightResult,
+} from './project-storage-bootstrap-service.js';
+import { ProjectStorageLifecycleService } from './project-storage-lifecycle-service.js';
+import { AfscpResourceOwnershipGuard } from './afscp-resource-ownership-guard.js';
+import {
+  AfscpFileLibraryStorageAdapter,
+  JsonDocProjectFileLibraryAfscpMappingRepo,
+  normalizeAfscpFileLibraryPath,
+  type FileLibraryDownloadResult,
+  type FileLibraryEntry,
+  type FileLibraryObjectMeta,
+  type FileLibraryStoragePort,
+} from './file-library-afscp-storage.js';
+import { guessFileLibraryContentType } from './file-library-content-type.js';
 
 function deriveWebSocketBaseFromHttpBase(value: string | undefined | null): string {
   const trimmed = value?.trim();
@@ -151,16 +151,447 @@ function configureNotebookTerminalAuthorization(deps: Pick<
   });
 }
 
+type DefaultStoredFileLibraryEntry =
+  | {
+      kind: 'directory';
+      path: string;
+      modifiedAt: string;
+    }
+  | {
+      kind: 'file';
+      path: string;
+      body: Buffer;
+      contentType: string;
+      modifiedAt: string;
+      etag: string;
+    };
+
+type DefaultStoredFileLibraryRepo = {
+  namespaceId: string;
+  repoId: string;
+  projectStorageGeneration: number;
+  entries: Map<string, DefaultStoredFileLibraryEntry>;
+  savePoints: Map<string, { id: string; message?: string; createdAt: string }>;
+};
+
+type DefaultStoredTemplate = {
+  namespaceId: string;
+  templateId: string;
+  sourceRepo: DefaultStoredFileLibraryRepo;
+  sourceSavePointId: string;
+};
+
+function sanitizeDefaultAfscpSegment(value: string): string {
+  return value.trim().replace(/[^A-Za-z0-9_-]+/g, '_').replace(/^_+|_+$/g, '') || 'default';
+}
+
+function createDefaultProjectStorageReadyResult(input: {
+  workspaceId: string;
+  projectId: string;
+}): ProjectStoragePreflightResult {
+  return {
+    status: 'ready',
+    namespaceId: `ns_${sanitizeDefaultAfscpSegment(input.workspaceId)}_${sanitizeDefaultAfscpSegment(input.projectId)}`,
+    stage: 'ready',
+    generation: 1,
+    nextAction: 'none',
+    retryable: false,
+    lastErrorCode: null,
+  };
+}
+
+function createDefaultReadyProjectStorageBootstrapService(): ProjectStorageBootstrapServicePort {
+  return {
+    enabled: true,
+    bootstrapProjectStorage: async () => undefined,
+    reconcileProjectStorage: async () => undefined,
+    ensureProjectStorageReady: async (input) => createDefaultProjectStorageReadyResult(input),
+  };
+}
+
+function defaultRepoKey(input: { workspaceId: string; projectId: string; libraryId: string }): string {
+  return `${input.workspaceId}:${input.projectId}:${input.libraryId}`;
+}
+
+function defaultNowIso(): string {
+  return new Date().toISOString();
+}
+
+function normalizeDefaultObjectPath(input: string): string {
+  const normalized = normalizeAfscpFileLibraryPath(input);
+  if (!normalized) {
+    throw new Error('invalid_file_library_path');
+  }
+  return normalized;
+}
+
+function normalizeDefaultDirectoryPath(input: string): string {
+  const normalized = normalizeAfscpFileLibraryPath(input);
+  return normalized ? `${normalized}/` : '';
+}
+
+function defaultPathName(pathValue: string): string {
+  const trimmed = pathValue.endsWith('/') ? pathValue.slice(0, -1) : pathValue;
+  return trimmed.split('/').at(-1) ?? trimmed;
+}
+
+function defaultFileMeta(
+  pathValue: string,
+  entry: Extract<DefaultStoredFileLibraryEntry, { kind: 'file' }>,
+): FileLibraryObjectMeta {
+  return {
+    key: pathValue,
+    size_bytes: entry.body.length,
+    content_type: entry.contentType,
+    etag: entry.etag,
+    last_modified: entry.modifiedAt,
+    user_metadata: {
+      'content-type': entry.contentType,
+    },
+  };
+}
+
+function presentDefaultEntry(entry: DefaultStoredFileLibraryEntry): FileLibraryEntry {
+  if (entry.kind === 'directory') {
+    return {
+      kind: 'directory',
+      path: entry.path,
+      name: defaultPathName(entry.path),
+    };
+  }
+  return {
+    kind: 'file',
+    path: entry.path,
+    name: defaultPathName(entry.path),
+    size_bytes: entry.body.length,
+    content_type: entry.contentType,
+    modified_at: entry.modifiedAt,
+    etag: entry.etag,
+  };
+}
+
+function ensureDefaultParentDirectories(repo: DefaultStoredFileLibraryRepo, pathValue: string): void {
+  const segments = pathValue.split('/');
+  segments.pop();
+  let current = '';
+  for (const segment of segments) {
+    if (!segment) continue;
+    current = current ? `${current}${segment}/` : `${segment}/`;
+    if (!repo.entries.has(current)) {
+      repo.entries.set(current, {
+        kind: 'directory',
+        path: current,
+        modifiedAt: defaultNowIso(),
+      });
+    }
+  }
+}
+
+async function readDefaultWebStream(stream: WebReadableStream<Uint8Array>): Promise<Buffer> {
+  const reader = stream.getReader();
+  const chunks: Buffer[] = [];
+  try {
+    while (true) {
+      const next = await reader.read();
+      if (next.done) break;
+      chunks.push(Buffer.from(next.value));
+    }
+  } finally {
+    reader.releaseLock();
+  }
+  return Buffer.concat(chunks);
+}
+
+function createDefaultInMemoryFileLibraryStorageAdapter(): FileLibraryStoragePort {
+  const repos = new Map<string, DefaultStoredFileLibraryRepo>();
+  const templates = new Map<string, DefaultStoredTemplate>();
+
+  const requireRepo = (input: { workspaceId: string; projectId: string; libraryId: string }): DefaultStoredFileLibraryRepo => {
+    const repo = repos.get(defaultRepoKey(input));
+    if (!repo) {
+      throw new Error('file_library_afscp_mapping_not_found');
+    }
+    return repo;
+  };
+
+  return {
+    enabled: true,
+    async getOperationProjection() {
+      throw new Error('file_library_operation_not_found');
+    },
+    async createRepoForLibrary(input) {
+      const key = defaultRepoKey(input);
+      let repo = repos.get(key);
+      if (!repo) {
+        repo = {
+          namespaceId: input.namespaceId,
+          repoId: `repo_${sanitizeDefaultAfscpSegment(input.libraryId)}`,
+          projectStorageGeneration: input.projectStorageGeneration,
+          entries: new Map(),
+          savePoints: new Map(),
+        };
+        repos.set(key, repo);
+      }
+      return {
+        namespaceId: repo.namespaceId,
+        repoId: repo.repoId,
+        operationId: `op_${sanitizeDefaultAfscpSegment(input.libraryId)}`,
+        operationStatus: 'succeeded',
+        projectStorageGeneration: repo.projectStorageGeneration,
+      };
+    },
+    async deleteRepoForLibrary(input) {
+      repos.delete(defaultRepoKey(input));
+    },
+    async assertEmpty(input) {
+      const repo = requireRepo(input);
+      if (repo.entries.size > 0) {
+        throw new Error('file_library_not_empty');
+      }
+    },
+    async listSavePoints(input) {
+      const repo = requireRepo(input);
+      return Array.from(repo.savePoints.values()).map((savePoint) => ({
+        savePointId: savePoint.id,
+        repoId: repo.repoId,
+        ...(savePoint.message ? { message: savePoint.message } : {}),
+        createdAt: savePoint.createdAt,
+      }));
+    },
+    async createSavePoint(input) {
+      const repo = requireRepo(input);
+      const id = `sp_${sanitizeDefaultAfscpSegment(input.libraryId)}_${repo.savePoints.size + 1}`;
+      const createdAt = defaultNowIso();
+      repo.savePoints.set(id, {
+        id,
+        message: input.message,
+        createdAt,
+      });
+      return {
+        operationId: `op_${sanitizeDefaultAfscpSegment(input.libraryId)}_save_point_${repo.savePoints.size}`,
+        operationStatus: 'succeeded',
+        savePointId: id,
+        createdAt,
+      };
+    },
+    async createRestorePreview(input) {
+      requireRepo(input);
+      return {
+        operationId: `op_${sanitizeDefaultAfscpSegment(input.libraryId)}_restore_preview`,
+        operationStatus: 'succeeded',
+        restorePlanId: `plan_${sanitizeDefaultAfscpSegment(input.libraryId)}`,
+        sourceSavePointId: input.savePointId,
+      };
+    },
+    async runRestorePreview(input) {
+      requireRepo(input);
+      return {
+        operationId: `op_${sanitizeDefaultAfscpSegment(input.libraryId)}_restore_run`,
+        operationStatus: 'succeeded',
+        restorePlanId: `plan_${sanitizeDefaultAfscpSegment(input.libraryId)}`,
+        sourceSavePointId: null,
+      };
+    },
+    async discardRestorePreview(input) {
+      requireRepo(input);
+      return {
+        operationId: `op_${sanitizeDefaultAfscpSegment(input.libraryId)}_restore_discard`,
+        operationStatus: 'succeeded',
+        restorePlanId: `plan_${sanitizeDefaultAfscpSegment(input.libraryId)}`,
+        sourceSavePointId: null,
+      };
+    },
+    async createTemplateFromLibrary(input) {
+      const repo = requireRepo(input);
+      const sourceSavePointId = `sp_${sanitizeDefaultAfscpSegment(input.libraryId)}_template_${templates.size + 1}`;
+      repo.savePoints.set(sourceSavePointId, {
+        id: sourceSavePointId,
+        message: `Template source ${input.templateId}`,
+        createdAt: defaultNowIso(),
+      });
+      templates.set(input.templateId, {
+        namespaceId: repo.namespaceId,
+        templateId: input.templateId,
+        sourceRepo: repo,
+        sourceSavePointId,
+      });
+      return {
+        operationId: `op_${sanitizeDefaultAfscpSegment(input.libraryId)}_template_create`,
+        operationStatus: 'succeeded',
+        templateId: input.templateId,
+        sourceSavePointId,
+      };
+    },
+    async cloneTemplateToLibrary(input) {
+      const template = templates.get(input.templateId);
+      if (!template || template.namespaceId !== input.namespaceId) {
+        throw new Error('file_library_template_clone_failed');
+      }
+      const key = defaultRepoKey(input);
+      const repo: DefaultStoredFileLibraryRepo = {
+        namespaceId: input.namespaceId,
+        repoId: `repo_${sanitizeDefaultAfscpSegment(input.libraryId)}`,
+        projectStorageGeneration: input.projectStorageGeneration,
+        entries: new Map(template.sourceRepo.entries),
+        savePoints: new Map(),
+      };
+      repos.set(key, repo);
+      return {
+        namespaceId: repo.namespaceId,
+        repoId: repo.repoId,
+        operationId: `op_${sanitizeDefaultAfscpSegment(input.libraryId)}_template_clone`,
+        operationStatus: 'succeeded',
+        projectStorageGeneration: repo.projectStorageGeneration,
+      };
+    },
+    async listEntries(input) {
+      const repo = requireRepo(input);
+      const directoryPath = normalizeDefaultDirectoryPath(input.path);
+      const children = new Map<string, DefaultStoredFileLibraryEntry>();
+      for (const entry of repo.entries.values()) {
+        if (!entry.path.startsWith(directoryPath) || entry.path === directoryPath) continue;
+        const remainder = entry.path.slice(directoryPath.length);
+        const firstSegment = remainder.split('/')[0];
+        if (!firstSegment) continue;
+        const childPath = remainder.includes('/') ? `${directoryPath}${firstSegment}/` : entry.path;
+        if (children.has(childPath)) continue;
+        children.set(childPath, childPath.endsWith('/') && childPath !== entry.path
+          ? { kind: 'directory', path: childPath, modifiedAt: entry.modifiedAt }
+          : entry);
+      }
+      let items = Array.from(children.values()).map(presentDefaultEntry);
+      if (input.search) {
+        const needle = input.search.toLowerCase();
+        items = items.filter((item) => item.name.toLowerCase().includes(needle));
+      }
+      const direction = input.sortOrder === 'desc' ? -1 : 1;
+      items = items.sort((left, right) => {
+        if (input.sortBy === 'size_bytes') {
+          const leftSize = left.kind === 'file' ? left.size_bytes : -1;
+          const rightSize = right.kind === 'file' ? right.size_bytes : -1;
+          return (leftSize - rightSize) * direction;
+        }
+        if (input.sortBy === 'modified_at') {
+          const leftModified = left.kind === 'file' ? Date.parse(left.modified_at) : 0;
+          const rightModified = right.kind === 'file' ? Date.parse(right.modified_at) : 0;
+          return (leftModified - rightModified) * direction;
+        }
+        return left.name.localeCompare(right.name) * direction;
+      });
+      return {
+        path: directoryPath,
+        items: items.slice(0, input.pageSize),
+        nextContinuationToken: items.length > input.pageSize ? items[input.pageSize - 1]?.path ?? null : null,
+      };
+    },
+    async createFolder(input) {
+      const repo = requireRepo(input);
+      const folderPath = normalizeDefaultDirectoryPath(input.folderPath);
+      if (!folderPath) {
+        throw new Error('invalid_file_library_directory_path');
+      }
+      ensureDefaultParentDirectories(repo, folderPath);
+      repo.entries.set(folderPath, {
+        kind: 'directory',
+        path: folderPath,
+        modifiedAt: defaultNowIso(),
+      });
+    },
+    async deletePaths(input) {
+      const repo = requireRepo(input);
+      return input.paths.map((rawPath) => {
+        const pathValue = rawPath.endsWith('/') ? normalizeDefaultDirectoryPath(rawPath) : normalizeDefaultObjectPath(rawPath);
+        const deleteKeys = Array.from(repo.entries.keys()).filter((key) => key === pathValue || key.startsWith(pathValue.endsWith('/') ? pathValue : `${pathValue}/`));
+        if (deleteKeys.length === 0) {
+          return { path: rawPath, status: 'not_found' };
+        }
+        for (const key of deleteKeys) {
+          repo.entries.delete(key);
+        }
+        return { path: rawPath, status: 'deleted' };
+      });
+    },
+    async moveEntry(input) {
+      const repo = requireRepo(input);
+      const fromPath = input.fromPath.endsWith('/') ? normalizeDefaultDirectoryPath(input.fromPath) : normalizeDefaultObjectPath(input.fromPath);
+      const toPath = input.toPath.endsWith('/') ? normalizeDefaultDirectoryPath(input.toPath) : normalizeDefaultObjectPath(input.toPath);
+      const moving = Array.from(repo.entries.entries()).filter(([key]) => key === fromPath || key.startsWith(fromPath.endsWith('/') ? fromPath : `${fromPath}/`));
+      if (moving.length === 0) {
+        throw new Error('file_library_object_not_found');
+      }
+      const destinationExists = Array.from(repo.entries.keys()).some((key) => key === toPath || key.startsWith(toPath.endsWith('/') ? toPath : `${toPath}/`));
+      if (destinationExists && !input.overwrite) {
+        throw new Error('file_library_destination_exists');
+      }
+      if (destinationExists) {
+        for (const key of Array.from(repo.entries.keys())) {
+          if (key === toPath || key.startsWith(toPath.endsWith('/') ? toPath : `${toPath}/`)) {
+            repo.entries.delete(key);
+          }
+        }
+      }
+      for (const [key, entry] of moving) {
+        repo.entries.delete(key);
+        const nextPath = key === fromPath ? toPath : `${toPath}${key.slice(fromPath.length)}`;
+        repo.entries.set(nextPath, { ...entry, path: nextPath, modifiedAt: defaultNowIso() });
+      }
+    },
+    async uploadObject(input) {
+      const repo = requireRepo(input);
+      const objectPath = normalizeDefaultObjectPath(input.objectPath);
+      if (!input.overwrite && repo.entries.has(objectPath)) {
+        throw new Error('file_library_destination_exists');
+      }
+      const body = await readDefaultWebStream(input.body);
+      const entry: Extract<DefaultStoredFileLibraryEntry, { kind: 'file' }> = {
+        kind: 'file',
+        path: objectPath,
+        body,
+        contentType: input.contentType ?? guessFileLibraryContentType(objectPath) ?? 'application/octet-stream',
+        modifiedAt: defaultNowIso(),
+        etag: `"default-${body.length}-${Date.now().toString(36)}"`,
+      };
+      ensureDefaultParentDirectories(repo, objectPath);
+      repo.entries.set(objectPath, entry);
+      return presentDefaultEntry(entry) as Extract<FileLibraryEntry, { kind: 'file' }>;
+    },
+    async downloadObject(input): Promise<FileLibraryDownloadResult> {
+      const repo = requireRepo(input);
+      const objectPath = normalizeDefaultObjectPath(input.objectPath);
+      const entry = repo.entries.get(objectPath);
+      if (!entry || entry.kind !== 'file') {
+        throw new Error('file_library_object_not_found');
+      }
+      return {
+        meta: defaultFileMeta(objectPath, entry),
+        download: {
+          stream: Readable.from([entry.body]),
+          cancel: async () => undefined,
+        },
+      };
+    },
+    async getObjectMeta(input): Promise<FileLibraryObjectMeta> {
+      const repo = requireRepo(input);
+      const objectPath = normalizeDefaultObjectPath(input.objectPath);
+      const entry = repo.entries.get(objectPath);
+      if (!entry || entry.kind !== 'file') {
+        throw new Error('file_library_object_not_found');
+      }
+      return defaultFileMeta(objectPath, entry);
+    },
+  };
+}
+
 export function createDefaultNodeApiDeps(): NodeApiDeps {
   const projectRepo = createProjectRepoFactoryResult({}).projectRepo;
   const cache = new InMemoryCache();
   const docStore = new InMemoryJsonDocStore();
   const clock = new SystemClock();
-  const fileLibraryCatalogRepo = new JsonDocFileLibraryCatalogRepo(docStore);
-  const objectStore = new InMemoryObjectStore();
-  const fileLibraryBucket = 'mbos-dev';
   const agentPresenceStore = createAgentPresenceStore(cache);
   const agentResourceService = new AgentResourceService(docStore, cache, agentPresenceStore);
+  const projectAfscpNamespaceStore = new ProjectAfscpNamespaceStore(docStore);
+  const projectAfscpResourceOwnershipStore = new ProjectAfscpResourceOwnershipStore(docStore);
+  const fileLibraryStorageAdapter = createDefaultInMemoryFileLibraryStorageAdapter();
 
   const agentExecutionService = new AgentExecutionService(agentResourceService);
   const notebookTerminalService = new NotebookTerminalService(cache, agentExecutionService);
@@ -176,36 +607,20 @@ export function createDefaultNodeApiDeps(): NodeApiDeps {
     agentResourceService,
     agentExecutionService,
     notebookTerminalService,
-    fileLibraryBucket,
-    createFileLibraryCatalogUseCase: new CreateFileLibraryCatalogUseCase(
-      fileLibraryCatalogRepo,
-      new SimpleIdGenerator(),
-      clock,
-      cache,
-    ),
-    createFileLibraryFolderUseCase: new CreateFileLibraryFolderUseCase(fileLibraryCatalogRepo, objectStore, fileLibraryBucket),
-    createFileLibraryObjectShareLinkUseCase: new CreateFileLibraryObjectShareLinkUseCase(
-      fileLibraryCatalogRepo,
-      objectStore,
-      clock,
-      fileLibraryBucket,
-    ),
+    projectAfscpNamespaceStore,
+    projectStorageBootstrapService: createDefaultReadyProjectStorageBootstrapService(),
+    projectStorageLifecycleService: new ProjectStorageLifecycleService({
+      docStore,
+      namespaceStore: projectAfscpNamespaceStore,
+      fileLibraryStorageAdapter,
+    }),
+    afscpResourceOwnershipGuard: AfscpResourceOwnershipGuard.disabled(),
+    fileLibraryStorageAdapter,
     createProjectUseCase: new CreateProjectUseCase(projectRepo, new SimpleIdGenerator(), clock),
-    uploadFileLibraryObjectUseCase: new UploadFileLibraryObjectUseCase(fileLibraryCatalogRepo, objectStore, clock, fileLibraryBucket),
-    deleteFileLibraryCatalogUseCase: new DeleteFileLibraryCatalogUseCase(fileLibraryCatalogRepo, objectStore, cache, fileLibraryBucket),
-    deleteFileLibraryObjectsUseCase: new DeleteFileLibraryObjectsUseCase(fileLibraryCatalogRepo, objectStore, fileLibraryBucket),
-    moveFileLibraryObjectUseCase: new MoveFileLibraryObjectUseCase(fileLibraryCatalogRepo, objectStore, fileLibraryBucket),
-    downloadFileLibraryObjectUseCase: new DownloadFileLibraryObjectUseCase(fileLibraryCatalogRepo, objectStore, fileLibraryBucket),
-    getFileLibraryObjectMetaUseCase: new GetFileLibraryObjectMetaUseCase(fileLibraryCatalogRepo, objectStore, fileLibraryBucket),
     deleteProjectUseCase: new DeleteProjectUseCase(projectRepo),
     getProjectUseCase: new GetProjectUseCase(projectRepo),
     listProjectsUseCase: new ListProjectsUseCase(projectRepo),
-    listFileLibraryCatalogsUseCase: new ListFileLibraryCatalogsUseCase(fileLibraryCatalogRepo, cache),
-    listFileLibraryObjectsUseCase: new ListFileLibraryObjectsUseCase(fileLibraryCatalogRepo, objectStore, fileLibraryBucket),
-    updateFileLibraryCatalogUseCase: new UpdateFileLibraryCatalogUseCase(fileLibraryCatalogRepo, clock, cache),
     updateProjectUseCase: new UpdateProjectUseCase(projectRepo, clock),
-    fileLibraryOrchestrator: new InMemoryFileLibraryOrchestrator(),
-    fileLibraryGatewayManager: new InMemoryFileLibraryGatewayManager(),
     universalProxyService: UniversalProxyService.fromEnv(process.env),
   };
   configureNotebookTerminalAuthorization(deps);
@@ -260,21 +675,12 @@ export function createNodeApiDepsFromEnv(env: NodeJS.ProcessEnv): {
   repoMode: 'postgres' | 'memory';
 } {
   const universalProxyService = UniversalProxyService.fromEnv(env);
-  const canEnableRealFileLibraries = Boolean(
-    env.DATABASE_URL
-      && env.MINIO_ENDPOINT
-      && env.MINIO_ACCESS_KEY
-      && env.MINIO_SECRET_KEY,
-  );
+  const afscpConfig = parseAfscpConfig(env);
   const sandboxUrl = env.SANDBOX_MANAGER_URL?.trim() || '';
   const sandboxServiceKey = env.SANDBOX_SERVICE_KEY?.trim() || '';
   const internalAgentWsBaseUrl = env.AGENT_EXECUTION_WS_BASE_URL?.trim()
     || deriveWebSocketBaseFromHttpBase(env.AGENT_EXECUTION_HTTP_BASE_URL)
     || deriveWebSocketBaseFromHttpBase(env.INTERNAL_API_BASE_URL);
-  const internalAgentMetadataHostOverride = env.INTERNAL_AGENT_JUICEFS_META_HOST_OVERRIDE?.trim() || '';
-  const internalAgentMetadataPortOverride = env.INTERNAL_AGENT_JUICEFS_META_PORT_OVERRIDE?.trim() || '';
-  const internalMountBucketEndpoint =
-    env.JUICEFS_BUCKET_ENDPOINT_FOR_INTERNAL_MOUNT?.trim() || '';
   if ((sandboxUrl && !sandboxServiceKey) || (!sandboxUrl && sandboxServiceKey)) {
     throw Object.assign(new Error('sandbox_manager_config_incomplete: both SANDBOX_MANAGER_URL and SANDBOX_SERVICE_KEY must be set'), {
       code: 'SANDBOX_MANAGER_CONFIG_INCOMPLETE',
@@ -293,45 +699,58 @@ export function createNodeApiDepsFromEnv(env: NodeJS.ProcessEnv): {
         mongoClientOptions: DEFAULT_MONGO_JSON_DOC_STORE_POOL_OPTIONS,
       })
     : new InMemoryJsonDocStore();
-  const objectStore = env.MINIO_ENDPOINT
-    ? new MinioObjectStore({
-        endPoint: env.MINIO_ENDPOINT,
-        port: Number(env.MINIO_PORT ?? '19000'),
-        useSSL: (env.MINIO_USE_SSL ?? 'false') === 'true',
-        accessKey: env.MINIO_ACCESS_KEY ?? 'mbos',
-        secretKey: env.MINIO_SECRET_KEY ?? 'mbos_dev_password',
-      })
-    : new InMemoryObjectStore();
-  const fileLibraryCatalogRepo = new JsonDocFileLibraryCatalogRepo(docStore);
   const chatResourceService = new ChatResourceService(docStore);
   const endpointResourceService = new EndpointResourceService(docStore);
   const agentPresenceStore = createAgentPresenceStore(cache);
   const agentResourceService = new AgentResourceService(docStore, cache, agentPresenceStore);
   const agentExecutionService = new AgentExecutionService(agentResourceService);
   const notebookTerminalService = new NotebookTerminalService(cache, agentExecutionService);
+  const projectAfscpNamespaceStore = new ProjectAfscpNamespaceStore(docStore);
+  const projectAfscpResourceOwnershipStore = new ProjectAfscpResourceOwnershipStore(docStore);
+  const fileLibraryAfscpMappingRepo = new JsonDocProjectFileLibraryAfscpMappingRepo(docStore);
+  const afscpClient = afscpConfig.enabled
+    ? new AfscpClient({
+        baseUrl: afscpConfig.baseUrl,
+        callerService: afscpConfig.callerService,
+        serviceToken: afscpConfig.serviceToken,
+        bootstrapServiceToken: afscpConfig.bootstrapServiceToken,
+        bootstrapCallerService: afscpConfig.bootstrapCallerService,
+      })
+    : undefined;
+  const afscpBootstrapClient = afscpClient ? new AfscpBootstrapClient(afscpClient) : undefined;
+  const afscpProductClient = afscpClient ? new AfscpProductClient(afscpClient) : undefined;
+  const projectStorageBootstrapService = afscpConfig.enabled && afscpBootstrapClient
+    ? new ProjectStorageBootstrapService({
+        namespaceStore: projectAfscpNamespaceStore,
+        resourceOwnershipStore: projectAfscpResourceOwnershipStore,
+        client: afscpBootstrapClient,
+        defaultVolumeId: afscpConfig.defaultVolumeId,
+        productCallerService: afscpConfig.callerService,
+      })
+    : ProjectStorageBootstrapService.disabled();
+  const afscpResourceOwnershipGuard = afscpConfig.enabled
+    ? new AfscpResourceOwnershipGuard(projectAfscpNamespaceStore, projectAfscpResourceOwnershipStore)
+    : AfscpResourceOwnershipGuard.disabled();
+  const fileLibraryStorageAdapter = afscpConfig.enabled && afscpProductClient
+    ? new AfscpFileLibraryStorageAdapter({
+        client: afscpProductClient,
+        mappingRepo: fileLibraryAfscpMappingRepo,
+        projectAfscpNamespaceStore,
+        resourceOwnershipStore: projectAfscpResourceOwnershipStore,
+      })
+    : AfscpFileLibraryStorageAdapter.disabled();
   const sandboxClient = sandboxUrl && sandboxServiceKey
     ? new SandboxManagerClient(sandboxUrl, sandboxServiceKey)
     : undefined;
-  const internalAgentWorkspaceBindingManager = sandboxClient
+  const internalAgentWorkspaceBindingManager = sandboxClient && afscpProductClient
     ? new InternalAgentWorkspaceProvisionerImpl(
         docStore,
         sandboxClient,
         {
-          namespace: '',
-          csiDriver: env.INTERNAL_AGENT_JUICEFS_CSI_DRIVER?.trim() || 'csi.juicefs.com',
-          storageCapacity: env.INTERNAL_AGENT_WORKSPACE_CAPACITY?.trim() || '1Pi',
-          storageClassName: env.INTERNAL_AGENT_JUICEFS_STORAGE_CLASS_NAME?.trim() || '',
-          mountOptions: parseCsiMountOptions(env.INTERNAL_AGENT_JUICEFS_MOUNT_OPTIONS),
-          subdir: env.INTERNAL_AGENT_JUICEFS_SUBDIR?.trim() || '',
-          mountServiceAccount: env.INTERNAL_AGENT_JUICEFS_MOUNT_SERVICE_ACCOUNT?.trim() || '',
-          mountImage: env.INTERNAL_AGENT_JUICEFS_MOUNT_IMAGE?.trim() || '',
-          metadataHostOverride: internalAgentMetadataHostOverride || undefined,
-          metadataPortOverride: internalAgentMetadataPortOverride || undefined,
-          bucketEndpointForInternalMount: internalMountBucketEndpoint || undefined,
-          storageCredentialSeed:
-            env.FILE_LIBRARY_GATEWAY_ROOT_PASSWORD_SEED?.trim()
-            || env.AGENTSMITH_SECRET_KEY?.trim()
-            || undefined,
+          afscpProductClient,
+          projectStorageBootstrapService,
+          mappingRepo: fileLibraryAfscpMappingRepo,
+          resourceOwnershipStore: projectAfscpResourceOwnershipStore,
         },
       )
     : undefined;
@@ -351,13 +770,18 @@ export function createNodeApiDepsFromEnv(env: NodeJS.ProcessEnv): {
         { keepaliveIntervalMs: INTERNAL_AGENT_KEEPALIVE_INTERVAL_SECONDS * 1000 },
       )
     : undefined;
+  const projectStorageLifecycleService = new ProjectStorageLifecycleService({
+    docStore,
+    namespaceStore: projectAfscpNamespaceStore,
+    fileLibraryStorageAdapter,
+    ...(internalAgentWorkspaceBindingManager ? { internalAgentWorkspaceBindingManager } : {}),
+  });
   if (sandboxClient) {
     void sandboxClient.checkReady().catch((error: unknown) => {
       const message = error instanceof Error ? error.message : 'unknown_error';
       process.stderr.write(`[api-entry-node] sandbox readyz preflight failed: ${message}\n`);
     });
   }
-  const fileLibraryBucket = env.MINIO_BUCKET ?? 'mbos-dev';
   const deps: NodeApiDeps = {
       governanceReportsDir: join(process.cwd(), 'artifacts/governance-reports'),
       governanceRunsDir: join(process.cwd(), 'artifacts/governance-runs'),
@@ -369,6 +793,11 @@ export function createNodeApiDepsFromEnv(env: NodeJS.ProcessEnv): {
       agentResourceService,
       agentExecutionService,
       notebookTerminalService,
+      projectAfscpNamespaceStore,
+      projectStorageBootstrapService,
+      projectStorageLifecycleService,
+      afscpResourceOwnershipGuard,
+      fileLibraryStorageAdapter,
       ...(internalAgentPodManager ? { internalAgentPodManager } : {}),
       ...(internalWorkloadCoordinator ? { internalWorkloadCoordinator } : {}),
       ...(internalAgentWorkspaceBindingManager
@@ -377,40 +806,11 @@ export function createNodeApiDepsFromEnv(env: NodeJS.ProcessEnv): {
           internalAgentWorkspaceProvisioner: internalAgentWorkspaceBindingManager,
         }
         : {}),
-      fileLibraryBucket,
-      createFileLibraryCatalogUseCase: new CreateFileLibraryCatalogUseCase(
-        fileLibraryCatalogRepo,
-        new SimpleIdGenerator(),
-        clock,
-        cache,
-      ),
-      createFileLibraryFolderUseCase: new CreateFileLibraryFolderUseCase(fileLibraryCatalogRepo, objectStore, fileLibraryBucket),
-      createFileLibraryObjectShareLinkUseCase: new CreateFileLibraryObjectShareLinkUseCase(
-        fileLibraryCatalogRepo,
-        objectStore,
-        clock,
-        fileLibraryBucket,
-      ),
       createProjectUseCase: new CreateProjectUseCase(factory.projectRepo, new SimpleIdGenerator(), clock),
-      uploadFileLibraryObjectUseCase: new UploadFileLibraryObjectUseCase(fileLibraryCatalogRepo, objectStore, clock, fileLibraryBucket),
-      deleteFileLibraryCatalogUseCase: new DeleteFileLibraryCatalogUseCase(fileLibraryCatalogRepo, objectStore, cache, fileLibraryBucket),
-      deleteFileLibraryObjectsUseCase: new DeleteFileLibraryObjectsUseCase(fileLibraryCatalogRepo, objectStore, fileLibraryBucket),
-      moveFileLibraryObjectUseCase: new MoveFileLibraryObjectUseCase(fileLibraryCatalogRepo, objectStore, fileLibraryBucket),
-      downloadFileLibraryObjectUseCase: new DownloadFileLibraryObjectUseCase(fileLibraryCatalogRepo, objectStore, fileLibraryBucket),
-      getFileLibraryObjectMetaUseCase: new GetFileLibraryObjectMetaUseCase(fileLibraryCatalogRepo, objectStore, fileLibraryBucket),
       deleteProjectUseCase: new DeleteProjectUseCase(factory.projectRepo),
       getProjectUseCase: new GetProjectUseCase(factory.projectRepo),
       listProjectsUseCase: new ListProjectsUseCase(factory.projectRepo),
-      listFileLibraryCatalogsUseCase: new ListFileLibraryCatalogsUseCase(fileLibraryCatalogRepo, cache),
-      listFileLibraryObjectsUseCase: new ListFileLibraryObjectsUseCase(fileLibraryCatalogRepo, objectStore, fileLibraryBucket),
-      updateFileLibraryCatalogUseCase: new UpdateFileLibraryCatalogUseCase(fileLibraryCatalogRepo, clock, cache),
       updateProjectUseCase: new UpdateProjectUseCase(factory.projectRepo, clock),
-      fileLibraryOrchestrator: canEnableRealFileLibraries
-        ? new RealFileLibraryOrchestrator()
-        : new UnavailableFileLibraryOrchestrator(),
-      fileLibraryGatewayManager: canEnableRealFileLibraries
-        ? new RealFileLibraryGatewayManager()
-        : new InMemoryFileLibraryGatewayManager(),
       ...(universalProxyService ? { universalProxyService } : {}),
     };
   configureNotebookTerminalAuthorization(deps);

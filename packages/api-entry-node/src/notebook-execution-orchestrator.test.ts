@@ -16,6 +16,10 @@ import {
 import { JsonDocTaskFileLibraryBindingRepo } from './notebook-task/task-file-library-bindings.js';
 import { resolveInternalTicket } from './internal-ticket-store.js';
 import { resolveWorkspaceScopedCollection } from './workspace-tenant-collections.js';
+import {
+  DEVELOPER_RUNNER_TASK_HOME_BINDING_UNAVAILABLE_CODE,
+  DEVELOPER_RUNNER_TASK_HOME_BINDING_UNAVAILABLE_MESSAGE,
+} from './developer-runner-workspace-blocker.js';
 
 function createDeferred<T = void>(): {
   promise: Promise<T>;
@@ -71,13 +75,80 @@ async function seedReadyTaskWorkspaceLibrary(
     name: input.name ?? input.libraryId,
     status: 'ready',
     version: 1,
-    filesystem_name: input.libraryId.replace(/_/g, '-'),
     file_library_home_segment: `flibhome_${input.libraryId.replace(/[^a-zA-Z0-9]/g, '').slice(0, 32)}`,
-    source: 'manual',
+    source: 'agent_task_files',
     created_by_user_id: input.ownerUserId,
     created_at: now,
     updated_at: now,
   });
+}
+
+function attachManagedExecutionDeps<T extends Record<string, unknown>>(deps: T): T {
+  Object.assign(deps, {
+    internalAgentPodManager: {
+      ensureAgentReady: vi.fn(async () => undefined),
+      keepalive: vi.fn(async () => undefined),
+    },
+    internalAgentWorkspaceBindingManager: {
+      ensureWorkspaceBinding: vi.fn(async (input: {
+        fileLibraryId: string;
+        taskHomeSegment: string;
+      }) => {
+        const taskHomePath = `/home/${input.taskHomeSegment}`;
+        const workspacePath = `${taskHomePath}/workspace`;
+        return {
+          workspaceMount: {
+            bindingId: `wmb_${input.fileLibraryId}`,
+            mountPath: taskHomePath,
+            taskHomePath,
+            workspacePath,
+            artifactsPath: `${workspacePath}/.artifacts`,
+          },
+          binding: {
+            file_library_id: input.fileLibraryId,
+            task_home_binding_id: `wmb_${input.fileLibraryId}`,
+            afscp_mount_binding_id: `wmb_${input.fileLibraryId}`,
+            mount_binding_status: 'issued',
+          },
+        };
+      }),
+    },
+    internalWorkloadCoordinator: {
+      acquireHolder: vi.fn(async () => undefined),
+      releaseHolder: vi.fn(async () => undefined),
+    },
+  });
+  return deps;
+}
+
+async function seedReadyTaskWorkspaceLibraryForTask(
+  docStore: InMemoryJsonDocStore,
+  task: {
+    workspace_id: string;
+    project_id: string;
+    owner_user_id: string;
+    workspace_file_library_id?: string;
+    workspace_file_library_name?: string;
+  },
+): Promise<void> {
+  const libraryId = task.workspace_file_library_id?.trim();
+  if (!libraryId) throw new Error('workspace_file_library_id_required_for_managed_test_task');
+  await seedReadyTaskWorkspaceLibrary(docStore, {
+    workspaceId: task.workspace_id,
+    projectId: task.project_id,
+    libraryId,
+    ownerUserId: task.owner_user_id,
+    name: task.workspace_file_library_name,
+  });
+}
+
+function setManagedExecutionApiBaseForTest(value = 'http://api:20000'): () => void {
+  const previousInternalApiBase = process.env.INTERNAL_API_BASE_URL;
+  process.env.INTERNAL_API_BASE_URL = value;
+  return () => {
+    if (previousInternalApiBase === undefined) delete process.env.INTERNAL_API_BASE_URL;
+    else process.env.INTERNAL_API_BASE_URL = previousInternalApiBase;
+  };
 }
 
 describe('notebook-execution-orchestrator governance preflight', () => {
@@ -132,8 +203,8 @@ describe('notebook-execution-orchestrator governance preflight', () => {
         getAgent: vi.fn(async () => ({
           id: 'agent_1',
           status: 'enabled',
-          runner_provider: 'developer',
-          mode: 'external',
+          runner_provider: 'managed',
+          mode: 'internal',
           execution_preferences_json: {
             notebook: {
               endpoint_id: endpointId,
@@ -253,6 +324,7 @@ describe('notebook-execution-orchestrator governance preflight', () => {
   });
 
   it('persists final notebook task truth before finalizing the run and emitting terminal SSE updates', async () => {
+    const restoreManagedExecutionApiBase = setManagedExecutionApiBaseForTest();
     const docStore = new InMemoryJsonDocStore();
     const originalUpsert = docStore.upsert.bind(docStore);
     const steps: string[] = [];
@@ -266,15 +338,15 @@ describe('notebook-execution-orchestrator governance preflight', () => {
       return originalUpsert(collection, id, doc);
     };
 
-    const deps = {
+    const deps = attachManagedExecutionDeps({
       cache: new InMemoryCache(),
       docStore,
       agentResourceService: {
         getAgent: vi.fn(async () => ({
           id: 'agent_final_order',
           status: 'enabled',
-          runner_provider: 'developer',
-          mode: 'external',
+          runner_provider: 'managed',
+          mode: 'internal',
           execution_preferences_json: {
             notebook: {
               endpoint_id: 'ep_final_order',
@@ -310,7 +382,7 @@ describe('notebook-execution-orchestrator governance preflight', () => {
           })(),
         })),
       },
-    } as unknown as NodeApiDeps;
+    }) as unknown as NodeApiDeps;
     await seedAgentTaskModelSetting(docStore, {
       workspaceId: 'ws_finalizing_failure',
       projectId: 'proj_finalizing_failure',
@@ -330,7 +402,10 @@ describe('notebook-execution-orchestrator governance preflight', () => {
       updated_at: new Date().toISOString(),
       last_activity_at: new Date().toISOString(),
       agent_id: 'agent_final_order',
+      workspace_file_library_id: 'flib_final_order',
+      workspace_file_library_name: 'Final Order Workspace',
     };
+    await seedReadyTaskWorkspaceLibraryForTask(deps.docStore as InMemoryJsonDocStore, task);
     const assistantMessage = {
       id: 'msg_final_order',
       task_id: task.id,
@@ -340,41 +415,45 @@ describe('notebook-execution-orchestrator governance preflight', () => {
     };
     const activityItems: unknown[] = [];
 
-    await runNotebookTaskWithExecutionAgent({
-      deps,
-      task,
-      assistantMessage,
-      agentId: 'agent_final_order',
-      user: { id: 'user_final_order', name: 'Final Order User', email: 'final@example.com' },
-      publicBaseUrl: 'http://localhost:20000',
-      buildRunId: () => 'run_final_order',
-      buildProxyUsername: () => 'final_order_user',
-      mapTaskMessagesForExecution: () => [],
-      updateTaskActivity: () => undefined,
-      emitTaskEvent: (_taskId, payload) => {
-        if (payload.type === 'activity_item') {
-          steps.push('emit_activity_item');
-          activityItems.push(payload.data);
-        }
-        if (payload.type === 'task_update') {
-          steps.push('emit_task_update');
-        }
-      },
-      onFinalize: () => {
-        steps.push('finalize');
-      },
-      debugLog: () => undefined,
-      taskCollections: {
-        tasks: 'project_tasks',
-        messages: 'project_task_messages',
-      },
-      createTaskArtifact: async () => ({
-        id: 'artifact_final_order',
-        task_id: task.id,
-        type: 'file',
-        created_at: new Date().toISOString(),
-      }),
-    });
+    try {
+      await runNotebookTaskWithExecutionAgent({
+        deps,
+        task,
+        assistantMessage,
+        agentId: 'agent_final_order',
+        user: { id: 'user_final_order', name: 'Final Order User', email: 'final@example.com' },
+        publicBaseUrl: 'http://localhost:20000',
+        buildRunId: () => 'run_final_order',
+        buildProxyUsername: () => 'final_order_user',
+        mapTaskMessagesForExecution: () => [],
+        updateTaskActivity: () => undefined,
+        emitTaskEvent: (_taskId, payload) => {
+          if (payload.type === 'activity_item') {
+            steps.push('emit_activity_item');
+            activityItems.push(payload.data);
+          }
+          if (payload.type === 'task_update') {
+            steps.push('emit_task_update');
+          }
+        },
+        onFinalize: () => {
+          steps.push('finalize');
+        },
+        debugLog: () => undefined,
+        taskCollections: {
+          tasks: 'project_tasks',
+          messages: 'project_task_messages',
+        },
+        createTaskArtifact: async () => ({
+          id: 'artifact_final_order',
+          task_id: task.id,
+          type: 'file',
+          created_at: new Date().toISOString(),
+        }),
+      });
+    } finally {
+      restoreManagedExecutionApiBase();
+    }
 
     expect(steps).toEqual([
       'persist_message',
@@ -395,6 +474,7 @@ describe('notebook-execution-orchestrator governance preflight', () => {
   });
 
   it('marks the shared run as finalizing instead of clearing it to idle when terminal truth persistence fails', async () => {
+    const restoreManagedExecutionApiBase = setManagedExecutionApiBaseForTest();
     const docStore = new InMemoryJsonDocStore();
     const originalUpsert = docStore.upsert.bind(docStore);
     docStore.upsert = async (collection, id, doc) => {
@@ -414,15 +494,15 @@ describe('notebook-execution-orchestrator governance preflight', () => {
     };
 
     const cache = new InMemoryCache();
-    const deps = {
+    const deps = attachManagedExecutionDeps({
       cache,
       docStore,
       agentResourceService: {
         getAgent: vi.fn(async () => ({
           id: 'agent_finalizing_failure',
           status: 'enabled',
-          runner_provider: 'developer',
-          mode: 'external',
+          runner_provider: 'managed',
+          mode: 'internal',
           execution_preferences_json: {
             notebook: {
               endpoint_id: 'ep_finalizing_failure',
@@ -459,7 +539,7 @@ describe('notebook-execution-orchestrator governance preflight', () => {
           })(),
         })),
       },
-    } as unknown as NodeApiDeps;
+    }) as unknown as NodeApiDeps;
     await seedAgentTaskModelSetting(deps.docStore as InMemoryJsonDocStore, {
       workspaceId: 'ws_internal',
       projectId: 'proj_internal',
@@ -486,7 +566,10 @@ describe('notebook-execution-orchestrator governance preflight', () => {
       updated_at: new Date().toISOString(),
       last_activity_at: new Date().toISOString(),
       agent_id: 'agent_finalizing_failure',
+      workspace_file_library_id: 'flib_finalizing_failure',
+      workspace_file_library_name: 'Finalizing Failure Workspace',
     };
+    await seedReadyTaskWorkspaceLibraryForTask(deps.docStore as InMemoryJsonDocStore, task);
     const assistantMessage = {
       id: 'msg_finalizing_failure',
       task_id: task.id,
@@ -502,33 +585,37 @@ describe('notebook-execution-orchestrator governance preflight', () => {
     }))).resolves.toBe(true);
 
     const finalizeCalls: Array<{ durableTerminalTruth: boolean }> = [];
-    await runNotebookTaskWithExecutionAgent({
-      deps,
-      task,
-      assistantMessage,
-      agentId: 'agent_finalizing_failure',
-      user: { id: 'user_finalizing_failure', name: 'Finalizing Failure User', email: 'failure@example.com' },
-      publicBaseUrl: 'http://localhost:20000',
-      buildRunId: () => 'run_finalizing_failure',
-      buildProxyUsername: () => 'finalizing_failure_user',
-      mapTaskMessagesForExecution: () => [],
-      updateTaskActivity: () => undefined,
-      emitTaskEvent: () => undefined,
-      onFinalize: (_taskId, _runId, summary) => {
-        finalizeCalls.push(summary);
-      },
-      debugLog: () => undefined,
-      taskCollections: {
-        tasks: 'project_tasks',
-        messages: 'project_task_messages',
-      },
-      createTaskArtifact: async () => ({
-        id: 'artifact_finalizing_failure',
-        task_id: task.id,
-        type: 'file',
-        created_at: new Date().toISOString(),
-      }),
-    });
+    try {
+      await runNotebookTaskWithExecutionAgent({
+        deps,
+        task,
+        assistantMessage,
+        agentId: 'agent_finalizing_failure',
+        user: { id: 'user_finalizing_failure', name: 'Finalizing Failure User', email: 'failure@example.com' },
+        publicBaseUrl: 'http://localhost:20000',
+        buildRunId: () => 'run_finalizing_failure',
+        buildProxyUsername: () => 'finalizing_failure_user',
+        mapTaskMessagesForExecution: () => [],
+        updateTaskActivity: () => undefined,
+        emitTaskEvent: () => undefined,
+        onFinalize: (_taskId, _runId, summary) => {
+          finalizeCalls.push(summary);
+        },
+        debugLog: () => undefined,
+        taskCollections: {
+          tasks: 'project_tasks',
+          messages: 'project_task_messages',
+        },
+        createTaskArtifact: async () => ({
+          id: 'artifact_finalizing_failure',
+          task_id: task.id,
+          type: 'file',
+          created_at: new Date().toISOString(),
+        }),
+      });
+    } finally {
+      restoreManagedExecutionApiBase();
+    }
 
     expect(finalizeCalls).toEqual([
       expect.objectContaining({ durableTerminalTruth: false }),
@@ -603,15 +690,17 @@ describe('notebook-execution-orchestrator governance preflight', () => {
       internalAgentWorkspaceBindingManager: {
         ensureWorkspaceBinding: vi.fn(async () => ({
           workspaceMount: {
-            bindingId: 'flib_internal',
+            bindingId: 'wmb_internal',
             mountPath: '/home/task_internal',
             taskHomePath: '/home/task_internal',
             workspacePath: '/home/task_internal/workspace',
             artifactsPath: '/home/task_internal/workspace/.artifacts',
-            subPath: 'agent-tasks/task_internal',
           },
           binding: {
             file_library_id: 'flib_internal',
+            task_home_binding_id: 'wmb_internal',
+            afscp_mount_binding_id: 'wmb_internal',
+            mount_binding_status: 'issued',
           },
         })),
       },
@@ -718,6 +807,25 @@ describe('notebook-execution-orchestrator governance preflight', () => {
         }),
       }),
     );
+    expect(deps.internalAgentWorkspaceBindingManager?.ensureWorkspaceBinding).toHaveBeenCalledWith(expect.objectContaining({
+      workspaceId: 'ws_internal',
+      projectId: 'proj_internal',
+      fileLibraryId: 'flib_internal',
+      taskId: 'task_internal',
+      taskHomeSegment: 'task_internal',
+      actorUserId: 'user_internal',
+      requestId: 'run_internal',
+    }));
+    expect(deps.internalAgentPodManager?.ensureAgentReady).toHaveBeenCalledWith(expect.objectContaining({
+      workspaceMount: expect.objectContaining({
+        bindingId: 'wmb_internal',
+        taskHomePath: '/home/task_internal',
+        workspacePath: '/home/task_internal/workspace',
+      }),
+    }));
+    expect(JSON.stringify((deps.internalAgentPodManager?.ensureAgentReady as ReturnType<typeof vi.fn>).mock.calls[0]?.[0])).not.toMatch(
+      /metadata_url|storage_endpoint|storage_bucket_url|filesystem_name|juicefs|secret|access_key/i,
+    );
     expect(acquireHolder).toHaveBeenCalledWith({
       workspaceId: 'ws_internal',
       projectId: 'proj_internal',
@@ -759,15 +867,15 @@ describe('notebook-execution-orchestrator governance preflight', () => {
       cancel: () => undefined,
       stream: (async function* stream() {})(),
     }));
-    const deps = {
+    const deps = attachManagedExecutionDeps({
       cache: new InMemoryCache(),
       docStore: new InMemoryJsonDocStore(),
       agentResourceService: {
         getAgent: vi.fn(async () => ({
           id: 'agent_external_compose',
           status: 'enabled',
-          runner_provider: 'developer',
-          mode: 'external',
+          runner_provider: 'managed',
+          mode: 'internal',
           config: {
             runner_runtime: 'compose_managed',
           },
@@ -804,7 +912,7 @@ describe('notebook-execution-orchestrator governance preflight', () => {
       agentExecutionService: {
         dispatchStreamingRequest,
       },
-    } as unknown as NodeApiDeps;
+    }) as unknown as NodeApiDeps;
     await seedAgentTaskModelSetting(deps.docStore as InMemoryJsonDocStore, {
       workspaceId: 'ws_external',
       projectId: 'proj_external',
@@ -827,6 +935,7 @@ describe('notebook-execution-orchestrator governance preflight', () => {
       workspace_file_library_id: 'flib_external',
       workspace_file_library_name: 'External Workspace',
     };
+    await seedReadyTaskWorkspaceLibraryForTask(deps.docStore as InMemoryJsonDocStore, task);
     const assistantMessage = {
       id: 'msg_external_compose',
       task_id: task.id,
@@ -871,7 +980,7 @@ describe('notebook-execution-orchestrator governance preflight', () => {
     expect(dispatchStreamingRequest).toHaveBeenCalledWith(
       expect.objectContaining({
         executionContext: expect.objectContaining({
-          api_base: 'http://host.docker.internal:20000/api/v1',
+          api_base: 'http://api:20000/api/v1',
           execution_ticket: expect.stringMatching(/^exec_/),
           runner_id: 'agent_external_compose',
           model_catalog: {
@@ -880,9 +989,9 @@ describe('notebook-execution-orchestrator governance preflight', () => {
             supports_parallel_tool_calls: false,
             apply_patch_tool_type: 'function',
           },
-          runner_session_scope: 'agent_presence',
-          workspace_binding_mode: 'file_library',
-          runtime_profile: 'developer',
+          runner_session_scope: 'task_execution',
+          workspace_binding_mode: 'pre_mounted',
+          runtime_profile: 'managed',
           task_home_segment: 'task_external_compose',
           library_root_path: '.',
           workspace_file_library_id: 'flib_external',
@@ -893,7 +1002,7 @@ describe('notebook-execution-orchestrator governance preflight', () => {
     expect(dispatchArg?.executionContext).not.toHaveProperty('user_bearer_token');
   });
 
-  it('uses agent-presence scope for configless dev-direct external notebook agents', async () => {
+  it('fails closed for configless dev-direct external notebook agents before local task HOME binding', async () => {
     const previousInternalApiBase = process.env.INTERNAL_API_BASE_URL;
     const previousExternalApiBase = process.env.AGENT_RUNNER_DEVELOPER_EXECUTION_HTTP_BASE_URL;
     const previousDeveloperWorkspaceRoot = process.env.MBOS_AGENT_TASK_DEVELOPER_WORKSPACE_ROOT;
@@ -901,11 +1010,23 @@ describe('notebook-execution-orchestrator governance preflight', () => {
     process.env.AGENT_RUNNER_DEVELOPER_EXECUTION_HTTP_BASE_URL = 'http://localhost:21000';
     process.env.MBOS_AGENT_TASK_DEVELOPER_WORKSPACE_ROOT = '/tmp/agentsmith-dev-workspaces';
 
+    const emitted: Array<{ type: string; data: unknown }> = [];
+    const finalizeCalls: Array<{ durableTerminalTruth: boolean }> = [];
     const dispatchStreamingRequest = vi.fn(async () => ({
       requestId: 'req_external_dev_direct',
       cancel: () => undefined,
       stream: (async function* stream() {})(),
     }));
+    const ensureWorkspaceBinding = vi.fn(async () => ({
+      workspaceMount: {
+        bindingId: 'wmb_external_dev_direct',
+        mountPath: '/should-not-bind',
+      },
+      binding: {
+        file_library_id: 'flib_external',
+      },
+    }));
+    const acquireHolder = vi.fn(async () => undefined);
     const deps = {
       cache: new InMemoryCache(),
       docStore: new InMemoryJsonDocStore(),
@@ -947,6 +1068,13 @@ describe('notebook-execution-orchestrator governance preflight', () => {
       },
       agentExecutionService: {
         dispatchStreamingRequest,
+      },
+      internalAgentWorkspaceBindingManager: {
+        ensureWorkspaceBinding,
+      },
+      internalWorkloadCoordinator: {
+        acquireHolder,
+        releaseHolder: vi.fn(async () => undefined),
       },
     } as unknown as NodeApiDeps;
     await seedAgentTaskModelSetting(deps.docStore as InMemoryJsonDocStore, {
@@ -991,8 +1119,12 @@ describe('notebook-execution-orchestrator governance preflight', () => {
         buildProxyUsername: () => 'external_user',
         mapTaskMessagesForExecution: () => [],
         updateTaskActivity: () => undefined,
-        emitTaskEvent: () => undefined,
-        onFinalize: () => undefined,
+        emitTaskEvent: (_taskId, payload) => {
+          emitted.push(payload as { type: string; data: unknown });
+        },
+        onFinalize: (_taskId, _runId, summary) => {
+          finalizeCalls.push(summary);
+        },
         debugLog: () => undefined,
         taskCollections: {
           tasks: 'project_tasks',
@@ -1014,26 +1146,25 @@ describe('notebook-execution-orchestrator governance preflight', () => {
       else process.env.MBOS_AGENT_TASK_DEVELOPER_WORKSPACE_ROOT = previousDeveloperWorkspaceRoot;
     }
 
-    expect(dispatchStreamingRequest).toHaveBeenCalledWith(
-      expect.objectContaining({
-        executionContext: expect.objectContaining({
-          api_base: 'http://localhost:21000/api/v1',
-          execution_ticket: expect.stringMatching(/^exec_/),
-          runner_id: 'agent_external_dev_direct',
-          runner_session_scope: 'agent_presence',
-          workspace_binding_mode: 'file_library',
-          runtime_profile: 'developer',
-          task_home_segment: 'task_external_dev_direct',
-          task_home_path: '/tmp/agentsmith-dev-workspaces/task_external_dev_direct',
-          workspace_path: '/tmp/agentsmith-dev-workspaces/task_external_dev_direct/workspace',
-          artifacts_path: '/tmp/agentsmith-dev-workspaces/task_external_dev_direct/workspace/.artifacts',
-          library_root_path: '.',
-          workspace_file_library_id: 'flib_external',
-        }),
-      }),
+    expect(dispatchStreamingRequest).not.toHaveBeenCalled();
+    expect(deps.endpointResourceService.getEndpoint).not.toHaveBeenCalled();
+    expect(ensureWorkspaceBinding).not.toHaveBeenCalled();
+    expect(acquireHolder).not.toHaveBeenCalled();
+    expect(finalizeCalls).toEqual([
+      expect.objectContaining({ durableTerminalTruth: true }),
+    ]);
+    expect(assistantMessage.content).toContain(DEVELOPER_RUNNER_TASK_HOME_BINDING_UNAVAILABLE_CODE);
+    expect(emitted.find((item) => item.type === 'error')).toMatchObject({
+      type: 'error',
+      data: {
+        code: DEVELOPER_RUNNER_TASK_HOME_BINDING_UNAVAILABLE_CODE,
+        message: DEVELOPER_RUNNER_TASK_HOME_BINDING_UNAVAILABLE_MESSAGE,
+      },
+    });
+    const observableJson = JSON.stringify({ emitted, assistantMessage });
+    expect(observableJson).not.toMatch(
+      /\/tmp\/agentsmith-dev-workspaces|task_home_path|workspace_path|artifacts_path|developer_workspace_root|workspace_binding_mode/i,
     );
-    const dispatchArg = dispatchStreamingRequest.mock.calls[0]?.[0] as { executionContext?: Record<string, unknown> } | undefined;
-    expect(dispatchArg?.executionContext).not.toHaveProperty('user_bearer_token');
   });
 
   it('uses project setting endpoint protocol for external task dispatch regardless of runner preferences', async () => {
@@ -1047,15 +1178,15 @@ describe('notebook-execution-orchestrator governance preflight', () => {
       cancel: () => undefined,
       stream: (async function* stream() {})(),
     }));
-    const deps = {
+    const deps = attachManagedExecutionDeps({
       cache: new InMemoryCache(),
       docStore: new InMemoryJsonDocStore(),
       agentResourceService: {
         getAgent: vi.fn(async () => ({
           id: 'agent_external_responses',
           status: 'enabled',
-          runner_provider: 'developer',
-          mode: 'external',
+          runner_provider: 'managed',
+          mode: 'internal',
           default_endpoint_id: 'ep_runner_default_stale',
           config: {
             runner_runtime: 'compose_managed',
@@ -1092,7 +1223,7 @@ describe('notebook-execution-orchestrator governance preflight', () => {
       agentExecutionService: {
         dispatchStreamingRequest,
       },
-    } as unknown as NodeApiDeps;
+    }) as unknown as NodeApiDeps;
     await seedAgentTaskModelSetting(deps.docStore as InMemoryJsonDocStore, {
       workspaceId: 'ws_external',
       projectId: 'proj_external',
@@ -1115,6 +1246,7 @@ describe('notebook-execution-orchestrator governance preflight', () => {
       workspace_file_library_id: 'flib_external',
       workspace_file_library_name: 'External Workspace',
     };
+    await seedReadyTaskWorkspaceLibraryForTask(deps.docStore as InMemoryJsonDocStore, task);
     const assistantMessage = {
       id: 'msg_external_responses',
       task_id: task.id,
@@ -1191,20 +1323,21 @@ describe('notebook-execution-orchestrator governance preflight', () => {
   });
 
   it('dispatches freeform apply_patch catalog truth for native OpenAI responses endpoints', async () => {
+    const restoreManagedExecutionApiBase = setManagedExecutionApiBaseForTest();
     const dispatchStreamingRequest = vi.fn(async () => ({
       requestId: 'req_native_responses',
       cancel: () => undefined,
       stream: (async function* stream() {})(),
     }));
-    const deps = {
+    const deps = attachManagedExecutionDeps({
       cache: new InMemoryCache(),
       docStore: new InMemoryJsonDocStore(),
       agentResourceService: {
         getAgent: vi.fn(async () => ({
           id: 'agent_native_responses',
           status: 'enabled',
-          runner_provider: 'developer',
-          mode: 'external',
+          runner_provider: 'managed',
+          mode: 'internal',
           execution_preferences_json: {
             notebook: {
               endpoint_id: 'ep_native_responses',
@@ -1236,7 +1369,7 @@ describe('notebook-execution-orchestrator governance preflight', () => {
       agentExecutionService: {
         dispatchStreamingRequest,
       },
-    } as unknown as NodeApiDeps;
+    }) as unknown as NodeApiDeps;
     await seedAgentTaskModelSetting(deps.docStore as InMemoryJsonDocStore, {
       workspaceId: 'ws_native',
       projectId: 'proj_native',
@@ -1260,6 +1393,7 @@ describe('notebook-execution-orchestrator governance preflight', () => {
       workspace_file_library_id: 'flib_native',
       workspace_file_library_name: 'Native Workspace',
     };
+    await seedReadyTaskWorkspaceLibraryForTask(deps.docStore as InMemoryJsonDocStore, task);
     const assistantMessage = {
       id: 'msg_native_responses',
       task_id: task.id,
@@ -1268,31 +1402,35 @@ describe('notebook-execution-orchestrator governance preflight', () => {
       created_at: new Date().toISOString(),
     };
 
-    await runNotebookTaskWithExecutionAgent({
-      deps,
-      task,
-      assistantMessage,
-      agentId: 'agent_native_responses',
-      user: { id: 'user_native', name: 'Native User', email: 'native@example.com' },
-      publicBaseUrl: 'http://localhost:20000',
-      buildRunId: () => 'run_native_responses',
-      buildProxyUsername: () => 'native_user',
-      mapTaskMessagesForExecution: () => [],
-      updateTaskActivity: () => undefined,
-      emitTaskEvent: () => undefined,
-      onFinalize: () => undefined,
-      debugLog: () => undefined,
-      taskCollections: {
-        tasks: 'project_tasks',
-        messages: 'project_task_messages',
-      },
-      createTaskArtifact: async () => ({
-        id: 'artifact_native_responses',
-        task_id: task.id,
-        type: 'file',
-        created_at: new Date().toISOString(),
-      }),
-    });
+    try {
+      await runNotebookTaskWithExecutionAgent({
+        deps,
+        task,
+        assistantMessage,
+        agentId: 'agent_native_responses',
+        user: { id: 'user_native', name: 'Native User', email: 'native@example.com' },
+        publicBaseUrl: 'http://localhost:20000',
+        buildRunId: () => 'run_native_responses',
+        buildProxyUsername: () => 'native_user',
+        mapTaskMessagesForExecution: () => [],
+        updateTaskActivity: () => undefined,
+        emitTaskEvent: () => undefined,
+        onFinalize: () => undefined,
+        debugLog: () => undefined,
+        taskCollections: {
+          tasks: 'project_tasks',
+          messages: 'project_task_messages',
+        },
+        createTaskArtifact: async () => ({
+          id: 'artifact_native_responses',
+          task_id: task.id,
+          type: 'file',
+          created_at: new Date().toISOString(),
+        }),
+      });
+    } finally {
+      restoreManagedExecutionApiBase();
+    }
 
     expect(dispatchStreamingRequest).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -1309,20 +1447,21 @@ describe('notebook-execution-orchestrator governance preflight', () => {
   });
 
   it('dispatches freeform apply_patch catalog truth from upstream_protocol for custom Responses endpoints', async () => {
+    const restoreManagedExecutionApiBase = setManagedExecutionApiBaseForTest();
     const dispatchStreamingRequest = vi.fn(async () => ({
       requestId: 'req_custom_responses',
       cancel: () => undefined,
       stream: (async function* stream() {})(),
     }));
-    const deps = {
+    const deps = attachManagedExecutionDeps({
       cache: new InMemoryCache(),
       docStore: new InMemoryJsonDocStore(),
       agentResourceService: {
         getAgent: vi.fn(async () => ({
           id: 'agent_custom_responses',
           status: 'enabled',
-          runner_provider: 'developer',
-          mode: 'external',
+          runner_provider: 'managed',
+          mode: 'internal',
           execution_preferences_json: {
             notebook: {
               endpoint_id: 'ep_custom_responses',
@@ -1354,7 +1493,7 @@ describe('notebook-execution-orchestrator governance preflight', () => {
       agentExecutionService: {
         dispatchStreamingRequest,
       },
-    } as unknown as NodeApiDeps;
+    }) as unknown as NodeApiDeps;
     await seedAgentTaskModelSetting(deps.docStore as InMemoryJsonDocStore, {
       workspaceId: 'ws_custom_responses',
       projectId: 'proj_custom_responses',
@@ -1378,6 +1517,7 @@ describe('notebook-execution-orchestrator governance preflight', () => {
       workspace_file_library_id: 'flib_custom_responses',
       workspace_file_library_name: 'Custom Responses Workspace',
     };
+    await seedReadyTaskWorkspaceLibraryForTask(deps.docStore as InMemoryJsonDocStore, task);
     const assistantMessage = {
       id: 'msg_custom_responses',
       task_id: task.id,
@@ -1386,31 +1526,35 @@ describe('notebook-execution-orchestrator governance preflight', () => {
       created_at: new Date().toISOString(),
     };
 
-    await runNotebookTaskWithExecutionAgent({
-      deps,
-      task,
-      assistantMessage,
-      agentId: 'agent_custom_responses',
-      user: { id: 'user_custom_responses', name: 'Custom User', email: 'custom@example.com' },
-      publicBaseUrl: 'http://localhost:20000',
-      buildRunId: () => 'run_custom_responses',
-      buildProxyUsername: () => 'custom_user',
-      mapTaskMessagesForExecution: () => [],
-      updateTaskActivity: () => undefined,
-      emitTaskEvent: () => undefined,
-      onFinalize: () => undefined,
-      debugLog: () => undefined,
-      taskCollections: {
-        tasks: 'project_tasks',
-        messages: 'project_task_messages',
-      },
-      createTaskArtifact: async () => ({
-        id: 'artifact_custom_responses',
-        task_id: task.id,
-        type: 'file',
-        created_at: new Date().toISOString(),
-      }),
-    });
+    try {
+      await runNotebookTaskWithExecutionAgent({
+        deps,
+        task,
+        assistantMessage,
+        agentId: 'agent_custom_responses',
+        user: { id: 'user_custom_responses', name: 'Custom User', email: 'custom@example.com' },
+        publicBaseUrl: 'http://localhost:20000',
+        buildRunId: () => 'run_custom_responses',
+        buildProxyUsername: () => 'custom_user',
+        mapTaskMessagesForExecution: () => [],
+        updateTaskActivity: () => undefined,
+        emitTaskEvent: () => undefined,
+        onFinalize: () => undefined,
+        debugLog: () => undefined,
+        taskCollections: {
+          tasks: 'project_tasks',
+          messages: 'project_task_messages',
+        },
+        createTaskArtifact: async () => ({
+          id: 'artifact_custom_responses',
+          task_id: task.id,
+          type: 'file',
+          created_at: new Date().toISOString(),
+        }),
+      });
+    } finally {
+      restoreManagedExecutionApiBase();
+    }
 
     expect(dispatchStreamingRequest).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -1424,16 +1568,17 @@ describe('notebook-execution-orchestrator governance preflight', () => {
   });
 
   it('persists a fallback assistant message when execution fails before any visible output', async () => {
+    const restoreManagedExecutionApiBase = setManagedExecutionApiBaseForTest();
     const docStore = new InMemoryJsonDocStore();
-    const deps = {
+    const deps = attachManagedExecutionDeps({
       cache: new InMemoryCache(),
       docStore,
       agentResourceService: {
         getAgent: vi.fn(async () => ({
           id: 'agent_empty_error',
           status: 'enabled',
-          runner_provider: 'developer',
-          mode: 'external',
+          runner_provider: 'managed',
+          mode: 'internal',
           execution_preferences_json: {
             notebook: {
               endpoint_id: 'ep_empty_error',
@@ -1473,7 +1618,7 @@ describe('notebook-execution-orchestrator governance preflight', () => {
           })(),
         })),
       },
-    } as unknown as NodeApiDeps;
+    }) as unknown as NodeApiDeps;
     await seedAgentTaskModelSetting(docStore, {
       workspaceId: 'ws_empty_error',
       projectId: 'proj_empty_error',
@@ -1496,6 +1641,7 @@ describe('notebook-execution-orchestrator governance preflight', () => {
       workspace_file_library_id: 'flib_empty_error',
       workspace_file_library_name: 'Empty Error Workspace',
     };
+    await seedReadyTaskWorkspaceLibraryForTask(deps.docStore as InMemoryJsonDocStore, task);
     const assistantMessage = {
       id: 'msg_empty_error',
       task_id: task.id,
@@ -1504,51 +1650,56 @@ describe('notebook-execution-orchestrator governance preflight', () => {
       created_at: new Date().toISOString(),
     };
 
-    await runNotebookTaskWithExecutionAgent({
-      deps,
-      task,
-      assistantMessage,
-      agentId: 'agent_empty_error',
-      user: { id: 'user_empty_error', name: 'Empty Error User', email: 'empty@example.com' },
-      publicBaseUrl: 'http://localhost:20000',
-      buildRunId: () => 'run_empty_error',
-      buildProxyUsername: () => 'empty_error_user',
-      mapTaskMessagesForExecution: () => [],
-      updateTaskActivity: () => undefined,
-      emitTaskEvent: () => undefined,
-      onFinalize: () => undefined,
-      debugLog: () => undefined,
-      taskCollections: {
-        tasks: 'project_tasks',
-        messages: 'project_task_messages',
-      },
-      createTaskArtifact: async () => ({
-        id: 'artifact_empty_error',
-        task_id: task.id,
-        type: 'file',
-        created_at: new Date().toISOString(),
-      }),
-    });
+    try {
+      await runNotebookTaskWithExecutionAgent({
+        deps,
+        task,
+        assistantMessage,
+        agentId: 'agent_empty_error',
+        user: { id: 'user_empty_error', name: 'Empty Error User', email: 'empty@example.com' },
+        publicBaseUrl: 'http://localhost:20000',
+        buildRunId: () => 'run_empty_error',
+        buildProxyUsername: () => 'empty_error_user',
+        mapTaskMessagesForExecution: () => [],
+        updateTaskActivity: () => undefined,
+        emitTaskEvent: () => undefined,
+        onFinalize: () => undefined,
+        debugLog: () => undefined,
+        taskCollections: {
+          tasks: 'project_tasks',
+          messages: 'project_task_messages',
+        },
+        createTaskArtifact: async () => ({
+          id: 'artifact_empty_error',
+          task_id: task.id,
+          type: 'file',
+          created_at: new Date().toISOString(),
+        }),
+      });
+    } finally {
+      restoreManagedExecutionApiBase();
+    }
 
     expect(assistantMessage.content).toContain('Execution failed before any visible output was produced.');
     expect(assistantMessage.content).toContain('AGENT_EMPTY_OUTPUT');
   });
 
   it('derives model context window and compact token limit from endpoint profile for external notebook runs', async () => {
+    const restoreManagedExecutionApiBase = setManagedExecutionApiBaseForTest();
     const dispatchStreamingRequest = vi.fn(async () => ({
       requestId: 'req_external',
       cancel: () => undefined,
       stream: (async function* stream() {})(),
     }));
-    const deps = {
+    const deps = attachManagedExecutionDeps({
       cache: new InMemoryCache(),
       docStore: new InMemoryJsonDocStore(),
       agentResourceService: {
         getAgent: vi.fn(async () => ({
           id: 'agent_external',
           status: 'enabled',
-          runner_provider: 'developer',
-          mode: 'external',
+          runner_provider: 'managed',
+          mode: 'internal',
           execution_preferences_json: {
             notebook: {
               endpoint_id: 'ep_external',
@@ -1581,7 +1732,7 @@ describe('notebook-execution-orchestrator governance preflight', () => {
       agentExecutionService: {
         dispatchStreamingRequest,
       },
-    } as unknown as NodeApiDeps;
+    }) as unknown as NodeApiDeps;
     await seedAgentTaskModelSetting(deps.docStore as InMemoryJsonDocStore, {
       workspaceId: 'ws_external',
       projectId: 'proj_external',
@@ -1604,6 +1755,7 @@ describe('notebook-execution-orchestrator governance preflight', () => {
       workspace_file_library_id: 'flib_external',
       workspace_file_library_name: 'External Workspace',
     };
+    await seedReadyTaskWorkspaceLibraryForTask(deps.docStore as InMemoryJsonDocStore, task);
     const assistantMessage = {
       id: 'msg_external',
       task_id: task.id,
@@ -1612,31 +1764,35 @@ describe('notebook-execution-orchestrator governance preflight', () => {
       created_at: new Date().toISOString(),
     };
 
-    await runNotebookTaskWithExecutionAgent({
-      deps,
-      task,
-      assistantMessage,
-      agentId: 'agent_external',
-      user: { id: 'user_external', name: 'External User', email: 'external@example.com' },
-      publicBaseUrl: 'http://localhost:20000',
-      buildRunId: () => 'run_external',
-      buildProxyUsername: () => 'external_user',
-      mapTaskMessagesForExecution: () => [],
-      updateTaskActivity: () => undefined,
-      emitTaskEvent: () => undefined,
-      onFinalize: () => undefined,
-      debugLog: () => undefined,
-      taskCollections: {
-        tasks: 'project_tasks',
-        messages: 'project_task_messages',
-      },
-      createTaskArtifact: async () => ({
-        id: 'artifact_external',
-        task_id: task.id,
-        type: 'file',
-        created_at: new Date().toISOString(),
-      }),
-    });
+    try {
+      await runNotebookTaskWithExecutionAgent({
+        deps,
+        task,
+        assistantMessage,
+        agentId: 'agent_external',
+        user: { id: 'user_external', name: 'External User', email: 'external@example.com' },
+        publicBaseUrl: 'http://localhost:20000',
+        buildRunId: () => 'run_external',
+        buildProxyUsername: () => 'external_user',
+        mapTaskMessagesForExecution: () => [],
+        updateTaskActivity: () => undefined,
+        emitTaskEvent: () => undefined,
+        onFinalize: () => undefined,
+        debugLog: () => undefined,
+        taskCollections: {
+          tasks: 'project_tasks',
+          messages: 'project_task_messages',
+        },
+        createTaskArtifact: async () => ({
+          id: 'artifact_external',
+          task_id: task.id,
+          type: 'file',
+          created_at: new Date().toISOString(),
+        }),
+      });
+    } finally {
+      restoreManagedExecutionApiBase();
+    }
 
     expect(dispatchStreamingRequest).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -1659,6 +1815,7 @@ describe('notebook-execution-orchestrator governance preflight', () => {
   });
 
   it('sanitizes sensitive runner trace details before emitting and persisting notebook traces', async () => {
+    const restoreManagedExecutionApiBase = setManagedExecutionApiBaseForTest();
     const docStore = new InMemoryJsonDocStore();
     const emitted: Array<{ type: string; data: unknown }> = [];
     const sharedAuthorizationSecret = 'same-summary-command-secret-123';
@@ -1669,15 +1826,15 @@ describe('notebook-execution-orchestrator governance preflight', () => {
     const assignedFallbackPassword = 'assigned-fallback-password';
     const embeddedJsonSummary = `Command failed: {"api_key":"${embeddedJsonApiKey}","client_secret":"${embeddedJsonClientSecret}"}`;
     const quotedFallbackText = `larger string has "api_key":"${quotedFallbackApiKey}", 'client_secret':'${quotedFallbackClientSecret}', password = "${assignedFallbackPassword}"`;
-    const deps = {
+    const deps = attachManagedExecutionDeps({
       cache: new InMemoryCache(),
       docStore,
       agentResourceService: {
         getAgent: vi.fn(async () => ({
           id: 'agent_trace_sanitize',
           status: 'enabled',
-          runner_provider: 'developer',
-          mode: 'external',
+          runner_provider: 'managed',
+          mode: 'internal',
           execution_preferences_json: {
             notebook: {
               endpoint_id: 'ep_trace_sanitize',
@@ -1789,7 +1946,7 @@ describe('notebook-execution-orchestrator governance preflight', () => {
           })(),
         })),
       },
-    } as unknown as NodeApiDeps;
+    }) as unknown as NodeApiDeps;
     await seedAgentTaskModelSetting(docStore, {
       workspaceId: 'ws_trace_sanitize',
       projectId: 'proj_trace_sanitize',
@@ -1812,6 +1969,7 @@ describe('notebook-execution-orchestrator governance preflight', () => {
       workspace_file_library_id: 'flib_trace_sanitize',
       workspace_file_library_name: 'Trace Sanitize Workspace',
     };
+    await seedReadyTaskWorkspaceLibraryForTask(deps.docStore as InMemoryJsonDocStore, task);
     const assistantMessage = {
       id: 'msg_trace_sanitize',
       task_id: task.id,
@@ -1820,33 +1978,37 @@ describe('notebook-execution-orchestrator governance preflight', () => {
       created_at: new Date().toISOString(),
     };
 
-    await runNotebookTaskWithExecutionAgent({
-      deps,
-      task,
-      assistantMessage,
-      agentId: 'agent_trace_sanitize',
-      user: { id: 'user_trace_sanitize', name: 'Trace User', email: 'trace@example.com' },
-      publicBaseUrl: 'http://localhost:20000',
-      buildRunId: () => 'run_trace_sanitize',
-      buildProxyUsername: () => 'trace_user',
-      mapTaskMessagesForExecution: () => [],
-      updateTaskActivity: () => undefined,
-      emitTaskEvent: (_taskId, payload) => {
-        emitted.push(payload as { type: string; data: unknown });
-      },
-      onFinalize: () => undefined,
-      debugLog: () => undefined,
-      taskCollections: {
-        tasks: 'project_tasks',
-        messages: 'project_task_messages',
-      },
-      createTaskArtifact: async () => ({
-        id: 'artifact_trace_sanitize',
-        task_id: task.id,
-        type: 'file',
-        created_at: new Date().toISOString(),
-      }),
-    });
+    try {
+      await runNotebookTaskWithExecutionAgent({
+        deps,
+        task,
+        assistantMessage,
+        agentId: 'agent_trace_sanitize',
+        user: { id: 'user_trace_sanitize', name: 'Trace User', email: 'trace@example.com' },
+        publicBaseUrl: 'http://localhost:20000',
+        buildRunId: () => 'run_trace_sanitize',
+        buildProxyUsername: () => 'trace_user',
+        mapTaskMessagesForExecution: () => [],
+        updateTaskActivity: () => undefined,
+        emitTaskEvent: (_taskId, payload) => {
+          emitted.push(payload as { type: string; data: unknown });
+        },
+        onFinalize: () => undefined,
+        debugLog: () => undefined,
+        taskCollections: {
+          tasks: 'project_tasks',
+          messages: 'project_task_messages',
+        },
+        createTaskArtifact: async () => ({
+          id: 'artifact_trace_sanitize',
+          task_id: task.id,
+          type: 'file',
+          created_at: new Date().toISOString(),
+        }),
+      });
+    } finally {
+      restoreManagedExecutionApiBase();
+    }
 
     const observableTrace = emitted.find((item) => (
       item.type === 'trace_event'
@@ -1959,8 +2121,8 @@ describe('notebook-execution-orchestrator governance preflight', () => {
         getAgent: vi.fn(async () => ({
           id: 'agent_invalid_window',
           status: 'enabled',
-          runner_provider: 'developer',
-          mode: 'external',
+          runner_provider: 'managed',
+          mode: 'internal',
           execution_preferences_json: {
             notebook: {
               endpoint_id: 'ep_invalid',
@@ -2293,9 +2455,8 @@ describe('notebook-execution-orchestrator governance preflight', () => {
       name: 'Internal Deleting Workspace',
       status: 'deleting',
       version: 2,
-      filesystem_name: 'flib-internal-deleting',
       file_library_home_segment: 'flibhome_internal_deleting',
-      source: 'manual',
+      source: 'agent_task_files',
       created_by_user_id: 'user_internal_deleting',
       created_at: now,
       updated_at: now,
@@ -2556,18 +2717,19 @@ describe('notebook-execution-orchestrator governance preflight', () => {
   });
 
   it('treats a rejected late dispatch fence as terminal cancel and never consumes the old stream', async () => {
+    const restoreManagedExecutionApiBase = setManagedExecutionApiBaseForTest();
     const docStore = new InMemoryJsonDocStore();
     const cache = new InMemoryCache();
     let streamConsumed = false;
-    const deps = {
+    const deps = attachManagedExecutionDeps({
       cache,
       docStore,
       agentResourceService: {
         getAgent: vi.fn(async () => ({
           id: 'agent_late_dispatch_cancelled',
           status: 'enabled',
-          runner_provider: 'developer',
-          mode: 'external',
+          runner_provider: 'managed',
+          mode: 'internal',
           execution_preferences_json: {
             notebook: {
               endpoint_id: 'ep_late_dispatch_cancelled',
@@ -2605,7 +2767,7 @@ describe('notebook-execution-orchestrator governance preflight', () => {
           })(),
         })),
       },
-    } as unknown as NodeApiDeps;
+    }) as unknown as NodeApiDeps;
     await seedAgentTaskModelSetting(docStore, {
       workspaceId: 'ws_late_dispatch_cancelled',
       projectId: 'proj_late_dispatch_cancelled',
@@ -2628,6 +2790,7 @@ describe('notebook-execution-orchestrator governance preflight', () => {
       workspace_file_library_id: 'flib_late_dispatch_cancelled',
       workspace_file_library_name: 'Late Dispatch Cancelled Workspace',
     };
+    await seedReadyTaskWorkspaceLibraryForTask(deps.docStore as InMemoryJsonDocStore, task);
     const assistantMessage = {
       id: 'msg_late_dispatch_cancelled',
       task_id: task.id,
@@ -2646,40 +2809,44 @@ describe('notebook-execution-orchestrator governance preflight', () => {
     const emitted: Array<{ type: string; data: unknown }> = [];
     const finalizeCalls: Array<{ durableTerminalTruth: boolean }> = [];
 
-    await runNotebookTaskWithExecutionAgent({
-      deps,
-      task,
-      assistantMessage,
-      agentId: 'agent_late_dispatch_cancelled',
-      user: {
-        id: 'user_late_dispatch_cancelled',
-        name: 'Late Dispatch Cancelled User',
-        email: 'late-dispatch-cancelled@example.com',
-      },
-      publicBaseUrl: 'http://localhost:20000',
-      buildRunId: () => 'run_late_dispatch_cancelled',
-      buildProxyUsername: () => 'late_dispatch_cancelled_user',
-      mapTaskMessagesForExecution: () => [],
-      updateTaskActivity: () => undefined,
-      emitTaskEvent: (_taskId, payload) => {
-        emitted.push(payload as { type: string; data: unknown });
-      },
-      onDispatched: () => false,
-      onFinalize: (_taskId, _runId, summary) => {
-        finalizeCalls.push(summary);
-      },
-      debugLog: () => undefined,
-      taskCollections: {
-        tasks: 'project_tasks',
-        messages: 'project_task_messages',
-      },
-      createTaskArtifact: async () => ({
-        id: 'artifact_late_dispatch_cancelled',
-        task_id: task.id,
-        type: 'file',
-        created_at: new Date().toISOString(),
-      }),
-    });
+    try {
+      await runNotebookTaskWithExecutionAgent({
+        deps,
+        task,
+        assistantMessage,
+        agentId: 'agent_late_dispatch_cancelled',
+        user: {
+          id: 'user_late_dispatch_cancelled',
+          name: 'Late Dispatch Cancelled User',
+          email: 'late-dispatch-cancelled@example.com',
+        },
+        publicBaseUrl: 'http://localhost:20000',
+        buildRunId: () => 'run_late_dispatch_cancelled',
+        buildProxyUsername: () => 'late_dispatch_cancelled_user',
+        mapTaskMessagesForExecution: () => [],
+        updateTaskActivity: () => undefined,
+        emitTaskEvent: (_taskId, payload) => {
+          emitted.push(payload as { type: string; data: unknown });
+        },
+        onDispatched: () => false,
+        onFinalize: (_taskId, _runId, summary) => {
+          finalizeCalls.push(summary);
+        },
+        debugLog: () => undefined,
+        taskCollections: {
+          tasks: 'project_tasks',
+          messages: 'project_task_messages',
+        },
+        createTaskArtifact: async () => ({
+          id: 'artifact_late_dispatch_cancelled',
+          task_id: task.id,
+          type: 'file',
+          created_at: new Date().toISOString(),
+        }),
+      });
+    } finally {
+      restoreManagedExecutionApiBase();
+    }
 
     expect(streamConsumed).toBe(false);
     expect(assistantMessage.content).toContain('AGENT_CANCELLED');

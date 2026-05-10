@@ -142,7 +142,6 @@ export const MAJOR_PRODUCT_SURFACE_COVERAGE: readonly ProductSurfaceCoverage[] =
     label: 'Entry and identity',
     storyIds: [
       'workspace-public-entry-and-login-truth',
-      'desktop-auth-request-complete-and-work',
       'invite-to-first-effective-work',
       'workspace-identity-switch-truth',
     ],

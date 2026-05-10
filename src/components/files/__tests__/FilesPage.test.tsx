@@ -58,9 +58,10 @@ vi.mock('next-intl', () => ({
         'file_manager.library_binding_bound': 'Bound',
         'file_manager.library_binding_bound_visible': `Bound to ${values?.title ?? 'task'} (${values?.status ?? 'unknown'})`,
         'file_manager.library_binding_bound_redacted': 'Bound to a task you cannot view',
-        'file_manager.library_bound_home_banner': 'This library is an Agent task HOME. Files changes affect that task HOME.',
-        'file_manager.library_bound_home_banner_visible': `This library is the HOME for ${values?.title ?? 'task'} (${values?.status ?? 'unknown'}). Files changes affect that task HOME.`,
+        'file_manager.library_bound_home_banner': `This file library is attached to an Agent task. Changes in Files affect that task's files.`,
+        'file_manager.library_bound_home_banner_visible': `This file library is attached to ${values?.title ?? 'task'} (${values?.status ?? 'unknown'}). Changes in Files affect that task's files.`,
         'file_manager.library_delete_bound_blocked': 'Delete the bound task before deleting this library.',
+        'file_manager.root_system_folders_note': 'System folders are shown in this root view so task files match the file library state.',
       },
       errors: {
         validation_error: 'Validation error',
@@ -81,16 +82,14 @@ const {
   mockUploadFileObjectMutateAsync,
   mockDeleteFileObjectsMutateAsync,
   mockFilesApiListObjects,
-  mockDesktopMountAccessMutateAsync,
-  mockStorageCredentialExchangeMutateAsync,
+  mockUseFilesPageCapabilities,
 } = vi.hoisted(() => ({
   mockUseFileObjectsInfinite: vi.fn(),
   mockUseFileObjects: vi.fn(),
   mockUploadFileObjectMutateAsync: vi.fn(),
   mockDeleteFileObjectsMutateAsync: vi.fn(),
   mockFilesApiListObjects: vi.fn(),
-  mockDesktopMountAccessMutateAsync: vi.fn(),
-  mockStorageCredentialExchangeMutateAsync: vi.fn(),
+  mockUseFilesPageCapabilities: vi.fn(),
 }));
 
 let mockLibraries = [createFileLibrary()];
@@ -112,7 +111,7 @@ vi.mock('react-virtuoso', () => ({
 }));
 
 vi.mock('@/lib/hooks/use-permissions', () => ({
-  useFilesPageCapabilities: () => ({ canRead: true, canManage: true, canExchangeCredentials: true }),
+  useFilesPageCapabilities: () => mockUseFilesPageCapabilities(),
 }));
 
 vi.mock('@/lib/stores/authStore', () => ({
@@ -121,17 +120,6 @@ vi.mock('@/lib/stores/authStore', () => ({
   useAuthStoreHydration: () => true,
   selectIsAuthenticated: (state: { isAuthenticated: boolean }) => state.isAuthenticated,
   selectToken: (state: { token: string | null }) => state.token,
-}));
-
-vi.mock('@/lib/hooks/use-file-libraries-v2', () => ({
-  useFileLibraryDesktopMountAccess: () => ({
-    mutateAsync: mockDesktopMountAccessMutateAsync,
-    isPending: false,
-  }),
-  useFileLibraryStorageCredentialExchange: () => ({
-    mutateAsync: mockStorageCredentialExchangeMutateAsync,
-    isPending: false,
-  }),
 }));
 
 vi.mock('@/lib/hooks/use-files', () => ({
@@ -261,40 +249,10 @@ describe('FilesPage (object browser)', () => {
     mockUploadFileObjectMutateAsync.mockReset();
     mockDeleteFileObjectsMutateAsync.mockReset();
     mockFilesApiListObjects.mockReset();
-    mockDesktopMountAccessMutateAsync.mockReset();
-    mockStorageCredentialExchangeMutateAsync.mockReset();
+    mockUseFilesPageCapabilities.mockReset();
+    mockUseFilesPageCapabilities.mockReturnValue({ canRead: true, canManage: true, canExchangeCredentials: true });
     mockToast.success.mockReset();
     mockToast.error.mockReset();
-    mockDesktopMountAccessMutateAsync.mockResolvedValue({
-      desktop_mount_access: {
-        filesystem_name: 'flib-ws-default-proj-001-shared-docs',
-        metadata_url: 'postgres://user:password@files.example.com:5432/jfs_lib_1',
-        storage_bucket_url: 'https://files.example.com:19000/jfs-lib-1',
-        deployment_base_url: 'https://mbos.imotion.ai:3001',
-        default_mount_roots: {
-          linux: '~/AgentSmith',
-          macos: '~/AgentSmith',
-          windows: '%USERPROFILE%\\AgentSmith',
-        },
-        windows_requires_drive_letter: true,
-        created_at: '2026-03-16T08:00:00.000Z',
-      },
-    });
-    mockStorageCredentialExchangeMutateAsync.mockResolvedValue({
-      client_mount_access: {
-        filesystem_name: 'flib-ws-default-proj-001-shared-docs',
-        metadata_url: 'postgres://user:password@files.example.com:5432/jfs_lib_1',
-        storage_bucket_url: 'https://files.example.com:19000/jfs-lib-1',
-        recommended_mount_path: '~/JuiceFS/shared-docs',
-        platform_notes: ['Install JuiceFS before mounting.'],
-        recommended_mount_commands: {
-          linux: 'juicefs mount postgres://user:password@files.example.com:5432/jfs_lib_1 ~/JuiceFS/shared-docs --bucket https://files.example.com:19000/jfs-lib-1',
-          macos: 'juicefs mount postgres://user:password@files.example.com:5432/jfs_lib_1 ~/JuiceFS/shared-docs --bucket https://files.example.com:19000/jfs-lib-1',
-          windows: 'juicefs mount postgres://user:password@files.example.com:5432/jfs_lib_1 X: --bucket https://files.example.com:19000/jfs-lib-1',
-        },
-        created_at: '2026-03-16T08:00:00.000Z',
-      },
-    });
     mockUploadFileObjectMutateAsync.mockResolvedValue({
       key: 'README.txt',
       name: 'README.txt',
@@ -354,27 +312,91 @@ describe('FilesPage (object browser)', () => {
     expect(screen.getByText('Libraries')).toBeInTheDocument();
   });
 
+  it('opens the ordinary Files entry in workspace/ by default and can navigate back to the task-file root', async () => {
+    const user = userEvent.setup();
+
+    renderWithQueryClient(<FilesPage workspaceId="ws_default" projectId="proj_001" />);
+
+    expect(await screen.findByTestId('files__objects-table')).toBeInTheDocument();
+    await waitFor(() => {
+      expect(mockUseFileObjectsInfinite).toHaveBeenLastCalledWith(
+        'ws_default',
+        'proj_001',
+        'lib_1',
+        expect.objectContaining({ prefix: 'workspace/' }),
+        expect.any(Object),
+      );
+    });
+    expect(screen.getByTestId('files__breadcrumb--1')).toHaveTextContent('workspace');
+
+    await user.click(screen.getByTestId('files__breadcrumb-root'));
+
+    await waitFor(() => {
+      expect(mockUseFileObjectsInfinite).toHaveBeenLastCalledWith(
+        'ws_default',
+        'proj_001',
+        'lib_1',
+        expect.objectContaining({ prefix: '' }),
+        expect.any(Object),
+      );
+    });
+    expect(screen.getByTestId('files__root-scope-note')).toHaveTextContent('System folders');
+  });
+
+  it('renders dot folders and dot files from the listing without front-end filtering', async () => {
+    mockUseFileObjectsInfinite.mockReturnValue({
+      data: {
+        pages: [
+          {
+            prefix: '',
+            items: [
+              createPrefixItem({ prefix: '.codex/', name: '.codex' }),
+              createPrefixItem({ prefix: '.mbos/', name: '.mbos' }),
+              createObjectItem({ key: '.env', name: '.env' }),
+            ],
+            next_continuation_token: null,
+          },
+        ],
+      },
+      isLoading: false,
+      hasNextPage: false,
+      isFetchingNextPage: false,
+      fetchNextPage: vi.fn(),
+      refetch: vi.fn(),
+    });
+
+    renderWithQueryClient(<FilesPage workspaceId="ws_default" projectId="proj_001" />);
+
+    const table = await screen.findByTestId('files__objects-table');
+    expect(within(table).getByRole('button', { name: '.codex' })).toBeInTheDocument();
+    expect(within(table).getByRole('button', { name: '.mbos' })).toBeInTheDocument();
+    expect(within(table).getByRole('button', { name: '.env' })).toBeInTheDocument();
+    expect(document.body.textContent).not.toContain('hidden runtime');
+    expect(document.body.textContent).not.toContain('HOME');
+  });
+
   it('selects the first library by default and only shows active-library actions', async () => {
     mockLibraries = [
       createFileLibrary({ id: 'lib_a', name: 'Library A' }),
-      createFileLibrary({ id: 'lib_b', name: 'Library B', filesystem_name: 'flib-ws-default-proj-001-library-b' }),
+      createFileLibrary({ id: 'lib_b', name: 'Library B', file_library_home_segment: 'task-home-library-b' }),
     ];
 
     renderWithQueryClient(<FilesPage workspaceId="ws_default" projectId="proj_001" />);
     const user = userEvent.setup();
 
-    expect(await screen.findByTestId('files__library-desktop-access--lib_a')).toBeInTheDocument();
-    expect(screen.queryByTestId('files__library-desktop-access--lib_b')).not.toBeInTheDocument();
+    expect(await screen.findByTestId('files__library-rename-inline--lib_a')).toBeInTheDocument();
+    expect(screen.queryByTestId('files__library-rename-inline--lib_b')).not.toBeInTheDocument();
+    expect(screen.queryByTestId('files__library-desktop-access--lib_a')).not.toBeInTheDocument();
 
     await user.click(screen.getByTestId('files__library-item--lib_b'));
 
     await waitFor(() => {
-      expect(screen.getByTestId('files__library-desktop-access--lib_b')).toBeInTheDocument();
+      expect(screen.getByTestId('files__library-rename-inline--lib_b')).toBeInTheDocument();
     });
-    expect(screen.queryByTestId('files__library-desktop-access--lib_a')).not.toBeInTheDocument();
+    expect(screen.queryByTestId('files__library-rename-inline--lib_a')).not.toBeInTheDocument();
   });
 
-  it('shows failed library status and disables mount actions for non-ready libraries', async () => {
+  it('shows failed library status and hides removed local access actions for non-ready libraries', async () => {
     mockLibraries = [
       createFileLibrary({ id: 'lib_ready', name: 'Ready Library', status: 'ready' }),
       createFileLibrary({ id: 'lib_failed', name: 'Failed Library', status: 'failed' }),
@@ -389,13 +411,15 @@ describe('FilesPage (object browser)', () => {
     expect(screen.getByTestId('files__library-status-reason--lib_failed')).toHaveTextContent(
       'Library provisioning failed.',
     );
-    expect(screen.getByTestId('files__library-desktop-access--lib_failed')).toBeDisabled();
+    expect(screen.queryByTestId('files__library-desktop-access--lib_failed')).not.toBeInTheDocument();
     expect(screen.getByTestId('files__new-folder')).toBeDisabled();
+    expect(screen.getByTestId('files__file-states')).toBeDisabled();
     expect(screen.getByTestId('files__upload')).toBeDisabled();
     expect(screen.getByTestId('files__refresh')).toBeDisabled();
+    expect(screen.queryByTestId('files__dialog__file-states')).not.toBeInTheDocument();
   });
 
-  it('shows task HOME binding state without leaking redacted task metadata', async () => {
+  it('shows task workspace binding state without leaking redacted task metadata', async () => {
     mockLibraries = [
       createFileLibrary({
         id: 'lib_unbound',
@@ -476,11 +500,30 @@ describe('FilesPage (object browser)', () => {
     renderWithQueryClient(<FilesPage workspaceId="ws_default" projectId="proj_001" />);
 
     expect(await screen.findByTestId('files__bound-home-banner')).toHaveTextContent(
-      'This library is the HOME for Visible Task (active). Files changes affect that task HOME.',
+      `This file library is attached to Visible Task (active). Changes in Files affect that task's files.`,
     );
     expect(screen.getByTestId('files__objects-table')).toBeInTheDocument();
     expect(screen.getByTestId('files__new-folder')).toBeEnabled();
     expect(screen.getByTestId('files__upload')).toBeEnabled();
+  });
+
+  it('hides file write operations for read-only Files access while keeping download available', async () => {
+    mockUseFilesPageCapabilities.mockReturnValue({ canRead: true, canManage: false, canExchangeCredentials: true });
+
+    renderWithQueryClient(<FilesPage workspaceId="ws_default" projectId="proj_001" />);
+    const user = userEvent.setup();
+
+    const table = await screen.findByTestId('files__objects-table');
+    const row = within(table).getAllByTestId('files__object-row').find((el) => el.textContent?.includes('README.txt'));
+    expect(row).toBeDefined();
+    await user.click(within(row as HTMLElement).getByRole('button', { name: /README\.txt/i }));
+
+    expect(screen.queryByTestId('files__new-folder')).not.toBeInTheDocument();
+    expect(screen.queryByTestId('files__file-states')).not.toBeInTheDocument();
+    expect(screen.queryByTestId('files__upload')).not.toBeInTheDocument();
+    expect(screen.queryByTestId('files__rename')).not.toBeInTheDocument();
+    expect(screen.queryByTestId('files__delete')).not.toBeInTheDocument();
+    expect(screen.getByTestId('files__download')).toBeEnabled();
   });
 
   it('shows a canonical no-library surface instead of folder-empty actions when no library exists', async () => {
@@ -1745,7 +1788,7 @@ describe('FilesPage (object browser)', () => {
     const user = userEvent.setup();
     mockLibraries = [
       createFileLibrary({ id: 'lib_1', name: 'Library A' }),
-      createFileLibrary({ id: 'lib_b', name: 'Library B', filesystem_name: 'flib-ws-default-proj-001-library-b' }),
+      createFileLibrary({ id: 'lib_b', name: 'Library B', file_library_home_segment: 'task-home-library-b' }),
     ];
     const uploadDeferred = createDeferred<{ key: string; name: string }>();
     const observerRefetch = vi.fn().mockRejectedValue(new Error('wrong observer refetch'));
@@ -2112,92 +2155,15 @@ describe('FilesPage (object browser)', () => {
     expect(mockToast.error).not.toHaveBeenCalled();
   });
 
-  it('opens desktop access dialog for a library', async () => {
+  it('does not render desktop or raw local mount entry points for file libraries', async () => {
     renderWithQueryClient(<FilesPage workspaceId="ws_default" projectId="proj_001" />);
-    const user = userEvent.setup();
 
-    await user.click(await screen.findByTestId('files__library-desktop-access--lib_1'));
-
-    expect(await screen.findByTestId('files__dialog__desktop-mount-access')).toBeInTheDocument();
-    expect(screen.getByTestId('files__desktop-mount__deployment-url')).toHaveValue('https://mbos.imotion.ai:3001');
-    expect(screen.getByText('file_manager.desktop_app_name')).toBeInTheDocument();
-    expect(screen.getByTestId('files__desktop-setup__platform-macos')).toHaveAttribute('data-state', 'active');
-    expect(screen.getByTestId('files__desktop-setup__download')).toBeInTheDocument();
+    expect(await screen.findByTestId('files__library-list')).toBeInTheDocument();
+    expect(screen.queryByTestId('files__library-desktop-access--lib_1')).not.toBeInTheDocument();
+    expect(screen.queryByTestId('files__dialog__desktop-mount-access')).not.toBeInTheDocument();
     expect(screen.queryByTestId('files__library-mount__filesystem-name')).not.toBeInTheDocument();
-  });
-
-  it('keeps typed desktop mount conflicts inline in the desktop access dialog', async () => {
-    mockDesktopMountAccessMutateAsync.mockRejectedValueOnce(new APIError(
-      'FILE_LIBRARY_DELETING',
-      'file_library_deleting',
-      undefined,
-      409,
-      { file_library_id: 'lib_1', file_library_status: 'deleting' },
-    ));
-    renderWithQueryClient(<FilesPage workspaceId="ws_default" projectId="proj_001" />);
-    const user = userEvent.setup();
-
-    await user.click(await screen.findByTestId('files__library-desktop-access--lib_1'));
-
-    const dialog = await screen.findByTestId('files__dialog__desktop-mount-access');
-    expect(dialog).toBeInTheDocument();
-    expect(await screen.findByTestId('files__desktop-mount__error')).toHaveTextContent(
-      'This library is being deleted. Refresh the library status before trying again.',
-    );
+    expect(screen.queryByText(/mount/i)).not.toBeInTheDocument();
     expect(mockToast.error).not.toHaveBeenCalled();
-  });
-
-  it('keeps manual mount details inside the desktop dialog debug section', async () => {
-    renderWithQueryClient(<FilesPage workspaceId="ws_default" projectId="proj_001" />);
-    const user = userEvent.setup();
-
-    expect(screen.queryByTestId('files__library-manual-mount-access--lib_1')).not.toBeInTheDocument();
-    await user.click(await screen.findByTestId('files__library-desktop-access--lib_1'));
-    await user.click(await screen.findByTestId('files__desktop-setup__debug-toggle'));
-
-    expect(await screen.findByTestId('files__desktop-setup__debug-panel')).toBeInTheDocument();
-    expect(screen.getByTestId('files__library-mount__filesystem-name')).toHaveValue('flib-ws-default-proj-001-shared-docs');
-    expect(screen.getByTestId('files__library-mount__tab-macos')).toHaveAttribute('data-state', 'active');
-    expect(screen.getByTestId('files__library-mount__command-macos')).toHaveValue(
-      'juicefs mount postgres://user:password@files.example.com:5432/jfs_lib_1 ~/JuiceFS/shared-docs --bucket https://files.example.com:19000/jfs-lib-1',
-    );
-  });
-
-  it('keeps typed manual mount credential conflicts inline in the debug panel', async () => {
-    mockStorageCredentialExchangeMutateAsync.mockRejectedValueOnce(new APIError(
-      'FILE_LIBRARY_DELETING',
-      'file_library_deleting',
-      undefined,
-      409,
-      { file_library_id: 'lib_1', file_library_status: 'deleting' },
-    ));
-    renderWithQueryClient(<FilesPage workspaceId="ws_default" projectId="proj_001" />);
-    const user = userEvent.setup();
-
-    await user.click(await screen.findByTestId('files__library-desktop-access--lib_1'));
-    await user.click(await screen.findByTestId('files__desktop-setup__debug-toggle'));
-
-    expect(await screen.findByTestId('files__desktop-setup__debug-panel')).toBeInTheDocument();
-    expect(await screen.findByTestId('files__library-mount__error')).toHaveTextContent(
-      'This library is being deleted. Refresh the library status before trying again.',
-    );
-    expect(mockToast.error).not.toHaveBeenCalled();
-  });
-
-  it('switches mount command tabs and shows the active platform command', async () => {
-    renderWithQueryClient(<FilesPage workspaceId="ws_default" projectId="proj_001" />);
-    const user = userEvent.setup();
-
-    await user.click(await screen.findByTestId('files__library-desktop-access--lib_1'));
-    await user.click(await screen.findByTestId('files__desktop-setup__debug-toggle'));
-    await user.click(await screen.findByTestId('files__library-mount__tab-windows'));
-    await waitFor(() =>
-      expect(screen.getByTestId('files__library-mount__tab-windows')).toHaveAttribute('data-state', 'active'),
-    );
-    expect(screen.getByTestId('files__library-mount__copy-command')).toBeInTheDocument();
-    expect(screen.getByTestId('files__library-mount__command-windows')).toHaveValue(
-      'juicefs mount postgres://user:password@files.example.com:5432/jfs_lib_1 X: --bucket https://files.example.com:19000/jfs-lib-1',
-    );
   });
 
   it('configures auto refresh for the active file library listing', async () => {

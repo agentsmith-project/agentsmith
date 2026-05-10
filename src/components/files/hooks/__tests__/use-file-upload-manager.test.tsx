@@ -49,7 +49,7 @@ describe('useFileUploadManager', () => {
   it.each([
     ['APIError REQUEST_ABORTED', new APIError('REQUEST_ABORTED', 'request aborted', 'req_abort', 499)],
     ['DOMException AbortError', new DOMException('The operation was aborted.', 'AbortError')],
-    ['legacy XHR message', new Error('Upload was aborted')],
+    ['raw XHR abort message', new Error('Upload was aborted')],
   ])('treats %s as upload cancellation', async (_label, abortError) => {
     const uploadObject = vi.fn().mockRejectedValueOnce(abortError);
     const syncUploadedObjects = vi.fn().mockResolvedValue(undefined);
@@ -264,7 +264,7 @@ describe('useFileUploadManager', () => {
     expect(syncUploadedObjects).not.toHaveBeenCalled();
   });
 
-  it('opens upload conflict dialog for legacy file_library_destination_exists shape', async () => {
+  it('opens upload conflict dialog for old-shaped file_library_destination_exists error', async () => {
     const uploadObject = vi
       .fn()
       .mockRejectedValueOnce(new APIError('RESOURCE_CONFLICT', 'file_library_destination_exists', 'req_2', 409));

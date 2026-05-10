@@ -57,16 +57,53 @@ describe('check-doc-governance historical document detection', () => {
     ).toBe(false);
   });
 
-  it('states file-library HOME segment repair as one-time pre-GA repair, not a long-term bridge', () => {
+  it('states file-library HOME segment handling as pre-GA reset/recreate, not a repair bridge', () => {
     const plan = readFileSync(
       resolve(process.cwd(), 'docs/engineering/agent-task-persistent-home-runtime-plan.md'),
       'utf8',
     );
 
-    expect(plan).toContain('pre-GA 一次性自愈迁移/repair');
-    expect(plan).toContain('不是长期 silent compatibility');
+    expect(plan).toContain('本地开发/测试数据 reset/recreate');
+    expect(plan).toContain('缺少 `file_library_home_segment` 的开发/测试配置记录不得在读取时派生或补写字段；删除后重新创建');
+    expect(plan).not.toContain('pre-GA 一次性自愈迁移/repair');
+    expect(plan).not.toContain('不是长期 silent compatibility');
     expect(plan).not.toContain('不做长期 legacy dual-read');
     expect(plan).not.toContain('不得静默兼容两个 HOME 根');
+  });
+
+  it('keeps Agent task runner runbook aligned with the AFSCP Developer runner blocker', () => {
+    const runbook = readFileSync(
+      resolve(process.cwd(), 'docs/agent-task-runner-runbook.md'),
+      'utf8',
+    );
+
+    expect(runbook).toContain('Managed runner is the current executable task HOME binding chain.');
+    expect(runbook).toContain('Developer runner Slice 5 blocker posture');
+    expect(runbook).toContain('no task HOME/file access; fail closed for execution self-check');
+    expect(runbook).toContain('upstream blocker/no-workaround evidence');
+    expect(runbook).toContain('must not synthesize them from a host-local file-library path');
+
+    expect(runbook).not.toContain('Developer runner self-check / runner-test task 也使用绑定 file library');
+    expect(runbook).not.toContain('| Local developer | local-manual, host development | `file_library`');
+    expect(runbook).not.toContain('authorized expert creation may send `bound_runner_id` for a Developer runner');
+    expect(runbook).not.toContain('managed runner 和 Developer runner 两条 task/terminal/recovery smoke 都有证据');
+  });
+
+  it('keeps the persistent HOME implementation plan from reintroducing Developer local HOME smoke', () => {
+    const plan = readFileSync(
+      resolve(process.cwd(), 'docs/engineering/agent-task-persistent-home-runtime-plan.md'),
+      'utf8',
+    );
+
+    expect(plan).toContain('managed runner | 当前可执行 HOME binding 主链');
+    expect(plan).toContain('Developer runner | Slice 5 blocked 时只允许连接/存在状态诊断');
+    expect(plan).toContain('no local file_library binding');
+    expect(plan).toContain('upstream blocker/no-workaround record');
+
+    expect(plan).not.toContain('<developer_task_home_path>');
+    expect(plan).not.toContain('managed 和 Developer runner 的 `task_home_path` 都代表');
+    expect(plan).not.toContain('Managed and Developer runner echo');
+    expect(plan).not.toContain('managed runner 和 Developer runner 都把同一文件库根目录作为');
   });
 
   it('flags handoff/refactor/migration entries in the engineering current index section', () => {

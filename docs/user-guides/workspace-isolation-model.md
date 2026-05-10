@@ -70,11 +70,11 @@
 | PostgreSQL | `projects` | `workspace_id` / `project_id` | No | Shared database, shared table |
 | Object storage | `workspaces/{workspaceId}/projects/{projectId}/...` | Path prefix | N/A | Shared bucket |
 
-JuiceFS 文件库当前使用：
-- 每个文件库独立 PostgreSQL metadata database
-- 每个文件库独立 MinIO bucket
-- Web 端通过 JuiceFS Gateway 访问
-- 本地通过 `juicefs mount` 访问
+File Library 当前使用后端托管的项目级文件库能力：
+- 前端只看到 project-scoped file library
+- 后端负责存储初始化、状态投影和审计
+- Web 端通过 Files API 访问
+- 本地连接器不是当前产品入口
 
 ## 发布与排障建议
 

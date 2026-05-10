@@ -1,12 +1,8 @@
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { WebSocket } from "ws";
 import { NOTEBOOK_RUNNER_SPEC } from "@mbos/agent-runner";
 import { createDefaultNodeApiDeps } from "./index.js";
-import {
-  JsonDocProjectFileLibraryBackendRepo,
-  JsonDocProjectFileLibraryCatalogRepo,
-  JsonDocProjectFileLibraryMountAccessRepo,
-} from "./file-library-persistence.js";
+import { AgentTaskModelSettingService } from "./agent-task-model-setting-service.js";
 import { sanitizeWorkloadId } from "./internal-agent-pod-manager.js";
 import { UniversalProxyService } from "./universal-proxy-service.js";
 import {
@@ -16,29 +12,95 @@ import {
 import {
   apiFetch,
   apiFetchWithToken,
-  startServer,
-  startServerWithDeps,
+  startServer as startBaseServer,
+  startServerWithDeps as startBaseServerWithDeps,
 } from "./__integration__/test-support.js";
+import {
+  configureAfscpReadyFileLibraryTestDeps,
+} from "./__integration__/afscp-file-library-test-support.js";
 import {
   acquireNotebookTaskRunLease,
   buildNotebookTaskRunState,
 } from "./notebook-task/task-run-coordination.js";
 import {
+  __resetTaskFileLibraryBindingsForTests,
+} from "./notebook-task/task-file-library-bindings.js";
+import {
+  ACTIVE_RUNS_BY_TASK,
+  ACTIVE_RUN_CANCEL_BY_TASK,
+  ACTIVE_RUN_CANCEL_REQUESTED_BY_TASK,
+  ARTIFACTS_BY_TASK,
+  MESSAGES_BY_TASK,
+  TASKS_BY_PROJECT,
+} from "./notebook-task/task-runtime-state.js";
+import {
   upsertProjectMemberPermissionState,
   upsertProjectMembershipRecord,
 } from "./project-member-governance-persistence.js";
 
-const originalGatewayReconcileInterval = process.env.FILE_LIBRARY_GATEWAY_RECONCILE_INTERVAL_MS;
 const originalFeishuRefreshEnabled = process.env.FEISHU_OAUTH_REFRESH_RUNNER_ENABLED;
+type NodeApiTestDeps = ReturnType<typeof createDefaultNodeApiDeps>;
+type GetProjectInput = Parameters<NodeApiTestDeps["getProjectUseCase"]["execute"]>[0];
+type GetProjectResult = Awaited<ReturnType<NodeApiTestDeps["getProjectUseCase"]["execute"]>>;
+const defaultProjectFallbackDeps = new WeakSet<NodeApiTestDeps>();
+
+beforeEach(() => {
+  ACTIVE_RUNS_BY_TASK.clear();
+  ACTIVE_RUN_CANCEL_BY_TASK.clear();
+  ACTIVE_RUN_CANCEL_REQUESTED_BY_TASK.clear();
+  ARTIFACTS_BY_TASK.clear();
+  MESSAGES_BY_TASK.clear();
+  TASKS_BY_PROJECT.clear();
+  __resetTaskFileLibraryBindingsForTests();
+});
 
 afterEach(async () => {
   vi.restoreAllMocks();
   await cleanupChatUpstreamServers();
-  if (originalGatewayReconcileInterval === undefined) delete process.env.FILE_LIBRARY_GATEWAY_RECONCILE_INTERVAL_MS;
-  else process.env.FILE_LIBRARY_GATEWAY_RECONCILE_INTERVAL_MS = originalGatewayReconcileInterval;
+  __resetTaskFileLibraryBindingsForTests();
   if (originalFeishuRefreshEnabled === undefined) delete process.env.FEISHU_OAUTH_REFRESH_RUNNER_ENABLED;
   else process.env.FEISHU_OAUTH_REFRESH_RUNNER_ENABLED = originalFeishuRefreshEnabled;
 });
+
+function ensureDefaultProjectUseCaseFallback(deps: NodeApiTestDeps): void {
+  if (defaultProjectFallbackDeps.has(deps)) return;
+  const originalExecute = deps.getProjectUseCase.execute.bind(deps.getProjectUseCase);
+  deps.getProjectUseCase.execute = async (input: GetProjectInput): Promise<GetProjectResult> => {
+    try {
+      return await originalExecute(input);
+    } catch (error) {
+      if (input.workspaceId !== "ws_default" || input.projectId !== "proj_1") {
+        throw error;
+      }
+      return {
+        id: "proj_1",
+        workspace_id: "ws_default",
+        name: "Default Project",
+        owner_id: "user_test",
+        governance_json: null,
+      } as GetProjectResult;
+    }
+  };
+  defaultProjectFallbackDeps.add(deps);
+}
+
+function configureIndexTestDeps(deps: NodeApiTestDeps): void {
+  configureAfscpReadyFileLibraryTestDeps(deps);
+  ensureDefaultProjectUseCaseFallback(deps);
+}
+
+function startServer(): ReturnType<typeof startBaseServer> {
+  const started = startBaseServer();
+  configureIndexTestDeps(started.deps);
+  return started;
+}
+
+function startServerWithDeps(
+  deps: NodeApiTestDeps,
+): ReturnType<typeof startBaseServerWithDeps> {
+  configureIndexTestDeps(deps);
+  return startBaseServerWithDeps(deps);
+}
 
 async function createFileLibrary(
   baseUrl: string,
@@ -214,6 +276,51 @@ async function createChatEndpoint(
   expect(createEndpoint.status).toBe(201);
   const endpoint = (await createEndpoint.json()) as { id: string };
   return { id: endpoint.id, model };
+}
+
+async function seedAgentTaskModelSetting(
+  deps: ReturnType<typeof createDefaultNodeApiDeps>,
+  endpointId: string,
+  projectId = "proj_1",
+): Promise<void> {
+  const service = new AgentTaskModelSettingService(deps);
+  const current = await service.getSetting("ws_default", projectId);
+  await service.patchSetting({
+    workspaceId: "ws_default",
+    projectId,
+    endpointId,
+    expectedSettingRevision: current?.setting_revision ?? null,
+    actorUserId: "user_test",
+  });
+}
+
+async function grantNotebookTaskRunnerPermissions(
+  deps: ReturnType<typeof createDefaultNodeApiDeps>,
+  projectId = "proj_1",
+): Promise<void> {
+  await upsertProjectMembershipRecord(deps.docStore, "ws_default", projectId, {
+    project_id: projectId,
+    user_id: "user_test",
+    user_email: "test@example.com",
+    user_name: "Test User",
+    status: "active",
+    joined_at: new Date().toISOString(),
+  });
+  await upsertProjectMemberPermissionState(
+    deps.docStore,
+    "ws_default",
+    projectId,
+    "user_test",
+    {
+      mode: "custom",
+      template: null,
+      permissions: [
+        "project:agent_task:use",
+        "project:agent_runner:manage",
+        "project:files:update",
+      ],
+    },
+  );
 }
 
 async function createEndpointChatSession(
@@ -423,6 +530,8 @@ async function createNotebookExternalAgentFixture(
   );
   expect(createEndpoint.status).toBe(201);
   const endpoint = (await createEndpoint.json()) as { id: string };
+  await seedAgentTaskModelSetting(deps, endpoint.id);
+  await grantNotebookTaskRunnerPermissions(deps);
 
   const agent = await deps.agentResourceService.createAgent(
     "ws_default",
@@ -477,6 +586,7 @@ async function createNotebookExternalAgentFixture(
 
 async function createNotebookTask(
   baseUrl: string,
+  agentId: string,
   workspaceFileLibraryId: string,
   title: string,
 ): Promise<{ id: string }> {
@@ -488,11 +598,13 @@ async function createNotebookTask(
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         title,
+        bound_runner_id: agentId,
+        workspace_mode: "use_existing",
         workspace_file_library_id: workspaceFileLibraryId,
       }),
     },
   );
-  expect(createTaskRes.status).toBe(201);
+  expect(createTaskRes.status, await createTaskRes.clone().text()).toBe(201);
   return (await createTaskRes.json()) as { id: string };
 }
 
@@ -575,17 +687,20 @@ async function openNotebookRunnerSocket(input: {
 }
 
 describe("api-entry-node me routes", () => {
-  it("shuts down file library gateways when the server closes", async () => {
+  it("does not start or shut down the retired file library gateway runtime", async () => {
+    process.env.FEISHU_OAUTH_REFRESH_RUNNER_ENABLED = "false";
+
     const deps = createDefaultNodeApiDeps();
+    const reconcile = vi.fn(async () => undefined);
     const shutdown = vi.fn(async () => undefined);
+    const setIntervalSpy = vi.spyOn(globalThis, "setInterval");
     const { server } = startServerWithDeps({
       ...deps,
       fileLibraryGatewayManager: {
-        ...deps.fileLibraryGatewayManager,
-        reconcile: vi.fn(async () => undefined),
+        reconcile,
         shutdown,
       },
-    });
+    } as never);
 
     await new Promise<void>((resolve) => {
       if (server.listening) {
@@ -594,6 +709,9 @@ describe("api-entry-node me routes", () => {
       }
       server.once("listening", () => resolve());
     });
+
+    expect(reconcile).not.toHaveBeenCalled();
+    expect(setIntervalSpy).not.toHaveBeenCalledWith(expect.any(Function), expect.any(Number));
 
     await new Promise<void>((resolve, reject) => {
       server.close((error) => {
@@ -605,116 +723,7 @@ describe("api-entry-node me routes", () => {
       });
     });
 
-    expect(shutdown).toHaveBeenCalledTimes(1);
-  });
-
-  it("waits for file library gateway shutdown before resolving server.close", async () => {
-    const deps = createDefaultNodeApiDeps();
-    let resolveShutdown: (() => void) | null = null;
-    const shutdown = vi.fn(
-      () =>
-        new Promise<void>((resolve) => {
-          resolveShutdown = resolve;
-        }),
-    );
-    const { server } = startServerWithDeps({
-      ...deps,
-      fileLibraryGatewayManager: {
-        ...deps.fileLibraryGatewayManager,
-        reconcile: vi.fn(async () => undefined),
-        shutdown,
-      },
-    });
-
-    await new Promise<void>((resolve) => {
-      if (server.listening) {
-        resolve();
-        return;
-      }
-      server.once("listening", () => resolve());
-    });
-
-    let closeResolved = false;
-    const closePromise = new Promise<void>((resolve, reject) => {
-      server.close((error) => {
-        if (error) {
-          reject(error);
-          return;
-        }
-        closeResolved = true;
-        resolve();
-      });
-    });
-
-    await new Promise<void>((resolve) => setTimeout(resolve, 0));
-    expect(shutdown).toHaveBeenCalledTimes(1);
-    expect(closeResolved).toBe(false);
-
-    resolveShutdown?.();
-    await closePromise;
-
-    expect(closeResolved).toBe(true);
-  });
-
-  it("still triggers gateway manager shutdown when reconcile is hung", async () => {
-    process.env.FILE_LIBRARY_GATEWAY_RECONCILE_INTERVAL_MS = "60000";
-    process.env.FEISHU_OAUTH_REFRESH_RUNNER_ENABLED = "false";
-
-    const deps = createDefaultNodeApiDeps();
-    let resolveReconcile: (() => void) | null = null;
-    let resolveShutdown: (() => void) | null = null;
-    const reconcile = vi.fn(
-      () =>
-        new Promise<void>((resolve) => {
-          resolveReconcile = resolve;
-        }),
-    );
-    const shutdown = vi.fn(
-      () =>
-        new Promise<void>((resolve) => {
-          resolveReconcile?.();
-          resolveShutdown = resolve;
-        }),
-    );
-    const { server } = startServerWithDeps({
-      ...deps,
-      fileLibraryGatewayManager: {
-        ...deps.fileLibraryGatewayManager,
-        reconcile,
-        shutdown,
-      },
-    });
-
-    await new Promise<void>((resolve) => {
-      if (server.listening) {
-        resolve();
-        return;
-      }
-      server.once("listening", () => resolve());
-    });
-
-    let closeResolved = false;
-    const closePromise = new Promise<void>((resolve, reject) => {
-      server.close((error) => {
-        if (error) {
-          reject(error);
-          return;
-        }
-        closeResolved = true;
-        resolve();
-      });
-    });
-
-    await new Promise<void>((resolve) => setTimeout(resolve, 0));
-
-    expect(reconcile).toHaveBeenCalledTimes(1);
-    expect(shutdown).toHaveBeenCalledTimes(1);
-    expect(closeResolved).toBe(false);
-
-    resolveShutdown?.();
-    await closePromise;
-
-    expect(closeResolved).toBe(true);
+    expect(shutdown).not.toHaveBeenCalled();
   });
 
   it("shuts down terminal and agent execution lifecycle services before resolving server.close", async () => {
@@ -723,14 +732,7 @@ describe("api-entry-node me routes", () => {
     const executionShutdown = vi.fn(async () => undefined);
     vi.spyOn(deps.notebookTerminalService, "shutdown").mockImplementation(terminalShutdown);
     vi.spyOn(deps.agentExecutionService, "shutdown").mockImplementation(executionShutdown);
-    const { server } = startServerWithDeps({
-      ...deps,
-      fileLibraryGatewayManager: {
-        ...deps.fileLibraryGatewayManager,
-        reconcile: vi.fn(async () => undefined),
-        shutdown: vi.fn(async () => undefined),
-      },
-    });
+    const { server } = startServerWithDeps(deps);
 
     await new Promise<void>((resolve) => {
       if (server.listening) {
@@ -768,14 +770,7 @@ describe("api-entry-node me routes", () => {
       configurable: true,
       value: closeDocStore,
     });
-    const { server } = startServerWithDeps({
-      ...deps,
-      fileLibraryGatewayManager: {
-        ...deps.fileLibraryGatewayManager,
-        reconcile: vi.fn(async () => undefined),
-        shutdown: vi.fn(async () => undefined),
-      },
-    });
+    const { server } = startServerWithDeps(deps);
 
     await new Promise<void>((resolve) => {
       if (server.listening) {
@@ -807,75 +802,6 @@ describe("api-entry-node me routes", () => {
     expect(closeResolved).toBe(true);
   });
 
-  it("runs gateway reconcile on a single-flight interval and clears it during shutdown", async () => {
-    process.env.FILE_LIBRARY_GATEWAY_RECONCILE_INTERVAL_MS = "60000";
-    process.env.FEISHU_OAUTH_REFRESH_RUNNER_ENABLED = "false";
-
-    const deps = createDefaultNodeApiDeps();
-    let resolveFirstReconcile: (() => void) | null = null;
-    const reconcile = vi.fn(() => new Promise<void>((resolve) => {
-      if (!resolveFirstReconcile) {
-        resolveFirstReconcile = resolve;
-        return;
-      }
-      resolve();
-    }));
-    const shutdown = vi.fn(async () => undefined);
-    const intervalCallbacks: Array<() => void> = [];
-    const intervalHandle = { unref: vi.fn() } as unknown as NodeJS.Timeout;
-    const setIntervalSpy = vi.spyOn(globalThis, "setInterval").mockImplementation(((callback: TimerHandler) => {
-      intervalCallbacks.push(callback as () => void);
-      return intervalHandle;
-    }) as typeof setInterval);
-    const clearIntervalSpy = vi.spyOn(globalThis, "clearInterval").mockImplementation(() => undefined);
-
-    const { server } = startServerWithDeps({
-      ...deps,
-      fileLibraryGatewayManager: {
-        ...deps.fileLibraryGatewayManager,
-        reconcile,
-        shutdown,
-      },
-    });
-
-    await new Promise<void>((resolve) => {
-      if (server.listening) {
-        resolve();
-        return;
-      }
-      server.once("listening", () => resolve());
-    });
-
-    expect(reconcile).toHaveBeenCalledTimes(1);
-    expect(setIntervalSpy).toHaveBeenCalledWith(expect.any(Function), 60000);
-    expect(intervalCallbacks).toHaveLength(1);
-
-    intervalCallbacks[0]();
-    intervalCallbacks[0]();
-    await Promise.resolve();
-    expect(reconcile).toHaveBeenCalledTimes(1);
-
-    resolveFirstReconcile?.();
-    await new Promise<void>((resolve) => setImmediate(resolve));
-
-    intervalCallbacks[0]();
-    await new Promise<void>((resolve) => setImmediate(resolve));
-    expect(reconcile).toHaveBeenCalledTimes(2);
-
-    await new Promise<void>((resolve, reject) => {
-      server.close((error) => {
-        if (error) {
-          reject(error);
-          return;
-        }
-        resolve();
-      });
-    });
-
-    expect(clearIntervalSpy).toHaveBeenCalledWith(intervalHandle);
-    expect(shutdown).toHaveBeenCalledTimes(1);
-  });
-
   it("returns unread notification count for authenticated user", async () => {
     const { baseUrl } = startServer();
     const response = await apiFetch(
@@ -886,196 +812,104 @@ describe("api-entry-node me routes", () => {
     await expect(response.json()).resolves.toEqual({ unread_count: 0 });
   });
 
-  it("returns desktop file libraries for the authenticated owner sorted newest first", async () => {
+  it("returns 404 for the removed desktop file libraries route", async () => {
     const { baseUrl } = startServer();
-    const older = await createFileLibrary(baseUrl, "Older Library");
-    await new Promise((resolve) => setTimeout(resolve, 5));
-    const newer = await createFileLibrary(baseUrl, "Newer Library");
-
     const response = await apiFetch(
       baseUrl,
       "/api/v1/me/desktop/file-libraries",
     );
-    expect(response.status).toBe(200);
-    const payload = (await response.json()) as {
-      items: Array<{ id: string; name: string }>;
-    };
-    expect(payload.items.slice(0, 2)).toEqual([
-      expect.objectContaining({ id: newer.id, name: "Newer Library" }),
-      expect.objectContaining({ id: older.id, name: "Older Library" }),
-    ]);
-  });
-
-  it("filters desktop file libraries down to mountable ready libraries", async () => {
-    const deps = createDefaultNodeApiDeps();
-    const { baseUrl } = startServerWithDeps(deps);
-    const ready = await createFileLibrary(baseUrl, "Ready Library");
-
-    const catalogRepo = new JsonDocProjectFileLibraryCatalogRepo(deps.docStore);
-    const backendRepo = new JsonDocProjectFileLibraryBackendRepo(deps.docStore);
-    const mountAccessRepo = new JsonDocProjectFileLibraryMountAccessRepo(
-      deps.docStore,
-    );
-    await catalogRepo.save({
-      id: "flib_failed",
-      workspace_id: "ws_default",
-      project_id: "proj_1",
-      name: "Failed Library",
-      description: "broken",
-      status: "failed",
-      filesystem_name: "flib-failed",
-      created_by_user_id: "user_test",
-      created_at: new Date(Date.now() + 50).toISOString(),
-      updated_at: new Date(Date.now() + 50).toISOString(),
+    expect(response.status).toBe(404);
+    await expect(response.json()).resolves.toMatchObject({
+      error_code: "NOT_FOUND",
     });
-    await catalogRepo.save({
-      id: "flib_ready_missing_mount",
-      workspace_id: "ws_default",
-      project_id: "proj_1",
-      name: "Ready Missing Mount",
-      description: "missing mount access",
-      status: "ready",
-      filesystem_name: "flib-ready-missing-mount",
-      created_by_user_id: "user_test",
-      created_at: new Date(Date.now() + 100).toISOString(),
-      updated_at: new Date(Date.now() + 100).toISOString(),
-    });
-    await backendRepo.save("ws_default", "proj_1", "flib_ready_missing_mount", {
-      library_id: "flib_ready_missing_mount",
-      filesystem_name: "flib-ready-missing-mount",
-      provisioning_status: "ready",
-      gateway_status: "not_started",
-      postgres: {
-        host: "127.0.0.1",
-        port: 15432,
-        database: "jfs_ready_missing_mount",
-        username: "jfsu_ready_missing_mount",
-      },
-      minio: {
-        endpoint: "http://127.0.0.1:19000",
-        bucket: "flib-ready-missing-mount",
-      },
-      metadata_url:
-        "postgres://user:pass@127.0.0.1:15432/jfs_ready_missing_mount?sslmode=disable",
-      internal_metadata_url:
-        "postgres://user:pass@127.0.0.1:15432/jfs_ready_missing_mount?sslmode=disable",
-    });
-    await mountAccessRepo.save("ws_default", "proj_1", ready.id, {
-      filesystem_name: "flib-ready-library",
-      metadata_url:
-        "postgres://user:pass@127.0.0.1:15432/jfs_ready_library?sslmode=disable",
-      storage_bucket_url: "http://127.0.0.1:19000/flib-ready-library",
-      recommended_mount_path: "~/Agentsmith/Ready Library",
-      platform_notes: [],
-      recommended_mount_commands: {
-        linux: "noop",
-        macos: "noop",
-        windows: "noop",
-      },
-      created_at: new Date().toISOString(),
-    });
-
-    const response = await apiFetch(
-      baseUrl,
-      "/api/v1/me/desktop/file-libraries",
-    );
-    expect(response.status).toBe(200);
-    const payload = (await response.json()) as {
-      items: Array<{ id: string; name: string }>;
-    };
-    expect(payload.items).toEqual([
-      expect.objectContaining({ id: ready.id, name: "Ready Library" }),
-    ]);
   });
 });
 
-describe("api-entry-node brokered desktop auth routes", () => {
-  it("starts, completes, exchanges, and accepts desktop sessions for desktop me routes", async () => {
+describe("api-entry-node removed desktop auth routes", () => {
+  it("lets unauthenticated desktop auth routes fail through the generic auth gate", async () => {
     const { baseUrl } = startServer();
 
-    const startResponse = await fetch(`${baseUrl}/api/v1/desktop/auth/start`, {
+    const responses = [
+      await fetch(`${baseUrl}/api/v1/desktop/auth/start`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          deployment_base_url: "http://localhost:3101",
+        }),
+      }),
+      await fetch(`${baseUrl}/api/v1/desktop/auth/requests/dreq_removed`),
+      await fetch(`${baseUrl}/api/v1/desktop/auth/exchange`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          request_id: "dreq_removed",
+          exchange_ticket: "dext_removed",
+        }),
+      }),
+    ];
+
+    for (const response of responses) {
+      expect(response.status).toBe(401);
+      await expect(response.json()).resolves.toMatchObject({
+        error_code: "UNAUTHORIZED",
+        message: "Missing or invalid bearer token",
+      });
+    }
+  });
+
+  it("lets authenticated desktop auth routes fall through to the generic unknown route response", async () => {
+    const { baseUrl } = startServer();
+
+    const startResponse = await apiFetch(baseUrl, "/api/v1/desktop/auth/start", {
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify({
         deployment_base_url: "http://localhost:3101",
       }),
     });
-    expect(startResponse.status).toBe(201);
-    const started = (await startResponse.json()) as {
-      request_id: string;
-      browser_start_url: string;
-      poll_url: string;
-      poll_interval_ms: number;
-    };
-    expect(started.request_id).toMatch(/^dreq_/);
-    expect(started.browser_start_url).toContain(
-      "/en-US/desktop/auth/request?desktop_auth_request_id=",
-    );
-
-    const pendingResponse = await fetch(`${baseUrl}${started.poll_url}`);
-    expect(pendingResponse.status).toBe(200);
-    await expect(pendingResponse.json()).resolves.toMatchObject({
-      request_id: started.request_id,
-      status: "pending",
+    expect(startResponse.status).toBe(404);
+    await expect(startResponse.json()).resolves.toMatchObject({
+      error_code: "NOT_FOUND",
+      message: "Route not found",
     });
+
+    const pollResponse = await apiFetch(
+      baseUrl,
+      "/api/v1/desktop/auth/requests/dreq_removed",
+    );
+    expect(pollResponse.status).toBe(404);
+    await expect(pollResponse.json()).resolves.toMatchObject({
+      error_code: "NOT_FOUND",
+      message: "Route not found",
+    });
+
+    const exchangeResponse = await apiFetch(baseUrl, "/api/v1/desktop/auth/exchange", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        request_id: "dreq_removed",
+        exchange_ticket: "dext_removed",
+      }),
+    });
+    expect(exchangeResponse.status).toBe(404);
+    await expect(exchangeResponse.json()).resolves.toMatchObject({
+      error_code: "NOT_FOUND",
+      message: "Route not found",
+    });
+  });
+
+  it("returns 404 for authenticated desktop auth completion under me routes", async () => {
+    const { baseUrl } = startServer();
 
     const completeResponse = await apiFetch(
       baseUrl,
-      `/api/v1/me/desktop/auth/requests/${started.request_id}/complete`,
+      "/api/v1/me/desktop/auth/requests/dreq_removed/complete",
       { method: "POST" },
     );
-    expect(completeResponse.status).toBe(200);
-    const completed = (await completeResponse.json()) as {
-      status: "authenticated";
-      exchange_ticket: string;
-    };
-    expect(completed.exchange_ticket).toMatch(/^dext_/);
-
-    const authenticatedResponse = await fetch(`${baseUrl}${started.poll_url}`);
-    expect(authenticatedResponse.status).toBe(200);
-    await expect(authenticatedResponse.json()).resolves.toMatchObject({
-      request_id: started.request_id,
-      status: "authenticated",
-      exchange_ticket: completed.exchange_ticket,
-      authenticated_user: expect.objectContaining({
-        id: "user_test",
-      }),
-    });
-
-    const exchangeResponse = await fetch(
-      `${baseUrl}/api/v1/desktop/auth/exchange`,
-      {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({
-          request_id: started.request_id,
-          exchange_ticket: completed.exchange_ticket,
-        }),
-      },
-    );
-    expect(exchangeResponse.status).toBe(200);
-    const exchanged = (await exchangeResponse.json()) as {
-      access_token: string;
-      signed_in_user: {
-        id: string;
-        email: string;
-      };
-    };
-    expect(exchanged.access_token).toMatch(/^dsk_/);
-    expect(exchanged.signed_in_user).toMatchObject({
-      id: "user_test",
-      email: "test@example.com",
-    });
-
-    const meResponse = await fetch(
-      `${baseUrl}/api/v1/me/desktop/file-libraries`,
-      {
-        headers: { authorization: `Bearer ${exchanged.access_token}` },
-      },
-    );
-    expect(meResponse.status).toBe(200);
-    await expect(meResponse.json()).resolves.toMatchObject({
-      items: expect.any(Array),
+    expect(completeResponse.status).toBe(404);
+    await expect(completeResponse.json()).resolves.toMatchObject({
+      error_code: "NOT_FOUND",
+      message: "Route not found",
     });
   });
 });
@@ -1371,7 +1205,12 @@ describe("api-entry-node projects routes", () => {
     await expect(createAgentRes.json()).resolves.toMatchObject({
       error_code: "unsupported_field",
       message: "unsupported_field",
-      fields: ["mode", "interaction_kind", "execution_preferences"],
+      fields: [
+        "mode",
+        "interaction_kind",
+        "execution_preferences",
+        "capabilities",
+      ],
     });
   });
 
@@ -1600,7 +1439,7 @@ describe("api-entry-node projects routes", () => {
     expect(createChatWithoutEndpointRes.status).toBe(400);
     await expect(createChatWithoutEndpointRes.json()).resolves.toMatchObject({
       error_code: "unsupported_field",
-      fields: ["mode", "interaction_kind"],
+      fields: ["mode", "interaction_kind", "capabilities"],
     });
 
     const createWithoutEndpointRes = await ownerFetch(
@@ -1622,7 +1461,7 @@ describe("api-entry-node projects routes", () => {
     expect(createWithoutEndpointRes.status).toBe(400);
     await expect(createWithoutEndpointRes.json()).resolves.toMatchObject({
       error_code: "unsupported_field",
-      fields: ["mode", "interaction_kind"],
+      fields: ["mode", "interaction_kind", "capabilities"],
     });
 
     const createChatAgentRes = await ownerFetch(
@@ -1632,21 +1471,16 @@ describe("api-entry-node projects routes", () => {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           name: "agent-runner-patch-target",
-          status: "ready",
-          default_endpoint_id: "ep_chat_patch",
-          capabilities: {
-            task_execution: true,
-            terminal: true,
-          },
+          description: "Developer runner patch target",
         }),
       },
     );
     expect(createChatAgentRes.status).toBe(201);
     const created = (await createChatAgentRes.json()) as {
       id: string;
-      default_endpoint_id?: string;
+      kind?: string;
     };
-    expect(created.default_endpoint_id).toBe("ep_chat_patch");
+    expect(created.kind).toBe("developer");
 
     const patchInvalidRes = await ownerFetch(
       `${agentRunnerPath}/${created.id}`,
@@ -1698,25 +1532,36 @@ describe("api-entry-node projects routes", () => {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           name: "shape-agent",
-          status: "ready",
-          is_default: true,
-          default_endpoint_id: "ep_shape_chat",
-          capabilities: {
-            task_execution: true,
-            terminal: true,
-          },
+          description: "Developer runner shape",
         }),
       },
     );
     expect(createRes.status).toBe(201);
     const created = (await createRes.json()) as Record<string, unknown>;
-    expect(created.status).toBe("ready");
-    expect(created.default_endpoint_id).toBe("ep_shape_chat");
+    expect(created).toMatchObject({
+      name: "shape-agent",
+      description: "Developer runner shape",
+      kind: "developer",
+      source: "developer",
+      read_only: false,
+      is_default: false,
+      status: "draft",
+      diagnostics: expect.objectContaining({
+        presence: "offline",
+      }),
+      actions: expect.objectContaining({
+        edit: expect.objectContaining({ visible: true }),
+        delete: expect.objectContaining({ visible: true }),
+        issue_connection_key: expect.objectContaining({ visible: true }),
+      }),
+    });
     expect(created).not.toHaveProperty("interaction_mode");
     expect(created).not.toHaveProperty("interaction_kind");
     expect(created).not.toHaveProperty("execution_preferences_json");
     expect(created).not.toHaveProperty("execution_preferences");
     expect(created).not.toHaveProperty("mode");
+    expect(created).not.toHaveProperty("runner_runtime");
+    expect(created).not.toHaveProperty("default_endpoint_id");
     expect(created).not.toHaveProperty("config");
 
     const listRes = await ownerFetch(
@@ -1727,13 +1572,21 @@ describe("api-entry-node projects routes", () => {
       items: Record<string, unknown>[];
     };
     const listed = listBody.items.find((item) => item.id === created.id);
-    expect(listed?.status).toBe("ready");
-    expect(listed?.default_endpoint_id).toBe("ep_shape_chat");
+    expect(listed).toMatchObject({
+      name: "shape-agent",
+      kind: "developer",
+      source: "developer",
+      read_only: false,
+      is_default: false,
+      status: "draft",
+    });
     expect(listed).not.toHaveProperty("interaction_mode");
     expect(listed).not.toHaveProperty("interaction_kind");
     expect(listed).not.toHaveProperty("execution_preferences_json");
     expect(listed).not.toHaveProperty("execution_preferences");
     expect(listed).not.toHaveProperty("mode");
+    expect(listed).not.toHaveProperty("runner_runtime");
+    expect(listed).not.toHaveProperty("default_endpoint_id");
     expect(listed).not.toHaveProperty("config");
 
     const itemRes = await ownerFetch(
@@ -1741,13 +1594,21 @@ describe("api-entry-node projects routes", () => {
     );
     expect(itemRes.status).toBe(200);
     const itemBody = (await itemRes.json()) as Record<string, unknown>;
-    expect(itemBody.status).toBe("ready");
-    expect(itemBody.default_endpoint_id).toBe("ep_shape_chat");
+    expect(itemBody).toMatchObject({
+      name: "shape-agent",
+      kind: "developer",
+      source: "developer",
+      read_only: false,
+      is_default: false,
+      status: "draft",
+    });
     expect(itemBody).not.toHaveProperty("interaction_mode");
     expect(itemBody).not.toHaveProperty("interaction_kind");
     expect(itemBody).not.toHaveProperty("execution_preferences_json");
     expect(itemBody).not.toHaveProperty("execution_preferences");
     expect(itemBody).not.toHaveProperty("mode");
+    expect(itemBody).not.toHaveProperty("runner_runtime");
+    expect(itemBody).not.toHaveProperty("default_endpoint_id");
     expect(itemBody).not.toHaveProperty("config");
   });
 
@@ -1779,7 +1640,7 @@ describe("api-entry-node projects routes", () => {
         "mode",
         "interaction_kind",
         "execution_preferences",
-        "config.image",
+        "config",
       ],
     });
   });
@@ -1812,7 +1673,7 @@ describe("api-entry-node projects routes", () => {
         "mode",
         "interaction_kind",
         "execution_preferences",
-        "config.image",
+        "config",
       ],
     });
   });
@@ -1832,8 +1693,7 @@ describe("api-entry-node projects routes", () => {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           name: "agent-runner-patch-config-target",
-          status: "ready",
-          default_endpoint_id: "ep_internal_target",
+          description: "Developer runner config patch target",
         }),
       },
     );
@@ -1864,7 +1724,7 @@ describe("api-entry-node projects routes", () => {
         "mode",
         "interaction_kind",
         "execution_preferences",
-        "config.image",
+        "config",
       ],
     });
   });
@@ -1932,21 +1792,28 @@ describe("api-entry-node projects routes", () => {
     };
     const { baseUrl } = startServerWithDeps(deps);
 
-    const internalAgent = await deps.agentResourceService.createAgent(
+    const endpoint = await createChatEndpoint(baseUrl, {
+      name: "internal-task-endpoint",
+      model: "gpt-5-codex",
+    });
+    await seedAgentTaskModelSetting(deps, endpoint.id);
+    await grantNotebookTaskRunnerPermissions(deps);
+    const internalAgent = await deps.agentResourceService.upsertDeploymentDefaultManagedAgentRunner(
       "ws_default",
       "proj_1",
       {
         name: "managed-agent-task-runner",
-        runner_provider: "managed",
         status: "enabled",
+        presence: "managed",
         runner_status: "ready",
-        is_default: true,
+        endpointId: endpoint.id,
         owner_id: "user_test",
         visibility: "private",
-        default_endpoint_id: "ep_internal",
         capabilities: {
           task_execution: true,
           terminal: true,
+          artifacts: true,
+          file_inputs: true,
         },
       },
     );
@@ -1964,7 +1831,7 @@ describe("api-entry-node projects routes", () => {
         }),
       },
     );
-    expect(taskRes.status).toBe(201);
+    expect(taskRes.status, await taskRes.clone().text()).toBe(201);
     const task = (await taskRes.json()) as { id: string };
     await expect(
       acquireNotebookTaskRunLease(
@@ -1973,6 +1840,7 @@ describe("api-entry-node projects routes", () => {
           taskId: task.id,
           runId: "run_release_archive",
           runnerId: internalAgent.id,
+          resolvedRunnerId: internalAgent.id,
           startedAt: new Date().toISOString(),
           ownerInstanceId: "index-test",
         }),
@@ -2009,25 +1877,20 @@ describe("api-entry-node projects routes", () => {
     const ownerFetch = (path: string, init?: RequestInit) =>
       apiFetchWithToken(baseUrl, path, "test-token", init);
 
-    const createRes = await ownerFetch(
-      agentRunnerPath,
+    const created = await deps.agentResourceService.createAgent(
+      "ws_default",
+      projectId,
       {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          name: "managed-sanitized",
-          status: "ready",
-          default_endpoint_id: "ep_sanitized",
-        }),
+        name: "managed-sanitized",
+        runner_provider: "managed",
+        status: "enabled",
+        presence: "managed",
+        runner_status: "ready",
+        default_endpoint_id: "ep_sanitized",
+        owner_id: "user_test",
+        visibility: "private",
       },
     );
-    expect(createRes.status).toBe(201);
-    const created = (await createRes.json()) as {
-      id: string;
-      config?: Record<string, unknown>;
-    };
-    expect(created.config?._internal_raw_key).toBeUndefined();
-    expect(created.config?._internal_key_id).toBeUndefined();
 
     const listRes = await ownerFetch(
       agentRunnerPath,
@@ -2038,6 +1901,7 @@ describe("api-entry-node projects routes", () => {
     };
     const listed = listBody.items.find((item) => item.id === created.id);
     expect(listed).toBeTruthy();
+    expect(listed).not.toHaveProperty("config");
     expect(listed?.config?._internal_raw_key).toBeUndefined();
     expect(listed?.config?._internal_key_id).toBeUndefined();
 
@@ -2048,6 +1912,7 @@ describe("api-entry-node projects routes", () => {
     const itemBody = (await itemRes.json()) as {
       config?: Record<string, unknown>;
     };
+    expect(itemBody).not.toHaveProperty("config");
     expect(itemBody.config?._internal_raw_key).toBeUndefined();
     expect(itemBody.config?._internal_key_id).toBeUndefined();
 
@@ -2198,6 +2063,7 @@ describe("api-entry-node projects routes", () => {
       socketsToClose.push(agentScopedRunner.ws);
       const task = await createNotebookTask(
         baseUrl,
+        fixture.agent.id,
         fixture.workspaceLibrary.id,
         "Truncate trace details",
       );
@@ -2243,30 +2109,32 @@ describe("api-entry-node projects routes", () => {
       await delay(NOTEBOOK_RUNNER_SETTLE_MS);
       expect(agentScopedRunner.getDispatchCount()).toBe(0);
 
-      let tracesBody: {
-        items: Array<{ details?: Record<string, unknown> }>;
-      } | null = null;
+      let storedTraces: Array<{ details?: Record<string, unknown> }> = [];
       for (let attempt = 0; attempt < 200; attempt += 1) {
-        const tracesRes = await apiFetch(
-          baseUrl,
-          `/api/v1/workspaces/ws_default/projects/proj_1/tasks/${task.id}/traces`,
+        storedTraces = await deps.docStore.list<{
+          task_id: string;
+          details?: Record<string, unknown>;
+        }>(
+          "ws_default_agent_task_trace_events",
+          { task_id: task.id },
         );
-        expect(tracesRes.status).toBe(200);
-        tracesBody = (await tracesRes.json()) as {
-          items: Array<{ details?: Record<string, unknown> }>;
-        };
-        if (tracesBody.items.some((item) => item.details?._truncated === true))
+        if (storedTraces.some((item) => item.details?._truncated === true))
           break;
         await new Promise((resolve) => setTimeout(resolve, 50));
       }
-      expect(tracesBody).not.toBeNull();
-      const detailEvent = tracesBody!.items.find(
+      const detailEvent = storedTraces.find(
         (item) => item.details && Object.keys(item.details).length > 0,
       );
       expect(detailEvent).toBeTruthy();
       expect(detailEvent!.details?._truncated).toBe(true);
       expect(detailEvent!.details?._reason).toBe("trace_details_too_large");
       expect(typeof detailEvent!.details?._preview).toBe("string");
+      const tracesRes = await apiFetch(
+        baseUrl,
+        `/api/v1/workspaces/ws_default/projects/proj_1/tasks/${task.id}/traces`,
+      );
+      expect(tracesRes.status).toBe(200);
+      expect(JSON.stringify(await tracesRes.json())).not.toContain(huge.slice(0, 1024));
     } finally {
       await Promise.allSettled(socketsToClose.map((socket) => disposeWebSocket(socket)));
       if (previousPublicApiBase === undefined) {
@@ -2297,6 +2165,7 @@ describe("api-entry-node projects routes", () => {
       socketsToClose.push(agentScopedRunner.ws);
       const task = await createNotebookTask(
         baseUrl,
+        fixture.agent.id,
         fixture.workspaceLibrary.id,
         "Persist notebook docs",
       );
@@ -2437,6 +2306,7 @@ describe("api-entry-node projects routes", () => {
       socketsToClose.push(agentScopedRunner.ws);
       const task = await createNotebookTask(
         baseUrl,
+        fixture.agent.id,
         fixture.workspaceLibrary.id,
         "Trace retention bound",
       );

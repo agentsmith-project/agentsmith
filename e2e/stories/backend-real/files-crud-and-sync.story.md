@@ -11,21 +11,14 @@
   "kind": "journey",
   "lane": "backend-real",
   "entryRoute": "/en-US/workspaces/ws_default/projects/{projectId}/files",
-  "goal": "成员在 Files 中管理文件对象后，Web 文件浏览与桌面挂载内容保持一致，不需要自己猜测哪一侧才是真相。",
+  "goal": "成员在 Files 中管理文件对象后，Web 文件浏览、API 响应和 task HOME 展示状态保持同一产品真相，不需要自己猜测哪一侧才可信。",
   "gatePolicy": {
     "tier": "default",
     "requiredEvidence": [
       "trace"
     ]
   },
-  "externalDependencies": [
-    {
-      "dependencyId": "juicefs-client",
-      "kind": "service",
-      "required": true,
-      "note": "mount sync validation requires a local JuiceFS client and storage credential exchange."
-    }
-  ],
+  "externalDependencies": [],
   "preconditions": [
     "backend-real stack is ready",
     "workspace ws_default is accessible"
@@ -42,18 +35,10 @@
         "uploadFileName": "story-web-note.txt",
         "uploadContent": "story-web-content\\n",
         "renamedFileName": "story-web-note-renamed.txt"
-      },
-      "mountSync": {
-        "projectNamePrefix": "Story Files Sync",
-        "libraryNamePrefix": "Story Files Sync",
-        "localFileName": "story-from-local.txt",
-        "localContent": "hello-from-local\\n",
-        "webFileName": "story-from-web.txt",
-        "webContent": "hello-from-web\\n"
       }
     }
   },
-  "narrative": "Files 的高频主故事不是孤立的 API 行为，而是成员在浏览器里管理文件对象后，马上能在桌面挂载看到同一份结果，反过来也一样。",
+  "narrative": "Files 的高频主故事不是孤立的 API 行为，而是成员在浏览器里管理文件对象后，能通过 Web/API 看到同一份结果，并理解 task HOME 绑定状态不会暴露原始存储字段。",
   "scenes": [
     {
       "sceneId": "project-files",
@@ -95,20 +80,8 @@
       "evidence": [
         "trace"
       ]
-    },
-    {
-      "stepId": "verify-web-desktop-sync",
-      "sceneId": "project-files-browser",
-      "intent": "Verify local mount writes appear in the web UI and web uploads appear in the local mount.",
-      "action": "Verify web and desktop sync",
-      "target": "files__objects-table",
-      "expectedFeedback": "Web 与桌面挂载看到的是同一份文件结果。",
-      "note": "同步主线要证明用户面对的是一份一致文件真相，而不是两套弱一致入口。",
-      "evidence": [
-        "trace"
-      ]
     }
   ]
 }
 ---
-Canonical backend-real story for high-frequency Files CRUD and sync continuity.
+Canonical backend-real story for high-frequency Files CRUD and Web/API continuity.

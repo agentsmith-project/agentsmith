@@ -9,11 +9,6 @@ import { getApiClient, MemberAPI } from '@/lib/api';
 import { resolveKeycloakRealmBase } from '@/lib/auth/keycloak';
 import { readAccessTokenClaims } from '@/lib/auth/token-claims';
 import { buildWorkspaceLoginLandingHref, clearInviteHandoff, readInviteHandoffForWorkspace, readPendingInviteToken, clearPendingInviteToken } from '@/lib/auth/invite-handoff';
-import {
-  buildDesktopAuthCompleteHref,
-  buildDesktopAuthRequestHref,
-  completeDesktopAuthRequest,
-} from '@/lib/auth/desktop-auth-request';
 
 interface KeycloakTokenResponse {
   access_token: string;
@@ -28,7 +23,6 @@ interface StoredPkceContext {
   createdAt: number;
   workspaceId?: string;
   locale?: string;
-  desktopAuthRequestId?: string;
   projectId?: string;
 }
 
@@ -184,9 +178,6 @@ export function WorkspaceLoginCallbackClient({
       const locale = pkce.locale || fallbackLocale;
       const inviteHandoff = readInviteHandoffForWorkspace(workspaceId);
       const resolvedProjectId = pkce.projectId || inviteHandoff?.projectId || null;
-      const desktopAuthRequestHref = pkce.desktopAuthRequestId
-        ? buildDesktopAuthRequestHref(locale, pkce.desktopAuthRequestId)
-        : null;
       const pendingInviteToken = readPendingInviteToken();
       const memberApi = new MemberAPI(getApiClient());
       setAuth(
@@ -208,7 +199,7 @@ export function WorkspaceLoginCallbackClient({
       );
       getApiClient().setToken(token.access_token);
       await tryBindWorkspaceAdmin(workspaceId, token.access_token);
-      if (!pkce.desktopAuthRequestId && pendingInviteToken) {
+      if (pendingInviteToken) {
         try {
           const invite = await memberApi.acceptInvite(pendingInviteToken);
           clearPendingInviteToken();
@@ -231,26 +222,11 @@ export function WorkspaceLoginCallbackClient({
           return;
         }
       }
-      if (pkce.desktopAuthRequestId) {
-        try {
-          await completeDesktopAuthRequest(pkce.desktopAuthRequestId, token.access_token);
-        } catch (cause) {
-          if (!cancelled) {
-            setError(cause instanceof Error ? cause.message : 'desktop_auth_complete_failed');
-            if (desktopAuthRequestHref) {
-              window.location.replace(desktopAuthRequestHref);
-            }
-          }
-          return;
-        }
-      }
       sessionStorage.removeItem('mbos:keycloak:pkce');
       if (!cancelled) {
         clearInviteHandoff();
         window.location.replace(
-          pkce.desktopAuthRequestId
-            ? buildDesktopAuthCompleteHref(locale, pkce.desktopAuthRequestId)
-            : buildWorkspaceLoginLandingHref(locale, workspaceId, resolvedProjectId),
+          buildWorkspaceLoginLandingHref(locale, workspaceId, resolvedProjectId),
         );
       }
     };

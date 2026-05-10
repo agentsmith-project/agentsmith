@@ -140,15 +140,6 @@ local_manual_runner_owner_token_for_pid() {
   return 0
 }
 
-run_juicefs_orphan_preflight() {
-  local context="${1:-local-manual}"
-  if [[ "${LOCAL_MANUAL_SKIP_JUICEFS_ORPHAN_PREFLIGHT:-0}" == "1" ]]; then
-    info "skipping stale JuiceFS preflight for ${context}"
-    return 0
-  fi
-  "${ROOT_DIR}/node_modules/.bin/tsx" "${ROOT_DIR}/scripts/juicefs-orphan-preflight.ts" --apply --context "${context}"
-}
-
 detect_local_manual_file_library_client_postgres_host() {
   printf 'localhost\n'
 }

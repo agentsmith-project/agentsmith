@@ -80,8 +80,8 @@ Audience: 架构评审、后端、前端、测试、发布负责人
 | Agent Runner 在线状态 | `packages/api-entry-node/src/agent-resource-service.ts` | heartbeat / presence | shared cache / Redis + 本地 socket 镜像 | 共享运行态 | 通过 | 当前实现适合多实例 presence 投影 |
 | 用户外部连接 | `packages/api-entry-node/src/user-external-connections-store.ts` | external connections | `docStore` / Mongo | 主数据 | 通过 | 外部账号绑定真相已持久化 |
 | Feishu OAuth state | `packages/api-entry-node/src/feishu-oauth.ts` | OAuth callback state | shared cache / Redis TTL | 共享运行态 | 通过 | API 重启后回调可继续完成 |
-| 文件库 catalog / backend / mount access | `packages/api-entry-node/src/file-library-persistence.ts`, `packages/api-entry-node/src/project-file-library-routes.ts` | catalog / backend / mount access | `docStore` / Mongo | 主数据 | 通过 | 已修复 API 重启即丢问题 |
-| 文件库 gateway 运行态 | `packages/api-entry-node/src/file-library-runtime.ts` | gateway sessions / child proc state | 进程内内存 | 瞬态运行态 | 条件通过 | 连接型运行态，若未来多实例 HA 需增强 |
+| 文件库 catalog / AFSCP repo mapping | `packages/api-entry-node/src/file-library-persistence.ts`, `packages/api-entry-node/src/file-library-afscp-storage.ts`, `packages/api-entry-node/src/project-file-library-routes.ts` | catalog / AFSCP repo mapping | `docStore` / Mongo + AFSCP | 主数据 | 通过 | 已收敛到 Files API 与 AFSCP repo mapping |
+| Files API / AFSCP 适配运行态 | `packages/api-entry-node/src/file-library-afscp-storage.ts`、`packages/api-entry-node/src/project-storage-bootstrap-service.ts` | AFSCP repo mapping / project storage readiness / short-lived export session state when used | AFSCP + catalog mapping | 后端基础初始化与文件库访问真相 | 通过 | 文件访问经 AgentSmith Files adapter 调用 AFSCP；不维护 per-file-library gateway 进程真相 |
 | Chat 主数据 | `packages/api-entry-node/src/chat-resource-service.ts` | sessions / messages / attachments | `docStore` / Mongo | 主数据 | 通过 | 当前真相清晰 |
 | Chat 流式状态 | `packages/api-entry-node/src/chat-stream-state.ts` | active stream registry / abort handles | 本地内存 + shared cache | 共享/瞬态混合 | 通过 | 分层合理 |
 | Agent task 主数据 | `packages/api-entry-node/src/task-route-handler.ts`, `packages/api-entry-node/src/notebook-task/task-store.ts`, `packages/api-entry-node/src/notebook-trace-store.ts` | tasks / messages / artifacts / traces | `docStore` / Mongo | 主数据 | 通过 | 已与 file library workspace 真相打通 |
@@ -127,7 +127,7 @@ Audience: 架构评审、后端、前端、测试、发布负责人
 
 - Agent task 当前运行控制
 - SSE tickets
-- file library gateway runtime
+- AFSCP export/session runtime
 
 它们不是“主数据未落库”问题，但如果目标是：
 
@@ -150,7 +150,7 @@ Audience: 架构评审、后端、前端、测试、发布负责人
 
 - SSE ticket 单进程模型
 - Agent task active run / cancel 进程内控制
-- file library gateway 进程内会话模型
+- AFSCP export/session 短 TTL server-side cache 与 revoke/reconcile 前提
 
 ### 不纳入产品主数据成熟度主线
 
@@ -168,7 +168,7 @@ Audience: 架构评审、后端、前端、测试、发布负责人
 
 1. SSE ticket 共享化
 2. Agent task active run / cancel 控制共享化
-3. file library gateway manager 外部化
+3. AFSCP export/session cache 与 revoke/reconcile 状态共享化
 4. 如需继续提升工程证据链，再单独立项治理证据型存储外部化
 
 对应完整清单见：

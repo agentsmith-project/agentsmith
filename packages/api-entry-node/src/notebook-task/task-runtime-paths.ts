@@ -1,11 +1,14 @@
-import { homedir } from 'node:os';
-import { isAbsolute, join, normalize, relative } from 'node:path';
+import { normalize } from 'node:path';
 
 import {
   buildTaskHomePaths,
   resolveTaskHomeSegment,
   type TaskHomePaths,
 } from './task-models.js';
+import {
+  DEVELOPER_RUNNER_TASK_HOME_BINDING_UNAVAILABLE_CODE,
+  DEVELOPER_RUNNER_TASK_HOME_BINDING_UNAVAILABLE_MESSAGE,
+} from '../developer-runner-workspace-blocker.js';
 
 export type TaskRuntimeProfile = 'managed' | 'developer';
 
@@ -21,36 +24,52 @@ type TaskRuntimePathTaskInput = {
 export type ResolvedTaskRuntimeHomePaths = TaskHomePaths & {
   runtimeProfile: TaskRuntimeProfile;
   taskHomeSegment: string;
-  developerWorkspaceRoot?: string;
 };
 
+type TaskRuntimePathResolutionCode =
+  | 'runtime_path_unavailable'
+  | typeof DEVELOPER_RUNNER_TASK_HOME_BINDING_UNAVAILABLE_CODE;
+
 export class TaskRuntimePathResolutionError extends Error {
-  readonly code = 'runtime_path_unavailable';
+  readonly code: TaskRuntimePathResolutionCode;
   readonly reason: string;
   readonly metadata: Record<string, unknown>;
 
-  constructor(reason: string, metadata: Record<string, unknown> = {}) {
-    super('runtime_path_unavailable');
+  constructor(
+    reason: string,
+    metadata: Record<string, unknown> = {},
+    options: {
+      code?: TaskRuntimePathResolutionCode;
+      message?: string;
+    } = {},
+  ) {
+    super(options.message ?? 'runtime_path_unavailable');
     this.name = 'TaskRuntimePathResolutionError';
+    this.code = options.code ?? 'runtime_path_unavailable';
     this.reason = reason;
     this.metadata = metadata;
   }
 }
 
 const TASK_HOME_SEGMENT_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/;
-const DEVELOPER_WORKSPACE_ROOT_ENV = 'MBOS_AGENT_TASK_DEVELOPER_WORKSPACE_ROOT';
 
 function fail(reason: string, metadata: Record<string, unknown> = {}): never {
   throw new TaskRuntimePathResolutionError(reason, metadata);
 }
 
-function hasPathTraversalSegment(value: string): boolean {
-  return value.split(/[\\/]+/).some((part) => part === '..');
+function failDeveloperTaskHomeBindingUnavailable(): never {
+  throw new TaskRuntimePathResolutionError(
+    DEVELOPER_RUNNER_TASK_HOME_BINDING_UNAVAILABLE_MESSAGE,
+    {},
+    {
+      code: DEVELOPER_RUNNER_TASK_HOME_BINDING_UNAVAILABLE_CODE,
+      message: DEVELOPER_RUNNER_TASK_HOME_BINDING_UNAVAILABLE_MESSAGE,
+    },
+  );
 }
 
-function trimTrailingSeparators(value: string): string {
-  if (value === '/') return value;
-  return value.replace(/\/+$/, '');
+function hasPathTraversalSegment(value: string): boolean {
+  return value.split(/[\\/]+/).some((part) => part === '..');
 }
 
 function validateTaskHomeSegment(rawSegment: string): string {
@@ -67,78 +86,20 @@ function validateTaskHomeSegment(rawSegment: string): string {
   return segment;
 }
 
-function normalizeAbsoluteRootPath(rawRoot: string, source: string): string {
-  const root = rawRoot.trim();
-  if (!root || root.includes('\0')) {
-    fail(`${source}_invalid`, { source });
-  }
-  if (!isAbsolute(root)) {
-    fail(`${source}_must_be_absolute`, { source, path: root });
-  }
-  if (hasPathTraversalSegment(root)) {
-    fail(`${source}_must_not_contain_traversal`, { source, path: root });
-  }
-  const normalized = trimTrailingSeparators(normalize(root));
-  if (!normalized || normalized === '/' || !isAbsolute(normalized)) {
-    fail(`${source}_invalid`, { source, path: root });
-  }
-  return normalized;
-}
-
-function resolveDeveloperWorkspaceRoot(env: RuntimePathEnv): string {
-  const configuredRoot = env[DEVELOPER_WORKSPACE_ROOT_ENV]?.trim();
-  if (configuredRoot) {
-    return normalizeAbsoluteRootPath(configuredRoot, 'developer_workspace_root');
-  }
-  const home = env.HOME?.trim() || homedir();
-  const normalizedHome = normalizeAbsoluteRootPath(home, 'home');
-  return join(normalizedHome, 'ags-workspace');
-}
-
-function assertChildPath(root: string, childPath: string, reason: string): void {
-  const childRelativePath = relative(root, childPath);
-  if (!childRelativePath || childRelativePath.startsWith('..') || isAbsolute(childRelativePath)) {
-    fail(reason, { root, path: childPath });
-  }
-}
-
-function resolveDeveloperTaskHomePaths(input: {
-  taskHomeSegment: string;
-  env: RuntimePathEnv;
-}): ResolvedTaskRuntimeHomePaths {
-  const developerWorkspaceRoot = resolveDeveloperWorkspaceRoot(input.env);
-  const taskHomePath = normalize(join(developerWorkspaceRoot, input.taskHomeSegment));
-  assertChildPath(developerWorkspaceRoot, taskHomePath, 'task_home_path_outside_developer_workspace_root');
-  const workspacePath = join(taskHomePath, 'workspace');
-  const artifactsPath = join(workspacePath, '.artifacts');
-  return {
-    runtimeProfile: 'developer',
-    taskHomeSegment: input.taskHomeSegment,
-    developerWorkspaceRoot,
-    taskHomePath,
-    workspacePath,
-    artifactsPath,
-    libraryRootPath: '.',
-  };
-}
-
 export function resolveTaskRuntimeHomePaths(input: {
   runtimeProfile: TaskRuntimeProfile;
   taskHomeSegment: string;
   env?: RuntimePathEnv;
 }): ResolvedTaskRuntimeHomePaths {
-  const taskHomeSegment = validateTaskHomeSegment(input.taskHomeSegment);
-  if (input.runtimeProfile === 'managed') {
-    return {
-      runtimeProfile: 'managed',
-      taskHomeSegment,
-      ...buildTaskHomePaths(taskHomeSegment),
-    };
+  if (input.runtimeProfile === 'developer') {
+    failDeveloperTaskHomeBindingUnavailable();
   }
-  return resolveDeveloperTaskHomePaths({
+  const taskHomeSegment = validateTaskHomeSegment(input.taskHomeSegment);
+  return {
+    runtimeProfile: 'managed',
     taskHomeSegment,
-    env: input.env ?? process.env,
-  });
+    ...buildTaskHomePaths(taskHomeSegment),
+  };
 }
 
 export function resolveTaskRuntimeHomePathsForRunner(input: {
@@ -146,8 +107,11 @@ export function resolveTaskRuntimeHomePathsForRunner(input: {
   runnerProvider?: string | null;
   env?: RuntimePathEnv;
 }): ResolvedTaskRuntimeHomePaths {
+  if (input.runnerProvider === 'developer') {
+    failDeveloperTaskHomeBindingUnavailable();
+  }
   return resolveTaskRuntimeHomePaths({
-    runtimeProfile: input.runnerProvider === 'developer' ? 'developer' : 'managed',
+    runtimeProfile: 'managed',
     taskHomeSegment: resolveTaskHomeSegment(input.task),
     env: input.env,
   });
@@ -159,6 +123,10 @@ export function isTaskRuntimePathResolutionError(
   return error instanceof TaskRuntimePathResolutionError
     || (
       error instanceof Error
-      && (error as Error & { code?: unknown }).code === 'runtime_path_unavailable'
+      && (
+        (error as Error & { code?: unknown }).code === 'runtime_path_unavailable'
+        || (error as Error & { code?: unknown }).code
+          === DEVELOPER_RUNNER_TASK_HOME_BINDING_UNAVAILABLE_CODE
+      )
     );
 }

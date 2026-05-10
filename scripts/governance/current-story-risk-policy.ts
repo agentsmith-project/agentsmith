@@ -112,9 +112,6 @@ export const CURRENT_STORY_RISK_POLICY = {
     'chat-stop-terminate-idempotent-state-resync': {
       policy_refs: ['runtime_agent_control'],
     },
-    'desktop-auth-request-complete-and-work': {
-      policy_refs: ['identity_access_boundary'],
-    },
     'files-crud-and-sync': {
       policy_refs: ['file_continuity_integrity'],
     },

@@ -48,7 +48,7 @@ artifacts/product-docs/<run-id>/
 - 工作区与项目入口
 - Chat 多轮会话
 - Agent tasks 列表与任务详情
-- Files 页面与本地挂载说明
+- Files 页面与 Web/API 文件访问说明
 - Endpoints / Project secrets / Agent Runners / Members / Policy / Audit / Usage / Settings
 
 ## 注意事项

@@ -18,14 +18,14 @@ const defaultLibrary = {
   id: 'lib_shared_default',
   name: 'Shared library',
   status: 'ready',
-  bucket: 'shared-bucket',
+  source: 'agent_task_files',
+  file_library_home_segment: 'task-home-shared-library',
 } as FilesPageContentProps['libraries'][number];
 
 function buildProps(overrides: Partial<FilesPageContentProps> = {}): FilesPageContentProps {
   return {
     allSelected: false,
     canManage: true,
-    canExchangeCredentials: false,
     crumbs: [],
     fileInputRef: { current: null },
     filteredItems: [],
@@ -61,9 +61,9 @@ function buildProps(overrides: Partial<FilesPageContentProps> = {}): FilesPageCo
     onClearSelection: vi.fn(),
     onCreateFolder: vi.fn(),
     onCreateLibrary: vi.fn(),
-    onOpenDesktopAccess: vi.fn(),
     onDeleteLibrary: vi.fn(),
     onGoUp: vi.fn(),
+    onManageFileStates: vi.fn(),
     onNavigateToPrefix: vi.fn(),
     onRenameLibrary: vi.fn(),
     onSelectLibrary: vi.fn(),
@@ -139,6 +139,77 @@ describe('FilesPageContent', () => {
     expect(screen.getByTestId('files__workspace-surface').className).not.toContain('shadow-card');
     expect(screen.getByTestId('files__dropzone')).toBeInTheDocument();
     expect(screen.queryByTestId('files__no-library-empty-state')).not.toBeInTheDocument();
+  });
+
+  it('does not render raw storage implementation fields in the library rail', () => {
+    render(
+      <FilesPageContent
+        {...buildProps({
+          libraries: [
+            {
+              ...defaultLibrary,
+              provider: 'internal-provider',
+              bucket: 'internal-storage-location',
+              filesystem_name: 'internal-storage-name',
+            } as never,
+          ],
+        })}
+      />,
+    );
+
+    expect(screen.queryByText('internal-storage-location')).not.toBeInTheDocument();
+    expect(screen.queryByText('internal-provider')).not.toBeInTheDocument();
+    expect(screen.queryByText('internal-storage-name')).not.toBeInTheDocument();
+  });
+
+  it('fails closed for file mutation controls when the selected library is not ready', () => {
+    render(
+      <FilesPageContent
+        {...buildProps({
+          hasSelection: true,
+          selected: [{ kind: 'object', key: 'lib_shared_default/README.txt' } as never],
+          selectedCount: 1,
+          selectedIds: ['lib_shared_default/README.txt'] as never,
+          selectedLibraryStatus: 'degraded',
+          selectedObjectsCount: 1,
+        })}
+      />
+    );
+
+    expect(screen.getByTestId('files__library-unavailable-empty-state')).toBeInTheDocument();
+    expect(screen.getByTestId('files__refresh')).toBeDisabled();
+    expect(screen.getByTestId('files__new-folder')).toBeDisabled();
+    expect(screen.getByTestId('files__file-states')).toBeDisabled();
+    expect(screen.getByTestId('files__upload')).toBeDisabled();
+    expect(screen.getByTestId('files__rename')).toBeDisabled();
+    expect(screen.getByTestId('files__delete')).toBeDisabled();
+    expect(screen.getByTestId('files__download')).toBeDisabled();
+  });
+
+  it('hides write controls when the member can only browse files', () => {
+    render(
+      <FilesPageContent
+        {...buildProps({
+          canManage: false,
+          hasSelection: true,
+          selected: [{ kind: 'object', key: 'lib_shared_default/README.txt' } as never],
+          selectedCount: 1,
+          selectedIds: ['lib_shared_default/README.txt'] as never,
+          selectedObjectsCount: 1,
+        })}
+      />,
+    );
+
+    expect(screen.queryByTestId('files__new-folder')).not.toBeInTheDocument();
+    expect(screen.queryByTestId('files__file-states')).not.toBeInTheDocument();
+    expect(screen.queryByTestId('files__upload')).not.toBeInTheDocument();
+    expect(screen.queryByTestId('files__rename')).not.toBeInTheDocument();
+    expect(screen.queryByTestId('files__delete')).not.toBeInTheDocument();
+    expect(screen.queryByTestId('files__empty-new-folder')).not.toBeInTheDocument();
+    expect(screen.queryByTestId('files__empty-upload')).not.toBeInTheDocument();
+    expect(screen.getByText('file_manager.empty_read_only_description')).toBeInTheDocument();
+    expect(screen.getByTestId('files__download')).toBeEnabled();
+    expect(screen.getByTestId('files__refresh')).toBeEnabled();
   });
 
   it('flattens the details shell into the main files surface', () => {

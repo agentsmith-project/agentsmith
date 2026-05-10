@@ -5,13 +5,11 @@ export {
 
 type InviteHandoffOptions = {
   projectId?: string | null;
-  desktopAuthRequestId?: string | null;
 };
 
 export type InviteHandoffContinuation = {
   workspaceId: string;
   projectId: string;
-  desktopAuthRequestId?: string;
   storedAt: number;
 };
 
@@ -47,12 +45,8 @@ function localePrefix(locale?: string | null): string {
 function buildQuerySuffix(options?: InviteHandoffOptions): string {
   const params = new URLSearchParams();
   const projectId = options?.projectId?.trim();
-  const desktopAuthRequestId = options?.desktopAuthRequestId?.trim();
   if (projectId) {
     params.set('project_id', projectId);
-  }
-  if (desktopAuthRequestId) {
-    params.set('desktop_auth_request_id', desktopAuthRequestId);
   }
   const query = params.toString();
   return query ? `?${query}` : '';
@@ -194,12 +188,10 @@ export function buildInviteInspectHref(locale: string | null | undefined, token:
 export function persistInviteHandoff(args: {
   workspaceId?: string | null;
   projectId?: string | null;
-  desktopAuthRequestId?: string | null;
 }): void {
   if (!hasWindowStorage()) return;
   const workspaceId = args.workspaceId?.trim();
   const projectId = args.projectId?.trim();
-  const desktopAuthRequestId = args.desktopAuthRequestId?.trim();
   if (!workspaceId || !projectId) {
     clearInviteHandoff();
     return;
@@ -210,7 +202,6 @@ export function persistInviteHandoff(args: {
       JSON.stringify({
         workspaceId,
         projectId,
-        desktopAuthRequestId: desktopAuthRequestId || undefined,
         storedAt: Date.now(),
       }),
     );

@@ -5,23 +5,11 @@ const {
   execFilePromisifiedMock,
   readdirMock,
   readlinkMock,
-  resolvePreflightOptionsMock,
-  loadGatewayStatesMock,
-  loadProcessTableMock,
-  matchGatewayStateForProcessMock,
-  findMountedTaskDirectoriesMock,
-  extractGatewayProcessIdentityMock,
 } = vi.hoisted(() => ({
   execFileMock: vi.fn(),
   execFilePromisifiedMock: vi.fn(),
   readdirMock: vi.fn(),
   readlinkMock: vi.fn(),
-  resolvePreflightOptionsMock: vi.fn(),
-  loadGatewayStatesMock: vi.fn(),
-  loadProcessTableMock: vi.fn(),
-  matchGatewayStateForProcessMock: vi.fn(),
-  findMountedTaskDirectoriesMock: vi.fn(),
-  extractGatewayProcessIdentityMock: vi.fn(),
 }));
 
 vi.mock('node:child_process', async (importOriginal) => {
@@ -53,15 +41,6 @@ vi.mock('node:fs/promises', async (importOriginal) => {
   };
 });
 
-vi.mock('./juicefs-orphan-preflight', () => ({
-  resolvePreflightOptions: resolvePreflightOptionsMock,
-  loadGatewayStates: loadGatewayStatesMock,
-  loadProcessTable: loadProcessTableMock,
-  matchGatewayStateForProcess: matchGatewayStateForProcessMock,
-  findMountedTaskDirectories: findMountedTaskDirectoriesMock,
-  extractGatewayProcessIdentity: extractGatewayProcessIdentityMock,
-}));
-
 import { captureResourceRecoverySnapshot } from './file-library-resource-recovery';
 
 describe('file library resource recovery snapshot capture', () => {
@@ -70,123 +49,60 @@ describe('file library resource recovery snapshot capture', () => {
     execFilePromisifiedMock.mockReset();
     readdirMock.mockReset();
     readlinkMock.mockReset();
-    resolvePreflightOptionsMock.mockReset();
-    loadGatewayStatesMock.mockReset();
-    loadProcessTableMock.mockReset();
-    matchGatewayStateForProcessMock.mockReset();
-    findMountedTaskDirectoriesMock.mockReset();
-    extractGatewayProcessIdentityMock.mockReset();
 
     execFilePromisifiedMock.mockResolvedValue({
-      stdout: '',
+      stdout: [
+        'ESTAB 0 0 127.0.0.1:41000 127.0.0.1:15432 users:(("node",pid=42001,fd=31))',
+        'ESTAB 0 0 127.0.0.1:41001 127.0.0.1:15432 users:(("node",pid=42001,fd=32))',
+        'CLOSE-WAIT 0 0 127.0.0.1:41002 127.0.0.1:17017 users:(("node",pid=42001,fd=33))',
+        'ESTAB 0 0 127.0.0.1:41003 127.0.0.1:19000 users:(("node",pid=99999,fd=34))',
+      ].join('\n'),
       stderr: '',
     });
-    resolvePreflightOptionsMock.mockReturnValue({
-      gatewayStateDir: '/gateway-state',
-      taskMountRoot: '/task-mounts',
-    });
-    loadGatewayStatesMock.mockResolvedValue([]);
-    loadProcessTableMock.mockResolvedValue([]);
-    matchGatewayStateForProcessMock.mockReturnValue(null);
-    findMountedTaskDirectoriesMock.mockResolvedValue([]);
-    extractGatewayProcessIdentityMock.mockReturnValue({
-      label: null,
-      libraryId: null,
-      ownerScope: null,
-    });
-    readlinkMock.mockResolvedValue('socket:[12345]');
+    readdirMock.mockResolvedValue(['0', '1', '2']);
+    readlinkMock.mockImplementation(async (targetPath: string) => (
+      targetPath.endsWith('/1') ? 'socket:[12345]' : 'pipe:[67890]'
+    ));
   });
 
-  it('ignores non-authoritative helper processes that disappear before /proc fd truth can be sampled', async () => {
-    loadProcessTableMock.mockResolvedValue([
-      {
-        pid: 2002,
-        ppid: 1,
-        ageSeconds: 2,
-        command: 'mc rb --force fladmin/jfs-lib-helper',
-        cwd: null,
-      },
-    ]);
-    readdirMock.mockImplementation(async (targetPath: string) => {
-      if (targetPath === '/proc/2002/fd') {
-        const error = new Error('ENOENT while listing helper fd truth');
-        Object.assign(error, { code: 'ENOENT' });
-        throw error;
-      }
-      return [];
+  it('captures tracked API fd/socket and tcp truth for AFSCP Files API recovery evidence', async () => {
+    const snapshot = await captureResourceRecoverySnapshot(process.env, {
+      apiPid: 42001,
     });
 
-    const snapshot = await captureResourceRecoverySnapshot();
-
-    expect(snapshot.helper_labels).toEqual([]);
-    expect(snapshot.helper_processes).toEqual([]);
-    expect(snapshot.tcp_connections).toEqual([]);
-  });
-
-  it('ignores non-authoritative gateway processes whose /proc fd truth is not readable', async () => {
-    loadProcessTableMock.mockResolvedValue([
-      {
-        pid: 2003,
-        ppid: 1,
-        ageSeconds: 3600,
-        command: 'juicefs owner_scope=api-v1:old-instance:old-boot library_id=flib_old gateway redis://cache 127.0.0.1:39000',
-        cwd: null,
-      },
-    ]);
-    extractGatewayProcessIdentityMock.mockReturnValue({
-      label: 'scope_library:api-v1:old-instance:old-boot:flib_old',
-      libraryId: 'flib_old',
-      ownerScope: 'api-v1:old-instance:old-boot',
+    expect(snapshot).toMatchObject({
+      evidence_kind: 'afscp_files_api',
+      api_processes: [
+        {
+          pid: 42001,
+          label: 'api-entry',
+          open_fd_count: 3,
+          socket_fd_count: 1,
+        },
+      ],
+      tcp_connections: [
+        {
+          process_label: 'api-entry',
+          remote_host: '127.0.0.1',
+          remote_port: 15432,
+          state: 'ESTABLISHED',
+          count: 2,
+        },
+        {
+          process_label: 'api-entry',
+          remote_host: '127.0.0.1',
+          remote_port: 17017,
+          state: 'CLOSE_WAIT',
+          count: 1,
+        },
+      ],
     });
-    readdirMock.mockImplementation(async (targetPath: string) => {
-      if (targetPath === '/proc/2003/fd') {
-        const error = new Error('EACCES while listing root-owned gateway fd truth');
-        Object.assign(error, { code: 'EACCES' });
-        throw error;
-      }
-      return [];
-    });
-
-    const snapshot = await captureResourceRecoverySnapshot();
-
-    expect(snapshot.managed_gateway_labels).toEqual([]);
-    expect(snapshot.managed_gateway_processes).toEqual([]);
-    expect(snapshot.tcp_connections).toEqual([]);
-  });
-
-  it('fails closed when an authority-backed managed gateway disappears before /proc fd truth can be sampled', async () => {
-    loadGatewayStatesMock.mockResolvedValue([
-      {
-        libraryId: 'existing-library',
-        ownerScope: 'api-v1:instance-a:boot-current',
-        stateFilePath: '/gateway-state/existing-library.json',
-      },
-    ]);
-    loadProcessTableMock.mockResolvedValue([
-      {
-        pid: 3001,
-        ppid: 1,
-        ageSeconds: 2,
-        command: 'juicefs gateway redis://cache /tmp/library --bucket minio://mbos-dev/existing-library',
-        cwd: null,
-      },
-    ]);
-    matchGatewayStateForProcessMock.mockReturnValue({
-      libraryId: 'existing-library',
-      ownerScope: 'api-v1:instance-a:boot-current',
-      stateFilePath: '/gateway-state/existing-library.json',
-    });
-    readdirMock.mockImplementation(async (targetPath: string) => {
-      if (targetPath === '/proc/3001/fd') {
-        const error = new Error('ENOENT while listing managed gateway fd truth');
-        Object.assign(error, { code: 'ENOENT' });
-        throw error;
-      }
-      return [];
-    });
-
-    await expect(captureResourceRecoverySnapshot()).rejects.toThrow(
-      'tracked state:existing-library pid 3001 disappeared before fd truth could be captured',
+    expect(execFilePromisifiedMock).toHaveBeenCalledWith(
+      'ss',
+      ['-H', '-tanp'],
+      expect.objectContaining({
+        encoding: 'utf8',
+      }),
     );
   });
 
@@ -207,5 +123,17 @@ describe('file library resource recovery snapshot capture', () => {
     ).rejects.toThrow(
       'tracked api-entry pid 42001 disappeared before fd truth could be captured',
     );
+  });
+
+  it('captures an empty boot snapshot without scanning retired gateway or mount processes', async () => {
+    const snapshot = await captureResourceRecoverySnapshot();
+
+    expect(snapshot).toMatchObject({
+      evidence_kind: 'afscp_files_api',
+      api_processes: [],
+      tcp_connections: [],
+    });
+    expect(readdirMock).not.toHaveBeenCalled();
+    expect(execFilePromisifiedMock).not.toHaveBeenCalled();
   });
 });

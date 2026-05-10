@@ -1,26 +1,21 @@
-import { Readable } from 'node:stream';
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { describe, expect, it } from 'vitest';
 import { createDefaultNodeApiDeps } from '../index.js';
-import { apiFetch, apiFetchWithToken, startServer, startServerWithDeps } from './test-support.js';
+import { apiFetch, apiFetchWithToken, startServer as startBaseServer, startServerWithDeps as startBaseServerWithDeps } from './test-support.js';
+import { configureAfscpReadyFileLibraryTestDeps } from './afscp-file-library-test-support.js';
 
-const { createFileLibraryGatewayClientMock } = vi.hoisted(() => ({
-  createFileLibraryGatewayClientMock: vi.fn(),
-}));
+function startServer(): ReturnType<typeof startBaseServer> {
+  const started = startBaseServer();
+  configureAfscpReadyFileLibraryTestDeps(started.deps);
+  return started;
+}
 
-vi.mock('../file-library-gateway-client.js', async () => {
-  const actual = await vi.importActual<typeof import('../file-library-gateway-client.js')>('../file-library-gateway-client.js');
-  return {
-    ...actual,
-    createFileLibraryGatewayClient: createFileLibraryGatewayClientMock,
-  };
-});
-
-afterEach(() => {
-  createFileLibraryGatewayClientMock.mockReset();
-});
+function startServerWithDeps(deps: ReturnType<typeof createDefaultNodeApiDeps>): ReturnType<typeof startBaseServerWithDeps> {
+  configureAfscpReadyFileLibraryTestDeps(deps);
+  return startBaseServerWithDeps(deps);
+}
 
 describe.sequential('api-entry-node project file libraries integration', () => {
-  it('supports file libraries CRUD flow when the integration harness provides the delete gateway seam', async () => {
+  it('supports file libraries CRUD flow through the AFSCP storage adapter', async () => {
     const { baseUrl } = startServer();
 
     const listBefore = await apiFetch(baseUrl, '/api/v1/workspaces/ws_default/projects/proj_1/file-libraries');
@@ -44,13 +39,14 @@ describe.sequential('api-entry-node project file libraries integration', () => {
       name: string;
       description?: string;
       status: string;
-      filesystem_name: string;
+      source: string;
     };
     expect(created.id).toContain('flib_');
     expect(created.name).toBe('Project Uploads');
     expect(created.description).toBe('default uploads library');
     expect(created.status).toBe('ready');
-    expect(created.filesystem_name).toContain('flib-');
+    expect(created.source).toBe('agent_task_files');
+    expect(created).not.toHaveProperty('filesystem_name');
 
     const updateRes = await apiFetch(
       baseUrl,
@@ -71,17 +67,12 @@ describe.sequential('api-entry-node project file libraries integration', () => {
     expect(listed.items).toHaveLength(initialCount + 1);
     expect(listed.items.some((item) => item.id === created.id && item.name === 'Project Uploads')).toBe(true);
 
-    createFileLibraryGatewayClientMock.mockResolvedValue({
-      listObjectsV2: vi.fn().mockReturnValue(Readable.from([])),
-    });
-
     const deleteRes = await apiFetch(
       baseUrl,
       `/api/v1/workspaces/ws_default/projects/proj_1/file-libraries/${created.id}`,
       { method: 'DELETE' },
     );
     expect(deleteRes.status).toBe(204);
-    expect(createFileLibraryGatewayClientMock).toHaveBeenCalledTimes(1);
   });
 
   it('preserves file libraries across api restarts when the same deps/doc store are reused', async () => {
@@ -111,7 +102,7 @@ describe.sequential('api-entry-node project file libraries integration', () => {
     expect(listed.items.some((item) => item.id === created.id && item.name === created.name)).toBe(true);
   });
 
-  it('isolates file libraries by owner, even from project admins', async () => {
+  it('lists and reads file libraries by project scope instead of creator ownership', async () => {
     const { baseUrl } = startServer();
 
     const createRes = await apiFetchWithToken(
@@ -144,23 +135,18 @@ describe.sequential('api-entry-node project file libraries integration', () => {
     );
     expect(otherList.status).toBe(200);
     const otherListBody = (await otherList.json()) as { items: Array<{ id: string }> };
-    expect(otherListBody.items.some((item) => item.id === created.id)).toBe(false);
+    expect(otherListBody.items.some((item) => item.id === created.id)).toBe(true);
 
-    for (const token of ['owner-token', 'alt-token']) {
-      const itemRes = await apiFetchWithToken(
-        baseUrl,
-        `/api/v1/workspaces/ws_default/projects/proj_1/file-libraries/${created.id}`,
-        token,
-      );
-      expect(itemRes.status).toBe(404);
-
-      const deleteRes = await apiFetchWithToken(
-        baseUrl,
-        `/api/v1/workspaces/ws_default/projects/proj_1/file-libraries/${created.id}`,
-        token,
-        { method: 'DELETE' },
-      );
-      expect(deleteRes.status).toBe(404);
-    }
+    const itemRes = await apiFetchWithToken(
+      baseUrl,
+      `/api/v1/workspaces/ws_default/projects/proj_1/file-libraries/${created.id}`,
+      'owner-token',
+    );
+    expect(itemRes.status).toBe(200);
+    await expect(itemRes.json()).resolves.toMatchObject({
+      id: created.id,
+      created_by_user_id: 'user_test',
+      source: 'agent_task_files',
+    });
   });
 });

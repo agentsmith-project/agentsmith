@@ -13,7 +13,3 @@ export function buildWorkspaceProjectCacheKey(
     ? `${buildWorkspaceProjectScope(workspaceId, projectId)}:${kind}:${suffix}`
     : `${buildWorkspaceProjectScope(workspaceId, projectId)}:${kind}`;
 }
-
-export function buildFileLibrariesCacheKey(workspaceId: string, projectId: string): string {
-  return buildWorkspaceProjectCacheKey('file-libraries', workspaceId, projectId);
-}

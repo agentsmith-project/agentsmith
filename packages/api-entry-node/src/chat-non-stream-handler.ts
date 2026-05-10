@@ -786,7 +786,7 @@ export async function handleChatNonStreamRoute(args: ChatNonStreamHandlerArgs): 
     if (inputRef?.kind === 'library_object') {
       const resolved = await resolveInputRef({
         kind: 'library_object',
-        deps: { getFileLibraryObjectMetaUseCase: deps.getFileLibraryObjectMetaUseCase },
+        deps: { fileLibraryStorageAdapter: deps.fileLibraryStorageAdapter },
         workspaceId: route.workspaceId,
         projectId: route.projectId,
         input: inputRef,
@@ -799,7 +799,7 @@ export async function handleChatNonStreamRoute(args: ChatNonStreamHandlerArgs): 
     } else if (inputRef?.kind === 'url') {
       const resolved = await resolveInputRef({
         kind: 'url',
-        deps: { getFileLibraryObjectMetaUseCase: deps.getFileLibraryObjectMetaUseCase },
+        deps: { fileLibraryStorageAdapter: deps.fileLibraryStorageAdapter },
         workspaceId: route.workspaceId,
         projectId: route.projectId,
         input: inputRef,

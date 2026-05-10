@@ -127,6 +127,15 @@ export const queryKeys = {
       ['file-libraries', workspaceId, projectId] as const,
     detail: (workspaceId: string, projectId: string, libraryId: string) =>
       ['file-library', workspaceId, projectId, libraryId] as const,
+    savePoints: (workspaceId: string, projectId: string, libraryId: string) =>
+      ['file-library-save-points', workspaceId, projectId, libraryId] as const,
+  },
+
+  /** Project task file templates */
+  taskFileTemplates: {
+    _def: ['task-file-templates'] as const,
+    list: (workspaceId: string, projectId: string) =>
+      ['task-file-templates', workspaceId, projectId] as const,
   },
 
   /** File objects (MinIO-like browser) */

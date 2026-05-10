@@ -32,9 +32,10 @@ import type {
 import {
   apiFetch,
   apiFetchWithToken,
-  startServerReady as startServer,
-  startServerWithDepsReady as startServerWithDeps,
+  startServerReady as startBaseServer,
+  startServerWithDepsReady as startBaseServerWithDeps,
 } from './test-support.js';
+import { configureAfscpReadyFileLibraryTestDeps } from './afscp-file-library-test-support.js';
 
 const upstreamServers: Server[] = [];
 const sockets: WebSocket[] = [];
@@ -82,6 +83,40 @@ const notebookTaskProjectFallbacksByDeps = new WeakMap<
   ReturnType<typeof createDefaultNodeApiDeps>,
   Map<string, string>
 >();
+
+async function startServer(): Promise<{
+  server: Server;
+  baseUrl: string;
+  deps: ReturnType<typeof createDefaultNodeApiDeps>;
+}> {
+  const started = await startBaseServer();
+  configureAfscpReadyFileLibraryTestDeps(started.deps);
+  return started;
+}
+
+async function startServerWithDeps(
+  deps: ReturnType<typeof createDefaultNodeApiDeps>,
+): Promise<{ server: Server; baseUrl: string }> {
+  configureAfscpReadyFileLibraryTestDeps(deps);
+  return startBaseServerWithDeps(deps);
+}
+
+function expectNoRawFileLibraryStorageFields(payload: unknown): void {
+  expect(JSON.stringify(payload)).not.toMatch(/metadata_url|storage_bucket_url|recommended_mount|filesystem_name|juicefs|storage-credential-exchange/i);
+}
+
+async function expectTaskWorkspaceAccessPayload(
+  response: Response,
+  expected: Record<string, unknown>,
+): Promise<Record<string, unknown>> {
+  const payload = await response.json() as Record<string, unknown>;
+  expect(payload).toMatchObject(expected);
+  expect(payload).toHaveProperty('task_home_binding');
+  expect(payload).not.toHaveProperty('workspace_mount');
+  expect(payload).not.toHaveProperty('mount');
+  expectNoRawFileLibraryStorageFields(payload);
+  return payload;
+}
 
 function taskActivityPath(workspaceId: string, projectId: string, taskId: string): string {
   return `/api/v1/workspaces/${workspaceId}/projects/${projectId}/tasks/${taskId}/activity`;
@@ -224,7 +259,7 @@ async function createFileLibrary(
     workspaceId?: string;
     projectId?: string;
   },
-): Promise<{ id: string; name: string }> {
+): Promise<{ id: string; name: string; file_library_home_segment: string }> {
   const workspaceId = options?.workspaceId ?? 'ws_default';
   const projectId = options?.projectId ?? 'proj_1';
   const createLibraryRes = await apiFetch(
@@ -237,7 +272,7 @@ async function createFileLibrary(
     },
   );
   expect(createLibraryRes.status).toBe(201);
-  return (await createLibraryRes.json()) as { id: string; name: string };
+  return (await createLibraryRes.json()) as { id: string; name: string; file_library_home_segment: string };
 }
 
 function configureManagedTaskRunnerRuntimeDeps(
@@ -260,16 +295,18 @@ function configureManagedTaskRunnerRuntimeDeps(
         workspace_id: input.workspaceId,
         project_id: input.projectId,
         file_library_id: input.fileLibraryId,
-        kind: 'juicefs_volume',
+        provider: 'afscp',
         status: 'ready',
-        metadata_url: 'postgres://jfsu_user:secret@localhost:15432/jfs_managed?sslmode=disable',
-        storage_bucket_url: 'http://localhost:19000/jfs-managed',
+        task_home_binding_id: `bind_${input.taskId}`,
+        task_home_path: `/home/${input.taskId}`,
+        workspace_path: `/home/${input.taskId}/workspace`,
+        artifacts_path: `/home/${input.taskId}/workspace/.artifacts`,
+        library_root_path: '.',
         created_at: '2026-04-05T00:00:00.000Z',
         updated_at: '2026-04-05T00:00:00.000Z',
       },
       workspaceMount: {
         bindingId: `bind_${input.taskId}`,
-        volumeName: 'juicefs-task',
         mountPath: `/home/${input.taskId}`,
         taskHomePath: `/home/${input.taskId}`,
         workspacePath: `/home/${input.taskId}/workspace`,
@@ -1180,26 +1217,30 @@ describe('api-entry-node notebook task routes', () => {
       { method: 'POST' },
     );
     expect(workspaceAccessRes.status).toBe(200);
-    await expect(workspaceAccessRes.json()).resolves.toMatchObject({
+    await expectTaskWorkspaceAccessPayload(workspaceAccessRes, {
       task_id: task.id,
-      workspace_binding_mode: 'file_library',
-      task_home_path: `/home/${task.task_home_segment}`,
-      workspace_path: `/home/${task.task_home_segment}/workspace`,
-      artifacts_path: `/home/${task.task_home_segment}/workspace/.artifacts`,
-      library_root_path: '.',
-      workspace_dir_name: workspaceLibrary.filesystem_name,
       file_library_id: workspaceLibrary.id,
       file_library_name: workspaceLibrary.name,
-      filesystem_name: expect.any(String),
-      metadata_url: expect.stringContaining('sslmode=disable'),
-      recommended_mount_path: expect.any(String),
-      holder_id: expect.any(String),
-      holder_kind: 'runner_workspace',
-      binding_generation: expect.any(String),
-      lease_epoch: expect.any(String),
-      issued_at: expect.any(String),
-      expires_at: expect.any(String),
-      created_at: expect.any(String),
+      task_home_binding: {
+        provider: 'afscp',
+        mode: 'pre_mounted',
+        task_id: task.id,
+        file_library_id: workspaceLibrary.id,
+        paths: {
+          task_home_path: `/home/${task.task_home_segment}`,
+          workspace_path: `/home/${task.task_home_segment}/workspace`,
+          artifacts_path: `/home/${task.task_home_segment}/workspace/.artifacts`,
+          library_root_path: '.',
+        },
+        holder: {
+          holder_id: expect.any(String),
+          holder_kind: 'runner_workspace',
+          binding_generation: expect.any(String),
+          lease_epoch: expect.any(String),
+          issued_at: expect.any(String),
+          expires_at: expect.any(String),
+        },
+      },
     });
   });
 
@@ -1263,6 +1304,16 @@ describe('api-entry-node notebook task routes', () => {
       { method: 'POST' },
     );
     expect(goodRes.status).toBe(200);
+    const goodPayload = await expectTaskWorkspaceAccessPayload(goodRes, {
+      task_id: task.id,
+      file_library_id: task.workspace_file_library_id,
+      task_home_binding: {
+        provider: 'afscp',
+        mode: 'pre_mounted',
+        file_library_id: task.workspace_file_library_id,
+      },
+    });
+    expect(goodPayload.task_home_binding).toBeTruthy();
 
     const badScopeTicket = await issueInternalTicket(deps.cache, {
       purpose: 'agent_execution',
@@ -1309,7 +1360,7 @@ describe('api-entry-node notebook task routes', () => {
       },
     );
     expect(createTaskRes.status).toBe(201);
-    const task = (await createTaskRes.json()) as { id: string; workspace_file_library_id: string };
+    const task = (await createTaskRes.json()) as { id: string; task_home_segment: string; workspace_file_library_id: string };
     expect(task.workspace_file_library_id).toBeTruthy();
 
     const workspaceAccessRes = await apiFetch(
@@ -1318,20 +1369,25 @@ describe('api-entry-node notebook task routes', () => {
       { method: 'POST' },
     );
     expect(workspaceAccessRes.status).toBe(200);
-    await expect(workspaceAccessRes.json()).resolves.toMatchObject({
+    await expectTaskWorkspaceAccessPayload(workspaceAccessRes, {
       task_id: task.id,
-      workspace_binding_mode: 'file_library',
-      task_home_path: `/home/${task.task_home_segment}`,
-      workspace_path: `/home/${task.task_home_segment}/workspace`,
-      artifacts_path: `/home/${task.task_home_segment}/workspace/.artifacts`,
-      library_root_path: '.',
       file_library_id: task.workspace_file_library_id,
-      metadata_url: expect.any(String),
-      holder_id: expect.any(String),
-      holder_kind: 'runner_workspace',
-      binding_generation: expect.any(String),
-      lease_epoch: expect.any(String),
-      created_at: expect.any(String),
+      task_home_binding: {
+        provider: 'afscp',
+        mode: 'pre_mounted',
+        paths: {
+          task_home_path: `/home/${task.task_home_segment}`,
+          workspace_path: `/home/${task.task_home_segment}/workspace`,
+          artifacts_path: `/home/${task.task_home_segment}/workspace/.artifacts`,
+          library_root_path: '.',
+        },
+        holder: {
+          holder_id: expect.any(String),
+          holder_kind: 'runner_workspace',
+          binding_generation: expect.any(String),
+          lease_epoch: expect.any(String),
+        },
+      },
     });
   });
 
@@ -1392,9 +1448,10 @@ describe('api-entry-node notebook task routes', () => {
     expect(ownerAccessRes.status).toBe(200);
     const ownerAccess = await ownerAccessRes.json() as {
       file_library_id: string;
-      workspace_dir_name: string;
-      metadata_url: string;
-      storage_bucket_url?: string;
+      task_home_binding: {
+        binding_id: string;
+        paths: { task_home_path: string };
+      };
     };
 
     const otherAccessRes = await apiFetchWithToken(
@@ -1406,19 +1463,21 @@ describe('api-entry-node notebook task routes', () => {
     expect(otherAccessRes.status).toBe(200);
     const otherAccess = await otherAccessRes.json() as {
       file_library_id: string;
-      workspace_dir_name: string;
-      metadata_url: string;
-      storage_bucket_url?: string;
+      task_home_binding: {
+        binding_id: string;
+        paths: { task_home_path: string };
+      };
     };
 
     expect(ownerAccess.file_library_id).toBe(ownerTask.workspace_file_library_id);
     expect(otherAccess.file_library_id).toBe(otherTask.workspace_file_library_id);
-    expect(ownerAccess.workspace_dir_name).not.toBe(otherAccess.workspace_dir_name);
-    expect(ownerAccess.metadata_url).not.toBe(otherAccess.metadata_url);
-    expect(ownerAccess.storage_bucket_url).not.toBe(otherAccess.storage_bucket_url);
+    expect(ownerAccess.task_home_binding.binding_id).not.toBe(otherAccess.task_home_binding.binding_id);
+    expect(ownerAccess.task_home_binding.paths.task_home_path).not.toBe(otherAccess.task_home_binding.paths.task_home_path);
+    expect(JSON.stringify(ownerAccess)).not.toMatch(/metadata_url|storage_bucket_url|recommended_mount|filesystem_name|juicefs/i);
+    expect(JSON.stringify(otherAccess)).not.toMatch(/metadata_url|storage_bucket_url|recommended_mount|filesystem_name|juicefs/i);
   });
 
-  it('rewrites task workspace mount access for developer Agent Task runner containers', async () => {
+  it('fails closed for developer task HOME binding without exposing connector modes', async () => {
     const previousExternalExecutionBase = process.env.AGENT_RUNNER_DEVELOPER_EXECUTION_HTTP_BASE_URL;
     process.env.AGENT_RUNNER_DEVELOPER_EXECUTION_HTTP_BASE_URL = 'http://172.18.0.1:20000';
     try {
@@ -1460,18 +1519,17 @@ describe('api-entry-node notebook task routes', () => {
         `/api/v1/workspaces/ws_default/projects/${project.id}/tasks/${task.id}/workspace-access`,
         { method: 'POST' },
       );
-      expect(workspaceAccessRes.status, await workspaceAccessRes.clone().text()).toBe(200);
-      await expect(workspaceAccessRes.json()).resolves.toMatchObject({
+      expect(workspaceAccessRes.status, await workspaceAccessRes.clone().text()).toBe(409);
+      const payload = await workspaceAccessRes.json() as Record<string, unknown>;
+      expect(payload).toMatchObject({
+        error_code: 'TASK_HOME_BINDING_UNAVAILABLE_FOR_DEVELOPER_RUNNER',
+        message: 'task_home_binding_unavailable_for_developer_runner',
         task_id: task.id,
         runtime_profile: 'developer',
         file_library_id: workspaceLibrary.id,
-        metadata_url: expect.stringMatching(/@172\.18\.0\.1:15432\//),
-        storage_bucket_url: expect.stringMatching(/http:\/\/172\.18\.0\.1:19000\//),
-        holder_id: expect.any(String),
-        holder_kind: 'runner_workspace',
-        binding_generation: expect.any(String),
-        lease_epoch: expect.any(String),
       });
+      expect(payload).not.toHaveProperty('task_home_binding');
+      expectNoRawFileLibraryStorageFields(payload);
     } finally {
       if (previousExternalExecutionBase === undefined) {
         delete process.env.AGENT_RUNNER_DEVELOPER_EXECUTION_HTTP_BASE_URL;
@@ -1566,11 +1624,14 @@ describe('api-entry-node notebook task routes', () => {
       { method: 'POST' },
     );
     expect(workspaceAccessRes.status).toBe(200);
-    await expect(workspaceAccessRes.json()).resolves.toMatchObject({
+    await expectTaskWorkspaceAccessPayload(workspaceAccessRes, {
       task_id: task.id,
       file_library_id: workspaceLibrary.id,
       file_library_name: workspaceLibrary.name,
-      metadata_url: expect.stringContaining('sslmode=disable'),
+      task_home_binding: {
+        provider: 'afscp',
+        mode: 'pre_mounted',
+      },
     });
   });
 
@@ -2212,10 +2273,13 @@ describe('api-entry-node notebook task routes', () => {
           workspace_id: input.workspaceId,
           project_id: input.projectId,
           file_library_id: input.fileLibraryId,
-          kind: 'juicefs_volume',
+          provider: 'afscp',
           status: 'ready',
-          metadata_url: 'postgres://jfsu_user:secret@localhost:15432/jfs_internal?sslmode=disable',
-          storage_bucket_url: 'http://localhost:19000/jfs-internal',
+          task_home_binding_id: 'bind_internal_pre_dispatch_recovery',
+          task_home_path: `/home/${input.taskId}`,
+          workspace_path: `/home/${input.taskId}/workspace`,
+          artifacts_path: `/home/${input.taskId}/workspace/.artifacts`,
+          library_root_path: '.',
           created_at: '2026-04-05T00:00:00.000Z',
           updated_at: '2026-04-05T00:00:00.000Z',
         },
@@ -2599,7 +2663,6 @@ describe('api-entry-node notebook task routes', () => {
               artifacts_path?: string;
               workspace_file_library_id?: string | null;
               workspace_file_library_name?: string | null;
-              workspace_dir_name?: string | null;
               task_inputs?: unknown[];
             };
           };
@@ -2638,9 +2701,6 @@ describe('api-entry-node notebook task routes', () => {
             : null,
           workspaceFileLibraryName: typeof msg.payload?.execution_context?.workspace_file_library_name === 'string'
             ? msg.payload.execution_context.workspace_file_library_name
-            : null,
-          workspaceDirName: typeof msg.payload?.execution_context?.workspace_dir_name === 'string'
-            ? msg.payload.execution_context.workspace_dir_name
             : null,
           taskInputsCount: Array.isArray(msg.payload?.execution_context?.task_inputs)
             ? msg.payload.execution_context.task_inputs.length
@@ -2818,7 +2878,7 @@ describe('api-entry-node notebook task routes', () => {
     expect(execution.artifactsPath).toBe(`${developerTaskHomePath}/workspace/.artifacts`);
     expect(execution.workspaceFileLibraryId).toBe(workspaceLibrary.id);
     expect(execution.workspaceFileLibraryName).toBe(workspaceLibrary.name);
-    expect(execution.workspaceDirName).toBe(workspaceLibrary.filesystem_name);
+    expect(execution.workspaceDirName).toBeUndefined();
     expect(execution.taskInputsCount).toBe(0);
     expect(execution.helloProxyBase).toBe('');
     expect(normalizeApiBasePath(execution.endpointProxyBase ?? '')).toBe(
@@ -3172,7 +3232,7 @@ describe('api-entry-node notebook task routes', () => {
     expect(capturedExecutionContext?.workspace_path).toBe(`/home/${task.task_home_segment}/workspace`);
     expect(capturedExecutionContext?.artifacts_path).toBe(`/home/${task.task_home_segment}/workspace/.artifacts`);
     expect(capturedExecutionContext?.workspace_file_library_id).toBe(workspaceLibrary.id);
-    expect(capturedExecutionContext?.workspace_dir_name).toBe(workspaceLibrary.filesystem_name);
+    expect(capturedExecutionContext).not.toHaveProperty('workspace_dir_name');
     expect(capturedExecutionContext).not.toHaveProperty('interaction_kind');
     expect(capturedExecutionContext?.api_base).toBe('http://127.0.0.1:20000/api/v1');
     expect(capturedExecutionContext?.credential_files).toBeUndefined();
@@ -3205,15 +3265,17 @@ describe('api-entry-node notebook task routes', () => {
             workspace_id: input.workspaceId,
             project_id: input.projectId,
             file_library_id: input.fileLibraryId,
-            kind: 'juicefs_volume',
+            provider: 'afscp',
             status: 'ready',
-            metadata_url: 'postgres://jfsu_user:secret@localhost:15432/jfs_internal?sslmode=disable',
-            storage_bucket_url: 'http://localhost:19000/jfs-internal',
+            task_home_binding_id: 'bind_internal_terminal',
+            task_home_path: `/home/${input.taskId}`,
+            workspace_path: `/home/${input.taskId}/workspace`,
+            artifacts_path: `/home/${input.taskId}/workspace/.artifacts`,
+            library_root_path: '.',
             created_at: '2026-04-05T00:00:00.000Z',
             updated_at: '2026-04-05T00:00:00.000Z',
           },
           workspaceMount: {
-            volumeName: 'juicefs-task',
             mountPath: `/home/${input.taskId}`,
             taskHomePath: `/home/${input.taskId}`,
             workspacePath: `/home/${input.taskId}/workspace`,
@@ -3284,7 +3346,7 @@ describe('api-entry-node notebook task routes', () => {
     expect(capturedExecutionContext?.workspace_path).toBe(`/home/${task.task_home_segment}/workspace`);
     expect(capturedExecutionContext?.artifacts_path).toBe(`/home/${task.task_home_segment}/workspace/.artifacts`);
     expect(capturedExecutionContext?.workspace_file_library_id).toBe(workspaceLibrary.id);
-    expect(capturedExecutionContext?.workspace_dir_name).toBe(workspaceLibrary.filesystem_name);
+    expect(capturedExecutionContext).not.toHaveProperty('workspace_dir_name');
     expect(capturedExecutionContext).not.toHaveProperty('interaction_kind');
     expect(capturedExecutionContext?.api_base).toBe('http://127.0.0.1:20000/api/v1');
     } finally {
@@ -4198,10 +4260,13 @@ describe('api-entry-node notebook task routes', () => {
           workspace_id: input.workspaceId,
           project_id: input.projectId,
           file_library_id: input.fileLibraryId,
-          kind: 'juicefs_volume',
+          provider: 'afscp',
           status: 'ready',
-          metadata_url: 'postgres://jfsu_user:secret@localhost:15432/jfs_internal?sslmode=disable',
-          storage_bucket_url: 'http://localhost:19000/jfs-internal',
+          task_home_binding_id: 'bind_internal_terminal_reload',
+          task_home_path: `/home/${input.taskId}`,
+          workspace_path: `/home/${input.taskId}/workspace`,
+          artifacts_path: `/home/${input.taskId}/workspace/.artifacts`,
+          library_root_path: '.',
           created_at: '2026-04-05T00:00:00.000Z',
           updated_at: '2026-04-05T00:00:00.000Z',
         },

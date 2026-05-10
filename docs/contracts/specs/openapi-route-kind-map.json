@@ -67,14 +67,6 @@
     "path": "/api/v1/workspaces/{workspaceId}/projects/{projectId}/file-libraries/{libraryId}",
     "method": "get"
   },
-  "fileLibraryBackend": {
-    "path": "/api/v1/workspaces/{workspaceId}/projects/{projectId}/file-libraries/{libraryId}/backend",
-    "method": "get"
-  },
-  "fileLibraryStorageCredentialExchange": {
-    "path": "/api/v1/workspaces/{workspaceId}/projects/{projectId}/file-libraries/{libraryId}/storage-credential-exchange",
-    "method": "post"
-  },
   "fileLibraryEntries": {
     "path": "/api/v1/workspaces/{workspaceId}/projects/{projectId}/file-libraries/{libraryId}/entries",
     "method": "get"
@@ -103,12 +95,40 @@
     "path": "/api/v1/workspaces/{workspaceId}/projects/{projectId}/file-libraries/{libraryId}/meta",
     "method": "get"
   },
-  "fileLibraryShareLink": {
-    "path": "/api/v1/workspaces/{workspaceId}/projects/{projectId}/file-libraries/{libraryId}/share-link",
+  "fileLibrarySavePoints": {
+    "path": "/api/v1/workspaces/{workspaceId}/projects/{projectId}/file-libraries/{libraryId}/save-points",
+    "method": "get"
+  },
+  "fileLibraryRestorePreview": {
+    "path": "/api/v1/workspaces/{workspaceId}/projects/{projectId}/file-libraries/{libraryId}/restore-preview",
     "method": "post"
   },
-  "fileLibraryDesktopMountAccess": {
-    "path": "/api/v1/workspaces/{workspaceId}/projects/{projectId}/file-libraries/{libraryId}/desktop-mount-access",
+  "fileLibraryRestoreRun": {
+    "path": "/api/v1/workspaces/{workspaceId}/projects/{projectId}/file-libraries/{libraryId}/restore-run",
+    "method": "post"
+  },
+  "fileLibraryRestoreCancel": {
+    "path": "/api/v1/workspaces/{workspaceId}/projects/{projectId}/file-libraries/{libraryId}/restore-cancel",
+    "method": "post"
+  },
+  "fileLibraryOperation": {
+    "path": "/api/v1/workspaces/{workspaceId}/projects/{projectId}/file-library-operations/{operationId}",
+    "method": "get"
+  },
+  "taskFileTemplates": {
+    "path": "/api/v1/workspaces/{workspaceId}/projects/{projectId}/task-file-templates",
+    "method": "get"
+  },
+  "taskFileTemplateItem": {
+    "path": "/api/v1/workspaces/{workspaceId}/projects/{projectId}/task-file-templates/{taskFileTemplateId}",
+    "method": "delete"
+  },
+  "taskFileTemplatePublish": {
+    "path": "/api/v1/workspaces/{workspaceId}/projects/{projectId}/task-file-templates/{taskFileTemplateId}/publish",
+    "method": "post"
+  },
+  "taskFileTemplateUnpublish": {
+    "path": "/api/v1/workspaces/{workspaceId}/projects/{projectId}/task-file-templates/{taskFileTemplateId}/unpublish",
     "method": "post"
   },
   "audit": {

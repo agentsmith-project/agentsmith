@@ -1,7 +1,6 @@
 import type http from 'node:http';
-import type { CachePort, JsonDocStorePort } from '@mbos/ports';
+import type { JsonDocStorePort } from '@mbos/ports';
 import type { AuthenticatedUser } from './auth.js';
-import { completeDesktopAuthRequest } from './desktop-auth-store.js';
 import { json, readBody } from './http-utils.js';
 import {
   getUserNotifications,
@@ -31,11 +30,6 @@ import {
   presentUserExternalConnection,
   updateUserExternalConnection,
 } from './user-external-connections-store.js';
-import {
-  JsonDocProjectFileLibraryBackendRepo,
-  JsonDocProjectFileLibraryCatalogRepo,
-  JsonDocProjectFileLibraryMountAccessRepo,
-} from './file-library-persistence.js';
 
 interface UserProfileRecord {
   display_name?: string | null;
@@ -97,68 +91,19 @@ async function setUserProfile(docStore: JsonDocStorePort, userId: string, profil
   await docStore.upsert(USER_PROFILE_COLLECTION, userId, profile);
 }
 
-async function listMountableDesktopFileLibraries(args: {
-  docStore: JsonDocStorePort;
-  userId: string;
-}): Promise<Awaited<ReturnType<JsonDocProjectFileLibraryCatalogRepo['listByOwner']>>> {
-  const catalogRepo = new JsonDocProjectFileLibraryCatalogRepo(args.docStore);
-  const backendRepo = new JsonDocProjectFileLibraryBackendRepo(args.docStore);
-  const mountAccessRepo = new JsonDocProjectFileLibraryMountAccessRepo(args.docStore);
-  const items = await catalogRepo.listByOwner(args.userId);
-  const mountable = await Promise.all(items.map(async (item) => {
-    if (item.status !== 'ready') {
-      return null;
-    }
-    const [backend, mountAccess] = await Promise.all([
-      backendRepo.getInternal(item.workspace_id, item.project_id, item.id),
-      mountAccessRepo.getById(item.workspace_id, item.project_id, item.id),
-    ]);
-    if (!backend || !mountAccess) {
-      return null;
-    }
-    return item;
-  }));
-  return mountable
-    .filter((item): item is NonNullable<typeof item> => item !== null)
-    .sort((left, right) => right.created_at.localeCompare(left.created_at));
-}
-
 export async function handleMeRoute(args: {
   req: http.IncomingMessage;
   res: http.ServerResponse;
   method: string;
   requestUrl: URL;
   user: AuthenticatedUser;
-  cache: CachePort;
   docStore: JsonDocStorePort;
   governanceIncidentsDir?: string;
 }): Promise<boolean> {
-  const { req, res, method, requestUrl, user, docStore, cache, governanceIncidentsDir } = args;
+  const { req, res, method, requestUrl, user, docStore, governanceIncidentsDir } = args;
   const pathname = requestUrl.pathname;
   if (!pathname.startsWith('/api/v1/me/')) {
     return false;
-  }
-
-  const desktopAuthCompleteMatch = pathname.match(/^\/api\/v1\/me\/desktop\/auth\/requests\/([^/]+)\/complete$/);
-  if (desktopAuthCompleteMatch) {
-    if (method !== 'POST') {
-      json(res, 405, { error_code: 'METHOD_NOT_ALLOWED', message: 'method_not_allowed' });
-      return true;
-    }
-    const requestId = decodeURIComponent(desktopAuthCompleteMatch[1] ?? '');
-    const completed = await completeDesktopAuthRequest(cache, {
-      requestId,
-      user,
-    });
-    if (!completed) {
-      json(res, 404, {
-        error_code: 'NOT_FOUND',
-        message: 'desktop_auth_request_not_found',
-      });
-      return true;
-    }
-    json(res, 200, completed);
-    return true;
   }
 
   if (pathname === '/api/v1/me/profile') {
@@ -178,19 +123,6 @@ export async function handleMeRoute(args: {
       return true;
     }
     json(res, 405, { error_code: 'METHOD_NOT_ALLOWED', message: 'method_not_allowed' });
-    return true;
-  }
-
-  if (pathname === '/api/v1/me/desktop/file-libraries') {
-    if (method !== 'GET') {
-      json(res, 405, { error_code: 'METHOD_NOT_ALLOWED', message: 'method_not_allowed' });
-      return true;
-    }
-    const items = await listMountableDesktopFileLibraries({
-      docStore,
-      userId: user.id,
-    });
-    json(res, 200, { items });
     return true;
   }
 

@@ -16,7 +16,6 @@ type FilesWorkspaceSurface = 'browser' | 'no_library';
 interface FilesPageContentProps {
   allSelected: React.ComponentProps<typeof FilesBrowserPane>['allSelected'];
   canManage: boolean;
-  canExchangeCredentials: boolean;
   crumbs: React.ComponentProps<typeof FilesBrowserPane>['crumbs'];
   fileInputRef: React.ComponentProps<typeof FilesBrowserPane>['fileInputRef'];
   filteredItems: React.ComponentProps<typeof FilesBrowserPane>['filteredItems'];
@@ -45,9 +44,9 @@ interface FilesPageContentProps {
   onClearSelection: React.ComponentProps<typeof FilesBrowserPane>['onClearSelection'];
   onCreateFolder: React.ComponentProps<typeof FilesBrowserPane>['onCreateFolder'];
   onCreateLibrary: React.ComponentProps<typeof FilesLibrariesPane>['onCreateLibrary'];
-  onOpenDesktopAccess: React.ComponentProps<typeof FilesLibrariesPane>['onOpenDesktopAccess'];
   onDeleteLibrary: React.ComponentProps<typeof FilesLibrariesPane>['onDeleteLibrary'];
   onGoUp: React.ComponentProps<typeof FilesBrowserPane>['onGoUp'];
+  onManageFileStates: React.ComponentProps<typeof FilesBrowserPane>['onManageFileStates'];
   onNavigateToPrefix: React.ComponentProps<typeof FilesBrowserPane>['onNavigateToPrefix'];
   onRenameLibrary: React.ComponentProps<typeof FilesLibrariesPane>['onRenameLibrary'];
   onSelectLibrary: React.ComponentProps<typeof FilesLibrariesPane>['onSelectLibrary'];
@@ -81,7 +80,6 @@ interface FilesPageContentProps {
 export function FilesPageContent({
   allSelected,
   canManage,
-  canExchangeCredentials,
   crumbs,
   fileInputRef,
   filteredItems,
@@ -110,9 +108,9 @@ export function FilesPageContent({
   onClearSelection,
   onCreateFolder,
   onCreateLibrary,
-  onOpenDesktopAccess,
   onDeleteLibrary,
   onGoUp,
+  onManageFileStates,
   onNavigateToPrefix,
   onRenameLibrary,
   onSelectLibrary,
@@ -170,14 +168,12 @@ export function FilesPageContent({
           <FilesLibrariesPane
             t={t}
             canManage={canManage}
-            canExchangeCredentials={canExchangeCredentials}
             libsLoading={libsLoading}
             libraries={libraries}
             showEmptyMessage={!showNoLibrarySurface}
             selectedLibraryId={selectedLibraryId}
             onSelectLibrary={onSelectLibrary}
             onCreateLibrary={onCreateLibrary}
-            onOpenDesktopAccess={onOpenDesktopAccess}
             onRenameLibrary={onRenameLibrary}
             onDeleteLibrary={onDeleteLibrary}
           />
@@ -195,7 +191,11 @@ export function FilesPageContent({
               <div className="mx-auto flex w-full max-w-[520px] flex-col items-center gap-4 rounded-md border border-dashed border-subtle bg-surface-low px-6 py-8 text-center">
                 <div>
                   <div className="text-sm font-medium text-primary">{t('file_manager.no_libraries')}</div>
-                  <div className="mt-2 text-sm text-tertiary">{t('file_manager.library_create_description')}</div>
+                  <div className="mt-2 text-sm text-tertiary">
+                    {canManage
+                      ? t('file_manager.library_create_description')
+                      : t('file_manager.library_empty_read_only_description')}
+                  </div>
                 </div>
                 {canManage ? (
                   <Button type="button" onClick={onCreateLibrary} data-testid="files__empty-create-library">
@@ -208,6 +208,7 @@ export function FilesPageContent({
           ) : (
             <FilesBrowserPane
               t={t}
+              canManage={canManage}
               prefix={prefix}
               crumbs={crumbs}
               searchInput={searchInput}
@@ -239,6 +240,7 @@ export function FilesPageContent({
               onGoUp={onGoUp}
               onRefresh={handleRefresh}
               onCreateFolder={onCreateFolder}
+              onManageFileStates={onManageFileStates}
               onUploadClick={handleUploadClick}
               onCancelUpload={handleCancelUpload}
               onRename={handleRename}

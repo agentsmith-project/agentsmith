@@ -254,7 +254,7 @@ test('generate chinese product documentation artifacts', async ({ page, authedPa
     group: 'files',
     role: '项目成员',
     route: `/${DOC_LOCALE}/workspaces/${WORKSPACE_ID}/projects/${PROJECT_ID}/files`,
-    summary: 'Files 页面用于管理项目文件库、浏览目录、查看文件详情，并支持与本地挂载目录同步。',
+    summary: 'Files 页面用于管理项目文件库、浏览目录、查看文件详情，并通过 Web/API 保持项目文件真相。',
     contentPoints: [
       '左侧展示文件库列表，中间展示目录与文件，右侧展示详情面板。',
       '示例文件库包含周报、巡检截图和治理模板等真实风格内容。',
@@ -274,7 +274,7 @@ test('generate chinese product documentation artifacts', async ({ page, authedPa
     group: 'files',
     role: '项目成员',
     route: `/${DOC_LOCALE}/workspaces/${WORKSPACE_ID}/projects/${PROJECT_ID}/files`,
-    summary: '创建文件库对话框用于新建项目级文件库，为 Web 文件管理和本地挂载提供统一入口。',
+    summary: '创建文件库对话框用于新建项目级文件库，为 Web 文件管理提供统一入口。',
     contentPoints: [
       '表单包含文件库名称和描述。',
       '创建后会生成独立文件库并出现在左侧列表中。',
@@ -282,34 +282,34 @@ test('generate chinese product documentation artifacts', async ({ page, authedPa
     userSteps: [
       '点击“创建文件库”。',
       '填写名称和说明。',
-      '提交后即可开始上传文件或本地挂载。',
+      '提交后即可开始上传文件。',
     ],
   });
   await dismissOpenDialogs(authedPage);
   await expect(authedPage.getByTestId('files__dialog__library-create')).toHaveCount(0);
 
   await dismissOpenDialogs(authedPage);
-  await authedPage.getByTestId('files__library-desktop-access--lib_shared_default').click();
-  await expect(authedPage.getByTestId('files__dialog__desktop-mount-access')).toBeVisible();
+  await expect(authedPage.locator('[data-testid^="files__library-desktop-access--"]')).toHaveCount(0);
+  await expect(authedPage.getByTestId('files__dialog__desktop-mount-access')).toHaveCount(0);
+  await expect(authedPage.getByText(/metadata URL|JuiceFS|挂载命令/i)).toHaveCount(0);
   await writeDocArtifact(authedPage, manifest, {
-    id: 'dialog-file-library-mount-access',
-    title: '文件库本地挂载说明',
+    id: 'file-library-web-access',
+    title: '文件库 Web/API 访问',
     group: 'files',
     role: '项目成员',
     route: `/${DOC_LOCALE}/workspaces/${WORKSPACE_ID}/projects/${PROJECT_ID}/files`,
-    summary: '挂载说明对话框展示 filesystem 名称、metadata URL 和多平台挂载命令，用于把项目文件库挂载到本地目录。',
+    summary: '文件库当前通过 Web 文件面、API 和任务 HOME 展示访问，不暴露本地客户端挂载入口或原始存储字段。',
     contentPoints: [
-      '对话框展示 JuiceFS 挂载所需的关键信息。',
-      '支持复制 metadata URL 和查看推荐挂载路径。',
+      '页面保留文件库列表、对象浏览和详情检查。',
+      '界面不展示本地客户端挂载按钮、metadata URL 或原始存储凭据。',
     ],
     userSteps: [
-      '点击文件库右侧的挂载入口。',
-      '查看并复制挂载信息。',
-      '在本地执行 JuiceFS 挂载命令后与 Web 端同步操作。',
+      '进入 Files 页面。',
+      '选择文件库并浏览对象。',
+      '通过 Web 文件面上传、下载、重命名或删除。',
     ],
   });
   await dismissOpenDialogs(authedPage);
-  await expect(authedPage.getByTestId('files__dialog__desktop-mount-access')).toHaveCount(0);
   await authedPage.getByTestId('files__library-delete-inline--lib_shared_default').click();
   await expect(authedPage.getByTestId('files__dialog__library-delete')).toBeVisible();
   await writeDocArtifact(authedPage, manifest, {

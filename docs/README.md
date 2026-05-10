@@ -58,7 +58,7 @@
 
 ## 4. Product doc / artifacts helpers
 
-- [File Library Client Mount](./user-guides/file-library-local-mount.md)
+- [File Library Access Model](./user-guides/file-library-access-model.md)
 - [Product Doc Artifacts](./user-guides/product-doc-artifacts.md)
 
 ## 5. What Is Outside This Index

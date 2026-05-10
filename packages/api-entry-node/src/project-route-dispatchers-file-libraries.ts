@@ -4,9 +4,6 @@ import type { ProjectRouteContext } from './project-route-types.js';
 const FILE_LIBRARY_ROUTE_KINDS = new Set([
   'fileLibraries',
   'fileLibraryItem',
-  'fileLibraryBackend',
-  'fileLibraryStorageCredentialExchange',
-  'fileLibraryDesktopMountAccess',
   'fileLibraryEntries',
   'fileLibraryFolders',
   'fileLibraryDelete',
@@ -14,7 +11,15 @@ const FILE_LIBRARY_ROUTE_KINDS = new Set([
   'fileLibraryUpload',
   'fileLibraryDownload',
   'fileLibraryMeta',
-  'fileLibraryShareLink',
+  'fileLibrarySavePoints',
+  'fileLibraryRestorePreview',
+  'fileLibraryRestoreRun',
+  'fileLibraryRestoreCancel',
+  'fileLibraryOperation',
+  'taskFileTemplates',
+  'taskFileTemplateItem',
+  'taskFileTemplatePublish',
+  'taskFileTemplateUnpublish',
 ]);
 
 export async function handleFileLibraryRoutes(context: ProjectRouteContext): Promise<boolean> {
@@ -38,7 +43,11 @@ export async function handleFileLibraryRoutes(context: ProjectRouteContext): Pro
     method,
     workspaceId: route.workspaceId,
     projectId: route.projectId,
-    libraryId: route.libraryId,
+    libraryId: 'libraryId' in route && typeof route.libraryId === 'string' ? route.libraryId : undefined,
+    operationId: 'operationId' in route && typeof route.operationId === 'string' ? route.operationId : undefined,
+    taskFileTemplateId: 'taskFileTemplateId' in route && typeof route.taskFileTemplateId === 'string'
+      ? route.taskFileTemplateId
+      : undefined,
     req,
     res,
     deps,

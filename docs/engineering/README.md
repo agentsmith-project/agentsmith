@@ -5,6 +5,7 @@ This directory holds engineering-side guidance, active implementation rationale,
 Current guidance and implementation plans:
 - [Current Engineering Governance Model](../current-engineering-governance-model.md) - current engineering governance truth; keep aligned with machine-readable manifests/contracts
 - [Agent Task File Library HOME Runtime Implementation Plan](./agent-task-persistent-home-runtime-plan.md) - `current_implementation_plan`; current development plan for making a file-library-stable HOME root the Agent task HOME, enforcing durable one-file-library-per-undeleted-task binding, and keeping artifacts scoped to `workspace/.artifacts`
+- [AFSCP File Library Runtime Rearchitecture Plan](./afscp-file-library-runtime-rearchitecture-plan.md) - `current_milestone_plan`; current plan for AFSCP shared-volume repos, save points, restore, templates, and workload mounts with AgentSmith as product authority
 - [Agent Task Terminal Runtime Recovery Engineering Guidance](./agent-task-terminal-runtime-recovery-guidance.md) - `current_engineering_guidance`; active guidance and implementation rationale for terminal runtime recovery, separating browser disconnect, runner transport recovery, closing tombstones, and typed terminal failures
 - [AgentSmith Unified Deploy and Docker Substrate Milestone Plan v1](./agentsmith-unified-deploy-and-docker-substrate-milestone-plan-v1.md) - current deploy implementation plan for local-kind and existing-cluster profiles
 - [前端技术栈与国际化策略-v1](./前端技术栈与国际化策略-v1.md)

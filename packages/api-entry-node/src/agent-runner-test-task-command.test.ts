@@ -2,21 +2,8 @@ import { describe, expect, it, vi } from 'vitest';
 import { createDefaultNodeApiDeps } from './index.js';
 import { dispatchDeveloperRunnerTestTaskRun } from './agent-runner-test-task-command.js';
 import { AgentTaskModelSettingService } from './agent-task-model-setting-service.js';
-import { getNotebookTaskRunState } from './notebook-task/task-run-coordination.js';
 import { notebookTaskMessagesCollection, notebookTasksCollection } from './notebook-task/task-store.js';
 import { JsonDocProjectFileLibraryCatalogRepo } from './file-library-persistence.js';
-import { JsonDocTaskFileLibraryBindingRepo } from './notebook-task/task-file-library-bindings.js';
-
-function createDeferred<T = void>(): {
-  promise: Promise<T>;
-  resolve: (value: T | PromiseLike<T>) => void;
-} {
-  let resolve!: (value: T | PromiseLike<T>) => void;
-  const promise = new Promise<T>((nextResolve) => {
-    resolve = nextResolve;
-  });
-  return { promise, resolve };
-}
 
 describe('dispatchDeveloperRunnerTestTaskRun', () => {
   async function createReadyEndpoint(
@@ -62,7 +49,56 @@ describe('dispatchDeveloperRunnerTestTaskRun', () => {
     });
   }
 
-  it('fails closed before creating a runner test task when project model setting is missing', async () => {
+  it('fails closed before creating a runner test task while the AFSCP developer connector is blocked', async () => {
+    const previousPublicApiBase = process.env.PUBLIC_API_BASE_URL;
+    process.env.PUBLIC_API_BASE_URL = 'http://localhost:20000';
+    const deps = createDefaultNodeApiDeps();
+    try {
+      const endpoint = await createReadyEndpoint(deps, {
+        name: 'project setting endpoint',
+        model: 'project-setting-model',
+        upstreamProtocol: 'anthropic_messages',
+      });
+      await seedAgentTaskModelSetting(deps, endpoint.id);
+      const runner = await deps.agentResourceService.createAgent('ws_default', 'proj_1', {
+        name: 'Developer runner blocked by storage connector',
+        runner_provider: 'developer',
+        status: 'enabled',
+        presence: 'online',
+        runner_status: 'ready',
+        capabilities: { task_execution: true, artifacts: true },
+      });
+      deps.agentExecutionService.dispatchStreamingRequest = vi.fn();
+
+      await expect(dispatchDeveloperRunnerTestTaskRun({
+        deps,
+        workspaceId: 'ws_default',
+        projectId: 'proj_1',
+        user: { id: 'user_test', email: 'user_test@example.com', name: 'Test User' },
+        runner,
+        intent: 'Run self-check',
+        requestId: 'req_developer_connector_blocked',
+      })).resolves.toEqual({
+        ok: false,
+        errorCode: 'TASK_HOME_BINDING_UNAVAILABLE_FOR_DEVELOPER_RUNNER',
+        message: 'task_home_binding_unavailable_for_developer_runner',
+      });
+
+      expect(deps.agentExecutionService.dispatchStreamingRequest).not.toHaveBeenCalled();
+      await expect(deps.docStore.list(notebookTasksCollection('ws_default'), {
+        source: 'runner_test',
+      })).resolves.toHaveLength(0);
+      await expect(new JsonDocProjectFileLibraryCatalogRepo(deps.docStore).listByProject(
+        'ws_default',
+        'proj_1',
+      )).resolves.toHaveLength(0);
+    } finally {
+      if (previousPublicApiBase === undefined) delete process.env.PUBLIC_API_BASE_URL;
+      else process.env.PUBLIC_API_BASE_URL = previousPublicApiBase;
+    }
+  });
+
+  it('fails closed before model resolution while the AFSCP developer connector is blocked', async () => {
     const previousPublicApiBase = process.env.PUBLIC_API_BASE_URL;
     process.env.PUBLIC_API_BASE_URL = 'http://localhost:20000';
     const deps = createDefaultNodeApiDeps();
@@ -100,8 +136,8 @@ describe('dispatchDeveloperRunnerTestTaskRun', () => {
         requestId: 'req_missing_setting',
       })).resolves.toMatchObject({
         ok: false,
-        errorCode: 'agent_task_model_setting_missing',
-        message: 'agent_task_model_setting_missing',
+        errorCode: 'TASK_HOME_BINDING_UNAVAILABLE_FOR_DEVELOPER_RUNNER',
+        message: 'task_home_binding_unavailable_for_developer_runner',
       });
 
       expect(deps.agentExecutionService.dispatchStreamingRequest).not.toHaveBeenCalled();
@@ -114,7 +150,7 @@ describe('dispatchDeveloperRunnerTestTaskRun', () => {
     }
   });
 
-  it('dispatches with the project model setting endpoint instead of runner defaults or preferences', async () => {
+  it('does not create model-setting dispatch evidence while the AFSCP developer connector is blocked', async () => {
     const previousPublicApiBase = process.env.PUBLIC_API_BASE_URL;
     process.env.PUBLIC_API_BASE_URL = 'http://localhost:20000';
     const deps = createDefaultNodeApiDeps();
@@ -146,15 +182,7 @@ describe('dispatchDeveloperRunnerTestTaskRun', () => {
         },
         capabilities: { task_execution: true, artifacts: true },
       });
-      const streamGate = createDeferred<void>();
-      deps.agentExecutionService.dispatchStreamingRequest = vi.fn(async () => ({
-        requestId: 'req_runner_test_project_setting',
-        cancel: vi.fn(),
-        stream: (async function* stream() {
-          await streamGate.promise;
-          yield { type: 'done', finish_reason: 'stop', usage_tokens: 1 } as const;
-        })(),
-      })) as never;
+      deps.agentExecutionService.dispatchStreamingRequest = vi.fn();
 
       const result = await dispatchDeveloperRunnerTestTaskRun({
         deps,
@@ -166,89 +194,26 @@ describe('dispatchDeveloperRunnerTestTaskRun', () => {
         requestId: 'req_project_setting',
       });
 
-      expect(result).toMatchObject({
-        ok: true,
-        accepted: {
-          resolvedRunnerId: runner.id,
-        },
+      expect(result).toEqual({
+        ok: false,
+        errorCode: 'TASK_HOME_BINDING_UNAVAILABLE_FOR_DEVELOPER_RUNNER',
+        message: 'task_home_binding_unavailable_for_developer_runner',
       });
-      if (!result.ok) throw new Error(result.errorCode);
-      await vi.waitFor(() => {
-        expect(deps.agentExecutionService.dispatchStreamingRequest).toHaveBeenCalledWith(
-          expect.objectContaining({
-            agentId: runner.id,
-            model: 'project-setting-model',
-            executionContext: expect.objectContaining({
-              endpoint_id: projectSettingEndpoint.id,
-              model: 'project-setting-model',
-              wire_api: 'anthropic_messages',
-              agent_task_model: expect.objectContaining({
-                endpoint_id: projectSettingEndpoint.id,
-                resolved_model: 'project-setting-model',
-                upstream_protocol: 'anthropic_messages',
-              }),
-            }),
-          }),
-        );
-      });
-      expect(deps.agentExecutionService.dispatchStreamingRequest).not.toHaveBeenCalledWith(
-        expect.objectContaining({
-          model: 'runner-default-model',
-        }),
-      );
-      await expect(getNotebookTaskRunState(deps.cache, result.accepted.taskId)).resolves.toMatchObject({
-        task_id: result.accepted.taskId,
-        run_id: result.accepted.runId,
-        resolved_runner_id: runner.id,
-        agent_task_model: expect.objectContaining({
-          endpoint_id: projectSettingEndpoint.id,
-          resolved_model: 'project-setting-model',
-          upstream_protocol: 'anthropic_messages',
-        }),
-      });
-      const storedTask = await deps.docStore.get<Record<string, unknown>>(
-        notebookTasksCollection('ws_default'),
-        result.accepted.taskId,
-      );
-      expect(storedTask).toMatchObject({
+      expect(deps.agentExecutionService.dispatchStreamingRequest).not.toHaveBeenCalled();
+      await expect(deps.docStore.list(notebookTasksCollection('ws_default'), {
         source: 'runner_test',
-        runner_test: true,
-        workspace_file_library_id: expect.stringMatching(/^flib_/),
-        task_home_segment: expect.stringMatching(/^flibhome_/),
-        file_library_binding_generation: expect.any(Number),
-        runtime_writable_affordance: 'task_internal_home',
-      });
-      const fileLibraryId = String(storedTask?.workspace_file_library_id);
-      await expect(new JsonDocProjectFileLibraryCatalogRepo(deps.docStore).getById(
+      })).resolves.toHaveLength(0);
+      await expect(new JsonDocProjectFileLibraryCatalogRepo(deps.docStore).listByProject(
         'ws_default',
         'proj_1',
-        fileLibraryId,
-      )).resolves.toMatchObject({
-        id: fileLibraryId,
-        file_library_home_segment: storedTask?.task_home_segment,
-      });
-      await expect(new JsonDocTaskFileLibraryBindingRepo(deps.docStore).find({
-        workspaceId: 'ws_default',
-        projectId: 'proj_1',
-        fileLibraryId,
-      })).resolves.toMatchObject({
-        taskId: result.accepted.taskId,
-        bindingGeneration: storedTask?.file_library_binding_generation,
-        runtimeWritableAffordance: 'task_internal_home',
-        bindingState: 'bound',
-      });
-
-      streamGate.resolve();
-      await vi.waitFor(async () => {
-        expect(await getNotebookTaskRunState(deps.cache, result.accepted.taskId)).toBeNull();
-      });
+      )).resolves.toHaveLength(0);
     } finally {
       if (previousPublicApiBase === undefined) delete process.env.PUBLIC_API_BASE_URL;
       else process.env.PUBLIC_API_BASE_URL = previousPublicApiBase;
     }
   });
 
-  it('uses a canonical self-check prompt instead of forwarding diagnostic intent tokens to the runner', async () => {
+  it('does not persist self-check prompt material while the AFSCP developer connector is blocked', async () => {
     const previousPublicApiBase = process.env.PUBLIC_API_BASE_URL;
     process.env.PUBLIC_API_BASE_URL = 'http://localhost:20000';
     const deps = createDefaultNodeApiDeps();
@@ -267,13 +232,7 @@ describe('dispatchDeveloperRunnerTestTaskRun', () => {
         runner_status: 'ready',
         capabilities: { task_execution: true, artifacts: true },
       });
-      deps.agentExecutionService.dispatchStreamingRequest = vi.fn(async () => ({
-        requestId: 'req_runner_test_prompt',
-        cancel: vi.fn(),
-        stream: (async function* stream() {
-          yield { type: 'done', finish_reason: 'stop', usage_tokens: 1 } as const;
-        })(),
-      })) as never;
+      deps.agentExecutionService.dispatchStreamingRequest = vi.fn();
 
       const result = await dispatchDeveloperRunnerTestTaskRun({
         deps,
@@ -285,25 +244,17 @@ describe('dispatchDeveloperRunnerTestTaskRun', () => {
         requestId: 'req_prompt',
       });
 
-      expect(result).toMatchObject({ ok: true });
-      await vi.waitFor(() => {
-        expect(deps.agentExecutionService.dispatchStreamingRequest).toHaveBeenCalledWith(
-          expect.objectContaining({
-            messages: [
-              expect.objectContaining({
-                role: 'user',
-                content: expect.stringContaining('AGENTSMITH_RUNNER_TEST_OK'),
-              }),
-            ],
-          }),
-        );
+      expect(result).toEqual({
+        ok: false,
+        errorCode: 'TASK_HOME_BINDING_UNAVAILABLE_FOR_DEVELOPER_RUNNER',
+        message: 'task_home_binding_unavailable_for_developer_runner',
       });
-      const taskId = result.ok ? result.accepted.taskId : '';
+      expect(deps.agentExecutionService.dispatchStreamingRequest).not.toHaveBeenCalled();
       const messages = await deps.docStore.list<Record<string, unknown>>(
         notebookTaskMessagesCollection('ws_default'),
-        { task_id: taskId },
+        {},
       );
-      expect(JSON.stringify(messages)).toContain('AGENTSMITH_RUNNER_TEST_OK');
+      expect(JSON.stringify(messages)).not.toContain('AGENTSMITH_RUNNER_TEST_OK');
       expect(JSON.stringify(messages)).not.toContain('developer_runner_connection_check');
     } finally {
       if (previousPublicApiBase === undefined) delete process.env.PUBLIC_API_BASE_URL;
@@ -311,7 +262,7 @@ describe('dispatchDeveloperRunnerTestTaskRun', () => {
     }
   });
 
-  it('rejects a second self-check for the same Developer runner while one is already running', async () => {
+  it('does not acquire a runner-test singleflight lease while the AFSCP developer connector is blocked', async () => {
     const previousPublicApiBase = process.env.PUBLIC_API_BASE_URL;
     process.env.PUBLIC_API_BASE_URL = 'http://localhost:20000';
     const deps = createDefaultNodeApiDeps();
@@ -330,15 +281,7 @@ describe('dispatchDeveloperRunnerTestTaskRun', () => {
         runner_status: 'ready',
         capabilities: { task_execution: true, artifacts: true },
       });
-      const streamGate = createDeferred<void>();
-      deps.agentExecutionService.dispatchStreamingRequest = vi.fn(async () => ({
-        requestId: 'req_runner_test_singleflight',
-        cancel: vi.fn(),
-        stream: (async function* stream() {
-          await streamGate.promise;
-          yield { type: 'done', finish_reason: 'stop', usage_tokens: 1 } as const;
-        })(),
-      })) as never;
+      deps.agentExecutionService.dispatchStreamingRequest = vi.fn();
 
       const first = await dispatchDeveloperRunnerTestTaskRun({
         deps,
@@ -349,7 +292,11 @@ describe('dispatchDeveloperRunnerTestTaskRun', () => {
         intent: 'Run first self-check',
         requestId: 'req_first',
       });
-      expect(first).toMatchObject({ ok: true });
+      expect(first).toEqual({
+        ok: false,
+        errorCode: 'TASK_HOME_BINDING_UNAVAILABLE_FOR_DEVELOPER_RUNNER',
+        message: 'task_home_binding_unavailable_for_developer_runner',
+      });
 
       const second = await dispatchDeveloperRunnerTestTaskRun({
         deps,
@@ -362,20 +309,14 @@ describe('dispatchDeveloperRunnerTestTaskRun', () => {
       });
       expect(second).toEqual({
         ok: false,
-        errorCode: 'agent_runner_test_task_unavailable',
-        message: 'runner_test_task_run_conflict',
+        errorCode: 'TASK_HOME_BINDING_UNAVAILABLE_FOR_DEVELOPER_RUNNER',
+        message: 'task_home_binding_unavailable_for_developer_runner',
       });
 
       await expect(deps.docStore.list(notebookTasksCollection('ws_default'), {
         source: 'runner_test',
-      })).resolves.toHaveLength(1);
-
-      streamGate.resolve();
-      if (first.ok) {
-        await vi.waitFor(async () => {
-          expect(await getNotebookTaskRunState(deps.cache, first.accepted.taskId)).toBeNull();
-        });
-      }
+      })).resolves.toHaveLength(0);
+      expect(deps.agentExecutionService.dispatchStreamingRequest).not.toHaveBeenCalled();
     } finally {
       if (previousPublicApiBase === undefined) delete process.env.PUBLIC_API_BASE_URL;
       else process.env.PUBLIC_API_BASE_URL = previousPublicApiBase;

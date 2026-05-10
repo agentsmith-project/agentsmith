@@ -150,4 +150,145 @@ describe('FilesAPI', () => {
       },
     );
   });
+
+  it('routes file-library save point and restore requests through project scoped paths', async () => {
+    const client: ApiClient = {
+      setToken: () => undefined,
+      getToken: () => null,
+      clearToken: () => undefined,
+      get: vi.fn().mockResolvedValue({ items: [] }),
+      getBlob: vi.fn(),
+      postMultipart: vi.fn(),
+      post: vi
+        .fn()
+        .mockResolvedValueOnce({
+          id: 'sp_1',
+          file_library_id: 'flib_1',
+          message: 'Before edits',
+          created_at: '2026-05-09T12:00:00.000Z',
+        })
+        .mockResolvedValueOnce({
+          id: 'rp_1',
+          file_library_id: 'flib_1',
+          source_save_point_id: 'sp_1',
+          status: 'ready',
+          created_at: '2026-05-09T12:01:00.000Z',
+          updated_at: '2026-05-09T12:01:00.000Z',
+        })
+        .mockResolvedValueOnce({
+          id: 'rr_1',
+          file_library_id: 'flib_1',
+          restore_preview_id: 'rp_1',
+          status: 'succeeded',
+          created_at: '2026-05-09T12:02:00.000Z',
+          updated_at: '2026-05-09T12:02:00.000Z',
+        })
+        .mockResolvedValueOnce({
+          id: 'rp_1',
+          file_library_id: 'flib_1',
+          source_save_point_id: 'sp_1',
+          status: 'canceled',
+          created_at: '2026-05-09T12:01:00.000Z',
+          updated_at: '2026-05-09T12:03:00.000Z',
+        }),
+      put: vi.fn(),
+      patch: vi.fn(),
+      delete: vi.fn(),
+      connectSSE: () => Promise.resolve(new EventSource('http://localhost')),
+    };
+    const api = new FilesAPI(client);
+
+    await api.listSavePoints('ws_1', 'proj_1', 'flib_1');
+    await api.createSavePoint('ws_1', 'proj_1', 'flib_1', { message: 'Before edits' });
+    await api.createRestorePreview('ws_1', 'proj_1', 'flib_1', { save_point_id: 'sp_1' });
+    await api.runRestore('ws_1', 'proj_1', 'flib_1', { restore_preview_id: 'rp_1' });
+    await api.cancelRestore('ws_1', 'proj_1', 'flib_1', { restore_preview_id: 'rp_1' });
+
+    expect(client.get).toHaveBeenCalledWith(
+      '/workspaces/ws_1/projects/proj_1/file-libraries/flib_1/save-points',
+    );
+    expect(client.post).toHaveBeenNthCalledWith(
+      1,
+      '/workspaces/ws_1/projects/proj_1/file-libraries/flib_1/save-points',
+      { message: 'Before edits' },
+    );
+    expect(client.post).toHaveBeenNthCalledWith(
+      2,
+      '/workspaces/ws_1/projects/proj_1/file-libraries/flib_1/restore-preview',
+      { save_point_id: 'sp_1' },
+    );
+    expect(client.post).toHaveBeenNthCalledWith(
+      3,
+      '/workspaces/ws_1/projects/proj_1/file-libraries/flib_1/restore-run',
+      { restore_preview_id: 'rp_1' },
+    );
+    expect(client.post).toHaveBeenNthCalledWith(
+      4,
+      '/workspaces/ws_1/projects/proj_1/file-libraries/flib_1/restore-cancel',
+      { restore_preview_id: 'rp_1' },
+    );
+  });
+
+  it('routes project task file template requests through project scoped paths', async () => {
+    const client: ApiClient = {
+      setToken: () => undefined,
+      getToken: () => null,
+      clearToken: () => undefined,
+      get: vi.fn().mockResolvedValue({ items: [] }),
+      getBlob: vi.fn(),
+      postMultipart: vi.fn(),
+      post: vi.fn().mockResolvedValue({
+        id: 'tmpl_1',
+        workspace_id: 'ws_1',
+        project_id: 'proj_1',
+        source_library_id: 'flib_1',
+        name: 'Starter',
+        status: 'published',
+        created_by_user_id: 'user_1',
+        created_at: '2026-05-09T12:00:00.000Z',
+        updated_at: '2026-05-09T12:00:00.000Z',
+      }),
+      put: vi.fn(),
+      patch: vi.fn(),
+      delete: vi.fn().mockResolvedValue(undefined),
+      connectSSE: () => Promise.resolve(new EventSource('http://localhost')),
+    };
+    const api = new FilesAPI(client);
+
+    await api.listTaskFileTemplates('ws_1', 'proj_1');
+    await api.createTaskFileTemplate('ws_1', 'proj_1', {
+      source_library_id: 'flib_1',
+      name: 'Starter',
+      description: 'Baseline files',
+    });
+    await api.publishTaskFileTemplate('ws_1', 'proj_1', 'tmpl_1');
+    await api.unpublishTaskFileTemplate('ws_1', 'proj_1', 'tmpl_1');
+    await api.deleteTaskFileTemplate('ws_1', 'proj_1', 'tmpl_1');
+
+    expect(client.get).toHaveBeenCalledWith(
+      '/workspaces/ws_1/projects/proj_1/task-file-templates',
+    );
+    expect(client.post).toHaveBeenNthCalledWith(
+      1,
+      '/workspaces/ws_1/projects/proj_1/task-file-templates',
+      {
+        source_library_id: 'flib_1',
+        name: 'Starter',
+        description: 'Baseline files',
+      },
+    );
+    expect(client.post).toHaveBeenNthCalledWith(
+      2,
+      '/workspaces/ws_1/projects/proj_1/task-file-templates/tmpl_1/publish',
+      undefined,
+    );
+    expect(client.post).toHaveBeenNthCalledWith(
+      3,
+      '/workspaces/ws_1/projects/proj_1/task-file-templates/tmpl_1/unpublish',
+      undefined,
+    );
+    expect(client.delete).toHaveBeenCalledWith(
+      '/workspaces/ws_1/projects/proj_1/task-file-templates/tmpl_1',
+    );
+  });
 });

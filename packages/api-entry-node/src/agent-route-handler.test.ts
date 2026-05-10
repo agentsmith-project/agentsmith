@@ -1,26 +1,14 @@
 import { describe, expect, it, vi } from 'vitest';
 import { createDefaultNodeApiDeps } from './index.js';
 import { handleAgentRoute, resolveAgentPresenceForApi } from './agent-route-handler.js';
-import { handleTaskRoute } from './task-route-handler.js';
 import {
   upsertProjectMemberPermissionState,
   upsertProjectMembershipRecord,
 } from './project-member-governance-persistence.js';
-import { getNotebookTaskRunState } from './notebook-task/task-run-coordination.js';
 import { notebookTaskMessagesCollection, notebookTasksCollection } from './notebook-task/task-store.js';
 import { listAuditEvents } from './audit-usage-store.js';
 import { resolveWorkspaceScopedCollection } from './workspace-tenant-collections.js';
 import { AgentTaskModelSettingService } from './agent-task-model-setting-service.js';
-
-function createDeferred<T>() {
-  let resolve!: (value: T | PromiseLike<T>) => void;
-  let reject!: (reason?: unknown) => void;
-  const promise = new Promise<T>((innerResolve, innerReject) => {
-    resolve = innerResolve;
-    reject = innerReject;
-  });
-  return { promise, resolve, reject };
-}
 
 describe('resolveAgentPresenceForApi', () => {
   it('returns online for developer runner sockets', () => {
@@ -1302,7 +1290,7 @@ describe('handleAgentRoute Agent Runner target contract', () => {
         }),
         run_test_task: expect.objectContaining({
           allowed: false,
-          reason_code: 'agent_runner_disconnected',
+          reason_code: 'TASK_HOME_BINDING_UNAVAILABLE_FOR_DEVELOPER_RUNNER',
         }),
       },
     });
@@ -1322,13 +1310,14 @@ describe('handleAgentRoute Agent Runner target contract', () => {
       actions: {
         test_connection: expect.objectContaining({ allowed: true }),
         run_test_task: expect.objectContaining({
-          allowed: true,
+          allowed: false,
+          reason_code: 'TASK_HOME_BINDING_UNAVAILABLE_FOR_DEVELOPER_RUNNER',
         }),
       },
     });
   });
 
-  it('creates standard runner_test task/run evidence and dispatches the route runner', async () => {
+  it('fails closed before standard runner_test task/run evidence while Developer runner HOME binding is blocked', async () => {
     const previousPublicApiBase = process.env.PUBLIC_API_BASE_URL;
     process.env.PUBLIC_API_BASE_URL = 'http://localhost:20000';
     const { deps, projectId } = await createProjectWithMemberPermissions([
@@ -1337,7 +1326,7 @@ describe('handleAgentRoute Agent Runner target contract', () => {
     ]);
     try {
       const defaultEndpoint = await createRunnerEndpoint(deps, projectId, 'ordinary default endpoint');
-      const defaultRunner = await deps.agentResourceService.createAgent('ws_default', projectId, {
+      await deps.agentResourceService.createAgent('ws_default', projectId, {
         name: 'Ordinary default should not receive test dispatch',
         status: 'enabled',
         presence: 'managed',
@@ -1348,15 +1337,7 @@ describe('handleAgentRoute Agent Runner target contract', () => {
       });
       await seedAgentTaskModelSetting(deps, projectId, defaultEndpoint.id);
       const { runner } = await createConnectedDeveloperRunner(deps, projectId);
-      const streamGate = createDeferred<void>();
-      deps.agentExecutionService.dispatchStreamingRequest = vi.fn(async () => ({
-        requestId: 'req_runner_test_dispatch',
-        cancel: vi.fn(),
-        stream: (async function* () {
-          await streamGate.promise;
-          yield { type: 'done', finish_reason: 'stop', usage_tokens: 1 } as const;
-        })(),
-      })) as never;
+      deps.agentExecutionService.dispatchStreamingRequest = vi.fn();
       const json = vi.fn();
 
       await expect(handleAgentRoute({
@@ -1370,151 +1351,20 @@ describe('handleAgentRoute Agent Runner target contract', () => {
         readBody: vi.fn(async () => ({ intent: 'Run a safe self-check with token sk-should-not-leak' })),
       })).resolves.toBe(true);
 
-      expect(json.mock.calls[0]?.[1]).toBe(202);
-      const body = json.mock.calls[0]?.[2] as { task_id: string; run_id: string; resolved_runner_id: string };
-      expect(body).toMatchObject({
+      expect(json.mock.calls[0]?.[1]).toBe(409);
+      expect(json.mock.calls[0]?.[2]).toMatchObject({
+        error_code: 'TASK_HOME_BINDING_UNAVAILABLE_FOR_DEVELOPER_RUNNER',
+        message: 'task_home_binding_unavailable_for_developer_runner',
         runner_test: true,
-        status: 'accepted',
-        task_id: expect.stringMatching(/^task_/),
-        run_id: expect.stringMatching(/^run_/),
+        status: 'not_started',
         resolved_runner_id: runner.id,
       });
-      expect(body).not.toHaveProperty('selection');
-      await vi.waitFor(() => {
-        expect(deps.agentExecutionService.dispatchStreamingRequest).toHaveBeenCalledWith(
-          expect.objectContaining({
-            agentId: runner.id,
-            sessionId: body.task_id,
-            executionContext: expect.objectContaining({
-              task_id: body.task_id,
-              run_id: body.run_id,
-              runner_id: runner.id,
-            }),
-          }),
-        );
-      });
-      expect(deps.agentExecutionService.dispatchStreamingRequest).not.toHaveBeenCalledWith(
-        expect.objectContaining({ agentId: defaultRunner.id }),
-      );
-
-      const task = await deps.docStore.get<Record<string, unknown>>(notebookTasksCollection('ws_default'), body.task_id);
-      expect(task).toMatchObject({
-        id: body.task_id,
-        project_id: projectId,
-        owner_user_id: 'user_test',
-        source: 'runner_test',
-        runner_test: true,
-        bound_runner_id: runner.id,
-        bound_runner_kind: 'developer',
-        runner_binding_source: 'explicit',
-        bound_at: expect.any(String),
-        bound_by_user_id: 'user_test',
-      });
-      expect(task).not.toHaveProperty('runner_selection');
-      expect(task).not.toHaveProperty('runner_id');
-
-      const runState = await getNotebookTaskRunState(deps.cache, body.task_id);
-      expect(runState).toMatchObject({
-        task_id: body.task_id,
-        run_id: body.run_id,
-        runner_id: runner.id,
-        resolved_runner_id: runner.id,
-        runner_test: true,
-      });
-      expect(runState).not.toHaveProperty('selection');
-
-      const taskRouteUser = { id: 'user_test', email: 'user_test@example.com', name: 'Test User' } as never;
-      const listJson = vi.fn();
-      await expect(handleTaskRoute({
-        route: { kind: 'tasks', workspaceId: 'ws_default', projectId } as never,
-        method: 'GET',
-        req: { headers: {}, url: 'http://localhost/api/v1/workspaces/ws_default/projects/test/tasks?page=1&page_size=10' } as never,
-        res: {} as never,
-        deps,
-        user: taskRouteUser,
-        json: listJson,
-        readBody: vi.fn(),
-      })).resolves.toBe(true);
-      const listBody = listJson.mock.calls[0]?.[2] as { items: Array<Record<string, unknown>> };
-      expect(listBody.items.find((item) => item.id === body.task_id)).toMatchObject({
-        id: body.task_id,
-        source: 'runner_test',
-        runner_test: true,
-        bound_runner_id: runner.id,
-        bound_runner_kind: 'developer',
-        runner_binding_source: 'explicit',
-        active_run: expect.objectContaining({
-          id: body.run_id,
-          runner_id: runner.id,
-          source: 'runner_test',
-          runner_test: true,
-        }),
-      });
-
-      const getJson = vi.fn();
-      await expect(handleTaskRoute({
-        route: { kind: 'taskItem', workspaceId: 'ws_default', projectId, taskId: body.task_id } as never,
-        method: 'GET',
-        req: { headers: {}, url: '' } as never,
-        res: {} as never,
-        deps,
-        user: taskRouteUser,
-        json: getJson,
-        readBody: vi.fn(),
-      })).resolves.toBe(true);
-      expect(getJson.mock.calls[0]?.[2]).toMatchObject({
-        id: body.task_id,
-        source: 'runner_test',
-        runner_test: true,
-        bound_runner_id: runner.id,
-        bound_runner_kind: 'developer',
-        runner_binding_source: 'explicit',
-        active_run: expect.objectContaining({
-          id: body.run_id,
-          source: 'runner_test',
-          runner_test: true,
-        }),
-      });
-
-      const activityJson = vi.fn();
-      await expect(handleTaskRoute({
-        route: { kind: 'taskActivity', workspaceId: 'ws_default', projectId, taskId: body.task_id } as never,
-        method: 'GET',
-        req: { headers: {}, url: '' } as never,
-        res: {} as never,
-        deps,
-        user: taskRouteUser,
-        json: activityJson,
-        readBody: vi.fn(),
-      })).resolves.toBe(true);
-      const activityBody = activityJson.mock.calls[0]?.[2] as Array<Record<string, unknown>>;
-      expect(activityBody).toEqual(expect.arrayContaining([
-        expect.objectContaining({
-          task_id: body.task_id,
-          source: 'runner_test',
-          runner_test: true,
-        }),
-        expect.objectContaining({
-          task_id: body.task_id,
-          run_id: body.run_id,
-          source: 'runner_test',
-          runner_test: true,
-        }),
-      ]));
-      const messages = await deps.docStore.list<Record<string, unknown>>(
-        notebookTaskMessagesCollection('ws_default'),
-        { task_id: body.task_id },
-      );
-      expect(messages).toEqual(expect.arrayContaining([
-        expect.objectContaining({ role: 'user', content: expect.stringContaining('AGENTSMITH_RUNNER_TEST_OK') }),
-        expect.objectContaining({ role: 'agent', turn_id: body.run_id }),
-      ]));
-      expect(JSON.stringify(messages)).not.toContain('sk-should-not-leak');
-
-      streamGate.resolve();
-      await vi.waitFor(async () => {
-        expect(await getNotebookTaskRunState(deps.cache, body.task_id)).toBeNull();
-      });
+      expect(json.mock.calls[0]?.[2]).not.toHaveProperty('selection');
+      expect(deps.agentExecutionService.dispatchStreamingRequest).not.toHaveBeenCalled();
+      await expect(deps.docStore.list(notebookTasksCollection('ws_default'), { project_id: projectId }))
+        .resolves.toEqual([]);
+      await expect(deps.docStore.list(notebookTaskMessagesCollection('ws_default'), {}))
+        .resolves.toEqual([]);
     } finally {
       if (previousPublicApiBase === undefined) delete process.env.PUBLIC_API_BASE_URL;
       else process.env.PUBLIC_API_BASE_URL = previousPublicApiBase;
@@ -1645,7 +1495,7 @@ describe('handleAgentRoute Agent Runner target contract', () => {
           name: 'No task execution runner',
           capabilities: { task_execution: false },
         }),
-      'agent_runner_capability_mismatch',
+      'TASK_HOME_BINDING_UNAVAILABLE_FOR_DEVELOPER_RUNNER',
     ],
     [
       'disconnected',
@@ -1662,7 +1512,7 @@ describe('handleAgentRoute Agent Runner target contract', () => {
           capabilities: { task_execution: true },
         }),
       }),
-      'agent_runner_disconnected',
+      'TASK_HOME_BINDING_UNAVAILABLE_FOR_DEVELOPER_RUNNER',
     ],
     [
       'stale',
@@ -1685,7 +1535,7 @@ describe('handleAgentRoute Agent Runner target contract', () => {
           runner: (await deps.agentResourceService.getAgent('ws_default', projectId, runner.id)) ?? runner,
         };
       },
-      'agent_runner_stale',
+      'TASK_HOME_BINDING_UNAVAILABLE_FOR_DEVELOPER_RUNNER',
     ],
     [
       'not ready',
@@ -1694,9 +1544,9 @@ describe('handleAgentRoute Agent Runner target contract', () => {
           name: 'Draft runner',
           runnerStatus: 'draft',
         }),
-      'agent_runner_test_task_unavailable',
+      'TASK_HOME_BINDING_UNAVAILABLE_FOR_DEVELOPER_RUNNER',
     ],
-  ])('fails closed with no task for %s Developer runner test-task-runs', async (_name, setupRunner, errorCode) => {
+  ])('prioritizes blocked Developer runner HOME binding before %s test-task checks', async (_name, setupRunner, errorCode) => {
     const { deps, projectId } = await createProjectWithMemberPermissions([
       'project:agent_runner:manage',
       'project:agent_task:use',
@@ -1725,6 +1575,7 @@ describe('handleAgentRoute Agent Runner target contract', () => {
     const responseBody = json.mock.calls[0]?.[2] as Record<string, unknown>;
     expect(responseBody).toMatchObject({
       error_code: errorCode,
+      message: 'task_home_binding_unavailable_for_developer_runner',
       runner_test: true,
       status: 'not_started',
       resolved_runner_id: runner.id,
@@ -1735,7 +1586,7 @@ describe('handleAgentRoute Agent Runner target contract', () => {
       .resolves.toEqual(tasksBefore);
   });
 
-  it('audits runner test task request and accepted events with redacted metadata and no preference side effects', async () => {
+  it('audits runner test task request and failed events with redacted metadata and no preference side effects while blocked', async () => {
     const previousPublicApiBase = process.env.PUBLIC_API_BASE_URL;
     process.env.PUBLIC_API_BASE_URL = 'http://localhost:20000';
     const { deps, projectId } = await createProjectWithMemberPermissions([
@@ -1745,13 +1596,7 @@ describe('handleAgentRoute Agent Runner target contract', () => {
     try {
       const { endpoint, runner } = await createConnectedDeveloperRunner(deps, projectId);
       await seedAgentTaskModelSetting(deps, projectId, endpoint.id);
-      deps.agentExecutionService.dispatchStreamingRequest = vi.fn(async () => ({
-        requestId: 'req_runner_test_redacted',
-        cancel: vi.fn(),
-        stream: (async function* () {
-          yield { type: 'done', finish_reason: 'stop', usage_tokens: 1 } as const;
-        })(),
-      })) as never;
+      deps.agentExecutionService.dispatchStreamingRequest = vi.fn();
       const json = vi.fn();
 
       await expect(handleAgentRoute({
@@ -1765,11 +1610,17 @@ describe('handleAgentRoute Agent Runner target contract', () => {
         readBody: vi.fn(async () => ({ intent: 'secret token sk-live-secret should not leak' })),
       })).resolves.toBe(true);
 
-      expect(json.mock.calls[0]?.[1]).toBe(202);
-      const body = json.mock.calls[0]?.[2] as { task_id: string; run_id: string };
-      await vi.waitFor(async () => {
-        expect(await getNotebookTaskRunState(deps.cache, body.task_id)).toBeNull();
+      expect(json.mock.calls[0]?.[1]).toBe(409);
+      expect(json.mock.calls[0]?.[2]).toMatchObject({
+        error_code: 'TASK_HOME_BINDING_UNAVAILABLE_FOR_DEVELOPER_RUNNER',
+        message: 'task_home_binding_unavailable_for_developer_runner',
+        runner_test: true,
+        status: 'not_started',
+        resolved_runner_id: runner.id,
       });
+      expect(deps.agentExecutionService.dispatchStreamingRequest).not.toHaveBeenCalled();
+      await expect(deps.docStore.list(notebookTasksCollection('ws_default'), { project_id: projectId }))
+        .resolves.toEqual([]);
 
       const auditEvents = await listAuditEvents(deps.docStore, {
         workspaceId: 'ws_default',
@@ -1783,25 +1634,24 @@ describe('handleAgentRoute Agent Runner target contract', () => {
       const runnerTestEvents = auditEvents.items.filter((item) => item.action.startsWith('agent_runner.test_task.'));
       expect(runnerTestEvents.map((item) => item.action)).toEqual(expect.arrayContaining([
         'agent_runner.test_task.requested',
-        'agent_runner.test_task.accepted',
+        'agent_runner.test_task.failed',
       ]));
+      expect(runnerTestEvents.map((item) => item.action)).not.toContain('agent_runner.test_task.accepted');
       expect(JSON.stringify(runnerTestEvents)).not.toContain('sk-live-secret');
       expect(JSON.stringify(runnerTestEvents)).not.toContain('secret token');
       expect(runnerTestEvents).toContainEqual(expect.objectContaining({
-        action: 'agent_runner.test_task.accepted',
+        action: 'agent_runner.test_task.failed',
+        error_code: 'TASK_HOME_BINDING_UNAVAILABLE_FOR_DEVELOPER_RUNNER',
+        error_message: 'task_home_binding_unavailable_for_developer_runner',
         metadata_json: expect.objectContaining({
           runner_test: true,
-          task_id: body.task_id,
-          run_id: body.run_id,
           resolved_runner_id: runner.id,
-          bound_runner_id: runner.id,
-          bound_runner_kind: 'developer',
-          runner_binding_source: 'explicit',
-          intent_present: true,
+          failure_code: 'task_home_binding_unavailable_for_developer_runner',
         }),
       }));
-      const acceptedEvent = runnerTestEvents.find((item) => item.action === 'agent_runner.test_task.accepted');
-      expect(acceptedEvent?.metadata_json).not.toHaveProperty('selection');
+      const failedEvent = runnerTestEvents.find((item) => item.action === 'agent_runner.test_task.failed');
+      expect(failedEvent?.metadata_json).not.toHaveProperty('selection');
+      expect(failedEvent?.metadata_json).not.toHaveProperty('bound_runner_id');
       const storedRunner = await deps.agentResourceService.getAgent('ws_default', projectId, runner.id);
       expect(storedRunner).toMatchObject({
         is_default: false,

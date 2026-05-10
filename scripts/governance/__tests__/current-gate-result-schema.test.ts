@@ -118,9 +118,9 @@ function seedVisualProducerManifestSource(tempRoot: string, runId: string): stri
   const reviewRoot = join(tempRoot, "visual-baseline-reviews");
   const runRoot = join(reviewRoot, runId);
   mkdirSync(runRoot, { recursive: true });
-  const actualCapturePath = join(runRoot, "captured", "desktop-auth-complete", "desktop-auth-complete.png");
+  const actualCapturePath = join(runRoot, "captured", "workspace-login", "workspace-login.png");
   const actualCapture = Buffer.from(`run-bound actual capture for ${runId}`);
-  mkdirSync(join(runRoot, "captured", "desktop-auth-complete"), { recursive: true });
+  mkdirSync(join(runRoot, "captured", "workspace-login"), { recursive: true });
   writeFileSync(actualCapturePath, actualCapture);
   writeFileSync(
     join(runRoot, "run-manifest.json"),
@@ -136,18 +136,18 @@ function seedVisualProducerManifestSource(tempRoot: string, runId: string): stri
       },
       coverage: {
         scope: "full_catalog",
-        expected_scenario_ids: ["desktop-auth-complete"],
-        captured_scenario_ids: ["desktop-auth-complete"],
+        expected_scenario_ids: ["workspace-login"],
+        captured_scenario_ids: ["workspace-login"],
       },
       scenarios: [
         {
-          scenario_id: "desktop-auth-complete",
-          actual_url: "/en-US/desktop/auth/complete?desktop_auth_request_id=req_visual_001",
+          scenario_id: "workspace-login",
+          actual_url: "/en-US/workspaces/ws_default/login",
           story_fingerprint: "sha256:1111111111111111111111111111111111111111111111111111111111111111",
           screenshots: [
             {
-              file_name: "desktop-auth-complete.png",
-              actual_relpath: "captured/desktop-auth-complete/desktop-auth-complete.png",
+              file_name: "workspace-login.png",
+              actual_relpath: "captured/workspace-login/workspace-login.png",
               actual_sha256: `sha256:${createHash("sha256").update(actualCapture).digest("hex")}`,
               baseline_sha256: "sha256:3333333333333333333333333333333333333333333333333333333333333333",
             },
@@ -243,18 +243,18 @@ describe("current gate result schema", () => {
       },
       coverage: {
         scope: "full_catalog",
-        expected_scenario_ids: ["desktop-auth-complete"],
-        captured_scenario_ids: ["desktop-auth-complete"],
+        expected_scenario_ids: ["workspace-login"],
+        captured_scenario_ids: ["workspace-login"],
       },
       scenarios: [
         {
-          scenario_id: "desktop-auth-complete",
-          actual_url: "/en-US/desktop/auth/complete?desktop_auth_request_id=req_visual_001",
+          scenario_id: "workspace-login",
+          actual_url: "/en-US/workspaces/ws_default/login",
           story_fingerprint: "sha256:1111111111111111111111111111111111111111111111111111111111111111",
           screenshots: [
             {
-              file_name: "desktop-auth-complete.png",
-              actual_relpath: "captured/desktop-auth-complete/desktop-auth-complete.png",
+              file_name: "workspace-login.png",
+              actual_relpath: "captured/workspace-login/workspace-login.png",
               actual_sha256: "sha256:2222222222222222222222222222222222222222222222222222222222222222",
               baseline_sha256: "sha256:3333333333333333333333333333333333333333333333333333333333333333",
             },
@@ -273,9 +273,9 @@ describe("current gate result schema", () => {
         'if (!runId || !reviewRoot) throw new Error("missing visual producer context");',
         "const runRoot = join(reviewRoot, runId);",
         "mkdirSync(runRoot, { recursive: true });",
-        'const actualRelPath = "captured/desktop-auth-complete/desktop-auth-complete.png";',
+        'const actualRelPath = "captured/workspace-login/workspace-login.png";',
         'const actualCapture = Buffer.from("run-bound actual capture for " + runId);',
-        'mkdirSync(join(runRoot, "captured", "desktop-auth-complete"), { recursive: true });',
+        'mkdirSync(join(runRoot, "captured", "workspace-login"), { recursive: true });',
         'writeFileSync(join(runRoot, actualRelPath), actualCapture);',
         `const manifest = ${JSON.stringify(producerManifest)};`,
         'manifest.scenarios[0].screenshots[0].actual_sha256 = "sha256:" + createHash("sha256").update(actualCapture).digest("hex");',
@@ -334,10 +334,10 @@ describe("current gate result schema", () => {
     });
 
     expect(
-      existsSync(join(payload.evidence_dir, "captured", "desktop-auth-complete", "desktop-auth-complete.png")),
+      existsSync(join(payload.evidence_dir, "captured", "workspace-login", "workspace-login.png")),
     ).toBe(true);
     expect(
-      readFileSync(join(payload.evidence_dir, "captured", "desktop-auth-complete", "desktop-auth-complete.png"), "utf8"),
+      readFileSync(join(payload.evidence_dir, "captured", "workspace-login", "workspace-login.png"), "utf8"),
     ).toBe(`run-bound actual capture for ${runId}`);
   });
 
@@ -412,8 +412,8 @@ describe("current gate result schema", () => {
     };
     manifest.coverage = {
       scope: "partial_catalog",
-      expected_scenario_ids: ["desktop-auth-complete", "access-guide"],
-      captured_scenario_ids: ["desktop-auth-complete"],
+      expected_scenario_ids: ["workspace-login", "access-guide"],
+      captured_scenario_ids: ["workspace-login"],
     };
     writeFileSync(manifestPath, `${JSON.stringify(manifest, null, 2)}\n`);
 
@@ -445,8 +445,8 @@ describe("current gate result schema", () => {
     };
     manifest.coverage = {
       scope: "partial_catalog",
-      expected_scenario_ids: ["desktop-auth-complete", "access-guide"],
-      captured_scenario_ids: ["desktop-auth-complete"],
+      expected_scenario_ids: ["workspace-login", "access-guide"],
+      captured_scenario_ids: ["workspace-login"],
     };
     writeFileSync(manifestPath, `${JSON.stringify(manifest, null, 2)}\n`);
 

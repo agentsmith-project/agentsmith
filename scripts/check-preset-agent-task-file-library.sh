@@ -128,13 +128,19 @@ while (( $(date +%s) < READY_DEADLINE )); do
         mkdir -p "$(dirname "${WORKSPACE_ACCESS_EVIDENCE_FILE}")"
         cp "${BODY_FILE}" "${WORKSPACE_ACCESS_EVIDENCE_FILE}"
       fi
-      METADATA_URL="$(cat "${BODY_FILE}" | json_extract metadata_url)"
-      STORAGE_BUCKET_URL="$(cat "${BODY_FILE}" | json_extract storage_bucket_url)"
-      LIBRARY_ROOT_PATH="$(json_body_field 'j.library_root_path' || true)"
-      TASK_HOME_PATH="$(json_body_field 'j.task_home_path' || true)"
-      WORKSPACE_PATH="$(json_body_field 'j.workspace_path' || true)"
-      ARTIFACTS_PATH="$(json_body_field 'j.artifacts_path' || true)"
-      if [[ "${METADATA_URL}" == *"@postgres:5432/"* && "${STORAGE_BUCKET_URL}" == *"http://minio:9000/"* ]] \
+      RAW_STORAGE_LEAK="0"
+      if grep -Eq 'metadata_url|storage_bucket_url|recommended_mount|filesystem_name|juicefs' "${BODY_FILE}"; then
+        RAW_STORAGE_LEAK="1"
+        LAST_STATUS="workspace-access-raw-storage-leak"
+        LAST_BODY="$(cat "${BODY_FILE}")"
+      fi
+      BINDING_PROVIDER="$(json_body_field 'j.task_home_binding && j.task_home_binding.provider ? j.task_home_binding.provider : ""' || true)"
+      BINDING_MODE="$(json_body_field 'j.task_home_binding && j.task_home_binding.mode ? j.task_home_binding.mode : ""' || true)"
+      LIBRARY_ROOT_PATH="$(json_body_field 'j.task_home_binding && j.task_home_binding.paths ? j.task_home_binding.paths.library_root_path : ""' || true)"
+      TASK_HOME_PATH="$(json_body_field 'j.task_home_binding && j.task_home_binding.paths ? j.task_home_binding.paths.task_home_path : ""' || true)"
+      WORKSPACE_PATH="$(json_body_field 'j.task_home_binding && j.task_home_binding.paths ? j.task_home_binding.paths.workspace_path : ""' || true)"
+      ARTIFACTS_PATH="$(json_body_field 'j.task_home_binding && j.task_home_binding.paths ? j.task_home_binding.paths.artifacts_path : ""' || true)"
+      if [[ "${RAW_STORAGE_LEAK}" == "0" && "${BINDING_PROVIDER}" == "afscp" && "${BINDING_MODE}" == "pre_mounted" ]] \
         && is_relative_library_root_path "${LIBRARY_ROOT_PATH}" \
         && is_canonical_task_home_paths "${TASK_HOME_PATH}" "${WORKSPACE_PATH}" "${ARTIFACTS_PATH}"; then
         api_json DELETE "/api/v1/workspaces/${WORKSPACE_ID}/projects/${PROJECT_ID}/tasks/${TASK_ID}" >/dev/null || true

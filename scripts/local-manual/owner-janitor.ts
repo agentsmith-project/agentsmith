@@ -61,7 +61,7 @@ export interface LocalManualDerivedInvalidRunnerNormalizationCase {
   readonly expectedFallback: RunnerOwnerJanitorPlanItem;
 }
 
-interface ManagedProcessInfoLike {
+export interface LocalManualOwnerJanitorProcessInfo {
   pid: number;
   ppid: number;
   cwd: string | null;
@@ -77,9 +77,8 @@ interface BuildLocalManualOwnerJanitorPlanArgs {
   portApi: number;
   portWeb: number;
   allowUntrackedPortCleanup: boolean;
-  processes: ManagedProcessInfoLike[];
+  processes: LocalManualOwnerJanitorProcessInfo[];
   portListenersByPort: Map<number, number[]>;
-  gatewayStates: unknown[];
   taskMountOwners: Map<string, string | null>;
   mountedTaskPaths?: string[];
 }
@@ -523,8 +522,8 @@ export function buildLocalManualOwnerJanitorPlan(
   args: BuildLocalManualOwnerJanitorPlanArgs,
 ): { items: OwnerJanitorPlanItem[] } {
   const items: OwnerJanitorPlanItem[] = [];
-  const processByPid = new Map<number, ManagedProcessInfoLike>();
-  const childrenByPid = new Map<number, ManagedProcessInfoLike[]>();
+  const processByPid = new Map<number, LocalManualOwnerJanitorProcessInfo>();
+  const childrenByPid = new Map<number, LocalManualOwnerJanitorProcessInfo[]>();
 
   for (const process of args.processes) {
     processByPid.set(process.pid, process);
@@ -832,7 +831,7 @@ function loadProcessCwdForCli(pid: number): string | null {
   return null;
 }
 
-function loadProcessesForCli(): ManagedProcessInfoLike[] {
+function loadProcessesForCli(): LocalManualOwnerJanitorProcessInfo[] {
   const output = execFileSync(
     'ps',
     ['-ww', '-eo', 'pid=,ppid=,command='],
@@ -841,7 +840,7 @@ function loadProcessesForCli(): ManagedProcessInfoLike[] {
       maxBuffer: CLI_PROCESS_SCAN_MAX_BUFFER_BYTES,
     },
   );
-  const processes: ManagedProcessInfoLike[] = [];
+  const processes: LocalManualOwnerJanitorProcessInfo[] = [];
 
   for (const rawLine of output.split('\n')) {
     const line = rawLine.trim();
@@ -915,7 +914,6 @@ function runLocalManualOwnerJanitorCli(argv: string[] = process.argv.slice(2)): 
       allowUntrackedPortCleanup: false,
       processes: loadProcessesForCli(),
       portListenersByPort: new Map<number, number[]>(),
-      gatewayStates: [],
       taskMountOwners: new Map<string, string | null>(),
       mountedTaskPaths: [],
     });

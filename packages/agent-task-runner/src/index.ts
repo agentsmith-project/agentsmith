@@ -2494,7 +2494,6 @@ function handleServerMessage(socket: WebSocket, raw: RawData): void {
     task_id?: string;
     workspace_binding_mode?: string;
     workspace_file_library_id?: string;
-    workspace_dir_name?: string;
   } | undefined;
   debugLog('received start', {
     request_id: message.request_id,
@@ -2503,7 +2502,6 @@ function handleServerMessage(socket: WebSocket, raw: RawData): void {
     task_id: executionContext?.task_id ?? null,
     workspace_binding_mode: executionContext?.workspace_binding_mode ?? null,
     workspace_file_library_id: executionContext?.workspace_file_library_id ?? null,
-    workspace_dir_name: executionContext?.workspace_dir_name ?? null,
   });
 
   void runCodexRequest(message.request_id, startPayload).catch((error) => {

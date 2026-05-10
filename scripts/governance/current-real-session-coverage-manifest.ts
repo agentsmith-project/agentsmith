@@ -56,6 +56,7 @@ export type CurrentRealSessionMutableResource =
   | "fixed_user"
   | "context_store"
   | "runner_task"
+  | "task_home_binding"
   | "runner_mount"
   | "terminal_session"
   | "files"
@@ -346,6 +347,7 @@ const MUTABLE_RESOURCES = [
   "fixed_user",
   "context_store",
   "runner_task",
+  "task_home_binding",
   "runner_mount",
   "terminal_session",
   "files",
@@ -392,6 +394,7 @@ const HIGH_RISK_MERGE_RESOURCES = new Set<CurrentRealSessionMutableResource>([
   "ws_default",
   "fixed_user",
   "context_store",
+  "task_home_binding",
   "runner_mount",
   "terminal_session",
   "usage_audit",
@@ -1029,10 +1032,11 @@ const NPM_SCRIPT_COVERAGE = [
   }),
   ...npmScriptCoverageGroup(
     [
+      "test:e2e:integration:files:connector-absence",
       "test:e2e:integration:files:management-ux",
       "test:files:backend-real:smoke",
-      "test:files:backend-real:sync",
-      "test:files:backend-real:ui-sync",
+      "test:files:backend-real:home-binding",
+      "test:files:backend-real:ui-home-binding",
       "test:files:release:strict",
     ],
     {
@@ -1042,13 +1046,13 @@ const NPM_SCRIPT_COVERAGE = [
       mutable_resources: [
         "files",
         "project",
-        "runner_mount",
+        "task_home_binding",
         "shared_local_substrate",
         "local_ports",
       ],
       lock_ids: BACKEND_REAL_LOCK_IDS,
       reason:
-        "Files real checks mutate file libraries and local JuiceFS mount state, so they remain serialized.",
+        "Files real checks mutate AFSCP-backed file libraries, Files API objects, and task HOME binding evidence, so they remain serialized.",
     },
   ),
   ...npmScriptCoverageGroup(["test:feishu:real:credential"], {
@@ -1182,7 +1186,7 @@ const SPEC_COVERAGE = [
       "workspace",
       "project",
       "runner_task",
-      "runner_mount",
+      "task_home_binding",
       "context_store",
       "provider_quota",
     ],
@@ -1501,6 +1505,16 @@ const SPEC_COVERAGE = [
       "Release user story spans backend-real, files, runner, and internal-k8s evidence in one release lane.",
   }),
   specCoverage({
+    spec: "e2e/integration-files-connector-absence.spec.ts",
+    proposed_shard_id: "files",
+    evidence_owner: "backend-real-files:file-library",
+    isolation_level: "serialized",
+    mutable_resources: ["files", "project", "shared_local_substrate", "local_ports"],
+    lock_ids: BACKEND_REAL_LOCK_IDS,
+    reason:
+      "Files connector absence spec verifies AFSCP-backed Web/API access while retired local connector routes stay absent on shared backend-real substrate.",
+  }),
+  specCoverage({
     spec: "e2e/integration-files-management-ux.spec.ts",
     proposed_shard_id: "files",
     evidence_owner: "backend-real-files:management-ux",
@@ -1511,19 +1525,19 @@ const SPEC_COVERAGE = [
       "Files management UX spec mutates file library UI state on shared backend-real substrate.",
   }),
   specCoverage({
-    spec: "e2e/integration-files-mount-sync.spec.ts",
+    spec: "e2e/integration-preset-agent-task-file-library.spec.ts",
     proposed_shard_id: "files",
     evidence_owner: "backend-real-files:file-library",
     isolation_level: "serialized",
     mutable_resources: [
       "files",
-      "runner_mount",
       "project",
+      "task_home_binding",
       "shared_local_substrate",
     ],
     lock_ids: BACKEND_REAL_LOCK_IDS,
     reason:
-      "Files mount sync spec uses local mount state and shared file library resources.",
+      "Preset Agent Task file library spec verifies AFSCP-backed task HOME binding paths on shared backend-real substrate.",
   }),
   specCoverage({
     spec: "e2e/integration-agent-task-terminal-ux.spec.ts",

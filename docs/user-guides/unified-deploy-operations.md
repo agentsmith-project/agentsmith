@@ -117,7 +117,7 @@ kubectl --context kind-agentsmith delete namespace agentsmith-sandbox --ignore-n
 npx tsx scripts/unified-deploy/substrate-lifecycle.ts reset
 ```
 
-If file-library PVs remain from local tests, remove only the test JuiceFS PVs in the local kind cluster before rerunning deploy verification.
+If file-library PVs remain from local tests, remove only the test file-library PVs in the local kind cluster before rerunning deploy verification.
 
 ## Evidence
 

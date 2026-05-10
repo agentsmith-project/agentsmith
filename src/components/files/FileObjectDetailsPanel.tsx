@@ -2,7 +2,7 @@
 
 import * as React from 'react';
 import { useQuery } from '@tanstack/react-query';
-import { Copy, Download, Link2 } from 'lucide-react';
+import { Copy, Download } from 'lucide-react';
 import { useTranslations } from 'next-intl';
 
 import { Button } from '@/components/ui/button';
@@ -20,7 +20,6 @@ import {
 import { FileItemIcon } from '@/components/files/FileItemIcon';
 import { PreviewDialog } from '@/components/files/file-object-details-panel/PreviewDialog';
 import { PreviewSection } from '@/components/files/file-object-details-panel/PreviewSection';
-import { ShareLinkDialog } from '@/components/files/file-object-details-panel/ShareLinkDialog';
 import {
   formatMetaSummary,
   previewSupportsInline,
@@ -105,11 +104,6 @@ export function FileObjectDetailsPanel({
   const [objectUrl, setObjectUrl] = React.useState<string | null>(null);
   const [textPreview, setTextPreview] = React.useState('');
   const [previewModalOpen, setPreviewModalOpen] = React.useState(false);
-  const [shareDialogOpen, setShareDialogOpen] = React.useState(false);
-  const [shareExpirySeconds, setShareExpirySeconds] = React.useState('3600');
-  const [shareLinkValue, setShareLinkValue] = React.useState<string | null>(null);
-  const [shareExpiresAt, setShareExpiresAt] = React.useState<string | null>(null);
-  const [creatingShareLink, setCreatingShareLink] = React.useState(false);
 
   React.useEffect(() => {
     if (!previewQuery.data || !previewSupportsInline(previewKind)) {
@@ -152,11 +146,6 @@ export function FileObjectDetailsPanel({
     [objectUrl],
   );
 
-  React.useEffect(() => {
-    setShareLinkValue(null);
-    setShareExpiresAt(null);
-  }, [selectedLibraryId, selectedObject?.key]);
-
   const copyPath = React.useCallback(async (key: string) => {
     try {
       await navigator.clipboard.writeText(key);
@@ -165,37 +154,6 @@ export function FileObjectDetailsPanel({
       toast.error(t('file_manager.key_copy_failed'));
     }
   }, [t]);
-
-  const copyShareLink = React.useCallback(async () => {
-    if (!shareLinkValue) return;
-    try {
-      await navigator.clipboard.writeText(shareLinkValue);
-      toast.success(t('file_manager.share_link_copied'));
-    } catch {
-      toast.error(t('file_manager.share_link_copy_failed'));
-    }
-  }, [shareLinkValue, t]);
-
-  const createShareLink = React.useCallback(async () => {
-    if (!selectedLibraryId || !selectedObject) return;
-    setCreatingShareLink(true);
-    try {
-      const expires = Number.parseInt(shareExpirySeconds, 10);
-      const api = new FilesAPI(getApiClient());
-      const shared = await api.createObjectShareLink(workspaceId, projectId, selectedLibraryId, {
-        key: selectedObject.key,
-        expires_in_seconds: Number.isFinite(expires) ? expires : undefined,
-      });
-      setShareLinkValue(shared.url);
-      setShareExpiresAt(shared.expires_at);
-      toast.success(t('file_manager.share_link_created'));
-    } catch (error) {
-      const message = error instanceof Error ? error.message : t('file_manager.share_link_failed');
-      toast.error(message);
-    } finally {
-      setCreatingShareLink(false);
-    }
-  }, [projectId, selectedLibraryId, selectedObject, shareExpirySeconds, t, workspaceId]);
 
   const renderEmpty = () => {
     if (!selectedLibraryId || selected.length === 0) {
@@ -288,17 +246,6 @@ export function FileObjectDetailsPanel({
                   <Copy className="h-3.5 w-3.5" />
                   {t('file_manager.copy_key')}
                 </Button>
-                <Button
-                  type="button"
-                  variant="outline"
-                  size="sm"
-                  className="h-8"
-                  onClick={() => setShareDialogOpen(true)}
-                  data-testid="files__details-share"
-                >
-                  <Link2 className="h-3.5 w-3.5" />
-                  {t('file_manager.share_link')}
-                </Button>
               </div>
             </div>
 
@@ -342,24 +289,6 @@ export function FileObjectDetailsPanel({
           </TabsContent>
         </Tabs>
       </div>
-
-      <ShareLinkDialog
-        creatingShareLink={creatingShareLink}
-        metaKey={meta.key}
-        open={shareDialogOpen}
-        shareExpirySeconds={shareExpirySeconds}
-        shareExpiresAt={shareExpiresAt}
-        shareLinkValue={shareLinkValue}
-        t={t}
-        onCopyShareLink={() => {
-          void copyShareLink();
-        }}
-        onCreateShareLink={() => {
-          void createShareLink();
-        }}
-        onOpenChange={setShareDialogOpen}
-        onShareExpirySecondsChange={setShareExpirySeconds}
-      />
 
       <PreviewDialog
         filename={filename}

@@ -185,6 +185,12 @@ export async function handleProjectCrudRoutes(context: ProjectRouteContext): Pro
       actorId: user.id,
       input,
     });
+    await deps.projectStorageBootstrapService.bootstrapProjectStorage({
+      workspaceId: route.workspaceId,
+      projectId: created.id,
+      actorUserId: user.id,
+      requestId,
+    });
     await writeProjectAuditEvent(deps, {
       workspaceId: route.workspaceId,
       projectId: created.id,
@@ -445,6 +451,33 @@ export async function handleProjectCrudRoutes(context: ProjectRouteContext): Pro
       return true;
     }
     try {
+      const storageLifecycle = await deps.projectStorageLifecycleService.beginProjectStorageTeardown({
+        workspaceId: route.workspaceId,
+        projectId: route.projectId,
+        actorUserId: user.id,
+        requestId,
+        reason: 'project_delete',
+      });
+      if (storageLifecycle.status !== 'tombstoned') {
+        await writeProjectAuditEvent(deps, {
+          workspaceId: route.workspaceId,
+          projectId: route.projectId,
+          actor: { type: 'user', id: user.id },
+          action: 'project.delete',
+          result: 'error',
+          requestId,
+          resourceType: 'project',
+          resourceId: route.projectId,
+          errorCode: 'PROJECT_STORAGE_TEARDOWN_PENDING',
+          errorMessage: storageLifecycle.lastErrorCode ?? 'project_storage_teardown_pending',
+          metadata: existingProjectName ? { name: existingProjectName } : undefined,
+        });
+        json(res, 409, {
+          error_code: 'PROJECT_STORAGE_TEARDOWN_PENDING',
+          message: storageLifecycle.lastErrorCode ?? 'project_storage_teardown_pending',
+        });
+        return true;
+      }
       await deps.deleteProjectUseCase.execute({
         workspaceId: route.workspaceId,
         projectId: route.projectId,

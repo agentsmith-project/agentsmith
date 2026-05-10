@@ -49,7 +49,7 @@ runtime-line 当前状态目录统一收敛到 `artifacts/runtime/lines/<line>/c
 - [Personal Connections & Workspace Integrations](./third-party-accounts-feishu.md)
 
 ### Files / libraries
-- [File Library Client Mount](./file-library-local-mount.md)
+- [File Library Access Model](./file-library-access-model.md)
 
 ## 3. Evidence and doc helpers
 

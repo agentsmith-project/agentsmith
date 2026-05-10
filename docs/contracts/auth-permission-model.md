@@ -148,10 +148,10 @@ Current split-token scope:
 - `project:agent_task:use` covers Agent task list/detail/create/run/update/archive/cancel, default managed runner binding at task creation, binding-options fetch, and Developer runner test task only when paired with runner-manage/action affordance
 - `project:agent_task:terminal` covers Agent task terminal access and must be granted explicitly with task access; backend terminal create/open/reconnect/input/resize/close must require both `project:agent_task:use` and `project:agent_task:terminal`
 - `project:agent_runner:read` covers Agent Runner route/list/status read and display-safe diagnostics only when backend `actions.view_diagnostics.allowed=true`
-- `project:agent_runner:manage` covers Developer runner create/edit/disable/delete, Developer runner explicit task binding and later Developer-bound task execution/recovery/terminal use, Test connection, connection key/one-time-secret/mutating connection actions, and Developer runner test task only when paired with `project:agent_task:use`
+- `project:agent_runner:manage` covers Developer runner create/edit/disable/delete, Test connection, connection key/one-time-secret/mutating connection actions, and Developer runner execution actions only when backend action affordances allow them. While AFSCP Slice 5 is blocked, Developer runner explicit task binding, Developer-bound task execution/recovery/terminal use, and Developer runner test task must fail closed even for users with this token.
 - `project:audit:read` covers Audit and Alert Center read/action access in the current MVP alert surface
 - `project:governance:update` covers project secrets, resource policy, endpoint governance, and similar governance surfaces
-- `project:files:update` covers file-library create/update/delete/move/upload/share-link writes
+- `project:files:update` covers file-library create/update/delete/move/upload writes
 - `project:membership:update` covers join requests, member lifecycle writes, templates, and groups
 - `project:admins:update` covers assigning or revoking project admins
 - `project:lifecycle:update` covers delete, owner transfer, and other lifecycle actions
@@ -186,6 +186,8 @@ Runner binding and Agent Runners operation rules:
 | Developer runner test task | `project:agent_task:use` + `project:agent_runner:manage` + backend `actions.run_test_task.allowed` |
 
 `CreateTask` must recompute binding authority, readiness, policy, capability, and freshness at submit time. Binding-options responses are UI affordance snapshots, not durable authorization artifacts. `StartTaskRun` must not accept runner selection fields. Action `required_permissions` values are per-row/per-operation diagnostic metadata and must not be treated as a frontend authorization source or as a fixed permission recipe for runner binding.
+
+AFSCP Slice 5 blocker rule: until the safe export-backed Developer runner lease/connector exists, backend `binding action`, `bound-runner use`, and `actions.run_test_task` affordances for Developer runner execution must be false or fail closed. Permission possession is necessary but not sufficient; current evidence is the upstream blocker/no-workaround record plus connection/existence diagnostics.
 
 UI audiences such as Ordinary task user, Expert task creator, Runner maintainer, and Diagnostics viewer are backend-affordance-derived presentation contexts, not role names.
 
@@ -227,6 +229,6 @@ UI audiences such as Ordinary task user, Expert task creator, Runner maintainer,
 - Use identical permission vocabulary in FE and BE.
 - Do not introduce new permission points without updating this file and `src/lib/constants/permissions.ts`.
 - This milestone does not introduce separate Developer runner ownership/test authority; any future split from `project:agent_runner:manage` requires an RFC and permission contract update.
-- Developer runner test task creates standard task/run evidence, so it must keep the explicit `project:agent_task:use` requirement in addition to runner-manage/action affordance.
+- When `actions.run_test_task.allowed=true` after Slice 5 is unblocked, Developer runner test task creates standard task/run evidence, so it must keep the explicit `project:agent_task:use` requirement in addition to runner-manage/action affordance. While Slice 5 is blocked, that action remains unavailable and must not be replaced by local path/file_library smoke.
 - Keep page/operation mapping in `frontend-backend-gating-matrix.md`.
 - Keep status/error schema in the active contract set in `docs/contracts/`.

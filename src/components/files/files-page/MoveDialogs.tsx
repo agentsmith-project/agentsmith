@@ -98,7 +98,7 @@ export function MoveDialogs({
       <Dialog open={createFolderOpen} onOpenChange={onSetCreateFolderOpen}>
         <DialogContent className="sm:max-w-[480px]" data-testid="files__dialog__new-folder">
           <DialogHeader className="space-y-3">
-            <div className="inline-flex w-fit items-center gap-2 rounded-full border border-accent/20 bg-accent/10 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.18em] text-accent">
+            <div className="inline-flex w-fit items-center gap-2 rounded-full border border-accent/20 bg-accent/10 px-3 py-1 text-[11px] font-semibold uppercase text-accent">
               <FolderPlus className="h-3.5 w-3.5" />
               Files
             </div>
@@ -131,7 +131,7 @@ export function MoveDialogs({
       <Dialog open={moveOpen} onOpenChange={onSetMoveOpen}>
         <DialogContent className="sm:max-w-[560px]" data-testid="files__dialog__move">
           <DialogHeader className="space-y-3">
-            <div className="inline-flex w-fit items-center gap-2 rounded-full border border-accent/20 bg-accent/10 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.18em] text-accent">
+            <div className="inline-flex w-fit items-center gap-2 rounded-full border border-accent/20 bg-accent/10 px-3 py-1 text-[11px] font-semibold uppercase text-accent">
               <PencilLine className="h-3.5 w-3.5" />
               Files
             </div>

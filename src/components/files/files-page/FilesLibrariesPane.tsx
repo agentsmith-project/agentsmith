@@ -1,4 +1,4 @@
-import { MonitorCog, Pencil, Plus, Trash2 } from 'lucide-react';
+import { Pencil, Plus, Trash2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 import { cn } from '@/lib/utils';
@@ -7,14 +7,12 @@ import type { FileLibrary } from '@/lib/api/types';
 type FilesLibrariesPaneProps = {
   t: (key: string, values?: Record<string, string>) => string;
   canManage: boolean;
-  canExchangeCredentials: boolean;
   libsLoading: boolean;
   libraries: FileLibrary[];
   showEmptyMessage?: boolean;
   selectedLibraryId: string | null;
   onSelectLibrary: (libraryId: string) => void;
   onCreateLibrary: () => void;
-  onOpenDesktopAccess: (library: FileLibrary) => void;
   onRenameLibrary: (library: FileLibrary) => void;
   onDeleteLibrary: (library: FileLibrary) => void;
 };
@@ -26,24 +24,22 @@ function isTaskHomeBound(library: FileLibrary) {
 export function FilesLibrariesPane({
   t,
   canManage,
-  canExchangeCredentials,
   libsLoading,
   libraries,
   showEmptyMessage = true,
   selectedLibraryId,
   onSelectLibrary,
   onCreateLibrary,
-  onOpenDesktopAccess,
   onRenameLibrary,
   onDeleteLibrary,
 }: FilesLibrariesPaneProps) {
-  const showActions = canManage || canExchangeCredentials;
+  const showActions = canManage;
 
   return (
     <div className="min-h-0 rounded-md border border-subtle bg-surface/74 shadow-ambient">
       <div className="flex items-center justify-between border-b border-subtle px-3 py-2">
         <div>
-          <div className="text-[11px] font-semibold uppercase tracking-[0.16em] text-tertiary">{t('file_manager.libraries')}</div>
+          <div className="text-[11px] font-semibold uppercase text-tertiary">{t('file_manager.libraries')}</div>
           <div className="mt-0.5 text-[11px] text-secondary">{libraries.length} {t('file_manager.items')}</div>
         </div>
         {canManage ? (
@@ -72,7 +68,6 @@ export function FilesLibrariesPane({
           <div className="p-1.5" data-testid="files__library-list">
             {libraries.map((library) => {
               const active = library.id === selectedLibraryId;
-              const isMountable = library.status === 'ready';
               const taskHomeBound = isTaskHomeBound(library);
               const statusToneClass = library.status === 'failed'
                 ? 'border-error/25 bg-error/10 text-error'
@@ -124,7 +119,7 @@ export function FilesLibrariesPane({
                       <div className="mt-1 flex flex-wrap items-center gap-1.5">
                         <span
                           className={cn(
-                            'rounded-full border px-2 py-0.5 text-[10px] font-medium uppercase tracking-[0.08em]',
+                            'rounded-full border px-2 py-0.5 text-[10px] font-medium uppercase',
                             statusToneClass,
                           )}
                           data-testid={`files__library-status--${library.id}`}
@@ -133,7 +128,7 @@ export function FilesLibrariesPane({
                         </span>
                         <span
                           className={cn(
-                            'rounded-full border px-2 py-0.5 text-[10px] font-medium uppercase tracking-[0.08em]',
+                            'rounded-full border px-2 py-0.5 text-[10px] font-medium uppercase',
                             bindingToneClass,
                           )}
                           data-testid={`files__library-binding--${library.id}`}
@@ -143,7 +138,6 @@ export function FilesLibrariesPane({
                             : t('file_manager.library_binding_unbound')}
                         </span>
                       </div>
-                      {library.bucket ? <div className="truncate text-[11px] text-tertiary">{library.bucket}</div> : null}
                       {bindingDetail ? (
                         <div
                           className="mt-1 text-[11px] text-tertiary"
@@ -173,31 +167,6 @@ export function FilesLibrariesPane({
                   {active && showActions ? (
                     <TooltipProvider delayDuration={120}>
                       <div className="flex items-center gap-1.5 border-t border-subtle pt-1">
-                        {canExchangeCredentials ? (
-                          <Tooltip>
-                            <TooltipTrigger asChild>
-                              <Button
-                                type="button"
-                                size="icon"
-                                variant="ghost"
-                                className="h-8 w-8 rounded-full border border-accent/20 bg-accent/6 text-accent hover:bg-accent/12 hover:text-accent"
-                                onClick={(event) => {
-                                  event.preventDefault();
-                                  event.stopPropagation();
-                                  onOpenDesktopAccess(library);
-                                }}
-                                disabled={!isMountable}
-                                aria-label={t('file_manager.desktop_access')}
-                                data-testid={`files__library-desktop-access--${library.id}`}
-                              >
-                                <MonitorCog className="h-3.5 w-3.5" />
-                              </Button>
-                            </TooltipTrigger>
-                            <TooltipContent>
-                              {isMountable ? t('file_manager.desktop_access') : t('file_manager.library_status_reason_failed_mount')}
-                            </TooltipContent>
-                          </Tooltip>
-                        ) : null}
                         {!canManage ? null : (
                           <>
                             <Tooltip>

@@ -16,6 +16,7 @@ import { TaskAPI, getApiClient } from '@/lib/api';
 import { APIError, resolveApiErrorPresentation } from '@/lib/api/errors';
 import { useCreateTask } from '@/lib/hooks/use-task';
 import { useFileLibraries } from '@/lib/hooks/use-files';
+import { useTaskFileTemplates } from '@/lib/hooks/use-task-file-templates';
 import { queryKeys } from '@/lib/query-keys';
 import { useAgentTaskModelSetting } from '@/lib/agent-task-model-setting';
 import type { FileLibrary } from '@/lib/api/types';
@@ -53,6 +54,8 @@ function isFileLibrarySelectableForTask(library: FileLibrary) {
   return library.status === 'ready' && !isFileLibraryTaskHomeBound(library);
 }
 
+type TaskWorkspaceMode = 'create_new' | 'use_existing' | 'use_template';
+
 const TASK_CREATE_FILE_LIBRARY_TYPED_ERROR_CODES = new Set([
   'AGENT_TASK_FILE_LIBRARY_IN_USE',
   'AGENT_TASK_WORKSPACE_BINDING_CONFLICT',
@@ -77,6 +80,7 @@ const DEVELOPER_RUNNER_REASON_KEY_BY_CODE: Record<string, string> = {
   permission_denied: 'developer_runner_reason_forbidden',
   invalid_binding_target: 'developer_runner_reason_capability',
   agent_runner_capability_mismatch: 'developer_runner_reason_capability',
+  TASK_HOME_BINDING_UNAVAILABLE_FOR_DEVELOPER_RUNNER: 'developer_runner_reason_task_home_binding_unavailable',
 };
 
 function getDeveloperRunnerReasonKey(option: TaskRunnerBindingOption): string {
@@ -120,9 +124,10 @@ export function TaskCreateDialog({
   const errorT = useTranslations('errors');
   const locale = useLocale();
   const [title, setTitle] = React.useState('');
-  const [workspaceMode, setWorkspaceMode] = React.useState<'create_new' | 'use_existing'>('create_new');
+  const [workspaceMode, setWorkspaceMode] = React.useState<TaskWorkspaceMode>('create_new');
   const [workspaceName, setWorkspaceName] = React.useState('');
   const [workspaceFileLibraryId, setWorkspaceFileLibraryId] = React.useState<string>('');
+  const [taskFileTemplateId, setTaskFileTemplateId] = React.useState<string>('');
   const [workspaceFileLibraryConflict, setWorkspaceFileLibraryConflict] = React.useState<string | null>(null);
   const [advancedOpen, setAdvancedOpen] = React.useState(false);
   const [useDeveloperRunner, setUseDeveloperRunner] = React.useState(false);
@@ -144,9 +149,23 @@ export function TaskCreateDialog({
     () => (fileLibrariesData?.items || []).filter(isFileLibrarySelectableForTask),
     [fileLibrariesData?.items],
   );
+  const {
+    data: taskFileTemplatesData,
+    isLoading: taskFileTemplatesLoading,
+  } = useTaskFileTemplates(workspaceId, projectId, {
+    enabled: open && !!workspaceId && !!projectId,
+  });
+  const taskFileTemplates = React.useMemo(
+    () => (taskFileTemplatesData?.items ?? []).filter((template) => template.status === 'published'),
+    [taskFileTemplatesData?.items],
+  );
   const selectedFileLibrary = React.useMemo(
     () => fileLibraries.find((library) => library.id === workspaceFileLibraryId) ?? null,
     [fileLibraries, workspaceFileLibraryId],
+  );
+  const selectedTaskFileTemplate = React.useMemo(
+    () => taskFileTemplates.find((template) => template.id === taskFileTemplateId) ?? null,
+    [taskFileTemplateId, taskFileTemplates],
   );
   const selectedFileLibrarySelectable = selectedFileLibrary
     ? isFileLibrarySelectableForTask(selectedFileLibrary)
@@ -183,6 +202,16 @@ export function TaskCreateDialog({
     modelSetting.settingQuery.data?.actions?.update?.visible === true
     && modelSetting.settingQuery.data.actions.update.allowed === true;
   const endpointsHref = `/${locale}/workspaces/${workspaceId}/projects/${projectId}/endpoints`;
+  const selectWorkspaceMode = React.useCallback((nextMode: TaskWorkspaceMode) => {
+    setWorkspaceMode(nextMode);
+    if (nextMode !== 'use_existing') {
+      setWorkspaceFileLibraryId('');
+      setWorkspaceFileLibraryConflict(null);
+    }
+    if (nextMode !== 'use_template') {
+      setTaskFileTemplateId('');
+    }
+  }, []);
 
   // Reset form when dialog opens
   React.useEffect(() => {
@@ -191,6 +220,7 @@ export function TaskCreateDialog({
       setWorkspaceMode('create_new');
       setWorkspaceName('');
       setWorkspaceFileLibraryId('');
+      setTaskFileTemplateId('');
       setWorkspaceFileLibraryConflict(null);
       setAdvancedOpen(false);
       setUseDeveloperRunner(false);
@@ -204,6 +234,13 @@ export function TaskCreateDialog({
       setWorkspaceFileLibraryId('');
     }
   }, [selectedFileLibrary, workspaceFileLibraryId]);
+
+  React.useEffect(() => {
+    if (!taskFileTemplateId) return;
+    if (!selectedTaskFileTemplate) {
+      setTaskFileTemplateId('');
+    }
+  }, [selectedTaskFileTemplate, taskFileTemplateId]);
 
   React.useEffect(() => {
     if (useDeveloperRunner) return;
@@ -231,6 +268,9 @@ export function TaskCreateDialog({
     if (workspaceMode === 'use_existing' && !selectedFileLibrarySelectable) {
       return;
     }
+    if (workspaceMode === 'use_template' && !selectedTaskFileTemplate) {
+      return;
+    }
     if (modelReadinessBlocks) {
       return;
     }
@@ -246,10 +286,15 @@ export function TaskCreateDialog({
             workspace_mode: 'create_new' as const,
             workspace_name: workspaceName.trim() || defaultWorkspaceName,
           }
-        : {
-            workspace_mode: 'use_existing' as const,
-            workspace_file_library_id: workspaceFileLibraryId,
-          }),
+        : workspaceMode === 'use_existing'
+          ? {
+              workspace_mode: 'use_existing' as const,
+              workspace_file_library_id: workspaceFileLibraryId,
+            }
+          : {
+              workspace_mode: 'use_template' as const,
+              task_file_template_id: taskFileTemplateId,
+            }),
     };
 
     try {
@@ -280,7 +325,11 @@ export function TaskCreateDialog({
   };
 
   const canSubmit = title.trim().length > 0
-    && (workspaceMode === 'create_new' || (workspaceFileLibraryId.length > 0 && selectedFileLibrarySelectable))
+    && (
+      workspaceMode === 'create_new'
+      || (workspaceMode === 'use_existing' && workspaceFileLibraryId.length > 0 && selectedFileLibrarySelectable)
+      || (workspaceMode === 'use_template' && !!selectedTaskFileTemplate)
+    )
     && !modelReadinessBlocks
     && (!useDeveloperRunner || selectedDeveloperRunnerIsSelectable)
     && !createTask.isPending;
@@ -345,7 +394,7 @@ export function TaskCreateDialog({
                   name="task-workspace-mode"
                   value="create_new"
                   checked={workspaceMode === 'create_new'}
-                  onChange={() => setWorkspaceMode('create_new')}
+                  onChange={() => selectWorkspaceMode('create_new')}
                   disabled={createTask.isPending}
                 />
                 <div className="space-y-1">
@@ -374,7 +423,7 @@ export function TaskCreateDialog({
                   name="task-workspace-mode"
                   value="use_existing"
                   checked={workspaceMode === 'use_existing'}
-                  onChange={() => setWorkspaceMode('use_existing')}
+                  onChange={() => selectWorkspaceMode('use_existing')}
                   disabled={createTask.isPending}
                 />
                 <div className="space-y-1">
@@ -426,6 +475,52 @@ export function TaskCreateDialog({
                   <p className="text-xs text-tertiary">{t('workspace_file_library_hint')}</p>
                 </div>
               ) : null}
+              <label className="flex items-start gap-3 rounded-lg border border-subtle bg-surface/30 px-3 py-3">
+                <input
+                  type="radio"
+                  name="task-workspace-mode"
+                  value="use_template"
+                  checked={workspaceMode === 'use_template'}
+                  onChange={() => selectWorkspaceMode('use_template')}
+                  disabled={createTask.isPending}
+                />
+                <div className="space-y-1">
+                  <div className="text-sm font-medium text-foreground">{t('workspace_source_use_template')}</div>
+                  <p className="text-xs text-tertiary">{t('workspace_source_use_template_hint')}</p>
+                </div>
+              </label>
+              {workspaceMode === 'use_template' ? (
+                <div className="space-y-2 rounded-lg border border-dashed border-subtle bg-surface/20 p-3">
+                  <label htmlFor="task-file-template" className="text-sm font-medium text-foreground">
+                    {t('select_task_file_template')}
+                  </label>
+                  <Select
+                    value={taskFileTemplateId}
+                    onValueChange={setTaskFileTemplateId}
+                    disabled={createTask.isPending || taskFileTemplatesLoading}
+                  >
+                    <SelectTrigger id="task-file-template" data-testid="task-create__task-file-template">
+                      <SelectValue placeholder={t('select_task_file_template')} />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {taskFileTemplatesLoading ? (
+                        <div className="flex items-center justify-center py-4">
+                          <Loader2 className="h-4 w-4 animate-spin text-tertiary" />
+                        </div>
+                      ) : taskFileTemplates.length === 0 ? (
+                        <div className="py-4 text-center text-sm text-tertiary">{t('task_file_template_empty')}</div>
+                      ) : (
+                        taskFileTemplates.map((template) => (
+                          <SelectItem key={template.id} value={template.id}>
+                            {template.name}
+                          </SelectItem>
+                        ))
+                      )}
+                    </SelectContent>
+                  </Select>
+                  <p className="text-xs text-tertiary">{t('task_file_template_hint')}</p>
+                </div>
+              ) : null}
             </div>
           </div>
 
@@ -453,30 +548,31 @@ export function TaskCreateDialog({
                   <p className="text-sm text-tertiary">{t('developer_runner_empty')}</p>
                 ) : (
                   <>
-                    <label className="flex items-start gap-3 rounded-lg border border-subtle bg-background/70 px-3 py-3">
-                      <input
-                        type="checkbox"
-                        aria-label={t('use_developer_runner')}
-                        aria-describedby="task-developer-runner-hint"
-                        checked={useDeveloperRunner}
-                        onChange={(event) => setUseDeveloperRunner(event.target.checked)}
-                        disabled={createTask.isPending || !hasSelectableDeveloperRunnerOption}
-                      />
-                      <div className="space-y-1">
-                        <div className="text-sm font-medium text-foreground">{t('use_developer_runner')}</div>
-                        <p id="task-developer-runner-hint" className="text-xs text-tertiary">
-                          {hasSelectableDeveloperRunnerOption
-                            ? t('developer_runner_hint')
-                            : t('developer_runner_override_unavailable_hint')}
-                        </p>
-                      </div>
-                    </label>
+                    {hasSelectableDeveloperRunnerOption ? (
+                      <label className="flex items-start gap-3 rounded-lg border border-subtle bg-background/70 px-3 py-3">
+                        <input
+                          type="checkbox"
+                          aria-label={t('use_developer_runner')}
+                          aria-describedby="task-developer-runner-hint"
+                          checked={useDeveloperRunner}
+                          onChange={(event) => setUseDeveloperRunner(event.target.checked)}
+                          disabled={createTask.isPending}
+                        />
+                        <div className="space-y-1">
+                          <div className="text-sm font-medium text-foreground">{t('use_developer_runner')}</div>
+                          <p id="task-developer-runner-hint" className="text-xs text-tertiary">
+                            {t('developer_runner_hint')}
+                          </p>
+                        </div>
+                      </label>
+                    ) : null}
 
                     {!hasSelectableDeveloperRunnerOption && !useDeveloperRunner ? (
                       <div
                         className="space-y-2 rounded-lg border border-dashed border-subtle bg-background/70 p-3"
                         data-testid="task-create__developer-runner-unavailable-options"
                       >
+                        <p className="text-sm text-tertiary">{t('developer_runner_override_unavailable_hint')}</p>
                         {developerRunnerOptions.map((option) => (
                           <div key={option.option_id} className="space-y-0.5">
                             <p className="text-sm font-medium text-foreground">{option.label}</p>

@@ -14,6 +14,7 @@ interface ObjectOperationDialogsProps {
   batchResultOpen: boolean;
   batchResultType: 'delete' | 'download';
   batchRetryPending: boolean;
+  canManage: boolean;
   deleteInlineError: string | null;
   deleteConfirmOpen: boolean;
   selectedCount: number;
@@ -37,6 +38,7 @@ export function ObjectOperationDialogs({
   batchResultOpen,
   batchResultType,
   batchRetryPending,
+  canManage,
   deleteInlineError,
   deleteConfirmOpen,
   selectedCount,
@@ -56,7 +58,7 @@ export function ObjectOperationDialogs({
 }: ObjectOperationDialogsProps) {
   return (
     <>
-      <Dialog open={uploadConflictOpen} onOpenChange={onHandleUploadConflictOpenChange}>
+      <Dialog open={canManage && uploadConflictOpen} onOpenChange={onHandleUploadConflictOpenChange}>
         <DialogContent className="sm:max-w-[520px]" data-testid="files__dialog__upload-conflict">
           <DialogHeader>
             <DialogTitle>{t('file_manager.upload_conflict_title')}</DialogTitle>
@@ -84,7 +86,7 @@ export function ObjectOperationDialogs({
       </Dialog>
 
       <Dialog
-        open={deleteConfirmOpen}
+        open={canManage && deleteConfirmOpen}
         onOpenChange={(open) => {
           if (!open) onClearDeleteInlineError();
           onSetDeleteConfirmOpen(open);
@@ -135,7 +137,7 @@ export function ObjectOperationDialogs({
         </DialogContent>
       </Dialog>
 
-      <Dialog open={batchResultOpen} onOpenChange={onHandleBatchResultOpenChange}>
+      <Dialog open={batchResultOpen && (canManage || batchResultType === 'download')} onOpenChange={onHandleBatchResultOpenChange}>
         <DialogContent className="sm:max-w-[620px]" data-testid="files__dialog__batch-result">
           <DialogHeader>
             <DialogTitle>
@@ -176,7 +178,7 @@ export function ObjectOperationDialogs({
               onClick={() => {
                 void onHandleRetryBatchFailures();
               }}
-              disabled={batchRetryPending || batchFailedKeys.length === 0}
+              disabled={batchRetryPending || batchFailedKeys.length === 0 || (!canManage && batchResultType === 'delete')}
               data-testid="files__batch-result__retry"
             >
               {t('file_manager.retry_failed')}

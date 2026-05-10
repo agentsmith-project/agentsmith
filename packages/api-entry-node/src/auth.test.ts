@@ -3,12 +3,6 @@ import { InMemoryCache } from '@mbos/adapters-private';
 import { createRemoteJWKSet, decodeJwt, jwtVerify } from 'jose';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { extractBearerToken, verifyBearerToken, verifyRequestAuth } from './auth.js';
-import {
-  exchangeDesktopAuthRequest,
-  resetDesktopAuthForTest,
-  startDesktopAuthRequest,
-  completeDesktopAuthRequest,
-} from './desktop-auth-store.js';
 import { issueInternalTicket, resetInternalTicketsForTest } from './internal-ticket-store.js';
 import { issueSSETicket, resetSSETicketsForTest } from './sse-ticket-store.js';
 import { listPersistedSystemWorkspaces } from './system-workspace-persistence.js';
@@ -67,7 +61,6 @@ describe('auth', () => {
     return Promise.all([
       resetSSETicketsForTest(cache, issued),
       resetInternalTicketsForTest(cache, issued),
-      resetDesktopAuthForTest(cache, { requestIds: issued, accessTokens: issued }),
       Promise.resolve().then(() => {
         vi.restoreAllMocks();
         delete process.env.INTERNAL_KEYCLOAK_BASE_URL;
@@ -255,37 +248,32 @@ describe('auth', () => {
     expect(jwtVerifyMock).not.toHaveBeenCalled();
   });
 
-  it('accepts desktop access tokens on bearer routes', async () => {
-    const started = await startDesktopAuthRequest(cache, {
-      deploymentBaseUrl: 'https://agentsmith.example.com',
-    });
-    issuedTickets.push(started.request_id);
-    const completed = await completeDesktopAuthRequest(cache, {
-      requestId: started.request_id,
-      user: {
-        id: 'user_desktop',
-        email: 'desktop@example.com',
-        name: 'Desktop User',
+  it('does not keep retired dsk_ prefix knowledge ahead of the current bearer verifier', async () => {
+    const token = 'dsk_current_verifier_token';
+    jwtVerifyMock.mockResolvedValue({
+      payload: {
+        sub: 'user_current_verifier',
+        email: 'current-verifier@example.com',
+        name: 'Current Verifier User',
       },
-    });
-    const exchanged = await exchangeDesktopAuthRequest(cache, {
-      requestId: started.request_id,
-      exchangeTicket: completed?.exchange_ticket ?? '',
-    });
-    issuedTickets.push(exchanged?.accessToken ?? '');
+    } as never);
 
     const auth = await verifyRequestAuth(makeRequest({
-      url: '/api/v1/me/desktop/file-libraries',
-      authorization: `Bearer ${exchanged?.accessToken}`,
+      url: '/api/v1/me/profile',
+      authorization: `Bearer ${token}`,
     }), { cache });
 
-    expect(auth?.tokenType).toBe('desktop_token');
+    expect(auth?.tokenType).toBe('jwt');
     expect(auth?.internalTicket).toBeNull();
     expect(auth?.user).toMatchObject({
-      id: 'user_desktop',
-      email: 'desktop@example.com',
+      id: 'user_current_verifier',
+      email: 'current-verifier@example.com',
     });
-    expect(jwtVerifyMock).not.toHaveBeenCalled();
+    expect(jwtVerifyMock).toHaveBeenCalledWith(
+      token,
+      expect.any(Symbol),
+      expect.objectContaining({ issuer }),
+    );
   });
 
   it('prefers internal keycloak base url over public issuer url for jwks discovery', async () => {

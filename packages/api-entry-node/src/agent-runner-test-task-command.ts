@@ -52,6 +52,11 @@ import {
   type AgentTaskModelResolvedTarget,
   resolveAgentTaskModelTarget,
 } from './agent-task-model-setting-service.js';
+import {
+  DEVELOPER_RUNNER_TASK_HOME_BINDING_UNAVAILABLE_CODE,
+  DEVELOPER_RUNNER_TASK_HOME_BINDING_UNAVAILABLE_MESSAGE,
+  isDeveloperRunnerTaskHomeBindingAvailable,
+} from './developer-runner-workspace-blocker.js';
 
 const RUNNER_TEST_PROMPT = [
   'AgentSmith Developer runner self-check.',
@@ -260,6 +265,14 @@ export async function dispatchDeveloperRunnerTestTaskRun(input: {
   intent?: string;
   requestId?: string | null;
 }): Promise<RunnerTestTaskRunDispatchResult> {
+  if (!isDeveloperRunnerTaskHomeBindingAvailable()) {
+    return {
+      ok: false,
+      errorCode: DEVELOPER_RUNNER_TASK_HOME_BINDING_UNAVAILABLE_CODE,
+      message: DEVELOPER_RUNNER_TASK_HOME_BINDING_UNAVAILABLE_MESSAGE,
+    };
+  }
+
   await loadProjectTasks(input.deps, input.workspaceId, input.projectId);
   let publicBaseUrl: string;
   try {

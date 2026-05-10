@@ -119,8 +119,6 @@ RESOURCE_RECOVERY_BASELINE_JSON="${RESOURCE_RECOVERY_DIR}/baseline.json"
 RESOURCE_RECOVERY_STARTUP_JSON="${RESOURCE_RECOVERY_DIR}/file-library-api-startup.json"
 RESOURCE_RECOVERY_FAILURE_OBSERVATION_JSON="${RESOURCE_RECOVERY_DIR}/failure-observation.json"
 RESOURCE_RECOVERY_SMOKE_JSON="${RESOURCE_RECOVERY_DIR}/file-library-real-smoke.json"
-RESOURCE_RECOVERY_MOUNT_SYNC_JSON="${RESOURCE_RECOVERY_DIR}/file-library-mount-sync-smoke.json"
-RESOURCE_RECOVERY_MOUNT_SYNC_PROBE_JSON="${RESOURCE_RECOVERY_DIR}/file-library-mount-sync-probe.json"
 RESOURCE_RECOVERY_REPORT_JSON="${RESOURCE_RECOVERY_DIR}/report.json"
 RESOURCE_RECOVERY_REPORT_MD="${RESOURCE_RECOVERY_DIR}/report.md"
 STARTUP_QUIESCE_SNAPSHOT_JSON="${RESOURCE_RECOVERY_DIR}/startup-quiesce.snapshot.json"
@@ -139,9 +137,6 @@ STARTUP_STEADY_STATE_API_TCP_CONTRACTS=(
   "api-entry|${POSTGRES_PORT}|ESTABLISHED|0|1"
   "api-entry|${MONGO_PORT}|ESTABLISHED|4|4"
 )
-STARTUP_STEADY_STATE_HELPER_LABEL_ALLOWANCES=(
-  "helper:mc|0"
-)
 API_ROOT_PID=""
 API_PID=""
 
@@ -156,8 +151,6 @@ rm -f \
   "${RESOURCE_RECOVERY_STARTUP_JSON}" \
   "${RESOURCE_RECOVERY_FAILURE_OBSERVATION_JSON}" \
   "${RESOURCE_RECOVERY_SMOKE_JSON}" \
-  "${RESOURCE_RECOVERY_MOUNT_SYNC_JSON}" \
-  "${RESOURCE_RECOVERY_MOUNT_SYNC_PROBE_JSON}" \
   "${RESOURCE_RECOVERY_REPORT_JSON}" \
   "${RESOURCE_RECOVERY_REPORT_MD}" \
   "${STARTUP_QUIESCE_SNAPSHOT_JSON}" \
@@ -324,10 +317,6 @@ append_startup_steady_state_args() {
   for contract in "${STARTUP_STEADY_STATE_API_TCP_CONTRACTS[@]}"; do
     startup_args_ref+=(--steady-state-api-tcp "${contract}")
   done
-  local allowance
-  for allowance in "${STARTUP_STEADY_STATE_HELPER_LABEL_ALLOWANCES[@]}"; do
-    startup_args_ref+=(--steady-state-helper-label "${allowance}")
-  done
 }
 
 perform_startup_authenticated_docstore_warmup() {
@@ -343,10 +332,10 @@ perform_startup_authenticated_docstore_warmup() {
   status="$(
     curl -sS -D "${STARTUP_WARMUP_HEADERS_FILE}" -o "${STARTUP_WARMUP_BODY_FILE}" -w '%{http_code}' \
       -H "Authorization: Bearer $(cat "${STARTUP_WARMUP_TOKEN_FILE}")" \
-      "${API_BASE%/}/api/v1/me/desktop/file-libraries"
+      "${API_BASE%/}/api/v1/workspaces/ws_default/projects/proj_1/file-libraries"
   )"
   if [[ "${status}" != "200" ]]; then
-    echo "File library gate startup warmup failed with status ${status} for GET /api/v1/me/desktop/file-libraries." >&2
+    echo "File library gate startup warmup failed with status ${status} for GET /api/v1/workspaces/ws_default/projects/proj_1/file-libraries." >&2
     cat "${STARTUP_WARMUP_BODY_FILE}" >&2 || true
     return 1
   fi
@@ -597,7 +586,6 @@ write_resource_recovery_summary() {
     report_paths=(
       "${RESOURCE_RECOVERY_STARTUP_JSON}"
       "${RESOURCE_RECOVERY_SMOKE_JSON}"
-      "${RESOURCE_RECOVERY_MOUNT_SYNC_JSON}"
     )
   fi
 
@@ -682,14 +670,6 @@ cleanup() {
   exit "${exit_code}"
 }
 trap 'cleanup $?' EXIT
-
-if ! npx tsx "${ROOT_DIR}/scripts/juicefs-orphan-preflight.ts" --apply --context "file-library-real-gate"; then
-  pre_ready_failure_reason="juicefs orphan preflight failed before boot baseline"
-  if ! materialize_pre_ready_failure_evidence "${pre_ready_failure_reason}"; then
-    echo "File library gate could not materialize startup resource recovery evidence before exiting." >&2
-  fi
-  exit 1
-fi
 
 ensure_boot_resource_recovery_baseline
 
@@ -860,21 +840,6 @@ if ! run_resource_recovery_step "file-library-real-smoke" "${RESOURCE_RECOVERY_S
     KEYCLOAK_ISSUER_URL="${KEYCLOAK_ISSUER_URL}" \
     INTEGRATION_KEYCLOAK_PORT="${KEYCLOAK_PORT}" \
     bash "${ROOT_DIR}/scripts/file-library-real-smoke.sh"; then
-  overall_status=1
-fi
-
-if ! run_resource_recovery_step "file-library-mount-sync-smoke" "${RESOURCE_RECOVERY_MOUNT_SYNC_JSON}" "${RESOURCE_RECOVERY_MOUNT_SYNC_PROBE_JSON}" \
-  env \
-    API_BASE="${API_BASE}" \
-    KEYCLOAK_BASE_URL="${KEYCLOAK_BASE_URL}" \
-    KEYCLOAK_REALM="${KEYCLOAK_REALM}" \
-    KEYCLOAK_CLIENT_ID="${KEYCLOAK_CLIENT_ID}" \
-    PUBLIC_KEYCLOAK_BASE_URL="${PUBLIC_KEYCLOAK_BASE_URL}" \
-    INTERNAL_KEYCLOAK_BASE_URL="${INTERNAL_KEYCLOAK_BASE_URL}" \
-    KEYCLOAK_ISSUER_URL="${KEYCLOAK_ISSUER_URL}" \
-    INTEGRATION_KEYCLOAK_PORT="${KEYCLOAK_PORT}" \
-    FILE_LIBRARY_RESOURCE_RECOVERY_PROBE_PATH="${RESOURCE_RECOVERY_MOUNT_SYNC_PROBE_JSON}" \
-    bash "${ROOT_DIR}/scripts/file-library-mount-sync-smoke.sh"; then
   overall_status=1
 fi
 

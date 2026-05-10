@@ -1537,13 +1537,6 @@ async function runFilesFlow(
   }
   state.libraryId = libraryId;
   const ready = await waitForFileLibraryReady({ truth, state, fetchImpl, libraryId });
-  await expectJson(
-    fetchImpl,
-    apiV1Url(truth, `workspaces/${encodeURIComponent(truth.workspaceId)}/projects/${encodeURIComponent(state.projectId)}/file-libraries/${encodeURIComponent(libraryId)}/storage-credential-exchange`),
-    jsonInit(state, 'POST', {}),
-    200,
-    'file library storage credential exchange',
-  );
   await expectText(
     fetchImpl,
     apiV1Url(truth, `workspaces/${encodeURIComponent(truth.workspaceId)}/projects/${encodeURIComponent(state.projectId)}/file-libraries/${encodeURIComponent(libraryId)}/folders`),

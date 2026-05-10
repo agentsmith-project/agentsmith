@@ -56,22 +56,22 @@ SANDBOX_SERVICE_KEY_VALUE="${SANDBOX_SERVICE_KEY:-agentsmith-internal-test-key}"
 KIND_CLUSTER_NAME="${INTERNAL_AGENT_KIND_CLUSTER_NAME:-agentsmith}"
 KIND_CONTEXT_NAME="kind-${KIND_CLUSTER_NAME}"
 K8S_NAMESPACE="${INTERNAL_AGENT_K8S_NAMESPACE:-agentsmith-sandbox}"
-CSI_DRIVER="${INTERNAL_AGENT_JUICEFS_CSI_DRIVER:-csi.juicefs.com}"
-WORKSPACE_CAPACITY="${INTERNAL_AGENT_WORKSPACE_CAPACITY:-1Pi}"
-STORAGE_CLASS_NAME="${INTERNAL_AGENT_JUICEFS_STORAGE_CLASS_NAME:-juicefs-sc}"
-MOUNT_OPTIONS="${INTERNAL_AGENT_JUICEFS_MOUNT_OPTIONS:-}"
-SUBDIR="${INTERNAL_AGENT_JUICEFS_SUBDIR:-}"
-MOUNT_SERVICE_ACCOUNT="${INTERNAL_AGENT_JUICEFS_MOUNT_SERVICE_ACCOUNT:-}"
-MOUNT_IMAGE_OVERRIDE="${INTERNAL_AGENT_JUICEFS_MOUNT_IMAGE:-}"
+CSI_DRIVER="${AFSCP_STORAGE_CSI_DRIVER:-csi.juicefs.com}"
+STORAGE_CAPACITY="${AFSCP_STORAGE_CAPACITY:-1Pi}"
+STORAGE_CLASS_NAME="${AFSCP_STORAGE_CLASS_NAME:-juicefs-sc}"
+MOUNT_OPTIONS="${AFSCP_STORAGE_CSI_MOUNT_OPTIONS:-}"
+SUBDIR="${AFSCP_STORAGE_CSI_SUBDIR:-}"
+MOUNT_SERVICE_ACCOUNT="${AFSCP_STORAGE_CSI_MOUNT_SERVICE_ACCOUNT:-}"
+MOUNT_IMAGE_OVERRIDE="${AFSCP_STORAGE_CSI_MOUNT_IMAGE:-}"
 RUNNER_KIND="${LOCAL_MANUAL_INTERNAL_AGENT_RUNNER_KIND:-agent-task}"
 RUNNER_IMAGE="${LOCAL_MANUAL_INTERNAL_AGENT_IMAGE:-$(runner_default_image "${RUNNER_KIND}")}"
 RUNNER_BASE_IMAGE="${LOCAL_MANUAL_INTERNAL_AGENT_BASE_IMAGE:-$(runner_default_base_image "${RUNNER_KIND}")}"
 DOCKER_BUILD_PROXY_VALUE="${LOCAL_MANUAL_INTERNAL_DOCKER_BUILD_PROXY:-${DOCKER_BUILD_PROXY:-${HTTP_PROXY:-}}}"
 REBUILD_RUNNER_IMAGE="${LOCAL_MANUAL_INTERNAL_REBUILD_RUNNER_IMAGE:-0}"
-JUICEFS_MOUNT_IMAGE="${INTERNAL_AGENT_JUICEFS_MOUNT_IMAGE:-juicedata/mount:ce-v1.3.1}"
-JUICEFS_CSI_VERSION="${JUICEFS_CSI_VERSION:-v0.31.3}"
-JUICEFS_CSI_MANIFEST_PATH="${JUICEFS_CSI_MANIFEST_PATH:-${ROOT_DIR}/infra/deploy/unified/local-kind/juicefs-csi/upstream-manifest.yaml}"
-JUICEFS_CSI_NAMESPACE="${JUICEFS_CSI_NAMESPACE:-kube-system}"
+AFSCP_STORAGE_CSI_MOUNT_IMAGE="${AFSCP_STORAGE_CSI_MOUNT_IMAGE:-juicedata/mount:ce-v1.3.1}"
+AFSCP_STORAGE_CSI_VERSION="${AFSCP_STORAGE_CSI_VERSION:-v0.31.3}"
+AFSCP_STORAGE_CSI_MANIFEST_PATH="${AFSCP_STORAGE_CSI_MANIFEST_PATH:-${ROOT_DIR}/infra/deploy/unified/local-kind/juicefs-csi/upstream-manifest.yaml}"
+AFSCP_STORAGE_CSI_NAMESPACE="${AFSCP_STORAGE_CSI_NAMESPACE:-kube-system}"
 KIND_CONFIG_PATH="${LOCAL_KIND_CONFIG_PATH:-${ROOT_DIR}/infra/deploy/unified/local-kind/config.yaml}"
 EXTERNAL_DEPS_MANIFEST="${INTERNAL_REAL_DIR}/external-dependencies.yaml"
 CONTROL_SCRIPT="${ROOT_DIR}/scripts/lib/internal-sandbox-real-control.sh"
@@ -137,7 +137,7 @@ ensure_internal_runner_image() {
   ensure_kind_image "${RUNNER_IMAGE}"
 }
 
-wait_for_juicefs_pods() {
+wait_for_afscp_storage_csi_pods() {
   local namespace="$1"
   local selector="$2"
   local timeout_seconds="${3:-120}"
@@ -154,30 +154,30 @@ wait_for_juicefs_pods() {
   done
 }
 
-wait_for_juicefs_ready() {
+wait_for_afscp_storage_csi_ready() {
   local namespace="$1"
-  wait_for_juicefs_pods "${namespace}" 'app=juicefs-csi-controller'
+  wait_for_afscp_storage_csi_pods "${namespace}" 'app=juicefs-csi-controller'
   kubectl wait --for=condition=Ready pod -l app=juicefs-csi-controller -n "${namespace}" --timeout=600s >/dev/null
-  wait_for_juicefs_pods "${namespace}" 'app=juicefs-csi-node'
+  wait_for_afscp_storage_csi_pods "${namespace}" 'app=juicefs-csi-node'
   kubectl wait --for=condition=Ready pod -l app=juicefs-csi-node -n "${namespace}" --timeout=600s >/dev/null
 }
 
-ensure_juicefs_csi() {
+ensure_afscp_storage_csi() {
   local csi_namespace
-  internal_info "reconciling JuiceFS CSI driver ${CSI_DRIVER}"
-  local csi_manifest="${JUICEFS_CSI_MANIFEST_PATH}"
+  internal_info "reconciling AFSCP storage CSI driver ${CSI_DRIVER}"
+  local csi_manifest="${AFSCP_STORAGE_CSI_MANIFEST_PATH}"
   if [[ ! -f "${csi_manifest}" ]]; then
     csi_manifest="https://raw.githubusercontent.com/juicedata/juicefs-csi-driver/master/deploy/k8s.yaml"
   fi
   kubectl apply --validate=false -f "${csi_manifest}" >/dev/null
 
-  csi_namespace="${JUICEFS_CSI_NAMESPACE}"
+  csi_namespace="${AFSCP_STORAGE_CSI_NAMESPACE}"
 
   internal_info "loading CSI images into kind"
-  ensure_local_image "${JUICEFS_MOUNT_IMAGE}"
-  ensure_kind_image "juicedata/juicefs-csi-driver:${JUICEFS_CSI_VERSION}"
-  ensure_kind_image "juicedata/csi-dashboard:${JUICEFS_CSI_VERSION}"
-  ensure_kind_image "${JUICEFS_MOUNT_IMAGE}"
+  ensure_local_image "${AFSCP_STORAGE_CSI_MOUNT_IMAGE}"
+  ensure_kind_image "juicedata/juicefs-csi-driver:${AFSCP_STORAGE_CSI_VERSION}"
+  ensure_kind_image "juicedata/csi-dashboard:${AFSCP_STORAGE_CSI_VERSION}"
+  ensure_kind_image "${AFSCP_STORAGE_CSI_MOUNT_IMAGE}"
   ensure_kind_image "registry.k8s.io/sig-storage/csi-provisioner:v3.6.0"
   ensure_kind_image "registry.k8s.io/sig-storage/csi-resizer:v1.9.0"
   ensure_kind_image "registry.k8s.io/sig-storage/csi-node-driver-registrar:v2.9.0"
@@ -186,7 +186,7 @@ ensure_juicefs_csi() {
   kubectl scale statefulset/juicefs-csi-controller -n "${csi_namespace}" --replicas=1 >/dev/null || true
   kubectl delete pod -n "${csi_namespace}" -l app=juicefs-csi-controller >/dev/null 2>&1 || true
   kubectl delete pod -n "${csi_namespace}" -l app=juicefs-csi-node >/dev/null 2>&1 || true
-  wait_for_juicefs_ready "${csi_namespace}"
+  wait_for_afscp_storage_csi_ready "${csi_namespace}"
 }
 
 resolve_kind_gateway_ip() {
@@ -322,12 +322,13 @@ files:
     bin: tar
     rejectSymlinks: true
 
-storage:
-  endpoint: localhost:${SUBSTRATE_MINIO_API_PORT}
-  accessKey: ${MINIO_ACCESS_KEY:-mbos}
-  secretKey: ${MINIO_SECRET_KEY:-mbos_dev_password}
-  bucket: ${MINIO_BUCKET:-mbos-dev}
-  useSSL: false
+afscp:
+  baseUrl: ${AFSCP_BASE_URL:-http://127.0.0.1:28090}
+  callerService: ${AFSCP_ORCHESTRATOR_CALLER_SERVICE:-agentsmith-sandbox-manager}
+  serviceToken: ${AFSCP_ORCHESTRATOR_SERVICE_TOKEN:-agentsmith-local-afscp-orchestrator-token}
+  actor:
+    type: system
+    id: ${AFSCP_ORCHESTRATOR_CALLER_SERVICE:-agentsmith-sandbox-manager}
 
 buffer:
   capacity: 10000
@@ -347,7 +348,17 @@ K8S_NAMESPACE="${K8S_NAMESPACE}"
 SANDBOX_LOG="${INTERNAL_SANDBOX_MANAGER_LOG}"
 CLEANER_LOG="${INTERNAL_SANDBOX_CLEANER_LOG}"
 CLEANER_INTERVAL_SECONDS="${INTERNAL_SANDBOX_CLEANER_INTERVAL_SECONDS}"
-JUICEFS_BUCKET_ENDPOINT_FOR_INTERNAL_MOUNT_VALUE="${JUICEFS_BUCKET_ENDPOINT_FOR_INTERNAL_MOUNT:-}"
+AFSCP_STORAGE_CSI_DRIVER="${CSI_DRIVER}"
+AFSCP_STORAGE_CAPACITY="${STORAGE_CAPACITY}"
+AFSCP_STORAGE_CLASS_NAME="${STORAGE_CLASS_NAME}"
+AFSCP_STORAGE_CSI_MOUNT_OPTIONS="${MOUNT_OPTIONS}"
+AFSCP_STORAGE_CSI_SUBDIR="${SUBDIR}"
+AFSCP_STORAGE_CSI_MOUNT_SERVICE_ACCOUNT="${MOUNT_SERVICE_ACCOUNT}"
+AFSCP_STORAGE_CSI_MOUNT_IMAGE="${MOUNT_IMAGE_OVERRIDE}"
+AFSCP_BASE_URL="${AFSCP_BASE_URL:-http://127.0.0.1:28090}"
+AFSCP_ORCHESTRATOR_CALLER_SERVICE="${AFSCP_ORCHESTRATOR_CALLER_SERVICE:-agentsmith-sandbox-manager}"
+AFSCP_ORCHESTRATOR_SERVICE_TOKEN="${AFSCP_ORCHESTRATOR_SERVICE_TOKEN:-agentsmith-local-afscp-orchestrator-token}"
+AFSCP_SUBSTRATE_OBJECT_STORAGE_ENDPOINT_VALUE="${AFSCP_SUBSTRATE_OBJECT_STORAGE_ENDPOINT:-}"
 MINIO_ACCESS_KEY="${MINIO_ACCESS_KEY:-mbos}"
 MINIO_SECRET_KEY="${MINIO_SECRET_KEY:-mbos_dev_password}"
 MINIO_BUCKET="${MINIO_BUCKET:-mbos-dev}"

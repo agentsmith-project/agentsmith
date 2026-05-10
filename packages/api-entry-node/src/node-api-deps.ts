@@ -1,21 +1,9 @@
 import type {
-  CreateFileLibraryFolderUseCase,
-  CreateFileLibraryObjectShareLinkUseCase,
   CreateProjectUseCase,
-  CreateFileLibraryCatalogUseCase,
-  DeleteFileLibraryObjectsUseCase,
   DeleteProjectUseCase,
-  DeleteFileLibraryCatalogUseCase,
-  DownloadFileLibraryObjectUseCase,
   GetProjectUseCase,
-  GetFileLibraryObjectMetaUseCase,
   ListProjectsUseCase,
-  ListFileLibraryObjectsUseCase,
-  ListFileLibraryCatalogsUseCase,
-  MoveFileLibraryObjectUseCase,
-  UploadFileLibraryObjectUseCase,
   UpdateProjectUseCase,
-  UpdateFileLibraryCatalogUseCase,
 } from '@mbos/application';
 import type { CachePort, JsonDocStorePort } from '@mbos/ports';
 import type { ChatResourceService } from './chat-resource-service.js';
@@ -25,11 +13,14 @@ import type { AgentExecutionService } from './agent-execution-service.js';
 import type { InternalAgentPodManager } from './internal-agent-pod-manager.js';
 import type { InternalAgentWorkspaceBindingManager, InternalAgentWorkspaceProvisioner } from './internal-agent-workspace-provisioner.js';
 import type { GovernanceRunnerController } from './governance-runner.js';
-import type { FileLibraryOrchestrator } from './file-library-orchestrator.js';
-import type { FileLibraryGatewayManager } from './file-library-gateway-manager.js';
 import type { UniversalProxyService } from './universal-proxy-service.js';
 import type { NotebookTerminalService } from './notebook-terminal-service.js';
 import type { InternalWorkloadCoordinator } from './internal-workload-coordinator.js';
+import type { ProjectAfscpNamespaceStore } from './project-afscp-namespace-store.js';
+import type { ProjectStorageBootstrapServicePort } from './project-storage-bootstrap-service.js';
+import type { ProjectStorageLifecycleServicePort } from './project-storage-lifecycle-service.js';
+import type { AfscpResourceOwnershipGuardPort } from './afscp-resource-ownership-guard.js';
+import type { FileLibraryStoragePort } from './file-library-afscp-storage.js';
 
 export interface NodeApiDeps {
   governanceReportsDir?: string;
@@ -47,26 +38,16 @@ export interface NodeApiDeps {
   internalAgentWorkspaceBindingManager?: InternalAgentWorkspaceBindingManager;
   /** @deprecated use internalAgentWorkspaceBindingManager */
   internalAgentWorkspaceProvisioner?: InternalAgentWorkspaceProvisioner;
-  fileLibraryBucket: string;
-  createFileLibraryCatalogUseCase: CreateFileLibraryCatalogUseCase;
-  createFileLibraryFolderUseCase: CreateFileLibraryFolderUseCase;
-  createFileLibraryObjectShareLinkUseCase: CreateFileLibraryObjectShareLinkUseCase;
+  projectAfscpNamespaceStore?: ProjectAfscpNamespaceStore;
+  projectStorageBootstrapService: ProjectStorageBootstrapServicePort;
+  projectStorageLifecycleService: ProjectStorageLifecycleServicePort;
+  afscpResourceOwnershipGuard: AfscpResourceOwnershipGuardPort;
+  fileLibraryStorageAdapter?: FileLibraryStoragePort;
   createProjectUseCase: CreateProjectUseCase;
-  uploadFileLibraryObjectUseCase: UploadFileLibraryObjectUseCase;
-  deleteFileLibraryCatalogUseCase: DeleteFileLibraryCatalogUseCase;
-  deleteFileLibraryObjectsUseCase: DeleteFileLibraryObjectsUseCase;
-  moveFileLibraryObjectUseCase: MoveFileLibraryObjectUseCase;
-  downloadFileLibraryObjectUseCase: DownloadFileLibraryObjectUseCase;
-  getFileLibraryObjectMetaUseCase: GetFileLibraryObjectMetaUseCase;
   deleteProjectUseCase: DeleteProjectUseCase;
   getProjectUseCase: GetProjectUseCase;
   listProjectsUseCase: ListProjectsUseCase;
-  listFileLibraryCatalogsUseCase: ListFileLibraryCatalogsUseCase;
-  listFileLibraryObjectsUseCase: ListFileLibraryObjectsUseCase;
-  updateFileLibraryCatalogUseCase: UpdateFileLibraryCatalogUseCase;
   updateProjectUseCase: UpdateProjectUseCase;
   governanceRunner?: GovernanceRunnerController;
-  fileLibraryOrchestrator?: FileLibraryOrchestrator;
-  fileLibraryGatewayManager?: FileLibraryGatewayManager;
   universalProxyService?: UniversalProxyService;
 }

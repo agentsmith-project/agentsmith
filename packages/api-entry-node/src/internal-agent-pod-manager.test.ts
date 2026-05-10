@@ -101,8 +101,6 @@ describe('internal-agent-pod-manager', () => {
       'task_1',
       expect.objectContaining({
         workspace_binding_id: 'flib_demo',
-        mount_path: '/home/task_1',
-        working_dir: '/home/task_1/workspace',
         env: expect.objectContaining({
           TASK_HOME: '/home/task_1',
           HOME: '/home/task_1',
@@ -115,7 +113,9 @@ describe('internal-agent-pod-manager', () => {
       }),
       undefined,
     );
+    expect(createOrEnsurePod.mock.calls[0]?.[3]).not.toHaveProperty('mount_path');
     expect(createOrEnsurePod.mock.calls[0]?.[3]).not.toHaveProperty('sub_path');
+    expect(createOrEnsurePod.mock.calls[0]?.[3]).not.toHaveProperty('working_dir');
     expect(onlineStateStore.getAgentSessionOnlineState).toHaveBeenCalledWith('ag_1', 'task_1');
   });
 

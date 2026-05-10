@@ -82,7 +82,6 @@ run_cmd "node --max-old-space-size=6144 ./node_modules/vitest/vitest.mjs run \
   -t 'lets workspace admins manage project creators and exposes creator permissions in workspace members|forbids plain workspace members from creating projects while allowing project creators|does not expose disabled registered workspaces in runtime workspace list'"
 
 run_cmd "node --max-old-space-size=6144 ./node_modules/vitest/vitest.mjs run \
-  'packages/api-entry-node/src/file-library-runtime.test.ts' \
   'packages/api-entry-node/src/task-route-handler.test.ts'"
 
 info "running workspace/project chromium mock lane"

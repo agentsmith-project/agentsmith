@@ -38,7 +38,6 @@ export function WorkspaceSelectView() {
   } = useWorkspaces({ public: true });
 
   const isUnauthorized = isError && error instanceof APIError && error.statusCode === 401;
-  const desktopAuthRequestId = searchParams.get('desktop_auth_request_id')?.trim() ?? '';
   const [inviteHandoff] = useState(() => readInviteHandoff());
   const projectId = searchParams.get('project_id')?.trim() ?? '';
 
@@ -50,7 +49,6 @@ export function WorkspaceSelectView() {
   const getWorkspaceLoginHref = (workspaceId: string) => {
     const workspaceInviteHandoff = inviteHandoff?.workspaceId === workspaceId ? inviteHandoff : null;
     return buildWorkspaceLoginHref(locale, workspaceId, {
-      desktopAuthRequestId: desktopAuthRequestId || null,
       projectId: projectId || workspaceInviteHandoff?.projectId || null,
     });
   };
@@ -66,7 +64,6 @@ export function WorkspaceSelectView() {
     clearLoginContinuationState();
     router.replace(
       buildWorkspaceSelectionPath({
-        desktopAuthRequestId: desktopAuthRequestId || null,
         projectId: projectId || null,
       }),
     );

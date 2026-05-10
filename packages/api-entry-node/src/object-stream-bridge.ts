@@ -2,12 +2,9 @@ import type http from 'node:http';
 import { Readable } from 'node:stream';
 import type {
   ReadableStream as WebReadableStream,
-  ReadableStreamDefaultReader as WebReadableStreamDefaultReader,
 } from 'node:stream/web';
-import type { ObjectStorePutObjectStreamOptions } from '@mbos/ports';
-import type { Client as MinioClient } from 'minio';
 
-export interface GatewayObjectDownloadHandle {
+export interface ObjectDownloadHandle {
   stream: Readable;
   cancel: (reason?: unknown) => Promise<void>;
 }
@@ -88,13 +85,6 @@ function supportsEventEmitterLifecycle(
   );
 }
 
-function destroyReadableSafely(stream: Readable, error: Error): void {
-  if (stream.listenerCount('error') === 0) {
-    stream.once('error', () => {});
-  }
-  stream.destroy(error);
-}
-
 export function createHttpOperationEnvelope(args: {
   req: http.IncomingMessage;
   res: http.ServerResponse;
@@ -138,7 +128,7 @@ export function createHttpOperationEnvelope(args: {
       cleanup();
       return;
     }
-    controller.abort(createAbortError(reason, 'http_operation_aborted'));
+    controller.abort(reason ?? 'http_operation_aborted');
     cleanup();
   };
 
@@ -222,125 +212,10 @@ export async function awaitAbortableOperation<T>(
   }
 }
 
-async function cancelReader(
-  reader: WebReadableStreamDefaultReader<Uint8Array>,
-  reason?: unknown,
-): Promise<void> {
-  try {
-    await reader.cancel(reason);
-  } catch {
-    // best-effort cancellation
-  }
-}
-
-function createAbortableNodeReadable(
-  body: WebReadableStream<Uint8Array>,
-  signal?: AbortSignal,
-): {
-  stream: Readable;
-  cleanup: () => void;
-} {
-  const reader = body.getReader();
-  let finished = false;
-  let cleanupAbort: () => void = () => {};
-  const stream = Readable.from((async function* () {
-    try {
-      while (true) {
-        if (signal?.aborted) {
-          throw createAbortError(signal.reason, 'gateway_upload_aborted');
-        }
-        const { done, value } = await reader.read();
-        if (done) {
-          finished = true;
-          return;
-        }
-        if (value) {
-          yield Buffer.from(value);
-        }
-      }
-    } finally {
-      cleanupAbort();
-      if (!finished) {
-        await cancelReader(reader, signal?.reason);
-      }
-      reader.releaseLock();
-    }
-  })());
-
-  cleanupAbort = bindAbortSignal(signal, (reason) => {
-    void cancelReader(reader, reason);
-    stream.destroy(createAbortError(reason, 'gateway_upload_aborted'));
-  });
-
-  return {
-    stream,
-    cleanup: () => cleanupAbort(),
-  };
-}
-
-export async function putGatewayObjectStream(
-  client: MinioClient,
-  bucket: string,
-  key: string,
-  body: WebReadableStream<Uint8Array>,
-  options: ObjectStorePutObjectStreamOptions = {},
-): Promise<void> {
-  const { stream, cleanup } = createAbortableNodeReadable(body, options.signal);
-  try {
-    await client.putObject(bucket, key, stream, options.sizeBytes, {
-      'Content-Type': options.contentType ?? 'application/octet-stream',
-      ...(options.metadata ?? {}),
-    });
-    if (options.signal?.aborted) {
-      throw createAbortError(options.signal.reason, 'gateway_upload_aborted');
-    }
-  } catch (error) {
-    if (options.signal?.aborted) {
-      throw createAbortError(options.signal.reason, 'gateway_upload_aborted');
-    }
-    throw error;
-  } finally {
-    cleanup();
-  }
-}
-
-export async function openGatewayObjectDownload(
-  client: MinioClient,
-  bucket: string,
-  key: string,
-  options: {
-    signal?: AbortSignal;
-  } = {},
-): Promise<GatewayObjectDownloadHandle> {
-  const stream = await awaitAbortableOperation(
-    client.getObject(bucket, key),
-    {
-      signal: options.signal,
-      abortMessage: 'gateway_download_aborted',
-      onLateResolve: async (lateStream, reason) => {
-        if (!lateStream.destroyed) {
-          destroyReadableSafely(lateStream, createAbortError(reason, 'gateway_download_aborted'));
-        }
-      },
-    },
-  );
-  let cancelled = false;
-  return {
-    stream,
-    cancel: async (reason?: unknown) => {
-      if (cancelled || stream.destroyed) {
-        return;
-      }
-      cancelled = true;
-      destroyReadableSafely(stream, createAbortError(reason, 'gateway_download_aborted'));
-    },
-  };
-}
-
-export function pipeGatewayDownloadToHttpResponse(args: {
+export function pipeObjectDownloadToHttpResponse(args: {
   req: http.IncomingMessage;
   res: http.ServerResponse;
-  download: GatewayObjectDownloadHandle;
+  download: ObjectDownloadHandle;
   streamErrorMessage: string;
 }): void {
   const { req, res, download, streamErrorMessage } = args;

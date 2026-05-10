@@ -914,9 +914,9 @@ describe('unified deploy local-kind live rollout producer', () => {
     expect(applyCalls[4]?.input).toContain('REDIS_URL: "redis://:sentinel_redis_secret@substrate-redis:6379/0"');
     expect(applyCalls[4]?.input).toContain('MINIO_PORT: "9000"');
     expect(applyCalls[4]?.input).toContain('INTERNAL_KEYCLOAK_BASE_URL: "http://substrate-keycloak:8080"');
-    expect(applyCalls[4]?.input).toContain('INTERNAL_AGENT_JUICEFS_META_HOST_OVERRIDE: "substrate-postgresql.agentsmith.svc.cluster.local"');
-    expect(applyCalls[4]?.input).toContain('INTERNAL_AGENT_JUICEFS_META_PORT_OVERRIDE: "5432"');
-    expect(applyCalls[4]?.input).toContain('JUICEFS_BUCKET_ENDPOINT_FOR_INTERNAL_MOUNT: "http://substrate-minio.agentsmith.svc.cluster.local:9000"');
+    expect(applyCalls[4]?.input).not.toContain('INTERNAL_AGENT_JUICEFS_META_HOST_OVERRIDE');
+    expect(applyCalls[4]?.input).not.toContain('INTERNAL_AGENT_JUICEFS_META_PORT_OVERRIDE');
+    expect(applyCalls[4]?.input).not.toContain('JUICEFS_BUCKET_ENDPOINT_FOR_INTERNAL_MOUNT');
     expect(applyCalls[4]?.input).toContain('value: "http://substrate-minio.agentsmith.svc.cluster.local:9000"');
     expect(applyCalls[4]?.input).toMatch(/agentsmith\.mbos\.dev\/checksum-app-config: "sha256:[a-f0-9]{64}"/u);
     expect(applyCalls[4]?.input).toMatch(/agentsmith\.mbos\.dev\/checksum-app-secrets: "sha256:[a-f0-9]{64}"/u);

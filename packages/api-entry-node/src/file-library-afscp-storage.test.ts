@@ -1,0 +1,1226 @@
+import { Readable } from 'node:stream';
+import { finished } from 'node:stream/promises';
+import { describe, expect, it, vi } from 'vitest';
+import { InMemoryJsonDocStore } from '@mbos/adapters-private';
+import {
+  AfscpFileLibraryStorageAdapter,
+  JsonDocProjectFileLibraryAfscpMappingRepo,
+} from './file-library-afscp-storage.js';
+import { AfscpClientError } from './afscp-error-mapper.js';
+import {
+  PROJECT_AFSCP_NAMESPACE_COLLECTION,
+  ProjectAfscpNamespaceStore,
+  ProjectAfscpResourceOwnershipStore,
+} from './project-afscp-namespace-store.js';
+import type { AfscpProductClientPort } from './afscp-client.js';
+
+const repoOperation = {
+  operation_id: 'op_repo_create',
+  operation_state: 'queued',
+  resource: { type: 'repo', id: 'repo_flib_123' },
+  result: null,
+  error: null,
+};
+
+const succeededRepoOperation = {
+  operation_id: 'op_repo_create',
+  operation_type: 'repo_create',
+  operation_state: 'succeeded',
+  phase: 'done',
+  attempt: 1,
+  lease_owner: null,
+  lease_expires_at: null,
+  idempotency_scope: 'agentsmith-api:ns_project_1:repo_create',
+  idempotency_key: 'file-library:flib_123:create-repo',
+  request_hash: 'hash',
+  correlation_id: 'req_create',
+  caller_service: 'agentsmith-api',
+  authorized_actor: { type: 'user', id: 'user_1' },
+  resource: { type: 'repo', id: 'repo_flib_123' },
+  namespace_id: 'ns_project_1',
+  repo_id: 'repo_flib_123',
+  template_id: null,
+  export_id: null,
+  mount_binding_id: null,
+  session_fence_id: null,
+  external_resource_ids: {},
+  input_summary: {},
+  jvs_json_output: null,
+  verification_result: null,
+  compensation_status: null,
+  error: null,
+  created_at: '2026-05-09T00:00:00.000Z',
+  started_at: '2026-05-09T00:00:00.000Z',
+  finished_at: '2026-05-09T00:00:01.000Z',
+};
+
+function createProductClient(overrides: Partial<AfscpProductClientPort> = {}): AfscpProductClientPort {
+  return {
+    createRepo: vi.fn(async () => repoOperation),
+    listRepos: vi.fn(async () => ({ repos: [] })),
+    getRepo: vi.fn(async () => ({
+      repo_id: 'repo_flib_123',
+      namespace_id: 'ns_project_1',
+      volume_id: 'vol_shared',
+      repo_kind: 'repo',
+      jvs_repo_id: 'jvs_repo_123',
+      status: 'active',
+      lifecycle: {
+        status: 'active',
+        retention_expires_at: null,
+        last_lifecycle_operation_id: null,
+      },
+      created_at: '2026-05-09T00:00:00.000Z',
+    })),
+    listSavePoints: vi.fn(async () => ({
+      save_points: [
+        {
+          save_point_id: 'sp_user_001',
+          repo_id: 'repo_flib_123',
+          message: 'User checkpoint',
+          created_at: '2026-05-09T00:00:00.000Z',
+        },
+      ],
+    })),
+    createSavePoint: vi.fn(async () => ({
+      operation_id: 'op_save_point',
+      operation_state: 'queued',
+      resource: { type: 'repo', id: 'repo_flib_123' },
+      result: null,
+      error: null,
+    })),
+    createRestorePreview: vi.fn(async () => ({
+      operation_id: 'op_preview01',
+      operation_state: 'queued',
+      resource: { type: 'repo', id: 'repo_flib_123' },
+      result: null,
+      error: null,
+    })),
+    runRestorePreview: vi.fn(async () => ({
+      operation_id: 'op_restore_run',
+      operation_state: 'queued',
+      resource: { type: 'repo', id: 'repo_flib_123' },
+      result: null,
+      error: null,
+    })),
+    discardRestorePreview: vi.fn(async () => ({
+      operation_id: 'op_restore_discard',
+      operation_state: 'queued',
+      resource: { type: 'repo', id: 'repo_flib_123' },
+      result: null,
+      error: null,
+    })),
+    createRepoTemplate: vi.fn(async () => ({
+      operation_id: 'op_template_create',
+      operation_state: 'queued',
+      resource: { type: 'repo_template', id: 'tmpl_template_1' },
+      result: null,
+      error: null,
+    })),
+    cloneRepoTemplate: vi.fn(async () => ({
+      operation_id: 'op_template_clone',
+      operation_state: 'queued',
+      resource: { type: 'repo', id: 'repo_clone_1' },
+      result: null,
+      error: null,
+    })),
+    deleteRepo: vi.fn(async () => ({
+      operation_id: 'op_repo_delete',
+      operation_state: 'succeeded',
+      resource: { type: 'repo', id: 'repo_flib_123' },
+      result: null,
+      error: null,
+    })),
+    createExport: vi.fn(async () => ({
+      operation_id: 'op_export_create',
+      operation_state: 'succeeded',
+      resource: { type: 'export', id: 'export_flib_123' },
+      result: {
+        export: {
+          export_id: 'export_flib_123',
+          namespace_id: 'ns_project_1',
+          repo_id: 'repo_flib_123',
+          protocol: 'webdav',
+          mode: 'read_write',
+          status: 'active',
+          created_by_caller_service: 'agentsmith-api',
+          created_by_actor: { type: 'user', id: 'user_1' },
+          created_at: '2026-05-09T00:00:00.000Z',
+          updated_at: '2026-05-09T00:00:00.000Z',
+          expires_at: '2026-05-09T01:00:00.000Z',
+          revoked_at: null,
+          last_accessed_at: null,
+          active_request_count: 0,
+          active_write_count: 0,
+          last_observed_at: null,
+          last_gateway_heartbeat_at: null,
+          gateway_heartbeat_expires_at: null,
+          write_drained_at: null,
+          terminal_observed_at: null,
+          status_reason: '',
+        },
+        access: {
+          url: 'https://files.example.test/e/export_flib_123/',
+          auth: {
+            type: 'basic',
+            username: 'export_flib_123',
+            password: 'one-time-webdav-secret',
+          },
+          mode: 'read_write',
+          expires_at: '2026-05-09T01:00:00.000Z',
+        },
+      },
+      error: null,
+    })),
+    getExport: vi.fn(async () => ({})),
+    revokeExport: vi.fn(async () => ({
+      operation_id: 'op_export_revoke',
+      operation_state: 'queued',
+      resource: { type: 'export', id: 'export_flib_123' },
+      result: null,
+      error: null,
+    })),
+    getOperation: vi.fn(async () => succeededRepoOperation),
+    pollOperation: vi.fn(async () => succeededRepoOperation),
+    ...overrides,
+  };
+}
+
+async function markNamespaceReady(input: {
+  docStore: InMemoryJsonDocStore;
+  namespaceStore: ProjectAfscpNamespaceStore;
+  workspaceId?: string;
+  projectId?: string;
+  namespaceId?: string;
+}): Promise<void> {
+  const workspaceId = input.workspaceId ?? 'ws_default';
+  const projectId = input.projectId ?? 'proj_1';
+  const ready = await input.namespaceStore.markProjectNamespaceReady({
+    workspaceId,
+    projectId,
+    namespaceUpsertOperationId: 'op_namespace_ready',
+    volumeBindingOperationId: 'op_binding_ready',
+  });
+  await input.docStore.upsert(PROJECT_AFSCP_NAMESPACE_COLLECTION, ready.id, {
+    ...ready,
+    namespace_id: input.namespaceId ?? 'ns_project_1',
+  });
+}
+
+async function createMappedAdapter(input: {
+  client?: AfscpProductClientPort;
+  fetchFn?: typeof fetch;
+  projectStorageGeneration?: number;
+} = {}): Promise<{
+  docStore: InMemoryJsonDocStore;
+  client: AfscpProductClientPort;
+  mappingRepo: JsonDocProjectFileLibraryAfscpMappingRepo;
+  namespaceStore: ProjectAfscpNamespaceStore;
+  ownershipStore: ProjectAfscpResourceOwnershipStore;
+  adapter: AfscpFileLibraryStorageAdapter;
+}> {
+  const docStore = new InMemoryJsonDocStore();
+  const client = input.client ?? createProductClient();
+  const mappingRepo = new JsonDocProjectFileLibraryAfscpMappingRepo(docStore);
+  const namespaceStore = new ProjectAfscpNamespaceStore(docStore);
+  const ownershipStore = new ProjectAfscpResourceOwnershipStore(docStore);
+  await markNamespaceReady({ docStore, namespaceStore });
+  await mappingRepo.saveReady({
+    workspaceId: 'ws_default',
+    projectId: 'proj_1',
+    libraryId: 'flib_123',
+    namespaceId: 'ns_project_1',
+    repoId: 'repo_flib_123',
+    projectStorageGeneration: input.projectStorageGeneration ?? 1,
+    operationId: 'op_repo_create',
+  });
+  const adapter = new AfscpFileLibraryStorageAdapter({
+    client,
+    mappingRepo,
+    projectAfscpNamespaceStore: namespaceStore,
+    resourceOwnershipStore: ownershipStore,
+    fetchFn: input.fetchFn ?? (vi.fn() as unknown as typeof fetch),
+  });
+  return {
+    docStore,
+    client,
+    mappingRepo,
+    namespaceStore,
+    ownershipStore,
+    adapter,
+  };
+}
+
+describe('AFSCP File Library storage adapter', () => {
+  it('creates a repo, stores only internal AFSCP mapping, and maps repo/operation ownership', async () => {
+    const docStore = new InMemoryJsonDocStore();
+    const client = createProductClient();
+    const mappingRepo = new JsonDocProjectFileLibraryAfscpMappingRepo(docStore);
+    const namespaceStore = new ProjectAfscpNamespaceStore(docStore);
+    const ownershipStore = new ProjectAfscpResourceOwnershipStore(docStore);
+    const adapter = new AfscpFileLibraryStorageAdapter({
+      client,
+      mappingRepo,
+      projectAfscpNamespaceStore: namespaceStore,
+      resourceOwnershipStore: ownershipStore,
+      fetchFn: vi.fn() as unknown as typeof fetch,
+    });
+
+    const result = await adapter.createRepoForLibrary({
+      workspaceId: 'ws_default',
+      projectId: 'proj_1',
+      libraryId: 'flib_123',
+      namespaceId: 'ns_project_1',
+      projectStorageGeneration: 1,
+      actorUserId: 'user_1',
+      requestId: 'req_create',
+    });
+
+    expect(result).toMatchObject({
+      namespaceId: 'ns_project_1',
+      repoId: 'repo_flib_123',
+      operationId: 'op_repo_create',
+      operationStatus: 'succeeded',
+    });
+    await expect(mappingRepo.getByLibraryId('ws_default', 'proj_1', 'flib_123')).resolves.toMatchObject({
+      library_id: 'flib_123',
+      namespace_id: 'ns_project_1',
+      repo_id: 'repo_flib_123',
+      project_storage_generation: 1,
+      operation_id: 'op_repo_create',
+      operation_status: 'succeeded',
+    });
+    await expect(ownershipStore.getResourceOwnership({
+      resourceKind: 'repo',
+      resourceId: 'repo_flib_123',
+    })).resolves.toMatchObject({
+      workspace_id: 'ws_default',
+      project_id: 'proj_1',
+      namespace_id: 'ns_project_1',
+    });
+    await expect(ownershipStore.getResourceOwnership({
+      resourceKind: 'operation',
+      resourceId: 'op_repo_create',
+    })).resolves.toMatchObject({
+      workspace_id: 'ws_default',
+      project_id: 'proj_1',
+      namespace_id: 'ns_project_1',
+    });
+
+    const serializedDocs = JSON.stringify(await docStore.list('project_file_library_afscp_mappings'));
+    expect(serializedDocs).not.toContain('one-time-webdav-secret');
+    expect(serializedDocs).not.toContain('metadata_url');
+    expect(serializedDocs).not.toContain('bucket');
+    expect(serializedDocs).not.toContain('postgres://');
+  });
+
+  it('projects owned operation records with namespace visibility and redacts raw AFSCP details', async () => {
+    const richOperation = {
+      ...succeededRepoOperation,
+      operation_id: 'op_repo_create',
+      operation_type: 'repo_create',
+      operation_state: 'succeeded',
+      namespace_id: 'ns_project_1',
+      repo_id: 'repo_flib_123',
+      result: {
+        metadata_url: 'postgres://user:svc-secret-token@db/juicefs',
+        path: '/var/lib/juicefs/ns_project_1/repo_flib_123',
+        access: {
+          url: 'https://files.example.test/e/export_flib_123/',
+          auth: {
+            type: 'basic',
+            username: 'export_flib_123',
+            password: 'one-time-webdav-secret',
+          },
+        },
+      },
+      input_summary: {
+        run_command: 'mount.juicefs --token svc-secret-token',
+        secret_ref: 'Secret/afscp/metadata',
+      },
+      verification_result: {
+        stdout: 'mounted /var/lib/juicefs/ns_project_1',
+        stderr: 'password=one-time-webdav-secret',
+      },
+    };
+    const client = createProductClient({
+      getOperation: vi.fn(async () => richOperation),
+    });
+    const { ownershipStore, adapter } = await createMappedAdapter({ client });
+    await ownershipStore.ensureResourceOwnership({
+      workspaceId: 'ws_default',
+      projectId: 'proj_1',
+      resourceKind: 'operation',
+      resourceId: 'op_repo_create',
+      namespaceId: 'ns_project_1',
+    });
+
+    const projection = await adapter.getOperationProjection({
+      workspaceId: 'ws_default',
+      projectId: 'proj_1',
+      operationId: 'op_repo_create',
+      requestId: 'req_projection',
+    });
+
+    expect(client.getOperation).toHaveBeenCalledWith({
+      operationId: 'op_repo_create',
+      correlationId: 'req_projection',
+      signal: undefined,
+    });
+    expect(projection).toMatchObject({
+      operation_id: 'op_repo_create',
+      operation_state: 'succeeded',
+      operation_type: 'repo_create',
+      resource: { type: 'repo' },
+      error: null,
+    });
+    const serialized = JSON.stringify(projection);
+    expect(serialized).not.toContain('ns_project_1');
+    expect(serialized).not.toContain('repo_flib_123');
+    expect(serialized).not.toContain('metadata_url');
+    expect(serialized).not.toContain('postgres://');
+    expect(serialized).not.toContain('/var/lib/juicefs');
+    expect(serialized).not.toContain('one-time-webdav-secret');
+    expect(serialized).not.toContain('run_command');
+    expect(serialized).not.toContain('Secret/afscp');
+    expect(serialized).not.toContain('stdout');
+  });
+
+  it('hides operation projection for cross-project ownership before calling AFSCP', async () => {
+    const client = createProductClient({
+      getOperation: vi.fn(async () => succeededRepoOperation),
+    });
+    const { docStore, namespaceStore, ownershipStore, adapter } = await createMappedAdapter({ client });
+    await markNamespaceReady({
+      docStore,
+      namespaceStore,
+      workspaceId: 'ws_default',
+      projectId: 'proj_other',
+      namespaceId: 'ns_other',
+    });
+    await ownershipStore.ensureResourceOwnership({
+      workspaceId: 'ws_default',
+      projectId: 'proj_other',
+      resourceKind: 'operation',
+      resourceId: 'op_hidden_elsewhere',
+      namespaceId: 'ns_other',
+    });
+
+    await expect(adapter.getOperationProjection({
+      workspaceId: 'ws_default',
+      projectId: 'proj_1',
+      operationId: 'op_hidden_elsewhere',
+      requestId: 'req_hidden',
+    })).rejects.toThrow('file_library_operation_not_found');
+    expect(client.getOperation).not.toHaveBeenCalled();
+  });
+
+  it('keeps operation projection visible for tombstoned project namespace mappings', async () => {
+    const client = createProductClient({
+      getOperation: vi.fn(async () => ({
+        ...succeededRepoOperation,
+        operation_id: 'op_repo_delete',
+        operation_type: 'repo_delete',
+      })),
+    });
+    const { namespaceStore, ownershipStore, adapter } = await createMappedAdapter({ client });
+    await ownershipStore.ensureResourceOwnership({
+      workspaceId: 'ws_default',
+      projectId: 'proj_1',
+      resourceKind: 'operation',
+      resourceId: 'op_repo_delete',
+      namespaceId: 'ns_project_1',
+    });
+    await namespaceStore.markProjectNamespaceDeleting({
+      workspaceId: 'ws_default',
+      projectId: 'proj_1',
+      lastErrorCode: null,
+    });
+    await namespaceStore.markProjectNamespaceTombstoned({
+      workspaceId: 'ws_default',
+      projectId: 'proj_1',
+    });
+
+    await expect(adapter.getOperationProjection({
+      workspaceId: 'ws_default',
+      projectId: 'proj_1',
+      operationId: 'op_repo_delete',
+      requestId: 'req_tombstoned_projection',
+    })).resolves.toMatchObject({
+      operation_id: 'op_repo_delete',
+      operation_state: 'succeeded',
+      operation_type: 'repo_delete',
+    });
+  });
+
+  it('requires explicit project storage generation when creating a repo', () => {
+    const docStore = new InMemoryJsonDocStore();
+    const adapter = new AfscpFileLibraryStorageAdapter({
+      client: createProductClient(),
+      mappingRepo: new JsonDocProjectFileLibraryAfscpMappingRepo(docStore),
+      projectAfscpNamespaceStore: new ProjectAfscpNamespaceStore(docStore),
+      resourceOwnershipStore: new ProjectAfscpResourceOwnershipStore(docStore),
+      fetchFn: vi.fn() as unknown as typeof fetch,
+    });
+
+    if (false) {
+      void adapter.createRepoForLibrary({
+        workspaceId: 'ws_default',
+        projectId: 'proj_1',
+        libraryId: 'flib_123',
+        namespaceId: 'ns_project_1',
+        // @ts-expect-error projectStorageGeneration is a required guard, never a default.
+        actorUserId: 'user_1',
+      });
+    }
+
+    expect(adapter.enabled).toBe(true);
+  });
+
+  it('keeps a repo create operation anchor when terminal polling does not succeed', async () => {
+    const docStore = new InMemoryJsonDocStore();
+    const client = createProductClient({
+      pollOperation: vi.fn(async () => ({
+        ...succeededRepoOperation,
+        operation_id: 'op_repo_create_pending',
+        operation_state: 'running',
+      })),
+    });
+    const mappingRepo = new JsonDocProjectFileLibraryAfscpMappingRepo(docStore);
+    const namespaceStore = new ProjectAfscpNamespaceStore(docStore);
+    const adapter = new AfscpFileLibraryStorageAdapter({
+      client,
+      mappingRepo,
+      projectAfscpNamespaceStore: namespaceStore,
+      resourceOwnershipStore: new ProjectAfscpResourceOwnershipStore(docStore),
+      fetchFn: vi.fn() as unknown as typeof fetch,
+    });
+
+    await expect(adapter.createRepoForLibrary({
+      workspaceId: 'ws_default',
+      projectId: 'proj_1',
+      libraryId: 'flib_123',
+      namespaceId: 'ns_project_1',
+      projectStorageGeneration: 7,
+      actorUserId: 'user_1',
+      requestId: 'req_create_pending',
+    })).rejects.toThrow('file_library_repo_create_pending');
+
+    await expect(mappingRepo.getByLibraryId('ws_default', 'proj_1', 'flib_123')).resolves.toMatchObject({
+      library_id: 'flib_123',
+      namespace_id: 'ns_project_1',
+      repo_id: 'repo_flib_123',
+      project_storage_generation: 7,
+      operation_id: 'op_repo_create_pending',
+      operation_status: 'pending',
+    });
+  });
+
+  it('persists repo create failure details as sanitized operation state instead of losing the mapping', async () => {
+    const docStore = new InMemoryJsonDocStore();
+    const client = createProductClient({
+      pollOperation: vi.fn(async () => {
+        throw new Error('poll failed token=svc-secret-token metadata_url=postgres://db');
+      }),
+    });
+    const mappingRepo = new JsonDocProjectFileLibraryAfscpMappingRepo(docStore);
+    const namespaceStore = new ProjectAfscpNamespaceStore(docStore);
+    const adapter = new AfscpFileLibraryStorageAdapter({
+      client,
+      mappingRepo,
+      projectAfscpNamespaceStore: namespaceStore,
+      resourceOwnershipStore: new ProjectAfscpResourceOwnershipStore(docStore),
+      fetchFn: vi.fn() as unknown as typeof fetch,
+    });
+
+    await expect(adapter.createRepoForLibrary({
+      workspaceId: 'ws_default',
+      projectId: 'proj_1',
+      libraryId: 'flib_123',
+      namespaceId: 'ns_project_1',
+      projectStorageGeneration: 3,
+      actorUserId: 'user_1',
+      requestId: 'req_create_failed',
+    })).rejects.toThrow('file_library_repo_create_failed');
+
+    const mapping = await mappingRepo.getByLibraryId('ws_default', 'proj_1', 'flib_123');
+    expect(mapping).toMatchObject({
+      operation_id: 'op_repo_create',
+      operation_status: 'failed',
+      last_error_code: 'file_library_repo_create_failed',
+      project_storage_generation: 3,
+    });
+    expect(JSON.stringify(mapping)).not.toContain('svc-secret-token');
+    expect(JSON.stringify(mapping)).not.toContain('metadata_url');
+  });
+
+  it('polls repo delete to terminal success before removing the mapping', async () => {
+    const client = createProductClient({
+      deleteRepo: vi.fn(async () => ({
+        operation_id: 'op_repo_delete',
+        operation_state: 'queued',
+        resource: { type: 'repo', id: 'repo_flib_123' },
+        result: null,
+        error: null,
+      })),
+      pollOperation: vi.fn(async () => ({
+        ...succeededRepoOperation,
+        operation_id: 'op_repo_delete',
+        operation_state: 'succeeded',
+      })),
+    });
+    const { mappingRepo, ownershipStore, adapter } = await createMappedAdapter({ client });
+
+    await expect(adapter.deleteRepoForLibrary({
+      workspaceId: 'ws_default',
+      projectId: 'proj_1',
+      libraryId: 'flib_123',
+      actorUserId: 'user_1',
+      requestId: 'req_delete_success',
+      reason: 'file_library_delete',
+    })).resolves.toBeUndefined();
+
+    expect(client.pollOperation).toHaveBeenCalledWith(expect.objectContaining({
+      operationId: 'op_repo_delete',
+    }));
+    await expect(mappingRepo.getByLibraryId('ws_default', 'proj_1', 'flib_123')).resolves.toBeNull();
+    await expect(ownershipStore.getResourceOwnership({
+      resourceKind: 'operation',
+      resourceId: 'op_repo_delete',
+    })).resolves.toMatchObject({
+      workspace_id: 'ws_default',
+      project_id: 'proj_1',
+      namespace_id: 'ns_project_1',
+    });
+  });
+
+  it('keeps the mapping and delete operation anchor when repo delete remains pending', async () => {
+    const client = createProductClient({
+      deleteRepo: vi.fn(async () => ({
+        operation_id: 'op_repo_delete_pending',
+        operation_state: 'queued',
+        resource: { type: 'repo', id: 'repo_flib_123' },
+        result: null,
+        error: null,
+      })),
+      pollOperation: vi.fn(async () => ({
+        ...succeededRepoOperation,
+        operation_id: 'op_repo_delete_pending',
+        operation_state: 'running',
+      })),
+    });
+    const { mappingRepo, adapter } = await createMappedAdapter({ client });
+
+    await expect(adapter.deleteRepoForLibrary({
+      workspaceId: 'ws_default',
+      projectId: 'proj_1',
+      libraryId: 'flib_123',
+      actorUserId: 'user_1',
+      requestId: 'req_delete_pending',
+      reason: 'file_library_delete',
+    })).rejects.toThrow('file_library_repo_delete_pending');
+
+    await expect(mappingRepo.getByLibraryId('ws_default', 'proj_1', 'flib_123')).resolves.toMatchObject({
+      operation_id: 'op_repo_delete_pending',
+      operation_status: 'pending',
+      repo_id: 'repo_flib_123',
+    });
+  });
+
+  it('uses one-time WebDAV export credentials internally for file writes and revokes them without persisting secrets', async () => {
+    const docStore = new InMemoryJsonDocStore();
+    const client = createProductClient();
+    const mappingRepo = new JsonDocProjectFileLibraryAfscpMappingRepo(docStore);
+    const namespaceStore = new ProjectAfscpNamespaceStore(docStore);
+    await markNamespaceReady({ docStore, namespaceStore });
+    await mappingRepo.saveReady({
+      workspaceId: 'ws_default',
+      projectId: 'proj_1',
+      libraryId: 'flib_123',
+      namespaceId: 'ns_project_1',
+      repoId: 'repo_flib_123',
+      projectStorageGeneration: 1,
+      operationId: 'op_repo_create',
+    });
+    const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      if (init?.method === 'HEAD') {
+        return new Response(null, { status: 404 });
+      }
+      expect(String(input)).toBe('https://files.example.test/e/export_flib_123/docs/hello.txt');
+      expect(init?.method).toBe('PUT');
+      expect((init?.headers as Record<string, string>).Authorization).toBe(
+        `Basic ${Buffer.from('export_flib_123:one-time-webdav-secret', 'utf8').toString('base64')}`,
+      );
+      return new Response(null, {
+        status: 201,
+        headers: {
+          ETag: '"etag-upload"',
+          'Last-Modified': 'Sat, 09 May 2026 00:00:00 GMT',
+        },
+      });
+    }) as unknown as typeof fetch;
+    const adapter = new AfscpFileLibraryStorageAdapter({
+      client,
+      mappingRepo,
+      projectAfscpNamespaceStore: namespaceStore,
+      resourceOwnershipStore: new ProjectAfscpResourceOwnershipStore(docStore),
+      fetchFn: fetchMock,
+    });
+
+    await expect(adapter.uploadObject({
+      workspaceId: 'ws_default',
+      projectId: 'proj_1',
+      libraryId: 'flib_123',
+      actorUserId: 'user_1',
+      requestId: 'req_upload',
+      objectPath: 'docs/hello.txt',
+      contentType: 'text/plain',
+      overwrite: false,
+      body: Readable.toWeb(Readable.from(['hello'])) as unknown as ReadableStream<Uint8Array>,
+    })).resolves.toMatchObject({
+      kind: 'file',
+      path: 'docs/hello.txt',
+      name: 'hello.txt',
+      content_type: 'text/plain',
+      etag: '"etag-upload"',
+    });
+
+    expect(client.createExport).toHaveBeenCalledWith(expect.objectContaining({
+      namespaceId: 'ns_project_1',
+      repoId: 'repo_flib_123',
+      mode: 'read_write',
+    }));
+    expect(client.revokeExport).toHaveBeenCalledWith(expect.objectContaining({
+      namespaceId: 'ns_project_1',
+      exportId: 'export_flib_123',
+    }));
+    const serializedDocs = JSON.stringify(await docStore.list('project_file_library_afscp_mappings'));
+    expect(serializedDocs).not.toContain('one-time-webdav-secret');
+    expect(serializedDocs).not.toContain('https://files.example.test');
+  });
+
+  it('releases WebDAV export credentials only after a download stream finishes', async () => {
+    const fetchMock = vi.fn(async () => new Response(
+      Readable.toWeb(Readable.from(['hello world'])) as unknown as BodyInit,
+      {
+        status: 200,
+        headers: {
+          'Content-Type': 'text/plain',
+          'Content-Length': '11',
+          'Last-Modified': 'Sat, 09 May 2026 00:00:00 GMT',
+        },
+      },
+    )) as unknown as typeof fetch;
+    const { client, adapter } = await createMappedAdapter({ fetchFn: fetchMock });
+
+    const result = await adapter.downloadObject({
+      workspaceId: 'ws_default',
+      projectId: 'proj_1',
+      libraryId: 'flib_123',
+      objectPath: 'docs/hello.txt',
+      requestId: 'req_download',
+    });
+
+    expect(client.createExport).toHaveBeenCalledWith(expect.objectContaining({
+      mode: 'read_only',
+      namespaceId: 'ns_project_1',
+      repoId: 'repo_flib_123',
+    }));
+    expect(client.revokeExport).not.toHaveBeenCalled();
+
+    result.download.stream.resume();
+    await finished(result.download.stream);
+    await vi.waitFor(() => expect(client.revokeExport).toHaveBeenCalledWith(expect.objectContaining({
+      namespaceId: 'ns_project_1',
+      exportId: 'export_flib_123',
+    })));
+  });
+
+  it('lists and creates save points through the mapped AFSCP repo without persisting raw ids in public state', async () => {
+    const client = createProductClient({
+      pollOperation: vi.fn(async () => ({
+        ...succeededRepoOperation,
+        operation_id: 'op_save_point',
+        operation_type: 'save_point_create',
+        operation_state: 'succeeded',
+        external_resource_ids: { save_point_id: 'sp_user_002' },
+        jvs_json_output: { save_point_id: 'sp_user_002' },
+      })),
+    });
+    const { adapter, ownershipStore } = await createMappedAdapter({ client });
+
+    await expect(adapter.listSavePoints({
+      workspaceId: 'ws_default',
+      projectId: 'proj_1',
+      libraryId: 'flib_123',
+      requestId: 'req_save_point_list',
+    })).resolves.toEqual([
+      {
+        savePointId: 'sp_user_001',
+        repoId: 'repo_flib_123',
+        message: 'User checkpoint',
+        createdAt: '2026-05-09T00:00:00.000Z',
+      },
+    ]);
+
+    await expect(adapter.createSavePoint({
+      workspaceId: 'ws_default',
+      projectId: 'proj_1',
+      libraryId: 'flib_123',
+      message: 'Before risky change',
+      actorUserId: 'user_1',
+      requestId: 'req_save_point_create',
+    })).resolves.toMatchObject({
+      operationId: 'op_save_point',
+      operationStatus: 'succeeded',
+      savePointId: 'sp_user_002',
+    });
+
+    expect(client.createSavePoint).toHaveBeenCalledWith(expect.objectContaining({
+      namespaceId: 'ns_project_1',
+      repoId: 'repo_flib_123',
+      message: 'Before risky change',
+      actor: { type: 'user', id: 'user_1' },
+    }));
+    await expect(ownershipStore.getResourceOwnership({
+      resourceKind: 'save_point',
+      resourceId: 'sp_user_002',
+    })).resolves.toMatchObject({
+      workspace_id: 'ws_default',
+      project_id: 'proj_1',
+    });
+  });
+
+  it('creates, runs, and discards restore previews through AFSCP with restore-plan ownership anchors', async () => {
+    const client = createProductClient({
+      pollOperation: vi.fn(async (input) => ({
+        ...succeededRepoOperation,
+        operation_id: input.operationId,
+        operation_type: input.operationId === 'op_preview01'
+          ? 'restore_preview'
+          : input.operationId === 'op_restore_run'
+            ? 'restore_run'
+            : 'restore_preview_discard',
+        operation_state: 'succeeded',
+        external_resource_ids: {
+          restore_plan_id: 'plan_001',
+          source_save_point_id: 'sp_user_001',
+        },
+        verification_result: {
+          restore_plan_id: 'plan_001',
+          source_save_point_id: 'sp_user_001',
+          summary: {
+            added: { count: 1, samples: ['src/new.ts'] },
+            changed: { count: 2, samples: ['docs/readme.md'] },
+            removed: { count: 1, samples: ['tmp/cache.txt'] },
+            destructive: true,
+          },
+          blockers: [],
+          stale: false,
+        },
+      })),
+    });
+    const { adapter, ownershipStore } = await createMappedAdapter({ client });
+
+    await expect(adapter.createRestorePreview({
+      workspaceId: 'ws_default',
+      projectId: 'proj_1',
+      libraryId: 'flib_123',
+      savePointId: 'sp_user_001',
+      actorUserId: 'user_1',
+      requestId: 'req_restore_preview',
+    })).resolves.toMatchObject({
+      operationId: 'op_preview01',
+      operationStatus: 'succeeded',
+      restorePlanId: 'plan_001',
+      sourceSavePointId: 'sp_user_001',
+      summary: {
+        added: { count: 1, samples: ['src/new.ts'] },
+        changed: { count: 2, samples: ['docs/readme.md'] },
+        removed: { count: 1, samples: ['tmp/cache.txt'] },
+        destructive: true,
+      },
+      blockers: [],
+      stale: false,
+    });
+    await expect(adapter.runRestorePreview({
+      workspaceId: 'ws_default',
+      projectId: 'proj_1',
+      libraryId: 'flib_123',
+      previewOperationId: 'op_preview01',
+      actorUserId: 'user_1',
+      requestId: 'req_restore_run',
+    })).resolves.toMatchObject({
+      operationId: 'op_restore_run',
+      operationStatus: 'succeeded',
+    });
+    await expect(adapter.discardRestorePreview({
+      workspaceId: 'ws_default',
+      projectId: 'proj_1',
+      libraryId: 'flib_123',
+      previewOperationId: 'op_preview01',
+      actorUserId: 'user_1',
+      requestId: 'req_restore_discard',
+    })).resolves.toMatchObject({
+      operationId: 'op_restore_discard',
+      operationStatus: 'succeeded',
+    });
+
+    await expect(ownershipStore.getResourceOwnership({
+      resourceKind: 'restore_plan',
+      resourceId: 'plan_001',
+    })).resolves.toMatchObject({
+      workspace_id: 'ws_default',
+      project_id: 'proj_1',
+    });
+  });
+
+  it('projects stale restore preview AFSCP responses without leaking upstream ids', async () => {
+    const client = createProductClient({
+      runRestorePreview: vi.fn(async () => {
+        throw new AfscpClientError({
+          status: 409,
+          code: 'afscp_restore_preview_stale',
+          message: 'afscp_restore_preview_stale',
+          retryable: true,
+          correlation_id: 'corr_restore_stale',
+          operation_id: 'op_hidden_restore',
+        });
+      }),
+    });
+    const { adapter } = await createMappedAdapter({ client });
+
+    let caught: unknown;
+    try {
+      await adapter.runRestorePreview({
+        workspaceId: 'ws_default',
+        projectId: 'proj_1',
+        libraryId: 'flib_123',
+        previewOperationId: 'op_preview01',
+        actorUserId: 'user_1',
+        requestId: 'req_restore_stale',
+      });
+    } catch (error) {
+      caught = error;
+    }
+
+    expect(caught).toBeInstanceOf(Error);
+    expect((caught as Error).message).toBe('file_library_restore_preview_stale');
+    expect(JSON.stringify(caught)).not.toMatch(/op_hidden_restore|corr_restore_stale|repo_|ns_project/);
+  });
+
+  it('maps typed stale restore preview operation failures to the public storage error', async () => {
+    const client = createProductClient({
+      pollOperation: vi.fn(async () => ({
+        ...succeededRepoOperation,
+        operation_id: 'op_restore_run',
+        operation_type: 'restore_run',
+        operation_state: 'failed',
+        error: {
+          code: 'RESTORE_PREVIEW_STALE',
+          message: 'restore preview stale repo_hidden_elsewhere',
+          retryable: true,
+          correlation_id: 'corr_restore_stale',
+          operation_id: 'op_restore_run',
+          details: {
+            repo_id: 'repo_hidden_elsewhere',
+            namespace_id: 'ns_hidden',
+            restore_plan_id: 'plan_hidden',
+          },
+        },
+        verification_result: {
+          stale: true,
+          restore_state: 'stale_restore_preview',
+          restore_plan_id: 'plan_hidden',
+        },
+      })),
+    });
+    const { adapter } = await createMappedAdapter({ client });
+
+    let caught: unknown;
+    try {
+      await adapter.runRestorePreview({
+        workspaceId: 'ws_default',
+        projectId: 'proj_1',
+        libraryId: 'flib_123',
+        previewOperationId: 'op_preview01',
+        actorUserId: 'user_1',
+        requestId: 'req_restore_stale_operation',
+      });
+    } catch (error) {
+      caught = error;
+    }
+
+    expect(caught).toBeInstanceOf(Error);
+    expect((caught as Error).message).toBe('file_library_restore_preview_stale');
+    expect(JSON.stringify(caught)).not.toMatch(/plan_hidden|repo_hidden_elsewhere|ns_hidden|corr_restore_stale/);
+  });
+
+  it('projects restore writer-session blocker operation failures without exposing AFSCP payload details', async () => {
+    const client = createProductClient({
+      pollOperation: vi.fn(async () => ({
+        ...succeededRepoOperation,
+        operation_id: 'op_restore_run',
+        operation_type: 'restore_run',
+        operation_state: 'failed',
+        phase: 'restore_run_writer_fenced',
+        error: {
+          code: 'RESTORE_RUN_WRITER_SESSIONS_DENIED',
+          message: 'restore run writer sessions denied repo_hidden_elsewhere',
+          retryable: false,
+          correlation_id: 'corr_writer_blocked',
+          operation_id: 'op_restore_run',
+          details: {
+            repo_id: 'repo_hidden_elsewhere',
+            namespace_id: 'ns_hidden',
+            export_id: 'export_hidden',
+            metadata_url: 'postgres://postgres:postgres@db:5432/juicefs',
+          },
+        },
+        verification_result: {
+          writer_gate_error_family: 'ACTIVE_WRITER_SESSIONS',
+          export_id: 'export_hidden',
+          namespace_id: 'ns_hidden',
+        },
+      })),
+    });
+    const { adapter } = await createMappedAdapter({ client });
+
+    let caught: unknown;
+    try {
+      await adapter.runRestorePreview({
+        workspaceId: 'ws_default',
+        projectId: 'proj_1',
+        libraryId: 'flib_123',
+        previewOperationId: 'op_preview01',
+        actorUserId: 'user_1',
+        requestId: 'req_writer_blocked',
+      });
+    } catch (error) {
+      caught = error;
+    }
+
+    expect(caught).toBeInstanceOf(Error);
+    expect((caught as Error).message).toBe('file_library_active_writer_blocked');
+    expect(JSON.stringify(caught)).not.toMatch(/repo_hidden_elsewhere|ns_hidden|export_hidden|metadata_url|postgres/);
+  });
+
+  it('creates templates and clones them into a new file library repo without exposing raw template ids', async () => {
+    const client = createProductClient({
+      pollOperation: vi.fn(async (input) => ({
+        ...succeededRepoOperation,
+        operation_id: input.operationId,
+        operation_type: input.operationId === 'op_template_create' ? 'template_create' : 'template_clone',
+        operation_state: 'succeeded',
+        external_resource_ids: input.operationId === 'op_template_create'
+          ? { source_save_point_id: 'sp_template_source_001' }
+          : {},
+        verification_result: input.operationId === 'op_template_create'
+          ? { source_save_point_id: 'sp_template_source_001' }
+          : {},
+      })),
+    });
+    const { adapter, mappingRepo, ownershipStore } = await createMappedAdapter({ client });
+
+    await expect(adapter.createTemplateFromLibrary({
+      workspaceId: 'ws_default',
+      projectId: 'proj_1',
+      libraryId: 'flib_123',
+      templateId: 'tmpl_task_file_template_1',
+      actorUserId: 'user_1',
+      requestId: 'req_template_create',
+    })).resolves.toMatchObject({
+      templateId: 'tmpl_task_file_template_1',
+      operationId: 'op_template_create',
+      operationStatus: 'succeeded',
+      sourceSavePointId: 'sp_template_source_001',
+    });
+
+    await expect(adapter.cloneTemplateToLibrary({
+      workspaceId: 'ws_default',
+      projectId: 'proj_1',
+      libraryId: 'flib_clone_123',
+      namespaceId: 'ns_project_1',
+      projectStorageGeneration: 1,
+      templateId: 'tmpl_task_file_template_1',
+      actorUserId: 'user_1',
+      requestId: 'req_template_clone',
+    })).resolves.toMatchObject({
+      namespaceId: 'ns_project_1',
+      repoId: 'repo_flib_clone_123',
+      operationId: 'op_template_clone',
+      operationStatus: 'succeeded',
+      projectStorageGeneration: 1,
+    });
+
+    await expect(mappingRepo.getByLibraryId('ws_default', 'proj_1', 'flib_clone_123')).resolves.toMatchObject({
+      repo_id: 'repo_flib_clone_123',
+      operation_id: 'op_template_clone',
+      operation_status: 'succeeded',
+    });
+    await expect(ownershipStore.getResourceOwnership({
+      resourceKind: 'repo_template',
+      resourceId: 'tmpl_task_file_template_1',
+    })).resolves.toMatchObject({
+      workspace_id: 'ws_default',
+      project_id: 'proj_1',
+    });
+    expect(JSON.stringify(await mappingRepo.getByLibraryId('ws_default', 'proj_1', 'flib_clone_123'))).not.toContain('tmpl_task_file_template_1');
+  });
+
+  it('projects template clone denials as safe public errors and sanitized mapping state', async () => {
+    const client = createProductClient({
+      cloneRepoTemplate: vi.fn(async () => {
+        throw new AfscpClientError({
+          status: 403,
+          code: 'afscp_template_clone_not_allowed',
+          message: 'afscp_template_clone_not_allowed',
+          retryable: false,
+          correlation_id: 'corr_template_denied',
+          operation_id: 'op_template_hidden',
+        });
+      }),
+    });
+    const { adapter, mappingRepo } = await createMappedAdapter({ client });
+
+    await expect(adapter.cloneTemplateToLibrary({
+      workspaceId: 'ws_default',
+      projectId: 'proj_1',
+      libraryId: 'flib_clone_denied',
+      namespaceId: 'ns_project_1',
+      projectStorageGeneration: 1,
+      templateId: 'tmpl_task_file_template_1',
+      actorUserId: 'user_1',
+      requestId: 'req_template_clone_denied',
+    })).rejects.toThrow('file_library_template_clone_not_allowed');
+
+    const mapping = await mappingRepo.getByLibraryId('ws_default', 'proj_1', 'flib_clone_denied');
+    expect(mapping).toMatchObject({
+      operation_id: null,
+      operation_status: 'failed',
+      last_error_code: 'file_library_template_clone_not_allowed',
+    });
+    expect(JSON.stringify(mapping)).not.toMatch(/tmpl_task_file_template_1|op_template_hidden|corr_template_denied|credential|control_root/);
+  });
+
+  it('uses an independent short-lived signal when canceling a download export after request abort', async () => {
+    const userAbort = new AbortController();
+    const fetchMock = vi.fn(async () => new Response(
+      new ReadableStream<Uint8Array>({
+        start(controller) {
+          controller.enqueue(new TextEncoder().encode('partial'));
+        },
+      }),
+      {
+        status: 200,
+        headers: { 'Content-Type': 'text/plain' },
+      },
+    )) as unknown as typeof fetch;
+    const { client, adapter } = await createMappedAdapter({ fetchFn: fetchMock });
+
+    const result = await adapter.downloadObject({
+      workspaceId: 'ws_default',
+      projectId: 'proj_1',
+      libraryId: 'flib_123',
+      objectPath: 'docs/hello.txt',
+      requestId: 'req_download_cancel',
+      signal: userAbort.signal,
+    });
+    expect(client.revokeExport).not.toHaveBeenCalled();
+
+    userAbort.abort(new Error('client aborted token=svc-secret-token'));
+    await result.download.cancel(userAbort.signal.reason);
+    await vi.waitFor(() => expect(client.revokeExport).toHaveBeenCalled());
+
+    const revokeInput = vi.mocked(client.revokeExport).mock.calls[0]?.[0];
+    expect(revokeInput?.signal).toBeInstanceOf(AbortSignal);
+    expect(revokeInput?.signal).not.toBe(userAbort.signal);
+    expect(revokeInput?.signal?.aborted).toBe(false);
+    expect(JSON.stringify(revokeInput)).not.toContain('svc-secret-token');
+  });
+
+  it('fails file operations closed when project storage namespace is not ready', async () => {
+    const docStore = new InMemoryJsonDocStore();
+    const client = createProductClient();
+    const mappingRepo = new JsonDocProjectFileLibraryAfscpMappingRepo(docStore);
+    await mappingRepo.saveReady({
+      workspaceId: 'ws_default',
+      projectId: 'proj_1',
+      libraryId: 'flib_123',
+      namespaceId: 'ns_project_1',
+      repoId: 'repo_flib_123',
+      projectStorageGeneration: 1,
+      operationId: 'op_repo_create',
+    });
+    const adapter = new AfscpFileLibraryStorageAdapter({
+      client,
+      mappingRepo,
+      projectAfscpNamespaceStore: new ProjectAfscpNamespaceStore(docStore),
+      resourceOwnershipStore: new ProjectAfscpResourceOwnershipStore(docStore),
+      fetchFn: vi.fn() as unknown as typeof fetch,
+    });
+
+    await expect(adapter.listEntries({
+      workspaceId: 'ws_default',
+      projectId: 'proj_1',
+      libraryId: 'flib_123',
+      path: '',
+      pageSize: 20,
+      sortBy: 'name',
+      sortOrder: 'asc',
+    })).rejects.toThrow('file_library_project_storage_not_ready');
+    expect(client.createExport).not.toHaveBeenCalled();
+  });
+
+  it('fails file operations closed when mapping generation does not match the ready project namespace', async () => {
+    const fetchMock = vi.fn(async () => new Response('<d:multistatus xmlns:d="DAV:" />', {
+      status: 207,
+      headers: { 'Content-Type': 'application/xml' },
+    })) as unknown as typeof fetch;
+    const { docStore, client, namespaceStore, adapter } = await createMappedAdapter({ fetchFn: fetchMock });
+    const namespace = await namespaceStore.getProjectNamespace({
+      workspaceId: 'ws_default',
+      projectId: 'proj_1',
+    });
+    expect(namespace).not.toBeNull();
+    if (namespace) {
+      await docStore.upsert(PROJECT_AFSCP_NAMESPACE_COLLECTION, namespace.id, {
+        ...namespace,
+        generation: 2,
+      });
+    }
+
+    await expect(adapter.listEntries({
+      workspaceId: 'ws_default',
+      projectId: 'proj_1',
+      libraryId: 'flib_123',
+      path: '',
+      pageSize: 20,
+      sortBy: 'name',
+      sortOrder: 'asc',
+    })).rejects.toThrow('file_library_project_storage_generation_mismatch');
+    expect(client.createExport).not.toHaveBeenCalled();
+  });
+
+  it('redacts per-path delete errors from WebDAV failures', async () => {
+    const fetchMock = vi.fn(async () => {
+      throw new Error('webdav delete failed password=one-time-webdav-secret metadata_url=postgres://db');
+    }) as unknown as typeof fetch;
+    const { adapter } = await createMappedAdapter({ fetchFn: fetchMock });
+
+    await expect(adapter.deletePaths({
+      workspaceId: 'ws_default',
+      projectId: 'proj_1',
+      libraryId: 'flib_123',
+      paths: ['docs/secret.txt'],
+      actorUserId: 'user_1',
+    })).resolves.toEqual([
+      {
+        path: 'docs/secret.txt',
+        status: 'error',
+        error_code: 'file_library_delete_failed',
+        message: 'file_library_delete_failed',
+      },
+    ]);
+  });
+});

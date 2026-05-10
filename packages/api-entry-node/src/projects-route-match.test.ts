@@ -188,6 +188,70 @@ describe('matchProjectsRoute', () => {
       projectId: 'proj_1',
     });
   });
+
+  it('matches file-library save point, restore, and task file template routes', () => {
+    expect(
+      matchProjectsRoute('/api/v1/workspaces/ws_default/projects/proj_1/file-libraries/flib_1/save-points'),
+    ).toEqual({
+      kind: 'fileLibrarySavePoints',
+      workspaceId: 'ws_default',
+      projectId: 'proj_1',
+      libraryId: 'flib_1',
+    });
+
+    expect(
+      matchProjectsRoute('/api/v1/workspaces/ws_default/projects/proj_1/file-libraries/flib_1/restore-preview'),
+    ).toEqual({
+      kind: 'fileLibraryRestorePreview',
+      workspaceId: 'ws_default',
+      projectId: 'proj_1',
+      libraryId: 'flib_1',
+    });
+
+    expect(
+      matchProjectsRoute('/api/v1/workspaces/ws_default/projects/proj_1/file-libraries/flib_1/restore-run'),
+    ).toEqual({
+      kind: 'fileLibraryRestoreRun',
+      workspaceId: 'ws_default',
+      projectId: 'proj_1',
+      libraryId: 'flib_1',
+    });
+
+    expect(
+      matchProjectsRoute('/api/v1/workspaces/ws_default/projects/proj_1/file-libraries/flib_1/restore-cancel'),
+    ).toEqual({
+      kind: 'fileLibraryRestoreCancel',
+      workspaceId: 'ws_default',
+      projectId: 'proj_1',
+      libraryId: 'flib_1',
+    });
+
+    expect(
+      matchProjectsRoute('/api/v1/workspaces/ws_default/projects/proj_1/file-library-operations/op_repo_create'),
+    ).toEqual({
+      kind: 'fileLibraryOperation',
+      workspaceId: 'ws_default',
+      projectId: 'proj_1',
+      operationId: 'op_repo_create',
+    });
+
+    expect(
+      matchProjectsRoute('/api/v1/workspaces/ws_default/projects/proj_1/task-file-templates'),
+    ).toEqual({
+      kind: 'taskFileTemplates',
+      workspaceId: 'ws_default',
+      projectId: 'proj_1',
+    });
+
+    expect(
+      matchProjectsRoute('/api/v1/workspaces/ws_default/projects/proj_1/task-file-templates/tftpl_1/publish'),
+    ).toEqual({
+      kind: 'taskFileTemplatePublish',
+      workspaceId: 'ws_default',
+      projectId: 'proj_1',
+      taskFileTemplateId: 'tftpl_1',
+    });
+  });
   it('matches agent runner management and key routes only on the canonical public namespace', () => {
     expect(
       matchProjectsRoute('/api/v1/workspaces/ws_default/projects/proj_1/agent-runners'),
@@ -260,30 +324,6 @@ describe('matchProjectsRoute', () => {
       libraryId: 'lib_1',
     });
     expect(
-      matchProjectsRoute('/api/v1/workspaces/ws_default/projects/proj_1/file-libraries/lib_1/backend'),
-    ).toEqual({
-      kind: 'fileLibraryBackend',
-      workspaceId: 'ws_default',
-      projectId: 'proj_1',
-      libraryId: 'lib_1',
-    });
-    expect(
-      matchProjectsRoute('/api/v1/workspaces/ws_default/projects/proj_1/file-libraries/lib_1/storage-credential-exchange'),
-    ).toEqual({
-      kind: 'fileLibraryStorageCredentialExchange',
-      workspaceId: 'ws_default',
-      projectId: 'proj_1',
-      libraryId: 'lib_1',
-    });
-    expect(
-      matchProjectsRoute('/api/v1/workspaces/ws_default/projects/proj_1/file-libraries/lib_1/desktop-mount-access'),
-    ).toEqual({
-      kind: 'fileLibraryDesktopMountAccess',
-      workspaceId: 'ws_default',
-      projectId: 'proj_1',
-      libraryId: 'lib_1',
-    });
-    expect(
       matchProjectsRoute('/api/v1/workspaces/ws_default/projects/proj_1/file-libraries/lib_1/entries'),
     ).toEqual({
       kind: 'fileLibraryEntries',
@@ -339,14 +379,6 @@ describe('matchProjectsRoute', () => {
       projectId: 'proj_1',
       libraryId: 'lib_1',
     });
-    expect(
-      matchProjectsRoute('/api/v1/workspaces/ws_default/projects/proj_1/file-libraries/lib_1/share-link'),
-    ).toEqual({
-      kind: 'fileLibraryShareLink',
-      workspaceId: 'ws_default',
-      projectId: 'proj_1',
-      libraryId: 'lib_1',
-    });
   });
 
   it('matches file library control plane routes', () => {
@@ -361,30 +393,6 @@ describe('matchProjectsRoute', () => {
       matchProjectsRoute('/api/v1/workspaces/ws_default/projects/proj_1/file-libraries/flib_1'),
     ).toEqual({
       kind: 'fileLibraryItem',
-      workspaceId: 'ws_default',
-      projectId: 'proj_1',
-      libraryId: 'flib_1',
-    });
-    expect(
-      matchProjectsRoute('/api/v1/workspaces/ws_default/projects/proj_1/file-libraries/flib_1/backend'),
-    ).toEqual({
-      kind: 'fileLibraryBackend',
-      workspaceId: 'ws_default',
-      projectId: 'proj_1',
-      libraryId: 'flib_1',
-    });
-    expect(
-      matchProjectsRoute('/api/v1/workspaces/ws_default/projects/proj_1/file-libraries/flib_1/storage-credential-exchange'),
-    ).toEqual({
-      kind: 'fileLibraryStorageCredentialExchange',
-      workspaceId: 'ws_default',
-      projectId: 'proj_1',
-      libraryId: 'flib_1',
-    });
-    expect(
-      matchProjectsRoute('/api/v1/workspaces/ws_default/projects/proj_1/file-libraries/flib_1/desktop-mount-access'),
-    ).toEqual({
-      kind: 'fileLibraryDesktopMountAccess',
       workspaceId: 'ws_default',
       projectId: 'proj_1',
       libraryId: 'flib_1',
@@ -421,6 +429,16 @@ describe('matchProjectsRoute', () => {
       projectId: 'proj_1',
       libraryId: 'flib_1',
     });
+  });
+
+  it('does not match removed file library connector routes', () => {
+    for (const path of [
+      '/api/v1/workspaces/ws_default/projects/proj_1/file-libraries/lib_1/backend',
+      '/api/v1/workspaces/ws_default/projects/proj_1/file-libraries/lib_1/storage-credential-exchange',
+      '/api/v1/workspaces/ws_default/projects/proj_1/file-libraries/lib_1/desktop-mount-access',
+    ]) {
+      expect(matchProjectsRoute(path)).toBeNull();
+    }
   });
 
   it('matches project members governance read routes', () => {

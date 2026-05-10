@@ -62,7 +62,6 @@ describe('WorkspaceLoginCallbackClient', () => {
         createdAt: Date.now(),
         workspaceId: 'ws_alpha',
         locale: 'en-US',
-        desktopAuthRequestId: 'req_123',
       }),
     );
     fetchMock.mockImplementation(async (input: RequestInfo | URL) => {
@@ -91,9 +90,6 @@ describe('WorkspaceLoginCallbackClient', () => {
             expires_in: 3600,
           }),
         } as Response;
-      }
-      if (url === 'https://api.example.com/me/desktop/auth/requests/req_123/complete') {
-        return { ok: true } as Response;
       }
       if (url === '/api/public/workspaces/ws_alpha/admin-binding') {
         return { ok: true } as Response;
@@ -131,7 +127,7 @@ describe('WorkspaceLoginCallbackClient', () => {
     });
   });
 
-  it('completes desktop auth request during keycloak callback and redirects to completion page', async () => {
+  it('completes keycloak callback and redirects to workspace entry', async () => {
     render(<WorkspaceLoginCallbackClient workspaceId="ws_alpha" />);
 
     await waitFor(() => {
@@ -140,13 +136,9 @@ describe('WorkspaceLoginCallbackClient', () => {
         'https://login.example.com/realms/alpha/protocol/openid-connect/token',
         expect.objectContaining({ method: 'POST' }),
       );
-      expect(fetchMock).toHaveBeenCalledWith(
-        'https://api.example.com/me/desktop/auth/requests/req_123/complete',
-        expect.objectContaining({ method: 'POST' }),
-      );
       expect(mockSetAuth).toHaveBeenCalled();
       expect(mockSetToken).toHaveBeenCalledWith('access_123');
-      expect(mockReplace).toHaveBeenCalledWith('/en-US/desktop/auth/complete?desktop_auth_request_id=req_123');
+      expect(mockReplace).toHaveBeenCalledWith('/en-US/workspaces/ws_alpha/projects');
     });
   });
 
@@ -260,49 +252,4 @@ describe('WorkspaceLoginCallbackClient', () => {
     });
   });
 
-  it('keeps auth and returns to desktop handoff recovery when callback desktop completion fails', async () => {
-    fetchMock.mockImplementation(async (input: RequestInfo | URL) => {
-      const url = String(input);
-      if (url === '/api/public/workspaces/ws_alpha') {
-        return {
-          ok: true,
-          json: async () => ({
-            id: 'ws_alpha',
-            name: 'Alpha Workspace',
-            login_idp: {
-              kind: 'keycloak',
-              url: 'https://login.example.com',
-              realm: 'alpha',
-              client_id: 'alpha-client',
-            },
-          }),
-        } as Response;
-      }
-      if (url === 'https://login.example.com/realms/alpha/protocol/openid-connect/token') {
-        return {
-          ok: true,
-          json: async () => ({
-            access_token: 'access_123',
-            refresh_token: 'refresh_123',
-            expires_in: 3600,
-          }),
-        } as Response;
-      }
-      if (url === 'https://api.example.com/me/desktop/auth/requests/req_123/complete') {
-        return { ok: false, status: 503 } as Response;
-      }
-      if (url === '/api/public/workspaces/ws_alpha/admin-binding') {
-        return { ok: true } as Response;
-      }
-      throw new Error(`Unexpected fetch: ${url}`);
-    });
-
-    render(<WorkspaceLoginCallbackClient workspaceId="ws_alpha" />);
-
-    await waitFor(() => {
-      expect(mockSetAuth).toHaveBeenCalled();
-      expect(mockSetToken).toHaveBeenCalledWith('access_123');
-      expect(mockReplace).toHaveBeenCalledWith('/en-US/desktop/auth/request?desktop_auth_request_id=req_123');
-    });
-  });
 });

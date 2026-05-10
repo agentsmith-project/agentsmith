@@ -18,18 +18,11 @@ describe('run-integration-release-user-story integration dependency contract', (
     expect(script).not.toContain(':-notebook');
   });
 
-  it('uses integration dependency ports as the single source of truth for internal runner mounts and child lane env', () => {
+  it('keeps internal runner storage bootstrap behind AFSCP substrate env names', () => {
     const script = readFileSync('scripts/run-integration-release-user-story.sh', 'utf8');
 
     expect(script).toContain('INTEGRATION_POSTGRES_PORT="${INTEGRATION_POSTGRES_PORT:-25432}"');
     expect(script).toContain('INTEGRATION_MINIO_API_PORT="${INTEGRATION_MINIO_API_PORT:-29000}"');
-
-    expect(script).toContain(
-      'AGENT_RUNNER_DEVELOPER_JUICEFS_META_PORT_OVERRIDE_VALUE="${AGENT_RUNNER_DEVELOPER_JUICEFS_META_PORT_OVERRIDE:-${INTEGRATION_POSTGRES_PORT}}"',
-    );
-    expect(script).toContain(
-      'AGENT_RUNNER_DEVELOPER_JUICEFS_STORAGE_ENDPOINT_OVERRIDE_VALUE="${AGENT_RUNNER_DEVELOPER_JUICEFS_STORAGE_ENDPOINT_OVERRIDE:-http://127.0.0.1:${INTEGRATION_MINIO_API_PORT}}"',
-    );
 
     expect(script).toContain('render_k8s_external_dependency_services \\');
     expect(script).toContain('  "${INTEGRATION_POSTGRES_PORT}" \\');
@@ -40,9 +33,12 @@ describe('run-integration-release-user-story integration dependency contract', (
 
     expect(script).toContain('INTEGRATION_POSTGRES_PORT="${INTEGRATION_POSTGRES_PORT}" \\');
     expect(script).toContain('INTEGRATION_MINIO_API_PORT="${INTEGRATION_MINIO_API_PORT}" \\');
+    expect(script).toContain('AFSCP_STORAGE_CSI_DRIVER="${CSI_DRIVER}" \\');
+    expect(script).toContain('AFSCP_SUBSTRATE_OBJECT_STORAGE_ENDPOINT="${AFSCP_SUBSTRATE_OBJECT_STORAGE_ENDPOINT_VALUE}" \\');
 
-    expect(script).not.toContain('AGENT_RUNNER_DEVELOPER_JUICEFS_META_PORT_OVERRIDE_VALUE="${AGENT_RUNNER_DEVELOPER_JUICEFS_META_PORT_OVERRIDE:-15432}"');
-    expect(script).not.toContain('AGENT_RUNNER_DEVELOPER_JUICEFS_STORAGE_ENDPOINT_OVERRIDE_VALUE="${AGENT_RUNNER_DEVELOPER_JUICEFS_STORAGE_ENDPOINT_OVERRIDE:-http://127.0.0.1:19000}"');
+    expect(script).not.toContain('AGENT_RUNNER_DEVELOPER_JUICEFS');
+    expect(script).not.toContain('INTERNAL_AGENT_JUICEFS');
+    expect(script).not.toContain('JUICEFS_BUCKET_ENDPOINT_FOR_INTERNAL_MOUNT');
     expect(script).not.toContain('STORAGE_ENDPOINT="localhost:19000"');
     expect(script).not.toContain('endpoint: localhost:19000');
   });

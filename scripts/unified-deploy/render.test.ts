@@ -660,9 +660,9 @@ describe('unified deploy render producer', () => {
       name: 'JUICEFS_STORAGE_ENDPOINT',
       value: 'http://substrate-minio.agentsmith.svc.cluster.local:9000',
     });
-    expect(appConfigData.INTERNAL_AGENT_JUICEFS_META_HOST_OVERRIDE).toBe('substrate-postgresql.agentsmith.svc.cluster.local');
-    expect(appConfigData.INTERNAL_AGENT_JUICEFS_META_PORT_OVERRIDE).toBe('5432');
-    expect(appConfigData.JUICEFS_BUCKET_ENDPOINT_FOR_INTERNAL_MOUNT).toBe('http://substrate-minio.agentsmith.svc.cluster.local:9000');
+    expect(appConfigData.INTERNAL_AGENT_JUICEFS_META_HOST_OVERRIDE).toBeUndefined();
+    expect(appConfigData.INTERNAL_AGENT_JUICEFS_META_PORT_OVERRIDE).toBeUndefined();
+    expect(appConfigData.JUICEFS_BUCKET_ENDPOINT_FOR_INTERNAL_MOUNT).toBeUndefined();
     expect(containerEnvEntry(documents, 'agentsmith-sandbox-manager', 'sandbox-manager', 'JUICEFS_STORAGE_ACCESS_KEY')).toEqual({
       name: 'JUICEFS_STORAGE_ACCESS_KEY',
       valueFrom: {
@@ -929,9 +929,9 @@ API_REPLICAS=2
     expect(config.KEYCLOAK_ISSUER_URL).toBe('https://sentinel-login.example.com/realms/sentinel-realm');
     expect(config.PUBLIC_KEYCLOAK_BASE_URL).toBe('https://sentinel-login.example.com');
     expect(config.INTERNAL_KEYCLOAK_BASE_URL).toBe('http://substrate-keycloak:8080');
-    expect(config.INTERNAL_AGENT_JUICEFS_META_HOST_OVERRIDE).toBe('substrate-postgresql.agentsmith.svc.cluster.local');
-    expect(config.INTERNAL_AGENT_JUICEFS_META_PORT_OVERRIDE).toBe('5432');
-    expect(config.JUICEFS_BUCKET_ENDPOINT_FOR_INTERNAL_MOUNT).toBe('http://substrate-minio.agentsmith.svc.cluster.local:9000');
+    expect(config.INTERNAL_AGENT_JUICEFS_META_HOST_OVERRIDE).toBeUndefined();
+    expect(config.INTERNAL_AGENT_JUICEFS_META_PORT_OVERRIDE).toBeUndefined();
+    expect(config.JUICEFS_BUCKET_ENDPOINT_FOR_INTERNAL_MOUNT).toBeUndefined();
     expect(config.KEYCLOAK_REALM).toBe('sentinel-realm');
     expect(config.KEYCLOAK_ADMIN_CLIENT_ID).toBe('admin-cli');
     expect(stringData.KEYCLOAK_ADMIN).toBe('sentinel-admin');
@@ -1035,9 +1035,9 @@ SANDBOX_SERVICE_KEY=substrate_should_not_override_app_secret
     expect(config.KEYCLOAK_ISSUER_URL).toBe('https://sentinel-login.example.com/realms/sentinel-realm');
     expect(config.PUBLIC_KEYCLOAK_BASE_URL).toBe('https://sentinel-login.example.com');
     expect(config.INTERNAL_KEYCLOAK_BASE_URL).toBe('http://substrate-keycloak:8080');
-    expect(config.INTERNAL_AGENT_JUICEFS_META_HOST_OVERRIDE).toBe('substrate-postgresql.agentsmith.svc.cluster.local');
-    expect(config.INTERNAL_AGENT_JUICEFS_META_PORT_OVERRIDE).toBe('5432');
-    expect(config.JUICEFS_BUCKET_ENDPOINT_FOR_INTERNAL_MOUNT).toBe('http://substrate-minio.agentsmith.svc.cluster.local:9000');
+    expect(config.INTERNAL_AGENT_JUICEFS_META_HOST_OVERRIDE).toBeUndefined();
+    expect(config.INTERNAL_AGENT_JUICEFS_META_PORT_OVERRIDE).toBeUndefined();
+    expect(config.JUICEFS_BUCKET_ENDPOINT_FOR_INTERNAL_MOUNT).toBeUndefined();
     expect(config.KEYCLOAK_REALM).toBe('sentinel-realm');
     expect(config.KEYCLOAK_ADMIN_CLIENT_ID).toBe('admin-cli');
     expect(stringData.KEYCLOAK_ADMIN).toBe('sentinel-admin');

@@ -1,15 +1,13 @@
 import type { JsonDocStorePort } from '@mbos/ports';
 import { createHash, randomUUID } from 'node:crypto';
-import { encryptSecretValue, decryptSecretValue } from './secret-crypto.js';
 import type {
-  FileLibraryBackendRecord,
-  FileLibraryMountAccess,
   FileLibraryRecord,
 } from './file-library-model.js';
 
-const FILE_LIBRARY_CATALOG_COLLECTION = 'project_file_libraries';
-const FILE_LIBRARY_BACKEND_COLLECTION = 'project_file_library_backends';
-const FILE_LIBRARY_MOUNT_ACCESS_COLLECTION = 'project_file_library_mount_access';
+export const FILE_LIBRARY_CATALOG_COLLECTION = 'project_file_libraries';
+const FILE_LIBRARY_SAVE_POINT_MAPPING_COLLECTION = 'project_file_library_save_point_mappings';
+const FILE_LIBRARY_RESTORE_PREVIEW_COLLECTION = 'project_file_library_restore_previews';
+const TASK_FILE_TEMPLATE_COLLECTION = 'project_task_file_templates';
 const FILE_LIBRARY_HOME_SEGMENT_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/;
 
 type FileLibraryLifecycleFenceKind = 'binding_acquire';
@@ -30,34 +28,50 @@ export type FileLibraryLifecycleFence = {
   library: FileLibraryRecord;
 };
 
-type FileLibraryBackendSecretRecord = Omit<FileLibraryBackendRecord, 'postgres'> & {
-  postgres: FileLibraryBackendRecord['postgres'] & {
-    encrypted_metadata_url?: string;
-    encrypted_internal_metadata_url?: string;
-  };
-};
+const FILE_LIBRARY_PUBLIC_RECORD_KEYS = new Set<string>([
+  'id',
+  'workspace_id',
+  'project_id',
+  'name',
+  'description',
+  'status',
+  'version',
+  'file_library_home_segment',
+  'source',
+  'delete_correlation_id',
+  'created_by_user_id',
+  'created_at',
+  'updated_at',
+]);
 
-type FileLibraryMountAccessSecretRecord = Omit<FileLibraryMountAccess, 'metadata_url'> & {
-  encrypted_metadata_url: string;
-};
+const FILE_LIBRARY_STORED_RECORD_KEYS = new Set<string>([
+  ...FILE_LIBRARY_PUBLIC_RECORD_KEYS,
+  'lifecycle_fence_token',
+  'lifecycle_fence_kind',
+  'lifecycle_fence_owner_task_id',
+  'lifecycle_fence_correlation_id',
+  'lifecycle_fence_expires_at',
+]);
 
-export function normalizeFileLibraryMetadataUrl(metadataUrl: string): string {
-  try {
-    const parsed = new URL(metadataUrl);
-    if (parsed.protocol !== 'postgres:' && parsed.protocol !== 'postgresql:') {
-      return metadataUrl;
-    }
-    if (parsed.hostname !== 'localhost' && parsed.hostname !== '127.0.0.1') {
-      return metadataUrl;
-    }
-    if (!parsed.searchParams.has('sslmode')) {
-      parsed.searchParams.set('sslmode', 'disable');
-    }
-    return parsed.toString();
-  } catch {
-    return metadataUrl;
-  }
-}
+const FILE_LIBRARY_STATUSES = new Set<FileLibraryRecord['status']>([
+  'creating',
+  'ready',
+  'degraded',
+  'failed',
+  'deleting',
+  'deleted',
+]);
+
+const FILE_LIBRARY_UPDATE_PATCH_KEYS = new Set<string>([
+  'name',
+  'description',
+  'status',
+  'updated_at',
+  'version',
+  'file_library_home_segment',
+  'source',
+  'delete_correlation_id',
+]);
 
 function assertFileLibraryHomeSegment(segment: string): string {
   const trimmed = segment.trim();
@@ -77,85 +91,161 @@ export function generateFileLibraryHomeSegment(): string {
   return assertFileLibraryHomeSegment(`flibhome_${randomUUID().replace(/-/g, '').slice(0, 24)}`);
 }
 
-function deriveLegacyFileLibraryHomeSegment(input: {
-  workspaceId: string;
-  projectId: string;
-  libraryId: string;
-}): string {
-  const hash = createHash('sha256')
-    .update(`${input.workspaceId}/${input.projectId}/${input.libraryId}`)
-    .digest('hex')
-    .slice(0, 32);
-  return assertFileLibraryHomeSegment(`flibhome_${hash}`);
+function assertCatalogRecordObject(record: unknown): Record<string, unknown> {
+  if (typeof record !== 'object' || record === null || Array.isArray(record)) {
+    throw new Error('invalid_file_library_catalog_record');
+  }
+  return record as Record<string, unknown>;
+}
+
+function assertCatalogRecordKeys(raw: Record<string, unknown>, allowedKeys: Set<string>): void {
+  if (Object.keys(raw).some((key) => !allowedKeys.has(key))) {
+    throw new Error('invalid_file_library_catalog_record');
+  }
+}
+
+function requireStringField(raw: Record<string, unknown>, key: string): string {
+  const value = raw[key];
+  if (typeof value !== 'string') {
+    throw new Error('invalid_file_library_catalog_record');
+  }
+  return value;
+}
+
+function optionalStringField(raw: Record<string, unknown>, key: string): string | undefined {
+  const value = raw[key];
+  if (value === undefined) {
+    return undefined;
+  }
+  if (typeof value !== 'string') {
+    throw new Error('invalid_file_library_catalog_record');
+  }
+  return value;
+}
+
+function requireVersion(raw: Record<string, unknown>): number {
+  const value = raw.version;
+  if (typeof value !== 'number' || !Number.isInteger(value) || value <= 0) {
+    throw new Error('invalid_file_library_catalog_record');
+  }
+  return value;
+}
+
+function requireStatus(raw: Record<string, unknown>): FileLibraryRecord['status'] {
+  const value = raw.status;
+  if (typeof value !== 'string' || !FILE_LIBRARY_STATUSES.has(value as FileLibraryRecord['status'])) {
+    throw new Error('invalid_file_library_catalog_record');
+  }
+  return value as FileLibraryRecord['status'];
+}
+
+function requireCurrentSource(raw: Record<string, unknown>): FileLibraryRecord['source'] {
+  if (raw.source !== 'agent_task_files') {
+    throw new Error('invalid_file_library_catalog_record');
+  }
+  return 'agent_task_files';
+}
+
+function normalizeFileLibraryPublicFields(raw: Record<string, unknown>): FileLibraryRecord {
+  const fileLibraryHomeSegment = assertFileLibraryHomeSegment(
+    requireStringField(raw, 'file_library_home_segment'),
+  );
+  return {
+    id: requireStringField(raw, 'id'),
+    workspace_id: requireStringField(raw, 'workspace_id'),
+    project_id: requireStringField(raw, 'project_id'),
+    name: requireStringField(raw, 'name'),
+    description: optionalStringField(raw, 'description'),
+    status: requireStatus(raw),
+    version: requireVersion(raw),
+    file_library_home_segment: fileLibraryHomeSegment,
+    source: requireCurrentSource(raw),
+    delete_correlation_id: optionalStringField(raw, 'delete_correlation_id'),
+    created_by_user_id: requireStringField(raw, 'created_by_user_id'),
+    created_at: requireStringField(raw, 'created_at'),
+    updated_at: requireStringField(raw, 'updated_at'),
+  };
 }
 
 export function normalizeFileLibraryRecord(record: FileLibraryRecord): FileLibraryRecord {
-  const raw = record as FileLibraryRecord & {
-    version?: unknown;
-    file_library_home_segment?: unknown;
-    source?: unknown;
-  } & FileLibraryLifecycleFenceFields;
-  const version = typeof raw.version === 'number' && Number.isInteger(raw.version) && raw.version > 0
-    ? raw.version
-    : 1;
-  const fileLibraryHomeSegment = typeof raw.file_library_home_segment === 'string' && raw.file_library_home_segment.trim()
-    ? assertFileLibraryHomeSegment(raw.file_library_home_segment)
-    : deriveLegacyFileLibraryHomeSegment({
-        workspaceId: record.workspace_id,
-        projectId: record.project_id,
-        libraryId: record.id,
-      });
-  const source = raw.source === 'agent_task_auto' ? 'agent_task_auto' : 'manual';
-  const {
-    lifecycle_fence_token: _lifecycleFenceToken,
-    lifecycle_fence_kind: _lifecycleFenceKind,
-    lifecycle_fence_owner_task_id: _lifecycleFenceOwnerTaskId,
-    lifecycle_fence_correlation_id: _lifecycleFenceCorrelationId,
-    lifecycle_fence_expires_at: _lifecycleFenceExpiresAt,
-    ...publicRecord
-  } = record as FileLibraryRecord & FileLibraryLifecycleFenceFields;
-  return {
-    ...publicRecord,
-    version,
-    file_library_home_segment: fileLibraryHomeSegment,
-    source,
-  };
+  const raw = assertCatalogRecordObject(record);
+  assertCatalogRecordKeys(raw, FILE_LIBRARY_PUBLIC_RECORD_KEYS);
+  return normalizeFileLibraryPublicFields(raw);
 }
 
 function normalizeFileLibraryStoredRecord(record: FileLibraryRecord | FileLibraryStoredRecord): FileLibraryStoredRecord {
-  const publicRecord = normalizeFileLibraryRecord(record as FileLibraryRecord);
-  const raw = record as FileLibraryStoredRecord;
-  const token = typeof raw.lifecycle_fence_token === 'string' && raw.lifecycle_fence_token.trim()
-    ? raw.lifecycle_fence_token.trim()
-    : null;
+  const raw = assertCatalogRecordObject(record);
+  assertCatalogRecordKeys(raw, FILE_LIBRARY_STORED_RECORD_KEYS);
+  const publicRecord = normalizeFileLibraryPublicFields(raw);
+  const tokenValue = raw.lifecycle_fence_token;
+  const token = tokenValue === undefined || tokenValue === null ? null : requireStringField(raw, 'lifecycle_fence_token');
+  if (token !== null && token.trim() !== token) {
+    throw new Error('invalid_file_library_catalog_record');
+  }
+  if (token !== null && token === '') {
+    throw new Error('invalid_file_library_catalog_record');
+  }
+  if (token === null) {
+    for (const key of [
+      'lifecycle_fence_kind',
+      'lifecycle_fence_owner_task_id',
+      'lifecycle_fence_correlation_id',
+      'lifecycle_fence_expires_at',
+    ]) {
+      if (raw[key] !== undefined && raw[key] !== null) {
+        throw new Error('invalid_file_library_catalog_record');
+      }
+    }
+  } else if (
+    raw.lifecycle_fence_kind !== 'binding_acquire'
+    || typeof raw.lifecycle_fence_owner_task_id !== 'string'
+    || typeof raw.lifecycle_fence_correlation_id !== 'string'
+    || typeof raw.lifecycle_fence_expires_at !== 'string'
+  ) {
+    throw new Error('invalid_file_library_catalog_record');
+  }
+  const lifecycleFenceOwnerTaskId = token === null
+    ? null
+    : requireStringField(raw, 'lifecycle_fence_owner_task_id');
+  const lifecycleFenceCorrelationId = token === null
+    ? null
+    : requireStringField(raw, 'lifecycle_fence_correlation_id');
+  const lifecycleFenceExpiresAt = token === null
+    ? null
+    : requireStringField(raw, 'lifecycle_fence_expires_at');
   return {
     ...publicRecord,
     lifecycle_fence_token: token,
-    lifecycle_fence_kind: token && raw.lifecycle_fence_kind === 'binding_acquire' ? 'binding_acquire' : null,
-    lifecycle_fence_owner_task_id: token && typeof raw.lifecycle_fence_owner_task_id === 'string'
-      ? raw.lifecycle_fence_owner_task_id
-      : null,
-    lifecycle_fence_correlation_id: token && typeof raw.lifecycle_fence_correlation_id === 'string'
-      ? raw.lifecycle_fence_correlation_id
-      : null,
-    lifecycle_fence_expires_at: token && typeof raw.lifecycle_fence_expires_at === 'string'
-      ? raw.lifecycle_fence_expires_at
-      : null,
+    lifecycle_fence_kind: token === null ? null : 'binding_acquire',
+    lifecycle_fence_owner_task_id: lifecycleFenceOwnerTaskId,
+    lifecycle_fence_correlation_id: lifecycleFenceCorrelationId,
+    lifecycle_fence_expires_at: lifecycleFenceExpiresAt,
   };
 }
 
-function hasStoredRecordDrift(
-  record: FileLibraryStoredRecord,
-  normalized: FileLibraryStoredRecord,
-): boolean {
-  return normalized.version !== record.version
-    || normalized.file_library_home_segment !== record.file_library_home_segment
-    || normalized.source !== record.source
-    || normalized.lifecycle_fence_token !== record.lifecycle_fence_token
-    || normalized.lifecycle_fence_kind !== record.lifecycle_fence_kind
-    || normalized.lifecycle_fence_owner_task_id !== record.lifecycle_fence_owner_task_id
-    || normalized.lifecycle_fence_correlation_id !== record.lifecycle_fence_correlation_id
-    || normalized.lifecycle_fence_expires_at !== record.lifecycle_fence_expires_at;
+function tryNormalizeFileLibraryStoredRecord(
+  record: FileLibraryRecord | FileLibraryStoredRecord,
+): FileLibraryStoredRecord | null {
+  try {
+    return normalizeFileLibraryStoredRecord(record);
+  } catch {
+    return null;
+  }
+}
+
+function toPublicFileLibraryRecord(record: FileLibraryStoredRecord): FileLibraryRecord {
+  return normalizeFileLibraryPublicFields(record as unknown as Record<string, unknown>);
+}
+
+function toPublicFileLibraryRecords(records: FileLibraryStoredRecord[]): FileLibraryRecord[] {
+  const normalized: FileLibraryRecord[] = [];
+  for (const record of records) {
+    const stored = tryNormalizeFileLibraryStoredRecord(record);
+    if (stored) {
+      normalized.push(toPublicFileLibraryRecord(stored));
+    }
+  }
+  return normalized;
 }
 
 export function buildFileLibraryRecord(input: {
@@ -164,10 +254,8 @@ export function buildFileLibraryRecord(input: {
   projectId: string;
   name: string;
   description?: string;
-  filesystemName: string;
   createdByUserId: string;
   status?: FileLibraryRecord['status'];
-  source?: FileLibraryRecord['source'];
   fileLibraryHomeSegment?: string;
   now?: string;
 }): FileLibraryRecord {
@@ -180,11 +268,10 @@ export function buildFileLibraryRecord(input: {
     description: input.description,
     status: input.status ?? 'creating',
     version: 1,
-    filesystem_name: input.filesystemName,
     file_library_home_segment: input.fileLibraryHomeSegment
       ? assertFileLibraryHomeSegment(input.fileLibraryHomeSegment)
       : generateFileLibraryHomeSegment(),
-    source: input.source ?? 'manual',
+    source: 'agent_task_files',
     created_by_user_id: input.createdByUserId,
     created_at: now,
     updated_at: now,
@@ -201,14 +288,11 @@ export class JsonDocProjectFileLibraryCatalogRepo {
   ): Promise<FileLibraryStoredRecord | null> {
     const record = await this.docStore.get<FileLibraryStoredRecord>(FILE_LIBRARY_CATALOG_COLLECTION, libraryId);
     if (!record) return null;
-    const normalized = normalizeFileLibraryStoredRecord(record);
-    if (normalized.workspace_id !== workspaceId || normalized.project_id !== projectId) {
+    const stored = tryNormalizeFileLibraryStoredRecord(record);
+    if (!stored || stored.workspace_id !== workspaceId || stored.project_id !== projectId) {
       return null;
     }
-    if (hasStoredRecordDrift(record, normalized)) {
-      await this.saveStored(normalized);
-    }
-    return normalized;
+    return stored;
   }
 
   private async saveStored(record: FileLibraryStoredRecord): Promise<void> {
@@ -220,18 +304,18 @@ export class JsonDocProjectFileLibraryCatalogRepo {
   }
 
   async listByOwner(ownerUserId: string): Promise<FileLibraryRecord[]> {
-    const records = await this.docStore.list<FileLibraryRecord>(FILE_LIBRARY_CATALOG_COLLECTION, {
+    const records = await this.docStore.list<FileLibraryStoredRecord>(FILE_LIBRARY_CATALOG_COLLECTION, {
       created_by_user_id: ownerUserId,
     });
-    return records.map(normalizeFileLibraryRecord);
+    return toPublicFileLibraryRecords(records);
   }
 
   async listByProject(workspaceId: string, projectId: string): Promise<FileLibraryRecord[]> {
-    const records = await this.docStore.list<FileLibraryRecord>(FILE_LIBRARY_CATALOG_COLLECTION, {
+    const records = await this.docStore.list<FileLibraryStoredRecord>(FILE_LIBRARY_CATALOG_COLLECTION, {
       workspace_id: workspaceId,
       project_id: projectId,
     });
-    return records.map(normalizeFileLibraryRecord);
+    return toPublicFileLibraryRecords(records);
   }
 
   async listByProjectForOwner(
@@ -239,12 +323,12 @@ export class JsonDocProjectFileLibraryCatalogRepo {
     projectId: string,
     ownerUserId: string,
   ): Promise<FileLibraryRecord[]> {
-    const records = await this.docStore.list<FileLibraryRecord>(FILE_LIBRARY_CATALOG_COLLECTION, {
+    const records = await this.docStore.list<FileLibraryStoredRecord>(FILE_LIBRARY_CATALOG_COLLECTION, {
       workspace_id: workspaceId,
       project_id: projectId,
       created_by_user_id: ownerUserId,
     });
-    return records.map(normalizeFileLibraryRecord);
+    return toPublicFileLibraryRecords(records);
   }
 
   async getById(
@@ -253,7 +337,7 @@ export class JsonDocProjectFileLibraryCatalogRepo {
     libraryId: string,
   ): Promise<FileLibraryRecord | null> {
     const record = await this.getStoredById(workspaceId, projectId, libraryId);
-    return record ? normalizeFileLibraryRecord(record) : null;
+    return record ? toPublicFileLibraryRecord(record) : null;
   }
 
   async getByIdForOwner(
@@ -270,7 +354,7 @@ export class JsonDocProjectFileLibraryCatalogRepo {
   }
 
   async save(record: FileLibraryRecord): Promise<void> {
-    await this.saveStored(normalizeFileLibraryStoredRecord(record));
+    await this.saveStored(normalizeFileLibraryRecord(record));
   }
 
   async update(
@@ -282,7 +366,6 @@ export class JsonDocProjectFileLibraryCatalogRepo {
       | 'name'
       | 'description'
       | 'status'
-      | 'filesystem_name'
       | 'updated_at'
       | 'version'
       | 'file_library_home_segment'
@@ -290,6 +373,7 @@ export class JsonDocProjectFileLibraryCatalogRepo {
       | 'delete_correlation_id'
     >>,
   ): Promise<FileLibraryRecord | null> {
+    assertCatalogRecordKeys(assertCatalogRecordObject(patch), FILE_LIBRARY_UPDATE_PATCH_KEYS);
     const existing = await this.getStoredById(workspaceId, projectId, libraryId);
     if (!existing) {
       return null;
@@ -301,7 +385,7 @@ export class JsonDocProjectFileLibraryCatalogRepo {
       updated_at: patch.updated_at ?? new Date().toISOString(),
     };
     await this.saveStored(updated);
-    return normalizeFileLibraryRecord(updated);
+    return toPublicFileLibraryRecord(normalizeFileLibraryStoredRecord(updated));
   }
 
   async acquireReadyLifecycleFence(input: {
@@ -326,14 +410,14 @@ export class JsonDocProjectFileLibraryCatalogRepo {
       return { ok: false, code: 'FILE_LIBRARY_NOT_FOUND', library: null };
     }
     if (existing.status === 'deleting' || existing.status === 'deleted') {
-      return { ok: false, code: 'FILE_LIBRARY_DELETING', library: normalizeFileLibraryRecord(existing) };
+      return { ok: false, code: 'FILE_LIBRARY_DELETING', library: toPublicFileLibraryRecord(existing) };
     }
     if (
       existing.status !== 'ready'
       || existing.version !== input.expectedVersion
       || existing.lifecycle_fence_token !== null
     ) {
-      return { ok: false, code: 'FILE_LIBRARY_NOT_READY', library: normalizeFileLibraryRecord(existing) };
+      return { ok: false, code: 'FILE_LIBRARY_NOT_READY', library: toPublicFileLibraryRecord(existing) };
     }
     const now = input.now ?? new Date().toISOString();
     const token = `bind_${input.taskId}_${randomUUID().replace(/-/g, '').slice(0, 16)}`;
@@ -368,11 +452,11 @@ export class JsonDocProjectFileLibraryCatalogRepo {
         fence: {
           token,
           version: stored.version,
-          library: normalizeFileLibraryRecord(stored),
+          library: toPublicFileLibraryRecord(stored),
         },
       };
     }
-    const current = result.current ? normalizeFileLibraryStoredRecord(result.current) : null;
+    const current = result.current ? tryNormalizeFileLibraryStoredRecord(result.current) : null;
     if (!current) {
       return { ok: false, code: 'FILE_LIBRARY_NOT_FOUND', library: null };
     }
@@ -381,7 +465,7 @@ export class JsonDocProjectFileLibraryCatalogRepo {
       code: current.status === 'deleting' || current.status === 'deleted'
         ? 'FILE_LIBRARY_DELETING'
         : 'FILE_LIBRARY_NOT_READY',
-      library: normalizeFileLibraryRecord(current),
+      library: toPublicFileLibraryRecord(current),
     };
   }
 
@@ -413,9 +497,12 @@ export class JsonDocProjectFileLibraryCatalogRepo {
       },
     );
     if (result.ok) {
-      return { ok: true, library: normalizeFileLibraryRecord(normalizeFileLibraryStoredRecord(result.doc)) };
+      const stored = tryNormalizeFileLibraryStoredRecord(result.doc);
+      return stored
+        ? { ok: true, library: toPublicFileLibraryRecord(stored) }
+        : { ok: false, code: 'FILE_LIBRARY_NOT_FOUND', library: null };
     }
-    const current = result.current ? normalizeFileLibraryStoredRecord(result.current) : null;
+    const current = result.current ? tryNormalizeFileLibraryStoredRecord(result.current) : null;
     if (!current) {
       return { ok: false, code: 'FILE_LIBRARY_NOT_FOUND', library: null };
     }
@@ -424,7 +511,7 @@ export class JsonDocProjectFileLibraryCatalogRepo {
       code: current.status === 'deleting' || current.status === 'deleted'
         ? 'FILE_LIBRARY_DELETING'
         : 'FILE_LIBRARY_NOT_READY',
-      library: normalizeFileLibraryRecord(current),
+      library: toPublicFileLibraryRecord(current),
     };
   }
 
@@ -449,7 +536,7 @@ export class JsonDocProjectFileLibraryCatalogRepo {
       return { ok: false, code: 'FILE_LIBRARY_NOT_FOUND', library: null };
     }
     if (existing.lifecycle_fence_token === null) {
-      return { ok: true, released: false, library: normalizeFileLibraryRecord(existing) };
+      return { ok: true, released: false, library: toPublicFileLibraryRecord(existing) };
     }
     const next: FileLibraryStoredRecord = {
       ...existing,
@@ -479,10 +566,10 @@ export class JsonDocProjectFileLibraryCatalogRepo {
       return {
         ok: true,
         released: true,
-        library: normalizeFileLibraryRecord(normalizeFileLibraryStoredRecord(result.doc)),
+        library: toPublicFileLibraryRecord(normalizeFileLibraryStoredRecord(result.doc)),
       };
     }
-    const current = result.current ? normalizeFileLibraryStoredRecord(result.current) : null;
+    const current = result.current ? tryNormalizeFileLibraryStoredRecord(result.current) : null;
     if (!current) {
       return { ok: false, code: 'FILE_LIBRARY_NOT_FOUND', library: null };
     }
@@ -491,7 +578,7 @@ export class JsonDocProjectFileLibraryCatalogRepo {
       code: current.status === 'deleting' || current.status === 'deleted'
         ? 'FILE_LIBRARY_DELETING'
         : 'FILE_LIBRARY_NOT_READY',
-      library: normalizeFileLibraryRecord(current),
+      library: toPublicFileLibraryRecord(current),
     };
   }
 
@@ -515,14 +602,14 @@ export class JsonDocProjectFileLibraryCatalogRepo {
       return { ok: false, code: 'FILE_LIBRARY_NOT_FOUND', library: null };
     }
     if (existing.status === 'deleting' || existing.status === 'deleted') {
-      return { ok: false, code: 'FILE_LIBRARY_DELETING', library: normalizeFileLibraryRecord(existing) };
+      return { ok: false, code: 'FILE_LIBRARY_DELETING', library: toPublicFileLibraryRecord(existing) };
     }
     if (
       existing.status !== 'ready'
       || existing.version !== input.expectedVersion
       || existing.lifecycle_fence_token !== null
     ) {
-      return { ok: false, code: 'FILE_LIBRARY_NOT_READY', library: normalizeFileLibraryRecord(existing) };
+      return { ok: false, code: 'FILE_LIBRARY_NOT_READY', library: toPublicFileLibraryRecord(existing) };
     }
     const next: FileLibraryStoredRecord = {
       ...existing,
@@ -551,9 +638,9 @@ export class JsonDocProjectFileLibraryCatalogRepo {
       },
     );
     if (result.ok) {
-      return { ok: true, library: normalizeFileLibraryRecord(normalizeFileLibraryStoredRecord(result.doc)) };
+      return { ok: true, library: toPublicFileLibraryRecord(normalizeFileLibraryStoredRecord(result.doc)) };
     }
-    const current = result.current ? normalizeFileLibraryStoredRecord(result.current) : null;
+    const current = result.current ? tryNormalizeFileLibraryStoredRecord(result.current) : null;
     if (!current) {
       return { ok: false, code: 'FILE_LIBRARY_NOT_FOUND', library: null };
     }
@@ -562,7 +649,7 @@ export class JsonDocProjectFileLibraryCatalogRepo {
       code: current.status === 'deleting' || current.status === 'deleted'
         ? 'FILE_LIBRARY_DELETING'
         : 'FILE_LIBRARY_NOT_READY',
-      library: normalizeFileLibraryRecord(current),
+      library: toPublicFileLibraryRecord(current),
     };
   }
 
@@ -602,9 +689,10 @@ export class JsonDocProjectFileLibraryCatalogRepo {
       },
     );
     if (result.ok) {
-      return normalizeFileLibraryRecord(normalizeFileLibraryStoredRecord(result.doc));
+      return toPublicFileLibraryRecord(normalizeFileLibraryStoredRecord(result.doc));
     }
-    return result.current ? normalizeFileLibraryRecord(normalizeFileLibraryStoredRecord(result.current)) : null;
+    const current = result.current ? tryNormalizeFileLibraryStoredRecord(result.current) : null;
+    return current ? toPublicFileLibraryRecord(current) : null;
   }
 
   async delete(workspaceId: string, projectId: string, libraryId: string): Promise<boolean> {
@@ -617,122 +705,474 @@ export class JsonDocProjectFileLibraryCatalogRepo {
   }
 }
 
-export class JsonDocProjectFileLibraryBackendRepo {
-  constructor(private readonly docStore: JsonDocStorePort) {}
+export type FileLibrarySavePointPurpose = 'user' | 'task_template_source';
 
-  async save(
-    workspaceId: string,
-    projectId: string,
-    libraryId: string,
-    backend: FileLibraryBackendRecord & { metadata_url?: string; internal_metadata_url?: string },
-  ): Promise<void> {
-    const normalizedMetadataUrl = backend.metadata_url
-      ? normalizeFileLibraryMetadataUrl(backend.metadata_url)
-      : undefined;
-    const normalizedInternalMetadataUrl = backend.internal_metadata_url
-      ? normalizeFileLibraryMetadataUrl(backend.internal_metadata_url)
-      : undefined;
-    const { metadata_url: _metadataUrl, internal_metadata_url: _internalMetadataUrl, ...publicBackend } = backend;
-    const stored: FileLibraryBackendSecretRecord = {
-      ...publicBackend,
-      postgres: {
-        ...publicBackend.postgres,
-        encrypted_metadata_url: normalizedMetadataUrl ? encryptSecretValue(normalizedMetadataUrl) : undefined,
-        encrypted_internal_metadata_url: normalizedInternalMetadataUrl
-          ? encryptSecretValue(normalizedInternalMetadataUrl)
-          : undefined,
-      },
-    };
-    await this.docStore.upsert(FILE_LIBRARY_BACKEND_COLLECTION, libraryId, {
-      ...stored,
-      workspace_id: workspaceId,
-      project_id: projectId,
-    });
+export interface FileLibrarySavePointPublicRecord {
+  id: string;
+  file_library_id: string;
+  message?: string;
+  created_at: string;
+}
+
+export interface FileLibrarySavePointMappingRecord extends FileLibrarySavePointPublicRecord {
+  workspace_id: string;
+  project_id: string;
+  library_id: string;
+  afscp_save_point_id: string;
+  purpose: FileLibrarySavePointPurpose;
+  updated_at: string;
+}
+
+export type FileLibraryRestorePreviewStatus =
+  | 'previewing'
+  | 'ready'
+  | 'failed'
+  | 'canceling'
+  | 'canceled'
+  | 'restoring'
+  | 'restored';
+
+export interface FileLibraryRestorePreviewChangeSummary {
+  count: number;
+  samples: string[];
+}
+
+export interface FileLibraryRestorePreviewSummary {
+  added: FileLibraryRestorePreviewChangeSummary;
+  changed: FileLibraryRestorePreviewChangeSummary;
+  removed: FileLibraryRestorePreviewChangeSummary;
+  destructive: boolean;
+}
+
+export type FileLibraryRestorePreviewBlockerCode =
+  | 'active_writer_sessions'
+  | 'stale_writer_session_uncertain'
+  | 'restore_preview_stale'
+  | 'restore_plan_requires_recovery';
+
+export interface FileLibraryRestorePreviewBlocker {
+  code: FileLibraryRestorePreviewBlockerCode;
+  message?: string;
+}
+
+export interface FileLibraryRestorePreviewPublicRecord {
+  id: string;
+  file_library_id: string;
+  source_save_point_id: string;
+  status: FileLibraryRestorePreviewStatus;
+  message?: string;
+  summary?: FileLibraryRestorePreviewSummary;
+  blockers?: FileLibraryRestorePreviewBlocker[];
+  stale?: boolean;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface FileLibraryRestorePreviewRecord extends FileLibraryRestorePreviewPublicRecord {
+  workspace_id: string;
+  project_id: string;
+  library_id: string;
+  afscp_preview_operation_id: string;
+  source_afscp_save_point_id: string;
+  restore_plan_id?: string;
+}
+
+export type TaskFileTemplateStatus = 'unpublished' | 'published' | 'failed';
+
+export interface TaskFileTemplatePublicRecord {
+  id: string;
+  workspace_id: string;
+  project_id: string;
+  name: string;
+  description?: string;
+  status: TaskFileTemplateStatus;
+  source_library_id: string;
+  source_save_point_id?: string;
+  created_by_user_id: string;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface TaskFileTemplateRecord extends TaskFileTemplatePublicRecord {
+  afscp_template_id: string;
+  afscp_create_operation_id?: string;
+  source_afscp_save_point_id?: string;
+}
+
+function scopedDigestId(prefix: string, parts: string[], length = 24): string {
+  const digest = createHash('sha256')
+    .update(parts.join('\0'))
+    .digest('base64url')
+    .replace(/[^A-Za-z0-9_-]/g, '')
+    .slice(0, length);
+  return `${prefix}_${digest}`;
+}
+
+export function buildFileLibrarySavePointPublicId(input: {
+  workspaceId: string;
+  projectId: string;
+  libraryId: string;
+  afscpSavePointId: string;
+}): string {
+  return scopedDigestId('flsp', [
+    input.workspaceId,
+    input.projectId,
+    input.libraryId,
+    input.afscpSavePointId,
+  ]);
+}
+
+export function generateFileLibraryRestorePreviewId(): string {
+  return `flrp_${randomUUID().replace(/-/g, '').slice(0, 24)}`;
+}
+
+export function generateFileLibraryRestoreRunId(): string {
+  return `flrr_${randomUUID().replace(/-/g, '').slice(0, 24)}`;
+}
+
+export function generateTaskFileTemplateId(): string {
+  return `tftpl_${randomUUID().replace(/-/g, '').slice(0, 24)}`;
+}
+
+export function buildAfscpTemplateId(taskFileTemplateId: string): string {
+  const segment = taskFileTemplateId
+    .replace(/[^A-Za-z0-9_-]+/g, '_')
+    .replace(/^_+|_+$/g, '')
+    .slice(0, 58);
+  return `tmpl_${segment || randomUUID().replace(/-/g, '').slice(0, 24)}`;
+}
+
+function publicSavePoint(record: FileLibrarySavePointMappingRecord): FileLibrarySavePointPublicRecord {
+  return {
+    id: record.id,
+    file_library_id: record.file_library_id,
+    ...(record.message ? { message: record.message } : {}),
+    created_at: record.created_at,
+  };
+}
+
+function publicRestorePreview(record: FileLibraryRestorePreviewRecord): FileLibraryRestorePreviewPublicRecord {
+  return {
+    id: record.id,
+    file_library_id: record.file_library_id,
+    source_save_point_id: record.source_save_point_id,
+    status: record.status,
+    ...(record.message ? { message: record.message } : {}),
+    ...(record.summary ? { summary: normalizeRestorePreviewSummary(record.summary) } : {}),
+    ...(record.blockers ? { blockers: normalizeRestorePreviewBlockers(record.blockers) } : {}),
+    ...(record.stale !== undefined ? { stale: record.stale } : {}),
+    created_at: record.created_at,
+    updated_at: record.updated_at,
+  };
+}
+
+function normalizeRestorePreviewChangeSummary(
+  summary: FileLibraryRestorePreviewChangeSummary,
+): FileLibraryRestorePreviewChangeSummary {
+  if (!Number.isSafeInteger(summary.count) || summary.count < 0 || !Array.isArray(summary.samples)) {
+    throw new Error('invalid_file_library_restore_preview_record');
   }
+  const samples = summary.samples.map((sample) => {
+    if (typeof sample !== 'string' || sample.trim() === '') {
+      throw new Error('invalid_file_library_restore_preview_record');
+    }
+    return sample;
+  });
+  return { count: summary.count, samples };
+}
 
-  async getPublic(
-    workspaceId: string,
-    projectId: string,
-    libraryId: string,
-  ): Promise<FileLibraryBackendRecord | null> {
-    const stored = await this.getStored(workspaceId, projectId, libraryId);
-    if (!stored) return null;
+function normalizeRestorePreviewSummary(
+  summary: FileLibraryRestorePreviewSummary,
+): FileLibraryRestorePreviewSummary {
+  if (typeof summary !== 'object' || summary === null || typeof summary.destructive !== 'boolean') {
+    throw new Error('invalid_file_library_restore_preview_record');
+  }
+  return {
+    added: normalizeRestorePreviewChangeSummary(summary.added),
+    changed: normalizeRestorePreviewChangeSummary(summary.changed),
+    removed: normalizeRestorePreviewChangeSummary(summary.removed),
+    destructive: summary.destructive,
+  };
+}
+
+const RESTORE_PREVIEW_BLOCKER_CODES = new Set<FileLibraryRestorePreviewBlockerCode>([
+  'active_writer_sessions',
+  'stale_writer_session_uncertain',
+  'restore_preview_stale',
+  'restore_plan_requires_recovery',
+]);
+
+function normalizeRestorePreviewBlockers(
+  blockers: FileLibraryRestorePreviewBlocker[],
+): FileLibraryRestorePreviewBlocker[] {
+  if (!Array.isArray(blockers)) {
+    throw new Error('invalid_file_library_restore_preview_record');
+  }
+  return blockers.map((blocker) => {
+    if (
+      typeof blocker !== 'object'
+      || blocker === null
+      || !RESTORE_PREVIEW_BLOCKER_CODES.has(blocker.code)
+      || (blocker.message !== undefined && (typeof blocker.message !== 'string' || blocker.message.trim() === ''))
+    ) {
+      throw new Error('invalid_file_library_restore_preview_record');
+    }
     return {
-      ...stored,
-      postgres: {
-        host: stored.postgres.host,
-        port: stored.postgres.port,
-        database: stored.postgres.database,
-        username: stored.postgres.username,
-      },
+      code: blocker.code,
+      ...(blocker.message ? { message: blocker.message } : {}),
     };
+  });
+}
+
+export function publicTaskFileTemplate(record: TaskFileTemplateRecord): TaskFileTemplatePublicRecord {
+  return {
+    id: record.id,
+    workspace_id: record.workspace_id,
+    project_id: record.project_id,
+    name: record.name,
+    ...(record.description ? { description: record.description } : {}),
+    status: record.status,
+    source_library_id: record.source_library_id,
+    ...(record.source_save_point_id ? { source_save_point_id: record.source_save_point_id } : {}),
+    created_by_user_id: record.created_by_user_id,
+    created_at: record.created_at,
+    updated_at: record.updated_at,
+  };
+}
+
+export class JsonDocFileLibrarySavePointMappingRepo {
+  constructor(
+    private readonly docStore: JsonDocStorePort,
+    private readonly nowIso: () => string = () => new Date().toISOString(),
+  ) {}
+
+  async upsertFromAfscp(input: {
+    workspaceId: string;
+    projectId: string;
+    libraryId: string;
+    afscpSavePointId: string;
+    message?: string;
+    createdAt?: string;
+    purpose?: FileLibrarySavePointPurpose;
+  }): Promise<FileLibrarySavePointMappingRecord> {
+    const id = buildFileLibrarySavePointPublicId(input);
+    const existing = await this.getById(input.workspaceId, input.projectId, input.libraryId, id);
+    const now = this.nowIso();
+    const record: FileLibrarySavePointMappingRecord = {
+      id,
+      file_library_id: input.libraryId,
+      workspace_id: input.workspaceId,
+      project_id: input.projectId,
+      library_id: input.libraryId,
+      afscp_save_point_id: input.afscpSavePointId,
+      purpose: input.purpose ?? existing?.purpose ?? 'user',
+      ...(input.message ?? existing?.message ? { message: input.message ?? existing?.message } : {}),
+      created_at: input.createdAt ?? existing?.created_at ?? now,
+      updated_at: now,
+    };
+    await this.docStore.upsert(FILE_LIBRARY_SAVE_POINT_MAPPING_COLLECTION, id, record);
+    return record;
   }
 
-  async getInternal(
+  async getById(
     workspaceId: string,
     projectId: string,
     libraryId: string,
-  ): Promise<(FileLibraryBackendRecord & { metadata_url?: string; internal_metadata_url?: string }) | null> {
-    const stored = await this.getStored(workspaceId, projectId, libraryId);
-    if (!stored) return null;
-    return {
-      ...stored,
-      postgres: {
-        host: stored.postgres.host,
-        port: stored.postgres.port,
-        database: stored.postgres.database,
-        username: stored.postgres.username,
-      },
-      metadata_url: stored.postgres.encrypted_metadata_url
-        ? decryptSecretValue(stored.postgres.encrypted_metadata_url)
-        : undefined,
-      internal_metadata_url: stored.postgres.encrypted_internal_metadata_url
-        ? decryptSecretValue(stored.postgres.encrypted_internal_metadata_url)
-        : undefined,
-    };
-  }
-
-  async delete(workspaceId: string, projectId: string, libraryId: string): Promise<void> {
-    const stored = await this.getStored(workspaceId, projectId, libraryId);
-    if (!stored) return;
-    await this.docStore.delete(FILE_LIBRARY_BACKEND_COLLECTION, libraryId);
-  }
-
-  private async getStored(
-    workspaceId: string,
-    projectId: string,
-    libraryId: string,
-  ): Promise<FileLibraryBackendSecretRecord | null> {
-    const stored = await this.docStore.get<(FileLibraryBackendSecretRecord & { workspace_id: string; project_id: string })>(
-      FILE_LIBRARY_BACKEND_COLLECTION,
-      libraryId,
+    savePointId: string,
+  ): Promise<FileLibrarySavePointMappingRecord | null> {
+    const record = await this.docStore.get<FileLibrarySavePointMappingRecord>(
+      FILE_LIBRARY_SAVE_POINT_MAPPING_COLLECTION,
+      savePointId,
     );
-    if (!stored) return null;
-    if (stored.workspace_id !== workspaceId || stored.project_id !== projectId) {
+    if (
+      !record
+      || record.workspace_id !== workspaceId
+      || record.project_id !== projectId
+      || record.library_id !== libraryId
+    ) {
       return null;
     }
-    const { workspace_id: _workspaceId, project_id: _projectId, ...backend } = stored;
-    return backend;
+    return record;
+  }
+
+  async getByAfscpId(input: {
+    workspaceId: string;
+    projectId: string;
+    libraryId: string;
+    afscpSavePointId: string;
+  }): Promise<FileLibrarySavePointMappingRecord | null> {
+    const id = buildFileLibrarySavePointPublicId(input);
+    return this.getById(input.workspaceId, input.projectId, input.libraryId, id);
+  }
+
+  async listByLibrary(input: {
+    workspaceId: string;
+    projectId: string;
+    libraryId: string;
+    includeTemplateSources?: boolean;
+  }): Promise<FileLibrarySavePointMappingRecord[]> {
+    const records = await this.docStore.list<FileLibrarySavePointMappingRecord>(
+      FILE_LIBRARY_SAVE_POINT_MAPPING_COLLECTION,
+      {
+        workspace_id: input.workspaceId,
+        project_id: input.projectId,
+        library_id: input.libraryId,
+      },
+    );
+    return records.filter((record) => input.includeTemplateSources || record.purpose !== 'task_template_source');
+  }
+
+  toPublic(record: FileLibrarySavePointMappingRecord): FileLibrarySavePointPublicRecord {
+    return publicSavePoint(record);
   }
 }
 
-export class JsonDocProjectFileLibraryMountAccessRepo {
-  constructor(private readonly docStore: JsonDocStorePort) {}
+export class JsonDocFileLibraryRestorePreviewRepo {
+  constructor(
+    private readonly docStore: JsonDocStorePort,
+    private readonly nowIso: () => string = () => new Date().toISOString(),
+  ) {}
 
-  async save(
+  async create(input: {
+    id?: string;
+    workspaceId: string;
+    projectId: string;
+    libraryId: string;
+    afscpPreviewOperationId: string;
+    sourceSavePointId: string;
+    sourceAfscpSavePointId: string;
+    status: FileLibraryRestorePreviewStatus;
+    restorePlanId?: string;
+    summary?: FileLibraryRestorePreviewSummary;
+    blockers?: FileLibraryRestorePreviewBlocker[];
+    stale?: boolean;
+    message?: string;
+  }): Promise<FileLibraryRestorePreviewRecord> {
+    const now = this.nowIso();
+    const record: FileLibraryRestorePreviewRecord = {
+      id: generateFileLibraryRestorePreviewId(),
+      file_library_id: input.libraryId,
+      workspace_id: input.workspaceId,
+      project_id: input.projectId,
+      library_id: input.libraryId,
+      afscp_preview_operation_id: input.afscpPreviewOperationId,
+      source_save_point_id: input.sourceSavePointId,
+      source_afscp_save_point_id: input.sourceAfscpSavePointId,
+      status: input.status,
+      ...(input.restorePlanId ? { restore_plan_id: input.restorePlanId } : {}),
+      ...(input.message ? { message: input.message } : {}),
+      ...(input.summary ? { summary: normalizeRestorePreviewSummary(input.summary) } : {}),
+      ...(input.blockers ? { blockers: normalizeRestorePreviewBlockers(input.blockers) } : {}),
+      ...(input.stale !== undefined ? { stale: input.stale } : {}),
+      created_at: now,
+      updated_at: now,
+    };
+    await this.docStore.upsert(FILE_LIBRARY_RESTORE_PREVIEW_COLLECTION, record.id, record);
+    return record;
+  }
+
+  async getById(
     workspaceId: string,
     projectId: string,
     libraryId: string,
-    access: FileLibraryMountAccess,
-  ): Promise<void> {
-    const normalizedMetadataUrl = normalizeFileLibraryMetadataUrl(access.metadata_url);
-    const { metadata_url: _metadataUrl, ...publicAccess } = access;
-    const stored: FileLibraryMountAccessSecretRecord = {
-      ...publicAccess,
-      encrypted_metadata_url: encryptSecretValue(normalizedMetadataUrl),
+    restorePreviewId: string,
+  ): Promise<FileLibraryRestorePreviewRecord | null> {
+    const record = await this.docStore.get<FileLibraryRestorePreviewRecord>(
+      FILE_LIBRARY_RESTORE_PREVIEW_COLLECTION,
+      restorePreviewId,
+    );
+    if (
+      !record
+      || record.workspace_id !== workspaceId
+      || record.project_id !== projectId
+      || record.library_id !== libraryId
+    ) {
+      return null;
+    }
+    return record;
+  }
+
+  async updateStatus(input: {
+    workspaceId: string;
+    projectId: string;
+    libraryId: string;
+    restorePreviewId: string;
+    status: FileLibraryRestorePreviewStatus;
+    restorePlanId?: string;
+    summary?: FileLibraryRestorePreviewSummary;
+    blockers?: FileLibraryRestorePreviewBlocker[];
+    stale?: boolean;
+  }): Promise<FileLibraryRestorePreviewRecord | null> {
+    const existing = await this.getById(
+      input.workspaceId,
+      input.projectId,
+      input.libraryId,
+      input.restorePreviewId,
+    );
+    if (!existing) {
+      return null;
+    }
+    const next: FileLibraryRestorePreviewRecord = {
+      ...existing,
+      status: input.status,
+      ...(input.restorePlanId ? { restore_plan_id: input.restorePlanId } : {}),
+      ...(input.summary ? { summary: normalizeRestorePreviewSummary(input.summary) } : {}),
+      ...(input.blockers ? { blockers: normalizeRestorePreviewBlockers(input.blockers) } : {}),
+      ...(input.stale !== undefined ? { stale: input.stale } : {}),
+      updated_at: this.nowIso(),
     };
-    await this.docStore.upsert(FILE_LIBRARY_MOUNT_ACCESS_COLLECTION, libraryId, {
-      ...stored,
+    await this.docStore.upsert(FILE_LIBRARY_RESTORE_PREVIEW_COLLECTION, next.id, next);
+    return next;
+  }
+
+  toPublic(record: FileLibraryRestorePreviewRecord): FileLibraryRestorePreviewPublicRecord {
+    return publicRestorePreview(record);
+  }
+}
+
+export class JsonDocProjectTaskFileTemplateRepo {
+  constructor(
+    private readonly docStore: JsonDocStorePort,
+    private readonly nowIso: () => string = () => new Date().toISOString(),
+  ) {}
+
+  async create(input: {
+    id?: string;
+    workspaceId: string;
+    projectId: string;
+    name: string;
+    description?: string;
+    sourceLibraryId: string;
+    sourceSavePointId?: string;
+    createdByUserId: string;
+    afscpTemplateId: string;
+    afscpCreateOperationId?: string;
+    sourceAfscpSavePointId?: string;
+  }): Promise<TaskFileTemplateRecord> {
+    const now = this.nowIso();
+    const id = input.id ?? generateTaskFileTemplateId();
+    const record: TaskFileTemplateRecord = {
+      id,
+      workspace_id: input.workspaceId,
+      project_id: input.projectId,
+      name: input.name,
+      ...(input.description ? { description: input.description } : {}),
+      status: 'unpublished',
+      source_library_id: input.sourceLibraryId,
+      ...(input.sourceSavePointId ? { source_save_point_id: input.sourceSavePointId } : {}),
+      created_by_user_id: input.createdByUserId,
+      afscp_template_id: input.afscpTemplateId,
+      ...(input.afscpCreateOperationId ? { afscp_create_operation_id: input.afscpCreateOperationId } : {}),
+      ...(input.sourceAfscpSavePointId ? { source_afscp_save_point_id: input.sourceAfscpSavePointId } : {}),
+      created_at: now,
+      updated_at: now,
+    };
+    await this.docStore.upsert(TASK_FILE_TEMPLATE_COLLECTION, record.id, record);
+    return record;
+  }
+
+  async listByProject(workspaceId: string, projectId: string): Promise<TaskFileTemplateRecord[]> {
+    return this.docStore.list<TaskFileTemplateRecord>(TASK_FILE_TEMPLATE_COLLECTION, {
       workspace_id: workspaceId,
       project_id: projectId,
     });
@@ -741,35 +1181,47 @@ export class JsonDocProjectFileLibraryMountAccessRepo {
   async getById(
     workspaceId: string,
     projectId: string,
-    libraryId: string,
-  ): Promise<FileLibraryMountAccess | null> {
-    const stored = await this.docStore.get<
-      FileLibraryMountAccessSecretRecord & { workspace_id: string; project_id: string }
-    >(FILE_LIBRARY_MOUNT_ACCESS_COLLECTION, libraryId);
-    if (!stored) return null;
-    if (stored.workspace_id !== workspaceId || stored.project_id !== projectId) {
+    taskFileTemplateId: string,
+  ): Promise<TaskFileTemplateRecord | null> {
+    const record = await this.docStore.get<TaskFileTemplateRecord>(
+      TASK_FILE_TEMPLATE_COLLECTION,
+      taskFileTemplateId,
+    );
+    if (!record || record.workspace_id !== workspaceId || record.project_id !== projectId) {
       return null;
     }
-    return {
-      filesystem_name: stored.filesystem_name,
-      metadata_url: decryptSecretValue(stored.encrypted_metadata_url),
-      storage_bucket_url: stored.storage_bucket_url,
-      recommended_mount_path: stored.recommended_mount_path,
-      platform_notes: stored.platform_notes,
-      recommended_mount_commands: stored.recommended_mount_commands,
-      created_at: stored.created_at,
-    };
+    return record;
   }
 
-  async delete(workspaceId: string, projectId: string, libraryId: string): Promise<void> {
-    const stored = await this.docStore.get<{ workspace_id: string; project_id: string }>(
-      FILE_LIBRARY_MOUNT_ACCESS_COLLECTION,
-      libraryId,
-    );
-    if (!stored) return;
-    if (stored.workspace_id !== workspaceId || stored.project_id !== projectId) {
-      return;
+  async updateStatus(input: {
+    workspaceId: string;
+    projectId: string;
+    taskFileTemplateId: string;
+    status: TaskFileTemplateStatus;
+  }): Promise<TaskFileTemplateRecord | null> {
+    const existing = await this.getById(input.workspaceId, input.projectId, input.taskFileTemplateId);
+    if (!existing) {
+      return null;
     }
-    await this.docStore.delete(FILE_LIBRARY_MOUNT_ACCESS_COLLECTION, libraryId);
+    const next: TaskFileTemplateRecord = {
+      ...existing,
+      status: input.status,
+      updated_at: this.nowIso(),
+    };
+    await this.docStore.upsert(TASK_FILE_TEMPLATE_COLLECTION, next.id, next);
+    return next;
+  }
+
+  async delete(workspaceId: string, projectId: string, taskFileTemplateId: string): Promise<boolean> {
+    const existing = await this.getById(workspaceId, projectId, taskFileTemplateId);
+    if (!existing) {
+      return false;
+    }
+    await this.docStore.delete(TASK_FILE_TEMPLATE_COLLECTION, taskFileTemplateId);
+    return true;
+  }
+
+  toPublic(record: TaskFileTemplateRecord): TaskFileTemplatePublicRecord {
+    return publicTaskFileTemplate(record);
   }
 }

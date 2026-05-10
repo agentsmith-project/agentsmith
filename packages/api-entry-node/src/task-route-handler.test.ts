@@ -1,5 +1,7 @@
 import { EventEmitter } from 'node:events';
+import { readFileSync } from 'node:fs';
 import type http from 'node:http';
+import { resolve } from 'node:path';
 import { PassThrough, Readable } from 'node:stream';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { InMemoryCache, InMemoryJsonDocStore } from '@mbos/adapters-private';
@@ -16,7 +18,6 @@ import {
   hasBlockingTerminalSessionsForTask,
   hasBlockingTaskRunForTerminal,
   resolveTerminalWebSocketBaseUrl,
-  resolveTaskWorkspaceMountAccess,
 } from './task-route-handler.js';
 import { handleProjectFileLibraryRoutes } from './project-file-library-routes.js';
 import { createDefaultNodeApiDeps } from './index.js';
@@ -50,6 +51,7 @@ import {
 } from './notebook-task/task-store.js';
 import {
   JsonDocTaskFileLibraryBindingRepo,
+  JsonDocTaskWorkspaceHolderRepo,
   __resetTaskFileLibraryBindingsForTests,
   hydrateTaskFileLibraryBindingsForProject,
 } from './notebook-task/task-file-library-bindings.js';
@@ -65,21 +67,11 @@ import {
 import { resolveWorkspaceScopedCollection } from './workspace-tenant-collections.js';
 import { AgentTaskModelSettingService } from './agent-task-model-setting-service.js';
 import {
+  buildFileLibraryRecord,
   JsonDocProjectFileLibraryCatalogRepo,
-  JsonDocProjectFileLibraryMountAccessRepo,
+  JsonDocProjectTaskFileTemplateRepo,
 } from './file-library-persistence.js';
-
-const { createFileLibraryGatewayClientMock } = vi.hoisted(() => ({
-  createFileLibraryGatewayClientMock: vi.fn(),
-}));
-
-vi.mock('./file-library-gateway-client.js', async () => {
-  const actual = await vi.importActual<typeof import('./file-library-gateway-client.js')>('./file-library-gateway-client.js');
-  return {
-    ...actual,
-    createFileLibraryGatewayClient: createFileLibraryGatewayClientMock,
-  };
-});
+import type { FileLibraryStoragePort } from './file-library-afscp-storage.js';
 
 function createDeferred<T>() {
   let resolve!: (value: T | PromiseLike<T>) => void;
@@ -102,7 +94,6 @@ describe('task-route-handler workspace access', () => {
     ACTIVE_RUN_CANCEL_REQUESTED_BY_TASK.clear();
     ARTIFACTS_BY_TASK.clear();
     TASKS_BY_PROJECT.clear();
-    createFileLibraryGatewayClientMock.mockReset();
     __resetInternalTerminalWorkloadLifecycleForTests();
     __resetTaskFileLibraryBindingsForTests();
   });
@@ -110,6 +101,16 @@ describe('task-route-handler workspace access', () => {
   afterEach(() => {
     if (previousManagedExecutionHttpBase === undefined) delete process.env.AGENT_EXECUTION_HTTP_BASE_URL;
     else process.env.AGENT_EXECUTION_HTTP_BASE_URL = previousManagedExecutionHttpBase;
+  });
+
+  it('does not keep a raw mount-access resolver in the task route module', () => {
+    const source = readFileSync(resolve(process.cwd(), 'packages/api-entry-node/src/task-route-handler.ts'), 'utf8');
+
+    expect(source).not.toContain('resolveTaskWorkspaceMountAccess');
+    expect(source).not.toContain('createFileLibraryGatewayClient');
+    expect(source).not.toContain('fileLibraryOrchestrator');
+    expect(source).not.toContain('filesystemName');
+    expect(source).not.toContain('filesystem_name');
   });
 
   function readContentDispositionHeader(
@@ -121,6 +122,146 @@ describe('task-route-handler workspace access', () => {
     return {
       raw,
       fallback: fallbackMatch?.[1] ?? null,
+    };
+  }
+
+  function createTaskFileLibraryStorageAdapter(
+    overrides: Partial<FileLibraryStoragePort> = {},
+  ): FileLibraryStoragePort {
+    return {
+      enabled: true,
+      getOperationProjection: vi.fn(async (input) => ({
+        operation_id: input.operationId,
+        operation_state: 'succeeded',
+        operation_type: 'repo_create',
+        resource: { type: 'repo' },
+        error: null,
+      })),
+      createRepoForLibrary: vi.fn(async (input) => ({
+        namespaceId: input.namespaceId,
+        repoId: `repo_${input.libraryId}`,
+        operationId: `op_${input.libraryId}`,
+        operationStatus: 'succeeded',
+        projectStorageGeneration: input.projectStorageGeneration,
+      })),
+      deleteRepoForLibrary: vi.fn(async () => undefined),
+      assertEmpty: vi.fn(async () => undefined),
+      listSavePoints: vi.fn(async () => []),
+      createSavePoint: vi.fn(async (input) => ({
+        operationId: `op_${input.libraryId}_save_point`,
+        operationStatus: 'succeeded',
+        savePointId: `sp_${input.libraryId}`,
+        createdAt: new Date().toISOString(),
+      })),
+      createRestorePreview: vi.fn(async (input) => ({
+        operationId: `op_${input.libraryId}_restore_preview`,
+        operationStatus: 'succeeded',
+        restorePlanId: `plan_${input.libraryId}`,
+        sourceSavePointId: input.savePointId,
+      })),
+      runRestorePreview: vi.fn(async (input) => ({
+        operationId: `op_${input.libraryId}_restore_run`,
+        operationStatus: 'succeeded',
+        restorePlanId: `plan_${input.libraryId}`,
+        sourceSavePointId: null,
+      })),
+      discardRestorePreview: vi.fn(async (input) => ({
+        operationId: `op_${input.libraryId}_restore_discard`,
+        operationStatus: 'succeeded',
+        restorePlanId: `plan_${input.libraryId}`,
+        sourceSavePointId: null,
+      })),
+      createTemplateFromLibrary: vi.fn(async (input) => ({
+        operationId: `op_${input.libraryId}_template_create`,
+        operationStatus: 'succeeded',
+        templateId: input.templateId,
+        sourceSavePointId: `sp_${input.libraryId}_template_source`,
+      })),
+      cloneTemplateToLibrary: vi.fn(async (input) => ({
+        namespaceId: input.namespaceId,
+        repoId: `repo_${input.libraryId}`,
+        operationId: `op_${input.libraryId}_template_clone`,
+        operationStatus: 'succeeded',
+        projectStorageGeneration: input.projectStorageGeneration,
+      })),
+      listEntries: vi.fn(async (input) => ({
+        path: input.path,
+        items: [],
+        nextContinuationToken: null,
+      })),
+      createFolder: vi.fn(async () => undefined),
+      deletePaths: vi.fn(async (input) => input.paths.map((path) => ({ path, status: 'deleted' as const }))),
+      moveEntry: vi.fn(async () => undefined),
+      uploadObject: vi.fn(async (input) => ({
+        kind: 'file',
+        path: input.objectPath,
+        name: input.objectPath.split('/').at(-1) ?? input.objectPath,
+        size_bytes: 0,
+        content_type: input.contentType ?? 'application/octet-stream',
+        modified_at: new Date().toISOString(),
+      })),
+      downloadObject: vi.fn(async (input) => ({
+        meta: {
+          key: input.objectPath,
+          size_bytes: 12,
+          content_type: 'text/plain',
+          last_modified: new Date().toISOString(),
+          user_metadata: {},
+        },
+        download: {
+          stream: Readable.from(['hello world']),
+          cancel: vi.fn(async () => undefined),
+        },
+      })),
+      getObjectMeta: vi.fn(async (input) => ({
+        key: input.objectPath,
+        size_bytes: 0,
+        content_type: 'application/octet-stream',
+        last_modified: new Date().toISOString(),
+        user_metadata: {},
+      })),
+      ...overrides,
+    };
+  }
+
+  function createFileLibraryCatalogFixture(input: {
+    id: string;
+    name: string;
+    now?: string;
+    workspaceId?: string;
+    projectId?: string;
+    createdByUserId?: string;
+    status?: 'creating' | 'ready' | 'degraded' | 'failed' | 'deleting' | 'deleted';
+    fileLibraryHomeSegment?: string;
+  }) {
+    return buildFileLibraryRecord({
+      id: input.id,
+      workspaceId: input.workspaceId ?? 'ws_default',
+      projectId: input.projectId ?? 'proj_1',
+      name: input.name,
+      createdByUserId: input.createdByUserId ?? 'user_1',
+      status: input.status ?? 'ready',
+      fileLibraryHomeSegment: input.fileLibraryHomeSegment,
+      now: input.now,
+    });
+  }
+
+  function installReadyProjectStorage(
+    deps: ReturnType<typeof createDefaultNodeApiDeps>,
+  ): void {
+    deps.projectStorageBootstrapService = {
+      enabled: true,
+      bootstrapProjectStorage: vi.fn(async () => undefined),
+      reconcileProjectStorage: vi.fn(async () => undefined),
+      ensureProjectStorageReady: vi.fn(async () => ({
+        status: 'ready',
+        namespaceId: 'ns_task_test',
+        stage: 'ready',
+        generation: 1,
+        nextAction: 'none',
+        retryable: false,
+        lastErrorCode: null,
+      })),
     };
   }
 
@@ -369,46 +510,14 @@ describe('task-route-handler workspace access', () => {
     };
   }
 
-  it('keeps local mount access untouched when no runner provider is selected', () => {
-    const resolved = resolveTaskWorkspaceMountAccess({
-      runnerProvider: null,
-      metadataUrl: 'postgres://jfsu_user:secret@localhost:15432/jfs_lib_demo?sslmode=disable',
-      storageBucketUrl: 'http://localhost:19000/jfs-lib-demo',
-    });
-
-    expect(resolved).toEqual({
-      metadataUrl: 'postgres://jfsu_user:secret@localhost:15432/jfs_lib_demo?sslmode=disable',
-      storageBucketUrl: 'http://localhost:19000/jfs-lib-demo',
-    });
-  });
-
-  it('returns task HOME path fields from workspace access without the legacy container workspace path', async () => {
+  it('returns opaque task HOME binding path truth from workspace access without raw storage material', async () => {
     const deps = createDefaultNodeApiDeps();
     const now = new Date().toISOString();
-    await new JsonDocProjectFileLibraryCatalogRepo(deps.docStore).save({
+    await new JsonDocProjectFileLibraryCatalogRepo(deps.docStore).save(createFileLibraryCatalogFixture({
       id: 'lib_workspace_access_home',
-      workspace_id: 'ws_default',
-      project_id: 'proj_1',
       name: 'Workspace Access HOME',
-      status: 'ready',
-      filesystem_name: 'flib-workspace-access-home',
-      created_by_user_id: 'user_1',
-      created_at: now,
-      updated_at: now,
-    } as never);
-    await new JsonDocProjectFileLibraryMountAccessRepo(deps.docStore).save('ws_default', 'proj_1', 'lib_workspace_access_home', {
-      filesystem_name: 'flib-workspace-access-home',
-      metadata_url: 'postgres://jfsu_user:secret@localhost:15432/jfs_workspace_access_home?sslmode=disable',
-      storage_bucket_url: 'http://localhost:19000/jfs-workspace-access-home',
-      recommended_mount_path: '~/AgentSmith/Workspace Access HOME',
-      platform_notes: [],
-      recommended_mount_commands: {
-        linux: 'juicefs mount ...',
-        macos: 'juicefs mount ...',
-        windows: 'juicefs mount ...',
-      },
-      created_at: now,
-    });
+      now,
+    }));
     await deps.docStore.upsert(notebookTasksCollection('ws_default'), 'task_workspace_access_home', {
       id: 'task_workspace_access_home',
       workspace_id: 'ws_default',
@@ -446,50 +555,43 @@ describe('task-route-handler workspace access', () => {
     expect(json.mock.calls[0]?.[1]).toBe(200);
     expect(payload).toMatchObject({
       task_id: 'task_workspace_access_home',
-      workspace_binding_mode: 'file_library',
-      task_home_path: '/home/task_workspace_access_home',
-      workspace_path: '/home/task_workspace_access_home/workspace',
-      artifacts_path: '/home/task_workspace_access_home/workspace/.artifacts',
-      library_root_path: '.',
       file_library_id: 'lib_workspace_access_home',
-      holder_id: expect.any(String),
-      holder_kind: 'runner_workspace',
-      binding_generation: expect.any(String),
-      lease_epoch: expect.any(String),
-      issued_at: expect.any(String),
-      expires_at: expect.any(String),
+      task_home_binding: {
+        provider: 'afscp',
+        mode: 'pre_mounted',
+        task_id: 'task_workspace_access_home',
+        file_library_id: 'lib_workspace_access_home',
+        task_home_segment: 'task_workspace_access_home',
+        generation: expect.any(String),
+        holder: {
+          holder_id: expect.any(String),
+          holder_kind: 'runner_workspace',
+          binding_generation: expect.any(String),
+          lease_epoch: expect.any(String),
+          issued_at: expect.any(String),
+          expires_at: expect.any(String),
+        },
+        paths: {
+          task_home_path: '/home/task_workspace_access_home',
+          workspace_path: '/home/task_workspace_access_home/workspace',
+          artifacts_path: '/home/task_workspace_access_home/workspace/.artifacts',
+          library_root_path: '.',
+        },
+      },
     });
     expect(payload).not.toHaveProperty('container_workspace_path');
+    expect(JSON.stringify(payload)).not.toMatch(/metadata_url|storage_bucket_url|recommended_mount|filesystem_name|juicefs/i);
   });
 
   it('denies files_update workspace access when project files update permission is no longer granted', async () => {
     const deps = createDefaultNodeApiDeps();
     await grantProjectPermissionsForUser(deps, 'user_1', ['project:agent_task:use']);
     const now = new Date().toISOString();
-    await new JsonDocProjectFileLibraryCatalogRepo(deps.docStore).save({
+    await new JsonDocProjectFileLibraryCatalogRepo(deps.docStore).save(createFileLibraryCatalogFixture({
       id: 'lib_workspace_access_files_update_denied',
-      workspace_id: 'ws_default',
-      project_id: 'proj_1',
       name: 'Workspace Access Files Update Denied',
-      status: 'ready',
-      filesystem_name: 'flib-workspace-access-files-update-denied',
-      created_by_user_id: 'user_1',
-      created_at: now,
-      updated_at: now,
-    } as never);
-    await new JsonDocProjectFileLibraryMountAccessRepo(deps.docStore).save('ws_default', 'proj_1', 'lib_workspace_access_files_update_denied', {
-      filesystem_name: 'flib-workspace-access-files-update-denied',
-      metadata_url: 'postgres://jfsu_user:secret@localhost:15432/jfs_workspace_access_files_update_denied?sslmode=disable',
-      storage_bucket_url: 'http://localhost:19000/jfs-workspace-access-files-update-denied',
-      recommended_mount_path: '~/AgentSmith/Workspace Access Files Update Denied',
-      platform_notes: [],
-      recommended_mount_commands: {
-        linux: 'juicefs mount ...',
-        macos: 'juicefs mount ...',
-        windows: 'juicefs mount ...',
-      },
-      created_at: now,
-    });
+      now,
+    }));
     const acquired = await new JsonDocTaskFileLibraryBindingRepo(deps.docStore).acquire({
       workspaceId: 'ws_default',
       projectId: 'proj_1',
@@ -552,30 +654,11 @@ describe('task-route-handler workspace access', () => {
   it('fails workspace access when the task binding generation is stale', async () => {
     const deps = createDefaultNodeApiDeps();
     const now = new Date().toISOString();
-    await new JsonDocProjectFileLibraryCatalogRepo(deps.docStore).save({
+    await new JsonDocProjectFileLibraryCatalogRepo(deps.docStore).save(createFileLibraryCatalogFixture({
       id: 'lib_workspace_access_stale_generation',
-      workspace_id: 'ws_default',
-      project_id: 'proj_1',
       name: 'Workspace Access Stale Generation',
-      status: 'ready',
-      filesystem_name: 'flib-workspace-access-stale-generation',
-      created_by_user_id: 'user_1',
-      created_at: now,
-      updated_at: now,
-    } as never);
-    await new JsonDocProjectFileLibraryMountAccessRepo(deps.docStore).save('ws_default', 'proj_1', 'lib_workspace_access_stale_generation', {
-      filesystem_name: 'flib-workspace-access-stale-generation',
-      metadata_url: 'postgres://jfsu_user:secret@localhost:15432/jfs_workspace_access_stale_generation?sslmode=disable',
-      storage_bucket_url: 'http://localhost:19000/jfs-workspace-access-stale-generation',
-      recommended_mount_path: '~/AgentSmith/Workspace Access Stale Generation',
-      platform_notes: [],
-      recommended_mount_commands: {
-        linux: 'juicefs mount ...',
-        macos: 'juicefs mount ...',
-        windows: 'juicefs mount ...',
-      },
-      created_at: now,
-    });
+      now,
+    }));
     const acquired = await new JsonDocTaskFileLibraryBindingRepo(deps.docStore).acquire({
       workspaceId: 'ws_default',
       projectId: 'proj_1',
@@ -633,9 +716,9 @@ describe('task-route-handler workspace access', () => {
     });
   });
 
-  it('returns developer runtime task HOME paths from workspace access using execution-ticket runner profile', async () => {
+  it('fails closed for developer runtime workspace access before acquiring a holder', async () => {
     const previousDeveloperWorkspaceRoot = process.env.MBOS_AGENT_TASK_DEVELOPER_WORKSPACE_ROOT;
-    process.env.MBOS_AGENT_TASK_DEVELOPER_WORKSPACE_ROOT = '/tmp/agentsmith-route-dev-workspaces';
+    process.env.MBOS_AGENT_TASK_DEVELOPER_WORKSPACE_ROOT = 'relative-route-dev-workspaces';
     const deps = createDefaultNodeApiDeps();
     const now = new Date().toISOString();
     const developerRunner = await deps.agentResourceService.createAgent('ws_default', 'proj_1', {
@@ -653,30 +736,12 @@ describe('task-route-handler workspace access', () => {
     } as never);
 
     try {
-      await deps.docStore.upsert('project_file_libraries', 'lib_workspace_access_developer_home', {
+      await deps.docStore.upsert('project_file_libraries', 'lib_workspace_access_developer_home', createFileLibraryCatalogFixture({
         id: 'lib_workspace_access_developer_home',
-        workspace_id: 'ws_default',
-        project_id: 'proj_1',
         name: 'Workspace Access Developer HOME',
-        status: 'ready',
-        filesystem_name: 'flib-workspace-access-developer-home',
-        created_by_user_id: 'user_1',
-        created_at: now,
-        updated_at: now,
-      });
-      await new JsonDocProjectFileLibraryMountAccessRepo(deps.docStore).save('ws_default', 'proj_1', 'lib_workspace_access_developer_home', {
-        filesystem_name: 'flib-workspace-access-developer-home',
-        metadata_url: 'postgres://jfsu_user:secret@localhost:15432/jfs_workspace_access_developer_home?sslmode=disable',
-        storage_bucket_url: 'http://localhost:19000/jfs-workspace-access-developer-home',
-        recommended_mount_path: '~/AgentSmith/Workspace Access Developer HOME',
-        platform_notes: [],
-        recommended_mount_commands: {
-          linux: 'juicefs mount ...',
-          macos: 'juicefs mount ...',
-          windows: 'juicefs mount ...',
-        },
-        created_at: now,
-      });
+        fileLibraryHomeSegment: 'flibhome_workspace_access_developer_home',
+        now,
+      }));
       await deps.docStore.upsert(notebookTasksCollection('ws_default'), 'task_workspace_access_developer_home', {
         id: 'task_workspace_access_developer_home',
         workspace_id: 'ws_default',
@@ -729,19 +794,24 @@ describe('task-route-handler workspace access', () => {
       })).resolves.toBe(true);
 
       const payload = json.mock.calls[0]?.[2] as Record<string, unknown>;
-      expect(json.mock.calls[0]?.[1]).toBe(200);
+      expect(json.mock.calls[0]?.[1]).toBe(409);
       expect(payload).toMatchObject({
+        error_code: 'TASK_HOME_BINDING_UNAVAILABLE_FOR_DEVELOPER_RUNNER',
+        message: 'task_home_binding_unavailable_for_developer_runner',
         task_id: 'task_workspace_access_developer_home',
-        workspace_binding_mode: 'file_library',
-        runtime_profile: 'developer',
-        task_home_segment: 'task_workspace_access_developer_home',
-        task_home_path: '/tmp/agentsmith-route-dev-workspaces/task_workspace_access_developer_home',
-        workspace_path: '/tmp/agentsmith-route-dev-workspaces/task_workspace_access_developer_home/workspace',
-        artifacts_path: '/tmp/agentsmith-route-dev-workspaces/task_workspace_access_developer_home/workspace/.artifacts',
-        library_root_path: '.',
         file_library_id: 'lib_workspace_access_developer_home',
+        runtime_profile: 'developer',
       });
+      expect(payload).not.toHaveProperty('task_home_binding');
       expect(payload).not.toHaveProperty('container_workspace_path');
+      expect(JSON.stringify(payload)).not.toMatch(
+        /runtime_path_unavailable|metadata_url|storage_bucket_url|recommended_mount|filesystem_name|juicefs|relative-route-dev-workspaces|task_home_path|workspace_path|artifacts_path|developer_workspace_root|ags-workspace|\/tmp\//i,
+      );
+      await expect(new JsonDocTaskWorkspaceHolderRepo(deps.docStore).listLiveByTask({
+        workspaceId: 'ws_default',
+        projectId: 'proj_1',
+        taskId: 'task_workspace_access_developer_home',
+      })).resolves.toHaveLength(0);
     } finally {
       if (previousDeveloperWorkspaceRoot === undefined) delete process.env.MBOS_AGENT_TASK_DEVELOPER_WORKSPACE_ROOT;
       else process.env.MBOS_AGENT_TASK_DEVELOPER_WORKSPACE_ROOT = previousDeveloperWorkspaceRoot;
@@ -815,6 +885,7 @@ describe('task-route-handler workspace access', () => {
       422,
       expect.objectContaining({
         error_code: 'AGENT_TASK_WORKSPACE_MODE_INVALID',
+        message: 'agent_task_workspace_mode_invalid',
         field: 'workspace_mode',
       }),
     );
@@ -849,6 +920,7 @@ describe('task-route-handler workspace access', () => {
       422,
       expect.objectContaining({
         error_code: 'AGENT_TASK_WORKSPACE_MODE_INVALID',
+        message: 'agent_task_workspace_mode_invalid',
         field: 'workspace_mode',
       }),
     );
@@ -882,6 +954,7 @@ describe('task-route-handler workspace access', () => {
       422,
       expect.objectContaining({
         error_code: 'AGENT_TASK_WORKSPACE_FILE_LIBRARY_REQUIRED',
+        message: 'agent_task_workspace_file_library_required',
         field: 'workspace_file_library_id',
       }),
     );
@@ -920,7 +993,7 @@ describe('task-route-handler workspace access', () => {
     );
     expect(storedLibrary).toMatchObject({
       id: task.workspace_file_library_id,
-      source: 'agent_task_auto',
+      source: 'agent_task_files',
       version: expect.any(Number),
       file_library_home_segment: task.task_home_segment,
     });
@@ -938,8 +1011,208 @@ describe('task-route-handler workspace access', () => {
     });
   });
 
+  it('creates a task from a published task file template for a task-use user without files:update', async () => {
+    const deps = createDefaultNodeApiDeps();
+    await seedDefaultManagedRunner(deps);
+    await grantProjectPermissionsForUser(deps, 'user_1', ['project:agent_task:use']);
+    const cloneTemplateToLibrary = vi.fn(async (input) => ({
+      namespaceId: input.namespaceId,
+      repoId: `repo_${input.libraryId}`,
+      operationId: `op_${input.libraryId}_template_clone`,
+      operationStatus: 'succeeded' as const,
+      projectStorageGeneration: input.projectStorageGeneration,
+    }));
+    deps.fileLibraryStorageAdapter = createTaskFileLibraryStorageAdapter({ cloneTemplateToLibrary });
+
+    const templateRepo = new JsonDocProjectTaskFileTemplateRepo(deps.docStore);
+    await templateRepo.create({
+      id: 'tftpl_release_notes',
+      workspaceId: 'ws_default',
+      projectId: 'proj_1',
+      name: 'Release notes files',
+      sourceLibraryId: 'flib_source_release',
+      createdByUserId: 'user_1',
+      afscpTemplateId: 'tmpl_tftpl_release_notes',
+    });
+    await templateRepo.updateStatus({
+      workspaceId: 'ws_default',
+      projectId: 'proj_1',
+      taskFileTemplateId: 'tftpl_release_notes',
+      status: 'published',
+    });
+
+    const json = vi.fn();
+    await expect(handleTaskRoute({
+      route: {
+        kind: 'tasks',
+        workspaceId: 'ws_default',
+        projectId: 'proj_1',
+      } as never,
+      method: 'POST',
+      req: { headers: { 'x-request-id': 'req_template_task' }, url: '' } as never,
+      res: {} as never,
+      deps,
+      user: { id: 'user_1' } as never,
+      json,
+      readBody: vi.fn(async () => ({
+        title: 'Task from template',
+        workspace_mode: 'use_template',
+        task_file_template_id: 'tftpl_release_notes',
+      })),
+    })).resolves.toBe(true);
+
+    expect(json.mock.calls[0]?.[1]).toBe(201);
+    const task = json.mock.calls[0]?.[2] as Record<string, string>;
+    expect(task.workspace_file_library_id).toMatch(/^flib_/);
+    expect(task.workspace_file_library_id).not.toBe('flib_source_release');
+    expect(JSON.stringify(task)).not.toMatch(/tmpl_tftpl_release_notes|repo_|sp_|credential|control_root/);
+    expect(cloneTemplateToLibrary).toHaveBeenCalledWith(expect.objectContaining({
+      workspaceId: 'ws_default',
+      projectId: 'proj_1',
+      templateId: 'tmpl_tftpl_release_notes',
+      actorUserId: 'user_1',
+      requestId: 'req_template_task',
+    }));
+    await expect(new JsonDocTaskFileLibraryBindingRepo(deps.docStore).find({
+      workspaceId: 'ws_default',
+      projectId: 'proj_1',
+      fileLibraryId: task.workspace_file_library_id,
+    })).resolves.toMatchObject({
+      taskId: task.id,
+      runtimeWritableAffordance: 'task_internal_home',
+      bindingState: 'bound',
+    });
+  });
+
+  it('refuses missing, unpublished, and cross-project task file templates before cloning or binding', async () => {
+    const deps = createDefaultNodeApiDeps();
+    await seedDefaultManagedRunner(deps);
+    await grantProjectPermissionsForUser(deps, 'user_1', ['project:agent_task:use']);
+    const cloneTemplateToLibrary = vi.fn(async (input) => ({
+      namespaceId: input.namespaceId,
+      repoId: `repo_${input.libraryId}`,
+      operationId: `op_${input.libraryId}_template_clone`,
+      operationStatus: 'succeeded' as const,
+      projectStorageGeneration: input.projectStorageGeneration,
+    }));
+    deps.fileLibraryStorageAdapter = createTaskFileLibraryStorageAdapter({ cloneTemplateToLibrary });
+
+    const templateRepo = new JsonDocProjectTaskFileTemplateRepo(deps.docStore);
+    await templateRepo.create({
+      id: 'tftpl_draft',
+      workspaceId: 'ws_default',
+      projectId: 'proj_1',
+      name: 'Draft template',
+      sourceLibraryId: 'flib_source_draft',
+      createdByUserId: 'user_1',
+      afscpTemplateId: 'tmpl_tftpl_draft',
+    });
+    await templateRepo.create({
+      id: 'tftpl_other_project',
+      workspaceId: 'ws_default',
+      projectId: 'proj_other',
+      name: 'Other project template',
+      sourceLibraryId: 'flib_source_other',
+      createdByUserId: 'user_1',
+      afscpTemplateId: 'tmpl_tftpl_other_project',
+    });
+    await templateRepo.updateStatus({
+      workspaceId: 'ws_default',
+      projectId: 'proj_other',
+      taskFileTemplateId: 'tftpl_other_project',
+      status: 'published',
+    });
+
+    const unpublishedJson = vi.fn();
+    await expect(handleTaskRoute({
+      route: { kind: 'tasks', workspaceId: 'ws_default', projectId: 'proj_1' } as never,
+      method: 'POST',
+      req: { headers: { 'x-request-id': 'req_unpublished_template' }, url: '' } as never,
+      res: {} as never,
+      deps,
+      user: { id: 'user_1' } as never,
+      json: unpublishedJson,
+      readBody: vi.fn(async () => ({
+        title: 'Draft task',
+        workspace_mode: 'use_template',
+        task_file_template_id: 'tftpl_draft',
+      })),
+    })).resolves.toBe(true);
+    expect(unpublishedJson.mock.calls[0]?.[1]).toBe(409);
+    expect(unpublishedJson.mock.calls[0]?.[2]).toMatchObject({
+      error_code: 'TASK_FILE_TEMPLATE_UNPUBLISHED',
+      message: 'task_file_template_unpublished',
+      task_file_template_id: 'tftpl_draft',
+    });
+
+    const missingIdJson = vi.fn();
+    await expect(handleTaskRoute({
+      route: { kind: 'tasks', workspaceId: 'ws_default', projectId: 'proj_1' } as never,
+      method: 'POST',
+      req: { headers: { 'x-request-id': 'req_missing_template_id' }, url: '' } as never,
+      res: {} as never,
+      deps,
+      user: { id: 'user_1' } as never,
+      json: missingIdJson,
+      readBody: vi.fn(async () => ({
+        title: 'Missing template id task',
+        workspace_mode: 'use_template',
+      })),
+    })).resolves.toBe(true);
+    expect(missingIdJson.mock.calls[0]?.[1]).toBe(422);
+    expect(missingIdJson.mock.calls[0]?.[2]).toMatchObject({
+      error_code: 'AGENT_TASK_FILE_TEMPLATE_REQUIRED',
+      message: 'agent_task_file_template_required',
+      field: 'task_file_template_id',
+    });
+
+    const crossProjectJson = vi.fn();
+    await expect(handleTaskRoute({
+      route: { kind: 'tasks', workspaceId: 'ws_default', projectId: 'proj_1' } as never,
+      method: 'POST',
+      req: { headers: { 'x-request-id': 'req_cross_template' }, url: '' } as never,
+      res: {} as never,
+      deps,
+      user: { id: 'user_1' } as never,
+      json: crossProjectJson,
+      readBody: vi.fn(async () => ({
+        title: 'Cross project task',
+        workspace_mode: 'use_template',
+        task_file_template_id: 'tftpl_other_project',
+      })),
+    })).resolves.toBe(true);
+    expect(crossProjectJson.mock.calls[0]?.[1]).toBe(404);
+    expect(crossProjectJson.mock.calls[0]?.[2]).toMatchObject({
+      error_code: 'TASK_FILE_TEMPLATE_NOT_FOUND',
+      message: 'task_file_template_not_found',
+      task_file_template_id: 'tftpl_other_project',
+    });
+    expect(cloneTemplateToLibrary).not.toHaveBeenCalled();
+    await expect(new JsonDocTaskFileLibraryBindingRepo(deps.docStore).listByProject({
+      workspaceId: 'ws_default',
+      projectId: 'proj_1',
+    })).resolves.toHaveLength(0);
+    await expect(deps.docStore.list(notebookTasksCollection('ws_default'), {
+      workspace_id: 'ws_default',
+      project_id: 'proj_1',
+    })).resolves.toHaveLength(0);
+  });
+
   it('compensates create_new workspace setup when model readiness blocks task creation', async () => {
     const deps = createDefaultNodeApiDeps();
+    installReadyProjectStorage(deps);
+    const deleteRepoForLibrary = vi.fn(async () => undefined);
+    deps.fileLibraryStorageAdapter = createTaskFileLibraryStorageAdapter({
+      deleteRepoForLibrary,
+    });
+    const legacyDeleteLibrary = vi.fn(async () => undefined);
+    (deps as typeof deps & {
+      fileLibraryOrchestrator?: {
+        deleteLibrary: typeof legacyDeleteLibrary;
+      };
+    }).fileLibraryOrchestrator = {
+      deleteLibrary: legacyDeleteLibrary,
+    };
     const endpoint = await createRunnerBindingEndpoint(deps);
     await deps.agentResourceService.upsertDeploymentDefaultManagedAgentRunner('ws_default', 'proj_1', {
       name: 'Default managed task runner without model readiness',
@@ -975,6 +1248,15 @@ describe('task-route-handler workspace access', () => {
     })).resolves.toBe(true);
 
     expect(json.mock.calls[0]?.[1]).toBe(409);
+    expect(deleteRepoForLibrary).toHaveBeenCalledTimes(1);
+    expect(deleteRepoForLibrary).toHaveBeenCalledWith(expect.objectContaining({
+      workspaceId: 'ws_default',
+      projectId: 'proj_1',
+      actorUserId: 'user_1',
+      requestId: 'req_create_new_compensate',
+      reason: 'agent_task_create_compensation',
+    }));
+    expect(legacyDeleteLibrary).not.toHaveBeenCalled();
     await expect(deps.docStore.list(notebookTasksCollection('ws_default'))).resolves.toHaveLength(0);
     await expect(deps.docStore.list('project_file_libraries')).resolves.toHaveLength(0);
     await expect(deps.docStore.list('agent_task_file_library_bindings')).resolves.toHaveLength(0);
@@ -985,17 +1267,11 @@ describe('task-route-handler workspace access', () => {
     await seedDefaultManagedRunner(deps);
     await grantProjectPermissionsForUser(deps, 'user_1', ['project:agent_task:use', 'project:files:update']);
     const now = new Date().toISOString();
-    await new JsonDocProjectFileLibraryCatalogRepo(deps.docStore).save({
+    await new JsonDocProjectFileLibraryCatalogRepo(deps.docStore).save(createFileLibraryCatalogFixture({
       id: 'lib_race_deleting_during_acquire',
-      workspace_id: 'ws_default',
-      project_id: 'proj_1',
       name: 'Race Deleting Workspace',
-      status: 'ready',
-      filesystem_name: 'flib-race-deleting-during-acquire',
-      created_by_user_id: 'user_1',
-      created_at: now,
-      updated_at: now,
-    } as never);
+      now,
+    }));
 
     const originalUpdateIfMatch = deps.docStore.updateIfMatch.bind(deps.docStore);
     let raced = false;
@@ -1078,21 +1354,12 @@ describe('task-route-handler workspace access', () => {
     await seedDefaultManagedRunner(deps);
     await grantProjectPermissionsForUser(deps, 'user_1', ['project:agent_task:use', 'project:files:update']);
     const now = new Date().toISOString();
-    await new JsonDocProjectFileLibraryCatalogRepo(deps.docStore).save({
+    await new JsonDocProjectFileLibraryCatalogRepo(deps.docStore).save(createFileLibraryCatalogFixture({
       id: 'lib_delete_during_binding_fence',
-      workspace_id: 'ws_default',
-      project_id: 'proj_1',
       name: 'Delete During Binding Fence Workspace',
-      status: 'ready',
-      filesystem_name: 'flib-delete-during-binding-fence',
-      created_by_user_id: 'user_1',
-      created_at: now,
-      updated_at: now,
-    } as never);
+      now,
+    }));
 
-    createFileLibraryGatewayClientMock.mockResolvedValue({
-      listObjectsV2: vi.fn().mockReturnValue(Readable.from([])),
-    });
     const deleteJson = vi.fn();
     const deleteRes = {
       statusCode: 200,
@@ -1181,17 +1448,11 @@ describe('task-route-handler workspace access', () => {
     const deps = createDefaultNodeApiDeps();
     await seedDefaultManagedRunner(deps);
     const now = new Date().toISOString();
-    await new JsonDocProjectFileLibraryCatalogRepo(deps.docStore).save({
+    await new JsonDocProjectFileLibraryCatalogRepo(deps.docStore).save(createFileLibraryCatalogFixture({
       id: 'lib_archived_binding_conflict',
-      workspace_id: 'ws_default',
-      project_id: 'proj_1',
       name: 'Archived Binding Workspace',
-      status: 'ready',
-      filesystem_name: 'flib-archived-binding-conflict',
-      created_by_user_id: 'user_1',
-      created_at: now,
-      updated_at: now,
-    } as never);
+      now,
+    }));
     await deps.docStore.upsert(notebookTasksCollection('ws_default'), 'task_archived_binding_owner_visible', {
       id: 'task_archived_binding_owner_visible',
       workspace_id: 'ws_default',
@@ -1248,17 +1509,11 @@ describe('task-route-handler workspace access', () => {
   it('archives a task without releasing its file library binding', async () => {
     const deps = createDefaultNodeApiDeps();
     const now = new Date().toISOString();
-    await new JsonDocProjectFileLibraryCatalogRepo(deps.docStore).save({
+    await new JsonDocProjectFileLibraryCatalogRepo(deps.docStore).save(createFileLibraryCatalogFixture({
       id: 'lib_archive_keeps_binding',
-      workspace_id: 'ws_default',
-      project_id: 'proj_1',
       name: 'Archive Keeps Binding Workspace',
-      status: 'ready',
-      filesystem_name: 'flib-archive-keeps-binding',
-      created_by_user_id: 'user_1',
-      created_at: now,
-      updated_at: now,
-    } as never);
+      now,
+    }));
     const acquired = await new JsonDocTaskFileLibraryBindingRepo(deps.docStore).acquire({
       workspaceId: 'ws_default',
       projectId: 'proj_1',
@@ -1648,7 +1903,60 @@ describe('task-route-handler workspace access', () => {
     },
   );
 
-  it('dispatches the task bound Developer runner instead of the current default', async () => {
+  it('fails closed before task creation when explicit Developer runner HOME binding is blocked upstream', async () => {
+    const deps = createDefaultNodeApiDeps();
+    await grantProjectPermissionsForUser(deps, 'user_1', [
+      'project:agent_task:use',
+      'project:agent_runner:manage',
+    ]);
+    const developerRunner = await deps.agentResourceService.createAgent('ws_default', 'proj_1', {
+      name: 'Developer runner without AFSCP connector',
+      runner_provider: 'developer',
+      status: 'enabled',
+      presence: 'online',
+      runner_status: 'ready',
+      capabilities: {
+        task_execution: true,
+        terminal: true,
+        artifacts: true,
+      },
+    } as never);
+    deps.agentExecutionService.dispatchStreamingRequest = vi.fn();
+
+    const createJson = vi.fn();
+    await expect(handleTaskRoute({
+      route: { kind: 'tasks', workspaceId: 'ws_default', projectId: 'proj_1' } as never,
+      method: 'POST',
+      req: { headers: { 'x-request-id': 'req_developer_home_blocked' }, url: '' } as never,
+      res: {} as never,
+      deps,
+      user: { id: 'user_1' } as never,
+      json: createJson,
+      readBody: vi.fn(async () => ({
+        title: 'Blocked Developer runner task',
+        prompt: 'Should fail before workspace creation',
+        bound_runner_id: developerRunner.id,
+      })),
+    })).resolves.toBe(true);
+
+    expect(createJson).toHaveBeenCalledWith(
+      expect.anything(),
+      409,
+      {
+        error_code: 'TASK_HOME_BINDING_UNAVAILABLE_FOR_DEVELOPER_RUNNER',
+        message: 'task_home_binding_unavailable_for_developer_runner',
+        runtime_profile: 'developer',
+      },
+    );
+    expect(deps.agentExecutionService.dispatchStreamingRequest).not.toHaveBeenCalled();
+    expect(getTasks('ws_default', 'proj_1')).toHaveLength(0);
+    await expect(new JsonDocProjectFileLibraryCatalogRepo(deps.docStore).listByProject(
+      'ws_default',
+      'proj_1',
+    )).resolves.toHaveLength(0);
+  });
+
+  it('fails closed for an explicit Developer runner task instead of falling back to the current default', async () => {
     const previousPublicApiBase = process.env.PUBLIC_API_BASE_URL;
     process.env.PUBLIC_API_BASE_URL = 'http://localhost:20000';
     const deps = createDefaultNodeApiDeps();
@@ -1682,20 +1990,6 @@ describe('task-route-handler workspace access', () => {
           permissions: ['project:agent_task:use', 'project:agent_runner:manage'],
         },
       );
-      deps.internalAgentPodManager = {
-        ensureAgentReady: vi.fn(async () => undefined),
-        keepalive: vi.fn(async () => undefined),
-        releasePod: vi.fn(async () => undefined),
-      };
-      deps.internalAgentWorkspaceBindingManager = {
-        ensureWorkspaceBinding: vi.fn(async () => ({
-          workspaceMount: {
-            mountPath: '/workspace/task',
-            metadataUrl: 'postgres://jfsu_user:secret@postgres:5432/jfs_lib_demo?sslmode=disable',
-            storageBucketUrl: 'http://minio:9000/jfs-lib-demo',
-          },
-        })),
-      } as never;
       const credential = await deps.endpointResourceService.createCredential('ws_default', projectId, {
         name: 'explicit-runner-key',
         value: 'sk-explicit-runner',
@@ -1721,7 +2015,7 @@ describe('task-route-handler workspace access', () => {
         },
       });
       await seedAgentTaskModelSetting(deps, projectId, endpoint.id, 'user_1');
-      const defaultRunner = await deps.agentResourceService.createAgent('ws_default', projectId, {
+      await deps.agentResourceService.createAgent('ws_default', projectId, {
         name: 'Default task runner',
         status: 'enabled',
         presence: 'managed',
@@ -1769,56 +2063,17 @@ describe('task-route-handler workspace access', () => {
           bound_runner_id: boundDeveloperRunner.id,
         })),
       })).resolves.toBe(true);
-      const createdTask = createJson.mock.calls[0]?.[2] as { id: string };
-      expect(createdTask).toMatchObject({
-        bound_runner_id: boundDeveloperRunner.id,
-        bound_runner_kind: 'developer',
-        runner_binding_source: 'explicit',
-      });
-
-      const runJson = vi.fn();
-      await expect(handleTaskRoute({
-        route: {
-          kind: 'taskRuns',
-          workspaceId: 'ws_default',
-          projectId,
-          taskId: createdTask.id,
-        } as never,
-        method: 'POST',
-        req: { headers: {}, url: '' } as never,
-        res: {} as never,
-        deps,
-        user: { id: 'user_1', email: 'user_1@example.com' } as never,
-        json: runJson,
-        readBody: vi.fn(async () => ({
-          intent: 'Run now',
-        })),
-      })).resolves.toBe(true);
-
-      await vi.waitFor(() => {
-        expect(deps.agentExecutionService.dispatchStreamingRequest).toHaveBeenCalledWith(
-          expect.objectContaining({
-            agentId: boundDeveloperRunner.id,
-          }),
-        );
-      });
-      expect(deps.agentExecutionService.dispatchStreamingRequest).not.toHaveBeenCalledWith(
-        expect.objectContaining({
-          agentId: defaultRunner.id,
-        }),
-      );
-      await expect(buildTaskRealtimeView(
-        deps,
-        'ws_default',
-        projectId,
-        (await deps.docStore.get(notebookTasksCollection('ws_default'), createdTask.id)) as never,
-      )).resolves.toMatchObject({
-        id: createdTask.id,
-        active_run: {
-          runner_id: boundDeveloperRunner.id,
-          status: 'running',
+      expect(createJson).toHaveBeenCalledWith(
+        expect.anything(),
+        409,
+        {
+          error_code: 'TASK_HOME_BINDING_UNAVAILABLE_FOR_DEVELOPER_RUNNER',
+          message: 'task_home_binding_unavailable_for_developer_runner',
+          runtime_profile: 'developer',
         },
-      });
+      );
+      expect(deps.agentExecutionService.dispatchStreamingRequest).not.toHaveBeenCalled();
+      expect(getTasks('ws_default', projectId)).toHaveLength(0);
     } finally {
       if (previousPublicApiBase === undefined) delete process.env.PUBLIC_API_BASE_URL;
       else process.env.PUBLIC_API_BASE_URL = previousPublicApiBase;
@@ -1990,14 +2245,13 @@ describe('task-route-handler workspace access', () => {
       })),
     })).resolves.toBe(true);
 
-    expect(allowedJson.mock.calls[0]?.[1]).toBe(201);
+    expect(allowedJson.mock.calls[0]?.[1]).toBe(409);
     expect(allowedJson.mock.calls[0]?.[2]).toMatchObject({
-      title: 'Allowed Developer binding task',
-      bound_runner_id: developerRunner.id,
-      bound_runner_kind: 'developer',
-      runner_binding_source: 'explicit',
-      bound_by_user_id: 'user_task_only',
+      error_code: 'TASK_HOME_BINDING_UNAVAILABLE_FOR_DEVELOPER_RUNNER',
+      message: 'task_home_binding_unavailable_for_developer_runner',
+      runtime_profile: 'developer',
     });
+    expect(getTasks('ws_default', project.id)).toHaveLength(0);
   });
 
   it('returns only the display-safe default managed binding option to task-use-only callers', async () => {
@@ -2189,9 +2443,11 @@ describe('task-route-handler workspace access', () => {
         state: 'fresh',
         summary: 'fresh',
       },
+      disabled_reason_code: 'TASK_HOME_BINDING_UNAVAILABLE_FOR_DEVELOPER_RUNNER',
       actions: {
         bind_to_task: {
-          allowed: true,
+          allowed: false,
+          reason_code: 'TASK_HOME_BINDING_UNAVAILABLE_FOR_DEVELOPER_RUNNER',
           required_permissions: ['project:agent_task:use', 'project:agent_runner:manage'],
         },
       },
@@ -3075,7 +3331,6 @@ describe('task-route-handler workspace access', () => {
         'active_terminal',
         'workspace_holder',
       ]));
-      expect(createFileLibraryGatewayClientMock).not.toHaveBeenCalled();
       await expect(deps.docStore.get(notebookTasksCollection('ws_default'), taskId)).resolves.toMatchObject({
         id: taskId,
       });
@@ -3089,17 +3344,11 @@ describe('task-route-handler workspace access', () => {
     await seedDefaultManagedRunner(deps);
     const now = new Date().toISOString();
     const taskId = 'task_delete_clean';
-    await new JsonDocProjectFileLibraryCatalogRepo(deps.docStore).save({
+    await new JsonDocProjectFileLibraryCatalogRepo(deps.docStore).save(createFileLibraryCatalogFixture({
       id: 'lib_delete_clean',
-      workspace_id: 'ws_default',
-      project_id: 'proj_1',
       name: 'Delete Clean Workspace',
-      status: 'ready',
-      filesystem_name: 'flib-delete-clean',
-      created_by_user_id: 'user_1',
-      created_at: now,
-      updated_at: now,
-    } as never);
+      now,
+    }));
     await deps.docStore.upsert(notebookTasksCollection('ws_default'), taskId, {
       id: taskId,
       workspace_id: 'ws_default',
@@ -3115,18 +3364,6 @@ describe('task-route-handler workspace access', () => {
       updated_at: now,
       last_activity_at: now,
     });
-    const removeObjects = vi.fn(async () => undefined);
-    const removeObject = vi.fn(async () => undefined);
-    const listObjectsV2 = vi.fn(() => (async function* listTaskHomeObjects() {
-      yield { name: 'agent-tasks/task_delete_clean/workspace/.artifacts/result.txt' };
-      yield { name: 'agent-tasks/task_delete_clean/.codex/config.json' };
-    })());
-    createFileLibraryGatewayClientMock.mockResolvedValue({
-      listObjectsV2,
-      removeObjects,
-      removeObject,
-    });
-
     const json = vi.fn();
     await expect(handleTaskRoute({
       route: {
@@ -3144,9 +3381,6 @@ describe('task-route-handler workspace access', () => {
       readBody: vi.fn(),
     })).resolves.toBe(true);
 
-    expect(listObjectsV2).not.toHaveBeenCalled();
-    expect(removeObjects).not.toHaveBeenCalled();
-    expect(removeObject).not.toHaveBeenCalled();
     expect(json).toHaveBeenCalledWith(expect.anything(), 200, { success: true });
     await expect(deps.docStore.get(notebookTasksCollection('ws_default'), taskId)).resolves.toBeNull();
     await expect(deps.docStore.get(notebookTaskMessagesCollection('ws_default'), 'msg_delete_clean')).resolves.toBeNull();
@@ -3205,17 +3439,11 @@ describe('task-route-handler workspace access', () => {
     const deps = createDefaultNodeApiDeps();
     const now = new Date().toISOString();
     const taskId = 'task_delete_hydration_race';
-    await new JsonDocProjectFileLibraryCatalogRepo(deps.docStore).save({
+    await new JsonDocProjectFileLibraryCatalogRepo(deps.docStore).save(createFileLibraryCatalogFixture({
       id: 'lib_delete_hydration_race',
-      workspace_id: 'ws_default',
-      project_id: 'proj_1',
       name: 'Delete Hydration Race Workspace',
-      status: 'ready',
-      filesystem_name: 'flib-delete-hydration-race',
-      created_by_user_id: 'user_1',
-      created_at: now,
-      updated_at: now,
-    } as never);
+      now,
+    }));
     const acquired = await new JsonDocTaskFileLibraryBindingRepo(deps.docStore).acquire({
       workspaceId: 'ws_default',
       projectId: 'proj_1',
@@ -3294,35 +3522,11 @@ describe('task-route-handler workspace access', () => {
     const deps = createDefaultNodeApiDeps();
     const now = new Date().toISOString();
     const taskId = 'task_delete_live_workspace_holder';
-    await new JsonDocProjectFileLibraryCatalogRepo(deps.docStore).save({
+    await new JsonDocProjectFileLibraryCatalogRepo(deps.docStore).save(createFileLibraryCatalogFixture({
       id: 'lib_delete_live_workspace_holder',
-      workspace_id: 'ws_default',
-      project_id: 'proj_1',
       name: 'Delete Live Holder Workspace',
-      status: 'ready',
-      filesystem_name: 'flib-delete-live-holder',
-      created_by_user_id: 'user_1',
-      created_at: now,
-      updated_at: now,
-    } as never);
-    await new JsonDocProjectFileLibraryMountAccessRepo(deps.docStore).save(
-      'ws_default',
-      'proj_1',
-      'lib_delete_live_workspace_holder',
-      {
-        filesystem_name: 'flib-delete-live-holder',
-        metadata_url: 'postgres://jfsu_user:secret@localhost:15432/jfs_delete_live_holder?sslmode=disable',
-        storage_bucket_url: 'http://localhost:19000/jfs-delete-live-holder',
-        recommended_mount_path: '~/AgentSmith/Delete Live Holder',
-        platform_notes: [],
-        recommended_mount_commands: {
-          linux: 'juicefs mount ...',
-          macos: 'juicefs mount ...',
-          windows: 'juicefs mount ...',
-        },
-        created_at: now,
-      },
-    );
+      now,
+    }));
     await deps.docStore.upsert(notebookTasksCollection('ws_default'), taskId, {
       id: taskId,
       workspace_id: 'ws_default',
@@ -3358,12 +3562,17 @@ describe('task-route-handler workspace access', () => {
     })).resolves.toBe(true);
     expect(accessJson.mock.calls[0]?.[1]).toBe(200);
     const accessPayload = accessJson.mock.calls[0]?.[2] as {
-      holder_id: string;
       file_library_id: string;
-      lease_epoch: string;
-      binding_generation: string;
+      task_home_binding: {
+        holder: {
+          holder_id: string;
+          lease_epoch: string;
+          binding_generation: string;
+        };
+      };
     };
-    expect(accessPayload).toMatchObject({
+    const accessHolder = accessPayload.task_home_binding.holder;
+    expect(accessHolder).toMatchObject({
       holder_id: expect.any(String),
       lease_epoch: expect.any(String),
       binding_generation: expect.any(String),
@@ -3425,9 +3634,9 @@ describe('task-route-handler workspace access', () => {
       internalTicket,
       json: missingFileLibraryReleaseJson,
       readBody: vi.fn(async () => ({
-        holder_id: accessPayload.holder_id,
-        binding_generation: accessPayload.binding_generation,
-        lease_epoch: accessPayload.lease_epoch,
+        holder_id: accessHolder.holder_id,
+        binding_generation: accessHolder.binding_generation,
+        lease_epoch: accessHolder.lease_epoch,
       })),
     })).resolves.toBe(true);
     expect(missingFileLibraryReleaseJson.mock.calls[0]?.[1]).toBe(400);
@@ -3453,19 +3662,19 @@ describe('task-route-handler workspace access', () => {
       internalTicket,
       json: wrongFileLibraryReleaseJson,
       readBody: vi.fn(async () => ({
-        holder_id: accessPayload.holder_id,
+        holder_id: accessHolder.holder_id,
         file_library_id: 'lib_delete_live_workspace_holder_other',
-        binding_generation: accessPayload.binding_generation,
-        lease_epoch: accessPayload.lease_epoch,
+        binding_generation: accessHolder.binding_generation,
+        lease_epoch: accessHolder.lease_epoch,
       })),
     })).resolves.toBe(true);
     expect(wrongFileLibraryReleaseJson.mock.calls[0]?.[1]).toBe(409);
     expect(wrongFileLibraryReleaseJson.mock.calls[0]?.[2]).toMatchObject({
       error_code: 'AGENT_TASK_WORKSPACE_BINDING_CONFLICT',
       file_library_id: 'lib_delete_live_workspace_holder_other',
-      holder_id: accessPayload.holder_id,
-      binding_generation: accessPayload.binding_generation,
-      lease_epoch: accessPayload.lease_epoch,
+      holder_id: accessHolder.holder_id,
+      binding_generation: accessHolder.binding_generation,
+      lease_epoch: accessHolder.lease_epoch,
     });
 
     const blockedAfterWrongFileLibraryReleaseJson = vi.fn();
@@ -3506,16 +3715,16 @@ describe('task-route-handler workspace access', () => {
       internalTicket,
       json: staleReleaseJson,
       readBody: vi.fn(async () => ({
-        holder_id: accessPayload.holder_id,
+        holder_id: accessHolder.holder_id,
         file_library_id: accessPayload.file_library_id,
-        binding_generation: accessPayload.binding_generation,
+        binding_generation: accessHolder.binding_generation,
         lease_epoch: 'lease_old_epoch',
       })),
     })).resolves.toBe(true);
     expect(staleReleaseJson.mock.calls[0]?.[1]).toBe(409);
     expect(staleReleaseJson.mock.calls[0]?.[2]).toMatchObject({
       error_code: 'AGENT_TASK_WORKSPACE_BINDING_CONFLICT',
-      holder_id: accessPayload.holder_id,
+      holder_id: accessHolder.holder_id,
       lease_epoch: 'lease_old_epoch',
     });
 
@@ -3557,10 +3766,10 @@ describe('task-route-handler workspace access', () => {
       internalTicket,
       json: releaseJson,
       readBody: vi.fn(async () => ({
-        holder_id: accessPayload.holder_id,
+        holder_id: accessHolder.holder_id,
         file_library_id: accessPayload.file_library_id,
-        binding_generation: accessPayload.binding_generation,
-        lease_epoch: accessPayload.lease_epoch,
+        binding_generation: accessHolder.binding_generation,
+        lease_epoch: accessHolder.lease_epoch,
       })),
     })).resolves.toBe(true);
     expect(releaseJson).toHaveBeenCalledWith(expect.anything(), 200, { released: true });
@@ -3588,17 +3797,11 @@ describe('task-route-handler workspace access', () => {
     const deps = createDefaultNodeApiDeps();
     const now = new Date().toISOString();
     const taskId = 'task_delete_release_conflict';
-    await new JsonDocProjectFileLibraryCatalogRepo(deps.docStore).save({
+    await new JsonDocProjectFileLibraryCatalogRepo(deps.docStore).save(createFileLibraryCatalogFixture({
       id: 'lib_delete_release_conflict',
-      workspace_id: 'ws_default',
-      project_id: 'proj_1',
       name: 'Delete Release Conflict Workspace',
-      status: 'ready',
-      filesystem_name: 'flib-delete-release-conflict',
-      created_by_user_id: 'user_1',
-      created_at: now,
-      updated_at: now,
-    } as never);
+      now,
+    }));
     const acquired = await new JsonDocTaskFileLibraryBindingRepo(deps.docStore).acquire({
       workspaceId: 'ws_default',
       projectId: 'proj_1',
@@ -5105,10 +5308,13 @@ describe('task-route-handler workspace access', () => {
             workspace_id: input.workspaceId,
             project_id: input.projectId,
             file_library_id: input.fileLibraryId,
-            kind: 'juicefs_volume',
+            provider: 'afscp',
             status: 'ready',
-            metadata_url: 'postgres://jfsu_user:secret@localhost:15432/jfs_internal?sslmode=disable',
-            storage_bucket_url: 'http://localhost:19000/jfs-internal',
+            task_home_binding_id: 'bind_internal_pre_dispatch_cancel',
+            task_home_path: `/home/${input.taskId}`,
+            workspace_path: `/home/${input.taskId}/workspace`,
+            artifacts_path: `/home/${input.taskId}/workspace/.artifacts`,
+            library_root_path: '.',
             created_at: '2026-04-05T00:00:00.000Z',
             updated_at: '2026-04-05T00:00:00.000Z',
           },
@@ -5184,17 +5390,11 @@ describe('task-route-handler workspace access', () => {
         updated_at: now,
         last_activity_at: now,
       };
-      await deps.docStore.upsert('project_file_libraries', 'lib_internal_pre_dispatch_cancel', {
+      await deps.docStore.upsert('project_file_libraries', 'lib_internal_pre_dispatch_cancel', createFileLibraryCatalogFixture({
         id: 'lib_internal_pre_dispatch_cancel',
-        workspace_id: 'ws_default',
-        project_id: 'proj_1',
         name: 'Internal Pre-dispatch Workspace',
-        status: 'ready',
-        filesystem_name: 'flib-internal-pre-dispatch',
-        created_by_user_id: 'user_1',
-        created_at: now,
-        updated_at: now,
-      });
+        now,
+      }));
       await deps.docStore.upsert(notebookTasksCollection('ws_default'), task.id, task);
 
       const postJson = vi.fn();
@@ -5338,10 +5538,13 @@ describe('task-route-handler workspace access', () => {
             workspace_id: input.workspaceId,
             project_id: input.projectId,
             file_library_id: input.fileLibraryId,
-            kind: 'juicefs_volume',
+            provider: 'afscp',
             status: 'ready',
-            metadata_url: 'postgres://jfsu_user:secret@localhost:15432/jfs_internal?sslmode=disable',
-            storage_bucket_url: 'http://localhost:19000/jfs-internal',
+            task_home_binding_id: 'bind_internal_pre_dispatch_cancel_persist_failed',
+            task_home_path: `/home/${input.taskId}`,
+            workspace_path: `/home/${input.taskId}/workspace`,
+            artifacts_path: `/home/${input.taskId}/workspace/.artifacts`,
+            library_root_path: '.',
             created_at: '2026-04-05T00:00:00.000Z',
             updated_at: '2026-04-05T00:00:00.000Z',
           },
@@ -5417,17 +5620,11 @@ describe('task-route-handler workspace access', () => {
         updated_at: now,
         last_activity_at: now,
       };
-      await deps.docStore.upsert('project_file_libraries', 'lib_internal_pre_dispatch_cancel_persist_failed', {
+      await deps.docStore.upsert('project_file_libraries', 'lib_internal_pre_dispatch_cancel_persist_failed', createFileLibraryCatalogFixture({
         id: 'lib_internal_pre_dispatch_cancel_persist_failed',
-        workspace_id: 'ws_default',
-        project_id: 'proj_1',
         name: 'Internal Pre-dispatch Persist Failed Workspace',
-        status: 'ready',
-        filesystem_name: 'flib-internal-pre-dispatch-persist-failed',
-        created_by_user_id: 'user_1',
-        created_at: now,
-        updated_at: now,
-      });
+        now,
+      }));
       await deps.docStore.upsert(notebookTasksCollection('ws_default'), task.id, task);
 
       await expect(handleTaskRoute({
@@ -5522,10 +5719,13 @@ describe('task-route-handler workspace access', () => {
             workspace_id: input.workspaceId,
             project_id: input.projectId,
             file_library_id: input.fileLibraryId,
-            kind: 'juicefs_volume',
+            provider: 'afscp',
             status: 'ready',
-            metadata_url: 'postgres://jfsu_user:secret@localhost:15432/jfs_internal?sslmode=disable',
-            storage_bucket_url: 'http://localhost:19000/jfs-internal',
+            task_home_binding_id: 'bind_internal_late_on_dispatched',
+            task_home_path: `/home/${input.taskId}`,
+            workspace_path: `/home/${input.taskId}/workspace`,
+            artifacts_path: `/home/${input.taskId}/workspace/.artifacts`,
+            library_root_path: '.',
             created_at: '2026-04-05T00:00:00.000Z',
             updated_at: '2026-04-05T00:00:00.000Z',
           },
@@ -5601,17 +5801,11 @@ describe('task-route-handler workspace access', () => {
         updated_at: now,
         last_activity_at: now,
       };
-      await deps.docStore.upsert('project_file_libraries', 'lib_internal_late_on_dispatched', {
+      await deps.docStore.upsert('project_file_libraries', 'lib_internal_late_on_dispatched', createFileLibraryCatalogFixture({
         id: 'lib_internal_late_on_dispatched',
-        workspace_id: 'ws_default',
-        project_id: 'proj_1',
         name: 'Internal Late onDispatched Workspace',
-        status: 'ready',
-        filesystem_name: 'flib-internal-late-on-dispatched',
-        created_by_user_id: 'user_1',
-        created_at: now,
-        updated_at: now,
-      });
+        now,
+      }));
       await deps.docStore.upsert(notebookTasksCollection('ws_default'), task.id, task);
 
       const firstMessageJson = vi.fn();
@@ -6597,240 +6791,15 @@ describe('task-route-handler workspace access', () => {
     }
   });
 
-  it('rewrites client-visible mount access for internal agents when internal overrides are configured', () => {
-    const previousMetaHost = process.env.INTERNAL_AGENT_JUICEFS_META_HOST_OVERRIDE;
-    const previousMetaPort = process.env.INTERNAL_AGENT_JUICEFS_META_PORT_OVERRIDE;
-    const previousStorageEndpoint = process.env.JUICEFS_BUCKET_ENDPOINT_FOR_INTERNAL_MOUNT;
-    process.env.INTERNAL_AGENT_JUICEFS_META_HOST_OVERRIDE = 'postgres-external.agentsmith-sandbox.svc.cluster.local';
-    process.env.INTERNAL_AGENT_JUICEFS_META_PORT_OVERRIDE = '5432';
-    process.env.JUICEFS_BUCKET_ENDPOINT_FOR_INTERNAL_MOUNT = 'http://minio-external.agentsmith-sandbox.svc.cluster.local:9000';
-    try {
-      const resolved = resolveTaskWorkspaceMountAccess({
-        runnerProvider: 'managed',
-        metadataUrl: 'postgres://jfsu_user:secret@files.example.com:15432/jfs_lib_demo?sslmode=disable',
-        storageBucketUrl: 'https://files.example.com:19000/jfs-lib-demo',
-      });
-
-      expect(resolved).toEqual({
-        metadataUrl: 'postgres://jfsu_user:secret@postgres-external.agentsmith-sandbox.svc.cluster.local:5432/jfs_lib_demo?sslmode=disable',
-        storageBucketUrl: 'http://minio-external.agentsmith-sandbox.svc.cluster.local:9000/jfs-lib-demo',
-      });
-    } finally {
-      if (previousMetaHost === undefined) delete process.env.INTERNAL_AGENT_JUICEFS_META_HOST_OVERRIDE;
-      else process.env.INTERNAL_AGENT_JUICEFS_META_HOST_OVERRIDE = previousMetaHost;
-      if (previousMetaPort === undefined) delete process.env.INTERNAL_AGENT_JUICEFS_META_PORT_OVERRIDE;
-      else process.env.INTERNAL_AGENT_JUICEFS_META_PORT_OVERRIDE = previousMetaPort;
-      if (previousStorageEndpoint === undefined) delete process.env.JUICEFS_BUCKET_ENDPOINT_FOR_INTERNAL_MOUNT;
-      else process.env.JUICEFS_BUCKET_ENDPOINT_FOR_INTERNAL_MOUNT = previousStorageEndpoint;
-    }
-  });
-
-  it('rewrites loopback mount access for developer runner execution', () => {
-    const previousExternalExecutionBase = process.env.AGENT_RUNNER_DEVELOPER_EXECUTION_HTTP_BASE_URL;
-    process.env.AGENT_RUNNER_DEVELOPER_EXECUTION_HTTP_BASE_URL = 'http://172.18.0.1:20000';
-    try {
-      const resolved = resolveTaskWorkspaceMountAccess({
-        runnerProvider: 'developer',
-        metadataUrl: 'postgres://jfsu_user:secret@localhost:15432/jfs_lib_demo?sslmode=disable',
-        storageBucketUrl: 'http://localhost:19000/jfs-lib-demo',
-      });
-
-      expect(resolved).toEqual({
-        metadataUrl: 'postgres://jfsu_user:secret@172.18.0.1:15432/jfs_lib_demo?sslmode=disable',
-        storageBucketUrl: 'http://172.18.0.1:19000/jfs-lib-demo',
-      });
-    } finally {
-      if (previousExternalExecutionBase === undefined) {
-        delete process.env.AGENT_RUNNER_DEVELOPER_EXECUTION_HTTP_BASE_URL;
-      } else {
-        process.env.AGENT_RUNNER_DEVELOPER_EXECUTION_HTTP_BASE_URL = previousExternalExecutionBase;
-      }
-    }
-  });
-
-  it('rewrites non-loopback mount access to the docker-manual runner host', () => {
-    const previousExternalExecutionBase = process.env.AGENT_RUNNER_DEVELOPER_EXECUTION_HTTP_BASE_URL;
-    process.env.AGENT_RUNNER_DEVELOPER_EXECUTION_HTTP_BASE_URL = 'http://host.docker.internal:20000';
-    try {
-      const resolved = resolveTaskWorkspaceMountAccess({
-        runnerProvider: 'developer',
-        metadataUrl: 'postgres://jfsu_user:secret@mbos.imotion.ai:15432/jfs_lib_demo?sslmode=disable',
-        storageBucketUrl: 'http://mbos.imotion.ai:19000/jfs-lib-demo',
-      });
-
-      expect(resolved).toEqual({
-        metadataUrl: 'postgres://jfsu_user:secret@host.docker.internal:15432/jfs_lib_demo?sslmode=disable',
-        storageBucketUrl: 'http://host.docker.internal:19000/jfs-lib-demo',
-      });
-    } finally {
-      if (previousExternalExecutionBase === undefined) {
-        delete process.env.AGENT_RUNNER_DEVELOPER_EXECUTION_HTTP_BASE_URL;
-      } else {
-        process.env.AGENT_RUNNER_DEVELOPER_EXECUTION_HTTP_BASE_URL = previousExternalExecutionBase;
-      }
-    }
-  });
-
-  it('prefers explicit developer runner JuiceFS overrides when configured', () => {
-    const previousExternalExecutionBase = process.env.AGENT_RUNNER_DEVELOPER_EXECUTION_HTTP_BASE_URL;
-    const previousExternalMetaHost = process.env.AGENT_RUNNER_DEVELOPER_JUICEFS_META_HOST_OVERRIDE;
-    const previousExternalMetaPort = process.env.AGENT_RUNNER_DEVELOPER_JUICEFS_META_PORT_OVERRIDE;
-    const previousExternalStorageEndpoint = process.env.AGENT_RUNNER_DEVELOPER_JUICEFS_STORAGE_ENDPOINT_OVERRIDE;
-    process.env.AGENT_RUNNER_DEVELOPER_EXECUTION_HTTP_BASE_URL = 'http://host.docker.internal:20000';
-    process.env.AGENT_RUNNER_DEVELOPER_JUICEFS_META_HOST_OVERRIDE = '192.168.0.220';
-    process.env.AGENT_RUNNER_DEVELOPER_JUICEFS_META_PORT_OVERRIDE = '15432';
-    process.env.AGENT_RUNNER_DEVELOPER_JUICEFS_STORAGE_ENDPOINT_OVERRIDE = 'http://192.168.0.220:19000';
-    try {
-      const resolved = resolveTaskWorkspaceMountAccess({
-        runnerProvider: 'developer',
-        metadataUrl: 'postgres://jfsu_user:secret@files.example.com:15432/jfs_lib_demo?sslmode=disable',
-        storageBucketUrl: 'http://files.example.com:19000/jfs-lib-demo',
-      });
-
-      expect(resolved).toEqual({
-        metadataUrl: 'postgres://jfsu_user:secret@192.168.0.220:15432/jfs_lib_demo?sslmode=disable',
-        storageBucketUrl: 'http://192.168.0.220:19000/jfs-lib-demo',
-      });
-    } finally {
-      if (previousExternalExecutionBase === undefined) delete process.env.AGENT_RUNNER_DEVELOPER_EXECUTION_HTTP_BASE_URL;
-      else process.env.AGENT_RUNNER_DEVELOPER_EXECUTION_HTTP_BASE_URL = previousExternalExecutionBase;
-      if (previousExternalMetaHost === undefined) delete process.env.AGENT_RUNNER_DEVELOPER_JUICEFS_META_HOST_OVERRIDE;
-      else process.env.AGENT_RUNNER_DEVELOPER_JUICEFS_META_HOST_OVERRIDE = previousExternalMetaHost;
-      if (previousExternalMetaPort === undefined) delete process.env.AGENT_RUNNER_DEVELOPER_JUICEFS_META_PORT_OVERRIDE;
-      else process.env.AGENT_RUNNER_DEVELOPER_JUICEFS_META_PORT_OVERRIDE = previousExternalMetaPort;
-      if (previousExternalStorageEndpoint === undefined) delete process.env.AGENT_RUNNER_DEVELOPER_JUICEFS_STORAGE_ENDPOINT_OVERRIDE;
-      else process.env.AGENT_RUNNER_DEVELOPER_JUICEFS_STORAGE_ENDPOINT_OVERRIDE = previousExternalStorageEndpoint;
-    }
-  });
-
-  it('leaves developer runner mount access to the provider adapter instead of selecting compose runtime in the route', () => {
-    const previousDatabaseUrl = process.env.DATABASE_URL;
-    const previousManagedExecutionHttpBase = process.env.AGENT_EXECUTION_HTTP_BASE_URL;
-    const previousMinioEndpoint = process.env.MINIO_ENDPOINT;
-    const previousMinioPort = process.env.MINIO_PORT;
-    const previousMinioUseSsl = process.env.MINIO_USE_SSL;
-    delete process.env.AGENT_EXECUTION_HTTP_BASE_URL;
-    process.env.DATABASE_URL = 'postgresql://mbos:secret@postgres:5432/mbos';
-    process.env.MINIO_ENDPOINT = 'minio';
-    process.env.MINIO_PORT = '9000';
-    process.env.MINIO_USE_SSL = 'false';
-    try {
-      const resolved = resolveTaskWorkspaceMountAccess({
-        runnerProvider: 'developer',
-        metadataUrl: 'postgres://jfsu_user:secret@localhost:15432/jfs_lib_demo?sslmode=disable',
-        storageBucketUrl: 'http://localhost:19000/jfs-lib-demo',
-      });
-
-      expect(resolved).toEqual({
-        metadataUrl: 'postgres://jfsu_user:secret@localhost:15432/jfs_lib_demo?sslmode=disable',
-        storageBucketUrl: 'http://localhost:19000/jfs-lib-demo',
-      });
-    } finally {
-      if (previousDatabaseUrl === undefined) delete process.env.DATABASE_URL;
-      else process.env.DATABASE_URL = previousDatabaseUrl;
-      if (previousManagedExecutionHttpBase === undefined) delete process.env.AGENT_EXECUTION_HTTP_BASE_URL;
-      else process.env.AGENT_EXECUTION_HTTP_BASE_URL = previousManagedExecutionHttpBase;
-      if (previousMinioEndpoint === undefined) delete process.env.MINIO_ENDPOINT;
-      else process.env.MINIO_ENDPOINT = previousMinioEndpoint;
-      if (previousMinioPort === undefined) delete process.env.MINIO_PORT;
-      else process.env.MINIO_PORT = previousMinioPort;
-      if (previousMinioUseSsl === undefined) delete process.env.MINIO_USE_SSL;
-      else process.env.MINIO_USE_SSL = previousMinioUseSsl;
-    }
-  });
-
-  it('ignores docker-manual runtime selectors in task route mount resolution', () => {
-    const previousManagedExecutionHttpBase = process.env.AGENT_EXECUTION_HTTP_BASE_URL;
-    const previousDockerManualHost = process.env.DOCKER_MANUAL_AGENT_JUICEFS_META_HOST_OVERRIDE;
-    const previousDockerManualPort = process.env.DOCKER_MANUAL_AGENT_JUICEFS_META_PORT_OVERRIDE;
-    const previousDockerManualEndpoint = process.env.DOCKER_MANUAL_AGENT_JUICEFS_STORAGE_ENDPOINT_OVERRIDE;
-    const previousClientPgPort = process.env.FILE_LIBRARY_CLIENT_POSTGRES_PORT;
-    const previousMinioApiPort = process.env.MINIO_API_PORT;
-    delete process.env.AGENT_EXECUTION_HTTP_BASE_URL;
-    process.env.DOCKER_MANUAL_AGENT_JUICEFS_META_HOST_OVERRIDE = 'host.docker.internal';
-    process.env.DOCKER_MANUAL_AGENT_JUICEFS_META_PORT_OVERRIDE = '15432';
-    process.env.DOCKER_MANUAL_AGENT_JUICEFS_STORAGE_ENDPOINT_OVERRIDE = 'http://host.docker.internal:19000';
-    process.env.FILE_LIBRARY_CLIENT_POSTGRES_PORT = '15432';
-    process.env.MINIO_API_PORT = '19000';
-    try {
-      const resolved = resolveTaskWorkspaceMountAccess({
-        runnerProvider: 'developer',
-        metadataUrl: 'postgres://jfsu_user:secret@192.168.0.220:15432/jfs_lib_demo?sslmode=disable',
-        storageBucketUrl: 'http://192.168.0.220:19000/jfs-lib-demo',
-      });
-
-      expect(resolved).toEqual({
-        metadataUrl: 'postgres://jfsu_user:secret@192.168.0.220:15432/jfs_lib_demo?sslmode=disable',
-        storageBucketUrl: 'http://192.168.0.220:19000/jfs-lib-demo',
-      });
-    } finally {
-      if (previousManagedExecutionHttpBase === undefined) delete process.env.AGENT_EXECUTION_HTTP_BASE_URL;
-      else process.env.AGENT_EXECUTION_HTTP_BASE_URL = previousManagedExecutionHttpBase;
-      if (previousDockerManualHost === undefined) delete process.env.DOCKER_MANUAL_AGENT_JUICEFS_META_HOST_OVERRIDE;
-      else process.env.DOCKER_MANUAL_AGENT_JUICEFS_META_HOST_OVERRIDE = previousDockerManualHost;
-      if (previousDockerManualPort === undefined) delete process.env.DOCKER_MANUAL_AGENT_JUICEFS_META_PORT_OVERRIDE;
-      else process.env.DOCKER_MANUAL_AGENT_JUICEFS_META_PORT_OVERRIDE = previousDockerManualPort;
-      if (previousDockerManualEndpoint === undefined) delete process.env.DOCKER_MANUAL_AGENT_JUICEFS_STORAGE_ENDPOINT_OVERRIDE;
-      else process.env.DOCKER_MANUAL_AGENT_JUICEFS_STORAGE_ENDPOINT_OVERRIDE = previousDockerManualEndpoint;
-      if (previousClientPgPort === undefined) delete process.env.FILE_LIBRARY_CLIENT_POSTGRES_PORT;
-      else process.env.FILE_LIBRARY_CLIENT_POSTGRES_PORT = previousClientPgPort;
-      if (previousMinioApiPort === undefined) delete process.env.MINIO_API_PORT;
-      else process.env.MINIO_API_PORT = previousMinioApiPort;
-    }
-  });
-
-  it('rewrites loopback mount access for internal agent execution', () => {
-    const previousMetaHost = process.env.INTERNAL_AGENT_JUICEFS_META_HOST_OVERRIDE;
-    const previousMetaPort = process.env.INTERNAL_AGENT_JUICEFS_META_PORT_OVERRIDE;
-    const previousStorageEndpoint = process.env.JUICEFS_BUCKET_ENDPOINT_FOR_INTERNAL_MOUNT;
-    process.env.INTERNAL_AGENT_JUICEFS_META_HOST_OVERRIDE = 'postgres-external.agentsmith-sandbox.svc.cluster.local';
-    process.env.INTERNAL_AGENT_JUICEFS_META_PORT_OVERRIDE = '5432';
-    process.env.JUICEFS_BUCKET_ENDPOINT_FOR_INTERNAL_MOUNT = 'http://minio-external.agentsmith-sandbox.svc.cluster.local:9000';
-    try {
-      const resolved = resolveTaskWorkspaceMountAccess({
-        runnerProvider: 'managed',
-        metadataUrl: 'postgres://jfsu_user:secret@localhost:15432/jfs_lib_demo?sslmode=disable',
-        storageBucketUrl: 'http://localhost:19000/jfs-lib-demo',
-      });
-
-      expect(resolved).toEqual({
-        metadataUrl: 'postgres://jfsu_user:secret@postgres-external.agentsmith-sandbox.svc.cluster.local:5432/jfs_lib_demo?sslmode=disable',
-        storageBucketUrl: 'http://minio-external.agentsmith-sandbox.svc.cluster.local:9000/jfs-lib-demo',
-      });
-    } finally {
-      if (previousMetaHost === undefined) {
-        delete process.env.INTERNAL_AGENT_JUICEFS_META_HOST_OVERRIDE;
-      } else {
-        process.env.INTERNAL_AGENT_JUICEFS_META_HOST_OVERRIDE = previousMetaHost;
-      }
-      if (previousMetaPort === undefined) {
-        delete process.env.INTERNAL_AGENT_JUICEFS_META_PORT_OVERRIDE;
-      } else {
-        process.env.INTERNAL_AGENT_JUICEFS_META_PORT_OVERRIDE = previousMetaPort;
-      }
-      if (previousStorageEndpoint === undefined) {
-        delete process.env.JUICEFS_BUCKET_ENDPOINT_FOR_INTERNAL_MOUNT;
-      } else {
-        process.env.JUICEFS_BUCKET_ENDPOINT_FOR_INTERNAL_MOUNT = previousStorageEndpoint;
-      }
-    }
-  });
-
   it('cancels workspace-library artifact fallback downloads when the client disconnects', async () => {
     const docStore = new InMemoryJsonDocStore();
     const now = new Date().toISOString();
 
-    await docStore.upsert('project_file_libraries', 'lib_1', {
+    await docStore.upsert('project_file_libraries', 'lib_1', createFileLibraryCatalogFixture({
       id: 'lib_1',
-      workspace_id: 'ws_default',
-      project_id: 'proj_1',
       name: 'Workspace Library',
-      status: 'ready',
-      filesystem_name: 'flib-workspace-library',
-      created_by_user_id: 'user_1',
-      created_at: now,
-      updated_at: now,
-    });
+      now,
+    }));
     await docStore.upsert(notebookTasksCollection('ws_default'), 'task_1', {
       id: 'task_1',
       workspace_id: 'ws_default',
@@ -6860,12 +6829,24 @@ describe('task-route-handler workspace access', () => {
 
     const objectStream = new PassThrough();
     const destroySpy = vi.spyOn(objectStream, 'destroy');
-    createFileLibraryGatewayClientMock.mockResolvedValue({
-      statObject: vi.fn().mockResolvedValue({
-        size: 12,
-        metaData: { 'content-type': 'text/plain' },
-      }),
-      getObject: vi.fn().mockResolvedValue(objectStream),
+    const cancel = vi.fn(async (reason?: unknown) => {
+      objectStream.destroy(reason instanceof Error ? reason : undefined);
+    });
+    const downloadObject = vi.fn(async (input: { objectPath: string }) => ({
+      meta: {
+        key: input.objectPath,
+        size_bytes: 12,
+        content_type: 'text/plain',
+        last_modified: now,
+        user_metadata: {},
+      },
+      download: {
+        stream: objectStream,
+        cancel,
+      },
+    }));
+    const storageAdapter = createTaskFileLibraryStorageAdapter({
+      downloadObject,
     });
 
     const req = new EventEmitter() as http.IncomingMessage;
@@ -6888,6 +6869,7 @@ describe('task-route-handler workspace access', () => {
       res: res as unknown as http.ServerResponse,
       deps: {
         docStore,
+        fileLibraryStorageAdapter: storageAdapter,
       } as never,
       user: { id: 'user_1' } as never,
       json: vi.fn(),
@@ -6897,23 +6879,18 @@ describe('task-route-handler workspace access', () => {
     res.emit('close');
 
     expect(destroySpy).toHaveBeenCalledTimes(1);
+    expect(cancel).toHaveBeenCalledTimes(1);
   });
 
   it('maps runner artifact metadata paths to workspace artifact object keys', async () => {
     const docStore = new InMemoryJsonDocStore();
     const now = new Date().toISOString();
 
-    await docStore.upsert('project_file_libraries', 'lib_artifact_workspace_key', {
+    await docStore.upsert('project_file_libraries', 'lib_artifact_workspace_key', createFileLibraryCatalogFixture({
       id: 'lib_artifact_workspace_key',
-      workspace_id: 'ws_default',
-      project_id: 'proj_1',
       name: 'Workspace Library',
-      status: 'ready',
-      filesystem_name: 'flib-workspace-library',
-      created_by_user_id: 'user_1',
-      created_at: now,
-      updated_at: now,
-    });
+      now,
+    }));
     await docStore.upsert(notebookTasksCollection('ws_default'), 'task_artifact_workspace_key', {
       id: 'task_artifact_workspace_key',
       workspace_id: 'ws_default',
@@ -6940,14 +6917,21 @@ describe('task-route-handler workspace access', () => {
     });
 
     const objectStream = new PassThrough();
-    const statObject = vi.fn().mockResolvedValue({
-      size: 12,
-      metaData: { 'content-type': 'text/plain' },
-    });
-    const getObject = vi.fn().mockResolvedValue(objectStream);
-    createFileLibraryGatewayClientMock.mockResolvedValue({
-      statObject,
-      getObject,
+    const downloadObject = vi.fn(async (input: { objectPath: string }) => ({
+      meta: {
+        key: input.objectPath,
+        size_bytes: 12,
+        content_type: 'text/plain',
+        last_modified: now,
+        user_metadata: {},
+      },
+      download: {
+        stream: objectStream,
+        cancel: vi.fn(async () => undefined),
+      },
+    }));
+    const storageAdapter = createTaskFileLibraryStorageAdapter({
+      downloadObject,
     });
 
     const res = new PassThrough() as PassThrough & http.ServerResponse;
@@ -6970,6 +6954,7 @@ describe('task-route-handler workspace access', () => {
       res: res as unknown as http.ServerResponse,
       deps: {
         docStore,
+        fileLibraryStorageAdapter: storageAdapter,
       } as never,
       user: { id: 'user_1' } as never,
       json: vi.fn(),
@@ -6977,13 +6962,18 @@ describe('task-route-handler workspace access', () => {
     })).resolves.toBe(true);
 
     objectStream.end('downloaded');
-    expect(statObject).toHaveBeenCalledWith('flib-workspace-library', 'workspace/.artifacts/result.txt');
-    expect(getObject).toHaveBeenCalledWith('flib-workspace-library', 'workspace/.artifacts/result.txt');
-    expect(statObject).not.toHaveBeenCalledWith('flib-workspace-library', '.artifacts/result.txt');
-    expect(statObject).not.toHaveBeenCalledWith(
-      'flib-workspace-library',
-      expect.stringContaining('agent-tasks/'),
-    );
+    expect(downloadObject).toHaveBeenCalledWith(expect.objectContaining({
+      workspaceId: 'ws_default',
+      projectId: 'proj_1',
+      libraryId: 'lib_artifact_workspace_key',
+      objectPath: 'workspace/.artifacts/result.txt',
+    }));
+    expect(downloadObject).not.toHaveBeenCalledWith(expect.objectContaining({
+      objectPath: '.artifacts/result.txt',
+    }));
+    expect(downloadObject).not.toHaveBeenCalledWith(expect.objectContaining({
+      objectPath: expect.stringContaining('agent-tasks/'),
+    }));
   });
 
   it('does not use workspace-library fallback for artifact paths outside workspace artifacts', async () => {
@@ -6993,17 +6983,11 @@ describe('task-route-handler workspace access', () => {
     ]) {
       const docStore = new InMemoryJsonDocStore();
       const now = new Date().toISOString();
-      await docStore.upsert('project_file_libraries', 'lib_reject_artifact_path', {
+      await docStore.upsert('project_file_libraries', 'lib_reject_artifact_path', createFileLibraryCatalogFixture({
         id: 'lib_reject_artifact_path',
-        workspace_id: 'ws_default',
-        project_id: 'proj_1',
         name: 'Workspace Library',
-        status: 'ready',
-        filesystem_name: 'flib-workspace-library',
-        created_by_user_id: 'user_1',
-        created_at: now,
-        updated_at: now,
-      });
+        now,
+      }));
       await docStore.upsert(notebookTasksCollection('ws_default'), 'task_reject_artifact_path', {
         id: 'task_reject_artifact_path',
         workspace_id: 'ws_default',
@@ -7030,6 +7014,7 @@ describe('task-route-handler workspace access', () => {
       });
 
       const end = vi.fn();
+      const downloadObject = vi.fn();
       await expect(handleTaskRoute({
         route: {
           kind: 'taskArtifactDownload',
@@ -7050,32 +7035,28 @@ describe('task-route-handler workspace access', () => {
         } as never,
         deps: {
           docStore,
+          fileLibraryStorageAdapter: createTaskFileLibraryStorageAdapter({
+            downloadObject: downloadObject as never,
+          }),
         } as never,
         user: { id: 'user_1' } as never,
         json: vi.fn(),
         readBody: vi.fn(),
       })).resolves.toBe(true);
 
-      expect(createFileLibraryGatewayClientMock).not.toHaveBeenCalled();
+      expect(downloadObject).not.toHaveBeenCalled();
       expect(end).toHaveBeenCalledWith('artifact binary download is unavailable: no inline content stored');
-      createFileLibraryGatewayClientMock.mockReset();
     }
   });
 
   it('cancels artifact fallback downloads when the client already aborted before the bridge attaches listeners', async () => {
     const docStore = new InMemoryJsonDocStore();
     const now = new Date().toISOString();
-    await docStore.upsert('project_file_libraries', 'lib_1', {
+    await docStore.upsert('project_file_libraries', 'lib_1', createFileLibraryCatalogFixture({
       id: 'lib_1',
-      workspace_id: 'ws_default',
-      project_id: 'proj_1',
       name: 'Workspace Library',
-      status: 'ready',
-      filesystem_name: 'flib-workspace-library',
-      created_by_user_id: 'user_1',
-      created_at: now,
-      updated_at: now,
-    });
+      now,
+    }));
     await docStore.upsert(notebookTasksCollection('ws_default'), 'task_1', {
       id: 'task_1',
       workspace_id: 'ws_default',
@@ -7105,15 +7086,15 @@ describe('task-route-handler workspace access', () => {
 
     const objectStream = new PassThrough();
     const destroySpy = vi.spyOn(objectStream, 'destroy');
-    let resolveGetObject: ((stream: PassThrough) => void) | null = null;
-    createFileLibraryGatewayClientMock.mockResolvedValue({
-      statObject: vi.fn().mockResolvedValue({
-        size: 12,
-        metaData: { 'content-type': 'text/plain' },
-      }),
-      getObject: vi.fn().mockImplementation(() => new Promise<PassThrough>((resolve) => {
-        resolveGetObject = resolve;
-      })),
+    let resolveDownloadObject: ((value: Awaited<ReturnType<FileLibraryStoragePort['downloadObject']>>) => void) | null = null;
+    const cancel = vi.fn(async (reason?: unknown) => {
+      objectStream.destroy(reason instanceof Error ? reason : undefined);
+    });
+    const downloadObject = vi.fn(() => new Promise<Awaited<ReturnType<FileLibraryStoragePort['downloadObject']>>>((resolve) => {
+      resolveDownloadObject = resolve;
+    }));
+    const storageAdapter = createTaskFileLibraryStorageAdapter({
+      downloadObject,
     });
 
     const req = new EventEmitter() as http.IncomingMessage & { aborted: boolean };
@@ -7137,6 +7118,7 @@ describe('task-route-handler workspace access', () => {
       res: res as unknown as http.ServerResponse,
       deps: {
         docStore,
+        fileLibraryStorageAdapter: storageAdapter,
       } as never,
       user: { id: 'user_1' } as never,
       json: vi.fn(),
@@ -7146,28 +7128,35 @@ describe('task-route-handler workspace access', () => {
     await new Promise((resolve) => setImmediate(resolve));
     req.aborted = true;
     req.emit('aborted');
-    resolveGetObject?.(objectStream);
+    resolveDownloadObject?.({
+      meta: {
+        key: 'workspace/.artifacts/result.txt',
+        size_bytes: 12,
+        content_type: 'text/plain',
+        last_modified: now,
+        user_metadata: {},
+      },
+      download: {
+        stream: objectStream,
+        cancel,
+      },
+    });
 
     await expect(routePromise).resolves.toBe(true);
     await new Promise((resolve) => setImmediate(resolve));
 
     expect(destroySpy).toHaveBeenCalledTimes(1);
+    expect(cancel).toHaveBeenCalledTimes(1);
   });
 
   it('cancels artifact fallback downloads before statObject resolves and does not continue to getObject', async () => {
     const docStore = new InMemoryJsonDocStore();
     const now = new Date().toISOString();
-    await docStore.upsert('project_file_libraries', 'lib_1', {
+    await docStore.upsert('project_file_libraries', 'lib_1', createFileLibraryCatalogFixture({
       id: 'lib_1',
-      workspace_id: 'ws_default',
-      project_id: 'proj_1',
       name: 'Workspace Library',
-      status: 'ready',
-      filesystem_name: 'flib-workspace-library',
-      created_by_user_id: 'user_1',
-      created_at: now,
-      updated_at: now,
-    });
+      now,
+    }));
     await docStore.upsert(notebookTasksCollection('ws_default'), 'task_1', {
       id: 'task_1',
       workspace_id: 'ws_default',
@@ -7195,13 +7184,14 @@ describe('task-route-handler workspace access', () => {
       created_at: now,
     });
 
-    let resolveStatObject: ((value: { size: number; metaData?: Record<string, string> }) => void) | null = null;
-    const getObject = vi.fn();
-    createFileLibraryGatewayClientMock.mockResolvedValue({
-      statObject: vi.fn().mockImplementation(() => new Promise((resolve) => {
-        resolveStatObject = resolve;
-      })),
-      getObject,
+    const objectStream = new PassThrough();
+    const cancel = vi.fn(async () => undefined);
+    let resolveDownloadObject: ((value: Awaited<ReturnType<FileLibraryStoragePort['downloadObject']>>) => void) | null = null;
+    const downloadObject = vi.fn(() => new Promise<Awaited<ReturnType<FileLibraryStoragePort['downloadObject']>>>((resolve) => {
+      resolveDownloadObject = resolve;
+    }));
+    const storageAdapter = createTaskFileLibraryStorageAdapter({
+      downloadObject,
     });
 
     const req = new EventEmitter() as http.IncomingMessage & { aborted: boolean };
@@ -7226,6 +7216,7 @@ describe('task-route-handler workspace access', () => {
       res: res as unknown as http.ServerResponse,
       deps: {
         docStore,
+        fileLibraryStorageAdapter: storageAdapter,
       } as never,
       user: { id: 'user_1' } as never,
       json: vi.fn(),
@@ -7235,32 +7226,35 @@ describe('task-route-handler workspace access', () => {
     await new Promise((resolve) => setImmediate(resolve));
     req.aborted = true;
     req.emit('aborted');
-    resolveStatObject?.({
-      size: 12,
-      metaData: { 'content-type': 'text/plain' },
+    resolveDownloadObject?.({
+      meta: {
+        key: 'workspace/.artifacts/result.txt',
+        size_bytes: 12,
+        content_type: 'text/plain',
+        last_modified: now,
+        user_metadata: {},
+      },
+      download: {
+        stream: objectStream,
+        cancel,
+      },
     });
 
     await expect(routePromise).resolves.toBe(true);
     await new Promise((resolve) => setImmediate(resolve));
 
-    expect(getObject).not.toHaveBeenCalled();
+    expect(cancel).toHaveBeenCalledTimes(1);
     expect(res.end).not.toHaveBeenCalled();
   });
 
-  it('passes the http operation signal into gateway client creation for artifact fallback downloads', async () => {
+  it('passes the http operation signal into AFSCP storage adapter artifact fallback downloads', async () => {
     const docStore = new InMemoryJsonDocStore();
     const now = new Date().toISOString();
-    await docStore.upsert('project_file_libraries', 'lib_1', {
+    await docStore.upsert('project_file_libraries', 'lib_1', createFileLibraryCatalogFixture({
       id: 'lib_1',
-      workspace_id: 'ws_default',
-      project_id: 'proj_1',
       name: 'Workspace Library',
-      status: 'ready',
-      filesystem_name: 'flib-workspace-library',
-      created_by_user_id: 'user_1',
-      created_at: now,
-      updated_at: now,
-    });
+      now,
+    }));
     await docStore.upsert(notebookTasksCollection('ws_default'), 'task_1', {
       id: 'task_1',
       workspace_id: 'ws_default',
@@ -7289,9 +7283,12 @@ describe('task-route-handler workspace access', () => {
     });
 
     let receivedSignal: AbortSignal | undefined;
-    createFileLibraryGatewayClientMock.mockImplementation(async (args: { signal?: AbortSignal }) => {
+    const downloadObject = vi.fn(async (args: { signal?: AbortSignal }) => {
       receivedSignal = args.signal;
       return await new Promise<never>(() => {});
+    });
+    const storageAdapter = createTaskFileLibraryStorageAdapter({
+      downloadObject: downloadObject as never,
     });
 
     const req = new EventEmitter() as http.IncomingMessage & { aborted: boolean };
@@ -7322,6 +7319,7 @@ describe('task-route-handler workspace access', () => {
       res: res as unknown as http.ServerResponse,
       deps: {
         docStore,
+        fileLibraryStorageAdapter: storageAdapter,
       } as never,
       user: { id: 'user_1' } as never,
       json: vi.fn(),
@@ -7408,17 +7406,11 @@ describe('task-route-handler workspace access', () => {
   it('sets the same UTF-8 aware attachment header for workspace-library-backed task artifact downloads', async () => {
     const docStore = new InMemoryJsonDocStore();
     const now = new Date().toISOString();
-    await docStore.upsert('project_file_libraries', 'lib_utf8_1', {
+    await docStore.upsert('project_file_libraries', 'lib_utf8_1', createFileLibraryCatalogFixture({
       id: 'lib_utf8_1',
-      workspace_id: 'ws_default',
-      project_id: 'proj_1',
       name: 'Workspace Library',
-      status: 'ready',
-      filesystem_name: 'flib-workspace-library',
-      created_by_user_id: 'user_1',
-      created_at: now,
-      updated_at: now,
-    });
+      now,
+    }));
     await docStore.upsert(notebookTasksCollection('ws_default'), 'task_stream_1', {
       id: 'task_stream_1',
       workspace_id: 'ws_default',
@@ -7447,12 +7439,21 @@ describe('task-route-handler workspace access', () => {
     });
 
     const objectStream = new PassThrough();
-    createFileLibraryGatewayClientMock.mockResolvedValue({
-      statObject: vi.fn().mockResolvedValue({
-        size: 12,
-        metaData: { 'content-type': 'image/png' },
-      }),
-      getObject: vi.fn().mockResolvedValue(objectStream),
+    const downloadObject = vi.fn(async (input: { objectPath: string }) => ({
+      meta: {
+        key: input.objectPath,
+        size_bytes: 12,
+        content_type: 'image/png',
+        last_modified: now,
+        user_metadata: {},
+      },
+      download: {
+        stream: objectStream,
+        cancel: vi.fn(async () => undefined),
+      },
+    }));
+    const storageAdapter = createTaskFileLibraryStorageAdapter({
+      downloadObject,
     });
 
     const setHeader = vi.fn();
@@ -7476,6 +7477,7 @@ describe('task-route-handler workspace access', () => {
       res: res as unknown as http.ServerResponse,
       deps: {
         docStore,
+        fileLibraryStorageAdapter: storageAdapter,
       } as never,
       user: { id: 'user_1' } as never,
       json: vi.fn(),
@@ -7666,6 +7668,30 @@ describe('task-route-handler workspace access', () => {
     process.env.PUBLIC_API_BASE_URL = 'http://127.0.0.1:20000/api/v1';
     process.env.AGENT_RUNNER_DEVELOPER_EXECUTION_HTTP_BASE_URL = 'http://127.0.0.1:20000';
     const deps = createDefaultNodeApiDeps();
+    deps.internalAgentPodManager = {
+      ensureAgentReady: vi.fn(async () => undefined),
+      keepalive: vi.fn(async () => undefined),
+      releasePod: vi.fn(async () => undefined),
+    };
+    deps.internalAgentWorkspaceBindingManager = {
+      ensureWorkspaceBinding: vi.fn(async () => ({
+        binding: {
+          task_home_binding_id: 'bind_active_terminal_inherit',
+          task_home_path: '/home/flibhome_active_terminal_inherit',
+          workspace_path: '/home/flibhome_active_terminal_inherit/workspace',
+          artifacts_path: '/home/flibhome_active_terminal_inherit/workspace/.artifacts',
+          library_root_path: '.',
+        },
+        workspaceMount: {
+          bindingId: 'bind_active_terminal_inherit',
+          mountPath: '/home/flibhome_active_terminal_inherit',
+          taskHomePath: '/home/flibhome_active_terminal_inherit',
+          workspacePath: '/home/flibhome_active_terminal_inherit/workspace',
+          artifactsPath: '/home/flibhome_active_terminal_inherit/workspace/.artifacts',
+          fileLibraryId: 'lib_active_terminal_inherit',
+        },
+      })),
+    } as never;
     try {
       await grantProjectPermissionsForUser(deps, 'user_1', [
         'project:agent_task:use',
@@ -7695,10 +7721,10 @@ describe('task-route-handler workspace access', () => {
         },
       } as never);
       const activeRunner = await deps.agentResourceService.createAgent('ws_default', 'proj_1', {
-        name: 'Active run developer runner',
+        name: 'Active run managed runner',
         status: 'enabled',
-        runner_provider: 'developer',
-        presence: 'online',
+        runner_provider: 'managed',
+        presence: 'managed',
         runner_status: 'ready',
         is_default: false,
         default_endpoint_id: endpoint.id,
@@ -7716,9 +7742,8 @@ describe('task-route-handler workspace access', () => {
         name: 'Active terminal inherit HOME',
         status: 'ready',
         version: 1,
-        filesystem_name: 'flib-active-terminal-inherit',
         file_library_home_segment: 'flibhome_active_terminal_inherit',
-        source: 'manual',
+        source: 'agent_task_files',
         created_by_user_id: 'user_1',
         created_at: now,
         updated_at: now,
@@ -7793,10 +7818,7 @@ describe('task-route-handler workspace access', () => {
           }),
         }),
       }));
-      expect(deps.agentExecutionService.getAgentSessionDispatchAuthority).toHaveBeenCalledWith(
-        activeRunner.id,
-        'task_active_terminal_inherit',
-      );
+      expect(deps.agentExecutionService.getAgentSessionDispatchAuthority).not.toHaveBeenCalled();
     } finally {
       if (previousPublicApiBase === undefined) delete process.env.PUBLIC_API_BASE_URL;
       else process.env.PUBLIC_API_BASE_URL = previousPublicApiBase;
@@ -7949,17 +7971,11 @@ describe('task-route-handler workspace access', () => {
         })),
       } as never;
       const now = new Date().toISOString();
-      await new JsonDocProjectFileLibraryCatalogRepo(deps.docStore).save({
+      await new JsonDocProjectFileLibraryCatalogRepo(deps.docStore).save(createFileLibraryCatalogFixture({
         id: 'lib_terminal_unresolved',
-        workspace_id: 'ws_default',
-        project_id: 'proj_1',
         name: 'Terminal Unresolved Workspace',
-        status: 'ready',
-        filesystem_name: 'flib-terminal-unresolved',
-        created_by_user_id: 'user_1',
-        created_at: now,
-        updated_at: now,
-      } as never);
+        now,
+      }));
       await deps.docStore.upsert(notebookTasksCollection('ws_default'), 'task_terminal_unresolved_session', {
         id: 'task_terminal_unresolved_session',
         workspace_id: 'ws_default',
@@ -8057,10 +8073,13 @@ describe('task-route-handler workspace access', () => {
           workspace_id: input.workspaceId,
           project_id: input.projectId,
           file_library_id: input.fileLibraryId,
-          kind: 'juicefs_volume',
+          provider: 'afscp',
           status: 'ready',
-          metadata_url: 'postgres://jfsu_user:secret@localhost:15432/jfs_terminal_evidence?sslmode=disable',
-          storage_bucket_url: 'http://localhost:19000/jfs-terminal-evidence',
+          task_home_binding_id: 'bind_terminal_evidence',
+          task_home_path: `/home/${input.taskId}`,
+          workspace_path: `/home/${input.taskId}/workspace`,
+          artifacts_path: `/home/${input.taskId}/workspace/.artifacts`,
+          library_root_path: '.',
           created_at: '2026-04-05T00:00:00.000Z',
           updated_at: '2026-04-05T00:00:00.000Z',
         },
@@ -8336,10 +8355,13 @@ describe('task-route-handler workspace access', () => {
           workspace_id: input.workspaceId,
           project_id: input.projectId,
           file_library_id: input.fileLibraryId,
-          kind: 'juicefs_volume',
+          provider: 'afscp',
           status: 'ready',
-          metadata_url: 'postgres://jfsu_user:secret@localhost:15432/jfs_terminal_context?sslmode=disable',
-          storage_bucket_url: 'http://localhost:19000/jfs-terminal-context',
+          task_home_binding_id: 'bind_terminal_context',
+          task_home_path: `/home/${input.taskId}`,
+          workspace_path: `/home/${input.taskId}/workspace`,
+          artifacts_path: `/home/${input.taskId}/workspace/.artifacts`,
+          library_root_path: '.',
           created_at: '2026-04-05T00:00:00.000Z',
           updated_at: '2026-04-05T00:00:00.000Z',
         },
@@ -8380,17 +8402,11 @@ describe('task-route-handler workspace access', () => {
       } as never);
 
       const now = new Date().toISOString();
-      await new JsonDocProjectFileLibraryCatalogRepo(deps.docStore).save({
+      await new JsonDocProjectFileLibraryCatalogRepo(deps.docStore).save(createFileLibraryCatalogFixture({
         id: 'lib_terminal_context',
-        workspace_id: 'ws_default',
-        project_id: 'proj_1',
         name: 'Terminal Context Workspace',
-        status: 'ready',
-        filesystem_name: 'flib-terminal-context',
-        created_by_user_id: 'user_1',
-        created_at: now,
-        updated_at: now,
-      } as never);
+        now,
+      }));
       await deps.docStore.upsert(notebookTasksCollection('ws_default'), 'task_terminal_context', {
         id: 'task_terminal_context',
         workspace_id: 'ws_default',
@@ -8467,13 +8483,14 @@ describe('task-route-handler workspace access', () => {
     }
   });
 
-  it('passes developer runtime task HOME paths to terminal session creation', async () => {
+  it('fails closed for developer runtime terminal session creation without exposing local task HOME paths', async () => {
     const previousPublicApiBase = process.env.PUBLIC_API_BASE_URL;
     const previousDeveloperWorkspaceRoot = process.env.MBOS_AGENT_TASK_DEVELOPER_WORKSPACE_ROOT;
     process.env.PUBLIC_API_BASE_URL = 'http://127.0.0.1:20000/api/v1';
     process.env.MBOS_AGENT_TASK_DEVELOPER_WORKSPACE_ROOT = '/tmp/agentsmith-terminal-dev-workspaces';
     const deps = createDefaultNodeApiDeps();
-    deps.agentExecutionService.getAgentSessionDispatchAuthority = vi.fn(async () => 'local_dispatchable') as never;
+    const getAgentSessionDispatchAuthority = vi.fn(async () => 'local_dispatchable');
+    deps.agentExecutionService.getAgentSessionDispatchAuthority = getAgentSessionDispatchAuthority as never;
 
     try {
       const endpoint = await deps.endpointResourceService.createEndpoint('ws_default', 'proj_1', {
@@ -8512,9 +8529,8 @@ describe('task-route-handler workspace access', () => {
         name: 'Terminal developer context HOME',
         status: 'ready',
         version: 1,
-        filesystem_name: 'flib-terminal-developer-context',
         file_library_home_segment: 'flibhome_terminal_developer_context',
-        source: 'manual',
+        source: 'agent_task_files',
         created_by_user_id: 'user_1',
         created_at: now,
         updated_at: now,
@@ -8540,6 +8556,10 @@ describe('task-route-handler workspace access', () => {
         last_activity_at: now,
       });
       const createSession = vi.spyOn(deps.notebookTerminalService, 'createSession');
+      await expect(new JsonDocProjectFileLibraryCatalogRepo(deps.docStore).listByProject(
+        'ws_default',
+        'proj_1',
+      )).resolves.toHaveLength(1);
 
       const json = vi.fn();
       await expect(handleTaskRoute({
@@ -8561,24 +8581,43 @@ describe('task-route-handler workspace access', () => {
         readBody: vi.fn(async () => ({ cols: 96, rows: 28 })),
       })).resolves.toBe(true);
 
-      expect(json.mock.calls[0]?.[1]).toBe(201);
-      expect(createSession).toHaveBeenCalledTimes(1);
-      const executionContext = createSession.mock.calls[0]?.[0].executionContext;
-      expect(() => assertTaskExecutionContext(executionContext)).not.toThrow();
-      expect(executionContext).toMatchObject({
-        workspace_id: 'ws_default',
-        project_id: 'proj_1',
-        task_id: 'task_terminal_developer_context',
-        runner_id: runner.id,
-        runner_session_scope: 'agent_presence',
+      const payload = json.mock.calls[0]?.[2] as Record<string, unknown>;
+      expect(json.mock.calls[0]?.[1]).toBe(409);
+      expect(payload).toMatchObject({
+        error_code: 'TASK_HOME_BINDING_UNAVAILABLE_FOR_DEVELOPER_RUNNER',
+        message: 'task_home_binding_unavailable_for_developer_runner',
         runtime_profile: 'developer',
-        task_home_segment: 'flibhome_terminal_developer_context',
-        task_home_path: '/tmp/agentsmith-terminal-dev-workspaces/flibhome_terminal_developer_context',
-        workspace_path: '/tmp/agentsmith-terminal-dev-workspaces/flibhome_terminal_developer_context/workspace',
-        artifacts_path: '/tmp/agentsmith-terminal-dev-workspaces/flibhome_terminal_developer_context/workspace/.artifacts',
-        workspace_binding_mode: 'file_library',
       });
-      expect(executionContext).not.toHaveProperty('container_workspace_path');
+      expect(payload).not.toHaveProperty('task_home_binding');
+      expect(payload).not.toHaveProperty('task_home_path');
+      expect(payload).not.toHaveProperty('workspace_path');
+      expect(payload).not.toHaveProperty('artifacts_path');
+      expect(payload).not.toHaveProperty('container_workspace_path');
+      expect(JSON.stringify(payload)).not.toMatch(
+        /metadata_url|storage_bucket_url|recommended_mount|filesystem_name|juicefs|task_home_path|workspace_path|artifacts_path|developer_workspace_root|agentsmith-terminal-dev-workspaces|\/tmp\//i,
+      );
+      expect(createSession).not.toHaveBeenCalled();
+      expect(getAgentSessionDispatchAuthority).not.toHaveBeenCalled();
+      await expect(deps.notebookTerminalService.listSessionsForTask({
+        workspaceId: 'ws_default',
+        projectId: 'proj_1',
+        taskId: 'task_terminal_developer_context',
+        userId: 'user_1',
+      })).resolves.toEqual([]);
+      await expect(new JsonDocTaskWorkspaceHolderRepo(deps.docStore).listLiveByTask({
+        workspaceId: 'ws_default',
+        projectId: 'proj_1',
+        taskId: 'task_terminal_developer_context',
+      })).resolves.toHaveLength(0);
+      await expect(new JsonDocProjectFileLibraryCatalogRepo(deps.docStore).listByProject(
+        'ws_default',
+        'proj_1',
+      )).resolves.toEqual([
+        expect.objectContaining({ id: 'lib_terminal_developer_context' }),
+      ]);
+      expect(getTasks('ws_default', 'proj_1')).toEqual([
+        expect.objectContaining({ id: 'task_terminal_developer_context' }),
+      ]);
     } finally {
       if (previousPublicApiBase === undefined) delete process.env.PUBLIC_API_BASE_URL;
       else process.env.PUBLIC_API_BASE_URL = previousPublicApiBase;
@@ -8631,17 +8670,11 @@ describe('task-route-handler workspace access', () => {
       } as never);
 
       const now = new Date().toISOString();
-      await deps.docStore.upsert('project_file_libraries', 'lib_terminal_async_create', {
+      await deps.docStore.upsert('project_file_libraries', 'lib_terminal_async_create', createFileLibraryCatalogFixture({
         id: 'lib_terminal_async_create',
-        workspace_id: 'ws_default',
-        project_id: 'proj_1',
         name: 'Terminal Async Create Workspace',
-        status: 'ready',
-        filesystem_name: 'flib-terminal-async-create',
-        created_by_user_id: 'user_1',
-        created_at: now,
-        updated_at: now,
-      });
+        now,
+      }));
       await deps.docStore.upsert(notebookTasksCollection('ws_default'), 'task_terminal_async_create', {
         id: 'task_terminal_async_create',
         workspace_id: 'ws_default',
@@ -8813,17 +8846,11 @@ describe('task-route-handler workspace access', () => {
     try {
       const { runner } = await seedDefaultManagedRunner(deps);
       const now = new Date().toISOString();
-      await deps.docStore.upsert('project_file_libraries', 'lib_terminal_missing_api_base', {
+      await deps.docStore.upsert('project_file_libraries', 'lib_terminal_missing_api_base', createFileLibraryCatalogFixture({
         id: 'lib_terminal_missing_api_base',
-        workspace_id: 'ws_default',
-        project_id: 'proj_1',
         name: 'Terminal Missing Api Base Workspace',
-        status: 'ready',
-        filesystem_name: 'flib-terminal-missing-api-base',
-        created_by_user_id: 'user_1',
-        created_at: now,
-        updated_at: now,
-      });
+        now,
+      }));
       await deps.docStore.upsert(notebookTasksCollection('ws_default'), 'task_terminal_missing_api_base', {
         id: 'task_terminal_missing_api_base',
         workspace_id: 'ws_default',
@@ -8915,10 +8942,13 @@ describe('task-route-handler workspace access', () => {
             workspace_id: input.workspaceId,
             project_id: input.projectId,
             file_library_id: input.fileLibraryId,
-            kind: 'juicefs_volume',
+            provider: 'afscp',
             status: 'ready',
-            metadata_url: 'postgres://jfsu_user:secret@localhost:15432/jfs_internal?sslmode=disable',
-            storage_bucket_url: 'http://localhost:19000/jfs-internal',
+            task_home_binding_id: 'bind_terminal_internal',
+            task_home_path: `/home/${input.taskId}`,
+            workspace_path: `/home/${input.taskId}/workspace`,
+            artifacts_path: `/home/${input.taskId}/workspace/.artifacts`,
+            library_root_path: '.',
             created_at: '2026-04-05T00:00:00.000Z',
             updated_at: '2026-04-05T00:00:00.000Z',
           },
@@ -8974,17 +9004,11 @@ describe('task-route-handler workspace access', () => {
       });
 
       const now = new Date().toISOString();
-      await deps.docStore.upsert('project_file_libraries', 'lib_internal_terminal', {
+      await deps.docStore.upsert('project_file_libraries', 'lib_internal_terminal', createFileLibraryCatalogFixture({
         id: 'lib_internal_terminal',
-        workspace_id: 'ws_default',
-        project_id: 'proj_1',
         name: 'Internal Terminal Workspace',
-        status: 'ready',
-        filesystem_name: 'flib-internal-terminal',
-        created_by_user_id: 'user_1',
-        created_at: now,
-        updated_at: now,
-      });
+        now,
+      }));
       await deps.docStore.upsert(notebookTasksCollection('ws_default'), 'task_internal_terminal', {
         id: 'task_internal_terminal',
         workspace_id: 'ws_default',

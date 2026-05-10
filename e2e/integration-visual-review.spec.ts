@@ -851,16 +851,15 @@ test.describe('@lane-real integration visual review', () => {
         await page.reload();
       }
       await expect(visualLibrary).toBeVisible({ timeout: 30_000 });
-      await visualLibrary.locator('[data-testid^="files__library-desktop-access--"]').first().click();
-      await expect(page.getByTestId('files__dialog__desktop-mount-access')).toBeVisible({ timeout: 30_000 });
+      await expect(visualLibrary.locator('[data-testid^="files__library-desktop-access--"]')).toHaveCount(0);
+      await expect(page.getByTestId('files__dialog__desktop-mount-access')).toHaveCount(0);
+      await expect(page.getByText(/metadata URL|JuiceFS|mount command/i)).toHaveCount(0);
       await settlePage(page);
       await capturePage(page, captures, {
-        name: 'dialog-file-library-mount-access-real',
+        name: 'project-files-web-access-real',
         role: 'project owner',
-        notes: '真实文件库本地挂载说明对话框',
+        notes: '真实文件库 Web 文件面，不展示本地客户端挂载入口或原始连接字段',
       });
-      await page.keyboard.press('Escape');
-      await expect(page.getByTestId('files__dialog__desktop-mount-access')).toBeHidden({ timeout: 10_000 });
 
       await captureProjectPages(page, capturePage, captures, project, 'project owner');
       await runAgentTask({

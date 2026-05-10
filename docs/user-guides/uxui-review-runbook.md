@@ -134,7 +134,6 @@ UX/UI 审查的最小单位不是“一个 `page.tsx` 文件”，而是：
 - system info
 - workspace selector
 - join / invite accept
-- desktop auth request / complete
 - workspace login
 
 #### B. Workspace Surfaces

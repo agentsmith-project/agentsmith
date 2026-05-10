@@ -209,7 +209,7 @@ ensure_internal_external_dependency_services() {
   ensure_internal_common_runtime_env
   local kind_gateway
   kind_gateway="$(resolve_kind_gateway_ip)"
-  kubectl create namespace "${K8S_NAMESPACE}" --dry-run=client -o yaml | kubectl apply --validate=false -f - >/dev/null
+  ensure_agentsmith_owned_namespace "${K8S_NAMESPACE}"
   render_k8s_external_dependency_services \
     "${EXTERNAL_DEPS_MANIFEST}" \
     "${K8S_NAMESPACE}" \

@@ -167,7 +167,7 @@ ensure_afscp_storage_csi() {
   wait_for_afscp_storage_csi_ready "${AFSCP_STORAGE_CSI_NAMESPACE}"
 }
 
-kubectl create namespace "${K8S_NAMESPACE}" --dry-run=client -o yaml | kubectl apply --validate=false -f - >/dev/null
+ensure_agentsmith_owned_namespace "${K8S_NAMESPACE}"
 
 ensure_afscp_storage_csi
 

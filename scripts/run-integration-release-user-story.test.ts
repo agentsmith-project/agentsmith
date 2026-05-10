@@ -21,6 +21,9 @@ describe('run-integration-release-user-story integration dependency contract', (
   it('keeps internal runner storage bootstrap behind AFSCP substrate env names', () => {
     const script = readFileSync('scripts/run-integration-release-user-story.sh', 'utf8');
 
+    expect(script).toContain('ensure_agentsmith_owned_namespace "${K8S_NAMESPACE}"');
+    expect(script).not.toContain('kubectl create namespace "${K8S_NAMESPACE}"');
+
     expect(script).toContain('INTEGRATION_POSTGRES_PORT="${INTEGRATION_POSTGRES_PORT:-25432}"');
     expect(script).toContain('INTEGRATION_MINIO_API_PORT="${INTEGRATION_MINIO_API_PORT:-29000}"');
 

@@ -84,6 +84,8 @@ describe('internal backend-real gate runtime contract', () => {
       'AFSCP_SUBSTRATE_OBJECT_STORAGE_ENDPOINT_VALUE="${AFSCP_SUBSTRATE_OBJECT_STORAGE_ENDPOINT:-http://$(k8s_external_minio_fqdn "${K8S_NAMESPACE}"):9000}"',
     );
     expect(helper).toContain('internal_real_gate_ensure_afscp_storage_csi');
+    expect(helper).toContain('ensure_agentsmith_owned_namespace "${K8S_NAMESPACE}"');
+    expect(helper).not.toContain('kubectl create namespace "${K8S_NAMESPACE}"');
     expect(helper).not.toContain('INTERNAL_AGENT_JUICEFS_META_HOST_OVERRIDE_VALUE');
     expect(helper).not.toContain('JUICEFS_BUCKET_ENDPOINT_FOR_INTERNAL_MOUNT_VALUE');
     expect(helper).not.toContain('INTEGRATION_CLIENT_JUICEFS_META_HOST_OVERRIDE_VALUE');

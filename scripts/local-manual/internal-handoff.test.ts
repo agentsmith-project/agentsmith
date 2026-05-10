@@ -129,4 +129,11 @@ describe('local-manual internal handoff', () => {
     expect(config).not.toContain('callerService:');
     expect(config).not.toContain('serviceToken:');
   });
+
+  it('creates the internal sandbox namespace through the AgentSmith-owned namespace helper', () => {
+    const script = readFileSync('scripts/local-manual/internal-common.sh', 'utf8');
+
+    expect(script).toContain('ensure_agentsmith_owned_namespace "${K8S_NAMESPACE}"');
+    expect(script).not.toContain('kubectl create namespace "${K8S_NAMESPACE}"');
+  });
 });

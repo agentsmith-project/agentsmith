@@ -60,6 +60,26 @@ is_ipv4_address() {
   [[ "${value}" =~ ^([0-9]{1,3}\.){3}[0-9]{1,3}$ ]]
 }
 
+render_agentsmith_owned_namespace_manifest() {
+  local namespace="$1"
+
+  cat <<EOF
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: ${namespace}
+  labels:
+    app.kubernetes.io/managed-by: agentsmith
+EOF
+}
+
+ensure_agentsmith_owned_namespace() {
+  local namespace="$1"
+
+  render_agentsmith_owned_namespace_manifest "${namespace}" \
+    | kubectl apply --validate=false -f - >/dev/null
+}
+
 render_k8s_external_dependency_services() {
   local output_path="$1"
   local namespace="$2"

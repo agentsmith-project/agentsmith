@@ -48,12 +48,12 @@ export interface FileLibraryStorageOperationResult {
 }
 
 export class FileLibraryStorageOperationPendingError extends Error {
-  readonly operationId: string | null;
+  readonly operationId: string;
   readonly operationStatus: Extract<FileLibraryStorageOperationStatus, 'pending'> = 'pending';
 
   constructor(input: {
     message: string;
-    operationId: string | null;
+    operationId: string;
   }) {
     super(input.message);
     this.name = 'FileLibraryStorageOperationPendingError';
@@ -302,7 +302,19 @@ interface AfscpFileLibraryStorageAdapterOptions {
   nowIso?: () => string;
 }
 
-const OPERATION_TERMINAL_STATES = new Set(['succeeded', 'success', 'completed', 'ready', 'failed', 'failure', 'error', 'errored', 'cancelled', 'canceled']);
+const OPERATION_TERMINAL_STATES = new Set([
+  'succeeded',
+  'success',
+  'completed',
+  'ready',
+  'failed',
+  'failure',
+  'error',
+  'errored',
+  'cancelled',
+  'canceled',
+  'operator_intervention_required',
+]);
 const OPERATION_SUCCESS_STATES = new Set(['succeeded', 'success', 'completed', 'ready']);
 const HEADER_SAFE_ID_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/;
 const ERROR_CODE_PATTERN = /^[A-Za-z0-9._:-]{1,80}$/;
@@ -383,8 +395,16 @@ function normalizeOperationStatus(value: unknown): FileLibraryStorageOperationSt
   return 'pending';
 }
 
+function isStorageTerminalOperation(operation: AfscpOperationRecord): boolean {
+  return normalizeOperationStatus(operation.operation_state) !== 'pending';
+}
+
 function readOperationId(operation: AfscpOperationEnvelope | AfscpOperationRecord): string | null {
   return typeof operation.operation_id === 'string' ? operation.operation_id : null;
+}
+
+function hasOperationId(operationId: string | null): operationId is string {
+  return typeof operationId === 'string' && operationId.trim().length > 0;
 }
 
 function readSafeOperationId(value: unknown): string | null {
@@ -1248,6 +1268,7 @@ export class AfscpFileLibraryStorageAdapter implements FileLibraryStoragePort {
         finalOperation = await this.client.pollOperation({
           operationId,
           correlationId: resolveCorrelationId(input.requestId, 'file-library-create-repo-poll'),
+          isTerminal: isStorageTerminalOperation,
           signal: input.signal,
         });
       } catch {
@@ -1356,6 +1377,7 @@ export class AfscpFileLibraryStorageAdapter implements FileLibraryStoragePort {
         finalOperation = await this.client.pollOperation({
           operationId,
           correlationId: resolveCorrelationId(input.requestId, 'file-library-delete-repo-poll'),
+          isTerminal: isStorageTerminalOperation,
           signal: input.signal,
         });
       } catch {
@@ -1380,6 +1402,16 @@ export class AfscpFileLibraryStorageAdapter implements FileLibraryStoragePort {
     if (status === 'succeeded') {
       await this.mappingRepo.delete(input.workspaceId, input.projectId, input.libraryId);
       return;
+    }
+
+    if (status === 'pending' && !hasOperationId(operationId)) {
+      await this.mappingRepo.updateOperation({
+        ...input,
+        operationId: null,
+        operationStatus: 'failed',
+        lastErrorCode: 'file_library_repo_delete_failed',
+      });
+      throw new Error('file_library_repo_delete_failed');
     }
 
     await this.mappingRepo.updateOperation({
@@ -1859,10 +1891,18 @@ export class AfscpFileLibraryStorageAdapter implements FileLibraryStoragePort {
         }
         return left.name.localeCompare(right.name) * direction;
       });
+      const continuationIndex = input.continuationToken
+        ? items.findIndex((item) => item.path === input.continuationToken)
+        : -1;
+      const startIndex = continuationIndex >= 0 ? continuationIndex + 1 : 0;
+      const pageItems = items.slice(startIndex, startIndex + input.pageSize);
+      const nextIndex = startIndex + input.pageSize;
       return {
         path,
-        items: items.slice(0, input.pageSize),
-        nextContinuationToken: items.length > input.pageSize ? items[input.pageSize - 1]?.path ?? null : null,
+        items: pageItems,
+        nextContinuationToken: items.length > nextIndex
+          ? pageItems[pageItems.length - 1]?.path ?? null
+          : null,
       };
     });
   }
@@ -2059,6 +2099,7 @@ export class AfscpFileLibraryStorageAdapter implements FileLibraryStoragePort {
       finalOperation = await this.client.pollOperation({
         operationId: input.operationId,
         correlationId: resolveCorrelationId(input.input.requestId, 'file-library-delete-repo-reconcile'),
+        isTerminal: isStorageTerminalOperation,
         signal: input.input.signal,
       });
     } catch {
@@ -2086,6 +2127,16 @@ export class AfscpFileLibraryStorageAdapter implements FileLibraryStoragePort {
     if (status === 'succeeded') {
       await this.mappingRepo.delete(input.input.workspaceId, input.input.projectId, input.input.libraryId);
       return true;
+    }
+
+    if (status === 'pending' && !hasOperationId(operationId)) {
+      await this.mappingRepo.updateOperation({
+        ...input.input,
+        operationId: null,
+        operationStatus: 'failed',
+        lastErrorCode: 'file_library_repo_delete_failed',
+      });
+      throw new Error('file_library_repo_delete_failed');
     }
 
     await this.mappingRepo.updateOperation({
@@ -2241,6 +2292,7 @@ export class AfscpFileLibraryStorageAdapter implements FileLibraryStoragePort {
       const finalOperation = await this.client.pollOperation({
         operationId,
         correlationId: resolveCorrelationId(input.requestId, input.fallbackPrefix),
+        isTerminal: isStorageTerminalOperation,
         signal: input.signal,
       });
       await this.ensureOperationOwnership({

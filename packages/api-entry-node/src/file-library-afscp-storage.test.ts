@@ -638,6 +638,74 @@ describe('AFSCP File Library storage adapter', () => {
     });
   });
 
+  it('fails repo delete when AFSCP reports pending without an operation id', async () => {
+    const client = createProductClient({
+      deleteRepo: vi.fn(async () => ({
+        operation_id: null as unknown as string,
+        operation_state: 'queued',
+        resource: { type: 'repo', id: 'repo_flib_123' },
+        result: null,
+        error: null,
+      })),
+      pollOperation: vi.fn(),
+    });
+    const { mappingRepo, adapter } = await createMappedAdapter({ client });
+
+    await expect(adapter.deleteRepoForLibrary({
+      workspaceId: 'ws_default',
+      projectId: 'proj_1',
+      libraryId: 'flib_123',
+      actorUserId: 'user_1',
+      requestId: 'req_delete_pending_without_operation_id',
+      reason: 'file_library_delete',
+    })).rejects.toThrow('file_library_repo_delete_failed');
+
+    expect(client.pollOperation).not.toHaveBeenCalled();
+    await expect(mappingRepo.getByLibraryId('ws_default', 'proj_1', 'flib_123')).resolves.toMatchObject({
+      operation_id: null,
+      operation_status: 'failed',
+      last_error_code: 'file_library_repo_delete_failed',
+      repo_id: 'repo_flib_123',
+    });
+  });
+
+  it('marks repo delete operator intervention as a terminal failed operation', async () => {
+    const client = createProductClient({
+      deleteRepo: vi.fn(async () => ({
+        operation_id: 'op_repo_delete_control',
+        operation_state: 'queued',
+        resource: { type: 'repo', id: 'repo_flib_123' },
+        result: null,
+        error: null,
+      })),
+      pollOperation: vi.fn(async () => ({
+        ...succeededRepoOperation,
+        operation_id: 'op_repo_delete_control',
+        operation_type: 'repo_delete',
+        operation_state: 'operator_intervention_required',
+        resource: { type: 'repo', id: 'repo_flib_123' },
+        error: { code: 'operator_intervention_required', retryable: false },
+      })),
+    });
+    const { mappingRepo, adapter } = await createMappedAdapter({ client });
+
+    await expect(adapter.deleteRepoForLibrary({
+      workspaceId: 'ws_default',
+      projectId: 'proj_1',
+      libraryId: 'flib_123',
+      actorUserId: 'user_1',
+      requestId: 'req_delete_control',
+      reason: 'file_library_delete',
+    })).rejects.toThrow('file_library_repo_delete_failed');
+
+    await expect(mappingRepo.getByLibraryId('ws_default', 'proj_1', 'flib_123')).resolves.toMatchObject({
+      operation_id: 'op_repo_delete_control',
+      operation_status: 'failed',
+      last_error_code: 'operator_intervention_required',
+      repo_id: 'repo_flib_123',
+    });
+  });
+
   it('reconciles a stored pending repo delete operation before issuing another delete mutation', async () => {
     const client = createProductClient({
       deleteRepo: vi.fn(async () => {
@@ -787,6 +855,64 @@ describe('AFSCP File Library storage adapter', () => {
       ],
       nextContinuationToken: null,
     });
+  });
+
+  it('continues WebDAV listings after the continuation token instead of replaying the first page', async () => {
+    const fileResponse = (path: string) => [
+      '<D:response>',
+      `<D:href>/${path}</D:href>`,
+      '<D:propstat><D:prop>',
+      '<D:getcontentlength>1</D:getcontentlength>',
+      '<D:getcontenttype>text/plain</D:getcontenttype>',
+      '<D:getlastmodified>Sat, 09 May 2026 00:00:00 GMT</D:getlastmodified>',
+      '</D:prop></D:propstat>',
+      '</D:response>',
+    ].join('');
+    const xml = [
+      '<?xml version="1.0" encoding="UTF-8"?>',
+      '<D:multistatus xmlns:D="DAV:">',
+      '<D:response>',
+      '<D:href>/</D:href>',
+      '<D:propstat><D:prop><D:resourcetype><D:collection xmlns:D="DAV:"/></D:resourcetype></D:prop></D:propstat>',
+      '</D:response>',
+      fileResponse('docs/a.txt'),
+      fileResponse('docs/b.txt'),
+      fileResponse('docs/c.txt'),
+      fileResponse('docs/d.txt'),
+      '</D:multistatus>',
+    ].join('');
+    const fetchMock = vi.fn(async () => new Response(xml, {
+      status: 207,
+      headers: { 'Content-Type': 'application/xml' },
+    })) as unknown as typeof fetch;
+    const { adapter } = await createMappedAdapter({ fetchFn: fetchMock });
+
+    const firstPage = await adapter.listEntries({
+      workspaceId: 'ws_default',
+      projectId: 'proj_1',
+      libraryId: 'flib_123',
+      path: '',
+      pageSize: 2,
+      sortBy: 'name',
+      sortOrder: 'asc',
+      requestId: 'req_list_page_1',
+    });
+    const secondPage = await adapter.listEntries({
+      workspaceId: 'ws_default',
+      projectId: 'proj_1',
+      libraryId: 'flib_123',
+      path: '',
+      pageSize: 2,
+      continuationToken: firstPage.nextContinuationToken ?? undefined,
+      sortBy: 'name',
+      sortOrder: 'asc',
+      requestId: 'req_list_page_2',
+    });
+
+    expect(firstPage.items.map((item) => item.path)).toEqual(['docs/a.txt', 'docs/b.txt']);
+    expect(firstPage.nextContinuationToken).toBe('docs/b.txt');
+    expect(secondPage.items.map((item) => item.path)).toEqual(['docs/c.txt', 'docs/d.txt']);
+    expect(secondPage.nextContinuationToken).toBeNull();
   });
 
   it('releases WebDAV export credentials only after a download stream finishes', async () => {

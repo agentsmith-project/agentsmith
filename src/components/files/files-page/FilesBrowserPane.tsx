@@ -88,6 +88,13 @@ function SortIcon({ active, order }: { active: boolean; order: FileSortOrder }) 
   return order === 'asc' ? <ArrowUp className="h-3.5 w-3.5" /> : <ArrowDown className="h-3.5 w-3.5" />;
 }
 
+function emptyDescriptionKey(prefix: string, canWrite: boolean) {
+  if (!canWrite) return 'file_manager.empty_read_only_description';
+  if (!prefix) return 'file_manager.empty_home_root_description';
+  if (prefix === 'workspace/') return 'file_manager.empty_workspace_description';
+  return 'file_manager.empty_description';
+}
+
 export function FilesBrowserPane(props: FilesBrowserPaneProps) {
   const {
     t,
@@ -169,10 +176,10 @@ export function FilesBrowserPane(props: FilesBrowserPaneProps) {
       <div className="flex flex-wrap items-center gap-2 border-b border-subtle px-3.5 py-1.5">
         <div className="min-w-0">
           <div className="text-[11px] font-semibold uppercase text-tertiary">{t('file_manager.location')}</div>
-          <div className="mt-0.5 text-sm text-secondary">{selectedLibraryId ? t('file_manager.root') : t('file_manager.no_libraries')}</div>
+          <div className="mt-0.5 text-sm text-secondary">{selectedLibraryId ? t('file_manager.home_root') : t('file_manager.no_libraries')}</div>
           {selectedLibraryId && !prefix ? (
             <div className="mt-0.5 max-w-[360px] text-[11px] text-tertiary" data-testid="files__root-scope-note">
-              {t('file_manager.root_system_folders_note')}
+              {t('file_manager.home_root_note')}
             </div>
           ) : null}
         </div>
@@ -199,7 +206,7 @@ export function FilesBrowserPane(props: FilesBrowserPaneProps) {
                 onClick={() => onNavigateToPrefix(crumb.prefix)}
                 data-testid={index === 0 ? 'files__breadcrumb-root' : `files__breadcrumb--${index}`}
               >
-                {index === 0 ? t('file_manager.root') : crumb.label}
+                {index === 0 ? t('file_manager.home_root') : crumb.label}
               </button>
             </React.Fragment>
           ))}
@@ -430,9 +437,7 @@ export function FilesBrowserPane(props: FilesBrowserPaneProps) {
                     <div className="mt-2 text-sm text-tertiary">
                       {searchInput.trim().length > 0
                         ? t('file_manager.search_empty_description')
-                        : showWriteActions
-                          ? t('file_manager.empty_description')
-                          : t('file_manager.empty_read_only_description')}
+                        : t(emptyDescriptionKey(prefix, showWriteActions))}
                     </div>
                   </div>
                   <div className="flex flex-wrap items-center justify-center gap-2">

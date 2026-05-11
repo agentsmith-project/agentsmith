@@ -89,6 +89,9 @@ AFSCP_SERVICE_TOKEN="${AFSCP_SERVICE_TOKEN:-agentsmith-local-afscp-product-token
 AFSCP_BOOTSTRAP_SERVICE_TOKEN="${AFSCP_BOOTSTRAP_SERVICE_TOKEN:-agentsmith-local-afscp-bootstrap-token}"
 AFSCP_ORCHESTRATOR_SERVICE_TOKEN="${AFSCP_ORCHESTRATOR_SERVICE_TOKEN:-agentsmith-local-afscp-orchestrator-token}"
 AFSCP_VOLUME_ROOT="${AFSCP_VOLUME_ROOT:-${INTERNAL_REAL_DIR}/afscp-volume-root}"
+AFSCP_VOLUME_ROOT_MOUNT_MARKER="${AFSCP_VOLUME_ROOT_MOUNT_MARKER:-${INTERNAL_REAL_DIR}/afscp-volume-root.mount}"
+AFSCP_LOCAL_RUNTIME_JUICEFS_MOUNT_LOG="${AFSCP_LOCAL_RUNTIME_JUICEFS_MOUNT_LOG:-${INTERNAL_REAL_DIR}/afscp-juicefs-mount.log}"
+AFSCP_LOCAL_RUNTIME_JUICEFS_CACHE_DIR="${AFSCP_LOCAL_RUNTIME_JUICEFS_CACHE_DIR:-${INTERNAL_REAL_DIR}/afscp-juicefs-cache}"
 AFSCP_JVS_CWD="${AFSCP_JVS_CWD:-${INTERNAL_REAL_DIR}/afscp-jvs-cwd}"
 AFSCP_JVS_RELEASE_BINARY_NAME="${AFSCP_JVS_RELEASE_BINARY_NAME:-jvs-linux-amd64}"
 AFSCP_JVS_RELEASE_CACHE_DIR="${AFSCP_JVS_RELEASE_CACHE_DIR:-${INTERNAL_REAL_DIR}/jvs-release}"
@@ -598,6 +601,7 @@ prepare_afscp_local_runtime_env() {
 
   AFSCP_EXPORT_GATEWAY_POSTGRES_DSN="${AFSCP_EXPORT_GATEWAY_POSTGRES_DSN:-${AFSCP_POSTGRES_DSN}}"
   AFSCP_EXPORT_GATEWAY_VOLUME_ROOTS="${AFSCP_EXPORT_GATEWAY_VOLUME_ROOTS:-${AFSCP_VOLUME_ROOTS}}"
+  afscp_validate_local_runtime_volume_root_maps || return 1
 }
 
 write_afscp_local_runtime_env() {
@@ -663,8 +667,85 @@ write_afscp_local_runtime_env() {
   chmod 0600 "${AFSCP_LOCAL_RUNTIME_ENV_FILE}"
 }
 
+ensure_afscp_local_runtime_mounts_and_write_env() {
+  ensure_afscp_local_runtime_volume_root
+  ensure_afscp_local_runtime_workload_mount_secret_refs
+  write_afscp_local_runtime_env
+}
+
 afscp_trim() {
   printf '%s' "$1" | sed -E 's/^[[:space:]]+//; s/[[:space:]]+$//'
+}
+
+afscp_canonical_path() {
+  realpath -m "$1"
+}
+
+afscp_normalize_local_runtime_volume_root_map() {
+  local var_name="$1"
+  local raw_value="$2"
+  local canonical_root="$3"
+  local configured=0
+  local normalized=""
+  local -a entries
+  local IFS=','
+  read -r -a entries <<< "${raw_value}"
+
+  local entry
+  for entry in "${entries[@]}"; do
+    local pair volume_id volume_path resolved_path
+    pair="$(afscp_trim "${entry}")"
+    [[ -n "${pair}" ]] || continue
+    if [[ "${pair}" != *=* ]]; then
+      internal_err "${var_name} must use volume_id=path pairs; local-real fails closed"
+      return 1
+    fi
+    volume_id="$(afscp_trim "${pair%%=*}")"
+    volume_path="$(afscp_trim "${pair#*=}")"
+    if [[ -z "${volume_id}" || -z "${volume_path}" ]]; then
+      internal_err "${var_name} must use non-empty volume_id=path pairs; local-real fails closed"
+      return 1
+    fi
+
+    if [[ "${volume_id}" == "${AFSCP_DEFAULT_VOLUME_ID}" ]]; then
+      configured=$((configured + 1))
+      if (( configured > 1 )); then
+        internal_err "${var_name} must contain default volume ${AFSCP_DEFAULT_VOLUME_ID} only once; local-real fails closed"
+        return 1
+      fi
+      resolved_path="$(afscp_canonical_path "${volume_path}")"
+      if [[ "${resolved_path}" != "${canonical_root}" ]]; then
+        internal_err "${var_name} default volume ${AFSCP_DEFAULT_VOLUME_ID} resolves to ${resolved_path}, expected AFSCP_VOLUME_ROOT ${canonical_root}; local-real fails closed"
+        return 1
+      fi
+      volume_path="${canonical_root}"
+    fi
+
+    normalized+="${normalized:+,}${volume_id}=${volume_path}"
+  done
+
+  if (( configured != 1 )); then
+    internal_err "${var_name} must include default volume ${AFSCP_DEFAULT_VOLUME_ID}; local-real fails closed"
+    return 1
+  fi
+  printf '%s' "${normalized}"
+}
+
+afscp_validate_local_runtime_volume_root_maps() {
+  local canonical_root
+  canonical_root="$(afscp_canonical_path "${AFSCP_VOLUME_ROOT}")"
+  AFSCP_VOLUME_ROOT="${canonical_root}"
+
+  local var_name raw_value normalized
+  for var_name in AFSCP_VOLUME_ROOTS AFSCP_API_VOLUME_ROOTS AFSCP_EXPORT_GATEWAY_VOLUME_ROOTS; do
+    raw_value="${!var_name:-}"
+    if [[ -z "$(afscp_trim "${raw_value}")" ]]; then
+      internal_err "${var_name} is required for local-real AFSCP volume roots; local-real fails closed"
+      return 1
+    fi
+    normalized="$(afscp_normalize_local_runtime_volume_root_map "${var_name}" "${raw_value}" "${canonical_root}")" || return 1
+    printf -v "${var_name}" '%s' "${normalized}"
+  done
 }
 
 afscp_default_local_runtime_juicefs_metaurl() {
@@ -681,6 +762,20 @@ afscp_default_local_runtime_juicefs_bucket() {
     "${MINIO_BUCKET}"
 }
 
+afscp_default_local_runtime_host_juicefs_metaurl() {
+  printf 'postgres://%s:%s@localhost:%s/%s?sslmode=disable' \
+    "${SUBSTRATE_DB_USER}" \
+    "${SUBSTRATE_DB_PASSWORD}" \
+    "${SUBSTRATE_POSTGRES_PORT}" \
+    "${SUBSTRATE_DB_NAME}"
+}
+
+afscp_default_local_runtime_host_juicefs_bucket() {
+  printf 'http://localhost:%s/%s' \
+    "${SUBSTRATE_MINIO_API_PORT}" \
+    "${MINIO_BUCKET:-${SUBSTRATE_MINIO_BUCKET:-mbos-dev}}"
+}
+
 afscp_default_local_runtime_juicefs_name() {
   local raw sanitized
   raw="${AFSCP_DEFAULT_VOLUME_ID:-vol_local_manual}"
@@ -695,13 +790,237 @@ afscp_default_local_runtime_juicefs_name() {
   printf '%s\n' "${sanitized:0:63}" | sed -E 's/-+$//'
 }
 
+afscp_local_runtime_juicefs_name() {
+  printf '%s' "${AFSCP_LOCAL_RUNTIME_JUICEFS_NAME:-$(afscp_default_local_runtime_juicefs_name)}"
+}
+
+afscp_local_runtime_juicefs_storage() {
+  printf '%s' "${AFSCP_LOCAL_RUNTIME_JUICEFS_STORAGE:-minio}"
+}
+
+afscp_local_runtime_host_juicefs_metaurl() {
+  printf '%s' "${AFSCP_LOCAL_RUNTIME_HOST_JUICEFS_METAURL:-$(afscp_default_local_runtime_host_juicefs_metaurl)}"
+}
+
+afscp_local_runtime_host_juicefs_bucket() {
+  printf '%s' "${AFSCP_LOCAL_RUNTIME_HOST_JUICEFS_BUCKET:-$(afscp_default_local_runtime_host_juicefs_bucket)}"
+}
+
+afscp_local_runtime_workload_juicefs_metaurl() {
+  printf '%s' "${AFSCP_LOCAL_RUNTIME_JUICEFS_METAURL:-$(afscp_default_local_runtime_juicefs_metaurl)}"
+}
+
+afscp_local_runtime_workload_juicefs_bucket() {
+  printf '%s' "${AFSCP_LOCAL_RUNTIME_JUICEFS_BUCKET:-$(afscp_default_local_runtime_juicefs_bucket)}"
+}
+
+afscp_mountpoint_state() {
+  local path="$1"
+  local status
+  if command -v mountpoint >/dev/null 2>&1; then
+    mountpoint -q "${path}"
+    status=$?
+    if [[ "${status}" == "0" ]]; then
+      printf 'mounted'
+      return 0
+    fi
+    if [[ "${status}" == "1" || "${status}" == "32" ]]; then
+      printf 'absent'
+      return 0
+    fi
+    internal_err "unable to determine AFSCP_VOLUME_ROOT mountpoint state for ${path} with mountpoint status ${status}; local-real fails closed"
+    printf 'unknown'
+    return 2
+  fi
+  if command -v findmnt >/dev/null 2>&1; then
+    findmnt -M "${path}" >/dev/null 2>&1
+    status=$?
+    if [[ "${status}" == "0" ]]; then
+      printf 'mounted'
+      return 0
+    fi
+    if [[ "${status}" == "1" ]]; then
+      printf 'absent'
+      return 0
+    fi
+    internal_err "unable to determine AFSCP_VOLUME_ROOT mountpoint state for ${path} with findmnt status ${status}; local-real fails closed"
+    printf 'unknown'
+    return 2
+  fi
+  internal_err "mountpoint or findmnt is required to validate AFSCP_VOLUME_ROOT; local-real fails closed"
+  printf 'unknown'
+  return 2
+}
+
+afscp_is_mountpoint() {
+  local state
+  state="$(afscp_mountpoint_state "$1" 2>/dev/null)" || return 1
+  [[ "${state}" == "mounted" ]]
+}
+
+afscp_validate_juicefs_mount_type() {
+  local path="$1"
+  local fs_type
+  if ! command -v findmnt >/dev/null 2>&1; then
+    internal_err "findmnt is required to validate AFSCP_VOLUME_ROOT as JuiceFS; local-real fails closed"
+    return 1
+  fi
+  fs_type="$(findmnt -no FSTYPE -T "${path}" 2>/dev/null | head -n1 || true)"
+  if [[ "${fs_type}" != "fuse.juicefs" && "${fs_type}" != "juicefs" ]]; then
+    internal_err "AFSCP_VOLUME_ROOT is mounted as ${fs_type:-unknown}, expected JuiceFS; local-real fails closed"
+    return 1
+  fi
+}
+
+afscp_validate_volume_root_rw() {
+  local path="$1"
+  local probe
+  if [[ ! -d "${path}" || ! -r "${path}" || ! -w "${path}" ]]; then
+    internal_err "AFSCP_VOLUME_ROOT is not readable and writable: ${path}; local-real fails closed"
+    return 1
+  fi
+  probe="$(mktemp "${path}/.agentsmith-afscp-volume-root-check.XXXXXX")" || {
+    internal_err "AFSCP_VOLUME_ROOT write probe failed at ${path}; local-real fails closed"
+    return 1
+  }
+  printf 'agentsmith-afscp-volume-root-check\n' > "${probe}" || {
+    rm -f "${probe}"
+    internal_err "AFSCP_VOLUME_ROOT write probe failed at ${path}; local-real fails closed"
+    return 1
+  }
+  if [[ "$(cat "${probe}" 2>/dev/null || true)" != "agentsmith-afscp-volume-root-check" ]]; then
+    rm -f "${probe}"
+    internal_err "AFSCP_VOLUME_ROOT read probe failed at ${path}; local-real fails closed"
+    return 1
+  fi
+  rm -f "${probe}"
+}
+
+afscp_validate_local_runtime_volume_root_mount() {
+  local path="$1"
+  local mount_state
+  mount_state="$(afscp_mountpoint_state "${path}")" || return 1
+  if [[ "${mount_state}" != "mounted" ]]; then
+    internal_err "AFSCP_VOLUME_ROOT is not mounted: ${path}; local-real fails closed"
+    return 1
+  fi
+  afscp_validate_juicefs_mount_type "${path}" || return 1
+  afscp_validate_volume_root_rw "${path}" || return 1
+}
+
+ensure_afscp_local_runtime_volume_root() {
+  prepare_afscp_local_runtime_env
+  mkdir -p "${AFSCP_VOLUME_ROOT}" "$(dirname "${AFSCP_VOLUME_ROOT_MOUNT_MARKER}")" "${AFSCP_LOCAL_RUNTIME_JUICEFS_CACHE_DIR}"
+
+  local mount_state
+  mount_state="$(afscp_mountpoint_state "${AFSCP_VOLUME_ROOT}")" || return 1
+  if [[ "${mount_state}" == "mounted" ]]; then
+    afscp_validate_local_runtime_volume_root_mount "${AFSCP_VOLUME_ROOT}" || return 1
+    return 0
+  fi
+
+  if ! command -v juicefs >/dev/null 2>&1; then
+    internal_err "juicefs is required to mount AFSCP_VOLUME_ROOT; local-real fails closed"
+    return 1
+  fi
+
+  local metaurl bucket storage juicefs_name access_key secret_key
+  metaurl="$(afscp_local_runtime_host_juicefs_metaurl)"
+  bucket="$(afscp_local_runtime_host_juicefs_bucket)"
+  storage="$(afscp_local_runtime_juicefs_storage)"
+  juicefs_name="$(afscp_local_runtime_juicefs_name)"
+  access_key="${MINIO_ACCESS_KEY:-${SUBSTRATE_MINIO_ACCESS_KEY:-mbos}}"
+  secret_key="${MINIO_SECRET_KEY:-${SUBSTRATE_MINIO_SECRET_KEY:-mbos_dev_password}}"
+
+  internal_info "mounting AFSCP local-real volume root with JuiceFS at ${AFSCP_VOLUME_ROOT}"
+  if ! ACCESS_KEY="${access_key}" SECRET_KEY="${secret_key}" \
+    juicefs format --no-update --storage "${storage}" --bucket "${bucket}" "${metaurl}" "${juicefs_name}" >/dev/null; then
+    internal_err "failed to format or validate AFSCP local-real JuiceFS volume; local-real fails closed"
+    return 1
+  fi
+  if ! printf '%s\n' "${AFSCP_VOLUME_ROOT}" > "${AFSCP_VOLUME_ROOT_MOUNT_MARKER}"; then
+    internal_err "failed to record AFSCP local-real mount marker; local-real fails closed"
+    return 1
+  fi
+  if ! ACCESS_KEY="${access_key}" SECRET_KEY="${secret_key}" \
+    juicefs mount -d --no-usage-report --check-storage --storage "${storage}" --bucket "${bucket}" --cache-dir "${AFSCP_LOCAL_RUNTIME_JUICEFS_CACHE_DIR}" --log "${AFSCP_LOCAL_RUNTIME_JUICEFS_MOUNT_LOG}" "${metaurl}" "${AFSCP_VOLUME_ROOT}" >/dev/null; then
+    internal_err "failed to mount AFSCP_VOLUME_ROOT with JuiceFS; local-real fails closed"
+    unmount_afscp_local_runtime_volume_root || return 1
+    return 1
+  fi
+
+  local waited
+  for waited in $(seq 1 30); do
+    mount_state="$(afscp_mountpoint_state "${AFSCP_VOLUME_ROOT}")" || {
+      unmount_afscp_local_runtime_volume_root || return 1
+      return 1
+    }
+    if [[ "${mount_state}" == "mounted" ]]; then
+      if afscp_validate_local_runtime_volume_root_mount "${AFSCP_VOLUME_ROOT}"; then
+        return 0
+      else
+        local validation_status=$?
+        unmount_afscp_local_runtime_volume_root || return 1
+        return "${validation_status}"
+      fi
+    fi
+    sleep 1
+  done
+
+  internal_err "timed out waiting for AFSCP_VOLUME_ROOT JuiceFS mount; local-real fails closed"
+  unmount_afscp_local_runtime_volume_root || return 1
+  return 1
+}
+
+unmount_afscp_local_runtime_volume_root() {
+  if [[ ! -f "${AFSCP_VOLUME_ROOT_MOUNT_MARKER}" ]]; then
+    return 0
+  fi
+
+  local mount_path canonical_root canonical_mount_path
+  mount_path="$(head -n1 "${AFSCP_VOLUME_ROOT_MOUNT_MARKER}" 2>/dev/null || true)"
+  mount_path="$(afscp_trim "${mount_path}")"
+  [[ -n "${mount_path}" ]] || {
+    rm -f "${AFSCP_VOLUME_ROOT_MOUNT_MARKER}"
+    return 0
+  }
+
+  canonical_root="$(afscp_canonical_path "${AFSCP_VOLUME_ROOT}")"
+  canonical_mount_path="$(afscp_canonical_path "${mount_path}")"
+  if [[ "${canonical_mount_path}" != "${canonical_root}" ]]; then
+    internal_err "AFSCP local-real mount marker path ${canonical_mount_path} does not match AFSCP_VOLUME_ROOT ${canonical_root}; local-real fails closed"
+    return 1
+  fi
+  mount_path="${canonical_mount_path}"
+  [[ -n "${mount_path}" && -d "${mount_path}" ]] || {
+    rm -f "${AFSCP_VOLUME_ROOT_MOUNT_MARKER}"
+    return 0
+  }
+  local mount_state
+  mount_state="$(afscp_mountpoint_state "${mount_path}")" || return 1
+  if [[ "${mount_state}" == "mounted" ]]; then
+    internal_info "unmounting AFSCP local-real JuiceFS volume root ${mount_path}"
+    if command -v juicefs >/dev/null 2>&1; then
+      juicefs umount "${mount_path}" >/dev/null 2>&1 || umount "${mount_path}" >/dev/null 2>&1 || true
+    else
+      umount "${mount_path}" >/dev/null 2>&1 || true
+    fi
+    mount_state="$(afscp_mountpoint_state "${mount_path}")" || return 1
+    if [[ "${mount_state}" == "mounted" ]]; then
+      internal_err "failed to unmount AFSCP local-real JuiceFS volume root ${mount_path}; local-real fails closed"
+      return 1
+    fi
+  fi
+  rm -f "${AFSCP_VOLUME_ROOT_MOUNT_MARKER}"
+}
+
 afscp_create_local_workload_mount_secret() {
   local secret_namespace="$1"
   local secret_name="$2"
   local metaurl bucket juicefs_name
-  metaurl="${AFSCP_LOCAL_RUNTIME_JUICEFS_METAURL:-$(afscp_default_local_runtime_juicefs_metaurl)}"
-  bucket="${AFSCP_LOCAL_RUNTIME_JUICEFS_BUCKET:-$(afscp_default_local_runtime_juicefs_bucket)}"
-  juicefs_name="${AFSCP_LOCAL_RUNTIME_JUICEFS_NAME:-$(afscp_default_local_runtime_juicefs_name)}"
+  metaurl="$(afscp_local_runtime_workload_juicefs_metaurl)"
+  bucket="$(afscp_local_runtime_workload_juicefs_bucket)"
+  juicefs_name="$(afscp_local_runtime_juicefs_name)"
 
   local secret_args=(
     create secret generic "${secret_name}"
@@ -710,7 +1029,7 @@ afscp_create_local_workload_mount_secret() {
     -o yaml
     "--from-literal=name=${juicefs_name}"
     "--from-literal=metaurl=${metaurl}"
-    "--from-literal=storage=${AFSCP_LOCAL_RUNTIME_JUICEFS_STORAGE:-minio}"
+    "--from-literal=storage=$(afscp_local_runtime_juicefs_storage)"
     "--from-literal=bucket=${bucket}"
     "--from-literal=access-key=${MINIO_ACCESS_KEY}"
     "--from-literal=secret-key=${MINIO_SECRET_KEY}"
@@ -726,14 +1045,82 @@ afscp_create_local_workload_mount_secret() {
 afscp_validate_workload_mount_secret_ref() {
   local secret_namespace="$1"
   local secret_name="$2"
-  local secret_json missing_keys
+  local secret_json validation_result expected_name expected_storage expected_host_metaurl expected_host_bucket expected_workload_metaurl expected_workload_bucket
   if ! secret_json="$(kubectl get secret "${secret_name}" -n "${secret_namespace}" -o json 2>/dev/null)"; then
     internal_err "AFSCP workload mount SecretRef is not present; local-real fails closed"
     return 1
   fi
-  missing_keys="$(
-    AFSCP_WORKLOAD_MOUNT_SECRET_JSON="${secret_json}" node <<'NODE'
+  expected_name="$(afscp_local_runtime_juicefs_name)"
+  expected_storage="$(afscp_local_runtime_juicefs_storage)"
+  expected_host_metaurl="$(afscp_local_runtime_host_juicefs_metaurl)"
+  expected_host_bucket="$(afscp_local_runtime_host_juicefs_bucket)"
+  expected_workload_metaurl="$(afscp_local_runtime_workload_juicefs_metaurl)"
+  expected_workload_bucket="$(afscp_local_runtime_workload_juicefs_bucket)"
+  validation_result="$(
+    AFSCP_WORKLOAD_MOUNT_SECRET_JSON="${secret_json}" \
+    AFSCP_EXPECTED_JUICEFS_NAME="${expected_name}" \
+    AFSCP_EXPECTED_JUICEFS_STORAGE="${expected_storage}" \
+    AFSCP_EXPECTED_HOST_JUICEFS_METAURL="${expected_host_metaurl}" \
+    AFSCP_EXPECTED_HOST_JUICEFS_BUCKET="${expected_host_bucket}" \
+    AFSCP_EXPECTED_WORKLOAD_JUICEFS_METAURL="${expected_workload_metaurl}" \
+    AFSCP_EXPECTED_WORKLOAD_JUICEFS_BUCKET="${expected_workload_bucket}" \
+    node <<'NODE'
 const required = ['name', 'metaurl', 'storage', 'bucket', 'access-key', 'secret-key'];
+const valueKeys = ['name', 'metaurl', 'storage', 'bucket'];
+
+function decodeSecretValue(data, key) {
+  return Buffer.from(data[key], 'base64').toString('utf8');
+}
+
+function sortedSearchParams(url) {
+  return Array.from(url.searchParams.entries())
+    .sort(([leftKey, leftValue], [rightKey, rightValue]) => {
+      const byKey = leftKey.localeCompare(rightKey);
+      return byKey === 0 ? leftValue.localeCompare(rightValue) : byKey;
+    });
+}
+
+function metaIdentity(raw) {
+  try {
+    const url = new URL(raw);
+    const protocol = url.protocol.toLowerCase();
+    if (protocol === 'postgres:' || protocol === 'postgresql:') {
+      return {
+        protocol,
+        username: decodeURIComponent(url.username),
+        password: decodeURIComponent(url.password),
+        database: url.pathname.replace(/^\/+/, '').replace(/\/+$/u, ''),
+        search: sortedSearchParams(url),
+      };
+    }
+    return { protocol, raw };
+  } catch {
+    return { raw };
+  }
+}
+
+function bucketIdentity(raw) {
+  try {
+    const url = new URL(raw);
+    return {
+      protocol: url.protocol.toLowerCase(),
+      bucket: url.pathname.replace(/^\/+/, '').replace(/\/+$/u, ''),
+    };
+  } catch {
+    return { raw };
+  }
+}
+
+function sameIdentity(left, right) {
+  return JSON.stringify(left) === JSON.stringify(right);
+}
+
+function addMismatch(mismatches, key) {
+  if (!mismatches.includes(key)) {
+    mismatches.push(key);
+  }
+}
+
 try {
   const secret = JSON.parse(process.env.AFSCP_WORKLOAD_MOUNT_SECRET_JSON ?? '{}');
   const data = secret && typeof secret === 'object' && secret.data && typeof secret.data === 'object'
@@ -741,7 +1128,31 @@ try {
     : {};
   const missing = required.filter((key) => typeof data[key] !== 'string' || data[key].length === 0);
   if (missing.length > 0) {
-    process.stdout.write(missing.join(','));
+    process.stdout.write(`missing:${missing.join(',')}`);
+    process.exit(1);
+  }
+  const values = Object.fromEntries(valueKeys.map((key) => [key, decodeSecretValue(data, key)]));
+  const mismatches = [];
+  if (values.name !== process.env.AFSCP_EXPECTED_JUICEFS_NAME) {
+    addMismatch(mismatches, 'name');
+  }
+  if (values.storage !== process.env.AFSCP_EXPECTED_JUICEFS_STORAGE) {
+    addMismatch(mismatches, 'storage');
+  }
+  if (values.metaurl !== process.env.AFSCP_EXPECTED_WORKLOAD_JUICEFS_METAURL) {
+    addMismatch(mismatches, 'metaurl');
+  }
+  if (values.bucket !== process.env.AFSCP_EXPECTED_WORKLOAD_JUICEFS_BUCKET) {
+    addMismatch(mismatches, 'bucket');
+  }
+  if (!sameIdentity(metaIdentity(values.metaurl), metaIdentity(process.env.AFSCP_EXPECTED_HOST_JUICEFS_METAURL ?? ''))) {
+    addMismatch(mismatches, 'metaurl');
+  }
+  if (!sameIdentity(bucketIdentity(values.bucket), bucketIdentity(process.env.AFSCP_EXPECTED_HOST_JUICEFS_BUCKET ?? ''))) {
+    addMismatch(mismatches, 'bucket');
+  }
+  if (mismatches.length > 0) {
+    process.stdout.write(`mismatch:${mismatches.join(',')}`);
     process.exit(1);
   }
 } catch {
@@ -750,7 +1161,17 @@ try {
 }
 NODE
   )" || {
-    internal_err "AFSCP workload mount SecretRef is missing required JuiceFS CSI keys (${missing_keys:-unknown}); local-real fails closed"
+    case "${validation_result}" in
+      missing:*)
+        internal_err "AFSCP workload mount SecretRef is missing required JuiceFS CSI keys (${validation_result#missing:}); local-real fails closed"
+        ;;
+      mismatch:*)
+        internal_err "AFSCP workload mount SecretRef does not match AFSCP local-real JuiceFS identity (${validation_result#mismatch:}); local-real fails closed"
+        ;;
+      *)
+        internal_err "AFSCP workload mount SecretRef is invalid (${validation_result:-unknown}); local-real fails closed"
+        ;;
+    esac
     return 1
   }
 }
@@ -876,7 +1297,7 @@ afscp_run_worker_once() {
 }
 
 start_afscp_export_gateway() {
-  write_afscp_local_runtime_env
+  ensure_afscp_local_runtime_mounts_and_write_env
   afscp_stop_pid_file "${AFSCP_EXPORT_GATEWAY_PID_FILE}" "AFSCP export gateway"
   rm -f "${AFSCP_EXPORT_GATEWAY_READY_FILE}"
   wait_port_free "${AFSCP_EXPORT_GATEWAY_PORT}" "AFSCP export gateway"
@@ -887,7 +1308,7 @@ start_afscp_export_gateway() {
 }
 
 start_afscp_api() {
-  write_afscp_local_runtime_env
+  ensure_afscp_local_runtime_mounts_and_write_env
   afscp_stop_pid_file "${AFSCP_API_PID_FILE}" "AFSCP API"
   rm -f "${AFSCP_API_READY_FILE}"
   wait_port_free "${AFSCP_API_PORT}" "AFSCP API"
@@ -899,7 +1320,7 @@ start_afscp_api() {
 }
 
 start_afscp_worker_loop() {
-  write_afscp_local_runtime_env
+  ensure_afscp_local_runtime_mounts_and_write_env
   afscp_stop_pid_file "${AFSCP_WORKER_PID_FILE}" "AFSCP worker"
   rm -f "${AFSCP_WORKER_READY_FILE}"
   internal_info "starting AFSCP worker loop"
@@ -1023,8 +1444,7 @@ JSON
 ensure_afscp_local_runtime() {
   prepare_afscp_local_runtime_env
   ensure_afscp_local_runtime_prerequisites
-  ensure_afscp_local_runtime_workload_mount_secret_refs
-  write_afscp_local_runtime_env
+  ensure_afscp_local_runtime_mounts_and_write_env
   apply_afscp_postgres_migrations
   internal_info "validating AFSCP worker config"
   afscp_run_worker_once >> "${AFSCP_WORKER_LOG}" 2>&1
@@ -1048,7 +1468,10 @@ stop_afscp_local_runtime() {
   afscp_stop_pid_file "${AFSCP_WORKER_PID_FILE}" "AFSCP worker"
   afscp_stop_pid_file "${AFSCP_API_PID_FILE}" "AFSCP API"
   afscp_stop_pid_file "${AFSCP_EXPORT_GATEWAY_PID_FILE}" "AFSCP export gateway"
+  local unmount_status=0
+  unmount_afscp_local_runtime_volume_root || unmount_status=$?
   rm -f "${AFSCP_WORKER_READY_FILE}" "${AFSCP_API_READY_FILE}" "${AFSCP_EXPORT_GATEWAY_READY_FILE}"
+  return "${unmount_status}"
 }
 
 write_internal_sandbox_config() {

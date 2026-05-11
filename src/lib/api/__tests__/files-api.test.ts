@@ -44,6 +44,156 @@ describe('FilesAPI', () => {
     );
   });
 
+  it('normalizes file-library delete 204 responses as deleted results', async () => {
+    const client: ApiClient = {
+      setToken: () => undefined,
+      getToken: () => null,
+      clearToken: () => undefined,
+      get: vi.fn(),
+      getBlob: vi.fn(),
+      postMultipart: vi.fn(),
+      post: vi.fn(),
+      put: vi.fn(),
+      patch: vi.fn(),
+      delete: vi.fn().mockResolvedValue(undefined),
+      connectSSE: () => Promise.resolve(new EventSource('http://localhost')),
+    };
+
+    const api = new FilesAPI(client);
+
+    await expect(api.deleteLibrary('ws_1', 'proj_1', 'flib_1')).resolves.toEqual({
+      status: 'deleted',
+    });
+    expect(client.delete).toHaveBeenCalledWith(
+      '/workspaces/ws_1/projects/proj_1/file-libraries/flib_1',
+    );
+  });
+
+  it('returns accepted file-library delete operation results for 202 responses', async () => {
+    const accepted = {
+      file_library_id: 'flib_1',
+      file_library_status: 'deleting' as const,
+      operation_id: 'op_repo_delete',
+      operation_status: 'pending' as const,
+    };
+    const client: ApiClient = {
+      setToken: () => undefined,
+      getToken: () => null,
+      clearToken: () => undefined,
+      get: vi.fn(),
+      getBlob: vi.fn(),
+      postMultipart: vi.fn(),
+      post: vi.fn(),
+      put: vi.fn(),
+      patch: vi.fn(),
+      delete: vi.fn().mockResolvedValue(accepted),
+      connectSSE: () => Promise.resolve(new EventSource('http://localhost')),
+    };
+
+    const api = new FilesAPI(client);
+
+    await expect(api.deleteLibrary('ws_1', 'proj_1', 'flib_1')).resolves.toEqual({
+      status: 'accepted',
+      ...accepted,
+    });
+  });
+
+  it('rejects malformed non-empty file-library delete response bodies instead of treating them as deleted', async () => {
+    const malformedAccepted = {
+      file_library_id: 'flib_1',
+      file_library_status: 'deleting',
+      operation_id: 'op_repo_delete',
+      operation_status: 'queued',
+    };
+    const client: ApiClient = {
+      setToken: () => undefined,
+      getToken: () => null,
+      clearToken: () => undefined,
+      get: vi.fn(),
+      getBlob: vi.fn(),
+      postMultipart: vi.fn(),
+      post: vi.fn(),
+      put: vi.fn(),
+      patch: vi.fn(),
+      delete: vi.fn().mockResolvedValue(malformedAccepted),
+      connectSSE: () => Promise.resolve(new EventSource('http://localhost')),
+    };
+
+    const api = new FilesAPI(client);
+
+    await expect(api.deleteLibrary('ws_1', 'proj_1', 'flib_1')).rejects.toMatchObject({
+      errorCode: 'FILE_LIBRARY_DELETE_ACCEPTED_RESPONSE_INVALID',
+      statusCode: 202,
+      details: {
+        file_library_id: 'flib_1',
+      },
+    });
+  });
+
+  it('rejects accepted file-library delete responses without an operation id', async () => {
+    const acceptedWithoutOperationId = {
+      file_library_id: 'flib_1',
+      file_library_status: 'deleting',
+      operation_id: null,
+      operation_status: 'pending',
+    };
+    const client: ApiClient = {
+      setToken: () => undefined,
+      getToken: () => null,
+      clearToken: () => undefined,
+      get: vi.fn(),
+      getBlob: vi.fn(),
+      postMultipart: vi.fn(),
+      post: vi.fn(),
+      put: vi.fn(),
+      patch: vi.fn(),
+      delete: vi.fn().mockResolvedValue(acceptedWithoutOperationId),
+      connectSSE: () => Promise.resolve(new EventSource('http://localhost')),
+    };
+
+    const api = new FilesAPI(client);
+
+    await expect(api.deleteLibrary('ws_1', 'proj_1', 'flib_1')).rejects.toMatchObject({
+      errorCode: 'FILE_LIBRARY_DELETE_ACCEPTED_RESPONSE_INVALID',
+      statusCode: 202,
+      details: {
+        file_library_id: 'flib_1',
+      },
+    });
+  });
+
+  it('routes file-library operation projection requests through the project scoped path', async () => {
+    const projection = {
+      operation_id: 'op_repo_delete',
+      operation_state: 'succeeded',
+      operation_type: 'repo_delete',
+      resource: { type: 'repo' },
+      error: null,
+      updated_at: '2026-05-09T00:00:01.000Z',
+    };
+    const client: ApiClient = {
+      setToken: () => undefined,
+      getToken: () => null,
+      clearToken: () => undefined,
+      get: vi.fn().mockResolvedValue(projection),
+      getBlob: vi.fn(),
+      postMultipart: vi.fn(),
+      post: vi.fn(),
+      put: vi.fn(),
+      patch: vi.fn(),
+      delete: vi.fn(),
+      connectSSE: () => Promise.resolve(new EventSource('http://localhost')),
+    };
+
+    const api = new FilesAPI(client);
+
+    await expect(api.getFileLibraryOperationProjection('ws_1', 'proj_1', 'op_repo_delete'))
+      .resolves.toEqual(projection);
+    expect(client.get).toHaveBeenCalledWith(
+      '/workspaces/ws_1/projects/proj_1/file-library-operations/op_repo_delete',
+    );
+  });
+
   it('passes object listing aborts through the FetchApiClient fetch path', async () => {
     const controller = new AbortController();
     const fetchMock = vi.fn((_url: RequestInfo | URL, init?: RequestInit) => new Promise<Response>((_resolve, reject) => {

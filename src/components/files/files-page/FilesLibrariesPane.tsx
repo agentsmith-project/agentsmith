@@ -21,6 +21,12 @@ function isTaskHomeBound(library: FileLibrary) {
   return library.task_home_binding_status === 'bound';
 }
 
+function statusReasonKey(library: FileLibrary) {
+  if (library.status === 'failed') return 'file_manager.library_status_reason_failed';
+  if (library.status === 'degraded') return 'file_manager.library_status_reason_degraded';
+  return null;
+}
+
 export function FilesLibrariesPane({
   t,
   canManage,
@@ -36,8 +42,11 @@ export function FilesLibrariesPane({
   const showActions = canManage;
 
   return (
-    <div className="min-h-0 rounded-md border border-subtle bg-surface/74 shadow-ambient">
-      <div className="flex items-center justify-between border-b border-subtle px-3 py-2">
+    <div
+      className="flex h-full min-h-0 flex-col overflow-hidden rounded-md border border-subtle bg-surface/74 shadow-ambient"
+      data-testid="files__libraries-pane"
+    >
+      <div className="shrink-0 flex items-center justify-between border-b border-subtle px-3 py-2">
         <div>
           <div className="text-[11px] font-semibold uppercase text-tertiary">{t('file_manager.libraries')}</div>
           <div className="mt-0.5 text-[11px] text-secondary">{libraries.length} {t('file_manager.items')}</div>
@@ -55,7 +64,7 @@ export function FilesLibrariesPane({
           </Button>
         ) : null}
       </div>
-      <div className="min-h-0 overflow-auto">
+      <div className="min-h-0 flex-1 overflow-y-auto" data-testid="files__library-list-scroll">
         {libsLoading ? (
           <div className="p-3 text-sm text-tertiary">{t('file_manager.loading')}</div>
         ) : libraries.length === 0 ? (
@@ -69,15 +78,13 @@ export function FilesLibrariesPane({
             {libraries.map((library) => {
               const active = library.id === selectedLibraryId;
               const taskHomeBound = isTaskHomeBound(library);
+              const statusReason = statusReasonKey(library);
               const statusToneClass = library.status === 'failed'
                 ? 'border-error/25 bg-error/10 text-error'
                 : library.status === 'degraded'
                   ? 'border-warning/25 bg-warning/10 text-warning'
                   : 'border-subtle bg-white/5 text-secondary';
-              const bindingToneClass = taskHomeBound
-                ? 'border-warning/25 bg-warning/10 text-warning'
-                : 'border-subtle bg-white/5 text-secondary';
-              const bindingDetail = taskHomeBound
+              const bindingLabel = taskHomeBound
                 ? (
                     library.bound_task_visible && library.bound_task_title
                       ? t('file_manager.library_binding_bound_visible', {
@@ -87,11 +94,6 @@ export function FilesLibrariesPane({
                       : t('file_manager.library_binding_bound_redacted')
                   )
                 : null;
-              const statusReason = library.status === 'failed'
-                ? t('file_manager.library_status_reason_failed')
-                : library.status === 'degraded'
-                  ? t('file_manager.library_status_reason_degraded')
-                  : null;
               return (
                 <div
                   key={library.id}
@@ -102,7 +104,7 @@ export function FilesLibrariesPane({
                     onSelectLibrary(library.id);
                   }}
                   className={cn(
-                    'flex w-full flex-col gap-2 rounded-md px-2.5 py-2 text-left transition-colors',
+                    'group flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left transition-colors',
                     active
                       ? 'bg-accent/10 text-strong ring-1 ring-accent/18'
                       : 'text-primary hover:bg-hover/55',
@@ -111,62 +113,35 @@ export function FilesLibrariesPane({
                   tabIndex={0}
                   data-testid={`files__library-item--${library.id}`}
                 >
-                  <div className="min-w-0">
-                    <div className="min-w-0 flex-1">
-                      <div className={cn('truncate text-sm transition-colors', active ? 'text-strong' : 'text-primary')}>
-                        {library.name}
-                      </div>
-                      <div className="mt-1 flex flex-wrap items-center gap-1.5">
+                  <div className="min-w-0 flex-1">
+                    <div className={cn('truncate text-sm transition-colors', active ? 'text-strong' : 'text-primary')}>
+                      {library.name}
+                    </div>
+                    <div className="mt-1 flex min-w-0 items-center gap-1.5">
+                      <span
+                        className={cn(
+                          'shrink-0 rounded-full border px-1.5 py-0.5 text-[10px] font-medium uppercase',
+                          statusToneClass,
+                        )}
+                        title={statusReason ? t(statusReason) : undefined}
+                        data-testid={`files__library-status--${library.id}`}
+                      >
+                        {t(`file_manager.library_status_${library.status}`)}
+                      </span>
+                      {taskHomeBound ? (
                         <span
-                          className={cn(
-                            'rounded-full border px-2 py-0.5 text-[10px] font-medium uppercase',
-                            statusToneClass,
-                          )}
-                          data-testid={`files__library-status--${library.id}`}
-                        >
-                          {t(`file_manager.library_status_${library.status}`)}
-                        </span>
-                        <span
-                          className={cn(
-                            'rounded-full border px-2 py-0.5 text-[10px] font-medium uppercase',
-                            bindingToneClass,
-                          )}
+                          className="min-w-0 truncate rounded-full border border-warning/25 bg-warning/10 px-1.5 py-0.5 text-[10px] font-medium uppercase text-warning"
+                          title={bindingLabel ?? undefined}
                           data-testid={`files__library-binding--${library.id}`}
                         >
-                          {taskHomeBound
-                            ? t('file_manager.library_binding_bound')
-                            : t('file_manager.library_binding_unbound')}
+                          {t('file_manager.library_binding_bound')}
                         </span>
-                      </div>
-                      {bindingDetail ? (
-                        <div
-                          className="mt-1 text-[11px] text-tertiary"
-                          data-testid={`files__library-binding-detail--${library.id}`}
-                        >
-                          {bindingDetail}
-                        </div>
-                      ) : null}
-                      {taskHomeBound ? (
-                        <div
-                          className="mt-1 text-[11px] text-tertiary"
-                          data-testid={`files__library-delete-blocked--${library.id}`}
-                        >
-                          {t('file_manager.library_delete_bound_blocked')}
-                        </div>
-                      ) : null}
-                      {statusReason ? (
-                        <div
-                          className="mt-1 text-[11px] text-tertiary"
-                          data-testid={`files__library-status-reason--${library.id}`}
-                        >
-                          {statusReason}
-                        </div>
                       ) : null}
                     </div>
                   </div>
                   {active && showActions ? (
                     <TooltipProvider delayDuration={120}>
-                      <div className="flex items-center gap-1.5 border-t border-subtle pt-1">
+                      <div className="shrink-0 flex items-center gap-1">
                         {!canManage ? null : (
                           <>
                             <Tooltip>
@@ -175,7 +150,7 @@ export function FilesLibrariesPane({
                                   type="button"
                                   size="icon"
                                   variant="ghost"
-                                  className="h-8 w-8 rounded-full border border-subtle bg-transparent text-secondary hover:bg-hover/55 hover:text-primary"
+                                  className="h-7 w-7 rounded-full border border-subtle bg-transparent text-secondary hover:bg-hover/55 hover:text-primary"
                                   onClick={(event) => {
                                     event.preventDefault();
                                     event.stopPropagation();
@@ -195,7 +170,7 @@ export function FilesLibrariesPane({
                                   type="button"
                                   size="icon"
                                   variant="ghost"
-                                  className="h-8 w-8 rounded-full border border-subtle bg-transparent text-secondary hover:bg-error/12 hover:text-error"
+                                  className="h-7 w-7 rounded-full border border-subtle bg-transparent text-secondary hover:bg-error/12 hover:text-error"
                                   onClick={(event) => {
                                     event.preventDefault();
                                     event.stopPropagation();
@@ -203,6 +178,7 @@ export function FilesLibrariesPane({
                                   }}
                                   disabled={taskHomeBound}
                                   aria-label={t('file_manager.library_delete')}
+                                  title={taskHomeBound ? t('file_manager.library_delete_bound_blocked') : undefined}
                                   data-testid={`files__library-delete-inline--${library.id}`}
                                 >
                                   <Trash2 className="h-3.5 w-3.5" />
@@ -218,8 +194,6 @@ export function FilesLibrariesPane({
                         )}
                       </div>
                     </TooltipProvider>
-                  ) : active ? (
-                    <div className="border-t border-subtle pt-1" />
                   ) : null}
                 </div>
               );

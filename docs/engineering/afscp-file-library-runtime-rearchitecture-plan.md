@@ -4,7 +4,7 @@ Status: decision-complete handoff for the next development milestone.
 
 Owner: AgentSmith product and engineering.
 
-Primary input: use `ghcr.io/agentsmith-project/agentsmith-fs-control-plane:v1.0.1` for File Library storage runtime, with AgentSmith as the product authority for workspace/project, permissions, file library catalog, task binding, task file template availability, UX, and audit projection.
+Primary input: use `ghcr.io/agentsmith-project/agentsmith-fs-control-plane:v1.0.2` for File Library storage runtime, with AgentSmith as the product authority for workspace/project, permissions, file library catalog, task binding, task file template availability, UX, and audit projection.
 
 ## 1. Executive Summary
 
@@ -628,7 +628,7 @@ new AFSCP access without an explicit reconcile path.
 
 ### 3.4 File Browser Access Strategy
 
-AFSCP v1.0.1 does not expose a first-class file browse/upload/download/move API. It exposes export sessions and a WebDAV gateway contract.
+The current AFSCP file-library contract does not expose a first-class file browse/upload/download/move API. It exposes export sessions and a WebDAV gateway contract.
 
 Decision for this milestone:
 
@@ -682,7 +682,7 @@ Developer runner flow:
 - It must not receive AFSCP root credentials, raw control paths, Secret refs,
   metadata URLs, bucket details, storage-root material, or direct JuiceFS mount
   material.
-- If AFSCP v1.0.1 cannot safely express this export-backed developer runner
+- If the current AFSCP contract cannot safely express this export-backed developer runner
   lease/connector abstraction, Slice 5 is blocked on an upstream AFSCP contract
   change. Do not add an AgentSmith workaround, a dedicated developer-orchestrator
   identity, or raw storage shortcuts.
@@ -983,7 +983,7 @@ Known gaps or integration risks:
 12. Template creation should preferably be an AFSCP operation for "create template from current repo state" that internally materializes a source save point and returns `template_id` plus `source_save_point_id`. AgentSmith should not expose source save point plumbing as the normal template UX.
 13. Developer runner parity is a target of this milestone and requires an AFSCP
     export-backed developer runner lease/connector with short TTL, revoke,
-    heartbeat/reconcile, and export/session accounting. If AFSCP v1.0.1 cannot
+    heartbeat/reconcile, and export/session accounting. If the current AFSCP contract cannot
     express that safely, Slice 5 is blocked upstream and AgentSmith must record
     the blocker instead of adding a workaround.
 14. AFSCP must enforce namespace mismatch rejection for every namespace-scoped resource id AgentSmith passes, including repo, template, save point, restore plan, export session, workload mount binding, and operation id.
@@ -1201,7 +1201,7 @@ Acceptance:
 
 ### Slice 5: Developer Runner Workspace Parity
 
-Slice 5 is a milestone target. If AFSCP v1.0.1 cannot provide the safe
+Slice 5 is a milestone target. If the current AFSCP contract cannot provide the safe
 export-backed developer runner lease/connector, Slice 5 is blocked upstream:
 record the upstream blocker and the explicit no-workaround decision, then do not
 treat developer-runner-specific backend-real/deploy smoke as a pass condition for
@@ -1221,7 +1221,7 @@ Implementation:
 
 - provide the AFSCP export-backed developer runner lease/connector path that preserves the same HOME semantics.
 - do not add a second product model for developer files.
-- if AFSCP v1.0.1 cannot support the safe lease/connector abstraction, stop Slice 5 and open the upstream AFSCP contract change; do not add a dedicated developer-orchestrator identity or raw storage workaround.
+- if the current AFSCP contract cannot support the safe lease/connector abstraction, stop Slice 5 and open the upstream AFSCP contract change; do not add a dedicated developer-orchestrator identity or raw storage workaround.
 - while Slice 5 is blocked, the active `workspace-access` / `task_home_binding`
   contract exposes only `mode: pre_mounted`; developer runner file access fails
   closed with an explicit 409 and must not surface placeholder connector modes.
@@ -1343,7 +1343,7 @@ and any other fixture that still encodes `metadata_url`, raw mount, bucket, or
 JuiceFS provider assumptions.
 
 Developer runner evidence follows one rule everywhere: Slice 5 is in scope for
-this milestone, but if AFSCP v1.0.1 officially blocks the safe export-backed
+this milestone, but if the current AFSCP contract officially blocks the safe export-backed
 lease/connector, developer-runner-specific backend-real and deploy smoke are not
 required to pass for this round. The close evidence must instead include the
 upstream blocker, the no-workaround decision, and proof AgentSmith did not add a
@@ -1481,7 +1481,7 @@ This milestone is complete only when:
 6. Save point, restore, and template dialogs tell users the scope is the whole task file library/HOME, including hidden agent runtime folders, not only the current `workspace/` view.
 7. Platform-managed Project secrets, managed OAuth credentials, execution tickets, runner connection secrets, WebDAV/export passwords, AFSCP credentials, and storage-root material are not automatically leaked or persisted into HOME payload. The handoff and tests distinguish this from user/agent-authored secret text files, which are user data risk rather than a platform guarantee.
 8. Managed runner uses AFSCP workload mount binding and an orchestrator-only repo/namespace/destination/TTL-scoped mount plan. The orchestrator cannot list/read arbitrary Kubernetes Secrets, cannot persist root credentials, and never exposes storage-root material to runner/task containers.
-9. Developer runner uses the selected AFSCP export-backed lease/connector path with short TTL, revoke, heartbeat/reconcile, and AFSCP export/session accounting when Slice 5 is unblocked and implemented. If AFSCP v1.0.1 cannot support this safely, Slice 5 remains officially blocked upstream with upstream blocker evidence, a no-workaround record, and no developer-runner-specific backend-real/deploy smoke required for this round.
+9. Developer runner uses the selected AFSCP export-backed lease/connector path with short TTL, revoke, heartbeat/reconcile, and AFSCP export/session accounting when Slice 5 is unblocked and implemented. If the current AFSCP contract cannot support this safely, Slice 5 remains officially blocked upstream with upstream blocker evidence, a no-workaround record, and no developer-runner-specific backend-real/deploy smoke required for this round.
 10. Save point list/create works.
 11. Restore preview/confirm/cancel works; cancel leaves files unchanged, restore blocks active or uncertain writers, preview plans bind repo base revision/generation/head/fence token, and stale previews require preview again before restore-run. The backend operation may still be named discard preview.
 12. Template draft/publish/unpublish/delete/clone works within the AgentSmith project namespace model. Drafts are shown only in project template management to the creator and `project:files:update` users, mutation actions require `project:files:update`, published templates are available during task creation to current project members with `project:agent_task:use`, and no member/group sharing is introduced.

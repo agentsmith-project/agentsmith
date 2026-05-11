@@ -45,7 +45,8 @@ vi.mock('next-intl', () => ({
         open_chat: 'Open Chat',
         open_agent_tasks: 'Open Agent tasks',
         open_endpoints: 'Open Endpoints',
-        'file_manager.root': 'Root',
+        'file_manager.home_root': 'HOME root',
+        'file_manager.root': 'root',
         'file_manager.items': 'items',
         'file_manager.libraries': 'Libraries',
         'file_manager.no_libraries': 'No libraries yet',
@@ -61,7 +62,9 @@ vi.mock('next-intl', () => ({
         'file_manager.library_bound_home_banner': `This file library is attached to an Agent task. Changes in Files affect that task's files.`,
         'file_manager.library_bound_home_banner_visible': `This file library is attached to ${values?.title ?? 'task'} (${values?.status ?? 'unknown'}). Changes in Files affect that task's files.`,
         'file_manager.library_delete_bound_blocked': 'Delete the bound task before deleting this library.',
-        'file_manager.root_system_folders_note': 'System folders are shown in this root view so task files match the file library state.',
+        'file_manager.home_root_note': 'This is the task HOME root. The workspace folder is one directory inside it.',
+        'file_manager.empty_home_root_description': 'This task HOME root is empty. Upload files here or open workspace/.',
+        'file_manager.empty_workspace_description': 'The workspace folder is empty.',
       },
       errors: {
         validation_error: 'Validation error',
@@ -312,12 +315,42 @@ describe('FilesPage (object browser)', () => {
     expect(screen.getByText('Libraries')).toBeInTheDocument();
   });
 
-  it('opens the ordinary Files entry in workspace/ by default and can navigate back to the task-file root', async () => {
+  it('opens the ordinary Files entry at the task HOME root and can navigate into workspace/', async () => {
     const user = userEvent.setup();
+    mockUseFileObjectsInfinite.mockReturnValue({
+      data: {
+        pages: [
+          {
+            prefix: '',
+            items: [createPrefixItem({ prefix: 'workspace/', name: 'workspace' })],
+            next_continuation_token: null,
+          },
+        ],
+      },
+      isLoading: false,
+      hasNextPage: false,
+      isFetchingNextPage: false,
+      fetchNextPage: vi.fn(),
+      refetch: vi.fn(),
+    });
 
     renderWithQueryClient(<FilesPage workspaceId="ws_default" projectId="proj_001" />);
 
     expect(await screen.findByTestId('files__objects-table')).toBeInTheDocument();
+    await waitFor(() => {
+      expect(mockUseFileObjectsInfinite).toHaveBeenLastCalledWith(
+        'ws_default',
+        'proj_001',
+        'lib_1',
+        expect.objectContaining({ prefix: '' }),
+        expect.any(Object),
+      );
+    });
+    expect(screen.getByTestId('files__breadcrumb-root')).toHaveTextContent('HOME root');
+    expect(screen.getByTestId('files__root-scope-note')).toHaveTextContent('task HOME root');
+
+    await user.dblClick(screen.getByRole('button', { name: 'workspace' }));
+
     await waitFor(() => {
       expect(mockUseFileObjectsInfinite).toHaveBeenLastCalledWith(
         'ws_default',
@@ -328,19 +361,6 @@ describe('FilesPage (object browser)', () => {
       );
     });
     expect(screen.getByTestId('files__breadcrumb--1')).toHaveTextContent('workspace');
-
-    await user.click(screen.getByTestId('files__breadcrumb-root'));
-
-    await waitFor(() => {
-      expect(mockUseFileObjectsInfinite).toHaveBeenLastCalledWith(
-        'ws_default',
-        'proj_001',
-        'lib_1',
-        expect.objectContaining({ prefix: '' }),
-        expect.any(Object),
-      );
-    });
-    expect(screen.getByTestId('files__root-scope-note')).toHaveTextContent('System folders');
   });
 
   it('renders dot folders and dot files from the listing without front-end filtering', async () => {
@@ -372,7 +392,6 @@ describe('FilesPage (object browser)', () => {
     expect(within(table).getByRole('button', { name: '.mbos' })).toBeInTheDocument();
     expect(within(table).getByRole('button', { name: '.env' })).toBeInTheDocument();
     expect(document.body.textContent).not.toContain('hidden runtime');
-    expect(document.body.textContent).not.toContain('HOME');
   });
 
   it('selects the first library by default and only shows active-library actions', async () => {
@@ -408,9 +427,11 @@ describe('FilesPage (object browser)', () => {
     await user.click(await screen.findByTestId('files__library-item--lib_failed'));
 
     expect(screen.getByTestId('files__library-status--lib_failed')).toHaveTextContent('Failed');
-    expect(screen.getByTestId('files__library-status-reason--lib_failed')).toHaveTextContent(
+    expect(screen.getByTestId('files__library-status--lib_failed')).toHaveAttribute(
+      'title',
       'Library provisioning failed.',
     );
+    expect(screen.queryByTestId('files__library-status-reason--lib_failed')).not.toBeInTheDocument();
     expect(screen.queryByTestId('files__library-desktop-access--lib_failed')).not.toBeInTheDocument();
     expect(screen.getByTestId('files__new-folder')).toBeDisabled();
     expect(screen.getByTestId('files__file-states')).toBeDisabled();
@@ -448,15 +469,20 @@ describe('FilesPage (object browser)', () => {
 
     renderWithQueryClient(<FilesPage workspaceId="ws_default" projectId="proj_001" />);
 
-    expect(await screen.findByTestId('files__library-binding--lib_unbound')).toHaveTextContent('Unbound');
+    expect(await screen.findByTestId('files__library-item--lib_unbound')).toBeInTheDocument();
+    expect(screen.queryByTestId('files__library-binding--lib_unbound')).not.toBeInTheDocument();
     expect(screen.getByTestId('files__library-binding--lib_bound_visible')).toHaveTextContent('Bound');
-    expect(screen.getByTestId('files__library-binding-detail--lib_bound_visible')).toHaveTextContent(
+    expect(screen.getByTestId('files__library-binding--lib_bound_visible')).toHaveAttribute(
+      'title',
       'Bound to Visible Task (archived)',
     );
+    expect(screen.queryByTestId('files__library-binding-detail--lib_bound_visible')).not.toBeInTheDocument();
     expect(screen.getByTestId('files__library-binding--lib_bound_redacted')).toHaveTextContent('Bound');
-    expect(screen.getByTestId('files__library-binding-detail--lib_bound_redacted')).toHaveTextContent(
+    expect(screen.getByTestId('files__library-binding--lib_bound_redacted')).toHaveAttribute(
+      'title',
       'Bound to a task you cannot view',
     );
+    expect(screen.queryByTestId('files__library-binding-detail--lib_bound_redacted')).not.toBeInTheDocument();
     expect(screen.queryByText('Secret Task')).not.toBeInTheDocument();
   });
 
@@ -475,13 +501,15 @@ describe('FilesPage (object browser)', () => {
 
     renderWithQueryClient(<FilesPage workspaceId="ws_default" projectId="proj_001" />);
 
-    expect(await screen.findByTestId('files__library-delete-inline--lib_bound_visible')).toBeDisabled();
-    expect(screen.getByTestId('files__library-binding-detail--lib_bound_visible')).toHaveTextContent(
+    const deleteButton = await screen.findByTestId('files__library-delete-inline--lib_bound_visible');
+    expect(deleteButton).toBeDisabled();
+    expect(deleteButton).toHaveAttribute('title', 'Delete the bound task before deleting this library.');
+    expect(screen.getByTestId('files__library-binding--lib_bound_visible')).toHaveAttribute(
+      'title',
       'Bound to Visible Task (active)',
     );
-    expect(screen.getByTestId('files__library-delete-blocked--lib_bound_visible')).toHaveTextContent(
-      'Delete the bound task before deleting this library.',
-    );
+    expect(screen.queryByTestId('files__library-binding-detail--lib_bound_visible')).not.toBeInTheDocument();
+    expect(screen.queryByTestId('files__library-delete-blocked--lib_bound_visible')).not.toBeInTheDocument();
   });
 
   it('shows a selected bound library banner without disabling browsing or editing actions', async () => {

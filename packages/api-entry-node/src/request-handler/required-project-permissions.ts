@@ -37,7 +37,7 @@ export function requiredProjectPermissions(route: ProjectsRoute, method: string)
   }
 
   if (route.kind === 'fileLibraryOperation') {
-    return ['project:audit:read'];
+    return ['project:files:update'];
   }
 
   if (

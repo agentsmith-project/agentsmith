@@ -3397,7 +3397,7 @@ export interface components {
             file_library_id: string;
             /** @enum {string} */
             file_library_status: "deleting";
-            operation_id: string | null;
+            operation_id: string;
             /** @enum {string} */
             operation_status: "pending";
         };

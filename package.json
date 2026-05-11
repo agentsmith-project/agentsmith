@@ -29,6 +29,7 @@
     "test:e2e:integration:files": "playwright test --config playwright.config.integration.ts e2e/integration-files.spec.ts --project=chromium --workers=1",
     "test:e2e:integration:files:connector-absence": "bash scripts/run-integration-e2e-full.sh e2e/integration-files-connector-absence.spec.ts",
     "test:e2e:integration:files:management-ux": "bash scripts/files-management-ux-real-gate.sh",
+    "test:e2e:integration:files:user-stories": "unset http_proxy https_proxy all_proxy HTTP_PROXY HTTPS_PROXY ALL_PROXY no_proxy NO_PROXY; BASE_URL=${BASE_URL:-http://localhost:3101} INTEGRATION_API_BASE=${INTEGRATION_API_BASE:-http://localhost:21000} INTEGRATION_LOCALE=${INTEGRATION_LOCALE:-en-US} INTEGRATION_PRESEEDED_SYSTEM_WORKSPACES=${INTEGRATION_PRESEEDED_SYSTEM_WORKSPACES:-true} playwright test --config playwright.config.integration.ts e2e/integration-files-user-stories.spec.ts --project=chromium --workers=1",
     "test:e2e:integration:chat": "playwright test --config playwright.config.integration.ts e2e/integration-chat.spec.ts --project=chromium --workers=1",
     "test:e2e:integration:agent-task": "playwright test --config playwright.config.integration.ts e2e/integration-agent-task-runner.spec.ts --project=chromium --workers=1 --grep-invert docker",
     "test:e2e:integration:endpoints-capabilities": "playwright test --config playwright.config.integration.ts e2e/integration-endpoint-capabilities.spec.ts --project=chromium --workers=1",

@@ -77,6 +77,34 @@ export interface UpdateFileLibraryRequest {
   description?: string;
 }
 
+export interface DeleteFileLibraryAcceptedResponse {
+  file_library_id: string;
+  file_library_status: 'deleting';
+  operation_id: string;
+  operation_status: 'pending';
+}
+
+export type DeleteFileLibraryResult =
+  | { status: 'deleted' }
+  | ({ status: 'accepted' } & DeleteFileLibraryAcceptedResponse);
+
+export interface FileLibraryOperationProjection {
+  operation_id: string;
+  operation_state: string;
+  operation_type?: string;
+  resource?: {
+    type: string;
+  };
+  error: {
+    code: string;
+    retryable?: boolean;
+  } | null;
+  created_at?: string;
+  started_at?: string;
+  updated_at?: string;
+  finished_at?: string;
+}
+
 export interface CreateFileLibraryFolderRequest {
   path: string;
 }

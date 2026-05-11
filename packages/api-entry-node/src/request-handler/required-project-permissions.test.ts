@@ -235,7 +235,7 @@ describe('requiredProjectPermissions', () => {
     ).toEqual(['project:files:update']);
   });
 
-  it('gates file-library operation projections by project audit read', () => {
+  it('gates file-library operation projections by project files update', () => {
     expect(
       requiredProjectPermissions(
         {
@@ -246,6 +246,6 @@ describe('requiredProjectPermissions', () => {
         } as never,
         'GET',
       ),
-    ).toEqual(['project:audit:read']);
+    ).toEqual(['project:files:update']);
   });
 });

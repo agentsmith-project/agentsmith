@@ -5,7 +5,7 @@ import type { FileLibrary } from '@/lib/api/types';
 
 export type FileSortBy = 'name' | 'size_bytes' | 'last_modified';
 export type FileSortOrder = 'asc' | 'desc';
-export const DEFAULT_FILES_BROWSE_PREFIX = 'workspace/';
+export const DEFAULT_FILES_BROWSE_PREFIX = '';
 
 type UseSourcesUrlStateOptions = {
   defaultPrefix?: string;
@@ -52,16 +52,20 @@ function writeBrowsePrefix(params: URLSearchParams, prefix: string, defaultPrefi
   params.set('prefix', nextPrefix);
 }
 
+function hasLibrary(libraries: FileLibrary[], libraryId: string | null): libraryId is string {
+  return Boolean(libraryId && libraries.some((library) => library.id === libraryId));
+}
+
 function resolveLibrarySelection(
   libraries: FileLibrary[],
   queryLibraryId: string | null,
   selectedLibraryId: string | null,
 ): string | null {
-  if (selectedLibraryId && libraries.some((library) => library.id === selectedLibraryId)) {
-    return selectedLibraryId;
-  }
-  if (queryLibraryId && libraries.some((library) => library.id === queryLibraryId)) {
+  if (hasLibrary(libraries, queryLibraryId)) {
     return queryLibraryId;
+  }
+  if (hasLibrary(libraries, selectedLibraryId)) {
+    return selectedLibraryId;
   }
   return libraries[0]?.id ?? null;
 }
@@ -80,7 +84,8 @@ export function useFilesUrlState(
   const previousLibrariesLength = previousLibrariesLengthRef.current;
 
   const librarySelectionInitializedRef = useRef(false);
-  const [selectedLibraryId, setSelectedLibraryId] = useState<string | null>(null);
+  const pendingUserSelectedLibraryIdRef = useRef<string | null>(null);
+  const [selectedLibraryId, setSelectedLibraryIdState] = useState<string | null>(null);
   const [prefix, setPrefix] = useState(
     resetBrowseStateOnMount
       ? defaultBrowsePrefix
@@ -103,8 +108,9 @@ export function useFilesUrlState(
 
   useEffect(() => {
     if (libraries.length === 0) {
+      pendingUserSelectedLibraryIdRef.current = null;
       if (selectedLibraryId !== null) {
-        setSelectedLibraryId(null);
+        setSelectedLibraryIdState(null);
       }
       librarySelectionInitializedRef.current = false;
       return;
@@ -112,11 +118,22 @@ export function useFilesUrlState(
 
     const params = new URLSearchParams(searchParamsKey);
     const queryLibraryId = params.get('library_id');
+    const pendingUserSelectedLibraryId = pendingUserSelectedLibraryIdRef.current;
+    if (pendingUserSelectedLibraryId) {
+      if (queryLibraryId === pendingUserSelectedLibraryId) {
+        pendingUserSelectedLibraryIdRef.current = null;
+      } else if (selectedLibraryId === pendingUserSelectedLibraryId && hasLibrary(libraries, pendingUserSelectedLibraryId)) {
+        return;
+      } else {
+        pendingUserSelectedLibraryIdRef.current = null;
+      }
+    }
+
     const nextSelectedLibraryId = resolveLibrarySelection(libraries, queryLibraryId, selectedLibraryId);
     if (!librarySelectionInitializedRef.current) {
       librarySelectionInitializedRef.current = true;
       if (nextSelectedLibraryId !== selectedLibraryId) {
-        setSelectedLibraryId(nextSelectedLibraryId);
+        setSelectedLibraryIdState(nextSelectedLibraryId);
       }
       return;
     }
@@ -124,7 +141,7 @@ export function useFilesUrlState(
     if (nextSelectedLibraryId === selectedLibraryId) {
       return;
     }
-    setSelectedLibraryId(nextSelectedLibraryId);
+    setSelectedLibraryIdState(nextSelectedLibraryId);
   }, [libraries, searchParamsKey, selectedLibraryId]);
 
   useEffect(() => {
@@ -142,6 +159,29 @@ export function useFilesUrlState(
       routerRef.current.replace(query ? `${pathname}?${query}` : pathname, { scroll: false });
     },
     [pathname, searchParamsKey],
+  );
+
+  const setSelectedLibraryId = useCallback(
+    (nextLibraryId: string | null) => {
+      if (nextLibraryId && hasLibrary(libraries, nextLibraryId)) {
+        pendingUserSelectedLibraryIdRef.current = nextLibraryId;
+      } else {
+        pendingUserSelectedLibraryIdRef.current = null;
+      }
+      setSelectedLibraryIdState(nextLibraryId);
+      replaceQueryParams((params) => {
+        const currentLibraryId = params.get('library_id');
+        if (!nextLibraryId) {
+          if (!currentLibraryId) return false;
+          params.delete('library_id');
+          return true;
+        }
+        if (currentLibraryId === nextLibraryId) return false;
+        params.set('library_id', nextLibraryId);
+        return true;
+      });
+    },
+    [libraries, replaceQueryParams],
   );
 
   useEffect(() => {
@@ -201,7 +241,18 @@ export function useFilesUrlState(
   useEffect(() => {
     replaceQueryParams((params) => {
       const currentLibraryId = params.get('library_id');
-      const resolvedLibraryId = resolveLibrarySelection(libraries, currentLibraryId, selectedLibraryId);
+      const currentLibraryIdIsValid = hasLibrary(libraries, currentLibraryId);
+      if (currentLibraryIdIsValid) {
+        const pendingUserSelectedLibraryId = pendingUserSelectedLibraryIdRef.current;
+        if (!pendingUserSelectedLibraryId || pendingUserSelectedLibraryId !== selectedLibraryId) {
+          return false;
+        }
+      }
+
+      const selectedLibraryIdIsValid = hasLibrary(libraries, selectedLibraryId);
+      const resolvedLibraryId = selectedLibraryIdIsValid
+        ? selectedLibraryId
+        : libraries[0]?.id ?? null;
       if (!resolvedLibraryId) {
         if (!currentLibraryId) return false;
         if (libraries.length === 0 && previousLibrariesLength === 0) return false;

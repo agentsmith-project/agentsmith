@@ -21,7 +21,7 @@ vi.mock('next/navigation', () => ({
   useSearchParams: () => new URLSearchParams(mockSearchState.value),
 }));
 
-import { useFilesUrlState } from '../use-files-url-state';
+import { DEFAULT_FILES_BROWSE_PREFIX, useFilesUrlState } from '../use-files-url-state';
 
 const libraries: FileLibrary[] = [
   {
@@ -90,6 +90,32 @@ describe('useFilesUrlState', () => {
     });
   });
 
+  it('uses a valid query library_id over the existing selected library', async () => {
+    mockSearchState.value = 'library_id=lib_a';
+    const { result, rerender } = renderHook(() => useFilesUrlState(libraries));
+
+    await waitFor(() => {
+      expect(result.current.selectedLibraryId).toBe('lib_a');
+    });
+
+    mockSearchState.value = 'library_id=lib_b';
+    rerender();
+
+    await waitFor(() => {
+      expect(result.current.selectedLibraryId).toBe('lib_b');
+    });
+  });
+
+  it('does not rewrite an already valid query library_id during initial selection sync', async () => {
+    mockSearchState.value = 'library_id=lib_b';
+    const { result } = renderHook(() => useFilesUrlState(libraries));
+
+    await waitFor(() => {
+      expect(result.current.selectedLibraryId).toBe('lib_b');
+    });
+    expect(mockRouter.replace).not.toHaveBeenCalled();
+  });
+
   it('defaults to the first library when no query selection is present', async () => {
     const { result } = renderHook(() => useFilesUrlState(libraries));
 
@@ -98,13 +124,15 @@ describe('useFilesUrlState', () => {
     });
   });
 
-  it('uses the default browse prefix when prefix is absent from the URL', async () => {
-    const { result } = renderHook(() => useFilesUrlState(libraries, { defaultPrefix: 'workspace/' }));
+  it('defaults ordinary Files browsing to the task HOME root when prefix is absent from the URL', async () => {
+    expect(DEFAULT_FILES_BROWSE_PREFIX).toBe('');
+
+    const { result } = renderHook(() => useFilesUrlState(libraries, { defaultPrefix: DEFAULT_FILES_BROWSE_PREFIX }));
 
     await waitFor(() => {
       expect(result.current.selectedLibraryId).toBe('lib_a');
     });
-    expect(result.current.prefix).toBe('workspace/');
+    expect(result.current.prefix).toBe('');
   });
 
   it('keeps explicit URL root reachable when a default browse prefix is configured', async () => {
@@ -154,6 +182,26 @@ describe('useFilesUrlState', () => {
 
     await waitFor(() => {
       expect(result.current.selectedLibraryId).toBeNull();
+    });
+  });
+
+  it('writes user-selected libraries back to the URL', async () => {
+    mockSearchState.value = 'library_id=lib_a';
+    const { result } = renderHook(() => useFilesUrlState(libraries));
+
+    await waitFor(() => {
+      expect(result.current.selectedLibraryId).toBe('lib_a');
+    });
+
+    act(() => {
+      result.current.setSelectedLibraryId('lib_b');
+    });
+
+    await waitFor(() => {
+      expect(mockRouter.replace).toHaveBeenCalledWith(
+        '/en-US/workspaces/ws_default/projects/proj_001/files?library_id=lib_b',
+        { scroll: false },
+      );
     });
   });
 

@@ -9,7 +9,10 @@ import type {
   CreateFileLibraryRestorePreviewRequest,
   CreateFileLibrarySavePointRequest,
   CreateTaskFileTemplateRequest,
+  DeleteFileLibraryAcceptedResponse,
+  DeleteFileLibraryResult,
   FileLibrary,
+  FileLibraryOperationProjection,
   FileLibraryRestorePreview,
   FileLibraryRestoreRun,
   FileObjectsListParams,
@@ -23,6 +26,30 @@ import type {
   TaskFileTemplate,
 } from '../types';
 import type { ApiClient, ApiRequestOptions } from '../client';
+import { APIError } from '../errors';
+
+function isNonEmptyRecord(value: unknown): value is Record<string, unknown> {
+  return Boolean(
+    value
+    && typeof value === 'object'
+    && !Array.isArray(value)
+    && Object.keys(value).length > 0,
+  );
+}
+
+function isDeleteFileLibraryAcceptedResponse(value: unknown): value is DeleteFileLibraryAcceptedResponse {
+  if (!value || typeof value !== 'object') {
+    return false;
+  }
+  const record = value as Record<string, unknown>;
+  return (
+    typeof record.file_library_id === 'string'
+    && record.file_library_status === 'deleting'
+    && typeof record.operation_id === 'string'
+    && record.operation_id.trim().length > 0
+    && record.operation_status === 'pending'
+  );
+}
 
 export class FilesAPI {
   constructor(private client: ApiClient) {}
@@ -59,9 +86,38 @@ export class FilesAPI {
     );
   }
 
-  async deleteLibrary(workspaceId: string, projectId: string, libraryId: string): Promise<void> {
-    return this.client.delete<void>(
+  async deleteLibrary(workspaceId: string, projectId: string, libraryId: string): Promise<DeleteFileLibraryResult> {
+    const response = await this.client.delete<DeleteFileLibraryAcceptedResponse | void>(
       `/workspaces/${workspaceId}/projects/${projectId}/file-libraries/${libraryId}`,
+    );
+    if (isDeleteFileLibraryAcceptedResponse(response)) {
+      return {
+        status: 'accepted',
+        ...response,
+      };
+    }
+    if (isNonEmptyRecord(response)) {
+      throw new APIError(
+        'FILE_LIBRARY_DELETE_ACCEPTED_RESPONSE_INVALID',
+        'file_library_delete_accepted_response_invalid',
+        undefined,
+        202,
+        {
+          file_library_id: libraryId,
+          response,
+        },
+      );
+    }
+    return { status: 'deleted' };
+  }
+
+  async getFileLibraryOperationProjection(
+    workspaceId: string,
+    projectId: string,
+    operationId: string,
+  ): Promise<FileLibraryOperationProjection> {
+    return this.client.get<FileLibraryOperationProjection>(
+      `/workspaces/${workspaceId}/projects/${projectId}/file-library-operations/${operationId}`,
     );
   }
 

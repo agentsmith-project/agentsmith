@@ -13,7 +13,10 @@ import {
   upsertProjectMemberPermissionState,
   upsertProjectMembershipRecord,
 } from './project-member-governance-persistence.js';
-import type { FileLibraryStoragePort } from './file-library-afscp-storage.js';
+import {
+  FileLibraryStorageOperationPendingError,
+  type FileLibraryStoragePort,
+} from './file-library-afscp-storage.js';
 import type { ProjectStoragePreflightResult } from './project-storage-bootstrap-service.js';
 
 const OWNER_USER = { id: 'user_1', email: 'user@example.com', name: 'User One' } as never;
@@ -576,7 +579,7 @@ describe('project-file-library-routes', () => {
       workspaceId: 'ws_default',
       projectId: 'proj_1',
       libraryId,
-      req: { url: '/file-libraries/entries?path=docs&page_size=20' } as never,
+      req: { url: '/file-libraries/entries?path=docs&page_size=20&continuation_token=docs%2Fold.txt' } as never,
       res: createMockResponse(),
       deps,
       user: OWNER_USER,
@@ -589,6 +592,7 @@ describe('project-file-library-routes', () => {
       libraryId,
       path: 'docs/',
       pageSize: 20,
+      continuationToken: 'docs/old.txt',
     }));
 
     const folderRes = createMockResponse();
@@ -797,7 +801,10 @@ describe('project-file-library-routes', () => {
   it('returns accepted and keeps deleting status while AFSCP repo delete remains pending', async () => {
     const storageAdapter = createStorageAdapter({
       deleteRepoForLibrary: vi.fn(async () => {
-        throw new Error('file_library_repo_delete_pending');
+        throw new FileLibraryStorageOperationPendingError({
+          message: 'file_library_repo_delete_pending',
+          operationId: 'op_repo_delete_pending',
+        });
       }),
     });
     const deps = createDeps({ storageAdapter });
@@ -829,7 +836,7 @@ describe('project-file-library-routes', () => {
       expect.objectContaining({
         file_library_id: 'flib_ready',
         file_library_status: 'deleting',
-        operation_id: null,
+        operation_id: 'op_repo_delete_pending',
         operation_status: 'pending',
       }),
     );
@@ -841,7 +848,10 @@ describe('project-file-library-routes', () => {
 
   it('retries deleting libraries until AFSCP repo cleanup reaches terminal success', async () => {
     const deleteRepoForLibrary = vi.fn()
-      .mockRejectedValueOnce(new Error('file_library_repo_delete_pending'))
+      .mockRejectedValueOnce(new FileLibraryStorageOperationPendingError({
+        message: 'file_library_repo_delete_pending',
+        operationId: 'op_repo_delete_pending',
+      }))
       .mockResolvedValueOnce(undefined);
     const storageAdapter = createStorageAdapter({ deleteRepoForLibrary });
     const deps = createDeps({ storageAdapter });
@@ -885,7 +895,10 @@ describe('project-file-library-routes', () => {
   it('does not fast-delete failed libraries before AFSCP repo cleanup reaches terminal success', async () => {
     const storageAdapter = createStorageAdapter({
       deleteRepoForLibrary: vi.fn(async () => {
-        throw new Error('file_library_repo_delete_pending');
+        throw new FileLibraryStorageOperationPendingError({
+          message: 'file_library_repo_delete_pending',
+          operationId: 'op_repo_delete_failed_pending',
+        });
       }),
     });
     const deps = createDeps({ storageAdapter });
@@ -917,11 +930,53 @@ describe('project-file-library-routes', () => {
       expect.objectContaining({
         file_library_id: 'flib_failed',
         file_library_status: 'deleting',
+        operation_id: 'op_repo_delete_failed_pending',
         operation_status: 'pending',
       }),
     );
     await expect(deps.docStore.get('project_file_libraries', 'flib_failed')).resolves.toMatchObject({
       status: 'deleting',
+    });
+  });
+
+  it('fails closed when AFSCP repo delete reports pending without an operation id', async () => {
+    const storageAdapter = createStorageAdapter({
+      deleteRepoForLibrary: vi.fn(async () => {
+        throw new FileLibraryStorageOperationPendingError({
+          message: 'file_library_repo_delete_pending',
+          operationId: null as unknown as string,
+        });
+      }),
+    });
+    const deps = createDeps({ storageAdapter });
+    await seedLibrary(deps, 'ready');
+    const json = vi.fn();
+
+    await expect(handleProjectFileLibraryRoutes({
+      routeKind: 'fileLibraryItem',
+      method: 'DELETE',
+      workspaceId: 'ws_default',
+      projectId: 'proj_1',
+      libraryId: 'flib_ready',
+      req: { headers: { 'x-request-id': 'req_delete_pending_without_operation_id' } } as never,
+      res: createMockResponse(),
+      deps,
+      user: OWNER_USER,
+      json,
+      readBody: vi.fn(),
+    })).resolves.toBe(true);
+
+    expect(json).toHaveBeenCalledWith(
+      expect.anything(),
+      502,
+      expect.objectContaining({
+        error_code: 'FILE_LIBRARY_DELETE_FAILED',
+        message: 'file_library_operation_failed',
+      }),
+    );
+    await expect(deps.docStore.get('project_file_libraries', 'flib_ready')).resolves.toMatchObject({
+      status: 'degraded',
+      delete_correlation_id: 'req_delete_pending_without_operation_id',
     });
   });
 

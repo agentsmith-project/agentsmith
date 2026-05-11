@@ -1,4 +1,4 @@
-import { describe, it, expect, vi } from 'vitest';
+import { beforeEach, describe, it, expect, vi } from 'vitest';
 import { renderHook, waitFor, act } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 
@@ -7,11 +7,18 @@ const {
   mockCreateLibrary,
   mockUpdateLibrary,
   mockDeleteLibrary,
+  mockGetFileLibraryOperationProjection,
 } = vi.hoisted(() => ({
   mockListLibraries: vi.fn().mockResolvedValue({ items: [] }),
   mockCreateLibrary: vi.fn().mockResolvedValue({ id: 'lib_new', name: 'New Library' }),
   mockUpdateLibrary: vi.fn().mockResolvedValue({ id: 'lib_1', name: 'Renamed Library' }),
-  mockDeleteLibrary: vi.fn().mockResolvedValue(undefined),
+  mockDeleteLibrary: vi.fn().mockResolvedValue({ status: 'deleted' }),
+  mockGetFileLibraryOperationProjection: vi.fn().mockResolvedValue({
+    operation_id: 'op_delete',
+    operation_state: 'succeeded',
+    resource: { type: 'repo' },
+    error: null,
+  }),
 }));
 
 vi.mock('@/lib/api/endpoints/files', () => {
@@ -20,6 +27,7 @@ vi.mock('@/lib/api/endpoints/files', () => {
     createLibrary = mockCreateLibrary;
     updateLibrary = mockUpdateLibrary;
     deleteLibrary = mockDeleteLibrary;
+    getFileLibraryOperationProjection = mockGetFileLibraryOperationProjection;
   }
 
   return {
@@ -39,6 +47,7 @@ vi.mock('@/lib/api', () => ({
       createLibrary: mockCreateLibrary,
       updateLibrary: mockUpdateLibrary,
       deleteLibrary: mockDeleteLibrary,
+      getFileLibraryOperationProjection: mockGetFileLibraryOperationProjection,
     };
   }),
 }));
@@ -78,7 +87,8 @@ import {
   useUpdateFileLibrary,
   useDeleteFileLibrary,
 } from '../use-files';
-import { APIError } from '@/lib/api/errors';
+import { toast } from '@/components/ui/toast';
+import { APIError, handleErrorForToast } from '@/lib/api/errors';
 
 const workspaceId = 'ws_test';
 const projectId = 'proj_test';
@@ -102,6 +112,28 @@ function createTestHarness() {
 function createTestWrapper() {
   return createTestHarness().Wrapper;
 }
+
+beforeEach(() => {
+  mockListLibraries.mockReset();
+  mockListLibraries.mockResolvedValue({ items: [] });
+  mockCreateLibrary.mockReset();
+  mockCreateLibrary.mockResolvedValue({ id: 'lib_new', name: 'New Library' });
+  mockUpdateLibrary.mockReset();
+  mockUpdateLibrary.mockResolvedValue({ id: 'lib_1', name: 'Renamed Library' });
+  mockDeleteLibrary.mockReset();
+  mockDeleteLibrary.mockResolvedValue({ status: 'deleted' });
+  mockGetFileLibraryOperationProjection.mockReset();
+  mockGetFileLibraryOperationProjection.mockResolvedValue({
+    operation_id: 'op_delete',
+    operation_state: 'succeeded',
+    resource: { type: 'repo' },
+    error: null,
+  });
+  vi.mocked(toast.success).mockClear();
+  vi.mocked(toast.error).mockClear();
+  vi.mocked(toast.warning).mockClear();
+  vi.mocked(handleErrorForToast).mockClear();
+});
 
 describe('useFileLibraries', () => {
   it('returns project file libraries', async () => {
@@ -201,6 +233,128 @@ describe('file library mutations', () => {
     });
 
     expect(mockDeleteLibrary).toHaveBeenCalledWith(workspaceId, projectId, 'lib_1');
+  });
+
+  it('surfaces invalid accepted deletes without an operation handle as errors', async () => {
+    const { Wrapper } = createTestHarness();
+    mockDeleteLibrary.mockRejectedValueOnce(new APIError(
+      'FILE_LIBRARY_DELETE_ACCEPTED_RESPONSE_INVALID',
+      'file_library_delete_accepted_response_invalid',
+      undefined,
+      202,
+      { file_library_id: 'lib_1' },
+    ));
+
+    const { result } = renderHook(() => useDeleteFileLibrary(), {
+      wrapper: Wrapper,
+    });
+
+    await expect(result.current.mutateAsync({
+      workspaceId,
+      projectId,
+      libraryId: 'lib_1',
+    })).rejects.toMatchObject({
+      errorCode: 'FILE_LIBRARY_DELETE_ACCEPTED_RESPONSE_INVALID',
+    });
+
+    expect(mockGetFileLibraryOperationProjection).not.toHaveBeenCalled();
+    expect(toast.success).not.toHaveBeenCalled();
+    expect(handleErrorForToast).toHaveBeenCalledWith(
+      expect.objectContaining({ errorCode: 'FILE_LIBRARY_DELETE_ACCEPTED_RESPONSE_INVALID' }),
+      'useDeleteFileLibrary',
+    );
+  });
+
+  it('polls accepted deletes, retries cleanup, and only succeeds after final delete', async () => {
+    const { queryClient, Wrapper } = createTestHarness();
+    const listKey = ['file-libraries', workspaceId, projectId];
+    const detailKey = ['file-library', workspaceId, projectId, 'lib_1'];
+    queryClient.setQueryData(listKey, { items: [{ id: 'lib_1', status: 'ready' }] });
+    queryClient.setQueryData(detailKey, { id: 'lib_1', status: 'deleting' });
+    mockDeleteLibrary
+      .mockResolvedValueOnce({
+        status: 'accepted',
+        file_library_id: 'lib_1',
+        file_library_status: 'deleting',
+        operation_id: 'op_delete',
+        operation_status: 'pending',
+      })
+      .mockResolvedValueOnce({ status: 'deleted' });
+    mockGetFileLibraryOperationProjection.mockResolvedValueOnce({
+      operation_id: 'op_delete',
+      operation_state: 'succeeded',
+      operation_type: 'repo_delete',
+      resource: { type: 'repo' },
+      error: null,
+      updated_at: '2026-05-09T00:00:01.000Z',
+    });
+
+    const { result } = renderHook(() => useDeleteFileLibrary(), {
+      wrapper: Wrapper,
+    });
+
+    await act(async () => {
+      await result.current.mutateAsync({
+        workspaceId,
+        projectId,
+        libraryId: 'lib_1',
+      });
+    });
+
+    expect(mockDeleteLibrary).toHaveBeenNthCalledWith(1, workspaceId, projectId, 'lib_1');
+    expect(mockGetFileLibraryOperationProjection).toHaveBeenCalledWith(workspaceId, projectId, 'op_delete');
+    expect(mockDeleteLibrary).toHaveBeenNthCalledWith(2, workspaceId, projectId, 'lib_1');
+    expect(toast.success).toHaveBeenCalledWith('delete_success');
+    await waitFor(() => {
+      expect(queryClient.getQueryCache().find({ queryKey: listKey })?.isStale()).toBe(true);
+      expect(queryClient.getQueryCache().find({ queryKey: detailKey })?.isStale()).toBe(true);
+    });
+  });
+
+  it('stops accepted delete polling on operator intervention and reports an error', async () => {
+    const { queryClient, Wrapper } = createTestHarness();
+    const listKey = ['file-libraries', workspaceId, projectId];
+    const detailKey = ['file-library', workspaceId, projectId, 'lib_1'];
+    queryClient.setQueryData(listKey, { items: [{ id: 'lib_1', status: 'deleting' }] });
+    queryClient.setQueryData(detailKey, { id: 'lib_1', status: 'deleting' });
+    mockDeleteLibrary.mockResolvedValueOnce({
+      status: 'accepted',
+      file_library_id: 'lib_1',
+      file_library_status: 'deleting',
+      operation_id: 'op_delete_control',
+      operation_status: 'pending',
+    });
+    mockGetFileLibraryOperationProjection.mockResolvedValueOnce({
+      operation_id: 'op_delete_control',
+      operation_state: 'operator_intervention_required',
+      operation_type: 'repo_delete',
+      resource: { type: 'repo' },
+      error: { code: 'operator_intervention_required', retryable: false },
+      updated_at: '2026-05-09T00:00:01.000Z',
+    });
+
+    const { result } = renderHook(() => useDeleteFileLibrary(), {
+      wrapper: Wrapper,
+    });
+
+    await expect(result.current.mutateAsync({
+      workspaceId,
+      projectId,
+      libraryId: 'lib_1',
+    })).rejects.toMatchObject({
+      errorCode: 'FILE_LIBRARY_OPERATION_FAILED',
+    });
+
+    expect(mockDeleteLibrary).toHaveBeenCalledTimes(1);
+    expect(toast.success).not.toHaveBeenCalled();
+    expect(handleErrorForToast).toHaveBeenCalledWith(
+      expect.objectContaining({ errorCode: 'FILE_LIBRARY_OPERATION_FAILED' }),
+      'useDeleteFileLibrary',
+    );
+    await waitFor(() => {
+      expect(queryClient.getQueryCache().find({ queryKey: listKey })?.isStale()).toBe(true);
+      expect(queryClient.getQueryCache().find({ queryKey: detailKey })?.isStale()).toBe(true);
+    });
   });
 
   it('refreshes file library caches after typed delete conflicts', async () => {

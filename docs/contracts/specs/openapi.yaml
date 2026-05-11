@@ -8522,7 +8522,6 @@ components:
             - deleting
         operation_id:
           type: string
-          nullable: true
         operation_status:
           type: string
           enum:

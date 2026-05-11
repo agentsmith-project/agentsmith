@@ -13,6 +13,10 @@ function shellSingleQuote(value: string): string {
   return `'${value.replace(/'/gu, `'\\''`)}'`;
 }
 
+function b64SecretData(values: Record<string, string>): Record<string, string> {
+  return Object.fromEntries(Object.entries(values).map(([key, value]) => [key, Buffer.from(value).toString('base64')]));
+}
+
 function functionBody(source: string, functionName: string): string {
   const match = source.match(new RegExp(`${functionName}\\(\\) \\{([\\s\\S]*?)\\n\\}`, 'u'));
   return match?.[1] ?? '';
@@ -258,8 +262,12 @@ describe('local-manual internal handoff', () => {
     expect(common).toContain(
       'AFSCP_EXPORT_SESSION_RECONCILE_POSTGRES_DSN="${AFSCP_EXPORT_SESSION_RECONCILE_POSTGRES_DSN:-${AFSCP_POSTGRES_DSN}}"',
     );
+    expect(common).toContain('ensure_afscp_local_runtime_volume_root');
     expect(common).toContain('ensure_afscp_local_runtime_workload_mount_secret_refs');
     expect(common).toContain('ensure_afscp_default_volume');
+
+    const ensureRuntimeBody = functionBody(common, 'ensure_afscp_local_runtime');
+    expect(ensureRuntimeBody).toContain('ensure_afscp_local_runtime_mounts_and_write_env');
 
     const resolverIndex = up.indexOf('resolve_afscp_jvs_binary');
     const afscpIndex = up.indexOf('ensure_afscp_local_runtime');
@@ -268,6 +276,29 @@ describe('local-manual internal handoff', () => {
     expect(afscpIndex).toBeGreaterThanOrEqual(0);
     expect(afscpIndex).toBeLessThan(up.indexOf('start_internal_runtime'));
     expect(afscpIndex).toBeLessThan(up.indexOf('restart_api_with_mode 1'));
+  });
+
+  it('guards every local-real AFSCP process start behind the host JuiceFS mount and workload SecretRef', () => {
+    const common = readFileSync('scripts/local-manual/internal-common.sh', 'utf8');
+    const guardBody = functionBody(common, 'ensure_afscp_local_runtime_mounts_and_write_env');
+    const exportGatewayBody = functionBody(common, 'start_afscp_export_gateway');
+    const apiBody = functionBody(common, 'start_afscp_api');
+    const workerBody = functionBody(common, 'start_afscp_worker_loop');
+
+    expect(guardBody).toContain('ensure_afscp_local_runtime_volume_root');
+    expect(guardBody).toContain('ensure_afscp_local_runtime_workload_mount_secret_refs');
+    expect(guardBody).toContain('write_afscp_local_runtime_env');
+    expect(guardBody.indexOf('ensure_afscp_local_runtime_volume_root')).toBeLessThan(
+      guardBody.indexOf('ensure_afscp_local_runtime_workload_mount_secret_refs'),
+    );
+    expect(guardBody.indexOf('ensure_afscp_local_runtime_workload_mount_secret_refs')).toBeLessThan(
+      guardBody.indexOf('write_afscp_local_runtime_env'),
+    );
+
+    for (const body of [exportGatewayBody, apiBody, workerBody]) {
+      expect(body).toContain('ensure_afscp_local_runtime_mounts_and_write_env');
+      expect(body).not.toContain('write_afscp_local_runtime_env');
+    }
   });
 
   it('keeps local-real internal runner launch after the API switches to internal mode', () => {
@@ -633,8 +664,14 @@ SH
   });
 
   it('creates and validates the default local-real workload mount SecretRef before AFSCP start', () => {
-    const requiredKeys = ['name', 'metaurl', 'storage', 'bucket', 'access-key', 'secret-key'];
-    const secretData = Object.fromEntries(requiredKeys.map((key) => [key, Buffer.from(`value-${key}`).toString('base64')]));
+    const secretData = b64SecretData({
+      name: 'vol-local-manual',
+      metaurl: 'postgres://mbos:mbos_dev_password@postgres-external.agentsmith-sandbox.svc.cluster.local:5432/mbos?sslmode=disable',
+      storage: 'minio',
+      bucket: 'http://minio-external.agentsmith-sandbox.svc.cluster.local:9000/mbos-dev',
+      'access-key': 'mbos',
+      'secret-key': 'mbos_dev_password',
+    });
     const result = runInternalCommonSnippet(`
       bin="\${SNIPPET_TEMP_ROOT}/bin"
       mkdir -p "$bin"
@@ -681,6 +718,43 @@ SH
     expect(result.stdout).toContain('get secret afscp-local-runtime -n agentsmith-sandbox -o json');
   });
 
+  it('fails closed when a workload mount SecretRef points at a different JuiceFS volume identity', () => {
+    const secretData = b64SecretData({
+      name: 'different-volume',
+      metaurl: 'postgres://mbos:mbos_dev_password@postgres-external.agentsmith-sandbox.svc.cluster.local:5432/different?sslmode=disable',
+      storage: 'minio',
+      bucket: 'http://minio-external.agentsmith-sandbox.svc.cluster.local:9000/different-bucket',
+      'access-key': 'mbos',
+      'secret-key': 'mbos_dev_password',
+    });
+    const result = runInternalCommonSnippet(`
+      bin="\${SNIPPET_TEMP_ROOT}/bin"
+      mkdir -p "$bin"
+      cat > "$bin/kubectl" <<'SH'
+#!/usr/bin/env bash
+printf '%s\\n' "$*" >> "$SNIPPET_TEMP_ROOT/kubectl.log"
+case "$1" in
+  get)
+    printf '%s\\n' ${shellSingleQuote(JSON.stringify({ data: secretData }))}
+    ;;
+  *)
+    exit 9
+    ;;
+esac
+SH
+      chmod +x "$bin/kubectl"
+      export PATH="$bin:$PATH"
+      AFSCP_JVS_ENABLED=false
+      AFSCP_API_WORKLOAD_MOUNT_SECRET_REFS="vol_local_manual=custom-runtime/custom-secret"
+      ensure_afscp_local_runtime_workload_mount_secret_refs
+    `);
+
+    expect(result.status).not.toBe(0);
+    expect(result.stderr).toContain('AFSCP workload mount SecretRef does not match AFSCP local-real JuiceFS identity');
+    expect(result.stderr).toContain('local-real fails closed');
+    expect(result.stderr).not.toContain('mbos_dev_password');
+  });
+
   it('fails closed when a configured non-default workload mount SecretRef is missing', () => {
     const result = runInternalCommonSnippet(`
       bin="\${SNIPPET_TEMP_ROOT}/bin"
@@ -707,6 +781,542 @@ SH
     expect(result.status).not.toBe(0);
     expect(result.stderr).toContain('AFSCP workload mount SecretRef is not present');
     expect(result.stderr).toContain('local-real fails closed');
+  });
+
+  it('mounts the AFSCP local-real volume root with the same JuiceFS volume before starting AFSCP', () => {
+    const result = runInternalCommonSnippet(`
+      bin="\${SNIPPET_TEMP_ROOT}/bin"
+      mount_root="\${SNIPPET_TEMP_ROOT}/afscp-volume-root"
+      mkdir -p "$bin" "$mount_root"
+      cat > "$bin/juicefs" <<'SH'
+#!/usr/bin/env bash
+printf 'juicefs %s\\n' "$*" >> "$SNIPPET_TEMP_ROOT/juicefs.log"
+if [[ "$1" == "mount" ]]; then
+  mountpoint="\${@: -1}"
+  mkdir -p "$mountpoint"
+  printf 'mounted\\n' > "$mountpoint/.juicefs-mounted"
+fi
+exit 0
+SH
+      cat > "$bin/mountpoint" <<'SH'
+#!/usr/bin/env bash
+[[ "$1" == "-q" && -f "$2/.juicefs-mounted" ]]
+SH
+      cat > "$bin/findmnt" <<'SH'
+#!/usr/bin/env bash
+if [[ "$1" == "-no" && "$2" == "FSTYPE" ]]; then
+  printf 'fuse.juicefs\\n'
+  exit 0
+fi
+exit 0
+SH
+      chmod +x "$bin/juicefs" "$bin/mountpoint" "$bin/findmnt"
+      export PATH="$bin:$PATH"
+      AFSCP_JVS_ENABLED=false
+      AFSCP_VOLUME_ROOT="$mount_root"
+      ensure_afscp_local_runtime_volume_root
+      write_afscp_local_runtime_env
+      set -a
+      source "$AFSCP_LOCAL_RUNTIME_ENV_FILE"
+      set +a
+      printf 'AFSCP_VOLUME_ROOTS=%s\\n' "$AFSCP_VOLUME_ROOTS"
+      cat "\${SNIPPET_TEMP_ROOT}/juicefs.log"
+    `);
+
+    expect(result.status).toBe(0);
+    expect(result.stderr).toBe('');
+    expect(result.stdout).toContain('AFSCP_VOLUME_ROOTS=vol_local_manual=');
+    expect(result.stdout).toContain('/afscp-volume-root');
+    expect(result.stdout).toContain('juicefs format --no-update --storage minio --bucket http://localhost:19000/mbos-dev');
+    expect(result.stdout).toContain('postgres://mbos:mbos_dev_password@localhost:15432/mbos?sslmode=disable vol-local-manual');
+    expect(result.stdout).toContain('juicefs mount -d');
+    expect(result.stdout).toContain('--storage minio --bucket http://localhost:19000/mbos-dev');
+    expect(result.stdout).toContain('postgres://mbos:mbos_dev_password@localhost:15432/mbos?sslmode=disable');
+  });
+
+  it.each(['AFSCP_VOLUME_ROOTS', 'AFSCP_API_VOLUME_ROOTS', 'AFSCP_EXPORT_GATEWAY_VOLUME_ROOTS'])(
+    'fails closed when %s points the default volume at a non-mounted host path',
+    (volumeRootMapEnv) => {
+      const result = runInternalCommonSnippet(`
+        bin="\${SNIPPET_TEMP_ROOT}/bin"
+        mount_root="\${SNIPPET_TEMP_ROOT}/afscp-volume-root"
+        stale_root="\${SNIPPET_TEMP_ROOT}/stale-afscp-volume-root"
+        mkdir -p "$bin" "$mount_root" "$stale_root"
+        cat > "$bin/juicefs" <<'SH'
+#!/usr/bin/env bash
+printf 'juicefs %s\\n' "$*" >> "$SNIPPET_TEMP_ROOT/juicefs.log"
+if [[ "$1" == "mount" ]]; then
+  mountpoint="\${@: -1}"
+  mkdir -p "$mountpoint"
+  printf 'mounted\\n' > "$mountpoint/.juicefs-mounted"
+fi
+exit 0
+SH
+        cat > "$bin/mountpoint" <<'SH'
+#!/usr/bin/env bash
+[[ "$1" == "-q" && -f "$2/.juicefs-mounted" ]]
+SH
+        cat > "$bin/findmnt" <<'SH'
+#!/usr/bin/env bash
+if [[ "$1" == "-no" && "$2" == "FSTYPE" ]]; then
+  printf 'fuse.juicefs\\n'
+  exit 0
+fi
+exit 0
+SH
+        chmod +x "$bin/juicefs" "$bin/mountpoint" "$bin/findmnt"
+        export PATH="$bin:$PATH"
+        AFSCP_JVS_ENABLED=false
+        AFSCP_VOLUME_ROOT="$mount_root"
+        export ${volumeRootMapEnv}="vol_local_manual=$stale_root"
+        ensure_afscp_local_runtime_volume_root
+      `);
+
+      expect(result.status).not.toBe(0);
+      expect(result.stderr).toContain(`${volumeRootMapEnv} default volume vol_local_manual resolves to`);
+      expect(result.stderr).toContain('expected AFSCP_VOLUME_ROOT');
+      expect(result.stderr).toContain('local-real fails closed');
+    },
+  );
+
+  it('fails closed when the AFSCP local-real JuiceFS mount helper is missing', () => {
+    const result = runInternalCommonSnippet(`
+      AFSCP_JVS_ENABLED=false
+      PATH="/usr/bin:/bin"
+      ensure_afscp_local_runtime_volume_root
+    `);
+
+    expect(result.status).not.toBe(0);
+    expect(result.stderr).toContain('juicefs is required to mount AFSCP_VOLUME_ROOT');
+    expect(result.stderr).toContain('local-real fails closed');
+  });
+
+  it('fails closed when mounting the AFSCP local-real JuiceFS volume root fails', () => {
+    const result = runInternalCommonSnippet(`
+      bin="\${SNIPPET_TEMP_ROOT}/bin"
+      mount_root="\${SNIPPET_TEMP_ROOT}/afscp-volume-root"
+      mkdir -p "$bin" "$mount_root"
+      cat > "$bin/juicefs" <<'SH'
+#!/usr/bin/env bash
+printf 'juicefs %s\\n' "$*" >> "$SNIPPET_TEMP_ROOT/juicefs.log"
+case "$1" in
+  format)
+    exit 0
+    ;;
+  mount)
+    exit 42
+    ;;
+esac
+exit 9
+SH
+      cat > "$bin/mountpoint" <<'SH'
+#!/usr/bin/env bash
+exit 1
+SH
+      chmod +x "$bin/juicefs" "$bin/mountpoint"
+      export PATH="$bin:$PATH"
+      AFSCP_JVS_ENABLED=false
+      AFSCP_VOLUME_ROOT="$mount_root"
+      ensure_afscp_local_runtime_volume_root
+    `);
+
+    expect(result.status).not.toBe(0);
+    expect(result.stderr).toContain('failed to mount AFSCP_VOLUME_ROOT with JuiceFS');
+    expect(result.stderr).toContain('local-real fails closed');
+  });
+
+  it('cleans up a local-created AFSCP JuiceFS mount when post-mount validation fails', () => {
+    const result = runInternalCommonSnippet(`
+      bin="\${SNIPPET_TEMP_ROOT}/bin"
+      mount_root="\${SNIPPET_TEMP_ROOT}/afscp-volume-root"
+      mkdir -p "$bin" "$mount_root"
+      cat > "$bin/juicefs" <<'SH'
+#!/usr/bin/env bash
+printf 'juicefs %s\\n' "$*" >> "$SNIPPET_TEMP_ROOT/juicefs.log"
+case "$1" in
+  mount)
+    mountpoint="\${@: -1}"
+    mkdir -p "$mountpoint"
+    printf 'mounted\\n' > "$mountpoint/.juicefs-mounted"
+    ;;
+  umount)
+    rm -f "$2/.juicefs-mounted"
+    ;;
+esac
+exit 0
+SH
+      cat > "$bin/mountpoint" <<'SH'
+#!/usr/bin/env bash
+[[ "$1" == "-q" && -f "$2/.juicefs-mounted" ]]
+SH
+      cat > "$bin/findmnt" <<'SH'
+#!/usr/bin/env bash
+if [[ "$1" == "-no" && "$2" == "FSTYPE" ]]; then
+  printf 'ext4\\n'
+  exit 0
+fi
+exit 0
+SH
+      chmod +x "$bin/juicefs" "$bin/mountpoint" "$bin/findmnt"
+      export PATH="$bin:$PATH"
+      AFSCP_JVS_ENABLED=false
+      AFSCP_VOLUME_ROOT="$mount_root"
+      set +e
+      ensure_afscp_local_runtime_volume_root
+      ensure_status=$?
+      set -e
+      printf 'ensure_status=%s\\n' "$ensure_status"
+      if afscp_is_mountpoint "$mount_root"; then
+        printf 'still_mountpoint=yes\\n'
+      else
+        printf 'still_mountpoint=no\\n'
+      fi
+      if [[ -f "$AFSCP_VOLUME_ROOT_MOUNT_MARKER" ]]; then
+        printf 'marker=present\\n'
+      else
+        printf 'marker=absent\\n'
+      fi
+      cat "\${SNIPPET_TEMP_ROOT}/juicefs.log"
+      exit "$ensure_status"
+    `);
+
+    expect(result.status).not.toBe(0);
+    expect(result.stderr).toContain('AFSCP_VOLUME_ROOT is mounted as ext4, expected JuiceFS');
+    expect(result.stdout).toContain('juicefs mount');
+    expect(result.stdout).toContain('juicefs umount');
+    expect(result.stdout).toContain('still_mountpoint=no');
+    expect(result.stdout).toContain('marker=absent');
+  });
+
+  it('fails closed before mounting when AFSCP_VOLUME_ROOT mountpoint state is indeterminate', () => {
+    const result = runInternalCommonSnippet(`
+      bin="\${SNIPPET_TEMP_ROOT}/bin"
+      mount_root="\${SNIPPET_TEMP_ROOT}/afscp-volume-root"
+      mkdir -p "$bin" "$mount_root"
+      for tool in mkdir realpath sed tr head rm dirname cat; do
+        ln -s "$(command -v "$tool")" "$bin/$tool"
+      done
+      cat > "$bin/mountpoint" <<'SH'
+#!/bin/bash
+printf 'mountpoint %s\\n' "$*" >> "$SNIPPET_TEMP_ROOT/mountpoint.log"
+exit 2
+SH
+      cat > "$bin/seq" <<'SH'
+#!/bin/bash
+printf '1\\n'
+SH
+      cat > "$bin/sleep" <<'SH'
+#!/bin/bash
+exit 0
+SH
+      cat > "$bin/juicefs" <<'SH'
+#!/bin/bash
+printf 'juicefs %s\\n' "$*" >> "$SNIPPET_TEMP_ROOT/juicefs.log"
+exit 0
+SH
+      chmod +x "$bin/mountpoint" "$bin/seq" "$bin/sleep" "$bin/juicefs"
+      export PATH="$bin"
+      AFSCP_JVS_ENABLED=false
+      AFSCP_VOLUME_ROOT="$mount_root"
+      set +e
+      ensure_afscp_local_runtime_volume_root
+      ensure_status=$?
+      set -e
+      printf 'ensure_status=%s\\n' "$ensure_status"
+      if [[ -f "$SNIPPET_TEMP_ROOT/juicefs.log" ]]; then
+        cat "$SNIPPET_TEMP_ROOT/juicefs.log"
+      fi
+      if [[ -f "$AFSCP_VOLUME_ROOT_MOUNT_MARKER" ]]; then
+        printf 'marker=present\\n'
+      else
+        printf 'marker=absent\\n'
+      fi
+      exit "$ensure_status"
+    `);
+
+    expect(result.status).not.toBe(0);
+    expect(result.stderr).toContain('unable to determine AFSCP_VOLUME_ROOT mountpoint state');
+    expect(result.stderr).toContain('local-real fails closed');
+    expect(result.stdout).toContain('marker=absent');
+    expect(result.stdout).not.toContain('juicefs ');
+  });
+
+  it('does not unmount an externally mounted AFSCP_VOLUME_ROOT when no local-real marker exists', () => {
+    const result = runInternalCommonSnippet(`
+      bin="\${SNIPPET_TEMP_ROOT}/bin"
+      mount_root="\${SNIPPET_TEMP_ROOT}/afscp-volume-root"
+      mkdir -p "$bin" "$mount_root"
+      printf 'external\\n' > "$mount_root/.external-mounted"
+      cat > "$bin/juicefs" <<'SH'
+#!/usr/bin/env bash
+printf 'juicefs %s\\n' "$*" >> "$SNIPPET_TEMP_ROOT/unmount.log"
+exit 0
+SH
+      cat > "$bin/umount" <<'SH'
+#!/usr/bin/env bash
+printf 'umount %s\\n' "$*" >> "$SNIPPET_TEMP_ROOT/unmount.log"
+exit 0
+SH
+      cat > "$bin/mountpoint" <<'SH'
+#!/usr/bin/env bash
+[[ "$1" == "-q" && -f "$2/.external-mounted" ]]
+SH
+      chmod +x "$bin/juicefs" "$bin/umount" "$bin/mountpoint"
+      export PATH="$bin:$PATH"
+      AFSCP_JVS_ENABLED=false
+      AFSCP_VOLUME_ROOT="$mount_root"
+      rm -f "$AFSCP_VOLUME_ROOT_MOUNT_MARKER"
+      stop_afscp_local_runtime
+      if [[ -f "$SNIPPET_TEMP_ROOT/unmount.log" ]]; then
+        cat "$SNIPPET_TEMP_ROOT/unmount.log"
+      fi
+      if [[ -f "$mount_root/.external-mounted" ]]; then
+        printf 'external_mount=present\\n'
+      else
+        printf 'external_mount=absent\\n'
+      fi
+      if [[ -f "$AFSCP_VOLUME_ROOT_MOUNT_MARKER" ]]; then
+        printf 'marker=present\\n'
+      else
+        printf 'marker=absent\\n'
+      fi
+    `);
+
+    expect(result.status).toBe(0);
+    expect(result.stderr).toBe('');
+    expect(result.stdout).toContain('external_mount=present');
+    expect(result.stdout).toContain('marker=absent');
+    expect(result.stdout).not.toContain('juicefs umount');
+    expect(result.stdout).not.toContain('umount ');
+  });
+
+  it('fails closed and keeps the marker when local-real cannot determine mountpoint state during stop', () => {
+    const result = runInternalCommonSnippet(`
+      bin="\${SNIPPET_TEMP_ROOT}/bin"
+      mount_root="\${SNIPPET_TEMP_ROOT}/afscp-volume-root"
+      mkdir -p "$bin" "$mount_root" "$(dirname "$AFSCP_VOLUME_ROOT_MOUNT_MARKER")"
+      printf '%s\\n' "$mount_root" > "$AFSCP_VOLUME_ROOT_MOUNT_MARKER"
+      for tool in head realpath sed rm dirname; do
+        ln -s "$(command -v "$tool")" "$bin/$tool"
+      done
+      cat > "$bin/juicefs" <<'SH'
+#!/bin/bash
+printf 'juicefs %s\\n' "$*" >> "$SNIPPET_TEMP_ROOT/unmount.log"
+exit 0
+SH
+      cat > "$bin/umount" <<'SH'
+#!/bin/bash
+printf 'umount %s\\n' "$*" >> "$SNIPPET_TEMP_ROOT/unmount.log"
+exit 0
+SH
+      chmod +x "$bin/juicefs" "$bin/umount"
+      export PATH="$bin"
+      AFSCP_JVS_ENABLED=false
+      AFSCP_VOLUME_ROOT="$mount_root"
+      set +e
+      stop_afscp_local_runtime
+      stop_status=$?
+      set -e
+      printf 'stop_status=%s\\n' "$stop_status"
+      if [[ -f "$SNIPPET_TEMP_ROOT/unmount.log" ]]; then
+        cat "$SNIPPET_TEMP_ROOT/unmount.log"
+      fi
+      if [[ -f "$AFSCP_VOLUME_ROOT_MOUNT_MARKER" ]]; then
+        printf 'marker=present\\n'
+      else
+        printf 'marker=absent\\n'
+      fi
+      exit "$stop_status"
+    `);
+
+    expect(result.status).not.toBe(0);
+    expect(result.stderr).toContain('mountpoint or findmnt is required to validate AFSCP_VOLUME_ROOT');
+    expect(result.stderr).toContain('local-real fails closed');
+    expect(result.stdout).toContain('marker=present');
+    expect(result.stdout).not.toContain('juicefs umount');
+    expect(result.stdout).not.toContain('umount ');
+  });
+
+  it('unmounts the local-real AFSCP JuiceFS volume root on internal runtime stop', () => {
+    const result = runInternalCommonSnippet(`
+      bin="\${SNIPPET_TEMP_ROOT}/bin"
+      mount_root="\${SNIPPET_TEMP_ROOT}/afscp-volume-root"
+      mkdir -p "$bin" "$mount_root"
+      cat > "$bin/juicefs" <<'SH'
+#!/usr/bin/env bash
+printf 'juicefs %s\\n' "$*" >> "$SNIPPET_TEMP_ROOT/juicefs.log"
+case "$1" in
+  mount)
+    mountpoint="\${@: -1}"
+    mkdir -p "$mountpoint"
+    printf 'mounted\\n' > "$mountpoint/.juicefs-mounted"
+    ;;
+  umount)
+    rm -f "$2/.juicefs-mounted"
+    ;;
+esac
+exit 0
+SH
+      cat > "$bin/mountpoint" <<'SH'
+#!/usr/bin/env bash
+[[ "$1" == "-q" && -f "$2/.juicefs-mounted" ]]
+SH
+      cat > "$bin/findmnt" <<'SH'
+#!/usr/bin/env bash
+if [[ "$1" == "-no" && "$2" == "FSTYPE" ]]; then
+  printf 'fuse.juicefs\\n'
+  exit 0
+fi
+exit 0
+SH
+      chmod +x "$bin/juicefs" "$bin/mountpoint" "$bin/findmnt"
+      export PATH="$bin:$PATH"
+      AFSCP_JVS_ENABLED=false
+      AFSCP_VOLUME_ROOT="$mount_root"
+      ensure_afscp_local_runtime_volume_root
+      stop_afscp_local_runtime
+      cat "\${SNIPPET_TEMP_ROOT}/juicefs.log"
+      if [[ -f "$AFSCP_VOLUME_ROOT_MOUNT_MARKER" ]]; then
+        printf 'marker=present\\n'
+      else
+        printf 'marker=absent\\n'
+      fi
+    `);
+
+    expect(result.status).toBe(0);
+    expect(result.stderr).toBe('');
+    expect(result.stdout).toContain('juicefs umount');
+    expect(result.stdout).toContain('/afscp-volume-root');
+    expect(result.stdout).toContain('marker=absent');
+  });
+
+  it('fails closed without unmounting when the local-real AFSCP marker points outside AFSCP_VOLUME_ROOT', () => {
+    const result = runInternalCommonSnippet(`
+      bin="\${SNIPPET_TEMP_ROOT}/bin"
+      mount_root="\${SNIPPET_TEMP_ROOT}/afscp-volume-root"
+      foreign_root="\${SNIPPET_TEMP_ROOT}/foreign-volume-root"
+      mkdir -p "$bin" "$mount_root" "$foreign_root" "$(dirname "$AFSCP_VOLUME_ROOT_MOUNT_MARKER")"
+      printf 'mounted\\n' > "$foreign_root/.juicefs-mounted"
+      printf '%s\\n' "$foreign_root" > "$AFSCP_VOLUME_ROOT_MOUNT_MARKER"
+      cat > "$bin/juicefs" <<'SH'
+#!/usr/bin/env bash
+printf 'juicefs %s\\n' "$*" >> "$SNIPPET_TEMP_ROOT/unmount.log"
+exit 0
+SH
+      cat > "$bin/umount" <<'SH'
+#!/usr/bin/env bash
+printf 'umount %s\\n' "$*" >> "$SNIPPET_TEMP_ROOT/unmount.log"
+exit 0
+SH
+      cat > "$bin/mountpoint" <<'SH'
+#!/usr/bin/env bash
+[[ "$1" == "-q" && -f "$2/.juicefs-mounted" ]]
+SH
+      chmod +x "$bin/juicefs" "$bin/umount" "$bin/mountpoint"
+      export PATH="$bin:$PATH"
+      AFSCP_JVS_ENABLED=false
+      AFSCP_VOLUME_ROOT="$mount_root"
+      set +e
+      stop_afscp_local_runtime
+      stop_status=$?
+      set -e
+      printf 'stop_status=%s\\n' "$stop_status"
+      if [[ -f "$SNIPPET_TEMP_ROOT/unmount.log" ]]; then
+        cat "$SNIPPET_TEMP_ROOT/unmount.log"
+      fi
+      if [[ -f "$AFSCP_VOLUME_ROOT_MOUNT_MARKER" ]]; then
+        printf 'marker=present\\n'
+      else
+        printf 'marker=absent\\n'
+      fi
+      exit "$stop_status"
+    `);
+
+    expect(result.status).not.toBe(0);
+    expect(result.stderr).toContain('AFSCP local-real mount marker path');
+    expect(result.stderr).toContain('does not match AFSCP_VOLUME_ROOT');
+    expect(result.stderr).toContain('local-real fails closed');
+    expect(result.stdout).toContain('marker=present');
+    expect(result.stdout).not.toContain('juicefs umount');
+    expect(result.stdout).not.toContain('umount ');
+  });
+
+  it('fails closed and keeps the mount marker when the local-real AFSCP JuiceFS unmount fails', () => {
+    const result = runInternalCommonSnippet(`
+      bin="\${SNIPPET_TEMP_ROOT}/bin"
+      mount_root="\${SNIPPET_TEMP_ROOT}/afscp-volume-root"
+      mkdir -p "$bin" "$mount_root"
+      cat > "$bin/juicefs" <<'SH'
+#!/usr/bin/env bash
+printf 'juicefs %s\\n' "$*" >> "$SNIPPET_TEMP_ROOT/juicefs.log"
+case "$1" in
+  mount)
+    mountpoint="\${@: -1}"
+    mkdir -p "$mountpoint"
+    printf 'mounted\\n' > "$mountpoint/.juicefs-mounted"
+    ;;
+  umount)
+    exit 55
+    ;;
+esac
+exit 0
+SH
+      cat > "$bin/umount" <<'SH'
+#!/usr/bin/env bash
+printf 'umount %s\\n' "$*" >> "$SNIPPET_TEMP_ROOT/juicefs.log"
+exit 56
+SH
+      cat > "$bin/mountpoint" <<'SH'
+#!/usr/bin/env bash
+[[ "$1" == "-q" && -f "$2/.juicefs-mounted" ]]
+SH
+      cat > "$bin/findmnt" <<'SH'
+#!/usr/bin/env bash
+if [[ "$1" == "-no" && "$2" == "FSTYPE" ]]; then
+  printf 'fuse.juicefs\\n'
+  exit 0
+fi
+exit 0
+SH
+      chmod +x "$bin/juicefs" "$bin/umount" "$bin/mountpoint" "$bin/findmnt"
+      export PATH="$bin:$PATH"
+      AFSCP_JVS_ENABLED=false
+      AFSCP_VOLUME_ROOT="$mount_root"
+      ensure_afscp_local_runtime_volume_root
+      set +e
+      stop_afscp_local_runtime
+      stop_status=$?
+      set -e
+      printf 'stop_status=%s\\n' "$stop_status"
+      if [[ -f "$AFSCP_VOLUME_ROOT_MOUNT_MARKER" ]]; then
+        printf 'marker=present\\n'
+      else
+        printf 'marker=absent\\n'
+      fi
+      if afscp_is_mountpoint "$mount_root"; then
+        printf 'still_mountpoint=yes\\n'
+      else
+        printf 'still_mountpoint=no\\n'
+      fi
+      cat "\${SNIPPET_TEMP_ROOT}/juicefs.log"
+      exit "$stop_status"
+    `);
+
+    expect(result.status).not.toBe(0);
+    expect(result.stderr).toContain('failed to unmount AFSCP local-real JuiceFS volume root');
+    expect(result.stderr).toContain('local-real fails closed');
+    expect(result.stdout).toContain('juicefs umount');
+    expect(result.stdout).toContain('umount ');
+    expect(result.stdout).toContain('marker=present');
+    expect(result.stdout).toContain('still_mountpoint=yes');
+  });
+
+  it('runs the local-real AFSCP unmount path before reset removes internal runtime state', () => {
+    const reset = readFileSync('scripts/local-manual/internal-reset.sh', 'utf8');
+
+    expect(reset.indexOf('stop_internal_runtime')).toBeGreaterThanOrEqual(0);
+    expect(reset.indexOf('rm -rf "${INTERNAL_REAL_DIR}"')).toBeGreaterThanOrEqual(0);
+    expect(reset.indexOf('stop_internal_runtime')).toBeLessThan(reset.indexOf('rm -rf "${INTERNAL_REAL_DIR}"'));
   });
 
   it('reports AFSCP API readiness from local-manual internal status and local-real status', () => {

@@ -241,6 +241,13 @@ function mapDeleteRepoRouteError(error: unknown): {
   errorCode: string;
   message: string;
 } {
+  if (isDeleteRepoPendingContractFailure(error)) {
+    return {
+      statusCode: 502,
+      errorCode: 'FILE_LIBRARY_DELETE_FAILED',
+      message: 'file_library_operation_failed',
+    };
+  }
   const message = readErrorMessage(error);
   if (message === 'file_library_repo_delete_pending') {
     return {
@@ -268,18 +275,26 @@ function mapDeleteRepoRouteError(error: unknown): {
 
 function isDeleteRepoPendingError(error: unknown): boolean {
   return error instanceof FileLibraryStorageOperationPendingError
-    || readErrorMessage(error) === 'file_library_repo_delete_pending';
+    && readDeleteRepoPendingOperationId(error) !== null;
+}
+
+function isDeleteRepoPendingContractFailure(error: unknown): boolean {
+  return error instanceof FileLibraryStorageOperationPendingError
+    && readDeleteRepoPendingOperationId(error) === null;
 }
 
 function readDeleteRepoPendingOperationId(error: unknown): string | null {
-  return error instanceof FileLibraryStorageOperationPendingError
+  if (!(error instanceof FileLibraryStorageOperationPendingError)) {
+    return null;
+  }
+  return typeof error.operationId === 'string' && error.operationId.trim().length > 0
     ? error.operationId
     : null;
 }
 
 function buildFileLibraryDeleteAcceptedResponse(input: {
   libraryId: string;
-  operationId: string | null;
+  operationId: string;
 }): Record<string, unknown> {
   return {
     file_library_id: input.libraryId,
@@ -807,13 +822,17 @@ export async function handleProjectFileLibraryRoutes(args: {
       res.end();
     } catch (error) {
       if (isDeleteRepoPendingError(error)) {
+        const operationId = readDeleteRepoPendingOperationId(error);
+        if (!operationId) {
+          throw new Error('unreachable_delete_pending_operation_id_missing');
+        }
         await catalogRepo.update(workspaceId, projectId, libraryId, {
           status: 'deleting',
           delete_correlation_id: requestId,
         });
         json(res, 202, buildFileLibraryDeleteAcceptedResponse({
           libraryId,
-          operationId: readDeleteRepoPendingOperationId(error),
+          operationId,
         }));
         return true;
       }

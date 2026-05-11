@@ -81,7 +81,7 @@ Current split-token status:
 ## Action-Level Permission Gate Contract
 
 - Endpoint create/update/delete: `project:governance:update`
-- File/library create/update/delete: `project:files:update`
+- File/library create/update/delete and redacted file-library operation projection reads: `project:files:update`
 - Project secret create/rotate/delete: `project:governance:update`
 - Resource policy save: `project:governance:update`
 - Alert rule and notification-status management: `project:audit:read` (current MVP alert surface gate)
@@ -92,7 +92,7 @@ Current split-token status:
 
 Current action split status:
 - Endpoint governance writes: `project:governance:update`
-- File/library create/update/delete/move/upload: `project:files:update`
+- File/library create/update/delete/move/upload and operation projection reads: `project:files:update`
 - Project secret create/rotate/delete: `project:governance:update`
 - Resource policy save: `project:governance:update`
 - Member/template/group management and join request decisions: `project:membership:update`

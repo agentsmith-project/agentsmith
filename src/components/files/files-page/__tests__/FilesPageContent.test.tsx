@@ -22,6 +22,13 @@ const defaultLibrary = {
   file_library_home_segment: 'task-home-shared-library',
 } as FilesPageContentProps['libraries'][number];
 
+function libraryFixture(overrides: Partial<FilesPageContentProps['libraries'][number]> = {}) {
+  return {
+    ...defaultLibrary,
+    ...overrides,
+  } as FilesPageContentProps['libraries'][number];
+}
+
 function buildProps(overrides: Partial<FilesPageContentProps> = {}): FilesPageContentProps {
   return {
     allSelected: false,
@@ -141,6 +148,57 @@ describe('FilesPageContent', () => {
     expect(screen.queryByTestId('files__no-library-empty-state')).not.toBeInTheDocument();
   });
 
+  it('keeps the library rail height-constrained with a dedicated scrolling list', () => {
+    render(
+      <FilesPageContent
+        {...buildProps({
+          libraries: Array.from({ length: 24 }, (_, index) => libraryFixture({
+            id: `lib_${index}`,
+            name: `Library ${index}`,
+          })),
+          selectedLibraryId: 'lib_0',
+        })}
+      />,
+    );
+
+    const pane = screen.getByTestId('files__libraries-pane');
+    const scrollArea = screen.getByTestId('files__library-list-scroll');
+    expect(pane.className).toContain('flex');
+    expect(pane.className).toContain('flex-col');
+    expect(pane.className).toContain('overflow-hidden');
+    expect(scrollArea.className).toContain('flex-1');
+    expect(scrollArea.className).toContain('overflow-y-auto');
+  });
+
+  it('keeps library rows compact and avoids per-row explanation text', () => {
+    render(
+      <FilesPageContent
+        {...buildProps({
+          libraries: [
+            libraryFixture({ id: 'lib_ready', name: 'Ready library', status: 'ready', task_home_binding_status: 'unbound' }),
+            libraryFixture({
+              id: 'lib_bound',
+              name: 'Bound library',
+              task_home_binding_status: 'bound',
+              bound_task_visible: true,
+              bound_task_title: 'Long running task',
+              bound_task_status: 'running',
+            }),
+            libraryFixture({ id: 'lib_failed', name: 'Failed library', status: 'failed' }),
+          ],
+          selectedLibraryId: 'lib_ready',
+        })}
+      />,
+    );
+
+    expect(screen.queryByTestId('files__library-binding--lib_ready')).not.toBeInTheDocument();
+    expect(screen.queryByTestId('files__library-binding-detail--lib_bound')).not.toBeInTheDocument();
+    expect(screen.queryByTestId('files__library-delete-blocked--lib_bound')).not.toBeInTheDocument();
+    expect(screen.queryByTestId('files__library-status-reason--lib_failed')).not.toBeInTheDocument();
+    expect(screen.getByTestId('files__library-binding--lib_bound')).toHaveTextContent('file_manager.library_binding_bound');
+    expect(screen.getByTestId('files__library-status--lib_failed')).toHaveTextContent('file_manager.library_status_failed');
+  });
+
   it('does not render raw storage implementation fields in the library rail', () => {
     render(
       <FilesPageContent
@@ -250,5 +308,37 @@ describe('FilesPageContent', () => {
     expect(screen.getByTestId('files__workspace-grid').className).toContain('grid-cols-[220px_minmax(0,1fr)_280px]');
     expect(screen.getByTestId('files__workspace-surface')).toHaveClass('overflow-hidden');
     expect(screen.getByTestId('files__details-shell').className).toContain('min-h-0');
+  });
+
+  it('labels the HOME root and workspace folder states clearly', () => {
+    const { rerender } = render(
+      <FilesPageContent
+        {...buildProps({
+          crumbs: [{ label: '', prefix: '' }],
+          prefix: '',
+        })}
+      />,
+    );
+
+    expect(screen.getByTestId('files__breadcrumb-root')).toHaveTextContent('file_manager.home_root');
+    expect(screen.getByTestId('files__root-scope-note')).toHaveTextContent('file_manager.home_root_note');
+    expect(screen.getByTestId('files__empty-state')).toHaveTextContent('file_manager.empty_home_root_description');
+
+    rerender(
+      <FilesPageContent
+        {...buildProps({
+          crumbs: [
+            { label: '', prefix: '' },
+            { label: 'workspace', prefix: 'workspace/' },
+          ],
+          prefix: 'workspace/',
+        })}
+      />,
+    );
+
+    expect(screen.getByTestId('files__breadcrumb-root')).toHaveTextContent('file_manager.home_root');
+    expect(screen.getByTestId('files__breadcrumb--1')).toHaveTextContent('workspace');
+    expect(screen.queryByTestId('files__root-scope-note')).not.toBeInTheDocument();
+    expect(screen.getByTestId('files__empty-state')).toHaveTextContent('file_manager.empty_workspace_description');
   });
 });

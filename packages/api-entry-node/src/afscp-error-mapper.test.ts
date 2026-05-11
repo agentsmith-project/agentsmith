@@ -228,6 +228,90 @@ describe('mapAfscpErrorEnvelope', () => {
     }
   });
 
+  it.each([
+    [
+      'error.details',
+      {
+        error: {
+          code: 'JVS_COMMAND_FAILED',
+          message: 'save point failed for repo_hidden_elsewhere',
+          retryable: false,
+          correlation_id: 'corr-jvs-busy',
+          operation_id: 'op_save_point_busy',
+          details: {
+            jvs_error_code: 'E_REPO_BUSY',
+            repo_id: 'repo_hidden_elsewhere',
+            namespace_id: 'ns_hidden',
+            metadata_url: 'postgres://postgres:postgres@db:5432/juicefs',
+          },
+        },
+      },
+    ],
+    [
+      'verification_result',
+      {
+        error: {
+          code: 'JVS_COMMAND_FAILED',
+          message: 'save point failed for repo_hidden_elsewhere',
+          retryable: false,
+          correlation_id: 'corr-jvs-busy',
+          operation_id: 'op_save_point_busy',
+        },
+        verification_result: {
+          jvs_error_code: 'E_REPO_BUSY',
+          repo_id: 'repo_hidden_elsewhere',
+          metadata_url: 'postgres://postgres:postgres@db:5432/juicefs',
+        },
+      },
+    ],
+    [
+      'jvs_json_output object',
+      {
+        error: {
+          code: 'JVS_COMMAND_FAILED',
+          message: 'save point failed for repo_hidden_elsewhere',
+          retryable: false,
+          correlation_id: 'corr-jvs-busy',
+          operation_id: 'op_save_point_busy',
+        },
+        jvs_json_output: {
+          jvs_error_code: 'E_REPO_BUSY',
+          repo_id: 'repo_hidden_elsewhere',
+          metadata_url: 'postgres://postgres:postgres@db:5432/juicefs',
+        },
+      },
+    ],
+    [
+      'jvs_json_output string',
+      {
+        error: {
+          code: 'JVS_COMMAND_FAILED',
+          message: 'save point failed for repo_hidden_elsewhere',
+          retryable: false,
+          correlation_id: 'corr-jvs-busy',
+          operation_id: 'op_save_point_busy',
+        },
+        jvs_json_output: JSON.stringify({
+          jvs_error_code: 'E_REPO_BUSY',
+          repo_id: 'repo_hidden_elsewhere',
+          metadata_url: 'postgres://postgres:postgres@db:5432/juicefs',
+        }),
+      },
+    ],
+  ])('maps JVS repo-busy command failures from %s to the active writer blocker without leaking details', (_caseName, payload) => {
+    const mapped = mapAfscpErrorEnvelope(500, payload);
+
+    expect(mapped).toEqual({
+      status: 409,
+      code: 'afscp_active_writer_blocks_restore',
+      message: 'afscp_active_writer_blocks_restore',
+      retryable: false,
+      correlation_id: 'corr-jvs-busy',
+      operation_id: 'op_save_point_busy',
+    });
+    expect(JSON.stringify(mapped)).not.toMatch(/repo_hidden_elsewhere|ns_hidden|metadata_url|postgres/);
+  });
+
   it('maps template clone and capability denials to stable non-leaking codes', () => {
     const cloneDenied = mapAfscpErrorEnvelope(403, {
       error: {

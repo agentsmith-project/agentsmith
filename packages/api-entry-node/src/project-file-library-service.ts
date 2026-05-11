@@ -11,6 +11,15 @@ import type { ProjectStoragePreflightResult } from './project-storage-bootstrap-
 
 const FILE_LIBRARY_OPERATION_RETRY_AFTER_MS = 2_000;
 
+export interface ProjectStorageReadyWaitOptions {
+  timeoutMs: number;
+  intervalMs: number;
+  signal?: AbortSignal;
+  deadlineAtMs?: number;
+  now?: () => number;
+  sleep?: (ms: number, signal?: AbortSignal) => Promise<void>;
+}
+
 export class FileLibraryTemplateClonePendingError extends Error {
   readonly fileLibraryId: string;
   readonly fileLibraryStatus = 'creating';
@@ -123,6 +132,110 @@ export class FileLibraryProjectStorageNotReadyError extends Error {
 }
 
 type ReadyProjectStoragePreflightResult = Extract<ProjectStoragePreflightResult, { status: 'ready' }>;
+type NormalizedProjectStorageReadyWaitOptions = {
+  deadlineAtMs: number;
+  intervalMs: number;
+  now: () => number;
+  signal?: AbortSignal;
+  sleep: (ms: number, signal?: AbortSignal) => Promise<void>;
+};
+type ProjectStorageReadyWaitRuntime = Omit<NormalizedProjectStorageReadyWaitOptions, 'signal'> & {
+  signal: AbortSignal;
+  dispose: () => void;
+};
+
+function sleep(ms: number, signal?: AbortSignal): Promise<void> {
+  return new Promise((resolve) => {
+    if (signal?.aborted) {
+      resolve();
+      return;
+    }
+    const timeout = setTimeout(finish, ms);
+    function finish() {
+      clearTimeout(timeout);
+      signal?.removeEventListener('abort', finish);
+      resolve();
+    }
+    signal?.addEventListener('abort', finish, { once: true });
+  });
+}
+
+function normalizeProjectStorageReadyWaitOptions(
+  input: ProjectStorageReadyWaitOptions | undefined,
+): NormalizedProjectStorageReadyWaitOptions | null {
+  if (
+    !input
+    || !Number.isFinite(input.timeoutMs)
+    || !Number.isFinite(input.intervalMs)
+    || input.timeoutMs <= 0
+    || input.intervalMs <= 0
+  ) {
+    return null;
+  }
+  const now = input.now ?? Date.now;
+  const deadlineAtMs = Number.isFinite(input.deadlineAtMs)
+    ? Math.floor(input.deadlineAtMs ?? 0)
+    : now() + Math.floor(input.timeoutMs);
+  return {
+    deadlineAtMs,
+    intervalMs: Math.floor(input.intervalMs),
+    now,
+    ...(input.signal ? { signal: input.signal } : {}),
+    sleep: input.sleep ?? sleep,
+  };
+}
+
+function createProjectStorageReadyWaitRuntime(
+  wait: NormalizedProjectStorageReadyWaitOptions,
+): ProjectStorageReadyWaitRuntime {
+  const controller = new AbortController();
+  const abortFromCaller = () => {
+    controller.abort(wait.signal?.reason);
+  };
+  if (wait.signal?.aborted) {
+    abortFromCaller();
+  } else {
+    wait.signal?.addEventListener('abort', abortFromCaller, { once: true });
+  }
+  const timeout = setTimeout(() => {
+    controller.abort();
+  }, Math.max(0, wait.deadlineAtMs - wait.now()));
+
+  return {
+    deadlineAtMs: wait.deadlineAtMs,
+    intervalMs: wait.intervalMs,
+    now: wait.now,
+    signal: controller.signal,
+    sleep: wait.sleep,
+    dispose: () => {
+      clearTimeout(timeout);
+      wait.signal?.removeEventListener('abort', abortFromCaller);
+    },
+  };
+}
+
+function throwProjectStorageNotReady(projectStorage: Exclude<ProjectStoragePreflightResult, { status: 'ready' }>): never {
+  throw new FileLibraryProjectStorageNotReadyError({
+    status: projectStorage.status,
+    stage: projectStorage.stage,
+    lastErrorCode: projectStorage.lastErrorCode,
+  });
+}
+
+function throwProjectStorageWaitUnavailable(projectStorage: ProjectStoragePreflightResult | null): never {
+  if (projectStorage && projectStorage.status !== 'ready') {
+    throwProjectStorageNotReady(projectStorage);
+  }
+  throw new FileLibraryProjectStorageNotReadyError({
+    status: 'pending',
+    stage: null,
+    lastErrorCode: null,
+  });
+}
+
+function hasProjectStorageWaitEnded(wait: ProjectStorageReadyWaitRuntime): boolean {
+  return wait.signal?.aborted === true || wait.now() >= wait.deadlineAtMs;
+}
 
 async function ensureReadyProjectStorageForFileLibrary(input: {
   deps: NodeApiDeps;
@@ -130,21 +243,68 @@ async function ensureReadyProjectStorageForFileLibrary(input: {
   projectId: string;
   userId: string;
   requestId?: string | null;
+  projectStorageReadyWait?: ProjectStorageReadyWaitOptions;
 }): Promise<ReadyProjectStoragePreflightResult> {
-  const projectStorage = await input.deps.projectStorageBootstrapService.ensureProjectStorageReady({
-    workspaceId: input.workspaceId,
-    projectId: input.projectId,
-    actorUserId: input.userId,
-    ...(input.requestId ? { requestId: input.requestId } : {}),
-  });
-  if (projectStorage.status !== 'ready') {
-    throw new FileLibraryProjectStorageNotReadyError({
-      status: projectStorage.status,
-      stage: projectStorage.stage,
-      lastErrorCode: projectStorage.lastErrorCode,
+  const normalizedWait = normalizeProjectStorageReadyWaitOptions(input.projectStorageReadyWait);
+  const wait = normalizedWait ? createProjectStorageReadyWaitRuntime(normalizedWait) : null;
+  try {
+    if (wait && hasProjectStorageWaitEnded(wait)) {
+      throwProjectStorageWaitUnavailable(null);
+    }
+
+    let projectStorage = await input.deps.projectStorageBootstrapService.ensureProjectStorageReady({
+      workspaceId: input.workspaceId,
+      projectId: input.projectId,
+      actorUserId: input.userId,
+      ...(input.requestId ? { requestId: input.requestId } : {}),
+      ...(wait ? { signal: wait.signal } : {}),
     });
+    if (wait && hasProjectStorageWaitEnded(wait)) {
+      throwProjectStorageWaitUnavailable(projectStorage);
+    }
+    if (projectStorage.status === 'ready') {
+      return projectStorage;
+    }
+
+    if (!wait || projectStorage.status !== 'pending') {
+      throwProjectStorageNotReady(projectStorage);
+    }
+
+    while (projectStorage.status === 'pending') {
+      if (hasProjectStorageWaitEnded(wait)) {
+        throwProjectStorageWaitUnavailable(projectStorage);
+      }
+      try {
+        await wait.sleep(Math.min(wait.intervalMs, Math.max(1, wait.deadlineAtMs - wait.now())), wait.signal);
+      } catch (error) {
+        if (wait.signal.aborted) {
+          throwProjectStorageWaitUnavailable(projectStorage);
+        }
+        throw error;
+      }
+      if (hasProjectStorageWaitEnded(wait)) {
+        throwProjectStorageWaitUnavailable(projectStorage);
+      }
+      projectStorage = await input.deps.projectStorageBootstrapService.ensureProjectStorageReady({
+        workspaceId: input.workspaceId,
+        projectId: input.projectId,
+        actorUserId: input.userId,
+        ...(input.requestId ? { requestId: input.requestId } : {}),
+        signal: wait.signal,
+      });
+      if (hasProjectStorageWaitEnded(wait)) {
+        throwProjectStorageWaitUnavailable(projectStorage);
+      }
+      if (projectStorage.status === 'ready') {
+        return projectStorage;
+      }
+    }
+
+    throwProjectStorageNotReady(projectStorage);
+  } finally {
+    wait?.dispose();
   }
-  return projectStorage;
+  throwProjectStorageWaitUnavailable(null);
 }
 
 async function reconcileTemplateCloneProvisioningState(input: {
@@ -266,6 +426,7 @@ export async function createAndProvisionProjectFileLibrary(input: {
   name: string;
   description?: string;
   requestId?: string | null;
+  projectStorageReadyWait?: ProjectStorageReadyWaitOptions;
 }) {
   if (!input.deps.fileLibraryStorageAdapter?.enabled) {
     throw new Error('file_library_backend_unavailable');
@@ -314,6 +475,7 @@ export async function createAndCloneTaskFileTemplateLibrary(input: {
   name: string;
   description?: string;
   requestId?: string | null;
+  projectStorageReadyWait?: ProjectStorageReadyWaitOptions;
 }) {
   if (!input.deps.fileLibraryStorageAdapter?.enabled) {
     throw new Error('file_library_backend_unavailable');

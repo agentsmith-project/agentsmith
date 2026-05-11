@@ -1025,6 +1025,380 @@ describe('task-route-handler workspace access', () => {
     });
   });
 
+  it('waits for project storage readiness while auto-creating a task file library', async () => {
+    vi.useFakeTimers();
+    try {
+      const deps = createDefaultNodeApiDeps();
+      await seedDefaultManagedRunner(deps);
+      const ensureProjectStorageReady = vi.fn()
+        .mockResolvedValueOnce({
+          status: 'pending',
+          stage: 'namespace_upsert',
+          generation: 1,
+          nextAction: 'wait',
+          retryable: false,
+          lastErrorCode: null,
+        })
+        .mockResolvedValueOnce({
+          status: 'pending',
+          stage: 'volume_binding',
+          generation: 1,
+          nextAction: 'wait',
+          retryable: false,
+          lastErrorCode: null,
+        })
+        .mockResolvedValueOnce({
+          status: 'ready',
+          namespaceId: 'ns_waited_project',
+          stage: 'ready',
+          generation: 1,
+          nextAction: 'none',
+          retryable: false,
+          lastErrorCode: null,
+        });
+      deps.projectStorageBootstrapService = {
+        enabled: true,
+        bootstrapProjectStorage: vi.fn(async () => undefined),
+        reconcileProjectStorage: vi.fn(async () => undefined),
+        ensureProjectStorageReady,
+      };
+      const createRepoForLibrary = vi.fn(async (input) => ({
+        namespaceId: input.namespaceId,
+        repoId: `repo_${input.libraryId}`,
+        operationId: `op_${input.libraryId}`,
+        operationStatus: 'succeeded' as const,
+        projectStorageGeneration: input.projectStorageGeneration,
+      }));
+      deps.fileLibraryStorageAdapter = createTaskFileLibraryStorageAdapter({ createRepoForLibrary });
+
+      const json = vi.fn();
+      const createPromise = handleTaskRoute({
+        route: {
+          kind: 'tasks',
+          workspaceId: 'ws_default',
+          projectId: 'proj_1',
+        } as never,
+        method: 'POST',
+        req: { headers: { 'x-request-id': 'req_storage_ready_wait' }, url: '' } as never,
+        res: {} as never,
+        deps,
+        user: { id: 'user_1' } as never,
+        json,
+        readBody: vi.fn(async () => ({
+          title: 'Waited storage task',
+          workspace_mode: 'create_new',
+        })),
+      });
+
+      await vi.runAllTimersAsync();
+      await expect(createPromise).resolves.toBe(true);
+
+      expect(json.mock.calls[0]?.[1]).toBe(201);
+      expect(json.mock.calls[0]?.[2]).toMatchObject({
+        title: 'Waited storage task',
+        workspace_file_library_id: expect.stringMatching(/^flib_/),
+      });
+      expect(ensureProjectStorageReady).toHaveBeenCalledTimes(3);
+      expect(ensureProjectStorageReady).toHaveBeenNthCalledWith(1, expect.objectContaining({
+        workspaceId: 'ws_default',
+        projectId: 'proj_1',
+        actorUserId: 'user_1',
+        requestId: 'req_storage_ready_wait',
+        signal: expect.any(AbortSignal),
+      }));
+      expect(createRepoForLibrary).toHaveBeenCalledWith(expect.objectContaining({
+        namespaceId: 'ns_waited_project',
+        projectStorageGeneration: 1,
+      }));
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('does not create a task or file library when bounded project storage wait times out', async () => {
+    vi.useFakeTimers();
+    try {
+      const deps = createDefaultNodeApiDeps();
+      await seedDefaultManagedRunner(deps);
+      const ensureProjectStorageReady = vi.fn(async () => ({
+        status: 'pending' as const,
+        stage: 'namespace_upsert' as const,
+        generation: 1,
+        nextAction: 'wait' as const,
+        retryable: false,
+        lastErrorCode: null,
+      }));
+      deps.projectStorageBootstrapService = {
+        enabled: true,
+        bootstrapProjectStorage: vi.fn(async () => undefined),
+        reconcileProjectStorage: vi.fn(async () => undefined),
+        ensureProjectStorageReady,
+      };
+      const createRepoForLibrary = vi.fn<FileLibraryStoragePort['createRepoForLibrary']>();
+      deps.fileLibraryStorageAdapter = createTaskFileLibraryStorageAdapter({ createRepoForLibrary });
+
+      const json = vi.fn();
+      const createPromise = handleTaskRoute({
+        route: {
+          kind: 'tasks',
+          workspaceId: 'ws_default',
+          projectId: 'proj_1',
+        } as never,
+        method: 'POST',
+        req: { headers: { 'x-request-id': 'req_storage_ready_timeout' }, url: '' } as never,
+        res: {} as never,
+        deps,
+        user: { id: 'user_1' } as never,
+        json,
+        readBody: vi.fn(async () => ({
+          title: 'Timed out storage task',
+          workspace_mode: 'create_new',
+        })),
+      });
+
+      await vi.runAllTimersAsync();
+      await expect(createPromise).resolves.toBe(true);
+
+      expect(json).toHaveBeenCalledWith(expect.anything(), 409, {
+        error_code: 'PROJECT_STORAGE_PENDING',
+        message: 'project_storage_pending',
+      });
+      expect(createRepoForLibrary).not.toHaveBeenCalled();
+      await expect(deps.docStore.list('project_file_libraries')).resolves.toEqual([]);
+      await expect(deps.docStore.list(notebookTasksCollection('ws_default'))).resolves.toEqual([]);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('aborts task file library auto-create waits from request close without creating half state', async () => {
+    for (const workspaceMode of ['create_new', 'use_template'] as const) {
+      const deps = createDefaultNodeApiDeps();
+      await seedDefaultManagedRunner(deps);
+      await grantProjectPermissionsForUser(deps, 'user_1', ['project:agent_task:use']);
+      if (workspaceMode === 'use_template') {
+        const templateRepo = new JsonDocProjectTaskFileTemplateRepo(deps.docStore);
+        await templateRepo.create({
+          id: 'tftpl_abort_wait',
+          workspaceId: 'ws_default',
+          projectId: 'proj_1',
+          name: 'Abort wait template',
+          sourceLibraryId: 'flib_source_abort_wait',
+          createdByUserId: 'user_1',
+          afscpTemplateId: 'tmpl_abort_wait',
+        });
+        await templateRepo.updateStatus({
+          workspaceId: 'ws_default',
+          projectId: 'proj_1',
+          taskFileTemplateId: 'tftpl_abort_wait',
+          status: 'published',
+        });
+      }
+
+      const firstEnsure = createDeferred<{
+        status: 'pending';
+        stage: 'namespace_upsert';
+        generation: number;
+        nextAction: 'wait';
+        retryable: false;
+        lastErrorCode: null;
+      }>();
+      const ensureProjectStorageReady = vi.fn(async () => firstEnsure.promise);
+      deps.projectStorageBootstrapService = {
+        enabled: true,
+        bootstrapProjectStorage: vi.fn(async () => undefined),
+        reconcileProjectStorage: vi.fn(async () => undefined),
+        ensureProjectStorageReady,
+      };
+      const createRepoForLibrary = vi.fn<FileLibraryStoragePort['createRepoForLibrary']>();
+      const cloneTemplateToLibrary = vi.fn<FileLibraryStoragePort['cloneTemplateToLibrary']>();
+      deps.fileLibraryStorageAdapter = createTaskFileLibraryStorageAdapter({
+        createRepoForLibrary,
+        cloneTemplateToLibrary,
+      });
+
+      const req = Object.assign(new EventEmitter(), {
+        headers: { 'x-request-id': `req_storage_abort_${workspaceMode}` },
+        url: '',
+        complete: false,
+      }) as http.IncomingMessage;
+      const json = vi.fn();
+      const createPromise = handleTaskRoute({
+        route: {
+          kind: 'tasks',
+          workspaceId: 'ws_default',
+          projectId: 'proj_1',
+        } as never,
+        method: 'POST',
+        req,
+        res: {} as never,
+        deps,
+        user: { id: 'user_1' } as never,
+        json,
+        readBody: vi.fn(async () => ({
+          title: `Abort storage ${workspaceMode}`,
+          workspace_mode: workspaceMode,
+          ...(workspaceMode === 'use_template' ? { task_file_template_id: 'tftpl_abort_wait' } : {}),
+        })),
+      });
+
+      await vi.waitFor(() => {
+        expect(ensureProjectStorageReady).toHaveBeenCalledTimes(1);
+      });
+      expect(ensureProjectStorageReady).toHaveBeenCalledTimes(1);
+      const signal = ensureProjectStorageReady.mock.calls[0]?.[0].signal;
+      expect(signal).toBeInstanceOf(AbortSignal);
+      expect(signal?.aborted).toBe(false);
+
+      firstEnsure.resolve({
+        status: 'pending',
+        stage: 'namespace_upsert',
+        generation: 1,
+        nextAction: 'wait',
+        retryable: false,
+        lastErrorCode: null,
+      });
+      await Promise.resolve();
+      req.emit('close');
+      await expect(createPromise).resolves.toBe(true);
+
+      expect(signal?.aborted).toBe(true);
+      expect(json).toHaveBeenCalledWith(expect.anything(), 409, {
+        error_code: 'PROJECT_STORAGE_PENDING',
+        message: 'project_storage_pending',
+      });
+      expect(createRepoForLibrary).not.toHaveBeenCalled();
+      expect(cloneTemplateToLibrary).not.toHaveBeenCalled();
+      await expect(deps.docStore.list('project_file_libraries')).resolves.toEqual([]);
+      await expect(deps.docStore.list(notebookTasksCollection('ws_default'))).resolves.toEqual([]);
+    }
+  });
+
+  it.each([
+    ['request close', 'close'],
+    ['request aborted', 'aborted'],
+  ] as const)(
+    'aborts task file library auto-create waits after body read completes from %s without creating half state',
+    async (_label, eventName) => {
+      for (const workspaceMode of ['create_new', 'use_template'] as const) {
+        const deps = createDefaultNodeApiDeps();
+        await seedDefaultManagedRunner(deps);
+        await grantProjectPermissionsForUser(deps, 'user_1', ['project:agent_task:use']);
+        if (workspaceMode === 'use_template') {
+          const templateRepo = new JsonDocProjectTaskFileTemplateRepo(deps.docStore);
+          await templateRepo.create({
+            id: 'tftpl_abort_after_body',
+            workspaceId: 'ws_default',
+            projectId: 'proj_1',
+            name: 'Abort after body template',
+            sourceLibraryId: 'flib_source_abort_after_body',
+            createdByUserId: 'user_1',
+            afscpTemplateId: 'tmpl_abort_after_body',
+          });
+          await templateRepo.updateStatus({
+            workspaceId: 'ws_default',
+            projectId: 'proj_1',
+            taskFileTemplateId: 'tftpl_abort_after_body',
+            status: 'published',
+          });
+        }
+
+        const firstEnsure = createDeferred<{
+          status: 'pending';
+          stage: 'namespace_upsert';
+          generation: number;
+          nextAction: 'wait';
+          retryable: false;
+          lastErrorCode: null;
+        }>();
+        const ensureProjectStorageReady = vi.fn(async () => firstEnsure.promise);
+        deps.projectStorageBootstrapService = {
+          enabled: true,
+          bootstrapProjectStorage: vi.fn(async () => undefined),
+          reconcileProjectStorage: vi.fn(async () => undefined),
+          ensureProjectStorageReady,
+        };
+        const createRepoForLibrary = vi.fn<FileLibraryStoragePort['createRepoForLibrary']>();
+        const cloneTemplateToLibrary = vi.fn<FileLibraryStoragePort['cloneTemplateToLibrary']>();
+        deps.fileLibraryStorageAdapter = createTaskFileLibraryStorageAdapter({
+          createRepoForLibrary,
+          cloneTemplateToLibrary,
+        });
+
+        const req = Object.assign(new EventEmitter(), {
+          headers: { 'x-request-id': `req_storage_abort_after_body_${workspaceMode}_${eventName}` },
+          url: '',
+          complete: false,
+        }) as http.IncomingMessage;
+        const res = Object.assign(new EventEmitter(), {
+          writableEnded: false,
+          destroyed: false,
+        }) as http.ServerResponse;
+        const json = vi.fn();
+        const createPromise = handleTaskRoute({
+          route: {
+            kind: 'tasks',
+            workspaceId: 'ws_default',
+            projectId: 'proj_1',
+          } as never,
+          method: 'POST',
+          req,
+          res,
+          deps,
+          user: { id: 'user_1' } as never,
+          json,
+          readBody: vi.fn(async () => {
+            req.complete = true;
+            return {
+              title: `Abort after body ${workspaceMode}`,
+              workspace_mode: workspaceMode,
+              ...(workspaceMode === 'use_template' ? { task_file_template_id: 'tftpl_abort_after_body' } : {}),
+            };
+          }),
+        });
+
+        await vi.waitFor(() => {
+          expect(ensureProjectStorageReady).toHaveBeenCalledTimes(1);
+        });
+        const signal = ensureProjectStorageReady.mock.calls[0]?.[0].signal;
+        expect(signal).toBeInstanceOf(AbortSignal);
+        expect(signal?.aborted).toBe(false);
+
+        firstEnsure.resolve({
+          status: 'pending',
+          stage: 'namespace_upsert',
+          generation: 1,
+          nextAction: 'wait',
+          retryable: false,
+          lastErrorCode: null,
+        });
+        await Promise.resolve();
+
+        try {
+          req.emit(eventName);
+          await vi.waitFor(() => {
+            expect(signal?.aborted).toBe(true);
+          }, { timeout: 100 });
+          await expect(createPromise).resolves.toBe(true);
+        } finally {
+          if (!signal?.aborted) {
+            req.emit('aborted');
+          }
+          await createPromise.catch(() => undefined);
+        }
+
+        expect(json).toHaveBeenCalledWith(expect.anything(), 409, {
+          error_code: 'PROJECT_STORAGE_PENDING',
+          message: 'project_storage_pending',
+        });
+        expect(createRepoForLibrary).not.toHaveBeenCalled();
+        expect(cloneTemplateToLibrary).not.toHaveBeenCalled();
+        await expect(deps.docStore.list('project_file_libraries')).resolves.toEqual([]);
+        await expect(deps.docStore.list(notebookTasksCollection('ws_default'))).resolves.toEqual([]);
+      }
+    },
+  );
+
   it('creates a task from a published task file template for a task-use user without files:update', async () => {
     const deps = createDefaultNodeApiDeps();
     await seedDefaultManagedRunner(deps);

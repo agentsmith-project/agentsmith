@@ -1,5 +1,5 @@
 import { execFileSync } from 'node:child_process';
-import { readFileSync, readlinkSync } from 'node:fs';
+import { readFileSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { isAgentTaskRunnerProcessSnapshot } from '../../packages/agent-task-runner/src/task-workspace-ownership.js';
@@ -10,7 +10,7 @@ type JanitorAuthority =
   | 'stale_reclaimable'
   | 'ownerless_adoptable';
 
-type LocalManualLifecycleIntent = 'replace_runner' | 'rollback_launch' | 'stop_line';
+type LocalManualLifecycleIntent = 'replace_runner' | 'internal_api_restart' | 'rollback_launch' | 'stop_line';
 
 type JanitorAction =
   | 'stop_runner_tree'
@@ -182,7 +182,7 @@ function isRunnerStopContract(value: unknown): value is RunnerStopContract {
     && value.verification === 'all_owned_pids_exited';
 }
 
-const LOCAL_MANUAL_LIFECYCLE_INTENTS = ['replace_runner', 'rollback_launch', 'stop_line'] as const;
+const LOCAL_MANUAL_LIFECYCLE_INTENTS = ['replace_runner', 'internal_api_restart', 'rollback_launch', 'stop_line'] as const;
 const RUNNER_JANITOR_AUTHORITIES = ['current_active', 'unverified', 'stale_reclaimable'] as const;
 const RUNNER_JANITOR_REASONS = [
   'tracked_runner_supervisor',
@@ -195,14 +195,14 @@ const RUNNER_JANITOR_REASONS = [
 const RUNNER_NORMALIZED_PLAN_MATRIX = {
   stop_runner_tree: {
     authority: 'current_active',
-    intents: ['replace_runner', 'rollback_launch', 'stop_line'] as const,
+    intents: ['replace_runner', 'internal_api_restart', 'rollback_launch', 'stop_line'] as const,
     reasons: ['tracked_runner_supervisor'] as const,
     lifecycle: undefined,
     requiresStopContract: true,
   },
   block: {
     authority: 'unverified',
-    intents: ['replace_runner', 'rollback_launch'] as const,
+    intents: ['replace_runner', 'internal_api_restart', 'rollback_launch'] as const,
     reasons: ['tracked_pid_reused', 'planner_malformed', 'planner_unavailable'] as const,
     lifecycle: undefined,
     requiresStopContract: false,
@@ -216,7 +216,7 @@ const RUNNER_NORMALIZED_PLAN_MATRIX = {
   },
   remove_state_only: {
     authority: 'stale_reclaimable',
-    intents: ['replace_runner', 'rollback_launch', 'stop_line'] as const,
+    intents: ['replace_runner', 'internal_api_restart', 'rollback_launch', 'stop_line'] as const,
     reasons: ['tracked_pid_missing'] as const,
     lifecycle: undefined,
     requiresStopContract: false,
@@ -466,6 +466,15 @@ function fallbackRunnerPlan(
   };
 }
 
+function malformedRunnerPlanBlock(): RunnerBlockPlanItem {
+  return {
+    kind: 'runner',
+    authority: 'unverified',
+    action: 'block',
+    reason: 'planner_malformed',
+  };
+}
+
 function isNormalizedRunnerOwnerJanitorPlanItem(
   value: unknown,
   intent: LocalManualLifecycleIntent,
@@ -670,6 +679,7 @@ export function buildLocalManualOwnerJanitorPlan(
 interface LocalManualOwnerJanitorCliArgs {
   kind: string | null;
   intent: LocalManualLifecycleIntent;
+  invalidIntent: string | null;
   normalizePlanStdin: boolean;
   normalizePlanBatchStdin: boolean;
   runnerPidFile: string | null;
@@ -680,6 +690,7 @@ const CLI_PROCESS_SCAN_MAX_BUFFER_BYTES = 16 * 1024 * 1024;
 function parseCliArgs(argv: string[]): LocalManualOwnerJanitorCliArgs {
   let kind: string | null = null;
   let intent: LocalManualLifecycleIntent = 'replace_runner';
+  let invalidIntent: string | null = null;
   let normalizePlanStdin = false;
   let normalizePlanBatchStdin = false;
   let runnerPidFile: string | null = null;
@@ -711,8 +722,10 @@ function parseCliArgs(argv: string[]): LocalManualOwnerJanitorCliArgs {
 
     if (arg === '--intent') {
       const nextIntent = argv[index + 1] ?? null;
-      if (nextIntent === 'replace_runner' || nextIntent === 'rollback_launch' || nextIntent === 'stop_line') {
+      if (isLocalManualLifecycleIntent(nextIntent)) {
         intent = nextIntent;
+      } else {
+        invalidIntent = nextIntent ?? '';
       }
       index += 1;
     }
@@ -721,6 +734,7 @@ function parseCliArgs(argv: string[]): LocalManualOwnerJanitorCliArgs {
   return {
     kind,
     intent,
+    invalidIntent,
     normalizePlanStdin,
     normalizePlanBatchStdin,
     runnerPidFile,
@@ -728,7 +742,8 @@ function parseCliArgs(argv: string[]): LocalManualOwnerJanitorCliArgs {
 }
 
 function isLocalManualLifecycleIntent(value: unknown): value is LocalManualLifecycleIntent {
-  return value === 'replace_runner' || value === 'rollback_launch' || value === 'stop_line';
+  return typeof value === 'string'
+    && LOCAL_MANUAL_LIFECYCLE_INTENTS.includes(value as LocalManualLifecycleIntent);
 }
 
 function parseJsonLines(value: string): unknown[] {
@@ -742,6 +757,10 @@ function parseJsonLines(value: string): unknown[] {
 function normalizeBatchPlanItem(value: unknown): RunnerOwnerJanitorPlanItem {
   if (!isRecord(value)) {
     return fallbackRunnerPlan('replace_runner', 'planner_malformed');
+  }
+
+  if ('intent' in value && !isLocalManualLifecycleIntent(value.intent)) {
+    return malformedRunnerPlanBlock();
   }
 
   const intent = isLocalManualLifecycleIntent(value.intent) ? value.intent : 'replace_runner';
@@ -787,48 +806,6 @@ function readTrackedRunnerPid(runnerPidFile: string): number | null {
   } catch {
     return null;
   }
-}
-
-function loadProcessCwdForCli(pid: number): string | null {
-  if (!Number.isInteger(pid) || pid <= 0) {
-    return null;
-  }
-
-  try {
-    const cwd = readlinkSync(`/proc/${pid}/cwd`).trim();
-    return cwd || null;
-  } catch {
-    // Fall back to platform tools below.
-  }
-
-  try {
-    const output = execFileSync('lsof', ['-a', '-p', String(pid), '-d', 'cwd', '-Fn'], {
-      encoding: 'utf8',
-      maxBuffer: CLI_PROCESS_SCAN_MAX_BUFFER_BYTES,
-    });
-    const cwd = output
-      .split('\n')
-      .map((line) => line.trim())
-      .find((line) => line.startsWith('n'));
-    return cwd?.slice(1).trim() || null;
-  } catch {
-    // Fall through.
-  }
-
-  try {
-    const output = execFileSync('pwdx', [String(pid)], {
-      encoding: 'utf8',
-      maxBuffer: CLI_PROCESS_SCAN_MAX_BUFFER_BYTES,
-    });
-    const cwd = output.split(':', 2)[1]?.trim();
-    if (cwd && cwd !== 'No such process') {
-      return cwd;
-    }
-  } catch {
-    // Ignore pwdx failures.
-  }
-
-  return null;
 }
 
 function loadProcessesForCli(): LocalManualOwnerJanitorProcessInfo[] {
@@ -880,6 +857,11 @@ function runLocalManualOwnerJanitorCli(argv: string[] = process.argv.slice(2)): 
     const parsedArgs = parseCliArgs(argv);
     if (parsedArgs.kind !== 'runner') {
       writeEmptyJson();
+      return;
+    }
+
+    if (parsedArgs.invalidIntent !== null) {
+      process.stdout.write(JSON.stringify(malformedRunnerPlanBlock()));
       return;
     }
 

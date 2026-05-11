@@ -32,7 +32,7 @@ function buildProcess(overrides: Partial<LocalManualOwnerJanitorProcessInfo> = {
 function runOwnerJanitorCliWithProcessTable(args: {
   trackedRunnerPid: number;
   processTable: string[];
-  intent: 'replace_runner' | 'stop_line';
+  intent: 'replace_runner' | 'internal_api_restart' | 'stop_line';
 }): Record<string, unknown> {
   const tempRoot = mkdtempSync(path.join(os.tmpdir(), 'local-manual-owner-janitor-cli-'));
   tempRoots.push(tempRoot);
@@ -125,18 +125,23 @@ describe('local-manual owner janitor', () => {
   it('keeps the canonical runner normalization rows approval-gated', () => {
     expect(LOCAL_MANUAL_CANONICAL_RUNNER_NORMALIZATION_ROWS).toEqual([
       { action: 'stop_runner_tree', authority: 'current_active', reason: 'tracked_runner_supervisor', intent: 'replace_runner', lifecycle: undefined, requiresStopContract: true },
+      { action: 'stop_runner_tree', authority: 'current_active', reason: 'tracked_runner_supervisor', intent: 'internal_api_restart', lifecycle: undefined, requiresStopContract: true },
       { action: 'stop_runner_tree', authority: 'current_active', reason: 'tracked_runner_supervisor', intent: 'rollback_launch', lifecycle: undefined, requiresStopContract: true },
       { action: 'stop_runner_tree', authority: 'current_active', reason: 'tracked_runner_supervisor', intent: 'stop_line', lifecycle: undefined, requiresStopContract: true },
       { action: 'block', authority: 'unverified', reason: 'tracked_pid_reused', intent: 'replace_runner', lifecycle: undefined, requiresStopContract: false },
+      { action: 'block', authority: 'unverified', reason: 'tracked_pid_reused', intent: 'internal_api_restart', lifecycle: undefined, requiresStopContract: false },
       { action: 'block', authority: 'unverified', reason: 'tracked_pid_reused', intent: 'rollback_launch', lifecycle: undefined, requiresStopContract: false },
       { action: 'block', authority: 'unverified', reason: 'planner_malformed', intent: 'replace_runner', lifecycle: undefined, requiresStopContract: false },
+      { action: 'block', authority: 'unverified', reason: 'planner_malformed', intent: 'internal_api_restart', lifecycle: undefined, requiresStopContract: false },
       { action: 'block', authority: 'unverified', reason: 'planner_malformed', intent: 'rollback_launch', lifecycle: undefined, requiresStopContract: false },
       { action: 'block', authority: 'unverified', reason: 'planner_unavailable', intent: 'replace_runner', lifecycle: undefined, requiresStopContract: false },
+      { action: 'block', authority: 'unverified', reason: 'planner_unavailable', intent: 'internal_api_restart', lifecycle: undefined, requiresStopContract: false },
       { action: 'block', authority: 'unverified', reason: 'planner_unavailable', intent: 'rollback_launch', lifecycle: undefined, requiresStopContract: false },
       { action: 'mark_degraded', authority: 'unverified', reason: 'tracked_pid_reused', intent: 'stop_line', lifecycle: 'stop_line', requiresStopContract: false },
       { action: 'mark_degraded', authority: 'unverified', reason: 'planner_malformed', intent: 'stop_line', lifecycle: 'stop_line', requiresStopContract: false },
       { action: 'mark_degraded', authority: 'unverified', reason: 'planner_unavailable', intent: 'stop_line', lifecycle: 'stop_line', requiresStopContract: false },
       { action: 'remove_state_only', authority: 'stale_reclaimable', reason: 'tracked_pid_missing', intent: 'replace_runner', lifecycle: undefined, requiresStopContract: false },
+      { action: 'remove_state_only', authority: 'stale_reclaimable', reason: 'tracked_pid_missing', intent: 'internal_api_restart', lifecycle: undefined, requiresStopContract: false },
       { action: 'remove_state_only', authority: 'stale_reclaimable', reason: 'tracked_pid_missing', intent: 'rollback_launch', lifecycle: undefined, requiresStopContract: false },
       { action: 'remove_state_only', authority: 'stale_reclaimable', reason: 'tracked_pid_missing', intent: 'stop_line', lifecycle: undefined, requiresStopContract: false },
     ]);
@@ -300,6 +305,25 @@ describe('local-manual owner janitor', () => {
     });
   });
 
+  it('blocks internal_api_restart when the tracked runner supervisor tree has no canonical runner leaf in real CLI process output', () => {
+    const plan = runOwnerJanitorCliWithProcessTable({
+      trackedRunnerPid: 4100,
+      intent: 'internal_api_restart',
+      processTable: [
+        '4100 1 /tmp/fake-bin/make agent-task-runner-from-state',
+        '4101 4100 make agent-task-runner',
+        '4102 4101 npm run dev -w @mbos/agent-task-runner',
+        `4103 4102 node ${path.join(repoRoot, 'node_modules/tsx/dist/cli.mjs')} src/not-runner.ts`,
+      ],
+    });
+
+    expect(plan).toMatchObject({
+      authority: 'unverified',
+      action: 'block',
+      reason: 'tracked_pid_reused',
+    });
+  });
+
   it('marks stop_line degraded when the tracked runner supervisor tree has no canonical runner leaf in real CLI process output', () => {
     const plan = runOwnerJanitorCliWithProcessTable({
       trackedRunnerPid: 4100,
@@ -322,6 +346,28 @@ describe('local-manual owner janitor', () => {
   it('treats a missing tracked runner pid as stale state-only cleanup instead of a block', () => {
     const plan = buildLocalManualOwnerJanitorPlan({
       intent: 'replace_runner',
+      rootDir: '/repo',
+      trackedRunnerPid: 4100,
+      trackedApiPid: null,
+      trackedWebPid: null,
+      portApi: 20000,
+      portWeb: 3001,
+      allowUntrackedPortCleanup: false,
+      processes: [],
+      portListenersByPort: new Map(),
+      taskMountOwners: new Map(),
+    });
+
+    expect(plan.items.find((item) => item.kind === 'runner')).toMatchObject({
+      authority: 'stale_reclaimable',
+      action: 'remove_state_only',
+      reason: 'tracked_pid_missing',
+    });
+  });
+
+  it('treats a missing tracked runner pid for internal_api_restart as stale state-only cleanup', () => {
+    const plan = buildLocalManualOwnerJanitorPlan({
+      intent: 'internal_api_restart',
       rootDir: '/repo',
       trackedRunnerPid: 4100,
       trackedApiPid: null,
@@ -484,6 +530,35 @@ describe('local-manual owner janitor', () => {
 
   it('treats empty owned_pids as planner_malformed for replace_runner', () => {
     const normalized = normalizeLocalManualOwnerJanitorRunnerPlan('replace_runner', JSON.stringify({
+      kind: 'runner',
+      authority: 'current_active',
+      action: 'stop_runner_tree',
+      reason: 'tracked_runner_supervisor',
+      stop: {
+        scope: 'owned_runner_tree',
+        root_pid: 4100,
+        owned_pids: [],
+        verification: 'all_owned_pids_exited',
+      },
+    }));
+
+    expect(normalized).toMatchObject({
+      kind: 'runner',
+      authority: 'unverified',
+      action: 'block',
+      reason: 'planner_malformed',
+    });
+  });
+
+  it('treats planner failures as block for internal_api_restart', () => {
+    expect(normalizeLocalManualOwnerJanitorRunnerPlan('internal_api_restart', '')).toMatchObject({
+      kind: 'runner',
+      authority: 'unverified',
+      action: 'block',
+      reason: 'planner_unavailable',
+    });
+
+    const normalized = normalizeLocalManualOwnerJanitorRunnerPlan('internal_api_restart', JSON.stringify({
       kind: 'runner',
       authority: 'current_active',
       action: 'stop_runner_tree',

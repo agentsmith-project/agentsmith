@@ -103,6 +103,26 @@ test.describe('Files Page (file library browser)', () => {
     await expect(authedPage.getByTestId('sidebar__nav-item--endpoints')).toHaveAttribute('href', /\/endpoints$/);
   });
 
+  test('sidebar files link clears prefix state without restoring stale query', async ({ authedPage }) => {
+    await goToProject(authedPage, 'files?prefix=workspace%2F.artifacts%2F');
+    await expect.poll(() => new URL(authedPage.url()).searchParams.get('prefix')).toBe('workspace/.artifacts/');
+
+    await authedPage.getByTestId('sidebar__nav-item--files').click();
+
+    await expect.poll(() => {
+      const url = new URL(authedPage.url());
+      return url.pathname.endsWith('/files') && url.search === '';
+    }).toBe(true);
+    await expect(authedPage.getByTestId('files__go-up')).toHaveCount(0);
+
+    const observedSearches = new Set<string>();
+    for (let sample = 0; sample < 8; sample += 1) {
+      observedSearches.add(new URL(authedPage.url()).search);
+      await authedPage.waitForTimeout(100);
+    }
+    expect([...observedSearches]).toEqual(['']);
+  });
+
   test('search filters objects via backend query', async ({ authedPage }) => {
     await authedPage.getByTestId('files__search').fill('readme');
     await expect(authedPage.getByTestId('files__search')).toHaveValue('readme');

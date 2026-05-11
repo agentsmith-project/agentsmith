@@ -486,7 +486,7 @@ universal_proxy_runtime_pull_image() {
 
 universal_proxy_runtime_start_managed_container() {
   local image_ref="$1"
-  local state_dir config_file container_id_file log_file run_error_file container_name runtime_label admin_token port base_url pull_policy timeout_seconds upstream_host container_id
+  local state_dir config_file container_id_file log_file run_error_file container_name runtime_label admin_token port base_url pull_policy timeout_seconds upstream_host healthcheck_cmd container_id
   state_dir="$(universal_proxy_runtime_state_dir)"
   config_file="$(universal_proxy_runtime_config_file)"
   container_id_file="$(universal_proxy_runtime_container_id_file)"
@@ -500,6 +500,7 @@ universal_proxy_runtime_start_managed_container() {
   pull_policy="${UNIVERSAL_PROXY_DOCKER_PULL_POLICY:-missing}"
   timeout_seconds="${UNIVERSAL_PROXY_RUNTIME_WAIT_TIMEOUT_SECONDS:-60}"
   upstream_host="${UNIVERSAL_PROXY_RUNTIME_UPSTREAM_HOST:-host.docker.internal}"
+  healthcheck_cmd="curl -fsS http://localhost:8080/health || exit 1"
 
   mkdir -p "${state_dir}" "$(dirname "${log_file}")"
   universal_proxy_runtime_write_config
@@ -526,6 +527,7 @@ universal_proxy_runtime_start_managed_container() {
       --add-host=host.docker.internal:host-gateway \
       -p "127.0.0.1:${port}:8080" \
       -v "${config_file}:/app/config/config.yaml:ro" \
+      --health-cmd "${healthcheck_cmd}" \
       -e LLM_UNIVERSAL_PROXY_AUTH_MODE=client_provider_key \
       -e "LLM_UNIVERSAL_PROXY_ADMIN_TOKEN=${admin_token}" \
       "${image_ref}" \

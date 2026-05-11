@@ -1,5 +1,12 @@
 import { createHash } from 'node:crypto';
 import { InMemoryJsonDocStore } from '@mbos/adapters-private';
+import type {
+  JsonDocCasCondition,
+  JsonDocConditionalCreateResult,
+  JsonDocConditionalDeleteResult,
+  JsonDocConditionalUpdateResult,
+  JsonDocStorePort,
+} from '@mbos/ports';
 import { describe, expect, it } from 'vitest';
 import { sanitizeAfscpNamespaceId } from './afscp-validation.js';
 import {
@@ -25,6 +32,88 @@ function deriveLegacyBase64urlNamespaceId(input: { workspaceId: string; projectI
     .digest('base64url')
     .slice(0, 40);
   return `ns_${digest}`;
+}
+
+class ReadyRaceJsonDocStore implements JsonDocStorePort {
+  private raced = false;
+
+  constructor(
+    private readonly inner: InMemoryJsonDocStore,
+    private readonly input: {
+      collection: string;
+      id: string;
+      staleStatus: 'pending' | 'blocked';
+      ready: ProjectAfscpNamespaceMapping;
+    },
+  ) {}
+
+  async get<T>(collection: string, id: string): Promise<T | null> {
+    return this.inner.get<T>(collection, id);
+  }
+
+  async upsert<T>(collection: string, id: string, doc: T): Promise<void> {
+    await this.writeReadyBeforeStaleWrite(collection, id, doc);
+    await this.inner.upsert(collection, id, doc);
+  }
+
+  async list<T>(collection: string, filter?: Record<string, string>): Promise<T[]> {
+    return this.inner.list<T>(collection, filter);
+  }
+
+  async delete(collection: string, id: string): Promise<void> {
+    await this.inner.delete(collection, id);
+  }
+
+  async createIfAbsent<T>(
+    collection: string,
+    id: string,
+    doc: T,
+  ): Promise<JsonDocConditionalCreateResult<T>> {
+    return this.inner.createIfAbsent<T>(collection, id, doc);
+  }
+
+  async updateIfMatch<T>(
+    collection: string,
+    id: string,
+    operation: {
+      expected: JsonDocCasCondition;
+      patch?: Partial<T>;
+      replace?: T;
+    },
+  ): Promise<JsonDocConditionalUpdateResult<T>> {
+    await this.writeReadyBeforeStaleWrite(collection, id, operation.replace ?? operation.patch);
+    return this.inner.updateIfMatch<T>(collection, id, operation);
+  }
+
+  async deleteIfMatch<T>(
+    collection: string,
+    id: string,
+    operation: {
+      expected: JsonDocCasCondition;
+    },
+  ): Promise<JsonDocConditionalDeleteResult<T>> {
+    return this.inner.deleteIfMatch<T>(collection, id, operation);
+  }
+
+  private async writeReadyBeforeStaleWrite(
+    collection: string,
+    id: string,
+    doc: unknown,
+  ): Promise<void> {
+    if (
+      this.raced
+      || collection !== this.input.collection
+      || id !== this.input.id
+      || typeof doc !== 'object'
+      || doc === null
+      || !('status' in doc)
+      || (doc as { status?: unknown }).status !== this.input.staleStatus
+    ) {
+      return;
+    }
+    this.raced = true;
+    await this.inner.upsert(PROJECT_AFSCP_NAMESPACE_COLLECTION, this.input.id, this.input.ready);
+  }
 }
 
 describe('ProjectAfscpNamespaceStore', () => {
@@ -160,22 +249,6 @@ describe('ProjectAfscpNamespaceStore', () => {
       last_error_code: null,
     });
 
-    await store.markProjectNamespaceReady({
-      ...key,
-      namespaceUpsertOperationId: 'op_namespace_1',
-      volumeBindingOperationId: 'op_binding_1',
-    });
-    await expect(store.getProjectNamespace(key)).resolves.toMatchObject({
-      status: 'ready',
-      stage: 'ready',
-      generation: 1,
-      next_action: 'none',
-      retryable: false,
-      namespace_upsert_operation_id: 'op_namespace_1',
-      volume_binding_operation_id: 'op_binding_1',
-      last_error_code: null,
-    });
-
     await store.markProjectNamespacePending({
       ...key,
       stage: 'volume_binding',
@@ -211,6 +284,222 @@ describe('ProjectAfscpNamespaceStore', () => {
       volume_binding_operation_id: 'op_binding_2',
       last_error_code: 'unavailable',
     });
+
+    await store.markProjectNamespaceReady({
+      ...key,
+      namespaceUpsertOperationId: 'op_namespace_1',
+      volumeBindingOperationId: 'op_binding_1',
+    });
+    await expect(store.getProjectNamespace(key)).resolves.toMatchObject({
+      status: 'ready',
+      stage: 'ready',
+      generation: 1,
+      next_action: 'none',
+      retryable: false,
+      namespace_upsert_operation_id: 'op_namespace_1',
+      volume_binding_operation_id: 'op_binding_1',
+      last_error_code: null,
+    });
+  });
+
+  it('does not let an older pending writeback regress a ready namespace mapping', async () => {
+    const store = createStore();
+    const key = { workspaceId: 'ws_alpha', projectId: 'proj_pending_ready_race' };
+
+    await store.markProjectNamespacePending({
+      ...key,
+      stage: 'volume_binding',
+      retryable: false,
+      namespaceUpsertOperationId: 'op_namespace_ready',
+      volumeBindingOperationId: 'op_binding_race',
+      volumeBindingSignature: 'signature_current',
+    });
+    await store.markProjectNamespaceReady({
+      ...key,
+      namespaceUpsertOperationId: 'op_namespace_ready',
+      volumeBindingOperationId: 'op_binding_race',
+      volumeBindingSignature: 'signature_current',
+    });
+    const afterStalePending = await store.markProjectNamespacePending({
+      ...key,
+      stage: 'volume_binding',
+      retryable: false,
+      namespaceUpsertOperationId: 'op_namespace_ready',
+      volumeBindingOperationId: 'op_binding_race',
+      volumeBindingSignature: 'signature_current',
+    });
+
+    expect(afterStalePending).toMatchObject({
+      status: 'ready',
+      stage: 'ready',
+      next_action: 'none',
+      retryable: false,
+      namespace_upsert_operation_id: 'op_namespace_ready',
+      volume_binding_operation_id: 'op_binding_race',
+      volume_binding_signature: 'signature_current',
+      last_error_code: null,
+    });
+    await expect(store.getProjectNamespace(key)).resolves.toMatchObject({
+      status: 'ready',
+      stage: 'ready',
+      volume_binding_operation_id: 'op_binding_race',
+      volume_binding_signature: 'signature_current',
+    });
+  });
+
+  it('does not let an earlier namespace-stage pending writeback regress ready storage', async () => {
+    const store = createStore();
+    const key = { workspaceId: 'ws_alpha', projectId: 'proj_namespace_pending_ready_race' };
+
+    await store.markProjectNamespacePending({
+      ...key,
+      stage: 'namespace_upsert',
+      retryable: false,
+      namespaceUpsertOperationId: 'op_namespace_race',
+      volumeBindingOperationId: null,
+    });
+    await store.markProjectNamespaceReady({
+      ...key,
+      namespaceUpsertOperationId: 'op_namespace_race',
+      volumeBindingOperationId: 'op_binding_ready',
+      volumeBindingSignature: 'signature_ready',
+    });
+    const afterStaleNamespacePending = await store.markProjectNamespacePending({
+      ...key,
+      stage: 'namespace_upsert',
+      retryable: false,
+      namespaceUpsertOperationId: 'op_namespace_race',
+      volumeBindingOperationId: null,
+      lastErrorCode: null,
+    });
+
+    expect(afterStaleNamespacePending).toMatchObject({
+      status: 'ready',
+      stage: 'ready',
+      next_action: 'none',
+      retryable: false,
+      namespace_upsert_operation_id: 'op_namespace_race',
+      volume_binding_operation_id: 'op_binding_ready',
+      volume_binding_signature: 'signature_ready',
+      last_error_code: null,
+    });
+    await expect(store.getProjectNamespace(key)).resolves.toMatchObject({
+      status: 'ready',
+      stage: 'ready',
+      volume_binding_operation_id: 'op_binding_ready',
+      volume_binding_signature: 'signature_ready',
+    });
+  });
+
+  it('does not let stale pending writeback overwrite ready after a read-before-ready race', async () => {
+    const inner = new InMemoryJsonDocStore();
+    const key = { workspaceId: 'ws_alpha', projectId: 'proj_pending_cas_race' };
+    const id = `${key.workspaceId}:${key.projectId}`;
+    const initial = '2026-05-09T00:00:00.000Z';
+    const ready: ProjectAfscpNamespaceMapping = {
+      id,
+      workspace_id: key.workspaceId,
+      project_id: key.projectId,
+      namespace_id: deriveProjectAfscpNamespaceId(key),
+      status: 'ready',
+      stage: 'ready',
+      generation: 1,
+      next_action: 'none',
+      retryable: false,
+      namespace_upsert_operation_id: 'op_namespace_ready',
+      volume_binding_operation_id: 'op_binding_ready',
+      volume_binding_signature: 'signature_ready',
+      last_error_code: null,
+      created_at: initial,
+      updated_at: '2026-05-09T00:00:02.000Z',
+    };
+    await inner.upsert<ProjectAfscpNamespaceMapping>(PROJECT_AFSCP_NAMESPACE_COLLECTION, id, {
+      ...ready,
+      status: 'pending',
+      stage: 'namespace_upsert',
+      next_action: 'wait',
+      namespace_upsert_operation_id: 'op_namespace_old',
+      volume_binding_operation_id: null,
+      volume_binding_signature: null,
+      updated_at: initial,
+    });
+    const store = new ProjectAfscpNamespaceStore(
+      new ReadyRaceJsonDocStore(inner, {
+        collection: PROJECT_AFSCP_NAMESPACE_COLLECTION,
+        id,
+        staleStatus: 'pending',
+        ready,
+      }),
+      () => '2026-05-09T00:00:03.000Z',
+    );
+
+    const afterStalePending = await store.markProjectNamespacePending({
+      ...key,
+      stage: 'namespace_upsert',
+      retryable: true,
+      namespaceUpsertOperationId: 'op_namespace_old',
+      volumeBindingOperationId: null,
+      lastErrorCode: 'operation_pending',
+    });
+
+    expect(afterStalePending).toEqual(ready);
+    await expect(inner.get<ProjectAfscpNamespaceMapping>(PROJECT_AFSCP_NAMESPACE_COLLECTION, id))
+      .resolves.toEqual(ready);
+  });
+
+  it('does not let stale blocked writeback overwrite ready after a read-before-ready race', async () => {
+    const inner = new InMemoryJsonDocStore();
+    const key = { workspaceId: 'ws_alpha', projectId: 'proj_blocked_cas_race' };
+    const id = `${key.workspaceId}:${key.projectId}`;
+    const initial = '2026-05-09T00:00:00.000Z';
+    const ready: ProjectAfscpNamespaceMapping = {
+      id,
+      workspace_id: key.workspaceId,
+      project_id: key.projectId,
+      namespace_id: deriveProjectAfscpNamespaceId(key),
+      status: 'ready',
+      stage: 'ready',
+      generation: 1,
+      next_action: 'none',
+      retryable: false,
+      namespace_upsert_operation_id: 'op_namespace_ready',
+      volume_binding_operation_id: 'op_binding_ready',
+      volume_binding_signature: 'signature_ready',
+      last_error_code: null,
+      created_at: initial,
+      updated_at: '2026-05-09T00:00:02.000Z',
+    };
+    await inner.upsert<ProjectAfscpNamespaceMapping>(PROJECT_AFSCP_NAMESPACE_COLLECTION, id, {
+      ...ready,
+      status: 'pending',
+      stage: 'volume_binding',
+      next_action: 'wait',
+      namespace_upsert_operation_id: 'op_namespace_old',
+      volume_binding_operation_id: 'op_binding_old',
+      volume_binding_signature: null,
+      updated_at: initial,
+    });
+    const store = new ProjectAfscpNamespaceStore(
+      new ReadyRaceJsonDocStore(inner, {
+        collection: PROJECT_AFSCP_NAMESPACE_COLLECTION,
+        id,
+        staleStatus: 'blocked',
+        ready,
+      }),
+      () => '2026-05-09T00:00:03.000Z',
+    );
+
+    const afterStaleBlocked = await store.markProjectNamespaceBlocked({
+      ...key,
+      stage: 'volume_binding',
+      namespaceUpsertOperationId: 'op_namespace_old',
+      volumeBindingOperationId: 'op_binding_old',
+      lastErrorCode: 'operation_failed',
+    });
+
+    expect(afterStaleBlocked).toEqual(ready);
+    await expect(inner.get<ProjectAfscpNamespaceMapping>(PROJECT_AFSCP_NAMESPACE_COLLECTION, id))
+      .resolves.toEqual(ready);
   });
 
   it('stores generic AFSCP resource ownership without exposing raw resource ids in document ids', async () => {

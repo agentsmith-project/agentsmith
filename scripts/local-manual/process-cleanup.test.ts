@@ -328,7 +328,7 @@ function writeOwnedRunnerTreeScripts(tempRoot: string) {
   mkdirSync(path.dirname(fakeTsxCli), { recursive: true });
   writeFileSync(
     fakeTsxCli,
-    'setInterval(() => {}, 1000);\\n',
+    'setInterval(() => {}, 1000);\n',
     'utf8',
   );
 
@@ -455,6 +455,9 @@ PORT_WEB=${args?.webPort ?? 3001}
     localManualRoot,
     runnerPidFile: path.join(runtimeLinesRoot, 'local-manual/current/runner.pid'),
     runnerReadyFile: path.join(runtimeLinesRoot, 'local-manual/current/runner.ready'),
+    runnerHealthFile: path.join(runtimeLinesRoot, 'local-manual/current/runner.health.json'),
+    runnerOwnerStateFile: path.join(runtimeLinesRoot, 'local-manual/current/runner.owner.json'),
+    runnerStopEvidenceFile: path.join(runtimeLinesRoot, 'local-manual/current/evidence/runner/stop-owner-janitor.json'),
     webPidFile: path.join(runtimeLinesRoot, 'local-manual/current/web.pid'),
     webPortFile: path.join(runtimeLinesRoot, 'local-manual/current/web.port'),
     webProcessFile: path.join(runtimeLinesRoot, 'local-manual/current/web.process.json'),
@@ -465,6 +468,16 @@ PORT_WEB=${args?.webPort ?? 3001}
     apiReadyFile: path.join(runtimeLinesRoot, 'local-manual/current/api.ready'),
     webEvidenceFile: path.join(runtimeLinesRoot, 'local-manual/current/evidence/web/stop-authority.json'),
     apiEvidenceFile: path.join(runtimeLinesRoot, 'local-manual/current/evidence/api/stop-authority.json'),
+  };
+}
+
+function realCommonEnv(fixture: ReturnType<typeof setupRealCommonFixture>): NodeJS.ProcessEnv {
+  return {
+    ...process.env,
+    ENV_FILE: fixture.envFile,
+    BACKEND_REAL_STATE_DIR: fixture.backendRealRoot,
+    RUNTIME_LINES_ROOT: fixture.runtimeLinesRoot,
+    LOCAL_MANUAL_ALLOW_MISSING_SUBSTRATE_CONNECTION: '1',
   };
 }
 
@@ -2513,6 +2526,126 @@ PORT_WEB=${webPort}
     } finally {
       killProcessTreeGroup(ownedRunnerRootPid);
       killProcessTreeGroup(siblingPid);
+    }
+  }, 20_000);
+
+  it('internal_api_restart stops the owned runner supervisor tree on the real common + owner-janitor path and leaves an unrelated sibling alive', async () => {
+    const fixture = setupRealCommonFixture();
+    tempRoots.push(fixture.tempRoot);
+
+    const ownedRunnerRootPid = spawnDetachedOwnedRunnerTree(fixture.tempRoot);
+    const siblingPid = spawnDetachedSiblingProcess();
+
+    try {
+      await sleep(300);
+      mkdirSync(fixture.localManualRoot, { recursive: true });
+      writeFileSync(fixture.runnerPidFile, `${ownedRunnerRootPid}\n`, 'utf8');
+      writeFileSync(fixture.runnerReadyFile, 'ready\n', 'utf8');
+      writeFileSync(fixture.runnerHealthFile, '{"state":"connected"}\n', 'utf8');
+      writeFileSync(
+        fixture.runnerOwnerStateFile,
+        `${JSON.stringify({
+          schema_version: 1,
+          pid: ownedRunnerRootPid,
+          owner_token: 'runner-owner-token',
+          recorded_at: '2026-04-14T00:00:00.000Z',
+          captured_by: 'process-cleanup.test',
+        }, null, 2)}\n`,
+        'utf8',
+      );
+
+      const result = execBashCapture({
+        script: `
+          source "${path.join(repoRoot, 'scripts/local-manual/common.sh')}"
+          init_local_manual_env
+          setup_local_manual_runtime_evidence
+          if ps -ww -o pid= -p "${ownedRunnerRootPid}" >/dev/null; then
+            printf 'pre_stop_tracked_pid=present\\n'
+          else
+            printf 'pre_stop_tracked_pid=missing\\n'
+          fi
+          owner_janitor_raw_output="$(local_manual_runner_owner_janitor_plan internal_api_restart)"
+          owner_janitor_output="$(local_manual_runner_owner_janitor_normalize_plan internal_api_restart "\${owner_janitor_raw_output}")"
+          node - <<'NODE' "\${owner_janitor_output}" "${ownedRunnerRootPid}"
+const [rawPlan, expectedRootPidRaw] = process.argv.slice(2);
+const plan = JSON.parse(rawPlan);
+const expectedRootPid = Number.parseInt(expectedRootPidRaw, 10);
+process.stdout.write([
+  \`janitor_action=\${plan.action}\`,
+  \`janitor_reason=\${plan.reason}\`,
+  \`janitor_root_pid=\${plan.stop?.root_pid ?? ''}\`,
+  \`janitor_owns_root=\${Array.isArray(plan.stop?.owned_pids) && plan.stop.owned_pids.includes(expectedRootPid) ? 'yes' : 'no'}\`,
+].join('\\n') + '\\n');
+NODE
+          stop_local_manual_runner_owner_aware internal_api_restart
+        `,
+        cwd: repoRoot,
+        env: realCommonEnv(fixture),
+      });
+
+      expect(result.status).toBe(0);
+      expect(result.stdout).toContain('pre_stop_tracked_pid=present');
+      expect(result.stdout).toContain('janitor_action=stop_runner_tree');
+      expect(result.stdout).toContain('janitor_reason=tracked_runner_supervisor');
+      expect(result.stdout).toContain(`janitor_root_pid=${ownedRunnerRootPid}`);
+      expect(result.stdout).toContain('janitor_owns_root=yes');
+      expect(await waitForPidExit(ownedRunnerRootPid)).toBe(true);
+      expect(isPidAlive(siblingPid)).toBe(true);
+      expect(existsSync(fixture.runnerPidFile)).toBe(false);
+      expect(existsSync(fixture.runnerReadyFile)).toBe(false);
+      expect(existsSync(fixture.runnerHealthFile)).toBe(false);
+      expect(existsSync(fixture.runnerOwnerStateFile)).toBe(false);
+    } finally {
+      killProcessTreeGroup(ownedRunnerRootPid);
+      killProcessTreeGroup(siblingPid);
+    }
+  }, 20_000);
+
+  it('internal_api_restart blocks an unverified reused tracked runner pid without degrading or clearing runner state on the real common + owner-janitor path', async () => {
+    const fixture = setupRealCommonFixture();
+    tempRoots.push(fixture.tempRoot);
+
+    const reusedPid = spawnDetachedSiblingProcess('local-manual-reused-runner-pid');
+
+    try {
+      expect(await waitForPidAlive(reusedPid)).toBe(true);
+      mkdirSync(fixture.localManualRoot, { recursive: true });
+      writeFileSync(fixture.runnerPidFile, `${reusedPid}\n`, 'utf8');
+      writeFileSync(fixture.runnerReadyFile, 'ready\n', 'utf8');
+
+      const result = execBashCapture({
+        script: `
+          source "${path.join(repoRoot, 'scripts/local-manual/common.sh')}"
+          init_local_manual_env
+          setup_local_manual_runtime_evidence
+          owner_janitor_raw_output="$(local_manual_runner_owner_janitor_plan internal_api_restart)"
+          owner_janitor_output="$(local_manual_runner_owner_janitor_normalize_plan internal_api_restart "\${owner_janitor_raw_output}")"
+          node - <<'NODE' "\${owner_janitor_output}"
+const [rawPlan] = process.argv.slice(2);
+const plan = JSON.parse(rawPlan);
+process.stdout.write([
+  \`janitor_action=\${plan.action}\`,
+  \`janitor_authority=\${plan.authority}\`,
+  \`janitor_reason=\${plan.reason}\`,
+].join('\\n') + '\\n');
+NODE
+          stop_local_manual_runner_owner_aware internal_api_restart
+        `,
+        cwd: repoRoot,
+        env: realCommonEnv(fixture),
+      });
+
+      expect(result.status).toBe(1);
+      expect(result.stdout).toContain('janitor_action=block');
+      expect(result.stdout).toContain('janitor_authority=unverified');
+      expect(result.stdout).toContain('janitor_reason=tracked_pid_reused');
+      expect(result.stderr).toContain('runner ownership is unverified; refusing to stop tracked local-manual runner');
+      expect(isPidAlive(reusedPid)).toBe(true);
+      expect(readFileSync(fixture.runnerPidFile, 'utf8')).toBe(`${reusedPid}\n`);
+      expect(readFileSync(fixture.runnerReadyFile, 'utf8')).toBe('ready\n');
+      expect(existsSync(fixture.runnerStopEvidenceFile)).toBe(false);
+    } finally {
+      killProcessTreeGroup(reusedPid);
     }
   }, 20_000);
 });

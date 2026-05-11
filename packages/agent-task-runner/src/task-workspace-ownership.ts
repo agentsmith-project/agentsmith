@@ -1,4 +1,5 @@
 import { execFileSync } from 'node:child_process';
+import { readlinkSync } from 'node:fs';
 import path from 'node:path';
 import type { OwnershipDecision } from '@mbos/domain';
 
@@ -62,6 +63,7 @@ const NODE_OPTIONS_WITH_VALUE = new Set([
 const TSX_OPTIONS_WITH_VALUE = new Set([
   '--tsconfig',
 ]);
+const PROCESS_CWD_LOOKUP_MAX_BUFFER_BYTES = 1024 * 1024;
 
 export function buildRunnerInstanceMarker(instanceId: string): string {
   return `runner_instance_id=${instanceId.trim()}`;
@@ -223,6 +225,54 @@ function loadProcessCwdSync(pid: number): string | null {
   if (!Number.isInteger(pid) || pid <= 0) {
     return null;
   }
+
+  try {
+    return normalizeCommandCwd(readlinkSync(`/proc/${pid}/cwd`));
+  } catch {
+    // Fall back to portable process inspection commands below.
+  }
+
+  try {
+    const stdout = execFileSync(
+      'lsof',
+      ['-a', '-p', String(pid), '-d', 'cwd', '-Fn'],
+      {
+        cwd: process.cwd(),
+        encoding: 'utf8',
+        maxBuffer: PROCESS_CWD_LOOKUP_MAX_BUFFER_BYTES,
+      },
+    );
+    const cwd = stdout
+      .split('\n')
+      .map((entry) => entry.trim())
+      .find((entry) => entry.startsWith('n'));
+    const normalized = normalizeCommandCwd(cwd?.slice(1) ?? null);
+    if (normalized) {
+      return normalized;
+    }
+  } catch {
+    // Fall back to pwdx/ps below.
+  }
+
+  try {
+    const stdout = execFileSync(
+      'pwdx',
+      [String(pid)],
+      {
+        cwd: process.cwd(),
+        encoding: 'utf8',
+        maxBuffer: PROCESS_CWD_LOOKUP_MAX_BUFFER_BYTES,
+      },
+    );
+    const cwd = stdout.split(':', 2)[1]?.trim();
+    const normalized = cwd === 'No such process' ? null : normalizeCommandCwd(cwd ?? null);
+    if (normalized) {
+      return normalized;
+    }
+  } catch {
+    // Fall back to ps below.
+  }
+
   try {
     const stdout = execFileSync(
       'ps',
@@ -230,7 +280,7 @@ function loadProcessCwdSync(pid: number): string | null {
       {
         cwd: process.cwd(),
         encoding: 'utf8',
-        maxBuffer: 1024 * 1024,
+        maxBuffer: PROCESS_CWD_LOOKUP_MAX_BUFFER_BYTES,
       },
     );
     const cwd = stdout

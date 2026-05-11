@@ -6,7 +6,7 @@ import {
   AfscpFileLibraryStorageAdapter,
   JsonDocProjectFileLibraryAfscpMappingRepo,
 } from './file-library-afscp-storage.js';
-import { AfscpClientError } from './afscp-error-mapper.js';
+import { AfscpClientError, mapAfscpErrorEnvelope } from './afscp-error-mapper.js';
 import {
   PROJECT_AFSCP_NAMESPACE_COLLECTION,
   ProjectAfscpNamespaceStore,
@@ -1046,6 +1046,201 @@ describe('AFSCP File Library storage adapter', () => {
       resourceKind: 'save_point',
       resourceId: '[REDACTED]',
     })).resolves.toBeNull();
+  });
+
+  it.each([
+    [
+      'operation.error.details',
+      {
+        error: {
+          code: 'JVS_COMMAND_FAILED',
+          message: '[REDACTED] repo_hidden_elsewhere',
+          retryable: false,
+          correlation_id: 'corr_save_point_busy',
+          operation_id: 'op_save_point_busy',
+          details: {
+            repo_id: 'repo_hidden_elsewhere',
+            jvs_error_code: 'E_REPO_BUSY',
+            jvs_command: 'save',
+            metadata_url: 'postgres://postgres:postgres@db:5432/juicefs',
+          },
+        },
+      },
+    ],
+    [
+      'verification_result',
+      {
+        error: {
+          code: 'JVS_COMMAND_FAILED',
+          message: '[REDACTED] repo_hidden_elsewhere',
+          retryable: false,
+        },
+        verification_result: {
+          jvs_error_code: 'E_REPO_BUSY',
+          jvs_command: 'save',
+          jvs_exit_code: 1,
+          repo_id: 'repo_hidden_elsewhere',
+        },
+      },
+    ],
+    [
+      'jvs_json_output object',
+      {
+        error: {
+          code: 'JVS_COMMAND_FAILED',
+          message: '[REDACTED] repo_hidden_elsewhere',
+          retryable: false,
+        },
+        jvs_json_output: {
+          jvs_error_code: 'E_REPO_BUSY',
+          repo_id: 'repo_hidden_elsewhere',
+          metadata_url: 'postgres://postgres:postgres@db:5432/juicefs',
+        },
+      },
+    ],
+    [
+      'jvs_json_output string',
+      {
+        error: {
+          code: 'JVS_COMMAND_FAILED',
+          message: '[REDACTED] repo_hidden_elsewhere',
+          retryable: false,
+        },
+        jvs_json_output: JSON.stringify({
+          jvs_error_code: 'E_REPO_BUSY',
+          repo_id: 'repo_hidden_elsewhere',
+          metadata_url: 'postgres://postgres:postgres@db:5432/juicefs',
+        }),
+      },
+    ],
+  ])('projects JVS repo-busy save point failures from %s as an active writer blocker', async (_caseName, operationFields) => {
+    const client = createProductClient({
+      pollOperation: vi.fn(async () => ({
+        ...succeededRepoOperation,
+        operation_id: 'op_save_point_busy',
+        operation_type: 'save_point_create',
+        operation_state: 'operator_intervention_required',
+        phase: 'save_point_create_prepared',
+        ...operationFields,
+      })),
+    });
+    const { adapter } = await createMappedAdapter({ client });
+
+    let caught: unknown;
+    try {
+      await adapter.createSavePoint({
+        workspaceId: 'ws_default',
+        projectId: 'proj_1',
+        libraryId: 'flib_123',
+        message: 'Before risky change',
+        actorUserId: 'user_1',
+        requestId: 'req_save_point_busy',
+      });
+    } catch (error) {
+      caught = error;
+    }
+
+    expect(caught).toBeInstanceOf(Error);
+    expect((caught as Error).message).toBe('file_library_active_writer_blocked');
+    expect(JSON.stringify(caught)).not.toMatch(/repo_hidden_elsewhere|corr_save_point_busy|metadata_url|postgres/);
+  });
+
+  it.each([
+    [
+      'error.details',
+      {
+        error: {
+          code: 'JVS_COMMAND_FAILED',
+          message: 'save point failed for repo_hidden_elsewhere',
+          retryable: false,
+          correlation_id: 'corr_save_point_busy',
+          operation_id: 'op_save_point_busy',
+          details: {
+            jvs_error_code: 'E_REPO_BUSY',
+            repo_id: 'repo_hidden_elsewhere',
+            metadata_url: 'postgres://postgres:postgres@db:5432/juicefs',
+          },
+        },
+      },
+    ],
+    [
+      'verification_result',
+      {
+        error: {
+          code: 'JVS_COMMAND_FAILED',
+          message: 'save point failed for repo_hidden_elsewhere',
+          retryable: false,
+          correlation_id: 'corr_save_point_busy',
+          operation_id: 'op_save_point_busy',
+        },
+        verification_result: {
+          jvs_error_code: 'E_REPO_BUSY',
+          repo_id: 'repo_hidden_elsewhere',
+          metadata_url: 'postgres://postgres:postgres@db:5432/juicefs',
+        },
+      },
+    ],
+    [
+      'jvs_json_output object',
+      {
+        error: {
+          code: 'JVS_COMMAND_FAILED',
+          message: 'save point failed for repo_hidden_elsewhere',
+          retryable: false,
+          correlation_id: 'corr_save_point_busy',
+          operation_id: 'op_save_point_busy',
+        },
+        jvs_json_output: {
+          jvs_error_code: 'E_REPO_BUSY',
+          repo_id: 'repo_hidden_elsewhere',
+          metadata_url: 'postgres://postgres:postgres@db:5432/juicefs',
+        },
+      },
+    ],
+    [
+      'jvs_json_output string',
+      {
+        error: {
+          code: 'JVS_COMMAND_FAILED',
+          message: 'save point failed for repo_hidden_elsewhere',
+          retryable: false,
+          correlation_id: 'corr_save_point_busy',
+          operation_id: 'op_save_point_busy',
+        },
+        jvs_json_output: JSON.stringify({
+          jvs_error_code: 'E_REPO_BUSY',
+          repo_id: 'repo_hidden_elsewhere',
+          metadata_url: 'postgres://postgres:postgres@db:5432/juicefs',
+        }),
+      },
+    ],
+  ])('projects initial JVS repo-busy save point client errors from %s as an active writer blocker', async (_caseName, payload) => {
+    const mapped = mapAfscpErrorEnvelope(500, payload);
+    const client = createProductClient({
+      createSavePoint: vi.fn(async () => {
+        throw new AfscpClientError(mapped);
+      }),
+    });
+    const { adapter } = await createMappedAdapter({ client });
+
+    let caught: unknown;
+    try {
+      await adapter.createSavePoint({
+        workspaceId: 'ws_default',
+        projectId: 'proj_1',
+        libraryId: 'flib_123',
+        message: 'Before risky change',
+        actorUserId: 'user_1',
+        requestId: 'req_save_point_busy',
+      });
+    } catch (error) {
+      caught = error;
+    }
+
+    expect(caught).toBeInstanceOf(Error);
+    expect((caught as Error).message).toBe('file_library_active_writer_blocked');
+    expect(JSON.stringify(caught)).not.toMatch(/repo_hidden_elsewhere|corr_save_point_busy|metadata_url|postgres/);
+    expect(client.pollOperation).not.toHaveBeenCalled();
   });
 
   it('creates, runs, and discards restore previews through AFSCP with restore-plan ownership anchors', async () => {

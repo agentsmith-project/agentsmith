@@ -564,6 +564,8 @@ runtime_label=${container.runtimeLabel}
     expect(dockerLog).toContain('docker run');
     expect(dockerLog).toContain(lockedImage);
     expect(dockerLog).toContain('127.0.0.1:38080:8080');
+    expect(dockerLog).toContain('--health-cmd curl -fsS http://localhost:8080/health || exit 1');
+    expect(dockerLog).not.toContain('/ready');
     const connectionEnv = readFileSync(fixture.connectionEnv, 'utf8');
     expect(connectionEnv).toContain('MBOS_UNIVERSAL_PROXY_BASE_URL=http://127.0.0.1:38080');
     expect(connectionEnv).toMatch(/^MBOS_UNIVERSAL_PROXY_ADMIN_TOKEN=.+$/m);
@@ -708,6 +710,8 @@ MBOS_UNIVERSAL_PROXY_ADMIN_TOKEN=stale-admin-token
     expect(dockerLog).toContain('-e LLM_UNIVERSAL_PROXY_AUTH_MODE=client_provider_key');
     expect(dockerLog).toMatch(/-e LLM_UNIVERSAL_PROXY_ADMIN_TOKEN=[^ ]+/);
     expect(dockerLog).toContain('--add-host=host.docker.internal:host-gateway');
+    expect(dockerLog).toContain('--health-cmd curl -fsS http://localhost:8080/health || exit 1');
+    expect(dockerLog).not.toContain('/ready');
     expect(dockerLog).not.toContain('LLM_UNIVERSAL_PROXY_KEY');
     expect(curlLog).toMatch(/-H Authorization: Bearer [^ ]+ .*\/admin\/state/);
   });

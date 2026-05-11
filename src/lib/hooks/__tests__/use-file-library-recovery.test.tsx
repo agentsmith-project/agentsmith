@@ -88,6 +88,7 @@ import {
   useRunFileLibraryRestore,
 } from '../use-file-library-recovery';
 import { toast } from '@/components/ui/toast';
+import { handleErrorForToast } from '@/lib/api/errors';
 
 const workspaceId = 'ws_test';
 const projectId = 'proj_test';
@@ -234,6 +235,47 @@ describe('file library recovery hooks', () => {
     await waitFor(() => {
       expect(queryClient.getQueryCache().find({ queryKey: savePointsKey })?.isStale()).toBe(true);
     });
+  });
+
+  it('allows dialog-controlled save point errors to suppress the global error toast', async () => {
+    mockCreateSavePoint.mockRejectedValueOnce(new Error('file_library_active_writer_blocked'));
+
+    const { Wrapper } = createTestHarness();
+    const { result } = renderHook(
+      () => useCreateFileLibrarySavePoint({ suppressErrorToast: true }),
+      { wrapper: Wrapper },
+    );
+
+    await act(async () => {
+      await expect(result.current.mutateAsync({
+        workspaceId,
+        projectId,
+        libraryId,
+        message: 'Before edits',
+      })).rejects.toThrow('file_library_active_writer_blocked');
+    });
+
+    expect(handleErrorForToast).not.toHaveBeenCalled();
+  });
+
+  it('keeps the default save point global error toast for non-dialog callers', async () => {
+    mockCreateSavePoint.mockRejectedValueOnce(new Error('save point failed'));
+
+    const { Wrapper } = createTestHarness();
+    const { result } = renderHook(() => useCreateFileLibrarySavePoint(), {
+      wrapper: Wrapper,
+    });
+
+    await act(async () => {
+      await expect(result.current.mutateAsync({
+        workspaceId,
+        projectId,
+        libraryId,
+        message: 'Before edits',
+      })).rejects.toThrow('save point failed');
+    });
+
+    expect(handleErrorForToast).toHaveBeenCalledWith(expect.any(Error), 'useCreateFileLibrarySavePoint');
   });
 
   it('runs restore through preview, updates active preview cache, and invalidates file listings for the library', async () => {

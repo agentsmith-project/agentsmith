@@ -1389,6 +1389,43 @@ describe('project-file-library-routes', () => {
     expect(JSON.stringify(listBody)).not.toMatch(/repo_flib|sp_user|tmpl_|storage_credential|control_root/);
   });
 
+  it('returns stable save point create blockers without exposing storage internals', async () => {
+    for (const [message, errorCode] of [
+      ['file_library_save_point_create_pending', 'FILE_LIBRARY_OPERATION_PENDING'],
+      ['file_library_active_writer_blocked', 'FILE_LIBRARY_ACTIVE_WRITER_BLOCKED'],
+    ] as const) {
+      const storageAdapter = createStorageAdapter({
+        createSavePoint: vi.fn(async () => {
+          throw new Error(`${message} repo_hidden_elsewhere ns_hidden metadata_url=postgres://db`);
+        }),
+      });
+      const deps = createDeps({ storageAdapter });
+      const created = await createReadyLibrary(deps);
+      const libraryId = String(created.id);
+
+      const createJson = vi.fn();
+      await expect(handleProjectFileLibraryRoutes({
+        routeKind: 'fileLibrarySavePoints',
+        method: 'POST',
+        workspaceId: 'ws_default',
+        projectId: 'proj_1',
+        libraryId,
+        req: { headers: { 'x-request-id': 'req_save_point_blocker' } } as never,
+        res: createMockResponse(),
+        deps,
+        user: OWNER_USER,
+        json: createJson,
+        readBody: vi.fn().mockResolvedValue({ message: 'Before restore' }),
+      })).resolves.toBe(true);
+
+      expect(createJson).toHaveBeenCalledWith(expect.anything(), 409, {
+        error_code: errorCode,
+        message,
+      });
+      expect(JSON.stringify(createJson.mock.calls)).not.toMatch(/repo_hidden_elsewhere|ns_hidden|metadata_url|postgres|repo_flib|sp_user|credential|control_root/);
+    }
+  });
+
   it('runs restore preview, restore run, and restore cancel using public preview ids', async () => {
     const storageAdapter = createStorageAdapter();
     const deps = createDeps({ storageAdapter });

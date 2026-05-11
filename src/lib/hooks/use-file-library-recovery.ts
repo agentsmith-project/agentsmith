@@ -19,6 +19,10 @@ import { queryKeys } from '@/lib/query-keys';
 
 const ACTIVE_RESTORE_PREVIEW_REFETCH_INTERVAL_MS = 2_000;
 
+type CreateFileLibrarySavePointOptions = {
+  suppressErrorToast?: boolean;
+};
+
 function isRestorePreviewReconciling(preview: FileLibraryRestorePreview | null | undefined) {
   return preview?.status === 'previewing'
     || preview?.status === 'canceling'
@@ -108,7 +112,7 @@ export function useFileLibraryActiveRestorePreview(
   });
 }
 
-export function useCreateFileLibrarySavePoint() {
+export function useCreateFileLibrarySavePoint(options: CreateFileLibrarySavePointOptions = {}) {
   const queryClient = useQueryClient();
   const filesAPI = new FilesAPI(getApiClient());
   const t = useTranslations('common.toast');
@@ -143,6 +147,7 @@ export function useCreateFileLibrarySavePoint() {
       toast.success(t('create_success'));
     },
     onError: (error: unknown) => {
+      if (options.suppressErrorToast) return;
       handleErrorForToast(error, 'useCreateFileLibrarySavePoint');
     },
   });

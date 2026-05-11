@@ -237,7 +237,7 @@ function writeOwnedRunnerTreeScripts(tempRoot: string) {
   mkdirSync(path.dirname(fakeTsxCli), { recursive: true });
   writeFileSync(
     fakeTsxCli,
-    'setInterval(() => {}, 1000);\\n',
+    'setInterval(() => {}, 1000);\n',
     'utf8',
   );
 

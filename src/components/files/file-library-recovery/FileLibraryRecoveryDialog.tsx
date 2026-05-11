@@ -66,6 +66,11 @@ type TemplateActionErrorDisplay = {
   title: string;
 };
 
+type SavePointActionErrorDisplay = {
+  description: string;
+  title: string;
+};
+
 function formatTimestamp(value: string) {
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return value;
@@ -122,14 +127,14 @@ function restorePreviewBlockerCopy(
   blocker: FileLibraryRestorePreviewBlocker,
   t: FileLibraryRecoveryDialogProps['t'],
 ) {
-  if (blocker.message?.trim()) return blocker.message;
-  const fallbackKeys: Record<FileLibraryRestorePreviewBlocker['code'], string> = {
+  const fallbackKeys: Partial<Record<FileLibraryRestorePreviewBlocker['code'], string>> = {
     active_writer_sessions: 'file_manager.restore_preview_blocked_active_writer',
     stale_writer_session_uncertain: 'file_manager.restore_preview_blocked_stale_writer_uncertain',
     restore_preview_stale: 'file_manager.restore_preview_blocked_stale',
     restore_plan_requires_recovery: 'file_manager.restore_preview_blocked_recovery',
   };
-  return t(fallbackKeys[blocker.code]);
+  const blockerKey = fallbackKeys[blocker.code];
+  return t(blockerKey ?? 'file_manager.restore_preview_blocked_default');
 }
 
 function buildRestorePreviewTitle(
@@ -270,6 +275,27 @@ function buildTemplateActionErrorDisplay(
   };
 }
 
+function buildSavePointActionErrorDisplay(
+  error: unknown,
+  t: FileLibraryRecoveryDialogProps['t'],
+): SavePointActionErrorDisplay {
+  let description = t('file_manager.save_point_action_failed');
+  if (isFileLibraryOperationPending(error)) {
+    description = t('file_manager.save_point_operation_pending');
+  }
+  if (isFileLibraryActiveWriterBlocked(error)) {
+    description = t('file_manager.save_point_active_writer_blocked');
+  }
+  if (isFileLibraryStorageNotReady(error)) {
+    description = t('file_manager.save_point_storage_not_ready');
+  }
+
+  return {
+    title: t('file_manager.save_point_action_failed_title'),
+    description,
+  };
+}
+
 function buildRestoreActiveTemplateError(t: FileLibraryRecoveryDialogProps['t']): TemplateActionErrorDisplay {
   return {
     title: t('file_manager.task_template_action_failed_title'),
@@ -314,6 +340,7 @@ export function FileLibraryRecoveryDialog({
 }: FileLibraryRecoveryDialogProps) {
   const [activeTab, setActiveTab] = React.useState<FileStatesTab>('save_points');
   const [savePointMessage, setSavePointMessage] = React.useState('');
+  const [savePointActionError, setSavePointActionError] = React.useState<SavePointActionErrorDisplay | null>(null);
   const [restorePreview, setRestorePreview] = React.useState<FileLibraryRestorePreview | null>(null);
   const [templateName, setTemplateName] = React.useState('');
   const [templateDescription, setTemplateDescription] = React.useState('');
@@ -332,7 +359,7 @@ export function FileLibraryRecoveryDialog({
     enabled: open,
   });
 
-  const createSavePoint = useCreateFileLibrarySavePoint();
+  const createSavePoint = useCreateFileLibrarySavePoint({ suppressErrorToast: true });
   const createRestorePreview = useCreateFileLibraryRestorePreview();
   const runRestore = useRunFileLibraryRestore();
   const cancelRestore = useCancelFileLibraryRestore();
@@ -344,6 +371,7 @@ export function FileLibraryRecoveryDialog({
   React.useEffect(() => {
     if (!open) {
       setSavePointMessage('');
+      setSavePointActionError(null);
       setTemplateName('');
       setTemplateDescription('');
       setRestorePreview(null);
@@ -380,13 +408,18 @@ export function FileLibraryRecoveryDialog({
 
   const handleCreateSavePoint = async () => {
     if (!library || !libraryReady) return;
-    await createSavePoint.mutateAsync({
-      workspaceId,
-      projectId,
-      libraryId: library.id,
-      message: savePointMessage.trim() || undefined,
-    });
-    setSavePointMessage('');
+    setSavePointActionError(null);
+    try {
+      await createSavePoint.mutateAsync({
+        workspaceId,
+        projectId,
+        libraryId: library.id,
+        message: savePointMessage.trim() || undefined,
+      });
+      setSavePointMessage('');
+    } catch (error) {
+      setSavePointActionError(buildSavePointActionErrorDisplay(error, t));
+    }
   };
 
   const handlePreviewRestore = async (savePoint: FileLibrarySavePoint) => {
@@ -587,6 +620,23 @@ export function FileLibraryRecoveryDialog({
                   {t('file_manager.save_point_create')}
                 </Button>
               </div>
+              {savePointActionError ? (
+                <div
+                  className="flex gap-2 rounded-md border border-warning/30 bg-warning/10 px-3 py-3"
+                  data-testid="files__save-point__error"
+                  role="alert"
+                >
+                  <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-warning" />
+                  <div className="min-w-0 space-y-1">
+                    <div className="text-sm font-medium text-primary">
+                      {savePointActionError.title}
+                    </div>
+                    <div className="text-sm text-secondary">
+                      {savePointActionError.description}
+                    </div>
+                  </div>
+                </div>
+              ) : null}
             </div>
 
             {restorePreview && restorePreviewDisplay ? (

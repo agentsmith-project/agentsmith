@@ -20,6 +20,7 @@ const {
   mockSavePointsQueryState,
   mockUnpublishTemplate,
   mockCreateRestorePreview,
+  mockUseCreateSavePointOptions,
 } = vi.hoisted(() => ({
   mockRefetchActiveRestorePreview: vi.fn(),
   mockRefetchSavePoints: vi.fn(),
@@ -35,6 +36,7 @@ const {
   mockSavePointsQueryState: vi.fn(),
   mockUnpublishTemplate: vi.fn(),
   mockCreateRestorePreview: vi.fn(),
+  mockUseCreateSavePointOptions: vi.fn(),
 }));
 
 import { APIError } from '@/lib/api/errors';
@@ -42,7 +44,10 @@ import { APIError } from '@/lib/api/errors';
 vi.mock('@/lib/hooks/use-file-library-recovery', () => ({
   useCancelFileLibraryRestore: () => ({ mutateAsync: mockCancelRestore, isPending: false }),
   useCreateFileLibraryRestorePreview: () => ({ mutateAsync: mockCreateRestorePreview, isPending: false }),
-  useCreateFileLibrarySavePoint: () => ({ mutateAsync: mockCreateSavePoint, isPending: false }),
+  useCreateFileLibrarySavePoint: (options?: unknown) => {
+    mockUseCreateSavePointOptions(options);
+    return { mutateAsync: mockCreateSavePoint, isPending: false };
+  },
   useFileLibraryActiveRestorePreview: () => mockActiveRestorePreviewQueryState(),
   useFileLibrarySavePoints: () => mockSavePointsQueryState(),
   useRunFileLibraryRestore: () => ({ mutateAsync: mockRunRestore, isPending: false }),
@@ -73,6 +78,9 @@ const t = (key: string, values?: Record<string, string>) => {
     'file_manager.save_point_message_placeholder': 'e.g. Before prompt edits',
     'file_manager.save_point_retry': 'Retry',
     'file_manager.save_point_scope_hint': 'Save a snapshot of the whole file library HOME payload before major file changes.',
+    'file_manager.save_point_action_failed_title': 'Save point needs attention',
+    'file_manager.save_point_action_failed': 'Save point could not be created. Your note is still here; try again after the file library is ready.',
+    'file_manager.save_point_active_writer_blocked': 'Files are still being written. Wait for the active file operation to finish, then try again.',
     'file_manager.save_points': 'Save points',
     'file_manager.restore': 'Restore',
     'file_manager.restore_cancel': 'Cancel restore',
@@ -263,6 +271,24 @@ describe('FileLibraryRecoveryDialog', () => {
 
   it('creates save points and confirms restore through preview/run', async () => {
     const user = userEvent.setup();
+    mockCreateSavePoint.mockImplementationOnce(async () => {
+      const savePoint = {
+        id: 'sp_new',
+        file_library_id: 'lib_1',
+        message: 'Before prompt edits',
+        created_at: '2026-05-09T12:04:00.000Z',
+      };
+      mockListSavePoints.mockReturnValue([
+        savePoint,
+        {
+          id: 'sp_1',
+          file_library_id: 'lib_1',
+          message: 'Before edits',
+          created_at: '2026-05-09T12:00:00.000Z',
+        },
+      ]);
+      return savePoint;
+    });
     renderDialog();
 
     expect(screen.getByTestId('files__file-states-scope')).toHaveTextContent(
@@ -278,6 +304,9 @@ describe('FileLibraryRecoveryDialog', () => {
       libraryId: 'lib_1',
       message: 'Before prompt edits',
     });
+    expect(screen.getByTestId('files__save-point__message')).toHaveValue('');
+    expect(await screen.findByText('Before prompt edits')).toBeInTheDocument();
+    expect(screen.getByText('Before edits')).toBeInTheDocument();
 
     await user.click(screen.getByTestId('files__save-point__restore--sp_1'));
 
@@ -302,6 +331,41 @@ describe('FileLibraryRecoveryDialog', () => {
       libraryId: 'lib_1',
       restorePreviewId: 'rp_1',
     });
+  });
+
+  it('uses inline-only save point errors so typed blockers do not also raise a global toast', () => {
+    renderDialog();
+
+    expect(mockUseCreateSavePointOptions).toHaveBeenCalledWith({ suppressErrorToast: true });
+  });
+
+  it('keeps save point creation recoverable and productizes typed active-writer blockers', async () => {
+    const user = userEvent.setup();
+    mockCreateSavePoint.mockRejectedValueOnce(new APIError(
+      'FILE_LIBRARY_ACTIVE_WRITER_BLOCKED',
+      'file_library_active_writer_blocked',
+      'req-save-point-blocked',
+      409,
+    ));
+    renderDialog();
+
+    await user.type(screen.getByTestId('files__save-point__message'), 'Before prompt edits');
+    await user.click(screen.getByTestId('files__save-point__create'));
+
+    expect(await screen.findByTestId('files__save-point__error')).toHaveTextContent(
+      'Save point needs attention',
+    );
+    expect(screen.getByTestId('files__save-point__error')).toHaveTextContent(
+      'Files are still being written. Wait for the active file operation to finish, then try again.',
+    );
+    expect(screen.getByTestId('files__save-point__error')).not.toHaveTextContent(
+      'file_library_active_writer_blocked',
+    );
+    expect(screen.getByTestId('files__save-point__error')).not.toHaveTextContent(
+      'FILE_LIBRARY_ACTIVE_WRITER_BLOCKED',
+    );
+    expect(screen.getByTestId('files__save-point__message')).toHaveValue('Before prompt edits');
+    expect(screen.getByTestId('files__save-point__create')).toBeEnabled();
   });
 
   it('shows a retryable save-point list error instead of an empty state', async () => {
@@ -356,6 +420,9 @@ describe('FileLibraryRecoveryDialog', () => {
       'The preview is out of date. Create a new preview before restoring.',
     );
     expect(screen.getByTestId('files__restore-preview-blockers')).toHaveTextContent(
+      'The preview is out of date. Create a new preview before restoring.',
+    );
+    expect(screen.getByTestId('files__restore-preview-blockers')).not.toHaveTextContent(
       'Create a new preview after refreshing file states.',
     );
     expect(screen.getByTestId('files__restore-confirm')).toBeDisabled();
@@ -391,6 +458,34 @@ describe('FileLibraryRecoveryDialog', () => {
     expect(screen.getByTestId('files__restore-preview-blockers')).not.toHaveTextContent(
       'Restore is blocked until the file library is ready for a new preview.',
     );
+    expect(screen.getByTestId('files__restore-confirm')).toBeDisabled();
+  });
+
+  it('uses generic localized copy instead of raw backend text for unknown restore preview blockers', async () => {
+    const user = userEvent.setup();
+    mockCreateRestorePreview.mockResolvedValueOnce({
+      id: 'rp_blocked_unknown',
+      file_library_id: 'lib_1',
+      source_save_point_id: 'sp_1',
+      message: 'Before edits',
+      status: 'ready',
+      blockers: [{
+        code: 'backend_internal_lock' as never,
+        message: 'AFSCP namespace lock failed at raw mount /var/lib/internal',
+      }],
+      stale: false,
+      created_at: '2026-05-09T12:01:00.000Z',
+      updated_at: '2026-05-09T12:01:00.000Z',
+    });
+    renderDialog();
+
+    await user.click(screen.getByTestId('files__save-point__restore--sp_1'));
+
+    expect(await screen.findByTestId('files__restore-preview-blockers')).toHaveTextContent(
+      'Restore is blocked until the file library is ready for a new preview.',
+    );
+    expect(screen.getByTestId('files__restore-preview-blockers')).not.toHaveTextContent('AFSCP');
+    expect(screen.getByTestId('files__restore-preview-blockers')).not.toHaveTextContent('/var/lib/internal');
     expect(screen.getByTestId('files__restore-confirm')).toBeDisabled();
   });
 

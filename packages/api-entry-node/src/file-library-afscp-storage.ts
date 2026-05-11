@@ -354,6 +354,7 @@ const PUBLIC_STORAGE_ERROR_MESSAGES = new Set([
   'invalid_file_library_path',
   'invalid_file_library_directory_path',
   'file_library_save_point_create_failed',
+  'file_library_save_point_create_pending',
   'file_library_save_point_list_failed',
   'file_library_restore_preview_failed',
   'file_library_restore_run_failed',
@@ -391,6 +392,10 @@ const WRITER_BLOCKER_OPERATION_CODES = new Set([
   'STALE_WRITER_SESSION_UNCERTAIN',
   'WRITER_SESSION_FENCE_HELD',
   'RESTORE_RUN_WRITER_SESSIONS_DENIED',
+]);
+
+const JVS_REPO_BUSY_OPERATION_CODES = new Set([
+  'E_REPO_BUSY',
 ]);
 
 function mappingId(input: FileLibraryStorageLibraryInput): string {
@@ -519,6 +524,18 @@ function readOperationValue(operation: AfscpOperationEnvelope | AfscpOperationRe
   const rootValue = root[key];
   if (!isUnavailableOperationValue(rootValue)) {
     return rootValue;
+  }
+  const error = root.error;
+  if (isRecord(error)) {
+    const errorValue = error[key];
+    if (!isUnavailableOperationValue(errorValue)) {
+      return errorValue;
+    }
+    const details = error.details;
+    const detailValue = isRecord(details) ? details[key] : undefined;
+    if (!isUnavailableOperationValue(detailValue)) {
+      return detailValue;
+    }
   }
   for (const containerKey of ['external_resource_ids', 'verification_result', 'result', 'metadata']) {
     const container = root[containerKey];
@@ -738,6 +755,11 @@ function mapAfscpOperationFailureMessage(
   fallback: string,
 ): string {
   const code = readOperationErrorCode(operation, fallback);
+  const jvsErrorCode = readOperationString(operation, 'jvs_error_code');
+  if (code === 'JVS_COMMAND_FAILED' && jvsErrorCode && JVS_REPO_BUSY_OPERATION_CODES.has(jvsErrorCode)) {
+    return 'file_library_active_writer_blocked';
+  }
+
   const writerGateFamily = readOperationString(operation, 'writer_gate_error_family');
   if (
     WRITER_BLOCKER_OPERATION_CODES.has(code)
@@ -1530,8 +1552,8 @@ export class AfscpFileLibraryStorageAdapter implements FileLibraryStoragePort {
         actor: { type: 'user', id: input.actorUserId },
         signal: input.signal,
       });
-    } catch {
-      throw new Error('file_library_save_point_create_failed');
+    } catch (error) {
+      throw new Error(mapAfscpClientErrorToStorageMessage(error, 'file_library_save_point_create_failed'));
     }
     const finalOperation = await this.pollMutationOperation({
       operation,
@@ -1557,7 +1579,7 @@ export class AfscpFileLibraryStorageAdapter implements FileLibraryStoragePort {
     if (operationStatus !== 'succeeded') {
       throw new Error(operationStatus === 'pending'
         ? 'file_library_save_point_create_pending'
-        : 'file_library_save_point_create_failed');
+        : mapAfscpOperationFailureMessage(finalOperation, 'file_library_save_point_create_failed'));
     }
     return {
       operationId,

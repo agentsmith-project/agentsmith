@@ -610,7 +610,6 @@ export function createDefaultNodeApiDeps(): NodeApiDeps {
   const agentPresenceStore = createAgentPresenceStore(cache);
   const agentResourceService = new AgentResourceService(docStore, cache, agentPresenceStore);
   const projectAfscpNamespaceStore = new ProjectAfscpNamespaceStore(docStore);
-  const projectAfscpResourceOwnershipStore = new ProjectAfscpResourceOwnershipStore(docStore);
   const fileLibraryStorageAdapter = createDefaultInMemoryFileLibraryStorageAdapter();
 
   const agentExecutionService = new AgentExecutionService(agentResourceService);

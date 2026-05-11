@@ -11,6 +11,27 @@ import {
   type SelectedRowId,
 } from './utils';
 
+type LibrarySelectionSnapshot = Pick<LibraryViewSnapshot, 'selectedIds' | 'selectionMode'>;
+
+const EMPTY_SELECTED_IDS: SelectedRowId[] = [];
+const SELECTION_SCOPE_SEPARATOR = '\u001F';
+
+function selectionScopeKey(libraryId: string, prefix: string, searchInput: string) {
+  return [libraryId, prefix, searchInput.trim()].join(SELECTION_SCOPE_SEPARATOR);
+}
+
+function selectionScopeLibraryId(scopeKey: string) {
+  return scopeKey.split(SELECTION_SCOPE_SEPARATOR)[0] ?? '';
+}
+
+function selectedIdsEqual(a: SelectedRowId[], b: SelectedRowId[]) {
+  return a.length === b.length && a.every((id, index) => id === b[index]);
+}
+
+function isDefaultSelectionSnapshot(snapshot: LibrarySelectionSnapshot) {
+  return snapshot.selectionMode === 'single' && snapshot.selectedIds.length === 0;
+}
+
 export function useFilesSelectionState(args: {
   defaultPrefix?: string;
   filteredItems: FileObjectsListItem[];
@@ -42,11 +63,79 @@ export function useFilesSelectionState(args: {
     updateSort,
   } = args;
 
-  const [selectedIds, setSelectedIds] = React.useState<SelectedRowId[]>([]);
-  const [selectionMode, setSelectionMode] = React.useState<FileSelectionMode>('single');
+  const [selectionByScope, setSelectionByScope] = React.useState<Record<string, LibrarySelectionSnapshot>>({});
   const [multiSelectAnchorIndex, setMultiSelectAnchorIndex] = React.useState<number | null>(null);
   const librarySnapshotsRef = React.useRef<Record<string, LibraryViewSnapshot>>({});
-  const sessionResetAppliedRef = React.useRef(false);
+  const activeSelectionScopeKey = selectedLibraryId
+    ? selectionScopeKey(selectedLibraryId, prefix, searchInput)
+    : null;
+  const activeSelection = activeSelectionScopeKey ? selectionByScope[activeSelectionScopeKey] : null;
+  const selectedIds = activeSelection?.selectedIds ?? EMPTY_SELECTED_IDS;
+  const selectionMode = activeSelection?.selectionMode ?? 'single';
+
+  const updateScopeSelection = React.useCallback((
+    scopeKey: string,
+    updater: (current: LibrarySelectionSnapshot) => LibrarySelectionSnapshot,
+  ) => {
+    setSelectionByScope((prev) => {
+      const current = prev[scopeKey] ?? { selectedIds: EMPTY_SELECTED_IDS, selectionMode: 'single' };
+      const next = updater(current);
+      const currentIsDefault = !prev[scopeKey] && isDefaultSelectionSnapshot(current);
+      if (
+        selectedIdsEqual(current.selectedIds, next.selectedIds)
+        && current.selectionMode === next.selectionMode
+      ) {
+        return prev;
+      }
+      if (isDefaultSelectionSnapshot(next)) {
+        if (currentIsDefault) return prev;
+        const nextByScope = { ...prev };
+        delete nextByScope[scopeKey];
+        return nextByScope;
+      }
+      return {
+        ...prev,
+        [scopeKey]: next,
+      };
+    });
+  }, []);
+
+  const updateActiveSelection = React.useCallback((
+    updater: (current: LibrarySelectionSnapshot) => LibrarySelectionSnapshot,
+  ) => {
+    if (!activeSelectionScopeKey) return;
+    updateScopeSelection(activeSelectionScopeKey, updater);
+  }, [activeSelectionScopeKey, updateScopeSelection]);
+
+  const setSelectedIds = React.useCallback<React.Dispatch<React.SetStateAction<SelectedRowId[]>>>((nextValue) => {
+    updateActiveSelection((current) => {
+      const nextSelectedIds = typeof nextValue === 'function' ? nextValue(current.selectedIds) : nextValue;
+      if (selectedIdsEqual(current.selectedIds, nextSelectedIds)) {
+        return current;
+      }
+      return {
+        ...current,
+        selectedIds: nextSelectedIds,
+      };
+    });
+  }, [updateActiveSelection]);
+
+  const setSelectionMode = React.useCallback((nextSelectionMode: FileSelectionMode) => {
+    updateActiveSelection((current) => {
+      if (current.selectionMode === nextSelectionMode) return current;
+      return {
+        ...current,
+        selectionMode: nextSelectionMode,
+      };
+    });
+  }, [updateActiveSelection]);
+
+  const replaceScopeSelection = React.useCallback((
+    scopeKey: string,
+    nextSelection: LibrarySelectionSnapshot,
+  ) => {
+    updateScopeSelection(scopeKey, () => nextSelection);
+  }, [updateScopeSelection]);
 
   const selected = React.useMemo(() => selectedIds.map(parseSelectedRowId), [selectedIds]);
   const selectedObjects = React.useMemo(
@@ -54,7 +143,7 @@ export function useFilesSelectionState(args: {
     [selected],
   );
 
-  const clearSelection = React.useCallback(() => setSelectedIds([]), []);
+  const clearSelection = React.useCallback(() => setSelectedIds([]), [setSelectedIds]);
 
   const navigateToPrefix = React.useCallback((nextPrefix: string) => {
     setPrefix(nextPrefix);
@@ -80,18 +169,25 @@ export function useFilesSelectionState(args: {
       setPrefix(defaultPrefix);
       setSearchImmediately('');
       updateSort('name', 'asc');
-      setSelectionMode('single');
-      setSelectedIds([]);
+      replaceScopeSelection(
+        selectionScopeKey(libraryId, defaultPrefix, ''),
+        { selectedIds: [], selectionMode: 'single' },
+      );
       setMultiSelectAnchorIndex(null);
       return;
     }
     setPrefix(snapshot.prefix);
     setSearchImmediately(snapshot.searchInput);
     updateSort(snapshot.sortBy, snapshot.sortOrder);
-    setSelectionMode(snapshot.selectionMode);
-    setSelectedIds(snapshot.selectedIds);
+    replaceScopeSelection(
+      selectionScopeKey(libraryId, snapshot.prefix, snapshot.searchInput),
+      {
+        selectedIds: snapshot.selectedIds,
+        selectionMode: snapshot.selectionMode,
+      },
+    );
     setMultiSelectAnchorIndex(null);
-  }, [defaultPrefix, setPrefix, setSearchImmediately, updateSort]);
+  }, [defaultPrefix, replaceScopeSelection, setPrefix, setSearchImmediately, updateSort]);
 
   const selectLibrary = React.useCallback((libraryId: string) => {
     if (selectedLibraryId === libraryId) return;
@@ -102,21 +198,21 @@ export function useFilesSelectionState(args: {
 
   const toggleRow = React.useCallback((id: SelectedRowId) => {
     setSelectedIds((prev) => (prev.includes(id) ? prev.filter((item) => item !== id) : [...prev, id]));
-  }, []);
+  }, [setSelectedIds]);
 
   const activateSingleObject = React.useCallback((id: SelectedRowId) => {
     setSelectedIds([id]);
-  }, []);
+  }, [setSelectedIds]);
 
   const enterMultiMode = React.useCallback(() => {
     setSelectionMode('multi');
-  }, []);
+  }, [setSelectionMode]);
 
   const exitMultiMode = React.useCallback(() => {
     setSelectionMode('single');
     setSelectedIds([]);
     setMultiSelectAnchorIndex(null);
-  }, []);
+  }, [setSelectedIds, setSelectionMode]);
 
   const visibleSelectedCount = React.useMemo(
     () => filteredItems.filter((item) => selectedIds.includes(rowId(item))).length,
@@ -129,7 +225,7 @@ export function useFilesSelectionState(args: {
   const toggleAll = React.useCallback(() => {
     if (selectionMode !== 'multi') return;
     setSelectedIds((prev) => (prev.length > 0 ? [] : filteredItems.map((item) => rowId(item))));
-  }, [filteredItems, selectionMode]);
+  }, [filteredItems, selectionMode, setSelectedIds]);
 
   const handleToggleRowCheckbox = React.useCallback((id: SelectedRowId, index: number) => {
     if (selectionMode !== 'multi') {
@@ -181,15 +277,19 @@ export function useFilesSelectionState(args: {
 
     activateSingleObject(id);
     setMultiSelectAnchorIndex(index);
-  }, [activateSingleObject, enterMultiMode, filteredItems, multiSelectAnchorIndex, selectionMode, toggleRow]);
+  }, [
+    activateSingleObject,
+    enterMultiMode,
+    filteredItems,
+    multiSelectAnchorIndex,
+    selectionMode,
+    setSelectedIds,
+    toggleRow,
+  ]);
 
   React.useEffect(() => {
-    if (sessionResetAppliedRef.current) return;
-    sessionResetAppliedRef.current = true;
-    setSelectionMode('single');
-    setSelectedIds([]);
     setMultiSelectAnchorIndex(null);
-  }, []);
+  }, [activeSelectionScopeKey]);
 
   React.useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
@@ -212,7 +312,7 @@ export function useFilesSelectionState(args: {
       }
       return next;
     });
-  }, [filteredItems, isFetching]);
+  }, [filteredItems, isFetching, setSelectedIds]);
 
   React.useEffect(() => {
     const availableLibraryIds = new Set(libraries.map((library) => library.id));
@@ -223,6 +323,18 @@ export function useFilesSelectionState(args: {
       }
     }
     librarySnapshotsRef.current = next;
+    setSelectionByScope((prev) => {
+      let changed = false;
+      const nextSelectionByScope: Record<string, LibrarySelectionSnapshot> = {};
+      for (const [scopeKey, snapshot] of Object.entries(prev)) {
+        if (availableLibraryIds.has(selectionScopeLibraryId(scopeKey))) {
+          nextSelectionByScope[scopeKey] = snapshot;
+        } else {
+          changed = true;
+        }
+      }
+      return changed ? nextSelectionByScope : prev;
+    });
   }, [libraries]);
 
   return {

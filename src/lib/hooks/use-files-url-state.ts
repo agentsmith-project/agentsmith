@@ -59,13 +59,9 @@ function hasLibrary(libraries: FileLibrary[], libraryId: string | null): library
 function resolveLibrarySelection(
   libraries: FileLibrary[],
   queryLibraryId: string | null,
-  selectedLibraryId: string | null,
 ): string | null {
   if (hasLibrary(libraries, queryLibraryId)) {
     return queryLibraryId;
-  }
-  if (hasLibrary(libraries, selectedLibraryId)) {
-    return selectedLibraryId;
   }
   return libraries[0]?.id ?? null;
 }
@@ -79,105 +75,90 @@ export function useFilesUrlState(
   const searchParams = useSearchParams();
   const searchParamsKey = searchParams.toString();
   const routerRef = useRef(router);
+  const actualSearchParamsKeyRef = useRef(searchParamsKey);
+  const actualSearchParamsGenerationRef = useRef(0);
+  const optimisticSearchParamsKeyRef = useRef(searchParamsKey);
   const defaultBrowsePrefix = normalizeBrowsePrefix(defaultPrefix);
   const previousLibrariesLengthRef = useRef(libraries.length);
   const previousLibrariesLength = previousLibrariesLengthRef.current;
 
-  const librarySelectionInitializedRef = useRef(false);
-  const pendingUserSelectedLibraryIdRef = useRef<string | null>(null);
-  const [selectedLibraryId, setSelectedLibraryIdState] = useState<string | null>(null);
-  const [prefix, setPrefix] = useState(
-    resetBrowseStateOnMount
-      ? defaultBrowsePrefix
-      : readBrowsePrefix(new URLSearchParams(searchParamsKey), defaultBrowsePrefix),
-  );
-  const [searchInput, setSearchInput] = useState(resetBrowseStateOnMount ? '' : (searchParams.get('search') ?? ''));
-  const [search, setSearch] = useState(resetBrowseStateOnMount ? '' : (searchParams.get('search')?.trim() ?? ''));
-  const [sortBy, setSortBy] = useState<FileSortBy>(
-    resetBrowseStateOnMount ? 'name' : parseFileSortBy(searchParams.get('sort_by')),
-  );
-  const [sortOrder, setSortOrder] = useState<FileSortOrder>(
-    resetBrowseStateOnMount ? 'asc' : parseFileSortOrder(searchParams.get('sort_order')),
-  );
+  const pendingSearchWriteRef = useRef<string | null>(null);
+  const [, setOptimisticRevision] = useState(0);
+  const [localPrefix, setLocalPrefix] = useState(defaultBrowsePrefix);
+  const [localSearchInput, setLocalSearchInput] = useState('');
+  const [localSearch, setLocalSearch] = useState('');
+  const [localSortBy, setLocalSortBy] = useState<FileSortBy>('name');
+  const [localSortOrder, setLocalSortOrder] = useState<FileSortOrder>('asc');
+  const [searchInputDraft, setSearchInputDraft] = useState<{
+    actualSearchParamsGeneration: number;
+    value: string;
+  } | null>(null);
   const browseResetAppliedRef = useRef(false);
   const ignoreInitialBrowseQueryRef = useRef(resetBrowseStateOnMount);
+
+  if (actualSearchParamsKeyRef.current !== searchParamsKey) {
+    actualSearchParamsKeyRef.current = searchParamsKey;
+    actualSearchParamsGenerationRef.current += 1;
+    optimisticSearchParamsKeyRef.current = searchParamsKey;
+    pendingSearchWriteRef.current = null;
+  }
+
+  const effectiveSearchParamsKey = optimisticSearchParamsKeyRef.current;
+  const effectiveSearchParams = useMemo(
+    () => new URLSearchParams(effectiveSearchParamsKey),
+    [effectiveSearchParamsKey],
+  );
+  const querySearch = effectiveSearchParams.get('search') ?? '';
+  const querySearchInput = searchInputDraft?.actualSearchParamsGeneration === actualSearchParamsGenerationRef.current
+    ? searchInputDraft.value
+    : querySearch;
+  const prefix = resetBrowseStateOnMount
+    ? localPrefix
+    : readBrowsePrefix(effectiveSearchParams, defaultBrowsePrefix);
+  const searchInput = resetBrowseStateOnMount ? localSearchInput : querySearchInput;
+  const search = resetBrowseStateOnMount ? localSearch : querySearch.trim();
+  const sortBy = resetBrowseStateOnMount ? localSortBy : parseFileSortBy(effectiveSearchParams.get('sort_by'));
+  const sortOrder = resetBrowseStateOnMount ? localSortOrder : parseFileSortOrder(effectiveSearchParams.get('sort_order'));
+  const selectedLibraryId = resolveLibrarySelection(libraries, effectiveSearchParams.get('library_id'));
 
   useEffect(() => {
     routerRef.current = router;
   }, [router]);
 
   useEffect(() => {
-    if (libraries.length === 0) {
-      pendingUserSelectedLibraryIdRef.current = null;
-      if (selectedLibraryId !== null) {
-        setSelectedLibraryIdState(null);
-      }
-      librarySelectionInitializedRef.current = false;
-      return;
-    }
-
-    const params = new URLSearchParams(searchParamsKey);
-    const queryLibraryId = params.get('library_id');
-    const pendingUserSelectedLibraryId = pendingUserSelectedLibraryIdRef.current;
-    if (pendingUserSelectedLibraryId) {
-      if (queryLibraryId === pendingUserSelectedLibraryId) {
-        pendingUserSelectedLibraryIdRef.current = null;
-      } else if (selectedLibraryId === pendingUserSelectedLibraryId && hasLibrary(libraries, pendingUserSelectedLibraryId)) {
-        return;
-      } else {
-        pendingUserSelectedLibraryIdRef.current = null;
-      }
-    }
-
-    const nextSelectedLibraryId = resolveLibrarySelection(libraries, queryLibraryId, selectedLibraryId);
-    if (!librarySelectionInitializedRef.current) {
-      librarySelectionInitializedRef.current = true;
-      if (nextSelectedLibraryId !== selectedLibraryId) {
-        setSelectedLibraryIdState(nextSelectedLibraryId);
-      }
-      return;
-    }
-
-    if (nextSelectedLibraryId === selectedLibraryId) {
-      return;
-    }
-    setSelectedLibraryIdState(nextSelectedLibraryId);
-  }, [libraries, searchParamsKey, selectedLibraryId]);
-
-  useEffect(() => {
+    if (!resetBrowseStateOnMount) return;
     const timer = window.setTimeout(() => {
-      setSearch(searchInput.trim());
+      setLocalSearch(localSearchInput.trim());
     }, 250);
     return () => window.clearTimeout(timer);
-  }, [searchInput]);
+  }, [localSearchInput, resetBrowseStateOnMount]);
 
   const replaceQueryParams = useCallback(
     (updater: (params: URLSearchParams) => boolean) => {
-      const params = new URLSearchParams(searchParamsKey);
+      const params = new URLSearchParams(optimisticSearchParamsKeyRef.current);
       if (!updater(params)) return;
       const query = params.toString();
+      if (query === optimisticSearchParamsKeyRef.current) return;
+      optimisticSearchParamsKeyRef.current = query;
+      setOptimisticRevision((revision) => revision + 1);
       routerRef.current.replace(query ? `${pathname}?${query}` : pathname, { scroll: false });
     },
-    [pathname, searchParamsKey],
+    [pathname],
   );
 
   const setSelectedLibraryId = useCallback(
     (nextLibraryId: string | null) => {
-      if (nextLibraryId && hasLibrary(libraries, nextLibraryId)) {
-        pendingUserSelectedLibraryIdRef.current = nextLibraryId;
-      } else {
-        pendingUserSelectedLibraryIdRef.current = null;
-      }
-      setSelectedLibraryIdState(nextLibraryId);
+      const validNextLibraryId = nextLibraryId && hasLibrary(libraries, nextLibraryId) ? nextLibraryId : null;
       replaceQueryParams((params) => {
         const currentLibraryId = params.get('library_id');
-        if (!nextLibraryId) {
+        const defaultLibraryId = libraries[0]?.id ?? null;
+        if (!validNextLibraryId || validNextLibraryId === defaultLibraryId) {
           if (!currentLibraryId) return false;
           params.delete('library_id');
           return true;
         }
-        if (currentLibraryId === nextLibraryId) return false;
-        params.set('library_id', nextLibraryId);
+        if (currentLibraryId === validNextLibraryId) return false;
+        params.set('library_id', validNextLibraryId);
         return true;
       });
     },
@@ -185,6 +166,7 @@ export function useFilesUrlState(
   );
 
   useEffect(() => {
+    if (!resetBrowseStateOnMount) return;
     const params = new URLSearchParams(searchParamsKey);
 
     if (ignoreInitialBrowseQueryRef.current) {
@@ -207,27 +189,86 @@ export function useFilesUrlState(
       }
       ignoreInitialBrowseQueryRef.current = false;
     }
-    if (resetBrowseStateOnMount) {
-      return;
-    }
-
-    const querySortBy = parseFileSortBy(params.get('sort_by'));
-    const querySortOrder = parseFileSortOrder(params.get('sort_order'));
-    const querySearch = params.get('search') ?? '';
-    const queryPrefix = readBrowsePrefix(params, defaultBrowsePrefix);
-    const trimmedQuerySearch = querySearch.trim();
-    setSortBy((prev) => (prev === querySortBy ? prev : querySortBy));
-    setSortOrder((prev) => (prev === querySortOrder ? prev : querySortOrder));
-    setSearchInput((prev) => (prev === querySearch ? prev : querySearch));
-    setSearch((prev) => (prev === trimmedQuerySearch ? prev : trimmedQuerySearch));
-    setPrefix((prev) => (prev === queryPrefix ? prev : queryPrefix));
-  }, [defaultBrowsePrefix, replaceQueryParams, resetBrowseStateOnMount, searchParamsKey]);
+  }, [replaceQueryParams, resetBrowseStateOnMount, searchParamsKey]);
 
   useEffect(() => {
     if (resetBrowseStateOnMount) return;
+    const pendingSearch = pendingSearchWriteRef.current;
+    if (pendingSearch === null) return;
+    const timer = window.setTimeout(() => {
+      const nextSearch = pendingSearchWriteRef.current;
+      if (nextSearch === null) return;
+      replaceQueryParams((params) => {
+        const currentSearch = params.get('search') ?? '';
+        if (nextSearch === currentSearch) return false;
+        if (nextSearch) {
+          params.set('search', nextSearch);
+        } else {
+          params.delete('search');
+        }
+        return true;
+      });
+      pendingSearchWriteRef.current = null;
+      setSearchInputDraft(null);
+    }, 250);
+    return () => window.clearTimeout(timer);
+  }, [replaceQueryParams, resetBrowseStateOnMount, searchInput]);
+
+  useEffect(() => {
+    replaceQueryParams((params) => {
+      const currentLibraryId = params.get('library_id');
+      if (!currentLibraryId) return false;
+      if (hasLibrary(libraries, currentLibraryId)) return false;
+      if (libraries.length === 0 && previousLibrariesLength === 0) return false;
+      params.delete('library_id');
+      return true;
+    });
+  }, [libraries, previousLibrariesLength, replaceQueryParams]);
+
+  useEffect(() => {
+    previousLibrariesLengthRef.current = libraries.length;
+  }, [libraries.length]);
+
+  const setPrefix = useCallback((value: string) => {
+    const nextPrefix = normalizeBrowsePrefix(value);
+    if (resetBrowseStateOnMount) {
+      setLocalPrefix((prev) => (prev === nextPrefix ? prev : nextPrefix));
+      return;
+    }
+    replaceQueryParams((params) => {
+      const currentPrefix = readBrowsePrefix(params, defaultBrowsePrefix);
+      if (currentPrefix === nextPrefix) return false;
+      writeBrowsePrefix(params, nextPrefix, defaultBrowsePrefix);
+      return true;
+    });
+  }, [defaultBrowsePrefix, replaceQueryParams, resetBrowseStateOnMount]);
+
+  const setSearchInput = useCallback((value: string) => {
+    if (resetBrowseStateOnMount) {
+      setLocalSearchInput(value);
+      return;
+    }
+    pendingSearchWriteRef.current = value.trim();
+    setSearchInputDraft({
+      actualSearchParamsGeneration: actualSearchParamsGenerationRef.current,
+      value,
+    });
+  }, [resetBrowseStateOnMount]);
+
+  const setSearchImmediately = useCallback((value: string) => {
+    const nextSearch = value.trim();
+    if (resetBrowseStateOnMount) {
+      setLocalSearchInput(value);
+      setLocalSearch(nextSearch);
+      return;
+    }
+    pendingSearchWriteRef.current = null;
+    setSearchInputDraft({
+      actualSearchParamsGeneration: actualSearchParamsGenerationRef.current,
+      value,
+    });
     replaceQueryParams((params) => {
       const currentSearch = params.get('search') ?? '';
-      const nextSearch = search.trim();
       if (nextSearch === currentSearch) return false;
       if (nextSearch) {
         params.set('search', nextSearch);
@@ -236,62 +277,19 @@ export function useFilesUrlState(
       }
       return true;
     });
-  }, [replaceQueryParams, resetBrowseStateOnMount, search]);
-
-  useEffect(() => {
-    replaceQueryParams((params) => {
-      const currentLibraryId = params.get('library_id');
-      const currentLibraryIdIsValid = hasLibrary(libraries, currentLibraryId);
-      if (currentLibraryIdIsValid) {
-        const pendingUserSelectedLibraryId = pendingUserSelectedLibraryIdRef.current;
-        if (!pendingUserSelectedLibraryId || pendingUserSelectedLibraryId !== selectedLibraryId) {
-          return false;
-        }
-      }
-
-      const selectedLibraryIdIsValid = hasLibrary(libraries, selectedLibraryId);
-      const resolvedLibraryId = selectedLibraryIdIsValid
-        ? selectedLibraryId
-        : libraries[0]?.id ?? null;
-      if (!resolvedLibraryId) {
-        if (!currentLibraryId) return false;
-        if (libraries.length === 0 && previousLibrariesLength === 0) return false;
-        params.delete('library_id');
-      } else if (currentLibraryId !== resolvedLibraryId) {
-        params.set('library_id', resolvedLibraryId);
-      } else {
-        return false;
-      }
-      return true;
-    });
-  }, [libraries, previousLibrariesLength, replaceQueryParams, selectedLibraryId]);
-
-  useEffect(() => {
-    previousLibrariesLengthRef.current = libraries.length;
-  }, [libraries.length]);
-
-  useEffect(() => {
-    if (resetBrowseStateOnMount) return;
-    replaceQueryParams((params) => {
-      const currentPrefix = readBrowsePrefix(params, defaultBrowsePrefix);
-      const nextPrefix = normalizeBrowsePrefix(prefix);
-      if (currentPrefix === nextPrefix) return false;
-      writeBrowsePrefix(params, nextPrefix, defaultBrowsePrefix);
-      return true;
-    });
-  }, [defaultBrowsePrefix, prefix, replaceQueryParams, resetBrowseStateOnMount]);
-
-  const setSearchImmediately = useCallback((value: string) => {
-    setSearchInput(value);
-    setSearch(value.trim());
-  }, []);
+  }, [replaceQueryParams, resetBrowseStateOnMount]);
 
   const updateSort = useCallback(
     (nextSortBy: FileSortBy, nextSortOrder: FileSortOrder) => {
-      setSortBy(nextSortBy);
-      setSortOrder(nextSortOrder);
-      if (resetBrowseStateOnMount) return;
+      if (resetBrowseStateOnMount) {
+        setLocalSortBy(nextSortBy);
+        setLocalSortOrder(nextSortOrder);
+        return;
+      }
       replaceQueryParams((params) => {
+        const currentSortBy = parseFileSortBy(params.get('sort_by'));
+        const currentSortOrder = parseFileSortOrder(params.get('sort_order'));
+        if (currentSortBy === nextSortBy && currentSortOrder === nextSortOrder) return false;
         if (nextSortBy === 'name') {
           params.delete('sort_by');
         } else {
@@ -327,7 +325,10 @@ export function useFilesUrlState(
       search,
       searchInput,
       selectedLibraryId,
+      setPrefix,
       setSearchImmediately,
+      setSearchInput,
+      setSelectedLibraryId,
       sortBy,
       sortOrder,
       updateSort,

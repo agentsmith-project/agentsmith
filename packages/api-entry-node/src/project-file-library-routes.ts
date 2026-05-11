@@ -209,6 +209,7 @@ const PUBLIC_FILE_OPERATION_MESSAGES = new Set([
   'file_library_project_storage_generation_mismatch',
   'file_library_project_storage_not_ready',
   'file_library_save_point_create_failed',
+  'file_library_save_point_create_pending',
   'file_library_save_point_list_failed',
   'file_library_restore_preview_failed',
   'file_library_restore_preview_pending',

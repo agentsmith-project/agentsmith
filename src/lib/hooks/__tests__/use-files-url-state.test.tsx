@@ -146,6 +146,107 @@ describe('useFilesUrlState', () => {
     expect(result.current.prefix).toBe('');
   });
 
+  it('treats an external /files navigation as the source of truth and does not restore a stale prefix', async () => {
+    mockSearchState.value = 'library_id=lib_b&prefix=workspace%2F.artifacts%2F';
+
+    const { result, rerender } = renderHook(() => useFilesUrlState(libraries));
+
+    await waitFor(() => {
+      expect(result.current.selectedLibraryId).toBe('lib_b');
+    });
+    expect(result.current.prefix).toBe('workspace/.artifacts/');
+
+    mockRouter.replace.mockClear();
+    mockSearchState.value = '';
+    rerender();
+
+    await waitFor(() => {
+      expect(result.current.selectedLibraryId).toBe('lib_a');
+      expect(result.current.prefix).toBe('');
+    });
+    expect(mockRouter.replace).not.toHaveBeenCalled();
+  });
+
+  it('derives queryless /files browse and list params during the navigation render', async () => {
+    mockSearchState.value = 'library_id=lib_b&prefix=workspace%2F.artifacts%2F&search=report&sort_by=size_bytes&sort_order=desc';
+    const renderSnapshots: Array<{
+      prefix: string;
+      search: string;
+      searchInput: string;
+      selectedLibraryId: string | null;
+      sortBy: string;
+      sortOrder: string;
+      listParams: {
+        prefix: string;
+        search: string | undefined;
+        sort_by: string;
+        sort_order: string;
+      };
+    }> = [];
+
+    const { result, rerender } = renderHook(() => {
+      const state = useFilesUrlState(libraries);
+      renderSnapshots.push({
+        prefix: state.prefix,
+        search: state.search,
+        searchInput: state.searchInput,
+        selectedLibraryId: state.selectedLibraryId,
+        sortBy: state.sortBy,
+        sortOrder: state.sortOrder,
+        listParams: {
+          prefix: state.prefix,
+          search: state.search || undefined,
+          sort_by: state.sortBy,
+          sort_order: state.sortOrder,
+        },
+      });
+      return state;
+    });
+
+    await waitFor(() => {
+      expect(result.current.selectedLibraryId).toBe('lib_b');
+    });
+
+    renderSnapshots.length = 0;
+    mockRouter.replace.mockClear();
+    mockSearchState.value = '';
+    rerender();
+
+    expect(renderSnapshots[0]).toEqual({
+      prefix: '',
+      search: '',
+      searchInput: '',
+      selectedLibraryId: 'lib_a',
+      sortBy: 'name',
+      sortOrder: 'asc',
+      listParams: {
+        prefix: '',
+        search: undefined,
+        sort_by: 'name',
+        sort_order: 'asc',
+      },
+    });
+    expect(mockRouter.replace).not.toHaveBeenCalled();
+  });
+
+  it('accepts an external prefix URL change without deleting it from stale local state', async () => {
+    const { result, rerender } = renderHook(() => useFilesUrlState(libraries));
+
+    await waitFor(() => {
+      expect(result.current.selectedLibraryId).toBe('lib_a');
+    });
+    expect(result.current.prefix).toBe('');
+
+    mockRouter.replace.mockClear();
+    mockSearchState.value = 'prefix=workspace%2F.artifacts%2F';
+    rerender();
+
+    await waitFor(() => {
+      expect(result.current.prefix).toBe('workspace/.artifacts/');
+    });
+    expect(mockRouter.replace).not.toHaveBeenCalled();
+  });
+
   it('preserves an existing library_id while the initial library list is still unresolved', async () => {
     mockSearchState.value = 'library_id=lib_a';
     type RenderProps = { nextLibraries: FileLibrary[] };

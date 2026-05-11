@@ -93,6 +93,7 @@ import {
   createAndCloneTaskFileTemplateLibrary,
   createAndProvisionProjectFileLibrary,
   mapFileLibraryInfraError,
+  type ProjectStorageReadyWaitOptions,
 } from './project-file-library-service.js';
 import { isAgentExecutionTicket, issueInternalTicket, type ResolvedInternalTicket } from './internal-ticket-store.js';
 import {
@@ -234,6 +235,69 @@ const NOTEBOOK_RUN_LEASE_HEARTBEAT_MS = 15_000;
 const NOTEBOOK_RUN_CANCEL_POLL_MS = 1_000;
 const NOTEBOOK_RUN_OWNER_STALE_AFTER_MS = (NOTEBOOK_RUN_LEASE_HEARTBEAT_MS * 2) + 5_000;
 const TASK_WORKSPACE_ACCESS_LEASE_TTL_MS = 5 * 60 * 1000;
+const TASK_CREATE_PROJECT_STORAGE_READY_WAIT: ProjectStorageReadyWaitOptions = {
+  timeoutMs: 15_000,
+  intervalMs: 250,
+};
+
+function createTaskRouteRequestAbortSignal(
+  req: http.IncomingMessage,
+  res: http.ServerResponse,
+): {
+  signal: AbortSignal;
+  armPostBodyDisconnects: () => void;
+  dispose: () => void;
+} {
+  const controller = new AbortController();
+  let postBodyDisconnectsArmed = false;
+  const abort = () => {
+    if (!controller.signal.aborted) {
+      controller.abort();
+    }
+  };
+  const abortOnRequestClose = () => {
+    if (postBodyDisconnectsArmed || !req.complete) {
+      abort();
+    }
+  };
+  const abortOnResponseClose = () => {
+    if (!(res as { writableEnded?: boolean }).writableEnded) {
+      abort();
+    }
+  };
+  if ((req as { aborted?: boolean }).aborted === true) {
+    abort();
+  }
+  if (typeof req.once === 'function') {
+    req.once('aborted', abort);
+    req.once('close', abortOnRequestClose);
+  }
+  if (typeof res.once === 'function') {
+    res.once('close', abortOnResponseClose);
+  }
+  return {
+    signal: controller.signal,
+    armPostBodyDisconnects: () => {
+      postBodyDisconnectsArmed = true;
+      if ((req as { aborted?: boolean }).aborted === true) {
+        abort();
+      }
+      const responseState = res as { destroyed?: boolean; writableEnded?: boolean };
+      if (responseState.destroyed && !responseState.writableEnded) {
+        abort();
+      }
+    },
+    dispose: () => {
+      if (typeof req.removeListener === 'function') {
+        req.removeListener('aborted', abort);
+        req.removeListener('close', abortOnRequestClose);
+      }
+      if (typeof res.removeListener === 'function') {
+        res.removeListener('close', abortOnResponseClose);
+      }
+    },
+  };
+}
 
 type AgentRunnerResolutionErrorCode =
   | 'agent_runner_unavailable'
@@ -2681,6 +2745,8 @@ export async function handleTaskRoute(args: TaskRouteHandlerArgs): Promise<boole
   }
 
   if (route.kind === 'tasks' && method === 'POST') {
+    const requestAbort = createTaskRouteRequestAbortSignal(req, res);
+    try {
     const existingTasks = await loadProjectTasks(deps, route.workspaceId, route.projectId);
     await hydrateTaskFileLibraryBindingsForProject({
       docStore: deps.docStore,
@@ -2689,6 +2755,7 @@ export async function handleTaskRoute(args: TaskRouteHandlerArgs): Promise<boole
       tasks: existingTasks,
     });
     const body = asObject(await readBody(req));
+    requestAbort.armPostBodyDisconnects();
     const requestId = typeof req.headers['x-request-id'] === 'string' ? req.headers['x-request-id'] : null;
     const unsupportedFields = collectUnsupportedFields(body, UNSUPPORTED_TASK_BINDING_FIELDS);
     if (unsupportedFields.length > 0) {
@@ -2818,6 +2885,11 @@ export async function handleTaskRoute(args: TaskRouteHandlerArgs): Promise<boole
           userId: user.id,
           name: requestedWorkspaceName || defaultWorkspaceNameFromTaskTitle(title),
           description: `Auto-initialized workspace for notebook task "${title}".`,
+          requestId,
+          projectStorageReadyWait: {
+            ...TASK_CREATE_PROJECT_STORAGE_READY_WAIT,
+            signal: requestAbort.signal,
+          },
         });
       } catch (error) {
         const mapped = mapFileLibraryInfraError(error);
@@ -2842,6 +2914,10 @@ export async function handleTaskRoute(args: TaskRouteHandlerArgs): Promise<boole
           name: requestedWorkspaceName || defaultWorkspaceNameFromTaskTitle(title),
           description: `Auto-initialized workspace for notebook task "${title}" from template "${taskFileTemplate.name}".`,
           requestId,
+          projectStorageReadyWait: {
+            ...TASK_CREATE_PROJECT_STORAGE_READY_WAIT,
+            signal: requestAbort.signal,
+          },
         });
       } catch (error) {
         const mapped = mapFileLibraryInfraError(error);
@@ -3396,6 +3472,9 @@ export async function handleTaskRoute(args: TaskRouteHandlerArgs): Promise<boole
         }
       }
       throw error;
+    }
+    } finally {
+      requestAbort.dispose();
     }
   }
 

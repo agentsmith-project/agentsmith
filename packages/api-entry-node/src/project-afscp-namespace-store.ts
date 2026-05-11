@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto';
-import type { JsonDocStorePort } from '@mbos/ports';
+import type { JsonDocCasCondition, JsonDocStorePort } from '@mbos/ports';
 import type { AfscpResourceKind } from './afscp-error-mapper.js';
 import { sanitizeAfscpNamespaceId } from './afscp-validation.js';
 
@@ -81,14 +81,6 @@ const PROJECT_AFSCP_OWNED_RESOURCE_KINDS = new Set<ProjectAfscpOwnedResourceKind
   'operation',
 ]);
 
-const PROJECT_AFSCP_NAMESPACE_STAGES = new Set<ProjectAfscpNamespaceStage>([
-  'namespace_upsert',
-  'volume_binding',
-  'ready',
-  'terminal_lifecycle',
-  'tombstoned',
-]);
-
 const PROJECT_AFSCP_BOOTSTRAP_STAGES = new Set<ProjectAfscpNamespaceStage>([
   'namespace_upsert',
   'volume_binding',
@@ -153,6 +145,22 @@ function resolveBlockedStage(input: {
     return 'volume_binding';
   }
   return input.existingStage === 'ready' ? 'namespace_upsert' : input.existingStage;
+}
+
+function isStalePendingWritebackAgainstReady(
+  existing: ProjectAfscpNamespaceMapping,
+): boolean {
+  return existing.status === 'ready';
+}
+
+function projectNamespaceCasCondition(existing: ProjectAfscpNamespaceMapping): JsonDocCasCondition {
+  return {
+    status: existing.status,
+    stage: existing.stage,
+    generation: existing.generation,
+    namespace_upsert_operation_id: existing.namespace_upsert_operation_id,
+    volume_binding_operation_id: existing.volume_binding_operation_id,
+  };
 }
 
 export function deriveProjectAfscpNamespaceId(input: ProjectAfscpNamespaceKey): string {
@@ -253,33 +261,50 @@ export class ProjectAfscpNamespaceStore {
     volumeBindingOperationId?: string | null;
     volumeBindingSignature?: string | null;
   }): Promise<ProjectAfscpNamespaceMapping> {
-    const existing = await this.ensureProjectNamespace(input);
-    const next: ProjectAfscpNamespaceMapping = {
-      ...existing,
-      status: 'pending',
-      stage: resolvePendingStage({
-        requestedStage: input.stage,
-        existingStage: existing.stage,
-      }),
-      generation: existing.generation,
-      next_action: input.nextAction ?? (input.retryable ? 'retry_now' : 'wait'),
-      retryable: input.retryable ?? false,
-      namespace_upsert_operation_id: hasOwnProperty(input, 'namespaceUpsertOperationId')
-        ? input.namespaceUpsertOperationId ?? null
-        : existing.namespace_upsert_operation_id,
-      volume_binding_operation_id: hasOwnProperty(input, 'volumeBindingOperationId')
-        ? input.volumeBindingOperationId ?? null
-        : existing.volume_binding_operation_id,
-      volume_binding_signature: hasOwnProperty(input, 'volumeBindingSignature')
-        ? input.volumeBindingSignature ?? null
-        : existing.volume_binding_signature ?? null,
-      last_error_code: hasOwnProperty(input, 'lastErrorCode')
-        ? input.lastErrorCode ?? null
-        : null,
-      updated_at: this.nowIso(),
-    };
-    await this.docStore.upsert(PROJECT_AFSCP_NAMESPACE_COLLECTION, next.id, next);
-    return next;
+    for (;;) {
+      const existing = await this.ensureProjectNamespace(input);
+      if (isStalePendingWritebackAgainstReady(existing)) {
+        return existing;
+      }
+      const next: ProjectAfscpNamespaceMapping = {
+        ...existing,
+        status: 'pending',
+        stage: resolvePendingStage({
+          requestedStage: input.stage,
+          existingStage: existing.stage,
+        }),
+        generation: existing.generation,
+        next_action: input.nextAction ?? (input.retryable ? 'retry_now' : 'wait'),
+        retryable: input.retryable ?? false,
+        namespace_upsert_operation_id: hasOwnProperty(input, 'namespaceUpsertOperationId')
+          ? input.namespaceUpsertOperationId ?? null
+          : existing.namespace_upsert_operation_id,
+        volume_binding_operation_id: hasOwnProperty(input, 'volumeBindingOperationId')
+          ? input.volumeBindingOperationId ?? null
+          : existing.volume_binding_operation_id,
+        volume_binding_signature: hasOwnProperty(input, 'volumeBindingSignature')
+          ? input.volumeBindingSignature ?? null
+          : existing.volume_binding_signature ?? null,
+        last_error_code: hasOwnProperty(input, 'lastErrorCode')
+          ? input.lastErrorCode ?? null
+          : null,
+        updated_at: this.nowIso(),
+      };
+      const updated = await this.docStore.updateIfMatch<ProjectAfscpNamespaceMapping>(
+        PROJECT_AFSCP_NAMESPACE_COLLECTION,
+        next.id,
+        {
+          expected: projectNamespaceCasCondition(existing),
+          replace: next,
+        },
+      );
+      if (updated.ok) {
+        return updated.doc;
+      }
+      if (updated.current?.status === 'ready') {
+        return updated.current;
+      }
+    }
   }
 
   async markProjectNamespaceReady(input: ProjectAfscpNamespaceKey & {
@@ -311,26 +336,43 @@ export class ProjectAfscpNamespaceStore {
     volumeBindingOperationId: string | null;
     lastErrorCode: string;
   }): Promise<ProjectAfscpNamespaceMapping> {
-    const existing = await this.ensureProjectNamespace(input);
-    const volumeBindingOperationId = input.volumeBindingOperationId;
-    const next: ProjectAfscpNamespaceMapping = {
-      ...existing,
-      status: 'blocked',
-      stage: resolveBlockedStage({
-        requestedStage: input.stage,
-        existingStage: existing.stage,
-        volumeBindingOperationId,
-      }),
-      generation: existing.generation,
-      next_action: 'admin_repair',
-      retryable: false,
-      namespace_upsert_operation_id: input.namespaceUpsertOperationId,
-      volume_binding_operation_id: volumeBindingOperationId,
-      last_error_code: input.lastErrorCode,
-      updated_at: this.nowIso(),
-    };
-    await this.docStore.upsert(PROJECT_AFSCP_NAMESPACE_COLLECTION, next.id, next);
-    return next;
+    for (;;) {
+      const existing = await this.ensureProjectNamespace(input);
+      if (existing.status === 'ready') {
+        return existing;
+      }
+      const volumeBindingOperationId = input.volumeBindingOperationId;
+      const next: ProjectAfscpNamespaceMapping = {
+        ...existing,
+        status: 'blocked',
+        stage: resolveBlockedStage({
+          requestedStage: input.stage,
+          existingStage: existing.stage,
+          volumeBindingOperationId,
+        }),
+        generation: existing.generation,
+        next_action: 'admin_repair',
+        retryable: false,
+        namespace_upsert_operation_id: input.namespaceUpsertOperationId,
+        volume_binding_operation_id: volumeBindingOperationId,
+        last_error_code: input.lastErrorCode,
+        updated_at: this.nowIso(),
+      };
+      const updated = await this.docStore.updateIfMatch<ProjectAfscpNamespaceMapping>(
+        PROJECT_AFSCP_NAMESPACE_COLLECTION,
+        next.id,
+        {
+          expected: projectNamespaceCasCondition(existing),
+          replace: next,
+        },
+      );
+      if (updated.ok) {
+        return updated.doc;
+      }
+      if (updated.current?.status === 'ready') {
+        return updated.current;
+      }
+    }
   }
 
   async markProjectNamespaceDeleting(input: ProjectAfscpNamespaceKey & {

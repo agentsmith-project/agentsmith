@@ -3,6 +3,24 @@ import type { FileSortBy, FileSortOrder } from '@/lib/hooks/use-files-url-state'
 
 export type SelectedRowId = `p:${string}` | `o:${string}`;
 export type FileSelectionMode = 'single' | 'multi';
+export type RuntimeSystemDotFolder = {
+  prefix: string;
+  name: string;
+  testIdSegment: string;
+};
+
+type RuntimeSystemDotFolderCandidate =
+  | { kind: 'prefix'; prefix: string }
+  | { kind: 'object'; key: string };
+
+const RUNTIME_SYSTEM_DOT_FOLDERS: RuntimeSystemDotFolder[] = [
+  { prefix: '.codex/', name: '.codex', testIdSegment: 'codex' },
+  { prefix: '.agents/', name: '.agents', testIdSegment: 'agents' },
+  { prefix: '.mbos/', name: '.mbos', testIdSegment: 'mbos' },
+  { prefix: '.cache/', name: '.cache', testIdSegment: 'cache' },
+  { prefix: '.config/', name: '.config', testIdSegment: 'config' },
+  { prefix: '.local/', name: '.local', testIdSegment: 'local' },
+];
 
 export interface LibraryViewSnapshot {
   prefix: string;
@@ -15,6 +33,24 @@ export interface LibraryViewSnapshot {
 
 export function rowId(item: FileObjectsListItem): SelectedRowId {
   return item.kind === 'prefix' ? (`p:${item.prefix}` as const) : (`o:${item.key}` as const);
+}
+
+export function getRuntimeSystemDotFolderInfo(candidate: RuntimeSystemDotFolderCandidate): RuntimeSystemDotFolder | null {
+  if (candidate.kind !== 'prefix') return null;
+  const normalizedPrefix = candidate.prefix.endsWith('/') ? candidate.prefix : `${candidate.prefix}/`;
+  return RUNTIME_SYSTEM_DOT_FOLDERS.find((folder) => folder.prefix === normalizedPrefix) ?? null;
+}
+
+export function getRuntimeSystemDotFolderInfos(candidates: RuntimeSystemDotFolderCandidate[]) {
+  const seen = new Set<string>();
+  const folders: RuntimeSystemDotFolder[] = [];
+  for (const candidate of candidates) {
+    const folder = getRuntimeSystemDotFolderInfo(candidate);
+    if (!folder || seen.has(folder.prefix)) continue;
+    seen.add(folder.prefix);
+    folders.push(folder);
+  }
+  return folders;
 }
 
 export function parseSelectedRowId(

@@ -886,7 +886,7 @@ export class JsonDocProjectFileLibraryCatalogRepo {
   }
 }
 
-export type FileLibrarySavePointPurpose = 'user' | 'task_template_source';
+export type FileLibrarySavePointPurpose = 'user' | 'task_template_source' | 'restore_preview_fence';
 
 export interface FileLibrarySavePointPublicRecord {
   id: string;
@@ -1201,7 +1201,11 @@ export class JsonDocFileLibrarySavePointMappingRepo {
         library_id: input.libraryId,
       },
     );
-    return records.filter((record) => input.includeTemplateSources || record.purpose !== 'task_template_source');
+    return records.filter((record) => (
+      input.includeTemplateSources
+        ? record.purpose !== 'restore_preview_fence'
+        : record.purpose === 'user'
+    ));
   }
 
   toPublic(record: FileLibrarySavePointMappingRecord): FileLibrarySavePointPublicRecord {
@@ -1433,6 +1437,50 @@ export class JsonDocProjectTaskFileTemplateRepo {
       status: input.status,
       updated_at: this.nowIso(),
     };
+    await this.docStore.upsert(TASK_FILE_TEMPLATE_COLLECTION, next.id, next);
+    return next;
+  }
+
+  async publishWithSnapshot(input: {
+    workspaceId: string;
+    projectId: string;
+    taskFileTemplateId: string;
+    afscpTemplateId: string;
+    afscpCreateOperationId?: string | null;
+    sourceSavePointId?: string | null;
+    sourceAfscpSavePointId?: string | null;
+  }): Promise<TaskFileTemplateRecord | null> {
+    const existing = await this.getById(input.workspaceId, input.projectId, input.taskFileTemplateId);
+    if (!existing) {
+      return null;
+    }
+    const next: TaskFileTemplateRecord = {
+      ...existing,
+      status: 'published',
+      afscp_template_id: input.afscpTemplateId,
+      updated_at: this.nowIso(),
+    };
+    if (input.afscpCreateOperationId !== undefined) {
+      if (input.afscpCreateOperationId) {
+        next.afscp_create_operation_id = input.afscpCreateOperationId;
+      } else {
+        delete next.afscp_create_operation_id;
+      }
+    }
+    if (input.sourceSavePointId !== undefined) {
+      if (input.sourceSavePointId) {
+        next.source_save_point_id = input.sourceSavePointId;
+      } else {
+        delete next.source_save_point_id;
+      }
+    }
+    if (input.sourceAfscpSavePointId !== undefined) {
+      if (input.sourceAfscpSavePointId) {
+        next.source_afscp_save_point_id = input.sourceAfscpSavePointId;
+      } else {
+        delete next.source_afscp_save_point_id;
+      }
+    }
     await this.docStore.upsert(TASK_FILE_TEMPLATE_COLLECTION, next.id, next);
     return next;
   }

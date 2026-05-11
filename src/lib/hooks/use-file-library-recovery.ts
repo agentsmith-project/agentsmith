@@ -214,6 +214,21 @@ export function useRunFileLibraryRestore() {
           activePreviewKey,
           { restore_preview: null },
         );
+      } else if (run.status === 'pending') {
+        queryClient.setQueryData<GetFileLibraryRestorePreviewResponse>(
+          activePreviewKey,
+          (current) => {
+            const currentPreview = current?.restore_preview;
+            if (!currentPreview || currentPreview.id !== run.restore_preview_id) return current;
+            return {
+              restore_preview: {
+                ...currentPreview,
+                status: 'restoring',
+                updated_at: run.updated_at,
+              },
+            };
+          },
+        );
       }
       await Promise.all([
         invalidateFileObjectCaches(
@@ -231,7 +246,9 @@ export function useRunFileLibraryRestore() {
         }),
         queryClient.invalidateQueries({ queryKey: activePreviewKey }),
       ]);
-      toast.success(t('update_success'));
+      if (run.status === 'succeeded') {
+        toast.success(t('update_success'));
+      }
     },
     onError: (error: unknown) => {
       handleErrorForToast(error, 'useRunFileLibraryRestore');

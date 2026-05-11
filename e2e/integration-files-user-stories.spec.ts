@@ -1,4 +1,4 @@
-import { expect, test, type Page } from '@playwright/test';
+import { expect, test, type APIResponse, type Locator, type Page } from '@playwright/test';
 import {
   API_BASE,
   BACKEND_REAL_MODEL,
@@ -42,11 +42,27 @@ type FileLibraryListItem = {
   id: string;
   name: string;
   status?: string | null;
+  task_home_binding_status?: 'unbound' | 'bound' | null;
+  bound_task_id?: string | null;
+  bound_task_title?: string | null;
+  bound_task_status?: 'active' | 'archived' | null;
+  bound_task_visible?: boolean | null;
 };
 
 type CreatedAgentTaskWithLibrary = {
   taskId: string;
   workspaceFileLibraryId: string;
+};
+
+type FileObjectListItem = {
+  kind: 'directory' | 'file';
+  path: string;
+  name: string;
+};
+
+type TaskArtifactListItem = {
+  id?: string;
+  task_relative_path?: string;
 };
 
 function asRecord(value: unknown): Record<string, unknown> | null {
@@ -184,6 +200,242 @@ async function listFileLibraries(args: {
   return Array.isArray(payload.items) ? payload.items : [];
 }
 
+function splitFilePath(path: string): { prefix: string; fileName: string } {
+  const parts = path.split('/').map((part) => part.trim()).filter(Boolean);
+  const fileName = parts.at(-1);
+  if (!fileName) {
+    throw new Error(`file_path_missing_name:${path}`);
+  }
+  const folderParts = parts.slice(0, -1);
+  return {
+    prefix: folderParts.length > 0 ? `${folderParts.join('/')}/` : '',
+    fileName,
+  };
+}
+
+function buildTextUploadMultipartBody(args: {
+  prefix: string;
+  fileName: string;
+  content: string;
+  overwrite: boolean;
+}): { boundary: string; body: Buffer } {
+  const boundary = `agentsmith-e2e-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+  const fields = [
+    ...(args.prefix ? [{ name: 'prefix', value: args.prefix }] : []),
+    ...(args.overwrite ? [{ name: 'overwrite', value: 'true' }] : []),
+  ];
+  const fieldParts = fields.map((field) => [
+    `--${boundary}`,
+    `Content-Disposition: form-data; name="${field.name}"`,
+    '',
+    field.value,
+  ].join('\r\n'));
+  const filePart = [
+    `--${boundary}`,
+    `Content-Disposition: form-data; name="file"; filename="${args.fileName.replace(/"/g, '\\"')}"`,
+    'Content-Type: text/plain',
+    '',
+    args.content,
+    `--${boundary}--`,
+    '',
+  ].join('\r\n');
+
+  return {
+    boundary,
+    body: Buffer.from([...fieldParts, filePart].join('\r\n'), 'utf8'),
+  };
+}
+
+async function uploadTextFileViaApi(args: {
+  page: Page;
+  workspaceId: string;
+  projectId: string;
+  libraryId: string;
+  path: string;
+  content: string;
+  overwrite?: boolean;
+}): Promise<void> {
+  const headers = await authHeaders(args.page);
+  const { prefix, fileName } = splitFilePath(args.path);
+  const { boundary, body } = buildTextUploadMultipartBody({
+    prefix,
+    fileName,
+    content: args.content,
+    overwrite: args.overwrite ?? true,
+  });
+  const response = await args.page.request.post(
+    `${API_BASE}/api/v1/workspaces/${args.workspaceId}/projects/${args.projectId}/file-libraries/${args.libraryId}/upload`,
+    {
+      headers: {
+        ...headers,
+        'Content-Type': `multipart/form-data; boundary=${boundary}`,
+      },
+      data: body,
+    },
+  );
+  expect(response.ok(), await response.text()).toBe(true);
+}
+
+async function createFolderViaApi(args: {
+  page: Page;
+  workspaceId: string;
+  projectId: string;
+  libraryId: string;
+  path: string;
+}): Promise<void> {
+  const headers = await authHeaders(args.page);
+  const response = await args.page.request.post(
+    `${API_BASE}/api/v1/workspaces/${args.workspaceId}/projects/${args.projectId}/file-libraries/${args.libraryId}/folders`,
+    {
+      headers: {
+        ...headers,
+        'Content-Type': 'application/json',
+      },
+      data: {
+        path: args.path,
+      },
+    },
+  );
+  const body = await response.text();
+  expect(response.ok() || response.status() === 409, body).toBe(true);
+}
+
+async function deleteFilePathViaApi(args: {
+  page: Page;
+  workspaceId: string;
+  projectId: string;
+  libraryId: string;
+  path: string;
+}): Promise<void> {
+  const headers = await authHeaders(args.page);
+  const response = await args.page.request.post(
+    `${API_BASE}/api/v1/workspaces/${args.workspaceId}/projects/${args.projectId}/file-libraries/${args.libraryId}/delete`,
+    {
+      headers: {
+        ...headers,
+        'Content-Type': 'application/json',
+      },
+      data: {
+        paths: [args.path],
+      },
+    },
+  );
+  const body = await response.text();
+  expect(response.ok(), body).toBe(true);
+  const payload = JSON.parse(body) as { results?: Array<{ path?: string; status?: string }> };
+  expect(payload.results?.some((item) => item.path === args.path && item.status === 'deleted')).toBe(true);
+}
+
+async function listFileEntriesViaApi(args: {
+  page: Page;
+  workspaceId: string;
+  projectId: string;
+  libraryId: string;
+  prefix?: string;
+}): Promise<FileObjectListItem[]> {
+  const headers = await authHeaders(args.page);
+  const query = args.prefix ? `?path=${encodeURIComponent(args.prefix)}` : '';
+  const response = await args.page.request.get(
+    `${API_BASE}/api/v1/workspaces/${args.workspaceId}/projects/${args.projectId}/file-libraries/${args.libraryId}/entries${query}`,
+    { headers },
+  );
+  const body = await response.text();
+  expect(response.ok(), body).toBe(true);
+  const payload = JSON.parse(body) as { items?: FileObjectListItem[] };
+  return Array.isArray(payload.items) ? payload.items : [];
+}
+
+async function waitForFileEntryViaApi(args: {
+  page: Page;
+  workspaceId: string;
+  projectId: string;
+  libraryId: string;
+  path: string;
+  timeoutMs?: number;
+}): Promise<void> {
+  const { prefix, fileName } = splitFilePath(args.path);
+  await expect.poll(async () => {
+    const entries = await listFileEntriesViaApi({
+      page: args.page,
+      workspaceId: args.workspaceId,
+      projectId: args.projectId,
+      libraryId: args.libraryId,
+      prefix,
+    });
+    return entries.some((item) => item.kind === 'file' && item.name === fileName && item.path === args.path);
+  }, {
+    timeout: args.timeoutMs ?? 120_000,
+    intervals: [1_000, 2_000, 5_000],
+    message: `file entry did not become visible: ${args.path}`,
+  }).toBe(true);
+}
+
+async function expectFileEntryMissingViaApi(args: {
+  page: Page;
+  workspaceId: string;
+  projectId: string;
+  libraryId: string;
+  path: string;
+  timeoutMs?: number;
+}): Promise<void> {
+  const { prefix, fileName } = splitFilePath(args.path);
+  await expect.poll(async () => {
+    const entries = await listFileEntriesViaApi({
+      page: args.page,
+      workspaceId: args.workspaceId,
+      projectId: args.projectId,
+      libraryId: args.libraryId,
+      prefix,
+    });
+    return entries.some((item) => item.kind === 'file' && item.name === fileName && item.path === args.path);
+  }, {
+    timeout: args.timeoutMs ?? 60_000,
+    intervals: [1_000, 2_000, 5_000],
+    message: `file entry unexpectedly remained visible: ${args.path}`,
+  }).toBe(false);
+}
+
+async function downloadTextFileViaApi(args: {
+  page: Page;
+  workspaceId: string;
+  projectId: string;
+  libraryId: string;
+  path: string;
+}): Promise<string> {
+  const headers = await authHeaders(args.page);
+  const response = await args.page.request.get(
+    `${API_BASE}/api/v1/workspaces/${args.workspaceId}/projects/${args.projectId}/file-libraries/${args.libraryId}/download?path=${encodeURIComponent(args.path)}`,
+    { headers },
+  );
+  const body = await response.text();
+  expect(response.ok(), body).toBe(true);
+  return body;
+}
+
+async function waitForTextFileContentViaApi(args: {
+  page: Page;
+  workspaceId: string;
+  projectId: string;
+  libraryId: string;
+  path: string;
+  expectedContent: string;
+  timeoutMs?: number;
+}): Promise<void> {
+  await expect.poll(async () => (
+    await downloadTextFileViaApi({
+      page: args.page,
+      workspaceId: args.workspaceId,
+      projectId: args.projectId,
+      libraryId: args.libraryId,
+      path: args.path,
+    })
+  ).trim(), {
+    timeout: args.timeoutMs ?? 120_000,
+    intervals: [1_000, 2_000, 5_000],
+    message: `file content did not reach expected state: ${args.path}`,
+  }).toBe(args.expectedContent);
+}
+
 async function waitForLibraryStatus(args: {
   page: Page;
   workspaceId: string;
@@ -203,6 +455,30 @@ async function waitForLibraryStatus(args: {
     message: `file library ${args.libraryId} did not reach ${args.expected}; latest=${latestStatus}`,
   }).toMatch(args.expected);
   return latestStatus;
+}
+
+async function waitForLibraryBindingStatus(args: {
+  page: Page;
+  workspaceId: string;
+  projectId: string;
+  libraryId: string;
+  expected: 'unbound' | 'bound';
+  timeoutMs?: number;
+}): Promise<FileLibraryListItem> {
+  let latestLibrary: FileLibraryListItem | undefined;
+  await expect.poll(async () => {
+    latestLibrary = (await listFileLibraries(args))
+      .find((library) => library.id === args.libraryId);
+    return latestLibrary?.task_home_binding_status ?? '';
+  }, {
+    timeout: args.timeoutMs ?? 120_000,
+    intervals: [1_000, 2_000, 5_000],
+    message: `file library ${args.libraryId} did not reach binding ${args.expected}`,
+  }).toBe(args.expected);
+  if (!latestLibrary) {
+    throw new Error(`file_library_missing_while_waiting_binding:${args.libraryId}`);
+  }
+  return latestLibrary;
 }
 
 async function deleteFileLibraryViaUi(args: {
@@ -231,6 +507,19 @@ async function deleteFileLibraryViaUi(args: {
   await deleteDialog.getByTestId('files__library-delete__submit').click();
   const deleteResponse = await deleteResponsePromise;
   expect(deleteResponse.ok()).toBeTruthy();
+}
+
+async function deleteAgentTaskViaApi(args: {
+  page: Page;
+  workspaceId: string;
+  projectId: string;
+  taskId: string;
+}): Promise<void> {
+  const response = await args.page.request.delete(
+    `${API_BASE}/api/v1/workspaces/${args.workspaceId}/projects/${args.projectId}/tasks/${args.taskId}`,
+    { headers: await authHeaders(args.page) },
+  );
+  expect(response.ok(), await response.text()).toBe(true);
 }
 
 async function resolveDemoProjectAndRunner(page: Page): Promise<{ projectId: string; runnerId: string }> {
@@ -361,6 +650,94 @@ async function createAgentTaskAfterProjectStorageReady(args: {
   return parseCreatedAgentTaskWithLibrary(lastBody);
 }
 
+async function postCreateAgentTaskUsingExistingFileLibraryViaApi(args: {
+  page: Page;
+  workspaceId: string;
+  projectId: string;
+  title: string;
+  fileLibraryId: string;
+}): Promise<APIResponse> {
+  return args.page.request.post(
+    `${API_BASE}/api/v1/workspaces/${args.workspaceId}/projects/${args.projectId}/tasks`,
+    {
+      timeout: CREATE_NEW_TASK_REQUEST_TIMEOUT_MS,
+      headers: {
+        ...(await authHeaders(args.page)),
+        'Content-Type': 'application/json',
+      },
+      data: {
+        title: args.title,
+        workspace_mode: 'use_existing',
+        workspace_file_library_id: args.fileLibraryId,
+      },
+    },
+  );
+}
+
+async function unpublishTaskFileTemplateViaApi(args: {
+  page: Page;
+  workspaceId: string;
+  projectId: string;
+  templateId: string;
+}): Promise<void> {
+  const response = await args.page.request.post(
+    `${API_BASE}/api/v1/workspaces/${args.workspaceId}/projects/${args.projectId}/task-file-templates/${args.templateId}/unpublish`,
+    { headers: await authHeaders(args.page) },
+  );
+  expect(response.ok(), await response.text()).toBe(true);
+}
+
+async function deleteTaskFileTemplateViaApi(args: {
+  page: Page;
+  workspaceId: string;
+  projectId: string;
+  templateId: string;
+}): Promise<void> {
+  const response = await args.page.request.delete(
+    `${API_BASE}/api/v1/workspaces/${args.workspaceId}/projects/${args.projectId}/task-file-templates/${args.templateId}`,
+    { headers: await authHeaders(args.page) },
+  );
+  expect(response.ok(), await response.text()).toBe(true);
+}
+
+function resolveTaskFileTemplateIdFromPublishResponse(response: APIResponse, body: string): string {
+  try {
+    const parsed = JSON.parse(body) as unknown;
+    const root = asRecord(parsed);
+    const candidates = [
+      root,
+      root ? asRecord(root.data) : null,
+      root ? asRecord(root.template) : null,
+    ].filter((candidate): candidate is Record<string, unknown> => candidate !== null);
+    const id = candidates.map((candidate) => readStringField(candidate, 'id')).find(Boolean);
+    if (id) return id;
+  } catch {
+    // Fall back to the canonical REST path below.
+  }
+  const match = /\/task-file-templates\/([^/]+)\/publish(?:$|[?#])/.exec(response.url());
+  if (match?.[1]) return decodeURIComponent(match[1]);
+  throw new Error(`task_file_template_id_not_found_after_publish:${response.url()}:${body}`);
+}
+
+async function listTaskArtifactsViaApi(args: {
+  page: Page;
+  workspaceId: string;
+  projectId: string;
+  taskId: string;
+}): Promise<TaskArtifactListItem[]> {
+  const response = await args.page.request.get(
+    `${API_BASE}/api/v1/workspaces/${args.workspaceId}/projects/${args.projectId}/tasks/${args.taskId}/artifacts`,
+    { headers: await authHeaders(args.page) },
+  );
+  const body = await response.text();
+  expect(response.ok(), body).toBe(true);
+  const payload = JSON.parse(body) as unknown;
+  if (Array.isArray(payload)) return payload as TaskArtifactListItem[];
+  const root = asRecord(payload);
+  const items = root && Array.isArray(root.items) ? root.items : [];
+  return items as TaskArtifactListItem[];
+}
+
 async function openWorkspaceFilesRoot(args: {
   page: Page;
   workspaceId: string;
@@ -386,13 +763,51 @@ async function openWorkspaceFilesRoot(args: {
   return args.libraryId;
 }
 
+function getObjectRowByName(page: Page, name: string): Locator {
+  return page.getByTestId('files__object-row').filter({ hasText: name }).first();
+}
+
+async function selectObjectRowByName(page: Page, name: string): Promise<Locator> {
+  await closeVisibleDialog(page);
+  const row = getObjectRowByName(page, name);
+  await expect(row).toBeVisible({ timeout: 30_000 });
+  await row.getByRole('button').click();
+  return row;
+}
+
+async function selectObjectAndDownloadViaUi(args: {
+  page: Page;
+  workspaceId: string;
+  projectId: string;
+  libraryId: string;
+  fileName: string;
+  expectedPath: string;
+  expectedContent: string;
+}): Promise<void> {
+  const row = args.page.getByTestId('files__object-row').filter({ hasText: args.fileName }).first();
+  await expect(row).toBeVisible({ timeout: 30_000 });
+  await row.getByRole('button').click();
+  const downloadResponsePromise = args.page.waitForResponse((response) => (
+    response.request().method() === 'GET'
+    && response
+      .url()
+      .includes(`/workspaces/${args.workspaceId}/projects/${args.projectId}/file-libraries/${args.libraryId}/download`)
+    && response.status() === 200
+  ));
+  await args.page.getByTestId('files__download').click();
+  const downloadResponse = await downloadResponsePromise;
+  expect(downloadResponse.url()).toContain(`path=${encodeURIComponent(args.expectedPath)}`);
+
+  const verifiedDownload = await args.page.request.get(downloadResponse.url(), {
+    headers: await authHeaders(args.page),
+  });
+  expect(verifiedDownload.ok()).toBeTruthy();
+  expect((await verifiedDownload.text()).trim()).toBe(args.expectedContent);
+}
+
 async function openFolderByName(page: Page, name: string): Promise<void> {
-  const visibleDialog = page.locator('[role="dialog"]:visible, [role="alertdialog"]:visible').last();
-  if (await visibleDialog.isVisible().catch(() => false)) {
-    await page.keyboard.press('Escape');
-    await page.waitForTimeout(200);
-  }
-  const folderRow = page.getByTestId('files__object-row').filter({ hasText: name }).first();
+  await closeVisibleDialog(page);
+  const folderRow = getObjectRowByName(page, name);
   await expect(folderRow).toBeVisible({ timeout: 30_000 });
   const button = folderRow.getByRole('button').first();
   if (await button.isVisible().catch(() => false)) {
@@ -400,6 +815,145 @@ async function openFolderByName(page: Page, name: string): Promise<void> {
     return;
   }
   await folderRow.dblclick();
+}
+
+async function closeVisibleDialog(page: Page): Promise<void> {
+  const visibleDialog = page.locator('[role="dialog"]:visible, [role="alertdialog"]:visible').last();
+  if (await visibleDialog.isVisible().catch(() => false)) {
+    const closeButton = visibleDialog.getByRole('button', { name: /^Close$/i }).last();
+    if (await closeButton.isVisible().catch(() => false)) {
+      await closeButton.click();
+    } else {
+      await page.keyboard.press('Escape');
+    }
+    await expect(visibleDialog).toBeHidden({ timeout: 10_000 });
+  }
+}
+
+async function expectAnyLocatorVisible(candidates: Locator[], message: string): Promise<void> {
+  await expect.poll(async () => {
+    for (const candidate of candidates) {
+      if (await candidate.first().isVisible().catch(() => false)) return true;
+    }
+    return false;
+  }, {
+    timeout: 30_000,
+    intervals: [500, 1_000, 2_000],
+    message,
+  }).toBe(true);
+}
+
+function fileObjectTestIdSegment(name: string): string {
+  return name.trim().replace(/^\./, 'dot-').replace(/[^a-zA-Z0-9_-]+/g, '-');
+}
+
+async function expectRuntimeFolderBadgeVisible(row: Locator, folderName: string): Promise<void> {
+  const safeFolderName = fileObjectTestIdSegment(folderName);
+  await expectAnyLocatorVisible([
+    row.getByTestId(`files__runtime-folder-badge--${folderName}`),
+    row.getByTestId(`files__runtime-folder-badge--${safeFolderName}`),
+    row.getByTestId(`files__system-folder-badge--${folderName}`),
+    row.getByTestId(`files__system-folder-badge--${safeFolderName}`),
+    row.getByTestId(`files__protected-folder-badge--${folderName}`),
+    row.getByTestId(`files__protected-folder-badge--${safeFolderName}`),
+    row.getByTestId(`files__object-runtime-badge--${safeFolderName}`),
+    row.getByTestId('files__runtime-folder-badge'),
+    row.getByTestId('files__system-folder-badge'),
+    row.getByTestId('files__protected-folder-badge'),
+    row.getByTestId('files__object-runtime-badge'),
+    row.getByTestId('files__object-system-badge'),
+    row.getByText(/runtime|system|protected|managed/i),
+  ], `runtime/system badge was not visible for ${folderName}`);
+}
+
+async function expectRuntimeFolderGuardVisible(dialog: Locator, folderName: string): Promise<void> {
+  const safeFolderName = fileObjectTestIdSegment(folderName);
+  await expectAnyLocatorVisible([
+    dialog.getByTestId(`files__runtime-folder-guard--${folderName}`),
+    dialog.getByTestId(`files__runtime-folder-guard--${safeFolderName}`),
+    dialog.getByTestId(`files__system-folder-guard--${folderName}`),
+    dialog.getByTestId(`files__system-folder-guard--${safeFolderName}`),
+    dialog.getByTestId(`files__protected-folder-guard--${folderName}`),
+    dialog.getByTestId(`files__protected-folder-guard--${safeFolderName}`),
+    dialog.getByTestId('files__runtime-folder-guard'),
+    dialog.getByTestId('files__system-folder-guard'),
+    dialog.getByTestId('files__protected-folder-guard'),
+    dialog.getByTestId('files__destructive-runtime-folder-guard'),
+    dialog.getByText(/runtime|system|protected|managed folder|agent runtime|internal folder/i),
+  ], `runtime/system guard was not visible for ${folderName}`);
+}
+
+async function cancelDialog(dialog: Locator): Promise<void> {
+  const cancelButton = dialog.getByRole('button', { name: /^Cancel$/i }).last();
+  await expect(cancelButton).toBeVisible({ timeout: 10_000 });
+  await cancelButton.click();
+  await expect(dialog).toBeHidden({ timeout: 10_000 });
+}
+
+async function expectVisibleSavePointListHidesRestorePreviewFence(fileStatesDialog: Locator): Promise<void> {
+  const visibleRestoreActions = await fileStatesDialog
+    .locator('[data-testid^="files__save-point__restore--"]')
+    .count();
+  if (visibleRestoreActions > 0) {
+    await expect(fileStatesDialog.getByText(/^Restore preview current state$/i)).toHaveCount(0);
+  }
+}
+
+async function openFilePathFromRoot(args: {
+  page: Page;
+  path: string;
+}) {
+  const { fileName } = splitFilePath(args.path);
+  const folders = args.path.split('/').map((part) => part.trim()).filter(Boolean).slice(0, -1);
+  for (const folder of folders) {
+    await openFolderByName(args.page, folder);
+  }
+  const fileRow = getObjectRowByName(args.page, fileName);
+  await expect(fileRow).toBeVisible({ timeout: 30_000 });
+  await fileRow.getByRole('button').click();
+  return fileRow;
+}
+
+async function downloadSelectedTextFileViaUi(args: {
+  page: Page;
+  workspaceId: string;
+  projectId: string;
+  libraryId: string;
+  path: string;
+}): Promise<string> {
+  await expect(args.page.getByTestId('files__download')).toBeEnabled({ timeout: 10_000 });
+  const downloadResponsePromise = args.page.waitForResponse((response) => (
+    response.request().method() === 'GET'
+    && response
+      .url()
+      .includes(`/workspaces/${args.workspaceId}/projects/${args.projectId}/file-libraries/${args.libraryId}/download`)
+    && response.url().includes('/download')
+    && response.status() === 200
+  ), { timeout: 30_000 });
+  await args.page.getByTestId('files__download').click();
+  const downloadResponse = await downloadResponsePromise;
+  expect(downloadResponse.url()).toContain(`path=${encodeURIComponent(args.path)}`);
+  const verifiedDownload = await args.page.request.get(downloadResponse.url(), {
+    headers: await authHeaders(args.page),
+  });
+  expect(verifiedDownload.ok()).toBeTruthy();
+  return verifiedDownload.text();
+}
+
+async function openFileFromLibraryRootAndDownloadText(args: {
+  page: Page;
+  workspaceId: string;
+  projectId: string;
+  libraryId: string;
+  path: string;
+}): Promise<string> {
+  await openWorkspaceFilesRoot(args);
+  await closeVisibleDialog(args.page);
+  await openFilePathFromRoot({
+    page: args.page,
+    path: args.path,
+  });
+  return downloadSelectedTextFileViaUi(args);
 }
 
 async function openTaskCreateDialog(page: Page, workspaceId: string, projectId: string): Promise<void> {
@@ -428,6 +982,40 @@ async function createTaskFromTemplateViaUi(args: {
   await selectUseTaskFileTemplateMode(page);
   await page.getByTestId('task-create__task-file-template').click();
   await page.getByRole('option', { name: templateName }).click();
+
+  const createResponsePromise = page.waitForResponse((response) => (
+    response.request().method() === 'POST'
+    && response.url().includes(`/workspaces/${workspaceId}/projects/${projectId}/tasks`)
+  ), { timeout: 60_000 });
+  const submit = dialog.locator('button[type="submit"]');
+  await expect(submit).toBeEnabled({ timeout: 10_000 });
+  await submit.click();
+  const createResponse = await createResponsePromise;
+  const body = await createResponse.text();
+  expect(createResponse.ok(), body).toBe(true);
+  const createdTask = parseCreatedAgentTaskWithLibrary(body);
+  await page.waitForURL(new RegExp(`/${LOCALE}/workspaces/${workspaceId}/projects/${projectId}/agent-tasks/${createdTask.taskId}(?:[/?#]|$)`), {
+    timeout: 30_000,
+  });
+  await expect(page.getByTestId('agent-task__task-header')).toContainText(title, { timeout: 30_000 });
+  await expect(page.getByTestId('agent-task__task-header-workspace-library')).toBeVisible({ timeout: 30_000 });
+  return createdTask;
+}
+
+async function createTaskUsingExistingLibraryViaUi(args: {
+  page: Page;
+  workspaceId: string;
+  projectId: string;
+  title: string;
+  libraryName: string;
+}): Promise<CreatedAgentTaskWithLibrary> {
+  const { page, workspaceId, projectId, title, libraryName } = args;
+  await openTaskCreateDialog(page, workspaceId, projectId);
+  const dialog = page.getByRole('dialog');
+  await dialog.locator('#task-title').fill(title);
+  await page.getByRole('radio').nth(1).click();
+  await page.getByTestId('task-create__file-library').click();
+  await page.getByRole('option', { name: libraryName }).click();
 
   const createResponsePromise = page.waitForResponse((response) => (
     response.request().method() === 'POST'
@@ -567,8 +1155,8 @@ test.describe.serial('@lane-real files user stories', () => {
     }
   });
 
-  test('File states save point restore preview and task template selection stay in one user loop', async ({ page }) => {
-    test.setTimeout(300_000);
+  test('File states whole HOME restore round trip and task template clone independence stay in one user loop', async ({ page }) => {
+    test.setTimeout(360_000);
 
     await keycloakLoginToWorkspace(page, WORKSPACE_ID, KEYCLOAK_DEV_ADMIN_USERNAME, KEYCLOAK_DEV_ADMIN_PASSWORD);
     const { projectId } = await createProjectInWorkspace(page, WORKSPACE_ID, 'Files Savepoint Template Loop');
@@ -589,12 +1177,60 @@ test.describe.serial('@lane-real files user stories', () => {
       name: libraryName,
     });
     const libraryId = createdLibrary.id;
+    const rootRestorePath = 'root-restore-target.txt';
+    const workspaceRestorePath = 'workspace/docs/restore-target.txt';
+    const afterOnlyPath = 'workspace/docs/post-savepoint-only.txt';
+    const templatePath = 'template-seed/guide.md';
     await waitForLibraryStatus({
       page,
       workspaceId: WORKSPACE_ID,
       projectId,
       libraryId,
       expected: /^ready$/i,
+    });
+    await createFolderViaApi({
+      page,
+      workspaceId: WORKSPACE_ID,
+      projectId,
+      libraryId,
+      path: 'workspace',
+    });
+    await uploadTextFileViaApi({
+      page,
+      workspaceId: WORKSPACE_ID,
+      projectId,
+      libraryId,
+      path: rootRestorePath,
+      content: 'before restore',
+    });
+    await createFolderViaApi({
+      page,
+      workspaceId: WORKSPACE_ID,
+      projectId,
+      libraryId,
+      path: 'workspace/docs',
+    });
+    await uploadTextFileViaApi({
+      page,
+      workspaceId: WORKSPACE_ID,
+      projectId,
+      libraryId,
+      path: workspaceRestorePath,
+      content: 'before restore',
+    });
+    await waitForFileEntryViaApi({
+      page,
+      workspaceId: WORKSPACE_ID,
+      projectId,
+      libraryId,
+      path: rootRestorePath,
+    });
+    await waitForFileEntryViaApi({
+      page,
+      workspaceId: WORKSPACE_ID,
+      projectId,
+      libraryId,
+      path: workspaceRestorePath,
     });
 
     await openWorkspaceFilesRoot({
@@ -625,68 +1261,197 @@ test.describe.serial('@lane-real files user stories', () => {
     expect(savePointId).toBeTruthy();
     await expect(fileStatesDialog.getByText(savePointMessage)).toBeVisible({ timeout: 10_000 });
 
+    await uploadTextFileViaApi({
+      page,
+      workspaceId: WORKSPACE_ID,
+      projectId,
+      libraryId,
+      path: rootRestorePath,
+      content: 'after mutation',
+    });
+    await waitForTextFileContentViaApi({
+      page,
+      workspaceId: WORKSPACE_ID,
+      projectId,
+      libraryId,
+      path: rootRestorePath,
+      expectedContent: 'after mutation',
+      timeoutMs: 60_000,
+    });
+    await deleteFilePathViaApi({
+      page,
+      workspaceId: WORKSPACE_ID,
+      projectId,
+      libraryId,
+      path: workspaceRestorePath,
+    });
+    await uploadTextFileViaApi({
+      page,
+      workspaceId: WORKSPACE_ID,
+      projectId,
+      libraryId,
+      path: afterOnlyPath,
+      content: 'created after save point',
+    });
+    await waitForFileEntryViaApi({
+      page,
+      workspaceId: WORKSPACE_ID,
+      projectId,
+      libraryId,
+      path: afterOnlyPath,
+    });
+    await expectFileEntryMissingViaApi({
+      page,
+      workspaceId: WORKSPACE_ID,
+      projectId,
+      libraryId,
+      path: workspaceRestorePath,
+      timeoutMs: 30_000,
+    });
+
+    const restoreFileStatesDialog = page.getByTestId('files__dialog__file-states');
+    if (!(await restoreFileStatesDialog.isVisible().catch(() => false))) {
+      await page.getByTestId('files__file-states').click();
+    }
+    await expect(restoreFileStatesDialog).toBeVisible({ timeout: 10_000 });
+    await expect(restoreFileStatesDialog.getByText(savePointMessage)).toBeVisible({ timeout: 10_000 });
+
     const restorePreviewResponsePromise = page.waitForResponse((response) => (
       response.request().method() === 'POST'
       && response
         .url()
         .includes(`/workspaces/${WORKSPACE_ID}/projects/${projectId}/file-libraries/${libraryId}/restore-preview`)
-      && response.ok()
     ), { timeout: 60_000 });
-    await fileStatesDialog.getByTestId(`files__save-point__restore--${savePointId}`).click();
+    await restoreFileStatesDialog.getByTestId(`files__save-point__restore--${savePointId}`).click();
     const restorePreviewResponse = await restorePreviewResponsePromise;
-    const restorePreviewPayload = await restorePreviewResponse.json() as { id?: string };
+    const restorePreviewBody = await restorePreviewResponse.text();
+    expect(restorePreviewResponse.ok(), restorePreviewBody).toBe(true);
+    const restorePreviewPayload = JSON.parse(restorePreviewBody) as { id?: string };
     expect(restorePreviewPayload.id).toBeTruthy();
-    await expect(fileStatesDialog.getByTestId('files__restore-preview')).toBeVisible({ timeout: 10_000 });
-    await expect(fileStatesDialog.getByTestId('files__restore-preview-summary')).toBeVisible();
-    const taskTemplatesTab = fileStatesDialog.getByRole('tab', { name: /^Task file templates$/i });
-    await expect(fileStatesDialog.getByTestId('files__restore-confirm')).toBeEnabled({ timeout: 90_000 });
+    await expect(restoreFileStatesDialog.getByTestId('files__restore-preview')).toBeVisible({ timeout: 10_000 });
+    await expect(restoreFileStatesDialog.getByTestId('files__restore-preview-summary')).toBeVisible();
+    await expectVisibleSavePointListHidesRestorePreviewFence(restoreFileStatesDialog);
+    const taskTemplatesTab = restoreFileStatesDialog.getByRole('tab', { name: /^Task file templates$/i });
+    await expect(restoreFileStatesDialog.getByTestId('files__restore-confirm')).toBeEnabled({ timeout: 90_000 });
     await expect(taskTemplatesTab).toBeDisabled();
-    await expect(fileStatesDialog.getByTestId('files__restore-template-blocker')).toBeVisible();
+    await expect(restoreFileStatesDialog.getByTestId('files__restore-template-blocker')).toBeVisible();
 
-    await fileStatesDialog.getByLabel('Close', { exact: true }).click();
-    await page.reload({ waitUntil: 'domcontentloaded' });
-    await expect(page.getByTestId('files__file-states')).toBeVisible({ timeout: 30_000 });
-    const activePreviewResponsePromise = page.waitForResponse((response) => (
-      response.request().method() === 'GET'
-      && response
-        .url()
-        .includes(`/workspaces/${WORKSPACE_ID}/projects/${projectId}/file-libraries/${libraryId}/restore-preview`)
-    ), { timeout: 60_000 });
-    await page.getByTestId('files__file-states').click();
-    const activePreviewResponse = await activePreviewResponsePromise;
-    expect(activePreviewResponse.ok(), await activePreviewResponse.text()).toBe(true);
-    await expect(fileStatesDialog).toBeVisible({ timeout: 10_000 });
-    await expect(fileStatesDialog.getByTestId('files__restore-preview')).toBeVisible({ timeout: 10_000 });
-    await expect(fileStatesDialog.getByTestId('files__restore-confirm')).toBeEnabled({ timeout: 90_000 });
-    await expect(fileStatesDialog.getByRole('tab', { name: /^Task file templates$/i })).toBeDisabled();
-
-    const cancelRestoreResponsePromise = page.waitForResponse((response) => (
+    const restoreRunResponsePromise = page.waitForResponse((response) => (
       response.request().method() === 'POST'
       && response
         .url()
-        .includes(`/workspaces/${WORKSPACE_ID}/projects/${projectId}/file-libraries/${libraryId}/restore-cancel`)
+        .includes(`/workspaces/${WORKSPACE_ID}/projects/${projectId}/file-libraries/${libraryId}/restore-run`)
     ), { timeout: 60_000 });
-    await fileStatesDialog.getByTestId('files__restore-cancel').click();
-    const cancelRestoreResponse = await cancelRestoreResponsePromise;
-    expect(cancelRestoreResponse.ok(), await cancelRestoreResponse.text()).toBe(true);
-    await expect(fileStatesDialog.getByTestId('files__restore-preview')).toBeHidden({ timeout: 10_000 });
-    const unblockedTaskTemplatesTab = fileStatesDialog.getByRole('tab', { name: /^Task file templates$/i });
+    await restoreFileStatesDialog.getByTestId('files__restore-confirm').click();
+    const restoreRunResponse = await restoreRunResponsePromise;
+    const restoreRunBody = await restoreRunResponse.text();
+    expect(restoreRunResponse.ok(), restoreRunBody).toBe(true);
+    const restoreRunPayload = JSON.parse(restoreRunBody) as { status?: string };
+    expect(restoreRunPayload.status).toMatch(/^(pending|succeeded)$/);
+    await waitForTextFileContentViaApi({
+      page,
+      workspaceId: WORKSPACE_ID,
+      projectId,
+      libraryId,
+      path: rootRestorePath,
+      expectedContent: 'before restore',
+      timeoutMs: 180_000,
+    });
+    await waitForTextFileContentViaApi({
+      page,
+      workspaceId: WORKSPACE_ID,
+      projectId,
+      libraryId,
+      path: workspaceRestorePath,
+      expectedContent: 'before restore',
+      timeoutMs: 180_000,
+    });
+    await expectFileEntryMissingViaApi({
+      page,
+      workspaceId: WORKSPACE_ID,
+      projectId,
+      libraryId,
+      path: afterOnlyPath,
+      timeoutMs: 180_000,
+    });
+    const restoredRootContent = await openFileFromLibraryRootAndDownloadText({
+      page,
+      workspaceId: WORKSPACE_ID,
+      projectId,
+      libraryId,
+      path: rootRestorePath,
+    });
+    expect(restoredRootContent.trim()).toBe('before restore');
+    const restoredWorkspaceContent = await openFileFromLibraryRootAndDownloadText({
+      page,
+      workspaceId: WORKSPACE_ID,
+      projectId,
+      libraryId,
+      path: workspaceRestorePath,
+    });
+    expect(restoredWorkspaceContent.trim()).toBe('before restore');
+
+    await page.getByTestId('files__file-states').click();
+    const restoredFileStatesDialog = page.getByTestId('files__dialog__file-states');
+    await expect(restoredFileStatesDialog).toBeVisible({ timeout: 10_000 });
+    const unblockedTaskTemplatesTab = restoredFileStatesDialog.getByRole('tab', { name: /^Task file templates$/i });
     await expect(unblockedTaskTemplatesTab).toBeEnabled();
 
+    await createFolderViaApi({
+      page,
+      workspaceId: WORKSPACE_ID,
+      projectId,
+      libraryId,
+      path: 'template-seed',
+    });
+    await uploadTextFileViaApi({
+      page,
+      workspaceId: WORKSPACE_ID,
+      projectId,
+      libraryId,
+      path: templatePath,
+      content: 'template version 1',
+    });
+    await waitForFileEntryViaApi({
+      page,
+      workspaceId: WORKSPACE_ID,
+      projectId,
+      libraryId,
+      path: templatePath,
+    });
     await unblockedTaskTemplatesTab.click();
-    await fileStatesDialog.getByTestId('files__template__name').fill(templateName);
-    await fileStatesDialog.getByTestId('files__template__description').fill('Reusable files for a new task.');
+    await restoredFileStatesDialog.getByTestId('files__template__name').fill(templateName);
+    await restoredFileStatesDialog.getByTestId('files__template__description').fill('Reusable files for a new task.');
     const publishResponsePromise = page.waitForResponse((response) => (
       response.request().method() === 'POST'
       && response.url().includes(`/workspaces/${WORKSPACE_ID}/projects/${projectId}/task-file-templates/`)
       && response.url().endsWith('/publish')
       && response.ok()
     ), { timeout: 60_000 });
-    await fileStatesDialog.getByTestId('files__template__publish-current').click();
-    await publishResponsePromise;
-    await expect(fileStatesDialog.getByText(templateName)).toBeVisible({ timeout: 10_000 });
+    await restoredFileStatesDialog.getByTestId('files__template__publish-current').click();
+    const publishResponse = await publishResponsePromise;
+    const publishBody = await publishResponse.text();
+    const templateId = resolveTaskFileTemplateIdFromPublishResponse(publishResponse, publishBody);
+    await expect(restoredFileStatesDialog.getByText(templateName)).toBeVisible({ timeout: 10_000 });
 
-    await fileStatesDialog.getByLabel('Close', { exact: true }).click();
+    await restoredFileStatesDialog.getByLabel('Close', { exact: true }).click();
+    await uploadTextFileViaApi({
+      page,
+      workspaceId: WORKSPACE_ID,
+      projectId,
+      libraryId,
+      path: templatePath,
+      content: 'template source changed',
+    });
+    await waitForTextFileContentViaApi({
+      page,
+      workspaceId: WORKSPACE_ID,
+      projectId,
+      libraryId,
+      path: templatePath,
+      expectedContent: 'template source changed',
+      timeoutMs: 30_000,
+    });
     const createdTask = await createTaskFromTemplateViaUi({
       page,
       workspaceId: WORKSPACE_ID,
@@ -694,6 +1459,7 @@ test.describe.serial('@lane-real files user stories', () => {
       title: `Template clone task ${timestamp}`,
       templateName,
     });
+    expect(createdTask.workspaceFileLibraryId).not.toBe(libraryId);
     await waitForLibraryStatus({
       page,
       workspaceId: WORKSPACE_ID,
@@ -702,15 +1468,67 @@ test.describe.serial('@lane-real files user stories', () => {
       expected: /^ready$/i,
       timeoutMs: 180_000,
     });
-    await openWorkspaceFilesRoot({
+    const clonedTemplateContent = await openFileFromLibraryRootAndDownloadText({
       page,
       workspaceId: WORKSPACE_ID,
       projectId,
       libraryId: createdTask.workspaceFileLibraryId,
+      path: templatePath,
     });
+    expect(clonedTemplateContent.trim()).toBe('template version 1');
+
+    await uploadTextFileViaApi({
+      page,
+      workspaceId: WORKSPACE_ID,
+      projectId,
+      libraryId: createdTask.workspaceFileLibraryId,
+      path: templatePath,
+      content: 'template clone changed',
+    });
+    await expect.poll(async () => (
+      await downloadTextFileViaApi({
+        page,
+        workspaceId: WORKSPACE_ID,
+        projectId,
+        libraryId: createdTask.workspaceFileLibraryId,
+        path: templatePath,
+      })
+    ).trim(), {
+      timeout: 30_000,
+      intervals: [1_000, 2_000],
+    }).toBe('template clone changed');
+    const sourceTemplateContentAfterCloneChange = await openFileFromLibraryRootAndDownloadText({
+      page,
+      workspaceId: WORKSPACE_ID,
+      projectId,
+      libraryId,
+      path: templatePath,
+    });
+    expect(sourceTemplateContentAfterCloneChange.trim()).toBe('template source changed');
+
+    await unpublishTaskFileTemplateViaApi({
+      page,
+      workspaceId: WORKSPACE_ID,
+      projectId,
+      templateId,
+    });
+    await deleteTaskFileTemplateViaApi({
+      page,
+      workspaceId: WORKSPACE_ID,
+      projectId,
+      templateId,
+    });
+    const clonedTemplateContentAfterTemplateDelete = await openFileFromLibraryRootAndDownloadText({
+      page,
+      workspaceId: WORKSPACE_ID,
+      projectId,
+      libraryId: createdTask.workspaceFileLibraryId,
+      path: templatePath,
+    });
+    expect(clonedTemplateContentAfterTemplateDelete.trim()).toBe('template clone changed');
   });
 
-  test('Agent Task artifacts written under HOME workspace are visible from Files', async ({ page }) => {
+  test('HOME root dot folders and workspace artifacts written by a task are visible and downloadable from Files', async ({ page }) => {
     test.setTimeout(600_000);
 
     await keycloakLoginToWorkspace(page, WORKSPACE_ID, KEYCLOAK_DEV_ADMIN_USERNAME, KEYCLOAK_DEV_ADMIN_PASSWORD);
@@ -723,6 +1541,8 @@ test.describe.serial('@lane-real files user stories', () => {
     const workspaceFileName = `files-ui-workspace-${Date.now()}.txt`;
     const artifactFileName = `files-ui-artifact-${Date.now()}.txt`;
     const contentLine = `same-content:${token}`;
+    const codexContent = `{"story":"home-root","token":"${token}"}`;
+    const agentsContent = `agents-dot-folder:${token}`;
     const createdTask = await createAgentTaskAfterProjectStorageReady({
       page,
       workspaceId: WORKSPACE_ID,
@@ -741,10 +1561,14 @@ test.describe.serial('@lane-real files user stories', () => {
         'Run this exact shell script and do not finish until every command succeeds.',
         '```bash',
         'set -euo pipefail',
-        'mkdir -p "$HOME/workspace/.artifacts"',
+        'mkdir -p "$HOME/.codex" "$HOME/.agents" "$HOME/workspace/.artifacts"',
+        `printf '%s\\n' '${codexContent}' > "$HOME/.codex/e2e.json"`,
+        `printf '%s\\n' '${agentsContent}' > "$HOME/.agents/e2e.txt"`,
         `printf '%s\\n' '${contentLine}' > "$HOME/${homeRootFileName}"`,
         `printf '%s\\n' '${contentLine}' > "$HOME/workspace/${workspaceFileName}"`,
         `cp "$HOME/workspace/${workspaceFileName}" "$HOME/workspace/.artifacts/${artifactFileName}"`,
+        `test "$(cat "$HOME/.codex/e2e.json")" = '${codexContent}'`,
+        `test "$(cat "$HOME/.agents/e2e.txt")" = '${agentsContent}'`,
         `test "$(cat "$HOME/${homeRootFileName}")" = '${contentLine}'`,
         `test "$(cat "$HOME/workspace/${workspaceFileName}")" = '${contentLine}'`,
         `test "$(cat "$HOME/workspace/.artifacts/${artifactFileName}")" = '${contentLine}'`,
@@ -778,9 +1602,62 @@ test.describe.serial('@lane-real files user stories', () => {
     await expect(page.getByTestId('files__object-row').filter({ hasText: homeRootFileName }).first()).toBeVisible({
       timeout: 30_000,
     });
+    await expect(page.getByTestId('files__object-row').filter({ hasText: '.codex' }).first()).toBeVisible({
+      timeout: 30_000,
+    });
+    await expect(page.getByTestId('files__object-row').filter({ hasText: '.agents' }).first()).toBeVisible({
+      timeout: 30_000,
+    });
     await expect(page.getByTestId('files__object-row').filter({ hasText: 'workspace' }).first()).toBeVisible({
       timeout: 30_000,
     });
+
+    const codexRuntimeRow = getObjectRowByName(page, '.codex');
+    const agentsRuntimeRow = getObjectRowByName(page, '.agents');
+    await expectRuntimeFolderBadgeVisible(codexRuntimeRow, '.codex');
+    await expectRuntimeFolderBadgeVisible(agentsRuntimeRow, '.agents');
+
+    await selectObjectRowByName(page, '.codex');
+    await page.getByTestId('files__delete').click();
+    const runtimeDeleteDialog = page.getByTestId('files__dialog__delete');
+    await expect(runtimeDeleteDialog).toBeVisible({ timeout: 10_000 });
+    await expectRuntimeFolderGuardVisible(runtimeDeleteDialog, '.codex');
+    await cancelDialog(runtimeDeleteDialog);
+    await expect(getObjectRowByName(page, '.codex')).toBeVisible({ timeout: 10_000 });
+
+    await selectObjectRowByName(page, '.codex');
+    await page.getByTestId('files__rename').click();
+    const runtimeMoveDialog = page.getByTestId('files__dialog__move');
+    await expect(runtimeMoveDialog).toBeVisible({ timeout: 10_000 });
+    await expect(runtimeMoveDialog.getByTestId('files__move__dest-prefix')).toBeVisible();
+    await expect(runtimeMoveDialog.getByTestId('files__move__name')).toBeVisible();
+    await expectRuntimeFolderGuardVisible(runtimeMoveDialog, '.codex');
+    await cancelDialog(runtimeMoveDialog);
+    await expect(getObjectRowByName(page, '.codex')).toBeVisible({ timeout: 10_000 });
+
+    await openFolderByName(page, '.codex');
+    await selectObjectAndDownloadViaUi({
+      page,
+      workspaceId: WORKSPACE_ID,
+      projectId,
+      libraryId,
+      fileName: 'e2e.json',
+      expectedPath: '.codex/e2e.json',
+      expectedContent: codexContent,
+    });
+    await page.getByTestId('files__breadcrumb-root').click();
+
+    await openFolderByName(page, '.agents');
+    await selectObjectAndDownloadViaUi({
+      page,
+      workspaceId: WORKSPACE_ID,
+      projectId,
+      libraryId,
+      fileName: 'e2e.txt',
+      expectedPath: '.agents/e2e.txt',
+      expectedContent: agentsContent,
+    });
+    await page.getByTestId('files__breadcrumb-root').click();
 
     await openFolderByName(page, 'workspace');
     await expect(page.getByTestId('files__object-row').filter({ hasText: workspaceFileName }).first()).toBeVisible({
@@ -790,26 +1667,221 @@ test.describe.serial('@lane-real files user stories', () => {
       timeout: 30_000,
     });
     await openFolderByName(page, '.artifacts');
-    const artifactRow = page.getByTestId('files__object-row').filter({ hasText: artifactFileName }).first();
-    await expect(artifactRow).toBeVisible({ timeout: 30_000 });
-    await artifactRow.getByRole('button').click();
-
-    const downloadResponsePromise = page.waitForResponse((response) => (
-      response.request().method() === 'GET'
-      && response
-        .url()
-        .includes(`/workspaces/${WORKSPACE_ID}/projects/${projectId}/file-libraries/${libraryId}/download`)
-      && response.url().includes('/download')
-      && response.status() === 200
-    ));
-    await page.getByTestId('files__download').click();
-    const downloadResponse = await downloadResponsePromise;
-    expect(downloadResponse.url()).toContain(`path=${encodeURIComponent(`workspace/.artifacts/${artifactFileName}`)}`);
-
-    const verifiedDownload = await page.request.get(downloadResponse.url(), {
-      headers: await authHeaders(page),
+    await selectObjectAndDownloadViaUi({
+      page,
+      workspaceId: WORKSPACE_ID,
+      projectId,
+      libraryId,
+      fileName: artifactFileName,
+      expectedPath: `workspace/.artifacts/${artifactFileName}`,
+      expectedContent: contentLine,
     });
-    expect(verifiedDownload.ok()).toBeTruthy();
-    expect((await verifiedDownload.text()).trim()).toBe(contentLine);
+  });
+
+  test('task file-library binding releases on task delete and can be explicitly reused', async ({ page }) => {
+    test.setTimeout(420_000);
+
+    await keycloakLoginToWorkspace(page, WORKSPACE_ID, KEYCLOAK_DEV_ADMIN_USERNAME, KEYCLOAK_DEV_ADMIN_PASSWORD);
+    const { projectId } = await resolveDemoProjectAndRunner(page);
+    const timestamp = Date.now();
+    const libraryName = `Binding lifecycle HOME ${timestamp}`;
+    const carryOverFolder = `carry-over-${timestamp}`;
+    const carryOverFileName = `notes-${timestamp}.md`;
+    const carryOverPath = `${carryOverFolder}/${carryOverFileName}`;
+    const carryOverContent = `carry-over:${timestamp}`;
+    const artifactPath = 'workspace/.artifacts/result.txt';
+    const artifactTaskRelativePath = '.artifacts/result.txt';
+    const artifactContent = `artifact-file-as-home-payload:${timestamp}`;
+    const taskA = await createAgentTaskAfterProjectStorageReady({
+      page,
+      workspaceId: WORKSPACE_ID,
+      projectId,
+      title: `Binding lifecycle task A ${timestamp}`,
+      workspaceName: libraryName,
+    });
+    await waitForLibraryStatus({
+      page,
+      workspaceId: WORKSPACE_ID,
+      projectId,
+      libraryId: taskA.workspaceFileLibraryId,
+      expected: /^ready$/i,
+      timeoutMs: 180_000,
+    });
+    const boundLibrary = await waitForLibraryBindingStatus({
+      page,
+      workspaceId: WORKSPACE_ID,
+      projectId,
+      libraryId: taskA.workspaceFileLibraryId,
+      expected: 'bound',
+    });
+    expect(boundLibrary.bound_task_title).toContain('Binding lifecycle task A');
+
+    await createFolderViaApi({
+      page,
+      workspaceId: WORKSPACE_ID,
+      projectId,
+      libraryId: taskA.workspaceFileLibraryId,
+      path: carryOverFolder,
+    });
+    await uploadTextFileViaApi({
+      page,
+      workspaceId: WORKSPACE_ID,
+      projectId,
+      libraryId: taskA.workspaceFileLibraryId,
+      path: carryOverPath,
+      content: carryOverContent,
+    });
+    await createFolderViaApi({
+      page,
+      workspaceId: WORKSPACE_ID,
+      projectId,
+      libraryId: taskA.workspaceFileLibraryId,
+      path: 'workspace',
+    });
+    await createFolderViaApi({
+      page,
+      workspaceId: WORKSPACE_ID,
+      projectId,
+      libraryId: taskA.workspaceFileLibraryId,
+      path: 'workspace/.artifacts',
+    });
+    await uploadTextFileViaApi({
+      page,
+      workspaceId: WORKSPACE_ID,
+      projectId,
+      libraryId: taskA.workspaceFileLibraryId,
+      path: artifactPath,
+      content: artifactContent,
+    });
+    await waitForFileEntryViaApi({
+      page,
+      workspaceId: WORKSPACE_ID,
+      projectId,
+      libraryId: taskA.workspaceFileLibraryId,
+      path: artifactPath,
+    });
+
+    const occupiedCreateResponse = await postCreateAgentTaskUsingExistingFileLibraryViaApi({
+      page,
+      workspaceId: WORKSPACE_ID,
+      projectId,
+      title: `Binding lifecycle rejected task ${timestamp}`,
+      fileLibraryId: taskA.workspaceFileLibraryId,
+    });
+    expect(occupiedCreateResponse.status(), await occupiedCreateResponse.text()).toBe(409);
+    await expect(occupiedCreateResponse.json()).resolves.toMatchObject({
+      error_code: 'AGENT_TASK_FILE_LIBRARY_IN_USE',
+      message: 'workspace_file_library_in_use',
+      file_library_id: taskA.workspaceFileLibraryId,
+      bound_task_title: expect.stringContaining('Binding lifecycle task A'),
+    });
+
+    await deleteAgentTaskViaApi({
+      page,
+      workspaceId: WORKSPACE_ID,
+      projectId,
+      taskId: taskA.taskId,
+    });
+    await waitForLibraryBindingStatus({
+      page,
+      workspaceId: WORKSPACE_ID,
+      projectId,
+      libraryId: taskA.workspaceFileLibraryId,
+      expected: 'unbound',
+      timeoutMs: 180_000,
+    });
+    await waitForTextFileContentViaApi({
+      page,
+      workspaceId: WORKSPACE_ID,
+      projectId,
+      libraryId: taskA.workspaceFileLibraryId,
+      path: carryOverPath,
+      expectedContent: carryOverContent,
+      timeoutMs: 60_000,
+    });
+    await waitForTextFileContentViaApi({
+      page,
+      workspaceId: WORKSPACE_ID,
+      projectId,
+      libraryId: taskA.workspaceFileLibraryId,
+      path: artifactPath,
+      expectedContent: artifactContent,
+      timeoutMs: 60_000,
+    });
+
+    const taskB = await createTaskUsingExistingLibraryViaUi({
+      page,
+      workspaceId: WORKSPACE_ID,
+      projectId,
+      title: `Binding lifecycle task B ${timestamp}`,
+      libraryName,
+    });
+    expect(taskB.workspaceFileLibraryId).toBe(taskA.workspaceFileLibraryId);
+    await waitForLibraryBindingStatus({
+      page,
+      workspaceId: WORKSPACE_ID,
+      projectId,
+      libraryId: taskA.workspaceFileLibraryId,
+      expected: 'bound',
+      timeoutMs: 180_000,
+    });
+
+    await openWorkspaceFilesRoot({
+      page,
+      workspaceId: WORKSPACE_ID,
+      projectId,
+      libraryId: taskA.workspaceFileLibraryId,
+    });
+    await openFolderByName(page, carryOverFolder);
+    await selectObjectAndDownloadViaUi({
+      page,
+      workspaceId: WORKSPACE_ID,
+      projectId,
+      libraryId: taskA.workspaceFileLibraryId,
+      fileName: carryOverFileName,
+      expectedPath: carryOverPath,
+      expectedContent: carryOverContent,
+    });
+    await openWorkspaceFilesRoot({
+      page,
+      workspaceId: WORKSPACE_ID,
+      projectId,
+      libraryId: taskA.workspaceFileLibraryId,
+    });
+    await openFolderByName(page, 'workspace');
+    await openFolderByName(page, '.artifacts');
+    await selectObjectAndDownloadViaUi({
+      page,
+      workspaceId: WORKSPACE_ID,
+      projectId,
+      libraryId: taskA.workspaceFileLibraryId,
+      fileName: 'result.txt',
+      expectedPath: artifactPath,
+      expectedContent: artifactContent,
+    });
+    const taskBArtifacts = await listTaskArtifactsViaApi({
+      page,
+      workspaceId: WORKSPACE_ID,
+      projectId,
+      taskId: taskB.taskId,
+    });
+    expect(taskBArtifacts.some((item) => item.task_relative_path === artifactTaskRelativePath)).toBe(false);
+
+    await openWorkspaceFilesRoot({
+      page,
+      workspaceId: WORKSPACE_ID,
+      projectId,
+      libraryId: taskA.workspaceFileLibraryId,
+    });
+    await expect(page.getByTestId('files__bound-home-banner')).toContainText(/Binding lifecycle task B/, {
+      timeout: 30_000,
+    });
+    await page.getByTestId(`files__library-delete-inline--${taskA.workspaceFileLibraryId}`).click();
+    const deleteDialog = page.getByTestId('files__dialog__library-delete');
+    await expect(deleteDialog).toBeVisible({ timeout: 10_000 });
+    await expect(deleteDialog).toContainText('Delete the bound task before deleting this library.');
+    await expect(deleteDialog).not.toContainText(/FILE_LIBRARY_TASK_IN_USE|file_library_task_in_use/);
+    await deleteDialog.getByTestId('files__library-delete__confirm').fill(libraryName);
+    await expect(deleteDialog.getByTestId('files__library-delete__submit')).toBeDisabled();
   });
 });

@@ -13,9 +13,9 @@ Agent task work uses backend-managed task files. Treat the Files page as the sup
 
 ## Directory Model
 
-- Opening the Files page from normal project navigation starts in `workspace/`, which is where task work should place user-facing task files.
-- The file-library root is still reachable from the breadcrumb or with `prefix=/` in the Files URL.
-- The root view shows task files and system folders exactly as the backend lists them. Dot folders such as `.codex/`, `.mbos/`, `.agents/`, or `.artifacts/` are not hidden by the frontend.
+- Opening the Files page from normal project navigation starts at the file library HOME root. When a library is attached to an Agent task, that root is the task HOME.
+- The `workspace/` folder is a normal child folder under HOME. Task work can place user-facing task files there, and task artifacts live under `workspace/.artifacts/`.
+- The HOME root view shows files and system folders exactly as the backend lists them. Dot folders such as `.codex/`, `.mbos/`, `.agents/`, or `.cache/` are not hidden by the frontend when they exist; not every HOME contains every example folder.
 - Folder visibility is a file library state issue. If a system folder looks unexpected, review the file library status and task activity before deleting or moving it.
 
 ## Access Model
@@ -23,6 +23,10 @@ Agent task work uses backend-managed task files. Treat the Files page as the sup
 - Members with project read/use access can browse file libraries and download files.
 - Members also need Files update access to create libraries, upload files, create folders, rename, move, delete, manage File states, create save points, restore files, or publish task file templates.
 - Published task file templates are starting file sets for new Agent tasks. Task creation shows them as task file templates, not as generic file templates.
+- Save points and restore apply to the whole file library HOME, not just the currently open folder or `workspace/`.
+- Restoring may take time. Treat "restoring" or "pending" as an in-progress state until the Files page reaches a final success or failure state.
+- A file library attached to a task stays attached until that task is deleted and the release finishes. Stopping or ending a task run does not make the library reusable.
+- Reusing a released library carries over HOME files only. Old task messages, traces, terminal sessions, runner binding, and artifact metadata are not reused.
 
 ## Current Behavior
 

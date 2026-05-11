@@ -45,6 +45,7 @@ import type {
 } from './file-library-model.js';
 import {
   FileLibraryStorageOperationPendingError,
+  type FileLibraryStoragePort,
 } from './file-library-afscp-storage.js';
 import {
   readProjectPermissionContext,
@@ -65,6 +66,7 @@ type JsonResponder = (res: http.ServerResponse, statusCode: number, body: unknow
 const TASK_FILE_TEMPLATE_USE_PERMISSION = 'project:agent_task:use';
 const TASK_FILE_TEMPLATE_MANAGE_PERMISSION = 'project:files:update';
 const FILE_LIBRARY_RETRY_AFTER_MS = 2_000;
+const RESTORE_PREVIEW_FENCE_SAVE_POINT_MESSAGE = 'Restore preview current state';
 
 class FileLibraryRestorePreviewActiveError extends Error {
   readonly preview: FileLibraryRestorePreviewRecord;
@@ -240,6 +242,10 @@ function readOptionalRequestId(req: http.IncomingMessage): string | undefined {
 
 function publicFileOperationMessage(error: unknown, fallback: string): string {
   const message = readErrorMessage(error);
+  const normalized = message.trim().toLowerCase().replace(/[_-]+/g, ' ');
+  if (normalized.includes('storage not ready')) {
+    return 'file_library_project_storage_not_ready';
+  }
   if (PUBLIC_FILE_OPERATION_MESSAGES.has(message)) {
     return message;
   }
@@ -385,6 +391,40 @@ function fileLibraryControlRouteErrorBody(
     };
   }
   return base;
+}
+
+async function createRestorePreviewCurrentStateFence(input: {
+  storageAdapter: FileLibraryStoragePort;
+  savePointRepo: JsonDocFileLibrarySavePointMappingRepo;
+  workspaceId: string;
+  projectId: string;
+  libraryId: string;
+  actorUserId: string;
+  requestId?: string;
+}): Promise<void> {
+  const result = await input.storageAdapter.createSavePoint({
+    workspaceId: input.workspaceId,
+    projectId: input.projectId,
+    libraryId: input.libraryId,
+    message: RESTORE_PREVIEW_FENCE_SAVE_POINT_MESSAGE,
+    actorUserId: input.actorUserId,
+    requestId: input.requestId,
+  });
+  if (!result.savePointId) return;
+  await input.savePointRepo.upsertFromAfscp({
+    workspaceId: input.workspaceId,
+    projectId: input.projectId,
+    libraryId: input.libraryId,
+    afscpSavePointId: result.savePointId,
+    message: RESTORE_PREVIEW_FENCE_SAVE_POINT_MESSAGE,
+    createdAt: result.createdAt,
+    purpose: 'restore_preview_fence',
+  });
+}
+
+function buildPublishSnapshotAfscpTemplateId(taskFileTemplateId: string, requestId?: string): string {
+  const suffix = requestId?.trim() || generateTaskFileTemplateId();
+  return buildAfscpTemplateId(`${taskFileTemplateId}_publish_${suffix}`);
 }
 
 function operationStatusToRestorePreviewStatus(status: 'pending' | 'succeeded' | 'failed') {
@@ -742,6 +782,24 @@ export async function handleProjectFileLibraryRoutes(args: {
       json(res, 404, { error_code: 'TASK_FILE_TEMPLATE_NOT_FOUND', message: 'task_file_template_not_found' });
       return true;
     }
+    const requestId = readOptionalRequestId(req);
+    const sourceLibrary = existing.status === 'published'
+      ? null
+      : await catalogRepo.getById(workspaceId, projectId, existing.source_library_id);
+    if (existing.status !== 'published') {
+      if (!deps.fileLibraryStorageAdapter?.enabled) {
+        json(res, 503, { error_code: 'SERVICE_UNAVAILABLE', message: 'file_library_backend_unavailable' });
+        return true;
+      }
+      if (!sourceLibrary) {
+        json(res, 404, { error_code: 'FILE_LIBRARY_NOT_FOUND', message: 'file_library_not_found' });
+        return true;
+      }
+      if (sourceLibrary.status !== 'ready') {
+        json(res, 409, buildFileLibraryNotReadyResponse(sourceLibrary));
+        return true;
+      }
+    }
     try {
       await ensureNoActiveRestorePreview({
         deps,
@@ -749,8 +807,59 @@ export async function handleProjectFileLibraryRoutes(args: {
         workspaceId,
         projectId,
         libraryId: existing.source_library_id,
-        requestId: readOptionalRequestId(req),
+        requestId,
       });
+      const updated = existing.status === 'published'
+        ? await templateRepo.updateStatus({
+            workspaceId,
+            projectId,
+            taskFileTemplateId,
+            status: 'published',
+          })
+        : await (async () => {
+            if (!sourceLibrary || !deps.fileLibraryStorageAdapter?.enabled) {
+              throw new Error('file_library_template_create_failed');
+            }
+            const result = await deps.fileLibraryStorageAdapter.createTemplateFromLibrary({
+              workspaceId,
+              projectId,
+              libraryId: sourceLibrary.id,
+              templateId: buildPublishSnapshotAfscpTemplateId(taskFileTemplateId, requestId),
+              actorUserId: user.id,
+              requestId,
+            });
+            if (result.operationStatus === 'pending') {
+              throw new Error('file_library_template_create_pending');
+            }
+            if (result.operationStatus === 'failed') {
+              throw new Error('file_library_template_create_failed');
+            }
+            if (!result.sourceSavePointId) {
+              throw new Error('file_library_template_create_failed');
+            }
+            const sourceSavePoint = await new JsonDocFileLibrarySavePointMappingRepo(deps.docStore).upsertFromAfscp({
+              workspaceId,
+              projectId,
+              libraryId: sourceLibrary.id,
+              afscpSavePointId: result.sourceSavePointId,
+              message: `Template source: ${existing.name}`,
+              purpose: 'task_template_source',
+            });
+            return templateRepo.publishWithSnapshot({
+              workspaceId,
+              projectId,
+              taskFileTemplateId,
+              afscpTemplateId: result.templateId,
+              afscpCreateOperationId: result.operationId ?? null,
+              sourceSavePointId: sourceSavePoint.id,
+              sourceAfscpSavePointId: result.sourceSavePointId,
+            });
+          })();
+      if (!updated) {
+        json(res, 404, { error_code: 'TASK_FILE_TEMPLATE_NOT_FOUND', message: 'task_file_template_not_found' });
+        return true;
+      }
+      json(res, 200, templateRepo.toPublic(updated));
     } catch (error) {
       const mapped = mapFileLibraryControlRouteError(
         error,
@@ -758,19 +867,7 @@ export async function handleProjectFileLibraryRoutes(args: {
         'file_library_template_create_failed',
       );
       json(res, mapped.statusCode, fileLibraryControlRouteErrorBody(mapped, error));
-      return true;
     }
-    const updated = await templateRepo.updateStatus({
-      workspaceId,
-      projectId,
-      taskFileTemplateId,
-      status: 'published',
-    });
-    if (!updated) {
-      json(res, 404, { error_code: 'TASK_FILE_TEMPLATE_NOT_FOUND', message: 'task_file_template_not_found' });
-      return true;
-    }
-    json(res, 200, templateRepo.toPublic(updated));
     return true;
   }
 
@@ -1097,7 +1194,7 @@ export async function handleProjectFileLibraryRoutes(args: {
           message: rawSavePoint.message,
           createdAt: rawSavePoint.createdAt,
         });
-        if (mapped.purpose !== 'task_template_source') {
+        if (mapped.purpose === 'user') {
           items.push(savePointRepo.toPublic(mapped));
         }
       }
@@ -1214,6 +1311,15 @@ export async function handleProjectFileLibraryRoutes(args: {
         workspaceId,
         projectId,
         libraryId,
+        requestId: readOptionalRequestId(req),
+      });
+      await createRestorePreviewCurrentStateFence({
+        storageAdapter: deps.fileLibraryStorageAdapter,
+        savePointRepo,
+        workspaceId,
+        projectId,
+        libraryId,
+        actorUserId: user.id,
         requestId: readOptionalRequestId(req),
       });
       const result = await deps.fileLibraryStorageAdapter.createRestorePreview({

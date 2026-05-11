@@ -61,9 +61,9 @@ const t = (key: string, values?: Record<string, string>) => {
     'file_manager.cancel': 'Cancel',
     'file_manager.close': 'Close',
     'file_manager.delete': 'Delete',
-    'file_manager.file_state_dialog_description': '{name}. Save points, restore, and task file templates apply to all task files.',
+    'file_manager.file_state_dialog_description': '{name}. Save points, restore, and task file templates apply to the whole file library HOME payload.',
     'file_manager.file_state_dialog_no_library': 'No ready file library is selected.',
-    'file_manager.file_state_scope_notice': 'This includes system folders. Restore changes files only; the task conversation and trace stay unchanged.',
+    'file_manager.file_state_scope_notice': 'This includes system folders. Restore changes files only; conversations and traces stay unchanged.',
     'file_manager.file_states': 'File states',
     'file_manager.save_point_create': 'Save current state',
     'file_manager.save_point_empty': 'No save points yet',
@@ -72,26 +72,30 @@ const t = (key: string, values?: Record<string, string>) => {
     'file_manager.save_point_message': 'Save point note',
     'file_manager.save_point_message_placeholder': 'e.g. Before prompt edits',
     'file_manager.save_point_retry': 'Retry',
-    'file_manager.save_point_scope_hint': 'Save a snapshot of all task files before major file changes.',
+    'file_manager.save_point_scope_hint': 'Save a snapshot of the whole file library HOME payload before major file changes.',
     'file_manager.save_points': 'Save points',
     'file_manager.restore': 'Restore',
     'file_manager.restore_cancel': 'Cancel restore',
     'file_manager.restore_confirm': 'Restore files',
     'file_manager.restore_preview_blocked_default': 'Restore is blocked until the file library is ready for a new preview.',
+    'file_manager.restore_preview_blocked_active_writer': 'Files are still being written. Wait for the active file operation to finish, then try again.',
+    'file_manager.restore_preview_blocked_stale_writer_uncertain': 'Files may still be changing. Refresh and create a new preview before restoring.',
+    'file_manager.restore_preview_blocked_stale': 'The preview is out of date. Create a new preview before restoring.',
+    'file_manager.restore_preview_blocked_recovery': 'The restore preview needs recovery. Create a new preview before restoring.',
     'file_manager.restore_preview_blockers_title': 'Needs attention',
     'file_manager.restore_preview_canceling_summary': 'The cancel request is being reconciled. Template publishing stays blocked until it clears.',
     'file_manager.restore_preview_canceling_title': 'Canceling restore preview',
     'file_manager.restore_preview_failed_default': 'The preview failed. Create a new preview before restoring.',
     'file_manager.restore_preview_failed_title': 'Restore preview failed',
     'file_manager.restore_preview_not_ready_default': 'The preview is not ready yet. Wait or create a new preview.',
-    'file_manager.restore_preview_preparing_summary': 'Comparing this save point with current task files. Restore will be available when the preview is ready.',
+    'file_manager.restore_preview_preparing_summary': 'Comparing this save point with the current file library HOME payload. Restore will be available when the preview is ready.',
     'file_manager.restore_preview_preparing_title': 'Preparing restore preview',
     'file_manager.restore_preview_ready': 'Ready to restore {name}',
     'file_manager.restore_preview_restoring_summary': 'The restore is running. Template publishing stays blocked until file state settles.',
     'file_manager.restore_preview_restoring_title': 'Restoring files',
     'file_manager.restore_preview_stale_default': 'The preview is out of date. Create a new preview before restoring.',
     'file_manager.restore_preview_summary_counts': 'Added {added}, changed {changed}, removed {removed}.',
-    'file_manager.restore_preview_summary_default': 'Restore will replace all task files with this save point. The task conversation and trace stay unchanged.',
+    'file_manager.restore_preview_summary_default': 'Restore will replace the whole file library HOME payload with this save point. Conversations and traces stay unchanged.',
     'file_manager.restore_preview_target_default': 'selected save point',
     'file_manager.restore_status_checking': 'Checking restore state before template publishing.',
     'file_manager.task_template_description': 'Description',
@@ -100,13 +104,15 @@ const t = (key: string, values?: Record<string, string>) => {
     'file_manager.task_template_action_failed': 'Task file template could not be updated. Your form is still here; try again after the project is ready.',
     'file_manager.task_template_action_failed_title': 'Template action needs attention',
     'file_manager.task_template_capability_denied': 'Task file templates are not available for this project yet. Ask an admin to enable file templates, then try again.',
+    'file_manager.task_template_active_writer_blocked': 'Files are still being written. Wait for the active file operation to finish, then try again.',
+    'file_manager.task_template_storage_not_ready': 'Project file storage is not ready yet. Wait for initialization to finish, then try again.',
     'file_manager.task_template_name': 'Template name',
     'file_manager.task_template_name_placeholder': 'e.g. Release notes starter',
     'file_manager.task_template_operation_pending': 'File state is still being updated. Wait for the current file operation to finish, then try again.',
     'file_manager.task_template_publish_current': 'Publish current state',
     'file_manager.task_template_restore_active': 'A restore preview is still open. Cancel or finish it before publishing task file templates.',
     'file_manager.task_template_restore_pending': 'Cancel or finish this restore preview before publishing task file templates.',
-    'file_manager.task_template_scope_hint': 'Publish a reusable task file template from all task files.',
+    'file_manager.task_template_scope_hint': 'Publish a reusable task file template from the whole file library HOME payload.',
     'file_manager.task_template_status_failed': 'Failed',
     'file_manager.task_template_status_published': 'Published',
     'file_manager.task_template_status_unpublished': 'Draft',
@@ -260,7 +266,7 @@ describe('FileLibraryRecoveryDialog', () => {
     renderDialog();
 
     expect(screen.getByTestId('files__file-states-scope')).toHaveTextContent(
-      'This includes system folders. Restore changes files only; the task conversation and trace stay unchanged.',
+      'This includes system folders. Restore changes files only; conversations and traces stay unchanged.',
     );
 
     await user.type(screen.getByTestId('files__save-point__message'), 'Before prompt edits');
@@ -359,6 +365,35 @@ describe('FileLibraryRecoveryDialog', () => {
     expect(mockRunRestore).not.toHaveBeenCalled();
   });
 
+  it.each([
+    ['active_writer_sessions', 'Files are still being written. Wait for the active file operation to finish, then try again.'],
+    ['stale_writer_session_uncertain', 'Files may still be changing. Refresh and create a new preview before restoring.'],
+    ['restore_preview_stale', 'The preview is out of date. Create a new preview before restoring.'],
+    ['restore_plan_requires_recovery', 'The restore preview needs recovery. Create a new preview before restoring.'],
+  ] as const)('uses product copy for restore preview blocker fallback %s', async (code, expected) => {
+    const user = userEvent.setup();
+    mockCreateRestorePreview.mockResolvedValueOnce({
+      id: `rp_blocked_${code}`,
+      file_library_id: 'lib_1',
+      source_save_point_id: 'sp_1',
+      message: 'Before edits',
+      status: 'ready',
+      blockers: [{ code }],
+      stale: false,
+      created_at: '2026-05-09T12:01:00.000Z',
+      updated_at: '2026-05-09T12:01:00.000Z',
+    });
+    renderDialog();
+
+    await user.click(screen.getByTestId('files__save-point__restore--sp_1'));
+
+    expect(await screen.findByTestId('files__restore-preview-blockers')).toHaveTextContent(expected);
+    expect(screen.getByTestId('files__restore-preview-blockers')).not.toHaveTextContent(
+      'Restore is blocked until the file library is ready for a new preview.',
+    );
+    expect(screen.getByTestId('files__restore-confirm')).toBeDisabled();
+  });
+
   it('treats stale restore previews as blocked even when no blockers are returned', async () => {
     const user = userEvent.setup();
     mockCreateRestorePreview.mockResolvedValueOnce({
@@ -406,6 +441,39 @@ describe('FileLibraryRecoveryDialog', () => {
     expect(screen.getByTestId('files__restore-confirm')).toBeDisabled();
     expect(screen.getByRole('tab', { name: 'Task file templates' })).toBeDisabled();
     expect(mockCreateRestorePreview).not.toHaveBeenCalled();
+  });
+
+  it('keeps a pending restore run in restoring state from the active backend projection', () => {
+    mockActiveRestorePreviewQueryState.mockReturnValue({
+      data: {
+        restore_preview: {
+          id: 'rp_active_restoring',
+          file_library_id: 'lib_1',
+          source_save_point_id: 'sp_1',
+          message: 'Before edits',
+          status: 'restoring',
+          blockers: [],
+          stale: false,
+          created_at: '2026-05-09T12:01:00.000Z',
+          updated_at: '2026-05-09T12:02:00.000Z',
+        },
+      },
+      error: null,
+      isError: false,
+      isLoading: false,
+      refetch: mockRefetchActiveRestorePreview,
+    });
+
+    renderDialog();
+
+    expect(screen.getByTestId('files__restore-preview-title')).toHaveTextContent('Restoring files');
+    expect(screen.getByTestId('files__restore-preview-summary')).toHaveTextContent(
+      'The restore is running. Template publishing stays blocked until file state settles.',
+    );
+    expect(screen.getByTestId('files__restore-preview-title')).not.toHaveTextContent('Ready to restore');
+    expect(screen.getByTestId('files__restore-confirm')).toBeDisabled();
+    expect(screen.getByTestId('files__restore-cancel')).toBeDisabled();
+    expect(screen.getByRole('tab', { name: 'Task file templates' })).toBeDisabled();
   });
 
   it('enables restore when the active backend projection is ready', async () => {
@@ -539,7 +607,7 @@ describe('FileLibraryRecoveryDialog', () => {
     {
       status: 'previewing' as const,
       title: 'Preparing restore preview',
-      summary: 'Comparing this save point with current task files. Restore will be available when the preview is ready.',
+      summary: 'Comparing this save point with the current file library HOME payload. Restore will be available when the preview is ready.',
       confirmEnabled: false,
       cancelEnabled: true,
     },
@@ -761,6 +829,26 @@ describe('FileLibraryRecoveryDialog', () => {
       rawMessage: 'file_library_operation_pending',
       expected: 'File state is still being updated. Wait for the current file operation to finish, then try again.',
     },
+    {
+      errorCode: 'FILE_LIBRARY_RESTORE_OPERATION_PENDING',
+      rawMessage: 'file_library_restore_operation_pending',
+      expected: 'File state is still being updated. Wait for the current file operation to finish, then try again.',
+    },
+    {
+      errorCode: 'FILE_LIBRARY_ACTIVE_WRITER_BLOCKED',
+      rawMessage: 'file_library_active_writer_blocked',
+      expected: 'Files are still being written. Wait for the active file operation to finish, then try again.',
+    },
+    {
+      errorCode: 'FILE_LIBRARY_STORAGE_NOT_READY',
+      rawMessage: 'storage not ready',
+      expected: 'Project file storage is not ready yet. Wait for initialization to finish, then try again.',
+    },
+    {
+      errorCode: 'FILE_LIBRARY_RESTORE_PREVIEW_STALE',
+      rawMessage: 'file_library_restore_preview_stale',
+      expected: 'The preview is out of date. Create a new preview before restoring.',
+    },
   ])('keeps template form recoverable and productizes typed template conflict %s', async ({
     errorCode,
     expected,
@@ -788,7 +876,7 @@ describe('FileLibraryRecoveryDialog', () => {
     await user.click(screen.getByRole('tab', { name: 'Task file templates' }));
 
     const text = document.body.textContent ?? '';
-    for (const forbidden of ['AFSCP', 'JuiceFS', 'HOME', 'hidden runtime', 'repo', 'namespace', 'volume', 'raw mount', 'credential']) {
+    for (const forbidden of ['AFSCP', 'JuiceFS', 'hidden runtime', 'repo', 'namespace', 'volume', 'raw mount', 'credential']) {
       expect(text).not.toContain(forbidden);
     }
   });

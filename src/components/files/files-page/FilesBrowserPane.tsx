@@ -10,7 +10,7 @@ import { formatBytes } from '@/lib/utils/formatters';
 import type { FileLibrary, FileObjectsListItem } from '@/lib/api/types';
 import type { FileSortBy, FileSortOrder } from '@/lib/hooks/use-files-url-state';
 import type { FileSelectionMode, SelectedRowId } from './utils';
-import { rowId } from './utils';
+import { getRuntimeSystemDotFolderInfo, rowId } from './utils';
 
 type FilesBrowserPaneProps = {
   t: (key: string, values?: Record<string, string>) => string;
@@ -153,6 +153,9 @@ export function FilesBrowserPane(props: FilesBrowserPaneProps) {
   const libraryActionsDisabled = !selectedLibraryId || selectedLibraryUnavailable;
   const showWriteActions = canManage;
   const selectedLibraryBound = selectedLibraryTaskHomeBinding?.task_home_binding_status === 'bound';
+  const homeRootNoteKey = selectedLibraryBound
+    ? 'file_manager.home_root_note_bound'
+    : 'file_manager.home_root_note';
   const boundLibraryBanner = selectedLibraryBound
     ? (
         selectedLibraryTaskHomeBinding.bound_task_visible && selectedLibraryTaskHomeBinding.bound_task_title
@@ -179,7 +182,7 @@ export function FilesBrowserPane(props: FilesBrowserPaneProps) {
           <div className="mt-0.5 text-sm text-secondary">{selectedLibraryId ? t('file_manager.home_root') : t('file_manager.no_libraries')}</div>
           {selectedLibraryId && !prefix ? (
             <div className="mt-0.5 max-w-[360px] text-[11px] text-tertiary" data-testid="files__root-scope-note">
-              {t('file_manager.home_root_note')}
+              {t(homeRootNoteKey)}
             </div>
           ) : null}
         </div>
@@ -492,6 +495,7 @@ export function FilesBrowserPane(props: FilesBrowserPaneProps) {
                 itemContent={(index, item) => {
                   const id = rowId(item);
                   const checked = selectedIds.includes(id);
+                  const runtimeSystemDotFolder = getRuntimeSystemDotFolderInfo(item);
                   return (
                     <div
                       key={id}
@@ -509,22 +513,33 @@ export function FilesBrowserPane(props: FilesBrowserPaneProps) {
                         </div>
                       ) : null}
                       <div className="px-3 py-2 min-w-0">
-                        <button
-                          type="button"
-                          className="flex items-center gap-2 w-full text-left"
-                          onClick={(event) => onRowActivate(event, item, id, index)}
-                          onDoubleClick={() => onRowOpen(item)}
-                        >
-                          <FileItemIcon
-                            kind={item.kind}
-                            name={item.name}
-                            contentType={item.kind === 'object' ? item.content_type : undefined}
-                            className="h-4 w-4 text-tertiary shrink-0"
-                          />
-                          <span className="truncate" title={item.name} aria-label={item.name}>
-                            {item.name}
-                          </span>
-                        </button>
+                        <div className="flex min-w-0 items-center gap-2">
+                          <button
+                            type="button"
+                            className="flex min-w-0 flex-1 items-center gap-2 text-left"
+                            onClick={(event) => onRowActivate(event, item, id, index)}
+                            onDoubleClick={() => onRowOpen(item)}
+                          >
+                            <FileItemIcon
+                              kind={item.kind}
+                              name={item.name}
+                              contentType={item.kind === 'object' ? item.content_type : undefined}
+                              className="h-4 w-4 text-tertiary shrink-0"
+                            />
+                            <span className="truncate" title={item.name} aria-label={item.name}>
+                              {item.name}
+                            </span>
+                          </button>
+                          {runtimeSystemDotFolder ? (
+                            <span
+                              className="shrink-0 rounded-sm border border-warning/25 bg-warning/10 px-1.5 py-0.5 text-[11px] font-medium leading-none text-warning"
+                              data-testid={`files__object-row__runtime-system-badge--${runtimeSystemDotFolder.testIdSegment}`}
+                              title={t('file_manager.runtime_system_badge')}
+                            >
+                              {t('file_manager.runtime_system_badge')}
+                            </span>
+                          ) : null}
+                        </div>
                       </div>
                       <div className="px-3 py-2 text-right text-tertiary tabular-nums">
                         {item.kind === 'object' ? formatBytes(item.size_bytes) : ''}

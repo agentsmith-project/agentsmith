@@ -18,7 +18,10 @@ The target shape is:
 - AgentSmith stores product catalog, display names, ownership, project permissions, task binding, task file template availability, and UX state.
 - AFSCP stores and executes storage truth: volume, namespace binding, repo, save point, restore plan, template clone, export session, workload mount binding, operation, and low-level audit.
 - One deployment-wide or policy-selected shared JuiceFS volume can host many AgentSmith project namespaces and file library repos.
-- File Library must faithfully show the user-visible task HOME/repo payload contents, including dot folders created by agent/runtime/user activity. It must not silently hide normal dot folders.
+- File Library must faithfully show the user-visible file library HOME/repo
+  payload contents, including dot folders created by agent/runtime/user activity.
+  When the library is bound to a task, that HOME is the task HOME. It must not
+  silently hide normal dot folders.
 - Task file templates are published to the current project template library only. They are not shared to individual members or groups in this milestone.
 - Project creation and project file-storage readiness are separate states.
   Project create may start the first bootstrap advance, but production
@@ -134,7 +137,7 @@ repo payload root and equals task HOME when the library is bound to a task. The
 versioned file-library scope is the whole HOME payload, not only
 `$HOME/workspace`.
 
-Required visible shape inside task runtime:
+Common visible shape inside task runtime:
 
 ```text
 $HOME/                         # AFSCP repo payload root
@@ -148,13 +151,21 @@ $HOME/.config/
 $HOME/.local/
 ```
 
-The Files page should open `workspace/` by default for ordinary users, because
-that is where normal task work happens. The HOME root must still be reachable
-through breadcrumb or an explicit root switch. Normal dot folders must not be
-hidden by generic filtering. Runtime folders such as `.codex`, `.mbos`,
-`.agents`, `.cache`, `.config`, and `.local` should be labeled as system/runtime
-folders, and destructive actions on them should require clearer confirmation or
-be disabled when deleting/moving them would break task runtime. Storage-provider
+The dot folders above are common runtime/system examples, not a guarantee that
+every HOME contains all of them. The product rule is existence-based: if the
+backend lists a HOME payload folder or file, including a dot folder, Files shows
+it.
+
+The Files page should open the HOME root by default, because it is the file
+library root users compare with `cd ~` in the task terminal. `workspace/`
+remains visible as an ordinary directory inside HOME and is the default
+agent/terminal working directory. Normal dot folders must not be hidden by
+generic filtering. Runtime folders such as `.codex`, `.mbos`, `.agents`,
+`.cache`, `.config`, and `.local`, when present, should have a low-cognitive UX
+guard: known top-level system/runtime folders are labeled as system/runtime
+folders, and destructive actions such as delete, move, and rename require
+clearer confirmation or are disabled by a backend typed blocker when the
+folder/library is protected or in use. Storage-provider
 internals are not part of the file-library payload. For AFSCP-managed repos, JVS
 control metadata must live outside the payload root through external
 control-root mode. The payload HOME must not contain `.jvs` or control-root
@@ -263,6 +274,10 @@ Safety behavior:
   verify that the file library still matches that preview base and fence. If the
   head/generation/fence no longer matches, restore-run fails with a typed stale
   preview state and requires the user to preview again before confirming.
+- If restore preview materializes a current-state save point or equivalent
+  checkpoint for fence/recovery purposes, it is an internal restore preview
+  fence. It must be hidden from ordinary save point lists. If surfaced in
+  audit/debug projection, label it `internal/restore preview fence`.
 - AgentSmith frontend may explain the blocker, but backend and AFSCP remain the authority. Blocking UX must use typed AFSCP blockers and tell the user the next action: stop the running task, close/release terminal sessions, wait for file operations to finish, or retry later.
 - Restore operations must be operation-driven and auditable.
 - If AFSCP/JVS cannot provide enough redacted preview or blocker detail for a clear UX, that is an upstream contract gap. AgentSmith must not parse raw JVS output or inspect private control files to invent the summary.
@@ -363,6 +378,8 @@ handle these states without pretending the operation finished synchronously:
 - failed with retry or inspectable reason.
 - restore preview pending.
 - restoring.
+- restore-run accepted but still pending/reconciling; UI must not show success
+  until terminal success is observed.
 - restore blocked by active writer/session.
 - template creating.
 - template clone creating file library/task.
@@ -854,11 +871,14 @@ temporarily unavailable, or needs administrator attention.
 Required UX:
 
 - File library list remains the entry surface.
-- File browser opens `workspace/` by default and lets users switch to the HOME root for every AFSCP-backed file library, not only task-bound libraries.
+- File browser opens the HOME root by default for every AFSCP-backed file library; `workspace/` remains an ordinary directory inside HOME and is the default agent/terminal working directory.
 - Normal dot folders are visible and navigable.
 - Save points are visible in the file library detail save point list.
-- Save point, restore, and template dialogs clearly state that the action applies to the whole task file library/HOME, including hidden agent runtime folders, not only the current `workspace/` view.
+- Save point, restore, and template dialogs clearly state that the action applies to the whole file library HOME, which is the task HOME when bound, including hidden agent runtime folders, not only the current `workspace/` view.
 - Restore flow is preview-first and clearly says it restores files, leaves task conversation unchanged, and canceling preview leaves files unchanged.
+- Restore-run pending is shown as restoring/reconciling until the backend
+  reports terminal success or a typed failure/blocker; the UI does not show
+  "restored successfully" for a pending operation.
 - Template action is named as saving current task files as a task file template.
 - Template creation does not show its internal source save point as a normal recovery point; audit/debug views label it as `template source/internal` if surfaced.
 - Published task file templates appear in the current project's template library. That project template library is the only sharing/availability surface in this milestone; the UI must not ask users to choose individual members or groups for template sharing.
@@ -886,8 +906,8 @@ as a new product surface.
 
 Task create should offer:
 
-- Start with a new task workspace.
-- Continue an existing task workspace.
+- Start with new task files.
+- Reuse a released file library.
 - Start from a task file template.
 
 Existing one-file-library-per-undeleted-task binding remains:
@@ -1477,13 +1497,13 @@ This milestone is complete only when:
 2. AgentSmith no longer creates or exposes the per-file-library JuiceFS product path: no per-library JuiceFS filesystems, metadata databases, buckets, users, policies, loopback gateways, raw mount UI, raw desktop/local mount docs, `metadata_url`/bucket DTOs, or fixtures/generated/mock/evidence payloads remain as product truth.
 3. Files UI is backed by an AgentSmith backend Files UI storage adapter. That adapter may use server-side AFSCP WebDAV/export or an upstream first-class AFSCP file API as equivalent safe backing paths; credentials stay server-side and frontend/API responses never expose export credentials.
 4. The user-computer `Connect on my computer` product feature is absent in this milestone. No disabled/unavailable placeholder is shown. No acceptance criterion requires a productized desktop WebDAV connector, and no raw JuiceFS/PostgreSQL/object-storage/bucket/metadata/service credential instructions are exposed.
-5. Files browser faithfully reflects the user-visible HOME/repo payload root for every AFSCP-backed file library, including normal dot folders, while opening `workspace/` by default.
-6. Save point, restore, and template dialogs tell users the scope is the whole task file library/HOME, including hidden agent runtime folders, not only the current `workspace/` view.
+5. Files browser faithfully reflects the user-visible HOME/repo payload root for every AFSCP-backed file library, including normal dot folders, and opens the HOME root by default. `workspace/` remains an ordinary directory inside HOME and is the default agent/terminal working directory, not the Files browser root.
+6. Save point, restore, and template dialogs tell users the scope is the whole file library HOME, which is the task HOME when bound, including hidden agent runtime folders, not only the current `workspace/` view.
 7. Platform-managed Project secrets, managed OAuth credentials, execution tickets, runner connection secrets, WebDAV/export passwords, AFSCP credentials, and storage-root material are not automatically leaked or persisted into HOME payload. The handoff and tests distinguish this from user/agent-authored secret text files, which are user data risk rather than a platform guarantee.
 8. Managed runner uses AFSCP workload mount binding and an orchestrator-only repo/namespace/destination/TTL-scoped mount plan. The orchestrator cannot list/read arbitrary Kubernetes Secrets, cannot persist root credentials, and never exposes storage-root material to runner/task containers.
 9. Developer runner uses the selected AFSCP export-backed lease/connector path with short TTL, revoke, heartbeat/reconcile, and AFSCP export/session accounting when Slice 5 is unblocked and implemented. If the current AFSCP contract cannot support this safely, Slice 5 remains officially blocked upstream with upstream blocker evidence, a no-workaround record, and no developer-runner-specific backend-real/deploy smoke required for this round.
 10. Save point list/create works.
-11. Restore preview/confirm/cancel works; cancel leaves files unchanged, restore blocks active or uncertain writers, preview plans bind repo base revision/generation/head/fence token, and stale previews require preview again before restore-run. The backend operation may still be named discard preview.
+11. Restore preview/confirm/cancel works; cancel leaves files unchanged, restore blocks active or uncertain writers, preview plans bind repo base revision/generation/head/fence token, stale previews require preview again before restore-run, and restore-run pending is shown as restoring/reconciling until the backend reports terminal success before success feedback appears. The backend operation may still be named discard preview.
 12. Template draft/publish/unpublish/delete/clone works within the AgentSmith project namespace model. Drafts are shown only in project template management to the creator and `project:files:update` users, mutation actions require `project:files:update`, published templates are available during task creation to current project members with `project:agent_task:use`, and no member/group sharing is introduced.
 13. Template creation internal source save points are not shown as ordinary recovery points and are labeled `template source/internal` in audit/debug projection if surfaced.
 14. Every product resource id and AFSCP resource id AgentSmith consumes maps back to the current `workspace_id/project_id/afscp_namespace_id`, current storage generation, lifecycle visibility, and ready namespace; AFSCP also rejects namespace mismatch; cross-namespace or invisible resources return not found without existence leakage.

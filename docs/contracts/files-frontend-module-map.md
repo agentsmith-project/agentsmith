@@ -27,7 +27,12 @@ Applies to:
 ## 2. Functional Contract
 
 - Module scope is file library management and file browsing.
-- A file library is a project-scoped resource for task workspace files.
+- A file library is a project-scoped HOME payload file set. When it is bound to
+  an Agent task, that HOME payload is the task HOME; unbound or released file
+  libraries are not described as a specific task HOME.
+- The file browser opens the file library HOME root by default. `workspace/` is
+  a normal child folder and the default task runtime working directory, not the
+  Files browser root.
 - Supported capabilities:
   - file library create/update/delete
   - browse directories and files
@@ -36,9 +41,9 @@ Applies to:
   - delete (single/batch)
   - multi-select
   - view file library storage readiness using product-safe status fields
-  - create save points for the whole task workspace file set
+  - create save points for the whole file library HOME payload
   - preview, cancel, and run restore operations against a save point
-  - publish/unpublish/delete task file templates from the current task workspace file set
+  - publish/unpublish/delete task file templates from the current file library HOME payload
 - Out of scope:
   - docdb/vectordb workflows
   - plugin processing
@@ -54,12 +59,27 @@ Applies to:
 - refresh or leaving the module resets browser-local state.
 - file library runtime state (`creating`, `ready`, `degraded`, `failed`, `deleting`) is backend-owned truth.
 - file library task workspace attachment state is backend-owned truth on the `FileLibrary` DTO.
+- A file library may be attached to at most one undeleted task. Stopping,
+  ending, failing, or closing a task run does not release the attachment. The
+  library becomes reusable only after task deletion and backend release/drain
+  reach a reusable terminal state.
+- Reusing a released file library carries over HOME payload files only,
+  including files under `workspace/.artifacts/` when present. It must not carry
+  over task messages, traces, terminal sessions, runner bindings, active leases,
+  artifact metadata, Project secrets, tickets, managed OAuth credentials, or
+  storage/control metadata.
 - Implementation detail: the current DTO field names are:
   - `task_home_binding_status: unbound | bound`
   - `bound_task_visible` controls whether task summary fields may be shown
   - `bound_task_id`, `bound_task_title`, and `bound_task_status` must only be rendered when `bound_task_visible` is true
 - Files must not infer task workspace attachment from the task list.
 - Save points, restore previews/runs, and task file templates are backend-owned state; the frontend displays API results and never derives restore readiness locally.
+- Restore preview may use an internal current-state fence save point. It must be
+  hidden from ordinary save point lists. If shown in audit/debug views, it must
+  be labeled `internal/restore preview fence`.
+- Published task file templates capture the file state at publish time. Later
+  source library changes, unpublish, or template delete do not mutate already
+  cloned task file libraries.
 
 ## 4. UX Contract
 
@@ -75,8 +95,26 @@ Applies to:
 - Bound libraries must be labeled in the library list. Deleting a bound library is blocked until the bound task is deleted; redacted bound tasks must not leak title/id/status.
 - Members with read/use access may browse and download project files.
 - New folder, File states, Upload, Rename, Delete, and library mutation controls require `project:files:update` and must be hidden or unusable without that permission.
-- File states copy must describe the scope as the whole task workspace file set, including system folders; it must not teach users to manage implementation folders directly.
+- Dot folders are visible when the backend lists them. The frontend must not
+  apply a generic dot-folder hide filter. Examples such as `.codex/`,
+  `.agents/`, `.mbos/`, `.cache/`, `.config/`, and `.local/` are common
+  runtime/system folders, not guaranteed contents of every HOME.
+- Known top-level runtime/system dot folders must be labeled as
+  runtime/system folders. Destructive actions such as delete, move, and rename
+  must require a second confirmation, or be disabled when a backend typed
+  blocker says the folder/library is protected or in use.
+- File states copy must describe the scope as the whole file library HOME
+  payload, including runtime/system folders when present; it must not teach
+  users to manage implementation folders directly.
+- Restore-run pending states must not be presented as success. The UI shows
+  restoring/converging copy until the backend reaches a terminal success or
+  typed failure state.
 - Task creation copy must call published templates `task file templates`.
+- Typed blocker copy must distinguish capability denied, project file storage
+  not ready, operation/restore pending, library in use, stale restore preview,
+  and active writer/session blockers. Do not collapse all blockers into
+  "contact an administrator"; only non-retryable storage readiness or capability
+  configuration states should suggest administrator action.
 
 ## 5. Backend Contract Linkage
 
@@ -96,3 +134,13 @@ Applies to:
   - UTF-8 filename integrity
   - nested directory correctness
   - degraded/failed runtime state handling
+  - HOME root default browsing and "dot folder exists => visible" behavior
+  - whole-HOME save point and restore-run round trip, including pending success timing
+  - internal restore preview fence is absent from ordinary save point lists
+  - task file template publish-time snapshot and clone independence
+  - template internal source save point is absent from ordinary recovery lists
+  - file library binding exclusivity, release after task delete, and reuse without old task state
+  - stale restore preview requires preview again before restore-run
+  - active writer/session blocks restore-run with typed copy
+  - known top-level runtime/system dot folder destructive guard
+  - typed blocker copy for capability denied, storage not ready, restore pending, and library in use; capability denied may stay at component/error-mapping coverage unless the UI path is stable and non-racy

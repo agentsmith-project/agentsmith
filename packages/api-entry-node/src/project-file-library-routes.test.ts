@@ -18,6 +18,7 @@ import {
   FileLibraryStorageOperationPendingError,
   type FileLibraryStoragePort,
 } from './file-library-afscp-storage.js';
+import { JsonDocTaskFileLibraryBindingRepo } from './notebook-task/task-file-library-bindings.js';
 import type { ProjectStoragePreflightResult } from './project-storage-bootstrap-service.js';
 
 const OWNER_USER = { id: 'user_1', email: 'user@example.com', name: 'User One' } as never;
@@ -36,6 +37,7 @@ function readyProjectStorage(): ProjectStoragePreflightResult {
 }
 
 function createStorageAdapter(overrides: Partial<FileLibraryStoragePort> = {}): FileLibraryStoragePort {
+  let createdSavePointCount = 1;
   const adapter: FileLibraryStoragePort = {
     enabled: true,
     createRepoForLibrary: vi.fn(async (input) => ({
@@ -109,12 +111,16 @@ function createStorageAdapter(overrides: Partial<FileLibraryStoragePort> = {}): 
         createdAt: '2026-05-09T00:00:00.000Z',
       },
     ]),
-    createSavePoint: vi.fn(async () => ({
-      operationId: 'op_save_point',
-      operationStatus: 'succeeded',
-      savePointId: 'sp_user_002',
-      createdAt: '2026-05-09T00:01:00.000Z',
-    })),
+    createSavePoint: vi.fn(async () => {
+      createdSavePointCount += 1;
+      const savePointSuffix = String(createdSavePointCount).padStart(3, '0');
+      return {
+        operationId: `op_save_point_${savePointSuffix}`,
+        operationStatus: 'succeeded',
+        savePointId: `sp_user_${savePointSuffix}`,
+        createdAt: '2026-05-09T00:01:00.000Z',
+      };
+    }),
     createRestorePreview: vi.fn(async () => ({
       operationId: 'op_preview01',
       operationStatus: 'succeeded',
@@ -908,6 +914,57 @@ describe('project-file-library-routes', () => {
     await expect(emptyDeps.docStore.get('project_file_libraries', String(emptyCreated.id))).resolves.toBeNull();
   });
 
+  it('blocks deleting a task-bound file library with safe bound-task fields and keeps the library ready', async () => {
+    const deps = createDeps();
+    const created = await createReadyLibrary(deps);
+    const acquired = await new JsonDocTaskFileLibraryBindingRepo(deps.docStore).acquire({
+      workspaceId: 'ws_default',
+      projectId: 'proj_1',
+      fileLibraryId: String(created.id),
+      taskId: 'task_bound_delete_blocker',
+      taskTitle: 'Bound delete blocker task',
+      taskStatus: 'active',
+      ownerUserId: OWNER_USER.id,
+      runtimeWritableAffordance: 'task_internal_home',
+      correlationId: 'req_bind_before_delete',
+    });
+    expect(acquired.ok).toBe(true);
+    const json = vi.fn();
+
+    await expect(handleProjectFileLibraryRoutes({
+      routeKind: 'fileLibraryItem',
+      method: 'DELETE',
+      workspaceId: 'ws_default',
+      projectId: 'proj_1',
+      libraryId: String(created.id),
+      req: { headers: { 'x-request-id': 'req_delete_bound_library' } } as never,
+      res: createMockResponse(),
+      deps,
+      user: OWNER_USER,
+      json,
+      readBody: vi.fn(),
+    })).resolves.toBe(true);
+
+    expect(json).toHaveBeenCalledWith(
+      expect.anything(),
+      409,
+      expect.objectContaining({
+        error_code: 'FILE_LIBRARY_TASK_IN_USE',
+        message: 'file_library_task_in_use',
+        file_library_id: created.id,
+        bound_task_visible: true,
+        bound_task_id: 'task_bound_delete_blocker',
+        bound_task_title: 'Bound delete blocker task',
+        bound_task_status: 'active',
+      }),
+    );
+    expect(deps.fileLibraryStorageAdapter.assertEmpty).not.toHaveBeenCalled();
+    expect(deps.fileLibraryStorageAdapter.deleteRepoForLibrary).not.toHaveBeenCalled();
+    await expect(deps.docStore.get('project_file_libraries', String(created.id))).resolves.toMatchObject({
+      status: 'ready',
+    });
+  });
+
   it('returns accepted and keeps deleting status while AFSCP repo delete remains pending', async () => {
     const storageAdapter = createStorageAdapter({
       deleteRepoForLibrary: vi.fn(async () => {
@@ -1426,6 +1483,89 @@ describe('project-file-library-routes', () => {
     expect(JSON.stringify([previewJson.mock.calls, runJson.mock.calls, cancelJson.mock.calls])).not.toMatch(/repo_|sp_user_|plan_|credential|control_root/);
   });
 
+  it('creates a hidden current-state fence before restore preview instead of requiring a user mutation save point', async () => {
+    const storageAdapter = createStorageAdapter();
+    const deps = createDeps({ storageAdapter });
+    const created = await createReadyLibrary(deps);
+    const libraryId = String(created.id);
+
+    const savePointJson = vi.fn();
+    await handleProjectFileLibraryRoutes({
+      routeKind: 'fileLibrarySavePoints',
+      method: 'POST',
+      workspaceId: 'ws_default',
+      projectId: 'proj_1',
+      libraryId,
+      req: { headers: { 'x-request-id': 'req_user_save_point' } } as never,
+      res: createMockResponse(),
+      deps,
+      user: OWNER_USER,
+      json: savePointJson,
+      readBody: vi.fn().mockResolvedValue({ message: 'Before delete' }),
+    });
+    const savePoint = savePointJson.mock.calls[0]?.[2] as Record<string, unknown>;
+
+    const previewJson = vi.fn();
+    await handleProjectFileLibraryRoutes({
+      routeKind: 'fileLibraryRestorePreview',
+      method: 'POST',
+      workspaceId: 'ws_default',
+      projectId: 'proj_1',
+      libraryId,
+      req: { headers: { 'x-request-id': 'req_restore_preview' } } as never,
+      res: createMockResponse(),
+      deps,
+      user: OWNER_USER,
+      json: previewJson,
+      readBody: vi.fn().mockResolvedValue({ save_point_id: savePoint.id }),
+    });
+
+    expect(storageAdapter.createSavePoint).toHaveBeenCalledTimes(2);
+    expect(storageAdapter.createSavePoint).toHaveBeenLastCalledWith(expect.objectContaining({
+      libraryId,
+      message: 'Restore preview current state',
+      actorUserId: 'user_1',
+      requestId: 'req_restore_preview',
+    }));
+    expect(vi.mocked(storageAdapter.createSavePoint).mock.invocationCallOrder[1])
+      .toBeLessThan(vi.mocked(storageAdapter.createRestorePreview).mock.invocationCallOrder[0] ?? 0);
+
+    vi.mocked(storageAdapter.listSavePoints).mockResolvedValueOnce([
+      {
+        savePointId: 'sp_user_002',
+        repoId: `repo_${libraryId}`,
+        message: 'Before delete',
+        createdAt: '2026-05-09T00:01:00.000Z',
+      },
+      {
+        savePointId: 'sp_user_003',
+        repoId: `repo_${libraryId}`,
+        message: 'Restore preview current state',
+        createdAt: '2026-05-09T00:01:00.000Z',
+      },
+    ]);
+    const listJson = vi.fn();
+    await handleProjectFileLibraryRoutes({
+      routeKind: 'fileLibrarySavePoints',
+      method: 'GET',
+      workspaceId: 'ws_default',
+      projectId: 'proj_1',
+      libraryId,
+      req: { headers: {} } as never,
+      res: createMockResponse(),
+      deps,
+      user: OWNER_USER,
+      json: listJson,
+      readBody: vi.fn(),
+    });
+    expect(listJson.mock.calls[0]?.[2]).toMatchObject({
+      items: [
+        expect.objectContaining({ message: 'Before delete' }),
+      ],
+    });
+    expect(JSON.stringify(listJson.mock.calls[0]?.[2])).not.toContain('Restore preview current state');
+  });
+
   it('returns a previewing restore preview instead of a conflict when AFSCP preview is still running', async () => {
     const storageAdapter = createStorageAdapter({
       createRestorePreview: vi.fn(async () => ({
@@ -1655,8 +1795,132 @@ describe('project-file-library-routes', () => {
     expect(JSON.stringify([getJson.mock.calls, publishJson.mock.calls])).not.toMatch(/op_restore_run_long|op_preview_hidden|repo_|plan_|sp_user_|credential|control_root/);
   });
 
+  it('keeps a pending restore run as an active restoring projection until terminal reconcile clears it', async () => {
+    const reconcileRestorePreview = vi.fn()
+      .mockResolvedValueOnce({
+        operationId: 'op_restore_run_long',
+        operationStatus: 'pending' as const,
+        restorePlanId: 'plan_hidden_pending',
+        sourceSavePointId: 'sp_user_hidden',
+      })
+      .mockResolvedValueOnce({
+        operationId: 'op_restore_run_long',
+        operationStatus: 'succeeded' as const,
+        restorePlanId: 'plan_hidden_restored',
+        sourceSavePointId: 'sp_user_hidden',
+      });
+    const storageAdapter = createStorageAdapter({
+      runRestorePreview: vi.fn(async () => ({
+        operationId: 'op_restore_run_long',
+        operationStatus: 'pending',
+        restorePlanId: 'plan_hidden_pending',
+        sourceSavePointId: 'sp_user_hidden',
+      })),
+      reconcileRestorePreview,
+    } as Partial<FileLibraryStoragePort> & { reconcileRestorePreview: typeof reconcileRestorePreview });
+    const deps = createDeps({ storageAdapter });
+    const created = await createReadyLibrary(deps);
+    const libraryId = String(created.id);
+
+    const savePointJson = vi.fn();
+    await handleProjectFileLibraryRoutes({
+      routeKind: 'fileLibrarySavePoints',
+      method: 'POST',
+      workspaceId: 'ws_default',
+      projectId: 'proj_1',
+      libraryId,
+      req: { headers: {} } as never,
+      res: createMockResponse(),
+      deps,
+      user: OWNER_USER,
+      json: savePointJson,
+      readBody: vi.fn().mockResolvedValue({ message: 'Before restore' }),
+    });
+    const savePoint = savePointJson.mock.calls[0]?.[2] as Record<string, unknown>;
+
+    const previewJson = vi.fn();
+    await handleProjectFileLibraryRoutes({
+      routeKind: 'fileLibraryRestorePreview',
+      method: 'POST',
+      workspaceId: 'ws_default',
+      projectId: 'proj_1',
+      libraryId,
+      req: { headers: {} } as never,
+      res: createMockResponse(),
+      deps,
+      user: OWNER_USER,
+      json: previewJson,
+      readBody: vi.fn().mockResolvedValue({ save_point_id: savePoint.id }),
+    });
+    const preview = previewJson.mock.calls[0]?.[2] as Record<string, unknown>;
+
+    const runJson = vi.fn();
+    await expect(handleProjectFileLibraryRoutes({
+      routeKind: 'fileLibraryRestoreRun',
+      method: 'POST',
+      workspaceId: 'ws_default',
+      projectId: 'proj_1',
+      libraryId,
+      req: { headers: { 'x-request-id': 'req_restore_run_pending' } } as never,
+      res: createMockResponse(),
+      deps,
+      user: OWNER_USER,
+      json: runJson,
+      readBody: vi.fn().mockResolvedValue({ restore_preview_id: preview.id }),
+    })).resolves.toBe(true);
+
+    expect(runJson).toHaveBeenCalledWith(expect.anything(), 200, expect.objectContaining({
+      restore_preview_id: preview.id,
+      status: 'pending',
+    }));
+
+    const pendingGetJson = vi.fn();
+    await expect(handleProjectFileLibraryRoutes({
+      routeKind: 'fileLibraryRestorePreview',
+      method: 'GET',
+      workspaceId: 'ws_default',
+      projectId: 'proj_1',
+      libraryId,
+      req: { headers: { 'x-request-id': 'req_restore_run_pending_poll' } } as never,
+      res: createMockResponse(),
+      deps,
+      user: OWNER_USER,
+      json: pendingGetJson,
+      readBody: vi.fn(),
+    })).resolves.toBe(true);
+
+    expect(pendingGetJson).toHaveBeenCalledWith(expect.anything(), 200, {
+      restore_preview: expect.objectContaining({
+        id: preview.id,
+        status: 'restoring',
+      }),
+    });
+
+    const terminalGetJson = vi.fn();
+    await expect(handleProjectFileLibraryRoutes({
+      routeKind: 'fileLibraryRestorePreview',
+      method: 'GET',
+      workspaceId: 'ws_default',
+      projectId: 'proj_1',
+      libraryId,
+      req: { headers: { 'x-request-id': 'req_restore_run_terminal_poll' } } as never,
+      res: createMockResponse(),
+      deps,
+      user: OWNER_USER,
+      json: terminalGetJson,
+      readBody: vi.fn(),
+    })).resolves.toBe(true);
+
+    expect(terminalGetJson).toHaveBeenCalledWith(expect.anything(), 200, {
+      restore_preview: null,
+    });
+    expect(JSON.stringify([runJson.mock.calls, pendingGetJson.mock.calls, terminalGetJson.mock.calls]))
+      .not.toMatch(/op_restore_run_long|repo_|plan_|sp_user_|credential|control_root/);
+  });
+
   it('returns stable restore conflict responses without exposing AFSCP ids', async () => {
     for (const [message, errorCode] of [
+      ['file_library_restore_run_pending', 'FILE_LIBRARY_OPERATION_PENDING'],
       ['file_library_restore_preview_stale', 'FILE_LIBRARY_RESTORE_PREVIEW_STALE'],
       ['file_library_active_writer_blocked', 'FILE_LIBRARY_ACTIVE_WRITER_BLOCKED'],
       ['file_library_project_storage_not_ready', 'FILE_LIBRARY_STORAGE_NOT_READY'],
@@ -2071,6 +2335,112 @@ describe('project-file-library-routes', () => {
     )).resolves.toMatchObject({
       status: 'canceled',
     });
+  });
+
+  it('re-snapshots an unpublished task file template at publish time and updates public source mapping', async () => {
+    let templateCreateCount = 0;
+    const createTemplateFromLibrary = vi.fn(async (input: Parameters<FileLibraryStoragePort['createTemplateFromLibrary']>[0]) => {
+      templateCreateCount += 1;
+      return {
+        templateId: input.templateId,
+        operationId: `op_template_create_${templateCreateCount}`,
+        operationStatus: 'succeeded' as const,
+        sourceSavePointId: `sp_template_source_${templateCreateCount}`,
+      };
+    });
+    const storageAdapter = createStorageAdapter({ createTemplateFromLibrary });
+    const deps = createDeps({ storageAdapter });
+    const created = await createReadyLibrary(deps);
+    const libraryId = String(created.id);
+
+    const createJson = vi.fn();
+    await expect(handleProjectFileLibraryRoutes({
+      routeKind: 'taskFileTemplates',
+      method: 'POST',
+      workspaceId: 'ws_default',
+      projectId: 'proj_1',
+      req: { headers: { 'x-request-id': 'req_template_create_draft' } } as never,
+      res: createMockResponse(),
+      deps,
+      user: OWNER_USER,
+      json: createJson,
+      readBody: vi.fn().mockResolvedValue({
+        name: 'Publish-time template',
+        source_library_id: libraryId,
+      }),
+    })).resolves.toBe(true);
+    const template = createJson.mock.calls[0]?.[2] as Record<string, unknown>;
+    const templateRepo = new JsonDocProjectTaskFileTemplateRepo(deps.docStore);
+    const initialInternal = await templateRepo.getById('ws_default', 'proj_1', String(template.id));
+    expect(initialInternal).toMatchObject({
+      status: 'unpublished',
+      source_afscp_save_point_id: 'sp_template_source_1',
+    });
+
+    const publishJson = vi.fn();
+    await expect(handleProjectFileLibraryRoutes({
+      routeKind: 'taskFileTemplatePublish',
+      method: 'POST',
+      workspaceId: 'ws_default',
+      projectId: 'proj_1',
+      taskFileTemplateId: String(template.id),
+      req: { headers: { 'x-request-id': 'req_template_publish_current_state' } } as never,
+      res: createMockResponse(),
+      deps,
+      user: OWNER_USER,
+      json: publishJson,
+      readBody: vi.fn(),
+    })).resolves.toBe(true);
+
+    expect(createTemplateFromLibrary).toHaveBeenCalledTimes(2);
+    expect(createTemplateFromLibrary).toHaveBeenLastCalledWith(expect.objectContaining({
+      workspaceId: 'ws_default',
+      projectId: 'proj_1',
+      libraryId,
+      actorUserId: OWNER_USER.id,
+      requestId: 'req_template_publish_current_state',
+      templateId: expect.stringMatching(/^tmpl_/),
+    }));
+    const updatedInternal = await templateRepo.getById('ws_default', 'proj_1', String(template.id));
+    expect(updatedInternal).toMatchObject({
+      status: 'published',
+      source_afscp_save_point_id: 'sp_template_source_2',
+      afscp_create_operation_id: 'op_template_create_2',
+    });
+    expect(updatedInternal?.source_save_point_id).toEqual(expect.stringMatching(/^flsp_/));
+    expect(updatedInternal?.source_save_point_id).not.toBe(initialInternal?.source_save_point_id);
+    expect(updatedInternal?.afscp_template_id).not.toBe(initialInternal?.afscp_template_id);
+
+    expect(publishJson.mock.calls[0]?.[2]).toMatchObject({
+      id: template.id,
+      status: 'published',
+      source_save_point_id: updatedInternal?.source_save_point_id,
+    });
+    expect(JSON.stringify(publishJson.mock.calls)).not.toMatch(/tmpl_|sp_template_source|repo_|credential|control_root/);
+
+    vi.mocked(storageAdapter.listSavePoints).mockResolvedValueOnce([
+      {
+        savePointId: 'sp_template_source_2',
+        repoId: `repo_${libraryId}`,
+        message: 'Template source: Publish-time template',
+        createdAt: '2026-05-09T00:02:00.000Z',
+      },
+    ]);
+    const listJson = vi.fn();
+    await handleProjectFileLibraryRoutes({
+      routeKind: 'fileLibrarySavePoints',
+      method: 'GET',
+      workspaceId: 'ws_default',
+      projectId: 'proj_1',
+      libraryId,
+      req: { headers: {} } as never,
+      res: createMockResponse(),
+      deps,
+      user: OWNER_USER,
+      json: listJson,
+      readBody: vi.fn(),
+    });
+    expect(listJson.mock.calls[0]?.[2]).toEqual({ items: [] });
   });
 
   it('manages project-scoped task file templates without exposing raw AFSCP ids', async () => {

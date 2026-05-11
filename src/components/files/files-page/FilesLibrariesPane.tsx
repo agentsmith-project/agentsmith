@@ -176,7 +176,6 @@ export function FilesLibrariesPane({
                                     event.stopPropagation();
                                     onDeleteLibrary(library);
                                   }}
-                                  disabled={taskHomeBound}
                                   aria-label={t('file_manager.library_delete')}
                                   title={taskHomeBound ? t('file_manager.library_delete_bound_blocked') : undefined}
                                   data-testid={`files__library-delete-inline--${library.id}`}

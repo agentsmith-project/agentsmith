@@ -1,6 +1,9 @@
 'use client';
 
+import * as React from 'react';
+
 import { Button } from '@/components/ui/button';
+import { Checkbox } from '@/components/ui/checkbox';
 import {
   Dialog,
   DialogContent,
@@ -8,6 +11,8 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog';
+import { Label } from '@/components/ui/label';
+import type { RuntimeSystemDotFolder } from './utils';
 
 interface ObjectOperationDialogsProps {
   batchFailedKeys: string[];
@@ -17,6 +22,7 @@ interface ObjectOperationDialogsProps {
   canManage: boolean;
   deleteInlineError: string | null;
   deleteConfirmOpen: boolean;
+  deleteRuntimeSystemTargets: RuntimeSystemDotFolder[];
   selectedCount: number;
   t: (key: string, values?: Record<string, string>) => string;
   uploadConflictFileName: string;
@@ -41,6 +47,7 @@ export function ObjectOperationDialogs({
   canManage,
   deleteInlineError,
   deleteConfirmOpen,
+  deleteRuntimeSystemTargets,
   selectedCount,
   t,
   uploadConflictFileName,
@@ -56,6 +63,15 @@ export function ObjectOperationDialogs({
   onResolveUploadConflictRename,
   onSetDeleteConfirmOpen,
 }: ObjectOperationDialogsProps) {
+  const [deleteRuntimeSystemGuardConfirmed, setDeleteRuntimeSystemGuardConfirmed] = React.useState(false);
+  const deleteRuntimeSystemTargetKey = deleteRuntimeSystemTargets.map((target) => target.prefix).join('|');
+  const hasRuntimeSystemDeleteTargets = deleteRuntimeSystemTargets.length > 0;
+  const deleteSubmitDisabled = selectedCount === 0 || (hasRuntimeSystemDeleteTargets && !deleteRuntimeSystemGuardConfirmed);
+
+  React.useEffect(() => {
+    setDeleteRuntimeSystemGuardConfirmed(false);
+  }, [deleteConfirmOpen, deleteRuntimeSystemTargetKey]);
+
   return (
     <>
       <Dialog open={canManage && uploadConflictOpen} onOpenChange={onHandleUploadConflictOpenChange}>
@@ -99,6 +115,30 @@ export function ObjectOperationDialogs({
           <div className="text-sm text-tertiary">
             {t('file_manager.delete_confirm', { count: String(selectedCount) })}
           </div>
+          {hasRuntimeSystemDeleteTargets ? (
+            <div
+              className="space-y-3 rounded-md border border-warning/30 bg-warning/10 px-3 py-2 text-sm"
+              data-testid="files__delete__runtime-system-guard"
+            >
+              <div className="font-medium text-warning">{t('file_manager.runtime_system_guard_title')}</div>
+              <div className="text-warning">
+                {t('file_manager.runtime_system_delete_guard_description', {
+                  names: deleteRuntimeSystemTargets.map((target) => target.prefix).join(', '),
+                })}
+              </div>
+              <div className="flex items-center gap-2">
+                <Checkbox
+                  id="files-delete-runtime-system-confirm"
+                  checked={deleteRuntimeSystemGuardConfirmed}
+                  onCheckedChange={(value: boolean | 'indeterminate') => setDeleteRuntimeSystemGuardConfirmed(value === true)}
+                  data-testid="files__delete__runtime-system-confirm"
+                />
+                <Label htmlFor="files-delete-runtime-system-confirm" className="text-sm text-primary">
+                  {t('file_manager.runtime_system_guard_confirm')}
+                </Label>
+              </div>
+            </div>
+          ) : null}
           {deleteInlineError ? (
             <div
               className="rounded-md border border-warning/30 bg-warning/10 px-3 py-2 text-sm text-warning"
@@ -123,13 +163,15 @@ export function ObjectOperationDialogs({
               type="button"
               variant="destructive"
               onClick={() => {
+                if (deleteSubmitDisabled) return;
                 void onHandleDelete().then((success) => {
                   if (success) {
                     onSetDeleteConfirmOpen(false);
                   }
                 });
               }}
-              disabled={selectedCount === 0}
+              disabled={deleteSubmitDisabled}
+              data-testid="files__delete__submit"
             >
               {t('file_manager.delete')}
             </Button>

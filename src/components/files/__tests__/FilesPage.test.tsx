@@ -14,6 +14,7 @@ import type { FileObjectsListItem, FileObjectsListResponse } from '@/lib/api/typ
 import { APIError } from '@/lib/api/errors';
 
 import { FilesPage } from '../FilesPage';
+import { getRuntimeSystemDotFolderInfo } from '../files-page/utils';
 import {
   createFileLibrary,
   createObjectItem,
@@ -61,10 +62,22 @@ vi.mock('next-intl', () => ({
         'file_manager.library_binding_bound_redacted': 'Bound to a task you cannot view',
         'file_manager.library_bound_home_banner': `This file library is attached to an Agent task. Changes in Files affect that task's files.`,
         'file_manager.library_bound_home_banner_visible': `This file library is attached to ${values?.title ?? 'task'} (${values?.status ?? 'unknown'}). Changes in Files affect that task's files.`,
+        'file_manager.library_delete': 'Delete library',
+        'file_manager.library_delete_bound_description': `"${values?.name ?? 'library'}" is still bound to an Agent task.`,
+        'file_manager.library_delete_bound_warning': 'Delete the bound task before deleting this library. Deleting the task releases the binding and keeps the library files.',
         'file_manager.library_delete_bound_blocked': 'Delete the bound task before deleting this library.',
-        'file_manager.home_root_note': 'This is the task HOME root. The workspace folder is one directory inside it.',
-        'file_manager.empty_home_root_description': 'This task HOME root is empty. Upload files here or open workspace/.',
+        'file_manager.confirm_name': 'Confirm name',
+        'file_manager.cancel': 'Cancel',
+        'file_manager.delete': 'Delete',
+        'file_manager.home_root_note': 'This is the file library HOME root. The workspace folder is one directory inside it.',
+        'file_manager.home_root_note_bound': 'This is the task HOME root for the attached Agent task. The workspace folder is one directory inside it.',
+        'file_manager.empty_home_root_description': 'This file library HOME root is empty. Upload files here or open workspace/.',
         'file_manager.empty_workspace_description': 'The workspace folder is empty.',
+        'file_manager.runtime_system_badge': 'Runtime/system',
+        'file_manager.runtime_system_guard_title': 'Runtime/system folder',
+        'file_manager.runtime_system_delete_guard_description': `This selection includes runtime/system folders: ${values?.names ?? '-'}. Confirm before deleting.`,
+        'file_manager.runtime_system_move_guard_description': `This action renames or moves a runtime/system folder: ${values?.name ?? '-'}. Confirm before saving.`,
+        'file_manager.runtime_system_guard_confirm': 'I understand this can affect the task runtime.',
       },
       errors: {
         validation_error: 'Validation error',
@@ -304,6 +317,24 @@ describe('FilesPage (object browser)', () => {
     });
   });
 
+  it('identifies only known top-level runtime/system dot folder prefixes', () => {
+    expect(getRuntimeSystemDotFolderInfo({ kind: 'prefix', prefix: '.codex/' })).toEqual({
+      name: '.codex',
+      prefix: '.codex/',
+      testIdSegment: 'codex',
+    });
+    expect(getRuntimeSystemDotFolderInfo({ kind: 'prefix', prefix: '.agents/' })?.testIdSegment).toBe('agents');
+    expect(getRuntimeSystemDotFolderInfo({ kind: 'prefix', prefix: '.mbos/' })?.testIdSegment).toBe('mbos');
+    expect(getRuntimeSystemDotFolderInfo({ kind: 'prefix', prefix: '.cache/' })?.testIdSegment).toBe('cache');
+    expect(getRuntimeSystemDotFolderInfo({ kind: 'prefix', prefix: '.config/' })?.testIdSegment).toBe('config');
+    expect(getRuntimeSystemDotFolderInfo({ kind: 'prefix', prefix: '.local/' })?.testIdSegment).toBe('local');
+
+    expect(getRuntimeSystemDotFolderInfo({ kind: 'object', key: '.env' })).toBeNull();
+    expect(getRuntimeSystemDotFolderInfo({ kind: 'prefix', prefix: '.hidden/' })).toBeNull();
+    expect(getRuntimeSystemDotFolderInfo({ kind: 'prefix', prefix: 'workspace/.codex/' })).toBeNull();
+    expect(getRuntimeSystemDotFolderInfo({ kind: 'prefix', prefix: '.codex/nested/' })).toBeNull();
+  });
+
   it('renders libraries pane and objects table', async () => {
     renderWithQueryClient(<FilesPage workspaceId="ws_default" projectId="proj_001" />);
 
@@ -315,7 +346,7 @@ describe('FilesPage (object browser)', () => {
     expect(screen.getByText('Libraries')).toBeInTheDocument();
   });
 
-  it('opens the ordinary Files entry at the task HOME root and can navigate into workspace/', async () => {
+  it('opens the ordinary Files entry at the file library HOME root and can navigate into workspace/', async () => {
     const user = userEvent.setup();
     mockUseFileObjectsInfinite.mockReturnValue({
       data: {
@@ -347,7 +378,7 @@ describe('FilesPage (object browser)', () => {
       );
     });
     expect(screen.getByTestId('files__breadcrumb-root')).toHaveTextContent('HOME root');
-    expect(screen.getByTestId('files__root-scope-note')).toHaveTextContent('task HOME root');
+    expect(screen.getByTestId('files__root-scope-note')).toHaveTextContent('file library HOME root');
 
     await user.dblClick(screen.getByRole('button', { name: 'workspace' }));
 
@@ -392,6 +423,158 @@ describe('FilesPage (object browser)', () => {
     expect(within(table).getByRole('button', { name: '.mbos' })).toBeInTheDocument();
     expect(within(table).getByRole('button', { name: '.env' })).toBeInTheDocument();
     expect(document.body.textContent).not.toContain('hidden runtime');
+  });
+
+  it('marks known top-level runtime/system dot folders without marking other dot paths', async () => {
+    const user = userEvent.setup();
+    mockUseFileObjectsInfinite.mockReturnValue({
+      data: {
+        pages: [
+          {
+            prefix: '',
+            items: [
+              createPrefixItem({ prefix: '.codex/', name: '.codex' }),
+              createPrefixItem({ prefix: '.local/', name: '.local' }),
+              createPrefixItem({ prefix: '.hidden/', name: '.hidden' }),
+              createPrefixItem({ prefix: 'workspace/.codex/', name: '.codex' }),
+              createObjectItem({ key: '.env', name: '.env' }),
+            ],
+            next_continuation_token: null,
+          },
+        ],
+      },
+      isLoading: false,
+      hasNextPage: false,
+      isFetchingNextPage: false,
+      fetchNextPage: vi.fn(),
+      refetch: vi.fn(),
+    });
+
+    renderWithQueryClient(<FilesPage workspaceId="ws_default" projectId="proj_001" />);
+
+    const table = await screen.findByTestId('files__objects-table');
+    const rows = within(table).getAllByTestId('files__object-row');
+    const codexRow = rows.find((row) => row.textContent?.includes('.codex'));
+    const workspaceCodexRow = rows.find((row) => row.getAttribute('data-row-id') === 'p:workspace/.codex/');
+    const localRow = rows.find((row) => row.textContent?.includes('.local'));
+    const hiddenRow = rows.find((row) => row.textContent?.includes('.hidden'));
+    const envRow = rows.find((row) => row.textContent?.includes('.env'));
+    expect(codexRow).toBeDefined();
+    expect(workspaceCodexRow).toBeDefined();
+    expect(localRow).toBeDefined();
+    expect(hiddenRow).toBeDefined();
+    expect(envRow).toBeDefined();
+
+    expect(within(codexRow as HTMLElement).getByTestId('files__object-row__runtime-system-badge--codex')).toHaveTextContent('Runtime/system');
+    expect(within(localRow as HTMLElement).getByTestId('files__object-row__runtime-system-badge--local')).toHaveTextContent('Runtime/system');
+    expect(within(workspaceCodexRow as HTMLElement).queryByText('Runtime/system')).not.toBeInTheDocument();
+    expect(within(hiddenRow as HTMLElement).queryByText('Runtime/system')).not.toBeInTheDocument();
+    expect(within(envRow as HTMLElement).queryByText('Runtime/system')).not.toBeInTheDocument();
+
+    await user.click(within(codexRow as HTMLElement).getByRole('button', { name: '.codex' }));
+
+    expect(await screen.findByTestId('files__details__runtime-system-badge--codex')).toHaveTextContent('Runtime/system');
+  });
+
+  it('requires a second confirmation before deleting a runtime/system dot folder', async () => {
+    const user = userEvent.setup();
+    mockUseFileObjectsInfinite.mockReturnValue({
+      data: {
+        pages: [
+          {
+            prefix: '',
+            items: [
+              createPrefixItem({ prefix: '.codex/', name: '.codex' }),
+              createObjectItem({ key: 'README.txt', name: 'README.txt' }),
+            ],
+            next_continuation_token: null,
+          },
+        ],
+      },
+      isLoading: false,
+      hasNextPage: false,
+      isFetchingNextPage: false,
+      fetchNextPage: vi.fn(),
+      refetch: vi.fn(),
+    });
+
+    renderWithQueryClient(<FilesPage workspaceId="ws_default" projectId="proj_001" />);
+
+    const table = await screen.findByTestId('files__objects-table');
+    await user.click(within(table).getByRole('button', { name: '.codex' }));
+    await user.click(screen.getByTestId('files__delete'));
+
+    const dialog = await screen.findByTestId('files__dialog__delete');
+    expect(within(dialog).getByTestId('files__delete__runtime-system-guard')).toHaveTextContent('.codex/');
+    expect(within(dialog).getByTestId('files__delete__submit')).toBeDisabled();
+
+    await user.click(within(dialog).getByTestId('files__delete__runtime-system-confirm'));
+
+    expect(within(dialog).getByTestId('files__delete__submit')).toBeEnabled();
+  });
+
+  it('does not require runtime/system confirmation for ordinary deletes', async () => {
+    const user = userEvent.setup();
+
+    renderWithQueryClient(<FilesPage workspaceId="ws_default" projectId="proj_001" />);
+
+    const table = await screen.findByTestId('files__objects-table');
+    const row = within(table).getAllByTestId('files__object-row').find((el) => el.textContent?.includes('README.txt'));
+    expect(row).toBeDefined();
+    await user.click(within(row as HTMLElement).getByRole('button', { name: /README\.txt/i }));
+    await user.click(screen.getByTestId('files__delete'));
+
+    const dialog = await screen.findByTestId('files__dialog__delete');
+    expect(within(dialog).queryByTestId('files__delete__runtime-system-guard')).not.toBeInTheDocument();
+    expect(within(dialog).getByTestId('files__delete__submit')).toBeEnabled();
+  });
+
+  it('requires a second confirmation before renaming or moving a runtime/system dot folder', async () => {
+    const user = userEvent.setup();
+    mockUseFileObjectsInfinite.mockReturnValue({
+      data: {
+        pages: [
+          {
+            prefix: '',
+            items: [createPrefixItem({ prefix: '.agents/', name: '.agents' })],
+            next_continuation_token: null,
+          },
+        ],
+      },
+      isLoading: false,
+      hasNextPage: false,
+      isFetchingNextPage: false,
+      fetchNextPage: vi.fn(),
+      refetch: vi.fn(),
+    });
+
+    renderWithQueryClient(<FilesPage workspaceId="ws_default" projectId="proj_001" />);
+
+    const table = await screen.findByTestId('files__objects-table');
+    await user.click(within(table).getByRole('button', { name: '.agents' }));
+    await user.click(screen.getByTestId('files__rename'));
+
+    const dialog = await screen.findByTestId('files__dialog__move');
+    expect(within(dialog).getByTestId('files__move__runtime-system-guard')).toHaveTextContent('.agents/');
+    expect(within(dialog).getByTestId('files__move__submit')).toBeDisabled();
+
+    await user.click(within(dialog).getByTestId('files__move__runtime-system-confirm'));
+
+    expect(within(dialog).getByTestId('files__move__submit')).toBeEnabled();
+  });
+
+  it('does not require runtime/system confirmation for ordinary rename or move targets', async () => {
+    const user = userEvent.setup();
+
+    renderWithQueryClient(<FilesPage workspaceId="ws_default" projectId="proj_001" />);
+
+    const table = await screen.findByTestId('files__objects-table');
+    await user.click(within(table).getByRole('button', { name: 'docs' }));
+    await user.click(screen.getByTestId('files__rename'));
+
+    const dialog = await screen.findByTestId('files__dialog__move');
+    expect(within(dialog).queryByTestId('files__move__runtime-system-guard')).not.toBeInTheDocument();
+    expect(within(dialog).getByTestId('files__move__submit')).toBeEnabled();
   });
 
   it('selects the first library by default and only shows active-library actions', async () => {
@@ -486,7 +669,8 @@ describe('FilesPage (object browser)', () => {
     expect(screen.queryByText('Secret Task')).not.toBeInTheDocument();
   });
 
-  it('disables library deletion up front while a task binding exists', async () => {
+  it('opens a delete blocker dialog while a task binding exists', async () => {
+    const user = userEvent.setup();
     mockLibraries = [
       createFileLibrary({
         id: 'lib_bound_visible',
@@ -502,14 +686,26 @@ describe('FilesPage (object browser)', () => {
     renderWithQueryClient(<FilesPage workspaceId="ws_default" projectId="proj_001" />);
 
     const deleteButton = await screen.findByTestId('files__library-delete-inline--lib_bound_visible');
-    expect(deleteButton).toBeDisabled();
+    expect(deleteButton).toBeEnabled();
     expect(deleteButton).toHaveAttribute('title', 'Delete the bound task before deleting this library.');
+    await user.hover(deleteButton);
+    expect(await screen.findByRole('tooltip')).toHaveTextContent('Delete the bound task before deleting this library.');
     expect(screen.getByTestId('files__library-binding--lib_bound_visible')).toHaveAttribute(
       'title',
       'Bound to Visible Task (active)',
     );
     expect(screen.queryByTestId('files__library-binding-detail--lib_bound_visible')).not.toBeInTheDocument();
     expect(screen.queryByTestId('files__library-delete-blocked--lib_bound_visible')).not.toBeInTheDocument();
+
+    await user.click(deleteButton);
+    const dialog = await screen.findByTestId('files__dialog__library-delete');
+    expect(dialog).toHaveTextContent('"Bound Workspace" is still bound to an Agent task.');
+    expect(within(dialog).getByTestId('files__library-delete__warning')).toHaveTextContent(
+      'Delete the bound task before deleting this library. Deleting the task releases the binding and keeps the library files.',
+    );
+    expect(dialog).not.toHaveTextContent(/FILE_LIBRARY_TASK_IN_USE|file_library_task_in_use|file_manager\./);
+    await user.type(within(dialog).getByTestId('files__library-delete__confirm'), 'Bound Workspace');
+    expect(within(dialog).getByTestId('files__library-delete__submit')).toBeDisabled();
   });
 
   it('shows a selected bound library banner without disabling browsing or editing actions', async () => {
@@ -530,6 +726,7 @@ describe('FilesPage (object browser)', () => {
     expect(await screen.findByTestId('files__bound-home-banner')).toHaveTextContent(
       `This file library is attached to Visible Task (active). Changes in Files affect that task's files.`,
     );
+    expect(screen.getByTestId('files__root-scope-note')).toHaveTextContent('task HOME root');
     expect(screen.getByTestId('files__objects-table')).toBeInTheDocument();
     expect(screen.getByTestId('files__new-folder')).toBeEnabled();
     expect(screen.getByTestId('files__upload')).toBeEnabled();
@@ -675,7 +872,7 @@ describe('FilesPage (object browser)', () => {
     await user.click(within(row as HTMLElement).getByRole('button', { name: /README\.txt/i }));
     await user.click(screen.getByTestId('files__delete'));
     const dialog = await screen.findByTestId('files__dialog__delete');
-    await user.click(within(dialog).getByRole('button', { name: 'file_manager.delete' }));
+    await user.click(within(dialog).getByTestId('files__delete__submit'));
 
     expect(await screen.findByTestId('files__delete__error')).toHaveTextContent(
       'This library is being deleted. Refresh the library status before trying again.',

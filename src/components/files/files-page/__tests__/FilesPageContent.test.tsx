@@ -1,4 +1,5 @@
 import { render, screen } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
 import { describe, expect, it, vi } from 'vitest';
 
 vi.mock('@/components/files/FileObjectDetailsPanel', () => ({
@@ -182,7 +183,7 @@ describe('FilesPageContent', () => {
               task_home_binding_status: 'bound',
               bound_task_visible: true,
               bound_task_title: 'Long running task',
-              bound_task_status: 'running',
+              bound_task_status: 'active',
             }),
             libraryFixture({ id: 'lib_failed', name: 'Failed library', status: 'failed' }),
           ],
@@ -197,6 +198,37 @@ describe('FilesPageContent', () => {
     expect(screen.queryByTestId('files__library-status-reason--lib_failed')).not.toBeInTheDocument();
     expect(screen.getByTestId('files__library-binding--lib_bound')).toHaveTextContent('file_manager.library_binding_bound');
     expect(screen.getByTestId('files__library-status--lib_failed')).toHaveTextContent('file_manager.library_status_failed');
+  });
+
+  it('lets bound libraries open the delete explanation instead of hiding the blocker behind a disabled icon', async () => {
+    const user = userEvent.setup();
+    const onDeleteLibrary = vi.fn();
+    const boundLibrary = libraryFixture({
+      id: 'lib_bound',
+      name: 'Bound library',
+      task_home_binding_status: 'bound',
+      bound_task_visible: true,
+      bound_task_title: 'Active task',
+      bound_task_status: 'active',
+    });
+
+    render(
+      <FilesPageContent
+        {...buildProps({
+          libraries: [boundLibrary],
+          selectedLibraryId: boundLibrary.id,
+          onDeleteLibrary,
+        })}
+      />,
+    );
+
+    const deleteButton = screen.getByTestId('files__library-delete-inline--lib_bound');
+    expect(deleteButton).toBeEnabled();
+    await user.click(deleteButton);
+    expect(onDeleteLibrary).toHaveBeenCalledWith(expect.objectContaining({
+      id: 'lib_bound',
+      task_home_binding_status: 'bound',
+    }));
   });
 
   it('does not render raw storage implementation fields in the library rail', () => {
@@ -310,19 +342,44 @@ describe('FilesPageContent', () => {
     expect(screen.getByTestId('files__details-shell').className).toContain('min-h-0');
   });
 
-  it('labels the HOME root and workspace folder states clearly', () => {
+  it('labels the file library HOME root and workspace folder states clearly', () => {
+    const translations: Record<string, string> = {
+      'file_manager.home_root': 'HOME root',
+      'file_manager.home_root_note': 'This is the file library HOME root. The workspace folder is one directory inside it.',
+      'file_manager.home_root_note_bound': 'This is the task HOME root for the attached Agent task. The workspace folder is one directory inside it.',
+      'file_manager.empty_home_root_description': 'This file library HOME root is empty. Upload files here or open workspace/.',
+      'file_manager.empty_workspace_description': 'The workspace folder is empty.',
+    };
+    const t = (key: string) => translations[key] ?? key;
     const { rerender } = render(
       <FilesPageContent
         {...buildProps({
           crumbs: [{ label: '', prefix: '' }],
           prefix: '',
+          t,
         })}
       />,
     );
 
-    expect(screen.getByTestId('files__breadcrumb-root')).toHaveTextContent('file_manager.home_root');
-    expect(screen.getByTestId('files__root-scope-note')).toHaveTextContent('file_manager.home_root_note');
-    expect(screen.getByTestId('files__empty-state')).toHaveTextContent('file_manager.empty_home_root_description');
+    expect(screen.getByTestId('files__breadcrumb-root')).toHaveTextContent('HOME root');
+    expect(screen.getByTestId('files__root-scope-note')).toHaveTextContent('file library HOME root');
+    expect(screen.getByTestId('files__empty-state')).toHaveTextContent('file library HOME root is empty');
+
+    rerender(
+      <FilesPageContent
+        {...buildProps({
+          crumbs: [{ label: '', prefix: '' }],
+          prefix: '',
+          selectedLibraryTaskHomeBinding: {
+            task_home_binding_status: 'bound',
+            bound_task_visible: false,
+          },
+          t,
+        })}
+      />,
+    );
+
+    expect(screen.getByTestId('files__root-scope-note')).toHaveTextContent('task HOME root');
 
     rerender(
       <FilesPageContent
@@ -332,13 +389,14 @@ describe('FilesPageContent', () => {
             { label: 'workspace', prefix: 'workspace/' },
           ],
           prefix: 'workspace/',
+          t,
         })}
       />,
     );
 
-    expect(screen.getByTestId('files__breadcrumb-root')).toHaveTextContent('file_manager.home_root');
+    expect(screen.getByTestId('files__breadcrumb-root')).toHaveTextContent('HOME root');
     expect(screen.getByTestId('files__breadcrumb--1')).toHaveTextContent('workspace');
     expect(screen.queryByTestId('files__root-scope-note')).not.toBeInTheDocument();
-    expect(screen.getByTestId('files__empty-state')).toHaveTextContent('file_manager.empty_workspace_description');
+    expect(screen.getByTestId('files__empty-state')).toHaveTextContent('The workspace folder is empty.');
   });
 });

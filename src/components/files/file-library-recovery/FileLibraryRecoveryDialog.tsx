@@ -18,6 +18,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import type {
   FileLibrary,
   FileLibraryRestorePreview,
+  FileLibraryRestorePreviewBlocker,
   FileLibraryRestorePreviewStatus,
   FileLibrarySavePoint,
   TaskFileTemplate,
@@ -82,10 +83,7 @@ function buildRestorePreviewDisplay(
   const status = restorePreview.status;
   const stale = restorePreview.stale === true;
   const title = buildRestorePreviewTitle(restorePreview, t);
-  const displayBlockers = (restorePreview.blockers ?? []).map((blocker) => {
-    if (blocker.message?.trim()) return blocker.message;
-    return t('file_manager.restore_preview_blocked_default');
-  });
+  const displayBlockers = (restorePreview.blockers ?? []).map((blocker) => restorePreviewBlockerCopy(blocker, t));
   const isFailed = status === 'failed';
   const isReady = status === 'ready';
   const isCanceling = status === 'canceling';
@@ -118,6 +116,20 @@ function buildRestorePreviewDisplay(
     summary,
     title,
   };
+}
+
+function restorePreviewBlockerCopy(
+  blocker: FileLibraryRestorePreviewBlocker,
+  t: FileLibraryRecoveryDialogProps['t'],
+) {
+  if (blocker.message?.trim()) return blocker.message;
+  const fallbackKeys: Record<FileLibraryRestorePreviewBlocker['code'], string> = {
+    active_writer_sessions: 'file_manager.restore_preview_blocked_active_writer',
+    stale_writer_session_uncertain: 'file_manager.restore_preview_blocked_stale_writer_uncertain',
+    restore_preview_stale: 'file_manager.restore_preview_blocked_stale',
+    restore_plan_requires_recovery: 'file_manager.restore_preview_blocked_recovery',
+  };
+  return t(fallbackKeys[blocker.code]);
 }
 
 function buildRestorePreviewTitle(
@@ -185,8 +197,32 @@ function isFileTemplateRestorePreviewActive(error: unknown): boolean {
 function isFileLibraryOperationPending(error: unknown): boolean {
   return hasApiErrorCode(
     error,
-    ['FILE_LIBRARY_OPERATION_PENDING'],
-    ['file_library_operation_pending'],
+    ['FILE_LIBRARY_OPERATION_PENDING', 'FILE_LIBRARY_RESTORE_OPERATION_PENDING'],
+    ['file_library_operation_pending', 'file_library_restore_operation_pending'],
+  );
+}
+
+function isFileLibraryActiveWriterBlocked(error: unknown): boolean {
+  return hasApiErrorCode(
+    error,
+    ['FILE_LIBRARY_ACTIVE_WRITER_BLOCKED'],
+    ['file_library_active_writer_blocked'],
+  );
+}
+
+function isFileLibraryStorageNotReady(error: unknown): boolean {
+  return hasApiErrorCode(
+    error,
+    ['FILE_LIBRARY_STORAGE_NOT_READY'],
+    ['file_library_storage_not_ready', 'file_library_project_storage_not_ready', 'storage not ready'],
+  );
+}
+
+function isFileLibraryRestorePreviewStale(error: unknown): boolean {
+  return hasApiErrorCode(
+    error,
+    ['FILE_LIBRARY_RESTORE_PREVIEW_STALE'],
+    ['file_library_restore_preview_stale'],
   );
 }
 
@@ -211,6 +247,15 @@ function buildTemplateActionErrorDisplay(
   let description = t('file_manager.task_template_action_failed');
   if (isFileLibraryOperationPending(error)) {
     description = t('file_manager.task_template_operation_pending');
+  }
+  if (isFileLibraryActiveWriterBlocked(error)) {
+    description = t('file_manager.task_template_active_writer_blocked');
+  }
+  if (isFileLibraryStorageNotReady(error)) {
+    description = t('file_manager.task_template_storage_not_ready');
+  }
+  if (isFileLibraryRestorePreviewStale(error)) {
+    description = t('file_manager.restore_preview_stale_default');
   }
   if (isFileTemplateRestorePreviewActive(error)) {
     description = t('file_manager.task_template_restore_active');
@@ -578,8 +623,8 @@ export function FileLibraryRecoveryDialog({
                           {t('file_manager.restore_preview_blockers_title')}
                         </div>
                         <ul className="mt-1 space-y-1 text-sm text-secondary">
-                          {restorePreviewDisplay.blockers.map((blocker) => (
-                            <li key={blocker} className="flex gap-2">
+                          {restorePreviewDisplay.blockers.map((blocker, index) => (
+                            <li key={`${index}-${blocker}`} className="flex gap-2">
                               <span className="mt-[0.5em] h-1 w-1 shrink-0 rounded-full bg-current" />
                               <span>{blocker}</span>
                             </li>

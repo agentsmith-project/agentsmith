@@ -26,6 +26,7 @@ import {
   previewTypeLabel,
   resolvePreviewKind,
 } from '@/components/files/file-object-details-panel/utils';
+import { getRuntimeSystemDotFolderInfo } from '@/components/files/files-page/utils';
 
 type SelectedItem =
   | { kind: 'prefix'; prefix: string }
@@ -171,11 +172,23 @@ export function FileObjectDetailsPanel({
       return <div className="text-tertiary">{t('file_manager.details_multi', { count: String(selected.length) })}</div>;
     }
     if (selected[0].kind === 'prefix') {
+      const runtimeSystemDotFolder = getRuntimeSystemDotFolderInfo(selected[0]);
       return (
         <div className="space-y-3" data-testid="files__details-prefix-state">
           <div>
             <div className="text-xs uppercase tracking-wide text-tertiary">{t('file_manager.folder')}</div>
             <div className="mt-1 text-sm font-medium text-primary">{selected[0].prefix}</div>
+            {runtimeSystemDotFolder ? (
+              <div className="mt-2">
+                <span
+                  className="inline-flex rounded-sm border border-warning/25 bg-warning/10 px-1.5 py-0.5 text-[11px] font-medium leading-none text-warning"
+                  data-testid={`files__details__runtime-system-badge--${runtimeSystemDotFolder.testIdSegment}`}
+                  title={t('file_manager.runtime_system_badge')}
+                >
+                  {t('file_manager.runtime_system_badge')}
+                </span>
+              </div>
+            ) : null}
             <div className="mt-2 text-sm text-tertiary">{t('file_manager.details_prefix_description')}</div>
           </div>
         </div>

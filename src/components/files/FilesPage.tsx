@@ -59,6 +59,7 @@ import { useFilesSelectionState } from '@/components/files/files-page/useFilesSe
 import {
   basename,
   buildCrumbs,
+  getRuntimeSystemDotFolderInfos,
   parentPrefixForKey,
   parentPrefixForPrefix,
 } from '@/components/files/files-page/utils';
@@ -488,6 +489,10 @@ export function FilesPage({ workspaceId, projectId, locale: _locale = 'en-US' }:
   }, [canManage, fileStatesOpen, selectedLibraryReady]);
 
   const selectedForMove = selected.length === 1 ? selected[0] : null;
+  const deleteRuntimeSystemTargets = React.useMemo(
+    () => getRuntimeSystemDotFolderInfos(selected),
+    [selected],
+  );
   const moveNamePlaceholder = selectedForMove
     ? (selectedForMove.kind === 'object' ? basename(selectedForMove.key) : basename(selectedForMove.prefix))
     : '';
@@ -1149,6 +1154,7 @@ export function FilesPage({ workspaceId, projectId, locale: _locale = 'en-US' }:
         canManage={canManage}
         deleteInlineError={deleteInlineError}
         deleteConfirmOpen={deleteConfirmOpen}
+        deleteRuntimeSystemTargets={deleteRuntimeSystemTargets}
         selectedCount={selected.length}
         t={t}
         uploadConflictFileName={uploadConflictFileName}

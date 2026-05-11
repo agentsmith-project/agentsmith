@@ -45,13 +45,13 @@ Do not add or expose backend storage fields such as storage backend names, bucke
 The Files page supports:
 - library create, rename, and delete
 - browse directories and files
-- default browsing from `workspace/` for normal project navigation
-- root browsing through an explicit root prefix (`prefix=/`) or the root breadcrumb
+- default browsing starts at the file library HOME root
+- `workspace/` is an ordinary directory under HOME and the agent/terminal default working directory, not the Files browser root
 - upload and download
 - move and delete entries
 - task attachment display and deletion blocking
 - File states:
-  - save points for all task files
+  - save points for the whole file library HOME payload
   - restore preview, restore run, and restore cancel
   - task file template create, publish, unpublish, and delete
 
@@ -94,7 +94,7 @@ Status fields must not include namespace, repository, volume, export id, credent
 
 ### Save Points and Restore
 
-- save points snapshot all task files for the selected file library
+- save points snapshot the whole file library HOME payload for the selected file library
 - restore must be previewed before it can run
 - restore readiness, blockers, stale state, and failures are backend-owned truth
 - restore changes files only; task conversation and trace state are not restored

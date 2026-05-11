@@ -15,6 +15,7 @@ import {
 } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import { getRuntimeSystemDotFolderInfo } from './utils';
 
 interface DestPickerItem {
   name: string;
@@ -48,7 +49,7 @@ interface MoveDialogsProps {
   normalizeFolderPrefixInput: (value: string) => { ok: boolean; prefix: string };
   selectedForMove: { kind: 'object'; key: string } | { kind: 'prefix'; prefix: string } | null;
   selectedLibraryId: string | null;
-  t: (key: string) => string;
+  t: (key: string, values?: Record<string, string>) => string;
   onHandleCreateFolder: () => void;
   onHandleMove: () => Promise<void>;
   onSetCreateFolderOpen: (open: boolean) => void;
@@ -93,6 +94,18 @@ export function MoveDialogs({
   onSetMoveOpen,
   onSetMoveOverwrite,
 }: MoveDialogsProps) {
+  const runtimeSystemMoveTarget = selectedForMove ? getRuntimeSystemDotFolderInfo(selectedForMove) : null;
+  const [moveRuntimeSystemGuardConfirmed, setMoveRuntimeSystemGuardConfirmed] = React.useState(false);
+  const moveSubmitDisabled =
+    !selectedForMove
+    || !moveName.trim()
+    || !selectedLibraryId
+    || (runtimeSystemMoveTarget !== null && !moveRuntimeSystemGuardConfirmed);
+
+  React.useEffect(() => {
+    setMoveRuntimeSystemGuardConfirmed(false);
+  }, [moveOpen, runtimeSystemMoveTarget?.prefix]);
+
   return (
     <>
       <Dialog open={createFolderOpen} onOpenChange={onSetCreateFolderOpen}>
@@ -144,6 +157,31 @@ export function MoveDialogs({
                 {selectedForMove ? (selectedForMove.kind === 'object' ? selectedForMove.key : selectedForMove.prefix) : '-'}
               </div>
             </div>
+
+            {runtimeSystemMoveTarget ? (
+              <div
+                className="space-y-3 rounded-md border border-warning/30 bg-warning/10 px-3 py-2 text-sm"
+                data-testid="files__move__runtime-system-guard"
+              >
+                <div className="font-medium text-warning">{t('file_manager.runtime_system_guard_title')}</div>
+                <div className="text-warning">
+                  {t('file_manager.runtime_system_move_guard_description', {
+                    name: runtimeSystemMoveTarget.prefix,
+                  })}
+                </div>
+                <div className="flex items-center gap-2">
+                  <Checkbox
+                    id="files-move-runtime-system-confirm"
+                    checked={moveRuntimeSystemGuardConfirmed}
+                    onCheckedChange={(value: boolean | 'indeterminate') => setMoveRuntimeSystemGuardConfirmed(value === true)}
+                    data-testid="files__move__runtime-system-confirm"
+                  />
+                  <Label htmlFor="files-move-runtime-system-confirm" className="text-sm text-primary">
+                    {t('file_manager.runtime_system_guard_confirm')}
+                  </Label>
+                </div>
+              </div>
+            ) : null}
 
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               <div className="space-y-1.5">
@@ -228,9 +266,10 @@ export function MoveDialogs({
             <Button
               type="button"
               onClick={() => {
+                if (moveSubmitDisabled) return;
                 void onHandleMove();
               }}
-              disabled={!selectedForMove || !moveName.trim() || !selectedLibraryId}
+              disabled={moveSubmitDisabled}
               data-testid="files__move__submit"
             >
               {t('file_manager.save')}

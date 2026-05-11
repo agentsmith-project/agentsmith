@@ -1,4 +1,4 @@
-import { describe, it, expect, vi } from 'vitest';
+import { beforeEach, describe, it, expect, vi } from 'vitest';
 import * as React from 'react';
 import { act, renderHook, waitFor } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
@@ -87,6 +87,7 @@ import {
   useFileLibrarySavePoints,
   useRunFileLibraryRestore,
 } from '../use-file-library-recovery';
+import { toast } from '@/components/ui/toast';
 
 const workspaceId = 'ws_test';
 const projectId = 'proj_test';
@@ -109,6 +110,10 @@ function createTestHarness() {
 }
 
 describe('file library recovery hooks', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
   it('lists save points for one file library', async () => {
     mockListSavePoints.mockResolvedValueOnce({
       items: [
@@ -286,6 +291,50 @@ describe('file library recovery hooks', () => {
       expect(queryClient.getQueryCache().find({ queryKey: objectsKey })?.isStale()).toBe(true);
     });
     expect(queryClient.getQueryData(activePreviewKey)).toEqual({ restore_preview: null });
+  });
+
+  it('keeps pending restore runs active without showing a success toast', async () => {
+    mockRunRestore.mockResolvedValueOnce({
+      id: 'rr_pending',
+      file_library_id: libraryId,
+      restore_preview_id: 'rp_1',
+      status: 'pending',
+      created_at: '2026-05-09T12:02:00.000Z',
+      updated_at: '2026-05-09T12:02:00.000Z',
+    });
+    const { queryClient, Wrapper } = createTestHarness();
+    const activePreviewKey = ['file-library-active-restore-preview', workspaceId, projectId, libraryId];
+    queryClient.setQueryData(activePreviewKey, {
+      restore_preview: {
+        id: 'rp_1',
+        file_library_id: libraryId,
+        source_save_point_id: 'sp_1',
+        status: 'ready',
+        created_at: '2026-05-09T12:01:00.000Z',
+        updated_at: '2026-05-09T12:01:00.000Z',
+      },
+    });
+
+    const { result } = renderHook(() => useRunFileLibraryRestore(), {
+      wrapper: Wrapper,
+    });
+
+    await act(async () => {
+      await result.current.mutateAsync({
+        workspaceId,
+        projectId,
+        libraryId,
+        restorePreviewId: 'rp_1',
+      });
+    });
+
+    expect(toast.success).not.toHaveBeenCalled();
+    expect(queryClient.getQueryData(activePreviewKey)).toEqual({
+      restore_preview: expect.objectContaining({
+        id: 'rp_1',
+        status: 'restoring',
+      }),
+    });
   });
 
   it('cancels restore preview, clears active preview cache, and does not invalidate object listings', async () => {

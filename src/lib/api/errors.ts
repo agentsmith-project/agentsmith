@@ -107,6 +107,10 @@ export class APIError extends Error {
       FILE_LIBRARY_CAPABILITY_DENIED: 'Task file templates are not available for this project yet. Ask an admin to enable file templates, then try again.',
       FILE_LIBRARY_RESTORE_PREVIEW_ACTIVE: 'A restore preview is still open. Cancel or finish it before publishing task file templates.',
       FILE_LIBRARY_OPERATION_PENDING: 'File state is still being updated. Wait for the current file operation to finish, then try again.',
+      FILE_LIBRARY_RESTORE_OPERATION_PENDING: 'File state is still being updated. Wait for the current file operation to finish, then try again.',
+      FILE_LIBRARY_RESTORE_PREVIEW_STALE: 'The restore preview is out of date. Create a new preview before restoring files.',
+      FILE_LIBRARY_ACTIVE_WRITER_BLOCKED: 'Files are still being written. Wait for the active file operation to finish, then try again.',
+      FILE_LIBRARY_STORAGE_NOT_READY: 'Project file storage is not ready yet. Wait for initialization to finish, then try again.',
     };
 
     return customMessages[this.errorCode] || this.message;
@@ -175,9 +179,23 @@ const FILE_LIBRARY_TYPED_ERROR_KEYS: Record<string, string[]> = {
   FILE_LIBRARY_CAPABILITY_DENIED: ['file_library_capability_denied.description'],
   FILE_LIBRARY_RESTORE_PREVIEW_ACTIVE: ['file_library_restore_preview_active.description'],
   FILE_LIBRARY_OPERATION_PENDING: ['file_library_operation_pending.description'],
+  FILE_LIBRARY_RESTORE_OPERATION_PENDING: ['file_library_operation_pending.description'],
+  FILE_LIBRARY_RESTORE_PREVIEW_STALE: ['file_library_restore_preview_stale.description'],
+  FILE_LIBRARY_ACTIVE_WRITER_BLOCKED: ['file_library_active_writer_blocked.description'],
+  FILE_LIBRARY_STORAGE_NOT_READY: ['file_library_storage_not_ready.description'],
   AGENT_TASK_WORKSPACE_BINDING_CONFLICT: ['agent_task_workspace_binding_conflict.description'],
   AGENT_TASK_WORKSPACE_FILE_LIBRARY_REQUIRED: ['agent_task_workspace_file_library_required.description'],
   AGENT_TASK_WORKSPACE_MODE_INVALID: ['agent_task_workspace_mode_invalid.description'],
+};
+
+const FILE_LIBRARY_TYPED_ERROR_DEFAULTS: Record<string, string> = {
+  FILE_LIBRARY_CAPABILITY_DENIED: 'Task file templates are not available for this project yet. Ask an admin to enable file templates, then try again.',
+  FILE_LIBRARY_RESTORE_PREVIEW_ACTIVE: 'A restore preview is still open. Cancel or finish it before publishing task file templates.',
+  FILE_LIBRARY_OPERATION_PENDING: 'File state is still being updated. Wait for the current file operation to finish, then try again.',
+  FILE_LIBRARY_RESTORE_OPERATION_PENDING: 'File state is still being updated. Wait for the current file operation to finish, then try again.',
+  FILE_LIBRARY_RESTORE_PREVIEW_STALE: 'The restore preview is out of date. Create a new preview before restoring files.',
+  FILE_LIBRARY_ACTIVE_WRITER_BLOCKED: 'Files are still being written. Wait for the active file operation to finish, then try again.',
+  FILE_LIBRARY_STORAGE_NOT_READY: 'Project file storage is not ready yet. Wait for initialization to finish, then try again.',
 };
 
 const AGENT_TASK_TYPED_ERROR_KEYS: Record<string, string[]> = {
@@ -247,7 +265,11 @@ function resolveTypedConflictErrorMessage(args: {
     AGENT_TASK_TYPED_ERROR_KEYS[args.error.errorCode]
     ?? FILE_LIBRARY_TYPED_ERROR_KEYS[args.error.errorCode];
   if (!keys) return null;
-  return pickTranslated(args.t, keys, args.fallback);
+  return pickTranslated(
+    args.t,
+    keys,
+    FILE_LIBRARY_TYPED_ERROR_DEFAULTS[args.error.errorCode] ?? args.fallback,
+  );
 }
 
 export function resolveAgentTaskSafeErrorMessage(args: {

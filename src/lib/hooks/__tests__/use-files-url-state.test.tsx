@@ -124,7 +124,7 @@ describe('useFilesUrlState', () => {
     });
   });
 
-  it('defaults ordinary Files browsing to the task HOME root when prefix is absent from the URL', async () => {
+  it('defaults ordinary Files browsing to the file library HOME root when prefix is absent from the URL', async () => {
     expect(DEFAULT_FILES_BROWSE_PREFIX).toBe('');
 
     const { result } = renderHook(() => useFilesUrlState(libraries, { defaultPrefix: DEFAULT_FILES_BROWSE_PREFIX }));

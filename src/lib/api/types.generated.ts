@@ -1484,7 +1484,7 @@ export interface paths {
             };
             cookie?: never;
         };
-        get?: never;
+        get: operations["getActiveFileLibraryRestorePreview"];
         put?: never;
         post: operations["createFileLibraryRestorePreview"];
         delete?: never;
@@ -3275,11 +3275,18 @@ export interface components {
         ChatStreamConflictResponse: {
             /** @enum {string} */
             error_code: "CHAT_SESSION_STREAM_CONFLICT";
+            file_library_id?: string;
+            file_library_status?: string;
             hard_teardown_status?: components["schemas"]["HardTeardownDebtStatus"];
-            /** @enum {string} */
-            message: "chat_session_stream_conflict";
+            message: string;
+            operation_status?: string;
             /** @enum {string} */
             reason?: "hard_teardown_pending";
+            request_id?: string;
+            restore_preview_id?: string;
+            restore_preview_status?: string;
+            /** @enum {integer} */
+            retry_after_ms?: "chat_session_stream_conflict";
         };
         ChatStreamStopResponse: {
             can_escalate: boolean;
@@ -3646,6 +3653,9 @@ export interface components {
             /** @enum {string} */
             message: "file_library_task_in_use";
             request_id?: string;
+        };
+        GetFileLibraryRestorePreviewResponse: {
+            restore_preview: components["schemas"]["FileLibraryRestorePreview"] | null;
         };
         /** @enum {string} */
         HardTeardownDebtStatus: "pending" | "requested" | "failed";
@@ -8087,6 +8097,68 @@ export interface operations {
                 };
             };
             /** @description Restore cancel failed */
+            502: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description File library backend unavailable */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+        };
+    };
+    getActiveFileLibraryRestorePreview: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                libraryId: components["parameters"]["libraryId"];
+                projectId: components["parameters"]["projectId"];
+                workspaceId: components["parameters"]["workspaceId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Active restore preview projection, reconciled by the backend without exposing AFSCP operation ids */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["GetFileLibraryRestorePreviewResponse"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            /** @description File library not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description File library storage not ready */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["FileLibraryDeletingError"] | components["schemas"]["FileLibraryNotReadyError"] | components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Restore preview reconcile failed */
             502: {
                 headers: {
                     [name: string]: unknown;

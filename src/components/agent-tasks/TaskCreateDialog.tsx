@@ -69,6 +69,15 @@ function isTaskCreateFileLibraryTypedError(error: unknown): error is APIError {
   return error instanceof APIError && TASK_CREATE_FILE_LIBRARY_TYPED_ERROR_CODES.has(error.errorCode);
 }
 
+const TASK_CREATE_TEMPLATE_TYPED_ERROR_CODES = new Set([
+  'FILE_LIBRARY_OPERATION_PENDING',
+  'FILE_LIBRARY_RESTORE_PREVIEW_ACTIVE',
+]);
+
+function isTaskCreateTemplateTypedError(error: unknown): error is APIError {
+  return error instanceof APIError && TASK_CREATE_TEMPLATE_TYPED_ERROR_CODES.has(error.errorCode);
+}
+
 const DEVELOPER_RUNNER_REASON_KEY_BY_CODE: Record<string, string> = {
   agent_runner_stale: 'developer_runner_reason_stale',
   agent_runner_disconnected: 'developer_runner_reason_unavailable',
@@ -129,6 +138,7 @@ export function TaskCreateDialog({
   const [workspaceFileLibraryId, setWorkspaceFileLibraryId] = React.useState<string>('');
   const [taskFileTemplateId, setTaskFileTemplateId] = React.useState<string>('');
   const [workspaceFileLibraryConflict, setWorkspaceFileLibraryConflict] = React.useState<string | null>(null);
+  const [taskFileTemplateConflict, setTaskFileTemplateConflict] = React.useState<string | null>(null);
   const [advancedOpen, setAdvancedOpen] = React.useState(false);
   const [useDeveloperRunner, setUseDeveloperRunner] = React.useState(false);
   const [boundRunnerId, setBoundRunnerId] = React.useState('');
@@ -210,6 +220,7 @@ export function TaskCreateDialog({
     }
     if (nextMode !== 'use_template') {
       setTaskFileTemplateId('');
+      setTaskFileTemplateConflict(null);
     }
   }, []);
 
@@ -222,6 +233,7 @@ export function TaskCreateDialog({
       setWorkspaceFileLibraryId('');
       setTaskFileTemplateId('');
       setWorkspaceFileLibraryConflict(null);
+      setTaskFileTemplateConflict(null);
       setAdvancedOpen(false);
       setUseDeveloperRunner(false);
       setBoundRunnerId('');
@@ -299,6 +311,7 @@ export function TaskCreateDialog({
 
     try {
       setWorkspaceFileLibraryConflict(null);
+      setTaskFileTemplateConflict(null);
       const task = await createTask.mutateAsync({
         workspaceId,
         projectId,
@@ -318,6 +331,15 @@ export function TaskCreateDialog({
         setWorkspaceFileLibraryConflict(resolved.description);
         setWorkspaceFileLibraryId('');
         await refetchFileLibraries();
+        return;
+      }
+      if (workspaceMode === 'use_template' && isTaskCreateTemplateTypedError(error)) {
+        const resolved = resolveApiErrorPresentation({
+          error,
+          t: errorT,
+          fallbackMessage: t('task_file_template_conflict'),
+        });
+        setTaskFileTemplateConflict(resolved.description);
         return;
       }
       // Error is handled by the hook
@@ -496,7 +518,10 @@ export function TaskCreateDialog({
                   </label>
                   <Select
                     value={taskFileTemplateId}
-                    onValueChange={setTaskFileTemplateId}
+                    onValueChange={(value) => {
+                      setTaskFileTemplateConflict(null);
+                      setTaskFileTemplateId(value);
+                    }}
                     disabled={createTask.isPending || taskFileTemplatesLoading}
                   >
                     <SelectTrigger id="task-file-template" data-testid="task-create__task-file-template">
@@ -518,6 +543,15 @@ export function TaskCreateDialog({
                       )}
                     </SelectContent>
                   </Select>
+                  {taskFileTemplateConflict ? (
+                    <div
+                      className="rounded-md border border-warning/30 bg-warning/10 px-3 py-2 text-sm text-secondary"
+                      role="alert"
+                      data-testid="task-create__task-file-template-conflict"
+                    >
+                      {taskFileTemplateConflict}
+                    </div>
+                  ) : null}
                   <p className="text-xs text-tertiary">{t('task_file_template_hint')}</p>
                 </div>
               ) : null}

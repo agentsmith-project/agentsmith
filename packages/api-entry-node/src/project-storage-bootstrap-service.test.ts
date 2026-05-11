@@ -118,6 +118,10 @@ describe('ProjectStorageBootstrapService', () => {
             roles: ['orchestrator_mount'],
           },
         ],
+        template_policy: {
+          namespace_templates_enabled: true,
+          cross_namespace_clone_enabled: false,
+        },
         status: 'active',
       }),
       signal: undefined,

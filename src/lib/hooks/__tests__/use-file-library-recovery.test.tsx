@@ -5,12 +5,14 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 
 const {
   mockListSavePoints,
+  mockGetActiveRestorePreview,
   mockCreateSavePoint,
   mockCreateRestorePreview,
   mockRunRestore,
   mockCancelRestore,
 } = vi.hoisted(() => ({
   mockListSavePoints: vi.fn().mockResolvedValue({ items: [] }),
+  mockGetActiveRestorePreview: vi.fn().mockResolvedValue({ restore_preview: null }),
   mockCreateSavePoint: vi.fn().mockResolvedValue({
     id: 'sp_new',
     file_library_id: 'lib_1',
@@ -48,6 +50,7 @@ vi.mock('@/lib/api', () => ({
   FilesAPI: vi.fn().mockImplementation(function FilesAPIMock() {
     return {
       listSavePoints: mockListSavePoints,
+      getActiveRestorePreview: mockGetActiveRestorePreview,
       createSavePoint: mockCreateSavePoint,
       createRestorePreview: mockCreateRestorePreview,
       runRestore: mockRunRestore,
@@ -80,6 +83,7 @@ import {
   useCancelFileLibraryRestore,
   useCreateFileLibraryRestorePreview,
   useCreateFileLibrarySavePoint,
+  useFileLibraryActiveRestorePreview,
   useFileLibrarySavePoints,
   useRunFileLibraryRestore,
 } from '../use-file-library-recovery';
@@ -131,10 +135,64 @@ describe('file library recovery hooks', () => {
     });
   });
 
-  it('creates a save point and marks the save-point list stale', async () => {
+  it('loads active restore preview projection for one file library', async () => {
+    mockGetActiveRestorePreview.mockResolvedValueOnce({
+      restore_preview: {
+        id: 'rp_active',
+        file_library_id: libraryId,
+        source_save_point_id: 'sp_1',
+        status: 'previewing',
+        created_at: '2026-05-09T12:01:00.000Z',
+        updated_at: '2026-05-09T12:01:00.000Z',
+      },
+    });
+
+    const { Wrapper } = createTestHarness();
+    const { result } = renderHook(
+      () => useFileLibraryActiveRestorePreview(workspaceId, projectId, libraryId),
+      { wrapper: Wrapper },
+    );
+
+    await waitFor(() => expect(result.current.isSuccess).toBe(true));
+    expect(mockGetActiveRestorePreview).toHaveBeenCalledWith(workspaceId, projectId, libraryId);
+    expect(result.current.data?.restore_preview?.status).toBe('previewing');
+  });
+
+  it('treats terminal restore preview projections as inactive', async () => {
+    mockGetActiveRestorePreview.mockResolvedValueOnce({
+      restore_preview: {
+        id: 'rp_restored',
+        file_library_id: libraryId,
+        source_save_point_id: 'sp_1',
+        status: 'restored',
+        created_at: '2026-05-09T12:01:00.000Z',
+        updated_at: '2026-05-09T12:05:00.000Z',
+      },
+    });
+
+    const { Wrapper } = createTestHarness();
+    const { result } = renderHook(
+      () => useFileLibraryActiveRestorePreview(workspaceId, projectId, libraryId),
+      { wrapper: Wrapper },
+    );
+
+    await waitFor(() => expect(result.current.isSuccess).toBe(true));
+    expect(result.current.data).toEqual({ restore_preview: null });
+  });
+
+  it('creates a save point, shows it from cache immediately, and marks the save-point list stale', async () => {
     const { queryClient, Wrapper } = createTestHarness();
     const savePointsKey = ['file-library-save-points', workspaceId, projectId, libraryId];
-    queryClient.setQueryData(savePointsKey, { items: [] });
+    queryClient.setQueryData(savePointsKey, {
+      items: [
+        {
+          id: 'sp_existing',
+          file_library_id: libraryId,
+          message: 'Earlier save',
+          created_at: '2026-05-09T11:00:00.000Z',
+        },
+      ],
+    });
 
     const { result } = renderHook(() => useCreateFileLibrarySavePoint(), {
       wrapper: Wrapper,
@@ -152,13 +210,30 @@ describe('file library recovery hooks', () => {
     expect(mockCreateSavePoint).toHaveBeenCalledWith(workspaceId, projectId, libraryId, {
       message: 'Before edits',
     });
+    expect(queryClient.getQueryData(savePointsKey)).toEqual({
+      items: [
+        {
+          id: 'sp_new',
+          file_library_id: 'lib_1',
+          message: 'Before edits',
+          created_at: '2026-05-09T12:00:00.000Z',
+        },
+        {
+          id: 'sp_existing',
+          file_library_id: libraryId,
+          message: 'Earlier save',
+          created_at: '2026-05-09T11:00:00.000Z',
+        },
+      ],
+    });
     await waitFor(() => {
       expect(queryClient.getQueryCache().find({ queryKey: savePointsKey })?.isStale()).toBe(true);
     });
   });
 
-  it('runs restore through preview and invalidates file listings for the library', async () => {
+  it('runs restore through preview, updates active preview cache, and invalidates file listings for the library', async () => {
     const { queryClient, Wrapper } = createTestHarness();
+    const activePreviewKey = ['file-library-active-restore-preview', workspaceId, projectId, libraryId];
     const objectsKey = [
       'file-objects',
       'infinite',
@@ -183,6 +258,16 @@ describe('file library recovery hooks', () => {
         libraryId,
         savePointId: 'sp_1',
       });
+      expect(queryClient.getQueryData(activePreviewKey)).toEqual({
+        restore_preview: {
+          id: 'rp_1',
+          file_library_id: 'lib_1',
+          source_save_point_id: 'sp_1',
+          status: 'ready',
+          created_at: '2026-05-09T12:01:00.000Z',
+          updated_at: '2026-05-09T12:01:00.000Z',
+        },
+      });
       await runResult.current.mutateAsync({
         workspaceId,
         projectId,
@@ -200,10 +285,12 @@ describe('file library recovery hooks', () => {
     await waitFor(() => {
       expect(queryClient.getQueryCache().find({ queryKey: objectsKey })?.isStale()).toBe(true);
     });
+    expect(queryClient.getQueryData(activePreviewKey)).toEqual({ restore_preview: null });
   });
 
-  it('cancels restore preview without invalidating object listings', async () => {
+  it('cancels restore preview, clears active preview cache, and does not invalidate object listings', async () => {
     const { queryClient, Wrapper } = createTestHarness();
+    const activePreviewKey = ['file-library-active-restore-preview', workspaceId, projectId, libraryId];
     const objectsKey = [
       'file-objects',
       'infinite',
@@ -213,6 +300,16 @@ describe('file library recovery hooks', () => {
       { prefix: '', delimiter: '/', page_size: 200 },
     ];
     queryClient.setQueryData(objectsKey, { pages: [{ items: [] }] });
+    queryClient.setQueryData(activePreviewKey, {
+      restore_preview: {
+        id: 'rp_1',
+        file_library_id: libraryId,
+        source_save_point_id: 'sp_1',
+        status: 'ready',
+        created_at: '2026-05-09T12:01:00.000Z',
+        updated_at: '2026-05-09T12:01:00.000Z',
+      },
+    });
 
     const { result } = renderHook(() => useCancelFileLibraryRestore(), {
       wrapper: Wrapper,
@@ -230,6 +327,7 @@ describe('file library recovery hooks', () => {
     expect(mockCancelRestore).toHaveBeenCalledWith(workspaceId, projectId, libraryId, {
       restore_preview_id: 'rp_1',
     });
+    expect(queryClient.getQueryData(activePreviewKey)).toEqual({ restore_preview: null });
     expect(queryClient.getQueryCache().find({ queryKey: objectsKey })?.isStale()).toBe(false);
   });
 });

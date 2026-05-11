@@ -9,8 +9,30 @@ import { useTranslations } from 'next-intl';
 
 import { toast } from '@/components/ui/toast';
 import { FilesAPI, getApiClient } from '@/lib/api';
+import type {
+  FileLibraryRestorePreview,
+  GetFileLibraryRestorePreviewResponse,
+  ListFileLibrarySavePointsResponse,
+} from '@/lib/api/types';
 import { handleErrorForToast } from '@/lib/api/errors';
 import { queryKeys } from '@/lib/query-keys';
+
+const ACTIVE_RESTORE_PREVIEW_REFETCH_INTERVAL_MS = 2_000;
+
+function isRestorePreviewReconciling(preview: FileLibraryRestorePreview | null | undefined) {
+  return preview?.status === 'previewing'
+    || preview?.status === 'canceling'
+    || preview?.status === 'restoring';
+}
+
+function activeRestorePreviewResponse(
+  preview: FileLibraryRestorePreview | null,
+): GetFileLibraryRestorePreviewResponse {
+  if (preview?.status === 'canceled' || preview?.status === 'restored') {
+    return { restore_preview: null };
+  }
+  return { restore_preview: preview };
+}
 
 function fileObjectQueryMatches(
   queryKey: readonly unknown[],
@@ -62,6 +84,30 @@ export function useFileLibrarySavePoints(
   });
 }
 
+export function useFileLibraryActiveRestorePreview(
+  workspaceId: string,
+  projectId: string,
+  libraryId: string | null | undefined,
+  options?: { enabled?: boolean },
+) {
+  const filesAPI = new FilesAPI(getApiClient());
+  const safeLibraryId = libraryId ?? '';
+
+  return useQuery({
+    queryKey: queryKeys.fileLibraries.activeRestorePreview(workspaceId, projectId, safeLibraryId),
+    queryFn: async () => activeRestorePreviewResponse(
+      (await filesAPI.getActiveRestorePreview(workspaceId, projectId, safeLibraryId)).restore_preview,
+    ),
+    enabled: (options?.enabled ?? true) && !!workspaceId && !!projectId && !!safeLibraryId,
+    refetchInterval: (query) => (
+      isRestorePreviewReconciling(query.state.data?.restore_preview)
+        ? ACTIVE_RESTORE_PREVIEW_REFETCH_INTERVAL_MS
+        : false
+    ),
+    staleTime: 0,
+  });
+}
+
 export function useCreateFileLibrarySavePoint() {
   const queryClient = useQueryClient();
   const filesAPI = new FilesAPI(getApiClient());
@@ -79,13 +125,20 @@ export function useCreateFileLibrarySavePoint() {
       libraryId: string;
       message?: string;
     }) => filesAPI.createSavePoint(workspaceId, projectId, libraryId, { message }),
-    onSuccess: async (_, variables) => {
+    onSuccess: async (savePoint, variables) => {
+      const savePointsKey = queryKeys.fileLibraries.savePoints(
+        variables.workspaceId,
+        variables.projectId,
+        variables.libraryId,
+      );
+      queryClient.setQueryData<ListFileLibrarySavePointsResponse>(savePointsKey, (current) => ({
+        items: [
+          savePoint,
+          ...(current?.items ?? []).filter((item) => item.id !== savePoint.id),
+        ],
+      }));
       await queryClient.invalidateQueries({
-        queryKey: queryKeys.fileLibraries.savePoints(
-          variables.workspaceId,
-          variables.projectId,
-          variables.libraryId,
-        ),
+        queryKey: savePointsKey,
       });
       toast.success(t('create_success'));
     },
@@ -96,6 +149,7 @@ export function useCreateFileLibrarySavePoint() {
 }
 
 export function useCreateFileLibraryRestorePreview() {
+  const queryClient = useQueryClient();
   const filesAPI = new FilesAPI(getApiClient());
 
   return useMutation({
@@ -112,6 +166,18 @@ export function useCreateFileLibraryRestorePreview() {
     }) => filesAPI.createRestorePreview(workspaceId, projectId, libraryId, {
       save_point_id: savePointId,
     }),
+    onSuccess: async (preview, variables) => {
+      const activePreviewKey = queryKeys.fileLibraries.activeRestorePreview(
+        variables.workspaceId,
+        variables.projectId,
+        variables.libraryId,
+      );
+      queryClient.setQueryData<GetFileLibraryRestorePreviewResponse>(
+        activePreviewKey,
+        activeRestorePreviewResponse(preview),
+      );
+      await queryClient.invalidateQueries({ queryKey: activePreviewKey });
+    },
     onError: (error: unknown) => {
       handleErrorForToast(error, 'useCreateFileLibraryRestorePreview');
     },
@@ -137,7 +203,18 @@ export function useRunFileLibraryRestore() {
     }) => filesAPI.runRestore(workspaceId, projectId, libraryId, {
       restore_preview_id: restorePreviewId,
     }),
-    onSuccess: async (_, variables) => {
+    onSuccess: async (run, variables) => {
+      const activePreviewKey = queryKeys.fileLibraries.activeRestorePreview(
+        variables.workspaceId,
+        variables.projectId,
+        variables.libraryId,
+      );
+      if (run.status === 'succeeded') {
+        queryClient.setQueryData<GetFileLibraryRestorePreviewResponse>(
+          activePreviewKey,
+          { restore_preview: null },
+        );
+      }
       await Promise.all([
         invalidateFileObjectCaches(
           queryClient,
@@ -152,6 +229,7 @@ export function useRunFileLibraryRestore() {
             variables.libraryId,
           ),
         }),
+        queryClient.invalidateQueries({ queryKey: activePreviewKey }),
       ]);
       toast.success(t('update_success'));
     },
@@ -162,6 +240,7 @@ export function useRunFileLibraryRestore() {
 }
 
 export function useCancelFileLibraryRestore() {
+  const queryClient = useQueryClient();
   const filesAPI = new FilesAPI(getApiClient());
 
   return useMutation({
@@ -178,6 +257,18 @@ export function useCancelFileLibraryRestore() {
     }) => filesAPI.cancelRestore(workspaceId, projectId, libraryId, {
       restore_preview_id: restorePreviewId,
     }),
+    onSuccess: async (preview, variables) => {
+      const activePreviewKey = queryKeys.fileLibraries.activeRestorePreview(
+        variables.workspaceId,
+        variables.projectId,
+        variables.libraryId,
+      );
+      queryClient.setQueryData<GetFileLibraryRestorePreviewResponse>(
+        activePreviewKey,
+        activeRestorePreviewResponse(preview),
+      );
+      await queryClient.invalidateQueries({ queryKey: activePreviewKey });
+    },
     onError: (error: unknown) => {
       handleErrorForToast(error, 'useCancelFileLibraryRestore');
     },

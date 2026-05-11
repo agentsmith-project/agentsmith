@@ -1758,6 +1758,48 @@ paths:
       - $ref: "#/components/parameters/workspaceId"
       - $ref: "#/components/parameters/projectId"
       - $ref: "#/components/parameters/libraryId"
+    get:
+      tags:
+        - Files
+      operationId: getActiveFileLibraryRestorePreview
+      responses:
+        "200":
+          description: Active restore preview projection, reconciled by the backend without exposing AFSCP operation ids
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/GetFileLibraryRestorePreviewResponse"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          description: File library not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+        "409":
+          description: File library storage not ready
+          content:
+            application/json:
+              schema:
+                oneOf:
+                  - $ref: "#/components/schemas/FileLibraryDeletingError"
+                  - $ref: "#/components/schemas/FileLibraryNotReadyError"
+                  - $ref: "#/components/schemas/ApiError"
+        "502":
+          description: Restore preview reconcile failed
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+        "503":
+          description: File library backend unavailable
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
     post:
       tags:
         - Files
@@ -7155,6 +7197,21 @@ components:
             - CHAT_SESSION_STREAM_CONFLICT
         message:
           type: string
+        request_id:
+          type: string
+        file_library_id:
+          type: string
+        file_library_status:
+          type: string
+        restore_preview_id:
+          type: string
+        restore_preview_status:
+          type: string
+        operation_status:
+          type: string
+        retry_after_ms:
+          type: integer
+          minimum: 1
           enum:
             - chat_session_stream_conflict
         reason:
@@ -8690,6 +8747,16 @@ components:
         updated_at:
           type: string
           format: date-time
+    GetFileLibraryRestorePreviewResponse:
+      type: object
+      additionalProperties: false
+      required:
+        - restore_preview
+      properties:
+        restore_preview:
+          oneOf:
+            - $ref: "#/components/schemas/FileLibraryRestorePreview"
+            - type: "null"
     FileLibraryRestorePreviewChangeSummary:
       type: object
       additionalProperties: false

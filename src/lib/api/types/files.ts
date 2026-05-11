@@ -194,6 +194,10 @@ export interface FileLibraryRestorePreview {
   updated_at: string;
 }
 
+export interface GetFileLibraryRestorePreviewResponse {
+  restore_preview: FileLibraryRestorePreview | null;
+}
+
 export interface RunFileLibraryRestoreRequest {
   restore_preview_id: string;
 }

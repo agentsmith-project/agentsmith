@@ -1007,6 +1007,47 @@ describe('AFSCP File Library storage adapter', () => {
     });
   });
 
+  it('creates save points from JVS output when external resource ids are redacted', async () => {
+    const jvsSavePointId = '1778481131647-4d2e0211';
+    const client = createProductClient({
+      pollOperation: vi.fn(async () => ({
+        ...succeededRepoOperation,
+        operation_id: 'op_save_point_jvs',
+        operation_type: 'save_point_create',
+        operation_state: 'succeeded',
+        external_resource_ids: { save_point_id: '[REDACTED]' },
+        verification_result: { save_point_id: jvsSavePointId },
+        jvs_json_output: { save_point_id: jvsSavePointId },
+      })),
+    });
+    const { adapter, ownershipStore } = await createMappedAdapter({ client });
+
+    await expect(adapter.createSavePoint({
+      workspaceId: 'ws_default',
+      projectId: 'proj_1',
+      libraryId: 'flib_123',
+      message: 'Before risky change',
+      actorUserId: 'user_1',
+      requestId: 'req_save_point_create_jvs',
+    })).resolves.toMatchObject({
+      operationId: 'op_save_point_jvs',
+      operationStatus: 'succeeded',
+      savePointId: jvsSavePointId,
+    });
+
+    await expect(ownershipStore.getResourceOwnership({
+      resourceKind: 'save_point',
+      resourceId: jvsSavePointId,
+    })).resolves.toMatchObject({
+      workspace_id: 'ws_default',
+      project_id: 'proj_1',
+    });
+    await expect(ownershipStore.getResourceOwnership({
+      resourceKind: 'save_point',
+      resourceId: '[REDACTED]',
+    })).resolves.toBeNull();
+  });
+
   it('creates, runs, and discards restore previews through AFSCP with restore-plan ownership anchors', async () => {
     const client = createProductClient({
       pollOperation: vi.fn(async (input) => ({
@@ -1089,6 +1130,123 @@ describe('AFSCP File Library storage adapter', () => {
       workspace_id: 'ws_default',
       project_id: 'proj_1',
     });
+  });
+
+  it('returns pending restore previews when AFSCP polling times out before the operation completes', async () => {
+    const client = createProductClient({
+      pollOperation: vi.fn(async (input) => ({
+        ...succeededRepoOperation,
+        operation_id: input.operationId,
+        operation_type: 'restore_preview',
+        operation_state: 'running',
+        phase: 'restore_preview_diff',
+        resource: { type: 'repo', id: 'repo_flib_123' },
+        external_resource_ids: {
+          source_save_point_id: '1778481131647-4d2e0211',
+        },
+        verification_result: {
+          source_save_point_id: '1778481131647-4d2e0211',
+        },
+        jvs_json_output: JSON.stringify({
+          source_save_point_id: '1778481131647-4d2e0211',
+        }),
+        finished_at: null,
+      })),
+    });
+    const { adapter, ownershipStore } = await createMappedAdapter({ client });
+
+    await expect(adapter.createRestorePreview({
+      workspaceId: 'ws_default',
+      projectId: 'proj_1',
+      libraryId: 'flib_123',
+      savePointId: '1778481131647-4d2e0211',
+      actorUserId: 'user_1',
+      requestId: 'req_restore_preview_pending',
+    })).resolves.toMatchObject({
+      operationId: 'op_preview01',
+      operationStatus: 'pending',
+      restorePlanId: null,
+      sourceSavePointId: '1778481131647-4d2e0211',
+    });
+
+    await expect(ownershipStore.getResourceOwnership({
+      resourceKind: 'save_point',
+      resourceId: '1778481131647-4d2e0211',
+    })).resolves.toMatchObject({
+      workspace_id: 'ws_default',
+      project_id: 'proj_1',
+    });
+  });
+
+  it('reconciles existing restore preview operations from getOperation using JVS save point ids', async () => {
+    const client = createProductClient({
+      getOperation: vi.fn(async (input) => ({
+        ...succeededRepoOperation,
+        operation_id: input.operationId,
+        operation_type: 'restore_preview',
+        operation_state: 'succeeded',
+        resource: { type: 'repo', id: 'repo_flib_123' },
+        external_resource_ids: {
+          save_point_id: '[REDACTED]',
+          restore_plan_id: 'plan_001',
+        },
+        verification_result: {
+          save_point_id: '1778481131647-4d2e0211',
+          restore_plan_id: 'plan_001',
+          summary: {
+            added: { count: 0, samples: [] },
+            changed: { count: 1, samples: ['docs/guide.txt'] },
+            removed: { count: 0, samples: [] },
+            destructive: false,
+          },
+          blockers: [],
+          stale: false,
+        },
+        jvs_json_output: JSON.stringify({
+          save_point_id: '1778481131647-4d2e0211',
+        }),
+      })),
+      pollOperation: vi.fn(),
+    });
+    const { adapter, ownershipStore } = await createMappedAdapter({ client });
+
+    await expect(adapter.reconcileRestorePreview({
+      workspaceId: 'ws_default',
+      projectId: 'proj_1',
+      libraryId: 'flib_123',
+      operationId: 'op_preview_long',
+      requestId: 'req_restore_preview_reconcile',
+    })).resolves.toMatchObject({
+      operationId: 'op_preview_long',
+      operationStatus: 'succeeded',
+      restorePlanId: 'plan_001',
+      sourceSavePointId: '1778481131647-4d2e0211',
+      summary: {
+        added: { count: 0, samples: [] },
+        changed: { count: 1, samples: ['docs/guide.txt'] },
+        removed: { count: 0, samples: [] },
+        destructive: false,
+      },
+      blockers: [],
+      stale: false,
+    });
+
+    expect(client.getOperation).toHaveBeenCalledWith(expect.objectContaining({
+      operationId: 'op_preview_long',
+      correlationId: 'req_restore_preview_reconcile',
+    }));
+    expect(client.pollOperation).not.toHaveBeenCalled();
+    await expect(ownershipStore.getResourceOwnership({
+      resourceKind: 'save_point',
+      resourceId: '1778481131647-4d2e0211',
+    })).resolves.toMatchObject({
+      workspace_id: 'ws_default',
+      project_id: 'proj_1',
+    });
+    await expect(ownershipStore.getResourceOwnership({
+      resourceKind: 'save_point',
+      resourceId: '[REDACTED]',
+    })).resolves.toBeNull();
   });
 
   it('projects stale restore preview AFSCP responses without leaking upstream ids', async () => {
@@ -1282,6 +1440,132 @@ describe('AFSCP File Library storage adapter', () => {
       project_id: 'proj_1',
     });
     expect(JSON.stringify(await mappingRepo.getByLibraryId('ws_default', 'proj_1', 'flib_clone_123'))).not.toContain('tmpl_task_file_template_1');
+  });
+
+  it('returns typed pending template create and clone results without marking clone mappings failed', async () => {
+    const client = createProductClient({
+      pollOperation: vi.fn(async (input) => ({
+        ...succeededRepoOperation,
+        operation_id: input.operationId,
+        operation_type: input.operationId === 'op_template_create' ? 'template_create' : 'template_clone',
+        operation_state: 'running',
+        resource: input.operationId === 'op_template_create'
+          ? { type: 'repo_template', id: 'tmpl_task_file_template_pending' }
+          : { type: 'repo', id: 'repo_flib_clone_pending' },
+        external_resource_ids: input.operationId === 'op_template_create'
+          ? { source_save_point_id: '1778481131647-4d2e0211' }
+          : {},
+        verification_result: input.operationId === 'op_template_create'
+          ? { source_save_point_id: '1778481131647-4d2e0211' }
+          : {},
+        finished_at: null,
+      })),
+    });
+    const { adapter, mappingRepo } = await createMappedAdapter({ client });
+
+    await expect(adapter.createTemplateFromLibrary({
+      workspaceId: 'ws_default',
+      projectId: 'proj_1',
+      libraryId: 'flib_123',
+      templateId: 'tmpl_task_file_template_pending',
+      actorUserId: 'user_1',
+      requestId: 'req_template_create_pending',
+    })).resolves.toMatchObject({
+      templateId: 'tmpl_task_file_template_pending',
+      operationId: 'op_template_create',
+      operationStatus: 'pending',
+      sourceSavePointId: '1778481131647-4d2e0211',
+    });
+
+    await expect(adapter.cloneTemplateToLibrary({
+      workspaceId: 'ws_default',
+      projectId: 'proj_1',
+      libraryId: 'flib_clone_pending',
+      namespaceId: 'ns_project_1',
+      projectStorageGeneration: 1,
+      templateId: 'tmpl_task_file_template_pending',
+      actorUserId: 'user_1',
+      requestId: 'req_template_clone_pending',
+    })).resolves.toMatchObject({
+      namespaceId: 'ns_project_1',
+      repoId: 'repo_flib_clone_pending',
+      operationId: 'op_template_clone',
+      operationStatus: 'pending',
+      projectStorageGeneration: 1,
+    });
+
+    await expect(mappingRepo.getByLibraryId('ws_default', 'proj_1', 'flib_clone_pending')).resolves.toMatchObject({
+      repo_id: 'repo_flib_clone_pending',
+      operation_id: 'op_template_clone',
+      operation_status: 'pending',
+      last_error_code: null,
+    });
+  });
+
+  it('reconciles pending template clone mappings to terminal operation state without leaking template ids', async () => {
+    const client = createProductClient({
+      pollOperation: vi.fn(async (input) => ({
+        ...succeededRepoOperation,
+        operation_id: input.operationId,
+        operation_type: 'template_clone',
+        operation_state: 'running',
+        resource: { type: 'repo', id: 'repo_flib_clone_pending' },
+        finished_at: null,
+      })),
+      getOperation: vi.fn(async (input) => ({
+        ...succeededRepoOperation,
+        operation_id: input.operationId,
+        operation_type: 'template_clone',
+        operation_state: 'succeeded',
+        resource: { type: 'repo', id: 'repo_flib_clone_pending' },
+        external_resource_ids: {
+          template_id: '[REDACTED]',
+        },
+      })),
+    });
+    const { adapter, mappingRepo, ownershipStore } = await createMappedAdapter({ client });
+    await ownershipStore.ensureResourceOwnership({
+      workspaceId: 'ws_default',
+      projectId: 'proj_1',
+      namespaceId: 'ns_project_1',
+      resourceKind: 'repo_template',
+      resourceId: 'tmpl_task_file_template_pending',
+    });
+
+    await expect(adapter.cloneTemplateToLibrary({
+      workspaceId: 'ws_default',
+      projectId: 'proj_1',
+      libraryId: 'flib_clone_pending',
+      namespaceId: 'ns_project_1',
+      projectStorageGeneration: 1,
+      templateId: 'tmpl_task_file_template_pending',
+      actorUserId: 'user_1',
+      requestId: 'req_template_clone_pending',
+    })).resolves.toMatchObject({
+      operationStatus: 'pending',
+      operationId: 'op_template_clone',
+    });
+
+    await expect(adapter.reconcileLibraryProvisioning({
+      workspaceId: 'ws_default',
+      projectId: 'proj_1',
+      libraryId: 'flib_clone_pending',
+      requestId: 'req_template_clone_reconcile',
+    })).resolves.toMatchObject({
+      namespaceId: 'ns_project_1',
+      repoId: 'repo_flib_clone_pending',
+      operationId: 'op_template_clone',
+      operationStatus: 'succeeded',
+      projectStorageGeneration: 1,
+      lastErrorCode: null,
+    });
+    await expect(mappingRepo.getByLibraryId('ws_default', 'proj_1', 'flib_clone_pending')).resolves.toMatchObject({
+      repo_id: 'repo_flib_clone_pending',
+      operation_id: 'op_template_clone',
+      operation_status: 'succeeded',
+      last_error_code: null,
+    });
+    expect(JSON.stringify(await mappingRepo.getByLibraryId('ws_default', 'proj_1', 'flib_clone_pending'))).not.toContain('tmpl_task_file_template_pending');
   });
 
   it('projects template clone denials as safe public errors and sanitized mapping state', async () => {

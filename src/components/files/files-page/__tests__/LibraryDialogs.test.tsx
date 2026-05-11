@@ -22,6 +22,9 @@ describe('LibraryDialogs', () => {
       'file_manager.library_delete_warning': 'This removes files.',
       'file_manager.library_delete_confirm_empty': 'Select a library to delete.',
       'file_manager.library_delete_confirm_placeholder': 'Type the library name',
+      'file_manager.library_delete_deleting': 'Deleting...',
+      'file_manager.library_delete_deleting_description': '{name} is already being deleted.',
+      'file_manager.library_delete_pending': 'Deleting this library. This can take a moment while file state settles.',
       'file_manager.delete': 'Delete',
     };
     const template = translations[key] ?? key;
@@ -160,6 +163,103 @@ describe('LibraryDialogs', () => {
       'Delete the bound task before deleting this library.',
     );
     expect(screen.getByTestId('files__library-delete__submit')).toBeEnabled();
+  });
+
+  it('shows a clear deleting state while library deletion is pending', () => {
+    render(
+      <LibraryDialogs
+        createLibraryPending={false}
+        deleteLibraryPending
+        libraryCreateError={null}
+        libraryCreateOpen={false}
+        libraryDeleteConfirm="Shared Docs"
+        libraryDeleteError={null}
+        libraryDeleteOpen
+        libraryDeleteTarget={{
+          name: 'Shared Docs',
+          status: 'ready',
+          task_home_binding_status: 'unbound',
+          bound_task_visible: false,
+        }}
+        libraryDescription=""
+        libraryName=""
+        libraryRenameDescription=""
+        libraryRenameError={null}
+        libraryRenameName=""
+        libraryRenameOpen={false}
+        libraryRenameTarget={null}
+        t={t}
+        updateLibraryPending={false}
+        onCloseDeleteLibraryDialog={vi.fn()}
+        onCloseRenameLibraryDialog={vi.fn()}
+        onCreateLibrary={vi.fn()}
+        onDeleteLibrary={vi.fn()}
+        onRenameLibrary={vi.fn()}
+        onSetLibraryCreateOpen={vi.fn()}
+        onSetLibraryDeleteConfirm={vi.fn()}
+        onSetLibraryDeleteOpen={vi.fn()}
+        onSetLibraryDescription={vi.fn()}
+        onSetLibraryName={vi.fn()}
+        onSetLibraryRenameDescription={vi.fn()}
+        onSetLibraryRenameName={vi.fn()}
+        onSetLibraryRenameOpen={vi.fn()}
+      />,
+    );
+
+    expect(screen.getByTestId('files__library-delete__pending')).toHaveTextContent(
+      'Deleting this library. This can take a moment while file state settles.',
+    );
+    expect(screen.getByTestId('files__library-delete__submit')).toHaveTextContent('Deleting...');
+    expect(screen.getByTestId('files__library-delete__submit')).toBeDisabled();
+  });
+
+  it('shows deleting state for a library that is already deleting', () => {
+    render(
+      <LibraryDialogs
+        createLibraryPending={false}
+        deleteLibraryPending={false}
+        libraryCreateError={null}
+        libraryCreateOpen={false}
+        libraryDeleteConfirm="Shared Docs"
+        libraryDeleteError={null}
+        libraryDeleteOpen
+        libraryDeleteTarget={{
+          name: 'Shared Docs',
+          status: 'deleting',
+          task_home_binding_status: 'unbound',
+          bound_task_visible: false,
+        }}
+        libraryDescription=""
+        libraryName=""
+        libraryRenameDescription=""
+        libraryRenameError={null}
+        libraryRenameName=""
+        libraryRenameOpen={false}
+        libraryRenameTarget={null}
+        t={t}
+        updateLibraryPending={false}
+        onCloseDeleteLibraryDialog={vi.fn()}
+        onCloseRenameLibraryDialog={vi.fn()}
+        onCreateLibrary={vi.fn()}
+        onDeleteLibrary={vi.fn()}
+        onRenameLibrary={vi.fn()}
+        onSetLibraryCreateOpen={vi.fn()}
+        onSetLibraryDeleteConfirm={vi.fn()}
+        onSetLibraryDeleteOpen={vi.fn()}
+        onSetLibraryDescription={vi.fn()}
+        onSetLibraryName={vi.fn()}
+        onSetLibraryRenameDescription={vi.fn()}
+        onSetLibraryRenameName={vi.fn()}
+        onSetLibraryRenameOpen={vi.fn()}
+      />,
+    );
+
+    expect(screen.getByText('Shared Docs is already being deleted.')).toBeInTheDocument();
+    expect(screen.getByTestId('files__library-delete__pending')).toHaveTextContent(
+      'Deleting this library. This can take a moment while file state settles.',
+    );
+    expect(screen.getByTestId('files__library-delete__submit')).toHaveTextContent('Deleting...');
+    expect(screen.getByTestId('files__library-delete__submit')).toBeDisabled();
   });
 
   it('renders a rename typed conflict inline without closing the dialog context', () => {

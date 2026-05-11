@@ -77,6 +77,9 @@ describe('resolveApiErrorPresentation', () => {
       'file_library_not_ready.description': 'This library is not ready yet. Refresh the library status before trying again.',
       'file_library_task_in_use.description': 'Delete the bound task before deleting this library.',
       'workspace_file_library_in_use.description': 'That task workspace is now bound to another task. Select another workspace or create a new one.',
+      'file_library_capability_denied.description': 'Task file templates are not available for this project yet. Ask an admin to enable file templates, then try again.',
+      'file_library_restore_preview_active.description': 'A restore preview is still open. Cancel or finish it before publishing task file templates.',
+      'file_library_operation_pending.description': 'File state is still being updated. Wait for the current file operation to finish, then try again.',
       'agent_task_delete_blocked.description':
         'Delete is blocked because this task still has an active run, terminal session, or task workspace in use. Finish those blockers and try again.',
       'rateLimitError.title': 'Too Many Requests',
@@ -127,6 +130,9 @@ describe('resolveApiErrorPresentation', () => {
     ['FILE_LIBRARY_NOT_READY', 'file_library_not_ready', 'This library is not ready yet. Refresh the library status before trying again.'],
     ['FILE_LIBRARY_TASK_IN_USE', 'file_library_task_in_use', 'Delete the bound task before deleting this library.'],
     ['AGENT_TASK_FILE_LIBRARY_IN_USE', 'workspace_file_library_in_use', 'That task workspace is now bound to another task. Select another workspace or create a new one.'],
+    ['FILE_LIBRARY_CAPABILITY_DENIED', 'file_library_capability_denied', 'Task file templates are not available for this project yet. Ask an admin to enable file templates, then try again.'],
+    ['FILE_LIBRARY_RESTORE_PREVIEW_ACTIVE', 'file_library_restore_preview_active', 'A restore preview is still open. Cancel or finish it before publishing task file templates.'],
+    ['FILE_LIBRARY_OPERATION_PENDING', 'file_library_operation_pending', 'File state is still being updated. Wait for the current file operation to finish, then try again.'],
     ['AGENT_TASK_DELETE_BLOCKED', 'agent_task_delete_blocked', 'Delete is blocked because this task still has an active run, terminal session, or task workspace in use. Finish those blockers and try again.'],
   ])('maps typed conflict %s through i18n instead of rendering %s', (errorCode, rawMessage, expectedDescription) => {
     const presentation = resolveApiErrorPresentation({
@@ -139,6 +145,21 @@ describe('resolveApiErrorPresentation', () => {
     expect(presentation.title).toBe('Conflict');
     expect(presentation.description).toBe(expectedDescription);
     expect(presentation.description).not.toBe(rawMessage);
+  });
+
+  it('returns a productized toast message for template capability denial', () => {
+    const userMessage = new APIError(
+      'FILE_LIBRARY_CAPABILITY_DENIED',
+      'file_library_capability_denied',
+      'req-file-template',
+      403,
+    ).getUserMessage();
+
+    expect(userMessage).toBe(
+      'Task file templates are not available for this project yet. Ask an admin to enable file templates, then try again.',
+    );
+    expect(userMessage).not.toContain('file_library_capability_denied');
+    expect(userMessage).not.toContain('FILE_LIBRARY_CAPABILITY_DENIED');
   });
 
   it.each([

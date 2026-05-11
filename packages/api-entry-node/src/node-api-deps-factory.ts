@@ -383,6 +383,15 @@ function createDefaultInMemoryFileLibraryStorageAdapter(): FileLibraryStoragePor
         sourceSavePointId: input.savePointId,
       };
     },
+    async reconcileRestorePreview(input) {
+      requireRepo(input);
+      return {
+        operationId: input.operationId,
+        operationStatus: 'succeeded',
+        restorePlanId: `plan_${sanitizeDefaultAfscpSegment(input.libraryId)}`,
+        sourceSavePointId: null,
+      };
+    },
     async runRestorePreview(input) {
       requireRepo(input);
       return {
@@ -442,6 +451,17 @@ function createDefaultInMemoryFileLibraryStorageAdapter(): FileLibraryStoragePor
         operationId: `op_${sanitizeDefaultAfscpSegment(input.libraryId)}_template_clone`,
         operationStatus: 'succeeded',
         projectStorageGeneration: repo.projectStorageGeneration,
+      };
+    },
+    async reconcileLibraryProvisioning(input) {
+      const repo = requireRepo(input);
+      return {
+        namespaceId: repo.namespaceId,
+        repoId: repo.repoId,
+        operationId: `op_${sanitizeDefaultAfscpSegment(input.libraryId)}_template_clone`,
+        operationStatus: 'succeeded',
+        projectStorageGeneration: repo.projectStorageGeneration,
+        lastErrorCode: null,
       };
     },
     async listEntries(input) {

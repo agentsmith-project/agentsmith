@@ -2826,6 +2826,7 @@ export async function handleTaskRoute(args: TaskRouteHandlerArgs): Promise<boole
             ? 'FILE_LIBRARY_PROVISIONING_FAILED'
             : mapped.errorCode,
           message: mapped.message,
+          ...(mapped.context ?? {}),
         });
         return true;
       }
@@ -2849,6 +2850,7 @@ export async function handleTaskRoute(args: TaskRouteHandlerArgs): Promise<boole
             ? 'FILE_LIBRARY_PROVISIONING_FAILED'
             : mapped.errorCode,
           message: mapped.message,
+          ...(mapped.context ?? {}),
         });
         return true;
       }

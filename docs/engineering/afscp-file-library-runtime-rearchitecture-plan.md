@@ -4,7 +4,7 @@ Status: decision-complete handoff for the next development milestone.
 
 Owner: AgentSmith product and engineering.
 
-Primary input: use `ghcr.io/agentsmith-project/agentsmith-fs-control-plane:v1.0.2` for File Library storage runtime, with AgentSmith as the product authority for workspace/project, permissions, file library catalog, task binding, task file template availability, UX, and audit projection.
+Primary input: use `ghcr.io/agentsmith-project/agentsmith-fs-control-plane:v1.0.3` for File Library storage runtime, with AgentSmith as the product authority for workspace/project, permissions, file library catalog, task binding, task file template availability, UX, and audit projection.
 
 ## 1. Executive Summary
 

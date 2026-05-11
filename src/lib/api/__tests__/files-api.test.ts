@@ -350,12 +350,16 @@ describe('FilesAPI', () => {
 
     await api.listSavePoints('ws_1', 'proj_1', 'flib_1');
     await api.createSavePoint('ws_1', 'proj_1', 'flib_1', { message: 'Before edits' });
+    await api.getActiveRestorePreview('ws_1', 'proj_1', 'flib_1');
     await api.createRestorePreview('ws_1', 'proj_1', 'flib_1', { save_point_id: 'sp_1' });
     await api.runRestore('ws_1', 'proj_1', 'flib_1', { restore_preview_id: 'rp_1' });
     await api.cancelRestore('ws_1', 'proj_1', 'flib_1', { restore_preview_id: 'rp_1' });
 
     expect(client.get).toHaveBeenCalledWith(
       '/workspaces/ws_1/projects/proj_1/file-libraries/flib_1/save-points',
+    );
+    expect(client.get).toHaveBeenCalledWith(
+      '/workspaces/ws_1/projects/proj_1/file-libraries/flib_1/restore-preview',
     );
     expect(client.post).toHaveBeenNthCalledWith(
       1,

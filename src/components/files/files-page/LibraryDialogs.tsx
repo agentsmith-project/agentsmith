@@ -90,9 +90,15 @@ export function LibraryDialogs({
 }: LibraryDialogsProps) {
   const isFailedLibraryDelete = libraryDeleteTarget?.status === 'failed' || libraryDeleteTarget?.status === 'degraded';
   const isBoundLibraryDelete = libraryDeleteTarget?.task_home_binding_status === 'bound';
+  const isDeletingLibraryDelete = libraryDeleteTarget?.status === 'deleting';
+  const showDeletePending = deleteLibraryPending || isDeletingLibraryDelete;
   const handleCreateDialogOpenChange = (open: boolean) => {
     if (!open && createLibraryPending) return;
     onSetLibraryCreateOpen(open);
+  };
+  const handleDeleteDialogOpenChange = (open: boolean) => {
+    if (!open && deleteLibraryPending) return;
+    onSetLibraryDeleteOpen(open);
   };
 
   return (
@@ -214,7 +220,7 @@ export function LibraryDialogs({
         </DialogContent>
       </Dialog>
 
-      <Dialog open={libraryDeleteOpen} onOpenChange={onSetLibraryDeleteOpen}>
+      <Dialog open={libraryDeleteOpen} onOpenChange={handleDeleteDialogOpenChange}>
         <DialogContent className="sm:max-w-[560px]" data-testid="files__dialog__library-delete">
           <DialogHeader>
             <DialogTitle>{t('file_manager.library_delete')}</DialogTitle>
@@ -223,6 +229,8 @@ export function LibraryDialogs({
                 ? (
                     isBoundLibraryDelete
                       ? t('file_manager.library_delete_bound_description', { name: libraryDeleteTarget.name })
+                      : isDeletingLibraryDelete
+                      ? t('file_manager.library_delete_deleting_description', { name: libraryDeleteTarget.name })
                       : isFailedLibraryDelete
                       ? t('file_manager.library_delete_failed_recovery_description', { name: libraryDeleteTarget.name })
                       : t('file_manager.library_delete_confirm', { name: libraryDeleteTarget.name })
@@ -236,6 +244,8 @@ export function LibraryDialogs({
                 className={
                   isBoundLibraryDelete
                     ? 'rounded-md border border-warning/30 bg-warning/10 px-3 py-2 text-xs text-warning'
+                    : isDeletingLibraryDelete
+                    ? 'rounded-md border border-warning/30 bg-warning/10 px-3 py-2 text-xs text-warning'
                     : isFailedLibraryDelete
                     ? 'rounded-md border border-warning/30 bg-warning/10 px-3 py-2 text-xs text-warning'
                     : 'rounded-md border border-error/30 bg-error/10 px-3 py-2 text-xs text-error'
@@ -244,9 +254,21 @@ export function LibraryDialogs({
               >
                 {isBoundLibraryDelete
                   ? t('file_manager.library_delete_bound_warning')
+                  : isDeletingLibraryDelete
+                  ? t('file_manager.library_delete_pending')
                   : isFailedLibraryDelete
                   ? t('file_manager.library_delete_failed_recovery_warning')
                   : t('file_manager.library_delete_warning')}
+              </div>
+            ) : null}
+            {showDeletePending ? (
+              <div
+                className="flex items-start gap-2 rounded-md border border-warning/30 bg-warning/10 px-3 py-2 text-sm text-secondary"
+                data-testid="files__library-delete__pending"
+                role="status"
+              >
+                <Loader2 className="mt-0.5 h-4 w-4 shrink-0 animate-spin text-warning" />
+                <div>{t('file_manager.library_delete_pending')}</div>
               </div>
             ) : null}
             {libraryDeleteError ? (
@@ -265,12 +287,13 @@ export function LibraryDialogs({
                 value={libraryDeleteConfirm}
                 onChange={(event) => onSetLibraryDeleteConfirm(event.target.value)}
                 placeholder={libraryDeleteTarget?.name ?? ''}
+                disabled={showDeletePending}
                 data-testid="files__library-delete__confirm"
               />
             </div>
           </div>
           <DialogFooter>
-            <Button type="button" variant="outline" onClick={onCloseDeleteLibraryDialog}>
+            <Button type="button" variant="outline" onClick={onCloseDeleteLibraryDialog} disabled={deleteLibraryPending}>
               {t('file_manager.cancel')}
             </Button>
             <Button
@@ -281,11 +304,12 @@ export function LibraryDialogs({
                 !libraryDeleteTarget
                 || libraryDeleteConfirm !== libraryDeleteTarget.name
                 || isBoundLibraryDelete
-                || deleteLibraryPending
+                || showDeletePending
               }
               data-testid="files__library-delete__submit"
             >
-              {t('file_manager.delete')}
+              {showDeletePending ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
+              {showDeletePending ? t('file_manager.library_delete_deleting') : t('file_manager.delete')}
             </Button>
           </DialogFooter>
         </DialogContent>

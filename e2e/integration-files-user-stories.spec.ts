@@ -1,10 +1,16 @@
 import { expect, test, type Page } from '@playwright/test';
 import {
   API_BASE,
+  BACKEND_REAL_MODEL,
+  BACKEND_REAL_OPENAI_BASE_URL,
   KEYCLOAK_DEV_ADMIN_PASSWORD,
   KEYCLOAK_DEV_ADMIN_USERNAME,
   LOCALE,
+  createCredentialViaUi,
+  createEndpointViaApi,
+  createManagedAgentRunnerViaApi,
   createProjectInWorkspace,
+  ensureAgentTaskModelSettingViaApi,
   keycloakLoginToWorkspace,
   startAgentTaskRunViaApi,
   waitForRunnerOutputToken,
@@ -15,6 +21,22 @@ const WORKSPACE_ID = 'ws_default';
 const DEMO_PROJECT_NAME = 'Codex Agent Regression';
 const MANY_LIBRARY_COUNT = 16;
 const CREATE_NEW_TASK_REQUEST_TIMEOUT_MS = 60_000;
+
+function resolveProviderCredentialValue() {
+  return process.env.BACKEND_REAL_API_KEY?.trim() || 'sk-files-user-story-model-setup';
+}
+
+function ensureManagedRunnerSeedEnv() {
+  if (!process.env.MONGO_URL?.trim()) {
+    const mongoPort = process.env.SUBSTRATE_MONGO_PORT?.trim()
+      || process.env.INTEGRATION_MONGO_PORT?.trim()
+      || '17017';
+    process.env.MONGO_URL = `mongodb://mbos:mbos_dev_password@localhost:${mongoPort}/admin`;
+  }
+  if (!process.env.MONGO_DB_NAME?.trim()) {
+    process.env.MONGO_DB_NAME = process.env.SUBSTRATE_MONGO_DB?.trim() || 'mbos';
+  }
+}
 
 type FileLibraryListItem = {
   id: string;
@@ -242,6 +264,45 @@ async function resolveDemoProjectAndRunner(page: Page): Promise<{ projectId: str
   };
 }
 
+async function prepareAgentTaskModelSetupForProject(args: {
+  page: Page;
+  workspaceId: string;
+  projectId: string;
+  timestamp: number;
+}): Promise<void> {
+  const credentialName = `Files user story provider ${args.timestamp}`;
+  await createCredentialViaUi(
+    args.page,
+    args.workspaceId,
+    args.projectId,
+    credentialName,
+    resolveProviderCredentialValue(),
+  );
+  const endpointId = await createEndpointViaApi(args.page, args.workspaceId, args.projectId, {
+    endpointName: `Files user story endpoint ${args.timestamp}`,
+    endpointModel: BACKEND_REAL_MODEL,
+    upstreamBaseUrl: BACKEND_REAL_OPENAI_BASE_URL,
+    credentialName,
+  });
+  const modelSetting = await ensureAgentTaskModelSettingViaApi(args.page, {
+    workspaceId: args.workspaceId,
+    projectId: args.projectId,
+    endpointId,
+  });
+  ensureManagedRunnerSeedEnv();
+  const runner = await createManagedAgentRunnerViaApi(args.page, {
+    workspaceId: args.workspaceId,
+    projectId: args.projectId,
+    endpointId,
+    title: `files-user-story-runner-${args.timestamp}`,
+  });
+
+  expect(modelSetting.endpointId).toBe(endpointId);
+  expect(modelSetting.settingRevision).toBeTruthy();
+  expect(runner.status).toMatch(/ready|connected/);
+  expect(runner.isDefault).toBe(true);
+}
+
 async function createAgentTaskAfterProjectStorageReady(args: {
   page: Page;
   workspaceId: string;
@@ -339,6 +400,52 @@ async function openFolderByName(page: Page, name: string): Promise<void> {
     return;
   }
   await folderRow.dblclick();
+}
+
+async function openTaskCreateDialog(page: Page, workspaceId: string, projectId: string): Promise<void> {
+  await page.goto(`/${LOCALE}/workspaces/${workspaceId}/projects/${projectId}/agent-tasks`);
+  await expect(page.getByTestId('agent-tasks__create-task-btn')).toBeVisible({ timeout: 30_000 });
+  await page.getByTestId('agent-tasks__create-task-btn').click();
+  await expect(page.getByRole('dialog')).toBeVisible({ timeout: 10_000 });
+}
+
+async function selectUseTaskFileTemplateMode(page: Page): Promise<void> {
+  await page.getByRole('radio').nth(2).click();
+  await expect(page.getByTestId('task-create__task-file-template')).toBeVisible({ timeout: 10_000 });
+}
+
+async function createTaskFromTemplateViaUi(args: {
+  page: Page;
+  workspaceId: string;
+  projectId: string;
+  title: string;
+  templateName: string;
+}): Promise<CreatedAgentTaskWithLibrary> {
+  const { page, workspaceId, projectId, title, templateName } = args;
+  await openTaskCreateDialog(page, workspaceId, projectId);
+  const dialog = page.getByRole('dialog');
+  await dialog.locator('#task-title').fill(title);
+  await selectUseTaskFileTemplateMode(page);
+  await page.getByTestId('task-create__task-file-template').click();
+  await page.getByRole('option', { name: templateName }).click();
+
+  const createResponsePromise = page.waitForResponse((response) => (
+    response.request().method() === 'POST'
+    && response.url().includes(`/workspaces/${workspaceId}/projects/${projectId}/tasks`)
+  ), { timeout: 60_000 });
+  const submit = dialog.locator('button[type="submit"]');
+  await expect(submit).toBeEnabled({ timeout: 10_000 });
+  await submit.click();
+  const createResponse = await createResponsePromise;
+  const body = await createResponse.text();
+  expect(createResponse.ok(), body).toBe(true);
+  const createdTask = parseCreatedAgentTaskWithLibrary(body);
+  await page.waitForURL(new RegExp(`/${LOCALE}/workspaces/${workspaceId}/projects/${projectId}/agent-tasks/${createdTask.taskId}(?:[/?#]|$)`), {
+    timeout: 30_000,
+  });
+  await expect(page.getByTestId('agent-task__task-header')).toContainText(title, { timeout: 30_000 });
+  await expect(page.getByTestId('agent-task__task-header-workspace-library')).toBeVisible({ timeout: 30_000 });
+  return createdTask;
 }
 
 async function waitForTaskArtifact(args: {
@@ -458,6 +565,149 @@ test.describe.serial('@lane-real files user stories', () => {
     } else {
       await expect(page.getByText(libraryName)).toHaveCount(0);
     }
+  });
+
+  test('File states save point restore preview and task template selection stay in one user loop', async ({ page }) => {
+    test.setTimeout(300_000);
+
+    await keycloakLoginToWorkspace(page, WORKSPACE_ID, KEYCLOAK_DEV_ADMIN_USERNAME, KEYCLOAK_DEV_ADMIN_PASSWORD);
+    const { projectId } = await createProjectInWorkspace(page, WORKSPACE_ID, 'Files Savepoint Template Loop');
+    const timestamp = Date.now();
+    await prepareAgentTaskModelSetupForProject({
+      page,
+      workspaceId: WORKSPACE_ID,
+      projectId,
+      timestamp,
+    });
+    const libraryName = `State Loop Library ${timestamp}`;
+    const savePointMessage = `Before restore preview ${timestamp}`;
+    const templateName = `State Loop Template ${timestamp}`;
+    const createdLibrary = await createFileLibraryViaApi({
+      page,
+      workspaceId: WORKSPACE_ID,
+      projectId,
+      name: libraryName,
+    });
+    const libraryId = createdLibrary.id;
+    await waitForLibraryStatus({
+      page,
+      workspaceId: WORKSPACE_ID,
+      projectId,
+      libraryId,
+      expected: /^ready$/i,
+    });
+
+    await openWorkspaceFilesRoot({
+      page,
+      workspaceId: WORKSPACE_ID,
+      projectId,
+      libraryId,
+    });
+    await page.getByTestId('files__file-states').click();
+    const fileStatesDialog = page.getByTestId('files__dialog__file-states');
+    await expect(fileStatesDialog).toBeVisible({ timeout: 10_000 });
+    const savePointsTab = fileStatesDialog.getByRole('tab', { name: /^Save points$/i });
+    await expect(savePointsTab).toBeVisible();
+    await expect(savePointsTab).toHaveAttribute('aria-selected', 'true');
+
+    await fileStatesDialog.getByTestId('files__save-point__message').fill(savePointMessage);
+    const savePointResponsePromise = page.waitForResponse((response) => (
+      response.request().method() === 'POST'
+      && response
+        .url()
+        .includes(`/workspaces/${WORKSPACE_ID}/projects/${projectId}/file-libraries/${libraryId}/save-points`)
+      && response.ok()
+    ), { timeout: 60_000 });
+    await fileStatesDialog.getByTestId('files__save-point__create').click();
+    const savePointResponse = await savePointResponsePromise;
+    const savePointPayload = await savePointResponse.json() as { id?: string };
+    const savePointId = savePointPayload.id;
+    expect(savePointId).toBeTruthy();
+    await expect(fileStatesDialog.getByText(savePointMessage)).toBeVisible({ timeout: 10_000 });
+
+    const restorePreviewResponsePromise = page.waitForResponse((response) => (
+      response.request().method() === 'POST'
+      && response
+        .url()
+        .includes(`/workspaces/${WORKSPACE_ID}/projects/${projectId}/file-libraries/${libraryId}/restore-preview`)
+      && response.ok()
+    ), { timeout: 60_000 });
+    await fileStatesDialog.getByTestId(`files__save-point__restore--${savePointId}`).click();
+    const restorePreviewResponse = await restorePreviewResponsePromise;
+    const restorePreviewPayload = await restorePreviewResponse.json() as { id?: string };
+    expect(restorePreviewPayload.id).toBeTruthy();
+    await expect(fileStatesDialog.getByTestId('files__restore-preview')).toBeVisible({ timeout: 10_000 });
+    await expect(fileStatesDialog.getByTestId('files__restore-preview-summary')).toBeVisible();
+    const taskTemplatesTab = fileStatesDialog.getByRole('tab', { name: /^Task file templates$/i });
+    await expect(fileStatesDialog.getByTestId('files__restore-confirm')).toBeEnabled({ timeout: 90_000 });
+    await expect(taskTemplatesTab).toBeDisabled();
+    await expect(fileStatesDialog.getByTestId('files__restore-template-blocker')).toBeVisible();
+
+    await fileStatesDialog.getByLabel('Close', { exact: true }).click();
+    await page.reload({ waitUntil: 'domcontentloaded' });
+    await expect(page.getByTestId('files__file-states')).toBeVisible({ timeout: 30_000 });
+    const activePreviewResponsePromise = page.waitForResponse((response) => (
+      response.request().method() === 'GET'
+      && response
+        .url()
+        .includes(`/workspaces/${WORKSPACE_ID}/projects/${projectId}/file-libraries/${libraryId}/restore-preview`)
+    ), { timeout: 60_000 });
+    await page.getByTestId('files__file-states').click();
+    const activePreviewResponse = await activePreviewResponsePromise;
+    expect(activePreviewResponse.ok(), await activePreviewResponse.text()).toBe(true);
+    await expect(fileStatesDialog).toBeVisible({ timeout: 10_000 });
+    await expect(fileStatesDialog.getByTestId('files__restore-preview')).toBeVisible({ timeout: 10_000 });
+    await expect(fileStatesDialog.getByTestId('files__restore-confirm')).toBeEnabled({ timeout: 90_000 });
+    await expect(fileStatesDialog.getByRole('tab', { name: /^Task file templates$/i })).toBeDisabled();
+
+    const cancelRestoreResponsePromise = page.waitForResponse((response) => (
+      response.request().method() === 'POST'
+      && response
+        .url()
+        .includes(`/workspaces/${WORKSPACE_ID}/projects/${projectId}/file-libraries/${libraryId}/restore-cancel`)
+    ), { timeout: 60_000 });
+    await fileStatesDialog.getByTestId('files__restore-cancel').click();
+    const cancelRestoreResponse = await cancelRestoreResponsePromise;
+    expect(cancelRestoreResponse.ok(), await cancelRestoreResponse.text()).toBe(true);
+    await expect(fileStatesDialog.getByTestId('files__restore-preview')).toBeHidden({ timeout: 10_000 });
+    const unblockedTaskTemplatesTab = fileStatesDialog.getByRole('tab', { name: /^Task file templates$/i });
+    await expect(unblockedTaskTemplatesTab).toBeEnabled();
+
+    await unblockedTaskTemplatesTab.click();
+    await fileStatesDialog.getByTestId('files__template__name').fill(templateName);
+    await fileStatesDialog.getByTestId('files__template__description').fill('Reusable files for a new task.');
+    const publishResponsePromise = page.waitForResponse((response) => (
+      response.request().method() === 'POST'
+      && response.url().includes(`/workspaces/${WORKSPACE_ID}/projects/${projectId}/task-file-templates/`)
+      && response.url().endsWith('/publish')
+      && response.ok()
+    ), { timeout: 60_000 });
+    await fileStatesDialog.getByTestId('files__template__publish-current').click();
+    await publishResponsePromise;
+    await expect(fileStatesDialog.getByText(templateName)).toBeVisible({ timeout: 10_000 });
+
+    await fileStatesDialog.getByLabel('Close', { exact: true }).click();
+    const createdTask = await createTaskFromTemplateViaUi({
+      page,
+      workspaceId: WORKSPACE_ID,
+      projectId,
+      title: `Template clone task ${timestamp}`,
+      templateName,
+    });
+    await waitForLibraryStatus({
+      page,
+      workspaceId: WORKSPACE_ID,
+      projectId,
+      libraryId: createdTask.workspaceFileLibraryId,
+      expected: /^ready$/i,
+      timeoutMs: 180_000,
+    });
+    await openWorkspaceFilesRoot({
+      page,
+      workspaceId: WORKSPACE_ID,
+      projectId,
+      libraryId: createdTask.workspaceFileLibraryId,
+    });
   });
 
   test('Agent Task artifacts written under HOME workspace are visible from Files', async ({ page }) => {

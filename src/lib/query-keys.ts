@@ -129,6 +129,8 @@ export const queryKeys = {
       ['file-library', workspaceId, projectId, libraryId] as const,
     savePoints: (workspaceId: string, projectId: string, libraryId: string) =>
       ['file-library-save-points', workspaceId, projectId, libraryId] as const,
+    activeRestorePreview: (workspaceId: string, projectId: string, libraryId: string) =>
+      ['file-library-active-restore-preview', workspaceId, projectId, libraryId] as const,
   },
 
   /** Project task file templates */

@@ -15,6 +15,7 @@ import {
   FileLibrarySchema,
   FileLibrarySavePointSchema,
   FileLibraryRestorePreviewSchema,
+  GetFileLibraryRestorePreviewResponseSchema,
   FileLibraryTaskInUseErrorSchema,
   TaskFileTemplateNotFoundErrorSchema,
   TaskFileTemplateUnpublishedErrorSchema,
@@ -194,6 +195,25 @@ describe('agent task persistent HOME contracts', () => {
       created_at: '2026-05-09T00:00:00.000Z',
       updated_at: '2026-05-09T00:00:00.000Z',
     }).success).toBe(false);
+
+    expect(GetFileLibraryRestorePreviewResponseSchema.parse({
+      restore_preview: null,
+    })).toEqual({ restore_preview: null });
+    expect(GetFileLibraryRestorePreviewResponseSchema.parse({
+      restore_preview: {
+        id: 'flrp_active',
+        file_library_id: 'flib_a',
+        source_save_point_id: 'flsp_safe',
+        status: 'previewing',
+        created_at: '2026-05-09T00:00:00.000Z',
+        updated_at: '2026-05-09T00:00:00.000Z',
+      },
+    })).toMatchObject({
+      restore_preview: {
+        id: 'flrp_active',
+        status: 'previewing',
+      },
+    });
 
     expect(TaskFileTemplateSchema.parse({
       id: 'tftpl_safe',
@@ -505,6 +525,13 @@ describe('agent task persistent HOME contracts', () => {
       ]));
     }
 
+    expect(readResponseSchemaNames(
+      openapi.paths ?? {},
+      '/api/v1/workspaces/{workspaceId}/projects/{projectId}/file-libraries/{libraryId}/restore-preview',
+      'get',
+      '200',
+    )).toEqual(['GetFileLibraryRestorePreviewResponse']);
+
     for (const path of [
       '/api/v1/workspaces/{workspaceId}/projects/{projectId}/task-file-templates/{taskFileTemplateId}',
       '/api/v1/workspaces/{workspaceId}/projects/{projectId}/task-file-templates/{taskFileTemplateId}/publish',
@@ -628,6 +655,11 @@ describe('agent task persistent HOME contracts', () => {
         path: '/api/v1/workspaces/{workspaceId}/projects/{projectId}/file-libraries/{libraryId}/save-points',
         method: 'post',
         statuses: ['201', '400', '401', '403', '404', '409', '502', '503'],
+      },
+      {
+        path: '/api/v1/workspaces/{workspaceId}/projects/{projectId}/file-libraries/{libraryId}/restore-preview',
+        method: 'get',
+        statuses: ['200', '401', '403', '404', '409', '502', '503'],
       },
       {
         path: '/api/v1/workspaces/{workspaceId}/projects/{projectId}/file-libraries/{libraryId}/restore-preview',

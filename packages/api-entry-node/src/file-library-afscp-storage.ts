@@ -194,6 +194,11 @@ export interface FileLibraryStoragePort {
     requestId?: string;
     signal?: AbortSignal;
   }): Promise<FileLibraryRestoreOperationResult>;
+  reconcileRestorePreview(input: FileLibraryStorageLibraryInput & {
+    operationId: string;
+    requestId?: string;
+    signal?: AbortSignal;
+  }): Promise<FileLibraryRestoreOperationResult>;
   runRestorePreview(input: FileLibraryStorageLibraryInput & {
     previewOperationId: string;
     actorUserId: string;
@@ -225,6 +230,17 @@ export interface FileLibraryStoragePort {
     operationId: string | null;
     operationStatus: FileLibraryStorageOperationStatus;
     projectStorageGeneration: number;
+  }>;
+  reconcileLibraryProvisioning(input: FileLibraryStorageLibraryInput & {
+    requestId?: string;
+    signal?: AbortSignal;
+  }): Promise<{
+    namespaceId: string;
+    repoId: string;
+    operationId: string | null;
+    operationStatus: FileLibraryStorageOperationStatus;
+    projectStorageGeneration: number;
+    lastErrorCode: string | null;
   }>;
   listEntries(input: FileLibraryStorageLibraryInput & {
     path: string;
@@ -479,34 +495,49 @@ function readStringField(record: Record<string, unknown>, key: string): string |
   return typeof value === 'string' && value.trim() ? value : null;
 }
 
+function isUnavailableOperationValue(value: unknown): boolean {
+  if (value === undefined || value === null) {
+    return true;
+  }
+  if (typeof value !== 'string') {
+    return false;
+  }
+  const normalized = value.trim().toLowerCase();
+  return !normalized || normalized === '[redacted]' || normalized === '<redacted>' || normalized === 'redacted';
+}
+
 function readOperationResourceId(operation: AfscpOperationEnvelope | AfscpOperationRecord, type: string): string | null {
   const resource = isRecord(operation.resource) ? operation.resource : null;
-  if (resource?.type === type && typeof resource.id === 'string' && resource.id.trim()) {
-    return resource.id;
+  if (resource?.type === type && typeof resource.id === 'string' && !isUnavailableOperationValue(resource.id)) {
+    return resource.id.trim();
   }
   return null;
 }
 
 function readOperationValue(operation: AfscpOperationEnvelope | AfscpOperationRecord, key: string): unknown {
   const root = operation as Record<string, unknown>;
-  if (root[key] !== undefined) {
-    return root[key];
+  const rootValue = root[key];
+  if (!isUnavailableOperationValue(rootValue)) {
+    return rootValue;
   }
   for (const containerKey of ['external_resource_ids', 'verification_result', 'result', 'metadata']) {
     const container = root[containerKey];
-    if (isRecord(container) && container[key] !== undefined) {
-      return container[key];
+    const containerValue = isRecord(container) ? container[key] : undefined;
+    if (!isUnavailableOperationValue(containerValue)) {
+      return containerValue;
     }
   }
   const jvsOutput = root.jvs_json_output;
-  if (isRecord(jvsOutput) && jvsOutput[key] !== undefined) {
-    return jvsOutput[key];
+  const jvsOutputValue = isRecord(jvsOutput) ? jvsOutput[key] : undefined;
+  if (!isUnavailableOperationValue(jvsOutputValue)) {
+    return jvsOutputValue;
   }
   if (typeof jvsOutput === 'string' && jvsOutput.trim()) {
     try {
       const parsed = JSON.parse(jvsOutput) as unknown;
-      if (isRecord(parsed)) {
-        return parsed[key];
+      const parsedValue = isRecord(parsed) ? parsed[key] : undefined;
+      if (!isUnavailableOperationValue(parsedValue)) {
+        return parsedValue;
       }
     } catch {
       return undefined;
@@ -998,6 +1029,10 @@ class DisabledFileLibraryStorageAdapter implements FileLibraryStoragePort {
     throw new Error('file_library_backend_unavailable');
   }
 
+  async reconcileRestorePreview(): Promise<never> {
+    throw new Error('file_library_backend_unavailable');
+  }
+
   async runRestorePreview(): Promise<never> {
     throw new Error('file_library_backend_unavailable');
   }
@@ -1011,6 +1046,10 @@ class DisabledFileLibraryStorageAdapter implements FileLibraryStoragePort {
   }
 
   async cloneTemplateToLibrary(): Promise<never> {
+    throw new Error('file_library_backend_unavailable');
+  }
+
+  async reconcileLibraryProvisioning(): Promise<never> {
     throw new Error('file_library_backend_unavailable');
   }
 
@@ -1414,6 +1453,7 @@ export class AfscpFileLibraryStorageAdapter implements FileLibraryStoragePort {
       throw new Error('file_library_repo_delete_failed');
     }
 
+    const pendingOperationId = hasOperationId(operationId) ? operationId : null;
     await this.mappingRepo.updateOperation({
       ...input,
       operationId,
@@ -1423,9 +1463,12 @@ export class AfscpFileLibraryStorageAdapter implements FileLibraryStoragePort {
         : null,
     });
     if (status === 'pending') {
+      if (!pendingOperationId) {
+        throw new Error('file_library_repo_delete_failed');
+      }
       throw new FileLibraryStorageOperationPendingError({
         message: 'file_library_repo_delete_pending',
-        operationId,
+        operationId: pendingOperationId,
       });
     }
     throw new Error('file_library_repo_delete_failed');
@@ -1562,6 +1605,42 @@ export class AfscpFileLibraryStorageAdapter implements FileLibraryStoragePort {
       fallbackPrefix: 'file-library-restore-preview-poll',
       failureMessage: 'file_library_restore_preview_failed',
       failureContext: 'restore_preview',
+    });
+  }
+
+  async reconcileRestorePreview(input: FileLibraryStorageLibraryInput & {
+    operationId: string;
+    requestId?: string;
+    signal?: AbortSignal;
+  }): Promise<FileLibraryRestoreOperationResult> {
+    const mapping = await this.requireActiveMapping(input);
+    let operation: AfscpOperationRecord;
+    try {
+      operation = await this.client.getOperation({
+        operationId: input.operationId,
+        correlationId: resolveCorrelationId(input.requestId, 'file-library-restore-preview-reconcile'),
+        signal: input.signal,
+      });
+      await this.ensureOperationOwnership({
+        workspaceId: input.workspaceId,
+        projectId: input.projectId,
+        namespaceId: mapping.namespace_id,
+        operationId: readOperationId(operation) ?? input.operationId,
+      });
+    } catch (error) {
+      throw new Error(mapAfscpClientErrorToStorageMessage(
+        error,
+        'file_library_restore_preview_failed',
+        'restore_preview',
+      ));
+    }
+    return this.projectRestoreOperationResult({
+      finalOperation: operation,
+      initialOperation: null,
+      input,
+      namespaceId: mapping.namespace_id,
+      failureMessage: 'file_library_restore_preview_failed',
+      failOnFailed: false,
     });
   }
 
@@ -1710,10 +1789,11 @@ export class AfscpFileLibraryStorageAdapter implements FileLibraryStoragePort {
         savePointId: sourceSavePointId,
       });
     }
-    if (operationStatus !== 'succeeded') {
-      throw new Error(operationStatus === 'pending'
-        ? 'file_library_template_create_pending'
-        : mapAfscpOperationFailureMessage(finalOperation, 'file_library_template_create_failed'));
+    if (operationStatus === 'failed') {
+      throw new Error(mapAfscpOperationFailureMessage(finalOperation, 'file_library_template_create_failed'));
+    }
+    if (operationStatus === 'pending' && !operationId) {
+      throw new Error('file_library_template_create_failed');
     }
     return {
       operationId,
@@ -1836,10 +1916,11 @@ export class AfscpFileLibraryStorageAdapter implements FileLibraryStoragePort {
       operationStatus: status,
       lastErrorCode: failureMessage,
     });
-    if (status !== 'succeeded') {
-      throw new Error(status === 'pending'
-        ? 'file_library_template_clone_pending'
-        : failureMessage ?? 'file_library_template_clone_failed');
+    if (status === 'failed') {
+      throw new Error(failureMessage ?? 'file_library_template_clone_failed');
+    }
+    if (status === 'pending' && !operationId) {
+      throw new Error('file_library_template_clone_failed');
     }
     return {
       namespaceId: input.namespaceId,
@@ -1847,6 +1928,102 @@ export class AfscpFileLibraryStorageAdapter implements FileLibraryStoragePort {
       operationId,
       operationStatus: status,
       projectStorageGeneration,
+    };
+  }
+
+  async reconcileLibraryProvisioning(input: FileLibraryStorageLibraryInput & {
+    requestId?: string;
+    signal?: AbortSignal;
+  }): Promise<{
+    namespaceId: string;
+    repoId: string;
+    operationId: string | null;
+    operationStatus: FileLibraryStorageOperationStatus;
+    projectStorageGeneration: number;
+    lastErrorCode: string | null;
+  }> {
+    const mapping = await this.requireStoredMapping(input);
+    if (mapping.operation_status !== 'pending') {
+      return {
+        namespaceId: mapping.namespace_id,
+        repoId: mapping.repo_id,
+        operationId: mapping.operation_id,
+        operationStatus: mapping.operation_status,
+        projectStorageGeneration: mapping.project_storage_generation,
+        lastErrorCode: mapping.last_error_code,
+      };
+    }
+    if (!hasOperationId(mapping.operation_id)) {
+      await this.mappingRepo.updateOperation({
+        ...input,
+        operationId: null,
+        operationStatus: 'failed',
+        lastErrorCode: 'file_library_template_clone_failed',
+      });
+      return {
+        namespaceId: mapping.namespace_id,
+        repoId: mapping.repo_id,
+        operationId: null,
+        operationStatus: 'failed',
+        projectStorageGeneration: mapping.project_storage_generation,
+        lastErrorCode: 'file_library_template_clone_failed',
+      };
+    }
+
+    let operation: AfscpOperationRecord;
+    try {
+      operation = await this.client.getOperation({
+        operationId: mapping.operation_id,
+        correlationId: resolveCorrelationId(input.requestId, 'file-library-provisioning-reconcile'),
+        signal: input.signal,
+      });
+    } catch (error) {
+      const message = mapAfscpClientErrorToStorageMessage(
+        error,
+        'file_library_template_clone_failed',
+        'template_clone',
+      );
+      await this.mappingRepo.updateOperation({
+        ...input,
+        operationId: mapping.operation_id,
+        operationStatus: 'failed',
+        lastErrorCode: message,
+      });
+      return {
+        namespaceId: mapping.namespace_id,
+        repoId: mapping.repo_id,
+        operationId: mapping.operation_id,
+        operationStatus: 'failed',
+        projectStorageGeneration: mapping.project_storage_generation,
+        lastErrorCode: message,
+      };
+    }
+
+    const operationId = readOperationId(operation) ?? mapping.operation_id;
+    await this.ensureRepoAndOperationOwnership({
+      workspaceId: input.workspaceId,
+      projectId: input.projectId,
+      namespaceId: mapping.namespace_id,
+      repoId: mapping.repo_id,
+      operationId,
+    });
+    const status = normalizeOperationStatus(operation.operation_state);
+    const failureMessage = status === 'failed'
+      ? mapAfscpOperationFailureMessage(operation, 'file_library_template_clone_failed')
+      : null;
+    await this.mappingRepo.updateOperation({
+      ...input,
+      operationId,
+      operationStatus: status,
+      lastErrorCode: failureMessage,
+    });
+    return {
+      namespaceId: mapping.namespace_id,
+      repoId: mapping.repo_id,
+      operationId,
+      operationStatus: status,
+      projectStorageGeneration: mapping.project_storage_generation,
+      lastErrorCode: failureMessage,
     };
   }
 
@@ -2334,8 +2511,33 @@ export class AfscpFileLibraryStorageAdapter implements FileLibraryStoragePort {
       failureMessage: input.failureMessage,
       failureContext: input.failureContext,
     });
-    const operationStatus = normalizeOperationStatus(finalOperation.operation_state);
-    const restorePlanId = readRestorePlanId(finalOperation) ?? readRestorePlanId(input.operation);
+    return this.projectRestoreOperationResult({
+      finalOperation,
+      initialOperation: input.operation,
+      input: input.input,
+      namespaceId: input.namespaceId,
+      failureMessage: input.failureMessage,
+      failOnFailed: true,
+    });
+  }
+
+  private async projectRestoreOperationResult(input: {
+    finalOperation: AfscpOperationEnvelope | AfscpOperationRecord;
+    initialOperation: AfscpOperationEnvelope | AfscpOperationRecord | null;
+    input: FileLibraryStorageLibraryInput & {
+      requestId?: string;
+      signal?: AbortSignal;
+    };
+    namespaceId: string;
+    failureMessage: string;
+    failOnFailed: boolean;
+  }): Promise<FileLibraryRestoreOperationResult> {
+    const initialOperation = input.initialOperation;
+    const operationId = readOperationId(input.finalOperation)
+      ?? (initialOperation ? readOperationId(initialOperation) : null);
+    const operationStatus = normalizeOperationStatus(input.finalOperation.operation_state);
+    const restorePlanId = readRestorePlanId(input.finalOperation)
+      ?? (initialOperation ? readRestorePlanId(initialOperation) : null);
     if (restorePlanId) {
       await this.ensureRestorePlanOwnership({
         workspaceId: input.input.workspaceId,
@@ -2344,10 +2546,10 @@ export class AfscpFileLibraryStorageAdapter implements FileLibraryStoragePort {
         restorePlanId,
       });
     }
-    const sourceSavePointId = readSourceSavePointId(finalOperation)
-      ?? readSourceSavePointId(input.operation)
-      ?? readSavePointId(finalOperation)
-      ?? readSavePointId(input.operation);
+    const sourceSavePointId = readSourceSavePointId(input.finalOperation)
+      ?? (initialOperation ? readSourceSavePointId(initialOperation) : null)
+      ?? readSavePointId(input.finalOperation)
+      ?? (initialOperation ? readSavePointId(initialOperation) : null);
     if (sourceSavePointId) {
       await this.ensureSavePointOwnership({
         workspaceId: input.input.workspaceId,
@@ -2356,16 +2558,20 @@ export class AfscpFileLibraryStorageAdapter implements FileLibraryStoragePort {
         savePointId: sourceSavePointId,
       });
     }
-    if (operationStatus !== 'succeeded') {
-      throw new Error(operationStatus === 'pending'
-        ? input.failureMessage.replace(/_failed$/, '_pending')
-        : mapAfscpOperationFailureMessage(finalOperation, input.failureMessage));
+    if (operationStatus === 'failed' && input.failOnFailed) {
+      throw new Error(mapAfscpOperationFailureMessage(input.finalOperation, input.failureMessage));
     }
-    const summary = readRestorePreviewSummary(finalOperation) ?? readRestorePreviewSummary(input.operation);
-    const blockers = readRestorePreviewBlockers(finalOperation) ?? readRestorePreviewBlockers(input.operation);
-    const stale = readOperationBoolean(finalOperation, 'stale') ?? readOperationBoolean(input.operation, 'stale');
+    if (operationStatus === 'pending' && !operationId) {
+      throw new Error(input.failureMessage);
+    }
+    const summary = readRestorePreviewSummary(input.finalOperation)
+      ?? (initialOperation ? readRestorePreviewSummary(initialOperation) : undefined);
+    const blockers = readRestorePreviewBlockers(input.finalOperation)
+      ?? (initialOperation ? readRestorePreviewBlockers(initialOperation) : undefined);
+    const stale = readOperationBoolean(input.finalOperation, 'stale')
+      ?? (initialOperation ? readOperationBoolean(initialOperation, 'stale') : undefined);
     return {
-      operationId: readOperationId(finalOperation) ?? readOperationId(input.operation),
+      operationId,
       operationStatus,
       restorePlanId,
       sourceSavePointId,

@@ -20,6 +20,7 @@ import type {
   FileObjectMeta,
   FileObjectItem,
   FileLibrarySavePoint,
+  GetFileLibraryRestorePreviewResponse,
   ListFileLibrarySavePointsResponse,
   ListTaskFileTemplatesResponse,
   RunFileLibraryRestoreRequest,
@@ -140,6 +141,16 @@ export class FilesAPI {
     return this.client.post<FileLibrarySavePoint>(
       `/workspaces/${workspaceId}/projects/${projectId}/file-libraries/${libraryId}/save-points`,
       payload,
+    );
+  }
+
+  async getActiveRestorePreview(
+    workspaceId: string,
+    projectId: string,
+    libraryId: string,
+  ): Promise<GetFileLibraryRestorePreviewResponse> {
+    return this.client.get<GetFileLibraryRestorePreviewResponse>(
+      `/workspaces/${workspaceId}/projects/${projectId}/file-libraries/${libraryId}/restore-preview`,
     );
   }
 

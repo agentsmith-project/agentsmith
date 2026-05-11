@@ -20,11 +20,30 @@ type FileLibraryLifecycleFenceFields = {
   lifecycle_fence_expires_at?: string | null;
 };
 
-type FileLibraryStoredRecord = FileLibraryRecord & FileLibraryLifecycleFenceFields;
+type FileLibraryProvisioningKind = 'template_clone';
+
+type FileLibraryProvisioningFields = {
+  provisioning_kind?: FileLibraryProvisioningKind | null;
+  provisioning_operation_id?: string | null;
+  provisioning_template_id?: string | null;
+  provisioning_request_id?: string | null;
+  provisioning_error_code?: string | null;
+};
+
+type FileLibraryStoredRecord = FileLibraryRecord & FileLibraryLifecycleFenceFields & FileLibraryProvisioningFields;
 
 export type FileLibraryLifecycleFence = {
   token: string;
   version: number;
+  library: FileLibraryRecord;
+};
+
+export type FileLibraryProvisioningState = {
+  kind: FileLibraryProvisioningKind;
+  operationId: string;
+  templateId: string;
+  requestId: string | null;
+  lastErrorCode: string | null;
   library: FileLibraryRecord;
 };
 
@@ -51,6 +70,11 @@ const FILE_LIBRARY_STORED_RECORD_KEYS = new Set<string>([
   'lifecycle_fence_owner_task_id',
   'lifecycle_fence_correlation_id',
   'lifecycle_fence_expires_at',
+  'provisioning_kind',
+  'provisioning_operation_id',
+  'provisioning_template_id',
+  'provisioning_request_id',
+  'provisioning_error_code',
 ]);
 
 const FILE_LIBRARY_STATUSES = new Set<FileLibraryRecord['status']>([
@@ -213,6 +237,45 @@ function normalizeFileLibraryStoredRecord(record: FileLibraryRecord | FileLibrar
   const lifecycleFenceExpiresAt = token === null
     ? null
     : requireStringField(raw, 'lifecycle_fence_expires_at');
+  const provisioningKindValue = raw.provisioning_kind;
+  const provisioningKind = provisioningKindValue === undefined || provisioningKindValue === null
+    ? null
+    : provisioningKindValue;
+  if (provisioningKind !== null && provisioningKind !== 'template_clone') {
+    throw new Error('invalid_file_library_catalog_record');
+  }
+  if (provisioningKind === null) {
+    for (const key of [
+      'provisioning_operation_id',
+      'provisioning_template_id',
+      'provisioning_request_id',
+      'provisioning_error_code',
+    ]) {
+      if (raw[key] !== undefined && raw[key] !== null) {
+        throw new Error('invalid_file_library_catalog_record');
+      }
+    }
+  }
+  const provisioningOperationId = provisioningKind === null
+    ? null
+    : requireStringField(raw, 'provisioning_operation_id');
+  const provisioningTemplateId = provisioningKind === null
+    ? null
+    : requireStringField(raw, 'provisioning_template_id');
+  const provisioningRequestId = provisioningKind === null
+    ? null
+    : optionalStringField(raw, 'provisioning_request_id') ?? null;
+  const provisioningErrorCode = provisioningKind === null
+    ? null
+    : optionalStringField(raw, 'provisioning_error_code') ?? null;
+  if (
+    (provisioningOperationId !== null && provisioningOperationId.trim() !== provisioningOperationId)
+    || (provisioningTemplateId !== null && provisioningTemplateId.trim() !== provisioningTemplateId)
+    || (provisioningRequestId !== null && provisioningRequestId.trim() !== provisioningRequestId)
+    || (provisioningErrorCode !== null && provisioningErrorCode.trim() !== provisioningErrorCode)
+  ) {
+    throw new Error('invalid_file_library_catalog_record');
+  }
   return {
     ...publicRecord,
     lifecycle_fence_token: token,
@@ -220,6 +283,11 @@ function normalizeFileLibraryStoredRecord(record: FileLibraryRecord | FileLibrar
     lifecycle_fence_owner_task_id: lifecycleFenceOwnerTaskId,
     lifecycle_fence_correlation_id: lifecycleFenceCorrelationId,
     lifecycle_fence_expires_at: lifecycleFenceExpiresAt,
+    provisioning_kind: provisioningKind,
+    provisioning_operation_id: provisioningOperationId,
+    provisioning_template_id: provisioningTemplateId,
+    provisioning_request_id: provisioningRequestId,
+    provisioning_error_code: provisioningErrorCode,
   };
 }
 
@@ -235,6 +303,24 @@ function tryNormalizeFileLibraryStoredRecord(
 
 function toPublicFileLibraryRecord(record: FileLibraryStoredRecord): FileLibraryRecord {
   return normalizeFileLibraryPublicFields(record as unknown as Record<string, unknown>);
+}
+
+function toFileLibraryProvisioningState(record: FileLibraryStoredRecord): FileLibraryProvisioningState | null {
+  if (
+    record.provisioning_kind !== 'template_clone'
+    || !record.provisioning_operation_id
+    || !record.provisioning_template_id
+  ) {
+    return null;
+  }
+  return {
+    kind: 'template_clone',
+    operationId: record.provisioning_operation_id,
+    templateId: record.provisioning_template_id,
+    requestId: record.provisioning_request_id ?? null,
+    lastErrorCode: record.provisioning_error_code ?? null,
+    library: toPublicFileLibraryRecord(record),
+  };
 }
 
 function toPublicFileLibraryRecords(records: FileLibraryStoredRecord[]): FileLibraryRecord[] {
@@ -386,6 +472,101 @@ export class JsonDocProjectFileLibraryCatalogRepo {
     };
     await this.saveStored(updated);
     return toPublicFileLibraryRecord(normalizeFileLibraryStoredRecord(updated));
+  }
+
+  async markTemplateCloneProvisioning(input: {
+    workspaceId: string;
+    projectId: string;
+    libraryId: string;
+    operationId: string;
+    templateId: string;
+    requestId?: string | null;
+  }): Promise<FileLibraryRecord | null> {
+    const existing = await this.getStoredById(input.workspaceId, input.projectId, input.libraryId);
+    if (!existing) {
+      return null;
+    }
+    const next: FileLibraryStoredRecord = {
+      ...existing,
+      status: 'creating',
+      version: existing.version + 1,
+      provisioning_kind: 'template_clone',
+      provisioning_operation_id: input.operationId,
+      provisioning_template_id: input.templateId,
+      provisioning_request_id: input.requestId ?? null,
+      provisioning_error_code: null,
+      updated_at: new Date().toISOString(),
+    };
+    await this.saveStored(next);
+    return toPublicFileLibraryRecord(normalizeFileLibraryStoredRecord(next));
+  }
+
+  async completeTemplateCloneProvisioning(input: {
+    workspaceId: string;
+    projectId: string;
+    libraryId: string;
+    status: Extract<FileLibraryRecord['status'], 'ready' | 'failed'>;
+    lastErrorCode?: string | null;
+  }): Promise<FileLibraryRecord | null> {
+    const existing = await this.getStoredById(input.workspaceId, input.projectId, input.libraryId);
+    if (!existing) {
+      return null;
+    }
+    const next: FileLibraryStoredRecord = {
+      ...existing,
+      status: input.status,
+      version: existing.version + 1,
+      provisioning_kind: null,
+      provisioning_operation_id: null,
+      provisioning_template_id: null,
+      provisioning_request_id: null,
+      provisioning_error_code: null,
+      updated_at: new Date().toISOString(),
+    };
+    await this.saveStored(next);
+    return toPublicFileLibraryRecord(normalizeFileLibraryStoredRecord(next));
+  }
+
+  async getProvisioningState(
+    workspaceId: string,
+    projectId: string,
+    libraryId: string,
+  ): Promise<FileLibraryProvisioningState | null> {
+    const existing = await this.getStoredById(workspaceId, projectId, libraryId);
+    return existing ? toFileLibraryProvisioningState(existing) : null;
+  }
+
+  async findTemplateCloneProvisioning(input: {
+    workspaceId: string;
+    projectId: string;
+    createdByUserId: string;
+    templateId: string;
+    requestId?: string | null;
+    name?: string;
+  }): Promise<FileLibraryProvisioningState | null> {
+    const records = await this.docStore.list<FileLibraryStoredRecord>(FILE_LIBRARY_CATALOG_COLLECTION, {
+      workspace_id: input.workspaceId,
+      project_id: input.projectId,
+      created_by_user_id: input.createdByUserId,
+    });
+    const candidates = records
+      .map((record) => tryNormalizeFileLibraryStoredRecord(record))
+      .filter((record): record is FileLibraryStoredRecord => (
+        !!record
+        && record.status === 'creating'
+        && record.provisioning_kind === 'template_clone'
+        && record.provisioning_template_id === input.templateId
+        && (
+          input.requestId
+            ? record.provisioning_request_id === input.requestId
+            : (!input.name || record.name === input.name)
+        )
+      ))
+      .sort((left, right) => {
+        const updated = right.updated_at.localeCompare(left.updated_at);
+        return updated !== 0 ? updated : right.created_at.localeCompare(left.created_at);
+      });
+    return candidates[0] ? toFileLibraryProvisioningState(candidates[0]) : null;
   }
 
   async acquireReadyLifecycleFence(input: {
@@ -773,6 +954,7 @@ export interface FileLibraryRestorePreviewRecord extends FileLibraryRestorePrevi
   project_id: string;
   library_id: string;
   afscp_preview_operation_id: string;
+  afscp_active_operation_id?: string;
   source_afscp_save_point_id: string;
   restore_plan_id?: string;
 }
@@ -1039,6 +1221,7 @@ export class JsonDocFileLibraryRestorePreviewRepo {
     projectId: string;
     libraryId: string;
     afscpPreviewOperationId: string;
+    activeAfscpOperationId?: string | null;
     sourceSavePointId: string;
     sourceAfscpSavePointId: string;
     status: FileLibraryRestorePreviewStatus;
@@ -1050,12 +1233,13 @@ export class JsonDocFileLibraryRestorePreviewRepo {
   }): Promise<FileLibraryRestorePreviewRecord> {
     const now = this.nowIso();
     const record: FileLibraryRestorePreviewRecord = {
-      id: generateFileLibraryRestorePreviewId(),
+      id: input.id ?? generateFileLibraryRestorePreviewId(),
       file_library_id: input.libraryId,
       workspace_id: input.workspaceId,
       project_id: input.projectId,
       library_id: input.libraryId,
       afscp_preview_operation_id: input.afscpPreviewOperationId,
+      ...(input.activeAfscpOperationId ? { afscp_active_operation_id: input.activeAfscpOperationId } : {}),
       source_save_point_id: input.sourceSavePointId,
       source_afscp_save_point_id: input.sourceAfscpSavePointId,
       status: input.status,
@@ -1069,6 +1253,33 @@ export class JsonDocFileLibraryRestorePreviewRepo {
     };
     await this.docStore.upsert(FILE_LIBRARY_RESTORE_PREVIEW_COLLECTION, record.id, record);
     return record;
+  }
+
+  async findActiveByLibrary(
+    workspaceId: string,
+    projectId: string,
+    libraryId: string,
+  ): Promise<FileLibraryRestorePreviewRecord | null> {
+    const records = await this.docStore.list<FileLibraryRestorePreviewRecord>(
+      FILE_LIBRARY_RESTORE_PREVIEW_COLLECTION,
+      {
+        workspace_id: workspaceId,
+        project_id: projectId,
+        library_id: libraryId,
+      },
+    );
+    const active = records
+      .filter((record) => (
+        record.status === 'previewing'
+        || record.status === 'ready'
+        || record.status === 'canceling'
+        || record.status === 'restoring'
+      ))
+      .sort((left, right) => {
+        const updated = right.updated_at.localeCompare(left.updated_at);
+        return updated !== 0 ? updated : right.created_at.localeCompare(left.created_at);
+      });
+    return active[0] ?? null;
   }
 
   async getById(
@@ -1098,7 +1309,8 @@ export class JsonDocFileLibraryRestorePreviewRepo {
     libraryId: string;
     restorePreviewId: string;
     status: FileLibraryRestorePreviewStatus;
-    restorePlanId?: string;
+    activeAfscpOperationId?: string | null;
+    restorePlanId?: string | null;
     summary?: FileLibraryRestorePreviewSummary;
     blockers?: FileLibraryRestorePreviewBlocker[];
     stale?: boolean;
@@ -1115,12 +1327,25 @@ export class JsonDocFileLibraryRestorePreviewRepo {
     const next: FileLibraryRestorePreviewRecord = {
       ...existing,
       status: input.status,
-      ...(input.restorePlanId ? { restore_plan_id: input.restorePlanId } : {}),
       ...(input.summary ? { summary: normalizeRestorePreviewSummary(input.summary) } : {}),
       ...(input.blockers ? { blockers: normalizeRestorePreviewBlockers(input.blockers) } : {}),
       ...(input.stale !== undefined ? { stale: input.stale } : {}),
       updated_at: this.nowIso(),
     };
+    if (input.activeAfscpOperationId !== undefined) {
+      if (input.activeAfscpOperationId) {
+        next.afscp_active_operation_id = input.activeAfscpOperationId;
+      } else {
+        delete next.afscp_active_operation_id;
+      }
+    }
+    if (input.restorePlanId !== undefined) {
+      if (input.restorePlanId) {
+        next.restore_plan_id = input.restorePlanId;
+      } else {
+        delete next.restore_plan_id;
+      }
+    }
     await this.docStore.upsert(FILE_LIBRARY_RESTORE_PREVIEW_COLLECTION, next.id, next);
     return next;
   }

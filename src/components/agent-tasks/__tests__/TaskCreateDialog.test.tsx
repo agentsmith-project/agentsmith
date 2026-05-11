@@ -177,11 +177,14 @@ vi.mock('next-intl', () => ({
       'select_task_file_template': 'Select task file template',
       'task_file_template_empty': 'No published task file templates are available in this project right now.',
       'task_file_template_hint': 'Only published task file templates are listed.',
+      'task_file_template_conflict': 'Task file template could not be cloned. Keep this selection and try again after file state settles.',
       'workspace_file_library_bound_visible': `Bound to ${values?.title ?? 'task'} (${values?.status ?? 'unknown'})`,
       'workspace_file_library_bound_redacted': 'Bound to another task',
       'workspace_file_library_conflict': 'That task workspace is now bound to another task. Select another workspace or create a new one.',
       'file_library_deleting.description': 'This library is being deleted. Refresh the library status before trying again.',
       'file_library_not_ready.description': 'This library is not ready yet. Refresh the library status before trying again.',
+      'file_library_operation_pending.description': 'File state is still being updated. Wait for the current file operation to finish, then try again.',
+      'file_library_restore_preview_active.description': 'A restore preview is still open. Cancel or finish it before creating a task from this template.',
       'task_start_notice': 'Start the task after creation by sending the first instruction.',
       'history_immutable_notice': 'Task history cannot be modified',
       'advanced_settings': 'Advanced settings',
@@ -621,6 +624,29 @@ describe('TaskCreateDialog', () => {
       expect(blockedState).not.toHaveTextContent('agent_task_model_setting_missing');
       expect(within(blockedState).queryByRole('link', { name: 'Open Endpoints' })).not.toBeInTheDocument();
     });
+
+    it('keeps template-based task creation blocked until Agent task model setup is ready', async () => {
+      const user = userEvent.setup();
+      mockGetAgentTaskModelSetting.mockResolvedValueOnce({
+        readiness: {
+          state: 'not_configured',
+          display_summary: 'Agent task model is not configured.',
+          reason_code: 'agent_task_model_setting_missing',
+        },
+      });
+      renderComponent();
+
+      await user.type(screen.getByRole('textbox', { name: /Task Title/i }), 'Template Task');
+      await user.click(screen.getAllByRole('radio')[2]!);
+      await selectRadixOption(user, screen.getByTestId('task-create__task-file-template'), 'Published starter');
+
+      expect(screen.getByTestId('task-create__task-file-template')).toHaveTextContent('tmpl-published');
+      expect(screen.getByRole('button', { name: 'Create' })).toBeDisabled();
+
+      submitTaskCreateForm();
+
+      expect(mockMutateAsync).not.toHaveBeenCalled();
+    });
   });
 
   describe('Form Actions', () => {
@@ -1055,6 +1081,40 @@ describe('TaskCreateDialog', () => {
 
       expect(await screen.findByRole('option', { name: 'Published starter' })).toBeInTheDocument();
       expect(screen.queryByRole('option', { name: 'Draft starter' })).not.toBeInTheDocument();
+    });
+
+    it.each([
+      [
+        'FILE_LIBRARY_OPERATION_PENDING',
+        'file_library_operation_pending',
+        'File state is still being updated. Wait for the current file operation to finish, then try again.',
+      ],
+      [
+        'FILE_LIBRARY_RESTORE_PREVIEW_ACTIVE',
+        'file_library_restore_preview_active',
+        'A restore preview is still open. Cancel or finish it before creating a task from this template.',
+      ],
+    ])('keeps template create conflicts inline for %s', async (errorCode, message, expectedMessage) => {
+      const user = userEvent.setup();
+      mockMutateAsync.mockRejectedValueOnce(new APIError(
+        errorCode,
+        message,
+        undefined,
+        409,
+        { task_file_template_id: 'tmpl-published' },
+      ));
+
+      renderComponent();
+
+      await user.type(screen.getByRole('textbox', { name: /Task Title/i }), 'Template Task');
+      await user.click(screen.getAllByRole('radio')[2]!);
+      await selectRadixOption(user, screen.getByTestId('task-create__task-file-template'), 'Published starter');
+      submitTaskCreateForm();
+
+      expect(await screen.findByTestId('task-create__task-file-template-conflict')).toHaveTextContent(expectedMessage);
+      expect(mockOnOpenChange).not.toHaveBeenCalledWith(false);
+      expect(screen.getByTestId('task-create__task-file-template')).toHaveTextContent('tmpl-published');
+      expect(screen.getByRole('button', { name: 'Create' })).toBeEnabled();
     });
 
     it('uses file library binding status instead of task-list occupancy when selecting an existing workspace', async () => {

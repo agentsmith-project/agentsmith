@@ -9,6 +9,7 @@ function isFileLibraryReadRoute(route: ProjectsRoute, method: string): boolean {
     || (route.kind === 'fileLibraryDownload' && method === 'GET')
     || (route.kind === 'fileLibraryMeta' && method === 'GET')
     || (route.kind === 'fileLibrarySavePoints' && method === 'GET')
+    || (route.kind === 'fileLibraryRestorePreview' && method === 'GET')
   );
 }
 

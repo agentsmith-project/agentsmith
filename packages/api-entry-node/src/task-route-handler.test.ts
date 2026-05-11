@@ -159,6 +159,12 @@ describe('task-route-handler workspace access', () => {
         restorePlanId: `plan_${input.libraryId}`,
         sourceSavePointId: input.savePointId,
       })),
+      reconcileRestorePreview: vi.fn(async (input) => ({
+        operationId: input.operationId,
+        operationStatus: 'succeeded',
+        restorePlanId: `plan_${input.libraryId}`,
+        sourceSavePointId: null,
+      })),
       runRestorePreview: vi.fn(async (input) => ({
         operationId: `op_${input.libraryId}_restore_run`,
         operationStatus: 'succeeded',
@@ -183,6 +189,14 @@ describe('task-route-handler workspace access', () => {
         operationId: `op_${input.libraryId}_template_clone`,
         operationStatus: 'succeeded',
         projectStorageGeneration: input.projectStorageGeneration,
+      })),
+      reconcileLibraryProvisioning: vi.fn(async (input) => ({
+        namespaceId: 'ns_project_1',
+        repoId: `repo_${input.libraryId}`,
+        operationId: `op_${input.libraryId}_template_clone`,
+        operationStatus: 'succeeded',
+        projectStorageGeneration: 1,
+        lastErrorCode: null,
       })),
       listEntries: vi.fn(async (input) => ({
         path: input.path,
@@ -1082,6 +1096,277 @@ describe('task-route-handler workspace access', () => {
       runtimeWritableAffordance: 'task_internal_home',
       bindingState: 'bound',
     });
+  });
+
+  it('keeps task file template clone pending retryable without marking the new file library failed', async () => {
+    const deps = createDefaultNodeApiDeps();
+    await seedDefaultManagedRunner(deps);
+    await grantProjectPermissionsForUser(deps, 'user_1', ['project:agent_task:use']);
+    const cloneTemplateToLibrary = vi.fn(async (input) => ({
+      namespaceId: input.namespaceId,
+      repoId: `repo_${input.libraryId}`,
+      operationId: `op_${input.libraryId}_template_clone`,
+      operationStatus: 'pending' as const,
+      projectStorageGeneration: input.projectStorageGeneration,
+    }));
+    deps.fileLibraryStorageAdapter = createTaskFileLibraryStorageAdapter({ cloneTemplateToLibrary });
+
+    const templateRepo = new JsonDocProjectTaskFileTemplateRepo(deps.docStore);
+    await templateRepo.create({
+      id: 'tftpl_pending_clone',
+      workspaceId: 'ws_default',
+      projectId: 'proj_1',
+      name: 'Pending clone files',
+      sourceLibraryId: 'flib_source_pending_clone',
+      createdByUserId: 'user_1',
+      afscpTemplateId: 'tmpl_tftpl_pending_clone',
+    });
+    await templateRepo.updateStatus({
+      workspaceId: 'ws_default',
+      projectId: 'proj_1',
+      taskFileTemplateId: 'tftpl_pending_clone',
+      status: 'published',
+    });
+
+    const json = vi.fn();
+    await expect(handleTaskRoute({
+      route: { kind: 'tasks', workspaceId: 'ws_default', projectId: 'proj_1' } as never,
+      method: 'POST',
+      req: { headers: { 'x-request-id': 'req_template_clone_pending' }, url: '' } as never,
+      res: {} as never,
+      deps,
+      user: { id: 'user_1' } as never,
+      json,
+      readBody: vi.fn(async () => ({
+        title: 'Pending template task',
+        workspace_mode: 'use_template',
+        task_file_template_id: 'tftpl_pending_clone',
+      })),
+    })).resolves.toBe(true);
+
+    expect(json).toHaveBeenCalledWith(expect.anything(), 409, expect.objectContaining({
+      error_code: 'FILE_LIBRARY_OPERATION_PENDING',
+      message: 'file_library_template_clone_pending',
+      file_library_id: expect.stringMatching(/^flib_/),
+      file_library_status: 'creating',
+      operation_status: 'pending',
+    }));
+    const libraries = await deps.docStore.list<Record<string, unknown>>('project_file_libraries', {
+      workspace_id: 'ws_default',
+      project_id: 'proj_1',
+    });
+    expect(libraries).toEqual([
+      expect.objectContaining({
+        status: 'creating',
+      }),
+    ]);
+    await expect(deps.docStore.list(notebookTasksCollection('ws_default'), {
+      workspace_id: 'ws_default',
+      project_id: 'proj_1',
+    })).resolves.toHaveLength(0);
+    expect(JSON.stringify(json.mock.calls)).not.toMatch(/tmpl_tftpl_pending_clone|repo_|op_|credential|control_root/);
+  });
+
+  it('reuses pending template clone provisioning and completes task creation after reconcile', async () => {
+    const deps = createDefaultNodeApiDeps();
+    await seedDefaultManagedRunner(deps);
+    await grantProjectPermissionsForUser(deps, 'user_1', ['project:agent_task:use']);
+    let cloneState: 'pending' | 'succeeded' = 'pending';
+    let pendingLibraryId: string | null = null;
+    const cloneTemplateToLibrary = vi.fn(async (input) => {
+      pendingLibraryId = input.libraryId;
+      return {
+        namespaceId: input.namespaceId,
+        repoId: `repo_${input.libraryId}`,
+        operationId: `op_${input.libraryId}_template_clone`,
+        operationStatus: 'pending' as const,
+        projectStorageGeneration: input.projectStorageGeneration,
+      };
+    });
+    const reconcileLibraryProvisioning = vi.fn(async (input) => ({
+      namespaceId: 'ns_project_1',
+      repoId: `repo_${input.libraryId}`,
+      operationId: `op_${input.libraryId}_template_clone`,
+      operationStatus: cloneState,
+      projectStorageGeneration: 1,
+      lastErrorCode: null,
+    }));
+    deps.fileLibraryStorageAdapter = createTaskFileLibraryStorageAdapter({
+      cloneTemplateToLibrary,
+      reconcileLibraryProvisioning,
+    } as Partial<FileLibraryStoragePort> & {
+      reconcileLibraryProvisioning: typeof reconcileLibraryProvisioning;
+    });
+
+    const templateRepo = new JsonDocProjectTaskFileTemplateRepo(deps.docStore);
+    await templateRepo.create({
+      id: 'tftpl_retry_clone',
+      workspaceId: 'ws_default',
+      projectId: 'proj_1',
+      name: 'Retry clone files',
+      sourceLibraryId: 'flib_source_retry_clone',
+      createdByUserId: 'user_1',
+      afscpTemplateId: 'tmpl_tftpl_retry_clone',
+    });
+    await templateRepo.updateStatus({
+      workspaceId: 'ws_default',
+      projectId: 'proj_1',
+      taskFileTemplateId: 'tftpl_retry_clone',
+      status: 'published',
+    });
+    const requestBody = {
+      title: 'Retry template task',
+      workspace_mode: 'use_template',
+      task_file_template_id: 'tftpl_retry_clone',
+    };
+
+    const firstJson = vi.fn();
+    await expect(handleTaskRoute({
+      route: { kind: 'tasks', workspaceId: 'ws_default', projectId: 'proj_1' } as never,
+      method: 'POST',
+      req: { headers: { 'x-request-id': 'req_template_clone_retry' }, url: '' } as never,
+      res: {} as never,
+      deps,
+      user: { id: 'user_1' } as never,
+      json: firstJson,
+      readBody: vi.fn(async () => requestBody),
+    })).resolves.toBe(true);
+
+    expect(firstJson).toHaveBeenCalledWith(expect.anything(), 409, expect.objectContaining({
+      error_code: 'FILE_LIBRARY_OPERATION_PENDING',
+      message: 'file_library_template_clone_pending',
+      file_library_id: expect.stringMatching(/^flib_/),
+      file_library_status: 'creating',
+      operation_status: 'pending',
+    }));
+    const firstPendingLibraryId = String((firstJson.mock.calls[0]?.[2] as Record<string, unknown>).file_library_id);
+    expect(firstPendingLibraryId).toBe(pendingLibraryId);
+
+    const secondJson = vi.fn();
+    await expect(handleTaskRoute({
+      route: { kind: 'tasks', workspaceId: 'ws_default', projectId: 'proj_1' } as never,
+      method: 'POST',
+      req: { headers: { 'x-request-id': 'req_template_clone_retry' }, url: '' } as never,
+      res: {} as never,
+      deps,
+      user: { id: 'user_1' } as never,
+      json: secondJson,
+      readBody: vi.fn(async () => requestBody),
+    })).resolves.toBe(true);
+
+    expect(secondJson).toHaveBeenCalledWith(expect.anything(), 409, expect.objectContaining({
+      file_library_id: firstPendingLibraryId,
+      operation_status: 'pending',
+    }));
+    expect(cloneTemplateToLibrary).toHaveBeenCalledTimes(1);
+    expect(reconcileLibraryProvisioning).toHaveBeenCalledWith(expect.objectContaining({
+      workspaceId: 'ws_default',
+      projectId: 'proj_1',
+      libraryId: firstPendingLibraryId,
+      requestId: 'req_template_clone_retry',
+    }));
+    await expect(deps.docStore.list<Record<string, unknown>>('project_file_libraries', {
+      workspace_id: 'ws_default',
+      project_id: 'proj_1',
+    })).resolves.toHaveLength(1);
+
+    cloneState = 'succeeded';
+    const successJson = vi.fn();
+    await expect(handleTaskRoute({
+      route: { kind: 'tasks', workspaceId: 'ws_default', projectId: 'proj_1' } as never,
+      method: 'POST',
+      req: { headers: { 'x-request-id': 'req_template_clone_retry' }, url: '' } as never,
+      res: {} as never,
+      deps,
+      user: { id: 'user_1' } as never,
+      json: successJson,
+      readBody: vi.fn(async () => requestBody),
+    })).resolves.toBe(true);
+
+    expect(successJson.mock.calls[0]?.[1]).toBe(201);
+    expect(successJson.mock.calls[0]?.[2]).toMatchObject({
+      title: 'Retry template task',
+      workspace_file_library_id: firstPendingLibraryId,
+    });
+    const libraries = await deps.docStore.list<Record<string, unknown>>('project_file_libraries', {
+      workspace_id: 'ws_default',
+      project_id: 'proj_1',
+    });
+    expect(libraries).toHaveLength(1);
+    expect(libraries[0]).toMatchObject({
+      id: firstPendingLibraryId,
+      status: 'ready',
+    });
+    await expect(deps.docStore.list(notebookTasksCollection('ws_default'), {
+      workspace_id: 'ws_default',
+      project_id: 'proj_1',
+    })).resolves.toHaveLength(1);
+    expect(JSON.stringify([firstJson.mock.calls, secondJson.mock.calls, successJson.mock.calls])).not.toMatch(/tmpl_tftpl_retry_clone|repo_|op_|credential|control_root/);
+  });
+
+  it('preserves typed template clone errors when creating a task from a template', async () => {
+    for (const [storageMessage, statusCode, errorCode, message] of [
+      [
+        'file_library_capability_denied repo_template disabled by local profile',
+        403,
+        'FILE_LIBRARY_CAPABILITY_DENIED',
+        'file_library_capability_denied',
+      ],
+      [
+        'file_library_template_clone_not_allowed repo_hidden template boundary',
+        403,
+        'FILE_LIBRARY_TEMPLATE_CLONE_NOT_ALLOWED',
+        'file_library_template_clone_not_allowed',
+      ],
+    ] as const) {
+      const deps = createDefaultNodeApiDeps();
+      await seedDefaultManagedRunner(deps);
+      await grantProjectPermissionsForUser(deps, 'user_1', ['project:agent_task:use']);
+      deps.fileLibraryStorageAdapter = createTaskFileLibraryStorageAdapter({
+        cloneTemplateToLibrary: vi.fn(async () => {
+          throw new Error(storageMessage);
+        }),
+      });
+
+      const templateRepo = new JsonDocProjectTaskFileTemplateRepo(deps.docStore);
+      await templateRepo.create({
+        id: 'tftpl_clone_error',
+        workspaceId: 'ws_default',
+        projectId: 'proj_1',
+        name: 'Clone error files',
+        sourceLibraryId: 'flib_source_clone_error',
+        createdByUserId: 'user_1',
+        afscpTemplateId: 'tmpl_tftpl_clone_error',
+      });
+      await templateRepo.updateStatus({
+        workspaceId: 'ws_default',
+        projectId: 'proj_1',
+        taskFileTemplateId: 'tftpl_clone_error',
+        status: 'published',
+      });
+
+      const json = vi.fn();
+      await expect(handleTaskRoute({
+        route: { kind: 'tasks', workspaceId: 'ws_default', projectId: 'proj_1' } as never,
+        method: 'POST',
+        req: { headers: { 'x-request-id': 'req_template_clone_error' }, url: '' } as never,
+        res: {} as never,
+        deps,
+        user: { id: 'user_1' } as never,
+        json,
+        readBody: vi.fn(async () => ({
+          title: 'Template clone error task',
+          workspace_mode: 'use_template',
+          task_file_template_id: 'tftpl_clone_error',
+        })),
+      })).resolves.toBe(true);
+
+      expect(json).toHaveBeenCalledWith(expect.anything(), statusCode, {
+        error_code: errorCode,
+        message,
+      });
+      expect(JSON.stringify(json.mock.calls)).not.toMatch(/repo_template disabled|repo_hidden|tmpl_tftpl_clone_error|credential|control_root/);
+    }
   });
 
   it('refuses missing, unpublished, and cross-project task file templates before cloning or binding', async () => {

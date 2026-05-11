@@ -6,6 +6,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { InMemoryJsonDocStore } from '@mbos/adapters-private';
 import { handleProjectFileLibraryRoutes } from './project-file-library-routes.js';
 import {
+  JsonDocFileLibraryRestorePreviewRepo,
   JsonDocProjectFileLibraryCatalogRepo,
   JsonDocProjectTaskFileTemplateRepo,
 } from './file-library-persistence.js';
@@ -128,6 +129,20 @@ function createStorageAdapter(overrides: Partial<FileLibraryStoragePort> = {}): 
       blockers: [],
       stale: false,
     })),
+    reconcileRestorePreview: vi.fn(async () => ({
+      operationId: 'op_preview01',
+      operationStatus: 'succeeded',
+      restorePlanId: 'plan_001',
+      sourceSavePointId: 'sp_user_001',
+      summary: {
+        added: { count: 1, samples: ['src/new.ts'] },
+        changed: { count: 2, samples: ['docs/readme.md'] },
+        removed: { count: 1, samples: ['tmp/cache.txt'] },
+        destructive: true,
+      },
+      blockers: [],
+      stale: false,
+    })),
     runRestorePreview: vi.fn(async () => ({
       operationId: 'op_restore_run',
       operationStatus: 'succeeded',
@@ -152,6 +167,14 @@ function createStorageAdapter(overrides: Partial<FileLibraryStoragePort> = {}): 
       operationId: 'op_template_clone',
       operationStatus: 'succeeded',
       projectStorageGeneration: input.projectStorageGeneration,
+    })),
+    reconcileLibraryProvisioning: vi.fn(async (input) => ({
+      namespaceId: 'ns_project_1',
+      repoId: `repo_${input.libraryId}`,
+      operationId: `op_${input.libraryId}_template_clone`,
+      operationStatus: 'succeeded',
+      projectStorageGeneration: 1,
+      lastErrorCode: null,
     })),
     ...overrides,
   };
@@ -267,6 +290,7 @@ async function seedTaskFileTemplate(input: {
   id: string;
   name: string;
   status: 'published' | 'unpublished';
+  sourceLibraryId?: string;
 }): Promise<void> {
   const repo = new JsonDocProjectTaskFileTemplateRepo(input.deps.docStore);
   await repo.create({
@@ -274,7 +298,7 @@ async function seedTaskFileTemplate(input: {
     workspaceId: 'ws_default',
     projectId: 'proj_1',
     name: input.name,
-    sourceLibraryId: `flib_source_${input.id}`,
+    sourceLibraryId: input.sourceLibraryId ?? `flib_source_${input.id}`,
     createdByUserId: OWNER_USER.id,
     afscpTemplateId: `tmpl_${input.id}`,
   });
@@ -487,6 +511,92 @@ describe('project-file-library-routes', () => {
     expect(detailJson.mock.calls[0]?.[2]).toMatchObject({
       source: 'agent_task_files',
     });
+  });
+
+  it('reconciles pending template clone provisioning on file-library list and detail without leaking AFSCP ids', async () => {
+    const reconcileLibraryProvisioning = vi.fn(async (input) => ({
+      namespaceId: 'ns_project_1',
+      repoId: `repo_${input.libraryId}`,
+      operationId: 'op_template_clone_hidden',
+      operationStatus: 'succeeded' as const,
+      projectStorageGeneration: 1,
+      lastErrorCode: null,
+    }));
+    const deps = createDeps({
+      storageAdapter: createStorageAdapter({ reconcileLibraryProvisioning }),
+    });
+    const repo = new JsonDocProjectFileLibraryCatalogRepo(deps.docStore);
+    await repo.save({
+      id: 'flib_pending_template_clone',
+      workspace_id: 'ws_default',
+      project_id: 'proj_1',
+      name: 'Pending clone',
+      status: 'creating',
+      version: 1,
+      file_library_home_segment: 'flibhome_pending_template_clone',
+      source: 'agent_task_files',
+      created_by_user_id: OWNER_USER.id,
+      created_at: '2026-05-09T00:00:00.000Z',
+      updated_at: '2026-05-09T00:00:00.000Z',
+    });
+    await repo.markTemplateCloneProvisioning({
+      workspaceId: 'ws_default',
+      projectId: 'proj_1',
+      libraryId: 'flib_pending_template_clone',
+      operationId: 'op_template_clone_hidden',
+      templateId: 'tftpl_public_template',
+      requestId: 'req_clone_retry',
+    });
+
+    const listJson = vi.fn();
+    await expect(handleProjectFileLibraryRoutes({
+      routeKind: 'fileLibraries',
+      method: 'GET',
+      workspaceId: 'ws_default',
+      projectId: 'proj_1',
+      req: { headers: { 'x-request-id': 'req_clone_list_reconcile' } } as never,
+      res: createMockResponse(),
+      deps,
+      user: OWNER_USER,
+      json: listJson,
+      readBody: vi.fn(),
+    })).resolves.toBe(true);
+
+    expect(listJson.mock.calls[0]?.[2]).toMatchObject({
+      items: [
+        expect.objectContaining({
+          id: 'flib_pending_template_clone',
+          status: 'ready',
+        }),
+      ],
+    });
+
+    const detailJson = vi.fn();
+    await expect(handleProjectFileLibraryRoutes({
+      routeKind: 'fileLibraryItem',
+      method: 'GET',
+      workspaceId: 'ws_default',
+      projectId: 'proj_1',
+      libraryId: 'flib_pending_template_clone',
+      req: { headers: { 'x-request-id': 'req_clone_detail_reconcile' } } as never,
+      res: createMockResponse(),
+      deps,
+      user: OWNER_USER,
+      json: detailJson,
+      readBody: vi.fn(),
+    })).resolves.toBe(true);
+
+    expect(detailJson.mock.calls[0]?.[2]).toMatchObject({
+      id: 'flib_pending_template_clone',
+      status: 'ready',
+    });
+    expect(reconcileLibraryProvisioning).toHaveBeenCalledWith(expect.objectContaining({
+      workspaceId: 'ws_default',
+      projectId: 'proj_1',
+      libraryId: 'flib_pending_template_clone',
+      requestId: 'req_clone_list_reconcile',
+    }));
+    expect(JSON.stringify([listJson.mock.calls, detailJson.mock.calls])).not.toMatch(/op_template_clone_hidden|repo_|tmpl_|credential|control_root/);
   });
 
   it('maps pending project storage to a typed response without creating a half-provisioned library', async () => {
@@ -1316,6 +1426,235 @@ describe('project-file-library-routes', () => {
     expect(JSON.stringify([previewJson.mock.calls, runJson.mock.calls, cancelJson.mock.calls])).not.toMatch(/repo_|sp_user_|plan_|credential|control_root/);
   });
 
+  it('returns a previewing restore preview instead of a conflict when AFSCP preview is still running', async () => {
+    const storageAdapter = createStorageAdapter({
+      createRestorePreview: vi.fn(async () => ({
+        operationId: 'op_preview_long',
+        operationStatus: 'pending',
+        restorePlanId: null,
+        sourceSavePointId: 'sp_user_001',
+      })),
+    });
+    const deps = createDeps({ storageAdapter });
+    const created = await createReadyLibrary(deps);
+    const libraryId = String(created.id);
+
+    const savePointJson = vi.fn();
+    await handleProjectFileLibraryRoutes({
+      routeKind: 'fileLibrarySavePoints',
+      method: 'POST',
+      workspaceId: 'ws_default',
+      projectId: 'proj_1',
+      libraryId,
+      req: { headers: {} } as never,
+      res: createMockResponse(),
+      deps,
+      user: OWNER_USER,
+      json: savePointJson,
+      readBody: vi.fn().mockResolvedValue({ message: 'Before restore' }),
+    });
+    const savePoint = savePointJson.mock.calls[0]?.[2] as Record<string, unknown>;
+
+    const previewJson = vi.fn();
+    await expect(handleProjectFileLibraryRoutes({
+      routeKind: 'fileLibraryRestorePreview',
+      method: 'POST',
+      workspaceId: 'ws_default',
+      projectId: 'proj_1',
+      libraryId,
+      req: { headers: { 'x-request-id': 'req_restore_preview_pending' } } as never,
+      res: createMockResponse(),
+      deps,
+      user: OWNER_USER,
+      json: previewJson,
+      readBody: vi.fn().mockResolvedValue({ save_point_id: savePoint.id }),
+    })).resolves.toBe(true);
+
+    expect(previewJson).toHaveBeenCalledWith(expect.anything(), 201, expect.objectContaining({
+      id: expect.stringMatching(/^flrp_/),
+      file_library_id: libraryId,
+      source_save_point_id: savePoint.id,
+      status: 'previewing',
+    }));
+    expect(JSON.stringify(previewJson.mock.calls)).not.toMatch(/repo_|sp_user_|plan_|credential|control_root/);
+  });
+
+  it('reconciles an active restore preview through a backend projection without exposing AFSCP ids', async () => {
+    const reconcileRestorePreview = vi.fn(async () => ({
+      operationId: 'op_preview_long',
+      operationStatus: 'succeeded' as const,
+      restorePlanId: 'plan_afscp_hidden',
+      sourceSavePointId: '1778481131647-4d2e0211',
+      summary: {
+        added: { count: 0, samples: [] },
+        changed: { count: 1, samples: ['docs/guide.txt'] },
+        removed: { count: 0, samples: [] },
+        destructive: false,
+      },
+      blockers: [],
+      stale: false,
+    }));
+    const storageAdapter = createStorageAdapter({
+      createRestorePreview: vi.fn(async () => ({
+        operationId: 'op_preview_long',
+        operationStatus: 'pending',
+        restorePlanId: null,
+        sourceSavePointId: '1778481131647-4d2e0211',
+      })),
+      reconcileRestorePreview,
+    } as Partial<FileLibraryStoragePort> & { reconcileRestorePreview: typeof reconcileRestorePreview });
+    const deps = createDeps({ storageAdapter });
+    const created = await createReadyLibrary(deps);
+    const libraryId = String(created.id);
+
+    const savePointJson = vi.fn();
+    await handleProjectFileLibraryRoutes({
+      routeKind: 'fileLibrarySavePoints',
+      method: 'POST',
+      workspaceId: 'ws_default',
+      projectId: 'proj_1',
+      libraryId,
+      req: { headers: {} } as never,
+      res: createMockResponse(),
+      deps,
+      user: OWNER_USER,
+      json: savePointJson,
+      readBody: vi.fn().mockResolvedValue({ message: 'Before restore' }),
+    });
+    const savePoint = savePointJson.mock.calls[0]?.[2] as Record<string, unknown>;
+
+    const previewJson = vi.fn();
+    await expect(handleProjectFileLibraryRoutes({
+      routeKind: 'fileLibraryRestorePreview',
+      method: 'POST',
+      workspaceId: 'ws_default',
+      projectId: 'proj_1',
+      libraryId,
+      req: { headers: { 'x-request-id': 'req_restore_preview_pending' } } as never,
+      res: createMockResponse(),
+      deps,
+      user: OWNER_USER,
+      json: previewJson,
+      readBody: vi.fn().mockResolvedValue({ save_point_id: savePoint.id }),
+    })).resolves.toBe(true);
+    const preview = previewJson.mock.calls[0]?.[2] as Record<string, unknown>;
+    expect(preview).toMatchObject({ status: 'previewing' });
+
+    const getJson = vi.fn();
+    await expect(handleProjectFileLibraryRoutes({
+      routeKind: 'fileLibraryRestorePreview',
+      method: 'GET',
+      workspaceId: 'ws_default',
+      projectId: 'proj_1',
+      libraryId,
+      req: { headers: { 'x-request-id': 'req_restore_preview_poll' } } as never,
+      res: createMockResponse(),
+      deps,
+      user: OWNER_USER,
+      json: getJson,
+      readBody: vi.fn(),
+    })).resolves.toBe(true);
+
+    expect(reconcileRestorePreview).toHaveBeenCalledWith(expect.objectContaining({
+      workspaceId: 'ws_default',
+      projectId: 'proj_1',
+      libraryId,
+      operationId: 'op_preview_long',
+      requestId: 'req_restore_preview_poll',
+    }));
+    expect(getJson).toHaveBeenCalledWith(expect.anything(), 200, {
+      restore_preview: expect.objectContaining({
+        id: preview.id,
+        file_library_id: libraryId,
+        source_save_point_id: savePoint.id,
+        status: 'ready',
+        summary: {
+          added: { count: 0, samples: [] },
+          changed: { count: 1, samples: ['docs/guide.txt'] },
+          removed: { count: 0, samples: [] },
+          destructive: false,
+        },
+        blockers: [],
+        stale: false,
+      }),
+    });
+    expect(JSON.stringify(getJson.mock.calls)).not.toMatch(/op_preview_long|repo_|plan_|1778481131647-4d2e0211|sp_user_|credential|control_root/);
+  });
+
+  it('does not return terminal restore previews as active blockers after reconcile', async () => {
+    const reconcileRestorePreview = vi.fn(async () => ({
+      operationId: 'op_restore_run_long',
+      operationStatus: 'succeeded' as const,
+      restorePlanId: 'plan_hidden_restored',
+      sourceSavePointId: 'sp_user_restored',
+    }));
+    const storageAdapter = createStorageAdapter({ reconcileRestorePreview });
+    const deps = createDeps({ storageAdapter });
+    const created = await createReadyLibrary(deps);
+    const libraryId = String(created.id);
+    const restoreRepo = new JsonDocFileLibraryRestorePreviewRepo(deps.docStore);
+    await restoreRepo.create({
+      id: 'flrp_restoring',
+      workspaceId: 'ws_default',
+      projectId: 'proj_1',
+      libraryId,
+      afscpPreviewOperationId: 'op_preview_hidden',
+      activeAfscpOperationId: 'op_restore_run_long',
+      sourceSavePointId: 'flsp_public',
+      sourceAfscpSavePointId: 'sp_user_restored',
+      status: 'restoring',
+      restorePlanId: 'plan_hidden_initial',
+    });
+
+    const getJson = vi.fn();
+    await expect(handleProjectFileLibraryRoutes({
+      routeKind: 'fileLibraryRestorePreview',
+      method: 'GET',
+      workspaceId: 'ws_default',
+      projectId: 'proj_1',
+      libraryId,
+      req: { headers: { 'x-request-id': 'req_restore_terminal_poll' } } as never,
+      res: createMockResponse(),
+      deps,
+      user: OWNER_USER,
+      json: getJson,
+      readBody: vi.fn(),
+    })).resolves.toBe(true);
+
+    expect(getJson).toHaveBeenCalledWith(expect.anything(), 200, {
+      restore_preview: null,
+    });
+
+    await seedTaskFileTemplate({
+      deps,
+      id: 'tftpl_after_restore',
+      name: 'After restore',
+      status: 'unpublished',
+      sourceLibraryId: libraryId,
+    });
+    const publishJson = vi.fn();
+    await expect(handleProjectFileLibraryRoutes({
+      routeKind: 'taskFileTemplatePublish',
+      method: 'POST',
+      workspaceId: 'ws_default',
+      projectId: 'proj_1',
+      taskFileTemplateId: 'tftpl_after_restore',
+      req: { headers: { 'x-request-id': 'req_publish_after_restore' } } as never,
+      res: createMockResponse(),
+      deps,
+      user: OWNER_USER,
+      json: publishJson,
+      readBody: vi.fn(),
+    })).resolves.toBe(true);
+
+    expect(publishJson.mock.calls[0]?.[1]).toBe(200);
+    expect(publishJson.mock.calls[0]?.[2]).toMatchObject({
+      id: 'tftpl_after_restore',
+      status: 'published',
+    });
+    expect(JSON.stringify([getJson.mock.calls, publishJson.mock.calls])).not.toMatch(/op_restore_run_long|op_preview_hidden|repo_|plan_|sp_user_|credential|control_root/);
+  });
+
   it('returns stable restore conflict responses without exposing AFSCP ids', async () => {
     for (const [message, errorCode] of [
       ['file_library_restore_preview_stale', 'FILE_LIBRARY_RESTORE_PREVIEW_STALE'],
@@ -1509,6 +1848,229 @@ describe('project-file-library-routes', () => {
       missing_permissions: ['project:agent_task:use', 'project:files:update'],
     });
     expect(JSON.stringify(listJson.mock.calls)).not.toMatch(/tftpl_draft|Draft template|tftpl_published|Published template|unpublished|published|tmpl_/);
+  });
+
+  it('keeps AFSCP capability denials as typed file-library errors instead of treating template publish as successful', async () => {
+    const storageAdapter = createStorageAdapter({
+      createTemplateFromLibrary: vi.fn(async () => {
+        throw new Error('file_library_capability_denied repo_template disabled by local profile');
+      }),
+    });
+    const deps = createDeps({ storageAdapter });
+    const created = await createReadyLibrary(deps);
+    const createJson = vi.fn();
+
+    await expect(handleProjectFileLibraryRoutes({
+      routeKind: 'taskFileTemplates',
+      method: 'POST',
+      workspaceId: 'ws_default',
+      projectId: 'proj_1',
+      req: { headers: { 'x-request-id': 'req_template_capability_denied' } } as never,
+      res: createMockResponse(),
+      deps,
+      user: OWNER_USER,
+      json: createJson,
+      readBody: vi.fn().mockResolvedValue({
+        name: 'Denied template',
+        source_library_id: String(created.id),
+      }),
+    })).resolves.toBe(true);
+
+    expect(createJson).toHaveBeenCalledWith(expect.anything(), 403, {
+      error_code: 'FILE_LIBRARY_CAPABILITY_DENIED',
+      message: 'file_library_capability_denied',
+    });
+    expect(JSON.stringify(createJson.mock.calls)).not.toMatch(/repo_template disabled|req_template_capability_denied|repo_|tmpl_|credential|control_root/);
+  });
+
+  it('blocks template create and publish while a backend restore preview is active', async () => {
+    const storageAdapter = createStorageAdapter();
+    const deps = createDeps({ storageAdapter });
+    const created = await createReadyLibrary(deps);
+    const libraryId = String(created.id);
+
+    const savePointJson = vi.fn();
+    await handleProjectFileLibraryRoutes({
+      routeKind: 'fileLibrarySavePoints',
+      method: 'POST',
+      workspaceId: 'ws_default',
+      projectId: 'proj_1',
+      libraryId,
+      req: { headers: {} } as never,
+      res: createMockResponse(),
+      deps,
+      user: OWNER_USER,
+      json: savePointJson,
+      readBody: vi.fn().mockResolvedValue({ message: 'Before restore' }),
+    });
+    const savePoint = savePointJson.mock.calls[0]?.[2] as Record<string, unknown>;
+
+    await handleProjectFileLibraryRoutes({
+      routeKind: 'fileLibraryRestorePreview',
+      method: 'POST',
+      workspaceId: 'ws_default',
+      projectId: 'proj_1',
+      libraryId,
+      req: { headers: { 'x-request-id': 'req_restore_preview_ready' } } as never,
+      res: createMockResponse(),
+      deps,
+      user: OWNER_USER,
+      json: vi.fn(),
+      readBody: vi.fn().mockResolvedValue({ save_point_id: savePoint.id }),
+    });
+
+    const createTemplateJson = vi.fn();
+    await expect(handleProjectFileLibraryRoutes({
+      routeKind: 'taskFileTemplates',
+      method: 'POST',
+      workspaceId: 'ws_default',
+      projectId: 'proj_1',
+      req: { headers: { 'x-request-id': 'req_template_blocked' } } as never,
+      res: createMockResponse(),
+      deps,
+      user: OWNER_USER,
+      json: createTemplateJson,
+      readBody: vi.fn().mockResolvedValue({
+        name: 'Blocked template',
+        source_library_id: libraryId,
+      }),
+    })).resolves.toBe(true);
+
+    expect(createTemplateJson).toHaveBeenCalledWith(expect.anything(), 409, expect.objectContaining({
+      error_code: 'FILE_LIBRARY_RESTORE_PREVIEW_ACTIVE',
+      message: 'file_library_restore_preview_active',
+      file_library_id: libraryId,
+      restore_preview_status: 'ready',
+    }));
+    expect(storageAdapter.createTemplateFromLibrary).not.toHaveBeenCalled();
+
+    await seedTaskFileTemplate({
+      deps,
+      id: 'tftpl_blocked_publish',
+      name: 'Blocked publish template',
+      status: 'unpublished',
+      sourceLibraryId: libraryId,
+    });
+    const publishJson = vi.fn();
+    await expect(handleProjectFileLibraryRoutes({
+      routeKind: 'taskFileTemplatePublish',
+      method: 'POST',
+      workspaceId: 'ws_default',
+      projectId: 'proj_1',
+      taskFileTemplateId: 'tftpl_blocked_publish',
+      req: { headers: { 'x-request-id': 'req_template_publish_blocked' } } as never,
+      res: createMockResponse(),
+      deps,
+      user: OWNER_USER,
+      json: publishJson,
+      readBody: vi.fn(),
+    })).resolves.toBe(true);
+
+    expect(publishJson).toHaveBeenCalledWith(expect.anything(), 409, expect.objectContaining({
+      error_code: 'FILE_LIBRARY_RESTORE_PREVIEW_ACTIVE',
+      message: 'file_library_restore_preview_active',
+      file_library_id: libraryId,
+      restore_preview_status: 'ready',
+    }));
+    expect(JSON.stringify([createTemplateJson.mock.calls, publishJson.mock.calls])).not.toMatch(/op_preview|repo_|plan_|sp_user_|tmpl_|credential|control_root/);
+  });
+
+  it('allows template create after a canceling preview reconciles to canceled', async () => {
+    const reconcileRestorePreview = vi.fn(async () => ({
+      operationId: 'op_restore_discard_long',
+      operationStatus: 'succeeded' as const,
+      restorePlanId: 'plan_afscp_hidden',
+      sourceSavePointId: 'sp_user_001',
+    }));
+    const storageAdapter = createStorageAdapter({
+      discardRestorePreview: vi.fn(async () => ({
+        operationId: 'op_restore_discard_long',
+        operationStatus: 'pending',
+        restorePlanId: 'plan_001',
+        sourceSavePointId: 'sp_user_001',
+      })),
+      reconcileRestorePreview,
+    } as Partial<FileLibraryStoragePort> & { reconcileRestorePreview: typeof reconcileRestorePreview });
+    const deps = createDeps({ storageAdapter });
+    const created = await createReadyLibrary(deps);
+    const libraryId = String(created.id);
+
+    const savePointJson = vi.fn();
+    await handleProjectFileLibraryRoutes({
+      routeKind: 'fileLibrarySavePoints',
+      method: 'POST',
+      workspaceId: 'ws_default',
+      projectId: 'proj_1',
+      libraryId,
+      req: { headers: {} } as never,
+      res: createMockResponse(),
+      deps,
+      user: OWNER_USER,
+      json: savePointJson,
+      readBody: vi.fn().mockResolvedValue({ message: 'Before restore' }),
+    });
+    const savePoint = savePointJson.mock.calls[0]?.[2] as Record<string, unknown>;
+    const previewJson = vi.fn();
+    await handleProjectFileLibraryRoutes({
+      routeKind: 'fileLibraryRestorePreview',
+      method: 'POST',
+      workspaceId: 'ws_default',
+      projectId: 'proj_1',
+      libraryId,
+      req: { headers: {} } as never,
+      res: createMockResponse(),
+      deps,
+      user: OWNER_USER,
+      json: previewJson,
+      readBody: vi.fn().mockResolvedValue({ save_point_id: savePoint.id }),
+    });
+    const preview = previewJson.mock.calls[0]?.[2] as Record<string, unknown>;
+    await handleProjectFileLibraryRoutes({
+      routeKind: 'fileLibraryRestoreCancel',
+      method: 'POST',
+      workspaceId: 'ws_default',
+      projectId: 'proj_1',
+      libraryId,
+      req: { headers: { 'x-request-id': 'req_restore_cancel_pending' } } as never,
+      res: createMockResponse(),
+      deps,
+      user: OWNER_USER,
+      json: vi.fn(),
+      readBody: vi.fn().mockResolvedValue({ restore_preview_id: preview.id }),
+    });
+
+    const createTemplateJson = vi.fn();
+    await expect(handleProjectFileLibraryRoutes({
+      routeKind: 'taskFileTemplates',
+      method: 'POST',
+      workspaceId: 'ws_default',
+      projectId: 'proj_1',
+      req: { headers: { 'x-request-id': 'req_template_after_cancel' } } as never,
+      res: createMockResponse(),
+      deps,
+      user: OWNER_USER,
+      json: createTemplateJson,
+      readBody: vi.fn().mockResolvedValue({
+        name: 'Template after cancel',
+        source_library_id: libraryId,
+      }),
+    })).resolves.toBe(true);
+
+    expect(reconcileRestorePreview).toHaveBeenCalledWith(expect.objectContaining({
+      operationId: 'op_restore_discard_long',
+    }));
+    expect(createTemplateJson.mock.calls[0]?.[1]).toBe(201);
+    expect(storageAdapter.createTemplateFromLibrary).toHaveBeenCalled();
+
+    const restoreRepo = new JsonDocFileLibraryRestorePreviewRepo(deps.docStore);
+    await expect(restoreRepo.getById(
+      'ws_default',
+      'proj_1',
+      libraryId,
+      String(preview.id),
+    )).resolves.toMatchObject({
+      status: 'canceled',
+    });
   });
 
   it('manages project-scoped task file templates without exposing raw AFSCP ids', async () => {

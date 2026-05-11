@@ -25,11 +25,34 @@ HEADERS_FILE="${TMP_DIR}/headers.txt"
 UPLOAD_FILE="${TMP_DIR}/guide.txt"
 DOWNLOAD_FILE="${TMP_DIR}/download.txt"
 LIBRARY_ID=""
+TASK_FILE_TEMPLATE_ID=""
+TEMPLATE_TASK_ID=""
+TEMPLATE_LIBRARY_ID=""
 
 info() { echo "[file-library-real-smoke] $*"; }
 err() { echo "[file-library-real-smoke] ERROR: $*" >&2; }
 
 cleanup() {
+  if [[ -n "${TEMPLATE_TASK_ID}" && -n "${WORKSPACE_ID}" && -n "${PROJECT_ID}" ]]; then
+    curl -sS -o /dev/null -X DELETE \
+      -H "Authorization: Bearer $(cat "${TOKEN_FILE}" 2>/dev/null || true)" \
+      "${API_BASE%/}/api/v1/workspaces/${WORKSPACE_ID}/projects/${PROJECT_ID}/tasks/${TEMPLATE_TASK_ID}" || true
+  fi
+  if [[ -n "${TEMPLATE_LIBRARY_ID}" && -n "${WORKSPACE_ID}" && -n "${PROJECT_ID}" ]]; then
+    curl -sS -o /dev/null -X POST \
+      -H "Authorization: Bearer $(cat "${TOKEN_FILE}" 2>/dev/null || true)" \
+      -H 'Content-Type: application/json' \
+      --data '{"paths":["docs/guide.txt","docs/"]}' \
+      "${API_BASE%/}/api/v1/workspaces/${WORKSPACE_ID}/projects/${PROJECT_ID}/file-libraries/${TEMPLATE_LIBRARY_ID}/delete" || true
+    curl -sS -o /dev/null -X DELETE \
+      -H "Authorization: Bearer $(cat "${TOKEN_FILE}" 2>/dev/null || true)" \
+      "${API_BASE%/}/api/v1/workspaces/${WORKSPACE_ID}/projects/${PROJECT_ID}/file-libraries/${TEMPLATE_LIBRARY_ID}" || true
+  fi
+  if [[ -n "${TASK_FILE_TEMPLATE_ID}" && -n "${WORKSPACE_ID}" && -n "${PROJECT_ID}" ]]; then
+    curl -sS -o /dev/null -X DELETE \
+      -H "Authorization: Bearer $(cat "${TOKEN_FILE}" 2>/dev/null || true)" \
+      "${API_BASE%/}/api/v1/workspaces/${WORKSPACE_ID}/projects/${PROJECT_ID}/task-file-templates/${TASK_FILE_TEMPLATE_ID}" || true
+  fi
   if [[ -n "${LIBRARY_ID}" && -n "${WORKSPACE_ID}" && -n "${PROJECT_ID}" ]]; then
     curl -sS -o /dev/null -X DELETE \
       -H "Authorization: Bearer $(cat "${TOKEN_FILE}" 2>/dev/null || true)" \
@@ -57,6 +80,15 @@ content_type_media_type() {
   node -e "process.stdout.write(String(process.argv[1] ?? '').split(';')[0].trim().toLowerCase())" "$1"
 }
 
+assert_no_raw_afscp_ids() {
+  local label="$1"
+  if grep -Eiq '(^|[^A-Za-z0-9_])(repo_|tmpl_|plan_|restore_plan|sp_(user|template|[A-Za-z0-9])|[0-9]{13}-[0-9a-f]{8})' "${BODY_FILE}"; then
+    err "${label} leaked raw AFSCP resource ids"
+    cat "${BODY_FILE}" >&2
+    exit 1
+  fi
+}
+
 assert_no_raw_storage_fields() {
   local label="$1"
   if grep -Eiq 'metadata_url|storage_bucket_url|client_mount_access|recommended_mount|filesystem_name|access_key|secret_key|juicefs' "${BODY_FILE}"; then
@@ -64,6 +96,7 @@ assert_no_raw_storage_fields() {
     cat "${BODY_FILE}" >&2
     exit 1
   fi
+  assert_no_raw_afscp_ids "${label}"
 }
 
 response_error_code() {
@@ -80,6 +113,53 @@ is_operation_failed_state() {
   local normalized
   normalized="$(printf '%s' "$1" | tr '[:upper:]' '[:lower:]')"
   [[ "${normalized}" == "failed" || "${normalized}" == "failure" || "${normalized}" == "error" || "${normalized}" == "errored" || "${normalized}" == "cancelled" || "${normalized}" == "canceled" ]]
+}
+
+wait_restore_preview_status() {
+  local preview_id="$1"
+  local desired_status="$2"
+  local label="$3"
+  local max_attempts="${FILE_LIBRARY_RESTORE_PREVIEW_READY_ATTEMPTS:-90}"
+  local attempt=1
+  if ! [[ "${max_attempts}" =~ ^[0-9]+$ ]] || [[ "${max_attempts}" -lt 1 ]]; then
+    max_attempts=90
+  fi
+
+  while (( attempt <= max_attempts )); do
+    status="$(api_json GET "/api/v1/workspaces/${WORKSPACE_ID}/projects/${PROJECT_ID}/file-libraries/${LIBRARY_ID}/restore-preview")"
+    if [[ "${status}" == "200" ]]; then
+      assert_no_raw_storage_fields "file library restore preview ${label}"
+      local preview_status
+      preview_status="$(cat "${BODY_FILE}" | json_field "j.restore_preview && j.restore_preview.id === '${preview_id}' ? j.restore_preview.status : ''" || true)"
+      if [[ "${preview_status}" == "${desired_status}" ]]; then
+        if [[ "${desired_status}" == "ready" ]]; then
+          info "restore preview is ready"
+        else
+          info "restore preview is ${desired_status}"
+        fi
+        return 0
+      fi
+      if [[ "${preview_status}" == "failed" ]]; then
+        err "restore preview failed while waiting for ${desired_status}"
+        cat "${BODY_FILE}" >&2
+        exit 1
+      fi
+    fi
+    sleep 1
+    attempt=$((attempt + 1))
+  done
+
+  err "timed out waiting for restore preview ${label}"
+  cat "${BODY_FILE}" >&2
+  exit 1
+}
+
+wait_restore_preview_ready() {
+  wait_restore_preview_status "$1" "ready" "ready"
+}
+
+wait_restore_preview_restored() {
+  wait_restore_preview_status "$1" "restored" "restored"
 }
 
 api_json() {
@@ -103,6 +183,22 @@ api_json() {
       "${API_BASE%/}${path}")"
   fi
   printf '%s' "${status}"
+}
+
+upload_guide_file() {
+  local label="$1"
+  local status
+  status="$(curl -sS -D "${HEADERS_FILE}" -o "${BODY_FILE}" -w '%{http_code}' \
+    -H "Authorization: Bearer $(cat "${TOKEN_FILE}")" \
+    -F "prefix=docs/" \
+    -F "file=@${UPLOAD_FILE};type=text/plain" \
+    "${API_BASE%/}/api/v1/workspaces/${WORKSPACE_ID}/projects/${PROJECT_ID}/file-libraries/${LIBRARY_ID}/upload")"
+  if [[ "${status}" != "200" && "${status}" != "201" ]]; then
+    err "failed to upload file ${label}: ${status}"
+    cat "${BODY_FILE}" >&2
+    exit 1
+  fi
+  assert_no_raw_storage_fields "file library upload ${label}"
 }
 
 create_library_when_project_storage_ready() {
@@ -278,8 +374,21 @@ discover_project() {
     cat "${BODY_FILE}" >&2
     exit 1
   fi
+  local projects_body
+  projects_body="$(cat "${BODY_FILE}")"
+  if [[ -z "${PROJECT_ID}" ]]; then
+    local project_ids
+    project_ids="$(printf '%s' "${projects_body}" | json_field "Array.isArray(j.items) ? j.items.map((item) => item.id).filter(Boolean).join('\n') : ''" || true)"
+    local candidate_project_id
+    while IFS= read -r candidate_project_id; do
+      if [[ -n "${candidate_project_id}" ]] && project_has_ready_managed_runner "${candidate_project_id}"; then
+        PROJECT_ID="${candidate_project_id}"
+        return
+      fi
+    done <<< "${project_ids}"
+  fi
   local discovered
-  discovered="$(cat "${BODY_FILE}" | json_field "Array.isArray(j.items) && j.items[0] ? j.items[0].id : ''" || true)"
+  discovered="$(printf '%s' "${projects_body}" | json_field "Array.isArray(j.items) && j.items[0] ? j.items[0].id : ''" || true)"
   PROJECT_ID="${PROJECT_ID:-${discovered}}"
   if [[ -z "${PROJECT_ID}" ]]; then
     info "no existing project found; creating temporary project"
@@ -293,6 +402,18 @@ discover_project() {
     PROJECT_ID="$(cat "${BODY_FILE}" | json_field "j.id")"
     PROJECT_CREATED="1"
   fi
+}
+
+project_has_ready_managed_runner() {
+  local project_id="$1"
+  local status
+  status="$(api_json GET "/api/v1/workspaces/${WORKSPACE_ID}/projects/${project_id}/agent-runners")"
+  if [[ "${status}" != "200" ]]; then
+    return 1
+  fi
+  local has_ready_runner
+  has_ready_runner="$(cat "${BODY_FILE}" | json_field "Array.isArray(j.items) && j.items.some((runner) => (runner.kind === 'system_managed' || runner.presence === 'managed' || runner.source === 'system') && (runner.status === 'ready' || runner.runner_status === 'ready')) ? '1' : ''" || true)"
+  [[ "${has_ready_runner}" == "1" ]]
 }
 
 wait_ready() {
@@ -380,17 +501,7 @@ if [[ "${ROOT_HAS_DOCS_FOLDER}" != "1" ]]; then
 fi
 
 printf 'hello from file-library smoke\n' > "${UPLOAD_FILE}"
-status="$(curl -sS -D "${HEADERS_FILE}" -o "${BODY_FILE}" -w '%{http_code}' \
-  -H "Authorization: Bearer $(cat "${TOKEN_FILE}")" \
-  -F "prefix=docs/" \
-  -F "file=@${UPLOAD_FILE};type=text/plain" \
-  "${API_BASE%/}/api/v1/workspaces/${WORKSPACE_ID}/projects/${PROJECT_ID}/file-libraries/${LIBRARY_ID}/upload")"
-if [[ "${status}" != "200" && "${status}" != "201" ]]; then
-  err "failed to upload file: ${status}"
-  cat "${BODY_FILE}" >&2
-  exit 1
-fi
-assert_no_raw_storage_fields "file library upload"
+upload_guide_file "initial"
 
 status="$(api_json GET "/api/v1/workspaces/${WORKSPACE_ID}/projects/${PROJECT_ID}/file-libraries/${LIBRARY_ID}/entries?path=docs/")"
 if [[ "${status}" != "200" ]]; then
@@ -430,6 +541,149 @@ if [[ "${status}" != "200" ]]; then
 fi
 if ! grep -q 'hello from file-library smoke' "${DOWNLOAD_FILE}"; then
   err "downloaded file content mismatch"
+  exit 1
+fi
+
+status="$(api_json POST "/api/v1/workspaces/${WORKSPACE_ID}/projects/${PROJECT_ID}/file-libraries/${LIBRARY_ID}/save-points" '{"message":"Smoke save point before template publish"}')"
+if [[ "${status}" != "201" ]]; then
+  err "failed to create save point: ${status}"
+  cat "${BODY_FILE}" >&2
+  exit 1
+fi
+assert_no_raw_storage_fields "file library save point create"
+SAVE_POINT_ID="$(cat "${BODY_FILE}" | json_field "j.id")"
+
+status="$(api_json GET "/api/v1/workspaces/${WORKSPACE_ID}/projects/${PROJECT_ID}/file-libraries/${LIBRARY_ID}/save-points")"
+if [[ "${status}" != "200" ]]; then
+  err "failed to list save points: ${status}"
+  cat "${BODY_FILE}" >&2
+  exit 1
+fi
+assert_no_raw_storage_fields "file library save point list"
+SAVE_POINT_LIST_HAS_CREATED="$(cat "${BODY_FILE}" | json_field "Array.isArray(j.items) && j.items.some((item) => item.id === '${SAVE_POINT_ID}') ? '1' : ''" || true)"
+if [[ "${SAVE_POINT_LIST_HAS_CREATED}" != "1" ]]; then
+  err "created save point missing from save point list"
+  cat "${BODY_FILE}" >&2
+  exit 1
+fi
+
+status="$(api_json POST "/api/v1/workspaces/${WORKSPACE_ID}/projects/${PROJECT_ID}/file-libraries/${LIBRARY_ID}/delete" '{"paths":["docs/guide.txt"]}')"
+if [[ "${status}" != "200" ]]; then
+  err "failed to delete guide after save point: ${status}"
+  cat "${BODY_FILE}" >&2
+  exit 1
+fi
+assert_no_raw_storage_fields "post-save-point mutation delete"
+
+status="$(api_json POST "/api/v1/workspaces/${WORKSPACE_ID}/projects/${PROJECT_ID}/file-libraries/${LIBRARY_ID}/save-points" '{"message":"Smoke save point after mutation"}')"
+if [[ "${status}" != "201" ]]; then
+  err "failed to create mutation save point: ${status}"
+  cat "${BODY_FILE}" >&2
+  exit 1
+fi
+assert_no_raw_storage_fields "file library mutation save point create"
+MUTATION_SAVE_POINT_ID="$(cat "${BODY_FILE}" | json_field "j.id")"
+if [[ "${MUTATION_SAVE_POINT_ID}" == "${SAVE_POINT_ID}" ]]; then
+  err "mutation save point reused original save point id"
+  cat "${BODY_FILE}" >&2
+  exit 1
+fi
+
+status="$(api_json POST "/api/v1/workspaces/${WORKSPACE_ID}/projects/${PROJECT_ID}/file-libraries/${LIBRARY_ID}/restore-preview" "{\"save_point_id\":\"${SAVE_POINT_ID}\"}")"
+if [[ "${status}" != "201" ]]; then
+  err "failed to create restore preview: ${status}"
+  cat "${BODY_FILE}" >&2
+  exit 1
+fi
+assert_no_raw_storage_fields "file library restore preview"
+RESTORE_PREVIEW_ID="$(cat "${BODY_FILE}" | json_field "j.id")"
+RESTORE_PREVIEW_STATUS="$(cat "${BODY_FILE}" | json_field "j.status" || true)"
+if [[ "${RESTORE_PREVIEW_STATUS}" != "ready" ]]; then
+  wait_restore_preview_ready "${RESTORE_PREVIEW_ID}"
+fi
+
+status="$(api_json POST "/api/v1/workspaces/${WORKSPACE_ID}/projects/${PROJECT_ID}/file-libraries/${LIBRARY_ID}/restore-run" "{\"restore_preview_id\":\"${RESTORE_PREVIEW_ID}\"}")"
+if [[ "${status}" != "200" ]]; then
+  err "failed to run restore preview: ${status}"
+  cat "${BODY_FILE}" >&2
+  exit 1
+fi
+assert_no_raw_storage_fields "file library restore run"
+RESTORE_RUN_STATUS="$(cat "${BODY_FILE}" | json_field "j.status" || true)"
+if [[ "${RESTORE_RUN_STATUS}" == "pending" ]]; then
+  wait_restore_preview_restored "${RESTORE_PREVIEW_ID}"
+fi
+
+status="$(curl -sS -D "${HEADERS_FILE}" -o "${DOWNLOAD_FILE}" -w '%{http_code}' \
+  -H "Authorization: Bearer $(cat "${TOKEN_FILE}")" \
+  "${API_BASE%/}/api/v1/workspaces/${WORKSPACE_ID}/projects/${PROJECT_ID}/file-libraries/${LIBRARY_ID}/download?path=$(node -p "encodeURIComponent('docs/guide.txt')")")"
+if [[ "${status}" != "200" ]]; then
+  err "failed to download restored file: ${status}"
+  cat "${DOWNLOAD_FILE}" >&2 || true
+  exit 1
+fi
+if ! grep -q 'hello from file-library smoke' "${DOWNLOAD_FILE}"; then
+  err "restored file content mismatch"
+  cat "${DOWNLOAD_FILE}" >&2 || true
+  exit 1
+fi
+
+status="$(api_json POST "/api/v1/workspaces/${WORKSPACE_ID}/projects/${PROJECT_ID}/task-file-templates" "{\"name\":\"Smoke task file template\",\"source_library_id\":\"${LIBRARY_ID}\"}")"
+if [[ "${status}" != "201" ]]; then
+  err "failed to create task file template: ${status}"
+  cat "${BODY_FILE}" >&2
+  exit 1
+fi
+assert_no_raw_storage_fields "task file template create"
+TASK_FILE_TEMPLATE_ID="$(cat "${BODY_FILE}" | json_field "j.id")"
+
+status="$(api_json POST "/api/v1/workspaces/${WORKSPACE_ID}/projects/${PROJECT_ID}/task-file-templates/${TASK_FILE_TEMPLATE_ID}/publish")"
+if [[ "${status}" != "200" ]]; then
+  err "failed to publish task file template: ${status}"
+  cat "${BODY_FILE}" >&2
+  exit 1
+fi
+assert_no_raw_storage_fields "task file template publish"
+
+status="$(api_json GET "/api/v1/workspaces/${WORKSPACE_ID}/projects/${PROJECT_ID}/task-file-templates")"
+if [[ "${status}" != "200" ]]; then
+  err "failed to list task file templates: ${status}"
+  cat "${BODY_FILE}" >&2
+  exit 1
+fi
+assert_no_raw_storage_fields "task file template list"
+TASK_FILE_TEMPLATE_LIST_HAS_PUBLISHED="$(cat "${BODY_FILE}" | json_field "Array.isArray(j.items) && j.items.some((item) => item.id === '${TASK_FILE_TEMPLATE_ID}' && item.status === 'published') ? '1' : ''" || true)"
+if [[ "${TASK_FILE_TEMPLATE_LIST_HAS_PUBLISHED}" != "1" ]]; then
+  err "published task file template missing from template list"
+  cat "${BODY_FILE}" >&2
+  exit 1
+fi
+
+status="$(api_json POST "/api/v1/workspaces/${WORKSPACE_ID}/projects/${PROJECT_ID}/tasks" "{\"title\":\"Smoke task from file template\",\"workspace_mode\":\"use_template\",\"task_file_template_id\":\"${TASK_FILE_TEMPLATE_ID}\"}")"
+if [[ "${status}" != "201" ]]; then
+  err "failed to create task from task file template: ${status}"
+  cat "${BODY_FILE}" >&2
+  exit 1
+fi
+assert_no_raw_storage_fields "task create from task file template"
+TEMPLATE_TASK_ID="$(cat "${BODY_FILE}" | json_field "j.id")"
+TEMPLATE_LIBRARY_ID="$(cat "${BODY_FILE}" | json_field "j.workspace_file_library_id")"
+if [[ -z "${TEMPLATE_LIBRARY_ID}" || "${TEMPLATE_LIBRARY_ID}" == "${LIBRARY_ID}" ]]; then
+  err "task file template clone did not create an independent file library"
+  cat "${BODY_FILE}" >&2
+  exit 1
+fi
+
+status="$(api_json GET "/api/v1/workspaces/${WORKSPACE_ID}/projects/${PROJECT_ID}/file-libraries/${TEMPLATE_LIBRARY_ID}/entries?path=docs/")"
+if [[ "${status}" != "200" ]]; then
+  err "failed to list cloned task file library entries: ${status}"
+  cat "${BODY_FILE}" >&2
+  exit 1
+fi
+assert_no_raw_storage_fields "cloned task file library entries"
+if ! grep -q 'guide.txt' "${BODY_FILE}"; then
+  err "cloned task file library is missing template source file"
+  cat "${BODY_FILE}" >&2
   exit 1
 fi
 

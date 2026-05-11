@@ -2146,6 +2146,16 @@
         ],
         "operationId": "deleteFileLibrary",
         "responses": {
+          "202": {
+            "description": "Repo delete accepted; poll operation projection and retry DELETE to complete catalog cleanup",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DeleteFileLibraryAcceptedResponse"
+                }
+              }
+            }
+          },
           "204": {
             "description": "Deleted"
           },
@@ -3068,6 +3078,80 @@
           "$ref": "#/components/parameters/libraryId"
         }
       ],
+      "get": {
+        "tags": [
+          "Files"
+        ],
+        "operationId": "getActiveFileLibraryRestorePreview",
+        "responses": {
+          "200": {
+            "description": "Active restore preview projection, reconciled by the backend without exposing AFSCP operation ids",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GetFileLibraryRestorePreviewResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "description": "File library not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "File library storage not ready",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "oneOf": [
+                    {
+                      "$ref": "#/components/schemas/FileLibraryDeletingError"
+                    },
+                    {
+                      "$ref": "#/components/schemas/FileLibraryNotReadyError"
+                    },
+                    {
+                      "$ref": "#/components/schemas/ApiError"
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "502": {
+            "description": "Restore preview reconcile failed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "File library backend unavailable",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          }
+        }
+      },
       "post": {
         "tags": [
           "Files"
@@ -11538,7 +11622,29 @@
             ]
           },
           "message": {
-            "type": "string",
+            "type": "string"
+          },
+          "request_id": {
+            "type": "string"
+          },
+          "file_library_id": {
+            "type": "string"
+          },
+          "file_library_status": {
+            "type": "string"
+          },
+          "restore_preview_id": {
+            "type": "string"
+          },
+          "restore_preview_status": {
+            "type": "string"
+          },
+          "operation_status": {
+            "type": "string"
+          },
+          "retry_after_ms": {
+            "type": "integer",
+            "minimum": 1,
             "enum": [
               "chat_session_stream_conflict"
             ]
@@ -13463,6 +13569,35 @@
           }
         }
       },
+      "DeleteFileLibraryAcceptedResponse": {
+        "type": "object",
+        "required": [
+          "file_library_id",
+          "file_library_status",
+          "operation_id",
+          "operation_status"
+        ],
+        "properties": {
+          "file_library_id": {
+            "type": "string"
+          },
+          "file_library_status": {
+            "type": "string",
+            "enum": [
+              "deleting"
+            ]
+          },
+          "operation_id": {
+            "type": "string"
+          },
+          "operation_status": {
+            "type": "string",
+            "enum": [
+              "pending"
+            ]
+          }
+        }
+      },
       "MoveFileLibraryEntryRequest": {
         "type": "object",
         "required": [
@@ -13693,6 +13828,25 @@
           "updated_at": {
             "type": "string",
             "format": "date-time"
+          }
+        }
+      },
+      "GetFileLibraryRestorePreviewResponse": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "restore_preview"
+        ],
+        "properties": {
+          "restore_preview": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/FileLibraryRestorePreview"
+              },
+              {
+                "type": "null"
+              }
+            ]
           }
         }
       },

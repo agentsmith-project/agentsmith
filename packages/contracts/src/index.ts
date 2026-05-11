@@ -57,6 +57,12 @@ export const ErrorResponseSchema = z.object({
   error_code: z.string(),
   message: z.string(),
   request_id: z.string().optional(),
+  file_library_id: z.string().min(1).optional(),
+  file_library_status: z.string().min(1).optional(),
+  restore_preview_id: z.string().min(1).optional(),
+  restore_preview_status: z.string().min(1).optional(),
+  operation_status: z.string().min(1).optional(),
+  retry_after_ms: z.number().int().positive().optional(),
 });
 
 export const FileLibraryBoundTaskStatusSchema = z.enum(['active', 'archived']);
@@ -400,6 +406,10 @@ export const FileLibraryRestorePreviewSchema = z.object({
   updated_at: z.string().datetime(),
 }).strict();
 
+export const GetFileLibraryRestorePreviewResponseSchema = z.object({
+  restore_preview: FileLibraryRestorePreviewSchema.nullable(),
+}).strict();
+
 export const CreateFileLibraryRestorePreviewRequestSchema = z.object({
   save_point_id: z.string().min(1),
 }).strict();
@@ -663,6 +673,7 @@ export type FileLibraryRestorePreviewSummary = z.infer<typeof FileLibraryRestore
 export type FileLibraryRestorePreviewBlockerCode = z.infer<typeof FileLibraryRestorePreviewBlockerCodeSchema>;
 export type FileLibraryRestorePreviewBlocker = z.infer<typeof FileLibraryRestorePreviewBlockerSchema>;
 export type FileLibraryRestorePreviewDTO = z.infer<typeof FileLibraryRestorePreviewSchema>;
+export type GetFileLibraryRestorePreviewResponse = z.infer<typeof GetFileLibraryRestorePreviewResponseSchema>;
 export type CreateFileLibraryRestorePreviewRequest = z.infer<typeof CreateFileLibraryRestorePreviewRequestSchema>;
 export type RunFileLibraryRestoreRequest = z.infer<typeof RunFileLibraryRestoreRequestSchema>;
 export type CancelFileLibraryRestoreRequest = z.infer<typeof CancelFileLibraryRestoreRequestSchema>;

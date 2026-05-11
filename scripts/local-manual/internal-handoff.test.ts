@@ -470,6 +470,46 @@ describe('local-manual internal handoff', () => {
     expect(values.AFSCP_EXPORT_SESSION_RECONCILE_LIMIT).toBe('10');
   });
 
+  it('enables the file-library save point, restore, and template product profile in local-real AFSCP by default', () => {
+    const result = runInternalCommonSnippet(`
+      AFSCP_JVS_ENABLED=false
+      write_afscp_local_runtime_env
+      set -a
+      source "$AFSCP_LOCAL_RUNTIME_ENV_FILE"
+      set +a
+      for key in \
+        AFSCP_REPO_TEMPLATE_ENABLED \
+        AFSCP_REPO_TEMPLATE_READY \
+        AFSCP_SAVE_POINT_RECOVERY_ENABLED \
+        AFSCP_TEMPLATE_CREATE_RECOVERY_ENABLED \
+        AFSCP_TEMPLATE_CLONE_RECOVERY_ENABLED \
+        AFSCP_RESTORE_PREVIEW_RECOVERY_ENABLED \
+        AFSCP_RESTORE_PREVIEW_DISCARD_RECOVERY_ENABLED \
+        AFSCP_RESTORE_RUN_RECOVERY_ENABLED; do
+        printf '%s=%s\\n' "$key" "\${!key}"
+      done
+    `);
+    const values = Object.fromEntries(
+      result.stdout
+        .trim()
+        .split('\n')
+        .map((line) => line.split(/=(.*)/su).slice(0, 2) as [string, string]),
+    );
+
+    expect(result.status).toBe(0);
+    expect(result.stderr).toBe('');
+    expect(values).toEqual({
+      AFSCP_REPO_TEMPLATE_ENABLED: 'true',
+      AFSCP_REPO_TEMPLATE_READY: 'true',
+      AFSCP_SAVE_POINT_RECOVERY_ENABLED: 'true',
+      AFSCP_TEMPLATE_CREATE_RECOVERY_ENABLED: 'true',
+      AFSCP_TEMPLATE_CLONE_RECOVERY_ENABLED: 'true',
+      AFSCP_RESTORE_PREVIEW_RECOVERY_ENABLED: 'true',
+      AFSCP_RESTORE_PREVIEW_DISCARD_RECOVERY_ENABLED: 'true',
+      AFSCP_RESTORE_RUN_RECOVERY_ENABLED: 'true',
+    });
+  });
+
   it('preserves explicit local-real AFSCP Postgres DSN overrides', () => {
     const result = runInternalCommonSnippet(`
       AFSCP_JVS_ENABLED=false

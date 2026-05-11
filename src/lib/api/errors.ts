@@ -104,6 +104,9 @@ export class APIError extends Error {
       VALIDATION_ERROR: 'Please check your input and try again.',
       RATE_LIMIT_EXCEEDED: 'Too many requests. Please wait and try again.',
       INTERNAL_ERROR: 'An unexpected error occurred. Please try again later.',
+      FILE_LIBRARY_CAPABILITY_DENIED: 'Task file templates are not available for this project yet. Ask an admin to enable file templates, then try again.',
+      FILE_LIBRARY_RESTORE_PREVIEW_ACTIVE: 'A restore preview is still open. Cancel or finish it before publishing task file templates.',
+      FILE_LIBRARY_OPERATION_PENDING: 'File state is still being updated. Wait for the current file operation to finish, then try again.',
     };
 
     return customMessages[this.errorCode] || this.message;
@@ -169,6 +172,9 @@ const FILE_LIBRARY_TYPED_ERROR_KEYS: Record<string, string[]> = {
   FILE_LIBRARY_NOT_FOUND: ['file_library_not_found.description'],
   FILE_LIBRARY_FORBIDDEN: ['file_library_forbidden.description'],
   FILE_LIBRARY_NOT_EMPTY: ['file_library_not_empty.description'],
+  FILE_LIBRARY_CAPABILITY_DENIED: ['file_library_capability_denied.description'],
+  FILE_LIBRARY_RESTORE_PREVIEW_ACTIVE: ['file_library_restore_preview_active.description'],
+  FILE_LIBRARY_OPERATION_PENDING: ['file_library_operation_pending.description'],
   AGENT_TASK_WORKSPACE_BINDING_CONFLICT: ['agent_task_workspace_binding_conflict.description'],
   AGENT_TASK_WORKSPACE_FILE_LIBRARY_REQUIRED: ['agent_task_workspace_file_library_required.description'],
   AGENT_TASK_WORKSPACE_MODE_INVALID: ['agent_task_workspace_mode_invalid.description'],

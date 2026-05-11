@@ -45,7 +45,7 @@ AFSCP export-backed developer connector 安全实现前，Developer runner 不�
 Slice 5 blocked 时必须 fail closed：
 - Developer runner 不得创建、解析或暴露 local `file_library` HOME。
 - Developer runner runner-test task、task HOME/file access、terminal/recovery execution self-check 都必须拒绝或保持不可用。
-- 关闭 evidence 只需要 upstream blocker/no-workaround evidence：说明 AFSCP v1.0.0 缺少安全 export-backed lease/connector，并证明 AgentSmith 没有加入 raw storage/local path workaround。
+- 关闭 evidence 只需要 upstream blocker/no-workaround evidence：说明 AFSCP v1.0.1 缺少安全 export-backed lease/connector，并证明 AgentSmith 没有加入 raw storage/local path workaround。
 - 不要求 Developer runner backend-real/deploy smoke；如果 Slice 5 后续 unblocked 并实现，才恢复 Developer runner file marker / task execution smoke。
 
 ### Runtime modes

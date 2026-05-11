@@ -637,6 +637,9 @@ describe('unified deploy render producer', () => {
     expect(managerConfig).not.toMatch(/^afscp:\s*$/mu);
     expect(managerConfig).not.toContain(appConfigData.AFSCP_BASE_URL);
     expect(managerConfig).not.toContain('tokenEnv:');
+    expect(appConfigData.AFSCP_CALLER_SERVICE).toBe('agentsmith-api');
+    expect(appConfigData.AFSCP_BOOTSTRAP_CALLER_SERVICE).toBe('agentsmith-bootstrap');
+    expect(appConfigData.AFSCP_ORCHESTRATOR_CALLER_SERVICE).toBe('agentsmith-sandbox-manager');
     expect(configData.SANDBOX_SERVICE_KEY).toBeUndefined();
     expect(configData.JUICEFS_STORAGE_SECRET_KEY).toBeUndefined();
     expect(appConfigData.MINIO_SECRET_KEY).toBeUndefined();

@@ -669,7 +669,7 @@ SH
     expect(result.status).toBe(0);
     expect(result.stderr).toBe('');
     expect(result.stdout).toContain('create secret generic afscp-local-runtime -n agentsmith-sandbox');
-    expect(result.stdout).toContain('--from-literal=name=vol_local_manual');
+    expect(result.stdout).toContain('--from-literal=name=vol-local-manual');
     expect(result.stdout).toContain('--from-literal=metaurl=postgres://');
     expect(result.stdout).toContain('postgres-external.agentsmith-sandbox.svc.cluster.local:5432');
     expect(result.stdout).toContain('postgres-external.agentsmith-sandbox.svc.cluster.local:5432/mbos?sslmode=disable');

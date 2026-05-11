@@ -542,6 +542,8 @@ function servicePort(documents: readonly Record<string, unknown>[], serviceName:
 function checkRunnableAppWorkloads(documents: readonly Record<string, unknown>[], failures: CheckFailure[]): void {
   const web = deploymentContainer(documents, 'agentsmith-web', 'web');
   const api = deploymentContainer(documents, 'agentsmith-api', 'api');
+  const appConfigMap = resourceByKindName(documents, 'ConfigMap', 'agentsmith-app-config');
+  const appConfigData = asRecord(appConfigMap.data);
   const ingressPorts = collectIngressRoutePorts(documents);
   const webImage = typeof web.image === 'string' ? web.image : '';
   const apiImage = typeof api.image === 'string' ? api.image : '';
@@ -576,6 +578,19 @@ function checkRunnableAppWorkloads(documents: readonly Record<string, unknown>[]
   }
   if (!containerPorts(api).includes(20000) || servicePort(documents, 'agentsmith-api') !== 20000 || ingressPorts.get('/api/v1') !== 20000) {
     addFailure(failures, 'Service/agentsmith-api', 'api container, Service, and ingress must expose port 20000');
+  }
+  if (appConfigData.AFSCP_CALLER_SERVICE !== 'agentsmith-api') {
+    addFailure(failures, 'ConfigMap/agentsmith-app-config', 'api AFSCP product caller must be agentsmith-api');
+  }
+  if (appConfigData.AFSCP_BOOTSTRAP_CALLER_SERVICE !== 'agentsmith-bootstrap') {
+    addFailure(failures, 'ConfigMap/agentsmith-app-config', 'api AFSCP bootstrap caller must be agentsmith-bootstrap');
+  }
+  if (appConfigData.AFSCP_ORCHESTRATOR_CALLER_SERVICE !== 'agentsmith-sandbox-manager') {
+    addFailure(
+      failures,
+      'ConfigMap/agentsmith-app-config',
+      'api AFSCP bootstrap binding must authorize the sandbox manager orchestrator caller',
+    );
   }
 }
 

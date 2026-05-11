@@ -46,6 +46,7 @@ describe('createNodeApiDepsFromEnv AFSCP wiring', () => {
       AFSCP_BOOTSTRAP_SERVICE_TOKEN: 'bootstrap-svc-secret-token',
       AFSCP_DEFAULT_VOLUME_ID: 'vol_default',
       AFSCP_BOOTSTRAP_CALLER_SERVICE: 'agentsmith-bootstrap',
+      AFSCP_ORCHESTRATOR_CALLER_SERVICE: 'agentsmith-sandbox-manager',
     });
     try {
       expect('afscpClient' in deps).toBe(false);
@@ -100,6 +101,7 @@ describe('createNodeApiDepsFromEnv AFSCP wiring', () => {
         AFSCP_SERVICE_TOKEN: 'svc-secret-token',
         AFSCP_BOOTSTRAP_SERVICE_TOKEN: 'bootstrap-svc-secret-token',
         AFSCP_DEFAULT_VOLUME_ID: 'vol_default',
+        AFSCP_ORCHESTRATOR_CALLER_SERVICE: 'agentsmith-sandbox-manager',
       });
     } catch (error) {
       caught = error;
@@ -124,6 +126,7 @@ describe('createNodeApiDepsFromEnv AFSCP wiring', () => {
         AFSCP_BOOTSTRAP_SERVICE_TOKEN: 'bootstrap-svc-secret-token',
         AFSCP_DEFAULT_VOLUME_ID: 'vol_default',
         AFSCP_BOOTSTRAP_CALLER_SERVICE: 'agentsmith-api',
+        AFSCP_ORCHESTRATOR_CALLER_SERVICE: 'agentsmith-sandbox-manager',
       });
     } catch (error) {
       caught = error;
@@ -148,6 +151,7 @@ describe('createNodeApiDepsFromEnv AFSCP wiring', () => {
         AFSCP_BOOTSTRAP_SERVICE_TOKEN: 'same-token',
         AFSCP_DEFAULT_VOLUME_ID: 'vol_default',
         AFSCP_BOOTSTRAP_CALLER_SERVICE: 'agentsmith-bootstrap',
+        AFSCP_ORCHESTRATOR_CALLER_SERVICE: 'agentsmith-sandbox-manager',
       });
     } catch (error) {
       caught = error;

@@ -10,6 +10,7 @@ export type AfscpConfig =
       bootstrapServiceToken: string;
       defaultVolumeId: string;
       bootstrapCallerService: string;
+      orchestratorCallerService: string;
     };
 
 export type AfscpConfigErrorCode = 'AFSCP_CONFIG_INCOMPLETE' | 'AFSCP_CONFIG_INVALID';
@@ -43,6 +44,7 @@ const REQUIRED_ENV_KEYS = [
   'AFSCP_BOOTSTRAP_SERVICE_TOKEN',
   'AFSCP_DEFAULT_VOLUME_ID',
   'AFSCP_BOOTSTRAP_CALLER_SERVICE',
+  'AFSCP_ORCHESTRATOR_CALLER_SERVICE',
 ] as const;
 
 type RequiredEnvKey = typeof REQUIRED_ENV_KEYS[number];
@@ -93,13 +95,23 @@ export function parseAfscpConfig(env: AfscpEnv = process.env): AfscpConfig {
   const bootstrapServiceToken = values.AFSCP_BOOTSTRAP_SERVICE_TOKEN;
   const defaultVolumeId = values.AFSCP_DEFAULT_VOLUME_ID;
   const bootstrapCallerService = values.AFSCP_BOOTSTRAP_CALLER_SERVICE;
-  if (!baseUrl || !callerService || !serviceToken || !bootstrapServiceToken || !defaultVolumeId || !bootstrapCallerService) {
+  const orchestratorCallerService = values.AFSCP_ORCHESTRATOR_CALLER_SERVICE;
+  if (
+    !baseUrl
+    || !callerService
+    || !serviceToken
+    || !bootstrapServiceToken
+    || !defaultVolumeId
+    || !bootstrapCallerService
+    || !orchestratorCallerService
+  ) {
     throw new AfscpConfigError({ code: 'AFSCP_CONFIG_INCOMPLETE', missing });
   }
 
   const invalid: string[] = [];
   const normalizedCallerService = normalizeAfscpValidatedValue('caller_service', callerService);
   const normalizedBootstrapCallerService = normalizeAfscpValidatedValue('caller_service', bootstrapCallerService);
+  const normalizedOrchestratorCallerService = normalizeAfscpValidatedValue('caller_service', orchestratorCallerService);
   const normalizedDefaultVolumeId = normalizeAfscpValidatedValue('volume_id', defaultVolumeId);
   if (!normalizedCallerService) {
     invalid.push('AFSCP_CALLER_SERVICE');
@@ -107,13 +119,21 @@ export function parseAfscpConfig(env: AfscpEnv = process.env): AfscpConfig {
   if (!normalizedBootstrapCallerService) {
     invalid.push('AFSCP_BOOTSTRAP_CALLER_SERVICE');
   }
+  if (!normalizedOrchestratorCallerService) {
+    invalid.push('AFSCP_ORCHESTRATOR_CALLER_SERVICE');
+  }
   if (!normalizedDefaultVolumeId) {
     invalid.push('AFSCP_DEFAULT_VOLUME_ID');
   }
   if (invalid.length > 0) {
     throw new AfscpConfigError({ code: 'AFSCP_CONFIG_INVALID', invalid });
   }
-  if (!normalizedCallerService || !normalizedBootstrapCallerService || !normalizedDefaultVolumeId) {
+  if (
+    !normalizedCallerService
+    || !normalizedBootstrapCallerService
+    || !normalizedOrchestratorCallerService
+    || !normalizedDefaultVolumeId
+  ) {
     throw new AfscpConfigError({ code: 'AFSCP_CONFIG_INVALID', invalid });
   }
 
@@ -121,6 +141,18 @@ export function parseAfscpConfig(env: AfscpEnv = process.env): AfscpConfig {
     throw new AfscpConfigError({
       code: 'AFSCP_CONFIG_INVALID',
       invalid: ['AFSCP_BOOTSTRAP_CALLER_SERVICE'],
+    });
+  }
+  if (normalizedOrchestratorCallerService === normalizedCallerService) {
+    throw new AfscpConfigError({
+      code: 'AFSCP_CONFIG_INVALID',
+      invalid: ['AFSCP_ORCHESTRATOR_CALLER_SERVICE'],
+    });
+  }
+  if (normalizedOrchestratorCallerService === normalizedBootstrapCallerService) {
+    throw new AfscpConfigError({
+      code: 'AFSCP_CONFIG_INVALID',
+      invalid: ['AFSCP_ORCHESTRATOR_CALLER_SERVICE'],
     });
   }
   if (bootstrapServiceToken === serviceToken) {
@@ -138,5 +170,6 @@ export function parseAfscpConfig(env: AfscpEnv = process.env): AfscpConfig {
     bootstrapServiceToken,
     defaultVolumeId: normalizedDefaultVolumeId,
     bootstrapCallerService: normalizedBootstrapCallerService,
+    orchestratorCallerService: normalizedOrchestratorCallerService,
   };
 }

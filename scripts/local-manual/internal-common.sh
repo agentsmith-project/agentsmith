@@ -681,19 +681,34 @@ afscp_default_local_runtime_juicefs_bucket() {
     "${MINIO_BUCKET}"
 }
 
+afscp_default_local_runtime_juicefs_name() {
+  local raw sanitized
+  raw="${AFSCP_DEFAULT_VOLUME_ID:-vol_local_manual}"
+  sanitized="$(
+    printf '%s' "${raw}" \
+      | tr '[:upper:]_' '[:lower:]-' \
+      | sed -E 's/[^a-z0-9-]+/-/g; s/^-+//; s/-+$//; s/-+/-/g'
+  )"
+  if [[ "${#sanitized}" -lt 3 ]]; then
+    sanitized="agentsmith-${sanitized}"
+  fi
+  printf '%s\n' "${sanitized:0:63}" | sed -E 's/-+$//'
+}
+
 afscp_create_local_workload_mount_secret() {
   local secret_namespace="$1"
   local secret_name="$2"
-  local metaurl bucket
+  local metaurl bucket juicefs_name
   metaurl="${AFSCP_LOCAL_RUNTIME_JUICEFS_METAURL:-$(afscp_default_local_runtime_juicefs_metaurl)}"
   bucket="${AFSCP_LOCAL_RUNTIME_JUICEFS_BUCKET:-$(afscp_default_local_runtime_juicefs_bucket)}"
+  juicefs_name="${AFSCP_LOCAL_RUNTIME_JUICEFS_NAME:-$(afscp_default_local_runtime_juicefs_name)}"
 
   local secret_args=(
     create secret generic "${secret_name}"
     -n "${secret_namespace}"
     --dry-run=client
     -o yaml
-    "--from-literal=name=${AFSCP_LOCAL_RUNTIME_JUICEFS_NAME:-${AFSCP_DEFAULT_VOLUME_ID}}"
+    "--from-literal=name=${juicefs_name}"
     "--from-literal=metaurl=${metaurl}"
     "--from-literal=storage=${AFSCP_LOCAL_RUNTIME_JUICEFS_STORAGE:-minio}"
     "--from-literal=bucket=${bucket}"

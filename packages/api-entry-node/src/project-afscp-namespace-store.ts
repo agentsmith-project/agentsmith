@@ -25,6 +25,7 @@ export interface ProjectAfscpNamespaceMapping {
   retryable: boolean;
   namespace_upsert_operation_id: string | null;
   volume_binding_operation_id: string | null;
+  volume_binding_signature?: string | null;
   last_error_code: string | null;
   created_at: string;
   updated_at: string;
@@ -206,6 +207,7 @@ export class ProjectAfscpNamespaceStore {
             retryable: false,
             namespace_upsert_operation_id: null,
             volume_binding_operation_id: null,
+            volume_binding_signature: null,
             last_error_code: null,
             updated_at: this.nowIso(),
           };
@@ -229,6 +231,7 @@ export class ProjectAfscpNamespaceStore {
       retryable: false,
       namespace_upsert_operation_id: null,
       volume_binding_operation_id: null,
+      volume_binding_signature: null,
       last_error_code: null,
       created_at: now,
       updated_at: now,
@@ -248,6 +251,7 @@ export class ProjectAfscpNamespaceStore {
     lastErrorCode?: string | null;
     namespaceUpsertOperationId?: string | null;
     volumeBindingOperationId?: string | null;
+    volumeBindingSignature?: string | null;
   }): Promise<ProjectAfscpNamespaceMapping> {
     const existing = await this.ensureProjectNamespace(input);
     const next: ProjectAfscpNamespaceMapping = {
@@ -266,6 +270,9 @@ export class ProjectAfscpNamespaceStore {
       volume_binding_operation_id: hasOwnProperty(input, 'volumeBindingOperationId')
         ? input.volumeBindingOperationId ?? null
         : existing.volume_binding_operation_id,
+      volume_binding_signature: hasOwnProperty(input, 'volumeBindingSignature')
+        ? input.volumeBindingSignature ?? null
+        : existing.volume_binding_signature ?? null,
       last_error_code: hasOwnProperty(input, 'lastErrorCode')
         ? input.lastErrorCode ?? null
         : null,
@@ -278,6 +285,7 @@ export class ProjectAfscpNamespaceStore {
   async markProjectNamespaceReady(input: ProjectAfscpNamespaceKey & {
     namespaceUpsertOperationId: string | null;
     volumeBindingOperationId: string | null;
+    volumeBindingSignature?: string | null;
   }): Promise<ProjectAfscpNamespaceMapping> {
     const existing = await this.ensureProjectNamespace(input);
     const next: ProjectAfscpNamespaceMapping = {
@@ -289,6 +297,7 @@ export class ProjectAfscpNamespaceStore {
       retryable: false,
       namespace_upsert_operation_id: input.namespaceUpsertOperationId,
       volume_binding_operation_id: input.volumeBindingOperationId,
+      volume_binding_signature: input.volumeBindingSignature ?? existing.volume_binding_signature ?? null,
       last_error_code: null,
       updated_at: this.nowIso(),
     };

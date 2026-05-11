@@ -13,6 +13,8 @@ describe('parseAfscpConfig', () => {
       AFSCP_SERVICE_TOKEN: '\t',
       AFSCP_BOOTSTRAP_SERVICE_TOKEN: '',
       AFSCP_DEFAULT_VOLUME_ID: '',
+      AFSCP_BOOTSTRAP_CALLER_SERVICE: '',
+      AFSCP_ORCHESTRATOR_CALLER_SERVICE: '',
     })).toEqual({ enabled: false });
   });
 
@@ -24,6 +26,7 @@ describe('parseAfscpConfig', () => {
       AFSCP_BOOTSTRAP_SERVICE_TOKEN: ' bootstrap-svc-token ',
       AFSCP_DEFAULT_VOLUME_ID: ' vol_shared ',
       AFSCP_BOOTSTRAP_CALLER_SERVICE: ' agentsmith-bootstrap ',
+      AFSCP_ORCHESTRATOR_CALLER_SERVICE: ' agentsmith-sandbox-manager ',
     })).toEqual({
       enabled: true,
       baseUrl: 'https://afscp.internal/api',
@@ -32,6 +35,7 @@ describe('parseAfscpConfig', () => {
       bootstrapServiceToken: 'bootstrap-svc-token',
       defaultVolumeId: 'vol_shared',
       bootstrapCallerService: 'agentsmith-bootstrap',
+      orchestratorCallerService: 'agentsmith-sandbox-manager',
     });
   });
 
@@ -49,7 +53,13 @@ describe('parseAfscpConfig', () => {
     expect(caught).toBeInstanceOf(AfscpConfigError);
     expect(caught).toMatchObject({
       code: 'AFSCP_CONFIG_INCOMPLETE',
-      missing: ['AFSCP_CALLER_SERVICE', 'AFSCP_BOOTSTRAP_SERVICE_TOKEN', 'AFSCP_DEFAULT_VOLUME_ID', 'AFSCP_BOOTSTRAP_CALLER_SERVICE'],
+      missing: [
+        'AFSCP_CALLER_SERVICE',
+        'AFSCP_BOOTSTRAP_SERVICE_TOKEN',
+        'AFSCP_DEFAULT_VOLUME_ID',
+        'AFSCP_BOOTSTRAP_CALLER_SERVICE',
+        'AFSCP_ORCHESTRATOR_CALLER_SERVICE',
+      ],
     });
     const serialized = `${caught instanceof Error ? caught.message : ''} ${JSON.stringify(caught)}`;
     expect(serialized).not.toContain('secret-token-value');
@@ -71,6 +81,7 @@ describe('parseAfscpConfig', () => {
         AFSCP_BOOTSTRAP_SERVICE_TOKEN: 'bootstrap-svc-token',
         AFSCP_DEFAULT_VOLUME_ID: 'vol_shared',
         AFSCP_BOOTSTRAP_CALLER_SERVICE: 'agentsmith-bootstrap',
+        AFSCP_ORCHESTRATOR_CALLER_SERVICE: 'agentsmith-sandbox-manager',
       });
     } catch (error) {
       caught = error;
@@ -96,6 +107,7 @@ describe('parseAfscpConfig', () => {
         AFSCP_BOOTSTRAP_SERVICE_TOKEN: 'bootstrap-svc-token',
         AFSCP_DEFAULT_VOLUME_ID: 'vol_shared',
         AFSCP_BOOTSTRAP_CALLER_SERVICE: 'agentsmith-api',
+        AFSCP_ORCHESTRATOR_CALLER_SERVICE: 'agentsmith-sandbox-manager',
       });
     } catch (error) {
       caught = error;
@@ -119,6 +131,7 @@ describe('parseAfscpConfig', () => {
         AFSCP_BOOTSTRAP_SERVICE_TOKEN: 'same-token',
         AFSCP_DEFAULT_VOLUME_ID: 'vol_shared',
         AFSCP_BOOTSTRAP_CALLER_SERVICE: 'agentsmith-bootstrap',
+        AFSCP_ORCHESTRATOR_CALLER_SERVICE: 'agentsmith-sandbox-manager',
       });
     } catch (error) {
       caught = error;
@@ -142,6 +155,7 @@ describe('parseAfscpConfig', () => {
         AFSCP_BOOTSTRAP_SERVICE_TOKEN: 'bootstrap-svc-token',
         AFSCP_DEFAULT_VOLUME_ID: 'volume shared\r\nx-token=svc-token',
         AFSCP_BOOTSTRAP_CALLER_SERVICE: 'agentsmith-bootstrap',
+        AFSCP_ORCHESTRATOR_CALLER_SERVICE: 'agentsmith-sandbox-manager',
       });
     } catch (error) {
       caught = error;
@@ -166,6 +180,7 @@ describe('parseAfscpConfig', () => {
         AFSCP_SERVICE_TOKEN: 'svc-token',
         AFSCP_DEFAULT_VOLUME_ID: 'vol_shared',
         AFSCP_BOOTSTRAP_CALLER_SERVICE: 'agentsmith-bootstrap',
+        AFSCP_ORCHESTRATOR_CALLER_SERVICE: 'agentsmith-sandbox-manager',
       });
     } catch (error) {
       caught = error;
@@ -189,6 +204,7 @@ describe('parseAfscpConfig', () => {
         AFSCP_BOOTSTRAP_SERVICE_TOKEN: 'bootstrap-svc-token',
         AFSCP_DEFAULT_VOLUME_ID: 'vol_shared',
         AFSCP_BOOTSTRAP_CALLER_SERVICE: 'agentsmith-bootstrap',
+        AFSCP_ORCHESTRATOR_CALLER_SERVICE: 'agentsmith-sandbox-manager',
       });
     } catch (error) {
       caught = error;
@@ -198,6 +214,54 @@ describe('parseAfscpConfig', () => {
     expect(caught).toMatchObject({
       code: 'AFSCP_CONFIG_INVALID',
       invalid: ['AFSCP_CALLER_SERVICE'],
+    });
+    expect(`${caught instanceof Error ? caught.message : ''} ${JSON.stringify(caught)}`).not.toContain('svc-token');
+  });
+
+  it('requires an orchestrator caller service distinct from the product caller', () => {
+    let caught: unknown;
+    try {
+      parseAfscpConfig({
+        AFSCP_BASE_URL: 'https://afscp.internal',
+        AFSCP_CALLER_SERVICE: 'agentsmith-api',
+        AFSCP_SERVICE_TOKEN: 'svc-token',
+        AFSCP_BOOTSTRAP_SERVICE_TOKEN: 'bootstrap-svc-token',
+        AFSCP_DEFAULT_VOLUME_ID: 'vol_shared',
+        AFSCP_BOOTSTRAP_CALLER_SERVICE: 'agentsmith-bootstrap',
+        AFSCP_ORCHESTRATOR_CALLER_SERVICE: 'agentsmith-api',
+      });
+    } catch (error) {
+      caught = error;
+    }
+
+    expect(caught).toBeInstanceOf(AfscpConfigError);
+    expect(caught).toMatchObject({
+      code: 'AFSCP_CONFIG_INVALID',
+      invalid: ['AFSCP_ORCHESTRATOR_CALLER_SERVICE'],
+    });
+    expect(`${caught instanceof Error ? caught.message : ''} ${JSON.stringify(caught)}`).not.toContain('svc-token');
+  });
+
+  it('requires an orchestrator caller service distinct from the bootstrap caller', () => {
+    let caught: unknown;
+    try {
+      parseAfscpConfig({
+        AFSCP_BASE_URL: 'https://afscp.internal',
+        AFSCP_CALLER_SERVICE: 'agentsmith-api',
+        AFSCP_SERVICE_TOKEN: 'svc-token',
+        AFSCP_BOOTSTRAP_SERVICE_TOKEN: 'bootstrap-svc-token',
+        AFSCP_DEFAULT_VOLUME_ID: 'vol_shared',
+        AFSCP_BOOTSTRAP_CALLER_SERVICE: 'agentsmith-bootstrap',
+        AFSCP_ORCHESTRATOR_CALLER_SERVICE: 'agentsmith-bootstrap',
+      });
+    } catch (error) {
+      caught = error;
+    }
+
+    expect(caught).toBeInstanceOf(AfscpConfigError);
+    expect(caught).toMatchObject({
+      code: 'AFSCP_CONFIG_INVALID',
+      invalid: ['AFSCP_ORCHESTRATOR_CALLER_SERVICE'],
     });
     expect(`${caught instanceof Error ? caught.message : ''} ${JSON.stringify(caught)}`).not.toContain('svc-token');
   });

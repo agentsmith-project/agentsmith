@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto';
 import type {
   AfscpBootstrapClientPort,
   AfscpActor,
@@ -84,6 +85,7 @@ interface ProjectStorageBootstrapServiceOptions {
   client: ProjectStorageBootstrapAfscpClient;
   defaultVolumeId: string;
   productCallerService: string;
+  orchestratorCallerService: string;
   correlationIdFactory?: () => string;
 }
 
@@ -114,8 +116,13 @@ function defaultCorrelationId(): string {
   return `project-storage-bootstrap-${Date.now().toString(36)}`;
 }
 
-function buildIdempotencyKey(namespaceId: string, operation: 'namespace-upsert' | 'volume-binding'): string {
-  return `project-storage-bootstrap:${namespaceId}:${operation}`;
+function buildIdempotencyKey(
+  namespaceId: string,
+  operation: 'namespace-upsert' | 'volume-binding',
+  signature?: string,
+): string {
+  const suffix = signature ? `:${signature.slice(0, 16)}` : '';
+  return `project-storage-bootstrap:${namespaceId}:${operation}${suffix}`;
 }
 
 const DEFAULT_PROJECT_AFSCP_PRODUCT_CALLER_ROLES = [
@@ -132,12 +139,14 @@ function buildDefaultVolumeBinding(input: {
   namespaceId: string;
   defaultVolumeId: string;
   productCallerService: string;
+  orchestratorCallerService: string;
 }): AfscpNamespaceVolumeBinding {
   return {
     namespace_id: input.namespaceId,
     default_volume_id: input.defaultVolumeId,
     allowed_callers: [
       { caller_service: input.productCallerService, roles: [...DEFAULT_PROJECT_AFSCP_PRODUCT_CALLER_ROLES] },
+      { caller_service: input.orchestratorCallerService, roles: ['orchestrator_mount'] },
     ],
     quota_bytes_default: 0,
     export_policy: {
@@ -160,6 +169,32 @@ function buildDefaultVolumeBinding(input: {
     },
     status: 'active',
   };
+}
+
+function sortJson(value: unknown): unknown {
+  if (Array.isArray(value)) {
+    return value.map(sortJson);
+  }
+  if (value !== null && typeof value === 'object') {
+    return Object.fromEntries(
+      Object.entries(value as Record<string, unknown>)
+        .sort(([left], [right]) => left.localeCompare(right))
+        .map(([key, nestedValue]) => [key, sortJson(nestedValue)]),
+    );
+  }
+  return value;
+}
+
+function buildVolumeBindingSignature(binding: AfscpNamespaceVolumeBinding): string {
+  return createHash('sha256')
+    .update(JSON.stringify(sortJson(binding)))
+    .digest('hex');
+}
+
+function readVolumeBindingSignature(mapping: ProjectAfscpNamespaceMapping): string | null {
+  return typeof mapping.volume_binding_signature === 'string' && mapping.volume_binding_signature.length > 0
+    ? mapping.volume_binding_signature
+    : null;
 }
 
 type BootstrapOperationState = 'pending' | 'ready' | 'failed';
@@ -232,12 +267,18 @@ function resolvePendingStage(mapping: ProjectAfscpNamespaceMapping): BootstrapOp
 function validateBootstrapServiceOptions(options: {
   defaultVolumeId: string;
   productCallerService: string;
+  orchestratorCallerService: string;
 }): {
   defaultVolumeId: string;
   productCallerService: string;
+  orchestratorCallerService: string;
 } {
   const normalizedDefaultVolumeId = normalizeAfscpValidatedValue('volume_id', options.defaultVolumeId);
   const normalizedProductCallerService = normalizeAfscpValidatedValue('caller_service', options.productCallerService);
+  const normalizedOrchestratorCallerService = normalizeAfscpValidatedValue(
+    'caller_service',
+    options.orchestratorCallerService,
+  );
   const invalid: string[] = [];
   if (!normalizedDefaultVolumeId) {
     invalid.push('AFSCP_DEFAULT_VOLUME_ID');
@@ -245,13 +286,27 @@ function validateBootstrapServiceOptions(options: {
   if (!normalizedProductCallerService) {
     invalid.push('AFSCP_CALLER_SERVICE');
   }
-  if (invalid.length > 0 || !normalizedDefaultVolumeId || !normalizedProductCallerService) {
+  if (!normalizedOrchestratorCallerService) {
+    invalid.push('AFSCP_ORCHESTRATOR_CALLER_SERVICE');
+  }
+  if (
+    invalid.length > 0
+    || !normalizedDefaultVolumeId
+    || !normalizedProductCallerService
+    || !normalizedOrchestratorCallerService
+  ) {
     throw new AfscpConfigError({ code: 'AFSCP_CONFIG_INVALID', invalid });
   }
-
+  if (normalizedOrchestratorCallerService === normalizedProductCallerService) {
+    throw new AfscpConfigError({
+      code: 'AFSCP_CONFIG_INVALID',
+      invalid: ['AFSCP_ORCHESTRATOR_CALLER_SERVICE'],
+    });
+  }
   return {
     defaultVolumeId: normalizedDefaultVolumeId,
     productCallerService: normalizedProductCallerService,
+    orchestratorCallerService: normalizedOrchestratorCallerService,
   };
 }
 
@@ -326,6 +381,7 @@ export class ProjectStorageBootstrapService implements ProjectStorageBootstrapSe
   private readonly client: ProjectStorageBootstrapAfscpClient;
   private readonly defaultVolumeId: string;
   private readonly productCallerService: string;
+  private readonly orchestratorCallerService: string;
   private readonly correlationIdFactory: () => string;
 
   static disabled(): ProjectStorageBootstrapServicePort {
@@ -336,12 +392,14 @@ export class ProjectStorageBootstrapService implements ProjectStorageBootstrapSe
     const validatedOptions = validateBootstrapServiceOptions({
       defaultVolumeId: options.defaultVolumeId,
       productCallerService: options.productCallerService,
+      orchestratorCallerService: options.orchestratorCallerService,
     });
     this.namespaceStore = options.namespaceStore;
     this.resourceOwnershipStore = options.resourceOwnershipStore;
     this.client = options.client;
     this.defaultVolumeId = validatedOptions.defaultVolumeId;
     this.productCallerService = validatedOptions.productCallerService;
+    this.orchestratorCallerService = validatedOptions.orchestratorCallerService;
     this.correlationIdFactory = options.correlationIdFactory ?? defaultCorrelationId;
   }
 
@@ -411,15 +469,29 @@ export class ProjectStorageBootstrapService implements ProjectStorageBootstrapSe
       workspaceId: input.workspaceId,
       projectId: input.projectId,
     });
-    if (mapping.status !== 'pending') {
+    const desiredVolumeBinding = buildDefaultVolumeBinding({
+      namespaceId: mapping.namespace_id,
+      defaultVolumeId: this.defaultVolumeId,
+      productCallerService: this.productCallerService,
+      orchestratorCallerService: this.orchestratorCallerService,
+    });
+    const desiredVolumeBindingSignature = buildVolumeBindingSignature(desiredVolumeBinding);
+    if (mapping.status === 'ready' && readVolumeBindingSignature(mapping) === desiredVolumeBindingSignature) {
+      return mapping;
+    }
+    if (mapping.status !== 'pending' && mapping.status !== 'ready') {
       return mapping;
     }
 
     const namespaceId = mapping.namespace_id;
     const correlationId = this.resolveCorrelationId(input.requestId);
-    let operationStage: BootstrapOperationStage = resolvePendingStage(mapping);
+    let operationStage: BootstrapOperationStage = mapping.status === 'ready'
+      ? 'volume_binding'
+      : resolvePendingStage(mapping);
     let namespaceUpsertOperationId = mapping.namespace_upsert_operation_id;
-    let volumeBindingOperationId = mapping.volume_binding_operation_id;
+    let volumeBindingOperationId = readVolumeBindingSignature(mapping) === desiredVolumeBindingSignature
+      ? mapping.volume_binding_operation_id
+      : null;
 
     try {
       await this.resourceOwnershipStore.ensureResourceOwnership({
@@ -484,13 +556,9 @@ export class ProjectStorageBootstrapService implements ProjectStorageBootstrapSe
         : await this.client.putNamespaceVolumeBinding({
             namespaceId,
             correlationId,
-            idempotencyKey: buildIdempotencyKey(namespaceId, 'volume-binding'),
+            idempotencyKey: buildIdempotencyKey(namespaceId, 'volume-binding', desiredVolumeBindingSignature),
             actor: input.actor,
-            binding: buildDefaultVolumeBinding({
-              namespaceId,
-              defaultVolumeId: this.defaultVolumeId,
-              productCallerService: this.productCallerService,
-            }),
+            binding: desiredVolumeBinding,
             signal: input.signal,
           });
       volumeBindingOperationId = readOperationId(volumeOperation) ?? volumeBindingOperationId;
@@ -518,6 +586,7 @@ export class ProjectStorageBootstrapService implements ProjectStorageBootstrapSe
           retryable: false,
           namespaceUpsertOperationId,
           volumeBindingOperationId,
+          volumeBindingSignature: desiredVolumeBindingSignature,
           lastErrorCode: null,
         });
       }
@@ -527,6 +596,7 @@ export class ProjectStorageBootstrapService implements ProjectStorageBootstrapSe
         projectId: input.projectId,
         namespaceUpsertOperationId,
         volumeBindingOperationId,
+        volumeBindingSignature: desiredVolumeBindingSignature,
       });
     } catch (error) {
       const normalized = normalizeBootstrapFailure(error);
@@ -549,6 +619,7 @@ export class ProjectStorageBootstrapService implements ProjectStorageBootstrapSe
           retryable: true,
           namespaceUpsertOperationId,
           volumeBindingOperationId,
+          ...(operationStage === 'volume_binding' ? { volumeBindingSignature: desiredVolumeBindingSignature } : {}),
           lastErrorCode: normalized.lastErrorCode,
         });
       }

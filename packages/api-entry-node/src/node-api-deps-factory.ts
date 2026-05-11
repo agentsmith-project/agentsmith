@@ -726,6 +726,7 @@ export function createNodeApiDepsFromEnv(env: NodeJS.ProcessEnv): {
         client: afscpBootstrapClient,
         defaultVolumeId: afscpConfig.defaultVolumeId,
         productCallerService: afscpConfig.callerService,
+        orchestratorCallerService: afscpConfig.orchestratorCallerService,
       })
     : ProjectStorageBootstrapService.disabled();
   const afscpResourceOwnershipGuard = afscpConfig.enabled

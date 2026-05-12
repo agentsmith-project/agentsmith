@@ -1524,8 +1524,8 @@ export class AfscpFileLibraryStorageAdapter implements FileLibraryStoragePort {
       return listed.save_points
         .map((record) => normalizeAfscpSavePoint(record))
         .filter((record): record is FileLibraryAfscpSavePoint => record !== null);
-    } catch {
-      throw new Error('file_library_save_point_list_failed');
+    } catch (error) {
+      throw new Error(mapAfscpClientErrorToStorageMessage(error, 'file_library_save_point_list_failed'));
     }
   }
 
@@ -1627,6 +1627,7 @@ export class AfscpFileLibraryStorageAdapter implements FileLibraryStoragePort {
       fallbackPrefix: 'file-library-restore-preview-poll',
       failureMessage: 'file_library_restore_preview_failed',
       failureContext: 'restore_preview',
+      failOnFailed: false,
     });
   }
 
@@ -2521,6 +2522,7 @@ export class AfscpFileLibraryStorageAdapter implements FileLibraryStoragePort {
     fallbackPrefix: string;
     failureMessage: string;
     failureContext: AfscpStorageFailureContext;
+    failOnFailed?: boolean;
   }): Promise<FileLibraryRestoreOperationResult> {
     const finalOperation = await this.pollMutationOperation({
       operation: input.operation,
@@ -2539,7 +2541,7 @@ export class AfscpFileLibraryStorageAdapter implements FileLibraryStoragePort {
       input: input.input,
       namespaceId: input.namespaceId,
       failureMessage: input.failureMessage,
-      failOnFailed: true,
+      failOnFailed: input.failOnFailed ?? true,
     });
   }
 

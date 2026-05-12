@@ -3786,6 +3786,7 @@ export async function handleTaskRoute(args: TaskRouteHandlerArgs): Promise<boole
       taskId: route.taskId,
       userId: user.id,
       sessionId: route.terminalSessionId,
+      waitForFinalization: true,
     });
     if (!deleted) {
       json(res, 404, { error_code: 'RESOURCE_NOT_FOUND', message: 'task_terminal_session_not_found' });

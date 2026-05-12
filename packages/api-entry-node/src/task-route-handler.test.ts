@@ -3811,13 +3811,13 @@ describe('task-route-handler workspace access', () => {
       rows: 24,
     });
 
-    (service as unknown as {
+    await (service as unknown as {
       finishSession: (
         sessionId: string,
         status: 'closed' | 'failed',
         closeReason?: string,
         exitCode?: number | null,
-      ) => void;
+      ) => Promise<void>;
     }).finishSession(created.sessionId, 'failed', 'terminal_start_timeout');
 
     await expect(
@@ -9579,7 +9579,10 @@ describe('task-route-handler workspace access', () => {
     try {
       const deps = createDefaultNodeApiDeps();
       const ensureAgentReady = vi.fn(async () => undefined);
-      const releasePod = vi.fn(async () => undefined);
+      const releaseDrain = createDeferred<void>();
+      const releasePod = vi.fn(async () => {
+        await releaseDrain.promise;
+      });
       deps.internalAgentPodManager = {
         ensureAgentReady,
         keepalive: vi.fn(async () => undefined),
@@ -9721,33 +9724,50 @@ describe('task-route-handler workspace access', () => {
       expect(ensureAgentReady).not.toHaveBeenCalled();
       expect(releasePod).not.toHaveBeenCalled();
 
-      for (const [index, sessionId] of createdSessionIds.entries()) {
-        const res = { statusCode: 0, end: vi.fn() } as never;
-        await expect(handleTaskRoute({
-          route: {
-            kind: 'taskTerminalSession',
-            workspaceId: 'ws_default',
-            projectId: 'proj_1',
-            taskId: 'task_internal_terminal',
-            terminalSessionId: sessionId,
-          } as never,
-          method: 'DELETE',
-          req: { headers: {}, url: '' } as never,
-          res,
-          deps,
-          user,
-          json: vi.fn(),
-          readBody: vi.fn(),
+      const firstDeleteRes = { statusCode: 0, end: vi.fn() } as never;
+      await expect(handleTaskRoute({
+        route: {
+          kind: 'taskTerminalSession',
+          workspaceId: 'ws_default',
+          projectId: 'proj_1',
+          taskId: 'task_internal_terminal',
+          terminalSessionId: createdSessionIds[0]!,
+        } as never,
+        method: 'DELETE',
+        req: { headers: {}, url: '' } as never,
+        res: firstDeleteRes,
+        deps,
+        user,
+        json: vi.fn(),
+        readBody: vi.fn(),
       })).resolves.toBe(true);
-        expect(res.statusCode).toBe(204);
-        if (index === 0) {
-          expect(releasePod).not.toHaveBeenCalled();
-        }
-      }
+      expect(firstDeleteRes.statusCode).toBe(204);
+      expect(releasePod).not.toHaveBeenCalled();
 
+      const finalDeleteRes = { statusCode: 0, end: vi.fn() } as never;
+      const finalDelete = handleTaskRoute({
+        route: {
+          kind: 'taskTerminalSession',
+          workspaceId: 'ws_default',
+          projectId: 'proj_1',
+          taskId: 'task_internal_terminal',
+          terminalSessionId: createdSessionIds[1]!,
+        } as never,
+        method: 'DELETE',
+        req: { headers: {}, url: '' } as never,
+        res: finalDeleteRes,
+        deps,
+        user,
+        json: vi.fn(),
+        readBody: vi.fn(),
+      });
       await vi.waitFor(() => {
         expect(releasePod).toHaveBeenCalledTimes(1);
       });
+      expect(finalDeleteRes.statusCode).toBe(0);
+      releaseDrain.resolve();
+      await expect(finalDelete).resolves.toBe(true);
+      expect(finalDeleteRes.statusCode).toBe(204);
       expect(releasePod).toHaveBeenCalledWith(
         'ws_default',
         'proj_1',

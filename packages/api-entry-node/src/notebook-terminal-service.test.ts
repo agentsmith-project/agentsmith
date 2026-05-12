@@ -575,13 +575,13 @@ describe('NotebookTerminalService', () => {
       taskId: 'task_1',
     });
 
-    (service as unknown as {
+    await (service as unknown as {
       finishSession: (
         sessionId: string,
         status: 'closed' | 'failed',
         closeReason?: string,
         exitCode?: number | null,
-      ) => void;
+      ) => Promise<void>;
     }).finishSession(created.sessionId, 'closed', 'process_exited', 0);
 
     const session = await service.getSession(created.sessionId);
@@ -2448,13 +2448,13 @@ describe('NotebookTerminalService', () => {
       rows: 24,
     });
 
-    (service as unknown as {
+    await (service as unknown as {
       finishSession: (
         sessionId: string,
         status: 'closed' | 'failed',
         closeReason?: string,
         exitCode?: number | null,
-      ) => void;
+      ) => Promise<void>;
     }).finishSession(created.sessionId, 'closed', 'process_exited', 0);
 
     await expect(
@@ -2492,13 +2492,13 @@ describe('NotebookTerminalService', () => {
       rows: 25,
     });
 
-    (service as unknown as {
+    await (service as unknown as {
       finishSession: (
         sessionId: string,
         status: 'closed' | 'failed',
         closeReason?: string,
         exitCode?: number | null,
-      ) => void;
+      ) => Promise<void>;
       sessions: Map<string, unknown>;
     }).finishSession(created.sessionId, 'closed', 'process_exited', 0);
     (service as unknown as { sessions: Map<string, unknown> }).sessions.clear();
@@ -3638,13 +3638,13 @@ describe('NotebookTerminalService', () => {
         cols: 80,
         rows: 24,
       });
-      (service as unknown as {
+      await (service as unknown as {
         finishSession: (
           sessionId: string,
           status: 'closed' | 'failed',
           closeReason?: string,
           exitCode?: number | null,
-        ) => void;
+        ) => Promise<void>;
       }).finishSession(created.sessionId, 'failed', 'runner_crashed');
     }
 
@@ -3697,13 +3697,13 @@ describe('NotebookTerminalService', () => {
       rows: 24,
     });
 
-    (service as unknown as {
+    await (service as unknown as {
       finishSession: (
         sessionId: string,
         status: 'closed' | 'failed',
         closeReason?: string,
         exitCode?: number | null,
-      ) => void;
+      ) => Promise<void>;
     }).finishSession(created.sessionId, 'failed', 'terminal_start_timeout');
 
     await expect(
@@ -4084,13 +4084,13 @@ describe('NotebookTerminalService', () => {
         rows: 24,
       });
       createdIds.push(created.sessionId);
-      (service as unknown as {
+      await (service as unknown as {
         finishSession: (
           sessionId: string,
           status: 'closed' | 'failed',
           closeReason?: string,
           exitCode?: number | null,
-        ) => void;
+        ) => Promise<void>;
       }).finishSession(created.sessionId, 'closed', 'process_exited', 0);
     }
 
@@ -4146,13 +4146,13 @@ describe('NotebookTerminalService', () => {
       rows: 24,
     });
 
-    (firstService as unknown as {
+    await (firstService as unknown as {
       finishSession: (
         sessionId: string,
         status: 'closed' | 'failed',
         closeReason?: string,
         exitCode?: number | null,
-      ) => void;
+      ) => Promise<void>;
     }).finishSession(created.sessionId, 'failed', 'terminal_stream_failed');
 
     const closeTerminalSession = vi.fn(async () => 'signaled');
@@ -4522,6 +4522,106 @@ describe('NotebookTerminalService', () => {
       lifecycleStatus: 'closing',
       closeState: 'delivered',
       inputEnabled: false,
+    });
+  });
+
+  it('waits for close ack and session-closed lifecycle hooks when finalization is requested', async () => {
+    const cache = new InMemoryCache();
+    const closeTerminalSession = vi.fn(async () => 'signaled');
+    const lifecycleDrain = createDeferred<void>();
+    const onSessionClosed = vi.fn(async () => {
+      await lifecycleDrain.promise;
+    });
+    const service = new NotebookTerminalService(cache, {
+      dispatchTerminalSession: vi.fn(),
+      closeTerminalSession,
+    } as never);
+    service.configureLifecycleHooks({ onSessionClosed });
+
+    const created = await service.createSession({
+      workspaceId: 'ws_default',
+      projectId: 'proj_1',
+      taskId: 'task_1',
+      agentId: 'agent_1',
+      resolvedRunnerId: 'agent_1',
+      runnerSessionId: 'task_1',
+      userId: 'user_1',
+      cols: 80,
+      rows: 24,
+    });
+    const session = await service.getSession(created.sessionId);
+    Object.assign(session!, {
+      status: 'active',
+      lifecycleStatus: 'active',
+      runnerConnectionStatus: 'attached',
+      runtimeReady: true,
+      terminalGeneration: 4,
+      terminalConnectionEpoch: 9,
+    });
+
+    let deleteResolved = false;
+    const deletePromise = service.deleteSession({
+      workspaceId: 'ws_default',
+      projectId: 'proj_1',
+      taskId: 'task_1',
+      userId: 'user_1',
+      sessionId: created.sessionId,
+      waitForFinalization: true,
+    }).then((value) => {
+      deleteResolved = true;
+      return value;
+    });
+
+    await vi.waitFor(() => {
+      expect(closeTerminalSession).toHaveBeenCalledTimes(1);
+    });
+    await Promise.resolve();
+    expect(deleteResolved).toBe(false);
+
+    const closeRequest = closeTerminalSession.mock.calls[0]?.[0] as {
+      closeRequestId: string;
+      closeAttemptId: string;
+      generation: number;
+      connectionEpoch: number;
+    };
+    const closeAckPromise = (service as unknown as {
+      handleTerminalCloseAck: (event: {
+        workspaceId: string;
+        projectId: string;
+        agentId: string;
+        runnerSessionId: string;
+        terminalSessionId: string;
+        requestId: string;
+        closeAttemptId: string;
+        generation: number;
+        connectionEpoch: number;
+        status: 'closed';
+      }) => Promise<void>;
+    }).handleTerminalCloseAck({
+      workspaceId: 'ws_default',
+      projectId: 'proj_1',
+      agentId: 'agent_1',
+      runnerSessionId: 'task_1',
+      terminalSessionId: created.sessionId,
+      requestId: closeRequest.closeRequestId,
+      closeAttemptId: closeRequest.closeAttemptId,
+      generation: closeRequest.generation,
+      connectionEpoch: closeRequest.connectionEpoch,
+      status: 'closed',
+    });
+
+    await vi.waitFor(() => {
+      expect(onSessionClosed).toHaveBeenCalledTimes(1);
+    });
+    expect(deleteResolved).toBe(false);
+
+    lifecycleDrain.resolve();
+    await expect(closeAckPromise).resolves.toBeUndefined();
+    await expect(deletePromise).resolves.toBe(true);
+    expect(deleteResolved).toBe(true);
+    await expect(service.getSession(created.sessionId)).resolves.toMatchObject({
+      status: 'closed',
+      closeState: 'acked',
     });
   });
 
@@ -5230,13 +5330,13 @@ describe('NotebookTerminalService', () => {
       rows: 24,
     });
 
-    (firstService as unknown as {
+    await (firstService as unknown as {
       finishSession: (
         sessionId: string,
         status: 'closed' | 'failed',
         closeReason?: string,
         exitCode?: number | null,
-      ) => void;
+      ) => Promise<void>;
     }).finishSession(created.sessionId, 'failed', 'terminal_stream_failed');
 
     const reloadedService = new NotebookTerminalService(cache, {

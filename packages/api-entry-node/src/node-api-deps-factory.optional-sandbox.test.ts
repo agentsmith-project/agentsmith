@@ -7,6 +7,16 @@ const baseEnv: NodeJS.ProcessEnv = {
   NODE_ENV: 'test',
 };
 
+const afscpEnv: NodeJS.ProcessEnv = {
+  AFSCP_BASE_URL: 'http://afscp.test',
+  AFSCP_CALLER_SERVICE: 'agentsmith-api',
+  AFSCP_SERVICE_TOKEN: 'afscp-service-token',
+  AFSCP_BOOTSTRAP_SERVICE_TOKEN: 'afscp-bootstrap-token',
+  AFSCP_DEFAULT_VOLUME_ID: 'vol_test',
+  AFSCP_BOOTSTRAP_CALLER_SERVICE: 'agentsmith-bootstrap',
+  AFSCP_ORCHESTRATOR_CALLER_SERVICE: 'agentsmith-orchestrator',
+};
+
 async function shutdownSafe(lifecycle: { shutdown: () => Promise<void> | void }): Promise<void> {
   await lifecycle.shutdown();
 }
@@ -79,6 +89,7 @@ describe('createNodeApiDepsFromEnv optional sandbox integration', () => {
 
     const { deps, lifecycle } = createNodeApiDepsFromEnv({
       ...baseEnv,
+      ...afscpEnv,
       SANDBOX_MANAGER_URL: 'http://sandbox-manager:8080',
       SANDBOX_SERVICE_KEY: 'svc-key',
       AGENT_EXECUTION_HTTP_BASE_URL: 'http://10.88.0.1:20000',
@@ -100,6 +111,7 @@ describe('createNodeApiDepsFromEnv optional sandbox integration', () => {
   it('does not wire a managed pod manager with sandbox env when the internal API base is missing', async () => {
     const { deps, lifecycle } = createNodeApiDepsFromEnv({
       ...baseEnv,
+      ...afscpEnv,
       SANDBOX_MANAGER_URL: 'http://sandbox-manager:8080',
       SANDBOX_SERVICE_KEY: 'svc-key',
     });
@@ -158,14 +170,14 @@ describe('createNodeApiDepsFromEnv optional sandbox integration', () => {
       ]);
       expect(deps.internalWorkloadCoordinator?.readSnapshotForTests()[0]?.workloadId).not.toBe(rawTaskId);
 
-      (
+      await (
         deps.notebookTerminalService as unknown as {
           finishSession: (
             sessionId: string,
             status: 'closed' | 'failed',
             closeReason?: string,
             exitCode?: number | null,
-          ) => void;
+          ) => Promise<void>;
         }
       ).finishSession(created.sessionId, 'closed', 'process_exited', 0);
 

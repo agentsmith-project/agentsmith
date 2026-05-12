@@ -1007,6 +1007,30 @@ describe('AFSCP File Library storage adapter', () => {
     });
   });
 
+  it('preserves typed AFSCP save point list errors instead of collapsing them to list failed', async () => {
+    const client = createProductClient({
+      listSavePoints: vi.fn(async () => {
+        throw new AfscpClientError({
+          status: 503,
+          code: 'afscp_operator_recovery_required',
+          message: 'afscp_operator_recovery_required',
+          retryable: false,
+          correlation_id: 'corr_save_point_operator',
+          operation_id: 'op_restore_preview_failed_hidden',
+          resource_kind: 'operation',
+        });
+      }),
+    });
+    const { adapter } = await createMappedAdapter({ client });
+
+    await expect(adapter.listSavePoints({
+      workspaceId: 'ws_default',
+      projectId: 'proj_1',
+      libraryId: 'flib_123',
+      requestId: 'req_save_point_list_operator',
+    })).rejects.toThrow('file_library_storage_admin_action_required');
+  });
+
   it('creates save points from JVS output when external resource ids are redacted', async () => {
     const jvsSavePointId = '1778481131647-4d2e0211';
     const client = createProductClient({
@@ -1367,6 +1391,52 @@ describe('AFSCP File Library storage adapter', () => {
     await expect(ownershipStore.getResourceOwnership({
       resourceKind: 'save_point',
       resourceId: '1778481131647-4d2e0211',
+    })).resolves.toMatchObject({
+      workspace_id: 'ws_default',
+      project_id: 'proj_1',
+    });
+  });
+
+  it('projects failed restore preview operations as retryable preview state instead of throwing', async () => {
+    const client = createProductClient({
+      pollOperation: vi.fn(async (input) => ({
+        ...succeededRepoOperation,
+        operation_id: input.operationId,
+        operation_type: 'restore_preview',
+        operation_state: 'operator_intervention_required',
+        resource: { type: 'repo', id: 'repo_flib_123' },
+        error: {
+          code: 'JVS_RESTORE_PREVIEW_FAILED',
+          retryable: true,
+        },
+        external_resource_ids: {
+          source_save_point_id: 'sp_user_001',
+        },
+        verification_result: {
+          source_save_point_id: 'sp_user_001',
+        },
+        finished_at: null,
+      })),
+    });
+    const { adapter, ownershipStore } = await createMappedAdapter({ client });
+
+    await expect(adapter.createRestorePreview({
+      workspaceId: 'ws_default',
+      projectId: 'proj_1',
+      libraryId: 'flib_123',
+      savePointId: 'sp_user_001',
+      actorUserId: 'user_1',
+      requestId: 'req_restore_preview_failed',
+    })).resolves.toMatchObject({
+      operationId: 'op_preview01',
+      operationStatus: 'failed',
+      restorePlanId: null,
+      sourceSavePointId: 'sp_user_001',
+    });
+
+    await expect(ownershipStore.getResourceOwnership({
+      resourceKind: 'save_point',
+      resourceId: 'sp_user_001',
     })).resolves.toMatchObject({
       workspace_id: 'ws_default',
       project_id: 'proj_1',

@@ -515,7 +515,10 @@ async function terminateCodexProcess(requestId: string, child: RunningProcess): 
 }
 
 async function terminateTerminalProcess(terminalSessionId: string, child: TerminalProcess): Promise<void> {
-  if (child.exitCode !== null) return;
+  if (child.exitCode !== null) {
+    await child.waitForWorkspaceRelease();
+    return;
+  }
   const result = await terminateTerminalProcessTree(child, {
     terminalSessionId,
     graceMs: terminalCloseGraceMs,
@@ -529,7 +532,9 @@ async function terminateTerminalProcess(terminalSessionId: string, child: Termin
       diagnostic_code: result.diagnosticCode,
       remaining_pid_count: result.remainingPids.length,
     });
+    return;
   }
+  await child.waitForWorkspaceRelease();
 }
 
 async function terminateActiveRunnerProcesses(): Promise<void> {
@@ -729,6 +734,9 @@ async function closeTerminalSession(
   const entry = activeTerminalBySessionId.get(terminalSessionId);
   const child = entry?.child ?? runningTerminalBySessionId.get(terminalSessionId);
   if (!child || child.exitCode !== null) {
+    if (child) {
+      await child.waitForWorkspaceRelease();
+    }
     if (closeAttempt) {
       sendTerminalCloseAck(terminalSessionId, closeAttempt, 'not_found');
     }
@@ -764,6 +772,7 @@ async function closeTerminalSession(
       return;
     }
     if (result.outcome === 'terminated') {
+      await child.waitForWorkspaceRelease();
       sendTerminalCloseAck(terminalSessionId, closeAttempt, 'closed', {
         exitCode: child.exitCode,
         signal: null,
@@ -772,6 +781,7 @@ async function closeTerminalSession(
       return;
     }
     if (result.outcome === 'not_found') {
+      await child.waitForWorkspaceRelease();
       sendTerminalCloseAck(terminalSessionId, closeAttempt, 'not_found', {
         terminationResult: result,
       });

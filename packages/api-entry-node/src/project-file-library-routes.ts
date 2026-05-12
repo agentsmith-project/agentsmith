@@ -460,6 +460,10 @@ function isActiveRestorePreviewStatus(status: FileLibraryRestorePreviewStatus): 
     || status === 'restoring';
 }
 
+function isDisplayableRestorePreviewStatus(status: FileLibraryRestorePreviewStatus): boolean {
+  return isActiveRestorePreviewStatus(status) || status === 'failed';
+}
+
 function restorePreviewActiveOperationId(preview: FileLibraryRestorePreviewRecord): string {
   return preview.afscp_active_operation_id ?? preview.afscp_preview_operation_id;
 }
@@ -525,6 +529,25 @@ async function findReconciledActiveRestorePreview(input: {
   return isActiveRestorePreviewStatus(reconciled.status) ? reconciled : null;
 }
 
+async function findReconciledDisplayableRestorePreview(input: {
+  deps: NodeApiDeps;
+  restoreRepo: JsonDocFileLibraryRestorePreviewRepo;
+  workspaceId: string;
+  projectId: string;
+  libraryId: string;
+  requestId?: string;
+}): Promise<FileLibraryRestorePreviewRecord | null> {
+  const latest = await input.restoreRepo.findLatestByLibrary(input.workspaceId, input.projectId, input.libraryId);
+  if (!latest) {
+    return null;
+  }
+  const reconciled = await reconcileRestorePreviewRecord({
+    ...input,
+    preview: latest,
+  });
+  return isDisplayableRestorePreviewStatus(reconciled.status) ? reconciled : null;
+}
+
 async function ensureNoActiveRestorePreview(input: {
   deps: NodeApiDeps;
   restoreRepo: JsonDocFileLibraryRestorePreviewRepo;
@@ -536,6 +559,36 @@ async function ensureNoActiveRestorePreview(input: {
   const active = await findReconciledActiveRestorePreview(input);
   if (active && isActiveRestorePreviewStatus(active.status)) {
     throw new FileLibraryRestorePreviewActiveError(active);
+  }
+}
+
+async function listCachedUserSavePoints(input: {
+  savePointRepo: JsonDocFileLibrarySavePointMappingRepo;
+  workspaceId: string;
+  projectId: string;
+  libraryId: string;
+}): Promise<FileLibrarySavePointPublicRecord[]> {
+  const records = await input.savePointRepo.listByLibrary({
+    workspaceId: input.workspaceId,
+    projectId: input.projectId,
+    libraryId: input.libraryId,
+  });
+  return records.map((record) => input.savePointRepo.toPublic(record));
+}
+
+async function shouldServeCachedSavePointsDuringRestorePreview(input: {
+  deps: NodeApiDeps;
+  restoreRepo: JsonDocFileLibraryRestorePreviewRepo;
+  workspaceId: string;
+  projectId: string;
+  libraryId: string;
+  requestId?: string;
+}): Promise<boolean> {
+  try {
+    const preview = await findReconciledDisplayableRestorePreview(input);
+    return preview !== null;
+  } catch {
+    return false;
   }
 }
 
@@ -1201,6 +1254,29 @@ export async function handleProjectFileLibraryRoutes(args: {
       }
       json(res, 200, { items });
     } catch (error) {
+      const publicMessage = publicFileOperationMessage(error, 'file_library_save_point_list_failed');
+      if (publicMessage === 'file_library_save_point_list_failed') {
+        const restoreRepo = new JsonDocFileLibraryRestorePreviewRepo(deps.docStore);
+        const hasRestorePreviewProjection = await shouldServeCachedSavePointsDuringRestorePreview({
+          deps,
+          restoreRepo,
+          workspaceId,
+          projectId,
+          libraryId,
+          requestId: readOptionalRequestId(req),
+        });
+        if (hasRestorePreviewProjection) {
+          json(res, 200, {
+            items: await listCachedUserSavePoints({
+              savePointRepo,
+              workspaceId,
+              projectId,
+              libraryId,
+            }),
+          });
+          return true;
+        }
+      }
       const mapped = mapFileLibraryControlRouteError(
         error,
         'FILE_LIBRARY_SAVE_POINT_LIST_FAILED',
@@ -1263,7 +1339,7 @@ export async function handleProjectFileLibraryRoutes(args: {
   if (routeKind === 'fileLibraryRestorePreview' && method === 'GET') {
     const restoreRepo = new JsonDocFileLibraryRestorePreviewRepo(deps.docStore);
     try {
-      const active = await findReconciledActiveRestorePreview({
+      const active = await findReconciledDisplayableRestorePreview({
         deps,
         restoreRepo,
         workspaceId,

@@ -248,6 +248,13 @@ type TerminalSessionScopeInput = {
   sessionId: string;
 };
 
+type TerminalSessionFinalizationWaiter = {
+  promise: Promise<void>;
+  resolve: () => void;
+  reject: (error: unknown) => void;
+  timeout?: NodeJS.Timeout;
+};
+
 export type NotebookTerminalAuthorizationInput = {
   workspaceId: string;
   projectId: string;
@@ -270,6 +277,7 @@ type NotebookTerminalAuthorizationHooks = {
 export class NotebookTerminalService {
   private readonly wsServer: WebSocketServer;
   private readonly sessions = new Map<string, RegisteredTerminalSession>();
+  private readonly finalizationWaiters = new Map<string, TerminalSessionFinalizationWaiter>();
   private configuredLifecycleHooks: NotebookTerminalLifecycleHooks = {};
   private readonly registeredLifecycleHooks = new Map<string, NotebookTerminalLifecycleHooks>();
   private configuredAuthorizationHooks: NotebookTerminalAuthorizationHooks = {};
@@ -360,6 +368,104 @@ export class NotebookTerminalService {
     await this.callLifecycleHooks(session, 'onSessionClosed');
   }
 
+  private ensureFinalizationWaiter(sessionId: string, deadlineAt?: string): TerminalSessionFinalizationWaiter {
+    let waiter = this.finalizationWaiters.get(sessionId);
+    if (!waiter) {
+      let resolveWaiter!: () => void;
+      let rejectWaiter!: (error: unknown) => void;
+      const promise = new Promise<void>((resolve, reject) => {
+        resolveWaiter = resolve;
+        rejectWaiter = reject;
+      });
+      waiter = {
+        promise,
+        resolve: resolveWaiter,
+        reject: rejectWaiter,
+      };
+      this.finalizationWaiters.set(sessionId, waiter);
+    }
+    if (!waiter.timeout) {
+      const deadlineMs = deadlineAt ? Date.parse(deadlineAt) : NaN;
+      const timeoutMs = Number.isFinite(deadlineMs)
+        ? Math.max(0, deadlineMs - Date.now())
+        : this.closeTimeoutMs;
+      waiter.timeout = setTimeout(() => {
+        void this.expireClosingSession(sessionId).catch((error) => {
+          this.rejectFinalizationWaiter(sessionId, error);
+        });
+      }, timeoutMs);
+      if (typeof waiter.timeout.unref === 'function') {
+        waiter.timeout.unref();
+      }
+    }
+    return waiter;
+  }
+
+  private resolveFinalizationWaiter(sessionId: string): void {
+    const waiter = this.finalizationWaiters.get(sessionId);
+    if (!waiter) return;
+    if (waiter.timeout) clearTimeout(waiter.timeout);
+    this.finalizationWaiters.delete(sessionId);
+    waiter.resolve();
+  }
+
+  private rejectFinalizationWaiter(sessionId: string, error: unknown): void {
+    const waiter = this.finalizationWaiters.get(sessionId);
+    if (!waiter) return;
+    if (waiter.timeout) clearTimeout(waiter.timeout);
+    this.finalizationWaiters.delete(sessionId);
+    waiter.reject(error);
+  }
+
+  private async waitForSessionFinalization(session: RegisteredTerminalSession): Promise<void> {
+    const existingWaiter = this.finalizationWaiters.get(session.id);
+    if (existingWaiter) {
+      await existingWaiter.promise;
+      return;
+    }
+    if (session.status === 'closed' || session.status === 'failed') {
+      return;
+    }
+    await this.ensureFinalizationWaiter(session.id, session.closeDeadlineAt).promise;
+  }
+
+  private async expireClosingSession(sessionId: string): Promise<void> {
+    const session = this.sessions.get(sessionId);
+    if (!session) {
+      this.resolveFinalizationWaiter(sessionId);
+      return;
+    }
+    if (session.status === 'closed' || session.status === 'failed') {
+      this.resolveFinalizationWaiter(sessionId);
+      return;
+    }
+    if (session.lifecycleStatus !== 'closing') {
+      return;
+    }
+    session.closeState = 'expired';
+    session.closeResult = undefined;
+    session.closeDiagnosticCode = session.closeDiagnosticCode ?? 'close_tombstone_timeout';
+    session.failureKind = 'terminal_process_lost';
+    await this.finishSession(session.id, 'failed', 'close_tombstone_timeout');
+  }
+
+  private async persistAndNotifyFinalSession(
+    session: RegisteredTerminalSession,
+    status: 'closed' | 'failed',
+  ): Promise<void> {
+    try {
+      await this.persistSession(session);
+      if (status === 'closed') {
+        await this.forgetTaskSession(session);
+      }
+      await this.notifySessionClosed(session);
+      this.resolveFinalizationWaiter(session.id);
+    } catch (error) {
+      this.rejectFinalizationWaiter(session.id, error);
+      throw error;
+    }
+  }
+
   private async callLifecycleHooks(
     session: RegisteredTerminalSession,
     hookName: keyof NotebookTerminalLifecycleHooks,
@@ -430,7 +536,7 @@ export class NotebookTerminalService {
       error_message: errorMessage,
     });
     if (this.canFailUnestablishedSession(session)) {
-      this.finishSession(session.id, 'failed', closeReason);
+      void this.finishSession(session.id, 'failed', closeReason).catch(() => undefined);
     }
     this.closeBrowserSocket(socket, 1008, closeReason);
   }
@@ -743,8 +849,7 @@ export class NotebookTerminalService {
       session.runtimeReady = false;
       session.runtimeDispatchPromise = undefined;
       session.streamBound = false;
-      await this.persistSession(session);
-      void this.notifySessionClosed(session);
+      await this.persistAndNotifyFinalSession(session, 'failed');
       return session;
     }
     if (
@@ -768,8 +873,7 @@ export class NotebookTerminalService {
       session.runtimeReady = false;
       session.runtimeDispatchPromise = undefined;
       session.streamBound = false;
-      await this.persistSession(session);
-      void this.notifySessionClosed(session);
+      await this.persistAndNotifyFinalSession(session, 'failed');
       return session;
     }
     return session;
@@ -1124,7 +1228,7 @@ export class NotebookTerminalService {
     });
     this.closeBrowserSocket(socket, 1011, 'terminal_runtime_session_mismatch');
     session.runtime?.close();
-    this.finishSession(session.id, 'failed', 'terminal_runtime_session_mismatch');
+    void this.finishSession(session.id, 'failed', 'terminal_runtime_session_mismatch').catch(() => undefined);
   }
 
   private buildReplayPlan(
@@ -1262,8 +1366,7 @@ export class NotebookTerminalService {
       session.closeReason = 'runner_process_exited';
       session.endedAt = now;
       session.lastActivityAt = now;
-      await this.persistSession(session);
-      void this.notifySessionClosed(session);
+      await this.persistAndNotifyFinalSession(session, 'failed');
       this.queueOrSendBrowserPayload(session, {
         type: 'terminal.error',
         terminal_session_id: session.id,
@@ -1441,7 +1544,7 @@ export class NotebookTerminalService {
         return;
       }
       this.closeBrowserSocket(session.browserSocket, 1000, 'terminal_complete');
-      this.finishSession(
+      await this.finishSession(
         session.id,
         session.status === 'failed' ? 'failed' : 'closed',
         session.closeReason ?? 'terminal_complete',
@@ -1455,7 +1558,7 @@ export class NotebookTerminalService {
         return;
       }
       this.closeBrowserSocket(session.browserSocket, 1011, 'terminal_stream_failed');
-      this.finishSession(session.id, 'failed', 'terminal_stream_failed');
+      void this.finishSession(session.id, 'failed', 'terminal_stream_failed').catch(() => undefined);
     });
   }
 
@@ -1589,7 +1692,7 @@ export class NotebookTerminalService {
       });
       this.closeBrowserSocket(session.browserSocket, 1011, 'terminal_start_timeout');
       session.runtime?.close();
-      this.finishSession(session.id, 'failed', 'terminal_start_timeout');
+      void this.finishSession(session.id, 'failed', 'terminal_start_timeout').catch(() => undefined);
     }, this.startupTimeoutMs);
   }
 
@@ -1892,7 +1995,7 @@ export class NotebookTerminalService {
       }
     ).adoptTerminalSession;
     if (typeof adoptTerminalSession !== 'function') {
-      this.finishSession(refreshed.id, 'failed', 'runner_recovery_timeout');
+      await this.finishSession(refreshed.id, 'failed', 'runner_recovery_timeout');
       return;
     }
 
@@ -1920,7 +2023,7 @@ export class NotebookTerminalService {
       this.bindRuntimeStream(refreshed);
       await this.persistSession(refreshed);
     } catch {
-      this.finishSession(refreshed.id, 'failed', 'runner_recovery_timeout');
+      await this.finishSession(refreshed.id, 'failed', 'runner_recovery_timeout');
     }
   }
 
@@ -2025,18 +2128,7 @@ export class NotebookTerminalService {
         session.closeRemainingPidCount = event.remainingPidCount;
       }
       session.failureKind = null;
-      this.finishSession(session.id, 'closed', session.closeReason ?? 'ended_by_user', 0);
-      session.closeState = 'acked';
-      session.closeResult = event.status;
-      session.closeDiagnosticCode = event.status === 'not_found'
-        ? 'terminal_process_missing_on_close'
-        : event.diagnosticCode;
-      if (typeof event.remainingPidCount === 'number') {
-        session.closeRemainingPidCount = event.remainingPidCount;
-      }
-      session.failureKind = null;
-      await this.persistSession(session);
-      await this.forgetTaskSession(session);
+      await this.finishSession(session.id, 'closed', session.closeReason ?? 'ended_by_user', 0);
       return;
     }
     session.closeState = 'delivered';
@@ -2153,6 +2245,7 @@ export class NotebookTerminalService {
     taskId: string;
     userId: string;
     sessionId: string;
+    waitForFinalization?: boolean;
   }): Promise<boolean> {
     const liveSession = this.sessions.get(input.sessionId);
     if (liveSession && !this.matchesSessionScope(liveSession, input)) {
@@ -2188,11 +2281,18 @@ export class NotebookTerminalService {
       if (!liveSession && !this.sessions.has(session.id)) {
         this.sessions.set(session.id, session);
       }
-      return this.beginCloseTombstone(session);
+      const closeStarted = await this.beginCloseTombstone(session);
+      if (!closeStarted) {
+        return false;
+      }
+      if (input.waitForFinalization === true) {
+        await this.waitForSessionFinalization(session);
+      }
+      return true;
     }
     this.closeBrowserSocket(session.browserSocket, 1000, 'terminal_closed_by_user');
     if (liveSession && this.sessions.has(session.id)) {
-      this.finishSession(session.id, 'closed', 'ended_by_user');
+      await this.finishSession(session.id, 'closed', 'ended_by_user');
     }
     this.sessions.delete(session.id);
     await this.cache.del(this.sessionCacheKey(session.id));
@@ -2323,7 +2423,7 @@ export class NotebookTerminalService {
           return;
         }
         if (this.canFailUnestablishedSession(session)) {
-          this.finishSession(session.id, 'closed', 'browser_disconnected_before_handshake');
+          void this.finishSession(session.id, 'closed', 'browser_disconnected_before_handshake').catch(() => undefined);
           return;
         }
       }
@@ -2350,7 +2450,7 @@ export class NotebookTerminalService {
           return;
         }
         if (this.canFailUnestablishedSession(session)) {
-          this.finishSession(session.id, 'failed', 'browser_socket_error_before_handshake');
+          void this.finishSession(session.id, 'failed', 'browser_socket_error_before_handshake').catch(() => undefined);
           return;
         }
       }
@@ -2561,7 +2661,7 @@ export class NotebookTerminalService {
         error_message: message,
       });
       this.closeBrowserSocket(ws, 1011, 'terminal_dispatch_failed');
-      this.finishSession(session.id, 'failed', message);
+      void this.finishSession(session.id, 'failed', message).catch(() => undefined);
     }
   }
 
@@ -2672,12 +2772,12 @@ export class NotebookTerminalService {
     }
   }
 
-  private finishSession(
+  private async finishSession(
     sessionId: string,
     status: 'closed' | 'failed',
     closeReason?: string,
     exitCode?: number | null,
-  ): void {
+  ): Promise<void> {
     const session = this.sessions.get(sessionId);
     if (!session) return;
     this.clearDisconnectTimer(session);
@@ -2713,11 +2813,7 @@ export class NotebookTerminalService {
     session.runtimeReady = false;
     session.runtimeDispatchPromise = undefined;
     session.streamBound = false;
-    void this.persistSession(session);
-    if (status === 'closed') {
-      void this.forgetTaskSession(session);
-    }
-    void this.notifySessionClosed(session);
+    await this.persistAndNotifyFinalSession(session, status);
   }
 
   async shutdown(): Promise<void> {

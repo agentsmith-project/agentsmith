@@ -7,6 +7,7 @@ import { InMemoryJsonDocStore } from '@mbos/adapters-private';
 import { handleProjectFileLibraryRoutes } from './project-file-library-routes.js';
 import {
   JsonDocFileLibraryRestorePreviewRepo,
+  JsonDocFileLibrarySavePointMappingRepo,
   JsonDocProjectFileLibraryCatalogRepo,
   JsonDocProjectTaskFileTemplateRepo,
 } from './file-library-persistence.js';
@@ -1756,6 +1757,211 @@ describe('project-file-library-routes', () => {
       }),
     });
     expect(JSON.stringify(getJson.mock.calls)).not.toMatch(/op_preview_long|repo_|plan_|1778481131647-4d2e0211|sp_user_|credential|control_root/);
+  });
+
+  it('returns failed restore preview projections after async AFSCP failure without blocking retry or templates', async () => {
+    const createRestorePreview = vi.fn()
+      .mockResolvedValueOnce({
+        operationId: 'op_preview_failed_hidden',
+        operationStatus: 'pending' as const,
+        restorePlanId: null,
+        sourceSavePointId: 'sp_user_001',
+      })
+      .mockResolvedValueOnce({
+        operationId: 'op_preview_retry_hidden',
+        operationStatus: 'succeeded' as const,
+        restorePlanId: 'plan_retry_hidden',
+        sourceSavePointId: 'sp_user_001',
+        summary: {
+          added: { count: 0, samples: [] },
+          changed: { count: 0, samples: [] },
+          removed: { count: 1, samples: ['tmp/deleted.txt'] },
+          destructive: true,
+        },
+        blockers: [],
+        stale: false,
+      });
+    const reconcileRestorePreview = vi.fn(async () => ({
+      operationId: 'op_preview_failed_hidden',
+      operationStatus: 'failed' as const,
+      restorePlanId: null,
+      sourceSavePointId: 'sp_user_001',
+    }));
+    const storageAdapter = createStorageAdapter({
+      createRestorePreview,
+      reconcileRestorePreview,
+    } as Partial<FileLibraryStoragePort> & {
+      createRestorePreview: typeof createRestorePreview;
+      reconcileRestorePreview: typeof reconcileRestorePreview;
+    });
+    const deps = createDeps({ storageAdapter });
+    const created = await createReadyLibrary(deps);
+    const libraryId = String(created.id);
+
+    const savePointJson = vi.fn();
+    await handleProjectFileLibraryRoutes({
+      routeKind: 'fileLibrarySavePoints',
+      method: 'POST',
+      workspaceId: 'ws_default',
+      projectId: 'proj_1',
+      libraryId,
+      req: { headers: {} } as never,
+      res: createMockResponse(),
+      deps,
+      user: OWNER_USER,
+      json: savePointJson,
+      readBody: vi.fn().mockResolvedValue({ message: 'Before restore' }),
+    });
+    const savePoint = savePointJson.mock.calls[0]?.[2] as Record<string, unknown>;
+
+    const previewJson = vi.fn();
+    await expect(handleProjectFileLibraryRoutes({
+      routeKind: 'fileLibraryRestorePreview',
+      method: 'POST',
+      workspaceId: 'ws_default',
+      projectId: 'proj_1',
+      libraryId,
+      req: { headers: { 'x-request-id': 'req_restore_preview_async_failure' } } as never,
+      res: createMockResponse(),
+      deps,
+      user: OWNER_USER,
+      json: previewJson,
+      readBody: vi.fn().mockResolvedValue({ save_point_id: savePoint.id }),
+    })).resolves.toBe(true);
+    const preview = previewJson.mock.calls[0]?.[2] as Record<string, unknown>;
+    expect(preview).toMatchObject({ status: 'previewing' });
+
+    const getJson = vi.fn();
+    await expect(handleProjectFileLibraryRoutes({
+      routeKind: 'fileLibraryRestorePreview',
+      method: 'GET',
+      workspaceId: 'ws_default',
+      projectId: 'proj_1',
+      libraryId,
+      req: { headers: { 'x-request-id': 'req_restore_preview_failed_poll' } } as never,
+      res: createMockResponse(),
+      deps,
+      user: OWNER_USER,
+      json: getJson,
+      readBody: vi.fn(),
+    })).resolves.toBe(true);
+
+    expect(getJson).toHaveBeenCalledWith(expect.anything(), 200, {
+      restore_preview: expect.objectContaining({
+        id: preview.id,
+        file_library_id: libraryId,
+        source_save_point_id: savePoint.id,
+        status: 'failed',
+      }),
+    });
+
+    const templateJson = vi.fn();
+    await expect(handleProjectFileLibraryRoutes({
+      routeKind: 'taskFileTemplates',
+      method: 'POST',
+      workspaceId: 'ws_default',
+      projectId: 'proj_1',
+      req: { headers: { 'x-request-id': 'req_template_after_failed_preview' } } as never,
+      res: createMockResponse(),
+      deps,
+      user: OWNER_USER,
+      json: templateJson,
+      readBody: vi.fn().mockResolvedValue({
+        name: 'Template after failed preview',
+        source_library_id: libraryId,
+      }),
+    })).resolves.toBe(true);
+    expect(templateJson.mock.calls[0]?.[1]).toBe(201);
+    expect(storageAdapter.createTemplateFromLibrary).toHaveBeenCalledWith(expect.objectContaining({
+      libraryId,
+    }));
+
+    const retryJson = vi.fn();
+    await expect(handleProjectFileLibraryRoutes({
+      routeKind: 'fileLibraryRestorePreview',
+      method: 'POST',
+      workspaceId: 'ws_default',
+      projectId: 'proj_1',
+      libraryId,
+      req: { headers: { 'x-request-id': 'req_restore_preview_retry' } } as never,
+      res: createMockResponse(),
+      deps,
+      user: OWNER_USER,
+      json: retryJson,
+      readBody: vi.fn().mockResolvedValue({ save_point_id: savePoint.id }),
+    })).resolves.toBe(true);
+    expect(retryJson.mock.calls[0]?.[1]).toBe(201);
+    expect(retryJson.mock.calls[0]?.[2]).toMatchObject({
+      file_library_id: libraryId,
+      source_save_point_id: savePoint.id,
+      status: 'ready',
+    });
+    expect(JSON.stringify([getJson.mock.calls, retryJson.mock.calls, templateJson.mock.calls]))
+      .not.toMatch(/op_preview_failed_hidden|op_preview_retry_hidden|repo_|plan_|sp_user_|credential|control_root/);
+  });
+
+  it('serves cached save points instead of list-failed while a restore preview projection is active', async () => {
+    const storageAdapter = createStorageAdapter({
+      listSavePoints: vi.fn(async () => {
+        throw new Error('file_library_save_point_list_failed repo_hidden_elsewhere metadata_url=postgres://db');
+      }),
+      reconcileRestorePreview: vi.fn(async () => ({
+        operationId: 'op_preview_long_hidden',
+        operationStatus: 'pending' as const,
+        restorePlanId: null,
+        sourceSavePointId: 'sp_cached_001',
+      })),
+    });
+    const deps = createDeps({ storageAdapter });
+    const created = await createReadyLibrary(deps);
+    const libraryId = String(created.id);
+    const savePointRepo = new JsonDocFileLibrarySavePointMappingRepo(deps.docStore);
+    const cachedSavePoint = await savePointRepo.upsertFromAfscp({
+      workspaceId: 'ws_default',
+      projectId: 'proj_1',
+      libraryId,
+      afscpSavePointId: 'sp_cached_001',
+      message: 'Cached before restore',
+      createdAt: '2026-05-09T00:00:00.000Z',
+      purpose: 'user',
+    });
+    await new JsonDocFileLibraryRestorePreviewRepo(deps.docStore).create({
+      id: 'flrp_active_cached_list',
+      workspaceId: 'ws_default',
+      projectId: 'proj_1',
+      libraryId,
+      afscpPreviewOperationId: 'op_preview_long_hidden',
+      activeAfscpOperationId: 'op_preview_long_hidden',
+      sourceSavePointId: cachedSavePoint.id,
+      sourceAfscpSavePointId: 'sp_cached_001',
+      status: 'previewing',
+    });
+
+    const listJson = vi.fn();
+    await expect(handleProjectFileLibraryRoutes({
+      routeKind: 'fileLibrarySavePoints',
+      method: 'GET',
+      workspaceId: 'ws_default',
+      projectId: 'proj_1',
+      libraryId,
+      req: { headers: { 'x-request-id': 'req_save_points_list_during_preview' } } as never,
+      res: createMockResponse(),
+      deps,
+      user: OWNER_USER,
+      json: listJson,
+      readBody: vi.fn(),
+    })).resolves.toBe(true);
+
+    expect(listJson).toHaveBeenCalledWith(expect.anything(), 200, {
+      items: [
+        expect.objectContaining({
+          id: cachedSavePoint.id,
+          file_library_id: libraryId,
+          message: 'Cached before restore',
+        }),
+      ],
+    });
+    expect(JSON.stringify(listJson.mock.calls)).not.toMatch(/FILE_LIBRARY_SAVE_POINT_LIST_FAILED|repo_hidden_elsewhere|metadata_url|postgres|op_preview_long_hidden|sp_cached_001|credential|control_root/);
   });
 
   it('does not return terminal restore previews as active blockers after reconcile', async () => {

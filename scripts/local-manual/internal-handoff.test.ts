@@ -76,7 +76,10 @@ function runExternalModeRestore(): { log: string; stateExists: string } {
   }
 }
 
-function runInternalCommonSnippet(script: string): { stdout: string; stderr: string; status: number | null } {
+function runInternalCommonSnippet(
+  script: string,
+  extraEnv: Record<string, string> = {},
+): { stdout: string; stderr: string; status: number | null } {
   const repoRoot = process.cwd();
   const tempRoot = mkdtempSync(path.join(os.tmpdir(), 'local-manual-internal-jvs-'));
   const backendRealRoot = path.join(tempRoot, 'backend-real', 'current');
@@ -105,7 +108,7 @@ function runInternalCommonSnippet(script: string): { stdout: string; stderr: str
       ],
       {
         cwd: repoRoot,
-        env: { ...process.env },
+        env: { ...process.env, ...extraEnv },
         encoding: 'utf8',
         stdio: 'pipe',
       },
@@ -375,7 +378,10 @@ describe('local-manual internal handoff', () => {
 
     expect(common).toContain('resolve_afscp_jvs_binary()');
     expect(common).toContain('prepare_afscp_jvs_release_artifact()');
-    expect(common).toContain('AFSCP_JVS_RELEASE_CACHE_DIR="${AFSCP_JVS_RELEASE_CACHE_DIR:-${INTERNAL_REAL_DIR}/jvs-release}"');
+    expect(common.indexOf('AFSCP_JVS_RELEASE_VERSION=')).toBeLessThan(
+      common.indexOf('AFSCP_JVS_RELEASE_CACHE_DIR='),
+    );
+    expect(common).toContain('AFSCP_JVS_RELEASE_CACHE_DIR="${AFSCP_JVS_RELEASE_CACHE_DIR:-${INTERNAL_REAL_DIR}/jvs-release/${AFSCP_JVS_RELEASE_VERSION}}"');
     expect(common).toContain('AFSCP_JVS_RELEASE_SHA256SUMS_CACHE_PATH="${AFSCP_JVS_RELEASE_SHA256SUMS_CACHE_PATH:-${AFSCP_JVS_RELEASE_CACHE_DIR}/SHA256SUMS}"');
     expect(common).toContain('AFSCP_JVS_RELEASE_BASE_URL');
     expect(common).toContain('AFSCP_JVS_RELEASE_URL="${AFSCP_JVS_RELEASE_URL:-${AFSCP_JVS_RELEASE_BASE_URL}/${AFSCP_JVS_RELEASE_BINARY_NAME}}"');
@@ -390,8 +396,8 @@ describe('local-manual internal handoff', () => {
     const envSource = readFileSync('infra/flows/local-manual-internal.env', 'utf8');
 
     expect(envSource).toContain('local development/test dependency config');
-    expect(envSource).toContain('AFSCP_JVS_RELEASE_URL=https://github.com/agentsmith-project/jvs/releases/download/v0.4.8/jvs-linux-amd64');
-    expect(envSource).toContain('AFSCP_JVS_SHA256SUMS_URL=https://github.com/agentsmith-project/jvs/releases/download/v0.4.8/SHA256SUMS');
+    expect(envSource).toContain('AFSCP_JVS_RELEASE_URL=https://github.com/agentsmith-project/jvs/releases/download/v0.4.9/jvs-linux-amd64');
+    expect(envSource).toContain('AFSCP_JVS_SHA256SUMS_URL=https://github.com/agentsmith-project/jvs/releases/download/v0.4.9/SHA256SUMS');
   });
 
   it('keeps the AFSCP WebDAV public base URL separate from the gateway route prefix', () => {
@@ -419,15 +425,39 @@ describe('local-manual internal handoff', () => {
     expect(result.stdout).toContain('gateway_prefix=/e/\n');
   });
 
-  it('defaults JVS release URLs in internal-common when the env file is not carrying them', () => {
+  it('defaults JVS release URLs and versioned cache paths in internal-common when the env file is not carrying them', () => {
     const result = runInternalCommonSnippet(`
+      printf 'cache=%s\\n' "$AFSCP_JVS_RELEASE_CACHE_DIR"
+      printf 'binary_cache=%s\\n' "$AFSCP_JVS_RELEASE_BINARY_CACHE_PATH"
+      printf 'sums_cache=%s\\n' "$AFSCP_JVS_RELEASE_SHA256SUMS_CACHE_PATH"
       printf 'release=%s\\n' "$AFSCP_JVS_RELEASE_URL"
       printf 'sums=%s\\n' "$AFSCP_JVS_SHA256SUMS_URL"
     `);
 
     expect(result.status).toBe(0);
-    expect(result.stdout).toContain('release=https://github.com/agentsmith-project/jvs/releases/download/v0.4.8/jvs-linux-amd64');
-    expect(result.stdout).toContain('sums=https://github.com/agentsmith-project/jvs/releases/download/v0.4.8/SHA256SUMS');
+    expect(result.stdout).toContain('/jvs-release/v0.4.9\n');
+    expect(result.stdout).toContain('/jvs-release/v0.4.9/jvs-linux-amd64\n');
+    expect(result.stdout).toContain('/jvs-release/v0.4.9/SHA256SUMS\n');
+    expect(result.stdout).toContain('release=https://github.com/agentsmith-project/jvs/releases/download/v0.4.9/jvs-linux-amd64');
+    expect(result.stdout).toContain('sums=https://github.com/agentsmith-project/jvs/releases/download/v0.4.9/SHA256SUMS');
+  });
+
+  it('preserves explicit JVS release cache dir overrides while deriving child cache paths from them', () => {
+    const customCacheDir = '/tmp/agentsmith-explicit-jvs-cache';
+    const result = runInternalCommonSnippet(
+      `
+        printf 'cache=%s\\n' "$AFSCP_JVS_RELEASE_CACHE_DIR"
+        printf 'binary_cache=%s\\n' "$AFSCP_JVS_RELEASE_BINARY_CACHE_PATH"
+        printf 'sums_cache=%s\\n' "$AFSCP_JVS_RELEASE_SHA256SUMS_CACHE_PATH"
+      `,
+      { AFSCP_JVS_RELEASE_CACHE_DIR: customCacheDir },
+    );
+
+    expect(result.status).toBe(0);
+    expect(result.stdout).toContain(`cache=${customCacheDir}\n`);
+    expect(result.stdout).toContain(`binary_cache=${customCacheDir}/jvs-linux-amd64\n`);
+    expect(result.stdout).toContain(`sums_cache=${customCacheDir}/SHA256SUMS\n`);
+    expect(result.stdout).not.toContain(`${customCacheDir}/v0.4.9`);
   });
 
   it('writes local-real AFSCP host-side Postgres DSNs with explicit non-SSL defaults', () => {

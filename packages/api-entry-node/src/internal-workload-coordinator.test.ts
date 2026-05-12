@@ -231,6 +231,43 @@ describe('InternalWorkloadCoordinator', () => {
     await coordinator.shutdown();
   });
 
+  it('keeps an immediate hard teardown request pending until releasePod finishes', async () => {
+    const keepalive = vi.fn(async () => undefined);
+    const releaseDrain = createDeferred<void>();
+    const releasePod = vi.fn(async () => {
+      await releaseDrain.promise;
+    });
+    const coordinator = new InternalWorkloadCoordinator(
+      {
+        keepalive,
+        releasePod,
+      } as never,
+      {
+        keepaliveIntervalMs: 1_000,
+      },
+    );
+
+    const teardown = coordinator.requestHardTeardown({
+      workspaceId: 'ws_default',
+      projectId: 'proj_1',
+      workloadId: 'chat_session_drain',
+    });
+    const teardownResult = vi.fn();
+    void teardown.then(teardownResult, teardownResult);
+
+    await vi.waitFor(() => {
+      expect(releasePod).toHaveBeenCalledTimes(1);
+    });
+    expect(teardownResult).not.toHaveBeenCalled();
+
+    releaseDrain.resolve();
+    await expect(teardown).resolves.toBeUndefined();
+    expect(teardownResult).toHaveBeenCalledTimes(1);
+    expect(coordinator.readSnapshotForTests()).toEqual([]);
+
+    await coordinator.shutdown();
+  });
+
   it('rejects a late holder for an epoch after accepted hard teardown completes but allows a new epoch', async () => {
     const keepalive = vi.fn(async () => undefined);
     const releasePod = vi.fn(async () => undefined);

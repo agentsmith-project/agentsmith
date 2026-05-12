@@ -38,6 +38,7 @@ export type TerminalProcess = {
   kill(signal?: NodeJS.Signals): void;
   onData(listener: (chunk: string) => void): void;
   onExit(listener: (event: { exitCode: number | null; signal?: string | number | null }) => void): void;
+  waitForWorkspaceRelease(): Promise<void>;
 };
 
 function debugTerminalRuntime(message: string, extra?: Record<string, unknown>): void {
@@ -328,6 +329,9 @@ export async function startTerminalProcess(input: {
       },
       onExit(listener: (event: { exitCode: number; signal?: number }) => void) {
         child.onExit(listener);
+      },
+      waitForWorkspaceRelease() {
+        return releasePreparedWorkspace();
       },
     },
     cwd: prepared.cwd,

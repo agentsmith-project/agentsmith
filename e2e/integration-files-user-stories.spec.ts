@@ -1,17 +1,17 @@
+import { readFileSync } from 'node:fs';
+import { resolve } from 'node:path';
 import { expect, test, type APIResponse, type Locator, type Page } from '@playwright/test';
 import {
   API_BASE,
-  BACKEND_REAL_MODEL,
-  BACKEND_REAL_OPENAI_BASE_URL,
   KEYCLOAK_DEV_ADMIN_PASSWORD,
   KEYCLOAK_DEV_ADMIN_USERNAME,
   LOCALE,
-  createCredentialViaUi,
-  createEndpointViaApi,
-  createManagedAgentRunnerViaApi,
   createProjectInWorkspace,
-  ensureAgentTaskModelSettingViaApi,
+  createTerminalSessionViaApi,
+  deleteTerminalSessionViaApi,
+  expectTerminalSessionRunnerEvidenceViaApi,
   keycloakLoginToWorkspace,
+  runTerminalCommandInSession,
   startAgentTaskRunViaApi,
   waitForRunnerOutputToken,
 } from './integration-real-helpers';
@@ -21,22 +21,6 @@ const WORKSPACE_ID = 'ws_default';
 const DEMO_PROJECT_NAME = 'Codex Agent Regression';
 const MANY_LIBRARY_COUNT = 16;
 const CREATE_NEW_TASK_REQUEST_TIMEOUT_MS = 60_000;
-
-function resolveProviderCredentialValue() {
-  return process.env.BACKEND_REAL_API_KEY?.trim() || 'sk-files-user-story-model-setup';
-}
-
-function ensureManagedRunnerSeedEnv() {
-  if (!process.env.MONGO_URL?.trim()) {
-    const mongoPort = process.env.SUBSTRATE_MONGO_PORT?.trim()
-      || process.env.INTEGRATION_MONGO_PORT?.trim()
-      || '17017';
-    process.env.MONGO_URL = `mongodb://mbos:mbos_dev_password@localhost:${mongoPort}/admin`;
-  }
-  if (!process.env.MONGO_DB_NAME?.trim()) {
-    process.env.MONGO_DB_NAME = process.env.SUBSTRATE_MONGO_DB?.trim() || 'mbos';
-  }
-}
 
 type FileLibraryListItem = {
   id: string;
@@ -63,6 +47,16 @@ type FileObjectListItem = {
 type TaskArtifactListItem = {
   id?: string;
   task_relative_path?: string;
+};
+
+type RestorePreviewProjection = {
+  restore_preview?: {
+    id?: string;
+    status?: string;
+    stale?: boolean;
+    blockers?: unknown[];
+    updated_at?: string;
+  } | null;
 };
 
 function asRecord(value: unknown): Record<string, unknown> | null {
@@ -117,10 +111,66 @@ function escapeRegex(value: string): string {
   return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 }
 
+function buildSineSvgContent(token: string): string {
+  const points = Array.from({ length: 41 }, (_, index) => {
+    const x = 20 + index * 7;
+    const y = 60 - Math.sin((index / 40) * Math.PI * 2) * 32;
+    return `${x.toFixed(2)},${y.toFixed(2)}`;
+  }).join(' ');
+
+  return [
+    '<svg xmlns="http://www.w3.org/2000/svg" width="320" height="120" viewBox="0 0 320 120" role="img" aria-label="Agent generated sine artifact">',
+    '  <rect width="320" height="120" fill="#ffffff"/>',
+    '  <line x1="20" y1="60" x2="300" y2="60" stroke="#d1d5db" stroke-width="1"/>',
+    `  <polyline points="${points}" fill="none" stroke="#2563eb" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>`,
+    `  <text x="20" y="104" font-family="monospace" font-size="10" fill="#111827">${token}</text>`,
+    '</svg>',
+  ].join('\n');
+}
+
+function readBackendRealEnvValue(key: string): string | null {
+  const direct = process.env[key]?.trim();
+  if (direct) return direct;
+  try {
+    const envText = readFileSync(resolve(process.cwd(), '.env.backend-real'), 'utf8');
+    for (const line of envText.split(/\r?\n/)) {
+      const trimmed = line.trim();
+      if (!trimmed || trimmed.startsWith('#')) continue;
+      const separator = trimmed.indexOf('=');
+      if (separator <= 0) continue;
+      if (trimmed.slice(0, separator).trim() !== key) continue;
+      return trimmed
+        .slice(separator + 1)
+        .trim()
+        .replace(/^['"]|['"]$/g, '') || null;
+    }
+  } catch {
+    return null;
+  }
+  return null;
+}
+
+function isPlaceholderModel(value: string | null | undefined): boolean {
+  const normalized = value?.trim().toLowerCase() ?? '';
+  return !normalized || normalized === 'placeholder-model';
+}
+
 async function authHeaders(page: Page): Promise<{ Authorization: string }> {
   const token = await readStoredAuthToken(page);
   expect(token).toBeTruthy();
   return { Authorization: `Bearer ${token}` };
+}
+
+function truncateEvidence(value: string, maxLength = 1600): string {
+  return value.length > maxLength ? `${value.slice(0, maxLength)}...<truncated>` : value;
+}
+
+function parseJsonEvidence(body: string): unknown {
+  try {
+    return JSON.parse(body) as unknown;
+  } catch {
+    return body;
+  }
 }
 
 async function createFileLibraryViaApi(args: {
@@ -522,7 +572,12 @@ async function deleteAgentTaskViaApi(args: {
   expect(response.ok(), await response.text()).toBe(true);
 }
 
-async function resolveDemoProjectAndRunner(page: Page): Promise<{ projectId: string; runnerId: string }> {
+async function resolveDemoProjectAndRunner(page: Page): Promise<{
+  projectId: string;
+  runnerId: string;
+  endpointId: string;
+  model: string;
+}> {
   const headers = await authHeaders(page);
   const projectsResponse = await page.request.get(
     `${API_BASE}/api/v1/workspaces/${WORKSPACE_ID}/projects?page=1&page_size=100`,
@@ -541,55 +596,89 @@ async function resolveDemoProjectAndRunner(page: Page): Promise<{ projectId: str
   );
   expect(runnersResponse.ok()).toBeTruthy();
   const runnersPayload = (await runnersResponse.json()) as {
-    items?: Array<{ id: string; is_default?: boolean; status?: string | null }>;
+    items?: Array<{
+      id: string;
+      is_default?: boolean;
+      status?: string | null;
+      default_endpoint_id?: string | null;
+    }>;
   };
   const runner = runnersPayload.items?.find((item) => item.is_default === true) ?? runnersPayload.items?.[0];
   expect(runner?.id).toBeTruthy();
   expect(runner?.status ?? 'ready').toMatch(/ready|connected/);
 
+  const settingResponse = await page.request.get(
+    `${API_BASE}/api/v1/workspaces/${WORKSPACE_ID}/projects/${projectId}/agent-task-model-setting`,
+    { headers },
+  );
+  expect(settingResponse.ok(), await settingResponse.text()).toBeTruthy();
+  const settingPayload = (await settingResponse.json()) as {
+    readiness?: { state?: string | null };
+    setting?: {
+      endpoint_id?: string | null;
+      default_model?: string | null;
+      default_model_id?: string | null;
+    } | null;
+  };
+  expect(settingPayload.readiness?.state ?? 'ready').toMatch(/^ready$/i);
+  const endpointId = settingPayload.setting?.endpoint_id?.trim()
+    || runner?.default_endpoint_id?.trim()
+    || '';
+  expect(endpointId).toBeTruthy();
+
+  const endpointsResponse = await page.request.get(
+    `${API_BASE}/api/v1/workspaces/${WORKSPACE_ID}/projects/${projectId}/endpoints?page=1&page_size=100`,
+    { headers },
+  );
+  expect(endpointsResponse.ok(), await endpointsResponse.text()).toBeTruthy();
+  const endpointsPayload = (await endpointsResponse.json()) as {
+    items?: Array<{
+      id?: string;
+      model?: string | null;
+      status?: string | null;
+      base_url?: string | null;
+    }>;
+  };
+  const endpoint = endpointsPayload.items?.find((item) => item.id === endpointId);
+  expect(endpoint?.id).toBe(endpointId);
+  expect(endpoint?.status ?? 'active').toMatch(/active|ready|connected/i);
+  const model = endpoint?.model?.trim()
+    || settingPayload.setting?.default_model?.trim()
+    || settingPayload.setting?.default_model_id?.trim()
+    || '';
+  const configuredModelHint = readBackendRealEnvValue('BACKEND_REAL_MODEL')
+    || readBackendRealEnvValue('PRESET_ENDPOINT_MODEL')
+    || readBackendRealEnvValue('BACKEND_REAL_OPENAI_MODEL');
+  expect(
+    configuredModelHint,
+    'seeded real endpoint model must come from backend-real/local-real config',
+  ).toBeTruthy();
+  expect(
+    isPlaceholderModel(model),
+    `seeded real endpoint model must not be placeholder; env_model_hint=${configuredModelHint ?? 'unset'}`,
+  ).toBe(false);
+  expect(model, 'seeded endpoint model must match backend-real/local-real config')
+    .toBe(configuredModelHint);
+  const endpointBaseUrl = endpoint?.base_url?.trim().replace(/\/+$/, '') ?? '';
+  const configuredBaseUrls = [
+    readBackendRealEnvValue('PRESET_ANTHROPIC_ENDPOINT_BASE_URL'),
+    readBackendRealEnvValue('PRESET_OPENAI_ENDPOINT_BASE_URL'),
+    readBackendRealEnvValue('BACKEND_REAL_OPENAI_BASE_URL'),
+  ]
+    .filter((value): value is string => Boolean(value))
+    .map((value) => value.replace(/\/+$/, ''));
+  expect(endpointBaseUrl, 'seeded endpoint base URL must come from local-real/backend-real config')
+    .not.toMatch(/provider\.example/i);
+  if (configuredBaseUrls.length > 0) {
+    expect(configuredBaseUrls).toContain(endpointBaseUrl);
+  }
+
   return {
     projectId: projectId ?? '',
     runnerId: runner?.id ?? '',
+    endpointId,
+    model,
   };
-}
-
-async function prepareAgentTaskModelSetupForProject(args: {
-  page: Page;
-  workspaceId: string;
-  projectId: string;
-  timestamp: number;
-}): Promise<void> {
-  const credentialName = `Files user story provider ${args.timestamp}`;
-  await createCredentialViaUi(
-    args.page,
-    args.workspaceId,
-    args.projectId,
-    credentialName,
-    resolveProviderCredentialValue(),
-  );
-  const endpointId = await createEndpointViaApi(args.page, args.workspaceId, args.projectId, {
-    endpointName: `Files user story endpoint ${args.timestamp}`,
-    endpointModel: BACKEND_REAL_MODEL,
-    upstreamBaseUrl: BACKEND_REAL_OPENAI_BASE_URL,
-    credentialName,
-  });
-  const modelSetting = await ensureAgentTaskModelSettingViaApi(args.page, {
-    workspaceId: args.workspaceId,
-    projectId: args.projectId,
-    endpointId,
-  });
-  ensureManagedRunnerSeedEnv();
-  const runner = await createManagedAgentRunnerViaApi(args.page, {
-    workspaceId: args.workspaceId,
-    projectId: args.projectId,
-    endpointId,
-    title: `files-user-story-runner-${args.timestamp}`,
-  });
-
-  expect(modelSetting.endpointId).toBe(endpointId);
-  expect(modelSetting.settingRevision).toBeTruthy();
-  expect(runner.status).toMatch(/ready|connected/);
-  expect(runner.isDefault).toBe(true);
 }
 
 async function createAgentTaskAfterProjectStorageReady(args: {
@@ -1058,6 +1147,218 @@ async function waitForTaskArtifact(args: {
   }).toBe(true);
 }
 
+async function createSavePointViaFilesUi(args: {
+  page: Page;
+  workspaceId: string;
+  projectId: string;
+  libraryId: string;
+  message: string;
+}): Promise<string> {
+  await openWorkspaceFilesRoot(args);
+  await args.page.getByTestId('files__file-states').click();
+  const fileStatesDialog = args.page.getByTestId('files__dialog__file-states');
+  await expect(fileStatesDialog).toBeVisible({ timeout: 10_000 });
+  const savePointsTab = fileStatesDialog.getByRole('tab', { name: /^Save points$/i });
+  await expect(savePointsTab).toBeVisible();
+  if ((await savePointsTab.getAttribute('aria-selected')) !== 'true') {
+    await savePointsTab.click();
+  }
+
+  await fileStatesDialog.getByTestId('files__save-point__message').fill(args.message);
+  const savePointResponsePromise = args.page.waitForResponse((response) => (
+    response.request().method() === 'POST'
+    && response
+      .url()
+      .includes(`/workspaces/${args.workspaceId}/projects/${args.projectId}/file-libraries/${args.libraryId}/save-points`)
+  ), { timeout: 120_000 });
+  await fileStatesDialog.getByTestId('files__save-point__create').click();
+  const savePointResponse = await savePointResponsePromise;
+  const savePointBody = await savePointResponse.text();
+  expect(savePointResponse.ok(), savePointBody).toBe(true);
+  const savePointPayload = JSON.parse(savePointBody) as { id?: string };
+  const savePointId = savePointPayload.id?.trim();
+  expect(savePointId).toBeTruthy();
+  await expect(fileStatesDialog.getByText(args.message)).toBeVisible({ timeout: 10_000 });
+  await fileStatesDialog.getByLabel('Close', { exact: true }).click();
+  await expect(fileStatesDialog).toBeHidden({ timeout: 10_000 });
+  return savePointId ?? '';
+}
+
+async function readRestorePreviewEvidence(args: {
+  page: Page;
+  workspaceId: string;
+  projectId: string;
+  libraryId: string;
+}): Promise<{ ok: boolean; status: number; body: string; payload: unknown }> {
+  const response = await args.page.request.get(
+    `${API_BASE}/api/v1/workspaces/${args.workspaceId}/projects/${args.projectId}/file-libraries/${args.libraryId}/restore-preview`,
+    { headers: await authHeaders(args.page) },
+  );
+  const body = await response.text();
+  return {
+    ok: response.ok(),
+    status: response.status(),
+    body: truncateEvidence(body),
+    payload: parseJsonEvidence(body),
+  };
+}
+
+async function readSavePointsEvidence(args: {
+  page: Page;
+  workspaceId: string;
+  projectId: string;
+  libraryId: string;
+}): Promise<{ ok: boolean; status: number; body: string; payload: unknown }> {
+  const response = await args.page.request.get(
+    `${API_BASE}/api/v1/workspaces/${args.workspaceId}/projects/${args.projectId}/file-libraries/${args.libraryId}/save-points`,
+    { headers: await authHeaders(args.page) },
+  );
+  const body = await response.text();
+  return {
+    ok: response.ok(),
+    status: response.status(),
+    body: truncateEvidence(body),
+    payload: parseJsonEvidence(body),
+  };
+}
+
+async function waitForRestoreConfirmEnabledWithEvidence(args: {
+  page: Page;
+  dialog: Locator;
+  workspaceId: string;
+  projectId: string;
+  libraryId: string;
+  timeoutMs: number;
+}): Promise<void> {
+  const confirm = args.dialog.getByTestId('files__restore-confirm');
+  const deadline = Date.now() + args.timeoutMs;
+  let lastEvidence: Record<string, unknown> = {};
+
+  while (Date.now() < deadline) {
+    if (await confirm.isEnabled().catch(() => false)) {
+      return;
+    }
+
+    const title = await args.dialog.getByTestId('files__restore-preview-title').textContent().catch(() => null);
+    const summary = await args.dialog.getByTestId('files__restore-preview-summary').textContent().catch(() => null);
+    const uiListErrorVisible = await args.dialog.getByTestId('files__save-point__list-error').isVisible().catch(() => false);
+    const uiFailed = /failed/i.test(`${title ?? ''} ${summary ?? ''}`);
+    const [activePreview, savePoints] = await Promise.all([
+      readRestorePreviewEvidence(args).catch((error: unknown) => ({
+        ok: false,
+        status: 0,
+        body: error instanceof Error ? error.message : String(error),
+        payload: null,
+      })),
+      readSavePointsEvidence(args).catch((error: unknown) => ({
+        ok: false,
+        status: 0,
+        body: error instanceof Error ? error.message : String(error),
+        payload: null,
+      })),
+    ]);
+    const previewPayload = activePreview.payload as RestorePreviewProjection;
+    const activeStatus = previewPayload?.restore_preview?.status ?? null;
+    const activeBlockers = previewPayload?.restore_preview?.blockers ?? [];
+
+    lastEvidence = {
+      ui: {
+        title,
+        summary,
+        list_error_visible: uiListErrorVisible,
+      },
+      active_preview: {
+        ok: activePreview.ok,
+        status: activePreview.status,
+        payload: activePreview.payload,
+      },
+      save_points: {
+        ok: savePoints.ok,
+        status: savePoints.status,
+        payload: savePoints.payload,
+      },
+    };
+
+    if (uiFailed || activeStatus === 'failed' || uiListErrorVisible || !savePoints.ok) {
+      throw new Error(`restore_preview_confirm_fail_fast:${JSON.stringify(lastEvidence)}`);
+    }
+    if (previewPayload?.restore_preview?.stale === true || activeBlockers.length > 0) {
+      throw new Error(`restore_preview_confirm_blocked:${JSON.stringify(lastEvidence)}`);
+    }
+
+    await args.page.waitForTimeout(2_000);
+  }
+
+  throw new Error(`restore_preview_confirm_timeout:${JSON.stringify(lastEvidence)}`);
+}
+
+async function waitForFileStatesDialogDismissedAfterRestoreRun(fileStatesDialog: Locator): Promise<void> {
+  if (await fileStatesDialog.isHidden().catch(() => true)) return;
+
+  const hiddenAfterRestoreRun = fileStatesDialog.waitFor({ state: 'hidden', timeout: 10_000 });
+  const hiddenAfterManualClose = (async () => {
+    await fileStatesDialog.getByLabel('Close', { exact: true }).click({ timeout: 10_000 });
+    await fileStatesDialog.waitFor({ state: 'hidden', timeout: 10_000 });
+  })();
+
+  await Promise.any([
+    hiddenAfterRestoreRun,
+    hiddenAfterManualClose,
+  ]);
+}
+
+async function restoreSavePointViaFilesUi(args: {
+  page: Page;
+  workspaceId: string;
+  projectId: string;
+  libraryId: string;
+  savePointId: string;
+  message: string;
+}): Promise<void> {
+  await openWorkspaceFilesRoot(args);
+  await args.page.getByTestId('files__file-states').click();
+  const fileStatesDialog = args.page.getByTestId('files__dialog__file-states');
+  await expect(fileStatesDialog).toBeVisible({ timeout: 10_000 });
+  await expect(fileStatesDialog.getByText(args.message)).toBeVisible({ timeout: 10_000 });
+
+  const restorePreviewResponsePromise = args.page.waitForResponse((response) => (
+    response.request().method() === 'POST'
+    && response
+      .url()
+      .includes(`/workspaces/${args.workspaceId}/projects/${args.projectId}/file-libraries/${args.libraryId}/restore-preview`)
+  ), { timeout: 120_000 });
+  await fileStatesDialog.getByTestId(`files__save-point__restore--${args.savePointId}`).click();
+  const restorePreviewResponse = await restorePreviewResponsePromise;
+  const restorePreviewBody = await restorePreviewResponse.text();
+  expect(restorePreviewResponse.ok(), restorePreviewBody).toBe(true);
+  const restorePreviewPayload = JSON.parse(restorePreviewBody) as { id?: string };
+  expect(restorePreviewPayload.id).toBeTruthy();
+  await expect(fileStatesDialog.getByTestId('files__restore-preview')).toBeVisible({ timeout: 10_000 });
+  await waitForRestoreConfirmEnabledWithEvidence({
+    page: args.page,
+    dialog: fileStatesDialog,
+    workspaceId: args.workspaceId,
+    projectId: args.projectId,
+    libraryId: args.libraryId,
+    timeoutMs: 90_000,
+  });
+
+  const restoreRunResponsePromise = args.page.waitForResponse((response) => (
+    response.request().method() === 'POST'
+    && response
+      .url()
+      .includes(`/workspaces/${args.workspaceId}/projects/${args.projectId}/file-libraries/${args.libraryId}/restore-run`)
+  ), { timeout: 120_000 });
+  await fileStatesDialog.getByTestId('files__restore-confirm').click();
+  const restoreRunResponse = await restoreRunResponsePromise;
+  const restoreRunBody = await restoreRunResponse.text();
+  expect(restoreRunResponse.ok(), restoreRunBody).toBe(true);
+  const restoreRunPayload = JSON.parse(restoreRunBody) as { status?: string };
+  expect(restoreRunPayload.status).toMatch(/^(pending|succeeded)$/);
+
+  await waitForFileStatesDialogDismissedAfterRestoreRun(fileStatesDialog);
+}
+
 test.describe.serial('@lane-real files user stories', () => {
   test('many file libraries keep the left list scrollable and scannable', async ({ page }) => {
     test.setTimeout(240_000);
@@ -1159,14 +1460,8 @@ test.describe.serial('@lane-real files user stories', () => {
     test.setTimeout(360_000);
 
     await keycloakLoginToWorkspace(page, WORKSPACE_ID, KEYCLOAK_DEV_ADMIN_USERNAME, KEYCLOAK_DEV_ADMIN_PASSWORD);
-    const { projectId } = await createProjectInWorkspace(page, WORKSPACE_ID, 'Files Savepoint Template Loop');
+    const { projectId } = await resolveDemoProjectAndRunner(page);
     const timestamp = Date.now();
-    await prepareAgentTaskModelSetupForProject({
-      page,
-      workspaceId: WORKSPACE_ID,
-      projectId,
-      timestamp,
-    });
     const libraryName = `State Loop Library ${timestamp}`;
     const savePointMessage = `Before restore preview ${timestamp}`;
     const templateName = `State Loop Template ${timestamp}`;
@@ -1332,7 +1627,14 @@ test.describe.serial('@lane-real files user stories', () => {
     await expect(restoreFileStatesDialog.getByTestId('files__restore-preview-summary')).toBeVisible();
     await expectVisibleSavePointListHidesRestorePreviewFence(restoreFileStatesDialog);
     const taskTemplatesTab = restoreFileStatesDialog.getByRole('tab', { name: /^Task file templates$/i });
-    await expect(restoreFileStatesDialog.getByTestId('files__restore-confirm')).toBeEnabled({ timeout: 90_000 });
+    await waitForRestoreConfirmEnabledWithEvidence({
+      page,
+      dialog: restoreFileStatesDialog,
+      workspaceId: WORKSPACE_ID,
+      projectId,
+      libraryId,
+      timeoutMs: 90_000,
+    });
     await expect(taskTemplatesTab).toBeDisabled();
     await expect(restoreFileStatesDialog.getByTestId('files__restore-template-blocker')).toBeVisible();
 
@@ -1675,6 +1977,316 @@ test.describe.serial('@lane-real files user stories', () => {
       fileName: artifactFileName,
       expectedPath: `workspace/.artifacts/${artifactFileName}`,
       expectedContent: contentLine,
+    });
+  });
+
+  test('task runtime HOME file can be save-pointed, deleted from terminal, and restored from Files', async ({ page }) => {
+    test.setTimeout(600_000);
+
+    await keycloakLoginToWorkspace(page, WORKSPACE_ID, KEYCLOAK_DEV_ADMIN_USERNAME, KEYCLOAK_DEV_ADMIN_PASSWORD);
+
+    const timestamp = Date.now();
+    const { projectId, runnerId, endpointId, model } = await resolveDemoProjectAndRunner(page);
+    expect(runnerId).toBeTruthy();
+    expect(endpointId).toBeTruthy();
+    expect(isPlaceholderModel(model)).toBe(false);
+
+    const artifactToken = `FILES_SAVEPOINT_RUNTIME_ARTIFACT_${timestamp}`;
+    const agentDoneMarker = `AGENT_WRITE_DONE_${timestamp}`;
+    const workspaceName = `Files Savepoint Runtime HOME ${timestamp}`;
+    const artifactFileName = `savepoint-runtime-${timestamp}.svg`;
+    const artifactLibraryPath = `workspace/.artifacts/${artifactFileName}`;
+    const artifactSvg = buildSineSvgContent(artifactToken);
+    const savePointMessage = `Agent generated HOME file ${timestamp}`;
+    const deleteDoneMarker = `DELETE_DONE_${timestamp}`;
+    const restoreDoneMarker = `RESTORE_DONE_${timestamp}`;
+    const createdTask = await createAgentTaskAfterProjectStorageReady({
+      page,
+      workspaceId: WORKSPACE_ID,
+      projectId,
+      title: `Files savepoint runtime task ${timestamp}`,
+      workspaceName,
+    });
+    const taskId = createdTask.taskId;
+    const libraryId = createdTask.workspaceFileLibraryId;
+    await waitForLibraryStatus({
+      page,
+      workspaceId: WORKSPACE_ID,
+      projectId,
+      libraryId,
+      expected: /^ready$/i,
+      timeoutMs: 180_000,
+    });
+
+    await test.step('real agent generates the workspace artifact with the seeded LLM endpoint', async () => {
+      const run = await startAgentTaskRunViaApi({
+        page,
+        workspaceId: WORKSPACE_ID,
+        projectId,
+        taskId,
+        intent: [
+          `Use the real configured model (${model}) and run this exact shell script to generate the sine SVG artifact.`,
+          '```bash',
+          'set -euo pipefail',
+          'mkdir -p "$HOME/workspace/.artifacts"',
+          `cat > "$HOME/workspace/.artifacts/${artifactFileName}" <<'SVG_EOF'`,
+          artifactSvg,
+          'SVG_EOF',
+          `test -s "$HOME/workspace/.artifacts/${artifactFileName}"`,
+          `grep -F '${artifactToken}' "$HOME/workspace/.artifacts/${artifactFileName}"`,
+          `grep -F '<polyline points=' "$HOME/workspace/.artifacts/${artifactFileName}"`,
+          `printf '${agentDoneMarker}\\n'`,
+          '```',
+          `After the script succeeds, reply with exactly ${artifactToken}.`,
+        ].join('\n'),
+      });
+      await waitForRunnerOutputToken({
+        page,
+        workspaceId: WORKSPACE_ID,
+        projectId,
+        taskId,
+        token: artifactToken,
+        runnerOutputActivityId: run.runnerOutputActivityId,
+        runId: run.runId,
+      });
+      await waitForTaskArtifact({
+        page,
+        workspaceId: WORKSPACE_ID,
+        projectId,
+        taskId,
+        expectedPath: `.artifacts/${artifactFileName}`,
+      });
+      await waitForFileEntryViaApi({
+        page,
+        workspaceId: WORKSPACE_ID,
+        projectId,
+        libraryId,
+        path: artifactLibraryPath,
+        timeoutMs: 120_000,
+      });
+      await expect.poll(async () => {
+        try {
+          return (await downloadTextFileViaApi({
+            page,
+            workspaceId: WORKSPACE_ID,
+            projectId,
+            libraryId,
+            path: artifactLibraryPath,
+          })).trim();
+        } catch {
+          return null;
+        }
+      }, {
+        timeout: 120_000,
+        intervals: [1_000, 2_000, 5_000],
+        message: `terminal-created artifact content did not become downloadable: ${artifactLibraryPath}`,
+      }).toBe(artifactSvg);
+    });
+
+    await test.step('Files can download the registered artifact before save point', async () => {
+      await openWorkspaceFilesRoot({
+        page,
+        workspaceId: WORKSPACE_ID,
+        projectId,
+        libraryId,
+      });
+      await openFolderByName(page, 'workspace');
+      await openFolderByName(page, '.artifacts');
+      await selectObjectAndDownloadViaUi({
+        page,
+        workspaceId: WORKSPACE_ID,
+        projectId,
+        libraryId,
+        fileName: artifactFileName,
+        expectedPath: artifactLibraryPath,
+        expectedContent: artifactSvg,
+      });
+    });
+
+    const savePointId = await test.step(
+      'Files UI creates a save point for the terminal-created artifact',
+      async () => createSavePointViaFilesUi({
+        page,
+        workspaceId: WORKSPACE_ID,
+        projectId,
+        libraryId,
+        message: savePointMessage,
+      }),
+    );
+
+    await test.step('terminal deletion removes the artifact from Files', async () => {
+      let deleteSessionId: string | null = null;
+      try {
+        const deleteSession = await createTerminalSessionViaApi({
+          page,
+          workspaceId: WORKSPACE_ID,
+          projectId,
+          taskId,
+          shell: '/usr/bin/bash',
+        });
+        deleteSessionId = deleteSession.sessionId;
+        await expectTerminalSessionRunnerEvidenceViaApi({
+          page,
+          workspaceId: WORKSPACE_ID,
+          projectId,
+          taskId,
+          sessionId: deleteSessionId,
+          runnerId,
+          createdSession: deleteSession,
+        });
+
+        const deleteOutput = await runTerminalCommandInSession({
+          page,
+          workspaceId: WORKSPACE_ID,
+          projectId,
+          taskId,
+          sessionId: deleteSessionId,
+          command: [
+            'set -euo pipefail',
+            `rm -f "$HOME/workspace/.artifacts/${artifactFileName}"`,
+            `test ! -e "$HOME/workspace/.artifacts/${artifactFileName}"`,
+            `printf '${deleteDoneMarker}\\n'`,
+          ].join('; '),
+          waitFor: [deleteDoneMarker],
+          timeoutMs: 120_000,
+        });
+        expect(deleteOutput).toContain(deleteDoneMarker);
+      } finally {
+        if (deleteSessionId) {
+          await deleteTerminalSessionViaApi({
+            page,
+            workspaceId: WORKSPACE_ID,
+            projectId,
+            taskId,
+            sessionId: deleteSessionId,
+          });
+        }
+      }
+
+      await expectFileEntryMissingViaApi({
+        page,
+        workspaceId: WORKSPACE_ID,
+        projectId,
+        libraryId,
+        path: artifactLibraryPath,
+        timeoutMs: 120_000,
+      });
+      await openWorkspaceFilesRoot({
+        page,
+        workspaceId: WORKSPACE_ID,
+        projectId,
+        libraryId,
+      });
+      await openFolderByName(page, 'workspace');
+      const artifactsRow = getObjectRowByName(page, '.artifacts');
+      if (await artifactsRow.isVisible().catch(() => false)) {
+        await openFolderByName(page, '.artifacts');
+        await expect(getObjectRowByName(page, artifactFileName)).toBeHidden({ timeout: 30_000 });
+      } else {
+        await expect(artifactsRow).toBeHidden({ timeout: 30_000 });
+      }
+    });
+
+    await test.step('restore save point brings the artifact back to Files and task runtime', async () => {
+      await restoreSavePointViaFilesUi({
+        page,
+        workspaceId: WORKSPACE_ID,
+        projectId,
+        libraryId,
+        savePointId,
+        message: savePointMessage,
+      });
+      await waitForFileEntryViaApi({
+        page,
+        workspaceId: WORKSPACE_ID,
+        projectId,
+        libraryId,
+        path: artifactLibraryPath,
+        timeoutMs: 240_000,
+      });
+      await expect.poll(async () => {
+        try {
+          return (await downloadTextFileViaApi({
+            page,
+            workspaceId: WORKSPACE_ID,
+            projectId,
+            libraryId,
+            path: artifactLibraryPath,
+          })).trim();
+        } catch {
+          return null;
+        }
+      }, {
+        timeout: 240_000,
+        intervals: [1_000, 2_000, 5_000],
+        message: `restored artifact content did not become downloadable: ${artifactLibraryPath}`,
+      }).toBe(artifactSvg);
+      await openWorkspaceFilesRoot({
+        page,
+        workspaceId: WORKSPACE_ID,
+        projectId,
+        libraryId,
+      });
+      await openFolderByName(page, 'workspace');
+      await openFolderByName(page, '.artifacts');
+      await selectObjectAndDownloadViaUi({
+        page,
+        workspaceId: WORKSPACE_ID,
+        projectId,
+        libraryId,
+        fileName: artifactFileName,
+        expectedPath: artifactLibraryPath,
+        expectedContent: artifactSvg,
+      });
+
+      let restoreVerifySessionId: string | null = null;
+      try {
+        const restoreVerifySession = await createTerminalSessionViaApi({
+          page,
+          workspaceId: WORKSPACE_ID,
+          projectId,
+          taskId,
+          shell: '/usr/bin/bash',
+        });
+        restoreVerifySessionId = restoreVerifySession.sessionId;
+        await expectTerminalSessionRunnerEvidenceViaApi({
+          page,
+          workspaceId: WORKSPACE_ID,
+          projectId,
+          taskId,
+          sessionId: restoreVerifySessionId,
+          runnerId,
+          createdSession: restoreVerifySession,
+        });
+        const restoreOutput = await runTerminalCommandInSession({
+          page,
+          workspaceId: WORKSPACE_ID,
+          projectId,
+          taskId,
+          sessionId: restoreVerifySessionId,
+          command: [
+            'set -euo pipefail',
+            `test -s "$HOME/workspace/.artifacts/${artifactFileName}"`,
+            `grep -F '${artifactToken}' "$HOME/workspace/.artifacts/${artifactFileName}"`,
+            `grep -F '<polyline points=' "$HOME/workspace/.artifacts/${artifactFileName}"`,
+            `printf '${restoreDoneMarker}\\n'`,
+          ].join('; '),
+          waitFor: [artifactToken, restoreDoneMarker],
+          timeoutMs: 180_000,
+        });
+        expect(restoreOutput).toContain(artifactToken);
+        expect(restoreOutput).toContain(restoreDoneMarker);
+      } finally {
+        if (restoreVerifySessionId) {
+          await deleteTerminalSessionViaApi({
+            page,
+            workspaceId: WORKSPACE_ID,
+            projectId,
+            taskId,
+            sessionId: restoreVerifySessionId,
+          });
+        }
+      }
     });
   });
 

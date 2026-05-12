@@ -35,6 +35,8 @@ export interface InternalAgentWorkspaceBinding {
   afscp_namespace_id?: string;
   afscp_repo_id?: string;
   afscp_volume_id?: string;
+  mount_binding_generation?: number;
+  previous_afscp_mount_binding_id?: string;
   project_storage_generation?: number;
   status: string;
   mount_binding_status?: AfscpWorkloadMountBindingStatus;
@@ -136,6 +138,12 @@ interface InternalAgentWorkspaceProvisionerOptions {
   workloadMountLeaseSeconds?: number;
 }
 
+interface EnsuredAfscpMountBinding {
+  mountBinding: AfscpWorkloadMountBinding;
+  mountBindingGeneration: number;
+  previousMountBindingId?: string;
+}
+
 export type InternalAgentWorkspaceProvisioningErrorCode =
   | 'AGENT_WORKSPACE_AFSCP_CONFIG_ERROR'
   | 'AGENT_WORKSPACE_AFSCP_PROJECT_STORAGE_NOT_READY'
@@ -191,8 +199,14 @@ function buildIdempotencyKey(input: {
   fileLibraryId: string;
   taskHomePath: string;
   operation: 'create' | 'revoke';
+  mountBindingGeneration?: number;
 }): string {
-  return `workspace-mount-${input.operation}:${stableDigest(`${input.workspaceId}:${input.projectId}:${input.fileLibraryId}:${input.taskHomePath}`)}`;
+  const stableInput = `${input.workspaceId}:${input.projectId}:${input.fileLibraryId}:${input.taskHomePath}`;
+  if (input.operation === 'create') {
+    const generation = normalizeMountBindingGeneration(input.mountBindingGeneration, 1);
+    return `workspace-mount-create:g${generation}:${stableDigest(`${stableInput}:mount-binding-generation:${generation}`)}`;
+  }
+  return `workspace-mount-revoke:${stableDigest(stableInput)}`;
 }
 
 function buildActor(actorUserId: string | undefined): AfscpActor {
@@ -215,8 +229,31 @@ function isUsableMountBindingStatus(value: AfscpWorkloadMountBindingStatus): boo
   return value === 'issued' || value === 'active';
 }
 
+function isRotatableMountBindingStatus(value: AfscpWorkloadMountBindingStatus): boolean {
+  return value === 'released' || value === 'revoked';
+}
+
 function mountBindingStatusRetryable(value: AfscpWorkloadMountBindingStatus): boolean {
-  return value === 'pending';
+  return value === 'pending' || value === 'releasing';
+}
+
+function normalizeMountBindingGeneration(value: unknown, fallback: number): number {
+  if (typeof value === 'number' && Number.isInteger(value) && value > 0) {
+    return value;
+  }
+  return fallback;
+}
+
+function currentMountBindingGeneration(existing: InternalAgentWorkspaceBinding | null | undefined): number {
+  const hasExistingBinding = Boolean(
+    existing?.afscp_mount_binding_id?.trim()
+    || existing?.task_home_binding_id?.trim(),
+  );
+  return normalizeMountBindingGeneration(existing?.mount_binding_generation, hasExistingBinding ? 1 : 0);
+}
+
+function nextMountBindingGeneration(existing: InternalAgentWorkspaceBinding | null | undefined): number {
+  return Math.max(1, currentMountBindingGeneration(existing) + 1);
 }
 
 function throwUnusableMountBinding(input: {
@@ -449,7 +486,7 @@ export class InternalAgentWorkspaceProvisionerImpl implements InternalAgentWorks
       namespaceId: preflight.namespaceId,
       projectStorageGeneration: preflight.generation,
     });
-    const mountBinding = await this.ensureAfscpMountBinding({
+    const ensuredMountBinding = await this.ensureAfscpMountBinding({
       client: options.afscpProductClient,
       resourceOwnershipStore: options.resourceOwnershipStore,
       existing,
@@ -463,15 +500,21 @@ export class InternalAgentWorkspaceProvisionerImpl implements InternalAgentWorks
       signal: input.signal,
       leaseSeconds: options.workloadMountLeaseSeconds ?? DEFAULT_WORKLOAD_MOUNT_LEASE_SECONDS,
     });
+    const mountBinding = ensuredMountBinding.mountBinding;
 
     binding.task_home_binding_id = mountBinding.mount_binding_id;
     binding.afscp_mount_binding_id = mountBinding.mount_binding_id;
     binding.afscp_namespace_id = mountBinding.namespace_id;
     binding.afscp_repo_id = mountBinding.repo_id;
     binding.afscp_volume_id = mountBinding.volume_id;
+    binding.mount_binding_generation = ensuredMountBinding.mountBindingGeneration;
+    if (ensuredMountBinding.previousMountBindingId) {
+      binding.previous_afscp_mount_binding_id = ensuredMountBinding.previousMountBindingId;
+    }
     binding.project_storage_generation = mapping.project_storage_generation;
     binding.mount_binding_status = mountBinding.status;
     binding.lease_expires_at = mountBinding.lease_expires_at;
+    await this.docStore.upsert(collection, input.fileLibraryId, binding);
     const remoteBinding = await this.k8sClient.ensureWorkspaceBinding(input.workspaceId, input.projectId, mountBinding.mount_binding_id, {
       namespace_id: mapping.namespace_id,
       mount_binding_id: mountBinding.mount_binding_id,
@@ -593,8 +636,10 @@ export class InternalAgentWorkspaceProvisionerImpl implements InternalAgentWorks
     correlationId: string;
     signal?: AbortSignal;
     leaseSeconds: number;
-  }): Promise<AfscpWorkloadMountBinding> {
+  }): Promise<EnsuredAfscpMountBinding> {
     const existingMountBindingId = input.existing?.afscp_mount_binding_id?.trim();
+    let mountBindingGeneration = nextMountBindingGeneration(input.existing);
+    let previousMountBindingId: string | undefined;
     if (
       existingMountBindingId
       && input.existing?.afscp_namespace_id === input.mapping.namespace_id
@@ -616,13 +661,20 @@ export class InternalAgentWorkspaceProvisionerImpl implements InternalAgentWorks
             reason: 'mount_binding_target_mismatch',
           });
         }
-        if (!isUsableMountBindingStatus(existingBinding.status)) {
+        if (isUsableMountBindingStatus(existingBinding.status)) {
+          return {
+            mountBinding: existingBinding,
+            mountBindingGeneration: Math.max(1, currentMountBindingGeneration(input.existing)),
+          };
+        }
+        if (!isRotatableMountBindingStatus(existingBinding.status)) {
           throwUnusableMountBinding({
             status: existingBinding.status,
             mountBindingId: existingBinding.mount_binding_id,
           });
         }
-        return existingBinding;
+        previousMountBindingId = existingBinding.mount_binding_id;
+        mountBindingGeneration = nextMountBindingGeneration(input.existing);
       } catch (error) {
         throw mapAfscpProvisioningError(error);
       }
@@ -643,6 +695,7 @@ export class InternalAgentWorkspaceProvisionerImpl implements InternalAgentWorks
           fileLibraryId: input.fileLibraryId,
           taskHomePath: input.taskHomePath,
           operation: 'create',
+          mountBindingGeneration,
         }),
         actor: input.actor,
         signal: input.signal,
@@ -715,7 +768,11 @@ export class InternalAgentWorkspaceProvisionerImpl implements InternalAgentWorks
           mountBindingId: mountBinding.mount_binding_id,
         });
       }
-      return mountBinding;
+      return {
+        mountBinding,
+        mountBindingGeneration,
+        ...(previousMountBindingId ? { previousMountBindingId } : {}),
+      };
     } catch (error) {
       throw mapAfscpProvisioningError(error);
     }

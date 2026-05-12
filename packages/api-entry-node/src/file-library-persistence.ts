@@ -1286,6 +1286,27 @@ export class JsonDocFileLibraryRestorePreviewRepo {
     return active[0] ?? null;
   }
 
+  async findLatestByLibrary(
+    workspaceId: string,
+    projectId: string,
+    libraryId: string,
+  ): Promise<FileLibraryRestorePreviewRecord | null> {
+    const records = await this.docStore.list<FileLibraryRestorePreviewRecord>(
+      FILE_LIBRARY_RESTORE_PREVIEW_COLLECTION,
+      {
+        workspace_id: workspaceId,
+        project_id: projectId,
+        library_id: libraryId,
+      },
+    );
+    const latest = records
+      .sort((left, right) => {
+        const updated = right.updated_at.localeCompare(left.updated_at);
+        return updated !== 0 ? updated : right.created_at.localeCompare(left.created_at);
+      });
+    return latest[0] ?? null;
+  }
+
   async getById(
     workspaceId: string,
     projectId: string,

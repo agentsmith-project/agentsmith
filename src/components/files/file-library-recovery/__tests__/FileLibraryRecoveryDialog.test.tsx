@@ -656,6 +656,11 @@ describe('FileLibraryRecoveryDialog', () => {
     renderDialog();
 
     expect(screen.getByTestId('files__restore-preview-title')).toHaveTextContent('Restore preview failed');
+    expect(screen.getByTestId('files__restore-preview-summary')).toHaveTextContent(
+      'The preview failed. Create a new preview before restoring.',
+    );
+    expect(screen.getByTestId('files__restore-confirm')).toBeDisabled();
+    expect(screen.getByTestId('files__save-point__restore--sp_1')).toBeEnabled();
     expect(screen.queryByTestId('files__restore-template-blocker')).not.toBeInTheDocument();
     const taskTemplatesTab = screen.getByRole('tab', { name: 'Task file templates' });
     expect(taskTemplatesTab).toBeEnabled();

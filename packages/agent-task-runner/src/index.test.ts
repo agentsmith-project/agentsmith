@@ -16,6 +16,7 @@ type MockTerminalChild = {
   kill: ReturnType<typeof vi.fn>;
   onData: ReturnType<typeof vi.fn>;
   onExit: ReturnType<typeof vi.fn>;
+  waitForWorkspaceRelease: ReturnType<typeof vi.fn>;
 };
 
 type MockTerminalProcessResult = {
@@ -229,6 +230,7 @@ const {
         kill: vi.fn(),
         onData: vi.fn(),
         onExit: vi.fn(),
+        waitForWorkspaceRelease: vi.fn(async () => undefined),
       },
       cwd: '/home/task_1/workspace',
     })),
@@ -476,6 +478,7 @@ describe('agent-task-runner entry lifecycle', () => {
       onExit: vi.fn((listener: (event: TerminalExitEvent) => void) => {
         exitListeners.push(listener);
       }),
+      waitForWorkspaceRelease: vi.fn(async () => undefined),
     };
     return child;
   }
@@ -2590,6 +2593,10 @@ describe('agent-task-runner entry lifecycle', () => {
       runnerSessionId: 'runner_session_1',
       generation: 4,
     });
+    let resolveWorkspaceRelease: (() => void) | undefined;
+    terminal.child.waitForWorkspaceRelease.mockImplementationOnce(() => new Promise<void>((resolve) => {
+      resolveWorkspaceRelease = resolve;
+    }));
 
     socket.emit('message', serverTerminalClose('terminal_close_ack', {
       requestId: 'close_terminal',
@@ -2603,7 +2610,24 @@ describe('agent-task-runner entry lifecycle', () => {
     expect(terminal.child.kill).toHaveBeenCalledWith('SIGTERM');
     expect(readSentFrames(socket).some((frame) => frame.type === 'agent.terminal.close_ack')).toBe(false);
 
+    await vi.waitFor(() => {
+      expect(terminal.child.onExit).toHaveBeenCalledTimes(2);
+    });
     closeTerminalChild(terminal.child, terminal.exitListeners, 0, null);
+    await vi.waitFor(() => {
+      expect(readSentFrames(socket)).toContainEqual(expect.objectContaining({
+        type: 'agent.terminal.exited',
+        terminal_session_id: 'terminal_close_ack',
+        payload: expect.objectContaining({
+          exit_code: 0,
+        }),
+      }));
+    });
+    expect(readSentFrames(socket).some((frame) => frame.type === 'agent.terminal.close_ack')).toBe(false);
+    await vi.waitFor(() => {
+      expect(terminal.child.waitForWorkspaceRelease).toHaveBeenCalledTimes(1);
+    });
+    resolveWorkspaceRelease?.();
 
     await vi.waitFor(() => {
       const sentFrames = readSentFrames(socket);

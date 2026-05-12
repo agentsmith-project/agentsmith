@@ -2,7 +2,6 @@ import {
   access,
   appendFile,
   mkdir,
-  mkdtemp,
   readFile,
   rm,
   writeFile,
@@ -3071,6 +3070,13 @@ export async function deleteTerminalSessionViaApi(args: {
       `delete_terminal_session_failed:${response.status()}:${body}`,
     );
   }
+  await waitForTerminalSessionFinalTruthViaApi({
+    page: args.page,
+    workspaceId: args.workspaceId,
+    projectId: args.projectId,
+    taskId: args.taskId,
+    sessionId: args.sessionId,
+  });
 }
 
 export async function runTerminalCommandViaWs(args: {

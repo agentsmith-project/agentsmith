@@ -153,6 +153,7 @@ function createFakeTerminalProcess(
     onExit: vi.fn((listener: (event: { exitCode: number | null; signal?: string | number | null }) => void) => {
       exitListeners.push(listener);
     }),
+    waitForWorkspaceRelease: vi.fn(async () => undefined),
   };
   return {
     child,
@@ -708,6 +709,36 @@ describe('terminal-runtime', () => {
     expect(started.child.exitCode).toBeNull();
     onExitHandler?.({ exitCode: 7, signal: 15 });
     expect(started.child.exitCode).toBe(7);
+    expect(releaseTaskWorkspaceMock).toHaveBeenCalledTimes(1);
+  });
+
+  it('exposes a terminal workspace release drain promise for close acknowledgements', async () => {
+    let onExitHandler: ((event: { exitCode: number; signal?: number }) => void) | undefined;
+    let resolveRelease: (() => void) | undefined;
+    let releaseResolved = false;
+    releaseTaskWorkspaceMock.mockImplementationOnce(() => new Promise<void>((resolve) => {
+      resolveRelease = () => {
+        releaseResolved = true;
+        resolve();
+      };
+    }));
+    nodePtyOnExitMock.mockImplementation((handler: (event: { exitCode: number; signal?: number }) => void) => {
+      onExitHandler = handler;
+    });
+
+    const started = await startTerminalProcess({
+      executionContext: terminalExecutionContext({
+        run_id: 'run_1',
+      }),
+    });
+
+    onExitHandler?.({ exitCode: 0, signal: 15 });
+    const drainPromise = started.child.waitForWorkspaceRelease();
+    await Promise.resolve();
+    expect(releaseResolved).toBe(false);
+    resolveRelease?.();
+    await drainPromise;
+    expect(releaseResolved).toBe(true);
     expect(releaseTaskWorkspaceMock).toHaveBeenCalledTimes(1);
   });
 

@@ -81,7 +81,7 @@ describe('resolveApiErrorPresentation', () => {
       'file_library_restore_preview_active.description': 'A restore preview is still open. Cancel or finish it before publishing task file templates.',
       'file_library_operation_pending.description': 'File state is still being updated. Wait for the current file operation to finish, then try again.',
       'file_library_restore_preview_stale.description': 'The restore preview is out of date. Create a new preview before restoring files.',
-      'file_library_active_writer_blocked.description': 'Files are still being written. Wait for the active file operation to finish, then try again.',
+      'file_library_active_writer_blocked.description': 'Task files and workspace are still being used by the task runtime. Release task workspace usage, then try again.',
       'file_library_storage_not_ready.description': 'Project file storage is not ready yet. Wait for initialization to finish, then try again.',
       'agent_task_delete_blocked.description':
         'Delete is blocked because this task still has an active run, terminal session, or task workspace in use. Finish those blockers and try again.',
@@ -138,7 +138,7 @@ describe('resolveApiErrorPresentation', () => {
     ['FILE_LIBRARY_OPERATION_PENDING', 'file_library_operation_pending', 'File state is still being updated. Wait for the current file operation to finish, then try again.'],
     ['FILE_LIBRARY_RESTORE_OPERATION_PENDING', 'file_library_restore_operation_pending', 'File state is still being updated. Wait for the current file operation to finish, then try again.'],
     ['FILE_LIBRARY_RESTORE_PREVIEW_STALE', 'file_library_restore_preview_stale', 'The restore preview is out of date. Create a new preview before restoring files.'],
-    ['FILE_LIBRARY_ACTIVE_WRITER_BLOCKED', 'file_library_active_writer_blocked', 'Files are still being written. Wait for the active file operation to finish, then try again.'],
+    ['FILE_LIBRARY_ACTIVE_WRITER_BLOCKED', 'file_library_active_writer_blocked', 'Task files and workspace are still being used by the task runtime. Release task workspace usage, then try again.'],
     ['FILE_LIBRARY_STORAGE_NOT_READY', 'storage not ready', 'Project file storage is not ready yet. Wait for initialization to finish, then try again.'],
     ['AGENT_TASK_DELETE_BLOCKED', 'agent_task_delete_blocked', 'Delete is blocked because this task still has an active run, terminal session, or task workspace in use. Finish those blockers and try again.'],
   ])('maps typed conflict %s through i18n instead of rendering %s', (errorCode, rawMessage, expectedDescription) => {

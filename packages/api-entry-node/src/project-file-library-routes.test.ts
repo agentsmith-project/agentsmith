@@ -11,6 +11,7 @@ import {
   JsonDocProjectFileLibraryCatalogRepo,
   JsonDocProjectTaskFileTemplateRepo,
 } from './file-library-persistence.js';
+import { notebookTasksCollection } from './notebook-task/task-store.js';
 import {
   upsertProjectMemberPermissionState,
   upsertProjectMembershipRecord,
@@ -19,8 +20,12 @@ import {
   FileLibraryStorageOperationPendingError,
   type FileLibraryStoragePort,
 } from './file-library-afscp-storage.js';
-import { JsonDocTaskFileLibraryBindingRepo } from './notebook-task/task-file-library-bindings.js';
+import {
+  JsonDocTaskFileLibraryBindingRepo,
+  JsonDocTaskWorkspaceHolderRepo,
+} from './notebook-task/task-file-library-bindings.js';
 import type { ProjectStoragePreflightResult } from './project-storage-bootstrap-service.js';
+import type { InternalAgentWorkspaceBinding } from './internal-agent-workspace-provisioner.js';
 
 const OWNER_USER = { id: 'user_1', email: 'user@example.com', name: 'User One' } as never;
 const OTHER_PROJECT_USER = { id: 'user_2', email: 'other@example.com', name: 'Other User' } as never;
@@ -194,6 +199,21 @@ function createDeps(args: {
 } = {}) {
   return {
     docStore: new InMemoryJsonDocStore(),
+    cache: {
+      get: vi.fn(async () => null),
+      set: vi.fn(async () => undefined),
+      del: vi.fn(async () => undefined),
+      incr: vi.fn(async () => 1),
+    },
+    notebookTerminalService: {
+      hasLiveSessionsForTask: vi.fn(async () => false),
+      listSessionsForTask: vi.fn(async () => []),
+    },
+    internalAgentWorkspaceBindingManager: {
+      ensureWorkspaceBinding: vi.fn(),
+      deleteWorkspaceBinding: vi.fn(async () => undefined),
+      findWorkspaceBinding: vi.fn(async () => null),
+    },
     fileLibraryStorageAdapter: args.storageAdapter ?? createStorageAdapter(),
     projectStorageBootstrapService: {
       enabled: true,
@@ -317,6 +337,106 @@ async function seedTaskFileTemplate(input: {
       status: input.status,
     });
   }
+}
+
+async function seedBoundTask(input: {
+  deps: ReturnType<typeof createDeps>;
+  libraryId: string;
+  taskId?: string;
+  title?: string;
+  ownerUserId?: string;
+  status?: 'active' | 'archived';
+}): Promise<{
+  taskId: string;
+  bindingGeneration: number;
+}> {
+  const now = new Date().toISOString();
+  const taskId = input.taskId ?? `task_${input.libraryId}`;
+  const ownerUserId = input.ownerUserId ?? OWNER_USER.id;
+  const title = input.title ?? 'Restore blocker task';
+  const status = input.status ?? 'active';
+  const taskRecord = {
+    id: taskId,
+    workspace_id: 'ws_default',
+    project_id: 'proj_1',
+    owner_user_id: ownerUserId,
+    title,
+    task_home_segment: taskId,
+    workspace_file_library_id: input.libraryId,
+    workspace_file_library_name: 'Shared Docs',
+    status,
+    attached_inputs: [],
+    created_at: now,
+    updated_at: now,
+    last_activity_at: now,
+  };
+  await input.deps.docStore.upsert(notebookTasksCollection('ws_default'), taskId, taskRecord);
+  const acquired = await new JsonDocTaskFileLibraryBindingRepo(input.deps.docStore).acquire({
+    workspaceId: 'ws_default',
+    projectId: 'proj_1',
+    fileLibraryId: input.libraryId,
+    taskId,
+    taskTitle: title,
+    taskStatus: status,
+    ownerUserId,
+    runtimeWritableAffordance: 'task_internal_home',
+    correlationId: `req_bind_${taskId}`,
+    now,
+  });
+  if (!acquired.ok) throw new Error('expected test binding acquire to succeed');
+  await input.deps.docStore.upsert(notebookTasksCollection('ws_default'), taskId, {
+    ...taskRecord,
+    file_library_binding_generation: acquired.binding.bindingGeneration,
+    runtime_writable_affordance: 'task_internal_home',
+  });
+  return {
+    taskId,
+    bindingGeneration: acquired.binding.bindingGeneration,
+  };
+}
+
+async function seedReadyRestorePreview(input: {
+  deps: ReturnType<typeof createDeps>;
+  libraryId: string;
+  blockers?: Array<{ code: 'active_writer_sessions' }>;
+}) {
+  return new JsonDocFileLibraryRestorePreviewRepo(input.deps.docStore).create({
+    id: `flrp_${input.libraryId}`,
+    workspaceId: 'ws_default',
+    projectId: 'proj_1',
+    libraryId: input.libraryId,
+    afscpPreviewOperationId: 'op_preview_hidden',
+    sourceSavePointId: 'flsp_before_restore',
+    sourceAfscpSavePointId: 'sp_user_hidden',
+    status: 'ready',
+    restorePlanId: 'plan_hidden',
+    blockers: input.blockers ?? [],
+  });
+}
+
+function activeRuntimeBinding(libraryId: string): InternalAgentWorkspaceBinding {
+  return {
+    file_library_id: libraryId,
+    workspace_id: 'ws_default',
+    project_id: 'proj_1',
+    provider: 'afscp',
+    task_home_binding_id: 'wmb_hidden_runtime',
+    afscp_mount_binding_id: 'wmb_hidden_runtime',
+    afscp_namespace_id: 'ns_hidden_runtime',
+    afscp_repo_id: 'repo_hidden_runtime',
+    afscp_volume_id: 'vol_hidden_runtime',
+    mount_binding_generation: 1,
+    project_storage_generation: 1,
+    status: 'ready',
+    mount_binding_status: 'issued',
+    lease_expires_at: '2999-05-09T00:00:00.000Z',
+    task_home_path: '/home/task_release_runtime_access',
+    workspace_path: '/home/task_release_runtime_access/workspace',
+    artifacts_path: '/home/task_release_runtime_access/workspace/.artifacts',
+    library_root_path: '.',
+    created_at: '2026-05-09T00:00:00.000Z',
+    updated_at: '2026-05-09T00:00:00.000Z',
+  };
 }
 
 function multipartUploadRequest(filename = 'hello.txt'): http.IncomingMessage {
@@ -2224,12 +2344,546 @@ describe('project-file-library-routes', () => {
         readBody: vi.fn().mockResolvedValue({ restore_preview_id: preview.id }),
       })).resolves.toBe(true);
 
-      expect(runJson).toHaveBeenCalledWith(expect.anything(), 409, {
-        error_code: errorCode,
-        message,
-      });
+      if (message === 'file_library_active_writer_blocked') {
+        expect(runJson).toHaveBeenCalledWith(expect.anything(), 409, {
+          error_code: errorCode,
+          message,
+          file_library_id: libraryId,
+          restore_preview_id: preview.id,
+          blockers: [{ code: 'active_writer_sessions' }],
+          bound_task_visible: false,
+        });
+      } else {
+        expect(runJson).toHaveBeenCalledWith(expect.anything(), 409, {
+          error_code: errorCode,
+          message,
+        });
+      }
       expect(JSON.stringify(runJson.mock.calls)).not.toMatch(/repo_hidden_elsewhere|ns_hidden|export_hidden|repo_|sp_user_|plan_|credential|control_root/);
     }
+  });
+
+  it('does not treat the durable task file-library binding as a restore active writer after runtime access is gone', async () => {
+    const storageAdapter = createStorageAdapter();
+    const deps = createDeps({ storageAdapter });
+    const created = await createReadyLibrary(deps);
+    const libraryId = String(created.id);
+    const preview = await seedReadyRestorePreview({ deps, libraryId });
+    await seedBoundTask({
+      deps,
+      libraryId,
+      taskId: 'task_restore_durable_binding_only',
+      title: 'Durable binding only task',
+    });
+
+    const runJson = vi.fn();
+    await expect(handleProjectFileLibraryRoutes({
+      routeKind: 'fileLibraryRestoreRun',
+      method: 'POST',
+      workspaceId: 'ws_default',
+      projectId: 'proj_1',
+      libraryId,
+      req: { headers: { 'x-request-id': 'req_restore_durable_binding_only' } } as never,
+      res: createMockResponse(),
+      deps,
+      user: OWNER_USER,
+      json: runJson,
+      readBody: vi.fn().mockResolvedValue({ restore_preview_id: preview.id }),
+    })).resolves.toBe(true);
+
+    expect(storageAdapter.runRestorePreview).toHaveBeenCalledWith(expect.objectContaining({
+      libraryId,
+      previewOperationId: 'op_preview_hidden',
+    }));
+    expect(runJson.mock.calls[0]?.[1]).toBe(200);
+    expect(JSON.stringify(runJson.mock.calls)).not.toMatch(/wmb_|ns_|repo_hidden|credential|control_root/);
+  });
+
+  it('preflights restore run against active runtime workspace access and projects a typed blocker', async () => {
+    const storageAdapter = createStorageAdapter();
+    const deps = createDeps({ storageAdapter });
+    const created = await createReadyLibrary(deps);
+    const libraryId = String(created.id);
+    const preview = await seedReadyRestorePreview({ deps, libraryId });
+    await seedBoundTask({
+      deps,
+      libraryId,
+      taskId: 'task_restore_active_writer',
+      title: 'Restore active writer task',
+    });
+    deps.internalAgentWorkspaceBindingManager.findWorkspaceBinding = vi.fn(async () => activeRuntimeBinding(libraryId));
+
+    const runJson = vi.fn();
+    await expect(handleProjectFileLibraryRoutes({
+      routeKind: 'fileLibraryRestoreRun',
+      method: 'POST',
+      workspaceId: 'ws_default',
+      projectId: 'proj_1',
+      libraryId,
+      req: { headers: { 'x-request-id': 'req_restore_preflight_blocked' } } as never,
+      res: createMockResponse(),
+      deps,
+      user: OWNER_USER,
+      json: runJson,
+      readBody: vi.fn().mockResolvedValue({ restore_preview_id: preview.id }),
+    })).resolves.toBe(true);
+
+    expect(storageAdapter.runRestorePreview).not.toHaveBeenCalled();
+    expect(runJson).toHaveBeenCalledWith(expect.anything(), 409, {
+      error_code: 'FILE_LIBRARY_ACTIVE_WRITER_BLOCKED',
+      message: 'file_library_active_writer_blocked',
+      file_library_id: libraryId,
+      restore_preview_id: preview.id,
+      blockers: [{ code: 'active_writer_sessions' }],
+      bound_task_visible: true,
+      bound_task_id: 'task_restore_active_writer',
+      bound_task_title: 'Restore active writer task',
+      bound_task_status: 'active',
+    });
+
+    const getJson = vi.fn();
+    await expect(handleProjectFileLibraryRoutes({
+      routeKind: 'fileLibraryRestorePreview',
+      method: 'GET',
+      workspaceId: 'ws_default',
+      projectId: 'proj_1',
+      libraryId,
+      req: { headers: { 'x-request-id': 'req_restore_preflight_refresh' } } as never,
+      res: createMockResponse(),
+      deps,
+      user: OWNER_USER,
+      json: getJson,
+      readBody: vi.fn(),
+    })).resolves.toBe(true);
+
+    expect(getJson).toHaveBeenCalledWith(expect.anything(), 200, {
+      restore_preview: expect.objectContaining({
+        id: preview.id,
+        status: 'ready',
+        blockers: [{ code: 'active_writer_sessions' }],
+      }),
+    });
+    expect(JSON.stringify([runJson.mock.calls, getJson.mock.calls]))
+      .not.toMatch(/op_preview_hidden|sp_user_hidden|plan_hidden|repo_|ns_|wmb_|mount|credential|control_root/);
+  });
+
+  it('returns typed restore active-writer schema and persists the preview blocker when storage rejects restore run', async () => {
+    const storageAdapter = createStorageAdapter({
+      runRestorePreview: vi.fn(async () => {
+        throw new Error('file_library_active_writer_blocked repo_hidden_elsewhere ns_hidden export_hidden');
+      }),
+    });
+    const deps = createDeps({ storageAdapter });
+    const created = await createReadyLibrary(deps);
+    const libraryId = String(created.id);
+    const preview = await seedReadyRestorePreview({ deps, libraryId });
+    const seededTask = await seedBoundTask({
+      deps,
+      libraryId,
+      taskId: 'task_restore_storage_writer',
+      title: 'Storage writer task',
+    });
+
+    const runJson = vi.fn();
+    await expect(handleProjectFileLibraryRoutes({
+      routeKind: 'fileLibraryRestoreRun',
+      method: 'POST',
+      workspaceId: 'ws_default',
+      projectId: 'proj_1',
+      libraryId,
+      req: { headers: { 'x-request-id': 'req_restore_storage_active_writer' } } as never,
+      res: createMockResponse(),
+      deps,
+      user: OWNER_USER,
+      json: runJson,
+      readBody: vi.fn().mockResolvedValue({ restore_preview_id: preview.id }),
+    })).resolves.toBe(true);
+
+    expect(storageAdapter.runRestorePreview).toHaveBeenCalledWith(expect.objectContaining({
+      libraryId,
+      previewOperationId: 'op_preview_hidden',
+    }));
+    expect(runJson).toHaveBeenCalledWith(expect.anything(), 409, {
+      error_code: 'FILE_LIBRARY_ACTIVE_WRITER_BLOCKED',
+      message: 'file_library_active_writer_blocked',
+      file_library_id: libraryId,
+      restore_preview_id: preview.id,
+      blockers: [{ code: 'active_writer_sessions' }],
+      bound_task_visible: true,
+      bound_task_id: seededTask.taskId,
+      bound_task_title: 'Storage writer task',
+      bound_task_status: 'active',
+    });
+    await expect(new JsonDocFileLibraryRestorePreviewRepo(deps.docStore).getById(
+      'ws_default',
+      'proj_1',
+      libraryId,
+      preview.id,
+    )).resolves.toMatchObject({
+      id: preview.id,
+      status: 'ready',
+      blockers: [{ code: 'active_writer_sessions' }],
+    });
+    expect(JSON.stringify(runJson.mock.calls)).not.toMatch(/repo_hidden_elsewhere|ns_hidden|export_hidden|op_preview_hidden|sp_user_hidden|plan_hidden|repo_|ns_|wmb_|mount|credential|control_root/);
+  });
+
+  it('redacts invisible bound task fields in restore active-writer preflight responses', async () => {
+    const storageAdapter = createStorageAdapter();
+    const deps = createDeps({ storageAdapter });
+    const created = await createReadyLibrary(deps);
+    const libraryId = String(created.id);
+    const preview = await seedReadyRestorePreview({ deps, libraryId });
+    await seedBoundTask({
+      deps,
+      libraryId,
+      taskId: 'task_restore_invisible_writer',
+      title: 'Invisible restore writer task',
+      ownerUserId: OTHER_PROJECT_USER.id,
+    });
+    deps.internalAgentWorkspaceBindingManager.findWorkspaceBinding = vi.fn(async () => activeRuntimeBinding(libraryId));
+
+    const runJson = vi.fn();
+    await expect(handleProjectFileLibraryRoutes({
+      routeKind: 'fileLibraryRestoreRun',
+      method: 'POST',
+      workspaceId: 'ws_default',
+      projectId: 'proj_1',
+      libraryId,
+      req: { headers: { 'x-request-id': 'req_restore_preflight_redacted' } } as never,
+      res: createMockResponse(),
+      deps,
+      user: OWNER_USER,
+      json: runJson,
+      readBody: vi.fn().mockResolvedValue({ restore_preview_id: preview.id }),
+    })).resolves.toBe(true);
+
+    expect(storageAdapter.runRestorePreview).not.toHaveBeenCalled();
+    const body = runJson.mock.calls[0]?.[2] as Record<string, unknown>;
+    expect(body).toMatchObject({
+      error_code: 'FILE_LIBRARY_ACTIVE_WRITER_BLOCKED',
+      message: 'file_library_active_writer_blocked',
+      file_library_id: libraryId,
+      restore_preview_id: preview.id,
+      blockers: [{ code: 'active_writer_sessions' }],
+      bound_task_visible: false,
+    });
+    expect(body).not.toHaveProperty('bound_task_id');
+    expect(body).not.toHaveProperty('bound_task_title');
+    expect(body).not.toHaveProperty('bound_task_status');
+    expect(JSON.stringify(body)).not.toMatch(/task_restore_invisible_writer|Invisible restore writer task|op_preview_hidden|sp_user_hidden|plan_hidden|repo_|ns_|wmb_|mount|credential|control_root/);
+  });
+
+  it('releases file-library runtime access through the workspace binding manager and clears stale preview blockers', async () => {
+    const storageAdapter = createStorageAdapter();
+    const deps = createDeps({ storageAdapter });
+    const created = await createReadyLibrary(deps);
+    const libraryId = String(created.id);
+    const preview = await seedReadyRestorePreview({
+      deps,
+      libraryId,
+      blockers: [{ code: 'active_writer_sessions' }],
+    });
+    const seededTask = await seedBoundTask({
+      deps,
+      libraryId,
+      taskId: 'task_release_runtime_access',
+      title: 'Release runtime access task',
+    });
+
+    const releaseJson = vi.fn();
+    await expect(handleProjectFileLibraryRoutes({
+      routeKind: 'fileLibraryRuntimeAccessRelease',
+      method: 'POST',
+      workspaceId: 'ws_default',
+      projectId: 'proj_1',
+      libraryId,
+      req: { headers: { 'x-request-id': 'req_runtime_access_release' } } as never,
+      res: createMockResponse(),
+      deps,
+      user: OWNER_USER,
+      json: releaseJson,
+      readBody: vi.fn().mockResolvedValue({}),
+    })).resolves.toBe(true);
+
+    expect(deps.internalAgentWorkspaceBindingManager.deleteWorkspaceBinding).toHaveBeenCalledWith({
+      workspaceId: 'ws_default',
+      fileLibraryId: libraryId,
+    });
+    expect(releaseJson).toHaveBeenCalledWith(expect.anything(), 200, {
+      file_library_id: libraryId,
+      released: true,
+      runtime_access_status: 'released',
+    });
+    expect(JSON.stringify(releaseJson.mock.calls)).not.toMatch(/wmb_|ns_|repo_|mount|credential|control_root/);
+    await expect(new JsonDocTaskFileLibraryBindingRepo(deps.docStore).find({
+      workspaceId: 'ws_default',
+      projectId: 'proj_1',
+      fileLibraryId: libraryId,
+    })).resolves.toMatchObject({
+      taskId: seededTask.taskId,
+      fileLibraryId: libraryId,
+      bindingGeneration: seededTask.bindingGeneration,
+      runtimeWritableAffordance: 'task_internal_home',
+    });
+    await expect(deps.docStore.get(notebookTasksCollection('ws_default'), seededTask.taskId)).resolves.toMatchObject({
+      workspace_file_library_id: libraryId,
+      workspace_file_library_name: 'Shared Docs',
+      file_library_binding_generation: seededTask.bindingGeneration,
+      runtime_writable_affordance: 'task_internal_home',
+    });
+
+    const detailJson = vi.fn();
+    await expect(handleProjectFileLibraryRoutes({
+      routeKind: 'fileLibraryItem',
+      method: 'GET',
+      workspaceId: 'ws_default',
+      projectId: 'proj_1',
+      libraryId,
+      req: { headers: { 'x-request-id': 'req_runtime_access_release_detail' } } as never,
+      res: createMockResponse(),
+      deps,
+      user: OWNER_USER,
+      json: detailJson,
+      readBody: vi.fn(),
+    })).resolves.toBe(true);
+    expect(detailJson.mock.calls[0]?.[2]).toMatchObject({
+      id: libraryId,
+      task_home_binding_status: 'bound',
+      bound_task_visible: true,
+      bound_task_id: seededTask.taskId,
+    });
+
+    const listJson = vi.fn();
+    await expect(handleProjectFileLibraryRoutes({
+      routeKind: 'fileLibraries',
+      method: 'GET',
+      workspaceId: 'ws_default',
+      projectId: 'proj_1',
+      req: { headers: { 'x-request-id': 'req_runtime_access_release_list' } } as never,
+      res: createMockResponse(),
+      deps,
+      user: OWNER_USER,
+      json: listJson,
+      readBody: vi.fn(),
+    })).resolves.toBe(true);
+    expect(listJson.mock.calls[0]?.[2]).toMatchObject({
+      items: [
+        expect.objectContaining({
+          id: libraryId,
+          task_home_binding_status: 'bound',
+          bound_task_visible: true,
+          bound_task_id: seededTask.taskId,
+        }),
+      ],
+    });
+
+    const getJson = vi.fn();
+    await expect(handleProjectFileLibraryRoutes({
+      routeKind: 'fileLibraryRestorePreview',
+      method: 'GET',
+      workspaceId: 'ws_default',
+      projectId: 'proj_1',
+      libraryId,
+      req: { headers: { 'x-request-id': 'req_runtime_access_release_refresh' } } as never,
+      res: createMockResponse(),
+      deps,
+      user: OWNER_USER,
+      json: getJson,
+      readBody: vi.fn(),
+    })).resolves.toBe(true);
+    expect(getJson.mock.calls[0]?.[2]).toMatchObject({
+      restore_preview: {
+        id: preview.id,
+        blockers: [],
+      },
+    });
+
+    const runJson = vi.fn();
+    await expect(handleProjectFileLibraryRoutes({
+      routeKind: 'fileLibraryRestoreRun',
+      method: 'POST',
+      workspaceId: 'ws_default',
+      projectId: 'proj_1',
+      libraryId,
+      req: { headers: { 'x-request-id': 'req_runtime_access_release_restore_run' } } as never,
+      res: createMockResponse(),
+      deps,
+      user: OWNER_USER,
+      json: runJson,
+      readBody: vi.fn().mockResolvedValue({ restore_preview_id: preview.id }),
+    })).resolves.toBe(true);
+    expect(storageAdapter.runRestorePreview).toHaveBeenCalledWith(expect.objectContaining({
+      libraryId,
+      previewOperationId: 'op_preview_hidden',
+    }));
+  });
+
+  it('reports pending runtime access release truth without dropping the durable task binding', async () => {
+    const storageAdapter = createStorageAdapter();
+    const deps = createDeps({ storageAdapter });
+    const created = await createReadyLibrary(deps);
+    const libraryId = String(created.id);
+    const preview = await seedReadyRestorePreview({
+      deps,
+      libraryId,
+      blockers: [{ code: 'active_writer_sessions' }],
+    });
+    const seededTask = await seedBoundTask({
+      deps,
+      libraryId,
+      taskId: 'task_release_runtime_access_pending',
+      title: 'Release pending task',
+    });
+    deps.internalAgentWorkspaceBindingManager.findWorkspaceBinding = vi.fn(async () => ({
+      ...activeRuntimeBinding(libraryId),
+      status: 'releasing',
+      mount_binding_status: 'releasing',
+      release_operation_id: 'op_hidden_release_pending',
+      release_requested_at: '2026-05-09T00:00:00.000Z',
+      drain_started_at: '2026-05-09T00:00:00.000Z',
+    }));
+
+    const releaseJson = vi.fn();
+    await expect(handleProjectFileLibraryRoutes({
+      routeKind: 'fileLibraryRuntimeAccessRelease',
+      method: 'POST',
+      workspaceId: 'ws_default',
+      projectId: 'proj_1',
+      libraryId,
+      req: { headers: { 'x-request-id': 'req_runtime_access_release_pending' } } as never,
+      res: createMockResponse(),
+      deps,
+      user: OWNER_USER,
+      json: releaseJson,
+      readBody: vi.fn().mockResolvedValue({}),
+    })).resolves.toBe(true);
+
+    expect(releaseJson).toHaveBeenCalledWith(expect.anything(), 200, {
+      file_library_id: libraryId,
+      released: false,
+      runtime_access_status: 'release_pending',
+    });
+    expect(JSON.stringify(releaseJson.mock.calls)).not.toMatch(/op_hidden|wmb_|ns_|repo_|mount|credential|control_root/);
+    await expect(new JsonDocTaskFileLibraryBindingRepo(deps.docStore).find({
+      workspaceId: 'ws_default',
+      projectId: 'proj_1',
+      fileLibraryId: libraryId,
+    })).resolves.toMatchObject({
+      taskId: seededTask.taskId,
+    });
+    await expect(deps.docStore.get(notebookTasksCollection('ws_default'), seededTask.taskId)).resolves.toMatchObject({
+      workspace_file_library_id: libraryId,
+      file_library_binding_generation: seededTask.bindingGeneration,
+      runtime_writable_affordance: 'task_internal_home',
+    });
+
+    const runJson = vi.fn();
+    await expect(handleProjectFileLibraryRoutes({
+      routeKind: 'fileLibraryRestoreRun',
+      method: 'POST',
+      workspaceId: 'ws_default',
+      projectId: 'proj_1',
+      libraryId,
+      req: { headers: { 'x-request-id': 'req_runtime_access_release_pending_restore_run' } } as never,
+      res: createMockResponse(),
+      deps,
+      user: OWNER_USER,
+      json: runJson,
+      readBody: vi.fn().mockResolvedValue({ restore_preview_id: preview.id }),
+    })).resolves.toBe(true);
+
+    expect(storageAdapter.runRestorePreview).not.toHaveBeenCalled();
+    expect(runJson).toHaveBeenCalledWith(expect.anything(), 409, {
+      error_code: 'FILE_LIBRARY_ACTIVE_WRITER_BLOCKED',
+      message: 'file_library_active_writer_blocked',
+      file_library_id: libraryId,
+      restore_preview_id: preview.id,
+      blockers: [{ code: 'active_writer_sessions' }],
+      bound_task_visible: true,
+      bound_task_id: seededTask.taskId,
+      bound_task_title: 'Release pending task',
+      bound_task_status: 'active',
+    });
+    expect(JSON.stringify(runJson.mock.calls)).not.toMatch(/op_preview_hidden|sp_user_hidden|plan_hidden|op_hidden|wmb_|ns_|repo_|mount|credential|control_root/);
+  });
+
+  it.each([
+    ['active_run', async (deps: ReturnType<typeof createDeps>, taskId: string) => {
+      deps.cache.get = vi.fn(async () => JSON.stringify({
+        task_id: taskId,
+        run_id: 'run_release_blocked',
+        owner_instance_id: 'api-test',
+        phase: 'running',
+        started_at: '2026-05-09T00:00:00.000Z',
+        heartbeat_at: '2026-05-09T00:00:00.000Z',
+      }));
+    }],
+    ['active_terminal', async (deps: ReturnType<typeof createDeps>) => {
+      deps.notebookTerminalService.hasLiveSessionsForTask = vi.fn(async () => true);
+    }],
+    ['workspace_holder', async (deps: ReturnType<typeof createDeps>, taskId: string, libraryId: string, bindingGeneration: number) => {
+      await new JsonDocTaskWorkspaceHolderRepo(deps.docStore).acquire({
+        workspaceId: 'ws_default',
+        projectId: 'proj_1',
+        taskId,
+        fileLibraryId: libraryId,
+        taskHomeSegment: taskId,
+        bindingGeneration,
+        holderId: 'holder_release_blocked',
+        holderKind: 'runner_workspace',
+        leaseEpoch: 'lease_release_blocked',
+        issuedAt: '2026-05-09T00:00:00.000Z',
+        expiresAt: '2999-05-09T00:00:00.000Z',
+      });
+    }],
+  ] as const)('refuses runtime access release while %s is live', async (blockerCode, setupBlocker) => {
+    const deps = createDeps();
+    const created = await createReadyLibrary(deps);
+    const libraryId = String(created.id);
+    const seededTask = await seedBoundTask({
+      deps,
+      libraryId,
+      taskId: `task_release_blocked_${blockerCode}`,
+      title: `Release blocked by ${blockerCode}`,
+    });
+    await setupBlocker(deps, seededTask.taskId, libraryId, seededTask.bindingGeneration);
+
+    const releaseJson = vi.fn();
+    await expect(handleProjectFileLibraryRoutes({
+      routeKind: 'fileLibraryRuntimeAccessRelease',
+      method: 'POST',
+      workspaceId: 'ws_default',
+      projectId: 'proj_1',
+      libraryId,
+      req: { headers: { 'x-request-id': `req_release_blocked_${blockerCode}` } } as never,
+      res: createMockResponse(),
+      deps,
+      user: OWNER_USER,
+      json: releaseJson,
+      readBody: vi.fn().mockResolvedValue({}),
+    })).resolves.toBe(true);
+
+    expect(releaseJson).toHaveBeenCalledWith(expect.anything(), 409, expect.objectContaining({
+      error_code: 'FILE_LIBRARY_RUNTIME_ACCESS_RELEASE_BLOCKED',
+      message: 'file_library_runtime_access_release_blocked',
+      file_library_id: libraryId,
+      blockers: [{ code: blockerCode }],
+      bound_task_visible: true,
+      bound_task_id: seededTask.taskId,
+    }));
+    expect(deps.internalAgentWorkspaceBindingManager.deleteWorkspaceBinding).not.toHaveBeenCalled();
+    await expect(new JsonDocTaskFileLibraryBindingRepo(deps.docStore).find({
+      workspaceId: 'ws_default',
+      projectId: 'proj_1',
+      fileLibraryId: libraryId,
+    })).resolves.toMatchObject({
+      taskId: seededTask.taskId,
+    });
+    await expect(deps.docStore.get(notebookTasksCollection('ws_default'), seededTask.taskId)).resolves.toMatchObject({
+      workspace_file_library_id: libraryId,
+      file_library_binding_generation: seededTask.bindingGeneration,
+      runtime_writable_affordance: 'task_internal_home',
+    });
   });
 
   it('lists only published task file templates for task-use users without leaking drafts', async () => {

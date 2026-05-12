@@ -15,6 +15,7 @@ const FILE_LIBRARY_ROUTE_KINDS = new Set([
   'fileLibraryRestorePreview',
   'fileLibraryRestoreRun',
   'fileLibraryRestoreCancel',
+  'fileLibraryRuntimeAccessRelease',
   'fileLibraryOperation',
   'taskFileTemplates',
   'taskFileTemplateItem',

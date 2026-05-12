@@ -19,7 +19,7 @@ import { queryKeys } from '@/lib/query-keys';
 
 const ACTIVE_RESTORE_PREVIEW_REFETCH_INTERVAL_MS = 2_000;
 
-type CreateFileLibrarySavePointOptions = {
+type FileLibraryRecoveryMutationOptions = {
   suppressErrorToast?: boolean;
 };
 
@@ -112,7 +112,7 @@ export function useFileLibraryActiveRestorePreview(
   });
 }
 
-export function useCreateFileLibrarySavePoint(options: CreateFileLibrarySavePointOptions = {}) {
+export function useCreateFileLibrarySavePoint(options: FileLibraryRecoveryMutationOptions = {}) {
   const queryClient = useQueryClient();
   const filesAPI = new FilesAPI(getApiClient());
   const t = useTranslations('common.toast');
@@ -189,7 +189,7 @@ export function useCreateFileLibraryRestorePreview() {
   });
 }
 
-export function useRunFileLibraryRestore() {
+export function useRunFileLibraryRestore(options: FileLibraryRecoveryMutationOptions = {}) {
   const queryClient = useQueryClient();
   const filesAPI = new FilesAPI(getApiClient());
   const t = useTranslations('common.toast');
@@ -256,7 +256,69 @@ export function useRunFileLibraryRestore() {
       }
     },
     onError: (error: unknown) => {
+      if (options.suppressErrorToast) return;
       handleErrorForToast(error, 'useRunFileLibraryRestore');
+    },
+  });
+}
+
+export function useReleaseFileLibraryRuntimeAccess(options: FileLibraryRecoveryMutationOptions = {}) {
+  const queryClient = useQueryClient();
+  const filesAPI = new FilesAPI(getApiClient());
+
+  return useMutation({
+    mutationFn: ({
+      workspaceId,
+      projectId,
+      libraryId,
+    }: {
+      workspaceId: string;
+      projectId: string;
+      libraryId: string;
+    }) => filesAPI.releaseRuntimeAccess(workspaceId, projectId, libraryId),
+    onSuccess: async (_release, variables) => {
+      await Promise.all([
+        queryClient.invalidateQueries({
+          queryKey: queryKeys.fileLibraries.activeRestorePreview(
+            variables.workspaceId,
+            variables.projectId,
+            variables.libraryId,
+          ),
+        }),
+        queryClient.invalidateQueries({
+          queryKey: queryKeys.fileLibraries.savePoints(
+            variables.workspaceId,
+            variables.projectId,
+            variables.libraryId,
+          ),
+        }),
+        queryClient.invalidateQueries({
+          queryKey: queryKeys.fileLibraries.list(
+            variables.workspaceId,
+            variables.projectId,
+          ),
+        }),
+        queryClient.invalidateQueries({
+          queryKey: queryKeys.fileLibraries.detail(
+            variables.workspaceId,
+            variables.projectId,
+            variables.libraryId,
+          ),
+        }),
+        invalidateFileObjectCaches(
+          queryClient,
+          variables.workspaceId,
+          variables.projectId,
+          variables.libraryId,
+        ),
+        queryClient.invalidateQueries({
+          queryKey: queryKeys.tasks.scope(variables.workspaceId, variables.projectId),
+        }),
+      ]);
+    },
+    onError: (error: unknown) => {
+      if (options.suppressErrorToast) return;
+      handleErrorForToast(error, 'useReleaseFileLibraryRuntimeAccess');
     },
   });
 }

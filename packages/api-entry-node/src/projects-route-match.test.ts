@@ -429,6 +429,14 @@ describe('matchProjectsRoute', () => {
       projectId: 'proj_1',
       libraryId: 'flib_1',
     });
+    expect(
+      matchProjectsRoute('/api/v1/workspaces/ws_default/projects/proj_1/file-libraries/flib_1/runtime-access/release'),
+    ).toEqual({
+      kind: 'fileLibraryRuntimeAccessRelease',
+      workspaceId: 'ws_default',
+      projectId: 'proj_1',
+      libraryId: 'flib_1',
+    });
   });
 
   it('does not match removed file library connector routes', () => {

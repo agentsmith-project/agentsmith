@@ -81,6 +81,10 @@ export interface InternalAgentWorkspaceProvisioner {
     workspaceId: string;
     fileLibraryId: string;
   }): Promise<void>;
+  findWorkspaceBinding?(input: {
+    workspaceId: string;
+    fileLibraryId: string;
+  }): Promise<InternalAgentWorkspaceBinding | null>;
 }
 
 export type InternalAgentWorkspaceBindingManager = InternalAgentWorkspaceProvisioner;
@@ -556,34 +560,94 @@ export class InternalAgentWorkspaceProvisionerImpl implements InternalAgentWorks
     await this.k8sClient.deleteWorkspaceBinding(input.workspaceId, existing.project_id, mountBindingId);
     const options = this.options;
     if (options?.afscpProductClient && existing.afscp_namespace_id && mountBindingId.startsWith('wmb_')) {
-      const revokeOperation = await options.afscpProductClient.revokeWorkloadMountBinding({
-        namespaceId: existing.afscp_namespace_id,
-        mountBindingId,
-        correlationId: buildCorrelationId({
-          workspaceId: input.workspaceId,
-          projectId: existing.project_id,
-          fileLibraryId: input.fileLibraryId,
-          taskId: mountBindingId,
-        }),
-        idempotencyKey: buildIdempotencyKey({
-          workspaceId: input.workspaceId,
-          projectId: existing.project_id,
-          fileLibraryId: input.fileLibraryId,
-          taskHomePath: existing.task_home_path,
-          operation: 'revoke',
-        }),
-        actor: { type: 'system', id: 'agentsmith-managed-runner' },
-      }).catch((error: unknown) => {
-        throw mapAfscpProvisioningError(error);
+      const correlationId = buildCorrelationId({
+        workspaceId: input.workspaceId,
+        projectId: existing.project_id,
+        fileLibraryId: input.fileLibraryId,
+        taskId: mountBindingId,
       });
-      const releaseOperationId = sanitizeAfscpOperationId(revokeOperation.operation_id) ?? null;
+      let revokeOperation: AfscpOperationEnvelope | AfscpOperationRecord;
+      try {
+        revokeOperation = await options.afscpProductClient.revokeWorkloadMountBinding({
+          namespaceId: existing.afscp_namespace_id,
+          mountBindingId,
+          correlationId,
+          idempotencyKey: buildIdempotencyKey({
+            workspaceId: input.workspaceId,
+            projectId: existing.project_id,
+            fileLibraryId: input.fileLibraryId,
+            taskHomePath: existing.task_home_path,
+            operation: 'revoke',
+          }),
+          actor: { type: 'system', id: 'agentsmith-managed-runner' },
+        });
+        const operationId = typeof revokeOperation.operation_id === 'string'
+          ? sanitizeAfscpOperationId(revokeOperation.operation_id)
+          : undefined;
+        if (operationId && !isSuccessOperationState(revokeOperation.operation_state) && options.afscpProductClient.pollOperation) {
+          revokeOperation = await options.afscpProductClient.pollOperation({
+            operationId,
+            correlationId,
+            intervalMs: 250,
+            timeoutMs: 30_000,
+          });
+        }
+      } catch (error) {
+        throw mapAfscpProvisioningError(error);
+      }
+      const releaseOperationId = typeof revokeOperation.operation_id === 'string'
+        ? sanitizeAfscpOperationId(revokeOperation.operation_id) ?? null
+        : null;
+      if (isFailedOperationState(revokeOperation.operation_state)) {
+        await this.docStore.upsert(collection, input.fileLibraryId, {
+          ...releasing,
+          status: 'failed',
+          mount_binding_status: 'failed',
+          release_operation_id: releaseOperationId,
+          updated_at: new Date().toISOString(),
+        });
+        throwProvisioningError({
+          code: 'AGENT_WORKSPACE_AFSCP_ERROR',
+          statusCode: 502,
+          retryable: false,
+          metadata: {
+            operation_id: releaseOperationId ?? undefined,
+            operation_state: typeof revokeOperation.operation_state === 'string'
+              ? revokeOperation.operation_state
+              : 'unknown',
+          },
+        });
+      }
+      if (!isSuccessOperationState(revokeOperation.operation_state)) {
+        await this.docStore.upsert(collection, input.fileLibraryId, {
+          ...releasing,
+          release_operation_id: releaseOperationId,
+          updated_at: new Date().toISOString(),
+        });
+        return;
+      }
       await this.docStore.upsert(collection, input.fileLibraryId, {
         ...releasing,
         release_operation_id: releaseOperationId,
+        drain_completed_at: new Date().toISOString(),
         updated_at: new Date().toISOString(),
       });
     }
     await this.docStore.delete(collection, input.fileLibraryId);
+  }
+
+  async findWorkspaceBinding(input: {
+    workspaceId: string;
+    fileLibraryId: string;
+  }): Promise<InternalAgentWorkspaceBinding | null> {
+    const binding = await this.docStore.get<InternalAgentWorkspaceBinding>(
+      bindingsCollection(input.workspaceId),
+      input.fileLibraryId,
+    );
+    if (!binding || binding.workspace_id !== input.workspaceId || binding.file_library_id !== input.fileLibraryId) {
+      return null;
+    }
+    return binding;
   }
 
   private async requireActiveMapping(input: {

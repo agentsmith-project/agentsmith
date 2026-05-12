@@ -215,6 +215,12 @@ export interface FileLibraryRestoreRun {
   updated_at: string;
 }
 
+export interface ReleaseFileLibraryRuntimeAccessResponse {
+  file_library_id: string;
+  released: boolean;
+  runtime_access_status?: 'released' | 'release_pending';
+}
+
 export type TaskFileTemplateStatus = 'unpublished' | 'published' | 'failed';
 
 export interface TaskFileTemplate {

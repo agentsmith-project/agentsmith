@@ -9,6 +9,7 @@ const {
   mockCreateSavePoint,
   mockCreateRestorePreview,
   mockRunRestore,
+  mockReleaseRuntimeAccess,
   mockCancelRestore,
 } = vi.hoisted(() => ({
   mockListSavePoints: vi.fn().mockResolvedValue({ items: [] }),
@@ -35,6 +36,7 @@ const {
     created_at: '2026-05-09T12:02:00.000Z',
     updated_at: '2026-05-09T12:02:00.000Z',
   }),
+  mockReleaseRuntimeAccess: vi.fn().mockResolvedValue({ file_library_id: 'lib_1', released: true }),
   mockCancelRestore: vi.fn().mockResolvedValue({
     id: 'rp_1',
     file_library_id: 'lib_1',
@@ -54,6 +56,7 @@ vi.mock('@/lib/api', () => ({
       createSavePoint: mockCreateSavePoint,
       createRestorePreview: mockCreateRestorePreview,
       runRestore: mockRunRestore,
+      releaseRuntimeAccess: mockReleaseRuntimeAccess,
       cancelRestore: mockCancelRestore,
     };
   }),
@@ -85,6 +88,7 @@ import {
   useCreateFileLibrarySavePoint,
   useFileLibraryActiveRestorePreview,
   useFileLibrarySavePoints,
+  useReleaseFileLibraryRuntimeAccess,
   useRunFileLibraryRestore,
 } from '../use-file-library-recovery';
 import { toast } from '@/components/ui/toast';
@@ -377,6 +381,90 @@ describe('file library recovery hooks', () => {
         status: 'restoring',
       }),
     });
+  });
+
+  it('allows dialog-controlled restore run errors to suppress the global error toast', async () => {
+    mockRunRestore.mockRejectedValueOnce(new Error('file_library_active_writer_blocked'));
+
+    const { Wrapper } = createTestHarness();
+    const { result } = renderHook(
+      () => useRunFileLibraryRestore({ suppressErrorToast: true }),
+      { wrapper: Wrapper },
+    );
+
+    await act(async () => {
+      await expect(result.current.mutateAsync({
+        workspaceId,
+        projectId,
+        libraryId,
+        restorePreviewId: 'rp_1',
+      })).rejects.toThrow('file_library_active_writer_blocked');
+    });
+
+    expect(handleErrorForToast).not.toHaveBeenCalled();
+  });
+
+  it('keeps the default restore run global error toast for non-dialog callers', async () => {
+    mockRunRestore.mockRejectedValueOnce(new Error('restore run failed'));
+
+    const { Wrapper } = createTestHarness();
+    const { result } = renderHook(() => useRunFileLibraryRestore(), {
+      wrapper: Wrapper,
+    });
+
+    await act(async () => {
+      await expect(result.current.mutateAsync({
+        workspaceId,
+        projectId,
+        libraryId,
+        restorePreviewId: 'rp_1',
+      })).rejects.toThrow('restore run failed');
+    });
+
+    expect(handleErrorForToast).toHaveBeenCalledWith(expect.any(Error), 'useRunFileLibraryRestore');
+  });
+
+  it('releases file-library runtime access and refreshes restore/file-library caches', async () => {
+    const { queryClient, Wrapper } = createTestHarness();
+    const activePreviewKey = ['file-library-active-restore-preview', workspaceId, projectId, libraryId];
+    const savePointsKey = ['file-library-save-points', workspaceId, projectId, libraryId];
+    const fileLibrariesKey = ['file-libraries', workspaceId, projectId];
+    const fileLibraryDetailKey = ['file-library', workspaceId, projectId, libraryId];
+    const objectsKey = [
+      'file-objects',
+      'infinite',
+      workspaceId,
+      projectId,
+      libraryId,
+      { prefix: '', delimiter: '/', page_size: 200 },
+    ];
+    queryClient.setQueryData(activePreviewKey, { restore_preview: { id: 'rp_1' } });
+    queryClient.setQueryData(savePointsKey, { items: [] });
+    queryClient.setQueryData(fileLibrariesKey, { items: [{ id: libraryId }] });
+    queryClient.setQueryData(fileLibraryDetailKey, { id: libraryId });
+    queryClient.setQueryData(objectsKey, { pages: [{ items: [] }] });
+
+    const { result } = renderHook(() => useReleaseFileLibraryRuntimeAccess({ suppressErrorToast: true }), {
+      wrapper: Wrapper,
+    });
+
+    await act(async () => {
+      await result.current.mutateAsync({
+        workspaceId,
+        projectId,
+        libraryId,
+      });
+    });
+
+    expect(mockReleaseRuntimeAccess).toHaveBeenCalledWith(workspaceId, projectId, libraryId);
+    await waitFor(() => {
+      expect(queryClient.getQueryCache().find({ queryKey: activePreviewKey })?.isStale()).toBe(true);
+      expect(queryClient.getQueryCache().find({ queryKey: savePointsKey })?.isStale()).toBe(true);
+      expect(queryClient.getQueryCache().find({ queryKey: fileLibrariesKey })?.isStale()).toBe(true);
+      expect(queryClient.getQueryCache().find({ queryKey: fileLibraryDetailKey })?.isStale()).toBe(true);
+      expect(queryClient.getQueryCache().find({ queryKey: objectsKey })?.isStale()).toBe(true);
+    });
+    expect(handleErrorForToast).not.toHaveBeenCalled();
   });
 
   it('cancels restore preview, clears active preview cache, and does not invalidate object listings', async () => {

@@ -15,12 +15,14 @@ const {
   mockListSavePoints,
   mockListTemplates,
   mockPublishTemplate,
+  mockReleaseRuntimeAccess,
   mockRunRestore,
   mockActiveRestorePreviewQueryState,
   mockSavePointsQueryState,
   mockUnpublishTemplate,
   mockCreateRestorePreview,
   mockUseCreateSavePointOptions,
+  mockUseRunRestoreOptions,
 } = vi.hoisted(() => ({
   mockRefetchActiveRestorePreview: vi.fn(),
   mockRefetchSavePoints: vi.fn(),
@@ -31,12 +33,14 @@ const {
   mockListSavePoints: vi.fn(),
   mockListTemplates: vi.fn(),
   mockPublishTemplate: vi.fn(),
+  mockReleaseRuntimeAccess: vi.fn(),
   mockRunRestore: vi.fn(),
   mockActiveRestorePreviewQueryState: vi.fn(),
   mockSavePointsQueryState: vi.fn(),
   mockUnpublishTemplate: vi.fn(),
   mockCreateRestorePreview: vi.fn(),
   mockUseCreateSavePointOptions: vi.fn(),
+  mockUseRunRestoreOptions: vi.fn(),
 }));
 
 import { APIError } from '@/lib/api/errors';
@@ -50,7 +54,11 @@ vi.mock('@/lib/hooks/use-file-library-recovery', () => ({
   },
   useFileLibraryActiveRestorePreview: () => mockActiveRestorePreviewQueryState(),
   useFileLibrarySavePoints: () => mockSavePointsQueryState(),
-  useRunFileLibraryRestore: () => ({ mutateAsync: mockRunRestore, isPending: false }),
+  useReleaseFileLibraryRuntimeAccess: () => ({ mutateAsync: mockReleaseRuntimeAccess, isPending: false }),
+  useRunFileLibraryRestore: (options?: unknown) => {
+    mockUseRunRestoreOptions(options);
+    return { mutateAsync: mockRunRestore, isPending: false };
+  },
 }));
 
 vi.mock('@/lib/hooks/use-task-file-templates', () => ({
@@ -80,13 +88,25 @@ const t = (key: string, values?: Record<string, string>) => {
     'file_manager.save_point_scope_hint': 'Save a snapshot of the whole file library HOME payload before major file changes.',
     'file_manager.save_point_action_failed_title': 'Save point needs attention',
     'file_manager.save_point_action_failed': 'Save point could not be created. Your note is still here; try again after the file library is ready.',
-    'file_manager.save_point_active_writer_blocked': 'Files are still being written. Wait for the active file operation to finish, then try again.',
+    'file_manager.save_point_active_writer_blocked': 'Task files and workspace are still being used by the task runtime. Release task workspace usage, then try again.',
     'file_manager.save_points': 'Save points',
     'file_manager.restore': 'Restore',
     'file_manager.restore_cancel': 'Cancel restore',
     'file_manager.restore_confirm': 'Restore files',
+    'file_manager.restore_runtime_open_task': 'Open task',
+    'file_manager.restore_runtime_release': 'Release task workspace usage',
+    'file_manager.restore_runtime_release_blocked': 'Task workspace usage is still blocked by active task activity. Stop the active run or terminal, then try again.',
+    'file_manager.restore_runtime_release_failed': 'Task workspace usage could not be released. Check the task, then try again.',
+    'file_manager.restore_runtime_release_failed_title': 'Could not release task workspace usage',
+    'file_manager.restore_runtime_release_pending': 'Task workspace usage is being released. Restore after it finishes, or retry in a moment.',
+    'file_manager.restore_runtime_release_pending_title': 'Release pending',
+    'file_manager.restore_run_active_writer_description': 'Before restoring an earlier version, release writable runtime access for this task workspace. This is a manual action; after it completes, click Restore files again.',
+    'file_manager.restore_run_active_writer_task': 'Task using this workspace: {title}',
+    'file_manager.restore_run_active_writer_title': 'Restore blocked',
+    'file_manager.restore_run_failed': 'Restore could not start. Check the file library state, then try again.',
+    'file_manager.restore_run_failed_title': 'Restore needs attention',
     'file_manager.restore_preview_blocked_default': 'Restore is blocked until the file library is ready for a new preview.',
-    'file_manager.restore_preview_blocked_active_writer': 'Files are still being written. Wait for the active file operation to finish, then try again.',
+    'file_manager.restore_preview_blocked_active_writer': 'Before restoring an earlier version, release writable runtime access for this task workspace. This is a manual action; after it completes, click Restore files again.',
     'file_manager.restore_preview_blocked_stale_writer_uncertain': 'Files may still be changing. Refresh and create a new preview before restoring.',
     'file_manager.restore_preview_blocked_stale': 'The preview is out of date. Create a new preview before restoring.',
     'file_manager.restore_preview_blocked_recovery': 'The restore preview needs recovery. Create a new preview before restoring.',
@@ -112,7 +132,7 @@ const t = (key: string, values?: Record<string, string>) => {
     'file_manager.task_template_action_failed': 'Task file template could not be updated. Your form is still here; try again after the project is ready.',
     'file_manager.task_template_action_failed_title': 'Template action needs attention',
     'file_manager.task_template_capability_denied': 'Task file templates are not available for this project yet. Ask an admin to enable file templates, then try again.',
-    'file_manager.task_template_active_writer_blocked': 'Files are still being written. Wait for the active file operation to finish, then try again.',
+    'file_manager.task_template_active_writer_blocked': 'Task files and workspace are still being used by the task runtime. Release task workspace usage, then try again.',
     'file_manager.task_template_storage_not_ready': 'Project file storage is not ready yet. Wait for initialization to finish, then try again.',
     'file_manager.task_template_name': 'Template name',
     'file_manager.task_template_name_placeholder': 'e.g. Release notes starter',
@@ -265,6 +285,7 @@ describe('FileLibraryRecoveryDialog', () => {
       updated_at: '2026-05-09T12:05:00.000Z',
     });
     mockPublishTemplate.mockResolvedValue(undefined);
+    mockReleaseRuntimeAccess.mockResolvedValue({ file_library_id: 'lib_1', released: true });
     mockUnpublishTemplate.mockResolvedValue(undefined);
     mockDeleteTemplate.mockResolvedValue(undefined);
   });
@@ -339,6 +360,12 @@ describe('FileLibraryRecoveryDialog', () => {
     expect(mockUseCreateSavePointOptions).toHaveBeenCalledWith({ suppressErrorToast: true });
   });
 
+  it('uses inline-only restore run errors so active-writer blockers do not also raise a global toast', () => {
+    renderDialog();
+
+    expect(mockUseRunRestoreOptions).toHaveBeenCalledWith({ suppressErrorToast: true });
+  });
+
   it('keeps save point creation recoverable and productizes typed active-writer blockers', async () => {
     const user = userEvent.setup();
     mockCreateSavePoint.mockRejectedValueOnce(new APIError(
@@ -356,7 +383,7 @@ describe('FileLibraryRecoveryDialog', () => {
       'Save point needs attention',
     );
     expect(screen.getByTestId('files__save-point__error')).toHaveTextContent(
-      'Files are still being written. Wait for the active file operation to finish, then try again.',
+      'Task files and workspace are still being used by the task runtime. Release task workspace usage, then try again.',
     );
     expect(screen.getByTestId('files__save-point__error')).not.toHaveTextContent(
       'file_library_active_writer_blocked',
@@ -433,7 +460,7 @@ describe('FileLibraryRecoveryDialog', () => {
   });
 
   it.each([
-    ['active_writer_sessions', 'Files are still being written. Wait for the active file operation to finish, then try again.'],
+    ['active_writer_sessions', 'Before restoring an earlier version, release writable runtime access for this task workspace. This is a manual action; after it completes, click Restore files again.'],
     ['stale_writer_session_uncertain', 'Files may still be changing. Refresh and create a new preview before restoring.'],
     ['restore_preview_stale', 'The preview is out of date. Create a new preview before restoring.'],
     ['restore_plan_requires_recovery', 'The restore preview needs recovery. Create a new preview before restoring.'],
@@ -612,6 +639,355 @@ describe('FileLibraryRecoveryDialog', () => {
       libraryId: 'lib_1',
       restorePreviewId: 'rp_active_ready',
     });
+  });
+
+  it('shows release action when a reopened active restore preview has a durable active-writer blocker', async () => {
+    const user = userEvent.setup();
+    mockActiveRestorePreviewQueryState.mockReturnValue({
+      data: {
+        restore_preview: {
+          id: 'rp_active_writer_blocked',
+          file_library_id: 'lib_1',
+          source_save_point_id: 'sp_1',
+          message: 'Before edits',
+          status: 'ready',
+          blockers: [{ code: 'active_writer_sessions' }],
+          stale: false,
+          created_at: '2026-05-09T12:01:00.000Z',
+          updated_at: '2026-05-09T12:01:00.000Z',
+        },
+      },
+      error: null,
+      isError: false,
+      isLoading: false,
+      refetch: mockRefetchActiveRestorePreview,
+    });
+
+    renderDialog({
+      locale: 'en-US',
+      library: {
+        ...library,
+        task_home_binding_status: 'bound',
+        bound_task_visible: true,
+        bound_task_id: 'task_bound',
+        bound_task_title: 'Bound Task',
+        bound_task_status: 'active',
+      },
+    });
+
+    expect(screen.getByTestId('files__restore-preview-blockers')).toHaveTextContent(
+      'Before restoring an earlier version, release writable runtime access for this task workspace. This is a manual action; after it completes, click Restore files again.',
+    );
+    expect(screen.getByTestId('files__restore-run-blocker')).toHaveTextContent('Restore blocked');
+    expect(screen.getByTestId('files__restore-run-blocker')).toHaveTextContent(
+      'Task using this workspace: Bound Task',
+    );
+    expect(screen.getByTestId('files__restore-blocker-open-task')).toHaveAttribute(
+      'href',
+      '/en-US/workspaces/ws_default/projects/proj_001/agent-tasks/task_bound',
+    );
+    expect(screen.getByTestId('files__restore-blocker-release')).toBeEnabled();
+    expect(screen.getByTestId('files__restore-confirm')).toBeDisabled();
+    expect(screen.getByTestId('files__restore-cancel')).toBeEnabled();
+
+    await user.click(screen.getByTestId('files__restore-confirm'));
+
+    expect(mockRunRestore).not.toHaveBeenCalled();
+
+    await user.click(screen.getByTestId('files__restore-blocker-release'));
+
+    expect(mockReleaseRuntimeAccess).toHaveBeenCalledWith({
+      workspaceId: 'ws_default',
+      projectId: 'proj_001',
+      libraryId: 'lib_1',
+    });
+  });
+
+  it('shows an inline active-writer restore blocker with visible task actions and keeps cancel available', async () => {
+    const user = userEvent.setup();
+    mockRunRestore.mockRejectedValueOnce(new APIError(
+      'FILE_LIBRARY_ACTIVE_WRITER_BLOCKED',
+      'file_library_active_writer_blocked',
+      'req-restore-blocked',
+      409,
+      {
+        task_id: 'task_visible',
+        bound_task_id: 'task_visible',
+        bound_task_title: 'Visible Task',
+        bound_task_visible: true,
+        file_library_id: 'lib_1',
+      },
+    ));
+    mockActiveRestorePreviewQueryState.mockReturnValue({
+      data: {
+        restore_preview: {
+          id: 'rp_active_ready',
+          file_library_id: 'lib_1',
+          source_save_point_id: 'sp_1',
+          message: 'Before edits',
+          status: 'ready',
+          blockers: [],
+          stale: false,
+          created_at: '2026-05-09T12:01:00.000Z',
+          updated_at: '2026-05-09T12:01:00.000Z',
+        },
+      },
+      error: null,
+      isError: false,
+      isLoading: false,
+      refetch: mockRefetchActiveRestorePreview,
+    });
+
+    renderDialog({ locale: 'en-US' });
+
+    await user.click(screen.getByTestId('files__restore-confirm'));
+
+    expect(await screen.findByTestId('files__restore-run-blocker')).toHaveTextContent('Restore blocked');
+    expect(screen.getByTestId('files__restore-run-blocker')).toHaveTextContent(
+      'Before restoring an earlier version, release writable runtime access for this task workspace. This is a manual action; after it completes, click Restore files again.',
+    );
+    expect(screen.getByTestId('files__restore-run-blocker')).toHaveTextContent(
+      'Task using this workspace: Visible Task',
+    );
+    expect(screen.getByTestId('files__restore-blocker-open-task')).toHaveAttribute(
+      'href',
+      '/en-US/workspaces/ws_default/projects/proj_001/agent-tasks/task_visible',
+    );
+    expect(screen.getByTestId('files__restore-blocker-release')).toBeEnabled();
+    expect(screen.getByTestId('files__restore-confirm')).toBeDisabled();
+    expect(screen.getByTestId('files__restore-cancel')).toBeEnabled();
+
+    await user.click(screen.getByTestId('files__restore-blocker-release'));
+
+    expect(mockReleaseRuntimeAccess).toHaveBeenCalledWith({
+      workspaceId: 'ws_default',
+      projectId: 'proj_001',
+      libraryId: 'lib_1',
+    });
+    expect(mockRefetchActiveRestorePreview).toHaveBeenCalled();
+    expect(mockRefetchSavePoints).toHaveBeenCalled();
+  });
+
+  it('does not leak hidden task ids when restore is blocked by an invisible active writer', async () => {
+    const user = userEvent.setup();
+    mockRunRestore.mockRejectedValueOnce(new APIError(
+      'FILE_LIBRARY_ACTIVE_WRITER_BLOCKED',
+      'file_library_active_writer_blocked',
+      'req-restore-blocked-hidden',
+      409,
+      {
+        task_id: 'task_secret',
+        bound_task_id: 'task_secret',
+        bound_task_visible: false,
+      },
+    ));
+    mockActiveRestorePreviewQueryState.mockReturnValue({
+      data: {
+        restore_preview: {
+          id: 'rp_active_ready',
+          file_library_id: 'lib_1',
+          source_save_point_id: 'sp_1',
+          message: 'Before edits',
+          status: 'ready',
+          blockers: [],
+          stale: false,
+          created_at: '2026-05-09T12:01:00.000Z',
+          updated_at: '2026-05-09T12:01:00.000Z',
+        },
+      },
+      error: null,
+      isError: false,
+      isLoading: false,
+      refetch: mockRefetchActiveRestorePreview,
+    });
+
+    renderDialog();
+
+    await user.click(screen.getByTestId('files__restore-confirm'));
+
+    expect(await screen.findByTestId('files__restore-run-blocker')).toHaveTextContent(
+      'Before restoring an earlier version, release writable runtime access for this task workspace. This is a manual action; after it completes, click Restore files again.',
+    );
+    expect(screen.getByTestId('files__restore-blocker-release')).toBeEnabled();
+    expect(screen.queryByTestId('files__restore-blocker-open-task')).not.toBeInTheDocument();
+    expect(document.body.textContent).not.toContain('task_secret');
+
+    await user.click(screen.getByTestId('files__restore-blocker-release'));
+
+    expect(mockReleaseRuntimeAccess).toHaveBeenCalledWith({
+      workspaceId: 'ws_default',
+      projectId: 'proj_001',
+      libraryId: 'lib_1',
+    });
+    expect(document.body.textContent).not.toContain('task_secret');
+  });
+
+  it('shows typed inline release errors without dropping the restore blocker', async () => {
+    const user = userEvent.setup();
+    mockRunRestore.mockRejectedValueOnce(new APIError(
+      'FILE_LIBRARY_ACTIVE_WRITER_BLOCKED',
+      'file_library_active_writer_blocked',
+      'req-restore-blocked',
+      409,
+      {
+        task_id: 'task_visible',
+        bound_task_id: 'task_visible',
+        bound_task_title: 'Visible Task',
+        bound_task_visible: true,
+        file_library_id: 'lib_1',
+      },
+    ));
+    mockReleaseRuntimeAccess.mockRejectedValueOnce(new APIError(
+      'FILE_LIBRARY_RUNTIME_ACCESS_RELEASE_BLOCKED',
+      'file_library_runtime_access_release_blocked',
+      'req-release-conflict',
+      409,
+      {
+        file_library_id: 'lib_1',
+        blockers: [{ code: 'active_run' }],
+      },
+    ));
+    mockActiveRestorePreviewQueryState.mockReturnValue({
+      data: {
+        restore_preview: {
+          id: 'rp_active_ready',
+          file_library_id: 'lib_1',
+          source_save_point_id: 'sp_1',
+          message: 'Before edits',
+          status: 'ready',
+          blockers: [],
+          stale: false,
+          created_at: '2026-05-09T12:01:00.000Z',
+          updated_at: '2026-05-09T12:01:00.000Z',
+        },
+      },
+      error: null,
+      isError: false,
+      isLoading: false,
+      refetch: mockRefetchActiveRestorePreview,
+    });
+
+    renderDialog();
+
+    await user.click(screen.getByTestId('files__restore-confirm'));
+    await user.click(await screen.findByTestId('files__restore-blocker-release'));
+
+    expect(await screen.findByTestId('files__restore-release-error')).toHaveTextContent(
+      'Could not release task workspace usage',
+    );
+    expect(screen.getByTestId('files__restore-release-error')).toHaveTextContent(
+      'Task workspace usage is still blocked by active task activity. Stop the active run or terminal, then try again.',
+    );
+    expect(screen.getByTestId('files__restore-run-blocker')).toBeInTheDocument();
+    expect(screen.getByTestId('files__restore-confirm')).toBeDisabled();
+  });
+
+  it('keeps the restore blocker when runtime access release is still pending', async () => {
+    const user = userEvent.setup();
+    mockRunRestore.mockRejectedValueOnce(new APIError(
+      'FILE_LIBRARY_ACTIVE_WRITER_BLOCKED',
+      'file_library_active_writer_blocked',
+      'req-restore-blocked',
+      409,
+      {
+        task_id: 'task_visible',
+        bound_task_id: 'task_visible',
+        bound_task_title: 'Visible Task',
+        bound_task_visible: true,
+        file_library_id: 'lib_1',
+      },
+    ));
+    mockReleaseRuntimeAccess.mockResolvedValueOnce({
+      file_library_id: 'lib_1',
+      runtime_access_status: 'release_pending',
+      released: false,
+    });
+    mockActiveRestorePreviewQueryState.mockReturnValue({
+      data: {
+        restore_preview: {
+          id: 'rp_active_ready',
+          file_library_id: 'lib_1',
+          source_save_point_id: 'sp_1',
+          message: 'Before edits',
+          status: 'ready',
+          blockers: [],
+          stale: false,
+          created_at: '2026-05-09T12:01:00.000Z',
+          updated_at: '2026-05-09T12:01:00.000Z',
+        },
+      },
+      error: null,
+      isError: false,
+      isLoading: false,
+      refetch: mockRefetchActiveRestorePreview,
+    });
+
+    renderDialog();
+
+    await user.click(screen.getByTestId('files__restore-confirm'));
+    await user.click(await screen.findByTestId('files__restore-blocker-release'));
+
+    expect(await screen.findByTestId('files__restore-release-pending')).toHaveTextContent('Release pending');
+    expect(screen.getByTestId('files__restore-release-pending')).toHaveTextContent(
+      'Task workspace usage is being released. Restore after it finishes, or retry in a moment.',
+    );
+    expect(screen.getByTestId('files__restore-run-blocker')).toBeInTheDocument();
+    expect(screen.getByTestId('files__restore-confirm')).toBeDisabled();
+    expect(screen.getByTestId('files__restore-blocker-release')).toBeEnabled();
+    expect(mockRefetchActiveRestorePreview).not.toHaveBeenCalled();
+    expect(mockRefetchSavePoints).not.toHaveBeenCalled();
+  });
+
+  it('treats released runtime access status as confirmed even when the release call is idempotent', async () => {
+    const user = userEvent.setup();
+    mockRunRestore.mockRejectedValueOnce(new APIError(
+      'FILE_LIBRARY_ACTIVE_WRITER_BLOCKED',
+      'file_library_active_writer_blocked',
+      'req-restore-blocked',
+      409,
+      {
+        bound_task_id: 'task_visible',
+        bound_task_title: 'Visible Task',
+        bound_task_visible: true,
+        file_library_id: 'lib_1',
+      },
+    ));
+    mockReleaseRuntimeAccess.mockResolvedValueOnce({
+      file_library_id: 'lib_1',
+      runtime_access_status: 'released',
+      released: false,
+    });
+    mockActiveRestorePreviewQueryState.mockReturnValue({
+      data: {
+        restore_preview: {
+          id: 'rp_active_ready',
+          file_library_id: 'lib_1',
+          source_save_point_id: 'sp_1',
+          message: 'Before edits',
+          status: 'ready',
+          blockers: [],
+          stale: false,
+          created_at: '2026-05-09T12:01:00.000Z',
+          updated_at: '2026-05-09T12:01:00.000Z',
+        },
+      },
+      error: null,
+      isError: false,
+      isLoading: false,
+      refetch: mockRefetchActiveRestorePreview,
+    });
+
+    renderDialog();
+
+    await user.click(screen.getByTestId('files__restore-confirm'));
+    await user.click(await screen.findByTestId('files__restore-blocker-release'));
+
+    await waitFor(() => {
+      expect(screen.queryByTestId('files__restore-run-blocker')).not.toBeInTheDocument();
+    });
+    expect(screen.queryByTestId('files__restore-release-pending')).not.toBeInTheDocument();
+    expect(mockRefetchActiveRestorePreview).toHaveBeenCalled();
+    expect(mockRefetchSavePoints).toHaveBeenCalled();
   });
 
   it('explains that template publishing is temporarily blocked while restore state is loading', () => {
@@ -937,7 +1313,7 @@ describe('FileLibraryRecoveryDialog', () => {
     {
       errorCode: 'FILE_LIBRARY_ACTIVE_WRITER_BLOCKED',
       rawMessage: 'file_library_active_writer_blocked',
-      expected: 'Files are still being written. Wait for the active file operation to finish, then try again.',
+      expected: 'Task files and workspace are still being used by the task runtime. Release task workspace usage, then try again.',
     },
     {
       errorCode: 'FILE_LIBRARY_STORAGE_NOT_READY',

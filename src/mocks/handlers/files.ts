@@ -24,6 +24,7 @@ type MockUploadFile = {
   content?: string;
   text?: () => Promise<string>;
 };
+type UploadFormFile = FormDataEntryValue & MockUploadFile;
 
 type MockTaskHomeBinding = {
   workspaceId: string;
@@ -51,6 +52,7 @@ type MockTaskFileTemplate = TaskFileTemplate & {
 };
 
 const taskHomeBindingsByLibrary = new Map<string, MockTaskHomeBinding>();
+const runtimeAccessByLibrary = new Set<string>();
 const savePointsById = new Map<string, MockFileLibrarySavePoint>();
 const restorePreviewsById = new Map<string, MockFileLibraryRestorePreview>();
 const taskFileTemplatesById = new Map<string, MockTaskFileTemplate>();
@@ -60,7 +62,13 @@ function bindingKey(input: { workspaceId: string; projectId: string; libraryId: 
 }
 
 export function bindMockFileLibraryTaskHome(input: MockTaskHomeBinding) {
-  taskHomeBindingsByLibrary.set(bindingKey(input), input);
+  const key = bindingKey(input);
+  taskHomeBindingsByLibrary.set(key, input);
+  if (input.taskStatus === 'active') {
+    runtimeAccessByLibrary.add(key);
+  } else {
+    runtimeAccessByLibrary.delete(key);
+  }
 }
 
 export function releaseMockFileLibraryTaskHome(input: { workspaceId: string; projectId: string; libraryId: string; taskId?: string }) {
@@ -69,6 +77,7 @@ export function releaseMockFileLibraryTaskHome(input: { workspaceId: string; pro
   if (!existing) return;
   if (input.taskId && existing.taskId !== input.taskId) return;
   taskHomeBindingsByLibrary.delete(key);
+  runtimeAccessByLibrary.delete(key);
 }
 
 export function getMockFileLibraryTaskHomeBinding(input: {
@@ -77,6 +86,20 @@ export function getMockFileLibraryTaskHomeBinding(input: {
   libraryId: string;
 }) {
   return taskHomeBindingsByLibrary.get(bindingKey(input)) ?? null;
+}
+
+function releaseMockFileLibraryRuntimeAccess(input: { workspaceId: string; projectId: string; libraryId: string }) {
+  return runtimeAccessByLibrary.delete(bindingKey(input));
+}
+
+function getMockFileLibraryActiveWriterBinding(input: {
+  workspaceId: string;
+  projectId: string;
+  libraryId: string;
+}) {
+  const binding = getMockFileLibraryTaskHomeBinding(input);
+  if (!binding || !runtimeAccessByLibrary.has(bindingKey(input))) return null;
+  return binding;
 }
 
 export function getMockFileLibrary(input: {
@@ -300,6 +323,9 @@ function toPublicRestorePreview(preview: MockFileLibraryRestorePreview): FileLib
     source_save_point_id: preview.source_save_point_id,
     ...(preview.message ? { message: preview.message } : {}),
     status: preview.status,
+    ...(preview.summary ? { summary: preview.summary } : {}),
+    ...(preview.blockers && preview.blockers.length > 0 ? { blockers: preview.blockers } : {}),
+    ...(typeof preview.stale === 'boolean' ? { stale: preview.stale } : {}),
     created_at: preview.created_at,
     updated_at: preview.updated_at,
   };
@@ -519,6 +545,62 @@ function fileLibraryStatusConflictResponse(library: FileLibrary) {
   }, { status: 409 });
 }
 
+function activeWriterRestorePreviewBlockers(binding: MockTaskHomeBinding | null) {
+  return binding
+    ? [{ code: 'active_writer_sessions' as const, message: 'file_library_active_writer_blocked' }]
+    : [];
+}
+
+function hasActiveWriterRestorePreviewBlocker(preview: FileLibraryRestorePreview) {
+  return preview.blockers?.some((blocker) => blocker.code === 'active_writer_sessions') ?? false;
+}
+
+function clearActiveWriterRestorePreviewBlocker(preview: MockFileLibraryRestorePreview) {
+  if (!preview.blockers?.length) return false;
+  const nextBlockers = preview.blockers.filter((blocker) => blocker.code !== 'active_writer_sessions');
+  if (nextBlockers.length === preview.blockers.length) return false;
+  preview.blockers = nextBlockers;
+  return true;
+}
+
+function fileLibraryActiveWriterBlockedResponse(input: {
+  binding: MockTaskHomeBinding | null;
+  libraryId: string;
+  restorePreviewId?: string;
+}) {
+  return HttpResponse.json({
+    error_code: 'FILE_LIBRARY_ACTIVE_WRITER_BLOCKED',
+    message: 'file_library_active_writer_blocked',
+    file_library_id: input.libraryId,
+    ...(input.restorePreviewId ? { restore_preview_id: input.restorePreviewId } : {}),
+    blockers: [{ code: 'active_writer_sessions' }],
+    bound_task_visible: input.binding?.visible ?? false,
+    ...(input.binding?.visible
+      ? {
+          bound_task_id: input.binding.taskId,
+          bound_task_title: input.binding.taskTitle,
+          bound_task_status: input.binding.taskStatus,
+        }
+      : {}),
+  }, { status: 409 });
+}
+
+function findActiveRestorePreview(input: {
+  workspaceId: string;
+  projectId: string;
+  libraryId: string;
+}) {
+  return Array.from(restorePreviewsById.values())
+    .filter((preview) =>
+      preview.workspace_id === input.workspaceId
+      && preview.project_id === input.projectId
+      && preview.file_library_id === input.libraryId
+      && preview.status !== 'canceled'
+      && preview.status !== 'restored',
+    )
+    .sort((a, b) => b.updated_at.localeCompare(a.updated_at))[0] ?? null;
+}
+
 function getRouteFileLibrary(params: { ws?: unknown; prj?: unknown; id?: unknown }) {
   return getMockFileLibrary({
     workspaceId: String(params.ws ?? ''),
@@ -561,7 +643,7 @@ function getFormString(form: FormData, name: string) {
   return typeof value === 'string' ? value : '';
 }
 
-function isUploadFileValue(value: FormDataEntryValue | null): value is MockUploadFile {
+function isUploadFileValue(value: FormDataEntryValue | null): value is UploadFormFile {
   if (!value || typeof value === 'string') return false;
   const candidate = value as Partial<MockUploadFile>;
   return typeof candidate.name === 'string' && typeof candidate.size === 'number';
@@ -835,6 +917,20 @@ export const fileHandlers = [
       .map(toPublicSavePoint);
     return HttpResponse.json({ items });
   }),
+  http.get(`${API_V1_PATTERN}/workspaces/:ws/projects/:prj/file-libraries/:id/restore-preview`, ({ params }) => {
+    const library = getRouteFileLibrary(params);
+    if (!library) {
+      return fileLibraryNotFoundResponse(String(params.id ?? ''));
+    }
+    const preview = findActiveRestorePreview({
+      workspaceId: String(params.ws ?? ''),
+      projectId: String(params.prj ?? ''),
+      libraryId: String(params.id ?? ''),
+    });
+    return HttpResponse.json({
+      restore_preview: preview ? toPublicRestorePreview(preview) : null,
+    });
+  }),
   http.post(`${API_V1_PATTERN}/workspaces/:ws/projects/:prj/file-libraries/:id/save-points`, async ({ params, request }) => {
     const availability = rejectUnavailableFileLibraryWrite(params);
     if (availability.response) return availability.response;
@@ -870,6 +966,12 @@ export const fileHandlers = [
       }, { status: 404 });
     }
     const now = nowIso();
+    const activeWriterBinding = getMockFileLibraryActiveWriterBinding({
+      workspaceId,
+      projectId,
+      libraryId,
+    });
+    const blockers = activeWriterRestorePreviewBlockers(activeWriterBinding);
     const preview: MockFileLibraryRestorePreview = {
       id: `rp_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`,
       workspace_id: workspaceId,
@@ -878,6 +980,8 @@ export const fileHandlers = [
       source_save_point_id: savePoint.id,
       message: savePoint.message,
       status: 'ready',
+      ...(blockers.length > 0 ? { blockers } : {}),
+      stale: false,
       created_at: now,
       updated_at: now,
     };
@@ -911,6 +1015,22 @@ export const fileHandlers = [
         message: 'file_library_save_point_not_found',
         save_point_id: preview.source_save_point_id,
       }, { status: 404 });
+    }
+    const activeWriterBinding = getMockFileLibraryActiveWriterBinding({
+      workspaceId,
+      projectId,
+      libraryId,
+    });
+    if (activeWriterBinding || hasActiveWriterRestorePreviewBlocker(preview)) {
+      return fileLibraryActiveWriterBlockedResponse({
+        binding: activeWriterBinding ?? getMockFileLibraryTaskHomeBinding({
+          workspaceId,
+          projectId,
+          libraryId,
+        }),
+        libraryId,
+        restorePreviewId: preview.id,
+      });
     }
     objectDbByLibraryId[libraryId] = cloneObjectRows(savePoint.snapshot);
     const now = nowIso();
@@ -951,6 +1071,37 @@ export const fileHandlers = [
     preview.status = 'canceled';
     preview.updated_at = nowIso();
     return HttpResponse.json(toPublicRestorePreview(preview));
+  }),
+  http.post(`${API_V1_PATTERN}/workspaces/:ws/projects/:prj/file-libraries/:id/runtime-access/release`, ({ params }) => {
+    const library = getRouteFileLibrary(params);
+    if (!library) {
+      return fileLibraryNotFoundResponse(String(params.id ?? ''));
+    }
+    const workspaceId = String(params.ws ?? '');
+    const projectId = String(params.prj ?? '');
+    const libraryId = String(params.id ?? '');
+    const binding = getMockFileLibraryTaskHomeBinding({
+      workspaceId,
+      projectId,
+      libraryId,
+    });
+    const released = releaseMockFileLibraryRuntimeAccess({ workspaceId, projectId, libraryId });
+    for (const preview of restorePreviewsById.values()) {
+      if (
+        preview.workspace_id === workspaceId
+        && preview.project_id === projectId
+        && preview.file_library_id === libraryId
+        && clearActiveWriterRestorePreviewBlocker(preview)
+      ) {
+        preview.updated_at = nowIso();
+      }
+    }
+    return HttpResponse.json({
+      file_library_id: libraryId,
+      released,
+      runtime_access_status: 'released',
+      task_home_binding_status: binding ? 'bound' : 'unbound',
+    });
   }),
   http.patch(`${API_V1_PATTERN}/workspaces/:ws/projects/:prj/file-libraries/:id`, async ({ params, request }) => {
     const body = (await request.json().catch(() => ({}))) as { name?: string; description?: string };

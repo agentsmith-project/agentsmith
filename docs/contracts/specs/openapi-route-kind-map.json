@@ -111,6 +111,10 @@
     "path": "/api/v1/workspaces/{workspaceId}/projects/{projectId}/file-libraries/{libraryId}/restore-cancel",
     "method": "post"
   },
+  "fileLibraryRuntimeAccessRelease": {
+    "path": "/api/v1/workspaces/{workspaceId}/projects/{projectId}/file-libraries/{libraryId}/runtime-access/release",
+    "method": "post"
+  },
   "fileLibraryOperation": {
     "path": "/api/v1/workspaces/{workspaceId}/projects/{projectId}/file-library-operations/{operationId}",
     "method": "get"

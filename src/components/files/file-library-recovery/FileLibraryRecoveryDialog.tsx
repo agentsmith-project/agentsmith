@@ -1,7 +1,8 @@
 'use client';
 
 import * as React from 'react';
-import { AlertTriangle, CheckCircle2, Info, Loader2, RefreshCw } from 'lucide-react';
+import Link from 'next/link';
+import { AlertTriangle, CheckCircle2, ExternalLink, Info, Loader2, RefreshCw, UnlockKeyhole } from 'lucide-react';
 
 import { Button } from '@/components/ui/button';
 import {
@@ -21,6 +22,7 @@ import type {
   FileLibraryRestorePreviewBlocker,
   FileLibraryRestorePreviewStatus,
   FileLibrarySavePoint,
+  ReleaseFileLibraryRuntimeAccessResponse,
   TaskFileTemplate,
 } from '@/lib/api/types';
 import { APIError } from '@/lib/api/errors';
@@ -30,6 +32,7 @@ import {
   useCreateFileLibrarySavePoint,
   useFileLibraryActiveRestorePreview,
   useFileLibrarySavePoints,
+  useReleaseFileLibraryRuntimeAccess,
   useRunFileLibraryRestore,
 } from '@/lib/hooks/use-file-library-recovery';
 import {
@@ -40,9 +43,11 @@ import {
   useUnpublishTaskFileTemplate,
 } from '@/lib/hooks/use-task-file-templates';
 import { cn } from '@/lib/utils';
+import { buildTaskPath } from '@/components/agent-tasks/task-list/navigation';
 
 type FileLibraryRecoveryDialogProps = {
   library: FileLibrary | null;
+  locale?: string;
   open: boolean;
   projectId: string;
   t: (key: string, values?: Record<string, string>) => string;
@@ -69,6 +74,22 @@ type TemplateActionErrorDisplay = {
 type SavePointActionErrorDisplay = {
   description: string;
   title: string;
+};
+
+type RestoreActionErrorDisplay = {
+  description: string;
+  title: string;
+};
+
+type RestoreRunActiveWriterBlocker = {
+  restorePreviewId: string;
+  releaseAction: {
+    libraryId: string;
+  } | null;
+  visibleTask: {
+    id: string | null;
+    title: string;
+  } | null;
 };
 
 function formatTimestamp(value: string) {
@@ -135,6 +156,10 @@ function restorePreviewBlockerCopy(
   };
   const blockerKey = fallbackKeys[blocker.code];
   return t(blockerKey ?? 'file_manager.restore_preview_blocked_default');
+}
+
+function hasRestorePreviewActiveWriterBlocker(restorePreview: FileLibraryRestorePreview): boolean {
+  return restorePreview.blockers?.some((blocker) => blocker.code === 'active_writer_sessions') ?? false;
 }
 
 function buildRestorePreviewTitle(
@@ -231,6 +256,14 @@ function isFileLibraryRestorePreviewStale(error: unknown): boolean {
   );
 }
 
+function isRuntimeAccessReleaseBlocked(error: unknown): boolean {
+  return hasApiErrorCode(
+    error,
+    ['FILE_LIBRARY_RUNTIME_ACCESS_RELEASE_BLOCKED', 'AGENT_TASK_WORKSPACE_BINDING_CONFLICT'],
+    ['file_library_runtime_access_release_blocked', 'agent_task_workspace_binding_conflict'],
+  );
+}
+
 function hasApiErrorCode(error: unknown, codes: string[], rawTokens: string[]): boolean {
   const rawValues = error instanceof APIError
     ? [error.errorCode, error.message]
@@ -243,6 +276,150 @@ function hasApiErrorCode(error: unknown, codes: string[], rawTokens: string[]): 
     return normalizedCodes.has(normalized)
       || rawTokens.some((token) => normalized === token || normalized.includes(token));
   });
+}
+
+function readNonEmptyString(record: Record<string, unknown> | null | undefined, key: string): string | null {
+  const value = record?.[key];
+  return typeof value === 'string' && value.trim().length > 0 ? value.trim() : null;
+}
+
+function readBoolean(record: Record<string, unknown> | null | undefined, key: string): boolean | null {
+  const value = record?.[key];
+  return typeof value === 'boolean' ? value : null;
+}
+
+function readRecord(record: Record<string, unknown> | null | undefined, key: string): Record<string, unknown> | null {
+  const value = record?.[key];
+  return value && typeof value === 'object' && !Array.isArray(value)
+    ? value as Record<string, unknown>
+    : null;
+}
+
+function readFirstString(records: Array<Record<string, unknown> | null | undefined>, keys: string[]): string | null {
+  for (const record of records) {
+    for (const key of keys) {
+      const value = readNonEmptyString(record, key);
+      if (value) return value;
+    }
+  }
+  return null;
+}
+
+function readFirstBoolean(records: Array<Record<string, unknown> | null | undefined>, keys: string[]): boolean | null {
+  for (const record of records) {
+    for (const key of keys) {
+      const value = readBoolean(record, key);
+      if (value !== null) return value;
+    }
+  }
+  return null;
+}
+
+function errorDetailRecords(error: unknown): Array<Record<string, unknown> | null> {
+  if (!(error instanceof APIError)) return [];
+  const details = error.details ?? null;
+  return [
+    details,
+    readRecord(details, 'details'),
+    readRecord(details, 'bound_task'),
+    readRecord(details, 'task'),
+  ];
+}
+
+function buildRestoreRunActiveWriterBlocker(
+  error: unknown,
+  restorePreview: FileLibraryRestorePreview,
+  library: FileLibrary,
+): RestoreRunActiveWriterBlocker {
+  const records = errorDetailRecords(error);
+  const visible = readFirstBoolean(records, ['bound_task_visible', 'task_visible', 'visible']);
+  const detailTaskTitle = readFirstString(records, ['bound_task_title', 'task_title', 'title']);
+  const detailTaskId = readFirstString(records, ['bound_task_id', 'task_id', 'id']);
+  const canUseLibraryFallback = visible !== false && library.bound_task_visible;
+  const fallbackTaskTitle = canUseLibraryFallback ? library.bound_task_title ?? null : null;
+  const fallbackTaskId = canUseLibraryFallback ? library.bound_task_id ?? null : null;
+  const visibleTaskTitle = visible === true ? detailTaskTitle ?? fallbackTaskTitle : fallbackTaskTitle;
+  const visibleTaskId = visible === true ? detailTaskId ?? fallbackTaskId : fallbackTaskId;
+  const visibleTask = visibleTaskTitle
+    ? {
+        id: visibleTaskId,
+        title: visibleTaskTitle,
+      }
+    : null;
+
+  return {
+    restorePreviewId: restorePreview.id,
+    releaseAction: library.id ? { libraryId: library.id } : null,
+    visibleTask,
+  };
+}
+
+function buildRestorePreviewActiveWriterBlocker(
+  restorePreview: FileLibraryRestorePreview,
+  library: FileLibrary,
+): RestoreRunActiveWriterBlocker {
+  const visibleTask = library.bound_task_visible && library.bound_task_title
+    ? {
+        id: library.bound_task_id ?? null,
+        title: library.bound_task_title,
+      }
+    : null;
+
+  return {
+    restorePreviewId: restorePreview.id,
+    releaseAction: library.id ? { libraryId: library.id } : null,
+    visibleTask,
+  };
+}
+
+function buildRestoreRunErrorDisplay(
+  error: unknown,
+  t: FileLibraryRecoveryDialogProps['t'],
+): RestoreActionErrorDisplay {
+  let description = t('file_manager.restore_run_failed');
+  if (isFileLibraryOperationPending(error)) {
+    description = t('file_manager.save_point_operation_pending');
+  }
+  if (isFileLibraryStorageNotReady(error)) {
+    description = t('file_manager.save_point_storage_not_ready');
+  }
+  if (isFileLibraryRestorePreviewStale(error)) {
+    description = t('file_manager.restore_preview_stale_default');
+  }
+  if (isFileLibraryActiveWriterBlocked(error)) {
+    description = t('file_manager.restore_run_active_writer_description');
+  }
+
+  return {
+    title: isFileLibraryActiveWriterBlocked(error)
+      ? t('file_manager.restore_run_active_writer_title')
+      : t('file_manager.restore_run_failed_title'),
+    description,
+  };
+}
+
+function buildRestoreRuntimeReleaseErrorDisplay(
+  error: unknown,
+  t: FileLibraryRecoveryDialogProps['t'],
+): RestoreActionErrorDisplay {
+  return {
+    title: t('file_manager.restore_runtime_release_failed_title'),
+    description: isRuntimeAccessReleaseBlocked(error)
+      ? t('file_manager.restore_runtime_release_blocked')
+      : t('file_manager.restore_runtime_release_failed'),
+  };
+}
+
+function buildRestoreRuntimeReleasePendingDisplay(t: FileLibraryRecoveryDialogProps['t']): RestoreActionErrorDisplay {
+  return {
+    title: t('file_manager.restore_runtime_release_pending_title'),
+    description: t('file_manager.restore_runtime_release_pending'),
+  };
+}
+
+function isRuntimeAccessReleaseConfirmed(release: ReleaseFileLibraryRuntimeAccessResponse): boolean {
+  if (release.runtime_access_status === 'release_pending') return false;
+  return release.runtime_access_status === 'released' || release.released === true;
 }
 
 function buildTemplateActionErrorDisplay(
@@ -332,6 +509,7 @@ function TemplateStatusBadge({
 
 export function FileLibraryRecoveryDialog({
   library,
+  locale = 'en-US',
   open,
   projectId,
   t,
@@ -342,6 +520,10 @@ export function FileLibraryRecoveryDialog({
   const [savePointMessage, setSavePointMessage] = React.useState('');
   const [savePointActionError, setSavePointActionError] = React.useState<SavePointActionErrorDisplay | null>(null);
   const [restorePreview, setRestorePreview] = React.useState<FileLibraryRestorePreview | null>(null);
+  const [restoreRunActionError, setRestoreRunActionError] = React.useState<RestoreActionErrorDisplay | null>(null);
+  const [restoreRunBlocker, setRestoreRunBlocker] = React.useState<RestoreRunActiveWriterBlocker | null>(null);
+  const [restoreReleaseError, setRestoreReleaseError] = React.useState<RestoreActionErrorDisplay | null>(null);
+  const [restoreReleasePendingDisplay, setRestoreReleasePendingDisplay] = React.useState<RestoreActionErrorDisplay | null>(null);
   const [templateName, setTemplateName] = React.useState('');
   const [templateDescription, setTemplateDescription] = React.useState('');
   const [templateActionError, setTemplateActionError] = React.useState<TemplateActionErrorDisplay | null>(null);
@@ -361,7 +543,8 @@ export function FileLibraryRecoveryDialog({
 
   const createSavePoint = useCreateFileLibrarySavePoint({ suppressErrorToast: true });
   const createRestorePreview = useCreateFileLibraryRestorePreview();
-  const runRestore = useRunFileLibraryRestore();
+  const runRestore = useRunFileLibraryRestore({ suppressErrorToast: true });
+  const releaseRuntimeAccess = useReleaseFileLibraryRuntimeAccess({ suppressErrorToast: true });
   const cancelRestore = useCancelFileLibraryRestore();
   const createTemplate = useCreateTaskFileTemplate();
   const publishTemplate = usePublishTaskFileTemplate();
@@ -375,6 +558,10 @@ export function FileLibraryRecoveryDialog({
       setTemplateName('');
       setTemplateDescription('');
       setRestorePreview(null);
+      setRestoreRunActionError(null);
+      setRestoreRunBlocker(null);
+      setRestoreReleaseError(null);
+      setRestoreReleasePendingDisplay(null);
       setTemplateActionError(null);
       setActiveTab('save_points');
     }
@@ -388,10 +575,25 @@ export function FileLibraryRecoveryDialog({
     ));
   }, [activeRestorePreviewQuery.data?.restore_preview, activeRestorePreviewQuery.isLoading, open]);
 
+  React.useEffect(() => {
+    if (!restoreRunBlocker) return;
+    if (!restorePreview || restorePreview.id !== restoreRunBlocker.restorePreviewId) {
+      setRestoreRunBlocker(null);
+      setRestoreRunActionError(null);
+      setRestoreReleaseError(null);
+      setRestoreReleasePendingDisplay(null);
+    }
+  }, [restorePreview, restoreRunBlocker]);
+
   const savePoints = savePointsQuery.data?.items ?? [];
   const templates = templatesQuery.data?.items ?? [];
   const templatesForLibrary = templates.filter((template) => template.source_library_id === libraryId);
   const restorePreviewDisplay = restorePreview ? buildRestorePreviewDisplay(restorePreview, t) : null;
+  const durableRestoreRunBlocker = library && restorePreview && hasRestorePreviewActiveWriterBlocker(restorePreview)
+    ? buildRestorePreviewActiveWriterBlocker(restorePreview, library)
+    : null;
+  const restoreActiveWriterBlocker = restoreRunBlocker ?? durableRestoreRunBlocker;
+  const restoreActiveWriterBlockerError = restoreRunBlocker ? restoreRunActionError : null;
   const restorePreviewBlocksTemplates = isBlockingRestorePreview(restorePreview);
   const taskTemplatesBlocked = restorePreviewBlocksTemplates || activeRestorePreviewQuery.isLoading;
 
@@ -424,6 +626,10 @@ export function FileLibraryRecoveryDialog({
 
   const handlePreviewRestore = async (savePoint: FileLibrarySavePoint) => {
     if (!library || !libraryReady) return;
+    setRestoreRunActionError(null);
+    setRestoreRunBlocker(null);
+    setRestoreReleaseError(null);
+    setRestoreReleasePendingDisplay(null);
     const preview = await createRestorePreview.mutateAsync({
       workspaceId,
       projectId,
@@ -434,6 +640,10 @@ export function FileLibraryRecoveryDialog({
   };
 
   const handleCancelRestore = async () => {
+    setRestoreRunActionError(null);
+    setRestoreRunBlocker(null);
+    setRestoreReleaseError(null);
+    setRestoreReleasePendingDisplay(null);
     if (!library || !restorePreview) {
       setRestorePreview(null);
       return;
@@ -451,17 +661,54 @@ export function FileLibraryRecoveryDialog({
     if (!library || !restorePreview || !libraryReady) return;
     const previewDisplay = buildRestorePreviewDisplay(restorePreview, t);
     if (!previewDisplay.canConfirm) return;
-    const run = await runRestore.mutateAsync({
-      workspaceId,
-      projectId,
-      libraryId: library.id,
-      restorePreviewId: restorePreview.id,
-    });
-    if (run.status === 'succeeded') {
-      setRestorePreview(null);
-      onOpenChange(false);
-    } else {
-      await activeRestorePreviewQuery.refetch();
+    setRestoreRunActionError(null);
+    setRestoreReleaseError(null);
+    setRestoreReleasePendingDisplay(null);
+    try {
+      const run = await runRestore.mutateAsync({
+        workspaceId,
+        projectId,
+        libraryId: library.id,
+        restorePreviewId: restorePreview.id,
+      });
+      if (run.status === 'succeeded') {
+        setRestoreRunBlocker(null);
+        setRestorePreview(null);
+        onOpenChange(false);
+      } else {
+        await activeRestorePreviewQuery.refetch();
+      }
+    } catch (error) {
+      const display = buildRestoreRunErrorDisplay(error, t);
+      setRestoreRunActionError(display);
+      if (isFileLibraryActiveWriterBlocked(error)) {
+        setRestoreRunBlocker(buildRestoreRunActiveWriterBlocker(error, restorePreview, library));
+      }
+    }
+  };
+
+  const handleReleaseRuntimeAccess = async () => {
+    if (!restoreActiveWriterBlocker?.releaseAction) return;
+    setRestoreReleaseError(null);
+    setRestoreReleasePendingDisplay(null);
+    try {
+      const release = await releaseRuntimeAccess.mutateAsync({
+        workspaceId,
+        projectId,
+        libraryId: restoreActiveWriterBlocker.releaseAction.libraryId,
+      });
+      if (!isRuntimeAccessReleaseConfirmed(release)) {
+        setRestoreReleasePendingDisplay(buildRestoreRuntimeReleasePendingDisplay(t));
+        return;
+      }
+      setRestoreRunBlocker(null);
+      setRestoreRunActionError(null);
+      await Promise.all([
+        activeRestorePreviewQuery.refetch(),
+        savePointsQuery.refetch(),
+      ]);
+    } catch (error) {
+      setRestoreReleaseError(buildRestoreRuntimeReleaseErrorDisplay(error, t));
     }
   };
 
@@ -553,8 +800,9 @@ export function FileLibraryRecoveryDialog({
 
   const savePointPending = createSavePoint.isPending;
   const restorePending = createRestorePreview.isPending || runRestore.isPending || cancelRestore.isPending;
+  const releasePending = releaseRuntimeAccess.isPending;
   const templatePending = createTemplate.isPending || publishTemplate.isPending || unpublishTemplate.isPending || deleteTemplate.isPending;
-  const restoreConfirmDisabled = !libraryReady || restorePending || !restorePreviewDisplay?.canConfirm;
+  const restoreConfirmDisabled = !libraryReady || restorePending || !!restoreActiveWriterBlocker || !restorePreviewDisplay?.canConfirm;
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -680,6 +928,96 @@ export function FileLibraryRecoveryDialog({
                             </li>
                           ))}
                         </ul>
+                      </div>
+                    ) : null}
+                    {restoreActiveWriterBlocker ? (
+                      <div
+                        className="mt-2 rounded-md border border-warning/30 bg-surface/50 px-3 py-3"
+                        data-testid="files__restore-run-blocker"
+                        role="alert"
+                      >
+                        <div className="flex gap-2">
+                          <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-warning" />
+                          <div className="min-w-0 space-y-2">
+                            <div className="space-y-1">
+                              <div className="text-sm font-medium text-primary">
+                                {restoreActiveWriterBlockerError?.title ?? t('file_manager.restore_run_active_writer_title')}
+                              </div>
+                              <div className="text-sm text-secondary">
+                                {restoreActiveWriterBlockerError?.description ?? t('file_manager.restore_run_active_writer_description')}
+                              </div>
+                              {restoreActiveWriterBlocker.visibleTask ? (
+                                <div className="text-sm text-secondary">
+                                  {t('file_manager.restore_run_active_writer_task', {
+                                    title: restoreActiveWriterBlocker.visibleTask.title,
+                                  })}
+                                </div>
+                              ) : null}
+                            </div>
+                            <div className="flex flex-wrap gap-2">
+                              {restoreActiveWriterBlocker.visibleTask?.id ? (
+                                <Button asChild type="button" variant="outline" size="sm">
+                                  <Link
+                                    href={buildTaskPath(locale, workspaceId, projectId, restoreActiveWriterBlocker.visibleTask.id)}
+                                    data-testid="files__restore-blocker-open-task"
+                                  >
+                                    <ExternalLink className="h-4 w-4" />
+                                    {t('file_manager.restore_runtime_open_task')}
+                                  </Link>
+                                </Button>
+                              ) : null}
+                              {restoreActiveWriterBlocker.releaseAction ? (
+                                <Button
+                                  type="button"
+                                  variant="outline"
+                                  size="sm"
+                                  onClick={handleReleaseRuntimeAccess}
+                                  disabled={releasePending}
+                                  data-testid="files__restore-blocker-release"
+                                >
+                                  {releasePending ? (
+                                    <Loader2 className="h-4 w-4 animate-spin" />
+                                  ) : (
+                                    <UnlockKeyhole className="h-4 w-4" />
+                                  )}
+                                  {t('file_manager.restore_runtime_release')}
+                                </Button>
+                              ) : null}
+                            </div>
+                            {restoreReleaseError ? (
+                              <div
+                                className="rounded-md border border-warning/25 bg-warning/10 px-3 py-2"
+                                data-testid="files__restore-release-error"
+                                role="alert"
+                              >
+                                <div className="text-sm font-medium text-primary">{restoreReleaseError.title}</div>
+                                <div className="text-sm text-secondary">{restoreReleaseError.description}</div>
+                              </div>
+                            ) : null}
+                            {restoreReleasePendingDisplay ? (
+                              <div
+                                className="rounded-md border border-warning/25 bg-warning/10 px-3 py-2"
+                                data-testid="files__restore-release-pending"
+                                role="status"
+                              >
+                                <div className="text-sm font-medium text-primary">{restoreReleasePendingDisplay.title}</div>
+                                <div className="text-sm text-secondary">{restoreReleasePendingDisplay.description}</div>
+                              </div>
+                            ) : null}
+                          </div>
+                        </div>
+                      </div>
+                    ) : restoreRunActionError ? (
+                      <div
+                        className="mt-2 flex gap-2 rounded-md border border-warning/30 bg-surface/50 px-3 py-3"
+                        data-testid="files__restore-run-error"
+                        role="alert"
+                      >
+                        <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-warning" />
+                        <div className="min-w-0 space-y-1">
+                          <div className="text-sm font-medium text-primary">{restoreRunActionError.title}</div>
+                          <div className="text-sm text-secondary">{restoreRunActionError.description}</div>
+                        </div>
                       </div>
                     ) : null}
                     {restorePreviewBlocksTemplates ? (

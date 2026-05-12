@@ -58,9 +58,13 @@ import {
   buildFileLibraryTaskHomeBindingFields,
   findTaskFileLibraryBinding,
   hydrateTaskFileLibraryBindingsForProject,
+  JsonDocTaskWorkspaceHolderRepo,
   type TaskFileLibraryBinding,
 } from './notebook-task/task-file-library-bindings.js';
 import { writeProjectAuditEvent } from './audit-usage-recorders.js';
+import { getNotebookTaskRunState } from './notebook-task/task-run-coordination.js';
+import { sanitizeWorkloadId } from './internal-agent-pod-manager.js';
+import type { InternalAgentWorkspaceBinding } from './internal-agent-workspace-provisioner.js';
 
 type JsonResponder = (res: http.ServerResponse, statusCode: number, body: unknown) => void;
 const TASK_FILE_TEMPLATE_USE_PERMISSION = 'project:agent_task:use';
@@ -92,6 +96,7 @@ type ProjectFileLibraryRouteKind =
   | 'fileLibraryRestorePreview'
   | 'fileLibraryRestoreRun'
   | 'fileLibraryRestoreCancel'
+  | 'fileLibraryRuntimeAccessRelease'
   | 'fileLibraryOperation'
   | 'taskFileTemplates'
   | 'taskFileTemplateItem'
@@ -592,6 +597,304 @@ async function shouldServeCachedSavePointsDuringRestorePreview(input: {
   }
 }
 
+type FileLibraryRuntimeAccessReleaseBlockerCode =
+  | 'bound_task_missing'
+  | 'active_run'
+  | 'active_terminal'
+  | 'workspace_holder';
+
+function isActiveWritableTaskBinding(binding: TaskFileLibraryBinding): boolean {
+  return binding.bindingState === 'bound'
+    && binding.taskStatus === 'active'
+    && (
+      binding.runtimeWritableAffordance === 'task_internal_home'
+      || binding.runtimeWritableAffordance === 'files_update'
+    );
+}
+
+function isActiveRuntimeWorkspaceBinding(binding: InternalAgentWorkspaceBinding): boolean {
+  const mountStatus = binding.mount_binding_status;
+  if (mountStatus) {
+    return mountStatus === 'issued' || mountStatus === 'active';
+  }
+  const status = binding.status.trim().toLowerCase();
+  return status === 'ready' || status === 'active';
+}
+
+function isReleasePendingRuntimeWorkspaceBinding(binding: InternalAgentWorkspaceBinding): boolean {
+  const mountStatus = binding.mount_binding_status;
+  if (mountStatus === 'released' || mountStatus === 'revoked' || mountStatus === 'expired') {
+    return false;
+  }
+  const status = binding.status.trim().toLowerCase();
+  if (status === 'released' || status === 'revoked' || status === 'expired' || status === 'deleted') {
+    return false;
+  }
+  return true;
+}
+
+async function findTaskRecordForBinding(input: {
+  deps: NodeApiDeps;
+  workspaceId: string;
+  projectId: string;
+  binding: TaskFileLibraryBinding;
+}): Promise<TaskRecord | null> {
+  const task = await input.deps.docStore.get<TaskRecord>(
+    notebookTasksCollection(input.workspaceId),
+    input.binding.taskId,
+  );
+  if (
+    !task
+    || task.workspace_id !== input.workspaceId
+    || task.project_id !== input.projectId
+    || task.id !== input.binding.taskId
+  ) {
+    return null;
+  }
+  return task;
+}
+
+async function findActiveRuntimeWriter(input: {
+  deps: NodeApiDeps;
+  workspaceId: string;
+  projectId: string;
+  libraryId: string;
+}): Promise<{ binding: TaskFileLibraryBinding | null } | null> {
+  const workspaceBindingManager = input.deps.internalAgentWorkspaceBindingManager
+    ?? input.deps.internalAgentWorkspaceProvisioner;
+  if (typeof workspaceBindingManager?.findWorkspaceBinding !== 'function') {
+    return null;
+  }
+  const runtimeBinding = await workspaceBindingManager.findWorkspaceBinding({
+    workspaceId: input.workspaceId,
+    fileLibraryId: input.libraryId,
+  });
+  if (!runtimeBinding || !isActiveRuntimeWorkspaceBinding(runtimeBinding)) {
+    return null;
+  }
+  return {
+    binding: await findRestoreActiveWriterBinding(input),
+  };
+}
+
+function hasRestorePreviewActiveWriterBlocker(preview: FileLibraryRestorePreviewRecord): boolean {
+  return preview.blockers?.some((blocker) => blocker.code === 'active_writer_sessions') ?? false;
+}
+
+async function findRestoreActiveWriterBinding(input: {
+  deps: NodeApiDeps;
+  workspaceId: string;
+  projectId: string;
+  libraryId: string;
+}): Promise<TaskFileLibraryBinding | null> {
+  await hydrateFileLibraryTaskBindings({
+    deps: input.deps,
+    workspaceId: input.workspaceId,
+    projectId: input.projectId,
+  });
+  const binding = await findTaskFileLibraryBinding({
+    docStore: input.deps.docStore,
+    workspaceId: input.workspaceId,
+    projectId: input.projectId,
+    fileLibraryId: input.libraryId,
+  });
+  return binding && isActiveWritableTaskBinding(binding) ? binding : null;
+}
+
+function buildActiveWriterRestoreBlockedBody(input: {
+  libraryId: string;
+  restorePreviewId: string;
+  binding: TaskFileLibraryBinding | null;
+  actorUserId: string;
+}): Record<string, unknown> {
+  return {
+    error_code: 'FILE_LIBRARY_ACTIVE_WRITER_BLOCKED',
+    message: 'file_library_active_writer_blocked',
+    file_library_id: input.libraryId,
+    restore_preview_id: input.restorePreviewId,
+    blockers: [{ code: 'active_writer_sessions' }],
+    ...(input.binding
+      ? buildBoundTaskSafeFields({
+          binding: input.binding,
+          actorUserId: input.actorUserId,
+        })
+      : { bound_task_visible: false }),
+  };
+}
+
+async function markRestorePreviewActiveWriterBlocked(input: {
+  restoreRepo: JsonDocFileLibraryRestorePreviewRepo;
+  workspaceId: string;
+  projectId: string;
+  libraryId: string;
+  preview: FileLibraryRestorePreviewRecord;
+}): Promise<FileLibraryRestorePreviewRecord> {
+  return await input.restoreRepo.updateStatus({
+    workspaceId: input.workspaceId,
+    projectId: input.projectId,
+    libraryId: input.libraryId,
+    restorePreviewId: input.preview.id,
+    status: 'ready',
+    activeAfscpOperationId: null,
+    blockers: [{ code: 'active_writer_sessions' }],
+    stale: false,
+  }) ?? input.preview;
+}
+
+async function buildActiveWriterRestoreBlockedBodyForCurrentBinding(input: {
+  deps: NodeApiDeps;
+  workspaceId: string;
+  projectId: string;
+  libraryId: string;
+  restorePreviewId: string;
+  actorUserId: string;
+}): Promise<Record<string, unknown>> {
+  const binding = await findRestoreActiveWriterBinding({
+    deps: input.deps,
+    workspaceId: input.workspaceId,
+    projectId: input.projectId,
+    libraryId: input.libraryId,
+  });
+  return buildActiveWriterRestoreBlockedBody({
+    libraryId: input.libraryId,
+    restorePreviewId: input.restorePreviewId,
+    binding,
+    actorUserId: input.actorUserId,
+  });
+}
+
+async function clearRestorePreviewActiveWriterBlocker(input: {
+  restoreRepo: JsonDocFileLibraryRestorePreviewRepo;
+  workspaceId: string;
+  projectId: string;
+  libraryId: string;
+}): Promise<void> {
+  const active = await input.restoreRepo.findActiveByLibrary(
+    input.workspaceId,
+    input.projectId,
+    input.libraryId,
+  );
+  if (!active?.blockers?.some((blocker) => blocker.code === 'active_writer_sessions')) {
+    return;
+  }
+  await input.restoreRepo.updateStatus({
+    workspaceId: input.workspaceId,
+    projectId: input.projectId,
+    libraryId: input.libraryId,
+    restorePreviewId: active.id,
+    status: active.status,
+    blockers: active.blockers.filter((blocker) => blocker.code !== 'active_writer_sessions'),
+  });
+}
+
+async function hasLiveTerminalSessionsForTask(input: {
+  deps: NodeApiDeps;
+  workspaceId: string;
+  projectId: string;
+  task: TaskRecord;
+}): Promise<boolean> {
+  const terminalService = input.deps.notebookTerminalService as NodeApiDeps['notebookTerminalService'] & {
+    hasLiveSessionsForTask?: (args: {
+      workspaceId: string;
+      projectId: string;
+      taskId: string;
+      userId: string;
+    }) => Promise<boolean>;
+  };
+  if (typeof terminalService.hasLiveSessionsForTask === 'function') {
+    return terminalService.hasLiveSessionsForTask({
+      workspaceId: input.workspaceId,
+      projectId: input.projectId,
+      taskId: input.task.id,
+      userId: input.task.owner_user_id,
+    });
+  }
+  const sessions = await terminalService.listSessionsForTask({
+    workspaceId: input.workspaceId,
+    projectId: input.projectId,
+    taskId: input.task.id,
+    userId: input.task.owner_user_id,
+  });
+  return sessions.some((session) => (
+    session.status === 'pending'
+    || session.status === 'active'
+    || session.status === 'disconnected'
+  ));
+}
+
+async function collectRuntimeAccessReleaseBlockers(input: {
+  deps: NodeApiDeps;
+  workspaceId: string;
+  projectId: string;
+  task: TaskRecord | null;
+  binding: TaskFileLibraryBinding;
+}): Promise<FileLibraryRuntimeAccessReleaseBlockerCode[]> {
+  if (!input.task) {
+    return ['bound_task_missing'];
+  }
+  const blockers: FileLibraryRuntimeAccessReleaseBlockerCode[] = [];
+  const activeRun = await getNotebookTaskRunState(input.deps.cache, input.task.id);
+  if (activeRun) {
+    blockers.push('active_run');
+  }
+  if (await hasLiveTerminalSessionsForTask({
+    deps: input.deps,
+    workspaceId: input.workspaceId,
+    projectId: input.projectId,
+    task: input.task,
+  })) {
+    blockers.push('active_terminal');
+  }
+  const liveWorkspaceHolders = await new JsonDocTaskWorkspaceHolderRepo(input.deps.docStore).listLiveByTask({
+    workspaceId: input.workspaceId,
+    projectId: input.projectId,
+    taskId: input.task.id,
+    bindingGeneration: input.binding.bindingGeneration,
+  });
+  if (liveWorkspaceHolders.length > 0) {
+    blockers.push('workspace_holder');
+  }
+  const coordinator = input.deps.internalWorkloadCoordinator as {
+    readSnapshotForTests?: () => Array<{
+      workspaceId: string;
+      projectId: string;
+      workloadId: string;
+      holders: string[];
+    }>;
+  } | undefined;
+  const workloadId = sanitizeWorkloadId(input.task.id);
+  const holderSnapshots = typeof coordinator?.readSnapshotForTests === 'function'
+    ? coordinator.readSnapshotForTests().filter((snapshot) => (
+      snapshot.workspaceId === input.workspaceId
+      && snapshot.projectId === input.projectId
+      && snapshot.workloadId === workloadId
+      && snapshot.holders.length > 0
+    ))
+    : [];
+  if (holderSnapshots.length > 0 && !blockers.includes('workspace_holder')) {
+    blockers.push('workspace_holder');
+  }
+  return blockers;
+}
+
+function buildRuntimeAccessReleaseBlockedBody(input: {
+  libraryId: string;
+  binding: TaskFileLibraryBinding;
+  actorUserId: string;
+  blockers: FileLibraryRuntimeAccessReleaseBlockerCode[];
+}): Record<string, unknown> {
+  return {
+    error_code: 'FILE_LIBRARY_RUNTIME_ACCESS_RELEASE_BLOCKED',
+    message: 'file_library_runtime_access_release_blocked',
+    file_library_id: input.libraryId,
+    blockers: input.blockers.map((code) => ({ code })),
+    ...buildBoundTaskSafeFields({
+      binding: input.binding,
+      actorUserId: input.actorUserId,
+    }),
+  };
+}
+
 export async function handleProjectFileLibraryRoutes(args: {
   routeKind: ProjectFileLibraryRouteKind;
   method: string;
@@ -976,6 +1279,101 @@ export async function handleProjectFileLibraryRoutes(args: {
     && library.status !== 'ready'
   ) {
     json(res, 409, buildFileLibraryNotReadyResponse(library));
+    return true;
+  }
+
+  if (routeKind === 'fileLibraryRuntimeAccessRelease' && method === 'POST') {
+    await hydrateFileLibraryTaskBindings({ deps, workspaceId, projectId });
+    const binding = await findTaskFileLibraryBinding({
+      docStore: deps.docStore,
+      workspaceId,
+      projectId,
+      fileLibraryId: libraryId,
+    });
+    if (!binding) {
+      json(res, 409, {
+        error_code: 'FILE_LIBRARY_RUNTIME_ACCESS_NOT_BOUND',
+        message: 'file_library_runtime_access_not_bound',
+        file_library_id: libraryId,
+      });
+      return true;
+    }
+    const task = await findTaskRecordForBinding({
+      deps,
+      workspaceId,
+      projectId,
+      binding,
+    });
+    const blockers = await collectRuntimeAccessReleaseBlockers({
+      deps,
+      workspaceId,
+      projectId,
+      task,
+      binding,
+    });
+    if (blockers.length > 0) {
+      json(res, 409, buildRuntimeAccessReleaseBlockedBody({
+        libraryId,
+        binding,
+        actorUserId: user.id,
+        blockers,
+      }));
+      return true;
+    }
+    if (!task) {
+      json(res, 409, buildRuntimeAccessReleaseBlockedBody({
+        libraryId,
+        binding,
+        actorUserId: user.id,
+        blockers: ['bound_task_missing'],
+      }));
+      return true;
+    }
+    const workspaceBindingManager = deps.internalAgentWorkspaceBindingManager
+      ?? deps.internalAgentWorkspaceProvisioner;
+    if (!workspaceBindingManager) {
+      json(res, 503, {
+        error_code: 'SERVICE_UNAVAILABLE',
+        message: 'file_library_runtime_access_release_unavailable',
+        file_library_id: libraryId,
+      });
+      return true;
+    }
+    try {
+      await workspaceBindingManager.deleteWorkspaceBinding({
+        workspaceId,
+        fileLibraryId: libraryId,
+      });
+      const runtimeBinding = typeof workspaceBindingManager.findWorkspaceBinding === 'function'
+        ? await workspaceBindingManager.findWorkspaceBinding({
+            workspaceId,
+            fileLibraryId: libraryId,
+          })
+        : null;
+      const releasePending = runtimeBinding ? isReleasePendingRuntimeWorkspaceBinding(runtimeBinding) : false;
+      if (!releasePending) {
+        await clearRestorePreviewActiveWriterBlocker({
+          restoreRepo: new JsonDocFileLibraryRestorePreviewRepo(deps.docStore),
+          workspaceId,
+          projectId,
+          libraryId,
+        });
+      }
+      json(res, 200, {
+        file_library_id: libraryId,
+        released: !releasePending,
+        runtime_access_status: releasePending ? 'release_pending' : 'released',
+      });
+    } catch (error) {
+      const mapped = mapFileLibraryInfraError(error);
+      json(res, mapped.statusCode, {
+        error_code: mapped.errorCode === 'FILE_LIBRARY_OPERATION_FAILED'
+          ? 'FILE_LIBRARY_RUNTIME_ACCESS_RELEASE_FAILED'
+          : mapped.errorCode,
+        message: mapped.message,
+        file_library_id: libraryId,
+      });
+    }
     return true;
   }
 
@@ -1474,6 +1872,39 @@ export async function handleProjectFileLibraryRoutes(args: {
           ? 'file_library_restore_preview_pending'
           : 'file_library_restore_preview_stale');
       }
+      if (hasRestorePreviewActiveWriterBlocker(preview)) {
+        json(res, 409, await buildActiveWriterRestoreBlockedBodyForCurrentBinding({
+          deps,
+          workspaceId,
+          projectId,
+          libraryId,
+          restorePreviewId: preview.id,
+          actorUserId: user.id,
+        }));
+        return true;
+      }
+      const activeWriter = await findActiveRuntimeWriter({
+        deps,
+        workspaceId,
+        projectId,
+        libraryId,
+      });
+      if (activeWriter) {
+        await markRestorePreviewActiveWriterBlocked({
+          restoreRepo,
+          workspaceId,
+          projectId,
+          libraryId,
+          preview,
+        });
+        json(res, 409, buildActiveWriterRestoreBlockedBody({
+          libraryId,
+          restorePreviewId: preview.id,
+          binding: activeWriter.binding,
+          actorUserId: user.id,
+        }));
+        return true;
+      }
       const result = await deps.fileLibraryStorageAdapter.runRestorePreview({
         workspaceId,
         projectId,
@@ -1513,6 +1944,24 @@ export async function handleProjectFileLibraryRoutes(args: {
         'FILE_LIBRARY_RESTORE_RUN_FAILED',
         'file_library_restore_run_failed',
       );
+      if (mapped.errorCode === 'FILE_LIBRARY_ACTIVE_WRITER_BLOCKED') {
+        await markRestorePreviewActiveWriterBlocked({
+          restoreRepo,
+          workspaceId,
+          projectId,
+          libraryId,
+          preview,
+        });
+        json(res, 409, await buildActiveWriterRestoreBlockedBodyForCurrentBinding({
+          deps,
+          workspaceId,
+          projectId,
+          libraryId,
+          restorePreviewId: preview.id,
+          actorUserId: user.id,
+        }));
+        return true;
+      }
       json(res, mapped.statusCode, fileLibraryControlRouteErrorBody(mapped, error));
     }
     return true;

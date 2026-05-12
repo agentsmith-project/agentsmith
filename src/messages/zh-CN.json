@@ -1478,7 +1478,7 @@
       "description": "恢复预览已过期。请重新生成预览后再恢复文件。"
     },
     "file_library_active_writer_blocked": {
-      "description": "仍有文件正在写入。请等待当前文件操作完成后再试。"
+      "description": "任务文件和工作区仍被 task runtime 使用。请先释放任务工作区占用，再重试。"
     },
     "file_library_storage_not_ready": {
       "description": "项目文件存储尚未就绪。请等待初始化完成后再试。"
@@ -2770,14 +2770,26 @@
       "save_point_scope_hint": "在重要文件变更前，保存整个文件库 HOME 内容的快照。",
       "save_point_action_failed_title": "保存点需要处理",
       "save_point_action_failed": "保存点暂未创建成功。备注内容已保留，请在文件库就绪后重试。",
-      "save_point_active_writer_blocked": "仍有文件正在写入。请等待当前文件操作完成后再试。",
+      "save_point_active_writer_blocked": "任务文件和工作区仍被 task runtime 使用。请先释放任务工作区占用，再重试。",
       "save_point_operation_pending": "文件状态仍在更新。请等待当前文件操作完成后再试。",
       "save_point_storage_not_ready": "项目文件存储尚未就绪。请等待初始化完成后再试。",
       "restore": "恢复",
       "restore_cancel": "取消恢复",
       "restore_confirm": "恢复文件",
+      "restore_runtime_open_task": "打开任务",
+      "restore_runtime_release": "释放任务工作区占用",
+      "restore_runtime_release_blocked": "任务工作区占用仍被活跃任务活动阻止。请先停止活跃运行或终端，再重试释放。",
+      "restore_runtime_release_failed": "暂未释放任务工作区占用。请检查任务状态后再试。",
+      "restore_runtime_release_failed_title": "无法释放任务工作区占用",
+      "restore_runtime_release_pending": "正在释放任务工作区占用。完成后再恢复，或稍后重试释放。",
+      "restore_runtime_release_pending_title": "正在释放占用",
+      "restore_run_active_writer_description": "恢复历史版本前必须先释放该任务工作区的可写 runtime 访问。这需要你显式选择；释放完成后，请重新点击恢复文件。",
+      "restore_run_active_writer_task": "正在使用该工作区的任务：{title}",
+      "restore_run_active_writer_title": "恢复被阻止",
+      "restore_run_failed": "暂未开始恢复。请检查文件库状态后再试。",
+      "restore_run_failed_title": "恢复需要处理",
       "restore_preview_blocked_default": "文件库准备好生成新预览前，暂不能恢复。",
-      "restore_preview_blocked_active_writer": "仍有文件正在写入。请等待当前文件操作完成后再试。",
+      "restore_preview_blocked_active_writer": "恢复历史版本前必须先释放该任务工作区的可写 runtime 访问。这需要你显式选择；释放完成后，请重新点击恢复文件。",
       "restore_preview_blocked_stale_writer_uncertain": "文件可能仍在变化。请刷新并重新生成预览后再恢复。",
       "restore_preview_blocked_stale": "预览已过期。请重新生成预览后再恢复。",
       "restore_preview_blocked_recovery": "恢复预览需要重新处理。请重新生成预览后再恢复。",
@@ -2805,7 +2817,7 @@
       "task_template_action_failed_title": "模板操作需要处理",
       "task_template_action_failed": "任务文件模板暂未更新成功。表单内容已保留，请在项目就绪后重试。",
       "task_template_capability_denied": "当前项目暂不能使用任务文件模板。请让管理员启用文件模板后再试。",
-      "task_template_active_writer_blocked": "仍有文件正在写入。请等待当前文件操作完成后再试。",
+      "task_template_active_writer_blocked": "任务文件和工作区仍被 task runtime 使用。请先释放任务工作区占用，再重试。",
       "task_template_storage_not_ready": "项目文件存储尚未就绪。请等待初始化完成后再试。",
       "task_template_name": "模板名称",
       "task_template_name_placeholder": "例如：发布说明起始模板",

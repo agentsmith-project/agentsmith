@@ -335,7 +335,7 @@ function getUploadListingScanData(scanState: UploadListingSyncScanState): FileOb
   };
 }
 
-export function FilesPage({ workspaceId, projectId, locale: _locale = 'en-US' }: FilesPageProps) {
+export function FilesPage({ workspaceId, projectId, locale = 'en-US' }: FilesPageProps) {
   const t = useTranslations('files');
   const tErrors = useTranslations('errors');
   const queryClient = useQueryClient();
@@ -1072,6 +1072,7 @@ export function FilesPage({ workspaceId, projectId, locale: _locale = 'en-US' }:
         <>
           <FileLibraryRecoveryDialog
             library={selectedLibraryReady ? selectedLibrary : null}
+            locale={locale}
             open={fileStatesOpen && selectedLibraryReady}
             projectId={projectId}
             t={t}

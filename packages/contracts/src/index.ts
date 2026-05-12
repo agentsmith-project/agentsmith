@@ -208,6 +208,48 @@ export const FileLibraryTaskInUseErrorSchema = z.object({
   request_id: z.string().optional(),
 }).strict().superRefine(validateBoundTaskSafeFields);
 
+export const FileLibraryRestoreActiveWriterBlockedErrorSchema = z.object({
+  error_code: z.literal('FILE_LIBRARY_ACTIVE_WRITER_BLOCKED'),
+  message: z.literal('file_library_active_writer_blocked'),
+  file_library_id: z.string().min(1),
+  restore_preview_id: z.string().min(1),
+  blockers: z.array(z.object({
+    code: z.literal('active_writer_sessions'),
+  }).strict()).min(1),
+  bound_task_visible: z.boolean(),
+  bound_task_id: z.string().min(1).optional(),
+  bound_task_title: z.string().min(1).optional(),
+  bound_task_status: FileLibraryBoundTaskStatusSchema.optional(),
+  request_id: z.string().optional(),
+}).strict().superRefine(validateBoundTaskSafeFields);
+
+export const FileLibraryRuntimeAccessReleaseBlockerCodeSchema = z.enum([
+  'bound_task_missing',
+  'active_run',
+  'active_terminal',
+  'workspace_holder',
+]);
+
+export const FileLibraryRuntimeAccessReleaseBlockedErrorSchema = z.object({
+  error_code: z.literal('FILE_LIBRARY_RUNTIME_ACCESS_RELEASE_BLOCKED'),
+  message: z.literal('file_library_runtime_access_release_blocked'),
+  file_library_id: z.string().min(1),
+  blockers: z.array(z.object({
+    code: FileLibraryRuntimeAccessReleaseBlockerCodeSchema,
+  }).strict()).min(1),
+  bound_task_visible: z.boolean(),
+  bound_task_id: z.string().min(1).optional(),
+  bound_task_title: z.string().min(1).optional(),
+  bound_task_status: FileLibraryBoundTaskStatusSchema.optional(),
+  request_id: z.string().optional(),
+}).strict().superRefine(validateBoundTaskSafeFields);
+
+export const ReleaseFileLibraryRuntimeAccessResponseSchema = z.object({
+  file_library_id: z.string().min(1),
+  released: z.boolean(),
+  runtime_access_status: z.enum(['released', 'release_pending']).optional(),
+}).strict();
+
 export const FileLibraryNotEmptyErrorSchema = z.object({
   error_code: z.literal('FILE_LIBRARY_NOT_EMPTY'),
   message: z.literal('file_library_not_empty'),
@@ -649,6 +691,10 @@ export type FileLibraryNotReadyError = z.infer<typeof FileLibraryNotReadyErrorSc
 export type FileLibraryDeletingError = z.infer<typeof FileLibraryDeletingErrorSchema>;
 export type AgentTaskFileLibraryInUseError = z.infer<typeof AgentTaskFileLibraryInUseErrorSchema>;
 export type FileLibraryTaskInUseError = z.infer<typeof FileLibraryTaskInUseErrorSchema>;
+export type FileLibraryRestoreActiveWriterBlockedError = z.infer<typeof FileLibraryRestoreActiveWriterBlockedErrorSchema>;
+export type FileLibraryRuntimeAccessReleaseBlockerCode = z.infer<typeof FileLibraryRuntimeAccessReleaseBlockerCodeSchema>;
+export type FileLibraryRuntimeAccessReleaseBlockedError = z.infer<typeof FileLibraryRuntimeAccessReleaseBlockedErrorSchema>;
+export type ReleaseFileLibraryRuntimeAccessResponse = z.infer<typeof ReleaseFileLibraryRuntimeAccessResponseSchema>;
 export type FileLibraryNotEmptyError = z.infer<typeof FileLibraryNotEmptyErrorSchema>;
 export type AgentTaskDeleteBlockedError = z.infer<typeof AgentTaskDeleteBlockedErrorSchema>;
 export type AgentTaskWorkspaceBindingConflictError = z.infer<typeof AgentTaskWorkspaceBindingConflictErrorSchema>;

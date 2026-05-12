@@ -247,6 +247,152 @@ describe('InternalAgentWorkspaceProvisionerImpl', () => {
     expect(revokeWorkloadMountBinding).not.toHaveBeenCalled();
   });
 
+  it('waits for AFSCP revoke before removing internal workspace binding truth', async () => {
+    const docStore = new InMemoryJsonDocStore();
+    const binding: InternalAgentWorkspaceBinding = {
+      file_library_id: 'flib_release_poll',
+      workspace_id: 'ws_demo',
+      project_id: 'proj_demo',
+      provider: 'afscp',
+      task_home_binding_id: 'wmb_release_poll',
+      afscp_mount_binding_id: 'wmb_release_poll',
+      afscp_namespace_id: 'ns_project_1',
+      afscp_repo_id: 'repo_file_library_1',
+      afscp_volume_id: 'vol_shared',
+      project_storage_generation: 7,
+      status: 'ready',
+      mount_binding_status: 'issued',
+      mount_binding_generation: 2,
+      lease_expires_at: '2026-03-19T01:00:00.000Z',
+      task_home_path: '/home/task_demo',
+      workspace_path: '/home/task_demo/workspace',
+      artifacts_path: '/home/task_demo/workspace/.artifacts',
+      library_root_path: '.',
+      created_at: '2026-03-19T00:00:00.000Z',
+      updated_at: '2026-03-19T00:00:00.000Z',
+    };
+    const collection = resolveWorkspaceScopedCollection('internal_agent_file_library_workspaces', 'ws_demo');
+    await docStore.upsert(collection, binding.file_library_id, binding);
+    const deleteWorkspaceBinding = vi.fn().mockResolvedValue(undefined);
+    const revokeWorkloadMountBinding = vi.fn().mockResolvedValue({
+      operation_id: 'op_release_poll',
+      operation_state: 'queued',
+      resource: { type: 'workload_mount_binding', id: 'wmb_release_poll' },
+      result: null,
+      error: null,
+    });
+    const pollOperation = vi.fn().mockResolvedValue({
+      operation_id: 'op_release_poll',
+      operation_state: 'succeeded',
+      resource: { type: 'workload_mount_binding', id: 'wmb_release_poll' },
+      result: null,
+      error: null,
+    });
+    const provisioner = new InternalAgentWorkspaceProvisionerImpl(
+      docStore,
+      {
+        ensureWorkspaceBinding: vi.fn(),
+        deleteWorkspaceBinding,
+      },
+      {
+        afscpProductClient: {
+          createWorkloadMountBinding: vi.fn(),
+          getWorkloadMountBinding: vi.fn(),
+          revokeWorkloadMountBinding,
+          pollOperation,
+        },
+      },
+    );
+
+    await expect(provisioner.deleteWorkspaceBinding({
+      workspaceId: 'ws_demo',
+      fileLibraryId: binding.file_library_id,
+    })).resolves.toBeUndefined();
+
+    expect(deleteWorkspaceBinding).toHaveBeenCalledWith('ws_demo', 'proj_demo', 'wmb_release_poll');
+    expect(revokeWorkloadMountBinding).toHaveBeenCalledWith(expect.objectContaining({
+      namespaceId: 'ns_project_1',
+      mountBindingId: 'wmb_release_poll',
+    }));
+    expect(pollOperation).toHaveBeenCalledWith(expect.objectContaining({
+      operationId: 'op_release_poll',
+    }));
+    await expect(docStore.get(collection, binding.file_library_id)).resolves.toBeNull();
+    await expect(provisioner.findWorkspaceBinding({
+      workspaceId: 'ws_demo',
+      fileLibraryId: binding.file_library_id,
+    })).resolves.toBeNull();
+  });
+
+  it('keeps pending release truth when AFSCP revoke cannot be confirmed synchronously', async () => {
+    const docStore = new InMemoryJsonDocStore();
+    const binding: InternalAgentWorkspaceBinding = {
+      file_library_id: 'flib_release_pending',
+      workspace_id: 'ws_demo',
+      project_id: 'proj_demo',
+      provider: 'afscp',
+      task_home_binding_id: 'wmb_release_pending',
+      afscp_mount_binding_id: 'wmb_release_pending',
+      afscp_namespace_id: 'ns_project_1',
+      afscp_repo_id: 'repo_file_library_1',
+      afscp_volume_id: 'vol_shared',
+      project_storage_generation: 7,
+      status: 'ready',
+      mount_binding_status: 'issued',
+      mount_binding_generation: 2,
+      lease_expires_at: '2026-03-19T01:00:00.000Z',
+      task_home_path: '/home/task_demo',
+      workspace_path: '/home/task_demo/workspace',
+      artifacts_path: '/home/task_demo/workspace/.artifacts',
+      library_root_path: '.',
+      created_at: '2026-03-19T00:00:00.000Z',
+      updated_at: '2026-03-19T00:00:00.000Z',
+    };
+    const collection = resolveWorkspaceScopedCollection('internal_agent_file_library_workspaces', 'ws_demo');
+    await docStore.upsert(collection, binding.file_library_id, binding);
+    const provisioner = new InternalAgentWorkspaceProvisionerImpl(
+      docStore,
+      {
+        ensureWorkspaceBinding: vi.fn(),
+        deleteWorkspaceBinding: vi.fn().mockResolvedValue(undefined),
+      },
+      {
+        afscpProductClient: {
+          createWorkloadMountBinding: vi.fn(),
+          getWorkloadMountBinding: vi.fn(),
+          revokeWorkloadMountBinding: vi.fn().mockResolvedValue({
+            operation_id: 'op_release_pending',
+            operation_state: 'queued',
+            resource: { type: 'workload_mount_binding', id: 'wmb_release_pending' },
+            result: null,
+            error: null,
+          }),
+        },
+      },
+    );
+
+    await expect(provisioner.deleteWorkspaceBinding({
+      workspaceId: 'ws_demo',
+      fileLibraryId: binding.file_library_id,
+    })).resolves.toBeUndefined();
+
+    await expect(docStore.get<InternalAgentWorkspaceBinding>(collection, binding.file_library_id)).resolves.toMatchObject({
+      status: 'releasing',
+      mount_binding_status: 'releasing',
+      release_operation_id: 'op_release_pending',
+      release_requested_at: expect.any(String),
+      drain_started_at: expect.any(String),
+    });
+    await expect(provisioner.findWorkspaceBinding({
+      workspaceId: 'ws_demo',
+      fileLibraryId: binding.file_library_id,
+    })).resolves.toMatchObject({
+      file_library_id: binding.file_library_id,
+      status: 'releasing',
+      mount_binding_status: 'releasing',
+    });
+  });
+
   function legacyCreateIdempotencyKey(input: {
     workspaceId: string;
     projectId: string;

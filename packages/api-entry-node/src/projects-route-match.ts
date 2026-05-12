@@ -29,6 +29,7 @@ export type ProjectsRoute =
   | { kind: 'fileLibraryRestorePreview'; workspaceId: string; projectId: string; libraryId: string }
   | { kind: 'fileLibraryRestoreRun'; workspaceId: string; projectId: string; libraryId: string }
   | { kind: 'fileLibraryRestoreCancel'; workspaceId: string; projectId: string; libraryId: string }
+  | { kind: 'fileLibraryRuntimeAccessRelease'; workspaceId: string; projectId: string; libraryId: string }
   | { kind: 'fileLibraryOperation'; workspaceId: string; projectId: string; operationId: string }
   | { kind: 'taskFileTemplates'; workspaceId: string; projectId: string }
   | { kind: 'taskFileTemplateItem'; workspaceId: string; projectId: string; taskFileTemplateId: string }
@@ -368,6 +369,18 @@ export function matchProjectsRoute(url: string): ProjectsRoute | null {
       workspaceId: decodeURIComponent(fileLibraryRestoreCancelMatched[1]),
       projectId: decodeURIComponent(fileLibraryRestoreCancelMatched[2]),
       libraryId: decodeURIComponent(fileLibraryRestoreCancelMatched[3]),
+    };
+  }
+
+  const fileLibraryRuntimeAccessReleaseMatched = pathname.match(
+    /^\/api\/v1\/workspaces\/([^/]+)\/projects\/([^/]+)\/file-libraries\/([^/]+)\/runtime-access\/release\/?$/,
+  );
+  if (fileLibraryRuntimeAccessReleaseMatched) {
+    return {
+      kind: 'fileLibraryRuntimeAccessRelease',
+      workspaceId: decodeURIComponent(fileLibraryRuntimeAccessReleaseMatched[1]),
+      projectId: decodeURIComponent(fileLibraryRuntimeAccessReleaseMatched[2]),
+      libraryId: decodeURIComponent(fileLibraryRuntimeAccessReleaseMatched[3]),
     };
   }
 

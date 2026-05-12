@@ -23,6 +23,7 @@ import type {
   GetFileLibraryRestorePreviewResponse,
   ListFileLibrarySavePointsResponse,
   ListTaskFileTemplatesResponse,
+  ReleaseFileLibraryRuntimeAccessResponse,
   RunFileLibraryRestoreRequest,
   TaskFileTemplate,
 } from '../types';
@@ -187,6 +188,17 @@ export class FilesAPI {
     return this.client.post<FileLibraryRestorePreview>(
       `/workspaces/${workspaceId}/projects/${projectId}/file-libraries/${libraryId}/restore-cancel`,
       payload,
+    );
+  }
+
+  async releaseRuntimeAccess(
+    workspaceId: string,
+    projectId: string,
+    libraryId: string,
+  ): Promise<ReleaseFileLibraryRuntimeAccessResponse> {
+    return this.client.post<ReleaseFileLibraryRuntimeAccessResponse>(
+      `/workspaces/${workspaceId}/projects/${projectId}/file-libraries/${libraryId}/runtime-access/release`,
+      undefined,
     );
   }
 

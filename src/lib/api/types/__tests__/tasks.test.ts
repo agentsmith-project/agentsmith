@@ -85,6 +85,7 @@ type CreateTaskValidationError =
 type ExpectedCreateTaskValidationError =
   | components['schemas']['AgentTaskWorkspaceModeInvalidError']
   | components['schemas']['AgentTaskWorkspaceFileLibraryRequiredError']
+  | components['schemas']['AgentTaskFileTemplateRequiredError']
   | components['schemas']['ApiError']
   | components['schemas']['InvalidBindingTargetError'];
 

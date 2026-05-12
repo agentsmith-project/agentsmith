@@ -383,6 +383,36 @@ describe('FilesAPI', () => {
     );
   });
 
+  it('releases file-library runtime access through the library scoped route without task ticket payload', async () => {
+    const client: ApiClient = {
+      setToken: () => undefined,
+      getToken: () => null,
+      clearToken: () => undefined,
+      get: vi.fn(),
+      getBlob: vi.fn(),
+      postMultipart: vi.fn(),
+      post: vi.fn().mockResolvedValue({
+        file_library_id: 'flib_1',
+        released: true,
+      }),
+      put: vi.fn(),
+      patch: vi.fn(),
+      delete: vi.fn(),
+      connectSSE: () => Promise.resolve(new EventSource('http://localhost')),
+    };
+    const api = new FilesAPI(client);
+
+    await expect(api.releaseRuntimeAccess('ws_1', 'proj_1', 'flib_1')).resolves.toEqual({
+      file_library_id: 'flib_1',
+      released: true,
+    });
+
+    expect(client.post).toHaveBeenCalledWith(
+      '/workspaces/ws_1/projects/proj_1/file-libraries/flib_1/runtime-access/release',
+      undefined,
+    );
+  });
+
   it('routes project task file template requests through project scoped paths', async () => {
     const client: ApiClient = {
       setToken: () => undefined,

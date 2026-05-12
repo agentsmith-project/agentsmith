@@ -229,6 +229,13 @@ describe('requiredProjectPermissions', () => {
 
     expect(
       requiredProjectPermissions(
+        { kind: 'fileLibraryRuntimeAccessRelease', workspaceId: 'ws_default', projectId: 'proj_1', libraryId: 'lib_1' } as never,
+        'POST',
+      ),
+    ).toEqual(['project:files:update']);
+
+    expect(
+      requiredProjectPermissions(
         { kind: 'taskFileTemplates', workspaceId: 'ws_default', projectId: 'proj_1' } as never,
         'GET',
       ),

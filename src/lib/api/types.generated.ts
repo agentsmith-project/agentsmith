@@ -1513,6 +1513,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/workspaces/{workspaceId}/projects/{projectId}/file-libraries/{libraryId}/runtime-access/release": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                libraryId: components["parameters"]["libraryId"];
+                projectId: components["parameters"]["projectId"];
+                workspaceId: components["parameters"]["workspaceId"];
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["releaseFileLibraryRuntimeAccess"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/workspaces/{workspaceId}/projects/{projectId}/file-libraries/{libraryId}/save-points": {
         parameters: {
             query?: never;
@@ -3074,7 +3094,7 @@ export interface components {
              * @description Machine-readable error code
              * @enum {string}
              */
-            error_code: "UNAUTHORIZED" | "PERMISSION_DENIED" | "RESOURCE_NOT_FOUND" | "RESOURCE_ALREADY_EXISTS" | "RESOURCE_CONFLICT" | "VALIDATION_ERROR" | "FORBIDDEN" | "RATE_LIMIT_EXCEEDED" | "SPENDING_LIMIT_EXCEEDED" | "AGENT_OFFLINE" | "unsupported_field" | "UNSUPPORTED_MEDIA_TYPE" | "SERVICE_UNAVAILABLE" | "PROJECT_STORAGE_PENDING" | "PROJECT_STORAGE_BLOCKED" | "FILE_LIBRARY_PROVISIONING_FAILED" | "FILE_LIBRARY_OPERATION_PENDING" | "FILE_LIBRARY_OPERATION_FAILED" | "FILE_LIBRARY_STORAGE_NOT_READY" | "FILE_LIBRARY_SAVE_POINT_LIST_FAILED" | "FILE_LIBRARY_SAVE_POINT_CREATE_FAILED" | "FILE_LIBRARY_SAVE_POINT_NOT_FOUND" | "FILE_LIBRARY_RESTORE_PREVIEW_FAILED" | "FILE_LIBRARY_RESTORE_PREVIEW_NOT_FOUND" | "FILE_LIBRARY_RESTORE_PREVIEW_STALE" | "FILE_LIBRARY_RESTORE_RUN_FAILED" | "FILE_LIBRARY_RESTORE_CANCEL_FAILED" | "FILE_LIBRARY_ACTIVE_WRITER_BLOCKED" | "FILE_LIBRARY_NAMESPACE_PROJECT_MISMATCH" | "FILE_LIBRARY_TEMPLATE_CLONE_NOT_ALLOWED" | "FILE_LIBRARY_CAPABILITY_DENIED" | "FILE_LIBRARY_STORAGE_ADMIN_ACTION_REQUIRED" | "TASK_FILE_TEMPLATE_CREATE_FAILED" | "FILE_LIBRARY_DELETE_FAILED" | "FILE_LIBRARY_UPLOAD_FAILED" | "FILE_LIBRARY_MOVE_FAILED" | "FILE_LIBRARY_FOLDER_CREATE_FAILED" | "FILE_LIBRARY_LIST_FAILED" | "destination_exists" | "INTERNAL_ERROR";
+            error_code: "UNAUTHORIZED" | "PERMISSION_DENIED" | "RESOURCE_NOT_FOUND" | "RESOURCE_ALREADY_EXISTS" | "RESOURCE_CONFLICT" | "VALIDATION_ERROR" | "FORBIDDEN" | "RATE_LIMIT_EXCEEDED" | "SPENDING_LIMIT_EXCEEDED" | "AGENT_OFFLINE" | "unsupported_field" | "UNSUPPORTED_MEDIA_TYPE" | "SERVICE_UNAVAILABLE" | "PROJECT_STORAGE_PENDING" | "PROJECT_STORAGE_BLOCKED" | "FILE_LIBRARY_PROVISIONING_FAILED" | "FILE_LIBRARY_OPERATION_PENDING" | "FILE_LIBRARY_OPERATION_FAILED" | "FILE_LIBRARY_STORAGE_NOT_READY" | "FILE_LIBRARY_SAVE_POINT_LIST_FAILED" | "FILE_LIBRARY_SAVE_POINT_CREATE_FAILED" | "FILE_LIBRARY_SAVE_POINT_NOT_FOUND" | "FILE_LIBRARY_RESTORE_PREVIEW_FAILED" | "FILE_LIBRARY_RESTORE_PREVIEW_NOT_FOUND" | "FILE_LIBRARY_RESTORE_PREVIEW_STALE" | "FILE_LIBRARY_RESTORE_RUN_FAILED" | "FILE_LIBRARY_RESTORE_CANCEL_FAILED" | "FILE_LIBRARY_ACTIVE_WRITER_BLOCKED" | "FILE_LIBRARY_RUNTIME_ACCESS_NOT_BOUND" | "FILE_LIBRARY_RUNTIME_ACCESS_RELEASE_FAILED" | "FILE_LIBRARY_NAMESPACE_PROJECT_MISMATCH" | "FILE_LIBRARY_TEMPLATE_CLONE_NOT_ALLOWED" | "FILE_LIBRARY_CAPABILITY_DENIED" | "FILE_LIBRARY_STORAGE_ADMIN_ACTION_REQUIRED" | "TASK_FILE_TEMPLATE_CREATE_FAILED" | "FILE_LIBRARY_DELETE_FAILED" | "FILE_LIBRARY_UPLOAD_FAILED" | "FILE_LIBRARY_MOVE_FAILED" | "FILE_LIBRARY_FOLDER_CREATE_FAILED" | "FILE_LIBRARY_LIST_FAILED" | "destination_exists" | "INTERNAL_ERROR";
             /** @description Human-readable error message */
             message: string;
             /** @description Unique identifier for the request (for debugging) */
@@ -3589,6 +3609,30 @@ export interface components {
             /** Format: date-time */
             updated_at?: string;
         };
+        FileLibraryRestoreActiveWriterBlockedError: {
+            blockers: {
+                /** @enum {string} */
+                code: "active_writer_sessions";
+            }[];
+            /** @description Present only when bound_task_visible is true. */
+            bound_task_id?: string;
+            /**
+             * @description Present only when bound_task_visible is true.
+             * @enum {string}
+             */
+            bound_task_status?: "active" | "archived";
+            /** @description Present only when bound_task_visible is true. */
+            bound_task_title?: string;
+            /** @description Whether bound task summary fields are safe to display to the current actor. */
+            bound_task_visible: boolean;
+            /** @enum {string} */
+            error_code: "FILE_LIBRARY_ACTIVE_WRITER_BLOCKED";
+            file_library_id: string;
+            /** @enum {string} */
+            message: "file_library_active_writer_blocked";
+            request_id?: string;
+            restore_preview_id: string;
+        };
         FileLibraryRestorePreview: {
             blockers?: {
                 /** @enum {string} */
@@ -3627,6 +3671,39 @@ export interface components {
             status: "pending" | "succeeded" | "failed";
             /** Format: date-time */
             updated_at: string;
+        };
+        FileLibraryRestoreRunConflictError: {
+            /** @enum {string} */
+            error_code: "FILE_LIBRARY_OPERATION_PENDING" | "FILE_LIBRARY_RESTORE_PREVIEW_STALE" | "FILE_LIBRARY_STORAGE_NOT_READY" | "FILE_LIBRARY_NAMESPACE_PROJECT_MISMATCH";
+            file_library_id?: string;
+            message: string;
+            operation_status?: string;
+            request_id?: string;
+            restore_preview_id?: string;
+            retry_after_ms?: number;
+        };
+        FileLibraryRuntimeAccessReleaseBlockedError: {
+            blockers: {
+                /** @enum {string} */
+                code: "bound_task_missing" | "active_run" | "active_terminal" | "workspace_holder";
+            }[];
+            /** @description Present only when bound_task_visible is true. */
+            bound_task_id?: string;
+            /**
+             * @description Present only when bound_task_visible is true.
+             * @enum {string}
+             */
+            bound_task_status?: "active" | "archived";
+            /** @description Present only when bound_task_visible is true. */
+            bound_task_title?: string;
+            /** @description Whether bound task summary fields are safe to display to the current actor. */
+            bound_task_visible: boolean;
+            /** @enum {string} */
+            error_code: "FILE_LIBRARY_RUNTIME_ACCESS_RELEASE_BLOCKED";
+            file_library_id: string;
+            /** @enum {string} */
+            message: "file_library_runtime_access_release_blocked";
+            request_id?: string;
         };
         FileLibrarySavePoint: {
             /** Format: date-time */
@@ -3920,6 +3997,12 @@ export interface components {
             groups?: components["schemas"]["MemberGroupSummary"][];
             membership_status: components["schemas"]["ProjectMembershipStatus"];
             permissions: string[];
+        };
+        ReleaseFileLibraryRuntimeAccessResponse: {
+            file_library_id: string;
+            released: boolean;
+            /** @enum {string} */
+            runtime_access_status?: "released" | "release_pending";
         };
         ResourceCostBreakdown: {
             /** @description Estimated cost in USD */
@@ -8289,7 +8372,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["FileLibraryDeletingError"] | components["schemas"]["FileLibraryNotReadyError"] | components["schemas"]["ApiError"];
+                    "application/json": components["schemas"]["FileLibraryDeletingError"] | components["schemas"]["FileLibraryNotReadyError"] | components["schemas"]["FileLibraryRestoreActiveWriterBlockedError"] | components["schemas"]["FileLibraryRestoreRunConflictError"];
                 };
             };
             /** @description Restore run failed */
@@ -8302,6 +8385,68 @@ export interface operations {
                 };
             };
             /** @description File library backend unavailable */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+        };
+    };
+    releaseFileLibraryRuntimeAccess: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                libraryId: components["parameters"]["libraryId"];
+                projectId: components["parameters"]["projectId"];
+                workspaceId: components["parameters"]["workspaceId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description File library runtime access released */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ReleaseFileLibraryRuntimeAccessResponse"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            /** @description File library not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Runtime access release is blocked by active task activity */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["FileLibraryRuntimeAccessReleaseBlockedError"] | components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Runtime access release failed */
+            502: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Runtime access release backend unavailable */
             503: {
                 headers: {
                     [name: string]: unknown;

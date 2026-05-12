@@ -15,6 +15,9 @@ import {
   FileLibrarySchema,
   FileLibrarySavePointSchema,
   FileLibraryRestorePreviewSchema,
+  FileLibraryRestoreActiveWriterBlockedErrorSchema,
+  FileLibraryRuntimeAccessReleaseBlockedErrorSchema,
+  ReleaseFileLibraryRuntimeAccessResponseSchema,
   GetFileLibraryRestorePreviewResponseSchema,
   FileLibraryTaskInUseErrorSchema,
   TaskFileTemplateNotFoundErrorSchema,
@@ -360,6 +363,50 @@ describe('agent task persistent HOME contracts', () => {
       bound_task_visible: false,
       bound_task_title: 'Secret task',
     }).success).toBe(false);
+
+    expect(FileLibraryRestoreActiveWriterBlockedErrorSchema.parse({
+      error_code: 'FILE_LIBRARY_ACTIVE_WRITER_BLOCKED',
+      message: 'file_library_active_writer_blocked',
+      file_library_id: 'lib_a',
+      restore_preview_id: 'flrp_a',
+      blockers: [{ code: 'active_writer_sessions' }],
+      bound_task_visible: true,
+      bound_task_id: 'task_restore',
+      bound_task_title: 'Restore task',
+      bound_task_status: 'active',
+    })).toMatchObject({
+      blockers: [{ code: 'active_writer_sessions' }],
+      bound_task_visible: true,
+    });
+
+    expect(FileLibraryRuntimeAccessReleaseBlockedErrorSchema.parse({
+      error_code: 'FILE_LIBRARY_RUNTIME_ACCESS_RELEASE_BLOCKED',
+      message: 'file_library_runtime_access_release_blocked',
+      file_library_id: 'lib_a',
+      blockers: [{ code: 'workspace_holder' }],
+      bound_task_visible: false,
+    })).toMatchObject({
+      blockers: [{ code: 'workspace_holder' }],
+      bound_task_visible: false,
+    });
+
+    expect(ReleaseFileLibraryRuntimeAccessResponseSchema.parse({
+      file_library_id: 'lib_a',
+      released: true,
+      runtime_access_status: 'released',
+    })).toEqual({
+      file_library_id: 'lib_a',
+      released: true,
+      runtime_access_status: 'released',
+    });
+    expect(ReleaseFileLibraryRuntimeAccessResponseSchema.parse({
+      file_library_id: 'lib_a',
+      released: false,
+      runtime_access_status: 'release_pending',
+    })).toMatchObject({
+      released: false,
+      runtime_access_status: 'release_pending',
+    });
   });
 
   it('keeps task delete and workspace binding conflict error fences contract-safe', () => {
@@ -514,7 +561,6 @@ describe('agent task persistent HOME contracts', () => {
     for (const path of [
       '/api/v1/workspaces/{workspaceId}/projects/{projectId}/file-libraries/{libraryId}/save-points',
       '/api/v1/workspaces/{workspaceId}/projects/{projectId}/file-libraries/{libraryId}/restore-preview',
-      '/api/v1/workspaces/{workspaceId}/projects/{projectId}/file-libraries/{libraryId}/restore-run',
       '/api/v1/workspaces/{workspaceId}/projects/{projectId}/file-libraries/{libraryId}/restore-cancel',
       '/api/v1/workspaces/{workspaceId}/projects/{projectId}/task-file-templates',
     ]) {
@@ -524,6 +570,18 @@ describe('agent task persistent HOME contracts', () => {
         'ApiError',
       ]));
     }
+
+    expect(readResponseSchemaNames(
+      openapi.paths ?? {},
+      '/api/v1/workspaces/{workspaceId}/projects/{projectId}/file-libraries/{libraryId}/restore-run',
+      'post',
+      '409',
+    )).toEqual(expect.arrayContaining([
+      'FileLibraryDeletingError',
+      'FileLibraryNotReadyError',
+      'FileLibraryRestoreActiveWriterBlockedError',
+      'FileLibraryRestoreRunConflictError',
+    ]));
 
     expect(readResponseSchemaNames(
       openapi.paths ?? {},
@@ -670,6 +728,11 @@ describe('agent task persistent HOME contracts', () => {
         path: '/api/v1/workspaces/{workspaceId}/projects/{projectId}/file-libraries/{libraryId}/restore-run',
         method: 'post',
         statuses: ['200', '400', '401', '403', '404', '409', '502', '503'],
+      },
+      {
+        path: '/api/v1/workspaces/{workspaceId}/projects/{projectId}/file-libraries/{libraryId}/runtime-access/release',
+        method: 'post',
+        statuses: ['200', '401', '403', '404', '409', '502', '503'],
       },
       {
         path: '/api/v1/workspaces/{workspaceId}/projects/{projectId}/file-libraries/{libraryId}/restore-cancel',

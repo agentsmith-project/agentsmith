@@ -1478,7 +1478,7 @@
       "description": "The restore preview is out of date. Create a new preview before restoring files."
     },
     "file_library_active_writer_blocked": {
-      "description": "Files are still being written. Wait for the active file operation to finish, then try again."
+      "description": "Task files and workspace are still being used by the task runtime. Release task workspace usage, then try again."
     },
     "file_library_storage_not_ready": {
       "description": "Project file storage is not ready yet. Wait for initialization to finish, then try again."
@@ -2770,14 +2770,26 @@
       "save_point_scope_hint": "Save a snapshot of the whole file library HOME payload before major file changes.",
       "save_point_action_failed_title": "Save point needs attention",
       "save_point_action_failed": "Save point could not be created. Your note is still here; try again after the file library is ready.",
-      "save_point_active_writer_blocked": "Files are still being written. Wait for the active file operation to finish, then try again.",
+      "save_point_active_writer_blocked": "Task files and workspace are still being used by the task runtime. Release task workspace usage, then try again.",
       "save_point_operation_pending": "File state is still being updated. Wait for the current file operation to finish, then try again.",
       "save_point_storage_not_ready": "Project file storage is not ready yet. Wait for initialization to finish, then try again.",
       "restore": "Restore",
       "restore_cancel": "Cancel restore",
       "restore_confirm": "Restore files",
+      "restore_runtime_open_task": "Open task",
+      "restore_runtime_release": "Release task workspace usage",
+      "restore_runtime_release_blocked": "Task workspace usage is still blocked by active task activity. Stop the active run or terminal, then try again.",
+      "restore_runtime_release_failed": "Task workspace usage could not be released. Check the task, then try again.",
+      "restore_runtime_release_failed_title": "Could not release task workspace usage",
+      "restore_runtime_release_pending": "Task workspace usage is being released. Restore after it finishes, or retry in a moment.",
+      "restore_runtime_release_pending_title": "Release pending",
+      "restore_run_active_writer_description": "Before restoring an earlier version, release writable runtime access for this task workspace. This is a manual action; after it completes, click Restore files again.",
+      "restore_run_active_writer_task": "Task using this workspace: {title}",
+      "restore_run_active_writer_title": "Restore blocked",
+      "restore_run_failed": "Restore could not start. Check the file library state, then try again.",
+      "restore_run_failed_title": "Restore needs attention",
       "restore_preview_blocked_default": "Restore is blocked until the file library is ready for a new preview.",
-      "restore_preview_blocked_active_writer": "Files are still being written. Wait for the active file operation to finish, then try again.",
+      "restore_preview_blocked_active_writer": "Before restoring an earlier version, release writable runtime access for this task workspace. This is a manual action; after it completes, click Restore files again.",
       "restore_preview_blocked_stale_writer_uncertain": "Files may still be changing. Refresh and create a new preview before restoring.",
       "restore_preview_blocked_stale": "The preview is out of date. Create a new preview before restoring.",
       "restore_preview_blocked_recovery": "The restore preview needs recovery. Create a new preview before restoring.",
@@ -2805,7 +2817,7 @@
       "task_template_action_failed_title": "Template action needs attention",
       "task_template_action_failed": "Task file template could not be updated. Your form is still here; try again after the project is ready.",
       "task_template_capability_denied": "Task file templates are not available for this project yet. Ask an admin to enable file templates, then try again.",
-      "task_template_active_writer_blocked": "Files are still being written. Wait for the active file operation to finish, then try again.",
+      "task_template_active_writer_blocked": "Task files and workspace are still being used by the task runtime. Release task workspace usage, then try again.",
       "task_template_storage_not_ready": "Project file storage is not ready yet. Wait for initialization to finish, then try again.",
       "task_template_name": "Template name",
       "task_template_name_placeholder": "e.g. Release notes starter",

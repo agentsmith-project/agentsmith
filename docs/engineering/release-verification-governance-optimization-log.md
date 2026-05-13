@@ -1012,7 +1012,10 @@
 
 当前状态：
 
-- 已记录。已分派 worker 按 AFSCP 既有 release evidence 机制修正，不手写猜 digest。
+- 已修正 AFSCP release selector evidence。
+- 已提交并推送 AFSCP `main`，创建并推送 `v1.0.4` tag。
+- GitHub release workflow 已通过，发布了 `ghcr.io/agentsmith-project/agentsmith-fs-control-plane:v1.0.4`。
+- workflow annotation 提示 GitHub Actions Node.js 20 action runtime 将在 2026-06-02 起默认迁移到 Node.js 24，后续需要维护 release workflow action 版本或显式 runtime 策略。
 
 ## 后续追加区
 

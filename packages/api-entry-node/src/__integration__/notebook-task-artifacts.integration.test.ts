@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it } from "vitest";
 import { WebSocket } from "ws";
-import { NOTEBOOK_RUNNER_SPEC } from "@mbos/agent-runner";
+import { AGENT_TASK_RUNNER_SPEC } from "@mbos/agent-runner";
 import { apiFetch, startServer } from "./test-support.js";
 import { AgentTaskModelSettingService } from "../agent-task-model-setting-service.js";
 import {
@@ -11,6 +11,7 @@ import {
 const sockets: WebSocket[] = [];
 const RUNNER_DISPATCH_TIMEOUT_MS = 1_500;
 const NO_DISPATCH_SETTLE_MS = 300;
+const originalManagedExecutionHttpBase = process.env.AGENT_EXECUTION_HTTP_BASE_URL;
 
 function ensureProjectUseCaseFallback(
   deps: ReturnType<typeof startServer>["deps"],
@@ -43,6 +44,11 @@ afterEach(() => {
     }
   }
   sockets.length = 0;
+  if (originalManagedExecutionHttpBase === undefined) {
+    delete process.env.AGENT_EXECUTION_HTTP_BASE_URL;
+  } else {
+    process.env.AGENT_EXECUTION_HTTP_BASE_URL = originalManagedExecutionHttpBase;
+  }
 });
 
 async function createFileLibrary(
@@ -73,13 +79,62 @@ function buildRunnerWsUrl(
   baseUrl: string,
   sessionId?: string,
 ): string {
-  const resolved = new URL(
-    wsUrl.replace("ws://localhost:20000", baseUrl.replace("http://", "ws://")),
-  );
+  const resolved = new URL(wsUrl);
+  const localBase = new URL(baseUrl);
+  resolved.protocol = localBase.protocol === "https:" ? "wss:" : "ws:";
+  resolved.host = localBase.host;
   if (sessionId) {
     resolved.searchParams.set("runner_session_id", sessionId);
   }
   return resolved.toString();
+}
+
+function configureManagedTaskRunnerRuntimeDeps(
+  deps: ReturnType<typeof startServer>["deps"],
+): void {
+  deps.internalAgentPodManager ??= {
+    ensureAgentReady: async () => undefined,
+    keepalive: async () => undefined,
+    releasePod: async () => undefined,
+  } as never;
+  deps.internalAgentWorkspaceBindingManager ??= {
+    ensureWorkspaceBinding: async (input: {
+      workspaceId: string;
+      projectId: string;
+      fileLibraryId: string;
+      taskId: string;
+    }) => ({
+      binding: {
+        id: `bind_${input.taskId}`,
+        workspace_id: input.workspaceId,
+        project_id: input.projectId,
+        file_library_id: input.fileLibraryId,
+        provider: "afscp",
+        status: "ready",
+        task_home_binding_id: `bind_${input.taskId}`,
+        task_home_path: `/home/${input.taskId}`,
+        workspace_path: `/home/${input.taskId}/workspace`,
+        artifacts_path: `/home/${input.taskId}/workspace/.artifacts`,
+        library_root_path: ".",
+        created_at: "2026-04-05T00:00:00.000Z",
+        updated_at: "2026-04-05T00:00:00.000Z",
+      },
+      workspaceMount: {
+        bindingId: `bind_${input.taskId}`,
+        mountPath: `/home/${input.taskId}`,
+        taskHomePath: `/home/${input.taskId}`,
+        workspacePath: `/home/${input.taskId}/workspace`,
+        artifactsPath: `/home/${input.taskId}/workspace/.artifacts`,
+        subPath: `agent-tasks/${input.taskId}`,
+        fileLibraryId: input.fileLibraryId,
+      },
+    }),
+  } as never;
+  deps.internalWorkloadCoordinator ??= {
+    acquireHolder: async () => undefined,
+    releaseHolder: async () => undefined,
+    requestHardTeardown: async () => undefined,
+  } as never;
 }
 
 async function expectRunnerDispatch(
@@ -102,10 +157,12 @@ async function createNotebookArtifactFixture(
   workspaceName: string,
 ): Promise<{
   workspaceLibrary: { id: string };
-  agent: { id: string };
+  runner: { id: string };
   runnerKey: string;
   runnerWsUrl: string;
 }> {
+  process.env.AGENT_EXECUTION_HTTP_BASE_URL = `${baseUrl}/api/v1`;
+  configureManagedTaskRunnerRuntimeDeps(deps);
   const workspaceLibrary = await createFileLibrary(baseUrl, workspaceName);
   ensureProjectUseCaseFallback(deps);
 
@@ -179,13 +236,14 @@ async function createNotebookArtifactFixture(
     ],
   });
 
-  const agent = await deps.agentResourceService.createAgent("ws_default", "proj_1", {
+  const runner = await deps.agentResourceService.upsertDeploymentDefaultManagedAgentRunner("ws_default", "proj_1", {
     name: "NotebookAgent",
-    runner_provider: "developer",
+    runner_provider: "managed",
     is_default: true,
     status: "enabled",
+    presence: "managed",
     runner_status: "ready",
-    default_endpoint_id: endpoint.id,
+    endpointId: endpoint.id,
     owner_id: "user_test",
     visibility: "private",
     capabilities: {
@@ -194,17 +252,21 @@ async function createNotebookArtifactFixture(
       streaming_completion: true,
       multimodal_completion: false,
     },
+    execution_preferences_json: {
+      task: {
+        endpoint_id: endpoint.id,
+        wire_api: "chat",
+        model: "gpt-5-codex",
+      },
+    },
   });
 
-  const keyResp = await deps.agentResourceService.createAgentKey("ws_default", "proj_1", agent.id);
-  const connInfo = deps.agentResourceService.buildConnectionInfo({
-    id: agent.id,
-    runner_provider: "developer",
-  });
+  const keyResp = await deps.agentResourceService.createAgentKey("ws_default", "proj_1", runner.id);
+  const connInfo = deps.agentResourceService.buildConnectionInfo(runner);
 
   return {
     workspaceLibrary,
-    agent,
+    runner,
     runnerKey: keyResp.key,
     runnerWsUrl: connInfo.ws_url,
   };
@@ -212,7 +274,6 @@ async function createNotebookArtifactFixture(
 
 async function createNotebookTask(input: {
   baseUrl: string;
-  agentId: string;
   workspaceFileLibraryId: string;
   title: string;
 }): Promise<{ id: string }> {
@@ -224,7 +285,6 @@ async function createNotebookTask(input: {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         title: input.title,
-        bound_runner_id: input.agentId,
         workspace_mode: "use_existing",
         workspace_file_library_id: input.workspaceFileLibraryId,
       }),
@@ -269,9 +329,9 @@ async function openReadyNotebookRunnerSocket(input: {
       if (msg.type === "server.hello") {
         ws.send(
           JSON.stringify({
-            type: "agent.ready",
-            payload: {
-              runner_spec: NOTEBOOK_RUNNER_SPEC,
+              type: "agent.ready",
+              payload: {
+              runner_spec: AGENT_TASK_RUNNER_SPEC,
               capabilities: { wire_api: "responses" },
             },
           }),
@@ -364,7 +424,6 @@ describe("api-entry-node notebook task artifact routes", () => {
       });
       const task = await createNotebookTask({
         baseUrl,
-        agentId: fixture.agent.id,
         workspaceFileLibraryId: fixture.workspaceLibrary.id,
         title: "artifact-dedupe",
       });
@@ -461,7 +520,6 @@ describe("api-entry-node notebook task artifact routes", () => {
       });
       const task = await createNotebookTask({
         baseUrl,
-        agentId: fixture.agent.id,
         workspaceFileLibraryId: fixture.workspaceLibrary.id,
         title: "artifact-download",
       });
@@ -533,7 +591,7 @@ describe("api-entry-node notebook task artifact routes", () => {
     }
   }, 30_000);
 
-  it("dispatches developer notebook execution to the agent-scoped runner when no task-scoped websocket is present", async () => {
+  it("does not dispatch managed notebook execution to an agent-scoped runner without the task-scoped websocket", async () => {
     const previousPublicApiBase = process.env.PUBLIC_API_BASE_URL;
     process.env.PUBLIC_API_BASE_URL = "";
     const { baseUrl, deps } = startServer();
@@ -560,7 +618,6 @@ describe("api-entry-node notebook task artifact routes", () => {
       });
       const task = await createNotebookTask({
         baseUrl,
-        agentId: fixture.agent.id,
         workspaceFileLibraryId: fixture.workspaceLibrary.id,
         title: "artifact-offline",
       });
@@ -573,11 +630,7 @@ describe("api-entry-node notebook task artifact routes", () => {
       expect(postMessageRes.status).toBe(200);
 
       await delay(NO_DISPATCH_SETTLE_MS);
-      await expectRunnerDispatch(
-        agentScopedRunner.firstDispatch,
-        "artifact agent-scoped runner fallback",
-      );
-      expect(agentScopedRunner.getDispatchCount()).toBe(1);
+      expect(agentScopedRunner.getDispatchCount()).toBe(0);
 
       const artifacts = await waitForNotebookTaskArtifacts(
         baseUrl,

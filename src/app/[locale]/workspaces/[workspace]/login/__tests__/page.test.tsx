@@ -380,22 +380,8 @@ describe('WorkspaceLoginPage', () => {
     expect(decodeURIComponent(authUrl)).not.toContain('/en-US/workspaces/ws_alpha/login/callback');
   });
 
-  it('shows not found state when workspace login config is unavailable', async () => {
+  it('shows not found state when workspace login config returns 404', async () => {
     fetchMock.mockResolvedValueOnce({
-      ok: false,
-      status: 404,
-      json: async () => ({
-        error_code: 'WORKSPACE_NOT_FOUND',
-        error_message: 'workspace_not_found',
-      }),
-    }).mockResolvedValueOnce({
-      ok: false,
-      status: 404,
-      json: async () => ({
-        error_code: 'WORKSPACE_NOT_FOUND',
-        error_message: 'workspace_not_found',
-      }),
-    }).mockResolvedValueOnce({
       ok: false,
       status: 404,
       json: async () => ({
@@ -408,16 +394,18 @@ describe('WorkspaceLoginPage', () => {
 
     expect(await screen.findByTestId('workspace-login__error')).toBeInTheDocument();
     expect(screen.getByText('workspace_not_found')).toBeInTheDocument();
+    expect(screen.queryByTestId('workspace-login__keycloak-btn')).not.toBeInTheDocument();
+    expect(fetchMock).toHaveBeenCalledTimes(1);
   });
 
-  it('retries transient workspace-not-found responses before showing the login button', async () => {
+  it('retries transient workspace config 503 responses before showing the login button', async () => {
     fetchMock
       .mockResolvedValueOnce({
         ok: false,
-        status: 404,
+        status: 503,
         json: async () => ({
-          error_code: 'WORKSPACE_NOT_FOUND',
-          error_message: 'workspace_not_found',
+          error_code: 'WORKSPACE_CONFIG_UNAVAILABLE',
+          error_message: 'workspace_config_unavailable',
         }),
       })
       .mockResolvedValueOnce({
@@ -439,7 +427,26 @@ describe('WorkspaceLoginPage', () => {
 
     expect(await screen.findByTestId('workspace-login__keycloak-btn')).toBeInTheDocument();
     expect(screen.queryByTestId('workspace-login__error')).not.toBeInTheDocument();
+    expect(screen.queryByText('workspace_not_found')).not.toBeInTheDocument();
     expect(fetchMock).toHaveBeenCalledTimes(2);
+  });
+
+  it('shows recoverable unavailable state for repeated workspace config 503 responses', async () => {
+    fetchMock.mockResolvedValue({
+      ok: false,
+      status: 503,
+      json: async () => ({
+        error_code: 'WORKSPACE_CONFIG_UNAVAILABLE',
+        error_message: 'workspace_config_unavailable',
+      }),
+    });
+
+    render(<WorkspaceLoginPage />);
+
+    expect(await screen.findByTestId('workspace-login__config-unavailable')).toBeInTheDocument();
+    expect(screen.getByText('workspace_config_unavailable')).toBeInTheDocument();
+    expect(screen.queryByText('workspace_not_found')).not.toBeInTheDocument();
+    expect(screen.queryByTestId('workspace-login__keycloak-btn')).not.toBeInTheDocument();
   });
 
   it('preserves the invited project target in the back link when the workspace login was reached from an invite', async () => {

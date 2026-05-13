@@ -1,8 +1,9 @@
 import { EventEmitter } from 'node:events';
 import { readFileSync } from 'node:fs';
 import type http from 'node:http';
-import { resolve } from 'node:path';
+import path from 'node:path';
 import { PassThrough, Readable } from 'node:stream';
+import { fileURLToPath } from 'node:url';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { InMemoryCache, InMemoryJsonDocStore } from '@mbos/adapters-private';
 import { assertTaskExecutionContext } from '@mbos/agent-runner';
@@ -83,6 +84,22 @@ function createDeferred<T>() {
   return { promise, resolve, reject };
 }
 
+function resolveSourceSibling(relativePath: string): string {
+  const sourceUrl = new URL(relativePath, import.meta.url);
+  if (sourceUrl.protocol === 'file:') return fileURLToPath(sourceUrl);
+  if (!['http:', 'https:', 'vite:'].includes(sourceUrl.protocol)) {
+    throw new Error(`Unsupported test module URL protocol: ${sourceUrl.protocol}`);
+  }
+
+  // Root test:run uses jsdom, where Vite may expose import.meta.url as a browser module URL.
+  const sourcePathname = decodeURIComponent(sourceUrl.pathname);
+  if (sourcePathname.startsWith('/@fs/')) return sourcePathname.slice('/@fs'.length);
+  if (sourcePathname === process.cwd() || sourcePathname.startsWith(`${process.cwd()}${path.sep}`)) {
+    return sourcePathname;
+  }
+  return path.resolve(process.cwd(), sourcePathname.replace(/^\/+/, ''));
+}
+
 describe('task-route-handler workspace access', () => {
   let previousManagedExecutionHttpBase: string | undefined;
 
@@ -104,7 +121,7 @@ describe('task-route-handler workspace access', () => {
   });
 
   it('does not keep a raw mount-access resolver in the task route module', () => {
-    const source = readFileSync(resolve(process.cwd(), 'packages/api-entry-node/src/task-route-handler.ts'), 'utf8');
+    const source = readFileSync(resolveSourceSibling('./task-route-handler.ts'), 'utf8');
 
     expect(source).not.toContain('resolveTaskWorkspaceMountAccess');
     expect(source).not.toContain('createFileLibraryGatewayClient');
@@ -1115,6 +1132,100 @@ describe('task-route-handler workspace access', () => {
     }
   });
 
+  it('waits for project storage readiness while cloning a task file template library', async () => {
+    vi.useFakeTimers();
+    try {
+      const deps = createDefaultNodeApiDeps();
+      await seedDefaultManagedRunner(deps);
+      await grantProjectPermissionsForUser(deps, 'user_1', ['project:agent_task:use']);
+      const templateRepo = new JsonDocProjectTaskFileTemplateRepo(deps.docStore);
+      await templateRepo.create({
+        id: 'tftpl_waited_clone',
+        workspaceId: 'ws_default',
+        projectId: 'proj_1',
+        name: 'Waited clone template',
+        sourceLibraryId: 'flib_source_waited_clone',
+        createdByUserId: 'user_1',
+        afscpTemplateId: 'tmpl_waited_clone',
+      });
+      await templateRepo.updateStatus({
+        workspaceId: 'ws_default',
+        projectId: 'proj_1',
+        taskFileTemplateId: 'tftpl_waited_clone',
+        status: 'published',
+      });
+      const ensureProjectStorageReady = vi.fn()
+        .mockResolvedValueOnce({
+          status: 'pending',
+          stage: 'namespace_upsert',
+          generation: 1,
+          nextAction: 'wait',
+          retryable: false,
+          lastErrorCode: null,
+        })
+        .mockResolvedValueOnce({
+          status: 'ready',
+          namespaceId: 'ns_waited_task_clone',
+          stage: 'ready',
+          generation: 4,
+          nextAction: 'none',
+          retryable: false,
+          lastErrorCode: null,
+        });
+      deps.projectStorageBootstrapService = {
+        enabled: true,
+        bootstrapProjectStorage: vi.fn(async () => undefined),
+        reconcileProjectStorage: vi.fn(async () => undefined),
+        ensureProjectStorageReady,
+      };
+      const cloneTemplateToLibrary = vi.fn<FileLibraryStoragePort['cloneTemplateToLibrary']>(async (input) => ({
+        namespaceId: input.namespaceId,
+        repoId: `repo_${input.libraryId}`,
+        operationId: `op_${input.libraryId}_template_clone`,
+        operationStatus: 'succeeded' as const,
+        projectStorageGeneration: input.projectStorageGeneration,
+      }));
+      deps.fileLibraryStorageAdapter = createTaskFileLibraryStorageAdapter({ cloneTemplateToLibrary });
+
+      const json = vi.fn();
+      const createPromise = handleTaskRoute({
+        route: {
+          kind: 'tasks',
+          workspaceId: 'ws_default',
+          projectId: 'proj_1',
+        } as never,
+        method: 'POST',
+        req: { headers: { 'x-request-id': 'req_template_storage_ready_wait' }, url: '' } as never,
+        res: {} as never,
+        deps,
+        user: { id: 'user_1' } as never,
+        json,
+        readBody: vi.fn(async () => ({
+          title: 'Waited template storage task',
+          workspace_mode: 'use_template',
+          task_file_template_id: 'tftpl_waited_clone',
+        })),
+      });
+
+      await vi.runAllTimersAsync();
+      await expect(createPromise).resolves.toBe(true);
+
+      expect(json.mock.calls[0]?.[1]).toBe(201);
+      expect(json.mock.calls[0]?.[2]).toMatchObject({
+        title: 'Waited template storage task',
+        workspace_file_library_id: expect.stringMatching(/^flib_/),
+      });
+      expect(ensureProjectStorageReady).toHaveBeenCalledTimes(2);
+      expect(cloneTemplateToLibrary).toHaveBeenCalledWith(expect.objectContaining({
+        namespaceId: 'ns_waited_task_clone',
+        projectStorageGeneration: 4,
+        templateId: 'tmpl_waited_clone',
+      }));
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it('does not create a task or file library when bounded project storage wait times out', async () => {
     vi.useFakeTimers();
     try {
@@ -2101,6 +2212,221 @@ describe('task-route-handler workspace access', () => {
     )).resolves.toMatchObject({
       status: 'ready',
     });
+  });
+
+  it('allows the owner to reuse a released task workspace without project files update permission', async () => {
+    const deps = createDefaultNodeApiDeps();
+    await seedDefaultManagedRunner(deps);
+    await grantProjectPermissionsForUser(deps, 'user_1', ['project:agent_task:use']);
+    const now = new Date().toISOString();
+    const libraryId = 'lib_released_owner_reuse_without_files_update';
+    const previousTaskId = 'task_released_owner_reuse_previous';
+    await new JsonDocProjectFileLibraryCatalogRepo(deps.docStore).save(createFileLibraryCatalogFixture({
+      id: libraryId,
+      name: 'Released Owner Reuse Workspace',
+      now,
+    }));
+    const acquired = await new JsonDocTaskFileLibraryBindingRepo(deps.docStore).acquire({
+      workspaceId: 'ws_default',
+      projectId: 'proj_1',
+      fileLibraryId: libraryId,
+      taskId: previousTaskId,
+      taskTitle: 'Previous owner task',
+      taskStatus: 'active',
+      ownerUserId: 'user_1',
+      runtimeWritableAffordance: 'task_internal_home',
+      correlationId: 'req_previous_owner_task_acquire',
+      now,
+    });
+    if (!acquired.ok) throw new Error('expected previous binding acquire to succeed');
+    await deps.docStore.upsert(notebookTasksCollection('ws_default'), previousTaskId, {
+      id: previousTaskId,
+      workspace_id: 'ws_default',
+      project_id: 'proj_1',
+      owner_user_id: 'user_1',
+      title: 'Previous owner task',
+      task_home_segment: 'flibhome_released_owner_reuse',
+      workspace_file_library_id: libraryId,
+      workspace_file_library_name: 'Released Owner Reuse Workspace',
+      file_library_binding_generation: acquired.binding.bindingGeneration,
+      runtime_writable_affordance: 'task_internal_home',
+      status: 'active',
+      attached_inputs: [],
+      created_at: now,
+      updated_at: now,
+      last_activity_at: now,
+    });
+    const released = await new JsonDocTaskFileLibraryBindingRepo(deps.docStore).release({
+      workspaceId: 'ws_default',
+      projectId: 'proj_1',
+      fileLibraryId: libraryId,
+      taskId: previousTaskId,
+      bindingGeneration: acquired.binding.bindingGeneration,
+      correlationId: 'req_previous_owner_task_release',
+    });
+    expect(released).toEqual({ ok: true, released: true });
+    await deps.docStore.delete(notebookTasksCollection('ws_default'), previousTaskId);
+
+    const json = vi.fn();
+    await expect(handleTaskRoute({
+      route: {
+        kind: 'tasks',
+        workspaceId: 'ws_default',
+        projectId: 'proj_1',
+      } as never,
+      method: 'POST',
+      req: { headers: { 'x-request-id': 'req_reuse_released_owner_workspace' }, url: '' } as never,
+      res: {} as never,
+      deps,
+      user: { id: 'user_1' } as never,
+      json,
+      readBody: vi.fn(async () => ({
+        title: 'Reuse released owner workspace',
+        workspace_mode: 'use_existing',
+        workspace_file_library_id: libraryId,
+      })),
+    })).resolves.toBe(true);
+
+    expect(json.mock.calls[0]?.[1]).toBe(201);
+    const task = json.mock.calls[0]?.[2] as Record<string, unknown>;
+    expect(task).toMatchObject({
+      workspace_file_library_id: libraryId,
+      workspace_file_library_name: 'Released Owner Reuse Workspace',
+      runtime_writable_affordance: 'task_internal_home',
+    });
+    await expect(new JsonDocTaskFileLibraryBindingRepo(deps.docStore).find({
+      workspaceId: 'ws_default',
+      projectId: 'proj_1',
+      fileLibraryId: libraryId,
+    })).resolves.toMatchObject({
+      taskId: task.id,
+      bindingState: 'bound',
+      runtimeWritableAffordance: 'task_internal_home',
+    });
+
+    const accessJson = vi.fn();
+    await expect(handleTaskRoute({
+      route: {
+        kind: 'taskWorkspaceAccess',
+        workspaceId: 'ws_default',
+        projectId: 'proj_1',
+        taskId: String(task.id),
+      } as never,
+      method: 'POST',
+      req: { headers: {}, url: '' } as never,
+      res: {} as never,
+      deps,
+      user: { id: 'user_1' } as never,
+      json: accessJson,
+      readBody: vi.fn(),
+    })).resolves.toBe(true);
+    expect(accessJson.mock.calls[0]?.[1]).toBe(200);
+  });
+
+  it('rejects reusing another user owned task workspace', async () => {
+    const deps = createDefaultNodeApiDeps();
+    await seedDefaultManagedRunner(deps);
+    await grantProjectPermissionsForUser(deps, 'user_2', ['project:agent_task:use']);
+    const now = new Date().toISOString();
+    const libraryId = 'lib_other_owner_reuse_forbidden';
+    await new JsonDocProjectFileLibraryCatalogRepo(deps.docStore).save(createFileLibraryCatalogFixture({
+      id: libraryId,
+      name: 'Other Owner Released Workspace',
+      createdByUserId: 'user_1',
+      now,
+    }));
+
+    const json = vi.fn();
+    await expect(handleTaskRoute({
+      route: {
+        kind: 'tasks',
+        workspaceId: 'ws_default',
+        projectId: 'proj_1',
+      } as never,
+      method: 'POST',
+      req: { headers: {}, url: '' } as never,
+      res: {} as never,
+      deps,
+      user: { id: 'user_2' } as never,
+      json,
+      readBody: vi.fn(async () => ({
+        title: 'Reuse another owner workspace',
+        workspace_mode: 'use_existing',
+        workspace_file_library_id: libraryId,
+      })),
+    })).resolves.toBe(true);
+
+    expect(json).toHaveBeenCalledWith(
+      expect.anything(),
+      403,
+      expect.objectContaining({
+        error_code: 'FILE_LIBRARY_FORBIDDEN',
+        message: 'file_library_forbidden',
+        file_library_id: libraryId,
+      }),
+    );
+  });
+
+  it('rejects creating a task when an active task already binds the file library', async () => {
+    const deps = createDefaultNodeApiDeps();
+    await seedDefaultManagedRunner(deps);
+    await grantProjectPermissionsForUser(deps, 'user_1', ['project:agent_task:use']);
+    const now = new Date().toISOString();
+    const libraryId = 'lib_active_binding_conflict';
+    await new JsonDocProjectFileLibraryCatalogRepo(deps.docStore).save(createFileLibraryCatalogFixture({
+      id: libraryId,
+      name: 'Active Binding Workspace',
+      now,
+    }));
+    const acquired = await new JsonDocTaskFileLibraryBindingRepo(deps.docStore).acquire({
+      workspaceId: 'ws_default',
+      projectId: 'proj_1',
+      fileLibraryId: libraryId,
+      taskId: 'task_active_binding_owner_visible',
+      taskTitle: 'Active bound task',
+      taskStatus: 'active',
+      ownerUserId: 'user_1',
+      runtimeWritableAffordance: 'task_internal_home',
+      correlationId: 'req_active_binding_acquire',
+      now,
+    });
+    if (!acquired.ok) throw new Error('expected active binding acquire to succeed');
+
+    const json = vi.fn();
+    await expect(handleTaskRoute({
+      route: {
+        kind: 'tasks',
+        workspaceId: 'ws_default',
+        projectId: 'proj_1',
+      } as never,
+      method: 'POST',
+      req: { headers: {}, url: '' } as never,
+      res: {} as never,
+      deps,
+      user: { id: 'user_1' } as never,
+      json,
+      readBody: vi.fn(async () => ({
+        title: 'Duplicate active binding task',
+        workspace_mode: 'use_existing',
+        workspace_file_library_id: libraryId,
+      })),
+    })).resolves.toBe(true);
+
+    expect(json).toHaveBeenCalledWith(
+      expect.anything(),
+      409,
+      expect.objectContaining({
+        error_code: 'AGENT_TASK_FILE_LIBRARY_IN_USE',
+        message: 'workspace_file_library_in_use',
+        field: 'workspace_file_library_id',
+        file_library_id: libraryId,
+        bound_task_visible: true,
+        bound_task_id: 'task_active_binding_owner_visible',
+        bound_task_title: 'Active bound task',
+        bound_task_status: 'active',
+      }),
+    );
+    expect(AgentTaskFileLibraryInUseErrorSchema.safeParse(json.mock.calls[0]?.[2]).success).toBe(true);
   });
 
   it('rejects creating a task when an archived task already binds the file library', async () => {

@@ -29,7 +29,7 @@ describe('task terminal mock handlers', () => {
     });
 
     expect(created).toMatchObject({
-      session_id: 'mock_terminal_001',
+      terminal_session_id: 'mock_terminal_001',
       status: 'active',
     });
     expect(listMockTaskTerminalSessions({
@@ -40,7 +40,7 @@ describe('task terminal mock handlers', () => {
       total: 1,
       items: [
         expect.objectContaining({
-          id: 'mock_terminal_001',
+          terminal_session_id: 'mock_terminal_001',
           cols: 100,
           rows: 28,
           created_at: VISUAL_TEST_REFERENCE_NOW_ISO,

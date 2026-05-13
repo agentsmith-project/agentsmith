@@ -7,11 +7,16 @@ unset no_proxy NO_PROXY
 ROOT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
 source "${ROOT_DIR}/scripts/lib/next-generated-root-state.sh"
 SKIP_SHARED_PREFLIGHT=0
+SKIP_FOCUSED_VISUAL="${GOVERNANCE_DEFAULT_GATE_SKIP_FOCUSED_VISUAL:-0}"
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --skip-shared-preflight)
       SKIP_SHARED_PREFLIGHT=1
+      shift
+      ;;
+    --skip-focused-visual)
+      SKIP_FOCUSED_VISUAL=1
       shift
       ;;
     *)
@@ -70,10 +75,14 @@ run_cmd "bash scripts/run-mock-lane-playwright.sh \
   --project=chromium \
   --workers=1"
 
-run_cmd "bash scripts/run-mock-lane-playwright.sh \
-  e2e/visual.spec.ts \
-  --project=visual \
-  --workers=1 \
-  --grep 'governance_pages / members|members-effective-access-drawer|governance_pages / resource-policy|drawer-audit-detail|alerts-notifications-tab'"
+if [[ "${SKIP_FOCUSED_VISUAL}" == "1" ]]; then
+  info "skipping governance focused visual mock lane; full visual evidence is owned by lane:visual"
+else
+  run_cmd "bash scripts/run-mock-lane-playwright.sh \
+    e2e/visual.spec.ts \
+    --project=visual \
+    --workers=1 \
+    --grep 'governance_pages / members|members-effective-access-drawer|governance_pages / resource-policy|drawer-audit-detail|alerts-notifications-tab'"
+fi
 
 info "governance default gate passed"

@@ -125,7 +125,9 @@
       "sceneId": "project-agent-runners",
       "route": "/en-US/workspaces/{workspaceId}/projects/{projectId}/agent-runners",
       "stableMarkers": [
-        "agent-runners__table"
+        "agent-runners__project-default-status",
+        "agent-runners__system-managed-section",
+        "agent-runners__system-managed-table"
       ]
     },
     {
@@ -313,7 +315,7 @@
       "sceneId": "project-agent-runners",
       "intent": "Inspect the managed Agent Runner list.",
       "action": "Review Agent Runners",
-      "target": "agent-runners__table",
+      "target": "agent-runners__system-managed-table",
       "expectedFeedback": "托管 Agent Runner 已创建",
       "note": "托管 Agent Runner 已创建",
       "evidence": [
@@ -325,7 +327,7 @@
       "sceneId": "project-agent-runners",
       "intent": "Inspect the managed Agent Runner list.",
       "action": "Review managed Agent Runner",
-      "target": "agent-runners__table",
+      "target": "agent-runners__project-default-status",
       "expectedFeedback": "托管 Agent Runner 的健康状态可见",
       "note": "托管 Agent Runner 的健康状态可见",
       "evidence": [
@@ -359,11 +361,11 @@
     {
       "stepId": "files-artifacts-managed",
       "sceneId": "project-files",
-      "intent": "Inspect managed Agent Task artifacts in Files.",
+      "intent": "Inspect managed Agent Task artifacts in Files under the task workspace directory.",
       "action": "Inspect generated artifacts",
       "target": "files__objects-table",
-      "expectedFeedback": "managed Agent Task 的 .artifacts 已可见",
-      "note": "managed Agent Task 的 .artifacts 已可见",
+      "expectedFeedback": "managed Agent Task 的 workspace/.artifacts 已可见",
+      "note": "managed Agent Task 的 workspace/.artifacts 已可见",
       "evidence": [
         "trace"
       ]
@@ -393,13 +395,37 @@
       ]
     },
     {
+      "stepId": "managed-continuity-governance-config",
+      "sceneId": "project-agent-runners",
+      "intent": "Switch to the project owner identity and configure the managed runner/model setting for the secondary endpoint.",
+      "action": "Configure managed continuity runner",
+      "target": "agent-runners__project-default-status",
+      "expectedFeedback": "项目所有者执行治理配置：切换到 secondary endpoint 的托管 Agent Runner",
+      "note": "项目所有者执行治理配置：切换到 secondary endpoint 的托管 Agent Runner",
+      "evidence": [
+        "trace"
+      ]
+    },
+    {
+      "stepId": "member-workspace-home-after-governance-config",
+      "sceneId": "workspace-projects",
+      "intent": "Return to the workspace as the ordinary member before running the managed continuity task.",
+      "action": "Return as member after managed runner config",
+      "target": "projects__heading",
+      "expectedFeedback": "普通成员重新进入 workspace，继续使用托管 Agent Runner",
+      "note": "普通成员重新进入 workspace，继续使用托管 Agent Runner",
+      "evidence": [
+        "trace"
+      ]
+    },
+    {
       "stepId": "files-artifacts-managed-continuity",
       "sceneId": "project-files",
-      "intent": "Inspect managed Agent Task artifacts in Files.",
+      "intent": "Inspect managed Agent Task artifacts in Files under the task workspace directory.",
       "action": "Inspect managed continuity artifacts",
       "target": "files__objects-table",
-      "expectedFeedback": "managed Agent Task 的 .artifacts 已可见",
-      "note": "managed Agent Task 的 .artifacts 已可见",
+      "expectedFeedback": "managed Agent Task 的 workspace/.artifacts 已可见",
+      "note": "managed Agent Task 的 workspace/.artifacts 已可见",
       "evidence": [
         "trace"
       ]

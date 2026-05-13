@@ -115,7 +115,7 @@ describe('AfscpClient', () => {
         },
         mount_policy: {
           workload_mount_enabled: true,
-          workload_mount_requires_jvs_external_control_root: true,
+          workload_mount_requires_external_control_root: true,
           allow_privileged_workload: false,
         },
         template_policy: {
@@ -257,7 +257,6 @@ describe('AfscpClient', () => {
       namespace_id: 'ns_project_1',
       volume_id: 'vol_shared',
       repo_kind: 'repo',
-      jvs_repo_id: 'jvs_repo_1',
       status: 'active',
       lifecycle: {
         status: 'active',

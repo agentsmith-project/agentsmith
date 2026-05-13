@@ -106,6 +106,33 @@ describe('check-doc-governance historical document detection', () => {
     expect(plan).not.toContain('managed runner 和 Developer runner 都把同一文件库根目录作为');
   });
 
+  it('keeps same-actor task workspace reuse decoupled from Files edit permission', () => {
+    const plan = readFileSync(
+      resolve(process.cwd(), 'docs/engineering/agent-task-persistent-home-runtime-plan.md'),
+      'utf8',
+    );
+    const afscpPlan = readFileSync(
+      resolve(process.cwd(), 'docs/engineering/afscp-file-library-runtime-rearchitecture-plan.md'),
+      'utf8',
+    );
+    const combined = `${plan}\n${afscpPlan}`;
+
+    expect(plan).toContain('自己已释放、ready、unbound 的 task workspace，而不是 Files 编辑权限');
+    expect(plan).toContain('不要求 `project:files:update`');
+    expect(plan).toContain('Files UI 直接 edit/upload/move/delete 仍由 `project:files:update` 单独门禁');
+    expect(afscpPlan).toContain(
+      'backend runtime writable affordance is `task_internal_home`, not Files edit permission',
+    );
+
+    expect(combined).not.toContain('cannot bind an existing library without `project:files:update`');
+    expect(combined).not.toContain(
+      '`use_existing` 时校验文件库 `ready`、project 边界、`project:files:update`',
+    );
+    expect(combined).not.toContain(
+      'Bind existing file library to task | `project:agent_task:use` plus `project:files:update`',
+    );
+  });
+
   it('flags handoff/refactor/migration entries in the engineering current index section', () => {
     const violations = findEngineeringIndexCurrentSectionViolations(
       [

@@ -10,11 +10,11 @@ describe('governance runtime effect stories', () => {
     expect(story.lane).toBe('backend-real');
     expect(story.actor).toContain('member');
     expect(story.goal).toContain('治理变更');
-    expect(story.goal).toContain('notebook');
-    expect(story.goal).toContain('notebook task detail');
+    expect(story.goal).toContain('Agent Task');
+    expect(story.goal).toContain('Agent Task detail');
     expect(story.goal).toContain('artifacts continuity');
-    expect(story.narrative).toContain('notebook task detail');
-    expect(story.scenes.map((scene) => scene.sceneId)).toContain('project-notebook-task');
+    expect(story.narrative).toContain('Agent Task detail');
+    expect(story.scenes.map((scene) => scene.sceneId)).toContain('project-agent-task');
     expect(story.scenes.map((scene) => scene.sceneId)).not.toContain('project-files');
     expect(story.steps.map((step) => step.stepId)).toEqual([
       'member-first-success',
@@ -30,12 +30,12 @@ describe('governance runtime effect stories', () => {
     expect(story.lane).toBe('backend-real');
     expect(story.actor).toContain('project admin');
     expect(story.goal).toContain('降回普通成员');
-    expect(story.goal).toContain('notebook');
+    expect(story.goal).toContain('agent-task');
     expect(story.goal).toContain('files');
     expect(story.goal).toContain('治理入口要立即收缩');
     expect(story.narrative).toContain('治理面必须收缩');
     expect(story.scenes.map((scene) => scene.sceneId)).toContain('project-settings');
-    expect(story.scenes.map((scene) => scene.sceneId)).toContain('project-notebook-task');
+    expect(story.scenes.map((scene) => scene.sceneId)).toContain('project-agent-task');
     expect(story.steps.map((step) => step.stepId)).toEqual([
       'confirm-admin-surface',
       'demote-admin-to-member',

@@ -242,6 +242,9 @@ const ROLLOUT_DEPLOYMENTS = [
   'agentsmith-web',
   'agentsmith-api',
   'agentsmith-llmup',
+  'afscp-api',
+  'afscp-worker',
+  'afscp-export-gateway',
   'agentsmith-sandbox-manager',
 ] as const;
 const SECRET_FIELD_KEY_PATTERN = /(?:PASSWORD|SECRET|TOKEN|PRIVATE|ACCESS[_-]?KEY|API[_-]?KEY|CREDENTIAL|DATABASE_URL|MONGO_URL|MONGODB_URI|REDIS_URL|CLIENT_SECRET|AUTHORIZATION)/iu;

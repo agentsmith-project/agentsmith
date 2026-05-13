@@ -18,7 +18,16 @@ export type UnifiedDeployProfile = typeof TARGET_PROFILES[number];
 
 const REQUIRED_SUBSTRATE_SERVICES = ['postgresql', 'mongodb', 'redis', 'minio', 'keycloak'] as const;
 const REQUIRED_SUBSTRATE_ENV = DOCKER_SUBSTRATE_REQUIRED_ENV;
-const REQUIRED_APP_COMPONENTS = ['web', 'api', 'llmup', 'sandbox-manager', 'managed-runner-support'] as const;
+const REQUIRED_APP_COMPONENTS = [
+  'web',
+  'api',
+  'llmup',
+  'afscp-api',
+  'afscp-worker',
+  'afscp-export-gateway',
+  'sandbox-manager',
+  'managed-runner-support',
+] as const;
 const REQUIRED_ROUTES = [
   { path: '/api/v1', service: 'api' },
   { path: '/api/public', service: 'web' },
@@ -339,7 +348,7 @@ function checkApp(manifest: Record<string, unknown>, failures: CheckFailure[]): 
   const components = asRecord(asRecord(manifest.app).components);
   const componentNames = Object.keys(components);
   if (!sameSet(componentNames, REQUIRED_APP_COMPONENTS)) {
-    addFailure(failures, 'app components must be exactly web, api, llmup, sandbox-manager, managed-runner-support');
+    addFailure(failures, 'app components must be exactly web, api, llmup, afscp-api, afscp-worker, afscp-export-gateway, sandbox-manager, managed-runner-support');
   }
 
   if (componentNames.includes('execution-gateway')) {
@@ -378,6 +387,11 @@ function checkIngress(manifest: Record<string, unknown>, failures: CheckFailure[
   const internalOnly = asStringArray(ingress.internal_only_services);
   if (!includesCaseSensitive(internalOnly, 'llmup')) {
     addFailure(failures, 'llmup must be internal only');
+  }
+  for (const service of ['afscp-api', 'afscp-export-gateway']) {
+    if (!includesCaseSensitive(internalOnly, service)) {
+      addFailure(failures, `${service} must be internal only`);
+    }
   }
 }
 

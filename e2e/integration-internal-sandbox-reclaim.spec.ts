@@ -12,6 +12,7 @@ import {
   KEYCLOAK_DEV_ADMIN_PASSWORD,
   KEYCLOAK_DEV_ADMIN_USERNAME,
   keycloakLoginToWorkspace,
+  patchWorkloadPodExpiry,
   runInternalSandboxControl,
   sanitizeWorkloadId,
   requestTaskWorkspaceAccess,
@@ -21,6 +22,7 @@ import {
   waitForWorkloadPodDeleted,
   waitForWorkloadPodIdentity,
   waitForWorkloadPodPresent,
+  waitForExpiredWorkloadReleasedViaManager,
 } from './integration-real-helpers';
 
 function requireReclaimEnv(): { namespace: string } {
@@ -126,7 +128,17 @@ test.describe('@lane-real internal sandbox reclaim', () => {
     await waitForWorkloadPodPresent({ namespace, workloadId: workloadId1, timeoutMs: 120_000 });
     await page.waitForTimeout(15_000);
     await waitForWorkloadPodPresent({ namespace, workloadId: workloadId1, timeoutMs: 10_000 });
-    await waitForWorkloadPodDeleted({ namespace, workloadId: workloadId1, timeoutMs: 330_000 });
+    await patchWorkloadPodExpiry({
+      namespace,
+      workloadId: workloadId1,
+      expiresAt: new Date(Date.now() - 60_000).toISOString(),
+    });
+    await waitForExpiredWorkloadReleasedViaManager({
+      namespace,
+      workloadId: workloadId1,
+      timeoutMs: 60_000,
+    });
+    await waitForWorkloadPodDeleted({ namespace, workloadId: workloadId1, timeoutMs: 120_000 });
 
     await waitForAfscpStorageCsiReady({ namespace: process.env.AFSCP_STORAGE_CSI_NAMESPACE?.trim() || "kube-system" });
 

@@ -117,7 +117,7 @@ agent_task_file_library_bindings
   task_id
   binding_generation
   owner_user_id
-  runtime_writable_affordance: task_internal_home | files_update
+  runtime_writable_affordance: task_internal_home
   binding_state: bound | releasing
   acquired_at
   updated_at
@@ -131,7 +131,7 @@ agent_task_file_library_bindings
 - released 历史不留在 current binding truth 中；释放历史写 audit，或写单独 history collection。
 - 从 task 表派生占用状态可以作为读模型，但不能作为并发控制的唯一依据。
 - 每次 acquire 必须分配新的 `binding_generation`。同一文件库复用时 `task_home_segment` 不变，因此 generation 是 runtime holder / lease / release 的 ABA fence。
-- `runtime_writable_affordance` 是后端私有授权快照：`create_new` 来自 task 内部 HOME 创建授权，`use_existing` 来自 Files 写能力和 resource policy / owner 边界。它不是新 permission point。
+- `runtime_writable_affordance` 是后端私有授权快照，表示当前 task runtime 可写入绑定的 task HOME。`create_new` 和允许的 `use_existing` 都记录 `task_internal_home`；`use_existing` 的准入来自同一 actor 复用自己已释放、ready、unbound 的 task workspace，而不是 Files 编辑权限。它不是新 permission point。
 - 进程内 Map、hydrated fixture、MSW fixture 只能是 cache/test helper。服务重启、多实例并发后仍必须保持独占。
 
 DB 实现必须使用唯一约束或事务内 conditional insert。JsonDocStore 实现必须提供持久 compare-and-create / compare-and-delete，条件写失败返回 typed conflict。禁止只用本进程锁或前端过滤完成独占。
@@ -169,14 +169,14 @@ DB 实现必须使用唯一约束或事务内 conditional insert。JsonDocStore 
 | --- | --- | --- |
 | omitted / `create_new` | omitted | 创建新文件库并绑定 |
 | omitted / `create_new` | present | `422 AGENT_TASK_WORKSPACE_MODE_INVALID` |
-| `use_existing` | present | 绑定已有 ready、未占用、且 actor 具备 runtime writable affordance 的文件库 |
+| `use_existing` | present | 绑定同一 actor 自己已释放、ready、未占用的 task workspace 对应文件库，并记录 `task_internal_home` runtime writable affordance |
 | `use_existing` | omitted | `422 AGENT_TASK_WORKSPACE_FILE_LIBRARY_REQUIRED` |
 | other | any | `422 AGENT_TASK_WORKSPACE_MODE_INVALID` |
 
 创建时还必须拒绝：
 
 - 文件库不存在或不在当前 workspace/project：`404 FILE_LIBRARY_NOT_FOUND`。
-- actor 无权把该文件库交给 task runtime 写入：`403 FILE_LIBRARY_FORBIDDEN`。`use_existing` 下只具备 Files read/use 不够，必须有 `project:files:update` 加 resource policy / owner 边界通过。
+- actor 无权复用该 task workspace：`403 FILE_LIBRARY_FORBIDDEN`。`use_existing` 只允许同一 actor 复用自己已释放、ready、unbound 的 task workspace；Files read/use 或 `project:files:update` 都不能绕过 actor、project、binding 和 lifecycle 边界。
 - 文件库不是 `ready`：`409 FILE_LIBRARY_NOT_READY`。
 - 文件库为 `deleting/deleted`：`409 FILE_LIBRARY_DELETING`。
 - 文件库已被未删除 task 绑定：`409 AGENT_TASK_FILE_LIBRARY_IN_USE`。
@@ -189,7 +189,7 @@ CreateTask 的可见成功条件是：task record、file library、binding 三�
 
 1. 校验 token、URL params、task payload、runner binding authority。
 2. `create_new` 时用 `project:agent_task:use` 创建 task HOME 文件库，持久化 `file_library_home_segment`，public source 统一为 `agent_task_files`，并记录 task 内部 HOME 的 writable affordance。
-3. `use_existing` 时校验文件库 `ready`、project 边界、`project:files:update`、resource policy 和 owner 边界；Files read/use 只能浏览，不能把文件库交给 task runtime 写入。
+3. `use_existing` 时校验文件库 `ready`、project 边界、同一 actor 自己已释放的 task workspace 边界、当前无 binding、且不是 active/archived/deleting 占用；Files read/use 或 `project:files:update` 都不能把他人或仍占用的文件库交给 task runtime 写入。
 4. 在同一事务内 conditional acquire binding。
 5. 持久化 task record，写入 `workspace_file_library_id`、`workspace_file_library_name`、`task_home_segment`、runner binding fields。
 6. 提交 audit `agent_task.file_library_binding.acquire` 和 `agent_task.create`。
@@ -292,17 +292,17 @@ CreateTask 和所有写入口只接受 `ready`，且必须校验读取到的 sta
 | 操作 | 权限/边界 |
 | --- | --- |
 | CreateTask `create_new` | `project:agent_task:use`；自动创建文件库作为 task create 的内部 HOME 资源，写 source/audit，不授予通用 Files UI 写能力 |
-| CreateTask `use_existing` | `project:agent_task:use` + 后端 writable affordance；具体复用现有 `project:files:update` + project/resource policy/owner 边界，不新增 permission point，不得跨 project |
+| CreateTask `use_existing` | `project:agent_task:use` + 同一 actor 自己已释放、ready、unbound 的 task workspace 边界 + 后端 `task_internal_home` writable affordance；不要求 `project:files:update`，不得跨 project 或复用他人/仍占用的文件库 |
 | Explicit Developer runner binding | Slice 5 blocked 时 backend binding affordance 必须 fail closed；Slice 5 unblocked 并实现后才允许 `project:agent_task:use` + `project:agent_runner:manage` + backend binding affordance |
 | Delete task release binding | `project:agent_task:use`；这是 task lifecycle，不要求 `project:files:update`，且不删除文件 |
 | File library delete | `project:files:update` + no current task binding + empty library rule |
 | Files browse/download bound HOME | `project:endpoint:use`；bound 不禁止浏览 |
 | Files edit/upload/move bound HOME | `project:files:update`；bound 不禁止编辑，但 deleting 状态禁止写 |
-| Workspace-access writable holder/ticket | `project:agent_task:use` + current task binding + `runtime_writable_affordance` 复校验；`use_existing` 必须重新通过 `project:files:update` + resource policy/owner 边界 |
+| Workspace-access writable holder/ticket | `project:agent_task:use` + current task binding + `runtime_writable_affordance` 复校验；`use_existing` 复用 `task_internal_home` affordance，不重新要求 `project:files:update` |
 | Terminal writable access | `project:agent_task:use` + `project:agent_task:terminal` + current task binding + writable affordance 复校验；Slice 5 unblocked 后的 Developer-bound task 继续叠加 runner manage/affordance |
 | Task HOME writable access issuance | current task binding + file library `ready` + writable affordance + generation/epoch fence；不得只凭 stale holder 或 taskHome 发放 |
 
-后端仍是唯一授权真相。前端禁用态只用于 UX，不得替代后端校验。Terminal、workspace-access、runner holder 和 task HOME writable access issuance 在发放任何可写 holder/ticket 前，都必须重新读取 task binding、file library status/version 和 writable affordance；否则会绕过 Files 写权限。
+后端仍是唯一授权真相。前端禁用态只用于 UX，不得替代后端校验。Terminal、workspace-access、runner holder 和 task HOME writable access issuance 在发放任何可写 holder/ticket 前，都必须重新读取 task binding、file library status/version 和 writable affordance；否则可能向错误 actor、错误 binding 或错误 lifecycle 状态发放 runtime 写访问。Files UI 直接 edit/upload/move/delete 仍由 `project:files:update` 单独门禁。
 
 ## 8. Contract、错误码与审计
 
@@ -343,7 +343,7 @@ Route x error mapping 必须在 OpenAPI、handlers、MSW parity 和 frontend err
 | CreateTask `POST /tasks` | selected file library `deleting/deleted` -> `409 FILE_LIBRARY_DELETING` | selected file library has current binding -> `409 AGENT_TASK_FILE_LIBRARY_IN_USE` | invalid mode/id -> `422 AGENT_TASK_WORKSPACE_MODE_INVALID` or `AGENT_TASK_WORKSPACE_FILE_LIBRARY_REQUIRED`; stale ready/version -> `409 FILE_LIBRARY_NOT_READY` with current status/version |
 | Task DELETE `DELETE /tasks/{taskId}` | task already `deleting` is idempotent only if same task/binding generation; otherwise conflict | live run/terminal/holder/lease -> `409 AGENT_TASK_DELETE_BLOCKED` | stale holder release/adopt or binding generation mismatch -> `409 AGENT_TASK_WORKSPACE_BINDING_CONFLICT`; no release without blocker truth guard |
 | File library DELETE | existing `deleting/deleted` -> `409 FILE_LIBRARY_DELETING` | current task binding -> `409 FILE_LIBRARY_TASK_IN_USE` | expected version/status mismatch -> typed status conflict; non-empty after transition -> `409 FILE_LIBRARY_NOT_EMPTY` and transition back to `ready` |
-| Files write routes: upload/move/rename/delete object/create folder | file library `deleting/deleted` -> `409 FILE_LIBRARY_DELETING` | bound HOME is writable only with `project:files:update`; bound alone is not a conflict | stale status/version -> typed status conflict; no permission -> `403 FILE_LIBRARY_FORBIDDEN` |
+| Files write routes: upload/move/rename/delete object/create folder | file library `deleting/deleted` -> `409 FILE_LIBRARY_DELETING` | Files write routes may mutate a bound HOME only with `project:files:update`; bound alone is not a conflict | stale status/version -> typed status conflict; no permission -> `403 FILE_LIBRARY_FORBIDDEN` |
 | Workspace-access `POST /tasks/{taskId}/workspace-access` | bound file library not `ready` -> `409 FILE_LIBRARY_DELETING` or `FILE_LIBRARY_NOT_READY` | current binding must match task; missing/mismatched binding -> `409 AGENT_TASK_WORKSPACE_BINDING_CONFLICT` | writable holder denied when writable affordance fails -> `403 FILE_LIBRARY_FORBIDDEN`; stale generation -> `409 AGENT_TASK_WORKSPACE_BINDING_CONFLICT` |
 | Task HOME writable access issuance | file library not `ready` -> `409 FILE_LIBRARY_DELETING` or `FILE_LIBRARY_NOT_READY` | requires current task binding and writable affordance; bound to another task -> `409 AGENT_TASK_WORKSPACE_BINDING_CONFLICT` | holder_id/task_id/generation/epoch mismatch -> `409 AGENT_TASK_WORKSPACE_BINDING_CONFLICT` |
 | Metadata PATCH for file library/task workspace metadata | deleting file library -> `409 FILE_LIBRARY_DELETING`; deleting task workspace binding metadata -> `409 AGENT_TASK_WORKSPACE_BINDING_CONFLICT` | display metadata patch may proceed with update permission; changing HOME identity/AFSCP repo mapping while bound -> `409 FILE_LIBRARY_TASK_IN_USE` | expected version/status mismatch -> typed status conflict with safe current status/version |
@@ -579,7 +579,7 @@ npm run test:files:backend-real:home-binding
 
 - `workspace_mode` matrix validation, including omitted mode plus id as invalid.
 - `create_new` creates file-library-stable segment and binds it.
-- `use_existing` reuses the same segment after prior task delete, and cannot bind an existing library without `project:files:update` + resource policy / owner writable affordance.
+- `use_existing` reuses the same segment after prior task delete for the same actor's released, ready, unbound task workspace; it rejects another actor's library, active/archived bound libraries, and does not require `project:files:update`. Runtime writable affordance remains `task_internal_home`.
 - `create_new` can create the internal HOME file library with `project:agent_task:use`; later Files UI writes still require Files update permission.
 - workspace-access, terminal, runner holder and task HOME holder issuance refuse writable holder/ticket when task binding, file library status/version, writable affordance, or generation/epoch check fails.
 - Concurrent CreateTask against one file library across two requests rejects exactly one with `AGENT_TASK_FILE_LIBRARY_IN_USE`.

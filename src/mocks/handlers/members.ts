@@ -98,8 +98,8 @@ function getMockProjectInviteByToken(token: string): MockProjectInvite | null {
   return projectInvites.find((invite) => invite.token === token) ?? null;
 }
 
-function normalizeMockProjectInvite(invite: MockProjectInvite): MockProjectInvite {
-  if (invite.status === 'pending' && new Date(invite.expires_at).getTime() <= Date.now()) {
+function normalizeMockProjectInvite(invite: MockProjectInvite, now = new Date()): MockProjectInvite {
+  if (invite.status === 'pending' && new Date(invite.expires_at).getTime() <= now.getTime()) {
     return { ...invite, status: 'expired' };
   }
   return invite;
@@ -209,7 +209,7 @@ export function acceptMockProjectInviteRecord(args: {
       body: { error: 'invite_not_found' },
     };
   }
-  const normalized = normalizeMockProjectInvite(invite);
+  const normalized = normalizeMockProjectInvite(invite, args.now ?? new Date());
   if (normalized.status !== invite.status) {
     Object.assign(invite, normalized);
   }

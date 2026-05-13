@@ -39,6 +39,7 @@ import {
 } from "./project-member-governance-persistence.js";
 
 const originalFeishuRefreshEnabled = process.env.FEISHU_OAUTH_REFRESH_RUNNER_ENABLED;
+const originalManagedExecutionHttpBase = process.env.AGENT_EXECUTION_HTTP_BASE_URL;
 type NodeApiTestDeps = ReturnType<typeof createDefaultNodeApiDeps>;
 type GetProjectInput = Parameters<NodeApiTestDeps["getProjectUseCase"]["execute"]>[0];
 type GetProjectResult = Awaited<ReturnType<NodeApiTestDeps["getProjectUseCase"]["execute"]>>;
@@ -60,6 +61,8 @@ afterEach(async () => {
   __resetTaskFileLibraryBindingsForTests();
   if (originalFeishuRefreshEnabled === undefined) delete process.env.FEISHU_OAUTH_REFRESH_RUNNER_ENABLED;
   else process.env.FEISHU_OAUTH_REFRESH_RUNNER_ENABLED = originalFeishuRefreshEnabled;
+  if (originalManagedExecutionHttpBase === undefined) delete process.env.AGENT_EXECUTION_HTTP_BASE_URL;
+  else process.env.AGENT_EXECUTION_HTTP_BASE_URL = originalManagedExecutionHttpBase;
 });
 
 function ensureDefaultProjectUseCaseFallback(deps: NodeApiTestDeps): void {
@@ -457,6 +460,54 @@ async function expectNotebookRunnerDispatch(
   ]);
 }
 
+function configureManagedNotebookTaskRuntimeDeps(
+  deps: ReturnType<typeof createDefaultNodeApiDeps>,
+): void {
+  deps.internalAgentPodManager ??= {
+    ensureAgentReady: async () => undefined,
+    keepalive: async () => undefined,
+    releasePod: async () => undefined,
+  } as never;
+  deps.internalAgentWorkspaceBindingManager ??= {
+    ensureWorkspaceBinding: async (input: {
+      workspaceId: string;
+      projectId: string;
+      fileLibraryId: string;
+      taskId: string;
+    }) => ({
+      binding: {
+        id: `bind_${input.taskId}`,
+        workspace_id: input.workspaceId,
+        project_id: input.projectId,
+        file_library_id: input.fileLibraryId,
+        provider: "afscp",
+        status: "ready",
+        task_home_binding_id: `bind_${input.taskId}`,
+        task_home_path: `/home/${input.taskId}`,
+        workspace_path: `/home/${input.taskId}/workspace`,
+        artifacts_path: `/home/${input.taskId}/workspace/.artifacts`,
+        library_root_path: ".",
+        created_at: "2026-04-05T00:00:00.000Z",
+        updated_at: "2026-04-05T00:00:00.000Z",
+      },
+      workspaceMount: {
+        bindingId: `bind_${input.taskId}`,
+        mountPath: `/home/${input.taskId}`,
+        taskHomePath: `/home/${input.taskId}`,
+        workspacePath: `/home/${input.taskId}/workspace`,
+        artifactsPath: `/home/${input.taskId}/workspace/.artifacts`,
+        subPath: `agent-tasks/${input.taskId}`,
+        fileLibraryId: input.fileLibraryId,
+      },
+    }),
+  } as never;
+  deps.internalWorkloadCoordinator ??= {
+    acquireHolder: async () => undefined,
+    releaseHolder: async () => undefined,
+    requestHardTeardown: async () => undefined,
+  } as never;
+}
+
 async function createNotebookExternalAgentFixture(
   deps: ReturnType<typeof createDefaultNodeApiDeps>,
   baseUrl: string,
@@ -467,6 +518,8 @@ async function createNotebookExternalAgentFixture(
   runnerWsUrl: string;
   workspaceLibrary: { id: string; name: string };
 }> {
+  process.env.AGENT_EXECUTION_HTTP_BASE_URL = `${baseUrl}/api/v1`;
+  configureManagedNotebookTaskRuntimeDeps(deps);
   const createCredential = await apiFetch(
     baseUrl,
     "/api/v1/workspaces/ws_default/projects/proj_1/credentials",
@@ -533,21 +586,22 @@ async function createNotebookExternalAgentFixture(
   await seedAgentTaskModelSetting(deps, endpoint.id);
   await grantNotebookTaskRunnerPermissions(deps);
 
-  const agent = await deps.agentResourceService.createAgent(
+  const agent = await deps.agentResourceService.upsertDeploymentDefaultManagedAgentRunner(
     "ws_default",
     "proj_1",
     {
       name: "Notebook task runner",
-      runner_provider: "developer",
+      runner_provider: "managed",
       status: "enabled",
-      presence: "offline",
+      presence: "managed",
       runner_status: "ready",
       is_default: true,
-      default_endpoint_id: endpoint.id,
+      endpointId: endpoint.id,
       execution_preferences_json: {
-        agent_task: {
+        task: {
           endpoint_id: endpoint.id,
           wire_api: "openai_responses",
+          model: "placeholder-model",
         },
       },
       capabilities: {
@@ -561,12 +615,6 @@ async function createNotebookExternalAgentFixture(
       visibility: "private",
     },
   );
-  await deps.agentResourceService.clearDefaultAgentRunnersExcept(
-    "ws_default",
-    "proj_1",
-    agent.id,
-  );
-
   const workspaceLibrary = await createFileLibrary(baseUrl, workspaceLibraryName);
 
   const agentKey = await deps.agentResourceService.createAgentKey(
@@ -586,7 +634,7 @@ async function createNotebookExternalAgentFixture(
 
 async function createNotebookTask(
   baseUrl: string,
-  agentId: string,
+  _agentId: string,
   workspaceFileLibraryId: string,
   title: string,
 ): Promise<{ id: string }> {
@@ -598,7 +646,6 @@ async function createNotebookTask(
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         title,
-        bound_runner_id: agentId,
         workspace_mode: "use_existing",
         workspace_file_library_id: workspaceFileLibraryId,
       }),

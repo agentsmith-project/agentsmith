@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it } from "vitest";
 import { WebSocket } from "ws";
-import { NOTEBOOK_RUNNER_SPEC } from "@mbos/agent-runner";
+import { AGENT_TASK_RUNNER_SPEC } from "@mbos/agent-runner";
 import { clearNotebookTaskEventState } from "../notebook-task-sse-broker.js";
 import {
   ARTIFACTS_BY_TASK,
@@ -26,6 +26,7 @@ import {
 const sockets: WebSocket[] = [];
 const RUNNER_DISPATCH_TIMEOUT_MS = 1_500;
 const NO_DISPATCH_SETTLE_MS = 300;
+const originalManagedExecutionHttpBase = process.env.AGENT_EXECUTION_HTTP_BASE_URL;
 
 function ensureProjectUseCaseFallback(
   deps: ReturnType<typeof startServer>["deps"],
@@ -124,13 +125,62 @@ function buildRunnerWsUrl(
   baseUrl: string,
   sessionId?: string,
 ): string {
-  const resolved = new URL(
-    wsUrl.replace("ws://localhost:20000", baseUrl.replace("http://", "ws://")),
-  );
+  const resolved = new URL(wsUrl);
+  const localBase = new URL(baseUrl);
+  resolved.protocol = localBase.protocol === "https:" ? "wss:" : "ws:";
+  resolved.host = localBase.host;
   if (sessionId) {
     resolved.searchParams.set("runner_session_id", sessionId);
   }
   return resolved.toString();
+}
+
+function configureManagedTaskRunnerRuntimeDeps(
+  deps: ReturnType<typeof startServer>["deps"],
+): void {
+  deps.internalAgentPodManager ??= {
+    ensureAgentReady: async () => undefined,
+    keepalive: async () => undefined,
+    releasePod: async () => undefined,
+  } as never;
+  deps.internalAgentWorkspaceBindingManager ??= {
+    ensureWorkspaceBinding: async (input: {
+      workspaceId: string;
+      projectId: string;
+      fileLibraryId: string;
+      taskId: string;
+    }) => ({
+      binding: {
+        id: `bind_${input.taskId}`,
+        workspace_id: input.workspaceId,
+        project_id: input.projectId,
+        file_library_id: input.fileLibraryId,
+        provider: "afscp",
+        status: "ready",
+        task_home_binding_id: `bind_${input.taskId}`,
+        task_home_path: `/home/${input.taskId}`,
+        workspace_path: `/home/${input.taskId}/workspace`,
+        artifacts_path: `/home/${input.taskId}/workspace/.artifacts`,
+        library_root_path: ".",
+        created_at: "2026-04-05T00:00:00.000Z",
+        updated_at: "2026-04-05T00:00:00.000Z",
+      },
+      workspaceMount: {
+        bindingId: `bind_${input.taskId}`,
+        mountPath: `/home/${input.taskId}`,
+        taskHomePath: `/home/${input.taskId}`,
+        workspacePath: `/home/${input.taskId}/workspace`,
+        artifactsPath: `/home/${input.taskId}/workspace/.artifacts`,
+        subPath: `agent-tasks/${input.taskId}`,
+        fileLibraryId: input.fileLibraryId,
+      },
+    }),
+  } as never;
+  deps.internalWorkloadCoordinator ??= {
+    acquireHolder: async () => undefined,
+    releaseHolder: async () => undefined,
+    requestHardTeardown: async () => undefined,
+  } as never;
 }
 
 async function expectRunnerDispatch(
@@ -184,7 +234,7 @@ async function openReadyNotebookRunnerSocket(input: {
           JSON.stringify({
             type: "agent.ready",
             payload: {
-              runner_spec: NOTEBOOK_RUNNER_SPEC,
+              runner_spec: AGENT_TASK_RUNNER_SPEC,
               capabilities: { wire_api: "responses" },
             },
           }),
@@ -259,6 +309,11 @@ afterEach(() => {
     }
   }
   sockets.length = 0;
+  if (originalManagedExecutionHttpBase === undefined) {
+    delete process.env.AGENT_EXECUTION_HTTP_BASE_URL;
+  } else {
+    process.env.AGENT_EXECUTION_HTTP_BASE_URL = originalManagedExecutionHttpBase;
+  }
 });
 
 describe("api-entry-node notebook task event routes", () => {
@@ -266,7 +321,9 @@ describe("api-entry-node notebook task event routes", () => {
     const previousPublicApiBase = process.env.PUBLIC_API_BASE_URL;
     process.env.PUBLIC_API_BASE_URL = "";
     const { baseUrl, deps } = startServer();
+    process.env.AGENT_EXECUTION_HTTP_BASE_URL = `${baseUrl}/api/v1`;
     process.env.PUBLIC_API_BASE_URL = `${baseUrl}/api/v1`;
+    configureManagedTaskRunnerRuntimeDeps(deps);
     try {
       const createCredential = await apiFetch(
         baseUrl,
@@ -318,13 +375,14 @@ describe("api-entry-node notebook task event routes", () => {
       const endpoint = (await createEndpoint.json()) as { id: string };
       await seedNotebookTaskCreateReadiness(deps, endpoint.id);
 
-      const agent = await deps.agentResourceService.createAgent("ws_default", "proj_1", {
+      const agent = await deps.agentResourceService.upsertDeploymentDefaultManagedAgentRunner("ws_default", "proj_1", {
         name: "External notebook agent",
-        runner_provider: "developer",
+        runner_provider: "managed",
         is_default: true,
         status: "enabled",
+        presence: "managed",
         runner_status: "ready",
-        default_endpoint_id: endpoint.id,
+        endpointId: endpoint.id,
         owner_id: "user_test",
         visibility: "private",
         capabilities: {
@@ -333,13 +391,17 @@ describe("api-entry-node notebook task event routes", () => {
           streaming_completion: true,
           multimodal_completion: false,
         },
+        execution_preferences_json: {
+          task: {
+            endpoint_id: endpoint.id,
+            wire_api: "chat",
+            model: "placeholder-model",
+          },
+        },
       });
 
       const agentKey = await deps.agentResourceService.createAgentKey("ws_default", "proj_1", agent.id);
-      const connectionInfo = deps.agentResourceService.buildConnectionInfo({
-        id: agent.id,
-        runner_provider: "developer",
-      });
+      const connectionInfo = deps.agentResourceService.buildConnectionInfo(agent);
 
       const agentScopedRunner = await openReadyNotebookRunnerSocket({
         baseUrl,
@@ -369,7 +431,6 @@ describe("api-entry-node notebook task event routes", () => {
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
             title: "Task SSE replay",
-            bound_runner_id: agent.id,
             workspace_mode: "use_existing",
             workspace_file_library_id: workspaceLibrary.id,
           }),
@@ -471,6 +532,8 @@ describe("api-entry-node notebook task event routes", () => {
 
   it("falls back to persisted authoritative notebook task truth when SSE replay history is missing", async () => {
     const { baseUrl, deps } = startServer();
+    process.env.AGENT_EXECUTION_HTTP_BASE_URL = `${baseUrl}/api/v1`;
+    configureManagedTaskRunnerRuntimeDeps(deps);
     const credential = await deps.endpointResourceService.createCredential("ws_default", "proj_1", {
       name: "persisted-fallback-key",
       value: "sk-placeholder-test",
@@ -496,13 +559,13 @@ describe("api-entry-node notebook task event routes", () => {
       },
     });
     await seedNotebookTaskCreateReadiness(deps, endpoint.id);
-    const agent = await deps.agentResourceService.createAgent("ws_default", "proj_1", {
+    await deps.agentResourceService.upsertDeploymentDefaultManagedAgentRunner("ws_default", "proj_1", {
       name: "Persisted fallback notebook agent",
-      runner_provider: "developer",
+      runner_provider: "managed",
       status: "enabled",
-      presence: "online",
+      presence: "managed",
       is_default: true,
-      default_endpoint_id: endpoint.id,
+      endpointId: endpoint.id,
       owner_id: "user_test",
       visibility: "private",
       capabilities: {
@@ -511,11 +574,13 @@ describe("api-entry-node notebook task event routes", () => {
         streaming_completion: true,
         multimodal_completion: false,
       },
-    });
-    await deps.agentResourceService.markAgentConnected(agent.id, {
-      remote_ip: "127.0.0.1",
-      protocol_version: "1.0",
-      last_pong_at: new Date().toISOString(),
+      execution_preferences_json: {
+        task: {
+          endpoint_id: endpoint.id,
+          wire_api: "chat",
+          model: "placeholder-model",
+        },
+      },
     });
 
     const createLibraryRes = await apiFetch(
@@ -538,7 +603,6 @@ describe("api-entry-node notebook task event routes", () => {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           title: "Persisted fallback task",
-          bound_runner_id: agent.id,
           workspace_mode: "use_existing",
           workspace_file_library_id: workspaceLibrary.id,
         }),

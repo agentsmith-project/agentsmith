@@ -423,7 +423,10 @@ export class AgentResourceService {
       || endpointId
       || existingRecord?.default_endpoint_id?.trim()
       || undefined;
-    const config = this.buildManagedAgentPrivateConfig(input.config ?? existingRecord?.config);
+    const config = this.buildManagedAgentPrivateConfig({
+      ...(existingRecord?.config ?? {}),
+      ...(input.config ?? {}),
+    });
     const agent: AgentRecord = {
       id,
       workspace_id: workspaceId,

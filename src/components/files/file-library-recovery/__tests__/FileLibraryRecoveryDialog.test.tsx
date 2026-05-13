@@ -46,6 +46,14 @@ const {
 import { APIError } from '@/lib/api/errors';
 
 vi.mock('@/lib/hooks/use-file-library-recovery', () => ({
+  isFileLibraryOperationPendingError: (error: unknown) => {
+    const record = error && typeof error === 'object'
+      ? error as { errorCode?: string; message?: string }
+      : null;
+    const value = `${record?.errorCode ?? ''} ${record?.message ?? ''}`.toLowerCase();
+    return value.includes('file_library_operation_pending')
+      || value.includes('file_library_restore_operation_pending');
+  },
   useCancelFileLibraryRestore: () => ({ mutateAsync: mockCancelRestore, isPending: false }),
   useCreateFileLibraryRestorePreview: () => ({ mutateAsync: mockCreateRestorePreview, isPending: false }),
   useCreateFileLibrarySavePoint: (options?: unknown) => {
@@ -82,6 +90,8 @@ const t = (key: string, values?: Record<string, string>) => {
     'file_manager.save_point_empty': 'No save points yet',
     'file_manager.save_point_load_error_description': 'Save points could not be loaded. Retry before choosing a restore point.',
     'file_manager.save_point_load_error_title': 'Could not load save points',
+    'file_manager.save_point_preparing_description': 'Save points are still syncing. Retry in a moment, or use the button to check again now.',
+    'file_manager.save_point_preparing_title': 'Save points are syncing',
     'file_manager.save_point_message': 'Save point note',
     'file_manager.save_point_message_placeholder': 'e.g. Before prompt edits',
     'file_manager.save_point_retry': 'Retry',
@@ -412,6 +422,45 @@ describe('FileLibraryRecoveryDialog', () => {
       'Save points could not be loaded. Retry before choosing a restore point.',
     );
     expect(screen.queryByText('No save points yet')).not.toBeInTheDocument();
+
+    await user.click(screen.getByTestId('files__save-point__retry'));
+
+    expect(mockRefetchSavePoints).toHaveBeenCalled();
+  });
+
+  it('shows operation-pending save-point lists as recoverable while keeping cached restore points visible', async () => {
+    const user = userEvent.setup();
+    mockSavePointsQueryState.mockReturnValue({
+      data: {
+        items: [
+          {
+            id: 'sp_cached',
+            file_library_id: 'lib_1',
+            message: 'Before risky edits',
+            created_at: '2026-05-09T12:00:00.000Z',
+          },
+        ],
+      },
+      error: new APIError(
+        'FILE_LIBRARY_OPERATION_PENDING',
+        'file_library_operation_pending',
+        'req-save-point-list-pending',
+        409,
+      ),
+      isError: true,
+      isLoading: false,
+      refetch: mockRefetchSavePoints,
+    });
+
+    renderDialog();
+
+    expect(screen.queryByTestId('files__save-point__list-error')).not.toBeInTheDocument();
+    expect(screen.queryByText('Could not load save points')).not.toBeInTheDocument();
+    expect(screen.getByTestId('files__save-point__list-recovering')).toHaveTextContent(
+      'Save points are syncing',
+    );
+    expect(screen.getByText('Before risky edits')).toBeInTheDocument();
+    expect(screen.getByTestId('files__save-point__restore--sp_cached')).toBeEnabled();
 
     await user.click(screen.getByTestId('files__save-point__retry'));
 

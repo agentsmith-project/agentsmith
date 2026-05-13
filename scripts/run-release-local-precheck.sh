@@ -23,7 +23,7 @@ API_PORT="${INTEGRATION_API_PORT:-20090}"
 WEB_PORT="${INTEGRATION_WEB_PORT:-3091}"
 KEYCLOAK_REALM="${KEYCLOAK_REALM:-mbos}"
 KEYCLOAK_CLIENT_ID="${KEYCLOAK_CLIENT_ID:-agentsmith}"
-KEYCLOAK_PORT="${KEYCLOAK_PORT:-18080}"
+KEYCLOAK_PORT="${KEYCLOAK_PORT:-${INTEGRATION_KEYCLOAK_PORT:-18080}}"
 clear_runtime_stack_env
 resolve_loopback_runtime_stack "${API_PORT}" "${WEB_PORT}" "${KEYCLOAK_PORT}" "${KEYCLOAK_REALM}" "${KEYCLOAK_CLIENT_ID}"
 PLAYWRIGHT_BASE_URL="${INTEGRATION_BASE_URL:-${RUNTIME_BROWSER_WEB_BASE_URL}}"
@@ -34,6 +34,13 @@ INTEGRATION_DEV_ADMIN_USERNAME="${INTEGRATION_DEV_ADMIN_USERNAME:-dev-admin}"
 INTEGRATION_DEV_ADMIN_PASSWORD="${INTEGRATION_DEV_ADMIN_PASSWORD:-dev-admin-123}"
 BOOTSTRAP_DEPS="${INTEGRATION_BOOTSTRAP_DEPS:-true}"
 INIT_DEPS="${INTEGRATION_INIT_DEPS:-true}"
+POSTGRES_PORT="${POSTGRES_PORT:-${INTEGRATION_POSTGRES_PORT:-15432}}"
+MONGO_PORT="${MONGO_PORT:-${INTEGRATION_MONGO_PORT:-17017}}"
+REDIS_PORT="${REDIS_PORT:-${INTEGRATION_REDIS_PORT:-16379}}"
+MINIO_API_PORT="${MINIO_API_PORT:-${INTEGRATION_MINIO_API_PORT:-19000}}"
+MINIO_CONSOLE_PORT="${MINIO_CONSOLE_PORT:-${INTEGRATION_MINIO_CONSOLE_PORT:-19001}}"
+MONGO_URL="${MONGO_URL:-mongodb://mbos:mbos_dev_password@localhost:${MONGO_PORT}/admin}"
+MONGO_DB_NAME="${MONGO_DB_NAME:-mbos}"
 
 INTEGRATION_RUN_ID="${INTEGRATION_RUN_ID:-$(lane_generate_run_id release-local-precheck)}"
 INTEGRATION_RUN_ROOT="${INTEGRATION_RUN_ROOT:-$(lane_prepare_run_root backend-real "${INTEGRATION_RUN_ID}" current-release-precheck)}"
@@ -120,11 +127,11 @@ PY
 }
 
 deps_ready() {
-  tcp_ready "127.0.0.1" "15432" || return 1
-  tcp_ready "127.0.0.1" "17017" || return 1
-  tcp_ready "127.0.0.1" "16379" || return 1
+  tcp_ready "127.0.0.1" "${POSTGRES_PORT}" || return 1
+  tcp_ready "127.0.0.1" "${MONGO_PORT}" || return 1
+  tcp_ready "127.0.0.1" "${REDIS_PORT}" || return 1
   [[ "$(curl_status "${KEYCLOAK_BASE_URL}/realms/${KEYCLOAK_REALM}/.well-known/openid-configuration")" == "200" ]] || return 1
-  [[ "$(curl_status "http://localhost:19000/minio/health/live")" == "200" ]] || return 1
+  [[ "$(curl_status "http://localhost:${MINIO_API_PORT}/minio/health/live")" == "200" ]] || return 1
   return 0
 }
 
@@ -169,14 +176,24 @@ json_extract_access_token() {
   python3 -c 'import json,sys; print(json.loads(sys.stdin.read()).get("access_token",""))'
 }
 
-cleanup() {
-  stop_background_job "${PLAYWRIGHT_PID}"
-  stop_background_job "$(cat "${NEXT_WEB_PID_FILE}" 2>/dev/null || true)"
+stop_api_web_stack() {
+  local next_pid
+  next_pid="$(cat "${NEXT_WEB_PID_FILE}" 2>/dev/null || true)"
+  stop_background_job "${next_pid}"
   stop_background_job "${WEB_PID}"
   stop_background_job "${API_PID}"
-  wait "${PLAYWRIGHT_PID}" >/dev/null 2>&1 || true
-  wait "${WEB_PID}" >/dev/null 2>&1 || true
-  wait "${API_PID}" >/dev/null 2>&1 || true
+  [[ -z "${next_pid}" ]] || wait "${next_pid}" >/dev/null 2>&1 || true
+  [[ -z "${WEB_PID}" ]] || wait "${WEB_PID}" >/dev/null 2>&1 || true
+  [[ -z "${API_PID}" ]] || wait "${API_PID}" >/dev/null 2>&1 || true
+  WEB_PID=""
+  API_PID=""
+  rm -f "${NEXT_WEB_PID_FILE}"
+}
+
+cleanup() {
+  stop_background_job "${PLAYWRIGHT_PID}"
+  [[ -z "${PLAYWRIGHT_PID}" ]] || wait "${PLAYWRIGHT_PID}" >/dev/null 2>&1 || true
+  stop_api_web_stack
   if [[ "${PLAYWRIGHT_STATUS}" -eq 0 ]]; then
     lane_mark_status "${INTEGRATION_RUN_ROOT}" success
     rm -rf "${INTEGRATION_RUN_ROOT}"
@@ -189,18 +206,67 @@ cleanup() {
 }
 trap cleanup EXIT
 
+run_agent_task_backend_real_precheck() {
+  local agent_task_api_port agent_task_web_port sandbox_port afscp_base_url afscp_export_gateway_base_url afscp_default_volume_id
+  agent_task_api_port="${RELEASE_PRECHECK_AGENT_TASK_COORDINATOR_API_PORT:-20072}"
+  agent_task_web_port="${RELEASE_PRECHECK_AGENT_TASK_COORDINATOR_WEB_PORT:-3072}"
+  sandbox_port="${INTERNAL_SANDBOX_MANAGER_PORT:-28080}"
+  afscp_base_url="${RELEASE_PRECHECK_AFSCP_BASE_URL:-http://127.0.0.1:$((agent_task_api_port + 9030))}"
+  afscp_export_gateway_base_url="${RELEASE_PRECHECK_AFSCP_EXPORT_GATEWAY_BASE_URL:-http://127.0.0.1:$((agent_task_api_port + 9031))}"
+  afscp_default_volume_id="${RELEASE_PRECHECK_AFSCP_DEFAULT_VOLUME_ID:-vol_release_precheck_${agent_task_api_port}}"
+
+  info "running Agent Task backend-real precheck via internal owner gate"
+  INTEGRATION_API_PORT="${agent_task_api_port}" \
+  INTEGRATION_WEB_PORT="${agent_task_web_port}" \
+  INTEGRATION_POSTGRES_PORT="${POSTGRES_PORT}" \
+  INTEGRATION_MONGO_PORT="${MONGO_PORT}" \
+  INTEGRATION_REDIS_PORT="${REDIS_PORT}" \
+  INTEGRATION_MINIO_API_PORT="${MINIO_API_PORT}" \
+  INTEGRATION_MINIO_CONSOLE_PORT="${MINIO_CONSOLE_PORT}" \
+  INTEGRATION_KEYCLOAK_PORT="${KEYCLOAK_PORT}" \
+  INTERNAL_SANDBOX_MANAGER_PORT="${sandbox_port}" \
+  SANDBOX_MANAGER_URL="http://127.0.0.1:${sandbox_port}" \
+  SANDBOX_SERVICE_KEY="${SANDBOX_SERVICE_KEY:-agentsmith-internal-test-key}" \
+  MONGO_URL="${MONGO_URL}" \
+  MONGO_DB_NAME="${MONGO_DB_NAME}" \
+  KEYCLOAK_REALM="${KEYCLOAK_REALM}" \
+  KEYCLOAK_CLIENT_ID="${KEYCLOAK_CLIENT_ID}" \
+  AFSCP_BASE_URL="${afscp_base_url}" \
+  AFSCP_EXPORT_GATEWAY_BASE_URL="${afscp_export_gateway_base_url}" \
+  AFSCP_DEFAULT_VOLUME_ID="${afscp_default_volume_id}" \
+  AFSCP_CALLER_SERVICE="${AFSCP_CALLER_SERVICE:-agentsmith-api}" \
+  AFSCP_BOOTSTRAP_CALLER_SERVICE="${AFSCP_BOOTSTRAP_CALLER_SERVICE:-agentsmith-bootstrap}" \
+  AFSCP_ORCHESTRATOR_CALLER_SERVICE="${AFSCP_ORCHESTRATOR_CALLER_SERVICE:-agentsmith-sandbox-manager}" \
+  AFSCP_SERVICE_TOKEN="${AFSCP_SERVICE_TOKEN:-agentsmith-local-afscp-product-token}" \
+  AFSCP_BOOTSTRAP_SERVICE_TOKEN="${AFSCP_BOOTSTRAP_SERVICE_TOKEN:-agentsmith-local-afscp-bootstrap-token}" \
+  AFSCP_ORCHESTRATOR_SERVICE_TOKEN="${AFSCP_ORCHESTRATOR_SERVICE_TOKEN:-agentsmith-local-afscp-orchestrator-token}" \
+  run_clean bash scripts/run-internal-agent-task-real-gate.sh --skills-runtime
+}
+
 if [[ "${BOOTSTRAP_DEPS}" == "true" ]]; then
   if deps_ready; then
     info "reusing existing local integration dependencies"
   else
+    POSTGRES_PORT="${POSTGRES_PORT}" \
+    MONGO_PORT="${MONGO_PORT}" \
+    REDIS_PORT="${REDIS_PORT}" \
+    MINIO_API_PORT="${MINIO_API_PORT}" \
+    MINIO_CONSOLE_PORT="${MINIO_CONSOLE_PORT}" \
+    KEYCLOAK_PORT="${KEYCLOAK_PORT}" \
     run_clean npm run integration:deps:up
+    POSTGRES_PORT="${POSTGRES_PORT}" \
+    MONGO_PORT="${MONGO_PORT}" \
+    REDIS_PORT="${REDIS_PORT}" \
+    MINIO_API_PORT="${MINIO_API_PORT}" \
+    MINIO_CONSOLE_PORT="${MINIO_CONSOLE_PORT}" \
+    KEYCLOAK_PORT="${KEYCLOAK_PORT}" \
     run_clean make deps-ready
   fi
 fi
 
 if [[ "${INIT_DEPS}" == "true" ]]; then
   if integration_compose_postgres_running; then
-    run_clean npm run integration:deps:init:postgres
+    POSTGRES_PORT="${POSTGRES_PORT}" run_clean npm run integration:deps:init:postgres
   else
     info "skipping compose-specific postgres init while reusing existing local dependencies"
   fi
@@ -210,6 +276,7 @@ if [[ "${INIT_DEPS}" == "true" ]]; then
   INTERNAL_KEYCLOAK_BASE_URL="${INTERNAL_KEYCLOAK_BASE_URL}" \
   KEYCLOAK_REALM="${KEYCLOAK_REALM}" \
   KEYCLOAK_CLIENT_ID="${KEYCLOAK_CLIENT_ID}" \
+  KEYCLOAK_PORT="${KEYCLOAK_PORT}" \
   run_clean npm run integration:deps:init:keycloak
 fi
 
@@ -233,12 +300,12 @@ API_PID="$(
   INTERNAL_KEYCLOAK_BASE_URL="${INTERNAL_KEYCLOAK_BASE_URL}" \
   KEYCLOAK_ISSUER_URL="${KEYCLOAK_ISSUER_URL}" \
   KEYCLOAK_REALM="${KEYCLOAK_REALM}" \
-  DATABASE_URL="${DATABASE_URL:-postgresql://mbos:mbos_dev_password@localhost:15432/mbos}" \
-  MONGO_URL="${MONGO_URL:-mongodb://mbos:mbos_dev_password@localhost:17017/admin}" \
-  MONGO_DB_NAME="${MONGO_DB_NAME:-mbos}" \
-  REDIS_URL="${REDIS_URL:-redis://localhost:16379}" \
+  DATABASE_URL="${DATABASE_URL:-postgresql://mbos:mbos_dev_password@localhost:${POSTGRES_PORT}/mbos}" \
+  MONGO_URL="${MONGO_URL}" \
+  MONGO_DB_NAME="${MONGO_DB_NAME}" \
+  REDIS_URL="${REDIS_URL:-redis://localhost:${REDIS_PORT}}" \
   MINIO_ENDPOINT="${MINIO_ENDPOINT:-localhost}" \
-  MINIO_PORT="${MINIO_PORT:-19000}" \
+  MINIO_PORT="${MINIO_PORT:-${MINIO_API_PORT}}" \
   MINIO_USE_SSL="${MINIO_USE_SSL:-false}" \
   MINIO_ACCESS_KEY="${MINIO_ACCESS_KEY:-mbos}" \
   MINIO_SECRET_KEY="${MINIO_SECRET_KEY:-mbos_dev_password}" \
@@ -252,8 +319,8 @@ API_PID="$(
 )"
 
 WEB_PID="$(
-  MONGO_URL="${MONGO_URL:-mongodb://mbos:mbos_dev_password@localhost:17017/admin}" \
-  MONGO_DB_NAME="${MONGO_DB_NAME:-mbos}" \
+  MONGO_URL="${MONGO_URL}" \
+  MONGO_DB_NAME="${MONGO_DB_NAME}" \
   NEXT_GENERATED_ROOT_MANAGED=1 \
   NEXT_DEV_PID_FILE="${NEXT_WEB_PID_FILE}" \
   NEXT_PUBLIC_USE_MSW=false \
@@ -325,10 +392,12 @@ curl -fsS "${INTEGRATION_API_BASE}/api/v1/me/profile" \
   }
 
 info "public-auth gate passed"
-info "running system admin entry, workspace public/login truth, workspace entry, publish usable, directory search, and Agent Task precheck"
+info "running system admin entry, workspace public/login truth, workspace entry, publish usable, and directory search precheck"
 
 BASE_URL="${PLAYWRIGHT_BASE_URL}" \
 INTEGRATION_API_BASE="${INTEGRATION_API_BASE}" \
+MONGO_URL="${MONGO_URL}" \
+MONGO_DB_NAME="${MONGO_DB_NAME}" \
 BACKEND_REAL_API_KEY="${BACKEND_REAL_API_KEY_VALUE}" \
 BACKEND_REAL_ANTHROPIC_BASE_URL="${BACKEND_REAL_ANTHROPIC_BASE_URL_VALUE}" \
 BACKEND_REAL_OPENAI_BASE_URL="${BACKEND_REAL_OPENAI_BASE_URL_VALUE}" \
@@ -343,7 +412,6 @@ run_clean npx playwright test \
   e2e/integration-workspace-entry.spec.ts \
   e2e/integration-workspace-publish-usable.spec.ts \
   e2e/integration-workspace-settings-directory.spec.ts \
-  e2e/integration-agent-task-runner.spec.ts \
   --project=chromium \
   --workers=1 &
 PLAYWRIGHT_PID=$!
@@ -354,5 +422,11 @@ set -e
 if [[ "${PLAYWRIGHT_STATUS}" -ne 0 ]]; then
   exit "${PLAYWRIGHT_STATUS}"
 fi
+
+PLAYWRIGHT_PID=""
+PLAYWRIGHT_STATUS=1
+stop_api_web_stack
+run_agent_task_backend_real_precheck
+PLAYWRIGHT_STATUS=0
 
 info "release local precheck passed"

@@ -51,4 +51,25 @@ describe('/api/public/workspaces/[id]', () => {
 
     expect(response.status).toBe(404);
   });
+
+  it('returns 503 when public workspace storage is temporarily unavailable', async () => {
+    const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+    registryModule.getPublicSystemWorkspace.mockRejectedValue(new Error('MongoNetworkError: connection closed'));
+
+    const response = await GET(new Request('http://localhost/api/public/workspaces/ws_alpha'), {
+      params: Promise.resolve({ id: 'ws_alpha' }),
+    });
+
+    expect(response.status).toBe(503);
+    await expect(response.json()).resolves.toEqual({
+      error_code: 'WORKSPACE_CONFIG_UNAVAILABLE',
+      error_message: 'workspace_config_unavailable',
+    });
+    expect(errorSpy).toHaveBeenCalledWith(
+      'Failed to load public workspace configuration:',
+      expect.any(Error),
+    );
+
+    errorSpy.mockRestore();
+  });
 });

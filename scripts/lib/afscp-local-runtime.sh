@@ -1,0 +1,99 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+AFSCP_LOCAL_RUNTIME_LIB_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+AFSCP_LOCAL_RUNTIME_ROOT_DIR="${ROOT_DIR:-$(cd "${AFSCP_LOCAL_RUNTIME_LIB_DIR}/../.." && pwd)}"
+
+resolve_afscp_local_runtime_defaults() {
+  local api_port="$1"
+  local volume_prefix="${2:-vol_integration}"
+
+  AFSCP_BASE_URL="${AFSCP_BASE_URL:-http://127.0.0.1:$((api_port + 9030))}"
+  AFSCP_EXPORT_GATEWAY_BASE_URL="${AFSCP_EXPORT_GATEWAY_BASE_URL:-http://127.0.0.1:$((api_port + 9031))}"
+  AFSCP_DEFAULT_VOLUME_ID="${AFSCP_DEFAULT_VOLUME_ID:-${volume_prefix}_${api_port}}"
+  AFSCP_CALLER_SERVICE="${AFSCP_CALLER_SERVICE:-agentsmith-api}"
+  AFSCP_SERVICE_TOKEN="${AFSCP_SERVICE_TOKEN:-agentsmith-local-afscp-product-token}"
+  AFSCP_BOOTSTRAP_CALLER_SERVICE="${AFSCP_BOOTSTRAP_CALLER_SERVICE:-agentsmith-bootstrap}"
+  AFSCP_BOOTSTRAP_SERVICE_TOKEN="${AFSCP_BOOTSTRAP_SERVICE_TOKEN:-agentsmith-local-afscp-bootstrap-token}"
+  AFSCP_ORCHESTRATOR_CALLER_SERVICE="${AFSCP_ORCHESTRATOR_CALLER_SERVICE:-agentsmith-sandbox-manager}"
+  AFSCP_ORCHESTRATOR_SERVICE_TOKEN="${AFSCP_ORCHESTRATOR_SERVICE_TOKEN:-agentsmith-local-afscp-orchestrator-token}"
+
+  export \
+    AFSCP_BASE_URL \
+    AFSCP_EXPORT_GATEWAY_BASE_URL \
+    AFSCP_DEFAULT_VOLUME_ID \
+    AFSCP_CALLER_SERVICE \
+    AFSCP_SERVICE_TOKEN \
+    AFSCP_BOOTSTRAP_CALLER_SERVICE \
+    AFSCP_BOOTSTRAP_SERVICE_TOKEN \
+    AFSCP_ORCHESTRATOR_CALLER_SERVICE \
+    AFSCP_ORCHESTRATOR_SERVICE_TOKEN
+}
+
+with_afscp_local_runtime_env() {
+  local runtime_dir="$1"
+  shift
+
+  (
+    unset AFSCP_API_PORT AFSCP_API_LISTEN_ADDR AFSCP_EXPORT_GATEWAY_PORT AFSCP_EXPORT_GATEWAY_LISTEN_ADDR
+
+    local afscp_database_url
+    afscp_database_url="${AFSCP_LOCAL_RUNTIME_DATABASE_URL:-${DATABASE_URL:-postgresql://mbos:mbos_dev_password@localhost:${POSTGRES_PORT:-25432}/mbos?sslmode=disable}}"
+
+    export ENV_FILE=/dev/null
+    export INTERNAL_REAL_DIR="${runtime_dir}"
+    export INTERNAL_AGENT_K8S_NAMESPACE="${INTERNAL_AGENT_K8S_NAMESPACE:-agentsmith-sandbox}"
+    export AFSCP_BASE_URL
+    export AFSCP_EXPORT_GATEWAY_BASE_URL
+    export AFSCP_DEFAULT_VOLUME_ID
+    export AFSCP_CALLER_SERVICE
+    export AFSCP_SERVICE_TOKEN
+    export AFSCP_BOOTSTRAP_CALLER_SERVICE
+    export AFSCP_BOOTSTRAP_SERVICE_TOKEN
+    export AFSCP_ORCHESTRATOR_CALLER_SERVICE
+    export AFSCP_ORCHESTRATOR_SERVICE_TOKEN
+    export LOCAL_MANUAL_ALLOW_MISSING_SUBSTRATE_CONNECTION=1
+    export LOCAL_MANUAL_INTERNAL_ENV_FILE=/dev/null
+    export DATABASE_URL="${afscp_database_url}"
+    export AFSCP_DATABASE_URL="${AFSCP_DATABASE_URL:-${afscp_database_url}}"
+    export AFSCP_POSTGRES_DSN="${AFSCP_POSTGRES_DSN:-${afscp_database_url}}"
+    export AFSCP_API_POSTGRES_DSN="${AFSCP_API_POSTGRES_DSN:-${afscp_database_url}}"
+    export AFSCP_EXPORT_SESSION_RECONCILE_POSTGRES_DSN="${AFSCP_EXPORT_SESSION_RECONCILE_POSTGRES_DSN:-${afscp_database_url}}"
+    export AFSCP_EXPORT_GATEWAY_POSTGRES_DSN="${AFSCP_EXPORT_GATEWAY_POSTGRES_DSN:-${afscp_database_url}}"
+    export POSTGRES_PORT="${POSTGRES_PORT:-}"
+    export MONGO_PORT="${MONGO_PORT:-}"
+    export REDIS_PORT="${REDIS_PORT:-}"
+    export MINIO_API_PORT="${MINIO_API_PORT:-${MINIO_PORT:-}}"
+    export MINIO_CONSOLE_PORT="${MINIO_CONSOLE_PORT:-}"
+    export KEYCLOAK_PORT="${KEYCLOAK_PORT:-}"
+    export SUBSTRATE_POSTGRES_PORT="${SUBSTRATE_POSTGRES_PORT:-${POSTGRES_PORT:-}}"
+    export SUBSTRATE_MINIO_API_PORT="${SUBSTRATE_MINIO_API_PORT:-${MINIO_API_PORT:-${MINIO_PORT:-}}}"
+    export MINIO_PORT="${MINIO_PORT:-${MINIO_API_PORT:-}}"
+    export MINIO_ENDPOINT="${MINIO_ENDPOINT:-localhost}"
+    export MINIO_ACCESS_KEY="${MINIO_ACCESS_KEY:-mbos}"
+    export MINIO_SECRET_KEY="${MINIO_SECRET_KEY:-mbos_dev_password}"
+    export MINIO_BUCKET="${MINIO_BUCKET:-mbos-dev}"
+    export AFSCP_STORAGE_CSI_DRIVER="${AFSCP_STORAGE_CSI_DRIVER:-csi.juicefs.com}"
+    export AFSCP_STORAGE_CAPACITY="${AFSCP_STORAGE_CAPACITY:-1Pi}"
+    export AFSCP_STORAGE_CLASS_NAME="${AFSCP_STORAGE_CLASS_NAME:-}"
+    export AFSCP_STORAGE_CSI_MOUNT_OPTIONS="${AFSCP_STORAGE_CSI_MOUNT_OPTIONS:-}"
+    export AFSCP_STORAGE_CSI_SUBDIR="${AFSCP_STORAGE_CSI_SUBDIR:-}"
+    export AFSCP_STORAGE_CSI_MOUNT_SERVICE_ACCOUNT="${AFSCP_STORAGE_CSI_MOUNT_SERVICE_ACCOUNT:-}"
+    export AFSCP_STORAGE_CSI_MOUNT_IMAGE="${AFSCP_STORAGE_CSI_MOUNT_IMAGE:-}"
+    export AFSCP_STORAGE_CSI_NAMESPACE="${AFSCP_STORAGE_CSI_NAMESPACE:-kube-system}"
+
+    # shellcheck disable=SC1091
+    source "${AFSCP_LOCAL_RUNTIME_ROOT_DIR}/scripts/local-manual/internal-common.sh"
+    "$@"
+  )
+}
+
+ensure_afscp_local_runtime_for_gate() {
+  local runtime_dir="$1"
+  with_afscp_local_runtime_env "${runtime_dir}" ensure_afscp_local_runtime
+}
+
+stop_afscp_local_runtime_for_gate() {
+  local runtime_dir="$1"
+  with_afscp_local_runtime_env "${runtime_dir}" stop_afscp_local_runtime
+}

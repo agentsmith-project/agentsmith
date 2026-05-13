@@ -330,7 +330,6 @@ describe('WorkspaceSettingsPage', () => {
 
     await waitFor(() => {
       expect(mockProjectCreate).toHaveBeenCalledWith('ws_1', {
-        workspace_id: 'ws_1',
         name: 'New Admin Project',
         description: undefined,
         visibility: 'private',

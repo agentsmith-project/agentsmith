@@ -17,6 +17,10 @@ function buildDefaultWorkspaceRecord() {
       realm: process.env.KEYCLOAK_REALM ?? 'mbos',
       client_id: process.env.KEYCLOAK_CLIENT_ID ?? 'agentsmith',
     },
+    directory_idp: {
+      client_id: process.env.KEYCLOAK_DIRECTORY_CLIENT_ID ?? 'agentsmith-directory',
+      client_secret: process.env.KEYCLOAK_DIRECTORY_CLIENT_SECRET ?? 'agentsmith-directory-secret',
+    },
     tenant: {
       workspace_id: 'ws_default',
       workspace_name: 'Default Workspace',

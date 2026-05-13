@@ -46,7 +46,7 @@
       "route": "/en-US/workspaces/{workspaceId}/projects/{projectId}/chat",
       "stableMarkers": [
         "chat__main-pane",
-        "chat__execution-target-trigger",
+        "chat__model-trigger",
         "chat__composer"
       ]
     },
@@ -87,7 +87,7 @@
       "sceneId": "project-chat",
       "intent": "Continue chat work without switching to a compatibility path.",
       "action": "Send the next chat message in the same project context",
-      "target": "chat__execution-target-trigger",
+      "target": "chat__model-trigger",
       "expectedFeedback": "成员仍然留在同一个项目 Chat 语境里，看到的是 endpoint/model truth，而不是旧 path 切换器。",
       "note": "连续性来自项目上下文，而不是旧兼容矩阵。",
       "evidence": [

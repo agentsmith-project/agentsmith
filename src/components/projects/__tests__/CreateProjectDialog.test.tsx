@@ -119,7 +119,6 @@ describe('CreateProjectDialog', () => {
 
     await waitFor(() => {
       expect(mockCreate).toHaveBeenCalledWith('ws_1', {
-        workspace_id: 'ws_1',
         name: 'New Project',
         description: 'Launch scope',
         visibility: 'private',

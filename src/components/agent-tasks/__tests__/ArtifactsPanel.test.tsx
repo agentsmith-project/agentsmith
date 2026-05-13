@@ -95,7 +95,7 @@ describe('ArtifactsPanel', () => {
       );
 
       expect(screen.getByTestId('empty-state')).toBeInTheDocument();
-      expect(screen.getByTestId('empty-title')).toHaveTextContent('No artifacts yet');
+      expect(screen.getByTestId('empty-title')).toHaveTextContent('empty');
     });
 
     it('shows empty state description', () => {
@@ -107,7 +107,7 @@ describe('ArtifactsPanel', () => {
         />
       );
 
-      expect(screen.getByTestId('empty-description')).toHaveTextContent(/Start a conversation/);
+      expect(screen.getByTestId('empty-description')).toHaveTextContent('empty_description');
     });
   });
 
@@ -203,7 +203,7 @@ describe('ArtifactsPanel', () => {
     it('renders artifacts title', () => {
       renderComponent();
 
-      expect(screen.getByText('Artifacts')).toBeInTheDocument();
+      expect(screen.getByText('title')).toBeInTheDocument();
     });
 
     it('renders refresh button when refresh handler is provided', () => {

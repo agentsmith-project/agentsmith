@@ -152,6 +152,8 @@ async function main() {
   const keycloakBaseUrl = requireEnv('PUBLIC_KEYCLOAK_BASE_URL', process.env.KEYCLOAK_BASE_URL || 'http://localhost:18080');
   const keycloakRealm = requireEnv('KEYCLOAK_REALM', 'mbos');
   const clientId = requireEnv('KEYCLOAK_CLIENT_ID', 'agentsmith');
+  const directoryClientId = requireEnv('KEYCLOAK_DIRECTORY_CLIENT_ID', 'agentsmith-directory');
+  const directoryClientSecret = requireEnv('KEYCLOAK_DIRECTORY_CLIENT_SECRET', 'agentsmith-directory-secret');
   const keycloakAdminBaseUrl = resolveKeycloakBaseUrl();
   const adminToken = await getAdminToken(keycloakAdminBaseUrl);
   const workspaceAdminEmail = requireEnv('MBOS_DEFAULT_WORKSPACE_ADMIN_EMAIL', 'dev-admin@example.com');
@@ -191,7 +193,8 @@ async function main() {
       client_id: clientId,
     },
     directory_idp: {
-      client_id: clientId,
+      client_id: directoryClientId,
+      client_secret: directoryClientSecret,
     },
     tenant: {
       workspace_id: workspaceId,

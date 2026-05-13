@@ -19,6 +19,17 @@ describe('governance-default-gate', () => {
     expect(() => execFileSync('bash', ['-n', 'scripts/governance-default-gate.sh'])).not.toThrow();
   });
 
+  it('keeps focused visual coverage enabled by default and skippable only by explicit flag or env', () => {
+    const script = readGovernanceGateScript();
+
+    expect(script).toContain('SKIP_FOCUSED_VISUAL="${GOVERNANCE_DEFAULT_GATE_SKIP_FOCUSED_VISUAL:-0}"');
+    expect(script).toContain('--skip-focused-visual');
+    expect(script).toContain('if [[ "${SKIP_FOCUSED_VISUAL}" == "1" ]]; then');
+    expect(script).toContain('skipping governance focused visual mock lane; full visual evidence is owned by lane:visual');
+    expect(script).toContain('e2e/visual.spec.ts');
+    expect(script).toContain("--grep 'governance_pages / members|members-effective-access-drawer|governance_pages / resource-policy|drawer-audit-detail|alerts-notifications-tab'");
+  });
+
   it('keeps the visual grep aligned with current governance visual scene titles', () => {
     const grep = extractVisualGrep(readGovernanceGateScript());
     const requiredGovernanceSceneTitles = [

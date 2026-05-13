@@ -24,6 +24,7 @@ const LLMUP_DIGEST = 'sha256:ccccccccccccccccccccccccccccccccccccccccccccccccccc
 const INGRESS_CONTROLLER_DIGEST = 'sha256:dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd';
 const INGRESS_CERTGEN_DIGEST = 'sha256:eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee';
 const MANAGED_RUNNER_DIGEST = 'sha256:9999999999999999999999999999999999999999999999999999999999999999';
+const AFSCP_DIGEST = 'sha256:abababababababababababababababababababababababababababababababab';
 
 afterEach(() => {
   for (const root of tempRoots.splice(0)) {
@@ -39,6 +40,13 @@ function tempDir(prefix: string): string {
 
 function createSandboxSource(root: string): string {
   const source = join(root, 'mbos-sandbox-v1', 'manager-service');
+  mkdirSync(source, { recursive: true });
+  writeFileSync(join(source, 'Dockerfile'), 'FROM scratch\n', 'utf8');
+  return source;
+}
+
+function createAfscpSource(root: string): string {
+  const source = join(root, 'agentsmith-fs-control-plane');
   mkdirSync(source, { recursive: true });
   writeFileSync(join(source, 'Dockerfile'), 'FROM scratch\n', 'utf8');
   return source;
@@ -62,6 +70,9 @@ function registryDigestForRef(ref: string): string {
   }
   if (ref.includes('/agentsmith-managed-runner:')) {
     return MANAGED_RUNNER_DIGEST;
+  }
+  if (ref.includes('/agentsmith-fs-control-plane:')) {
+    return AFSCP_DIGEST;
   }
 
   return 'sha256:ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff';
@@ -105,6 +116,7 @@ llmup_source_image=ghcr.io/agentsmith-project/llm-universal-proxy:v0.2.27@sha256
   it('generates a local-kind site env with immutable K8s digest refs and records host push refs', async () => {
     const root = tempDir('local-kind-images-');
     const sandboxSourceDir = createSandboxSource(root);
+    const afscpSourceDir = createAfscpSource(root);
     const evidenceDir = join(root, 'evidence');
     const calls: CommandCall[] = [];
 
@@ -112,6 +124,7 @@ llmup_source_image=ghcr.io/agentsmith-project/llm-universal-proxy:v0.2.27@sha256
       evidenceDir,
       outputSiteEnvPath: join(root, 'local-kind-site.env'),
       sandboxSourceDir,
+      afscpSourceDir,
       tag: 'test-tag',
       runner: successfulRunner(calls),
     });
@@ -121,6 +134,7 @@ llmup_source_image=ghcr.io/agentsmith-project/llm-universal-proxy:v0.2.27@sha256
     expect(siteEnv).toContain(`WEB_IMAGE=kind-registry:5000/mbos/agentsmith-app@${APP_DIGEST}`);
     expect(siteEnv).toContain(`API_IMAGE=kind-registry:5000/mbos/agentsmith-app@${APP_DIGEST}`);
     expect(siteEnv).toContain(`LLMUP_IMAGE=kind-registry:5000/mbos/llm-universal-proxy@${LLMUP_DIGEST}`);
+    expect(siteEnv).toContain(`AFSCP_IMAGE=kind-registry:5000/mbos/agentsmith-fs-control-plane@${AFSCP_DIGEST}`);
     expect(siteEnv).toContain(`SANDBOX_MANAGER_IMAGE=kind-registry:5000/mbos/sandbox-manager@${SANDBOX_DIGEST}`);
     expect(siteEnv).toContain(`MANAGED_RUNNER_IMAGE=kind-registry:5000/mbos/agentsmith-managed-runner@${MANAGED_RUNNER_DIGEST}`);
     expect(siteEnv).toContain(`INGRESS_NGINX_CONTROLLER_IMAGE=kind-registry:5000/mbos/ingress-nginx-controller@${INGRESS_CONTROLLER_DIGEST}`);
@@ -140,6 +154,10 @@ llmup_source_image=ghcr.io/agentsmith-project/llm-universal-proxy:v0.2.27@sha256
     expect(result.evidence.images.managed_runner.k8s_tag_ref).toBe('kind-registry:5000/mbos/agentsmith-managed-runner:test-tag');
     expect(result.evidence.images.managed_runner.host_digest_ref).toBe(`localhost:5001/mbos/agentsmith-managed-runner@${MANAGED_RUNNER_DIGEST}`);
     expect(result.evidence.images.managed_runner.k8s_ref).toBe(`kind-registry:5000/mbos/agentsmith-managed-runner@${MANAGED_RUNNER_DIGEST}`);
+    expect(result.evidence.images.afscp.host_ref).toBe('localhost:5001/mbos/agentsmith-fs-control-plane:test-tag');
+    expect(result.evidence.images.afscp.k8s_tag_ref).toBe('kind-registry:5000/mbos/agentsmith-fs-control-plane:test-tag');
+    expect(result.evidence.images.afscp.host_digest_ref).toBe(`localhost:5001/mbos/agentsmith-fs-control-plane@${AFSCP_DIGEST}`);
+    expect(result.evidence.images.afscp.k8s_ref).toBe(`kind-registry:5000/mbos/agentsmith-fs-control-plane@${AFSCP_DIGEST}`);
     expect(result.evidence.images.llmup.source_ref).toContain('@sha256:');
     expect(result.evidence.images.llmup.host_ref).toBe('localhost:5001/mbos/llm-universal-proxy:v0.2.27');
     expect(result.evidence.images.llmup.k8s_tag_ref).toBe('kind-registry:5000/mbos/llm-universal-proxy:v0.2.27');

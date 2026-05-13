@@ -20,12 +20,14 @@ import {
   createAgentTaskRunnerBundleViaApi,
   createAgentTaskViaApi,
   createExternalConnectionViaApi,
+  createInternalAgentTaskRunnerViaApi,
   createManagedAgentRunnerViaApi,
   createProjectInWorkspace,
   createTerminalSessionViaApi,
   expectTerminalSessionRunnerEvidenceViaApi,
   findPreparedTaskWorkspaceRootInRunnerLog,
   parseWorkloadPodSnapshot,
+  selectExpiredWorkloadReleaseTargets,
   resolveIntegrationKeycloakBaseUrl,
   resolveAgentTaskRunnerSocketUrl,
   resolveTerminalSessionCreateTimeoutMs,
@@ -37,6 +39,7 @@ import {
   waitForTerminalSessionFinalTruthViaApi,
   waitForRunnerOutputToken,
 } from '../e2e/integration-real-helpers';
+import { evaluateAgentTaskExecutionSnapshot } from '../e2e/agent-task-execution-outcome';
 
 type TerminalTestServer = {
   url: string;
@@ -997,6 +1000,69 @@ describe('integration-real-helpers', () => {
     });
   });
 
+  it('selects expired workload pods for manager-mediated release using workload labels and expires_at', () => {
+    const payload = JSON.stringify({
+      items: [
+        {
+          metadata: {
+            name: 'workload-target',
+            labels: {
+              app: 'llm-sandbox',
+              workspace_id: 'ws_default',
+              project_id: 'proj_1',
+              workload_id: 'task_target',
+            },
+            annotations: {
+              expires_at: '2026-05-12T12:00:00Z',
+            },
+            finalizers: ['example.com/finalizer'],
+          },
+        },
+        {
+          metadata: {
+            name: 'workload-active',
+            labels: {
+              workspace_id: 'ws_default',
+              project_id: 'proj_1',
+              workload_id: 'task_target',
+            },
+            annotations: {
+              expires_at: '2026-05-12T12:10:00Z',
+            },
+          },
+        },
+        {
+          metadata: {
+            name: 'workload-other',
+            labels: {
+              workspace_id: 'ws_default',
+              project_id: 'proj_1',
+              workload_id: 'task_other',
+            },
+            annotations: {
+              expires_at: '2026-05-12T11:00:00Z',
+            },
+          },
+        },
+      ],
+    });
+
+    expect(selectExpiredWorkloadReleaseTargets({
+      payload,
+      now: new Date('2026-05-12T12:05:00Z'),
+      workloadId: 'task_target',
+    })).toEqual([
+      {
+        podName: 'workload-target',
+        workspaceId: 'ws_default',
+        projectId: 'proj_1',
+        workloadId: 'task_target',
+        expiresAt: '2026-05-12T12:00:00Z',
+        finalizers: ['example.com/finalizer'],
+      },
+    ]);
+  });
+
   it('scopes Agent Task execution outcome polling to the current runner output activity boundary', async () => {
     const source = await readFile(path.resolve('e2e/integration-real-helpers.ts'), 'utf8');
 
@@ -1255,6 +1321,159 @@ describe('integration-real-helpers', () => {
       } else {
         process.env.MONGO_DB_NAME = previousMongoDbName;
       }
+    }
+  });
+
+  it('forwards internal Agent Task runner sandbox lifecycle overrides to the managed runner seed', async () => {
+    const previousMongoUrl = process.env.MONGO_URL;
+    const previousMongoDbName = process.env.MONGO_DB_NAME;
+    process.env.MONGO_URL = 'mongodb://mbos:mbos_dev_password@localhost:17017/admin';
+    process.env.MONGO_DB_NAME = 'mbos';
+    upsertManagedRunner.mockResolvedValue({
+      runnerId: 'ag_runner_internal',
+      runnerName: 'internal-sandbox-reclaim',
+      status: 'ready',
+      isDefault: true,
+      defaultEndpointId: 'ep_task',
+      capabilities: {},
+      diagnostics: { presence: 'managed' },
+      wsUrl: 'ws://127.0.0.1:20000/agent-runner/ws',
+    });
+    const get = vi.fn().mockResolvedValue(okResponse({
+      readiness: { state: 'not_configured' },
+    }));
+    const patch = vi.fn().mockResolvedValue(okResponse({
+      setting: {
+        endpoint_id: 'ep_task',
+        default_model: 'seed-model',
+        setting_revision: 'set_seed_1',
+      },
+    }));
+    const page = {
+      evaluate: vi.fn().mockResolvedValue(JSON.stringify({ state: { token: 'mock_token' } })),
+      request: {
+        get,
+        patch,
+      },
+    } as unknown as Parameters<typeof createInternalAgentTaskRunnerViaApi>[0];
+
+    try {
+      await createInternalAgentTaskRunnerViaApi(page, {
+        workspaceId: 'ws_default',
+        projectId: 'proj_1',
+        endpointId: 'ep_task',
+        title: 'internal-sandbox-reclaim',
+        image: 'internal-runner:test',
+        idleTimeoutSec: 180,
+        maxLifetimeSec: 3600,
+      });
+
+      expect(upsertManagedRunner).toHaveBeenCalledWith(expect.objectContaining({
+        image: 'internal-runner:test',
+        idleTimeoutSec: 180,
+        maxLifetimeSec: 3600,
+      }));
+    } finally {
+      if (previousMongoUrl === undefined) {
+        delete process.env.MONGO_URL;
+      } else {
+        process.env.MONGO_URL = previousMongoUrl;
+      }
+      if (previousMongoDbName === undefined) {
+        delete process.env.MONGO_DB_NAME;
+      } else {
+        process.env.MONGO_DB_NAME = previousMongoDbName;
+      }
+    }
+  });
+
+  it('bypasses reusable managed runner state when internal sandbox lifecycle overrides must be applied', async () => {
+    const tempRoot = await mkdtemp(path.join(tmpdir(), 'internal-runner-lifecycle-state-'));
+    const summaryFile = path.join(tempRoot, 'summary.env');
+    const previousSummaryFile = process.env.BACKEND_REAL_SUMMARY_FILE;
+    const previousRunnerId = process.env.AGENT_RUNNER_ID;
+    const previousMongoUrl = process.env.MONGO_URL;
+    const previousMongoDbName = process.env.MONGO_DB_NAME;
+    await writeFile(summaryFile, [
+      'AGENT_RUNNER_ID=ag_reusable_but_wrong_lifecycle',
+      'AGENT_RUNNER_PROVIDER=managed',
+      '',
+    ].join('\n'));
+    process.env.BACKEND_REAL_SUMMARY_FILE = summaryFile;
+    process.env.MONGO_URL = 'mongodb://mbos:mbos_dev_password@localhost:17017/admin';
+    process.env.MONGO_DB_NAME = 'mbos';
+    delete process.env.AGENT_RUNNER_ID;
+    upsertManagedRunner.mockResolvedValue({
+      runnerId: 'ag_runner_internal_reseeded',
+      runnerName: 'internal-sandbox-reclaim',
+      status: 'ready',
+      isDefault: true,
+      defaultEndpointId: 'ep_task',
+      capabilities: {},
+      diagnostics: { presence: 'managed' },
+      wsUrl: 'ws://127.0.0.1:20000/agent-runner/ws',
+    });
+    const get = vi.fn().mockImplementation(async (url: string) => {
+      if (url.endsWith('/agent-runners/ag_reusable_but_wrong_lifecycle')) {
+        throw new Error(`lifecycle_override_should_not_reuse_summary_runner:${url}`);
+      }
+      if (url.endsWith('/agent-task-model-setting')) {
+        return okResponse({ readiness: { state: 'not_configured' } });
+      }
+      throw new Error(`unexpected_get:${url}`);
+    });
+    const patch = vi.fn().mockResolvedValue(okResponse({
+      setting: {
+        endpoint_id: 'ep_task',
+        default_model: 'seed-model',
+        setting_revision: 'set_seed_1',
+      },
+    }));
+    const page = {
+      evaluate: vi.fn().mockResolvedValue(JSON.stringify({ state: { token: 'mock_token' } })),
+      request: { get, patch },
+    } as unknown as Parameters<typeof createInternalAgentTaskRunnerViaApi>[0];
+
+    try {
+      await createInternalAgentTaskRunnerViaApi(page, {
+        workspaceId: 'ws_default',
+        projectId: 'proj_1',
+        endpointId: 'ep_task',
+        title: 'internal-sandbox-reclaim',
+        idleTimeoutSec: 180,
+        maxLifetimeSec: 3600,
+      });
+
+      expect(upsertManagedRunner).toHaveBeenCalledWith(expect.objectContaining({
+        idleTimeoutSec: 180,
+        maxLifetimeSec: 3600,
+      }));
+      expect(get).not.toHaveBeenCalledWith(
+        expect.stringContaining('/agent-runners/ag_reusable_but_wrong_lifecycle'),
+        expect.any(Object),
+      );
+    } finally {
+      if (previousSummaryFile === undefined) {
+        delete process.env.BACKEND_REAL_SUMMARY_FILE;
+      } else {
+        process.env.BACKEND_REAL_SUMMARY_FILE = previousSummaryFile;
+      }
+      if (previousRunnerId === undefined) {
+        delete process.env.AGENT_RUNNER_ID;
+      } else {
+        process.env.AGENT_RUNNER_ID = previousRunnerId;
+      }
+      if (previousMongoUrl === undefined) {
+        delete process.env.MONGO_URL;
+      } else {
+        process.env.MONGO_URL = previousMongoUrl;
+      }
+      if (previousMongoDbName === undefined) {
+        delete process.env.MONGO_DB_NAME;
+      } else {
+        process.env.MONGO_DB_NAME = previousMongoDbName;
+      }
+      await rm(tempRoot, { recursive: true, force: true });
     }
   });
 
@@ -1709,6 +1928,255 @@ describe('integration-real-helpers', () => {
     expect(payload).not.toHaveProperty('content');
     expect(payload).not.toHaveProperty('agent_id');
     expect(payload).not.toHaveProperty('runner_id');
+  });
+
+  it('evaluates completed current-run runner output when the activity projection id differs from the run response id', () => {
+    const outcome = evaluateAgentTaskExecutionSnapshot({
+      token: 'MANAGED_T2_OK',
+      runnerOutputActivityId: 'activity_from_run_response',
+      runId: 'run_current',
+      minRunnerOutputs: 2,
+      activity: [
+        { id: 'activity_user_1', kind: 'user_intent', actor: 'user', content: 'first request' },
+        {
+          id: 'activity_runner_1',
+          kind: 'runner_output',
+          actor: 'runner',
+          content: 'first answer MANAGED_T1_OK',
+          run_id: 'run_previous',
+        },
+        { id: 'activity_user_2', kind: 'user_intent', actor: 'user', content: 'second request' },
+        {
+          id: 'activity_projected_current',
+          kind: 'runner_output',
+          actor: 'runner',
+          content: 'final answer MANAGED_T2_OK',
+          run_id: 'run_current',
+        },
+      ],
+      traces: [
+        {
+          message_id: 'activity_projected_current',
+          run_id: 'run_current',
+          category: 'progress',
+          phase: 'completed',
+          status: 'completed',
+          name: 'run.completed',
+          summary: 'codex exited with code 0',
+        },
+      ],
+      task: {
+        run_state: 'idle',
+        active_run: null,
+        run_status: 'completed',
+      },
+    });
+
+    expect(outcome).toMatchObject({
+      success: true,
+      failure: false,
+      activityHasToken: true,
+      artifactHasToken: false,
+      latestRunnerOutput: 'final answer MANAGED_T2_OK',
+      latestTraceSummary: 'codex exited with code 0',
+    });
+  });
+
+  it('keeps terminal trace failures scoped to the current run when activity ids differ', () => {
+    const outcome = evaluateAgentTaskExecutionSnapshot({
+      token: 'EXPECTED_TOKEN',
+      runnerOutputActivityId: 'activity_from_run_response',
+      runId: 'run_current',
+      activity: [
+        {
+          id: 'activity_projected_current',
+          kind: 'runner_output',
+          actor: 'runner',
+          content: '',
+          run_id: 'run_current',
+        },
+      ],
+      traces: [
+        {
+          message_id: 'activity_projected_current',
+          run_id: 'run_current',
+          category: 'error',
+          phase: 'end',
+          status: 'error',
+          name: 'execution.terminal',
+          summary: 'agent_task_runner_mode_invalid:missing',
+        },
+      ],
+      task: { run_state: 'running' },
+    });
+
+    expect(outcome).toMatchObject({
+      success: false,
+      failure: true,
+      reason: 'terminal_trace_failure',
+      activityHasToken: false,
+    });
+  });
+
+  it('does not mark a current-run completed output successful when the token is absent', () => {
+    const outcome = evaluateAgentTaskExecutionSnapshot({
+      token: 'EXPECTED_TOKEN',
+      runnerOutputActivityId: 'activity_from_run_response',
+      runId: 'run_current',
+      activity: [
+        {
+          id: 'activity_projected_current',
+          kind: 'runner_output',
+          actor: 'runner',
+          content: 'completed without the expected marker',
+          run_id: 'run_current',
+        },
+      ],
+      traces: [
+        {
+          message_id: 'activity_projected_current',
+          run_id: 'run_current',
+          category: 'progress',
+          phase: 'completed',
+          status: 'completed',
+          name: 'run.completed',
+          summary: 'codex exited with code 0',
+        },
+      ],
+      task: {
+        run_state: 'idle',
+        active_run: null,
+        run_status: 'completed',
+      },
+    });
+
+    expect(outcome).toMatchObject({
+      success: false,
+      failure: false,
+      activityHasToken: false,
+    });
+  });
+
+  it('does not accept a runner output id match from a different run when run_id identifies the current run', () => {
+    const outcome = evaluateAgentTaskExecutionSnapshot({
+      token: 'EXPECTED_TOKEN',
+      runnerOutputActivityId: 'activity_from_run_response',
+      runId: 'run_current',
+      minRunnerOutputs: 2,
+      activity: [
+        {
+          id: 'activity_from_run_response',
+          kind: 'runner_output',
+          actor: 'runner',
+          content: 'historical EXPECTED_TOKEN',
+          run_id: 'run_previous',
+        },
+        {
+          id: 'activity_projected_current',
+          kind: 'runner_output',
+          actor: 'runner',
+          content: 'current run completed without marker',
+          run_id: 'run_current',
+        },
+      ],
+      traces: [
+        {
+          message_id: 'activity_projected_current',
+          run_id: 'run_current',
+          category: 'progress',
+          phase: 'completed',
+          status: 'completed',
+          name: 'run.completed',
+          summary: 'codex exited with code 0',
+        },
+      ],
+      task: {
+        run_state: 'idle',
+        active_run: null,
+        run_status: 'completed',
+      },
+    });
+
+    expect(outcome).toMatchObject({
+      success: false,
+      failure: false,
+      activityHasToken: false,
+      latestRunnerOutput: 'current run completed without marker',
+    });
+  });
+
+  it('waits for runner output tokens using run_id when the activity projection id differs from the run response id', async () => {
+    const traceRequests: string[] = [];
+    const get = vi.fn().mockImplementation(async (url: string) => {
+      if (url.includes('/activity')) {
+        return okResponse([
+          { id: 'activity_user_1', kind: 'user_intent', actor: 'user', content: 'first request' },
+          {
+            id: 'activity_runner_1',
+            kind: 'runner_output',
+            actor: 'runner',
+            content: 'first answer MANAGED_T1_OK',
+            run_id: 'run_previous',
+          },
+          { id: 'activity_user_2', kind: 'user_intent', actor: 'user', content: 'second request' },
+          {
+            id: 'activity_projected_current',
+            kind: 'runner_output',
+            actor: 'runner',
+            content: 'final answer MANAGED_T2_OK',
+            run_id: 'run_current',
+          },
+        ]);
+      }
+      if (url.includes('/traces?')) {
+        traceRequests.push(url);
+        return okResponse({
+          items: [
+            {
+              message_id: 'activity_projected_current',
+              run_id: 'run_current',
+              category: 'progress',
+              phase: 'completed',
+              status: 'completed',
+              name: 'run.completed',
+              summary: 'codex exited with code 0',
+            },
+          ],
+        });
+      }
+      if (url.endsWith('/tasks/task_1')) {
+        return okResponse({
+          id: 'task_1',
+          run_state: 'idle',
+          active_run: null,
+          run_status: 'completed',
+        });
+      }
+      throw new Error(`unexpected_get:${url}`);
+    });
+    const page = {
+      evaluate: vi.fn().mockResolvedValue(JSON.stringify({ state: { token: 'mock_token' } })),
+      request: { get },
+      waitForTimeout: vi.fn().mockImplementation(
+        () => new Promise<void>((resolve) => setTimeout(resolve, 1)),
+      ),
+    } as unknown as Parameters<typeof waitForRunnerOutputToken>[0]['page'];
+
+    await expect(waitForRunnerOutputToken({
+      page,
+      workspaceId: 'ws_default',
+      projectId: 'proj_1',
+      taskId: 'task_1',
+      token: 'MANAGED_T2_OK',
+      runnerOutputActivityId: 'activity_from_run_response',
+      runId: 'run_current',
+      minRunnerOutputs: 2,
+      timeoutMs: 5,
+    })).resolves.toBeUndefined();
+
+    expect(page.waitForTimeout).not.toHaveBeenCalled();
+    expect(traceRequests[0]).toContain('run_id=run_current');
+    expect(traceRequests[0]).not.toContain('message_id=activity_from_run_response');
   });
 
   it('fast-fails runner output token waits on runner error traces with trace summary context', async () => {

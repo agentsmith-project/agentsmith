@@ -1,4 +1,4 @@
-import { beforeEach, describe, it, expect, vi } from 'vitest';
+import { afterEach, beforeEach, describe, it, expect, vi } from 'vitest';
 import * as React from 'react';
 import { act, renderHook, waitFor } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
@@ -92,7 +92,7 @@ import {
   useRunFileLibraryRestore,
 } from '../use-file-library-recovery';
 import { toast } from '@/components/ui/toast';
-import { handleErrorForToast } from '@/lib/api/errors';
+import { APIError, handleErrorForToast } from '@/lib/api/errors';
 
 const workspaceId = 'ws_test';
 const projectId = 'proj_test';
@@ -119,6 +119,10 @@ describe('file library recovery hooks', () => {
     vi.clearAllMocks();
   });
 
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
   it('lists save points for one file library', async () => {
     mockListSavePoints.mockResolvedValueOnce({
       items: [
@@ -143,6 +147,91 @@ describe('file library recovery hooks', () => {
       id: 'sp_1',
       message: 'Before edits',
     });
+  });
+
+  it('automatically retries save-point lists while the file library operation is pending', async () => {
+    vi.useFakeTimers();
+    mockListSavePoints
+      .mockRejectedValueOnce(new APIError(
+        'FILE_LIBRARY_OPERATION_PENDING',
+        'file_library_operation_pending',
+      ))
+      .mockResolvedValueOnce({
+        items: [
+          {
+            id: 'sp_after_pending',
+            file_library_id: libraryId,
+            message: 'After pending operation',
+            created_at: '2026-05-09T12:30:00.000Z',
+          },
+        ],
+      });
+
+    const { Wrapper } = createTestHarness();
+    const { result } = renderHook(
+      () => useFileLibrarySavePoints(workspaceId, projectId, libraryId),
+      { wrapper: Wrapper },
+    );
+
+    await act(async () => {
+      await vi.waitFor(() => expect(result.current.isError).toBe(true));
+    });
+    expect(mockListSavePoints).toHaveBeenCalledTimes(1);
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(2_000);
+      await Promise.resolve();
+    });
+
+    await act(async () => {
+      await vi.waitFor(() => expect(result.current.isSuccess).toBe(true));
+    });
+    expect(mockListSavePoints).toHaveBeenCalledTimes(2);
+    expect(result.current.data?.items[0]).toMatchObject({
+      id: 'sp_after_pending',
+      message: 'After pending operation',
+    });
+  });
+
+  it('keeps cached save points visible when a later refresh reports operation pending', async () => {
+    mockListSavePoints
+      .mockResolvedValueOnce({
+        items: [
+          {
+            id: 'sp_cached',
+            file_library_id: libraryId,
+            message: 'Before delete',
+            created_at: '2026-05-09T12:00:00.000Z',
+          },
+        ],
+      })
+      .mockRejectedValueOnce(new APIError(
+        'FILE_LIBRARY_OPERATION_PENDING',
+        'file_library_operation_pending',
+      ));
+
+    const { Wrapper } = createTestHarness();
+    const { result } = renderHook(
+      () => useFileLibrarySavePoints(workspaceId, projectId, libraryId),
+      { wrapper: Wrapper },
+    );
+
+    await waitFor(() => expect(result.current.isSuccess).toBe(true));
+    expect(result.current.data?.items[0]).toMatchObject({
+      id: 'sp_cached',
+      message: 'Before delete',
+    });
+
+    await act(async () => {
+      await result.current.refetch();
+    });
+
+    expect(mockListSavePoints).toHaveBeenCalledTimes(2);
+    expect(result.current.data?.items[0]).toMatchObject({
+      id: 'sp_cached',
+      message: 'Before delete',
+    });
+    expect(result.current.isError).toBe(false);
   });
 
   it('loads active restore preview projection for one file library', async () => {

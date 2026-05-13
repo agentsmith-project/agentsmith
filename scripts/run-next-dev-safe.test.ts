@@ -52,6 +52,47 @@ exit 0
   return { rootDir, fakeBin };
 }
 
+function runNodeOptionsProbe(envOverrides: Record<string, string>): {
+  nodeOptions: string;
+  profile: string;
+} {
+  const { rootDir, fakeBin } = setupTempRoot();
+  const nodeOptionsLog = path.join(rootDir, 'node-options.log');
+  const profileLog = path.join(rootDir, 'profile.log');
+
+  writeFileSync(
+    path.join(fakeBin, 'next'),
+    `#!/usr/bin/env bash
+set -euo pipefail
+printf '%s\\n' "\${NODE_OPTIONS:-}" > "${nodeOptionsLog}"
+printf '%s\\n' "\${NEXT_DEV_MEMORY_PROFILE:-}" > "${profileLog}"
+exit 0
+`,
+    { mode: 0o755 },
+  );
+
+  execFileSync('bash', [path.join(process.cwd(), 'scripts/run-next-dev-safe.sh')], {
+    cwd: rootDir,
+    env: {
+      ...process.env,
+      ROOT_DIR: rootDir,
+      PATH: `${fakeBin}:${process.env.PATH ?? ''}`,
+      NODE_OPTIONS: '',
+      NEXT_DEV_LOCAL_MAX_OLD_SPACE_SIZE: '',
+      NEXT_DEV_MEMORY_PROFILE: '',
+      NEXT_DEV_VALIDATION_MAX_OLD_SPACE_SIZE: '',
+      NEXT_MAX_OLD_SPACE_SIZE: '',
+      ...envOverrides,
+    },
+    stdio: 'pipe',
+  });
+
+  return {
+    nodeOptions: readFileSync(nodeOptionsLog, 'utf8').trim(),
+    profile: readFileSync(profileLog, 'utf8').trim(),
+  };
+}
+
 function installProbeRaceHook(args: {
   rootDir: string;
   restoredTsconfig?: string;
@@ -252,6 +293,29 @@ next_generated_root_final_reconcile_source_contract() {
 }
 
 describe('run-next-dev-safe', () => {
+  it('keeps the interactive heap default while validation lanes raise the restart threshold', () => {
+    const interactive = runNodeOptionsProbe({});
+    const validation = runNodeOptionsProbe({
+      NEXT_DEV_MEMORY_PROFILE: 'validation',
+    });
+
+    expect(interactive.profile).toBe('interactive');
+    expect(interactive.nodeOptions).toBe('--max-old-space-size=4096');
+    expect(validation.profile).toBe('validation');
+    expect(validation.nodeOptions).toBe('--max-old-space-size=12288');
+  });
+
+  it('lets validation callers override the Next dev heap ceiling explicitly', () => {
+    const probe = runNodeOptionsProbe({
+      NEXT_DEV_MEMORY_PROFILE: 'validation',
+      NEXT_MAX_OLD_SPACE_SIZE: '16384',
+      NODE_OPTIONS: '--trace-warnings',
+    });
+
+    expect(probe.profile).toBe('validation');
+    expect(probe.nodeOptions).toBe('--trace-warnings --max-old-space-size=16384');
+  });
+
   it('does not normalize root files unless NEXT_GENERATED_ROOT_MANAGED=1', () => {
     const { rootDir, fakeBin } = setupTempRoot();
 

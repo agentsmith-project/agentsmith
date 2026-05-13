@@ -40,6 +40,8 @@ const gateManifestContract = read('docs/contracts/current-gate-manifest-contract
 const gateResultContract = read('docs/contracts/current-gate-result-schema-contract.md');
 const productTerminology = read('docs/contracts/product-terminology.md');
 const releaseLocalPrecheck = read('scripts/run-release-local-precheck.sh');
+const integrationE2EFull = read('scripts/run-integration-e2e-full.sh');
+const internalAgentTaskRealGate = read('scripts/run-internal-agent-task-real-gate.sh');
 const playwrightConfig = read('playwright.config.ts');
 const makefile = read('Makefile');
 const contractsCheckWorkflow = read('.github/workflows/contracts-check.yml');
@@ -413,6 +415,46 @@ requireMatch(
   releaseLocalPrecheck,
   /PUBLIC_API_BASE_URL="\$\{PUBLIC_API_BASE_URL:-\$\{INTEGRATION_API_BASE\}\/api\/v1\}"/,
   'release-local-precheck must pass a trusted PUBLIC_API_BASE_URL when starting the local API for agent websocket/resource proxy flows',
+);
+requireMatch(
+  releaseLocalPrecheck,
+  /MONGO_PORT="\$\{MONGO_PORT:-\$\{INTEGRATION_MONGO_PORT:-17017\}\}"/,
+  'release-local-precheck must derive Mongo port from the backend-real integration port before constructing MONGO_URL',
+);
+requireMatch(
+  releaseLocalPrecheck,
+  /KEYCLOAK_PORT="\$\{KEYCLOAK_PORT:-\$\{INTEGRATION_KEYCLOAK_PORT:-18080\}\}"/,
+  'release-local-precheck must derive Keycloak port from the backend-real integration port',
+);
+requireMatch(
+  releaseLocalPrecheck,
+  /BASE_URL="\$\{PLAYWRIGHT_BASE_URL\}"[\s\S]*INTEGRATION_API_BASE="\$\{INTEGRATION_API_BASE\}"[\s\S]*MONGO_URL="\$\{MONGO_URL\}"[\s\S]*MONGO_DB_NAME="\$\{MONGO_DB_NAME\}"[\s\S]*run_clean npx playwright test[\s\S]*e2e\/integration-workspace-settings-directory\.spec\.ts/,
+  'release-local-precheck must pass Mongo env to its direct Playwright precheck process',
+);
+forbidMatch(
+  releaseLocalPrecheck,
+  /run_clean npx playwright test[\s\S]*e2e\/integration-agent-task-runner\.spec\.ts/,
+  'release-local-precheck must not run Agent Task backend-real directly in its lightweight API/Web stack',
+);
+requireMatch(
+  releaseLocalPrecheck,
+  /run_agent_task_backend_real_precheck\(\)[\s\S]*INTEGRATION_POSTGRES_PORT="\$\{POSTGRES_PORT\}"[\s\S]*INTEGRATION_MONGO_PORT="\$\{MONGO_PORT\}"[\s\S]*MONGO_URL="\$\{MONGO_URL\}"[\s\S]*AFSCP_BASE_URL="\$\{afscp_base_url\}"[\s\S]*bash scripts\/run-internal-agent-task-real-gate\.sh --skills-runtime/,
+  'release-local-precheck must delegate Agent Task backend-real coverage to the internal owner gate with explicit substrate and AFSCP env',
+);
+requireMatch(
+  integrationE2EFull,
+  /"\$\{PLAYWRIGHT_BASE_URL\}\/api\/test\/system\/workspaces\/seed"[\s\S]*gate_record_preflight_check "\$\{INTEGRATION_LOG_DIR\}" "web_test_routes" "passed"/,
+  'run-integration-e2e-full must verify web test routes before Playwright so BASE_URL cannot silently target a stale/manual web server',
+);
+requireMatch(
+  internalAgentTaskRealGate,
+  /resolve_internal_spec_port_pair\(\)[\s\S]*INTERNAL_REAL_SPEC_WEB_PORT_BASE:-33000[\s\S]*run_internal_spec_grep e2e\/integration-context-store-isolation\.spec\.ts "member context stays private between workspace members" 23079 33079/,
+  'internal Agent Task real gate must allocate isolated Context Store ports away from local-manual web defaults',
+);
+forbidMatch(
+  internalAgentTaskRealGate,
+  /run_internal_spec_grep e2e\/integration-context-store-isolation\.spec\.ts "member context stays private between workspace members" 20079 3101/,
+  'internal Agent Task real gate must not run nested Context Store isolation on local-manual web port 3101',
 );
 
 const defaultMockE2EScript = packageJson.scripts?.['test:e2e'];

@@ -143,6 +143,11 @@ Keycloak through explicit service/endpoint bindings or verified DNS semantics.
 Selectorless `Service` plus `EndpointSlice` / `Endpoints` is the default for
 port-specific health and diagnostics.
 
+AFSCP deployment owns only the AFSCP image, Service, worker, and export gateway
+surface. Internal storage-engine binaries such as JVS are packaged and verified
+by the AFSCP image/release; AgentSmith deploy manifests must not configure their
+paths, hashes, working directories, or runtime control settings.
+
 For Docker substrate binding, `SUBSTRATE_*_PORT` in substrate truth is the
 Docker/external target port used by the `EndpointSlice`. The Kubernetes
 `Service` port remains the dependency native port: PostgreSQL `5432`, MongoDB

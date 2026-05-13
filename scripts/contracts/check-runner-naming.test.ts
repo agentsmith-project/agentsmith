@@ -294,9 +294,7 @@ describe("check-runner-naming contract", () => {
         /integration-system-notebook-default\.spec\.ts|integration-internal-notebook-workspace\.spec\.ts/,
       );
     }
-    expect(agentTaskSmokeGate).toMatch(
-      /run-integration-e2e-full\.sh e2e\/integration-agent-task-runner\.spec\.ts/,
-    );
+    expect(agentTaskSmokeGate).toMatch(/run-internal-agent-task-real-gate\.sh/);
     expect(
       existsSync(
         path.join(root, "e2e/integration-agent-task-external.spec.ts"),

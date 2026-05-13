@@ -3,6 +3,7 @@ import { InMemoryJsonDocStore } from '@mbos/adapters-private';
 import {
   buildFileLibraryRecord,
   JsonDocFileLibraryRestorePreviewRepo,
+  JsonDocFileLibrarySavePointMappingRepo,
   JsonDocProjectFileLibraryCatalogRepo,
 } from './file-library-persistence.js';
 
@@ -251,5 +252,42 @@ describe('file-library-persistence catalog schema', () => {
       blockers: [],
       stale: false,
     });
+  });
+
+  it('classifies restore preview fence save points synced from AFSCP as internal records', async () => {
+    const docStore = new InMemoryJsonDocStore();
+    const repo = new JsonDocFileLibrarySavePointMappingRepo(
+      docStore,
+      () => '2026-05-09T12:00:00.000Z',
+    );
+
+    const syncedFence = await repo.upsertFromAfscp({
+      workspaceId: 'ws_default',
+      projectId: 'proj_1',
+      libraryId: 'flib_restore',
+      afscpSavePointId: 'sp_restore_preview_fence',
+      message: 'Restore preview current state',
+      createdAt: '2026-05-09T00:00:00.000Z',
+    });
+    await repo.upsertFromAfscp({
+      workspaceId: 'ws_default',
+      projectId: 'proj_1',
+      libraryId: 'flib_restore',
+      afscpSavePointId: 'sp_user_visible',
+      message: 'Before restore',
+      createdAt: '2026-05-09T00:01:00.000Z',
+    });
+
+    expect(syncedFence.purpose).toBe('restore_preview_fence');
+    await expect(repo.listByLibrary({
+      workspaceId: 'ws_default',
+      projectId: 'proj_1',
+      libraryId: 'flib_restore',
+    })).resolves.toEqual([
+      expect.objectContaining({
+        afscp_save_point_id: 'sp_user_visible',
+        purpose: 'user',
+      }),
+    ]);
   });
 });

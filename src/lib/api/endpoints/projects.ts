@@ -8,7 +8,6 @@ import type { Project, ProjectListResponse, ProjectWithMembership, PaginationPar
 import type { ApiClient } from '../client';
 
 export interface CreateProjectRequest {
-  workspace_id: string;
   name: string;
   description?: string;
   visibility?: 'public' | 'private';

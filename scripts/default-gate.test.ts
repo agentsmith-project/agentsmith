@@ -128,8 +128,10 @@ describe('default engineering gate profiles', () => {
     const script = readFileSync('scripts/default-gate.sh', 'utf8');
 
     expect(script).toContain('DEFAULT_GATE_PROFILE="${DEFAULT_GATE_PROFILE:-standalone}"');
+    expect(script).toContain('DEFAULT_GATE_REUSE_FAST_EVIDENCE="${DEFAULT_GATE_REUSE_FAST_EVIDENCE:-0}"');
     expect(script).toContain('--campaign-after-gate-fast');
     expect(script).toContain('standalone|fast|campaign_after_gate_fast');
+    expect(script).toContain('reuse_gate_fast_evidence()');
     expect(script).toContain('run_pure_check_cmd "contracts" "npm run contracts:check"');
     expect(script).toContain('run_pure_check_cmd "openapi-contract" "npm run contracts:check-openapi"');
     expect(script).toContain('run_pure_check_cmd "openapi-generated" "npm run openapi:check-generated"');
@@ -140,6 +142,18 @@ describe('default engineering gate profiles', () => {
     expect(script).toContain('run_cmd "npm run build"');
     expect(script).toContain('run_cmd "npm run test:e2e:lane:mock:smoke"');
     expect(script).toContain('if [[ "${DEFAULT_GATE_PROFILE}" == "fast" ]]; then');
+  });
+
+  it('reuses gate:fast evidence only for the campaign profile or an explicit reuse env', () => {
+    const script = readFileSync('scripts/default-gate.sh', 'utf8');
+
+    expect(script).toContain('[[ "${DEFAULT_GATE_PROFILE}" != "fast" ]]');
+    expect(script).toContain('[[ "${DEFAULT_GATE_PROFILE}" == "campaign_after_gate_fast" ]] || [[ "${DEFAULT_GATE_REUSE_FAST_EVIDENCE}" == "1" ]]');
+    expect(script).toContain('reusing gate:fast evidence; skipping contracts/openapi/lint/typegen/typecheck/build');
+    expect(script).toContain('bash scripts/workspace-project-default-gate.sh --skip-shared-preflight --skip-focused-visual');
+    expect(script).toContain('bash scripts/governance-default-gate.sh --skip-shared-preflight --skip-focused-visual');
+    expect(script).toContain('bash scripts/workspace-project-default-gate.sh --skip-shared-preflight"');
+    expect(script).toContain('bash scripts/governance-default-gate.sh --skip-shared-preflight"');
   });
 
   it('wraps only shared pure checks with producer evidence in default-gate', () => {

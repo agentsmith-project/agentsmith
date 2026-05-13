@@ -92,8 +92,8 @@ import {
 import {
   createAndCloneTaskFileTemplateLibrary,
   createAndProvisionProjectFileLibrary,
+  DEFAULT_FILE_LIBRARY_PROJECT_STORAGE_READY_WAIT,
   mapFileLibraryInfraError,
-  type ProjectStorageReadyWaitOptions,
 } from './project-file-library-service.js';
 import { isAgentExecutionTicket, issueInternalTicket, type ResolvedInternalTicket } from './internal-ticket-store.js';
 import {
@@ -235,10 +235,6 @@ const NOTEBOOK_RUN_LEASE_HEARTBEAT_MS = 15_000;
 const NOTEBOOK_RUN_CANCEL_POLL_MS = 1_000;
 const NOTEBOOK_RUN_OWNER_STALE_AFTER_MS = (NOTEBOOK_RUN_LEASE_HEARTBEAT_MS * 2) + 5_000;
 const TASK_WORKSPACE_ACCESS_LEASE_TTL_MS = 5 * 60 * 1000;
-const TASK_CREATE_PROJECT_STORAGE_READY_WAIT: ProjectStorageReadyWaitOptions = {
-  timeoutMs: 15_000,
-  intervalMs: 250,
-};
 
 function createTaskRouteRequestAbortSignal(
   req: http.IncomingMessage,
@@ -2887,7 +2883,7 @@ export async function handleTaskRoute(args: TaskRouteHandlerArgs): Promise<boole
           description: `Auto-initialized workspace for notebook task "${title}".`,
           requestId,
           projectStorageReadyWait: {
-            ...TASK_CREATE_PROJECT_STORAGE_READY_WAIT,
+            ...DEFAULT_FILE_LIBRARY_PROJECT_STORAGE_READY_WAIT,
             signal: requestAbort.signal,
           },
         });
@@ -2915,7 +2911,7 @@ export async function handleTaskRoute(args: TaskRouteHandlerArgs): Promise<boole
           description: `Auto-initialized workspace for notebook task "${title}" from template "${taskFileTemplate.name}".`,
           requestId,
           projectStorageReadyWait: {
-            ...TASK_CREATE_PROJECT_STORAGE_READY_WAIT,
+            ...DEFAULT_FILE_LIBRARY_PROJECT_STORAGE_READY_WAIT,
             signal: requestAbort.signal,
           },
         });
@@ -2946,29 +2942,6 @@ export async function handleTaskRoute(args: TaskRouteHandlerArgs): Promise<boole
         file_library_id: workspaceFileLibrary.id,
       });
       return true;
-    }
-    if (
-      effectiveWorkspaceMode === 'use_existing'
-      && !(await actorHasProjectPermissions({
-        deps,
-        workspaceId: route.workspaceId,
-        projectId: route.projectId,
-        actorUserId: user.id,
-        requiredPermissions: ['project:files:update'],
-      }))
-    ) {
-      const projectExists = await deps.getProjectUseCase.execute({
-        workspaceId: route.workspaceId,
-        projectId: route.projectId,
-      }).then(() => true, () => false);
-      if (projectExists) {
-        json(res, 403, {
-          error_code: 'FILE_LIBRARY_FORBIDDEN',
-          message: 'file_library_forbidden',
-          file_library_id: workspaceFileLibrary.id,
-        });
-        return true;
-      }
     }
     if (workspaceFileLibrary.status !== 'ready') {
       json(res, 409, {
@@ -3036,9 +3009,7 @@ export async function handleTaskRoute(args: TaskRouteHandlerArgs): Promise<boole
       workspace_file_library_id: workspaceFileLibrary.id,
       workspace_file_library_name: workspaceFileLibrary.name,
       file_library_binding_generation: undefined,
-      runtime_writable_affordance: createsNewTaskFileLibrary
-        ? 'task_internal_home'
-        : 'files_update',
+      runtime_writable_affordance: 'task_internal_home',
       status: 'active',
       attached_inputs: initialInputs,
       created_at: createdAt,

@@ -162,4 +162,56 @@ describe('managed runner seed core', () => {
     expect(patchSetting).not.toHaveBeenCalled();
     expect(storeClose).toHaveBeenCalledTimes(1);
   });
+
+  it('passes internal sandbox lifecycle config into the managed runner seed', async () => {
+    upsertManagedRunner.mockResolvedValue({ id: 'ag_managed_default_1' });
+    getAgent.mockResolvedValue({
+      id: 'ag_managed_default_1',
+      name: 'Managed Runner',
+      runner_status: 'ready',
+      is_default: true,
+      default_endpoint_id: 'ep_required',
+      capabilities: {},
+      diagnostics: {},
+    });
+    getEndpoint.mockResolvedValue({
+      id: 'ep_required',
+      workspace_id: 'ws_default',
+      project_id: 'proj_1',
+      model: 'seed-model',
+    });
+    resolveEndpointDefaultAgentTaskModel.mockReturnValue('seed-model');
+    getSetting.mockResolvedValue({
+      endpoint_id: 'ep_required',
+      default_model_id: 'seed-model',
+      setting_revision: 'set_existing',
+    });
+    buildConnectionInfo.mockReturnValue({
+      ws_url: 'ws://127.0.0.1:20000/api/v1/agent-execution/ws?agent_runner_id=ag_managed_default_1',
+    });
+
+    await upsertDeploymentDefaultManagedRunner({
+      workspaceId: 'ws_default',
+      projectId: 'proj_1',
+      endpointId: 'ep_required',
+      runnerName: 'Managed Runner',
+      mongoUrl: 'mongodb://localhost:17017/admin',
+      mongoDbName: 'mbos',
+      image: 'internal-runner:test',
+      idleTimeoutSec: 180,
+      maxLifetimeSec: 3600,
+    });
+
+    expect(upsertManagedRunner).toHaveBeenCalledWith(
+      'ws_default',
+      'proj_1',
+      expect.objectContaining({
+        config: {
+          image: 'internal-runner:test',
+          idle_timeout_sec: 180,
+          max_lifetime_sec: 3600,
+        },
+      }),
+    );
+  });
 });

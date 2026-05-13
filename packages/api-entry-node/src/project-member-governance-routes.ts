@@ -37,13 +37,17 @@ async function resolveWorkspaceMemberSnapshot(args: {
   const config = await getRegisteredWorkspaceConfig(args.workspaceId);
   const idpUrl = config?.login_idp?.url?.trim() ?? '';
   const idpRealm = config?.login_idp?.realm?.trim() ?? '';
-  if (!idpUrl || !idpRealm) {
+  const directoryClientId = config?.directory_idp?.client_id?.trim() ?? '';
+  const directoryClientSecret = config?.directory_idp?.client_secret?.trim() ?? '';
+  if (!idpUrl || !idpRealm || !directoryClientId || !directoryClientSecret) {
     return {};
   }
   try {
     const [resolved] = await resolveKeycloakDirectoryUsersByIds({
       url: idpUrl,
       realm: idpRealm,
+      clientId: directoryClientId,
+      clientSecret: directoryClientSecret,
       userIds: [args.userId],
     });
     return {

@@ -944,7 +944,7 @@ const CURRENT_WORKFLOW_RAW_MANIFEST: readonly RawCurrentWorkflowSection[] = [
       },
       {
         command: 'npm run test:agent-task:backend-real:smoke',
-        description: 'run notebook real-backend smoke verification',
+        description: 'run Agent Task real-backend smoke verification',
         canonical: 'npm',
         npmScript: 'test:agent-task:backend-real:smoke',
       },

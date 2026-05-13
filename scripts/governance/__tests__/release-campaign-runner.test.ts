@@ -424,6 +424,9 @@ exit 0
         baseEnv: {},
       });
       expect(gateDefault.DEFAULT_GATE_PROFILE).toBe('campaign_after_gate_fast');
+      expect(gateDefault.DEFAULT_GATE_REUSE_FAST_EVIDENCE).toBe('1');
+      expect(gateDefault.UNIFIED_DEPLOY_RELEASE_ROOT_DIR).toBe(join(root, 'unified-deploy'));
+      expect(gateDefault.UNIFIED_DEPLOY_RELEASE_SITE_ENV).toBe(join(root, 'unified-deploy', 'local-kind-site.env'));
 
       const visual = buildReleaseCampaignCommandEnv({
         campaignRoot: root,
@@ -444,6 +447,7 @@ exit 0
         step: releaseFullStep('gate-release'),
         baseEnv: {},
       });
+      expect(release.BACKEND_REAL_REUSE_DEFAULT_GATE_EVIDENCE).toBe('1');
       expect(release.RELEASE_REAL_VISUAL_RUN_ID).toBe(runId);
       expect(release.RELEASE_REAL_VISUAL_ARTIFACT_DIR).toBe(join(root, 'gate-release', 'backend-real-visual'));
       expect(release.RELEASE_REAL_RUN_ROOT).toBe(join(root, 'gate-release', 'backend-real-run'));
@@ -492,14 +496,16 @@ exit 0
     try {
       writeFakeNpm(fakeBin, `#!/usr/bin/env bash
 set -euo pipefail
-printf '%s|gate=%s|script=%s|mock=%s|visual=%s|release_real=%s|unified=%s\\n' \\
+printf '%s|gate=%s|script=%s|mock=%s|visual=%s|release_real=%s|unified=%s|reuse=%s|smoke_skip=%s\\n' \\
   "$*" \\
   "\${CURRENT_GATE_RESULT_GATE_ID:-}" \\
   "\${CURRENT_GATE_RESULT_NPM_SCRIPT:-}" \\
   "\${MOCK_RUN_ID:-}" \\
   "\${VISUAL_BASELINE_REVIEW_ROOT:-}" \\
   "\${RELEASE_REAL_RUN_ROOT:-}" \\
-  "\${UNIFIED_DEPLOY_RELEASE_ROOT_DIR:-}" >> "${logPath}"
+  "\${UNIFIED_DEPLOY_RELEASE_ROOT_DIR:-}" \\
+  "\${BACKEND_REAL_REUSE_DEFAULT_GATE_EVIDENCE:-}" \\
+  "\${AGENT_TASK_REAL_SMOKE_SKIP_SHARED_PREFLIGHT:-}" >> "${logPath}"
 if [[ "$1" == "run" && "$2" == "gate:fast" ]]; then
   exit 0
 fi
@@ -524,6 +530,8 @@ exit 0
         VISUAL_BASELINE_REVIEW_ROOT: '/tmp/stale-visual-review',
         RELEASE_REAL_RUN_ROOT: '/tmp/stale-release-real',
         UNIFIED_DEPLOY_RELEASE_ROOT_DIR: '/tmp/stale-unified-deploy',
+        BACKEND_REAL_REUSE_DEFAULT_GATE_EVIDENCE: 'stale-backend-reuse',
+        AGENT_TASK_REAL_SMOKE_SKIP_SHARED_PREFLIGHT: 'stale-smoke-skip',
       });
 
       const log = readFileSync(logPath, 'utf8');
@@ -539,7 +547,9 @@ exit 0
       expect(terminalLine).not.toContain('stale-visual-review');
       expect(terminalLine).not.toContain('stale-release-real');
       expect(terminalLine).not.toContain('stale-unified-deploy');
-      expect(terminalLine).toBe('run gate:release:full|gate=|script=|mock=|visual=|release_real=|unified=');
+      expect(terminalLine).not.toContain('stale-backend-reuse');
+      expect(terminalLine).not.toContain('stale-smoke-skip');
+      expect(terminalLine).toBe('run gate:release:full|gate=|script=|mock=|visual=|release_real=|unified=|reuse=|smoke_skip=');
     } finally {
       rmSync(root, { recursive: true, force: true });
       rmSync(fakeBin, { recursive: true, force: true });

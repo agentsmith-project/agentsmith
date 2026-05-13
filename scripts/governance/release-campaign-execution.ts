@@ -88,6 +88,11 @@ type StepLeaseResult = AcquiredLeases | LeaseConflict;
 
 const STEP_SPECIFIC_AGGREGATE_ENV_KEYS = [
   'DEFAULT_GATE_PROFILE',
+  'DEFAULT_GATE_REUSE_FAST_EVIDENCE',
+  'WORKSPACE_PROJECT_DEFAULT_GATE_SKIP_FOCUSED_VISUAL',
+  'GOVERNANCE_DEFAULT_GATE_SKIP_FOCUSED_VISUAL',
+  'BACKEND_REAL_REUSE_DEFAULT_GATE_EVIDENCE',
+  'AGENT_TASK_REAL_SMOKE_SKIP_SHARED_PREFLIGHT',
   'MOCK_RUN_ID',
   'VISUAL_BASELINE_REVIEW_ROOT',
   'RELEASE_REAL_VISUAL_RUN_ID',
@@ -290,6 +295,10 @@ export function buildReleaseCampaignCommandEnv(
 
   if (input.step.id === 'gate-default') {
     env.DEFAULT_GATE_PROFILE = 'campaign_after_gate_fast';
+    env.DEFAULT_GATE_REUSE_FAST_EVIDENCE = '1';
+    const releaseRoot = join(input.campaignRoot, 'unified-deploy');
+    env.UNIFIED_DEPLOY_RELEASE_ROOT_DIR = releaseRoot;
+    env.UNIFIED_DEPLOY_RELEASE_SITE_ENV = join(releaseRoot, 'local-kind-site.env');
   }
 
   if (input.step.id === 'lane-visual') {
@@ -299,6 +308,7 @@ export function buildReleaseCampaignCommandEnv(
 
   if (input.step.id === 'gate-release') {
     const gateReleaseDir = stepDir(input.campaignRoot, input.step);
+    env.BACKEND_REAL_REUSE_DEFAULT_GATE_EVIDENCE = '1';
     env.RELEASE_REAL_VISUAL_RUN_ID = input.runId;
     env.RELEASE_REAL_VISUAL_ARTIFACT_DIR = join(gateReleaseDir, 'backend-real-visual');
     env.RELEASE_REAL_RUN_ROOT = join(gateReleaseDir, 'backend-real-run');

@@ -887,6 +887,7 @@ export class JsonDocProjectFileLibraryCatalogRepo {
 }
 
 export type FileLibrarySavePointPurpose = 'user' | 'task_template_source' | 'restore_preview_fence';
+export const RESTORE_PREVIEW_FENCE_SAVE_POINT_MESSAGE = 'Restore preview current state';
 
 export interface FileLibrarySavePointPublicRecord {
   id: string;
@@ -1033,6 +1034,20 @@ function publicSavePoint(record: FileLibrarySavePointMappingRecord): FileLibrary
   };
 }
 
+function isRestorePreviewFenceSavePointMessage(message?: string): boolean {
+  return message?.trim() === RESTORE_PREVIEW_FENCE_SAVE_POINT_MESSAGE;
+}
+
+function resolveFileLibrarySavePointPurpose(input: {
+  purpose?: FileLibrarySavePointPurpose;
+  message?: string;
+  existingPurpose?: FileLibrarySavePointPurpose;
+}): FileLibrarySavePointPurpose {
+  if (input.purpose) return input.purpose;
+  if (isRestorePreviewFenceSavePointMessage(input.message)) return 'restore_preview_fence';
+  return input.existingPurpose ?? 'user';
+}
+
 function publicRestorePreview(record: FileLibraryRestorePreviewRecord): FileLibraryRestorePreviewPublicRecord {
   return {
     id: record.id,
@@ -1147,7 +1162,11 @@ export class JsonDocFileLibrarySavePointMappingRepo {
       project_id: input.projectId,
       library_id: input.libraryId,
       afscp_save_point_id: input.afscpSavePointId,
-      purpose: input.purpose ?? existing?.purpose ?? 'user',
+      purpose: resolveFileLibrarySavePointPurpose({
+        purpose: input.purpose,
+        message: input.message,
+        existingPurpose: existing?.purpose,
+      }),
       ...(input.message ?? existing?.message ? { message: input.message ?? existing?.message } : {}),
       created_at: input.createdAt ?? existing?.created_at ?? now,
       updated_at: now,

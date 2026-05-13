@@ -74,6 +74,23 @@
         "public": false,
         "internal_only": true
       },
+      "afscp-api": {
+        "workload": "Deployment",
+        "service": "afscp-api",
+        "public": false,
+        "internal_only": true
+      },
+      "afscp-worker": {
+        "workload": "Deployment",
+        "public": false,
+        "internal_only": true
+      },
+      "afscp-export-gateway": {
+        "workload": "Deployment",
+        "service": "afscp-export-gateway",
+        "public": false,
+        "internal_only": true
+      },
       "sandbox-manager": {
         "workload": "Deployment",
         "service": "agentsmith-sandbox-manager",
@@ -105,7 +122,9 @@
       }
     ],
     "internal_only_services": [
-      "llmup"
+      "llmup",
+      "afscp-api",
+      "afscp-export-gateway"
     ]
   },
   "guards": {
@@ -130,6 +149,7 @@
     "app": [
       "templates/app/rbac.yaml.tpl",
       "templates/app/config.yaml.tpl",
+      "templates/app/afscp.yaml.tpl",
       "templates/app/substrate-bindings.yaml.tpl",
       "templates/app/workloads.yaml.tpl",
       "templates/app/ingress.yaml.tpl"

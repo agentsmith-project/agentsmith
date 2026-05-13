@@ -61,7 +61,9 @@ async function getWorkspaceDirectoryConfig(workspaceId: string) {
   const config = await getRegisteredWorkspaceConfig(workspaceId);
   const idpUrl = config?.login_idp?.url?.trim() ?? '';
   const idpRealm = config?.login_idp?.realm?.trim() ?? '';
-  if (!idpUrl || !idpRealm) {
+  const directoryClientId = config?.directory_idp?.client_id?.trim() ?? '';
+  const directoryClientSecret = config?.directory_idp?.client_secret?.trim() ?? '';
+  if (!idpUrl || !idpRealm || !directoryClientId || !directoryClientSecret) {
     throw Object.assign(new Error('workspace_directory_not_configured'), {
       code: 'WORKSPACE_DIRECTORY_NOT_CONFIGURED',
     });
@@ -69,6 +71,8 @@ async function getWorkspaceDirectoryConfig(workspaceId: string) {
   return {
     url: idpUrl,
     realm: idpRealm,
+    clientId: directoryClientId,
+    clientSecret: directoryClientSecret,
   };
 }
 
@@ -146,6 +150,8 @@ export async function handleWorkspaceProjectCreatorsRoute(args: {
       const resolvedCreators = await resolveKeycloakDirectoryUsersByIds({
         url: directoryConfig.url,
         realm: directoryConfig.realm,
+        clientId: directoryConfig.clientId,
+        clientSecret: directoryConfig.clientSecret,
         userIds: nextCreatorIds,
       });
       await updateRegisteredWorkspaceProjectCreators(workspaceId, resolvedCreators);
@@ -237,6 +243,8 @@ export async function handleWorkspaceDirectoryUsersRoute(args: {
     const items = await searchKeycloakDirectoryUsers({
       url: directoryConfig.url,
       realm: directoryConfig.realm,
+      clientId: directoryConfig.clientId,
+      clientSecret: directoryConfig.clientSecret,
       query,
     });
     json(res, 200, { items, total: items.length });

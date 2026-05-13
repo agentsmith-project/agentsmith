@@ -374,6 +374,7 @@ prepare_internal_backend_real_gate_runtime() {
     "${INTEGRATION_MINIO_API_PORT}"
   kubectl apply -f "${EXTERNAL_DEPS_MANIFEST}" >/dev/null
 
+  ensure_internal_afscp_local_runtime
   internal_real_gate_write_sandbox_config
 }
 

@@ -39,6 +39,8 @@ const eslintConfig = [
       "node_modules/**",
       ".next/**",
       "out/**",
+      "dist/**",
+      "packages/*/dist/**",
       "artifacts/**",
       "test-results/**",
       "playwright-report/**",

@@ -1,12 +1,14 @@
-import { expect, test, type Page } from '@playwright/test';
+import { expect, test, type Page, type Response } from '@playwright/test';
 import {
   createAgentTaskViaApi,
+  createAndPublishWorkspaceWithDirectoryAdmin,
   createManagedAgentRunnerViaApi,
   startAgentTaskRunViaApi,
   waitForRunnerOutputToken,
 } from './integration-real-helpers';
 import {
   openFileLibraryRoot,
+  openFolderByName,
   waitForTaskArtifacts,
 } from './integration-governance-runtime-support';
 import { readStoredAuthToken } from './integration-workspace-access';
@@ -23,6 +25,7 @@ const BACKEND_REAL_MODEL = process.env.BACKEND_REAL_MODEL ?? 'placeholder-model'
 const BACKEND_REAL_API_KEY = process.env.BACKEND_REAL_API_KEY;
 const DEV_ADMIN_USERNAME = process.env.INTEGRATION_DEV_ADMIN_USERNAME ?? 'dev-admin';
 const DEV_ADMIN_PASSWORD = process.env.INTEGRATION_DEV_ADMIN_PASSWORD ?? 'dev-admin-123';
+const DEV_ADMIN_EMAIL = 'dev-admin@example.com';
 const PROJECT_CREATOR_USERNAME = process.env.INTEGRATION_USER_USERNAME ?? 'integration-user';
 const PROJECT_CREATOR_PASSWORD = process.env.INTEGRATION_USER_PASSWORD ?? 'integration-user-123';
 const MEMBER_USERNAME = process.env.INTEGRATION_MEMBER_USERNAME ?? 'integration-member';
@@ -70,9 +73,10 @@ function requireRealLaneApiKey(): string {
   return BACKEND_REAL_API_KEY.trim();
 }
 
-async function clearAppState(page: Page, workspaceId = 'ws_default'): Promise<void> {
+async function clearAppState(page: Page): Promise<void> {
+  await page.goto('about:blank');
   await page.context().clearCookies();
-  await page.goto(`/${LOCALE}/workspaces/${workspaceId}/login`);
+  await page.goto('/mockServiceWorker.js', { waitUntil: 'domcontentloaded' });
   await page.evaluate(async () => {
     localStorage.clear();
     sessionStorage.clear();
@@ -81,6 +85,8 @@ async function clearAppState(page: Page, workspaceId = 'ws_default'): Promise<vo
       await Promise.all(registrations.map((registration) => registration.unregister()));
     }
   });
+  await page.context().clearCookies();
+  await page.goto('about:blank');
 }
 
 async function gotoWithRetry(page: Page, pathOrUrl: string): Promise<void> {
@@ -154,52 +160,16 @@ async function loginAsSystemAdmin(page: Page): Promise<void> {
   await expect(page.getByText('Loading workspaces...')).not.toBeVisible({ timeout: 30_000 });
 }
 
-async function waitForWorkspaceId(page: Page, workspaceName: string): Promise<string> {
-  const resolveWorkspaceId = async (name: string) =>
-    page.evaluate(async (workspaceNameArg) => {
-      try {
-        const response = await fetch('/api/system/workspaces', { cache: 'no-store' });
-        const payload = (await response.json()) as { items?: Array<{ id: string; name: string }> };
-        return payload.items?.find((item) => item.name === workspaceNameArg)?.id ?? null;
-      } catch {
-        return null;
-      }
-    }, name);
-
-  await expect
-    .poll(
-      async () => resolveWorkspaceId(workspaceName),
-      { timeout: 30_000 },
-    )
-    .toBeTruthy();
-
-  const resolved = await resolveWorkspaceId(workspaceName);
-
-  if (!resolved) {
-    throw new Error('workspace_id_not_found');
-  }
-  return resolved;
-}
-
 async function createAndPublishWorkspace(page: Page): Promise<string> {
   const workspaceName = `Real Visual Workspace ${Date.now()}`;
-  await page.getByTestId('system-workspaces__new-workspace').click();
-  await page.waitForURL(new RegExp(`/${LOCALE}/system/workspaces/new$`), { timeout: 30_000 });
-  await expect(page.getByTestId('system-workspace-create__shell')).toBeVisible({ timeout: 30_000 });
-  await page.getByTestId('system-workspaces__draft-name').fill(workspaceName);
-  await page.getByTestId('system-workspace-create__next').click();
-  await page.getByTestId('system-workspaces__draft-idp-url').fill(KEYCLOAK_BASE_URL);
-  await page.getByTestId('system-workspaces__draft-idp-realm').fill(KEYCLOAK_REALM);
-  await page.getByTestId('system-workspaces__draft-idp-client-id').fill(KEYCLOAK_WORKSPACE_CLIENT_ID);
-  await verifyIdentityProvider(page);
-  await page.getByTestId('system-workspaces__admin-mode--email').click();
-  await page.getByTestId('system-workspaces__draft-admin-email').fill('dev-admin@example.com');
-  await page.getByTestId('system-workspace-create__next').click();
-  await page.getByTestId('system-workspace-create__create').click();
-
-  const workspaceId = await waitForWorkspaceId(page, workspaceName);
-  await page.getByTestId(`system-workspaces__configure--${workspaceId}`).click();
-  await page.getByTestId('system-workspaces__publish').click();
+  const workspaceId = await createAndPublishWorkspaceWithDirectoryAdmin({
+    page,
+    workspaceName,
+    keycloakBaseUrl: KEYCLOAK_BASE_URL,
+    keycloakRealm: KEYCLOAK_REALM,
+    loginClientId: KEYCLOAK_WORKSPACE_CLIENT_ID,
+    adminEmail: DEV_ADMIN_EMAIL,
+  });
   await expect(
     page.getByTestId(`system-workspaces__card--${workspaceId}`).getByTestId(`system-workspaces__open-workspace-login--${workspaceId}`),
   ).toHaveAttribute(
@@ -209,19 +179,8 @@ async function createAndPublishWorkspace(page: Page): Promise<string> {
   return workspaceId;
 }
 
-async function verifyIdentityProvider(page: Page): Promise<void> {
-  const responsePromise = page.waitForResponse(
-    (candidate) => candidate.url().includes('/api/system/workspaces/idp/verify') && candidate.request().method() === 'POST',
-    { timeout: 15_000 },
-  );
-  await page.getByTestId('system-workspace-create__next').click();
-  const response = await responsePromise;
-  expect(response.ok()).toBeTruthy();
-  await expect(page.getByTestId('system-workspaces__admin-mode--email')).toBeVisible({ timeout: 15_000 });
-}
-
 async function loginToWorkspace(page: Page, workspaceId: string, username: string, password: string): Promise<void> {
-  await clearAppState(page, workspaceId);
+  await clearAppState(page);
 
   for (let attempt = 0; attempt < 3; attempt += 1) {
     await gotoWithRetry(page, `/${LOCALE}/workspaces/${workspaceId}/login`);
@@ -264,7 +223,7 @@ async function loginToWorkspace(page: Page, workspaceId: string, username: strin
     }
 
     if (callbackError && attempt < 2) {
-      await clearAppState(page, workspaceId);
+      await clearAppState(page);
       continue;
     }
 
@@ -274,11 +233,87 @@ async function loginToWorkspace(page: Page, workspaceId: string, username: strin
   throw new Error(`workspace_login_retry_exhausted:${workspaceId}:${username}`);
 }
 
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+function truncateDiagnosticBody(value: string): string {
+  const normalized = value.replace(/\s+/g, ' ').trim();
+  if (normalized.length === 0) {
+    return '<empty>';
+  }
+  return normalized.length > 1_000 ? `${normalized.slice(0, 1_000)}...` : normalized;
+}
+
+async function readResponseBodyForDiagnostic(response: Response): Promise<string> {
+  try {
+    return await response.text();
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    return `<body_unavailable:${message}>`;
+  }
+}
+
+function directoryPayloadIncludesEmail(payload: unknown, email: string): boolean {
+  if (!isRecord(payload) || !Array.isArray(payload.items)) {
+    return false;
+  }
+
+  return payload.items.some((item) => isRecord(item) && item.email === email);
+}
+
+async function waitForProjectCreatorDirectorySearch(
+  page: Page,
+  workspaceId: string,
+  email: string,
+): Promise<Response> {
+  try {
+    return await page.waitForResponse(
+      (candidate) => {
+        if (candidate.request().method() !== 'GET') {
+          return false;
+        }
+        const url = new URL(candidate.url());
+        return url.pathname === `/api/v1/workspaces/${workspaceId}/directory/users`
+          && url.searchParams.get('query') === email;
+      },
+      { timeout: 20_000 },
+    );
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    throw new Error(
+      `workspace_project_creator_directory_search_failed:workspace=${workspaceId}:missing_email=${email}:status=no_response:body=<none>:cause=${message}`,
+    );
+  }
+}
+
+async function assertProjectCreatorDirectorySearchContainsEmail(
+  response: Response,
+  workspaceId: string,
+  email: string,
+): Promise<void> {
+  const body = await readResponseBodyForDiagnostic(response);
+  let payload: unknown = null;
+  try {
+    payload = body.trim().length > 0 ? JSON.parse(body) : null;
+  } catch {
+    payload = null;
+  }
+
+  if (!response.ok() || !directoryPayloadIncludesEmail(payload, email)) {
+    throw new Error(
+      `workspace_project_creator_directory_search_failed:workspace=${workspaceId}:missing_email=${email}:status=${response.status()}:body=${truncateDiagnosticBody(body)}`,
+    );
+  }
+}
+
 async function saveWorkspaceProjectCreators(page: Page, workspaceId: string): Promise<void> {
   await gotoWithRetry(page, `/${LOCALE}/workspaces/${workspaceId}/settings`);
   await expect(page.getByTestId('ws-settings__project-creators')).toBeVisible({ timeout: 30_000 });
   const searchInput = page.getByTestId('ws-settings__project-creators-input');
+  const directoryResponsePromise = waitForProjectCreatorDirectorySearch(page, workspaceId, PROJECT_CREATOR_EMAIL);
   await searchInput.fill(PROJECT_CREATOR_EMAIL);
+  await assertProjectCreatorDirectorySearchContainsEmail(await directoryResponsePromise, workspaceId, PROJECT_CREATOR_EMAIL);
   const creatorOption = page.getByTestId('ws-settings__project-creators-results').getByRole('button', {
     name: new RegExp(PROJECT_CREATOR_EMAIL.replace('.', '\\.')),
   });
@@ -553,7 +588,7 @@ async function captureProjectSurfaceHandoffContinuity(
     },
     {
       name: 'handoff-to-agent-tasks',
-      action: 'Switch to Agent Tasks',
+      action: 'Switch to agent-task',
       target: 'sidebar__nav-item--agent-tasks',
       notes: '从 chat 切到 Agent Tasks，继续同一个项目工作流。',
       route: `/${LOCALE}/workspaces/${context.workspaceId}/projects/${context.projectId}/agent-tasks`,
@@ -810,7 +845,12 @@ test.describe('@lane-real integration visual review', () => {
         title: `Real Visual Agent Task Runner ${Date.now()}`,
       });
       await gotoWithRetry(page, `/${LOCALE}/workspaces/${workspaceId}/projects/${project.projectId}/agent-runners`);
-      await expect(page.getByText(runnerInfo.runnerName)).toBeVisible({ timeout: 30_000 });
+      const managedRunnerRow = page
+        .getByTestId('agent-runners__system-managed-table')
+        .locator('[data-testid="agent-runners__system-managed-table__row"]')
+        .filter({ hasText: runnerInfo.runnerName });
+      await expect(managedRunnerRow).toHaveCount(1, { timeout: 30_000 });
+      await expect(managedRunnerRow.first()).toBeVisible();
       await settlePage(page);
       await capturePage(page, captures, {
         name: 'project-agent-runners-real',
@@ -893,13 +933,15 @@ test.describe('@lane-real integration visual review', () => {
         projectId: project.projectId,
         libraryName: 'Visual Review Library',
       });
+      await openFolderByName(page, 'workspace');
+      await expect(page.getByTestId('files__breadcrumb--1')).toContainText('workspace', { timeout: 30_000 });
       const artifactsRow = page.getByTestId('files__object-row').filter({ hasText: '.artifacts' }).first();
       await expect(artifactsRow).toBeVisible({ timeout: 30_000 });
       await settlePage(page);
       await capturePage(page, captures, {
         name: 'project-files-agent-task-workspace-real',
         role: 'project owner',
-        notes: 'Agent Task 绑定的文件库根目录，.artifacts 交付目录已经在 Files 页面中可见',
+        notes: 'Agent Task 绑定文件库的 workspace 目录内，.artifacts 交付目录已经在 Files 页面中可见',
       });
 
       await gotoWithRetry(page, `/${LOCALE}/workspaces/${workspaceId}/projects/${project.projectId}/usage`);

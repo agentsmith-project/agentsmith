@@ -44,11 +44,19 @@ export type UxTraceCaptureEventInput = {
   fullPage?: boolean;
 };
 
+export type UxTraceScreenshotCaptureMetadata = {
+  mode: 'full_page' | 'viewport' | 'viewport_fallback';
+  requested_full_page: boolean;
+  fallback: boolean;
+  warning_file?: string;
+};
+
 export type UxTraceEventRecord = UxTraceEventInput & {
   seq: number;
   ts: string;
   action: string;
   screenshot?: string;
+  screenshot_capture?: UxTraceScreenshotCaptureMetadata;
 };
 
 type TraceEventJson = {
@@ -64,6 +72,7 @@ type TraceEventJson = {
   assertion?: string;
   note?: string;
   screenshot?: string;
+  screenshot_capture?: UxTraceScreenshotCaptureMetadata;
 };
 
 export type UxTraceScreenshotRecord = {
@@ -72,6 +81,19 @@ export type UxTraceScreenshotRecord = {
   file: string;
   route: string;
   note?: string;
+  capture_mode?: UxTraceScreenshotCaptureMetadata['mode'];
+  warning_file?: string;
+};
+
+export type UxTraceCaptureWarningRecord = {
+  seq: number;
+  step_id: string;
+  file: string;
+  kind: 'screenshot_full_page_failed';
+  screenshot: string;
+  requested_full_page: boolean;
+  fallback_full_page: false;
+  message: string;
 };
 
 export type UxTraceBundleManifest = {
@@ -103,6 +125,8 @@ export type UxTraceBundleManifest = {
   event_count: number;
   screenshot_count: number;
   screenshots: UxTraceScreenshotRecord[];
+  capture_warning_count?: number;
+  capture_warnings?: UxTraceCaptureWarningRecord[];
 };
 
 export type UxTraceContractSnapshotStep = {
@@ -370,6 +394,15 @@ function nowIso(): string {
   return new Date().toISOString();
 }
 
+function screenshotCaptureErrorMessage(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
+}
+
+function isTransientScreenshotCaptureError(error: unknown): boolean {
+  const message = screenshotCaptureErrorMessage(error);
+  return /Page\.captureScreenshot|Protocol error|Unable to capture screenshot/i.test(message);
+}
+
 function defaultRunId(): string {
   return `run-${new Date().toISOString().replace(/[:.]/g, '-')}`;
 }
@@ -406,6 +439,7 @@ export function renderUxTraceEventsJsonl(events: UxTraceEventRecord[]): string {
       assertion: event.assertion,
       note: event.note,
       screenshot: event.screenshot,
+      screenshot_capture: event.screenshot_capture,
     } satisfies TraceEventJson))
     .join('\n')}\n`;
 }
@@ -416,6 +450,15 @@ export function renderUxTraceReviewMarkdown(args: {
 }): string {
   const { manifest, events } = args;
   const verdict = reviewVerdictForOutcome(manifest.outcome);
+  const renderCapture = (event: UxTraceEventRecord): string => {
+    if (!event.screenshot_capture) {
+      return '';
+    }
+    return event.screenshot_capture.warning_file
+      ? `${event.screenshot_capture.mode} (${event.screenshot_capture.warning_file})`
+      : event.screenshot_capture.mode;
+  };
+  const captureWarnings = manifest.capture_warnings ?? [];
   const lines = [
     `# ${manifest.title}`,
     '',
@@ -450,16 +493,28 @@ export function renderUxTraceReviewMarkdown(args: {
     '- manifest.json',
     '- events.jsonl',
     '- screenshots/',
+    ...(captureWarnings.length ? ['- capture-warnings/'] : []),
     '',
     '## Trace Events',
     '',
-    '| Seq | Step | Action | Target | Route | Screenshot | Assertion | Note |',
-    '| --- | --- | --- | --- | --- | --- | --- | --- |',
-    ...events.map((event) => `| ${event.seq} | ${event.stepId} | ${event.action} | ${event.target ?? ''} | ${event.route ?? manifest.route} | ${event.screenshot ?? ''} | ${event.assertion ?? ''} | ${event.note ?? ''} |`),
+    '| Seq | Step | Action | Target | Route | Screenshot | Capture | Assertion | Note |',
+    '| --- | --- | --- | --- | --- | --- | --- | --- | --- |',
+    ...events.map((event) => `| ${event.seq} | ${event.stepId} | ${event.action} | ${event.target ?? ''} | ${event.route ?? manifest.route} | ${event.screenshot ?? ''} | ${renderCapture(event)} | ${event.assertion ?? ''} | ${event.note ?? ''} |`),
     '',
     '## Screenshots',
     '',
-    ...manifest.screenshots.map((shot) => `- ${shot.file} (${shot.step_id})`),
+    ...manifest.screenshots.map((shot) => {
+      const capture = shot.warning_file
+        ? `${shot.capture_mode ?? 'unknown'}; warning ${shot.warning_file}`
+        : (shot.capture_mode ?? 'unknown');
+      return `- ${shot.file} (${shot.step_id}; capture ${capture})`;
+    }),
+    '',
+    '## Capture Warnings',
+    '',
+    ...(captureWarnings.length
+      ? captureWarnings.map((warning) => `- ${warning.file} (${warning.step_id}; ${warning.kind}; ${warning.message})`)
+      : ['- none']),
     '',
   ];
   return `${lines.join('\n')}\n`;
@@ -786,6 +841,12 @@ function validateManifestShape(
   if (!Array.isArray(manifest.screenshots)) {
     traceValidationIssue(issues, 'contract_drift', 'UX trace manifest screenshots must be an array.');
   }
+  if (manifest.capture_warning_count !== undefined && !Number.isInteger(manifest.capture_warning_count)) {
+    traceValidationIssue(issues, 'contract_drift', 'UX trace manifest capture_warning_count must be an integer when present.');
+  }
+  if (manifest.capture_warnings !== undefined && !Array.isArray(manifest.capture_warnings)) {
+    traceValidationIssue(issues, 'contract_drift', 'UX trace manifest capture_warnings must be an array when present.');
+  }
   const traceOrderContract = resolveManifestTraceOrderContract(manifest.trace_order_contract, issues);
   if (Number.isNaN(Date.parse(String(manifest.started_at)))) {
     traceValidationIssue(issues, 'contract_drift', 'UX trace manifest started_at is invalid.');
@@ -922,6 +983,35 @@ function validateTraceEvents(args: {
     }
   }
 
+  const manifestCaptureWarningRecords: unknown[] = Array.isArray(args.manifest.capture_warnings)
+    ? args.manifest.capture_warnings
+    : [];
+  const manifestWarningFiles = new Set<string>();
+  if (typeof args.manifest.capture_warning_count === 'number'
+    && args.manifest.capture_warning_count !== manifestCaptureWarningRecords.length) {
+    traceValidationIssue(args.issues, 'contract_drift', 'UX trace manifest capture_warning_count does not match capture_warnings.');
+  }
+  for (const warning of manifestCaptureWarningRecords) {
+    if (!isRecord(warning)) {
+      traceValidationIssue(args.issues, 'contract_drift', 'UX trace manifest contains a malformed capture warning record.');
+      continue;
+    }
+    const warningFile = requiredString(warning.file);
+    if (
+      warning.kind !== 'screenshot_full_page_failed'
+      || !requiredString(warning.step_id)
+      || !warningFile
+      || !isSafeRelativeFile(warningFile)
+    ) {
+      traceValidationIssue(args.issues, 'contract_drift', 'UX trace manifest contains a malformed capture warning record.');
+      continue;
+    }
+    manifestWarningFiles.add(warningFile);
+    if (!statIsFile(path.join(args.bundleDir, warningFile))) {
+      traceValidationIssue(args.issues, 'evidence_missing', `UX trace capture warning file missing: ${warningFile}.`);
+    }
+  }
+
   const manifestScreenshotRecords = Array.isArray(args.manifest.screenshots) ? args.manifest.screenshots : [];
   const manifestScreenshotsByStep = new Map<string, UxTraceScreenshotRecord[]>();
   for (const screenshot of manifestScreenshotRecords) {
@@ -934,11 +1024,24 @@ function validateTraceEvents(args: {
     if (!statIsFile(path.join(args.bundleDir, screenshot.file))) {
       traceValidationIssue(args.issues, 'evidence_missing', `UX trace screenshot file missing for step ${screenshot.step_id}: ${screenshot.file}.`);
     }
+    if (screenshot.warning_file !== undefined) {
+      if (!requiredString(screenshot.warning_file) || !isSafeRelativeFile(screenshot.warning_file)) {
+        traceValidationIssue(args.issues, 'contract_drift', `UX trace screenshot warning file is malformed for step ${screenshot.step_id}.`);
+      } else if (!manifestWarningFiles.has(screenshot.warning_file)) {
+        traceValidationIssue(args.issues, 'contract_drift', `UX trace screenshot warning record missing for step ${screenshot.step_id}.`);
+      }
+    }
   }
 
   const screenshotEvents = args.events.filter((event) => Boolean(event.screenshot));
   if (args.manifest.screenshot_count !== screenshotEvents.length || args.manifest.screenshot_count !== manifestScreenshotRecords.length) {
     traceValidationIssue(args.issues, 'contract_drift', 'UX trace manifest screenshot_count does not match events/screenshots.');
+  }
+  for (const event of screenshotEvents) {
+    const warningFile = event.screenshot_capture?.warning_file;
+    if (warningFile !== undefined && !manifestWarningFiles.has(warningFile)) {
+      traceValidationIssue(args.issues, 'contract_drift', `UX trace event warning record missing for step: ${event.step_id}.`);
+    }
   }
 
   for (const stepId of args.manifest.required_screenshot_steps ?? []) {
@@ -1124,6 +1227,7 @@ export async function createUxTraceBundleWriter(options: UxTraceBundleOptions): 
 
   const startedAt = options.startedAt ?? nowIso();
   const events: UxTraceEventRecord[] = [];
+  const captureWarnings: UxTraceCaptureWarningRecord[] = [];
 
   const normalizeEvent = (event: UxTraceEventInput): UxTraceEventInput & { action: string } => {
     let normalized: UxTraceEventInput & { action?: string; note?: string };
@@ -1166,6 +1270,34 @@ export async function createUxTraceBundleWriter(options: UxTraceBundleOptions): 
     });
   };
 
+  const writeScreenshotCaptureWarning = async (args: {
+    seq: number;
+    stepId: string;
+    route: string;
+    screenshotFile: string;
+    error: unknown;
+  }): Promise<UxTraceCaptureWarningRecord> => {
+    const warningFile = `capture-warnings/${String(args.seq).padStart(3, '0')}-${sanitizeTraceSegment(args.stepId)}-screenshot.json`;
+    const warning: UxTraceCaptureWarningRecord = {
+      seq: args.seq,
+      step_id: args.stepId,
+      file: warningFile,
+      kind: 'screenshot_full_page_failed',
+      screenshot: args.screenshotFile,
+      requested_full_page: true,
+      fallback_full_page: false,
+      message: screenshotCaptureErrorMessage(args.error),
+    };
+    await mkdir(path.dirname(path.join(bundleDir, warningFile)), { recursive: true });
+    await writeFile(path.join(bundleDir, warningFile), `${JSON.stringify({
+      schema: 'ux_trace_capture_warning/v1',
+      ts: nowIso(),
+      route: args.route,
+      ...warning,
+    }, null, 2)}\n`, 'utf-8');
+    return warning;
+  };
+
   return {
     bundleDir,
     manifestPath: path.join(bundleDir, 'manifest.json'),
@@ -1176,10 +1308,48 @@ export async function createUxTraceBundleWriter(options: UxTraceBundleOptions): 
       const normalized = normalizeEvent(event);
       const seq = events.length + 1;
       const screenshotFile = `screenshots/${String(seq).padStart(3, '0')}-${sanitizeTraceSegment(normalized.stepId)}.png`;
-      await page.screenshot({
-        path: path.join(bundleDir, screenshotFile),
-        fullPage: normalized.fullPage ?? true,
-      });
+      const screenshotPath = path.join(bundleDir, screenshotFile);
+      const route = normalized.route ?? page.url();
+      const requestedFullPage = normalized.fullPage ?? true;
+      let screenshotCapture: UxTraceScreenshotCaptureMetadata = {
+        mode: requestedFullPage ? 'full_page' : 'viewport',
+        requested_full_page: requestedFullPage,
+        fallback: false,
+      };
+      try {
+        await page.screenshot({
+          path: screenshotPath,
+          fullPage: requestedFullPage,
+        });
+      } catch (error) {
+        if (!requestedFullPage || !isTransientScreenshotCaptureError(error)) {
+          throw error;
+        }
+        const warning = await writeScreenshotCaptureWarning({
+          seq,
+          stepId: normalized.stepId,
+          route,
+          screenshotFile,
+          error,
+        });
+        try {
+          await page.screenshot({
+            path: screenshotPath,
+            fullPage: false,
+          });
+        } catch (fallbackError) {
+          throw new Error(
+            `UX trace viewport fallback screenshot failed for step ${normalized.stepId}: ${screenshotCaptureErrorMessage(fallbackError)}. Initial fullPage failure: ${warning.message}`,
+          );
+        }
+        screenshotCapture = {
+          mode: 'viewport_fallback',
+          requested_full_page: true,
+          fallback: true,
+          warning_file: warning.file,
+        };
+        captureWarnings.push(warning);
+      }
       const record: UxTraceEventRecord = {
         seq,
         ts: nowIso(),
@@ -1187,12 +1357,13 @@ export async function createUxTraceBundleWriter(options: UxTraceBundleOptions): 
         action: normalized.action,
         target: normalized.target,
         input: normalized.input,
-        route: normalized.route ?? page.url(),
+        route,
         request: normalized.request,
         response: normalized.response,
         assertion: normalized.assertion,
         note: normalized.note,
         screenshot: screenshotFile,
+        screenshot_capture: screenshotCapture,
       };
       events.push(record);
       return record;
@@ -1252,7 +1423,11 @@ export async function createUxTraceBundleWriter(options: UxTraceBundleOptions): 
             file: event.screenshot,
             route: event.route ?? options.route,
             note: event.note,
+            capture_mode: event.screenshot_capture?.mode,
+            warning_file: event.screenshot_capture?.warning_file,
           })),
+        capture_warning_count: captureWarnings.length,
+        capture_warnings: captureWarnings.map((warning) => ({ ...warning })),
       };
 
       await writeBundle(manifest);

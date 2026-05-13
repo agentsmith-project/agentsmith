@@ -646,7 +646,7 @@ export async function prepareTaskWorkspace(input: {
 }> {
   void input.username;
   void resolveFallbackHome();
-  const mode = resolveAgentTaskRunnerMode();
+  void resolveAgentTaskRunnerMode();
   const identity = buildTaskWorkspaceIdentity(input.executionContext, input.taskId);
   const resolved = resolveTaskCwd({
     taskHomePath: input.executionContext.task_home_path,

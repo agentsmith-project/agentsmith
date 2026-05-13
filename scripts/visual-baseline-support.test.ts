@@ -1623,7 +1623,7 @@ describe('visual baseline support', () => {
       '/en-US/workspaces/ws_default/projects/proj_001/files?library_id=lib_shared_default',
     );
     expect(scenarios.get('dialog-files-rename')?.route).toBe(
-      '/en-US/workspaces/ws_default/projects/proj_001/files?library_id=lib_shared_default',
+      '/en-US/workspaces/ws_default/projects/proj_001/files?library_id=lib_shared_default&search=README',
     );
     expect(scenarios.get('system-workspaces-delete-confirmation')?.route).toBe(
       '/en-US/system/workspaces?workspace=ws_seeded',

@@ -1,7 +1,7 @@
+import { spawnSync } from 'node:child_process';
 import { chmodSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { spawnSync } from 'node:child_process';
 
 import { afterEach, describe, expect, it } from 'vitest';
 
@@ -17,9 +17,21 @@ function writeExecutable(filePath: string, content: string): void {
   chmodSync(filePath, 0o755);
 }
 
+function dockerScriptThatFailsPublicEcr(dockerLog: string): string {
+  return `#!/usr/bin/env bash
+set -euo pipefail
+printf '%s\\n' "$*" >> "${dockerLog}"
+if [[ "\${1:-}" == "build" && "$*" == *"NODE_BASE_IMAGE=public.ecr.aws/docker/library/node:24.14.1-bookworm"* ]]; then
+  printf 'unexpected status from HEAD request to https://public.ecr.aws/v2/docker/library/node/manifests/24.14.1-bookworm: EOF\\n' >&2
+  exit 1
+fi
+exit 0
+`;
+}
+
 function runBuildRunnerImageFixture(args: {
   env?: NodeJS.ProcessEnv;
-  dockerScript?: string;
+  dockerScript?: (dockerLog: string) => string;
 } = {}): {
   status: number;
   stdout: string;
@@ -30,16 +42,9 @@ function runBuildRunnerImageFixture(args: {
   const tempRoot = mkdtempSync(path.join(os.tmpdir(), 'agentsmith-runner-image-common-'));
   const binDir = path.join(tempRoot, 'bin');
   const dockerLog = path.join(tempRoot, 'docker.log');
-  const dockerScript = args.dockerScript ?? `#!/usr/bin/env bash
+  const dockerScript = args.dockerScript?.(dockerLog) ?? `#!/usr/bin/env bash
 set -euo pipefail
 printf '%s\\n' "$*" >> "${dockerLog}"
-if [[ "\${1:-}" == "build" ]]; then
-  if [[ "$*" == *"NODE_BASE_IMAGE=node:24.14.1-bookworm"* ]]; then
-    printf 'unexpected status from HEAD request to https://docker.m.daocloud.io/v2/library/node/manifests/24.14.1-bookworm?ns=docker.io: 401 Unauthorized\\n' >&2
-    exit 1
-  fi
-  exit 0
-fi
 exit 0
 `;
 
@@ -86,18 +91,35 @@ describe('runner image build base fallback', () => {
     }
   });
 
-  it('retries an equivalent non-Docker-Hub node base image when the default mirror rejects metadata', () => {
+  it('uses public ECR as the primary Node base image without probing Docker Hub first', () => {
     const result = runBuildRunnerImageFixture();
     tempRoots.push(result.tempRoot);
 
     expect(result.status).toBe(0);
-    expect(result.stderr).toContain('base image build failed for agent-task with NODE_BASE_IMAGE=node:24.14.1-bookworm');
-    expect(result.stderr).toContain('401 Unauthorized');
-    expect(result.stderr).toContain(
-      'built agent-task runner base image with fallback NODE_BASE_IMAGE=public.ecr.aws/docker/library/node:24.14.1-bookworm',
-    );
-    expect(result.dockerLog).toContain('NODE_BASE_IMAGE=node:24.14.1-bookworm');
+    expect(result.stderr).not.toContain('base image build failed');
     expect(result.dockerLog).toContain('NODE_BASE_IMAGE=public.ecr.aws/docker/library/node:24.14.1-bookworm');
+    expect(result.dockerLog).not.toContain('NODE_BASE_IMAGE=node:24.14.1-bookworm');
+    expect(result.dockerLog).not.toContain('NODE_BASE_IMAGE=docker.io/library/node:24.14.1-bookworm');
+    expect(result.dockerLog).toContain('RUNNER_BASE_IMAGE=agentsmith-agent-task-runner-base:local');
+  });
+
+  it('retries Docker Hub as the first fallback when public ECR rejects metadata', () => {
+    const result = runBuildRunnerImageFixture({
+      dockerScript: dockerScriptThatFailsPublicEcr,
+    });
+    tempRoots.push(result.tempRoot);
+
+    expect(result.status).toBe(0);
+    expect(result.stderr).toContain(
+      'base image build failed for agent-task with NODE_BASE_IMAGE=public.ecr.aws/docker/library/node:24.14.1-bookworm',
+    );
+    expect(result.stderr).toContain('EOF');
+    expect(result.stderr).toContain(
+      'built agent-task runner base image with fallback NODE_BASE_IMAGE=docker.io/library/node:24.14.1-bookworm',
+    );
+    expect(result.dockerLog).toContain('NODE_BASE_IMAGE=public.ecr.aws/docker/library/node:24.14.1-bookworm');
+    expect(result.dockerLog).toContain('NODE_BASE_IMAGE=docker.io/library/node:24.14.1-bookworm');
+    expect(result.dockerLog).not.toContain('NODE_BASE_IMAGE=mirror.gcr.io/library/node:24.14.1-bookworm');
     expect(result.dockerLog).toContain('RUNNER_BASE_IMAGE=agentsmith-agent-task-runner-base:local');
   });
 
@@ -106,11 +128,13 @@ describe('runner image build base fallback', () => {
       env: {
         RUNNER_NODE_BASE_IMAGE_FALLBACKS: 'none',
       },
+      dockerScript: dockerScriptThatFailsPublicEcr,
     });
     tempRoots.push(result.tempRoot);
 
     expect(result.status).toBe(1);
-    expect(result.dockerLog).toContain('NODE_BASE_IMAGE=node:24.14.1-bookworm');
-    expect(result.dockerLog).not.toContain('public.ecr.aws/docker/library/node');
+    expect(result.dockerLog).toContain('NODE_BASE_IMAGE=public.ecr.aws/docker/library/node:24.14.1-bookworm');
+    expect(result.dockerLog).not.toContain('NODE_BASE_IMAGE=docker.io/library/node:24.14.1-bookworm');
+    expect(result.dockerLog).not.toContain('NODE_BASE_IMAGE=mirror.gcr.io/library/node:24.14.1-bookworm');
   });
 });

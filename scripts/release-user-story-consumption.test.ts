@@ -62,6 +62,94 @@ describe('release story consumption guards', () => {
     expect(source).toMatch(/story|trace.*binding|load.*story/i);
   });
 
+  it('keeps release user story Agent Runners checks on deployment-managed runner selectors', async () => {
+    const specSource = await readFile(
+      path.resolve(process.cwd(), 'e2e/integration-release-user-story.spec.ts'),
+      'utf-8',
+    );
+    const storySource = await readFile(
+      path.resolve(process.cwd(), 'e2e/stories/backend-real/release-user-story-end-to-end.story.md'),
+      'utf-8',
+    );
+
+    expect(specSource).toContain("page.getByTestId('agent-runners__system-managed-section')");
+    expect(specSource).toContain("page.getByTestId('agent-runners__system-managed-table')");
+    expect(specSource).toContain("'agent-runners__project-default-status'");
+    expect(specSource).not.toContain("page.getByTestId('agent-runners__table')");
+    expect(storySource).toContain('"target": "agent-runners__system-managed-table"');
+    expect(storySource).toContain('"target": "agent-runners__project-default-status"');
+  });
+
+  it('keeps full demo managed runner configuration under owner identity before member task use', async () => {
+    const specSource = await readFile(
+      path.resolve(process.cwd(), 'e2e/integration-release-user-story.spec.ts'),
+      'utf-8',
+    );
+    const storySource = await readFile(
+      path.resolve(process.cwd(), 'e2e/stories/backend-real/release-user-story-end-to-end.story.md'),
+      'utf-8',
+    );
+
+    const runnerTitleIndex = specSource.indexOf('Managed Continuity Runner');
+    expect(runnerTitleIndex).toBeGreaterThanOrEqual(0);
+    const fullBranchStart = specSource.lastIndexOf('if (DEMO_MODE_IS_FULL)', runnerTitleIndex);
+    const ownerLogin = specSource.indexOf(
+      'await loginToWorkspace(page, workspaceId, KEYCLOAK_DEV_ADMIN_USERNAME, KEYCLOAK_DEV_ADMIN_PASSWORD);',
+      fullBranchStart,
+    );
+    const managedRunnerConfig = specSource.lastIndexOf('await createManagedAgentRunnerViaApi(page, {', runnerTitleIndex);
+    const memberLogin = specSource.indexOf(
+      'await loginToWorkspace(page, workspaceId, MEMBER_USERNAME, MEMBER_PASSWORD);',
+      managedRunnerConfig,
+    );
+    const memberTaskCreate = specSource.indexOf('const internalTask = await createTaskViaUi({', managedRunnerConfig);
+
+    expect(fullBranchStart).toBeGreaterThanOrEqual(0);
+    expect(ownerLogin).toBeGreaterThan(fullBranchStart);
+    expect(managedRunnerConfig).toBeGreaterThan(ownerLogin);
+    expect(memberLogin).toBeGreaterThan(managedRunnerConfig);
+    expect(memberLogin).toBeLessThan(memberTaskCreate);
+    expect(storySource).toContain('"stepId": "managed-continuity-governance-config"');
+    expect(storySource).toContain('项目所有者执行治理配置');
+    expect(storySource).toContain('"stepId": "member-workspace-home-after-governance-config"');
+    expect(storySource).toContain('普通成员重新进入 workspace，继续使用托管 Agent Runner');
+  });
+
+  it('keeps release user story Files artifact checks under task workspace/.artifacts', async () => {
+    const specSource = await readFile(
+      path.resolve(process.cwd(), 'e2e/integration-release-user-story.spec.ts'),
+      'utf-8',
+    );
+    const storySource = await readFile(
+      path.resolve(process.cwd(), 'e2e/stories/backend-real/release-user-story-end-to-end.story.md'),
+      'utf-8',
+    );
+
+    expect(specSource).toContain('openTaskWorkspaceArtifactsFolder');
+    expect(specSource).toContain("await openFolderByName(args.page, 'workspace')");
+    expect(specSource).toContain("await openFolderByName(args.page, '.artifacts')");
+    expect(specSource).not.toMatch(
+      /openWorkspaceFilesRoot\(\{[\s\S]{0,500}\}\);\s*await openFolderByName\(page, '\.artifacts'\)/,
+    );
+    expect(storySource).toContain('workspace/.artifacts');
+    expect(storySource).not.toContain('managed Agent Task 的 .artifacts 已可见');
+  });
+
+  it('keeps backend-real visual review workspace fixtures aligned with directory-backed project creator selection', async () => {
+    const source = await readFile(
+      path.resolve(process.cwd(), 'e2e/integration-visual-review.spec.ts'),
+      'utf-8',
+    );
+
+    expect(source).toContain('createAndPublishWorkspaceWithDirectoryAdmin');
+    expect(source).toContain('adminEmail: DEV_ADMIN_EMAIL');
+    expect(source).toContain('/api/v1/workspaces/${workspaceId}/directory/users');
+    expect(source).toContain('workspace_project_creator_directory_search_failed');
+    expect(source).toContain('missing_email=');
+    expect(source).toContain('status=');
+    expect(source).toContain('body=');
+  });
+
   it('keeps release notebook tokens, prompts, and artifact paths derived from story runtime data instead of inline constants', async () => {
     const source = await readFile(
       path.resolve(process.cwd(), 'e2e/integration-release-user-story.spec.ts'),

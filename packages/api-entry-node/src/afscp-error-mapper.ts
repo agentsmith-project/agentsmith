@@ -7,6 +7,7 @@ export type AfscpPublicErrorCode =
   | 'afscp_resource_not_found'
   | 'afscp_restore_preview_stale'
   | 'afscp_active_writer_blocks_restore'
+  | 'afscp_repo_mutation_in_progress'
   | 'afscp_template_clone_not_allowed'
   | 'afscp_capability_denied'
   | 'afscp_service_permission_denied'
@@ -108,7 +109,6 @@ interface ParsedAfscpError {
   resource_kind?: AfscpResourceKind;
   validation_errors: string[];
   writer_gate_error_family?: string;
-  jvs_error_code?: string;
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -166,28 +166,6 @@ function extractDetailString(error: Record<string, unknown>, key: string): strin
   return readString(details, key);
 }
 
-function extractPayloadContainerString(payload: Record<string, unknown>, containerKey: string, key: string): string | undefined {
-  const container = payload[containerKey];
-  if (isRecord(container)) {
-    return readString(container, key);
-  }
-  if (typeof container === 'string' && container.trim()) {
-    try {
-      const parsed = JSON.parse(container) as unknown;
-      return isRecord(parsed) ? readString(parsed, key) : undefined;
-    } catch {
-      return undefined;
-    }
-  }
-  return undefined;
-}
-
-function extractJvsErrorCode(payload: Record<string, unknown>, error: Record<string, unknown>): string | undefined {
-  return extractDetailString(error, 'jvs_error_code')
-    ?? extractPayloadContainerString(payload, 'verification_result', 'jvs_error_code')
-    ?? extractPayloadContainerString(payload, 'jvs_json_output', 'jvs_error_code');
-}
-
 function parseErrorEnvelope(payload: unknown): ParsedAfscpError {
   if (!isRecord(payload) || !isRecord(payload.error)) {
     return { validation_errors: [] };
@@ -204,7 +182,6 @@ function parseErrorEnvelope(payload: unknown): ParsedAfscpError {
     resource_kind: extractResourceKind(error),
     validation_errors: extractValidationErrors(error),
     writer_gate_error_family: extractDetailString(error, 'writer_gate_error_family'),
-    jvs_error_code: extractJvsErrorCode(payload, error),
   };
 }
 
@@ -268,7 +245,6 @@ function isWriterBlocker(parsed: ParsedAfscpError): boolean {
     || parsed.code === 'STALE_WRITER_SESSION_UNCERTAIN'
     || parsed.code === 'WRITER_SESSION_FENCE_HELD'
     || parsed.code === 'RESTORE_RUN_WRITER_SESSIONS_DENIED'
-    || (parsed.code === 'JVS_COMMAND_FAILED' && parsed.jvs_error_code === 'E_REPO_BUSY')
     || parsed.writer_gate_error_family === 'ACTIVE_WRITER_SESSIONS'
     || parsed.writer_gate_error_family === 'STALE_WRITER_SESSION_UNCERTAIN';
 }
@@ -303,6 +279,17 @@ export function mapAfscpErrorEnvelope(status: number, payload: unknown): AfscpMa
       status: 409,
       code: 'afscp_active_writer_blocks_restore',
       retryable: parsed.retryable ?? false,
+      correlation_id: parsed.correlation_id,
+      operation_id: parsed.operation_id,
+      resource_kind: parsed.resource_kind,
+    });
+  }
+
+  if (parsed.code === 'REPO_MUTATION_IN_PROGRESS') {
+    return buildMappedError({
+      status: 409,
+      code: 'afscp_repo_mutation_in_progress',
+      retryable: parsed.retryable ?? true,
       correlation_id: parsed.correlation_id,
       operation_id: parsed.operation_id,
       resource_kind: parsed.resource_kind,

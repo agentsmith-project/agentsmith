@@ -29,7 +29,9 @@ The target shape is:
   Every storage-dependent API must pass preflight first; only `ready` may call
   the product AFSCP adapter to create repos, exports, mount bindings, save
   points, restores, or templates.
-- AFSCP and JVS are sibling upstream projects for this work. Wrong abstractions or missing contracts should be fixed upstream, not worked around inside AgentSmith.
+- AFSCP is the only AgentSmith storage-control integration boundary. If AFSCP
+  uses JVS internally, that is AFSCP implementation and release evidence, not an
+  AgentSmith product API, deploy setting, or acceptance gate.
 - This is a pre-GA current model. AFSCP-backed storage is the only product
   storage path, with no user-visible storage switch or fallback behavior.
 
@@ -58,7 +60,8 @@ AFSCP owns:
 - storage namespace and namespace volume binding.
 - shared JuiceFS volume metadata and capability health.
 - repo storage identity and lifecycle.
-- JVS save point, restore preview/run/discard, and template clone execution.
+- save point, restore preview/run/discard, and template clone execution,
+  including any internal versioned-filesystem implementation.
 - export sessions and workload mount bindings.
 - low-level operation records and redacted storage audit.
 
@@ -166,12 +169,13 @@ guard: known top-level system/runtime folders are labeled as system/runtime
 folders, and destructive actions such as delete, move, and rename require
 clearer confirmation or are disabled by a backend typed blocker when the
 folder/library is protected or in use. Storage-provider
-internals are not part of the file-library payload. For AFSCP-managed repos, JVS
-control metadata must live outside the payload root through external
-control-root mode. The payload HOME must not contain `.jvs` or control-root
-material. AgentSmith must not make this true by filtering file listings. If
-AFSCP/JVS cannot guarantee payload-outside control roots, integration must pause
-for an upstream fix before AgentSmith continues.
+internals are not part of the file-library payload. For AFSCP-managed repos,
+internal storage-control metadata must live outside the payload root through
+external control-root mode or an equivalent AFSCP-owned mechanism. The payload
+HOME must not contain `.jvs` or control-root material. AgentSmith must not make
+this true by filtering file listings. If AFSCP cannot guarantee
+payload-outside control roots, integration must pause for an upstream fix before
+AgentSmith continues.
 
 Save points, restore, and task file templates operate on the whole HOME payload.
 This means user-visible runtime/config/cache folders under HOME are file-library
@@ -180,9 +184,9 @@ explicit: the action covers the whole task file library/HOME, including hidden
 agent runtime folders such as `.codex`, `.mbos`, `.agents`, `.cache`, `.config`,
 and `.local`, not only the currently opened `workspace/` view. What does not
 carry over is non-payload task state: AgentSmith task records, messages, traces,
-terminal sessions, runner bindings, active leases, AFSCP/JVS control metadata,
-tickets, Project secrets, managed OAuth credentials, service credentials, and
-other request-scoped secrets.
+terminal sessions, runner bindings, active leases, AFSCP/internal
+storage-control metadata, tickets, Project secrets, managed OAuth credentials,
+service credentials, and other request-scoped secrets.
 
 Whole HOME payload capture includes dot folders. That makes secret handling a
 platform boundary, not a UI filtering problem. Platform-controlled secrets and
@@ -235,7 +239,7 @@ User-facing behavior:
 - AgentSmith validates project permission and template project availability first.
 - AgentSmith calls AFSCP to clone the template into a new repo/file library.
 - The new task binds to that new file library.
-- The new task inherits HOME payload files only. It does not inherit chat history, task events, terminal sessions, active runner state outside HOME, runner binding, Project secrets, tickets, managed OAuth credentials, service credentials, or AFSCP/JVS control metadata.
+- The new task inherits HOME payload files only. It does not inherit chat history, task events, terminal sessions, active runner state outside HOME, runner binding, Project secrets, tickets, managed OAuth credentials, service credentials, or AFSCP/internal storage-control metadata.
 - A task file template is a snapshot source. It is not a live shared folder. Unpublishing a template prevents future clone use but does not modify file libraries already cloned from it.
 - Creating a template uses the current file library state by creating a fresh
   internal source save point and then a template. That internal source save
@@ -280,7 +284,7 @@ Safety behavior:
   audit/debug projection, label it `internal/restore preview fence`.
 - AgentSmith frontend may explain the blocker, but backend and AFSCP remain the authority. Blocking UX must use typed AFSCP blockers and tell the user the next action: stop the running task, close/release terminal sessions, wait for file operations to finish, or retry later.
 - Restore operations must be operation-driven and auditable.
-- If AFSCP/JVS cannot provide enough redacted preview or blocker detail for a clear UX, that is an upstream contract gap. AgentSmith must not parse raw JVS output or inspect private control files to invent the summary.
+- If AFSCP cannot provide enough redacted preview or blocker detail for a clear UX, that is an upstream contract gap. AgentSmith must not parse raw storage-backend output or inspect private control files to invent the summary.
 
 ### 2.7 User Access And WebDAV Connector
 
@@ -352,7 +356,7 @@ mutations use `project:files:update`.
 | Create/update/delete file library | `project:files:update`; delete also requires no current task binding and lifecycle admission |
 | Create task with new file library | `project:agent_task:use`; backend creates an internal task HOME file library |
 | Create task from published task file template | `project:agent_task:use`; template must be published in the current project namespace |
-| Bind existing file library to task | `project:agent_task:use` plus `project:files:update` and backend writable affordance; explicit Developer runner binding still requires runner-manage affordance; file library must be unbound and reusable |
+| Bind existing file library to task | `project:agent_task:use` plus same-actor ownership of a released, ready, unbound task workspace; backend runtime writable affordance is `task_internal_home`, not Files edit permission; explicit Developer runner binding still requires runner-manage affordance |
 | Open terminal for bound task | `project:agent_task:use` + `project:agent_task:terminal` plus task visibility |
 | Create/list save points | `project:endpoint:use` plus `project:files:update` for create; file library visible |
 | Restore preview/confirm/cancel preview | `project:files:update`; file library visible; restore operation state valid; no active/uncertain writer for run; cancel preview maps to backend discard-preview semantics |
@@ -513,9 +517,9 @@ Responsibilities:
 | Layer | Responsibility |
 | --- | --- |
 | Deployment/substrate | install JuiceFS CSI driver, create or configure the shared JuiceFS volume, provide storage-root Secret material to AFSCP only |
-| AFSCP | record volume metadata/capabilities, bind namespaces to volumes, resolve repo paths, execute JVS operations, issue export/mount bindings |
+| AFSCP | record volume metadata/capabilities, bind namespaces to volumes, resolve repo paths, execute save point/restore/template operations, issue export/mount bindings |
 | AgentSmith API | call AFSCP with service identity after product authorization; store only opaque AFSCP IDs |
-| Sandbox/workload orchestrator | consume AFSCP orchestrator-only repo/namespace/destination/TTL-scoped mount plan and SecretRef, then mount repo payload into task pod |
+| Sandbox manager / Kubernetes / CSI | consume AFSCP repo/namespace/destination/TTL-scoped mount plan and SecretRef, then mount repo payload into task pod |
 | Runner/task container | see only mounted HOME payload, not storage credentials or control root |
 
 AFSCP `volume ensure` is not a product operation for ordinary users. It should be handled by deployment/bootstrap or a system admin job. AgentSmith project initialization may ensure the project namespace and namespace-volume binding exist through the project storage bootstrap saga.
@@ -524,7 +528,7 @@ Bootstrap identity split:
 
 - deployment/bootstrap job owns volume admin and first namespace-volume binding bootstrap through deployment namespace policy.
 - AgentSmith product caller owns normal repo, save point, template, export, mount-binding, and operation-inspection calls after product authorization.
-- dedicated orchestrator caller owns orchestrator-only mount plan, heartbeat, release, and revoke confirmation.
+- sandbox manager caller owns mount plan retrieval, heartbeat, release, and revoke confirmation.
 - ordinary end users never receive AFSCP roles; their permissions are enforced by AgentSmith before any AFSCP call.
 - product caller token/caller-service and bootstrap token/caller-service must be
   distinct. AgentSmith must fail fast at startup or configuration load if either
@@ -536,14 +540,14 @@ not advance from namespace upsert to binding until namespace readiness is known,
 unless AFSCP exposes a single durable ensure operation that explicitly owns both
 steps and returns a binding-ready result.
 
-Orchestrator contract:
+Sandbox manager/Kubernetes/CSI contract:
 
-- The orchestrator consumes only AFSCP-issued mount plans scoped to one
+- The sandbox manager consumes only AFSCP-issued mount plans scoped to one
   repo/namespace/destination/TTL and the SecretRefs included in that plan.
-- The orchestrator must not persist storage-root credentials, list arbitrary
+- The sandbox manager must not persist storage-root credentials, list arbitrary
   Kubernetes Secrets, read Secrets outside the scoped plan, or derive its own
   raw JuiceFS/root mount material.
-- The orchestrator must not expose storage-root material, SecretRefs, raw paths,
+- The sandbox manager must not expose storage-root material, SecretRefs, raw paths,
   or control-root details to runner/task containers, terminal sessions, logs, or
   AgentSmith product DTOs.
 
@@ -591,7 +595,7 @@ Adapter responsibilities:
 - sanitize unexpected bootstrap and product-operation errors before they become
   product state or public API responses.
 - keep raw URLs, Secret refs, mount plans, WebDAV password, storage credentials, and raw paths out of ordinary responses.
-- consume only caller-safe allowlist operation views from AFSCP. AgentSmith must not store or parse raw JVS stdout/stderr, raw `run_command`, `--control-root`, Secret refs, raw paths, or credential-shaped values.
+- consume only caller-safe allowlist operation views from AFSCP. AgentSmith must not store or parse raw storage-backend stdout/stderr, raw `run_command`, `--control-root`, Secret refs, raw paths, or credential-shaped values.
 
 The adapter should be testable without real AFSCP and should have backend-real tests against an AFSCP instance.
 
@@ -680,10 +684,10 @@ Managed runner flow:
 1. AgentSmith creates or reuses a file library.
 2. AgentSmith acquires the task-file-library binding.
 3. AgentSmith creates an AFSCP workload mount binding for the file library repo with destination `/home/<file_library_home_segment>`.
-4. The dedicated orchestrator fetches the AFSCP orchestrator mount plan.
-5. The orchestrator mounts only the repo payload subdir through JuiceFS CSI/subPath into the sandbox pod.
+4. The sandbox manager fetches the AFSCP mount plan.
+5. Kubernetes/CSI mounts only the repo payload subdir through JuiceFS CSI/subPath into the sandbox pod.
 6. The task container starts with `HOME=$TASK_HOME=/home/<file_library_home_segment>` and `cwd=$HOME/workspace`.
-7. The orchestrator heartbeats and releases/revokes the mount binding when the pod/session ends.
+7. The sandbox manager heartbeats and releases/revokes the mount binding when the pod/session ends.
 
 Developer runner flow:
 
@@ -701,7 +705,7 @@ Developer runner flow:
   material.
 - If the current AFSCP contract cannot safely express this export-backed developer runner
   lease/connector abstraction, Slice 5 is blocked on an upstream AFSCP contract
-  change. Do not add an AgentSmith workaround, a dedicated developer-orchestrator
+  change. Do not add an AgentSmith workaround, a dedicated developer sandbox-manager
   identity, or raw storage shortcuts.
 
 ### 3.6 Restore And Active Writers
@@ -713,7 +717,7 @@ admission. AgentSmith task holder state is a supplemental product preflight, not
 a parallel storage lock. Every writable terminal, run, and file browser export
 must be represented in AFSCP sessions or bindings. When Slice 5 is unblocked,
 every developer-runner access path must use the same representation. If any
-writer/access path cannot be represented, it is an AFSCP/orchestrator contract
+writer/access path cannot be represented, it is an AFSCP/sandbox-manager contract
 gap.
 
 Required behavior:
@@ -726,7 +730,7 @@ Required behavior:
   remains.
 - read-only file browsing does not block restore-run by itself, but lifecycle delete/archive may still need access drain according to AFSCP rules.
 - restore preview can exist as a pending plan and must have a cancel-preview UX
-  that leaves files unchanged, backed by AFSCP/JVS discard-preview semantics.
+  that leaves files unchanged, backed by AFSCP cancel/discard-preview semantics.
 
 ### 3.7 Deployment Shape
 
@@ -738,10 +742,12 @@ independent AFSCP release gates/contracts and internal-only access:
 - `afscp-export-gateway` when the Files UI storage adapter is backed by
   server-side WebDAV/export; an upstream first-class AFSCP file API can replace
   this backing path, but not the Files UI storage adapter boundary.
-- internal AFSCP API service accessible only to AgentSmith API and the dedicated orchestrator.
+- internal AFSCP API service accessible only to AgentSmith API and the sandbox manager.
 - optional future WebDAV gateway ingress/base URL for productized user-computer connector traffic; this is not required in this milestone and is not the AFSCP internal API.
 - service credentials configured through deployment secrets.
-- storage readiness checks and the pinned JVS binary packaged with AFSCP worker/runtime.
+- storage readiness checks plus AFSCP image/release evidence for its internal
+  storage engine. AgentSmith deploy must not configure JVS path, hash, cwd, or
+  control settings.
 
 Substrates remain outside the app pods:
 
@@ -751,12 +757,12 @@ Substrates remain outside the app pods:
 - JuiceFS metadata/object-store substrate as required by the selected volume.
 
 JuiceFS CSI driver remains cluster infrastructure. AFSCP internals may hold
-volume metadata and generate orchestrator-only mount plans. Outside AFSCP
-internals, only the dedicated orchestrator may receive plan-scoped CSI SecretRefs
-needed to mount one repo payload for one destination/TTL. It must not receive or
-persist storage-root credentials. AgentSmith product callers, frontend, runners,
-and task containers never receive SecretRefs, storage-root details, or
-control-root material.
+volume metadata and generate sandbox-manager-only mount plans. Outside AFSCP
+internals, only the sandbox manager may receive plan-scoped CSI SecretRefs
+needed for Kubernetes/CSI to mount one repo payload for one destination/TTL. It
+must not receive or persist storage-root credentials. AgentSmith product
+callers, frontend, runners, and task containers never receive SecretRefs,
+storage-root details, or control-root material.
 
 AgentSmith gates and deployment templates must name this bootstrap boundary as
 AFSCP/substrate, for example `AFSCP_STORAGE_CSI_*` and
@@ -767,15 +773,16 @@ config, runner config, API DTOs, or acceptance evidence.
 
 ### 3.8 Upstream Design Review Policy
 
-AFSCP and JVS are sibling projects owned by the same development organization.
-This milestone should use that advantage: when a storage abstraction or API is
-wrong for AgentSmith's product needs, fix the upstream AFSCP/JVS contract and
-then integrate it, instead of hiding design problems in AgentSmith.
+AFSCP is the only upstream storage-control boundary AgentSmith integrates with.
+When a storage abstraction or API is wrong for AgentSmith's product needs, fix
+the upstream AFSCP contract and then integrate it, instead of hiding design
+problems in AgentSmith. If AFSCP uses JVS internally, JVS-specific validation is
+attached to AFSCP release evidence and does not become an AgentSmith gate.
 
-If implementation discovers that AFSCP or JVS exposes the wrong abstraction,
-misses a required contract, leaks storage details, or forces AgentSmith to hold
+If implementation discovers that AFSCP exposes the wrong abstraction, misses a
+required contract, leaks storage details, or forces AgentSmith to hold
 storage-specific policy, treat that as an upstream design issue. The team should
-open or update the AFSCP/JVS change plan with:
+open or update the AFSCP change plan with:
 
 - the product behavior AgentSmith needs.
 - the module that should own the behavior.
@@ -785,11 +792,11 @@ open or update the AFSCP/JVS change plan with:
 - the AgentSmith slice blocked by the upstream change.
 
 Do not create AgentSmith workarounds for upstream gaps such as unsafe local
-mounts, raw JuiceFS credential handling, JVS control-root exposure, product
-authorization inside AFSCP, or AgentSmith-side parsing of private JVS state. The
-boundary rule is simple: AgentSmith owns product catalog and permission; AFSCP
-owns storage control; JVS owns versioned filesystem mechanics; the orchestrator
-owns runtime mounting; runner containers only consume mounted HOME.
+mounts, raw JuiceFS credential handling, control-root exposure, product
+authorization inside AFSCP, or AgentSmith-side parsing of private storage state.
+The boundary rule is simple: AgentSmith owns product catalog and permission;
+AFSCP owns storage control; sandbox manager, Kubernetes, and CSI own task HOME
+mounting; runner containers only consume mounted HOME.
 
 ### 3.9 Cross-System Saga And Reconciliation
 
@@ -857,7 +864,7 @@ Storage-dependent API behavior:
 | Task create with new file library | Do not create the repo or runnable task workspace until project storage is ready; if a product task row is created early, it stays `waiting_for_project_storage` and is not runnable. |
 | Task create from template | Validate product template availability first, then block/reconcile until storage is ready before cloning the AFSCP template. |
 | Bind existing file library to task | Requires project storage ready, resource generation match, file-library lifecycle visibility, and confirmed reusable binding state. |
-| Workload mount binding / terminal start | Must not request AFSCP mount binding or orchestrator plan until project storage and file-library repo are ready. |
+| Workload mount binding / terminal start | Must not request AFSCP mount binding or sandbox manager plan until project storage and file-library repo are ready. |
 | Save point, restore preview/run/cancel | Typed block or retryable pending response until project storage and target file library are ready; stale preview remains a separate typed state. |
 | Template create/publish/use/clone | Product metadata visibility may be shown, but AFSCP template create/clone waits for project storage ready and source/target generation match. |
 | Server-side export / future connector | Must not create export/session/lease until project storage and resource lifecycle are ready. |
@@ -907,7 +914,7 @@ as a new product surface.
 Task create should offer:
 
 - Start with new task files.
-- Reuse a released file library.
+- Reuse your own released task workspace/file library.
 - Start from a task file template.
 
 Existing one-file-library-per-undeleted-task binding remains:
@@ -963,7 +970,7 @@ Examples:
 | `afscp_storage_config_invalid` | Project file storage needs administrator attention. |
 | `afscp_service_permission_denied` | Project file storage needs administrator attention. |
 
-Errors must not leak raw paths, credentials, Secret refs, metadata URLs, JVS command strings, or backend details.
+Errors must not leak raw paths, credentials, Secret refs, metadata URLs, raw storage-backend command strings, or backend details.
 
 ## 5. AFSCP Capability Gaps To Validate
 
@@ -975,7 +982,7 @@ AFSCP has the core storage-control primitives needed for this direction:
 - restore preview/run/discard, where discard is the backend operation behind user-facing cancel preview.
 - repo template create/clone.
 - export sessions.
-- workload mount binding and orchestrator-only plan.
+- workload mount binding and sandbox-manager-only plan.
 - operation/audit model.
 
 Known gaps or integration risks:
@@ -983,7 +990,7 @@ Known gaps or integration risks:
 1. No first-class file browser API. AgentSmith must use a Files UI storage
    adapter backed by server-side WebDAV/export or request/add an upstream
    first-class AFSCP file API.
-2. Workload mount binding depends on an orchestrator contract: payload-only mount, plan-scoped SecretRef RBAC, no arbitrary Secret reads, heartbeat, release, revoke, and confirmed-unmounted terminal states.
+2. Workload mount binding depends on a sandbox manager/Kubernetes/CSI contract: payload-only mount, plan-scoped SecretRef RBAC, no arbitrary Secret reads, heartbeat, release, revoke, and confirmed-unmounted terminal states.
 3. Current AgentSmith raw local mount UX conflicts with AFSCP security model and
    must be deleted from product flows. Productized user-computer WebDAV
    connector is deferred to a separate connector milestone; the Files UI storage
@@ -996,9 +1003,9 @@ Known gaps or integration risks:
    single durable ensure that atomically owns both.
 6. AFSCP lifecycle semantics are archive/delete/tombstone/purge. AgentSmith product delete must map deliberately and cannot be raw filesystem deletion.
 7. Quota is only a policy hook unless the selected volume capability enforces directory quota.
-8. AFSCP deploy manifests are not complete in the sibling repo; AgentSmith deploy work must package and configure AFSCP explicitly.
-9. JVS external control-root and clone behavior must be pinned to the product semantics AgentSmith needs: payload-only HOME, no control-root exposure, snapshot-style templates, no AFSCP/JVS control-state copy, and stable restore summaries. HOME payload files are intentionally copied. If JVS cannot express those safely, fix JVS instead of parsing private state in AgentSmith.
-10. AFSCP/JVS redaction and operation summaries must be strong enough for AgentSmith audit/debug projection. If raw JVS commands, private paths, or recovery internals are required to understand an operation, improve the upstream summary contract.
+8. AFSCP deploy manifests are not complete in the sibling repo; AgentSmith deploy work must package and configure AFSCP explicitly without exposing AFSCP-internal JVS path, hash, cwd, or control settings.
+9. AFSCP control-root and clone behavior must be pinned to the product semantics AgentSmith needs: payload-only HOME, no control-root exposure, snapshot-style templates, no internal storage-control state copy, and stable restore summaries. HOME payload files are intentionally copied. If AFSCP cannot express those safely, fix AFSCP instead of parsing private state in AgentSmith.
+10. AFSCP redaction and operation summaries must be strong enough for AgentSmith audit/debug projection. If raw storage-backend commands, private paths, or recovery internals are required to understand an operation, improve the upstream summary contract.
 11. Restore preview and restore-run admission must return typed blockers, redacted file-change summaries, and a preview base revision/generation/head/fence token that restore-run verifies. AgentSmith should not infer active writer causes or destructive restore effects from unrelated task state.
 12. Template creation should preferably be an AFSCP operation for "create template from current repo state" that internally materializes a source save point and returns `template_id` plus `source_save_point_id`. AgentSmith should not expose source save point plumbing as the normal template UX.
 13. Developer runner parity is a target of this milestone and requires an AFSCP
@@ -1025,7 +1032,7 @@ Upstream security gates before AgentSmith integration:
 - AFSCP errors distinguish retryable unavailability/unknown operation state from
   non-retryable conflict, service permission, capability, and configuration
   failures.
-- AFSCP/JVS use external control-root mode for managed repos; payload exports and mounts never expose `.jvs` or control roots.
+- AFSCP uses external control-root mode or an equivalent AFSCP-owned mechanism for managed repos; payload exports and mounts never expose `.jvs` or control roots.
 - When WebDAV/export is the selected Files UI backing, AFSCP WebDAV gateway
   enforces payload-only no-follow path policy, method policy, `Destination`
   policy, credential verification, runtime request accounting, revoke, expiry,
@@ -1034,7 +1041,7 @@ Upstream security gates before AgentSmith integration:
 - AFSCP restore admission uses export/workload writer-session fences, binds preview plans to base revision/generation/head/fence, and returns typed blockers.
 - AFSCP export/session accounting includes server-side Files exports and, when
   Slice 5 is unblocked, developer runner leases/connectors.
-- AFSCP operation views exposed to AgentSmith are allowlisted/redacted and contain no raw JVS command, stdout/stderr, raw path, Secret ref, or credential-shaped value.
+- AFSCP operation views exposed to AgentSmith are allowlisted/redacted and contain no raw storage-backend command, stdout/stderr, raw path, Secret ref, or credential-shaped value.
 - AFSCP internal API schema/generated client evidence exists for the endpoints a
   subsequent AgentSmith slice consumes. Slice 1 may use focused validation while
   the boundary is being established, but later slices must not rely only on
@@ -1043,7 +1050,7 @@ Upstream security gates before AgentSmith integration:
 
 These are not blockers to planning. They are implementation checkpoints. Any
 checkpoint that fails because the upstream abstraction is wrong should produce
-an AFSCP/JVS change item with evidence, not an AgentSmith workaround.
+an AFSCP change item with evidence, not an AgentSmith workaround.
 
 ## 6. Development Plan
 
@@ -1171,7 +1178,7 @@ TDD first:
   when project storage is not ready; they do not create exports or file API
   sessions early.
 - dot folders under HOME root are visible.
-- `.jvs` and control-root material are absent from payload/export because AFSCP/JVS keep control roots outside the payload, not because AgentSmith hides them.
+- `.jvs` and control-root material are absent from payload/export because AFSCP keeps control roots outside the payload, not because AgentSmith hides them.
 - any WebDAV/export credential stays server-side.
 - abort/cancel behavior does not leave leaked sessions.
 - raw desktop/local mount UX is deleted and no `Connect on my computer` entry is shown; no user-facing connector exposes raw JuiceFS mount credentials.
@@ -1200,17 +1207,17 @@ TDD first:
 
 - task binding creates AFSCP workload mount binding.
 - task create/bind/mount paths require project storage ready before repo create,
-  workload mount binding, terminal start, or orchestrator plan fetch.
-- orchestrator plan is fetched only by orchestrator identity.
+  workload mount binding, terminal start, or sandbox manager plan fetch.
+- mount plan is fetched only by sandbox manager identity.
 - task pod receives only payload root mounted at HOME.
-- orchestrator cannot list/read arbitrary Kubernetes Secrets and consumes only AFSCP plan-scoped SecretRefs.
+- sandbox manager cannot list/read arbitrary Kubernetes Secrets and consumes only AFSCP plan-scoped SecretRefs.
 - release/revoke/heartbeat updates are idempotent.
 - active writable mount blocks restore-run.
 - binding reuse is denied while the previous mount/export session is releasing, expired, failed, or otherwise uncertain.
 
 Implementation:
 
-- replace sandbox-manager raw `metadata_url`/storage endpoint contract with AFSCP mount binding + orchestrator plan.
+- replace sandbox-manager raw `metadata_url`/storage endpoint contract with AFSCP mount binding + sandbox manager plan.
 - keep AgentSmith task binding generation and holder fences.
 
 Acceptance:
@@ -1241,7 +1248,7 @@ Implementation:
 
 - provide the AFSCP export-backed developer runner lease/connector path that preserves the same HOME semantics.
 - do not add a second product model for developer files.
-- if the current AFSCP contract cannot support the safe lease/connector abstraction, stop Slice 5 and open the upstream AFSCP contract change; do not add a dedicated developer-orchestrator identity or raw storage workaround.
+- if the current AFSCP contract cannot support the safe lease/connector abstraction, stop Slice 5 and open the upstream AFSCP contract change; do not add a dedicated developer sandbox-manager identity or raw storage workaround.
 - while Slice 5 is blocked, the active `workspace-access` / `task_home_binding`
   contract exposes only `mode: pre_mounted`; developer runner file access fails
   closed with an explicit 409 and must not surface placeholder connector modes.
@@ -1269,7 +1276,7 @@ TDD first:
   from restore blockers and stale previews.
 - restore preview returns a plan bound to repo base revision/generation/head and writer-session fence token.
 - restore run from a matching preview verifies the base/fence still matches and rejects stale previews with a typed error.
-- cancel preview leaves files unchanged, backed by the AFSCP/JVS discard-preview operation.
+- cancel preview leaves files unchanged, backed by the AFSCP cancel/discard-preview operation.
 - active writer conflict.
 - redacted operation/audit projection extends the Slice 2 projection model.
 - contract-first handoff covers save point and restore endpoints, DTO/status/error shape, OpenAPI, generated types, MSW handlers, i18n messages, focused e2e for preview/run/cancel/blockers, and focused visual coverage only for changed UI states.
@@ -1388,8 +1395,7 @@ Boundary evidence matrix:
 | --- | --- | --- |
 | AgentSmith product/API | unit/internal contract tests for touched product permission, file-library catalog, task binding, task file template availability, DTO redaction, product adapter/bootstrap port separation, distinct caller credentials, storage-ready preflight, ownership guard, and AFSCP adapter header construction; public OpenAPI/MSW evidence only when the slice changes public API shape | every AgentSmith slice, scoped to touched boundaries |
 | AgentSmith backend-real | focused smoke proving Files <-> task HOME sync through AFSCP-backed storage | file browser, task HOME, runner, or terminal changes |
-| AFSCP upstream | AFSCP repo-local contract verifier, schema/generated client evidence after Slice 1, and focused Go tests for namespace, repo, save point, restore, template, export, mount binding, operation, redaction | any AFSCP contract or behavior gap |
-| JVS upstream | JVS repo-local smoke/contract tests for external control root, save/restore, clone/template behavior, and recovery state | any JVS command, JSON, restore, or clone semantic gap |
+| AFSCP upstream | AFSCP repo-local contract verifier, schema/generated client evidence after Slice 1, focused Go tests for namespace, repo, save point, restore, template, export, mount binding, operation, and redaction; if AFSCP uses JVS internally, AFSCP release evidence may attach JVS-local evidence for external control root, save/restore, clone/template, and recovery state | any AFSCP contract or behavior gap |
 | Manual deploy smoke | managed runner echo/file marker flow plus developer runner echo/file marker flow when Slice 5 is unblocked; upstream blocker plus no-workaround evidence when Slice 5 is officially blocked | milestone close |
 
 Focused AgentSmith checks:
@@ -1451,11 +1457,14 @@ Focused AFSCP checks:
   Slice 5 is unblocked or attach upstream blocker evidence when Slice 5 is
   officially blocked.
 
-Focused JVS checks when upstream JVS behavior is touched:
+AFSCP internal implementation evidence attachments:
 
-- external control-root smoke.
-- save -> save point list -> restore preview -> restore-run -> backend discard-preview matrix.
-- repo/template clone smoke proving new repo identity, no AFSCP/JVS control-state copy, payload-only behavior, and no dangling save point references.
+- JVS-local evidence, when AFSCP uses JVS internally, is attached to AFSCP
+  upstream/release evidence and is not an AgentSmith product, E2E, deploy, or
+  acceptance gate.
+- Evidence may cover external control-root behavior, save/restore,
+  clone/template behavior, recovery state, payload-only behavior, and no
+  internal storage-control state copy.
 
 Manual/backend-real smokes:
 
@@ -1500,7 +1509,7 @@ This milestone is complete only when:
 5. Files browser faithfully reflects the user-visible HOME/repo payload root for every AFSCP-backed file library, including normal dot folders, and opens the HOME root by default. `workspace/` remains an ordinary directory inside HOME and is the default agent/terminal working directory, not the Files browser root.
 6. Save point, restore, and template dialogs tell users the scope is the whole file library HOME, which is the task HOME when bound, including hidden agent runtime folders, not only the current `workspace/` view.
 7. Platform-managed Project secrets, managed OAuth credentials, execution tickets, runner connection secrets, WebDAV/export passwords, AFSCP credentials, and storage-root material are not automatically leaked or persisted into HOME payload. The handoff and tests distinguish this from user/agent-authored secret text files, which are user data risk rather than a platform guarantee.
-8. Managed runner uses AFSCP workload mount binding and an orchestrator-only repo/namespace/destination/TTL-scoped mount plan. The orchestrator cannot list/read arbitrary Kubernetes Secrets, cannot persist root credentials, and never exposes storage-root material to runner/task containers.
+8. Managed runner uses AFSCP workload mount binding and a sandbox-manager-only repo/namespace/destination/TTL-scoped mount plan. The sandbox manager cannot list/read arbitrary Kubernetes Secrets, cannot persist root credentials, and never exposes storage-root material to runner/task containers; Kubernetes/CSI performs the pod mount.
 9. Developer runner uses the selected AFSCP export-backed lease/connector path with short TTL, revoke, heartbeat/reconcile, and AFSCP export/session accounting when Slice 5 is unblocked and implemented. If the current AFSCP contract cannot support this safely, Slice 5 remains officially blocked upstream with upstream blocker evidence, a no-workaround record, and no developer-runner-specific backend-real/deploy smoke required for this round.
 10. Save point list/create works.
 11. Restore preview/confirm/cancel works; cancel leaves files unchanged, restore blocks active or uncertain writers, preview plans bind repo base revision/generation/head/fence token, stale previews require preview again before restore-run, and restore-run pending is shown as restoring/reconciling until the backend reports terminal success before success feedback appears. The backend operation may still be named discard preview.
@@ -1514,7 +1523,7 @@ This milestone is complete only when:
 19. File library reuse after task delete waits for AFSCP confirmed non-accessing terminal state.
 20. Slice 2/3/6/7 contract-first artifacts are updated: endpoints, DTO/status/error shape, OpenAPI, generated types, MSW handlers and fixtures, i18n messages, focused e2e fixtures/scenarios, and focused visual coverage where UI states changed.
 21. Slice 8 deploy evidence exists for unified deploy render/manifest/substrate-boundary/k8s dry-run unit checks and required product-flow smokes; developer-runner-specific deploy smoke is required only when Slice 5 is unblocked and implemented.
-22. AFSCP/JVS upstream evidence exists for service caller mapping, namespace mismatch rejection, external control-root, selected Files UI storage backing policy, writer-session fence, restore preview base/fence validation, redacted operation view, template clone boundary, and required AFSCP internal contract validation. Developer runner lease/session accounting evidence is required when Slice 5 is unblocked; otherwise the upstream blocker and no-workaround record are required.
+22. AFSCP upstream/release evidence exists for service caller mapping, namespace mismatch rejection, external control-root, selected Files UI storage backing policy, writer-session fence, restore preview base/fence validation, redacted operation view, template clone boundary, and required AFSCP internal contract validation. If AFSCP uses JVS internally, JVS-local proof is attached to AFSCP release evidence rather than becoming an AgentSmith gate. Developer runner lease/session accounting evidence is required when Slice 5 is unblocked; otherwise the upstream blocker and no-workaround record are required.
 23. Focused tests and backend-real smokes listed above are green, except developer-runner-specific backend-real/deploy smoke is replaced by upstream blocker plus no-workaround evidence when Slice 5 is officially blocked.
 24. Ordinary product routes cannot import, inject, or receive a raw AFSCP client configured with bootstrap token/caller-service. Product routes use the product adapter; project storage bootstrap uses the bootstrap port.
 25. Product token/caller-service and bootstrap token/caller-service are distinct, and AgentSmith fails fast when they are missing, reused, or routed to the wrong port.
@@ -1528,7 +1537,7 @@ The implementation must keep these active documents aligned as behavior lands:
 
 - `docs/contracts/afscp-file-libraries-architecture.md`: canonical AFSCP shared-volume repo model and Files adapter boundary.
 - `docs/contracts/files-frontend-module-map.md`: frontend module contract for the AFSCP-backed file-library surface.
-- `docs/contracts/internal-agent-workspace-binding-model-v1.md`: managed runner authority through AFSCP workload mount binding, orchestrator-only mount plan, and task HOME contract; developer runner authority through the export-backed lease/connector path, or through the upstream blocker/no-workaround record while Slice 5 remains blocked.
+- `docs/contracts/internal-agent-workspace-binding-model-v1.md`: managed runner authority through AFSCP workload mount binding, sandbox-manager-only mount plan, and task HOME contract; developer runner authority through the export-backed lease/connector path, or through the upstream blocker/no-workaround record while Slice 5 remains blocked.
 - `docs/agent-task-runner-runbook.md`: AFSCP-backed HOME runtime and no-secret persistence rules.
 - `docs/user-guides/file-library-access-model.md`: user-facing file library access model. The current milestone must not expose raw JuiceFS local mount guidance; productized WebDAV connector guidance belongs only in a later connector milestone.
 - Deleted raw JuiceFS docs such as `docs/contracts/juicefs-file-libraries-architecture.md`

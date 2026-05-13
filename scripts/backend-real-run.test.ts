@@ -1,7 +1,13 @@
+import { execFileSync } from 'node:child_process';
 import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 
 describe('backend real run first-lane port contract', () => {
+  it('keeps backend-real runner shell scripts syntax valid', () => {
+    expect(() => execFileSync('bash', ['-n', 'scripts/backend-real-run.sh'])).not.toThrow();
+    expect(() => execFileSync('bash', ['-n', 'scripts/agent-task-real-smoke-gate.sh'])).not.toThrow();
+  });
+
   it('resolves the first lane from inherited integration ports before cleanup and execution', () => {
     const script = readFileSync('scripts/backend-real-run.sh', 'utf8');
 
@@ -37,5 +43,30 @@ describe('backend real run first-lane port contract', () => {
     expect(script.indexOf(restoreWeb)).toBeGreaterThan(script.indexOf(runtimeLoad));
     expect(script.indexOf(restoreApi)).toBeLessThan(script.indexOf(firstLaneApi));
     expect(script.indexOf(restoreWeb)).toBeLessThan(script.indexOf(firstLaneWeb));
+  });
+
+  it('reuses default gate preflight and focused visual evidence only when the release env explicitly opts in', () => {
+    const script = readFileSync('scripts/backend-real-run.sh', 'utf8');
+
+    expect(script).toContain('REUSE_DEFAULT_GATE_EVIDENCE="${BACKEND_REAL_REUSE_DEFAULT_GATE_EVIDENCE:-0}"');
+    expect(script).toContain('if [[ "${REUSE_DEFAULT_GATE_EVIDENCE}" == "1" ]]; then');
+    expect(script).toContain('bash scripts/workspace-project-default-gate.sh --with-backend-real --skip-shared-preflight --skip-focused-visual');
+    expect(script).toContain('npm run test:backend-real:core');
+    expect(script).toContain('AGENT_TASK_REAL_SMOKE_SKIP_SHARED_PREFLIGHT=1');
+    expect(script).toContain('npm run test:agent-task:backend-real:smoke');
+  });
+
+  it('keeps agent-task smoke static preflight by default and skippable only by explicit flag or env', () => {
+    const script = readFileSync('scripts/agent-task-real-smoke-gate.sh', 'utf8');
+
+    expect(script).toContain('SKIP_SHARED_PREFLIGHT="${AGENT_TASK_REAL_SMOKE_SKIP_SHARED_PREFLIGHT:-0}"');
+    expect(script).toContain('--skip-shared-preflight');
+    expect(script).toContain('if [[ "${SKIP_SHARED_PREFLIGHT}" == "1" ]]; then');
+    expect(script).toContain('reusing shared preflight evidence; skipping contracts/openapi/typegen/typecheck');
+    expect(script).toContain('run_cmd "npm run contracts:check"');
+    expect(script).toContain('run_cmd "npm run contracts:check-openapi"');
+    expect(script).toContain('run_cmd "npm run openapi:check-generated"');
+    expect(script).toContain('run_cmd "npx next typegen ."');
+    expect(script).toContain('run_cmd "npx tsc --noEmit"');
   });
 });

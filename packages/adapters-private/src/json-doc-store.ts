@@ -5,7 +5,7 @@ import type {
   JsonDocConditionalUpdateResult,
   JsonDocStorePort,
 } from '@mbos/ports';
-import { MongoClient, type MongoClientOptions } from 'mongodb';
+import { MongoClient, MongoNetworkError, type MongoClientOptions } from 'mongodb';
 
 export type MongoJsonDocStorePoolContract = Pick<
   MongoClientOptions,
@@ -19,6 +19,10 @@ export const DEFAULT_MONGO_JSON_DOC_STORE_POOL_OPTIONS = Object.freeze({
   maxConnecting: 2,
   waitQueueTimeoutMS: 5_000,
 } satisfies MongoJsonDocStorePoolContract);
+
+const MONGO_JSON_DOC_STORE_TRANSIENT_RETRY_ATTEMPTS = 3;
+const MONGO_JSON_DOC_STORE_TRANSIENT_RETRY_DELAY_MS = 50;
+const MONGO_TRANSIENT_MESSAGE_PATTERN = /\b(connection \d+ to .* closed|connection closed|socket closed|ECONNRESET|network error)\b/i;
 
 export interface MongoJsonDocStoreOptions {
   url: string;
@@ -47,40 +51,62 @@ export class MongoJsonDocStore implements JsonDocStorePort {
       .collection<Record<string, unknown> & { _id: string }>(collection);
   }
 
-  async get<T>(collection: string, id: string): Promise<T | null> {
-    const col = await this.collection(collection);
-    const doc = await col.findOne({ _id: id });
-    if (!doc) {
-      return null;
+  private async withTransientRetry<T>(operation: () => Promise<T>): Promise<T> {
+    for (let attempt = 0; attempt < MONGO_JSON_DOC_STORE_TRANSIENT_RETRY_ATTEMPTS; attempt += 1) {
+      try {
+        return await operation();
+      } catch (error) {
+        if (!isRetryableMongoJsonDocStoreError(error) || attempt === MONGO_JSON_DOC_STORE_TRANSIENT_RETRY_ATTEMPTS - 1) {
+          throw error;
+        }
+        await waitForMongoJsonDocStoreRetry(attempt);
+      }
     }
-
-    const { _id: _ignored, ...rest } = doc;
-    return rest as T;
+    throw new Error('mongo_json_doc_store_retry_exhausted');
   }
 
-  async upsert<T>(collection: string, id: string, doc: T): Promise<void> {
-    const col = await this.collection(collection);
-    await col.updateOne(
-      { _id: id },
-      {
-        $set: doc as Record<string, unknown>,
-      },
-      { upsert: true },
-    );
-  }
+  async get<T>(collection: string, id: string): Promise<T | null> {
+    return this.withTransientRetry(async () => {
+      const col = await this.collection(collection);
+      const doc = await col.findOne({ _id: id });
+      if (!doc) {
+        return null;
+      }
 
-  async list<T>(collection: string, filter: Record<string, string> = {}): Promise<T[]> {
-    const col = await this.collection(collection);
-    const docs = await col.find(filter).toArray();
-    return docs.map((doc) => {
       const { _id: _ignored, ...rest } = doc;
       return rest as T;
     });
   }
 
+  async upsert<T>(collection: string, id: string, doc: T): Promise<void> {
+    await this.withTransientRetry(async () => {
+      const col = await this.collection(collection);
+      await col.updateOne(
+        { _id: id },
+        {
+          $set: doc as Record<string, unknown>,
+        },
+        { upsert: true },
+      );
+    });
+  }
+
+  async list<T>(collection: string, filter: Record<string, string> = {}): Promise<T[]> {
+    return this.withTransientRetry(async () => {
+      const col = await this.collection(collection);
+      const docs = await col.find(filter).toArray();
+      return docs.map((doc) => {
+        const { _id: _ignored, ...rest } = doc;
+        return rest as T;
+      });
+    });
+  }
+
   async delete(collection: string, id: string): Promise<void> {
-    const col = await this.collection(collection);
-    await col.deleteOne({ _id: id });
+    await this.withTransientRetry(async () => {
+      const col = await this.collection(collection);
+      await col.deleteOne({ _id: id });
+    });
   }
 
   async createIfAbsent<T>(
@@ -120,8 +146,6 @@ export class MongoJsonDocStore implements JsonDocStorePort {
       replace?: T;
     },
   ): Promise<JsonDocConditionalUpdateResult<T>> {
-    const col = await this.collection(collection);
-    const filter = buildMongoConditionalFilter(id, operation.expected);
     const nextPatch = operation.replace
       ? operation.replace as Record<string, unknown>
       : operation.patch as Record<string, unknown> | undefined;
@@ -136,6 +160,8 @@ export class MongoJsonDocStore implements JsonDocStorePort {
       return { ok: true, doc: current };
     }
 
+    const col = await this.collection(collection);
+    const filter = buildMongoConditionalFilter(id, operation.expected);
     const result = operation.replace
       ? await col.replaceOne(filter, {
           _id: id,
@@ -290,6 +316,23 @@ export class InMemoryJsonDocStore implements JsonDocStorePort {
     col.delete(id);
     return { ok: true, deleted: true };
   }
+}
+
+function isRetryableMongoJsonDocStoreError(error: unknown): boolean {
+  if (error instanceof MongoNetworkError) {
+    return true;
+  }
+  if (typeof error !== 'object' || error === null || !('message' in error)) {
+    return false;
+  }
+  const { message } = error as { message?: unknown };
+  return typeof message === 'string' && MONGO_TRANSIENT_MESSAGE_PATTERN.test(message);
+}
+
+function waitForMongoJsonDocStoreRetry(attempt: number): Promise<void> {
+  return new Promise((resolve) => {
+    setTimeout(resolve, MONGO_JSON_DOC_STORE_TRANSIENT_RETRY_DELAY_MS * (attempt + 1));
+  });
 }
 
 function isMongoDuplicateKeyError(error: unknown): boolean {

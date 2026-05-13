@@ -2,6 +2,7 @@ import { mkdtemp, readFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { afterEach, describe, expect, it, vi } from 'vitest';
+import type { SystemWorkspaceRecord } from '../workspace-registry/types';
 
 async function importPersistence() {
   vi.resetModules();
@@ -134,6 +135,56 @@ describe('system workspace registry persistence', () => {
     const persisted = await readFile(filePath, 'utf8');
     expect(persisted).toContain('ws_alpha');
     expect(persisted).toContain('ws_beta');
+  });
+
+  it('normalizes legacy seeded idp records without dropping directory client credentials', async () => {
+    const persistence = await importPersistence();
+    const now = '2026-05-12T00:00:00.000Z';
+    persistence.seedPersistedSystemWorkspacesForTest([
+      {
+        id: 'ws_seeded',
+        name: 'Seeded Workspace',
+        workspace_admin: 'dev-admin@example.com',
+        workspace_admin_user_id: 'kc-dev-admin',
+        workspace_admin_name: 'Dev Admin',
+        project_creators: [],
+        idp: {
+          kind: 'keycloak',
+          url: 'http://localhost:28081',
+          realm: 'mbos',
+          client_id: 'agentsmith',
+        },
+        directory_idp: {
+          client_id: 'agentsmith-directory',
+          client_secret: 'agentsmith-directory-secret',
+        },
+        tenant: {
+          workspace_id: 'ws_seeded',
+          workspace_name: 'Seeded Workspace',
+          substrate_label: 'default',
+          database_name: 'agentsmith_ws_seeded',
+          collection_prefix: 'ws_seeded_',
+          key_prefix: 'ws_seeded:',
+        },
+        provisioning_status: 'ready',
+        last_initialized_at: now,
+        last_init_error: null,
+        created_at: now,
+        updated_at: now,
+      } as unknown as SystemWorkspaceRecord,
+    ]);
+
+    await expect(persistence.getPersistedSystemWorkspace('ws_seeded')).resolves.toEqual(
+      expect.objectContaining({
+        login_idp: expect.objectContaining({
+          client_id: 'agentsmith',
+        }),
+        directory_idp: {
+          client_id: 'agentsmith-directory',
+          client_secret: 'agentsmith-directory-secret',
+        },
+      }),
+    );
   });
 
   it('uses mongo-backed storage when MONGO_URL is configured', async () => {

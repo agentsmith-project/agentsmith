@@ -40,20 +40,37 @@ run_real_cmd() {
 
 FIRST_LANE_API_PORT="${INTEGRATION_API_PORT:-20040}"
 FIRST_LANE_WEB_PORT="${INTEGRATION_WEB_PORT:-3041}"
+REUSE_DEFAULT_GATE_EVIDENCE="${BACKEND_REAL_REUSE_DEFAULT_GATE_EVIDENCE:-0}"
 
 info "running default backend-real checks"
 cleanup_gate_ports "${FIRST_LANE_API_PORT}" "${FIRST_LANE_WEB_PORT}" e2e/integration-minimal.spec.ts
-run_real_cmd \
-  INTEGRATION_API_PORT="${FIRST_LANE_API_PORT}" \
-  INTEGRATION_WEB_PORT="${FIRST_LANE_WEB_PORT}" \
-  npm run test:backend-real:core
+if [[ "${REUSE_DEFAULT_GATE_EVIDENCE}" == "1" ]]; then
+  info "reusing default gate evidence for shared preflight and focused visual coverage"
+  run_real_cmd \
+    INTEGRATION_API_PORT="${FIRST_LANE_API_PORT}" \
+    INTEGRATION_WEB_PORT="${FIRST_LANE_WEB_PORT}" \
+    bash scripts/workspace-project-default-gate.sh --with-backend-real --skip-shared-preflight --skip-focused-visual
+else
+  run_real_cmd \
+    INTEGRATION_API_PORT="${FIRST_LANE_API_PORT}" \
+    INTEGRATION_WEB_PORT="${FIRST_LANE_WEB_PORT}" \
+    npm run test:backend-real:core
+fi
 
 info "running agent-task backend-real smoke"
 cleanup_gate_ports 20060 3061 e2e/integration-agent-task-runner.spec.ts
-run_real_cmd \
-  INTEGRATION_API_PORT=20060 \
-  INTEGRATION_WEB_PORT=3061 \
-  npm run test:agent-task:backend-real:smoke
+if [[ "${REUSE_DEFAULT_GATE_EVIDENCE}" == "1" ]]; then
+  run_real_cmd \
+    INTEGRATION_API_PORT=20060 \
+    INTEGRATION_WEB_PORT=3061 \
+    AGENT_TASK_REAL_SMOKE_SKIP_SHARED_PREFLIGHT=1 \
+    npm run test:agent-task:backend-real:smoke
+else
+  run_real_cmd \
+    INTEGRATION_API_PORT=20060 \
+    INTEGRATION_WEB_PORT=3061 \
+    npm run test:agent-task:backend-real:smoke
+fi
 
 info "running agent-task runner backend-real checks"
 cleanup_gate_ports 20064 3065 e2e/integration-agent-task-runner.spec.ts

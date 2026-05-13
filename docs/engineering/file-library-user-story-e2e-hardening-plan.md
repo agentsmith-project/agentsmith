@@ -6,7 +6,7 @@
 
 ## 0. 目标
 
-这份计划用于补齐 AFSCP-backed 文件库重构后的用户故事验收缺口。它不是扩大测试范围，而是把开发测试团队需要确认的产品心智、阻断文案、证据路径收敛到可实现状态。
+这份计划用于补齐文件库存储重构后的用户故事验收缺口。它不是扩大测试范围，而是把开发测试团队需要确认的产品心智、阻断文案、证据路径收敛到可实现状态。
 
 核心目标：
 
@@ -51,7 +51,7 @@ Restore-run 可能是异步操作。UI 不能在 restore-run 仍 pending 时给�
 
 - 新 task 获得新的 file library id。
 - 克隆继承 HOME payload 文件，包括 `workspace/.artifacts/` 里的普通文件。
-- 克隆不继承旧 task 消息、trace、terminal、runner binding、active lease、artifact metadata、Project secrets、tickets、managed OAuth credentials 或 AFSCP/JVS control metadata。
+- 克隆不继承旧 task 消息、trace、terminal、runner binding、active lease、artifact metadata、Project secrets、tickets、managed OAuth credentials 或 internal storage-control metadata。
 - unpublish/delete template 只影响未来使用，不影响已经克隆出来的 task/file library。
 
 ### 1.4 文件库绑定生命周期
@@ -112,7 +112,7 @@ Restore-run 可能是异步操作。UI 不能在 restore-run 仍 pending 时给�
 - restore 覆盖 whole HOME payload，不只覆盖当前目录或 `workspace/`。
 - UI 成功心智只在 restore terminal success 后出现。
 - restore preview 期间模板发布和 destructive mutation 入口被 typed blocker 阻断；恢复完成后解除阻断。
-- 页面不展示 raw AFSCP/JVS id、storage path、内部 token 或原始错误码。
+- 页面不展示 raw storage-control/storage-backend id、storage path、内部 token 或原始错误码。
 
 ### Story B: Task file template 点击时快照与独立克隆
 
@@ -228,7 +228,7 @@ Restore-run 可能是异步操作。UI 不能在 restore-run 仍 pending 时给�
 
 - UI E2E：证明用户能在界面上完成 restore、template clone、HOME root/dot folder、binding reuse 等主路径，并看到符合心智的结果。
 - 组件/错误映射测试：覆盖 typed blocker copy、禁用态、pending 文案、表单保留、capability denied。
-- backend-real smoke：证明 AFSCP-backed storage、restore、template clone、task HOME binding 行为正确，且无 raw storage 泄漏。
+- backend-real smoke：证明当前 storage-control backed storage、restore、template clone、task HOME binding 行为正确，且无 raw storage 泄漏。
 - API contract/openapi：只有公共 API 形状变化时才升级。
 
 ### 4.3 建议 focused 命令
@@ -242,7 +242,7 @@ npm run test:e2e:integration:files:user-stories -- --grep "HOME"
 npm run test:e2e:integration:files:user-stories -- --grep "binding"
 ```
 
-如果涉及后端 AFSCP 适配、save point、restore、template clone 或文件库删除：
+如果涉及后端 storage-control API 适配、save point、restore、template clone 或文件库删除：
 
 ```bash
 npm run test:files:backend-real:smoke
@@ -296,5 +296,5 @@ npm run verify -- --goal=pr --run
 - 不引入成员/组级模板共享；模板只在 project 内发布和使用。
 - 不把 stop/end task 设计成释放文件库绑定。
 - 不恢复旧 task 的消息、trace、terminal、runner binding、artifact metadata。
-- 不暴露 raw AFSCP/JVS/JuiceFS 路径、bucket、metadata URL、内部 credential 或 storage id 给普通用户。
+- 不暴露 raw storage-control/storage-backend 路径、bucket、metadata URL、内部 credential 或 storage id 给普通用户。
 - 不为 capability denied 等临界态强行增加脆弱 UI E2E；主路径不稳定时用组件和错误映射测试承接。

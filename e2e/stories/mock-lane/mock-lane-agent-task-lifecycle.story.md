@@ -148,9 +148,7 @@
       "stableMarkers": [
         "agent-task__task-header",
         "agent-tasks__execution-visibility",
-        "agent-tasks__sse-status",
-        "agent-tasks__sse-status-open-audit",
-        "agent-tasks__sse-status-open-usage"
+        "agent-tasks__sse-status"
       ]
     },
     {
@@ -628,7 +626,7 @@
         {
           "sceneId": "agent-task-sse-unavailable-reconcile",
           "scenarioId": "agent-task-sse-unavailable-reconcile",
-          "scenario": "Live updates cannot currently be trusted, so the task surfaces manual recovery guidance and diagnostics links before the member blindly keeps going.",
+          "scenario": "Live updates cannot currently be trusted, so the task surfaces concise recovery guidance before the member blindly keeps going.",
           "group": "project_pages",
           "codeRefs": [
             "e2e/visual.spec.ts",
@@ -651,9 +649,7 @@
           "semanticAssertions": {
             "requiredViewportTestIds": [
               "agent-task__task-header",
-              "agent-tasks__sse-status",
-              "agent-tasks__sse-status-open-audit",
-              "agent-tasks__sse-status-open-usage"
+              "agent-tasks__sse-status"
             ],
             "prominentActionScopeTestIds": [
               "agent-tasks__execution-visibility"

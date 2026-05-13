@@ -160,7 +160,7 @@ function buildDefaultVolumeBinding(input: {
     },
     mount_policy: {
       workload_mount_enabled: true,
-      workload_mount_requires_jvs_external_control_root: true,
+      workload_mount_requires_external_control_root: true,
       allow_privileged_workload: false,
     },
     template_policy: {

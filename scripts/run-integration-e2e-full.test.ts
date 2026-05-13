@@ -43,14 +43,17 @@ describe('run-integration-e2e-full lifecycle observability contract', () => {
     tempRoot: string,
     options: { curlMode: 'candidate-reachable' | 'explicit-unreachable' | 'managed-container'; dockerMode?: 'success' | 'pull-fail' | 'run-fail' },
   ): {
+    afscpLifecycleLog: string;
     apiEnvLog: string;
     binDir: string;
     dockerLog: string;
+    playwrightEnvLog: string;
     scriptPath: string;
     webEnvLog: string;
   } {
     const scriptsDir = path.join(tempRoot, 'scripts');
     const scriptsLibDir = path.join(scriptsDir, 'lib');
+    const scriptsLocalManualDir = path.join(scriptsDir, 'local-manual');
     const infraSharedDir = path.join(tempRoot, 'infra', 'deploy', 'shared');
     const universalProxyConfigDir = path.join(infraSharedDir, 'universal-proxy');
     const binDir = path.join(tempRoot, 'bin');
@@ -58,15 +61,19 @@ describe('run-integration-e2e-full lifecycle observability contract', () => {
     const runId = 'managed-proxy-test-run';
     const apiEnvLog = path.join(tempRoot, 'api-env.log');
     const webEnvLog = path.join(tempRoot, 'web-env.log');
+    const playwrightEnvLog = path.join(tempRoot, 'playwright-env.log');
     const dockerLog = path.join(tempRoot, 'docker.log');
+    const afscpLifecycleLog = path.join(tempRoot, 'afscp-lifecycle.log');
     const dockerRunMarker = path.join(tempRoot, 'docker-run.marker');
 
     mkdirSync(scriptsLibDir, { recursive: true });
+    mkdirSync(scriptsLocalManualDir, { recursive: true });
     mkdirSync(universalProxyConfigDir, { recursive: true });
     mkdirSync(binDir, { recursive: true });
     mkdirSync(path.join(tempRoot, 'artifacts', 'backend-real', 'runs'), { recursive: true });
 
     cpSync(path.join(process.cwd(), 'scripts', 'run-integration-e2e-full.sh'), path.join(scriptsDir, 'run-integration-e2e-full.sh'));
+    cpSync(path.join(process.cwd(), 'scripts', 'lib', 'afscp-local-runtime.sh'), path.join(scriptsLibDir, 'afscp-local-runtime.sh'));
     cpSync(path.join(process.cwd(), 'scripts', 'lib', 'llmup-image-lock.sh'), path.join(scriptsLibDir, 'llmup-image-lock.sh'));
     cpSync(
       path.join(process.cwd(), 'scripts', 'lib', 'universal-proxy-runtime.sh'),
@@ -103,6 +110,34 @@ ensure_backend_real_state() {
 set -euo pipefail
 load_backend_real_env() { :; }
 export_backend_real_endpoint_env() { :; }
+`,
+      'utf8',
+    );
+
+    writeFileSync(
+      path.join(scriptsLocalManualDir, 'internal-common.sh'),
+      `#!/usr/bin/env bash
+set -euo pipefail
+
+ensure_afscp_local_runtime() {
+  {
+    printf 'ensure\\n'
+    printf 'AFSCP_BASE_URL=%s\\n' "\${AFSCP_BASE_URL:-}"
+    printf 'AFSCP_EXPORT_GATEWAY_BASE_URL=%s\\n' "\${AFSCP_EXPORT_GATEWAY_BASE_URL:-}"
+    printf 'AFSCP_DEFAULT_VOLUME_ID=%s\\n' "\${AFSCP_DEFAULT_VOLUME_ID:-}"
+    printf 'AFSCP_CALLER_SERVICE=%s\\n' "\${AFSCP_CALLER_SERVICE:-}"
+    printf 'AFSCP_BOOTSTRAP_CALLER_SERVICE=%s\\n' "\${AFSCP_BOOTSTRAP_CALLER_SERVICE:-}"
+    printf 'AFSCP_ORCHESTRATOR_CALLER_SERVICE=%s\\n' "\${AFSCP_ORCHESTRATOR_CALLER_SERVICE:-}"
+    printf 'DATABASE_URL=%s\\n' "\${DATABASE_URL:-}"
+  } >> "${afscpLifecycleLog}"
+}
+
+stop_afscp_local_runtime() {
+  {
+    printf 'stop\\n'
+    printf 'AFSCP_BASE_URL=%s\\n' "\${AFSCP_BASE_URL:-}"
+  } >> "${afscpLifecycleLog}"
+}
 `,
       'utf8',
     );
@@ -200,7 +235,22 @@ resolve_loopback_runtime_stack() {
 
 gate_evidence_init() { mkdir -p "$1"; }
 gate_write_runtime_descriptor() { :; }
-gate_write_resolved_env() { :; }
+gate_write_resolved_env() {
+  local evidence_dir="$1"
+  cat > "\${evidence_dir}/resolved-env.json" <<EOF
+{
+  "AFSCP_BASE_URL": "\${AFSCP_BASE_URL:-}",
+  "AFSCP_EXPORT_GATEWAY_BASE_URL": "\${AFSCP_EXPORT_GATEWAY_BASE_URL:-}",
+  "AFSCP_DEFAULT_VOLUME_ID": "\${AFSCP_DEFAULT_VOLUME_ID:-}",
+  "AFSCP_CALLER_SERVICE": "\${AFSCP_CALLER_SERVICE:-}",
+  "AFSCP_SERVICE_TOKEN": "\${AFSCP_SERVICE_TOKEN:+[set]}",
+  "AFSCP_BOOTSTRAP_CALLER_SERVICE": "\${AFSCP_BOOTSTRAP_CALLER_SERVICE:-}",
+  "AFSCP_BOOTSTRAP_SERVICE_TOKEN": "\${AFSCP_BOOTSTRAP_SERVICE_TOKEN:+[set]}",
+  "AFSCP_ORCHESTRATOR_CALLER_SERVICE": "\${AFSCP_ORCHESTRATOR_CALLER_SERVICE:-}",
+  "AFSCP_ORCHESTRATOR_SERVICE_TOKEN": "\${AFSCP_ORCHESTRATOR_SERVICE_TOKEN:+[set]}"
+}
+EOF
+}
 gate_record_task_summary() { printf '%s\\n' "$2" > "$1/task-summary.json"; }
 gate_record_service_status() { :; }
 gate_wait_for_http() { return 0; }
@@ -218,6 +268,16 @@ gate_run_auth_preflight() { printf 'integration-token\\n'; }
 set -euo pipefail
 cat > "${webEnvLog}" <<EOF
 NEXT_PUBLIC_API_BASE=\${NEXT_PUBLIC_API_BASE:-}
+NEXT_DEV_MEMORY_PROFILE=\${NEXT_DEV_MEMORY_PROFILE:-}
+AFSCP_BASE_URL=\${AFSCP_BASE_URL:-}
+AFSCP_EXPORT_GATEWAY_BASE_URL=\${AFSCP_EXPORT_GATEWAY_BASE_URL:-}
+AFSCP_DEFAULT_VOLUME_ID=\${AFSCP_DEFAULT_VOLUME_ID:-}
+AFSCP_CALLER_SERVICE=\${AFSCP_CALLER_SERVICE:-}
+AFSCP_SERVICE_TOKEN=\${AFSCP_SERVICE_TOKEN:-}
+AFSCP_BOOTSTRAP_CALLER_SERVICE=\${AFSCP_BOOTSTRAP_CALLER_SERVICE:-}
+AFSCP_BOOTSTRAP_SERVICE_TOKEN=\${AFSCP_BOOTSTRAP_SERVICE_TOKEN:-}
+AFSCP_ORCHESTRATOR_CALLER_SERVICE=\${AFSCP_ORCHESTRATOR_CALLER_SERVICE:-}
+AFSCP_ORCHESTRATOR_SERVICE_TOKEN=\${AFSCP_ORCHESTRATOR_SERVICE_TOKEN:-}
 EOF
 trap 'exit 0' TERM INT
 while true; do
@@ -237,6 +297,15 @@ PORT=\${PORT:-}
 MBOS_UNIVERSAL_PROXY_BASE_URL=\${MBOS_UNIVERSAL_PROXY_BASE_URL:-}
 MBOS_UNIVERSAL_PROXY_ADMIN_TOKEN=\${MBOS_UNIVERSAL_PROXY_ADMIN_TOKEN:-}
 MBOS_UNIVERSAL_PROXY_UPSTREAM_HOST=\${MBOS_UNIVERSAL_PROXY_UPSTREAM_HOST:-}
+AFSCP_BASE_URL=\${AFSCP_BASE_URL:-}
+AFSCP_EXPORT_GATEWAY_BASE_URL=\${AFSCP_EXPORT_GATEWAY_BASE_URL:-}
+AFSCP_DEFAULT_VOLUME_ID=\${AFSCP_DEFAULT_VOLUME_ID:-}
+AFSCP_CALLER_SERVICE=\${AFSCP_CALLER_SERVICE:-}
+AFSCP_SERVICE_TOKEN=\${AFSCP_SERVICE_TOKEN:-}
+AFSCP_BOOTSTRAP_CALLER_SERVICE=\${AFSCP_BOOTSTRAP_CALLER_SERVICE:-}
+AFSCP_BOOTSTRAP_SERVICE_TOKEN=\${AFSCP_BOOTSTRAP_SERVICE_TOKEN:-}
+AFSCP_ORCHESTRATOR_CALLER_SERVICE=\${AFSCP_ORCHESTRATOR_CALLER_SERVICE:-}
+AFSCP_ORCHESTRATOR_SERVICE_TOKEN=\${AFSCP_ORCHESTRATOR_SERVICE_TOKEN:-}
 EOF
   trap 'exit 0' TERM INT
   while true; do
@@ -253,6 +322,21 @@ exit 0
       `#!/usr/bin/env bash
 set -euo pipefail
 if [[ "$1" == "playwright" && "$2" == "test" ]]; then
+  cat > "${playwrightEnvLog}" <<EOF
+BASE_URL=\${BASE_URL:-}
+INTEGRATION_API_BASE=\${INTEGRATION_API_BASE:-}
+MONGO_URL=\${MONGO_URL:-}
+MONGO_DB_NAME=\${MONGO_DB_NAME:-}
+AFSCP_BASE_URL=\${AFSCP_BASE_URL:-}
+AFSCP_EXPORT_GATEWAY_BASE_URL=\${AFSCP_EXPORT_GATEWAY_BASE_URL:-}
+AFSCP_DEFAULT_VOLUME_ID=\${AFSCP_DEFAULT_VOLUME_ID:-}
+AFSCP_CALLER_SERVICE=\${AFSCP_CALLER_SERVICE:-}
+AFSCP_SERVICE_TOKEN=\${AFSCP_SERVICE_TOKEN:-}
+AFSCP_BOOTSTRAP_CALLER_SERVICE=\${AFSCP_BOOTSTRAP_CALLER_SERVICE:-}
+AFSCP_BOOTSTRAP_SERVICE_TOKEN=\${AFSCP_BOOTSTRAP_SERVICE_TOKEN:-}
+AFSCP_ORCHESTRATOR_CALLER_SERVICE=\${AFSCP_ORCHESTRATOR_CALLER_SERVICE:-}
+AFSCP_ORCHESTRATOR_SERVICE_TOKEN=\${AFSCP_ORCHESTRATOR_SERVICE_TOKEN:-}
+EOF
   exit 17
 fi
 if [[ "$1" == "tsx" ]]; then
@@ -294,6 +378,9 @@ set -euo pipefail
     ;;
   */api/v1/workspaces*)
     status="401"
+    ;;
+  */api/test/system/workspaces/seed)
+    status="200"
     ;;
   */en-US/login|*/login|*/login/workspace|*/system/login|*/workspaces/ws_default|*/workspaces/ws_default/projects)
     status="200"
@@ -390,9 +477,11 @@ exit 0
     chmodSync(path.join(scriptsDir, 'run-integration-e2e-full.sh'), 0o755);
 
     return {
+      afscpLifecycleLog,
       apiEnvLog,
       binDir,
       dockerLog,
+      playwrightEnvLog,
       scriptPath: path.join(scriptsDir, 'run-integration-e2e-full.sh'),
       webEnvLog,
     };
@@ -402,8 +491,9 @@ exit 0
     tempRoot: string,
     fixture: { binDir: string; scriptPath: string },
     extraEnv: Record<string, string>,
+    specFile = 'e2e/example.spec.ts',
   ): ReturnType<typeof spawnSync> {
-    return spawnSync('bash', [fixture.scriptPath, 'e2e/example.spec.ts'], {
+    return spawnSync('bash', [fixture.scriptPath, specFile], {
       cwd: tempRoot,
       env: {
         ...process.env,
@@ -432,21 +522,65 @@ exit 0
 
     expect(script).toContain('NEXT_WEB_PROCESS_STATE_FILE="${INTEGRATION_RUN_ROOT}/web.process.json"');
     expect(script).toContain('NEXT_DEV_EXIT_MARKER_FILE="${INTEGRATION_RUN_ROOT}/next-dev-exit.json"');
+    expect(script).toContain('NEXT_DEV_MEMORY_PROFILE="${NEXT_DEV_MEMORY_PROFILE:-validation}"');
     expect(script).toContain('NEXT_DEV_PROCESS_STATE_FILE="${NEXT_WEB_PROCESS_STATE_FILE}"');
     expect(script).toContain('NEXT_DEV_PROCESS_KIND=web');
     expect(script).toContain('NEXT_DEV_PROCESS_CAPTURED_BY=run-integration-e2e-full');
     expect(script).toContain('NEXT_DEV_EXIT_MARKER_FILE="${NEXT_DEV_EXIT_MARKER_FILE}"');
     expect(script).toContain('next_generated_root_write_lane_owner "${INTEGRATION_RUN_ROOT}" "backend-real" "$$" "run-integration-e2e-full.sh"');
+    expect(script).toContain('ORIGINAL_INTEGRATION_MONGO_PORT="${INTEGRATION_MONGO_PORT:-}"');
+    expect(script).toContain('export INTEGRATION_MONGO_PORT="${ORIGINAL_INTEGRATION_MONGO_PORT}"');
+    expect(script).toContain('ORIGINAL_INTEGRATION_KEYCLOAK_PORT="${INTEGRATION_KEYCLOAK_PORT:-}"');
+    expect(script).toContain('export INTEGRATION_KEYCLOAK_PORT="${ORIGINAL_INTEGRATION_KEYCLOAK_PORT}"');
+    expect(script).toContain('MONGO_URL="${MONGO_URL:-mongodb://mbos:mbos_dev_password@127.0.0.1:${MONGO_PORT}/admin}"');
+    expect(script).toContain('MONGO_DB_NAME="${MONGO_DB_NAME:-mbos}"');
+    expect(script).toContain('export MONGO_URL MONGO_DB_NAME');
+    expect(script).not.toContain('MONGO_URL="${MONGO_URL:-mongodb://mbos:mbos_dev_password@localhost:${MONGO_PORT}/admin}"');
+    expect(script).toContain('"${PLAYWRIGHT_BASE_URL}/api/test/system/workspaces/seed"');
+    expect(script).toContain('gate_record_preflight_check "${INTEGRATION_LOG_DIR}" "web_test_routes" "passed"');
     expect(script).toContain('capture_integration_lifecycle_observation "pre-stop"');
     expect(script).toContain('capture_integration_lifecycle_observation "post-stop"');
     expect(script).toContain('next_generated_root_clear_lane_owner "${INTEGRATION_RUN_ROOT}"');
     expect(script).toContain('next_generated_root_finalize_lane_cleanup');
     expect(script).toContain('UNIVERSAL_PROXY_RUNTIME_FORCE_MANAGED="${INTEGRATION_UNIVERSAL_PROXY_FORCE_MANAGED:-${UNIVERSAL_PROXY_RUNTIME_FORCE_MANAGED:-0}}"');
     expect(script).toContain('UNIVERSAL_PROXY_RUNTIME_UPSTREAM_HOST="${INTEGRATION_UNIVERSAL_PROXY_UPSTREAM_HOST:-${UNIVERSAL_PROXY_RUNTIME_UPSTREAM_HOST:-host.docker.internal}}"');
+    expect(script).toContain('source "${ROOT_DIR}/scripts/lib/afscp-local-runtime.sh"');
+    expect(script).toContain('resolve_afscp_local_runtime_defaults "${API_PORT}" "vol_integration"');
+    expect(script).toContain('ensure_integration_afscp_local_runtime');
+    expect(script).toContain('stop_integration_afscp_local_runtime');
     expect(clearLaneOwnerIndex).toBeGreaterThanOrEqual(0);
     expect(normalizeIndex).toBeGreaterThanOrEqual(0);
     expect(clearLaneOwnerIndex).toBeLessThan(normalizeIndex);
   });
+
+  it('fails backend-real visual review before Playwright when managed sandbox env is missing', () => {
+    const tempRoot = mkdtempSync(path.join(os.tmpdir(), 'run-integration-e2e-full-visual-sandbox-'));
+    tempRoots.push(tempRoot);
+    const fixture = prepareManagedProxyFixture(tempRoot, { curlMode: 'candidate-reachable' });
+
+    const result = runManagedProxyFixture(
+      tempRoot,
+      fixture,
+      {
+        AGENT_EXECUTION_WS_BASE_URL: '',
+        INTERNAL_AGENT_K8S_NAMESPACE: '',
+        SANDBOX_MANAGER_URL: '',
+        SANDBOX_SERVICE_KEY: '',
+      },
+      'e2e/integration-visual-review.spec.ts',
+    );
+
+    expect(result.status).toBe(1);
+    expect(result.stderr).toContain('Managed Agent Task backend-real coverage requires sandbox bootstrap');
+    expect(result.stderr).toContain('SANDBOX_MANAGER_URL');
+    expect(result.stderr).toContain('SANDBOX_SERVICE_KEY');
+    expect(result.stderr).toContain('AGENT_EXECUTION_WS_BASE_URL');
+    expect(result.stderr).toContain('INTERNAL_AGENT_K8S_NAMESPACE');
+    expect(result.stderr).toContain('run-internal-agent-task-real-gate.sh --visual-review');
+    expect(existsSync(fixture.apiEnvLog)).toBe(false);
+    expect(existsSync(fixture.webEnvLog)).toBe(false);
+    expect(existsSync(fixture.playwrightEnvLog)).toBe(false);
+  }, 10000);
 
   it('binds focused universal-proxy model-profile evidence to a forced managed locked container', () => {
     const packageJson = JSON.parse(readFileSync('package.json', 'utf8')) as {
@@ -470,6 +604,8 @@ exit 0
       'MBOS_UNIVERSAL_PROXY_BASE_URL="${MBOS_UNIVERSAL_PROXY_BASE_URL:-}"',
       'MBOS_UNIVERSAL_PROXY_ADMIN_TOKEN="${MBOS_UNIVERSAL_PROXY_ADMIN_TOKEN:-}"',
       'MBOS_UNIVERSAL_PROXY_UPSTREAM_HOST="${MBOS_UNIVERSAL_PROXY_UPSTREAM_HOST:-}"',
+      'MONGO_URL="${MONGO_URL}"',
+      'MONGO_DB_NAME="${MONGO_DB_NAME}"',
       'INTEGRATION_AGENT_TASK_RUNNER_BASE_DOCKER_IMAGE="${INTEGRATION_AGENT_TASK_RUNNER_BASE_DOCKER_IMAGE:-}"',
       'INTEGRATION_AGENT_TASK_RUNNER_DOCKER_IMAGE="${INTEGRATION_AGENT_TASK_RUNNER_DOCKER_IMAGE:-}"',
       'INTEGRATION_AGENT_TASK_RUNNER_REBUILD_BASE_IMAGE="${INTEGRATION_AGENT_TASK_RUNNER_REBUILD_BASE_IMAGE:-0}"',
@@ -490,6 +626,103 @@ exit 0
       expect(script.indexOf(assignment), assignment).toBeLessThan(playwrightLaunchIndex);
     }
   });
+
+  it('passes the resolved backend-real Mongo configuration into the Playwright process with loopback defaults', () => {
+    const tempRoot = mkdtempSync(path.join(os.tmpdir(), 'run-integration-e2e-full-playwright-mongo-'));
+    tempRoots.push(tempRoot);
+    const fixture = prepareManagedProxyFixture(tempRoot, { curlMode: 'candidate-reachable' });
+
+    const result = runManagedProxyFixture(tempRoot, fixture, {
+      MBOS_UNIVERSAL_PROXY_ADMIN_TOKEN: 'fixture-admin-token',
+      INTEGRATION_MONGO_PORT: '',
+      MONGO_PORT: '',
+      MONGO_URL: '',
+      MONGO_DB_NAME: '',
+    });
+
+    expect(result.status).toBe(17);
+    const playwrightEnv = readFileSync(fixture.playwrightEnvLog, 'utf8');
+    expect(playwrightEnv).toContain('BASE_URL=http://127.0.0.1:38191');
+    expect(playwrightEnv).toContain('INTEGRATION_API_BASE=http://127.0.0.1:28191');
+    expect(playwrightEnv).toContain('MONGO_URL=mongodb://mbos:mbos_dev_password@127.0.0.1:27027/admin');
+    expect(playwrightEnv).toContain('MONGO_DB_NAME=mbos');
+  }, 10000);
+
+  it('derives the Playwright Mongo URL from the restored integration Mongo port override', () => {
+    const tempRoot = mkdtempSync(path.join(os.tmpdir(), 'run-integration-e2e-full-playwright-mongo-port-'));
+    tempRoots.push(tempRoot);
+    const fixture = prepareManagedProxyFixture(tempRoot, { curlMode: 'candidate-reachable' });
+
+    const result = runManagedProxyFixture(tempRoot, fixture, {
+      MBOS_UNIVERSAL_PROXY_ADMIN_TOKEN: 'fixture-admin-token',
+      INTEGRATION_MONGO_PORT: '27999',
+      MONGO_PORT: '',
+      MONGO_URL: '',
+      MONGO_DB_NAME: '',
+    });
+
+    expect(result.status).toBe(17);
+    const playwrightEnv = readFileSync(fixture.playwrightEnvLog, 'utf8');
+    expect(playwrightEnv).toContain('MONGO_URL=mongodb://mbos:mbos_dev_password@127.0.0.1:27999/admin');
+    expect(playwrightEnv).toContain('MONGO_DB_NAME=mbos');
+  }, 10000);
+
+  it('resolves default AFSCP runtime env, injects it into API/Web/Playwright, and cleans up the owned runtime', () => {
+    const tempRoot = mkdtempSync(path.join(os.tmpdir(), 'run-integration-e2e-full-afscp-'));
+    tempRoots.push(tempRoot);
+    const fixture = prepareManagedProxyFixture(tempRoot, { curlMode: 'candidate-reachable' });
+
+    const result = runManagedProxyFixture(tempRoot, fixture, {
+      MBOS_UNIVERSAL_PROXY_ADMIN_TOKEN: 'fixture-admin-token',
+      AFSCP_BASE_URL: '',
+      AFSCP_EXPORT_GATEWAY_BASE_URL: '',
+      AFSCP_DEFAULT_VOLUME_ID: '',
+      AFSCP_CALLER_SERVICE: '',
+      AFSCP_SERVICE_TOKEN: '',
+      AFSCP_BOOTSTRAP_CALLER_SERVICE: '',
+      AFSCP_BOOTSTRAP_SERVICE_TOKEN: '',
+      AFSCP_ORCHESTRATOR_CALLER_SERVICE: '',
+      AFSCP_ORCHESTRATOR_SERVICE_TOKEN: '',
+    });
+
+    expect(result.status).toBe(17);
+    const resolvedEnv = JSON.parse(
+      readFileSync(
+        path.join(tempRoot, 'artifacts', 'backend-real', 'runs', 'managed-proxy-test-run', 'integration', 'resolved-env.json'),
+        'utf8',
+      ),
+    ) as Record<string, string>;
+    const expected = [
+      'AFSCP_BASE_URL=http://127.0.0.1:37221',
+      'AFSCP_EXPORT_GATEWAY_BASE_URL=http://127.0.0.1:37222',
+      'AFSCP_DEFAULT_VOLUME_ID=vol_integration_28191',
+      'AFSCP_CALLER_SERVICE=agentsmith-api',
+      'AFSCP_SERVICE_TOKEN=agentsmith-local-afscp-product-token',
+      'AFSCP_BOOTSTRAP_CALLER_SERVICE=agentsmith-bootstrap',
+      'AFSCP_BOOTSTRAP_SERVICE_TOKEN=agentsmith-local-afscp-bootstrap-token',
+      'AFSCP_ORCHESTRATOR_CALLER_SERVICE=agentsmith-sandbox-manager',
+      'AFSCP_ORCHESTRATOR_SERVICE_TOKEN=agentsmith-local-afscp-orchestrator-token',
+    ];
+    for (const envLog of [
+      readFileSync(fixture.apiEnvLog, 'utf8'),
+      readFileSync(fixture.webEnvLog, 'utf8'),
+      readFileSync(fixture.playwrightEnvLog, 'utf8'),
+    ]) {
+      for (const assignment of expected) {
+        expect(envLog).toContain(assignment);
+      }
+    }
+
+    expect(readFileSync(fixture.webEnvLog, 'utf8')).toContain('NEXT_DEV_MEMORY_PROFILE=validation');
+    expect(resolvedEnv.AFSCP_BASE_URL).toBe('http://127.0.0.1:37221');
+    expect(resolvedEnv.AFSCP_EXPORT_GATEWAY_BASE_URL).toBe('http://127.0.0.1:37222');
+    expect(resolvedEnv.AFSCP_DEFAULT_VOLUME_ID).toBe('vol_integration_28191');
+    expect(resolvedEnv.AFSCP_SERVICE_TOKEN).toBe('[set]');
+    expect(resolvedEnv.AFSCP_BOOTSTRAP_SERVICE_TOKEN).toBe('[set]');
+    expect(resolvedEnv.AFSCP_ORCHESTRATOR_SERVICE_TOKEN).toBe('[set]');
+    expect(readFileSync(fixture.afscpLifecycleLog, 'utf8')).toContain('ensure');
+    expect(readFileSync(fixture.afscpLifecycleLog, 'utf8')).toContain('stop');
+  }, 10000);
 
   it('keeps active local/backend-real runtime entrypoints free of sibling source-build proxy coupling', () => {
     const activeEntrypoints = [
@@ -650,6 +883,7 @@ exit 0
 
     const scriptsDir = path.join(tempRoot, 'scripts');
     const scriptsLibDir = path.join(scriptsDir, 'lib');
+    const scriptsLocalManualDir = path.join(scriptsDir, 'local-manual');
     const binDir = path.join(tempRoot, 'bin');
     const stateRoot = path.join(tempRoot, 'artifacts', 'backend-real', 'current');
     const runId = 'integration-test-run';
@@ -657,13 +891,16 @@ exit 0
     const lifecycleDir = path.join(stateRoot, 'integration-lifecycle', runId);
     const webEnvLog = path.join(tempRoot, 'web-env.log');
     const apiEnvLog = path.join(tempRoot, 'api-env.log');
+    const afscpLifecycleLog = path.join(tempRoot, 'afscp-lifecycle.log');
     const finalizeLog = path.join(tempRoot, 'finalize.log');
 
     mkdirSync(scriptsLibDir, { recursive: true });
+    mkdirSync(scriptsLocalManualDir, { recursive: true });
     mkdirSync(binDir, { recursive: true });
     mkdirSync(path.join(tempRoot, 'artifacts', 'backend-real', 'runs'), { recursive: true });
 
     cpSync(path.join(process.cwd(), 'scripts', 'run-integration-e2e-full.sh'), path.join(scriptsDir, 'run-integration-e2e-full.sh'));
+    cpSync(path.join(process.cwd(), 'scripts', 'lib', 'afscp-local-runtime.sh'), path.join(scriptsLibDir, 'afscp-local-runtime.sh'));
     cpSync(path.join(process.cwd(), 'scripts', 'lib', 'llmup-image-lock.sh'), path.join(scriptsLibDir, 'llmup-image-lock.sh'));
     cpSync(
       path.join(process.cwd(), 'scripts', 'lib', 'universal-proxy-runtime.sh'),
@@ -700,6 +937,28 @@ load_backend_real_env() {
 
 export_backend_real_endpoint_env() {
   :
+}
+`,
+      'utf8',
+    );
+
+    writeFileSync(
+      path.join(scriptsLocalManualDir, 'internal-common.sh'),
+      `#!/usr/bin/env bash
+set -euo pipefail
+
+ensure_afscp_local_runtime() {
+  {
+    printf 'ensure\\n'
+    printf 'AFSCP_BASE_URL=%s\\n' "\${AFSCP_BASE_URL:-}"
+  } >> "${afscpLifecycleLog}"
+}
+
+stop_afscp_local_runtime() {
+  {
+    printf 'stop\\n'
+    printf 'AFSCP_BASE_URL=%s\\n' "\${AFSCP_BASE_URL:-}"
+  } >> "${afscpLifecycleLog}"
 }
 `,
       'utf8',
@@ -866,6 +1125,7 @@ gate_run_auth_preflight() {
 set -euo pipefail
 
 cat > "${webEnvLog}" <<EOF
+NEXT_DEV_MEMORY_PROFILE=\${NEXT_DEV_MEMORY_PROFILE:-}
 NEXT_DEV_PROCESS_STATE_FILE=\${NEXT_DEV_PROCESS_STATE_FILE:-}
 NEXT_DEV_PROCESS_KIND=\${NEXT_DEV_PROCESS_KIND:-}
 NEXT_DEV_PROCESS_CAPTURED_BY=\${NEXT_DEV_PROCESS_CAPTURED_BY:-}
@@ -977,6 +1237,13 @@ exit 0
       status="401"
     fi
     ;;
+  */api/test/system/workspaces/seed)
+    if [[ -f "${tempRoot}/stop-web-probe" ]]; then
+      status="000"
+    else
+      status="200"
+    fi
+    ;;
   */en-US/login|*/login|*/login/workspace|*/system/login|*/workspaces/ws_default|*/workspaces/ws_default/projects)
     if [[ -f "${tempRoot}/stop-web-probe" ]]; then
       status="000"
@@ -1058,6 +1325,7 @@ exit 0
       };
     };
 
+    expect(webEnv).toContain('NEXT_DEV_MEMORY_PROFILE=validation');
     expect(webEnv).toContain(`NEXT_DEV_PROCESS_STATE_FILE=${path.join(runRoot, 'web.process.json')}`);
     expect(webEnv).toContain('NEXT_DEV_PROCESS_KIND=web');
     expect(webEnv).toContain('NEXT_DEV_PROCESS_CAPTURED_BY=run-integration-e2e-full');

@@ -27,6 +27,7 @@ const LLMUP_DIGEST = 'sha256:ccccccccccccccccccccccccccccccccccccccccccccccccccc
 const INGRESS_CONTROLLER_DIGEST = 'sha256:dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd';
 const INGRESS_CERTGEN_DIGEST = 'sha256:eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee';
 const MANAGED_RUNNER_DIGEST = 'sha256:9999999999999999999999999999999999999999999999999999999999999999';
+const AFSCP_DIGEST = 'sha256:abababababababababababababababababababababababababababababababab';
 
 function dockerInspectContainer(options: {
   id: string;
@@ -167,6 +168,7 @@ function writeLocalKindImageSiteEnv(root: string, mutate: (source: string) => st
     .replace(/^WEB_IMAGE=.*$/mu, `WEB_IMAGE=kind-registry:5000/mbos/agentsmith-app@${APP_DIGEST}`)
     .replace(/^API_IMAGE=.*$/mu, `API_IMAGE=kind-registry:5000/mbos/agentsmith-app@${APP_DIGEST}`)
     .replace(/^LLMUP_IMAGE=.*$/mu, `LLMUP_IMAGE=kind-registry:5000/mbos/llm-universal-proxy@${LLMUP_DIGEST}`)
+    .replace(/^AFSCP_IMAGE=.*$/mu, `AFSCP_IMAGE=kind-registry:5000/mbos/agentsmith-fs-control-plane@${AFSCP_DIGEST}`)
     .replace(/^SANDBOX_MANAGER_IMAGE=.*$/mu, `SANDBOX_MANAGER_IMAGE=kind-registry:5000/mbos/sandbox-manager@${SANDBOX_DIGEST}`)
     .replace(/^MANAGED_RUNNER_IMAGE=.*$/mu, `MANAGED_RUNNER_IMAGE=kind-registry:5000/mbos/agentsmith-managed-runner@${MANAGED_RUNNER_DIGEST}`)
     .replace(/^INGRESS_NGINX_CONTROLLER_IMAGE=.*$/mu, `INGRESS_NGINX_CONTROLLER_IMAGE=kind-registry:5000/mbos/ingress-nginx-controller@${INGRESS_CONTROLLER_DIGEST}`)
@@ -178,6 +180,7 @@ function writeMutableLocalKindImageSiteEnv(root: string): string {
     .replace(/^WEB_IMAGE=.*$/mu, 'WEB_IMAGE=kind-registry:5000/mbos/agentsmith-app:local-kind-dev')
     .replace(/^API_IMAGE=.*$/mu, 'API_IMAGE=kind-registry:5000/mbos/agentsmith-app:local-kind-dev')
     .replace(/^LLMUP_IMAGE=.*$/mu, 'LLMUP_IMAGE=kind-registry:5000/mbos/llm-universal-proxy:v0.2.27')
+    .replace(/^AFSCP_IMAGE=.*$/mu, 'AFSCP_IMAGE=kind-registry:5000/mbos/agentsmith-fs-control-plane:local-kind-dev')
     .replace(/^SANDBOX_MANAGER_IMAGE=.*$/mu, 'SANDBOX_MANAGER_IMAGE=kind-registry:5000/mbos/sandbox-manager:local-kind-dev')
     .replace(/^MANAGED_RUNNER_IMAGE=.*$/mu, 'MANAGED_RUNNER_IMAGE=kind-registry:5000/mbos/agentsmith-managed-runner:local-kind-dev'));
 }

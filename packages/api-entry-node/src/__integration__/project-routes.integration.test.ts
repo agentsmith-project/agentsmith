@@ -54,6 +54,10 @@ function workspaceRecord(args: {
       realm: args.realm,
       client_id: args.clientId,
     },
+    directory_idp: {
+      client_id: 'agentsmith-directory',
+      client_secret: 'directory-secret',
+    },
     tenant: {
       workspace_id: args.id,
       workspace_name: args.name,

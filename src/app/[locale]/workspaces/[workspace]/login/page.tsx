@@ -48,6 +48,44 @@ type WorkspaceLoginConfig = {
   };
 };
 
+type WorkspaceConfigLoadState =
+  | { status: 'ready'; config: WorkspaceLoginConfig }
+  | { status: 'not_found' }
+  | { status: 'unavailable' };
+
+type WorkspaceConfigError = Exclude<WorkspaceConfigLoadState['status'], 'ready'>;
+
+function waitForWorkspaceConfigRetry(attempt: number): Promise<void> {
+  return new Promise((resolve) => {
+    window.setTimeout(resolve, WORKSPACE_CONFIG_RETRY_DELAY_MS * (attempt + 1));
+  });
+}
+
+async function loadWorkspaceLoginConfig(workspaceId: string): Promise<WorkspaceConfigLoadState> {
+  for (let attempt = 0; attempt < WORKSPACE_CONFIG_RETRY_ATTEMPTS; attempt += 1) {
+    try {
+      const response = await fetch(`/api/public/workspaces/${workspaceId}`, { cache: 'no-store' });
+      if (response.ok) {
+        return {
+          status: 'ready',
+          config: (await response.json()) as WorkspaceLoginConfig,
+        };
+      }
+      if (response.status === 404) {
+        return { status: 'not_found' };
+      }
+    } catch {
+      // Network and storage-backed route failures are retried below, then shown as recoverable.
+    }
+
+    if (attempt < WORKSPACE_CONFIG_RETRY_ATTEMPTS - 1) {
+      await waitForWorkspaceConfigRetry(attempt);
+    }
+  }
+
+  return { status: 'unavailable' };
+}
+
 export default function WorkspaceLoginPage() {
   const router = useRouter();
   const params = useParams();
@@ -62,7 +100,7 @@ export default function WorkspaceLoginPage() {
   const projectId = searchParams.get('project_id')?.trim() ?? inviteHandoff?.projectId ?? '';
   const [config, setConfig] = useState<WorkspaceLoginConfig | null>(null);
   const [isLoadingConfig, setIsLoadingConfig] = useState(true);
-  const [configError, setConfigError] = useState<string | null>(null);
+  const [configError, setConfigError] = useState<WorkspaceConfigError | null>(null);
   const [userEmail, setUserEmail] = useState('');
   const [isLoggingIn, setIsLoggingIn] = useState(false);
   const [keycloakError, setKeycloakError] = useState<string | null>(null);
@@ -110,24 +148,21 @@ export default function WorkspaceLoginPage() {
       setIsLoadingConfig(true);
       setConfigError(null);
       try {
-        for (let attempt = 0; attempt < WORKSPACE_CONFIG_RETRY_ATTEMPTS; attempt += 1) {
-          const response = await fetch(`/api/public/workspaces/${workspaceId}`, { cache: 'no-store' });
-          if (response.ok) {
-            const payload = (await response.json()) as WorkspaceLoginConfig;
-            if (!cancelled) {
-              setConfig(payload);
-            }
-            return;
-          }
-          if (response.status !== 404 || attempt === WORKSPACE_CONFIG_RETRY_ATTEMPTS - 1) {
-            throw new Error('workspace_not_found');
-          }
-          await new Promise((resolve) => setTimeout(resolve, WORKSPACE_CONFIG_RETRY_DELAY_MS));
+        const result = await loadWorkspaceLoginConfig(workspaceId);
+        if (cancelled) {
+          return;
         }
-      } catch (error) {
+        if (result.status === 'ready') {
+          setConfig(result.config);
+          setConfigError(null);
+          return;
+        }
+        setConfig(null);
+        setConfigError(result.status);
+      } catch {
         if (!cancelled) {
           setConfig(null);
-          setConfigError(error instanceof Error ? error.message : 'workspace_not_found');
+          setConfigError('unavailable');
         }
       } finally {
         if (!cancelled) {
@@ -238,10 +273,22 @@ export default function WorkspaceLoginPage() {
               <PublicAuthSection>
                 {isLoadingConfig ? (
                   <p className="text-sm text-tertiary" data-testid="workspace-login__loading">{t('loading_workspaces')}</p>
-                ) : configError || !config ? (
+                ) : configError === 'not_found' ? (
                   <div className="space-y-4" data-testid="workspace-login__error">
                     <div className="rounded-md border border-error/20 bg-error/8 px-4 py-3 text-sm text-error">
                       {t('workspace_not_found')}
+                    </div>
+                    <Link href={buildWorkspaceSelectionHref(locale, {
+                      projectId: projectId || null,
+                    })} className="text-sm text-accent underline underline-offset-4">
+                      {t('back_to_workspace_select')}
+                    </Link>
+                  </div>
+                ) : configError === 'unavailable' || !config ? (
+                  <div className="space-y-4" data-testid="workspace-login__config-unavailable">
+                    <div className="space-y-1 rounded-md border border-warning/30 bg-warning/10 px-4 py-3 text-sm text-secondary">
+                      <p className="font-medium text-foreground">{t('workspace_config_unavailable')}</p>
+                      <p>{t('workspace_config_unavailable_description')}</p>
                     </div>
                     <Link href={buildWorkspaceSelectionHref(locale, {
                       projectId: projectId || null,

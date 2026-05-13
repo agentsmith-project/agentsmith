@@ -6,6 +6,19 @@ unset no_proxy NO_PROXY
 
 ROOT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
 source "${ROOT_DIR}/scripts/lib/backend-real-env.sh"
+SKIP_SHARED_PREFLIGHT="${AGENT_TASK_REAL_SMOKE_SKIP_SHARED_PREFLIGHT:-0}"
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --skip-shared-preflight)
+      SKIP_SHARED_PREFLIGHT=1
+      shift
+      ;;
+    *)
+      echo "[backend-real-default-gate] unknown argument: $1" >&2
+      exit 1
+      ;;
+  esac
+done
 ORIGINAL_INTEGRATION_API_PORT="${INTEGRATION_API_PORT:-}"
 ORIGINAL_INTEGRATION_WEB_PORT="${INTEGRATION_WEB_PORT:-}"
 load_backend_real_env
@@ -34,11 +47,15 @@ run_cmd() {
   (cd "${ROOT_DIR}" && eval "$*")
 }
 
-run_cmd "npm run contracts:check"
-run_cmd "npm run contracts:check-openapi"
-run_cmd "npm run openapi:check-generated"
-run_cmd "npx next typegen ."
-run_cmd "npx tsc --noEmit"
+if [[ "${SKIP_SHARED_PREFLIGHT}" == "1" ]]; then
+  info "reusing shared preflight evidence; skipping contracts/openapi/typegen/typecheck"
+else
+  run_cmd "npm run contracts:check"
+  run_cmd "npm run contracts:check-openapi"
+  run_cmd "npm run openapi:check-generated"
+  run_cmd "npx next typegen ."
+  run_cmd "npx tsc --noEmit"
+fi
 
 run_cmd "npm run test:run -- \
   'src/lib/hooks/__tests__/use-join-requests.test.tsx' \
@@ -54,7 +71,7 @@ info "backend-real logs will be written to:"
 info "  API: ${API_LOG}"
 info "  Web: ${WEB_LOG}"
 
-info "BACKEND_REAL_API_KEY=<redacted> INTEGRATION_API_PORT='${API_PORT}' INTEGRATION_WEB_PORT='${WEB_PORT}' bash scripts/run-integration-e2e-full.sh e2e/integration-agent-task-runner.spec.ts --grep 'reads task context through mbos-context in a real Agent Task run resolved by the default Agent Runner'"
+info "BACKEND_REAL_API_KEY=<redacted> INTEGRATION_API_PORT='${API_PORT}' INTEGRATION_WEB_PORT='${WEB_PORT}' bash scripts/run-internal-agent-task-real-gate.sh"
 (
   cd "${ROOT_DIR}" && \
     BACKEND_REAL_API_KEY="${BACKEND_REAL_API_KEY_VALUE}" \
@@ -62,7 +79,7 @@ info "BACKEND_REAL_API_KEY=<redacted> INTEGRATION_API_PORT='${API_PORT}' INTEGRA
     INTEGRATION_WEB_PORT="${WEB_PORT}" \
     INTEGRATION_API_LOG="${API_LOG}" \
     INTEGRATION_WEB_LOG="${WEB_LOG}" \
-    bash scripts/run-integration-e2e-full.sh e2e/integration-agent-task-runner.spec.ts --grep "reads task context through mbos-context in a real Agent Task run resolved by the default Agent Runner"
+    bash scripts/run-internal-agent-task-real-gate.sh
 )
 
 info "system 管理侧 -> Agent Task 真实主链 gate passed"

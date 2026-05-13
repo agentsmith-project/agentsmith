@@ -504,8 +504,6 @@ const CHAT_AND_AGENT_TASK_VISUAL_STATE_MATRIX_CONTRACTS: readonly VisualStateMat
       requiredViewportTestIds: [
         'agent-task__task-header',
         'agent-tasks__sse-status',
-        'agent-tasks__sse-status-open-audit',
-        'agent-tasks__sse-status-open-usage',
       ],
       prominentActionScopeTestIds: ['agent-tasks__execution-visibility'],
       maxProminentActions: 0,

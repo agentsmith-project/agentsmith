@@ -2,7 +2,7 @@ import type { WorkspaceIdentitySnapshot } from './workspace-registry.js';
 
 export type KeycloakDirectoryUser = WorkspaceIdentitySnapshot;
 
-type KeycloakAdminTokenResponse = {
+type KeycloakTokenResponse = {
   access_token?: string;
 };
 
@@ -17,6 +17,8 @@ type KeycloakUserRecord = {
 type KeycloakDirectoryConfig = {
   url: string;
   realm: string;
+  clientId: string;
+  clientSecret?: string;
 };
 
 function deriveKeycloakBaseUrl(idpUrl: string): string {
@@ -26,16 +28,19 @@ function deriveKeycloakBaseUrl(idpUrl: string): string {
   return markerIndex >= 0 ? trimmed.slice(0, markerIndex) : trimmed;
 }
 
-function getKeycloakAdminUsername(): string {
-  return process.env.KEYCLOAK_ADMIN?.trim() ?? '';
-}
-
-function getKeycloakAdminPassword(): string {
-  return process.env.KEYCLOAK_ADMIN_PASSWORD?.trim() ?? '';
-}
-
-function getKeycloakAdminClientId(): string {
-  return process.env.KEYCLOAK_ADMIN_CLIENT_ID?.trim() || 'admin-cli';
+function resolveKeycloakFetchBaseUrl(idpUrl: string): string {
+  const requestedBase = deriveKeycloakBaseUrl(idpUrl);
+  const publicBase = process.env.PUBLIC_KEYCLOAK_BASE_URL?.trim();
+  const internalBase = process.env.INTERNAL_KEYCLOAK_BASE_URL?.trim();
+  if (!publicBase || !internalBase) {
+    return requestedBase;
+  }
+  const normalizedRequested = requestedBase.replace(/\/+$/, '');
+  const normalizedPublic = deriveKeycloakBaseUrl(publicBase).replace(/\/+$/, '');
+  if (normalizedRequested !== normalizedPublic) {
+    return requestedBase;
+  }
+  return deriveKeycloakBaseUrl(internalBase);
 }
 
 function buildDisplayName(user: KeycloakUserRecord): string | null {
@@ -58,43 +63,42 @@ function toDirectoryUser(user: KeycloakUserRecord): KeycloakDirectoryUser | null
   };
 }
 
-async function getAdminToken(config: KeycloakDirectoryConfig): Promise<string> {
-  const username = getKeycloakAdminUsername();
-  const password = getKeycloakAdminPassword();
-  if (!username || !password) {
-    throw Object.assign(new Error('KEYCLOAK_ADMIN and KEYCLOAK_ADMIN_PASSWORD must be configured for Keycloak directory access'), {
+async function getDirectoryClientToken(config: KeycloakDirectoryConfig): Promise<string> {
+  const clientId = config.clientId.trim();
+  const clientSecret = config.clientSecret?.trim() ?? '';
+  if (!clientId || !clientSecret) {
+    throw Object.assign(new Error('workspace directory client credentials must be configured for Keycloak directory access'), {
       code: 'KEYCLOAK_DIRECTORY_UNAVAILABLE',
     });
   }
 
   let response: Response;
   try {
-    response = await fetch(`${deriveKeycloakBaseUrl(config.url)}/realms/master/protocol/openid-connect/token`, {
+    response = await fetch(`${resolveKeycloakFetchBaseUrl(config.url)}/realms/${encodeURIComponent(config.realm.trim())}/protocol/openid-connect/token`, {
       method: 'POST',
       headers: { 'content-type': 'application/x-www-form-urlencoded' },
       body: new URLSearchParams({
-        grant_type: 'password',
-        client_id: getKeycloakAdminClientId(),
-        username,
-        password,
+        grant_type: 'client_credentials',
+        client_id: clientId,
+        client_secret: clientSecret,
       }).toString(),
     });
   } catch (error) {
     const message = error instanceof Error ? error.message : 'unknown_error';
-    throw Object.assign(new Error(`keycloak_admin_token_failed:network:${message}`), {
+    throw Object.assign(new Error(`keycloak_directory_client_token_failed:network:${message}`), {
       code: 'KEYCLOAK_DIRECTORY_UNAVAILABLE',
     });
   }
   if (!response.ok) {
     const text = await response.text();
-    throw Object.assign(new Error(`keycloak_admin_token_failed:${response.status}:${text}`), {
+    throw Object.assign(new Error(`keycloak_directory_client_token_failed:${response.status}:${text}`), {
       code: 'KEYCLOAK_DIRECTORY_UNAVAILABLE',
     });
   }
-  const payload = (await response.json()) as KeycloakAdminTokenResponse;
+  const payload = (await response.json()) as KeycloakTokenResponse;
   const token = payload.access_token?.trim();
   if (!token) {
-    throw Object.assign(new Error('keycloak_admin_token_missing'), {
+    throw Object.assign(new Error('keycloak_directory_client_token_missing'), {
       code: 'KEYCLOAK_DIRECTORY_UNAVAILABLE',
     });
   }
@@ -103,7 +107,7 @@ async function getAdminToken(config: KeycloakDirectoryConfig): Promise<string> {
 
 async function adminFetch(config: KeycloakDirectoryConfig, token: string, path: string): Promise<Response> {
   try {
-    return await fetch(`${deriveKeycloakBaseUrl(config.url)}${path}`, {
+    return await fetch(`${resolveKeycloakFetchBaseUrl(config.url)}${path}`, {
       method: 'GET',
       headers: {
         authorization: `Bearer ${token}`,
@@ -143,7 +147,7 @@ export async function searchKeycloakDirectoryUsers(args: KeycloakDirectoryConfig
 }): Promise<KeycloakDirectoryUser[]> {
   const query = args.query.trim();
   if (!query) return [];
-  const token = await getAdminToken(args);
+  const token = await getDirectoryClientToken(args);
   const max = Math.max(1, Math.min(args.max ?? 10, 20));
   const exactMatches = query.includes('@')
     ? await fetchUsers(
@@ -188,7 +192,7 @@ export async function resolveKeycloakDirectoryUsersByIds(args: KeycloakDirectory
     ),
   );
   if (uniqueIds.length === 0) return [];
-  const token = await getAdminToken(args);
+  const token = await getDirectoryClientToken(args);
   const items: KeycloakDirectoryUser[] = [];
   for (const userId of uniqueIds) {
     const response = await adminFetch(

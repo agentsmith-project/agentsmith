@@ -126,6 +126,11 @@ describe('ProjectStorageBootstrapService', () => {
       }),
       signal: undefined,
     });
+    const bindingArg = putNamespaceVolumeBinding.mock.calls[0]?.[0].binding as Record<string, unknown>;
+    const mountPolicy = bindingArg.mount_policy as Record<string, unknown>;
+    expect(JSON.stringify(bindingArg)).not.toMatch(/\b(?:JVS|jvs)\b/u);
+    expect(mountPolicy).not.toHaveProperty('workload_mount_requires_jvs_external_control_root');
+    expect(mountPolicy).toHaveProperty('workload_mount_requires_external_control_root', true);
     expect(mapping?.volume_binding_signature).toMatch(/^[a-f0-9]{64}$/);
     await expect(resourceOwnershipStore.getResourceOwnership({
       resourceKind: 'namespace',

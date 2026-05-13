@@ -165,7 +165,7 @@ vi.mock('next-intl', () => ({
       'workspace_source_create_new': 'Initialize a new task workspace automatically',
       'workspace_source_create_new_hint': 'Recommended. We\'ll create a fresh persistent task workspace for this task.',
       'workspace_source_use_existing': 'Continue an existing task workspace',
-      'workspace_source_use_existing_hint': 'Requires Files update access. Reuse an available task workspace to keep working with previous files.',
+      'workspace_source_use_existing_hint': 'Reuse your available task workspace after its previous task is deleted, keeping the files in place.',
       'workspace_source_use_template': 'Use task file template',
       'workspace_source_use_template_hint': 'Start from a published task file template in this project.',
       'workspace_name_label': 'New task workspace name',

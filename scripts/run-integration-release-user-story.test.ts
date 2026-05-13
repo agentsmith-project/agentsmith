@@ -3,6 +3,31 @@ import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 
 describe('run-integration-release-user-story integration dependency contract', () => {
+  it('preserves caller-selected integration and substrate ports through backend-real env loading', () => {
+    const script = readFileSync('scripts/run-integration-release-user-story.sh', 'utf8');
+    const loadIndex = script.indexOf('load_backend_real_env "${ROOT_DIR}/.env.backend-real"');
+
+    expect(loadIndex).toBeGreaterThanOrEqual(0);
+    for (const key of [
+      'INTEGRATION_API_PORT',
+      'INTEGRATION_WEB_PORT',
+      'INTEGRATION_POSTGRES_PORT',
+      'INTEGRATION_MONGO_PORT',
+      'INTEGRATION_REDIS_PORT',
+      'INTEGRATION_MINIO_API_PORT',
+      'INTEGRATION_MINIO_CONSOLE_PORT',
+      'INTEGRATION_KEYCLOAK_PORT',
+    ]) {
+      const original = `ORIGINAL_${key}="\${${key}:-}"`;
+      const restore = `export ${key}="\${ORIGINAL_${key}}"`;
+
+      expect(script).toContain(original);
+      expect(script).toContain(restore);
+      expect(script.indexOf(original)).toBeLessThan(loadIndex);
+      expect(script.indexOf(restore)).toBeGreaterThan(loadIndex);
+    }
+  });
+
   it('honors caller-provided Agent Task runner images without legacy codex runner aliases', () => {
     const script = readFileSync('scripts/run-integration-release-user-story.sh', 'utf8');
 
@@ -49,13 +74,9 @@ describe('run-integration-release-user-story integration dependency contract', (
   it('passes the sandbox-manager AFSCP env contract directly to the local manager process', () => {
     const script = readFileSync('scripts/run-integration-release-user-story.sh', 'utf8');
 
-    expect(script).toContain(
-      'AFSCP_INTERNAL_BASE_URL_VALUE="${AFSCP_INTERNAL_BASE_URL:-${AFSCP_BASE_URL:-http://127.0.0.1:28090}}"',
-    );
-    expect(script).toContain(
-      'AFSCP_ORCHESTRATOR_TOKEN_VALUE="${AFSCP_ORCHESTRATOR_TOKEN:-${AFSCP_ORCHESTRATOR_SERVICE_TOKEN:-agentsmith-local-afscp-orchestrator-token}}"',
-    );
-    expect(script).toContain('AFSCP_CALLER_SERVICE_VALUE="${AFSCP_CALLER_SERVICE:-${AFSCP_ORCHESTRATOR_CALLER_SERVICE:-agentsmith-sandbox-manager}}"');
+    expect(script).toContain('AFSCP_INTERNAL_BASE_URL_VALUE="${AFSCP_INTERNAL_BASE_URL:-${AFSCP_BASE_URL}}"');
+    expect(script).toContain('AFSCP_ORCHESTRATOR_TOKEN_VALUE="${AFSCP_ORCHESTRATOR_TOKEN:-${AFSCP_ORCHESTRATOR_SERVICE_TOKEN}}"');
+    expect(script).toContain('AFSCP_CALLER_SERVICE_VALUE="${AFSCP_ORCHESTRATOR_CALLER_SERVICE}"');
     expect(script).toContain('AFSCP_ACTOR_TYPE_VALUE="${AFSCP_ACTOR_TYPE:-${AFSCP_ORCHESTRATOR_ACTOR_TYPE:-system}}"');
     expect(script).toContain('AFSCP_ACTOR_ID_VALUE="${AFSCP_ACTOR_ID:-${AFSCP_ORCHESTRATOR_ACTOR_ID:-${AFSCP_CALLER_SERVICE_VALUE}}}"');
     expect(script).toContain('AFSCP_INTERNAL_BASE_URL="${AFSCP_INTERNAL_BASE_URL_VALUE}" \\');
@@ -64,5 +85,58 @@ describe('run-integration-release-user-story integration dependency contract', (
     expect(script).toContain('AFSCP_ACTOR_TYPE="${AFSCP_ACTOR_TYPE_VALUE}" \\');
     expect(script).toContain('AFSCP_ACTOR_ID="${AFSCP_ACTOR_ID_VALUE}" \\');
     expect(script).not.toMatch(/^afscp:\s*$/mu);
+    expect(script).not.toContain('http://127.0.0.1:28090');
+  });
+
+  it('starts the wrapper-owned AFSCP local runtime before the sandbox manager and cleans it up', () => {
+    const script = readFileSync('scripts/run-integration-release-user-story.sh', 'utf8');
+    const trapIndex = script.indexOf('trap cleanup EXIT');
+    const ensureIndex = script.indexOf('\nensure_release_user_story_afscp_local_runtime\n', trapIndex);
+    const sandboxStartIndex = script.indexOf('info "starting local sandbox manager"', trapIndex);
+    const cleanupStart = script.indexOf('cleanup() {');
+    const cleanupEnd = script.indexOf('trap cleanup EXIT', cleanupStart);
+    const cleanupBody = script.slice(cleanupStart, cleanupEnd);
+
+    expect(script).toContain('resolve_afscp_local_runtime_defaults "${API_PORT}" "vol_release_user_story"');
+    expect(script).toContain('ensure_release_user_story_afscp_local_runtime()');
+    expect(script).toContain('stop_release_user_story_afscp_local_runtime()');
+    expect(script).toContain('RELEASE_USER_STORY_AFSCP_LOCAL_RUNTIME_OWNED=0');
+    expect(script).toContain('INTEGRATION_AFSCP_DIR="${INTEGRATION_AFSCP_DIR:-${INTEGRATION_DIR}/afscp}"');
+    expect(trapIndex).toBeGreaterThanOrEqual(0);
+    expect(ensureIndex).toBeGreaterThan(trapIndex);
+    expect(sandboxStartIndex).toBeGreaterThan(ensureIndex);
+    expect(cleanupBody).toContain('RELEASE_USER_STORY_AFSCP_LOCAL_RUNTIME_OWNED');
+    expect(cleanupBody).toContain('stop_release_user_story_afscp_local_runtime');
+  });
+
+  it('passes a single AFSCP and sandbox runtime truth to the child integration wrapper', () => {
+    const script = readFileSync('scripts/run-integration-release-user-story.sh', 'utf8');
+    const childStart = script.indexOf('info "running full integration release user story"');
+    const childBody = script.slice(childStart);
+
+    expect(childStart).toBeGreaterThanOrEqual(0);
+    for (const assignment of [
+      'INTEGRATION_AFSCP_LOCAL_RUNTIME=0 \\',
+      'AFSCP_BASE_URL="${AFSCP_BASE_URL}" \\',
+      'AFSCP_EXPORT_GATEWAY_BASE_URL="${AFSCP_EXPORT_GATEWAY_BASE_URL}" \\',
+      'AFSCP_DEFAULT_VOLUME_ID="${AFSCP_DEFAULT_VOLUME_ID}" \\',
+      'AFSCP_CALLER_SERVICE="${AFSCP_CALLER_SERVICE}" \\',
+      'AFSCP_SERVICE_TOKEN="${AFSCP_SERVICE_TOKEN}" \\',
+      'AFSCP_BOOTSTRAP_CALLER_SERVICE="${AFSCP_BOOTSTRAP_CALLER_SERVICE}" \\',
+      'AFSCP_BOOTSTRAP_SERVICE_TOKEN="${AFSCP_BOOTSTRAP_SERVICE_TOKEN}" \\',
+      'AFSCP_ORCHESTRATOR_CALLER_SERVICE="${AFSCP_ORCHESTRATOR_CALLER_SERVICE}" \\',
+      'AFSCP_ORCHESTRATOR_SERVICE_TOKEN="${AFSCP_ORCHESTRATOR_SERVICE_TOKEN}" \\',
+      'SANDBOX_MANAGER_URL="${SANDBOX_MANAGER_URL_VALUE}" \\',
+      'AGENT_EXECUTION_WS_BASE_URL="${AGENT_EXECUTION_WS_BASE_URL_VALUE}" \\',
+    ]) {
+      expect(childBody).toContain(assignment);
+    }
+  });
+
+  it('keeps JVS details out of the release user story wrapper contract', () => {
+    const script = readFileSync('scripts/run-integration-release-user-story.sh', 'utf8');
+
+    expect(script).not.toContain('JVS');
+    expect(script).not.toContain('jvs');
   });
 });

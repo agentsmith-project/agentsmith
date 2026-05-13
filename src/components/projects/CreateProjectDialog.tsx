@@ -128,7 +128,6 @@ export function CreateProjectDialog({
     if (!name.trim()) return;
 
     const data: CreateProjectRequest = {
-      workspace_id: workspaceId,
       name: name.trim(),
       description: description.trim() || undefined,
       visibility,

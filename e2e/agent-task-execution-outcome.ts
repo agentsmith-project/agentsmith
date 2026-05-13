@@ -66,12 +66,28 @@ function latestTrace(traces: AgentTaskOutcomeTrace[]): AgentTaskOutcomeTrace | n
 function scopeActivityToRunnerOutput(
   activity: AgentTaskOutcomeActivity[],
   runnerOutputActivityId?: string,
+  runId?: string,
 ): AgentTaskOutcomeActivity[] {
   const scopedRunnerOutputActivityId = normalizeText(runnerOutputActivityId);
-  if (!scopedRunnerOutputActivityId) {
+  const scopedRunId = normalizeText(runId);
+  if (!scopedRunnerOutputActivityId && !scopedRunId) {
     return activity;
   }
-  return activity.filter((item) => normalizeText(item.id) === scopedRunnerOutputActivityId);
+  return activity.filter((item) => {
+    if (!isRunnerOutputActivity(item)) return false;
+    const itemRunId = normalizeText(item.run_id);
+    if (scopedRunId) {
+      if (itemRunId) return itemRunId === scopedRunId;
+      return Boolean(
+        scopedRunnerOutputActivityId
+        && normalizeText(item.id) === scopedRunnerOutputActivityId,
+      );
+    }
+    return Boolean(
+      scopedRunnerOutputActivityId
+      && normalizeText(item.id) === scopedRunnerOutputActivityId,
+    );
+  });
 }
 
 function scopeTracesToActivity(
@@ -85,10 +101,18 @@ function scopeTracesToActivity(
     return traces;
   }
   return traces.filter((trace) => {
-    const matchesActivity = !scopedRunnerOutputActivityId
-      || normalizeText(trace.message_id) === scopedRunnerOutputActivityId;
-    const matchesRunId = !scopedRunId || normalizeText(trace.run_id) === scopedRunId;
-    return matchesActivity && matchesRunId;
+    const traceRunId = normalizeText(trace.run_id);
+    if (scopedRunId) {
+      if (traceRunId) return traceRunId === scopedRunId;
+      return Boolean(
+        scopedRunnerOutputActivityId
+        && normalizeText(trace.message_id) === scopedRunnerOutputActivityId,
+      );
+    }
+    return Boolean(
+      scopedRunnerOutputActivityId
+      && normalizeText(trace.message_id) === scopedRunnerOutputActivityId,
+    );
   });
 }
 
@@ -135,7 +159,7 @@ function hasCompletedFailedTask(task?: AgentTaskOutcomeTask | null): boolean {
 }
 
 function isRunnerOutputActivity(item: AgentTaskOutcomeActivity): boolean {
-  return item.kind === 'runner_output' && item.actor === 'runner';
+  return normalizeText(item.kind) === 'runner_output' && normalizeText(item.actor) === 'runner';
 }
 
 function latestRunnerOutput(activity: AgentTaskOutcomeActivity[]): string | null {
@@ -145,11 +169,14 @@ function latestRunnerOutput(activity: AgentTaskOutcomeActivity[]): string | null
 
 export function evaluateAgentTaskExecutionSnapshot(input: AgentTaskExecutionSnapshot): AgentTaskExecutionEvaluation {
   const minRunnerOutputs = input.minRunnerOutputs ?? 1;
-  const scopedActivity = scopeActivityToRunnerOutput(input.activity, input.runnerOutputActivityId);
+  const scopedActivity = scopeActivityToRunnerOutput(input.activity, input.runnerOutputActivityId, input.runId);
   const scopedTraces = scopeTracesToActivity(input.traces, input.runnerOutputActivityId, input.runId);
+  const allRunnerOutputs = input.activity.filter(isRunnerOutputActivity);
   const runnerOutputs = scopedActivity.filter(isRunnerOutputActivity);
+  // minRunnerOutputs is a conversation-level guard; token matching stays scoped to the current run output.
+  const runnerOutputMinimumSatisfied = allRunnerOutputs.length >= minRunnerOutputs;
   const activityHasToken =
-    runnerOutputs.length >= minRunnerOutputs
+    runnerOutputMinimumSatisfied
     && runnerOutputs.some((item) => normalizeText(item.content).includes(input.token));
   const artifactHasToken = normalizeText(input.artifactContent).includes(input.token);
   const latestRunner = latestRunnerOutput(scopedActivity);

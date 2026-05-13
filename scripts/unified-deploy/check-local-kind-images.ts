@@ -68,6 +68,12 @@ export type LocalKindImageRefs = {
     k8s_tag_ref?: string;
     k8s_ref: string;
   };
+  afscp: {
+    host_ref: string;
+    host_digest_ref?: string;
+    k8s_tag_ref?: string;
+    k8s_ref: string;
+  };
   llmup: {
     version: string;
     source_ref: string;
@@ -116,6 +122,7 @@ export type LocalKindImagesProducerOptions = {
   outputSiteEnvPath?: string;
   evidenceDir?: string;
   sandboxSourceDir?: string;
+  afscpSourceDir?: string;
   llmupImageLockPath?: string;
   hostRegistry?: string;
   k8sRegistry?: string;
@@ -327,6 +334,11 @@ function imageRefs(options: {
       k8s_tag_ref: `${prefixK8s}/agentsmith-managed-runner:${options.tag}`,
       k8s_ref: `${prefixK8s}/agentsmith-managed-runner:${options.tag}`,
     },
+    afscp: {
+      host_ref: `${prefixHost}/agentsmith-fs-control-plane:${options.tag}`,
+      k8s_tag_ref: `${prefixK8s}/agentsmith-fs-control-plane:${options.tag}`,
+      k8s_ref: `${prefixK8s}/agentsmith-fs-control-plane:${options.tag}`,
+    },
     llmup: {
       version: options.llmup.version,
       source_ref: options.llmup.source_image,
@@ -409,6 +421,7 @@ function withDigestHandoff(
     app: string;
     sandboxManager: string;
     managedRunner: string;
+    afscp: string;
     llmup: string;
     ingressNginxController: string;
     ingressNginxCertgen: string;
@@ -432,6 +445,12 @@ function withDigestHandoff(
       host_digest_ref: digestRef(refs.managed_runner.host_ref, digests.managedRunner),
       k8s_tag_ref: refs.managed_runner.k8s_tag_ref ?? refs.managed_runner.k8s_ref,
       k8s_ref: digestRef(refs.managed_runner.k8s_ref, digests.managedRunner),
+    },
+    afscp: {
+      ...refs.afscp,
+      host_digest_ref: digestRef(refs.afscp.host_ref, digests.afscp),
+      k8s_tag_ref: refs.afscp.k8s_tag_ref ?? refs.afscp.k8s_ref,
+      k8s_ref: digestRef(refs.afscp.k8s_ref, digests.afscp),
     },
     llmup: {
       ...refs.llmup,
@@ -476,6 +495,7 @@ function buildLocalKindSiteEnv(source: string, refs: LocalKindImageRefs): string
     ['WEB_IMAGE', refs.app.k8s_ref],
     ['API_IMAGE', refs.app.k8s_ref],
     ['LLMUP_IMAGE', refs.llmup.k8s_ref],
+    ['AFSCP_IMAGE', refs.afscp.k8s_ref],
     ['SANDBOX_MANAGER_IMAGE', refs.sandbox_manager.k8s_ref],
     ['MANAGED_RUNNER_IMAGE', refs.managed_runner.k8s_ref],
     ['INGRESS_NGINX_CONTROLLER_IMAGE', refs.ingress_nginx_controller.k8s_ref],
@@ -793,6 +813,10 @@ function siblingSandboxSourceDir(): string {
   return path.resolve(REPO_ROOT, '..', 'mbos-sandbox-v1', 'manager-service');
 }
 
+function siblingAfscpSourceDir(): string {
+  return path.resolve(REPO_ROOT, '..', 'agentsmith-fs-control-plane');
+}
+
 export async function runLocalKindImagesProducer(
   options: LocalKindImagesProducerOptions = {},
 ): Promise<LocalKindImagesProducerResult> {
@@ -806,6 +830,8 @@ export async function runLocalKindImagesProducer(
   const generatedSiteEnvPath = path.resolve(options.outputSiteEnvPath ?? DEFAULT_LOCAL_KIND_SITE_ENV_PATH);
   const sandboxSourceDir = path.resolve(options.sandboxSourceDir ?? env.SANDBOX_SOURCE_DIR ?? siblingSandboxSourceDir());
   const sandboxDockerfile = path.join(sandboxSourceDir, 'Dockerfile');
+  const afscpSourceDir = path.resolve(options.afscpSourceDir ?? env.AFSCP_SOURCE_DIR ?? siblingAfscpSourceDir());
+  const afscpDockerfile = path.join(afscpSourceDir, 'Dockerfile');
   const llmupLockPath = path.resolve(options.llmupImageLockPath ?? DEFAULT_LLMUP_IMAGE_LOCK_PATH);
   const runner = options.runner ?? defaultLocalKindImageCommandRunner;
   const failures: CheckFailure[] = [];
@@ -852,6 +878,13 @@ export async function runLocalKindImagesProducer(
       failures,
       'sandbox-source',
       `missing sandbox manager source at ${sandboxSourceDir}; set SANDBOX_SOURCE_DIR or --sandbox-source-dir to ../mbos-sandbox-v1/manager-service`,
+    );
+  }
+  if (!existsSync(afscpSourceDir) || !existsSync(afscpDockerfile)) {
+    addFailure(
+      failures,
+      'afscp-source',
+      `missing AFSCP source at ${afscpSourceDir}; set AFSCP_SOURCE_DIR or --afscp-source-dir to ../agentsmith-fs-control-plane`,
     );
   }
 
@@ -933,6 +966,14 @@ export async function runLocalKindImagesProducer(
       {
         name: 'sandbox-push',
         args: ['push', refs.sandbox_manager.host_ref],
+      },
+      {
+        name: 'afscp-build',
+        args: ['build', '-t', refs.afscp.host_ref, '-f', afscpDockerfile, afscpSourceDir],
+      },
+      {
+        name: 'afscp-push',
+        args: ['push', refs.afscp.host_ref],
       },
       {
         name: 'managed-runner-base-build',
@@ -1034,6 +1075,7 @@ export async function runLocalKindImagesProducer(
       refs.app.host_ref,
       refs.sandbox_manager.host_ref,
       refs.managed_runner.host_ref,
+      refs.afscp.host_ref,
       refs.llmup.host_ref,
       refs.ingress_nginx_controller.host_ref,
       refs.ingress_nginx_certgen.host_ref,
@@ -1058,6 +1100,7 @@ export async function runLocalKindImagesProducer(
       app: manifestDigestFromOperations(manifests.operations, refs.app.host_ref),
       sandboxManager: manifestDigestFromOperations(manifests.operations, refs.sandbox_manager.host_ref),
       managedRunner: manifestDigestFromOperations(manifests.operations, refs.managed_runner.host_ref),
+      afscp: manifestDigestFromOperations(manifests.operations, refs.afscp.host_ref),
       llmup: manifestDigestFromOperations(manifests.operations, refs.llmup.host_ref),
       ingressNginxController: manifestDigestFromOperations(manifests.operations, refs.ingress_nginx_controller.host_ref),
       ingressNginxCertgen: manifestDigestFromOperations(manifests.operations, refs.ingress_nginx_certgen.host_ref),
@@ -1076,6 +1119,7 @@ export async function runLocalKindImagesProducer(
       digestRefs.app.k8s_ref,
       digestRefs.sandbox_manager.k8s_ref,
       digestRefs.managed_runner.k8s_ref,
+      digestRefs.afscp.k8s_ref,
       digestRefs.llmup.k8s_ref,
       digestRefs.ingress_nginx_controller.k8s_ref,
       digestRefs.ingress_nginx_certgen.k8s_ref,
@@ -1243,6 +1287,8 @@ function parseCliOptions(argv: readonly string[]): CliOptions {
       options.evidenceDir = arg.slice('--evidence-dir='.length);
     } else if (arg.startsWith('--sandbox-source-dir=')) {
       options.sandboxSourceDir = arg.slice('--sandbox-source-dir='.length);
+    } else if (arg.startsWith('--afscp-source-dir=')) {
+      options.afscpSourceDir = arg.slice('--afscp-source-dir='.length);
     } else if (arg.startsWith('--llmup-image-lock=')) {
       options.llmupImageLockPath = arg.slice('--llmup-image-lock='.length);
     } else if (arg.startsWith('--host-registry=')) {

@@ -20,6 +20,11 @@ export interface ProjectStorageReadyWaitOptions {
   sleep?: (ms: number, signal?: AbortSignal) => Promise<void>;
 }
 
+export const DEFAULT_FILE_LIBRARY_PROJECT_STORAGE_READY_WAIT: ProjectStorageReadyWaitOptions = {
+  timeoutMs: 15_000,
+  intervalMs: 250,
+};
+
 export class FileLibraryTemplateClonePendingError extends Error {
   readonly fileLibraryId: string;
   readonly fileLibraryStatus = 'creating';

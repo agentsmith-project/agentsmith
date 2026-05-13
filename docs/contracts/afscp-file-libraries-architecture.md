@@ -9,6 +9,7 @@ This document defines the product-facing Files contract.
 - The backend is the only authority for storage provisioning, readiness, task file attachment, auditing, and file operations.
 - Browser clients must not receive storage backend identifiers, export URLs, raw credential material, or local setup commands.
 - Local client connector access is not part of the current product surface.
+- AgentSmith consumes AFSCP APIs and redacted operation projections only. JVS is an AFSCP-internal implementation detail or local bootstrap detail; AgentSmith product code must not parse JVS fields, command output, paths, hashes, or control-root settings.
 
 Implementation detail: backend records and runner contracts may still use `HOME` or `task_home_*` field names for the sandbox path binding. Product UI and user-facing guides must describe this as task files, system folders, file library status, or file-library attachment.
 

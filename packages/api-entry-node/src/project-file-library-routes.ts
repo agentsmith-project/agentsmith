@@ -22,6 +22,7 @@ import {
   JsonDocFileLibraryRestorePreviewRepo,
   JsonDocFileLibrarySavePointMappingRepo,
   JsonDocProjectTaskFileTemplateRepo,
+  RESTORE_PREVIEW_FENCE_SAVE_POINT_MESSAGE,
   generateFileLibraryRestoreRunId,
   generateTaskFileTemplateId,
   type FileLibrarySavePointPublicRecord,
@@ -37,6 +38,7 @@ import { buildAttachmentContentDisposition } from './http-utils.js';
 import { guessFileLibraryContentType } from './file-library-content-type.js';
 import {
   createAndProvisionProjectFileLibrary,
+  DEFAULT_FILE_LIBRARY_PROJECT_STORAGE_READY_WAIT,
   mapFileLibraryInfraError,
   reconcileProjectFileLibraryProvisioning,
 } from './project-file-library-service.js';
@@ -70,7 +72,6 @@ type JsonResponder = (res: http.ServerResponse, statusCode: number, body: unknow
 const TASK_FILE_TEMPLATE_USE_PERMISSION = 'project:agent_task:use';
 const TASK_FILE_TEMPLATE_MANAGE_PERMISSION = 'project:files:update';
 const FILE_LIBRARY_RETRY_AFTER_MS = 2_000;
-const RESTORE_PREVIEW_FENCE_SAVE_POINT_MESSAGE = 'Restore preview current state';
 
 class FileLibraryRestorePreviewActiveError extends Error {
   readonly preview: FileLibraryRestorePreviewRecord;
@@ -79,6 +80,13 @@ class FileLibraryRestorePreviewActiveError extends Error {
     super('file_library_restore_preview_active');
     this.name = 'FileLibraryRestorePreviewActiveError';
     this.preview = preview;
+  }
+}
+
+class FileLibraryRestorePreviewPreparationPendingError extends Error {
+  constructor() {
+    super('file_library_restore_preview_pending');
+    this.name = 'FileLibraryRestorePreviewPreparationPendingError';
   }
 }
 
@@ -216,6 +224,7 @@ const PUBLIC_FILE_OPERATION_MESSAGES = new Set([
   'file_library_save_point_create_failed',
   'file_library_save_point_create_pending',
   'file_library_save_point_list_failed',
+  'file_library_save_point_list_pending',
   'file_library_restore_preview_failed',
   'file_library_restore_preview_pending',
   'file_library_restore_preview_active',
@@ -396,6 +405,14 @@ function fileLibraryControlRouteErrorBody(
         : {}),
     };
   }
+  if (error instanceof FileLibraryRestorePreviewPreparationPendingError) {
+    return {
+      ...base,
+      restore_preview_status: 'preparing',
+      operation_status: 'pending',
+      retry_after_ms: FILE_LIBRARY_RETRY_AFTER_MS,
+    };
+  }
   return base;
 }
 
@@ -408,15 +425,28 @@ async function createRestorePreviewCurrentStateFence(input: {
   actorUserId: string;
   requestId?: string;
 }): Promise<void> {
-  const result = await input.storageAdapter.createSavePoint({
-    workspaceId: input.workspaceId,
-    projectId: input.projectId,
-    libraryId: input.libraryId,
-    message: RESTORE_PREVIEW_FENCE_SAVE_POINT_MESSAGE,
-    actorUserId: input.actorUserId,
-    requestId: input.requestId,
-  });
-  if (!result.savePointId) return;
+  let result: Awaited<ReturnType<FileLibraryStoragePort['createSavePoint']>>;
+  try {
+    result = await input.storageAdapter.createSavePoint({
+      workspaceId: input.workspaceId,
+      projectId: input.projectId,
+      libraryId: input.libraryId,
+      message: RESTORE_PREVIEW_FENCE_SAVE_POINT_MESSAGE,
+      actorUserId: input.actorUserId,
+      requestId: input.requestId,
+    });
+  } catch (error) {
+    if (publicFileOperationMessage(error, '') === 'file_library_save_point_create_pending') {
+      throw new FileLibraryRestorePreviewPreparationPendingError();
+    }
+    throw error;
+  }
+  if (result.operationStatus === 'pending') {
+    throw new FileLibraryRestorePreviewPreparationPendingError();
+  }
+  if (result.operationStatus !== 'succeeded' || !result.savePointId) {
+    throw new Error('file_library_restore_preview_failed');
+  }
   await input.savePointRepo.upsertFromAfscp({
     workspaceId: input.workspaceId,
     projectId: input.projectId,
@@ -1004,6 +1034,7 @@ export async function handleProjectFileLibraryRoutes(args: {
         name: parsed.data.name,
         description: parsed.data.description,
         requestId: readOptionalRequestId(req),
+        projectStorageReadyWait: DEFAULT_FILE_LIBRARY_PROJECT_STORAGE_READY_WAIT,
       });
       json(res, 201, presentFileLibraryWithTaskHomeBinding({
         library: updated,
@@ -1653,6 +1684,18 @@ export async function handleProjectFileLibraryRoutes(args: {
       json(res, 200, { items });
     } catch (error) {
       const publicMessage = publicFileOperationMessage(error, 'file_library_save_point_list_failed');
+      if (publicMessage === 'file_library_save_point_list_pending') {
+        const cachedItems = await listCachedUserSavePoints({
+          savePointRepo,
+          workspaceId,
+          projectId,
+          libraryId,
+        });
+        if (cachedItems.length > 0) {
+          json(res, 200, { items: cachedItems });
+          return true;
+        }
+      }
       if (publicMessage === 'file_library_save_point_list_failed') {
         const restoreRepo = new JsonDocFileLibraryRestorePreviewRepo(deps.docStore);
         const hasRestorePreviewProjection = await shouldServeCachedSavePointsDuringRestorePreview({

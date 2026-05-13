@@ -2,7 +2,11 @@ import type { AuthenticatedUser } from './auth.js';
 import type { NodeApiDeps } from './node-api-deps.js';
 import type { AgentRecord } from './resource-models.js';
 import type { FileLibraryRecord } from './file-library-model.js';
-import { createAndProvisionProjectFileLibrary, mapFileLibraryInfraError } from './project-file-library-service.js';
+import {
+  createAndProvisionProjectFileLibrary,
+  DEFAULT_FILE_LIBRARY_PROJECT_STORAGE_READY_WAIT,
+  mapFileLibraryInfraError,
+} from './project-file-library-service.js';
 import { JsonDocProjectFileLibraryCatalogRepo } from './file-library-persistence.js';
 import { writeProjectAuditEvent } from './audit-usage-recorders.js';
 import { runNotebookTaskWithExecutionAgent } from './notebook-execution-orchestrator.js';
@@ -235,6 +239,7 @@ async function createRunnerTestWorkspace(input: {
   workspaceId: string;
   projectId: string;
   userId: string;
+  requestId?: string | null;
 }): Promise<FileLibraryRecord | null> {
   try {
     return await createAndProvisionProjectFileLibrary({
@@ -244,6 +249,8 @@ async function createRunnerTestWorkspace(input: {
       userId: input.userId,
       name: RUNNER_TEST_TASK_WORKSPACE_NAME,
       description: 'Auto-initialized workspace for Developer runner test task evidence.',
+      requestId: input.requestId,
+      projectStorageReadyWait: DEFAULT_FILE_LIBRARY_PROJECT_STORAGE_READY_WAIT,
     });
   } catch (error) {
     const mapped = mapFileLibraryInfraError(error);
@@ -347,6 +354,7 @@ export async function dispatchDeveloperRunnerTestTaskRun(input: {
     workspaceId: input.workspaceId,
     projectId: input.projectId,
     userId: input.user.id,
+    requestId: input.requestId,
   });
   if (!workspaceFileLibrary) {
     await releaseRunnerTestLease();

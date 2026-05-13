@@ -218,7 +218,7 @@
     },
     {
       "sceneId": "files-selection-details",
-      "route": "/en-US/workspaces/ws_default/projects/proj_001/files?library_id=lib_shared_default",
+      "route": "/en-US/workspaces/ws_default/projects/proj_001/files?library_id=lib_shared_default&search=README",
       "recipeFamily": "work_surface_immersive",
       "authLane": "authed",
       "stableMarkers": [
@@ -238,7 +238,7 @@
     },
     {
       "sceneId": "dialog-files-rename",
-      "route": "/en-US/workspaces/ws_default/projects/proj_001/files?library_id=lib_shared_default",
+      "route": "/en-US/workspaces/ws_default/projects/proj_001/files?library_id=lib_shared_default&search=README",
       "recipeFamily": "overlay_dialog",
       "authLane": "authed",
       "stableMarkers": [

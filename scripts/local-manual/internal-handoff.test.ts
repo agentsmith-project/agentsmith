@@ -381,7 +381,7 @@ describe('local-manual internal handoff', () => {
     expect(common.indexOf('AFSCP_JVS_RELEASE_VERSION=')).toBeLessThan(
       common.indexOf('AFSCP_JVS_RELEASE_CACHE_DIR='),
     );
-    expect(common).toContain('AFSCP_JVS_RELEASE_CACHE_DIR="${AFSCP_JVS_RELEASE_CACHE_DIR:-${INTERNAL_REAL_DIR}/jvs-release/${AFSCP_JVS_RELEASE_VERSION}}"');
+    expect(common).toContain('AFSCP_JVS_RELEASE_CACHE_DIR="${AFSCP_JVS_RELEASE_CACHE_DIR:-${ROOT_DIR}/artifacts/cache/jvs-release/${AFSCP_JVS_RELEASE_VERSION}}"');
     expect(common).toContain('AFSCP_JVS_RELEASE_SHA256SUMS_CACHE_PATH="${AFSCP_JVS_RELEASE_SHA256SUMS_CACHE_PATH:-${AFSCP_JVS_RELEASE_CACHE_DIR}/SHA256SUMS}"');
     expect(common).toContain('AFSCP_JVS_RELEASE_BASE_URL');
     expect(common).toContain('AFSCP_JVS_RELEASE_URL="${AFSCP_JVS_RELEASE_URL:-${AFSCP_JVS_RELEASE_BASE_URL}/${AFSCP_JVS_RELEASE_BINARY_NAME}}"');
@@ -425,19 +425,24 @@ describe('local-manual internal handoff', () => {
     expect(result.stdout).toContain('gateway_prefix=/e/\n');
   });
 
-  it('defaults JVS release URLs and versioned cache paths in internal-common when the env file is not carrying them', () => {
+  it('defaults JVS release URLs and stable versioned cache paths in internal-common when the env file is not carrying them', () => {
     const result = runInternalCommonSnippet(`
       printf 'cache=%s\\n' "$AFSCP_JVS_RELEASE_CACHE_DIR"
       printf 'binary_cache=%s\\n' "$AFSCP_JVS_RELEASE_BINARY_CACHE_PATH"
       printf 'sums_cache=%s\\n' "$AFSCP_JVS_RELEASE_SHA256SUMS_CACHE_PATH"
+      printf 'internal_real_dir=%s\\n' "$INTERNAL_REAL_DIR"
       printf 'release=%s\\n' "$AFSCP_JVS_RELEASE_URL"
       printf 'sums=%s\\n' "$AFSCP_JVS_SHA256SUMS_URL"
     `);
 
     expect(result.status).toBe(0);
-    expect(result.stdout).toContain('/jvs-release/v0.4.9\n');
-    expect(result.stdout).toContain('/jvs-release/v0.4.9/jvs-linux-amd64\n');
-    expect(result.stdout).toContain('/jvs-release/v0.4.9/SHA256SUMS\n');
+    const stableCacheDir = `${process.cwd()}/artifacts/cache/jvs-release/v0.4.9`;
+    expect(result.stdout).toContain(`cache=${stableCacheDir}\n`);
+    expect(result.stdout).toContain(`binary_cache=${stableCacheDir}/jvs-linux-amd64\n`);
+    expect(result.stdout).toContain(`sums_cache=${stableCacheDir}/SHA256SUMS\n`);
+    const internalRealDir = result.stdout.match(/^internal_real_dir=(.+)$/m)?.[1] ?? '';
+    expect(internalRealDir).toBeTruthy();
+    expect(stableCacheDir.startsWith(internalRealDir)).toBe(false);
     expect(result.stdout).toContain('release=https://github.com/agentsmith-project/jvs/releases/download/v0.4.9/jvs-linux-amd64');
     expect(result.stdout).toContain('sums=https://github.com/agentsmith-project/jvs/releases/download/v0.4.9/SHA256SUMS');
   });

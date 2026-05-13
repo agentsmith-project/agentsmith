@@ -53,11 +53,11 @@ runner_release_image() {
 }
 
 runner_default_node_base_image() {
-  printf 'node:24.14.1-bookworm\n'
+  printf 'public.ecr.aws/docker/library/node:24.14.1-bookworm\n'
 }
 
 runner_default_node_base_image_fallbacks() {
-  printf 'public.ecr.aws/docker/library/node:24.14.1-bookworm mirror.gcr.io/library/node:24.14.1-bookworm\n'
+  printf 'docker.io/library/node:24.14.1-bookworm mirror.gcr.io/library/node:24.14.1-bookworm\n'
 }
 
 runner_node_base_image_candidates() {

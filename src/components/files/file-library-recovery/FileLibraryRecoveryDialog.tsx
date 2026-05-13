@@ -32,6 +32,7 @@ import {
   useCreateFileLibrarySavePoint,
   useFileLibraryActiveRestorePreview,
   useFileLibrarySavePoints,
+  isFileLibraryOperationPendingError,
   useReleaseFileLibraryRuntimeAccess,
   useRunFileLibraryRestore,
 } from '@/lib/hooks/use-file-library-recovery';
@@ -224,14 +225,6 @@ function isFileTemplateRestorePreviewActive(error: unknown): boolean {
   );
 }
 
-function isFileLibraryOperationPending(error: unknown): boolean {
-  return hasApiErrorCode(
-    error,
-    ['FILE_LIBRARY_OPERATION_PENDING', 'FILE_LIBRARY_RESTORE_OPERATION_PENDING'],
-    ['file_library_operation_pending', 'file_library_restore_operation_pending'],
-  );
-}
-
 function isFileLibraryActiveWriterBlocked(error: unknown): boolean {
   return hasApiErrorCode(
     error,
@@ -377,7 +370,7 @@ function buildRestoreRunErrorDisplay(
   t: FileLibraryRecoveryDialogProps['t'],
 ): RestoreActionErrorDisplay {
   let description = t('file_manager.restore_run_failed');
-  if (isFileLibraryOperationPending(error)) {
+  if (isFileLibraryOperationPendingError(error)) {
     description = t('file_manager.save_point_operation_pending');
   }
   if (isFileLibraryStorageNotReady(error)) {
@@ -427,7 +420,7 @@ function buildTemplateActionErrorDisplay(
   t: FileLibraryRecoveryDialogProps['t'],
 ): TemplateActionErrorDisplay {
   let description = t('file_manager.task_template_action_failed');
-  if (isFileLibraryOperationPending(error)) {
+  if (isFileLibraryOperationPendingError(error)) {
     description = t('file_manager.task_template_operation_pending');
   }
   if (isFileLibraryActiveWriterBlocked(error)) {
@@ -457,7 +450,7 @@ function buildSavePointActionErrorDisplay(
   t: FileLibraryRecoveryDialogProps['t'],
 ): SavePointActionErrorDisplay {
   let description = t('file_manager.save_point_action_failed');
-  if (isFileLibraryOperationPending(error)) {
+  if (isFileLibraryOperationPendingError(error)) {
     description = t('file_manager.save_point_operation_pending');
   }
   if (isFileLibraryActiveWriterBlocked(error)) {
@@ -504,6 +497,51 @@ function TemplateStatusBadge({
     <span className={cn('rounded-full border px-2 py-0.5 text-[10px] font-medium uppercase', tone)}>
       {t(`file_manager.task_template_status_${status}`)}
     </span>
+  );
+}
+
+function SavePointListRecoveringNotice({
+  embedded = false,
+  onRetry,
+  t,
+}: {
+  embedded?: boolean;
+  onRetry: () => void;
+  t: FileLibraryRecoveryDialogProps['t'];
+}) {
+  return (
+    <div
+      className={cn(
+        'flex items-start justify-between gap-3',
+        embedded
+          ? 'px-3 py-4'
+          : 'rounded-md border border-warning/30 bg-warning/10 px-3 py-3',
+      )}
+      data-testid="files__save-point__list-recovering"
+      role="status"
+    >
+      <div className="flex min-w-0 gap-2">
+        <Loader2 className="mt-0.5 h-4 w-4 shrink-0 animate-spin text-warning" />
+        <div className="min-w-0 space-y-1">
+          <div className="text-sm font-medium text-primary">
+            {t('file_manager.save_point_preparing_title')}
+          </div>
+          <div className="text-sm text-secondary">
+            {t('file_manager.save_point_preparing_description')}
+          </div>
+        </div>
+      </div>
+      <Button
+        type="button"
+        variant="outline"
+        size="sm"
+        onClick={onRetry}
+        data-testid="files__save-point__retry"
+      >
+        <RefreshCw className="h-4 w-4" />
+        {t('file_manager.save_point_retry')}
+      </Button>
+    </div>
   );
 }
 
@@ -596,6 +634,11 @@ export function FileLibraryRecoveryDialog({
   const restoreActiveWriterBlockerError = restoreRunBlocker ? restoreRunActionError : null;
   const restorePreviewBlocksTemplates = isBlockingRestorePreview(restorePreview);
   const taskTemplatesBlocked = restorePreviewBlocksTemplates || activeRestorePreviewQuery.isLoading;
+  const savePointListOperationPending = isFileLibraryOperationPendingError(savePointsQuery.error);
+  const showSavePointListLoading = savePointsQuery.isLoading && savePoints.length === 0;
+  const showSavePointListError = savePointsQuery.isError
+    && !savePointListOperationPending
+    && savePoints.length === 0;
 
   React.useEffect(() => {
     if (taskTemplatesBlocked && activeTab === 'task_templates') {
@@ -1054,10 +1097,23 @@ export function FileLibraryRecoveryDialog({
               </div>
             ) : null}
 
+            {savePointListOperationPending && savePoints.length > 0 ? (
+              <SavePointListRecoveringNotice
+                onRetry={() => void savePointsQuery.refetch()}
+                t={t}
+              />
+            ) : null}
+
             <div className="max-h-[280px] overflow-auto rounded-md border border-subtle">
-              {savePointsQuery.isLoading ? (
+              {showSavePointListLoading ? (
                 <div className="px-3 py-6 text-center text-sm text-tertiary">{t('file_manager.loading')}</div>
-              ) : savePointsQuery.isError ? (
+              ) : savePointListOperationPending && savePoints.length === 0 ? (
+                <SavePointListRecoveringNotice
+                  embedded
+                  onRetry={() => void savePointsQuery.refetch()}
+                  t={t}
+                />
+              ) : showSavePointListError ? (
                 <div
                   className="flex items-start justify-between gap-3 px-3 py-4"
                   data-testid="files__save-point__list-error"

@@ -4,7 +4,7 @@ import path from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { buildStorySourceFingerprint, type StoryDefinition, type StoryStepDefinition } from '../e2e/story-contract';
 import { loadStoryDefinition } from '../e2e/story-loader';
-import { buildTraceStoryBinding } from '../e2e/story-trace-binding';
+import { buildTraceStoryBinding, type TraceStoryBinding } from '../e2e/story-trace-binding';
 import {
   createUxTraceBundleWriter,
   buildUxTraceCaptureEvent,
@@ -22,9 +22,65 @@ function makeFakePage(url: string): UxTracePageLike {
   };
 }
 
+type ScreenshotAttempt = {
+  path: string;
+  fullPage: boolean;
+};
+
+function makeScriptedScreenshotPage(args: {
+  url: string;
+  attempts: ScreenshotAttempt[];
+  handlers: Array<(attempt: ScreenshotAttempt) => Promise<void>>;
+}): UxTracePageLike {
+  return {
+    url: () => args.url,
+    screenshot: async (attempt) => {
+      args.attempts.push(attempt);
+      const handler = args.handlers[args.attempts.length - 1];
+      if (!handler) {
+        throw new Error(`unexpected screenshot attempt ${args.attempts.length}`);
+      }
+      await handler(attempt);
+    },
+  };
+}
+
 function stepRoute(story: StoryDefinition, step: StoryStepDefinition): string {
   const scene = story.scenes.find((candidate) => candidate.sceneId === step.sceneId);
   return scene?.route ?? story.entryRoute;
+}
+
+function makeSingleStepTraceBinding(): TraceStoryBinding {
+  return {
+    storyId: 'workspace-provisioning',
+    title: 'Workspace provisioning',
+    actor: 'system 管理侧',
+    family: 'system_admin_detail',
+    personas: ['system_admin'],
+    kind: 'journey',
+    gatePolicy: {
+      tier: 'release',
+      requiredEvidence: ['trace'],
+    },
+    externalDependencies: [],
+    goal: 'Capture a single required trace step.',
+    preconditions: [],
+    seedData: [],
+    storySource: 'scripts/trace-bundle-support.test.ts#workspace-provisioning',
+    storyFingerprint: 'single-step-story-fingerprint',
+    stepMapFingerprint: 'single-step-map-fingerprint',
+    steps: [
+      {
+        stepId: 'system-login',
+        sceneId: 'system-login',
+        intent: 'Open system login',
+        action: 'Open system login',
+        target: 'system-login__heading',
+        expectedFeedback: 'system login heading is visible',
+        evidence: ['trace'],
+      },
+    ],
+  };
 }
 
 describe('ux trace bundle support', () => {
@@ -145,6 +201,209 @@ describe('ux trace bundle support', () => {
       expect(reviewContent).toContain('screenshots/001-system-login.png');
       await expect(readFile(firstScreenshot, 'utf-8')).resolves.toBe('fake screenshot');
       await expect(readFile(secondScreenshot, 'utf-8')).resolves.toBe('fake screenshot');
+    } finally {
+      await rm(rootDir, { recursive: true, force: true });
+    }
+  });
+
+  it('captures the first screenshot attempt with the default fullPage semantics', async () => {
+    const rootDir = await mkdtemp(path.join(os.tmpdir(), 'agentsmith-ux-traces-fullpage-'));
+    try {
+      const attempts: ScreenshotAttempt[] = [];
+      const trace = await createUxTraceBundleWriter({
+        outputRoot: rootDir,
+        lane: 'backend-real',
+        suite: 'integration-release-user-story',
+        storyId: 'workspace-provisioning',
+        title: 'Workspace provisioning',
+        actor: 'system 管理侧',
+        route: '/en-US/system/login',
+        specFile: 'e2e/integration-release-user-story.spec.ts',
+        browser: 'chromium',
+        gitSha: 'abc123',
+        runId: 'run-fullpage-success',
+        startedAt: '2026-04-12T01:23:45.000Z',
+      });
+
+      await trace.capture(makeScriptedScreenshotPage({
+        url: '/en-US/system/login',
+        attempts,
+        handlers: [
+          async ({ path: screenshotPath }) => {
+            await writeFile(screenshotPath, 'full page screenshot', 'utf-8');
+          },
+        ],
+      }), {
+        stepId: 'system-login',
+        action: 'Open system login',
+      });
+      await trace.finish({
+        outcome: 'pass',
+        finishedAt: '2026-04-12T01:25:45.000Z',
+      });
+
+      expect(attempts.map((attempt) => attempt.fullPage)).toEqual([true]);
+      const manifest = JSON.parse(await readFile(trace.manifestPath, 'utf-8')) as {
+        capture_warning_count?: number;
+        capture_warnings?: unknown[];
+      };
+      expect(manifest.capture_warning_count).toBe(0);
+      expect(manifest.capture_warnings).toEqual([]);
+    } finally {
+      await rm(rootDir, { recursive: true, force: true });
+    }
+  });
+
+  it('falls back to a viewport screenshot and records warning evidence when fullPage capture fails transiently', async () => {
+    const rootDir = await mkdtemp(path.join(os.tmpdir(), 'agentsmith-ux-traces-fallback-'));
+    try {
+      const attempts: ScreenshotAttempt[] = [];
+      const trace = await createUxTraceBundleWriter({
+        outputRoot: rootDir,
+        lane: 'backend-real',
+        suite: 'integration-release-user-story',
+        storyId: 'workspace-provisioning',
+        title: 'Workspace provisioning',
+        actor: 'system 管理侧',
+        route: '/en-US/system/login',
+        specFile: 'e2e/integration-release-user-story.spec.ts',
+        browser: 'chromium',
+        gitSha: 'abc123',
+        runId: 'run-viewport-fallback',
+        startedAt: '2026-04-12T01:23:45.000Z',
+        storyBinding: makeSingleStepTraceBinding(),
+      });
+
+      const record = await trace.capture(makeScriptedScreenshotPage({
+        url: '/en-US/system/login',
+        attempts,
+        handlers: [
+          async () => {
+            throw new Error('page.screenshot: Protocol error (Page.captureScreenshot): Unable to capture screenshot');
+          },
+          async ({ path: screenshotPath }) => {
+            await writeFile(screenshotPath, 'viewport fallback screenshot', 'utf-8');
+          },
+        ],
+      }), {
+        stepId: 'system-login',
+        action: 'Open system login',
+      });
+      await trace.finish({
+        outcome: 'pass',
+        finishedAt: '2026-04-12T01:25:45.000Z',
+      });
+
+      const warningFile = 'capture-warnings/001-system-login-screenshot.json';
+      expect(attempts.map((attempt) => attempt.fullPage)).toEqual([true, false]);
+      expect(record.screenshot).toBe('screenshots/001-system-login.png');
+      await expect(readFile(path.join(trace.bundleDir, 'screenshots', '001-system-login.png'), 'utf-8'))
+        .resolves.toBe('viewport fallback screenshot');
+
+      const eventJson = JSON.parse((await readFile(trace.eventsPath, 'utf-8')).trim()) as {
+        screenshot_capture?: {
+          mode?: string;
+          requested_full_page?: boolean;
+          fallback?: boolean;
+          warning_file?: string;
+        };
+      };
+      expect(eventJson.screenshot_capture).toMatchObject({
+        mode: 'viewport_fallback',
+        requested_full_page: true,
+        fallback: true,
+        warning_file: warningFile,
+      });
+
+      const manifest = JSON.parse(await readFile(trace.manifestPath, 'utf-8')) as {
+        capture_warning_count?: number;
+        capture_warnings?: Array<{ file?: string; kind?: string; step_id?: string }>;
+        screenshots?: Array<{ capture_mode?: string; warning_file?: string }>;
+      };
+      expect(manifest.capture_warning_count).toBe(1);
+      expect(manifest.capture_warnings).toEqual([
+        expect.objectContaining({
+          file: warningFile,
+          kind: 'screenshot_full_page_failed',
+          step_id: 'system-login',
+        }),
+      ]);
+      expect(manifest.screenshots?.[0]).toMatchObject({
+        capture_mode: 'viewport_fallback',
+        warning_file: warningFile,
+      });
+
+      const warning = JSON.parse(await readFile(path.join(trace.bundleDir, warningFile), 'utf-8')) as {
+        schema?: string;
+        kind?: string;
+        step_id?: string;
+        fallback_full_page?: boolean;
+        message?: string;
+      };
+      expect(warning).toMatchObject({
+        schema: 'ux_trace_capture_warning/v1',
+        kind: 'screenshot_full_page_failed',
+        step_id: 'system-login',
+        fallback_full_page: false,
+      });
+      expect(warning.message).toMatch(/Page\.captureScreenshot|Unable to capture screenshot/);
+
+      const review = await readFile(trace.reviewPath, 'utf-8');
+      expect(review).toContain(warningFile);
+      expect(review).toContain('viewport_fallback');
+
+      const validation = validateUxTraceBundleArtifact({
+        bundleDir: trace.bundleDir,
+        expectedLane: 'backend-real',
+        expectedSuite: 'integration-release-user-story',
+      });
+      expect(validation.ok).toBe(true);
+    } finally {
+      await rm(rootDir, { recursive: true, force: true });
+    }
+  });
+
+  it('throws when both fullPage capture and viewport fallback fail', async () => {
+    const rootDir = await mkdtemp(path.join(os.tmpdir(), 'agentsmith-ux-traces-fallback-failed-'));
+    try {
+      const attempts: ScreenshotAttempt[] = [];
+      const trace = await createUxTraceBundleWriter({
+        outputRoot: rootDir,
+        lane: 'backend-real',
+        suite: 'integration-release-user-story',
+        storyId: 'workspace-provisioning',
+        title: 'Workspace provisioning',
+        actor: 'system 管理侧',
+        route: '/en-US/system/login',
+        specFile: 'e2e/integration-release-user-story.spec.ts',
+        browser: 'chromium',
+        gitSha: 'abc123',
+        runId: 'run-viewport-fallback-failed',
+        startedAt: '2026-04-12T01:23:45.000Z',
+      });
+
+      await expect(trace.capture(makeScriptedScreenshotPage({
+        url: '/en-US/system/login',
+        attempts,
+        handlers: [
+          async () => {
+            throw new Error('page.screenshot: Protocol error (Page.captureScreenshot): Unable to capture screenshot');
+          },
+          async () => {
+            throw new Error('page.screenshot: viewport capture failed');
+          },
+        ],
+      }), {
+        stepId: 'system-login',
+        action: 'Open system login',
+      })).rejects.toThrow(/viewport fallback screenshot failed|viewport capture failed/i);
+
+      expect(attempts.map((attempt) => attempt.fullPage)).toEqual([true, false]);
+      expect(trace.events()).toEqual([]);
+      await expect(readFile(
+        path.join(trace.bundleDir, 'capture-warnings', '001-system-login-screenshot.json'),
+        'utf-8',
+      )).resolves.toContain('screenshot_full_page_failed');
     } finally {
       await rm(rootDir, { recursive: true, force: true });
     }

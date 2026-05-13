@@ -21,12 +21,17 @@ const REQUIRED_COMPONENT_DEPLOYMENTS = new Map([
   ['web', 'agentsmith-web'],
   ['api', 'agentsmith-api'],
   ['llmup', 'agentsmith-llmup'],
+  ['afscp-api', 'afscp-api'],
+  ['afscp-worker', 'afscp-worker'],
+  ['afscp-export-gateway', 'afscp-export-gateway'],
   ['sandbox-manager', 'agentsmith-sandbox-manager'],
 ]);
 const REQUIRED_COMPONENT_SERVICES = new Map([
   ['web', 'agentsmith-web'],
   ['api', 'agentsmith-api'],
   ['llmup', 'agentsmith-llmup'],
+  ['afscp-api', 'afscp-api'],
+  ['afscp-export-gateway', 'afscp-export-gateway'],
   ['sandbox-manager', 'agentsmith-sandbox-manager'],
 ]);
 const REQUIRED_SUBSTRATE_SERVICES = ['postgresql', 'mongodb', 'redis', 'minio', 'keycloak'] as const;
@@ -46,6 +51,11 @@ const SANDBOX_MANAGER_CONFIG_MAP = 'sandbox-manager-config';
 const SANDBOX_MANAGER_CONFIG_PATH = '/etc/sandbox-manager/manager-config.yaml';
 const LLMUP_CONFIG_MAP = 'agentsmith-llmup-config';
 const LLMUP_CONFIG_PATH = '/app/config/config.yaml';
+const AFSCP_RUNTIME_SERVICE_ACCOUNT = 'afscp-runtime';
+const AFSCP_RUNTIME_CONFIG_MAP = 'afscp-runtime-config';
+const AFSCP_RUNTIME_SECRET = 'afscp-runtime-secrets';
+const AFSCP_VOLUME_SECRET = 'afscp-default-volume-juicefs';
+const AFSCP_VOLUME_ROOT_PATH = '/var/lib/afscp/volumes/default';
 const ROLLOUT_CHECKSUM_PATTERN = /^sha256:[a-f0-9]{64}$/u;
 
 type PackageJsonLike = {
@@ -178,6 +188,10 @@ function checkRequiredResources(documents: readonly Record<string, unknown>[], f
     addFailure(failures, `ConfigMap/${LLMUP_CONFIG_MAP}`, 'llmup app-owned configuration must be rendered');
   }
   for (const [kind, name] of [
+    ['ServiceAccount', AFSCP_RUNTIME_SERVICE_ACCOUNT],
+    ['ConfigMap', AFSCP_RUNTIME_CONFIG_MAP],
+    ['Secret', AFSCP_RUNTIME_SECRET],
+    ['Secret', AFSCP_VOLUME_SECRET],
     ['ServiceAccount', SANDBOX_MANAGER_SERVICE_ACCOUNT],
     ['Role', SANDBOX_MANAGER_SERVICE_ACCOUNT],
     ['RoleBinding', SANDBOX_MANAGER_SERVICE_ACCOUNT],
@@ -287,21 +301,42 @@ function checkIngressRoutes(documents: readonly Record<string, unknown>[], failu
     if (serviceName === 'agentsmith-llmup' || route.includes('llmup')) {
       addFailure(failures, 'Ingress/agentsmith', 'llmup must remain internal only');
     }
+    if (serviceName.includes('afscp') || route.includes('afscp')) {
+      addFailure(failures, 'Ingress/agentsmith', 'AFSCP services must remain internal only');
+    }
   }
 }
 
-function selectorTargetsLlmup(selector: Record<string, unknown>): boolean {
+function selectorTargetsInternalOnlyComponent(selector: Record<string, unknown>): boolean {
   return Object.entries(selector).some(([key, value]) => {
     const normalizedKey = key.toLowerCase();
     const normalizedValue = typeof value === 'string' ? value.toLowerCase() : '';
 
     return normalizedValue === 'llmup'
       || normalizedValue.includes('llmup')
-      || (normalizedKey.includes('component') && normalizedValue === 'llmup');
+      || normalizedValue.includes('afscp')
+      || (normalizedKey.includes('component') && (
+        normalizedValue === 'llmup'
+        || normalizedValue === 'afscp-api'
+        || normalizedValue === 'afscp-export-gateway'
+      ));
   });
 }
 
-function serviceExposesLlmup(document: Record<string, unknown>): boolean {
+function serviceExposesInternalOnlyComponent(document: Record<string, unknown>): boolean {
+  if (resourceKind(document) !== 'Service') {
+    return false;
+  }
+
+  const selector = asRecord(asRecord(document.spec).selector);
+  return resourceName(document).toLowerCase().includes('llmup')
+    || resourceName(document).toLowerCase().includes('afscp')
+    || componentLabel(document) === 'llmup'
+    || componentLabel(document).startsWith('afscp')
+    || selectorTargetsInternalOnlyComponent(selector);
+}
+
+function serviceExposesLlmupComponent(document: Record<string, unknown>): boolean {
   if (resourceKind(document) !== 'Service') {
     return false;
   }
@@ -309,18 +344,24 @@ function serviceExposesLlmup(document: Record<string, unknown>): boolean {
   const selector = asRecord(asRecord(document.spec).selector);
   return resourceName(document).toLowerCase().includes('llmup')
     || componentLabel(document) === 'llmup'
-    || selectorTargetsLlmup(selector);
+    || Object.values(selector).some((value) => typeof value === 'string' && value.toLowerCase().includes('llmup'));
 }
 
 function checkInternalServiceTypes(documents: readonly Record<string, unknown>[], failures: CheckFailure[]): void {
   for (const document of documents) {
-    if (!serviceExposesLlmup(document)) {
+    if (!serviceExposesInternalOnlyComponent(document)) {
       continue;
     }
 
     const serviceType = asRecord(document.spec).type;
     if (serviceType === 'NodePort' || serviceType === 'LoadBalancer') {
-      addFailure(failures, resourceId(document), 'llmup Service must remain ClusterIP');
+      addFailure(
+        failures,
+        resourceId(document),
+        serviceExposesLlmupComponent(document)
+          ? 'llmup Service must remain ClusterIP'
+          : 'AFSCP Service must remain ClusterIP',
+      );
     }
   }
 }
@@ -352,6 +393,9 @@ function checkAppConfig(documents: readonly Record<string, unknown>[], failures:
   }
   if (data.LLMUP_INTERNAL_BASE_URL !== 'http://agentsmith-llmup:8080') {
     addFailure(failures, 'ConfigMap/agentsmith-app-config', 'LLMUP_INTERNAL_BASE_URL must point to internal llmup service');
+  }
+  if (typeof data.AFSCP_BASE_URL !== 'string' || !/^http:\/\/afscp-api\.[a-z0-9-]+\.svc\.cluster\.local:8080$/u.test(data.AFSCP_BASE_URL)) {
+    addFailure(failures, 'ConfigMap/agentsmith-app-config', 'AFSCP_BASE_URL must be derived from the internal afscp-api Service');
   }
   for (const key of ['KEYCLOAK_ISSUER_URL', 'PUBLIC_KEYCLOAK_BASE_URL', 'INTERNAL_KEYCLOAK_BASE_URL', 'KEYCLOAK_REALM']) {
     if (typeof data[key] !== 'string' || !data[key]) {
@@ -659,11 +703,154 @@ function checkLlmupContract(documents: readonly Record<string, unknown>[], failu
   }
 }
 
+function checkAfscpVolumeMount(
+  documents: readonly Record<string, unknown>[],
+  deploymentName: string,
+  containerName: string,
+  failures: CheckFailure[],
+): void {
+  const podSpec = deploymentPodSpec(documents, deploymentName);
+  const container = deploymentContainer(documents, deploymentName, containerName);
+  const volumeMounts = Array.isArray(container.volumeMounts) ? container.volumeMounts.map(asRecord) : [];
+  const volumes = Array.isArray(podSpec.volumes) ? podSpec.volumes.map(asRecord) : [];
+  const csiVolume = volumes.find((volume) => volume.name === 'afscp-default-volume');
+  const csi = asRecord(csiVolume?.csi);
+  const nodePublishSecretRef = asRecord(csi.nodePublishSecretRef);
+
+  if (!volumeMounts.some((mount) =>
+    mount.name === 'afscp-default-volume'
+    && mount.mountPath === AFSCP_VOLUME_ROOT_PATH,
+  )) {
+    addFailure(failures, `Deployment/${deploymentName}`, `${deploymentName} must mount the AFSCP default volume root`);
+  }
+  if (csi.driver !== 'csi.juicefs.com' || nodePublishSecretRef.name !== AFSCP_VOLUME_SECRET) {
+    addFailure(failures, `Deployment/${deploymentName}`, `${deploymentName} must mount the default AFSCP volume through the JuiceFS CSI Secret`);
+  }
+}
+
+function checkAfscpEnvFrom(
+  documents: readonly Record<string, unknown>[],
+  deploymentName: string,
+  containerName: string,
+  failures: CheckFailure[],
+): void {
+  const envFrom = deploymentContainerEnvFrom(documents, deploymentName, containerName);
+  if (!hasEnvFromRef(envFrom, 'configMapRef', AFSCP_RUNTIME_CONFIG_MAP)) {
+    addFailure(failures, `Deployment/${deploymentName}`, `${deploymentName} must consume ${AFSCP_RUNTIME_CONFIG_MAP}`);
+  }
+  if (!hasEnvFromRef(envFrom, 'secretRef', AFSCP_RUNTIME_SECRET)) {
+    addFailure(failures, `Deployment/${deploymentName}`, `${deploymentName} must consume ${AFSCP_RUNTIME_SECRET}`);
+  }
+}
+
+function checkAfscpContract(documents: readonly Record<string, unknown>[], failures: CheckFailure[]): void {
+  const apiDeployment = resourceByKindName(documents, 'Deployment', 'afscp-api');
+  const config = asRecord(resourceByKindName(documents, 'ConfigMap', AFSCP_RUNTIME_CONFIG_MAP).data);
+  const secrets = asRecord(resourceByKindName(documents, 'Secret', AFSCP_RUNTIME_SECRET).stringData);
+  const volumeSecret = asRecord(resourceByKindName(documents, 'Secret', AFSCP_VOLUME_SECRET).stringData);
+  const namespace = resourceNamespace(apiDeployment) || resourceNamespace(resourceByKindName(documents, 'ConfigMap', AFSCP_RUNTIME_CONFIG_MAP));
+  const afscpImage = deploymentContainer(documents, 'afscp-api', 'afscp-api').image;
+
+  if (config.AFSCP_API_MODE !== 'internal') {
+    addFailure(failures, `ConfigMap/${AFSCP_RUNTIME_CONFIG_MAP}`, 'AFSCP API must run in internal mode');
+  }
+  if (config.AFSCP_API_VOLUME_ROOTS !== `vol_agentsmith_default=${AFSCP_VOLUME_ROOT_PATH}` && !String(config.AFSCP_API_VOLUME_ROOTS ?? '').endsWith(`=${AFSCP_VOLUME_ROOT_PATH}`)) {
+    addFailure(failures, `ConfigMap/${AFSCP_RUNTIME_CONFIG_MAP}`, 'AFSCP API volume roots must map the default volume to the mounted volume root');
+  }
+  if (config.AFSCP_VOLUME_ROOTS !== config.AFSCP_API_VOLUME_ROOTS || config.AFSCP_EXPORT_GATEWAY_VOLUME_ROOTS !== config.AFSCP_API_VOLUME_ROOTS) {
+    addFailure(failures, `ConfigMap/${AFSCP_RUNTIME_CONFIG_MAP}`, 'AFSCP API, worker, and export gateway must share the same volume root map');
+  }
+  if (config.AFSCP_API_WORKLOAD_MOUNT_SECRET_REFS !== `${config.AFSCP_API_VOLUME_ROOTS}`.split('=')[0] + `=${namespace}/${AFSCP_VOLUME_SECRET}`) {
+    addFailure(failures, `ConfigMap/${AFSCP_RUNTIME_CONFIG_MAP}`, 'AFSCP workload mount Secret refs must point to the namespace-local JuiceFS CSI Secret');
+  }
+  for (const [key, expected] of [
+    ['AFSCP_STORAGE_ENABLED', 'true'],
+    ['AFSCP_STORAGE_READY', 'true'],
+    ['AFSCP_MOUNT_ENABLED', 'true'],
+    ['AFSCP_MOUNT_READY', 'true'],
+    ['AFSCP_REPO_TEMPLATE_ENABLED', 'true'],
+    ['AFSCP_REPO_TEMPLATE_READY', 'true'],
+    ['AFSCP_WORKER_OPERATION_RECOVERY_ENABLED', 'true'],
+    ['AFSCP_SAVE_POINT_RECOVERY_ENABLED', 'true'],
+    ['AFSCP_RESTORE_PREVIEW_RECOVERY_ENABLED', 'true'],
+    ['AFSCP_RESTORE_RUN_RECOVERY_ENABLED', 'true'],
+  ] as const) {
+    if (config[key] !== expected) {
+      addFailure(failures, `ConfigMap/${AFSCP_RUNTIME_CONFIG_MAP}`, `${key} must be ${expected}`);
+    }
+  }
+  if (config.AFSCP_API_WEBDAV_EXPORT_PUBLIC_BASE_URL !== `http://afscp-export-gateway.${namespace}.svc.cluster.local:8080/e`) {
+    addFailure(failures, `ConfigMap/${AFSCP_RUNTIME_CONFIG_MAP}`, 'AFSCP WebDAV export URL must point to the internal export gateway Service');
+  }
+  for (const key of [
+    'AFSCP_DATABASE_URL',
+    'AFSCP_POSTGRES_DSN',
+    'AFSCP_API_POSTGRES_DSN',
+    'AFSCP_EXPORT_GATEWAY_POSTGRES_DSN',
+    'AFSCP_EXPORT_SESSION_RECONCILE_POSTGRES_DSN',
+    'AFSCP_API_SERVICE_TOKENS',
+  ]) {
+    if (typeof secrets[key] !== 'string' || !secrets[key]) {
+      addFailure(failures, `Secret/${AFSCP_RUNTIME_SECRET}`, `${key} must be rendered for AFSCP runtime`);
+    }
+  }
+  if (!String(secrets.AFSCP_API_SERVICE_TOKENS ?? '').includes('agentsmith-api=') || !String(secrets.AFSCP_API_SERVICE_TOKENS ?? '').includes('agentsmith-sandbox-manager=')) {
+    addFailure(failures, `Secret/${AFSCP_RUNTIME_SECRET}`, 'AFSCP service tokens must authorize product, bootstrap, and sandbox-manager callers');
+  }
+  for (const key of ['name', 'metaurl', 'storage', 'bucket', 'access-key', 'secret-key']) {
+    if (typeof volumeSecret[key] !== 'string' || !volumeSecret[key]) {
+      addFailure(failures, `Secret/${AFSCP_VOLUME_SECRET}`, `JuiceFS CSI Secret must include ${key}`);
+    }
+  }
+  if (volumeSecret.storage !== 'minio' || !String(volumeSecret.bucket ?? '').startsWith(`http://substrate-minio.${namespace}.svc.cluster.local:9000/`)) {
+    addFailure(failures, `Secret/${AFSCP_VOLUME_SECRET}`, 'AFSCP JuiceFS CSI Secret must bind to internal substrate MinIO');
+  }
+  if (!String(volumeSecret.metaurl ?? '').includes('@substrate-postgresql:5432/')) {
+    addFailure(failures, `Secret/${AFSCP_VOLUME_SECRET}`, 'AFSCP JuiceFS CSI Secret must bind to internal substrate PostgreSQL metadata');
+  }
+
+  const api = deploymentContainer(documents, 'afscp-api', 'afscp-api');
+  const worker = deploymentContainer(documents, 'afscp-worker', 'afscp-worker');
+  const exportGateway = deploymentContainer(documents, 'afscp-export-gateway', 'afscp-export-gateway');
+  if (!String(afscpImage ?? '').includes('agentsmith-fs-control-plane') || worker.image !== afscpImage || exportGateway.image !== afscpImage) {
+    addFailure(failures, 'Deployment/afscp-api', 'AFSCP API, worker, and export gateway must use the same AFSCP runtime image');
+  }
+  if (stringArray(api.command).join('\0') !== '/usr/local/bin/afscp-api' || stringArray(api.args).join('\0') !== ['--serve', '--listen', '0.0.0.0:8080'].join('\0')) {
+    addFailure(failures, 'Deployment/afscp-api', 'afscp-api must run the internal API server on 0.0.0.0:8080');
+  }
+  if (stringArray(worker.command).join('\0') !== '/usr/local/bin/afscp-worker' || stringArray(worker.args).join('\0') !== ['--loop', '--interval=2s'].join('\0')) {
+    addFailure(failures, 'Deployment/afscp-worker', 'afscp-worker must run as a long-running loop, not a run-once pod');
+  }
+  if (stringArray(exportGateway.command).join('\0') !== '/usr/local/bin/afscp-export-gateway' || stringArray(exportGateway.args).join('\0') !== ['--serve', '--listen-addr', '0.0.0.0:8080'].join('\0')) {
+    addFailure(failures, 'Deployment/afscp-export-gateway', 'afscp-export-gateway must serve on 0.0.0.0:8080');
+  }
+  for (const [deploymentName, containerName] of [
+    ['afscp-api', 'afscp-api'],
+    ['afscp-worker', 'afscp-worker'],
+    ['afscp-export-gateway', 'afscp-export-gateway'],
+  ] as const) {
+    if (asRecord(deploymentPodSpec(documents, deploymentName)).serviceAccountName !== AFSCP_RUNTIME_SERVICE_ACCOUNT) {
+      addFailure(failures, `Deployment/${deploymentName}`, `${deploymentName} must use the dedicated AFSCP ServiceAccount`);
+    }
+    checkAfscpEnvFrom(documents, deploymentName, containerName, failures);
+    checkAfscpVolumeMount(documents, deploymentName, containerName, failures);
+  }
+  if (!containerPorts(api).includes(8080) || servicePort(documents, 'afscp-api') !== 8080) {
+    addFailure(failures, 'Service/afscp-api', 'afscp-api container and Service must expose port 8080');
+  }
+  if (!containerPorts(exportGateway).includes(8080) || servicePort(documents, 'afscp-export-gateway') !== 8080) {
+    addFailure(failures, 'Service/afscp-export-gateway', 'afscp-export-gateway container and Service must expose port 8080');
+  }
+}
+
 function checkRolloutChecksumAnnotations(documents: readonly Record<string, unknown>[], failures: CheckFailure[]): void {
   for (const [deploymentName, checksumKeys] of [
     ['agentsmith-web', ['agentsmith.mbos.dev/checksum-app-config', 'agentsmith.mbos.dev/checksum-app-secrets']],
     ['agentsmith-api', ['agentsmith.mbos.dev/checksum-app-config', 'agentsmith.mbos.dev/checksum-app-secrets']],
     ['agentsmith-llmup', ['agentsmith.mbos.dev/checksum-llmup-config', 'agentsmith.mbos.dev/checksum-app-secrets']],
+    ['afscp-api', ['agentsmith.mbos.dev/checksum-afscp-config', 'agentsmith.mbos.dev/checksum-afscp-secrets']],
+    ['afscp-worker', ['agentsmith.mbos.dev/checksum-afscp-config', 'agentsmith.mbos.dev/checksum-afscp-secrets']],
+    ['afscp-export-gateway', ['agentsmith.mbos.dev/checksum-afscp-config', 'agentsmith.mbos.dev/checksum-afscp-secrets']],
     ['agentsmith-sandbox-manager', ['agentsmith.mbos.dev/checksum-sandbox-manager-config', 'agentsmith.mbos.dev/checksum-app-secrets']],
   ] as const) {
     const annotations = deploymentPodTemplateAnnotations(documents, deploymentName);
@@ -900,6 +1087,7 @@ export function checkRenderedOutput(renderedYaml: string): CheckResult {
     checkWebServerRouteEnv(parsed.documents, failures);
     checkRunnableAppWorkloads(parsed.documents, failures);
     checkLlmupContract(parsed.documents, failures);
+    checkAfscpContract(parsed.documents, failures);
     checkRolloutChecksumAnnotations(parsed.documents, failures);
     checkSandboxManagerContract(parsed.documents, failures);
   }

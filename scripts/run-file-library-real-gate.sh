@@ -98,17 +98,29 @@ MINIO_PORT="${MINIO_PORT:-$(
   echo "File library gate could not resolve a reachable MinIO loopback port." >&2
   exit 1
 }
-DATABASE_URL="${DATABASE_URL:-postgresql://mbos:mbos_dev_password@${POSTGRES_HOST}:${POSTGRES_PORT}/mbos}"
+DATABASE_URL="${DATABASE_URL:-postgresql://mbos:mbos_dev_password@${POSTGRES_HOST}:${POSTGRES_PORT}/mbos?sslmode=disable}"
 MONGO_URL="${MONGO_URL:-mongodb://mbos:mbos_dev_password@${MONGO_HOST}:${MONGO_PORT}/admin}"
 MINIO_ACCESS_KEY="${MINIO_ACCESS_KEY:-mbos}"
 MINIO_SECRET_KEY="${MINIO_SECRET_KEY:-mbos_dev_password}"
 MINIO_BUCKET="${MINIO_BUCKET:-mbos-dev}"
+REDIS_PORT="${REDIS_PORT:-${INTEGRATION_REDIS_PORT:-16379}}"
+MINIO_CONSOLE_PORT="${MINIO_CONSOLE_PORT:-${INTEGRATION_MINIO_CONSOLE_PORT:-19001}}"
+AFSCP_BASE_URL="${AFSCP_BASE_URL:-http://127.0.0.1:$((API_PORT + 9030))}"
+AFSCP_EXPORT_GATEWAY_BASE_URL="${AFSCP_EXPORT_GATEWAY_BASE_URL:-http://127.0.0.1:$((API_PORT + 9031))}"
+AFSCP_DEFAULT_VOLUME_ID="${AFSCP_DEFAULT_VOLUME_ID:-vol_file_library_${API_PORT}}"
+AFSCP_CALLER_SERVICE="${AFSCP_CALLER_SERVICE:-agentsmith-api}"
+AFSCP_SERVICE_TOKEN="${AFSCP_SERVICE_TOKEN:-agentsmith-local-afscp-product-token}"
+AFSCP_BOOTSTRAP_CALLER_SERVICE="${AFSCP_BOOTSTRAP_CALLER_SERVICE:-agentsmith-bootstrap}"
+AFSCP_BOOTSTRAP_SERVICE_TOKEN="${AFSCP_BOOTSTRAP_SERVICE_TOKEN:-agentsmith-local-afscp-bootstrap-token}"
+AFSCP_ORCHESTRATOR_CALLER_SERVICE="${AFSCP_ORCHESTRATOR_CALLER_SERVICE:-agentsmith-sandbox-manager}"
+AFSCP_ORCHESTRATOR_SERVICE_TOKEN="${AFSCP_ORCHESTRATOR_SERVICE_TOKEN:-agentsmith-local-afscp-orchestrator-token}"
 MBOS_DEV_USERNAME="${MBOS_DEV_USERNAME:-dev-admin}"
 MBOS_DEV_PASSWORD="${MBOS_DEV_PASSWORD:-dev-admin-123}"
 API_BASE="http://localhost:${API_PORT}"
 FILE_LIBRARY_REAL_GATE_ARTIFACT_DIR="${FILE_LIBRARY_REAL_GATE_ARTIFACT_DIR:-${ROOT_DIR}/artifacts/backend-real/current/file-library-real-gate}"
 FILE_LIBRARY_REAL_GATE_RUN_ID="${FILE_LIBRARY_REAL_GATE_RUN_ID:-file-library-real-gate-$$}"
 FILE_LIBRARY_REAL_GATE_RUNTIME_DIR="${FILE_LIBRARY_REAL_GATE_RUNTIME_DIR:-${FILE_LIBRARY_REAL_GATE_ARTIFACT_DIR}/runtime}"
+FILE_LIBRARY_REAL_GATE_AFSCP_DIR="${FILE_LIBRARY_REAL_GATE_AFSCP_DIR:-${FILE_LIBRARY_REAL_GATE_RUNTIME_DIR}/afscp}"
 export LOCAL_RUNTIME_RUN_ID="${FILE_LIBRARY_REAL_GATE_RUN_ID}"
 export LOCAL_RUNTIME_LINE_KIND="file_library_real_gate"
 export LOCAL_RUNTIME_OWNER_TOKEN="${FILE_LIBRARY_REAL_GATE_RUN_ID}:file_library_real_gate:$$"
@@ -137,6 +149,7 @@ STARTUP_STEADY_STATE_API_TCP_CONTRACTS=(
   "api-entry|${POSTGRES_PORT}|ESTABLISHED|0|1"
   "api-entry|${MONGO_PORT}|ESTABLISHED|4|4"
 )
+FILE_LIBRARY_AFSCP_LOCAL_RUNTIME_OWNED=0
 API_ROOT_PID=""
 API_PID=""
 
@@ -145,6 +158,7 @@ unset http_proxy https_proxy all_proxy HTTP_PROXY HTTPS_PROXY ALL_PROXY no_proxy
 mkdir -p "${RESOURCE_RECOVERY_DIR}"
 mkdir -p "${LOCAL_RUNTIME_PROCESS_STATE_DIR}"
 mkdir -p "${STARTUP_WARMUP_DIR}"
+mkdir -p "${FILE_LIBRARY_REAL_GATE_AFSCP_DIR}"
 rm -f \
   "${RESOURCE_RECOVERY_BOOT_BASELINE_JSON}" \
   "${RESOURCE_RECOVERY_BASELINE_JSON}" \
@@ -159,6 +173,86 @@ rm -f \
   "${STARTUP_WARMUP_TOKEN_FILE}" \
   "${STARTUP_WARMUP_BODY_FILE}" \
   "${STARTUP_WARMUP_HEADERS_FILE}"
+
+ensure_file_library_afscp_local_runtime() {
+  echo "File library gate ensuring AFSCP local runtime at ${AFSCP_BASE_URL}" >&2
+  FILE_LIBRARY_AFSCP_LOCAL_RUNTIME_OWNED=1
+  (
+    unset AFSCP_API_PORT AFSCP_API_LISTEN_ADDR AFSCP_EXPORT_GATEWAY_PORT AFSCP_EXPORT_GATEWAY_LISTEN_ADDR
+    export ENV_FILE=/dev/null
+    export INTERNAL_REAL_DIR="${FILE_LIBRARY_REAL_GATE_AFSCP_DIR}"
+    export INTERNAL_AGENT_K8S_NAMESPACE="${INTERNAL_AGENT_K8S_NAMESPACE:-agentsmith-sandbox}"
+    export AFSCP_BASE_URL
+    export AFSCP_EXPORT_GATEWAY_BASE_URL
+    export AFSCP_DEFAULT_VOLUME_ID
+    export AFSCP_CALLER_SERVICE
+    export AFSCP_SERVICE_TOKEN
+    export AFSCP_BOOTSTRAP_CALLER_SERVICE
+    export AFSCP_BOOTSTRAP_SERVICE_TOKEN
+    export AFSCP_ORCHESTRATOR_CALLER_SERVICE
+    export AFSCP_ORCHESTRATOR_SERVICE_TOKEN
+    export LOCAL_MANUAL_ALLOW_MISSING_SUBSTRATE_CONNECTION=1
+    export LOCAL_MANUAL_INTERNAL_ENV_FILE=/dev/null
+    export DATABASE_URL
+    export AFSCP_DATABASE_URL="${DATABASE_URL}"
+    export AFSCP_POSTGRES_DSN="${DATABASE_URL}"
+    export AFSCP_API_POSTGRES_DSN="${DATABASE_URL}"
+    export AFSCP_EXPORT_SESSION_RECONCILE_POSTGRES_DSN="${DATABASE_URL}"
+    export AFSCP_EXPORT_GATEWAY_POSTGRES_DSN="${DATABASE_URL}"
+    export POSTGRES_PORT
+    export MONGO_PORT
+    export REDIS_PORT
+    export MINIO_API_PORT="${MINIO_PORT}"
+    export MINIO_CONSOLE_PORT
+    export KEYCLOAK_PORT
+    export SUBSTRATE_POSTGRES_PORT="${POSTGRES_PORT}"
+    export SUBSTRATE_MINIO_API_PORT="${MINIO_PORT}"
+    export MINIO_PORT
+    export MINIO_ENDPOINT
+    export MINIO_ACCESS_KEY
+    export MINIO_SECRET_KEY
+    export MINIO_BUCKET
+    # shellcheck disable=SC1091
+    source "${ROOT_DIR}/scripts/local-manual/internal-common.sh"
+    ensure_afscp_local_runtime
+  )
+}
+
+stop_file_library_afscp_local_runtime() {
+  (
+    unset AFSCP_API_PORT AFSCP_API_LISTEN_ADDR AFSCP_EXPORT_GATEWAY_PORT AFSCP_EXPORT_GATEWAY_LISTEN_ADDR
+    export ENV_FILE=/dev/null
+    export INTERNAL_REAL_DIR="${FILE_LIBRARY_REAL_GATE_AFSCP_DIR}"
+    export INTERNAL_AGENT_K8S_NAMESPACE="${INTERNAL_AGENT_K8S_NAMESPACE:-agentsmith-sandbox}"
+    export AFSCP_BASE_URL
+    export AFSCP_EXPORT_GATEWAY_BASE_URL
+    export AFSCP_DEFAULT_VOLUME_ID
+    export AFSCP_CALLER_SERVICE
+    export AFSCP_SERVICE_TOKEN
+    export AFSCP_BOOTSTRAP_CALLER_SERVICE
+    export AFSCP_BOOTSTRAP_SERVICE_TOKEN
+    export AFSCP_ORCHESTRATOR_CALLER_SERVICE
+    export AFSCP_ORCHESTRATOR_SERVICE_TOKEN
+    export LOCAL_MANUAL_ALLOW_MISSING_SUBSTRATE_CONNECTION=1
+    export LOCAL_MANUAL_INTERNAL_ENV_FILE=/dev/null
+    export POSTGRES_PORT
+    export MONGO_PORT
+    export REDIS_PORT
+    export MINIO_API_PORT="${MINIO_PORT}"
+    export MINIO_CONSOLE_PORT
+    export KEYCLOAK_PORT
+    export SUBSTRATE_POSTGRES_PORT="${POSTGRES_PORT}"
+    export SUBSTRATE_MINIO_API_PORT="${MINIO_PORT}"
+    export MINIO_PORT
+    export MINIO_ENDPOINT
+    export MINIO_ACCESS_KEY
+    export MINIO_SECRET_KEY
+    export MINIO_BUCKET
+    # shellcheck disable=SC1091
+    source "${ROOT_DIR}/scripts/local-manual/internal-common.sh"
+    stop_afscp_local_runtime
+  )
+}
 
 resolve_owned_api_listener_pid() {
   [[ -n "${API_ROOT_PID}" ]] || {
@@ -462,6 +556,15 @@ build_file_library_api_launch_command() {
   printf -v command '%s%s' "${command}" " MINIO_ACCESS_KEY=$(printf '%q' "${MINIO_ACCESS_KEY}")"
   printf -v command '%s%s' "${command}" " MINIO_SECRET_KEY=$(printf '%q' "${MINIO_SECRET_KEY}")"
   printf -v command '%s%s' "${command}" " MINIO_BUCKET=$(printf '%q' "${MINIO_BUCKET}")"
+  printf -v command '%s%s' "${command}" " AFSCP_BASE_URL=$(printf '%q' "${AFSCP_BASE_URL}")"
+  printf -v command '%s%s' "${command}" " AFSCP_EXPORT_GATEWAY_BASE_URL=$(printf '%q' "${AFSCP_EXPORT_GATEWAY_BASE_URL}")"
+  printf -v command '%s%s' "${command}" " AFSCP_DEFAULT_VOLUME_ID=$(printf '%q' "${AFSCP_DEFAULT_VOLUME_ID}")"
+  printf -v command '%s%s' "${command}" " AFSCP_CALLER_SERVICE=$(printf '%q' "${AFSCP_CALLER_SERVICE}")"
+  printf -v command '%s%s' "${command}" " AFSCP_SERVICE_TOKEN=$(printf '%q' "${AFSCP_SERVICE_TOKEN}")"
+  printf -v command '%s%s' "${command}" " AFSCP_BOOTSTRAP_CALLER_SERVICE=$(printf '%q' "${AFSCP_BOOTSTRAP_CALLER_SERVICE}")"
+  printf -v command '%s%s' "${command}" " AFSCP_BOOTSTRAP_SERVICE_TOKEN=$(printf '%q' "${AFSCP_BOOTSTRAP_SERVICE_TOKEN}")"
+  printf -v command '%s%s' "${command}" " AFSCP_ORCHESTRATOR_CALLER_SERVICE=$(printf '%q' "${AFSCP_ORCHESTRATOR_CALLER_SERVICE}")"
+  printf -v command '%s%s' "${command}" " AFSCP_ORCHESTRATOR_SERVICE_TOKEN=$(printf '%q' "${AFSCP_ORCHESTRATOR_SERVICE_TOKEN}")"
   printf -v command '%s%s' "${command}" '; env -u http_proxy -u https_proxy -u all_proxy -u HTTP_PROXY -u HTTPS_PROXY -u ALL_PROXY -u no_proxy -u NO_PROXY npm run api:node:dev & wait "$!"'
   printf '%s\n' "${command}"
 }
@@ -628,6 +731,7 @@ write_resource_recovery_summary() {
 cleanup() {
   local exit_code="$1"
   local summary_status=0
+  local cleanup_afscp_status=0
   local cleanup_stop_status=0
   local cleanup_wait_status=0
   local -a summary_extra_args=()
@@ -636,6 +740,12 @@ cleanup() {
     set +e
     write_resource_recovery_summary
     summary_status=$?
+    set -e
+  fi
+  if [[ "${FILE_LIBRARY_AFSCP_LOCAL_RUNTIME_OWNED}" == "1" ]]; then
+    set +e
+    stop_file_library_afscp_local_runtime
+    cleanup_afscp_status=$?
     set -e
   fi
   if [[ -n "${API_ROOT_PID}" ]]; then
@@ -658,13 +768,19 @@ cleanup() {
       "cleanup failed to confirm api port ${API_PORT} became free after stopping the owned api process tree with exit code ${cleanup_wait_status}"
     )
   fi
+  if [[ "${cleanup_afscp_status}" -ne 0 ]]; then
+    summary_extra_args+=(
+      --extra-finding
+      "cleanup failed to stop the owned AFSCP local runtime for file-library gate with exit code ${cleanup_afscp_status}"
+    )
+  fi
   if [[ "${#summary_extra_args[@]}" -gt 0 ]]; then
     set +e
     write_resource_recovery_summary "${summary_extra_args[@]}"
     summary_status=$?
     set -e
   fi
-  if [[ "${summary_status}" -ne 0 || "${cleanup_stop_status}" -ne 0 || "${cleanup_wait_status}" -ne 0 ]]; then
+  if [[ "${summary_status}" -ne 0 || "${cleanup_afscp_status}" -ne 0 || "${cleanup_stop_status}" -ne 0 || "${cleanup_wait_status}" -ne 0 ]]; then
     exit_code=1
   fi
   exit "${exit_code}"
@@ -754,6 +870,8 @@ run_resource_recovery_step() {
   return 0
 }
 
+ensure_file_library_afscp_local_runtime
+
 PORT="${API_PORT}" \
 KEYCLOAK_BASE_URL="${KEYCLOAK_BASE_URL}" \
 KEYCLOAK_REALM="${KEYCLOAK_REALM}" \
@@ -767,6 +885,15 @@ MINIO_PORT="${MINIO_PORT}" \
 MINIO_ACCESS_KEY="${MINIO_ACCESS_KEY}" \
 MINIO_SECRET_KEY="${MINIO_SECRET_KEY}" \
 MINIO_BUCKET="${MINIO_BUCKET}" \
+AFSCP_BASE_URL="${AFSCP_BASE_URL}" \
+AFSCP_EXPORT_GATEWAY_BASE_URL="${AFSCP_EXPORT_GATEWAY_BASE_URL}" \
+AFSCP_DEFAULT_VOLUME_ID="${AFSCP_DEFAULT_VOLUME_ID}" \
+AFSCP_CALLER_SERVICE="${AFSCP_CALLER_SERVICE}" \
+AFSCP_SERVICE_TOKEN="${AFSCP_SERVICE_TOKEN}" \
+AFSCP_BOOTSTRAP_CALLER_SERVICE="${AFSCP_BOOTSTRAP_CALLER_SERVICE}" \
+AFSCP_BOOTSTRAP_SERVICE_TOKEN="${AFSCP_BOOTSTRAP_SERVICE_TOKEN}" \
+AFSCP_ORCHESTRATOR_CALLER_SERVICE="${AFSCP_ORCHESTRATOR_CALLER_SERVICE}" \
+AFSCP_ORCHESTRATOR_SERVICE_TOKEN="${AFSCP_ORCHESTRATOR_SERVICE_TOKEN}" \
 API_ROOT_PID="$(
   local_runtime_start_owned_service api "${API_PORT}" "${API_LOG}" bash -lc "$(build_file_library_api_launch_command)"
 )"

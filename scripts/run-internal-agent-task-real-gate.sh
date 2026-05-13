@@ -21,6 +21,9 @@ GATE_MODE="workspace"
 if [[ "${1:-}" == "--skills-runtime" ]]; then
   GATE_MODE="skills-runtime"
   shift
+elif [[ "${1:-}" == "--visual-review" ]]; then
+  GATE_MODE="visual-review"
+  shift
 fi
 if [[ "$#" -ne 0 ]]; then
   echo "[internal-real-gate] unsupported arguments: $*" >&2
@@ -28,12 +31,36 @@ if [[ "$#" -ne 0 ]]; then
 fi
 ORIGINAL_INTEGRATION_API_PORT="${INTEGRATION_API_PORT:-}"
 ORIGINAL_INTEGRATION_WEB_PORT="${INTEGRATION_WEB_PORT:-}"
+ORIGINAL_INTEGRATION_POSTGRES_PORT="${INTEGRATION_POSTGRES_PORT:-}"
+ORIGINAL_INTEGRATION_MONGO_PORT="${INTEGRATION_MONGO_PORT:-}"
+ORIGINAL_INTEGRATION_REDIS_PORT="${INTEGRATION_REDIS_PORT:-}"
+ORIGINAL_INTEGRATION_MINIO_API_PORT="${INTEGRATION_MINIO_API_PORT:-}"
+ORIGINAL_INTEGRATION_MINIO_CONSOLE_PORT="${INTEGRATION_MINIO_CONSOLE_PORT:-}"
+ORIGINAL_INTEGRATION_KEYCLOAK_PORT="${INTEGRATION_KEYCLOAK_PORT:-}"
 load_backend_real_env
 if [[ -n "${ORIGINAL_INTEGRATION_API_PORT}" ]]; then
   export INTEGRATION_API_PORT="${ORIGINAL_INTEGRATION_API_PORT}"
 fi
 if [[ -n "${ORIGINAL_INTEGRATION_WEB_PORT}" ]]; then
   export INTEGRATION_WEB_PORT="${ORIGINAL_INTEGRATION_WEB_PORT}"
+fi
+if [[ -n "${ORIGINAL_INTEGRATION_POSTGRES_PORT}" ]]; then
+  export INTEGRATION_POSTGRES_PORT="${ORIGINAL_INTEGRATION_POSTGRES_PORT}"
+fi
+if [[ -n "${ORIGINAL_INTEGRATION_MONGO_PORT}" ]]; then
+  export INTEGRATION_MONGO_PORT="${ORIGINAL_INTEGRATION_MONGO_PORT}"
+fi
+if [[ -n "${ORIGINAL_INTEGRATION_REDIS_PORT}" ]]; then
+  export INTEGRATION_REDIS_PORT="${ORIGINAL_INTEGRATION_REDIS_PORT}"
+fi
+if [[ -n "${ORIGINAL_INTEGRATION_MINIO_API_PORT}" ]]; then
+  export INTEGRATION_MINIO_API_PORT="${ORIGINAL_INTEGRATION_MINIO_API_PORT}"
+fi
+if [[ -n "${ORIGINAL_INTEGRATION_MINIO_CONSOLE_PORT}" ]]; then
+  export INTEGRATION_MINIO_CONSOLE_PORT="${ORIGINAL_INTEGRATION_MINIO_CONSOLE_PORT}"
+fi
+if [[ -n "${ORIGINAL_INTEGRATION_KEYCLOAK_PORT}" ]]; then
+  export INTEGRATION_KEYCLOAK_PORT="${ORIGINAL_INTEGRATION_KEYCLOAK_PORT}"
 fi
 export_backend_real_endpoint_env
 
@@ -70,6 +97,15 @@ mkdir -p "${INTERNAL_REAL_DIR}"
 INTERNAL_REAL_DIR="$(realpath -m "${INTERNAL_REAL_DIR}")"
 export RUNTIME_LINE_ID="${RUNTIME_LINE_ID:-$(basename "${INTERNAL_REAL_DIR}")}"
 export RUNTIME_RUNNER_MODES="${RUNTIME_RUNNER_MODES:-managed_runner}"
+AFSCP_BASE_URL="${AFSCP_BASE_URL:-http://127.0.0.1:$((API_PORT + 9030))}"
+AFSCP_EXPORT_GATEWAY_BASE_URL="${AFSCP_EXPORT_GATEWAY_BASE_URL:-http://127.0.0.1:$((API_PORT + 9031))}"
+AFSCP_DEFAULT_VOLUME_ID="${AFSCP_DEFAULT_VOLUME_ID:-vol_internal_${API_PORT}}"
+AFSCP_CALLER_SERVICE="${AFSCP_CALLER_SERVICE:-agentsmith-api}"
+AFSCP_BOOTSTRAP_CALLER_SERVICE="${AFSCP_BOOTSTRAP_CALLER_SERVICE:-agentsmith-bootstrap}"
+AFSCP_ORCHESTRATOR_CALLER_SERVICE="${AFSCP_ORCHESTRATOR_CALLER_SERVICE:-agentsmith-sandbox-manager}"
+AFSCP_SERVICE_TOKEN="${AFSCP_SERVICE_TOKEN:-agentsmith-local-afscp-product-token}"
+AFSCP_BOOTSTRAP_SERVICE_TOKEN="${AFSCP_BOOTSTRAP_SERVICE_TOKEN:-agentsmith-local-afscp-bootstrap-token}"
+AFSCP_ORCHESTRATOR_SERVICE_TOKEN="${AFSCP_ORCHESTRATOR_SERVICE_TOKEN:-agentsmith-local-afscp-orchestrator-token}"
 KEYCLOAK_REALM="${KEYCLOAK_REALM:-mbos}"
 KEYCLOAK_CLIENT_ID="${KEYCLOAK_CLIENT_ID:-agentsmith}"
 clear_runtime_stack_env
@@ -101,6 +137,156 @@ MONGO_DB_NAME="${MONGO_DB_NAME:-mbos}"
 
 info() { echo "[internal-real-gate] $*"; }
 
+ensure_internal_integration_deps_for_afscp() {
+  (
+    cd "${ROOT_DIR}" && \
+      POSTGRES_PORT="${INTEGRATION_POSTGRES_PORT}" \
+      MONGO_PORT="${INTEGRATION_MONGO_PORT}" \
+      REDIS_PORT="${INTEGRATION_REDIS_PORT}" \
+      MINIO_API_PORT="${INTEGRATION_MINIO_API_PORT}" \
+      MINIO_CONSOLE_PORT="${INTEGRATION_MINIO_CONSOLE_PORT}" \
+      KEYCLOAK_PORT="${INTEGRATION_KEYCLOAK_PORT}" \
+      npm run integration:deps:up && \
+      POSTGRES_PORT="${INTEGRATION_POSTGRES_PORT}" \
+      MONGO_PORT="${INTEGRATION_MONGO_PORT}" \
+      REDIS_PORT="${INTEGRATION_REDIS_PORT}" \
+      MINIO_API_PORT="${INTEGRATION_MINIO_API_PORT}" \
+      MINIO_CONSOLE_PORT="${INTEGRATION_MINIO_CONSOLE_PORT}" \
+      KEYCLOAK_PORT="${INTEGRATION_KEYCLOAK_PORT}" \
+      make deps-ready && \
+      POSTGRES_PORT="${INTEGRATION_POSTGRES_PORT}" \
+      npm run integration:deps:init:postgres
+  )
+}
+
+wait_for_internal_integration_deps_for_afscp() {
+  gate_wait_for_tcp "${INTERNAL_REAL_DIR}" "127.0.0.1" "${INTEGRATION_POSTGRES_PORT}" 120 infra_dependency_unready postgres_ready
+  gate_wait_for_tcp "${INTERNAL_REAL_DIR}" "127.0.0.1" "${INTEGRATION_MONGO_PORT}" 120 infra_dependency_unready mongo_ready
+  gate_wait_for_tcp "${INTERNAL_REAL_DIR}" "127.0.0.1" "${INTEGRATION_REDIS_PORT}" 120 infra_dependency_unready redis_ready
+  gate_wait_for_http "${INTERNAL_REAL_DIR}" "http://127.0.0.1:${INTEGRATION_MINIO_API_PORT}/minio/health/live" 120 infra_dependency_unready minio_ready 200
+  gate_wait_for_http "${INTERNAL_REAL_DIR}" "http://127.0.0.1:${INTEGRATION_KEYCLOAK_PORT}/realms/${KEYCLOAK_REALM}/.well-known/openid-configuration" 180 infra_dependency_unready keycloak_ready 200
+}
+
+prepare_internal_spec_port_pair() {
+  local api_port="$1"
+  local web_port="$2"
+
+  backend_real_gate_cleanup_listener "${api_port}" api || return 1
+  backend_real_gate_cleanup_listener "${web_port}" web || return 1
+  wait_port_free "${api_port}" api || return 1
+  wait_port_free "${web_port}" web || return 1
+}
+
+resolve_internal_spec_port_pair() {
+  local preferred_api_port="$1"
+  local preferred_web_port="$2"
+  local spec="$3"
+  local api_base="${INTERNAL_REAL_SPEC_API_PORT_BASE:-23000}"
+  local web_base="${INTERNAL_REAL_SPEC_WEB_PORT_BASE:-33000}"
+  local attempts="${INTERNAL_REAL_SPEC_PORT_SCAN_ATTEMPTS:-200}"
+  local offset api_port web_port
+
+  if prepare_internal_spec_port_pair "${preferred_api_port}" "${preferred_web_port}"; then
+    printf '%s %s\n' "${preferred_api_port}" "${preferred_web_port}"
+    return 0
+  fi
+
+  echo "[internal-real-gate] preferred ports api=${preferred_api_port} web=${preferred_web_port} unavailable for ${spec}; selecting isolated fallback ports" >&2
+  for offset in $(seq 0 "${attempts}"); do
+    api_port="$((api_base + offset))"
+    web_port="$((web_base + offset))"
+    if [[ "${api_port}" == "${preferred_api_port}" || "${web_port}" == "${preferred_web_port}" ]]; then
+      continue
+    fi
+    if prepare_internal_spec_port_pair "${api_port}" "${web_port}"; then
+      echo "[internal-real-gate] using isolated fallback ports api=${api_port} web=${web_port} for ${spec}" >&2
+      printf '%s %s\n' "${api_port}" "${web_port}"
+      return 0
+    fi
+  done
+
+  echo "[internal-real-gate] unable to find isolated ports for ${spec} after ${attempts} attempts" >&2
+  return 1
+}
+
+ensure_internal_afscp_local_runtime() {
+  info "ensuring AFSCP local runtime at ${AFSCP_BASE_URL}"
+  (
+    export INTERNAL_REAL_DIR
+    export INTERNAL_AGENT_K8S_NAMESPACE="${K8S_NAMESPACE}"
+    export AFSCP_BASE_URL
+    export AFSCP_EXPORT_GATEWAY_BASE_URL
+    export AFSCP_DEFAULT_VOLUME_ID
+    export AFSCP_CALLER_SERVICE
+    export AFSCP_BOOTSTRAP_CALLER_SERVICE
+    export AFSCP_ORCHESTRATOR_CALLER_SERVICE
+    export AFSCP_SERVICE_TOKEN
+    export AFSCP_BOOTSTRAP_SERVICE_TOKEN
+    export AFSCP_ORCHESTRATOR_SERVICE_TOKEN
+    export LOCAL_MANUAL_INTERNAL_ENV_FILE=/dev/null
+    export DATABASE_URL="postgresql://mbos:mbos_dev_password@localhost:${INTEGRATION_POSTGRES_PORT}/mbos?sslmode=disable"
+    export AFSCP_DATABASE_URL="${DATABASE_URL}"
+    export AFSCP_POSTGRES_DSN="${DATABASE_URL}"
+    export AFSCP_API_POSTGRES_DSN="${DATABASE_URL}"
+    export AFSCP_EXPORT_SESSION_RECONCILE_POSTGRES_DSN="${DATABASE_URL}"
+    export AFSCP_EXPORT_GATEWAY_POSTGRES_DSN="${DATABASE_URL}"
+    export POSTGRES_PORT="${INTEGRATION_POSTGRES_PORT}"
+    export MONGO_PORT="${INTEGRATION_MONGO_PORT}"
+    export REDIS_PORT="${INTEGRATION_REDIS_PORT}"
+    export MINIO_API_PORT="${INTEGRATION_MINIO_API_PORT}"
+    export MINIO_CONSOLE_PORT="${INTEGRATION_MINIO_CONSOLE_PORT}"
+    export KEYCLOAK_PORT="${INTEGRATION_KEYCLOAK_PORT}"
+    export SUBSTRATE_POSTGRES_PORT="${INTEGRATION_POSTGRES_PORT}"
+    export SUBSTRATE_MINIO_API_PORT="${INTEGRATION_MINIO_API_PORT}"
+    export MINIO_PORT="${INTEGRATION_MINIO_API_PORT}"
+    export MINIO_ENDPOINT="localhost"
+    export MINIO_ACCESS_KEY="${MINIO_ACCESS_KEY:-mbos}"
+    export MINIO_SECRET_KEY="${MINIO_SECRET_KEY:-mbos_dev_password}"
+    export MINIO_BUCKET="${MINIO_BUCKET:-mbos-dev}"
+    export AFSCP_STORAGE_CSI_DRIVER="${CSI_DRIVER}"
+    export AFSCP_STORAGE_CLASS_NAME="${STORAGE_CLASS_NAME}"
+    export AFSCP_STORAGE_CSI_MOUNT_OPTIONS="${MOUNT_OPTIONS}"
+    export AFSCP_STORAGE_CSI_SUBDIR="${SUBDIR}"
+    export AFSCP_STORAGE_CSI_MOUNT_SERVICE_ACCOUNT="${MOUNT_SERVICE_ACCOUNT}"
+    export AFSCP_STORAGE_CSI_MOUNT_IMAGE="${AFSCP_STORAGE_CSI_MOUNT_IMAGE}"
+    export AFSCP_STORAGE_CSI_NAMESPACE="${AFSCP_STORAGE_CSI_NAMESPACE}"
+    # shellcheck disable=SC1091
+    source "${ROOT_DIR}/scripts/local-manual/internal-common.sh"
+    ensure_afscp_local_runtime
+  )
+}
+
+stop_internal_afscp_local_runtime() {
+  (
+    export INTERNAL_REAL_DIR
+    export INTERNAL_AGENT_K8S_NAMESPACE="${K8S_NAMESPACE}"
+    export AFSCP_BASE_URL
+    export AFSCP_EXPORT_GATEWAY_BASE_URL
+    export AFSCP_DEFAULT_VOLUME_ID
+    export AFSCP_CALLER_SERVICE
+    export AFSCP_BOOTSTRAP_CALLER_SERVICE
+    export AFSCP_ORCHESTRATOR_CALLER_SERVICE
+    export AFSCP_SERVICE_TOKEN
+    export AFSCP_BOOTSTRAP_SERVICE_TOKEN
+    export AFSCP_ORCHESTRATOR_SERVICE_TOKEN
+    export LOCAL_MANUAL_INTERNAL_ENV_FILE=/dev/null
+    export POSTGRES_PORT="${INTEGRATION_POSTGRES_PORT}"
+    export MONGO_PORT="${INTEGRATION_MONGO_PORT}"
+    export REDIS_PORT="${INTEGRATION_REDIS_PORT}"
+    export MINIO_API_PORT="${INTEGRATION_MINIO_API_PORT}"
+    export MINIO_CONSOLE_PORT="${INTEGRATION_MINIO_CONSOLE_PORT}"
+    export KEYCLOAK_PORT="${INTEGRATION_KEYCLOAK_PORT}"
+    # shellcheck disable=SC1091
+    source "${ROOT_DIR}/scripts/local-manual/internal-common.sh"
+    stop_afscp_local_runtime
+  ) >/dev/null 2>&1 || true
+}
+
+reset_internal_afscp_local_runtime() {
+  info "resetting owned AFSCP local runtime before gate start"
+  stop_internal_afscp_local_runtime
+}
+
 record_service() {
   local service_name="$1"
   local status="$2"
@@ -113,14 +299,6 @@ if [[ -z "${BACKEND_REAL_API_KEY_VALUE}" ]]; then
   echo "[internal-backend-real-gate] Missing PRESET_ENDPOINT_API_KEY." >&2
   exit 1
 fi
-
-prepare_internal_backend_real_gate_runtime
-gate_record_preflight_check "${INTERNAL_REAL_DIR}" "kind_cluster" "passed" "${KIND_CLUSTER_NAME}"
-record_service kind_cluster ready "${KIND_CLUSTER_NAME}"
-gate_record_preflight_check "${INTERNAL_REAL_DIR}" "afscp_storage_csi" "passed" "${CSI_DRIVER}"
-record_service afscp_storage_csi ready "${CSI_DRIVER}"
-gate_record_preflight_check "${INTERNAL_REAL_DIR}" "external_dependency_services" "passed" "${EXTERNAL_DEPS_MANIFEST}"
-record_service external_dependency_services ready "${EXTERNAL_DEPS_MANIFEST}"
 
 cleanup() {
   if [[ "${KEEP_FAILED_ENV}" == "1" && "${GATE_STATUS}" -ne 0 ]]; then
@@ -137,14 +315,30 @@ cleanup() {
     info "visual_artifacts=${INTERNAL_VISUAL_ARTIFACT_DIR}"
     return 0
   fi
+  stop_internal_afscp_local_runtime
   if [[ -n "${CURRENT_SANDBOX_STATE_FILE}" ]]; then
     INTERNAL_SANDBOX_REAL_STATE_FILE="${CURRENT_SANDBOX_STATE_FILE}" bash "${CONTROL_SCRIPT}" stop-manager >/dev/null 2>&1 || true
   fi
 }
 trap cleanup EXIT
 
+reset_internal_afscp_local_runtime
+ensure_internal_integration_deps_for_afscp
+wait_for_internal_integration_deps_for_afscp
+prepare_internal_backend_real_gate_runtime
+gate_record_preflight_check "${INTERNAL_REAL_DIR}" "kind_cluster" "passed" "${KIND_CLUSTER_NAME}"
+record_service kind_cluster ready "${KIND_CLUSTER_NAME}"
+gate_record_preflight_check "${INTERNAL_REAL_DIR}" "afscp_storage_csi" "passed" "${CSI_DRIVER}"
+record_service afscp_storage_csi ready "${CSI_DRIVER}"
+gate_record_preflight_check "${INTERNAL_REAL_DIR}" "external_dependency_services" "passed" "${EXTERNAL_DEPS_MANIFEST}"
+record_service external_dependency_services ready "${EXTERNAL_DEPS_MANIFEST}"
+gate_record_preflight_check "${INTERNAL_REAL_DIR}" "afscp_local_runtime" "passed" "${AFSCP_BASE_URL}"
+record_service afscp_local_runtime ready "${AFSCP_BASE_URL}"
+
 if [[ "${GATE_MODE}" == "skills-runtime" ]]; then
   info "running internal agent-task skills runtime real integration"
+elif [[ "${GATE_MODE}" == "visual-review" ]]; then
+  info "running backend-real visual review with internal managed Agent Task sandbox"
 else
   info "running internal agent-task workspace real integration"
 fi
@@ -182,7 +376,16 @@ run_internal_spec() {
       AFSCP_STORAGE_CSI_MOUNT_SERVICE_ACCOUNT="${MOUNT_SERVICE_ACCOUNT}" \
       AFSCP_STORAGE_CSI_MOUNT_IMAGE="${MOUNT_IMAGE_OVERRIDE}" \
       AFSCP_STORAGE_CSI_NAMESPACE="${AFSCP_STORAGE_CSI_NAMESPACE}" \
+      AFSCP_BASE_URL="${AFSCP_BASE_URL}" \
+      AFSCP_CALLER_SERVICE="${AFSCP_CALLER_SERVICE}" \
+      AFSCP_SERVICE_TOKEN="${AFSCP_SERVICE_TOKEN}" \
+      AFSCP_BOOTSTRAP_CALLER_SERVICE="${AFSCP_BOOTSTRAP_CALLER_SERVICE}" \
+      AFSCP_BOOTSTRAP_SERVICE_TOKEN="${AFSCP_BOOTSTRAP_SERVICE_TOKEN}" \
+      AFSCP_ORCHESTRATOR_CALLER_SERVICE="${AFSCP_ORCHESTRATOR_CALLER_SERVICE}" \
+      AFSCP_DEFAULT_VOLUME_ID="${AFSCP_DEFAULT_VOLUME_ID}" \
       AFSCP_SUBSTRATE_OBJECT_STORAGE_ENDPOINT="${AFSCP_SUBSTRATE_OBJECT_STORAGE_ENDPOINT_VALUE}" \
+      RELEASE_REAL_VISUAL_ARTIFACT_DIR="${RELEASE_REAL_VISUAL_ARTIFACT_DIR:-${INTERNAL_VISUAL_ARTIFACT_DIR}}" \
+      UX_TRACE_OUTPUT_ROOT="${UX_TRACE_OUTPUT_ROOT:-${INTERNAL_VISUAL_ARTIFACT_DIR}/ux-traces}" \
       INTERNAL_AGENT_IMAGE="${RUNNER_IMAGE}" \
       INTEGRATION_INTERNAL_AGENT_IMAGE="${RUNNER_IMAGE}" \
       INTEGRATION_INTERNAL_AGENT_BASE_IMAGE="${RUNNER_BASE_IMAGE}" \
@@ -191,6 +394,7 @@ run_internal_spec() {
       AGENT_EXECUTION_WS_BASE_URL="${spec_agent_execution_ws_base_url}" \
       INTERNAL_REAL_VISUAL_ARTIFACT_DIR="${INTERNAL_VISUAL_ARTIFACT_DIR}" \
       INTERNAL_SANDBOX_REAL_STATE_FILE="${spec_state_file}" \
+      INTEGRATION_AFSCP_LOCAL_RUNTIME=0 \
       INTEGRATION_KEEP_FAILED_ENV="${KEEP_FAILED_ENV}" \
       POSTGRES_PORT="${INTEGRATION_POSTGRES_PORT}" \
       MONGO_PORT="${INTEGRATION_MONGO_PORT}" \
@@ -210,14 +414,20 @@ run_internal_spec() {
 run_internal_spec_grep() {
   local spec="$1"
   local label="$2"
-  local spec_api_port="$3"
-  local spec_web_port="$4"
+  local preferred_api_port="$3"
+  local preferred_web_port="$4"
+  local spec_api_port
+  local spec_web_port
   local spec_slug
   local spec_state_file
   local spec_status
+  local resolved_ports
 
+  if ! resolved_ports="$(resolve_internal_spec_port_pair "${preferred_api_port}" "${preferred_web_port}" "${spec}")"; then
+    return 1
+  fi
+  read -r spec_api_port spec_web_port <<< "${resolved_ports}"
   spec_slug="$(basename "${spec}" .spec.ts)-${spec_api_port}"
-  cleanup_gate_ports "${spec_api_port}" "${spec_web_port}" "${spec}"
   spec_state_file="$(prepare_internal_backend_real_spec_runtime "${spec_slug}")"
   gate_record_preflight_check "${INTERNAL_REAL_DIR}" "${spec_slug}_sandbox_manager" "passed" "port ${SANDBOX_PORT}"
   if [[ -n "${label}" ]]; then
@@ -259,10 +469,10 @@ run_skills_runtime_specs() {
     run_internal_spec_grep e2e/integration-agent-task-runner.spec.ts "rejects shared workspace context writes inside a real Agent Task terminal session resolved by the default Agent Runner" 20078 3091 || skills_status=$?
   fi
   if [[ "${skills_status}" -eq 0 ]]; then
-    run_internal_spec_grep e2e/integration-context-store-isolation.spec.ts "member context stays private between workspace members" 20079 3101 || skills_status=$?
+    run_internal_spec_grep e2e/integration-context-store-isolation.spec.ts "member context stays private between workspace members" 23079 33079 || skills_status=$?
   fi
   if [[ "${skills_status}" -eq 0 ]]; then
-    run_internal_spec_grep e2e/integration-context-store-isolation.spec.ts "task context stays private to the task owner within the same workspace" 20080 3041 || skills_status=$?
+    run_internal_spec_grep e2e/integration-context-store-isolation.spec.ts "task context stays private to the task owner within the same workspace" 23080 33080 || skills_status=$?
   fi
 
   return "${skills_status}"
@@ -278,6 +488,31 @@ if [[ "${GATE_MODE}" == "skills-runtime" ]]; then
   fi
   info "internal agent-task skills runtime real gate passed"
   gate_record_success "${INTERNAL_REAL_DIR}" "skills_runtime_specs"
+  exit 0
+fi
+
+if [[ "${GATE_MODE}" == "visual-review" ]]; then
+  VISUAL_REVIEW_STATUS=0
+  VISUAL_REVIEW_STATE_FILE="$(prepare_internal_backend_real_spec_runtime "integration-visual-review")" || VISUAL_REVIEW_STATUS=$?
+  if [[ "${VISUAL_REVIEW_STATUS}" -eq 0 ]]; then
+    gate_record_preflight_check "${INTERNAL_REAL_DIR}" "visual_review_spec_sandbox_manager" "passed" "port ${SANDBOX_PORT}"
+    run_internal_spec e2e/integration-visual-review.spec.ts "${API_PORT}" "${WEB_PORT}" "${VISUAL_REVIEW_STATE_FILE}" || VISUAL_REVIEW_STATUS=$?
+  fi
+  if [[ "${VISUAL_REVIEW_STATUS}" -eq 0 ]]; then
+    gate_record_preflight_check "${INTERNAL_REAL_DIR}" "visual_review_spec" "passed" "integration-visual-review"
+  else
+    gate_record_failure "${INTERNAL_REAL_DIR}" "scenario_assertion_failed" "visual_review_spec" "integration-visual-review failed with status ${VISUAL_REVIEW_STATUS}"
+  fi
+  if [[ -n "${VISUAL_REVIEW_STATE_FILE:-}" && ( "${KEEP_FAILED_ENV}" != "1" || "${VISUAL_REVIEW_STATUS}" -eq 0 ) ]]; then
+    INTERNAL_SANDBOX_REAL_STATE_FILE="${VISUAL_REVIEW_STATE_FILE}" bash "${CONTROL_SCRIPT}" stop-manager >/dev/null 2>&1 || true
+  fi
+  GATE_STATUS="${VISUAL_REVIEW_STATUS}"
+  set -e
+  if [[ "${GATE_STATUS}" -ne 0 ]]; then
+    exit "${GATE_STATUS}"
+  fi
+  info "backend-real visual review internal managed Agent Task gate passed"
+  gate_record_success "${INTERNAL_REAL_DIR}" "visual_review_spec"
   exit 0
 fi
 

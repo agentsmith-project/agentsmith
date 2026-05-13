@@ -228,86 +228,63 @@ describe('mapAfscpErrorEnvelope', () => {
     }
   });
 
-  it.each([
-    [
-      'error.details',
-      {
-        error: {
-          code: 'JVS_COMMAND_FAILED',
-          message: 'save point failed for repo_hidden_elsewhere',
-          retryable: false,
-          correlation_id: 'corr-jvs-busy',
-          operation_id: 'op_save_point_busy',
-          details: {
-            jvs_error_code: 'E_REPO_BUSY',
-            repo_id: 'repo_hidden_elsewhere',
-            namespace_id: 'ns_hidden',
-            metadata_url: 'postgres://postgres:postgres@db:5432/juicefs',
-          },
-        },
-      },
-    ],
-    [
-      'verification_result',
-      {
-        error: {
-          code: 'JVS_COMMAND_FAILED',
-          message: 'save point failed for repo_hidden_elsewhere',
-          retryable: false,
-          correlation_id: 'corr-jvs-busy',
-          operation_id: 'op_save_point_busy',
-        },
-        verification_result: {
+  it('does not infer public state from private JVS-shaped command payloads', () => {
+    const mapped = mapAfscpErrorEnvelope(500, {
+      error: {
+        code: 'JVS_COMMAND_FAILED',
+        message: 'save point failed for repo_hidden_elsewhere',
+        retryable: false,
+        correlation_id: 'corr-jvs-red-team',
+        operation_id: 'op_save_point_private',
+        details: {
           jvs_error_code: 'E_REPO_BUSY',
+          jvs_stdout: 'jvs stdout leaked',
           repo_id: 'repo_hidden_elsewhere',
+          namespace_id: 'ns_hidden',
           metadata_url: 'postgres://postgres:postgres@db:5432/juicefs',
         },
       },
-    ],
-    [
-      'jvs_json_output object',
-      {
-        error: {
-          code: 'JVS_COMMAND_FAILED',
-          message: 'save point failed for repo_hidden_elsewhere',
-          retryable: false,
-          correlation_id: 'corr-jvs-busy',
-          operation_id: 'op_save_point_busy',
-        },
-        jvs_json_output: {
-          jvs_error_code: 'E_REPO_BUSY',
-          repo_id: 'repo_hidden_elsewhere',
+      jvs_json_output: JSON.stringify({
+        jvs_error_code: 'E_REPO_BUSY',
+        repo_id: 'repo_hidden_elsewhere',
+      }),
+    });
+
+    expect(mapped).toEqual({
+      status: 500,
+      code: 'afscp_error',
+      message: 'afscp_error',
+      retryable: false,
+      correlation_id: 'corr-jvs-red-team',
+      operation_id: 'op_save_point_private',
+    });
+    expect(JSON.stringify(mapped)).not.toMatch(/E_REPO_BUSY|jvs stdout leaked|repo_hidden_elsewhere|ns_hidden|metadata_url|postgres/);
+  });
+
+  it('maps repo mutation-in-progress conflicts to a retryable busy state without leaking details', () => {
+    const mapped = mapAfscpErrorEnvelope(409, {
+      error: {
+        code: 'REPO_MUTATION_IN_PROGRESS',
+        message: 'repo repo_hidden_elsewhere has an active mutation metadata_url=postgres://db',
+        retryable: true,
+        correlation_id: 'corr-mutation-busy',
+        operation_id: 'op_repo_mutation_busy',
+        details: {
+          resource: { type: 'repo', id: 'repo_hidden_elsewhere' },
+          namespace_id: 'ns_hidden',
           metadata_url: 'postgres://postgres:postgres@db:5432/juicefs',
         },
       },
-    ],
-    [
-      'jvs_json_output string',
-      {
-        error: {
-          code: 'JVS_COMMAND_FAILED',
-          message: 'save point failed for repo_hidden_elsewhere',
-          retryable: false,
-          correlation_id: 'corr-jvs-busy',
-          operation_id: 'op_save_point_busy',
-        },
-        jvs_json_output: JSON.stringify({
-          jvs_error_code: 'E_REPO_BUSY',
-          repo_id: 'repo_hidden_elsewhere',
-          metadata_url: 'postgres://postgres:postgres@db:5432/juicefs',
-        }),
-      },
-    ],
-  ])('maps JVS repo-busy command failures from %s to the active writer blocker without leaking details', (_caseName, payload) => {
-    const mapped = mapAfscpErrorEnvelope(500, payload);
+    });
 
     expect(mapped).toEqual({
       status: 409,
-      code: 'afscp_active_writer_blocks_restore',
-      message: 'afscp_active_writer_blocks_restore',
-      retryable: false,
-      correlation_id: 'corr-jvs-busy',
-      operation_id: 'op_save_point_busy',
+      code: 'afscp_repo_mutation_in_progress',
+      message: 'afscp_repo_mutation_in_progress',
+      retryable: true,
+      correlation_id: 'corr-mutation-busy',
+      operation_id: 'op_repo_mutation_busy',
+      resource_kind: 'repo',
     });
     expect(JSON.stringify(mapped)).not.toMatch(/repo_hidden_elsewhere|ns_hidden|metadata_url|postgres/);
   });

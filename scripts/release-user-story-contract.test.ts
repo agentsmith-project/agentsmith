@@ -19,10 +19,10 @@ describe('release-critical story sources', () => {
     expect(RELEASE_USER_STORY.manifest.seedData).toEqual(['ws_default']);
     expect(RELEASE_USER_STORY.manifest.seedData).toEqual(story.seedData);
     expect(story.steps.find((step) => step.stepId === 'system-login')?.note).toBeTruthy();
-    expect(story.runtimeData?.notebook?.external_create?.turnOne).toMatchObject({
-      prompt: expect.stringContaining('EXT_T1_OK'),
-      expectedToken: 'EXT_T1_OK',
-      expectedArtifactPath: '.artifacts/external_summary.md',
+    expect(story.runtimeData?.agentTask?.managed_create?.turnOne).toMatchObject({
+      prompt: expect.stringContaining('MANAGED_T1_OK'),
+      expectedToken: 'MANAGED_T1_OK',
+      expectedArtifactPath: '.artifacts/managed_summary.md',
     });
     expect(story.steps.map((step) => step.stepId)).toEqual(
       expect.arrayContaining([
@@ -30,6 +30,31 @@ describe('release-critical story sources', () => {
         'workspace-login',
         'project-overview',
       ]),
+    );
+    expect(story.scenes.find((scene) => scene.sceneId === 'project-agent-runners')?.stableMarkers).toEqual(
+      expect.arrayContaining([
+        'agent-runners__project-default-status',
+        'agent-runners__system-managed-section',
+        'agent-runners__system-managed-table',
+      ]),
+    );
+    expect(story.steps.find((step) => step.stepId === 'agent-runners-managed-list')?.target).toBe(
+      'agent-runners__system-managed-table',
+    );
+    expect(story.steps.find((step) => step.stepId === 'agent-runners-managed-health')?.target).toBe(
+      'agent-runners__project-default-status',
+    );
+    expect(story.steps.find((step) => step.stepId === 'files-artifacts-managed')?.note).toContain(
+      'workspace/.artifacts',
+    );
+    expect(story.steps.find((step) => step.stepId === 'files-artifacts-managed-continuity')?.note).toContain(
+      'workspace/.artifacts',
+    );
+    expect(story.steps.find((step) => step.stepId === 'managed-continuity-governance-config')?.note).toContain(
+      '项目所有者执行治理配置',
+    );
+    expect(story.steps.find((step) => step.stepId === 'member-workspace-home-after-governance-config')?.note).toContain(
+      '普通成员重新进入 workspace，继续使用托管 Agent Runner',
     );
   });
 
@@ -59,7 +84,7 @@ describe('release-critical story sources', () => {
     expect(source).not.toContain('loadStoryDefinition');
   });
 
-  it('keeps release story runtime notes and notebook expectations in the markdown story source, not in the accessor module', async () => {
+  it('keeps release story runtime notes and Agent Task expectations in the markdown story source, not in the accessor module', async () => {
     const source = await readFile(path.resolve('e2e/release-user-story.contract.ts'), 'utf-8');
 
     expect(source).not.toContain('RELEASE_STORY_NOTES');

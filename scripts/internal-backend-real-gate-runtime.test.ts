@@ -77,6 +77,24 @@ describe('internal backend-real gate runtime contract', () => {
     expect(agentTaskGate).toContain('source "${ROOT_DIR}/scripts/lib/internal-backend-real-gate.sh"');
 
     expect(agentTaskGate).toContain('prepare_internal_backend_real_gate_runtime');
+    expect(agentTaskGate).toContain('reset_internal_afscp_local_runtime');
+    expect(agentTaskGate).toContain(
+      '\nreset_internal_afscp_local_runtime\nensure_internal_integration_deps_for_afscp\nwait_for_internal_integration_deps_for_afscp\nprepare_internal_backend_real_gate_runtime',
+    );
+    expect(agentTaskGate).toContain('export LOCAL_MANUAL_INTERNAL_ENV_FILE=/dev/null');
+    expect(agentTaskGate).toContain('export AFSCP_DATABASE_URL="${DATABASE_URL}"');
+    expect(agentTaskGate).toContain('export AFSCP_EXPORT_GATEWAY_POSTGRES_DSN="${DATABASE_URL}"');
+    expect(agentTaskGate).toContain('export POSTGRES_PORT="${INTEGRATION_POSTGRES_PORT}"');
+    expect(agentTaskGate).toContain('export MINIO_API_PORT="${INTEGRATION_MINIO_API_PORT}"');
+    expect(agentTaskGate).toContain('ORIGINAL_INTEGRATION_MONGO_PORT="${INTEGRATION_MONGO_PORT:-}"');
+    expect(agentTaskGate).toContain('export INTEGRATION_MONGO_PORT="${ORIGINAL_INTEGRATION_MONGO_PORT}"');
+    expect(agentTaskGate).toContain('ORIGINAL_INTEGRATION_MINIO_API_PORT="${INTEGRATION_MINIO_API_PORT:-}"');
+    expect(agentTaskGate).toContain('export INTEGRATION_MINIO_API_PORT="${ORIGINAL_INTEGRATION_MINIO_API_PORT}"');
+    expect(agentTaskGate).toContain('ORIGINAL_INTEGRATION_KEYCLOAK_PORT="${INTEGRATION_KEYCLOAK_PORT:-}"');
+    expect(agentTaskGate).toContain('export INTEGRATION_KEYCLOAK_PORT="${ORIGINAL_INTEGRATION_KEYCLOAK_PORT}"');
+    expect(agentTaskGate.indexOf('trap cleanup EXIT')).toBeLessThan(
+      agentTaskGate.indexOf('prepare_internal_backend_real_gate_runtime'),
+    );
     expect(agentTaskGate).toContain('export RUNTIME_RUNNER_MODES="${RUNTIME_RUNNER_MODES:-managed_runner}"');
     expect(agentTaskGate).not.toContain('RUNTIME_RUNNER_MODES="${RUNTIME_RUNNER_MODES:-external_host');
 
@@ -132,6 +150,28 @@ describe('internal backend-real gate runtime contract', () => {
     expect(developmentGuide).not.toContain('local sandbox manager / cleaner');
   });
 
+  it('allocates isolated ports for nested Context Store specs without cleaning unowned dev servers', () => {
+    const agentTaskGate = read('scripts/run-internal-agent-task-real-gate.sh');
+
+    expect(agentTaskGate).toContain('resolve_internal_spec_port_pair()');
+    expect(agentTaskGate).toContain('prepare_internal_spec_port_pair()');
+    expect(agentTaskGate).toContain('backend_real_gate_cleanup_listener "${web_port}" web || return 1');
+    expect(agentTaskGate).toContain('INTERNAL_REAL_SPEC_WEB_PORT_BASE:-33000');
+    expect(agentTaskGate).toContain('preferred ports api=${preferred_api_port} web=${preferred_web_port} unavailable');
+    expect(agentTaskGate).toContain(
+      'run_internal_spec_grep e2e/integration-context-store-isolation.spec.ts "member context stays private between workspace members" 23079 33079',
+    );
+    expect(agentTaskGate).toContain(
+      'run_internal_spec_grep e2e/integration-context-store-isolation.spec.ts "task context stays private to the task owner within the same workspace" 23080 33080',
+    );
+    expect(agentTaskGate).not.toContain(
+      'run_internal_spec_grep e2e/integration-context-store-isolation.spec.ts "member context stays private between workspace members" 20079 3101',
+    );
+    expect(agentTaskGate).not.toContain(
+      'run_internal_spec_grep e2e/integration-context-store-isolation.spec.ts "task context stays private to the task owner within the same workspace" 20080 3041',
+    );
+  });
+
   it('writes AFSCP manager env values into isolated sandbox state instead of relying on YAML config', () => {
     const helper = read('scripts/lib/internal-backend-real-gate.sh');
     const state = renderSandboxState({
@@ -160,6 +200,27 @@ describe('internal backend-real gate runtime contract', () => {
     expect(integrationGate).toContain('preflight_managed_agent_task_sandbox_env');
     expect(integrationGate).toContain('managed_agent_task_sandbox_env');
     expect(integrationGate).toContain('Managed Agent Task backend-real coverage requires sandbox bootstrap');
-    expect(integrationGate).toContain('agent-task-backend-real-runner|e2e/integration-agent-task-runner.spec.ts');
+    expect(integrationGate).toContain('agent-task-backend-real-runner|e2e/integration-agent-task-runner.spec.ts|e2e/integration-visual-review.spec.ts');
+    expect(integrationGate).toContain("grep -q 'startAgentTaskRunViaApi'");
+  });
+
+  it('routes backend-real visual review through the shared internal sandbox bootstrap', () => {
+    const visualWrapper = read('scripts/backend-real-visual-review.sh');
+    const agentTaskGate = read('scripts/run-internal-agent-task-real-gate.sh');
+
+    expect(visualWrapper).toContain('bash scripts/run-internal-agent-task-real-gate.sh --visual-review');
+    expect(visualWrapper).toContain('INTERNAL_REAL_VISUAL_ARTIFACT_DIR="${ARTIFACT_DIR}"');
+    expect(visualWrapper).toContain('export NEXT_DEV_MEMORY_PROFILE="${NEXT_DEV_MEMORY_PROFILE:-validation}"');
+    expect(visualWrapper).toContain('NEXT_DEV_MEMORY_PROFILE="${NEXT_DEV_MEMORY_PROFILE}"');
+    expect(visualWrapper).not.toContain('bash scripts/run-integration-e2e-full.sh e2e/integration-visual-review.spec.ts');
+    expect(agentTaskGate).toContain('elif [[ "${1:-}" == "--visual-review" ]]');
+    expect(agentTaskGate).toContain('running backend-real visual review with internal managed Agent Task sandbox');
+    expect(agentTaskGate).toContain('run_internal_spec e2e/integration-visual-review.spec.ts "${API_PORT}" "${WEB_PORT}" "${VISUAL_REVIEW_STATE_FILE}"');
+    expect(agentTaskGate).toContain('RELEASE_REAL_VISUAL_ARTIFACT_DIR="${RELEASE_REAL_VISUAL_ARTIFACT_DIR:-${INTERNAL_VISUAL_ARTIFACT_DIR}}"');
+    expect(agentTaskGate).toContain('UX_TRACE_OUTPUT_ROOT="${UX_TRACE_OUTPUT_ROOT:-${INTERNAL_VISUAL_ARTIFACT_DIR}/ux-traces}"');
+    expect(agentTaskGate).toContain('INTEGRATION_AFSCP_LOCAL_RUNTIME=0 \\');
+    expect(agentTaskGate.indexOf('INTEGRATION_AFSCP_LOCAL_RUNTIME=0 \\')).toBeLessThan(
+      agentTaskGate.indexOf('bash scripts/run-integration-e2e-full.sh "${spec}" "$@"'),
+    );
   });
 });

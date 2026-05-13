@@ -1166,8 +1166,8 @@ forbidMatch(
 );
 requireMatch(
   backendRealSessionWrapper,
-  /--session agent-task-backend-real-runner/,
-  "backend-real session wrapper must target agent-task-backend-real-runner",
+  /run-internal-agent-task-real-gate\.sh" --skills-runtime/,
+  "backend-real session wrapper must bootstrap the internal Agent Task skills runtime gate",
 );
 requireMatch(
   integrationE2eFull,

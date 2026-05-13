@@ -55,6 +55,10 @@ describe('project-workspace-governance-routes', () => {
         realm: 'mbos',
         client_id: 'agentsmith',
       },
+      directory_idp: {
+        client_id: 'agentsmith-directory',
+        client_secret: 'directory-secret',
+      },
       project_creators: [],
       created_at: '2026-03-01T00:00:00Z',
       updated_at: '2026-03-01T00:00:00Z',
@@ -141,6 +145,13 @@ describe('project-workspace-governance-routes', () => {
       readBody,
     })).resolves.toBe(true);
 
+    expect(resolveKeycloakDirectoryUsersByIds).toHaveBeenCalledWith({
+      url: 'http://localhost:18080',
+      realm: 'mbos',
+      clientId: 'agentsmith-directory',
+      clientSecret: 'directory-secret',
+      userIds: ['creator-new', 'creator-new', 'creator-two@example.com'],
+    });
     expect(updateRegisteredWorkspaceProjectCreators).toHaveBeenCalledWith('ws-1', [
       {
         user_id: 'creator-new',
@@ -210,6 +221,8 @@ describe('project-workspace-governance-routes', () => {
     expect(searchKeycloakDirectoryUsers).toHaveBeenCalledWith({
       url: 'http://localhost:18080',
       realm: 'mbos',
+      clientId: 'agentsmith-directory',
+      clientSecret: 'directory-secret',
       query: 'integration-user@example.com',
     });
     expect(json).toHaveBeenCalledWith(res, 200, {
@@ -221,6 +234,44 @@ describe('project-workspace-governance-routes', () => {
         },
       ],
       total: 1,
+    });
+  });
+
+  it('fails workspace directory search closed when directory client credentials are missing', async () => {
+    getRegisteredWorkspaceConfig.mockResolvedValueOnce({
+      id: 'ws-1',
+      name: 'Workspace One',
+      login_idp: {
+        url: 'http://localhost:18080',
+        realm: 'mbos',
+        client_id: 'agentsmith',
+      },
+      directory_idp: {
+        client_id: 'agentsmith-directory',
+      },
+      project_creators: [],
+      created_at: '2026-03-01T00:00:00Z',
+      updated_at: '2026-03-01T00:00:00Z',
+    });
+    const json = vi.fn();
+    const res = {} as never;
+
+    await expect(handleWorkspaceDirectoryUsersRoute({
+      req: {
+        headers: {},
+        url: '/api/v1/workspaces/ws-1/directory/users?query=integration-user%40example.com',
+      } as never,
+      res,
+      user: { id: 'admin-1', email: 'admin-1@example.com', name: 'Admin One' },
+      workspaces: [{ id: 'ws-1', created_at: '2026-03-01T00:00:00Z' }],
+      workspaceId: 'ws-1',
+      json,
+    })).resolves.toBe(true);
+
+    expect(searchKeycloakDirectoryUsers).not.toHaveBeenCalled();
+    expect(json).toHaveBeenCalledWith(res, 503, {
+      error_code: 'KEYCLOAK_DIRECTORY_UNAVAILABLE',
+      message: 'keycloak_directory_unavailable',
     });
   });
 });

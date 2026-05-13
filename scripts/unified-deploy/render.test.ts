@@ -608,6 +608,37 @@ describe('unified deploy render producer', () => {
     expect(ingressPorts.get('/api/v1')).toBe(20000);
   });
 
+  it('renders AFSCP runtime components without exposing internal JVS deployment controls', async () => {
+    const rendered = await renderUnifiedDeployFromFiles({ profile: 'local-kind' });
+    const documents = parsedDocuments(rendered.output);
+    const config = asRecord(findResource(documents, 'ConfigMap', 'afscp-runtime-config').data);
+    const afscpApi = deploymentContainer(documents, 'afscp-api', 'afscp-api');
+    const afscpWorker = deploymentContainer(documents, 'afscp-worker', 'afscp-worker');
+    const exportGateway = deploymentContainer(documents, 'afscp-export-gateway', 'afscp-export-gateway');
+
+    expect(rendered.output).not.toMatch(/\b(?:AFSCP_JVS|JVS|jvs)\b/u);
+    expect(Object.keys(config).some((key) => /\bJVS\b/u.test(key))).toBe(false);
+    expect(config.AFSCP_STORAGE_ENABLED).toBe('true');
+    expect(config.AFSCP_MOUNT_ENABLED).toBe('true');
+    expect(config.AFSCP_REPO_TEMPLATE_ENABLED).toBe('true');
+    expect(afscpApi.image).toBe(afscpWorker.image);
+    expect(exportGateway.image).toBe(afscpApi.image);
+    expect(afscpApi.command).toEqual(['/usr/local/bin/afscp-api']);
+    expect(afscpApi.args).toEqual(['--serve', '--listen', '0.0.0.0:8080']);
+    expect(afscpWorker.command).toEqual(['/usr/local/bin/afscp-worker']);
+    expect(afscpWorker.args).toEqual(['--loop', '--interval=2s']);
+    expect(exportGateway.command).toEqual(['/usr/local/bin/afscp-export-gateway']);
+    expect(exportGateway.args).toEqual(['--serve', '--listen-addr', '0.0.0.0:8080']);
+
+    for (const deploymentName of ['afscp-api', 'afscp-worker', 'afscp-export-gateway']) {
+      const podSpec = deploymentPodSpec(documents, deploymentName);
+      const volumes = Array.isArray(podSpec.volumes) ? podSpec.volumes.map(asRecord) : [];
+      const container = deploymentContainer(documents, deploymentName, deploymentName);
+      const volumeMounts = Array.isArray(container.volumeMounts) ? container.volumeMounts.map(asRecord) : [];
+      expect(JSON.stringify([...volumes, ...volumeMounts])).not.toMatch(/\b(?:JVS|jvs)\b/u);
+    }
+  });
+
   it('renders the sandbox-manager startup contract without leaking storage secrets through ConfigMaps', async () => {
     const rendered = await renderUnifiedDeployFromFiles({
       profile: 'local-kind',
@@ -1157,5 +1188,37 @@ spec:
     expect(reportText).not.toContain('agentsmith_dev_password');
     expect(reportText).not.toContain('SUBSTRATE_POSTGRES_PASSWORD=agentsmith_dev_password');
     expect(reportText).not.toContain('postgresql://agentsmith:agentsmith_dev_password');
+  });
+
+  it('defaults producer evidence to the release campaign unified-deploy root when release env is present', async () => {
+    const campaignRoot = mkdtempSync(join(tmpdir(), 'unified-deploy-release-campaign-'));
+    tempRoots.push(campaignRoot);
+    const previousCampaignRoot = process.env.RELEASE_CAMPAIGN_ROOT;
+    const previousReleaseRoot = process.env.UNIFIED_DEPLOY_RELEASE_ROOT_DIR;
+
+    try {
+      process.env.RELEASE_CAMPAIGN_ROOT = campaignRoot;
+      delete process.env.UNIFIED_DEPLOY_RELEASE_ROOT_DIR;
+
+      const evidence = await writeProducerEvidence({
+        producer: 'render',
+        status: 'passed',
+        failures: [],
+      });
+
+      expect(evidence.paths.report_path).toContain(join(campaignRoot, 'unified-deploy'));
+      expect(evidence.paths.log_path).toContain(join(campaignRoot, 'unified-deploy'));
+    } finally {
+      if (previousCampaignRoot === undefined) {
+        delete process.env.RELEASE_CAMPAIGN_ROOT;
+      } else {
+        process.env.RELEASE_CAMPAIGN_ROOT = previousCampaignRoot;
+      }
+      if (previousReleaseRoot === undefined) {
+        delete process.env.UNIFIED_DEPLOY_RELEASE_ROOT_DIR;
+      } else {
+        process.env.UNIFIED_DEPLOY_RELEASE_ROOT_DIR = previousReleaseRoot;
+      }
+    }
   });
 });

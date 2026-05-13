@@ -37,6 +37,9 @@ export type DefaultManagedRunnerSeedInput = {
   runnerName: string;
   mongoUrl: string;
   mongoDbName: string;
+  image?: string;
+  idleTimeoutSec?: number;
+  maxLifetimeSec?: number;
   isDefault?: boolean;
   status?: 'enabled' | 'disabled';
   presence?: 'managed' | 'online' | 'offline';
@@ -46,6 +49,32 @@ export type DefaultManagedRunnerSeedInput = {
   diagnostics?: Record<string, unknown>;
   actorUserId?: string;
 };
+
+function positiveInteger(value: number | undefined): number | undefined {
+  if (typeof value !== 'number' || !Number.isFinite(value) || value <= 0) {
+    return undefined;
+  }
+  return Math.floor(value);
+}
+
+function buildManagedRunnerConfig(input: Pick<
+  DefaultManagedRunnerSeedInput,
+  'image' | 'idleTimeoutSec' | 'maxLifetimeSec'
+>): {
+  image?: string;
+  idle_timeout_sec?: number;
+  max_lifetime_sec?: number;
+} | undefined {
+  const image = input.image?.trim();
+  const idleTimeoutSec = positiveInteger(input.idleTimeoutSec);
+  const maxLifetimeSec = positiveInteger(input.maxLifetimeSec);
+  const config = {
+    ...(image ? { image } : {}),
+    ...(idleTimeoutSec ? { idle_timeout_sec: idleTimeoutSec } : {}),
+    ...(maxLifetimeSec ? { max_lifetime_sec: maxLifetimeSec } : {}),
+  };
+  return Object.keys(config).length > 0 ? config : undefined;
+}
 
 async function ensureProjectAgentTaskModelSetting(input: {
   docStore: JsonDocStorePort;
@@ -128,6 +157,7 @@ export async function upsertDeploymentDefaultManagedRunner(
       || input.runnerStatus === 'offline'
       ? input.runnerStatus
       : 'ready';
+    const config = buildManagedRunnerConfig(input);
 
     const service = new AgentResourceService(store);
     const runner = await service.upsertDeploymentDefaultManagedAgentRunner(
@@ -140,6 +170,7 @@ export async function upsertDeploymentDefaultManagedRunner(
         presence,
         runner_status: runnerStatus,
         is_default: input.isDefault === true,
+        ...(config ? { config } : {}),
         description: input.description?.trim() || 'Managed Agent task runner baseline',
         diagnostics: {
           presence: 'managed',

@@ -458,7 +458,7 @@
           "group": "overlay_cases",
           "codeRefs": [
             "e2e/visual.spec.ts",
-            "src/components/agent-runners/CreateAgentDialog.tsx"
+            "src/components/agent-runners/CreateAgentRunnerDialog.tsx"
           ],
           "capture": "full_page",
           "authLane": "authed",

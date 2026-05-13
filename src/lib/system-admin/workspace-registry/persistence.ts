@@ -301,8 +301,8 @@ function normalizeStoredRecord(record: StoredSystemWorkspaceRecord): SystemWorks
       client_id: legacyRecord.idp.client_id,
     },
     directory_idp: {
-      client_id: legacyRecord.idp.client_id,
-      client_secret: legacyRecord.idp.client_secret,
+      client_id: record.directory_idp?.client_id ?? legacyRecord.idp.client_id,
+      client_secret: record.directory_idp?.client_secret ?? legacyRecord.idp.client_secret,
     },
   };
 }

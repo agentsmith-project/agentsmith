@@ -1481,6 +1481,7 @@ export function TaskTerminalPanel({
     sendTerminalResize,
     sessionStorageKey,
     shouldAcceptSequencedTerminalOutput,
+    storeSessionId,
     updateBackendRuntimeRecoveryActive,
     updateStatus,
   ]);

@@ -14,10 +14,11 @@ import type {
   GetFileLibraryRestorePreviewResponse,
   ListFileLibrarySavePointsResponse,
 } from '@/lib/api/types';
-import { handleErrorForToast } from '@/lib/api/errors';
+import { APIError, handleErrorForToast } from '@/lib/api/errors';
 import { queryKeys } from '@/lib/query-keys';
 
 const ACTIVE_RESTORE_PREVIEW_REFETCH_INTERVAL_MS = 2_000;
+const SAVE_POINTS_OPERATION_PENDING_REFETCH_INTERVAL_MS = 2_000;
 
 type FileLibraryRecoveryMutationOptions = {
   suppressErrorToast?: boolean;
@@ -27,6 +28,28 @@ function isRestorePreviewReconciling(preview: FileLibraryRestorePreview | null |
   return preview?.status === 'previewing'
     || preview?.status === 'canceling'
     || preview?.status === 'restoring';
+}
+
+function hasApiErrorCode(error: unknown, codes: string[], rawTokens: string[]): boolean {
+  const rawValues = error instanceof APIError
+    ? [error.errorCode, error.message]
+    : error instanceof Error
+      ? [error.message]
+      : [];
+  const normalizedCodes = new Set(codes.map((code) => code.trim().toLowerCase()));
+  return rawValues.some((value) => {
+    const normalized = value.trim().toLowerCase();
+    return normalizedCodes.has(normalized)
+      || rawTokens.some((token) => normalized === token || normalized.includes(token));
+  });
+}
+
+export function isFileLibraryOperationPendingError(error: unknown): boolean {
+  return hasApiErrorCode(
+    error,
+    ['FILE_LIBRARY_OPERATION_PENDING', 'FILE_LIBRARY_RESTORE_OPERATION_PENDING'],
+    ['file_library_operation_pending', 'file_library_restore_operation_pending'],
+  );
 }
 
 function activeRestorePreviewResponse(
@@ -84,6 +107,15 @@ export function useFileLibrarySavePoints(
     queryKey: queryKeys.fileLibraries.savePoints(workspaceId, projectId, safeLibraryId),
     queryFn: () => filesAPI.listSavePoints(workspaceId, projectId, safeLibraryId),
     enabled: (options?.enabled ?? true) && !!workspaceId && !!projectId && !!safeLibraryId,
+    refetchInterval: (query) => (
+      isFileLibraryOperationPendingError(query.state.error)
+        ? SAVE_POINTS_OPERATION_PENDING_REFETCH_INTERVAL_MS
+        : false
+    ),
+    refetchIntervalInBackground: true,
+    retry: (failureCount, error) => (
+      isFileLibraryOperationPendingError(error) ? false : failureCount < 1
+    ),
     staleTime: 10_000,
   });
 }

@@ -385,6 +385,92 @@ describe('backend-real full gate runtime ownership contract', () => {
     expect(script).not.toContain('API_PID=$!');
   });
 
+  it('starts and stops its own AFSCP local-real runtime inside the file-library owner gate lifecycle', () => {
+    const script = readFileSync('scripts/run-file-library-real-gate.sh', 'utf8');
+    const trapIndex = script.indexOf("trap 'cleanup $?' EXIT");
+    const ensureIndex = script.indexOf('\nensure_file_library_afscp_local_runtime\n', trapIndex);
+    const apiStartIndex = script.indexOf('API_ROOT_PID="$(', trapIndex);
+    const cleanupStart = script.indexOf('cleanup() {');
+    const cleanupEnd = script.indexOf("trap 'cleanup $?' EXIT", cleanupStart);
+    const cleanupBody = script.slice(cleanupStart, cleanupEnd);
+    const stopAfscpIndex = cleanupBody.indexOf('stop_file_library_afscp_local_runtime');
+    const stopApiIndex = cleanupBody.indexOf('local_runtime_stop_owned_process_tree "${API_ROOT_PID}" api "${API_PORT}"');
+
+    expect(script).toContain('ensure_file_library_afscp_local_runtime()');
+    expect(script).toContain('stop_file_library_afscp_local_runtime()');
+    expect(script).toContain('source "${ROOT_DIR}/scripts/local-manual/internal-common.sh"');
+    expect(script).toContain('ensure_afscp_local_runtime');
+    expect(script).toContain('stop_afscp_local_runtime');
+    expect(trapIndex).toBeGreaterThanOrEqual(0);
+    expect(ensureIndex).toBeGreaterThan(trapIndex);
+    expect(apiStartIndex).toBeGreaterThan(ensureIndex);
+    expect(cleanupBody).toContain('FILE_LIBRARY_AFSCP_LOCAL_RUNTIME_OWNED');
+    expect(cleanupBody).toContain('local cleanup_afscp_status=0');
+    expect(stopAfscpIndex).toBeGreaterThanOrEqual(0);
+    expect(stopApiIndex).toBeGreaterThan(stopAfscpIndex);
+    expect(script).not.toContain('run-internal-agent-task-real-gate.sh');
+  });
+
+  it('declares isolated file-library AFSCP defaults derived from the gate api port', () => {
+    const script = readFileSync('scripts/run-file-library-real-gate.sh', 'utf8');
+
+    expect(script).toContain('AFSCP_BASE_URL="${AFSCP_BASE_URL:-http://127.0.0.1:$((API_PORT + 9030))}"');
+    expect(script).toContain('AFSCP_EXPORT_GATEWAY_BASE_URL="${AFSCP_EXPORT_GATEWAY_BASE_URL:-http://127.0.0.1:$((API_PORT + 9031))}"');
+    expect(script).toContain('AFSCP_DEFAULT_VOLUME_ID="${AFSCP_DEFAULT_VOLUME_ID:-vol_file_library_${API_PORT}}"');
+    expect(script).toContain('DATABASE_URL="${DATABASE_URL:-postgresql://mbos:mbos_dev_password@${POSTGRES_HOST}:${POSTGRES_PORT}/mbos?sslmode=disable}"');
+    expect(script).toContain('AFSCP_CALLER_SERVICE="${AFSCP_CALLER_SERVICE:-agentsmith-api}"');
+    expect(script).toContain('AFSCP_SERVICE_TOKEN="${AFSCP_SERVICE_TOKEN:-agentsmith-local-afscp-product-token}"');
+    expect(script).toContain('AFSCP_BOOTSTRAP_CALLER_SERVICE="${AFSCP_BOOTSTRAP_CALLER_SERVICE:-agentsmith-bootstrap}"');
+    expect(script).toContain('AFSCP_BOOTSTRAP_SERVICE_TOKEN="${AFSCP_BOOTSTRAP_SERVICE_TOKEN:-agentsmith-local-afscp-bootstrap-token}"');
+    expect(script).toContain('AFSCP_ORCHESTRATOR_CALLER_SERVICE="${AFSCP_ORCHESTRATOR_CALLER_SERVICE:-agentsmith-sandbox-manager}"');
+    expect(script).toContain('AFSCP_ORCHESTRATOR_SERVICE_TOKEN="${AFSCP_ORCHESTRATOR_SERVICE_TOKEN:-agentsmith-local-afscp-orchestrator-token}"');
+  });
+
+  it('passes the full AFSCP client contract into the file-library api launch command', () => {
+    const script = readFileSync('scripts/run-file-library-real-gate.sh', 'utf8');
+    const commandStart = script.indexOf('build_file_library_api_launch_command()');
+    const commandEnd = script.indexOf('capture_resource_recovery_baseline()', commandStart);
+    const commandBody = script.slice(commandStart, commandEnd);
+
+    expect(commandStart).toBeGreaterThanOrEqual(0);
+    expect(commandEnd).toBeGreaterThan(commandStart);
+    for (const key of [
+      'AFSCP_BASE_URL',
+      'AFSCP_EXPORT_GATEWAY_BASE_URL',
+      'AFSCP_DEFAULT_VOLUME_ID',
+      'AFSCP_CALLER_SERVICE',
+      'AFSCP_SERVICE_TOKEN',
+      'AFSCP_BOOTSTRAP_CALLER_SERVICE',
+      'AFSCP_BOOTSTRAP_SERVICE_TOKEN',
+      'AFSCP_ORCHESTRATOR_CALLER_SERVICE',
+      'AFSCP_ORCHESTRATOR_SERVICE_TOKEN',
+    ]) {
+      expect(commandBody).toContain(`${key}=$(printf '%q' "\${${key}}")`);
+    }
+    expect(commandBody).toContain('npm run api:node:dev');
+  });
+
+  it('passes the existing local-manual AFSCP helper contract when starting the file-library runtime', () => {
+    const script = readFileSync('scripts/run-file-library-real-gate.sh', 'utf8');
+    const ensureStart = script.indexOf('ensure_file_library_afscp_local_runtime()');
+    const ensureEnd = script.indexOf('stop_file_library_afscp_local_runtime()', ensureStart);
+    const ensureBody = script.slice(ensureStart, ensureEnd);
+
+    expect(ensureStart).toBeGreaterThanOrEqual(0);
+    expect(ensureEnd).toBeGreaterThan(ensureStart);
+    expect(ensureBody).toContain('export INTERNAL_REAL_DIR="${FILE_LIBRARY_REAL_GATE_AFSCP_DIR}"');
+    expect(ensureBody).toContain('export LOCAL_MANUAL_INTERNAL_ENV_FILE=/dev/null');
+    expect(ensureBody).toContain('export DATABASE_URL');
+    expect(ensureBody).toContain('export AFSCP_DATABASE_URL="${DATABASE_URL}"');
+    expect(ensureBody).toContain('export AFSCP_EXPORT_GATEWAY_POSTGRES_DSN="${DATABASE_URL}"');
+    expect(ensureBody).toContain('export POSTGRES_PORT');
+    expect(ensureBody).toContain('export MINIO_API_PORT="${MINIO_PORT}"');
+    expect(ensureBody).toContain('export KEYCLOAK_PORT');
+    expect(ensureBody).toContain('export SUBSTRATE_POSTGRES_PORT="${POSTGRES_PORT}"');
+    expect(ensureBody).toContain('export SUBSTRATE_MINIO_API_PORT="${MINIO_PORT}"');
+    expect(ensureBody).toContain('ensure_afscp_local_runtime');
+  });
+
   it('resolves the current owned api listener pid from the listening port before handing pid truth to resource recovery', () => {
     const script = readFileSync('scripts/run-file-library-real-gate.sh', 'utf8');
 
@@ -413,10 +499,11 @@ describe('backend-real full gate runtime ownership contract', () => {
     expect(cleanupBody).toContain('cleanup_wait_status=$?');
     expect(cleanupBody).toContain('summary_extra_args+=(');
     expect(cleanupBody).toContain('--extra-finding');
+    expect(cleanupBody).toContain('cleanup failed to stop the owned AFSCP local runtime');
     expect(cleanupBody).toContain('cleanup failed to stop the owned api process tree');
     expect(cleanupBody).toContain('cleanup failed to confirm api port');
     expect(cleanupBody).toContain('write_resource_recovery_summary "${summary_extra_args[@]}"');
-    expect(cleanupBody).toContain('if [[ "${summary_status}" -ne 0 || "${cleanup_stop_status}" -ne 0 || "${cleanup_wait_status}" -ne 0 ]]; then');
+    expect(cleanupBody).toContain('if [[ "${summary_status}" -ne 0 || "${cleanup_afscp_status}" -ne 0 || "${cleanup_stop_status}" -ne 0 || "${cleanup_wait_status}" -ne 0 ]]; then');
     expect(cleanupBody).not.toContain('local_runtime_stop_owned_process_tree "${API_ROOT_PID}" api "${API_PORT}" || true');
     expect(cleanupBody).not.toContain('local_runtime_wait_port_free "${API_PORT}" api 10 || true');
     expect(cleanupBody).not.toContain('kill "${API_PID}" >/dev/null 2>&1 || true');

@@ -2117,6 +2117,9 @@ export async function createManagedAgentRunnerViaApi(
     projectId: string;
     endpointId: string;
     title: string;
+    image?: string;
+    idleTimeoutSec?: number;
+    maxLifetimeSec?: number;
     isDefault?: boolean;
     status?: "draft" | "connected" | "ready" | "degraded" | "offline";
     capabilities?: AgentRunnerCapabilitiesInput;
@@ -2140,7 +2143,13 @@ export async function createManagedAgentRunnerViaApi(
   if (!fallbackEndpointId) {
     throw new Error("managed_agent_runner_endpoint_id_required_for_model_setting");
   }
-  const seededRunnerId = await readBackendRealManagedRunnerIdFromState();
+  const requiresPrivateConfigUpsert =
+    Boolean(args.image?.trim()) ||
+    typeof args.idleTimeoutSec === "number" ||
+    typeof args.maxLifetimeSec === "number";
+  const seededRunnerId = requiresPrivateConfigUpsert
+    ? null
+    : await readBackendRealManagedRunnerIdFromState();
   const seededRunner = seededRunnerId
     ? await readManagedAgentRunnerById({
       page,
@@ -2183,6 +2192,9 @@ export async function createManagedAgentRunnerViaApi(
     status: "enabled",
     runnerStatus: args.status || "ready",
     isDefault: args.isDefault ?? true,
+    image: args.image,
+    idleTimeoutSec: args.idleTimeoutSec,
+    maxLifetimeSec: args.maxLifetimeSec,
     capabilities: args.capabilities,
     diagnostics: args.diagnostics,
   });
@@ -2259,6 +2271,9 @@ export async function createInternalAgentTaskRunnerViaApi(
     projectId: args.projectId,
     endpointId: args.endpointId,
     title: args.title,
+    image: args.image,
+    idleTimeoutSec: args.idleTimeoutSec,
+    maxLifetimeSec: args.maxLifetimeSec,
   });
   return {
     runnerId: runner.runnerId,
@@ -3499,6 +3514,27 @@ type IntegrationTaskTraceSnapshot = {
   at?: string;
 };
 
+type IntegrationTaskTraceScope = {
+  pageSize: number;
+  messageId?: string;
+  runId?: string;
+};
+
+function normalizeTaskTraceScope(args: {
+  pageSize?: number;
+  messageId?: string;
+  runId?: string;
+}): IntegrationTaskTraceScope {
+  const runId = args.runId?.trim();
+  const messageId = args.messageId?.trim();
+  // run_id is the durable execution scope. The run-start runner_output id can
+  // differ from the later activity projection id, so avoid ANDing both fields.
+  return {
+    pageSize: args.pageSize ?? 100,
+    ...(runId ? { runId } : messageId ? { messageId } : {}),
+  };
+}
+
 type IntegrationTaskRealtimeSnapshot = {
   id?: string;
   status?: string;
@@ -3524,6 +3560,75 @@ export type WorkloadPodSnapshot = {
   reason?: string | null;
   exitCode?: number | null;
 };
+
+export type ExpiredWorkloadReleaseTarget = {
+  podName: string;
+  workspaceId: string;
+  projectId: string;
+  workloadId: string;
+  expiresAt: string;
+  deletionTimestamp?: string;
+  finalizers: string[];
+};
+
+export function selectExpiredWorkloadReleaseTargets(args: {
+  payload: string;
+  now?: Date;
+  workloadId?: string;
+}): ExpiredWorkloadReleaseTarget[] {
+  const now = args.now ?? new Date();
+  const workloadFilter = args.workloadId?.trim();
+  let payload: {
+    items?: Array<{
+      metadata?: {
+        name?: string;
+        labels?: Record<string, string>;
+        annotations?: Record<string, string>;
+        deletionTimestamp?: string;
+        finalizers?: unknown[];
+      };
+    }>;
+  };
+  try {
+    payload = JSON.parse(args.payload || "{}") as typeof payload;
+  } catch {
+    return [];
+  }
+
+  return (payload.items ?? []).flatMap((item) => {
+    const metadata = item.metadata ?? {};
+    const labels = metadata.labels ?? {};
+    const annotations = metadata.annotations ?? {};
+    const podName = metadata.name?.trim();
+    const workspaceId = labels.workspace_id?.trim();
+    const projectId = labels.project_id?.trim();
+    const workloadId = labels.workload_id?.trim();
+    const expiresAt = annotations.expires_at?.trim();
+    if (!podName || !workspaceId || !projectId || !workloadId || !expiresAt) {
+      return [];
+    }
+    if (workloadFilter && workloadId !== workloadFilter) {
+      return [];
+    }
+    const expiresAtMs = Date.parse(expiresAt);
+    if (!Number.isFinite(expiresAtMs) || expiresAtMs >= now.getTime()) {
+      return [];
+    }
+    const deletionTimestamp = metadata.deletionTimestamp?.trim();
+    return [{
+      podName,
+      workspaceId,
+      projectId,
+      workloadId,
+      expiresAt,
+      ...(deletionTimestamp ? { deletionTimestamp } : {}),
+      finalizers: (metadata.finalizers ?? []).filter(
+        (value): value is string =>
+          typeof value === "string" && value.trim().length > 0,
+      ),
+    }];
+  });
+}
 
 async function fetchTaskActivitySnapshot(args: {
   page: Page;
@@ -3552,13 +3657,14 @@ async function fetchTaskTracesSnapshot(args: {
   messageId?: string;
   runId?: string;
 }): Promise<IntegrationTaskTraceSnapshot[]> {
+  const scope = normalizeTaskTraceScope(args);
   const query = [
-    `page_size=${args.pageSize ?? 100}`,
-    args.messageId?.trim()
-      ? `message_id=${encodeURIComponent(args.messageId.trim())}`
+    `page_size=${scope.pageSize}`,
+    scope.messageId
+      ? `message_id=${encodeURIComponent(scope.messageId)}`
       : null,
-    args.runId?.trim()
-      ? `run_id=${encodeURIComponent(args.runId.trim())}`
+    scope.runId
+      ? `run_id=${encodeURIComponent(scope.runId)}`
       : null,
   ]
     .filter(Boolean)
@@ -4392,6 +4498,69 @@ export async function patchWorkloadPodExpiry(args: {
       `patch_workload_expiry_failed:${podName}:${result.stderr || result.stdout}`,
     );
   }
+}
+
+export async function releaseExpiredWorkloadsViaManager(args: {
+  namespace: string;
+  workloadId: string;
+  now?: Date;
+}): Promise<{
+  released: number;
+  targets: ExpiredWorkloadReleaseTarget[];
+}> {
+  const result = await spawnAndCapture(
+    "kubectl",
+    [
+      "get",
+      "pods",
+      "-n",
+      args.namespace,
+      "-l",
+      `workload_id=${args.workloadId}`,
+      "-o",
+      "json",
+    ],
+    { env: withoutProxyEnv(process.env) },
+  );
+  if (result.code !== 0) {
+    throw new Error(
+      `release_expired_workloads_list_failed:${args.workloadId}:${result.stderr || result.stdout}`,
+    );
+  }
+  const targets = selectExpiredWorkloadReleaseTargets({
+    payload: result.stdout,
+    now: args.now,
+    workloadId: args.workloadId,
+  });
+  let released = 0;
+  for (const target of targets) {
+    await deleteInternalWorkloadViaManager({
+      workspaceId: target.workspaceId,
+      projectId: target.projectId,
+      workloadId: target.workloadId,
+    });
+    released += 1;
+  }
+  return { released, targets };
+}
+
+export async function waitForExpiredWorkloadReleasedViaManager(args: {
+  namespace: string;
+  workloadId: string;
+  timeoutMs?: number;
+}): Promise<void> {
+  await expect
+    .poll(
+      async () => {
+        const result = await releaseExpiredWorkloadsViaManager({
+          namespace: args.namespace,
+          workloadId: args.workloadId,
+        });
+        return result.released;
+      },
+      { timeout: args.timeoutMs ?? 60_000, intervals: [1_000, 2_000, 5_000] },
+    )
+    .toBeGreaterThan(0);
 }
 
 export async function expectInternalTaskRuntimeStateInPod(args: {

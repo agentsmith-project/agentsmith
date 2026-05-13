@@ -771,7 +771,7 @@ async function createVisualAgentTaskTerminalSession(
   options: {
     cols?: number;
     rows?: number;
-    status?: 'active' | 'disconnected' | 'failed';
+    status?: 'active' | 'disconnected' | 'recovering' | 'failed';
   } = {},
 ) {
   const { taskId } = extractAgentTaskRouteParts(route);
@@ -1436,7 +1436,7 @@ const VISUAL_SCENE_SETUP_REGISTRY: Partial<Record<string, VisualScenarioSetup>> 
       await prepareStableVisualChatSurface(page);
     },
     afterNavigate: async ({ page }) => {
-      await expect(page.getByTestId('chat__execution-target-trigger')).toBeVisible();
+      await expect(page.getByTestId('chat__model-trigger')).toBeVisible();
     },
   },
   'chat-recover-empty': {
@@ -1479,7 +1479,7 @@ const VISUAL_SCENE_SETUP_REGISTRY: Partial<Record<string, VisualScenarioSetup>> 
       await waitForVisualChatRecovering(page);
     },
     screenshotOptions: {
-      maskTestIds: ['chat__execution-target-trigger'],
+      maskTestIds: ['chat__model-trigger'],
       stabilizeAttempts: 4,
       stabilizeDelayMs: 120,
     },
@@ -1513,7 +1513,7 @@ const VISUAL_SCENE_SETUP_REGISTRY: Partial<Record<string, VisualScenarioSetup>> 
       await expect(page.getByTestId('chat__stop-escalation-dialog')).toHaveCount(0);
     },
     screenshotOptions: {
-      maskTestIds: ['chat__execution-target-trigger'],
+      maskTestIds: ['chat__model-trigger'],
       stabilizeAttempts: 4,
       stabilizeDelayMs: 120,
     },
@@ -1529,7 +1529,7 @@ const VISUAL_SCENE_SETUP_REGISTRY: Partial<Record<string, VisualScenarioSetup>> 
       await clickVisualChatStopAndWait(page);
     },
     screenshotOptions: {
-      maskTestIds: ['chat__execution-target-trigger'],
+      maskTestIds: ['chat__model-trigger'],
       stabilizeAttempts: 4,
       stabilizeDelayMs: 120,
     },
@@ -1545,7 +1545,7 @@ const VISUAL_SCENE_SETUP_REGISTRY: Partial<Record<string, VisualScenarioSetup>> 
       await waitForVisualChatStreaming(page);
     },
     screenshotOptions: {
-      maskTestIds: ['chat__execution-target-trigger'],
+      maskTestIds: ['chat__model-trigger'],
       stabilizeAttempts: 4,
       stabilizeDelayMs: 120,
     },
@@ -1553,7 +1553,7 @@ const VISUAL_SCENE_SETUP_REGISTRY: Partial<Record<string, VisualScenarioSetup>> 
   'chat-ultrawide': {
     afterNavigate: async ({ page }) => {
       await expect(page.getByTestId('chat__surface')).toBeVisible();
-      await expect(page.getByTestId('chat__execution-target-trigger')).toBeVisible();
+      await expect(page.getByTestId('chat__model-trigger')).toBeVisible();
     },
   },
   credentials: {
@@ -1774,7 +1774,7 @@ const VISUAL_SCENE_SETUP_REGISTRY: Partial<Record<string, VisualScenarioSetup>> 
   'agent-task-hidden-terminal-blocked': {
     beforeNavigate: async ({ page, scenario }) => {
       await createVisualAgentTaskTerminalSession(page, scenario.route, {
-        status: 'failed',
+        status: 'recovering',
       });
       await seedVisualAgentTaskConversationHistory(page, scenario.route);
     },

@@ -71,6 +71,25 @@ type EvidenceOptions = {
 const DEFAULT_EVIDENCE_DIR = path.join(REPO_ROOT, 'artifacts', 'unified-deploy');
 const SECRET_KEY_PATTERN = /(?:PASSWORD|SECRET|TOKEN|PRIVATE|ACCESS[_-]?KEY|API[_-]?KEY|CREDENTIAL|DATABASE_URL|MONGO_URL|MONGODB_URI|REDIS_URL|CLIENT_SECRET|AUTHORIZATION)/iu;
 
+function nonEmptyEnvPath(value: string | undefined): string | undefined {
+  const trimmed = value?.trim();
+  return trimmed && trimmed.length > 0 ? trimmed : undefined;
+}
+
+function defaultProducerEvidenceDir(env: NodeJS.ProcessEnv = process.env): string {
+  const releaseRoot = nonEmptyEnvPath(env.UNIFIED_DEPLOY_RELEASE_ROOT_DIR);
+  if (releaseRoot) {
+    return path.resolve(releaseRoot);
+  }
+
+  const campaignRoot = nonEmptyEnvPath(env.RELEASE_CAMPAIGN_ROOT);
+  if (campaignRoot) {
+    return path.resolve(campaignRoot, 'unified-deploy');
+  }
+
+  return DEFAULT_EVIDENCE_DIR;
+}
+
 function sha256(value: string): string {
   return `sha256:${createHash('sha256').update(value).digest('hex')}`;
 }
@@ -259,7 +278,7 @@ function evidenceBasename(producer: UnifiedDeployEvidenceProducer): string {
 
 export async function writeProducerEvidence(options: EvidenceOptions): Promise<UnifiedDeployEvidence> {
   const evidenceDir = prepareUnifiedDeployEvidenceDir({
-    evidenceDir: options.evidenceDir ?? DEFAULT_EVIDENCE_DIR,
+    evidenceDir: options.evidenceDir ?? defaultProducerEvidenceDir(),
     defaultRoot: DEFAULT_EVIDENCE_DIR,
     label: `unified deploy ${options.producer} evidenceDir`,
   });

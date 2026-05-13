@@ -85,6 +85,10 @@ describe('/api/test/system/workspaces/seed', () => {
         headers: { 'content-type': 'application/json' },
         body: JSON.stringify({
           records: [buildRecord({
+            directory_idp: {
+              client_id: 'seed-directory-client',
+              client_secret: 'seed-directory-secret',
+            },
             provisioning_status: 'failed',
             last_initialized_at: null,
             last_init_error: 'identity_provider_config_incomplete',
@@ -97,6 +101,10 @@ describe('/api/test/system/workspaces/seed', () => {
     expect(storageModule.upsertPersistedSystemWorkspace).toHaveBeenCalledWith(
       expect.objectContaining({
         id: 'ws_seeded',
+        directory_idp: {
+          client_id: 'seed-directory-client',
+          client_secret: 'seed-directory-secret',
+        },
         provisioning_status: 'failed',
         last_init_error: 'identity_provider_config_incomplete',
       }),

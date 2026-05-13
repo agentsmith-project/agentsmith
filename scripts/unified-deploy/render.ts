@@ -60,7 +60,9 @@ type RolloutChecksumKey =
   | 'AGENTSMITH_APP_CONFIG_CHECKSUM'
   | 'AGENTSMITH_APP_SECRETS_CHECKSUM'
   | 'AGENTSMITH_LLMUP_CONFIG_CHECKSUM'
-  | 'SANDBOX_MANAGER_CONFIG_CHECKSUM';
+  | 'SANDBOX_MANAGER_CONFIG_CHECKSUM'
+  | 'AFSCP_RUNTIME_CONFIG_CHECKSUM'
+  | 'AFSCP_RUNTIME_SECRETS_CHECKSUM';
 
 const REQUIRED_DEPLOY_ENV = [
   'NAMESPACE',
@@ -73,6 +75,7 @@ const REQUIRED_DEPLOY_ENV = [
   'WEB_IMAGE',
   'API_IMAGE',
   'LLMUP_IMAGE',
+  'AFSCP_IMAGE',
   'SANDBOX_MANAGER_IMAGE',
   'MANAGED_RUNNER_IMAGE',
   'INGRESS_NGINX_CONTROLLER_IMAGE',
@@ -230,6 +233,8 @@ function withRolloutChecksumPlaceholders(context: RenderContext): RenderContext 
     AGENTSMITH_APP_SECRETS_CHECKSUM: ROLLOUT_CHECKSUM_PLACEHOLDER,
     AGENTSMITH_LLMUP_CONFIG_CHECKSUM: ROLLOUT_CHECKSUM_PLACEHOLDER,
     SANDBOX_MANAGER_CONFIG_CHECKSUM: ROLLOUT_CHECKSUM_PLACEHOLDER,
+    AFSCP_RUNTIME_CONFIG_CHECKSUM: ROLLOUT_CHECKSUM_PLACEHOLDER,
+    AFSCP_RUNTIME_SECRETS_CHECKSUM: ROLLOUT_CHECKSUM_PLACEHOLDER,
   };
 }
 
@@ -260,6 +265,8 @@ function computeRolloutChecksums(renderedYaml: string): Record<RolloutChecksumKe
     AGENTSMITH_APP_SECRETS_CHECKSUM: resourceFieldChecksum(parsed.documents, 'Secret', 'agentsmith-app-secrets', 'stringData'),
     AGENTSMITH_LLMUP_CONFIG_CHECKSUM: resourceFieldChecksum(parsed.documents, 'ConfigMap', 'agentsmith-llmup-config', 'data'),
     SANDBOX_MANAGER_CONFIG_CHECKSUM: resourceFieldChecksum(parsed.documents, 'ConfigMap', 'sandbox-manager-config', 'data'),
+    AFSCP_RUNTIME_CONFIG_CHECKSUM: resourceFieldChecksum(parsed.documents, 'ConfigMap', 'afscp-runtime-config', 'data'),
+    AFSCP_RUNTIME_SECRETS_CHECKSUM: resourceFieldChecksum(parsed.documents, 'Secret', 'afscp-runtime-secrets', 'stringData'),
   };
 }
 
@@ -274,6 +281,10 @@ function buildContext(profile: UnifiedDeployProfile, env: Record<string, string>
     ...env,
     PROFILE: profile,
     LLMUP_INTERNAL_BASE_URL: 'http://agentsmith-llmup:8080',
+    AFSCP_BASE_URL: `http://afscp-api.${namespace}.svc.cluster.local:8080`,
+    AFSCP_EXPORT_GATEWAY_INTERNAL_BASE_URL: `http://afscp-export-gateway.${namespace}.svc.cluster.local:8080`,
+    AFSCP_DEFAULT_VOLUME_JUICEFS_NAME: `${namespace}-afscp-default`,
+    AFSCP_VOLUME_ROOT_PATH: '/var/lib/afscp/volumes/default',
     SUBSTRATE_KEYCLOAK_PUBLIC_BASE_URL: publicKeycloakBaseUrl,
     SUBSTRATE_KEYCLOAK_PUBLIC_REALMS_BASE_URL: `${publicKeycloakBaseUrl}/realms`,
     SUBSTRATE_POSTGRES_SERVICE_PORT: SUBSTRATE_NATIVE_PORTS.postgresql,

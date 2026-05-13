@@ -7,6 +7,7 @@ unset no_proxy NO_PROXY
 ROOT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
 source "${ROOT_DIR}/scripts/lib/next-generated-root-state.sh"
 DEFAULT_GATE_PROFILE="${DEFAULT_GATE_PROFILE:-standalone}"
+DEFAULT_GATE_REUSE_FAST_EVIDENCE="${DEFAULT_GATE_REUSE_FAST_EVIDENCE:-0}"
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
@@ -144,6 +145,12 @@ run_default_gate_build() {
   run_cmd "npm run build"
 }
 
+reuse_gate_fast_evidence() {
+  [[ "${DEFAULT_GATE_PROFILE}" != "fast" ]] && {
+    [[ "${DEFAULT_GATE_PROFILE}" == "campaign_after_gate_fast" ]] || [[ "${DEFAULT_GATE_REUSE_FAST_EVIDENCE}" == "1" ]]
+  }
+}
+
 case "${DEFAULT_GATE_PROFILE}" in
   standalone|fast|campaign_after_gate_fast)
     ;;
@@ -153,20 +160,21 @@ case "${DEFAULT_GATE_PROFILE}" in
     ;;
 esac
 
-next_generated_root_with_source_contract_lock default_gate_shared_preflight \
-  next_generated_root_prepare_for_validation
-
-if [[ "${DEFAULT_GATE_PROFILE}" != "campaign_after_gate_fast" ]]; then
+if reuse_gate_fast_evidence; then
+  info "reusing gate:fast evidence; skipping contracts/openapi/lint/typegen/typecheck/build"
+else
+  next_generated_root_with_source_contract_lock default_gate_shared_preflight \
+    next_generated_root_prepare_for_validation
   run_pure_check_cmd "contracts" "npm run contracts:check"
+  run_pure_check_cmd "openapi-contract" "npm run contracts:check-openapi"
+  run_pure_check_cmd "openapi-generated" "npm run openapi:check-generated"
+  run_pure_check_cmd "lint" "npm run lint"
+  next_generated_root_run_locked_type_state_gate_sequence \
+    default_gate_type_state \
+    run_default_gate_typegen \
+    run_default_gate_typecheck \
+    run_default_gate_build
 fi
-run_pure_check_cmd "openapi-contract" "npm run contracts:check-openapi"
-run_pure_check_cmd "openapi-generated" "npm run openapi:check-generated"
-run_pure_check_cmd "lint" "npm run lint"
-next_generated_root_run_locked_type_state_gate_sequence \
-  default_gate_type_state \
-  run_default_gate_typegen \
-  run_default_gate_typecheck \
-  run_default_gate_build
 
 if [[ "${DEFAULT_GATE_PROFILE}" == "fast" ]]; then
   run_cmd "npm run test:e2e:lane:mock:smoke"
@@ -174,7 +182,12 @@ if [[ "${DEFAULT_GATE_PROFILE}" == "fast" ]]; then
   exit 0
 fi
 
-run_cmd "bash scripts/workspace-project-default-gate.sh --skip-shared-preflight"
-run_cmd "bash scripts/governance-default-gate.sh --skip-shared-preflight"
+if reuse_gate_fast_evidence; then
+  run_cmd "bash scripts/workspace-project-default-gate.sh --skip-shared-preflight --skip-focused-visual"
+  run_cmd "bash scripts/governance-default-gate.sh --skip-shared-preflight --skip-focused-visual"
+else
+  run_cmd "bash scripts/workspace-project-default-gate.sh --skip-shared-preflight"
+  run_cmd "bash scripts/governance-default-gate.sh --skip-shared-preflight"
+fi
 
 info "default engineering gate passed"

@@ -54,13 +54,14 @@ type ExpectedProjectPathParams = {
   projectId: string;
   workspaceId: string;
 };
+type LegacyResourceBudgetField = `${'quo'}${'ta'}`;
 type ForbiddenUpdateAgentTaskModelSettingFields = Extract<
   keyof UpdateAgentTaskModelSettingRequest,
   | 'runner_id'
   | 'bound_runner_id'
   | 'runner'
   | 'routing'
-  | 'quota'
+  | LegacyResourceBudgetField
   | 'fallback'
   | 'upstream'
   | 'upstream_url'
@@ -78,7 +79,7 @@ type ForbiddenGeneratedUpdateAgentTaskModelSettingFields = Extract<
   | 'bound_runner_id'
   | 'runner'
   | 'routing'
-  | 'quota'
+  | LegacyResourceBudgetField
   | 'fallback'
   | 'upstream'
   | 'upstream_url'

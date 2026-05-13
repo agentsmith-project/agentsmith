@@ -356,6 +356,7 @@ const PUBLIC_STORAGE_ERROR_MESSAGES = new Set([
   'file_library_save_point_create_failed',
   'file_library_save_point_create_pending',
   'file_library_save_point_list_failed',
+  'file_library_save_point_list_pending',
   'file_library_restore_preview_failed',
   'file_library_restore_run_failed',
   'file_library_restore_discard_failed',
@@ -392,10 +393,6 @@ const WRITER_BLOCKER_OPERATION_CODES = new Set([
   'STALE_WRITER_SESSION_UNCERTAIN',
   'WRITER_SESSION_FENCE_HELD',
   'RESTORE_RUN_WRITER_SESSIONS_DENIED',
-]);
-
-const JVS_REPO_BUSY_OPERATION_CODES = new Set([
-  'E_REPO_BUSY',
 ]);
 
 function mappingId(input: FileLibraryStorageLibraryInput): string {
@@ -542,22 +539,6 @@ function readOperationValue(operation: AfscpOperationEnvelope | AfscpOperationRe
     const containerValue = isRecord(container) ? container[key] : undefined;
     if (!isUnavailableOperationValue(containerValue)) {
       return containerValue;
-    }
-  }
-  const jvsOutput = root.jvs_json_output;
-  const jvsOutputValue = isRecord(jvsOutput) ? jvsOutput[key] : undefined;
-  if (!isUnavailableOperationValue(jvsOutputValue)) {
-    return jvsOutputValue;
-  }
-  if (typeof jvsOutput === 'string' && jvsOutput.trim()) {
-    try {
-      const parsed = JSON.parse(jvsOutput) as unknown;
-      const parsedValue = isRecord(parsed) ? parsed[key] : undefined;
-      if (!isUnavailableOperationValue(parsedValue)) {
-        return parsedValue;
-      }
-    } catch {
-      return undefined;
     }
   }
   return undefined;
@@ -730,6 +711,14 @@ function mapAfscpClientErrorToStorageMessage(
       return 'file_library_restore_preview_stale';
     case 'afscp_active_writer_blocks_restore':
       return 'file_library_active_writer_blocked';
+    case 'afscp_repo_mutation_in_progress':
+      if (fallback === 'file_library_save_point_list_failed') {
+        return 'file_library_save_point_list_pending';
+      }
+      if (fallback === 'file_library_save_point_create_failed') {
+        return 'file_library_save_point_create_pending';
+      }
+      return fallback;
     case 'afscp_resource_not_found':
       return isRestoreRunContext(context)
         ? 'file_library_restore_preview_stale'
@@ -755,11 +744,6 @@ function mapAfscpOperationFailureMessage(
   fallback: string,
 ): string {
   const code = readOperationErrorCode(operation, fallback);
-  const jvsErrorCode = readOperationString(operation, 'jvs_error_code');
-  if (code === 'JVS_COMMAND_FAILED' && jvsErrorCode && JVS_REPO_BUSY_OPERATION_CODES.has(jvsErrorCode)) {
-    return 'file_library_active_writer_blocked';
-  }
-
   const writerGateFamily = readOperationString(operation, 'writer_gate_error_family');
   if (
     WRITER_BLOCKER_OPERATION_CODES.has(code)

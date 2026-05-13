@@ -405,6 +405,10 @@ function runSession(fixture: SessionFixture, sessionName = 'agent-task-backend-r
       KEYCLOAK_CLIENT_ID: 'agentsmith-web',
       MBOS_UNIVERSAL_PROXY_BASE_URL: 'http://127.0.0.1:39080',
       MBOS_UNIVERSAL_PROXY_ADMIN_TOKEN: 'fixture-admin-token',
+      SANDBOX_MANAGER_URL: 'http://127.0.0.1:39200',
+      SANDBOX_SERVICE_KEY: 'fixture-sandbox-service-key',
+      AGENT_EXECUTION_WS_BASE_URL: 'ws://127.0.0.1:28191/api/v1/agent-execution/ws',
+      INTERNAL_AGENT_K8S_NAMESPACE: 'agentsmith-test',
     },
     encoding: 'utf8',
     stdio: 'pipe',
@@ -431,12 +435,12 @@ describe('backend-real Agent task runner session shards', () => {
     expect(script.match(/run-integration-e2e-full\.sh/g) ?? []).toHaveLength(0);
   });
 
-  it('keeps the session wrapper shell-valid and pins the agent-task runner shard', () => {
+  it('keeps the session wrapper shell-valid and routes managed Agent Task coverage through sandbox bootstrap', () => {
     expect(() => execFileSync('bash', ['-n', 'scripts/run-backend-real-session-shards.sh'])).not.toThrow();
 
     const wrapper = readFileSync('scripts/run-backend-real-session-shards.sh', 'utf8');
-    expect(wrapper).toContain('--session');
-    expect(wrapper).toContain('agent-task-backend-real-runner');
+    expect(wrapper).toContain('run-internal-agent-task-real-gate.sh');
+    expect(wrapper).toContain('--skills-runtime');
     expect(wrapper).not.toMatch(/&&\s*bash scripts\/run-integration-e2e-full\.sh/);
 
     const runner = readFileSync('scripts/run-integration-e2e-full.sh', 'utf8');

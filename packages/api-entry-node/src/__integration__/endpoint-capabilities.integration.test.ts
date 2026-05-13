@@ -1,19 +1,33 @@
-import { execFileSync } from 'node:child_process';
 import http, { type Server } from 'node:http';
+import type { AddressInfo } from 'node:net';
 import { afterEach, describe, expect, it } from 'vitest';
-import { apiFetch, startServer } from './test-support.js';
+import { apiFetch, startServerReady } from './test-support.js';
 
 const upstreamServers: Server[] = [];
 
-function allocateMockPort(): number {
-  const raw = execFileSync('python3', ['-c', 'import socket; s=socket.socket(); s.bind(("127.0.0.1", 0)); print(s.getsockname()[1]); s.close()'], {
-    encoding: 'utf8',
-  }).trim();
-  const port = Number.parseInt(raw, 10);
-  if (!Number.isInteger(port) || port <= 0) {
-    throw new Error(`invalid_mock_port:${raw}`);
+async function listenLoopbackServer(server: Server): Promise<number> {
+  await new Promise<void>((resolve, reject) => {
+    const cleanup = () => {
+      server.off('error', onError);
+      server.off('listening', onListening);
+    };
+    const onError = (error: Error) => {
+      cleanup();
+      reject(error);
+    };
+    const onListening = () => {
+      cleanup();
+      resolve();
+    };
+    server.once('error', onError);
+    server.once('listening', onListening);
+    server.listen(0, '127.0.0.1');
+  });
+  const address = server.address();
+  if (!address || typeof address === 'string') {
+    throw new Error('upstream_test_server_address_unavailable');
   }
-  return port;
+  return (address as AddressInfo).port;
 }
 
 afterEach(async () => {
@@ -30,12 +44,12 @@ afterEach(async () => {
   upstreamServers.length = 0;
 });
 
-function startUpstreamServer(): {
+async function startUpstreamServer(): Promise<{
   server: Server;
   baseUrl: string;
   lastBody: () => unknown;
   lastPath: () => string;
-} {
+}> {
   let body: unknown = null;
   let path = '';
   const server = http.createServer((req, res) => {
@@ -52,8 +66,7 @@ function startUpstreamServer(): {
       res.end(JSON.stringify({ ok: true, echoed: body }));
     })();
   });
-  const port = allocateMockPort();
-  server.listen(port, '127.0.0.1');
+  const port = await listenLoopbackServer(server);
   upstreamServers.push(server);
   return {
     server,
@@ -65,7 +78,7 @@ function startUpstreamServer(): {
 
 describe('api-entry-node endpoint capability routes', () => {
   it('imports endpoint capability bundle in one request', async () => {
-    const { baseUrl } = startServer();
+    const { baseUrl } = await startServerReady();
     const importRes = await apiFetch(
       baseUrl,
       '/api/v1/workspaces/ws_default/projects/proj_1/endpoints/import-bulk',
@@ -106,7 +119,7 @@ describe('api-entry-node endpoint capability routes', () => {
   });
 
   it('imports exported endpoint records as new endpoints', async () => {
-    const { baseUrl } = startServer();
+    const { baseUrl } = await startServerReady();
     const credentialRes = await apiFetch(
       baseUrl,
       '/api/v1/workspaces/ws_default/projects/proj_1/credentials',
@@ -183,7 +196,7 @@ describe('api-entry-node endpoint capability routes', () => {
   });
 
   it('rejects bulk imports with no importable endpoint entries', async () => {
-    const { baseUrl } = startServer();
+    const { baseUrl } = await startServerReady();
     const importRes = await apiFetch(
       baseUrl,
       '/api/v1/workspaces/ws_default/projects/proj_1/endpoints/import-bulk',
@@ -204,8 +217,8 @@ describe('api-entry-node endpoint capability routes', () => {
   });
 
   it('supports rerank route with capability model selection', async () => {
-    const { baseUrl } = startServer();
-    const upstream = startUpstreamServer();
+    const { baseUrl } = await startServerReady();
+    const upstream = await startUpstreamServer();
 
     const createCredential = await apiFetch(
       baseUrl,
@@ -268,8 +281,8 @@ describe('api-entry-node endpoint capability routes', () => {
   });
 
   it('fails fast when endpoint capability is not enabled or unsupported by protocol', async () => {
-    const { baseUrl } = startServer();
-    const upstream = startUpstreamServer();
+    const { baseUrl } = await startServerReady();
+    const upstream = await startUpstreamServer();
 
     const createCredential = await apiFetch(
       baseUrl,
@@ -360,8 +373,8 @@ describe('api-entry-node endpoint capability routes', () => {
   });
 
   it('supports image/video generation routes with capability model binding', async () => {
-    const { baseUrl } = startServer();
-    const upstream = startUpstreamServer();
+    const { baseUrl } = await startServerReady();
+    const upstream = await startUpstreamServer();
 
     const createCredential = await apiFetch(
       baseUrl,
@@ -465,7 +478,7 @@ describe('api-entry-node endpoint capability routes', () => {
   });
 
   it('allows multiple endpoints with the same model id when their configurations differ', async () => {
-    const { baseUrl } = startServer();
+    const { baseUrl } = await startServerReady();
     const credentialRes = await apiFetch(
       baseUrl,
       '/api/v1/workspaces/ws_default/projects/proj_1/credentials',

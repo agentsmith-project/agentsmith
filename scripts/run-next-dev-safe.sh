@@ -4,11 +4,33 @@ set -euo pipefail
 
 ROOT_DIR="${ROOT_DIR:-$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)}"
 source "${ROOT_DIR}/scripts/lib/next-generated-root-state.sh"
-DEFAULT_MAX_OLD_SPACE_SIZE="${NEXT_MAX_OLD_SPACE_SIZE:-4096}"
+NEXT_DEV_MEMORY_PROFILE="${NEXT_DEV_MEMORY_PROFILE:-interactive}"
 NEXT_GENERATED_ROOT_MANAGED="${NEXT_GENERATED_ROOT_MANAGED:-0}"
 export PATH="${ROOT_DIR}/node_modules/.bin:${PATH}"
 NEXT_DEV_EXIT_MARKER_WRITTEN=0
 NEXT_DEV_ROOT_GUARD_PID=""
+
+resolve_next_dev_max_old_space_size() {
+  case "${NEXT_DEV_MEMORY_PROFILE}" in
+    interactive|local|manual|dev)
+      printf '%s\n' "${NEXT_MAX_OLD_SPACE_SIZE:-${NEXT_DEV_LOCAL_MAX_OLD_SPACE_SIZE:-4096}}"
+      ;;
+    validation|test|visual|release|ci)
+      printf '%s\n' "${NEXT_MAX_OLD_SPACE_SIZE:-${NEXT_DEV_VALIDATION_MAX_OLD_SPACE_SIZE:-12288}}"
+      ;;
+    *)
+      printf '[next-dev-safe] unsupported NEXT_DEV_MEMORY_PROFILE=%s\n' "${NEXT_DEV_MEMORY_PROFILE}" >&2
+      return 2
+      ;;
+  esac
+}
+
+DEFAULT_MAX_OLD_SPACE_SIZE="$(resolve_next_dev_max_old_space_size)"
+if [[ ! "${DEFAULT_MAX_OLD_SPACE_SIZE}" =~ ^[0-9]+$ || "${DEFAULT_MAX_OLD_SPACE_SIZE}" -le 0 ]]; then
+  printf '[next-dev-safe] NEXT max old space size must be a positive integer, got %s\n' "${DEFAULT_MAX_OLD_SPACE_SIZE}" >&2
+  exit 2
+fi
+export NEXT_DEV_MEMORY_PROFILE
 
 if [[ -n "${NODE_OPTIONS:-}" ]]; then
   export NODE_OPTIONS="${NODE_OPTIONS} --max-old-space-size=${DEFAULT_MAX_OLD_SPACE_SIZE}"

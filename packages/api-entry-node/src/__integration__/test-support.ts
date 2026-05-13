@@ -22,6 +22,9 @@ const originalInternalKeycloakBaseUrl = process.env.INTERNAL_KEYCLOAK_BASE_URL;
 const originalKeycloakRealm = process.env.KEYCLOAK_REALM;
 const originalKeycloakClientId = process.env.KEYCLOAK_CLIENT_ID;
 const originalKeycloakUrl = process.env.KEYCLOAK_URL;
+const originalKeycloakAdmin = process.env.KEYCLOAK_ADMIN;
+const originalKeycloakAdminPassword = process.env.KEYCLOAK_ADMIN_PASSWORD;
+const originalKeycloakAdminClientId = process.env.KEYCLOAK_ADMIN_CLIENT_ID;
 
 const signingKeys = generateKeyPairSync('rsa', { modulusLength: 2048 });
 const signingJwk = {
@@ -213,6 +216,12 @@ afterEach(async () => {
   else process.env.KEYCLOAK_CLIENT_ID = originalKeycloakClientId;
   if (originalKeycloakUrl === undefined) delete process.env.KEYCLOAK_URL;
   else process.env.KEYCLOAK_URL = originalKeycloakUrl;
+  if (originalKeycloakAdmin === undefined) delete process.env.KEYCLOAK_ADMIN;
+  else process.env.KEYCLOAK_ADMIN = originalKeycloakAdmin;
+  if (originalKeycloakAdminPassword === undefined) delete process.env.KEYCLOAK_ADMIN_PASSWORD;
+  else process.env.KEYCLOAK_ADMIN_PASSWORD = originalKeycloakAdminPassword;
+  if (originalKeycloakAdminClientId === undefined) delete process.env.KEYCLOAK_ADMIN_CLIENT_ID;
+  else process.env.KEYCLOAK_ADMIN_CLIENT_ID = originalKeycloakAdminClientId;
   resetSystemWorkspaceRegistryPersistenceForTest();
   if (originalFeishuAppId === undefined) delete process.env.FEISHU_APP_ID;
   else process.env.FEISHU_APP_ID = originalFeishuAppId;
@@ -235,6 +244,9 @@ function applyMockKeycloakEnv(baseUrl: string, issuerUrl: string): void {
   process.env.KEYCLOAK_REALM = 'mbos';
   process.env.KEYCLOAK_CLIENT_ID = 'agentsmith-web';
   process.env.KEYCLOAK_URL = `${baseUrl}/realms`;
+  process.env.KEYCLOAK_ADMIN = 'agentsmith-admin';
+  process.env.KEYCLOAK_ADMIN_PASSWORD = 'admin-secret';
+  process.env.KEYCLOAK_ADMIN_CLIENT_ID = 'admin-cli';
 }
 
 function createMockKeycloakServer(): Server {
@@ -272,16 +284,19 @@ function createMockKeycloakServer(): Server {
       res.end(JSON.stringify({ keys: [signingJwk] }));
       return;
     }
-    if (req.method === 'POST' && requestUrl.pathname === '/realms/master/protocol/openid-connect/token') {
+    if (req.method === 'POST' && requestUrl.pathname === '/realms/mbos/protocol/openid-connect/token') {
       res.statusCode = 200;
       res.setHeader('content-type', 'application/json');
-      res.end(JSON.stringify({ access_token: 'mock-admin-token' }));
+      res.end(JSON.stringify({ access_token: 'mock-directory-token' }));
       return;
     }
-    if (req.headers.authorization === 'Bearer mock-admin-token' && requestUrl.pathname === '/admin/realms/mbos/users') {
+    if (req.headers.authorization === 'Bearer mock-directory-token' && requestUrl.pathname === '/admin/realms/mbos/users') {
       const search = requestUrl.searchParams.get('search')?.trim().toLowerCase() ?? '';
+      const email = requestUrl.searchParams.get('email')?.trim().toLowerCase() ?? '';
       const items = search
         ? directoryUsers.filter((item) => `${item.email} ${item.username} ${item.name}`.toLowerCase().includes(search))
+        : email
+          ? directoryUsers.filter((item) => item.email.toLowerCase() === email)
         : directoryUsers;
       res.statusCode = 200;
       res.setHeader('content-type', 'application/json');
@@ -289,7 +304,7 @@ function createMockKeycloakServer(): Server {
       return;
     }
     const userItemMatch = requestUrl.pathname.match(/^\/admin\/realms\/mbos\/users\/([^/]+)$/);
-    if (req.headers.authorization === 'Bearer mock-admin-token' && userItemMatch) {
+    if (req.headers.authorization === 'Bearer mock-directory-token' && userItemMatch) {
       const found = directoryUsers.find((item) => item.id === decodeURIComponent(userItemMatch[1]));
       if (!found) {
         res.statusCode = 404;
@@ -320,6 +335,10 @@ function seedDefaultSystemWorkspace(issuerUrl: string): void {
         url: issuerUrl,
         realm: 'mbos',
         client_id: 'agentsmith-web',
+      },
+      directory_idp: {
+        client_id: 'agentsmith-directory',
+        client_secret: 'directory-secret',
       },
       tenant: {
         workspace_id: 'ws_default',

@@ -4,6 +4,7 @@ import { dispatchDeveloperRunnerTestTaskRun } from './agent-runner-test-task-com
 import { AgentTaskModelSettingService } from './agent-task-model-setting-service.js';
 import { notebookTaskMessagesCollection, notebookTasksCollection } from './notebook-task/task-store.js';
 import { JsonDocProjectFileLibraryCatalogRepo } from './file-library-persistence.js';
+import type { FileLibraryStoragePort } from './file-library-afscp-storage.js';
 
 describe('dispatchDeveloperRunnerTestTaskRun', () => {
   async function createReadyEndpoint(
@@ -320,6 +321,118 @@ describe('dispatchDeveloperRunnerTestTaskRun', () => {
     } finally {
       if (previousPublicApiBase === undefined) delete process.env.PUBLIC_API_BASE_URL;
       else process.env.PUBLIC_API_BASE_URL = previousPublicApiBase;
+    }
+  });
+
+  it('waits for project storage readiness before creating the Developer runner test workspace', async () => {
+    vi.useFakeTimers();
+    const previousPublicApiBase = process.env.PUBLIC_API_BASE_URL;
+    process.env.PUBLIC_API_BASE_URL = 'http://localhost:20000';
+    vi.resetModules();
+    vi.doMock('./developer-runner-workspace-blocker.js', () => ({
+      DEVELOPER_RUNNER_TASK_HOME_BINDING_UNAVAILABLE_CODE: 'TASK_HOME_BINDING_UNAVAILABLE_FOR_DEVELOPER_RUNNER',
+      DEVELOPER_RUNNER_TASK_HOME_BINDING_UNAVAILABLE_MESSAGE: 'task_home_binding_unavailable_for_developer_runner',
+      isDeveloperRunnerTaskHomeBindingAvailable: () => true,
+    }));
+    vi.doMock('./notebook-execution-orchestrator.js', () => ({
+      runNotebookTaskWithExecutionAgent: vi.fn(async (input) => {
+        await input.onFinalize(input.task.id, input.buildRunId(), { durableTerminalTruth: true });
+      }),
+    }));
+    try {
+      const {
+        dispatchDeveloperRunnerTestTaskRun: dispatchWithDeveloperHomeBinding,
+      } = await import('./agent-runner-test-task-command.js');
+      const deps = createDefaultNodeApiDeps();
+      const endpoint = await createReadyEndpoint(deps, {
+        name: 'developer runner waited endpoint',
+        model: 'developer-runner-waited-model',
+        upstreamProtocol: 'anthropic_messages',
+      });
+      await seedAgentTaskModelSetting(deps, endpoint.id);
+      const runner = await deps.agentResourceService.createAgent('ws_default', 'proj_1', {
+        name: 'Developer runner waited storage',
+        runner_provider: 'developer',
+        status: 'enabled',
+        presence: 'online',
+        runner_status: 'ready',
+        capabilities: { task_execution: true, artifacts: true },
+      });
+      const ensureProjectStorageReady = vi.fn()
+        .mockResolvedValueOnce({
+          status: 'pending',
+          stage: 'namespace_upsert',
+          generation: 1,
+          nextAction: 'wait',
+          retryable: false,
+          lastErrorCode: null,
+        })
+        .mockResolvedValueOnce({
+          status: 'ready',
+          namespaceId: 'ns_waited_runner_test',
+          stage: 'ready',
+          generation: 3,
+          nextAction: 'none',
+          retryable: false,
+          lastErrorCode: null,
+        });
+      deps.projectStorageBootstrapService = {
+        enabled: true,
+        bootstrapProjectStorage: vi.fn(async () => undefined),
+        reconcileProjectStorage: vi.fn(async () => undefined),
+        ensureProjectStorageReady,
+      };
+      const createRepoForLibrary = vi.fn<FileLibraryStoragePort['createRepoForLibrary']>(async (input) => ({
+        namespaceId: input.namespaceId,
+        repoId: `repo_${input.libraryId}`,
+        operationId: `op_${input.libraryId}`,
+        operationStatus: 'succeeded' as const,
+        projectStorageGeneration: input.projectStorageGeneration,
+      }));
+      deps.fileLibraryStorageAdapter = {
+        ...deps.fileLibraryStorageAdapter,
+        createRepoForLibrary,
+      };
+
+      const resultPromise = dispatchWithDeveloperHomeBinding({
+        deps,
+        workspaceId: 'ws_default',
+        projectId: 'proj_1',
+        user: { id: 'user_test', email: 'user_test@example.com', name: 'Test User' },
+        runner,
+        intent: 'Run waited self-check',
+        requestId: 'req_runner_test_storage_wait',
+      });
+
+      await vi.runAllTimersAsync();
+      await expect(resultPromise).resolves.toMatchObject({
+        ok: true,
+        accepted: {
+          resolvedRunnerId: runner.id,
+        },
+      });
+
+      expect(ensureProjectStorageReady).toHaveBeenCalledTimes(2);
+      expect(ensureProjectStorageReady).toHaveBeenNthCalledWith(1, expect.objectContaining({
+        workspaceId: 'ws_default',
+        projectId: 'proj_1',
+        actorUserId: 'user_test',
+        signal: expect.any(AbortSignal),
+      }));
+      expect(createRepoForLibrary).toHaveBeenCalledWith(expect.objectContaining({
+        namespaceId: 'ns_waited_runner_test',
+        projectStorageGeneration: 3,
+      }));
+      await expect(deps.docStore.list(notebookTasksCollection('ws_default'), {
+        source: 'runner_test',
+      })).resolves.toHaveLength(1);
+    } finally {
+      if (previousPublicApiBase === undefined) delete process.env.PUBLIC_API_BASE_URL;
+      else process.env.PUBLIC_API_BASE_URL = previousPublicApiBase;
+      vi.doUnmock('./developer-runner-workspace-blocker.js');
+      vi.doUnmock('./notebook-execution-orchestrator.js');
+      vi.resetModules();
+      vi.useRealTimers();
     }
   });
 });

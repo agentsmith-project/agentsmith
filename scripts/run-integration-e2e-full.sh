@@ -9,6 +9,7 @@ source "${ROOT_DIR}/scripts/lib/lane-run-state.sh"
 source "${ROOT_DIR}/scripts/lib/next-generated-root-state.sh"
 source "${ROOT_DIR}/scripts/lib/runtime-verification.sh"
 source "${ROOT_DIR}/scripts/lib/universal-proxy-runtime.sh"
+source "${ROOT_DIR}/scripts/lib/afscp-local-runtime.sh"
 
 BACKEND_REAL_SESSION_NAME=""
 if [[ "${1:-}" == "--session" ]]; then
@@ -45,6 +46,12 @@ ORIGINAL_INTEGRATION_WEB_PORT="${INTEGRATION_WEB_PORT:-}"
 ORIGINAL_INTEGRATION_BASE_URL="${INTEGRATION_BASE_URL:-}"
 ORIGINAL_INTEGRATION_API_BASE="${INTEGRATION_API_BASE:-}"
 ORIGINAL_BACKEND_REAL_STATE_DIR="${BACKEND_REAL_STATE_DIR:-}"
+ORIGINAL_INTEGRATION_POSTGRES_PORT="${INTEGRATION_POSTGRES_PORT:-}"
+ORIGINAL_INTEGRATION_MONGO_PORT="${INTEGRATION_MONGO_PORT:-}"
+ORIGINAL_INTEGRATION_REDIS_PORT="${INTEGRATION_REDIS_PORT:-}"
+ORIGINAL_INTEGRATION_MINIO_API_PORT="${INTEGRATION_MINIO_API_PORT:-}"
+ORIGINAL_INTEGRATION_MINIO_CONSOLE_PORT="${INTEGRATION_MINIO_CONSOLE_PORT:-}"
+ORIGINAL_INTEGRATION_KEYCLOAK_PORT="${INTEGRATION_KEYCLOAK_PORT:-}"
 
 load_backend_real_env "${ROOT_DIR}/.env.backend-real"
 export_backend_real_endpoint_env
@@ -64,6 +71,24 @@ fi
 if [[ -n "${ORIGINAL_BACKEND_REAL_STATE_DIR}" ]]; then
   export BACKEND_REAL_STATE_DIR="${ORIGINAL_BACKEND_REAL_STATE_DIR}"
 fi
+if [[ -n "${ORIGINAL_INTEGRATION_POSTGRES_PORT}" ]]; then
+  export INTEGRATION_POSTGRES_PORT="${ORIGINAL_INTEGRATION_POSTGRES_PORT}"
+fi
+if [[ -n "${ORIGINAL_INTEGRATION_MONGO_PORT}" ]]; then
+  export INTEGRATION_MONGO_PORT="${ORIGINAL_INTEGRATION_MONGO_PORT}"
+fi
+if [[ -n "${ORIGINAL_INTEGRATION_REDIS_PORT}" ]]; then
+  export INTEGRATION_REDIS_PORT="${ORIGINAL_INTEGRATION_REDIS_PORT}"
+fi
+if [[ -n "${ORIGINAL_INTEGRATION_MINIO_API_PORT}" ]]; then
+  export INTEGRATION_MINIO_API_PORT="${ORIGINAL_INTEGRATION_MINIO_API_PORT}"
+fi
+if [[ -n "${ORIGINAL_INTEGRATION_MINIO_CONSOLE_PORT}" ]]; then
+  export INTEGRATION_MINIO_CONSOLE_PORT="${ORIGINAL_INTEGRATION_MINIO_CONSOLE_PORT}"
+fi
+if [[ -n "${ORIGINAL_INTEGRATION_KEYCLOAK_PORT}" ]]; then
+  export INTEGRATION_KEYCLOAK_PORT="${ORIGINAL_INTEGRATION_KEYCLOAK_PORT}"
+fi
 
 export BACKEND_REAL_API_KEY="${BACKEND_REAL_API_KEY:-${BACKEND_REAL_API_KEY_VALUE:-}}"
 export BACKEND_REAL_MODEL="${BACKEND_REAL_MODEL:-${BACKEND_REAL_MODEL_VALUE:-}}"
@@ -81,6 +106,9 @@ REDIS_PORT="${REDIS_PORT:-${INTEGRATION_REDIS_PORT:-26379}}"
 MINIO_API_PORT="${MINIO_API_PORT:-${INTEGRATION_MINIO_API_PORT:-29000}}"
 MINIO_CONSOLE_PORT="${MINIO_CONSOLE_PORT:-${INTEGRATION_MINIO_CONSOLE_PORT:-29001}}"
 KEYCLOAK_PORT="${KEYCLOAK_PORT:-${INTEGRATION_KEYCLOAK_PORT:-28081}}"
+MONGO_URL="${MONGO_URL:-mongodb://mbos:mbos_dev_password@127.0.0.1:${MONGO_PORT}/admin}"
+MONGO_DB_NAME="${MONGO_DB_NAME:-mbos}"
+export MONGO_URL MONGO_DB_NAME
 export RUNTIME_RUNNER_MODES="${RUNTIME_RUNNER_MODES:-managed_runner}"
 ensure_backend_real_state
 INTEGRATION_RUN_ID="${INTEGRATION_RUN_ID:-$(lane_generate_run_id integration)}"
@@ -88,6 +116,8 @@ INTEGRATION_RUN_ROOT="${INTEGRATION_RUN_ROOT:-$(lane_prepare_run_root backend-re
 UX_TRACE_OUTPUT_ROOT="${UX_TRACE_OUTPUT_ROOT:-${INTEGRATION_RUN_ROOT}/ux-traces}"
 INTEGRATION_LOG_DIR="${INTEGRATION_LOG_DIR:-${INTEGRATION_RUN_ROOT}/integration}"
 REAL_SESSION_ROOT="${INTEGRATION_LOG_DIR}/real-session"
+INTEGRATION_AFSCP_LOCAL_RUNTIME="${INTEGRATION_AFSCP_LOCAL_RUNTIME:-true}"
+INTEGRATION_AFSCP_DIR="${INTEGRATION_AFSCP_DIR:-${INTEGRATION_RUN_ROOT}/afscp}"
 export CURRENT_GATE_RESULT_GATE_ID="${CURRENT_GATE_RESULT_GATE_ID:-lane-backend-real-core}"
 export CURRENT_GATE_RESULT_NPM_SCRIPT="${CURRENT_GATE_RESULT_NPM_SCRIPT:-lane:backend-real:core}"
 export CURRENT_GATE_RESULT_CI_JOB="${CURRENT_GATE_RESULT_CI_JOB:-lane-backend-real-core}"
@@ -108,11 +138,12 @@ export KEYCLOAK_ISSUER_URL="${PUBLIC_KEYCLOAK_BASE_URL%/}/realms/${KEYCLOAK_REAL
 PLAYWRIGHT_BASE_URL="${INTEGRATION_BASE_URL:-${RUNTIME_BROWSER_WEB_BASE_URL}}"
 INTEGRATION_API_BASE="${INTEGRATION_API_BASE:-${RUNTIME_HOST_API_BASE_URL}}"
 INTEGRATION_LOCALE="${INTEGRATION_LOCALE:-en-US}"
+resolve_afscp_local_runtime_defaults "${API_PORT}" "vol_integration"
 
 BOOTSTRAP_DEPS="${INTEGRATION_BOOTSTRAP_DEPS:-true}"
 INIT_DEPS="${INTEGRATION_INIT_DEPS:-true}"
 
-mkdir -p "${INTEGRATION_LOG_DIR}"
+mkdir -p "${INTEGRATION_LOG_DIR}" "${INTEGRATION_AFSCP_DIR}"
 lane_prepare_alias_link "${INTEGRATION_LOG_DIR}" "$(backend_real_state_root)/integration"
 gate_evidence_init "${INTEGRATION_LOG_DIR}" "backend_real"
 gate_write_runtime_descriptor "${INTEGRATION_LOG_DIR}" "backend_real"
@@ -134,6 +165,7 @@ PLAYWRIGHT_PID=""
 PLAYWRIGHT_STATUS=1
 KEEP_FAILED_ENV="${INTEGRATION_KEEP_FAILED_ENV:-0}"
 BACKEND_REAL_KEEP_RUNS="${BACKEND_REAL_KEEP_RUNS:-5}"
+INTEGRATION_AFSCP_LOCAL_RUNTIME_OWNED=0
 
 record_service() {
   local service_name="$1"
@@ -144,13 +176,22 @@ record_service() {
 
 managed_agent_task_sandbox_required() {
   case "${BACKEND_REAL_SESSION_NAME:-${SPEC_FILE}}" in
-    agent-task-backend-real-runner|e2e/integration-agent-task-runner.spec.ts)
+    agent-task-backend-real-runner|e2e/integration-agent-task-runner.spec.ts|e2e/integration-visual-review.spec.ts)
       return 0
       ;;
-    *)
-      return 1
-      ;;
   esac
+
+  if [[ -z "${BACKEND_REAL_SESSION_NAME:-}" ]]; then
+    local spec_path="${SPEC_FILE}"
+    if [[ "${spec_path}" != /* ]]; then
+      spec_path="${ROOT_DIR}/${spec_path}"
+    fi
+    if [[ -f "${spec_path}" ]] && grep -q 'startAgentTaskRunViaApi' "${spec_path}"; then
+      return 0
+    fi
+  fi
+
+  return 1
 }
 
 preflight_managed_agent_task_sandbox_env() {
@@ -178,10 +219,10 @@ preflight_managed_agent_task_sandbox_env() {
 
   local missing_text
   missing_text="$(IFS=,; printf '%s' "${missing[*]}")"
-  gate_record_failure "${INTEGRATION_LOG_DIR}" "infra_dependency_unready" "managed_agent_task_sandbox_env" "Managed Agent Task backend-real coverage requires sandbox bootstrap; missing ${missing_text}. Use scripts/run-internal-agent-task-real-gate.sh --skills-runtime or provide the managed sandbox env."
+  gate_record_failure "${INTEGRATION_LOG_DIR}" "infra_dependency_unready" "managed_agent_task_sandbox_env" "Managed Agent Task backend-real coverage requires sandbox bootstrap; missing ${missing_text}. Use scripts/run-internal-agent-task-real-gate.sh --visual-review/--skills-runtime or provide the managed sandbox env."
   echo "[integration-e2e-full] Managed Agent Task backend-real coverage requires sandbox bootstrap." >&2
   echo "[integration-e2e-full] Missing: ${missing_text}" >&2
-  echo "[integration-e2e-full] Use scripts/run-internal-agent-task-real-gate.sh --skills-runtime or provide the managed sandbox env." >&2
+  echo "[integration-e2e-full] Use scripts/run-internal-agent-task-real-gate.sh --visual-review/--skills-runtime or provide the managed sandbox env." >&2
   exit 1
 }
 
@@ -204,8 +245,8 @@ run_clean_with_integration_env() {
     INTERNAL_KEYCLOAK_BASE_URL="${INTERNAL_KEYCLOAK_BASE_URL}" \
     KEYCLOAK_ISSUER_URL="${KEYCLOAK_ISSUER_URL}" \
     DATABASE_URL="${DATABASE_URL:-postgresql://mbos:mbos_dev_password@localhost:${POSTGRES_PORT}/mbos}" \
-    MONGO_URL="${MONGO_URL:-mongodb://mbos:mbos_dev_password@localhost:${MONGO_PORT}/admin}" \
-    MONGO_DB_NAME="${MONGO_DB_NAME:-mbos}" \
+    MONGO_URL="${MONGO_URL}" \
+    MONGO_DB_NAME="${MONGO_DB_NAME}" \
     REDIS_URL="${REDIS_URL:-redis://localhost:${REDIS_PORT}}" \
     MINIO_ENDPOINT="${MINIO_ENDPOINT:-localhost}" \
     MINIO_PORT="${MINIO_PORT:-${MINIO_API_PORT}}" \
@@ -213,6 +254,15 @@ run_clean_with_integration_env() {
     MINIO_ACCESS_KEY="${MINIO_ACCESS_KEY:-mbos}" \
     MINIO_SECRET_KEY="${MINIO_SECRET_KEY:-mbos_dev_password}" \
     MINIO_BUCKET="${MINIO_BUCKET:-mbos-dev}" \
+    AFSCP_BASE_URL="${AFSCP_BASE_URL}" \
+    AFSCP_EXPORT_GATEWAY_BASE_URL="${AFSCP_EXPORT_GATEWAY_BASE_URL}" \
+    AFSCP_DEFAULT_VOLUME_ID="${AFSCP_DEFAULT_VOLUME_ID}" \
+    AFSCP_CALLER_SERVICE="${AFSCP_CALLER_SERVICE}" \
+    AFSCP_SERVICE_TOKEN="${AFSCP_SERVICE_TOKEN}" \
+    AFSCP_BOOTSTRAP_CALLER_SERVICE="${AFSCP_BOOTSTRAP_CALLER_SERVICE}" \
+    AFSCP_BOOTSTRAP_SERVICE_TOKEN="${AFSCP_BOOTSTRAP_SERVICE_TOKEN}" \
+    AFSCP_ORCHESTRATOR_CALLER_SERVICE="${AFSCP_ORCHESTRATOR_CALLER_SERVICE}" \
+    AFSCP_ORCHESTRATOR_SERVICE_TOKEN="${AFSCP_ORCHESTRATOR_SERVICE_TOKEN}" \
     POSTGRES_PORT="${POSTGRES_PORT:-}" \
     MONGO_PORT="${MONGO_PORT:-}" \
     REDIS_PORT="${REDIS_PORT:-}" \
@@ -478,6 +528,25 @@ cleanup_universal_proxy() {
     universal_proxy_runtime_cleanup_managed_container
 }
 
+ensure_integration_afscp_local_runtime() {
+  if [[ "${INTEGRATION_AFSCP_LOCAL_RUNTIME}" != "true" ]]; then
+    gate_record_preflight_check "${INTEGRATION_LOG_DIR}" "afscp_local_runtime" "skipped" "INTEGRATION_AFSCP_LOCAL_RUNTIME=${INTEGRATION_AFSCP_LOCAL_RUNTIME}"
+    return 0
+  fi
+
+  echo "[integration-e2e-full] ensuring AFSCP local runtime at ${AFSCP_BASE_URL}" >&2
+  INTEGRATION_AFSCP_LOCAL_RUNTIME_OWNED=1
+  ensure_afscp_local_runtime_for_gate "${INTEGRATION_AFSCP_DIR}"
+}
+
+stop_integration_afscp_local_runtime() {
+  if [[ "${INTEGRATION_AFSCP_LOCAL_RUNTIME_OWNED}" != "1" ]]; then
+    return 0
+  fi
+
+  stop_afscp_local_runtime_for_gate "${INTEGRATION_AFSCP_DIR}"
+}
+
 preflight_managed_agent_task_sandbox_env
 
 if [[ "${BOOTSTRAP_DEPS}" == "true" ]]; then
@@ -520,6 +589,16 @@ if port_in_use "${WEB_PORT}"; then
   exit 1
 fi
 
+if ! ensure_integration_afscp_local_runtime; then
+  gate_record_failure "${INTEGRATION_LOG_DIR}" "infra_dependency_unready" "afscp_local_runtime" "AFSCP local runtime unavailable"
+  echo "[integration-e2e-full] AFSCP local runtime did not become ready at ${AFSCP_BASE_URL}" >&2
+  stop_integration_afscp_local_runtime || true
+  cleanup_universal_proxy
+  exit 1
+fi
+gate_record_preflight_check "${INTEGRATION_LOG_DIR}" "afscp_local_runtime" "passed" "${AFSCP_BASE_URL}"
+record_service afscp_local_runtime ready "${AFSCP_BASE_URL}"
+
 rm -rf "${ROOT_DIR}/${NEXT_DIST_DIR}"
 
 API_PID="$(
@@ -534,8 +613,8 @@ API_PID="$(
     KEYCLOAK_ISSUER_URL="${KEYCLOAK_ISSUER_URL}" \
     KEYCLOAK_REALM="${KEYCLOAK_REALM}" \
     DATABASE_URL="${DATABASE_URL:-postgresql://mbos:mbos_dev_password@localhost:${POSTGRES_PORT}/mbos}" \
-    MONGO_URL="${MONGO_URL:-mongodb://mbos:mbos_dev_password@localhost:${MONGO_PORT}/admin}" \
-    MONGO_DB_NAME="${MONGO_DB_NAME:-mbos}" \
+    MONGO_URL="${MONGO_URL}" \
+    MONGO_DB_NAME="${MONGO_DB_NAME}" \
     REDIS_URL="${REDIS_URL:-redis://localhost:${REDIS_PORT}}" \
     MINIO_ENDPOINT="${MINIO_ENDPOINT:-localhost}" \
     MINIO_PORT="${MINIO_PORT:-${MINIO_API_PORT}}" \
@@ -545,6 +624,15 @@ API_PID="$(
     MINIO_BUCKET="${MINIO_BUCKET:-mbos-dev}" \
     SANDBOX_MANAGER_URL="${SANDBOX_MANAGER_URL:-}" \
     SANDBOX_SERVICE_KEY="${SANDBOX_SERVICE_KEY:-}" \
+    AFSCP_BASE_URL="${AFSCP_BASE_URL}" \
+    AFSCP_EXPORT_GATEWAY_BASE_URL="${AFSCP_EXPORT_GATEWAY_BASE_URL}" \
+    AFSCP_DEFAULT_VOLUME_ID="${AFSCP_DEFAULT_VOLUME_ID}" \
+    AFSCP_CALLER_SERVICE="${AFSCP_CALLER_SERVICE}" \
+    AFSCP_SERVICE_TOKEN="${AFSCP_SERVICE_TOKEN}" \
+    AFSCP_BOOTSTRAP_CALLER_SERVICE="${AFSCP_BOOTSTRAP_CALLER_SERVICE}" \
+    AFSCP_BOOTSTRAP_SERVICE_TOKEN="${AFSCP_BOOTSTRAP_SERVICE_TOKEN}" \
+    AFSCP_ORCHESTRATOR_CALLER_SERVICE="${AFSCP_ORCHESTRATOR_CALLER_SERVICE}" \
+    AFSCP_ORCHESTRATOR_SERVICE_TOKEN="${AFSCP_ORCHESTRATOR_SERVICE_TOKEN}" \
     INTERNAL_AGENT_IMAGE="${INTERNAL_AGENT_IMAGE:-${INTEGRATION_INTERNAL_AGENT_IMAGE:-}}" \
     INTEGRATION_INTERNAL_AGENT_IMAGE="${INTEGRATION_INTERNAL_AGENT_IMAGE:-}" \
     INTERNAL_AGENT_K8S_NAMESPACE="${INTERNAL_AGENT_K8S_NAMESPACE:-}" \
@@ -554,11 +642,12 @@ API_PID="$(
 
 WEB_PID="$(
   start_background_job "${WEB_LOG}" run_clean env \
-    MONGO_URL="${MONGO_URL:-mongodb://mbos:mbos_dev_password@localhost:${MONGO_PORT}/admin}" \
-    MONGO_DB_NAME="${MONGO_DB_NAME:-mbos}" \
+    MONGO_URL="${MONGO_URL}" \
+    MONGO_DB_NAME="${MONGO_DB_NAME}" \
     NEXT_DIST_DIR="${NEXT_DIST_DIR}" \
     NEXT_GENERATED_ROOT_ALLOWED_ACTIVE_RUN_ROOT="${INTEGRATION_RUN_ROOT}" \
     NEXT_GENERATED_ROOT_MANAGED=1 \
+    NEXT_DEV_MEMORY_PROFILE="${NEXT_DEV_MEMORY_PROFILE:-validation}" \
     NEXT_DEV_PID_FILE="${NEXT_WEB_PID_FILE}" \
     NEXT_DEV_PROCESS_STATE_FILE="${NEXT_WEB_PROCESS_STATE_FILE}" \
     NEXT_DEV_PROCESS_KIND=web \
@@ -570,6 +659,15 @@ WEB_PID="$(
     NEXT_PUBLIC_KEYCLOAK_URL="${KEYCLOAK_URL}" \
     NEXT_PUBLIC_KEYCLOAK_REALM="${KEYCLOAK_REALM}" \
     NEXT_PUBLIC_KEYCLOAK_CLIENT_ID="${KEYCLOAK_CLIENT_ID}" \
+    AFSCP_BASE_URL="${AFSCP_BASE_URL}" \
+    AFSCP_EXPORT_GATEWAY_BASE_URL="${AFSCP_EXPORT_GATEWAY_BASE_URL}" \
+    AFSCP_DEFAULT_VOLUME_ID="${AFSCP_DEFAULT_VOLUME_ID}" \
+    AFSCP_CALLER_SERVICE="${AFSCP_CALLER_SERVICE}" \
+    AFSCP_SERVICE_TOKEN="${AFSCP_SERVICE_TOKEN}" \
+    AFSCP_BOOTSTRAP_CALLER_SERVICE="${AFSCP_BOOTSTRAP_CALLER_SERVICE}" \
+    AFSCP_BOOTSTRAP_SERVICE_TOKEN="${AFSCP_BOOTSTRAP_SERVICE_TOKEN}" \
+    AFSCP_ORCHESTRATOR_CALLER_SERVICE="${AFSCP_ORCHESTRATOR_CALLER_SERVICE}" \
+    AFSCP_ORCHESTRATOR_SERVICE_TOKEN="${AFSCP_ORCHESTRATOR_SERVICE_TOKEN}" \
     bash scripts/run-next-dev-safe.sh --port "${WEB_PORT}"
 )"
 
@@ -597,6 +695,12 @@ cleanup() {
   wait "${PROXY_PID}" >/dev/null 2>&1 || true
   wait "${WEB_PID}" >/dev/null 2>&1 || true
   wait "${API_PID}" >/dev/null 2>&1 || true
+  if stop_integration_afscp_local_runtime; then
+    record_service afscp_local_runtime stopped "${AFSCP_BASE_URL}"
+  else
+    record_service afscp_local_runtime cleanup_failed "${AFSCP_BASE_URL}"
+    echo "[integration-e2e-full] cleanup warning: AFSCP local runtime stop failed" >&2
+  fi
   capture_integration_lifecycle_observation "post-stop"
   next_generated_root_clear_lane_owner "${INTEGRATION_RUN_ROOT}" || true
   next_generated_root_normalize || echo "[integration-e2e-full] cleanup warning: next generated root normalize failed" >&2
@@ -662,6 +766,17 @@ fi
 gate_record_preflight_check "${INTEGRATION_LOG_DIR}" "web_ready" "passed" "${PLAYWRIGHT_BASE_URL}"
 record_service web ready "${PLAYWRIGHT_BASE_URL}"
 
+test_routes_status="$(curl -s -o /dev/null -w "%{http_code}" "${PLAYWRIGHT_BASE_URL}/api/test/system/workspaces/seed" || true)"
+if [[ "${test_routes_status}" != "200" ]]; then
+  gate_record_failure "${INTEGRATION_LOG_DIR}" "infra_dependency_unready" "web_test_routes" "Web test routes unavailable at ${PLAYWRIGHT_BASE_URL} (status: ${test_routes_status})"
+  echo "[integration-e2e-full] Web test routes are unavailable at ${PLAYWRIGHT_BASE_URL} (status: ${test_routes_status})." >&2
+  echo "[integration-e2e-full] Ensure the isolated web server started with AGENTSMITH_ENABLE_TEST_ROUTES=true and BASE_URL targets that server." >&2
+  echo "--- Web log tail ---" >&2
+  tail -n 120 "${WEB_LOG}" >&2 || true
+  exit 1
+fi
+gate_record_preflight_check "${INTEGRATION_LOG_DIR}" "web_test_routes" "passed" "${PLAYWRIGHT_BASE_URL}/api/test/system/workspaces/seed"
+
 ACCESS_TOKEN="$(gate_run_auth_preflight "${INTEGRATION_LOG_DIR}" "${KEYCLOAK_BASE_URL}" "${KEYCLOAK_REALM}" "${KEYCLOAK_CLIENT_ID}" "${INTEGRATION_DEV_ADMIN_USERNAME:-dev-admin}" "${INTEGRATION_DEV_ADMIN_PASSWORD:-dev-admin-123}" "${INTEGRATION_API_BASE}/api/v1/me/profile" "failed to obtain integration token" "integration token missing access_token" "authenticated /api/v1/me/profile unavailable")" || exit 1
 record_service auth ready "integration dev-admin token bootstrap"
 
@@ -680,6 +795,8 @@ run_playwright_command() {
   run_clean env \
     BASE_URL="${PLAYWRIGHT_BASE_URL}" \
     INTEGRATION_API_BASE="${INTEGRATION_API_BASE}" \
+    MONGO_URL="${MONGO_URL}" \
+    MONGO_DB_NAME="${MONGO_DB_NAME}" \
     MBOS_UNIVERSAL_PROXY_BASE_URL="${MBOS_UNIVERSAL_PROXY_BASE_URL:-}" \
     MBOS_UNIVERSAL_PROXY_ADMIN_TOKEN="${MBOS_UNIVERSAL_PROXY_ADMIN_TOKEN:-}" \
     MBOS_UNIVERSAL_PROXY_UPSTREAM_HOST="${MBOS_UNIVERSAL_PROXY_UPSTREAM_HOST:-}" \
@@ -695,6 +812,15 @@ run_playwright_command() {
     AFSCP_STORAGE_CSI_MOUNT_SERVICE_ACCOUNT="${AFSCP_STORAGE_CSI_MOUNT_SERVICE_ACCOUNT:-}" \
     AFSCP_STORAGE_CSI_MOUNT_IMAGE="${AFSCP_STORAGE_CSI_MOUNT_IMAGE:-}" \
     AFSCP_STORAGE_CSI_NAMESPACE="${AFSCP_STORAGE_CSI_NAMESPACE:-}" \
+    AFSCP_BASE_URL="${AFSCP_BASE_URL}" \
+    AFSCP_EXPORT_GATEWAY_BASE_URL="${AFSCP_EXPORT_GATEWAY_BASE_URL}" \
+    AFSCP_DEFAULT_VOLUME_ID="${AFSCP_DEFAULT_VOLUME_ID}" \
+    AFSCP_CALLER_SERVICE="${AFSCP_CALLER_SERVICE}" \
+    AFSCP_SERVICE_TOKEN="${AFSCP_SERVICE_TOKEN}" \
+    AFSCP_BOOTSTRAP_CALLER_SERVICE="${AFSCP_BOOTSTRAP_CALLER_SERVICE}" \
+    AFSCP_BOOTSTRAP_SERVICE_TOKEN="${AFSCP_BOOTSTRAP_SERVICE_TOKEN}" \
+    AFSCP_ORCHESTRATOR_CALLER_SERVICE="${AFSCP_ORCHESTRATOR_CALLER_SERVICE}" \
+    AFSCP_ORCHESTRATOR_SERVICE_TOKEN="${AFSCP_ORCHESTRATOR_SERVICE_TOKEN}" \
     AFSCP_SUBSTRATE_OBJECT_STORAGE_ENDPOINT="${AFSCP_SUBSTRATE_OBJECT_STORAGE_ENDPOINT:-}" \
     INTEGRATION_INTERNAL_AGENT_IMAGE="${INTEGRATION_INTERNAL_AGENT_IMAGE:-}" \
     INTEGRATION_INTERNAL_AGENT_BASE_IMAGE="${INTEGRATION_INTERNAL_AGENT_BASE_IMAGE:-}" \

@@ -433,7 +433,7 @@ async function createTaskViaUi(args: {
   const createResponse = await createResponsePromise;
   if (!createResponse.ok()) {
     const body = await createResponse.text().catch(() => '');
-    throw new Error(`task_create_failed:${createResponse.status}:${body}`);
+    throw new Error(`task_create_failed:${createResponse.status()}:${body}`);
   }
   await page.waitForURL(new RegExp(`/${LOCALE}/workspaces/${workspaceId}/projects/${projectId}/agent-tasks/.+`), {
     timeout: 30_000,
@@ -524,6 +524,17 @@ async function openWorkspaceFilesRoot(args: {
   await expect(libraryItem).toBeVisible({ timeout: 30_000 });
   await libraryItem.click();
   await expect(args.page.getByTestId('files__objects-table')).toBeVisible({ timeout: 30_000 });
+}
+
+async function openTaskWorkspaceArtifactsFolder(args: {
+  page: Page;
+  workspaceId: string;
+  projectId: string;
+  workspaceName: string;
+}): Promise<void> {
+  await openWorkspaceFilesRoot(args);
+  await openFolderByName(args.page, 'workspace');
+  await openFolderByName(args.page, '.artifacts');
 }
 
 async function openFolderByName(page: Page, name: string): Promise<void> {
@@ -735,9 +746,13 @@ test.describe('@lane-real release user story end-to-end', () => {
         title: `Managed Agent Task Runner ${Date.now()}`,
       });
       await gotoWithRetry(page, `/${LOCALE}/workspaces/${workspaceId}/projects/${projectId}/agent-runners`);
-      await expect(page.getByTestId('agent-runners__table')).toBeVisible({ timeout: 30_000 });
-      await captureTrace('agent-runners-managed-list', 'Review Agent Runners', 'agent-runners__table', '托管 Agent Runner 已创建');
-      await captureTrace('agent-runners-managed-health', 'Review managed Agent Runner', 'agent-runners__table', '托管 Agent Runner 的健康状态可见');
+      await expect(page.getByTestId('agent-runners__project-default-status')).toBeVisible({ timeout: 30_000 });
+      await expect(page.getByTestId('agent-runners__system-managed-section')).toBeVisible({ timeout: 30_000 });
+      const systemManagedTable = page.getByTestId('agent-runners__system-managed-table');
+      await expect(systemManagedTable).toBeVisible({ timeout: 30_000 });
+      await expect(systemManagedTable.locator('[data-testid="agent-runners__system-managed-table__row"]').first()).toBeVisible({ timeout: 30_000 });
+      await captureTrace('agent-runners-managed-list', 'Review Agent Runners', 'agent-runners__system-managed-table', '托管 Agent Runner 已创建');
+      await captureTrace('agent-runners-managed-health', 'Review managed Agent Runner', 'agent-runners__project-default-status', '托管 Agent Runner 的健康状态可见');
 
       await loginToWorkspace(page, workspaceId, MEMBER_USERNAME, MEMBER_PASSWORD);
       await captureTrace('member-workspace-home', 'Return as member', 'projects__heading', '成员重新进入 workspace');
@@ -780,15 +795,14 @@ test.describe('@lane-real release user story end-to-end', () => {
         expectedPath: managedCreateFlow.turnTwo.expectedArtifactPath,
       });
       const managedSummaryName = managedCreateFlow.turnTwo.expectedArtifactPath.split('/').pop() ?? managedCreateFlow.turnTwo.expectedArtifactPath;
-      await openWorkspaceFilesRoot({
+      await openTaskWorkspaceArtifactsFolder({
         page,
         workspaceId,
         projectId,
         workspaceName: managedTaskOne.workspaceName,
       });
-      await openFolderByName(page, '.artifacts');
       await expect(page.getByText(managedSummaryName)).toBeVisible({ timeout: 30_000 });
-      await captureTrace('files-artifacts-managed', 'Inspect generated artifacts', 'files__objects-table', 'managed Agent Task .artifacts visible');
+      await captureTrace('files-artifacts-managed', 'Inspect generated artifacts', 'files__objects-table', 'managed Agent Task workspace/.artifacts visible');
 
       await loginToWorkspace(page, workspaceId, MEMBER_USERNAME, MEMBER_PASSWORD);
       await gotoWithRetry(page, `/${LOCALE}/workspaces/${workspaceId}/projects/${projectId}/agent-tasks/${managedTaskOne.taskId}`);
@@ -848,12 +862,30 @@ test.describe('@lane-real release user story end-to-end', () => {
       await captureTrace('agent-task-detail-managed-reuse', 'Review reused workspace task', 'agent-task__task-header', 'managed Agent Task B reused workspace');
 
       if (DEMO_MODE_IS_FULL) {
+        await loginToWorkspace(page, workspaceId, KEYCLOAK_DEV_ADMIN_USERNAME, KEYCLOAK_DEV_ADMIN_PASSWORD);
         await createManagedAgentRunnerViaApi(page, {
           workspaceId,
           projectId,
           endpointId: secondaryEndpointId,
           title: `Managed Continuity Runner ${Date.now()}`,
         });
+        await gotoWithRetry(page, `/${LOCALE}/workspaces/${workspaceId}/projects/${projectId}/agent-runners`);
+        await expect(page.getByTestId('agent-runners__project-default-status')).toBeVisible({ timeout: 30_000 });
+        await captureTrace(
+          'managed-continuity-governance-config',
+          'Configure managed continuity runner',
+          'agent-runners__project-default-status',
+          '项目所有者执行治理配置：切换到 secondary endpoint 的托管 Agent Runner',
+        );
+
+        await loginToWorkspace(page, workspaceId, MEMBER_USERNAME, MEMBER_PASSWORD);
+        await captureTrace(
+          'member-workspace-home-after-governance-config',
+          'Return as member after managed runner config',
+          'projects__heading',
+          '普通成员重新进入 workspace，继续使用托管 Agent Runner',
+        );
+
         const internalTask = await createTaskViaUi({
           page,
           workspaceId,
@@ -891,15 +923,14 @@ test.describe('@lane-real release user story end-to-end', () => {
           expectedPath: internalFlow.turnTwo.expectedArtifactPath,
         });
         const internalSummaryName = internalFlow.turnTwo.expectedArtifactPath.split('/').pop() ?? internalFlow.turnTwo.expectedArtifactPath;
-        await openWorkspaceFilesRoot({
+        await openTaskWorkspaceArtifactsFolder({
           page,
           workspaceId,
           projectId,
           workspaceName: internalTask.workspaceName,
         });
-        await openFolderByName(page, '.artifacts');
         await expect(page.getByText(internalSummaryName)).toBeVisible({ timeout: 30_000 });
-        await captureTrace('files-artifacts-managed-continuity', 'Inspect managed continuity artifacts', 'files__objects-table', 'managed Agent Task 的 .artifacts 已可见');
+        await captureTrace('files-artifacts-managed-continuity', 'Inspect managed continuity artifacts', 'files__objects-table', 'managed Agent Task 的 workspace/.artifacts 已可见');
 
         await loginToWorkspace(page, workspaceId, MEMBER_USERNAME, MEMBER_PASSWORD);
       }

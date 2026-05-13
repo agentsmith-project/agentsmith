@@ -2,49 +2,39 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import { searchKeycloakDirectoryUsers } from './keycloak-user-directory.js';
 
-const originalKeycloakAdmin = process.env.KEYCLOAK_ADMIN;
-const originalKeycloakAdminPassword = process.env.KEYCLOAK_ADMIN_PASSWORD;
-const originalKeycloakAdminClientId = process.env.KEYCLOAK_ADMIN_CLIENT_ID;
+const originalPublicKeycloakBaseUrl = process.env.PUBLIC_KEYCLOAK_BASE_URL;
+const originalInternalKeycloakBaseUrl = process.env.INTERNAL_KEYCLOAK_BASE_URL;
 
 afterEach(() => {
-  if (originalKeycloakAdmin === undefined) {
-    delete process.env.KEYCLOAK_ADMIN;
+  if (originalPublicKeycloakBaseUrl === undefined) {
+    delete process.env.PUBLIC_KEYCLOAK_BASE_URL;
   } else {
-    process.env.KEYCLOAK_ADMIN = originalKeycloakAdmin;
+    process.env.PUBLIC_KEYCLOAK_BASE_URL = originalPublicKeycloakBaseUrl;
   }
-  if (originalKeycloakAdminPassword === undefined) {
-    delete process.env.KEYCLOAK_ADMIN_PASSWORD;
+  if (originalInternalKeycloakBaseUrl === undefined) {
+    delete process.env.INTERNAL_KEYCLOAK_BASE_URL;
   } else {
-    process.env.KEYCLOAK_ADMIN_PASSWORD = originalKeycloakAdminPassword;
-  }
-  if (originalKeycloakAdminClientId === undefined) {
-    delete process.env.KEYCLOAK_ADMIN_CLIENT_ID;
-  } else {
-    process.env.KEYCLOAK_ADMIN_CLIENT_ID = originalKeycloakAdminClientId;
+    process.env.INTERNAL_KEYCLOAK_BASE_URL = originalInternalKeycloakBaseUrl;
   }
   vi.unstubAllGlobals();
 });
 
 describe('keycloak user directory', () => {
-  it('fails closed instead of falling back to admin/admin when admin credentials are missing', async () => {
-    delete process.env.KEYCLOAK_ADMIN;
-    delete process.env.KEYCLOAK_ADMIN_PASSWORD;
+  it('fails closed when workspace directory client credentials are missing', async () => {
     const fetchMock = vi.fn();
     vi.stubGlobal('fetch', fetchMock);
 
     await expect(searchKeycloakDirectoryUsers({
       url: 'http://keycloak:8080',
       realm: 'agentsmith',
+      clientId: 'agentsmith-directory',
       query: 'user@example.com',
-    })).rejects.toThrow(/KEYCLOAK_ADMIN and KEYCLOAK_ADMIN_PASSWORD must be configured/u);
+    })).rejects.toThrow(/workspace directory client credentials must be configured/u);
 
     expect(fetchMock).not.toHaveBeenCalled();
   });
 
-  it('uses explicit admin credentials and the admin-cli client id by default', async () => {
-    process.env.KEYCLOAK_ADMIN = 'agentsmith-admin';
-    process.env.KEYCLOAK_ADMIN_PASSWORD = 'admin-secret';
-    delete process.env.KEYCLOAK_ADMIN_CLIENT_ID;
+  it('uses the workspace directory client credentials against the configured realm', async () => {
     const fetchMock = vi.fn()
       .mockResolvedValueOnce(new Response(JSON.stringify({ access_token: 'token-1' }), { status: 200 }))
       .mockResolvedValueOnce(new Response(JSON.stringify([]), { status: 200 }))
@@ -54,13 +44,36 @@ describe('keycloak user directory', () => {
     await searchKeycloakDirectoryUsers({
       url: 'http://keycloak:8080',
       realm: 'agentsmith',
+      clientId: 'agentsmith-directory',
+      clientSecret: 'directory-secret',
       query: 'user@example.com',
     });
 
+    expect(fetchMock.mock.calls[0]?.[0]).toBe('http://keycloak:8080/realms/agentsmith/protocol/openid-connect/token');
     const body = String(asRecord(fetchMock.mock.calls[0]?.[1]).body);
-    expect(body).toContain('client_id=admin-cli');
-    expect(body).toContain('username=agentsmith-admin');
-    expect(body).toContain('password=admin-secret');
+    expect(body).toContain('grant_type=client_credentials');
+    expect(body).toContain('client_id=agentsmith-directory');
+    expect(body).toContain('client_secret=directory-secret');
+  });
+
+  it('uses the internal keycloak base when the workspace stores the public base', async () => {
+    process.env.PUBLIC_KEYCLOAK_BASE_URL = 'http://public-keycloak.example';
+    process.env.INTERNAL_KEYCLOAK_BASE_URL = 'http://keycloak:8080';
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce(new Response(JSON.stringify({ access_token: 'token-1' }), { status: 200 }))
+      .mockResolvedValueOnce(new Response(JSON.stringify([]), { status: 200 }));
+    vi.stubGlobal('fetch', fetchMock);
+
+    await searchKeycloakDirectoryUsers({
+      url: 'http://public-keycloak.example',
+      realm: 'agentsmith',
+      clientId: 'agentsmith-directory',
+      clientSecret: 'directory-secret',
+      query: 'user',
+    });
+
+    expect(fetchMock.mock.calls[0]?.[0]).toBe('http://keycloak:8080/realms/agentsmith/protocol/openid-connect/token');
+    expect(fetchMock.mock.calls[1]?.[0]).toBe('http://keycloak:8080/admin/realms/agentsmith/users?search=user&max=10');
   });
 });
 

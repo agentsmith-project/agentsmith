@@ -239,6 +239,17 @@ function deploymentContainer(
     .find((item) => item.name === containerName) ?? {};
 }
 
+function podSpecContainer(
+  podSpec: Record<string, unknown>,
+  containerListName: 'containers' | 'initContainers',
+  containerName: string,
+): Record<string, unknown> {
+  const containers = Array.isArray(podSpec[containerListName]) ? podSpec[containerListName] : [];
+  return containers
+    .map(asRecord)
+    .find((item) => item.name === containerName) ?? {};
+}
+
 function deploymentContainerEnvFrom(
   documents: readonly Record<string, unknown>[],
   deploymentName: string,
@@ -412,6 +423,8 @@ describe('unified deploy render producer', () => {
         'Role/agentsmith-sandbox-manager',
         'RoleBinding/agentsmith-sandbox-manager',
         'ConfigMap/sandbox-manager-config',
+        'Job/afscp-schema-bootstrap',
+        'Job/afscp-volume-bootstrap',
         'PersistentVolume/agentsmith-afscp-default-volume',
         'PersistentVolumeClaim/afscp-default-volume',
         'ConfigMap/agentsmith-llmup-config',
@@ -626,6 +639,14 @@ describe('unified deploy render producer', () => {
     const afscpApi = deploymentContainer(documents, 'afscp-api', 'afscp-api');
     const afscpWorker = deploymentContainer(documents, 'afscp-worker', 'afscp-worker');
     const exportGateway = deploymentContainer(documents, 'afscp-export-gateway', 'afscp-export-gateway');
+    const schemaJob = findResource(documents, 'Job', 'afscp-schema-bootstrap');
+    const schemaJobSpec = asRecord(schemaJob.spec);
+    const schemaJobPodSpec = asRecord(asRecord(schemaJobSpec.template).spec);
+    const schemaJobContainer = podSpecContainer(schemaJobPodSpec, 'containers', 'afscp-schema-bootstrap');
+    const volumeJob = findResource(documents, 'Job', 'afscp-volume-bootstrap');
+    const volumeJobSpec = asRecord(volumeJob.spec);
+    const volumeJobPodSpec = asRecord(asRecord(volumeJobSpec.template).spec);
+    const volumeJobContainer = podSpecContainer(volumeJobPodSpec, 'containers', 'afscp-volume-bootstrap');
     const persistentVolume = findResource(documents, 'PersistentVolume', 'agentsmith-afscp-default-volume');
     const persistentVolumeClaim = findResource(documents, 'PersistentVolumeClaim', 'afscp-default-volume');
     const persistentVolumeSpec = asRecord(persistentVolume.spec);
@@ -651,8 +672,47 @@ describe('unified deploy render producer', () => {
     expect(config.AFSCP_RESTORE_PREVIEW_RECOVERY_ENABLED).toBe('true');
     expect(config.AFSCP_RESTORE_PREVIEW_DISCARD_RECOVERY_ENABLED).toBe('true');
     expect(config.AFSCP_RESTORE_RUN_RECOVERY_ENABLED).toBe('true');
+    expect(config.AFSCP_API_WEBDAV_EXPORT_PUBLIC_BASE_URL).toBe('http://afscp-export-gateway.agentsmith.svc.cluster.local:8080');
+    expect(`${config.AFSCP_API_WEBDAV_EXPORT_PUBLIC_BASE_URL}/e/export_render_regression/`).not.toContain('/e/e/');
+    expect(config.AFSCP_DEFAULT_VOLUME_ID).toBe('vol_agentsmith_default');
+    expect(config.AFSCP_DEFAULT_VOLUME_BACKEND).toBe('juicefs');
+    expect(config.AFSCP_DEFAULT_VOLUME_ISOLATION_CLASS).toBe('shared');
+    expect(config.AFSCP_DEFAULT_VOLUME_STATUS).toBe('active');
+    expect(config.AFSCP_DEFAULT_VOLUME_ROOT_PATH).toBe('/var/lib/afscp/volumes/default');
+    expect(JSON.parse(String(config.AFSCP_DEFAULT_VOLUME_CAPABILITIES_JSON))).toEqual({
+      webdav_export: true,
+      workload_mount: true,
+      jvs_external_control_root: true,
+      directory_quota: false,
+      filtered_mount: false,
+      csi_driver: 'csi.juicefs.com',
+      storage_class: 'static-juicefs-rwx',
+      permission_model: 'payload-root-only',
+    });
     expect(afscpApi.image).toBe(afscpWorker.image);
     expect(exportGateway.image).toBe(afscpApi.image);
+    expect(schemaJobSpec.backoffLimit).toBe(0);
+    expect(schemaJobSpec.ttlSecondsAfterFinished).toBe(86400);
+    expect(schemaJobPodSpec.restartPolicy).toBe('Never');
+    expect(schemaJobPodSpec.serviceAccountName).toBe('afscp-runtime');
+    expect(schemaJobContainer.image).toBe(afscpApi.image);
+    expect(schemaJobContainer.command).toEqual(['/usr/local/bin/afscp-migrate']);
+    expect(schemaJobContainer.args).toEqual(['--apply', '--check', '--timeout=60s']);
+    expect(schemaJobContainer.envFrom).toEqual(expect.arrayContaining([
+      { configMapRef: { name: 'afscp-runtime-config' } },
+      { secretRef: { name: 'afscp-runtime-secrets' } },
+    ]));
+    expect(volumeJobSpec.backoffLimit).toBe(0);
+    expect(volumeJobSpec.ttlSecondsAfterFinished).toBe(86400);
+    expect(volumeJobPodSpec.restartPolicy).toBe('Never');
+    expect(volumeJobPodSpec.serviceAccountName).toBe('afscp-runtime');
+    expect(volumeJobContainer.image).toBe(afscpApi.image);
+    expect(volumeJobContainer.command).toEqual(['/usr/local/bin/afscp-volume-bootstrap']);
+    expect(volumeJobContainer.args).toEqual(['--ensure', '--check', '--timeout=60s']);
+    expect(volumeJobContainer.envFrom).toEqual(expect.arrayContaining([
+      { configMapRef: { name: 'afscp-runtime-config' } },
+      { secretRef: { name: 'afscp-runtime-secrets' } },
+    ]));
     expect(afscpApi.command).toEqual(['/usr/local/bin/afscp-api']);
     expect(afscpApi.args).toEqual(['--serve', '--listen', '0.0.0.0:8080']);
     expect(afscpWorker.command).toEqual(['/usr/local/bin/afscp-worker']);
@@ -697,7 +757,15 @@ describe('unified deploy render producer', () => {
       const podSpec = deploymentPodSpec(documents, deploymentName);
       const volumes = Array.isArray(podSpec.volumes) ? podSpec.volumes.map(asRecord) : [];
       const container = deploymentContainer(documents, deploymentName, deploymentName);
+      const initContainer = podSpecContainer(podSpec, 'initContainers', 'afscp-schema-check');
       const volumeMounts = Array.isArray(container.volumeMounts) ? container.volumeMounts.map(asRecord) : [];
+      expect(initContainer.image).toBe(afscpApi.image);
+      expect(initContainer.command).toEqual(['/usr/local/bin/afscp-migrate']);
+      expect(initContainer.args).toEqual(['--check', '--timeout=60s']);
+      expect(initContainer.envFrom).toEqual(expect.arrayContaining([
+        { configMapRef: { name: 'afscp-runtime-config' } },
+        { secretRef: { name: 'afscp-runtime-secrets' } },
+      ]));
       expect(volumes).toEqual(expect.arrayContaining([
         {
           name: 'afscp-default-volume',
@@ -761,6 +829,20 @@ describe('unified deploy render producer', () => {
 
     expect(text).toContain('AFSCP_JVS_BINARY_PATH must come from the AFSCP image default');
     expect(text).toContain('AFSCP_JVS_BINARY_SHA256 must come from the AFSCP image default');
+  });
+
+  it('rejects AFSCP WebDAV export public base URLs that include the gateway prefix', async () => {
+    const rendered = await renderUnifiedDeployFromFiles({ profile: 'local-kind' });
+    const documents = parsedDocuments(rendered.output);
+    const config = asRecord(findResource(documents, 'ConfigMap', 'afscp-runtime-config').data);
+    config.AFSCP_API_WEBDAV_EXPORT_PUBLIC_BASE_URL = 'http://afscp-export-gateway.agentsmith.svc.cluster.local:8080/e';
+
+    const text = checkRenderedOutput(stringifyDocuments(documents)).failures
+      .map((failure) => failure.message)
+      .join('\n');
+
+    expect(text).toContain('without the /e gateway prefix');
+    expect(text).toContain('/e/e/');
   });
 
   it('rejects AFSCP pods that use unsupported inline JuiceFS CSI volumes', async () => {
@@ -838,6 +920,22 @@ describe('unified deploy render producer', () => {
 
     expect(text).toContain('storage quantity must be 12P');
     expect(text).toContain('pre-GA 10Pi baseline');
+  });
+
+  it('rejects AFSCP default volume bootstrap jobs that use the nonexistent apply flag', async () => {
+    const rendered = await renderUnifiedDeployFromFiles({ profile: 'local-kind' });
+    const documents = parsedDocuments(rendered.output);
+    const volumeJob = findResource(documents, 'Job', 'afscp-volume-bootstrap');
+    const volumeJobSpec = asRecord(volumeJob.spec);
+    const volumeJobPodSpec = asRecord(asRecord(volumeJobSpec.template).spec);
+    const volumeJobContainer = podSpecContainer(volumeJobPodSpec, 'containers', 'afscp-volume-bootstrap');
+    volumeJobContainer.args = ['--apply', '--check', '--timeout=60s'];
+
+    const text = checkRenderedOutput(stringifyDocuments(documents)).failures
+      .map((failure) => failure.message)
+      .join('\n');
+
+    expect(text).toContain('/usr/local/bin/afscp-volume-bootstrap --ensure --check --timeout=60s');
   });
 
   it('renders the sandbox-manager startup contract without leaking storage secrets through ConfigMaps', async () => {

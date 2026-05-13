@@ -23,6 +23,8 @@ const REQUIRED_APP_COMPONENTS = [
   'api',
   'llmup',
   'afscp-api',
+  'afscp-schema-bootstrap',
+  'afscp-volume-bootstrap',
   'afscp-worker',
   'afscp-export-gateway',
   'sandbox-manager',
@@ -348,7 +350,7 @@ function checkApp(manifest: Record<string, unknown>, failures: CheckFailure[]): 
   const components = asRecord(asRecord(manifest.app).components);
   const componentNames = Object.keys(components);
   if (!sameSet(componentNames, REQUIRED_APP_COMPONENTS)) {
-    addFailure(failures, 'app components must be exactly web, api, llmup, afscp-api, afscp-worker, afscp-export-gateway, sandbox-manager, managed-runner-support');
+    addFailure(failures, `app components must be exactly ${REQUIRED_APP_COMPONENTS.join(', ')}`);
   }
 
   if (componentNames.includes('execution-gateway')) {

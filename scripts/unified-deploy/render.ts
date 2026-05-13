@@ -90,6 +90,16 @@ const NUMERIC_ENV = new Set([
   'SUBSTRATE_KEYCLOAK_PORT',
 ]);
 const ROLLOUT_CHECKSUM_PLACEHOLDER = `sha256:${'0'.repeat(64)}`;
+const DEFAULT_AFSCP_VOLUME_CAPABILITIES = {
+  webdav_export: true,
+  workload_mount: true,
+  jvs_external_control_root: true,
+  directory_quota: false,
+  filtered_mount: false,
+  csi_driver: 'csi.juicefs.com',
+  storage_class: 'static-juicefs-rwx',
+  permission_model: 'payload-root-only',
+} as const;
 
 function resolvePath(targetPath: string | undefined, fallback: string): string {
   if (!targetPath) {
@@ -287,6 +297,10 @@ function buildContext(profile: UnifiedDeployProfile, env: Record<string, string>
     AFSCP_DEFAULT_VOLUME_PV_NAME: `${namespace}-afscp-default-volume`,
     AFSCP_DEFAULT_VOLUME_STORAGE_QUANTITY: '12P',
     AFSCP_VOLUME_ROOT_PATH: '/var/lib/afscp/volumes/default',
+    AFSCP_DEFAULT_VOLUME_BACKEND: 'juicefs',
+    AFSCP_DEFAULT_VOLUME_ISOLATION_CLASS: 'shared',
+    AFSCP_DEFAULT_VOLUME_STATUS: 'active',
+    AFSCP_DEFAULT_VOLUME_CAPABILITIES_JSON: JSON.stringify(DEFAULT_AFSCP_VOLUME_CAPABILITIES),
     AFSCP_JVS_CWD_PATH: '/var/lib/afscp/jvs-cwd',
     SUBSTRATE_KEYCLOAK_PUBLIC_BASE_URL: publicKeycloakBaseUrl,
     SUBSTRATE_KEYCLOAK_PUBLIC_REALMS_BASE_URL: `${publicKeycloakBaseUrl}/realms`,

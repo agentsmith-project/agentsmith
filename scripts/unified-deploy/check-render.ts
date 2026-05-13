@@ -56,6 +56,9 @@ const AFSCP_RUNTIME_CONFIG_MAP = 'afscp-runtime-config';
 const AFSCP_RUNTIME_SECRET = 'afscp-runtime-secrets';
 const AFSCP_VOLUME_SECRET = 'afscp-default-volume-juicefs';
 const AFSCP_VOLUME_PVC = 'afscp-default-volume';
+const AFSCP_SCHEMA_BOOTSTRAP_JOB = 'afscp-schema-bootstrap';
+const AFSCP_VOLUME_BOOTSTRAP_JOB = 'afscp-volume-bootstrap';
+const AFSCP_SCHEMA_CHECK_INIT_CONTAINER = 'afscp-schema-check';
 const AFSCP_VOLUME_STORAGE_QUANTITY = '12P';
 const AFSCP_VOLUME_ROOT_PATH = '/var/lib/afscp/volumes/default';
 const AFSCP_JVS_CWD_VOLUME = 'afscp-jvs-cwd';
@@ -196,6 +199,8 @@ function checkRequiredResources(documents: readonly Record<string, unknown>[], f
     ['ConfigMap', AFSCP_RUNTIME_CONFIG_MAP],
     ['Secret', AFSCP_RUNTIME_SECRET],
     ['Secret', AFSCP_VOLUME_SECRET],
+    ['Job', AFSCP_SCHEMA_BOOTSTRAP_JOB],
+    ['Job', AFSCP_VOLUME_BOOTSTRAP_JOB],
     ['ServiceAccount', SANDBOX_MANAGER_SERVICE_ACCOUNT],
     ['Role', SANDBOX_MANAGER_SERVICE_ACCOUNT],
     ['RoleBinding', SANDBOX_MANAGER_SERVICE_ACCOUNT],
@@ -462,6 +467,17 @@ function deploymentContainer(
   );
   const podSpec = asRecord(asRecord(asRecord(asRecord(deployment).spec).template).spec);
   const containers = Array.isArray(podSpec.containers) ? podSpec.containers : [];
+  return containers
+    .map(asRecord)
+    .find((item) => item.name === containerName) ?? {};
+}
+
+function podSpecContainer(
+  podSpec: Record<string, unknown>,
+  containerListName: 'containers' | 'initContainers',
+  containerName: string,
+): Record<string, unknown> {
+  const containers = Array.isArray(podSpec[containerListName]) ? podSpec[containerListName] : [];
   return containers
     .map(asRecord)
     .find((item) => item.name === containerName) ?? {};
@@ -827,6 +843,136 @@ function checkAfscpEnvFrom(
   }
 }
 
+function checkAfscpBootstrapJob(
+  documents: readonly Record<string, unknown>[],
+  namespace: string,
+  afscpImage: unknown,
+  jobName: typeof AFSCP_SCHEMA_BOOTSTRAP_JOB | typeof AFSCP_VOLUME_BOOTSTRAP_JOB,
+  command: string,
+  args: readonly string[],
+  label: string,
+  failures: CheckFailure[],
+): void {
+  const job = resourceByKindName(documents, 'Job', jobName);
+  const jobSpec = asRecord(job.spec);
+  const podSpec = asRecord(asRecord(jobSpec.template).spec);
+  const container = podSpecContainer(podSpec, 'containers', jobName);
+
+  if (resourceName(job) !== jobName || resourceNamespace(job) !== namespace) {
+    addFailure(failures, `Job/${jobName}`, `${label} Job must be namespace-local`);
+  }
+  if (jobSpec.backoffLimit !== 0 || jobSpec.ttlSecondsAfterFinished !== 86400) {
+    addFailure(failures, `Job/${jobName}`, `${label} Job must fail fast and retain short-lived completion evidence`);
+  }
+  if (podSpec.restartPolicy !== 'Never') {
+    addFailure(failures, `Job/${jobName}`, `${label} Job must leave a failed Pod for diagnostics`);
+  }
+  if (podSpec.serviceAccountName !== AFSCP_RUNTIME_SERVICE_ACCOUNT) {
+    addFailure(failures, `Job/${jobName}`, `${label} Job must use the dedicated AFSCP ServiceAccount`);
+  }
+  if (container.image !== afscpImage) {
+    addFailure(failures, `Job/${jobName}`, `${label} Job must use the same AFSCP runtime image`);
+  }
+  if (
+    stringArray(container.command).join('\0') !== command
+    || stringArray(container.args).join('\0') !== args.join('\0')
+  ) {
+    addFailure(failures, `Job/${jobName}`, `${label} Job must run ${command} ${args.join(' ')}`);
+  }
+  const envFrom = Array.isArray(container.envFrom) ? container.envFrom.map(asRecord) : [];
+  if (!hasEnvFromRef(envFrom, 'configMapRef', AFSCP_RUNTIME_CONFIG_MAP) || !hasEnvFromRef(envFrom, 'secretRef', AFSCP_RUNTIME_SECRET)) {
+    addFailure(failures, `Job/${jobName}`, `${label} Job must consume the AFSCP runtime config and secrets`);
+  }
+}
+
+function checkAfscpSchemaInitContainer(
+  documents: readonly Record<string, unknown>[],
+  deploymentName: string,
+  afscpImage: unknown,
+  failures: CheckFailure[],
+): void {
+  const podSpec = deploymentPodSpec(documents, deploymentName);
+  const init = podSpecContainer(podSpec, 'initContainers', AFSCP_SCHEMA_CHECK_INIT_CONTAINER);
+  if (init.image !== afscpImage) {
+    addFailure(failures, `Deployment/${deploymentName}`, `${deploymentName} must run the AFSCP schema check init container with the same image`);
+  }
+  if (
+    stringArray(init.command).join('\0') !== '/usr/local/bin/afscp-migrate'
+    || stringArray(init.args).join('\0') !== ['--check', '--timeout=60s'].join('\0')
+  ) {
+    addFailure(failures, `Deployment/${deploymentName}`, `${deploymentName} must gate startup on afscp-migrate --check`);
+  }
+  const envFrom = Array.isArray(init.envFrom) ? init.envFrom.map(asRecord) : [];
+  if (!hasEnvFromRef(envFrom, 'configMapRef', AFSCP_RUNTIME_CONFIG_MAP) || !hasEnvFromRef(envFrom, 'secretRef', AFSCP_RUNTIME_SECRET)) {
+    addFailure(failures, `Deployment/${deploymentName}`, `${deploymentName} schema check init container must consume the AFSCP runtime config and secrets`);
+  }
+}
+
+function checkAfscpDefaultVolumeBootstrapConfig(
+  config: Record<string, unknown>,
+  defaultVolumeId: string,
+  failures: CheckFailure[],
+): void {
+  const expectedScalarValues = new Map([
+    ['AFSCP_DEFAULT_VOLUME_ID', defaultVolumeId],
+    ['AFSCP_DEFAULT_VOLUME_BACKEND', 'juicefs'],
+    ['AFSCP_DEFAULT_VOLUME_ISOLATION_CLASS', 'shared'],
+    ['AFSCP_DEFAULT_VOLUME_STATUS', 'active'],
+    ['AFSCP_DEFAULT_VOLUME_ROOT_PATH', AFSCP_VOLUME_ROOT_PATH],
+  ]);
+
+  for (const [key, expected] of expectedScalarValues) {
+    if (config[key] !== expected) {
+      addFailure(
+        failures,
+        `ConfigMap/${AFSCP_RUNTIME_CONFIG_MAP}`,
+        `${key} must explicitly describe the default AFSCP volume bootstrap spec`,
+      );
+    }
+  }
+
+  const rawCapabilities = config.AFSCP_DEFAULT_VOLUME_CAPABILITIES_JSON;
+  if (typeof rawCapabilities !== 'string' || !rawCapabilities.trim()) {
+    addFailure(
+      failures,
+      `ConfigMap/${AFSCP_RUNTIME_CONFIG_MAP}`,
+      'AFSCP_DEFAULT_VOLUME_CAPABILITIES_JSON must explicitly describe default volume capabilities',
+    );
+    return;
+  }
+
+  let capabilities: Record<string, unknown>;
+  try {
+    capabilities = asRecord(JSON.parse(rawCapabilities) as unknown);
+  } catch {
+    addFailure(
+      failures,
+      `ConfigMap/${AFSCP_RUNTIME_CONFIG_MAP}`,
+      'AFSCP_DEFAULT_VOLUME_CAPABILITIES_JSON must be valid JSON',
+    );
+    return;
+  }
+
+  for (const [key, expected] of [
+    ['webdav_export', true],
+    ['workload_mount', true],
+    ['jvs_external_control_root', true],
+    ['directory_quota', false],
+    ['filtered_mount', false],
+    ['csi_driver', 'csi.juicefs.com'],
+    ['storage_class', 'static-juicefs-rwx'],
+    ['permission_model', 'payload-root-only'],
+  ] as const) {
+    if (capabilities[key] !== expected) {
+      addFailure(
+        failures,
+        `ConfigMap/${AFSCP_RUNTIME_CONFIG_MAP}`,
+        `AFSCP default volume capabilities must set ${key}=${String(expected)}`,
+      );
+    }
+  }
+}
+
 function checkAfscpContract(documents: readonly Record<string, unknown>[], failures: CheckFailure[]): void {
   const apiDeployment = resourceByKindName(documents, 'Deployment', 'afscp-api');
   const config = asRecord(resourceByKindName(documents, 'ConfigMap', AFSCP_RUNTIME_CONFIG_MAP).data);
@@ -864,6 +1010,7 @@ function checkAfscpContract(documents: readonly Record<string, unknown>[], failu
     }
   }
   const defaultVolumeId = `${config.AFSCP_API_VOLUME_ROOTS ?? ''}`.split('=')[0];
+  checkAfscpDefaultVolumeBootstrapConfig(config, defaultVolumeId, failures);
   checkAfscpPersistentVolumeResources(documents, namespace, defaultVolumeId, failures);
   for (const [key, expected] of [
     ['AFSCP_STORAGE_ENABLED', 'true'],
@@ -888,8 +1035,12 @@ function checkAfscpContract(documents: readonly Record<string, unknown>[], failu
       addFailure(failures, `ConfigMap/${AFSCP_RUNTIME_CONFIG_MAP}`, `${key} must be ${expected}`);
     }
   }
-  if (config.AFSCP_API_WEBDAV_EXPORT_PUBLIC_BASE_URL !== `http://afscp-export-gateway.${namespace}.svc.cluster.local:8080/e`) {
-    addFailure(failures, `ConfigMap/${AFSCP_RUNTIME_CONFIG_MAP}`, 'AFSCP WebDAV export URL must point to the internal export gateway Service');
+  const webDAVExportPublicBaseURL = String(config.AFSCP_API_WEBDAV_EXPORT_PUBLIC_BASE_URL ?? '');
+  if (webDAVExportPublicBaseURL !== `http://afscp-export-gateway.${namespace}.svc.cluster.local:8080`) {
+    addFailure(failures, `ConfigMap/${AFSCP_RUNTIME_CONFIG_MAP}`, 'AFSCP WebDAV export public base URL must point to the internal export gateway Service origin without the /e gateway prefix');
+  }
+  if (webDAVExportPublicBaseURL.replace(/\/+$/u, '').endsWith('/e')) {
+    addFailure(failures, `ConfigMap/${AFSCP_RUNTIME_CONFIG_MAP}`, 'AFSCP WebDAV export public base URL must not include /e; AFSCP API appends /e/{exportId}/ and would render /e/e/ paths');
   }
   for (const key of [
     'AFSCP_DATABASE_URL',
@@ -927,6 +1078,26 @@ function checkAfscpContract(documents: readonly Record<string, unknown>[], failu
   if (!String(afscpImage ?? '').includes('agentsmith-fs-control-plane') || worker.image !== afscpImage || exportGateway.image !== afscpImage) {
     addFailure(failures, 'Deployment/afscp-api', 'AFSCP API, worker, and export gateway must use the same AFSCP runtime image');
   }
+  checkAfscpBootstrapJob(
+    documents,
+    namespace,
+    afscpImage,
+    AFSCP_SCHEMA_BOOTSTRAP_JOB,
+    '/usr/local/bin/afscp-migrate',
+    ['--apply', '--check', '--timeout=60s'],
+    'AFSCP schema bootstrap',
+    failures,
+  );
+  checkAfscpBootstrapJob(
+    documents,
+    namespace,
+    afscpImage,
+    AFSCP_VOLUME_BOOTSTRAP_JOB,
+    '/usr/local/bin/afscp-volume-bootstrap',
+    ['--ensure', '--check', '--timeout=60s'],
+    'AFSCP default volume bootstrap',
+    failures,
+  );
   if (stringArray(api.command).join('\0') !== '/usr/local/bin/afscp-api' || stringArray(api.args).join('\0') !== ['--serve', '--listen', '0.0.0.0:8080'].join('\0')) {
     addFailure(failures, 'Deployment/afscp-api', 'afscp-api must run the internal API server on 0.0.0.0:8080');
   }
@@ -944,6 +1115,7 @@ function checkAfscpContract(documents: readonly Record<string, unknown>[], failu
     if (asRecord(deploymentPodSpec(documents, deploymentName)).serviceAccountName !== AFSCP_RUNTIME_SERVICE_ACCOUNT) {
       addFailure(failures, `Deployment/${deploymentName}`, `${deploymentName} must use the dedicated AFSCP ServiceAccount`);
     }
+    checkAfscpSchemaInitContainer(documents, deploymentName, afscpImage, failures);
     checkAfscpEnvFrom(documents, deploymentName, containerName, failures);
     checkAfscpVolumeMount(documents, deploymentName, containerName, failures);
   }

@@ -80,6 +80,16 @@
         "public": false,
         "internal_only": true
       },
+      "afscp-schema-bootstrap": {
+        "workload": "Job",
+        "public": false,
+        "internal_only": true
+      },
+      "afscp-volume-bootstrap": {
+        "workload": "Job",
+        "public": false,
+        "internal_only": true
+      },
       "afscp-worker": {
         "workload": "Deployment",
         "public": false,

@@ -3,6 +3,7 @@ import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { isIP } from 'node:net';
 import { fileURLToPath } from 'node:url';
+import { MongoJsonDocStore } from '@mbos/adapters-private';
 import { Pool } from 'pg';
 
 import {
@@ -57,6 +58,21 @@ export type ProductFlowCommandRunner = (
   args: string[],
   options?: { env?: Record<string, string | undefined>; cwd?: string; input?: string; timeoutMs?: number },
 ) => Promise<{ exitCode: number; stdout: string; stderr: string }>;
+
+type FileLibraryFailureEvidenceInput = {
+  truth: ProductFlowRuntimeTruth;
+  state: ProductFlowState;
+  fetchImpl: ProductFlowFetch;
+  libraryName: string;
+  requestId: string;
+  responseStatus: number;
+  responseBody: string;
+  backendError: JsonRecord;
+};
+
+type FileLibraryFailureEvidenceProvider = (
+  input: FileLibraryFailureEvidenceInput,
+) => Promise<JsonRecord>;
 
 type KeycloakBootstrapResult = {
   users: {
@@ -147,9 +163,12 @@ type ProductFlowProducerOptions = {
     truth: ProductFlowRuntimeTruth,
     state: ProductFlowState,
   ) => Promise<DefaultManagedRunnerSeedResult>;
+  fileLibraryFailureEvidenceProvider?: FileLibraryFailureEvidenceProvider;
   now?: () => Date;
   agentTaskPolls?: number;
   agentTaskPollIntervalMs?: number;
+  fileLibraryCreateMaxAttempts?: number;
+  fileLibraryCreateRetryBaseMs?: number;
 };
 
 type ProductFlowState = {
@@ -226,6 +245,10 @@ const PRODUCT_FLOW_COMMAND = 'npm run test:unified-deploy:product-flows';
 const PRODUCT_FLOW_PRODUCER = 'unified-deploy-product-flows' as const;
 const DEFAULT_AGENT_TASK_POLLS = 20;
 const DEFAULT_AGENT_TASK_POLL_INTERVAL_MS = 2_000;
+const DEFAULT_FILE_LIBRARY_CREATE_MAX_ATTEMPTS = 8;
+const DEFAULT_FILE_LIBRARY_CREATE_RETRY_BASE_MS = 500;
+const FILE_LIBRARY_CATALOG_COLLECTION = 'project_file_libraries';
+const FILE_LIBRARY_AFSCP_MAPPING_COLLECTION = 'project_file_library_afscp_mappings';
 const FLOW_ORDER: ProductVerificationFlowId[] = [
   'login_profile',
   'workspace_project',
@@ -557,6 +580,26 @@ function itemsArray(record: JsonRecord): JsonRecord[] {
   return Array.isArray(items) ? items.map(asRecord) : [];
 }
 
+function compactJsonRecord(record: Record<string, unknown>): JsonRecord {
+  return Object.fromEntries(
+    Object.entries(record).filter(([, value]) => value !== undefined && value !== ''),
+  );
+}
+
+function firstString(...values: unknown[]): string | undefined {
+  for (const value of values) {
+    if (typeof value === 'string' && value.trim().length > 0) {
+      return value.trim();
+    }
+  }
+  return undefined;
+}
+
+function booleanValue(record: JsonRecord, key: string): boolean | undefined {
+  const value = record[key];
+  return typeof value === 'boolean' ? value : undefined;
+}
+
 function productFlowError(message: string, checks: JsonRecord): Error {
   return Object.assign(new Error(message), { checks });
 }
@@ -570,6 +613,250 @@ function checksFromError(error: unknown): JsonRecord {
 
 function requestId(flow: ProductVerificationFlowId): string {
   return `unified-product-${flow}-${Date.now()}-${Math.random().toString(16).slice(2)}`;
+}
+
+function apiErrorDetailsFromBodyText(status: number, text: string): JsonRecord {
+  try {
+    const payload = asRecord(JSON.parse(text) as unknown);
+    const nestedError = asRecord(payload.error);
+    const details = asRecord(payload.details);
+    const nestedDetails = asRecord(nestedError.details);
+    return compactJsonRecord({
+      status,
+      error_code: firstString(
+        payload.error_code,
+        payload.code,
+        typeof payload.error === 'string' ? payload.error : undefined,
+        nestedError.error_code,
+        nestedError.code,
+      ),
+      message: firstString(payload.message, nestedError.message),
+      operation_id: firstString(
+        payload.operation_id,
+        nestedError.operation_id,
+        details.operation_id,
+        nestedDetails.operation_id,
+      ),
+      correlation_id: firstString(
+        payload.correlation_id,
+        nestedError.correlation_id,
+        details.correlation_id,
+        nestedDetails.correlation_id,
+      ),
+      body_summary: bodySummary(text),
+    });
+  } catch {
+    return compactJsonRecord({
+      status,
+      body_summary: bodySummary(text),
+    });
+  }
+}
+
+function fileLibraryCreateRetryDelayMs(attempt: number, baseMs: number): number {
+  if (baseMs <= 0) {
+    return 0;
+  }
+  return Math.min(baseMs * (2 ** Math.max(0, attempt - 1)), 5_000);
+}
+
+async function sleep(ms: number): Promise<void> {
+  if (ms <= 0) {
+    return;
+  }
+  await new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+function fileLibraryMappingId(input: { workspaceId: string; projectId: string; libraryId: string }): string {
+  return `${input.workspaceId}:${input.projectId}:${input.libraryId}`;
+}
+
+function recordTimestampMs(record: JsonRecord): number {
+  const timestamp = stringValue(record, 'updated_at') || stringValue(record, 'created_at');
+  const parsed = Date.parse(timestamp);
+  return Number.isFinite(parsed) ? parsed : 0;
+}
+
+function latestRecord(records: JsonRecord[]): JsonRecord | null {
+  return records
+    .toSorted((left, right) => recordTimestampMs(right) - recordTimestampMs(left))[0] ?? null;
+}
+
+function operationProjectionEvidence(payload: JsonRecord): JsonRecord {
+  const error = asRecord(payload.error);
+  const resource = asRecord(payload.resource);
+  return compactJsonRecord({
+    operation_id: stringValue(payload, 'operation_id'),
+    operation_state: stringValue(payload, 'operation_state'),
+    operation_type: stringValue(payload, 'operation_type'),
+    resource_type: stringValue(resource, 'type'),
+    error_code: stringValue(error, 'code'),
+    error_retryable: booleanValue(error, 'retryable'),
+    created_at: stringValue(payload, 'created_at'),
+    started_at: stringValue(payload, 'started_at'),
+    updated_at: stringValue(payload, 'updated_at'),
+    finished_at: stringValue(payload, 'finished_at'),
+  });
+}
+
+async function fetchFileLibraryOperationProjectionEvidence(input: {
+  truth: ProductFlowRuntimeTruth;
+  state: ProductFlowState;
+  fetchImpl: ProductFlowFetch;
+  operationId: string;
+  requestId: string;
+}): Promise<JsonRecord> {
+  if (!input.state.projectId) {
+    return { enrichment_status: 'skipped_missing_project' };
+  }
+  const response = await input.fetchImpl(
+    apiV1Url(
+      input.truth,
+      `workspaces/${encodeURIComponent(input.truth.workspaceId)}/projects/${encodeURIComponent(input.state.projectId)}/file-library-operations/${encodeURIComponent(input.operationId)}`,
+    ),
+    {
+      method: 'GET',
+      headers: authHeaders(input.state, { 'x-request-id': input.requestId }),
+    },
+  );
+  const text = await readResponseText(response);
+  if (response.status !== 200) {
+    const error = apiErrorDetailsFromBodyText(response.status, text);
+    return compactJsonRecord({
+      enrichment_status: 'unavailable',
+      http_status: response.status,
+      error_code: stringValue(error, 'error_code'),
+      message: stringValue(error, 'message'),
+      body_summary: stringValue(error, 'body_summary'),
+    });
+  }
+  try {
+    return operationProjectionEvidence(asRecord(JSON.parse(text) as unknown));
+  } catch (error: unknown) {
+    return {
+      enrichment_status: 'invalid_json',
+      message: errorMessage(error),
+      body_summary: bodySummary(text),
+    };
+  }
+}
+
+async function readMongoFileLibraryProvisioningEvidence(input: {
+  truth: ProductFlowRuntimeTruth;
+  state: ProductFlowState;
+  libraryName: string;
+}): Promise<JsonRecord> {
+  if (!input.state.projectId) {
+    return { enrichment_status: 'skipped_missing_project' };
+  }
+
+  const store = new MongoJsonDocStore({
+    url: input.truth.mongo.url,
+    dbName: input.truth.mongo.dbName,
+    mongoClientOptions: {
+      maxPoolSize: 1,
+      maxConnecting: 1,
+      waitQueueTimeoutMS: 2_000,
+      maxIdleTimeMS: 1_000,
+    },
+  });
+  try {
+    const libraries = await store.list<JsonRecord>(FILE_LIBRARY_CATALOG_COLLECTION, {
+      workspace_id: input.truth.workspaceId,
+      project_id: input.state.projectId,
+      name: input.libraryName,
+    });
+    const library = latestRecord(libraries);
+    if (!library) {
+      return { enrichment_status: 'library_not_found' };
+    }
+
+    const libraryId = stringValue(library, 'id');
+    const mapping = libraryId
+      ? await store.get<JsonRecord>(FILE_LIBRARY_AFSCP_MAPPING_COLLECTION, fileLibraryMappingId({
+        workspaceId: input.truth.workspaceId,
+        projectId: input.state.projectId,
+        libraryId,
+      }))
+      : null;
+
+    return compactJsonRecord({
+      catalog: compactJsonRecord({
+        file_library_id: libraryId,
+        file_library_status: stringValue(library, 'status'),
+        created_at: stringValue(library, 'created_at'),
+        updated_at: stringValue(library, 'updated_at'),
+      }),
+      afscp_mapping: mapping
+        ? compactJsonRecord({
+          operation_id: stringValue(mapping, 'operation_id'),
+          operation_status: stringValue(mapping, 'operation_status'),
+          last_error_code: stringValue(mapping, 'last_error_code'),
+          updated_at: stringValue(mapping, 'updated_at'),
+        })
+        : undefined,
+    });
+  } finally {
+    await store.close();
+  }
+}
+
+async function defaultFileLibraryFailureEvidenceProvider(
+  input: FileLibraryFailureEvidenceInput,
+): Promise<JsonRecord> {
+  const evidenceSources = ['backend_response'];
+  const trace: JsonRecord = {
+    evidence_kind: 'file_library_provisioning_failure',
+    request_correlation_id: input.requestId,
+    create_request_id: input.requestId,
+    backend_response: input.backendError,
+  };
+  let operationId = stringValue(input.backendError, 'operation_id');
+
+  if (!operationId) {
+    try {
+      const mongoEvidence = await readMongoFileLibraryProvisioningEvidence(input);
+      if (Object.keys(mongoEvidence).length > 0) {
+        trace.mongo_evidence = mongoEvidence;
+        evidenceSources.push('mongo:project_file_libraries/project_file_library_afscp_mappings');
+      }
+      const mapping = asRecord(mongoEvidence.afscp_mapping);
+      operationId = stringValue(mapping, 'operation_id');
+      const catalog = asRecord(mongoEvidence.catalog);
+      const libraryId = stringValue(catalog, 'file_library_id');
+      if (libraryId) {
+        trace.file_library_id = libraryId;
+      }
+    } catch (error: unknown) {
+      trace.mongo_evidence = {
+        enrichment_status: 'unavailable',
+        message: errorMessage(error),
+      };
+    }
+  }
+
+  if (operationId) {
+    trace.afscp_operation_id = operationId;
+    try {
+      const operationEvidence = await fetchFileLibraryOperationProjectionEvidence({
+        truth: input.truth,
+        state: input.state,
+        fetchImpl: input.fetchImpl,
+        operationId,
+        requestId: input.requestId,
+      });
+      trace.afscp_operation = operationEvidence;
+      evidenceSources.push('api:file-library-operations');
+    } catch (error: unknown) {
+      trace.afscp_operation = {
+        enrichment_status: 'unavailable',
+        message: errorMessage(error),
+      };
+    }
+  }
+
+  trace.evidence_sources = evidenceSources;
+  return trace;
 }
 
 function buildFlowEvidence(input: {
@@ -1513,27 +1800,114 @@ async function waitForFileLibraryReady(args: {
   throw new Error(`file library did not become ready; last_status=${stringValue(last, 'status') || 'unknown'}`);
 }
 
+async function createFileLibraryWithPendingRetry(args: {
+  truth: ProductFlowRuntimeTruth;
+  state: ProductFlowState;
+  fetchImpl: ProductFlowFetch;
+  failureEvidenceProvider: FileLibraryFailureEvidenceProvider;
+  maxAttempts: number;
+  retryBaseMs: number;
+}): Promise<{ created: JsonRecord; checks: JsonRecord }> {
+  if (!args.state.projectId) {
+    throw new Error('file library create missing project');
+  }
+  const checks: JsonRecord = {
+    create_attempts: 0,
+  };
+  const maxAttempts = Math.max(1, Math.trunc(args.maxAttempts));
+  const url = apiV1Url(args.truth, `workspaces/${encodeURIComponent(args.truth.workspaceId)}/projects/${encodeURIComponent(args.state.projectId)}/file-libraries`);
+  const libraryName = `Unified Product Flow Files ${Date.now()}`;
+  const createRequestIds: string[] = [];
+  checks.create_library_name = libraryName;
+  checks.create_request_ids = createRequestIds;
+
+  for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
+    checks.create_attempts = attempt;
+    const createRequestId = requestId('files');
+    createRequestIds.push(createRequestId);
+    checks.create_last_request_id = createRequestId;
+    args.state.requestIds.files = createRequestId;
+    const init = jsonInit(args.state, 'POST', {
+      name: libraryName,
+      description: 'Unified deploy product-flow smoke library',
+    }, { 'x-request-id': createRequestId });
+    const response = await args.fetchImpl(url, init);
+    if (response.status === 201) {
+      try {
+        return {
+          created: await readJsonResponse(response),
+          checks,
+        };
+      } catch (error: unknown) {
+        throw productFlowError(`file library create returned invalid JSON: ${errorMessage(error)}`, checks);
+      }
+    }
+
+    const body = await readResponseText(response);
+    const backendError = apiErrorDetailsFromBodyText(response.status, body);
+    const errorCode = stringValue(backendError, 'error_code');
+    const lastError = `status=${response.status} code=${errorCode || 'unknown'} body=${bodySummary(body)}`;
+    checks.create_last_error = lastError;
+    checks.create_last_error_code = errorCode || 'unknown';
+    checks.create_last_response = backendError;
+
+    if (response.status === 409 && errorCode === 'PROJECT_STORAGE_PENDING') {
+      if (attempt >= maxAttempts) {
+        throw productFlowError(`file library create still pending after ${attempt} attempts; last_error=${lastError}`, checks);
+      }
+      await sleep(fileLibraryCreateRetryDelayMs(attempt, args.retryBaseMs));
+      continue;
+    }
+    if (errorCode === 'PROJECT_STORAGE_BLOCKED') {
+      throw productFlowError(`file library create blocked by project storage readiness: ${lastError}`, checks);
+    }
+    if (
+      response.status >= 500
+      || errorCode === 'FILE_LIBRARY_PROVISIONING_FAILED'
+      || errorCode === 'FILE_LIBRARY_OPERATION_FAILED'
+    ) {
+      checks.provisioning_failure_trace = await args.failureEvidenceProvider({
+        truth: args.truth,
+        state: args.state,
+        fetchImpl: args.fetchImpl,
+        libraryName,
+        requestId: createRequestId,
+        responseStatus: response.status,
+        responseBody: body,
+        backendError,
+      });
+    }
+    throw productFlowError(`file library create expected 201 got ${response.status}: ${bodySummary(body)}`, checks);
+  }
+
+  throw productFlowError('file library create retry loop exhausted without a terminal response', checks);
+}
+
 async function runFilesFlow(
   truth: ProductFlowRuntimeTruth,
   state: ProductFlowState,
   fetchImpl: ProductFlowFetch,
+  options: {
+    fileLibraryCreateMaxAttempts: number;
+    fileLibraryCreateRetryBaseMs: number;
+    failureEvidenceProvider: FileLibraryFailureEvidenceProvider;
+  },
 ): Promise<JsonRecord> {
   if (!state.projectId) {
     throw new Error('files flow missing project');
   }
-  const created = await expectJson(
+  const createdWithChecks = await createFileLibraryWithPendingRetry({
+    truth,
+    state,
     fetchImpl,
-    apiV1Url(truth, `workspaces/${encodeURIComponent(truth.workspaceId)}/projects/${encodeURIComponent(state.projectId)}/file-libraries`),
-    jsonInit(state, 'POST', {
-      name: `Unified Product Flow Files ${Date.now()}`,
-      description: 'Unified deploy product-flow smoke library',
-    }),
-    201,
-    'file library create',
-  );
+    failureEvidenceProvider: options.failureEvidenceProvider,
+    maxAttempts: options.fileLibraryCreateMaxAttempts,
+    retryBaseMs: options.fileLibraryCreateRetryBaseMs,
+  });
+  const created = createdWithChecks.created;
   const libraryId = stringValue(created, 'id');
   if (!libraryId) {
-    throw new Error('file library create response missing id');
+    throw productFlowError('file library create response missing id', createdWithChecks.checks);
   }
   state.libraryId = libraryId;
   const ready = await waitForFileLibraryReady({ truth, state, fetchImpl, libraryId });
@@ -1579,6 +1953,7 @@ async function runFilesFlow(
     throw new Error('downloaded file content mismatch');
   }
   return {
+    ...createdWithChecks.checks,
     library_id: libraryId,
     library_status: stringValue(ready, 'status'),
     uploaded_path: 'docs/guide.txt',
@@ -1683,16 +2058,15 @@ async function runAgentTaskManagedRunnerFlow(args: {
     execution_config_schema_version: numberValue(executionConfig, 'schema_version'),
     connection_info_status: connectionInfo.status,
   };
-  if (!state.libraryId) {
-    throw productFlowError('managed runner full task execution requires a ready file library from the files flow', checks);
-  }
+  const taskCreateRequestId = requestId('agent_task_managed_runner');
+  state.requestIds.agent_task_managed_runner_task_create = taskCreateRequestId;
   const task = await expectJson(
     fetchImpl,
     apiV1Url(truth, `workspaces/${encodeURIComponent(truth.workspaceId)}/projects/${encodeURIComponent(state.projectId)}/tasks`),
     jsonInit(state, 'POST', {
       title: `Unified managed runner ${Date.now()}`,
-      workspace_file_library_id: state.libraryId,
-    }, { 'x-request-id': requestId('agent_task_managed_runner') }),
+      workspace_mode: 'create_new',
+    }, { 'x-request-id': taskCreateRequestId }),
     201,
     'managed runner task create',
   );
@@ -1700,6 +2074,7 @@ async function runAgentTaskManagedRunnerFlow(args: {
   if (!taskId) {
     throw productFlowError('managed runner task create response missing id', checks);
   }
+  const taskWorkspaceFileLibraryId = stringValue(task, 'workspace_file_library_id');
   const run = await expectJson(
     fetchImpl,
     apiV1Url(truth, `workspaces/${encodeURIComponent(truth.workspaceId)}/projects/${encodeURIComponent(state.projectId)}/tasks/${encodeURIComponent(taskId)}/runs`),
@@ -1733,6 +2108,7 @@ async function runAgentTaskManagedRunnerFlow(args: {
   }
   checks.task_execution = {
     task_id: taskId,
+    task_workspace_file_library_id: taskWorkspaceFileLibraryId,
     run_response_id: stringValue(run, 'id'),
     trace_status: traceStatus || 'missing',
     trace_summary: traceSummary,
@@ -1819,6 +2195,9 @@ async function runSingleFlow(args: {
   now: () => Date;
   agentTaskPolls: number;
   agentTaskPollIntervalMs: number;
+  fileLibraryCreateMaxAttempts: number;
+  fileLibraryCreateRetryBaseMs: number;
+  fileLibraryFailureEvidenceProvider: FileLibraryFailureEvidenceProvider;
 }): Promise<ProductFlowEvidence> {
   const startedMs = Date.now();
   try {
@@ -1834,7 +2213,11 @@ async function runSingleFlow(args: {
         chat: await runChatViaLlmupFlow(args.truth, args.state, args.fetchImpl),
       };
     } else if (args.flow === 'files') {
-      checks = await runFilesFlow(args.truth, args.state, args.fetchImpl);
+      checks = await runFilesFlow(args.truth, args.state, args.fetchImpl, {
+        fileLibraryCreateMaxAttempts: args.fileLibraryCreateMaxAttempts,
+        fileLibraryCreateRetryBaseMs: args.fileLibraryCreateRetryBaseMs,
+        failureEvidenceProvider: args.fileLibraryFailureEvidenceProvider,
+      });
     } else if (args.flow === 'agent_task_managed_runner') {
       checks = await runAgentTaskManagedRunnerFlow({
         truth: args.truth,
@@ -2015,6 +2398,8 @@ export async function runUnifiedDeployProductFlowsProducer(
     ?? ((runtimeTruth: ProductFlowRuntimeTruth, user: { username: string; password: string }) => defaultTokenProvider(runtimeTruth, fetchImpl, user));
   const providerStarter = options.providerStarter ?? defaultProviderStarter;
   const seedManagedRunner = options.managedRunnerSeeder ?? defaultManagedRunnerSeeder;
+  const fileLibraryFailureEvidenceProvider = options.fileLibraryFailureEvidenceProvider
+    ?? defaultFileLibraryFailureEvidenceProvider;
   const generatedAt = nowIso(now);
   const flowIds = resolveFlowIds(options.flowIds);
   let keycloak: KeycloakBootstrapResult;
@@ -2092,6 +2477,9 @@ export async function runUnifiedDeployProductFlowsProducer(
         now,
         agentTaskPolls: options.agentTaskPolls ?? DEFAULT_AGENT_TASK_POLLS,
         agentTaskPollIntervalMs: options.agentTaskPollIntervalMs ?? DEFAULT_AGENT_TASK_POLL_INTERVAL_MS,
+        fileLibraryCreateMaxAttempts: options.fileLibraryCreateMaxAttempts ?? DEFAULT_FILE_LIBRARY_CREATE_MAX_ATTEMPTS,
+        fileLibraryCreateRetryBaseMs: options.fileLibraryCreateRetryBaseMs ?? DEFAULT_FILE_LIBRARY_CREATE_RETRY_BASE_MS,
+        fileLibraryFailureEvidenceProvider,
       });
       flowEvidence.push(evidence);
       flowPaths[flow] = await writeFlowEvidence({
@@ -2167,6 +2555,18 @@ function parseCliOptions(argv: readonly string[]): CliOptions {
         throw new Error('--agent-task-poll-interval-ms must be a non-negative integer');
       }
       options.agentTaskPollIntervalMs = value;
+    } else if (arg.startsWith('--file-library-create-attempts=')) {
+      const value = Number.parseInt(arg.slice('--file-library-create-attempts='.length), 10);
+      if (!Number.isInteger(value) || value <= 0) {
+        throw new Error('--file-library-create-attempts must be a positive integer');
+      }
+      options.fileLibraryCreateMaxAttempts = value;
+    } else if (arg.startsWith('--file-library-create-retry-base-ms=')) {
+      const value = Number.parseInt(arg.slice('--file-library-create-retry-base-ms='.length), 10);
+      if (!Number.isInteger(value) || value < 0) {
+        throw new Error('--file-library-create-retry-base-ms must be a non-negative integer');
+      }
+      options.fileLibraryCreateRetryBaseMs = value;
     } else {
       throw new Error(`unknown argument: ${arg}`);
     }

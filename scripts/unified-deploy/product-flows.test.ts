@@ -172,7 +172,10 @@ function makeKeycloakConflictReuseFetch(): ProductFlowFetch {
   });
 }
 
-function makeFocusedAgentTaskFetch(observed: { chatRequests: number }): ProductFlowFetch {
+function makeFocusedAgentTaskFetch(observed: {
+  chatRequests: number;
+  taskCreatePayloads?: Record<string, unknown>[];
+}): ProductFlowFetch {
   let libraryReadyReads = 0;
   return vi.fn(async (input: string | URL | Request, init?: RequestInit) => {
     const url = String(input);
@@ -234,13 +237,124 @@ function makeFocusedAgentTaskFetch(observed: { chatRequests: number }): ProductF
       return responseJson(403, { error: 'forbidden' });
     }
     if (url.endsWith('/tasks') && method === 'POST') {
-      return responseJson(201, { id: 'task_focused' });
+      const payload = typeof init?.body === 'string'
+        ? JSON.parse(init.body) as Record<string, unknown>
+        : {};
+      observed.taskCreatePayloads?.push(payload);
+      if (payload.workspace_file_library_id !== undefined || payload.workspace_mode !== 'create_new') {
+        return responseJson(400, {
+          error_code: 'AGENT_TASK_WORKSPACE_MODE_INVALID',
+          message: 'workspace_file_library_id requires workspace_mode=use_existing',
+        });
+      }
+      return responseJson(201, { id: 'task_focused', workspace_file_library_id: 'flib_task_created' });
     }
     if (url.endsWith('/tasks/task_focused/runs') && method === 'POST') {
       return responseJson(200, { id: 'run_focused' });
     }
     if (url.includes('/tasks/task_focused/traces') && method === 'GET') {
       return responseJson(200, { items: [{ id: 'trace_done', status: 'success', summary: 'Run completed' }] });
+    }
+    return responseJson(404, { error: `unexpected:${method}:${url}` });
+  });
+}
+
+function makeFileLibraryPendingFetch(observed: { createAttempts: number }, pendingAttempts: number): ProductFlowFetch {
+  return vi.fn(async (input: string | URL | Request, init?: RequestInit) => {
+    const url = String(input);
+    const method = init?.method ?? 'GET';
+    if (url.endsWith('/api/public/workspaces')) {
+      return responseJson(200, { items: [{ id: 'ws_default' }] });
+    }
+    if (url.endsWith('/projects') && method === 'POST') {
+      return responseJson(201, { id: 'proj_pending', name: 'Pending Storage Product Flow' });
+    }
+    if (url.endsWith('/projects') && method === 'GET') {
+      return responseJson(200, { items: [{ id: 'proj_pending', name: 'Pending Storage Product Flow' }] });
+    }
+    if (url.endsWith('/projects/proj_pending') && method === 'GET') {
+      return responseJson(200, { id: 'proj_pending', name: 'Pending Storage Product Flow' });
+    }
+    if (url.endsWith('/file-libraries') && method === 'POST') {
+      observed.createAttempts += 1;
+      if (observed.createAttempts <= pendingAttempts) {
+        return responseJson(409, {
+          error_code: 'PROJECT_STORAGE_PENDING',
+          message: 'Project storage is still being initialized.',
+        });
+      }
+      return responseJson(201, { id: 'flib_pending' });
+    }
+    if (url.endsWith('/file-libraries/flib_pending') && method === 'GET') {
+      return responseJson(200, { id: 'flib_pending', status: 'ready' });
+    }
+    if (url.endsWith('/file-libraries/flib_pending/folders') && method === 'POST') {
+      return responseText(204, '');
+    }
+    if (url.endsWith('/file-libraries/flib_pending/upload') && method === 'POST') {
+      return responseJson(201, { path: 'docs/guide.txt' });
+    }
+    if (url.includes('/file-libraries/flib_pending/entries') && method === 'GET') {
+      return responseJson(200, { items: [{ name: 'guide.txt', path: 'docs/guide.txt' }] });
+    }
+    if (url.includes('/file-libraries/flib_pending/download') && method === 'GET') {
+      return responseText(200, 'hello from unified deploy product flow\n');
+    }
+    return responseJson(404, { error: `unexpected:${method}:${url}` });
+  });
+}
+
+function makeFileLibraryBlockedFetch(observed: { createAttempts: number }): ProductFlowFetch {
+  return vi.fn(async (input: string | URL | Request, init?: RequestInit) => {
+    const url = String(input);
+    const method = init?.method ?? 'GET';
+    if (url.endsWith('/api/public/workspaces')) {
+      return responseJson(200, { items: [{ id: 'ws_default' }] });
+    }
+    if (url.endsWith('/projects') && method === 'POST') {
+      return responseJson(201, { id: 'proj_blocked', name: 'Blocked Storage Product Flow' });
+    }
+    if (url.endsWith('/projects') && method === 'GET') {
+      return responseJson(200, { items: [{ id: 'proj_blocked', name: 'Blocked Storage Product Flow' }] });
+    }
+    if (url.endsWith('/projects/proj_blocked') && method === 'GET') {
+      return responseJson(200, { id: 'proj_blocked', name: 'Blocked Storage Product Flow' });
+    }
+    if (url.endsWith('/file-libraries') && method === 'POST') {
+      observed.createAttempts += 1;
+      return responseJson(409, {
+        error_code: 'PROJECT_STORAGE_BLOCKED',
+        message: 'Project storage initialization failed.',
+      });
+    }
+    return responseJson(404, { error: `unexpected:${method}:${url}` });
+  });
+}
+
+function makeFileLibraryProvisioningFailedFetch(observed: { createAttempts: number; requestId: string }): ProductFlowFetch {
+  return vi.fn(async (input: string | URL | Request, init?: RequestInit) => {
+    const url = String(input);
+    const method = init?.method ?? 'GET';
+    const headers = new Headers(init?.headers);
+    if (url.endsWith('/api/public/workspaces')) {
+      return responseJson(200, { items: [{ id: 'ws_default' }] });
+    }
+    if (url.endsWith('/projects') && method === 'POST') {
+      return responseJson(201, { id: 'proj_provisioning_failed', name: 'Provisioning Failure Product Flow' });
+    }
+    if (url.endsWith('/projects') && method === 'GET') {
+      return responseJson(200, { items: [{ id: 'proj_provisioning_failed', name: 'Provisioning Failure Product Flow' }] });
+    }
+    if (url.endsWith('/projects/proj_provisioning_failed') && method === 'GET') {
+      return responseJson(200, { id: 'proj_provisioning_failed', name: 'Provisioning Failure Product Flow' });
+    }
+    if (url.endsWith('/file-libraries') && method === 'POST') {
+      observed.createAttempts += 1;
+      observed.requestId = headers.get('x-request-id') ?? '';
+      return responseJson(502, {
+        error_code: 'FILE_LIBRARY_PROVISIONING_FAILED',
+        message: 'file_library_operation_failed',
+      });
     }
     return responseJson(404, { error: `unexpected:${method}:${url}` });
   });
@@ -464,8 +578,8 @@ describe('unified deploy product flow producer', () => {
     expect(result.failures[0]?.message).not.toContain('keycloak_user_conflict_unresolved');
   });
 
-  it('runs the focused files plus managed runner flow without requiring the chat flow as endpoint setup', async () => {
-    const observed = { chatRequests: 0 };
+  it('runs the focused files plus managed runner flow with an independent create_new task workspace', async () => {
+    const observed = { chatRequests: 0, taskCreatePayloads: [] as Record<string, unknown>[] };
     const result = await runUnifiedDeployProductFlowsProducer({
       siteEnvPath: 'site.env',
       substrateTruthPath: 'connection.env',
@@ -513,5 +627,172 @@ describe('unified deploy product flow producer', () => {
       'agent_task_managed_runner',
     ]);
     expect(observed.chatRequests).toBe(0);
+    expect(observed.taskCreatePayloads).toEqual([
+      expect.objectContaining({
+        workspace_mode: 'create_new',
+      }),
+    ]);
+    expect(observed.taskCreatePayloads[0]).not.toHaveProperty('workspace_file_library_id');
+    const managedRunnerFlow = result.evidence.flows.find((flow) => flow.flow === 'agent_task_managed_runner');
+    expect(managedRunnerFlow?.checks).toMatchObject({
+      task_execution: {
+        task_workspace_file_library_id: 'flib_task_created',
+      },
+    });
+  });
+
+  it('retries file library create on typed project storage pending and records attempts', async () => {
+    const observed = { createAttempts: 0 };
+    const result = await runUnifiedDeployProductFlowsProducer({
+      siteEnvPath: 'site.env',
+      substrateTruthPath: 'connection.env',
+      evidenceDir: 'evidence',
+      fs: makeFs(),
+      fetch: makeFileLibraryPendingFetch(observed, 2),
+      flowIds: ['workspace_project', 'files'],
+      fileLibraryCreateRetryBaseMs: 0,
+      backendBootstrapper: async () => ({}),
+      keycloakBootstrapper: async () => ({
+        users: {
+          devAdmin: { user_id: 'kc-dev-admin', email: 'dev-admin@example.com', name: 'Dev Admin' },
+          integrationUser: { user_id: 'kc-integration-user', email: 'integration-user@example.com', name: 'Integration User' },
+        },
+      }),
+      workspaceBootstrapper: async () => undefined,
+      tokenProvider: async () => 'token-dev-admin',
+      now: () => new Date('2026-05-07T00:00:00.000Z'),
+    });
+
+    const filesFlow = result.evidence.flows.find((flow) => flow.flow === 'files');
+    expect(result.status).toBe('passed');
+    expect(observed.createAttempts).toBe(3);
+    expect(filesFlow?.checks).toMatchObject({
+      create_attempts: 3,
+      create_last_error_code: 'PROJECT_STORAGE_PENDING',
+      library_id: 'flib_pending',
+      library_status: 'ready',
+    });
+  });
+
+  it('fails file library create immediately on typed project storage blocked', async () => {
+    const observed = { createAttempts: 0 };
+    const result = await runUnifiedDeployProductFlowsProducer({
+      siteEnvPath: 'site.env',
+      substrateTruthPath: 'connection.env',
+      evidenceDir: 'evidence',
+      fs: makeFs(),
+      fetch: makeFileLibraryBlockedFetch(observed),
+      flowIds: ['workspace_project', 'files'],
+      fileLibraryCreateRetryBaseMs: 0,
+      backendBootstrapper: async () => ({}),
+      keycloakBootstrapper: async () => ({
+        users: {
+          devAdmin: { user_id: 'kc-dev-admin', email: 'dev-admin@example.com', name: 'Dev Admin' },
+          integrationUser: { user_id: 'kc-integration-user', email: 'integration-user@example.com', name: 'Integration User' },
+        },
+      }),
+      workspaceBootstrapper: async () => undefined,
+      tokenProvider: async () => 'token-dev-admin',
+      now: () => new Date('2026-05-07T00:00:00.000Z'),
+    });
+
+    const filesFlow = result.evidence.flows.find((flow) => flow.flow === 'files');
+    expect(result.status).toBe('failed');
+    expect(observed.createAttempts).toBe(1);
+    expect(filesFlow?.checks).toMatchObject({
+      create_attempts: 1,
+      create_last_error_code: 'PROJECT_STORAGE_BLOCKED',
+    });
+    expect(filesFlow?.failure?.message).toContain('file library create blocked');
+  });
+
+  it('enriches failed files evidence with operation clues when provisioning returns a generic 502', async () => {
+    const observed = { createAttempts: 0, requestId: '' };
+    const writes: Record<string, string> = {};
+    const failureEvidenceProvider = vi.fn(async () => ({
+      evidence_kind: 'file_library_provisioning_failure',
+      request_correlation_id: observed.requestId,
+      file_library_id: 'flib_failed',
+      afscp_operation_id: 'op_repo_create_failed',
+      mongo_evidence: {
+        catalog: {
+          file_library_id: 'flib_failed',
+          file_library_status: 'failed',
+        },
+        afscp_mapping: {
+          operation_id: 'op_repo_create_failed',
+          operation_status: 'failed',
+          last_error_code: 'JVS_COMMAND_FAILED',
+        },
+      },
+      afscp_operation: {
+        operation_id: 'op_repo_create_failed',
+        operation_state: 'operator_intervention_required',
+        operation_type: 'repo_create',
+        error_code: 'JVS_COMMAND_FAILED',
+      },
+      evidence_sources: ['backend_response', 'mongo:project_file_libraries/project_file_library_afscp_mappings', 'api:file-library-operations'],
+    }));
+
+    const result = await runUnifiedDeployProductFlowsProducer({
+      siteEnvPath: 'site.env',
+      substrateTruthPath: 'connection.env',
+      evidenceDir: 'evidence',
+      fs: makeFs(writes),
+      fetch: makeFileLibraryProvisioningFailedFetch(observed),
+      flowIds: ['workspace_project', 'files'],
+      fileLibraryCreateRetryBaseMs: 0,
+      fileLibraryFailureEvidenceProvider: failureEvidenceProvider,
+      backendBootstrapper: async () => ({}),
+      keycloakBootstrapper: async () => ({
+        users: {
+          devAdmin: { user_id: 'kc-dev-admin', email: 'dev-admin@example.com', name: 'Dev Admin' },
+          integrationUser: { user_id: 'kc-integration-user', email: 'integration-user@example.com', name: 'Integration User' },
+        },
+      }),
+      workspaceBootstrapper: async () => undefined,
+      tokenProvider: async () => 'token-dev-admin',
+      now: () => new Date('2026-05-07T00:00:00.000Z'),
+    });
+
+    const filesFlow = result.evidence.flows.find((flow) => flow.flow === 'files');
+    expect(result.status).toBe('failed');
+    expect(observed.createAttempts).toBe(1);
+    expect(observed.requestId).toMatch(/^unified-product-files-/u);
+    expect(failureEvidenceProvider).toHaveBeenCalledWith(expect.objectContaining({
+      requestId: observed.requestId,
+      responseStatus: 502,
+      backendError: expect.objectContaining({
+        error_code: 'FILE_LIBRARY_PROVISIONING_FAILED',
+        message: 'file_library_operation_failed',
+      }),
+    }));
+    expect(filesFlow?.checks).toMatchObject({
+      create_attempts: 1,
+      create_last_error_code: 'FILE_LIBRARY_PROVISIONING_FAILED',
+      create_last_response: {
+        status: 502,
+        error_code: 'FILE_LIBRARY_PROVISIONING_FAILED',
+        message: 'file_library_operation_failed',
+      },
+      provisioning_failure_trace: {
+        request_correlation_id: observed.requestId,
+        file_library_id: 'flib_failed',
+        afscp_operation_id: 'op_repo_create_failed',
+        afscp_operation: {
+          operation_state: 'operator_intervention_required',
+          error_code: 'JVS_COMMAND_FAILED',
+        },
+      },
+    });
+
+    const fileEvidence = Object.values(writes)
+      .filter((text) => text.trim().startsWith('{'))
+      .map((text) => JSON.parse(text) as Record<string, unknown>)
+      .find((payload) => payload.flow === 'files');
+    const serializedEvidence = JSON.stringify(fileEvidence);
+    expect(serializedEvidence).toContain('op_repo_create_failed');
+    expect(serializedEvidence).toContain('operator_intervention_required');
+    expect(serializedEvidence).toContain('JVS_COMMAND_FAILED');
   });
 });

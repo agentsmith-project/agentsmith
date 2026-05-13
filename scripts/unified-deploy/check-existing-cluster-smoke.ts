@@ -3,8 +3,15 @@ import { existsSync } from 'node:fs';
 import { readFile, writeFile } from 'node:fs/promises';
 import { homedir } from 'node:os';
 import path from 'node:path';
+import { setTimeout as sleep } from 'node:timers/promises';
 import { fileURLToPath } from 'node:url';
 
+import {
+  AFSCP_SCHEMA_BOOTSTRAP_JOB,
+  AFSCP_VOLUME_BOOTSTRAP_JOB,
+  splitAfscpBootstrapAppYaml,
+  summarizeKubernetesJobStatus,
+} from './afscp-bootstrap';
 import { checkApiSingleReplica } from './check-api-single-replica';
 import { checkRenderedOutput } from './check-render';
 import { fingerprintRenderedManifest } from './evidence';
@@ -80,7 +87,16 @@ type ResourceSummary = {
 };
 
 type OperationEvidence = {
-  name: 'namespace-exists' | 'app-dry-run' | 'app-apply';
+  name:
+    | 'namespace-exists'
+    | 'afscp-schema-bootstrap-delete-previous'
+    | 'afscp-schema-bootstrap-wait'
+    | 'afscp-volume-bootstrap-delete-previous'
+    | 'afscp-volume-bootstrap-wait'
+    | 'afscp-bootstrap-dry-run'
+    | 'afscp-bootstrap-apply'
+    | 'app-dry-run'
+    | 'app-apply';
   command: string;
   status: StepStatus;
   exit_code?: number;
@@ -218,6 +234,9 @@ const KUBECTL_REQUEST_TIMEOUT = '20s';
 const KUBECTL_TIMEOUT_MS = 45_000;
 const PROBE_TIMEOUT_MS = 10_000;
 const ROLLOUT_TIMEOUT = '60s';
+const AFSCP_BOOTSTRAP_WAIT_TIMEOUT = '120s';
+const AFSCP_BOOTSTRAP_WAIT_TIMEOUT_MS = 150_000;
+const AFSCP_BOOTSTRAP_JOB_POLL_INTERVAL_MS = 2_000;
 const ROLLOUT_DEPLOYMENTS = [
   'agentsmith-web',
   'agentsmith-api',
@@ -300,6 +319,20 @@ function addSecretValue(secrets: Set<string>, value: string, options: { force?: 
   secrets.add(trimmed);
 }
 
+function addAfscpCompositeServiceTokens(secrets: Set<string>, key: string, value: string): void {
+  if (key !== 'AFSCP_API_SERVICE_TOKENS') {
+    return;
+  }
+
+  for (const entry of value.split(',')) {
+    const separatorIndex = entry.indexOf('=');
+    if (separatorIndex <= 0) {
+      continue;
+    }
+    addSecretValue(secrets, entry.slice(separatorIndex + 1), { force: true });
+  }
+}
+
 function collectRenderedSecretValues(renderedYaml: string): string[] {
   const parsed = parseKubernetesDocuments(renderedYaml);
   const secrets = new Set<string>();
@@ -320,6 +353,7 @@ function collectRenderedSecretValues(renderedYaml: string): string[] {
           continue;
         }
         addSecretValue(secrets, value, { force: SECRET_FIELD_KEY_PATTERN.test(key) });
+        addAfscpCompositeServiceTokens(secrets, key, value);
       }
     }
   }
@@ -479,6 +513,7 @@ async function runKubectlOperation(options: {
   env: Record<string, string | undefined>;
   kubeconfigPath: string;
   secretValues: readonly string[];
+  timeoutMs?: number;
 }): Promise<{ evidence: OperationEvidence; failure?: CheckFailure }> {
   const result = await options.runner('kubectl', options.args, {
     input: options.input,
@@ -487,7 +522,7 @@ async function runKubectlOperation(options: {
       ...options.env,
       KUBECONFIG: options.kubeconfigPath,
     },
-    timeoutMs: KUBECTL_TIMEOUT_MS,
+    timeoutMs: options.timeoutMs ?? KUBECTL_TIMEOUT_MS,
   });
   const evidence: OperationEvidence = {
     name: options.name,
@@ -1345,43 +1380,270 @@ async function finish(
   };
 }
 
+type AfscpBootstrapJobDefinition = {
+  jobName: typeof AFSCP_SCHEMA_BOOTSTRAP_JOB | typeof AFSCP_VOLUME_BOOTSTRAP_JOB;
+  label: string;
+  failurePath: 'afscp-schema-bootstrap' | 'afscp-volume-bootstrap';
+  operationNames: {
+    deletePrevious: OperationEvidence['name'];
+    wait: OperationEvidence['name'];
+  };
+};
+
+const AFSCP_SCHEMA_BOOTSTRAP_DEFINITION: AfscpBootstrapJobDefinition = {
+  jobName: AFSCP_SCHEMA_BOOTSTRAP_JOB,
+  label: 'AFSCP schema bootstrap',
+  failurePath: 'afscp-schema-bootstrap',
+  operationNames: {
+    deletePrevious: 'afscp-schema-bootstrap-delete-previous',
+    wait: 'afscp-schema-bootstrap-wait',
+  },
+};
+
+const AFSCP_VOLUME_BOOTSTRAP_DEFINITION: AfscpBootstrapJobDefinition = {
+  jobName: AFSCP_VOLUME_BOOTSTRAP_JOB,
+  label: 'AFSCP default volume bootstrap',
+  failurePath: 'afscp-volume-bootstrap',
+  operationNames: {
+    deletePrevious: 'afscp-volume-bootstrap-delete-previous',
+    wait: 'afscp-volume-bootstrap-wait',
+  },
+};
+
+async function deletePreviousAfscpBootstrapJob(options: {
+  definition: AfscpBootstrapJobDefinition;
+  namespace: string;
+  kubeconfigPath: string;
+  runner: ExistingClusterCommandRunner;
+  env: Record<string, string | undefined>;
+  secretValues: readonly string[];
+}): Promise<{ operations: OperationEvidence[]; failures: CheckFailure[] }> {
+  const result = await runKubectlOperation({
+    name: options.definition.operationNames.deletePrevious,
+    args: [
+      ...kubeBaseArgs(options.kubeconfigPath),
+      '-n',
+      options.namespace,
+      'delete',
+      'job',
+      options.definition.jobName,
+      '--ignore-not-found=true',
+      '--wait=true',
+      '--timeout=90s',
+    ],
+    runner: options.runner,
+    env: options.env,
+    kubeconfigPath: options.kubeconfigPath,
+    secretValues: options.secretValues,
+    timeoutMs: 120_000,
+  });
+
+  return {
+    operations: [result.evidence],
+    failures: result.failure
+      ? [{
+        path: `${options.definition.failurePath}:delete-previous`,
+        message: `failed to delete the previous owned ${options.definition.label} Job before bootstrap apply: ${result.failure.message}`,
+      }]
+      : [],
+  };
+}
+
+async function waitForAfscpBootstrapJob(options: {
+  definition: AfscpBootstrapJobDefinition;
+  namespace: string;
+  kubeconfigPath: string;
+  runner: ExistingClusterCommandRunner;
+  env: Record<string, string | undefined>;
+  secretValues: readonly string[];
+}): Promise<{ operations: OperationEvidence[]; failures: CheckFailure[] }> {
+  const args = [
+    ...kubeBaseArgs(options.kubeconfigPath),
+    '-n',
+    options.namespace,
+    'get',
+    `job/${options.definition.jobName}`,
+    '-o',
+    'json',
+  ];
+  const deadline = Date.now() + AFSCP_BOOTSTRAP_WAIT_TIMEOUT_MS;
+  const operations: OperationEvidence[] = [];
+  let lastDiagnostic = `${options.definition.label} Job did not reach Complete before ${AFSCP_BOOTSTRAP_WAIT_TIMEOUT}`;
+
+  while (Date.now() <= deadline) {
+    const result = await options.runner('kubectl', args, {
+      cwd: REPO_ROOT,
+      env: {
+        ...options.env,
+        KUBECONFIG: options.kubeconfigPath,
+      },
+      timeoutMs: KUBECTL_TIMEOUT_MS,
+    });
+    const evidence: OperationEvidence = {
+      name: options.definition.operationNames.wait,
+      command: commandText(args),
+      status: result.exitCode === 0 ? 'passed' : 'failed',
+      exit_code: result.exitCode,
+      stdout: redactDiagnostic(result.stdout, options.secretValues),
+      stderr: redactDiagnostic(result.stderr, options.secretValues),
+    };
+    operations.splice(0, operations.length, evidence);
+
+    if (result.exitCode !== 0) {
+      lastDiagnostic = redactDiagnostic(result.stderr || result.stdout || `kubectl exited ${result.exitCode}`, options.secretValues);
+      break;
+    }
+
+    try {
+      const status = summarizeKubernetesJobStatus(parseJsonObject(result.stdout));
+      if (status.state === 'complete') {
+        return { operations, failures: [] };
+      }
+      if (status.state === 'failed') {
+        const reason = status.reason ? `${status.reason}: ` : '';
+        lastDiagnostic = `${reason}${status.message ?? `${options.definition.label} Job reported Failed`}`;
+        break;
+      }
+      lastDiagnostic = `${options.definition.label} Job is still pending (active=${status.active ?? 0}, succeeded=${status.succeeded ?? 0}, failed=${status.failed ?? 0})`;
+    } catch (error: unknown) {
+      lastDiagnostic = `kubectl Job JSON output must parse: ${errorMessage(error)}`;
+      break;
+    }
+
+    await sleep(Math.min(AFSCP_BOOTSTRAP_JOB_POLL_INTERVAL_MS, Math.max(0, deadline - Date.now())));
+  }
+
+  return {
+    operations,
+    failures: [{
+      path: `${options.definition.failurePath}:wait`,
+      message: `${options.definition.label} Job must complete before app Deployment apply: ${lastDiagnostic}`,
+    }],
+  };
+}
+
 async function runApplySequence(options: {
   appYaml: string;
+  namespace: string;
   kubeconfigPath: string;
   runner: ExistingClusterCommandRunner;
   env: Record<string, string | undefined>;
   secretValues: readonly string[];
 }): Promise<{ operations: OperationEvidence[]; failures: CheckFailure[] }> {
   const baseArgs = kubeBaseArgs(options.kubeconfigPath);
-  const dryRun = await runKubectlOperation({
-    name: 'app-dry-run',
-    args: [...baseArgs, 'apply', '--dry-run=server', '-f', '-'],
-    input: options.appYaml,
-    runner: options.runner,
-    env: options.env,
-    kubeconfigPath: options.kubeconfigPath,
-    secretValues: options.secretValues,
-  });
-  if (dryRun.failure) {
+  const operations: OperationEvidence[] = [];
+  const failures: CheckFailure[] = [];
+  let appBatches: { bootstrapYaml: string; remainingYaml: string };
+
+  try {
+    appBatches = splitAfscpBootstrapAppYaml(options.appYaml);
+  } catch (error: unknown) {
     return {
-      operations: [dryRun.evidence],
-      failures: [dryRun.failure],
+      operations,
+      failures: [{
+        path: 'apply-sequence:rendered-yaml',
+        message: errorMessage(error),
+      }],
     };
   }
 
-  const apply = await runKubectlOperation({
-    name: 'app-apply',
-    args: [...baseArgs, 'apply', '-f', '-'],
-    input: options.appYaml,
-    runner: options.runner,
-    env: options.env,
-    kubeconfigPath: options.kubeconfigPath,
-    secretValues: options.secretValues,
-  });
+  for (const definition of [AFSCP_SCHEMA_BOOTSTRAP_DEFINITION, AFSCP_VOLUME_BOOTSTRAP_DEFINITION]) {
+    const jobReset = await deletePreviousAfscpBootstrapJob({
+      definition,
+      namespace: options.namespace,
+      kubeconfigPath: options.kubeconfigPath,
+      runner: options.runner,
+      env: options.env,
+      secretValues: options.secretValues,
+    });
+    operations.push(...jobReset.operations);
+    failures.push(...jobReset.failures);
+    if (failures.length > 0) {
+      return { operations, failures };
+    }
+  }
+
+  for (const step of [
+    {
+      name: 'afscp-bootstrap-dry-run',
+      args: [...baseArgs, 'apply', '--dry-run=server', '-f', '-'],
+      input: appBatches.bootstrapYaml,
+    },
+    {
+      name: 'afscp-bootstrap-apply',
+      args: [...baseArgs, 'apply', '-f', '-'],
+      input: appBatches.bootstrapYaml,
+    },
+  ] as const) {
+    if (step.input.trim().length === 0) {
+      continue;
+    }
+    const result = await runKubectlOperation({
+      name: step.name,
+      args: step.args,
+      input: step.input,
+      runner: options.runner,
+      env: options.env,
+      kubeconfigPath: options.kubeconfigPath,
+      secretValues: options.secretValues,
+    });
+    operations.push(result.evidence);
+    if (result.failure) {
+      failures.push(result.failure);
+      return { operations, failures };
+    }
+  }
+
+  for (const definition of [AFSCP_SCHEMA_BOOTSTRAP_DEFINITION, AFSCP_VOLUME_BOOTSTRAP_DEFINITION]) {
+    const bootstrap = await waitForAfscpBootstrapJob({
+      definition,
+      namespace: options.namespace,
+      kubeconfigPath: options.kubeconfigPath,
+      runner: options.runner,
+      env: options.env,
+      secretValues: options.secretValues,
+    });
+    operations.push(...bootstrap.operations);
+    failures.push(...bootstrap.failures);
+    if (failures.length > 0) {
+      return { operations, failures };
+    }
+  }
+
+  for (const step of [
+    {
+      name: 'app-dry-run',
+      args: [...baseArgs, 'apply', '--dry-run=server', '-f', '-'],
+      input: appBatches.remainingYaml,
+    },
+    {
+      name: 'app-apply',
+      args: [...baseArgs, 'apply', '-f', '-'],
+      input: appBatches.remainingYaml,
+    },
+  ] as const) {
+    if (step.input.trim().length === 0) {
+      continue;
+    }
+    const result = await runKubectlOperation({
+      name: step.name,
+      args: step.args,
+      input: step.input,
+      runner: options.runner,
+      env: options.env,
+      kubeconfigPath: options.kubeconfigPath,
+      secretValues: options.secretValues,
+    });
+    operations.push(result.evidence);
+    if (result.failure) {
+      failures.push(result.failure);
+      break;
+    }
+  }
 
   return {
-    operations: [dryRun.evidence, apply.evidence],
-    failures: apply.failure ? [apply.failure] : [],
+    operations,
+    failures,
   };
 }
 
@@ -1512,6 +1774,7 @@ export async function runExistingClusterSmokeProducer(
 
   const apply = await runApplySequence({
     appYaml: rendered.appYaml,
+    namespace: rendered.namespace,
     kubeconfigPath: kubeconfig.path,
     runner,
     env,

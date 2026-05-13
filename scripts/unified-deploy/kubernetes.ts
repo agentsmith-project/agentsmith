@@ -38,6 +38,44 @@ export function parseKubernetesDocuments(source: string): CheckResult & { docume
   };
 }
 
+export function stringifyKubernetesDocuments(documents: readonly KubernetesDocument[]): string {
+  if (documents.length === 0) {
+    return '';
+  }
+
+  return documents
+    .map((document) => YAML.stringify(document).trim())
+    .filter((document) => document.length > 0)
+    .join('\n---\n') + '\n';
+}
+
+export function splitKubernetesDocuments(
+  source: string,
+  includeInFirst: (document: KubernetesDocument) => boolean,
+): { firstYaml: string; secondYaml: string; firstDocuments: KubernetesDocument[]; secondDocuments: KubernetesDocument[] } {
+  const parsed = parseKubernetesDocuments(source);
+  if (!parsed.ok) {
+    throw new Error(parsed.failures.map((failure) => `${failure.path}: ${failure.message}`).join('\n'));
+  }
+
+  const firstDocuments: KubernetesDocument[] = [];
+  const secondDocuments: KubernetesDocument[] = [];
+  for (const document of parsed.documents) {
+    if (includeInFirst(document)) {
+      firstDocuments.push(document);
+    } else {
+      secondDocuments.push(document);
+    }
+  }
+
+  return {
+    firstYaml: stringifyKubernetesDocuments(firstDocuments),
+    secondYaml: stringifyKubernetesDocuments(secondDocuments),
+    firstDocuments,
+    secondDocuments,
+  };
+}
+
 export function resourceKind(resource: KubernetesDocument): string {
   return typeof resource.kind === 'string' ? resource.kind : '';
 }

@@ -3,10 +3,15 @@ import { existsSync } from 'node:fs';
 import { readFile, writeFile } from 'node:fs/promises';
 import { homedir } from 'node:os';
 import path from 'node:path';
+import { setTimeout as sleep } from 'node:timers/promises';
 import { fileURLToPath } from 'node:url';
 
-import YAML from 'yaml';
-
+import {
+  AFSCP_SCHEMA_BOOTSTRAP_JOB,
+  AFSCP_VOLUME_BOOTSTRAP_JOB,
+  splitAfscpBootstrapAppYaml,
+  summarizeKubernetesJobStatus,
+} from './afscp-bootstrap';
 import { checkAddressTruth } from './check-address-truth';
 import { checkApiSingleReplica } from './check-api-single-replica';
 import {
@@ -28,6 +33,7 @@ import {
   parseKubernetesDocuments,
   resourceKind,
   resourceName,
+  splitKubernetesDocuments,
 } from './kubernetes';
 import {
   DEFAULT_TEMPLATES_ROOT,
@@ -111,6 +117,28 @@ type OperationEvidence = {
     | 'afscp-static-volume-reset-delete-workloads'
     | 'afscp-static-volume-reset-delete-pvc'
     | 'afscp-static-volume-reset-delete-pv'
+    | 'afscp-schema-bootstrap-delete-previous'
+    | 'afscp-schema-bootstrap-wait'
+    | 'afscp-schema-bootstrap-diagnostics-job-yaml'
+    | 'afscp-schema-bootstrap-diagnostics-job-describe'
+    | 'afscp-schema-bootstrap-diagnostics-pods-json'
+    | 'afscp-schema-bootstrap-diagnostics-pod-describe'
+    | 'afscp-schema-bootstrap-diagnostics-pod-logs'
+    | 'afscp-schema-bootstrap-diagnostics-pod-previous-logs'
+    | 'afscp-schema-bootstrap-diagnostics-pod-events'
+    | 'afscp-schema-bootstrap-diagnostics-events'
+    | 'afscp-volume-bootstrap-delete-previous'
+    | 'afscp-volume-bootstrap-wait'
+    | 'afscp-volume-bootstrap-diagnostics-job-yaml'
+    | 'afscp-volume-bootstrap-diagnostics-job-describe'
+    | 'afscp-volume-bootstrap-diagnostics-pods-json'
+    | 'afscp-volume-bootstrap-diagnostics-pod-describe'
+    | 'afscp-volume-bootstrap-diagnostics-pod-logs'
+    | 'afscp-volume-bootstrap-diagnostics-pod-previous-logs'
+    | 'afscp-volume-bootstrap-diagnostics-pod-events'
+    | 'afscp-volume-bootstrap-diagnostics-events'
+    | 'afscp-bootstrap-dry-run'
+    | 'afscp-bootstrap-apply'
     | 'app-dry-run'
     | 'app-apply';
   command: string;
@@ -245,6 +273,11 @@ const LOCAL_KIND_INGRESS_NODE_PORT = '30080';
 const LOCAL_KIND_INGRESS_HOST_PORT = '29180';
 const AFSCP_DEFAULT_VOLUME_PVC = 'afscp-default-volume';
 const AFSCP_RUNTIME_COMPONENT = 'afscp-runtime';
+const AFSCP_SCHEMA_BOOTSTRAP_WAIT_TIMEOUT = '120s';
+const AFSCP_SCHEMA_BOOTSTRAP_WAIT_TIMEOUT_MS = 150_000;
+const AFSCP_BOOTSTRAP_JOB_POLL_INTERVAL_MS = 2_000;
+const AFSCP_SCHEMA_BOOTSTRAP_DIAGNOSTIC_TIMEOUT_MS = 30_000;
+const AFSCP_SCHEMA_BOOTSTRAP_DIAGNOSTIC_OUTPUT_LIMIT = 12_000;
 const AFSCP_WORKLOAD_DEPLOYMENTS = [
   'afscp-api',
   'afscp-worker',
@@ -312,6 +345,20 @@ function addSecretValue(secrets: Set<string>, value: string, options: { force?: 
   secrets.add(trimmed);
 }
 
+function addAfscpCompositeServiceTokens(secrets: Set<string>, key: string, value: string): void {
+  if (key !== 'AFSCP_API_SERVICE_TOKENS') {
+    return;
+  }
+
+  for (const entry of value.split(',')) {
+    const separatorIndex = entry.indexOf('=');
+    if (separatorIndex <= 0) {
+      continue;
+    }
+    addSecretValue(secrets, entry.slice(separatorIndex + 1), { force: true });
+  }
+}
+
 function collectRenderedSecretValues(renderedYaml: string): string[] {
   const parsed = parseKubernetesDocuments(renderedYaml);
   const secrets = new Set<string>();
@@ -332,11 +379,14 @@ function collectRenderedSecretValues(renderedYaml: string): string[] {
           continue;
         }
         addSecretValue(secrets, value, { force: SECRET_FIELD_KEY_PATTERN.test(key) });
+        addAfscpCompositeServiceTokens(secrets, key, value);
         if (field === 'data' || field === 'binaryData') {
           try {
-            addSecretValue(secrets, Buffer.from(value, 'base64').toString('utf8'), {
+            const decodedValue = Buffer.from(value, 'base64').toString('utf8');
+            addSecretValue(secrets, decodedValue, {
               force: SECRET_FIELD_KEY_PATTERN.test(key),
             });
+            addAfscpCompositeServiceTokens(secrets, key, decodedValue);
           } catch {
             // Invalid base64 will be reported by Kubernetes validation when relevant.
           }
@@ -348,7 +398,7 @@ function collectRenderedSecretValues(renderedYaml: string): string[] {
   return [...secrets].sort((left, right) => right.length - left.length);
 }
 
-function redactDiagnostic(value: string, secretValues: readonly string[] = []): string {
+function redactDiagnostic(value: string, secretValues: readonly string[] = [], maxLength = 4000): string {
   let redacted = value
     .replace(/\/\/([^:\s/]+):([^@\s/]+)@/gu, '//$1:[REDACTED]@')
     .replace(/\b([A-Z0-9_]*(?:PASSWORD|SECRET|TOKEN|ACCESS_KEY|API_KEY|DATABASE_URL|MONGO_URL|REDIS_URL|CLIENT_SECRET)[A-Z0-9_]*)=([^\s]+)/giu, '$1=[REDACTED]');
@@ -357,7 +407,7 @@ function redactDiagnostic(value: string, secretValues: readonly string[] = []): 
     redacted = redacted.replace(new RegExp(escapeRegExp(secret), 'gu'), '[REDACTED]');
   }
 
-  return redacted.slice(0, 4000);
+  return redacted.slice(0, maxLength);
 }
 
 function substrateCommandRunnerFromLocalKind(
@@ -530,36 +580,12 @@ function buildLlmupConfigHealthEvidence(
   };
 }
 
-function stringifyKubernetesDocuments(documents: readonly Record<string, unknown>[]): string {
-  if (documents.length === 0) {
-    return '';
-  }
-
-  return documents
-    .map((document) => YAML.stringify(document).trim())
-    .filter((document) => document.length > 0)
-    .join('\n---\n') + '\n';
-}
-
 function splitAdminPreflightYaml(preflightYaml: string): { namespaceYaml: string; resourceYaml: string } {
-  const parsed = parseKubernetesDocuments(preflightYaml);
-  if (!parsed.ok) {
-    throw new Error(parsed.failures.map((failure) => `${failure.path}: ${failure.message}`).join('\n'));
-  }
-
-  const namespaces: Record<string, unknown>[] = [];
-  const resources: Record<string, unknown>[] = [];
-  for (const document of parsed.documents) {
-    if (resourceKind(document) === 'Namespace') {
-      namespaces.push(document);
-    } else {
-      resources.push(document);
-    }
-  }
+  const split = splitKubernetesDocuments(preflightYaml, (document) => resourceKind(document) === 'Namespace');
 
   return {
-    namespaceYaml: stringifyKubernetesDocuments(namespaces),
-    resourceYaml: stringifyKubernetesDocuments(resources),
+    namespaceYaml: split.firstYaml,
+    resourceYaml: split.secondYaml,
   };
 }
 
@@ -801,6 +827,8 @@ async function runKubectlCheck(options: {
   kubeconfigPath: string;
   secretValues: readonly string[];
   statusWhenFailed?: StepStatus;
+  timeoutMs?: number;
+  diagnosticMaxLength?: number;
 }): Promise<{ evidence: OperationEvidence; failure?: CheckFailure; raw: LocalKindCommandRunResult }> {
   const result = await options.runner('kubectl', options.args, {
     cwd: REPO_ROOT,
@@ -808,15 +836,15 @@ async function runKubectlCheck(options: {
       ...options.env,
       KUBECONFIG: options.kubeconfigPath,
     },
-    timeoutMs: KUBECTL_TIMEOUT_MS,
+    timeoutMs: options.timeoutMs ?? KUBECTL_TIMEOUT_MS,
   });
   const evidence: OperationEvidence = {
     name: options.name,
     command: commandText(options.args),
     status: result.exitCode === 0 ? 'passed' : options.statusWhenFailed ?? 'failed',
     exit_code: result.exitCode,
-    stdout: redactDiagnostic(result.stdout, options.secretValues),
-    stderr: redactDiagnostic(result.stderr, options.secretValues),
+    stdout: redactDiagnostic(result.stdout, options.secretValues, options.diagnosticMaxLength),
+    stderr: redactDiagnostic(result.stderr, options.secretValues, options.diagnosticMaxLength),
   };
 
   return {
@@ -2175,6 +2203,320 @@ async function buildSafety(options: {
   return { failures, context, namespace };
 }
 
+type AfscpBootstrapJobDefinition = {
+  jobName: typeof AFSCP_SCHEMA_BOOTSTRAP_JOB | typeof AFSCP_VOLUME_BOOTSTRAP_JOB;
+  label: string;
+  failurePath: 'afscp-schema-bootstrap' | 'afscp-volume-bootstrap';
+  operationNames: {
+    deletePrevious: OperationEvidence['name'];
+    wait: OperationEvidence['name'];
+    diagnosticsJobYaml: OperationEvidence['name'];
+    diagnosticsJobDescribe: OperationEvidence['name'];
+    diagnosticsPodsJson: OperationEvidence['name'];
+    diagnosticsPodDescribe: OperationEvidence['name'];
+    diagnosticsPodLogs: OperationEvidence['name'];
+    diagnosticsPodPreviousLogs: OperationEvidence['name'];
+    diagnosticsPodEvents: OperationEvidence['name'];
+    diagnosticsEvents: OperationEvidence['name'];
+  };
+};
+
+const AFSCP_SCHEMA_BOOTSTRAP_DEFINITION: AfscpBootstrapJobDefinition = {
+  jobName: AFSCP_SCHEMA_BOOTSTRAP_JOB,
+  label: 'AFSCP schema bootstrap',
+  failurePath: 'afscp-schema-bootstrap',
+  operationNames: {
+    deletePrevious: 'afscp-schema-bootstrap-delete-previous',
+    wait: 'afscp-schema-bootstrap-wait',
+    diagnosticsJobYaml: 'afscp-schema-bootstrap-diagnostics-job-yaml',
+    diagnosticsJobDescribe: 'afscp-schema-bootstrap-diagnostics-job-describe',
+    diagnosticsPodsJson: 'afscp-schema-bootstrap-diagnostics-pods-json',
+    diagnosticsPodDescribe: 'afscp-schema-bootstrap-diagnostics-pod-describe',
+    diagnosticsPodLogs: 'afscp-schema-bootstrap-diagnostics-pod-logs',
+    diagnosticsPodPreviousLogs: 'afscp-schema-bootstrap-diagnostics-pod-previous-logs',
+    diagnosticsPodEvents: 'afscp-schema-bootstrap-diagnostics-pod-events',
+    diagnosticsEvents: 'afscp-schema-bootstrap-diagnostics-events',
+  },
+};
+
+const AFSCP_VOLUME_BOOTSTRAP_DEFINITION: AfscpBootstrapJobDefinition = {
+  jobName: AFSCP_VOLUME_BOOTSTRAP_JOB,
+  label: 'AFSCP default volume bootstrap',
+  failurePath: 'afscp-volume-bootstrap',
+  operationNames: {
+    deletePrevious: 'afscp-volume-bootstrap-delete-previous',
+    wait: 'afscp-volume-bootstrap-wait',
+    diagnosticsJobYaml: 'afscp-volume-bootstrap-diagnostics-job-yaml',
+    diagnosticsJobDescribe: 'afscp-volume-bootstrap-diagnostics-job-describe',
+    diagnosticsPodsJson: 'afscp-volume-bootstrap-diagnostics-pods-json',
+    diagnosticsPodDescribe: 'afscp-volume-bootstrap-diagnostics-pod-describe',
+    diagnosticsPodLogs: 'afscp-volume-bootstrap-diagnostics-pod-logs',
+    diagnosticsPodPreviousLogs: 'afscp-volume-bootstrap-diagnostics-pod-previous-logs',
+    diagnosticsPodEvents: 'afscp-volume-bootstrap-diagnostics-pod-events',
+    diagnosticsEvents: 'afscp-volume-bootstrap-diagnostics-events',
+  },
+};
+
+async function deletePreviousAfscpBootstrapJob(options: {
+  definition: AfscpBootstrapJobDefinition;
+  namespace: string;
+  kubeconfigPath: string;
+  runner: LocalKindCommandRunner;
+  env: Record<string, string | undefined>;
+  secretValues: readonly string[];
+}): Promise<{ operations: OperationEvidence[]; failures: CheckFailure[] }> {
+  const result = await runKubectlCheck({
+    name: options.definition.operationNames.deletePrevious,
+    args: [
+      ...kubeBaseArgs(options.kubeconfigPath),
+      '-n',
+      options.namespace,
+      'delete',
+      'job',
+      options.definition.jobName,
+      '--ignore-not-found=true',
+      '--wait=true',
+      '--timeout=90s',
+    ],
+    runner: options.runner,
+    env: options.env,
+    kubeconfigPath: options.kubeconfigPath,
+    secretValues: options.secretValues,
+    timeoutMs: 120_000,
+  });
+
+  return {
+    operations: [result.evidence],
+    failures: result.failure
+      ? [{
+        path: `${options.definition.failurePath}:delete-previous`,
+        message: `failed to delete the previous owned ${options.definition.label} Job before app apply: ${result.failure.message}`,
+      }]
+      : [],
+  };
+}
+
+function podNamesFromPodList(source: string): string[] {
+  try {
+    return listItems(parseJsonObject(source))
+      .map(resourceName)
+      .filter((name) => name.length > 0)
+      .sort();
+  } catch {
+    return [];
+  }
+}
+
+async function collectAfscpBootstrapDiagnostics(options: {
+  definition: AfscpBootstrapJobDefinition;
+  namespace: string;
+  kubeconfigPath: string;
+  runner: LocalKindCommandRunner;
+  env: Record<string, string | undefined>;
+  secretValues: readonly string[];
+}): Promise<OperationEvidence[]> {
+  const baseArgs = kubeBaseArgs(options.kubeconfigPath);
+  const operations: OperationEvidence[] = [];
+  const runDiagnostic = async (
+    name: OperationEvidence['name'],
+    args: string[],
+  ): Promise<Awaited<ReturnType<typeof runKubectlCheck>>> => {
+    const result = await runKubectlCheck({
+      name,
+      args,
+      runner: options.runner,
+      env: options.env,
+      kubeconfigPath: options.kubeconfigPath,
+      secretValues: options.secretValues,
+      timeoutMs: AFSCP_SCHEMA_BOOTSTRAP_DIAGNOSTIC_TIMEOUT_MS,
+      diagnosticMaxLength: AFSCP_SCHEMA_BOOTSTRAP_DIAGNOSTIC_OUTPUT_LIMIT,
+    });
+    operations.push(result.evidence);
+    return result;
+  };
+
+  const podList = await runDiagnostic(options.definition.operationNames.diagnosticsPodsJson, [
+    ...baseArgs,
+    '-n',
+    options.namespace,
+    'get',
+    'pods',
+    '-l',
+    `job-name=${options.definition.jobName}`,
+    '-o',
+    'json',
+  ]);
+  let podNames = podNamesFromPodList(podList.raw.stdout);
+
+  if (podNames.length === 0) {
+    const prefixedPodList = await runDiagnostic(options.definition.operationNames.diagnosticsPodsJson, [
+      ...baseArgs,
+      '-n',
+      options.namespace,
+      'get',
+      'pods',
+      '-l',
+      `batch.kubernetes.io/job-name=${options.definition.jobName}`,
+      '-o',
+      'json',
+    ]);
+    podNames = podNamesFromPodList(prefixedPodList.raw.stdout);
+  }
+
+  for (const podName of podNames) {
+    await runDiagnostic(options.definition.operationNames.diagnosticsPodLogs, [
+      ...baseArgs,
+      '-n',
+      options.namespace,
+      'logs',
+      `pod/${podName}`,
+      '--all-containers=true',
+      '--prefix=true',
+      '--timestamps=true',
+      '--tail=200',
+    ]);
+    await runDiagnostic(options.definition.operationNames.diagnosticsPodPreviousLogs, [
+      ...baseArgs,
+      '-n',
+      options.namespace,
+      'logs',
+      `pod/${podName}`,
+      '--all-containers=true',
+      '--prefix=true',
+      '--timestamps=true',
+      '--previous',
+      '--tail=200',
+    ]);
+    await runDiagnostic(options.definition.operationNames.diagnosticsPodDescribe, [
+      ...baseArgs,
+      '-n',
+      options.namespace,
+      'describe',
+      `pod/${podName}`,
+    ]);
+    await runDiagnostic(options.definition.operationNames.diagnosticsPodEvents, [
+      ...baseArgs,
+      '-n',
+      options.namespace,
+      'get',
+      'events',
+      `--field-selector=involvedObject.kind=Pod,involvedObject.name=${podName}`,
+      '--sort-by=.lastTimestamp',
+    ]);
+  }
+
+  await runDiagnostic(options.definition.operationNames.diagnosticsJobYaml, [
+    ...baseArgs,
+    '-n',
+    options.namespace,
+    'get',
+    `job/${options.definition.jobName}`,
+    '-o',
+    'yaml',
+  ]);
+  await runDiagnostic(options.definition.operationNames.diagnosticsJobDescribe, [
+    ...baseArgs,
+    '-n',
+    options.namespace,
+    'describe',
+    `job/${options.definition.jobName}`,
+  ]);
+  await runDiagnostic(options.definition.operationNames.diagnosticsEvents, [
+    ...baseArgs,
+    '-n',
+    options.namespace,
+    'get',
+    'events',
+    `--field-selector=involvedObject.kind=Job,involvedObject.name=${options.definition.jobName}`,
+    '--sort-by=.lastTimestamp',
+  ]);
+  await runDiagnostic(options.definition.operationNames.diagnosticsEvents, [
+    ...baseArgs,
+    '-n',
+    options.namespace,
+    'get',
+    'events',
+    '--sort-by=.lastTimestamp',
+  ]);
+
+  return operations;
+}
+
+async function waitForAfscpBootstrapJob(options: {
+  definition: AfscpBootstrapJobDefinition;
+  namespace: string;
+  kubeconfigPath: string;
+  runner: LocalKindCommandRunner;
+  env: Record<string, string | undefined>;
+  secretValues: readonly string[];
+}): Promise<{ operations: OperationEvidence[]; failures: CheckFailure[] }> {
+  const args = [
+    ...kubeBaseArgs(options.kubeconfigPath),
+    '-n',
+    options.namespace,
+    'get',
+    `job/${options.definition.jobName}`,
+    '-o',
+    'json',
+  ];
+  const deadline = Date.now() + AFSCP_SCHEMA_BOOTSTRAP_WAIT_TIMEOUT_MS;
+  const operations: OperationEvidence[] = [];
+  let lastDiagnostic = `${options.definition.label} Job did not reach Complete before ${AFSCP_SCHEMA_BOOTSTRAP_WAIT_TIMEOUT}`;
+
+  while (Date.now() <= deadline) {
+    const result = await options.runner('kubectl', args, {
+      cwd: REPO_ROOT,
+      env: {
+        ...options.env,
+        KUBECONFIG: options.kubeconfigPath,
+      },
+      timeoutMs: KUBECTL_TIMEOUT_MS,
+    });
+    const evidence: OperationEvidence = {
+      name: options.definition.operationNames.wait,
+      command: commandText(args),
+      status: result.exitCode === 0 ? 'passed' : 'failed',
+      exit_code: result.exitCode,
+      stdout: redactDiagnostic(result.stdout, options.secretValues),
+      stderr: redactDiagnostic(result.stderr, options.secretValues),
+    };
+    operations.splice(0, operations.length, evidence);
+
+    if (result.exitCode !== 0) {
+      lastDiagnostic = redactDiagnostic(result.stderr || result.stdout || `kubectl exited ${result.exitCode}`, options.secretValues);
+      break;
+    }
+
+    try {
+      const status = summarizeKubernetesJobStatus(parseJsonObject(result.stdout));
+      if (status.state === 'complete') {
+        return { operations, failures: [] };
+      }
+      if (status.state === 'failed') {
+        const reason = status.reason ? `${status.reason}: ` : '';
+        lastDiagnostic = `${reason}${status.message ?? `${options.definition.label} Job reported Failed`}`;
+        break;
+      }
+      lastDiagnostic = `${options.definition.label} Job is still pending (active=${status.active ?? 0}, succeeded=${status.succeeded ?? 0}, failed=${status.failed ?? 0})`;
+    } catch (error: unknown) {
+      lastDiagnostic = `kubectl Job JSON output must parse: ${errorMessage(error)}`;
+      break;
+    }
+
+    await sleep(Math.min(AFSCP_BOOTSTRAP_JOB_POLL_INTERVAL_MS, Math.max(0, deadline - Date.now())));
+  }
+
+  operations.push(...await collectAfscpBootstrapDiagnostics(options));
+
+  return {
+    operations,
+    failures: [{
+      path: `${options.definition.failurePath}:wait`,
+      message: `${options.definition.label} Job must complete before app rollouts: ${lastDiagnostic}; diagnostics captured in local-kind rollout evidence operations`,
+    }],
+  };
+}
+
 async function runApplySequence(options: {
   preflightYaml: string;
   appYaml: string;
@@ -2188,12 +2530,14 @@ async function runApplySequence(options: {
   const operations: OperationEvidence[] = [];
   const failures: CheckFailure[] = [];
   let adminPreflightBatches: { namespaceYaml: string; resourceYaml: string };
+  let appBatches: { bootstrapYaml: string; remainingYaml: string };
 
   try {
     adminPreflightBatches = splitAdminPreflightYaml(options.preflightYaml);
+    appBatches = splitAfscpBootstrapAppYaml(options.appYaml);
   } catch (error: unknown) {
     failures.push({
-      path: 'admin-preflight:rendered-yaml',
+      path: 'apply-sequence:rendered-yaml',
       message: errorMessage(error),
     });
     return { operations, failures };
@@ -2282,18 +2626,87 @@ async function runApplySequence(options: {
     return { operations, failures };
   }
 
+  for (const definition of [AFSCP_SCHEMA_BOOTSTRAP_DEFINITION, AFSCP_VOLUME_BOOTSTRAP_DEFINITION]) {
+    const jobReset = await deletePreviousAfscpBootstrapJob({
+      definition,
+      namespace: options.namespace,
+      kubeconfigPath: options.kubeconfigPath,
+      runner: options.runner,
+      env: options.env,
+      secretValues: options.secretValues,
+    });
+    operations.push(...jobReset.operations);
+    failures.push(...jobReset.failures);
+    if (failures.length > 0) {
+      return { operations, failures };
+    }
+  }
+
+  for (const step of [
+    {
+      name: 'afscp-bootstrap-dry-run',
+      args: [...baseArgs, 'apply', '--dry-run=server', '-f', '-'],
+      input: appBatches.bootstrapYaml,
+    },
+    {
+      name: 'afscp-bootstrap-apply',
+      args: [...baseArgs, 'apply', '-f', '-'],
+      input: appBatches.bootstrapYaml,
+    },
+  ] as const) {
+    if (step.input.trim().length === 0) {
+      continue;
+    }
+    const result = await runKubectlOperation({
+      name: step.name,
+      args: step.args,
+      input: step.input,
+      runner: options.runner,
+      env: options.env,
+      kubeconfigPath: options.kubeconfigPath,
+      secretValues: options.secretValues,
+    });
+    operations.push(result.evidence);
+    if (result.failure) {
+      failures.push(result.failure);
+      break;
+    }
+  }
+  if (failures.length > 0) {
+    return { operations, failures };
+  }
+
+  for (const definition of [AFSCP_SCHEMA_BOOTSTRAP_DEFINITION, AFSCP_VOLUME_BOOTSTRAP_DEFINITION]) {
+    const bootstrap = await waitForAfscpBootstrapJob({
+      definition,
+      namespace: options.namespace,
+      kubeconfigPath: options.kubeconfigPath,
+      runner: options.runner,
+      env: options.env,
+      secretValues: options.secretValues,
+    });
+    operations.push(...bootstrap.operations);
+    failures.push(...bootstrap.failures);
+    if (failures.length > 0) {
+      return { operations, failures };
+    }
+  }
+
   for (const step of [
     {
       name: 'app-dry-run',
       args: [...baseArgs, 'apply', '--dry-run=server', '-f', '-'],
-      input: options.appYaml,
+      input: appBatches.remainingYaml,
     },
     {
       name: 'app-apply',
       args: [...baseArgs, 'apply', '-f', '-'],
-      input: options.appYaml,
+      input: appBatches.remainingYaml,
     },
   ] as const) {
+    if (step.input.trim().length === 0) {
+      continue;
+    }
     const result = await runKubectlOperation({
       name: step.name,
       args: step.args,

@@ -231,7 +231,7 @@ src/
 │   ├── hooks/       # Custom hooks
 │   ├── stores/      # Zustand stores
 │   └── utils/       # Utilities
-├── messages/        # i18n messages
+├── messages/        # i18n messages (src/messages)
 └── types/           # TypeScript types
 ```
 

@@ -55,7 +55,11 @@ const AFSCP_RUNTIME_SERVICE_ACCOUNT = 'afscp-runtime';
 const AFSCP_RUNTIME_CONFIG_MAP = 'afscp-runtime-config';
 const AFSCP_RUNTIME_SECRET = 'afscp-runtime-secrets';
 const AFSCP_VOLUME_SECRET = 'afscp-default-volume-juicefs';
+const AFSCP_VOLUME_PVC = 'afscp-default-volume';
+const AFSCP_VOLUME_STORAGE_QUANTITY = '12P';
 const AFSCP_VOLUME_ROOT_PATH = '/var/lib/afscp/volumes/default';
+const AFSCP_JVS_CWD_VOLUME = 'afscp-jvs-cwd';
+const AFSCP_JVS_CWD_PATH = '/var/lib/afscp/jvs-cwd';
 const ROLLOUT_CHECKSUM_PATTERN = /^sha256:[a-f0-9]{64}$/u;
 
 type PackageJsonLike = {
@@ -713,18 +717,98 @@ function checkAfscpVolumeMount(
   const container = deploymentContainer(documents, deploymentName, containerName);
   const volumeMounts = Array.isArray(container.volumeMounts) ? container.volumeMounts.map(asRecord) : [];
   const volumes = Array.isArray(podSpec.volumes) ? podSpec.volumes.map(asRecord) : [];
-  const csiVolume = volumes.find((volume) => volume.name === 'afscp-default-volume');
-  const csi = asRecord(csiVolume?.csi);
-  const nodePublishSecretRef = asRecord(csi.nodePublishSecretRef);
+  const afscpVolume = volumes.find((volume) => volume.name === AFSCP_VOLUME_PVC);
+  const jvsCwdVolume = volumes.find((volume) => volume.name === AFSCP_JVS_CWD_VOLUME);
 
   if (!volumeMounts.some((mount) =>
-    mount.name === 'afscp-default-volume'
+    mount.name === AFSCP_VOLUME_PVC
     && mount.mountPath === AFSCP_VOLUME_ROOT_PATH,
   )) {
     addFailure(failures, `Deployment/${deploymentName}`, `${deploymentName} must mount the AFSCP default volume root`);
   }
-  if (csi.driver !== 'csi.juicefs.com' || nodePublishSecretRef.name !== AFSCP_VOLUME_SECRET) {
-    addFailure(failures, `Deployment/${deploymentName}`, `${deploymentName} must mount the default AFSCP volume through the JuiceFS CSI Secret`);
+  if (!volumeMounts.some((mount) =>
+    mount.name === AFSCP_JVS_CWD_VOLUME
+    && mount.mountPath === AFSCP_JVS_CWD_PATH,
+  )) {
+    addFailure(failures, `Deployment/${deploymentName}`, `${deploymentName} must mount the clean AFSCP_JVS_CWD scratch path`);
+  }
+  if (asRecord(afscpVolume?.csi).driver === 'csi.juicefs.com') {
+    addFailure(
+      failures,
+      `Deployment/${deploymentName}`,
+      `${deploymentName} must not use inline CSI for the AFSCP default volume; JuiceFS CSI requires Persistent volume lifecycle`,
+    );
+  }
+  if (asRecord(afscpVolume?.persistentVolumeClaim).claimName !== AFSCP_VOLUME_PVC) {
+    addFailure(failures, `Deployment/${deploymentName}`, `${deploymentName} must mount the AFSCP default PersistentVolumeClaim`);
+  }
+  if (!Object.prototype.hasOwnProperty.call(jvsCwdVolume ?? {}, 'emptyDir')) {
+    addFailure(failures, `Deployment/${deploymentName}`, `${deploymentName} must back AFSCP_JVS_CWD with an emptyDir scratch volume`);
+  }
+}
+
+function checkAfscpPersistentVolumeResources(
+  documents: readonly Record<string, unknown>[],
+  namespace: string,
+  defaultVolumeId: string,
+  failures: CheckFailure[],
+): void {
+  const expectedPvName = `${namespace}-afscp-default-volume`;
+  const pv = resourceByKindName(documents, 'PersistentVolume', expectedPvName);
+  const pvc = resourceByKindName(documents, 'PersistentVolumeClaim', AFSCP_VOLUME_PVC);
+  const pvSpec = asRecord(pv.spec);
+  const pvcSpec = asRecord(pvc.spec);
+  const csi = asRecord(pvSpec.csi);
+  const nodePublishSecretRef = asRecord(csi.nodePublishSecretRef);
+  const pvCapacity = asRecord(pvSpec.capacity);
+  const pvcRequests = asRecord(asRecord(pvcSpec.resources).requests);
+  const pvAccessModes = Array.isArray(pvSpec.accessModes) ? pvSpec.accessModes : [];
+  const pvcAccessModes = Array.isArray(pvcSpec.accessModes) ? pvcSpec.accessModes : [];
+  const mountOptions = Array.isArray(pvSpec.mountOptions) ? pvSpec.mountOptions : [];
+
+  if (resourceName(pv) !== expectedPvName) {
+    addFailure(failures, `PersistentVolume/${expectedPvName}`, 'AFSCP default volume must render a static PersistentVolume');
+  }
+  if (resourceName(pvc) !== AFSCP_VOLUME_PVC || resourceNamespace(pvc) !== namespace) {
+    addFailure(failures, `PersistentVolumeClaim/${AFSCP_VOLUME_PVC}`, 'AFSCP default volume must render a namespace-local PersistentVolumeClaim');
+  }
+  if (pvSpec.volumeMode !== 'Filesystem' || pvcSpec.volumeMode !== 'Filesystem') {
+    addFailure(failures, `PersistentVolume/${expectedPvName}`, 'AFSCP default PV/PVC must use Filesystem volume mode');
+  }
+  if (!pvAccessModes.includes('ReadWriteMany') || !pvcAccessModes.includes('ReadWriteMany')) {
+    addFailure(failures, `PersistentVolume/${expectedPvName}`, 'AFSCP default PV/PVC must allow ReadWriteMany for API, worker, and export gateway');
+  }
+  if (pvSpec.storageClassName !== '' || pvcSpec.storageClassName !== '') {
+    addFailure(failures, `PersistentVolume/${expectedPvName}`, 'AFSCP static JuiceFS PV/PVC must use an empty storageClassName');
+  }
+  if (pvSpec.persistentVolumeReclaimPolicy !== 'Retain') {
+    addFailure(failures, `PersistentVolume/${expectedPvName}`, 'AFSCP default PersistentVolume must retain data on release');
+  }
+  if (pvcSpec.volumeName !== expectedPvName) {
+    addFailure(failures, `PersistentVolumeClaim/${AFSCP_VOLUME_PVC}`, 'AFSCP default PVC must bind to the static JuiceFS PersistentVolume');
+  }
+  if (pvCapacity.storage !== AFSCP_VOLUME_STORAGE_QUANTITY || pvcRequests.storage !== AFSCP_VOLUME_STORAGE_QUANTITY) {
+    addFailure(
+      failures,
+      `PersistentVolume/${expectedPvName}`,
+      `AFSCP default PV/PVC storage quantity must be ${AFSCP_VOLUME_STORAGE_QUANTITY} to avoid Kubernetes fractional-byte quantity warnings and stay above the pre-GA 10Pi baseline`,
+    );
+  }
+  if (
+    csi.driver !== 'csi.juicefs.com'
+    || csi.volumeHandle !== expectedPvName
+    || csi.fsType !== 'juicefs'
+    || nodePublishSecretRef.name !== AFSCP_VOLUME_SECRET
+    || nodePublishSecretRef.namespace !== namespace
+  ) {
+    addFailure(
+      failures,
+      `PersistentVolume/${expectedPvName}`,
+      'AFSCP default PersistentVolume must use JuiceFS CSI with the namespace-local volume Secret',
+    );
+  }
+  if (!mountOptions.includes(`subdir=/afscp/${defaultVolumeId}`)) {
+    addFailure(failures, `PersistentVolume/${expectedPvName}`, 'AFSCP default PersistentVolume must mount the default AFSCP subdirectory');
   }
 }
 
@@ -763,16 +847,41 @@ function checkAfscpContract(documents: readonly Record<string, unknown>[], failu
   if (config.AFSCP_API_WORKLOAD_MOUNT_SECRET_REFS !== `${config.AFSCP_API_VOLUME_ROOTS}`.split('=')[0] + `=${namespace}/${AFSCP_VOLUME_SECRET}`) {
     addFailure(failures, `ConfigMap/${AFSCP_RUNTIME_CONFIG_MAP}`, 'AFSCP workload mount Secret refs must point to the namespace-local JuiceFS CSI Secret');
   }
+  if (config.AFSCP_JVS_CWD !== AFSCP_JVS_CWD_PATH) {
+    addFailure(
+      failures,
+      `ConfigMap/${AFSCP_RUNTIME_CONFIG_MAP}`,
+      `AFSCP_JVS_CWD must be the clean absolute mounted scratch path ${AFSCP_JVS_CWD_PATH}`,
+    );
+  }
+  for (const key of ['AFSCP_JVS_BINARY_PATH', 'AFSCP_JVS_BINARY_SHA256']) {
+    if (Object.prototype.hasOwnProperty.call(config, key) || Object.prototype.hasOwnProperty.call(secrets, key)) {
+      addFailure(
+        failures,
+        `ConfigMap/${AFSCP_RUNTIME_CONFIG_MAP}`,
+        `${key} must come from the AFSCP image default instead of the AgentSmith deploy manifest`,
+      );
+    }
+  }
+  const defaultVolumeId = `${config.AFSCP_API_VOLUME_ROOTS ?? ''}`.split('=')[0];
+  checkAfscpPersistentVolumeResources(documents, namespace, defaultVolumeId, failures);
   for (const [key, expected] of [
     ['AFSCP_STORAGE_ENABLED', 'true'],
     ['AFSCP_STORAGE_READY', 'true'],
+    ['AFSCP_JVS_ENABLED', 'true'],
+    ['AFSCP_JVS_READY', 'true'],
     ['AFSCP_MOUNT_ENABLED', 'true'],
     ['AFSCP_MOUNT_READY', 'true'],
     ['AFSCP_REPO_TEMPLATE_ENABLED', 'true'],
     ['AFSCP_REPO_TEMPLATE_READY', 'true'],
     ['AFSCP_WORKER_OPERATION_RECOVERY_ENABLED', 'true'],
+    ['AFSCP_REPO_CREATE_RECOVERY_ENABLED', 'true'],
+    ['AFSCP_REPO_LIFECYCLE_RECOVERY_ENABLED', 'true'],
     ['AFSCP_SAVE_POINT_RECOVERY_ENABLED', 'true'],
+    ['AFSCP_TEMPLATE_CREATE_RECOVERY_ENABLED', 'true'],
+    ['AFSCP_TEMPLATE_CLONE_RECOVERY_ENABLED', 'true'],
     ['AFSCP_RESTORE_PREVIEW_RECOVERY_ENABLED', 'true'],
+    ['AFSCP_RESTORE_PREVIEW_DISCARD_RECOVERY_ENABLED', 'true'],
     ['AFSCP_RESTORE_RUN_RECOVERY_ENABLED', 'true'],
   ] as const) {
     if (config[key] !== expected) {
@@ -805,8 +914,11 @@ function checkAfscpContract(documents: readonly Record<string, unknown>[], failu
   if (volumeSecret.storage !== 'minio' || !String(volumeSecret.bucket ?? '').startsWith(`http://substrate-minio.${namespace}.svc.cluster.local:9000/`)) {
     addFailure(failures, `Secret/${AFSCP_VOLUME_SECRET}`, 'AFSCP JuiceFS CSI Secret must bind to internal substrate MinIO');
   }
-  if (!String(volumeSecret.metaurl ?? '').includes('@substrate-postgresql:5432/')) {
-    addFailure(failures, `Secret/${AFSCP_VOLUME_SECRET}`, 'AFSCP JuiceFS CSI Secret must bind to internal substrate PostgreSQL metadata');
+  if (!String(volumeSecret.metaurl ?? '').includes(`@substrate-postgresql.${namespace}.svc.cluster.local:5432/`)) {
+    addFailure(failures, `Secret/${AFSCP_VOLUME_SECRET}`, 'AFSCP JuiceFS CSI Secret metaurl must use the namespace FQDN for substrate PostgreSQL metadata');
+  }
+  if (String(volumeSecret.metaurl ?? '').includes('@substrate-postgresql:5432/')) {
+    addFailure(failures, `Secret/${AFSCP_VOLUME_SECRET}`, 'AFSCP JuiceFS CSI Secret metaurl must not use a short substrate PostgreSQL service name');
   }
 
   const api = deploymentContainer(documents, 'afscp-api', 'afscp-api');

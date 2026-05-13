@@ -106,6 +106,11 @@ type OperationEvidence = {
     | 'ingress-admission-patch-wait'
     | 'substrate-endpointslice-reconcile-check'
     | 'substrate-endpointslice-reconcile-delete'
+    | 'afscp-static-volume-reset-check-pvc'
+    | 'afscp-static-volume-reset-check-pv'
+    | 'afscp-static-volume-reset-delete-workloads'
+    | 'afscp-static-volume-reset-delete-pvc'
+    | 'afscp-static-volume-reset-delete-pv'
     | 'app-dry-run'
     | 'app-apply';
   command: string;
@@ -238,13 +243,18 @@ const LOCAL_KIND_INGRESS_CLASS = 'nginx';
 const LOCAL_KIND_CONTROL_PLANE_NODE = 'agentsmith-control-plane';
 const LOCAL_KIND_INGRESS_NODE_PORT = '30080';
 const LOCAL_KIND_INGRESS_HOST_PORT = '29180';
+const AFSCP_DEFAULT_VOLUME_PVC = 'afscp-default-volume';
+const AFSCP_RUNTIME_COMPONENT = 'afscp-runtime';
+const AFSCP_WORKLOAD_DEPLOYMENTS = [
+  'afscp-api',
+  'afscp-worker',
+  'afscp-export-gateway',
+] as const;
 const ROLLOUT_DEPLOYMENTS = [
   'agentsmith-web',
   'agentsmith-api',
   'agentsmith-llmup',
-  'afscp-api',
-  'afscp-worker',
-  'afscp-export-gateway',
+  ...AFSCP_WORKLOAD_DEPLOYMENTS,
   'agentsmith-sandbox-manager',
 ] as const;
 const SECRET_FIELD_KEY_PATTERN = /(?:PASSWORD|SECRET|TOKEN|PRIVATE|ACCESS[_-]?KEY|API[_-]?KEY|CREDENTIAL|DATABASE_URL|MONGO_URL|MONGODB_URI|REDIS_URL|CLIENT_SECRET|AUTHORIZATION)/iu;
@@ -937,6 +947,11 @@ function metadataAnnotations(resource: Record<string, unknown>): Record<string, 
   return asRecord(asRecord(resource.metadata).annotations);
 }
 
+function resourceNamespace(resource: Record<string, unknown>): string {
+  const namespace = asRecord(resource.metadata).namespace;
+  return typeof namespace === 'string' ? namespace : '';
+}
+
 function desiredSubstrateEndpointAddressTypes(appYaml: string): Map<string, string> {
   const parsed = parseKubernetesDocuments(appYaml);
   if (!parsed.ok) {
@@ -967,6 +982,104 @@ function isOwnedSubstrateEndpointSlice(endpointSlice: Record<string, unknown>): 
     && labels['app.kubernetes.io/component'] === 'substrate-binding'
     && labels['kubernetes.io/service-name'] === name
     && annotations['rendered-by'] === 'agentsmith-unified-deploy';
+}
+
+type DesiredAfscpStaticVolume = {
+  namespace: string;
+  pvcName: string;
+  pvName: string;
+  storageQuantity: string;
+};
+
+function desiredAfscpStaticVolume(appYaml: string, namespace: string): DesiredAfscpStaticVolume | undefined {
+  const parsed = parseKubernetesDocuments(appYaml);
+  if (!parsed.ok) {
+    throw new Error(parsed.failures.map((failure) => `${failure.path}: ${failure.message}`).join('\n'));
+  }
+
+  const pvc = parsed.documents.find((document) =>
+    resourceKind(document) === 'PersistentVolumeClaim'
+    && resourceName(document) === AFSCP_DEFAULT_VOLUME_PVC
+    && resourceNamespace(document) === namespace,
+  );
+  if (!pvc) {
+    return undefined;
+  }
+
+  const pvcSpec = asRecord(pvc.spec);
+  const pvcRequests = asRecord(asRecord(pvcSpec.resources).requests);
+  const pvName = typeof pvcSpec.volumeName === 'string' ? pvcSpec.volumeName : '';
+  const storageQuantity = pvcRequests.storage;
+  if (!pvName || typeof storageQuantity !== 'string') {
+    throw new Error('AFSCP default PersistentVolumeClaim must render volumeName and resources.requests.storage before local-kind reset');
+  }
+
+  const pv = parsed.documents.find((document) =>
+    resourceKind(document) === 'PersistentVolume'
+    && resourceName(document) === pvName,
+  );
+  const pvStorageQuantity = asRecord(asRecord(pv?.spec).capacity).storage;
+  if (pv && pvStorageQuantity !== storageQuantity) {
+    throw new Error('AFSCP default PersistentVolume and PersistentVolumeClaim must render the same storage quantity before local-kind reset');
+  }
+
+  return {
+    namespace,
+    pvcName: AFSCP_DEFAULT_VOLUME_PVC,
+    pvName,
+    storageQuantity,
+  };
+}
+
+function isOwnedAfscpStaticVolumeResource(
+  resource: Record<string, unknown>,
+  desired: DesiredAfscpStaticVolume,
+): boolean {
+  const labels = metadataLabels(resource);
+  const annotations = metadataAnnotations(resource);
+  const kind = resourceKind(resource);
+  const expectedName = kind === 'PersistentVolume' ? desired.pvName : desired.pvcName;
+  const expectedNamespace = kind === 'PersistentVolumeClaim' ? desired.namespace : '';
+
+  return resourceName(resource) === expectedName
+    && (expectedNamespace === '' || resourceNamespace(resource) === expectedNamespace)
+    && labels['app.kubernetes.io/name'] === 'agentsmith'
+    && labels['app.kubernetes.io/component'] === AFSCP_RUNTIME_COMPONENT
+    && labels['app.kubernetes.io/part-of'] === 'agentsmith-deploy'
+    && annotations['rendered-by'] === 'agentsmith-unified-deploy';
+}
+
+function liveAfscpStaticVolumeStorageValues(resource: Record<string, unknown>): string[] {
+  if (resourceKind(resource) === 'PersistentVolume') {
+    const storage = asRecord(asRecord(resource.spec).capacity).storage;
+    return typeof storage === 'string' ? [storage] : [];
+  }
+
+  const request = asRecord(asRecord(asRecord(resource.spec).resources).requests).storage;
+  const capacity = asRecord(asRecord(resource.status).capacity).storage;
+
+  return [request, capacity].filter((value): value is string => typeof value === 'string');
+}
+
+function hasAfscpStaticVolumeStorageDrift(
+  resource: Record<string, unknown> | undefined,
+  desired: DesiredAfscpStaticVolume,
+): boolean {
+  if (!resource) {
+    return false;
+  }
+
+  return liveAfscpStaticVolumeStorageValues(resource)
+    .some((storageQuantity) => storageQuantity !== desired.storageQuantity);
+}
+
+function parseOptionalKubectlResource(source: string): Record<string, unknown> | undefined {
+  const trimmed = source.trim();
+  if (!trimmed) {
+    return undefined;
+  }
+
+  return parseJsonObject(trimmed);
 }
 
 function autoscalerTargetName(resource: Record<string, unknown>): string {
@@ -1695,6 +1808,205 @@ async function reconcileSubstrateEndpointSliceAddressTypes(options: {
   return { operations, failures };
 }
 
+async function resetOwnedAfscpStaticVolumeDrift(options: {
+  appYaml: string;
+  namespace: string;
+  kubeconfigPath: string;
+  runner: LocalKindCommandRunner;
+  env: Record<string, string | undefined>;
+  secretValues: readonly string[];
+}): Promise<{ operations: OperationEvidence[]; failures: CheckFailure[] }> {
+  const operations: OperationEvidence[] = [];
+  const failures: CheckFailure[] = [];
+  let desired: DesiredAfscpStaticVolume | undefined;
+
+  try {
+    desired = desiredAfscpStaticVolume(options.appYaml, options.namespace);
+  } catch (error: unknown) {
+    return {
+      operations,
+      failures: [{
+        path: 'afscp-static-volume:rendered-yaml',
+        message: errorMessage(error),
+      }],
+    };
+  }
+
+  if (!desired) {
+    return { operations, failures };
+  }
+
+  const baseArgs = kubeBaseArgs(options.kubeconfigPath);
+  const pvcCheck = await runKubectlCheck({
+    name: 'afscp-static-volume-reset-check-pvc',
+    args: [
+      ...baseArgs,
+      '-n',
+      options.namespace,
+      'get',
+      'pvc',
+      desired.pvcName,
+      '-o',
+      'json',
+      '--ignore-not-found',
+    ],
+    runner: options.runner,
+    env: options.env,
+    kubeconfigPath: options.kubeconfigPath,
+    secretValues: options.secretValues,
+  });
+  operations.push(pvcCheck.evidence);
+  if (pvcCheck.failure) {
+    failures.push({
+      path: 'afscp-static-volume:pvc-check',
+      message: `could not inspect live AFSCP PersistentVolumeClaim before app apply: ${pvcCheck.failure.message}`,
+    });
+    return { operations, failures };
+  }
+
+  const pvCheck = await runKubectlCheck({
+    name: 'afscp-static-volume-reset-check-pv',
+    args: [
+      ...baseArgs,
+      'get',
+      'pv',
+      desired.pvName,
+      '-o',
+      'json',
+      '--ignore-not-found',
+    ],
+    runner: options.runner,
+    env: options.env,
+    kubeconfigPath: options.kubeconfigPath,
+    secretValues: options.secretValues,
+  });
+  operations.push(pvCheck.evidence);
+  if (pvCheck.failure) {
+    failures.push({
+      path: 'afscp-static-volume:pv-check',
+      message: `could not inspect live AFSCP PersistentVolume before app apply: ${pvCheck.failure.message}`,
+    });
+    return { operations, failures };
+  }
+
+  let livePvc: Record<string, unknown> | undefined;
+  let livePv: Record<string, unknown> | undefined;
+  try {
+    livePvc = parseOptionalKubectlResource(pvcCheck.raw.stdout);
+    livePv = parseOptionalKubectlResource(pvCheck.raw.stdout);
+  } catch (error: unknown) {
+    failures.push({
+      path: 'afscp-static-volume:check',
+      message: `live AFSCP PV/PVC JSON must parse before app apply: ${errorMessage(error)}`,
+    });
+    return { operations, failures };
+  }
+
+  const liveResources = [livePvc, livePv].filter((resource): resource is Record<string, unknown> => Boolean(resource));
+  for (const resource of liveResources) {
+    if (!isOwnedAfscpStaticVolumeResource(resource, desired)) {
+      failures.push({
+        path: `afscp-static-volume:${resourceKind(resource)}/${resourceName(resource)}`,
+        message: `${resourceKind(resource)}/${resourceName(resource)} exists but is not owned by agentsmith-unified-deploy; refusing to delete before app apply`,
+      });
+    }
+  }
+  if (failures.length > 0) {
+    return { operations, failures };
+  }
+
+  const pvcDrift = hasAfscpStaticVolumeStorageDrift(livePvc, desired);
+  const pvDrift = hasAfscpStaticVolumeStorageDrift(livePv, desired);
+  if (!pvcDrift && !pvDrift) {
+    return { operations, failures };
+  }
+
+  const workloadDelete = await runKubectlCheck({
+    name: 'afscp-static-volume-reset-delete-workloads',
+    args: [
+      ...baseArgs,
+      '-n',
+      options.namespace,
+      'delete',
+      'deployment',
+      ...AFSCP_WORKLOAD_DEPLOYMENTS,
+      '--ignore-not-found=true',
+      '--cascade=foreground',
+      '--wait=true',
+      '--timeout=90s',
+    ],
+    runner: options.runner,
+    env: options.env,
+    kubeconfigPath: options.kubeconfigPath,
+    secretValues: options.secretValues,
+  });
+  operations.push(workloadDelete.evidence);
+  if (workloadDelete.failure) {
+    failures.push({
+      path: 'afscp-static-volume:delete-workloads',
+      message: `failed to delete AFSCP workloads before static PV/PVC reset: ${workloadDelete.failure.message}`,
+    });
+    return { operations, failures };
+  }
+
+  if (livePvc) {
+    const pvcDelete = await runKubectlCheck({
+      name: 'afscp-static-volume-reset-delete-pvc',
+      args: [
+        ...baseArgs,
+        '-n',
+        options.namespace,
+        'delete',
+        'pvc',
+        desired.pvcName,
+        '--ignore-not-found=true',
+        '--wait=true',
+        '--timeout=90s',
+      ],
+      runner: options.runner,
+      env: options.env,
+      kubeconfigPath: options.kubeconfigPath,
+      secretValues: options.secretValues,
+    });
+    operations.push(pvcDelete.evidence);
+    if (pvcDelete.failure) {
+      failures.push({
+        path: 'afscp-static-volume:delete-pvc',
+        message: `failed to delete owned stale AFSCP PersistentVolumeClaim before app apply: ${pvcDelete.failure.message}`,
+      });
+      return { operations, failures };
+    }
+  }
+
+  if (livePv) {
+    const pvDelete = await runKubectlCheck({
+      name: 'afscp-static-volume-reset-delete-pv',
+      args: [
+        ...baseArgs,
+        'delete',
+        'pv',
+        desired.pvName,
+        '--ignore-not-found=true',
+        '--wait=true',
+        '--timeout=90s',
+      ],
+      runner: options.runner,
+      env: options.env,
+      kubeconfigPath: options.kubeconfigPath,
+      secretValues: options.secretValues,
+    });
+    operations.push(pvDelete.evidence);
+    if (pvDelete.failure) {
+      failures.push({
+        path: 'afscp-static-volume:delete-pv',
+        message: `failed to delete owned stale AFSCP PersistentVolume before app apply: ${pvDelete.failure.message}`,
+      });
+    }
+  }
+
+  return { operations, failures };
+}
+
 function createEmptyEvidence(params: {
   kubeconfig: KubeconfigResolution;
   context: string;
@@ -1952,6 +2264,20 @@ async function runApplySequence(options: {
   });
   operations.push(...substrateEndpointSliceReconcile.operations);
   failures.push(...substrateEndpointSliceReconcile.failures);
+  if (failures.length > 0) {
+    return { operations, failures };
+  }
+
+  const afscpStaticVolumeReset = await resetOwnedAfscpStaticVolumeDrift({
+    appYaml: options.appYaml,
+    namespace: options.namespace,
+    kubeconfigPath: options.kubeconfigPath,
+    runner: options.runner,
+    env: options.env,
+    secretValues: options.secretValues,
+  });
+  operations.push(...afscpStaticVolumeReset.operations);
+  failures.push(...afscpStaticVolumeReset.failures);
   if (failures.length > 0) {
     return { operations, failures };
   }

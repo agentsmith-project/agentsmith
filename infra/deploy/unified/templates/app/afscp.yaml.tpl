@@ -38,6 +38,9 @@ data:
   AFSCP_EXPORT_GATEWAY_VOLUME_ROOTS: "{{AFSCP_DEFAULT_VOLUME_ID}}={{AFSCP_VOLUME_ROOT_PATH}}"
   AFSCP_STORAGE_ENABLED: "true"
   AFSCP_STORAGE_READY: "true"
+  AFSCP_JVS_ENABLED: "true"
+  AFSCP_JVS_READY: "true"
+  AFSCP_JVS_CWD: "{{AFSCP_JVS_CWD_PATH}}"
   AFSCP_WEBDAV_ENABLED: "true"
   AFSCP_WEBDAV_READY: "true"
   AFSCP_MOUNT_ENABLED: "true"
@@ -99,11 +102,60 @@ metadata:
 type: Opaque
 stringData:
   name: "{{AFSCP_DEFAULT_VOLUME_JUICEFS_NAME}}"
-  metaurl: "postgres://{{SUBSTRATE_POSTGRES_USER}}:{{SUBSTRATE_POSTGRES_PASSWORD}}@substrate-postgresql:{{SUBSTRATE_POSTGRES_SERVICE_PORT}}/{{SUBSTRATE_POSTGRES_DATABASE}}?sslmode=disable"
+  metaurl: "postgres://{{SUBSTRATE_POSTGRES_USER}}:{{SUBSTRATE_POSTGRES_PASSWORD}}@{{SUBSTRATE_POSTGRES_SERVICE_FQDN}}:{{SUBSTRATE_POSTGRES_SERVICE_PORT}}/{{SUBSTRATE_POSTGRES_DATABASE}}?sslmode=disable"
   storage: "minio"
   bucket: "http://substrate-minio.{{NAMESPACE}}.svc.cluster.local:{{SUBSTRATE_MINIO_SERVICE_PORT}}/{{SUBSTRATE_MINIO_BUCKET}}"
   access-key: "{{SUBSTRATE_MINIO_ACCESS_KEY}}"
   secret-key: "{{SUBSTRATE_MINIO_SECRET_KEY}}"
+---
+apiVersion: v1
+kind: PersistentVolume
+metadata:
+  name: {{AFSCP_DEFAULT_VOLUME_PV_NAME}}
+  labels:
+    app.kubernetes.io/name: agentsmith
+    app.kubernetes.io/component: afscp-runtime
+    app.kubernetes.io/part-of: agentsmith-deploy
+  annotations:
+    rendered-by: agentsmith-unified-deploy
+spec:
+  capacity:
+    storage: {{AFSCP_DEFAULT_VOLUME_STORAGE_QUANTITY}}
+  volumeMode: Filesystem
+  accessModes:
+    - ReadWriteMany
+  persistentVolumeReclaimPolicy: Retain
+  storageClassName: ""
+  mountOptions:
+    - subdir=/afscp/{{AFSCP_DEFAULT_VOLUME_ID}}
+  csi:
+    driver: csi.juicefs.com
+    volumeHandle: {{AFSCP_DEFAULT_VOLUME_PV_NAME}}
+    fsType: juicefs
+    nodePublishSecretRef:
+      name: afscp-default-volume-juicefs
+      namespace: {{NAMESPACE}}
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: afscp-default-volume
+  namespace: {{NAMESPACE}}
+  labels:
+    app.kubernetes.io/name: agentsmith
+    app.kubernetes.io/component: afscp-runtime
+    app.kubernetes.io/part-of: agentsmith-deploy
+  annotations:
+    rendered-by: agentsmith-unified-deploy
+spec:
+  accessModes:
+    - ReadWriteMany
+  volumeMode: Filesystem
+  storageClassName: ""
+  volumeName: {{AFSCP_DEFAULT_VOLUME_PV_NAME}}
+  resources:
+    requests:
+      storage: {{AFSCP_DEFAULT_VOLUME_STORAGE_QUANTITY}}
 ---
 apiVersion: apps/v1
 kind: Deployment
@@ -174,14 +226,14 @@ spec:
           volumeMounts:
             - name: afscp-default-volume
               mountPath: "{{AFSCP_VOLUME_ROOT_PATH}}"
+            - name: afscp-jvs-cwd
+              mountPath: "{{AFSCP_JVS_CWD_PATH}}"
       volumes:
         - name: afscp-default-volume
-          csi:
-            driver: csi.juicefs.com
-            volumeAttributes:
-              subPath: "afscp/{{AFSCP_DEFAULT_VOLUME_ID}}"
-            nodePublishSecretRef:
-              name: afscp-default-volume-juicefs
+          persistentVolumeClaim:
+            claimName: afscp-default-volume
+        - name: afscp-jvs-cwd
+          emptyDir: {}
 ---
 apiVersion: v1
 kind: Service
@@ -252,14 +304,14 @@ spec:
           volumeMounts:
             - name: afscp-default-volume
               mountPath: "{{AFSCP_VOLUME_ROOT_PATH}}"
+            - name: afscp-jvs-cwd
+              mountPath: "{{AFSCP_JVS_CWD_PATH}}"
       volumes:
         - name: afscp-default-volume
-          csi:
-            driver: csi.juicefs.com
-            volumeAttributes:
-              subPath: "afscp/{{AFSCP_DEFAULT_VOLUME_ID}}"
-            nodePublishSecretRef:
-              name: afscp-default-volume-juicefs
+          persistentVolumeClaim:
+            claimName: afscp-default-volume
+        - name: afscp-jvs-cwd
+          emptyDir: {}
 ---
 apiVersion: apps/v1
 kind: Deployment
@@ -328,14 +380,14 @@ spec:
           volumeMounts:
             - name: afscp-default-volume
               mountPath: "{{AFSCP_VOLUME_ROOT_PATH}}"
+            - name: afscp-jvs-cwd
+              mountPath: "{{AFSCP_JVS_CWD_PATH}}"
       volumes:
         - name: afscp-default-volume
-          csi:
-            driver: csi.juicefs.com
-            volumeAttributes:
-              subPath: "afscp/{{AFSCP_DEFAULT_VOLUME_ID}}"
-            nodePublishSecretRef:
-              name: afscp-default-volume-juicefs
+          persistentVolumeClaim:
+            claimName: afscp-default-volume
+        - name: afscp-jvs-cwd
+          emptyDir: {}
 ---
 apiVersion: v1
 kind: Service

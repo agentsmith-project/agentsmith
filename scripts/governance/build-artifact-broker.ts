@@ -487,7 +487,6 @@ function normalizeBaseImageInputs(baseImages: readonly string[]): readonly Norma
 function isAppImageInputPath(path: string): boolean {
   return APP_IMAGE_ROOT_FILES.has(path)
     || path.startsWith('src/')
-    || path.startsWith('messages/')
     || path.startsWith('config/')
     || path.startsWith('public/')
     || path.startsWith('packages/')

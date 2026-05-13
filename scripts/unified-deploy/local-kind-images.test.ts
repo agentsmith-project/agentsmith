@@ -78,6 +78,31 @@ function registryDigestForRef(ref: string): string {
   return 'sha256:ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff';
 }
 
+function appDockerfileBuildContextCopySources(): Array<{ line: number; source: string }> {
+  const dockerfile = readFileSync(join(process.cwd(), 'infra', 'deploy', 'Dockerfile.agentsmith-app'), 'utf8');
+
+  return dockerfile.split('\n').flatMap((line, index) => {
+    const trimmed = line.trim();
+    if (!trimmed.startsWith('COPY ')) {
+      return [];
+    }
+
+    const parts = trimmed.split(/\s+/u).slice(1);
+    const flags: string[] = [];
+    while (parts[0]?.startsWith('--')) {
+      const flag = parts.shift();
+      if (flag) {
+        flags.push(flag);
+      }
+    }
+    if (flags.some((flag) => flag.startsWith('--from='))) {
+      return [];
+    }
+
+    return parts.slice(0, -1).map((source) => ({ line: index + 1, source }));
+  });
+}
+
 function successfulRunner(calls: CommandCall[]): LocalKindImageCommandRunner {
   return async (command, args) => {
     calls.push({ command, args });
@@ -111,6 +136,13 @@ llmup_source_image=ghcr.io/agentsmith-project/llm-universal-proxy:v0.2.27@sha256
     expect(lock.source_image).toContain('llm-universal-proxy:v0.2.27@sha256:');
     expect(lock.host_image).toBe('localhost:5001/mbos/llm-universal-proxy:v0.2.27');
     expect(lock.k8s_image).toBe('kind-registry:5000/mbos/llm-universal-proxy:v0.2.27');
+  });
+
+  it('keeps app Dockerfile build-context COPY sources present in the repo', () => {
+    const missingSources = appDockerfileBuildContextCopySources()
+      .filter(({ source }) => !existsSync(join(process.cwd(), source)));
+
+    expect(missingSources).toEqual([]);
   });
 
   it('generates a local-kind site env with immutable K8s digest refs and records host push refs', async () => {

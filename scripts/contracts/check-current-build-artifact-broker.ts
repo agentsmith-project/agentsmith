@@ -1,4 +1,4 @@
-import { readFileSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 
 import {
@@ -109,6 +109,28 @@ function parseDockerfileInstructions(content: string): string[] {
   return instructions;
 }
 
+function parseDockerfileBuildContextCopySources(content: string): Array<{ instruction: string; source: string }> {
+  return parseDockerfileInstructions(content).flatMap((instruction) => {
+    if (!instruction.startsWith('COPY ')) {
+      return [];
+    }
+
+    const parts = instruction.split(/\s+/u).slice(1);
+    const flags: string[] = [];
+    while (parts[0]?.startsWith('--')) {
+      const flag = parts.shift();
+      if (flag !== undefined) {
+        flags.push(flag);
+      }
+    }
+    if (flags.some((flag) => flag.startsWith('--from='))) {
+      return [];
+    }
+
+    return parts.slice(0, -1).map((source) => ({ instruction, source }));
+  });
+}
+
 function parseDockerfileMountOption(mountOption: string): Map<string, string> | null {
   if (!mountOption.startsWith('--mount=')) {
     return null;
@@ -125,6 +147,26 @@ function parseDockerfileMountOption(mountOption: string): Map<string, string> | 
   }
 
   return attributes;
+}
+
+function assertAgentsmithAppDockerfileBuildContextCopySources(dockerfileContent: string): void {
+  const copySources = parseDockerfileBuildContextCopySources(dockerfileContent);
+
+  assert(
+    copySources.some(({ source }) => source === 'src' || source === './src'),
+    'Dockerfile.agentsmith-app must copy src build-context source so src/messages is included.',
+  );
+  assert(
+    copySources.every(({ source }) => source !== 'messages' && source !== './messages' && !source.startsWith('messages/')),
+    'Dockerfile.agentsmith-app must not copy removed root messages/ source; i18n truth is src/messages.',
+  );
+
+  for (const { instruction, source } of copySources) {
+    assert(
+      existsSync(resolve(source)),
+      `Dockerfile.agentsmith-app build-context COPY source must exist: ${source} in "${instruction}".`,
+    );
+  }
 }
 
 function assertAgentsmithAppNextBuildCacheMount(dockerfileContent: string): void {
@@ -294,12 +336,14 @@ function main(): void {
     }
   }
   assertAgentsmithAppNextBuildCacheMount(agentsmithAppDockerfile);
+  assertAgentsmithAppDockerfileBuildContextCopySources(agentsmithAppDockerfile);
 
   const appKey = computeAppImageContentKey({
     files: [
       { path: 'package-lock.json', content: 'lock' },
       { path: 'src/app/page.tsx', content: 'page' },
       { path: 'src/messages/en-US.json', content: '{"hello":"Hello"}' },
+      { path: 'messages/en-US.json', content: '{"hello":"stale root"}' },
       { path: 'infra/deploy/Dockerfile.agentsmith-app', content: 'FROM base' },
       { path: 'scripts/build-next-with-root-finalize.sh', content: 'npm run build' },
       { path: 'docs/notes.md', content: 'not keyed' },
@@ -310,6 +354,14 @@ function main(): void {
     },
     baseImages: ['docker.io/library/node:22-bookworm-slim@' + LOCKED_DIGEST_A],
   });
+  assert(
+    appKey.selected_inputs.some((input) => input.path === 'src/messages/en-US.json'),
+    'build artifact broker app key must include src/messages as the Next/i18n truth.',
+  );
+  assert(
+    !appKey.selected_inputs.some((input) => input.path === 'messages/en-US.json' || input.path.startsWith('messages/')),
+    'build artifact broker app key must not include removed root messages/ inputs.',
+  );
   assert(
     normalizeReleaseAliasTag('release-20260427') === 'release-20260427',
     'release alias normalization must not duplicate an existing release- prefix.',

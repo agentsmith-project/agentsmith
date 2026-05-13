@@ -1,4 +1,4 @@
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { cpSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
@@ -185,6 +185,50 @@ function writeMutableLocalKindImageSiteEnv(root: string): string {
     .replace(/^MANAGED_RUNNER_IMAGE=.*$/mu, 'MANAGED_RUNNER_IMAGE=kind-registry:5000/mbos/agentsmith-managed-runner:local-kind-dev'));
 }
 
+function writeTemplatesRootWithInlineAfscpCsi(root: string): string {
+  const templatesRoot = join(root, 'unified-templates');
+  cpSync(join(process.cwd(), 'infra', 'deploy', 'unified', 'templates'), join(templatesRoot, 'templates'), {
+    recursive: true,
+  });
+  const afscpTemplatePath = join(templatesRoot, 'templates', 'app', 'afscp.yaml.tpl');
+  const inlineCsiVolume = [
+    'csi:',
+    '            driver: csi.juicefs.com',
+    '            volumeAttributes:',
+    '              subPath: "afscp/{{AFSCP_DEFAULT_VOLUME_ID}}"',
+    '            nodePublishSecretRef:',
+    '              name: afscp-default-volume-juicefs',
+  ].join('\n');
+  const source = readFileSync(afscpTemplatePath, 'utf8');
+  writeFileSync(
+    afscpTemplatePath,
+    source.replace(
+      [
+        'persistentVolumeClaim:',
+        '            claimName: afscp-default-volume',
+      ].join('\n'),
+      inlineCsiVolume,
+    ),
+    'utf8',
+  );
+  return templatesRoot;
+}
+
+function writeTemplatesRootWithoutAfscpJvsCwd(root: string): string {
+  const templatesRoot = join(root, 'unified-templates-missing-jvs-cwd');
+  cpSync(join(process.cwd(), 'infra', 'deploy', 'unified', 'templates'), join(templatesRoot, 'templates'), {
+    recursive: true,
+  });
+  const afscpTemplatePath = join(templatesRoot, 'templates', 'app', 'afscp.yaml.tpl');
+  const source = readFileSync(afscpTemplatePath, 'utf8');
+  writeFileSync(
+    afscpTemplatePath,
+    source.replace('  AFSCP_JVS_CWD: "{{AFSCP_JVS_CWD_PATH}}"\n', ''),
+    'utf8',
+  );
+  return templatesRoot;
+}
+
 function jsonResult(value: unknown): { exitCode: number; stdout: string; stderr: string } {
   return {
     exitCode: 0,
@@ -300,6 +344,9 @@ function createPassingRunner(calls: CommandCall[], context = 'kind-agentsmith'):
     if (joined.includes('get endpointslices')) {
       return jsonResult({ kind: 'EndpointSliceList', items: [] });
     }
+    if (joined.includes('get pvc afscp-default-volume') || joined.includes('get pv agentsmith-afscp-default-volume')) {
+      return { exitCode: 0, stdout: '', stderr: '' };
+    }
 
     return { exitCode: 0, stdout: 'ok', stderr: '' };
   };
@@ -334,6 +381,76 @@ const passingProbeRunner: LocalKindHttpProbeRunner = async (url) => {
     body: 'not found',
   };
 };
+
+function ownedAfscpPersistentVolumeClaim(storage = '10Pi'): Record<string, unknown> {
+  return {
+    apiVersion: 'v1',
+    kind: 'PersistentVolumeClaim',
+    metadata: {
+      name: 'afscp-default-volume',
+      namespace: 'agentsmith',
+      labels: {
+        'app.kubernetes.io/name': 'agentsmith',
+        'app.kubernetes.io/component': 'afscp-runtime',
+        'app.kubernetes.io/part-of': 'agentsmith-deploy',
+      },
+      annotations: {
+        'rendered-by': 'agentsmith-unified-deploy',
+      },
+    },
+    spec: {
+      accessModes: ['ReadWriteMany'],
+      resources: {
+        requests: {
+          storage,
+        },
+      },
+      storageClassName: '',
+      volumeMode: 'Filesystem',
+      volumeName: 'agentsmith-afscp-default-volume',
+    },
+    status: {
+      capacity: {
+        storage,
+      },
+      phase: 'Bound',
+    },
+  };
+}
+
+function ownedAfscpPersistentVolume(storage = '10Pi'): Record<string, unknown> {
+  return {
+    apiVersion: 'v1',
+    kind: 'PersistentVolume',
+    metadata: {
+      name: 'agentsmith-afscp-default-volume',
+      labels: {
+        'app.kubernetes.io/name': 'agentsmith',
+        'app.kubernetes.io/component': 'afscp-runtime',
+        'app.kubernetes.io/part-of': 'agentsmith-deploy',
+      },
+      annotations: {
+        'rendered-by': 'agentsmith-unified-deploy',
+      },
+    },
+    spec: {
+      accessModes: ['ReadWriteMany'],
+      capacity: {
+        storage,
+      },
+      persistentVolumeReclaimPolicy: 'Retain',
+      storageClassName: '',
+      volumeMode: 'Filesystem',
+      claimRef: {
+        name: 'afscp-default-volume',
+        namespace: 'agentsmith',
+      },
+    },
+    status: {
+      phase: 'Bound',
+    },
+  };
+}
 
 describe('unified deploy local-kind live rollout producer', () => {
   it('fails closed and writes evidence when kubeconfig is missing', async () => {
@@ -925,6 +1042,25 @@ describe('unified deploy local-kind live rollout producer', () => {
     expect(applyCalls[4]?.input).toMatch(/agentsmith\.mbos\.dev\/checksum-app-secrets: "sha256:[a-f0-9]{64}"/u);
     expect(applyCalls[4]?.input).toMatch(/agentsmith\.mbos\.dev\/checksum-llmup-config: "sha256:[a-f0-9]{64}"/u);
     expect(applyCalls[4]?.input).toMatch(/agentsmith\.mbos\.dev\/checksum-sandbox-manager-config: "sha256:[a-f0-9]{64}"/u);
+    expect(applyCalls[4]?.input).toContain('metaurl: "postgres://sentinel_pg_user:sentinel_pg_secret@substrate-postgresql.agentsmith.svc.cluster.local:5432/sentinel_pg_db?sslmode=disable"');
+    expect(applyCalls[4]?.input).not.toContain('metaurl: "postgres://sentinel_pg_user:sentinel_pg_secret@substrate-postgresql:5432/sentinel_pg_db?sslmode=disable"');
+    expect(applyCalls[4]?.input).toContain('bucket: "http://substrate-minio.agentsmith.svc.cluster.local:9000/sentinel-files"');
+    expect(applyCalls[4]?.input).toContain('kind: PersistentVolume');
+    expect(applyCalls[4]?.input).toContain('name: agentsmith-afscp-default-volume');
+    expect(applyCalls[4]?.input).toContain('kind: PersistentVolumeClaim');
+    expect(applyCalls[4]?.input).toContain('claimName: afscp-default-volume');
+    expect(applyCalls[4]?.input).toContain('storage: 12P');
+    expect(applyCalls[4]?.input).toContain('AFSCP_JVS_ENABLED: "true"');
+    expect(applyCalls[4]?.input).toContain('AFSCP_JVS_READY: "true"');
+    expect(applyCalls[4]?.input).toContain('AFSCP_JVS_CWD: "/var/lib/afscp/jvs-cwd"');
+    expect(applyCalls[4]?.input).toContain('name: afscp-jvs-cwd');
+    expect(applyCalls[4]?.input).toContain('mountPath: "/var/lib/afscp/jvs-cwd"');
+    expect(applyCalls[4]?.input).toContain('emptyDir: {}');
+    expect(applyCalls[4]?.input).not.toContain('AFSCP_JVS_BINARY_PATH');
+    expect(applyCalls[4]?.input).not.toContain('AFSCP_JVS_BINARY_SHA256');
+    expect(applyCalls[4]?.input).not.toContain('storage: 8Pi');
+    expect(applyCalls[4]?.input).not.toContain('storage: 10Pi');
+    expect(applyCalls[4]?.input).not.toContain('volumeAttributes:\n              subPath: "afscp/vol_agentsmith_default"');
     expect(applyCalls[4]?.input).not.toContain('@substrate-postgresql:15432/');
     expect(applyCalls[4]?.input).not.toContain('@substrate-mongodb:27027/');
     expect(applyCalls[4]?.input).not.toContain('@substrate-redis:16379/');
@@ -943,6 +1079,10 @@ describe('unified deploy local-kind live rollout producer', () => {
     expect(result.evidence.rendered_manifest_fingerprint).toMatch(/^sha256:[a-f0-9]{64}$/u);
     expect(result.evidence.substrate_truth_fingerprint).toMatch(/^sha256:[a-f0-9]{64}$/u);
     expect(result.evidence.substrate_live_check.status).toBe('passed');
+    expect(result.evidence.manifest_summary.resources).toEqual(expect.arrayContaining([
+      'PersistentVolume/agentsmith-afscp-default-volume',
+      'PersistentVolumeClaim/afscp-default-volume',
+    ]));
     expect(result.evidence.image_preflight.status).toBe('passed');
     expect(result.evidence.image_preflight.image_refs).toContain(`kind-registry:5000/mbos/agentsmith-managed-runner@${MANAGED_RUNNER_DIGEST}`);
     expect(result.evidence.llmup_config_health).toMatchObject({
@@ -955,6 +1095,155 @@ describe('unified deploy local-kind live rollout producer', () => {
     });
     expect(result.evidence.live_api_replica_check.ready_replicas).toBe(1);
     expect(result.evidence.route_probes.map((probe) => probe.status)).toEqual(['passed', 'passed', 'passed', 'passed']);
+  });
+
+  it('resets owned stale AFSCP static PV/PVC storage drift before app dry-run', async () => {
+    const root = tempDir('local-kind-afscp-volume-reset-');
+    const evidenceDir = tempDir('local-kind-evidence-');
+    const kubeconfigPath = writeKubeconfig(root);
+    const siteEnvPath = writeLocalKindImageSiteEnv(root);
+    const calls: CommandCall[] = [];
+    const runner: LocalKindCommandRunner = async (command, args, options = {}) => {
+      calls.push({ command, args, input: options.input ?? '' });
+      const joined = args.join(' ');
+      if (command === 'kubectl' && joined.includes('get pvc afscp-default-volume')) {
+        return jsonResult(ownedAfscpPersistentVolumeClaim('10Pi'));
+      }
+      if (command === 'kubectl' && joined.includes('get pv agentsmith-afscp-default-volume')) {
+        return jsonResult(ownedAfscpPersistentVolume('10Pi'));
+      }
+
+      return createPassingRunner([])(command, args, options);
+    };
+
+    const result = await runLocalKindRolloutProducer({
+      evidenceDir,
+      env: { KUBECONFIG: kubeconfigPath },
+      homeDir: root,
+      siteEnvPath,
+      runner,
+      probeRunner: passingProbeRunner,
+      substrateTruthPath: join(fixturesDir, 'substrate-truth.sentinel.env'),
+    });
+    const commandText = calls.map((call) => call.args.join(' '));
+    const appDryRunIndex = calls.findIndex((call) =>
+      call.args.join(' ').includes('apply --dry-run=server') && call.input.includes('name: agentsmith-api'),
+    );
+    const workloadDeleteIndex = commandText.findIndex((commandLine) =>
+      commandLine.includes('delete deployment afscp-api afscp-worker afscp-export-gateway'),
+    );
+    const pvcDeleteIndex = commandText.findIndex((commandLine) =>
+      commandLine.includes('delete pvc afscp-default-volume'),
+    );
+    const pvDeleteIndex = commandText.findIndex((commandLine) =>
+      commandLine.includes('delete pv agentsmith-afscp-default-volume'),
+    );
+
+    expect(result.status).toBe('passed');
+    expect(workloadDeleteIndex).toBeGreaterThan(-1);
+    expect(pvcDeleteIndex).toBeGreaterThan(workloadDeleteIndex);
+    expect(pvDeleteIndex).toBeGreaterThan(pvcDeleteIndex);
+    expect(appDryRunIndex).toBeGreaterThan(pvDeleteIndex);
+    expect(result.evidence.operations.map((operation) => operation.name)).toEqual(expect.arrayContaining([
+      'afscp-static-volume-reset-check-pvc',
+      'afscp-static-volume-reset-check-pv',
+      'afscp-static-volume-reset-delete-workloads',
+      'afscp-static-volume-reset-delete-pvc',
+      'afscp-static-volume-reset-delete-pv',
+    ]));
+  });
+
+  it('refuses to reset non-owned AFSCP static PV/PVC resources', async () => {
+    const root = tempDir('local-kind-afscp-volume-non-owned-');
+    const evidenceDir = tempDir('local-kind-evidence-');
+    const kubeconfigPath = writeKubeconfig(root);
+    const siteEnvPath = writeLocalKindImageSiteEnv(root);
+    const calls: CommandCall[] = [];
+    const runner: LocalKindCommandRunner = async (command, args, options = {}) => {
+      calls.push({ command, args, input: options.input ?? '' });
+      const joined = args.join(' ');
+      if (command === 'kubectl' && joined.includes('get pvc afscp-default-volume')) {
+        const resource = ownedAfscpPersistentVolumeClaim('10Pi');
+        const metadata = resource.metadata as Record<string, unknown>;
+        delete metadata.annotations;
+        return jsonResult(resource);
+      }
+      if (command === 'kubectl' && joined.includes('get pv agentsmith-afscp-default-volume')) {
+        return { exitCode: 0, stdout: '', stderr: '' };
+      }
+
+      return createPassingRunner([])(command, args, options);
+    };
+
+    const result = await runLocalKindRolloutProducer({
+      evidenceDir,
+      env: { KUBECONFIG: kubeconfigPath },
+      homeDir: root,
+      siteEnvPath,
+      runner,
+      probeRunner: passingProbeRunner,
+      substrateTruthPath: join(fixturesDir, 'substrate-truth.sentinel.env'),
+    });
+    const failureText = result.failures.map((failure) => `${failure.path}: ${failure.message}`).join('\n');
+
+    expect(result.status).toBe('failed');
+    expect(failureText).toContain('not owned by agentsmith-unified-deploy');
+    expect(calls.map((call) => call.args.join(' ')).some((args) => args.includes('delete pvc afscp-default-volume'))).toBe(false);
+    expect(calls.some((call) =>
+      call.args.join(' ').includes('apply --dry-run=server') && call.input.includes('name: agentsmith-api'),
+    )).toBe(false);
+  });
+
+  it('fails before app apply when rendered AFSCP pods use inline CSI instead of the PVC', async () => {
+    const root = tempDir('local-kind-inline-csi-guard-');
+    const evidenceDir = tempDir('local-kind-evidence-');
+    const kubeconfigPath = writeKubeconfig(root);
+    const siteEnvPath = writeLocalKindImageSiteEnv(root);
+    const templatesRoot = writeTemplatesRootWithInlineAfscpCsi(root);
+    const calls: CommandCall[] = [];
+
+    const result = await runLocalKindRolloutProducer({
+      evidenceDir,
+      env: { KUBECONFIG: kubeconfigPath },
+      homeDir: root,
+      siteEnvPath,
+      templatesRoot,
+      runner: createPassingRunner(calls),
+      probeRunner: passingProbeRunner,
+      substrateTruthPath: join(fixturesDir, 'substrate-truth.sentinel.env'),
+    });
+    const failureText = result.failures.map((failure) => `${failure.path}: ${failure.message}`).join('\n');
+
+    expect(result.status).toBe('failed');
+    expect(failureText).toContain('inline CSI');
+    expect(failureText).toContain('Persistent volume lifecycle');
+    expect(failureText).toContain('PersistentVolumeClaim');
+    expect(calls.map((call) => call.args.join(' ')).some((args) => args.includes(' apply '))).toBe(false);
+  });
+
+  it('fails before app apply when AFSCP recovery is missing its JVS cwd runtime contract', async () => {
+    const root = tempDir('local-kind-missing-jvs-cwd-');
+    const evidenceDir = tempDir('local-kind-evidence-');
+    const kubeconfigPath = writeKubeconfig(root);
+    const siteEnvPath = writeLocalKindImageSiteEnv(root);
+    const templatesRoot = writeTemplatesRootWithoutAfscpJvsCwd(root);
+    const calls: CommandCall[] = [];
+
+    const result = await runLocalKindRolloutProducer({
+      evidenceDir,
+      env: { KUBECONFIG: kubeconfigPath },
+      homeDir: root,
+      siteEnvPath,
+      templatesRoot,
+      runner: createPassingRunner(calls),
+      probeRunner: passingProbeRunner,
+      substrateTruthPath: join(fixturesDir, 'substrate-truth.sentinel.env'),
+    });
+    const failureText = result.failures.map((failure) => `${failure.path}: ${failure.message}`).join('\n');
+
+    expect(result.status).toBe('failed');
+    expect(failureText).toContain('AFSCP_JVS_CWD must be the clean absolute mounted scratch path');
+    expect(calls.map((call) => call.args.join(' ')).some((args) => args.includes(' apply '))).toBe(false);
   });
 
   it('deletes owned substrate EndpointSlices with immutable addressType drift before app dry-run', async () => {

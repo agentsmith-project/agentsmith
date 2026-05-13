@@ -19,13 +19,19 @@ const PRODUCT_RUNTIME_ROOTS = [
   {
     root: 'scripts/unified-deploy',
     extensions: new Set(['.ts']),
-    excludedPathPattern: /(?:^|\/)__fixtures__\/|\.test\.ts$/u,
+    excludedPathPattern: /(?:^|\/)__fixtures__\/|\.test\.ts$|(?:^|\/)(?:render|check-render)\.ts$/u,
   },
   {
     root: 'infra/deploy/unified/templates/app',
     extensions: new Set(['.tpl']),
-    excludedPathPattern: /$^/u,
+    excludedPathPattern: /(?:^|\/)afscp\.yaml\.tpl$/u,
   },
+] as const;
+
+const AFSCP_RUNTIME_DEPLOY_JVS_FILES = [
+  'infra/deploy/unified/templates/app/afscp.yaml.tpl',
+  'scripts/unified-deploy/render.ts',
+  'scripts/unified-deploy/check-render.ts',
 ] as const;
 
 const ALLOWED_NON_PRODUCT_JVS_FILES = [
@@ -123,13 +129,19 @@ function collectProductRuntimeFiles(): ScannedFile[] {
 }
 
 describe('AFSCP/JVS product boundary guard', () => {
-  it('keeps AgentSmith product API and deploy surfaces free of JVS runtime details', () => {
+  it('keeps AgentSmith product API and non-AFSCP deploy surfaces free of JVS runtime details', () => {
     const offenders = collectProductRuntimeFiles().flatMap((file) => {
       const content = readRepoFile(file.path);
       return FORBIDDEN_RUNTIME_JVS_PATTERN.test(content) ? [file.path] : [];
     });
 
     expect(offenders).toEqual([]);
+  });
+
+  it('keeps required AFSCP runtime JVS deployment config bounded to explicit deploy files', () => {
+    for (const path of AFSCP_RUNTIME_DEPLOY_JVS_FILES) {
+      expect(readRepoFile(path)).toMatch(/\bAFSCP_JVS/u);
+    }
   });
 
   it('keeps product and E2E plans from making JVS a user-visible or QA acceptance surface', () => {

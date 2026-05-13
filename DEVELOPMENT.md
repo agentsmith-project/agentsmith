@@ -401,7 +401,7 @@ src/
 │   ├── stores/          # Zustand state
 │   ├── i18n/            # i18n configuration
 │   └── utils/           # Utility functions
-├── messages/            # i18n message files
+├── messages/            # i18n message files (src/messages)
 ├── mocks/               # MSW mock handlers
 └── stories/             # Storybook stories
 ```

@@ -66,6 +66,10 @@ function parsedDocuments(rendered: string): Record<string, unknown>[] {
     );
 }
 
+function stringifyDocuments(documents: readonly Record<string, unknown>[]): string {
+  return documents.map((document) => YAML.stringify(document).trim()).join('\n---\n') + '\n';
+}
+
 function asRecord(value: unknown): Record<string, unknown> {
   return value !== null && typeof value === 'object' && !Array.isArray(value)
     ? value as Record<string, unknown>
@@ -408,6 +412,8 @@ describe('unified deploy render producer', () => {
         'Role/agentsmith-sandbox-manager',
         'RoleBinding/agentsmith-sandbox-manager',
         'ConfigMap/sandbox-manager-config',
+        'PersistentVolume/agentsmith-afscp-default-volume',
+        'PersistentVolumeClaim/afscp-default-volume',
         'ConfigMap/agentsmith-llmup-config',
         'ConfigMap/agentsmith-managed-runner-support',
         'Ingress/agentsmith',
@@ -608,19 +614,43 @@ describe('unified deploy render producer', () => {
     expect(ingressPorts.get('/api/v1')).toBe(20000);
   });
 
-  it('renders AFSCP runtime components without exposing internal JVS deployment controls', async () => {
-    const rendered = await renderUnifiedDeployFromFiles({ profile: 'local-kind' });
+  it('renders AFSCP runtime components with the bounded internal JVS runtime contract', async () => {
+    const rendered = await renderUnifiedDeployFromFiles({
+      profile: 'local-kind',
+      substrateTruthPath: join(fixturesDir, 'substrate-truth.sentinel.env'),
+    });
     const documents = parsedDocuments(rendered.output);
     const config = asRecord(findResource(documents, 'ConfigMap', 'afscp-runtime-config').data);
+    const secrets = asRecord(findResource(documents, 'Secret', 'afscp-runtime-secrets').stringData);
+    const volumeSecret = asRecord(findResource(documents, 'Secret', 'afscp-default-volume-juicefs').stringData);
     const afscpApi = deploymentContainer(documents, 'afscp-api', 'afscp-api');
     const afscpWorker = deploymentContainer(documents, 'afscp-worker', 'afscp-worker');
     const exportGateway = deploymentContainer(documents, 'afscp-export-gateway', 'afscp-export-gateway');
+    const persistentVolume = findResource(documents, 'PersistentVolume', 'agentsmith-afscp-default-volume');
+    const persistentVolumeClaim = findResource(documents, 'PersistentVolumeClaim', 'afscp-default-volume');
+    const persistentVolumeSpec = asRecord(persistentVolume.spec);
+    const persistentVolumeCsi = asRecord(persistentVolumeSpec.csi);
+    const persistentVolumeSecret = asRecord(persistentVolumeCsi.nodePublishSecretRef);
+    const persistentVolumeClaimSpec = asRecord(persistentVolumeClaim.spec);
 
-    expect(rendered.output).not.toMatch(/\b(?:AFSCP_JVS|JVS|jvs)\b/u);
-    expect(Object.keys(config).some((key) => /\bJVS\b/u.test(key))).toBe(false);
     expect(config.AFSCP_STORAGE_ENABLED).toBe('true');
+    expect(config.AFSCP_JVS_ENABLED).toBe('true');
+    expect(config.AFSCP_JVS_READY).toBe('true');
+    expect(config.AFSCP_JVS_CWD).toBe('/var/lib/afscp/jvs-cwd');
+    expect(config).not.toHaveProperty('AFSCP_JVS_BINARY_PATH');
+    expect(config).not.toHaveProperty('AFSCP_JVS_BINARY_SHA256');
+    expect(secrets).not.toHaveProperty('AFSCP_JVS_BINARY_PATH');
+    expect(secrets).not.toHaveProperty('AFSCP_JVS_BINARY_SHA256');
     expect(config.AFSCP_MOUNT_ENABLED).toBe('true');
     expect(config.AFSCP_REPO_TEMPLATE_ENABLED).toBe('true');
+    expect(config.AFSCP_REPO_CREATE_RECOVERY_ENABLED).toBe('true');
+    expect(config.AFSCP_REPO_LIFECYCLE_RECOVERY_ENABLED).toBe('true');
+    expect(config.AFSCP_SAVE_POINT_RECOVERY_ENABLED).toBe('true');
+    expect(config.AFSCP_TEMPLATE_CREATE_RECOVERY_ENABLED).toBe('true');
+    expect(config.AFSCP_TEMPLATE_CLONE_RECOVERY_ENABLED).toBe('true');
+    expect(config.AFSCP_RESTORE_PREVIEW_RECOVERY_ENABLED).toBe('true');
+    expect(config.AFSCP_RESTORE_PREVIEW_DISCARD_RECOVERY_ENABLED).toBe('true');
+    expect(config.AFSCP_RESTORE_RUN_RECOVERY_ENABLED).toBe('true');
     expect(afscpApi.image).toBe(afscpWorker.image);
     expect(exportGateway.image).toBe(afscpApi.image);
     expect(afscpApi.command).toEqual(['/usr/local/bin/afscp-api']);
@@ -629,14 +659,185 @@ describe('unified deploy render producer', () => {
     expect(afscpWorker.args).toEqual(['--loop', '--interval=2s']);
     expect(exportGateway.command).toEqual(['/usr/local/bin/afscp-export-gateway']);
     expect(exportGateway.args).toEqual(['--serve', '--listen-addr', '0.0.0.0:8080']);
+    expect(volumeSecret.metaurl).toBe('postgres://sentinel_pg_user:sentinel_pg_secret@substrate-postgresql.agentsmith.svc.cluster.local:5432/sentinel_pg_db?sslmode=disable');
+    expect(volumeSecret.metaurl).not.toContain('@substrate-postgresql:5432/');
+    expect(volumeSecret.bucket).toBe('http://substrate-minio.agentsmith.svc.cluster.local:9000/sentinel-files');
+    expect(persistentVolumeSpec).toMatchObject({
+      volumeMode: 'Filesystem',
+      accessModes: ['ReadWriteMany'],
+      persistentVolumeReclaimPolicy: 'Retain',
+      storageClassName: '',
+      capacity: {
+        storage: '12P',
+      },
+      mountOptions: ['subdir=/afscp/vol_agentsmith_default'],
+    });
+    expect(persistentVolumeCsi).toMatchObject({
+      driver: 'csi.juicefs.com',
+      volumeHandle: 'agentsmith-afscp-default-volume',
+      fsType: 'juicefs',
+    });
+    expect(persistentVolumeSecret).toEqual({
+      name: 'afscp-default-volume-juicefs',
+      namespace: 'agentsmith',
+    });
+    expect(persistentVolumeClaimSpec).toMatchObject({
+      accessModes: ['ReadWriteMany'],
+      volumeMode: 'Filesystem',
+      storageClassName: '',
+      volumeName: 'agentsmith-afscp-default-volume',
+      resources: {
+        requests: {
+          storage: '12P',
+        },
+      },
+    });
 
     for (const deploymentName of ['afscp-api', 'afscp-worker', 'afscp-export-gateway']) {
       const podSpec = deploymentPodSpec(documents, deploymentName);
       const volumes = Array.isArray(podSpec.volumes) ? podSpec.volumes.map(asRecord) : [];
       const container = deploymentContainer(documents, deploymentName, deploymentName);
       const volumeMounts = Array.isArray(container.volumeMounts) ? container.volumeMounts.map(asRecord) : [];
-      expect(JSON.stringify([...volumes, ...volumeMounts])).not.toMatch(/\b(?:JVS|jvs)\b/u);
+      expect(volumes).toEqual(expect.arrayContaining([
+        {
+          name: 'afscp-default-volume',
+          persistentVolumeClaim: {
+            claimName: 'afscp-default-volume',
+          },
+        },
+        {
+          name: 'afscp-jvs-cwd',
+          emptyDir: {},
+        },
+      ]));
+      expect(volumeMounts).toEqual(expect.arrayContaining([
+        {
+          name: 'afscp-default-volume',
+          mountPath: '/var/lib/afscp/volumes/default',
+        },
+        {
+          name: 'afscp-jvs-cwd',
+          mountPath: '/var/lib/afscp/jvs-cwd',
+        },
+      ]));
+      expect(volumes.some((volume) => asRecord(volume.csi).driver === 'csi.juicefs.com')).toBe(false);
     }
+  });
+
+  it('rejects AFSCP recovery config without a mounted clean JVS cwd', async () => {
+    const rendered = await renderUnifiedDeployFromFiles({ profile: 'local-kind' });
+    const documents = parsedDocuments(rendered.output);
+    const config = asRecord(findResource(documents, 'ConfigMap', 'afscp-runtime-config').data);
+    config.AFSCP_JVS_CWD = 'relative-jvs-cwd';
+
+    for (const deploymentName of ['afscp-api', 'afscp-worker', 'afscp-export-gateway']) {
+      const podSpec = deploymentPodSpec(documents, deploymentName);
+      const volumes = Array.isArray(podSpec.volumes) ? podSpec.volumes.map(asRecord) : [];
+      const container = deploymentContainer(documents, deploymentName, deploymentName);
+      const volumeMounts = Array.isArray(container.volumeMounts) ? container.volumeMounts.map(asRecord) : [];
+      podSpec.volumes = volumes.filter((volume) => volume.name !== 'afscp-jvs-cwd');
+      container.volumeMounts = volumeMounts.filter((mount) => mount.name !== 'afscp-jvs-cwd');
+    }
+
+    const text = checkRenderedOutput(stringifyDocuments(documents)).failures
+      .map((failure) => failure.message)
+      .join('\n');
+
+    expect(text).toContain('AFSCP_JVS_CWD must be the clean absolute mounted scratch path');
+    expect(text).toContain('must mount the clean AFSCP_JVS_CWD scratch path');
+    expect(text).toContain('must back AFSCP_JVS_CWD with an emptyDir scratch volume');
+  });
+
+  it('rejects AFSCP manifests that override image-owned JVS binary pins', async () => {
+    const rendered = await renderUnifiedDeployFromFiles({ profile: 'local-kind' });
+    const documents = parsedDocuments(rendered.output);
+    const config = asRecord(findResource(documents, 'ConfigMap', 'afscp-runtime-config').data);
+    config.AFSCP_JVS_BINARY_PATH = '/usr/local/bin/jvs';
+    config.AFSCP_JVS_BINARY_SHA256 = '0a1c6896cecf85ec2ac4e15e1c29f6e3f8cf09b9a4db48a516559604f0e7e944';
+
+    const text = checkRenderedOutput(stringifyDocuments(documents)).failures
+      .map((failure) => failure.message)
+      .join('\n');
+
+    expect(text).toContain('AFSCP_JVS_BINARY_PATH must come from the AFSCP image default');
+    expect(text).toContain('AFSCP_JVS_BINARY_SHA256 must come from the AFSCP image default');
+  });
+
+  it('rejects AFSCP pods that use unsupported inline JuiceFS CSI volumes', async () => {
+    const rendered = await renderUnifiedDeployFromFiles({ profile: 'local-kind' });
+    const documents = parsedDocuments(rendered.output);
+
+    for (const deploymentName of ['afscp-api', 'afscp-worker', 'afscp-export-gateway']) {
+      const podSpec = deploymentPodSpec(documents, deploymentName);
+      podSpec.volumes = [{
+        name: 'afscp-default-volume',
+        csi: {
+          driver: 'csi.juicefs.com',
+          volumeAttributes: {
+            subPath: 'afscp/vol_agentsmith_default',
+          },
+          nodePublishSecretRef: {
+            name: 'afscp-default-volume-juicefs',
+          },
+        },
+      }];
+    }
+
+    const text = checkRenderedOutput(stringifyDocuments(documents)).failures
+      .map((failure) => failure.message)
+      .join('\n');
+
+    expect(text).toContain('must not use inline CSI');
+    expect(text).toContain('Persistent volume lifecycle');
+    expect(text).toContain('PersistentVolumeClaim');
+  });
+
+  it('rejects AFSCP JuiceFS CSI secrets that use short substrate service names', async () => {
+    const rendered = await renderUnifiedDeployFromFiles({ profile: 'local-kind' });
+    const documents = parsedDocuments(rendered.output);
+    const volumeSecret = asRecord(findResource(documents, 'Secret', 'afscp-default-volume-juicefs').stringData);
+    volumeSecret.metaurl = 'postgres://sentinel_pg_user:sentinel_pg_secret@substrate-postgresql:5432/sentinel_pg_db?sslmode=disable';
+    volumeSecret.bucket = 'http://substrate-minio:9000/sentinel-files';
+
+    const text = checkRenderedOutput(stringifyDocuments(documents)).failures
+      .map((failure) => failure.message)
+      .join('\n');
+
+    expect(text).toContain('metaurl must use the namespace FQDN');
+    expect(text).toContain('metaurl must not use a short substrate PostgreSQL service name');
+    expect(text).toContain('AFSCP JuiceFS CSI Secret must bind to internal substrate MinIO');
+  });
+
+  it('rejects AFSCP PV/PVC storage quantities that trigger Kubernetes fractional-byte warnings', async () => {
+    const rendered = await renderUnifiedDeployFromFiles({ profile: 'local-kind' });
+    const documents = parsedDocuments(rendered.output);
+    const persistentVolume = findResource(documents, 'PersistentVolume', 'agentsmith-afscp-default-volume');
+    const persistentVolumeClaim = findResource(documents, 'PersistentVolumeClaim', 'afscp-default-volume');
+    asRecord(asRecord(persistentVolume.spec).capacity).storage = '10Pi';
+    asRecord(asRecord(asRecord(persistentVolumeClaim.spec).resources).requests).storage = '10Pi';
+
+    const text = checkRenderedOutput(stringifyDocuments(documents)).failures
+      .map((failure) => failure.message)
+      .join('\n');
+
+    expect(text).toContain('storage quantity must be 12P');
+    expect(text).toContain('Kubernetes fractional-byte quantity warnings');
+  });
+
+  it('rejects AFSCP PV/PVC storage quantities below the pre-GA 10Pi baseline', async () => {
+    const rendered = await renderUnifiedDeployFromFiles({ profile: 'local-kind' });
+    const documents = parsedDocuments(rendered.output);
+    const persistentVolume = findResource(documents, 'PersistentVolume', 'agentsmith-afscp-default-volume');
+    const persistentVolumeClaim = findResource(documents, 'PersistentVolumeClaim', 'afscp-default-volume');
+    asRecord(asRecord(persistentVolume.spec).capacity).storage = '8Pi';
+    asRecord(asRecord(asRecord(persistentVolumeClaim.spec).resources).requests).storage = '8Pi';
+
+    const text = checkRenderedOutput(stringifyDocuments(documents)).failures
+      .map((failure) => failure.message)
+      .join('\n');
+
+    expect(text).toContain('storage quantity must be 12P');
+    expect(text).toContain('pre-GA 10Pi baseline');
   });
 
   it('renders the sandbox-manager startup contract without leaking storage secrets through ConfigMaps', async () => {

@@ -117,7 +117,7 @@ describe('build artifact broker', () => {
     ]);
   });
 
-  it('includes app source, messages, config, NEXT_PUBLIC env, and final image copied assets/scripts/infra in the app key', () => {
+  it('includes app source, src/messages, config, NEXT_PUBLIC env, and final image copied assets/scripts/infra in the app key', () => {
     expectAppKeyToChange('src/app/page.tsx');
     expectAppKeyToChange('src/messages/en-US.json');
     expectAppKeyToChange('next.config.ts');
@@ -145,10 +145,18 @@ describe('build artifact broker', () => {
       env: { NEXT_PUBLIC_API_BASE: 'http://localhost:20000/api/v1', INTERNAL_SECRET: 'not-keyed' },
       baseImages: ['docker.io/library/node:22-bookworm-slim@' + LOCKED_DIGEST_A],
     });
+    const rootMessagesChange = computeAppImageContentKey({
+      files: [...APP_BASE_FILES, { path: 'messages/en-US.json', content: '{"hello":"stale root"}' }],
+      env: { NEXT_PUBLIC_API_BASE: 'http://localhost:20000/api/v1', INTERNAL_SECRET: 'not-keyed' },
+      baseImages: ['docker.io/library/node:22-bookworm-slim@' + LOCKED_DIGEST_A],
+    });
 
     expect(changedPublicEnv.content_key).not.toBe(base.content_key);
     expect(changedPrivateEnv.content_key).toBe(base.content_key);
     expect(unrelatedDocsChange.content_key).toBe(base.content_key);
+    expect(rootMessagesChange.content_key).toBe(base.content_key);
+    expect(base.selected_inputs.map((input) => input.path)).toContain('src/messages/en-US.json');
+    expect(rootMessagesChange.selected_inputs.map((input) => input.path)).not.toContain('messages/en-US.json');
   });
 
   it('treats VERSION.release_id as truth and fails closed on env or state drift', () => {

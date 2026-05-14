@@ -114,6 +114,7 @@ type OperationEvidence = {
     | 'substrate-endpointslice-reconcile-delete'
     | 'afscp-static-volume-reset-check-pvc'
     | 'afscp-static-volume-reset-check-pv'
+    | 'afscp-static-volume-reset-diff'
     | 'afscp-static-volume-reset-delete-workloads'
     | 'afscp-static-volume-reset-delete-pvc'
     | 'afscp-static-volume-reset-delete-pv'
@@ -1017,6 +1018,8 @@ type DesiredAfscpStaticVolume = {
   pvcName: string;
   pvName: string;
   storageQuantity: string;
+  pvc: Record<string, unknown>;
+  pv: Record<string, unknown>;
 };
 
 function desiredAfscpStaticVolume(appYaml: string, namespace: string): DesiredAfscpStaticVolume | undefined {
@@ -1046,8 +1049,11 @@ function desiredAfscpStaticVolume(appYaml: string, namespace: string): DesiredAf
     resourceKind(document) === 'PersistentVolume'
     && resourceName(document) === pvName,
   );
+  if (!pv) {
+    throw new Error(`AFSCP default PersistentVolume ${pvName} must render with PersistentVolumeClaim ${AFSCP_DEFAULT_VOLUME_PVC} before local-kind reset`);
+  }
   const pvStorageQuantity = asRecord(asRecord(pv?.spec).capacity).storage;
-  if (pv && pvStorageQuantity !== storageQuantity) {
+  if (pvStorageQuantity !== storageQuantity) {
     throw new Error('AFSCP default PersistentVolume and PersistentVolumeClaim must render the same storage quantity before local-kind reset');
   }
 
@@ -1056,6 +1062,8 @@ function desiredAfscpStaticVolume(appYaml: string, namespace: string): DesiredAf
     pvcName: AFSCP_DEFAULT_VOLUME_PVC,
     pvName,
     storageQuantity,
+    pvc,
+    pv,
   };
 }
 
@@ -1077,28 +1085,271 @@ function isOwnedAfscpStaticVolumeResource(
     && annotations['rendered-by'] === 'agentsmith-unified-deploy';
 }
 
-function liveAfscpStaticVolumeStorageValues(resource: Record<string, unknown>): string[] {
-  if (resourceKind(resource) === 'PersistentVolume') {
-    const storage = asRecord(asRecord(resource.spec).capacity).storage;
-    return typeof storage === 'string' ? [storage] : [];
-  }
+type ResetFieldFingerprint = {
+  present: boolean;
+  value?: unknown;
+};
 
-  const request = asRecord(asRecord(asRecord(resource.spec).resources).requests).storage;
-  const capacity = asRecord(asRecord(resource.status).capacity).storage;
+type ResetSpecDiff = {
+  path: string;
+  desired: string;
+  live: string;
+};
 
-  return [request, capacity].filter((value): value is string => typeof value === 'string');
+type ResetSpecFingerprint = Record<string, ResetFieldFingerprint>;
+
+function isResetRecord(value: unknown): value is Record<string, unknown> {
+  return value !== null && typeof value === 'object' && !Array.isArray(value);
 }
 
-function hasAfscpStaticVolumeStorageDrift(
-  resource: Record<string, unknown> | undefined,
-  desired: DesiredAfscpStaticVolume,
-): boolean {
-  if (!resource) {
-    return false;
+function hasOwnResetField(source: Record<string, unknown>, key: string): boolean {
+  return Object.prototype.hasOwnProperty.call(source, key);
+}
+
+function readOwnResetPath(
+  source: unknown,
+  pathSegments: readonly string[],
+): { present: true; value: unknown } | { present: false } {
+  let current = source;
+  for (const segment of pathSegments) {
+    if (!isResetRecord(current) || !hasOwnResetField(current, segment)) {
+      return { present: false };
+    }
+    current = current[segment];
   }
 
-  return liveAfscpStaticVolumeStorageValues(resource)
-    .some((storageQuantity) => storageQuantity !== desired.storageQuantity);
+  return { present: true, value: current };
+}
+
+function canonicalResetValue(value: unknown): unknown {
+  if (Array.isArray(value)) {
+    return value.map(canonicalResetValue);
+  }
+  if (isResetRecord(value)) {
+    return Object.fromEntries(
+      Object.entries(value)
+        .sort(([left], [right]) => left.localeCompare(right))
+        .map(([key, nestedValue]) => [key, canonicalResetValue(nestedValue)]),
+    );
+  }
+  if (
+    value === null
+    || typeof value === 'string'
+    || typeof value === 'number'
+    || typeof value === 'boolean'
+  ) {
+    return value;
+  }
+
+  return String(value);
+}
+
+function resetFieldFingerprint(value: unknown): ResetFieldFingerprint {
+  return {
+    present: true,
+    value: canonicalResetValue(value),
+  };
+}
+
+function resetPathFingerprint(source: unknown, pathSegments: readonly string[]): ResetFieldFingerprint {
+  const result = readOwnResetPath(source, pathSegments);
+  return result.present ? resetFieldFingerprint(result.value) : { present: false };
+}
+
+function resetArrayPathFingerprint(
+  source: unknown,
+  pathSegments: readonly string[],
+  options: { sort: boolean },
+): ResetFieldFingerprint {
+  const result = readOwnResetPath(source, pathSegments);
+  if (!result.present) {
+    return { present: false };
+  }
+  if (!Array.isArray(result.value)) {
+    return resetFieldFingerprint(result.value);
+  }
+
+  const values = result.value.map(canonicalResetValue);
+  if (options.sort) {
+    values.sort((left, right) => resetValueText(left).localeCompare(resetValueText(right)));
+  }
+
+  return resetFieldFingerprint(values);
+}
+
+function resetPresenceFingerprint(source: unknown, pathSegments: readonly string[]): ResetFieldFingerprint {
+  return resetFieldFingerprint(readOwnResetPath(source, pathSegments).present);
+}
+
+function resetValueText(value: unknown): string {
+  const stringified = JSON.stringify(canonicalResetValue(value));
+  return stringified === undefined ? String(value) : stringified;
+}
+
+function diffResetSpecFingerprints(
+  desired: ResetSpecFingerprint,
+  live: ResetSpecFingerprint,
+): ResetSpecDiff[] {
+  const paths = [...new Set([...Object.keys(desired), ...Object.keys(live)])].sort();
+  return paths.flatMap((pathName) => {
+    const desiredText = resetValueText(desired[pathName]);
+    const liveText = resetValueText(live[pathName]);
+    return desiredText === liveText
+      ? []
+      : [{
+        path: pathName,
+        desired: desiredText,
+        live: liveText,
+      }];
+  });
+}
+
+function afscpPersistentVolumeResetFingerprint(resource: Record<string, unknown>): ResetSpecFingerprint {
+  const spec = asRecord(resource.spec);
+  return {
+    'spec.capacity.storage': resetPathFingerprint(spec, ['capacity', 'storage']),
+    'spec.volumeMode': resetPathFingerprint(spec, ['volumeMode']),
+    'spec.accessModes': resetArrayPathFingerprint(spec, ['accessModes'], { sort: true }),
+    'spec.storageClassName': resetPathFingerprint(spec, ['storageClassName']),
+    'spec.mountOptions': resetArrayPathFingerprint(spec, ['mountOptions'], { sort: false }),
+    'spec.csi.driver': resetPathFingerprint(spec, ['csi', 'driver']),
+    'spec.csi.volumeHandle': resetPathFingerprint(spec, ['csi', 'volumeHandle']),
+    'spec.csi.fsType': resetPathFingerprint(spec, ['csi', 'fsType']),
+    'spec.csi.nodePublishSecretRef.name': resetPathFingerprint(spec, ['csi', 'nodePublishSecretRef', 'name']),
+    'spec.csi.nodePublishSecretRef.namespace': resetPathFingerprint(spec, ['csi', 'nodePublishSecretRef', 'namespace']),
+    'spec.csi.volumeAttributes': resetPathFingerprint(spec, ['csi', 'volumeAttributes']),
+  };
+}
+
+function afscpPersistentVolumeClaimResetFingerprint(resource: Record<string, unknown>): ResetSpecFingerprint {
+  const spec = asRecord(resource.spec);
+  return {
+    'spec.accessModes': resetArrayPathFingerprint(spec, ['accessModes'], { sort: true }),
+    'spec.volumeMode': resetPathFingerprint(spec, ['volumeMode']),
+    'spec.storageClassName': resetPathFingerprint(spec, ['storageClassName']),
+    'spec.volumeName': resetPathFingerprint(spec, ['volumeName']),
+    'spec.resources.requests.storage': resetPathFingerprint(spec, ['resources', 'requests', 'storage']),
+    'spec.selector.present': resetPresenceFingerprint(spec, ['selector']),
+    'spec.dataSource.present': resetPresenceFingerprint(spec, ['dataSource']),
+    'spec.dataSourceRef.present': resetPresenceFingerprint(spec, ['dataSourceRef']),
+  };
+}
+
+function afscpStaticVolumeResetDiff(
+  resource: Record<string, unknown> | undefined,
+  desired: DesiredAfscpStaticVolume,
+): ResetSpecDiff[] {
+  if (!resource) {
+    return [];
+  }
+
+  if (resourceKind(resource) === 'PersistentVolume') {
+    return diffResetSpecFingerprints(
+      afscpPersistentVolumeResetFingerprint(desired.pv),
+      afscpPersistentVolumeResetFingerprint(resource),
+    );
+  }
+
+  if (resourceKind(resource) === 'PersistentVolumeClaim') {
+    return diffResetSpecFingerprints(
+      afscpPersistentVolumeClaimResetFingerprint(desired.pvc),
+      afscpPersistentVolumeClaimResetFingerprint(resource),
+    );
+  }
+
+  return [];
+}
+
+function afscpStaticVolumeBoundPvFailure(
+  livePvc: Record<string, unknown> | undefined,
+  desired: DesiredAfscpStaticVolume,
+): CheckFailure | undefined {
+  if (!livePvc) {
+    return undefined;
+  }
+
+  const volumeName = asRecord(livePvc.spec).volumeName;
+  if (typeof volumeName !== 'string' || volumeName.length === 0 || volumeName === desired.pvName) {
+    return undefined;
+  }
+
+  return {
+    path: `afscp-static-volume:PersistentVolumeClaim/${desired.pvcName}:spec.volumeName`,
+    message: `live AFSCP PersistentVolumeClaim spec.volumeName is ${volumeName}; expected ${desired.pvName}; refusing to delete workloads/PVC/PV before app apply`,
+  };
+}
+
+function afscpStaticVolumeClaimRefFailure(
+  livePv: Record<string, unknown> | undefined,
+  desired: DesiredAfscpStaticVolume,
+): CheckFailure | undefined {
+  if (!livePv) {
+    return undefined;
+  }
+
+  const spec = asRecord(livePv.spec);
+  if (!hasOwnResetField(spec, 'claimRef')) {
+    return undefined;
+  }
+
+  const claimRef = spec.claimRef;
+  if (!isResetRecord(claimRef)) {
+    return {
+      path: `afscp-static-volume:PersistentVolume/${desired.pvName}:claimRef`,
+      message: `live AFSCP PersistentVolume claimRef must point at ${desired.namespace}/${desired.pvcName}; refusing to delete before app apply`,
+    };
+  }
+
+  const claimNamespace = typeof claimRef.namespace === 'string' ? claimRef.namespace : '';
+  const claimName = typeof claimRef.name === 'string' ? claimRef.name : '';
+  if (claimNamespace === desired.namespace && claimName === desired.pvcName) {
+    return undefined;
+  }
+
+  return {
+    path: `afscp-static-volume:PersistentVolume/${desired.pvName}:claimRef`,
+    message: `live AFSCP PersistentVolume claimRef points at ${claimNamespace || '<missing>'}/${claimName || '<missing>'}; expected ${desired.namespace}/${desired.pvcName}; refusing to delete before app apply`,
+  };
+}
+
+function reclaimPolicyText(value: unknown): string {
+  return typeof value === 'string' && value.length > 0 ? value : '<missing>';
+}
+
+function afscpStaticVolumeReclaimPolicyFailure(
+  livePv: Record<string, unknown> | undefined,
+  desired: DesiredAfscpStaticVolume,
+): CheckFailure | undefined {
+  if (!livePv) {
+    return undefined;
+  }
+
+  const livePolicy = asRecord(livePv.spec).persistentVolumeReclaimPolicy;
+  const desiredPolicy = asRecord(desired.pv.spec).persistentVolumeReclaimPolicy;
+  if (livePolicy === desiredPolicy) {
+    return undefined;
+  }
+
+  return {
+    path: `afscp-static-volume:PersistentVolume/${desired.pvName}:spec.persistentVolumeReclaimPolicy`,
+    message: `live AFSCP PersistentVolume persistentVolumeReclaimPolicy is ${reclaimPolicyText(livePolicy)}; desired is ${reclaimPolicyText(desiredPolicy)}; refusing to delete workloads/PVC/PV before app apply`,
+  };
+}
+
+function afscpStaticVolumeResetDiffEvidence(params: {
+  pvcDiff: ResetSpecDiff[];
+  pvDiff: ResetSpecDiff[];
+  secretValues: readonly string[];
+}): OperationEvidence {
+  return {
+    name: 'afscp-static-volume-reset-diff',
+    command: 'internal: compare rendered and live AFSCP static PV/PVC reset fields',
+    status: 'passed',
+    stdout: redactDiagnostic(JSON.stringify({
+      pvc: params.pvcDiff,
+      pv: params.pvDiff,
+    }, null, 2), params.secretValues),
+  };
 }
 
 function parseOptionalKubectlResource(source: string): Record<string, unknown> | undefined {
@@ -1943,11 +2194,35 @@ async function resetOwnedAfscpStaticVolumeDrift(options: {
     return { operations, failures };
   }
 
-  const pvcDrift = hasAfscpStaticVolumeStorageDrift(livePvc, desired);
-  const pvDrift = hasAfscpStaticVolumeStorageDrift(livePv, desired);
-  if (!pvcDrift && !pvDrift) {
+  const boundPvFailure = afscpStaticVolumeBoundPvFailure(livePvc, desired);
+  if (boundPvFailure) {
+    failures.push(boundPvFailure);
     return { operations, failures };
   }
+
+  const claimRefFailure = afscpStaticVolumeClaimRefFailure(livePv, desired);
+  if (claimRefFailure) {
+    failures.push(claimRefFailure);
+    return { operations, failures };
+  }
+
+  const pvcDiff = afscpStaticVolumeResetDiff(livePvc, desired);
+  const pvDiff = afscpStaticVolumeResetDiff(livePv, desired);
+  if (pvcDiff.length === 0 && pvDiff.length === 0) {
+    return { operations, failures };
+  }
+
+  const reclaimPolicyFailure = afscpStaticVolumeReclaimPolicyFailure(livePv, desired);
+  if (reclaimPolicyFailure) {
+    failures.push(reclaimPolicyFailure);
+    return { operations, failures };
+  }
+
+  operations.push(afscpStaticVolumeResetDiffEvidence({
+    pvcDiff,
+    pvDiff,
+    secretValues: options.secretValues,
+  }));
 
   const workloadDelete = await runKubectlCheck({
     name: 'afscp-static-volume-reset-delete-workloads',

@@ -179,12 +179,12 @@
 
 现象：
 
-- AgentSmith 业务代码和统一部署模板已基本不直接依赖 JVS。
-- 但工程计划文档曾把 JVS 写成 AgentSmith 的里程碑、gate 或验收对象。
+- AgentSmith 产品/业务逻辑不应直接感知或调用 JVS；统一部署只按 AFSCP deployment contract 声明 AFSCP runtime 需要的 env/volume。
+- 但工程计划文档曾把 JVS 写成 AgentSmith 的里程碑、gate 或验收对象，并一度把部署 contract 与业务边界混在一起。
 
 影响：
 
-- 容易误导后续开发，把 AFSCP 内部实现细节扩散到 AgentSmith 产品/业务/部署心智。
+- 容易误导后续开发，把 AFSCP 内部实现细节扩散到 AgentSmith 产品/业务心智；部署层也容易被误读为拥有 JVS 生命周期。
 
 根因线索：
 
@@ -193,6 +193,7 @@
 后续治理方向：
 
 - AgentSmith 只消费 AFSCP API、AFSCP image/release evidence 和 redacted operation projection。
+- AgentSmith 部署模板只声明 AFSCP contract 要求的 runtime env/volume；JVS 生命周期和内部语义仍由 AFSCP 负责。
 - JVS 下载只允许作为 local-real AFSCP sibling runtime bootstrap 细节。
 - 中长期由 AFSCP image/release 自带并校验 JVS。
 
@@ -994,14 +995,14 @@
 现象：
 
 - AgentSmith 部署示例已指向 `ghcr.io/agentsmith-project/agentsmith-fs-control-plane:v1.0.4`。
-- AFSCP 当前远端最新 tag 是 `v1.0.3`。
+- 修正前，当时 AFSCP 远端最新 tag 仍是 `v1.0.3`。
 - 本轮 AFSCP 增加 schema migration/default volume bootstrap 命令后，运行 `bash scripts/verify-ga-release.sh` 失败：
   `selector.identity_digest_mismatch: schema_migration_set_digest mismatch`。
 
 影响：
 
-- AgentSmith 可以用本地 kind registry 镜像通过测试，但正式部署引用的 AFSCP tag 还不存在。
-- 如果不在兄弟项目同步 release evidence 并发布新 image，后续用户/CI 使用 `v1.0.4` 会失败。
+- 当时 AgentSmith 可以用本地 kind registry 镜像通过测试，但正式部署引用的 AFSCP tag 还不存在。
+- 当时如果不在兄弟项目同步 release evidence 并发布新 image，后续用户/CI 使用 `v1.0.4` 会失败。
 - 这说明跨 repo 变更需要 release evidence checklist：AgentSmith manifest/version 更新必须绑定 AFSCP tag 发布状态。
 
 后续治理方向：
@@ -1016,6 +1017,14 @@
 - 已提交并推送 AFSCP `main`，创建并推送 `v1.0.4` tag。
 - GitHub release workflow 已通过，发布了 `ghcr.io/agentsmith-project/agentsmith-fs-control-plane:v1.0.4`。
 - workflow annotation 提示 GitHub Actions Node.js 20 action runtime 将在 2026-06-02 起默认迁移到 Node.js 24，后续需要维护 release workflow action 版本或显式 runtime 策略。
+
+### 38. AFSCP CLI evidence 修复发布状态补记
+
+当前状态：
+
+- 本轮 AFSCP CLI `afscp-migrate --apply --check` evidence 修复已推送 `main`，创建并推送 `v1.0.5` tag。
+- GitHub release workflow `Release Container Image` run `25835587653` 已成功，发布了 `ghcr.io/agentsmith-project/agentsmith-fs-control-plane:v1.0.5`。
+- workflow 仍有 Node.js 20 actions deprecation annotation，后续作为 release workflow action/runtime 策略治理优化记录。
 
 ## 后续追加区
 

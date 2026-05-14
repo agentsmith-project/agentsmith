@@ -484,6 +484,16 @@ function ownedAfscpPersistentVolume(storage = '10Pi'): Record<string, unknown> {
       persistentVolumeReclaimPolicy: 'Retain',
       storageClassName: '',
       volumeMode: 'Filesystem',
+      mountOptions: ['subdir=/afscp/vol_agentsmith_default'],
+      csi: {
+        driver: 'csi.juicefs.com',
+        volumeHandle: 'agentsmith-afscp-default-volume',
+        fsType: 'juicefs',
+        nodePublishSecretRef: {
+          name: 'afscp-default-volume-juicefs',
+          namespace: 'agentsmith',
+        },
+      },
       claimRef: {
         name: 'afscp-default-volume',
         namespace: 'agentsmith',
@@ -1493,10 +1503,417 @@ describe('unified deploy local-kind live rollout producer', () => {
     expect(result.evidence.operations.map((operation) => operation.name)).toEqual(expect.arrayContaining([
       'afscp-static-volume-reset-check-pvc',
       'afscp-static-volume-reset-check-pv',
+      'afscp-static-volume-reset-diff',
       'afscp-static-volume-reset-delete-workloads',
       'afscp-static-volume-reset-delete-pvc',
       'afscp-static-volume-reset-delete-pv',
     ]));
+    expect(result.evidence.operations).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        name: 'afscp-static-volume-reset-diff',
+        stdout: expect.stringContaining('spec.resources.requests.storage'),
+      }),
+    ]));
+  });
+
+  it('resets owned AFSCP static PVC immutable spec drift with the same storage before bootstrap dry-run', async () => {
+    const root = tempDir('local-kind-afscp-pvc-spec-reset-');
+    const evidenceDir = tempDir('local-kind-evidence-');
+    const kubeconfigPath = writeKubeconfig(root);
+    const siteEnvPath = writeLocalKindImageSiteEnv(root);
+    const calls: CommandCall[] = [];
+    const runner: LocalKindCommandRunner = async (command, args, options = {}) => {
+      calls.push({ command, args, input: options.input ?? '' });
+      const joined = args.join(' ');
+      if (command === 'kubectl' && joined.includes('get pvc afscp-default-volume')) {
+        const resource = ownedAfscpPersistentVolumeClaim('12P');
+        const spec = resource.spec as Record<string, unknown>;
+        spec.storageClassName = 'stale-static-class';
+        return jsonResult(resource);
+      }
+      if (command === 'kubectl' && joined.includes('get pv agentsmith-afscp-default-volume')) {
+        return jsonResult(ownedAfscpPersistentVolume('12P'));
+      }
+
+      return createPassingRunner([])(command, args, options);
+    };
+
+    const result = await runLocalKindRolloutProducer({
+      evidenceDir,
+      env: { KUBECONFIG: kubeconfigPath },
+      homeDir: root,
+      siteEnvPath,
+      runner,
+      probeRunner: passingProbeRunner,
+      substrateTruthPath: join(fixturesDir, 'substrate-truth.sentinel.env'),
+    });
+    const commandText = calls.map((call) => call.args.join(' '));
+    const bootstrapDryRunIndex = calls.findIndex((call) =>
+      call.args.join(' ').includes('apply --dry-run=server') && call.input.includes('name: afscp-schema-bootstrap'),
+    );
+    const workloadDeleteIndex = commandText.findIndex((commandLine) =>
+      commandLine.includes('delete deployment afscp-api afscp-worker afscp-export-gateway'),
+    );
+    const pvcDeleteIndex = commandText.findIndex((commandLine) =>
+      commandLine.includes('delete pvc afscp-default-volume'),
+    );
+    const pvDeleteIndex = commandText.findIndex((commandLine) =>
+      commandLine.includes('delete pv agentsmith-afscp-default-volume'),
+    );
+
+    expect(result.status).toBe('passed');
+    expect(workloadDeleteIndex).toBeGreaterThan(-1);
+    expect(pvcDeleteIndex).toBeGreaterThan(workloadDeleteIndex);
+    expect(pvDeleteIndex).toBeGreaterThan(pvcDeleteIndex);
+    expect(bootstrapDryRunIndex).toBeGreaterThan(pvDeleteIndex);
+  });
+
+  it('fails closed without deleting when AFSCP static PVC is bound to an unexpected PV name', async () => {
+    const root = tempDir('local-kind-afscp-pvc-bound-pv-fail-');
+    const evidenceDir = tempDir('local-kind-evidence-');
+    const kubeconfigPath = writeKubeconfig(root);
+    const siteEnvPath = writeLocalKindImageSiteEnv(root);
+    const calls: CommandCall[] = [];
+    const runner: LocalKindCommandRunner = async (command, args, options = {}) => {
+      calls.push({ command, args, input: options.input ?? '' });
+      const joined = args.join(' ');
+      if (command === 'kubectl' && joined.includes('get pvc afscp-default-volume')) {
+        const resource = ownedAfscpPersistentVolumeClaim('12P');
+        const spec = resource.spec as Record<string, unknown>;
+        spec.volumeName = 'stale-afscp-pv';
+        return jsonResult(resource);
+      }
+      if (command === 'kubectl' && joined.includes('get pv agentsmith-afscp-default-volume')) {
+        return jsonResult(ownedAfscpPersistentVolume('12P'));
+      }
+
+      return createPassingRunner([])(command, args, options);
+    };
+
+    const result = await runLocalKindRolloutProducer({
+      evidenceDir,
+      env: { KUBECONFIG: kubeconfigPath },
+      homeDir: root,
+      siteEnvPath,
+      runner,
+      probeRunner: passingProbeRunner,
+      substrateTruthPath: join(fixturesDir, 'substrate-truth.sentinel.env'),
+    });
+    const failureText = result.failures.map((failure) => `${failure.path}: ${failure.message}`).join('\n');
+    const commandText = calls.map((call) => call.args.join(' '));
+
+    expect(result.status).toBe('failed');
+    expect(failureText).toContain('spec.volumeName');
+    expect(failureText).toContain('stale-afscp-pv');
+    expect(failureText).toContain('agentsmith-afscp-default-volume');
+    expect(failureText).toContain('refusing to delete');
+    expect(commandText.some((commandLine) =>
+      commandLine.includes('delete deployment afscp-api afscp-worker afscp-export-gateway'),
+    )).toBe(false);
+    expect(commandText.some((commandLine) => commandLine.includes('delete pvc afscp-default-volume'))).toBe(false);
+    expect(commandText.some((commandLine) => commandLine.includes('delete pv agentsmith-afscp-default-volume'))).toBe(false);
+  });
+
+  it('resets owned AFSCP static PV CSI and mount spec drift with the same storage', async () => {
+    const root = tempDir('local-kind-afscp-pv-spec-reset-');
+    const evidenceDir = tempDir('local-kind-evidence-');
+    const kubeconfigPath = writeKubeconfig(root);
+    const siteEnvPath = writeLocalKindImageSiteEnv(root);
+    const calls: CommandCall[] = [];
+    const runner: LocalKindCommandRunner = async (command, args, options = {}) => {
+      calls.push({ command, args, input: options.input ?? '' });
+      const joined = args.join(' ');
+      if (command === 'kubectl' && joined.includes('get pvc afscp-default-volume')) {
+        return jsonResult(ownedAfscpPersistentVolumeClaim('12P'));
+      }
+      if (command === 'kubectl' && joined.includes('get pv agentsmith-afscp-default-volume')) {
+        const resource = ownedAfscpPersistentVolume('12P');
+        const spec = resource.spec as Record<string, unknown>;
+        spec.mountOptions = ['subdir=/afscp/stale-volume-root'];
+        const csi = spec.csi as Record<string, unknown>;
+        const secretRef = csi.nodePublishSecretRef as Record<string, unknown>;
+        secretRef.namespace = 'stale-namespace';
+        return jsonResult(resource);
+      }
+
+      return createPassingRunner([])(command, args, options);
+    };
+
+    const result = await runLocalKindRolloutProducer({
+      evidenceDir,
+      env: { KUBECONFIG: kubeconfigPath },
+      homeDir: root,
+      siteEnvPath,
+      runner,
+      probeRunner: passingProbeRunner,
+      substrateTruthPath: join(fixturesDir, 'substrate-truth.sentinel.env'),
+    });
+    const commandText = calls.map((call) => call.args.join(' '));
+
+    expect(result.status).toBe('passed');
+    expect(commandText.some((commandLine) =>
+      commandLine.includes('delete deployment afscp-api afscp-worker afscp-export-gateway'),
+    )).toBe(true);
+    expect(commandText.some((commandLine) => commandLine.includes('delete pvc afscp-default-volume'))).toBe(true);
+    expect(commandText.some((commandLine) => commandLine.includes('delete pv agentsmith-afscp-default-volume'))).toBe(true);
+  });
+
+  it('fails closed without deleting when AFSCP static PV reset drift is paired with reclaim policy drift', async () => {
+    const root = tempDir('local-kind-afscp-pv-reclaim-policy-fail-');
+    const evidenceDir = tempDir('local-kind-evidence-');
+    const kubeconfigPath = writeKubeconfig(root);
+    const siteEnvPath = writeLocalKindImageSiteEnv(root);
+    const calls: CommandCall[] = [];
+    const runner: LocalKindCommandRunner = async (command, args, options = {}) => {
+      calls.push({ command, args, input: options.input ?? '' });
+      const joined = args.join(' ');
+      if (command === 'kubectl' && joined.includes('get pvc afscp-default-volume')) {
+        return jsonResult(ownedAfscpPersistentVolumeClaim('12P'));
+      }
+      if (command === 'kubectl' && joined.includes('get pv agentsmith-afscp-default-volume')) {
+        const resource = ownedAfscpPersistentVolume('12P');
+        const spec = resource.spec as Record<string, unknown>;
+        spec.persistentVolumeReclaimPolicy = 'Delete';
+        spec.mountOptions = ['subdir=/afscp/stale-volume-root'];
+        const csi = spec.csi as Record<string, unknown>;
+        const secretRef = csi.nodePublishSecretRef as Record<string, unknown>;
+        secretRef.namespace = 'stale-namespace';
+        return jsonResult(resource);
+      }
+
+      return createPassingRunner([])(command, args, options);
+    };
+
+    const result = await runLocalKindRolloutProducer({
+      evidenceDir,
+      env: { KUBECONFIG: kubeconfigPath },
+      homeDir: root,
+      siteEnvPath,
+      runner,
+      probeRunner: passingProbeRunner,
+      substrateTruthPath: join(fixturesDir, 'substrate-truth.sentinel.env'),
+    });
+    const failureText = result.failures.map((failure) => `${failure.path}: ${failure.message}`).join('\n');
+    const commandText = calls.map((call) => call.args.join(' '));
+
+    expect(result.status).toBe('failed');
+    expect(failureText).toContain('persistentVolumeReclaimPolicy');
+    expect(failureText).toContain('Delete');
+    expect(failureText).toContain('Retain');
+    expect(failureText).toContain('refusing to delete');
+    expect(commandText.some((commandLine) =>
+      commandLine.includes('delete deployment afscp-api afscp-worker afscp-export-gateway'),
+    )).toBe(false);
+    expect(commandText.some((commandLine) => commandLine.includes('delete pvc afscp-default-volume'))).toBe(false);
+    expect(commandText.some((commandLine) => commandLine.includes('delete pv agentsmith-afscp-default-volume'))).toBe(false);
+  });
+
+  it('does not reset AFSCP static PV/PVC when only reclaim policy drifts', async () => {
+    const root = tempDir('local-kind-afscp-reclaim-policy-only-');
+    const evidenceDir = tempDir('local-kind-evidence-');
+    const kubeconfigPath = writeKubeconfig(root);
+    const siteEnvPath = writeLocalKindImageSiteEnv(root);
+    const calls: CommandCall[] = [];
+    const runner: LocalKindCommandRunner = async (command, args, options = {}) => {
+      calls.push({ command, args, input: options.input ?? '' });
+      const joined = args.join(' ');
+      if (command === 'kubectl' && joined.includes('get pvc afscp-default-volume')) {
+        return jsonResult(ownedAfscpPersistentVolumeClaim('12P'));
+      }
+      if (command === 'kubectl' && joined.includes('get pv agentsmith-afscp-default-volume')) {
+        const resource = ownedAfscpPersistentVolume('12P');
+        const spec = resource.spec as Record<string, unknown>;
+        spec.persistentVolumeReclaimPolicy = 'Delete';
+        return jsonResult(resource);
+      }
+
+      return createPassingRunner([])(command, args, options);
+    };
+
+    const result = await runLocalKindRolloutProducer({
+      evidenceDir,
+      env: { KUBECONFIG: kubeconfigPath },
+      homeDir: root,
+      siteEnvPath,
+      runner,
+      probeRunner: passingProbeRunner,
+      substrateTruthPath: join(fixturesDir, 'substrate-truth.sentinel.env'),
+    });
+    const commandText = calls.map((call) => call.args.join(' '));
+
+    expect(result.status).toBe('passed');
+    expect(commandText.some((commandLine) =>
+      commandLine.includes('delete deployment afscp-api afscp-worker afscp-export-gateway'),
+    )).toBe(false);
+    expect(commandText.some((commandLine) => commandLine.includes('delete pvc afscp-default-volume'))).toBe(false);
+    expect(commandText.some((commandLine) => commandLine.includes('delete pv agentsmith-afscp-default-volume'))).toBe(false);
+  });
+
+  it('does not reset AFSCP static PV/PVC when only runtime fields drift', async () => {
+    const root = tempDir('local-kind-afscp-runtime-field-ignore-');
+    const evidenceDir = tempDir('local-kind-evidence-');
+    const kubeconfigPath = writeKubeconfig(root);
+    const siteEnvPath = writeLocalKindImageSiteEnv(root);
+    const calls: CommandCall[] = [];
+    const runner: LocalKindCommandRunner = async (command, args, options = {}) => {
+      calls.push({ command, args, input: options.input ?? '' });
+      const joined = args.join(' ');
+      if (command === 'kubectl' && joined.includes('get pvc afscp-default-volume')) {
+        const resource = ownedAfscpPersistentVolumeClaim('12P');
+        resource.metadata = {
+          ...(resource.metadata as Record<string, unknown>),
+          uid: 'runtime-pvc-uid',
+          resourceVersion: '12345',
+          generation: 7,
+          creationTimestamp: '2026-01-01T00:00:00Z',
+          managedFields: [{ manager: 'kube-controller-manager' }],
+          finalizers: ['kubernetes.io/pvc-protection'],
+        };
+        resource.status = {
+          ...(resource.status as Record<string, unknown>),
+          phase: 'Bound',
+          conditions: [{ type: 'FileSystemResizePending', status: 'False' }],
+        };
+        return jsonResult(resource);
+      }
+      if (command === 'kubectl' && joined.includes('get pv agentsmith-afscp-default-volume')) {
+        const resource = ownedAfscpPersistentVolume('12P');
+        const spec = resource.spec as Record<string, unknown>;
+        spec.claimRef = {
+          ...(spec.claimRef as Record<string, unknown>),
+          uid: 'runtime-pvc-uid',
+          resourceVersion: '12345',
+        };
+        resource.metadata = {
+          ...(resource.metadata as Record<string, unknown>),
+          uid: 'runtime-pv-uid',
+          resourceVersion: '67890',
+          generation: 4,
+          creationTimestamp: '2026-01-01T00:00:00Z',
+          managedFields: [{ manager: 'kube-controller-manager' }],
+          finalizers: ['kubernetes.io/pv-protection'],
+        };
+        resource.status = {
+          phase: 'Released',
+          conditions: [{ type: 'Available', status: 'False' }],
+        };
+        return jsonResult(resource);
+      }
+
+      return createPassingRunner([])(command, args, options);
+    };
+
+    const result = await runLocalKindRolloutProducer({
+      evidenceDir,
+      env: { KUBECONFIG: kubeconfigPath },
+      homeDir: root,
+      siteEnvPath,
+      runner,
+      probeRunner: passingProbeRunner,
+      substrateTruthPath: join(fixturesDir, 'substrate-truth.sentinel.env'),
+    });
+    const commandText = calls.map((call) => call.args.join(' '));
+
+    expect(result.status).toBe('passed');
+    expect(commandText.some((commandLine) =>
+      commandLine.includes('delete deployment afscp-api afscp-worker afscp-export-gateway'),
+    )).toBe(false);
+    expect(commandText.some((commandLine) => commandLine.includes('delete pvc afscp-default-volume'))).toBe(false);
+    expect(commandText.some((commandLine) => commandLine.includes('delete pv agentsmith-afscp-default-volume'))).toBe(false);
+  });
+
+  it('does not reset AFSCP static PV/PVC when only PVC status capacity drifts', async () => {
+    const root = tempDir('local-kind-afscp-status-capacity-ignore-');
+    const evidenceDir = tempDir('local-kind-evidence-');
+    const kubeconfigPath = writeKubeconfig(root);
+    const siteEnvPath = writeLocalKindImageSiteEnv(root);
+    const calls: CommandCall[] = [];
+    const runner: LocalKindCommandRunner = async (command, args, options = {}) => {
+      calls.push({ command, args, input: options.input ?? '' });
+      const joined = args.join(' ');
+      if (command === 'kubectl' && joined.includes('get pvc afscp-default-volume')) {
+        const resource = ownedAfscpPersistentVolumeClaim('12P');
+        resource.status = {
+          ...(resource.status as Record<string, unknown>),
+          capacity: {
+            storage: '11P',
+          },
+        };
+        return jsonResult(resource);
+      }
+      if (command === 'kubectl' && joined.includes('get pv agentsmith-afscp-default-volume')) {
+        return jsonResult(ownedAfscpPersistentVolume('12P'));
+      }
+
+      return createPassingRunner([])(command, args, options);
+    };
+
+    const result = await runLocalKindRolloutProducer({
+      evidenceDir,
+      env: { KUBECONFIG: kubeconfigPath },
+      homeDir: root,
+      siteEnvPath,
+      runner,
+      probeRunner: passingProbeRunner,
+      substrateTruthPath: join(fixturesDir, 'substrate-truth.sentinel.env'),
+    });
+    const commandText = calls.map((call) => call.args.join(' '));
+
+    expect(result.status).toBe('passed');
+    expect(commandText.some((commandLine) =>
+      commandLine.includes('delete deployment afscp-api afscp-worker afscp-export-gateway'),
+    )).toBe(false);
+    expect(commandText.some((commandLine) => commandLine.includes('delete pvc afscp-default-volume'))).toBe(false);
+    expect(commandText.some((commandLine) => commandLine.includes('delete pv agentsmith-afscp-default-volume'))).toBe(false);
+  });
+
+  it('fails closed without deleting when the AFSCP static PV claimRef points outside the desired PVC', async () => {
+    const root = tempDir('local-kind-afscp-claimref-fail-');
+    const evidenceDir = tempDir('local-kind-evidence-');
+    const kubeconfigPath = writeKubeconfig(root);
+    const siteEnvPath = writeLocalKindImageSiteEnv(root);
+    const calls: CommandCall[] = [];
+    const runner: LocalKindCommandRunner = async (command, args, options = {}) => {
+      calls.push({ command, args, input: options.input ?? '' });
+      const joined = args.join(' ');
+      if (command === 'kubectl' && joined.includes('get pvc afscp-default-volume')) {
+        return jsonResult(ownedAfscpPersistentVolumeClaim('12P'));
+      }
+      if (command === 'kubectl' && joined.includes('get pv agentsmith-afscp-default-volume')) {
+        const resource = ownedAfscpPersistentVolume('12P');
+        const spec = resource.spec as Record<string, unknown>;
+        spec.claimRef = {
+          name: 'someone-elses-pvc',
+          namespace: 'other-namespace',
+          uid: 'foreign-uid',
+        };
+        return jsonResult(resource);
+      }
+
+      return createPassingRunner([])(command, args, options);
+    };
+
+    const result = await runLocalKindRolloutProducer({
+      evidenceDir,
+      env: { KUBECONFIG: kubeconfigPath },
+      homeDir: root,
+      siteEnvPath,
+      runner,
+      probeRunner: passingProbeRunner,
+      substrateTruthPath: join(fixturesDir, 'substrate-truth.sentinel.env'),
+    });
+    const failureText = result.failures.map((failure) => `${failure.path}: ${failure.message}`).join('\n');
+    const commandText = calls.map((call) => call.args.join(' '));
+
+    expect(result.status).toBe('failed');
+    expect(failureText).toContain('claimRef');
+    expect(failureText).toContain('afscp-default-volume');
+    expect(failureText).toContain('agentsmith');
+    expect(commandText.some((commandLine) =>
+      commandLine.includes('delete deployment afscp-api afscp-worker afscp-export-gateway'),
+    )).toBe(false);
+    expect(commandText.some((commandLine) => commandLine.includes('delete pvc afscp-default-volume'))).toBe(false);
+    expect(commandText.some((commandLine) => commandLine.includes('delete pv agentsmith-afscp-default-volume'))).toBe(false);
   });
 
   it('refuses to reset non-owned AFSCP static PV/PVC resources', async () => {

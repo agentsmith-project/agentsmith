@@ -4,7 +4,7 @@ Status: decision-complete handoff for the next development milestone.
 
 Owner: AgentSmith product and engineering.
 
-Primary input: use `ghcr.io/agentsmith-project/agentsmith-fs-control-plane:v1.0.3` for File Library storage runtime, with AgentSmith as the product authority for workspace/project, permissions, file library catalog, task binding, task file template availability, UX, and audit projection.
+Primary input: File Library storage runtime uses the AFSCP runtime image selected by unified deploy env `AFSCP_IMAGE`; the current example default is `ghcr.io/agentsmith-project/agentsmith-fs-control-plane:v1.0.5`, and release evidence must prove the selected tag/digest is usable. AgentSmith remains the product authority for workspace/project, permissions, file library catalog, task binding, task file template availability, UX, and audit projection.
 
 ## 1. Executive Summary
 
@@ -31,7 +31,9 @@ The target shape is:
   points, restores, or templates.
 - AFSCP is the only AgentSmith storage-control integration boundary. If AFSCP
   uses JVS internally, that is AFSCP implementation and release evidence, not an
-  AgentSmith product API, deploy setting, or acceptance gate.
+  AgentSmith product API, business concept, or acceptance gate. AgentSmith
+  deployment may still provide AFSCP contract-required runtime env/volumes, but
+  JVS lifecycle and internal semantics remain owned by AFSCP.
 - This is a pre-GA current model. AFSCP-backed storage is the only product
   storage path, with no user-visible storage switch or fallback behavior.
 
@@ -746,8 +748,10 @@ independent AFSCP release gates/contracts and internal-only access:
 - optional future WebDAV gateway ingress/base URL for productized user-computer connector traffic; this is not required in this milestone and is not the AFSCP internal API.
 - service credentials configured through deployment secrets.
 - storage readiness checks plus AFSCP image/release evidence for its internal
-  storage engine. AgentSmith deploy must not configure JVS path, hash, cwd, or
-  control settings.
+  storage engine. AgentSmith product/business logic must not directly sense or
+  call JVS. Deployment templates only declare AFSCP contract-required runtime
+  env/volumes, such as `AFSCP_JVS_CWD` when the selected AFSCP release requires
+  it; JVS lifecycle and internal semantics remain AFSCP-owned.
 
 Substrates remain outside the app pods:
 
@@ -1003,7 +1007,7 @@ Known gaps or integration risks:
    single durable ensure that atomically owns both.
 6. AFSCP lifecycle semantics are archive/delete/tombstone/purge. AgentSmith product delete must map deliberately and cannot be raw filesystem deletion.
 7. Quota is only a policy hook unless the selected volume capability enforces directory quota.
-8. AFSCP deploy manifests are not complete in the sibling repo; AgentSmith deploy work must package and configure AFSCP explicitly without exposing AFSCP-internal JVS path, hash, cwd, or control settings.
+8. Unified deploy renders AFSCP API/worker/export gateway plus schema/default-volume bootstrap Jobs from the selected `AFSCP_IMAGE`. AgentSmith product/business logic must not directly sense or call JVS; deployment templates only declare AFSCP contract-required runtime env/volumes, such as `AFSCP_JVS_CWD` when required by the selected AFSCP release. JVS lifecycle and internal semantics remain AFSCP-owned.
 9. AFSCP control-root and clone behavior must be pinned to the product semantics AgentSmith needs: payload-only HOME, no control-root exposure, snapshot-style templates, no internal storage-control state copy, and stable restore summaries. HOME payload files are intentionally copied. If AFSCP cannot express those safely, fix AFSCP instead of parsing private state in AgentSmith.
 10. AFSCP redaction and operation summaries must be strong enough for AgentSmith audit/debug projection. If raw storage-backend commands, private paths, or recovery internals are required to understand an operation, improve the upstream summary contract.
 11. Restore preview and restore-run admission must return typed blockers, redacted file-change summaries, and a preview base revision/generation/head/fence token that restore-run verifies. AgentSmith should not infer active writer causes or destructive restore effects from unrelated task state.

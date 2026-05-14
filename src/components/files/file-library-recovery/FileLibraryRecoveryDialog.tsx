@@ -74,6 +74,7 @@ type TemplateActionErrorDisplay = {
 
 type SavePointActionErrorDisplay = {
   description: string;
+  kind: 'error' | 'pending';
   title: string;
 };
 
@@ -92,6 +93,8 @@ type RestoreRunActiveWriterBlocker = {
     title: string;
   } | null;
 };
+
+const EMPTY_SAVE_POINTS: FileLibrarySavePoint[] = [];
 
 function formatTimestamp(value: string) {
   const date = new Date(value);
@@ -450,18 +453,27 @@ function buildSavePointActionErrorDisplay(
   t: FileLibraryRecoveryDialogProps['t'],
 ): SavePointActionErrorDisplay {
   let description = t('file_manager.save_point_action_failed');
+  let kind: SavePointActionErrorDisplay['kind'] = 'error';
+  let title = t('file_manager.save_point_action_failed_title');
   if (isFileLibraryOperationPendingError(error)) {
     description = t('file_manager.save_point_operation_pending');
+    kind = 'pending';
+    title = t('file_manager.save_point_preparing_title');
   }
   if (isFileLibraryActiveWriterBlocked(error)) {
     description = t('file_manager.save_point_active_writer_blocked');
+    kind = 'error';
+    title = t('file_manager.save_point_action_failed_title');
   }
   if (isFileLibraryStorageNotReady(error)) {
     description = t('file_manager.save_point_storage_not_ready');
+    kind = 'error';
+    title = t('file_manager.save_point_action_failed_title');
   }
 
   return {
-    title: t('file_manager.save_point_action_failed_title'),
+    kind,
+    title,
     description,
   };
 }
@@ -557,6 +569,10 @@ export function FileLibraryRecoveryDialog({
   const [activeTab, setActiveTab] = React.useState<FileStatesTab>('save_points');
   const [savePointMessage, setSavePointMessage] = React.useState('');
   const [savePointActionError, setSavePointActionError] = React.useState<SavePointActionErrorDisplay | null>(null);
+  const [pendingSavePointCreate, setPendingSavePointCreate] = React.useState<{
+    existingIds: ReadonlySet<string>;
+    message?: string;
+  } | null>(null);
   const [restorePreview, setRestorePreview] = React.useState<FileLibraryRestorePreview | null>(null);
   const [restoreRunActionError, setRestoreRunActionError] = React.useState<RestoreActionErrorDisplay | null>(null);
   const [restoreRunBlocker, setRestoreRunBlocker] = React.useState<RestoreRunActiveWriterBlocker | null>(null);
@@ -593,6 +609,7 @@ export function FileLibraryRecoveryDialog({
     if (!open) {
       setSavePointMessage('');
       setSavePointActionError(null);
+      setPendingSavePointCreate(null);
       setTemplateName('');
       setTemplateDescription('');
       setRestorePreview(null);
@@ -623,7 +640,7 @@ export function FileLibraryRecoveryDialog({
     }
   }, [restorePreview, restoreRunBlocker]);
 
-  const savePoints = savePointsQuery.data?.items ?? [];
+  const savePoints = savePointsQuery.data?.items ?? EMPTY_SAVE_POINTS;
   const templates = templatesQuery.data?.items ?? [];
   const templatesForLibrary = templates.filter((template) => template.source_library_id === libraryId);
   const restorePreviewDisplay = restorePreview ? buildRestorePreviewDisplay(restorePreview, t) : null;
@@ -639,6 +656,26 @@ export function FileLibraryRecoveryDialog({
   const showSavePointListError = savePointsQuery.isError
     && !savePointListOperationPending
     && savePoints.length === 0;
+
+  React.useEffect(() => {
+    if (savePointActionError?.kind !== 'pending' || !pendingSavePointCreate) return;
+    if (savePointsQuery.isError || savePointsQuery.isLoading) return;
+    const pendingMessage = pendingSavePointCreate.message;
+    const createdSavePointVisible = savePoints.some((savePoint) => (
+      !pendingSavePointCreate.existingIds.has(savePoint.id)
+      && (!pendingMessage || savePoint.message === pendingMessage)
+    ));
+    if (!createdSavePointVisible) return;
+    setSavePointActionError(null);
+    setPendingSavePointCreate(null);
+    setSavePointMessage('');
+  }, [
+    pendingSavePointCreate,
+    savePointActionError?.kind,
+    savePoints,
+    savePointsQuery.isError,
+    savePointsQuery.isLoading,
+  ]);
 
   React.useEffect(() => {
     if (taskTemplatesBlocked && activeTab === 'task_templates') {
@@ -661,8 +698,18 @@ export function FileLibraryRecoveryDialog({
         libraryId: library.id,
         message: savePointMessage.trim() || undefined,
       });
+      setPendingSavePointCreate(null);
       setSavePointMessage('');
     } catch (error) {
+      if (isFileLibraryOperationPendingError(error)) {
+        setPendingSavePointCreate({
+          existingIds: new Set(savePoints.map((savePoint) => savePoint.id)),
+          message: savePointMessage.trim() || undefined,
+        });
+        void savePointsQuery.refetch();
+      } else {
+        setPendingSavePointCreate(null);
+      }
       setSavePointActionError(buildSavePointActionErrorDisplay(error, t));
     }
   };
@@ -842,6 +889,7 @@ export function FileLibraryRecoveryDialog({
   };
 
   const savePointPending = createSavePoint.isPending;
+  const savePointCreateBlocked = savePointPending || savePointActionError?.kind === 'pending';
   const restorePending = createRestorePreview.isPending || runRestore.isPending || cancelRestore.isPending;
   const releasePending = releaseRuntimeAccess.isPending;
   const templatePending = createTemplate.isPending || publishTemplate.isPending || unpublishTemplate.isPending || deleteTemplate.isPending;
@@ -896,7 +944,7 @@ export function FileLibraryRecoveryDialog({
                   value={savePointMessage}
                   onChange={(event) => setSavePointMessage(event.target.value)}
                   placeholder={t('file_manager.save_point_message_placeholder')}
-                  disabled={!libraryReady || savePointPending}
+                  disabled={!libraryReady || savePointCreateBlocked}
                   data-testid="files__save-point__message"
                 />
               </div>
@@ -904,7 +952,7 @@ export function FileLibraryRecoveryDialog({
                 <Button
                   type="button"
                   onClick={handleCreateSavePoint}
-                  disabled={!libraryReady || savePointPending}
+                  disabled={!libraryReady || savePointCreateBlocked}
                   data-testid="files__save-point__create"
                 >
                   {savePointPending ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
@@ -914,10 +962,16 @@ export function FileLibraryRecoveryDialog({
               {savePointActionError ? (
                 <div
                   className="flex gap-2 rounded-md border border-warning/30 bg-warning/10 px-3 py-3"
-                  data-testid="files__save-point__error"
-                  role="alert"
+                  data-testid={savePointActionError.kind === 'pending'
+                    ? 'files__save-point__pending'
+                    : 'files__save-point__error'}
+                  role={savePointActionError.kind === 'pending' ? 'status' : 'alert'}
                 >
-                  <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-warning" />
+                  {savePointActionError.kind === 'pending' ? (
+                    <Loader2 className="mt-0.5 h-4 w-4 shrink-0 animate-spin text-warning" />
+                  ) : (
+                    <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-warning" />
+                  )}
                   <div className="min-w-0 space-y-1">
                     <div className="text-sm font-medium text-primary">
                       {savePointActionError.title}

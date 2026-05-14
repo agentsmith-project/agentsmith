@@ -1,6 +1,6 @@
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
-import { expect, test, type APIResponse, type Locator, type Page } from '@playwright/test';
+import { expect, test, type APIResponse, type Locator, type Page, type Request, type Response } from '@playwright/test';
 import {
   API_BASE,
   KEYCLOAK_DEV_ADMIN_PASSWORD,
@@ -59,6 +59,18 @@ type RestorePreviewProjection = {
   } | null;
 };
 
+type SavePointListItemProjection = {
+  id: string | null;
+  message: string | null;
+};
+
+type SavePointEvidence = {
+  ok: boolean;
+  status: number;
+  body: string;
+  payload: unknown;
+};
+
 function asRecord(value: unknown): Record<string, unknown> | null {
   return value && typeof value === 'object' && !Array.isArray(value)
     ? value as Record<string, unknown>
@@ -68,6 +80,11 @@ function asRecord(value: unknown): Record<string, unknown> | null {
 function readStringField(record: Record<string, unknown>, field: string): string | null {
   const value = record[field];
   return typeof value === 'string' && value.trim() ? value.trim() : null;
+}
+
+function readNumberField(record: Record<string, unknown>, field: string): number | null {
+  const value = record[field];
+  return typeof value === 'number' && Number.isFinite(value) ? value : null;
 }
 
 function resolveCreatedAgentTaskFields(payload: unknown): { taskId: string | null; workspaceFileLibraryId: string | null } {
@@ -1184,6 +1201,167 @@ async function createSavePointViaFilesUi(args: {
   return savePointId ?? '';
 }
 
+function isSavePointCollectionRequest(args: {
+  request: Request;
+  workspaceId: string;
+  projectId: string;
+  libraryId: string;
+  method: 'GET' | 'POST';
+}): boolean {
+  return args.request.method() === args.method
+    && args.request
+      .url()
+      .includes(`/workspaces/${args.workspaceId}/projects/${args.projectId}/file-libraries/${args.libraryId}/save-points`);
+}
+
+function trackSavePointListResponses(args: {
+  page: Page;
+  workspaceId: string;
+  projectId: string;
+  libraryId: string;
+}) {
+  const evidence: SavePointEvidence[] = [];
+  const onResponse = (response: Response) => {
+    if (!isSavePointCollectionRequest({
+      request: response.request(),
+      workspaceId: args.workspaceId,
+      projectId: args.projectId,
+      libraryId: args.libraryId,
+      method: 'GET',
+    })) {
+      return;
+    }
+
+    void response.text()
+      .then((body) => {
+        evidence.push({
+          ok: response.ok(),
+          status: response.status(),
+          body: truncateEvidence(body),
+          payload: parseJsonEvidence(body),
+        });
+      })
+      .catch((error: unknown) => {
+        evidence.push({
+          ok: false,
+          status: response.status(),
+          body: error instanceof Error ? error.message : String(error),
+          payload: null,
+        });
+      });
+  };
+
+  args.page.on('response', onResponse);
+  return {
+    dispose: () => args.page.off('response', onResponse),
+    evidence,
+    findByMessage: (message: string) => evidence
+      .filter((item) => item.ok)
+      .map((item) => savePointListFindByMessage(item.payload, message))
+      .find((item): item is SavePointListItemProjection => Boolean(item?.id)) ?? null,
+    hasSavePoint: (savePointId: string, message: string) => evidence
+      .some((item) => item.ok && savePointListContains(item.payload, savePointId, message)),
+  };
+}
+
+async function createSavePointFromOpenDialogWithPendingAssertions(args: {
+  page: Page;
+  dialog: Locator;
+  workspaceId: string;
+  projectId: string;
+  libraryId: string;
+  message: string;
+}): Promise<string> {
+  const messageInput = args.dialog.getByTestId('files__save-point__message');
+  const createButton = args.dialog.getByTestId('files__save-point__create');
+  const listResponseTracker = trackSavePointListResponses(args);
+  let createPostCount = 0;
+  const onCreateRequest = (request: Request) => {
+    if (isSavePointCollectionRequest({
+      request,
+      workspaceId: args.workspaceId,
+      projectId: args.projectId,
+      libraryId: args.libraryId,
+      method: 'POST',
+    })) {
+      createPostCount += 1;
+    }
+  };
+  args.page.on('request', onCreateRequest);
+
+  try {
+    await messageInput.fill(args.message);
+    await expect(createButton).toBeEnabled({ timeout: 30_000 });
+    const savePointResponsePromise = args.page.waitForResponse((response) => (
+      isSavePointCollectionRequest({
+        request: response.request(),
+        workspaceId: args.workspaceId,
+        projectId: args.projectId,
+        libraryId: args.libraryId,
+        method: 'POST',
+      })
+    ), { timeout: 120_000 });
+    await createButton.click();
+    const savePointResponse = await savePointResponsePromise;
+    const savePointBody = await savePointResponse.text();
+    const savePointPayload = parseJsonEvidence(savePointBody);
+    expect(createPostCount).toBe(1);
+
+    if (savePointResponse.ok()) {
+      const savePointRecord = asRecord(savePointPayload);
+      const savePointId = savePointRecord ? readStringField(savePointRecord, 'id') : null;
+      expect(savePointId).toBeTruthy();
+      await expect(args.dialog.getByText(args.message)).toBeVisible({ timeout: 10_000 });
+      return savePointId ?? '';
+    }
+
+    const pendingEvidence = {
+      status: savePointResponse.status(),
+      body: truncateEvidence(savePointBody),
+      payload: savePointPayload,
+    };
+    if (!isFileLibraryOperationPendingEvidence(pendingEvidence)) {
+      throw new Error(`create_save_point_failed:${JSON.stringify(pendingEvidence)}`);
+    }
+
+    await expect(args.dialog.getByTestId('files__save-point__pending')).toBeVisible({
+      timeout: 10_000,
+    });
+    await expect(args.dialog.getByTestId('files__save-point__error')).toHaveCount(0);
+    await expect(args.dialog.getByTestId('files__save-point__list-error')).toHaveCount(0);
+    await expect(messageInput).toHaveValue(args.message);
+    await expect(messageInput).toBeDisabled();
+    await expect(createButton).toBeDisabled();
+    await expect.poll(() => createPostCount, {
+      timeout: 1_000,
+      message: 'pending save-point create should not issue a duplicate POST after one click',
+    }).toBe(1);
+
+    await expect(args.dialog.getByText(args.message)).toBeVisible({ timeout: 120_000 });
+    await expect(args.dialog.getByTestId('files__save-point__pending')).toHaveCount(0, {
+      timeout: 10_000,
+    });
+    await expect(messageInput).toHaveValue('');
+    await expect(createButton).toBeEnabled({ timeout: 10_000 });
+    let savePoint = listResponseTracker.findByMessage(args.message);
+    await expect.poll(() => {
+      savePoint = listResponseTracker.findByMessage(args.message);
+      return savePoint?.id ?? null;
+    }, {
+      timeout: 10_000,
+      intervals: [250, 500, 1_000],
+      message: `UI save-point list response did not include pending create result: ${JSON.stringify(listResponseTracker.evidence)}`,
+    }).toBeTruthy();
+    if (!savePoint?.id) {
+      throw new Error(`ui_save_point_list_missing_pending_create_result:${JSON.stringify(listResponseTracker.evidence)}`);
+    }
+    return savePoint.id;
+  } finally {
+    args.page.off('request', onCreateRequest);
+    listResponseTracker.dispose();
+  }
+}
+
 async function readRestorePreviewEvidence(args: {
   page: Page;
   workspaceId: string;
@@ -1208,7 +1386,7 @@ async function readSavePointsEvidence(args: {
   workspaceId: string;
   projectId: string;
   libraryId: string;
-}): Promise<{ ok: boolean; status: number; body: string; payload: unknown }> {
+}): Promise<SavePointEvidence> {
   const response = await args.page.request.get(
     `${API_BASE}/api/v1/workspaces/${args.workspaceId}/projects/${args.projectId}/file-libraries/${args.libraryId}/save-points`,
     { headers: await authHeaders(args.page) },
@@ -1220,6 +1398,61 @@ async function readSavePointsEvidence(args: {
     body: truncateEvidence(body),
     payload: parseJsonEvidence(body),
   };
+}
+
+function readSavePointListItems(payload: unknown): SavePointListItemProjection[] {
+  const root = asRecord(payload);
+  const rawItems = Array.isArray(payload)
+    ? payload
+    : root && Array.isArray(root.items)
+      ? root.items
+      : [];
+  return rawItems
+    .map((item) => asRecord(item))
+    .filter((item): item is Record<string, unknown> => item !== null)
+    .map((item) => ({
+      id: readStringField(item, 'id'),
+      message: readStringField(item, 'message'),
+    }));
+}
+
+function savePointListContains(payload: unknown, savePointId: string, message: string): boolean {
+  return readSavePointListItems(payload)
+    .some((item) => item.id === savePointId && item.message === message);
+}
+
+function savePointListFindByMessage(payload: unknown, message: string): SavePointListItemProjection | null {
+  return readSavePointListItems(payload)
+    .find((item) => item.message === message) ?? null;
+}
+
+function isFileLibraryOperationPendingEvidence(evidence: {
+  status: number;
+  body: string;
+  payload?: unknown;
+}): boolean {
+  if (evidence.status !== 409) return false;
+  if (/\b(?:AFSCP_[A-Z0-9_]+|REPO_[A-Z0-9_]+|E_REPO_BUSY)\b|repo_[a-z0-9_]+|jvs/i.test(evidence.body)) return false;
+  const payload = evidence.payload ?? parseJsonEvidence(evidence.body);
+  const record = asRecord(payload);
+  if (!record) return false;
+  const errorCode = readStringField(record, 'error_code') ?? readStringField(record, 'errorCode');
+  const operationStatus = readStringField(record, 'operation_status') ?? readStringField(record, 'operationStatus');
+  const retryAfterMs = readNumberField(record, 'retry_after_ms') ?? readNumberField(record, 'retryAfterMs');
+
+  return errorCode === 'FILE_LIBRARY_OPERATION_PENDING'
+    && operationStatus === 'pending'
+    && retryAfterMs !== null
+    && retryAfterMs > 0;
+}
+
+async function expectSavePointListPendingUiNotFatal(fileStatesDialog: Locator): Promise<void> {
+  await expect(fileStatesDialog.getByTestId('files__save-point__list-recovering')).toBeVisible({
+    timeout: 10_000,
+  });
+  await expect(fileStatesDialog.getByTestId('files__save-point__retry')).toBeVisible();
+  await expect(fileStatesDialog.getByTestId('files__save-point__list-error')).toHaveCount(0);
+  await expect(fileStatesDialog.getByText(/^Could not load save points$/i)).toHaveCount(0);
 }
 
 async function waitForRestoreConfirmEnabledWithEvidence(args: {
@@ -1453,6 +1686,122 @@ test.describe.serial('@lane-real files user stories', () => {
       await expect(page.getByTestId(`files__library-status--${libraryId}`)).not.toContainText(/deleting/i);
     } else {
       await expect(page.getByText(libraryName)).toHaveCount(0);
+    }
+  });
+
+  test('File states save point reloads from backend list after refresh', async ({ page }) => {
+    test.setTimeout(240_000);
+
+    await keycloakLoginToWorkspace(page, WORKSPACE_ID, KEYCLOAK_DEV_ADMIN_USERNAME, KEYCLOAK_DEV_ADMIN_PASSWORD);
+    const { projectId } = await createProjectInWorkspace(page, WORKSPACE_ID, 'Files Save Point Reload');
+    const timestamp = Date.now();
+    const libraryName = `Save Point Reload Library ${timestamp}`;
+    const savePointMessage = `Reload save point ${timestamp}`;
+    const createdLibrary = await createFileLibraryViaApi({
+      page,
+      workspaceId: WORKSPACE_ID,
+      projectId,
+      name: libraryName,
+    });
+    const libraryId = createdLibrary.id;
+    await waitForLibraryStatus({
+      page,
+      workspaceId: WORKSPACE_ID,
+      projectId,
+      libraryId,
+      expected: /^ready$/i,
+    });
+    await uploadTextFileViaApi({
+      page,
+      workspaceId: WORKSPACE_ID,
+      projectId,
+      libraryId,
+      path: `reload-save-point-${timestamp}.txt`,
+      content: `save-point-source:${timestamp}`,
+    });
+    await waitForFileEntryViaApi({
+      page,
+      workspaceId: WORKSPACE_ID,
+      projectId,
+      libraryId,
+      path: `reload-save-point-${timestamp}.txt`,
+    });
+
+    await openWorkspaceFilesRoot({
+      page,
+      workspaceId: WORKSPACE_ID,
+      projectId,
+      libraryId,
+    });
+    await page.getByTestId('files__file-states').click();
+    const fileStatesDialog = page.getByTestId('files__dialog__file-states');
+    await expect(fileStatesDialog).toBeVisible({ timeout: 10_000 });
+    const savePointId = await createSavePointFromOpenDialogWithPendingAssertions({
+      page,
+      dialog: fileStatesDialog,
+      workspaceId: WORKSPACE_ID,
+      projectId,
+      libraryId,
+      message: savePointMessage,
+    });
+    await fileStatesDialog.getByLabel('Close', { exact: true }).click();
+    await expect(fileStatesDialog).toBeHidden({ timeout: 10_000 });
+
+    await page.reload({ waitUntil: 'domcontentloaded' });
+    await expect(page.getByTestId(`files__library-item--${libraryId}`)).toBeVisible({ timeout: 30_000 });
+    await expect(page.getByTestId('files__objects-table')).toBeVisible({ timeout: 30_000 });
+
+    const listResponseTracker = trackSavePointListResponses({
+      page,
+      workspaceId: WORKSPACE_ID,
+      projectId,
+      libraryId,
+    });
+    const savePointListResponsePromise = page.waitForResponse((response) => (
+      isSavePointCollectionRequest({
+        request: response.request(),
+        workspaceId: WORKSPACE_ID,
+        projectId,
+        libraryId,
+        method: 'GET',
+      })
+    ), { timeout: 120_000 });
+    await page.getByTestId('files__file-states').click();
+    const reopenedDialog = page.getByTestId('files__dialog__file-states');
+    await expect(reopenedDialog).toBeVisible({ timeout: 10_000 });
+    const savePointListResponse = await savePointListResponsePromise;
+    const savePointListBody = await savePointListResponse.text();
+    const savePointListEvidence = {
+      ok: savePointListResponse.ok(),
+      status: savePointListResponse.status(),
+      body: truncateEvidence(savePointListBody),
+      payload: parseJsonEvidence(savePointListBody),
+    };
+
+    try {
+      if (isFileLibraryOperationPendingEvidence(savePointListEvidence)) {
+        await expectSavePointListPendingUiNotFatal(reopenedDialog);
+        await expect(reopenedDialog.getByText(savePointMessage)).toBeVisible({ timeout: 120_000 });
+        await expect(reopenedDialog.getByTestId('files__save-point__list-recovering')).toHaveCount(0, {
+          timeout: 10_000,
+        });
+        await expect.poll(() => listResponseTracker.hasSavePoint(savePointId, savePointMessage), {
+          timeout: 10_000,
+          intervals: [250, 500, 1_000],
+          message: `UI save-point list responses did not include ${savePointId}: ${JSON.stringify(listResponseTracker.evidence)}`,
+        }).toBe(true);
+      } else {
+        expect(savePointListResponse.ok(), savePointListBody).toBe(true);
+        expect(
+          savePointListContains(savePointListEvidence.payload, savePointId, savePointMessage),
+          JSON.stringify(savePointListEvidence),
+        ).toBe(true);
+      }
+
+      await expect(reopenedDialog.getByTestId('files__save-point__list-error')).toHaveCount(0);
+      await expect(reopenedDialog.getByText(savePointMessage)).toBeVisible({ timeout: 30_000 });
+    } finally {
+      listResponseTracker.dispose();
     }
   });
 

@@ -50,6 +50,20 @@ type UpdateAgentTaskModelSettingJsonResponse<
 > = UpdateAgentTaskModelSettingResponses[Status] extends {
   content: { 'application/json': infer Body };
 } ? Body : never;
+type OperationJsonResponse<
+  Responses,
+  Status extends keyof Responses,
+> = Responses[Status] extends {
+  content: { 'application/json': infer Body };
+} ? Body : never;
+type ListFileLibrarySavePoints409Response = OperationJsonResponse<
+  operations['listFileLibrarySavePoints']['responses'],
+  409
+>;
+type CreateFileLibrarySavePoint409Response = OperationJsonResponse<
+  operations['createFileLibrarySavePoint']['responses'],
+  409
+>;
 type ExpectedProjectPathParams = {
   projectId: string;
   workspaceId: string;
@@ -269,6 +283,72 @@ describe('Agent task model setting contract', () => {
     expect(yamlSource).toContain('AgentTaskModelSettingValidationError:');
     expect(yamlSource).toContain('"422":');
     expect(yamlSource).toContain('"429":');
+  });
+});
+
+describe('File library save point pending contract', () => {
+  it('documents pending list/create conflicts as a narrow product response schema', () => {
+    expectTypeOf<Extract<'operation_status', keyof components['schemas']['ApiError']>>()
+      .toEqualTypeOf<never>();
+    expectTypeOf<Extract<'retry_after_ms', keyof components['schemas']['ApiError']>>()
+      .toEqualTypeOf<never>();
+    expectTypeOf<components['schemas']['FileLibrarySavePointOperationPendingError']>()
+      .toEqualTypeOf<{
+        error_code: 'FILE_LIBRARY_OPERATION_PENDING';
+        message: string;
+        operation_status: 'pending';
+        retry_after_ms: number;
+        request_id?: string;
+      }>();
+    expectTypeOf<components['schemas']['FileLibrarySavePointOperationPendingError']>()
+      .toMatchTypeOf<ListFileLibrarySavePoints409Response>();
+    expectTypeOf<components['schemas']['FileLibrarySavePointOperationPendingError']>()
+      .toMatchTypeOf<CreateFileLibrarySavePoint409Response>();
+
+    const jsonSource = JSON.parse(
+      readFileSync(resolve(process.cwd(), 'docs/contracts/specs/openapi.json'), 'utf8'),
+    ) as {
+      components?: {
+        schemas?: Record<string, {
+          additionalProperties?: boolean;
+          properties?: Record<string, unknown>;
+          required?: string[];
+        }>;
+      };
+      paths?: Record<string, Record<string, {
+        responses?: Record<string, unknown>;
+      }>>;
+    };
+    const pendingSchema = jsonSource.components?.schemas?.FileLibrarySavePointOperationPendingError;
+    expect(pendingSchema?.additionalProperties).toBe(false);
+    expect(pendingSchema?.required).toEqual([
+      'error_code',
+      'message',
+      'operation_status',
+      'retry_after_ms',
+    ]);
+    expect(pendingSchema?.properties?.error_code).toMatchObject({
+      enum: ['FILE_LIBRARY_OPERATION_PENDING'],
+      type: 'string',
+    });
+    expect(pendingSchema?.properties?.operation_status).toMatchObject({
+      enum: ['pending'],
+      type: 'string',
+    });
+    expect(pendingSchema?.properties?.retry_after_ms).toMatchObject({
+      minimum: 1,
+      type: 'integer',
+    });
+
+    const savePointsPath = jsonSource.paths?.[
+      '/api/v1/workspaces/{workspaceId}/projects/{projectId}/file-libraries/{libraryId}/save-points'
+    ];
+    expect(JSON.stringify(savePointsPath?.get?.responses?.['409'])).toContain(
+      '#/components/schemas/FileLibrarySavePointOperationPendingError',
+    );
+    expect(JSON.stringify(savePointsPath?.post?.responses?.['409'])).toContain(
+      '#/components/schemas/FileLibrarySavePointOperationPendingError',
+    );
   });
 });
 

@@ -2951,7 +2951,14 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ApiError"
+                  "oneOf": [
+                    {
+                      "$ref": "#/components/schemas/FileLibrarySavePointOperationPendingError"
+                    },
+                    {
+                      "$ref": "#/components/schemas/ApiError"
+                    }
+                  ]
                 }
               }
             }
@@ -3034,6 +3041,9 @@
                     },
                     {
                       "$ref": "#/components/schemas/FileLibraryNotReadyError"
+                    },
+                    {
+                      "$ref": "#/components/schemas/FileLibrarySavePointOperationPendingError"
                     },
                     {
                       "$ref": "#/components/schemas/ApiError"
@@ -13739,6 +13749,40 @@
             "items": {
               "$ref": "#/components/schemas/FileLibrarySavePoint"
             }
+          }
+        }
+      },
+      "FileLibrarySavePointOperationPendingError": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "error_code",
+          "message",
+          "operation_status",
+          "retry_after_ms"
+        ],
+        "properties": {
+          "error_code": {
+            "type": "string",
+            "enum": [
+              "FILE_LIBRARY_OPERATION_PENDING"
+            ]
+          },
+          "message": {
+            "type": "string"
+          },
+          "operation_status": {
+            "type": "string",
+            "enum": [
+              "pending"
+            ]
+          },
+          "retry_after_ms": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "request_id": {
+            "type": "string"
           }
         }
       },

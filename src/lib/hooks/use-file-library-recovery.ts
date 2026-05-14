@@ -178,7 +178,16 @@ export function useCreateFileLibrarySavePoint(options: FileLibraryRecoveryMutati
       });
       toast.success(t('create_success'));
     },
-    onError: (error: unknown) => {
+    onError: async (error: unknown, variables) => {
+      if (isFileLibraryOperationPendingError(error)) {
+        await queryClient.invalidateQueries({
+          queryKey: queryKeys.fileLibraries.savePoints(
+            variables.workspaceId,
+            variables.projectId,
+            variables.libraryId,
+          ),
+        });
+      }
       if (options.suppressErrorToast) return;
       handleErrorForToast(error, 'useCreateFileLibrarySavePoint');
     },

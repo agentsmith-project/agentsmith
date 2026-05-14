@@ -712,6 +712,7 @@ function mapAfscpClientErrorToStorageMessage(
     case 'afscp_active_writer_blocks_restore':
       return 'file_library_active_writer_blocked';
     case 'afscp_repo_mutation_in_progress':
+    case 'afscp_repo_jvs_mutation_in_progress':
       if (fallback === 'file_library_save_point_list_failed') {
         return 'file_library_save_point_list_pending';
       }

@@ -8,6 +8,7 @@ export type AfscpPublicErrorCode =
   | 'afscp_restore_preview_stale'
   | 'afscp_active_writer_blocks_restore'
   | 'afscp_repo_mutation_in_progress'
+  | 'afscp_repo_jvs_mutation_in_progress'
   | 'afscp_template_clone_not_allowed'
   | 'afscp_capability_denied'
   | 'afscp_service_permission_denied'
@@ -285,10 +286,12 @@ export function mapAfscpErrorEnvelope(status: number, payload: unknown): AfscpMa
     });
   }
 
-  if (parsed.code === 'REPO_MUTATION_IN_PROGRESS') {
+  if (parsed.code === 'REPO_MUTATION_IN_PROGRESS' || parsed.code === 'REPO_JVS_MUTATION_IN_PROGRESS') {
     return buildMappedError({
       status: 409,
-      code: 'afscp_repo_mutation_in_progress',
+      code: parsed.code === 'REPO_JVS_MUTATION_IN_PROGRESS'
+        ? 'afscp_repo_jvs_mutation_in_progress'
+        : 'afscp_repo_mutation_in_progress',
       retryable: parsed.retryable ?? true,
       correlation_id: parsed.correlation_id,
       operation_id: parsed.operation_id,

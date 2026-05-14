@@ -392,6 +392,19 @@ function fileLibraryControlRouteErrorBody(
     error_code: mapped.errorCode,
     message: mapped.message,
   };
+  if (
+    mapped.errorCode === 'FILE_LIBRARY_OPERATION_PENDING'
+    && (
+      mapped.message === 'file_library_save_point_create_pending'
+      || mapped.message === 'file_library_save_point_list_pending'
+    )
+  ) {
+    return {
+      ...base,
+      operation_status: 'pending',
+      retry_after_ms: FILE_LIBRARY_RETRY_AFTER_MS,
+    };
+  }
   if (error instanceof FileLibraryRestorePreviewActiveError) {
     return {
       ...base,

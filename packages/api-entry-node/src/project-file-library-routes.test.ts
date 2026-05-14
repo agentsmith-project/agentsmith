@@ -1656,6 +1656,10 @@ describe('project-file-library-routes', () => {
       expect(createJson).toHaveBeenCalledWith(expect.anything(), 409, {
         error_code: errorCode,
         message,
+        ...(message.endsWith('_pending') ? {
+          operation_status: 'pending',
+          retry_after_ms: 2000,
+        } : {}),
       });
       expect(JSON.stringify(createJson.mock.calls)).not.toMatch(/repo_hidden_elsewhere|ns_hidden|metadata_url|postgres|repo_flib|sp_user|credential|control_root/);
     }
@@ -2475,6 +2479,8 @@ describe('project-file-library-routes', () => {
     expect(listJson).toHaveBeenCalledWith(expect.anything(), 409, {
       error_code: 'FILE_LIBRARY_OPERATION_PENDING',
       message: 'file_library_save_point_list_pending',
+      operation_status: 'pending',
+      retry_after_ms: 2000,
     });
     expect(JSON.stringify(listJson.mock.calls))
       .not.toMatch(/FILE_LIBRARY_SAVE_POINT_LIST_FAILED|repo_hidden_elsewhere|metadata_url|postgres|credential|control_root/);

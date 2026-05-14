@@ -99,6 +99,8 @@ const t = (key: string, values?: Record<string, string>) => {
     'file_manager.save_point_action_failed_title': 'Save point needs attention',
     'file_manager.save_point_action_failed': 'Save point could not be created. Your note is still here; try again after the file library is ready.',
     'file_manager.save_point_active_writer_blocked': 'Task files and workspace are still being used by the task runtime. Release task workspace usage, then try again.',
+    'file_manager.save_point_operation_pending': 'File state is still being updated. Wait for the current file operation to finish, then try again.',
+    'file_manager.save_point_storage_not_ready': 'Project file storage is not ready yet. Wait for initialization to finish, then try again.',
     'file_manager.save_points': 'Save points',
     'file_manager.restore': 'Restore',
     'file_manager.restore_cancel': 'Cancel restore',
@@ -402,6 +404,70 @@ describe('FileLibraryRecoveryDialog', () => {
       'FILE_LIBRARY_ACTIVE_WRITER_BLOCKED',
     );
     expect(screen.getByTestId('files__save-point__message')).toHaveValue('Before prompt edits');
+    expect(screen.getByTestId('files__save-point__create')).toBeEnabled();
+  });
+
+  it('blocks duplicate save point creation while a pending operation is recovering', async () => {
+    const user = userEvent.setup();
+    mockCreateSavePoint.mockRejectedValueOnce(new APIError(
+      'FILE_LIBRARY_OPERATION_PENDING',
+      'file_library_operation_pending',
+      'req-save-point-pending',
+      409,
+    ));
+    const { rerender } = renderDialog();
+
+    await user.type(screen.getByTestId('files__save-point__message'), 'Before prompt edits');
+    await user.click(screen.getByTestId('files__save-point__create'));
+
+    expect(await screen.findByTestId('files__save-point__pending')).toHaveTextContent(
+      'Save points are syncing',
+    );
+    expect(screen.getByTestId('files__save-point__pending')).toHaveTextContent(
+      'File state is still being updated. Wait for the current file operation to finish, then try again.',
+    );
+    expect(screen.queryByTestId('files__save-point__error')).not.toBeInTheDocument();
+    expect(screen.queryByTestId('files__save-point__list-error')).not.toBeInTheDocument();
+    expect(screen.queryByText('Could not load save points')).not.toBeInTheDocument();
+    expect(screen.getByTestId('files__save-point__message')).toHaveValue('Before prompt edits');
+    expect(screen.getByTestId('files__save-point__message')).toBeDisabled();
+    expect(screen.getByTestId('files__save-point__create')).toBeDisabled();
+    await user.click(screen.getByTestId('files__save-point__create'));
+    expect(mockCreateSavePoint).toHaveBeenCalledTimes(1);
+    expect(mockRefetchSavePoints).toHaveBeenCalled();
+
+    mockSavePointsQueryState.mockReturnValue({
+      data: {
+        items: [
+          {
+            id: 'sp_after_pending',
+            file_library_id: 'lib_1',
+            message: 'Before prompt edits',
+            created_at: '2026-05-09T12:06:00.000Z',
+          },
+        ],
+      },
+      error: null,
+      isError: false,
+      isLoading: false,
+      refetch: mockRefetchSavePoints,
+    });
+    rerender(
+      <FileLibraryRecoveryDialog
+        open
+        library={library}
+        projectId="proj_001"
+        t={t}
+        workspaceId="ws_default"
+        onOpenChange={vi.fn()}
+      />,
+    );
+
+    await waitFor(() => {
+      expect(screen.queryByTestId('files__save-point__pending')).not.toBeInTheDocument();
+    });
+    expect(screen.getByText('Before prompt edits')).toBeInTheDocument();
+    expect(screen.getByTestId('files__save-point__message')).toHaveValue('');
     expect(screen.getByTestId('files__save-point__create')).toBeEnabled();
   });
 

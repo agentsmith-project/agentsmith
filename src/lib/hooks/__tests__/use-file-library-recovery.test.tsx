@@ -330,6 +330,43 @@ describe('file library recovery hooks', () => {
     });
   });
 
+  it('marks the save-point list stale when create reports an operation-pending state', async () => {
+    mockCreateSavePoint.mockRejectedValueOnce(new APIError(
+      'FILE_LIBRARY_OPERATION_PENDING',
+      'file_library_operation_pending',
+    ));
+    const { queryClient, Wrapper } = createTestHarness();
+    const savePointsKey = ['file-library-save-points', workspaceId, projectId, libraryId];
+    queryClient.setQueryData(savePointsKey, {
+      items: [
+        {
+          id: 'sp_existing',
+          file_library_id: libraryId,
+          message: 'Earlier save',
+          created_at: '2026-05-09T11:00:00.000Z',
+        },
+      ],
+    });
+
+    const { result } = renderHook(() => useCreateFileLibrarySavePoint({ suppressErrorToast: true }), {
+      wrapper: Wrapper,
+    });
+
+    await act(async () => {
+      await expect(result.current.mutateAsync({
+        workspaceId,
+        projectId,
+        libraryId,
+        message: 'Before edits',
+      })).rejects.toThrow('file_library_operation_pending');
+    });
+
+    await waitFor(() => {
+      expect(queryClient.getQueryCache().find({ queryKey: savePointsKey })?.isStale()).toBe(true);
+    });
+    expect(handleErrorForToast).not.toHaveBeenCalled();
+  });
+
   it('allows dialog-controlled save point errors to suppress the global error toast', async () => {
     mockCreateSavePoint.mockRejectedValueOnce(new Error('file_library_active_writer_blocked'));
 

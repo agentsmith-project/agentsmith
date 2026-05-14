@@ -262,31 +262,38 @@ describe('mapAfscpErrorEnvelope', () => {
   });
 
   it('maps repo mutation-in-progress conflicts to a retryable busy state without leaking details', () => {
-    const mapped = mapAfscpErrorEnvelope(409, {
-      error: {
-        code: 'REPO_MUTATION_IN_PROGRESS',
-        message: 'repo repo_hidden_elsewhere has an active mutation metadata_url=postgres://db',
+    for (const [rawCode, mappedCode] of [
+      ['REPO_MUTATION_IN_PROGRESS', 'afscp_repo_mutation_in_progress'],
+      ['REPO_JVS_MUTATION_IN_PROGRESS', 'afscp_repo_jvs_mutation_in_progress'],
+    ] as const) {
+      const mapped = mapAfscpErrorEnvelope(409, {
+        error: {
+          code: rawCode,
+          message: rawCode === 'REPO_JVS_MUTATION_IN_PROGRESS'
+            ? 'repo JVS mutation is in progress'
+            : 'repo repo_hidden_elsewhere has an active mutation metadata_url=postgres://db',
+          retryable: true,
+          correlation_id: 'corr-mutation-busy',
+          operation_id: 'op_repo_mutation_busy',
+          details: {
+            resource: { type: 'repo', id: 'repo_hidden_elsewhere' },
+            namespace_id: 'ns_hidden',
+            metadata_url: 'postgres://postgres:postgres@db:5432/juicefs',
+          },
+        },
+      });
+
+      expect(mapped).toEqual({
+        status: 409,
+        code: mappedCode,
+        message: mappedCode,
         retryable: true,
         correlation_id: 'corr-mutation-busy',
         operation_id: 'op_repo_mutation_busy',
-        details: {
-          resource: { type: 'repo', id: 'repo_hidden_elsewhere' },
-          namespace_id: 'ns_hidden',
-          metadata_url: 'postgres://postgres:postgres@db:5432/juicefs',
-        },
-      },
-    });
-
-    expect(mapped).toEqual({
-      status: 409,
-      code: 'afscp_repo_mutation_in_progress',
-      message: 'afscp_repo_mutation_in_progress',
-      retryable: true,
-      correlation_id: 'corr-mutation-busy',
-      operation_id: 'op_repo_mutation_busy',
-      resource_kind: 'repo',
-    });
-    expect(JSON.stringify(mapped)).not.toMatch(/repo_hidden_elsewhere|ns_hidden|metadata_url|postgres/);
+        resource_kind: 'repo',
+      });
+      expect(JSON.stringify(mapped)).not.toMatch(/REPO_JVS_MUTATION_IN_PROGRESS|repo JVS mutation is in progress|repo_hidden_elsewhere|ns_hidden|metadata_url|postgres/);
+    }
   });
 
   it('maps template clone and capability denials to stable non-leaking codes', () => {

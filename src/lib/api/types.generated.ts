@@ -3712,6 +3712,15 @@ export interface components {
             id: string;
             message?: string;
         };
+        FileLibrarySavePointOperationPendingError: {
+            /** @enum {string} */
+            error_code: "FILE_LIBRARY_OPERATION_PENDING";
+            message: string;
+            /** @enum {string} */
+            operation_status: "pending";
+            request_id?: string;
+            retry_after_ms: number;
+        };
         FileLibraryTaskInUseError: {
             /** @description Present only when bound_task_visible is true. */
             bound_task_id?: string;
@@ -8496,7 +8505,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["ApiError"];
+                    "application/json": components["schemas"]["FileLibrarySavePointOperationPendingError"] | components["schemas"]["ApiError"];
                 };
             };
             /** @description Save point list failed */
@@ -8563,7 +8572,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["FileLibraryDeletingError"] | components["schemas"]["FileLibraryNotReadyError"] | components["schemas"]["ApiError"];
+                    "application/json": components["schemas"]["FileLibraryDeletingError"] | components["schemas"]["FileLibraryNotReadyError"] | components["schemas"]["FileLibrarySavePointOperationPendingError"] | components["schemas"]["ApiError"];
                 };
             };
             /** @description Save point create failed */

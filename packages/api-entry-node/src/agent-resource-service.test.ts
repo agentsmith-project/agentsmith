@@ -19,6 +19,8 @@ describe('AgentResourceService', () => {
     delete process.env.INTERNAL_API_BASE_URL;
     delete process.env.AGENT_EXECUTION_WS_BASE_URL;
     delete process.env.AGENT_EXECUTION_HTTP_BASE_URL;
+    delete process.env.INTERNAL_AGENT_IMAGE;
+    delete process.env.INTEGRATION_INTERNAL_AGENT_IMAGE;
   });
 
   it('creates developer agent runner with expected defaults', async () => {
@@ -139,6 +141,34 @@ describe('AgentResourceService', () => {
       _internal_raw_key: createdConfig?._internal_raw_key,
       idle_timeout_sec: 180,
       max_lifetime_sec: 3600,
+    }));
+  });
+
+  it('refreshes deployment default managed runner image from deploy truth without rotating runtime key material', async () => {
+    process.env.INTERNAL_AGENT_IMAGE = 'kind-registry:5000/mbos/agentsmith-managed-runner@sha256:1111';
+    const service = new AgentResourceService(new InMemoryJsonDocStore());
+
+    const created = await service.upsertDeploymentDefaultManagedAgentRunner('ws_default', 'proj_1', {
+      name: 'Default managed runner',
+      endpointId: 'ep_managed_default',
+      is_default: true,
+    });
+    const createdConfig = created.config;
+    expect(createdConfig?.image).toBe('kind-registry:5000/mbos/agentsmith-managed-runner@sha256:1111');
+
+    process.env.INTERNAL_AGENT_IMAGE = 'kind-registry:5000/mbos/agentsmith-managed-runner@sha256:2222';
+    const updated = await service.upsertDeploymentDefaultManagedAgentRunner('ws_default', 'proj_1', {
+      endpointId: 'ep_managed_default',
+      config: {
+        idle_timeout_sec: 180,
+      },
+    });
+
+    expect(updated.config).toEqual(expect.objectContaining({
+      image: 'kind-registry:5000/mbos/agentsmith-managed-runner@sha256:2222',
+      _internal_key_id: createdConfig?._internal_key_id,
+      _internal_raw_key: createdConfig?._internal_raw_key,
+      idle_timeout_sec: 180,
     }));
   });
 

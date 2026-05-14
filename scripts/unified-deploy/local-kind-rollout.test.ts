@@ -306,6 +306,18 @@ function createPassingRunner(calls: CommandCall[], context = 'kind-agentsmith'):
       if (joined.includes('manifest inspect') || joined.includes('buildx imagetools inspect')) {
         return { exitCode: 0, stdout: 'Name: local-kind-image\nDigest: sha256:dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd\n', stderr: '' };
       }
+      if (args[0] === 'run' && joined.includes('--entrypoint /usr/local/bin/afscp-migrate')) {
+        const isValid = args.includes('--apply') && args.includes('--check');
+        return isValid
+          ? { exitCode: 0, stdout: 'migration ok', stderr: '' }
+          : { exitCode: 2, stdout: '', stderr: 'missing action flag: --apply or --check' };
+      }
+      if (args[0] === 'run' && joined.includes('--entrypoint /usr/local/bin/afscp-volume-bootstrap')) {
+        const isValid = args.includes('--ensure') && args.includes('--check');
+        return isValid
+          ? { exitCode: 0, stdout: 'volume bootstrap ok', stderr: '' }
+          : { exitCode: 2, stdout: '', stderr: args.includes('--apply') ? 'unknown flag: --apply' : 'missing action flag: --ensure or --check' };
+      }
 
       return { exitCode: 0, stdout: 'docker ok', stderr: '' };
     }
@@ -932,6 +944,7 @@ describe('unified deploy local-kind live rollout producer', () => {
       siteEnvPath,
       runner,
       probeRunner: passingProbeRunner,
+      registryAvailabilityPoll: { timeoutMs: 0 },
     });
 
     expect(result.status).toBe('failed');
@@ -1055,16 +1068,28 @@ describe('unified deploy local-kind live rollout producer', () => {
     const ingressRolloutIndex = calls.findIndex((call) =>
       call.args.join(' ').includes('rollout status deployment/ingress-nginx-controller'),
     );
-    const bootstrapDryRunIndex = calls.indexOf(applyCalls[4] as CommandCall);
-    const bootstrapApplyIndex = calls.indexOf(applyCalls[5] as CommandCall);
-    const appDryRunIndex = calls.indexOf(applyCalls[6] as CommandCall);
+    const csiApplyIndex = calls.indexOf(applyCalls[4] as CommandCall);
+    const csiControllerScaleIndex = calls.findIndex((call) =>
+      call.args.join(' ').includes('scale statefulset/juicefs-csi-controller --replicas=1'),
+    );
+    const csiControllerRolloutIndex = calls.findIndex((call) =>
+      call.args.join(' ').includes('rollout status statefulset/juicefs-csi-controller'),
+    );
+    const csiNodeRolloutIndex = calls.findIndex((call) =>
+      call.args.join(' ').includes('rollout status daemonset/juicefs-csi-node'),
+    );
+    const schemaBootstrapDryRunIndex = calls.indexOf(applyCalls[5] as CommandCall);
+    const schemaBootstrapApplyIndex = calls.indexOf(applyCalls[6] as CommandCall);
+    const volumeBootstrapDryRunIndex = calls.indexOf(applyCalls[7] as CommandCall);
+    const volumeBootstrapApplyIndex = calls.indexOf(applyCalls[8] as CommandCall);
+    const appDryRunIndex = calls.indexOf(applyCalls[9] as CommandCall);
     const schemaJobDeleteIndex = calls.findIndex((call) =>
       call.args.join(' ').includes('delete job afscp-schema-bootstrap'),
     );
     const volumeJobDeleteIndex = calls.findIndex((call) =>
       call.args.join(' ').includes('delete job afscp-volume-bootstrap'),
     );
-    const appApplyIndex = calls.indexOf(applyCalls[7] as CommandCall);
+    const appApplyIndex = calls.indexOf(applyCalls[10] as CommandCall);
     const schemaJobPollIndex = calls.findIndex((call) =>
       call.args.join(' ').includes('get job/afscp-schema-bootstrap -o json'),
     );
@@ -1075,8 +1100,8 @@ describe('unified deploy local-kind live rollout producer', () => {
       call.args.join(' ').includes('rollout status deployment/agentsmith-web'),
     );
 
-    expect(result.status).toBe('passed');
-    expect(applyCalls).toHaveLength(8);
+    expect(result.status, JSON.stringify(result.failures, null, 2)).toBe('passed');
+    expect(applyCalls).toHaveLength(11);
     expect(applyCalls[0]?.args).toEqual(expect.arrayContaining(['apply', '--dry-run=server', '-f', '-']));
     expect(applyCalls[0]?.input).toContain('kind: Namespace');
     expect(applyCalls[0]?.input).toContain('name: agentsmith');
@@ -1096,96 +1121,126 @@ describe('unified deploy local-kind live rollout producer', () => {
     expect(applyCalls[3]?.input).toContain('namespace: ingress-nginx');
     expect(ingressClassIndex).toBeGreaterThan(calls.indexOf(applyCalls[3] as CommandCall));
     expect(ingressRolloutIndex).toBeGreaterThan(ingressClassIndex);
-    expect(schemaJobDeleteIndex).toBeGreaterThan(ingressRolloutIndex);
+    expect(csiApplyIndex).toBeGreaterThan(ingressRolloutIndex);
+    expect(applyCalls[4]?.args).toEqual(expect.arrayContaining(['apply', '--validate=false', '-f']));
+    expect(applyCalls[4]?.args.join(' ')).toContain('local-kind/juicefs-csi/upstream-manifest.yaml');
+    expect(applyCalls[4]?.input).toBe('');
+    expect(csiControllerScaleIndex).toBeGreaterThan(csiApplyIndex);
+    expect(csiControllerRolloutIndex).toBeGreaterThan(csiControllerScaleIndex);
+    expect(csiNodeRolloutIndex).toBeGreaterThan(csiControllerRolloutIndex);
+    expect(schemaJobDeleteIndex).toBeGreaterThan(csiNodeRolloutIndex);
     expect(volumeJobDeleteIndex).toBeGreaterThan(schemaJobDeleteIndex);
-    expect(bootstrapDryRunIndex).toBeGreaterThan(volumeJobDeleteIndex);
-    expect(applyCalls[4]?.args).toEqual(expect.arrayContaining(['apply', '--dry-run=server', '-f', '-']));
-    expect(applyCalls[4]?.input).not.toContain('kind: Deployment');
-    expect(applyCalls[4]?.input).not.toContain('name: agentsmith-api');
-    expect(applyCalls[4]?.input).not.toContain('name: afscp-api');
-    expect(applyCalls[4]?.input).toContain('kind: ServiceAccount');
-    expect(applyCalls[4]?.input).toContain('name: afscp-runtime');
-    expect(applyCalls[4]?.input).toContain('name: afscp-runtime-config');
-    expect(applyCalls[4]?.input).toContain('name: afscp-runtime-secrets');
-    expect(applyCalls[4]?.input).toContain('name: afscp-default-volume-juicefs');
-    expect(applyCalls[4]?.input).toContain('kind: Job');
-    expect(applyCalls[4]?.input).toContain('name: afscp-schema-bootstrap');
-    expect(applyCalls[4]?.input).toContain('/usr/local/bin/afscp-migrate');
-    expect(applyCalls[4]?.input).toContain('--apply');
-    expect(applyCalls[4]?.input).toContain('--check');
-    expect(applyCalls[4]?.input).toContain('name: afscp-volume-bootstrap');
-    expect(applyCalls[4]?.input).toContain('/usr/local/bin/afscp-volume-bootstrap');
-    expect(applyCalls[4]?.input).toContain('--ensure');
-    expect(applyCalls[4]?.input).toMatch(
+    expect(schemaBootstrapDryRunIndex).toBeGreaterThan(volumeJobDeleteIndex);
+    expect(applyCalls[5]?.args).toEqual(expect.arrayContaining(['apply', '--dry-run=server', '-f', '-']));
+    expect(applyCalls[5]?.input).not.toContain('kind: Deployment');
+    expect(applyCalls[5]?.input).not.toContain('name: agentsmith-api');
+    expect(applyCalls[5]?.input).not.toContain('name: afscp-api');
+    expect(applyCalls[5]?.input).toContain('kind: ServiceAccount');
+    expect(applyCalls[5]?.input).toContain('name: afscp-runtime');
+    expect(applyCalls[5]?.input).toContain('name: afscp-runtime-config');
+    expect(applyCalls[5]?.input).toContain('name: afscp-runtime-secrets');
+    expect(applyCalls[5]?.input).toContain('name: afscp-default-volume-juicefs');
+    expect(applyCalls[5]?.input).toContain('name: substrate-postgresql');
+    expect(applyCalls[5]?.input).toContain('name: substrate-minio');
+    expect(applyCalls[5]?.input).toContain('kubernetes.io/service-name: substrate-postgresql');
+    expect(applyCalls[5]?.input).toContain('kubernetes.io/service-name: substrate-minio');
+    expect(applyCalls[5]?.input).toContain('kind: Job');
+    expect(applyCalls[5]?.input).toContain('name: afscp-schema-bootstrap');
+    expect(applyCalls[5]?.input).toContain('/usr/local/bin/afscp-migrate');
+    expect(applyCalls[5]?.input).toContain('--apply');
+    expect(applyCalls[5]?.input).toContain('--check');
+    expect(applyCalls[5]?.input).not.toContain('name: afscp-volume-bootstrap');
+    expect(applyCalls[5]?.input).not.toContain('/usr/local/bin/afscp-volume-bootstrap');
+    expect(applyCalls[5]?.input).toContain('AFSCP_DEFAULT_VOLUME_ID: vol_agentsmith_default');
+    expect(applyCalls[5]?.input).toContain('AFSCP_DEFAULT_VOLUME_BACKEND: juicefs');
+    expect(applyCalls[5]?.input).toContain('AFSCP_DEFAULT_VOLUME_STATUS: active');
+    expect(applyCalls[5]?.input).toContain('AFSCP_DEFAULT_VOLUME_CAPABILITIES_JSON:');
+    expect(applyCalls[5]?.input).toContain('"jvs_external_control_root":true');
+    expect(applyCalls[5]?.input).toContain('metaurl: postgres://sentinel_pg_user:sentinel_pg_secret@substrate-postgresql.agentsmith.svc.cluster.local:5432/sentinel_pg_db?sslmode=disable');
+    expect(applyCalls[5]?.input).not.toContain('metaurl: postgres://sentinel_pg_user:sentinel_pg_secret@substrate-postgresql:5432/sentinel_pg_db?sslmode=disable');
+    expect(applyCalls[5]?.input).toContain('bucket: http://substrate-minio.agentsmith.svc.cluster.local:9000/sentinel-files');
+    expect(applyCalls[5]?.input).toContain('kind: PersistentVolume');
+    expect(applyCalls[5]?.input).toContain('name: agentsmith-afscp-default-volume');
+    expect(applyCalls[5]?.input).toContain('kind: PersistentVolumeClaim');
+    expect(applyCalls[5]?.input).toContain('storage: 12P');
+    expect(applyCalls[5]?.input).toContain('AFSCP_JVS_ENABLED: "true"');
+    expect(applyCalls[5]?.input).toContain('AFSCP_JVS_READY: "true"');
+    expect(applyCalls[5]?.input).toContain('AFSCP_JVS_CWD: /var/lib/afscp/jvs-cwd');
+    expect(applyCalls[5]?.input).not.toContain('AFSCP_JVS_BINARY_PATH');
+    expect(applyCalls[5]?.input).not.toContain('AFSCP_JVS_BINARY_SHA256');
+    expect(applyCalls[5]?.input).not.toContain('storage: 8Pi');
+    expect(applyCalls[5]?.input).not.toContain('storage: 10Pi');
+    expect(applyCalls[5]?.input).not.toContain('volumeAttributes:\n              subPath: "afscp/vol_agentsmith_default"');
+    expect(applyCalls[5]?.input).not.toMatch(/name: afscp-volume-bootstrap[\s\S]*\/usr\/local\/bin\/afscp-volume-bootstrap/u);
+    expect(applyCalls[5]?.input).not.toContain('@substrate-postgresql:15432/');
+    expect(applyCalls[5]?.input).not.toContain('@substrate-mongodb:27027/');
+    expect(applyCalls[5]?.input).not.toContain('@substrate-redis:16379/');
+    expect(applyCalls[5]?.input).not.toContain('kind: ClusterRole');
+    expect(applyCalls[5]?.input).not.toContain('persistentvolumes');
+    expect(applyCalls[5]?.input).not.toContain('execution-gateway');
+    expect(applyCalls[6]?.args).toEqual(expect.arrayContaining(['apply', '-f', '-']));
+    expect(applyCalls[6]?.input).not.toContain('kind: Deployment');
+    expect(applyCalls[6]?.input).not.toContain('name: afscp-volume-bootstrap');
+    expect(schemaJobPollIndex).toBeGreaterThan(schemaBootstrapApplyIndex);
+    expect(volumeBootstrapDryRunIndex).toBeGreaterThan(schemaJobPollIndex);
+    expect(applyCalls[7]?.args).toEqual(expect.arrayContaining(['apply', '--dry-run=server', '-f', '-']));
+    expect(applyCalls[7]?.input).toContain('kind: Job');
+    expect(applyCalls[7]?.input).toContain('name: afscp-volume-bootstrap');
+    expect(applyCalls[7]?.input).toContain('/usr/local/bin/afscp-volume-bootstrap');
+    expect(applyCalls[7]?.input).toContain('--ensure');
+    expect(applyCalls[7]?.input).toContain('--check');
+    expect(applyCalls[7]?.input).toMatch(
       /name: afscp-volume-bootstrap[\s\S]*?command:\s*\n\s*- \/usr\/local\/bin\/afscp-volume-bootstrap\s*\n\s*args:\s*\n\s*- --ensure\s*\n\s*- --check\s*\n\s*- --timeout=60s/u,
     );
-    expect(applyCalls[4]?.input).toContain('AFSCP_DEFAULT_VOLUME_ID: vol_agentsmith_default');
-    expect(applyCalls[4]?.input).toContain('AFSCP_DEFAULT_VOLUME_BACKEND: juicefs');
-    expect(applyCalls[4]?.input).toContain('AFSCP_DEFAULT_VOLUME_STATUS: active');
-    expect(applyCalls[4]?.input).toContain('AFSCP_DEFAULT_VOLUME_CAPABILITIES_JSON:');
-    expect(applyCalls[4]?.input).toContain('"jvs_external_control_root":true');
-    expect(applyCalls[4]?.input).toContain('metaurl: postgres://sentinel_pg_user:sentinel_pg_secret@substrate-postgresql.agentsmith.svc.cluster.local:5432/sentinel_pg_db?sslmode=disable');
-    expect(applyCalls[4]?.input).not.toContain('metaurl: postgres://sentinel_pg_user:sentinel_pg_secret@substrate-postgresql:5432/sentinel_pg_db?sslmode=disable');
-    expect(applyCalls[4]?.input).toContain('bucket: http://substrate-minio.agentsmith.svc.cluster.local:9000/sentinel-files');
-    expect(applyCalls[4]?.input).toContain('kind: PersistentVolume');
-    expect(applyCalls[4]?.input).toContain('name: agentsmith-afscp-default-volume');
-    expect(applyCalls[4]?.input).toContain('kind: PersistentVolumeClaim');
-    expect(applyCalls[4]?.input).toContain('storage: 12P');
-    expect(applyCalls[4]?.input).toContain('AFSCP_JVS_ENABLED: "true"');
-    expect(applyCalls[4]?.input).toContain('AFSCP_JVS_READY: "true"');
-    expect(applyCalls[4]?.input).toContain('AFSCP_JVS_CWD: /var/lib/afscp/jvs-cwd');
-    expect(applyCalls[4]?.input).not.toContain('AFSCP_JVS_BINARY_PATH');
-    expect(applyCalls[4]?.input).not.toContain('AFSCP_JVS_BINARY_SHA256');
-    expect(applyCalls[4]?.input).not.toContain('storage: 8Pi');
-    expect(applyCalls[4]?.input).not.toContain('storage: 10Pi');
-    expect(applyCalls[4]?.input).not.toContain('volumeAttributes:\n              subPath: "afscp/vol_agentsmith_default"');
-    expect(applyCalls[4]?.input).not.toMatch(/name: afscp-volume-bootstrap[\s\S]*\/usr\/local\/bin\/afscp-volume-bootstrap[\s\S]*- --apply/u);
-    expect(applyCalls[4]?.input).not.toContain('@substrate-postgresql:15432/');
-    expect(applyCalls[4]?.input).not.toContain('@substrate-mongodb:27027/');
-    expect(applyCalls[4]?.input).not.toContain('@substrate-redis:16379/');
-    expect(applyCalls[4]?.input).not.toContain('kind: ClusterRole');
-    expect(applyCalls[4]?.input).not.toContain('persistentvolumes');
-    expect(applyCalls[4]?.input).not.toContain('execution-gateway');
-    expect(applyCalls[5]?.args).toEqual(expect.arrayContaining(['apply', '-f', '-']));
-    expect(applyCalls[5]?.input).not.toContain('kind: Deployment');
-    expect(schemaJobPollIndex).toBeGreaterThan(bootstrapApplyIndex);
-    expect(volumeJobPollIndex).toBeGreaterThan(schemaJobPollIndex);
-    expect(appDryRunIndex).toBeGreaterThan(volumeJobPollIndex);
-    expect(applyCalls[6]?.args).toEqual(expect.arrayContaining(['apply', '--dry-run=server', '-f', '-']));
-    expect(applyCalls[6]?.input).toContain('Deployment');
-    expect(applyCalls[6]?.input).toContain('name: agentsmith-api');
-    expect(applyCalls[6]?.input).toContain('name: afscp-api');
-    expect(applyCalls[6]?.input).toContain('name: afscp-schema-check');
-    expect(applyCalls[6]?.input).toContain('DATABASE_URL: postgresql://sentinel_pg_user:sentinel_pg_secret@substrate-postgresql:5432/sentinel_pg_db');
-    expect(applyCalls[6]?.input).toContain('MONGO_URL: mongodb://sentinel_mongo_user:sentinel_mongo_secret@substrate-mongodb:27017/admin');
-    expect(applyCalls[6]?.input).toContain('REDIS_URL: redis://:sentinel_redis_secret@substrate-redis:6379/0');
-    expect(applyCalls[6]?.input).toContain('MINIO_PORT: "9000"');
-    expect(applyCalls[6]?.input).toContain('INTERNAL_KEYCLOAK_BASE_URL: http://substrate-keycloak:8080');
-    expect(applyCalls[6]?.input).not.toContain('INTERNAL_AGENT_JUICEFS_META_HOST_OVERRIDE');
-    expect(applyCalls[6]?.input).not.toContain('INTERNAL_AGENT_JUICEFS_META_PORT_OVERRIDE');
-    expect(applyCalls[6]?.input).not.toContain('JUICEFS_BUCKET_ENDPOINT_FOR_INTERNAL_MOUNT');
-    expect(applyCalls[6]?.input).toContain('value: http://substrate-minio.agentsmith.svc.cluster.local:9000');
-    expect(applyCalls[6]?.input).toMatch(/agentsmith\.mbos\.dev\/checksum-app-config: sha256:[a-f0-9]{64}/u);
-    expect(applyCalls[6]?.input).toMatch(/agentsmith\.mbos\.dev\/checksum-app-secrets: sha256:[a-f0-9]{64}/u);
-    expect(applyCalls[6]?.input).toMatch(/agentsmith\.mbos\.dev\/checksum-llmup-config: sha256:[a-f0-9]{64}/u);
-    expect(applyCalls[6]?.input).toMatch(/agentsmith\.mbos\.dev\/checksum-sandbox-manager-config: sha256:[a-f0-9]{64}/u);
-    expect(applyCalls[6]?.input).toContain('name: afscp-jvs-cwd');
-    expect(applyCalls[6]?.input).toContain('mountPath: /var/lib/afscp/jvs-cwd');
-    expect(applyCalls[6]?.input).toContain('claimName: afscp-default-volume');
-    expect(applyCalls[6]?.input).toContain('emptyDir: {}');
-    expect(applyCalls[6]?.input).not.toContain('name: afscp-schema-bootstrap');
-    expect(applyCalls[6]?.input).not.toContain('name: afscp-volume-bootstrap');
-    expect(applyCalls[6]?.input).not.toContain('kind: PersistentVolume');
-    expect(applyCalls[6]?.input).not.toContain('kind: PersistentVolumeClaim');
-    expect(applyCalls[6]?.input).not.toContain('@substrate-postgresql:15432/');
-    expect(applyCalls[6]?.input).not.toContain('@substrate-mongodb:27027/');
-    expect(applyCalls[6]?.input).not.toContain('@substrate-redis:16379/');
-    expect(applyCalls[6]?.input).not.toContain('kind: ClusterRole');
-    expect(applyCalls[6]?.input).not.toContain('persistentvolumes');
-    expect(applyCalls[6]?.input).not.toContain('execution-gateway');
-    expect(applyCalls[7]?.args).toEqual(expect.arrayContaining(['apply', '-f', '-']));
     expect(applyCalls[7]?.input).not.toContain('name: afscp-schema-bootstrap');
-    expect(applyCalls[7]?.input).not.toContain('name: afscp-volume-bootstrap');
+    expect(applyCalls[7]?.input).not.toContain('/usr/local/bin/afscp-migrate');
+    expect(applyCalls[7]?.input).not.toContain('kind: Deployment');
+    expect(applyCalls[7]?.input).not.toContain('kind: PersistentVolume');
+    expect(applyCalls[7]?.input).not.toContain('kind: PersistentVolumeClaim');
+    expect(applyCalls[7]?.input).not.toContain('kind: ServiceAccount');
+    expect(applyCalls[7]?.input).not.toMatch(/name: afscp-volume-bootstrap[\s\S]*\/usr\/local\/bin\/afscp-volume-bootstrap[\s\S]*- --apply/u);
+    expect(applyCalls[8]?.args).toEqual(expect.arrayContaining(['apply', '-f', '-']));
+    expect(applyCalls[8]?.input).toContain('name: afscp-volume-bootstrap');
+    expect(applyCalls[8]?.input).not.toContain('name: afscp-schema-bootstrap');
+    expect(volumeJobPollIndex).toBeGreaterThan(volumeBootstrapApplyIndex);
+    expect(appDryRunIndex).toBeGreaterThan(volumeJobPollIndex);
+    expect(applyCalls[9]?.args).toEqual(expect.arrayContaining(['apply', '--dry-run=server', '-f', '-']));
+    expect(applyCalls[9]?.input).toContain('Deployment');
+    expect(applyCalls[9]?.input).toContain('name: agentsmith-api');
+    expect(applyCalls[9]?.input).toContain('name: afscp-api');
+    expect(applyCalls[9]?.input).toContain('name: afscp-schema-check');
+    expect(applyCalls[9]?.input).toContain('DATABASE_URL: postgresql://sentinel_pg_user:sentinel_pg_secret@substrate-postgresql:5432/sentinel_pg_db');
+    expect(applyCalls[9]?.input).toContain('MONGO_URL: mongodb://sentinel_mongo_user:sentinel_mongo_secret@substrate-mongodb:27017/admin');
+    expect(applyCalls[9]?.input).toContain('REDIS_URL: redis://:sentinel_redis_secret@substrate-redis:6379/0');
+    expect(applyCalls[9]?.input).toContain('MINIO_PORT: "9000"');
+    expect(applyCalls[9]?.input).toContain('INTERNAL_KEYCLOAK_BASE_URL: http://substrate-keycloak:8080');
+    expect(applyCalls[9]?.input).toContain('name: INTERNAL_AGENT_IMAGE');
+    expect(applyCalls[9]?.input).toContain(`value: ${`kind-registry:5000/mbos/agentsmith-managed-runner@${MANAGED_RUNNER_DIGEST}`}`);
+    expect(applyCalls[9]?.input).not.toContain('INTERNAL_AGENT_JUICEFS_META_HOST_OVERRIDE');
+    expect(applyCalls[9]?.input).not.toContain('INTERNAL_AGENT_JUICEFS_META_PORT_OVERRIDE');
+    expect(applyCalls[9]?.input).not.toContain('JUICEFS_BUCKET_ENDPOINT_FOR_INTERNAL_MOUNT');
+    expect(applyCalls[9]?.input).toContain('value: http://substrate-minio.agentsmith.svc.cluster.local:9000');
+    expect(applyCalls[9]?.input).toMatch(/agentsmith\.mbos\.dev\/checksum-app-config: sha256:[a-f0-9]{64}/u);
+    expect(applyCalls[9]?.input).toMatch(/agentsmith\.mbos\.dev\/checksum-app-secrets: sha256:[a-f0-9]{64}/u);
+    expect(applyCalls[9]?.input).toMatch(/agentsmith\.mbos\.dev\/checksum-llmup-config: sha256:[a-f0-9]{64}/u);
+    expect(applyCalls[9]?.input).toMatch(/agentsmith\.mbos\.dev\/checksum-sandbox-manager-config: sha256:[a-f0-9]{64}/u);
+    expect(applyCalls[9]?.input).toContain('name: afscp-jvs-cwd');
+    expect(applyCalls[9]?.input).toContain('mountPath: /var/lib/afscp/jvs-cwd');
+    expect(applyCalls[9]?.input).toContain('claimName: afscp-default-volume');
+    expect(applyCalls[9]?.input).toContain('emptyDir: {}');
+    expect(applyCalls[9]?.input).not.toContain('name: afscp-schema-bootstrap');
+    expect(applyCalls[9]?.input).not.toContain('name: afscp-volume-bootstrap');
+    expect(applyCalls[9]?.input).not.toContain('kind: PersistentVolume');
+    expect(applyCalls[9]?.input).not.toContain('kind: PersistentVolumeClaim');
+    expect(applyCalls[9]?.input).not.toContain('@substrate-postgresql:15432/');
+    expect(applyCalls[9]?.input).not.toContain('@substrate-mongodb:27027/');
+    expect(applyCalls[9]?.input).not.toContain('@substrate-redis:16379/');
+    expect(applyCalls[9]?.input).not.toContain('kind: ClusterRole');
+    expect(applyCalls[9]?.input).not.toContain('persistentvolumes');
+    expect(applyCalls[9]?.input).not.toContain('execution-gateway');
+    expect(applyCalls[10]?.args).toEqual(expect.arrayContaining(['apply', '-f', '-']));
+    expect(applyCalls[10]?.input).not.toContain('name: afscp-schema-bootstrap');
+    expect(applyCalls[10]?.input).not.toContain('name: afscp-volume-bootstrap');
     expect(firstAppRolloutIndex).toBeGreaterThan(appApplyIndex);
     expect(rolloutCalls.map((call) => call.args.join(' '))).toEqual(expect.arrayContaining([
       expect.stringContaining('rollout status deployment/agentsmith-web'),
@@ -1193,6 +1248,23 @@ describe('unified deploy local-kind live rollout producer', () => {
       expect.stringContaining('rollout status deployment/agentsmith-llmup'),
       expect.stringContaining('rollout status deployment/agentsmith-sandbox-manager'),
     ]));
+    const rolloutCommands = rolloutCalls.map((call) => call.args.join(' '));
+    expect(rolloutCommands.some((command) =>
+      command.includes('rollout status deployment/agentsmith-web')
+      && command.includes('--timeout=30s'),
+    )).toBe(true);
+    expect(rolloutCommands.some((command) =>
+      command.includes('rollout status deployment/afscp-api')
+      && command.includes('--timeout=180s'),
+    )).toBe(true);
+    expect(rolloutCommands.some((command) =>
+      command.includes('rollout status deployment/afscp-worker')
+      && command.includes('--timeout=180s'),
+    )).toBe(true);
+    expect(rolloutCommands.some((command) =>
+      command.includes('rollout status deployment/afscp-export-gateway')
+      && command.includes('--timeout=180s'),
+    )).toBe(true);
     expect(result.evidence.rendered_manifest_fingerprint).toMatch(/^sha256:[a-f0-9]{64}$/u);
     expect(result.evidence.substrate_truth_fingerprint).toMatch(/^sha256:[a-f0-9]{64}$/u);
     expect(result.evidence.substrate_live_check.status).toBe('passed');
@@ -1203,6 +1275,10 @@ describe('unified deploy local-kind live rollout producer', () => {
       'PersistentVolumeClaim/afscp-default-volume',
     ]));
     expect(result.evidence.operations.map((operation) => operation.name)).toEqual(expect.arrayContaining([
+      'afscp-storage-csi-apply',
+      'afscp-storage-csi-controller-scale',
+      'afscp-storage-csi-controller-rollout',
+      'afscp-storage-csi-node-rollout',
       'afscp-schema-bootstrap-delete-previous',
       'afscp-schema-bootstrap-wait',
       'afscp-volume-bootstrap-delete-previous',

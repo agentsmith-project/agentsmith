@@ -130,6 +130,9 @@ type ProductFlowRuntimeTruth = {
     internalBaseUrl: string;
     adminTokenPresent: boolean;
   };
+  managedRunner: {
+    image: string;
+  };
   provider: {
     baseUrl?: string;
     advertiseHost: string;
@@ -448,6 +451,9 @@ export function buildProductFlowRuntimeTruth(input: {
     llmup: {
       internalBaseUrl: 'http://agentsmith-llmup:8080',
       adminTokenPresent: Boolean(siteEnv.MBOS_UNIVERSAL_PROXY_ADMIN_TOKEN?.trim()),
+    },
+    managedRunner: {
+      image: requireValue(siteEnv, 'MANAGED_RUNNER_IMAGE'),
     },
     provider: {
       ...(input.providerBaseUrl ? { baseUrl: trimTrailingSlash(input.providerBaseUrl) } : {}),
@@ -1566,6 +1572,7 @@ async function defaultManagedRunnerSeeder(
     runnerName: 'unified-deploy-managed-runner',
     mongoUrl: truth.mongo.url,
     mongoDbName: truth.mongo.dbName,
+    image: truth.managedRunner.image,
     isDefault: true,
     status: 'enabled',
     presence: 'managed',

@@ -423,9 +423,14 @@ export class AgentResourceService {
       || endpointId
       || existingRecord?.default_endpoint_id?.trim()
       || undefined;
+    const inputConfig = input.config ?? {};
+    const explicitInputImage = typeof inputConfig.image === 'string' && inputConfig.image.trim()
+      ? inputConfig.image.trim()
+      : undefined;
     const config = this.buildManagedAgentPrivateConfig({
       ...(existingRecord?.config ?? {}),
-      ...(input.config ?? {}),
+      ...inputConfig,
+      image: explicitInputImage ?? resolveManagedAgentRunnerImage(),
     });
     const agent: AgentRecord = {
       id,

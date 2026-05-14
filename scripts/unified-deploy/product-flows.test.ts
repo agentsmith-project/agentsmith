@@ -22,6 +22,7 @@ const SITE_ENV = [
   'PUBLIC_API_BASE_URL=http://agentsmith.localtest.me:29180/api/v1',
   'RUNNER_PUBLIC_API_BASE_URL=ws://agentsmith.localtest.me:29180/api/v1',
   'MBOS_UNIVERSAL_PROXY_ADMIN_TOKEN=llmup-admin-token',
+  'MANAGED_RUNNER_IMAGE=kind-registry:5000/mbos/agentsmith-managed-runner@sha256:9999',
 ].join('\n');
 
 const SUBSTRATE_TRUTH = [
@@ -422,6 +423,7 @@ describe('unified deploy product flow producer', () => {
     expect(truth.mongo.dbName).toBe('agentsmith');
     expect(truth.minio.endpoint).toBe('http://172.19.0.1:19000');
     expect(truth.llmup.internalBaseUrl).toBe('http://agentsmith-llmup:8080');
+    expect(truth.managedRunner.image).toBe('kind-registry:5000/mbos/agentsmith-managed-runner@sha256:9999');
   });
 
   it('rejects provider base URLs that pods cannot route to', () => {

@@ -293,29 +293,31 @@ describe('unified deploy existing-cluster smoke producer', () => {
     const volumeJobDeleteIndex = calls.findIndex((call) =>
       call.args.join(' ').includes('delete job afscp-volume-bootstrap'),
     );
-    const bootstrapDryRunIndex = calls.indexOf(applyCalls[0] as CommandCall);
-    const bootstrapApplyIndex = calls.indexOf(applyCalls[1] as CommandCall);
+    const schemaBootstrapDryRunIndex = calls.indexOf(applyCalls[0] as CommandCall);
+    const schemaBootstrapApplyIndex = calls.indexOf(applyCalls[1] as CommandCall);
+    const volumeBootstrapDryRunIndex = calls.indexOf(applyCalls[2] as CommandCall);
+    const volumeBootstrapApplyIndex = calls.indexOf(applyCalls[3] as CommandCall);
     const schemaJobPollIndex = calls.findIndex((call) =>
       call.args.join(' ').includes('get job/afscp-schema-bootstrap -o json'),
     );
     const volumeJobPollIndex = calls.findIndex((call) =>
       call.args.join(' ').includes('get job/afscp-volume-bootstrap -o json'),
     );
-    const appDryRunIndex = calls.indexOf(applyCalls[2] as CommandCall);
-    const appApplyIndex = calls.indexOf(applyCalls[3] as CommandCall);
+    const appDryRunIndex = calls.indexOf(applyCalls[4] as CommandCall);
+    const appApplyIndex = calls.indexOf(applyCalls[5] as CommandCall);
     const firstRolloutIndex = calls.findIndex((call) =>
       call.args.join(' ').includes('rollout status deployment/agentsmith-web'),
     );
 
     expect(result.status).toBe('passed');
-    expect(applyCalls).toHaveLength(4);
+    expect(applyCalls).toHaveLength(6);
     expect(schemaJobDeleteIndex).toBeGreaterThan(-1);
     expect(volumeJobDeleteIndex).toBeGreaterThan(schemaJobDeleteIndex);
-    expect(bootstrapDryRunIndex).toBeGreaterThan(volumeJobDeleteIndex);
+    expect(schemaBootstrapDryRunIndex).toBeGreaterThan(volumeJobDeleteIndex);
     expect(applyCalls[0]?.args).toEqual(expect.arrayContaining(['apply', '--dry-run=server', '-f', '-']));
     expect(applyCalls[0]?.input).toContain('kind: Job');
     expect(applyCalls[0]?.input).toContain('name: afscp-schema-bootstrap');
-    expect(applyCalls[0]?.input).toContain('name: afscp-volume-bootstrap');
+    expect(applyCalls[0]?.input).not.toContain('name: afscp-volume-bootstrap');
     expect(applyCalls[0]?.input).toContain('name: afscp-runtime-config');
     expect(applyCalls[0]?.input).toContain('name: afscp-runtime-secrets');
     expect(applyCalls[0]?.input).toContain('name: afscp-default-volume-juicefs');
@@ -324,33 +326,49 @@ describe('unified deploy existing-cluster smoke producer', () => {
     expect(applyCalls[0]?.input).not.toContain('kind: Deployment');
     expect(applyCalls[0]?.input).not.toContain('name: agentsmith-api');
     expect(applyCalls[1]?.args).toEqual(expect.arrayContaining(['apply', '-f', '-']));
-    expect(schemaJobPollIndex).toBeGreaterThan(bootstrapApplyIndex);
-    expect(volumeJobPollIndex).toBeGreaterThan(schemaJobPollIndex);
-    expect(appDryRunIndex).toBeGreaterThan(volumeJobPollIndex);
+    expect(applyCalls[1]?.input).not.toContain('name: afscp-volume-bootstrap');
+    expect(schemaJobPollIndex).toBeGreaterThan(schemaBootstrapApplyIndex);
+    expect(volumeBootstrapDryRunIndex).toBeGreaterThan(schemaJobPollIndex);
     expect(applyCalls[2]?.args).toEqual(expect.arrayContaining(['apply', '--dry-run=server', '-f', '-']));
-    expect(applyCalls[2]?.input).toContain('kind: Deployment');
-    expect(applyCalls[2]?.input).toContain('name: agentsmith-api');
-    expect(applyCalls[2]?.input).toContain('DATABASE_URL: postgresql://sentinel_pg_user:sentinel_pg_secret@substrate-postgresql:5432/sentinel_pg_db');
-    expect(applyCalls[2]?.input).toContain('MONGO_URL: mongodb://sentinel_mongo_user:sentinel_mongo_secret@substrate-mongodb:27017/admin');
-    expect(applyCalls[2]?.input).toContain('REDIS_URL: redis://:sentinel_redis_secret@substrate-redis:6379/0');
-    expect(applyCalls[2]?.input).toContain('MINIO_PORT: "9000"');
-    expect(applyCalls[2]?.input).toContain('INTERNAL_KEYCLOAK_BASE_URL: http://substrate-keycloak:8080');
-    expect(applyCalls[2]?.input).not.toContain('INTERNAL_AGENT_JUICEFS_META_HOST_OVERRIDE');
-    expect(applyCalls[2]?.input).not.toContain('INTERNAL_AGENT_JUICEFS_META_PORT_OVERRIDE');
-    expect(applyCalls[2]?.input).not.toContain('JUICEFS_BUCKET_ENDPOINT_FOR_INTERNAL_MOUNT');
-    expect(applyCalls[2]?.input).toContain('value: http://substrate-minio.agentsmith.svc.cluster.local:9000');
-    expect(applyCalls[2]?.input).toMatch(/agentsmith\.mbos\.dev\/checksum-app-config: sha256:[a-f0-9]{64}/u);
-    expect(applyCalls[2]?.input).toMatch(/agentsmith\.mbos\.dev\/checksum-app-secrets: sha256:[a-f0-9]{64}/u);
-    expect(applyCalls[2]?.input).toMatch(/agentsmith\.mbos\.dev\/checksum-llmup-config: sha256:[a-f0-9]{64}/u);
-    expect(applyCalls[2]?.input).toMatch(/agentsmith\.mbos\.dev\/checksum-sandbox-manager-config: sha256:[a-f0-9]{64}/u);
+    expect(applyCalls[2]?.input).toContain('kind: Job');
+    expect(applyCalls[2]?.input).toContain('name: afscp-volume-bootstrap');
+    expect(applyCalls[2]?.input).toContain('/usr/local/bin/afscp-volume-bootstrap');
     expect(applyCalls[2]?.input).not.toContain('name: afscp-schema-bootstrap');
-    expect(applyCalls[2]?.input).not.toContain('name: afscp-volume-bootstrap');
-    expect(applyCalls[2]?.input).not.toContain('@substrate-postgresql:15432/');
-    expect(applyCalls[2]?.input).not.toContain('@substrate-mongodb:27027/');
-    expect(applyCalls[2]?.input).not.toContain('@substrate-redis:16379/');
+    expect(applyCalls[2]?.input).not.toContain('/usr/local/bin/afscp-migrate');
+    expect(applyCalls[2]?.input).not.toContain('kind: Deployment');
+    expect(applyCalls[2]?.input).not.toContain('kind: PersistentVolume');
+    expect(applyCalls[2]?.input).not.toContain('kind: PersistentVolumeClaim');
     expect(applyCalls[3]?.args).toEqual(expect.arrayContaining(['apply', '-f', '-']));
+    expect(applyCalls[3]?.input).toContain('name: afscp-volume-bootstrap');
     expect(applyCalls[3]?.input).not.toContain('name: afscp-schema-bootstrap');
-    expect(applyCalls[3]?.input).not.toContain('name: afscp-volume-bootstrap');
+    expect(volumeJobPollIndex).toBeGreaterThan(volumeBootstrapApplyIndex);
+    expect(appDryRunIndex).toBeGreaterThan(volumeJobPollIndex);
+    expect(applyCalls[4]?.args).toEqual(expect.arrayContaining(['apply', '--dry-run=server', '-f', '-']));
+    expect(applyCalls[4]?.input).toContain('kind: Deployment');
+    expect(applyCalls[4]?.input).toContain('name: agentsmith-api');
+    expect(applyCalls[4]?.input).toContain('DATABASE_URL: postgresql://sentinel_pg_user:sentinel_pg_secret@substrate-postgresql:5432/sentinel_pg_db');
+    expect(applyCalls[4]?.input).toContain('MONGO_URL: mongodb://sentinel_mongo_user:sentinel_mongo_secret@substrate-mongodb:27017/admin');
+    expect(applyCalls[4]?.input).toContain('REDIS_URL: redis://:sentinel_redis_secret@substrate-redis:6379/0');
+    expect(applyCalls[4]?.input).toContain('MINIO_PORT: "9000"');
+    expect(applyCalls[4]?.input).toContain('INTERNAL_KEYCLOAK_BASE_URL: http://substrate-keycloak:8080');
+    expect(applyCalls[4]?.input).toContain('name: INTERNAL_AGENT_IMAGE');
+    expect(applyCalls[4]?.input).toContain('value: ghcr.io/mbos/agentsmith-managed-runner:dev');
+    expect(applyCalls[4]?.input).not.toContain('INTERNAL_AGENT_JUICEFS_META_HOST_OVERRIDE');
+    expect(applyCalls[4]?.input).not.toContain('INTERNAL_AGENT_JUICEFS_META_PORT_OVERRIDE');
+    expect(applyCalls[4]?.input).not.toContain('JUICEFS_BUCKET_ENDPOINT_FOR_INTERNAL_MOUNT');
+    expect(applyCalls[4]?.input).toContain('value: http://substrate-minio.agentsmith.svc.cluster.local:9000');
+    expect(applyCalls[4]?.input).toMatch(/agentsmith\.mbos\.dev\/checksum-app-config: sha256:[a-f0-9]{64}/u);
+    expect(applyCalls[4]?.input).toMatch(/agentsmith\.mbos\.dev\/checksum-app-secrets: sha256:[a-f0-9]{64}/u);
+    expect(applyCalls[4]?.input).toMatch(/agentsmith\.mbos\.dev\/checksum-llmup-config: sha256:[a-f0-9]{64}/u);
+    expect(applyCalls[4]?.input).toMatch(/agentsmith\.mbos\.dev\/checksum-sandbox-manager-config: sha256:[a-f0-9]{64}/u);
+    expect(applyCalls[4]?.input).not.toContain('name: afscp-schema-bootstrap');
+    expect(applyCalls[4]?.input).not.toContain('name: afscp-volume-bootstrap');
+    expect(applyCalls[4]?.input).not.toContain('@substrate-postgresql:15432/');
+    expect(applyCalls[4]?.input).not.toContain('@substrate-mongodb:27027/');
+    expect(applyCalls[4]?.input).not.toContain('@substrate-redis:16379/');
+    expect(applyCalls[5]?.args).toEqual(expect.arrayContaining(['apply', '-f', '-']));
+    expect(applyCalls[5]?.input).not.toContain('name: afscp-schema-bootstrap');
+    expect(applyCalls[5]?.input).not.toContain('name: afscp-volume-bootstrap');
     for (const call of applyCalls) {
       expect(call.input).not.toContain('kind: Namespace');
       expect(call.input).not.toContain('kind: ClusterRole');

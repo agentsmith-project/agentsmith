@@ -76,18 +76,44 @@ function isAfscpBootstrapJob(document: KubernetesDocument): boolean {
     && AFSCP_BOOTSTRAP_JOB_NAMES.includes(name as AfscpBootstrapJobName);
 }
 
-function isAfscpBootstrapPrerequisite(document: KubernetesDocument): boolean {
-  return componentLabel(document) === 'afscp-runtime'
-    && ['ServiceAccount', 'ConfigMap', 'Secret', 'PersistentVolume', 'PersistentVolumeClaim'].includes(resourceKind(document));
+function isAfscpSchemaBootstrapJob(document: KubernetesDocument): boolean {
+  return resourceKind(document) === 'Job' && asRecord(document.metadata).name === AFSCP_SCHEMA_BOOTSTRAP_JOB;
 }
 
-export function splitAfscpBootstrapAppYaml(source: string): { bootstrapYaml: string; remainingYaml: string } {
-  const split = splitKubernetesDocuments(source, (document) =>
+function isAfscpVolumeBootstrapJob(document: KubernetesDocument): boolean {
+  return resourceKind(document) === 'Job' && asRecord(document.metadata).name === AFSCP_VOLUME_BOOTSTRAP_JOB;
+}
+
+function isAfscpBootstrapPrerequisite(document: KubernetesDocument): boolean {
+  const kind = resourceKind(document);
+  const component = componentLabel(document);
+
+  if (component === 'substrate-binding' && ['Service', 'EndpointSlice'].includes(kind)) {
+    return true;
+  }
+
+  return component === 'afscp-runtime'
+    && ['ServiceAccount', 'ConfigMap', 'Secret', 'PersistentVolume', 'PersistentVolumeClaim'].includes(kind);
+}
+
+export function splitAfscpBootstrapAppYaml(source: string): {
+  bootstrapYaml: string;
+  schemaBootstrapYaml: string;
+  volumeBootstrapYaml: string;
+  remainingYaml: string;
+} {
+  const schemaSplit = splitKubernetesDocuments(source, (document) =>
+    isAfscpSchemaBootstrapJob(document) || isAfscpBootstrapPrerequisite(document),
+  );
+  const volumeSplit = splitKubernetesDocuments(schemaSplit.secondYaml, isAfscpVolumeBootstrapJob);
+  const combinedSplit = splitKubernetesDocuments(source, (document) =>
     isAfscpBootstrapJob(document) || isAfscpBootstrapPrerequisite(document),
   );
 
   return {
-    bootstrapYaml: split.firstYaml,
-    remainingYaml: split.secondYaml,
+    bootstrapYaml: combinedSplit.firstYaml,
+    schemaBootstrapYaml: schemaSplit.firstYaml,
+    volumeBootstrapYaml: volumeSplit.firstYaml,
+    remainingYaml: volumeSplit.secondYaml,
   };
 }

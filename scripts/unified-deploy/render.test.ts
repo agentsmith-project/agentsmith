@@ -601,6 +601,7 @@ describe('unified deploy render producer', () => {
   });
 
   it('renders service-specific startup commands for the shared app image workloads', async () => {
+    const siteEnv = parseSiteEnv(await readFile(DEFAULT_SITE_ENV_PATH, 'utf8'));
     const rendered = await renderUnifiedDeployFromFiles({ profile: 'local-kind' });
     const documents = parsedDocuments(rendered.output);
     const web = deploymentContainer(documents, 'agentsmith-web', 'web');
@@ -623,6 +624,7 @@ describe('unified deploy render producer', () => {
     expect(apiPorts[0]?.containerPort).toBe(20000);
     expect(apiEnv).toEqual(expect.arrayContaining([
       { name: 'PORT', value: '20000' },
+      { name: 'INTERNAL_AGENT_IMAGE', value: siteEnv.MANAGED_RUNNER_IMAGE },
     ]));
     expect(ingressPorts.get('/api/v1')).toBe(20000);
   });

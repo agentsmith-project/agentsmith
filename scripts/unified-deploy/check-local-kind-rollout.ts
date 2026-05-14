@@ -18,6 +18,7 @@ import {
   DEFAULT_LOCAL_KIND_SITE_ENV_PATH,
   checkLocalKindImagePreflight,
   type LocalKindImagePreflightResult,
+  type RegistryAvailabilityPollOptions,
 } from './check-local-kind-images';
 import { checkRenderedOutput } from './check-render';
 import { fingerprintRenderedManifest } from './evidence';
@@ -110,6 +111,10 @@ type OperationEvidence = {
     | 'ingress-admission-create-wait'
     | 'ingress-admission-patch-check'
     | 'ingress-admission-patch-wait'
+    | 'afscp-storage-csi-apply'
+    | 'afscp-storage-csi-controller-scale'
+    | 'afscp-storage-csi-controller-rollout'
+    | 'afscp-storage-csi-node-rollout'
     | 'substrate-endpointslice-reconcile-check'
     | 'substrate-endpointslice-reconcile-delete'
     | 'afscp-static-volume-reset-check-pvc'
@@ -138,8 +143,10 @@ type OperationEvidence = {
     | 'afscp-volume-bootstrap-diagnostics-pod-previous-logs'
     | 'afscp-volume-bootstrap-diagnostics-pod-events'
     | 'afscp-volume-bootstrap-diagnostics-events'
-    | 'afscp-bootstrap-dry-run'
-    | 'afscp-bootstrap-apply'
+    | 'afscp-schema-bootstrap-dry-run'
+    | 'afscp-schema-bootstrap-apply'
+    | 'afscp-volume-bootstrap-dry-run'
+    | 'afscp-volume-bootstrap-apply'
     | 'app-dry-run'
     | 'app-apply';
   command: string;
@@ -233,6 +240,7 @@ export type LocalKindRolloutProducerOptions = {
   publicBaseUrl?: string;
   runner?: LocalKindCommandRunner;
   probeRunner?: LocalKindHttpProbeRunner;
+  registryAvailabilityPoll?: RegistryAvailabilityPollOptions;
 };
 
 export type LocalKindRolloutProducerResult = {
@@ -265,6 +273,7 @@ const KUBECTL_REQUEST_TIMEOUT = '20s';
 const KUBECTL_TIMEOUT_MS = 45_000;
 const PROBE_TIMEOUT_MS = 10_000;
 const ROLLOUT_TIMEOUT = '30s';
+const AFSCP_WORKLOAD_ROLLOUT_TIMEOUT = '180s';
 const INGRESS_ROLLOUT_TIMEOUT = '240s';
 const LOCAL_KIND_NAMESPACE = 'agentsmith';
 const LOCAL_KIND_INGRESS_NAMESPACE = 'ingress-nginx';
@@ -274,6 +283,11 @@ const LOCAL_KIND_INGRESS_NODE_PORT = '30080';
 const LOCAL_KIND_INGRESS_HOST_PORT = '29180';
 const AFSCP_DEFAULT_VOLUME_PVC = 'afscp-default-volume';
 const AFSCP_RUNTIME_COMPONENT = 'afscp-runtime';
+const AFSCP_STORAGE_CSI_NAMESPACE = 'kube-system';
+const AFSCP_STORAGE_CSI_MANIFEST_PATH = path.join(REPO_ROOT, 'infra', 'deploy', 'unified', 'local-kind', 'juicefs-csi', 'upstream-manifest.yaml');
+const AFSCP_STORAGE_CSI_CONTROLLER = 'juicefs-csi-controller';
+const AFSCP_STORAGE_CSI_NODE = 'juicefs-csi-node';
+const AFSCP_STORAGE_CSI_ROLLOUT_TIMEOUT = '600s';
 const AFSCP_SCHEMA_BOOTSTRAP_WAIT_TIMEOUT = '120s';
 const AFSCP_SCHEMA_BOOTSTRAP_WAIT_TIMEOUT_MS = 150_000;
 const AFSCP_BOOTSTRAP_JOB_POLL_INTERVAL_MS = 2_000;
@@ -307,6 +321,12 @@ const EMPTY_LLMUP_CONFIG_HEALTH: LlmupConfigHealthEvidence = {
   liveness_path: '/health',
   rollout_status: 'skipped',
 };
+
+function rolloutTimeoutForDeployment(deployment: string): string {
+  return (AFSCP_WORKLOAD_DEPLOYMENTS as readonly string[]).includes(deployment)
+    ? AFSCP_WORKLOAD_ROLLOUT_TIMEOUT
+    : ROLLOUT_TIMEOUT;
+}
 
 function addFailure(failures: CheckFailure[], failurePath: string, message: string): void {
   failures.push({ path: failurePath, message });
@@ -879,7 +899,7 @@ async function rolloutDeployment(options: {
     'rollout',
     'status',
     `deployment/${options.deployment}`,
-    `--timeout=${ROLLOUT_TIMEOUT}`,
+    `--timeout=${rolloutTimeoutForDeployment(options.deployment)}`,
   ];
   const result = await options.runner('kubectl', args, {
     cwd: REPO_ROOT,
@@ -1986,6 +2006,100 @@ async function waitForIngressPreflight(options: {
   return { operations, failures };
 }
 
+async function ensureAfscpStorageCsiReady(options: {
+  kubeconfigPath: string;
+  runner: LocalKindCommandRunner;
+  env: Record<string, string | undefined>;
+  secretValues: readonly string[];
+}): Promise<{ operations: OperationEvidence[]; failures: CheckFailure[] }> {
+  const baseArgs = kubeBaseArgs(options.kubeconfigPath);
+  const operations: OperationEvidence[] = [];
+  const failures: CheckFailure[] = [];
+
+  if (!existsSync(AFSCP_STORAGE_CSI_MANIFEST_PATH)) {
+    return {
+      operations,
+      failures: [{
+        path: 'afscp-storage-csi:manifest',
+        message: `local-kind rollout requires the bundled JuiceFS CSI manifest at ${AFSCP_STORAGE_CSI_MANIFEST_PATH}`,
+      }],
+    };
+  }
+
+  const steps: Array<{ name: OperationEvidence['name']; args: string[]; input?: string; timeoutMs?: number }> = [
+    {
+      name: 'afscp-storage-csi-apply',
+      args: [
+        ...baseArgs,
+        'apply',
+        '--validate=false',
+        '-f',
+        AFSCP_STORAGE_CSI_MANIFEST_PATH,
+      ],
+      timeoutMs: 120_000,
+    },
+    {
+      name: 'afscp-storage-csi-controller-scale',
+      args: [
+        ...baseArgs,
+        '-n',
+        AFSCP_STORAGE_CSI_NAMESPACE,
+        'scale',
+        `statefulset/${AFSCP_STORAGE_CSI_CONTROLLER}`,
+        '--replicas=1',
+      ],
+    },
+    {
+      name: 'afscp-storage-csi-controller-rollout',
+      args: [
+        ...baseArgs,
+        '-n',
+        AFSCP_STORAGE_CSI_NAMESPACE,
+        'rollout',
+        'status',
+        `statefulset/${AFSCP_STORAGE_CSI_CONTROLLER}`,
+        `--timeout=${AFSCP_STORAGE_CSI_ROLLOUT_TIMEOUT}`,
+      ],
+      timeoutMs: 650_000,
+    },
+    {
+      name: 'afscp-storage-csi-node-rollout',
+      args: [
+        ...baseArgs,
+        '-n',
+        AFSCP_STORAGE_CSI_NAMESPACE,
+        'rollout',
+        'status',
+        `daemonset/${AFSCP_STORAGE_CSI_NODE}`,
+        `--timeout=${AFSCP_STORAGE_CSI_ROLLOUT_TIMEOUT}`,
+      ],
+      timeoutMs: 650_000,
+    },
+  ];
+
+  for (const step of steps) {
+    const result = await runKubectlCheck({
+      name: step.name,
+      args: step.args,
+      runner: options.runner,
+      env: options.env,
+      kubeconfigPath: options.kubeconfigPath,
+      secretValues: options.secretValues,
+      timeoutMs: step.timeoutMs,
+    });
+    operations.push(result.evidence);
+    if (result.failure) {
+      failures.push({
+        path: `afscp-storage-csi:${step.name}`,
+        message: `JuiceFS CSI must be ready before AFSCP workloads can mount ${AFSCP_DEFAULT_VOLUME_PVC}: ${result.failure.message}`,
+      });
+      break;
+    }
+  }
+
+  return { operations, failures };
+}
+
 async function reconcileSubstrateEndpointSliceAddressTypes(options: {
   appYaml: string;
   namespace: string;
@@ -2821,7 +2935,7 @@ async function runApplySequence(options: {
   const operations: OperationEvidence[] = [];
   const failures: CheckFailure[] = [];
   let adminPreflightBatches: { namespaceYaml: string; resourceYaml: string };
-  let appBatches: { bootstrapYaml: string; remainingYaml: string };
+  let appBatches: { schemaBootstrapYaml: string; volumeBootstrapYaml: string; remainingYaml: string };
 
   try {
     adminPreflightBatches = splitAdminPreflightYaml(options.preflightYaml);
@@ -2889,6 +3003,18 @@ async function runApplySequence(options: {
     return { operations, failures };
   }
 
+  const afscpStorageCsi = await ensureAfscpStorageCsiReady({
+    kubeconfigPath: options.kubeconfigPath,
+    runner: options.runner,
+    env: options.env,
+    secretValues: options.secretValues,
+  });
+  operations.push(...afscpStorageCsi.operations);
+  failures.push(...afscpStorageCsi.failures);
+  if (failures.length > 0) {
+    return { operations, failures };
+  }
+
   const substrateEndpointSliceReconcile = await reconcileSubstrateEndpointSliceAddressTypes({
     appYaml: options.appYaml,
     namespace: options.namespace,
@@ -2935,14 +3061,14 @@ async function runApplySequence(options: {
 
   for (const step of [
     {
-      name: 'afscp-bootstrap-dry-run',
+      name: 'afscp-schema-bootstrap-dry-run',
       args: [...baseArgs, 'apply', '--dry-run=server', '-f', '-'],
-      input: appBatches.bootstrapYaml,
+      input: appBatches.schemaBootstrapYaml,
     },
     {
-      name: 'afscp-bootstrap-apply',
+      name: 'afscp-schema-bootstrap-apply',
       args: [...baseArgs, 'apply', '-f', '-'],
-      input: appBatches.bootstrapYaml,
+      input: appBatches.schemaBootstrapYaml,
     },
   ] as const) {
     if (step.input.trim().length === 0) {
@@ -2967,20 +3093,66 @@ async function runApplySequence(options: {
     return { operations, failures };
   }
 
-  for (const definition of [AFSCP_SCHEMA_BOOTSTRAP_DEFINITION, AFSCP_VOLUME_BOOTSTRAP_DEFINITION]) {
-    const bootstrap = await waitForAfscpBootstrapJob({
-      definition,
-      namespace: options.namespace,
-      kubeconfigPath: options.kubeconfigPath,
+  const schemaBootstrap = await waitForAfscpBootstrapJob({
+    definition: AFSCP_SCHEMA_BOOTSTRAP_DEFINITION,
+    namespace: options.namespace,
+    kubeconfigPath: options.kubeconfigPath,
+    runner: options.runner,
+    env: options.env,
+    secretValues: options.secretValues,
+  });
+  operations.push(...schemaBootstrap.operations);
+  failures.push(...schemaBootstrap.failures);
+  if (failures.length > 0) {
+    return { operations, failures };
+  }
+
+  for (const step of [
+    {
+      name: 'afscp-volume-bootstrap-dry-run',
+      args: [...baseArgs, 'apply', '--dry-run=server', '-f', '-'],
+      input: appBatches.volumeBootstrapYaml,
+    },
+    {
+      name: 'afscp-volume-bootstrap-apply',
+      args: [...baseArgs, 'apply', '-f', '-'],
+      input: appBatches.volumeBootstrapYaml,
+    },
+  ] as const) {
+    if (step.input.trim().length === 0) {
+      continue;
+    }
+    const result = await runKubectlOperation({
+      name: step.name,
+      args: step.args,
+      input: step.input,
       runner: options.runner,
       env: options.env,
+      kubeconfigPath: options.kubeconfigPath,
       secretValues: options.secretValues,
     });
-    operations.push(...bootstrap.operations);
-    failures.push(...bootstrap.failures);
-    if (failures.length > 0) {
-      return { operations, failures };
+    operations.push(result.evidence);
+    if (result.failure) {
+      failures.push(result.failure);
+      break;
     }
+  }
+  if (failures.length > 0) {
+    return { operations, failures };
+  }
+
+  const volumeBootstrap = await waitForAfscpBootstrapJob({
+    definition: AFSCP_VOLUME_BOOTSTRAP_DEFINITION,
+    namespace: options.namespace,
+    kubeconfigPath: options.kubeconfigPath,
+    runner: options.runner,
+    env: options.env,
+    secretValues: options.secretValues,
+  });
+  operations.push(...volumeBootstrap.operations);
+  failures.push(...volumeBootstrap.failures);
+  if (failures.length > 0) {
+    return { operations, failures };
   }
 
   for (const step of [
@@ -3201,6 +3373,7 @@ export async function runLocalKindRolloutProducer(
     renderedYaml: imagePreflightYaml,
     runner,
     env,
+    registryAvailabilityPoll: options.registryAvailabilityPoll,
   });
   const afterImagePreflightEvidence = {
     ...baseEvidence,

@@ -93,8 +93,10 @@ type OperationEvidence = {
     | 'afscp-schema-bootstrap-wait'
     | 'afscp-volume-bootstrap-delete-previous'
     | 'afscp-volume-bootstrap-wait'
-    | 'afscp-bootstrap-dry-run'
-    | 'afscp-bootstrap-apply'
+    | 'afscp-schema-bootstrap-dry-run'
+    | 'afscp-schema-bootstrap-apply'
+    | 'afscp-volume-bootstrap-dry-run'
+    | 'afscp-volume-bootstrap-apply'
     | 'app-dry-run'
     | 'app-apply';
   command: string;
@@ -1533,7 +1535,7 @@ async function runApplySequence(options: {
   const baseArgs = kubeBaseArgs(options.kubeconfigPath);
   const operations: OperationEvidence[] = [];
   const failures: CheckFailure[] = [];
-  let appBatches: { bootstrapYaml: string; remainingYaml: string };
+  let appBatches: { schemaBootstrapYaml: string; volumeBootstrapYaml: string; remainingYaml: string };
 
   try {
     appBatches = splitAfscpBootstrapAppYaml(options.appYaml);
@@ -1565,14 +1567,14 @@ async function runApplySequence(options: {
 
   for (const step of [
     {
-      name: 'afscp-bootstrap-dry-run',
+      name: 'afscp-schema-bootstrap-dry-run',
       args: [...baseArgs, 'apply', '--dry-run=server', '-f', '-'],
-      input: appBatches.bootstrapYaml,
+      input: appBatches.schemaBootstrapYaml,
     },
     {
-      name: 'afscp-bootstrap-apply',
+      name: 'afscp-schema-bootstrap-apply',
       args: [...baseArgs, 'apply', '-f', '-'],
-      input: appBatches.bootstrapYaml,
+      input: appBatches.schemaBootstrapYaml,
     },
   ] as const) {
     if (step.input.trim().length === 0) {
@@ -1594,20 +1596,63 @@ async function runApplySequence(options: {
     }
   }
 
-  for (const definition of [AFSCP_SCHEMA_BOOTSTRAP_DEFINITION, AFSCP_VOLUME_BOOTSTRAP_DEFINITION]) {
-    const bootstrap = await waitForAfscpBootstrapJob({
-      definition,
-      namespace: options.namespace,
-      kubeconfigPath: options.kubeconfigPath,
+  const schemaBootstrap = await waitForAfscpBootstrapJob({
+    definition: AFSCP_SCHEMA_BOOTSTRAP_DEFINITION,
+    namespace: options.namespace,
+    kubeconfigPath: options.kubeconfigPath,
+    runner: options.runner,
+    env: options.env,
+    secretValues: options.secretValues,
+  });
+  operations.push(...schemaBootstrap.operations);
+  failures.push(...schemaBootstrap.failures);
+  if (failures.length > 0) {
+    return { operations, failures };
+  }
+
+  for (const step of [
+    {
+      name: 'afscp-volume-bootstrap-dry-run',
+      args: [...baseArgs, 'apply', '--dry-run=server', '-f', '-'],
+      input: appBatches.volumeBootstrapYaml,
+    },
+    {
+      name: 'afscp-volume-bootstrap-apply',
+      args: [...baseArgs, 'apply', '-f', '-'],
+      input: appBatches.volumeBootstrapYaml,
+    },
+  ] as const) {
+    if (step.input.trim().length === 0) {
+      continue;
+    }
+    const result = await runKubectlOperation({
+      name: step.name,
+      args: step.args,
+      input: step.input,
       runner: options.runner,
       env: options.env,
+      kubeconfigPath: options.kubeconfigPath,
       secretValues: options.secretValues,
     });
-    operations.push(...bootstrap.operations);
-    failures.push(...bootstrap.failures);
-    if (failures.length > 0) {
+    operations.push(result.evidence);
+    if (result.failure) {
+      failures.push(result.failure);
       return { operations, failures };
     }
+  }
+
+  const volumeBootstrap = await waitForAfscpBootstrapJob({
+    definition: AFSCP_VOLUME_BOOTSTRAP_DEFINITION,
+    namespace: options.namespace,
+    kubeconfigPath: options.kubeconfigPath,
+    runner: options.runner,
+    env: options.env,
+    secretValues: options.secretValues,
+  });
+  operations.push(...volumeBootstrap.operations);
+  failures.push(...volumeBootstrap.failures);
+  if (failures.length > 0) {
+    return { operations, failures };
   }
 
   for (const step of [

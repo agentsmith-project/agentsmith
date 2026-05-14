@@ -87,6 +87,7 @@ describe('managed runner seed core', () => {
       runnerName: 'Managed Runner',
       mongoUrl: 'mongodb://localhost:17017/admin',
       mongoDbName: 'mbos',
+      image: 'kind-registry:5000/mbos/agentsmith-managed-runner@sha256:9999',
     })).resolves.toMatchObject({
       runnerId: 'ag_managed_default_1',
       defaultEndpointId: null,
@@ -103,6 +104,9 @@ describe('managed runner seed core', () => {
       'proj_1',
       expect.objectContaining({
         endpointId: 'ep_required',
+        config: expect.objectContaining({
+          image: 'kind-registry:5000/mbos/agentsmith-managed-runner@sha256:9999',
+        }),
       }),
     );
     expect(patchSetting).toHaveBeenCalledWith({

@@ -108,6 +108,8 @@ spec:
           env:
             - name: PORT
               value: "20000"
+            - name: INTERNAL_AGENT_IMAGE
+              value: "{{MANAGED_RUNNER_IMAGE}}"
           envFrom:
             - configMapRef:
                 name: agentsmith-app-config

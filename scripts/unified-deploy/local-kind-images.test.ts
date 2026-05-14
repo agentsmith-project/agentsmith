@@ -125,6 +125,99 @@ function successfulRunner(calls: CommandCall[]): LocalKindImageCommandRunner {
   };
 }
 
+function yamlStringList(values: readonly string[]): string {
+  return values.map((value) => `            - ${value}`).join('\n');
+}
+
+function afscpBootstrapJobsYaml(options: {
+  schemaCommand?: string[];
+  schemaArgs?: string[];
+  volumeCommand?: string[];
+  volumeArgs?: string[];
+  image?: string;
+} = {}): string {
+  const image = options.image ?? `kind-registry:5000/mbos/agentsmith-fs-control-plane@${AFSCP_DIGEST}`;
+  const schemaCommand = options.schemaCommand ?? ['/usr/local/bin/afscp-migrate'];
+  const schemaArgs = options.schemaArgs ?? ['--apply', '--check', '--timeout=60s'];
+  const volumeCommand = options.volumeCommand ?? ['/usr/local/bin/afscp-volume-bootstrap'];
+  const volumeArgs = options.volumeArgs ?? ['--ensure', '--check', '--timeout=60s'];
+
+  return `\
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: afscp-schema-bootstrap
+spec:
+  template:
+    spec:
+      containers:
+        - name: afscp-schema-bootstrap
+          image: ${image}
+          command:
+${yamlStringList(schemaCommand)}
+          args:
+${yamlStringList(schemaArgs)}
+---
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: afscp-volume-bootstrap
+spec:
+  template:
+    spec:
+      containers:
+        - name: afscp-volume-bootstrap
+          image: ${image}
+          command:
+${yamlStringList(volumeCommand)}
+          args:
+${yamlStringList(volumeArgs)}
+`;
+}
+
+function afscpCommandContractRunner(calls: CommandCall[]): LocalKindImageCommandRunner {
+  return async (command, args) => {
+    calls.push({ command, args });
+    const joined = args.join(' ');
+    if (joined.includes('network inspect kind')) {
+      return { exitCode: 0, stdout: 'kind-registry\n', stderr: '' };
+    }
+    if (joined.includes('buildx imagetools inspect')) {
+      const imageRef = args[args.length - 1] ?? '';
+      return { exitCode: 0, stdout: `Name: ${imageRef}\nDigest: ${registryDigestForRef(imageRef)}\n`, stderr: '' };
+    }
+    if (args.includes('ps')) {
+      return { exitCode: 0, stdout: 'kind-registry\n', stderr: '' };
+    }
+    if (args.includes('exec') && args.includes('agentsmith-control-plane')) {
+      return { exitCode: 0, stdout: 'ok', stderr: '' };
+    }
+    if (args[0] === 'run') {
+      const entrypointIndex = args.indexOf('--entrypoint');
+      const entrypoint = entrypointIndex >= 0 ? args[entrypointIndex + 1] ?? '' : '';
+      const imageIndex = entrypointIndex + 2;
+      const commandArgs = args.slice(imageIndex + 1);
+      if (entrypoint === '/usr/local/bin/afscp-migrate') {
+        if (!commandArgs.includes('--apply') && !commandArgs.includes('--check')) {
+          return { exitCode: 2, stdout: '', stderr: 'afscp-migrate: --apply or --check is required' };
+        }
+        return { exitCode: 2, stdout: '', stderr: 'afscp-migrate: AFSCP_MIGRATION_POSTGRES_DSN, AFSCP_POSTGRES_DSN, or AFSCP_DATABASE_URL is required' };
+      }
+      if (entrypoint === '/usr/local/bin/afscp-volume-bootstrap') {
+        if (commandArgs.includes('--apply')) {
+          return { exitCode: 2, stdout: '', stderr: 'flag provided but not defined: -apply' };
+        }
+        if (!commandArgs.includes('--ensure') && !commandArgs.includes('--check')) {
+          return { exitCode: 2, stdout: '', stderr: 'afscp-volume-bootstrap: --ensure or --check is required' };
+        }
+        return { exitCode: 2, stdout: '', stderr: 'afscp-volume-bootstrap: AFSCP_VOLUME_BOOTSTRAP_POSTGRES_DSN, AFSCP_POSTGRES_DSN, or AFSCP_DATABASE_URL is required' };
+      }
+    }
+
+    return { exitCode: 0, stdout: 'ok', stderr: '' };
+  };
+}
+
 describe('unified deploy local-kind image truth producer', () => {
   it('parses the locked llmup source image and version', () => {
     const lock = parseLlmupImageLock(`\
@@ -614,6 +707,152 @@ data:
         message: expect.stringContaining('private ghcr.io/mbos/*:dev image'),
       }),
     ]));
+  });
+
+  it('smokes rendered AFSCP bootstrap Job command contracts from the selected image', async () => {
+    const calls: CommandCall[] = [];
+    const result = await checkLocalKindImagePreflight({
+      renderedYaml: afscpBootstrapJobsYaml(),
+      runner: afscpCommandContractRunner(calls),
+    });
+    const commandText = calls.map((call) => `${call.command} ${call.args.join(' ')}`).join('\n');
+
+    expect(result.status).toBe('passed');
+    expect(commandText).toContain(`docker run --rm --network=none --entrypoint /usr/local/bin/afscp-migrate localhost:5001/mbos/agentsmith-fs-control-plane@${AFSCP_DIGEST} --apply --check --timeout=60s`);
+    expect(commandText).toContain(`docker run --rm --network=none --entrypoint /usr/local/bin/afscp-volume-bootstrap localhost:5001/mbos/agentsmith-fs-control-plane@${AFSCP_DIGEST} --ensure --check --timeout=60s`);
+    expect(result.diagnostics.join('\n')).toContain('AFSCP command contract smoke');
+    expect(result.diagnostics.join('\n')).toContain('not full bootstrap readiness');
+  });
+
+  it('smokes the full rendered AFSCP Job command vector without dropping command argv', async () => {
+    const calls: CommandCall[] = [];
+    const result = await checkLocalKindImagePreflight({
+      renderedYaml: afscpBootstrapJobsYaml({
+        schemaCommand: ['/usr/local/bin/afscp-migrate', '--apply'],
+        schemaArgs: ['--check', '--timeout=60s'],
+        volumeCommand: ['/usr/local/bin/afscp-volume-bootstrap', '--ensure'],
+        volumeArgs: ['--check', '--timeout=60s'],
+      }),
+      runner: afscpCommandContractRunner(calls),
+    });
+    const commandText = calls.map((call) => `${call.command} ${call.args.join(' ')}`).join('\n');
+
+    expect(result.status).toBe('passed');
+    expect(commandText).toContain(`docker run --rm --network=none --entrypoint /usr/local/bin/afscp-migrate localhost:5001/mbos/agentsmith-fs-control-plane@${AFSCP_DIGEST} --apply --check --timeout=60s`);
+    expect(commandText).toContain(`docker run --rm --network=none --entrypoint /usr/local/bin/afscp-volume-bootstrap localhost:5001/mbos/agentsmith-fs-control-plane@${AFSCP_DIGEST} --ensure --check --timeout=60s`);
+  });
+
+  it('does not emit passed diagnostics when an AFSCP command smoke fails', async () => {
+    const result = await checkLocalKindImagePreflight({
+      renderedYaml: afscpBootstrapJobsYaml(),
+      runner: async (_command, args) => {
+        const joined = args.join(' ');
+        if (args.includes('ps')) {
+          return { exitCode: 0, stdout: 'kind-registry\n', stderr: '' };
+        }
+        if (joined.includes('network inspect kind')) {
+          return { exitCode: 0, stdout: 'kind-registry\n', stderr: '' };
+        }
+        if (joined.includes('buildx imagetools inspect')) {
+          const imageRef = args[args.length - 1] ?? '';
+          return { exitCode: 0, stdout: `Name: ${imageRef}\nDigest: ${registryDigestForRef(imageRef)}\n`, stderr: '' };
+        }
+        if (args.includes('exec') && args.includes('agentsmith-control-plane')) {
+          return { exitCode: 0, stdout: 'ok', stderr: '' };
+        }
+        if (args[0] === 'run') {
+          return { exitCode: 127, stdout: '', stderr: 'unexpected argument contract failure' };
+        }
+
+        return { exitCode: 0, stdout: 'ok', stderr: '' };
+      },
+    });
+    const diagnostics = result.diagnostics.join('\n');
+
+    expect(result.status).toBe('failed');
+    expect(result.failures).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        path: 'afscp-command-contract:Job/afscp-schema-bootstrap',
+        message: expect.stringContaining('argument contract'),
+      }),
+    ]));
+    expect(diagnostics).toContain('unexpected argument contract failure');
+    expect(diagnostics).not.toContain('smoke passed');
+  });
+
+  it('fails the AFSCP command contract when rendered schema bootstrap lacks an action flag', async () => {
+    const result = await checkLocalKindImagePreflight({
+      renderedYaml: afscpBootstrapJobsYaml({ schemaArgs: ['--timeout=60s'] }),
+      runner: afscpCommandContractRunner([]),
+    });
+
+    expect(result.status).toBe('failed');
+    expect(result.failures).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        path: 'afscp-command-contract:Job/afscp-schema-bootstrap',
+        message: expect.stringContaining('--apply or --check'),
+      }),
+    ]));
+  });
+
+  it('fails the AFSCP command contract when rendered volume bootstrap uses the schema --apply flag', async () => {
+    const calls: CommandCall[] = [];
+    const result = await checkLocalKindImagePreflight({
+      renderedYaml: afscpBootstrapJobsYaml({ volumeArgs: ['--apply', '--check', '--timeout=60s'] }),
+      runner: afscpCommandContractRunner(calls),
+    });
+    const commandText = calls.map((call) => `${call.command} ${call.args.join(' ')}`).join('\n');
+
+    expect(result.status).toBe('failed');
+    expect(commandText).toContain(`docker run --rm --network=none --entrypoint /usr/local/bin/afscp-volume-bootstrap localhost:5001/mbos/agentsmith-fs-control-plane@${AFSCP_DIGEST} --apply --check --timeout=60s`);
+    expect(result.failures).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        path: 'afscp-command-contract:Job/afscp-volume-bootstrap',
+        message: expect.stringContaining('--ensure'),
+      }),
+    ]));
+  });
+
+  it('redacts secret-like rendered AFSCP args from smoke failure diagnostics', async () => {
+    const secret = 'super_secret_token_123';
+    const result = await checkLocalKindImagePreflight({
+      renderedYaml: afscpBootstrapJobsYaml({
+        schemaArgs: ['--apply', `--admin-token=${secret}`, '--check', '--timeout=60s'],
+      }),
+      runner: async (_command, args) => {
+        const joined = args.join(' ');
+        if (args.includes('ps')) {
+          return { exitCode: 0, stdout: 'kind-registry\n', stderr: '' };
+        }
+        if (joined.includes('network inspect kind')) {
+          return { exitCode: 0, stdout: 'kind-registry\n', stderr: '' };
+        }
+        if (joined.includes('buildx imagetools inspect')) {
+          const imageRef = args[args.length - 1] ?? '';
+          return { exitCode: 0, stdout: `Name: ${imageRef}\nDigest: ${registryDigestForRef(imageRef)}\n`, stderr: '' };
+        }
+        if (args.includes('exec') && args.includes('agentsmith-control-plane')) {
+          return { exitCode: 0, stdout: 'ok', stderr: '' };
+        }
+        if (args[0] === 'run') {
+          return {
+            exitCode: 127,
+            stdout: '',
+            stderr: `unexpected rendered arg --admin-token=${secret}`,
+          };
+        }
+
+        return { exitCode: 0, stdout: 'ok', stderr: '' };
+      },
+    });
+    const serialized = JSON.stringify({
+      failures: result.failures,
+      diagnostics: result.diagnostics,
+    });
+
+    expect(result.status).toBe('failed');
+    expect(serialized).not.toContain(secret);
+    expect(serialized).toContain('[REDACTED]');
   });
 
   it('redacts secret-like values from docker diagnostics in evidence', async () => {

@@ -78,6 +78,19 @@ export interface BuildStatusProjectionInput {
   leaseStatusShadow?: CurrentStatusProjection['lease_status_shadow'];
 }
 
+export interface ShortFailureProjectionInput {
+  title?: string;
+  diagnosticOnly?: boolean;
+  verdict?: 'FAILED' | 'BLOCKED';
+  blocker: string;
+  stage: string;
+  why: string;
+  fixCommand?: string | null;
+  inspectCommand?: string | null;
+  rerunCommand?: string | null;
+  evidencePath?: string | null;
+}
+
 const DEFAULT_GENERATED_AT = '1970-01-01T00:00:00.000Z';
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -94,6 +107,33 @@ function redactProjectionText(value: string): string {
 
 function redactProjectionPath(path: string): string {
   return path;
+}
+
+export function renderShortFailureProjection(input: ShortFailureProjectionInput): string {
+  const lines: string[] = [];
+  if (input.title) {
+    lines.push(input.title);
+  }
+  if (input.diagnosticOnly) {
+    lines.push('Diagnostic only: not a release verdict.');
+  } else {
+    lines.push(`Verdict: ${input.verdict ?? 'FAILED'}`);
+  }
+  lines.push(`Blocker: ${redactProjectionText(input.blocker)}`);
+  lines.push(`Stage: ${redactProjectionText(input.stage)}`);
+  lines.push(`Why: ${redactProjectionText(input.why)}`);
+  if (input.fixCommand) {
+    lines.push(`Fix: ${redactProjectionText(input.fixCommand)}`);
+  } else if (input.inspectCommand) {
+    lines.push(`Inspect: ${redactProjectionText(input.inspectCommand)}`);
+  }
+  if (input.rerunCommand) {
+    lines.push(`Rerun: ${redactProjectionText(input.rerunCommand)}`);
+  }
+  if (input.evidencePath) {
+    lines.push(`Evidence: ${redactProjectionPath(input.evidencePath)}`);
+  }
+  return `${lines.join('\n')}\n`;
 }
 
 function releaseAggregateResultPath(campaignRoot: string): string {

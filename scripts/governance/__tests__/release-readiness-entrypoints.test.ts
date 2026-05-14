@@ -12,6 +12,7 @@ import {
   writeReleaseSummaryForCampaign,
 } from '../release-summary';
 import { runReleaseReady } from '../release-ready';
+import type { ResourceOwnerPreflightResult } from '../resource-owner-preflight';
 
 function readPackageScripts(): Record<string, string> {
   return (JSON.parse(readFileSync('package.json', 'utf8')) as { scripts: Record<string, string> }).scripts;
@@ -106,6 +107,12 @@ function writeFakeNpm(dir: string, script: string): void {
   const path = join(dir, 'npm');
   writeFileSync(path, script);
   chmodSync(path, 0o755);
+  const dockerPath = join(dir, 'docker');
+  writeFileSync(dockerPath, '#!/usr/bin/env bash\nset -euo pipefail\nif [[ "$1" == "ps" ]]; then exit 0; fi\nexit 1\n');
+  chmodSync(dockerPath, 0o755);
+  const lsofPath = join(dir, 'lsof');
+  writeFileSync(lsofPath, '#!/usr/bin/env bash\nexit 1\n');
+  chmodSync(lsofPath, 0o755);
 }
 
 function writeBackendRealStyleEnv(root: string): void {
@@ -147,6 +154,53 @@ function failingSentinelResult() {
       public_endpoint: null,
       port_family: 'unknown',
     },
+  };
+}
+
+function unifiedSubstrateConflictPreflight(evidencePath: string): ResourceOwnerPreflightResult {
+  return {
+    ok: false,
+    evidencePath,
+    evidence: {
+      schema: 'agentsmith_resource_owner_preflight/v1',
+      target: 'release-ready',
+      status: 'failed',
+      generated_at: '2026-04-27T12:00:00.000Z',
+      lock_id: 'fixed-local-ports',
+      checked_ports: [27027],
+      conflicts: [],
+      blocker: null,
+    },
+    blocker: {
+      port: 27027,
+      label: 'Mongo unified substrate database port',
+      owner_kind: 'unified-deploy-substrate',
+      owner_label: 'agentsmith-unified-substrate-mongodb-1',
+      detail: 'agentsmith-unified-substrate/mongodb publishes host port 27027',
+      recovery: {
+        kind: 'fix',
+        command: 'npx tsx scripts/unified-deploy/substrate-lifecycle.ts down',
+      },
+    },
+    conflicts: [],
+  };
+}
+
+function passingOwnerPreflight(evidencePath: string): ResourceOwnerPreflightResult {
+  return {
+    ok: true,
+    evidencePath,
+    evidence: {
+      schema: 'agentsmith_resource_owner_preflight/v1',
+      target: 'release-ready',
+      status: 'passed',
+      generated_at: '2026-04-27T12:00:00.000Z',
+      lock_id: 'fixed-local-ports',
+      checked_ports: [],
+      conflicts: [],
+      blocker: null,
+    },
+    conflicts: [],
   };
 }
 
@@ -527,6 +581,7 @@ exit 0
           sentinelProfiles.push(profile);
           return passingSentinelResult();
         },
+        ownerPreflight: passingOwnerPreflight,
       });
 
       expect(exitCode).toBe(9);
@@ -535,6 +590,51 @@ exit 0
       expect(`${stdout.join('')}\n${stderr.join('')}`).toContain('Automated release verdict: NOT STARTED');
       expect(existsSync(join(root, 'gate-release-full', 'result.json'))).toBe(false);
       expect(existsSync(join(root, 'summary.json'))).toBe(false);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it('fails fast on fixed-port owner conflicts before release precheck, sentinel, or campaign', () => {
+    const root = mkdtempSync(join(tmpdir(), 'agentsmith-release-ready-owner-preflight-'));
+    const stdout: string[] = [];
+    const stderr: string[] = [];
+    const scripts: string[] = [];
+    const sentinelProfiles: string[] = [];
+    try {
+      const evidencePath = join(root, 'preflight', 'evidence.json');
+      const exitCode = runReleaseReady([], {
+        stdout: { write: (chunk: string) => stdout.push(chunk) },
+        stderr: { write: (chunk: string) => stderr.push(chunk) },
+        env: {
+          ...process.env,
+          RELEASE_CAMPAIGN_ROOT: root,
+        },
+        runNpmScript: (script) => {
+          scripts.push(script);
+          return { status: 0, signal: null };
+        },
+        sentinelRunner: (profile) => {
+          sentinelProfiles.push(profile);
+          return passingSentinelResult();
+        },
+        ownerPreflight: () => unifiedSubstrateConflictPreflight(evidencePath),
+      });
+
+      const combinedOutput = `${stdout.join('')}\n${stderr.join('')}`;
+
+      expect(exitCode).toBe(1);
+      expect(scripts).toEqual([]);
+      expect(sentinelProfiles).toEqual([]);
+      expect(combinedOutput.trim().split('\n')).toHaveLength(8);
+      expect(combinedOutput).toContain('Blocker: environment_conflict');
+      expect(combinedOutput).toContain('Stage: preflight');
+      expect(combinedOutput).toContain('Why: port 27027 is owned by agentsmith-unified-substrate-mongodb-1');
+      expect(combinedOutput).toContain('Fix: npx tsx scripts/unified-deploy/substrate-lifecycle.ts down');
+      expect(combinedOutput).toContain('Rerun: npm run release:ready');
+      expect(combinedOutput).toContain(`Evidence: ${evidencePath}`);
+      expect(combinedOutput).not.toContain('Automated release verdict: PASSED');
+      expect(existsSync(join(root, 'gate-release-full', 'result.json'))).toBe(false);
     } finally {
       rmSync(root, { recursive: true, force: true });
     }
@@ -562,6 +662,7 @@ exit 0
           sentinelProfiles.push(profile);
           return failingSentinelResult();
         },
+        ownerPreflight: passingOwnerPreflight,
       });
 
       const combinedOutput = `${stdout.join('')}\n${stderr.join('')}`;
@@ -603,6 +704,7 @@ exit 0
             ? { status: 7, signal: null }
             : { status: 0, signal: null };
         },
+        ownerPreflight: passingOwnerPreflight,
       });
 
       expect(exitCode).toBe(7);
@@ -640,6 +742,7 @@ exit 0
           sentinelProfiles.push(profile);
           return passingSentinelResult();
         },
+        ownerPreflight: passingOwnerPreflight,
       });
 
       const combinedOutput = `${stdout.join('')}\n${stderr.join('')}`;
@@ -681,6 +784,7 @@ exit 0
           sentinelProfiles.push(profile);
           return passingSentinelResult();
         },
+        ownerPreflight: passingOwnerPreflight,
       });
 
       const combinedOutput = `${stdout.join('')}\n${stderr.join('')}`;
@@ -726,6 +830,7 @@ exit 0
           sentinelProfiles.push(profile);
           return passingSentinelResult();
         },
+        ownerPreflight: passingOwnerPreflight,
       });
 
       const combinedOutput = `${stdout.join('')}\n${stderr.join('')}`;
@@ -768,6 +873,7 @@ exit 0
           }
           return { status: 0, signal: null };
         },
+        ownerPreflight: passingOwnerPreflight,
       });
 
       const combinedOutput = `${stdout.join('')}\n${stderr.join('')}`;
@@ -810,6 +916,7 @@ exit 0
           sentinelProfiles.push(profile);
           return passingSentinelResult();
         },
+        ownerPreflight: passingOwnerPreflight,
       });
 
       expect(exitCode).toBe(7);

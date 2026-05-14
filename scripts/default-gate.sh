@@ -55,6 +55,33 @@ summarize_stream() {
   '
 }
 
+is_expected_success_stderr_line() {
+  local _check_id="$1"
+  local line="$2"
+  case "${line}" in
+    "Browserslist: caniuse-lite is outdated."*|*"npx update-browserslist-db@latest"*|*"Why you should do it regularly:"*"browserslist/update-db"*)
+      return 0
+      ;;
+  esac
+  return 1
+}
+
+filter_expected_success_stderr_summary() {
+  local check_id="$1"
+  local summary_file="$2"
+  local filtered_file line
+  [[ -s "${summary_file}" ]] || return 0
+  filtered_file="${summary_file}.filtered"
+  : > "${filtered_file}"
+  while IFS= read -r line || [[ -n "${line}" ]]; do
+    if is_expected_success_stderr_line "${check_id}" "${line}"; then
+      continue
+    fi
+    printf '%s\n' "${line}" >> "${filtered_file}"
+  done < "${summary_file}"
+  mv "${filtered_file}" "${summary_file}"
+}
+
 run_pure_check_cmd() {
   local check_id="$1"
   local command="$2"
@@ -93,6 +120,10 @@ run_pure_check_cmd() {
 
   wait "${stdout_pid}" || true
   wait "${stderr_pid}" || true
+
+  if [[ "${status}" -eq 0 ]]; then
+    filter_expected_success_stderr_summary "${check_id}" "${stderr_summary}"
+  fi
 
   if [[ "${status}" -eq 0 ]]; then
     result_status="passed"

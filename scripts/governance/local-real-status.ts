@@ -1,5 +1,11 @@
 import { resolveMinimalLeaseStatusShadow } from './lease-status-shadow';
 import { buildStatusProjection, renderStatusProjection } from './status-projection';
+import {
+  defaultResourceOwnerPreflightEvidencePath,
+  renderResourceOwnerPreflightSummary,
+  runResourceOwnerPreflight,
+  type ResourceOwnerPreflightResult,
+} from './resource-owner-preflight';
 
 type LocalRealStatusStreams = {
   stdout: {
@@ -12,6 +18,7 @@ type LocalRealStatusStreams = {
 
 type LocalRealStatusDependencies = LocalRealStatusStreams & {
   generatedAt?: string;
+  ownerPreflight?: (evidencePath: string) => ResourceOwnerPreflightResult;
 };
 
 type ParsedLocalRealStatusArgs = {
@@ -43,6 +50,7 @@ export function runLocalRealStatusProjection(
 ): number {
   try {
     const options = parseArgs(argv);
+    const ownerPreflight = dependencies.ownerPreflight ?? defaultOwnerPreflight;
     const projection = buildStatusProjection({
       goal: 'local-real',
       runtimeLine: 'local-manual',
@@ -51,14 +59,34 @@ export function runLocalRealStatusProjection(
         generatedAt: dependencies.generatedAt,
       }),
     });
-    dependencies.stdout.write(options.json
-      ? `${JSON.stringify(projection, null, 2)}\n`
-      : renderStatusProjection(projection));
+    if (options.json) {
+      dependencies.stdout.write(`${JSON.stringify(projection, null, 2)}\n`);
+      return 0;
+    }
+
+    dependencies.stdout.write('Diagnostic only: not a release verdict.\n');
+    dependencies.stdout.write(renderStatusProjection(projection));
+    const evidencePath = defaultResourceOwnerPreflightEvidencePath({ target: 'local-real-status' });
+    const preflight = ownerPreflight(evidencePath);
+    if (preflight.ok) {
+      dependencies.stdout.write('Resource owner preflight: fixed-local-ports clear\n');
+    } else {
+      dependencies.stdout.write(renderResourceOwnerPreflightSummary(preflight, {
+        diagnosticOnly: true,
+      }));
+    }
     return 0;
   } catch {
     dependencies.stderr.write('[local-real-status] status unavailable; check arguments.\n');
     return 1;
   }
+}
+
+function defaultOwnerPreflight(evidencePath: string): ResourceOwnerPreflightResult {
+  return runResourceOwnerPreflight({
+    target: 'local-real-status',
+    evidencePath,
+  });
 }
 
 if (isCliEntrypoint('local-real-status.ts')) {

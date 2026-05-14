@@ -39,6 +39,14 @@ VISUAL_BUILD_INFO_FILE="${MOCK_STATE_DIR}/visual-build-info.json"
 VISUAL_BASELINE_BUILD_INFO_FILE="${VISUAL_BASELINE_BUILD_INFO_FILE:-${VISUAL_BUILD_INFO_FILE}}"
 VISUAL_BASELINE_BUILD_FINGERPRINT="${VISUAL_BASELINE_BUILD_FINGERPRINT:-}"
 PLAYWRIGHT_WATCHDOG_SIGNAL_FILE="${MOCK_STATE_DIR}/playwright-watchdog.signal"
+PLAYWRIGHT_SELECTION_LIST_LOG="${MOCK_STATE_DIR}/playwright-list.log"
+PLAYWRIGHT_EMPTY_SELECTION_DIR="${ROOT_DIR}/artifacts/mock-lane/empty-selections/${MOCK_RUN_ID}"
+PLAYWRIGHT_EMPTY_SELECTION_EVIDENCE_FILE="${PLAYWRIGHT_EMPTY_SELECTION_DIR}/evidence.json"
+PLAYWRIGHT_EMPTY_SELECTION_LOG_FILE="${PLAYWRIGHT_EMPTY_SELECTION_DIR}/playwright-list.log"
+PLAYWRIGHT_EMPTY_SELECTION_HELPER_VERSION="mock_lane_playwright_empty_selection/v2"
+PLAYWRIGHT_ALLOW_EMPTY_SELECTION_ARG=0
+PLAYWRIGHT_ORIGINAL_ARGS=()
+PLAYWRIGHT_ARGS=()
 PLAYWRIGHT_PID=""
 PLAYWRIGHT_TAIL_PID=""
 PLAYWRIGHT_WATCHDOG_PID=""
@@ -475,14 +483,203 @@ is_visual_baseline_run() {
   done
   return 1
 }
+
+prepare_playwright_args() {
+  PLAYWRIGHT_ALLOW_EMPTY_SELECTION_ARG=0
+  PLAYWRIGHT_ORIGINAL_ARGS=("$@")
+  PLAYWRIGHT_ARGS=()
+
+  local arg
+  for arg in "$@"; do
+    case "${arg}" in
+      --allow-empty-selection)
+        PLAYWRIGHT_ALLOW_EMPTY_SELECTION_ARG=1
+        ;;
+      *)
+        PLAYWRIGHT_ARGS+=("${arg}")
+        ;;
+    esac
+  done
+}
+
+playwright_args_request_empty_selection_probe() {
+  local arg
+  for arg in "$@"; do
+    case "${arg}" in
+      --list|--ui|--debug)
+        return 1
+        ;;
+      --grep|-g|--grep=*|-g=*)
+        return 0
+        ;;
+    esac
+  done
+  return 1
+}
+
+playwright_empty_selection_allowed() {
+  if [[ "${MOCK_LANE_ALLOW_EMPTY_SELECTION:-0}" == "1" || "${MOCK_LANE_ALLOW_EMPTY_SELECTION:-}" == "true" ]]; then
+    return 0
+  fi
+  if [[ "${PLAYWRIGHT_ALLOW_EMPTY_SELECTION_ARG}" == "1" ]]; then
+    return 0
+  fi
+
+  local arg
+  for arg in "$@"; do
+    if [[ "${arg}" == "--allow-empty-selection" ]]; then
+      return 0
+    fi
+  done
+  return 1
+}
+
+json_array_for_args() {
+  node -e 'process.stdout.write(JSON.stringify(process.argv.slice(1)))' -- "$@"
+}
+
+playwright_arg_values_json() {
+  local long_name="$1"
+  local short_name="${2:-}"
+  shift 2 || true
+
+  node -e '
+    const longName = process.argv[1];
+    const shortName = process.argv[2];
+    const argv = process.argv.slice(3);
+    const values = [];
+    for (let index = 0; index < argv.length; index += 1) {
+      const arg = argv[index];
+      if (arg === longName || (shortName && arg === shortName)) {
+        if (index + 1 < argv.length) {
+          values.push(argv[index + 1]);
+          index += 1;
+        }
+        continue;
+      }
+      const longPrefix = `${longName}=`;
+      if (arg.startsWith(longPrefix)) {
+        values.push(arg.slice(longPrefix.length));
+        continue;
+      }
+      if (shortName) {
+        const shortPrefix = `${shortName}=`;
+        if (arg.startsWith(shortPrefix)) {
+          values.push(arg.slice(shortPrefix.length));
+        }
+      }
+    }
+    process.stdout.write(JSON.stringify(values));
+  ' -- "${long_name}" "${short_name}" "$@"
+}
+
+write_empty_playwright_selection_evidence() {
+  local started_at="$1"
+  local finished_at="$2"
+  local list_status="$3"
+  local evidence_status="$4"
+  local selection="$5"
+  local reason="$6"
+  local matched_count="$7"
+  shift 7
+  local argv_json grep_json project_json
+  argv_json="$(json_array_for_args "$@")"
+  grep_json="$(playwright_arg_values_json --grep -g "$@")"
+  project_json="$(playwright_arg_values_json --project "" "$@")"
+
+  mkdir -p "${PLAYWRIGHT_EMPTY_SELECTION_DIR}"
+  cp "${PLAYWRIGHT_SELECTION_LIST_LOG}" "${PLAYWRIGHT_EMPTY_SELECTION_LOG_FILE}"
+  cat > "${PLAYWRIGHT_EMPTY_SELECTION_EVIDENCE_FILE}" <<EOF
+{
+  "schema": "mock_lane_playwright_empty_selection/v1",
+  "helper_version": "${PLAYWRIGHT_EMPTY_SELECTION_HELPER_VERSION}",
+  "status": "${evidence_status}",
+  "selection": "${selection}",
+  "reason": "${reason}",
+  "started_at": "${started_at}",
+  "finished_at": "${finished_at}",
+  "argv": ${argv_json},
+  "grep": ${grep_json},
+  "project": ${project_json},
+  "matched_count": ${matched_count},
+  "list_exit_code": ${list_status},
+  "list_log": "${PLAYWRIGHT_EMPTY_SELECTION_LOG_FILE}"
+}
+EOF
+}
+
+handle_empty_playwright_selection() {
+  playwright_args_request_empty_selection_probe "$@" || return 1
+
+  local started_at finished_at list_status
+  started_at="$(date -u +%Y-%m-%dT%H:%M:%S.000Z)"
+  : > "${PLAYWRIGHT_SELECTION_LIST_LOG}"
+  set +e
+  (
+    cd "${ROOT_DIR}"
+    env \
+      PW_EXCLUDE_LANE_REAL=true \
+      BASE_URL="${BASE_URL}" \
+      npx playwright test "$@" --list
+  ) >"${PLAYWRIGHT_SELECTION_LIST_LOG}" 2>&1
+  list_status=$?
+  set -e
+  finished_at="$(date -u +%Y-%m-%dT%H:%M:%S.000Z)"
+
+  if grep -q 'Total: 0 tests in 0 files' "${PLAYWRIGHT_SELECTION_LIST_LOG}"; then
+    cat "${PLAYWRIGHT_SELECTION_LIST_LOG}"
+    if playwright_empty_selection_allowed "$@"; then
+      write_empty_playwright_selection_evidence \
+        "${started_at}" \
+        "${finished_at}" \
+        "${list_status}" \
+        "passed" \
+        "empty_allowed" \
+        "playwright_list_zero_matches_explicitly_allowed" \
+        0 \
+        "${PLAYWRIGHT_ORIGINAL_ARGS[@]}"
+      info "Playwright selection matched 0 tests; explicit allow-empty selection wrote evidence to ${PLAYWRIGHT_EMPTY_SELECTION_EVIDENCE_FILE}; skipping mock server startup"
+      return 0
+    fi
+
+    write_empty_playwright_selection_evidence \
+      "${started_at}" \
+      "${finished_at}" \
+      "${list_status}" \
+      "failed" \
+      "empty_disallowed" \
+      "playwright_list_zero_matches_requires_explicit_allow" \
+      0 \
+      "${PLAYWRIGHT_ORIGINAL_ARGS[@]}"
+    err "Playwright selection matched 0 tests; refusing to treat empty grep as success. Set MOCK_LANE_ALLOW_EMPTY_SELECTION=1 or pass --allow-empty-selection for intentional empty selections. Evidence: ${PLAYWRIGHT_EMPTY_SELECTION_EVIDENCE_FILE}"
+    return 2
+  fi
+
+  if [[ "${list_status}" -ne 0 ]]; then
+    info "Playwright --list preflight did not prove an empty grep selection; continuing to normal mock lane run"
+  fi
+  return 1
+}
+
+prepare_playwright_args "$@"
+if handle_empty_playwright_selection "${PLAYWRIGHT_ARGS[@]}"; then
+  RUN_SUCCEEDED=1
+  exit 0
+else
+  empty_selection_status=$?
+  if [[ "${empty_selection_status}" -eq 2 ]]; then
+    exit 1
+  fi
+fi
+
 cleanup_stale_mock_processes
 start_mock_server
 write_visual_build_info
 
 attempt=1
 while [[ "${attempt}" -le "${MAX_ATTEMPTS}" ]]; do
-  if run_playwright_once "$@"; then
-    if is_visual_baseline_run "$@"; then
+  if run_playwright_once "${PLAYWRIGHT_ARGS[@]}"; then
+    if is_visual_baseline_run "${PLAYWRIGHT_ARGS[@]}"; then
       (cd "${ROOT_DIR}" && npx tsx scripts/governance/write-visual-baseline-reviews.ts)
     fi
     RUN_SUCCEEDED=1

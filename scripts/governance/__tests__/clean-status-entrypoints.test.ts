@@ -15,6 +15,7 @@ import { CURRENT_GATE_RESULT_SCHEMA_VERSION } from '../current-gate-result-schem
 import { validateCurrentStatusProjection } from '../current-status-projection-schema';
 import type { GovernanceRuntimeLockLease } from '../governance-lock-lease-manager';
 import { runLocalRealStatusProjection } from '../local-real-status';
+import type { ResourceOwnerPreflightResult } from '../resource-owner-preflight';
 
 const GENERATED_AT = '2026-04-27T12:00:00.000Z';
 const LEASE_SNAPSHOT_ENV = 'AGENTSMITH_GOVERNANCE_LEASE_SNAPSHOT_PATH';
@@ -96,6 +97,35 @@ function activeLeaseSnapshot(): readonly GovernanceRuntimeLockLease[] {
       ownerStepId: 'gate-release',
     }),
   ];
+}
+
+function localRealAppConflictPreflight(): ResourceOwnerPreflightResult {
+  return {
+    ok: false,
+    evidencePath: 'artifacts/local-real/preflight/evidence.json',
+    evidence: {
+      schema: 'agentsmith_resource_owner_preflight/v1',
+      target: 'local-real-status',
+      status: 'failed',
+      generated_at: GENERATED_AT,
+      lock_id: 'fixed-local-ports',
+      checked_ports: [20000],
+      conflicts: [],
+      blocker: null,
+    },
+    blocker: {
+      port: 20000,
+      label: 'API backend base port',
+      owner_kind: 'local-real-app',
+      owner_label: 'node scripts/local-manual/start-api.js',
+      detail: 'local-real app process is listening on port 20000',
+      recovery: {
+        kind: 'fix',
+        command: 'make local-real-down',
+      },
+    },
+    conflicts: [],
+  };
 }
 
 function writeLeaseSnapshot(root: string): string {
@@ -460,6 +490,30 @@ describe('clean status entrypoints', () => {
     }
   });
 
+  it('prints diagnostic-only resource owner state in local-real status without failing the read-only command', () => {
+    const stdout: string[] = [];
+    const stderr: string[] = [];
+
+    const exitCode = runLocalRealStatusProjection([], {
+      stdout: { write: (chunk: string) => stdout.push(chunk) },
+      stderr: { write: (chunk: string) => stderr.push(chunk) },
+      generatedAt: GENERATED_AT,
+      ownerPreflight: () => localRealAppConflictPreflight(),
+    });
+
+    const output = stdout.join('');
+
+    expect(exitCode).toBe(0);
+    expect(stderr.join('')).toBe('');
+    expect(output).toContain('Diagnostic only: not a release verdict.');
+    expect(output).toContain('AgentSmith Status Projection');
+    expect(output).toContain('Blocker: environment_conflict');
+    expect(output).toContain('Why: port 20000 is owned by node scripts/local-manual/start-api.js');
+    expect(output).toContain('Fix: make local-real-down');
+    expect(output).toContain('Evidence: artifacts/local-real/preflight/evidence.json');
+    expect(output).not.toContain('Rerun: make local-real-status');
+  });
+
   it('does not echo secret-like unknown args from local-real status errors', () => {
     const stdout: string[] = [];
     const stderr: string[] = [];
@@ -487,6 +541,9 @@ describe('clean status entrypoints', () => {
 
     expect(makefile).toMatch(
       /local-real-status:[\s\S]*tsx scripts\/governance\/local-real-status\.ts[\s\S]*\$\(MAKE\) substrate-status[\s\S]*\$\(MAKE\) local-manual-status/,
+    );
+    expect(makefile).toMatch(
+      /local-real-up:[\s\S]*tsx scripts\/governance\/resource-owner-preflight\.ts --target=local-real-up[\s\S]*\$\(MAKE\) substrate-up/,
     );
     expect(makefile).not.toContain('artifacts/runtime/lines/local-real');
   });

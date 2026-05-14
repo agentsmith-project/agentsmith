@@ -28,6 +28,12 @@ import {
   type SentinelProfile,
 } from './sentinel-preflight';
 import {
+  defaultResourceOwnerPreflightEvidencePath,
+  renderResourceOwnerPreflightSummary,
+  runResourceOwnerPreflight,
+  type ResourceOwnerPreflightResult,
+} from './resource-owner-preflight';
+import {
   buildGovernancePureCheckShadowAudit,
   PURE_CHECK_SHADOW_AUDIT_FILE_NAME,
 } from './pure-check-shadow-audit';
@@ -75,6 +81,7 @@ type VerificationCliDependencies = {
   stderr?: CliWriteStream;
   runNpmScript?: (script: string, context: NpmScriptRunContext) => NpmScriptResult;
   sentinelRunner?: (profile: SentinelProfile) => SentinelPreflightResult;
+  ownerPreflight?: (evidencePath: string) => ResourceOwnerPreflightResult;
   pureCheckShadowRepoRoot?: string;
   pureCheckShadowGitSha?: string;
   pureCheckShadowToolchainIdentity?: Readonly<Record<string, string | null | undefined>>;
@@ -577,6 +584,13 @@ function defaultSentinelRunner(profile: SentinelProfile): SentinelPreflightResul
   });
 }
 
+function defaultOwnerPreflight(evidencePath: string): ResourceOwnerPreflightResult {
+  return runResourceOwnerPreflight({
+    target: 'verify-real',
+    evidencePath,
+  });
+}
+
 function verificationSentinelProfile(options: ParsedVerifyArgs): SentinelProfile | null {
   if (!options.run || !options.goalExplicit) {
     return null;
@@ -621,6 +635,7 @@ export function runVerificationCli(
   const stderr = dependencies.stderr ?? process.stderr;
   const runNpmScript = dependencies.runNpmScript ?? defaultRunNpmScript;
   const sentinelRunner = dependencies.sentinelRunner ?? defaultSentinelRunner;
+  const ownerPreflight = dependencies.ownerPreflight ?? defaultOwnerPreflight;
 
   try {
     const options = parseArgs(argv);
@@ -642,6 +657,20 @@ export function runVerificationCli(
     }
 
     const reportRoot = options.reportRoot ?? defaultReportRoot();
+    if (options.run && options.goalExplicit && options.goal === 'real') {
+      const ownerPreflightEvidencePath = defaultResourceOwnerPreflightEvidencePath({
+        target: 'verify-real',
+        reportRoot,
+      });
+      const ownerPreflightResult = ownerPreflight(ownerPreflightEvidencePath);
+      if (!ownerPreflightResult.ok) {
+        stdout.write(renderResourceOwnerPreflightSummary(ownerPreflightResult, {
+          title: 'AgentSmith Verification',
+          rerunCommand: 'npm run verify -- --goal=real --run',
+        }));
+        return 1;
+      }
+    }
     const pureCheckShadowRepoRoot = dependencies.pureCheckShadowRepoRoot
       ?? process.env[PURE_CHECK_SHADOW_REPO_ROOT_ENV]
       ?? process.cwd();

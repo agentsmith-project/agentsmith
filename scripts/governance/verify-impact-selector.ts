@@ -22,6 +22,8 @@ export type ChangedFileImpactRule =
   | 'generated_story_specs_derived_cache'
   | 'visual_code_ref'
   | 'trace_spec_story_binding'
+  | 'env_only_configuration'
+  | 'design_system'
   | 'runner_context_credential'
   | 'release_real_owner_diagnostic'
   | 'release_deploy_operations'
@@ -193,6 +195,8 @@ const IMPACT_RULE_ORDER: readonly ChangedFileImpactRule[] = [
   'generated_story_specs_derived_cache',
   'visual_code_ref',
   'trace_spec_story_binding',
+  'env_only_configuration',
+  'design_system',
   'runner_context_credential',
   'release_real_owner_diagnostic',
   'release_deploy_operations',
@@ -327,6 +331,7 @@ const RUNNER_CONTEXT_CREDENTIAL_PATH_PATTERNS: readonly RegExp[] = [
   /^src\/lib\/api\/types\/notebook\.ts$/,
   /^src\/mocks\/handlers\/context\.ts$/,
   /^src\/mocks\/handlers\/credentials\.ts$/,
+  /^infra\/runtime\/backend-real\.env$/,
 ];
 
 function isRunnerContextOrCredentialPath(filePath: string): boolean {
@@ -378,6 +383,53 @@ function isGovernanceToolingPath(filePath: string): boolean {
     return false;
   }
   return /^scripts\/governance\/.*\.ts$/.test(filePath);
+}
+
+function isEnvLikePath(filePath: string): boolean {
+  const basename = filePath.split('/').at(-1) ?? filePath;
+  return /^\.env(?:[.-].*)?$/.test(basename)
+    || /\.env(?:\..*)?$/.test(basename);
+}
+
+function isRuntimeCriticalEnvPath(filePath: string): boolean {
+  if (!isEnvLikePath(filePath)) {
+    return false;
+  }
+
+  return [
+    /^infra\/runtime\/[^/]+\.env$/,
+    /^infra\/substrate\/[^/]+\.env$/,
+    /(^|\/)(backend-real|runner|credential|credentials|context-store|managed-credential|oauth|release|deploy|substrate)[^/]*\.env(?:\.|$)/i,
+  ].some((pattern) => pattern.test(filePath));
+}
+
+function isEnvOnlyConfigurationPath(filePath: string): boolean {
+  if (
+    isRunnerContextOrCredentialPath(filePath)
+    || isReleaseRealOwnerDiagnosticPath(filePath)
+    || isReleaseDeployPath(filePath)
+    || isRuntimeCriticalEnvPath(filePath)
+  ) {
+    return false;
+  }
+
+  const basename = filePath.split('/').at(-1) ?? filePath;
+  const rootLocalFrontendEnv = !filePath.includes('/')
+    && /^\.env\.(?:local|development|test|development\.local|test\.local)$/.test(basename);
+  const envExampleOrTemplate = /^\.env(?:[.-].*)?\.(?:example|sample|template)$/.test(basename)
+    || /\.env\.(?:example|sample|template)$/.test(basename);
+
+  return rootLocalFrontendEnv || envExampleOrTemplate;
+}
+
+function isDesignSystemPath(filePath: string): boolean {
+  return filePath === 'DESIGN.md'
+    || filePath.startsWith('docs/UXUI/')
+    || filePath === 'src/app/globals.css'
+    || filePath.startsWith('src/components/ui/')
+    || /^tailwind\.config\.[cm]?[jt]s$/.test(filePath)
+    || /^postcss\.config\.[cm]?[jt]s$/.test(filePath)
+    || filePath === 'components.json';
 }
 
 function levelsForGoal(goal: VerificationGoal): readonly VerificationLevel[] {
@@ -1107,6 +1159,72 @@ export function buildVerificationPlan(input: BuildVerificationPlanInput = {}): V
         manualReviewReasons: [MANUAL_REVIEW_REASONS.generatedSpecsDerivedCacheDrift],
         impactSource,
       });
+    }
+
+    if (isEnvOnlyConfigurationPath(changedFile)) {
+      mapped = true;
+      const levels: readonly VerificationLevel[] = ['V0', 'V1'];
+      const action = 'Run npm run verify -- --goal=pr --run for the env-only configuration change.';
+      const surface = 'env-only-configuration';
+      addLevels(accumulator, levels);
+      accumulator.surfaces.add(surface);
+      accumulator.reasons.push(`${changedFile} is env-only configuration; V0/V1 verification is selected without visual or backend-real expansion.`);
+      pushUnique(accumulator.nextActions, action);
+      recordChangedFileImpact(accumulator, {
+        changedFile,
+        rule: 'env_only_configuration',
+        surfaces: [surface],
+        storyIds: [],
+        action,
+        manualReviewRequired: false,
+        broadImpact: false,
+      });
+    }
+
+    if (isDesignSystemPath(changedFile)) {
+      mapped = true;
+      const levels: readonly VerificationLevel[] = ['V0', 'V1', 'V2'];
+      const action = 'Run npm run verify:visual and review the full mock-lane visual catalog before accepting the design-system impact.';
+      const surface = 'design-system';
+      const impactedStories = stories.filter((story) => (
+        story.lane === 'mock-lane' && story.visualScenarioIds.length > 0
+      ));
+      const storyIds = impactedStories.map((story) => story.storyId);
+      const impactSource: VerificationStoryImpactSource = {
+        changedFile,
+        rule: 'design_system',
+        surface,
+        action,
+        manualReviewRequired: true,
+        broadImpact: true,
+      };
+      addLevels(accumulator, levels);
+      accumulator.surfaces.add(surface);
+      accumulator.broadImpact = true;
+      accumulator.manualReviewRequired = true;
+      accumulator.reasons.push(`${changedFile} touches design-system truth; full mock-lane visual verification is selected with story policy floors retained.`);
+      pushUnique(accumulator.nextActions, action);
+      recordChangedFileImpact(accumulator, {
+        changedFile,
+        rule: 'design_system',
+        surfaces: [surface],
+        storyIds,
+        action,
+        manualReviewRequired: true,
+        broadImpact: true,
+      });
+      for (const story of impactedStories) {
+        const storyLevels = levelsWithStoryPolicyFloor(levels, story);
+        addLevels(accumulator, storyLevels);
+        addStoryCard(accumulator, story, {
+          risk: 'inferred',
+          levels: storyLevels,
+          evidenceStatus: 'not_evaluated',
+          manualReviewReasons: [MANUAL_REVIEW_REASONS.visualV2NeedsReview],
+          nextAction: action,
+          impactSource,
+        });
+      }
     }
 
     const visualMatches = findVisualMatches(changedFile, catalog);

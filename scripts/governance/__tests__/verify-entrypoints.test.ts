@@ -11,6 +11,7 @@ import {
   renderVerificationPlan,
   runVerificationCli,
 } from '../run-verify';
+import type { ResourceOwnerPreflightResult } from '../resource-owner-preflight';
 import { findCurrentGateDefinitionById } from '../current-gate-manifest';
 import { validateCurrentStatusProjection } from '../current-status-projection-schema';
 import { PURE_CHECK_SHADOW_AUDIT_FILE_NAME } from '../pure-check-shadow-audit';
@@ -118,6 +119,12 @@ printf '%s\\n' "$*" >> "${logPath}"
 exit 0
 `);
   chmodSync(path, 0o755);
+  const dockerPath = join(dir, 'docker');
+  writeFileSync(dockerPath, '#!/usr/bin/env bash\nset -euo pipefail\nif [[ "$1" == "ps" ]]; then exit 0; fi\nexit 1\n');
+  chmodSync(dockerPath, 0o755);
+  const lsofPath = join(dir, 'lsof');
+  writeFileSync(lsofPath, '#!/usr/bin/env bash\nexit 1\n');
+  chmodSync(lsofPath, 0o755);
 }
 
 type FakeGitOptions = {
@@ -384,6 +391,53 @@ function failingSentinelResult() {
       public_endpoint: null,
       port_family: 'unknown',
     },
+  };
+}
+
+function unifiedSubstrateConflictPreflight(evidencePath: string): ResourceOwnerPreflightResult {
+  return {
+    ok: false,
+    evidencePath,
+    evidence: {
+      schema: 'agentsmith_resource_owner_preflight/v1',
+      target: 'verify-real',
+      status: 'failed',
+      generated_at: '2026-04-27T12:00:00.000Z',
+      lock_id: 'fixed-local-ports',
+      checked_ports: [27027],
+      conflicts: [],
+      blocker: null,
+    },
+    blocker: {
+      port: 27027,
+      label: 'Mongo unified substrate database port',
+      owner_kind: 'unified-deploy-substrate',
+      owner_label: 'agentsmith-unified-substrate-mongodb-1',
+      detail: 'agentsmith-unified-substrate/mongodb publishes host port 27027',
+      recovery: {
+        kind: 'fix',
+        command: 'npx tsx scripts/unified-deploy/substrate-lifecycle.ts down',
+      },
+    },
+    conflicts: [],
+  };
+}
+
+function passingOwnerPreflight(evidencePath: string): ResourceOwnerPreflightResult {
+  return {
+    ok: true,
+    evidencePath,
+    evidence: {
+      schema: 'agentsmith_resource_owner_preflight/v1',
+      target: 'verify-real',
+      status: 'passed',
+      generated_at: '2026-04-27T12:00:00.000Z',
+      lock_id: 'fixed-local-ports',
+      checked_ports: [],
+      conflicts: [],
+      blocker: null,
+    },
+    conflicts: [],
   };
 }
 
@@ -677,6 +731,7 @@ describe('verify human entrypoints', () => {
           sentinelProfiles.push(profile);
           return failingSentinelResult();
         },
+        ownerPreflight: passingOwnerPreflight,
         runNpmScript: (script) => {
           aliases.push(script);
           return { status: 0 };
@@ -693,6 +748,7 @@ describe('verify human entrypoints', () => {
           sentinelProfiles.push(profile);
           return failingSentinelResult();
         },
+        ownerPreflight: passingOwnerPreflight,
         runNpmScript: (script) => {
           aliases.push(script);
           return { status: 0 };
@@ -704,6 +760,54 @@ describe('verify human entrypoints', () => {
       expect(sentinelProfiles).toEqual([]);
       expect(aliases).toEqual([]);
       expect(stderr.join('')).toBe('');
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it('fails fast on fixed-port owner conflicts before writing the full real-run plan or executing aliases', () => {
+    const root = mkdtempSync(join(tmpdir(), 'agentsmith-verify-real-owner-preflight-'));
+    const stdout: string[] = [];
+    const stderr: string[] = [];
+    const sentinelProfiles: string[] = [];
+    const aliases: string[] = [];
+    try {
+      const evidencePath = join(root, 'preflight', 'evidence.json');
+      const exitCode = runVerificationCli([
+        '--goal=real',
+        '--run',
+        '--report-root',
+        root,
+        '--changed-file',
+        'e2e/stories/backend-real/notebook-first-success.story.md',
+      ], {
+        stdout: { write: (chunk: string) => stdout.push(chunk) },
+        stderr: { write: (chunk: string) => stderr.push(chunk) },
+        ownerPreflight: () => unifiedSubstrateConflictPreflight(evidencePath),
+        sentinelRunner: (profile) => {
+          sentinelProfiles.push(profile);
+          return passingSentinelResult();
+        },
+        runNpmScript: (script) => {
+          aliases.push(script);
+          return { status: 0 };
+        },
+      });
+
+      const combinedOutput = `${stdout.join('')}\n${stderr.join('')}`;
+
+      expect(exitCode).toBe(1);
+      expect(sentinelProfiles).toEqual([]);
+      expect(aliases).toEqual([]);
+      expect(combinedOutput.trim().split('\n')).toHaveLength(8);
+      expect(combinedOutput).toContain('AgentSmith Verification');
+      expect(combinedOutput).toContain('Blocker: environment_conflict');
+      expect(combinedOutput).toContain('Fix: npx tsx scripts/unified-deploy/substrate-lifecycle.ts down');
+      expect(combinedOutput).toContain('Rerun: npm run verify -- --goal=real --run');
+      expect(combinedOutput).toContain(`Evidence: ${evidencePath}`);
+      expect(combinedOutput).not.toContain('Recommended plan:');
+      expect(existsSync(join(root, 'story-acceptance-report.json'))).toBe(false);
+      expect(existsSync(join(root, 'verification-catalog.json'))).toBe(false);
     } finally {
       rmSync(root, { recursive: true, force: true });
     }
@@ -2207,6 +2311,7 @@ describe('verify human entrypoints', () => {
           sentinelProfiles.push(profile);
           return failingSentinelResult();
         },
+        ownerPreflight: passingOwnerPreflight,
         runNpmScript: (script) => {
           aliases.push(script);
           return { status: 0 };

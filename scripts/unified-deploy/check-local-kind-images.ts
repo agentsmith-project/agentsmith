@@ -5,7 +5,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 import { REPO_ROOT, asRecord, prepareUnifiedDeployEvidenceDir, type CheckFailure } from './manifest';
-import { parseKubernetesDocuments, resourceKind } from './kubernetes';
+import { parseKubernetesDocuments, resourceKind, resourceName } from './kubernetes';
 import { DEFAULT_SITE_ENV_PATH } from './render';
 
 type ProducerStatus = 'passed' | 'failed';
@@ -154,9 +154,16 @@ const DEFAULT_K8S_REGISTRY = 'kind-registry:5000';
 const DEFAULT_REGISTRY_PROJECT = 'mbos';
 const DEFAULT_TAG = 'local-kind-dev';
 const LOCAL_KIND_CONTROL_PLANE_NODE = 'agentsmith-control-plane';
+const AFSCP_SCHEMA_BOOTSTRAP_JOB = 'afscp-schema-bootstrap';
+const AFSCP_VOLUME_BOOTSTRAP_JOB = 'afscp-volume-bootstrap';
+const AFSCP_SCHEMA_BOOTSTRAP_COMMAND = '/usr/local/bin/afscp-migrate';
+const AFSCP_VOLUME_BOOTSTRAP_COMMAND = '/usr/local/bin/afscp-volume-bootstrap';
 const DOCKER_TIMEOUT_MS = 20 * 60_000;
 const SHORT_DOCKER_TIMEOUT_MS = 30_000;
 const SECRET_DIAGNOSTIC_PATTERN = /\b([A-Z0-9_]*(?:PASSWORD|SECRET|TOKEN|ACCESS_KEY|API_KEY|CLIENT_SECRET)[A-Z0-9_]*)=([^\s]+)/giu;
+const CLI_SECRET_ASSIGNMENT_PATTERN = /((?:--?|\/)?[A-Z0-9_-]*(?:PASSWORD|SECRET|TOKEN|ACCESS[-_]?KEY|API[-_]?KEY|CLIENT[-_]?SECRET)[A-Z0-9_-]*=)([^\s,"]+)/giu;
+const COMMAND_SECRET_KEY_PATTERN = /(?:password|secret|token|access[-_]?key|api[-_]?key|client[-_]?secret)/iu;
+const SECRET_LIKE_TOKEN_PATTERN = /\b[^\s,"]*(?:password|secret|token)[^\s,"]*/giu;
 const SHA256_DIGEST_PATTERN = /^sha256:[a-f0-9]{64}$/u;
 
 function errorMessage(error: unknown): string {
@@ -169,13 +176,46 @@ function addFailure(failures: CheckFailure[], failurePath: string, message: stri
 
 function redactDiagnostic(value: string): string {
   return value
+    .replace(CLI_SECRET_ASSIGNMENT_PATTERN, '$1[REDACTED]')
     .replace(SECRET_DIAGNOSTIC_PATTERN, '$1=[REDACTED]')
-    .replace(/(password|secret|token)[^,\s]*/giu, '[REDACTED]')
+    .replace(SECRET_LIKE_TOKEN_PATTERN, '[REDACTED]')
     .slice(0, 4000);
 }
 
 function dockerCommandText(args: readonly string[]): string {
   return `docker ${args.join(' ')}`;
+}
+
+function sanitizedCommandArgs(args: readonly string[]): string[] {
+  const sanitized: string[] = [];
+  let redactNext = false;
+  for (const arg of args) {
+    if (redactNext) {
+      sanitized.push('[REDACTED]');
+      redactNext = false;
+      continue;
+    }
+
+    const assignmentIndex = arg.indexOf('=');
+    const key = assignmentIndex >= 0 ? arg.slice(0, assignmentIndex) : arg;
+    if (COMMAND_SECRET_KEY_PATTERN.test(key)) {
+      if (assignmentIndex >= 0) {
+        sanitized.push(`${arg.slice(0, assignmentIndex + 1)}[REDACTED]`);
+      } else {
+        sanitized.push(arg);
+        redactNext = true;
+      }
+      continue;
+    }
+
+    sanitized.push(redactDiagnostic(arg));
+  }
+
+  return sanitized;
+}
+
+function sanitizedDockerCommandText(args: readonly string[]): string {
+  return dockerCommandText(sanitizedCommandArgs(args));
 }
 
 function commandText(command: string, args: readonly string[]): string {
@@ -1187,6 +1227,257 @@ function hostRefForK8sRef(imageRef: string, hostRegistry: string, k8sRegistry: s
     : imageRef;
 }
 
+function stringArray(value: unknown): string[] {
+  return Array.isArray(value) ? value.filter((item): item is string => typeof item === 'string') : [];
+}
+
+type AfscpBootstrapCommandContract = {
+  jobName: typeof AFSCP_SCHEMA_BOOTSTRAP_JOB | typeof AFSCP_VOLUME_BOOTSTRAP_JOB;
+  image: string;
+  command: string;
+  commandVector: string[];
+  args: string[];
+  renderedArgs: string[];
+  expectedCommand: string;
+  expectedArgs: string[];
+  actionFlags: string[];
+};
+
+function afscpBootstrapContractSpec(jobName: AfscpBootstrapCommandContract['jobName']): {
+  expectedCommand: string;
+  expectedArgs: string[];
+  actionFlags: string[];
+} {
+  if (jobName === AFSCP_SCHEMA_BOOTSTRAP_JOB) {
+    return {
+      expectedCommand: AFSCP_SCHEMA_BOOTSTRAP_COMMAND,
+      expectedArgs: ['--apply', '--check', '--timeout=60s'],
+      actionFlags: ['--apply', '--check'],
+    };
+  }
+
+  return {
+    expectedCommand: AFSCP_VOLUME_BOOTSTRAP_COMMAND,
+    expectedArgs: ['--ensure', '--check', '--timeout=60s'],
+    actionFlags: ['--ensure', '--check'],
+  };
+}
+
+function renderedAfscpBootstrapCommandContracts(renderedYaml: string): {
+  contracts: AfscpBootstrapCommandContract[];
+  failures: CheckFailure[];
+} {
+  const parsed = parseKubernetesDocuments(renderedYaml);
+  const failures: CheckFailure[] = parsed.failures.map((failure) => ({
+    path: `afscp-command-contract:${failure.path}`,
+    message: failure.message,
+  }));
+  const jobNames = [AFSCP_SCHEMA_BOOTSTRAP_JOB, AFSCP_VOLUME_BOOTSTRAP_JOB] as const;
+  const hasAnyAfscpBootstrapJob = parsed.documents.some((document) =>
+    resourceKind(document) === 'Job' && jobNames.includes(resourceName(document) as typeof jobNames[number]));
+  if (!hasAnyAfscpBootstrapJob) {
+    return { contracts: [], failures };
+  }
+
+  const contracts: AfscpBootstrapCommandContract[] = [];
+  for (const jobName of jobNames) {
+    const spec = afscpBootstrapContractSpec(jobName);
+    const job = parsed.documents.find((document) => resourceKind(document) === 'Job' && resourceName(document) === jobName);
+    if (!job) {
+      addFailure(failures, `afscp-command-contract:Job/${jobName}`, 'rendered AFSCP bootstrap command contract requires both schema and volume bootstrap Jobs');
+      continue;
+    }
+    const podSpec = asRecord(asRecord(asRecord(job.spec).template).spec);
+    const containers = Array.isArray(podSpec.containers) ? podSpec.containers.map(asRecord) : [];
+    const container = containers.find((item) => item.name === jobName) ?? containers[0] ?? {};
+    const image = typeof container.image === 'string' ? container.image : '';
+    const commandVector = stringArray(container.command);
+    const command = commandVector[0] ?? '';
+    const args = stringArray(container.args);
+    const renderedArgs = [...commandVector.slice(1), ...args];
+    if (!image || !command) {
+      addFailure(failures, `afscp-command-contract:Job/${jobName}`, 'rendered AFSCP bootstrap Job must include image and command');
+      continue;
+    }
+    if (command !== spec.expectedCommand) {
+      addFailure(
+        failures,
+        `afscp-command-contract:Job/${jobName}`,
+        `rendered AFSCP bootstrap Job must run ${spec.expectedCommand}`,
+      );
+    }
+    if (!spec.actionFlags.some((flag) => renderedArgs.includes(flag))) {
+      addFailure(
+        failures,
+        `afscp-command-contract:Job/${jobName}`,
+        `rendered AFSCP bootstrap Job must include an action flag (${spec.actionFlags.join(' or ')})`,
+      );
+    }
+    if (renderedArgs.join('\0') !== spec.expectedArgs.join('\0')) {
+      addFailure(
+        failures,
+        `afscp-command-contract:Job/${jobName}`,
+        `rendered AFSCP bootstrap Job command contract must be ${spec.expectedCommand} ${spec.expectedArgs.join(' ')}`,
+      );
+    }
+    contracts.push({
+      jobName,
+      image,
+      command,
+      commandVector,
+      args,
+      renderedArgs,
+      expectedCommand: spec.expectedCommand,
+      expectedArgs: spec.expectedArgs,
+      actionFlags: spec.actionFlags,
+    });
+  }
+
+  return { contracts, failures };
+}
+
+function acceptsPositiveAfscpContractSmoke(contract: AfscpBootstrapCommandContract, result: LocalKindImageCommandRunResult): boolean {
+  const output = `${result.stdout}\n${result.stderr}`;
+  if (result.exitCode === 0) {
+    return true;
+  }
+  if (/flag provided but not defined|unknown flag|unexpected argument/iu.test(output)) {
+    return false;
+  }
+  if (contract.jobName === AFSCP_SCHEMA_BOOTSTRAP_JOB) {
+    return result.exitCode === 2 && /AFSCP_MIGRATION_POSTGRES_DSN|AFSCP_POSTGRES_DSN|AFSCP_DATABASE_URL/u.test(output);
+  }
+  return result.exitCode === 2 && /AFSCP_VOLUME_BOOTSTRAP_POSTGRES_DSN|AFSCP_POSTGRES_DSN|AFSCP_DATABASE_URL/u.test(output);
+}
+
+function acceptsMissingActionAfscpContractSmoke(contract: AfscpBootstrapCommandContract, result: LocalKindImageCommandRunResult): boolean {
+  const output = `${result.stdout}\n${result.stderr}`;
+  return result.exitCode !== 0 && contract.actionFlags.every((flag) => output.includes(flag));
+}
+
+function acceptsVolumeWrongApplySmoke(result: LocalKindImageCommandRunResult): boolean {
+  return result.exitCode !== 0 && /apply/iu.test(`${result.stdout}\n${result.stderr}`) && /flag|unknown|defined/iu.test(`${result.stdout}\n${result.stderr}`);
+}
+
+async function runAfscpCommandContractSmoke(args: {
+  name: string;
+  contract: AfscpBootstrapCommandContract;
+  imageRef: string;
+  commandArgs: string[];
+  runner: LocalKindImageCommandRunner;
+  env: Record<string, string | undefined>;
+  accept: (result: LocalKindImageCommandRunResult) => boolean;
+  successDiagnostic: string;
+  failureDiagnostic: string;
+}): Promise<{ diagnostics: string[]; failure?: CheckFailure }> {
+  const dockerArgs = [
+    'run',
+    '--rm',
+    '--network=none',
+    '--entrypoint',
+    args.contract.command,
+    args.imageRef,
+    ...args.commandArgs,
+  ];
+  const commandForDiagnostics = sanitizedDockerCommandText(dockerArgs);
+  const result = await args.runner('docker', dockerArgs, {
+    cwd: REPO_ROOT,
+    env: args.env,
+    timeoutMs: SHORT_DOCKER_TIMEOUT_MS,
+  });
+  const output = redactDiagnostic(`${result.stdout}\n${result.stderr}`.trim());
+  if (args.accept(result)) {
+    return {
+      diagnostics: [
+        `${args.successDiagnostic}: ${commandForDiagnostics}; AFSCP command contract smoke only, not full bootstrap readiness`,
+      ],
+    };
+  }
+
+  return {
+    diagnostics: [
+      `${args.failureDiagnostic}: ${commandForDiagnostics}; AFSCP command contract smoke only, not full bootstrap readiness`,
+      output,
+    ].filter(Boolean),
+    failure: {
+      path: `afscp-command-contract:Job/${args.contract.jobName}`,
+      message: redactDiagnostic(`${args.failureDiagnostic}; ${commandForDiagnostics} exited ${result.exitCode}${output ? `: ${output}` : ''}`),
+    },
+  };
+}
+
+async function checkAfscpCommandContracts(options: {
+  renderedYaml: string;
+  runner: LocalKindImageCommandRunner;
+  env: Record<string, string | undefined>;
+  hostRegistry: string;
+  k8sRegistry: string;
+}): Promise<{ failures: CheckFailure[]; diagnostics: string[] }> {
+  const rendered = renderedAfscpBootstrapCommandContracts(options.renderedYaml);
+  const failures = [...rendered.failures];
+  const diagnostics: string[] = [];
+
+  for (const contract of rendered.contracts) {
+    const imageRef = hostRefForK8sRef(contract.image, options.hostRegistry, options.k8sRegistry);
+    const positive = await runAfscpCommandContractSmoke({
+      name: `${contract.jobName}:rendered`,
+      contract,
+      imageRef,
+      commandArgs: contract.renderedArgs,
+      runner: options.runner,
+      env: options.env,
+      accept: (result) => acceptsPositiveAfscpContractSmoke(contract, result),
+      successDiagnostic: `AFSCP command contract smoke passed for rendered Job/${contract.jobName}`,
+      failureDiagnostic: `rendered AFSCP command did not satisfy the ${contract.expectedCommand} argument contract`,
+    });
+    diagnostics.push(...positive.diagnostics);
+    if (positive.failure) {
+      failures.push(positive.failure);
+    }
+
+    const missingActionArgs = contract.renderedArgs.filter((arg) => !contract.actionFlags.includes(arg));
+    const missingAction = await runAfscpCommandContractSmoke({
+      name: `${contract.jobName}:missing-action`,
+      contract,
+      imageRef,
+      commandArgs: missingActionArgs,
+      runner: options.runner,
+      env: options.env,
+      accept: (result) => acceptsMissingActionAfscpContractSmoke(contract, result),
+      successDiagnostic: `AFSCP command contract smoke passed for missing action negative Job/${contract.jobName}`,
+      failureDiagnostic: `AFSCP command must reject missing action flag (${contract.actionFlags.join(' or ')})`,
+    });
+    diagnostics.push(...missingAction.diagnostics);
+    if (missingAction.failure) {
+      failures.push(missingAction.failure);
+    }
+
+    if (contract.jobName === AFSCP_VOLUME_BOOTSTRAP_JOB) {
+      const nonActionArgs = contract.renderedArgs.filter((arg) => !['--ensure', '--check', '--apply'].includes(arg));
+      const wrongApply = await runAfscpCommandContractSmoke({
+        name: `${contract.jobName}:wrong-apply`,
+        contract,
+        imageRef,
+        commandArgs: ['--apply', '--check', ...nonActionArgs],
+        runner: options.runner,
+        env: options.env,
+        accept: acceptsVolumeWrongApplySmoke,
+        successDiagnostic: `AFSCP command contract smoke passed for volume --apply negative Job/${contract.jobName}`,
+        failureDiagnostic: 'AFSCP volume bootstrap must reject the schema --apply flag and require --ensure for apply-like behavior',
+      });
+      diagnostics.push(...wrongApply.diagnostics);
+      if (wrongApply.failure) {
+        failures.push(wrongApply.failure);
+      }
+    }
+  }
+
+  return {
+    failures,
+    diagnostics: diagnostics.filter(Boolean).map(redactDiagnostic),
+  };
+}
+
 export async function checkLocalKindImagePreflight(options: {
   renderedYaml: string;
   runner: LocalKindImageCommandRunner;
@@ -1262,6 +1553,18 @@ export async function checkLocalKindImagePreflight(options: {
         `local-kind image prep is required; host registry does not have ${hostRef}`,
       );
     }
+  }
+
+  if (failures.length === 0) {
+    const afscpCommandContracts = await checkAfscpCommandContracts({
+      renderedYaml: options.renderedYaml,
+      runner: options.runner,
+      env,
+      hostRegistry,
+      k8sRegistry,
+    });
+    diagnostics.push(...afscpCommandContracts.diagnostics);
+    failures.push(...afscpCommandContracts.failures);
   }
 
   return {

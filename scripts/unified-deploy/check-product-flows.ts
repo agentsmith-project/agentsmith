@@ -41,6 +41,11 @@ import {
 type ProducerStatus = 'passed' | 'failed';
 type FlowStatus = 'passed' | 'failed';
 type JsonRecord = Record<string, unknown>;
+type ProductFlowFailure = CheckFailure & {
+  code?: string;
+  blocked_by?: ProductVerificationFlowId;
+  root_cause_flow?: ProductVerificationFlowId;
+};
 
 export type ProductFlowFetch = (
   input: string | URL | Request,
@@ -206,7 +211,9 @@ type ProductFlowEvidence = {
   generated_at: string;
   duration_ms: number;
   checks: JsonRecord;
-  failure?: CheckFailure;
+  blocked_by?: ProductVerificationFlowId;
+  root_cause_flow?: ProductVerificationFlowId;
+  failure?: ProductFlowFailure;
 };
 
 type ProductFlowAggregateEvidence = {
@@ -225,7 +232,8 @@ type ProductFlowAggregateEvidence = {
   };
   flows: ProductFlowEvidence[];
   flow_evidence_paths: Partial<Record<ProductVerificationFlowId, string>>;
-  failures: CheckFailure[];
+  root_cause_flow?: ProductVerificationFlowId;
+  failures: ProductFlowFailure[];
   paths: {
     report_path: string;
     log_path: string;
@@ -234,7 +242,7 @@ type ProductFlowAggregateEvidence = {
 
 export type ProductFlowProducerResult = {
   status: ProducerStatus;
-  failures: CheckFailure[];
+  failures: ProductFlowFailure[];
   evidence: ProductFlowAggregateEvidence;
 };
 
@@ -249,6 +257,8 @@ const DEFAULT_FILE_LIBRARY_CREATE_MAX_ATTEMPTS = 8;
 const DEFAULT_FILE_LIBRARY_CREATE_RETRY_BASE_MS = 500;
 const FILE_LIBRARY_CATALOG_COLLECTION = 'project_file_libraries';
 const FILE_LIBRARY_AFSCP_MAPPING_COLLECTION = 'project_file_library_afscp_mappings';
+const DEPENDENCY_BLOCKED_CODE = 'DEPENDENCY_BLOCKED';
+const SECRET_DIAGNOSTIC_PATTERN = /\b([A-Z0-9_]*(?:PASSWORD|SECRET|TOKEN|ACCESS_KEY|API_KEY|CLIENT_SECRET)[A-Z0-9_]*)=([^\s,"]+)/giu;
 const FLOW_ORDER: ProductVerificationFlowId[] = [
   'login_profile',
   'workspace_project',
@@ -258,6 +268,9 @@ const FLOW_ORDER: ProductVerificationFlowId[] = [
   'audit',
   'usage',
 ];
+const FLOW_DEPENDENCIES: Partial<Record<ProductVerificationFlowId, ProductVerificationFlowId[]>> = {
+  agent_task_managed_runner: ['files'],
+};
 const SERVICE_START_PATTERNS = [
   /\bnpm\s+run\s+(?:dev|start|backend-real(?::|$)|test:e2e:.*with-api|test:.*backend-real)/iu,
   /\b(?:make)\s+(?:local-real-up|local-real-reset)/iu,
@@ -275,6 +288,33 @@ function defaultFs(): ProductFlowFs {
 
 function errorMessage(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
+}
+
+function redactDiagnostic(value: string): string {
+  return value
+    .replace(SECRET_DIAGNOSTIC_PATTERN, '$1=[REDACTED]')
+    .replace(/(password|secret|token)[^,\s"]*/giu, '[REDACTED]')
+    .slice(0, 4000);
+}
+
+function redactJsonValue(value: unknown): unknown {
+  if (typeof value === 'string') {
+    return redactDiagnostic(value);
+  }
+  if (Array.isArray(value)) {
+    return value.map((item) => redactJsonValue(item));
+  }
+  if (value !== null && typeof value === 'object') {
+    return Object.fromEntries(
+      Object.entries(value as Record<string, unknown>)
+        .map(([key, nested]) => [key, redactJsonValue(nested)]),
+    );
+  }
+  return value;
+}
+
+function redactedJsonRecord(record: JsonRecord): JsonRecord {
+  return asRecord(redactJsonValue(record));
 }
 
 function nowIso(now: () => Date): string {
@@ -859,6 +899,19 @@ async function defaultFileLibraryFailureEvidenceProvider(
   return trace;
 }
 
+async function collectFileLibraryFailureEvidence(input: {
+  failureEvidenceProvider: FileLibraryFailureEvidenceProvider;
+} & FileLibraryFailureEvidenceInput): Promise<JsonRecord> {
+  try {
+    return redactedJsonRecord(await input.failureEvidenceProvider(input));
+  } catch (error: unknown) {
+    return {
+      enrichment_status: 'unavailable',
+      message: redactDiagnostic(errorMessage(error)),
+    };
+  }
+}
+
 function buildFlowEvidence(input: {
   truth: ProductFlowRuntimeTruth;
   flow: ProductVerificationFlowId;
@@ -866,7 +919,9 @@ function buildFlowEvidence(input: {
   startedMs: number;
   generatedAt: string;
   checks: JsonRecord;
-  failure?: CheckFailure;
+  blockedBy?: ProductVerificationFlowId;
+  rootCauseFlow?: ProductVerificationFlowId;
+  failure?: ProductFlowFailure;
 }): ProductFlowEvidence {
   return {
     schema_version: 'agentsmith.focused-product-flow.evidence/v1',
@@ -878,6 +933,8 @@ function buildFlowEvidence(input: {
     generated_at: input.generatedAt,
     duration_ms: Math.max(0, Date.now() - input.startedMs),
     checks: input.checks,
+    ...(input.blockedBy ? { blocked_by: input.blockedBy } : {}),
+    ...(input.rootCauseFlow ? { root_cause_flow: input.rootCauseFlow } : {}),
     ...(input.failure ? { failure: input.failure } : {}),
   };
 }
@@ -1853,6 +1910,17 @@ async function createFileLibraryWithPendingRetry(args: {
 
     if (response.status === 409 && errorCode === 'PROJECT_STORAGE_PENDING') {
       if (attempt >= maxAttempts) {
+        checks.provisioning_failure_trace = await collectFileLibraryFailureEvidence({
+          failureEvidenceProvider: args.failureEvidenceProvider,
+          truth: args.truth,
+          state: args.state,
+          fetchImpl: args.fetchImpl,
+          libraryName,
+          requestId: createRequestId,
+          responseStatus: response.status,
+          responseBody: body,
+          backendError,
+        });
         throw productFlowError(`file library create still pending after ${attempt} attempts; last_error=${lastError}`, checks);
       }
       await sleep(fileLibraryCreateRetryDelayMs(attempt, args.retryBaseMs));
@@ -1866,7 +1934,8 @@ async function createFileLibraryWithPendingRetry(args: {
       || errorCode === 'FILE_LIBRARY_PROVISIONING_FAILED'
       || errorCode === 'FILE_LIBRARY_OPERATION_FAILED'
     ) {
-      checks.provisioning_failure_trace = await args.failureEvidenceProvider({
+      checks.provisioning_failure_trace = await collectFileLibraryFailureEvidence({
+        failureEvidenceProvider: args.failureEvidenceProvider,
         truth: args.truth,
         state: args.state,
         fetchImpl: args.fetchImpl,
@@ -2259,6 +2328,87 @@ async function runSingleFlow(args: {
   }
 }
 
+function isDependencyBlockedFlow(flow: ProductFlowEvidence): boolean {
+  return flow.failure?.code === DEPENDENCY_BLOCKED_CODE;
+}
+
+function rootCauseFlowFor(flow: ProductFlowEvidence): ProductVerificationFlowId {
+  return flow.root_cause_flow ?? flow.failure?.root_cause_flow ?? flow.flow;
+}
+
+function firstFailedDependency(args: {
+  flow: ProductVerificationFlowId;
+  evidenceByFlow: Partial<Record<ProductVerificationFlowId, ProductFlowEvidence>>;
+}): ProductFlowEvidence | null {
+  const dependencies = FLOW_DEPENDENCIES[args.flow] ?? [];
+  for (const dependency of dependencies) {
+    const evidence = args.evidenceByFlow[dependency];
+    if (evidence?.status === 'failed') {
+      return evidence;
+    }
+  }
+  return null;
+}
+
+function flowNeedsProvider(flow: ProductVerificationFlowId, state: ProductFlowState): boolean {
+  return flow === 'chat_via_llmup' || (flow === 'agent_task_managed_runner' && !state.endpointId);
+}
+
+async function ensureProviderStartedForFlow(args: {
+  flow: ProductVerificationFlowId;
+  truth: ProductFlowRuntimeTruth;
+  state: ProductFlowState;
+  providerStarter: (truth: ProductFlowRuntimeTruth) => Promise<ProviderMockHandle>;
+}): Promise<void> {
+  if (!flowNeedsProvider(args.flow, args.state) || args.state.provider) {
+    return;
+  }
+  args.state.provider = await args.providerStarter(args.truth);
+  args.truth.provider.baseUrl = args.state.provider.baseUrl;
+  assertPodRoutableProviderBaseUrl(args.state.provider.baseUrl);
+}
+
+function buildDependencyBlockedFlowEvidence(input: {
+  truth: ProductFlowRuntimeTruth;
+  flow: ProductVerificationFlowId;
+  dependency: ProductFlowEvidence;
+  startedMs: number;
+  generatedAt: string;
+}): ProductFlowEvidence {
+  const blockedBy = input.dependency.flow;
+  const rootCauseFlow = rootCauseFlowFor(input.dependency);
+  const failure: ProductFlowFailure = {
+    path: `flow:${input.flow}`,
+    code: DEPENDENCY_BLOCKED_CODE,
+    blocked_by: blockedBy,
+    root_cause_flow: rootCauseFlow,
+    message: `${flowLabel(input.flow)} blocked by ${blockedBy}; root_cause_flow=${rootCauseFlow}`,
+  };
+
+  return buildFlowEvidence({
+    truth: input.truth,
+    flow: input.flow,
+    status: 'failed',
+    startedMs: input.startedMs,
+    generatedAt: input.generatedAt,
+    checks: {
+      blocked_by: blockedBy,
+      root_cause_flow: rootCauseFlow,
+      dependency_status: input.dependency.status,
+      dependency_failure: input.dependency.failure,
+    },
+    blockedBy,
+    rootCauseFlow,
+    failure,
+  });
+}
+
+function aggregateRootCauseFlow(flows: readonly ProductFlowEvidence[]): ProductVerificationFlowId | undefined {
+  const failedFlows = flows.filter((flow) => flow.status === 'failed' || flow.failure);
+  const primaryFailure = failedFlows.find((flow) => !isDependencyBlockedFlow(flow)) ?? failedFlows[0];
+  return primaryFailure ? rootCauseFlowFor(primaryFailure) : undefined;
+}
+
 async function loadTruth(options: ProductFlowProducerOptions, fsDriver: ProductFlowFs): Promise<ProductFlowRuntimeTruth> {
   const siteEnvPath = path.resolve(options.siteEnvPath ?? DEFAULT_LIVE_SITE_ENV_PATH);
   const substrateTruthPath = path.resolve(options.substrateTruthPath ?? DEFAULT_LIVE_SUBSTRATE_TRUTH_PATH);
@@ -2321,10 +2471,11 @@ async function writeAggregateEvidence(args: {
   if (!args.prepareEvidenceDir) {
     await args.fs.mkdir(evidenceDir, { recursive: true });
   }
-  const failures = args.flows.flatMap((flow) => flow.failure ? [flow.failure] : []);
+  const failures: ProductFlowFailure[] = args.flows.flatMap((flow) => flow.failure ? [flow.failure] : []);
   const status: ProducerStatus = args.flows.length > 0 && failures.length === 0 && args.flows.every((flow) => flow.status === 'passed')
     ? 'passed'
     : 'failed';
+  const rootCauseFlow = aggregateRootCauseFlow(args.flows);
   const basename = `product-flows-${args.generatedAt.replace(/[:.]/gu, '-')}`;
   const reportPath = path.join(evidenceDir, `${basename}.json`);
   const logPath = path.join(evidenceDir, `${basename}.log`);
@@ -2346,6 +2497,7 @@ async function writeAggregateEvidence(args: {
     },
     flows: args.flows,
     flow_evidence_paths: args.flowPaths,
+    ...(rootCauseFlow ? { root_cause_flow: rootCauseFlow } : {}),
     failures,
     paths: {
       report_path: reportPath,
@@ -2460,28 +2612,59 @@ export async function runUnifiedDeployProductFlowsProducer(
 
   const flowEvidence: ProductFlowEvidence[] = [];
   const flowPaths: Partial<Record<ProductVerificationFlowId, string>> = {};
+  const evidenceByFlow: Partial<Record<ProductVerificationFlowId, ProductFlowEvidence>> = {};
 
   try {
-    if (flowIds.includes('chat_via_llmup') || flowIds.includes('agent_task_managed_runner')) {
-      state.provider = await providerStarter(truth);
-      truth.provider.baseUrl = state.provider.baseUrl;
-      assertPodRoutableProviderBaseUrl(state.provider.baseUrl);
-    }
     for (const flow of flowIds) {
-      const evidence = await runSingleFlow({
-        flow,
-        truth,
-        state,
-        fetchImpl,
-        seedManagedRunner,
-        now,
-        agentTaskPolls: options.agentTaskPolls ?? DEFAULT_AGENT_TASK_POLLS,
-        agentTaskPollIntervalMs: options.agentTaskPollIntervalMs ?? DEFAULT_AGENT_TASK_POLL_INTERVAL_MS,
-        fileLibraryCreateMaxAttempts: options.fileLibraryCreateMaxAttempts ?? DEFAULT_FILE_LIBRARY_CREATE_MAX_ATTEMPTS,
-        fileLibraryCreateRetryBaseMs: options.fileLibraryCreateRetryBaseMs ?? DEFAULT_FILE_LIBRARY_CREATE_RETRY_BASE_MS,
-        fileLibraryFailureEvidenceProvider,
-      });
+      const failedDependency = firstFailedDependency({ flow, evidenceByFlow });
+      const evidence = failedDependency
+        ? buildDependencyBlockedFlowEvidence({
+          truth,
+          flow,
+          dependency: failedDependency,
+          startedMs: Date.now(),
+          generatedAt: nowIso(now),
+        })
+        : await (async () => {
+          const startedMs = Date.now();
+          try {
+            await ensureProviderStartedForFlow({
+              flow,
+              truth,
+              state,
+              providerStarter,
+            });
+          } catch (error: unknown) {
+            return buildFlowEvidence({
+              truth,
+              flow,
+              status: 'failed',
+              startedMs,
+              generatedAt: nowIso(now),
+              checks: {},
+              failure: {
+                path: `flow:${flow}`,
+                message: errorMessage(error),
+              },
+            });
+          }
+
+          return runSingleFlow({
+            flow,
+            truth,
+            state,
+            fetchImpl,
+            seedManagedRunner,
+            now,
+            agentTaskPolls: options.agentTaskPolls ?? DEFAULT_AGENT_TASK_POLLS,
+            agentTaskPollIntervalMs: options.agentTaskPollIntervalMs ?? DEFAULT_AGENT_TASK_POLL_INTERVAL_MS,
+            fileLibraryCreateMaxAttempts: options.fileLibraryCreateMaxAttempts ?? DEFAULT_FILE_LIBRARY_CREATE_MAX_ATTEMPTS,
+            fileLibraryCreateRetryBaseMs: options.fileLibraryCreateRetryBaseMs ?? DEFAULT_FILE_LIBRARY_CREATE_RETRY_BASE_MS,
+            fileLibraryFailureEvidenceProvider,
+          });
+        })();
       flowEvidence.push(evidence);
+      evidenceByFlow[flow] = evidence;
       flowPaths[flow] = await writeFlowEvidence({
         fs: fsDriver,
         evidenceDir,

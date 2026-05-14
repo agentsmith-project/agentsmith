@@ -1,0 +1,182 @@
+import { readFileSync } from 'node:fs';
+
+import { describe, expect, it } from 'vitest';
+
+import {
+  createDefaultIntegrationDepsProbe,
+  waitForIntegrationDepsReady,
+  type IntegrationDepsProbeName,
+} from './integration-deps-ready';
+
+describe('integration deps readiness polling', () => {
+  it('continues immediately when all dependencies are healthy', async () => {
+    const probes: IntegrationDepsProbeName[] = [];
+    const sleeps: number[] = [];
+
+    const result = await waitForIntegrationDepsReady({
+      timeoutMs: 25_000,
+      pollMs: 500,
+      now: () => 1_000,
+      sleep: async (delayMs) => {
+        sleeps.push(delayMs);
+      },
+      probe: async (name) => {
+        probes.push(name);
+        return true;
+      },
+    });
+
+    expect(result.ok).toBe(true);
+    expect(result.attempts).toBe(1);
+    expect(result.pending).toEqual([]);
+    expect(sleeps).toEqual([]);
+    expect(probes).toEqual(['postgres', 'mongo', 'redis', 'minio', 'keycloak']);
+  });
+
+  it('runs dependency probes in parallel within each polling attempt', async () => {
+    const probes: IntegrationDepsProbeName[] = [];
+    let activeProbeCount = 0;
+    let maxActiveProbeCount = 0;
+
+    const result = await waitForIntegrationDepsReady({
+      timeoutMs: 25_000,
+      pollMs: 500,
+      now: () => 1_000,
+      sleep: async () => {
+        throw new Error('healthy parallel probes should not sleep');
+      },
+      probe: async (name) => {
+        probes.push(name);
+        activeProbeCount += 1;
+        maxActiveProbeCount = Math.max(maxActiveProbeCount, activeProbeCount);
+        await Promise.resolve();
+        activeProbeCount -= 1;
+        return true;
+      },
+    });
+
+    expect(result.ok).toBe(true);
+    expect(result.attempts).toBe(1);
+    expect(maxActiveProbeCount).toBe(5);
+    expect(probes).toEqual(['postgres', 'mongo', 'redis', 'minio', 'keycloak']);
+  });
+
+  it('polls only until health is reached and does not use a fixed 25 second sleep', async () => {
+    let clock = 0;
+    const sleeps: number[] = [];
+    const attemptsByProbe = new Map<IntegrationDepsProbeName, number>();
+
+    const result = await waitForIntegrationDepsReady({
+      timeoutMs: 10_000,
+      pollMs: 250,
+      now: () => clock,
+      sleep: async (delayMs) => {
+        sleeps.push(delayMs);
+        clock += delayMs;
+      },
+      probe: async (name) => {
+        attemptsByProbe.set(name, (attemptsByProbe.get(name) ?? 0) + 1);
+        return name === 'keycloak'
+          ? (attemptsByProbe.get(name) ?? 0) >= 3
+          : true;
+      },
+    });
+
+    expect(result).toMatchObject({
+      ok: true,
+      attempts: 3,
+      elapsedMs: 500,
+      pending: [],
+    });
+    expect(sleeps).toEqual([250, 250]);
+    expect(sleeps).not.toContain(25_000);
+  });
+
+  it('fails with bounded timeout and reports pending dependencies', async () => {
+    let clock = 0;
+
+    const result = await waitForIntegrationDepsReady({
+      timeoutMs: 750,
+      pollMs: 250,
+      now: () => clock,
+      sleep: async (delayMs) => {
+        clock += delayMs;
+      },
+      probe: async (name) => name !== 'keycloak',
+    });
+
+    expect(result.ok).toBe(false);
+    expect(result.pending).toEqual(['keycloak']);
+    expect(result.elapsedMs).toBe(750);
+  });
+
+  it('passes the shared global deadline into each probe instead of accumulating per-service timeouts', async () => {
+    let clock = 100;
+    const remainingByAttempt: number[][] = [];
+    let attemptIndex = -1;
+
+    const result = await waitForIntegrationDepsReady({
+      timeoutMs: 750,
+      pollMs: 250,
+      now: () => clock,
+      sleep: async (delayMs) => {
+        clock += delayMs;
+      },
+      probe: async (_name, context) => {
+        if (remainingByAttempt[attemptIndex]?.length === 5) {
+          attemptIndex += 1;
+        }
+        if (attemptIndex < 0) {
+          attemptIndex = 0;
+        }
+        remainingByAttempt[attemptIndex] ??= [];
+        remainingByAttempt[attemptIndex].push(context.remainingMs);
+        return false;
+      },
+    });
+
+    expect(result.ok).toBe(false);
+    expect(result.elapsedMs).toBe(750);
+    expect(remainingByAttempt[0]).toEqual([750, 750, 750, 750, 750]);
+    expect(remainingByAttempt.at(-1)?.every((remainingMs) => remainingMs <= 750)).toBe(true);
+  });
+
+  it('uses Docker health status before falling back to plain TCP for compose-health services', async () => {
+    const calls: string[] = [];
+    const probe = createDefaultIntegrationDepsProbe({
+      postgresPort: 15432,
+      mongoPort: 17017,
+      redisPort: 16379,
+      minioPort: 19000,
+      keycloakBaseUrl: 'http://localhost:18080',
+      probeTimeoutMs: 1500,
+    }, {
+      dockerHealthProbe: async (name) => {
+        calls.push(`health:${name}`);
+        return name === 'postgres' ? true : null;
+      },
+      tcpProbe: async (port) => {
+        calls.push(`tcp:${port}`);
+        return true;
+      },
+      httpProbe: async (url) => {
+        calls.push(`http:${url}`);
+        return true;
+      },
+    });
+
+    await expect(probe('postgres', {
+      deadlineMs: 1_000,
+      remainingMs: 1_000,
+    })).resolves.toBe(true);
+    expect(calls).toEqual(['health:postgres']);
+  });
+
+  it('wires Makefile deps-ready to health polling instead of DEPS_READY_SLEEP', () => {
+    const makefile = readFileSync('Makefile', 'utf8');
+
+    expect(makefile).toContain('scripts/integration-deps-ready.ts');
+    expect(makefile).not.toContain('DEPS_READY_SLEEP');
+    expect(makefile).not.toContain('sleep $(DEPS_READY_SLEEP)');
+  });
+});

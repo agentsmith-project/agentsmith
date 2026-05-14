@@ -16,6 +16,12 @@ import {
   type SentinelPreflightResult,
   type SentinelProfile,
 } from './sentinel-preflight';
+import {
+  defaultResourceOwnerPreflightEvidencePath,
+  renderResourceOwnerPreflightSummary,
+  runResourceOwnerPreflight,
+  type ResourceOwnerPreflightResult,
+} from './resource-owner-preflight';
 
 type CliWriteStream = {
   write(chunk: string): unknown;
@@ -37,6 +43,7 @@ type ReleaseReadyDependencies = {
     env: NodeJS.ProcessEnv,
   ) => NpmScriptResult;
   sentinelRunner?: (profile: SentinelProfile, env: NodeJS.ProcessEnv, cwd: string) => SentinelPreflightResult;
+  ownerPreflight?: (evidencePath: string, env: NodeJS.ProcessEnv, cwd: string) => ResourceOwnerPreflightResult;
 };
 
 function isCliEntrypoint(fileName: string): boolean {
@@ -74,7 +81,10 @@ function timestampRunId(): string {
   return `release-ready-${new Date().toISOString().replace(/[-:]/g, '').replace(/\.\d{3}Z$/, 'Z')}`;
 }
 
-function resolveReleaseReadyCampaignContext(env: NodeJS.ProcessEnv): {
+function resolveReleaseReadyCampaignContext(
+  env: NodeJS.ProcessEnv,
+  defaultRunId = timestampRunId(),
+): {
   runId: string;
   campaignRoot: string;
   explicitCampaignRoot: boolean;
@@ -82,7 +92,7 @@ function resolveReleaseReadyCampaignContext(env: NodeJS.ProcessEnv): {
   const explicitCampaignRoot = Boolean(env.RELEASE_CAMPAIGN_ROOT?.trim());
   const runId = env.RELEASE_CAMPAIGN_RUN_ID !== undefined
     ? assertSafeReleaseCampaignRunId(env.RELEASE_CAMPAIGN_RUN_ID)
-    : timestampRunId();
+    : defaultRunId;
   const releaseRunsRoot = resolve(env.RELEASE_RUNS_ROOT?.trim() || join('artifacts', 'release-runs'));
   const campaignRoot = explicitCampaignRoot
     ? resolve(env.RELEASE_CAMPAIGN_ROOT!)
@@ -104,6 +114,25 @@ export function runReleaseReady(
   const cwd = dependencies.cwd ?? process.cwd();
   const runNpmScript = dependencies.runNpmScript ?? defaultRunNpmScript;
   const sentinelRunner = dependencies.sentinelRunner ?? defaultSentinelRunner;
+  const ownerPreflight = dependencies.ownerPreflight ?? defaultOwnerPreflight;
+  const defaultRunId = timestampRunId();
+  const preflightEnv = env.RELEASE_CAMPAIGN_RUN_ID === undefined
+    ? { ...env, RELEASE_CAMPAIGN_RUN_ID: defaultRunId }
+    : env;
+
+  const ownerPreflightEvidencePath = defaultResourceOwnerPreflightEvidencePath({
+    target: 'release-ready',
+    env: preflightEnv,
+    cwd,
+  });
+  const ownerPreflightResult = ownerPreflight(ownerPreflightEvidencePath, env, cwd);
+  if (!ownerPreflightResult.ok) {
+    stdout.write(renderResourceOwnerPreflightSummary(ownerPreflightResult, {
+      title: 'AgentSmith Release Readiness',
+      rerunCommand: 'npm run release:ready',
+    }));
+    return 1;
+  }
 
   const precheck = runNpmScript('test:release:precheck', [], env);
 
@@ -137,7 +166,7 @@ export function runReleaseReady(
 
   let campaignContext: ReturnType<typeof resolveReleaseReadyCampaignContext>;
   try {
-    campaignContext = resolveReleaseReadyCampaignContext(env);
+    campaignContext = resolveReleaseReadyCampaignContext(env, defaultRunId);
   } catch (error) {
     stdout.write(renderNotStarted(error instanceof Error ? error.message : String(error), {
       next: 'fix the release campaign run id, then run: npm run release:ready',
@@ -184,6 +213,19 @@ function defaultSentinelRunner(
   return runSentinelPreflightSync({
     profile,
     env: buildSentinelPreflightEnv({ profile, env, cwd }),
+  });
+}
+
+function defaultOwnerPreflight(
+  evidencePath: string,
+  env: NodeJS.ProcessEnv,
+  cwd: string,
+): ResourceOwnerPreflightResult {
+  return runResourceOwnerPreflight({
+    target: 'release-ready',
+    evidencePath,
+    env,
+    cwd,
   });
 }
 

@@ -228,12 +228,13 @@ verify-governance-with-report:
 deps-up:
 	$(NPM) run integration:deps:up
 
-# Wait for integration services to accept connections (Postgres is fast; Keycloak often needs 20–30s).
-# Override with DEPS_READY_SLEEP=30 if keycloak init still fails.
-DEPS_READY_SLEEP ?= 25
+# Poll integration services until they are ready, with a bounded timeout.
+DEPS_READY_TIMEOUT_MS ?= 120000
+DEPS_READY_POLL_MS ?= 1000
 deps-ready: deps-up
-	@echo "[make] waiting $(DEPS_READY_SLEEP)s for integration services..."
-	@sleep $(DEPS_READY_SLEEP)
+	DEPS_READY_TIMEOUT_MS=$(DEPS_READY_TIMEOUT_MS) \
+	DEPS_READY_POLL_MS=$(DEPS_READY_POLL_MS) \
+	npx tsx scripts/integration-deps-ready.ts
 
 # Order: deps-smoke runs last (verifies pgvector, which is created by deps-init).
 deps-init: deps-ready
@@ -577,6 +578,7 @@ local-manual-reset:
 	./scripts/local-manual-down.sh && $(MAKE) substrate-reset SUBSTRATE=local-dev && $(MAKE) substrate-up SUBSTRATE=local-dev && $(MAKE) substrate-reseed SUBSTRATE=local-dev && $(MAKE) local-manual-up && $(MAKE) local-manual-seed-agent-task
 
 local-real-up:
+	npx tsx scripts/governance/resource-owner-preflight.ts --target=local-real-up
 	$(MAKE) substrate-up
 	$(MAKE) substrate-reseed
 	$(MAKE) local-manual-up

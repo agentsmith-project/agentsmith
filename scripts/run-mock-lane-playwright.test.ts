@@ -108,4 +108,35 @@ describe('run-mock-lane-playwright', () => {
     expect(warmRouteIndex).toBeGreaterThanOrEqual(0);
     expect(acceptedStatusIndex).toBeGreaterThan(warmRouteIndex);
   });
+
+  it('requires explicit allow-empty selection before short-circuiting empty grep selections', () => {
+    const script = readFileSync('scripts/run-mock-lane-playwright.sh', 'utf8');
+    const probeIndex = script.indexOf('playwright_args_request_empty_selection_probe()');
+    const selectionCallIndex = script.indexOf('if handle_empty_playwright_selection "${PLAYWRIGHT_ARGS[@]}"; then');
+    const startServerIndex = script.indexOf('start_mock_server\nwrite_visual_build_info');
+
+    expect(probeIndex).toBeGreaterThanOrEqual(0);
+    expect(script).toContain('npx playwright test "$@" --list');
+    expect(script).toContain('Total: 0 tests in 0 files');
+    expect(script).toContain('playwright_empty_selection_allowed "$@"');
+    expect(script).toContain('MOCK_LANE_ALLOW_EMPTY_SELECTION');
+    expect(script).toContain('--allow-empty-selection');
+    expect(script).toContain('"status": "${evidence_status}"');
+    expect(script).toContain('"selection": "${selection}"');
+    expect(script).toContain('"passed"');
+    expect(script).toContain('"failed"');
+    expect(script).toContain('"empty_allowed"');
+    expect(script).toContain('"empty_disallowed"');
+    expect(script).toContain('"helper_version": "${PLAYWRIGHT_EMPTY_SELECTION_HELPER_VERSION}"');
+    expect(script).toContain('"argv": ${argv_json},');
+    expect(script).toContain('"grep": ${grep_json},');
+    expect(script).toContain('"project": ${project_json},');
+    expect(script).toContain('"matched_count": ${matched_count},');
+    expect(script).toContain("node -e 'process.stdout.write(JSON.stringify(process.argv.slice(1)))' -- \"$@\"");
+    expect(script).toContain("' -- \"${long_name}\" \"${short_name}\" \"$@\"");
+    expect(script).not.toContain('"status": "skipped"');
+    expect(script).not.toContain('"selection": "skipped"');
+    expect(selectionCallIndex).toBeGreaterThan(probeIndex);
+    expect(startServerIndex).toBeGreaterThan(selectionCallIndex);
+  });
 });

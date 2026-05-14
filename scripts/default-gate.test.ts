@@ -1,5 +1,5 @@
 import { execFileSync, spawnSync } from 'node:child_process';
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
@@ -7,11 +7,13 @@ import { describe, expect, it } from 'vitest';
 
 type PureCheckHarnessOptions = {
   commandExitCode: number;
+  commandStderr?: string;
   evidenceWriterExitCode?: number;
   reportRootEnabled: boolean;
 };
 
 type PureCheckHarnessResult = {
+  capturedStderrSummary: string | null;
   processStatus: number | null;
   pureCheckStatus: number;
   stderr: string;
@@ -44,7 +46,7 @@ function runPureCheckHarness(options: PureCheckHarnessOptions): PureCheckHarness
       join(root, 'check-command.sh'),
       `#!/usr/bin/env bash
 printf 'check stdout\\n'
-printf 'check stderr\\n' >&2
+printf '%s' ${shellQuote(options.commandStderr ?? 'check stderr\n')} >&2
 exit ${options.commandExitCode}
 `,
       { mode: 0o755 },
@@ -52,6 +54,19 @@ exit ${options.commandExitCode}
     writeFileSync(
       join(binDir, 'npx'),
       `#!/usr/bin/env bash
+stderr_summary_file=""
+while [[ "$#" -gt 0 ]]; do
+  if [[ "$1" == "--stderr-summary-file" ]]; then
+    stderr_summary_file="$2"
+    shift 2
+    continue
+  fi
+  shift
+done
+if [[ -n "\${FAKE_NPX_CAPTURE_DIR:-}" && -n "\${stderr_summary_file}" ]]; then
+  mkdir -p "\${FAKE_NPX_CAPTURE_DIR}"
+  cp "\${stderr_summary_file}" "\${FAKE_NPX_CAPTURE_DIR}/stderr-summary.txt"
+fi
 printf '[fake evidence writer] %s\\n' "$*" >&2
 exit "\${FAKE_NPX_EXIT:-0}"
 `,
@@ -81,6 +96,7 @@ printf '__RUN_PURE_CHECK_STATUS__=%s\\n' "\${pure_check_status}"
 
     const env: NodeJS.ProcessEnv = {
       ...process.env,
+      FAKE_NPX_CAPTURE_DIR: join(root, 'capture'),
       FAKE_NPX_EXIT: String(options.evidenceWriterExitCode ?? 0),
       PATH: `${binDir}:${process.env.PATH ?? ''}`,
     };
@@ -104,7 +120,12 @@ stderr:
 ${stderr}`);
     }
 
+    const capturedStderrSummaryPath = join(root, 'capture', 'stderr-summary.txt');
+
     return {
+      capturedStderrSummary: existsSync(capturedStderrSummaryPath)
+        ? readFileSync(capturedStderrSummaryPath, 'utf8')
+        : null,
       processStatus: result.status,
       pureCheckStatus: Number(statusMatch[1]),
       stderr,
@@ -216,6 +237,43 @@ describe('default engineering gate profiles', () => {
     expect(result.stderr).toContain('[default-gate] warning: pure check producer evidence writer failed');
     expect(result.stderr).toContain('probe-check');
     expect(result.stderr).toContain('43');
+  });
+
+  it('filters allowlisted expected stderr from successful pure check evidence summaries', () => {
+    const result = runPureCheckHarness({
+      commandExitCode: 0,
+      commandStderr: 'Browserslist: caniuse-lite is outdated. Please run:\n',
+      reportRootEnabled: true,
+    });
+
+    expect(result.processStatus).toBe(0);
+    expect(result.pureCheckStatus).toBe(0);
+    expect(result.stderr).toContain('Browserslist: caniuse-lite is outdated');
+    expect(result.capturedStderrSummary).toBe('');
+  });
+
+  it('preserves stderr summaries for failed checks even when the text is allowlisted on success', () => {
+    const result = runPureCheckHarness({
+      commandExitCode: 7,
+      commandStderr: 'Browserslist: caniuse-lite is outdated. Please run:\n',
+      reportRootEnabled: true,
+    });
+
+    expect(result.processStatus).toBe(0);
+    expect(result.pureCheckStatus).toBe(7);
+    expect(result.capturedStderrSummary).toContain('Browserslist: caniuse-lite is outdated');
+  });
+
+  it('keeps unexpected successful stderr compacted into producer evidence instead of failing the check', () => {
+    const result = runPureCheckHarness({
+      commandExitCode: 0,
+      commandStderr: 'unexpected warning from toolchain\n',
+      reportRootEnabled: true,
+    });
+
+    expect(result.processStatus).toBe(0);
+    expect(result.pureCheckStatus).toBe(0);
+    expect(result.capturedStderrSummary).toContain('unexpected warning from toolchain');
   });
 
   it('keeps the original pure check failure code when producer evidence writing fails', () => {

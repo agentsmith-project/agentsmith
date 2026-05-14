@@ -331,6 +331,48 @@ function makeFileLibraryBlockedFetch(observed: { createAttempts: number }): Prod
   });
 }
 
+function makeFilesBlockedWithManagedRunnerObserverFetch(observed: {
+  createAttempts: number;
+  managedRunnerRequests: string[];
+}): ProductFlowFetch {
+  return vi.fn(async (input: string | URL | Request, init?: RequestInit) => {
+    const url = String(input);
+    const method = init?.method ?? 'GET';
+    if (url.endsWith('/api/public/workspaces')) {
+      return responseJson(200, { items: [{ id: 'ws_default' }] });
+    }
+    if (url.endsWith('/projects') && method === 'POST') {
+      return responseJson(201, { id: 'proj_dependency_blocked', name: 'Dependency Blocked Product Flow' });
+    }
+    if (url.endsWith('/projects') && method === 'GET') {
+      return responseJson(200, { items: [{ id: 'proj_dependency_blocked', name: 'Dependency Blocked Product Flow' }] });
+    }
+    if (url.endsWith('/projects/proj_dependency_blocked') && method === 'GET') {
+      return responseJson(200, { id: 'proj_dependency_blocked', name: 'Dependency Blocked Product Flow' });
+    }
+    if (url.endsWith('/file-libraries') && method === 'POST') {
+      observed.createAttempts += 1;
+      return responseJson(409, {
+        error_code: 'PROJECT_STORAGE_BLOCKED',
+        message: 'Project storage initialization failed.',
+      });
+    }
+    if (
+      url.endsWith('/credentials')
+      || url.endsWith('/endpoints')
+      || url.endsWith('/agent-runners')
+      || url.endsWith('/agent-task-model-setting')
+      || url.includes('/agent-runners/')
+      || url.endsWith('/tasks')
+      || url.includes('/tasks/')
+    ) {
+      observed.managedRunnerRequests.push(`${method} ${url}`);
+      return responseJson(500, { error: 'managed_runner_dependency_block_should_have_short_circuited' });
+    }
+    return responseJson(404, { error: `unexpected:${method}:${url}` });
+  });
+}
+
 function makeFileLibraryProvisioningFailedFetch(observed: { createAttempts: number; requestId: string }): ProductFlowFetch {
   return vi.fn(async (input: string | URL | Request, init?: RequestInit) => {
     const url = String(input);
@@ -704,6 +746,159 @@ describe('unified deploy product flow producer', () => {
       create_last_error_code: 'PROJECT_STORAGE_BLOCKED',
     });
     expect(filesFlow?.failure?.message).toContain('file library create blocked');
+  });
+
+  it('dependency-blocks managed runner when the files flow has already failed', async () => {
+    const observed = { createAttempts: 0, managedRunnerRequests: [] as string[] };
+    const writes: Record<string, string> = {};
+    const providerStarter = vi.fn(async () => ({
+      baseUrl: 'http://172.19.0.1:39999/v1',
+      getRequestCount: () => 0,
+      close: async () => undefined,
+    }));
+    const managedRunnerSeeder = vi.fn(async () => {
+      throw new Error('managed runner seed should not run after files failed');
+    });
+    const result = await runUnifiedDeployProductFlowsProducer({
+      siteEnvPath: 'site.env',
+      substrateTruthPath: 'connection.env',
+      evidenceDir: 'evidence',
+      fs: makeFs(writes),
+      fetch: makeFilesBlockedWithManagedRunnerObserverFetch(observed),
+      flowIds: ['workspace_project', 'files', 'agent_task_managed_runner'],
+      fileLibraryCreateRetryBaseMs: 0,
+      backendBootstrapper: async () => ({}),
+      keycloakBootstrapper: async () => ({
+        users: {
+          devAdmin: { user_id: 'kc-dev-admin', email: 'dev-admin@example.com', name: 'Dev Admin' },
+          integrationUser: { user_id: 'kc-integration-user', email: 'integration-user@example.com', name: 'Integration User' },
+        },
+      }),
+      workspaceBootstrapper: async () => undefined,
+      tokenProvider: async () => 'token-dev-admin',
+      providerStarter,
+      managedRunnerSeeder,
+      now: () => new Date('2026-05-07T00:00:00.000Z'),
+    });
+
+    const filesFlow = result.evidence.flows.find((flow) => flow.flow === 'files');
+    const managedRunnerFlow = result.evidence.flows.find((flow) => flow.flow === 'agent_task_managed_runner');
+    expect(result.status).toBe('failed');
+    expect(observed.createAttempts).toBe(1);
+    expect(observed.managedRunnerRequests).toEqual([]);
+    expect(providerStarter).not.toHaveBeenCalled();
+    expect(managedRunnerSeeder).not.toHaveBeenCalled();
+    expect(filesFlow?.status).toBe('failed');
+    expect(managedRunnerFlow).toMatchObject({
+      flow: 'agent_task_managed_runner',
+      status: 'failed',
+      blocked_by: 'files',
+      root_cause_flow: 'files',
+      failure: {
+        path: 'flow:agent_task_managed_runner',
+        code: 'DEPENDENCY_BLOCKED',
+      },
+    });
+    expect(managedRunnerFlow?.failure?.message).toContain('blocked by files');
+    expect(managedRunnerFlow).not.toHaveProperty('flow_evidence_paths');
+    expect(result.evidence).toMatchObject({
+      status: 'failed',
+      root_cause_flow: 'files',
+    });
+    const flowEvidencePayloads = Object.entries(writes)
+      .filter(([filePath, text]) => filePath.includes('product-flow-') && text.trim().startsWith('{'))
+      .map(([, text]) => JSON.parse(text) as Record<string, unknown>);
+    expect(flowEvidencePayloads).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        flow: 'files',
+        status: 'failed',
+      }),
+      expect.objectContaining({
+        flow: 'agent_task_managed_runner',
+        status: 'failed',
+        failure: expect.objectContaining({
+          code: 'DEPENDENCY_BLOCKED',
+          blocked_by: 'files',
+        }),
+      }),
+    ]));
+  });
+
+  it('enriches files pending-to-limit evidence without replacing the primary failure', async () => {
+    const observed = { createAttempts: 0 };
+    const writes: Record<string, string> = {};
+    const failureEvidenceProvider = vi.fn(async () => ({
+      evidence_kind: 'file_library_provisioning_failure',
+      request_correlation_id: 'pending-request',
+      mongo_evidence: {
+        afscp_mapping: {
+          operation_id: 'op_pending_storage',
+          operation_status: 'queued',
+          last_error_code: 'STORAGE_PENDING',
+        },
+      },
+      afscp_operation: {
+        operation_id: 'op_pending_storage',
+        operation_state: 'queued',
+        diagnostic: 'AFSCP_API_SERVICE_TOKENS=super_secret_token_123',
+      },
+      evidence_sources: ['backend_response', 'mongo:project_file_library_afscp_mappings', 'api:file-library-operations'],
+    }));
+
+    const result = await runUnifiedDeployProductFlowsProducer({
+      siteEnvPath: 'site.env',
+      substrateTruthPath: 'connection.env',
+      evidenceDir: 'evidence',
+      fs: makeFs(writes),
+      fetch: makeFileLibraryPendingFetch(observed, 10),
+      flowIds: ['workspace_project', 'files'],
+      fileLibraryCreateMaxAttempts: 2,
+      fileLibraryCreateRetryBaseMs: 0,
+      fileLibraryFailureEvidenceProvider: failureEvidenceProvider,
+      backendBootstrapper: async () => ({}),
+      keycloakBootstrapper: async () => ({
+        users: {
+          devAdmin: { user_id: 'kc-dev-admin', email: 'dev-admin@example.com', name: 'Dev Admin' },
+          integrationUser: { user_id: 'kc-integration-user', email: 'integration-user@example.com', name: 'Integration User' },
+        },
+      }),
+      workspaceBootstrapper: async () => undefined,
+      tokenProvider: async () => 'token-dev-admin',
+      now: () => new Date('2026-05-07T00:00:00.000Z'),
+    });
+
+    const filesFlow = result.evidence.flows.find((flow) => flow.flow === 'files');
+    expect(result.status).toBe('failed');
+    expect(observed.createAttempts).toBe(2);
+    expect(failureEvidenceProvider).toHaveBeenCalledWith(expect.objectContaining({
+      responseStatus: 409,
+      backendError: expect.objectContaining({
+        error_code: 'PROJECT_STORAGE_PENDING',
+      }),
+    }));
+    expect(filesFlow?.failure?.message).toContain('file library create still pending after 2 attempts');
+    expect(filesFlow?.failure?.message).not.toContain('super_secret_token_123');
+    expect(filesFlow?.checks).toMatchObject({
+      create_attempts: 2,
+      create_last_error_code: 'PROJECT_STORAGE_PENDING',
+      provisioning_failure_trace: {
+        mongo_evidence: {
+          afscp_mapping: {
+            operation_id: 'op_pending_storage',
+            operation_status: 'queued',
+            last_error_code: 'STORAGE_PENDING',
+          },
+        },
+        afscp_operation: {
+          operation_id: 'op_pending_storage',
+          operation_state: 'queued',
+        },
+      },
+    });
+    const serializedEvidence = JSON.stringify(Object.values(writes));
+    expect(serializedEvidence).toContain('op_pending_storage');
+    expect(serializedEvidence).toContain('[REDACTED]');
+    expect(serializedEvidence).not.toContain('super_secret_token_123');
   });
 
   it('enriches failed files evidence with operation clues when provisioning returns a generic 502', async () => {

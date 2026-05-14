@@ -884,6 +884,164 @@ describe('verify impact selector', () => {
     expect(plan.storyCards[0]?.manualReviewReasons).toContain('release/deploy operator review');
   });
 
+  it('maps non-runtime env examples/local frontend configuration to V0/V1 without visual, backend-real, or unmapped impact', () => {
+    const changedFiles = [
+      '.env.local.example',
+      '.env.example',
+      'infra/integration/.env.example',
+    ];
+    const plan = buildVerificationPlan({ changedFiles });
+
+    expect(plan.requiredLevels).toEqual(['V0', 'V1']);
+    expect(plan.recommendedCommands).toEqual([
+      'npm run verify:quick',
+      'npm run verify:default',
+    ]);
+    expect(plan.recommendedCommands).not.toContain('npm run verify:visual');
+    expect(plan.recommendedCommands).not.toContain('npm run verify:real');
+    expect(plan.affectedSurfaces).toEqual(['env-only-configuration']);
+    expect(plan.affectedSurfaces).not.toContain('unmapped-source');
+    expect(plan.storyCards).toEqual([]);
+    expect(plan.riskSummary.manualReviewRequired).toBe(false);
+    expect(plan.riskSummary.broadImpact).toBe(false);
+    expect(plan.riskSummary.warnings.join('\n')).not.toContain('did not match canonical story markdown');
+    expect(plan.changedFileImpacts).toEqual(expect.arrayContaining(
+      changedFiles.map((changedFile) => expect.objectContaining({
+        changedFile,
+        matchedRules: ['env_only_configuration'],
+        affectedSurfaces: ['env-only-configuration'],
+        storyIds: [],
+        manualReviewRequired: false,
+        broadImpact: false,
+      })),
+    ));
+  });
+
+  it.each([
+    'infra/runtime/backend-real.env',
+    'infra/substrate/local-dev.env',
+  ])('does not downgrade runtime-critical env path %s to env-only verification', (changedFile) => {
+    const plan = buildVerificationPlan({
+      changedFiles: [changedFile],
+    });
+    const impact = plan.changedFileImpacts.find((candidate) => candidate.changedFile === changedFile);
+
+    expect(plan.requiredLevels).toContain('V3');
+    expect(plan.requiredLevels).not.toEqual(['V0', 'V1']);
+    expect(plan.recommendedCommands).not.toEqual([
+      'npm run verify:quick',
+      'npm run verify:default',
+    ]);
+    expect(plan.affectedSurfaces).not.toEqual(['env-only-configuration']);
+    expect(impact?.matchedRules).not.toContain('env_only_configuration');
+    expect(impact?.broadImpact).toBe(true);
+  });
+
+  it.each([
+    'infra/deploy/unified/env/site.env.example',
+    'infra/deploy/unified/substrate/connection.env.example',
+  ])('keeps release env path %s on the release/deploy closure instead of env-only selection', (changedFile) => {
+    const plan = buildVerificationPlan({
+      changedFiles: [changedFile],
+    });
+
+    expect(plan.requiredLevels).toEqual(['V4']);
+    expect(plan.recommendedCommands).not.toContain('npm run verify:visual');
+    expect(plan.recommendedCommands).not.toContain('npm run verify:real');
+    expect(plan.affectedSurfaces).toEqual(['release/deploy']);
+    expect(plan.changedFileImpacts).toEqual([
+      expect.objectContaining({
+        changedFile,
+        matchedRules: ['release_deploy_operations'],
+        affectedSurfaces: ['release/deploy'],
+        manualReviewRequired: true,
+        broadImpact: true,
+      }),
+    ]);
+  });
+
+  it('maps design-system changes to visual impact while preserving story policy floors', () => {
+    const changedFiles = [
+      'DESIGN.md',
+      'docs/UXUI/00-设计系统/状态与文案规范-v1.md',
+      'src/app/globals.css',
+      'src/components/ui/button.tsx',
+      'tailwind.config.js',
+      'components.json',
+    ];
+    const plan = buildVerificationPlan({ changedFiles });
+    const designImpacts = plan.changedFileImpacts.filter(
+      (impact) => changedFiles.includes(impact.changedFile),
+    );
+    const governanceCard = plan.storyCards.find((card) => card.storyId === 'mock-lane-governance-surfaces');
+    const chatCard = plan.storyCards.find((card) => card.storyId === 'mock-lane-chat-operate-and-recover');
+
+    expect(plan.requiredLevels).toEqual(['V0', 'V1', 'V2', 'V3']);
+    expect(plan.recommendedCommands).toEqual([
+      'npm run verify:quick',
+      'npm run verify:default',
+      'npm run verify:visual',
+      'npm run verify:real',
+    ]);
+    expect(plan.affectedSurfaces).toContain('design-system');
+    expect(plan.affectedSurfaces).not.toContain('unmapped-source');
+    expect(plan.affectedStories).toContain('mock-lane-chat-operate-and-recover');
+    expect(plan.storyCards.every((card) => card.lane === 'mock-lane')).toBe(true);
+    expect(governanceCard).toMatchObject({
+      riskLevel: 'R0',
+      riskPolicyRefs: expect.arrayContaining(['release_blocking_governance']),
+      requiredLevels: ['V0', 'V1', 'V2', 'V3'],
+    });
+    expect(chatCard).toMatchObject({
+      riskLevel: 'R2',
+      requiredLevels: ['V0', 'V1', 'V2'],
+    });
+    expect(plan.riskSummary.manualReviewRequired).toBe(true);
+    expect(plan.riskSummary.broadImpact).toBe(true);
+    expect(plan.nextAction).toContain('npm run verify:visual');
+    expect(designImpacts).toHaveLength(changedFiles.length);
+    expect(designImpacts).toEqual(expect.arrayContaining(
+      changedFiles.map((changedFile) => expect.objectContaining({
+        changedFile,
+        matchedRules: ['design_system'],
+        affectedSurfaces: ['design-system'],
+        manualReviewRequired: true,
+        broadImpact: true,
+      })),
+    ));
+  });
+
+  it.each([
+    'DESIGN.md',
+    'src/app/globals.css',
+    'src/components/ui/button.tsx',
+  ])('keeps design-system path %s from bypassing R0/R1 story policy floors', (changedFile) => {
+    const plan = buildVerificationPlan({
+      changedFiles: [changedFile],
+    });
+    const r0Card = plan.storyCards.find((card) => card.storyId === 'mock-lane-entry-access');
+    const r2Card = plan.storyCards.find((card) => card.storyId === 'mock-lane-chat-operate-and-recover');
+
+    expect(plan.requiredLevels).toEqual(['V0', 'V1', 'V2', 'V3']);
+    expect(plan.recommendedCommands).toContain('npm run verify:visual');
+    expect(plan.recommendedCommands).toContain('npm run verify:real');
+    expect(plan.changedFileImpacts).toContainEqual(expect.objectContaining({
+      changedFile,
+      matchedRules: ['design_system'],
+      affectedSurfaces: ['design-system'],
+      broadImpact: true,
+    }));
+    expect(r0Card).toMatchObject({
+      riskLevel: 'R0',
+      riskPolicyRefs: expect.arrayContaining(['identity_access_boundary']),
+      requiredLevels: ['V0', 'V1', 'V2', 'V3'],
+    });
+    expect(r2Card).toMatchObject({
+      riskLevel: 'R2',
+      requiredLevels: ['V0', 'V1', 'V2'],
+    });
+  });
+
   it('maps backend-real full gate to the release-real owner diagnostic instead of V4 release closure', () => {
     const plan = buildVerificationPlan({
       changedFiles: ['scripts/backend-real-full-gate.sh'],
